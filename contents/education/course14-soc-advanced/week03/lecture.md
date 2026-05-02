@@ -1047,3 +1047,735 @@ graph LR
 
 **학생 액션**: user 별 anomaly 룰.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course14 SOC Advanced — Week 03 SIGMA 룰 심화·DaC·다중 SIEM 변환)
+
+> 이 부록은 lab `soc-adv-ai/week03.yaml` (15 step + multi_task) 의 모든 명령을
+> 실제로 실행 가능한 형태로 도구·옵션·예상 출력·해석을 정리한다. SIGMA 의 고급
+> 문법 (condition / pipeline modifier / aggregation / correlation), 다중 SIEM
+> 변환 (Wazuh/Splunk/Elastic/QRadar), 테스트 프레임워크, 저장소 구조, ATT&CK
+> 매핑까지 모두 다룬다.
+
+### lab step → 도구·SIGMA 매핑 표
+
+| step | 학습 항목 | 핵심 OSS 도구 / 명령 | ATT&CK |
+|------|----------|---------------------|--------|
+| s1 | SIGMA 핵심 구조 (title/logsource/detection/condition/level/tags) | `sigma-cli check`, `pysigma`, SigmaHQ spec | - |
+| s2 | Windows Sysmon EID 1 + Mimikatz 탐지 | Sysmon, sigma-cli convert -t splunk | T1003.001 |
+| s3 | Pipeline modifiers (contains/endswith/re/base64/wide/all) | sigma-cli convert + pipeline yaml | - |
+| s4 | C2 포트 (4444/5555/8888) 네트워크 룰 | logsource: network_connection, netflow | T1571 |
+| s5 | Lateral Movement T1021 (Remote Services) | tags + sigma2attack | T1021 |
+| s6 | SIGMA → Wazuh XML 수동 변환 | grep + xmlstarlet + decoder.xml + rule.xml | - |
+| s7 | sigmac/sigma-cli 다중 변환 (Splunk/ES/QRadar) | pysigma-backend-{splunk,elasticsearch,qradar} | - |
+| s8 | False positive 섹션 활용 | falsepositives + filter (negation) condition | - |
+| s9 | 테스트 프레임워크 (sample log → 매칭) | SigmAIQ, evtx 샘플, chainsaw | - |
+| s10 | 룰 저장소 구조 (tactic/platform/명명/메타) | git + 디렉터리 spec + sigma rule schema | - |
+| s11 | ATT&CK Coverage 분석 + Navigator JSON | sigma2attack, ATT&CK Navigator, DeTT&CT | - |
+| s12 | Linux auditd 룰 (sudo abuse, SUID) | auditd + execve + sudo + setuid | T1548.003 |
+| s13 | Aggregation (5분 / 10 파일) | aggregation: count() by user / timeframe | T1005 |
+| s14 | Correlation 룰 (SIGMA 2.0) | correlation: type / rules / timespan | 다중 |
+| s15 | 종합 탐지 엔지니어링 보고서 | sigma2attack export + DeTT&CT + markdown | - |
+| s99 | 통합 다단계 (s1→s2→s3→s4→s5) | Bastion plan: spec → Mimikatz → modifier → C2 → T1021 | 다중 |
+
+### 학생 환경 준비 (Sigma 풀 워크플로우)
+
+```bash
+# === [s1·s7·s11] 핵심 도구 ===
+pip install --user sigma-cli pysigma
+pip install --user pysigma-backend-splunk pysigma-backend-elasticsearch
+pip install --user pysigma-backend-qradar pysigma-backend-wazuh
+sigma --help
+
+# SigmaHQ 공식 룰 저장소 (1700+ 룰)
+git clone https://github.com/SigmaHQ/sigma /tmp/sigma
+ls /tmp/sigma/rules/
+# application/  cloud/  compliance/  generic/  linux/
+# macos/        network/  proxy/     web/      windows/
+
+# === [s2·s9] Windows Sysmon (EVTX) ===
+git clone https://github.com/olafhartong/sysmon-modular /tmp/sysmon-mod
+
+# chainsaw — Linux 에서 Windows EVTX 분석
+sudo apt install -y wget
+wget https://github.com/WithSecureLabs/chainsaw/releases/latest/download/chainsaw_x86_64-unknown-linux-gnu.tar.gz
+tar xzf chainsaw_x86_64-unknown-linux-gnu.tar.gz
+sudo install chainsaw /usr/local/bin/
+
+# EVTX 샘플
+git clone https://github.com/sbousseaden/EVTX-ATTACK-SAMPLES /tmp/evtx-samples
+
+# === [s12] Linux auditd ===
+sudo apt install -y auditd audispd-plugins
+sudo systemctl enable --now auditd
+
+# === [s4·s10] 네트워크 + 룰 저장소 ===
+mkdir -p ~/sigma-rules/{rules/{linux,windows,network,cloud,correlation},pipelines,tests,docs}
+cd ~/sigma-rules && git init
+
+# === [s9] 테스트 프레임워크 ===
+pip install --user sigmaiq
+
+# zircolite — SQLite 기반 EVTX → Sigma (대용량)
+git clone https://github.com/wagga40/Zircolite /tmp/zircolite
+cd /tmp/zircolite && pip install -r requirements.txt
+
+# === [s11] ATT&CK Navigator + sigma2attack ===
+git clone https://github.com/mitre-attack/attack-navigator /tmp/nav
+cd /tmp/nav/nav-app && npm install && npm run start &
+
+pip install --user sigma2attack
+sigma2attack --rules-directory ~/sigma-rules/rules/ \
+  --out-file ~/sigma-rules/coverage-layer.json
+
+# DeTT&CT
+git clone https://github.com/rabobank-cdc/DeTTECT /tmp/dettect
+cd /tmp/dettect && pip install -r requirements.txt
+```
+
+### 핵심 도구별 상세 사용법
+
+#### 도구 1: SIGMA 룰 핵심 구조 (Step 1·2)
+
+```yaml
+# === 표준 SIGMA 룰 (모든 9 핵심 필드) ===
+title: Mimikatz Default Filename Detection
+id: a8b7c2d3-1e4f-5678-90ab-cdef12345678
+status: stable                  # experimental | test | stable | deprecated
+description: |
+  Mimikatz 의 기본 파일명 또는 알려진 hash 가 실행되면 알림.
+  T1003 OS Credential Dumping 의 가장 흔한 기법.
+references:
+  - https://attack.mitre.org/software/S0002/
+  - https://github.com/gentilkiwi/mimikatz
+author: SOC Team
+date: 2026-05-02
+modified: 2026-05-02
+tags:
+  - attack.credential_access
+  - attack.t1003.001         # LSASS Memory
+  - attack.s0002             # Mimikatz software
+logsource:
+  product: windows
+  category: process_creation
+  service: sysmon
+detection:
+  selection_filename:
+    Image|endswith: '\mimikatz.exe'
+  selection_cmdline:
+    CommandLine|contains:
+      - 'sekurlsa::'
+      - 'lsadump::'
+      - 'crypto::'
+      - 'kerberos::'
+  selection_hash:
+    Hashes|contains:
+      - 'SHA256=AA9F36DAC...'
+  condition: 1 of selection_*
+falsepositives:
+  - 보안 도구 테스트 (sandbox / labs)
+  - Red Team 훈련
+level: critical
+```
+
+```bash
+# 검증
+sigma check ~/sigma-rules/rules/windows/process_creation/proc_mimikatz.yml
+# OK — no errors
+
+# 변환
+sigma convert -t splunk -p splunk_default \
+  ~/sigma-rules/rules/windows/process_creation/proc_mimikatz.yml
+# 출력
+# index=* source="WinEventLog:Microsoft-Windows-Sysmon/Operational"
+#   ((Image="*\\mimikatz.exe") OR
+#    (CommandLine="*sekurlsa::*" OR CommandLine="*lsadump::*" ...))
+```
+
+**Level 의미**: informational / low / medium / high / critical
+
+#### 도구 2: Pipeline Modifiers (Step 3)
+
+```yaml
+# === 모든 modifier ===
+# 문자열
+contains:        Image|contains: 'powershell'
+endswith:        Image|endswith: '.exe'
+startswith:      Image|startswith: 'C:\Windows\'
+
+# 정규식
+re:              CommandLine|re: 'powershell\.exe.*-enc\s+\w+'
+re|i:            CommandLine|re|i: 'powershell.*-enc'
+
+# 인코딩
+base64:          CommandLine|base64: 'whoami'
+base64offset:    CommandLine|base64offset: 'cmd.exe'
+utf16le:         CommandLine|utf16le: 'cmd'
+wide:            CommandLine|wide: 'cmd'
+
+# 비교
+gt:              EventID|gt: 4624
+gte:             EventID|gte: 4624
+
+# 컬렉션
+all:             CommandLine|contains|all:
+                   - 'whoami'
+                   - 'admin'
+
+# CIDR
+cidr:            DestinationIp|cidr:
+                   - '!10.0.0.0/8'
+                   - '!192.168.0.0/16'
+
+# 부정 / 제외
+selection:
+  Image|endswith: '\powershell.exe'
+filter:
+  ParentImage|endswith: '\Outlook.exe'
+condition: selection and not filter
+```
+
+```bash
+# Pipeline 적용 (logsource → ECS 변환)
+sigma convert -t elasticsearch -p ecs_kubernetes,ecs_windows rule.yml
+
+# 사용자 정의 pipeline
+cat > /tmp/my-pipeline.yml << 'YML'
+name: My Custom Mappings
+priority: 100
+transformations:
+  - id: image_mapping
+    type: field_name_mapping
+    mapping:
+      Image: process.executable
+    rule_conditions:
+      - type: logsource
+        product: windows
+        category: process_creation
+YML
+sigma convert -t splunk -p /tmp/my-pipeline.yml rule.yml
+```
+
+#### 도구 3: 네트워크 + ATT&CK 매핑 (Step 4·5)
+
+```yaml
+# === C2 포트 룰 (T1571) ===
+title: Outbound Connection to Suspicious C2 Ports
+id: c2-suspicious-ports-1234
+status: experimental
+description: |
+  내부 호스트가 알려진 C2 default port (4444 Metasploit / 5555 Sliver /
+  8888 Cobalt Strike) 로 외부 연결.
+tags:
+  - attack.command_and_control
+  - attack.t1571
+logsource:
+  category: network_connection
+  product: windows
+detection:
+  selection:
+    DestinationIp|cidr:
+      - '!10.0.0.0/8'
+      - '!172.16.0.0/12'
+      - '!192.168.0.0/16'
+    DestinationPort:
+      - 4444   # Metasploit
+      - 5555   # Sliver
+      - 8888   # Cobalt Strike
+      - 50050  # CS alternate
+      - 1337
+  condition: selection
+falsepositives:
+  - 합법적 P2P / VoIP
+level: high
+---
+# === Lateral Movement T1021 ===
+title: Suspicious WinRM Connection from Internal Host
+id: t1021-winrm-lateral-5678
+status: experimental
+tags:
+  - attack.lateral_movement
+  - attack.t1021.006
+logsource:
+  category: network_connection
+detection:
+  selection:
+    SourceIp|cidr: '10.0.0.0/8'
+    DestinationIp|cidr: '10.0.0.0/8'
+    DestinationPort:
+      - 5985   # WinRM HTTP
+      - 5986   # WinRM HTTPS
+  filter_admin_subnet:
+    SourceIp|cidr: '10.0.10.0/24'
+  condition: selection and not filter_admin_subnet
+falsepositives:
+  - PowerShell remoting (운영 자동화)
+  - SCCM / Ansible / Salt agent
+level: medium
+```
+
+```bash
+# sigma2attack 으로 ATT&CK Navigator 자동 생성
+sigma2attack --rules-directory ~/sigma-rules/rules/ \
+  --out-file ~/sigma-rules/coverage-layer.json
+
+cat ~/sigma-rules/coverage-layer.json | jq '.techniques | length'
+# 47   ← 47 techniques cover
+
+# Navigator load: http://localhost:4200 → Open Existing Layer
+```
+
+#### 도구 4: SIGMA → Wazuh 수동 변환 (Step 6)
+
+```xml
+<!-- /var/ossec/etc/rules/local_sigma_converted.xml -->
+<group name="custom,sigma_converted,credential_access,">
+  <!-- 변환 시 주의:
+       1. logsource: windows process_creation → sysmon decoder
+       2. Image|endswith → regex \\mimikatz.exe$
+       3. SIGMA condition → if_sid + regex 조합
+       4. SIGMA tags → mitre 블록
+       5. SIGMA level critical → Wazuh level 14
+  -->
+
+  <rule id="100700" level="14">
+    <if_sid>61603</if_sid>     <!-- Sysmon Process Created (Wazuh sid) -->
+    <field name="win.eventdata.image">\\mimikatz\.exe$</field>
+    <description>Mimikatz default filename — converted from SIGMA</description>
+    <mitre><id>T1003.001</id></mitre>
+    <group>credential_access,critical,sigma_converted,</group>
+    <options>alert_by_email</options>
+  </rule>
+</group>
+```
+
+```bash
+# 자동 변환 도구 (3rd party)
+sigma convert -t wazuh -p wazuh_default \
+  ~/sigma-rules/rules/windows/process_creation/proc_mimikatz.yml
+
+# 변환 검증
+xmllint --noout /var/ossec/etc/rules/local_sigma_converted.xml
+sudo /var/ossec/bin/wazuh-control test-config
+
+# Wazuh logtest 매칭
+sudo /var/ossec/bin/wazuh-logtest
+# Phase 3: Rule id '100700' (level 14)
+```
+
+#### 도구 5: sigma-cli 자동 변환 (Step 7)
+
+```bash
+RULE=~/sigma-rules/rules/windows/process_creation/proc_mimikatz.yml
+
+# Splunk SPL
+sigma convert -t splunk -p splunk_default $RULE
+# index=* source="WinEventLog:*Sysmon*" Image="*\\mimikatz.exe"
+
+# Splunk + Sysmon source
+sigma convert -t splunk -p sysmon $RULE
+
+# ElasticSearch DSL (ECS)
+sigma convert -t elasticsearch -p ecs_windows $RULE
+# {"query": {"bool": {"must": [
+#   {"match_phrase": {"process.executable": "*\\mimikatz.exe"}}
+# ]}}}
+
+# QRadar AQL
+sigma convert -t qradar -p qradar_default $RULE
+
+# 다중 출력 형식
+sigma convert -t splunk -p splunk_default -O ndjson $RULE
+sigma convert -t elasticsearch -p ecs_windows -O dsl_lucene $RULE
+sigma convert -t elasticsearch -p ecs_windows -O eql $RULE
+
+# 디렉터리 일괄 변환
+sigma convert -t splunk -p splunk_default ~/sigma-rules/rules/ -o /tmp/splunk-rules.txt
+
+# Pipeline 조합
+sigma convert -t splunk -p splunk_windows -p splunk_sysmon $RULE
+sigma convert -t elasticsearch -p ecs_kubernetes -p ecs_windows $RULE
+```
+
+지원 backend: splunk / elasticsearch / qradar / wazuh / sentinel-pro / opensearch / panther / sumologic / arcsight
+
+#### 도구 6: 테스트 프레임워크 (Step 9)
+
+```bash
+# === SigmAIQ ===
+cat > /tmp/test-events.json << 'JSON'
+[
+  {"EventID": 1, "Image": "C:\\Tools\\mimikatz.exe",
+   "CommandLine": "mimikatz.exe sekurlsa::logonpasswords"},
+  {"EventID": 1, "Image": "C:\\Windows\\System32\\notepad.exe",
+   "CommandLine": "notepad.exe report.txt"}
+]
+JSON
+sigmaiq test --rule ~/sigma-rules/rules/windows/process_creation/proc_mimikatz.yml \
+  --events /tmp/test-events.json
+# Expected: 1 match / 0 false positive
+
+# === chainsaw — EVTX 직접 hunt ===
+chainsaw hunt /tmp/evtx-samples/Credential_Access \
+  -s /tmp/sigma/rules/windows/builtin/security/
+
+chainsaw hunt /tmp/evtx-samples \
+  -s /tmp/sigma/rules \
+  --csv -o /tmp/chainsaw-results.csv
+
+# === Zircolite — SQLite 기반 (대용량) ===
+cd /tmp/zircolite
+python3 zircolite.py --evtx /tmp/evtx-samples/ \
+  --ruleset rules/rules_windows_sysmon.json \
+  --outfile /tmp/zircolite-results.json
+
+# === Atomic Red Team 시뮬 + 검증 ===
+pwsh -c "Invoke-AtomicTest T1003.001 -ShowDetailsBrief"
+pwsh -c "Invoke-AtomicTest T1003.001-1"
+wevtutil epl Microsoft-Windows-Sysmon/Operational T1003.001-test.evtx
+chainsaw hunt T1003.001-test.evtx -s ~/sigma-rules/rules/
+
+# === CI 통합 ===
+cat > .github/workflows/sigma-test.yml << 'YML'
+name: Sigma Detection Test
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install sigma-cli pysigma sigmaiq
+      - name: Validate
+        run: |
+          for f in $(find rules/ -name '*.yml'); do
+            sigma check "$f" || exit 1
+          done
+      - name: Test
+        run: |
+          for f in $(find rules/ -name '*.yml'); do
+            test_dir="tests/$(basename $f .yml)"
+            [ -d "$test_dir" ] && sigmaiq test --rule "$f" --events "$test_dir/events.json"
+          done
+      - name: ATT&CK coverage
+        run: sigma2attack --rules-directory rules/ --out-file coverage.json
+      - uses: actions/upload-artifact@v4
+        with: { name: coverage, path: coverage.json }
+YML
+```
+
+#### 도구 7: 룰 저장소 + Aggregation/Correlation (Step 10·13·14)
+
+```bash
+# === 표준 디렉터리 구조 ===
+tree ~/sigma-rules/rules/
+# rules/
+# ├── application/
+# ├── cloud/{aws,azure,gcp,m365}/
+# ├── compliance/{pci_dss,hipaa}/
+# ├── linux/{auditd,builtin,file_event,network_connection,process_creation,lateral_movement}/
+# ├── network/{dns,firewall,tls,zeek}/
+# ├── web/{nginx,webserver_generic,waf}/
+# ├── windows/{builtin,driver_load,powershell,process_creation,registry_event,sysmon}/
+# └── correlation/
+
+# 명명: {tactic}_{technique}_{specific}.yml
+# 예: cred_access_t1003_001_mimikatz.yml
+
+# === Aggregation 룰 (Step 13) ===
+cat > ~/sigma-rules/rules/linux/auditd/data_collection_t1005.yml << 'YML'
+title: Mass File Access by Single User (Data Collection)
+id: t1005-mass-file-access-9876
+status: stable
+description: |
+  단일 사용자가 5분 내 10개 이상의 서로 다른 파일에 접근.
+tags:
+  - attack.collection
+  - attack.t1005
+logsource:
+  product: linux
+  service: auditd
+detection:
+  selection:
+    type: PATH
+    syscall: open|openat|read
+  condition: selection | count(distinct.name) by uid > 10
+  timeframe: 5m
+falsepositives:
+  - Backup (rsync / tar)
+  - Code build (find / grep)
+level: medium
+YML
+
+# === Correlation 룰 (SIGMA 2.0, Step 14) ===
+cat > ~/sigma-rules/rules/correlation/credential_then_lateral.yml << 'YML'
+title: Credential Access Followed by Lateral Movement
+id: corr-cred-then-lateral-1111
+status: experimental
+description: |
+  credential dump (T1003) 후 60분 내 같은 호스트에서 lateral movement
+  (T1021) 시도. 두 신호가 단일 호스트에서 발생 시 매우 의심.
+correlation:
+  type: temporal_ordered
+  rules:
+    - cred_access_t1003_001_mimikatz
+    - lateral_t1021_006_winrm
+  group-by:
+    - ComputerName
+  timespan: 60m
+  ordered: true
+falsepositives:
+  - Red Team 훈련
+level: critical
+tags:
+  - attack.credential_access
+  - attack.lateral_movement
+YML
+
+sigma convert -t splunk -p splunk_default ~/sigma-rules/rules/correlation/
+```
+
+#### 도구 8: Linux auditd SIGMA (Step 12)
+
+```yaml
+# === sudo abuse 탐지 ===
+title: Sudo Privilege Escalation Attempt
+id: linux-sudo-abuse-2222
+status: stable
+tags:
+  - attack.privilege_escalation
+  - attack.t1548.003
+logsource:
+  product: linux
+  service: auditd
+detection:
+  selection_sudo:
+    type: USER_CMD
+    cmd|contains:
+      - 'sudo /bin/bash'
+      - 'sudo /bin/sh'
+      - 'sudo su -'
+      - 'sudo -i'
+      - 'sudo -s'
+  filter_admin:
+    user|startswith: 'admin'
+  condition: selection_sudo and not filter_admin
+falsepositives:
+  - Admin 사용자 정상 운영
+level: high
+---
+# === SUID exploitation (GTFOBins 패턴) ===
+title: SUID Binary Exploitation Attempt
+id: linux-suid-exploit-3333
+status: experimental
+tags:
+  - attack.privilege_escalation
+  - attack.t1548.001
+logsource:
+  product: linux
+  service: auditd
+detection:
+  selection_find:
+    type: EXECVE
+    a0|endswith: '/find'
+    a1: '.'
+    a2: '-exec'
+    a3|contains: 'sh'
+  selection_vim:
+    type: EXECVE
+    a0|endswith: '/vim'
+    a1|startswith: '-c'
+    a1|contains: ':!'
+  selection_python:
+    type: EXECVE
+    a0|endswith: ['/python', '/python3']
+    a1: '-c'
+    a2|contains: ['os.setuid(0)', 'pty.spawn']
+  condition: 1 of selection_*
+falsepositives:
+  - 시스템 관리자 정상 작업
+level: critical
+```
+
+```bash
+# auditd 설정
+sudo tee /etc/audit/rules.d/sigma.rules > /dev/null << 'RULES'
+-a always,exit -F arch=b64 -S execve -k exec
+-a always,exit -F arch=b64 -S setuid -F a0=0 -k setuid_root
+-w /usr/bin/find -p x -k suid_exec
+-w /usr/bin/vim -p x -k suid_exec
+-w /usr/bin/python3 -p x -k suid_exec
+RULES
+sudo augenrules --load
+sudo auditctl -l
+
+# 시뮬 + 검증
+sudo -u testuser bash -c "sudo /bin/bash"
+ausearch -k exec --start recent | aureport --executable
+```
+
+### 점검 / 작성 / 변환 흐름 (15 step + multi_task 통합)
+
+#### Phase A — 룰 작성 + 검증 (s1·s2·s3·s4·s5·s8·s12·s13·s14)
+
+```bash
+cd ~/sigma-rules
+
+# 6 종 룰 작성 (위 도구 1·3·6·7·8 양식)
+# - windows/process_creation/cred_access_t1003_001_mimikatz.yml
+# - windows/network_connection/c2_t1571_suspicious_ports.yml
+# - windows/network_connection/lateral_t1021_006_winrm.yml
+# - linux/auditd/privesc_t1548_003_sudo_abuse.yml
+# - linux/auditd/collection_t1005_mass_file_access.yml
+# - correlation/credential_then_lateral.yml
+
+# 모든 룰 검증
+for f in $(find rules/ -name '*.yml'); do
+  echo "Checking $f"
+  sigma check "$f" || echo "  ERROR"
+done
+```
+
+#### Phase B — 변환 + 테스트 (s6·s7·s9)
+
+```bash
+# 4 backend 일괄 변환
+mkdir -p out/{wazuh,splunk,elastic,qradar}
+for f in $(find rules/ -name '*.yml'); do
+  base=$(basename $f .yml)
+  sigma convert -t wazuh -p wazuh_default $f > out/wazuh/$base.xml 2>/dev/null
+  sigma convert -t splunk -p splunk_default $f > out/splunk/$base.spl 2>/dev/null
+  sigma convert -t elasticsearch -p ecs_windows $f > out/elastic/$base.json 2>/dev/null
+  sigma convert -t qradar -p qradar_default $f > out/qradar/$base.aql 2>/dev/null
+done
+
+# 테스트
+for rule in $(find rules/ -name '*.yml'); do
+  test_dir="tests/$(basename $rule .yml)"
+  [ -d "$test_dir" ] && sigmaiq test --rule "$rule" --events "$test_dir/events.json"
+done
+
+# EVTX 검증 (Windows)
+chainsaw hunt /tmp/evtx-samples -s rules/windows/
+
+# Linux 룰: auditd 시뮬 + 검증
+ssh ccc@10.20.30.80 'sudo bash -c "sudo /bin/bash -c whoami"'
+sleep 2
+sudo ausearch -k exec --start recent | head
+```
+
+#### Phase C — 보고서 + 운영 (s10·s11·s15)
+
+```bash
+# ATT&CK Coverage Navigator JSON
+sigma2attack --rules-directory rules/ --out-file coverage-2026-Q2.json
+
+# DeTT&CT 정밀 평가
+python /tmp/dettect/dettect.py editor
+
+# 종합 보고서
+cat > REPORT-2026-Q2.md << 'MD'
+# SIGMA Detection Engineering Report — 2026-Q2
+
+## 룰셋 통계
+- 총 룰: 47
+- Status: stable 32 / experimental 12 / test 3
+- 플랫폼: Windows 28 / Linux 14 / Network 5
+
+## ATT&CK Coverage
+- Cover technique: 47 / 600+ (7.8%)
+- 우선 cover: Initial Access 80%, Credential Access 70%
+- 부족: Discovery (10%), Defense Evasion (12%)
+
+## 변환 호환성
+- Wazuh: 47/47 / Splunk: 45/47 / ElasticSearch: 47/47 / QRadar: 42/47
+
+## 테스트 결과
+- True positive: 47/47, False positive: 평균 8% → 화이트리스트 후 3%
+- detection latency: avg 1.2s
+
+## 운영 가이드
+- 신규 룰 PR: experimental → test (lab 7일) → stable
+- 분기별 SigmaHQ upstream sync (PR submit)
+- 월간 ATT&CK Navigator coverage 갱신
+MD
+
+# Deploy
+ansible-playbook -i hosts deploy-sigma-rules.yml --extra-vars "sigma_dir=$HOME/sigma-rules"
+```
+
+#### Phase D — 통합 시나리오 (s99 multi_task)
+
+s1 → s2 → s3 → s4 → s5 를 Bastion 가 한 번에:
+
+1. **plan**: SIGMA spec → Mimikatz 룰 → modifier 매트릭스 → C2 ports → Lateral T1021
+2. **execute**: yaml 작성 + sigma check + sigma2attack
+3. **synthesize**: 5 산출물 (spec doc / Mimikatz rule / modifier table / C2 rule / T1021 rule + ATT&CK coverage)
+
+### 도구 비교표 — SIGMA 워크플로우 단계별
+
+| 단계 | 1순위 도구 | 2순위 (보완) | 사용 조건 |
+|------|-----------|-------------|----------|
+| 작성 | sigma-cli + IDE (VSCode + YAML schema) | SigmAIQ Web UI | 대량 |
+| 검증 | sigma check | yamllint + sigma-similarity-analyzer | 중복 탐지 |
+| 변환 | sigma convert -t {backend} | Uncoder.io (web) | UI 선호 |
+| 테스트 (Windows) | chainsaw + EVTX-ATTACK-SAMPLES | Zircolite | 1GB+ EVTX |
+| 테스트 (Linux) | auditd + sigmaiq | rsyslog parser | 대용량 syslog |
+| ATT&CK 매핑 | sigma2attack | DeTT&CT (정밀) | coverage matrix |
+| 저장소 | git + 표준 디렉터리 | SigmaHQ fork | 커뮤니티 contribute |
+| CI | GitHub Actions + sigma check | GitLab CI / Jenkins | enterprise |
+| Deploy | Ansible + 변환된 backend 형식 | SaltStack / Puppet | 복잡 환경 |
+| 시뮬 | Atomic Red Team | Caldera / Stratus Red Team | cloud sim |
+
+### 도구 선택 매트릭스 — 시나리오별 권장
+
+| 시나리오 | 우선 도구 | 이유 |
+|---------|---------|------|
+| "처음 SIGMA 도입" | sigma-cli + SigmaHQ 공식 룰 fork | 학습 + 즉시 적용 |
+| "Wazuh 단독 SOC" | sigma → pysigma-backend-wazuh | 변환 자동화 |
+| "멀티 SIEM" | sigma + 4 backend pipeline | 한 번 작성 → N 번 deploy |
+| "Detection Engineering 팀" | DaC + chainsaw + DeTT&CT + CI | 정성·정량 통합 |
+| "Bug bounty / consulting" | SigmaHQ contribute | 가시성 + 평판 |
+| "Threat hunting" | Sigma + Hayabusa (Windows) | EVTX 검색 강력 |
+| "신규 위협 빠른 적응" | SigmaHQ upstream + 사용자 fork | 24h 내 적용 |
+| "regulator 보고" | DeTT&CT + ATT&CK Navigator | 정량 coverage |
+
+### 학생 셀프 체크리스트 (각 step 완료 기준)
+
+- [ ] s1: 9 핵심 필드 모두 포함한 룰 1개 작성
+- [ ] s2: Mimikatz 탐지 룰 — Image|endswith + CommandLine|contains + Hashes|contains + 1 of selection_*
+- [ ] s3: 8 modifier (contains/endswith/startswith/re/base64/wide/all/cidr) 사용 예
+- [ ] s4: C2 포트 룰 (4444/5555/8888) + 내부 IP 제외 cidr filter
+- [ ] s5: T1021 Remote Services + 내부-내부 lateral 패턴
+- [ ] s6: SIGMA → Wazuh XML 수동 변환 (level + group + mitre 블록)
+- [ ] s7: sigma convert -t {splunk,elasticsearch,qradar,wazuh} 4 backend 비교
+- [ ] s8: falsepositives + filter (negation) 화이트리스트
+- [ ] s9: sigmaiq test 또는 chainsaw hunt sample 매칭 검증
+- [ ] s10: 표준 디렉터리 + 명명 + 메타데이터
+- [ ] s11: sigma2attack coverage Navigator JSON + DeTT&CT
+- [ ] s12: auditd 룰 (sudo abuse + SUID GTFOBins)
+- [ ] s13: aggregation 룰 — count(distinct.name) by uid > 10 / 5m
+- [ ] s14: SIGMA 2.0 correlation — temporal_ordered + 2 sub-rules + 60m
+- [ ] s15: REPORT.md 6 섹션 (통계 / coverage / 변환 / 테스트 / 운영 / 다음)
+- [ ] s99: Bastion 가 5 룰 (spec/Mimikatz/modifier/C2/T1021) 순차 작성
+
+### 추가 참조 자료
+
+- **SIGMA Specification** https://github.com/SigmaHQ/sigma-specification
+- **SigmaHQ Rules** https://github.com/SigmaHQ/sigma — 1700+ 공식
+- **pysigma** https://github.com/SigmaHQ/pysigma
+- **Sigma CLI** https://github.com/SigmaHQ/sigma-cli
+- **chainsaw** https://github.com/WithSecureLabs/chainsaw — Windows EVTX hunt
+- **Zircolite** https://github.com/wagga40/Zircolite
+- **Hayabusa** https://github.com/Yamato-Security/hayabusa
+- **EVTX-ATTACK-SAMPLES** https://github.com/sbousseaden/EVTX-ATTACK-SAMPLES
+- **SigmAIQ** https://github.com/AttackIQ/SigmAIQ
+- **sigma2attack** https://github.com/marbl3z/sigma2attack
+- **MITRE ATT&CK Navigator** https://mitre-attack.github.io/attack-navigator/
+- **DeTT&CT** https://github.com/rabobank-cdc/DeTTECT
+- **Florian Roth Sigma blog** https://cyb3rops.medium.com/
+
+위 모든 SIGMA 룰 작성·테스트는 **격리 lab + Sigma rule schema 검증** 으로 수행한다.
+운영 환경 적용 전 (1) sigma check (2) sigmaiq test (3) chainsaw EVTX 매칭
+(4) staging 24h (5) 운영 단계별. **DaC pipeline** 의 모든 단계 (작성 → 검증 → 변환
+→ 테스트 → deploy) 가 git PR 으로 자동화 되어야 신규 위협에 24h 내 적용 가능.
