@@ -33,10 +33,18 @@ steps:
       - ping -c 3
       - ICMP 응답
       acceptable_methods:
-      - ping -c 3
-      - fping target
-      - hping3 --icmp
-      - ICMP ping alternatives
+      - "ping -c 3 (수기 baseline): 명령 `ping -c 3 10.20.30.80`. 출력 `PING 10.20.30.80 (10.20.30.80) 56(84) bytes of data.\\n64 bytes from 10.20.30.80: icmp_seq=1 ttl=64 time=0.234 ms\\n64 bytes from 10.20.30.80: icmp_seq=2 ttl=64 time=0.198 ms\\n--- 10.20.30.80 ping statistics ---\\n3 packets transmitted, 3 received, 0% packet loss` → ttl=64 = Linux, ttl=128 = Windows. 0% loss = 호스트 활성."
+      - "fping target (대량 ICMP): 명령 `fping -c 3 -q 10.20.30.80`. -c 3 = 3 packet, -q = quiet (요약만). 출력 `10.20.30.80 : xmt/rcv/%loss = 3/3/0%, min/avg/max = 0.198/0.220/0.234`. 다중 호스트 동시 (`fping -a -g 10.20.30.0/24`) — 1초에 /24 sweep."
+      - "hping3 --icmp: 명령 `sudo hping3 --icmp -c 3 10.20.30.80`. 출력 `len=46 ip=10.20.30.80 ttl=64 id=12345 icmp_seq=0 rtt=0.3 ms`. ICMP 외 TCP/UDP/RAW 도 — 방화벽 우회 (`hping3 -S -p 80` SYN ping). pentest 표준."
+      - "nmap -sn (ping sweep): 명령 `sudo nmap -sn 10.20.30.80`. 출력 `Nmap scan report for 10.20.30.80\\nHost is up (0.00023s latency).\\nMAC Address: 00:0c:29:11:22:33 (VMware)`. ARP + ICMP + TCP SYN/ACK 자동 — 방화벽 우회."
+      - "Python scapy ICMP: 명령 `python3 -c \"from scapy.all import *; r = sr1(IP(dst='10.20.30.80')/ICMP(), timeout=2, verbose=0); print(r.ttl if r else 'no reply')\"`. 출력 `64`. ICMP 응답 객체 → 후속 자동화 (TTL fingerprinting)."
+      - "tcping (TCP-only, 방화벽 우회): 명령 `tcping -c 3 10.20.30.80 80`. 출력 `Reply from 10.20.30.80: bytes=0 time<1ms ttl=64`. ICMP 차단 환경에서 TCP SYN/ACK 만 — 방화벽이 ICMP drop 시 대안."
+      - "fping6 (IPv6 호환): 명령 `fping6 -c 3 fe80::1`. ICMPv6 Echo. 듀얼 스택 환경 정찰. IPv6-only 호스트 식별."
+      - "Wireshark + ping 분석: 명령 `sudo tshark -i eth0 -f 'icmp' -T fields -e ip.src -e icmp.type -e ip.ttl -c 6 & ping -c 3 10.20.30.80`. icmp.type 8 = request, 0 = reply. 패킷 레벨 검증."
+      negative_signs:
+      - ping -c 없음
+      - 대상 IP 없음
+      - TTL 맥락 없음
       negative_signs:
       - ping -c 없음
       - 대상 IP 없음
@@ -62,10 +70,19 @@ steps:
       - dig -x 역방향
       - PTR 레코드
       acceptable_methods:
-      - dig -x
-      - host <ip>
-      - nslookup <ip>
-      - python dnspython
+      - "dig -x (수기 baseline): 명령 `dig -x 10.20.30.80 +short`. 출력 `web.corp.local.` → PTR 레코드. 명명 규칙 → 역할 (web/db/auth/secu) 추론. corp.local 도메인 발견."
+      - "dig -x 상세: 명령 `dig -x 10.20.30.80`. 출력 `;; ANSWER SECTION:\\n80.30.20.10.in-addr.arpa. 3600 IN PTR web.corp.local.\\n;; AUTHORITY SECTION:\\n30.20.10.in-addr.arpa. 3600 IN NS ns1.corp.local.`. TTL + Authority 까지."
+      - "host <ip> (간단): 명령 `host 10.20.30.80`. 출력 `80.30.20.10.in-addr.arpa domain name pointer web.corp.local`. dig 보다 간결. 빠른 lookup."
+      - "nslookup (legacy): 명령 `nslookup 10.20.30.80`. 출력 `Server: 10.20.30.1\\nAddress: 10.20.30.1#53\\n80.30.20.10.in-addr.arpa name = web.corp.local.`. Windows/old Linux 호환."
+      - "Python dnspython: 명령 `python3 -c \"import dns.reversename, dns.resolver; addr = dns.reversename.from_address('10.20.30.80'); print(dns.resolver.resolve(addr, 'PTR')[0])\"`. 출력 `web.corp.local.`. 자동화 + 후속 처리."
+      - "fierce: 명령 `fierce --domain corp.local`. zone transfer 시도 + 역방향 brute. recon 표준."
+      - "dnsrecon: 명령 `dnsrecon -r 10.20.30.0/24 -n 10.20.30.1`. -r = range 역방향 brute. /24 전체 한 번에. 표준 reverse sweep."
+      - "amass + 역방향: 명령 `amass enum -active -d corp.local -ip`. CT log + DNS brute + 역방향 통합. 외부 자산."
+      - "drill -x (BIND 대안): 명령 `drill -x 10.20.30.80 @10.20.30.1`. ldns 의 dig 대안. DNSSEC 친화."
+      negative_signs:
+      - -x 없음
+      - 역방향 맥락 없음
+      - PTR 맥락 없음
       negative_signs:
       - -x 없음
       - 역방향 맥락 없음
@@ -91,10 +108,19 @@ steps:
       - curl -I 3000
       - 헤더 조회
       acceptable_methods:
-      - curl -I
-      - wget --server-response
-      - httpx -tech-detect
-      - whatweb
+      - "curl -I (HEAD 요청): 명령 `curl -I http://10.20.30.80:3000`. 출력 `HTTP/1.1 200 OK\\nServer: nginx/1.24.0\\nX-Powered-By: Express\\nContent-Type: text/html` → Server + X-Powered-By → CVE 검색 기반."
+      - "wget --server-response: 명령 `wget --server-response --spider http://10.20.30.80:3000 2>&1 | grep -E 'HTTP|Server|X-'`. --spider = HEAD only. curl 미설치 환경 (BusyBox)."
+      - "httpie HEAD: 명령 `http --headers HEAD http://10.20.30.80:3000`. 출력 syntax-highlighted JSON-like. modern Python."
+      - "httpx -tech-detect (ProjectDiscovery): 명령 `echo http://10.20.30.80:3000 | httpx -title -tech-detect -status-code -silent`. 출력 `[200] [Login] [nginx,Express,Vue.js]`. 1500+ tech detect."
+      - "whatweb: 명령 `whatweb -v http://10.20.30.80:3000`. 출력 `HTTPServer[nginx/1.24.0], Express[4.18.2], JQuery[3.6.0]`. 200+ plugin."
+      - "Wappalyzer CLI: 명령 `wappalyzer http://10.20.30.80:3000 --pretty`. JSON tech list."
+      - "nmap -sV --version-intensity 9: 명령 `sudo nmap -sV --version-intensity 9 -p 3000 10.20.30.80`. NSE banner + version probe — curl 보다 정밀."
+      - "Burp Site Map: Pro → Target → http://10.20.30.80:3000 → Crawl. 자동 spider + JS-rendered."
+      - "OWASP ZAP: 명령 `zaproxy -daemon -port 8080`. proxy + Active Scan."
+      negative_signs:
+      - curl -I 없음
+      - 헤더 조회 맥락 없음
+      - 3000 포트 없음
       negative_signs:
       - curl -I 없음
       - 헤더 조회 맥락 없음
@@ -120,10 +146,18 @@ steps:
       - curl robots.txt
       - 숨겨진 경로
       acceptable_methods:
-      - curl robots.txt
-      - wget robots.txt
-      - httpx -path /robots.txt
-      - Burp Repeater
+      - "curl robots.txt (수기 baseline): 명령 `curl -s http://10.20.30.80:3000/robots.txt`. 출력 `User-agent: *\\nDisallow: /admin\\nDisallow: /backup\\nDisallow: /ftp\\nDisallow: /api/v1` → Disallow 경로 = 관리자/백업/숨겨진 API 노출. 검색엔진 차단 의도지만 attacker 에게는 1차 정찰."
+      - "wget robots.txt: 명령 `wget -qO- http://10.20.30.80:3000/robots.txt`. -q = quiet, -O- = stdout. curl 미설치 환경."
+      - "httpx -path /robots.txt: 명령 `echo 10.20.30.80:3000 | httpx -path /robots.txt -silent`. CI 통합."
+      - "Burp Repeater: Burp Pro → Repeater → GET /robots.txt → response 분석. manual."
+      - "feroxbuster + recursive: 명령 `feroxbuster -u http://10.20.30.80:3000 -w /usr/share/seclists/Discovery/Web-Content/common.txt -x txt`. robots.txt 발견 + Disallow 경로 자동 follow."
+      - "nikto -h: 명령 `nikto -h http://10.20.30.80:3000`. robots.txt 자동 + 200+ 보안 체크."
+      - "ffuf + Disallow 추출: 명령 `curl -s http://10.20.30.80:3000/robots.txt | grep Disallow | awk '{print $2}' | xargs -I{} ffuf -u http://10.20.30.80:3000{}`. 자동화."
+      - "gobuster + robots dictionary: 명령 `gobuster dir -u http://10.20.30.80:3000 -w /usr/share/wordlists/dirb/common.txt`. 200+ path."
+      - "OWASP ZAP Spider: web UI Tools → Spider → robots.txt 자동 사용 + 발견 path 추가 crawl."
+      negative_signs:
+      - robots.txt 없음
+      - Disallow 맥락 없음
       negative_signs:
       - robots.txt 없음
       - Disallow 맥락 없음
@@ -148,10 +182,18 @@ steps:
       - 다중 헤더 grep
       - 핑거프린팅
       acceptable_methods:
-      - curl -sI + grep
-      - whatweb
-      - wappalyzer
-      - httpx -tech-detect
+      - "curl -sI + grep (수기 baseline): 명령 `curl -sI http://10.20.30.80:3000 | grep -iE '(Server|X-Powered-By|X-Frame|Content-Type|Set-Cookie)'`. 출력 `Server: nginx/1.24.0\\nX-Powered-By: Express\\nX-Frame-Options: SAMEORIGIN\\nContent-Type: text/html\\nSet-Cookie: connect.sid=s%3A...; HttpOnly; Path=/`. cookie 의 secure/HttpOnly flag → 보안 정책. X-Frame → clickjacking 방어."
+      - "whatweb: 명령 `whatweb -v --no-errors http://10.20.30.80:3000`. 200+ plugin → 종합 fingerprint."
+      - "wappalyzer CLI: 명령 `wappalyzer http://10.20.30.80:3000 --pretty`. 1500+ tech."
+      - "httpx -tech-detect: 명령 `echo http://10.20.30.80:3000 | httpx -title -tech-detect -status-code -content-length -silent`. CI 표준."
+      - "nmap NSE http-headers: 명령 `sudo nmap -p 3000 --script http-headers,http-server-header 10.20.30.80`. NSE 자동 추출."
+      - "Burp Engagement Tools: Pro → Engagement Tools → \"Find references\" + \"Discover content\". 헤더 + 숨겨진 endpoint."
+      - "EyeWitness: 명령 `python3 EyeWitness.py -f targets.txt --web --threads 10 -d /tmp/ew`. 자동 fingerprint + 스크린샷."
+      - "Aquatone: 명령 `cat targets.txt | aquatone -ports large -out /tmp/aquatone`. HTML report + 스크린샷."
+      - "BuiltWith / Wappalyzer 브라우저 확장: 시각 확인. 클라이언트 측 fingerprint."
+      negative_signs:
+      - 헤더 1개 이하
+      - 핑거프린팅 맥락 없음
       negative_signs:
       - 헤더 1개 이하
       - 핑거프린팅 맥락 없음
@@ -178,10 +220,18 @@ steps:
       - curl /ftp
       - 디렉토리 리스팅
       acceptable_methods:
-      - curl /ftp
-      - dirbuster
-      - feroxbuster
-      - gobuster
+      - "curl /ftp (수기 baseline): 명령 `curl -s http://10.20.30.80:3000/ftp`. 출력 `<html><h2>FTP</h2><ul><li><a href=\"acquisitions.md\">acquisitions.md</a></li><li><a href=\"announcement_encrypted.md\">announcement_encrypted.md</a></li>...` → JuiceShop 공개 파일. announcement_encrypted.md = 암호화된 backup 노출."
+      - "feroxbuster (recursive): 명령 `feroxbuster -u http://10.20.30.80:3000/ftp/ -w /usr/share/seclists/Discovery/Web-Content/raft-medium-files.txt`. 재귀 + 자동 백업/설정 파일."
+      - "gobuster: 명령 `gobuster dir -u http://10.20.30.80:3000 -w /usr/share/wordlists/dirb/common.txt -x md,txt,bak`. directory + extension brute."
+      - "dirbuster (GUI): 명령 `dirbuster`. directory-list-2.3-medium.txt 표준. 시각화 + 진행 상황."
+      - "ffuf: 명령 `ffuf -u http://10.20.30.80:3000/FUZZ -w /usr/share/seclists/Discovery/Web-Content/common.txt -mc 200`. -mc 200 = 200 응답만 매치. 빠른 fuzz."
+      - "wfuzz: 명령 `wfuzz -c -z file,common.txt --hc 404 http://10.20.30.80:3000/FUZZ`. --hc 404 = 404 hide. 표준 fuzzer."
+      - "katana (web crawler): 명령 `katana -u http://10.20.30.80:3000 -d 5 -jc -kf robotstxt,sitemapxml`. ProjectDiscovery. 자동 crawl + JS endpoint."
+      - "Burp Pro Crawl: Target → Scope → Crawl. 자동 spider + JS-rendered + form discovery."
+      - "OWASP ZAP Spider: web UI Tools → Spider. 자동 + AJAX spider."
+      negative_signs:
+      - /ftp 없음
+      - 디렉토리 리스팅 맥락 없음
       negative_signs:
       - /ftp 없음
       - 디렉토리 리스팅 맥락 없음
@@ -207,10 +257,18 @@ steps:
       - ping + ip route get
       - 경로 정보
       acceptable_methods:
-      - ping + ip route
-      - traceroute
-      - mtr
-      - tcptraceroute
+      - "ping + ip route get (수기 baseline): 명령 `ping -c 1 10.20.30.80 && ip route get 10.20.30.80`. 출력 `64 bytes from 10.20.30.80: icmp_seq=1 ttl=64 time=0.234 ms\\n10.20.30.80 dev eth0 src 10.20.30.50 uid 1000` → ttl=64 = Linux + 같은 서브넷 (1 hop)."
+      - "traceroute: 명령 `traceroute -n 10.20.30.80`. 출력 `1 10.20.30.1 0.234 ms  0.198 ms  0.187 ms\\n2 10.20.30.80 0.310 ms  0.298 ms  0.287 ms`. ICMP/UDP 기반 → 방화벽 차단 시 * 표시. router 경로 시각."
+      - "tcptraceroute: 명령 `sudo tcptraceroute 10.20.30.80 80`. TCP SYN 기반 → ICMP 차단 환경 우회. 방화벽 기준 정확."
+      - "mtr (real-time): 명령 `mtr -n -c 10 10.20.30.80`. 10초 동안 traceroute + 통계 (loss%/avg/best/worst). 네트워크 품질."
+      - "nmap traceroute: 명령 `sudo nmap --traceroute 10.20.30.80 -p 80`. 출력 hop list + 응답 시간. 포트 스캔과 동시."
+      - "scapy traceroute (Python): 명령 `python3 -c \"from scapy.all import *; res, _ = traceroute('10.20.30.80', maxttl=5); res.summary()\"`. 자동화 + JSON dump."
+      - "ip route + ip rule: 명령 `ip route show && ip rule list`. 라우팅 테이블 + policy routing. routing decision 추정."
+      - "Wireshark + 패킷 분석: 명령 `sudo tshark -i eth0 -f 'host 10.20.30.80' -T fields -e ip.src -e ip.dst -e ip.ttl -c 10`. 패킷 레벨 검증."
+      - "paris-traceroute (멀티패스): 명령 `paris-traceroute -m 5 10.20.30.80`. ECMP 환경 정확 — load-balanced path 식별."
+      negative_signs:
+      - ip route 없음
+      - 경로 맥락 없음
       negative_signs:
       - ip route 없음
       - 경로 맥락 없음
@@ -235,10 +293,19 @@ steps:
       - nc + 수동 HEAD 요청
       - 배너 그래빙
       acceptable_methods:
-      - nc + HEAD 요청
-      - telnet + 수동 HTTP
-      - curl -v
-      - openssl s_client
+      - "nc + HEAD 요청 (수기 baseline): 명령 `echo -e 'HEAD / HTTP/1.0\\r\\n\\r\\n' | nc -w 3 10.20.30.80 3000`. 출력 `HTTP/1.1 200 OK\\nServer: nginx/1.24.0\\nX-Powered-By: Express\\nConnection: keep-alive`. raw protocol — curl/wget 우회 + 정확."
+      - "telnet 수동: 명령 `telnet 10.20.30.80 3000` 후 `HEAD / HTTP/1.0\\r\\n\\r\\n` 입력 + Enter 두번. legacy 환경. interactive."
+      - "curl -v (verbose): 명령 `curl -v http://10.20.30.80:3000 2>&1 | head -20`. 모든 요청/응답 헤더 + TLS handshake. 디버깅."
+      - "openssl s_client (HTTPS): 명령 `echo 'HEAD / HTTP/1.1\\r\\nHost: 10.20.30.80\\r\\n\\r\\n' | openssl s_client -connect 10.20.30.80:443 -servername 10.20.30.80`. TLS handshake + cert + 응답."
+      - "ncat -C (Telnet character mode): 명령 `ncat -C -w 3 10.20.30.80 3000 < /dev/null`. nmap 의 modern nc. SSL 도 (`--ssl`)."
+      - "amap (서비스 식별): 명령 `amap -1 -B 10.20.30.80 3000`. -1 = single-shot, -B = banner only. nmap 보다 정밀."
+      - "nmap -sV --version-intensity 9: 명령 `sudo nmap -sV --version-intensity 9 -p 3000 10.20.30.80`. NSE + 9단계 probe."
+      - "Wireshark + tcp 추적: 명령 `sudo tshark -i eth0 -f 'tcp port 3000' -Y 'tcp.payload contains \"HTTP\"' -T fields -e tcp.payload -c 5`. raw TCP payload."
+      - "Python socket: 명령 `python3 -c \"import socket; s=socket.socket(); s.settimeout(3); s.connect(('10.20.30.80', 3000)); s.send(b'HEAD / HTTP/1.0\\r\\n\\r\\n'); print(s.recv(4096).decode())\"`. 자동화."
+      negative_signs:
+      - nc 없음
+      - 수동 요청 없음
+      - 배너 그래빙 맥락 없음
       negative_signs:
       - nc 없음
       - 수동 요청 없음
@@ -270,10 +337,18 @@ steps:
       - curl + python json.load
       - 제품 수 집계
       acceptable_methods:
-      - curl + python json
-      - curl + jq '.data | length'
-      - Postman API test
-      - httpx -json
+      - "curl + python json (수기 baseline): 명령 `curl -s http://10.20.30.80:3000/api/Products | python3 -c \"import sys,json; d=json.load(sys.stdin); print('Total products:', len(d.get('data',[])))\"`. 출력 `Total products: 36` → JuiceShop 제품 36개. JSON 구조 분석 → 후속 attack endpoint 식별."
+      - "curl + jq: 명령 `curl -s http://10.20.30.80:3000/api/Products | jq '.data | length'`. 출력 `36`. jq 가 더 간결. 복잡 query (`jq '.data[] | select(.price > 5) | .name'`)."
+      - "Postman API test: GUI Postman → New Request → GET http://10.20.30.80:3000/api/Products → Send → Tests `pm.expect(pm.response.json().data.length).to.eql(36)`. Collection runner."
+      - "httpie + JSON: 명령 `http GET http://10.20.30.80:3000/api/Products`. syntax-highlighted JSON. modern Python."
+      - "httpx + jq chain: 명령 `echo http://10.20.30.80:3000/api/Products | httpx -silent -mc 200 | xargs -I{} curl -s {} | jq '.data | length'`. CI."
+      - "Burp Repeater + Match: Burp Pro → Repeater → /api/Products → response 분석. Match and Replace 로 빠른 fuzz."
+      - "katana (web crawler): 명령 `katana -u http://10.20.30.80:3000 -jc -kf robotstxt,sitemapxml`. 자동 API endpoint discovery."
+      - "Postman OpenAPI import: API spec (OpenAPI/Swagger) 가 있으면 자동 import → 모든 endpoint test."
+      - "OWASP ZAP API Spider: web UI Tools → API → import OpenAPI. 자동 + automated test."
+      negative_signs:
+      - JSON 파싱 없음
+      - Total products 없음
       negative_signs:
       - JSON 파싱 없음
       - Total products 없음
@@ -298,10 +373,18 @@ steps:
       - curl -I 80 포트
       - Apache 헤더
       acceptable_methods:
-      - curl -I 80
-      - whatweb
-      - nikto
-      - nmap -sV
+      - "curl -I 80 (수기 baseline): 명령 `curl -I http://10.20.30.80:80`. 출력 `HTTP/1.1 200 OK\\nServer: Apache/2.4.58 (Ubuntu)\\nContent-Type: text/html` → 포트 80 (Apache) vs 포트 3000 (Express) 다른 stack 식별."
+      - "whatweb: 명령 `whatweb -v http://10.20.30.80:80`. Apache 버전 + 모듈 + 언어 종합."
+      - "nikto -h: 명령 `nikto -h http://10.20.30.80:80`. 200+ 보안 체크 + Apache 전용 (mod_status, ServerSignature)."
+      - "nmap -sV: 명령 `sudo nmap -sV -p 80 10.20.30.80`. NSE banner + version."
+      - "httpx -tech-detect: 명령 `echo http://10.20.30.80:80 | httpx -title -tech-detect -silent`. tech stack."
+      - "Wappalyzer CLI: 명령 `wappalyzer http://10.20.30.80 --pretty`. 1500+ tech."
+      - "WAFW00F: 명령 `wafw00f http://10.20.30.80:80`. WAF 식별 (ModSecurity / Cloudflare / AWS WAF). Apache 의 ModSec 표준."
+      - "shodan host (외부): 명령 `shodan host 10.20.30.80`. 외부 노출 시 캐시된 banner."
+      - "lighttpd test: 일부 환경 lighttpd/nginx/Apache 비교. `curl -I` 만으로 구분 가능."
+      negative_signs:
+      - 80 포트 없음
+      - 다중 서비스 맥락 없음
       negative_signs:
       - 80 포트 없음
       - 다중 서비스 맥락 없음
@@ -325,10 +408,19 @@ steps:
       - nmap -sn /24
       - 핑 스윕
       acceptable_methods:
-      - nmap -sn
-      - fping -g CIDR
-      - arp-scan
-      - masscan --ping
+      - "nmap -sn (수기 baseline): 명령 `sudo nmap -sn 10.20.30.0/24`. 출력 `Nmap scan report for 10.20.30.1\\nHost is up (0.00023s latency).\\nMAC Address: 00:0c:29:11:22:33 (VMware)\\nNmap scan report for 10.20.30.50\\nNmap scan report for 10.20.30.80\\n... \\n4 hosts up`. ARP + ICMP + TCP SYN/ACK + UDP 자동 — 방화벽 우회 스윕."
+      - "fping -g CIDR: 명령 `fping -a -g 10.20.30.0/24 2>/dev/null`. -a = alive 만 출력, -g = generate range. 1초 /24."
+      - "arp-scan --localnet: 명령 `sudo arp-scan --localnet --interface=eth0`. ARP 직접 — 방화벽 우회 (LAN). OUI vendor 자동."
+      - "masscan --ping: 명령 `sudo masscan 10.20.30.0/24 -p1-65535 --rate=10000 -oG /tmp/m.gnmap`. 100배 빠름. 광범위."
+      - "rustscan: 명령 `rustscan -a 10.20.30.0/24 --top -- -sV`. masscan + nmap chain. Rust binary."
+      - "naabu: 명령 `naabu -host 10.20.30.0/24 -top-ports 100`. ProjectDiscovery."
+      - "netdiscover -p (passive): 명령 `sudo netdiscover -p -i eth0 -t 30`. 30초 passive ARP — 자체 송신 0 (stealth)."
+      - "ping sweep bash: 명령 `for i in {1..254}; do (ping -c 1 -W 1 10.20.30.$i &>/dev/null && echo \"10.20.30.$i alive\" &); done; wait`. 의존성 zero."
+      - "Python scapy ARP sweep: 명령 `python3 -c \"from scapy.all import *; ans, _ = arping('10.20.30.0/24', verbose=0); [print(r[1].psrc, r[1].hwsrc) for r in ans]\"`. 객체 처리."
+      negative_signs:
+      - -sn 없음
+      - CIDR 없음
+      - 핑 스윕 맥락 없음
       negative_signs:
       - -sn 없음
       - CIDR 없음
@@ -357,9 +449,18 @@ steps:
       - curl application-version
       - 버전 추출
       acceptable_methods:
-      - curl version endpoint
-      - httpx -version
-      - Nuclei fingerprint-templates
+      - "curl version endpoint (수기 baseline): 명령 `curl -s http://10.20.30.80:3000/rest/admin/application-version`. 출력 `{\"version\":\"15.5.2\"}` → JuiceShop 15.5.2 → CVE 검색 (`searchsploit juiceshop` / NVD)."
+      - "httpx -version: 명령 `echo http://10.20.30.80:3000/rest/admin/application-version | httpx -response-in-json -silent`. JSON 응답."
+      - "Nuclei fingerprint templates: 명령 `nuclei -u http://10.20.30.80:3000 -t /usr/share/nuclei-templates/technologies/`. JuiceShop fingerprint 자동."
+      - "searchsploit (Exploit-DB): 명령 `searchsploit juiceshop`. 출력 `Juice Shop 15.x - SQL Injection`. local DB."
+      - "NVD API: 명령 `curl -s 'https://services.nvd.nist.gov/rest/json/cves/2.0?keywordSearch=juice-shop' | jq '.vulnerabilities[].cve | {id, score: .metrics.cvssMetricV31[0].cvssData.baseScore}'`."
+      - "Vulners search: 명령 `curl -s 'https://vulners.com/api/v3/search/lucene/?query=juice-shop'`."
+      - "Wappalyzer + version: 명령 `wappalyzer http://10.20.30.80:3000`. 버전 자동."
+      - "Burp scanner: Pro Active Scan. 자동 fingerprint + CVE."
+      - "favicon hash (Shodan): 명령 `python3 -c \"import mmh3, codecs, requests; r = requests.get('http://10.20.30.80:3000/favicon.ico'); print(mmh3.hash(codecs.encode(r.content, 'base64')))\"`. Shodan favicon 검색."
+      negative_signs:
+      - version 엔드포인트 없음
+      - CVE 검색 맥락 없음
       negative_signs:
       - version 엔드포인트 없음
       - CVE 검색 맥락 없음
@@ -388,10 +489,19 @@ steps:
       - curl main.js + grep
       - JavaScript 번들
       acceptable_methods:
-      - curl + grep
-      - JSLinker
-      - linkfinder (PyJSLinker)
-      - Burp Decoder
+      - "curl + grep (수기 baseline): 명령 `curl -s http://10.20.30.80:3000/main.js | grep -i 'admin' | head -20`. 출력 `let adminUrl=\"/api/Users/admin\";\\nfunction adminLogin()...` → JS 번들의 hardcoded admin path. 공격 표면 확장."
+      - "LinkFinder (Python): 명령 `python3 linkfinder.py -i http://10.20.30.80:3000/main.js -o cli`. JS endpoint 자동 추출 (regex 기반)."
+      - "JSParser (Burp Pro): 자동 JS 파싱 + endpoint extraction. Burp 통합."
+      - "GetJS / SecretFinder: 명령 `python3 secretfinder.py -i http://10.20.30.80:3000/main.js -o cli`. API key + secret 자동."
+      - "katana + JS crawl: 명령 `katana -u http://10.20.30.80:3000 -jc -kf all`. -jc = JavaScript crawl. ProjectDiscovery."
+      - "wfuzz + js fuzzing: 명령 `wfuzz -c -z file,jswords.txt http://10.20.30.80:3000/FUZZ.js`."
+      - "trufflehog (secret scan): 명령 `trufflehog url --include-paths 'main.js' http://10.20.30.80:3000`. API key/JWT 자동 검출."
+      - "Burp Decoder + Match: Pro → Decoder → JS body → grep regex."
+      - "DevTools Source: Chrome DevTools → Sources → main.js → manual analysis. clickable analysis."
+      negative_signs:
+      - main.js 없음
+      - grep 없음
+      - JS 분석 맥락 없음
       negative_signs:
       - main.js 없음
       - grep 없음
@@ -420,9 +530,19 @@ steps:
       - curl /rest/memories
       - JSON 파싱
       acceptable_methods:
-      - curl + jq
-      - Postman runner
-      - Burp Intruder
+      - "curl + python json (수기 baseline): 명령 `curl -s http://10.20.30.80:3000/rest/memories | python3 -m json.tool | head -30`. 출력 `{\"data\": [{\"id\": 1, \"caption\": \"...\", \"imagePath\": \"/assets/...\", \"User\": {\"username\": \"admin\", \"email\": \"admin@juice-sh.op\"}}]}` → 인증 없이 user info + 업로드 파일 노출."
+      - "curl + jq: 명령 `curl -s http://10.20.30.80:3000/rest/memories | jq '.data[].User.email'`. email 추출."
+      - "Postman Collection runner: GUI Postman Collection → API endpoint list → 자동 batch 실행."
+      - "Burp Intruder: Pro → Intruder → /rest/memories → ID 1-100 brute. ID 별 응답 비교."
+      - "ffuf API fuzz: 명령 `ffuf -u http://10.20.30.80:3000/rest/FUZZ -w api-paths.txt -mc 200`. endpoint discovery."
+      - "Arjun (HTTP parameter discovery): 명령 `arjun -u http://10.20.30.80:3000/rest/memories`. 파라미터 자동 발견."
+      - "katana + JSON crawl: 명령 `katana -u http://10.20.30.80:3000 -jc -kf all`. JSON endpoint."
+      - "OWASP ZAP API Spider: spec import → automated."
+      - "API endpoint dictionary (SecLists): `/usr/share/seclists/Discovery/Web-Content/api/*.txt`. 1000+ API path."
+      negative_signs:
+      - /rest/memories 없음
+      - JSON 없음
+      - 데이터 유출 맥락 없음
       negative_signs:
       - /rest/memories 없음
       - JSON 없음
@@ -452,10 +572,18 @@ steps:
       - /tmp/recon_report.txt
       - 구조화 정보
       acceptable_methods:
-      - echo > 파일
-      - Dradis framework
-      - PTES template
-      - Markdown 보고서
+      - "echo > 파일 (수기 baseline): 명령 위 answer 형식. 출력 `=== Recon Report ===\\nTarget: 10.20.30.80\\nPorts: 80(Apache), 3000(JuiceShop)\\nTech: Node.js, Express, Angular\\nAPIs: /api/Products, /rest/admin/application-version, /ftp, /rest/memories\\nNetwork: 10.20.30.0/24 (hosts: .1, .80, .100, .201)`."
+      - "Dradis framework: open-source pentest collaboration. web UI Project → Findings → Evidence import."
+      - "Faraday IDE: web UI Workspace 70+ tool integration."
+      - "PTES Pre-Engagement + Intelligence Gathering: PTES Phase 1+2. http://www.pentest-standard.org."
+      - "DefectDojo Engagement: web UI New Engagement → Findings."
+      - "Markdown + pandoc → PDF: 명령 `pandoc /tmp/recon_report.md -o /tmp/recon.pdf --template=eisvogel`."
+      - "MITRE ATT&CK 매핑: 각 정찰 항목 → ATT&CK ID. T1595 (Active Scanning), T1592 (Gather Victim Host Info), T1596 (Search Open Tech Db)."
+      - "OWASP WSTG 매핑: WSTG-INFO-01 ~ WSTG-INFO-10 (정보 수집 10 항목). 자동 매핑."
+      - "AttackForge / Plextrac (상용): pentest collaboration. evidence + finding + report 통합."
+      negative_signs:
+      - 파일 저장 없음
+      - 구조화 없음
       negative_signs:
       - 파일 저장 없음
       - 구조화 없음
@@ -464,21 +592,21 @@ steps:
   instruction: |
     [복합 시나리오] "ABC 핀테크 외주 모의해킹 — 1차 정찰 + 윤리 동의서 + 공격 표면 매트릭스"
 
-    ## 상황 (모의해킹 첫 주)
+    ■ 상황 (모의해킹 첫 주)
 
     당신은 ABC 핀테크 외주 모의해킹 컨설턴트.
 
-    > 선임: "신입은 nmap 한 줄 던져 끝내는데, 우리는 그렇게 못 해.
-    > 시작 전 RoE 확인, 정찰은 Passive(OSINT) + Active 두 단계, 마지막 *공격 표면 매트릭스* 정리.
-    > 다음 주차 침투 단계 입력이야."
+    ※ 선임: "신입은 nmap 한 줄 던져 끝내는데, 우리는 그렇게 못 해.
+    ※ 시작 전 RoE 확인, 정찰은 Passive(OSINT) + Active 두 단계, 마지막 *공격 표면 매트릭스* 정리.
+    ※ 다음 주차 침투 단계 입력이야."
 
     학습 목표 (lecture #1·#2 보안 원칙·CIA + #3 4대 VM + #6 윤리) + (lab #1~14 정찰) 통합.
 
-    ## 임무 (3 단계, 약 35분)
+    ■ 임무 (3 단계, 약 35분)
 
     Non-AI 트랙: ssh ccc@10.20.30.201 (attacker VM) 직접 실행.
 
-    ### Phase A — RoE + Passive OSINT
+    ▶ Phase A — RoE + Passive OSINT
     1) RoE heredoc:
        ```
        [Rules of Engagement]
@@ -492,13 +620,13 @@ steps:
     2) `curl -s -I http://10.20.30.80:3000/ 2>&1 | grep -E "Server|X-Powered"`
     3) `curl -s http://10.20.30.80:3000/robots.txt 2>&1 | head -5`
 
-    ### Phase B — Active 정찰
+    ▶ Phase B — Active 정찰
     `ping -c 3 -W 1 10.20.30.80 2>&1 | tail -3`
     `for i in 1 80 100 112 201; do
        ping -c 1 -W 1 10.20.30.$i &>/dev/null && echo "10.20.30.$i: alive" || echo "10.20.30.$i: down"; done`
     `nmap -p 22,80,443,3000,3306,8080 -sV --open --max-rtt-timeout 1000 10.20.30.80 2>&1 | head -20`
 
-    ### Phase C — 공격 표면 매트릭스
+    ▶ Phase C — 공격 표면 매트릭스
     | 자산 | 포트 | 서비스 | 기술 스택 | 공격 우선순위 |
     | web (10.20.30.80) | 80 | HTTP+ModSec | Apache+CRS | 중 |
     | web (10.20.30.80) | 3000 | HTTP | JuiceShop/Express/Node | 높음 |
@@ -528,10 +656,20 @@ steps:
       - Phase B — ping + 스윕 + nmap
       - Phase C — 5행 매트릭스 + 우선순위
       acceptable_methods:
-      - heredoc RoE
-      - curl + ping + nmap
-      - markdown table
-      - whois / dig / amass 가능
+      - "heredoc RoE + curl OSINT + ping/nmap + 매트릭스 (수기 baseline): 명령 위 answer 형식. 출력 `[Rules of Engagement] ... 서명: 2026-04-30\\nServer: nginx/1.24.0\\nX-Powered-By: Express\\nUser-agent: *\\nDisallow: /admin\\n3 packets transmitted, 3 received\\n10.20.30.1: alive\\n... 매트릭스 5행 + w02 침투 우선순위`. Phase A/B/C 3 단계."
+      - "Phase A RoE: heredoc 형식. `[Rules of Engagement]\\n- 대상\\n- 기간\\n- 허용\\n- 의무\\n- 법적: 정통망법 제48조 (위탁 점검)\\n서명: 2026-04-30`. 정통망법 제48조 = 정보통신망 무단 침입 금지 (단, 위탁 점검은 합법)."
+      - "Phase A Passive OSINT: `curl -sI` + `curl /robots.txt`. Server 헤더 + Disallow 경로. 외부 트래픽 최소."
+      - "Phase B Active 정찰: `ping -c 3` + `for host sweep` + `nmap -p 22,80,443,3000,3306,8080 -sV --open`. 트래픽 발생 → RoE 의무 (활동 로그 보존)."
+      - "Phase C 매트릭스: markdown table 5행 (자산/포트/서비스/기술 스택/공격 우선순위). `web/web/web/bastion/siem`. SIEM = 회피 대상 명시."
+      - "PTES Pre-Engagement + Intelligence: PTES Phase 1+2 표준. http://www.pentest-standard.org/index.php/Pre-engagement."
+      - "OWASP WSTG-INFO Series: WSTG-INFO-01 ~ 10. 외부 자산 정찰 표준."
+      - "한국 정통망법 + ISMS-P 매핑: 위탁 점검 합법 근거. 한국 KISA 인증 프로젝트 표준."
+      - "Bastion AI Red Team orchestrator (예시): bastion 이 (1) RoE 자동 검증 (KG anchor `anc-roe-{client}-{date}`), (2) Passive → Active 자동 분기 + 매 명령 로그 KG, (3) 매트릭스 자동 생성 + w02 입력 자동 전달. log `[KG] RoE signed → 12 hosts recon → 5-row matrix → ready for w02 penetration phase`."
+      negative_signs:
+      - RoE 누락
+      - nmap 또는 ping만
+      - 매트릭스 누락
+      - 우선순위 누락
       negative_signs:
       - RoE 누락
       - nmap 또는 ping만

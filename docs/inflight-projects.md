@@ -12,6 +12,27 @@
 
 ## In-Progress
 
+### P19. course1 attack acceptable_methods OSS 도구 보강 [STATUS: 진행 중]
+
+**동기**: P18 (physical-pentest) 완료 후속. course1 attack 이 학생 첫 수강 과목 + 메모리 "multi_task 재작성 — attack 6" 일부 진행 중. 동일 패턴 (도구명 → 도구 + 명령 + 출력 + 해석) 으로 재작성.
+
+**원칙** (P18 동일):
+- 병렬/스크립트/템플릿/자동화 금지
+- 매 주차 instruction/script 읽고 정성껏 수기
+- 한 step 당 8~9개 도구 (nonai 8, ai 9)
+
+**진행**:
+- [x] week01 nonai (544→682줄, 16 step × 8~9 method) — 정찰 기초: ping/DNS reverse/HTTP banner/robots.txt/fingerprint/디렉토리/경로/nc/REST/Apache/sweep/version/main.js/memories/recon report
+- [x] week01 ai (709→789줄, 16 step × 9 method, multi_task RoE+Phase A/B/C + Bastion KG anchor)
+- [ ] week02~15 nonai
+- [ ] week02~15 ai
+
+**Next concrete step**: attack-nonai/week02.yaml 보강.
+
+**Files**: `contents/labs/attack-nonai/week*.yaml`, `contents/labs/attack-ai/week*.yaml`
+
+---
+
 ### P18. course16-17 physical-pentest acceptable_methods OSS 도구 보강 [STATUS: ✅ COMPLETE — week05~15 전부 완료]
 
 **동기**: 사용자 지시 (2026-05-03) — Cyber Range = UI /labs 메뉴 = `contents/labs/` 자체.

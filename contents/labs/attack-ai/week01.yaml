@@ -36,10 +36,15 @@ steps:
       - 응답에 bytes from <IP> 또는 time= 응답시간 포함
       - 활성 여부(최소 1 응답) 판정
       acceptable_methods:
-      - ping -c 3 <IP>
-      - hping3 -1 -c 3 <IP> (ICMP mode)
-      - nmap -sn <IP>
-      - fping <IP>
+      - "ping -c 3 (수기 baseline): 명령 `ping -c 3 10.20.30.80`. 출력 `64 bytes from 10.20.30.80: icmp_seq=1 ttl=64 time=0.234 ms\\n3 packets transmitted, 3 received, 0% packet loss`. ttl=64 = Linux."
+      - "fping: 명령 `fping -c 3 -q 10.20.30.80`. -q = 요약. 다중 호스트 동시."
+      - "hping3 --icmp: 명령 `sudo hping3 --icmp -c 3 10.20.30.80`. ICMP + TCP/UDP/RAW. 방화벽 우회."
+      - "nmap -sn: 명령 `sudo nmap -sn 10.20.30.80`. ARP+ICMP+TCP. 방화벽 우회."
+      - "Python scapy ICMP: 명령 `python3 -c \"from scapy.all import *; r = sr1(IP(dst='10.20.30.80')/ICMP(), timeout=2); print(r.ttl if r else 'no reply')\"`. 자동화."
+      - "tcping (TCP-only): 명령 `tcping -c 3 10.20.30.80 80`. ICMP 차단 환경 우회."
+      - "fping6 (IPv6): 명령 `fping6 -c 3 fe80::1`. 듀얼 스택."
+      - "Wireshark + ping 분석: 명령 `sudo tshark -f 'icmp' -T fields -e ip.src -e icmp.type -e ip.ttl -c 6`."
+      - "Bastion AI 자동 ping + KG: bastion 이 (1) ping 결과 KG anchor `anc-host-alive-{ip}` 자동, (2) TTL → OS 추정 자동, (3) 방화벽 차단 시 TCP-ping fallback. log `[KG] 10.20.30.80 alive (Linux ttl=64) → asset_state anchor`."
       negative_signs:
       - -c 없이 무제한 ping
       - 전혀 다른 IP 대상
@@ -73,10 +78,15 @@ steps:
       - 응답에 IN + PTR 레코드 또는 NXDOMAIN 해석 포함
       - 호스트명 획득 시 역할 추정 또는 명명 규칙 언급
       acceptable_methods:
-      - dig -x 10.20.30.80
-      - dig PTR 80.30.20.10.in-addr.arpa
-      - nslookup 10.20.30.80
-      - host 10.20.30.80
+      - "dig -x +short (수기 baseline): 명령 `dig -x 10.20.30.80 +short`. 출력 `web.corp.local.` PTR. 명명 규칙 → 역할 추론."
+      - "dig -x 상세: TTL + Authority 까지."
+      - "host <ip>: 간단."
+      - "nslookup: legacy Windows."
+      - "Python dnspython: 자동화."
+      - "fierce: zone transfer + 역방향 brute."
+      - "dnsrecon -r CIDR: 범위 역방향."
+      - "amass enum: CT log + 역방향."
+      - "Bastion AI DNS recon orchestrator: bastion 이 (1) PTR 자동 → 자산 KG anchor, (2) shadow IT 식별 → finding."
       negative_signs:
       - 정방향 DNS(A/AAAA) 조회만 수행
       - DNS 서버 지정 없이 localhost 조회해 실패
@@ -111,10 +121,15 @@ steps:
       - 응답에 HTTP/1.x 또는 HTTP/2 상태 라인 포함
       - Server 또는 X-Powered-By 등 기술 스택 힌트 헤더 최소 1개 해석
       acceptable_methods:
-      - curl -I http://10.20.30.80:3000
-      - curl -sI <url>
-      - wget --server-response --spider <url>
-      - python3 requests.head(url).headers
+      - "curl -I (수기 baseline): 명령 `curl -I http://10.20.30.80:3000`. 출력 `Server: nginx/1.24.0\\nX-Powered-By: Express`."
+      - "wget --server-response: BusyBox 환경."
+      - "httpie HEAD: modern Python."
+      - "httpx -tech-detect: 1500+ tech."
+      - "whatweb: 200+ plugin."
+      - "Wappalyzer CLI: tech list."
+      - "nmap -sV --version-intensity 9: NSE."
+      - "Burp Site Map: spider + JS."
+      - "Bastion AI tech + CVE 자동 매칭: bastion 이 (1) banner 추출, (2) CVE DB 매칭 → finding."
       negative_signs:
       - GET 으로 본문까지 다운로드해 헤더만 확인하라는 의도 벗어남
       - 응답 헤더는 받았으나 서버 식별 시도 없음
@@ -147,10 +162,15 @@ steps:
       - 응답에 Disallow 또는 Allow 지시문 포함
       - Disallow 경로 중 최소 1개를 실제 탐색 후보로 해석
       acceptable_methods:
-      - curl -s http://<target>/robots.txt
-      - wget -qO- http://<target>/robots.txt
-      - python urllib.request.urlopen(<url>/robots.txt).read()
-      - humans.txt · sitemap.xml 추가 확인
+      - "curl /robots.txt (수기 baseline): 명령 `curl -s http://10.20.30.80:3000/robots.txt`. 출력 `User-agent: *\\nDisallow: /admin\\nDisallow: /ftp`. attacker 1차 정찰."
+      - "wget /robots.txt: BusyBox."
+      - "Burp Repeater: GET manual."
+      - "feroxbuster + recursive: Disallow 경로 자동 follow."
+      - "nikto -h: 200+ 보안 체크."
+      - "ffuf + Disallow 추출: 자동 chain."
+      - "gobuster: directory brute."
+      - "OWASP ZAP Spider: robots.txt 자동 사용."
+      - "Bastion AI 자동 robots + crawl: bastion 이 (1) Disallow 경로 자동 추출, (2) 각 경로 자동 fuzz, (3) 발견 endpoint anchor."
       negative_signs:
       - 404 응답만 받고 종료
       - 파일 내용 출력 후 해석 없이 단순 출력만
@@ -184,10 +204,15 @@ steps:
       - Server 또는 X-Powered-By 값 해석(예 nginx/1.18, Express, PHP/7.4)
       - 쿠키명(PHPSESSID·JSESSIONID·connect.sid 등)으로 서버사이드 추정 또는 추가 CVE 조회 가능성 언급
       acceptable_methods:
-      - curl -sI <url> | grep -iE pattern
-      - whatweb <url>
-      - wappalyzer 브라우저 확장 또는 CLI
-      - httpx -title -tech-detect -status-code
+      - "curl -sI + grep -iE (수기 baseline): 명령 위 answer 형식. 출력 `Server: nginx/1.24.0\\nX-Powered-By: Express\\nSet-Cookie: connect.sid=...; HttpOnly`."
+      - "whatweb: 200+ plugin."
+      - "wappalyzer CLI: 1500+ tech."
+      - "httpx -tech-detect: CI."
+      - "nmap NSE http-headers."
+      - "Burp Engagement Tools: Find references."
+      - "EyeWitness: 스크린샷 + fingerprint."
+      - "Aquatone: HTML report."
+      - "Bastion AI tech + 보안 헤더 audit: bastion 이 (1) 통합, (2) 보안 헤더 누락 자동 finding (HSTS/CSP/X-Frame)."
       negative_signs:
       - 헤더 수집만 하고 필터/해석 없음
       - 패시브 아닌 포트 스캔·주입 수행
@@ -220,10 +245,15 @@ steps:
       - 응답에서 파일 이름 목록 (.md, .txt, .pdf 등 확장자 포함) 확인
       - 노출된 파일 중 민감 가능성 파일(backup/config/exfiltration) 지목
       acceptable_methods:
-      - curl -s http://<host>:3000/ftp
-      - curl -s http://<host>:3000/ftp | grep -oE href="[^"]+"
-      - browser 직접 접속 후 목록 확인
-      - wget -r -l1 --no-parent http://<host>:3000/ftp
+      - "curl /ftp (수기 baseline): 명령 `curl -s http://10.20.30.80:3000/ftp`. 출력 HTML file list. JuiceShop 공개."
+      - "wget -r -l1 --no-parent: 자동 다운로드."
+      - "feroxbuster -u /ftp/ -x md,txt,bak: extension fuzz."
+      - "gobuster: directory + extension."
+      - "ffuf -mc 200: 빠른 fuzz."
+      - "wfuzz: 표준."
+      - "katana -jc: ProjectDiscovery."
+      - "Burp Pro Crawl: spider + JS."
+      - "Bastion AI 자동 file enum + 분류: bastion 이 (1) /ftp 자동 + 모든 파일 download, (2) MIME + 내용 분석 → 민감 파일 자동 분류 (backup/config/cred)."
       negative_signs:
       - /ftp 대신 루트만 조회
       - 파일명 추출 없이 raw HTML 만 출력
@@ -258,10 +288,15 @@ steps:
       - ip route get <IP> 또는 traceroute 로 다음 홉·소스 IP 확인
       - 라우팅 경로(via, dev) 또는 RTT 결과 해석
       acceptable_methods:
-      - ping -c 1 <IP> 와 ip route get <IP> 조합
-      - traceroute <IP> 또는 mtr -r -c 3 <IP>
-      - tcptraceroute <IP>:<port>
-      - ip -4 neigh (인접 호스트 ARP)
+      - "ping + ip route get (수기 baseline): 명령 `ping -c 1 10.20.30.80 && ip route get 10.20.30.80`. ttl + dev + src."
+      - "traceroute -n: ICMP/UDP. 방화벽 차단 시 *."
+      - "tcptraceroute -p 80: TCP SYN. ICMP 차단 우회."
+      - "mtr -n -c 10: real-time + 통계."
+      - "nmap --traceroute: 포트 스캔 + traceroute."
+      - "scapy traceroute: Python 자동화."
+      - "ip route + ip rule: 라우팅 + policy."
+      - "Wireshark + 패킷 분석: tcpdump TTL."
+      - "Bastion AI 토폴로지 자동 + KG: bastion 이 (1) traceroute → 토폴로지 anchor, (2) hop count → 네트워크 segment 추정."
       negative_signs:
       - ping 없이 라우팅 조회만
       - 결과 해석 없이 raw 출력
@@ -296,10 +331,15 @@ steps:
       - HTTP HEAD 또는 GET 요청 수동 전송 (\r\n 줄바꿈 포함)
       - 응답의 Status Line(HTTP/1.x) + Server 헤더 획득
       acceptable_methods:
-      - echo -e HEAD / HTTP/1.0\r\n\r\n | nc -w 3 <IP> 3000
-      - printf ... | ncat <IP> 3000
-      - telnet <IP> 3000 + 수동 입력
-      - openssl s_client -connect <IP>:443 (TLS 포트용 대안)
+      - "nc + HEAD (수기 baseline): 명령 `echo -e 'HEAD / HTTP/1.0\\r\\n\\r\\n' | nc -w 3 10.20.30.80 3000`. raw protocol."
+      - "telnet 수동: legacy + interactive."
+      - "curl -v: TLS handshake + 헤더."
+      - "openssl s_client (HTTPS): TLS + cert."
+      - "ncat -C --ssl: nmap modern nc."
+      - "amap -1 -B: 정밀 식별."
+      - "nmap -sV --version-intensity 9: NSE 9단계."
+      - "Python socket: 자동화."
+      - "Bastion AI banner + version: bastion 이 raw banner → 자동 CVE 매칭."
       negative_signs:
       - curl 로만 수행해 수동 프로토콜 학습 의도 벗어남
       - 연결 실패만 받고 재시도/다른 포트 시도 없음
@@ -337,10 +377,15 @@ steps:
       - python3 로 JSON 파싱 후 data 키의 리스트 길이 계산
       - 'Total products: <N> 형식 또는 동등한 숫자 출력'
       acceptable_methods:
-      - curl -s ... | python3 -c import sys,json; json.load(sys.stdin)
-      - curl -s ... | jq .data | length
-      - python requests.get 후 response.json()
-      - httpie http <url>/api/Products 후 jq
+      - "curl + python json (수기 baseline): 명령 `curl -s http://10.20.30.80:3000/api/Products | python3 -c \"import sys,json; print('Total products:', len(json.load(sys.stdin)['data']))\"`. 출력 `Total products: 36`."
+      - "curl + jq: `jq '.data | length'`. 더 간결."
+      - "httpie + JSON: syntax-highlighted."
+      - "Postman runner: collection."
+      - "Burp Repeater: manual."
+      - "katana + JSON crawl: 자동 endpoint."
+      - "Arjun: 파라미터 자동."
+      - "OWASP ZAP API Spider: spec import."
+      - "Bastion AI API enum + 분류: bastion 이 (1) 모든 endpoint 자동, (2) 인증 여부 분류, (3) 데이터 노출 finding."
       negative_signs:
       - HTML 응답을 JSON 으로 파싱 시도 실패
       - data 필드 대신 전체 응답 크기만 측정
@@ -375,10 +420,15 @@ steps:
       - 응답 상태 라인(HTTP/) 과 Server 헤더 확인 (예 Apache/2.4.x 또는 nginx)
       - 포트 80 과 3000 의 서버 종류 차이 언급
       acceptable_methods:
-      - curl -I http://<IP>:80
-      - curl -I http://<IP> (80은 기본)
-      - wget --server-response --spider http://<IP>
-      - nmap -sV -p 80 <IP> 로 서비스 버전 확인
+      - "curl -I 80 (수기 baseline): 명령 `curl -I http://10.20.30.80:80`. 출력 `Server: Apache/2.4.58`. 80 vs 3000 다른 stack."
+      - "whatweb: Apache + 모듈."
+      - "nikto -h: Apache 전용."
+      - "nmap -sV -p 80: NSE banner."
+      - "httpx -tech-detect: tech stack."
+      - "Wappalyzer: 1500+ tech."
+      - "WAFW00F: WAF 식별 (ModSecurity)."
+      - "shodan host: 외부 캐시."
+      - "Bastion AI 다중 서비스 분류: bastion 이 80/3000 stack diff → 자동 자산 분류 anchor."
       negative_signs:
       - 포트 3000 재확인만 (80 누락)
       - Server 헤더 없는 응답 해석 없이 종료
@@ -412,10 +462,15 @@ steps:
       - 응답에 Nmap scan report for 또는 Host is up 라인 최소 2개
       - 활성 호스트 IP 목록 추출
       acceptable_methods:
-      - nmap -sn 10.20.30.0/24
-      - arp-scan --interface=<iface> --localnet
-      - fping -g 10.20.30.0/24 -a 2>/dev/null
-      - for i in $(seq 1 254); do ping -c1 -W1 10.20.30.$i; done
+      - "nmap -sn (수기 baseline): 명령 `sudo nmap -sn 10.20.30.0/24`. 4 hosts up. ARP+ICMP+TCP."
+      - "fping -g CIDR: 1초 /24."
+      - "arp-scan --localnet: ARP 직접 + OUI."
+      - "masscan --ping: 100배 빠름."
+      - "rustscan: Rust binary."
+      - "naabu: ProjectDiscovery."
+      - "netdiscover -p: passive ARP stealth."
+      - "for + ping bash: 의존성 zero."
+      - "Bastion AI 자산 자동 inventory: bastion 이 (1) /24 sweep → asset_state anchor 별 기록, (2) 신규 호스트 finding."
       negative_signs:
       - 단일 IP 만 ping (/24 미스캔)
       - 포트 스캔까지 수행 (의도 초과)
@@ -451,10 +506,15 @@ steps:
       - JSON 응답에 version 필드와 값(예 14.x) 포함
       - 인증 없는 노출이 보안 설정 미흡임을 언급
       acceptable_methods:
-      - curl -s http://<host>:3000/rest/admin/application-version
-      - python requests.get(url).json()
-      - httpie http <url>/rest/admin/application-version
-      - Burp Repeater 로 인증 헤더 유무 비교
+      - "curl version endpoint (수기 baseline): 명령 `curl -s http://10.20.30.80:3000/rest/admin/application-version`. 출력 `{\"version\":\"15.5.2\"}`. CVE 검색 base."
+      - "httpx -response-in-json: 자동."
+      - "Nuclei fingerprint: 자동 + CVE."
+      - "searchsploit juiceshop: local DB."
+      - "NVD API + jq: 표준."
+      - "Vulners search: API."
+      - "Wappalyzer: 버전 자동."
+      - "Burp Active Scan: 자동."
+      - "Bastion AI 자동 CVE 매칭: bastion 이 (1) version 추출, (2) NVD/CISA KEV 매칭 → finding 자동 (severity from CVSS)."
       negative_signs:
       - 다른 엔드포인트 조회
       - 인증 토큰 포함해 요청 (인증 없는 노출 확인 의도 벗어남)
@@ -491,10 +551,15 @@ steps:
       - grep -i admin 으로 필터
       - 매칭된 라인 최소 1개 (/api/..., /admin/... 경로 추정)
       acceptable_methods:
-      - curl -s http://<host>:3000/main.js | grep -i admin
-      - curl -s ... | head -c 1000 후 수동 분석
-      - LinkFinder 도구
-      - browser dev tools Source 탭
+      - "curl + grep (수기 baseline): 명령 `curl -s http://10.20.30.80:3000/main.js | grep -i 'admin' | head -20`. JS 번들 hardcoded path."
+      - "LinkFinder: regex 자동."
+      - "JSParser (Burp Pro): 자동 endpoint."
+      - "GetJS / SecretFinder: API key 자동."
+      - "katana -jc: ProjectDiscovery JS crawl."
+      - "trufflehog: secret scan."
+      - "Burp Decoder: regex grep."
+      - "Chrome DevTools Sources: manual."
+      - "Bastion AI JS 분석 + secret 자동: bastion 이 (1) JS 번들 다운, (2) regex + LLM 의 hardcoded path/secret 자동 식별 → finding."
       negative_signs:
       - main.js 파일 없이 HTML 만 확인
       - admin 매칭 결과 해석 없이 raw 출력
@@ -529,10 +594,15 @@ steps:
       - JSON 응답에 data 배열과 최소 1개 항목
       - 노출된 필드(user/image/caption 등)에서 부가 정보 추출
       acceptable_methods:
-      - curl -s .../rest/memories | python3 -m json.tool
-      - curl -s ... | jq .data[0]
-      - python requests + json parse
-      - Burp Repeater 로 반복 요청
+      - "curl + python json (수기 baseline): 명령 `curl -s http://10.20.30.80:3000/rest/memories | python3 -m json.tool | head -30`. user info + 업로드 파일."
+      - "curl + jq: `.data[].User.email`."
+      - "Postman runner."
+      - "Burp Intruder: ID brute."
+      - "ffuf API fuzz."
+      - "Arjun: 파라미터 자동."
+      - "katana + JSON crawl."
+      - "OWASP ZAP API."
+      - "Bastion AI 자동 enum + IDOR 검출: bastion 이 (1) ID 1-N 자동, (2) cross-user 데이터 접근 가능 시 IDOR finding."
       negative_signs:
       - 인증 필요하다고 판단해 토큰 생성 시도 (불필요)
       - 응답 JSON 해석 없이 raw 출력
@@ -571,10 +641,15 @@ steps:
       - Target/Ports/Tech/APIs/Network 5 카테고리 이상 포함
       - cat 으로 파일 내용 검증 출력
       acceptable_methods:
-      - echo -e 다줄 > /tmp/recon_report.txt
-      - cat > /tmp/recon_report.txt << EOF ... EOF
-      - python 으로 json/markdown 리포트 생성
-      - tee 명령으로 동시에 stdout+파일
+      - "echo > 파일 (수기 baseline): 명령 위 answer 형식. `=== Recon Report ===\\nTarget + Ports + Tech + APIs + Network`."
+      - "Dradis framework: collaborative."
+      - "Faraday IDE: 70+ tool."
+      - "PTES Pre-Engagement: 표준."
+      - "DefectDojo Engagement."
+      - "Markdown + pandoc → PDF."
+      - "MITRE ATT&CK 매핑: T1595/T1592/T1596."
+      - "OWASP WSTG-INFO 매핑."
+      - "Bastion AI 자동 보고서 + 다중 framework: bastion 이 모든 anchor 통합 → PTES + ISO + ISMS-P 매핑 자동 PDF."
       negative_signs:
       - 파일 저장 없이 화면 출력만
       - 카테고리 3개 이하 (구조화 부족)
@@ -593,19 +668,19 @@ steps:
   instruction: |
     [복합 시나리오] "ABC 핀테크 외주 모의해킹 — 1차 정찰 + 윤리 동의서 + 공격 표면 매트릭스"
 
-    ## 상황 (모의해킹 첫 주)
+    ■ 상황 (모의해킹 첫 주)
 
     당신은 ABC 핀테크의 외주 모의해킹 컨설턴트. 첫 정찰 단계 임무. 선임이 한 마디.
 
-    > 선임: "신입은 nmap 한 줄 던져 끝내는데, 우리는 그렇게 못 해.
-    > 점검 시작 전 *Rules of Engagement (RoE)* 확인하고, 정찰은 Passive(OSINT) 와 Active 두 단계로 나눠 진행.
-    > 마지막에 발견 자산을 *공격 표면 매트릭스*로 정리해. 다음 주차의 침투 단계 입력이야."
+    ※ 선임: "신입은 nmap 한 줄 던져 끝내는데, 우리는 그렇게 못 해.
+    ※ 점검 시작 전 *Rules of Engagement (RoE)* 확인하고, 정찰은 Passive(OSINT) 와 Active 두 단계로 나눠 진행.
+    ※ 마지막에 발견 자산을 *공격 표면 매트릭스*로 정리해. 다음 주차의 침투 단계 입력이야."
 
     학습 목표 (lecture #1·#2 보안 원칙·CIA + #3 4대 VM + #6 윤리) + (lab #1~14 정찰) 통합.
 
-    ## 임무 (3 단계, 약 35분)
+    ■ 임무 (3 단계, 약 35분)
 
-    ### Phase A — Passive OSINT + 윤리 동의서 (lecture #6)
+    ▶ Phase A — Passive OSINT + 윤리 동의서 (lecture #6)
     1) 윤리 동의서 텍스트 출력:
        ```
        [Rules of Engagement]
@@ -618,13 +693,13 @@ steps:
        ```
     2) 도메인·기술 스택 OSINT — `curl -s -I http://10.20.30.80:3000/ | grep -E "Server|X-Powered"` 등.
 
-    ### Phase B — Active 정찰 (lab #7·#11·#1)
+    ▶ Phase B — Active 정찰 (lab #7·#11·#1)
     1) 호스트 활성 확인: `ping -c 3 -W 1 10.20.30.80 2>&1 | tail -3`
     2) 네트워크 스윕: `for i in 1 80 100 112 201; do
          ping -c 1 -W 1 10.20.30.$i &>/dev/null && echo "10.20.30.$i: alive" || echo "10.20.30.$i: down"; done`
     3) 포트 정찰: `nmap -p 22,80,443,3000,3306,8080 -sV --open --max-rtt-timeout 1000 10.20.30.80 2>&1 | head -20`
 
-    ### Phase C — 공격 표면 매트릭스 + 다음 주차 입력
+    ▶ Phase C — 공격 표면 매트릭스 + 다음 주차 입력
     | 자산 | 포트 | 서비스 | 기술 스택 | 공격 우선순위 |
     | web (10.20.30.80) | 80 | HTTP+ModSec | Apache+CRS | 중 |
     | web (10.20.30.80) | 3000 | HTTP | JuiceShop / Express / Node.js | 높음 |
@@ -690,10 +765,15 @@ steps:
       - Phase B — ping + 네트워크 스윕 + nmap 3 정찰
       - Phase C — 5행 공격 표면 매트릭스 + 다음 주차 우선순위
       acceptable_methods:
-      - heredoc RoE 텍스트
-      - curl + ping + nmap
-      - markdown table
-      - whois / dig / amass 추가 가능
+      - "Phase A/B/C 통합 (수기 baseline): 명령 위 answer. RoE heredoc + curl OSINT + ping/nmap + 5행 매트릭스. 정통망법 제48조 + 위탁 점검 합법."
+      - "Phase A RoE: heredoc 정형. 정통망법 제48조 + 위탁 점검 합법 근거."
+      - "Phase A Passive OSINT: curl -sI + robots.txt. 외부 트래픽 최소."
+      - "Phase B Active: ping + sweep + nmap. 트래픽 발생 → RoE 의무."
+      - "Phase C 매트릭스: markdown 5행."
+      - "PTES Pre-Engagement + Intelligence Gathering 표준."
+      - "OWASP WSTG-INFO Series 매핑."
+      - "한국 ISMS-P D.4 + 정통망법 매핑."
+      - "Bastion AI Red Team orchestrator: bastion 이 (1) RoE KG anchor + 자동 검증, (2) Passive→Active 자동 분기, (3) 매트릭스 자동 생성 + w02 입력 자동 전달."
       negative_signs:
       - RoE 또는 윤리 동의서 누락
       - nmap 만 또는 ping 만
