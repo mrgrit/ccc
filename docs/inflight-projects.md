@@ -26,8 +26,10 @@
 - [x] week01 ai (709→987줄, 16 step × 9 method, hint 보강, multi_task RoE+Phase A/B/C)
 - [x] week02 nonai (480→777줄, 16 step × 9 method, hint 보강) — 포트스캐닝: -sT/-sS/-p-/-sV/-O/-sU/NSE/http-enum/-sA/-F/-oX/vuln/포트/Idle/보고서
 - [x] week02 ai (709→1012줄, 16 step × 9 method, hint 보강, multi_task ATT&CK Recon)
-- [ ] week03~15 nonai
-- [ ] week03~15 ai
+- [x] week03 nonai (536→840줄, 16 step × 9 method, hint 보강) — 취약점 스캐닝: Nikto/searchsploit/SQLi/SSL/dirb/admin API/header/CVE 매트릭스
+- [x] week03 ai (683→1022줄, 16 step × 9 method, hint 보강, multi_task HTTP+Nikto+CVE 매트릭스)
+- [ ] week04~15 nonai
+- [ ] week04~15 ai
 
 **구조 확정** (2단계 검증):
 - answer / bastion_prompt = 추상 prompt (1차 검증: 학습자/AI 능력)

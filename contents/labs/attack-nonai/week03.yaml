@@ -15,7 +15,21 @@ pass_threshold: 0.6
 steps:
 - order: 1
   instruction: Nikto를 사용하여 {{WEB_IP}}:3000(JuiceShop) 웹 서버의 취약점을 스캔하라.
-  hint: nikto -h 옵션으로 대상 호스트를 지정한다
+  hint: |
+    nikto -h 옵션으로 대상 호스트를 지정한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: nikto -h http://10.20.30.80:3000
+    2) 미설치 시: sudo apt install -y nikto (Debian/Ubuntu) 또는 sudo yum install -y nikto
+    3) 실패/대안 (web vuln scanner):
+       - nuclei -u http://10.20.30.80:3000 -severity critical,high (ProjectDiscovery, 6000+ template)
+       - sudo nmap --script=vuln,http-vuln-* -p 3000 10.20.30.80 (NSE)
+       - wapiti -u http://10.20.30.80:3000 (Python, OWASP Top 10)
+       - skipfish -o /tmp/skipfish http://10.20.30.80:3000 (Google, 빠름)
+       - w3af_console (대화형, 200+ plugin)
+       - OWASP ZAP baseline scan (zaproxy -daemon -port 8080)
+       - arachni (Ruby, 종합)
+    4) 검증: Server: 헤더 + + 발견 라인 + Vulnerable.
   category: analysis
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
@@ -35,9 +49,15 @@ steps:
       - nikto -h + 3000
       - 웹 취약점 스캔
       acceptable_methods:
-      - nikto -h
-      - Wapiti
-      - OWASP ZAP baseline
+      - "nikto -h (수기 baseline): 명령 `nikto -h http://10.20.30.80:3000`. 출력 `+ Server: nginx\\n+ X-Frame-Options header missing\\n+ /admin/: Admin login page\\n+ 6700 items checked: 12 findings`. 6700+ 잠재 문제 + OSVDB 매핑."
+      - "nuclei -severity critical,high: 6000+ template, CVE 매핑."
+      - "nmap --script=vuln NSE: 표준 NSE."
+      - "wapiti: Python OWASP Top 10."
+      - "skipfish: Google 도구. 빠름."
+      - "w3af_console: 200+ plugin."
+      - "OWASP ZAP baseline: web UI + 자동."
+      - "arachni: Ruby 종합."
+      - "Burp Pro Active Scan: 상용."
       negative_signs:
       - nikto 없음
       - 취약점 스캐너 맥락 없음
@@ -45,7 +65,20 @@ steps:
 - order: 2
   instruction: Nikto를 사용하여 {{WEB_IP}}:80(Apache) 웹 서버를 스캔하고, 결과를 /tmp/nikto_apache.txt에
     저장하라.
-  hint: -o 옵션으로 출력 파일을 지정한다
+  hint: |
+    -o 옵션으로 출력 파일을 지정한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: nikto -h http://10.20.30.80:80 -o /tmp/nikto_apache.txt
+    2) 미설치 시: sudo apt install -y nikto
+    3) 실패/대안 (포맷별):
+       - nikto -h http://10.20.30.80:80 -Format html -o /tmp/nikto.html (HTML)
+       - nikto -h http://10.20.30.80:80 -Format xml -o /tmp/nikto.xml (XML)
+       - nikto -h http://10.20.30.80:80 -Format json -o /tmp/nikto.json (JSON)
+       - nikto -h http://10.20.30.80:80 -Format csv -o /tmp/nikto.csv (CSV)
+       - nuclei -u http://10.20.30.80:80 -o /tmp/nuclei.txt (대안)
+       - nmap --script=vuln -p 80 10.20.30.80 -oN /tmp/nmap_vuln.txt
+    4) 검증: cat /tmp/nikto_apache.txt → Apache 전용 finding (mod_status, ServerSignature 등).
   category: analysis
   points: 10
   answer: nikto -h http://10.20.30.80:80 -o /tmp/nikto_apache.txt && cat /tmp/nikto_apache.txt
@@ -63,15 +96,37 @@ steps:
       - -o 출력 옵션
       - Apache 80
       acceptable_methods:
-      - nikto -h -o
-      - nikto -Format html
+      - "nikto -h -o (수기 baseline): 명령 위 answer. Apache 전용 finding (mod_status/ServerSignature/.htaccess)."
+      - "nikto -Format html/xml/json/csv: 다양한 포맷."
+      - "nikto -Tuning 9: SSL/TLS 약점 추가."
+      - "nuclei -o: 대안."
+      - "nmap --script=vuln -oN: NSE."
+      - "OWASP ZAP report: HTML/PDF export."
+      - "wapiti -f json -o report: Python."
+      - "Burp Pro report: 상용."
+      - "DefectDojo Engagement: 자동 import + dashboard."
       negative_signs:
       - -o 출력 없음
       - 80 포트 맥락 없음
   target_vm: attacker
 - order: 3
   instruction: searchsploit을 사용하여 'juice shop' 관련 알려진 익스플로잇을 검색하라.
-  hint: searchsploit 키워드 형태로 검색한다
+  hint: |
+    searchsploit 키워드 형태로 검색한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: searchsploit juice shop
+    2) 미설치 시: sudo apt install -y exploitdb (Debian/Ubuntu) 또는 git clone https://gitlab.com/exploit-database/exploitdb /opt/exploitdb
+    3) 실패/대안 (CVE/exploit DB 검색):
+       - searchsploit -t "juice shop" (정확 매칭)
+       - curl -s 'https://services.nvd.nist.gov/rest/json/cves/2.0?keywordSearch=juice-shop' | jq (NVD API)
+       - curl -s 'https://vulners.com/api/v3/search/lucene/?query=juice-shop' | jq (Vulners)
+       - msfconsole -q -x 'search type:exploit name:juice-shop' (Metasploit)
+       - github 검색: PoC 코드 (https://github.com/search?q=juice-shop+exploit)
+       - exploit-db.com 웹 (offline DB 미작동 시)
+       - cve-search-tool: cli + 자체 DB
+    4) 후속: searchsploit -m <id> (PoC 다운로드). searchsploit -p <id> (경로 표시).
+    5) 검증: Title + Path 컬럼. PoC 코드 파일 존재.
   category: analysis
   points: 10
   answer: searchsploit juice shop
@@ -89,9 +144,15 @@ steps:
       - searchsploit juice shop
       - Exploit-DB 검색
       acceptable_methods:
-      - searchsploit
-      - Exploit-DB 웹 검색
-      - Metasploit msfconsole search
+      - "searchsploit (수기 baseline): 명령 `searchsploit juice shop`. 출력 `Exploit Title | Path\\nJuice Shop ... | webapps/...`. local DB."
+      - "searchsploit -t 정확 매칭."
+      - "NVD API: jq 친화."
+      - "Vulners API: 1M+ vuln."
+      - "Metasploit msfconsole search: type:exploit."
+      - "github 검색: PoC."
+      - "cve-search-tool: 자체 DB."
+      - "Trickest CVE Repo: GitHub 큐레이션."
+      - "ExploitDB 웹 (https://www.exploit-db.com): online."
       negative_signs:
       - searchsploit 없음
       - Exploit-DB 맥락 없음
@@ -99,7 +160,21 @@ steps:
 - order: 4
   instruction: searchsploit으로 'node.js' 관련 취약점을 검색하여 JuiceShop 백엔드에 적용 가능한 익스플로잇을
     찾아라.
-  hint: searchsploit node.js 또는 nodejs로 검색한다
+  hint: |
+    searchsploit node.js 또는 nodejs로 검색한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: searchsploit nodejs
+    2) 미설치 시: sudo apt install -y exploitdb
+    3) 실패/대안:
+       - searchsploit -t "node.js" (정확 매칭)
+       - searchsploit express (프레임워크)
+       - curl -s 'https://services.nvd.nist.gov/rest/json/cves/2.0?cpeName=cpe:2.3:a:nodejs:node.js:*' | jq
+       - npm audit (실 프로젝트, package.json 기반)
+       - Snyk vuln DB (snyk test --all-projects)
+       - Vulners search "node.js"
+       - Metasploit search platform:linux name:node
+    4) 검증: Title 컬럼 + Path. node.js 버전 매칭 핵심.
   category: analysis
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
@@ -119,9 +194,15 @@ steps:
       - searchsploit nodejs
       - Node.js 버전 매칭
       acceptable_methods:
-      - searchsploit
-      - Exploit-DB 웹 검색
-      - Metasploit search type:exploit name:node
+      - "searchsploit nodejs (수기 baseline): 명령 `searchsploit nodejs`. Title + Path."
+      - "searchsploit -t: 정확 매칭."
+      - "searchsploit express: 프레임워크."
+      - "NVD CPE 검색: cpe:2.3:a:nodejs:node.js."
+      - "npm audit: package.json 기반."
+      - "Snyk: snyk test."
+      - "Vulners API."
+      - "Metasploit search."
+      - "github CVE-XXXX-YYYY 검색."
       negative_signs:
       - searchsploit 없음
       - Node.js 버전 매칭 맥락 없음
@@ -129,7 +210,21 @@ steps:
 - order: 5
   instruction: nmap의 http-sql-injection 스크립트를 사용하여 {{WEB_IP}}:3000에 SQL Injection
     취약점이 있는지 스캔하라.
-  hint: --script http-sql-injection 옵션을 사용한다
+  hint: |
+    --script http-sql-injection 옵션을 사용한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: nmap --script http-sql-injection -p 3000 10.20.30.80
+    2) 미설치 시: sudo apt install -y nmap
+    3) 실패/대안 (SQLi 도구별 정밀도):
+       - sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=" --batch --random-agent (가장 정밀)
+       - sqlmap -u URL --crawl=2 --batch (자동 crawl + SQLi)
+       - nuclei -u http://10.20.30.80:3000 -t /usr/share/nuclei-templates/vulnerabilities/sql/ (template 기반)
+       - Burp Pro Active Scan SQLi (상용)
+       - OWASP ZAP Active Scan
+       - wapiti -u http://10.20.30.80:3000 -m sql
+       - 수동: curl 'http://10.20.30.80:3000/...?q=1%27' → 에러 메시지 분석
+    4) 검증: VULNERABLE 라인 + payload + extractable info.
   category: analysis
   points: 10
   answer: nmap --script http-sql-injection -p 3000 10.20.30.80
@@ -147,10 +242,15 @@ steps:
       - --script http-sql-injection
       - SQL Injection 자동 탐지
       acceptable_methods:
-      - nmap --script http-sql-injection
-      - sqlmap -u URL --batch
-      - Burp Scanner SQLi
-      - Nuclei dast sqli
+      - "nmap --script http-sql-injection (수기 baseline): NSE 자동. 빠른 첫 탐색."
+      - "sqlmap --batch: 가장 정밀. 자동 DB extract."
+      - "sqlmap --crawl=2: 자동 crawl + SQLi."
+      - "nuclei vulnerabilities/sql: template 기반."
+      - "Burp Pro Active Scan: 상용."
+      - "OWASP ZAP Active Scan: 무료."
+      - "wapiti -m sql: Python."
+      - "수동 curl + 에러 메시지: % 27/' UNION 등."
+      - "Ghauri (SQLi automation): GitHub."
       negative_signs:
       - http-sql-injection 스크립트 없음
       - SQLi 탐지 맥락 없음
@@ -158,7 +258,21 @@ steps:
 - order: 6
   instruction: curl을 사용하여 JuiceShop의 /api/SecurityQuestions 엔드포인트에 접근하여 보안 질문 목록을
     확인하라. 이는 인증 공격에 활용할 수 있는 정보이다.
-  hint: REST API에 GET 요청을 보내라
+  hint: |
+    REST API에 GET 요청을 보내라.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: curl -s http://10.20.30.80:3000/api/SecurityQuestions | python3 -m json.tool
+    2) 미설치 시: sudo apt install -y curl python3
+    3) 실패/대안:
+       - curl -s ... | jq '.data[]' (jq 더 간결)
+       - http GET http://10.20.30.80:3000/api/SecurityQuestions (httpie)
+       - python3 -c "import urllib.request, json; d=json.loads(urllib.request.urlopen('http://10.20.30.80:3000/api/SecurityQuestions').read()); print(json.dumps(d, indent=2))"
+       - Burp Repeater: GET 수동 + response 분석
+       - Postman GET request
+       - katana endpoint discovery
+    4) 후속: SecurityQuestions 답변 → OSINT (FB/LinkedIn 직원 답변 추측) → 비밀번호 재설정 abuse.
+    5) 검증: question 필드 + 다양한 질문 (어머니 결혼 전 성/첫 학교 등).
   category: analysis
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
@@ -179,16 +293,37 @@ steps:
       - curl /api/SecurityQuestions
       - JSON 파싱
       acceptable_methods:
-      - curl + json.tool
-      - curl + jq
-      - Burp Repeater
+      - "curl + json.tool (수기 baseline): 명령 위 answer. question 필드 + 다양한 질문."
+      - "curl + jq: 더 간결."
+      - "httpie GET: modern."
+      - "Python urllib: 의존성 zero."
+      - "Burp Repeater: manual."
+      - "Postman: GUI."
+      - "katana: 자동 endpoint discovery."
+      - "후속 OSINT: theHarvester + 직원 SNS → 답변 추측."
+      - "Bastion AI orchestrator: 질문 ↔ 직원 SNS 매칭 자동."
       negative_signs:
       - /api/SecurityQuestions 없음
       - OSINT/답변 추측 맥락 없음
   target_vm: attacker
 - order: 7
   instruction: curl로 JuiceShop의 /api/Users 엔드포인트에 접근하여 사용자 정보가 노출되는지 확인하라.
-  hint: 인증 없이 사용자 API에 접근을 시도하라
+  hint: |
+    인증 없이 사용자 API에 접근을 시도하라.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: curl -s http://10.20.30.80:3000/api/Users | python3 -m json.tool | head -30
+    2) 미설치 시: sudo apt install -y curl python3
+    3) 실패/대안:
+       - curl -s ... | jq '.data[].email' (이메일만)
+       - http GET http://10.20.30.80:3000/api/Users
+       - Burp Intruder ID brute (Pitchfork): /api/Users/1, /api/Users/2 ... → IDOR
+       - ffuf -u http://10.20.30.80:3000/api/Users/FUZZ -w numbers.txt (ID enum)
+       - Arjun (HTTP parameter discovery)
+       - katana endpoint discovery
+       - OWASP ZAP API spider
+    4) 후속: 노출 이메일 → 후속 brute force/phishing target list.
+    5) 검증: email/username 필드 노출 → OWASP A01 Broken Access Control + IDOR.
   category: analysis
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
@@ -209,9 +344,15 @@ steps:
       - curl /api/Users
       - 사용자 데이터 노출
       acceptable_methods:
-      - curl + jq
-      - Burp Intruder enum
-      - httpx -path /api/Users
+      - "curl + json.tool (수기 baseline): 명령 위 answer. email 필드 노출 → OWASP A01."
+      - "curl + jq: email/username 추출."
+      - "Burp Intruder Pitchfork: ID brute."
+      - "ffuf ID enum: numbers.txt."
+      - "Arjun: 파라미터 자동."
+      - "katana endpoint discovery."
+      - "OWASP ZAP API spider."
+      - "Postman: collection runner."
+      - "Bastion AI IDOR detection: 자동 ID 1-N + 다른 user 데이터 접근 시 finding."
       negative_signs:
       - /api/Users 없음
       - OWASP A01/IDOR 맥락 없음
@@ -219,7 +360,20 @@ steps:
 - order: 8
   instruction: nmap의 ssl-enum-ciphers 스크립트를 사용하여 SIEM 서버({{SECU_IP}}00:443)의 SSL/TLS
     설정을 분석하라.
-  hint: --script ssl-enum-ciphers 옵션을 사용한다
+  hint: |
+    --script ssl-enum-ciphers 옵션을 사용한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: nmap --script ssl-enum-ciphers -p 443 10.20.30.100
+    2) 미설치 시: sudo apt install -y nmap
+    3) 실패/대안 (TLS 분석 도구별):
+       - testssl.sh 10.20.30.100:443 (5K line bash, 가장 종합)
+       - sslscan 10.20.30.100:443 (빠름)
+       - sslyze --regular 10.20.30.100:443 (Python, 최신)
+       - openssl s_client -connect 10.20.30.100:443 -tls1_0 (수동 약한 cipher 테스트)
+       - SSL Labs (https://www.ssllabs.com/ssltest/) (외부 자산만, web)
+       - testssl.sh --severity HIGH (HIGH 이상만)
+    4) 검증: 약한 cipher (RC4/DES/3DES) + 구버전 (SSLv3/TLS 1.0/1.1) → MITM 취약. A+ ~ F 등급.
   category: analysis
   points: 10
   answer: nmap --script ssl-enum-ciphers -p 443 10.20.30.100
@@ -238,11 +392,15 @@ steps:
       - --script ssl-enum-ciphers -p 443
       - 암호 스위트 나열
       acceptable_methods:
-      - nmap ssl-enum-ciphers
-      - testssl.sh
-      - sslscan
-      - SSLyze
-      - SSL Labs
+      - "nmap --script ssl-enum-ciphers (수기 baseline): cipher list + grade."
+      - "testssl.sh: 5K line bash 가장 종합."
+      - "sslscan: 빠름."
+      - "sslyze --regular: Python."
+      - "openssl s_client -tls1_0: 수동 약한 cipher."
+      - "SSL Labs (web): 외부 자산."
+      - "Mozilla Observatory: A+~F."
+      - "Nuclei ssl/: template."
+      - "tlsfuzzer: TLS bug fuzzer."
       negative_signs:
       - ssl-enum-ciphers 없음
       - 암호 스위트 맥락 없음
@@ -250,7 +408,20 @@ steps:
 - order: 9
   instruction: JuiceShop의 /rest/products/search?q= 엔드포인트에 특수문자(')를 포함한 검색어를 보내 에러
     메시지를 유발하라.
-  hint: URL 인코딩된 작은따옴표(%27)를 사용하라
+  hint: |
+    URL 인코딩된 작은따옴표(%27)를 사용하라.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: curl -s 'http://10.20.30.80:3000/rest/products/search?q=%27' | python3 -m json.tool
+    2) 미설치 시: sudo apt install -y curl python3
+    3) 실패/대안 (SQLi 페이로드별):
+       - curl 'http://10.20.30.80:3000/rest/products/search?q=%27%20OR%201=1--' (UNION SELECT)
+       - curl 'http://...?q=%27%20UNION%20SELECT%20null,null,null--' (column 추출)
+       - sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=" --batch --dbs (자동)
+       - Burp Repeater + SQLi cheat sheet (수동)
+       - ffuf -u 'http://...?q=FUZZ' -w sqli-payloads.txt -mc 200,500
+       - PayloadAllTheThings SQLi 모음
+    4) 검증: error 메시지 + SQL 문법 노출 → SQLi 강력 징후. + Information Disclosure.
   category: analysis
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
@@ -272,16 +443,36 @@ steps:
       - '%27 (URL 인코딩 작은따옴표)'
       - /rest/products/search?q=
       acceptable_methods:
-      - curl + URL 인코딩
-      - Burp Repeater + payload
-      - sqlmap --dbs
+      - "curl + URL 인코딩 (수기 baseline): %27 = '. error 유발."
+      - "curl OR 1=1 페이로드: UNION SELECT."
+      - "sqlmap --batch --dbs: 자동 DB 추출."
+      - "Burp Repeater + cheat sheet: 수동."
+      - "ffuf SQLi payloads: fuzz."
+      - "wfuzz SQLi: Python."
+      - "PayloadAllTheThings: GitHub 모음."
+      - "Nuclei sqli template: ProjectDiscovery."
+      - "Ghauri (modern): GitHub."
       negative_signs:
       - '%27 또는 작은따옴표 없음'
       - 에러 유발 맥락 없음
   target_vm: attacker
 - order: 10
   instruction: dirb 또는 gobuster를 사용하여 {{WEB_IP}}:3000의 숨겨진 디렉토리를 브루트포스로 열거하라.
-  hint: dirb URL wordlist 형태로 실행한다
+  hint: |
+    dirb URL wordlist 형태로 실행한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: dirb http://10.20.30.80:3000 /usr/share/wordlists/dirb/common.txt -r
+    2) 미설치 시: sudo apt install -y dirb (또는 wordlists)
+    3) 실패/대안 (속도/기능별):
+       - gobuster dir -u http://10.20.30.80:3000 -w common.txt -x html,php,bak (Go 빠름)
+       - feroxbuster -u http://10.20.30.80:3000 -w common.txt -d 3 -x html,php (Rust 재귀)
+       - ffuf -u http://10.20.30.80:3000/FUZZ -w common.txt -mc 200,301 (Go fast)
+       - dirsearch -u http://10.20.30.80:3000 -w common.txt (Python)
+       - wfuzz -c -z file,common.txt --hc 404 http://10.20.30.80:3000/FUZZ
+       - katana -u http://10.20.30.80:3000 -d 5 -jc -kf all (JS-aware)
+    4) wordlist: SecLists/Discovery/Web-Content (raft-medium-words/big.txt 등). cewl 로 동적 생성.
+    5) 검증: FOUND 키워드 + 발견 디렉토리. 재귀(-r) → 깊은 경로 발견.
   category: analysis
   points: 10
   answer: dirb http://10.20.30.80:3000 /usr/share/wordlists/dirb/common.txt -r
@@ -299,11 +490,15 @@ steps:
       - dirb + URL + wordlist
       - 재귀 탐색
       acceptable_methods:
-      - dirb
-      - gobuster dir
-      - ffuf -u URL/FUZZ -w wordlist
-      - feroxbuster
-      - dirsearch
+      - "dirb (수기 baseline): 명령 위 answer. -r 재귀 + common.txt 사전. FOUND 키워드."
+      - "gobuster dir: Go 빠름."
+      - "feroxbuster -d 3: Rust 재귀."
+      - "ffuf: Go fastest."
+      - "dirsearch: Python."
+      - "wfuzz: Python."
+      - "katana: JS-aware."
+      - "Burp Pro Crawl: spider."
+      - "OWASP ZAP Spider: AJAX."
       negative_signs:
       - dirb/유사 도구 없음
       - wordlist 없음
@@ -311,7 +506,20 @@ steps:
 - order: 11
   instruction: JuiceShop의 /rest/admin/application-configuration 엔드포인트에 접근하여 서버 설정
     정보가 노출되는지 확인하라.
-  hint: 관리자용 REST API 경로에 인증 없이 접근을 시도하라
+  hint: |
+    관리자용 REST API 경로에 인증 없이 접근을 시도하라.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: curl -s http://10.20.30.80:3000/rest/admin/application-configuration | python3 -m json.tool | head -30
+    2) 미설치 시: sudo apt install -y curl python3
+    3) 실패/대안:
+       - curl -s ... | jq '.application.config' (jq)
+       - http GET http://10.20.30.80:3000/rest/admin/application-configuration
+       - python3 -c "import urllib.request, json; d=json.loads(urllib.request.urlopen('http://10.20.30.80:3000/rest/admin/application-configuration').read()); print(json.dumps(d, indent=2))"
+       - Burp Repeater + Auth 헤더 비교 (인증/비인증)
+       - ffuf -u http://10.20.30.80:3000/rest/admin/FUZZ -w common.txt -mc 200 (admin endpoint enum)
+       - katana -u http://10.20.30.80:3000 -jc (JS endpoint extract)
+    4) 검증: config 필드 노출 → DB 연결 정보/비밀 키/내부 경로. Critical Information Disclosure.
   category: analysis
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
@@ -333,16 +541,36 @@ steps:
       - curl /rest/admin/application-configuration
       - JSON 파싱
       acceptable_methods:
-      - curl + json.tool
-      - curl + jq
-      - Burp Repeater
+      - "curl + json.tool (수기 baseline): config 필드 노출 → Critical IDOR."
+      - "curl + jq: 더 간결."
+      - "httpie GET: modern."
+      - "Python urllib: 의존성 zero."
+      - "Burp Repeater: Auth 비교."
+      - "ffuf admin endpoint enum."
+      - "katana JS endpoint."
+      - "Postman: collection."
+      - "Bastion AI 자동 admin enum + finding: bastion 이 (1) /rest/admin/* 자동 enum, (2) 인증 없이 접근 가능 시 finding."
       negative_signs:
       - application-configuration 경로 없음
       - 관리자 API 노출 맥락 없음
   target_vm: attacker
 - order: 12
   instruction: nmap의 http-headers 스크립트로 {{WEB_IP}}:3000의 보안 헤더 설정을 점검하라.
-  hint: --script http-headers 옵션을 사용한다
+  hint: |
+    --script http-headers 옵션을 사용한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: nmap --script http-headers -p 3000 10.20.30.80
+    2) 미설치 시: sudo apt install -y nmap
+    3) 실패/대안:
+       - curl -sI http://10.20.30.80:3000 | grep -iE "(strict-transport|content-security|x-frame|x-content|x-xss|referrer)"
+       - Mozilla Observatory (https://observatory.mozilla.org/, web)
+       - securityheaders.com (web, A+~F 등급)
+       - testssl.sh --headers
+       - httpx -security-headers (ProjectDiscovery)
+       - Nuclei security-headers template
+       - shcheck (Python security header scanner)
+    4) 검증: HSTS/CSP/X-Frame-Options/X-Content-Type-Options/X-XSS-Protection/Referrer-Policy 6 헤더 점검.
   category: analysis
   points: 10
   answer: nmap --script http-headers -p 3000 10.20.30.80
@@ -360,17 +588,36 @@ steps:
       - --script http-headers -p 3000
       - 보안 헤더 점검
       acceptable_methods:
-      - nmap --script http-headers
-      - curl -sI + grep security headers
-      - Mozilla Observatory
-      - securityheaders.com
+      - "nmap --script http-headers (수기 baseline): NSE 자동."
+      - "curl -sI + grep -iE: 수동."
+      - "Mozilla Observatory: web 등급."
+      - "securityheaders.com: A+~F."
+      - "testssl.sh --headers: bash."
+      - "httpx -security-headers: ProjectDiscovery."
+      - "Nuclei security-headers template."
+      - "shcheck: Python."
+      - "OWASP Secure Headers Project: 표준 list."
       negative_signs:
       - http-headers 스크립트 없음
       - 보안 헤더 맥락 없음
   target_vm: attacker
 - order: 13
   instruction: searchsploit으로 'apache 2.4' 관련 취약점을 검색하여 web 서버에 적용 가능한 익스플로잇을 찾아라.
-  hint: searchsploit apache 2.4로 검색한다
+  hint: |
+    searchsploit apache 2.4로 검색한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: searchsploit apache 2.4
+    2) 미설치 시: sudo apt install -y exploitdb
+    3) 실패/대안:
+       - searchsploit -t "apache 2.4" (정확 매칭)
+       - searchsploit --update (DB 갱신)
+       - curl -s 'https://services.nvd.nist.gov/rest/json/cves/2.0?cpeName=cpe:2.3:a:apache:http_server:2.4.*' | jq
+       - Vulners API: vulners.com search
+       - Metasploit msfconsole search apache 2.4
+       - github CVE search
+       - CISA KEV (Known Exploited Vulnerabilities)
+    4) 검증: Title 컬럼 + Path. CVE-2021-41773 (Path Traversal) / CVE-2021-42013 (RCE) 등.
   category: analysis
   points: 10
   answer: searchsploit apache 2.4
@@ -388,16 +635,37 @@ steps:
       - searchsploit apache 2.4
       - Apache 익스플로잇
       acceptable_methods:
-      - searchsploit
-      - Exploit-DB 검색
-      - NVD CVE 검색
+      - "searchsploit (수기 baseline): Apache 2.4 CVE list. Path Traversal/RCE."
+      - "searchsploit -t: 정확 매칭."
+      - "searchsploit --update: DB 갱신."
+      - "NVD API CPE: 자동."
+      - "Vulners search."
+      - "Metasploit search apache."
+      - "github CVE 검색."
+      - "CISA KEV: active exploitation."
+      - "Nuclei cves/2021/CVE-2021-41773.yaml: PoC 자동."
       negative_signs:
       - searchsploit 없음
       - Apache 버전 매칭 맥락 없음
   target_vm: attacker
 - order: 14
   instruction: curl로 JuiceShop의 /metrics 또는 /api-docs 엔드포인트에 접근하여 내부 정보가 노출되는지 확인하라.
-  hint: 개발/디버그용 엔드포인트가 프로덕션에 노출되어 있을 수 있다
+  hint: |
+    개발/디버그용 엔드포인트가 프로덕션에 노출되어 있을 수 있다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: curl -s http://10.20.30.80:3000/api-docs/ | head -50
+    2) 미설치 시: sudo apt install -y curl
+    3) 실패/대안 (debug endpoint enum):
+       - curl http://10.20.30.80:3000/swagger
+       - curl http://10.20.30.80:3000/openapi.json
+       - curl http://10.20.30.80:3000/.well-known/openapi
+       - curl http://10.20.30.80:3000/metrics (Prometheus)
+       - curl http://10.20.30.80:3000/debug/vars (Go pprof)
+       - curl http://10.20.30.80:3000/actuator/* (Spring Boot)
+       - ffuf -u http://10.20.30.80:3000/FUZZ -w api-paths.txt -mc 200 (자동 enum)
+       - katana -u http://10.20.30.80:3000 -jc -kf all (JS endpoint)
+    4) 검증: Swagger/OpenAPI/metrics 노출 → OWASP A05 Security Misconfiguration.
   category: analysis
   points: 15
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
@@ -418,10 +686,15 @@ steps:
       - curl /api-docs/
       - Swagger/OpenAPI 노출
       acceptable_methods:
-      - curl /api-docs
-      - curl /swagger
-      - curl /openapi.json
-      - Burp Repeater
+      - "curl /api-docs (수기 baseline): Swagger 노출 → API 구조 전부 공개."
+      - "curl /swagger / /openapi.json: 다양한 path."
+      - "curl /metrics: Prometheus."
+      - "curl /actuator/*: Spring Boot."
+      - "curl /debug/vars: Go pprof."
+      - "ffuf api-paths.txt: 자동 enum."
+      - "katana JS endpoint."
+      - "Burp Site Map crawl."
+      - "OWASP ZAP API spider."
       negative_signs:
       - /api-docs 없음
       - Swagger/OpenAPI 맥락 없음
@@ -429,9 +702,22 @@ steps:
 - order: 15
   instruction: 취약점 스캔 결과를 종합하여 /tmp/vuln_report.txt에 위험도별(Critical/High/Medium/Low)로
     분류하여 보고서를 작성하라.
-  hint: 발견된 취약점을 CVSS 기준으로 분류하라
-  category: analysis
-  points: 15
+  hint: |
+    발견된 취약점을 CVSS 기준으로 분류하라.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: echo -e '=== Vulnerability Assessment Report ===\n[CRITICAL]\n[HIGH]\n[MEDIUM]\n[LOW]\n...' > /tmp/vuln_report.txt
+    2) 미설치 시: bash 기본
+    3) 실패/대안 (보고서 도구):
+       - heredoc: cat > /tmp/vuln_report.txt << EOF\n...\nEOF
+       - markdown + pandoc → PDF: pandoc /tmp/vuln_report.md -o /tmp/vuln.pdf --template=eisvogel
+       - DefectDojo Engagement: web UI Findings import
+       - Faraday IDE: collaborative
+       - Dradis framework: Project Findings
+       - python3 + cvss-lib: 자동 score 계산
+       - SARIF (CI/CD): GitHub Code Scanning
+    4) CVSS 기준: Critical (9.0-10.0) / High (7.0-8.9) / Medium (4.0-6.9) / Low (0.1-3.9).
+    5) 검증: 4 단계 위험도 + 발견 vulnerability + OWASP 매핑.
   answer: 'echo -e ''=== Vulnerability Assessment Report ===\nTarget: 10.20.30.80\nDate:
     $(date)\n\n[CRITICAL]\n- SQL Injection in /rest/products/search (OWASP A03)\n-
     User data exposure via /api/Users (OWASP A01)\n\n[HIGH]\n- Application config
@@ -456,10 +742,15 @@ steps:
       - CRITICAL/HIGH/MEDIUM/LOW 4단계
       - /tmp/vuln_report.txt 저장
       acceptable_methods:
-      - echo > 보고서
-      - DefectDojo Finding
-      - CVSS v3.1 계산기
-      - OWASP Risk Rating
+      - "echo > 보고서 (수기 baseline): 4 단계 위험도 + OWASP 매핑."
+      - "heredoc cat > EOF: 표준."
+      - "Markdown + pandoc → PDF: eisvogel."
+      - "DefectDojo Engagement: web."
+      - "Faraday IDE: collaborative."
+      - "Dradis framework: Project."
+      - "python3 cvss-lib: 자동 score."
+      - "SARIF: CI/CD GitHub."
+      - "MITRE ATT&CK 매핑: 자동."
       negative_signs:
       - 4단계 위험도 없음
       - CRITICAL 카테고리 없음
@@ -469,29 +760,29 @@ steps:
   instruction: |
     [복합 시나리오] "HTTP 정찰 + Nikto + searchsploit CVE 매칭 + 익스플로잇 우선순위 매트릭스"
 
-    ## 상황 (w02 → w03 시나리오 연속)
+    ■ 상황 (w02 → w03 시나리오 연속)
 
-    > 선임: "스캔만으론 부족. *어떤 CVE 가 적용 가능한지* 매핑해야 익스플로잇 단계 진입.
-    > HTTP 정찰 → Nikto·searchsploit CVE 매칭 → CVSS 우선순위. w04 입력."
+    ※ 선임: "스캔만으론 부족. *어떤 CVE 가 적용 가능한지* 매핑해야 익스플로잇 단계 진입.
+    ※ HTTP 정찰 → Nikto·searchsploit CVE 매칭 → CVSS 우선순위. w04 입력."
 
     학습 목표 (lecture #1·#2 HTTP + #5 REST API) + (lab #1·#3·#4·#13 Nikto/searchsploit) 통합.
 
-    ## 임무 (3 단계, 약 35분)
+    ■ 임무 (3 단계, 약 35분)
 
     Non-AI 트랙: ssh ccc@10.20.30.201 (attacker VM) 직접 실행.
 
-    ### Phase A — HTTP 정찰
+    ▶ Phase A — HTTP 정찰
     `curl -s -I http://10.20.30.80:3000/ | head -10`
     `curl -s -X OPTIONS -i http://10.20.30.80:3000/ 2>&1 | grep -i Allow | head -3`
     `curl -s -I http://10.20.30.80:3000/ | grep -i "csp\|hsts\|x-frame\|x-content" 2>&1 | head -5`
 
-    ### Phase B — Nikto + searchsploit
+    ▶ Phase B — Nikto + searchsploit
     `nikto -h http://10.20.30.80:3000 -maxtime 60 -nointeractive 2>&1 | head -30`
     `searchsploit -t "juice shop" 2>&1 | head -10`
     `searchsploit -t "express" 2>&1 | head -10`
     `searchsploit -t "apache 2.4" 2>&1 | head -10`
 
-    ### Phase C — 익스플로잇 매트릭스
+    ▶ Phase C — 익스플로잇 매트릭스
     | CVE / 발견 | 영향 | CVSS | exploit-db | 우선순위 |
     | CVE-Node-Express | RCE | 9.8 | exploits/nodejs/... | #1 |
     | Nikto admin 노출 | 정보 | 5.3 | (수동) | #2 |
@@ -506,6 +797,14 @@ steps:
     Phase B: nikto -maxtime 60 + searchsploit -t.
     Phase C: 5행 매트릭스 + w04 입력.
     포인트: 정찰 → CVE 매칭 → 우선순위.
+
+    📎 도구 우선순위 (힌트):
+    1) Phase A: curl -I (HEAD), -X OPTIONS (메소드), grep -i (보안 헤더 — csp/hsts/x-frame/x-content).
+    2) Phase B: nikto -h -maxtime 60 (자동 + 시간 제한), searchsploit -t (정확 매칭).
+    3) Phase C: markdown table 5행 (CVE/영향/CVSS/exploit-db 경로/우선순위).
+    4) 미설치 시: sudo apt install -y curl nikto exploitdb
+    5) 추가: nuclei -severity (template), Vulners/NVD API.
+    6) CVSS 기준 분류 + CISA KEV 매핑 (active exploitation 우선).
   category: integration_scenario
   points: 50
   verify:
@@ -521,10 +820,15 @@ steps:
       - Phase B — Nikto + searchsploit 4 케이스
       - Phase C — 5행 매트릭스 + w04 입력
       acceptable_methods:
-      - curl + grep
-      - nikto / searchsploit / nuclei
-      - markdown table CVE/CVSS
-      - exploit-db 경로
+      - "Phase A HTTP 정찰 (수기 baseline): curl -I + OPTIONS + 보안 헤더 grep. 5 헤더 누락 식별."
+      - "Phase B Nikto + searchsploit: -maxtime 60 + -t 4 케이스 (juice/express/apache/node)."
+      - "Phase C 매트릭스: markdown 5행 + ATT&CK ID + CVSS."
+      - "nuclei -severity: 6000+ template."
+      - "Vulners/NVD API: jq."
+      - "Metasploit msfconsole search."
+      - "CISA KEV: 우선순위."
+      - "MITRE ATT&CK Navigator: 시각."
+      - "Bastion AI orchestrator: 모든 결과 통합 + KG anchor."
       negative_signs:
       - 정찰 또는 nikto만
       - CVE 매칭 누락
