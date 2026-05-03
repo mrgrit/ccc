@@ -1349,3 +1349,378 @@ graph LR
 
 **학생 액션**: lab eventlog clear → gap 측정.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course12 — Week 06 고급 탐지 공학)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | Suricata Lua script | suricata + lua hooks |
+| s2 | Wazuh custom decoder | Wazuh decoder.xml |
+| s3 | Sigma 룰 작성 | Sigma + sigma-cli |
+| s4 | chainsaw (Rust 빠름) | chainsaw |
+| s5 | hayabusa (Win EVTX) | hayabusa |
+| s6 | YARA-X (modern) | yara-x (Rust) / yara |
+| s7 | Vector.dev pipeline | vector |
+| s8 | 통합 SIEM 룰셋 | Sigma → 5+ SIEM 자동 변환 |
+
+### 학생 환경 준비
+
+```bash
+# === Sigma + 변환 backends ===
+pip install pysigma \
+    pysigma-backend-elasticsearch \
+    pysigma-backend-splunk \
+    pysigma-backend-loki \
+    pysigma-backend-kibana \
+    pysigma-pipeline-sysmon
+
+git clone https://github.com/SigmaHQ/sigma ~/sigma                    # 5000+ rule
+
+# === chainsaw (Rust, 매우 빠름) ===
+cargo install chainsaw
+
+# === hayabusa (Win EVTX 전용) ===
+git clone https://github.com/Yamato-Security/hayabusa ~/hayabusa
+cd ~/hayabusa && cargo build --release
+
+# === YARA + YARA-X ===
+sudo apt install -y yara
+git clone https://github.com/VirusTotal/yara-x ~/yara-x
+cd ~/yara-x && cargo build --release
+
+# Yara rule 카탈로그
+git clone https://github.com/Yara-Rules/rules ~/yara-rules
+git clone https://github.com/Neo23x0/signature-base ~/signature-base
+
+# === Vector.dev (modern observability pipeline) ===
+curl -1sLf https://repositories.timber.io/public/vector/cfg/setup/bash.deb.sh | sudo bash
+sudo apt install -y vector
+```
+
+### Suricata Lua scripting (custom logic)
+
+```lua
+-- /etc/suricata/lua/check-base64-cmd.lua
+function init(args)
+    local needs = {}
+    needs["http.request"] = tostring(true)
+    return needs
+end
+
+function match(args)
+    local req_body = HttpGetRequestBody()
+    if req_body == nil then
+        return 0
+    end
+    
+    -- base64 인코딩된 powershell 명령 탐지
+    if string.match(req_body, "powershell.+%-EncodedCommand") or
+       string.match(req_body, "[A-Za-z0-9+/]{200,}={0,2}") then
+        return 1
+    end
+    
+    return 0
+end
+```
+
+```bash
+# Suricata 룰에서 Lua 호출
+sudo tee /etc/suricata/rules/lua-rules.rules << 'EOF2'
+alert http any any -> any any (msg:"Base64 encoded command"; \
+    flow:established,to_server; \
+    lua:check-base64-cmd.lua; \
+    sid:1000100; rev:1;)
+EOF2
+
+sudo systemctl reload suricata
+```
+
+### Wazuh Custom Decoder + Rule
+
+```xml
+<!-- /var/ossec/etc/decoders/local_decoder.xml -->
+<decoder name="custom-app">
+    <prematch>^MyApp\[</prematch>
+</decoder>
+
+<decoder name="custom-app-1">
+    <parent>custom-app</parent>
+    <regex>^MyApp\[(\d+)\]:\s+(\S+)\s+from\s+(\S+):(\d+)</regex>
+    <order>pid, action, srcip, srcport</order>
+</decoder>
+```
+
+```xml
+<!-- /var/ossec/etc/rules/local_rules.xml -->
+<group name="custom-app,">
+    <rule id="100800" level="0">
+        <decoded_as>custom-app</decoded_as>
+        <description>Custom app event</description>
+    </rule>
+    
+    <rule id="100801" level="10">
+        <if_sid>100800</if_sid>
+        <field name="action">FAILED_LOGIN</field>
+        <description>App login failed: $(srcip)</description>
+        <mitre>
+            <id>T1110.001</id>
+        </mitre>
+    </rule>
+    
+    <rule id="100802" level="13" frequency="5" timeframe="120">
+        <if_matched_sid>100801</if_matched_sid>
+        <description>App login brute force: $(srcip)</description>
+        <mitre>
+            <id>T1110</id>
+        </mitre>
+        <group>brute_force,attack,</group>
+    </rule>
+</group>
+```
+
+```bash
+# 검증
+sudo /var/ossec/bin/wazuh-control logtest
+# 입력: MyApp[1234]: FAILED_LOGIN from 1.2.3.4:50000
+# → rule 100801 매칭 + ATT&CK T1110.001
+```
+
+### Sigma 표준 (universal SIEM rule)
+
+```yaml
+# /opt/sigma-rules/custom-app-brute.yml
+title: Custom App Brute Force
+id: 12345678-1234-1234-1234-123456789abc
+status: experimental
+description: 5+ failed login from same IP in 2 minutes
+references:
+    - https://internal/wiki/custom-app
+author: Security Team
+date: 2026-05-02
+tags:
+    - attack.t1110.001
+    - attack.credential_access
+
+logsource:
+    product: custom-app
+    service: authentication
+detection:
+    selection:
+        action: FAILED_LOGIN
+    timeframe: 2m
+    condition: selection | count() by srcip > 5
+falsepositives:
+    - 자동 점검 도구
+level: high
+```
+
+```bash
+# 자동 변환 (5+ SIEM)
+sigma convert -t opensearch /opt/sigma-rules/custom-app-brute.yml > /tmp/os.json
+sigma convert -t splunk /opt/sigma-rules/custom-app-brute.yml > /tmp/splunk.txt
+sigma convert -t loki /opt/sigma-rules/custom-app-brute.yml > /tmp/loki.txt
+sigma convert -t kibana /opt/sigma-rules/custom-app-brute.yml > /tmp/kibana.json
+
+# 카탈로그 룰 일괄 변환
+for f in ~/sigma/rules/linux/*.yml; do
+    sigma convert -t opensearch "$f" >> /tmp/all-rules-opensearch.json
+done
+```
+
+### chainsaw (Rust — 매우 빠름)
+
+```bash
+# 1) 단일 룰
+chainsaw hunt /var/log -s /opt/sigma-rules/custom-app-brute.yml
+
+# 2) 카탈로그 (5000+ 룰)
+chainsaw hunt /var/log -s ~/sigma/rules/linux/
+
+# 3) JSON 출력 (자동화)
+chainsaw hunt /var/log -s ~/sigma/rules/ \
+    --output json > /tmp/hunt.json
+
+# 4) 결과 분석
+jq -r '.[] | "\(.timestamp) [\(.rule.level)] \(.rule.title)"' /tmp/hunt.json | head
+
+# 5) ATT&CK 매핑
+jq -r '.[] | .rule.tags[]' /tmp/hunt.json | grep "attack\." | sort | uniq -c
+```
+
+### hayabusa (Windows EVTX)
+
+```bash
+cd ~/hayabusa
+
+# 1) Timeline
+./target/release/hayabusa csv-timeline -d /evtx_files \
+    -o /tmp/timeline.csv
+
+# 2) Logon 통계
+./target/release/hayabusa logon-summary -d /evtx_files
+
+# 3) JSON output (자동화)
+./target/release/hayabusa json-timeline -d /evtx_files \
+    -o /tmp/timeline.json
+
+# 4) 자동 update (3000+ 룰)
+./target/release/hayabusa update-rules
+```
+
+### YARA-X (Rust 후속, 빠름)
+
+```bash
+# 1) 룰 작성
+cat > /tmp/malware.yar << 'YEOF'
+rule sliver_implant
+{
+    meta:
+        description = "Detects Sliver C2 implant"
+        author = "CCC Security"
+    strings:
+        $a = "sliver-server" wide ascii
+        $b = "BeaconJitter" wide ascii
+        $c = { 53 6c 69 76 65 72 }                       // "Sliver"
+    condition:
+        any of them
+}
+
+rule mimikatz_signature
+{
+    strings:
+        $s1 = "sekurlsa::logonpasswords"
+        $s2 = "kerberos::list"
+        $s3 = "lsadump::sam"
+    condition:
+        any of them
+}
+YEOF
+
+# 2) yara-x (modern, 빠름)
+~/yara-x/target/release/yr scan /tmp/malware.yar /tmp/
+
+# 3) yara (전통)
+yara -r /tmp/malware.yar /tmp/
+
+# 4) 카탈로그 사용
+yara -r ~/signature-base/yara/index.yar /tmp/sample
+```
+
+### Vector.dev (modern observability pipeline)
+
+```toml
+# /etc/vector/vector.toml
+
+# === Sources (다중 input) ===
+[sources.syslog]
+type = "syslog"
+address = "0.0.0.0:514"
+mode = "tcp"
+
+[sources.suricata]
+type = "file"
+include = ["/var/log/suricata/eve.json"]
+
+[sources.wazuh]
+type = "http_server"
+address = "0.0.0.0:8888"
+
+# === Transforms (변환) ===
+[transforms.parse_alerts]
+type = "remap"
+inputs = ["suricata"]
+source = '''
+. = parse_json!(.message)
+.severity = if .alert.severity == 1 { "high" } 
+           else if .alert.severity == 2 { "medium" } 
+           else { "low" }
+.attck_id = .alert.metadata.mitre_attack_id // ""
+'''
+
+[transforms.dedupe]
+type = "dedupe"
+inputs = ["parse_alerts"]
+fields.match = ["alert.signature", "src_ip", "dest_ip"]
+ttl_seconds = 60
+
+# === Sinks (다중 output) ===
+[sinks.opensearch]
+type = "elasticsearch"
+inputs = ["dedupe"]
+endpoint = "http://opensearch:9200"
+mode = "bulk"
+bulk.index = "wazuh-alerts-%Y-%m-%d"
+
+[sinks.loki]
+type = "loki"
+inputs = ["dedupe"]
+endpoint = "http://loki:3100"
+labels.app = "security"
+labels.severity = "{{ severity }}"
+
+[sinks.kafka]
+type = "kafka"
+inputs = ["dedupe"]
+bootstrap_servers = "kafka:9092"
+topic = "security-alerts"
+
+[sinks.s3_archive]
+type = "aws_s3"
+inputs = ["dedupe"]
+bucket = "security-archive"
+encoding.codec = "json"
+compression = "gzip"
+```
+
+```bash
+sudo systemctl restart vector
+```
+
+### Universal Sigma → SIEM 자동 변환 pipeline
+
+```bash
+#!/bin/bash
+# /usr/local/bin/sigma-deploy.sh
+
+SIGMA_DIR=~/sigma/rules
+OUTPUT=/tmp/sigma-deployed
+
+mkdir -p $OUTPUT
+
+# 1) Wazuh
+for f in $SIGMA_DIR/linux/**/*.yml $SIGMA_DIR/web/**/*.yml; do
+    [ -f "$f" ] && sigma convert -t opensearch "$f" 2>/dev/null
+done | tee $OUTPUT/wazuh-rules.json
+
+# 2) Suricata (HTTP/TLS/DNS rules)
+for f in $SIGMA_DIR/network/**/*.yml; do
+    [ -f "$f" ] && sigma convert -t suricata "$f" 2>/dev/null
+done | tee $OUTPUT/suricata.rules
+
+# 3) Splunk
+for f in $SIGMA_DIR/**/*.yml; do
+    [ -f "$f" ] && sigma convert -t splunk "$f" 2>/dev/null
+done | tee $OUTPUT/splunk-rules.txt
+
+# 4) Loki
+for f in $SIGMA_DIR/**/*.yml; do
+    [ -f "$f" ] && sigma convert -t loki "$f" 2>/dev/null
+done | tee $OUTPUT/loki-rules.txt
+
+# 5) Falco (custom backend)
+# pysigma-backend-falco 사용
+
+# 6) 자동 배포 (각 SIEM 에)
+sudo cp $OUTPUT/suricata.rules /etc/suricata/rules/sigma.rules
+sudo systemctl reload suricata
+
+# Wazuh 는 OpenSearch query 형식 → ossec.conf 통합 별도
+
+echo "=== Sigma 룰 배포 완료 ==="
+```
+
+학생은 본 6주차에서 **Suricata Lua + Wazuh decoder + Sigma + chainsaw + hayabusa + yara-x + vector.dev** 7 도구로 Universal Sigma 룰 작성 + 5+ SIEM 자동 변환 + Multi-source pipeline 의 advanced 탐지 공학을 익힌다.

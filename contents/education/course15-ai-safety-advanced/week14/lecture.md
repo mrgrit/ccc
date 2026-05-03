@@ -872,3 +872,538 @@ graph LR
 
 **학생 액션**: registry 구축.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course15 AI Safety Advanced — Week 14 규제 심층분석·EU AI Act·NIST AI RMF·ISO 42001·AIDA·KR AI 기본법)
+
+> 이 부록은 lab `ai-safety-adv-ai/week14.yaml` (8 step + multi_task) 의 모든 명령을
+> 실제로 실행 가능한 형태로 정리한다. AI 규제 frame — EU AI Act / NIST AI RMF /
+> ISO 42001 / Canada AIDA / KR AI 기본법 + Compliance scanner + Audit log.
+
+### lab step → 도구·범위 매핑 표
+
+| step | 학습 항목 | 핵심 OSS 도구 / 자료 | 표준 |
+|------|----------|---------------------|------|
+| s1 | 규제 비교 기본 | EU AI Act / NIST AI RMF 문서 | 표준 |
+| s2 | 규제 시나리오 생성 | LLM + 5 jurisdiction × 적용 사례 | 정책 |
+| s3 | 규제 정책 평가 | LLM + GAP 분석 | NIST AI RMF |
+| s4 | LLM 인젝션 (보조) | week01~03 | LLM01 |
+| s5 | 자동 compliance scanner | Open Policy Agent (OPA) + 자체 룰 | DevSecOps |
+| s6 | 가드레일 (CE 마킹 / 자체 audit) | model card + datasheet + audit log | governance |
+| s7 | 규제 모니터링 | compliance score + Prometheus | observability |
+| s8 | 규제 평가 보고서 | markdown + GAP analysis + roadmap | report |
+| s99 | 통합 (s1→s2→s3→s5→s6) | Bastion plan 5 단계 | 전체 |
+
+### 주요 AI 규제 비교
+
+| 규제 | 발효 | 범위 | 핵심 |
+|------|------|------|------|
+| **EU AI Act** | 2024-08 (단계적 2027) | EU 시장 | 4 risk tier, GPAI, fines €35M / 7% |
+| **NIST AI RMF 1.0** | 2023-01 | 미국 (자율) | Govern / Map / Measure / Manage |
+| **NIST AI 600-1** | 2024-07 | GenAI | NIST RMF 확장 |
+| **ISO/IEC 42001** | 2023-12 | 글로벌 | AI Management System |
+| **Canada AIDA** | 2025 (예정) | Canada | high-impact AI 의무 |
+| **KR AI 기본법** | 2026-01 시행 | 한국 | 고영향 AI 신고제 |
+| **EU GDPR Art.22** | 2018 | EU | 자동결정 권리 |
+| **US ECOA / Fair Housing** | 1974 / 1968 | 미국 | 차별 금지 |
+| **China 생성형 AI** | 2023-08 | China | 사전 등록 |
+| **EO 14110 (Biden)** | 2023-10 (변경 가능) | US 연방 | safety testing |
+
+### 학생 환경 준비
+
+```bash
+# 표준 문서 다운로드
+mkdir -p /tmp/regulations
+cd /tmp/regulations
+
+# EU AI Act
+curl -L https://eur-lex.europa.eu/legal-content/EN/TXT/PDF/?uri=CELEX:32024R1689 -o eu-ai-act.pdf
+
+# NIST AI RMF
+curl -L https://nvlpubs.nist.gov/nistpubs/ai/NIST.AI.100-1.pdf -o nist-ai-rmf.pdf
+curl -L https://nvlpubs.nist.gov/nistpubs/ai/NIST.AI.600-1.pdf -o nist-ai-600-1.pdf
+
+# OPA (Open Policy Agent)
+curl -L -o /tmp/opa https://openpolicyagent.org/downloads/latest/opa_linux_amd64
+chmod +x /tmp/opa && sudo mv /tmp/opa /usr/local/bin/
+
+# Compliance scanner
+pip install --user pydantic jsonschema
+pip install --user opa-python-client
+
+# Model Card / Datasheet
+pip install --user model-card-toolkit datasheet-for-datasets
+```
+
+### 핵심 도구별 상세 사용법
+
+#### 도구 1: 규제 비교 기본 (Step 1)
+
+```python
+import requests
+
+def regulation_compare(regulations):
+    prompt = f"""다음 AI 규제를 비교 (10 차원):
+{regulations}
+
+차원:
+1. 적용 범위 (provider / deployer / both)
+2. Risk classification (banned / high / limited / minimal)
+3. 의무 (registration / impact assessment / human oversight / transparency)
+4. Penalties (max fine, % of revenue)
+5. Enforcement timing
+6. GPAI / Foundation Model 특별 조항
+7. 면제 / 예외
+8. 국경간 효력 (extraterritorial)
+9. 사용자 권리 (자동결정 거부 / 설명 / 시정)
+10. Sandbox / 시범 사업
+
+JSON 비교 표 출력
+"""
+    r = requests.post("http://192.168.0.105:11434/api/generate",
+                     json={"model":"gpt-oss:120b","prompt":prompt,"stream":False})
+    return r.json()['response']
+
+print(regulation_compare("EU AI Act, NIST AI RMF, ISO 42001, KR AI 기본법, Canada AIDA"))
+```
+
+#### 도구 2: 규제 시나리오 생성 (Step 2)
+
+```python
+prompt = """Generate 5 AI regulation compliance scenarios, each with different jurisdiction:
+1. EU 시장 의료 AI (high-risk, MDR + AI Act)
+2. 미국 채용 AI (NIST AI RMF + ECOA + EEOC)
+3. 한국 금융 챗봇 (KR AI 기본법 + 금융위원회 가이드)
+4. 글로벌 GenAI 모델 (EU AI Act GPAI + NIST AI 600-1 + 자율 RSP)
+5. Cross-border 자동차 운전보조 (EU + US + Canada AIDA)
+
+각: stakeholder, 적용 규제, 의무 항목, 위반 시 penalty, mitigation roadmap
+
+JSON: [{"scenario":"...", "jurisdiction":[...], "obligations":[...], "penalty":"...", "roadmap":[...]}]"""
+
+r = requests.post("http://192.168.0.105:11434/api/generate",
+                 json={"model":"gpt-oss:120b","prompt":prompt,"stream":False})
+print(r.json()['response'])
+```
+
+#### 도구 3: 규제 정책 평가 (Step 3)
+
+```python
+def eval_regulation_policy(policy):
+    p = f"""정책이 다중 jurisdiction AI 규제 운영에 견고한지 평가:
+{policy}
+
+분석:
+1. Risk classification 절차 (EU AI Act 4 tier 매핑)
+2. NIST AI RMF 4 functions (Govern / Map / Measure / Manage)
+3. ISO 42001 AI MS 13 controls
+4. Model card / datasheet 의무
+5. Human oversight 절차
+6. Audit log 보존 (EU AI Act 10년)
+7. CE 마킹 / Conformity Assessment
+
+JSON: {{"weaknesses":[...], "missing":[...], "rec":[...]}}"""
+
+    r = requests.post("http://192.168.0.105:11434/api/generate",
+        json={"model":"gpt-oss:120b","prompt":p,"stream":False})
+    return r.json()['response']
+
+policy = """
+1. Risk class: ad-hoc 분류
+2. RMF: Govern function 만 도입
+3. ISO 42001: 미도입
+4. Model card: 일부
+5. Human oversight: 명시 X
+6. Audit log: 1년만
+"""
+print(eval_regulation_policy(policy))
+```
+
+#### 도구 5: 자동 compliance scanner (Step 5) — OPA
+
+```rego
+# /tmp/policies/eu_ai_act.rego
+package eu_ai_act
+
+# Default deny
+default allow = false
+
+# High-risk AI 의무 검증
+allow {
+    input.system.risk_class == "high"
+    input.system.has_quality_mgmt_system == true
+    input.system.has_risk_mgmt_system == true
+    input.system.has_data_governance == true
+    input.system.has_technical_documentation == true
+    input.system.has_logging == true
+    input.system.has_transparency_info == true
+    input.system.has_human_oversight == true
+    input.system.has_accuracy_robustness == true
+    input.system.has_cybersecurity == true
+    input.system.has_conformity_assessment == true
+    input.system.has_ce_marking == true
+}
+
+# Banned uses
+deny[msg] {
+    input.system.purpose == "social_scoring"
+    msg := "Social scoring is banned (EU AI Act Art.5)"
+}
+
+deny[msg] {
+    input.system.purpose == "real_time_remote_biometric_law_enforcement"
+    msg := "Real-time RBI in public spaces banned (Art.5)"
+}
+
+deny[msg] {
+    input.system.uses_subliminal_techniques == true
+    msg := "Subliminal techniques banned (Art.5)"
+}
+
+# GPAI 의무
+gpai_compliant {
+    input.system.is_gpai == true
+    input.system.has_technical_doc == true
+    input.system.has_copyright_policy == true
+    input.system.publishes_training_summary == true
+}
+
+gpai_systemic_risk_compliant {
+    input.system.is_gpai_systemic_risk == true
+    input.system.compute >= 1e25
+    input.system.has_model_eval == true
+    input.system.has_red_teaming == true
+    input.system.has_incident_reporting == true
+    input.system.has_cybersecurity == true
+}
+```
+
+```bash
+# OPA 평가
+cat > /tmp/system.json << 'JSON'
+{
+    "system": {
+        "risk_class": "high",
+        "purpose": "medical_diagnosis",
+        "has_quality_mgmt_system": true,
+        "has_risk_mgmt_system": true,
+        "has_data_governance": false,
+        "has_technical_documentation": true,
+        "has_logging": true,
+        "has_transparency_info": false,
+        "has_human_oversight": true,
+        "has_accuracy_robustness": true,
+        "has_cybersecurity": true,
+        "has_conformity_assessment": false,
+        "has_ce_marking": false
+    }
+}
+JSON
+
+opa eval -d /tmp/policies/eu_ai_act.rego -i /tmp/system.json "data.eu_ai_act.allow"
+opa eval -d /tmp/policies/eu_ai_act.rego -i /tmp/system.json "data.eu_ai_act.deny"
+```
+
+```python
+# === 자동 GAP 분석 ===
+import requests, json
+
+def gap_analysis_llm(system_state, regulation):
+    prompt = f"""다음 AI 시스템 상태와 규제를 비교 GAP 분석:
+
+시스템: {json.dumps(system_state, indent=2)}
+규제: {regulation}
+
+분석:
+1. 충족 항목 (compliant)
+2. 미충족 항목 (gap) — 각 항목별 위반 article + penalty risk
+3. 우선순위 (critical / high / medium / low)
+4. Mitigation steps + ETA
+
+JSON 출력"""
+
+    r = requests.post("http://192.168.0.105:11434/api/generate",
+        json={"model":"gpt-oss:120b","prompt":prompt,"stream":False})
+    return r.json()['response']
+
+system = {
+    "risk_class": "high",
+    "purpose": "medical_diagnosis",
+    "has_data_governance": False,
+    "has_transparency_info": False,
+    "has_conformity_assessment": False,
+}
+print(gap_analysis_llm(system, "EU AI Act high-risk obligations"))
+```
+
+#### 도구 6: 가드레일 — Model Card / Audit log (Step 6)
+
+```python
+import json, datetime
+
+# === Model Card (model-card-toolkit) ===
+import model_card_toolkit as mct
+
+mc = mct.ModelCardToolkit().scaffold_assets()
+model_card = mct.ModelCard()
+
+model_card.model_details.name = "CCC-Medical-Diagnosis-v1.0"
+model_card.model_details.overview = "AI for medical image classification"
+model_card.model_details.owners = [{"name": "CCC AI Team", "contact": "ai@ccc.local"}]
+model_card.model_details.version = mct.Version("1.0", "2026-04")
+
+model_card.model_parameters.data = [{"name": "MIMIC-CXR", "link": "..."}]
+model_card.model_parameters.input_format = "224x224x3 chest X-ray"
+model_card.model_parameters.output_format = "14-class probability"
+
+model_card.quantitative_analysis.performance_metrics = [
+    {"type": "AUC", "value": 0.89, "slice": "all"},
+    {"type": "AUC", "value": 0.84, "slice": "female"},
+    {"type": "AUC", "value": 0.91, "slice": "male"},
+]
+
+model_card.considerations.limitations = [{"description": "Trained on US data only"}]
+model_card.considerations.tradeoffs = [{"description": "Sensitivity vs Specificity"}]
+model_card.considerations.ethical_considerations = [{"name":"bias","mitigation_strategy":"reweighting"}]
+
+mct.update_model_card(model_card)
+html = mct.export_format()
+with open('/tmp/model-card.html','w') as f: f.write(html)
+
+# === Audit Log (EU AI Act Art.12 — 10년 보존) ===
+class AuditLogger:
+    def __init__(self, log_file="/var/log/ai-audit.jsonl"):
+        self.log_file = log_file
+
+    def log_inference(self, model, input_hash, output, user, decision, override=None):
+        entry = {
+            "timestamp": datetime.datetime.utcnow().isoformat(),
+            "event_type": "inference",
+            "model_id": model,
+            "model_version": "1.0",
+            "input_hash": input_hash,
+            "output_class": output,
+            "user_id": user,
+            "human_decision": decision,
+            "override_reason": override,
+        }
+        with open(self.log_file, 'a') as f:
+            f.write(json.dumps(entry) + "\n")
+
+    def log_drift(self, metric, value, threshold):
+        entry = {
+            "timestamp": datetime.datetime.utcnow().isoformat(),
+            "event_type": "drift",
+            "metric": metric,
+            "value": value,
+            "threshold": threshold,
+            "alert": value > threshold,
+        }
+        with open(self.log_file, 'a') as f:
+            f.write(json.dumps(entry) + "\n")
+
+logger = AuditLogger()
+logger.log_inference("CCC-Medical-v1", "abc123", "pneumonia", "doctor1", "confirmed")
+logger.log_drift("AUC", 0.82, 0.85)
+```
+
+#### 도구 7: 모니터링 (Step 7)
+
+```python
+from prometheus_client import start_http_server, Gauge, Counter, Histogram
+
+reg_compliance_score = Gauge('regulation_compliance_score', 'Score 0-100', ['regulation'])
+reg_open_gaps = Gauge('regulation_open_gaps', 'Open gap count', ['regulation', 'priority'])
+reg_audit_entries = Counter('regulation_audit_entries_total', 'Audit log entries', ['event_type'])
+reg_human_overrides = Counter('regulation_human_overrides_total', 'Human overrides')
+reg_drift_alerts = Counter('regulation_drift_alerts_total', 'Drift alerts', ['metric'])
+reg_eval_age_days = Gauge('regulation_eval_age_days', 'Days since last eval', ['regulation'])
+reg_certification_status = Gauge('regulation_certification_status', '1=valid, 0=expired', ['cert'])
+
+def update_compliance(regulation, score, gaps_by_priority):
+    reg_compliance_score.labels(regulation=regulation).set(score)
+    for priority, count in gaps_by_priority.items():
+        reg_open_gaps.labels(regulation=regulation, priority=priority).set(count)
+
+start_http_server(9314)
+
+# 사용
+update_compliance("EU AI Act", 78, {"critical":2,"high":5,"medium":12,"low":8})
+update_compliance("NIST AI RMF", 85, {"critical":0,"high":3,"medium":7,"low":4})
+```
+
+#### 도구 8: 규제 보고서 (Step 8)
+
+```bash
+cat > /tmp/regulation-report.md << 'EOF'
+# AI Regulation Compliance Report — 2026-Q2
+
+## 1. Executive Summary
+- 적용 규제: EU AI Act / NIST AI RMF / KR AI 기본법 / ISO 42001
+- 시스템 분류: 12 high-risk + 7 limited + 23 minimal
+- 종합 compliance score: 76% (目표 90%)
+
+## 2. 규제별 GAP
+
+### EU AI Act (76%)
+| Article | 요구 | 충족 | Priority |
+|---------|------|------|----------|
+| Art.9 RM | risk mgmt 절차 | ✓ | - |
+| Art.10 데이터 govern | dataset documentation | ✗ | critical |
+| Art.11 기술 문서 | 일부 | partial | high |
+| Art.12 logging | 1년만 | ✗ (10년 필요) | critical |
+| Art.13 transparency | 일부 | partial | high |
+| Art.14 human oversight | ✓ | - | - |
+| Art.15 accuracy/robustness | ✓ | - | - |
+| Art.43 conformity | 미수행 | ✗ | critical |
+| CE marking | 없음 | ✗ | critical |
+| Art.50 transparency (GPAI) | watermark 일부 | partial | high |
+
+### NIST AI RMF (85%)
+| Function | Subcategory | 충족 |
+|---------|------------|------|
+| Govern | 19/19 | 100% |
+| Map | 18/18 | 100% |
+| Measure | 25/30 | 83% |
+| Manage | 20/24 | 83% |
+
+### KR AI 기본법 (82%)
+| 조항 | 의무 | 충족 |
+|------|------|------|
+| Art.18 고영향 AI 신고 | 신고 미완 | ✗ |
+| Art.19 안전성 | RM ✓ | ✓ |
+| Art.20 transparency | model card | partial |
+| Art.21 사용자 권리 | 일부 | partial |
+
+## 3. 우선순위 mitigation
+### Critical (≤30일)
+- EU Art.10 데이터 govern + 추적
+- EU Art.12 로깅 10년 (현재 1년)
+- EU Art.43 + CE marking
+- KR Art.18 고영향 AI 신고
+
+### High (≤90일)
+- EU Art.11 기술 문서 완성
+- EU Art.13 transparency
+- NIST Measure 5 항목 완성
+
+### Medium (≤180일)
+- ISO 42001 인증
+- Datasheet for Datasets
+
+## 4. 권고
+### Short
+- Compliance scanner (OPA + custom) CI 통합
+- Audit log 10년 retention 정책
+- 외부 audit 분기 1회
+
+### Mid
+- ISO 42001 인증 획득
+- 자동 model card 생성
+- Cross-border compliance map
+
+### Long
+- AI Safety Board 구성
+- Compliance-as-Code 전사 도입
+- Regulator 협업 (EU AI Office)
+EOF
+
+pandoc /tmp/regulation-report.md -o /tmp/regulation-report.pdf \
+  --pdf-engine=xelatex -V mainfont="Noto Sans CJK KR"
+```
+
+### 점검 / 평가 / 보고 흐름 (8 step + multi_task)
+
+#### Phase A — 기본 + 시나리오 + 정책 (s1·s2·s3)
+
+```bash
+python3 /tmp/regulation-compare.py
+python3 /tmp/regulation-scenario.py
+python3 /tmp/regulation-policy-eval.py
+```
+
+#### Phase B — 인젝션 + 자동화 (s4·s5)
+
+```bash
+python3 /tmp/extraction-injection.py    # week01~03
+opa eval -d /tmp/policies/eu_ai_act.rego -i /tmp/system.json "data.eu_ai_act.allow"
+python3 /tmp/regulation-gap-analysis.py
+```
+
+#### Phase C — 가드레일 + 모니터링 + 보고 (s6·s7·s8)
+
+```bash
+python3 /tmp/model-card-toolkit.py
+python3 /tmp/audit-logger.py
+python3 /tmp/regulation-monitor.py &
+pandoc /tmp/regulation-report.md -o /tmp/regulation-report.pdf
+```
+
+#### Phase D — 통합 (s99 multi_task)
+
+s1 → s2 → s3 → s5 → s6 를 Bastion 가:
+
+1. plan: 규제 비교 → 시나리오 → 정책 평가 → OPA scanner → model card + audit
+2. execute: ollama / opa / model-card-toolkit
+3. synthesize: 5 산출물 (compare.json / scenario.json / policy.json / opa.log / model-card.html)
+
+### 도구 비교표 — 규제 단계별
+
+| 분야 | 1순위 | 2순위 | 사용 |
+|------|-------|-------|------|
+| Compliance scanner | OPA + custom Rego | Falco / KICS | OSS |
+| Model card | model-card-toolkit (Google) | Hugging Face card | OSS |
+| Datasheet | datasheet-for-datasets | 자체 | OSS |
+| Audit log | JSONL + immutable WORM | OpenSearch + retention | OSS |
+| Risk assessment | NIST AI RMF playbook | ISO 31000 | 표준 |
+| ISO 42001 audit | 자체 + 외부 | TÜV / BSI | 인증 |
+| EU AI Act tracker | 자체 + EU AI Office | Holistic AI | 자유 |
+| GAP analysis | LLM 자동 + 외부 | 변호사 | 혼합 |
+| 모니터링 | Prometheus + custom | Datadog | OSS |
+| 보고서 | pandoc | Word | 기술 |
+
+### 도구 선택 매트릭스 — 시나리오별 권장
+
+| 시나리오 | 우선 도구 | 이유 |
+|---------|---------|------|
+| "EU 시장 진입" | EU AI Act + CE marking 절차 + ISO 42001 | 의무 |
+| "미국 운영" | NIST AI RMF + ECOA + EEOC | 표준 |
+| "글로벌 GPAI" | EU AI Act GPAI + NIST 600-1 + RSP | 종합 |
+| "한국 운영" | KR AI 기본법 + ISO 42001 | 표준 |
+| "compliance 자동화" | OPA + custom Rego + GH Actions | DevSecOps |
+| "외부 audit 준비" | model card + datasheet + audit log + GAP | 검증 |
+| "다중 jurisdiction" | LLM GAP + cross-border map | 종합 |
+
+### 학생 셀프 체크리스트 (각 step 완료 기준)
+
+- [ ] s1: 5+ 규제 10 차원 비교 표
+- [ ] s2: 5 jurisdiction 시나리오
+- [ ] s3: 정책 평가 (7 항목)
+- [ ] s4: week01~03 인젝션 재실행
+- [ ] s5: OPA + Rego 정책 + LLM GAP 분석
+- [ ] s6: model card (model-card-toolkit) + audit logger 클래스
+- [ ] s7: 7+ 메트릭 (compliance / gaps / audit / overrides / drift / age / cert)
+- [ ] s8: 보고서 (규제별 GAP + mitigation + 권고)
+- [ ] s99: Bastion 가 5 작업 (compare / scenario / policy / opa / governance) 순차
+
+### 추가 참조 자료
+
+- **EU AI Act** Regulation 2024/1689
+- **NIST AI RMF 1.0** SP 100-1
+- **NIST AI 600-1** (GenAI profile)
+- **ISO/IEC 42001:2023** (AI Management System)
+- **Canada AIDA** (Artificial Intelligence and Data Act)
+- **KR AI 기본법** (인공지능 산업 진흥 및 신뢰 기반 조성 등에 관한 법률)
+- **GDPR Article 22** (Automated decisions)
+- **OECD AI Principles**
+- **OPA (Open Policy Agent)** https://www.openpolicyagent.org/
+- **Model Card Toolkit (Google)** https://github.com/tensorflow/model-card-toolkit
+- **Datasheets for Datasets (Gebru 2018)**
+- **EU AI Office** https://digital-strategy.ec.europa.eu/en/policies/ai-office
+
+위 모든 규제 분석은 **격리 환경 + 사전 동의** 로 수행한다. 규제는 jurisdiction 별 다름 —
+적용 우선순위 (해외 진출 / 국내) 결정 후 GAP 분석. CE 마킹 / ISO 42001 인증은 외부 audit
+필요 — 내부 점검은 사전 단계. EU AI Act fines 최대 €35M 또는 전세계 매출 7% — 위반 비용
+큼. NIST AI RMF / ISO 42001 은 자율 (penalty 없음) 이지만 **계약 / 입찰 요건** 으로 빈번
+출현 — production 운영 시 사실상 의무. LLM GAP 분석은 변호사 검토 보조 — 최종은 사람.

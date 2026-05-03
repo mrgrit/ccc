@@ -834,3 +834,206 @@ graph LR
 
 **학생 액션**: lab Nikto 스캔 → Wazuh detection 비율 측정.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course11 — Week 02 취약점 스캐닝)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 | 명령 |
+|------|----------|---------|------|
+| s1 | nikto 종합 | **nikto** | `nikto -h http://target -o /tmp/nikto.txt` |
+| s2 | nuclei 자동 | **nuclei** | `nuclei -u http://target -severity high,critical -j` |
+| s3 | wapiti | wapiti | `wapiti -u http://target` |
+| s4 | dir/file brute | gobuster / ffuf / dirsearch | `gobuster dir -u http://target -w wordlist.txt` |
+| s5 | TLS 점검 | testssl.sh / sslscan | `testssl.sh https://target` |
+| s6 | Exploit 검색 | searchsploit | `searchsploit "Apache 2.4"` |
+| s7 | CVE DB | cve-search / vuls | `cve-search apache` |
+| s8 | 결과 통합 | faraday | `faraday import nmap.xml nuclei.json` |
+
+### 학생 환경 준비 (Red)
+
+```bash
+# 1) 모든 web vuln scanner
+sudo apt install -y nikto wapiti dirb dirsearch gobuster ffuf
+sudo apt install -y exploitdb sslscan
+sudo searchsploit -u                                  # DB update
+
+# 2) nuclei (Go)
+go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
+nuclei -update-templates                              # 5000+ template
+
+# 3) testssl.sh (가장 종합 TLS)
+git clone --depth 1 https://github.com/drwetter/testssl.sh ~/testssl
+ln -sf ~/testssl/testssl.sh ~/.local/bin/testssl
+
+# 4) Faraday (multi-tool 결과 통합)
+docker run -d -p 5985:5985 --name faraday faradaysec/faraday:latest
+
+# 5) Vuls (CVE 자동 추적)
+go install github.com/future-architect/vuls/cmd/vuls@latest
+```
+
+### Red 측 — 자동 vuln 스캔 흐름
+
+```bash
+# === Phase 1: nikto (전통적 web scanner) ===
+nikto -h http://10.20.30.80:3000 -o /tmp/nikto-juice.txt
+nikto -h http://10.20.30.80:80 -o /tmp/nikto-apache.txt
+
+# 출력 예:
+# + Server: Apache/2.4.52 (Ubuntu)
+# + The X-Frame-Options header is not present
+# + The X-Content-Type-Options header is not present
+# + 7898 items found
+
+# === Phase 2: nuclei (modern, 정확도 우수) ===
+# 모든 high/critical 자동
+nuclei -u http://10.20.30.80:3000 -severity high,critical -j > /tmp/nuclei-juice.json
+nuclei -u http://10.20.30.80:80 -severity high,critical -j > /tmp/nuclei-apache.json
+
+# 카테고리 별 (CVE / misconfig / exposure / vulnerabilities)
+nuclei -u http://10.20.30.80:3000 -tags cve,exposures
+nuclei -u http://10.20.30.80:3000 -tags misconfig
+nuclei -u http://10.20.30.80:3000 -tags injection
+
+# 결과 분석
+jq -r '"\(.host) \(.["template-id"]) \(.severity)"' /tmp/nuclei-juice.json | sort | uniq -c
+
+# === Phase 3: wapiti (대체 web scanner) ===
+wapiti -u http://10.20.30.80:3000 \
+    --scope folder \
+    -m sql,xss,exec,file \
+    -o /tmp/wapiti-report
+
+# === Phase 4: 디렉토리 brute force ===
+# gobuster (Go, 빠름)
+gobuster dir -u http://10.20.30.80:3000 \
+    -w /usr/share/wordlists/dirb/common.txt \
+    -t 50 -x html,php,bak,txt
+
+# ffuf (Go, fuzzing 강력)
+ffuf -w /usr/share/wordlists/dirb/big.txt \
+    -u http://10.20.30.80:3000/FUZZ \
+    -mc 200,301,403 -fs 1024 -t 50
+
+# dirsearch (Python)
+dirsearch -u http://10.20.30.80:3000 \
+    -w /usr/share/wordlists/dirb/common.txt \
+    -e html,php,bak
+
+# === Phase 5: TLS 점검 ===
+testssl.sh https://10.20.30.100:443 > /tmp/testssl.txt
+# 출력: 모든 cipher / 프로토콜 / Heartbleed / POODLE 등 자동 점검
+
+# 또는 빠른 sslscan
+sslscan 10.20.30.100:443
+
+# === Phase 6: Exploit 검색 (발견된 서비스 매칭) ===
+# Apache 2.4.52 알려진 CVE
+searchsploit "Apache 2.4"
+searchsploit -m 51914                                 # mirror (로컬 복사)
+
+# Node.js / Express 알려진 vuln
+searchsploit "node.js"
+searchsploit "express"
+
+# === Phase 7: 결과 통합 (Faraday) ===
+docker exec faraday faraday-manage import-vulns /opt/faraday/imports/nmap.xml
+```
+
+### Blue 측 — 자동 차단 강화
+
+```bash
+# === ModSecurity (WAF) 강화 ===
+# /etc/modsecurity/modsecurity.conf 에서:
+# SecRuleEngine On                 # DetectionOnly → On
+sudo systemctl restart apache2
+
+# === Suricata 룰 강화 ===
+sudo suricata-update enable-source et/open
+sudo suricata-update enable-source ptresearch/attackdetection
+sudo suricata-update
+sudo systemctl reload suricata
+
+# nuclei UA 자동 차단
+sudo tee /etc/suricata/rules/nuclei-block.rules > /dev/null << 'EOF'
+alert http any any -> $HOME_NET any (msg:"nuclei scanner detected"; flow:established,to_server; http.user_agent; content:"Nuclei"; sid:1000001; rev:1;)
+EOF
+sudo systemctl reload suricata
+
+# === Wazuh frequency rule (반복 스캔 차단) ===
+sudo tee -a /var/ossec/etc/rules/local_rules.xml > /dev/null << 'EOF'
+<rule id="100200" level="13" frequency="50" timeframe="60">
+  <if_matched_sid>31100</if_matched_sid>
+  <description>Web scan detected (50+ in 60s)</description>
+  <mitre><id>T1595.002</id></mitre>
+</rule>
+EOF
+sudo /var/ossec/bin/wazuh-control restart
+
+# === crowdsec scenario ===
+sudo cscli scenarios install crowdsecurity/http-crawl-non_statics \
+    crowdsecurity/http-cve crowdsecurity/sqli-attack crowdsecurity/xss-attack
+sudo systemctl restart crowdsec
+sudo cscli decisions list                             # 현재 차단된 IP
+```
+
+### Red 우회 (이전 phase 결과로 차단 회피)
+
+```bash
+# Suricata UA 차단 → User-Agent 변경
+nuclei -u http://10.20.30.80:3000 -severity high \
+    -H "User-Agent: Mozilla/5.0"
+
+# crowdsec 차단 → IP rotation (proxychains)
+proxychains4 nuclei -u http://10.20.30.80:3000
+
+# Rate limit → timing 조절
+nuclei -u http://10.20.30.80:3000 -rl 5                # 5 req/s
+
+# 분산 스캔 (여러 IP)
+for proxy in $proxies; do
+    proxychains4 -f /tmp/proxy-$proxy.conf nikto -h http://10.20.30.80:3000
+done
+```
+
+### 결과 분석 자동화
+
+```python
+# /opt/scripts/aggregate_scan_results.py
+import json
+
+# nuclei
+nuclei_findings = []
+with open('/tmp/nuclei-juice.json') as f:
+    for line in f:
+        if line.strip():
+            nuclei_findings.append(json.loads(line))
+
+# 심각도 별 카운트
+severity_count = {}
+for f in nuclei_findings:
+    sev = f.get('severity', 'unknown')
+    severity_count[sev] = severity_count.get(sev, 0) + 1
+
+print(f"Critical: {severity_count.get('critical', 0)}")
+print(f"High: {severity_count.get('high', 0)}")
+print(f"Medium: {severity_count.get('medium', 0)}")
+
+# Exploit DB 매칭
+import subprocess
+for f in nuclei_findings:
+    cve = f.get('cve-id')
+    if cve:
+        result = subprocess.run(
+            ["searchsploit", "--cve", cve],
+            capture_output=True, text=True
+        )
+        if "exploit" in result.stdout.lower():
+            print(f"{cve}: exploit available")
+            print(result.stdout[:300])
+```
+
+학생은 본 2주차에서 **Red (nikto + nuclei + wapiti + gobuster + ffuf + searchsploit) ↔ Blue (ModSecurity + Suricata + Wazuh frequency + crowdsec)** 의 자동 스캔·자동 차단 양방향 공방을 OSS 도구로 익힌다.

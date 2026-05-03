@@ -235,7 +235,12 @@ steps:
   risk_level: medium
   bastion_prompt: attacker VM에서 web VM으로 /index.php?cmd=ls 요청을 보내줘
 - order: 6
-  instruction: secu VM eve.json 에서 sid:1000301 알람을 확인하시오.
+  instruction: 'secu VM eve.json 에서 sid:1000301 알람을 확인하시오.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/secops-ai-week15/6/eve.json 사전 주입. `jq
+    -c ''.alert'' /home/ccc/cyber-range/fixtures/secops-ai-week15/6/eve.json` 후 (1)
+    빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: grep 1000301 eve.json
   category: verify
   points: 10
@@ -272,9 +277,31 @@ steps:
   script: sudo grep '"signature_id":1000301' /var/log/suricata/eve.json 2>/dev/null
     | tail -3 || sudo grep 1000301 /var/log/suricata/eve.json | tail
   risk_level: low
-  bastion_prompt: secu VM의 suricata eve.json에서 sid 1000301 알람을 찾아줘
+  bastion_prompt: 'secu VM의 suricata eve.json에서 sid 1000301 알람을 찾아줘
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/secops-ai-week15/6/eve.json 사전 주입. `jq
+    -c ''.alert'' /home/ccc/cyber-range/fixtures/secops-ai-week15/6/eve.json` 후 (1)빈도·패턴
+    (2)MITRE (3)방어 3섹션. raw dump 금지.'
+  fixtures:
+  - generator: suricata_alert
+    target_vm: secu
+    path: /home/ccc/cyber-range/fixtures/secops-ai-week15/6/eve.json
+    params:
+      seed: 42
+      duration_days: 7
+      alerts_per_day: 30
+      c2_beacon_count: 12
+      metadata_attempt_count: 4
+    mode: overwrite
+    cleanup: false
 - order: 7
-  instruction: siem VM alerts.json 에서 sid 1000301 혹은 cmd injection 관련 이벤트를 검색하시오.
+  instruction: 'siem VM alerts.json 에서 sid 1000301 혹은 cmd injection 관련 이벤트를 검색하시오.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/secops-ai-week15/7/alerts.json 사전 주입.
+    `jq -c ''.rule'' /home/ccc/cyber-range/fixtures/secops-ai-week15/7/alerts.json`
+    후 (1) 빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: grep cmd alerts.json
   category: verify
   points: 10
@@ -313,8 +340,25 @@ steps:
   script: sudo grep -i 'cmd injection\|1000301' /var/ossec/logs/alerts/alerts.json
     2>/dev/null | tail
   risk_level: low
-  bastion_prompt: siem VM wazuh alerts.json에서 cmd injection 또는 sid 1000301 관련 이벤트를
+  bastion_prompt: 'siem VM wazuh alerts.json에서 cmd injection 또는 sid 1000301 관련 이벤트를
     찾아줘
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/secops-ai-week15/7/alerts.json 사전 주입.
+    `jq -c ''.rule'' /home/ccc/cyber-range/fixtures/secops-ai-week15/7/alerts.json`
+    후 (1)빈도·패턴 (2)MITRE (3)방어 3섹션. raw dump 금지.'
+  fixtures:
+  - generator: wazuh_alert
+    target_vm: siem
+    path: /home/ccc/cyber-range/fixtures/secops-ai-week15/7/alerts.json
+    params:
+      seed: 42
+      duration_days: 7
+      alerts_per_day: 50
+      brute_force_burst: true
+      ar_trigger_count: 4
+    mode: overwrite
+    cleanup: false
 - order: 8
   instruction: CTI 결과를 가정해 blacklist_ips set에 203.0.113.77 을 주입하시오.
   hint: nft add element inet final blacklist_ips { 203.0.113.77 }
@@ -435,116 +479,60 @@ steps:
   risk_level: high
   bastion_prompt: secu VM에서 final 테이블 삭제, sid 1000301 룰 삭제, suricata reload를 모두 수행해줘
 - order: 99
-  instruction: |
-    [기말고사 — 학기 종합 capstone] "내 SOC 의 maturity 자가 진단 + 다음 분기 개선 계획"
+  instruction: "[기말고사 — 학기 종합 capstone] \"내 SOC 의 maturity 자가 진단 + 다음 분기 개선 계획\"\n\
+    \n## 상황 (학기 마지막 — 15주차)\n\nABC 핀테크 SOC 신규 분석가, 학기 마지막 주.\n1~10 step 으로 *기말 종합\
+    \ 실기* — final 테이블 + Suricata 룰 + Wazuh + CTI 모두 연계까지\n수행했다. 이제 마지막 임무 — *학기 학습\
+    \ 전체* 를 자가 평가하고 *다음 분기 개선 계획* 작성.\n\n> 선임 (이번엔 평가자 + 멘토): \"1~10 은 너의 *구축 능력*\
+    \ 검증이었어. 99번은 *진단 능력*.\n>  본인 SOC 의 maturity 를 5 layer × 5 mechanism (deploy/monitor/detect/respond/improve)\n\
+    ※  = 25 cell 로 자가 진단해. 1점 (없음) ~ 5점 (완벽 자동화) 점수. 그 다음 약점 찾고 다음\n>  분기 (Q+1) 개선\
+    \ plan 3개 작성. 학기 동안 익힌 KG 9-tier (Mission/Vision/Goal/Strategy/\n>  KPI/Plan/Todo/Playbook/Experience)\
+    \ 의 *Plan 단계* 작성하는 거야.\"\n\n학습 목표 #4 (15주 학습 내재화) + 9-tier KG 의 Plan tier 활용 (학기\
+    \ 후 운영 도입의 첫걸음).\n\n## 임무 (3 단계, 약 40분)\n\n### Phase A — Maturity 25 cell 자가 진단\
+    \ (15분)\n\n5 layer × 5 mechanism 매트릭스. 본인 SOC 환경 기준 1-5 점.\n\n**5 layer**: nft\
+    \ / Suricata / ModSec / Wazuh / OpenCTI\n**5 mechanism**:\n  - **Deploy**: 솔루션\
+    \ 배포·기본 설정 완료도\n  - **Monitor**: 로그·alert·counter 실시간 가시성\n  - **Detect**: custom\
+    \ 룰·decoder·IoC 매칭 정확도\n  - **Respond**: AR / sync / exception / IR 절차 자동화\n \
+    \ - **Improve**: FP/FN 회고·튜닝·정기 review\n\n각 cell 점수 매기기 (1=없음 / 2=수동만 / 3=일부 자동\
+    \ / 4=대부분 자동 / 5=완전 자동+검증):\n\n| Layer \\\\ Mech | Deploy | Monitor | Detect |\
+    \ Respond | Improve |\n|--------------|--------|---------|--------|---------|---------|\n\
+    | nft          | ?      | ?       | ?      | ?       | ?       |\n| Suricata \
+    \    | ?      | ?       | ?      | ?       | ?       |\n| ModSec       | ?   \
+    \   | ?       | ?      | ?       | ?       |\n| Wazuh        | ?      | ?    \
+    \   | ?      | ?       | ?       |\n| OpenCTI      | ?      | ?       | ?    \
+    \  | ?       | ?       |\n\n*근거*: 학기 동안 작성한 verify 테이블, suricata-update, ModSec\
+    \ exception, Wazuh AR,\ncti-sync 등으로 점수 산정. 각 cell 옆에 1줄 근거.\n\n**합계 계산**:\n \
+    \ - layer 별 합 (각 layer 의 5 mech 점수 합)\n  - mechanism 별 합 (각 mech 의 5 layer 점수\
+    \ 합)\n  - 총합 / 125 (25 × 5)\n\n### Phase B — 약점 분석 + 9-tier Plan 3개 작성 (15분)\n\
+    \nPhase A 의 매트릭스에서 *최저 점수 layer 또는 mechanism* 식별. 보통:\n  - Improve 점이 낮음 (FP review\
+    \ 안 함)\n  - Respond 의 OpenCTI 또는 nft 영역 (자동화 미완)\n  - Detect 의 custom decoder/rule\
+    \ 부족\n\n각 약점에 대해 *Plan* 작성 (KG 9-tier 의 Plan 단계 형식):\n\n```\n### Plan #1 — [약점\
+    \ 1 영역]\n- **Strategy**: [상위 전략 인용] (예: \"5 layer 모두 Improve 점수 4+ 도달\")\n- **derives_from**:\
+    \ [Goal 인용]\n- **Plan 본문**:\n  - 분기: Q+1 (다음 분기)\n  - 책임: SOC team\n  - Todo:\
+    \ (Plan 분해)\n    - Todo A: 매주 ModSec audit log review 자동 보고\n    - Todo B: Suricata\
+    \ FP suppress 분기별 audit\n    - Todo C: ...\n- **measures (KPI)**: FP 비율 < 5% /\
+    \ Improve 점수 5점 도달\n- **timeline**: 12주 (3개월)\n- **realizes**: Strategy \"통합 보안\
+    \ 운영 효율화\"\n```\n\nPlan 3개 작성 (Phase A 의 최저 점수 영역 3개).\n\n### Phase C — capstone\
+    \ 보고서 + sha256 + KG 등록 안 (10분)\n\nmarkdown 보고서 종합:\n\n```\n# SOC Maturity 자가 진단\
+    \ + Q+1 개선 Plan\n학생: <id> / 학기: 2026-Spring / 작성: 2026-05-XX\n\n## Phase A — 25\
+    \ cell maturity matrix\n[표]\n- Layer 별 합: nft N1 / Suricata N2 / ModSec N3 / Wazuh\
+    \ N4 / OpenCTI N5\n- Mechanism 별 합: Deploy / Monitor / Detect / Respond / Improve\n\
+    - **총합: X / 125**\n\n## Phase B — 약점 + Q+1 Plan 3개\n[Plan 3개 markdown]\n\n## Phase\
+    \ C — KG 등록 의향\n위 Plan 3개를 본인 KG 의 *Plan node* 로 등록하려면:\n  - bastion API: POST\
+    \ /api/graph/node {type: \"Plan\", title: \"...\", ...}\n  - derives_from edge\
+    \ → Strategy node\n  - 본 capstone 의 Plan 들이 *학기 학습 → 운영 도입* 의 첫걸음\n\n## 무결성\n\
+    sha256sum capstone.md > capstone.sha256\n```\n\n종료 정리: lab 변경 없음 (보고서 작성만).\n"
+  hint: 'Phase A: 5 layer × 5 mechanism = 25 cell. 1-5 점 자가 진단. 합계 / 125.
 
-    ## 상황 (학기 마지막 — 15주차)
+    Phase B: 최저 점수 영역 3개 → KG 9-tier 의 Plan 형식 (Strategy 연결 + Todo 분해 + KPI + timeline)
+    작성
 
-    ABC 핀테크 SOC 신규 분석가, 학기 마지막 주.
-    1~10 step 으로 *기말 종합 실기* — final 테이블 + Suricata 룰 + Wazuh + CTI 모두 연계까지
-    수행했다. 이제 마지막 임무 — *학기 학습 전체* 를 자가 평가하고 *다음 분기 개선 계획* 작성.
-
-    > 선임 (이번엔 평가자 + 멘토): "1~10 은 너의 *구축 능력* 검증이었어. 99번은 *진단 능력*.
-    >  본인 SOC 의 maturity 를 5 layer × 5 mechanism (deploy/monitor/detect/respond/improve)
-    >  = 25 cell 로 자가 진단해. 1점 (없음) ~ 5점 (완벽 자동화) 점수. 그 다음 약점 찾고 다음
-    >  분기 (Q+1) 개선 plan 3개 작성. 학기 동안 익힌 KG 9-tier (Mission/Vision/Goal/Strategy/
-    >  KPI/Plan/Todo/Playbook/Experience) 의 *Plan 단계* 작성하는 거야."
-
-    학습 목표 #4 (15주 학습 내재화) + 9-tier KG 의 Plan tier 활용 (학기 후 운영 도입의 첫걸음).
-
-    ## 임무 (3 단계, 약 40분)
-
-    ### Phase A — Maturity 25 cell 자가 진단 (15분)
-
-    5 layer × 5 mechanism 매트릭스. 본인 SOC 환경 기준 1-5 점.
-
-    **5 layer**: nft / Suricata / ModSec / Wazuh / OpenCTI
-    **5 mechanism**:
-      - **Deploy**: 솔루션 배포·기본 설정 완료도
-      - **Monitor**: 로그·alert·counter 실시간 가시성
-      - **Detect**: custom 룰·decoder·IoC 매칭 정확도
-      - **Respond**: AR / sync / exception / IR 절차 자동화
-      - **Improve**: FP/FN 회고·튜닝·정기 review
-
-    각 cell 점수 매기기 (1=없음 / 2=수동만 / 3=일부 자동 / 4=대부분 자동 / 5=완전 자동+검증):
-
-    | Layer \\ Mech | Deploy | Monitor | Detect | Respond | Improve |
-    |--------------|--------|---------|--------|---------|---------|
-    | nft          | ?      | ?       | ?      | ?       | ?       |
-    | Suricata     | ?      | ?       | ?      | ?       | ?       |
-    | ModSec       | ?      | ?       | ?      | ?       | ?       |
-    | Wazuh        | ?      | ?       | ?      | ?       | ?       |
-    | OpenCTI      | ?      | ?       | ?      | ?       | ?       |
-
-    *근거*: 학기 동안 작성한 verify 테이블, suricata-update, ModSec exception, Wazuh AR,
-    cti-sync 등으로 점수 산정. 각 cell 옆에 1줄 근거.
-
-    **합계 계산**:
-      - layer 별 합 (각 layer 의 5 mech 점수 합)
-      - mechanism 별 합 (각 mech 의 5 layer 점수 합)
-      - 총합 / 125 (25 × 5)
-
-    ### Phase B — 약점 분석 + 9-tier Plan 3개 작성 (15분)
-
-    Phase A 의 매트릭스에서 *최저 점수 layer 또는 mechanism* 식별. 보통:
-      - Improve 점이 낮음 (FP review 안 함)
-      - Respond 의 OpenCTI 또는 nft 영역 (자동화 미완)
-      - Detect 의 custom decoder/rule 부족
-
-    각 약점에 대해 *Plan* 작성 (KG 9-tier 의 Plan 단계 형식):
-
-    ```
-    ### Plan #1 — [약점 1 영역]
-    - **Strategy**: [상위 전략 인용] (예: "5 layer 모두 Improve 점수 4+ 도달")
-    - **derives_from**: [Goal 인용]
-    - **Plan 본문**:
-      - 분기: Q+1 (다음 분기)
-      - 책임: SOC team
-      - Todo: (Plan 분해)
-        - Todo A: 매주 ModSec audit log review 자동 보고
-        - Todo B: Suricata FP suppress 분기별 audit
-        - Todo C: ...
-    - **measures (KPI)**: FP 비율 < 5% / Improve 점수 5점 도달
-    - **timeline**: 12주 (3개월)
-    - **realizes**: Strategy "통합 보안 운영 효율화"
-    ```
-
-    Plan 3개 작성 (Phase A 의 최저 점수 영역 3개).
-
-    ### Phase C — capstone 보고서 + sha256 + KG 등록 안 (10분)
-
-    markdown 보고서 종합:
-
-    ```
-    # SOC Maturity 자가 진단 + Q+1 개선 Plan
-    학생: <id> / 학기: 2026-Spring / 작성: 2026-05-XX
-
-    ## Phase A — 25 cell maturity matrix
-    [표]
-    - Layer 별 합: nft N1 / Suricata N2 / ModSec N3 / Wazuh N4 / OpenCTI N5
-    - Mechanism 별 합: Deploy / Monitor / Detect / Respond / Improve
-    - **총합: X / 125**
-
-    ## Phase B — 약점 + Q+1 Plan 3개
-    [Plan 3개 markdown]
-
-    ## Phase C — KG 등록 의향
-    위 Plan 3개를 본인 KG 의 *Plan node* 로 등록하려면:
-      - bastion API: POST /api/graph/node {type: "Plan", title: "...", ...}
-      - derives_from edge → Strategy node
-      - 본 capstone 의 Plan 들이 *학기 학습 → 운영 도입* 의 첫걸음
-
-    ## 무결성
-    sha256sum capstone.md > capstone.sha256
-    ```
-
-    종료 정리: lab 변경 없음 (보고서 작성만).
-  hint: |
-    Phase A: 5 layer × 5 mechanism = 25 cell. 1-5 점 자가 진단. 합계 / 125.
-    Phase B: 최저 점수 영역 3개 → KG 9-tier 의 Plan 형식 (Strategy 연결 + Todo 분해 + KPI + timeline) 작성
     Phase C: capstone markdown + sha256 + KG 등록 의향
+
     포인트: 학기 동안 *구축* 했다면 99번은 *진단·개선 계획*. 9-tier KG 의 Plan 단계 활용.
+
     종료: lab 변경 없음.
+
+    '
   category: integration_scenario
   points: 100
   verify:
@@ -552,9 +540,12 @@ steps:
     expect: maturity
     field: stdout
     semantic:
-      intent: |
-        15주 학기 종합 capstone — 5 layer × 5 mechanism = 25 cell maturity 자가 진단 + Q+1 개선
+      intent: '15주 학기 종합 capstone — 5 layer × 5 mechanism = 25 cell maturity 자가 진단
+        + Q+1 개선
+
         Plan 3개 작성 (KG 9-tier 의 Plan tier 형식). 학기 학습 전체 내재화 + 운영 도입 의지.
+
+        '
       success_criteria:
       - Phase A — 25 cell matrix 작성 (각 cell 1-5 점 + 근거 1줄)
       - Phase A — layer 별 / mechanism 별 합계 + 총합 / 125
@@ -573,33 +564,14 @@ steps:
       - Plan 에 Strategy/Todo/KPI 누락 (단순 todo 만)
       - sha256 또는 KG 등록 의향 누락
   target_vm: bastion
-  answer: |
-    🤖 프롬프트: 학기 종합 capstone — maturity 자가 진단 + Q+1 Plan.
-
-    Phase A — 25 cell matrix:
-      5 layer (nft / Suricata / ModSec / Wazuh / OpenCTI) × 5 mechanism (Deploy/Monitor/Detect/Respond/Improve)
-      = 25 cell. 각 cell 1-5 점 + 근거 1줄. layer 합 / mechanism 합 / 총합 (X/125).
-
-    Phase B — Plan 3개:
-      최저 점수 영역 3개 → 각각 KG 9-tier 의 Plan 형식:
-      - Strategy 인용 + derives_from Goal
-      - Plan 본문 (분기/책임/Todo 분해)
-      - measures (KPI)
-      - timeline (12주)
-      - realizes Strategy
-
-    Phase C — capstone markdown + sha256sum + KG bastion API 등록 의향
-      (POST /api/graph/node {type:Plan, ...} + derives_from edge → Strategy).
-
-    종료: lab 변경 없음.
-  answer_detail: |
-    학기 마지막 — *구축 능력* (1~10) → *진단·개선 계획 능력* (99) 전환. 9-tier KG 의 Plan tier 활용 으로 학기 학습이 *운영 도입* 의 시작점이 됨.
-  risk_level: low
-  bastion_prompt: |
-    학기 종합 capstone. Phase A: 5 layer × 5 mech = 25 cell maturity matrix (1-5 점 + 근거).
-    Layer 합 / Mech 합 / 총합 (X/125). Phase B: 최저 점수 3개 영역 → KG 9-tier Plan 3개
-    (Strategy 인용 + Todo 분해 + KPI + timeline + realizes). Phase C: capstone markdown + sha256 +
-    KG bastion API 등록 의향. 종료 시 lab 변경 없음.
+  answer: "\U0001F916 프롬프트: 학기 종합 capstone — maturity 자가 진단 + Q+1 Plan.\n\nPhase A\
+    \ — 25 cell matrix:\n  5 layer (nft / Suricata / ModSec / Wazuh / OpenCTI) × 5\
+    \ mechanism (Deploy/Monitor/Detect/Respond/Improve)\n  = 25 cell. 각 cell 1-5 점\
+    \ + 근거 1줄. layer 합 / mechanism 합 / 총합 (X/125).\n\nPhase B — Plan 3개:\n  최저 점수\
+    \ 영역 3개 → 각각 KG 9-tier 의 Plan 형식:\n  - Strategy 인용 + derives_from Goal\n  - Plan\
+    \ 본문 (분기/책임/Todo 분해)\n  - measures (KPI)\n  - timeline (12주)\n  - realizes Strategy\n\
+    \nPhase C — capstone markdown + sha256sum + KG bastion API 등록 의향\n  (POST /api/graph/node\
+    \ {type:Plan, ...} + derives_from edge → Strategy).\n\n종료: lab 변경 없음.\n"
   answer_detail: ''
   risk_level: low
   bastion_prompt: 'secu/web/siem VM 전반에 대해 다음 작업들을 순서대로 수행해줘:

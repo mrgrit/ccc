@@ -972,3 +972,42 @@ dataset 통계: **2,070,923 signals × 365일 = 평균 5,673 events/일**.
 
 **학생 액션**: 본인 환경에서 *수집:룰:트리아지:사람 분석* 비율 측정 → dataset 의 funnel (10:1:0.1:0.02 %) 와 비교.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course5 SOC — Week 01 환경 점검)
+
+| 작업 | 도구 |
+|------|------|
+| SOC 환경 헬스 | systemctl / lnav / Prometheus + node_exporter |
+| 서비스 가용성 | nc -zv / curl --max-time / ss -tlnp |
+| 인벤토리 | ansible / facter / osquery |
+| 로그 위치 식별 | journalctl / find /var/log / ausearch (auditd) |
+| 자산 매핑 | osquery / Glpi (GUI 자산 관리) | 
+
+### 학생 환경 준비
+```bash
+# 모든 SOC VM 공통
+sudo apt install -y \
+  prometheus prometheus-node-exporter \
+  lnav multitail iotop \
+  osquery auditd
+```
+
+### 핵심 도구 사용
+```bash
+# osquery — SQL 형 자산 조회
+osqueryi "SELECT name,version FROM os_version;"
+osqueryi "SELECT * FROM listening_ports WHERE address='0.0.0.0';"
+osqueryi "SELECT * FROM users WHERE shell LIKE '%bash%';"
+osqueryi "SELECT * FROM processes WHERE name='wazuh-manager';"
+
+# auditd — 시스템 호출 감사
+sudo ausearch -k execve -ts today | head
+sudo aureport -au -i
+
+# lnav — 컬러 + 자동 SQL
+lnav /var/log/auth.log /var/log/syslog
+```
+
+학생은 본 1주차에서 **osquery + auditd + lnav** 의 3 도구로 SOC 환경 가시성을 확보한다.

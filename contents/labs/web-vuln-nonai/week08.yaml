@@ -13,8 +13,18 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: 대상 웹 서버({{WEB_IP}})에서 XML 입력을 받는 엔드포인트를 탐색하시오. JuiceShop(:3000)의 API
+  instruction: '대상 웹 서버({{WEB_IP}})에서 XML 입력을 받는 엔드포인트를 탐색하시오. JuiceShop(:3000)의 API
     엔드포인트 목록을 확인하라.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **XML endpoint 식별**: curl + Content-Type:application/xml / **Burp Repeater** +
+    CT 변경 / **nuclei -tags xxe** / OWASP ZAP XML scan / nikto
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
   hint: 'curl로 JuiceShop의 /api 경로에 접근하고, Content-Type: application/xml 헤더로 POST 요청을
     보내 XML 파싱 여부를 확인하세요.'
   category: recon
@@ -46,8 +56,18 @@ steps:
       - 파서 동작 확인 없음
   target_vm: attacker
 - order: 2
-  instruction: 기본 XXE 페이로드를 작성하여 /etc/hostname 파일을 읽어라. SYSTEM 키워드로 외부 엔티티를 선언하고 /tmp/xxe_basic.xml에
-    저장한 뒤 전송하라.
+  instruction: '기본 XXE 페이로드를 작성하여 /etc/hostname 파일을 읽어라. SYSTEM 키워드로 외부 엔티티를 선언하고
+    /tmp/xxe_basic.xml에 저장한 뒤 전송하라.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **기본 XXE**: 수동 DOCTYPE + ENTITY / **XXEinjector** (https://github.com/enjoiz/XXEinjector)
+    자동 / **PayloadsAllTheThings/XXE Injection/** / Burp XXE Generator extension
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
   hint: <?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/hostname">]><comment><text>&xxe;</text></comment>
     형태를 사용하세요.
   category: exploit
@@ -83,7 +103,17 @@ steps:
       - 엔티티 참조 없음
   target_vm: attacker
 - order: 3
-  instruction: XXE를 이용하여 /etc/passwd 파일을 읽으시오. 시스템 사용자 목록을 추출하라.
+  instruction: 'XXE를 이용하여 /etc/passwd 파일을 읽으시오. 시스템 사용자 목록을 추출하라.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **파일 read**: file:// SYSTEM / XXEinjector --enumports --file=/etc/passwd / **xxeftp
+    도구** (FTP-based) / Burp Active Scan
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
   hint: ENTITY 선언에서 file:///etc/passwd를 지정하고, 엔티티 참조(&xxe;)를 XML 요소 값에 넣으세요.
   category: exploit
   points: 12
@@ -115,8 +145,18 @@ steps:
       - 엔티티 확장 맥락 없음
   target_vm: attacker
 - order: 4
-  instruction: XXE를 이용한 SSRF(Server-Side Request Forgery) 공격을 수행하시오. 서버가 내부 네트워크의
+  instruction: 'XXE를 이용한 SSRF(Server-Side Request Forgery) 공격을 수행하시오. 서버가 내부 네트워크의
     localhost:8080(DVWA)에 접근할 수 있는지 확인하라.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **XXE→SSRF**: http://localhost SYSTEM / **gopher://** with XXE / **interactsh**
+    OOB 검증 / SSRFmap 결합
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
   hint: ENTITY SYSTEM 값을 file:// 대신 http://localhost:8080/ 으로 변경하세요.
   category: exploit
   points: 12
@@ -147,8 +187,18 @@ steps:
       - 단순 XXE
   target_vm: attacker
 - order: 5
-  instruction: PHP wrapper를 활용한 XXE로 서버의 PHP 소스코드를 Base64 인코딩하여 추출하시오. DVWA의 index.php
+  instruction: 'PHP wrapper를 활용한 XXE로 서버의 PHP 소스코드를 Base64 인코딩하여 추출하시오. DVWA의 index.php
     소스를 읽어라.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **PHP wrapper**: php://filter/convert.base64-encode/resource= / php://input /
+    **expect://** (PHP expect 모듈 RCE) / **phar://** deserialization
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
   hint: php://filter/convert.base64-encode/resource=/var/www/html/index.php 를 ENTITY
     SYSTEM 값으로 사용하세요.
   category: exploit
@@ -181,8 +231,18 @@ steps:
       - base64 누락
   target_vm: attacker
 - order: 6
-  instruction: Billion Laughs(XML Bomb) DoS 페이로드를 구성하여 /tmp/xxe_bomb.xml에 저장하시오. 실제
-    전송은 하지 말고 페이로드 구조만 작성하라.
+  instruction: 'Billion Laughs(XML Bomb) DoS 페이로드를 구성하여 /tmp/xxe_bomb.xml에 저장하시오.
+    실제 전송은 하지 말고 페이로드 구조만 작성하라.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **Billion Laughs DoS**: 중첩 엔티티 (lol1→lol9) / **xmlbomb 도구** / `lxml.etree.parse(huge_tree=False)`
+    방어 / Quadratic Blowup 변형
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
   hint: 엔티티를 중첩 참조하는 XML을 작성하세요. lol 엔티티가 lol2를 참조하고, lol2가 lol3를 참조하는 기하급수적 확장 구조입니다.
   category: exploit
   points: 10
@@ -216,8 +276,18 @@ steps:
       - 확장 맥락 없음
   target_vm: attacker
 - order: 7
-  instruction: Content-Type을 application/json에서 application/xml로 변경하여 XXE 공격 가능성을
+  instruction: 'Content-Type을 application/json에서 application/xml로 변경하여 XXE 공격 가능성을
     테스트하시오. JuiceShop 로그인 API의 JSON 요청을 XML로 변환하여 보내라.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **Content-Type 변경**: curl -H ''Content-Type:application/xml'' / Burp Match and
+    Replace JSON→XML / `Accept: application/xml` 헤더 / **OAS/Swagger fuzz**
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
   hint: '원래 JSON 요청 {"email":"test","password":"test"}를 <login><email>test</email><password>test</password></login>
     XML 형태로 변환하고 Content-Type: application/xml로 전송하세요.'
   category: exploit
@@ -252,8 +322,18 @@ steps:
       - 파서 전환 맥락 없음
   target_vm: attacker
 - order: 8
-  instruction: SVG 파일 업로드를 통한 XXE 공격을 시도하시오. SVG는 XML 기반이므로 DOCTYPE과 ENTITY를 포함할 수
-    있다. /etc/hostname을 읽는 악성 SVG를 작성하여 업로드하라.
+  instruction: 'SVG 파일 업로드를 통한 XXE 공격을 시도하시오. SVG는 XML 기반이므로 DOCTYPE과 ENTITY를 포함할
+    수 있다. /etc/hostname을 읽는 악성 SVG를 작성하여 업로드하라.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **SVG XXE**: SVG 파일 안 DOCTYPE / `<image xlink:href=''file:///etc/passwd''/>` /
+    **exiftool comment** / **ImageTragick CVE-2016-3714**
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
   hint: <?xml version="1.0"?><!DOCTYPE svg [<!ENTITY xxe SYSTEM "file:///etc/hostname">]><svg
     xmlns="http://www.w3.org/2000/svg"><text>&xxe;</text></svg> 를 /tmp/xxe.svg에 저장
     후 curl -F로 업로드하세요.
@@ -290,8 +370,18 @@ steps:
       - 업로드 맥락 없음
   target_vm: attacker
 - order: 9
-  instruction: ModSecurity WAF가 XXE 공격을 차단하는지 확인하시오. 같은 XXE 페이로드를 포트 80(WAF 적용)과 포트
-    3000(JuiceShop 직접)에 각각 보내서 응답 차이를 비교하라.
+  instruction: 'ModSecurity WAF가 XXE 공격을 차단하는지 확인하시오. 같은 XXE 페이로드를 포트 80(WAF 적용)과
+    포트 3000(JuiceShop 직접)에 각각 보내서 응답 차이를 비교하라.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **WAF 차단 검증**: ModSecurity OWASP CRS rule 920180 / wafw00f / curl 80 vs 3000 비교
+    / OWASP CRS XXE Cheatsheet
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
   hint: curl로 같은 DOCTYPE/ENTITY 페이로드를 포트 80과 3000에 전송하여 403 vs 200 응답 차이를 확인하세요.
   category: defense
   points: 10
@@ -328,8 +418,18 @@ steps:
       - WAF 효과 맥락 없음
   target_vm: attacker
 - order: 10
-  instruction: XXE 취약점 진단 결과를 정리하시오. 테스트한 페이로드 유형(기본 XXE, SSRF, XML Bomb, SVG)과 성공/실패
+  instruction: 'XXE 취약점 진단 결과를 정리하시오. 테스트한 페이로드 유형(기본 XXE, SSRF, XML Bomb, SVG)과 성공/실패
     여부, WAF 차단 여부를 보고서로 작성하라.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **보고서**: 페이로드 카탈로그 (basic/SSRF/PHP wrapper/DoS/SVG) / DefectDojo Finding / OWASP
+    A05 매핑 / CVSS v3.1 / sha256 무결성
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
   hint: echo 명령으로 구조화된 보고서를 /tmp/xxe_report.txt에 작성하세요.
   category: reporting
   points: 8
@@ -399,55 +499,98 @@ steps:
       - WAF만 의존
   target_vm: attacker
 - order: 99
-  instruction: |
-    [복합 시나리오 — 중간고사] "JuiceShop 종합 점검 + XXE 검증 + 위험도 보고서"
+  instruction: '[복합 시나리오 — 중간고사] "JuiceShop 종합 점검 + XXE 검증 + 위험도 보고서"
 
-    ## 상황 (w02-w07 → w08 중간고사)
 
-    > 선배: "중간고사 주차야. w02-w07 학습한 SQLi·XSS·CSRF·인증·업로드·신뢰경계 도구 다 쓰는 거고,
-    > 추가로 XXE 신규 점검까지. 각 영역 핵심 결과 + XXE 4페이로드 + Critical/High/Med/Low 위험도 보고서.
-    > CVSS 기반으로 정렬해."
+    ■ 상황 (w02-w07 → w08 중간고사)
+
+
+    ※ 선배: "중간고사 주차야. w02-w07 학습한 SQLi·XSS·CSRF·인증·업로드·신뢰경계 도구 다 쓰는 거고,
+
+    ※ 추가로 XXE 신규 점검까지. 각 영역 핵심 결과 + XXE 4페이로드 + Critical/High/Med/Low 위험도 보고서.
+
+    ※ CVSS 기반으로 정렬해."
+
 
     학습 목표 (lecture 종합 + OWASP Testing Guide) + (lab #2·#4·#6·#8 XXE 4 페이로드) 통합.
 
-    ## 임무 (3 단계, 약 40분)
+
+    ■ 임무 (3 단계, 약 40분)
+
 
     Non-AI 트랙: ssh ccc@10.20.30.201 (attacker VM) 직접 실행.
 
-    ### Phase A — w02-w07 통합 점검 요약표
-    ```
-    | 주차 | 영역 | 핵심 결과 | OWASP |
-    | w02 | 도구 비교 | sqlmap < curl 정확도 | A03 |
-    | w03 | 헤더 정찰 | CSP 미설정 → XSS 가능 | A05 |
-    | w04 | 인증 | JWT-Header → CSRF X | A07 |
-    | w05 | 입력 검증 | SQLi+Upload allowlist | A03 |
-    | w06 | JWT chain | alg=none / XSS+JWT 결합 | A02 |
-    | w07 | 신뢰 경계 | Path/SSRF 매트릭스 | A10 |
+
+    ▶ Phase A — w02-w07 통합 점검 요약표
+
     ```
 
-    ### Phase B — XXE 4 페이로드 PoC
+    | 주차 | 영역 | 핵심 결과 | OWASP |
+
+    | w02 | 도구 비교 | sqlmap < curl 정확도 | A03 |
+
+    | w03 | 헤더 정찰 | CSP 미설정 → XSS 가능 | A05 |
+
+    | w04 | 인증 | JWT-Header → CSRF X | A07 |
+
+    | w05 | 입력 검증 | SQLi+Upload allowlist | A03 |
+
+    | w06 | JWT chain | alg=none / XSS+JWT 결합 | A02 |
+
+    | w07 | 신뢰 경계 | Path/SSRF 매트릭스 | A10 |
+
+    ```
+
+
+    ▶ Phase B — XXE 4 페이로드 PoC
+
     1) Classic: heredoc 으로 `/tmp/xxe_basic.xml` 저장 (`<!ENTITY x SYSTEM "file:///etc/hostname">`).
+
     2) SSRF chain: `<!ENTITY x SYSTEM "http://127.0.0.1:8080/">`.
+
     3) XML Bomb: lol 9중 페이로드 (`/tmp/xxe_bomb.xml`, *전송 X*).
+
     4) SVG-XXE: `<svg ...><!ENTITY x SYSTEM "file:///etc/hostname">&x;</svg>`.
 
-    ### Phase C — Critical/High/Med/Low 4단계 위험도 보고서
+
+    ▶ Phase C — Critical/High/Med/Low 4단계 위험도 보고서
+
     ```
+
     | 위험도 | 취약점 | CVSS | 즉시 조치 |
+
     | Critical | XXE 외부 entity | 9.8 | DOCTYPE 비활성화 |
-    | High | XSS (CSP 미설정) | 8.2 | CSP default-src 'self' |
+
+    | High | XSS (CSP 미설정) | 8.2 | CSP default-src ''self'' |
+
     | High | SQLi (검색) | 8.0 | Prepared Statement |
+
     | Medium | 보안 헤더 누락 5종 | 5.5 | Secure Headers Project |
+
     | Low | 사용자 enum | 3.7 | rate limit + 응답 통일 |
+
     ```
+
     표 끝 "JuiceShop 종합: Critical 1 + High 2 + Med 1 + Low 1. 즉시 조치 후 재점검 권고." 한 줄.
 
-    종료: echo "=== Phase A 요약표 ===" / "=== Phase B XXE ===" / "=== Phase C 위험도 ===" 묶음.
-  hint: |
-    Phase A: w02-w07 결과 1줄 + OWASP A0X 매핑.
+
+    종료: echo "=== Phase A 요약표 ===" / "=== Phase B XXE ===" / "=== Phase C 위험도 ==="
+    묶음.
+
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `integration_scenario` 에 적합한 도구: 여러 도구 chain —
+    정찰 (whatweb/nmap) → 식별 (sqlmap/xsstrike) → 후속 작업. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로
+    답변에 직접 quote** 해야 채점 통과.'
+  hint: 'Phase A: w02-w07 결과 1줄 + OWASP A0X 매핑.
+
     Phase B: 4 페이로드 파일 저장 + cat. XML Bomb 절대 전송 X.
+
     Phase C: CVSS 점수 + 즉시 조치 1줄.
+
     포인트: 중간고사 — 전 주차 도구 활용 + XXE 신규 + 위험도 분류.
+
+    '
   category: integration_scenario
   points: 50
   verify:
@@ -455,9 +598,11 @@ steps:
     expect: 위험도
     field: stdout
     semantic:
-      intent: |
-        중간고사 종합 — w02-w07 영역별 요약 + XXE 4 페이로드 PoC + 4단계 위험도 보고서.
+      intent: '중간고사 종합 — w02-w07 영역별 요약 + XXE 4 페이로드 PoC + 4단계 위험도 보고서.
+
         OWASP Testing Guide + CVSS 기반.
+
+        '
       success_criteria:
       - Phase A — w02-w07 6주차 영역별 요약표
       - Phase B — XXE 4 페이로드 (Classic / SSRF / XML Bomb / SVG)
@@ -474,6 +619,9 @@ steps:
       - CVSS 누락
   target_vm: attacker
   risk_level: low
-  answer_detail: |
-    학생이 ssh attacker 직접. 실제 XXE 차단 시 페이로드 작성 자체가 학습. XML Bomb 절대 전송 X.
+  answer_detail: '학생이 ssh attacker 직접. 실제 XXE 차단 시 페이로드 작성 자체가 학습. XML Bomb 절대 전송
+    X.
+
     JuiceShop 의 libxml DOCTYPE 비활성화가 기본 — 그게 정상.
+
+    '

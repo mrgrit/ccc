@@ -496,20 +496,20 @@ steps:
   instruction: |
     [복합 시나리오] "CISA 위협 헌팅 분석가 — KQL/SPL Threat Hunt 7 query"
 
-    ## 상황 — 24h 내 KQL+SPL hunt pack 작성
+    ■ 상황 — 24h 내 KQL+SPL hunt pack 작성
 
     KISA-CERT 위협 헌팅 분석가. 협력사 SOC 가 SSRF/XXE/SSTI 의심. 30일 retrospective hunt 7 시그니처.
 
-    > [협력사 IR head] "alert 만 받지 말고 retrospective. SSRF / XXE / SSTI / Race / cloud meta /
-    > Deserialize / WAF 우회 7 시그니처. KQL + SPL 양식."
+    ※ [협력사 IR head] "alert 만 받지 말고 retrospective. SSRF / XXE / SSTI / Race / cloud meta /
+    ※ Deserialize / WAF 우회 7 시그니처. KQL + SPL 양식."
 
     학습 목표 (lecture w04 SSRF/XXE/Deserialize/Race/SSTI) + (lab #1·#3·#4·#8·#10·#12·#13) 통합.
 
-    ## 산출물 — 7 재현 + 7 hunt query + 요약표
+    ■ 산출물 — 7 재현 + 7 hunt query + 요약표
 
     Non-AI 트랙: ssh ccc@10.20.30.201 (attacker VM) 직접 실행.
 
-    ### Hunt 1 — SSRF localhost (T1190)
+    ▶ Hunt 1 — SSRF localhost (T1190)
     `curl -s "http://10.20.30.80:3000/redirect?to=http://127.0.0.1:22" -o /dev/null -w "%{http_code}\n"`
     KQL:
     ```
@@ -522,7 +522,7 @@ steps:
     | where Count > 5
     ```
 
-    ### Hunt 2 — Cloud metadata (T1552.005)
+    ▶ Hunt 2 — Cloud metadata (T1552.005)
     `curl -s "http://10.20.30.80:3000/redirect?to=http://169.254.169.254/latest/meta-data/" -o /dev/null -w "%{http_code}\n"`
     KQL:
     ```
@@ -531,7 +531,7 @@ steps:
     | summarize Count=count() by ClientIP, Url, ResultCode
     ```
 
-    ### Hunt 3 — XXE (T1059)
+    ▶ Hunt 3 — XXE (T1059)
     `cat <<'EOF' > /tmp/xxe_test.xml
     <?xml version="1.0"?><!DOCTYPE r [<!ENTITY x SYSTEM "file:///etc/hostname">]><r>&x;</r>
     EOF
@@ -543,7 +543,7 @@ steps:
     | where RequestBody has_any ("<!ENTITY", "SYSTEM \"file://", "SYSTEM \"http://")
     ```
 
-    ### Hunt 4 — SSTI (T1059)
+    ▶ Hunt 4 — SSTI (T1059)
     `curl -s "http://10.20.30.80:3000/?q={{7*7}}" -o /dev/null -w "%{http_code}\n"`
     SPL:
     ```
@@ -553,7 +553,7 @@ steps:
     | stats count by clientip, input
     ```
 
-    ### Hunt 5 — Deserialize (T1059)
+    ▶ Hunt 5 — Deserialize (T1059)
     `curl -s -X POST -H "Content-Type: application/json" -d '{"__proto__":{"role":"admin"}}' http://10.20.30.80:3000/api/Users/ -o /dev/null -w "%{http_code}\n"`
     KQL:
     ```
@@ -562,7 +562,7 @@ steps:
     | summarize Count=count() by ClientIP
     ```
 
-    ### Hunt 6 — Race (T1212)
+    ▶ Hunt 6 — Race (T1212)
     `for i in 1 2 3 4 5; do curl -s -X POST -H "Content-Type: application/json" -d '{"email":"admin@juice-sh.op","password":"admin123"}' http://10.20.30.80:3000/rest/user/login -o /dev/null -w "$(date +%s%N) %{http_code}\n" & done; wait`
     SPL:
     ```
@@ -572,7 +572,7 @@ steps:
     | where count > 3 AND uri="*/login*"
     ```
 
-    ### Hunt 7 — WAF 우회 (T1027)
+    ▶ Hunt 7 — WAF 우회 (T1027)
     `curl -s -G "http://10.20.30.80:3000/rest/products/search" --data-urlencode "q=' Or 1=1--" -o /dev/null -w "%{http_code}\n"`
     KQL:
     ```
@@ -581,7 +581,7 @@ steps:
     | summarize Count=count() by ClientIP, Url
     ```
 
-    ## 요약표
+    ■ 요약표
     | Hunt | T-ID | Platform | FP | Action |
     | 1 SSRF local | T1190 | KQL+SPL | 헬스체크 | block IP |
     | 2 Cloud meta | T1552.005 | KQL | 없음 | egress allowlist |

@@ -654,3 +654,153 @@ graph TB
 
 **학생 액션**: lab 에서 단일 KG vs 분산 KG 비용 비교.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course9 — Week 13 평가 체계)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | ATT&CK Navigator | **MITRE ATT&CK Navigator** |
+| s2 | DeTT&CT | **DeTT&CT** (Rabobank) |
+| s3 | OWASP DevSecOps Maturity | OWASP DSOMM |
+| s4 | SOC-CMM | SOC-CMM 모델 |
+| s5 | Atomic coverage 측정 | Atomic Red Team + 자체 |
+| s6 | Sigma coverage | Sigma + sigma-cli analyze |
+| s7 | KPI dashboard | Grafana + Prometheus |
+| s8 | 종합 평가 보고서 | pandoc + Mermaid |
+
+### 학생 환경 준비
+
+```bash
+# DeTT&CT
+git clone https://github.com/rabobank-cdc/DeTTECT ~/dettect
+cd ~/dettect && pip install -r requirements.txt
+
+# ATT&CK Navigator
+git clone https://github.com/mitre/attack-navigator ~/navigator
+cd ~/navigator && npm install
+
+# OWASP DSOMM
+git clone https://github.com/wurstbrot/DevSecOps-MaturityModel.git ~/dsomm
+```
+
+### 핵심 — DeTT&CT (Detect Tactics Techniques & Combat Threats)
+
+```bash
+# 1) Web editor 시작
+python3 ~/dettect/dettect.py editor
+# → http://localhost:8080
+
+# 2) Data Source mapping (어떤 로그/시그널 가능?)
+# - process_creation
+# - command_line
+# - authentication_log
+# - network_traffic
+# - file_modification
+
+# 3) Visibility scoring (각 ATT&CK technique 별 가시성)
+# 0: No visibility
+# 1: Some indicators
+# 2: Most indicators
+# 3: Comprehensive
+
+# 4) Detection rules mapping
+# - 어떤 detection 룰이 어떤 technique 를 cover?
+# - 정확도/오탐률
+
+# 5) 결과 export → ATT&CK Navigator JSON
+python3 ~/dettect/dettect.py d -fd /opt/data-sources.yaml \
+    --output-filename /tmp/dataSourceMatrix.json
+
+python3 ~/dettect/dettect.py de -ft /opt/techniques.yaml \
+    --output-filename /tmp/techniqueMatrix.json
+```
+
+### ATT&CK Navigator (시각화)
+
+```bash
+# Local navigator
+cd ~/navigator
+npm run start                                         # http://localhost:4200
+
+# DeTT&CT JSON import
+# - 메뉴 → "Open" → /tmp/dataSourceMatrix.json
+# - heatmap 으로 coverage 시각화
+# - Red: no coverage / Yellow: partial / Green: full
+
+# Layered view (여러 layer 비교)
+# - "ATT&CK Coverage from Wazuh"
+# - "ATT&CK Coverage from Suricata"
+# - "Combined coverage"
+```
+
+### KPI 자동 측정 (Prometheus + Grafana)
+
+```python
+# /opt/security-metrics/exporter.py
+from prometheus_client import start_http_server, Gauge, Counter
+import time, requests
+
+# Gauge 정의
+mttd_gauge = Gauge('soc_mttd_seconds', 'Mean Time To Detect')
+mttr_gauge = Gauge('soc_mttr_seconds', 'Mean Time To Respond')
+attack_coverage = Gauge('attack_coverage_percent', 'ATT&CK Coverage', ['layer'])
+fp_rate = Gauge('false_positive_rate', 'False Positive Rate')
+auto_resolve_rate = Gauge('auto_resolve_rate', 'Auto-resolved %')
+
+def update_metrics():
+    while True:
+        # MTTD 계산 (Wazuh + TheHive)
+        cases = requests.get("http://thehive:9000/api/case", auth=("user","pass")).json()
+        detect_times = [c['createdAt'] - c['attackStartTime'] for c in cases]
+        mttd_gauge.set(sum(detect_times) / len(detect_times) if detect_times else 0)
+        
+        # ATT&CK coverage (DeTT&CT JSON 읽기)
+        with open('/tmp/dataSourceMatrix.json') as f:
+            data = json.load(f)
+        covered = sum(1 for t in data['techniques'] if t['score'] >= 2)
+        total = len(data['techniques'])
+        attack_coverage.labels(layer="data_source").set(covered / total * 100)
+        
+        # FP rate
+        ...
+        
+        time.sleep(60)
+
+if __name__ == "__main__":
+    start_http_server(9091)
+    update_metrics()
+```
+
+```yaml
+# Grafana dashboard panel
+- title: SOC KPI
+  panels:
+    - title: MTTD
+      query: soc_mttd_seconds
+      target: < 300
+    - title: MTTR
+      query: soc_mttr_seconds
+      target: < 600
+    - title: ATT&CK Coverage
+      query: attack_coverage_percent{layer="data_source"}
+      target: > 80
+    - title: False Positive Rate
+      query: false_positive_rate
+      target: < 0.05
+```
+
+### SOC 성숙도 평가 (SOC-CMM)
+
+| 성숙도 | 특징 | 도구 |
+|--------|------|------|
+| Level 1 (Initial) | Ad-hoc, 사람 의존 | 수동 점검 |
+| Level 2 (Managed) | 절차 정형화 | TheHive + Wazuh |
+| Level 3 (Defined) | 표준 룰셋 | Sigma + Wazuh + Suricata |
+| Level 4 (Managed) | KPI 측정 | + DeTT&CT + Grafana |
+| Level 5 (Optimizing) | 자율 학습 | + RL agent + MLflow |
+
+학생은 본 13주차에서 **DeTT&CT + ATT&CK Navigator + DSOMM + SOC-CMM + Prometheus** 5 도구로 평가 체계의 5 차원 (coverage / KPI / 성숙도 / 효과성 / 비용) 자동 측정 사이클을 익힌다.

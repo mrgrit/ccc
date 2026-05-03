@@ -519,3 +519,117 @@ graph TB
 2. **자신만의 evidence chain 1개를 작성하라** — 가공의 침해 시나리오를 1개 만들고, 6단계 (Recon → Image → Runtime → Lateral → Exfil → Anti-forensic) 마다 dataset 의 어느 신호로 검증할지 적어보기.
 3. **5개 설계 결정의 임계값을 정량 근거로 정당화하라** — IAM TTL, audit retention, egress allow list, cap_drop, log RBAC 의 5가지 결정 각각에 대해 "왜 이 숫자인가" 를 한 줄씩 답할 수 있는지 자가 점검.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course6 Cloud-Container — Week 15 종합 평가)
+
+본 15주차는 1-14주차의 모든 OSS 도구를 통합 운영하는 종합 평가.
+
+### 통합 도구 매트릭스 (Cloud-Container 전 영역)
+
+| Layer | 핵심 OSS 도구 |
+|-------|--------------|
+| Build | Trivy · hadolint · dockle · dive · Semgrep · gitleaks · Snyk |
+| Push | cosign · syft (SBOM) · Harbor (registry) |
+| Deploy | Argo CD · Flux CD · Helm |
+| Admission | OPA Gatekeeper · Kyverno · Datree |
+| Network | Cilium · Calico · Istio · NetworkPolicy |
+| IAM | Keycloak · OPA · Vault · ESO · Sealed Secrets |
+| Storage | Velero · Longhorn · Rook · SOPS · age |
+| Runtime | Falco · Tracee · Tetragon · Pixie |
+| Compliance | kubescape · kube-bench · Polaris · Trivy k8s |
+| Monitoring | Prometheus · Grafana · Loki · Jaeger · OpenTelemetry |
+| IR | Velociraptor · TheHive · CRIU · Volatility · Wazuh AR |
+| CI/CD | Gitlab CE · Argo CD · checkov · OWASP ZAP |
+| Cloud | Prowler · scout-suite · Steampipe · CloudCustodian · LocalStack |
+
+### 종합 평가 시나리오
+
+```bash
+#!/bin/bash
+# /usr/local/bin/cloud-container-master-audit.sh
+TS=$(date +%Y%m%d-%H%M)
+DIR=/var/log/cc-audit/$TS
+mkdir -p $DIR
+
+# === Phase 1: 호스트 보안 ===
+sudo lynis audit system > $DIR/01-lynis.txt
+sudo sh ~/docker-bench/docker-bench-security.sh > $DIR/02-docker-bench.txt
+
+# === Phase 2: 이미지 점검 ===
+for img in $(docker images --format "{{.Repository}}:{{.Tag}}"); do
+  trivy image --severity HIGH,CRITICAL $img --format json -o $DIR/03-trivy-$img.json
+  syft $img -o spdx-json > $DIR/04-sbom-$img.json
+done
+
+# === Phase 3: K8s 컴플라이언스 ===
+kubescape scan framework allcontrols --format json --output $DIR/05-kubescape.json
+kube-bench run --targets master,node > $DIR/06-cis.txt
+trivy k8s --report all cluster -o $DIR/07-trivy-k8s.json
+polaris audit --cluster --format=json > $DIR/08-polaris.json
+
+# === Phase 4: 네트워크 정책 ===
+kubectl get networkpolicy --all-namespaces -o json > $DIR/09-netpol.json
+cilium policy get > $DIR/10-cilium.txt
+
+# === Phase 5: IAM ===
+rakkess > $DIR/11-rbac.txt
+kubectl get clusterrolebindings -o json > $DIR/12-crb.json
+
+# === Phase 6: 런타임 ===
+sudo journalctl -u falco --since "1 day ago" --output json > $DIR/13-falco.json
+
+# === Phase 7: 모니터링 메트릭 ===
+curl -s http://prometheus:9090/api/v1/query?query=up > $DIR/14-prometheus.json
+curl -s http://grafana:3000/api/dashboards/uid/k8s > $DIR/15-grafana.json
+
+# === Phase 8: IR 준비도 ===
+velero backup get > $DIR/16-backup.txt
+restic snapshots > $DIR/17-restic.txt
+
+# === Phase 9: 종합 보고서 ===
+cat > $DIR/00-master-report.md << EOF
+# Cloud-Container 종합 평가 보고서
+- 점검 일시: $(date)
+
+## 요약
+- Trivy CRITICAL CVE: $(jq '.Results[].Vulnerabilities | map(select(.Severity=="CRITICAL"))' $DIR/03-trivy-*.json 2>/dev/null | wc -l)
+- kubescape compliance: $(jq '.summaryDetails.frameworks[].complianceScore' $DIR/05-kubescape.json 2>/dev/null | head)
+- CIS K8s FAIL: $(grep -c '\[FAIL\]' $DIR/06-cis.txt)
+- NetworkPolicy 수: $(jq '.items | length' $DIR/09-netpol.json)
+- Falco alert (24h): $(jq '. | length' $DIR/13-falco.json 2>/dev/null)
+- 백업 최근: $(restic snapshots --last 1 | tail -1)
+EOF
+
+pandoc $DIR/00-master-report.md -o $DIR/master.pdf
+
+echo "=== 종합 평가 완료 — $DIR ==="
+```
+
+### 평가 기준
+
+| 등급 | Trivy CRITICAL | kubescape | CIS Pass | NetPol | Compliance |
+|------|---------------|-----------|----------|--------|-----------|
+| A | 0 | > 90% | > 95% | 모든 ns | 4+ 표준 |
+| B | < 5 | > 80% | > 85% | 모든 ns | 3 표준 |
+| C | < 20 | > 60% | > 70% | 일부 | 2 표준 |
+| F | ≥ 20 | < 60% | < 70% | 없음 | 1 표준 이하 |
+
+### Cloud-Container 운영 4 단계 (학생 목표)
+
+```
+1. Build-time (shift-left)
+   - Trivy + hadolint + Semgrep + gitleaks
+   
+2. Deploy-time (admission)
+   - cosign verify + OPA + Kyverno
+   
+3. Run-time (지속 모니터링)
+   - Falco + Prometheus + Loki + Jaeger
+   
+4. Compliance (분기 점검)
+   - kubescape + kube-bench + 보고서 자동
+```
+
+학생은 본 15주차 종합 평가에서 **OSS 50+ 도구 통합 운용** 으로 Cloud-Container 보안 4 단계 사이클을 직접 구축·운영·평가한다.

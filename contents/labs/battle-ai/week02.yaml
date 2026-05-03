@@ -258,7 +258,12 @@ steps:
   risk_level: low
   bastion_prompt: '[BLUE] Suricata에서 취약점 스캐닝 관련 알림을 확인해줘'
 - order: 7
-  instruction: '[BLUE] web 서버의 Apache access.log에서 스캐닝 흔적을 분석하라.'
+  instruction: '[BLUE] web 서버의 Apache access.log에서 스캐닝 흔적을 분석하라.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/battle-ai-week02/7/access.log 사전 주입.
+    `grep -E ''sqli|xss|\.\./|admin'' /home/ccc/cyber-range/fixtures/battle-ai-week02/7/access.log`
+    후 (1) 빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: HTTP 상태 코드별 요청 건수를 집계한다.
   category: defense
   points: 10
@@ -296,10 +301,32 @@ steps:
   script: awk '{print $9}' /var/log/apache2/access.log 2>/dev/null | sort | uniq -c
     | sort -rn | head -10
   risk_level: low
-  bastion_prompt: '[BLUE] web 서버의 Apache access.log에서 스캐닝 흔적을 분석해줘'
+  bastion_prompt: '[BLUE] web 서버의 Apache access.log에서 스캐닝 흔적을 분석해줘
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/battle-ai-week02/7/access.log 사전 주입.
+    `grep -E ''sqli|xss|\.\./|admin'' /home/ccc/cyber-range/fixtures/battle-ai-week02/7/access.log`
+    후 (1)빈도·패턴 (2)MITRE (3)방어 3섹션. raw dump 금지.'
+  fixtures:
+  - generator: web_access
+    target_vm: web
+    path: /home/ccc/cyber-range/fixtures/battle-ai-week02/7/access.log
+    params:
+      seed: 42
+      duration_days: 7
+      scanner_bursts: 5
+      sqli_attempts: 12
+      xss_attempts: 8
+    mode: overwrite
+    cleanup: false
 - order: 8
   instruction: '[BLUE] secu에서 공격자 IP({{ATTACKER_IP}})의 스캔 트래픽 빈도를 확인하고, 과도한 스캔 시 nftables로
-    rate limiting을 적용하라.'
+    rate limiting을 적용하라.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/battle-ai-week02/8/syslog 사전 주입. `grep
+    -E ''DROP|REJECT|filter'' /home/ccc/cyber-range/fixtures/battle-ai-week02/8/syslog`
+    후 (1) 빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: nft add rule로 rate limiting을 설정한다.
   category: defense
   points: 10
@@ -338,7 +365,24 @@ steps:
     state new limit rate over 30/minute drop && nft list ruleset | grep '10.20.30.201'
   risk_level: low
   bastion_prompt: '[BLUE] secu에서 공격자 IP(10.20.30.201)의 스캔 트래픽 빈도를 확인하고, 과도한 스캔 시 nftables로
-    rate limiting을 적용해줘'
+    rate limiting을 적용해줘
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/battle-ai-week02/8/syslog 사전 주입. `grep
+    -E ''DROP|REJECT|filter'' /home/ccc/cyber-range/fixtures/battle-ai-week02/8/syslog`
+    후 (1)빈도·패턴 (2)MITRE (3)방어 3섹션. raw dump 금지.'
+  fixtures:
+  - generator: firewall_log
+    target_vm: secu
+    path: /home/ccc/cyber-range/fixtures/battle-ai-week02/8/syslog
+    params:
+      seed: 42
+      duration_days: 7
+      scan_bursts: 5
+      egress_violations: 20
+      syn_flood_count: 200
+    mode: overwrite
+    cleanup: false
 - order: 9
   instruction: '[RED] Nikto 스캔 결과를 파일로 저장하라.'
   hint: nikto -o 옵션으로 출력 파일을 지정한다.

@@ -613,3 +613,198 @@ Master/Sub 분리로 *처리 시간 3배 단축* + *실패 격리*. dataset 13K 
 
 **학생 액션**: lab 에서 Master/SubAgent 구조로 dataset 100건 처리 — 단일 에이전트 대비 시간 측정.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course9 — Week 04 자가 치유)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | Wazuh AR (Active Response) | Wazuh built-in |
+| s2 | Ansible playbook 자동 | **Ansible** + ansible-runner |
+| s3 | Salt-Stack 비교 | **Salt** |
+| s4 | Falco actions | Falco + falcosidekick |
+| s5 | Kubernetes operator | **kubebuilder** / Operator SDK |
+| s6 | RL 정책 (action 선택) | sb3 PPO (week01 재사용) |
+| s7 | OPA 정책 게이트 | **OPA** Rego |
+| s8 | 통합 IR | Shuffle workflow |
+
+### 학생 환경 준비
+
+```bash
+sudo apt install -y ansible salt-master
+pip install ansible-runner
+
+# Wazuh AR 활성
+sudo systemctl status wazuh-manager
+
+# Falco + falcosidekick
+helm install falco falcosecurity/falco \
+    --set falcosidekick.enabled=true \
+    --set falcosidekick.config.webhook.address=http://shuffle:3001/webhook
+
+# OPA
+curl -L -o opa https://openpolicyagent.org/downloads/v0.62.0/opa_linux_amd64_static
+chmod +x opa && sudo mv opa /usr/local/bin/
+```
+
+### 핵심 — Wazuh AR + Ansible 통합
+
+```bash
+# 1) Wazuh AR 스크립트 작성
+sudo tee /var/ossec/active-response/bin/auto-heal.sh > /dev/null << 'EOF'
+#!/bin/bash
+THREAT_TYPE=$3
+SRC_IP=$4
+USER=$5
+SEVERITY=$6
+
+LOG=/var/ossec/logs/active-response.log
+echo "$(date) [$THREAT_TYPE] $SRC_IP $USER $SEVERITY" >> $LOG
+
+case $THREAT_TYPE in
+  ssh-brute)
+    ansible-playbook -i /etc/ansible/hosts \
+      /etc/ansible/playbooks/block-ip.yml \
+      -e "ip=$SRC_IP severity=$SEVERITY"
+    ;;
+  malware-detected)
+    ansible-playbook -i /etc/ansible/hosts \
+      /etc/ansible/playbooks/quarantine-host.yml \
+      -e "host=$SRC_IP"
+    ;;
+  data-exfil)
+    ansible-playbook -i /etc/ansible/hosts \
+      /etc/ansible/playbooks/network-isolate.yml \
+      -e "host=$SRC_IP"
+    ;;
+  privesc)
+    ansible-playbook -i /etc/ansible/hosts \
+      /etc/ansible/playbooks/lock-account.yml \
+      -e "user=$USER"
+    ;;
+esac
+EOF
+sudo chmod +x /var/ossec/active-response/bin/auto-heal.sh
+
+# 2) Wazuh ossec.conf 등록
+# <command><name>auto-heal</name><executable>auto-heal.sh</executable></command>
+# <active-response><command>auto-heal</command><location>local</location><level>10</level></active-response>
+```
+
+### Ansible playbook 예 — block-ip.yml
+
+```yaml
+- hosts: firewall
+  become: yes
+  tasks:
+    - name: Add IP to nft blocked set
+      command: |
+        nft add element inet filter blocked '{ {{ ip }} }'
+    
+    - name: Notify Slack
+      uri:
+        url: "{{ slack_webhook }}"
+        method: POST
+        body_format: json
+        body: |
+          {"text": "🛡 Auto-blocked {{ ip }} (severity: {{ severity }})"}
+    
+    - name: Create TheHive case (if severity >= 12)
+      uri:
+        url: "http://thehive:9000/api/case"
+        method: POST
+        headers: { Authorization: "Bearer {{ thehive_token }}" }
+        body_format: json
+        body: |
+          {"title":"Auto-block {{ ip }}","severity":3,"tlp":2,"description":"Wazuh auto-response"}
+      when: severity | int >= 12
+    
+    - name: Schedule auto-unblock after 24h
+      cron:
+        name: "unblock {{ ip }}"
+        special_time: hourly
+        job: |
+          if [ $(date +%s) -gt {{ block_until }} ]; then
+            nft delete element inet filter blocked '{ {{ ip }} }'
+            crontab -l | grep -v "unblock {{ ip }}" | crontab -
+          fi
+```
+
+### OPA 정책 (자동 시정 결정)
+
+```rego
+package security.auto_response
+
+default allow = false
+
+# 자동 차단 결정
+auto_block {
+    input.alert.severity >= 10
+    input.alert.confidence >= 0.9
+    input.source.reputation < 0.3       # 외부 reputation
+    not input.source.in_whitelist
+}
+
+# 격리 결정
+quarantine {
+    input.alert.type in ["malware", "ransomware", "rootkit"]
+    input.host.criticality != "critical"  # production 호스트는 수동
+}
+
+# Manual review (자동 안 함)
+manual_review { not auto_block }
+manual_review { not quarantine }
+```
+
+```bash
+# 정책 평가
+opa eval -d /etc/opa/auto_response.rego \
+    --input '{
+        "alert": {"severity": 12, "confidence": 0.95, "type": "ssh-brute"},
+        "source": {"reputation": 0.1, "in_whitelist": false}
+    }' \
+    "data.security.auto_response.auto_block"
+# → true
+```
+
+### Falco + Kubernetes Operator (자동 격리)
+
+```yaml
+# falcosidekick → custom webhook → K8s 자동 격리
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: pod-quarantine-operator}
+spec:
+  template:
+    spec:
+      containers:
+        - name: operator
+          image: myorg/quarantine-operator:v1
+          env:
+            - name: FALCO_WEBHOOK
+              value: http://falcosidekick.falco.svc:2801
+
+# Operator 로직: Falco alert → Pod 에 NetworkPolicy 자동 적용
+# - "Shell in container" alert → quarantine label 자동 추가
+# - NetworkPolicy 가 모든 in/out 차단
+```
+
+### Shuffle workflow (SOAR 통합)
+
+```
+Wazuh alert
+  → Shuffle workflow trigger
+  → Severity check (OPA eval)
+    ├ severity >= 12 → auto_block
+    │   ├ Ansible block-ip
+    │   ├ TheHive case
+    │   └ Slack notify
+    ├ severity 8-11 → quarantine_host
+    │   └ K8s NetworkPolicy
+    └ severity < 8 → log only
+```
+
+학생은 본 4주차에서 **Wazuh AR + Ansible + OPA + Falco + Shuffle** 5 도구로 자가 치유의 4 단계 (탐지 → 의사결정 → 실행 → audit) 통합 운영을 익힌다.

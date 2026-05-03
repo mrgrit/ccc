@@ -556,3 +556,40 @@ dataset record 의 severity 별 분포:
 
 **학생 액션**: 본인 환경 alert 의 *severity × suspicion 매트릭스* 작성 → 트리아지 큐 정의.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course5 SOC — Week 05 상관분석)
+
+| 작업 | 도구 |
+|------|------|
+| 상관 룰 | Wazuh frequency rule / Sigma correlation / OpenSearch threshold |
+| 시간순 분석 | jq + sort / lnav SQL |
+| Graph 분석 | OpenCTI knowledge graph / Maltego CE |
+| Stream 처리 | vector.dev / Logstash / Apache NiFi |
+| ML 이상탐지 | Elastic ML / Wazuh anomaly / Sigma stats |
+
+### 핵심
+```bash
+# Wazuh frequency rule (10분에 5회 SSH fail → escalate)
+sudo tee -a /var/ossec/etc/rules/local_rules.xml > /dev/null << 'EOF'
+<rule id="100200" level="13" frequency="5" timeframe="600">
+  <if_matched_sid>5710</if_matched_sid>
+  <description>SSH brute-force escalation</description>
+  <mitre><id>T1110</id></mitre>
+</rule>
+EOF
+sudo systemctl restart wazuh-manager
+
+# Sigma correlation (modern)
+cat > /tmp/corr.yml << 'EOF'
+title: SSH brute escalation
+correlation:
+  type: event_count
+  rules: [ssh_failed]
+  group-by: [src_ip]
+  timespan: 10m
+  condition: { gte: 5 }
+EOF
+sigma convert -t opensearch /tmp/corr.yml
+```

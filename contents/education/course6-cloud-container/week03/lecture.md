@@ -538,3 +538,171 @@ dataset 174,293건은 정상 운영 한 달치 — *대부분이 CI/CD 와 ECS s
 
 **학생 액션**: 본인이 작성한 Dockerfile 에서 (1) `ENV PASSWORD=*` 류 평문 secret, (2) `.dockerignore` 누락으로 인한 `.git/.env` 포함, (3) `latest` 태그 사용 의 3가지를 점검하고, Trivy 또는 docker scan 으로 1회 스캔한 결과를 보고서에 첨부. 발견된 issue 별로 *"이 결함이 운영 환경에서 어느 dataset 신호로 폭로되는가"* 를 한 줄씩 작성.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course6 Cloud-Container — Week 03 컨테이너 기초)
+
+### 컨테이너 보안 도구 — Build·Push·Run 단계별
+
+| 단계 | 도구 | 역할 |
+|------|------|------|
+| Dockerfile lint | **hadolint** / dockerfile-spec | 모범 사례 |
+| Image build | **docker** / podman / buildah / kaniko | 빌드 |
+| 이미지 scan | **Trivy** / Grype / Clair / Anchore | CVE |
+| Secret scan | **gitleaks** / trufflehog / detect-secrets | secret 누출 |
+| Layer 분석 | **dive** / docker-history-cli | 최소화 |
+| Dockerfile 보안 점검 | **dockle** / docker-bench-security | CIS |
+| 서명 / SBOM | **cosign** / sigstore / syft | 공급망 |
+| Registry 보안 | **Harbor** (CNCF, OSS) / Docker Registry + 인증 | private registry |
+| Runtime 격리 | **Podman** rootless / gVisor / Kata | runtime |
+
+### 핵심 — Trivy 종합 사용 (4 모드)
+
+```bash
+# 1) image (CVE 스캔 — 가장 자주)
+trivy image --severity HIGH,CRITICAL alpine:3.18
+trivy image --severity HIGH,CRITICAL --format json -o /tmp/trivy.json alpine:3.18
+trivy image --ignore-unfixed alpine:3.18                      # fix 가능 CVE 만
+
+# 2) fs (코드+secret+IaC 한번에)
+trivy fs /path/to/project --scanners vuln,secret,config
+# → CVE + 평문 secret + IaC 미설정 한 번에
+
+# 3) k8s (전체 클러스터)
+trivy k8s --report summary cluster
+
+# 4) image with SBOM
+trivy image --format spdx-json --output sbom.json alpine:3.18
+syft alpine:3.18 -o spdx-json > sbom2.json                    # syft 도 SBOM
+```
+
+### 학생 환경 준비
+
+```bash
+# 1주차에 설치한 도구 (Trivy, hadolint, dockle, dive, Falco, docker-bench)
+
+# 추가 설치
+sudo apt install -y skopeo                                   # 이미지 다중 registry 도구
+
+# Grype (Trivy 대안 — 로컬 vuln DB)
+curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sudo sh -s -- -b /usr/local/bin
+
+# Syft (SBOM 생성 — Anchore)
+curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sudo sh -s -- -b /usr/local/bin
+
+# gitleaks (secret 스캔)
+curl -L https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks_8.18.0_linux_x64.tar.gz | tar xz
+sudo mv gitleaks /usr/local/bin/
+
+# trufflehog
+docker pull trufflesecurity/trufflehog:latest
+
+# cosign (이미지 서명)
+sudo curl -L https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64 -o /usr/local/bin/cosign
+sudo chmod +x /usr/local/bin/cosign
+
+# Harbor (CNCF 그래데이트, private registry)
+curl -L https://github.com/goharbor/harbor/releases/latest/download/harbor-online-installer-v2.10.0.tgz | tar xz -C /tmp
+# /tmp/harbor/install.sh 으로 설치
+```
+
+### 핵심 도구별 사용법
+
+```bash
+# 1) hadolint — Dockerfile 정적 분석
+hadolint Dockerfile
+# 발견 가능한 issue:
+# DL3008: pin versions in apt-get install
+# DL3009: cleanup apt-get cache
+# DL3015: --no-install-recommends 누락
+# DL3025: latest 태그 사용
+
+# 2) dockle — Dockerfile + image 보안 점검
+dockle alpine:3.18
+# CIS-DI-0001: USER 명령 없음 (root 로 실행)
+# CIS-DI-0008: setuid/setgid 파일 존재
+# DKL-DI-0006: latest 태그
+
+# 3) dive — 이미지 layer 시각화
+dive alpine:3.18
+# 키:
+#   Tab     : 패널 전환
+#   Ctrl-F  : 검색
+#   Ctrl-A  : aggregated 모드 (전체 변화)
+# 목표: efficiency score > 95%
+
+# 4) gitleaks — git repo 의 secret 발견
+gitleaks detect --source /path/to/repo --redact
+gitleaks detect -v --no-git --source /path/to/code
+
+# 5) cosign — 이미지 서명
+cosign generate-key-pair                                     # cosign.key, cosign.pub
+cosign sign --key cosign.key registry.local/myimg:v1
+cosign verify --key cosign.pub registry.local/myimg:v1
+
+# 6) Harbor — private registry (Docker Registry 대안)
+# Web UI: https://harbor.local
+# Vulnerability 자동 스캔 (Trivy 통합)
+# 서명된 이미지만 pull 가능 (cosign 통합)
+docker login harbor.local
+docker push harbor.local/project/myimg:v1
+```
+
+### 이미지 보안 4 단계 흐름
+
+```bash
+# Phase 1: Build-time (shift-left)
+hadolint Dockerfile                                          # 정적 분석
+docker build -t myimage:v1 .
+trivy image myimage:v1                                       # CVE
+syft myimage:v1 -o spdx-json > sbom.json                     # SBOM
+gitleaks detect --no-git --source .                          # secret
+
+# Phase 2: Push-time (signing + registry)
+cosign sign --key cosign.key registry/myimage:v1
+docker push registry/myimage:v1
+# Harbor 가 vulnerability 자동 스캔, FAIL 시 push 차단
+
+# Phase 3: Runtime (kubernetes admission)
+# OPA Gatekeeper / Kyverno 가 cosign verify → 서명 없으면 거부
+
+# Phase 4: Continuous monitoring
+trivy image --report summary cluster                         # k8s 전체 정기 스캔
+falco                                                        # runtime 행위 모니터
+```
+
+### CVE 발견 시 대응
+
+| 심각도 | 대응 |
+|-------|------|
+| Critical (CVSS 9.0+) | 즉시 빌드 차단, 24h 내 패치 |
+| High (7.0-8.9) | 7일 내 패치 |
+| Medium (4.0-6.9) | 30일 내 패치 |
+| Low (< 4.0) | 다음 정기 빌드 |
+
+### CI/CD 통합 예 (GitLab CI / GitHub Actions)
+
+```yaml
+# .gitlab-ci.yml
+stages:
+  - build
+  - scan
+
+build:
+  stage: build
+  script:
+    - hadolint Dockerfile
+    - docker build -t $IMG .
+    
+scan:
+  stage: scan
+  script:
+    - trivy image --severity HIGH,CRITICAL --exit-code 1 $IMG
+    - syft $IMG -o spdx-json > sbom.json
+    - cosign sign --key $COSIGN_KEY $IMG
+  artifacts:
+    paths: [sbom.json]
+```
+
+학생은 본 3주차에서 **hadolint + Trivy + dive + cosign + Harbor** 5 도구로 컨테이너 build → push → run 전체 파이프라인의 보안 통제를 OSS 만으로 구축한다.

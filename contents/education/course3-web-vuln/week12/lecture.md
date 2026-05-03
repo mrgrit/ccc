@@ -599,3 +599,31 @@ echo "Products API: ${count}건 반환"
 2. AssumeRole 의 *대상 role 다양성* 측정 → 단일 user 가 5+ role 전환하면 *권한 oversight* 점검 항목
 3. *Describe* 같은 read-only API 의 *과도한 권한* (`*` resource scope) 사용 IAM 정책 점검 — 침해 시 *전체 enumeration* 가능
 
+
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (lab week12 — API 보안)
+
+| step | OWASP API 항목 | 핵심 도구 |
+|---|---|---|
+| 1 mapping | (recon) | curl / **kiterunner** / **arjun** / gau + httpx |
+| 2 BOLA 인증 없이 | API1:2023 | curl / autorize / **idor-cli** |
+| 3 BOLA 객체 변조 | API1:2023 | curl for-loop / Burp Intruder / autorize |
+| 4 Mass Assignment | API6:2023 | curl POST `role:admin` / **Burp Intruder** / API Fuzzer |
+| 5 Rate Limit | API4:2023 | hydra / **k6 부하** / Burp Intruder |
+| 6 BFLA | API5:2023 | autorize / API Auditor |
+| 7 Injection | API8:2023 | sqlmap / graphql-sqli / Burp Active Scan |
+| 8 응답 헤더 | API7:2023 | curl -I / Mozilla Observatory / nuclei |
+| 9 Swagger 노출 | API7:2023 | curl /api-docs / **swagger-jacker** / kiterunner |
+| 10 보고서 | (전체) | OWASP API Top 10 매트릭스 / **APIClarity** / DefectDojo / sha256 |
+
+### 학생 환경 준비
+```bash
+go install -v github.com/assetnote/kiterunner/cmd/kr@latest
+pip install arjun
+go install -v github.com/lc/gau/v2/cmd/gau@latest
+go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
+go install go.k6.io/k6/cmd/k6@latest
+# autorize / API Auditor: Burp BApp Store
+```

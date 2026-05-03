@@ -1136,3 +1136,55 @@ active
 > *이 사례는 dataset metadata 의 통계 매핑 (어떤 host 가 몇 개 framework 와 mapping 됐다 같은 추상 수치) 이 아니라, "1 layer 만 있으면 보지 못하는 evidence 의 비율" 이라는 실측 정량으로 학생이 5 layer 의 필요성을 검증하게 한다.*
 
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course2 SecOps — Week 01 인프라 점검)
+
+| 단계/주제 | lab step | 본문 명령 | OSS 도구 옵션 (강조) | 비고 |
+|----------|---------|----------|---------------------|------|
+| 방화벽 룰 확인 | s1 | `nft list tables` | nftables (nft) / iptables (legacy) / firewalld | nft = modern |
+| 서비스 상태 | s2,3 | `systemctl status` | systemctl / openrc / supervisord | systemd 표준 |
+| 포트 리스닝 | s4 | `ss -tlnp` | ss / netstat / lsof -i / nmap localhost | ss 가 빠름 |
+| 인터페이스 | s5 | `ip addr` | ip / ifconfig (legacy) | iproute2 표준 |
+| 라우팅 테이블 | s6 | `ip route` | ip route / route -n / netstat -rn | |
+| 로그 조회 | s7,8 | `journalctl -u` | journalctl / less / lnav | lnav = colored navigator |
+| Wazuh 상태 | s9 | `systemctl status wazuh-manager` | wazuh-manager / wazuh-control / curl API | API 점검 별도 |
+| OpenCTI 상태 | s10 | `curl localhost:8080` | curl / httpie / OpenCTI client (Python) | |
+| Apache + ModSec | s11 | `apachectl -M` | apachectl / a2enmod / nginx -t | nginx 도 OSS WAF |
+| nft set 조회 | s12 | `nft list set` | nft / ipset (legacy) | |
+| 보고 정리 | s15 | text | lnav / multitail / mtr | 통합 모니터 |
+
+### 학생 환경 준비 (한 번만 실행, secu/web/siem VM 각각)
+
+```bash
+# secu VM (10.20.30.1)
+ssh ccc@10.20.30.1
+sudo apt update && sudo apt install -y \
+  nftables iproute2 \
+  suricata suricata-update \
+  ipset fail2ban \
+  lnav multitail iotop iftop
+
+# web VM (10.20.30.80)
+ssh ccc@10.20.30.80
+sudo apt install -y apache2 libapache2-mod-security2 modsecurity-crs
+sudo a2enmod security2 headers && sudo systemctl restart apache2
+
+# siem VM (10.20.30.100) — Wazuh + OpenCTI 이미 설치됨
+ssh ccc@10.20.30.100
+systemctl status wazuh-manager wazuh-indexer wazuh-dashboard
+curl -s http://localhost:8080/health    # OpenCTI
+```
+
+### 본문 → 도구 권장 흐름
+
+| 점검 영역 | 1차 (수동) | 2차 (도구) |
+|----------|-----------|-----------|
+| 방화벽 정책 | `nft list ruleset` | nftables-rules-tester / firewall-applet (GUI) |
+| IDS/IPS 상태 | `systemctl status suricata` | suricatasc CLI / evebox / SELKS (GUI) |
+| WAF 룰 | `apachectl -M | grep security` | modsec-cli-tools / OWASP CRS test runner |
+| SIEM 헬스 | `systemctl status wazuh-manager` | wazuh-control info / Wazuh API + jq |
+| CTI 헬스 | `curl localhost:8080/health` | OpenCTI Python client / opencti-cli |
+
+학생은 본 1주차에서 **5종 OSS 보안 솔루션** (nftables/Suricata/ModSecurity/Wazuh/OpenCTI) 의 헬스체크를 도구로 자동화하는 흐름을 익힌다.

@@ -647,3 +647,161 @@ init 단계에서 *392 사례를 KG node 50개로 압축 학습*. operate 에서
 
 **학생 액션**: 본인의 Bastion 프로젝트의 3단계를 정의 + 각 단계의 dataset 활용 방식 설계.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course9 — Week 03 자동 스캐닝)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | nmap 자동화 | **python-nmap** + nmap |
+| s2 | nuclei 자동화 | **nuclei** + jq |
+| s3 | 결과 통합 | **faraday** (multi-tool import) |
+| s4 | RL 의사결정 | sb3 + 자체 환경 |
+| s5 | Schedule (cron / Airflow) | **apache-airflow** / Prefect |
+| s6 | 결과 vector DB | ChromaDB (week02 재사용) |
+| s7 | Anomaly detection | sklearn IsolationForest |
+| s8 | 통합 dashboard | Grafana + Loki |
+
+### 학생 환경 준비
+
+```bash
+sudo apt install -y nmap nuclei
+pip install python-nmap apache-airflow prefect
+go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
+nuclei -update-templates
+
+# Faraday (multi-tool 결과 통합)
+pip install faraday-cli
+docker run -d -p 5985:5985 faradaysec/faraday:latest
+
+# Airflow (workflow scheduler)
+docker run -d -p 8080:8080 apache/airflow:latest
+```
+
+### 핵심 — python-nmap (자동화 표준)
+
+```python
+import nmap
+
+nm = nmap.PortScanner()
+
+# 1) 단일 호스트 종합
+result = nm.scan("10.20.30.80", "22-1024", arguments="-sV -O -A")
+
+for host in nm.all_hosts():
+    print(f"Host: {host} ({nm[host].hostname()})")
+    print(f"State: {nm[host].state()}")
+    
+    for proto in nm[host].all_protocols():
+        for port in nm[host][proto].keys():
+            info = nm[host][proto][port]
+            print(f"  {proto}/{port}: {info['state']} {info['name']} {info.get('product', '')} {info.get('version', '')}")
+
+# 2) 네트워크 전체 (병렬)
+nm.scan(hosts="10.20.30.0/24", arguments="-sn -PE -PA21,22,23,80,443")
+alive_hosts = [h for h in nm.all_hosts() if nm[h].state() == "up"]
+print(f"Alive: {len(alive_hosts)}")
+```
+
+### Nuclei 자동화
+
+```bash
+# 1) 단일 URL
+nuclei -u http://10.20.30.80:3000 -severity high,critical -j > /tmp/nuclei.json
+
+# 2) 여러 URL 병렬
+echo -e "http://10.20.30.80\nhttp://10.20.30.100" | \
+    nuclei -severity high,critical -c 50 -j -o /tmp/nuclei-multi.json
+
+# 3) 결과 분석
+jq -r '"\(.host) \(.["template-id"]) \(.severity)"' /tmp/nuclei.json | sort | uniq -c
+
+# 4) Python 통합
+python3 << 'EOF'
+import json
+import subprocess
+
+result = subprocess.run([
+    "nuclei", "-u", "http://10.20.30.80:3000",
+    "-severity", "high,critical", "-j"
+], capture_output=True, text=True)
+
+vulns = [json.loads(line) for line in result.stdout.strip().split("\n") if line]
+print(f"Found {len(vulns)} vulns")
+for v in vulns:
+    print(f"  {v['template-id']}: {v.get('matched-at', '')}")
+EOF
+```
+
+### RL 통합 — 어디를 다음에 스캔?
+
+```python
+import gymnasium as gym
+from stable_baselines3 import PPO
+
+class ScanScheduleEnv(gym.Env):
+    """RL 이 스캔 우선순위 학습"""
+    def __init__(self, host_list):
+        super().__init__()
+        self.hosts = host_list                              # 100 호스트
+        self.observation_space = gym.spaces.Box(0, 1, (len(host_list), 5))
+        self.action_space = gym.spaces.Discrete(len(host_list))
+        # state: [last_scan_age, vuln_count, criticality, exposure, last_change]
+    
+    def step(self, action):
+        host = self.hosts[action]
+        result = nm.scan(host, "1-1024", arguments="-sV")
+        
+        new_vulns = self._count_new_vulns(result)
+        scan_time = self._get_scan_time(result)
+        
+        # Reward: 새 vuln 발견 +10, 시간 -1
+        reward = new_vulns * 10 - scan_time / 60
+        
+        self._update_state(action, result)
+        return self.state, reward, False, False, {}
+
+# 학습 → 모델이 "어떤 host 를 우선 스캔" 학습
+model = PPO("MlpPolicy", ScanScheduleEnv(alive_hosts), verbose=1)
+model.learn(total_timesteps=10000)
+```
+
+### Airflow DAG (정기 스캔)
+
+```python
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+from datetime import datetime, timedelta
+
+dag = DAG(
+    'auto_security_scan',
+    schedule_interval='0 2 * * *',                          # 매일 새벽 2시
+    start_date=datetime(2026, 1, 1),
+    catchup=False
+)
+
+def scan_subnet(**context):
+    nm = nmap.PortScanner()
+    nm.scan("10.20.30.0/24", "1-1024", arguments="-sV -sS")
+    return nm.csv()
+
+def run_nuclei(**context):
+    subprocess.run(["nuclei", "-u", "http://10.20.30.80:3000",
+                    "-severity", "high,critical", "-j",
+                    "-o", "/tmp/nuclei.json"])
+
+def update_chroma(**context):
+    # 결과를 ChromaDB 에 저장 (week02 재사용)
+    pass
+
+t1 = PythonOperator(task_id='nmap', python_callable=scan_subnet, dag=dag)
+t2 = PythonOperator(task_id='nuclei', python_callable=run_nuclei, dag=dag)
+t3 = PythonOperator(task_id='store', python_callable=update_chroma, dag=dag)
+
+t1 >> t2 >> t3
+```
+
+학생은 본 3주차에서 **python-nmap + nuclei + Faraday + RL agent + Airflow** 5 도구로 자동 스캔의 4 단계 (실행 → 통합 → RL 우선순위 → 스케줄) 사이클을 익힌다.

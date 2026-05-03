@@ -1055,3 +1055,401 @@ graph LR
 
 **학생 액션**: 최근 APT 보고서 1편 → dataset 매핑.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course12 — Week 09 SOAR)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | Shuffle (modern OSS SOAR) | **Shuffle** |
+| s2 | TheHive 5 + Cortex | **TheHive 5** + Cortex |
+| s3 | n8n (general workflow) | n8n |
+| s4 | StackStorm (enterprise) | StackStorm |
+| s5 | Webhook 통합 (Wazuh) | Wazuh integration |
+| s6 | Cortex analyzer (자동 enrichment) | Cortex |
+| s7 | Custom action 작성 | Python script |
+| s8 | 통합 IR pipeline | 4 도구 통합 |
+
+### 학생 환경 준비
+
+```bash
+# === Shuffle (가장 modern, drag-drop) ===
+docker network create shuffle
+docker run -d --name shuffle-frontend --network shuffle -p 3001:80 \
+    ghcr.io/shuffle/shuffle-frontend:latest
+docker run -d --name shuffle-backend --network shuffle -p 5001:5001 \
+    ghcr.io/shuffle/shuffle-backend:latest
+docker run -d --name shuffle-orborus --network shuffle \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    ghcr.io/shuffle/shuffle-orborus:latest
+
+# Web UI: http://localhost:3001
+
+# === TheHive 5 ===
+docker run -d --name thehive -p 9000:9000 \
+    -v $(pwd)/thehive-data:/etc/thehive \
+    strangebee/thehive:5.2
+
+# 초기 admin: admin@thehive.local / secret
+
+# === Cortex (analyzer + responder) ===
+docker run -d --name cortex -p 9001:9001 \
+    -v $(pwd)/cortex-data:/opt/cortex \
+    thehiveproject/cortex:3.1.7
+
+# === n8n (workflow automation) ===
+docker run -d -p 5678:5678 \
+    -v $(pwd)/n8n-data:/home/node/.n8n \
+    docker.n8n.io/n8nio/n8n:latest
+# Web UI: http://localhost:5678
+
+# === StackStorm (대규모 enterprise) ===
+curl -sSL https://stackstorm.com/packages/install.sh | bash -s -- \
+    --user=admin --password=Pa\$\$w0rd
+# Web UI: http://localhost
+```
+
+### 핵심 — Shuffle workflow (가장 직관적)
+
+```yaml
+# Shuffle workflow 는 web UI 에서 drag-drop 으로 작성
+# 예시: Wazuh alert → AbuseIPDB lookup → 자동 차단 + TheHive case + Slack
+
+triggers:
+  - id: wazuh_webhook
+    type: webhook
+    url: http://shuffle:5001/api/v1/hooks/wazuh-alert
+
+actions:
+  # === 1. 데이터 추출 ===
+  - id: extract_data
+    name: Extract IP
+    type: jinja
+    template: |
+      {
+        "src_ip": "{{ $exec.payload.data.srcip }}",
+        "rule_level": {{ $exec.payload.rule.level }},
+        "description": "{{ $exec.payload.rule.description }}"
+      }
+  
+  # === 2. AbuseIPDB lookup (외부 enrichment) ===
+  - id: abuseipdb
+    name: Check reputation
+    type: http
+    method: GET
+    url: "https://api.abuseipdb.com/api/v2/check?ipAddress={{ $extract_data.output.src_ip }}"
+    headers:
+      Key: "{{ $env.ABUSEIPDB_KEY }}"
+      Accept: "application/json"
+  
+  # === 3. VirusTotal (대안) ===
+  - id: virustotal
+    name: VT lookup
+    type: http
+    method: GET
+    url: "https://www.virustotal.com/api/v3/ip_addresses/{{ $extract_data.output.src_ip }}"
+    headers:
+      x-apikey: "{{ $env.VT_KEY }}"
+  
+  # === 4. 의사결정 (OPA 또는 conditional) ===
+  - id: decide
+    type: condition
+    if: |
+      {{ $abuseipdb.output.data.abuseConfidenceScore > 50 }} OR 
+      {{ $virustotal.output.data.attributes.last_analysis_stats.malicious > 5 }}
+    then: auto_block
+    else: log_only
+  
+  # === 5. 자동 차단 (nft + crowdsec) ===
+  - id: auto_block
+    name: nft block
+    type: ssh
+    host: secu-vm.local
+    command: "sudo nft add element inet filter blocked '{ {{ $extract_data.output.src_ip }} }'"
+  
+  - id: crowdsec_block
+    name: crowdsec ban
+    type: ssh
+    host: secu-vm.local
+    command: "sudo cscli decisions add --ip {{ $extract_data.output.src_ip }} --type ban --duration 24h"
+  
+  # === 6. TheHive case 생성 ===
+  - id: create_case
+    name: TheHive case
+    type: http
+    method: POST
+    url: "http://thehive:9000/api/case"
+    headers:
+      Authorization: "Bearer {{ $env.THEHIVE_TOKEN }}"
+      Content-Type: "application/json"
+    body: |
+      {
+        "title": "Auto-block {{ $extract_data.output.src_ip }} (Wazuh L{{ $extract_data.output.rule_level }})",
+        "severity": 3,
+        "tlp": 2,
+        "description": "{{ $extract_data.output.description }}\n\nAbuseIPDB: {{ $abuseipdb.output.data.abuseConfidenceScore }}%\nVT malicious: {{ $virustotal.output.data.attributes.last_analysis_stats.malicious }}",
+        "tags": ["auto-soar", "wazuh", "{{ $extract_data.output.src_ip }}"]
+      }
+  
+  # === 7. Cortex Responder (자동 추가 enrichment) ===
+  - id: cortex_responders
+    type: http
+    method: POST
+    url: "http://cortex:9001/api/case/{{ $create_case.output.id }}/run-analyzers"
+    body: |
+      ["AbuseIPDB", "VirusTotal_GetReport", "Shodan_Host", "GreyNoise"]
+  
+  # === 8. Slack 알림 ===
+  - id: slack
+    name: Slack notify
+    type: http
+    url: "{{ $env.SLACK_WEBHOOK }}"
+    method: POST
+    body: |
+      {
+        "text": "🛡 Auto-blocked {{ $extract_data.output.src_ip }}",
+        "attachments": [{
+          "color": "danger",
+          "fields": [
+            {"title": "Rule level", "value": "{{ $extract_data.output.rule_level }}", "short": true},
+            {"title": "AbuseIPDB", "value": "{{ $abuseipdb.output.data.abuseConfidenceScore }}%", "short": true},
+            {"title": "TheHive case", "value": "<http://thehive:9000/cases/{{ $create_case.output.id }}|{{ $create_case.output.id }}>", "short": false}
+          ]
+        }]
+      }
+```
+
+### Wazuh integration (webhook 자동 트리거)
+
+```bash
+# /var/ossec/etc/ossec.conf
+sudo tee -a /var/ossec/etc/ossec.conf << 'EOFW'
+<integration>
+  <name>shuffle</name>
+  <hook_url>http://shuffle:5001/api/v1/hooks/wazuh-alert</hook_url>
+  <level>10</level>
+  <alert_format>json</alert_format>
+</integration>
+EOFW
+
+sudo /var/ossec/bin/wazuh-control restart
+```
+
+### TheHive 5 (사고 케이스 관리)
+
+```python
+# Python SDK
+from thehive4py.api import TheHiveApi
+from thehive4py.models import Case, CaseTask, Alert, AlertArtifact, CaseObservable
+
+api = TheHiveApi("http://thehive:9000", "API_TOKEN")
+
+# === 1. Alert 생성 ===
+alert = Alert(
+    title="SQL Injection from 1.2.3.4",
+    description="Wazuh detected SQLi from external IP",
+    severity=3,
+    tlp=2,
+    type="external",
+    source="wazuh",
+    sourceRef=f"alert-{wazuh_alert_id}",
+    artifacts=[
+        AlertArtifact(dataType="ip", data="1.2.3.4"),
+        AlertArtifact(dataType="url", data="http://target/login.php?id=1"),
+        AlertArtifact(dataType="user-agent", data="sqlmap/1.7"),
+    ]
+)
+response = api.create_alert(alert)
+alert_id = response.json()['id']
+
+# === 2. Alert → Case 자동 promotion ===
+case_id = api.promote_alert_to_case(alert_id).json()['id']
+
+# === 3. Tasks 추가 (IR playbook) ===
+api.create_case_task(case_id, CaseTask(title="Initial triage"))
+api.create_case_task(case_id, CaseTask(title="Block source IP"))
+api.create_case_task(case_id, CaseTask(title="Forensic memory dump"))
+api.create_case_task(case_id, CaseTask(title="Notify management"))
+
+# === 4. Observables 추가 ===
+api.create_case_observable(case_id,
+    CaseObservable(dataType="ip", data="1.2.3.4", tlp=2,
+                   tags=["malicious", "external"]))
+
+# === 5. Cortex analyzer 실행 ===
+# Web UI 에서 "Run Analyzers" 또는 API:
+api.run_analyzer(case_id, "AbuseIPDB_1_0", obs_id)
+api.run_analyzer(case_id, "VirusTotal_GetReport_3_0", obs_id)
+api.run_analyzer(case_id, "Shodan_Host_1_0", obs_id)
+api.run_analyzer(case_id, "GreyNoise_GreyNoiseRIOT_1_0", obs_id)
+
+# === 6. Case 상태 update ===
+api.update_case(case_id, {"status": "InProgress"})
+api.update_case(case_id, {"status": "Resolved", "resolutionStatus": "TruePositive"})
+```
+
+### Cortex (100+ analyzers)
+
+```bash
+# === 1. Analyzers 카탈로그 (web UI) ===
+# http://cortex:9001 → Organization → Analyzers
+# 100+ 통합:
+# - AbuseIPDB
+# - VirusTotal (GetReport, Hash, IP, URL, etc)
+# - Shodan
+# - GreyNoise
+# - URLScan
+# - Hybrid Analysis
+# - MISP
+# - OpenCTI
+# - WHOIS
+# - DNS
+# - HIBP (have i been pwned)
+# - PhishTank
+# - ...
+
+# === 2. Responder (자동 대응) ===
+# http://cortex:9001 → Organization → Responders
+# 예:
+# - Block-IP-on-Firewall
+# - Send-Email
+# - Create-MISP-Event
+# - Disable-User-AD
+# - Block-Domain-on-DNS
+
+# === 3. Custom analyzer 작성 (Python) ===
+mkdir -p /opt/cortex/analyzers/CustomChecker/1_0
+cat > /opt/cortex/analyzers/CustomChecker/1_0/CustomChecker.json << 'EOFC'
+{
+    "name": "CustomChecker",
+    "version": "1.0",
+    "author": "CCC",
+    "url": "https://internal/wiki",
+    "license": "MIT",
+    "description": "Internal IP reputation check",
+    "dataTypeList": ["ip"],
+    "command": "CustomChecker/CustomChecker.py",
+    "baseConfig": "CustomChecker"
+}
+EOFC
+
+cat > /opt/cortex/analyzers/CustomChecker/1_0/CustomChecker.py << 'PEOF'
+#!/usr/bin/env python3
+from cortexutils.analyzer import Analyzer
+import requests
+
+class CustomChecker(Analyzer):
+    def run(self):
+        ip = self.get_data()
+        # Internal API 호출 (예: 회사 자체 reputation DB)
+        response = requests.get(f"http://internal-api/check/{ip}")
+        result = response.json()
+        
+        if result['malicious']:
+            self.report({"taxonomies": [
+                self.build_taxonomy("malicious", "CCC-Internal", "score", str(result['score']))
+            ]})
+        else:
+            self.report({"taxonomies": [
+                self.build_taxonomy("safe", "CCC-Internal", "score", "0")
+            ]})
+
+if __name__ == "__main__":
+    CustomChecker().run()
+PEOF
+chmod +x /opt/cortex/analyzers/CustomChecker/1_0/CustomChecker.py
+```
+
+### n8n (대안 — 가벼운 workflow)
+
+```bash
+# n8n web UI: http://localhost:5678
+# Drag-drop:
+# Webhook (Wazuh) → 
+#   Function (parse JSON) → 
+#   HTTP (AbuseIPDB) → 
+#   IF (score > 50) → 
+#     SSH (nft block) + Slack notify
+#   ELSE → log only
+
+# Webhook URL (Wazuh integration 으로 사용):
+# http://n8n:5678/webhook/wazuh-alert
+```
+
+### StackStorm (대규모 enterprise)
+
+```yaml
+# /opt/stackstorm/packs/security/rules/auto-block.yaml
+---
+name: auto-block-malicious-ip
+trigger:
+  type: webhook
+  parameters:
+    url: wazuh-webhook
+criteria:
+  trigger.body.rule.level:
+    type: greaterthan
+    pattern: 12
+action:
+  ref: security.block_ip_workflow
+  parameters:
+    ip: "{{ trigger.body.data.srcip }}"
+    severity: "{{ trigger.body.rule.level }}"
+```
+
+```bash
+# Pack 설치
+st2 pack install security
+st2 rule list
+st2 action list
+```
+
+### IR Pipeline 통합 흐름
+
+```
+[Wazuh alert (level 13+)]
+    ↓ webhook
+[Shuffle workflow]
+    ↓
+    ├─ Cortex 자동 enrichment (10+ analyzer 병렬)
+    │   - AbuseIPDB
+    │   - VirusTotal
+    │   - Shodan
+    │   - GreyNoise
+    │   - HIBP
+    │
+    ├─ OPA decision (자동 vs manual)
+    │   ├ auto-block (severity 13+ + reputation < 0.3)
+    │   │   ├─ nft block (secu)
+    │   │   ├─ crowdsec ban
+    │   │   ├─ K8s NetworkPolicy (격리)
+    │   │   └─ Velociraptor live hunt 트리거
+    │   │
+    │   └ manual review (severity 10-12)
+    │       └─ TheHive case 생성 + analyst alert
+    │
+    ├─ TheHive case 자동 생성 (모든 경우)
+    │   ├─ Alert artifacts → observables
+    │   ├─ Tasks 자동 (playbook based)
+    │   └─ Cortex responders 자동
+    │
+    └─ Notification
+        ├─ Slack (#soc-alerts)
+        ├─ Email (DPO)
+        └─ PagerDuty (critical 만)
+```
+
+### SOAR 도구 비교
+
+| 도구 | 강점 | 약점 | 사용처 |
+|------|------|------|--------|
+| **Shuffle** | Modern, drag-drop, OSS | 비교적 새로움 | SOC 표준 |
+| **TheHive 5 + Cortex** | 사고 관리 + 분석 통합 | 설정 복잡 | 사고 케이스 중심 |
+| **n8n** | 가장 가벼움, general | 보안 특화 적음 | small SOC |
+| **StackStorm** | Enterprise scale | 무거움 | 대규모 |
+| **Zapier alts (Make)** | 클라우드 친화 | 자체호스트 어려움 | SaaS |
+
+학생은 본 9주차에서 **Shuffle + TheHive 5 + Cortex + n8n + StackStorm** 5 SOAR framework 로 자동 IR 의 4 단계 (alert → enrichment → 결정 → 실행) + 100+ analyzer 통합을 OSS 만으로 익힌다.

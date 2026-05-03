@@ -539,3 +539,119 @@ dataset 의 message_sanitized 에서 jailbreak 의심 frame 을 탐지하려면 
 
 **학생 액션**: lab 의 LLM 에 *5가지 frame 의 jailbreak prompt* 를 각 10건씩 시도. 차단율을 카테고리별로 측정하여 표로 정리. 결과를 *"우리 LLM 이 4축 KPI 를 통과하는가"* 로 평가.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course8 AI Safety — Week 04 백도어 탐지)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | 백도어 데이터셋 생성 | **TextAttack PoisonRecipe** / BadNets |
+| s2 | 백도어 모델 훈련 | PyTorch + Trojaning |
+| s3 | Trigger 시점 ASR 측정 | TextAttack / 자체 evaluator |
+| s4 | Reverse engineering | **Neural-Cleanse** |
+| s5 | abs (Activation-based) | **TrojAI Tools** (NIST) |
+| s6 | STRIP defense | strip-paper repo |
+| s7 | Pruning defense | torch.nn.utils.prune |
+| s8 | 자동 탐지 시스템 | TrojAI + custom anomaly score |
+
+### 학생 환경 준비
+
+```bash
+pip install textattack
+git clone https://github.com/usnistgov/trojai ~/trojai
+git clone https://github.com/bolunwang/backdoor ~/neural-cleanse
+git clone https://github.com/garrisonz/STRIP ~/strip
+```
+
+### 핵심 — Neural-Cleanse (백도어 reverse engineering)
+
+```python
+import keras
+from keras import backend as K
+import numpy as np
+
+# 1) 의심 모델 load
+model = keras.models.load_model("/opt/models/production_model.h5")
+
+# 2) 각 class 별로 reverse-engineered trigger pattern 찾기
+def find_trigger(model, target_class, num_classes=10):
+    """
+    각 class 에 대해, 어떤 작은 perturbation 으로 모든 input 이
+    해당 class 로 분류되도록 만드는 mask + pattern 을 학습
+    """
+    pattern = K.variable(np.random.rand(*input_shape))
+    mask = K.variable(np.random.rand(*input_shape))
+    
+    # 손실: pattern 적용 후 target class 분류 성공률
+    loss = -K.mean(K.softmax(model(input + mask * pattern))[:, target_class])
+    loss += 0.01 * K.mean(K.abs(mask))           # mask 작게 (작은 trigger)
+    
+    optimizer = K.optimizers.Adam(lr=0.01)
+    for _ in range(100):
+        optimizer.minimize(loss, [pattern, mask])
+    
+    return pattern.numpy(), mask.numpy()
+
+# 3) 모든 class 의 trigger 크기 측정
+trigger_sizes = []
+for c in range(num_classes):
+    pattern, mask = find_trigger(model, c)
+    size = np.sum(np.abs(mask))
+    trigger_sizes.append(size)
+
+# 4) Anomaly detection — MAD (Median Absolute Deviation)
+median = np.median(trigger_sizes)
+mad = np.median(np.abs(trigger_sizes - median))
+anomalies = [(c, s) for c, s in enumerate(trigger_sizes) if (median - s) / mad > 2]
+
+print("Suspected backdoor classes:", anomalies)
+# 출력 예: [(7, 0.012)]  → class 7 의 trigger 가 비정상적으로 작음 = 백도어
+```
+
+### TrojAI Tools (NIST OSS — 가장 권위 있음)
+
+```bash
+cd ~/trojai
+pip install -e .
+
+# Round 별 dataset (NIST 가 challenge 로 공개)
+python3 -m trojai.datagen.image_factory \
+    --output /tmp/round1 --num_models 100 --backdoor_ratio 0.5
+
+# 백도어 detection 평가
+python3 trojan_detector.py \
+    --model /opt/models/production.h5 \
+    --output /tmp/result.json
+```
+
+### 학생 실습 흐름
+
+```bash
+# Phase 1: Clean baseline 모델
+python3 train_clean.py --output /tmp/clean.h5
+python3 evaluate.py --model /tmp/clean.h5
+# → Clean accuracy: 0.95
+
+# Phase 2: Poisoned 모델 (BadNets)
+python3 train_poisoned.py --output /tmp/poisoned.h5 --backdoor_ratio 0.05
+python3 evaluate.py --model /tmp/poisoned.h5
+# → Clean accuracy: 0.94 (거의 동일!)
+# → ASR (trigger 적용): 0.99 (거의 모두 target class 로)
+
+# Phase 3: Neural-Cleanse 탐지
+python3 ~/neural-cleanse/visualize.py --model /tmp/poisoned.h5
+# → "Class 7: anomaly score 4.2 (trigger size 0.011)"
+# → Backdoor detected!
+
+# Phase 4: 시정 (pruning + fine-tuning)
+python3 prune_neurons.py --model /tmp/poisoned.h5 \
+    --threshold 0.5 --output /tmp/pruned.h5
+python3 evaluate.py --model /tmp/pruned.h5
+# → Clean accuracy: 0.93 (약간 손실)
+# → ASR: 0.05 (대폭 감소!)
+```
+
+학생은 본 4주차에서 **TextAttack + Neural-Cleanse + TrojAI + STRIP + pruning** 5 도구로 백도어의 4 단계 (생성 → 측정 → 탐지 → 시정) 사이클을 익힌다.

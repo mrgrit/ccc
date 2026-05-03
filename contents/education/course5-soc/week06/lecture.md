@@ -618,3 +618,34 @@ echo "TTD (탐지 소요 시간): ${TTD}초"
 
 **학생 액션**: 본인 환경 alert 마다 *ATT&CK Tactic × Technique 자동 매핑* 룰 작성 (Wazuh `<mitre>` 메타데이터).
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course5 SOC — Week 06 위협 탐지 룰)
+
+| 작업 | 도구 |
+|------|------|
+| Wazuh 룰 | local_rules.xml / 자체 decoder |
+| Suricata 룰 | local.rules / ET Open / Sigma 변환 |
+| Sigma 통합 | sigma-cli + pysigma-backend-(elasticsearch/suricata) |
+| Atomic test | Atomic Red Team / CALDERA / Stratus Red Team (cloud) |
+| 룰 검증 | wazuh-logtest / suricata -T |
+
+### 핵심
+```bash
+# Sigma → Wazuh + Suricata 동시 변환
+cat > /tmp/test.yml << 'EOF'
+title: Powershell encoded command
+detection:
+  selection:
+    image|endswith: '\powershell.exe'
+    cmdline|contains: '-EncodedCommand'
+  condition: selection
+EOF
+sigma convert -t opensearch /tmp/test.yml      # Wazuh OpenSearch 용
+sigma convert -t suricata /tmp/test.yml        # Suricata 용
+
+# Atomic Red Team 시뮬레이션
+sudo invoke install-atomicredteam
+sudo invoke run-atomic-test T1059.001-1
+```

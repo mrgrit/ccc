@@ -922,3 +922,380 @@ graph LR
 
 **학생 액션**: Flower lab.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course15 AI Safety Advanced — Week 08 인증된 강건성·Randomized Smoothing·CROWN·formal verification)
+
+> 이 부록은 lab `ai-safety-adv-ai/week08.yaml` (8 step + multi_task) 의 모든 명령을
+> 실제로 실행 가능한 형태로 정리한다. Certified Robustness — Randomized Smoothing
+> (Cohen) / CROWN-IBP / Lipschitz bound / interval bound + auto_LiRPA / α,β-CROWN /
+> Marabou + Adversarial Patch.
+
+### lab step → 도구·범위 매핑 표
+
+| step | 학습 항목 | 핵심 OSS 도구 | 학계 |
+|------|----------|--------------|------|
+| s1 | Certified robustness 기본 | Randomized Smoothing (Cohen 2019) | NeurIPS |
+| s2 | 시나리오 생성 | LLM + L_p ball / patch | NIST AI |
+| s3 | 정책 평가 | LLM + 인증 vs 경험적 | NIST AI 600-1 |
+| s4 | 우회 시도 (LLM 측면) | week01~03 | LLM01 |
+| s5 | 자동 인증 파이프라인 | auto_LiRPA / α,β-CROWN | training |
+| s6 | 가드레일 (인증 모델 운영) | smoothing wrapper + 인증 보장 | inference |
+| s7 | 인증 모니터링 | certified accuracy + Prometheus | observability |
+| s8 | 인증 평가 보고서 | markdown + ε vs cert acc curve | report |
+| s99 | 통합 (s1→s2→s3→s5→s6) | Bastion plan 5 단계 | 전체 |
+
+### 인증 종류 매핑
+
+| 종류 | 정의 | 도구 | 강도 |
+|------|------|------|------|
+| **Empirical (PGD)** | 공격 후 정확도 | ART / Foolbox | weak |
+| **Lipschitz bound** | 1-Lipschitz 네트워크 | LipMIP | medium |
+| **Interval Bound (IBP)** | 활성화 구간 추적 | auto_LiRPA | medium |
+| **CROWN** | 활성화 비선형 bound | auto_LiRPA / α-CROWN | strong |
+| **β-CROWN** | branch-and-bound | β-CROWN | strongest |
+| **Randomized Smoothing** | 가우시안 noise + Monte Carlo | smoothing-cohen | scalable |
+| **SDP** | semidefinite programming | LipSDP | exact-small |
+| **MILP** | mixed integer | Marabou / Reluplex | exact-small |
+| **Patch certification** | adversarial patch bound | Patch-CROWN | special |
+
+### 학생 환경 준비
+
+```bash
+pip install --user torch torchvision auto-LiRPA
+git clone https://github.com/Verified-Intelligence/alpha-beta-CROWN /tmp/abcrown
+cd /tmp/abcrown && pip install --user -r complete_verifier/requirements.txt
+
+# Randomized Smoothing
+git clone https://github.com/locuslab/smoothing /tmp/smoothing
+cd /tmp/smoothing && pip install --user -r requirements.txt
+
+# Marabou (formal verification)
+git clone https://github.com/NeuralNetworkVerification/Marabou /tmp/marabou
+cd /tmp/marabou && cmake . && make
+```
+
+### 핵심 도구별 상세 사용법
+
+#### 도구 1: Randomized Smoothing — Cohen (Step 1)
+
+```python
+import torch, torchvision
+from smoothing.core.smoothing import Smooth
+
+base_classifier = torchvision.models.resnet50(pretrained=True)
+base_classifier.eval()
+
+# === Smoothed classifier ===
+sigma = 0.25   # noise stdev
+smoothed = Smooth(base_classifier, num_classes=1000, sigma=sigma)
+
+x = torch.randn(1, 3, 224, 224)
+
+# === Certified prediction ===
+n0 = 100      # selection samples
+n = 100000    # certification samples
+alpha = 0.001 # confidence
+
+prediction, radius = smoothed.certify(x, n0=n0, n=n, alpha=alpha, batch_size=400)
+
+if prediction == -1:
+    print("Abstain")
+else:
+    print(f"Prediction: {prediction}, certified L2 radius: {radius:.3f}")
+    print(f"Means: any perturbation with ||δ||_2 ≤ {radius:.3f} cannot change prediction")
+```
+
+#### 도구 2: 시나리오 생성 (Step 2)
+
+```python
+import requests
+
+prompt = """Generate a certified robustness threat scenario:
+1. Threat type (L_2 / L_inf / patch / semantic perturbation)
+2. Adversary capability (perturbation budget ε)
+3. Defense (empirical adversarial training vs certified)
+4. Tradeoff (certified accuracy / clean accuracy / ε)
+5. Detection (out-of-bound query patterns)
+6. Coverage (which inputs certified, which abstain)
+
+JSON: {"threat":"...", "epsilon":"...", "defense":"...", "tradeoff":"...", "detection":[...], "coverage":"..."}"""
+
+r = requests.post("http://192.168.0.105:11434/api/generate",
+                 json={"model":"gpt-oss:120b","prompt":prompt,"stream":False})
+print(r.json()['response'])
+```
+
+#### 도구 3: 정책 평가 (Step 3)
+
+```python
+def eval_cert_policy(policy):
+    p = f"""정책이 인증된 강건성 운영에 견고한지 평가:
+{policy}
+
+분석:
+1. 모델 종류 (smooth-trained vs adversarial-trained)
+2. ε 보장 (L_2 / L_inf radius)
+3. Certification budget (compute time per inference)
+4. Abstain rate 정책
+5. Update / retrain 절차
+6. 사용자 알림 (uncertain prediction 표시)
+
+JSON: {{"weaknesses":[...], "missing_defenses":[...], "rec":[...]}}"""
+
+    r = requests.post("http://192.168.0.105:11434/api/generate",
+        json={"model":"gpt-oss:120b","prompt":p,"stream":False})
+    return r.json()['response']
+
+policy = """
+1. 모델: vanilla ResNet (no smoothing)
+2. ε 보장: 없음
+3. Certification: 미수행
+4. Abstain: 미지원
+5. Update: 분기 1회
+"""
+print(eval_cert_policy(policy))
+```
+
+#### 도구 5: 자동 인증 — auto_LiRPA + α,β-CROWN (Step 5)
+
+```python
+from auto_LiRPA import BoundedModule, BoundedTensor, PerturbationLpNorm
+import torch, torch.nn as nn
+
+model = nn.Sequential(
+    nn.Conv2d(3, 32, 3), nn.ReLU(),
+    nn.MaxPool2d(2),
+    nn.Flatten(), nn.Linear(32*15*15, 10)
+)
+
+bounded_model = BoundedModule(model, torch.zeros(1, 3, 32, 32))
+
+x = torch.randn(1, 3, 32, 32)
+ptb = PerturbationLpNorm(norm=float('inf'), eps=8/255)
+x_bounded = BoundedTensor(x, ptb)
+
+# CROWN bound
+lb, ub = bounded_model.compute_bounds(x=(x_bounded,), method="CROWN")
+print(f"Lower bound: {lb}")
+print(f"Upper bound: {ub}")
+
+certified = (lb.argmax(dim=1) == lb.argmax(dim=1)).all()
+print(f"Certified: {certified}")
+```
+
+```bash
+# === α,β-CROWN (state-of-the-art) ===
+cd /tmp/abcrown
+python3 abcrown.py --config exp_configs/cifar10_resnet.yaml \
+                   --epsilon 0.0314 \
+                   --norm inf \
+                   --instances 100
+```
+
+#### 도구 6: 가드레일 (Step 6)
+
+```python
+class CertifiedClassifier:
+    """인증된 강건성 wrapper"""
+
+    def __init__(self, base_model, sigma=0.25, num_classes=10):
+        self.smooth = Smooth(base_model, num_classes=num_classes, sigma=sigma)
+
+    def predict_with_cert(self, x, n0=100, n=10000, alpha=0.01):
+        prediction, radius = self.smooth.certify(x, n0=n0, n=n, alpha=alpha, batch_size=400)
+        return {
+            "prediction": prediction,
+            "certified_radius": radius,
+            "abstain": prediction == -1,
+            "confidence": "high" if radius > 0.5 else "medium" if radius > 0.1 else "low"
+        }
+
+    def safe_inference(self, x, min_radius=0.1):
+        """min_radius 이하 인증은 abstain"""
+        result = self.predict_with_cert(x)
+        if result['abstain'] or result['certified_radius'] < min_radius:
+            return {"action": "abstain", "reason": f"radius {result['certified_radius']:.3f} < {min_radius}"}
+        return {"action": "predict", "label": result['prediction'], "radius": result['certified_radius']}
+```
+
+#### 도구 7: 모니터링 (Step 7)
+
+```python
+from prometheus_client import start_http_server, Gauge, Counter, Histogram
+
+cert_predictions = Counter('cert_predictions_total', 'Certified predictions', ['result'])
+cert_radius = Histogram('cert_radius', 'Certified radius distribution',
+                        buckets=(0.0, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0))
+cert_abstains = Counter('cert_abstains_total', 'Abstain count')
+cert_inference_time = Histogram('cert_inference_time_seconds', 'Inference time')
+cert_accuracy = Gauge('cert_accuracy_at_radius', 'Certified accuracy', ['radius'])
+
+import time
+
+def monitor_inference(classifier, x, true_label):
+    start = time.time()
+    result = classifier.predict_with_cert(x)
+    cert_inference_time.observe(time.time() - start)
+
+    if result['abstain']:
+        cert_abstains.inc()
+        cert_predictions.labels(result="abstain").inc()
+    elif result['prediction'] == true_label:
+        cert_predictions.labels(result="correct").inc()
+        cert_radius.observe(result['certified_radius'])
+    else:
+        cert_predictions.labels(result="incorrect").inc()
+
+start_http_server(9307)
+```
+
+#### 도구 8: 보고서 (Step 8)
+
+```bash
+cat > /tmp/cert-eval-report.md << 'EOF'
+# Certified Robustness Evaluation — 2026-Q2
+
+## 1. Executive Summary
+- CIFAR-10 / ResNet-50 + Randomized Smoothing
+- σ = 0.25, n = 10000, α = 0.001
+- Clean accuracy: 78%
+- Certified accuracy at L_2 ε=0.5: 56%
+- Certified accuracy at L_2 ε=1.0: 32%
+- Abstain rate: 8%
+
+## 2. ε vs Certified Accuracy curve
+| ε (L_2) | Cert Acc | Abstain |
+|---------|---------|---------|
+| 0 | 78% | 8% |
+| 0.1 | 73% | 9% |
+| 0.25 | 65% | 10% |
+| 0.5 | 56% | 12% |
+| 1.0 | 32% | 18% |
+| 1.5 | 12% | 27% |
+
+## 3. 비교
+| 모델 | Clean | Empirical (PGD ε=8/255) | Certified ε=0.5 |
+|------|-------|------------------------|----------------|
+| Vanilla ResNet | 92% | 0% (PGD 100%) | 0% |
+| AT-ResNet (Madry) | 87% | 47% | 18% |
+| Smoothed (Cohen σ=0.25) | 78% | n/a | 56% |
+| Smoothed + AT | 76% | n/a | 64% |
+
+## 4. Compute overhead
+- Vanilla inference: 5ms
+- Smoothed (n=10000): 1500ms (300x)
+- α,β-CROWN: 2000-30000ms / sample (수만 배)
+
+## 5. 권고
+### Short
+- Critical decision (medical / autonomous) → smoothed
+- 일반 → vanilla + monitoring
+- Abstain UI 명확화
+
+### Mid
+- α,β-CROWN 정기 sample 검증
+- Adversarial patch 별도 인증
+- Federated Smoothing (Cohen + Flower)
+
+### Long
+- Hardware-accel certified inference
+- Larger ε (semantic robustness 포함)
+- Compositional certification (chain of models)
+EOF
+
+pandoc /tmp/cert-eval-report.md -o /tmp/cert-eval-report.pdf \
+  --pdf-engine=xelatex -V mainfont="Noto Sans CJK KR"
+```
+
+### 점검 / 평가 / 보고 흐름 (8 step + multi_task)
+
+#### Phase A — 기본 + 시나리오 + 정책 (s1·s2·s3)
+
+```bash
+python3 /tmp/cert-smoothing-basic.py
+python3 /tmp/cert-scenario.py
+python3 /tmp/cert-policy-eval.py
+```
+
+#### Phase B — 우회 + 자동화 (s4·s5)
+
+```bash
+python3 /tmp/extraction-injection.py    # week01~03
+python3 /tmp/cert-autoLiRPA.py
+cd /tmp/abcrown && python3 abcrown.py --config exp_configs/cifar10_resnet.yaml
+```
+
+#### Phase C — 가드레일 + 모니터링 + 보고 (s6·s7·s8)
+
+```bash
+python3 /tmp/cert-guard.py
+python3 /tmp/cert-monitor.py &
+pandoc /tmp/cert-eval-report.md -o /tmp/cert-eval-report.pdf
+```
+
+#### Phase D — 통합 (s99 multi_task)
+
+s1 → s2 → s3 → s5 → s6 를 Bastion 가:
+
+1. plan: smoothing → 시나리오 → 정책 → CROWN/abcrown → cert wrapper
+2. execute: smoothing-cohen / auto_LiRPA / abcrown
+3. synthesize: 5 산출물 (basic.txt / scenario.json / policy.json / cert-results.csv / guard.py)
+
+### 도구 비교표 — 인증 단계별
+
+| 단계 | 1순위 | 2순위 | 사용 |
+|------|-------|-------|------|
+| Randomized Smoothing | smoothing-cohen | macer | OSS |
+| CROWN | auto_LiRPA | CROWN-IBP | OSS |
+| α,β-CROWN | α,β-CROWN | nnenum | OSS, SOTA |
+| Lipschitz | LipSDP / LipMIP | 자체 SDP | OSS |
+| MILP / SMT | Marabou / Reluplex | NeVer / Eran | OSS |
+| Patch | Patch-CROWN | DRS | 학계 |
+| Empirical (보조) | ART / Foolbox | TextAttack | OSS |
+| 모니터링 | Prometheus + custom | TensorBoard | OSS |
+| Compliance | EU AI Act high-risk | NIST AI 600-1 | 표준 |
+| 보고서 | pandoc | Word | 기술 |
+
+### 도구 선택 매트릭스 — 시나리오별 권장
+
+| 시나리오 | 우선 도구 | 이유 |
+|---------|---------|------|
+| "ImageNet 큰 모델" | Randomized Smoothing | 확장 |
+| "작은 모델 정확 인증" | α,β-CROWN | exact |
+| "patch attack" | Patch-CROWN | 특화 |
+| "compliance 의무" | smoothing + α,β-CROWN sample | 다층 |
+| "research" | auto_LiRPA | 유연 |
+| "production (medical)" | smoothing + abstain UI | 안전 |
+| "production (autonomous)" | smoothing + adversarial training | 강함 |
+
+### 학생 셀프 체크리스트 (각 step 완료 기준)
+
+- [ ] s1: Smooth + certify + radius 출력
+- [ ] s2: 6 컴포넌트 시나리오 (L_p / patch / semantic)
+- [ ] s3: 정책 평가 (6 항목)
+- [ ] s4: week01~03 인젝션 재실행
+- [ ] s5: auto_LiRPA + α,β-CROWN 인증
+- [ ] s6: CertifiedClassifier wrapper + abstain
+- [ ] s7: 5+ 메트릭 (predictions / radius / abstains / time / acc)
+- [ ] s8: 보고서 (curve + 비교 + overhead + 권고)
+- [ ] s99: Bastion 가 5 작업 (basic / scenario / policy / cert / guard) 순차
+
+### 추가 참조 자료
+
+- **NeurIPS Cohen 2019** Randomized Smoothing
+- **CROWN (Zhang 2018)** Efficient Neural Net Verification
+- **α,β-CROWN** https://github.com/Verified-Intelligence/alpha-beta-CROWN
+- **auto_LiRPA** https://github.com/Verified-Intelligence/auto_LiRPA
+- **smoothing-cohen** https://github.com/locuslab/smoothing
+- **Marabou** https://github.com/NeuralNetworkVerification/Marabou
+- **Reluplex** (Stanford)
+- **MITRE ATLAS** (Adversarial threats)
+- **NIST AI 600-1**
+- **EU AI Act Article 15** (Robustness for high-risk systems)
+
+위 모든 인증 평가는 **격리 환경** 으로 수행한다. 인증 boundary 는 모델·입력·ε 별 — 변경 시
+재인증 필수. Randomized Smoothing 은 inference 비용 300x — 비용·정확도 tradeoff 평가
+필요. α,β-CROWN 은 small 모델 (수만 노드) 에서만 실용 — 대형은 sample. 인증 결과는
+"보장" 이지만 ε 외부는 보장 없음 — 운영 SLA 와 ε 정합 필수.

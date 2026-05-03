@@ -581,3 +581,146 @@ K8s 의 secret 과 configmap 은 etcd (분산 key-value store) 에 저장된다.
 
 **학생 액션**: lab 환경에서 default SA token 1개로 `kubectl get secrets -A` 와 `kubectl auth can-i --list` 를 실행하고, audit 에 어느 신호가 발생하는지 추적. 그 후 RBAC role 을 *자기 namespace 의 secret list 만 허용* 으로 좁힌 뒤 동일 명령 재실행 — 어느 단계에서 차단되고 어느 audit 가 새로 발생하는지 비교 표 작성.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course6 Cloud-Container — Week 11 IaC 보안)
+
+### IaC 보안 도구
+
+| 영역 | OSS 도구 | 강점 |
+|------|---------|------|
+| Terraform | **checkov** / tfsec / terrascan / kics | tfsec 가장 빠름 |
+| K8s YAML | checkov / kics / kube-score / Polaris (week05 재사용) | |
+| Helm | checkov + helm template / Datree | |
+| CloudFormation | cfn-lint / cfn-nag / checkov | |
+| Ansible | ansible-lint / kics | |
+| Policy as Code | **OPA conftest** / Sentinel (HashiCorp, free) | |
+| Drift Detection | **driftctl** / Atlantis / Spacelift OSS | |
+
+### 핵심 — checkov (멀티 IaC 표준)
+
+```bash
+pip3 install checkov
+
+# Terraform 점검
+checkov -d /terraform/                                            # 모든 .tf
+checkov -f /terraform/main.tf                                     # 단일 파일
+checkov -d /terraform/ --framework terraform --check CKV_AWS_18   # 특정 룰
+
+# K8s 점검
+checkov -d /k8s/ --framework kubernetes
+checkov -d /helm/ --framework helm
+checkov -d /Dockerfile --framework dockerfile
+
+# 출력 형식
+checkov -d /terraform/ -o json --output-file /tmp/checkov.json
+checkov -d /terraform/ -o cli                                     # 색상 콘솔
+checkov -d /terraform/ -o sarif                                   # GitHub Code Scanning
+checkov -d /terraform/ -o junitxml                                # CI 시스템
+
+# 룰 카탈로그
+checkov --list                                                    # 모든 룰 (700+)
+checkov -d /terraform/ --skip-check CKV_AWS_18,CKV_AWS_19         # 룰 제외
+```
+
+### 학생 환경 준비
+
+```bash
+pip3 install checkov ansible-lint
+go install github.com/aquasecurity/tfsec/cmd/tfsec@latest
+go install github.com/Checkmarx/kics/cmd/kics@latest
+go install github.com/tenable/terrascan@latest
+
+# OPA conftest (정책 as 코드)
+curl -L https://github.com/open-policy-agent/conftest/releases/latest/download/conftest_0.49.0_Linux_x86_64.tar.gz | tar xz
+sudo mv conftest /usr/local/bin/
+
+# driftctl (drift detection)
+curl -L https://github.com/snyk/driftctl/releases/latest/download/driftctl_linux_amd64 -o driftctl
+chmod +x driftctl && sudo mv driftctl /usr/local/bin/
+
+# Atlantis (PR-based Terraform CI)
+docker pull ghcr.io/runatlantis/atlantis:latest
+```
+
+### 핵심 사용법
+
+```bash
+# 1) tfsec (Terraform — 가장 빠름)
+tfsec /terraform/
+tfsec /terraform/ --format json --out /tmp/tfsec.json
+tfsec /terraform/ --minimum-severity HIGH
+
+# 2) kics (멀티 형식)
+kics scan -p /terraform -o /tmp/kics-report
+kics scan -p /k8s --type Kubernetes
+
+# 3) terrascan
+terrascan scan -d /terraform -p ./policies
+
+# 4) ansible-lint
+ansible-lint /playbooks/
+ansible-lint --profile production /playbooks/site.yml
+
+# 5) OPA conftest (커스텀 정책)
+cat > /policies/k8s.rego << 'EOF'
+package main
+deny[msg] {
+  input.kind == "Deployment"
+  not input.spec.template.spec.securityContext.runAsNonRoot
+  msg := sprintf("Deployment %s must runAsNonRoot", [input.metadata.name])
+}
+EOF
+conftest test --policy /policies /k8s/deployment.yaml
+
+# 6) driftctl (Terraform state vs 실제 환경)
+driftctl scan --from tfstate://terraform.tfstate
+# 출력: state 와 다른 resource (수동 변경 감지)
+
+# 7) Atlantis (PR-based Terraform)
+# atlantis.yaml:
+# version: 3
+# projects:
+# - dir: terraform/
+#   workflow: default
+# Atlantis 가 PR 마다 terraform plan 실행 + 보안 점검 자동
+```
+
+### IaC 보안 점검 흐름
+
+```bash
+# Phase 1: 정적 분석 (모든 IaC 파일)
+for f in /repo/terraform /repo/k8s /repo/ansible; do
+  case $f in
+    *terraform) tfsec $f && checkov -d $f --framework terraform ;;
+    *k8s) checkov -d $f --framework kubernetes && conftest test --policy /policies $f/*.yaml ;;
+    *ansible) ansible-lint $f ;;
+  esac
+done
+
+# Phase 2: PR-based 점검 (Atlantis 또는 GitHub Actions)
+# 모든 PR 에서 자동 실행
+
+# Phase 3: drift detection (정기)
+driftctl scan --from tfstate://prod.tfstate \
+  --output json:/tmp/drift.json
+# 수동 변경 → 알람
+
+# Phase 4: 정책 자동 적용 (OPA)
+conftest test --policy /policies /k8s/
+
+# Phase 5: 변경 history (Git)
+git log --since="1 month" /terraform/ --pretty='%h %ai %an %s'
+```
+
+### IaC 자동 시정 (auto-fix)
+
+| 도구 | auto-fix |
+|------|---------|
+| checkov | `--apply-suppressions` (제한적) |
+| tflint | `--fix` |
+| ansible-lint | `--fix` (제한적) |
+| custom OPA | rego 정책 → terraform `local-exec` provisioner |
+
+학생은 본 11주차에서 **checkov + tfsec + kics + conftest + driftctl + Atlantis** 6 도구로 IaC 의 4 단계 (정적 분석 → 정책 강제 → drift 감지 → 자동 시정) 사이클을 OSS 만으로 운영한다.

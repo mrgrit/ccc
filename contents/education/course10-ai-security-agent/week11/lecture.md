@@ -976,3 +976,265 @@ graph LR
 
 **학생 액션**: lab 에 Chroma + dataset 392 사례 임포트 → RAG 활성/비활성 비교.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course10 — Week 11 오케스트레이션)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | LangGraph 그래프 | LangGraph |
+| s2 | Temporal durable | **Temporal** |
+| s3 | Apache Airflow | **Apache Airflow** |
+| s4 | Prefect | Prefect |
+| s5 | dagster | dagster |
+| s6 | Long-running task | Temporal activities |
+| s7 | 실패 시 재시도 | Temporal retry policy |
+| s8 | 통합 workflow | Temporal + LangGraph |
+
+### 학생 환경 준비
+
+```bash
+pip install temporalio apache-airflow prefect dagster langgraph
+
+# Temporal server (가장 modern)
+docker run -d -p 7233:7233 -p 8233:8233 temporalio/temporal:latest
+# Web UI: http://localhost:8233
+
+# Airflow
+docker run -d -p 8080:8080 apache/airflow:latest
+```
+
+### 핵심 — Temporal (durable workflow — 재시작 후에도 진행)
+
+```python
+# /opt/workflows/pentest_workflow.py
+from temporalio import workflow, activity
+from temporalio.client import Client
+from temporalio.worker import Worker
+from datetime import timedelta
+import asyncio
+import subprocess
+
+# === Activities (실제 작업 — idempotent + retry-safe) ===
+
+@activity.defn
+async def scan_target(target: str) -> dict:
+    """nmap 스캔 — 실패 시 자동 재시도"""
+    activity.logger.info(f"Scanning {target}")
+    result = subprocess.run(
+        ["nmap", "-sV", target],
+        capture_output=True, text=True, timeout=600
+    )
+    return {
+        "target": target,
+        "stdout": result.stdout,
+        "ports": parse_nmap_xml(result.stdout)
+    }
+
+@activity.defn
+async def exploit_finding(finding: dict) -> dict:
+    """sqlmap / XSStrike 등 vuln 검증"""
+    if finding["type"] == "sqli":
+        result = subprocess.run(
+            ["sqlmap", "-u", finding["url"], "--batch"],
+            capture_output=True, text=True, timeout=900
+        )
+        return {"success": "vulnerable" in result.stdout, "evidence": result.stdout}
+    return {}
+
+@activity.defn
+async def write_report(scan_results: list, exploit_results: list) -> str:
+    """LLM 으로 보고서 자동 작성"""
+    from langchain_ollama import OllamaLLM
+    llm = OllamaLLM(model="gemma3:4b")
+    return llm.invoke(f"보고서 작성: {scan_results}, {exploit_results}")
+
+@activity.defn
+async def submit_to_thehive(report: str) -> str:
+    """TheHive 에 case 생성"""
+    import requests
+    r = requests.post("http://thehive:9000/api/case",
+        headers={"Authorization": "Bearer TOKEN"},
+        json={"title": "Auto Pentest Report", "description": report}
+    )
+    return r.json()["id"]
+
+# === Workflow ===
+
+@workflow.defn
+class PentestWorkflow:
+    @workflow.run
+    async def run(self, targets: list[str]) -> str:
+        """모의해킹 전체 흐름 (1시간+ 가능)"""
+        
+        # 1) 정찰 (병렬, 자동 재시도)
+        scan_tasks = [
+            workflow.execute_activity(
+                scan_target, target,
+                start_to_close_timeout=timedelta(minutes=15),
+                retry_policy=workflow.RetryPolicy(
+                    initial_interval=timedelta(seconds=10),
+                    maximum_attempts=3,
+                    backoff_coefficient=2.0
+                )
+            )
+            for target in targets
+        ]
+        scan_results = await asyncio.gather(*scan_tasks)
+        
+        # 2) 발견된 vuln 별 exploit (각 task durable)
+        exploit_results = []
+        for result in scan_results:
+            for finding in result.get("ports", []):
+                if finding.get("vulnerable"):
+                    er = await workflow.execute_activity(
+                        exploit_finding, finding,
+                        start_to_close_timeout=timedelta(minutes=20),
+                        retry_policy=workflow.RetryPolicy(maximum_attempts=2)
+                    )
+                    exploit_results.append(er)
+        
+        # 3) 보고서
+        report = await workflow.execute_activity(
+            write_report, args=[scan_results, exploit_results],
+            start_to_close_timeout=timedelta(minutes=10)
+        )
+        
+        # 4) TheHive 등록
+        case_id = await workflow.execute_activity(
+            submit_to_thehive, report,
+            start_to_close_timeout=timedelta(minutes=5)
+        )
+        
+        return f"Pentest complete. TheHive case: {case_id}"
+
+# === Worker (실행 환경) ===
+async def main():
+    client = await Client.connect("localhost:7233")
+    
+    worker = Worker(
+        client,
+        task_queue="pentest-queue",
+        workflows=[PentestWorkflow],
+        activities=[scan_target, exploit_finding, write_report, submit_to_thehive]
+    )
+    await worker.run()
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+### Workflow 시작
+
+```python
+# /opt/workflows/start_pentest.py
+from temporalio.client import Client
+import asyncio
+
+async def main():
+    client = await Client.connect("localhost:7233")
+    
+    handle = await client.start_workflow(
+        PentestWorkflow.run,
+        args=[["10.20.30.80", "10.20.30.100"]],
+        id=f"pentest-{datetime.now().isoformat()}",
+        task_queue="pentest-queue"
+    )
+    
+    print(f"Started: {handle.id}")
+    
+    # Workflow 가 1시간+ 걸려도 OK — Temporal 이 durable
+    result = await handle.result()
+    print(result)
+
+asyncio.run(main())
+```
+
+### Apache Airflow (대안 — DAG 기반)
+
+```python
+# /opt/airflow/dags/security_dag.py
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+from airflow.operators.bash import BashOperator
+from datetime import datetime, timedelta
+
+default_args = {
+    "owner": "security-team",
+    "retries": 3,
+    "retry_delay": timedelta(minutes=5),
+}
+
+dag = DAG(
+    "auto_security_scan",
+    default_args=default_args,
+    schedule_interval="0 2 * * *",                       # 매일 새벽 2시
+    start_date=datetime(2026, 1, 1),
+    catchup=False
+)
+
+# Tasks
+scan_task = BashOperator(
+    task_id="nmap_scan",
+    bash_command="nmap -sV 10.20.30.0/24 -oX /tmp/scan.xml",
+    dag=dag
+)
+
+vuln_task = BashOperator(
+    task_id="nuclei_scan",
+    bash_command="nuclei -l /tmp/hosts.txt -severity high -j > /tmp/nuclei.json",
+    dag=dag
+)
+
+llm_task = PythonOperator(
+    task_id="llm_report",
+    python_callable=lambda: write_report_with_llm(),
+    dag=dag
+)
+
+# 의존성
+scan_task >> vuln_task >> llm_task
+```
+
+### LangGraph (더 유연 — agent flow)
+
+```python
+# 복잡한 agent flow 를 graph 로
+from langgraph.graph import StateGraph, START, END
+
+g = StateGraph(State)
+
+g.add_node("recon", recon_node)
+g.add_node("plan", plan_node)
+g.add_node("execute", execute_node)
+g.add_node("verify", verify_node)
+g.add_node("report", report_node)
+
+g.add_edge(START, "recon")
+g.add_conditional_edges("recon", lambda s: "plan" if s["found_vulns"] else END)
+g.add_edge("plan", "execute")
+g.add_conditional_edges("execute", lambda s: "verify" if s["success"] else "plan")
+g.add_edge("verify", "report")
+g.add_edge("report", END)
+
+app = g.compile(checkpointer=SqliteSaver.from_conn_string(":memory:"))
+
+# Resumable — 중단 후 재시작 가능
+config = {"configurable": {"thread_id": "session-123"}}
+result = app.invoke({"input": "..."}, config=config)
+```
+
+### 도구 비교
+
+| 도구 | 강점 | 약점 | 사용처 |
+|------|------|------|--------|
+| **Temporal** | Durable, retry, multi-language | 복잡 | long-running, mission-critical |
+| **Airflow** | DAG, scheduler 강력 | LLM 통합 약함 | data pipeline + cron |
+| **Prefect** | Python-friendly | Temporal 만큼 robust 안 함 | data + ML |
+| **dagster** | data lineage 우수 | LLM 통합 약함 | data engineering |
+| **LangGraph** | Agent flow 직관적 | durability 약함 | LLM agent |
+
+학생은 본 11주차에서 **Temporal + LangGraph + Airflow + Prefect + dagster** 5 도구로 long-running agent workflow 의 4 보장 (durable / retry / idempotent / observable) 운영을 익힌다.

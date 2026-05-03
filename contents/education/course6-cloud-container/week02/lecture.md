@@ -552,3 +552,189 @@ event 4662 는 *호스트 OS 의 객체에 누가 접근했는가* 를 기록하
 
 **학생 액션**: lab 환경에서 (1) `docker run --privileged ubuntu find /` 와 (2) `docker run --user 1000 --read-only ubuntu echo hi` 를 각각 실행하여 — Wazuh 가 두 경우의 4656/4662/4690 이벤트를 얼마나 다르게 생성하는지 비교 측정. 두 결과의 차이를 표로 정리하고, *"왜 이런 차이가 나는가"* 를 1문단으로 설명.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course6 Cloud-Container — Week 02 AWS 보안)
+
+### AWS 보안 영역 → OSS 도구
+
+| 영역 | OSS 도구 | 강점 |
+|------|---------|------|
+| 자동 점검 | **Prowler** (200+ checks) / scout-suite / cloudsploit | 종합 |
+| IAM 분석 | **iamlive** / aws-iam-authenticator / pmapper | 권한 분석 |
+| 비용/구성 점검 | **Steampipe** + cloud-quotas / aws-nuke | SQL 형 조회 |
+| Vulnerability | Trivy (`trivy aws`) / Inspector OSS-mirror | CVE 매핑 |
+| 무결성 | aws-cloudtrail / **Config Rules** (CloudCustodian OSS) | 변경 감지 |
+| Pentest | **Pacu** (Rhino Sec) / cf-pwn / cloud-nuke | 공격 시뮬 |
+| LocalStack 모방 | **LocalStack** (대부분 AWS API 모방) | 실습 환경 |
+
+### 핵심 — Prowler (사실상 표준)
+
+```bash
+# Docker 로 가장 단순
+docker pull toniblyx/prowler:latest
+
+# 기본 점검
+docker run -ti --name prowler \
+  -v ~/.aws:/root/.aws \
+  toniblyx/prowler
+
+# CIS AWS Benchmark 1.5
+docker run -ti -v ~/.aws:/root/.aws toniblyx/prowler -g cis_2.0_aws_v1
+
+# 특정 영역만
+docker run -ti -v ~/.aws:/root/.aws toniblyx/prowler -g iam
+docker run -ti -v ~/.aws:/root/.aws toniblyx/prowler -g s3
+
+# HTML 보고서
+docker run -ti -v ~/.aws:/root/.aws -v $PWD/output:/prowler/output \
+  toniblyx/prowler -M html
+```
+
+### 학생 환경 준비 (실습은 LocalStack 으로 AWS 모방)
+
+```bash
+# Docker 기본 (이미 설치됨)
+docker --version
+
+# LocalStack — AWS API 모방 (S3/IAM/EC2/CloudTrail 등)
+docker pull localstack/localstack
+docker run -d -p 4566:4566 -e SERVICES=s3,iam,ec2,cloudtrail,lambda,sts \
+  --name localstack localstack/localstack
+
+# AWS CLI (LocalStack endpoint 사용)
+sudo apt install -y awscli
+mkdir -p ~/.aws
+cat > ~/.aws/credentials << 'EOF'
+[default]
+aws_access_key_id = test
+aws_secret_access_key = test
+EOF
+cat > ~/.aws/config << 'EOF'
+[default]
+region = us-east-1
+output = json
+endpoint_url = http://localhost:4566
+EOF
+
+# Prowler
+docker pull toniblyx/prowler:latest
+
+# scout-suite
+pip3 install scoutsuite
+
+# Steampipe (SQL 으로 AWS 조회)
+sudo /bin/sh -c "$(curl -fsSL https://steampipe.io/install/steampipe.sh)"
+steampipe plugin install aws
+
+# Pacu (AWS pentest 프레임워크)
+git clone https://github.com/RhinoSecurityLabs/pacu.git ~/pacu
+cd ~/pacu && pip3 install -r requirements.txt
+
+# CloudCustodian (정책 자동 강제)
+pip3 install c7n
+
+# iamlive (실시간 IAM 권한 분석)
+go install github.com/iann0036/iamlive@latest 2>/dev/null || \
+  curl -L https://github.com/iann0036/iamlive/releases/latest/download/iamlive-linux-amd64.tar.gz | tar xz
+```
+
+### 핵심 도구 사용법
+
+```bash
+# 1) LocalStack 환경 모의
+aws --endpoint-url=http://localhost:4566 s3 mb s3://test-bucket
+aws --endpoint-url=http://localhost:4566 iam create-user --user-name testuser
+aws --endpoint-url=http://localhost:4566 iam attach-user-policy \
+  --user-name testuser --policy-arn arn:aws:iam::aws:policy/AdministratorAccess
+
+# 2) Prowler 자동 점검 (LocalStack endpoint 가능)
+docker run -ti -v ~/.aws:/root/.aws \
+  -e AWS_ENDPOINT_URL=http://host.docker.internal:4566 \
+  toniblyx/prowler -g cis_2.0_aws_v1
+
+# 3) scout-suite
+scout aws --endpoint-url http://localhost:4566 --report-dir /tmp/scout
+firefox /tmp/scout/aws/index.html
+
+# 4) Steampipe — SQL 형 점검
+steampipe query "SELECT name, arn FROM aws_iam_user;"
+steampipe query "SELECT name, encryption_rules FROM aws_s3_bucket WHERE encryption_rules IS NULL;"
+# Public S3 bucket 찾기
+steampipe query "SELECT name, bucket_policy_is_public FROM aws_s3_bucket WHERE bucket_policy_is_public = true;"
+
+# 5) Pacu (공격 시뮬레이션 — LocalStack 환경)
+cd ~/pacu && python3 pacu.py
+# Pacu prompt 에서:
+#   set_keys                   # 자격증명 등록
+#   import_keys default
+#   run iam__enum_users
+#   run iam__bruteforce_permissions
+#   run s3__bucket_finder
+
+# 6) CloudCustodian (정책 자동 강제)
+cat > /tmp/policy.yml << 'EOF'
+policies:
+  - name: ensure-s3-encrypted
+    resource: aws.s3
+    filters:
+      - type: bucket-encryption
+        state: false
+    actions:
+      - type: set-bucket-encryption
+        crypto: AES256
+EOF
+custodian run -s /tmp/output /tmp/policy.yml
+
+# 7) iamlive (실시간 IAM 권한 추적)
+iamlive --output-format aws-policy &
+aws --endpoint-url=http://localhost:4566 s3 ls
+# iamlive 가 사용된 IAM 액션 자동 정책 생성 → least-privilege
+```
+
+### 본 2주차 점검 흐름 (LocalStack 실습)
+
+```bash
+# Phase 1: 환경 구축 (LocalStack)
+docker-compose up -d                                                # localstack + 다른 서비스
+
+# Phase 2: 의도적 misconfig 환경 (학생이 점검할 대상)
+aws --endpoint-url=http://localhost:4566 s3 mb s3://public-bucket
+aws --endpoint-url=http://localhost:4566 s3api put-bucket-acl \
+  --bucket public-bucket --acl public-read
+aws --endpoint-url=http://localhost:4566 iam create-user --user-name admin-user
+aws --endpoint-url=http://localhost:4566 iam attach-user-policy \
+  --user-name admin-user --policy-arn arn:aws:iam::aws:policy/AdministratorAccess
+
+# Phase 3: 자동 점검 (Prowler + Steampipe)
+docker run -ti -v ~/.aws:/root/.aws \
+  -e AWS_ENDPOINT_URL=http://host.docker.internal:4566 \
+  toniblyx/prowler
+
+steampipe query "SELECT name FROM aws_s3_bucket WHERE bucket_policy_is_public;"
+# → public-bucket 발견
+
+# Phase 4: 자동 시정 (CloudCustodian)
+custodian run /tmp/policy.yml -s /tmp/c7n-out
+# Public bucket 자동 차단
+
+# Phase 5: 공격 시뮬 (Pacu) → 방어 검증
+cd ~/pacu && python3 pacu.py
+# 모의 공격 후 CloudTrail 에 흔적 남는지 확인
+aws --endpoint-url=http://localhost:4566 cloudtrail lookup-events --max-results 10
+```
+
+### AWS 보안 OSS 도구 우선순위
+
+| 우선 | 도구 | 용도 |
+|------|------|------|
+| ★★★ | Prowler | 종합 자동 점검 (CIS / GDPR / HIPAA) |
+| ★★★ | Steampipe | SQL 형 정책 조회 |
+| ★★ | scout-suite | 멀티 클라우드 |
+| ★★ | CloudCustodian | 자동 시정 |
+| ★★ | LocalStack | 실습 환경 |
+| ★ | Pacu | 공격 시뮬 |
+| ★ | iamlive | least-privilege 정책 생성 |
+
+학생은 본 2주차에서 **LocalStack (실습 환경) + Prowler (점검) + Steampipe (조회) + CloudCustodian (시정) + Pacu (검증)** 5 도구로 AWS 보안의 4 단계 (모방 → 점검 → 시정 → 검증) 사이클을 OSS 만으로 익힌다.

@@ -585,3 +585,173 @@ ISO/IEC 42001 (2024년 시행) 는 *AI 관리 시스템의 표준* 으로, ISO 2
 
 **학생 액션**: 본인이 만든 시스템에 NIST AI RMF 5 functions 를 적용한 *체크리스트* 작성. 각 function 별 충족도를 0-100% 로 평가하고, 미충족 항목의 개선 우선순위 산출.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course8 AI Safety — Week 14 배포 안전)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | 추론 서버 + 안전 미들웨어 | **vLLM** + **llm-guard** |
+| s2 | API gateway | **LiteLLM** proxy |
+| s3 | Auth (Keycloak OIDC) | **Keycloak** + LiteLLM API key |
+| s4 | Rate limiting | LiteLLM rpm/tpm |
+| s5 | Cost limit | LiteLLM cost callback |
+| s6 | 이미지 보안 | **Trivy** + **cosign** |
+| s7 | Auto-scale | **KServe** / Knative |
+| s8 | 통합 모니터링 | Langfuse + Prometheus |
+
+### 학생 환경 준비
+
+```bash
+pip install 'litellm[proxy]' llm-guard
+
+# vLLM (production GPU) 또는 Ollama (CPU)
+# Trivy + cosign (이미 설치됨)
+sudo curl -L https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64 -o /usr/local/bin/cosign
+sudo chmod +x /usr/local/bin/cosign
+
+# Keycloak
+docker run -d -p 8090:8080 \
+    -e KEYCLOAK_ADMIN=admin -e KEYCLOAK_ADMIN_PASSWORD=Pa\$\$w0rd \
+    quay.io/keycloak/keycloak:latest start-dev
+```
+
+### 핵심 — LiteLLM proxy 통합 보안 게이트웨이
+
+```yaml
+# litellm.yaml
+model_list:
+  - model_name: gpt-4
+    litellm_params:
+      model: ollama/gemma3:4b
+      api_base: http://localhost:11434
+
+litellm_settings:
+  callbacks: ["langfuse"]                              # 자동 로깅
+  
+  # 입출력 안전 필터 (custom callback)
+  pre_call_checks:
+    - type: prompt_injection
+      threshold: 0.5
+    - type: pii_detection
+  
+  post_call_checks:
+    - type: sensitive_data
+    - type: bias_detection
+
+router_settings:
+  fallbacks:
+    - {"gpt-4": ["gpt-3.5-turbo"]}                     # 자동 폴백
+  retry_policy:
+    BadRequestErrorRetries: 3
+  
+general_settings:
+  master_key: "sk-master"
+  rpm_limit: 60
+  tpm_limit: 100000
+  cost_limit: 100.0                                    # $100/day
+  
+  # Keycloak 통합
+  jwt_auth_settings:
+    enabled: true
+    public_key_url: "http://keycloak/realms/llm/protocol/openid-connect/certs"
+```
+
+### Llm-guard 미들웨어 (FastAPI 통합)
+
+```python
+from fastapi import FastAPI, HTTPException, Header, Depends
+from llm_guard import scan_prompt, scan_output
+from llm_guard.input_scanners import PromptInjection, Anonymize, TokenLimit, Toxicity
+from llm_guard.output_scanners import Sensitive, Code, Bias
+import requests
+import jwt
+
+app = FastAPI()
+
+input_scanners = [
+    PromptInjection(threshold=0.5),
+    Anonymize(),
+    TokenLimit(limit=4000),
+    Toxicity(threshold=0.7),
+]
+output_scanners = [
+    Sensitive(),
+    Code(deny=["malicious"]),
+    Bias(threshold=0.5),
+]
+
+# Keycloak JWT 검증
+def verify_token(authorization: str = Header(None)):
+    token = authorization.replace("Bearer ", "")
+    public_key = requests.get("http://keycloak/realms/llm/protocol/openid-connect/certs").json()
+    payload = jwt.decode(token, public_key, algorithms=["RS256"])
+    return payload
+
+@app.post("/v1/chat/completions")
+async def chat(request: dict, user=Depends(verify_token)):
+    prompt = request["messages"][-1]["content"]
+    
+    # 입력 검증
+    sanitized, valid, scores = scan_prompt(input_scanners, prompt)
+    if not all(valid.values()):
+        raise HTTPException(403, f"Prompt rejected: {scores}")
+    
+    request["messages"][-1]["content"] = sanitized
+    
+    # LiteLLM 으로 forward
+    r = requests.post("http://litellm:4000/v1/chat/completions", json=request)
+    response = r.json()
+    output_text = response["choices"][0]["message"]["content"]
+    
+    # 출력 검증
+    sanitized_out, valid, _ = scan_output(output_scanners, prompt, output_text)
+    if not all(valid.values()):
+        return {"error": "Output filtered"}
+    
+    response["choices"][0]["message"]["content"] = sanitized_out
+    return response
+```
+
+### Container 보안 (cosign + Trivy)
+
+```bash
+# 1) 이미지 빌드 후 CVE 점검
+docker build -t myorg/llm-server:v1.2.3 .
+trivy image --severity HIGH,CRITICAL --exit-code 1 myorg/llm-server:v1.2.3
+
+# 2) 서명
+cosign generate-key-pair
+cosign sign --key cosign.key myorg/llm-server:v1.2.3
+
+# 3) 검증 (배포 전)
+cosign verify --key cosign.pub myorg/llm-server:v1.2.3
+
+# 4) Kubernetes admission control (cosign 미서명 거부)
+# OPA Gatekeeper 정책으로 enforce
+```
+
+### 운영 흐름
+
+```
+Client → 
+  1. Keycloak OIDC (인증)
+  2. LiteLLM proxy (rate limit + cost + 로깅)
+  3. llm-guard middleware (입출력 필터)
+  4. vLLM (LLM 호출)
+  5. Langfuse 자동 trace
+  → Response
+
+Container:
+  - Trivy CVE check (0 CRITICAL)
+  - cosign 서명 검증
+  - OPA Gatekeeper admission
+
+Auto-scale:
+  - KServe HPA (CPU 70% / RPS 50)
+```
+
+학생은 본 14주차에서 **vLLM + LiteLLM + llm-guard + Keycloak + cosign + Trivy + Langfuse** 7 도구로 LLM 배포의 4 layer (인증 / 안전 필터 / 컨테이너 / 모니터링) 통합 운영을 익힌다.

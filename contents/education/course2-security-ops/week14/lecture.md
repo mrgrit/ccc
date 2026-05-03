@@ -804,3 +804,58 @@ dataset host `HOST-4476` (incident `e5578610-d2eb-11ee-...`):
 3. latency baseline 측정 — nft block → OpenCTI 까지 *분 단위 이내* 도달 보장
 
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course2 SecOps — Week 14 통합 보안 아키텍처)
+
+본 14주차는 **2-13주차의 모든 도구를 통합 운용**하는 단계.
+
+### 통합 도구 매트릭스
+
+| Layer | 도구 | 역할 |
+|-------|------|------|
+| Network FW | nftables / fail2ban / crowdsec | L3/L4 차단 |
+| IDS/IPS | Suricata / Snort3 | L7 시그니처 |
+| WAF | ModSecurity + OWASP CRS / Coraza | HTTP 룰 |
+| Endpoint | Wazuh agent / Falco / OSSEC | host-based |
+| SIEM | Wazuh manager / Elastic SIEM | 로그 통합 |
+| CTI | OpenCTI / MISP / TheHive | 인텔리전스 |
+| Sigma 표준 | pysigma + sigma-cli | rule unification |
+| 시각화 | Grafana / Kibana / Wazuh Dashboard | dashboard |
+
+### 통합 흐름 — 한 명령으로 전체 점검
+```bash
+ssh ccc@10.20.30.100
+# 헬스체크 통합 스크립트
+for svc in wazuh-manager wazuh-indexer wazuh-dashboard opencti-platform; do
+  echo "$svc: $(systemctl is-active $svc 2>/dev/null)"
+done
+ssh ccc@10.20.30.1 'for svc in nftables suricata fail2ban crowdsec; do echo "$svc: $(systemctl is-active $svc)"; done'
+ssh ccc@10.20.30.80 'for svc in apache2 wazuh-agent falco; do echo "$svc: $(systemctl is-active $svc)"; done'
+```
+
+### CTI → SIEM → IPS 자동화 파이프라인 (실무 표준)
+```bash
+# 1) OpenCTI 에서 최근 high-confidence IP indicators export
+python3 << 'EOF' > /tmp/blocklist.txt
+from pycti import OpenCTIApiClient
+c = OpenCTIApiClient(...)
+for ind in c.indicator.list(first=1000):
+    if "ipv4-addr" in ind["pattern"] and ind.get("x_opencti_score", 0) > 80:
+        print(ind["pattern"].split("'")[1])
+EOF
+
+# 2) nftables set 으로 자동 적용
+ssh ccc@10.20.30.1 << 'EOF'
+sudo nft flush set inet filter cti_blocklist
+while read ip; do
+  sudo nft add element inet filter cti_blocklist "{ $ip }"
+done < /tmp/blocklist.txt
+EOF
+
+# 3) Suricata reputation 룰 자동 갱신
+sudo suricata-update --etpro
+```
+
+학생은 본 14주차에서 **5 layer (FW/IPS/WAF/SIEM/CTI) 를 한 흐름으로 운영**하는 통합 보안 운영자 역할을 도구로 직접 수행한다.

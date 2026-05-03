@@ -509,3 +509,33 @@ ENDSSH
 
 **학생 액션**: 본 시스템 retest cursor + R3 보고서 양식 그대로 모방하여 본인 환경의 자동화 metric 측정.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course5 SOC — Week 14 레드팀 연동)
+
+| 작업 | 도구 |
+|------|------|
+| 공격 시뮬 | Atomic Red Team / CALDERA / Stratus Red Team (cloud) |
+| Purple Team | Atomic + Wazuh / Sigma → coverage |
+| 보고 매핑 | MITRE ATT&CK Navigator / DeTT&CT |
+| 디텍션 검증 | atomic invoke / Sigma test / Wazuh logtest |
+| 메트릭 | EDR coverage / detection-as-code |
+
+### 핵심
+```bash
+# Atomic Red Team
+sudo invoke run-atomic-test T1059.003                  # bash 명령 실행
+sudo invoke run-atomic-test T1547.006                  # kernel module
+# 실행 후 Wazuh / Suricata 가 잡았는지 확인
+
+# CALDERA — adversary emulation framework (MITRE)
+git clone https://github.com/mitre/caldera.git --recursive ~/caldera
+cd ~/caldera && pip3 install -r requirements.txt
+python3 server.py --insecure                            # http://localhost:8888
+
+# DeTT&CT — coverage 측정
+git clone https://github.com/rabobank-cdc/DeTTECT.git ~/dettect
+cd ~/dettect && pip3 install -r requirements.txt
+python3 dettect.py editor                               # web UI
+```

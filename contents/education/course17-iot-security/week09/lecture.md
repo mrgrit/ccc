@@ -578,3 +578,177 @@ graph LR
 
 **학생 액션**: Modbus scan.
 
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course17 IoT Security — Week 09 IP Camera·RTSP·ONVIF·펌웨어 분석)
+
+> 이 부록은 본문 (RTSP / ONVIF / 카메라 펌웨어) 의 도구를 *course16 w11
+> 부록 (IP Camera 심화)* + *course17 w04 부록 (펌웨어 분석)* 의 *IoT 특화
+> 차별화* 로 구성한다. RTSP raw 분석 / cameradar / hydra / ffprobe / nuclei
+> CVE-2021-36260 PoC / metasploit hikvision_rce / EMBA 펌웨어 audit / Frigate
+> 영상 IDS — 모두 course16 w11 부록 참조. IoT 환경의 *클라우드 P2P*
+> (Hikvision Hik-Connect / Dahua DMSS / EZVIZ) + *디바이스 수십대 통합 audit*
+> + *Wazuh IDS 통합* 위주로 추가.
+
+### lab step → 도구 매핑 표 (course16 w11 + IoT 특화)
+
+| step | 본문 | 학습 항목 | 핵심 OSS 도구 (참조) | IoT 추가 |
+|------|------|----------|---------------------|----------|
+| s1 | 1.1 | IP camera 아키텍처 | course16 w11 부록 | ONVIF Profile S/T/M 차이 |
+| s2 | 1.2 | 공격 표면 | course16 w11 부록 | P2P / 클라우드 추가 |
+| s3 | 1.3 | Verkada / Hikvision 사례 | course16 w11 1.5 (CVE-2021-36260) | nuclei / metasploit |
+| s4 | 2 | RTSP 메서드 | course16 w11 도구 1 | wireshark RTSP filter |
+| s5 | 3 | RTSP 분석 실습 | course16 w11 도구 2-4 | cameradar / hydra / ffprobe |
+| s6 | 4 | 카메라 웹 공격 | course17 w05 부록 | sqlmap / dalfox / commix |
+| s7 | 5 | 보안 강화 | course16 w11 운영 주의 | Frigate IDS / Wazuh 룰 |
+| s8 | (추가) | 다수 카메라 자동 audit | (없음) | python-onvif batch |
+| s9 | (추가) | 펌웨어 audit | course17 w04 + course16 w11 도구 6 | EMBA + Hikvision firmware |
+| s10 | (추가) | P2P 클라우드 분석 | (없음) | mitmproxy + Frida (모바일 앱) |
+
+### 추가 (IoT 특화) — 다수 카메라 통합 audit
+
+운영 환경에서 *수십~수백대* IP camera 의 자동 audit 흐름.
+
+```python
+#!/usr/bin/env python3
+# /tmp/cam-batch-audit.py — 다수 IP camera 통합 audit
+import asyncio, json, csv
+from onvif import ONVIFCamera
+
+# 카메라 inventory (CSV)
+CAMERAS = [
+    ('10.20.30.50', 80, 'admin', '12345', 'Hikvision-Lobby'),
+    ('10.20.30.51', 80, 'admin', 'admin', 'Dahua-Hallway'),
+    ('10.20.30.52', 80, 'admin', '', 'Generic-RearDoor'),
+    ('10.20.30.53', 80, 'root', 'pass', 'Axis-ServerRoom'),
+]
+
+results = []
+
+for ip, port, user, pw, name in CAMERAS:
+    audit = {'ip': ip, 'name': name, 'issues': []}
+    try:
+        cam = ONVIFCamera(ip, port, user, pw)
+
+        # 1. default cred 검증
+        info = cam.devicemgmt.GetDeviceInformation()
+        audit['manufacturer'] = info.Manufacturer
+        audit['model'] = info.Model
+        audit['firmware'] = info.FirmwareVersion
+        audit['issues'].append(f"[CRIT] Default cred: {user}:{pw}")
+
+        # 2. anonymous RTSP 검증
+        media = cam.create_media_service()
+        profiles = media.GetProfiles()
+        for p in profiles:
+            req = media.create_type('GetStreamUri')
+            req.ProfileToken = p.token
+            req.StreamSetup = {'Stream': 'RTP-Unicast', 'Transport': {'Protocol': 'RTSP'}}
+            uri = media.GetStreamUri(req).Uri
+            audit['stream_uri'] = uri
+
+        # 3. 펌웨어 CVE 매칭 (Hikvision DS- < 5.5.5)
+        if 'V5.4' in info.FirmwareVersion:
+            audit['issues'].append("[CRIT] CVE-2017-7921 Hikvision auth bypass")
+        if 'Hikvision' in info.Manufacturer and 'V5.4' in info.FirmwareVersion:
+            audit['issues'].append("[CRIT] CVE-2021-36260 RCE")
+
+        # 4. 사용자 enum
+        users = cam.devicemgmt.GetUsers()
+        audit['user_count'] = len(users)
+        if any(str(u.UserLevel) == 'Anonymous' for u in users):
+            audit['issues'].append("[HIGH] Anonymous user enabled")
+
+    except Exception as e:
+        audit['error'] = str(e)
+
+    results.append(audit)
+
+# CSV 출력
+with open('/tmp/cam-audit-result.csv', 'w', newline='') as f:
+    w = csv.DictWriter(f, fieldnames=['ip','name','manufacturer','model','firmware','user_count','issues','stream_uri'])
+    w.writeheader()
+    for r in results:
+        r['issues'] = ' | '.join(r.get('issues', []))
+        w.writerow(r)
+
+print(json.dumps(results, indent=2))
+```
+
+```bash
+sudo python3 /tmp/cam-batch-audit.py
+
+# 결과 → 보고서
+csvlook /tmp/cam-audit-result.csv | head -20
+```
+
+### Wazuh + Suricata IoT 카메라 룰 (방어 — 통합)
+
+```bash
+# 1. Suricata IP cam 룰 (ET-IoT)
+sudo suricata-update enable-source ptresearch/attackdetection
+sudo suricata-update
+
+# 2. Wazuh custom 카메라 룰
+sudo tee -a /var/ossec/etc/rules/local_rules.xml << 'EOF'
+<group name="iot,camera">
+  <rule id="100200" level="10">
+    <decoded_as>nginx-access</decoded_as>
+    <url>/Streaming/Channels/</url>
+    <description>Hikvision RTSP access attempt</description>
+  </rule>
+  <rule id="100201" level="14">
+    <decoded_as>nginx-access</decoded_as>
+    <url>/SDK/webLanguage</url>
+    <regex>language</regex>
+    <description>CVE-2021-36260 Hikvision RCE attempt</description>
+  </rule>
+  <rule id="100202" level="12">
+    <decoded_as>nginx-access</decoded_as>
+    <url>/Security/users?auth=</url>
+    <description>CVE-2017-7921 Hikvision auth bypass</description>
+  </rule>
+  <rule id="100203" level="10">
+    <if_sid>5710</if_sid>
+    <match>cameradar</match>
+    <description>Cameradar scanner detected</description>
+  </rule>
+</group>
+EOF
+
+sudo systemctl restart wazuh-manager
+```
+
+### IoT 특화 추가 도구 (P2P / 클라우드)
+
+| 카테고리 | 사례 | 대표 도구 |
+|---------|------|----------|
+| **P2P 분석** | Hik-Connect / DMSS / EZVIZ | mitmproxy + Frida (모바일) |
+| **모바일 앱 분석** | Hik-Connect APK | apktool / jadx / Frida hook |
+| **MQTT bridge** | 카메라 → MQTT | Frigate / Shinobi MQTT plugin |
+| **운영 IDS (OpenCV)** | frame anomaly | course16 w11 도구 8 (cam-ids.py) |
+| **자산 inventory** | 다수 카메라 | snipe-it + cron audit |
+| **펌웨어 OEM 모니터** | update 자동 | OEM RSS / nvd-api / cve-search |
+
+### 학생 자가 점검 체크리스트
+
+- [ ] cameradar 로 lab CIDR 의 IP cam 자동 발견 + cred 식별 1회 (course16 w11)
+- [ ] python-onvif-zeep 으로 *다수 카메라* 통합 audit 1회 (cam-batch-audit.py)
+- [ ] nuclei CVE-2021-36260 template 으로 lab cam 검출 1회
+- [ ] EMBA 로 회수 카메라 펌웨어 audit + critical 발견 (course17 w04)
+- [ ] Frigate / Shinobi 1개 운영 (lab cam 영상 자동 객체 탐지)
+- [ ] Wazuh + Suricata IP cam 룰 적용 + alert 1건 (cameradar 자가 시뮬)
+
+### 운영 주의
+
+1. **외부 cam 절대 금지** — Insecam / 외부 IP cam 시청은 통신비밀보호법.
+2. **default cred 즉시 변경** — 카메라 도입 시 *수령 즉시*. 1년 1회 재점검.
+3. **CVE patch 90일** — 정보보호법 §29 — high+ CVE 90일 내 patch 의무.
+4. **카메라 VLAN 분리** — 회사 LAN 과 별도 VLAN. 사고 시 LAN 측 영향 차단.
+5. **OpenCV frame IDS** — loop attack / frame freeze 자동 탐지.
+6. **감사 로그** — ONVIF privileged action (CreateUsers / PTZ) Wazuh alert.
+
+> 본 부록은 course16 w11 + course17 w04 부록 *IoT 특화 보강*. 모든 도구는
+> lab 또는 자기 자산 한정. 외부 IP cam 한 frame 시청 시 형사 처벌 대상.
+
+---

@@ -1083,3 +1083,767 @@ graph LR
 
 **학생 액션**: GuardDuty 룰 운영.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course14 SOC Advanced — Week 10 SOAR 자동화·플레이북·Active Response·ROI)
+
+> 이 부록은 lab `soc-adv-ai/week10.yaml` (15 step + multi_task) 의 모든 명령을
+> 실제로 실행 가능한 형태로 정리한다. SOAR 3대 (Orchestration / Automation /
+> Response), CCC Bastion 의 playbook, Wazuh Active Response, IOC enrichment,
+> 복합 랜섬웨어 대응, ROI 분석까지.
+
+### lab step → 도구·SOAR 매핑 표
+
+| step | 학습 항목 | 핵심 OSS 도구 | 분류 |
+|------|----------|--------------|------|
+| s1 | SOAR 3대 (O/A/R) 정의 | SANS SOAR Maturity 표 | - |
+| s2 | CCC Bastion playbook 분석·생성 | bastion API + playbook YAML | Orchestration |
+| s3 | 피싱 이메일 대응 playbook | TheHive + Cortex + IOC analyzer | Response |
+| s4 | 악성 IP 자동 차단 playbook | Wazuh AR + nftables + TI 검증 | Response |
+| s5 | 인시던트 티켓 자동 생성 | TheHive API + Webhook | Orchestration |
+| s6 | IOC enrichment 워크플로우 | Cortex analyzer + week05 도구 | Automation |
+| s7 | 에스컬레이션 자동화 | TheHive case rules + 시간 SLA | Orchestration |
+| s8 | playbook 테스트 | unit test + dry-run + simulation | Quality |
+| s9 | SOAR KPI (자동화율/MTTR/성공률) | Grafana + Prometheus + audit | Metrics |
+| s10 | Wazuh AR + CCC 연동 | wazuh active-response + bastion API | Integration |
+| s11 | 복합 랜섬웨어 대응 | 탐지→격리→분석(week09)→복구→보고 | Response |
+| s12 | playbook 버전관리 | git + PR + staging | Quality |
+| s13 | SOAR 리스크 (오탐/SPOF/과자동화) | risk register + mitigation | Risk |
+| s14 | ROI 분석 (MTTR/인력/비용) | spreadsheet + cost model | Business |
+| s15 | SOAR 구축 종합 보고서 | architecture + 카탈로그 + 로드맵 | - |
+| s99 | 통합 다단계 (s1→s2→s3→s4→s5) | Bastion plan: SOAR→playbook→피싱→IP→티켓 | 다중 |
+
+### 학생 환경 준비
+
+```bash
+# === [s2·s10] Bastion (이미 운영) ===
+curl -s http://192.168.0.103:8003/health
+curl -s http://192.168.0.103:8003/playbooks | jq '.[] | {id, name}'
+
+# === [s3·s5·s7] TheHive + Cortex (week05·09 와 동일) ===
+docker pull strangebee/thehive:5.2 thehiveproject/cortex:3.1
+docker compose up -d
+
+# === [s4·s10] Wazuh AR ===
+ssh ccc@10.20.30.100 'sudo ls /var/ossec/active-response/bin/'
+
+# === [s6] enrichment ===
+pip install --user requests pycti pymisp
+
+# === [s9] Metrics ===
+sudo apt install -y prometheus grafana
+sudo systemctl enable --now prometheus grafana-server
+
+# === [s8] Test ===
+pip install --user pytest httpx pyyaml
+```
+
+### 핵심 도구별 상세 사용법
+
+#### 도구 1: SOAR 3대 (Step 1)
+
+| 기능 | 정의 | 도구 | 사례 |
+|------|------|------|------|
+| **Orchestration** | 다중 도구 통합 + 워크플로우 | TheHive + Cortex + Bastion | Wazuh → MISP → Suricata |
+| **Automation** | 사람 없이 정해진 액션 | Wazuh AR + Bastion playbook | 알려진 IP 자동 차단 |
+| **Response** | 인시던트 대응 (격리/통보/복구) | playbook + on-call | 랜섬웨어 격리 → IR |
+
+**SANS SOAR Maturity** 5 단계: L0 Manual → L1 Tool-assisted → L2 Partial Auto → L3 Orchestrated → L4 Adaptive (ML)
+
+#### 도구 2: Bastion playbook (Step 2)
+
+```bash
+curl -s http://192.168.0.103:8003/playbooks | jq '.[] | {id, name, version}'
+curl -s http://192.168.0.103:8003/playbooks/pb-firewall-audit | jq
+
+cat > /tmp/playbook-block-ip.yaml << 'YML'
+playbook_id: block-malicious-ip
+name: Block Malicious IP via nftables
+description: Wazuh 알림의 srcip 를 nft drop 에 추가
+version: 1
+risk_level: medium
+reasoning:
+  task_decomposition: |
+    1. Wazuh alert 에서 srcip 추출
+    2. TI (VT/AbuseIPDB) 검증
+    3. 통과 시 nft 룰 추가 + 5분 자동 제거
+  why_this_approach: 자동 차단 + TI 검증으로 FP 최소화
+  assumptions: [VT API 사용 가능, secu ssh 가능]
+  known_risks: [VT rate limit 4/min, 자체 IP 차단]
+plan:
+  - step: 1
+    intent: srcip 추출
+    skill: shell
+    params:
+      target: bastion
+      command: 'jq -r .data.srcip /tmp/wazuh-alert.json'
+  - step: 2
+    intent: VT 검증
+    skill: shell
+    params:
+      target: bastion
+      command: 'curl -sH "x-apikey: $VT_KEY" "https://www.virustotal.com/api/v3/ip_addresses/${SRCIP}" | jq .data.attributes.last_analysis_stats.malicious'
+  - step: 3
+    intent: nft drop 룰
+    skill: shell
+    params:
+      target: secu
+      command: 'sudo nft add rule inet filter input ip saddr ${SRCIP} drop counter'
+known_pitfalls: [VT 실패 시 차단 안 함, 5분 후 자동 제거 cron 필요]
+YML
+
+curl -X POST http://192.168.0.103:8003/playbooks --data @/tmp/playbook-block-ip.yaml
+curl -X POST http://192.168.0.103:8003/playbooks/block-malicious-ip/run \
+  -d '{"vars": {"SRCIP": "192.168.1.50", "VT_KEY": "..."}}'
+```
+
+#### 도구 3: 피싱 이메일 대응 playbook (Step 3)
+
+```yaml
+playbook_id: phishing-email-response
+trigger: email arrived in phishing@corp.example mailbox
+
+steps:
+  1_receive: postfix → IMAP poller → TheHive case
+  2_analyze_email:
+    extracts: [sender_ip, sender_domain, links, attachments hash]
+  3_extract_iocs:
+    tool: Cortex (URLscan, VirusTotal, MaxMind, AbuseIPDB)
+  4_ti_check:
+    tool: MISP search + Cortex MISP_2_0
+  5_block:
+    if: known phishing in TI
+    actions:
+      - SEG sender domain block
+      - Suricata DNS rule
+      - Wazuh CDB IP/domain
+  6_user_notify:
+    template: "확인된 피싱 — 메일 삭제 요청"
+  7_close: TheHive close + tag
+```
+
+```bash
+docker exec -it cortex /opt/cortex/scripts/install_analyzers.py \
+  -p VirusTotal_GetReport_3_1 -p EmailRep_1_0 -p URLhaus_2_0 \
+  -p MaxMind_GeoIP_4_0 -p AbuseIPDB_1_0
+
+# Wazuh → TheHive
+ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/ossec.conf' << 'XML'
+<integration>
+  <name>thehive</name>
+  <hook_url>http://thehive:9000/api/v1/alert</hook_url>
+  <api_key>API_KEY</api_key>
+  <level>10</level>
+</integration>
+XML
+```
+
+#### 도구 4: 악성 IP 자동 차단 (Step 4)
+
+```bash
+ssh ccc@10.20.30.100 'sudo tee /var/ossec/active-response/bin/block-ip-nft.sh' << 'AR'
+#!/bin/bash
+ACTION=$1; IP=$3; ALERTID=$4
+LOG=/var/log/wazuh-ar-block.log
+[ -z "$IP" ] && exit 1
+
+# 화이트리스트
+case "$IP" in
+    10.20.30.201|10.20.30.250|127.0.0.1) echo "[$(date)] Whitelist: $IP" >> $LOG; exit 0 ;;
+esac
+
+# TI 검증 (VT)
+VT=$(curl -s -H "x-apikey: ${VT_KEY:-}" \
+    "https://www.virustotal.com/api/v3/ip_addresses/$IP" | \
+    jq '.data.attributes.last_analysis_stats.malicious // 0')
+
+if [ "$VT" -lt 3 ]; then
+    echo "[$(date)] $IP VT=$VT < 3, skip" >> $LOG
+    exit 0
+fi
+
+if [ "$ACTION" = "add" ]; then
+    sshpass -p "$SECU_PASS" ssh ccc@10.20.30.1 \
+        "sudo nft add rule inet filter input ip saddr $IP drop counter comment \"AR-$ALERTID\""
+    echo "[$(date)] BLOCKED: $IP (VT=$VT)" >> $LOG
+    # 5분 후 자동 제거
+    echo "sudo nft delete rule inet filter input handle \$(sudo nft -a list chain inet filter input | grep AR-$ALERTID | awk '{print \$NF}')" | at now + 5 minutes
+fi
+AR
+
+ssh ccc@10.20.30.100 'sudo chmod +x /var/ossec/active-response/bin/block-ip-nft.sh'
+
+ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/ossec.conf' << 'XML'
+<command>
+  <name>block-ip-nft</name>
+  <executable>block-ip-nft.sh</executable>
+  <expect>srcip</expect>
+</command>
+<active-response>
+  <command>block-ip-nft</command>
+  <location>local</location>
+  <rules_id>5712,100600,100900</rules_id>
+  <timeout>300</timeout>
+</active-response>
+XML
+
+ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-control restart'
+
+# 검증
+ssh ccc@10.20.30.112 'for i in {1..10}; do sshpass -p wrong ssh ccc@10.20.30.80 ls 2>/dev/null; done'
+sleep 5
+ssh ccc@10.20.30.1 'sudo nft list chain inet filter input | grep AR-'
+```
+
+#### 도구 5: 인시던트 티켓 자동 생성 (Step 5)
+
+```bash
+THEHIVE=http://10.20.30.100:9000
+API_KEY="..."
+
+curl -X POST "$THEHIVE/api/v1/alert" \
+  -H "Authorization: Bearer $API_KEY" \
+  -d '{
+    "title": "Wazuh High Severity — SQLi",
+    "description": "RuleID 100200 from 192.168.1.50",
+    "severity": 3, "tlp": 2,
+    "type": "wazuh", "source": "wazuh-manager",
+    "sourceRef": "alert-12345",
+    "tags": ["wazuh", "sqli", "auto"]
+  }'
+
+# 자동 mapper
+cat > /tmp/wazuh-thehive-mapper.py << 'PY'
+import json, sys, requests
+
+THEHIVE = "http://10.20.30.100:9000"
+API_KEY = "..."
+
+def map_severity(level):
+    if level >= 13: return 4
+    if level >= 10: return 3
+    if level >= 7: return 2
+    return 1
+
+event = json.load(sys.stdin)
+r = requests.post(
+    f"{THEHIVE}/api/v1/alert",
+    headers={"Authorization": f"Bearer {API_KEY}"},
+    json={
+        "title": f"Wazuh — {event['rule']['description']}",
+        "severity": map_severity(event['rule']['level']),
+        "tlp": 2,
+        "source": "wazuh",
+        "sourceRef": event['id'],
+        "tags": ["auto"] + event['rule']['groups'][:5],
+        "observables": [{"dataType":"ip","data":event['data']['srcip']}]
+                       if event.get('data',{}).get('srcip') else [],
+    },
+)
+print(r.json())
+PY
+```
+
+#### 도구 6: IOC enrichment (Step 6)
+
+```bash
+# Cortex 자동 호출
+curl -X POST "http://10.20.30.100:9001/api/analyzer/VirusTotal_GetReport_3_1/run" \
+  -H "Authorization: Bearer $CORTEX_KEY" \
+  -d '{"data":"192.168.1.50","dataType":"ip","tlp":2}'
+
+# TheHive observable 자동 enrich
+curl -X POST "$THEHIVE/api/v1/case/$CASE_ID/observable" \
+  -H "Authorization: Bearer $API_KEY" \
+  -d '{"dataType":"ip","data":"192.168.1.50","ioc":true,"tlp":2}'
+# → Cortex 자동 분석 → case 첨부
+
+# 종합 enrichment (week05 와 동일)
+python3 /tmp/enrich-ioc.py 192.168.1.50 > /tmp/ioc-context.json
+```
+
+#### 도구 7: 에스컬레이션 자동화 (Step 7)
+
+| Severity | Initial | 30분 후 | 1시간 후 | 4시간 후 |
+|---------|---------|--------|---------|----------|
+| Critical (4) | T1 + T2 즉시 | T2 + T3 + manager | + CISO | + 외부 IR |
+| High (3) | T1 → T2 | T2 + T3 | T3 + manager | manager |
+| Medium (2) | T1 | T1 + T2 | T2 | T2 |
+| Low (1) | T1 batch (4h) | - | - | - |
+
+알림: Slack (전체) / PagerDuty (3+) / 전화 (4 + 30분 미해결)
+
+```yaml
+# Bastion playbook (auto-escalate)
+playbook_id: auto-escalate
+trigger: TheHive webhook (status=Open, age > 30min, severity >= 3)
+plan:
+  - step: 1  # 다음 Tier 식별
+    skill: shell
+    params:
+      command: 'curl -s "$THEHIVE/api/v1/case/$CASE_ID" | jq .severity'
+  - step: 2  # on-call 사용자
+    skill: shell
+    params:
+      command: 'cat /etc/soc/tier-rotation.json | jq -r ".tier_$NEXT_TIER.on_call"'
+  - step: 3  # case 재할당
+    skill: shell
+    params:
+      command: 'curl -X PATCH "$THEHIVE/api/v1/case/$CASE_ID" -d "{\"assignee\":\"$NEXT_USER\"}"'
+  - step: 4  # 알림
+    skill: shell
+    params:
+      command: |
+        curl -X POST "$SLACK_WEBHOOK" -d "{\"text\":\"🚨 Escalation: case $CASE_ID → @$NEXT_USER\"}"
+        curl -X POST "https://events.pagerduty.com/v2/enqueue" -d "{\"routing_key\":\"$PD_KEY\",\"event_action\":\"trigger\"}"
+```
+
+#### 도구 8: playbook 테스트 (Step 8)
+
+```python
+import pytest, yaml
+from unittest.mock import patch
+
+PB = yaml.safe_load(open('/tmp/playbook-block-ip.yaml'))
+
+def test_playbook_structure():
+    assert PB['playbook_id'] == 'block-malicious-ip'
+    assert len(PB['plan']) == 3
+    assert PB['plan'][0]['skill'] == 'shell'
+
+def test_step_2_vt_check():
+    with patch('requests.get') as mock_get:
+        mock_get.return_value.json.return_value = {
+            "data":{"attributes":{"last_analysis_stats":{"malicious":5}}}
+        }
+        # malicious >= 3 검증
+        assert True
+
+def test_whitelist_excludes_internal():
+    assert "10.20.30.201" in ["10.20.30.201","10.20.30.250","127.0.0.1"]
+```
+
+```bash
+pytest /tmp/test_playbook_block_ip.py -v
+
+# Dry-run
+curl -X POST http://192.168.0.103:8003/playbooks/block-malicious-ip/run \
+  -d '{"vars":{"SRCIP":"192.168.1.50"},"dry_run":true}'
+
+# Simulation
+mkdir -p tests/playbooks
+cat > tests/playbooks/sqli_alert_sample.json << 'JSON'
+{"id":"test-001","rule":{"id":"100200","level":12,"description":"SQLi"},
+ "data":{"srcip":"10.0.0.42"}}
+JSON
+```
+
+#### 도구 9: SOAR KPI (Step 9)
+
+| KPI | 정의 | 목표 | 측정 |
+|-----|------|------|------|
+| 자동화율 | 자동 처리 / 전체 | > 60% | TheHive case status |
+| MTTR | mean time to respond | < 30분 | open → resolved |
+| Playbook 성공률 | success / 전체 실행 | > 95% | bastion audit |
+| 분석가 시간 절약 | 도입 전후 시간 | -40% | timesheet |
+| FP rate (자동 차단) | FP / 전체 차단 | < 5% | manual review |
+| Playbook 평균 실행 시간 | start → end | < 2분 | bastion audit |
+| 에스컬레이션 정확률 | 적절한 Tier escalate | > 90% | manual review |
+| 24x7 가용성 | SOAR uptime | > 99.5% | Prometheus |
+
+```python
+# Prometheus exporter
+from prometheus_client import start_http_server, Counter, Histogram
+import requests, time
+
+playbook_runs = Counter('bastion_playbook_runs_total', 'Total runs', ['playbook_id','success'])
+playbook_duration = Histogram('bastion_playbook_duration_seconds', 'Duration', ['playbook_id'])
+
+def collect():
+    audit = requests.get('http://192.168.0.103:8003/audit/recent?limit=100').json()
+    for entry in audit:
+        playbook_runs.labels(
+            playbook_id=entry.get('playbook_id','unknown'),
+            success=str(entry.get('outcome')=='success')
+        ).inc()
+        playbook_duration.labels(playbook_id=entry.get('playbook_id','unknown')) \
+            .observe(entry.get('duration_ms',0)/1000.0)
+
+if __name__ == "__main__":
+    start_http_server(9100)
+    while True:
+        collect(); time.sleep(60)
+```
+
+#### 도구 10: Wazuh AR + CCC 연동 (Step 10)
+
+```bash
+# Wazuh alert → CCC project
+ssh ccc@10.20.30.100 'sudo tee /opt/wazuh-ccc-integration.py' << 'PY'
+#!/usr/bin/env python3
+import json, sys, requests
+
+CCC_API = "http://10.20.30.201:9100"
+CCC_KEY = "ccc-api-key-2026"
+
+alert = json.load(sys.stdin)
+if alert.get('rule', {}).get('level', 0) < 10: sys.exit(0)
+
+r = requests.post(
+    f"{CCC_API}/projects",
+    headers={"X-API-Key": CCC_KEY},
+    json={
+        "name": f"IR-Auto-{alert.get('id','unknown')}",
+        "type": "incident_response",
+        "description": alert.get('rule', {}).get('description', ''),
+        "metadata": {
+            "wazuh_rule_id": alert['rule']['id'],
+            "src_ip": alert.get('data', {}).get('srcip', ''),
+            "auto_created": True,
+        },
+    },
+)
+print(r.json())
+PY
+
+ssh ccc@10.20.30.100 'sudo chmod +x /opt/wazuh-ccc-integration.py'
+
+# Wazuh integration
+ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/ossec.conf' << 'XML'
+<integration>
+  <name>custom-ccc</name>
+  <hook_url>file:///opt/wazuh-ccc-integration.py</hook_url>
+  <level>10</level>
+</integration>
+XML
+
+# 다중 액션
+ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/ossec.conf' << 'XML'
+<active-response>
+  <command>block-ip-nft</command>
+  <rules_id>5712,100600,100900</rules_id>
+  <timeout>300</timeout>
+</active-response>
+<active-response>
+  <command>ccc-create-project</command>
+  <rules_id>100600,100700,100800</rules_id>
+</active-response>
+<active-response>
+  <command>slack-notify</command>
+  <rules_id>100700,100800</rules_id>
+</active-response>
+<active-response>
+  <command>yara-quarantine</command>
+  <rules_id>100800</rules_id>
+</active-response>
+XML
+```
+
+#### 도구 11: 복합 랜섬웨어 대응 playbook (Step 11)
+
+```yaml
+playbook_id: ransomware-incident-response
+risk_level: critical
+estimated_duration: 4h
+
+phases:
+  - phase: 1_detect (1m)
+    sources:
+      - Wazuh rule 100800 (yara-match: ransomware)
+      - 사용자 신고 (file extension 이상)
+      - backup 실패 (다수 파일 변경)
+
+  - phase: 2_contain (5m)
+    actions:
+      - 영향 호스트 격리 (nft drop in/out)
+      - SMB / NFS unmount (전파 차단)
+      - 백업 시스템 일시 중단
+      - file share read-only
+
+  - phase: 3_analyze (30m)
+    actions:
+      - 메모리 dump (week08 LiME)
+      - 디스크 이미징 (write blocker)
+      - 격리 sandbox (week09 Cuckoo)
+      - 시간 + 패턴 (Plaso timeline)
+      - 침해 범위 확정
+
+  - phase: 4_recover (2h)
+    approval_required: manager
+    actions:
+      - 백업 복원 (감염 시점 이전)
+      - OS 재설치 (bare metal)
+      - 자격증명 회전 (전체)
+      - 패치 적용
+
+  - phase: 5_report (1h)
+    approval_required: CISO (legal 통보 시)
+    actions:
+      - 종합 보고서 (week09 양식)
+      - 개인정보보호위원회 신고 (PII 영향)
+      - 보험 + legal 통보
+      - lessons learned + IR 절차 개선
+```
+
+#### 도구 12: 버전관리 + 리스크 (Step 12·13)
+
+```bash
+mkdir ~/soar-playbooks && cd ~/soar-playbooks
+git init
+mkdir -p {playbooks,tests,docs,configs}
+
+cat > .pre-commit-config.yaml << 'YML'
+repos:
+- repo: local
+  hooks:
+    - id: yaml-lint
+      entry: yamllint
+      language: system
+      files: \.yaml$
+    - id: pytest
+      entry: pytest tests/
+      language: system
+      pass_filenames: false
+YML
+pre-commit install
+
+# === Lifecycle ===
+# 1. draft (status: experimental)
+# 2. review (PR + 2명 리뷰 + dry-run)
+# 3. test (staging 7일 + simulation)
+# 4. prod (main merge + Bastion 등록)
+# 5. monitor (Prometheus / Grafana KPI)
+# 6. improve (KPI 기반 + version bump)
+# 7. deprecate (30일 후 archive)
+
+# === Risk register ===
+cat > docs/risks.md << 'MD'
+| Risk | Mitigation |
+|------|------------|
+| 자동 차단 FP | TI 검증, 화이트리스트, 5분 자동 해제 |
+| Playbook SPOF | HA 구성, audit log 외부 syslog |
+| 과도한 자동화 | T1 manual 일부 유지, 분기 manual drill |
+| API key 유출 | Vault, key 회전 30일 |
+| Webhook spoofing | mTLS + IP allowlist + signature |
+| Playbook 무한루프 | timeout 5분, execution graph 검증 |
+| 변경 관리 누락 | git PR + 2명 review + staging 7일 |
+| 권한 escalation 자동화 오용 | manager 승인 단계 (high-risk action) |
+| 감사 추적 부재 | audit log 7년 retention |
+| 업스트림 변경 (TheHive 5→6) | 분기 호환성 테스트, version pin |
+MD
+```
+
+#### 도구 13: ROI 분석 (Step 14)
+
+```python
+# === ROI 모델 ===
+before = {
+    "incidents_per_month": 100,
+    "manual_time_per_incident_min": 60,
+    "analyst_hourly_cost_usd": 50,
+    "tier1_count": 4,
+    "mttr_min": 120,
+}
+
+after = {
+    "automated_ratio": 0.60,
+    "automated_time_per_incident_min": 5,
+    "manual_time_per_incident_min": 45,
+    "soar_setup_cost_usd": 50000,
+    "soar_annual_maintenance_usd": 12000,
+    "mttr_min": 30,
+}
+
+incidents_per_year = before['incidents_per_month'] * 12
+auto = incidents_per_year * after['automated_ratio']
+manual = incidents_per_year - auto
+
+before_min = incidents_per_year * before['manual_time_per_incident_min']
+after_min = (auto * after['automated_time_per_incident_min'] +
+             manual * after['manual_time_per_incident_min'])
+
+time_saved_h = (before_min - after_min) / 60
+labor_saved = time_saved_h * before['analyst_hourly_cost_usd']
+
+investment = after['soar_setup_cost_usd'] + after['soar_annual_maintenance_usd']
+roi = (labor_saved - investment) / investment * 100
+break_even = investment / (labor_saved / 12)
+
+print(f"=== SOAR ROI Analysis ===")
+print(f"Time saved: {time_saved_h:.0f} hours/year")
+print(f"Labor saved: ${labor_saved:,.0f}")
+print(f"Investment: ${investment:,.0f}")
+print(f"ROI: {roi:.0f}%")
+print(f"Break-even: {break_even:.1f} months")
+
+# Intangibles
+intangibles = {
+    "MTTR 단축 (120→30분)": "사고 영향 축소",
+    "분석가 burnout 감소": "이직률 하락",
+    "TI 활용도 증가": "탐지 quality 향상",
+    "compliance audit 용이": "감사 시간 단축",
+}
+```
+
+#### 도구 14: 종합 보고서 (Step 15)
+
+```bash
+cat > /tmp/soar-report.md << 'EOF'
+# SOAR 구축 보고서 — 2026-Q2
+
+## 1. Executive Summary
+- 도입 기간: Q2 (3개월)
+- 자동화 대상: 인시던트 60%
+- ROI: 12개월 240% / 손익분기 5개월
+- KPI: MTTR 120분 → 30분 (75% 개선)
+
+## 2. Architecture
+- Orchestration: TheHive 5.2
+- Automation: Bastion (CCC) + Cortex
+- Response: Wazuh AR + nftables
+- TI: MISP + OpenCTI (week05)
+- Detection: SIGMA + YARA + Wazuh rules (week03/04/06)
+
+## 3. 구현된 Playbook (10개)
+1. block-malicious-ip — 자동
+2. phishing-email-response — 반자동
+3. ioc-enrichment — 자동
+4. ransomware-incident-response — 반자동, 4h
+5. webshell-quarantine — 자동 (week04)
+6. ssh-brute-force — 자동
+7. dns-tunnel-block — 자동 (week06)
+8. lateral-movement-alert — 수동
+9. credential-leak-rotate — 수동
+10. backup-malware-isolate — 자동
+
+## 4. KPI (3개월)
+- 자동화율: 62% (목표 60% ✓)
+- MTTR: 28분 (목표 30분 ✓)
+- Playbook 성공률: 96% (목표 95% ✓)
+- FP rate: 4% (목표 5% ✓)
+- 분석가 시간 절약: 42% (목표 40% ✓)
+
+## 5. ROI
+- 투자: $62,000 / 절약: $148,000 / ROI 240% / 손익분기 5.0개월
+
+## 6. 향후 발전
+- Q3: ML alert 우선순위
+- Q4: 외부 SOAR 비교
+- 2027 Q1: 24x7 외주 SOC 통합
+
+## 7. Lessons Learned
+- TI 검증 없이 자동 차단 → 첫 주 FP 12% (이후 4%)
+- 점진적 마이그레이션 (한 번에 모두 자동 X)
+- T1 manual 일부 유지 (학습 + 신뢰)
+- 비상 시 manual override (kill switch)
+EOF
+
+pandoc /tmp/soar-report.md -o /tmp/soar-report.pdf \
+  --pdf-engine=xelatex --toc -V mainfont="Noto Sans CJK KR"
+```
+
+### 점검 / 구축 / 측정 흐름 (15 step + multi_task)
+
+#### Phase A — 설계 + Playbook (s1·s2·s3·s4·s11)
+
+```bash
+# Bastion playbook 카탈로그
+curl -s http://192.168.0.103:8003/playbooks | jq '.[] | .id'
+
+# 신규 작성
+vi /tmp/playbook-{block-ip,phishing,ransomware}.yaml
+for pb in /tmp/playbook-*.yaml; do
+    curl -X POST http://192.168.0.103:8003/playbooks --data @$pb
+done
+```
+
+#### Phase B — 통합 (s5·s6·s10)
+
+```bash
+ssh ccc@10.20.30.100 'sudo cp /tmp/wazuh-thehive-mapper.py /opt/'
+ssh ccc@10.20.30.100 'sudo cp /tmp/block-ip-nft.sh /var/ossec/active-response/bin/'
+ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-control restart'
+
+docker exec cortex /opt/cortex/scripts/install_analyzers.py -p VirusTotal_GetReport_3_1
+```
+
+#### Phase C — KPI + ROI + 보고 (s7·s8·s9·s14·s15)
+
+```bash
+pytest /tmp/test_playbook_*.py -v
+sudo systemctl enable --now prometheus grafana-server
+python3 /tmp/roi-analysis.py
+pandoc /tmp/soar-report.md -o /tmp/soar-report.pdf
+```
+
+#### Phase D — 통합 시나리오 (s99 multi_task)
+
+s1 → s2 → s3 → s4 → s5 를 Bastion 가 한 번에:
+
+1. **plan**: SOAR 3대 → playbook 분석 → 피싱 → IP 차단 → 티켓
+2. **execute**: curl + jq + vi + REST API
+3. **synthesize**: 5 산출물 (soar-3대.md / playbook-list.json / phishing.yaml / block-ip.yaml / wazuh-thehive-integration.py)
+
+### 도구 비교표 — SOAR 단계별
+
+| 단계 | 1순위 | 2순위 | 사용 조건 |
+|------|-------|-------|----------|
+| Playbook engine | Bastion (CCC) | TheHive Cortex | 학습 |
+| Case management | TheHive 5 | DFIR-IRIS | OSS |
+| Analyzer | Cortex | n8n / StackStorm | TheHive 통합 |
+| TI integration | MISP + OpenCTI | Anomali ThreatStream | OSS |
+| Active Response | Wazuh AR | Velociraptor | OSS |
+| Webhook router | TheHive native + Bastion | n8n / Zapier | OSS |
+| Test | pytest + Bastion dry-run | Splunk SOAR test | OSS |
+| Metrics | Prometheus + Grafana | Datadog | OSS |
+| 버전관리 | Git + pre-commit | GitLab Runner | OSS |
+| Secret 관리 | HashiCorp Vault | Bitwarden | enterprise |
+| 알림 | Slack + PagerDuty | Opsgenie | combine |
+
+### 도구 선택 매트릭스 — 시나리오별 권장
+
+| 시나리오 | 우선 도구 | 이유 |
+|---------|---------|------|
+| "처음 SOAR 도입" | Bastion + TheHive + Cortex | OSS 풀스택 |
+| "중소기업" | TheHive + Wazuh AR + Bastion | 무료 |
+| "신속 대응" | playbook 사전 작성 + 1-click | 시간 |
+| "ROI 측정" | Prometheus + Grafana + ROI 모델 | 정량 |
+| "regulator audit" | audit log 7년 + KPI dashboard | 추적 |
+| "복합 시나리오" | TheHive case + Bastion playbook | 통합 |
+
+### 학생 셀프 체크리스트 (각 step 완료 기준)
+
+- [ ] s1: SOAR 3대 + SANS 5단계 maturity 매트릭스
+- [ ] s2: Bastion playbook YAML 작성 + 등록 + 실행
+- [ ] s3: 피싱 7-step playbook
+- [ ] s4: Wazuh AR block-ip-nft.sh + TI 검증 + 5분 자동 제거
+- [ ] s5: TheHive REST API + severity mapping
+- [ ] s6: Cortex 5 analyzer + observable 자동 enrich
+- [ ] s7: Severity × 시간 escalation + auto-escalate playbook
+- [ ] s8: pytest unit + dry-run + simulation
+- [ ] s9: 8 KPI + Prometheus exporter + Grafana
+- [ ] s10: Wazuh AR + CCC 자동 + 4 액션
+- [ ] s11: 랜섬웨어 5 phase playbook
+- [ ] s12: git lifecycle 7 단계 + pre-commit
+- [ ] s13: 10+ 리스크 register + mitigation
+- [ ] s14: ROI 계산 (투자/절약/손익분기/intangibles)
+- [ ] s15: 7 섹션 종합 보고서
+- [ ] s99: Bastion 가 5 작업 (3대/playbook/피싱/IP차단/티켓) 순차
+
+### 추가 참조 자료
+
+- **NIST SP 800-61 r2** Computer Security Incident Handling Guide
+- **MITRE D3FEND** https://d3fend.mitre.org/
+- **TheHive Project** https://thehive-project.org/
+- **Cortex Analyzers** https://github.com/TheHive-Project/Cortex-Analyzers
+- **MISP** https://www.misp-project.org/
+- **Wazuh Active Response** https://documentation.wazuh.com/current/user-manual/capabilities/active-response/
+- **Bastion (CCC)** apps/bastion/api.py
+- **SANS SOAR Maturity Model**
+- **DFIR-IRIS** https://dfir-iris.org/
+
+위 모든 SOAR 자동화는 **인간 통제 (kill switch + manager 승인) + audit log 7년** 으로 운영한다.
+자동 차단 액션은 항상 (1) TI 검증 (2) 화이트리스트 (3) 시간 제한 (5분 auto-unblock)
+3중 안전장치. **랜섬웨어 phase 4 (recover) 는 manager 승인 필수** — 잘못된 복구는 추가 손해.
+모든 secret (API key) 은 Vault — git 에 commit 절대 금지.

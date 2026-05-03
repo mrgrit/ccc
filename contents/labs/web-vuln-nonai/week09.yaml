@@ -14,7 +14,17 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: JuiceShop(:3000)에 SQL Injection으로 관리자 인증을 우회하고 JWT 토큰을 획득하시오.
+  instruction: 'JuiceShop(:3000)에 SQL Injection으로 관리자 인증을 우회하고 JWT 토큰을 획득하시오.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **JWT 인증 우회 + 추출**: curl SQLi 페이로드 / **sqlmap --forms** / Burp Repeater / pyjwt
+    + jwt.io 디코딩
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
   hint: POST /rest/user/login 에 email 필드에 ' or 1=1-- 을 넣고 password는 아무 값을 넣으세요.
   category: recon
   points: 8
@@ -45,8 +55,18 @@ steps:
       - 단순 로그인
   target_vm: attacker
 - order: 2
-  instruction: 획득한 JWT 토큰의 구조를 분석하시오. Base64로 디코딩하여 Header(알고리즘)와 Payload(사용자 정보)를
+  instruction: '획득한 JWT 토큰의 구조를 분석하시오. Base64로 디코딩하여 Header(알고리즘)와 Payload(사용자 정보)를
     확인하라.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **JWT 구조 분석**: base64 + jq 수동 / **jwt_tool** (https://github.com/ticarpi/jwt_tool)
+    / pyjwt / jwt.io 웹 GUI
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
   hint: JWT는 header.payload.signature 형태입니다. echo 'JWT_PART' | base64 -d 로 각 부분을 디코딩하세요.
   category: recon
   points: 10
@@ -79,8 +99,18 @@ steps:
       - Payload 분석 없음
   target_vm: attacker
 - order: 3
-  instruction: JWT 토큰의 알고리즘을 none으로 변경하여 서명 검증 우회를 시도하시오. 페이로드의 id를 다른 사용자로 변경한 위조
+  instruction: 'JWT 토큰의 알고리즘을 none으로 변경하여 서명 검증 우회를 시도하시오. 페이로드의 id를 다른 사용자로 변경한 위조
     토큰을 생성하라.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **alg:none 변조**: jwt_tool -X a / 수동 base64 변조 / **Burp JWT Editor** extension
+    / hashcat -m 16500 (HS256 secret crack)
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
   hint: 헤더를 {"alg":"none","typ":"JWT"}로 변경하고, 페이로드에서 id를 2로 수정 후 Base64URL 인코딩하세요.
     서명 부분은 비워둡니다(header.payload. 형태).
   category: exploit
@@ -115,8 +145,18 @@ steps:
       - 서명 포함
   target_vm: attacker
 - order: 4
-  instruction: DVWA(:8080)에 로그인하여 쿠키 구조를 분석하시오. Set-Cookie 헤더에서 세션 ID와 security 쿠키를
+  instruction: 'DVWA(:8080)에 로그인하여 쿠키 구조를 분석하시오. Set-Cookie 헤더에서 세션 ID와 security 쿠키를
     확인하라.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **쿠키 분석**: curl -c cookie jar / Chrome DevTools Application / Burp Cookie 분석 /
+    `Set-Cookie` 보안 속성 표 (HttpOnly/Secure/SameSite)
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
   hint: curl -v -d 'username=admin&password=password&Login=Login' http://{{WEB_IP}}:8080/login.php
     로 응답 헤더의 Set-Cookie를 확인하세요.
   category: recon
@@ -147,8 +187,18 @@ steps:
       - 평문 의미 맥락 없음
   target_vm: attacker
 - order: 5
-  instruction: 쿠키 변조를 통한 보안 레벨 조작을 수행하시오. DVWA의 security 쿠키를 impossible에서 low로 변경하여
+  instruction: '쿠키 변조를 통한 보안 레벨 조작을 수행하시오. DVWA의 security 쿠키를 impossible에서 low로 변경하여
     SQL Injection이 가능한 상태로 만들어라.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **쿠키 변조**: curl -b ''security=low'' / **Burp Repeater + Match and Replace** /
+    Chrome DevTools Cookie 편집 / **EditThisCookie** 확장
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
   hint: curl -b 'PHPSESSID=세션값;security=low' 형태로 쿠키를 직접 지정하세요.
   category: exploit
   points: 10
@@ -183,8 +233,18 @@ steps:
       - 역직렬화 맥락 없음
   target_vm: attacker
 - order: 6
-  instruction: JuiceShop의 장바구니 API에서 BOLA/IDOR을 이용한 객체 참조 변조를 수행하시오. 다른 사용자의 장바구니(basket/1,
+  instruction: 'JuiceShop의 장바구니 API에서 BOLA/IDOR을 이용한 객체 참조 변조를 수행하시오. 다른 사용자의 장바구니(basket/1,
     basket/2)에 접근하라.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **BOLA/IDOR**: curl /api/Baskets/{N} for-loop / **Burp Intruder** Sniper / **autorize
+    Burp 확장** (자동) / **idor-cli** (https://github.com/ariya/idorcli)
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
   hint: 인증 토큰과 함께 /rest/basket/1, /rest/basket/2에 순차적으로 접근하여 다른 사용자 데이터를 조회하세요.
   category: exploit
   points: 12
@@ -219,8 +279,19 @@ steps:
       - IDOR 개념 누락
   target_vm: attacker
 - order: 7
-  instruction: Prototype Pollution 공격을 시도하시오. JuiceShop API에 __proto__ 속성을 포함한 JSON을
+  instruction: 'Prototype Pollution 공격을 시도하시오. JuiceShop API에 __proto__ 속성을 포함한 JSON을
     전송하여 서버 객체를 오염시켜라.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **Prototype Pollution**: `__proto__` JSON / `constructor.prototype` 변형 / **Burp
+    Server Side Prototype Pollution Scanner** / **PortSwigger PP-finder** / nuclei
+    -tags pp
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
   hint: POST /api/Users/ 에 {"email":"proto@test.com","password":"test1234","__proto__":{"role":"admin","isAdmin":true}}
     형태로 전송하세요.
   category: exploit
@@ -255,8 +326,18 @@ steps:
       - prototype 맥락 없음
   target_vm: attacker
 - order: 8
-  instruction: Node.js의 node-serialize 모듈 취약점 페이로드를 작성하시오. IIFE(즉시 실행 함수) 패턴이 포함된
+  instruction: 'Node.js의 node-serialize 모듈 취약점 페이로드를 작성하시오. IIFE(즉시 실행 함수) 패턴이 포함된
     직렬화 문자열을 구성하고 /tmp/node_deser.json에 저장하라.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **Node.js 직렬화**: node-serialize 페이로드 (`{rce}` IIFE) / **ysoserial.net** (.NET)
+    / **ysoserial** (Java) / **ph-cli** (Python pickle) / **gadgetinspector** 자동 chain
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
   hint: node-serialize는 _$$ND_FUNC$$_ 마커로 함수를 직렬화합니다. {"rce":"_$$ND_FUNC$$_function(){return
     require('child_process').execSync('id').toString()}()"} 형태입니다.
   category: exploit
@@ -292,8 +373,18 @@ steps:
       - RCE 실행 맥락 없음
   target_vm: attacker
 - order: 9
-  instruction: 역직렬화 방어 상태를 검증하시오. ModSecurity(포트 80)가 __proto__, _$$ND_FUNC$$_ 패턴을
+  instruction: '역직렬화 방어 상태를 검증하시오. ModSecurity(포트 80)가 __proto__, _$$ND_FUNC$$_ 패턴을
     차단하는지 확인하고, 직접 접근(포트 3000)과 비교하라.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **ModSecurity 검증**: curl 80 vs 3000 비교 / OWASP CRS rule 933 / wafw00f / Burp Active
+    Scan
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
   hint: 같은 Prototype Pollution 페이로드를 포트 80과 포트 3000에 각각 전송하여 응답 코드를 비교하세요.
   category: defense
   points: 10
@@ -326,49 +417,39 @@ steps:
       - WAF 효과 맥락 없음
   target_vm: attacker
 - order: 99
-  instruction: |
-    [복합 시나리오] "권한 상승 chain — IDOR 수평 + Prototype Pollution 수직"
+  instruction: "[복합 시나리오] \"권한 상승 chain — IDOR 수평 + Prototype Pollution 수직\"\n\n##\
+    \ 상황 (w08 → w09 시나리오 연속)\n\n> 선배: \"권한 상승은 두 종류 — *수평* (다른 사용자) 과 *수직* (관리자).\n\
+    ※ 수평은 IDOR 로 객체 ID 변조. 수직은 JWT id 변조 또는 prototype pollution 으로 role=admin 주입.\n\
+    ※ 두 케이스 다 시연 + 권한 상승 매트릭스 정리.\"\n\n학습 목표 (lecture #1·#2 수평·수직 + #3 IDOR + #4 API\
+    \ 접근제어) + (lab #6 IDOR + #7 Prototype) 통합.\n\n## 임무 (3 단계, 약 35분)\n\nNon-AI 트랙:\
+    \ ssh ccc@10.20.30.201 (attacker VM) 직접 실행.\n\n### Phase A — IDOR 수평\n1) admin\
+    \ 로그인:\n   `JWT=$(curl -s -X POST -H \"Content-Type: application/json\" -d '{\"\
+    email\":\"admin@juice-sh.op\",\"password\":\"admin123\"}'\n    http://10.20.30.80/rest/user/login\
+    \ | python3 -c \"import sys,json; print(json.load(sys.stdin)['authentication']['token'])\"\
+    )`\n2) basket 1~4 비교:\n   `for i in 1 2 3 4; do\n     curl -s -o /dev/null -w\
+    \ \"basket/$i: %{http_code}\\n\" -H \"Authorization: Bearer $JWT\"\n     http://10.20.30.80/api/Baskets/$i;\
+    \ done`\n\n### Phase B — Prototype Pollution 수직\n`curl -s -i -X POST -H \"Content-Type:\
+    \ application/json\"\n -d '{\"email\":\"test'$(date +%s)'@x.com\",\"password\"\
+    :\"Test1234!\",\"__proto__\":{\"role\":\"admin\"}}'\n http://10.20.30.80/api/Users/`\
+    \ 응답 status + role 필드 캡처.\n\n### Phase C — 권한 상승 매트릭스\n| 방향 | 공격 기법 | 입력 위치 |\
+    \ 핵심 방어 | 잔존 위험 |\n| 수평 (IDOR) | object ID 변조 | URL 경로/쿼리 | 객체 owner 검증 | 검증 누락\
+    \ endpoint |\n| 수직 (JWT id) | id payload 변조 | JWT payload | 서명 검증 + role check\
+    \ | key leak |\n| 수직 (Prototype) | __proto__ 주입 | JSON body | Object.freeze +\
+    \ parse 검사 | 라이브러리 취약 |\n| chain | IDOR → token 탈취 | 다단계 | 다층 인증 + audit log |\
+    \ 종합 모니터링 |\n표 끝 \"JuiceShop 권고: API endpoint owner check + __proto__ 거부 + audit\
+    \ log\" 한 줄.\n\n종료: echo \"=== Phase A IDOR ===\" / \"=== Phase B Prototype ===\"\
+    \ / \"=== Phase C 매트릭스 ===\".\n\n\n[도구 권장] **curl 단독 의존 금지**. 카테고리 `integration_scenario`\
+    \ 에 적합한 도구: 여러 도구 chain — 정찰 (whatweb/nmap) → 식별 (sqlmap/xsstrike) → 후속 작업. 도구\
+    \ 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과."
+  hint: 'Phase A: bash 변수 JWT + loop basket 1~4 비교.
 
-    ## 상황 (w08 → w09 시나리오 연속)
-
-    > 선배: "권한 상승은 두 종류 — *수평* (다른 사용자) 과 *수직* (관리자).
-    > 수평은 IDOR 로 객체 ID 변조. 수직은 JWT id 변조 또는 prototype pollution 으로 role=admin 주입.
-    > 두 케이스 다 시연 + 권한 상승 매트릭스 정리."
-
-    학습 목표 (lecture #1·#2 수평·수직 + #3 IDOR + #4 API 접근제어) + (lab #6 IDOR + #7 Prototype) 통합.
-
-    ## 임무 (3 단계, 약 35분)
-
-    Non-AI 트랙: ssh ccc@10.20.30.201 (attacker VM) 직접 실행.
-
-    ### Phase A — IDOR 수평
-    1) admin 로그인:
-       `JWT=$(curl -s -X POST -H "Content-Type: application/json" -d '{"email":"admin@juice-sh.op","password":"admin123"}'
-        http://10.20.30.80/rest/user/login | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])")`
-    2) basket 1~4 비교:
-       `for i in 1 2 3 4; do
-         curl -s -o /dev/null -w "basket/$i: %{http_code}\n" -H "Authorization: Bearer $JWT"
-         http://10.20.30.80/api/Baskets/$i; done`
-
-    ### Phase B — Prototype Pollution 수직
-    `curl -s -i -X POST -H "Content-Type: application/json"
-     -d '{"email":"test'$(date +%s)'@x.com","password":"Test1234!","__proto__":{"role":"admin"}}'
-     http://10.20.30.80/api/Users/` 응답 status + role 필드 캡처.
-
-    ### Phase C — 권한 상승 매트릭스
-    | 방향 | 공격 기법 | 입력 위치 | 핵심 방어 | 잔존 위험 |
-    | 수평 (IDOR) | object ID 변조 | URL 경로/쿼리 | 객체 owner 검증 | 검증 누락 endpoint |
-    | 수직 (JWT id) | id payload 변조 | JWT payload | 서명 검증 + role check | key leak |
-    | 수직 (Prototype) | __proto__ 주입 | JSON body | Object.freeze + parse 검사 | 라이브러리 취약 |
-    | chain | IDOR → token 탈취 | 다단계 | 다층 인증 + audit log | 종합 모니터링 |
-    표 끝 "JuiceShop 권고: API endpoint owner check + __proto__ 거부 + audit log" 한 줄.
-
-    종료: echo "=== Phase A IDOR ===" / "=== Phase B Prototype ===" / "=== Phase C 매트릭스 ===".
-  hint: |
-    Phase A: bash 변수 JWT + loop basket 1~4 비교.
     Phase B: __proto__ 차단 시도 — 응답 캡처가 학습.
+
     Phase C: 4행 매트릭스 + 권고 한 줄.
+
     포인트: 수평 vs 수직 차이 + chain.
+
+    '
   category: integration_scenario
   points: 50
   verify:
@@ -376,9 +457,11 @@ steps:
     expect: 매트릭스
     field: stdout
     semantic:
-      intent: |
-        IDOR 수평 + Prototype Pollution 수직 + 매트릭스.
+      intent: 'IDOR 수평 + Prototype Pollution 수직 + 매트릭스.
+
         lecture #1·#2·#3·#4 + lab #6·#7 동시 행동 증명.
+
+        '
       success_criteria:
       - Phase A — admin 로그인 + basket 4개 status
       - Phase B — __proto__ POST + 응답
@@ -395,5 +478,7 @@ steps:
       - 수평·수직 구분 누락
   target_vm: attacker
   risk_level: low
-  answer_detail: |
-    학생이 ssh attacker 직접. JuiceShop IDOR/__proto__ 차단 여부 endpoint 별. 시도 자체 학습.
+  answer_detail: '학생이 ssh attacker 직접. JuiceShop IDOR/__proto__ 차단 여부 endpoint 별.
+    시도 자체 학습.
+
+    '

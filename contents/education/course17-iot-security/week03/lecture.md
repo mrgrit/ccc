@@ -595,3 +595,592 @@ graph LR
 
 **학생 액션**: lab UART.
 
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course17 IoT Security — Week 03 하드웨어 인터페이스·UART·SPI·I2C·JTAG·SWD)
+
+> 이 부록은 본문 Part 3-4 의 lab (socat 가상 UART / Python 시뮬레이터 /
+> 보드레이트 자동 탐지 / SPI Flash 덤프 / I2C EEPROM) 의 모든 시뮬을
+> *실제 OSS 도구 + 저가 하드웨어* (~$30 Bus Pirate / ~$15 FTDI / ~$10
+> Logic Analyzer) 매핑한다. 가상 환경 (socat / minicom / pyserial) → 실
+> 하드웨어 (flashrom / OpenOCD / urjtag / pyOCD) → 펌웨어 분석 (binwalk /
+> EMBA / ghidra) 의 *3 단계 학습 경로* 로 구성.
+
+### lab step → 도구 매핑 표
+
+| step | 본문 위치 | 학습 항목 | 본문 명령 (시뮬) | 핵심 OSS 도구 (실 명령) | 도구 옵션 |
+|------|----------|----------|----------------|-------------------------|-----------|
+| s1 | 3.1 | 가상 PTY UART | `socat pty pty` | socat / pty / virtualbox serial | `link=/tmp/vUART0` |
+| s2 | 3.1 | Python UART 시뮬 | pyserial | pyserial / pyftdi / minicom | `serial.Serial('/tmp/vUART1', 115200)` |
+| s3 | 3.2 | UART 접속 (CLI) | `minicom -D` | minicom / screen / picocom / tio / cu | `tio -b 115200 /dev/ttyUSB0` |
+| s4 | 3.2 | UART 자동화 | Python 코드 | pyserial / pexpect / expect script | `expect "login:" → send` |
+| s5 | 3.3 | baudrate detect | Python loop | baudrate (Craig Heffner) / pyserial 자작 | `baudrate.py /dev/ttyUSB0` |
+| s6 | 4.1 | SPI Flash 덤프 | Python bytearray | flashrom / spi-flash-tools / linux mtd | `flashrom -p ch341a_spi -r dump.bin` |
+| s7 | 4.1 | 펌웨어 분석 | strings + re | binwalk / EMBA / ghidra / radare2 | week 11 부록 |
+| s8 | 4.2 | I2C EEPROM | Python class | i2cdump / i2cget / i2cset (i2c-tools) | `i2cdump -y 1 0x50` |
+| s9 | 2.1 JTAG 체인 | (이론) | OpenOCD / urjtag / jtag-finder | `openocd -f interface/...` |
+| s10 | 2.2 OpenOCD | openocd_jtag.cfg | OpenOCD / pyOCD / Black Magic Probe | `flash read_image` |
+| s11 | 2.3 JTAGulator | (Joe Grand 도구) | JTAGulator OSS firmware / jtagscan | UART → JTAG 자동 |
+| s12 | 1.5 SWD | ARM 전용 | pyOCD / OpenOCD swd / cmsis-dap | `pyocd cmd -t stm32f4` |
+| s13 | 5.2 보안 부트 | (개념) | Trust Onion / OP-TEE / TF-A / U-Boot Secure | signed image |
+| s14 | 5.1 Tamper | 회수 분석 | tamper detect Linux dmesg / Wazuh | log + alarm |
+| s15 | 회수 후 | 칩 분석 | binwalk / firmware-mod-kit / ghidra | 정적 |
+
+### 하드웨어 인터페이스 도구 카테고리 매트릭스
+
+| 카테고리 | 사례 | 대표 도구 (OSS) | 비고 |
+|---------|------|----------------|------|
+| **UART (가상)** | lab pty 쌍 | socat / pty / qemu serial | 학습 |
+| **UART (CLI 접속)** | 시리얼 콘솔 | minicom / screen / picocom / tio / cu / putty | 표준 |
+| **UART (Python)** | 자동화 | pyserial / pyftdi / esptool | 자동 |
+| **UART (자동 baud)** | 보드레이트 탐지 | baudrate (devttys0) / craig-heffner | OSS |
+| **UART → USB 어댑터** | $5-15 | FTDI FT232R / CP2102 / CH340 | 표준 |
+| **SPI Flash 읽기** | $5 CH341A | flashrom / spi-flash-tools / linux mtd-utils | 운영 표준 |
+| **SPI Flash 분석** | 추출 후 | binwalk / EMBA / firmware-mod-kit | week 11 |
+| **I2C 통신** | i2c-tools | i2cdetect / i2cdump / i2cget / i2cset (Linux) | 표준 |
+| **I2C bus monitor** | logic analyzer | sigrok-cli + pulseview / saleae logic | 디버그 |
+| **JTAG (universal)** | $30-150 | OpenOCD / urjtag / Black Magic Probe | OSS standard |
+| **JTAG (auto pin scan)** | JTAGulator | JTAGulator OSS firmware / jtag-finder | 핀 탐색 |
+| **SWD (ARM)** | 2-pin debug | pyOCD / OpenOCD swd / Black Magic Probe / DAPLink | ARM Cortex |
+| **JTAG / SWD 어댑터** | 저가 | FTDI FT232H / FT2232H + OpenOCD / J-Link EDU | 표준 |
+| **Logic analyzer** | $10-500 | sigrok-cli + pulseview / saleae logic-2 | 신호 분석 |
+| **Bus Pirate** | $30 — UART/SPI/I2C/JTAG/1-Wire | OSS firmware / flashrom + Bus Pirate | 범용 |
+| **Shikra** | $30 — SPI/I2C 빠른 덤프 | OSS firmware + flashrom | 빠름 |
+| **칩 disassembly** | bin → 코드 | ghidra / radare2 / cutter / IDA Free | 정적 |
+| **펌웨어 dynamic** | emul | qiling / FAT / qemu-user-static | 부팅 |
+| **보안 부트** | secure boot | Trust Onion / OP-TEE / TF-A / U-Boot Secure / Coreboot | 방어 |
+| **HSM (저가)** | $5-30 | OpenSC + ATECC608A / TPM 2.0 | 키 보관 |
+| **Tamper switch** | 물리 감지 | linux dmesg + Wazuh / Home Assistant | alarm |
+
+### 학생 환경 준비
+
+```bash
+# attacker VM (192.168.0.112) — 하드웨어 도구
+sudo apt-get update
+sudo apt-get install -y \
+   socat minicom picocom screen cu tio \
+   python3-serial python3-pyftdi \
+   flashrom \
+   i2c-tools \
+   openocd \
+   sigrok-cli pulseview \
+   binwalk file unblob \
+   radare2 \
+   gdb gdb-multiarch \
+   git build-essential \
+   libftdi1-dev libusb-1.0-0-dev
+
+# pyOCD (ARM SWD/JTAG)
+pip3 install --user pyocd
+
+# urjtag (universal JTAG)
+sudo apt-get install -y urjtag
+
+# esptool (ESP8266/ESP32)
+pip3 install --user esptool
+
+# baudrate (Craig Heffner — auto baudrate detection)
+git clone https://github.com/devttys0/baudrate /tmp/baudrate
+sudo install -m755 /tmp/baudrate/baudrate.py /usr/local/bin/baudrate.py
+
+# JTAGulator firmware (Joe Grand — Parallax Propeller P8X32A)
+# (실 보드 필요 — $150)
+git clone https://github.com/grandideastudio/jtagulator /tmp/jtagulator
+
+# JTAG-finder (Arduino 기반 자동 핀 탐색)
+git clone https://github.com/cyphunk/JTAGenum /tmp/jtagenum
+
+# spi-flash-tools (linux kernel)
+git clone https://github.com/google/spi-flash-tools /tmp/spi-flash-tools
+
+# Black Magic Probe firmware (BMP)
+git clone --recursive https://github.com/blackmagic-debug/blackmagic /tmp/bmp
+
+# DAPLink (CMSIS-DAP — ARM SWD)
+git clone https://github.com/ARMmbed/DAPLink /tmp/daplink
+
+# 검증
+socat -V 2>&1 | head -1
+minicom --version 2>&1 | head -1
+picocom --help 2>&1 | head -3
+tio --version 2>&1 | head -1
+flashrom --version 2>&1 | head -1
+i2cdetect -V
+openocd -v 2>&1 | head -1
+pyocd --version
+urjtag --version 2>&1 | head -3
+sigrok-cli -V | head -3
+esptool.py version
+```
+
+### 핵심 도구별 상세 사용법
+
+#### 도구 1: minicom / picocom / tio — UART CLI 접속 비교 (s3)
+
+본문 minicom + screen 외에 *현대 도구* picocom / tio 비교.
+
+```bash
+# 1. minicom (전통 — UI 메뉴)
+sudo minicom -D /dev/ttyUSB0 -b 115200 -8 -E
+# Ctrl+A → Z 메뉴
+# Ctrl+A → X 종료
+
+# 2. picocom (lightweight — 학습 추천)
+sudo picocom -b 115200 -d 8 -p n -f n /dev/ttyUSB0
+# Ctrl+A → Ctrl+X 종료
+
+# 3. screen (모든 시스템 기본)
+sudo screen /dev/ttyUSB0 115200,cs8,-parenb,-cstopb
+# Ctrl+A → \ 종료
+
+# 4. tio (현대 — 자동 reconnect + 색상 + log)
+sudo tio -b 115200 -d 8 -p none -s 1 -m INLCRNL,ONLCRNL \
+   --log /tmp/uart-session.log /dev/ttyUSB0
+# Ctrl+T → q 종료
+# 자동 reconnect (디바이스 분리/재연결 시 자동)
+
+# 5. cu (BSD 표준)
+sudo cu -l /dev/ttyUSB0 -s 115200
+# ~. 종료
+
+# 6. Python pyserial (자동화)
+python3 << 'PY'
+import serial, time
+ser = serial.Serial('/dev/ttyUSB0', 115200, timeout=2)
+ser.write(b'\r\n')
+time.sleep(1)
+print(ser.read(1024).decode(errors='ignore'))
+ser.close()
+PY
+```
+
+#### 도구 2: baudrate.py + 자작 — UART 보드레이트 자동 탐지 (s5)
+
+본문 brute force 의 표준 도구. Craig Heffner (devttys0) 의 baudrate.py 가
+운영 표준 — *통계적 baudrate 검출* + *interactive switch*.
+
+```bash
+# 1. baudrate.py (Craig Heffner — 표준)
+sudo baudrate.py -p /dev/ttyUSB0
+# Looking for baudrate...
+# 9600    : ........
+# 19200   : ........
+# 115200  : Hello! Welcome to BusyBox v1.21.1
+# Detected baudrate: 115200
+# Press 'q' to quit, 's' to swap baudrate
+
+# 2. 자작 (본문 baudrate_detect.py 보강)
+cat << 'PY' > /tmp/baudrate-v2.py
+#!/usr/bin/env python3
+"""보드레이트 자동 검출 — 통계 기반 + interactive"""
+import serial, time, sys
+
+BAUDS = [300, 1200, 2400, 4800, 9600, 19200, 38400, 57600,
+         115200, 230400, 460800, 921600]
+
+def score(text):
+    """ASCII printable 비율 + 라인 break + 일반 단어 점수"""
+    if not text: return 0
+    p = sum(1 for c in text if 32 <= ord(c) < 127 or c in '\r\n\t')
+    common = sum(1 for w in ['Hello','login','OK','Boot','Linux','BusyBox','U-Boot']
+                 if w.encode() in text.encode(errors='replace'))
+    return (p / len(text)) + common * 0.5
+
+def detect(port, sample_time=2):
+    print(f"Scanning baudrates on {port}...")
+    best = (0, 0, b'')
+    for b in BAUDS:
+        try:
+            s = serial.Serial(port, b, timeout=sample_time)
+            s.write(b'\r\n\r\n')
+            time.sleep(0.3)
+            data = s.read(512)
+            sc = score(data.decode(errors='replace'))
+            print(f"  {b:7d} score={sc:.2f}  {repr(data[:50])}")
+            if sc > best[0]:
+                best = (sc, b, data)
+            s.close()
+        except Exception as e:
+            print(f"  {b:7d} ERR: {e}")
+    print(f"\n[+] Best: baudrate={best[1]} score={best[0]:.2f}")
+    return best[1]
+
+if __name__ == '__main__':
+    port = sys.argv[1] if len(sys.argv) > 1 else '/dev/ttyUSB0'
+    detect(port)
+PY
+
+sudo python3 /tmp/baudrate-v2.py /dev/ttyUSB0
+```
+
+#### 도구 3: flashrom — SPI Flash 직접 덤프 (s6)
+
+본문 4.1 *SPI Flash 시뮬* 의 *실 도구*. CH341A 프로그래머 (~$5) + flashrom
+한 명령으로 전체 NOR Flash 덤프.
+
+```bash
+# 1. CH341A 프로그래머 인식
+lsusb | grep -i 1a86
+# Bus 003 Device 005: ID 1a86:5512 QinHeng Electronics CH341A
+
+# 2. flashrom — 사용 가능 chip 확인
+sudo flashrom --programmer ch341a_spi
+# Found Winbond flash chip "W25Q64.V" (8192 kB, SPI)
+# Found Spansion flash chip "S25FL128S......0" (16384 kB, SPI)
+
+# 3. 전체 chip 읽기 (덤프)
+sudo flashrom --programmer ch341a_spi -r /tmp/firmware.bin -V
+# Reading flash... done.
+# 8192 kB read
+
+# 4. sha256 보존 (chain of custody)
+sha256sum /tmp/firmware.bin > /tmp/firmware.sha256
+
+# 5. binwalk 자동 파일시스템 추출
+binwalk -e /tmp/firmware.bin
+ls _firmware.bin.extracted/
+
+# 6. 추출된 squashfs / cpio / jffs2 분석
+ls _firmware.bin.extracted/squashfs-root/
+# bin/  etc/  lib/  sbin/  usr/  var/
+
+# 7. /etc/passwd / /etc/shadow / config 검색
+cat _firmware.bin.extracted/squashfs-root/etc/passwd
+grep -r "password\|api_key\|secret" \
+   _firmware.bin.extracted/squashfs-root/etc/
+
+# 8. 쓰기 (백도어 주입 — lab 한정)
+sudo flashrom --programmer ch341a_spi \
+   -w /tmp/firmware-modified.bin --force
+
+# 9. 다른 어댑터 (FT232H + flashrom)
+sudo flashrom --programmer ft2232_spi:type=232H,divisor=4 \
+   -r /tmp/firmware-ft.bin
+
+# 10. Linux mtd (운영 호스트의 SPI Flash — 자가 점검)
+ls /dev/mtd*
+sudo dd if=/dev/mtd0 of=/tmp/mtd0.bin bs=1M
+```
+
+#### 도구 4: i2c-tools — I2C EEPROM / sensor 통신 (s8)
+
+본문 4.2 *I2C EEPROM 시뮬* 의 *실 도구*. Linux i2c-tools (Raspberry Pi /
+BeagleBone / I2C-USB 어댑터).
+
+```bash
+# 1. I2C bus 활성 (Raspberry Pi)
+sudo raspi-config nonint do_i2c 0
+sudo modprobe i2c-dev
+
+# 2. I2C bus 목록
+ls /dev/i2c-*
+# /dev/i2c-1
+
+# 3. I2C device 검색 (주소 0x03-0x77)
+sudo i2cdetect -y 1
+#      0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
+# 00:          -- -- -- -- -- -- -- -- -- -- -- -- --
+# 10: -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+# 20: -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+# 50: 50 -- -- -- -- -- -- -- 57 -- -- -- -- -- -- --
+#                                 ↑                ↑
+#                              EEPROM           RTC
+
+# 4. EEPROM 전체 dump (256 bytes)
+sudo i2cdump -y 1 0x50
+# 본문 시뮬레이터의 출력과 동일한 hex dump
+
+# 5. 단일 byte 읽기
+sudo i2cget -y 1 0x50 0x00
+# 0xaa  (Magic byte)
+
+# 6. byte 쓰기 (lab 한정)
+sudo i2cset -y 1 0x50 0x00 0x55
+
+# 7. 16-bit 읽기 (EEPROM 큰 주소 공간)
+sudo i2cget -y 1 0x50 0x00 w
+
+# 8. SMBus block 읽기
+sudo i2ctransfer -y 1 w1@0x50 0x00 r16
+# 16 byte 한 번에
+
+# 9. 디바이스 메타 자동 식별 (대표 sensor)
+# 0x40: SHT31 (온습도)
+# 0x68: DS3231 (RTC)
+# 0x76/0x77: BME280 (기압/온습도)
+# 0x50-0x57: EEPROM 24Cxx
+# 0x29: VL53L0X (ToF distance)
+
+# 10. Python smbus2 (자동화)
+pip3 install --user smbus2
+python3 << 'PY'
+from smbus2 import SMBus
+with SMBus(1) as bus:
+    # EEPROM 0x50 의 16 byte 읽기
+    data = bus.read_i2c_block_data(0x50, 0x00, 16)
+    print(' '.join(f'{b:02X}' for b in data))
+PY
+```
+
+#### 도구 5: OpenOCD + pyOCD — JTAG/SWD 디버그 (s9-s12)
+
+본문 2.2 *OpenOCD 설정* 의 보강 + ARM SWD 전용 pyOCD 비교.
+
+```bash
+# 1. OpenOCD — JTAG 어댑터 + 타겟 자동
+# /usr/share/openocd/scripts/interface/ — 어댑터 cfg
+# /usr/share/openocd/scripts/target/    — MCU cfg
+
+# FT2232H + STM32F4 예
+sudo openocd \
+   -f interface/ftdi/dp_busblaster.cfg \
+   -f target/stm32f4x.cfg
+
+# 결과 (foreground):
+# Open On-Chip Debugger 0.12.0
+# Info : ftdi: if you experience problems at higher adapter clocks, ...
+# Info : clock speed 1000 kHz
+# Info : JTAG tap: stm32f4x.cpu tap/device found: 0x4ba00477
+# Info : stm32f4x.cpu: hardware has 6 breakpoints, 4 watchpoints
+
+# 2. telnet 인터페이스 (다른 터미널)
+telnet localhost 4444
+> halt
+> reg                    # CPU 레지스터 읽기
+> mdw 0x20000000 16      # SRAM 16 word 읽기
+> flash banks            # Flash bank 정보
+> flash read_image /tmp/fw.bin 0x08000000 0x100000   # Flash 덤프
+> flash erase_sector 0 0 last
+> flash write_image /tmp/new-fw.bin 0x08000000
+> resume
+
+# 3. GDB 통합
+arm-none-eabi-gdb -ex 'target extended-remote localhost:3333' \
+   /tmp/firmware.elf
+(gdb) load
+(gdb) monitor reset halt
+(gdb) b main
+(gdb) c
+
+# 4. pyOCD (ARM SWD 전용 — 더 간단)
+# CMSIS-DAP 어댑터 (DAPLink / J-Link CMSIS-DAP) 인식
+pyocd list
+# Connected probes:
+#   #     UID                         Vendor              Product            Target
+#   0     1234567890                  ARM                 DAPLink CMSIS-DAP  cortex_m
+
+# 사용 가능 타겟
+pyocd list --targets | grep stm32
+
+# Flash dump
+pyocd cmd -t stm32f407vg \
+   -c "load_memory 0x08000000 1048576 /tmp/fw.bin --type=raw"
+
+# Flash 쓰기
+pyocd flash -t stm32f407vg /tmp/new-fw.elf
+
+# GDB server (Visual Studio Code 등 IDE 연동)
+pyocd gdbserver -t stm32f407vg -p 3333
+
+# 5. urjtag (보드 디스커버리)
+urjtag
+> cable ft2232 vid=0x0403 pid=0x6010
+> detect
+# IR length: 4
+# Chain length: 1
+# Device Id: 00100110000010100000000001110001
+#   Manufacturer: Atmel
+#   Part(0):  AT91SAM7S256
+> peek 0x00200000
+> poke 0x00200000 0xDEADBEEF
+```
+
+#### 도구 6: JTAGulator + JTAG-finder — 핀 자동 탐색 (s11)
+
+미상 보드의 JTAG 핀 위치 자동 탐색. JTAGulator 는 Joe Grand 의 Parallax
+Propeller 보드 ($150). 저가 대안 — JTAGenum (Arduino 기반).
+
+```bash
+# 1. JTAGulator (실 보드 필요 — 학습용)
+# 보드 0-23 핀에 디바이스 연결 → UART 콘솔
+sudo picocom -b 115200 /dev/ttyUSB0
+# JTAGulator menu:
+# > IDCODE Scan        # JTAG IDCODE 자동 검출
+# > BYPASS Scan        # JTAG BYPASS 모드 검출
+# > UART Scan          # UART TX/RX 자동 검출
+
+# IDCODE Scan 결과:
+# Voltage: 3.3V
+# Pins: 24
+# Discovered JTAG pinout!
+# TCK: pin 5
+# TMS: pin 7
+# TDO: pin 9
+# TDI: pin 11
+
+# 2. JTAGenum (Arduino — 저가 대안 ~$10)
+# Arduino IDE 에서 JTAGenum.ino 컴파일 + flash
+# Serial Monitor 9600 baud 접속
+# Commands:
+#   r → IDCODE scan
+#   l → loopback test (UART 검출)
+#   p → 핀 매핑 출력
+
+# 3. Bus Pirate (UART/SPI/I2C/JTAG 다목적)
+sudo picocom -b 115200 /dev/ttyUSB0
+HiZ> m
+1. HiZ
+2. 1-WIRE
+3. UART
+4. I2C
+5. SPI
+6. 2WIRE
+7. 3WIRE
+8. KEYB
+9. LCD
+10. PIC
+x. exit(without change)
+
+(1)>3              # UART 모드
+Set serial port speed: (bps)
+1. 300
+...
+9. 115200
+(1)>9
+```
+
+#### 도구 7: sigrok-cli + pulseview — 로직 분석기 (s7-s8)
+
+저가 USB 로직 analyzer (~$10) + sigrok 으로 *I2C / SPI / UART / 1-Wire*
+신호 프로토콜 디코드.
+
+```bash
+# 1. 디바이스 인식
+sigrok-cli --scan
+# fx2lafw - Generic 8-channel logic analyzer with 8 channels: D0 D1 D2 D3 D4 D5 D6 D7
+
+# 2. 캡처 (1초, 4MHz, 8 채널)
+sigrok-cli -d fx2lafw --config samplerate=4M \
+   --samples 4M -O srzip -o /tmp/capture.sr
+
+# 3. I2C 디코드 (SDA on D0, SCL on D1)
+sigrok-cli -i /tmp/capture.sr \
+   -P i2c:scl=D1:sda=D0 -A i2c=address-read,address-write,data-read,data-write
+# Address: 0x50
+# Data write: 0x00
+# Data read: 0xAA, 0x55, ...
+
+# 4. SPI 디코드 (CLK on D0, MOSI on D1, MISO on D2, CS on D3)
+sigrok-cli -i /tmp/capture.sr \
+   -P spi:clk=D0:mosi=D1:miso=D2:cs=D3 -A spi=mosi-data,miso-data
+
+# 5. UART 디코드 (TX on D0, baud 115200)
+sigrok-cli -i /tmp/capture.sr \
+   -P uart:rx=D0:baudrate=115200 -A uart=rx-data
+# RX: 'L', 'i', 'n', 'u', 'x'
+
+# 6. PulseView GUI (실시간)
+sudo pulseview &
+# File → Open → /tmp/capture.sr
+# Decoders → I2C → 자동 시각화
+
+# 7. 자동 baudrate (UART)
+sigrok-cli -i /tmp/capture.sr -P uart:rx=D0:baudrate=auto
+```
+
+#### 도구 8: esptool — ESP32/ESP8266 전용 (펌웨어 + Flash)
+
+ESP32 (week 09 / week 11 부록 참조) 의 *통합 도구* — UART → 펌웨어 read/write
++ chip 정보 + secure boot + flash encrypt.
+
+```bash
+# 1. chip 정보
+esptool.py --port /dev/ttyUSB0 chip_id
+# Chip is ESP32-D0WD-V3 (revision 3)
+# Features: WiFi, BT, Dual Core, 240MHz, ...
+# MAC: aa:bb:cc:11:22:33
+
+# 2. 전체 flash 덤프 (4MB)
+esptool.py --port /dev/ttyUSB0 --baud 921600 \
+   read_flash 0 0x400000 /tmp/esp32-fw.bin
+
+# 3. 메타 (partition table)
+esptool.py --port /dev/ttyUSB0 read_flash 0x8000 0xC00 /tmp/partition.bin
+parttool.py --port /dev/ttyUSB0 get_partition_info --info offset --partition-name nvs
+
+# 4. 펌웨어 쓰기 (lab — 백도어 주입)
+esptool.py --port /dev/ttyUSB0 --baud 921600 \
+   write_flash 0x10000 /tmp/modified.bin
+
+# 5. NVS (저장된 cred / wifi pwd)
+git clone https://github.com/Jason2866/esp32-nvs-tool /tmp/esp32-nvs
+python3 /tmp/esp32-nvs/nvs_partition_gen.py extract \
+   --input /tmp/partition.bin --output /tmp/nvs-extracted/
+
+# 6. secure boot 확인 (eFuse)
+espefuse.py --port /dev/ttyUSB0 summary
+```
+
+### 가상 lab → 실 하드웨어 학습 경로
+
+| 단계 | 구성 | 비용 | 학습 |
+|------|------|------|------|
+| **1. 완전 가상 (본문)** | socat + pyserial | $0 | UART 프로토콜 |
+| **2. USB-UART** | FTDI FT232R + 점퍼 + Raspberry Pi GPIO | $20 | 실 시리얼 |
+| **3. 저가 logic 분석기** | $10 8-ch USB analyzer + sigrok | $10 | I2C/SPI/UART decode |
+| **4. SPI 프로그래머** | CH341A + Pomona test clip + flashrom | $15 | Flash read/write |
+| **5. JTAG 어댑터** | FTDI FT2232H + OpenOCD | $30 | JTAG/SWD |
+| **6. Bus Pirate** | OSS firmware | $30 | UART+SPI+I2C+JTAG 통합 |
+| **7. JTAG auto** | JTAGulator (Joe Grand) | $150 | 핀 자동 탐색 |
+| **8. 운영 grade** | Saleae Logic + Segger J-Link | $1000+ | 전문 |
+
+### IoT 하드웨어 공격 → 방어 매핑
+
+| 공격 | 1차 도구 | 방어 |
+|------|----------|------|
+| UART 부트로그 | minicom + Power on | 생산 시 UART 비활성 |
+| UART 루트 셸 | minicom + login default | 인증 강제 + 로그 |
+| U-Boot 인터럽트 | UART + Ctrl+C | U-Boot 비번 + Secure Boot |
+| SPI Flash 덤프 | flashrom + CH341A | Flash 암호화 + 보안 부트 |
+| I2C EEPROM cred | i2cdump + grep | EEPROM 암호화 + ATECC608A |
+| JTAG IDCODE | JTAGulator + OpenOCD | JTAG fuse blow + lock |
+| SWD 디버그 | pyOCD + GDB | SWD disable + secure boot |
+| 펌웨어 변조 | flashrom -w + 수정 binary | TPM + signed update |
+| chip-off | desolder + reader | epoxy + BGA |
+| side channel | (학술) | masking + shielding |
+
+### 학생 자가 점검 체크리스트
+
+- [ ] socat 가상 PTY + pyserial 시뮬레이터 동작 1회 (본문 lab)
+- [ ] minicom + picocom + tio 3 도구 모두 사용 + 차이 답변 가능
+- [ ] baudrate.py 또는 자작 v2 로 알 수 없는 device 의 baudrate 자동 검출
+- [ ] flashrom 으로 자기 보드 (Pi / OpenWrt 라우터) Flash 덤프 1회
+- [ ] binwalk -e 로 덤프 파일 → squashfs 추출 → /etc/passwd 확인
+- [ ] i2cdetect + i2cdump 로 lab 의 EEPROM (또는 sensor) 자동 식별
+- [ ] OpenOCD JTAG 또는 pyOCD SWD 로 ARM 보드 (STM32 NUCLEO 등) Flash 덤프
+- [ ] sigrok-cli I2C / SPI / UART decode 1회 (가상 또는 실 신호)
+- [ ] esptool 로 ESP32 전체 flash 덤프 + strings 분석 1회
+- [ ] 본 부록 모든 명령에 대해 "외부 디바이스 적용 시 위반 법조항" 답변 가능
+
+### 운영 환경 적용 시 주의
+
+1. **UART / JTAG 생산 비활성** — IoT 출하 전 UART 콘솔 / JTAG fuse 비활성화.
+   에폭시 + BGA 패키지 권장.
+2. **Flash 암호화 의무** — ESP32 Flash Encryption / STM32 RDP Level 2 / NXP
+   secure boot. 평문 cred 절대 금지.
+3. **EEPROM 암호화** — I2C EEPROM 의 cred / API key 평문 보관 금지.
+   ATECC608A / TPM 2.0 같은 secure element 사용.
+4. **JTAG fuse blow** — 출하 전 JTAG / SWD 영구 비활성. 디버그 필요 시
+   인증서 기반 unlock (ARM CryptoCell 등).
+5. **secure boot chain** — ROM → Bootloader → Kernel → App 모든 단계 서명
+   검증. U-Boot / OP-TEE / Trust Onion.
+6. **물리 lab 한정** — 본 부록 모든 도구는 *자기 IoT* 또는 *학습 lab* 한정.
+   외부 IoT 의 UART / JTAG 접근은 정통망법 §48.
+7. **chain of custody** — 회수된 IoT 의 Flash 덤프 시 sha256 + 시각 + 사용자
+   기록 (week 11 부록 AFF4 표준).
+
+> 본 부록은 *학습 시연용 OSS 시퀀스* 이다. 모든 하드웨어 인터페이스
+> 접근은 *자기 IoT* 또는 *허가된 lab* 한정. 외부 IoT 의 UART / JTAG
+> 접근 시 정통망법 §48 + 영업비밀보호법 위반 가능 — 형사 처벌 대상.
+
+---

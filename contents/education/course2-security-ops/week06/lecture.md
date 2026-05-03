@@ -678,3 +678,50 @@ dataset 통계:
 3. 룰 *suppress* / *threshold* 정책 적용 후 SIEM 적재량 50% 이상 감소 가능
 
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course2 SecOps — Week 06 Suricata 운영)
+
+| 작업 | 도구 |
+|------|------|
+| 알람 분석 (Web) | evebox / scirius / kibana / brim |
+| 알람 분석 (CLI) | jq / lnav / multitail |
+| False positive 튜닝 | suricata-update disable-rule / threshold.config |
+| 성능 튜닝 | af-packet workers / cpu pinning / threads |
+| 메트릭 | stats.log / prometheus exporter / grafana |
+| pcap 캡처 | suricata -i ... --pcap-buffer-size / netsniff-ng |
+| 비교 분석 | brim / wireshark / tshark | 
+
+### 학생 환경 준비
+```bash
+sudo apt install -y jq lnav prometheus prometheus-node-exporter
+
+# Suricata Prometheus exporter
+git clone https://github.com/corelight/suricata-prometheus-exporter.git ~/sp_exp
+cd ~/sp_exp && go build
+```
+
+### 핵심 시나리오
+```bash
+# 알람 빈도 top 10
+sudo jq -r 'select(.event_type=="alert") | .alert.signature' /var/log/suricata/eve.json | \
+  sort | uniq -c | sort -rn | head -10
+
+# 특정 룰 비활성화 (false positive)
+sudo suricata-update disable-rule sid:2027390
+sudo suricata-update --disabled-rules-file /etc/suricata/disable.conf
+sudo systemctl reload suricata
+
+# threshold.config (rate limit)
+sudo tee -a /etc/suricata/threshold.config > /dev/null << 'EOF'
+suppress gen_id 1, sig_id 2027390
+threshold gen_id 1, sig_id 2008090, type limit, track by_src, count 10, seconds 60
+EOF
+
+# 성능 — af-packet 워커 늘리기
+sudo sed -i 's/threads: auto/threads: 4/' /etc/suricata/suricata.yaml
+sudo systemctl restart suricata
+```
+
+학생은 본 6주차에서 **알람 빈도 분석 → false positive 튜닝 → 성능 모니터링** 의 운영 사이클을 jq + suricata-update + Prometheus 로 익힌다.

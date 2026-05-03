@@ -815,3 +815,228 @@ dataset 의 모든 신호에는 `mo_name` (modus operandi 분류) + `label_binar
 
 **학생 액션**: lab 환경에 Ollama + gemma3:4b 를 설치하고, dataset 의 임의 audit 100건을 LLM 에 입력하여 *"이것이 의심스러운가"* 를 yes/no 로 분류시킨다. LLM 의 답변이 dataset 의 `label_binary` 과 일치하는 비율 (정확도) 을 측정. 정확도 ≥ 95% 면 AI 활용의 시작점, < 95% 면 추가 fine-tune 필요한 단계.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course7 AI Security — Week 01 Ollama LLM 기초/API)
+
+### LLM 인프라 OSS 도구
+
+| 영역 | OSS 도구 |
+|------|---------|
+| LLM 호스팅 (로컬) | **Ollama** / **vLLM** / TGI (HuggingFace) / llama.cpp |
+| 모델 변환 | llama.cpp `convert-hf-to-gguf.py` / GGUF format |
+| 모델 양자화 | llama.cpp `quantize` (Q4/Q5/Q8) / AWQ / GPTQ |
+| API 클라이언트 | curl / **httpie** / OpenAI SDK / Anthropic SDK |
+| Local UI | **Open WebUI** (구 ollama-webui) / LobeChat / Hollama |
+| 모델 비교 | promptfoo / OpenAI Evals / lm-eval-harness |
+| API gateway | **LiteLLM** (proxy) / Helicone-router |
+
+### 핵심 — Ollama 표준 사용법
+
+```bash
+# Ollama 가 이미 실습 환경에 설치됨
+ollama --version
+ollama list                                                       # 다운로드된 모델
+
+# 1) 모델 다운로드 (Hugging Face → Ollama)
+ollama pull gemma3:4b                                             # 4B 모델 ~3GB
+ollama pull llama3:8b                                             # 8B 모델 ~5GB
+ollama pull qwen2.5:7b                                            # 다국어 강력
+ollama pull deepseek-r1:7b                                        # reasoning 모델
+
+# 2) REST API
+curl http://localhost:11434/api/generate -d '{
+  "model": "gemma3:4b",
+  "prompt": "Explain reinforcement learning in 1 sentence",
+  "stream": false
+}' | jq
+
+# 3) Chat API (OpenAI-compatible)
+curl http://localhost:11434/v1/chat/completions -d '{
+  "model": "gemma3:4b",
+  "messages": [{"role":"user","content":"Hello"}]
+}' | jq
+
+# 4) Streaming
+curl -N http://localhost:11434/api/generate -d '{
+  "model": "gemma3:4b",
+  "prompt": "Hello"
+}'
+# → 토큰 단위로 stream
+
+# 5) Modelfile (커스텀 모델 — system prompt 고정)
+cat > /tmp/Modelfile << 'EOF'
+FROM gemma3:4b
+SYSTEM You are a security analyst. Always respond in Korean.
+PARAMETER temperature 0.3
+PARAMETER num_ctx 4096
+EOF
+ollama create security-analyst -f /tmp/Modelfile
+ollama run security-analyst "SQLi 가 뭐야?"
+```
+
+### 학생 환경 준비
+
+```bash
+# Ollama (이미 설치됨)
+ollama --version
+
+# Python venv
+python3 -m venv ~/.venv-llm && source ~/.venv-llm/bin/activate
+pip install --upgrade pip
+
+# OpenAI SDK (Ollama 도 OpenAI-compatible)
+pip install openai
+
+# httpie (사람 친화적 HTTP)
+sudo apt install -y httpie
+
+# jq (JSON 파싱 표준)
+sudo apt install -y jq
+
+# Open WebUI (Ollama 의 Web UI)
+docker run -d -p 3000:8080 \
+  --add-host=host.docker.internal:host-gateway \
+  -v open-webui:/app/backend/data \
+  --name open-webui \
+  --restart always \
+  ghcr.io/open-webui/open-webui:main
+# http://localhost:3000
+
+# LiteLLM (다중 LLM 통합 proxy — OpenAI/Anthropic/Ollama 모두 동일 API)
+pip install 'litellm[proxy]'
+litellm --model ollama/gemma3:4b --port 4000
+# 이제 http://localhost:4000/chat/completions 으로 OpenAI SDK 사용 가능
+```
+
+### 핵심 도구별 상세 사용법
+
+```bash
+# 1) Ollama API — 가장 단순
+curl http://localhost:11434/api/generate -d '{"model":"gemma3:4b","prompt":"hi"}' | jq
+
+# Ollama 모델 정보
+curl http://localhost:11434/api/show -d '{"name":"gemma3:4b"}' | jq
+
+# Ollama 사용 stats
+curl http://localhost:11434/api/ps                                # 메모리 사용 모델 목록
+
+# 2) httpie (사람 친화)
+http POST http://localhost:11434/api/generate \
+  model=gemma3:4b \
+  prompt="Explain LLM in Korean" \
+  stream:=false
+
+# 3) OpenAI SDK (Ollama 도 OpenAI-compatible)
+python3 << 'EOF'
+from openai import OpenAI
+c = OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
+r = c.chat.completions.create(
+  model="gemma3:4b",
+  messages=[{"role":"user","content":"Hello"}]
+)
+print(r.choices[0].message.content)
+EOF
+
+# 4) LiteLLM proxy (다중 모델 통합)
+litellm --config litellm.yaml &
+# config 예:
+# model_list:
+#   - model_name: gpt-4
+#     litellm_params:
+#       model: ollama/gemma3:4b
+#       api_base: http://localhost:11434
+
+# 이제 동일 API 로 어떤 LLM 도 호출 가능
+curl http://localhost:4000/chat/completions \
+  -H "Authorization: Bearer sk-fake" \
+  -d '{"model":"gpt-4","messages":[{"role":"user","content":"hi"}]}'
+
+# 5) vLLM (대안 — 더 빠름, GPU 필요)
+docker run --gpus all -p 8000:8000 vllm/vllm-openai:latest \
+  --model meta-llama/Meta-Llama-3-8B
+# 이제 http://localhost:8000/v1/chat/completions OpenAI-compatible
+
+# 6) Open WebUI — chat GUI
+# http://localhost:3000 접속 후
+# - 모델 선택
+# - 시스템 프롬프트 설정
+# - API 키 관리 (사용자 별)
+# - 검색/RAG 통합
+```
+
+### LLM API 보안 점검 흐름 (1주차 baseline)
+
+```bash
+# Phase 1: 모델 인벤토리
+ollama list > /tmp/models.txt
+# 사용 중인 모델, 크기, 마지막 업데이트
+
+# Phase 2: API 인증 점검
+# Ollama 자체에는 인증 없음 → reverse proxy 로 인증 추가 필요
+curl http://localhost:11434/api/tags                              # 모델 목록 (인증 없이 노출 → 위험)
+
+# Phase 3: 외부 노출 점검
+sudo ss -tlnp | grep 11434
+# 0.0.0.0:11434 = 외부 노출 (위험)
+# 127.0.0.1:11434 = 로컬만 (안전)
+
+# Phase 4: Rate limiting (LiteLLM proxy)
+# litellm.yaml 의 limit 설정으로 RPM/TPM 제한
+
+# Phase 5: 로깅 (모든 prompt/response)
+# Open WebUI 자동 / Langfuse 통합 (week11 에서 본격)
+
+# Phase 6: 모델 무결성
+sha256sum ~/.ollama/models/manifests/registry.ollama.ai/library/gemma3/4b
+# 정기적으로 비교 → tampering 감지
+```
+
+### Ollama 보안 강화 (실습 환경 표준)
+
+```bash
+# 1) 외부 노출 방지 (loopback only)
+sudo systemctl edit ollama
+# [Service]
+# Environment="OLLAMA_HOST=127.0.0.1:11434"
+sudo systemctl restart ollama
+
+# 2) Reverse proxy + 인증 (nginx)
+sudo apt install -y nginx apache2-utils
+htpasswd -c /etc/nginx/.htpasswd llmuser
+sudo tee /etc/nginx/sites-available/ollama > /dev/null << 'EOF'
+server {
+  listen 8443 ssl;
+  ssl_certificate /etc/ssl/certs/server.crt;
+  ssl_certificate_key /etc/ssl/private/server.key;
+
+  location / {
+    auth_basic "Ollama API";
+    auth_basic_user_file /etc/nginx/.htpasswd;
+    proxy_pass http://127.0.0.1:11434;
+    limit_req zone=ollama_limit burst=10;
+  }
+}
+EOF
+
+# 3) Rate limit (LiteLLM proxy)
+# litellm.yaml:
+# litellm_settings:
+#   rpm_limit: 60         # 분당 60 요청
+#   tpm_limit: 100000     # 분당 100k token
+```
+
+### 본 1주차 도구 비교 — 언제 무엇을 쓸 것인가
+
+| 시나리오 | 권장 도구 | 이유 |
+|---------|---------|------|
+| 빠른 1회 테스트 | curl + ollama | 가장 단순 |
+| 사람이 입력 | httpie | 색상, 직관 |
+| 여러 모델 비교 | promptfoo | 자동 평가 |
+| Production API | LiteLLM proxy | 인증·rate-limit·로깅 통합 |
+| Web GUI 필요 | Open WebUI | 사용자 친화 |
+| GPU 가속 | vLLM / TGI | throughput 우수 |
+| OpenAI 호환 SDK | Ollama `/v1/` | 코드 변경 없이 |
+
+학생은 본 1주차에서 **Ollama + curl + httpie + LiteLLM + Open WebUI** 5 도구로 LLM API 운영의 4 단계 (모델 호스팅 → API 호출 → proxy 인증 → GUI 통합) 사이클을 OSS 만으로 익힌다.

@@ -87,7 +87,13 @@ steps:
   risk_level: low
   bastion_prompt: siem VM의 wazuh local_rules.xml 상단 30줄을 보여줘
 - order: 3
-  instruction: local_rules.xml 에 '여러 번 sudo 실패' 탐지 룰(rule id 100100, level 10)을 추가하시오.
+  instruction: 'local_rules.xml 에 ''여러 번 sudo 실패'' 탐지 룰(rule id 100100, level 10)을
+    추가하시오.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/secops-ai-week10/3/auth.log 사전 주입. `grep
+    -E ''Failed password|sudo|Accepted'' /home/ccc/cyber-range/fixtures/secops-ai-week10/3/auth.log`
+    후 (1) 빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: <rule id="100100" level="10">…
   category: configure
   points: 10
@@ -133,7 +139,26 @@ steps:
     level 10)을 추가해줘
 
 
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/secops-ai-week10/3/auth.log 사전 주입. `grep
+    -E ''Failed password|sudo|Accepted'' /home/ccc/cyber-range/fixtures/secops-ai-week10/3/auth.log`
+    후 (1)빈도·패턴 (2)MITRE (3)방어 3섹션. raw dump 금지.
+
+
     [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
+  fixtures:
+  - generator: auth_log
+    target_vm: siem
+    path: /home/ccc/cyber-range/fixtures/secops-ai-week10/3/auth.log
+    params:
+      seed: 42
+      duration_days: 30
+      burst_count: 3
+      spray_attempts: 100
+      normal_logins_per_day: 8
+    mode: overwrite
+    cleanup: false
 - order: 4
   instruction: wazuh-analysisd -t 로 룰 문법을 검증하시오.
   hint: sudo /var/ossec/bin/wazuh-analysisd -t
@@ -258,7 +283,12 @@ steps:
   bastion_prompt: siem VM에서 wazuh-logtest에 'sudo incorrect password attempts' 로그를
     넣어 룰 매칭을 테스트해줘
 - order: 7
-  instruction: alerts.json 에서 rule.id=100100 의 최근 항목을 검색하시오.
+  instruction: 'alerts.json 에서 rule.id=100100 의 최근 항목을 검색하시오.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/secops-ai-week10/7/alerts.json 사전 주입.
+    `jq -c ''.rule'' /home/ccc/cyber-range/fixtures/secops-ai-week10/7/alerts.json`
+    후 (1) 빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: grep 100100 …
   category: analysis
   points: 10
@@ -294,7 +324,24 @@ steps:
   script: sudo grep '"id":"100100"' /var/ossec/logs/alerts/alerts.json 2>/dev/null
     | tail -5 || echo 'no hits yet'
   risk_level: low
-  bastion_prompt: siem VM의 wazuh alerts.json에서 rule id 100100의 최근 5건을 보여줘
+  bastion_prompt: 'siem VM의 wazuh alerts.json에서 rule id 100100의 최근 5건을 보여줘
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/secops-ai-week10/7/alerts.json 사전 주입.
+    `jq -c ''.rule'' /home/ccc/cyber-range/fixtures/secops-ai-week10/7/alerts.json`
+    후 (1)빈도·패턴 (2)MITRE (3)방어 3섹션. raw dump 금지.'
+  fixtures:
+  - generator: wazuh_alert
+    target_vm: siem
+    path: /home/ccc/cyber-range/fixtures/secops-ai-week10/7/alerts.json
+    params:
+      seed: 42
+      duration_days: 7
+      alerts_per_day: 50
+      brute_force_burst: true
+      ar_trigger_count: 4
+    mode: overwrite
+    cleanup: false
 - order: 8
   instruction: /var/ossec/logs/ossec.log 의 오류(ERROR) 라인을 5개 출력하시오.
   hint: grep ERROR ossec.log
@@ -412,129 +459,59 @@ steps:
 
     [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
 - order: 99
-  instruction: |
-    [복합 시나리오] "표준 외 로그 형식 → 커스텀 decoder + rule 작성"
-
-    ## 상황 (w01-w09 시나리오 연속)
-
-    ABC 핀테크 SOC 신규 분석가, 10주 차.
-    1~10 step 으로 sudo 실패 *rule* 작성·검증까지 했다. 그런데 학습 목표 #3 — *"디코더(decoder)
-    의 역할을 이해하고 작성할 수 있다"* — 1~10 은 *rule* 만. decoder 는 표준 syslog 자동 파싱
-    되는 거라 안 다뤘다.
-
-    > 선임: "방금 우리 회사 결제 서비스가 새 로그 형식 도입했는데 — 표준 syslog 가 아니라
-    >  *커스텀 JSON* 이야: '{\"event\":\"login_fail\",\"user\":\"alice\",\"src\":\"1.2.3.4\"}'.
-    >  Wazuh 기본 decoder 가 이걸 못 풀어 — 그래서 *커스텀 decoder + 그 위에 rule* 작성해야
-    >  alert 발생해. wazuh-logtest 로 매칭 cycle 직접 보면서 작성해."
-
-    학습 목표 #3 (decoder 작성) 행동 증명.
-
-    ## 임무 (3 단계, 약 25분)
-
-    ### Phase A — 커스텀 로그 파일 + 모니터 추가 (5분)
-
-    web 또는 siem 에 가짜 결제 로그 파일 생성:
-      ```
-      ssh ccc@10.20.30.100      # siem
-      sudo touch /var/log/payment-app.log
-      sudo chmod 644 /var/log/payment-app.log
-      ```
-
-    siem 의 ossec.conf 에 모니터 추가:
-      ```
-      sudo tee -a /var/ossec/etc/ossec.conf <<'EOF'
-      <localfile>
-        <log_format>json</log_format>
-        <location>/var/log/payment-app.log</location>
-      </localfile>
-      EOF
-      sudo systemctl restart wazuh-manager
-      sleep 5
-      ```
-
-    ### Phase B — Decoder + Rule 작성 + wazuh-logtest 검증 (15분)
-
-    siem 의 `/var/ossec/etc/decoders/local_decoder.xml` 에 decoder 추가:
-      ```
-      sudo tee -a /var/ossec/etc/decoders/local_decoder.xml <<'EOF'
-      <decoder name="payment-app">
-        <prematch>"event":"</prematch>
-      </decoder>
-
-      <decoder name="payment-app-fields">
-        <parent>payment-app</parent>
-        <regex>"event":"(\S+)","user":"(\S+)","src":"(\S+)"</regex>
-        <order>event_name,user,src_ip</order>
-      </decoder>
-      EOF
-      ```
-
-    `/var/ossec/etc/rules/local_rules.xml` 에 rule 추가:
-      ```
-      sudo tee -a /var/ossec/etc/rules/local_rules.xml <<'EOF'
-      <group name="payment-app,">
-        <rule id="100400" level="10">
-          <decoded_as>payment-app</decoded_as>
-          <field name="event_name">login_fail</field>
-          <description>Payment app login failure (decoder=payment-app, user=$(user))</description>
-        </rule>
-      </group>
-      EOF
-      ```
-
-    문법 검증:
-      `sudo /var/ossec/bin/wazuh-analysisd -t 2>&1 | grep -E 'OK|error|ERROR'`
-
-    Manager 재시작:
-      `sudo systemctl restart wazuh-manager && sleep 5`
-
-    `wazuh-logtest` 로 매칭 cycle 직접 확인:
-      ```
-      echo '{"event":"login_fail","user":"alice","src":"1.2.3.4"}' | sudo /var/ossec/bin/wazuh-logtest
-      ```
-    → 예상 출력:
-      ```
-      Phase 1: Completed pre-decoding.
-      Phase 2: Completed decoding. → name: 'payment-app-fields', user='alice', src_ip='1.2.3.4'
-      Phase 3: Completed filtering (rules). → id: '100400', level: 10
-      ```
-
-    ### Phase C — 실 trigger + cross-check + 정리 (5분)
-
-    실제 로그 라인 발생:
-      ```
-      echo '{"event":"login_fail","user":"alice","src":"1.2.3.4"}' | sudo tee -a /var/log/payment-app.log
-      sleep 5
-      ```
-
-    siem alerts.json 에서 매칭 alert 검색:
-      `sudo tail -100 /var/ossec/logs/alerts/alerts.json | jq -c 'select(.rule.id=="100400")' | head`
-    → 예상: 1 alert + decoded fields (user, src_ip).
-
-    1~2 단락 회고:
-    1. **Phase 1 (pre-decoding) → 2 (decoding) → 3 (rule matching) 의 책임 차이** —
-       decoder 는 *raw → 구조화* (regex), rule 은 *구조화 → alert* (조건문)
-    2. **decoder 없이 rule 만 작성하면** — `decoded_as` 매칭 안 됨, alert 미발생.
-       또는 `<match>` 같은 raw 매칭 fallback 필요 (성능 X)
-    3. **운영 시 표준 외 로그** — JSON / CEF / LEEF 형식이 흔함. 각 형식별 decoder 라이브러리
-       (Wazuh 기본 + ossec-rules) 활용.
-
-    종료 정리:
-      ```
-      sudo sed -i '/payment-app/,/^$/d' /var/ossec/etc/decoders/local_decoder.xml
-      sudo sed -i '/payment-app/,/<\\/group>/d' /var/ossec/etc/rules/local_rules.xml
-      sudo sed -i '/payment-app.log/,/<\\/localfile>/d' /var/ossec/etc/ossec.conf
-      sudo rm /var/log/payment-app.log
-      sudo systemctl restart wazuh-manager
-      ```
-  hint: |
-    Phase A: siem 에 /var/log/payment-app.log 생성 + ossec.conf 에 localfile JSON 모니터 추가
-    Phase B: local_decoder.xml 에 payment-app decoder (prematch + regex + order) + local_rules.xml 에
-             rule id 100400 (decoded_as=payment-app, field event_name=login_fail) 추가, wazuh-analysisd -t 검증,
-             wazuh-logtest 로 phase 1/2/3 모두 통과 확인
-    Phase C: 실 log line 발생 + alerts.json 매칭 alert 확인, decoder vs rule 책임 차이 회고
-    포인트: decoder = raw→구조화 (regex), rule = 구조화→alert (조건). 표준 외 로그는 decoder 필수.
-    종료: payment-app 관련 모든 항목 정리 (decoder + rule + ossec.conf localfile + log 파일).
+  instruction: "[복합 시나리오] \"표준 외 로그 형식 → 커스텀 decoder + rule 작성\"\n\n## 상황 (w01-w09\
+    \ 시나리오 연속)\n\nABC 핀테크 SOC 신규 분석가, 10주 차.\n1~10 step 으로 sudo 실패 *rule* 작성·검증까지\
+    \ 했다. 그런데 학습 목표 #3 — *\"디코더(decoder)\n의 역할을 이해하고 작성할 수 있다\"* — 1~10 은 *rule* 만.\
+    \ decoder 는 표준 syslog 자동 파싱\n되는 거라 안 다뤘다.\n\n> 선임: \"방금 우리 회사 결제 서비스가 새 로그 형식\
+    \ 도입했는데 — 표준 syslog 가 아니라\n>  *커스텀 JSON* 이야: '{\\\"event\\\":\\\"login_fail\\\"\
+    ,\\\"user\\\":\\\"alice\\\",\\\"src\\\":\\\"1.2.3.4\\\"}'.\n>  Wazuh 기본 decoder\
+    \ 가 이걸 못 풀어 — 그래서 *커스텀 decoder + 그 위에 rule* 작성해야\n>  alert 발생해. wazuh-logtest\
+    \ 로 매칭 cycle 직접 보면서 작성해.\"\n\n학습 목표 #3 (decoder 작성) 행동 증명.\n\n## 임무 (3 단계, 약 25분)\n\
+    \n### Phase A — 커스텀 로그 파일 + 모니터 추가 (5분)\n\nweb 또는 siem 에 가짜 결제 로그 파일 생성:\n  ```\n\
+    \  ssh ccc@10.20.30.100      # siem\n  sudo touch /var/log/payment-app.log\n \
+    \ sudo chmod 644 /var/log/payment-app.log\n  ```\n\nsiem 의 ossec.conf 에 모니터 추가:\n\
+    \  ```\n  sudo tee -a /var/ossec/etc/ossec.conf <<'EOF'\n  <localfile>\n    <log_format>json</log_format>\n\
+    \    <location>/var/log/payment-app.log</location>\n  </localfile>\n  EOF\n  sudo\
+    \ systemctl restart wazuh-manager\n  sleep 5\n  ```\n\n### Phase B — Decoder +\
+    \ Rule 작성 + wazuh-logtest 검증 (15분)\n\nsiem 의 `/var/ossec/etc/decoders/local_decoder.xml`\
+    \ 에 decoder 추가:\n  ```\n  sudo tee -a /var/ossec/etc/decoders/local_decoder.xml\
+    \ <<'EOF'\n  <decoder name=\"payment-app\">\n    <prematch>\"event\":\"</prematch>\n\
+    \  </decoder>\n\n  <decoder name=\"payment-app-fields\">\n    <parent>payment-app</parent>\n\
+    \    <regex>\"event\":\"(\\S+)\",\"user\":\"(\\S+)\",\"src\":\"(\\S+)\"</regex>\n\
+    \    <order>event_name,user,src_ip</order>\n  </decoder>\n  EOF\n  ```\n\n`/var/ossec/etc/rules/local_rules.xml`\
+    \ 에 rule 추가:\n  ```\n  sudo tee -a /var/ossec/etc/rules/local_rules.xml <<'EOF'\n\
+    \  <group name=\"payment-app,\">\n    <rule id=\"100400\" level=\"10\">\n    \
+    \  <decoded_as>payment-app</decoded_as>\n      <field name=\"event_name\">login_fail</field>\n\
+    \      <description>Payment app login failure (decoder=payment-app, user=$(user))</description>\n\
+    \    </rule>\n  </group>\n  EOF\n  ```\n\n문법 검증:\n  `sudo /var/ossec/bin/wazuh-analysisd\
+    \ -t 2>&1 | grep -E 'OK|error|ERROR'`\n\nManager 재시작:\n  `sudo systemctl restart\
+    \ wazuh-manager && sleep 5`\n\n`wazuh-logtest` 로 매칭 cycle 직접 확인:\n  ```\n  echo\
+    \ '{\"event\":\"login_fail\",\"user\":\"alice\",\"src\":\"1.2.3.4\"}' | sudo /var/ossec/bin/wazuh-logtest\n\
+    \  ```\n→ 예상 출력:\n  ```\n  Phase 1: Completed pre-decoding.\n  Phase 2: Completed\
+    \ decoding. → name: 'payment-app-fields', user='alice', src_ip='1.2.3.4'\n  Phase\
+    \ 3: Completed filtering (rules). → id: '100400', level: 10\n  ```\n\n### Phase\
+    \ C — 실 trigger + cross-check + 정리 (5분)\n\n실제 로그 라인 발생:\n  ```\n  echo '{\"event\"\
+    :\"login_fail\",\"user\":\"alice\",\"src\":\"1.2.3.4\"}' | sudo tee -a /var/log/payment-app.log\n\
+    \  sleep 5\n  ```\n\nsiem alerts.json 에서 매칭 alert 검색:\n  `sudo tail -100 /var/ossec/logs/alerts/alerts.json\
+    \ | jq -c 'select(.rule.id==\"100400\")' | head`\n→ 예상: 1 alert + decoded fields\
+    \ (user, src_ip).\n\n1~2 단락 회고:\n1. **Phase 1 (pre-decoding) → 2 (decoding) →\
+    \ 3 (rule matching) 의 책임 차이** —\n   decoder 는 *raw → 구조화* (regex), rule 은 *구조화\
+    \ → alert* (조건문)\n2. **decoder 없이 rule 만 작성하면** — `decoded_as` 매칭 안 됨, alert 미발생.\n\
+    \   또는 `<match>` 같은 raw 매칭 fallback 필요 (성능 X)\n3. **운영 시 표준 외 로그** — JSON / CEF\
+    \ / LEEF 형식이 흔함. 각 형식별 decoder 라이브러리\n   (Wazuh 기본 + ossec-rules) 활용.\n\n종료 정리:\n\
+    \  ```\n  sudo sed -i '/payment-app/,/^$/d' /var/ossec/etc/decoders/local_decoder.xml\n\
+    \  sudo sed -i '/payment-app/,/<\\\\/group>/d' /var/ossec/etc/rules/local_rules.xml\n\
+    \  sudo sed -i '/payment-app.log/,/<\\\\/localfile>/d' /var/ossec/etc/ossec.conf\n\
+    \  sudo rm /var/log/payment-app.log\n  sudo systemctl restart wazuh-manager\n\
+    \  ```"
+  hint: "Phase A: siem 에 /var/log/payment-app.log 생성 + ossec.conf 에 localfile JSON\
+    \ 모니터 추가\nPhase B: local_decoder.xml 에 payment-app decoder (prematch + regex +\
+    \ order) + local_rules.xml 에\n         rule id 100400 (decoded_as=payment-app,\
+    \ field event_name=login_fail) 추가, wazuh-analysisd -t 검증,\n         wazuh-logtest\
+    \ 로 phase 1/2/3 모두 통과 확인\nPhase C: 실 log line 발생 + alerts.json 매칭 alert 확인, decoder\
+    \ vs rule 책임 차이 회고\n포인트: decoder = raw→구조화 (regex), rule = 구조화→alert (조건). 표준\
+    \ 외 로그는 decoder 필수.\n종료: payment-app 관련 모든 항목 정리 (decoder + rule + ossec.conf\
+    \ localfile + log 파일).\n"
   category: integration_scenario
   points: 50
   verify:
@@ -542,9 +519,11 @@ steps:
     expect: payment-app
     field: stdout
     semantic:
-      intent: |
-        Wazuh decoder + rule cycle 직접 작성. 표준 외 JSON 로그를 custom decoder 로 파싱하고
+      intent: 'Wazuh decoder + rule cycle 직접 작성. 표준 외 JSON 로그를 custom decoder 로 파싱하고
+
         rule 로 alert. wazuh-logtest 의 phase 1/2/3 직접 봄. 학습 목표 #3 (decoder 작성) 행동 증명.
+
+        '
       success_criteria:
       - Phase A — payment-app.log + ossec.conf localfile 추가
       - Phase B — local_decoder.xml 에 prematch + regex + order decoder 추가
@@ -563,30 +542,18 @@ steps:
       - 실 log 발생 후 alerts.json 미확인
       - 정리 누락 (decoder/rule/localfile/log 파일 어느 하나라도 남음)
   target_vm: bastion
-  answer: |
-    🤖 프롬프트: Wazuh decoder + rule cycle 직접 작성.
-
-    Phase A: siem 에 /var/log/payment-app.log 생성 + ossec.conf 에 <localfile><log_format>json</log_format><location>/var/log/payment-app.log</location></localfile> 추가, wazuh-manager restart.
-
-    Phase B: local_decoder.xml 에 decoder name=payment-app (prematch="event":") + payment-app-fields (parent + regex + order=event_name,user,src_ip) 추가.
-             local_rules.xml 에 rule id 100400 level 10 (decoded_as=payment-app, field event_name=login_fail) 추가.
-             wazuh-analysisd -t 검증, wazuh-manager restart.
-             echo '{"event":"login_fail","user":"alice","src":"1.2.3.4"}' | sudo /var/ossec/bin/wazuh-logtest → phase 1/2/3 모두 통과.
-
-    Phase C: echo JSON | sudo tee -a /var/log/payment-app.log → tail alerts.json | jq 'select(.rule.id=="100400")' → 1 alert.
-             회고: decoder vs rule 책임 차이 + decoder 없이는 alert 미발생 + 표준 외 로그 형식.
-
-    종료: sed -i 로 payment-app 모든 entry 제거 + log 파일 rm + wazuh-manager restart.
-  answer_detail: |
-    학습 목표 #3 (decoder 작성) 행동 증명. 1~10 step 이 rule 만 다뤘다면 99 번은 decoder + rule
-    *함께* — 표준 외 로그 처리의 진짜 cycle. wazuh-logtest 의 phase 1/2/3 가 핵심 학습 도구.
-  risk_level: medium
-  bastion_prompt: |
-    Wazuh custom decoder + rule cycle. Phase A: siem 에 /var/log/payment-app.log 생성 +
-    ossec.conf 에 JSON localfile 추가, wazuh-manager restart. Phase B: local_decoder.xml 에
-    payment-app decoder (prematch + regex + order) + local_rules.xml 에 rule id 100400 추가,
-    wazuh-analysisd -t 검증, wazuh-logtest 로 phase 1/2/3 통과. Phase C: 실 JSON log 발생 →
-    alerts.json rule 100400 매칭 → decoder vs rule 책임 차이 회고. 종료 시 모든 entry 정리.
+  answer: "\U0001F916 프롬프트: Wazuh decoder + rule cycle 직접 작성.\n\nPhase A: siem 에 /var/log/payment-app.log\
+    \ 생성 + ossec.conf 에 <localfile><log_format>json</log_format><location>/var/log/payment-app.log</location></localfile>\
+    \ 추가, wazuh-manager restart.\n\nPhase B: local_decoder.xml 에 decoder name=payment-app\
+    \ (prematch=\"event\":\") + payment-app-fields (parent + regex + order=event_name,user,src_ip)\
+    \ 추가.\n         local_rules.xml 에 rule id 100400 level 10 (decoded_as=payment-app,\
+    \ field event_name=login_fail) 추가.\n         wazuh-analysisd -t 검증, wazuh-manager\
+    \ restart.\n         echo '{\"event\":\"login_fail\",\"user\":\"alice\",\"src\"\
+    :\"1.2.3.4\"}' | sudo /var/ossec/bin/wazuh-logtest → phase 1/2/3 모두 통과.\n\nPhase\
+    \ C: echo JSON | sudo tee -a /var/log/payment-app.log → tail alerts.json | jq\
+    \ 'select(.rule.id==\"100400\")' → 1 alert.\n         회고: decoder vs rule 책임 차이\
+    \ + decoder 없이는 alert 미발생 + 표준 외 로그 형식.\n\n종료: sed -i 로 payment-app 모든 entry 제거\
+    \ + log 파일 rm + wazuh-manager restart.\n"
   answer_detail: ''
   risk_level: low
   bastion_prompt: 'secu/web/siem VM 전반에 대해 다음 작업들을 순서대로 수행해줘:

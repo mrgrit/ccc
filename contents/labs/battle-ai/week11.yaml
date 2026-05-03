@@ -136,7 +136,12 @@ steps:
   risk_level: low
   bastion_prompt: '[BLUE] Suricata에서 방금 발생한 공격 알림을 확인해줘'
 - order: 4
-  instruction: '[BLUE] 공격자 IP({{ATTACKER_IP}})를 nftables로 차단하라.'
+  instruction: '[BLUE] 공격자 IP({{ATTACKER_IP}})를 nftables로 차단하라.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/battle-ai-week11/4/syslog 사전 주입. `grep
+    -E ''DROP|REJECT|filter'' /home/ccc/cyber-range/fixtures/battle-ai-week11/4/syslog`
+    후 (1) 빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: blocklist set에 IP를 추가한다.
   category: defense
   points: 15
@@ -175,7 +180,24 @@ steps:
   script: sudo nft add element inet filter blocklist { 10.20.30.201 } 2>/dev/null
     && nft list ruleset | grep '10.20.30.201' && echo 'Attacker blocked'
   risk_level: low
-  bastion_prompt: '[BLUE] 공격자 IP(10.20.30.201)를 nftables로 차단해줘'
+  bastion_prompt: '[BLUE] 공격자 IP(10.20.30.201)를 nftables로 차단해줘
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/battle-ai-week11/4/syslog 사전 주입. `grep
+    -E ''DROP|REJECT|filter'' /home/ccc/cyber-range/fixtures/battle-ai-week11/4/syslog`
+    후 (1)빈도·패턴 (2)MITRE (3)방어 3섹션. raw dump 금지.'
+  fixtures:
+  - generator: firewall_log
+    target_vm: secu
+    path: /home/ccc/cyber-range/fixtures/battle-ai-week11/4/syslog
+    params:
+      seed: 42
+      duration_days: 7
+      scan_bursts: 5
+      egress_violations: 20
+      syn_flood_count: 200
+    mode: overwrite
+    cleanup: false
 - order: 5
   instruction: '[RED] 차단된 상태를 확인하고, DVWA(:8080)에 다른 경로로 공격을 시도하라.'
   hint: 차단 여부를 확인한 후 우회 방법을 시도한다.
@@ -338,7 +360,12 @@ steps:
 
     [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
 - order: 9
-  instruction: '[BLUE] web 서버의 Apache access.log에서 Command Injection 흔적을 분석하라.'
+  instruction: '[BLUE] web 서버의 Apache access.log에서 Command Injection 흔적을 분석하라.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/battle-ai-week11/9/access.log 사전 주입.
+    `grep -E ''sqli|xss|\.\./|admin'' /home/ccc/cyber-range/fixtures/battle-ai-week11/9/access.log`
+    후 (1) 빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: 세미콜론, 파이프 등 명령 연결 패턴을 검색한다.
   category: defense
   points: 10
@@ -350,7 +377,9 @@ steps:
     %7C)도 검색해야 한다.
   verify:
     type: output_contains
-    expect: complete
+    expect:
+    - complete
+    - grep
     field: stdout
     semantic:
       intent: '[BLUE] Apache access.log Command Injection 탐지 — grep -iE (%3B|;cat|;id|exec\.php|%0A)
@@ -373,7 +402,24 @@ steps:
   script: grep -E '(;|%3B|%7C|\|)' /var/log/apache2/access.log 2>/dev/null | grep
     -i exec | tail -10 || echo 'Command injection log analysis complete'
   risk_level: low
-  bastion_prompt: '[BLUE] web 서버의 Apache access.log에서 Command Injection 흔적을 분석해줘'
+  bastion_prompt: '[BLUE] web 서버의 Apache access.log에서 Command Injection 흔적을 분석해줘
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/battle-ai-week11/9/access.log 사전 주입.
+    `grep -E ''sqli|xss|\.\./|admin'' /home/ccc/cyber-range/fixtures/battle-ai-week11/9/access.log`
+    후 (1)빈도·패턴 (2)MITRE (3)방어 3섹션. raw dump 금지.'
+  fixtures:
+  - generator: web_access
+    target_vm: web
+    path: /home/ccc/cyber-range/fixtures/battle-ai-week11/9/access.log
+    params:
+      seed: 42
+      duration_days: 7
+      scanner_bursts: 5
+      sqli_attempts: 12
+      xss_attempts: 8
+    mode: overwrite
+    cleanup: false
 - order: 10
   instruction: '[BLUE] 서비스 가용성을 점검하고, 라운드 1 결과를 정리하라.'
   hint: 모든 서비스가 정상인지 확인하고 보고서를 작성한다.

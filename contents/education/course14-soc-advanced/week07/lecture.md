@@ -1035,3 +1035,589 @@ graph LR
 
 **학생 액션**: Volatility 분석.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course14 SOC Advanced — Week 07 네트워크 포렌식·PCAP·Zeek·NetFlow)
+
+> 이 부록은 lab `soc-adv-ai/week07.yaml` (15 step + multi_task) 의 모든 명령을
+> 실제로 실행 가능한 형태로 도구·옵션·예상 출력·해석을 정리한다. 법적 요건 (CoC +
+> 해시 체인) 부터 tcpdump 캡처, tshark/Zeek 통계, HTTP/DNS/TLS 분석, 파일 추출,
+> Suricata 상관, JA3, NetFlow, 타임라인 (Plaso/Timesketch), Wireshark 프로파일,
+> 증거 보고서 까지 풀 워크플로우.
+
+### lab step → 도구·포렌식 매핑 표
+
+| step | 학습 항목 | 핵심 OSS 도구 / 명령 | 표준 |
+|------|----------|---------------------|------|
+| s1 | 법적 요건 (해시 체인 + Chain of Custody) | sha256sum + 양식 + RFC 3227 | NIST SP 800-86 |
+| s2 | tcpdump 패킷 캡처 (5분) | tcpdump -i -w -G -W | RFC 791 |
+| s3 | 캡처 통계 (proto/IP/port/시간) | capinfos + tshark + zeek + jq | - |
+| s4 | HTTP 분석 (SQLi/XSS/traversal) | tshark -Y http + zeek http.log | - |
+| s5 | DNS 분석 (NXDOMAIN/긴 subdomain/TXT) | zeek dns.log + jq + entropy | - |
+| s6 | TCP 세션 재구성 | tshark -z follow + tcpflow | - |
+| s7 | 파일 추출 (HTTP) | zeek + foremost + binwalk + bro-cut | - |
+| s8 | Suricata + PCAP 상관 | suricata -r + jq + 시간 매칭 | - |
+| s9 | TLS 분석 (JA3/JA3S/SNI/Cert) | zeek ssl.log + ja3-tools + tlsx | - |
+| s10 | NetFlow / IPFIX 분석 | nfcapd + nfdump + softflowd | RFC 7011 |
+| s11 | 공격 타임라인 재구성 | plaso (log2timeline) + Timesketch | - |
+| s12 | PCAP 저장 전략 | full vs selective + Stenographer | - |
+| s13 | Wireshark 프로파일 + 색상 룰 | profile dir + display filter | - |
+| s14 | 증거 보고서 템플릿 | NIST SP 800-86 + ISO/IEC 27037 | - |
+| s15 | 네트워크 포렌식 종합 보고서 | markdown + 타임라인 + 증거 catalog | - |
+| s99 | 통합 다단계 (s1→s2→s3→s4→s5) | Bastion plan: 법적→캡처→통계→HTTP→DNS | 다중 |
+
+### 학생 환경 준비
+
+```bash
+# === [s2·s4·s6] PCAP 도구 ===
+sudo apt install -y tcpdump tshark wireshark-common tcpflow tcpreplay
+
+# === [s3·s5·s7·s9] Zeek (네트워크 분석 표준) ===
+sudo apt install -y zeek zeek-aux zeek-spicy
+
+# === [s7] 파일 추출 ===
+sudo apt install -y foremost binwalk
+
+# === [s9] TLS / JA3 ===
+pip install --user ja3
+go install -v github.com/projectdiscovery/tlsx/cmd/tlsx@latest
+
+# === [s10] NetFlow ===
+sudo apt install -y nfcapd nfdump softflowd
+
+# === [s11] Plaso + Timesketch ===
+pip install --user plaso
+git clone https://github.com/google/timesketch /tmp/timesketch
+cd /tmp/timesketch && docker compose up -d 2>/dev/null
+
+# === [s12] Stenographer ===
+git clone https://github.com/google/stenographer /tmp/stenographer
+
+# === [s8] Suricata (이미 설치) ===
+ssh ccc@10.20.30.1 'suricata -V'
+```
+
+### 핵심 도구별 상세 사용법
+
+#### 도구 1: 법적 요건 + Chain of Custody (Step 1·14)
+
+```bash
+# === 증거 무결성 — 해시 체인 ===
+PCAP=/var/log/forensics/2026-05-02-incident.pcap
+sha256sum $PCAP > ${PCAP}.sha256
+sha256sum -c ${PCAP}.sha256             # 정상: OK / 변조: FAILED
+gpg --armor --detach-sign $PCAP         # PGP 서명
+
+# === Chain of Custody 양식 ===
+cat > /var/log/forensics/coc-incident-2026-05-02.txt << 'COC'
+=== CHAIN OF CUSTODY ===
+Case ID: IR-2026-Q2-001
+Evidence ID: EVD-001
+Description: PCAP capture - 10.20.30.0/24
+File: 2026-05-02-incident.pcap
+SHA256: 029a5cefb1...
+Captured: 2026-05-02 14:00 ~ 14:05 KST (secu/eth0)
+
+CHAIN:
+| Date/Time           | From          | To            | Action      | Hash 검증 |
+|---------------------|---------------|---------------|-------------|----------|
+| 2026-05-02 14:05:00 | (capture)     | analyst       | Initial     | OK |
+| 2026-05-02 14:30:00 | analyst       | forensic-vm   | scp         | OK |
+| 2026-05-02 15:00:00 | forensic-vm   | analyst-host  | Mount RO    | OK |
+
+Storage: Read-only encrypted volume / 7 years retention
+COC
+
+# === RFC 3227 Volatility 우선순위 ===
+# 1. CPU 레지스터, 캐시
+# 2. 라우팅 테이블, ARP 캐시, 프로세스 테이블
+# 3. 임시 파일시스템 (memory dump 후)
+# 4. 디스크 (이미징)
+# 5. 원격 로그
+# 6. 물리 구성
+# 7. 백업 매체
+# → 네트워크 포렌식은 휘발성, 즉시 캡처 필수
+```
+
+#### 도구 2: tcpdump 캡처 (Step 2)
+
+```bash
+# 5분 단일 파일
+ssh ccc@10.20.30.1 'sudo timeout 300 tcpdump -i eth0 -w /tmp/incident.pcap -s 0 not port 22'
+# -s 0   전체 패킷
+# 'not port 22'  자신의 SSH 제외
+
+# 회전 (1시간마다)
+ssh ccc@10.20.30.1 'sudo tcpdump -i eth0 -w /tmp/cap-%Y%m%d-%H%M%S.pcap -G 3600 -z gzip'
+
+# Ring buffer (덮어쓰기)
+ssh ccc@10.20.30.1 'sudo tcpdump -i eth0 -w /tmp/ring.pcap -C 100 -W 10'
+
+# 즉시 hash + 가져오기 + 검증
+PCAP=/tmp/incident.pcap
+ssh ccc@10.20.30.1 "sudo sha256sum $PCAP > ${PCAP}.sha256"
+scp ccc@10.20.30.1:${PCAP}{,.sha256} /var/log/forensics/
+sha256sum -c /var/log/forensics/incident.pcap.sha256
+```
+
+#### 도구 3: tshark + Zeek 통계 (Step 3)
+
+```bash
+PCAP=/tmp/incident.pcap
+
+# capinfos 메타데이터
+capinfos $PCAP
+
+# tshark 통계
+tshark -r $PCAP -q -z io,phs                       # 프로토콜 계층
+tshark -r $PCAP -q -z endpoints,ip | head -20      # IP 분포
+tshark -r $PCAP -q -z conv,ip | head -20            # 대화
+tshark -r $PCAP -q -z io,stat,10                    # 시간대별 (10s bucket)
+
+# Zeek
+mkdir /tmp/zeek-out && cd /tmp/zeek-out
+zeek -r $PCAP
+ls /tmp/zeek-out/
+# capture_loss.log conn.log dns.log files.log http.log notice.log ssl.log
+
+# 호스트별 byte 양
+zeek-cut id.orig_h orig_bytes resp_bytes < /tmp/zeek-out/conn.log | \
+  awk '{ src[$1] += $2; dst[$1] += $3 } END { for (k in src) printf "%s out=%d in=%d\n", k, src[k], dst[k] }' | \
+  sort -k 2 -rn | head
+```
+
+#### 도구 4: HTTP 분석 (Step 4)
+
+```bash
+# tshark
+tshark -r $PCAP -Y "http.request" -T fields \
+  -e ip.src -e ip.dst -e http.host -e http.request.method -e http.request.uri | head -20
+
+# SQLi
+tshark -r $PCAP -Y 'http.request and (http.request.uri contains "UNION" or http.request.uri contains "SELECT" or http.request.uri contains "--")' \
+  -T fields -e frame.time -e ip.src -e http.request.uri | head
+
+# XSS
+tshark -r $PCAP -Y 'http.request and (http.request.uri contains "<script>" or http.request.uri contains "javascript:")' \
+  -T fields -e frame.time -e ip.src -e http.request.uri | head
+
+# Directory Traversal
+tshark -r $PCAP -Y 'http.request and http.request.uri matches "\\.\\./"' \
+  -T fields -e frame.time -e ip.src -e http.request.uri | head
+
+# Zeek http.log
+zeek-cut ts id.orig_h host method uri user_agent < /tmp/zeek-out/http.log | head
+
+# 의심 user-agent
+zeek-cut user_agent < /tmp/zeek-out/http.log | sort -u | grep -iE "(sqlmap|nikto|nmap|hydra)"
+
+# 대용량 응답 (exfil 의심)
+zeek-cut id.orig_h id.resp_h response_body_len uri < /tmp/zeek-out/http.log | \
+  awk '$3 > 10485760' | sort -k 3 -rn | head
+```
+
+#### 도구 5: DNS 분석 (Step 5)
+
+```bash
+# Zeek dns.log
+zeek-cut id.orig_h query qtype_name rcode_name < /tmp/zeek-out/dns.log | head
+
+# NXDOMAIN 비율 (DGA 의심)
+total=$(wc -l < /tmp/zeek-out/dns.log)
+nxd=$(grep -c NXDOMAIN /tmp/zeek-out/dns.log)
+echo "NXDOMAIN: $(echo "scale=2; $nxd*100/$total" | bc)%"
+# 정상 < 5%, DGA 의심 > 20%
+
+# 호스트별 NXDOMAIN
+zeek-cut id.orig_h rcode_name < /tmp/zeek-out/dns.log | \
+  awk '$2 == "NXDOMAIN"' | cut -f1 | sort | uniq -c | sort -rn | head
+
+# 긴 subdomain (DNS 터널링)
+zeek-cut query < /tmp/zeek-out/dns.log | awk '{ if (length($1) > 50) print }' | sort -u | head
+
+# TXT 남용 (data exfil)
+zeek-cut query qtype_name < /tmp/zeek-out/dns.log | \
+  awk '$2 == "TXT"' | cut -f1 | sort | uniq -c | sort -rn | head
+
+# entropy 분석 (DGA / 터널링)
+python3 << 'PY'
+import math
+def ent(s):
+    if not s: return 0
+    f={}; [f.__setitem__(c,f.get(c,0)+1) for c in s]
+    t=len(s); return -sum((c/t)*math.log2(c/t) for c in f.values())
+
+with open('/tmp/zeek-out/dns.log') as fh:
+    queries = set()
+    for line in fh:
+        if line.startswith('#'): continue
+        cols = line.strip().split('\t')
+        if len(cols) >= 9:
+            queries.add(cols[8])
+high = [(q, ent(q.split('.')[0])) for q in queries if len(q.split('.')[0]) > 8]
+high.sort(key=lambda x: -x[1])
+for q, e in high[:10]:
+    print(f"  entropy={e:.2f}  {q}")
+PY
+```
+
+#### 도구 6: TCP 세션 + 파일 추출 (Step 6·7)
+
+```bash
+# tshark - TCP follow
+tshark -r $PCAP -Y 'tcp.port == 4444' -T fields -e tcp.stream | sort -u | head
+tshark -r $PCAP -q -z follow,tcp,ascii,5 | head -50   # stream id 5
+
+# tcpflow - 모든 stream 자동 분리
+mkdir /tmp/tcpflow && cd /tmp/tcpflow
+tcpflow -r $PCAP
+
+# Zeek extract (HTTP/SMB/FTP 자동)
+mkdir /tmp/zeek-files && cd /tmp/zeek-files
+zeek -r $PCAP /opt/zeek/share/zeek/policy/frameworks/files/extract-all-files.zeek
+ls extract_files/
+
+# 각 파일 hash + 유형
+for f in extract_files/*; do
+    file_type=$(file -b "$f" | cut -d',' -f1)
+    sha=$(sha256sum "$f" | cut -d' ' -f1)
+    echo "$sha  $(stat -c%s $f)  $file_type  $(basename $f)"
+done
+
+# foremost - magic byte 카빙
+mkdir /tmp/foremost-out
+foremost -i $PCAP -o /tmp/foremost-out
+
+# binwalk
+binwalk $PCAP | head
+
+# YARA 결합 (week04 와)
+yara -wr ~/yara-rules/all-rules.yar /tmp/zeek-files/extract_files/
+```
+
+#### 도구 7: Suricata + PCAP 상관 (Step 8)
+
+```bash
+# Suricata replay
+ssh ccc@10.20.30.1 'sudo suricata -r /tmp/incident.pcap -l /tmp/suricata-replay/ -c /etc/suricata/suricata.yaml'
+
+ssh ccc@10.20.30.1 'sudo jq -r "select(.event_type==\"alert\") | [.timestamp, .src_ip, .dest_ip, .alert.signature] | @tsv" /tmp/suricata-replay/eve.json | head -20'
+
+# 알림 시간 → 패킷 매칭
+ALERT_TIME="2026-05-02T14:01:23.456789+0900"
+EPOCH=$(date -d "$ALERT_TIME" +%s)
+PRE=$((EPOCH - 1)); POST=$((EPOCH + 1))
+
+tshark -r $PCAP -Y "frame.time >= \"$ALERT_TIME\" and frame.time < \"$(date -d "@$POST" -Iseconds)\"" \
+  -T fields -e frame.number -e ip.src -e ip.dst -e http.request.uri | head
+
+# 5-tuple 정밀 매칭
+SRC_IP=192.168.1.50; DST_IP=10.20.30.80; DST_PORT=80
+tshark -r $PCAP -Y "(ip.src == $SRC_IP and ip.dst == $DST_IP and tcp.dstport == $DST_PORT) or (ip.src == $DST_IP and ip.dst == $SRC_IP and tcp.srcport == $DST_PORT)" \
+  -T fields -e frame.number -e frame.time -e tcp.flags | head
+```
+
+#### 도구 8: TLS + JA3 (Step 9)
+
+```bash
+# Zeek ssl.log
+zeek-cut id.orig_h id.resp_h server_name version cipher subject ja3 < /tmp/zeek-out/ssl.log | head
+
+# 의심 SNI
+zeek-cut server_name < /tmp/zeek-out/ssl.log | sort -u | head
+
+# 알려진 악성 JA3 (sslbl)
+curl -s https://sslbl.abuse.ch/blacklist/ja3_fingerprints.csv > /tmp/ja3-blacklist.csv
+
+# 매칭
+join -t, \
+  <(zeek-cut id.orig_h id.resp_h ja3 < /tmp/zeek-out/ssl.log | awk '{print $3","$1","$2}' | sort -t, -k 1) \
+  <(grep -v ^# /tmp/ja3-blacklist.csv | awk -F, '{print $2","$3}' | sort -t, -k 1) | head
+
+# 빈도 (botnet beacon 의심)
+zeek-cut ja3 < /tmp/zeek-out/ssl.log | sort | uniq -c | sort -rn | head -10
+
+# 인증서 — 자체서명
+awk -F'\t' '$2 == $3' /tmp/zeek-out/x509.log | head
+
+# tshark 직접
+tshark -r $PCAP -Y "ssl.handshake.type == 1" -T fields \
+  -e ip.src -e ssl.handshake.extensions_server_name | head
+
+# ja3-tools (python)
+python3 -c "
+from ja3 import process_pcap
+for r in process_pcap('/tmp/incident.pcap')[:10]:
+    print(f'src={r[\"source_ip\"]:15s} dst={r[\"destination_ip\"]:15s} ja3={r[\"ja3_digest\"]}')
+"
+```
+
+#### 도구 9: NetFlow / IPFIX (Step 10)
+
+```bash
+# softflowd - interface NetFlow 생성
+ssh ccc@10.20.30.1 'sudo softflowd -i eth0 -n 10.20.30.100:9995 -v 9 -t maxlife=300'
+
+# nfcapd - collector
+ssh ccc@10.20.30.100 'sudo nfcapd -p 9995 -l /var/log/netflow/ -t 60'
+
+# nfdump 분석
+ssh ccc@10.20.30.100 'sudo nfdump -R /var/log/netflow/ -A srcip -O bytes -c 10'   # top talker
+ssh ccc@10.20.30.100 'sudo nfdump -R /var/log/netflow/ -A srcip,dstip -O bytes \
+  "src net 10.20.30.0/24 and dst not net 10.20.30.0/24" -c 10'                     # exfil
+
+# Port scan 시그니처 (small packets, large count)
+ssh ccc@10.20.30.100 'sudo nfdump -R /var/log/netflow/ -A srcip,dstip,dstport -c 100 \
+  "proto tcp and packets < 5" | sort | uniq -c | sort -rn | head'
+```
+
+#### 도구 10: 타임라인 (Plaso / Timesketch) (Step 11)
+
+```bash
+# Plaso - log2timeline
+log2timeline.py --storage_file /tmp/incident.plaso /tmp/forensic-evidence/
+
+# Storage → CSV
+psort.py -o l2tcsv -w /tmp/incident-timeline.csv /tmp/incident.plaso
+sort -t, -k 1 /tmp/incident-timeline.csv | head -50
+
+# Timesketch - 시각화
+docker compose -f /tmp/timesketch/docker-compose.yml up -d
+psort.py -o timesketch \
+  --timesketch_url http://localhost:5000 \
+  --timesketch_user admin \
+  --timesketch_password password \
+  /tmp/incident.plaso
+
+# 수동 5-phase 타임라인
+cat > /tmp/incident-timeline.md << 'EOF'
+## Phase 1: Reconnaissance (14:00 ~ 14:01)
+- 14:00:01  attacker (192.168.1.50) → web — nmap SYN scan port 1-1000
+- 14:00:45  Suricata alert: ET SCAN nmap
+
+## Phase 2: Initial Access (14:01 ~ 14:02)
+- 14:01:23  attacker → web — POST /rest/user/login (SQL injection)
+- 14:01:24  web → attacker — admin JWT token
+
+## Phase 3: Privilege Escalation (14:02 ~ 14:03)
+- 14:02:10  attacker → web — webshell.php upload
+- 14:02:30  web (sudo NOPASSWD vim) → root shell
+
+## Phase 4: Lateral Movement (14:03 ~ 14:04)
+- 14:03:15  web → siem — SSH key reuse
+- 14:03:45  siem login as ccc
+
+## Phase 5: Exfiltration (14:04 ~ 14:05)
+- 14:04:00  siem → attacker — tar+nc 40MB
+EOF
+```
+
+#### 도구 11: PCAP 저장 전략 + Wireshark 프로파일 (Step 12·13)
+
+| 전략 | 보관 | 스토리지 (1Gbps × 7일) | 장단점 |
+|------|------|----------------------|--------|
+| Full PCAP | 7-30일 | ~10TB / week | 모든 분석, 비싸다 |
+| Selective | 90일+ | ~1TB / 월 | 알림 시만, 미탐 시 못 잡음 |
+| Headers only | 1년 | ~50GB / 월 | 빠른 검색, payload 분석 불가 |
+| NetFlow | 1년 | ~10GB / 월 | 메타만, 효율 |
+| Hybrid (Stenographer + Suricata + flow) | full 7일 + 알림 90일 + flow 1년 | ~12TB | **권장** |
+
+```bash
+# Wireshark 프로파일
+mkdir -p ~/.config/wireshark/profiles/SOC
+
+cat > ~/.config/wireshark/profiles/SOC/colorfilters << 'CF'
+# 빨강 — Suricata 알림
+@Suspicious@http.request.uri matches "(?i)(union.*select|<script>|\\.\\./)"@[64,255,255]
+# 노랑 — 비정상 user-agent
+@Bad UA@http.user_agent matches "(?i)(sqlmap|nikto|nmap|hydra)"@[200,200,0]
+# 보라 — 자체서명 SSL
+@Self-signed SSL@ssl.handshake.type == 11 and ssl.handshake.extensions_server_name@[150,0,150]
+CF
+```
+
+#### 도구 12: 증거 보고서 (Step 14·15)
+
+```bash
+cat > /tmp/network-forensic-report.md << 'EOF'
+# Network Forensic Report — IR-2026-Q2-001
+
+## 1. Executive Summary
+- Incident: web 서버 침투 + lateral + exfil
+- 영향: 사용자 12,847 명 PII (예상)
+- 캡처: 2026-05-02 14:00~14:05 (4.2GB PCAP)
+
+## 2. Evidence Collection
+### Chain of Custody
+| Date/Time | Action | Actor | Hash |
+|-----------|--------|-------|------|
+| 14:00 | Capture | secu/eth0 | initial |
+| 14:05 | sha256 | analyst | abc123... |
+| 14:30 | scp | analyst | abc123... ✓ |
+
+### Tools
+- tcpdump 4.99.4 / Zeek 5.0 / tshark 4.0 / Suricata 6.0 / Plaso 20240525
+
+## 3. Attack Timeline
+[위 도구 10 의 incident-timeline.md 참조]
+
+## 4. Indicators of Compromise
+### Network IOCs
+- Source IP: 192.168.1.50 (attacker)
+- C2 Domain: evil-c2.example
+- TLS JA3: 6734f37431670b3ab4292b8f60f29984
+- Webshell upload: /api/Files (POST, multipart, .php)
+
+### File IOCs
+- webshell.php (SHA256: a1b2c3...)
+- exfil.tar.gz (SHA256: d4e5f6...)
+
+## 5. Network Statistics
+- Packets: 100K / Unique IPs: 47
+- Top talker: 192.168.1.50 (4.2MB out / 12MB in)
+- HTTP req: 1247 / HTTPS: 89 / DNS: 2134
+
+## 6. Detection Coverage
+- Suricata: 12 (3 critical / 8 high / 1 medium)
+- Wazuh: 47
+
+## 7. Recommendations
+### Short-term (≤24h)
+- 192.168.1.50 차단 + web 서버 격리 + 메모리 dump
+### Mid-term (≤7일)
+- JuiceShop 패치 + WAF + SSH key 회전
+### Long-term (≤90일)
+- Stenographer 도입 + JA3 blacklist 자동 + Threat Hunting 정기화
+
+## 8. Appendix
+- A. 추출 파일 catalog (33 files, 12 unique)
+- B. Suricata alert detail
+- C. Zeek logs (전문)
+- D. Plaso timeline (CSV)
+- E. CoC sign-offs
+
+## 9. Legal & Compliance
+- 개인정보보호법 위반 가능성 (KISA 신고)
+- GDPR 영향 평가 (EU 사용자 8명)
+- NDA 검토 (외부 공유 전)
+EOF
+
+# PDF 변환 (week14 의 pandoc + xelatex)
+pandoc /tmp/network-forensic-report.md \
+  -o /tmp/network-forensic-report.pdf \
+  --pdf-engine=xelatex --toc \
+  --highlight-style=tango \
+  -V mainfont="Noto Sans CJK KR"
+```
+
+### 점검 / 분석 / 보고 흐름 (15 step + multi_task 통합)
+
+#### Phase A — 캡처 + 통계 (s1·s2·s3)
+
+```bash
+ssh ccc@10.20.30.1 'sudo timeout 300 tcpdump -i eth0 -w /tmp/incident.pcap -s 0 not port 22'
+ssh ccc@10.20.30.1 'sudo sha256sum /tmp/incident.pcap > /tmp/incident.pcap.sha256'
+scp ccc@10.20.30.1:/tmp/incident.pcap{,.sha256} /var/log/forensics/
+sha256sum -c /var/log/forensics/incident.pcap.sha256
+
+capinfos /var/log/forensics/incident.pcap
+mkdir /tmp/zeek-out && cd /tmp/zeek-out && zeek -r /var/log/forensics/incident.pcap
+```
+
+#### Phase B — 프로토콜 + 파일 분석 (s4·s5·s6·s7·s9)
+
+```bash
+mkdir /tmp/zeek-files && cd /tmp/zeek-files
+zeek -r /var/log/forensics/incident.pcap /opt/zeek/share/zeek/policy/frameworks/files/extract-all-files.zeek
+yara -wr ~/yara-rules/all-rules.yar /tmp/zeek-files/extract_files/
+```
+
+#### Phase C — 상관 + 타임라인 (s8·s10·s11)
+
+```bash
+ssh ccc@10.20.30.1 'sudo suricata -r /tmp/incident.pcap -l /tmp/suricata-replay/'
+ssh ccc@10.20.30.100 'sudo nfdump -R /var/log/netflow/ -A srcip -O bytes -c 10'
+log2timeline.py --storage_file /tmp/incident.plaso /var/log/forensics/
+psort.py -o l2tcsv -w /tmp/timeline.csv /tmp/incident.plaso
+```
+
+#### Phase D — 통합 시나리오 (s99 multi_task)
+
+s1 → s2 → s3 → s4 → s5 를 Bastion 가 한 번에:
+
+1. **plan**: 법적 요건 → 캡처 → 통계 → HTTP 분석 → DNS 분석
+2. **execute**: tcpdump + sha256sum + capinfos + Zeek + tshark + jq
+3. **synthesize**: 5 산출물 (coc.txt / incident.pcap+sha / capinfos.txt / http-findings.csv / dns-findings.csv)
+
+### 도구 비교표 — 네트워크 포렌식 단계별
+
+| 단계 | 1순위 | 2순위 | 사용 조건 |
+|------|-------|-------|----------|
+| 캡처 | tcpdump | dumpcap | 표준 |
+| Live (대용량) | Stenographer | Arkime | 분산 |
+| 통계 | Zeek + zeek-cut | tshark + capinfos | depth |
+| HTTP 분석 | Zeek http.log | tshark -Y http | depth |
+| DNS 분석 | Zeek dns.log | dnstop / passivedns | live |
+| TLS / JA3 | Zeek ssl.log + ja3 | tshark -Y ssl | depth |
+| TCP follow | tcpflow | tshark -z follow | bulk |
+| 파일 추출 | Zeek extract-all-files | foremost / binwalk | magic |
+| Suricata 상관 | suricata -r + jq | Sguil (legacy) | OSS |
+| NetFlow | nfcapd + nfdump | pmacct / ntopng | 풍부 |
+| 타임라인 | Plaso + Timesketch | Splunk Time | OSS |
+| 보고서 | pandoc + LaTeX | Dradis / pwndoc | 기술 |
+| GUI | Wireshark | Capanalysis | 인터랙티브 |
+| Replay | tcpreplay | Suricata -r | 룰 회귀 |
+
+### 도구 선택 매트릭스 — 시나리오별 권장
+
+| 시나리오 | 우선 도구 | 이유 |
+|---------|---------|------|
+| "incident response 즉시" | tcpdump + Zeek + Plaso | 빠른 통합 |
+| "장기 보존 (full PCAP)" | Stenographer | 효율 |
+| "분산 환경 (TB+)" | Arkime + Elasticsearch | 검색 강력 |
+| "메타만 (privacy)" | NetFlow + nfcapd | header only |
+| "악성코드 분석 결합" | Zeek extract + YARA + Cuckoo | 자동 sandbox |
+| "TLS 통신 분석" | Zeek ssl.log + JA3 + sslbl | fingerprint |
+| "타임라인 시각화" | Plaso + Timesketch | UI |
+| "법적 증거 (court)" | tcpdump + sha256 + PGP + CoC | 무결성 |
+
+### 학생 셀프 체크리스트 (각 step 완료 기준)
+
+- [ ] s1: CoC 양식 + sha256sum + RFC 3227 + NIST SP 800-86 인용
+- [ ] s2: tcpdump 5분 + sha256 + scp 검증
+- [ ] s3: capinfos + tshark phs/endpoints/conv + Zeek 통계 4종
+- [ ] s4: HTTP SQLi/XSS/traversal 3종 + Zeek http.log
+- [ ] s5: NXDOMAIN 비율 + 긴 subdomain + TXT + entropy
+- [ ] s6: tshark -z follow + tcpflow 자동 분리
+- [ ] s7: Zeek extract-all-files + foremost + 파일 hash + YARA
+- [ ] s8: suricata -r + 5-tuple 매칭 + 알림→패킷
+- [ ] s9: Zeek ssl.log + JA3 + 자체서명 + sslbl
+- [ ] s10: nfcapd + nfdump 4 분석 (top / scan / exfil / ratio)
+- [ ] s11: Plaso → CSV → 5 phase markdown 타임라인
+- [ ] s12: full vs selective vs flow 비교표 + Stenographer
+- [ ] s13: ~/.config/wireshark/profiles/SOC + colorfilters
+- [ ] s14: 9 섹션 보고서 (Exec/Evidence/Timeline/IOC/Stats/Detection/Reco/Appendix/Legal)
+- [ ] s15: pandoc PDF + sha256 + PGP + NDA 검토
+- [ ] s99: Bastion 가 5 작업 (CoC/캡처/통계/HTTP/DNS) 순차
+
+### 추가 참조 자료
+
+- **NIST SP 800-86** Guide to Integrating Forensic Techniques
+- **NIST SP 800-101** Mobile Device Forensics
+- **RFC 3227** Evidence Collection
+- **ISO/IEC 27037** Digital evidence handling
+- **Zeek Documentation** https://docs.zeek.org/
+- **Wireshark User Guide** https://www.wireshark.org/docs/
+- **Plaso (log2timeline)** https://plaso.readthedocs.io/
+- **Timesketch** https://timesketch.org/
+- **Stenographer** https://github.com/google/stenographer
+- **Arkime** https://arkime.com/
+- **JA3** https://github.com/salesforce/ja3
+- **sslbl ja3** https://sslbl.abuse.ch/blacklist/ja3_fingerprints.csv
+- **Suricata** https://suricata.io/
+
+위 모든 네트워크 포렌식 작업은 **법적 요건 (CoC + 해시 체인) 우선** 으로 수행한다. 캡처
+즉시 sha256 + write-only 매체 (또는 read-only mount) 로 보존. 외부 공유 전 NDA + 개인정보보호법
+검토. 활성 incident 의 PCAP 은 **TLP:RED** (week05 의 TLP 정책 참조). 분석 host 는 격리
+환경 (forensic VM) 에서만, 절대 운영 host 에서 직접 분석 금지 — 메모리 swap / 캐시 변조 위험.

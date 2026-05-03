@@ -600,3 +600,31 @@ dataset 의 winlogbeat 8.2.2 수집 분포 (top 10 = 38만 events):
 
 **학생 액션**: ossec.conf 의 `<localfile><log_format>json` 활성 + winlogbeat 통합 → dataset baseline 38만 events 처리 가능 capacity 측정.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course5 SOC — Week 04 이벤트 분석)
+
+| 작업 | 도구 |
+|------|------|
+| 알람 검색 | jq / lnav / wazuh API + jq |
+| Dashboard | Wazuh Dashboard / Kibana |
+| Drill-down | OpenSearch DSL query / lnav SQL |
+| Aggregation | jq group_by / OpenSearch aggregations |
+| 외부 enrichment | abuseipdb / virustotal / OpenCTI |
+
+### 핵심
+```bash
+# 알람 빈도 top10
+sudo jq -r 'select(.rule.level >= 10) | .rule.description' /var/ossec/logs/alerts/alerts.json | \
+  sort | uniq -c | sort -rn | head
+
+# OpenSearch query로 특정 IP 알람
+curl -s -k -u admin:admin -X POST "https://localhost:9200/wazuh-alerts-*/_search" \
+  -H "Content-Type: application/json" \
+  -d '{"query":{"match":{"data.srcip":"1.2.3.4"}},"size":20}' | jq
+
+# AbuseIPDB 외부 enrichment
+curl -s "https://api.abuseipdb.com/api/v2/check?ipAddress=1.2.3.4" \
+  -H "Key: $API_KEY" -H "Accept: application/json" | jq .data
+```

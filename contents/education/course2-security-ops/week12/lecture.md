@@ -653,3 +653,60 @@ print(bundle.serialize())
 3. 4-layer 익명화 (regex + format + NER + 검토) 후 외부 TAXII 공유 가능 형태로 export
 
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course2 SecOps — Week 12 OpenCTI 설치·구성)
+
+| 작업 | 도구 |
+|------|------|
+| CTI 플랫폼 | OpenCTI / MISP / TheHive / IntelMQ |
+| 표준 형식 | STIX 2.1 / TAXII 2.1 / OpenIOC |
+| 클라이언트 | pycti (Python) / opencti-cli / curl + GraphQL |
+| Connector | OpenCTI 50+ connectors (MISP/AlienVault/AbuseIPDB/...) |
+| 시각화 | OpenCTI built-in / Knowledge Graph / Misp Galaxy |
+
+### 학생 환경 준비
+```bash
+ssh ccc@10.20.30.100   # OpenCTI 이미 설치
+systemctl status opencti
+
+# 클라이언트
+pip3 install pycti
+
+# MISP CLI (대안 — 가장 큰 OSS CTI)
+sudo apt install -y python3-pymisp
+```
+
+### 핵심 도구 사용
+```bash
+# 1) OpenCTI 헬스 + 인증 토큰
+curl -s http://10.20.30.100:8080/health
+# 토큰: ~/.config/opencti/config.yml 또는 web UI Settings → Token
+
+# 2) pycti 로 indicator 검색
+python3 << 'EOF'
+from pycti import OpenCTIApiClient
+c = OpenCTIApiClient("http://10.20.30.100:8080", "TOKEN_HERE")
+for ind in c.indicator.list(first=10, search="ransomware"):
+    print(ind["name"], ind["pattern"])
+EOF
+
+# 3) Connector 등록 (자동 데이터 수집)
+# AlienVault OTX / AbuseIPDB / Mitre / MISP
+docker run -d --name connector-alienvault \
+  -e OPENCTI_URL=http://10.20.30.100:8080 \
+  -e OPENCTI_TOKEN=... \
+  -e ALIENVAULT_API_KEY=... \
+  opencti/connector-alienvault:latest
+
+# 4) STIX bundle import
+curl -X POST -H "Content-Type: application/json" -d @bundle.json \
+  http://10.20.30.100:8080/graphql
+
+# 5) MISP CLI (대안)
+curl -k -H "Authorization: API_KEY" -H "Accept: application/json" \
+  https://misp.local/events/restSearch | jq '.response[]'
+```
+
+학생은 본 12주차에서 **OpenCTI + pycti + connector ecosystem** 으로 CTI 플랫폼 운영의 3 축 (수집/저장/조회) 을 익힌다.

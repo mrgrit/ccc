@@ -629,3 +629,174 @@ graph LR
 
 **학생 액션**: dataset 의 392 Data Theft 사례를 분류 — 표준/변형/신규 비율 측정.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course9 — Week 05 적응형 방어)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | Static rule baseline | nftables / Suricata 룰 |
+| s2 | crowdsec 도입 | **crowdsec** community CTI |
+| s3 | RL 정책 학습 | sb3 + 자체 env (week01) |
+| s4 | A/B 테스트 (정책 비교) | 자체 + Prometheus |
+| s5 | Adaptive 임계치 | exp moving average / quantile |
+| s6 | Online learning | River (incremental ML) |
+| s7 | Drift detection | Evidently AI / NannyML |
+| s8 | 통합 dashboard | Grafana + Prometheus |
+
+### 학생 환경 준비
+
+```bash
+# crowdsec (modern fail2ban 후속)
+curl -s https://install.crowdsec.net | sudo sh
+sudo apt install -y crowdsec crowdsec-firewall-bouncer-nftables
+
+# River (incremental ML)
+pip install river
+
+# Evidently AI (drift detection)
+pip install evidently
+
+# NannyML
+pip install nannyml
+```
+
+### 핵심 — crowdsec (community CTI 자동 차단)
+
+```bash
+# 1) 시작
+sudo systemctl enable --now crowdsec
+
+# 2) 상태
+sudo cscli decisions list                          # 현재 차단 IP
+sudo cscli alerts list                             # 알림
+sudo cscli metrics                                 # acquisitions / parsers / scenarios
+
+# 3) Scenario 추가 (community 룰셋)
+sudo cscli scenarios install \
+    crowdsecurity/ssh-bf \
+    crowdsecurity/http-crawl-non_statics \
+    crowdsecurity/http-cve \
+    crowdsecurity/sqli-attack \
+    crowdsecurity/xss-attack
+sudo systemctl restart crowdsec
+
+# 4) Bouncer (실제 차단 실행)
+sudo cscli bouncers list
+# crowdsec-firewall-bouncer-nftables 가 자동으로 nft set 에 IP 추가
+
+# 5) Console (community 통계)
+sudo cscli console enroll YOUR_KEY
+# → app.crowdsec.net 에서 visualizations
+```
+
+### River (incremental ML — online learning)
+
+```python
+from river import linear_model, preprocessing, metrics, drift
+
+# 1) Online classifier (drift 자동 감지)
+model = preprocessing.StandardScaler() | linear_model.LogisticRegression()
+metric = metrics.Accuracy()
+drift_detector = drift.ADWIN()
+
+# 2) Stream 처리 (실시간 학습)
+import requests, json
+
+# Wazuh alert stream
+for alert in wazuh_alert_stream():
+    features = extract_features(alert)              # IP, port, signature, ...
+    label = alert.get('blocked', False)
+    
+    # 예측
+    y_pred = model.predict_one(features)
+    metric.update(label, y_pred)
+    
+    # Drift 감지
+    drift_detector.update(int(label != y_pred))
+    if drift_detector.drift_detected:
+        print("⚠ Drift detected — model 재학습")
+        # 새 룰 자동 학습 또는 alert
+    
+    # 학습
+    model.learn_one(features, label)
+    
+    print(f"Accuracy: {metric.get():.4f}")
+```
+
+### Evidently AI (drift detection)
+
+```python
+from evidently.report import Report
+from evidently.metric_preset import DataDriftPreset, TargetDriftPreset
+
+# 1) Reference (학습 시) vs Current (운영) 데이터
+ref_data = pd.read_csv("/data/wazuh_q1.csv")
+cur_data = pd.read_csv("/data/wazuh_q2.csv")
+
+# 2) Drift report
+report = Report(metrics=[DataDriftPreset(), TargetDriftPreset()])
+report.run(reference_data=ref_data, current_data=cur_data)
+report.save_html("/tmp/drift_report.html")
+
+# 3) Drift 발생 시 alert
+result = report.as_dict()
+drifted_features = [f['column_name'] for f in result['metrics'][0]['result']['drift_by_columns'].values() if f['drift_detected']]
+if drifted_features:
+    print(f"⚠ Features drifted: {drifted_features}")
+    # → 모델 재학습 트리거
+```
+
+### A/B 테스트 (정책 v1 vs v2)
+
+```python
+import random
+
+def ab_test_policy(alert):
+    if random.random() < 0.5:
+        action = policy_v1(alert)                    # 50% v1
+        prometheus_counter.labels(policy="v1", action=action).inc()
+    else:
+        action = policy_v2(alert)                    # 50% v2
+        prometheus_counter.labels(policy="v2", action=action).inc()
+    return action
+
+# Grafana dashboard 에서 정책별 성과 비교
+# - True positive rate per policy
+# - False positive rate per policy
+# - Mean time to block
+```
+
+### Adaptive Threshold (지수 이동 평균)
+
+```python
+class AdaptiveThreshold:
+    def __init__(self, alpha=0.1):
+        self.alpha = alpha
+        self.mean = None
+        self.std = None
+    
+    def update(self, value):
+        if self.mean is None:
+            self.mean = value
+            self.std = 0
+            return
+        
+        self.mean = self.alpha * value + (1 - self.alpha) * self.mean
+        self.std = self.alpha * abs(value - self.mean) + (1 - self.alpha) * self.std
+    
+    def is_anomaly(self, value, k=3):
+        return abs(value - self.mean) > k * self.std
+
+# 사용
+threshold = AdaptiveThreshold(alpha=0.05)
+for traffic_count in real_time_metrics():
+    if threshold.is_anomaly(traffic_count):
+        alert("Traffic anomaly detected")
+    threshold.update(traffic_count)
+```
+
+학생은 본 5주차에서 **crowdsec + River + Evidently + Prometheus + adaptive threshold** 5 도구로 적응형 방어의 4 단계 (community CTI → online ML → drift 감지 → A/B) 통합 운영을 익힌다.

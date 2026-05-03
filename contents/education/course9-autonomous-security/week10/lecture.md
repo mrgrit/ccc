@@ -702,3 +702,171 @@ graph LR
 
 **학생 액션**: lab 환경에 5 주기 작업 + 3 Watcher 트리거 등록 후 dataset 24h 운영.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course9 — Week 10 에스컬레이션)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | TheHive 사고 등급 | **TheHive 5** |
+| s2 | OnCall (Grafana) | **Grafana OnCall** |
+| s3 | Custom escalation | OPA + 자체 webhook |
+| s4 | PagerDuty 대안 | OnCall / Karma |
+| s5 | Slack 통합 | webhook |
+| s6 | SMS / 전화 | Twilio (commercial) / SignalWire |
+| s7 | 자동 escalation | TheHive playbook |
+| s8 | 통합 흐름 | TheHive + OnCall + Slack |
+
+### 학생 환경 준비
+
+```bash
+# TheHive 5
+docker run -d -p 9000:9000 strangebee/thehive:5.2
+
+# Grafana OnCall (PagerDuty OSS 대안)
+docker run -d -p 8080:8080 grafana/oncall:latest
+
+# Karma (Alertmanager UI)
+docker run -d -p 8080:8080 ghcr.io/prymitive/karma:latest
+```
+
+### 핵심 — TheHive 5 자동 escalation
+
+```python
+from thehive4py.api import TheHiveApi
+from thehive4py.models import Alert
+
+api = TheHiveApi("http://thehive:9000", "API_TOKEN")
+
+# 1) Alert 생성 (Wazuh 통합)
+def create_alert_from_wazuh(wazuh_event):
+    severity_map = {1: 1, 5: 2, 10: 3, 12: 4}                        # Wazuh level → TheHive
+    severity = severity_map.get(wazuh_event['rule']['level'], 2)
+    
+    alert = Alert(
+        title=wazuh_event['rule']['description'],
+        description=json.dumps(wazuh_event, indent=2),
+        severity=severity,
+        tlp=2,
+        type="external",
+        source="wazuh",
+        sourceRef=wazuh_event['id'],
+        artifacts=[
+            AlertArtifact(dataType="ip", data=wazuh_event['data'].get('srcip', '')),
+        ]
+    )
+    return api.create_alert(alert)
+
+# 2) 자동 escalation 룰
+# severity 4 (critical) → 즉시 case + on-call 호출
+# severity 3 (high) → case + slack
+# severity 2 (medium) → case (manual review)
+# severity 1 (low) → log only
+
+def auto_escalate(alert_id):
+    alert = api.get_alert(alert_id).json()
+    
+    if alert['severity'] == 4:
+        # Critical: 즉시 promote + on-call
+        case_id = api.promote_alert_to_case(alert_id).json()['id']
+        
+        # OnCall 호출 (전화/SMS)
+        requests.post("http://oncall:8080/api/v1/incidents", json={
+            "title": alert['title'],
+            "description": alert['description'],
+            "severity": "critical",
+            "team": "soc-oncall"
+        })
+        
+        # Slack 즉시 알림
+        requests.post(SLACK_WEBHOOK, json={
+            "text": f"🚨 CRITICAL: {alert['title']}",
+            "channel": "#soc-critical"
+        })
+        
+    elif alert['severity'] == 3:
+        case_id = api.promote_alert_to_case(alert_id).json()['id']
+        requests.post(SLACK_WEBHOOK, json={
+            "text": f"⚠ HIGH: {alert['title']}",
+            "channel": "#soc-alerts"
+        })
+```
+
+### Grafana OnCall (PagerDuty 무료 대안)
+
+```yaml
+# /etc/oncall/config.yml
+schedules:
+  - name: soc-primary
+    type: ical
+    timezone: Asia/Seoul
+    rotations:
+      - duration: 1week
+        users: [alice, bob, charlie]
+
+escalation_chains:
+  - name: critical-soc
+    steps:
+      - notify: alice
+        delay: 0m
+      - notify: bob
+        delay: 5m                                   # 5분 응답 없으면
+      - notify: charlie
+        delay: 10m
+      - notify: manager
+        delay: 15m
+```
+
+```bash
+# Webhook trigger
+curl -X POST http://oncall:8080/api/v1/incidents \
+    -H "Authorization: Bearer $TOKEN" \
+    -d '{
+        "title": "Wazuh CRITICAL: ransomware detected",
+        "severity": "critical",
+        "team": "soc-primary"
+    }'
+# OnCall 자동:
+# 1. Alice 에게 Slack/SMS/전화
+# 2. 5분 미응답 → Bob
+# 3. 10분 → Charlie
+# 4. 15분 → Manager
+```
+
+### Cost-aware Escalation (자체 algorithm)
+
+```python
+class CostAwareEscalator:
+    """자율 escalation: 시간 + 위험도 + 비용 고려"""
+    
+    def __init__(self):
+        self.escalation_costs = {
+            "log_only": 0,
+            "slack": 1,
+            "email": 2,
+            "sms": 5,
+            "call": 50,                              # 야간 호출 비용
+            "manager": 100,
+        }
+    
+    def decide(self, alert):
+        impact = alert['severity'] * alert['confidence'] * alert['blast_radius']
+        time_factor = self._business_hours_multiplier()
+        
+        # 비용 < 영향 인 escalation 만 trigger
+        for level, cost in sorted(self.escalation_costs.items(), key=lambda x: x[1]):
+            if cost * time_factor < impact:
+                continue
+            return level
+        return "manager"
+    
+    def _business_hours_multiplier(self):
+        from datetime import datetime
+        h = datetime.now().hour
+        return 1.0 if 9 <= h <= 18 else 2.0          # 야간 비용 2x
+```
+
+학생은 본 10주차에서 **TheHive + OnCall + Karma + Slack + custom cost-aware** 5 도구로 자동 escalation 의 4 단계 (severity 분류 → 의사결정 → 통보 → audit) 통합 흐름을 익힌다.

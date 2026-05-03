@@ -536,3 +536,125 @@ dataset 의 정상 운영 환경에서도 *오타가 자연 발생* 한다 — �
 
 **학생 액션**: dataset 의 message_sanitized 에서 *정상 오타 비율* 을 측정 (baseline 산출). 의도적 적대적 변형 10건을 만들어 — 4가지 방어 (문자열/정규화/임베딩/LLM) 의 각각의 차단율 측정. 결과를 표로 정리.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course8 AI Safety — Week 06 차분 프라이버시)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | DP 개념 (ε, δ) | **opacus** PrivacyEngine.compute_epsilon |
+| s2 | Laplace mechanism | **diffprivlib** (IBM) |
+| s3 | Gaussian mechanism | **opacus** noise injection |
+| s4 | DP-SGD 훈련 | **opacus** make_private_with_epsilon |
+| s5 | Privacy budget 추적 | RDP accountant |
+| s6 | DP query 시스템 | Google's pydp / **diffprivlib** |
+| s7 | Federated DP | **opacus + Flower** |
+| s8 | Privacy/utility trade-off | utility 측정 + ε vs accuracy 그래프 |
+
+### 학생 환경 준비
+
+```bash
+pip install opacus tensorflow-privacy diffprivlib pydp
+```
+
+### 핵심 — opacus DP-SGD (PyTorch 표준)
+
+```python
+from opacus import PrivacyEngine
+import torch.nn as nn
+import torch.optim as optim
+
+model = nn.Sequential(...)                          # 모델 정의
+optimizer = optim.SGD(model.parameters(), lr=0.01)
+data_loader = DataLoader(train_set, batch_size=64)
+
+# 1) DP-SGD 자동 적용
+engine = PrivacyEngine()
+model, optimizer, data_loader = engine.make_private_with_epsilon(
+    module=model,
+    optimizer=optimizer,
+    data_loader=data_loader,
+    epochs=10,
+    target_epsilon=1.0,         # privacy budget
+    target_delta=1e-5,          # δ (보통 1/N)
+    max_grad_norm=1.0,          # gradient clipping
+)
+
+# 2) 일반 학습처럼 — 매 step 자동 noise 추가
+for epoch in range(10):
+    for x, y in data_loader:
+        optimizer.zero_grad()
+        out = model(x)
+        loss = criterion(out, y)
+        loss.backward()
+        optimizer.step()                            # noise 자동 추가
+
+    # 3) 현재까지 사용한 ε 확인
+    epsilon = engine.get_epsilon(delta=1e-5)
+    print(f"Epoch {epoch}: ε={epsilon:.2f} (budget: 1.0)")
+```
+
+### diffprivlib (IBM — DP query/통계)
+
+```python
+import diffprivlib.tools as dp_tools
+import numpy as np
+
+# 정상 평균
+data = np.array([1, 2, 3, 4, 5, 1000])  # 1000 = outlier
+plain_mean = np.mean(data)              # 169.17 (영향 큼)
+
+# DP 평균 (ε=1.0)
+dp_mean = dp_tools.mean(data, epsilon=1.0, bounds=(0, 100))
+print(f"Plain: {plain_mean}, DP: {dp_mean}")
+# DP mean: ~50 (noise + clipping)
+
+# DP histogram, count, sum, var, std 모두 지원
+dp_count = dp_tools.count_nonzero(data, epsilon=0.5)
+dp_var = dp_tools.var(data, epsilon=1.0, bounds=(0, 100))
+```
+
+### Privacy / Utility Trade-off 측정
+
+```python
+import matplotlib.pyplot as plt
+
+epsilons = [0.1, 0.5, 1.0, 2.0, 5.0, 10.0, float('inf')]
+accuracies = []
+
+for eps in epsilons:
+    if eps == float('inf'):
+        # No DP
+        model = train_normal()
+    else:
+        engine = PrivacyEngine()
+        model, _, _ = engine.make_private_with_epsilon(
+            module=net, optimizer=opt, data_loader=loader,
+            epochs=10, target_epsilon=eps, target_delta=1e-5,
+            max_grad_norm=1.0
+        )
+        train(model)
+    
+    acc = evaluate(model, test_loader)
+    accuracies.append(acc)
+
+plt.plot(epsilons, accuracies)
+plt.xlabel("Privacy budget ε")
+plt.ylabel("Test accuracy")
+plt.xscale('log')
+# 일반적으로: ε ↓ → accuracy ↓ (trade-off)
+```
+
+### 권장 ε 값 (실무)
+
+| ε 범위 | 의미 | 사용처 |
+|--------|------|--------|
+| < 0.1 | 매우 강 | 의료, 금융 |
+| 0.1 ~ 1.0 | 강 | 일반 ML |
+| 1.0 ~ 10 | 중 | 비-민감 |
+| > 10 | 약 | 거의 의미 없음 |
+
+학생은 본 6주차에서 **opacus + diffprivlib + Flower** 3 도구로 DP 의 4 단계 (노이즈 → 학습 → 추적 → trade-off) 정량 분석을 익힌다.

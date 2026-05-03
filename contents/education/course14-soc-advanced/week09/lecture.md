@@ -1122,3 +1122,736 @@ graph LR
 
 **학생 액션**: Atomic test 5 케이스.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course14 SOC Advanced — Week 09 악성코드 분석·정적/동적·Sandbox)
+
+> 이 부록은 lab `soc-adv-ai/week09.yaml` (15 step + multi_task) 의 모든 명령을
+> 실제로 실행 가능한 형태로 정리한다. SANS 4 단계 (자동/정적/동적/리버싱), 정적
+> 분석 (file/strings/PE/엔트로피/패커), 동적 분석 (strace/ltrace/network/FS),
+> 안티 분석 우회, 분류, IOC 추출, 탐지 룰 (YARA/Suricata/SIGMA), Cuckoo Sandbox,
+> SOC 통합 워크플로우까지.
+
+### lab step → 도구·악성코드 매핑 표
+
+| step | 학습 항목 | 핵심 OSS 도구 | ATT&CK |
+|------|----------|--------------|--------|
+| s1 | 4 단계 방법론 (자동/정적/동적/리버싱) | SANS FOR610 양식 | - |
+| s2 | 정적 속성 (file/hash/strings/PE) | file, sha256sum, strings, readelf, objdump | - |
+| s3 | 패킹/난독화 탐지 | DIE, math.entropy, YARA packer | T1027.002 |
+| s4 | 격리 분석 환경 | KVM/VirtualBox + INetSim + 스냅샷 | - |
+| s5 | strace / ltrace 시스템 콜 | strace, ltrace, sysdig, bpftrace | T1059 |
+| s6 | 네트워크 행위 (C2/비콘) | tshark, INetSim, mitmproxy | T1071 |
+| s7 | 파일시스템 변경 (지속성) | inotifywait, auditd, osquery | T1053 / T1546 |
+| s8 | 안티 분석 우회 | unipacker, pafish, strings filter | T1497 |
+| s9 | 악성코드 분류 (RAT/랜섬/봇/드롭퍼) | YARA + 분류 휴리스틱 | - |
+| s10 | IOC 추출 (Network/Host/Behavior) | strings + grep + jq + STIX2 | - |
+| s11 | 탐지 룰 (YARA + Suricata + SIGMA) | week04 + week05 + week03 도구 재사용 | - |
+| s12 | 악성코드 리포트 (업계 표준) | SANS FOR610 + markdown | - |
+| s13 | 샌드박스 자동 분석 | Cuckoo Sandbox 3 / CAPE / DRAKVUF | - |
+| s14 | SOC 워크플로우 통합 | TheHive + Cortex + MISP | - |
+| s15 | 종합 보고서 + ATT&CK 매핑 | markdown + Navigator JSON | - |
+| s99 | 통합 다단계 (s1→s2→s3→s4→s5) | Bastion plan: 방법론→정적→패킹→환경→strace | 다중 |
+
+### 학생 환경 준비
+
+```bash
+# === [s2] 정적 ===
+sudo apt install -y binutils file hexdump xxd
+pip install --user pefile
+
+# === [s3] 패커 탐지 ===
+wget https://github.com/horsicq/DIE-engine/releases/latest/download/die_3.10_Ubuntu_22.04_amd64.deb
+sudo dpkg -i die_*.deb 2>/dev/null
+pip install --user unipacker
+
+# === [s4] 격리 ===
+sudo apt install -y qemu-kvm libvirt-daemon-system virt-manager inetsim
+sudo systemctl enable --now libvirtd inetsim
+
+# === [s5] 동적 ===
+sudo apt install -y strace ltrace sysdig bpftrace
+
+# === [s6] 네트워크 ===
+sudo apt install -y tshark wireshark-common
+pip install --user mitmproxy
+
+# === [s7] FS ===
+sudo apt install -y inotify-tools
+
+# === [s8] 안티 분석 우회 ===
+git clone https://github.com/a0rtega/pafish /tmp/pafish
+
+# === [s13] Sandbox ===
+git clone https://github.com/cuckoosandbox/cuckoo /tmp/cuckoo
+cd /tmp/cuckoo && pip install -r requirements.txt 2>/dev/null
+git clone https://github.com/kevoreilly/CAPEv2 /tmp/cape
+
+# === [s14] TheHive + Cortex + MISP (week05 와 동일) ===
+docker pull strangebee/thehive:5.2
+docker pull thehiveproject/cortex:3.1
+```
+
+### 핵심 도구별 상세 사용법
+
+#### 도구 1: SANS 4 단계 방법론 (Step 1)
+
+| 단계 | 목적 | 주요 도구 | 시간 |
+|-----|------|----------|------|
+| **1. Automated** | 빠른 분류 (악성/정상) | VirusTotal, Hybrid Analysis, AV | 분 |
+| **2. Static Properties** | 시그니처 + 속성 | file, strings, PE, YARA | 분-시간 |
+| **3. Interactive Dynamic** | 행위 관찰 | strace, tshark, sandbox | 시간 |
+| **4. Code RE** | 코드 깊이 분석 | Ghidra, IDA, radare2 | 시간-일 |
+
+원칙: 단계별 escalate (Automated → Static → Dynamic → RE), 각 단계 발견을 다음 입력으로, "필요한 만큼만" — RE 까지 안 가도 IOC 충분 시 종료.
+
+#### 도구 2: 정적 속성 분석 (Step 2)
+
+```bash
+SAMPLE=/tmp/samples/suspicious.bin
+
+# file 유형
+file $SAMPLE
+# ELF 64-bit LSB executable, x86-64, ... 또는 PE32 / HTML dropper
+
+# Hash
+md5sum $SAMPLE; sha1sum $SAMPLE; sha256sum $SAMPLE
+ssdeep $SAMPLE   # fuzzy (변종 비교)
+
+# Strings
+strings -n 8 $SAMPLE | head -50
+strings $SAMPLE | grep -iE "(http://|password|cmd.exe|/bin/sh|powershell)"
+strings -el $SAMPLE | head   # UTF-16 (Windows)
+
+# ELF (Linux)
+readelf -h $SAMPLE       # 헤더
+readelf -S $SAMPLE       # 섹션
+readelf -d $SAMPLE       # dynamic 의존성
+readelf -s $SAMPLE       # 심볼
+objdump -d $SAMPLE | head -50
+ldd $SAMPLE 2>/dev/null
+
+# PE (Windows)
+python3 << 'PY'
+import pefile
+pe = pefile.PE('/tmp/samples/malware.exe')
+print(f"Compile time: {pe.FILE_HEADER.TimeDateStamp}")
+print(f"Subsystem: {pe.OPTIONAL_HEADER.Subsystem}")
+print(f"Image base: 0x{pe.OPTIONAL_HEADER.ImageBase:x}")
+print(f"Entry: 0x{pe.OPTIONAL_HEADER.AddressOfEntryPoint:x}")
+
+for s in pe.sections:
+    name = s.Name.decode().strip('\x00')
+    print(f"  {name}: VS=0x{s.Misc_VirtualSize:x} entropy={s.get_entropy():.2f}")
+
+for entry in pe.DIRECTORY_ENTRY_IMPORT:
+    print(f"\n{entry.dll.decode()}:")
+    for imp in entry.imports[:10]:
+        if imp.name: print(f"  {imp.name.decode()}")
+PY
+
+hexdump -C $SAMPLE | head -20
+xxd $SAMPLE | head -20
+```
+
+#### 도구 3: 패커 / 난독화 탐지 (Step 3)
+
+```bash
+# 엔트로피
+python3 << 'PY'
+import math
+def entropy(data):
+    if not data: return 0
+    f = {}
+    for b in data: f[b] = f.get(b, 0) + 1
+    t = len(data)
+    return -sum((c/t) * math.log2(c/t) for c in f.values())
+
+with open('/tmp/samples/suspicious.bin', 'rb') as f:
+    data = f.read()
+print(f"Total entropy: {entropy(data):.3f}")
+# 정상 5.0~6.5 / 패킹 7.0+ / 암호화 7.5+
+
+# 1KB 블록별
+block_size = 1024
+for i in range(0, len(data), block_size):
+    e = entropy(data[i:i+block_size])
+    if e > 6.5: print(f"  Block {i:08x}: entropy={e:.3f} (suspicious)")
+PY
+
+# DIE
+die /tmp/samples/suspicious.bin
+# PE32 / Console / UPX 3.96  또는 ELF / Linux / Themida 3.x
+
+# YARA packer (week04 룰)
+yara -wr ~/yara-rules/packers.yar /tmp/samples/
+
+# Unpacking
+upx -d /tmp/samples/upx-packed.exe -o /tmp/samples/unpacked.exe   # UPX
+unipacker /tmp/samples/packed.exe                                  # 다양
+
+# PE 섹션 entropy
+python3 << 'PY'
+import pefile
+pe = pefile.PE('/tmp/samples/malware.exe')
+for s in pe.sections:
+    e = s.get_entropy()
+    name = s.Name.decode().strip('\x00')
+    flag = "★ HIGH" if e > 7.0 else ""
+    print(f"  {name:10s}: entropy={e:.3f} {flag}")
+PY
+```
+
+#### 도구 4: 격리 분석 환경 (Step 4)
+
+```bash
+# KVM 가상머신 격리 네트워크
+cat > /tmp/isolated.xml << 'XML'
+<network>
+  <name>isolated</name>
+  <bridge name="virbr10"/>
+  <ip address="192.168.100.1" netmask="255.255.255.0">
+    <dhcp><range start="192.168.100.10" end="192.168.100.50"/></dhcp>
+  </ip>
+  <forward mode="nat"/>
+</network>
+XML
+sudo virsh net-define /tmp/isolated.xml
+sudo virsh net-start isolated
+
+# 스냅샷
+sudo virsh snapshot-create-as --domain analysis-vm --name baseline
+sudo virsh snapshot-revert --domain analysis-vm --snapshotname baseline
+
+# INetSim (가짜 internet — DNS/HTTP/SMTP 모두 응답)
+sudo vi /etc/inetsim/inetsim.conf
+# service_bind_address 192.168.100.1
+# service_run dns http https ftp smtp pop3
+sudo systemctl enable --now inetsim
+
+# 분석 VM 의 DNS → INetSim
+# /etc/resolv.conf nameserver 192.168.100.1
+
+# 안전 수칙
+cat > /tmp/sandbox-safety.md << 'MD'
+1. 물리 격리: 분석 host 별도 NIC/VLAN
+2. 네트워크 격리: VM internet 차단 (host-only or NAT 차단)
+3. 스냅샷 우선: 매 분석 전 baseline → 분석 후 복구
+4. 시간 격리: NTP 변경 (시간 기반 trigger 우회)
+5. 제한 권한: 분석 VM 의 host 자원 최소
+6. 로그 분리: 결과 read-only 매체로 export
+7. 법적: 자기 권한 sample 만
+8. outbound 모니터링: tshark 모든 트래픽 캡처
+MD
+```
+
+#### 도구 5: 동적 분석 — strace / ltrace / sysdig (Step 5)
+
+```bash
+# strace (시스템 콜)
+strace -f -e trace=all -o /tmp/strace.log /tmp/samples/suspicious.bin
+# 또는 카테고리: -e trace=network,file,process
+
+# 출력 분석
+grep -E "open|read|write" /tmp/strace.log | head        # 파일
+grep -E "socket|connect|bind|sendto" /tmp/strace.log    # 네트워크
+grep -E "fork|clone|execve" /tmp/strace.log              # 프로세스
+
+# ltrace (라이브러리 콜)
+ltrace -f -o /tmp/ltrace.log /tmp/samples/suspicious.bin
+# malloc, strcpy, system 등 libc 호출
+
+# sysdig (강력)
+sudo sysdig -p '%proc.name %evt.type %evt.args' proc.name=suspicious | head -30
+sudo sysdig -c spy_users           # 사용자 명령 모니터링
+sudo sysdig -c topfiles_bytes       # 파일 쓰기
+sudo sysdig -c topconns             # 네트워크 연결
+
+# bpftrace (eBPF)
+sudo bpftrace -e 'tracepoint:syscalls:sys_enter_execve { printf("%s %s\n", comm, str(args->filename)); }'
+sudo bpftrace -e 'tracepoint:syscalls:sys_enter_connect { printf("%s connect\n", comm); }'
+
+# Container 격리 (sandbox 대안)
+docker run --rm --network=none -v /tmp/samples:/samples:ro \
+  --memory=256m --pids-limit=10 \
+  ubuntu:22.04 strace -f -o /samples/strace.log /samples/suspicious.bin
+```
+
+#### 도구 6: 네트워크 행위 분석 (Step 6)
+
+```bash
+# 분석 VM 안에서
+sudo tcpdump -i any -w /tmp/dynamic-capture.pcap -s 0 not port 22 &
+TCPDUMP_PID=$!
+
+strace -f -e trace=network /tmp/samples/suspicious.bin &
+sleep 60   # 비콘 / DNS query 캡처 충분히
+
+kill $TCPDUMP_PID
+
+# 분석 (week07 도구와 동일)
+tshark -r /tmp/dynamic-capture.pcap -q -z io,phs
+
+# DNS query
+tshark -r /tmp/dynamic-capture.pcap -Y dns.qry.name -T fields -e dns.qry.name | sort -u | head
+
+# C2 후보 (SYN out, no SYN/ACK back)
+tshark -r /tmp/dynamic-capture.pcap -Y "tcp.flags.syn == 1 and tcp.flags.ack == 0" \
+  -T fields -e ip.dst -e tcp.dstport | sort | uniq -c | sort -rn | head
+
+# 비콘 (week06 와 동일 방법)
+zeek -r /tmp/dynamic-capture.pcap
+
+# mitmproxy (HTTP/HTTPS 인터셉트)
+sudo iptables -t nat -A OUTPUT -p tcp --dport 80 -j REDIRECT --to-port 8080
+mitmproxy -T --host
+
+# INetSim 응답 검증
+sudo cat /var/log/inetsim/main.log | head
+# 모든 query 가 inetsim 도달 = 격리 정상
+
+# Custom binary protocol
+strings -n 8 /tmp/dynamic-capture.pcap | grep -iE "(http|user-agent|cookie|auth)" | head
+xxd /tmp/dynamic-capture.pcap | head -100
+```
+
+#### 도구 7: 파일시스템 변경 (Step 7)
+
+```bash
+# inotifywait 실시간
+sudo inotifywait -m -r --format '%T %e %w%f' --timefmt '%Y-%m-%dT%H:%M:%S' \
+  /tmp /var/tmp /etc /home /root &
+INOTIFY_PID=$!
+
+/tmp/samples/suspicious.bin &
+sleep 30
+
+kill $INOTIFY_PID
+
+# Persistence diff (분석 전후)
+sudo find /etc/cron.d /etc/cron.daily /etc/cron.hourly /etc/init.d \
+  /etc/systemd/system /home/*/.bashrc /etc/ld.so.preload \
+  -newer /tmp/baseline -ls 2>/dev/null > /tmp/persistence-after.txt
+
+diff /tmp/persistence-before.txt /tmp/persistence-after.txt
+
+# osquery
+sudo osqueryi << 'SQL'
+SELECT * FROM file WHERE directory LIKE '/tmp/%' AND atime > DATE('now', '-1 hour');
+SELECT * FROM crontab;
+SELECT * FROM systemd_units WHERE source_path LIKE '%/tmp/%';
+SELECT path, mtime FROM file WHERE path LIKE '/home/%/.bashrc';
+SQL
+
+# auditd (사후)
+sudo auditctl -w /etc -p wa -k etc_change
+sudo auditctl -w /var/spool/cron -p wa -k cron_change
+sudo ausearch -k etc_change --start recent | head
+```
+
+#### 도구 8: 안티 분석 우회 (Step 8)
+
+```bash
+# pafish 검증
+cd /tmp/pafish && make
+./pafish
+# CPU vendor / VM / Sandboxie / Cuckoo / 디버거 / 시간 모두 검사
+
+# 시그니처 검색
+strings $SAMPLE | grep -iE "(vmware|virtualbox|qemu|xen|hyper-v|kvm)"
+strings $SAMPLE | grep -iE "(IsDebuggerPresent|ptrace|TracerPid)"
+strings $SAMPLE | grep -iE "(GetTickCount|sleep|nanosleep)"
+strings $SAMPLE | grep -iE "(ProgramData/Sandboxie|cuckoo|VBoxGuest)"
+
+# 우회: VM hide (KVM)
+# /etc/libvirt/qemu/analysis-vm.xml:
+# <hyperv>
+#   <vendor_id state='on' value='Microsoft Hv'/>
+# </hyperv>
+
+# 시간 가속
+sudo date -s "2026-12-31 23:59:50"   # 시간 trigger 우회
+
+# ptrace 우회 (sysdig / bpftrace 사용 — strace 대신)
+sudo bpftrace -e 'tracepoint:syscalls:sys_enter_ptrace { printf("%s ptrace called\n", comm); }'
+```
+
+#### 도구 9: 악성코드 분류 (Step 9)
+
+| 카테고리 | 시그니처 | YARA tag |
+|---------|---------|----------|
+| **RAT** | C2 + reverse shell + screenshot | `tag:rat` |
+| **Ransomware** | Crypt API + 랜섬노트 + 확장자 | `tag:ransomware` |
+| **Botnet** | C2 + worm + DDoS payload | `tag:bot` |
+| **Dropper** | 작은 크기 + URL download + 실행 | `tag:dropper` |
+| **Cryptominer** | 100% CPU + mining pool URL | `tag:miner` |
+| **Wiper** | 파일 삭제/덮어쓰기 + MBR 손상 | `tag:wiper` |
+| **Stealer** | 브라우저 / wallet / SSH key 수집 | `tag:stealer` |
+| **Backdoor** | reverse shell + persistence | `tag:backdoor` |
+
+```python
+import re
+def classify(strings_output, network_log, fs_log):
+    score = {'rat':0,'ransomware':0,'bot':0,'dropper':0,'miner':0,
+             'wiper':0,'stealer':0,'backdoor':0}
+    if re.search(r'CryptEncrypt|CryptGenKey|ransom|decrypt', strings_output, re.I):
+        score['ransomware'] += 3
+    if re.search(r'\.lockbit|\.conti|\.ryuk', strings_output, re.I):
+        score['ransomware'] += 2
+    if re.search(r'reverse.shell|/bin/sh -i|cmd\.exe /c', strings_output, re.I):
+        score['rat'] += 2; score['backdoor'] += 2
+    if re.search(r'wget|curl|InternetOpen|URLDownloadToFile', strings_output, re.I):
+        score['dropper'] += 2
+    if re.search(r'xmrig|mining.pool|cryptonight|monero', strings_output, re.I):
+        score['miner'] += 5
+    if re.search(r'Cookies|Login Data|wallet\.dat|\.ssh/id_rsa', strings_output, re.I):
+        score['stealer'] += 4
+    if re.search(r'shred -u|dd if=.*of=/dev/[sh]d|wbadmin delete', strings_output, re.I):
+        score['wiper'] += 4
+    return sorted(score.items(), key=lambda x: -x[1])[:3]
+
+print(classify(open('/tmp/strings.txt').read(),
+               open('/tmp/network.txt').read(),
+               open('/tmp/fs.txt').read()))
+```
+
+#### 도구 10: IOC + 탐지 룰 (Step 10·11)
+
+```bash
+SAMPLE=/tmp/samples/suspicious.bin
+
+# Network IOCs
+strings $SAMPLE | grep -oE "https?://[a-zA-Z0-9.-]+(/[^ ]*)?" | sort -u
+strings $SAMPLE | grep -oE "\b[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\b" | sort -u
+strings $SAMPLE | grep -oE "\b[a-zA-Z0-9.-]+\.(com|net|org|io|cn|ru)\b" | sort -u
+
+# Host IOCs
+sha256sum $SAMPLE
+ssdeep $SAMPLE
+
+# 행위 IOC
+grep -E "openat|connect|execve" /tmp/strace.log | head -20
+
+# STIX 2.1 (week05)
+python3 << 'PY'
+import stix2, hashlib
+sha = hashlib.sha256(open('/tmp/samples/suspicious.bin','rb').read()).hexdigest()
+ind_hash = stix2.Indicator(
+    pattern_type="stix",
+    pattern=f"[file:hashes.'SHA-256' = '{sha}']",
+    indicator_types=["malicious-activity"],
+    name="Sample malware SHA256")
+ind_ip = stix2.Indicator(
+    pattern_type="stix",
+    pattern="[ipv4-addr:value = '192.168.1.50']",
+    indicator_types=["malicious-activity"],
+    name="C2 server")
+print(stix2.Bundle(objects=[ind_hash, ind_ip]).serialize(pretty=True))
+PY
+
+# 1. YARA (week04)
+cat > /tmp/yara-malware.yar << 'YARA'
+rule Malware_Sample_2026Q2_001 : malware
+{
+    meta:
+        sha256 = "029a5cefb1..."
+        description = "Sample malware analyzed 2026-05-02"
+    strings:
+        $c2 = "192.168.1.50"
+        $cmd1 = "/bin/sh -i"
+        $cmd2 = "reverse_shell"
+    condition:
+        any of them
+}
+YARA
+yara -wr /tmp/yara-malware.yar /var/www/
+
+# 2. Suricata (week05 + 사용자 정의)
+cat >> /etc/suricata/rules/local.rules << 'RULES'
+alert ip $HOME_NET any -> 192.168.1.50 any (msg:"Malware C2 — sample 2026Q2"; \
+    sid:9000010; rev:1; classtype:trojan-activity;)
+RULES
+
+# 3. SIGMA (week03)
+cat > /tmp/sigma-malware.yml << 'SIGMA'
+title: Malware Sample 2026Q2 Network Activity
+id: malware-2026q2-001
+tags: [attack.command_and_control, attack.t1071]
+logsource: { category: network_connection }
+detection:
+  selection:
+    DestinationIp: '192.168.1.50'
+  condition: selection
+level: critical
+SIGMA
+sigma convert -t wazuh -p wazuh_default /tmp/sigma-malware.yml
+```
+
+#### 도구 11: Cuckoo Sandbox (Step 13)
+
+```bash
+# Cuckoo Sandbox 3
+cd /tmp/cuckoo
+cuckoo init                # ~/.cuckoo
+cuckoo machinery libvirt   # KVM 등록
+cuckoo                     # daemon
+cuckoo web                 # 5000 port
+
+cuckoo submit /tmp/samples/suspicious.bin
+# Task ID: 1
+
+cuckoo task summary 1
+ls ~/.cuckoo/storage/analyses/1/
+# reports/  shots/  files/  logs/  network/  memory/
+
+cat ~/.cuckoo/storage/analyses/1/reports/report.json | \
+  jq '.behavior.summary | {files: .files | length, network: .domains}'
+
+# CAPE Sandbox (modern)
+cd /tmp/cape && docker compose up -d
+# UI: http://localhost:8000
+
+# DRAKVUF (hypervisor 깊이) — Xen + 별도 설치
+```
+
+#### 도구 12: SOC 워크플로우 (Step 14)
+
+```
+## SOC 악성코드 분석 10 단계
+
+1. 탐지: Wazuh alert level≥12 / 사용자 신고 / EDR
+2. Triage (5분): TheHive case 자동 + VirusTotal (Cortex)
+3. Sample 확보 (15분): 호스트 격리 + scp + 메모리 dump (week08)
+4. Static (30분): file + hash + strings + PE
+5. Dynamic (1-3시간): Cuckoo / CAPE 제출
+6. IOC 추출 (30분): strings → URL/IP/Domain + 행위 → ATT&CK
+7. 룰 작성 (30분): YARA + Suricata + SIGMA
+8. 배포 (15분): Wazuh CDB + Suricata reputation + TheHive observable
+9. 보고 (1시간): TheHive case 마감 + MISP 공유 (TLP:GREEN)
+10. Lessons Learned (30분): 탐지 누락 + hunting 가설 + SOC 개선
+```
+
+#### 도구 13: 종합 보고서 (Step 12·15)
+
+```bash
+cat > /tmp/malware-report.md << 'EOF'
+# Malware Analysis Report — Sample 2026Q2-001
+
+## 1. Sample Info
+- Filename: suspicious.bin
+- File type: ELF 64-bit LSB executable, x86-64
+- Size: 156 KB
+- MD5: 029a5cefb1... / SHA256: e3b0c44...
+- ssdeep: 384:abc123...
+- Source: /var/www/uploads/document.bin
+- First seen: 2026-05-02 14:05:00
+
+## 2. Static Analysis
+### Strings
+- C2 IP: 192.168.1.50:4444
+- 의심 명령: "/bin/sh -i", "wget", "chmod +s"
+- LD_PRELOAD: "/tmp/libev.so"
+
+### ELF
+- Sections: 5 (entropy: text=6.2, data=7.8 ★)
+- Imports: connect, execve, open
+- Stripped symbols ★
+
+### Packing
+- Total entropy: 7.4 (suspected packed)
+- DIE: ELF / Linux / UPX 3.96
+
+## 3. Dynamic Analysis
+### strace 핵심
+- execve("/tmp/payload", ...)
+- open("/etc/passwd", O_RDONLY)
+- connect(192.168.1.50:4444)
+
+### Network
+- DNS: evil-c2.example
+- TCP: 192.168.1.50:4444 (reverse shell)
+- 비콘: 60s ± 5s (CV 0.08, regular)
+
+### File System
+- /tmp/payload (생성)
+- /etc/cron.d/backup (생성, persistence)
+- /home/ccc/.bashrc (변조, LD_PRELOAD)
+
+## 4. Classification
+- Top 3: RAT (4) / Backdoor (4) / Dropper (2)
+- 최종: Linux RAT with persistence + reverse shell
+
+## 5. ATT&CK Mapping
+| Tactic | Technique | Evidence |
+|--------|-----------|----------|
+| Initial Access | T1190 | web exploit (week07) |
+| Execution | T1059.004 | bash via execve |
+| Persistence | T1053.003 | /etc/cron.d/backup |
+| Persistence | T1546.004 | .bashrc LD_PRELOAD |
+| Defense Evasion | T1027.002 | UPX packing |
+| C2 | T1071.001 | reverse shell 4444 |
+
+## 6. IOC
+### Network
+- IP: 192.168.1.50:4444
+- Domain: evil-c2.example
+### Host
+- SHA256: e3b0c44...
+- Filename: payload, libev.so
+- Cron: /etc/cron.d/backup
+- LD_PRELOAD: /tmp/libev.so
+
+## 7. Detection Rules
+### YARA / Suricata / SIGMA — 위 도구 10 참조
+
+## 8. Recommendations
+### Short-term (≤24h)
+- 영향 호스트 격리
+- 모든 IOC 차단 (Wazuh CDB + Suricata reputation)
+- 다른 호스트 yara 스캔
+### Mid-term (≤7일)
+- LD_PRELOAD 모니터링
+- /etc/cron.d 무결성 (AIDE)
+### Long-term (≤90일)
+- Cuckoo Sandbox 운영 자동화
+- TheHive workflow 정립
+
+## 9. Appendix
+- A. strings.txt / B. strace.log / C. dynamic-capture.pcap / D. cuckoo report.json / E. CoC
+EOF
+
+pandoc /tmp/malware-report.md -o /tmp/malware-report.pdf \
+  --pdf-engine=xelatex --toc -V mainfont="Noto Sans CJK KR"
+```
+
+### 점검 / 분석 / 배포 흐름 (15 step + multi_task)
+
+#### Phase A — 정적 (s1·s2·s3)
+
+```bash
+SAMPLE=/tmp/samples/suspicious.bin
+file $SAMPLE; sha256sum $SAMPLE; ssdeep $SAMPLE
+strings $SAMPLE > /tmp/strings.txt
+readelf -h $SAMPLE
+python3 -c "
+import math
+data=open('$SAMPLE','rb').read()
+f={};[f.__setitem__(b,f.get(b,0)+1) for b in data]
+t=len(data); print(f'Entropy: {-sum((c/t)*math.log2(c/t) for c in f.values()):.3f}')"
+die $SAMPLE
+yara -wr ~/yara-rules/packers.yar $SAMPLE
+```
+
+#### Phase B — 동적 (s4·s5·s6·s7·s8)
+
+```bash
+scp $SAMPLE analyst@analysis-vm:/tmp/
+ssh analyst@analysis-vm '
+  sudo tcpdump -i any -w /tmp/capture.pcap -s 0 not port 22 &
+  sudo inotifywait -m -r /tmp /etc /home --format "%T %e %w%f" --timefmt "%Y-%m-%dT%H:%M:%S" > /tmp/fs.log &
+  strace -f -e trace=all -o /tmp/strace.log /tmp/suspicious.bin &
+  sleep 60; kill %1 %2 %3
+'
+scp analyst@analysis-vm:/tmp/{capture.pcap,fs.log,strace.log} /var/log/forensics/
+zeek -r /var/log/forensics/capture.pcap
+```
+
+#### Phase C — 분류 + IOC + 룰 (s9·s10·s11·s13)
+
+```bash
+python3 /tmp/classify-malware.py
+strings $SAMPLE | grep -oE "https?://[a-zA-Z0-9.-]+" | sort -u > /tmp/ioc-urls.txt
+strings $SAMPLE | grep -oE "\b[0-9]{1,3}(\.[0-9]{1,3}){3}\b" | sort -u > /tmp/ioc-ips.txt
+
+yara -wr /tmp/yara-malware.yar /var/www/
+ssh ccc@10.20.30.1 'sudo cp /tmp/local.rules /etc/suricata/rules/ && sudo suricatasc -c reload-rules'
+ssh ccc@10.20.30.100 'sudo cp /tmp/cdb_*.list /var/ossec/etc/lists/ && sudo /var/ossec/bin/wazuh-control restart'
+
+cuckoo submit /tmp/samples/suspicious.bin
+```
+
+#### Phase D — 통합 시나리오 (s99 multi_task)
+
+s1 → s2 → s3 → s4 → s5 를 Bastion 가 한 번에:
+
+1. **plan**: 4단계 방법론 → 정적 (file/hash/strings) → 패킹 entropy → 격리 VM 구성 → strace 실행
+2. **execute**: file + sha256 + strings + readelf + python entropy + DIE + KVM + strace
+3. **synthesize**: 5 산출물 (methodology.md / static.json / packing.txt / vm-config.xml / strace.log)
+
+### 도구 비교표 — 악성코드 분석 단계별
+
+| 단계 | 1순위 | 2순위 | 사용 조건 |
+|------|-------|-------|----------|
+| 자동 분석 | VirusTotal + Cortex | Falcon Sandbox / Hybrid | API |
+| 정적 file | file + binwalk | DIE | magic |
+| 정적 string | strings + grep | FLOSS (decoded) | 정밀 |
+| 정적 PE | pefile (Python) | PEStudio | depth |
+| 정적 ELF | readelf + objdump | Ghidra | RE |
+| 패킹 탐지 | DIE + 엔트로피 | YARA packer | depth |
+| Unpacking | upx -d / unipacker | manual w/ x86dbg | tool 별 |
+| 격리 환경 | KVM + INetSim | VirtualBox + REMnux | OSS |
+| Syscall | strace | sysdig + bpftrace | depth |
+| 라이브러리 | ltrace | API Monitor (Win) | depth |
+| 네트워크 | tshark + Zeek | mitmproxy | depth |
+| FS 변경 | inotifywait + auditd | osquery diff | 자동 |
+| Anti-analysis | pafish + manual | al-khaser (Win) | 검증 |
+| 분류 | YARA tag + 휴리스틱 | manual analyst | 자동 |
+| Sandbox 자동 | Cuckoo / CAPE | DRAKVUF | depth |
+| RE | Ghidra | radare2 / IDA Free | OSS |
+| SOC 통합 | TheHive + Cortex + MISP | Splunk SOAR | OSS |
+
+### 도구 선택 매트릭스 — 시나리오별 권장
+
+| 시나리오 | 우선 도구 | 이유 |
+|---------|---------|------|
+| "처음 sample" | VirusTotal + file + strings + Cuckoo | 자동 + 분류 |
+| "실시간 격리 분석" | KVM + INetSim + strace + tshark | 격리 |
+| "패킹/난독화" | DIE + unipacker + Ghidra | unpack 후 RE |
+| "fileless / 메모리만" | Volatility (week08) | 메모리 |
+| "리눅스 ELF" | readelf + objdump + Ghidra | OSS |
+| "Windows PE" | pefile + Cuckoo + Ghidra | OSS |
+| "안티 분석 강력" | DRAKVUF (hypervisor) | 회피 |
+| "regulator 보고" | SANS FOR610 양식 + ATT&CK | 정형 |
+| "팀 협업" | TheHive + Cortex + MISP | 워크플로우 |
+
+### 학생 셀프 체크리스트 (각 step 완료 기준)
+
+- [ ] s1: 4 단계 방법론 표 (목적/도구/시간/escalation)
+- [ ] s2: file + md5 + sha256 + ssdeep + strings + readelf 또는 pefile
+- [ ] s3: total + 1KB 블록 엔트로피 + DIE + YARA packer
+- [ ] s4: KVM + INetSim 구성 + 8 안전 수칙
+- [ ] s5: strace + ltrace + sysdig 또는 bpftrace
+- [ ] s6: tcpdump + tshark + Zeek + 비콘 간격
+- [ ] s7: inotifywait + 5 persistence 카테고리
+- [ ] s8: pafish 결과 + VM hide + 시간 가속 + ptrace 우회
+- [ ] s9: 8 카테고리 분류 휴리스틱 + Top 3
+- [ ] s10: Network/Host/Behavior IOC + STIX 2.1 변환
+- [ ] s11: YARA + Suricata + SIGMA 3 형식 룰
+- [ ] s12: SANS FOR610 양식 보고서 (9 섹션)
+- [ ] s13: Cuckoo 또는 CAPE 제출 + 보고서 분석
+- [ ] s14: SOC 10 단계 워크플로우 + TheHive/Cortex/MISP
+- [ ] s15: 종합 보고서 + ATT&CK 매핑 + IOC 배포
+- [ ] s99: Bastion 가 5 작업 (방법론/정적/패킹/환경/strace) 순차
+
+### 추가 참조 자료
+
+- **SANS FOR610** Reverse-Engineering Malware (Lenny Zeltser)
+- **Practical Malware Analysis** Sikorski & Honig (No Starch 2012)
+- **Cuckoo Sandbox** https://cuckoosandbox.org/
+- **CAPE Sandbox** https://github.com/kevoreilly/CAPEv2
+- **REMnux** https://remnux.org/
+- **Detect It Easy** https://github.com/horsicq/Detect-It-Easy
+- **unipacker** https://github.com/unipacker/unipacker
+- **pafish** https://github.com/a0rtega/pafish
+- **DRAKVUF** https://drakvuf.com/
+- **Ghidra** https://ghidra-sre.org/
+- **radare2** https://rada.re/
+- **VirusTotal** https://www.virustotal.com/
+- **Hybrid Analysis** https://www.hybrid-analysis.com/
+- **Malpedia** https://malpedia.caad.fkie.fraunhofer.de/
+
+위 모든 악성코드 분석은 **격리 환경 + 자기 권한 sample 만** 으로 수행한다. 외부 sample 수집 시
+저작권 / 법적 검토 필수. 분석 host 의 외부 통신 차단 (INetSim 으로 가짜 응답). 메모리 dump /
+PCAP 은 자격증명 / PII 포함 가능 — read-only encrypted volume + 7년 retention. **랜섬웨어
+sample 다룰 때 절대 운영 host 에서 실행 금지** — VM 스냅샷 복원 필수.

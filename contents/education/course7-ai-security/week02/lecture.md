@@ -546,3 +546,195 @@ LLM 을 보안에 도입할 때 가장 먼저 검증해야 할 것은 — *"이 
 
 **학생 액션**: lab 의 Ollama 에 gemma3:4b 를 배포하고, dataset 에서 임의로 100건의 신호를 골라 *"이것이 정상이면 0, 이상이면 1 로만 답하라"* 의 prompt 로 분류 시킨다. LLM 답변과 dataset 의 label_binary 의 일치율을 측정하여 — *baseline 정확도* 를 산출. 결과를 *"우리 환경에 이 모델을 그대로 적용할 수 있는가"* 한 줄로 결론.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course7 AI Security — Week 02 프롬프트 엔지니어링/보안)
+
+### 프롬프트 엔지니어링 OSS 도구
+
+| 영역 | OSS 도구 |
+|------|---------|
+| 프롬프트 관리 | **LangChain** (PromptTemplate) / Promptflow / LMQL |
+| 자동 평가 | **promptfoo** / OpenAI Evals / DeepEval / lm-eval-harness |
+| Few-shot 자동 생성 | DSPy (Stanford) / LangChain |
+| Chain / Agent | **LangGraph** / AutoGen / CrewAI |
+| Prompt versioning | LangSmith (commercial) / Langfuse (OSS) / GitOps |
+| Comparison UI | Open WebUI / promptfoo web | 
+
+### 핵심 — promptfoo (프롬프트 자동 평가)
+
+```bash
+npm install -g promptfoo
+
+# 프롬프트 비교 실험
+cat > promptfooconfig.yaml << 'EOF'
+prompts:
+  - "Translate to Korean: {{text}}"
+  - "Translate to Korean (formal): {{text}}"
+  - file://prompt-with-context.txt
+
+providers:
+  - id: ollama:gemma3:4b
+  - id: ollama:llama3:8b
+
+tests:
+  - vars: {text: "Hello world"}
+    assert:
+      - type: contains
+        value: "안녕"
+      - type: latency
+        threshold: 5000
+  - vars: {text: "How are you?"}
+    assert:
+      - type: similar
+        value: "어떻게 지내?"
+        threshold: 0.7
+EOF
+
+promptfoo eval                                                    # 모든 prompt × provider
+promptfoo view                                                    # web UI 결과
+```
+
+### 학생 환경 준비
+
+```bash
+source ~/.venv-llm/bin/activate
+
+pip install langchain langchain-community langchain-ollama \
+  langgraph dspy-ai \
+  langfuse promptfoo
+
+# promptfoo (Node)
+sudo apt install -y nodejs npm
+npm install -g promptfoo
+
+# DeepEval
+pip install deepeval
+
+# lm-eval-harness (EleutherAI)
+pip install lm-eval
+```
+
+### 핵심 사용법
+
+```bash
+# 1) LangChain — 프롬프트 템플릿
+python3 << 'EOF'
+from langchain.prompts import ChatPromptTemplate
+from langchain_ollama import OllamaLLM
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "You are a {role} that always responds in {language}."),
+    ("user", "{question}")
+])
+
+llm = OllamaLLM(model="gemma3:4b")
+chain = prompt | llm
+
+print(chain.invoke({
+    "role": "security analyst",
+    "language": "Korean",
+    "question": "SQLi 가 뭐야?"
+}))
+EOF
+
+# 2) DSPy — 프롬프트 자동 최적화
+python3 << 'EOF'
+import dspy
+ollama = dspy.OllamaLocal(model="gemma3:4b")
+dspy.settings.configure(lm=ollama)
+
+class BasicQA(dspy.Signature):
+    """Answer questions concisely."""
+    question = dspy.InputField()
+    answer = dspy.OutputField(desc="2-3 sentences")
+
+qa = dspy.Predict(BasicQA)
+print(qa(question="What is XSS?").answer)
+EOF
+
+# 3) LangGraph — 상태 그래프 기반 chain
+python3 << 'EOF'
+from langgraph.graph import StateGraph, START, END
+from langchain_ollama import OllamaLLM
+from typing import TypedDict
+
+class State(TypedDict):
+    question: str
+    answer: str
+
+def think(state):
+    llm = OllamaLLM(model="gemma3:4b")
+    return {"answer": llm.invoke(f"Step by step: {state['question']}")}
+
+g = StateGraph(State)
+g.add_node("think", think)
+g.add_edge(START, "think")
+g.add_edge("think", END)
+app = g.compile()
+
+print(app.invoke({"question": "1+1"}))
+EOF
+
+# 4) Langfuse (Prompt versioning + monitoring)
+docker run -d -p 3000:3000 \
+  -e DATABASE_URL=postgresql://... \
+  -e SALT=secret \
+  langfuse/langfuse:latest
+
+# Python:
+# from langfuse import Langfuse
+# langfuse = Langfuse()
+# 모든 prompt/response 자동 기록 → Langfuse UI 에서 검색
+
+# 5) DeepEval — 프롬프트 정량 평가
+python3 << 'EOF'
+from deepeval.test_case import LLMTestCase
+from deepeval.metrics import AnswerRelevancyMetric
+
+test = LLMTestCase(
+  input="What is XSS?",
+  actual_output="XSS is cross-site scripting...",
+  expected_output="XSS allows attackers to inject scripts"
+)
+
+metric = AnswerRelevancyMetric(threshold=0.7, model="gpt-4")
+metric.measure(test)
+print(metric.score, metric.reason)
+EOF
+```
+
+### 프롬프트 보안 점검 흐름
+
+```bash
+# Phase 1: 프롬프트 인벤토리
+# 모든 system prompt 를 git 에 versioning
+git log /repo/prompts/ --oneline
+
+# Phase 2: 자동 평가 (promptfoo)
+promptfoo eval --config /repo/prompts/test.yaml
+# 정확성, 일관성, 안전성 자동 점수
+
+# Phase 3: 보안 테스트 (week03 prompt injection 과 연결)
+promptfoo eval --config /repo/prompts/redteam.yaml
+# Jailbreak 시도 → 모델 응답 검증
+
+# Phase 4: 모니터링 (Langfuse)
+# 모든 production 호출 자동 기록 → 이상 패턴 감지
+
+# Phase 5: A/B 테스트
+# 프롬프트 v1 vs v2 → metric 비교 → 우수한 것 채택
+```
+
+### 프롬프트 보안 패턴
+
+| 패턴 | 설명 | 예시 |
+|------|------|------|
+| Role | 모델 역할 고정 | "You are a security analyst" |
+| Context isolation | 사용자 입력 분리 | XML/JSON 태그 사용 |
+| Output structure | 형식 강제 | "Respond in JSON: {...}" |
+| Refusal | 위험 요청 거부 | "If asked X, respond 'unable'" |
+| Citation | 근거 강제 | "Cite source for each claim" |
+
+학생은 본 2주차에서 **promptfoo + LangChain + DSPy + Langfuse + DeepEval** 5 도구로 프롬프트 엔지니어링 4 단계 (작성 → 자동 평가 → 모니터링 → 최적화) 사이클을 익힌다.

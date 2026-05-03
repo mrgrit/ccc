@@ -664,3 +664,254 @@ graph LR
 
 **학생 액션**: Sigma 룰 5개 dataset 적용.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course12 — Week 13 퍼플팀)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | Atomic Red Team | atomic-red-team + invoke |
+| s2 | CALDERA | CALDERA |
+| s3 | Wazuh ATT&CK 매핑 | Wazuh rule.mitre.id |
+| s4 | DeTT&CT coverage | DeTT&CT |
+| s5 | Sigma rule 추가 | Sigma + chainsaw |
+| s6 | Detection metrics | Prometheus + Grafana |
+| s7 | Continuous purple | cron + bash |
+| s8 | Report 자동 생성 | pandoc + Mermaid |
+
+### Purple Team Cycle 표준
+
+```bash
+#!/bin/bash
+# /usr/local/bin/purple-cycle.sh
+# Purple team 자동 사이클 (분기별 또는 요청 시)
+
+DATE=$(date +%Y%m%d)
+DIR=/var/log/purple/$DATE
+mkdir -p $DIR
+
+# === Phase 1: Pre-test (현재 detection coverage 측정) ===
+echo "=== Phase 1: Coverage measurement ==="
+
+# Wazuh 의 ATT&CK 매핑된 룰 추출
+sudo grep -r "mitre" /var/ossec/etc/rules/*.xml | \
+    grep -oP 'T\d+\.\d+|T\d+' | sort -u > $DIR/01-wazuh-mitre-rules.txt
+
+# DeTT&CT coverage report
+python3 ~/dettect/dettect.py de \
+    -ft /opt/techniques.yaml \
+    --output-filename $DIR/02-pre-coverage.json
+
+PRE_COVERAGE=$(jq '[.techniques[] | select(.score >= 2)] | length' $DIR/02-pre-coverage.json)
+echo "Pre-test coverage: $PRE_COVERAGE techniques"
+
+# === Phase 2: Atomic Red Team 시뮬 (다단계) ===
+echo "=== Phase 2: Atomic simulations ==="
+
+ATOMIC_TESTS=(
+    "T1078.001"     # Default Accounts
+    "T1078.003"     # Local Accounts
+    "T1059.001"     # PowerShell
+    "T1059.003"     # Windows Cmd Shell
+    "T1059.004"     # Bash
+    "T1110.001"     # Password Guessing
+    "T1003.001"     # LSASS Memory
+    "T1003.008"     # /etc/passwd /etc/shadow
+    "T1547.001"     # Boot or Logon Autostart
+    "T1021.001"     # Remote Desktop Protocol
+    "T1021.004"     # SSH
+    "T1041"         # Exfil Over C2
+    "T1027"         # Obfuscated Files
+    "T1070.004"     # File Deletion
+)
+
+for t in "${ATOMIC_TESTS[@]}"; do
+    echo "Running $t..."
+    sudo invoke run-atomic-test $t > /dev/null 2>&1
+    sleep 30                                              # 탐지 시간 확보
+done
+
+echo "Tests completed: ${#ATOMIC_TESTS[@]} techniques"
+
+# === Phase 3: CALDERA APT 시뮬 (1시간) ===
+echo "=== Phase 3: CALDERA APT29 simulation ==="
+
+OPERATION_ID=$(curl -X POST http://localhost:8888/api/v2/operations \
+    -H "KEY: ADMIN123" \
+    -d '{
+        "name": "Purple-'$DATE'",
+        "adversary": {"adversary_id": "0f4c3c67-845e-49a0-927e-90ed33c044e0"},
+        "group": "linux",
+        "planner": {"planner_id": "atomic"},
+        "auto_close": false
+    }' | jq -r .id)
+
+echo "Operation started: $OPERATION_ID"
+sleep 3600                                                # 1시간 실행
+
+# === Phase 4: Detection 측정 ===
+echo "=== Phase 4: Detection measurement ==="
+
+# CALDERA 가 실행한 ATT&CK technique 목록
+EXECUTED=$(curl http://localhost:8888/api/v2/operations/$OPERATION_ID -H "KEY: ADMIN123" | \
+    jq -r '.completed_tasks[].technique.technique_id' | sort -u)
+echo "$EXECUTED" > $DIR/03-executed.txt
+
+# Wazuh 가 탐지한 ATT&CK
+DETECTED=$(sudo jq -r 'select(.rule.mitre.id) | .rule.mitre.id' \
+    /var/ossec/logs/alerts/alerts.json | sort -u)
+echo "$DETECTED" > $DIR/04-detected.txt
+
+# Gap (executed but not detected)
+GAP=$(comm -23 <(echo "$EXECUTED" | sort) <(echo "$DETECTED" | sort))
+echo "$GAP" > $DIR/05-gap.txt
+
+GAP_COUNT=$(echo "$GAP" | wc -l)
+EXECUTED_COUNT=$(echo "$EXECUTED" | wc -l)
+DETECTION_RATE=$(echo "scale=1; ($EXECUTED_COUNT - $GAP_COUNT) / $EXECUTED_COUNT * 100" | bc)
+echo "Detection rate: $DETECTION_RATE%"
+
+# === Phase 5: Sigma rule 추가 (gap 항목) ===
+echo "=== Phase 5: Adding Sigma rules ==="
+
+ADDED_RULES=0
+for tech in $GAP; do
+    # SigmaHQ catalog 에서 해당 technique rule 찾기
+    rules_for_tech=$(grep -rl "$tech" ~/sigma/rules/ | head -3)
+    
+    for rule_file in $rules_for_tech; do
+        echo "  Adding rule for $tech: $(basename $rule_file)"
+        sigma convert -t opensearch "$rule_file" >> $DIR/06-new-wazuh-rules.json 2>/dev/null
+        sigma convert -t suricata "$rule_file" >> $DIR/07-new-suricata-rules.txt 2>/dev/null
+        ADDED_RULES=$((ADDED_RULES + 1))
+    done
+done
+
+echo "Added $ADDED_RULES new rules"
+
+# Wazuh / Suricata 에 자동 배포
+sudo cp $DIR/07-new-suricata-rules.txt /etc/suricata/rules/sigma-purple.rules
+sudo systemctl reload suricata
+sudo /var/ossec/bin/wazuh-control restart
+
+# === Phase 6: Re-test (1시간 대기 후 재시뮬) ===
+echo "=== Phase 6: Re-test ==="
+
+# 동일 Atomic 재실행
+for t in "${ATOMIC_TESTS[@]}"; do
+    sudo invoke run-atomic-test $t > /dev/null 2>&1
+    sleep 30
+done
+
+# Re-detection 측정
+RE_DETECTED=$(sudo jq -r 'select(.rule.mitre.id) | .rule.mitre.id' \
+    /var/ossec/logs/alerts/alerts.json | sort -u)
+RE_GAP=$(comm -23 <(echo "$EXECUTED" | sort) <(echo "$RE_DETECTED" | sort))
+RE_GAP_COUNT=$(echo "$RE_GAP" | wc -l)
+RE_DETECTION_RATE=$(echo "scale=1; ($EXECUTED_COUNT - $RE_GAP_COUNT) / $EXECUTED_COUNT * 100" | bc)
+echo "Post-fix detection rate: $RE_DETECTION_RATE%"
+
+IMPROVEMENT=$(echo "scale=1; $RE_DETECTION_RATE - $DETECTION_RATE" | bc)
+echo "Improvement: +$IMPROVEMENT%"
+
+# === Phase 7: Coverage report (DeTT&CT) ===
+echo "=== Phase 7: Final coverage ==="
+
+python3 ~/dettect/dettect.py de \
+    -ft /opt/techniques.yaml \
+    --output-filename $DIR/08-post-coverage.json
+
+POST_COVERAGE=$(jq '[.techniques[] | select(.score >= 2)] | length' $DIR/08-post-coverage.json)
+
+# === Phase 8: Mermaid 다이어그램 + 보고서 ===
+echo "=== Phase 8: Report generation ==="
+
+cat > $DIR/00-purple-report.md << EOF
+# Purple Team Cycle Report — $DATE
+
+## Executive Summary
+
+- **시뮬레이션 기간**: $(date '+%Y-%m-%d %H:%M') 부터 (2시간)
+- **실행된 ATT&CK Techniques**: $EXECUTED_COUNT
+- **Pre-test 탐지율**: ${DETECTION_RATE}%
+- **Post-fix 탐지율**: ${RE_DETECTION_RATE}%
+- **개선**: +${IMPROVEMENT}%
+- **새 Sigma rules 추가**: $ADDED_RULES
+- **Coverage 변화**: $PRE_COVERAGE → $POST_COVERAGE techniques
+
+## ATT&CK 매핑 (Heat Map)
+
+\`\`\`mermaid
+graph LR
+$(for t in $EXECUTED; do
+    if echo "$RE_DETECTED" | grep -q "$t"; then
+        echo "    $t[$t<br/>Detected]:::detected"
+    else
+        echo "    $t[$t<br/>NOT Detected]:::missed"
+    fi
+done)
+    classDef detected fill:#9f9
+    classDef missed fill:#f99
+\`\`\`
+
+## 새 Sigma Rules (Gap 보강)
+
+| Technique | Rule | SIEM |
+|-----------|------|------|
+$(while read tech; do
+    rule_count=$(grep -c "$tech" $DIR/06-new-wazuh-rules.json 2>/dev/null || echo 0)
+    if [ "$rule_count" -gt 0 ]; then
+        echo "| $tech | $rule_count rules added | Wazuh + Suricata |"
+    fi
+done < $DIR/05-gap.txt)
+
+## 권고
+
+1. **분기별 Purple cycle** — 자동 cron
+2. **Atomic + CALDERA 매월** — gap 식별
+3. **Sigma catalog 정기 update** — 매주 \`git pull\`
+4. **DeTT&CT coverage 목표 90%+** — 현재 $POST_COVERAGE / 200
+
+## 참조
+
+- Detected ATT&CK: $DIR/04-detected.txt
+- Executed ATT&CK: $DIR/03-executed.txt
+- Gap: $DIR/05-gap.txt
+- New rules: $DIR/06-new-wazuh-rules.json + $DIR/07-new-suricata-rules.txt
+EOF
+
+# Mermaid → PNG
+mmdc -i $DIR/00-purple-report.md -o $DIR/00-purple-report-with-img.md 2>/dev/null
+
+# PDF 변환 (한글)
+pandoc $DIR/00-purple-report-with-img.md \
+    -o $DIR/purple-report-$DATE.pdf \
+    --pdf-engine=xelatex \
+    -V mainfont=NanumGothic \
+    --toc
+
+echo "=== 완료 — $DIR/purple-report-$DATE.pdf ==="
+```
+
+### 분기별 Continuous Purple 자동화
+
+```bash
+# /etc/cron.d/purple-team
+# 매 분기 첫 월요일 새벽 3시
+0 3 1 1,4,7,10 * /usr/local/bin/purple-cycle.sh
+```
+
+### Purple Team Maturity Model
+
+| Level | 설명 |
+|-------|------|
+| 1. Reactive | 사고 발생 후만 룰 추가 |
+| 2. Periodic | 분기별 수동 시뮬 + 검토 |
+| 3. Continuous | 매월 자동 cycle |
+| 4. Adaptive | 매주 자동 + ML based gap detection |
+| 5. AI-Augmented | LLM 자동 hypothesis + 자동 rule 작성 |
+
+학생은 본 13주차에서 **Atomic Red Team + CALDERA + DeTT&CT + Sigma + chainsaw + Wazuh ATT&CK 매핑 + cron 자동화** 통합으로 Purple Team cycle 의 5 단계 maturity model 을 OSS 만으로 구현한다.

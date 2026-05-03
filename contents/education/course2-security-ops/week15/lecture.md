@@ -825,3 +825,79 @@ dataset 의 4-layer 익명화 (regex + format + NER + Claude review) 가 *학생
 - 단순 5솔루션 setup 만 (통합 미흡, dataset 비교 없음) = 70점 이하
 
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course2 SecOps — Week 15 종합 인프라 구축)
+
+본 15주차는 **빈 VM 에서 시작해 5 layer 보안 인프라를 처음부터 구축** 하는 종합 평가.
+
+### 구축 순서 (한 사이클)
+
+```bash
+# 1. 방화벽 layer (secu VM)
+ssh ccc@10.20.30.1
+sudo apt install -y nftables fail2ban crowdsec
+sudo nft -f /etc/nftables.conf                                      # 룰 적용
+sudo systemctl enable --now nftables fail2ban crowdsec
+
+# 2. IPS layer (secu VM)
+sudo apt install -y suricata suricata-update
+sudo suricata-update
+sudo systemctl enable --now suricata
+
+# 3. WAF layer (web VM)
+ssh ccc@10.20.30.80
+sudo apt install -y libapache2-mod-security2 modsecurity-crs
+sudo a2enmod security2 headers
+sudo systemctl restart apache2
+
+# 4. SIEM layer (siem VM)
+ssh ccc@10.20.30.100
+# Wazuh 설치 (이미)
+systemctl status wazuh-manager wazuh-indexer wazuh-dashboard
+
+# 4-1. Endpoint agent 설치 (모든 VM)
+for vm in secu web siem; do
+  ssh ccc@$vm "sudo apt install -y wazuh-agent && sudo systemctl enable --now wazuh-agent"
+done
+
+# 5. CTI layer (siem VM)
+systemctl status opencti
+pip3 install pycti
+
+# 6. Sigma 통합
+pip3 install pysigma pysigma-backend-elasticsearch
+
+# 7. 통합 검증 (헬스체크 한방)
+./health_check.sh                                                   # 자체 작성
+```
+
+### 평가용 시나리오 (학생이 도구로 수행)
+
+```bash
+# Test 1: 공격자 IP 로부터 시도
+curl -A "Nikto/2.1.5" http://10.20.30.80/                            # WAF 차단
+# → ModSec 차단, Wazuh 에 alert, OpenCTI 에 IP 등록
+
+# Test 2: SSH brute
+hydra -l root -P /usr/share/wordlists/rockyou.txt 10.20.30.80 ssh
+# → fail2ban 차단, Suricata alert, Wazuh rule 100100, OpenCTI 자동 enrichment
+
+# Test 3: 통합 보고
+sudo /var/ossec/bin/agent_control -l                                # 모든 에이전트 status
+sudo jq '.alert.signature' /var/log/suricata/eve.json | sort | uniq -c | sort -rn | head
+python3 -c "from pycti import OpenCTIApiClient; ..."
+```
+
+### 평가 도구 사용 비율 (참고)
+
+| Phase | 도구 |
+|-------|------|
+| 30% | nftables + Suricata + ModSec (구축) |
+| 30% | Wazuh agent + manager (수집·룰) |
+| 20% | OpenCTI (인텔리전스) |
+| 10% | Sigma + python (자동화) |
+| 10% | 통합 dashboard + 보고 |
+
+학생은 본 15주차 종합 평가에서 **5 layer × OSS 도구 표준** 의 인프라 구축·운영·자동화·보고를 실시간으로 수행한다.

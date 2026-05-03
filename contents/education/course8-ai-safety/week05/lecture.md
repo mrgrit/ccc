@@ -589,3 +589,116 @@ dataset 의 모든 신호는 *이미 sanitize* 되어 있어 — IP, hostname, u
 
 **학생 액션**: lab 환경에 입력 가드레일 (prompt injection 검사) + 출력 가드레일 (PII 검사) 을 LLM 호출 전후에 추가. dataset 의 임의 100 신호를 처리하면서 — *각 가드레일이 차단한 신호 수 / 통과한 신호 수* 를 측정. 결과를 *"가드레일이 우리 환경에서 의미 있는 차단을 수행하는가"* 평가.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course8 AI Safety — Week 05 연합학습 보안)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | FL baseline | **Flower** (FL framework) |
+| s2 | Byzantine 공격 | Flower + custom attacker client |
+| s3 | Krum aggregation 방어 | Flower CustomStrategy |
+| s4 | Backdoor in FL | TrojAI on FL |
+| s5 | Membership Inference | ml-privacy-meter + Flower |
+| s6 | DP-SGD 통합 | **opacus** + Flower |
+| s7 | Secure Aggregation | **crypten** (Meta) |
+| s8 | 통합 평가 | Flower + opacus + crypten |
+
+### 학생 환경 준비
+
+```bash
+pip install flwr opacus crypten
+pip install flwr-datasets[vision]                  # 이미지 데이터셋
+
+# FL 시뮬 - 한 머신에서 여러 client + server
+```
+
+### 핵심 — Flower (FL 표준)
+
+```python
+# 1) 서버 (aggregation logic)
+import flwr as fl
+from flwr.server.strategy import FedAvg
+
+class SafeStrategy(FedAvg):
+    """Krum aggregation - Byzantine-robust"""
+    def aggregate_fit(self, rnd, results, failures):
+        # 일반 FedAvg 대신 Krum: 가장 가까운 N-f client 만 선택
+        weights = [r.parameters for _, r in results]
+        # ... krum 알고리즘 ...
+        return krum_weights, {}
+
+strategy = SafeStrategy(min_fit_clients=10, min_available_clients=10)
+fl.server.start_server(server_address="0.0.0.0:8080", strategy=strategy, config=fl.server.ServerConfig(num_rounds=20))
+
+# 2) 정상 클라이언트
+class NormalClient(fl.client.NumPyClient):
+    def fit(self, parameters, config):
+        train(model, loader)
+        return get_weights(model), len(loader.dataset), {}
+    def evaluate(self, parameters, config):
+        return loss, len(test_loader.dataset), {"accuracy": acc}
+
+# 3) Byzantine 클라이언트 (악성)
+class ByzantineClient(fl.client.NumPyClient):
+    def fit(self, parameters, config):
+        # 가짜 weight 보냄 (negate)
+        return [-w for w in parameters], 100, {}
+
+# 시작
+# Terminal 1: server
+# Terminal 2-11: 정상 client 9개
+# Terminal 12: byzantine 1개
+# Krum 이 byzantine 자동 제외
+```
+
+### DP-SGD + FL 통합 (opacus + Flower)
+
+```python
+import flwr as fl
+from opacus import PrivacyEngine
+
+class DPClient(fl.client.NumPyClient):
+    def fit(self, parameters, config):
+        engine = PrivacyEngine()
+        model, opt, loader = engine.make_private_with_epsilon(
+            module=model, optimizer=optimizer, data_loader=train_loader,
+            epochs=1, target_epsilon=1.0, target_delta=1e-5,
+            max_grad_norm=1.0
+        )
+        train(model, loader)
+        return get_weights(model), len(loader.dataset), {
+            "epsilon": engine.get_epsilon(delta=1e-5)
+        }
+```
+
+### Secure Aggregation (crypten)
+
+```python
+import crypten
+import crypten.communicator as comm
+
+crypten.init()
+
+# 각 client 의 weight 를 암호화 → server 가 복호화 불가
+# 단지 합산 결과만 가능
+encrypted_w = crypten.cryptensor(local_weights)
+sum_w = comm.get().reduce(encrypted_w, op=comm.ReduceOp.SUM)
+avg_w = sum_w / num_clients
+plain_avg = avg_w.get_plain_text()                 # 합산 결과만 plaintext
+```
+
+### FL 위협 매트릭스
+
+| 위협 | 방어 도구 |
+|------|---------|
+| Byzantine (악성 weight) | Krum / Bulyan / Median |
+| Backdoor 주입 | Foolsgold / DP |
+| Privacy leak (gradient) | DP-SGD (opacus) |
+| Model 추출 | Secure Aggregation (crypten) |
+| Sybil 공격 | client authentication |
+
+학생은 본 5주차에서 **Flower + opacus + crypten + Foolsgold** 4 도구로 FL 의 5 위협 통합 방어를 익힌다.

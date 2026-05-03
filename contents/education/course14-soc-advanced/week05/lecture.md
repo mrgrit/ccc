@@ -1132,3 +1132,685 @@ graph LR
 
 **학생 액션**: GitHub PR 룰 v2.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course14 SOC Advanced — Week 05 위협 인텔리전스·STIX·MISP·OpenCTI)
+
+> 이 부록은 lab `soc-adv-ai/week05.yaml` (15 step + multi_task) 의 모든 명령을
+> 실제로 실행 가능한 형태로 도구·옵션·예상 출력·해석을 정리한다. STIX 2.1 spec,
+> 4계층 (Strategic/Operational/Tactical/Technical), 공개 피드 (OTX/AbuseIPDB/
+> URLhaus), MISP/OpenCTI 플랫폼, IOC enrichment, TLP 공유 정책, KPI 까지 풀 워크플로우.
+
+### lab step → 도구·TI 매핑 표
+
+| step | 학습 항목 | 핵심 OSS 도구 / 명령 | TI 계층 |
+|------|----------|---------------------|---------|
+| s1 | TI 4계층 (Strategic/Operational/Tactical/Technical) | 표 + 사례 매트릭스 | 모두 |
+| s2 | STIX 2.1 SDO 18종 + SRO 관계 | stix2 (python), oasis-open spec | Tactical |
+| s3 | STIX Indicator 작성 (IP/Hash/Domain) | python stix2 + pattern syntax | Tactical |
+| s4 | 공개 TI 피드 수집 (OTX/AbuseIPDB/URLhaus) | curl + jq + API tokens | Operational |
+| s5 | IOC → Suricata 룰 변환 | suricata + iprep + custom .rules | Technical |
+| s6 | IOC → Wazuh CDB 등록 | wazuh CDB list + rule | Technical |
+| s7 | IOC 품질 평가 (confidence/severity/TTL) | spreadsheet + scoring framework | Operational |
+| s8 | Diamond Model 분석 | mermaid + TIBER-EU template | Tactical |
+| s9 | TI 자동 수집 파이프라인 | cron + python + 정규화 + Wazuh sync | Operational |
+| s10 | 위협 행위자 프로파일 (APT) | STIX threat-actor + intrusion-set | Strategic |
+| s11 | IOC enrichment (Whois/GeoIP/VT) | whois + geoip2 + VT API + opencti | Operational |
+| s12 | TLP 기반 공유 정책 | RFC 2350 + TLP 4 색상 + sharing policy | Strategic |
+| s13 | TI KPI 정의 (활용률/매칭률/MTTM/적용시간) | dashboard + metric 표 | Strategic |
+| s14 | MISP 플랫폼 구축 계획 | misp-docker + 피드 연동 + sharing groups | Operational |
+| s15 | TI 종합 보고서 | markdown + STIX export + Diamond + 로드맵 | 모두 |
+| s99 | 통합 다단계 (s1→s2→s3→s4→s5) | Bastion plan: 4계층→STIX→Indicator→피드→Suricata | 다중 |
+
+### 학생 환경 준비 (TI 풀 스택)
+
+```bash
+# === [s2·s3] STIX 2.1 ===
+pip install --user stix2 stix2-elevator stix2-validator
+python3 -c "import stix2; print(stix2.__version__)"
+
+# === [s4·s9·s11] TI 피드 수집 ===
+sudo apt install -y curl jq
+export OTX_API_KEY="your_key"
+export ABUSEIPDB_KEY="your_key"
+export VT_API_KEY="your_key"
+
+# === [s10·s11·s14] MISP / OpenCTI ===
+curl -s http://10.20.30.100:8080/health   # OpenCTI 이미 운영 중
+pip install --user pycti pymisp
+
+# === [s8·s10] Diagram ===
+sudo apt install -y graphviz
+npm install -g @mermaid-js/mermaid-cli
+git clone https://github.com/mitre-attack/attack-navigator /tmp/nav 2>/dev/null
+
+# === [s11] enrichment ===
+sudo apt install -y whois geoip-bin
+pip install --user geoip2 requests-cache
+
+# === [s9] 자동화 ===
+sudo apt install -y cron
+pip install --user feedparser
+```
+
+### 핵심 도구별 상세 사용법
+
+#### 도구 1: TI 4계층 매트릭스 (Step 1)
+
+| 계층 | 소비자 | 데이터 유형 | 시간 범위 | 갱신 주기 | 활용처 |
+|------|--------|------------|-----------|-----------|--------|
+| Strategic | C-Suite, BoD | 트렌드 보고서 | 분기-연간 | 분기 | 예산/투자/위험관리 |
+| Operational | SOC 관리자 | 캠페인, 행위자, TTP | 주-월 | 주 | 사전 룰 작성/IR 절차 |
+| Tactical | Tier 2/3 분석가 | TTP, 공격 도구 | 일-주 | 일 | hunting, 룰 튜닝 |
+| Technical | Tier 1 분석가 | IOC (IP/Hash/URL) | 분-일 | 실시간 | 자동 차단/알림 |
+
+#### 도구 2: STIX 2.1 SDO 18종 + SRO (Step 2·3)
+
+```python
+import stix2
+
+# === 18 SDO 핵심 ===
+ind = stix2.Indicator(
+    pattern_type="stix",
+    pattern="[ipv4-addr:value = '192.168.1.50']",
+    valid_from="2026-05-02T00:00:00Z",
+    name="Malicious IP — known C2",
+    indicator_types=["malicious-activity"],
+    confidence=80,
+)
+
+malware = stix2.Malware(name="LockBit 3.0", is_family=True,
+                       malware_types=["ransomware"])
+
+actor = stix2.ThreatActor(
+    name="APT28", aliases=["Fancy Bear", "Sofacy"],
+    threat_actor_types=["nation-state"],
+    sophistication="advanced",
+)
+
+intset = stix2.IntrusionSet(name="APT28 Operations 2026-Q2",
+                            aliases=["Sofacy_2026Q2"])
+
+camp = stix2.Campaign(name="2026 Olympic Phishing",
+                      first_seen="2026-04-01T00:00:00Z",
+                      objective="Credential theft")
+
+pattern = stix2.AttackPattern(
+    name="Spearphishing Attachment",
+    external_references=[stix2.ExternalReference(
+        source_name="mitre-attack", external_id="T1566.001")],
+)
+
+tool = stix2.Tool(name="Mimikatz",
+                  tool_types=["credential-exploitation"])
+
+# === SRO (Relationship) ===
+rel1 = stix2.Relationship(source_ref=actor.id, target_ref=tool.id,
+                          relationship_type="uses")
+rel2 = stix2.Relationship(source_ref=camp.id, target_ref=actor.id,
+                          relationship_type="attributed-to")
+rel3 = stix2.Relationship(source_ref=ind.id, target_ref=malware.id,
+                          relationship_type="indicates")
+
+# === Bundle ===
+bundle = stix2.Bundle(objects=[ind, malware, actor, intset, camp,
+                                pattern, tool, rel1, rel2, rel3])
+print(bundle.serialize(pretty=True))
+
+# 검증
+stix2.Bundle.parse(bundle.serialize())   # 오류 없으면 valid
+```
+
+```bash
+# CLI 검증
+echo '<bundle JSON>' | stix2-validator -
+
+# Legacy STIX 1.x → 2.1
+stix2-elevator -f legacy_stix1.xml > converted.json
+```
+
+**18 SDO 목록**: Indicator / Malware / ThreatActor / IntrusionSet / Campaign /
+AttackPattern / Tool / Identity / Location / Vulnerability / CourseOfAction /
+Infrastructure / ObservedData / Note / Opinion / Report / MarkingDefinition / Grouping
+
+#### 도구 3: Indicator 작성 (Step 3)
+
+```python
+import stix2
+
+# IP
+ind_ip = stix2.Indicator(
+    pattern_type="stix",
+    pattern="[ipv4-addr:value = '192.168.1.50']",
+    name="C2 server — APT28",
+    indicator_types=["malicious-activity"],
+    valid_from="2026-05-02T00:00:00Z",
+    valid_until="2026-08-02T00:00:00Z",
+    confidence=85,
+    labels=["c2", "apt28"],
+)
+
+# SHA256 Hash
+ind_hash = stix2.Indicator(
+    pattern_type="stix",
+    pattern="[file:hashes.'SHA-256' = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855']",
+    name="Mimikatz — known SHA256",
+    indicator_types=["malicious-activity"],
+    valid_from="2026-05-02T00:00:00Z",
+)
+
+# Domain
+ind_domain = stix2.Indicator(
+    pattern_type="stix",
+    pattern="[domain-name:value = 'evil-c2.example']",
+    name="C2 domain — APT28 infrastructure",
+    indicator_types=["malicious-activity"],
+    valid_from="2026-05-02T00:00:00Z",
+)
+```
+
+**Pattern syntax**:
+```
+단일:    [ipv4-addr:value = '1.2.3.4']
+AND:     [ipv4-addr:value = '1.2.3.4' AND domain-name:value = 'evil.com']
+OR:      [ipv4-addr:value = '1.2.3.4' OR ipv4-addr:value = '5.6.7.8']
+정규식:  [domain-name:value MATCHES '^evil-[0-9]+\\.com$']
+시간:    [(file:created BETWEEN '2026-01-01' AND '2026-12-31')]
+부정:    [NOT (network-traffic:src_ref.value = '192.168.0.0/16')]
+```
+
+#### 도구 4: 공개 TI 피드 수집 (Step 4·9)
+
+```bash
+# === OTX (AlienVault) ===
+curl -s -H "X-OTX-API-KEY: $OTX_API_KEY" \
+  "https://otx.alienvault.com/api/v1/pulses/subscribed?limit=50" | \
+  jq '.results[] | {name, indicators: .indicators | length, tags}'
+
+# 단일 IP reputation
+curl -s -H "X-OTX-API-KEY: $OTX_API_KEY" \
+  "https://otx.alienvault.com/api/v1/indicators/IPv4/8.8.8.8/general" | \
+  jq '{reputation, country_name, asn, pulse_info: .pulse_info.count}'
+
+# IOC dump
+curl -s -H "X-OTX-API-KEY: $OTX_API_KEY" \
+  "https://otx.alienvault.com/api/v1/pulses/subscribed?limit=200" | \
+  jq -r '.results[].indicators[] | "\(.type),\(.indicator),\(.title)"' > /tmp/otx-iocs.csv
+
+# === AbuseIPDB ===
+curl -s -H "Key: $ABUSEIPDB_KEY" -H "Accept: application/json" \
+  "https://api.abuseipdb.com/api/v2/check?ipAddress=192.168.1.50&maxAgeInDays=90" | \
+  jq '.data | {abuseConfidenceScore, totalReports, countryCode, usageType}'
+
+curl -s -H "Key: $ABUSEIPDB_KEY" -H "Accept: application/json" \
+  "https://api.abuseipdb.com/api/v2/blacklist?confidenceMinimum=90&limit=10000" | \
+  jq -r '.data[] | .ipAddress' > /tmp/abuseipdb-blacklist.txt
+
+# === URLhaus (no key) ===
+curl -s "https://urlhaus.abuse.ch/downloads/csv_recent/" | \
+  grep -v ^# | head -1000 > /tmp/urlhaus-recent.csv
+
+# === 정규화 ===
+python3 << 'PY'
+import csv, json, datetime
+
+iocs = []
+with open('/tmp/otx-iocs.csv') as f:
+    for row in csv.reader(f):
+        if len(row) >= 2:
+            iocs.append({"type": row[0], "value": row[1], "source": "otx",
+                        "first_seen": datetime.datetime.utcnow().isoformat() + "Z",
+                        "confidence": 70})
+
+with open('/tmp/abuseipdb-blacklist.txt') as f:
+    for line in f:
+        iocs.append({"type": "IPv4", "value": line.strip(),
+                    "source": "abuseipdb", "confidence": 90,
+                    "first_seen": datetime.datetime.utcnow().isoformat() + "Z"})
+
+unique = {ioc['value']: ioc for ioc in iocs}.values()
+print(f"Total unique IOCs: {len(unique)}")
+json.dump(list(unique), open('/tmp/normalized-iocs.json', 'w'), indent=2)
+PY
+```
+
+#### 도구 5: IOC → Suricata 변환 (Step 5)
+
+```bash
+# === IPRep ===
+ssh ccc@10.20.30.1 'sudo tee /etc/suricata/iprep/categories.txt' << 'CAT'
+1,c2,Command and Control servers
+2,malware,Malware distribution
+3,phishing,Phishing infrastructure
+4,scanner,Vulnerability scanners
+5,brute,Brute force sources
+CAT
+
+ssh ccc@10.20.30.1 'sudo tee /etc/suricata/iprep/reputation.list' << 'REP'
+192.168.1.50,1,90
+10.20.30.0,2,85
+198.51.100.42,3,75
+REP
+
+# suricata.yaml 활성화
+ssh ccc@10.20.30.1 'sudo grep -A 5 "iprep:" /etc/suricata/suricata.yaml'
+
+# 룰 작성
+ssh ccc@10.20.30.1 'sudo tee -a /etc/suricata/rules/local.rules' << 'RULES'
+alert ip $HOME_NET any -> $EXTERNAL_NET any (msg:"TI: Outbound to known C2"; \
+    iprep:dst,c2,>,80; sid:9000001; rev:1; classtype:trojan-activity;)
+
+alert dns $HOME_NET any -> any any (msg:"TI: DNS query to known phishing domain"; \
+    dns_query; content:"phishing-evil.example"; nocase; \
+    sid:9000002; rev:1; classtype:trojan-activity;)
+RULES
+
+ssh ccc@10.20.30.1 'sudo suricata -T -c /etc/suricata/suricata.yaml'
+ssh ccc@10.20.30.1 'sudo suricatasc -c reload-rules'
+
+# 자동 변환
+cat > /tmp/iocs-to-suricata.py << 'PY'
+import json
+iocs = json.load(open('/tmp/normalized-iocs.json'))
+
+with open('/tmp/iprep-auto.list', 'w') as f:
+    for ioc in iocs:
+        if ioc['type'] in ('IPv4', 'ipv4-addr'):
+            cat = 1 if 'c2' in ioc.get('source','') else 2
+            score = ioc.get('confidence', 70)
+            f.write(f"{ioc['value']},{cat},{score}\n")
+
+sid = 9100000
+rules = []
+for ioc in iocs:
+    if ioc['type'] in ('domain-name', 'hostname'):
+        rules.append(
+            f'alert dns $HOME_NET any -> any any '
+            f'(msg:"TI: DNS query to {ioc["source"]} domain"; '
+            f'dns_query; content:"{ioc["value"]}"; nocase; '
+            f'sid:{sid}; rev:1; classtype:trojan-activity;)')
+        sid += 1
+
+with open('/tmp/ti-domains.rules', 'w') as f:
+    f.write('\n'.join(rules))
+print(f"Generated {len(rules)} DNS rules")
+PY
+python3 /tmp/iocs-to-suricata.py
+```
+
+#### 도구 6: IOC → Wazuh CDB (Step 6)
+
+```bash
+# CDB list 생성
+ssh ccc@10.20.30.100 'sudo tee /var/ossec/etc/lists/malicious_ips' << 'IPS'
+192.168.1.50:c2
+198.51.100.42:phishing
+203.0.113.10:scanner
+IPS
+
+# CDB 컴파일
+ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-make_cdb /var/ossec/etc/lists/malicious_ips'
+
+# ossec.conf 등록
+ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/ossec.conf' << 'XML'
+<ruleset>
+  <list>etc/lists/malicious_ips</list>
+  <list>etc/lists/malicious_hashes</list>
+  <list>etc/lists/malicious_domains</list>
+</ruleset>
+XML
+
+# 룰
+ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/rules/local_rules.xml' << 'XML'
+<group name="custom,ti,">
+  <rule id="100900" level="13">
+    <list field="srcip" lookup="address_match_key">etc/lists/malicious_ips</list>
+    <description>Connection from known malicious IP — TI feed</description>
+    <mitre><id>T1071</id></mitre>
+    <group>ti,malicious_ip,critical,</group>
+  </rule>
+
+  <rule id="100901" level="14">
+    <if_sid>554,594</if_sid>
+    <list field="sha256" lookup="match_key">etc/lists/malicious_hashes</list>
+    <description>Known malicious hash detected</description>
+    <mitre><id>T1204</id></mitre>
+  </rule>
+
+  <rule id="100902" level="12">
+    <if_sid>5715</if_sid>
+    <list field="data.dns_query" lookup="match_key_value">etc/lists/malicious_domains</list>
+    <description>DNS query to known malicious domain</description>
+  </rule>
+</group>
+XML
+
+ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-control restart'
+
+# 검증
+ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-logtest' << 'TEST'
+Apr 25 10:00:00 web sshd[1234]: Accepted password for ccc from 192.168.1.50
+TEST
+# Phase 3: Rule id '100900' (level 13)
+```
+
+#### 도구 7: Diamond Model + IOC enrichment (Step 8·11)
+
+```bash
+# === Diamond Model 4 꼭짓점 ===
+cat > /tmp/diamond-apt28.mmd << 'M'
+graph TD
+    A[Adversary<br/>APT28 / Fancy Bear<br/>aliases: Sofacy, STRONTIUM]
+    C[Capability<br/>Tools: Mimikatz, X-Agent, Sednit<br/>Custom: Drovorub, Cannon]
+    I[Infrastructure<br/>C2: 192.168.1.50, 10.0.0.42<br/>Domains: evil-c2.example]
+    V[Victim<br/>Industry: Government, Defense<br/>Geo: US, EU]
+
+    A -->|uses| C
+    A -->|deploys via| I
+    A -->|targets| V
+    C -->|delivered via| I
+    I -->|enables| V
+
+    style A fill:#ffaaaa
+    style C fill:#aaffaa
+    style I fill:#aaaaff
+    style V fill:#ffffaa
+M
+mmdc -i /tmp/diamond-apt28.mmd -o /tmp/diamond-apt28.png
+
+# === IOC enrichment 스크립트 ===
+cat > /tmp/enrich-ioc.py << 'PY'
+import sys, json, os, requests, subprocess
+
+ip = sys.argv[1]
+result = {"ioc": ip, "type": "IPv4", "enrichment": {}}
+
+# Whois
+out = subprocess.run(["whois", ip], capture_output=True, text=True, timeout=10)
+result["enrichment"]["whois_lines"] = out.stdout.split('\n')[:20]
+
+# GeoIP
+try:
+    import geoip2.database
+    reader = geoip2.database.Reader('/var/ossec/etc/lists/GeoLite2-Country.mmdb')
+    geo = reader.country(ip)
+    result["enrichment"]["geoip"] = {"country": geo.country.name, "iso": geo.country.iso_code}
+except Exception as e:
+    result["enrichment"]["geoip"] = {"error": str(e)}
+
+# VirusTotal
+vt_key = os.getenv('VT_API_KEY')
+if vt_key:
+    r = requests.get(f"https://www.virustotal.com/api/v3/ip_addresses/{ip}",
+                     headers={"x-apikey": vt_key}, timeout=10)
+    if r.status_code == 200:
+        d = r.json()['data']['attributes']
+        result["enrichment"]["virustotal"] = {
+            "reputation": d.get('reputation', 0),
+            "malicious": d.get('last_analysis_stats', {}).get('malicious', 0),
+            "country": d.get('country', ''),
+            "asn": d.get('asn', 0)}
+
+# AbuseIPDB
+abuse_key = os.getenv('ABUSEIPDB_KEY')
+if abuse_key:
+    r = requests.get("https://api.abuseipdb.com/api/v2/check",
+                     headers={"Key": abuse_key, "Accept": "application/json"},
+                     params={"ipAddress": ip, "maxAgeInDays": 90}, timeout=10)
+    if r.status_code == 200:
+        d = r.json()['data']
+        result["enrichment"]["abuseipdb"] = {"score": d['abuseConfidenceScore'],
+                                              "totalReports": d['totalReports']}
+
+# OTX
+otx_key = os.getenv('OTX_API_KEY')
+if otx_key:
+    r = requests.get(f"https://otx.alienvault.com/api/v1/indicators/IPv4/{ip}/general",
+                     headers={"X-OTX-API-KEY": otx_key}, timeout=10)
+    if r.status_code == 200:
+        d = r.json()
+        result["enrichment"]["otx"] = {"reputation": d.get('reputation', 0),
+                                       "pulse_count": d.get('pulse_info', {}).get('count', 0)}
+
+print(json.dumps(result, indent=2, ensure_ascii=False))
+PY
+python3 /tmp/enrich-ioc.py 192.168.1.50
+```
+
+#### 도구 8: 자동 수집 cron (Step 9)
+
+```bash
+sudo tee /etc/cron.daily/ti-feed-sync.sh > /dev/null << 'CRON'
+#!/bin/bash
+LOG=/var/log/ti-feed-sync.log
+WORK=/tmp/ti-sync
+mkdir -p $WORK
+
+curl -s -H "X-OTX-API-KEY: $OTX_API_KEY" \
+  "https://otx.alienvault.com/api/v1/pulses/subscribed?limit=200" -o $WORK/otx.json
+curl -s -H "Key: $ABUSEIPDB_KEY" -H "Accept: application/json" \
+  "https://api.abuseipdb.com/api/v2/blacklist?confidenceMinimum=90&limit=10000" -o $WORK/abuseipdb.json
+curl -s "https://urlhaus.abuse.ch/downloads/csv_recent/" -o $WORK/urlhaus.csv
+
+python3 /opt/ti-pipeline/normalize.py
+python3 /opt/ti-pipeline/iocs-to-suricata.py
+scp -q /tmp/iprep-auto.list ccc@10.20.30.1:/etc/suricata/iprep/reputation.list
+ssh ccc@10.20.30.1 'sudo suricatasc -c reload-rules' >> $LOG
+
+python3 /opt/ti-pipeline/iocs-to-wazuh-cdb.py
+scp -q /tmp/cdb_*.list ccc@10.20.30.100:/var/ossec/etc/lists/
+ssh ccc@10.20.30.100 'for f in /var/ossec/etc/lists/cdb_*.list; do sudo /var/ossec/bin/wazuh-make_cdb $f; done'
+ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-control restart'
+
+COUNT=$(jq '. | length' /tmp/normalized-iocs.json)
+echo "[$(date)] Imported $COUNT IOCs" >> $LOG
+CRON
+sudo chmod +x /etc/cron.daily/ti-feed-sync.sh
+```
+
+#### 도구 9: TLP 공유 정책 (Step 12)
+
+| TLP 색상 | 공유 대상 | 데이터 예시 | 보존 |
+|---------|----------|------------|------|
+| **RED** | 명시된 인원만 | 진행 중 incident IOC | 종료+30일 |
+| **AMBER** | 조직 + 직접 클라이언트 | vendor 미패치 0day | 패치 후 GREEN |
+| **GREEN** | 보안 커뮤니티 | 새 phishing 캠페인 | 영구 |
+| **CLEAR** | 무제한 (구 WHITE) | 패치된 CVE | 영구 |
+
+원칙:
+1. 공유 전 always TLP 표시
+2. RED/AMBER 는 PGP 암호화 + 받은 사람 명시
+3. NDA 위반 가능성 사전 검토
+4. IR 진행 중 데이터는 종료 후 GREEN 강등
+5. 받은 IOC 는 동일 TLP 유지 (downgrade 금지)
+
+#### 도구 10: TI KPI + MISP 구축 (Step 13·14)
+
+| KPI | 정의 | 목표값 |
+|-----|------|--------|
+| TI 활용률 | 전체 알림 중 TI 매칭 비율 | > 30% |
+| IOC 매칭률 | 활성 IOC 중 30일 매칭 | 5-15% 적정 |
+| 평균 IOC 적용 시간 (MTTM) | TI 수집 → SIEM 적용 | < 60분 |
+| TI 기반 탐지 비율 | 전체 detection 중 TI source | > 25% |
+| FP rate (TI 룰) | 0-100% | < 10% |
+| 신규 IOC 일일 | 24h 내 신규 unique | > 1000 |
+| TI 피드 가용성 | 자동 cron 성공률 | > 99% |
+| Enrichment 적용률 | 알림 중 enrichment | > 80% |
+
+```bash
+# === MISP 구축 (옵션 — OpenCTI 가 가벼움) ===
+git clone https://github.com/MISP/misp-docker /opt/misp-docker
+cd /opt/misp-docker
+cp template.env .env
+# .env 편집: MYSQL_ROOT_PASSWORD, ADMIN_EMAIL, BASE_URL
+docker compose up -d
+
+# Sync Server / Sharing Group 설정 후
+# - 70+ 무료 피드 활성 (CIRCL, URLhaus, Botvrij 등)
+# - PyMISP 통합
+pip install pymisp
+python3 -c "
+from pymisp import PyMISP
+misp = PyMISP('https://misp.example.com', 'API_KEY', False)
+events = misp.search('events', published=True, limit=10)
+for e in events: print(e['Event']['info'])
+"
+```
+
+### 점검 / 작성 / 운영 흐름 (15 step + multi_task 통합)
+
+#### Phase A — 수집 + 정규화 (s1·s4·s5·s6·s9)
+
+```bash
+sudo /etc/cron.daily/ti-feed-sync.sh
+cat /tmp/normalized-iocs.json | jq '. | length'
+ssh ccc@10.20.30.1 'sudo wc -l /etc/suricata/iprep/reputation.list'
+ssh ccc@10.20.30.100 'sudo wc -l /var/ossec/etc/lists/cdb_*.list'
+```
+
+#### Phase B — 분석 + Enrichment (s2·s3·s8·s10·s11)
+
+```bash
+python3 /tmp/create-stix-bundle.py > /tmp/apt28-bundle.json
+stix2-validator /tmp/apt28-bundle.json
+python3 /tmp/enrich-ioc.py 192.168.1.50
+mmdc -i /tmp/diamond-apt28.mmd -o /tmp/diamond-apt28.png
+
+# OpenCTI push
+python3 << 'PY'
+from pycti import OpenCTIApiClient
+import json
+client = OpenCTIApiClient(url="http://10.20.30.100:8080", token="TOKEN")
+bundle = json.load(open('/tmp/apt28-bundle.json'))
+client.stix2.import_bundle(bundle, update=True)
+PY
+```
+
+#### Phase C — 공유 + 측정 (s7·s12·s13·s14·s15)
+
+```bash
+# IOC 품질 점수
+python3 << 'PY'
+import json
+ioc_list = json.load(open('/tmp/normalized-iocs.json'))
+source_trust = {"otx": 0.7, "abuseipdb": 0.85, "urlhaus": 0.9, "vendor-paid": 0.95}
+for ioc in ioc_list:
+    s = source_trust.get(ioc['source'], 0.5)
+    c = ioc.get('confidence', 50) / 100
+    ioc['quality_score'] = round(s * c, 2)
+top = sorted(ioc_list, key=lambda x: -x['quality_score'])[:10]
+for t in top: print(t)
+PY
+
+# KPI 측정 (Wazuh)
+ssh ccc@10.20.30.100 'curl -sk -u admin:admin "https://localhost:9200/wazuh-alerts-*/_search" \
+  -H "Content-Type: application/json" -d "{
+    \"size\":0,\"query\":{\"range\":{\"@timestamp\":{\"gte\":\"now-30d\"}}},
+    \"aggs\":{\"ti_alerts\":{\"filter\":{\"prefix\":{\"rule.id\":\"1009\"}}},
+              \"total\":{\"value_count\":{\"field\":\"@timestamp\"}}}
+  }" | jq "{ti: .aggregations.ti_alerts.doc_count, total: .aggregations.total.value, ratio: (.aggregations.ti_alerts.doc_count / .aggregations.total.value)}"'
+
+# 종합 보고서
+cat > /tmp/ti-report.md << 'EOF'
+# Threat Intelligence Report — 2026-Q2
+
+## TI 수집 체계
+- 자동 일일 cron: OTX + AbuseIPDB + URLhaus
+- 누적 IOC: 28,470 (IP 18K + Hash 8K + Domain 2.4K)
+- 평균 신규: 약 850/day
+
+## SIEM/IDS 연동
+- Suricata iprep: 4 카테고리 (c2/malware/phishing/scanner)
+- Suricata rules: TI-기반 87 룰
+- Wazuh CDB: 3 list, rules 100900-100902
+
+## 위협 행위자 분석
+- APT28 / Fancy Bear: 활성, Diamond Model + OpenCTI 등록
+
+## KPI (30일)
+- TI 활용률: 21.7% (목표 30%)
+- 평균 IOC 적용 시간: 35분 (목표 60분 ✓)
+- TI 기반 탐지 비율: 18% (목표 25%)
+- FP rate: 6% (목표 10% ✓)
+
+## 개선 로드맵
+- Q3: MISP 구축 + ISAC 가입
+- Q4: TI 활용률 30% 달성
+- Q1 2027: 자체 OSINT 수집
+EOF
+```
+
+#### Phase D — 통합 시나리오 (s99 multi_task)
+
+s1 → s2 → s3 → s4 → s5 를 Bastion 가 한 번에:
+
+1. **plan**: 4계층 매트릭스 → STIX 18 SDO → Indicator 3종 → 피드 수집 → Suricata 변환
+2. **execute**: python stix2 + curl + jq + ssh + suricatasc
+3. **synthesize**: 5 산출물 (layers.md / stix.json / indicators.json / iocs.csv / suricata.rules)
+
+### 도구 비교표 — TI 워크플로우 단계별
+
+| 단계 | 1순위 도구 | 2순위 (보완) | 사용 조건 |
+|------|-----------|-------------|----------|
+| 표준 | STIX 2.1 + python stix2 | STIX 1.x (legacy only) | 신규는 2.1 |
+| 피드 (무료) | OTX + AbuseIPDB + URLhaus | Botvrij.eu / CIRCL | 다양 source |
+| 피드 (상용) | Recorded Future / Mandiant | CrowdStrike / Anomali | 예산 있을 때 |
+| 플랫폼 (OSS) | OpenCTI (가벼움) | MISP (공유 강력) | 사용 목적별 |
+| 변환 | python custom + stix2 | TAXII client | 프로토콜 표준 |
+| Enrichment | VirusTotal + GreyNoise + Shodan | Recorded Future | 다층 |
+| SIEM 통합 | Wazuh CDB + Suricata iprep | Splunk ESCU | 무료 우선 |
+| 시각화 | OpenCTI + ATT&CK Navigator | Maltego CE | 대화형 |
+| 공유 | TAXII (자동) + MISP (수동) | email PGP (legacy) | 표준 |
+| 자동화 | python + cron + ansible | airflow / dagster | 복잡도 |
+
+### 도구 선택 매트릭스 — 시나리오별 권장
+
+| 시나리오 | 우선 도구 | 이유 |
+|---------|---------|------|
+| "처음 TI 도입" | OpenCTI + 무료 피드 3개 | 학습 + 즉시 |
+| "중소기업" | OpenCTI + Suricata iprep + Wazuh CDB | 무료 풀스택 |
+| "대기업 / ISAC 회원" | MISP + sharing groups + 상용 피드 | 공유 강력 |
+| "incident 중" | OpenCTI + 빠른 STIX 작성 | 신속 분석 |
+| "신규 위협 분석" | Diamond Model + ATT&CK + STIX 2.1 | 구조화 |
+| "regulator 보고" | TI KPI 표 + 30일 통계 | 정량 |
+| "공급망 위협" | MISP + TLP:AMBER 공유 | 통제 |
+
+### 학생 셀프 체크리스트 (각 step 완료 기준)
+
+- [ ] s1: 4계층 매트릭스 (소비자/데이터/시간/갱신/활용) 채움
+- [ ] s2: STIX 2.1 18 SDO + SRO 5종 (uses/attributed-to/indicates 등)
+- [ ] s3: IP/Hash/Domain Indicator 3개 + pattern 검증
+- [ ] s4: OTX/AbuseIPDB/URLhaus 3 피드 수집 + 형식 비교
+- [ ] s5: iprep + custom .rules + suricata -T 검증
+- [ ] s6: Wazuh CDB list 3종 + wazuh-make_cdb + rule 100900-100902
+- [ ] s7: confidence × source_trust × TTL 점수 framework
+- [ ] s8: Diamond Model 4 꼭짓점 + pivot 가능성
+- [ ] s9: cron + 정규화 + Suricata + Wazuh 자동 sync
+- [ ] s10: APT 1개 (APT28/Lazarus) STIX threat-actor + intrusion-set
+- [ ] s11: enrich-ioc.py 1 IP 에 5종 enrichment
+- [ ] s12: TLP 4색상 + 데이터 유형별 매트릭스
+- [ ] s13: 8+ KPI 정의 + 측정 방법 + 목표값
+- [ ] s14: MISP 구축 계획 (인프라 + docker + 피드 + sharing + automation)
+- [ ] s15: TI 종합 보고서 (수집/연동/행위자/KPI/로드맵 5 섹션)
+- [ ] s99: Bastion 가 5 작업 (4계층/STIX/Indicator/피드/Suricata) 순차 작성
+
+### 추가 참조 자료
+
+- **STIX 2.1 Specification** https://docs.oasis-open.org/cti/stix/v2.1/
+- **OASIS CTI** https://www.oasis-open.org/committees/cti/
+- **python stix2** https://stix2.readthedocs.io/
+- **TAXII 2.1** https://oasis-open.github.io/cti-documentation/taxii/intro
+- **MITRE ATT&CK** https://attack.mitre.org/
+- **Diamond Model** Caltagirone et al. (2013)
+- **MISP** https://www.misp-project.org/
+- **OpenCTI** https://www.opencti.io/
+- **OTX** https://otx.alienvault.com/
+- **AbuseIPDB** https://www.abuseipdb.com/
+- **URLhaus** https://urlhaus.abuse.ch/
+- **TLP** https://www.first.org/tlp/
+
+위 모든 TI 작업은 **TLP 표시 + 공유 정책 준수** 로 수행한다. 활성 incident IOC 는 절대
+외부 공개 금지 (RED). vendor 미패치 vulnerability IOC 는 AMBER 로 ISAC/벤더만. 자동
+수집 시 API rate limit 준수 (OTX 10K/hour, VT 4/min). 신규 IOC 는 staging 24h 운영 후
+운영 적용 — 잘못된 IP/도메인 차단 시 정상 트래픽 영향 발생 가능.

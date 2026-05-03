@@ -677,3 +677,22 @@ ENDSSH
 2. 동일 점검 시나리오를 *2회 실행* 하여 결과 일치도 측정 (재현성 확보)
 3. 점검 결과의 *false positive 비율* 측정 (정상 트래픽도 일부 alert 발생) → 임계값 조정
 
+
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (lab week13 — 인증/세션)
+
+| step | 카테고리 | 핵심 도구 |
+|---|---|---|
+| 1 SQLi 우회 | `admin'--` / sqlmap --forms / PayloadsAllTheThings Auth_Bypass |
+| 2 hydra brute | **hydra http-post-form** / wfuzz / **Burp Cluster Bomb** / patator |
+| 3 curl 수동 | bash for-loop / Python requests threading / 응답 차이 |
+| 4 쿠키 속성 | curl -I / DevTools / Burp / 보안 속성 표 |
+| 5 Session Fixation | curl 4 단계 / Burp Repeater / OWASP ZAP rule |
+| 6 Password Reset | 8 패턴 / **Host header injection** / sqlmap |
+| 7 쿠키 변조 | curl -b / Burp Match and Replace / **EditThisCookie** |
+| 8 인증 검증 | curl /whoami / pyjwt decode / Burp |
+| 9 reporting | Burp Sequencer / NIST SP 800-63B / DefectDojo / sha256 |
+
+(week06 의 종합 인증/세션 매트릭스 참조)

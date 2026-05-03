@@ -579,3 +579,41 @@ ENDSSH
 
 **학생 액션**: top user 분리 후 *시간/path/role* 3-axis UEBA → 정상 baseline 외 행위 detect.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course5 SOC — Week 12 자동화 대응)
+
+| 작업 | 도구 |
+|------|------|
+| Active Response | Wazuh AR / fail2ban / Cortex responder |
+| SOAR | Shuffle / TheHive + Cortex / n8n / StackStorm |
+| Webhook | Wazuh integration / curl / Slack incoming webhook |
+| 스크립트 자동화 | bash / python / ansible-playbook |
+| 임의 액션 | Falco actions / Tracee actions |
+
+### 학생 환경 준비
+```bash
+# Shuffle (Modern SOAR, OSS)
+docker run -p 3001:3001 ghcr.io/shuffle/shuffle-frontend:latest
+
+# n8n (workflow automation, OSS)
+docker run -p 5678:5678 docker.n8n.io/n8nio/n8n
+```
+
+### 핵심
+```bash
+# Wazuh integration → Shuffle webhook
+# /var/ossec/etc/ossec.conf
+# <integration><name>shuffle</name><hook_url>http://shuffle:3001/...</hook_url>...</integration>
+
+# Shuffle workflow 예: Wazuh alert → AbuseIPDB lookup → Slack notify → nft block
+
+# 직접 Active Response 스크립트
+sudo tee /var/ossec/active-response/bin/custom-block.sh > /dev/null << 'EOF'
+#!/bin/bash
+ip=$3
+ssh ccc@10.20.30.1 "sudo nft add element inet filter blocked '{ $ip }'"
+EOF
+sudo chmod +x /var/ossec/active-response/bin/custom-block.sh
+```

@@ -823,3 +823,262 @@ graph LR
 
 **학생 액션**: Bastion Playbook 디렉토리 확인 → dataset 사례에 Playbook 적용 → 정확도 측정.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course10 — Week 06 에이전트 보안)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | Prompt injection 방어 | **llm-guard** PromptInjection |
+| s2 | Tool 권한 (whitelist) | OPA + tool registry |
+| s3 | Excessive agency 제한 | NeMo Guardrails permission flow |
+| s4 | Code 실행 sandbox | **e2b** / firecracker (week07 본격) |
+| s5 | Data exfil 방지 | output Sensitive scanner |
+| s6 | Memory 격리 | session-scoped memory |
+| s7 | Audit log | Langfuse + OpenTelemetry |
+| s8 | 통합 secure agent | 위 모두 |
+
+### 학생 환경 준비
+
+```bash
+pip install llm-guard rebuff nemoguardrails e2b
+pip install agent-armor                               # OWASP LLM Agent guard
+```
+
+### Agent 7 위협 (OWASP LLM Top 10 적용)
+
+| # | 위협 | 방어 도구 |
+|---|------|----------|
+| 1 | **Prompt injection** | llm-guard PromptInjection / Rebuff canary |
+| 2 | **Tool misuse** | OPA + tool whitelist |
+| 3 | **Excessive agency** | NeMo Guardrails permission flow |
+| 4 | **RCE via code exec** | e2b / firecracker / gVisor |
+| 5 | **Data exfil via tool** | output Sensitive scanner |
+| 6 | **Goal hijacking** | session memory verify |
+| 7 | **Resource exhaustion** | LiteLLM rate limit + timeout |
+
+### 핵심 — Secure Agent 통합 패턴
+
+```python
+from llm_guard import scan_prompt, scan_output
+from llm_guard.input_scanners import PromptInjection, Anonymize, TokenLimit, Toxicity
+from llm_guard.output_scanners import Sensitive, Code, Bias
+from e2b import Sandbox
+import requests
+import json
+
+class SecureAgent:
+    """7 layer security agent"""
+    
+    def __init__(self, allowed_tools, allowed_targets, llm):
+        self.allowed_tools = set(allowed_tools)              # tool whitelist
+        self.allowed_targets = allowed_targets               # IP/host whitelist
+        self.llm = llm
+        self.sandbox = Sandbox(template="python")
+        
+        # 입출력 scanner
+        self.input_scanners = [
+            PromptInjection(threshold=0.5),
+            Anonymize(),
+            TokenLimit(limit=4000),
+            Toxicity(threshold=0.7),
+        ]
+        self.output_scanners = [
+            Sensitive(),
+            Code(deny=["os.system", "subprocess.Popen", "/etc/shadow"]),
+            Bias(threshold=0.5),
+        ]
+    
+    def execute(self, user_input: str) -> str:
+        # === Layer 1: 입력 검증 (prompt injection / PII / token / toxicity) ===
+        sanitized, valid, scores = scan_prompt(self.input_scanners, user_input)
+        if not all(valid.values()):
+            self._audit("input_blocked", scores)
+            return f"Request denied: {scores}"
+        
+        # === Layer 2: LLM 응답 (tool call 의도) ===
+        response = self.llm.invoke(sanitized)
+        
+        # === Layer 3: Tool 권한 체크 ===
+        for tool_call in response.tool_calls:
+            # 3-1) Tool whitelist
+            if tool_call.name not in self.allowed_tools:
+                self._audit("tool_denied", tool_call)
+                raise PermissionError(f"Tool {tool_call.name} not in whitelist")
+            
+            # 3-2) Target 검증 (대상 IP/호스트)
+            target = tool_call.arguments.get("target")
+            if target and not self._is_authorized_target(target):
+                self._audit("target_unauthorized", target)
+                raise PermissionError(f"Target {target} not authorized")
+        
+        # === Layer 4: Sandbox 실행 ===
+        results = []
+        for tc in response.tool_calls:
+            # 격리된 환경에서 실행
+            r = self.sandbox.process.run_code(self._build_safe_code(tc))
+            results.append(r)
+            self._audit("tool_executed", {"tool": tc.name, "result_size": len(r.stdout)})
+        
+        # === Layer 5: 출력 검증 (sensitive data / code injection / bias) ===
+        combined_output = json.dumps([r.stdout for r in results])
+        sanitized_out, valid, scores = scan_output(
+            self.output_scanners, user_input, combined_output
+        )
+        if not all(valid.values()):
+            self._audit("output_blocked", scores)
+            return "[Output redacted by safety filter]"
+        
+        # === Layer 6: 최종 응답 ===
+        self._audit("response_delivered", {})
+        return sanitized_out
+    
+    def _is_authorized_target(self, target: str) -> bool:
+        import ipaddress
+        try:
+            target_ip = ipaddress.ip_address(target.split(":")[0])
+            return any(target_ip in ipaddress.ip_network(net) for net in self.allowed_targets)
+        except ValueError:
+            return False
+    
+    def _audit(self, event_type: str, data):
+        # Layer 7: Langfuse 로 모든 이벤트 기록
+        from langfuse import Langfuse
+        lf = Langfuse(...)
+        lf.event(name=event_type, metadata=data)
+```
+
+### NeMo Guardrails (선언적 정책)
+
+```yaml
+# config/colang.co
+define user request scan
+  "scan host"
+  "find vulnerabilities"
+  "pentest"
+
+define user request destructive
+  "delete file"
+  "modify config"
+  "stop service"
+
+define bot ask permission
+  "이 작업은 destructive 입니다. 정말 진행할까요? (yes/no)"
+
+define bot refuse out_of_scope
+  "이 작업은 권한 밖입니다."
+
+define flow scan
+  user request scan
+  $authorized = await check_authorization(target=$target)
+  
+  if $authorized
+    await execute_scan
+  else
+    bot refuse out_of_scope
+
+define flow destructive
+  user request destructive
+  bot ask permission
+  user gives permission
+  await execute_destructive
+```
+
+```python
+from nemoguardrails import LLMRails, RailsConfig
+
+config = RailsConfig.from_path("./config")
+rails = LLMRails(config)
+
+response = rails.generate(
+    messages=[{"role": "user", "content": "delete production database"}]
+)
+# → "이 작업은 destructive 입니다. 정말 진행할까요?"
+```
+
+### Tool Whitelist + Permission flow (OPA 통합)
+
+```python
+import requests
+
+def execute_with_permission(agent, tool_name, args, user):
+    # OPA 정책 평가
+    opa_response = requests.post(
+        "http://opa:8181/v1/data/agent/permissions/allow",
+        json={"input": {
+            "user": user,
+            "tool": tool_name,
+            "args": args,
+            "context": {"time": datetime.now().isoformat()}
+        }}
+    ).json()
+    
+    if not opa_response['result'].get('allow', False):
+        reason = opa_response['result'].get('reason', 'no policy match')
+        raise PermissionError(f"Tool denied: {reason}")
+    
+    # 추가 manual confirmation (destructive 인 경우)
+    if opa_response['result'].get('require_confirmation'):
+        if not get_user_confirmation():
+            raise PermissionError("User declined")
+    
+    return run_tool(tool_name, args)
+```
+
+### Excessive Agency 제한 (LangGraph)
+
+```python
+# Agent 가 1 turn 에 호출할 수 있는 tool 수 제한
+# Agent 가 무한 loop 빠지면 강제 종료
+
+from langgraph.graph import StateGraph, END
+
+class State(TypedDict):
+    messages: list
+    tool_call_count: int
+    cost_so_far: float
+
+def check_limits(state):
+    """매 step 마다 검증"""
+    if state["tool_call_count"] > 20:
+        return "end_excessive_calls"
+    if state["cost_so_far"] > 1.0:                    # $1 limit
+        return "end_cost_exceeded"
+    if elapsed_time(state) > 300:                       # 5분 limit
+        return "end_timeout"
+    return "continue"
+```
+
+### Audit log (Langfuse 표준)
+
+```python
+from langfuse import Langfuse
+from langfuse.callback import CallbackHandler
+
+langfuse = Langfuse(
+    host="http://localhost:3001",
+    public_key="pk-xxx", secret_key="sk-xxx"
+)
+
+# 1) Tracing 자동
+handler = CallbackHandler(
+    user_id="user-123",
+    session_id="session-abc",
+    tags=["security-agent", "production"]
+)
+
+agent.invoke({"input": "..."}, config={"callbacks": [handler]})
+
+# 2) Audit 이벤트 명시
+langfuse.event(
+    name="tool_call",
+    input={"tool": "nmap", "target": "10.20.30.80"},
+    metadata={"authorized_by": "OPA", "user": "user-123"},
+    output={"result_size": 1024}
+)
+```
+
+학생은 본 6주차에서 **llm-guard + Rebuff + NeMo Guardrails + OPA + e2b + LangGraph + Langfuse** 7 도구로 OWASP LLM Top 10 의 7 agent 위협 통합 방어를 익힌다.

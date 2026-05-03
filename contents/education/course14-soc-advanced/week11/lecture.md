@@ -1120,3 +1120,718 @@ graph LR
 
 **학생 액션**: Modbus anomaly 룰.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course14 SOC Advanced — Week 11 인시던트 대응 심화·NIST SP 800-61·격리·근절·복구)
+
+> 이 부록은 lab `soc-adv-ai/week11.yaml` (15 step + multi_task) 의 모든 명령을
+> 실제로 실행 가능한 형태로 정리한다. NIST SP 800-61 r2 의 4 단계, SQLi 시나리오 +
+> 내부자 위협, P1~P4 분류, tabletop exercise, 법적 요건까지 풀 워크플로우.
+
+### lab step → 도구·IR 매핑 표
+
+| step | 학습 항목 | 핵심 OSS 도구 | NIST 단계 |
+|------|----------|--------------|----------|
+| s1 | NIST SP 800-61 r2 4 단계 | NIST 양식 + RACI | All |
+| s2 | SQLi triage (초기 분류) | Wazuh API + jq + TheHive | Detection |
+| s3 | 공격 범위 파악 | Apache log + Wazuh + Zeek (week07) | Analysis |
+| s4 | 격리 (firewall + endpoint disable) | nft drop + apache disable + LB drain | Containment |
+| s5 | 증거 수집 (log + pcap + 메모리) | tcpdump + LiME + sha256 + CoC | Analysis |
+| s6 | 근절 (코드 fix + WAF + DB 권한) | git PR + ModSecurity + GRANT REVOKE | Eradication |
+| s7 | 복구 (서비스 정상화 + 모니터링) | restore + monitoring + canary | Recovery |
+| s8 | 커뮤니케이션 (내·외부) | RACI + 통보 매트릭스 + 보도자료 | Communication |
+| s9 | 통합 타임라인 | Plaso + mermaid + Timesketch | Analysis |
+| s10 | Lessons Learned (AAR) | After Action Report 양식 | Post-Incident |
+| s11 | 내부자 위협 대응 | UEBA + DLP + CCTV + HR 협력 | Special |
+| s12 | 심각도 분류 (P1~P4) | severity matrix + SLA | Preparation |
+| s13 | Tabletop Exercise | scenario card + 진행자 | Preparation |
+| s14 | 법적 요건 (PIPA/GDPR) | compliance 매트릭스 | Legal |
+| s15 | IR 종합 보고서 | NIST 양식 + 5 phase + 교훈 | - |
+| s99 | 통합 다단계 (s1→s2→s3→s4→s5) | Bastion plan: NIST→triage→범위→격리→증거 | 다중 |
+
+### 학생 환경 준비
+
+```bash
+# === [s2·s5] Wazuh + jq (이미 설치) ===
+TOKEN=$(curl -sk -u wazuh:wazuh -X POST "https://10.20.30.100:55000/security/user/authenticate?raw=true")
+
+# === [s4] nftables + Apache ===
+ssh ccc@10.20.30.1 'sudo nft list ruleset'
+ssh ccc@10.20.30.80 'sudo apache2ctl -t -D DUMP_VHOSTS'
+
+# === [s5] 증거 수집 (week07·08 도구) ===
+sudo apt install -y tcpdump
+ls /tmp/lime/src/lime-*.ko 2>/dev/null
+
+# === [s6] WAF (ModSecurity OWASP CRS) ===
+sudo apt install -y libapache2-mod-security2 modsecurity-crs
+ssh ccc@10.20.30.80 'sudo a2enmod security2'
+
+# === [s9] Plaso + Timesketch (week07 와 동일) ===
+pip install --user plaso
+
+# === [s11] UEBA / DLP — Wazuh 기반 ===
+
+# === [s14] 법적 — 개인정보보호위원회 신고 양식 ===
+
+# === [s15] 보고서 (pandoc) ===
+```
+
+### 핵심 도구별 상세 사용법
+
+#### 도구 1: NIST SP 800-61 r2 4 단계 (Step 1)
+
+| 단계 | 활동 | 핵심 도구 | 기간 |
+|------|------|----------|------|
+| **1. Preparation** | playbook + tools + training | TheHive + Bastion + Tabletop | 상시 |
+| **2. Detection & Analysis** | alert → 분류 → 범위 → 영향 | Wazuh + Suricata + Plaso | 분-시간 |
+| **3. Containment / Eradication / Recovery** | 격리 → 제거 → 복구 | nft + WAF + backup | 시간-일 |
+| **4. Post-Incident Activity** | lessons learned + 보고 | After Action Report | 일-주 |
+
+원칙: Containment 우선 (eradication 전), 증거 + 운영 동시, AAR 매번.
+
+#### 도구 2: 초기 분류 — SQLi (Step 2)
+
+```bash
+TOKEN=$(curl -sk -u wazuh:wazuh -X POST "https://10.20.30.100:55000/security/user/authenticate?raw=true")
+
+# 최근 1h SQLi 알림
+curl -sk -u admin:admin "https://10.20.30.100:9200/wazuh-alerts-*/_search" -H 'Content-Type: application/json' -d '{
+  "size": 100,
+  "query": {"bool":{"must":[
+    {"range":{"@timestamp":{"gte":"now-1h"}}},
+    {"prefix":{"rule.id":"1002"}}]}},
+  "sort": [{"@timestamp":"desc"}]
+}' | jq '.hits.hits[] | {time:._source["@timestamp"], src:._source.data.srcip, uri:._source.data.url}'
+
+# 빈도 — 단일 vs 분산
+curl -sk -u admin:admin "https://10.20.30.100:9200/wazuh-alerts-*/_search" -H 'Content-Type: application/json' -d '{
+  "size": 0,
+  "query": {"bool":{"must":[{"range":{"@timestamp":{"gte":"now-1h"}}},{"prefix":{"rule.id":"1002"}}]}},
+  "aggs": {"by_src": {"terms": {"field": "data.srcip", "size": 10}}}
+}' | jq '.aggregations.by_src.buckets'
+```
+
+| 질문 | Yes | No |
+|------|-----|-----|
+| 1. SIEM 알림 신뢰도 90+? | → 2 | FP, close |
+| 2. payload 가 실제 SQLi pattern? | → 3 | FP, close |
+| 3. 응답 코드 200 (성공)? | → P1 (Critical) | → 4 |
+| 4. 단일 IP 분산? | → P2 (recon) | → P3 (general) |
+
+```bash
+# TheHive case
+curl -X POST "$THEHIVE/api/v1/case" \
+  -H "Authorization: Bearer $API_KEY" \
+  -d '{"title":"[P1] SQLi — web (10.20.30.80)", "severity":4, "tlp":2, "tags":["sqli","P1"]}'
+```
+
+#### 도구 3: 공격 범위 파악 (Step 3)
+
+```bash
+# 시작 시점
+ssh ccc@10.20.30.80 'sudo grep -E "UNION.*SELECT" /var/log/apache2/access.log | head -1'
+
+# 영향 시스템
+ssh ccc@10.20.30.80 'sudo grep -c "SQL syntax error" /var/log/apache2/error.log'
+ssh ccc@10.20.30.80 'sudo grep -E "SELECT.*UNION|password|user.*=" /var/log/mysql/general.log | head'
+
+# Lateral 검사
+for host in 10.20.30.1 10.20.30.100; do
+    ssh ccc@$host 'sudo grep "10.20.30.80\|192.168.1.50" /var/log/auth.log | tail'
+done
+
+# 응답 크기 (exfil 의심)
+ssh ccc@10.20.30.80 'sudo awk "{print \$10}" /var/log/apache2/access.log | sort -n | tail -10'
+
+# Zeek (week07)
+zeek -r /var/log/forensics/incident.pcap
+
+# 외부 outbound
+zeek-cut id.orig_h id.resp_h orig_bytes resp_bytes < /var/log/zeek/conn.log | \
+  awk '$1 ~ /^10\.20\.30\./ && $2 !~ /^10\.20\.30\./ && $4 > 1048576' | sort -k 4 -rn
+
+# 정리
+cat > /tmp/incident-scope.md << 'MD'
+## Incident Scope — IR-2026-Q2-001
+- 시작: 2026-05-02 14:01:23
+- 영향: web (10.20.30.80) — 직접
+- DB: web mysql — SELECT FROM users 1247건
+- 사용자: 12,847 (전체)
+- Lateral: 없음
+- 유출 추정: ~1.3MB (12,847 × 100B)
+MD
+```
+
+#### 도구 4: 격리 (Step 4)
+
+```bash
+# 1. 공격 IP 차단
+ssh ccc@10.20.30.1 'sudo nft add rule inet filter input ip saddr 192.168.1.50 drop counter'
+
+# 2. 취약 endpoint 비활성화
+ssh ccc@10.20.30.80 'sudo a2dissite vulnerable-app && sudo systemctl reload apache2'
+
+# 또는 path 만 차단
+ssh ccc@10.20.30.80 'sudo tee -a /etc/apache2/conf-enabled/emergency-block.conf' << 'CONF'
+<Location "/rest/products/search">
+    Require all denied
+</Location>
+CONF
+ssh ccc@10.20.30.80 'sudo systemctl reload apache2'
+
+# 3. DB 권한 read-only
+ssh ccc@10.20.30.80 'sudo mysql -e "REVOKE INSERT, UPDATE, DELETE, CREATE ON juiceshop.* FROM \"webapp\"@\"localhost\""'
+
+# 4. 모니터링 강화
+ssh ccc@10.20.30.100 'sudo sed -i "s/<level>5</<level>10</" /var/ossec/etc/rules/local_rules.xml'
+ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-control restart'
+
+# 검증
+ssh ccc@10.20.30.1 'sudo nft list counter inet filter input_dropped'
+ssh ccc@10.20.30.80 'sudo grep 192.168.1.50 /var/log/apache2/access.log | tail'   # 새 접근 없음
+```
+
+| 시나리오 | 격리 | 영향 | 시간 |
+|---------|------|------|------|
+| SQLi 성공 + 활성 | nft drop + endpoint disable | 사용자 일부 | 5분 |
+| 랜섬웨어 active | 호스트 격리 (모든 포트) | 서비스 중단 | 1분 |
+| 내부자 의심 | 사용자 계정 잠금 + 모니터링 | 정상 업무 영향 | 10분 |
+| C2 통신 | outbound 차단 | 외부 통신 영향 | 5분 |
+| 다중 호스트 침해 | VLAN 격리 | 부서 전체 | 30분 |
+
+원칙: 영향 최소화 (don't kill the patient), 증거 보존, 가역성, 단계적.
+
+#### 도구 5: 증거 수집 (Step 5)
+
+```bash
+EVID=/var/log/forensics/incident-2026-05-02
+mkdir -p $EVID
+
+# 1. Web log
+ssh ccc@10.20.30.80 'sudo cp /var/log/apache2/access.log /tmp/access.log.snapshot'
+scp ccc@10.20.30.80:/tmp/access.log.snapshot $EVID/web-access.log
+sha256sum $EVID/web-access.log > $EVID/web-access.log.sha256
+
+# DB log
+ssh ccc@10.20.30.80 'sudo cp /var/log/mysql/general.log /tmp/mysql.log.snapshot'
+scp ccc@10.20.30.80:/tmp/mysql.log.snapshot $EVID/mysql-general.log
+sha256sum $EVID/mysql-general.log >> $EVID/web-access.log.sha256
+
+# 2. PCAP (week07)
+ssh ccc@10.20.30.1 'sudo timeout 300 tcpdump -i eth0 -w /tmp/incident.pcap -s 0 not port 22'
+scp ccc@10.20.30.1:/tmp/incident.pcap{,.sha256} $EVID/
+
+# 3. 메모리 dump (week08)
+ssh ccc@10.20.30.80 '
+  cd /tmp/lime/src
+  sudo insmod lime-$(uname -r).ko "path=/tmp/mem.lime format=lime"
+'
+scp ccc@10.20.30.80:/tmp/mem.lime $EVID/
+sha256sum $EVID/mem.lime > $EVID/mem.lime.sha256
+
+# 4. Wazuh / Suricata export
+curl -sk -u admin:admin "https://10.20.30.100:9200/wazuh-alerts-*/_search?size=10000" \
+  -H 'Content-Type: application/json' \
+  -d '{"query":{"range":{"@timestamp":{"gte":"now-3h"}}}}' > $EVID/wazuh-alerts.json
+
+ssh ccc@10.20.30.1 'sudo cat /var/log/suricata/eve.json' > $EVID/suricata-eve.json
+
+# 5. CoC (week07 양식)
+cat > $EVID/coc.txt << 'COC'
+=== CHAIN OF CUSTODY — IR-2026-Q2-001 ===
+Incident: SQL Injection on web (10.20.30.80)
+Date: 2026-05-02
+Captured by: 학생 이름
+
+Evidence:
+- web-access.log / mysql-general.log
+- incident.pcap (5분, secu/eth0)
+- mem.lime (web 8GB)
+- wazuh-alerts.json / suricata-eve.json
+
+Hashes: hashes.sha256
+Storage: read-only encrypted volume / 7 years retention
+COC
+
+# 6. PGP 서명 (외부 제출)
+gpg --armor --detach-sign $EVID/coc.txt
+```
+
+#### 도구 6: 근절 (Step 6)
+
+```bash
+# 1. 근본 원인 분석
+ssh ccc@10.20.30.80 'grep -A 20 "products/search" /opt/juiceshop/routes/search.js'
+# 취약: db.query(`SELECT ... '%${q}%'`, ...)   ← template literal SQL
+
+# 2. 코드 fix
+cat > /tmp/fix-sqli.diff << 'DIFF'
+--- a/routes/search.js
++++ b/routes/search.js
+@@ -3,7 +3,7 @@
+ router.get('/search', (req, res) => {
+   const q = req.query.q;
+-  db.query(`SELECT * FROM products WHERE name LIKE '%${q}%'`, ...);
++  db.query('SELECT * FROM products WHERE name LIKE ?', [`%${q}%`], ...);
+ });
+DIFF
+
+ssh ccc@10.20.30.80 'cd /opt/juiceshop && patch < /tmp/fix-sqli.diff && git commit -am "fix: SQLi"'
+
+# 3. WAF 활성화
+ssh ccc@10.20.30.80 '
+  sudo apt install -y libapache2-mod-security2 modsecurity-crs
+  sudo a2enmod security2
+  sudo cp /etc/modsecurity/modsecurity.conf-recommended /etc/modsecurity/modsecurity.conf
+  sudo sed -i "s/SecRuleEngine DetectionOnly/SecRuleEngine On/" /etc/modsecurity/modsecurity.conf
+  sudo systemctl reload apache2
+'
+
+# 시뮬 검증
+curl -s "http://10.20.30.80/search?q=' OR 1=1--" -o /dev/null -w "%{http_code}\n"
+# 403 = 차단 성공
+
+# 4. DB 권한 강화
+ssh ccc@10.20.30.80 'sudo mysql -e "
+  CREATE USER \"webapp_readonly\"@\"localhost\" IDENTIFIED BY \"random\";
+  GRANT SELECT ON juiceshop.products TO \"webapp_readonly\"@\"localhost\";
+  -- users 등 다른 테이블 차단
+"'
+
+# 5. 신규 룰
+ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/rules/local_rules.xml' << 'XML'
+<group name="custom,sqli,response,">
+  <rule id="100250" level="14">
+    <if_sid>100200</if_sid>
+    <regex>UNION.*SELECT.*FROM.*users</regex>
+    <description>SQLi targeting users table — high impact</description>
+    <mitre><id>T1190</id></mitre>
+    <options>alert_by_email</options>
+  </rule>
+</group>
+XML
+
+# 검증
+ssh ccc@10.20.30.80 'cd /opt/juiceshop && grep -rn "db.query.*\${" routes/'   # 다른 SQLi 위험
+docker run --rm -v /opt/juiceshop:/src returntocorp/semgrep --config p/owasp-top-ten /src
+```
+
+#### 도구 7: 복구 (Step 7)
+
+```bash
+# 1. 격리 해제
+ssh ccc@10.20.30.1 'sudo nft delete rule inet filter input handle $(sudo nft -a list chain inet filter input | grep "192.168.1.50" | awk "{print \$NF}")'
+ssh ccc@10.20.30.80 'sudo a2ensite vulnerable-app && sudo systemctl reload apache2'
+
+# 2. 데이터 무결성
+ssh ccc@10.20.30.80 'sudo mysql -e "CHECK TABLE juiceshop.users"'
+ssh ccc@10.20.30.80 'sudo mysql -e "SELECT COUNT(*) FROM juiceshop.users"'
+
+# backup 비교
+ssh ccc@10.20.30.80 'sudo mysqldump juiceshop users > /tmp/users-current.sql'
+diff /tmp/users-current.sql /var/backups/users-2026-05-01.sql
+
+# 3. canary (10% traffic, 24h 후 100%)
+ssh ccc@10.20.30.1 'sudo nft add rule inet filter forward ip daddr 10.20.30.80 ip saddr 10.0.0.0/8 limit rate 10/second accept'
+
+# 4. 복구 체크리스트
+cat > /tmp/recovery-checklist.md << 'MD'
+- [ ] 격리 해제 (nft drop 제거)
+- [ ] 엔드포인트 재활성화
+- [ ] 코드 fix 검증 (curl test)
+- [ ] WAF active 확인
+- [ ] DB 무결성 (CHECK TABLE)
+- [ ] DB 권한 검증 (REVOKE 적용)
+- [ ] 모니터링 강화 (Wazuh rule level)
+- [ ] Wazuh / Suricata reload
+- [ ] 사이트 smoke test
+- [ ] 24h 안정 운영
+- [ ] 영향 사용자 통보
+- [ ] 외부 통보 (개인정보보호위) 검토
+MD
+```
+
+#### 도구 8: 커뮤니케이션 (Step 8)
+
+| 대상 | 시점 | 내용 | 채널 |
+|------|------|------|------|
+| 내부 IT | 즉시 (5분) | 격리 + 협조 | Slack #incident |
+| CISO / 경영진 | 30분 (sev 3+) | summary + 영향 + 대응 | 전화 + email |
+| 법무팀 | 2h (PII 영향) | 법적 의무 검토 | email + 회의 |
+| 사용자 | 24h (피해 확정) | 명확 통보 + 다음 단계 | email + 사이트 공지 |
+| 개인정보보호위원회 | 72h (PIPA 위반) | 정형 양식 신고 | 공식 시스템 |
+| 금융 규제기관 | 24h (금융 산업) | FSS / KISA | 전화 + email |
+| 언론 | (선택) 사실 공개 후 | 보도자료 | PR 팀 |
+
+```
+=== 보도자료 양식 ===
+[제목] [회사명] 보안 사고 발생에 대한 공지
+
+1. 사고 개요: 2026-05-02 SQL Injection → 사용자 정보 일부 노출
+2. 영향 범위: 사용자 12,847 명 (이메일 + 해시 비밀번호)
+3. 대응: 즉시 차단, 비밀번호 강제 재설정, 보안 강화
+4. 권고: 비밀번호 변경, 동일 비밀번호 다른 사이트도 변경
+5. 문의: support@corp.example, 02-XXX-XXXX
+[발송] CISO/CEO 명의
+```
+
+```bash
+# 사용자 통보 자동화
+ssh ccc@10.20.30.80 'sudo mysql -N -e "SELECT email FROM juiceshop.users LIMIT 12847"' > /tmp/affected.txt
+
+while read email; do
+    cat << 'EOF' | mail -s "[보안 통보] 비밀번호 재설정 요청" "$email"
+귀하 안녕하세요,
+
+저희 시스템에서 보안 사고 발생으로 일부 정보가 노출되었습니다.
+
+1. 영향 정보: 이메일, 해시 비밀번호
+2. 권장 조치: 즉시 비밀번호 변경 (https://corp.example/reset)
+3. 동일 비밀번호 사용 다른 사이트도 변경 권장
+
+문의: security@corp.example
+EOF
+done < /tmp/affected.txt
+```
+
+#### 도구 9: 통합 타임라인 (Step 9)
+
+```bash
+# Plaso (week07)
+log2timeline.py --storage_file /tmp/incident.plaso /var/log/forensics/incident-2026-05-02/
+psort.py -o l2tcsv -w /tmp/timeline.csv /tmp/incident.plaso
+sort -t, -k 1 /tmp/timeline.csv | head -50
+
+# Mermaid Gantt (공격 + 대응)
+cat > /tmp/incident-timeline.mmd << 'M'
+gantt
+    title Incident IR-2026-Q2-001 — Timeline
+    dateFormat  HH:mm:ss
+    section Attack
+      Recon (nmap)         :a1, 14:00:01, 30s
+      SQLi exploit         :a2, 14:01:23, 90s
+      Data exfil (UNION)   :a3, 14:02:50, 130s
+      Webshell upload      :a4, 14:05:00, 60s
+      C2 connection        :a5, 14:06:00, 600s
+
+    section Detection
+      Wazuh alert          :crit, d1, 14:01:25, 5s
+      Suricata alert       :d2, 14:01:30, 3s
+      SOC analyst review   :d3, 14:02:00, 600s
+
+    section Response
+      P1 case 생성         :crit, r1, 14:02:30, 30s
+      Triage decision      :r2, 14:03:00, 300s
+      IP 차단 (nft)        :crit, r3, 14:08:00, 30s
+      Endpoint disable     :r4, 14:08:30, 60s
+      증거 수집            :r5, 14:09:30, 1800s
+
+    section Eradication
+      코드 fix PR          :e1, 14:40:00, 1800s
+      WAF 활성화           :e2, 15:10:00, 600s
+      DB 권한 강화         :e3, 15:20:00, 600s
+
+    section Recovery
+      엔드포인트 재활성화  :rc1, 15:30:00, 300s
+      Smoke test          :rc2, 15:35:00, 1200s
+
+    section Communication
+      내부 통보            :com1, 14:05:00, 60s
+      경영진 통보          :com2, 14:30:00, 300s
+      사용자 통보          :com3, 17:00:00, 3600s
+M
+
+mmdc -i /tmp/incident-timeline.mmd -o /tmp/incident-timeline.png
+```
+
+#### 도구 10: Lessons Learned (Step 10)
+
+```
+=== After Action Report (AAR) — IR-2026-Q2-001 ===
+
+## 1. 사고 요약
+- 시점: 2026-05-02 14:01 ~ 15:55 (1시간 54분)
+- 유형: SQLi → 사용자 데이터 노출
+- 영향: 12,847 사용자 (이메일 + 해시 비밀번호)
+- MTTR: 87분 (목표 30분, 초과)
+
+## 2. 잘된 점
+- Wazuh + Suricata 양측 알림 정확 (5초 latency)
+- TheHive 자동 case 생성 작동 (week10 SOAR)
+- 격리 신속 (탐지 → 차단 8분)
+- 증거 무결성 OK
+
+## 3. 개선점
+- Triage 시간 길음 (5분 30초)
+- Manual 의사결정 (자동 차단 룰 부재)
+- 사용자 통보 지연 (탐지 14:01 → 통보 17:00, 3시간)
+
+## 4. 개선 항목
+### 기술
+- [ ] Wazuh rule 100200 자동 차단 (week10 block-malicious-ip)
+- [ ] WAF 사전 활성화 (DetectionOnly → On)
+- [ ] DB 권한 사전 분리
+- [ ] SAST CI 통합 (semgrep)
+
+### 프로세스
+- [ ] Triage SLA 5분 → 2분
+- [ ] 자동 사용자 통보 playbook
+- [ ] 분기별 tabletop
+- [ ] 증거 수집 자동화 (Wazuh AR)
+
+### 인력
+- [ ] T1 SQLi 식별 훈련
+- [ ] On-call rotation 명확화
+- [ ] CISO 보고 양식 표준화
+
+## 5. Action Items
+| 항목 | 담당 | 마감 | 우선순위 |
+|------|------|------|---------|
+| WAF 활성화 | Engineer | 1주 | High |
+| 자동 차단 playbook | SOAR | 2주 | High |
+| SAST CI | Dev + Security | 1개월 | Medium |
+| Tabletop | SOC Lead | 분기 | Medium |
+| Triage 훈련 | Manager | 2주 | High |
+
+## 6. 다음 회의
+- 2주 후 진행 검토
+- 1개월 후 효과 측정
+- 분기 후 tabletop
+```
+
+#### 도구 11: 내부자 위협 (Step 11)
+
+```bash
+# UEBA — Wazuh 룰
+ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/rules/local_rules.xml' << 'XML'
+<group name="custom,insider,">
+  <!-- off-hours user activity -->
+  <rule id="100600" level="11">
+    <if_sid>5715</if_sid>
+    <user>!^backup_svc$</user>
+    <time>22:00-06:00</time>
+    <weekday>weekdays</weekday>
+    <description>User login during off-hours</description>
+    <mitre><id>T1078</id></mitre>
+  </rule>
+
+  <!-- 비인가 sensitive data 접근 -->
+  <rule id="100601" level="13">
+    <if_sid>2501</if_sid>
+    <regex>SELECT.*FROM (users|payment|hr_data)</regex>
+    <user>!admin|dba</user>
+    <description>Insider — sensitive data by non-DBA</description>
+  </rule>
+
+  <!-- 대용량 download (DLP simulation) -->
+  <rule id="100602" level="12">
+    <if_sid>31100</if_sid>
+    <regex>response_size > 10485760</regex>
+    <description>Large download — possible exfil</description>
+    <mitre><id>T1041</id></mitre>
+  </rule>
+</group>
+XML
+```
+
+```
+## Insider Threat Response
+
+### 1. 의심 시점 (HR + 기술 신호)
+- HR: 퇴사 예정, 평가 부정적, 비정상 행동
+- 기술: off-hours, sensitive data download
+
+### 2. Triage (HR 협력 필수)
+- 즉시 IT 차단 X (오해 시 영향 큼)
+- HR 와 회의 (1h 내)
+- 법무팀 상의 (개인정보 + 노동법)
+
+### 3. 증거 수집 (조용히)
+- auth.log + bash_history + DB query
+- auditd (파일 접근)
+- Zeek (네트워크)
+- email / Slack DM (회사 정책 따라)
+
+### 4. 격리 (HR + 법무 결정 후)
+- 계정 잠금
+- 회사 자산 회수 (laptop, badge)
+- 시설 출입 차단
+
+### 5. 법적 (필요 시)
+- 형사 고발 (배임 / 영업비밀 침해)
+- 민사 소송
+- 외부 노출 시 통보
+
+## CCTV
+- 사무실 출입 시간 (badge log + CCTV 매칭)
+- 화면 촬영 / USB 사용 영상
+
+## 윤리 / 법적
+- 개인정보보호법 + 통신비밀보호법 준수
+- 사전 정책 동의 (employment contract)
+- 과도한 모니터링 → 노조 분쟁 위험
+```
+
+#### 도구 12: P1~P4 + Tabletop (Step 12·13)
+
+| 분류 | 정의 | 영향 | SLA Triage | SLA Resolve | Escalation |
+|------|------|------|-----------|-------------|------------|
+| **P1 Critical** | 활성 침해 + 고가치 | 사용자 1000+ | 5분 | 1시간 | 즉시 CISO + 법무 |
+| **P2 High** | 잠재 침해 + 중요 | 사용자 100+ | 15분 | 4시간 | 30분 후 manager |
+| **P3 Medium** | 잠재 / 미확인 | 단일 호스트 | 1시간 | 24시간 | 4시간 후 manager |
+| **P4 Low** | 정보성 / 학습 | 영향 없음 | 4시간 | 1주 | 일일 batch |
+
+```
+=== Tabletop Exercise — Ransomware Scenario ===
+
+## 시나리오 (진행자만)
+- 14:00 백업 alert: 다수 파일 변경
+- 14:05 사용자 신고: .lockbit 확장자
+- 14:10 README.txt: "Pay 5 BTC..."
+
+## 참가자 (역할)
+- T1 분석가 / T2 분석가 / SOC Lead
+- IT manager / CISO / 법무 / HR
+
+## 진행 (90분)
+- Phase 1 Detection (15m)
+- Phase 2 Containment (15m)
+- Phase 3 Communication (20m)
+- Phase 4 Recovery (15m)
+- Phase 5 Lessons (25m)
+
+## 평가
+- NIST SP 800-61 준수
+- 의사결정 명확성
+- 커뮤니케이션
+- 시간 관리
+
+## 도구
+- /docs/tabletop-facilitator.md
+- /docs/scenarios/{ransomware,phishing,insider,supply-chain}.md
+- /docs/tabletop-evaluation.xlsx
+- AAR (도구 10)
+```
+
+#### 도구 13: 법적 요건 (Step 14)
+
+| 산업 / 데이터 | 규제 | 신고 의무 | 기한 | 대상 |
+|--------------|------|----------|------|------|
+| **개인정보 (한국)** | PIPA | 의무 | 72시간 (1000명+) | 개인정보보호위원회 + 사용자 |
+| **EU 사용자** | GDPR | 의무 | 72시간 | DPA + 사용자 |
+| **금융 (한국)** | 전자금융거래법 | 의무 | 24시간 | FSS + 한국은행 |
+| **의료 (한국)** | 의료법 + PIPA | 의무 | 72시간 | 보건복지부 + 환자 |
+| **상장사** | 자본시장법 | 의무 (영향 시) | 즉시 | 거래소 + 투자자 |
+| **신용정보** | 신용정보법 | 의무 | 24시간 | 금감원 + 사용자 |
+| **공공기관** | 공공기관 정보보안 지침 | 의무 | 24시간 | KISA + 상위기관 |
+| **결제 (PCI DSS)** | PCI DSS | 의무 (계약) | 24시간 | acquirer + Visa/MC |
+
+### 점검 / 대응 / 회복 흐름 (15 step + multi_task)
+
+#### Phase A — 탐지 + 분석 (s1·s2·s3)
+
+```bash
+TOKEN=$(curl -sk -u wazuh:wazuh -X POST "https://10.20.30.100:55000/security/user/authenticate?raw=true")
+curl -sk -u admin:admin "https://10.20.30.100:9200/wazuh-alerts-*/_search" -H 'Content-Type: application/json' -d '...'
+curl -X POST "$THEHIVE/api/v1/case" -d '{"title":"[P1] SQLi","severity":4}'
+ssh ccc@10.20.30.80 'sudo grep -E "UNION.*SELECT" /var/log/apache2/access.log | head'
+```
+
+#### Phase B — 격리 + 증거 (s4·s5)
+
+```bash
+ssh ccc@10.20.30.1 'sudo nft add rule inet filter input ip saddr 192.168.1.50 drop counter'
+ssh ccc@10.20.30.80 'sudo a2dissite vulnerable-app && sudo systemctl reload apache2'
+
+EVID=/var/log/forensics/incident-2026-05-02
+mkdir -p $EVID
+ssh ccc@10.20.30.80 'sudo cp /var/log/apache2/access.log /tmp/access.log.snapshot'
+scp ccc@10.20.30.80:/tmp/access.log.snapshot $EVID/
+sha256sum $EVID/* > $EVID/hashes.sha256
+```
+
+#### Phase C — 근절 + 복구 (s6·s7)
+
+```bash
+ssh ccc@10.20.30.80 'cd /opt/juiceshop && patch < /tmp/fix-sqli.diff && git commit -am "fix: SQLi"'
+ssh ccc@10.20.30.80 'sudo a2enmod security2 && sudo systemctl reload apache2'
+
+ssh ccc@10.20.30.1 'sudo nft delete rule inet filter input handle ...'
+ssh ccc@10.20.30.80 'sudo a2ensite vulnerable-app && sudo systemctl reload apache2'
+```
+
+#### Phase D — 통합 시나리오 (s99 multi_task)
+
+s1 → s2 → s3 → s4 → s5 를 Bastion 가 한 번에:
+
+1. **plan**: NIST 4 단계 → SQLi triage → 범위 → 격리 → 증거
+2. **execute**: Wazuh API + jq + nft + tcpdump + LiME + sha256
+3. **synthesize**: 5 산출물 (nist-stages.md / triage.md / scope.md / containment.txt / evid-hashes.sha256)
+
+### 도구 비교표 — IR 단계별
+
+| 단계 | 1순위 | 2순위 | 사용 조건 |
+|------|-------|-------|----------|
+| Case mgmt | TheHive | DFIR-IRIS | OSS |
+| Triage 분석 | Wazuh API + jq | Splunk REST | OSS |
+| 범위 파악 | Wazuh + Zeek + 직접 log | Splunk Enterprise | OSS |
+| 격리 | nft + Apache config | Wazuh AR (week10) | manual + auto |
+| 증거 수집 | tcpdump + LiME + scp | Wazuh + osquery | depth |
+| 근절 | git PR + SAST | Snyk / SonarQube | OSS |
+| WAF | ModSecurity OWASP CRS | Coraza | OSS |
+| 복구 | restore + smoke | canary deploy | 점진 |
+| 통신 | email + Slack + 양식 | PR / 보도자료 | manual |
+| 타임라인 | Plaso + Timesketch | Splunk Time | OSS |
+| AAR | markdown 양식 | dedicated AAR tool | 단순 |
+| Tabletop | scenario card + facilitator | TTX 도구 | manual |
+
+### 도구 선택 매트릭스 — 시나리오별 권장
+
+| 시나리오 | 우선 도구 | 이유 |
+|---------|---------|------|
+| "처음 IR 도입" | NIST SP 800-61 r2 + TheHive + 5 phase | 표준 |
+| "P1 Critical" | TheHive + Wazuh AR + 즉시 격리 | 시간 |
+| "내부자 위협" | UEBA + DLP + HR + 법무 | 신중 |
+| "Ransomware" | week10 의 ransomware playbook | 5 phase |
+| "supply chain" | week09 sandbox + week05 TI | 분석 |
+| "regulator audit" | NIST 양식 + Plaso + 법적 | 정형 |
+| "tabletop" | scenario card + AAR | 훈련 |
+
+### 학생 셀프 체크리스트 (각 step 완료 기준)
+
+- [ ] s1: NIST 4 단계 + 도구 + 기간 + RACI 표
+- [ ] s2: SQLi 분석 + Triage Decision Tree + TheHive case
+- [ ] s3: 시작 + 영향 시스템 + 유출 데이터 + 정리
+- [ ] s4: nft + Apache + DB 권한 + 모니터링 4 격리 + 매트릭스
+- [ ] s5: web log + DB log + PCAP + 메모리 + Wazuh + CoC
+- [ ] s6: 근본 원인 + 코드 fix + WAF + DB + 신규 룰 + 검증
+- [ ] s7: 격리 해제 + 무결성 + 모니터링 + canary + 체크리스트
+- [ ] s8: 통보 매트릭스 (7 대상) + 보도자료 + 자동 통보
+- [ ] s9: Plaso + mermaid Gantt 5 phase + Timesketch
+- [ ] s10: AAR (요약/평가/개선/책임/다음)
+- [ ] s11: UEBA 3 룰 + DLP + HR 절차 + CCTV + 법적
+- [ ] s12: P1~P4 분류 + SLA + Escalation
+- [ ] s13: tabletop scenario + 진행자 + 평가 + AAR
+- [ ] s14: 8 산업 × 규제 × 기한 × 대상
+- [ ] s15: 종합 보고서 (Executive + 상세 + 타임라인 + 영향 + 교훈)
+- [ ] s99: Bastion 가 5 작업 (NIST/triage/범위/격리/증거) 순차
+
+### 추가 참조 자료
+
+- **NIST SP 800-61 r2** Computer Security Incident Handling Guide
+- **NIST SP 800-86** Forensic Techniques
+- **NIST SP 800-184** Cybersecurity Event Recovery
+- **ISO/IEC 27035** Incident Management
+- **SANS Incident Handler's Handbook**
+- **개인정보보호법** https://www.privacy.go.kr/
+- **GDPR** https://gdpr.eu/
+- **TheHive Project** https://thehive-project.org/
+- **DFIR-IRIS** https://dfir-iris.org/
+- **CISA Tabletop Exercise Packages** https://www.cisa.gov/cybersecurity-training-exercises
+- **Plaso** https://plaso.readthedocs.io/
+
+위 모든 IR 작업은 **NIST SP 800-61 r2 + 사전 playbook** 으로 수행한다. 격리 우선 (eradication
+이전), 증거 보존 + 운영 정상화 동시. 외부 통보 (PIPA / GDPR) **기한 24-72h 엄수** —
+위반 시 추가 제재. AAR 매번 (작은 incident 도) — 학습 누락 시 같은 incident 반복.

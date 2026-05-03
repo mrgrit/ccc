@@ -734,3 +734,83 @@ print(base64.urlsafe_b64encode(sig).decode().rstrip('='))
 3. 동일 user 의 *src_host 다양성* 추적 → 정상 baseline (1~2 host) vs 공격 (5+ host hopping)
 
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course1 Attack — Week 06 네트워크 공격)
+
+| 공격 유형 | lab step | 본문 도구 | OSS 도구 옵션 (강조) | 비고 |
+|----------|----------|----------|---------------------|------|
+| 패킷 캡처 (CLI) | s1,2 | `tcpdump` | tcpdump / tshark / dumpcap | 가장 가벼움 |
+| 패킷 분석 (GUI/필터) | s2,3 | `wireshark` | wireshark / tshark / termshark | termshark = 터미널 GUI |
+| ARP 테이블 / 스캔 | s3 | `arp -a / arp-scan` | arp-scan / netdiscover / nmap -PR | netdiscover = 수동 |
+| ARP 스푸핑 | s4 | `arpspoof / ettercap` | ettercap / arpspoof / bettercap / scapy | bettercap 권장 |
+| MITM (HTTP) | s5 | `mitmproxy` | mitmproxy / mitmdump / Burp Proxy | mitmproxy CLI |
+| DNS 스푸핑 | s6 | `ettercap dns_spoof` | ettercap / dnsspoof / bettercap | bettercap 권장 |
+| 포트 미러링 / sniff | s7 | `tcpdump -i any` | tcpdump / dsniff / driftnet | dsniff = 평문 자격증명 |
+| 패킷 재생 | s8 | `tcpreplay` | tcpreplay / scapy / bittwist | tcpreplay 빠름 |
+| Kerberos sniff | s9 | `wireshark krb5` | wireshark / impacket-Get* | AD 환경 |
+| WPA Handshake 캡처 | s10 | `airodump-ng` | airodump-ng / wireshark + 모니터모드 | 13주차에 본격 |
+| TCP RST 인젝션 | s11 | `scapy / hping3` | hping3 -R / scapy / nemesis | scapy = Python 라이브러리 |
+| ICMP 터널링 | s12 | `icmpsh / ptunnel` | ptunnel / icmpsh / icmptunnel | 14주차 exfil 과 연결 |
+| Wireshark 필터 작성 | s13 | display filter | wireshark / tshark -Y "filter" | 표현식 학습 |
+| 보고 | s15 | text | tshark -z statistics / capinfos | 통계 추출 |
+
+### 학생 환경 준비 (한 번만 실행)
+
+```bash
+ssh ccc@192.168.0.112
+
+sudo apt update && sudo apt install -y \
+  tcpdump tshark wireshark-common termshark \
+  arp-scan netdiscover \
+  ettercap-text-only dsniff \
+  mitmproxy \
+  hping3 nemesis \
+  tcpreplay tcpflow \
+  python3-scapy
+
+# bettercap (Go) — 현대적 MITM 도구
+go install github.com/bettercap/bettercap@latest 2>/dev/null
+
+# tcpdump 권한 (non-root capture)
+sudo setcap cap_net_raw,cap_net_admin=eip $(which tcpdump)
+sudo setcap cap_net_raw,cap_net_admin=eip $(which tshark)
+```
+
+### 도구별 사용법 핵심
+
+```bash
+# tcpdump — 가장 가벼움
+sudo tcpdump -i eth0 -n -c 100 'tcp port 80'                   # 100 패킷
+sudo tcpdump -i eth0 -w /tmp/cap.pcap 'host 10.20.30.80'       # pcap 저장
+
+# tshark — wireshark CLI
+tshark -i eth0 -Y 'http.request' -T fields -e ip.src -e http.host -e http.request.uri
+
+# bettercap — MITM 인터랙티브 (실습 환경에서만)
+sudo bettercap -iface eth0
+> set arp.spoof.targets 10.20.30.80
+> arp.spoof on
+> http.proxy on
+> events.stream on
+
+# ettercap — 클래식 MITM (NCURSES)
+sudo ettercap -T -M arp:remote /10.20.30.80// /10.20.30.1//
+
+# mitmproxy — HTTP/HTTPS 프록시
+mitmproxy --mode transparent --showhost
+```
+
+### 본문 → 도구 권장 흐름
+
+| 학습 단계 | 흐름 |
+|----------|------|
+| 1 | tcpdump / tshark 로 **수동 캡처·분석** (가장 기본) |
+| 2 | wireshark/termshark 로 **GUI 분석** + display filter 학습 |
+| 3 | arp-scan/netdiscover 로 **L2 호스트 발견** |
+| 4 | ettercap/bettercap 로 **수동 MITM** 시도 (실습 환경 한정) |
+| 5 | mitmproxy 로 **HTTP(S) 인터셉트·변조** |
+| 6 | scapy 로 **임의 패킷 생성** (RST/ICMP) |
+
+학생은 본 6주차에서 **수동 캡처 → 분석 → 능동적 변조** 의 단계적 도구 사용을 익힌다.

@@ -3,7 +3,8 @@ title: Suricata 운영 — 튜닝·알람 분석
 version: non-ai
 course: secops-nonai
 week: 6
-description: suricata-update로 룰셋을 갱신하고, stats.log / fast.log / eve.json 을 활용해 운영 상태를 점검한다.
+description: suricata-update로 룰셋을 갱신하고, stats.log / fast.log / eve.json 을 활용해 운영 상태를
+  점검한다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -18,14 +19,15 @@ steps:
   category: configure
   points: 10
   answer: sudo suricata-update list-sources 2>&1 | head
-  answer_detail: 'Suricata 운영 — 튜닝·알람 분석: secu VM에서 suricata-update list-sources 로 사용 가능한 룰셋 소스를 확인하시오.'
+  answer_detail: 'Suricata 운영 — 튜닝·알람 분석: secu VM에서 suricata-update list-sources 로
+    사용 가능한 룰셋 소스를 확인하시오.'
   verify:
     type: output_contains
     expect: source
     field: stdout
     semantic:
-      intent: suricata-update 룰셋 소스 — sudo suricata-update list-sources. 사용 가능한 공식/커뮤니티 룰셋 목록 (et/open
-        Free + et/pro 상용 + ptrules 등). 룰셋 소스 관리 도구. scirius 대안.
+      intent: suricata-update 룰셋 소스 — sudo suricata-update list-sources. 사용 가능한 공식/커뮤니티
+        룰셋 목록 (et/open Free + et/pro 상용 + ptrules 등). 룰셋 소스 관리 도구. scirius 대안.
       success_criteria:
       - source 키워드
       - suricata-update list-sources
@@ -52,8 +54,8 @@ steps:
     expect: et/open
     field: stdout
     semantic:
-      intent: ET Open 룰셋 활성화 — sudo suricata-update enable-source et/open. Emerging Threats Open 무료 룰셋
-        (30,000+ 룰). 활성화 후 suricata-update 실행 시 다운로드. 기본 IDS 커버리지.
+      intent: ET Open 룰셋 활성화 — sudo suricata-update enable-source et/open. Emerging
+        Threats Open 무료 룰셋 (30,000+ 룰). 활성화 후 suricata-update 실행 시 다운로드. 기본 IDS 커버리지.
       success_criteria:
       - et/open 키워드
       - enable-source 명령
@@ -80,8 +82,9 @@ steps:
     expect: rules
     field: stdout
     semantic:
-      intent: suricata-update 룰셋 다운로드 — sudo suricata-update 2>&1 | tail -10. 활성 소스에서 룰 다운로드 + 로컬 병합 +
-        /var/lib/suricata/rules/suricata.rules 생성. N rules loaded 메시지. 주기 실행 (cron/systemd timer) 권장.
+      intent: suricata-update 룰셋 다운로드 — sudo suricata-update 2>&1 | tail -10. 활성 소스에서
+        룰 다운로드 + 로컬 병합 + /var/lib/suricata/rules/suricata.rules 생성. N rules loaded
+        메시지. 주기 실행 (cron/systemd timer) 권장.
       success_criteria:
       - rules 키워드
       - suricata-update 실행
@@ -102,14 +105,15 @@ steps:
   category: verify
   points: 10
   answer: sudo wc -l /var/lib/suricata/rules/suricata.rules
-  answer_detail: 'Suricata 운영 — 튜닝·알람 분석: 갱신된 룰 파일 위치(/var/lib/suricata/rules/suricata.rules)의 룰 개수를 확인하시오.'
+  answer_detail: 'Suricata 운영 — 튜닝·알람 분석: 갱신된 룰 파일 위치(/var/lib/suricata/rules/suricata.rules)의
+    룰 개수를 확인하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: 병합된 룰 파일 크기 — sudo wc -l /var/lib/suricata/rules/suricata.rules. ET Open 활성화 후 룰 수 (~30,000+
-        기대). 룰셋 볼륨 파악 = 메모리 예상 + 성능 영향 평가.
+      intent: 병합된 룰 파일 크기 — sudo wc -l /var/lib/suricata/rules/suricata.rules. ET
+        Open 활성화 후 룰 수 (~30,000+ 기대). 룰셋 볼륨 파악 = 메모리 예상 + 성능 영향 평가.
       success_criteria:
       - wc -l 명령
       - /var/lib/suricata/rules/suricata.rules 경로
@@ -125,22 +129,27 @@ steps:
       - 룰 규모 해석 없음
   target_vm: secu
 - order: 5
-  instruction: eve.json 의 최근 50줄에서 event_type=alert 만 필터링해 상위 5개 signature 를 집계하시오.
+  instruction: 'eve.json 의 최근 50줄에서 event_type=alert 만 필터링해 상위 5개 signature 를 집계하시오.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/secops-nonai-week06/5/eve.json 사전 주입.
+    `jq -c ''.alert'' /home/ccc/cyber-range/fixtures/secops-nonai-week06/5/eve.json`
+    후 (1) 빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: jq 필터 + sort | uniq
   category: analysis
   points: 10
-  answer: sudo tail -500 /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert") | .alert.signature'
-    2>/dev/null | sort | uniq -c | sort -rn | head
-  answer_detail: 'Suricata 운영 — 튜닝·알람 분석: eve.json 의 최근 50줄에서 event_type=alert 만 필터링해 상위 5개 signature
-    를 집계하시오.'
+  answer: sudo tail -500 /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert")
+    | .alert.signature' 2>/dev/null | sort | uniq -c | sort -rn | head
+  answer_detail: 'Suricata 운영 — 튜닝·알람 분석: eve.json 의 최근 50줄에서 event_type=alert 만 필터링해
+    상위 5개 signature 를 집계하시오.'
   verify:
     type: output_contains
     expect: alert
     field: stdout
     semantic:
-      intent: Top signature 집계 — sudo tail -500 eve.json | jq -r 'select(.event_type=="alert") | .alert.signature'
-        | sort | uniq -c | sort -rn | head. event_type=alert 필터 → signature 추출 → 빈도 집계 → Top 5. 주요 탐지
-        시그니처 파악 + 오탐 후보 식별.
+      intent: Top signature 집계 — sudo tail -500 eve.json | jq -r 'select(.event_type=="alert")
+        | .alert.signature' | sort | uniq -c | sort -rn | head. event_type=alert 필터
+        → signature 추출 → 빈도 집계 → Top 5. 주요 탐지 시그니처 파악 + 오탐 후보 식별.
       success_criteria:
       - alert 키워드
       - jq + sort + uniq 파이프라인
@@ -155,22 +164,40 @@ steps:
       - 집계 없이 alert 목록만
       - Top N 추출 없음
   target_vm: secu
+  fixtures:
+  - generator: suricata_alert
+    target_vm: secu
+    path: /home/ccc/cyber-range/fixtures/secops-nonai-week06/5/eve.json
+    params:
+      seed: 42
+      duration_days: 7
+      alerts_per_day: 30
+      c2_beacon_count: 12
+      metadata_attempt_count: 4
+    mode: overwrite
+    cleanup: false
 - order: 6
-  instruction: eve.json 에서 alert 를 가장 많이 발생시킨 source IP top 5 를 추출하시오.
+  instruction: 'eve.json 에서 alert 를 가장 많이 발생시킨 source IP top 5 를 추출하시오.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/secops-nonai-week06/6/eve.json 사전 주입.
+    `jq -c ''.alert'' /home/ccc/cyber-range/fixtures/secops-nonai-week06/6/eve.json`
+    후 (1) 빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: jq '.src_ip' …
   category: analysis
   points: 10
-  answer: sudo tail -500 /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert") | .src_ip' 2>/dev/null
-    | sort | uniq -c | sort -rn | head
-  answer_detail: 'Suricata 운영 — 튜닝·알람 분석: eve.json 에서 alert 를 가장 많이 발생시킨 source IP top 5 를 추출하시오.'
+  answer: sudo tail -500 /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert")
+    | .src_ip' 2>/dev/null | sort | uniq -c | sort -rn | head
+  answer_detail: 'Suricata 운영 — 튜닝·알람 분석: eve.json 에서 alert 를 가장 많이 발생시킨 source IP
+    top 5 를 추출하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: Top source IP 집계 — sudo tail -500 eve.json | jq -r 'select(.event_type=="alert") | .src_ip'
-        | sort | uniq -c | sort -rn | head. 공격 발생 IP 순위. Threat actor 식별 + 차단 우선순위 결정. MITRE D3FEND Detect
-        + Evict.
+      intent: Top source IP 집계 — sudo tail -500 eve.json | jq -r 'select(.event_type=="alert")
+        | .src_ip' | sort | uniq -c | sort -rn | head. 공격 발생 IP 순위. Threat actor 식별
+        + 차단 우선순위 결정. MITRE D3FEND Detect + Evict.
       success_criteria:
       - src_ip 추출 + 집계
       - jq + sort + uniq -c
@@ -185,22 +212,34 @@ steps:
       - 집계 없이 목록
       - alert 필터 없음
   target_vm: secu
+  fixtures:
+  - generator: suricata_alert
+    target_vm: secu
+    path: /home/ccc/cyber-range/fixtures/secops-nonai-week06/6/eve.json
+    params:
+      seed: 42
+      duration_days: 7
+      alerts_per_day: 30
+      c2_beacon_count: 12
+      metadata_attempt_count: 4
+    mode: overwrite
+    cleanup: false
 - order: 7
   instruction: /var/log/suricata/stats.log 에서 'kernel_drops' 항목을 확인해 drop 여부를 점검하시오.
   hint: grep kernel_drops …
   category: analysis
   points: 10
   answer: sudo grep kernel_drops /var/log/suricata/stats.log | tail
-  answer_detail: 'Suricata 운영 — 튜닝·알람 분석: /var/log/suricata/stats.log 에서 ''kernel_drops'' 항목을 확인해 drop
-    여부를 점검하시오.'
+  answer_detail: 'Suricata 운영 — 튜닝·알람 분석: /var/log/suricata/stats.log 에서 ''kernel_drops''
+    항목을 확인해 drop 여부를 점검하시오.'
   verify:
     type: output_contains
     expect: kernel_drops
     field: stdout
     semantic:
-      intent: 'kernel_drops 성능 점검 — sudo grep kernel_drops /var/log/suricata/stats.log | tail. kernel_drops
-        = Suricata 큐 overflow 로 패킷 손실. 0 초과 = 탐지 gap. 원인: CPU 부족 / 큐 크기 / af-packet threads. 튜닝 우선순위 판단
-        지표.'
+      intent: 'kernel_drops 성능 점검 — sudo grep kernel_drops /var/log/suricata/stats.log
+        | tail. kernel_drops = Suricata 큐 overflow 로 패킷 손실. 0 초과 = 탐지 gap. 원인: CPU
+        부족 / 큐 크기 / af-packet threads. 튜닝 우선순위 판단 지표.'
       success_criteria:
       - kernel_drops 키워드
       - stats.log grep
@@ -216,20 +255,26 @@ steps:
       - tuning 시사점 없음
   target_vm: secu
 - order: 8
-  instruction: /var/log/suricata/fast.log 마지막 20줄을 출력해 최근 알람을 확인하시오.
+  instruction: '/var/log/suricata/fast.log 마지막 20줄을 출력해 최근 알람을 확인하시오.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/secops-nonai-week06/8/eve.json 사전 주입.
+    `jq -c ''.alert'' /home/ccc/cyber-range/fixtures/secops-nonai-week06/8/eve.json`
+    후 (1) 빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: tail -20 /var/log/suricata/fast.log
   category: analysis
   points: 10
   answer: sudo tail -20 /var/log/suricata/fast.log
-  answer_detail: 'Suricata 운영 — 튜닝·알람 분석: /var/log/suricata/fast.log 마지막 20줄을 출력해 최근 알람을 확인하시오.'
+  answer_detail: 'Suricata 운영 — 튜닝·알람 분석: /var/log/suricata/fast.log 마지막 20줄을 출력해
+    최근 알람을 확인하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: fast.log 최근 알람 — sudo tail -20 /var/log/suricata/fast.log. fast.log = 텍스트 형식 간단 alert (timestamp
-        / sid / classification / src:port → dst:port). 빠른 triage + tail -f 실시간 모니터링. eve.json 은 상세 / fast.log
-        는 요약.
+      intent: fast.log 최근 알람 — sudo tail -20 /var/log/suricata/fast.log. fast.log
+        = 텍스트 형식 간단 alert (timestamp / sid / classification / src:port → dst:port).
+        빠른 triage + tail -f 실시간 모니터링. eve.json 은 상세 / fast.log 는 요약.
       success_criteria:
       - fast.log 경로 또는 tail 실행
       - 20줄 출력
@@ -244,6 +289,18 @@ steps:
       - tail 라인 수 없음
       - fast.log 형식 이해 없음
   target_vm: secu
+  fixtures:
+  - generator: suricata_alert
+    target_vm: secu
+    path: /home/ccc/cyber-range/fixtures/secops-nonai-week06/8/eve.json
+    params:
+      seed: 42
+      duration_days: 7
+      alerts_per_day: 30
+      c2_beacon_count: 12
+      metadata_attempt_count: 4
+    mode: overwrite
+    cleanup: false
 - order: 9
   instruction: suricata.yaml의 threshold 설정 파일 경로를 확인하시오.
   hint: grep threshold-file /etc/suricata/suricata.yaml
@@ -256,9 +313,9 @@ steps:
     expect: threshold
     field: stdout
     semantic:
-      intent: threshold 설정 경로 — grep -n threshold-file /etc/suricata/suricata.yaml. threshold.config 로
-        특정 sid 의 alert 빈도 제한 (type limit/both/threshold + count + seconds). 오탐 튜닝 + 스톰 방지. per-rule 튜닝
-        핵심.
+      intent: threshold 설정 경로 — grep -n threshold-file /etc/suricata/suricata.yaml.
+        threshold.config 로 특정 sid 의 alert 빈도 제한 (type limit/both/threshold + count
+        + seconds). 오탐 튜닝 + 스톰 방지. per-rule 튜닝 핵심.
       success_criteria:
       - threshold 키워드
       - grep suricata.yaml
@@ -285,8 +342,9 @@ steps:
     expect: uptime
     field: stdout
     semantic:
-      intent: 'suricatasc uptime 질의 — sudo suricatasc -c uptime. Unix socket 을 통한 런타임 IPC. 엔진 실행 시간 (초)
-        반환. suricatasc 다른 명령: reload-rules / dump-counters / shutdown. 운영 헬스체크.'
+      intent: 'suricatasc uptime 질의 — sudo suricatasc -c uptime. Unix socket 을 통한
+        런타임 IPC. 엔진 실행 시간 (초) 반환. suricatasc 다른 명령: reload-rules / dump-counters /
+        shutdown. 운영 헬스체크.'
       success_criteria:
       - uptime 키워드
       - suricatasc -c 명령
@@ -302,106 +360,53 @@ steps:
       - IPC 소켓 개념 없음
   target_vm: secu
 - order: 99
-  instruction: |
-    [복합 시나리오] "오탐 폭증 → threshold 로 억제" — FP 식별과 관리 직접 체험
+  instruction: "[복합 시나리오] \"오탐 폭증 → threshold 로 억제\" — FP 식별과 관리 직접 체험\n\n## 상황 (w01-w05\
+    \ 시나리오 연속)\n\nABC 핀테크 SOC 신규 분석가, 여섯째 주.\n1~10 step 으로 et/open 룰셋 갱신 + eve.json\
+    \ 분석 + stats.log 까지 익혔다. 학습 목표 #3 —\n*\"오탐(False Positive) 을 식별하고 관리할 수 있다\"*\
+    \ — 분석 도구만 익혔지 실제 FP 발생→\n식별→억제 cycle 은 안 함.\n\n> 선임: \"FP 가 진짜 문제는 *알람 피로(alert\
+    \ fatigue)* 야. 1만 건 alert 중 9999 가 FP 면\n>  진짜 1건을 놓쳐. 학생용으로 *의도적으로 FP 폭증* 시키는\
+    \ 광범위 룰 하나 넣고, threshold 로\n>  억제해 봐. 그 cycle 이 운영의 핵심이야.\"\n\n학습 목표 #3 (FP 관리)\
+    \ 의 행동 증명.\n\n※ Non-AI 트랙: 학생 직접 SSH + transcript paste.\n\n## 임무 (3 단계, 약 25분)\n\
+    \n### Phase A — 의도적 FP 폭증 룰 작성 (5분, secu 에서)\n\nsecu(10.20.30.1) SSH 후 광범위 룰 추가\
+    \ — 정상 트래픽이 모두 alert 발생하게:\n  ```\n  ssh ccc@10.20.30.1\n  echo 'alert tcp any\
+    \ any -> any 80 (msg:\"FP_TEST any HTTP traffic\"; sid:1000301; rev:1;)' \\\n\
+    \    | sudo tee -a /etc/suricata/rules/local.rules\n  sudo systemctl restart suricata\n\
+    \  ```\n\n의도: \"any tcp → any 80\" 이라 모든 HTTP 트래픽이 alert.\n\n### Phase B — FP\
+    \ 폭증 측정 + threshold 억제 (15분)\n\nattacker(10.20.30.201) 또는 secu 에서 web 으로 정상 curl\
+    \ 5회:\n  ```\n  for i in 1 2 3 4 5; do\n    curl -sI http://10.20.30.80/ --max-time\
+    \ 2 > /dev/null\n    sleep 1\n  done\n  ```\n\nsecu (별도 SSH 세션) 에서 FP_TEST alert\
+    \ 카운트:\n  ```\n  sudo tail -200 /var/log/suricata/eve.json | grep -c '\"sid\"\
+    :1000301'\n  ```\n→ 예상: 5 이상 (각 정상 트래픽마다 alert)\n\nTop source IP 분석 (jq):\n  ```\n\
+    \  sudo tail -500 /var/log/suricata/eve.json \\\n    | jq -r 'select(.alert.signature_id==1000301)\
+    \ | .src_ip' \\\n    | sort | uniq -c | sort -rn | head -5\n  ```\n→ 정상 source\
+    \ IP 가 top — \"이 source 만 suppress\" 단서.\n\nthreshold.config 에 suppress 룰 추가 후\
+    \ 재시작:\n  ```\n  sudo bash -c 'echo \"suppress gen_id 1, sig_id 1000301, track\
+    \ by_src, ip 10.20.30.0/24\" >> /etc/suricata/threshold.config'\n  sudo grep '1000301'\
+    \ /etc/suricata/threshold.config       # 추가 확인\n  sudo systemctl restart suricata\n\
+    \  ```\n\n의도: 내부 망 (10.20.30.0/24) 에서 발생한 sid 1000301 alert 모두 *기록 안 함*.\n\n같은\
+    \ curl 5회 반복:\n  `for i in 1..5; do curl -sI http://10.20.30.80/ --max-time 2;\
+    \ sleep 1; done`\n\nsecu 에서 alert 카운트 재측정:\n  `sudo tail -200 /var/log/suricata/eve.json\
+    \ | grep -c '\"sid\":1000301'`\n→ 예상: 0 (또는 추가 카운트 없음 — suppress 적용)\n\n### Phase\
+    \ C — 비교 + 회고 + 정리 (5분)\n\n## 비교표\n\n| 시점 | 트래픽 5건 | alert 카운트 | 비고 |\n|------|----------|-------------|-----|\n\
+    | suppress 전 | 5 curl | 5+ | FP 폭증 |\n| suppress 후 | 5 curl | 0 (또는 정지) | suppress\
+    \ 적용 |\n\n1~2 단락 회고:\n1. **suppress 전후 alert 수 변화** — 정량 (X건 → 0건 차이)\n2. **threshold\
+    \ 의 *3 가지 액션* 차이** — suppress (전체 차단) / threshold limit\n   (n분당 m건만) / threshold\
+    \ both (limit + 시간 윈도우 모두)\n3. **운영 시 suppress 의 위험** — *지나친 suppress 는 진짜 공격을\
+    \ 놓치게 함*. 따라서\n   suppress 룰은 *최소한* + 정기 review (예: 분기별)\n\n종료 정리:\n  ```\n  sudo\
+    \ sed -i '/sid:1000301/d' /etc/suricata/rules/local.rules\n  sudo sed -i '/1000301/d'\
+    \ /etc/suricata/threshold.config\n  sudo systemctl restart suricata\n  ```"
+  hint: 'Phase A: secu 에 광범위 alert 룰 (sid:1000301) 추가 → 정상 트래픽 alert 발생 환경
 
-    ## 상황 (w01-w05 시나리오 연속)
+    Phase B: 정상 curl 5회 → eve.json 카운트 5+ → top source IP jq → threshold suppress
+    추가 → restart → 5회 → 카운트 0
 
-    ABC 핀테크 SOC 신규 분석가, 여섯째 주.
-    1~10 step 으로 et/open 룰셋 갱신 + eve.json 분석 + stats.log 까지 익혔다. 학습 목표 #3 —
-    *"오탐(False Positive) 을 식별하고 관리할 수 있다"* — 분석 도구만 익혔지 실제 FP 발생→
-    식별→억제 cycle 은 안 함.
-
-    > 선임: "FP 가 진짜 문제는 *알람 피로(alert fatigue)* 야. 1만 건 alert 중 9999 가 FP 면
-    >  진짜 1건을 놓쳐. 학생용으로 *의도적으로 FP 폭증* 시키는 광범위 룰 하나 넣고, threshold 로
-    >  억제해 봐. 그 cycle 이 운영의 핵심이야."
-
-    학습 목표 #3 (FP 관리) 의 행동 증명.
-
-    ※ Non-AI 트랙: 학생 직접 SSH + transcript paste.
-
-    ## 임무 (3 단계, 약 25분)
-
-    ### Phase A — 의도적 FP 폭증 룰 작성 (5분, secu 에서)
-
-    secu(10.20.30.1) SSH 후 광범위 룰 추가 — 정상 트래픽이 모두 alert 발생하게:
-      ```
-      ssh ccc@10.20.30.1
-      echo 'alert tcp any any -> any 80 (msg:"FP_TEST any HTTP traffic"; sid:1000301; rev:1;)' \
-        | sudo tee -a /etc/suricata/rules/local.rules
-      sudo systemctl restart suricata
-      ```
-
-    의도: "any tcp → any 80" 이라 모든 HTTP 트래픽이 alert.
-
-    ### Phase B — FP 폭증 측정 + threshold 억제 (15분)
-
-    attacker(10.20.30.201) 또는 secu 에서 web 으로 정상 curl 5회:
-      ```
-      for i in 1 2 3 4 5; do
-        curl -sI http://10.20.30.80/ --max-time 2 > /dev/null
-        sleep 1
-      done
-      ```
-
-    secu (별도 SSH 세션) 에서 FP_TEST alert 카운트:
-      ```
-      sudo tail -200 /var/log/suricata/eve.json | grep -c '"sid":1000301'
-      ```
-    → 예상: 5 이상 (각 정상 트래픽마다 alert)
-
-    Top source IP 분석 (jq):
-      ```
-      sudo tail -500 /var/log/suricata/eve.json \
-        | jq -r 'select(.alert.signature_id==1000301) | .src_ip' \
-        | sort | uniq -c | sort -rn | head -5
-      ```
-    → 정상 source IP 가 top — "이 source 만 suppress" 단서.
-
-    threshold.config 에 suppress 룰 추가 후 재시작:
-      ```
-      sudo bash -c 'echo "suppress gen_id 1, sig_id 1000301, track by_src, ip 10.20.30.0/24" >> /etc/suricata/threshold.config'
-      sudo grep '1000301' /etc/suricata/threshold.config       # 추가 확인
-      sudo systemctl restart suricata
-      ```
-
-    의도: 내부 망 (10.20.30.0/24) 에서 발생한 sid 1000301 alert 모두 *기록 안 함*.
-
-    같은 curl 5회 반복:
-      `for i in 1..5; do curl -sI http://10.20.30.80/ --max-time 2; sleep 1; done`
-
-    secu 에서 alert 카운트 재측정:
-      `sudo tail -200 /var/log/suricata/eve.json | grep -c '"sid":1000301'`
-    → 예상: 0 (또는 추가 카운트 없음 — suppress 적용)
-
-    ### Phase C — 비교 + 회고 + 정리 (5분)
-
-    ## 비교표
-
-    | 시점 | 트래픽 5건 | alert 카운트 | 비고 |
-    |------|----------|-------------|-----|
-    | suppress 전 | 5 curl | 5+ | FP 폭증 |
-    | suppress 후 | 5 curl | 0 (또는 정지) | suppress 적용 |
-
-    1~2 단락 회고:
-    1. **suppress 전후 alert 수 변화** — 정량 (X건 → 0건 차이)
-    2. **threshold 의 *3 가지 액션* 차이** — suppress (전체 차단) / threshold limit
-       (n분당 m건만) / threshold both (limit + 시간 윈도우 모두)
-    3. **운영 시 suppress 의 위험** — *지나친 suppress 는 진짜 공격을 놓치게 함*. 따라서
-       suppress 룰은 *최소한* + 정기 review (예: 분기별)
-
-    종료 정리:
-      ```
-      sudo sed -i '/sid:1000301/d' /etc/suricata/rules/local.rules
-      sudo sed -i '/1000301/d' /etc/suricata/threshold.config
-      sudo systemctl restart suricata
-      ```
-  hint: |
-    Phase A: secu 에 광범위 alert 룰 (sid:1000301) 추가 → 정상 트래픽 alert 발생 환경
-    Phase B: 정상 curl 5회 → eve.json 카운트 5+ → top source IP jq → threshold suppress 추가 → restart → 5회 → 카운트 0
     Phase C: 전후 비교표 + threshold 3 액션 + suppress 위험 회고
+
     포인트: FP 식별 → 분석 → 억제 cycle 직접 체험
+
     종료: sid:1000301 룰 + threshold suppress 모두 정리
+
+    '
   category: integration_scenario
   points: 50
   verify:
@@ -409,10 +414,14 @@ steps:
     expect: suppress
     field: stdout
     semantic:
-      intent: |
-        의도적 FP 폭증 룰을 작성해 alert fatigue 환경 만들고, threshold.config suppress 로 억제.
+      intent: '의도적 FP 폭증 룰을 작성해 alert fatigue 환경 만들고, threshold.config suppress 로
+        억제.
+
         학습 목표 #3 (FP 식별·관리) 의 cycle (식별 → 분석 → 억제) 직접 체험.
+
         Non-AI 트랙: 학생 직접 SSH + transcript paste.
+
+        '
       success_criteria:
       - Phase A — 광범위 sid:1000301 룰 + suricata restart
       - Phase B — 정상 트래픽 5회 → alert 폭증 (5건+)
@@ -433,6 +442,8 @@ steps:
       - 정리 누락
   target_vm: bastion
   answer: ''
-  answer_detail: |
-    1~10 step 이 분석 도구 익히기였다면 99 번은 FP cycle (식별 → 분석 → 억제) 직접 체험.
+  answer_detail: '1~10 step 이 분석 도구 익히기였다면 99 번은 FP cycle (식별 → 분석 → 억제) 직접 체험.
+
     학습 목표 #3 의 행동 증명. threshold 3 액션 중 suppress 만 다루지만 가장 흔한 운영 도구.
+
+    '

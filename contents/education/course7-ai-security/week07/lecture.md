@@ -541,3 +541,80 @@ dataset 의 392건 사례를 모두 LLM context 에 넣을 수는 없다 (토큰
 
 **학생 액션**: lab 환경에서 Bastion 같은 에이전트 시스템을 구동하고, *"dataset 의 Data Theft 사례를 분석해 SIGMA 룰을 작성하라"* 의 단일 요청을 입력. 에이전트가 어느 tool 을 어느 순서로 호출하는지 transcript 를 캡처. *"이 에이전트가 4 카테고리 tool 을 모두 사용했는가"* 를 평가.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course7 AI Security — Week 07 LLM 프라이버시)
+
+### LLM 프라이버시 OSS 도구
+
+| 영역 | OSS 도구 |
+|------|---------|
+| PII 탐지 | **Microsoft Presidio** / pii-codex / scrubadub |
+| PII 마스킹 | Presidio Anonymizer / scrubadub.clean |
+| Differential Privacy | **opacus** (Meta) / TF Privacy / pydp |
+| Membership Inference | **MIA-Bench** / pyrobustness |
+| Model 추출 방어 | watermarking / **MarkLLM** / lm-watermarking |
+| Federated Learning | **Flower** / FedML / OpenFL (Intel) |
+| 동형암호 | **Microsoft SEAL** / Concrete-ML (Zama) / TenSEAL |
+
+### 핵심 — Presidio (Microsoft OSS, course4 week05 와 연결)
+
+```bash
+pip install presidio-analyzer presidio-anonymizer
+python3 -m spacy download en_core_web_lg
+python3 -m spacy download ko_core_news_sm                         # 한국어
+
+python3 << 'EOF'
+from presidio_analyzer import AnalyzerEngine
+from presidio_anonymizer import AnonymizerEngine
+
+# Prompt 에서 PII 자동 탐지/제거
+prompt = "User SSN is 123-45-6789. Email: john@example.com"
+
+analyzer = AnalyzerEngine()
+results = analyzer.analyze(text=prompt, language='en')
+
+anonymizer = AnonymizerEngine()
+sanitized = anonymizer.anonymize(text=prompt, analyzer_results=results)
+print(sanitized.text)
+# Output: "User SSN is <US_SSN>. Email: <EMAIL_ADDRESS>"
+EOF
+```
+
+### 학생 환경 준비
+
+```bash
+source ~/.venv-llm/bin/activate
+pip install presidio-analyzer presidio-anonymizer pii-codex scrubadub
+pip install opacus tensorflow-privacy
+pip install flwr crypten
+
+# MarkLLM (워터마킹)
+git clone https://github.com/THU-BPM/MarkLLM.git ~/markllm
+cd ~/markllm && pip install -e .
+
+# Concrete-ML (동형암호)
+pip install concrete-ml
+```
+
+### LLM Privacy 4 단계 흐름
+
+```bash
+# Phase 1: 입력 PII 자동 마스킹 (Presidio + llm-guard Anonymize)
+# Phase 2: 학습 시 DP 적용 (opacus, ε=1.0)
+# Phase 3: 출력 검증 (PII 누출 방지)
+# Phase 4: Membership Inference 테스트 (MIA-Bench)
+
+python3 << 'EOF'
+# Phase 1
+from llm_guard.input_scanners import Anonymize
+sanitized = Anonymize().scan("My SSN is 123-45-6789")[0]
+
+# Phase 3
+from llm_guard.output_scanners import Sensitive
+result = Sensitive().scan("My SSN is " + response)
+EOF
+```
+
+학생은 본 7주차에서 **Presidio + opacus + MarkLLM + MIA-Bench + Flower** 5 도구로 LLM 프라이버시의 4 영역 (PII / DP / 워터마킹 / 연합학습) 통합 운영을 익힌다.

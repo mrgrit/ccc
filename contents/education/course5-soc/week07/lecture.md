@@ -625,3 +625,35 @@ FROM signals WHERE <학생 룰 조건>
 
 **학생 액션**: 모든 SIGMA 룰을 dataset 에 적용 → P/R 자동 측정 + 회귀 테스트 자동화.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course5 SOC — Week 07 인시던트 분류)
+
+| 작업 | 도구 |
+|------|------|
+| 티켓 시스템 | TheHive / Shuffle / Iris-DFIR / RTIR (legacy) |
+| 위험도 채점 | EPSS / CVSS / Wazuh rule.level |
+| 분류 자동화 | TheHive + Cortex + analyzers |
+| Playbook | Shuffle / TheHive responder / SOAR |
+| 알람 재정렬 | jq sort / OpenSearch ranking |
+
+### 학생 환경 준비
+```bash
+# TheHive 5 (현재 OSS)
+docker run --rm -p 9000:9000 strangebee/thehive:5.2.4 2>/dev/null
+
+# Shuffle (modern SOAR, 무료 tier)
+docker run -p 3001:3001 ghcr.io/shuffle/shuffle-frontend:latest 2>/dev/null
+```
+
+### 핵심
+```bash
+# Wazuh rule level → 티켓 자동 생성
+# /var/ossec/etc/ossec.conf 의 integrations 섹션
+# → TheHive API 로 alert 자동 push
+
+# CVSS 자동 계산
+pip3 install cvss
+python3 -c "from cvss import CVSS3; print(CVSS3('CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H').scores())"
+```

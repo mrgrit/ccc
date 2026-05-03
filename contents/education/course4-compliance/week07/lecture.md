@@ -469,3 +469,125 @@ WitFoo Precinct 의 `csf` 키가 [1,3,4] = *Identify·Detect·Respond* 만 cover
 
 **학생 액션**: 5 함수 별 *cover product list* 작성 — RC (Recover) 누락 시 backup 솔루션 추가 권장.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course4 Compliance — Week 07 SOX IT 통제)
+
+### SOX IT 통제 영역 → OSS 도구
+
+| SOX 영역 | 의무 | OSS 도구 |
+|---------|------|---------|
+| ITGC-1 (변경관리) | 코드 + 인프라 변경 추적 | **GitLab CE** + IaC (Terraform) + drift detection |
+| ITGC-2 (접근관리) | 권한 부여 추적 | **Keycloak** + OPA + Casbin |
+| ITGC-3 (운영관리) | 백업 + 복구 + 재해 | **restic** + borg + Bareos |
+| ITGC-4 (개발관리) | SDLC + 보안 테스트 | **DefectDojo** + SonarQube CE + OWASP ZAP |
+| ITAC (자동 통제) | 거래 무결성 | **Apache NiFi** (data lineage) + Kafka audit |
+| Section 404 (Internal Controls) | 통제 점검 | **chef-inspec** profiles + OpenSCAP |
+
+### 핵심 — chef-inspec (SOX IT 통제 표준)
+
+```bash
+# Inspec 설치
+curl https://omnitruck.chef.io/install.sh | sudo bash -s -- -P inspec
+
+# SOX 자동 점검 (커스텀 profile)
+inspec init profile sox-itgc
+cd sox-itgc
+# controls/audit_log.rb 작성 (예시):
+cat > controls/audit_log.rb << 'EOF'
+control 'sox-itgc-1.1' do
+  impact 1.0
+  title 'Audit log retention >= 7 years'
+  desc 'SOX requires 7-year audit log retention'
+  describe file('/etc/logrotate.d/audit') do
+    its('content') { should match /rotate\s+2557/ }
+  end
+end
+EOF
+inspec exec sox-itgc
+
+# 또는 DevSec.io 의 기존 profile 사용
+inspec exec https://github.com/dev-sec/linux-baseline
+```
+
+### 학생 환경 준비
+
+```bash
+sudo apt install -y aide tripwire chef-inspec
+pip3 install ansible-lint terraform-compliance
+
+# Velociraptor (변경 추적 + 포렌식)
+curl -L https://github.com/Velocidex/velociraptor/releases/latest/download/velociraptor-v0.7.0-linux-amd64 -o /tmp/vr
+chmod +x /tmp/vr && sudo mv /tmp/vr /usr/local/bin/velociraptor
+
+# restic (SOX-compliant 백업)
+sudo apt install -y restic
+restic version
+```
+
+### 핵심 도구 사용
+
+```bash
+# 1) chef-inspec — SOX 통제 자동 점검
+inspec exec linux-baseline-master                                  # CIS-baseline + SOX 매핑
+inspec exec --reporter json:/tmp/sox.json linux-baseline-master    # JSON 출력
+
+# 2) AIDE — 파일 무결성 (ITGC-1 변경 감지)
+sudo aide --init
+sudo cp /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+# 매일 cron:
+0 2 * * * sudo aide --check | mail -s "AIDE report" dpo@company.com
+
+# 3) GitLab + GitOps (ITGC-1 변경관리)
+git log --since="1 month ago" --oneline                            # 변경 이력
+# 모든 IaC 변경이 PR 통해 → 자동 감사 trail
+
+# 4) restic (ITGC-3 백업 + Section 404 무결성)
+restic -r /backup init
+restic backup /etc /var/lib/wazuh
+restic check                                                       # 백업 무결성 검증
+restic snapshots                                                   # SOX 7년 보관 검증
+
+# 5) Velociraptor (ITGC + Section 404 포렌식)
+velociraptor server --config /etc/velociraptor.yaml
+# Web UI 에서 hunt 생성 → 모든 endpoint 에서 SOX 통제 evidence 수집
+```
+
+### SOX 분기별 통제 점검 흐름
+
+```bash
+# Phase 1: 자동 baseline (chef-inspec)
+inspec exec sox-itgc --reporter json | jq '.profiles[].controls[] | select(.results[].status=="failed")'
+
+# Phase 2: 변경 이력 audit (ITGC-1)
+sudo aide --check > /tmp/aide.txt
+git log --since="3 months" --pretty='%h %ai %an %s' production-iac/
+
+# Phase 3: 접근 권한 review (ITGC-2)
+keycloak-cli list-users --realm sox | jq '.[].roles'
+sudo /var/ossec/bin/agent_control -A                               # 모든 agent 권한
+osqueryi "SELECT * FROM users WHERE shell LIKE '%bash%' AND uid >= 1000;"
+
+# Phase 4: 백업 + 복구 테스트 (ITGC-3 + Section 404)
+restic check
+# 매월: 백업 복원 시뮬레이션
+restic restore latest --target /tmp/restore-test
+diff -r /etc /tmp/restore-test/etc | head
+
+# Phase 5: 통제 효과성 보고서 (Section 404)
+inspec exec sox-itgc --reporter html:/tmp/sox-q1.html
+# DPO/CFO 검토 → external auditor 제출
+```
+
+### SOX 자동화 체크리스트
+
+| 통제 | 자동 점검 OSS | 빈도 |
+|------|--------------|------|
+| 코드 변경 (ITGC-1) | git log + AIDE + chef-inspec | 일별 |
+| 권한 변경 (ITGC-2) | osquery + Wazuh user-behavior | 일별 |
+| 백업 (ITGC-3) | restic check + 복원 테스트 | 주별 |
+| 보안 패치 (ITGC) | Lynis + OpenSCAP | 월별 |
+| 통제 효과성 (S.404) | chef-inspec + 외부 감사 | 분기 |
+
+학생은 본 7주차에서 **chef-inspec + AIDE + restic + Velociraptor + Keycloak** 5 도구로 SOX IT 통제의 4 영역 (변경/접근/운영/개발) 을 자동 점검 + 분기 보고 사이클로 운영한다.

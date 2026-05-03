@@ -594,3 +594,144 @@ dataset 의 metadata.json 양식:
 
 **학생 액션**: 감사 시 evidence 마다 *4 layer ID* (timestamp + partition + node + edge) 명시 — 재현 가능성 보장.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course4 Compliance — Week 12 BCP/DR)
+
+### BCP/DR 영역 → OSS 도구
+
+| 영역 | OSS 도구 | 강점 |
+|------|---------|------|
+| 백업 (파일) | **restic** + borgbackup + bareos + rsnapshot | 중복제거 + 암호화 |
+| 백업 (DB) | pgBackRest (Postgres) / mariabackup / mongodump | 일관성 |
+| 백업 (전체) | **Bareos** (Bacula 후속) / Veeam (commercial) | enterprise-class |
+| 백업 (k8s) | **Velero** + restic + Stash | k8s native |
+| 복제 | **rsync** + lsyncd / DRBD / Ceph | 동기 |
+| 클러스터 | Pacemaker + Corosync / keepalived | failover |
+| 모의 훈련 | chef-inspec backup-test profile | 정기 검증 |
+| RTO/RPO 측정 | 자체 스크립트 + Prometheus | 측정 자동화 |
+
+### 핵심 — restic (현대 표준 백업)
+
+```bash
+sudo apt install -y restic
+
+# repo 초기화 (저장 위치 = local / S3 / B2 / SFTP)
+restic init -r /backup/restic-repo
+restic init -r s3:s3.amazonaws.com/bucket-name
+restic init -r sftp:user@backup-server:/path
+
+# 일별 백업 (cron)
+sudo tee /etc/cron.d/restic > /dev/null << 'EOF'
+0 2 * * * root restic -r /backup/restic-repo backup /etc /var/lib/wazuh /home --password-file /root/.restic-pwd
+0 3 * * 0 root restic -r /backup/restic-repo forget --keep-daily 7 --keep-weekly 4 --keep-monthly 12 --keep-yearly 7 --prune
+30 3 * * 0 root restic -r /backup/restic-repo check
+EOF
+
+# 복원 (DR 시뮬레이션)
+restic -r /backup/restic-repo snapshots
+restic -r /backup/restic-repo restore latest --target /tmp/restore
+
+# 무결성 검증 (정기)
+restic -r /backup/restic-repo check --read-data
+```
+
+### 학생 환경 준비
+
+```bash
+sudo apt install -y restic borgbackup rsync \
+  pacemaker corosync keepalived \
+  postgresql-client mariadb-client
+
+# Bareos (대규모 백업 시스템)
+echo "deb http://download.bareos.org/bareos/release/latest/Debian_12 /" | sudo tee /etc/apt/sources.list.d/bareos.list
+sudo apt update && sudo apt install -y bareos bareos-database-postgresql
+
+# Velero (k8s 백업)
+curl -L https://github.com/vmware-tanzu/velero/releases/latest/download/velero-v1.13.0-linux-amd64.tar.gz | sudo tar xz -C /tmp
+sudo mv /tmp/velero-v1.13.0-linux-amd64/velero /usr/local/bin/
+```
+
+### 핵심 도구별 사용법
+
+```bash
+# 1) restic — 모든 백업 표준
+restic init -r /backup
+restic backup /etc /var/lib --tag "system-config"
+restic snapshots
+restic stats latest                                              # 백업 크기/속도
+restic forget --keep-last 30 --prune                             # 30개만 유지
+
+# 2) borgbackup — 대안 (deduplication 강력)
+borg init -e repokey /backup/borg-repo
+borg create /backup/borg-repo::backup-{now} /etc /home
+borg list /backup/borg-repo
+borg extract /backup/borg-repo::backup-2024-01-01
+
+# 3) Bareos (대규모 — 다중 호스트)
+sudo systemctl start bareos-dir bareos-sd bareos-fd
+bconsole << 'EOF'
+*status
+*list jobs
+*run job=BackupClient1
+*restore client=server1 select all
+EOF
+
+# 4) PostgreSQL 백업 (pgBackRest)
+sudo -u postgres pg_dumpall > /backup/pg-$(date +%Y%m%d).sql
+# 또는 pgBackRest (incremental + WAL)
+pgbackrest --stanza=demo backup --type=full
+pgbackrest --stanza=demo restore --target-time="2024-01-01 12:00:00"
+
+# 5) Velero (k8s)
+velero install --provider aws --bucket k8s-backup --secret-file ./credentials
+velero backup create demo-backup --include-namespaces production
+velero restore create --from-backup demo-backup
+```
+
+### BCP/DR 분기별 훈련
+
+```bash
+# Phase 1: 백업 무결성 검증 (매주)
+restic -r /backup/restic-repo check --read-data
+borg check /backup/borg-repo
+
+# Phase 2: 복원 모의 (분기 1회)
+restic restore latest --target /tmp/dr-test-$(date +%Y%m%d)
+diff -r /etc /tmp/dr-test-*/etc | head
+# RTO 측정: 시작-완료 시간 기록
+
+# Phase 3: failover 모의 (반기 1회)
+sudo systemctl status pacemaker
+sudo crm node standby primary-node                                # primary down 시뮬
+# secondary 자동 인계 시간 측정 (RTO)
+
+# Phase 4: 전체 DR 훈련 (연 1회)
+# 1. primary site shutdown
+# 2. secondary 에서 모든 서비스 복원
+# 3. 데이터 무결성 검증 (RPO 측정)
+# 4. 보고서 작성
+
+# Phase 5: 보고
+restic stats latest -r /backup/restic-repo
+echo "RTO: 25분, RPO: 1시간, 마지막 검증: $(date)" > /tmp/dr-q1.txt
+```
+
+### RTO/RPO 자동 측정
+
+```bash
+# Prometheus exporter (자체)
+cat > /usr/local/bin/backup-exporter.sh << 'EOF'
+#!/bin/bash
+# 매 5분 백업 상태 metric 출력
+LAST=$(restic snapshots --json -r /backup | jq -r '.[-1].time')
+NOW=$(date +%s)
+LAST_TS=$(date -d "$LAST" +%s)
+RPO=$((NOW - LAST_TS))
+echo "backup_age_seconds $RPO"
+EOF
+# Prometheus + Grafana 에서 실시간 RPO 알람 (1시간 초과 시)
+```
+
+학생은 본 12주차에서 **restic + borgbackup + Bareos + Velero + Pacemaker** 5 도구로 BCP/DR 의 4 단계 (백업 → 검증 → 복원 → failover) 를 OSS 만으로 운영하며 RTO/RPO 자동 측정 흐름을 익힌다.

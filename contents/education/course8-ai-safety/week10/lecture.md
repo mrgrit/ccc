@@ -617,3 +617,141 @@ dataset 환경의 Bastion skill 33개를 이 4 카테고리로 분류하면 — 
 
 **학생 액션**: Bastion 의 33개 skill 을 위 4 카테고리로 분류하는 표를 작성. 각 skill 마다 *위험도 + 운영 정책* 을 명시. 결과를 *우리 환경의 에이전트 권한 정책 v1* 으로 정리.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course8 AI Safety — Week 10 강건성 테스트)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | NLP 적대적 baseline | **TextAttack** TextFooler |
+| s2 | 다양한 recipe | TextAttack PWWS / BERT-Attack / DeepWordBug |
+| s3 | Image 적대적 (FGSM/PGD) | **advtorch** / Foolbox |
+| s4 | Black-box 공격 | OpenAttack / IBM ART |
+| s5 | Robustness 측정 | **RobustBench** |
+| s6 | Adversarial training | TextAttack augment / madry-lab |
+| s7 | Detection (logit-based) | TextAttack scorer |
+| s8 | 통합 평가 | RobustBench leaderboard |
+
+### 학생 환경 준비
+
+```bash
+pip install textattack openattack adversarial-robustness-toolbox \
+    advtorch foolbox cleverhans robustbench
+```
+
+### 핵심 — TextAttack (NLP 적대적 표준)
+
+```bash
+# 1) 자동 공격 (recipe 기반)
+textattack attack \
+    --model bert-base-uncased \
+    --recipe textfooler \
+    --num-examples 100 \
+    --log-to-csv /tmp/textfooler-results.csv
+
+# 출력:
+# Successful attacks: 67/100 (67%)
+# Failed attacks: 21/100
+# Skipped: 12/100
+# Avg perturbed words: 12.3%
+# Avg num queries: 142
+
+# 2) 다양한 recipe 비교
+for recipe in textfooler pwws bae deepwordbug hotflip kuleshov; do
+    textattack attack --model bert-base-uncased --recipe $recipe \
+        --num-examples 50 --log-to-csv /tmp/$recipe.csv
+done
+
+# 결과 매트릭스:
+# textfooler: 67% (word swap, BERT-based)
+# pwws:       72% (word swap, importance ranking)
+# bae:        61% (BERT mask)
+# deepwordbug: 58% (char swap)
+# hotflip:    49% (char swap, gradient)
+# kuleshov:   44% (PSO)
+```
+
+### Image 적대적 (advtorch + Foolbox)
+
+```python
+import torch
+from advtorch.attacks import LinfPGDAttack, GradientSignAttack
+
+# 1) FGSM (가장 단순)
+fgsm = GradientSignAttack(model, eps=8/255)
+adv_x = fgsm.perturb(x, y)
+
+# 2) PGD (multi-step, 더 강함)
+pgd = LinfPGDAttack(model, eps=8/255, eps_iter=2/255, nb_iter=20)
+adv_x = pgd.perturb(x, y)
+
+# 3) C&W (L2, 가장 정교 — 작은 perturbation)
+from advtorch.attacks import CarliniWagnerL2Attack
+cw = CarliniWagnerL2Attack(model, num_classes=10, max_iterations=1000)
+adv_x = cw.perturb(x, y)
+
+# 4) Foolbox (대안)
+import foolbox as fb
+fmodel = fb.PyTorchModel(model, bounds=(0, 1))
+attack = fb.attacks.LinfPGD()
+raw, clipped, success = attack(fmodel, x, y, epsilons=[8/255])
+```
+
+### Adversarial Training (방어)
+
+```python
+import torch.optim as optim
+
+optimizer = optim.SGD(model.parameters(), lr=0.01)
+adversary = LinfPGDAttack(model, eps=8/255, eps_iter=2/255, nb_iter=10)
+
+for epoch in range(20):
+    for x, y in train_loader:
+        # 1. 적대적 sample 생성
+        x_adv = adversary.perturb(x, y)
+        
+        # 2. Combined batch (clean + adversarial)
+        x_combined = torch.cat([x, x_adv])
+        y_combined = torch.cat([y, y])
+        
+        # 3. 학습
+        out = model(x_combined)
+        loss = criterion(out, y_combined)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+# 결과:
+# Standard accuracy: 0.93 → 0.88 (조금 감소)
+# Adversarial accuracy: 0.05 → 0.42 (대폭 증가)
+```
+
+### RobustBench (벤치마크)
+
+```python
+from robustbench import benchmark
+from robustbench.utils import load_model
+
+# 사전 학습된 robust model
+model = load_model(
+    model_name='Wang2023Better_WRN-70-16',          # CIFAR-10 robust model
+    dataset='cifar10',
+    threat_model='Linf'
+)
+
+# Adversarial accuracy 측정
+adv_accuracy = benchmark(
+    model,
+    n_examples=1000,
+    dataset='cifar10',
+    threat_model='Linf',
+    eps=8/255,
+)
+print(f"Robust accuracy: {adv_accuracy}")
+# 출력: 0.65 (RobustBench leaderboard top model)
+```
+
+학생은 본 10주차에서 **TextAttack + advtorch + Foolbox + RobustBench** 4 도구로 NLP·Image 양쪽 적대적 공격·방어·벤치 사이클을 익힌다.

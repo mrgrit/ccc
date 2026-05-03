@@ -827,3 +827,920 @@ graph LR
 
 **학생 액션**: Caldera 시나리오.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course13 Attack Advanced — Week 15 보고서 작성·책임 있는 공개·커리어)
+
+> 이 부록은 lab `attack-adv-ai/week15.yaml` (15 step + multi_task) 의 모든 명령을
+> 실제 보고서 산출물 + 윤리 절차 + 커리어 도구 매트릭스로 매핑한다. Week 14 의
+> 모의해킹 결과를 *공유 가능한 산출물* 로 변환하는 방법론을 다룬다.
+
+### lab step → 도구·산출물 매핑 표
+
+| step | 학습 항목 | 핵심 OSS 도구 / 산출물 | 표준·기준 |
+|------|----------|---------------------|-----------|
+| s1 | 보고서 구조 설계 | pandoc, markdown, LaTeX template | NIST SP 800-115 §5 |
+| s2 | Finding 작성 (SQLi 예제) | OWASP WSTG, CWE-89, CVSS v3.1 | OWASP Risk Rating |
+| s3 | Finding 작성 (default cred) | CWE-798, CIS Controls 5 | CIS / OWASP |
+| s4 | 발견사항 요약 테이블 | markdown table, csvkit, pandas | OSCP report style |
+| s5 | Attack Narrative (시간순) | markdown, mermaid timeline | PTES Reporting |
+| s6 | MITRE ATT&CK 매핑 | ATT&CK Navigator, Atomic Red Team | MITRE ATT&CK v14 |
+| s7 | Risk Heat Map | matplotlib, seaborn, plotly, asciichart | NIST SP 800-30 |
+| s8 | Cost-Benefit 분석 | spreadsheet, RICE/ICE framework | OWASP Risk Rating |
+| s9 | Technical Appendix | pandoc, markdown, code block | OSCP guide |
+| s10 | 보고서 품질 체크리스트 | OSCP/CREST/PTES 체크리스트 | CREST CCT App |
+| s11 | 경영진 프레젠테이션 | reveal.js, Marp, Beamer | Pyramid Principle |
+| s12 | Retest 계획 | text + RoE-style 문서 | OWASP retest checklist |
+| s13 | 최종 종합 보고서 | pandoc + LaTeX 또는 typst | NIST SP 800-115 |
+| s14 | (보고서 마무리·검증) | pandoc, weasyprint, pdftotext | quality gate |
+| s15 | 책임 있는 공개·포트폴리오 | security.txt, HackerOne, GitHub | ISO/IEC 29147 |
+| s99 | 통합 다단계 (s1→s2→s3→s4→s5) | Bastion plan: outline → 2 finding → table → narrative | 다중 |
+
+### 학생 환경 준비 (보고서·발표·공개·포트폴리오 풀세트)
+
+```bash
+# === [s1·s4·s9·s13] markdown → PDF/Word ===
+sudo apt install -y pandoc texlive-xetex texlive-lang-korean
+pandoc --version
+
+# weasyprint (HTML/CSS → PDF, 한글 깔끔)
+pip install --user weasyprint
+
+# typst (모던 typesetting)
+curl -LsSf https://typst.community/typst-install/install.sh | sh
+
+# === [s5·s6·s7] 시각화 ===
+sudo apt install -y graphviz
+npm install -g @mermaid-js/mermaid-cli
+
+# matplotlib / seaborn / plotly
+pip install --user matplotlib seaborn plotly numpy pandas
+
+# asciichart (텍스트 차트)
+npm install -g asciichart
+
+# === [s11] 프레젠테이션 ===
+# Marp CLI — markdown → slide
+npm install -g @marp-team/marp-cli
+
+# reveal.js — 웹 슬라이드
+npm install -g reveal-md
+
+# pandoc beamer — LaTeX 슬라이드
+pandoc --version | grep beamer
+
+# === [s2·s3·s9] Finding 템플릿 ===
+git clone https://github.com/noraj/OSCP-Exam-Report-Template-Markdown /tmp/oscp-template
+ls /tmp/oscp-template/
+
+# CWE / OWASP DB (offline)
+git clone https://github.com/OWASP/wstg /tmp/wstg
+
+# === [s6] ATT&CK Navigator ===
+git clone https://github.com/mitre-attack/attack-navigator /tmp/nav
+cd /tmp/nav/nav-app && npm install && npm run start &
+
+# Atomic Red Team (TTP 매핑 검증)
+git clone https://github.com/redcanaryco/atomic-red-team /tmp/atomic
+
+# === [s11] 보고서 협업 / Pentest framework ===
+docker run -p 3000:3000 -d dradisframework/community
+docker run -p 5252:8443 ghcr.io/pwndoc/pwndoc:latest
+docker run -p 5985:5985 faradaysec/faraday
+
+# === [s15] Responsible Disclosure / Bug Bounty ===
+# disclose.io — 정책 템플릿
+git clone https://github.com/disclose/disclose.io /tmp/disclose
+
+# Bugcrowd VRT — 취약점 등급 표
+git clone https://github.com/bugcrowd/vulnerability-rating-taxonomy /tmp/vrt
+
+# === [s15] 포트폴리오 ===
+pip install --user mkdocs mkdocs-material
+sudo apt install -y hugo jekyll bundler
+```
+
+### 핵심 도구별 상세 사용법
+
+#### 도구 1: pandoc + LaTeX — 전문 보고서 PDF 생성 (Step 1·9·13)
+
+```bash
+# === markdown → PDF ===
+cat > /tmp/report.md << 'MD'
+---
+title: "Penetration Test Report — Internal Network Assessment"
+subtitle: "10.20.30.0/24 — 2026-04-25 ~ 2026-05-02"
+author: "Security Team / 학생"
+date: "2026-05-02"
+toc: true
+toc-depth: 3
+numbersections: true
+geometry: margin=2.5cm
+fontsize: 11pt
+mainfont: "Noto Sans CJK KR"
+monofont: "FiraCode Nerd Font"
+header-includes:
+  - \usepackage{xcolor}
+  - \usepackage{fancyhdr}
+  - \pagestyle{fancy}
+  - \fancyhead[L]{CONFIDENTIAL — 학습용}
+  - \fancyhead[R]{Penetration Test Report v1.0}
+---
+
+# Executive Summary
+
+본 보고서는 ...
+
+# Methodology
+
+PTES + OWASP WSTG ...
+
+# Findings
+
+## F-001 — JWT none algorithm allowed (CRITICAL, CVSS 10.0)
+
+### Description
+...
+MD
+
+# PDF 생성 (한글 + 코드 블록 + TOC)
+pandoc /tmp/report.md \
+  -o /tmp/report.pdf \
+  --pdf-engine=xelatex \
+  --toc \
+  --highlight-style=tango \
+  --variable papersize=a4
+
+# Word docx
+pandoc /tmp/report.md -o /tmp/report.docx --reference-doc=corp-template.docx
+
+# HTML (단일 파일, 이미지 embed)
+pandoc /tmp/report.md -o /tmp/report.html --self-contained --toc --standalone
+
+# === LaTeX 직접 (학술/공식 보고서) ===
+cat > /tmp/report.tex << 'TEX'
+\documentclass[11pt,a4paper]{article}
+\usepackage[hangul]{kotex}
+\usepackage{xcolor,fancyhdr,hyperref,longtable,booktabs}
+\title{Penetration Test Report}
+\author{학생 이름}
+\date{2026-05-02}
+\begin{document}
+\maketitle
+\tableofcontents
+\end{document}
+TEX
+xelatex /tmp/report.tex && xelatex /tmp/report.tex   # 두 번 (TOC reference)
+
+# === typst (모던 LaTeX 대안) ===
+cat > /tmp/report.typ << 'TYP'
+#set page(paper: "a4")
+#set heading(numbering: "1.1")
+
+= Executive Summary
+본 보고서는 ...
+
+= Findings
+== F-001 JWT none algorithm allowed
+- *Severity*: CRITICAL
+- *CVSS*: 10.0
+- *CWE*: CWE-347
+TYP
+typst compile /tmp/report.typ /tmp/report.pdf
+```
+
+#### 도구 2: Finding 작성 양식 (Step 2·3)
+
+```bash
+# OWASP / CREST / OSCP 표준 Finding 양식
+cat > /tmp/finding-F001.md << 'MD'
+# F-001 — SQL Injection in /rest/products/search
+
+## 메타데이터
+
+| 항목 | 값 |
+|------|------|
+| Finding ID | F-001 |
+| 발견일 | 2026-04-26 14:23 KST |
+| 검증일 | 2026-04-27 10:00 KST |
+| 보고자 | 학생 이름 |
+| 영향 시스템 | web (10.20.30.80:3000) |
+| 영향 컴포넌트 | /rest/products/search?q=* |
+| CWE | CWE-89 (SQL Injection) |
+| OWASP | A03:2021 Injection |
+| CVSS v3.1 | 9.8 (CRITICAL) |
+| Vector | AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H |
+| 상태 | Open |
+
+## 설명 (Description)
+JuiceShop 의 /rest/products/search 엔드포인트는 사용자 입력 q 파라미터를
+SQL 쿼리에 직접 삽입한다. 검증되지 않은 입력은 백엔드 SQLite 데이터베이스의
+전체 스키마 추출 + 임의 데이터 수정 + UNION 기반 인증 우회를 가능하게 한다.
+
+## 재현 단계
+\`\`\`bash
+# 1. 정상 요청
+curl -s "http://10.20.30.80:3000/rest/products/search?q=apple" | jq '.data | length'
+
+# 2. SQL 메타문자 오류 확인
+curl -s "http://10.20.30.80:3000/rest/products/search?q=apple'" | jq -r '.error'
+
+# 3. UNION SELECT 추출
+curl -s "http://10.20.30.80:3000/rest/products/search?q=')) UNION SELECT id,email,password,'4','5','6','7','8','9' FROM Users--"
+\`\`\`
+
+## 영향
+| 항목 | 평가 |
+|------|------|
+| 기밀성 (C) | High — 모든 사용자 자격증명 (bcrypt hash) 노출 |
+| 무결성 (I) | High — UPDATE/INSERT 가능 시 데이터 위변조 |
+| 가용성 (A) | High — DROP TABLE / 대용량 query 로 DB 장애 |
+| 비즈니스 영향 | 사용자 12,847 명의 PII 유출 가능, GDPR 위반 위험 |
+
+## 권고
+### 즉시 (≤24시간)
+1. 해당 endpoint 임시 차단 또는 WAF 룰 (ModSecurity OWASP CRS 941xxx)
+2. 모든 사용자 비밀번호 강제 재설정
+3. 위반 가능성 통보 (개인정보보호위원회)
+
+### 단기 (≤7일)
+1. Sequelize ORM `findAll({where: {name: {[Op.like]: '%' + q + '%'}}})` 으로 변경
+2. q 파라미터 입력 검증 (alphanumeric + space only)
+3. 모든 query 의 prepared statement 강제
+
+### 중기 (≤30일)
+1. 모든 endpoint 의 SAST 스캔 (semgrep) CI 통합
+2. DAST 스캔 (OWASP ZAP) 야간 자동
+3. WAF 룰 monthly update + tuning
+
+## 참고
+- [OWASP — SQL Injection](https://owasp.org/www-community/attacks/SQL_Injection)
+- [CWE-89](https://cwe.mitre.org/data/definitions/89.html)
+- [Sequelize Docs](https://sequelize.org/docs/v6/core-concepts/model-querying-basics/#operators)
+
+## 증거
+- Screenshot: /evidence/F-001-burp-1.png
+- HTTP request log: /evidence/F-001-request.txt
+- Tool output: /evidence/F-001-sqlmap.log
+MD
+```
+
+모든 finding 의 12 섹션 (Title/Meta/Description/Repro/Result/Impact/Recommendation/References/Evidence/Severity/CVSS/Status) 표준 준수.
+
+#### 도구 3: Risk Heat Map (Step 7)
+
+```bash
+# === Python matplotlib Heat Map ===
+python3 << 'PY'
+import matplotlib.pyplot as plt
+import numpy as np
+
+# 5x5 매트릭스 (가능성 × 영향도)
+data = np.array([
+  [0, 0, 1, 2, 0],   # 영향도 5 (Catastrophic)
+  [0, 1, 2, 3, 1],   # 영향도 4 (Major)
+  [1, 2, 3, 2, 1],   # 영향도 3 (Moderate)
+  [2, 1, 1, 0, 0],   # 영향도 2 (Minor)
+  [3, 1, 0, 0, 0],   # 영향도 1 (Insignificant)
+])
+
+# 위험 색상 (5x5 risk matrix - NIST SP 800-30)
+risk_colors = np.array([
+  ['yellow','orange','red','red','red'],
+  ['yellow','orange','red','red','red'],
+  ['green','yellow','orange','red','red'],
+  ['green','green','yellow','orange','red'],
+  ['green','green','yellow','orange','orange'],
+])
+
+fig, ax = plt.subplots(figsize=(10, 8))
+for i in range(5):
+    for j in range(5):
+        ax.add_patch(plt.Rectangle((j,4-i), 1, 1, color=risk_colors[i,j]))
+        if data[i,j] > 0:
+            ax.text(j+0.5, 4-i+0.5, str(data[i,j]), ha='center', va='center', fontsize=14, weight='bold')
+
+ax.set_xlim(0, 5); ax.set_ylim(0, 5)
+ax.set_xticks([0.5,1.5,2.5,3.5,4.5])
+ax.set_yticks([0.5,1.5,2.5,3.5,4.5])
+ax.set_xticklabels(['Rare','Unlikely','Possible','Likely','Certain'])
+ax.set_yticklabels(['Insignificant','Minor','Moderate','Major','Catastrophic'])
+ax.set_xlabel('Likelihood', fontsize=12)
+ax.set_ylabel('Impact', fontsize=12)
+ax.set_title('Risk Heat Map — 25 Findings (Internal Pentest)', fontsize=14)
+plt.savefig('/tmp/heatmap.png', dpi=150, bbox_inches='tight')
+print("Saved: /tmp/heatmap.png")
+PY
+
+# === ASCII (보고서 plain text) ===
+cat > /tmp/heatmap.txt << 'EOF'
+                    LIKELIHOOD
+              Rare  Unlik  Poss  Likely  Cert
+            +------+------+------+------+------+
+Catastr. 5  |  .   |  .   |  1   |  2   |  .   |   ★ F-001 (CVSS 10), F-002 (9.8)
+            +------+------+------+------+------+
+Major    4  |  .   |  1   |  2   |  3   |  1   |
+            +------+------+------+------+------+
+Moderate 3  |  1   |  2   |  3   |  2   |  1   |
+            +------+------+------+------+------+
+Minor    2  |  2   |  1   |  1   |  .   |  .   |
+            +------+------+------+------+------+
+Insig.   1  |  3   |  1   |  .   |  .   |  .   |
+            +------+------+------+------+------+
+
+Legend: . none   숫자 = finding 수
+색상 (실 보고서):  녹색=Acceptable  노랑=Monitor  주황=Mitigate  빨강=Immediate
+
+총 25 finding: 즉시 3 / 완화 12 / 모니터 8 / 수용 2
+EOF
+```
+
+#### 도구 4: ATT&CK Navigator + Atomic Red Team — TTP 매핑 (Step 6)
+
+```bash
+# === Navigator JSON 생성 ===
+python3 << 'PY'
+import json
+
+techniques = [
+  ("T1595.002", 100, "#00ff00", "nmap NSE vuln"),
+  ("T1190",     100, "#00ff00", "SQLi exploit /rest/products/search"),
+  ("T1078.003", 80,  "#ffaa00", "default credentials wazuh-api"),
+  ("T1505.003", 100, "#00ff00", "webshell.php upload via JuiceShop"),
+  ("T1059.004", 100, "#00ff00", "shell command injection /imageCaptcha"),
+  ("T1068",     100, "#00ff00", "sudo NOPASSWD vim → root"),
+  ("T1003.008", 50,  "#ffff00", "/etc/shadow read"),
+  ("T1021.004", 80,  "#ffaa00", "SSH key reuse to siem"),
+  ("T1041",     100, "#00ff00", "tar+nc data exfil"),
+  ("T1070.002", 60,  "#ffaa00", "anti-forensic log clean"),
+]
+
+layer = {
+  "name": "Pentest Lab Coverage",
+  "versions": {"attack": "14", "navigator": "4.9.4", "layer": "4.5"},
+  "domain": "enterprise-attack",
+  "techniques": [
+    {"techniqueID": tid, "score": s, "color": c, "comment": cm}
+    for tid, s, c, cm in techniques
+  ],
+  "gradient": {"colors": ["#ff0000","#ffff00","#00ff00"], "minValue": 0, "maxValue": 100},
+  "legendItems": [
+    {"label": "Confirmed exploit", "color": "#00ff00"},
+    {"label": "Partial / sample", "color": "#ffaa00"},
+    {"label": "Identified, not exploited", "color": "#ffff00"},
+  ],
+  "metadata": [
+    {"name": "engagement", "value": "Internal Pentest 2026-Q2"},
+    {"name": "report", "value": "F-001 ~ F-025"},
+  ],
+}
+
+with open('/tmp/navigator-layer.json','w') as f:
+    json.dump(layer, f, indent=2)
+print("Saved: /tmp/navigator-layer.json — load at http://localhost:4200")
+PY
+
+# === ATT&CK 매트릭스 markdown 표 (보고서용) ===
+cat > /tmp/attack-matrix.md << 'MD'
+## MITRE ATT&CK Coverage
+
+| Tactic | Technique ID | Name | Finding | Status |
+|--------|--------------|------|---------|--------|
+| TA0043 Reconnaissance | T1595.002 | Vulnerability Scanning | F-Recon | ✓ Used |
+| TA0001 Initial Access | T1190 | Exploit Public Facing | F-001 (SQLi) | ✓ Confirmed |
+| TA0001 Initial Access | T1078.003 | Local Accounts | F-002 (default cred) | ✓ Confirmed |
+| TA0002 Execution | T1059.004 | Unix Shell | F-005 (cmd inject) | ✓ Confirmed |
+| TA0003 Persistence | T1505.003 | Web Shell | F-006 (php) | ✓ Confirmed |
+| TA0004 Privilege Esc. | T1068 | Exploitation for PE | F-007 (sudo vim) | ✓ Confirmed |
+| TA0006 Cred. Access | T1003.008 | /etc/shadow | F-008 (read) | ⚠ Partial |
+| TA0008 Lateral Move. | T1021.004 | SSH | F-009 (key reuse) | ⚠ Partial |
+| TA0010 Exfiltration | T1041 | Exfil over C2 | F-010 (tar+nc) | ✓ Confirmed |
+| TA0005 Defense Evasion | T1070.002 | Clear Linux Logs | F-011 (sed) | ⚠ Partial |
+
+Coverage: 7/10 confirmed, 3/10 partial — **Detection 우선순위**: T1003.008, T1021.004, T1070.002 (3 partial = 알림 미발생)
+MD
+```
+
+#### 도구 5: Marp / reveal.js — 경영진 프레젠테이션 (Step 11)
+
+```bash
+# === Marp markdown → slides ===
+cat > /tmp/exec-deck.md << 'MD'
+---
+marp: true
+theme: gaia
+class: lead
+paginate: true
+backgroundColor: #fff
+header: 'CONFIDENTIAL — Internal'
+footer: 'Pentest Report 2026-Q2 | Slide ${current}/${total}'
+---
+
+# Penetration Test Report
+### Executive Briefing
+**2026-05-02**
+
+---
+
+# Engagement Summary
+
+| 항목 | 값 |
+|------|------|
+| 범위 | 10.20.30.0/24 (4 hosts) |
+| 기간 | 2026-04-25 ~ 05-02 (8d) |
+| 방법론 | PTES + OWASP WSTG |
+| 발견 | **25 vulnerabilities** |
+
+---
+
+# Risk Distribution
+
+![bg right:60% width:100%](/tmp/heatmap.png)
+
+- **Critical**: 2 (즉시 조치)
+- **High**: 8 (7일 내)
+- **Medium**: 11 (30일 내)
+- **Low**: 4 (90일 내)
+
+---
+
+# Top 3 Critical Findings
+
+1. **JWT none algorithm** (CVSS 10.0)
+   - Impact: 모든 인증 우회
+   - Fix: 1일 (라이브러리 update)
+
+2. **SQL Injection** (CVSS 9.8)
+   - Impact: 12,847 사용자 PII 유출 위험
+   - Fix: 3-5일 (ORM 변경)
+
+3. **Sudo NOPASSWD** (CVSS 7.8)
+   - Impact: Local root
+   - Fix: 1시간 (sudoers 정책)
+
+---
+
+# Defense Recommendations
+
+| 시점 | 조치 | 비용 | 위험 감소 |
+|------|------|------|-----------|
+| ≤7일  | JWT/SQLi/cred 회전 | 5 MD | 60% |
+| ≤30일 | WAF + SAST | 15 MD | 85% |
+| ≤90일 | SDLC 보안 게이트 | 30 MD | 95% |
+
+---
+
+# Next Steps
+
+1. **금주**: critical 3 patch + 자격증명 회전
+2. **2주**: WAF 배포 + retest
+3. **분기**: SDLC 보안 통합
+4. **연간**: 외부 pentest 갱신
+MD
+
+# Marp 로 slide 생성
+marp /tmp/exec-deck.md --pdf -o /tmp/exec-deck.pdf
+marp /tmp/exec-deck.md --html -o /tmp/exec-deck.html
+marp /tmp/exec-deck.md --pptx -o /tmp/exec-deck.pptx     # PowerPoint
+
+# === reveal.js 웹 슬라이드 ===
+reveal-md /tmp/exec-deck.md --port 8000
+
+# === Pyramid Principle (피라미드 원칙) — 경영진 발표 구조 ===
+# 1. Conclusion First (위험 등급 + 권고)
+# 2. Supporting evidence (Top 3 finding)
+# 3. Action items (date + owner)
+# 4. Q&A
+# 안티 패턴: 기술 detail 부터 → bottom-up → 경영진 인내심 한계
+```
+
+#### 도구 6: security.txt + HackerOne — Responsible Disclosure (Step 15)
+
+```bash
+# === security.txt 생성 ===
+sudo mkdir -p /var/www/html/.well-known
+cat | sudo tee /var/www/html/.well-known/security.txt > /dev/null << 'TXT'
+# https://securitytxt.org/ standard
+
+Contact: mailto:security@corp.example
+Contact: https://hackerone.com/corp
+Expires: 2027-12-31T23:59:59.000Z
+Encryption: https://corp.example/.well-known/pgp-key.txt
+Acknowledgments: https://corp.example/security-hall-of-fame
+Preferred-Languages: ko, en
+Canonical: https://corp.example/.well-known/security.txt
+Policy: https://corp.example/security-policy
+Hiring: https://corp.example/careers/security
+TXT
+
+# 검증
+curl -s https://yoursite.example/.well-known/security.txt
+
+# === Disclose.io 정책 템플릿 ===
+cat > /tmp/disclosure-policy.md << 'MD'
+# Vulnerability Disclosure Policy (VDP)
+
+## Scope
+| 범위 | 포함 |
+|------|------|
+| In-scope | *.corp.example, mobile apps, OAuth flows |
+| Out-of-scope | 3rd party SaaS, social engineering, DoS |
+
+## Reporting
+이메일 또는 HackerOne 으로 신고: security@corp.example / hackerone.com/corp
+
+요청 정보:
+- 영향 시스템 + 버전
+- 재현 단계
+- PoC (스크린샷 또는 터미널 캡처)
+- 위험도 평가 (CVSS v3.1 권장)
+
+## Response Timeline
+| 단계 | SLA |
+|------|-----|
+| 접수 확인 | 1 영업일 |
+| 분류·검증 | 5 영업일 |
+| 수정 (Critical) | 7일 |
+| 수정 (High) | 30일 |
+| 수정 (Medium) | 90일 |
+| 공개 (조율) | 수정 후 30일 |
+
+## Safe Harbor
+선의의 보안 연구는 법적 책임 면제. 단:
+- 데이터 파괴·수정 금지
+- PII 다운로드 금지
+- 신고 후 24시간 내 모든 자료 폐기
+- 제3자 시스템 공격 금지
+
+## Acknowledgment
+- Hall of Fame 에 등재 가능
+- 금전 보상 (Bug Bounty 프로그램 별도)
+- CVE 식별자 신청 시 인정
+MD
+
+# === ISO/IEC 29147 / 30111 표준 절차 ===
+cat > /tmp/disclosure-process.md << 'MD'
+1. **Receipt** (D+0): 신고 접수, 알림 자동
+2. **Triage** (D+1~5): security team 분석, 위험도 분류
+3. **Acknowledge** (D+5): 신고자에게 분류 결과 + ETA
+4. **Mitigation** (D+5~90): 패치 + retest
+5. **Coordinated Disclosure** (D+T+0~30): 공개 일정 조율
+6. **Public Disclosure** (D+T+30): CVE + advisory + credits
+7. **Lessons Learned** (D+T+45): SDLC 개선
+MD
+
+# === HackerOne Submit ===
+# https://hackerone.com/<program>/reports/new
+# - Asset: Web (https://corp.example)
+# - Weakness: CWE-89 (SQL Injection)
+# - Severity: CVSS 9.8 Critical
+# - Title: SQL Injection in /rest/products/search
+# - Description: (위 finding F-001 형식)
+# - Steps + PoC + Impact
+
+# === CVE Request ===
+# https://cveform.mitre.org/
+# vendor 가 CNA 인 경우는 vendor 에 신청
+# 그 외는 MITRE 에 신청 (보통 1~30 영업일)
+
+# === 90-day Project Zero 정책 ===
+# Google Project Zero: 90일 내 미수정 시 자동 공개
+# 대부분 vendor 는 90~120일 grace period 인정
+```
+
+#### 도구 7: 포트폴리오 + 커리어 (Step 15)
+
+```bash
+# === GitHub Pages — 정적 포트폴리오 ===
+mkdir ~/portfolio && cd ~/portfolio
+cat > index.md << 'MD'
+# 학생 이름 — Security Engineer Portfolio
+
+## About
+- 사이버보안 학사 / OSCP / CRTP 보유 예정
+- 주요 분야: Web Application Security, Cloud Security, Pentest
+
+## Projects
+- [JuiceShop pentest report](./reports/juiceshop-2026.pdf) — 25 findings
+- [JWT none CVE-XXXX-XXXX disclosure](./cves/jwt-none-2026.md) — Coordinated
+- [Bastion AI pentest tool](https://github.com/me/bastion) — 2.3k stars
+
+## Bug Bounty
+- HackerOne: <link>
+- Bugcrowd: <link>
+- Total: 17 valid reports / Critical 2 / High 8
+
+## Speaking
+- BSides Seoul 2026 — "AI-assisted Pentesting"
+- DEF CON CTF Quals 2025 — Top 100
+
+## Contact
+- security@my.example
+- LinkedIn / Twitter
+MD
+
+# Hugo / mkdocs 빌드
+mkdocs new portfolio
+cd portfolio
+mkdocs serve   # http://localhost:8000
+
+# === GitHub repo curation ===
+# 좋은 레포의 신호:
+# - README.md (목적 + 사용법 + 스크린샷)
+# - LICENSE (MIT/Apache/GPL 명시)
+# - .github/workflows/ (CI badge)
+# - releases (Tagged versions)
+# - 외부 reference (CVE / blog post / talk)
+
+# pinned repository — 가장 강한 6 개 선택
+
+# === 자격증·인증 ===
+# Entry: Security+, eJPT, PNPT, OSCP
+# Mid: OSCP+ ($), CRTP, CRTO, BSCP, GPEN
+# Senior: OSCE3 (OSWE+OSEP+OSED), GXPN, GREM
+# Cloud: CCSP, AWS Security Specialty, GCP Security Engineer
+# AI: AI/ML 보안 자격은 미성숙 — Anthropic safety, OWASP LLM Top 10 follow
+
+# === 기여 (가시성 향상) ===
+# 1. CVE 신청 (5개 이상 → CV 가치 ↑)
+# 2. OSS 보안 도구 contribution
+# 3. blog (medium / dev.to / 자체 hugo)
+# 4. CTF 참가 (CTFtime ranking)
+# 5. Conference talk (BSides → DEF CON / RSA)
+# 6. 책 / 강의 (advanced)
+
+# === 학생 → 주니어 → 시니어 트랙 ===
+# Year 1: CTF 100+ + CVE 1 + GitHub repo 5 + OSCP 도전
+# Year 2: 첫 직장 (junior pentester / SOC analyst) + blog 12 + bug bounty 5
+# Year 3: 시니어 자격증 (OSEP/GXPN) + DEF CON CFP 시도
+# Year 5: 본인 R&D + 책 / 도구 / startup
+```
+
+### 점검 / 작성 / 공개 흐름 (15 step + multi_task 통합)
+
+#### Phase A — 보고서 구조 + Finding (s1·s2·s3·s4·s5·s9)
+
+```bash
+# 1. Outline 작성
+cat > /tmp/report_outline.txt << 'EOF'
+== Penetration Test Report — Outline ==
+1. Title Page
+2. Confidentiality Notice
+3. Document Control (version, date, author, distribution)
+4. Executive Summary
+   4.1 Engagement Summary
+   4.2 Overall Risk
+   4.3 Top 5 Findings
+   4.4 Recommendations Summary
+5. Methodology
+   5.1 PTES Phase Overview
+   5.2 Tools Used
+   5.3 Scope and Limitations
+6. Findings (각 finding 12 섹션 표준)
+   6.1 Critical (F-001, F-002)
+   6.2 High (F-003 ~ F-010)
+   6.3 Medium (F-011 ~ F-021)
+   6.4 Low (F-022 ~ F-025)
+7. Attack Narrative (시간순 storytelling)
+8. MITRE ATT&CK Coverage Matrix
+9. Risk Heat Map
+10. Defense Recommendations (단/중/장기)
+11. Cost-Benefit Analysis
+12. Retest Plan
+13. Technical Appendix
+   13.1 Tool versions and configurations
+   13.2 Raw scan output (nmap, nuclei, ...)
+   13.3 PoC code
+14. References
+15. Glossary
+EOF
+
+# 2. 모든 finding 작성 (12 섹션 × 25개) — 직접 수기 (자동화 금지)
+
+# 3. 요약 테이블 (csvkit)
+cat > /tmp/findings.csv << 'CSV'
+ID,Title,CWE,CVSS,Severity,Status
+F-001,JWT none algorithm,CWE-347,10.0,Critical,Open
+F-002,SQL Injection /search,CWE-89,9.8,Critical,Open
+F-003,Sudo NOPASSWD vim,CWE-269,7.8,High,Open
+F-004,Wazuh API default cred,CWE-798,7.5,High,Open
+F-005,Stored XSS comment,CWE-79,6.5,Medium,Open
+CSV
+csvlook /tmp/findings.csv > /tmp/findings-table.txt
+cat /tmp/findings-table.txt
+
+# 4. PDF 변환
+pandoc /tmp/report.md -o /tmp/report.pdf --pdf-engine=xelatex --toc --highlight-style=tango
+```
+
+#### Phase B — 시각화 + 분석 (s6·s7·s8)
+
+```bash
+# 1. ATT&CK Navigator JSON
+python3 /tmp/gen-navigator.py > /tmp/navigator-layer.json
+
+# 2. Risk Heat Map
+python3 /tmp/gen-heatmap.py        # → /tmp/heatmap.png
+cat /tmp/heatmap.txt               # 텍스트 버전 보고서 embed
+
+# 3. Cost-Benefit
+python3 << 'PY'
+findings = [
+  ("JWT none disable",       1,  9.8, "Critical"),  # 1 MD, 9.8 risk reduction
+  ("SQLi → ORM",             5,  9.8, "Critical"),
+  ("Sudo policy revise",     0.5, 7.8, "High"),
+  ("Wazuh cred rotation",    0.5, 7.5, "High"),
+  ("CSP header",             1,  6.5, "Medium"),
+  ("WAF deployment",         15, 8.0, "Multiple"),  # 다수 finding 완화
+  ("SAST in CI",             10, 7.0, "Multiple"),
+  ("Network segmentation",   30, 6.0, "Multiple"),
+]
+print(f"{'Item':<30} {'MD':>4} {'Risk':>5} {'ROI':>6}")
+print("-" * 50)
+for name, days, risk, sev in sorted(findings, key=lambda x: -x[2]/x[1]):
+    roi = round(risk/days, 2)
+    print(f"{name:<30} {days:>4} {risk:>5.1f} {roi:>6.2f}")
+PY
+# ROI 높은 항목 (NOPASSWD/cred rotation) 부터 우선 시행
+```
+
+#### Phase C — 검증 + 발표 + 공개 (s10·s11·s12·s13·s14·s15)
+
+```bash
+# 1. 보고서 품질 체크리스트
+cat > /tmp/qa-checklist.txt << 'EOF'
+[ ] Title page + version + date + author
+[ ] Confidentiality notice (NDA reference)
+[ ] Executive Summary < 2 pages, no jargon
+[ ] All findings have 12 sections
+[ ] CVSS vector + score for every finding
+[ ] CWE ID for every finding
+[ ] OWASP Top 10 mapping
+[ ] MITRE ATT&CK matrix
+[ ] Risk Heat Map (visual + text)
+[ ] Cost-Benefit table
+[ ] Retest plan with date + scope
+[ ] Technical Appendix (raw output)
+[ ] All screenshots have captions
+[ ] All code blocks have language hints
+[ ] PII/secret 마스킹 (********  처리)
+[ ] PDF passes accessibility (PDF/UA-1)
+[ ] PDF size < 10MB (이미지 압축)
+[ ] Spelling + grammar (LanguageTool)
+[ ] Final reviewer signature
+EOF
+
+# 2. 경영진 슬라이드 (Marp)
+marp /tmp/exec-deck.md --pdf -o /tmp/exec-deck.pdf
+marp /tmp/exec-deck.md --pptx -o /tmp/exec-deck.pptx
+
+# 3. Retest 계획
+cat > /tmp/retest-plan.txt << 'EOF'
+=== Retest Plan — Post-remediation Verification ===
+Trigger:    수정 PR merge 또는 vendor 의 fix release
+Scope:      F-001 ~ F-025 (25 findings)
+Method:     Same payload + automated regression
+Tools:      sqlmap, nuclei custom, jwt_tool, postman collection
+Timeline:   3 영업일 (수정 1일/검증 1일/보고서 1일)
+Pass:      모든 finding 의 PoC 가 더 이상 작동 안 함 + new vector 없음
+Fail:      1 이상 finding 재현 → Closed → Open 전환, 재 mitigate
+Owner:     security team + dev (PR review)
+EOF
+
+# 4. security.txt 배포
+sudo cp /tmp/security.txt /var/www/html/.well-known/
+
+# 5. 포트폴리오 갱신
+echo "## 2026-Q2 — Internal Pentest" >> ~/portfolio/index.md
+echo "- 25 findings, 2 CVE candidates, 14 days" >> ~/portfolio/index.md
+mkdocs build && mkdocs gh-deploy
+
+# 6. 윤리 자기 평가
+cat > /tmp/ethics-checklist.txt << 'EOF'
+[ ] RoE 범위 내에서만 활동 했는가?
+[ ] PII 다운로드 했다면 안전 삭제 + 보고 했는가?
+[ ] 발견 즉시 책임자에게 통보 했는가?
+[ ] 외부 시스템 (3rd party) 침해 의심 시 즉시 중단 했는가?
+[ ] cleanup 모두 수행 했는가?
+[ ] 연구 결과를 공개하기 전 vendor 동의 받았는가?
+[ ] CVE 신청 시 적절한 credit 부여 했는가?
+EOF
+```
+
+#### Phase D — 통합 시나리오 (s99 multi_task)
+
+s1 → s2 → s3 → s4 → s5 를 Bastion 가 한 번에:
+
+1. **plan**: outline → finding 1 (SQLi) → finding 2 (default cred) → 요약 table → narrative
+2. **execute**: markdown 생성 + pandoc PDF + csvkit table + mermaid timeline
+3. **synthesize**: 5 산출물 (outline.txt + finding-F001.md + finding-F002.md + summary-table.csv + narrative.md) + 다음 phase 안내
+
+### 도구 비교표 — 보고서 산출물별 도구
+
+| 산출물 | 1순위 도구 | 2순위 (보완) | 사용 조건 |
+|---------|-----------|-------------|----------|
+| 보고서 (PDF) | pandoc + xelatex | typst | 한글 + 코드 + TOC |
+| 보고서 (Word) | pandoc → docx | LibreOffice template | 회사 양식 강제 |
+| 보고서 (HTML) | pandoc → html | mkdocs / Hugo | 협업 / 검색 |
+| 슬라이드 | Marp | reveal.js / Beamer | markdown 으로 빠르게 |
+| 학술 슬라이드 | Beamer (LaTeX) | reveal.js | 식 수식 많을 때 |
+| 협업 보고서 | Dradis CE | pwndoc / Faraday | 팀 공동 |
+| 다이어그램 (sequence) | mermaid | PlantUML | markdown 통합 |
+| 다이어그램 (architecture) | draw.io | Excalidraw / diagrams.net | 자유로운 그림 |
+| Heat Map | matplotlib + seaborn | plotly (interactive) | PDF 정적 |
+| 표 | csvkit + pandoc | excel + img | 보고서 embed |
+| TTP 매핑 | ATT&CK Navigator | Atomic Red Team yaml | 시각화 강력 |
+| Disclosure | security.txt + HackerOne | email + PGP | 공식 program 시 H1 |
+| 포트폴리오 | mkdocs / Hugo | Jekyll / Netlify | 정적 빠름 |
+| Bug Bounty | HackerOne | Bugcrowd / Synack / Intigriti | 수당 + 가시성 |
+
+### 도구 선택 매트릭스 — 시나리오별 권장
+
+| 시나리오 | 우선 도구 | 이유 |
+|---------|---------|------|
+| "내부 보고서 (한글 + 코드)" | pandoc + xelatex (Noto Sans CJK KR) | TOC + 코드 + 한글 |
+| "외부 vendor 보고서" | pandoc + LaTeX 양식 + PGP 서명 | 정형 + 무결성 |
+| "협업 (5+명)" | Dradis CE + Slack | 실시간 + 권한 |
+| "학술 발표" | Beamer (LaTeX) + bib | 수식 + 참고문헌 |
+| "경영진 5분 발표" | Marp + Pyramid Principle | 빠르게 + 명확 |
+| "기술 공개 talk" | reveal.js + GitHub Pages | 인터랙티브 + 공유 |
+| "책임 있는 공개 (CVE)" | security.txt + email + 90-day | ISO/IEC 29147 |
+| "Bug Bounty 첫 도전" | HackerOne + practice CTF | 보호 + 학습 |
+| "포트폴리오 (취업)" | mkdocs + GitHub Pages + LinkedIn | 정적 + 검색 + 네트워크 |
+
+### 보고서 품질 체크리스트 (s10·s14 산출물)
+
+```
+=== 25-Point Report Quality Checklist ===
+구조
+[ ] 1. Title page + version + date + author
+[ ] 2. Confidentiality notice + NDA reference
+[ ] 3. Document control (revision history)
+[ ] 4. Table of Contents (clickable)
+[ ] 5. Executive Summary < 2 pages, jargon-free
+Findings
+[ ] 6. 모든 finding 의 12 섹션 표준 준수
+[ ] 7. CVSS vector + score 모두 있음
+[ ] 8. CWE / OWASP / MITRE ATT&CK ID 있음
+[ ] 9. 재현 단계 (curl/sqlmap/payload) 명확
+[ ] 10. 영향도 정량 (사용자 수, $, 다운타임 등)
+[ ] 11. 권고 단/중/장기 분류
+[ ] 12. References (OWASP/NIST/vendor docs)
+[ ] 13. Evidence (screenshot/raw log/PoC)
+시각화
+[ ] 14. Risk Heat Map (visual + text)
+[ ] 15. ATT&CK Coverage Matrix
+[ ] 16. Attack Narrative timeline
+[ ] 17. Cost-Benefit table
+보안
+[ ] 18. PII/secret 마스킹 (********)
+[ ] 19. screenshot 의 자격증명 redact
+[ ] 20. PDF 메타데이터 정리 (author/path)
+[ ] 21. PGP 서명 (외부 배포 시)
+품질
+[ ] 22. Spelling + grammar 검사
+[ ] 23. Code block syntax highlighting
+[ ] 24. PDF/UA-1 accessibility
+[ ] 25. Final reviewer 서명
+```
+
+### 학생 셀프 체크리스트 (각 step 완료 기준)
+
+- [ ] s1: `/tmp/report_outline.txt` 15+ 섹션, 각 섹션의 sub-section 명시
+- [ ] s2: F-001 SQLi finding, 12 섹션 모두 + CVSS 9.8 vector + 재현 명령
+- [ ] s3: F-002 default credential, CWE-798 + CIS Controls 5 매핑
+- [ ] s4: 25 finding 요약 table (markdown 또는 CSV)
+- [ ] s5: 시간순 attack narrative (mermaid timeline 또는 text)
+- [ ] s6: ATT&CK Coverage matrix, 7+ technique, color-coded
+- [ ] s7: Risk Heat Map (PNG + ASCII 둘 다), 5×5 매트릭스
+- [ ] s8: Cost-Benefit 표 (item × MD × risk × ROI), ROI 정렬
+- [ ] s9: Technical Appendix (tool version + raw output + PoC)
+- [ ] s10: 25-point quality checklist 통과
+- [ ] s11: Marp/reveal.js 슬라이드 5+ 슬라이드, Pyramid Principle
+- [ ] s12: Retest plan (Trigger / Scope / Method / Pass/Fail / Owner)
+- [ ] s13: `/tmp/final_pentest_report.txt` 모든 섹션 통합
+- [ ] s14: 보고서 PDF 생성, PII 마스킹 + PGP 서명
+- [ ] s15: security.txt + disclosure policy + 포트폴리오 1+ 항목 추가
+- [ ] s99: Bastion 가 5 작업 (outline+F001+F002+table+narrative) 순차 생성
+
+### 추가 참조 자료
+
+- **NIST SP 800-115** Technical Guide to InfoSec Testing and Assessment §5
+- **PTES Reporting** http://www.pentest-standard.org/index.php/Reporting
+- **OWASP Risk Rating Methodology** https://owasp.org/www-community/OWASP_Risk_Rating_Methodology
+- **CREST CCT App Methodology** (CREST Certified Tester guide)
+- **MITRE ATT&CK Navigator** https://mitre-attack.github.io/attack-navigator/
+- **ISO/IEC 29147** Vulnerability Disclosure
+- **ISO/IEC 30111** Vulnerability Handling Processes
+- **CVSS v3.1 Specification** https://www.first.org/cvss/v3.1/specification-document
+- **security.txt RFC 9116** https://www.rfc-editor.org/rfc/rfc9116
+- **disclose.io** Vulnerability Disclosure Templates
+- **HackerOne disclosure standards** https://www.hackerone.com/vulnerability-disclosure-policy
+- **Project Zero 90-day Policy** https://googleprojectzero.blogspot.com/p/vulnerability-disclosure-policy.html
+- **OSCP Exam Report Template** https://github.com/noraj/OSCP-Exam-Report-Template-Markdown
+
+위 모든 보고서 작성 도구는 **격리 + 익명화** 원칙을 따른다. PII / 비밀번호 / 토큰 / 내부 IP 등은
+보고서 배포 전 반드시 마스킹 (********), 가능하면 vendor 와 PGP 암호화 채널 사용. CVE 신청·
+Bug Bounty 제출은 사전에 vendor 와 책임 있는 공개 timeline 합의 (보통 90일 grace period).
+절대 RoE 외부 시스템에 도구 사용 금지 — 모든 윤리·법적 책임은 학생 본인에게 있음.

@@ -709,3 +709,53 @@ dataset 의 `e5578610-d2eb-11ee-...` incident 가 보유한 *동시 다층 정�
 
 **기말 평가 함의**: 본 dataset 의 다층 구조 (signal · graph · framework) 와 4-layer 익명화 를 *모방한 보고서* 가 가장 높은 점수.
 
+
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (lab week15 — 종합 웹 해킹)
+
+| step | 카테고리 | 핵심 도구 |
+|---|---|---|
+| 1 nmap 정찰 | **nmap -sV -sC -A** / **rustscan** / masscan / naabu |
+| 2 fingerprint | whatweb / **httpx** / wappalyzer / nmap -sV |
+| 3 SQLi 인증 | `admin'--` / sqlmap --level=5 / Burp Intruder |
+| 4 Command Injection | **commix** / DVWA / curl `;` |
+| 5 UNION SELECT | sqlmap --technique=U / 수동 / **DBeaver** |
+| 6 Null Byte / Traversal | %00 / ../../../ / **dotdotpwn** / wfuzz |
+| 7 sqlmap 자동 | --batch --dbs --tables --dump / **ghauri** / wapiti |
+| 8 chain | SQLi→BOLA→RCE / **BloodHound** / **CrackMapExec** / **PEASS-ng** |
+| 9 WAF 우회 | wafw00f / sqlmap --tamper / xsstrike --waf-evasion / Bypass-WAF Burp |
+| 10 보고서 | **OWASP Top 10 매트릭스** / **Kill Chain** / DefectDojo / **PTES** / CVSS / sha256 |
+
+### 학생 환경 준비
+```bash
+sudo apt install -y nmap rustscan masscan dotdotpwn-go crackmapexec
+go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
+git clone --depth 1 https://github.com/BloodHoundAD/BloodHound ~/BloodHound
+git clone --depth 1 https://github.com/peass-ng/PEASS-ng ~/PEASS-ng
+# DefectDojo: docker compose -f docker-compose.yml up -d
+```
+
+---
+
+## 종합: web-vuln-nonai 15 주차 OSS 도구 카탈로그
+
+전 주차에서 학생이 실습한 OSS 도구 (대분류):
+- **정찰**: nmap, rustscan, masscan, naabu, whatweb, httpx, wappalyzer, nikto, gobuster, ffuf, dirb
+- **TLS/headers**: openssl, sslscan, testssl.sh, Mozilla Observatory, Google CSP Evaluator
+- **WAF**: wafw00f, ModSecurity CRS, CORScanner, Corsy
+- **Injection**: sqlmap, ghauri, wapiti, bbqsql, sqlninja, commix
+- **Client-side**: XSStrike, dalfox, BeEF, XSS Hunter, Gophish
+- **File**: weevely, p0wny-shell, b374k, evilarc, exiftool, steghide
+- **Crypto**: hashid, hashcat, john, jwt_tool, pyjwt, ysoserial
+- **SSRF/XXE/CSRF**: SSRFmap, gopherus, XXEinjector, interactsh, rbndr.us, Singularity, csrfgenerator
+- **API**: kiterunner, arjun, gau, httpx, k6, autorize
+- **Auth/Session**: hydra, ffuf, wfuzz, patator, Burp Sequencer, ent
+- **MITM**: Wireshark, tshark, bettercap, Ferret, Hamster
+- **Static analysis**: bandit, semgrep, sqlfluff, eslint-plugin-security, RetireJS
+- **Defense lib**: DOMPurify, bleach, OWASP Java Encoder, Trusted Types, python-magic, ClamAV, Argon2id, WebAuthn/FIDO2
+- **Auto / CI/CD**: nuclei, OWASP ZAP, Burp Suite, Playwright, GitHub Actions
+- **Monitor**: Wazuh FIM, auditd, inotifywait, ModSecurity, Falco, VirusTotal API
+- **Cloud / Lateral**: Pacu, CloudGoat, BloodHound, CrackMapExec, kubectl, K8s NetworkPolicy, Cilium, Squid
+- **보고**: DefectDojo, sha256, asciinema, PTES, OWASP Top 10, Kill Chain

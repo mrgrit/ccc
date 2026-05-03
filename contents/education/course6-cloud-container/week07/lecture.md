@@ -566,3 +566,176 @@ CIS 2.1 항목은 Docker daemon 옵션 `--icc=false` (inter-container communicat
 
 **학생 액션**: lab 환경에서 docker bench-security 를 1회 실행하고, fail 또는 warn 으로 표시된 항목 5개를 골라 표로 정리. 각 항목 옆에 *"이 항목이 위반되면 dataset 의 어느 message_type 에 어떤 패턴으로 흔적을 남기는가"* 한 줄씩 기재. 5건 모두 매핑 가능한 신호를 찾을 수 있어야 본 lecture 학습 완료.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course6 Cloud-Container — Week 07 컨테이너 네트워크)
+
+### CNI / Network Policy 도구
+
+| 영역 | OSS 도구 |
+|------|---------|
+| CNI 플러그인 | **Calico** (Tigera, OSS) / Cilium / Flannel / Weave Net |
+| Network Policy | Calico GlobalNetworkPolicy / Cilium CiliumNetworkPolicy / native k8s NetPol |
+| Service Mesh | **Istio** / Linkerd / Consul Connect / Cilium Service Mesh |
+| Ingress | nginx-ingress / Traefik / HAProxy / contour |
+| L7 정책 | Cilium L7 (HTTP/gRPC) / Istio AuthZPolicy |
+| eBPF | **Cilium** / Tetragon / Tracee / pixie |
+| 트래픽 가시성 | Hubble (Cilium) / Kiali (Istio) / pixie |
+
+### 핵심 — Cilium (현대 표준, eBPF 기반)
+
+```bash
+# Cilium CLI 설치
+curl -L --remote-name-all https://github.com/cilium/cilium-cli/releases/latest/download/cilium-linux-amd64.tar.gz
+sudo tar xzvfC cilium-linux-amd64.tar.gz /usr/local/bin
+
+# minikube 에서 설치
+minikube start --network-plugin=cni --cni=false
+cilium install
+cilium status --wait
+cilium connectivity test
+
+# Hubble (관측성)
+cilium hubble enable
+hubble observe                                                    # 실시간 트래픽
+hubble observe --pod default/nginx
+hubble observe --type drop                                        # drop 만
+```
+
+### 학생 환경 준비
+
+```bash
+# Cilium
+curl -L --remote-name-all https://github.com/cilium/cilium-cli/releases/latest/download/cilium-linux-amd64.tar.gz
+sudo tar xzvfC cilium-linux-amd64.tar.gz /usr/local/bin
+
+# Calico (OSS, 가장 대중)
+kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.27.0/manifests/tigera-operator.yaml
+kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.27.0/manifests/custom-resources.yaml
+
+# Istio
+curl -L https://istio.io/downloadIstio | sh -
+istioctl install --set profile=demo -y
+
+# Linkerd (간단, lightweight)
+curl --proto '=https' --tlsv1.2 -sSfL https://run.linkerd.io/install | sh
+linkerd install --crds | kubectl apply -f -
+linkerd install | kubectl apply -f -
+
+# nginx-ingress
+helm install ingress-nginx ingress-nginx/ingress-nginx --create-namespace -n ingress-nginx
+
+# Hubble UI
+cilium hubble ui                                                  # 자동 web UI 열림
+```
+
+### 핵심 사용법
+
+```bash
+# 1) NetworkPolicy (kubernetes native — 모든 CNI 호환)
+cat > deny-all.yaml << 'EOF'
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: default
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+EOF
+kubectl apply -f deny-all.yaml
+
+# 특정 Pod 만 허용
+cat > allow-app.yaml << 'EOF'
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend-to-backend
+spec:
+  podSelector:
+    matchLabels: {app: backend}
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app: frontend}
+      ports:
+        - protocol: TCP
+          port: 8080
+EOF
+
+# 2) CiliumNetworkPolicy (L7 — HTTP path/method)
+cat > l7-policy.yaml << 'EOF'
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: l7-rule
+spec:
+  endpointSelector:
+    matchLabels: {app: api}
+  ingress:
+    - fromEndpoints:
+        - matchLabels: {app: web}
+      toPorts:
+        - ports: [{port: "80", protocol: TCP}]
+          rules:
+            http:
+              - method: "GET"
+                path: "/api/v1/.*"
+EOF
+
+# 3) Hubble — 트래픽 가시성
+hubble observe --output json --pod default/web
+hubble observe --type drop                                        # 차단된 트래픽만
+hubble observe --verdict FORWARDED --to-pod backend
+
+# 4) Istio — sidecar 자동 주입 + mTLS
+kubectl label namespace default istio-injection=enabled
+kubectl apply -f my-app.yaml                                       # sidecar 자동
+istioctl analyze                                                   # 설정 점검
+
+# mTLS 강제
+kubectl apply -f - << 'EOF'
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: istio-system
+spec:
+  mtls:
+    mode: STRICT
+EOF
+
+# 5) Network 점검
+kubectl exec -it pod/source -- curl http://backend:80
+# Hubble 으로 verdict 확인
+hubble observe --pod default/source --pod default/backend
+```
+
+### 네트워크 보안 점검 흐름
+
+```bash
+# Phase 1: 환경 baseline
+cilium status
+kubectl get networkpolicy --all-namespaces
+istioctl analyze                                                   # 또는
+
+# Phase 2: 모든 namespace deny-all 적용
+for ns in $(kubectl get ns -o name); do
+  kubectl apply -f deny-all.yaml -n ${ns#namespace/}
+done
+
+# Phase 3: 명시적 허용 룰 작성
+# app → app 만 허용
+# 모니터링 도구 → 모든 pod 허용 (port 9090)
+
+# Phase 4: 실시간 모니터링 (Hubble)
+hubble observe --type drop --output json | tee /tmp/drops.json
+# Pre-existing trafic 패턴 분석 → policy 보완
+
+# Phase 5: 침투 시뮬 (다른 pod 에서 backend 직접 접근 시도)
+kubectl exec -it pod/attacker -- curl backend:8080
+# 결과: dropped → policy 작동 확인
+```
+
+학생은 본 7주차에서 **Cilium + NetworkPolicy + Istio + Hubble** 4 도구로 컨테이너 네트워크의 4 단계 (CNI → L3/L4 정책 → L7 정책 → 가시성) 보안을 OSS 만으로 구축한다.

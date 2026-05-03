@@ -633,3 +633,30 @@ dataset 의 incident `e5578610-d2eb-11ee-...` 가 보유한 메타:
 2. 외부 공유 보고서는 본 dataset 의 4-layer 익명화 절차 그대로 적용 (regex → format → NER → 검토자 sign-off)
 3. 발견 vuln 마다 *최소 3개 framework 매핑* 표 첨부 — OWASP + ISO + 국내 (개인정보보호법·정보통신망법)
 
+
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (lab week14 — 보안 설정 오류)
+
+| step | 카테고리 | 핵심 도구 |
+|---|---|---|
+| 1 종합 스캔 | **nikto** / **nuclei misconfiguration** / nmap --script http-* / **httpx** |
+| 2 Server 헤더 | curl -I / whatweb / httpx -tech-detect / nmap -sV |
+| 3 디렉토리 listing | **gobuster** / ffuf / nikto / nuclei -tags listing |
+| 4 민감 파일 | gobuster -x bak,env / **gitdumper** / **truffleHog** / **gitleaks** |
+| 5 에러 분석 | curl 잘못된 path / nikto / nuclei exposure / wpscan |
+| 6 WAF 식별 | **wafw00f** / nuclei waf-detect / curl 80 vs 3000 |
+| 7 WAF 우회 | URL 이중 인코딩 / **sqlmap --tamper** / xsstrike --waf-evasion / **Bypass-WAF Burp** |
+| 8 Method/CT | curl -X / Burp Repeater / **HTTP Smuggler Burp** |
+| 9 CORS | curl -H Origin / **CORScanner** / **Corsy** / Burp Repeater |
+| 10 보고서 | 위험도 표 / **Mozilla Observatory** / DefectDojo / OWASP A05 / CVSS |
+
+### 학생 환경 준비
+```bash
+go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
+git clone --depth 1 https://github.com/internetwache/GitTools ~/GitTools
+go install -v github.com/trufflesecurity/trufflehog/v3@latest
+go install -v github.com/gitleaks/gitleaks/v8@latest
+# Bypass-WAF / HTTP Smuggler: Burp BApp Store
+```

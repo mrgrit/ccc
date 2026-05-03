@@ -348,7 +348,12 @@ steps:
   risk_level: low
   bastion_prompt: '[BLUE] Suricata에서 SSH 브루트포스 탐지 알림을 확인해줘'
 - order: 9
-  instruction: '[BLUE] 공격자 IP({{ATTACKER_IP}})의 SSH 접근을 nftables로 rate limiting하라.'
+  instruction: '[BLUE] 공격자 IP({{ATTACKER_IP}})의 SSH 접근을 nftables로 rate limiting하라.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/battle-ai-week04/9/syslog 사전 주입. `grep
+    -E ''DROP|REJECT|filter'' /home/ccc/cyber-range/fixtures/battle-ai-week04/9/syslog`
+    후 (1) 빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: nft add rule로 SSH 접근 빈도를 제한한다.
   category: defense
   points: 10
@@ -385,7 +390,24 @@ steps:
   script: sudo nft add rule inet filter input ip saddr 10.20.30.201 tcp dport 22 ct
     state new limit rate over 3/minute drop && nft list ruleset | grep '10.20.30.201'
   risk_level: low
-  bastion_prompt: '[BLUE] 공격자 IP(10.20.30.201)의 SSH 접근을 nftables로 rate limiting해줘'
+  bastion_prompt: '[BLUE] 공격자 IP(10.20.30.201)의 SSH 접근을 nftables로 rate limiting해줘
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/battle-ai-week04/9/syslog 사전 주입. `grep
+    -E ''DROP|REJECT|filter'' /home/ccc/cyber-range/fixtures/battle-ai-week04/9/syslog`
+    후 (1)빈도·패턴 (2)MITRE (3)방어 3섹션. raw dump 금지.'
+  fixtures:
+  - generator: firewall_log
+    target_vm: secu
+    path: /home/ccc/cyber-range/fixtures/battle-ai-week04/9/syslog
+    params:
+      seed: 42
+      duration_days: 7
+      scan_bursts: 5
+      egress_violations: 20
+      syn_flood_count: 200
+    mode: overwrite
+    cleanup: false
 - order: 10
   instruction: '[RED] 패스워드 스프레이 공격을 시뮬레이션하라. 여러 사용자에 대해 하나의 패스워드를 시도한다.'
   hint: hydra -L userlist -p password 형식을 사용한다.
@@ -399,7 +421,9 @@ steps:
     목록 파일이다.
   verify:
     type: output_contains
-    expect: 'host:'
+    expect:
+    - 'host:'
+    - hydra
     field: stdout
     semantic:
       intent: '[RED] 패스워드 스프레이 시뮬레이션 — echo -e root\nccc\nadmin\nwww-data\nservice

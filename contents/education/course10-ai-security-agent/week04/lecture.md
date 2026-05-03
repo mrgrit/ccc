@@ -889,3 +889,232 @@ graph TB
 
 **학생 액션**: 본인 시나리오에 적합한 하네스 1개 선택 + 이유 1문단.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course10 — Week 04 RAG 보안)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | RAG framework | **llama-index** / langchain RAG |
+| s2 | Vector DB | **Chroma** / Weaviate / Qdrant / Milvus / pgvector |
+| s3 | Embedding 모델 | sentence-transformers / nomic-embed-text |
+| s4 | RAG 품질 평가 | **Ragas** / TruLens / DeepEval |
+| s5 | PII 마스킹 (인덱스) | Presidio (course7 재사용) |
+| s6 | 입출력 필터 | llm-guard PromptInjection / Sensitive |
+| s7 | Reranking | Cohere reranker (commercial) / **bge-reranker-base** |
+| s8 | 통합 secure RAG | 위 도구 통합 |
+
+### 학생 환경 준비
+
+```bash
+source ~/.venv-aagent/bin/activate
+
+# RAG framework
+pip install llama-index llama-index-llms-ollama llama-index-embeddings-huggingface
+pip install langchain langchain-community langchain-chroma
+
+# Vector DB
+pip install chromadb weaviate-client qdrant-client pymilvus pgvector
+
+# Embedding
+pip install sentence-transformers
+ollama pull nomic-embed-text                          # 768-dim, multilingual
+
+# Eval
+pip install ragas trulens-eval deepeval
+
+# Reranker
+pip install FlagEmbedding                             # bge-reranker
+
+# Security
+pip install llm-guard presidio-analyzer presidio-anonymizer
+```
+
+### 핵심 — Secure RAG (LangChain + Chroma + llm-guard + Presidio)
+
+```python
+from langchain_community.document_loaders import DirectoryLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_community.vectorstores import Chroma
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_ollama import OllamaLLM
+from langchain.chains import RetrievalQA
+from llm_guard.input_scanners import PromptInjection, Anonymize
+from llm_guard.output_scanners import Sensitive, Code
+from presidio_analyzer import AnalyzerEngine
+from presidio_anonymizer import AnonymizerEngine
+
+# === Phase 1: Secure indexing ===
+
+# 1) 문서 load
+loader = DirectoryLoader("/data/security_docs", glob="**/*.md")
+docs = loader.load()
+
+# 2) PII 자동 마스킹 (인덱스 시점에 — 가장 안전)
+analyzer = AnalyzerEngine()
+anonymizer = AnonymizerEngine()
+
+for doc in docs:
+    results = analyzer.analyze(text=doc.page_content, language='en')
+    if results:
+        anonymized = anonymizer.anonymize(text=doc.page_content, analyzer_results=results)
+        doc.page_content = anonymized.text
+    # 한국어 검증
+    results_ko = analyzer.analyze(text=doc.page_content, language='ko')
+    if results_ko:
+        doc.page_content = anonymizer.anonymize(text=doc.page_content, analyzer_results=results_ko).text
+
+# 3) Chunking
+splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+chunks = splitter.split_documents(docs)
+
+# 4) Embedding + Store
+embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+vectorstore = Chroma.from_documents(
+    chunks, embeddings, persist_directory="/var/lib/secure_rag"
+)
+
+# === Phase 2: Secure query ===
+
+llm = OllamaLLM(model="gemma3:4b")
+
+input_scanners = [PromptInjection(threshold=0.5), Anonymize()]
+output_scanners = [Sensitive(), Code(deny=["malicious"])]
+
+def secure_query(question: str) -> str:
+    # 1) 입력 검증
+    sanitized, valid, scores = scan_prompt(input_scanners, question)
+    if not all(valid.values()):
+        return f"Request denied (injection detected): {scores}"
+    
+    # 2) Retrieval (검색)
+    qa_chain = RetrievalQA.from_chain_type(
+        llm=llm,
+        chain_type="stuff",
+        retriever=vectorstore.as_retriever(search_kwargs={"k": 5}),
+        return_source_documents=True
+    )
+    response = qa_chain.invoke({"query": sanitized})
+    
+    # 3) 출력 검증 (민감 정보 누출 방지)
+    answer = response["result"]
+    sanitized_out, valid, _ = scan_output(output_scanners, sanitized, answer)
+    
+    # 4) 출처 표시 (검증된 문서)
+    sources = [d.metadata.get('source', 'unknown') for d in response["source_documents"]]
+    
+    return f"{sanitized_out}\n\n출처: {', '.join(sources)}"
+
+# Test
+result = secure_query("SQLi 어떻게 방어?")
+print(result)
+```
+
+### llama-index Secure RAG (대안)
+
+```python
+from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Settings
+from llama_index.llms.ollama import Ollama
+from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+from llama_index.vector_stores.chroma import ChromaVectorStore
+from llama_index.core import StorageContext
+
+# Config
+Settings.llm = Ollama(model="gemma3:4b", base_url="http://localhost:11434")
+Settings.embed_model = HuggingFaceEmbedding(model_name="all-MiniLM-L6-v2")
+
+# Vector store
+import chromadb
+client = chromadb.PersistentClient(path="/var/lib/secure_rag")
+collection = client.get_or_create_collection("docs")
+vector_store = ChromaVectorStore(chroma_collection=collection)
+storage_context = StorageContext.from_defaults(vector_store=vector_store)
+
+# Index 생성
+docs = SimpleDirectoryReader("/data").load_data()
+index = VectorStoreIndex.from_documents(docs, storage_context=storage_context)
+
+# Query engine + 후처리
+query_engine = index.as_query_engine(
+    similarity_top_k=5,
+    response_mode="tree_summarize"
+)
+
+response = query_engine.query("질문")
+print(response.response)
+print("Sources:", [n.metadata for n in response.source_nodes])
+```
+
+### Reranking (정확도 향상)
+
+```python
+from FlagEmbedding import FlagReranker
+
+reranker = FlagReranker('BAAI/bge-reranker-base', use_fp16=True)
+
+def rerank_search(query: str, top_k: int = 10):
+    # 1) Vector search (top 50)
+    docs = vectorstore.similarity_search(query, k=50)
+    
+    # 2) Reranker (정확도 ↑)
+    pairs = [(query, doc.page_content) for doc in docs]
+    scores = reranker.compute_score(pairs)
+    
+    # 3) 상위 top_k 만
+    ranked = sorted(zip(docs, scores), key=lambda x: x[1], reverse=True)
+    return [doc for doc, score in ranked[:top_k]]
+```
+
+### Ragas (RAG 품질 평가)
+
+```python
+from ragas import evaluate
+from ragas.metrics import (
+    faithfulness,                    # 응답이 context 와 일치
+    answer_relevancy,                # 응답이 질문에 적절
+    context_precision,               # 검색된 context 가 정확
+    context_recall,                  # 모든 필요 context 검색됨
+    answer_correctness               # 정답과 일치
+)
+from datasets import Dataset
+
+# Test dataset
+test_data = Dataset.from_list([
+    {
+        "question": "SQLi 방어법?",
+        "answer": llm_response,
+        "contexts": retrieved_docs,
+        "ground_truth": "Prepared statement, 입력 검증, ..."
+    },
+    # ... 100+ test cases
+])
+
+result = evaluate(
+    test_data,
+    metrics=[faithfulness, answer_relevancy, context_precision, context_recall, answer_correctness]
+)
+print(result)
+# faithfulness: 0.92    (높을수록 hallucination 적음)
+# answer_relevancy: 0.89
+# context_precision: 0.85
+# context_recall: 0.78
+# answer_correctness: 0.88
+```
+
+### RAG 위협 매트릭스
+
+| 위협 | 방어 |
+|------|------|
+| Prompt injection (직접) | llm-guard input scanner |
+| Indirect injection (외부 doc) | 인덱스 시점 PII 마스킹 + scan |
+| 민감 정보 검색 → 누출 | 출력 scanner Sensitive |
+| Context dilution | reranker + relevance threshold |
+| Hallucination | Ragas faithfulness 측정 |
+| 출처 누락 | source 강제 표시 |
+| Embedding 추출 | rate limit + 사용자 quota |
+| Retrieval 변조 | 인덱스 무결성 (cosign 서명) |
+
+학생은 본 4주차에서 **llama-index + Chroma + sentence-transformers + Ragas + llm-guard + Presidio + bge-reranker** 7 도구로 secure RAG 의 4 layer (인덱스 마스킹 / 검색 격리 / 입력 필터 / 출력 필터) + 품질 평가 통합을 익힌다.

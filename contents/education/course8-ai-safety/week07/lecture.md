@@ -740,3 +740,132 @@ poisoning 방어는 *4가지 기법의 결합* 이 표준이다.
 
 **학생 액션**: dataset 의 label_confidence 분포를 시간순으로 plot 하여 — *어느 시점에 low confidence 가 집중되는지* 시각화. spike 가 발견되면 *그 시점의 신호들이 poisoning 의심* 인지 분석. 결과를 *"우리 dataset 에 poisoning 흔적이 있는가"* 로 결론.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course8 AI Safety — Week 07 워터마킹)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | KGW (green list) | **MarkLLM** KGW |
+| s2 | SemStamp | MarkLLM SemStamp |
+| s3 | SIR (Stylized Indirect) | MarkLLM SIR |
+| s4 | Robustness 측정 | paraphrase 후 detection rate |
+| s5 | False positive | 비-WM 텍스트로 detect 시도 |
+| s6 | Distortion-free WM | lm-watermarking |
+| s7 | Image WM (Stable Diff) | invisible-watermark |
+| s8 | 통합 detection | MarkLLM detect_watermark |
+
+### 학생 환경 준비
+
+```bash
+git clone https://github.com/THU-BPM/MarkLLM ~/markllm
+cd ~/markllm && pip install -e .
+
+# 대안 — Maryland lm-watermarking
+git clone https://github.com/jwkirchenbauer/lm-watermarking ~/lm-wm
+
+# 이미지 WM
+pip install invisible-watermark
+```
+
+### 핵심 — MarkLLM (가장 종합적인 LLM WM toolkit)
+
+```python
+from MarkLLM.watermark.kgw import KGW
+from MarkLLM.utils.transformers_config import TransformersConfig
+from transformers import AutoTokenizer, AutoModelForCausalLM
+
+# 1) 모델 + tokenizer
+tokenizer = AutoTokenizer.from_pretrained("gpt2")
+model = AutoModelForCausalLM.from_pretrained("gpt2")
+
+config = TransformersConfig(
+    model=model, tokenizer=tokenizer,
+    max_new_tokens=200, do_sample=True
+)
+
+# 2) KGW (Kirchenbauer-Geiping-Wen) 워터마킹
+wm = KGW(algorithm_config='~/markllm/config/KGW.json',
+        transformers_config=config)
+
+# 3) 워터마크된 텍스트 생성
+prompt = "Once upon a time"
+wm_text = wm.generate_watermarked_text(prompt)
+unwm_text = wm.generate_unwatermarked_text(prompt)
+
+# 4) 탐지
+wm_detected = wm.detect_watermark(wm_text)['is_watermarked']
+unwm_detected = wm.detect_watermark(unwm_text)['is_watermarked']
+
+print(f"WM text detected: {wm_detected}")             # True
+print(f"Non-WM detected: {unwm_detected}")            # False (이상적)
+```
+
+### Robustness 측정 (Paraphrasing 후 detection)
+
+```python
+from MarkLLM.watermark.kgw import KGW
+import requests
+
+wm = KGW(...)
+wm_text = wm.generate_watermarked_text("Tell me about cybersecurity")
+
+# Paraphrase (여러 LLM 으로)
+paraphrasers = ["llama3:8b", "gemma3:4b", "qwen2.5:7b"]
+paraphrased_texts = []
+for p_model in paraphrasers:
+    r = requests.post("http://localhost:11434/api/generate",
+        json={"model": p_model, 
+              "prompt": f"Paraphrase: {wm_text}", "stream": False})
+    paraphrased_texts.append(r.json()['response'])
+
+# 각 paraphrased text 의 detection rate
+for i, pt in enumerate(paraphrased_texts):
+    detected = wm.detect_watermark(pt)['is_watermarked']
+    print(f"Paraphrase {paraphrasers[i]}: detected={detected}")
+
+# 강한 WM: paraphrase 후에도 70%+ detection
+# 약한 WM: paraphrase 후 30% 이하
+```
+
+### Image Watermarking
+
+```python
+from imwatermark import WatermarkEncoder, WatermarkDecoder
+import cv2
+
+# 1) Encoder
+encoder = WatermarkEncoder()
+encoder.set_watermark('bytes', b'CCC-2026')
+
+# 원본 이미지에 invisible watermark
+img = cv2.imread('image.png')
+wm_img = encoder.encode(img, 'dwtDct')
+cv2.imwrite('image_wm.png', wm_img)
+
+# 2) Detector
+decoder = WatermarkDecoder('bytes', 64)
+extracted = decoder.decode(cv2.imread('image_wm.png'), 'dwtDct')
+print(f"Extracted: {extracted}")                       # b'CCC-2026'
+
+# 3) Robustness — JPEG compression, resize, crop
+for transform in [jpeg_compress, resize, crop]:
+    transformed = transform(wm_img)
+    extracted = decoder.decode(transformed, 'dwtDct')
+    success = extracted == b'CCC-2026'
+    print(f"After {transform.__name__}: {success}")
+```
+
+### Watermarking 표준 평가
+
+| 메트릭 | 측정 |
+|-------|------|
+| True Positive Rate | WM 텍스트 → detected 비율 |
+| False Positive Rate | 비-WM 텍스트 → detected 비율 |
+| Robustness (paraphrase) | paraphrase 후 detection 유지율 |
+| Quality (perplexity) | WM 적용 후 텍스트 품질 |
+
+학생은 본 7주차에서 **MarkLLM + lm-watermarking + invisible-watermark** 3 도구로 텍스트·이미지 워터마킹 + robustness 측정 + false-positive 분석을 익힌다.

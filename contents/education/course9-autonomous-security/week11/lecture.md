@@ -692,3 +692,210 @@ graph LR
 
 **학생 액션**: lab Blue Agent 로 dataset 10건 처리 — 평균 대응 시간 측정.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course9 — Week 11 지속 학습)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | MLflow 추적 | **MLflow** self-host |
+| s2 | DVC 데이터 버전 | **DVC** |
+| s3 | W&B 대안 | Weights & Biases (selfhost) |
+| s4 | Online learning | **River** |
+| s5 | Drift detection | **Evidently** / NannyML |
+| s6 | A/B 모델 배포 | KServe canary |
+| s7 | Catastrophic forgetting | EWC (Elastic Weight Consolidation) |
+| s8 | 통합 ML pipeline | Kubeflow |
+
+### 학생 환경 준비
+
+```bash
+pip install mlflow dvc river evidently nannyml
+
+# MLflow self-host
+mlflow server --host 0.0.0.0 --port 5000 \
+    --backend-store-uri postgresql://mlflow:secret@db:5432/mlflow \
+    --default-artifact-root s3://mlflow-artifacts/
+
+# Kubeflow (대규모)
+# https://www.kubeflow.org/docs/started/installing-kubeflow/
+
+# DVC
+dvc init
+```
+
+### 핵심 — MLflow 통합
+
+```python
+import mlflow
+import mlflow.pytorch
+
+mlflow.set_tracking_uri("http://localhost:5000")
+mlflow.set_experiment("auto-defense-rl")
+
+with mlflow.start_run(run_name="ppo-v2.1"):
+    # Hyperparameters
+    mlflow.log_param("algorithm", "PPO")
+    mlflow.log_param("lr", 3e-4)
+    mlflow.log_param("env_version", "SecurityEnv-v2")
+    
+    # 학습
+    model = PPO("MlpPolicy", env, ...)
+    model.learn(total_timesteps=100000)
+    
+    # Metrics
+    mlflow.log_metric("blocked_attacks", 1432)
+    mlflow.log_metric("false_positives", 23)
+    mlflow.log_metric("mean_reward", 87.3)
+    
+    # Model artifact
+    mlflow.pytorch.log_model(model, "model")
+    
+    # Register (production 후보)
+    mlflow.register_model("runs:/{}/model".format(mlflow.active_run().info.run_id), "auto-defense-prod")
+```
+
+### DVC (데이터 버전 관리)
+
+```bash
+# 1) Data 추적
+dvc add data/training.parquet
+git add data/training.parquet.dvc .gitignore
+git commit -m "Add training data v1.2"
+
+# 2) Remote storage
+dvc remote add -d storage s3://mlflow-artifacts/dvc/
+dvc push                                              # 데이터 클라우드 저장
+
+# 3) 다른 환경에서 재현
+dvc pull                                              # 동일 데이터 다운로드
+
+# 4) Pipeline 정의 (dvc.yaml)
+cat > dvc.yaml << 'EOF'
+stages:
+  prepare:
+    cmd: python prepare.py
+    deps: [data/training.parquet]
+    outs: [data/prepared/]
+  
+  train:
+    cmd: python train.py
+    deps: [data/prepared/]
+    outs: [models/model.pkl]
+    metrics: [metrics/score.json]
+EOF
+
+dvc repro                                             # 자동 재실행 (변경된 stage 만)
+dvc dag                                               # 의존성 그래프
+```
+
+### River (incremental ML)
+
+```python
+from river import (
+    linear_model, preprocessing, metrics,
+    drift, anomaly, feature_extraction
+)
+
+# 1) Online classifier (drift 자동 감지)
+model = (
+    feature_extraction.FeatureHasher() |
+    preprocessing.StandardScaler() |
+    linear_model.LogisticRegression()
+)
+
+metric = metrics.Accuracy()
+drift_detector = drift.ADWIN()
+
+# 2) Stream 처리 (실시간 학습)
+for alert in wazuh_alert_stream():
+    features = extract_features(alert)
+    label = alert.get('blocked', False)
+    
+    # 예측
+    y_pred = model.predict_one(features)
+    metric.update(label, y_pred)
+    
+    # Drift 감지
+    drift_detector.update(int(label != y_pred))
+    if drift_detector.drift_detected:
+        print("⚠ Drift detected — retrain!")
+        model = (
+            feature_extraction.FeatureHasher() |
+            preprocessing.StandardScaler() |
+            linear_model.LogisticRegression()
+        )
+    
+    # 학습 (online)
+    model.learn_one(features, label)
+    
+    # Anomaly 별도 detection
+    anomaly_score = anomaly.HalfSpaceTrees(seed=42).score_one(features)
+    if anomaly_score > 0.95:
+        alert("Anomalous alert pattern")
+```
+
+### A/B 모델 배포 (KServe canary)
+
+```yaml
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata: {name: auto-defense}
+spec:
+  predictor:
+    minReplicas: 2
+    maxReplicas: 10
+    canaryTrafficPercent: 20                          # 신모델 20% 만
+    pytorch:
+      storageUri: gs://models/auto-defense/v2.1
+  
+  # Canary version (v2.1) 이 main (v2.0) 대비 metric 더 좋으면 점진 traffic 증가
+```
+
+### Catastrophic Forgetting 방지 (EWC)
+
+```python
+import torch
+import torch.nn as nn
+
+class EWC:
+    """Elastic Weight Consolidation — 새 task 학습 시 이전 task 보존"""
+    def __init__(self, model, dataset, importance=1000):
+        self.model = model
+        self.importance = importance
+        self.params = {n: p.clone().detach() for n, p in model.named_parameters() if p.requires_grad}
+        self.fisher = self._compute_fisher(dataset)
+    
+    def _compute_fisher(self, dataset):
+        fisher = {n: torch.zeros_like(p) for n, p in self.model.named_parameters() if p.requires_grad}
+        self.model.eval()
+        for x, y in dataset:
+            self.model.zero_grad()
+            output = self.model(x)
+            loss = nn.functional.nll_loss(output, y)
+            loss.backward()
+            for n, p in self.model.named_parameters():
+                fisher[n] += p.grad.data.pow(2)
+        return {n: f / len(dataset) for n, f in fisher.items()}
+    
+    def penalty(self):
+        loss = 0
+        for n, p in self.model.named_parameters():
+            if n in self.fisher:
+                loss += (self.fisher[n] * (p - self.params[n]).pow(2)).sum()
+        return self.importance * loss
+
+# 새 task 학습 시
+ewc = EWC(model, old_dataset)
+
+for x, y in new_dataset:
+    output = model(x)
+    loss = criterion(output, y) + ewc.penalty()       # EWC penalty 추가
+    loss.backward()
+    optimizer.step()
+```
+
+학생은 본 11주차에서 **MLflow + DVC + River + Evidently + KServe + EWC** 6 도구로 지속 학습의 5 단계 (실험 추적 → 데이터 버전 → 온라인 학습 → drift → A/B → 안정성) 사이클을 익힌다.

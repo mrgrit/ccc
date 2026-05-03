@@ -14,8 +14,13 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: SOC 환경 점검을 수행하라. Wazuh Manager, Suricata, nftables의 상태를 확인하고 모든 보안
+  instruction: 'SOC 환경 점검을 수행하라. Wazuh Manager, Suricata, nftables의 상태를 확인하고 모든 보안
     도구가 정상 동작하는지 검증하라.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/soc-adv-ai-week15/1/syslog 사전 주입. `grep
+    -E ''DROP|REJECT|filter'' /home/ccc/cyber-range/fixtures/soc-adv-ai-week15/1/syslog`
+    후 (1) 빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: 각 도구의 프로세스 상태와 로그 수집 상태를 확인한다.
   category: operation
   points: 10
@@ -62,11 +67,33 @@ steps:
     2>/dev/null | python3 -m json.tool 2>/dev/null | head -10 && echo '' && echo 'Environment
     check complete'
   risk_level: low
-  bastion_prompt: SOC 환경 점검을 수행하라. Wazuh Manager, Suricata, nftables의 상태를 확인하고 모든
+  bastion_prompt: 'SOC 환경 점검을 수행하라. Wazuh Manager, Suricata, nftables의 상태를 확인하고 모든
     보안 도구가 정상 동작하는지 검증해줘
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/soc-adv-ai-week15/1/syslog 사전 주입. `grep
+    -E ''DROP|REJECT|filter'' /home/ccc/cyber-range/fixtures/soc-adv-ai-week15/1/syslog`
+    후 (1)빈도·패턴 (2)MITRE (3)방어 3섹션. raw dump 금지.'
+  fixtures:
+  - generator: firewall_log
+    target_vm: siem
+    path: /home/ccc/cyber-range/fixtures/soc-adv-ai-week15/1/syslog
+    params:
+      seed: 42
+      duration_days: 7
+      scan_bursts: 5
+      egress_violations: 20
+      syn_flood_count: 200
+    mode: overwrite
+    cleanup: false
 - order: 2
   instruction: '시나리오 1: 외부에서 웹서버 공격이 감지되었다. Suricata eve.json에서 최근 HTTP 관련 알림을 분석하고,
-    공격 유형/소스/성공 여부를 판단하라.'
+    공격 유형/소스/성공 여부를 판단하라.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/soc-adv-ai-week15/2/eve.json 사전 주입. `jq
+    -c ''.alert'' /home/ccc/cyber-range/fixtures/soc-adv-ai-week15/2/eve.json` 후 (1)
+    빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: eve.json에서 alert 이벤트 중 http 관련 항목을 필터링한다.
   category: detection
   points: 10
@@ -122,9 +149,31 @@ steps:
     && echo "" && echo "MITRE ATT&CK: T1190 (Exploit Public-Facing Application)"'
   risk_level: low
   bastion_prompt: '시나리오 1: 외부에서 웹서버 공격이 감지되었다. Suricata eve.json에서 최근 HTTP 관련 알림을
-    분석하고, 공격 유형/소스/성공 여부를 판단해줘'
+    분석하고, 공격 유형/소스/성공 여부를 판단해줘
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/soc-adv-ai-week15/2/eve.json 사전 주입. `jq
+    -c ''.alert'' /home/ccc/cyber-range/fixtures/soc-adv-ai-week15/2/eve.json` 후 (1)빈도·패턴
+    (2)MITRE (3)방어 3섹션. raw dump 금지.'
+  fixtures:
+  - generator: suricata_alert
+    target_vm: secu
+    path: /home/ccc/cyber-range/fixtures/soc-adv-ai-week15/2/eve.json
+    params:
+      seed: 42
+      duration_days: 7
+      alerts_per_day: 30
+      c2_beacon_count: 12
+      metadata_attempt_count: 4
+    mode: overwrite
+    cleanup: false
 - order: 3
-  instruction: '시나리오 1 대응: 공격 소스 IP를 nftables로 차단하고, Suricata에 해당 IP의 추가 탐지 규칙을 배포하라.'
+  instruction: '시나리오 1 대응: 공격 소스 IP를 nftables로 차단하고, Suricata에 해당 IP의 추가 탐지 규칙을 배포하라.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/soc-adv-ai-week15/3/syslog 사전 주입. `grep
+    -E ''DROP|REJECT|filter'' /home/ccc/cyber-range/fixtures/soc-adv-ai-week15/3/syslog`
+    후 (1) 빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: nft add element로 차단 목록에 추가하고, Suricata 커스텀 룰을 작성한다.
   category: response
   points: 12
@@ -182,7 +231,24 @@ steps:
     && echo "" && echo "Response complete - attacker blocked and monitored"'
   risk_level: low
   bastion_prompt: '시나리오 1 대응: 공격 소스 IP를 nftables로 차단하고, Suricata에 해당 IP의 추가 탐지 규칙을
-    배포해줘'
+    배포해줘
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/soc-adv-ai-week15/3/syslog 사전 주입. `grep
+    -E ''DROP|REJECT|filter'' /home/ccc/cyber-range/fixtures/soc-adv-ai-week15/3/syslog`
+    후 (1)빈도·패턴 (2)MITRE (3)방어 3섹션. raw dump 금지.'
+  fixtures:
+  - generator: firewall_log
+    target_vm: secu
+    path: /home/ccc/cyber-range/fixtures/soc-adv-ai-week15/3/syslog
+    params:
+      seed: 42
+      duration_days: 7
+      scan_bursts: 5
+      egress_violations: 20
+      syn_flood_count: 200
+    mode: overwrite
+    cleanup: false
 - order: 4
   instruction: '시나리오 2: 내부 서버에서 비정상적인 아웃바운드 트래픽이 감지되었다. Suricata와 시스템 로그를 교차 분석하여
     C2 통신 여부를 판단하라.'
@@ -316,7 +382,7 @@ steps:
   answer: '🤖 프롬프트: IOC를 통합 관리해줘
 
     📎 참고 (CLI): echo ''=== IOC Deployment ==='' && echo ''203.0.113.50:blocked_attacker''
-    > /tmp/ioc_list.txt && echo ''198.51.100.1:c2_suspect'' >> /tmp/ioc_list.txt &&
+    ※ /tmp/ioc_list.txt && echo ''198.51.100.1:c2_suspect'' >> /tmp/ioc_list.txt &&
     echo '''' && echo ''[1] Deploy to Wazuh CDB:'' && cat /tmp/ioc_list.txt | sudo
     tee -a /var/ossec/etc/lists/blocked_ips && echo ''Wazuh CDB updated'' && echo
     '''' && echo ''[2] IOC list saved for cross-tool deployment:'' && cat /tmp/ioc_list.txt
@@ -365,7 +431,12 @@ steps:
 - order: 7
   instruction: 'Wazuh Dashboard에서 Suricata 알림을 교차 분석하라. Dashboard → Security events
     → 필터: ''rule.groups: suricata'' → 동일 source IP에서 발생한 다중 알림을 확인하고, Suricata와 Wazuh
-    탐지 결과를 비교하라.'
+    탐지 결과를 비교하라.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/soc-adv-ai-week15/7/alerts.json 사전 주입.
+    `jq -c ''.rule'' /home/ccc/cyber-range/fixtures/soc-adv-ai-week15/7/alerts.json`
+    후 (1) 빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: rule.groups 필드에 suricata를 필터링하면 Suricata IDS 이벤트만 볼 수 있습니다.
   category: analysis
   points: 10
@@ -414,7 +485,24 @@ steps:
     x:-x[1])[:5]: print(f\"{c:5d} alerts from {ip}\") " 2>/dev/null && echo "" &&
     echo "Correlation: Match IPs appearing in both tools for confirmed threats"'
   risk_level: low
-  bastion_prompt: Wazuh 알림과 Suricata 알림을 교차 분석하여 상관관계를 파악해줘
+  bastion_prompt: 'Wazuh 알림과 Suricata 알림을 교차 분석하여 상관관계를 파악해줘
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/soc-adv-ai-week15/7/alerts.json 사전 주입.
+    `jq -c ''.rule'' /home/ccc/cyber-range/fixtures/soc-adv-ai-week15/7/alerts.json`
+    후 (1)빈도·패턴 (2)MITRE (3)방어 3섹션. raw dump 금지.'
+  fixtures:
+  - generator: wazuh_alert
+    target_vm: siem
+    path: /home/ccc/cyber-range/fixtures/soc-adv-ai-week15/7/alerts.json
+    params:
+      seed: 42
+      duration_days: 7
+      alerts_per_day: 50
+      brute_force_burst: true
+      ar_trigger_count: 4
+    mode: overwrite
+    cleanup: false
 - order: 8
   instruction: KPI를 측정하라. 오늘 시뮬레이션의 MTTD(탐지 시간), MTTR(대응 시간), 처리 알림 수, 인시던트 수를 계산하라.
   hint: 각 인시던트의 시작/종료 타임스탬프를 기반으로 계산한다.

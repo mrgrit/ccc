@@ -517,3 +517,122 @@ graph TB
 
 **학생 액션**: Bastion 에 *"오늘 dataset 의 임의 1,000 신호를 분류하고 critical 5건의 chain 분석 + 룰 생성"* 의 단일 추상 목표를 입력. 진행 중 사람 개입 횟수와 최종 완료 시점을 기록. 결과를 *"우리 Bastion 이 lecture 의 자율 미션 정의를 만족하는가"* 평가.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course7 AI Security — Week 11 LLM 모니터링/로깅)
+
+### LLM Observability OSS 도구
+
+| 영역 | OSS 도구 |
+|------|---------|
+| LLM 전용 | **Langfuse** (OSS Self-host) / **Phoenix-Arize** / Helicone-OSS |
+| Trace + Metric | **OpenTelemetry** + OpenLLMetry / Jaeger / Tempo |
+| Prompt management | **Langfuse** prompts / Helicone Templates / PromptLayer-OSS |
+| 비용 추적 | LiteLLM cost callback / Langfuse cost tracking |
+| Quality 평가 | Ragas / DeepEval / TruLens |
+| Anomaly detection | LangSmith (commercial) / 자체 ML on Langfuse data |
+
+### 핵심 — Langfuse (OSS LangSmith 대안)
+
+```bash
+# self-host
+docker run -d -p 3001:3000 \
+  -e DATABASE_URL=postgresql://langfuse:secret@postgres:5432/langfuse \
+  -e SALT=secret \
+  -e NEXTAUTH_SECRET=secret \
+  -e NEXTAUTH_URL=http://localhost:3001 \
+  -e LANGFUSE_INIT_PROJECT_PUBLIC_KEY=pk-xxx \
+  -e LANGFUSE_INIT_PROJECT_SECRET_KEY=sk-xxx \
+  langfuse/langfuse:latest
+
+# Python SDK 통합
+python3 << 'EOF'
+from langfuse import Langfuse
+from langfuse.openai import openai                                # 자동 wrapper
+
+langfuse = Langfuse(
+  host="http://localhost:3001",
+  public_key="pk-xxx",
+  secret_key="sk-xxx",
+)
+
+client = openai.OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
+# 모든 호출 자동 trace
+r = client.chat.completions.create(
+  model="gemma3:4b",
+  messages=[{"role":"user","content":"Hello"}]
+)
+EOF
+# → http://localhost:3001 에서 모든 호출 시각화
+```
+
+### 학생 환경 준비
+
+```bash
+source ~/.venv-llm/bin/activate
+pip install langfuse phoenix-arize openllmetry-sdk \
+  ragas deepeval trulens-eval
+
+# Phoenix (Arize OSS — 시각화 강력)
+python3 -m phoenix.server.main serve
+
+# OpenLLMetry — OpenTelemetry-based
+pip install traceloop-sdk
+```
+
+### 핵심 사용
+
+```bash
+# 1) Langfuse 자동 로깅 (모든 LLM 호출)
+# 위 langfuse SDK + openai wrapper
+
+# 2) Phoenix (LangChain 통합)
+python3 << 'EOF'
+import phoenix as px
+session = px.launch_app()                                         # http://localhost:6006
+
+from phoenix.trace.langchain import LangChainInstrumentor
+LangChainInstrumentor().instrument()
+
+# 이제 모든 LangChain 호출이 phoenix 에 자동 기록
+EOF
+
+# 3) Ragas (RAG 품질 평가)
+python3 << 'EOF'
+from ragas import evaluate
+from ragas.metrics import faithfulness, answer_relevancy, context_recall
+
+dataset = [...]                                                   # question, answer, contexts
+result = evaluate(dataset, metrics=[faithfulness, answer_relevancy, context_recall])
+print(result)
+EOF
+
+# 4) TruLens (LLM eval)
+python3 << 'EOF'
+from trulens_eval import Tru, Feedback
+tru = Tru()
+@tru.app(app_id="my_app")
+def my_app(prompt):
+    ...
+EOF
+
+# 5) OpenLLMetry (OTel 표준)
+python3 << 'EOF'
+from traceloop.sdk import Traceloop
+Traceloop.init(app_name="my_llm_app")
+# 모든 LLM 호출 자동 OTel trace
+EOF
+```
+
+### 모니터링 대시보드 (학생 목표)
+
+```
+[Langfuse] - 모든 호출 trace + cost
+[Phoenix] - LangChain chain 시각화
+[Grafana] - Prometheus metric (latency, tokens/s, error rate)
+[Loki] - 모든 LLM 응답 로그 검색
+[Ragas] - RAG 품질 정량 평가 (분기)
+```
+
+학생은 본 11주차에서 **Langfuse + Phoenix + Ragas + OpenLLMetry + LiteLLM callbacks** 5 도구로 LLM observability 4 축 (trace / metric / cost / quality) 통합 모니터링을 OSS 만으로 구축한다.

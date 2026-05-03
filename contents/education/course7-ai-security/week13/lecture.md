@@ -519,3 +519,122 @@ graph TB
 
 **학생 액션**: lab 환경에서 Bastion 인스턴스 2개를 띄우고 — (1) 분산 KG (공유 SQLite) 모드, (2) 단일 KG (인스턴스별) 모드의 비교 테스트. dataset 의 100 신호를 두 모드로 처리하여 *총 LLM 호출 횟수와 학습 결과 일관성* 측정. 측정 결과를 *"우리 환경에서 분산 KG 의 효과는 lecture 가 말한 100배에 근접하는가"* 로 평가.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course7 AI Security — Week 13 AI 거버넌스/규제)
+
+### AI 거버넌스 / 규제 OSS 도구
+
+| 영역 | OSS 도구 |
+|------|---------|
+| EU AI Act | **AI-Verify** (Singapore IMDA) / Microsoft RAI Toolbox |
+| NIST AI RMF | **NIST AI RMF Companion** / OSCAL profiles |
+| 모델 카드 | **model-cards-toolkit** (Google) |
+| 데이터시트 | **datasheets-for-datasets** |
+| 책임 AI | **Responsible AI Toolbox** (Microsoft) / Aequitas / Fairlearn |
+| 영향 평가 | **AI-Verify** (Singapore IMDA, free, OSS-mirror) |
+| 감사 추적 | Langfuse + OSCAL audit log |
+
+### 핵심 — Microsoft RAI Toolbox (responsibleai)
+
+```bash
+pip install responsibleai responsibleai-toolbox
+
+python3 << 'EOF'
+from responsibleai import RAIInsights
+from raiwidgets import ResponsibleAIDashboard
+
+rai_insights = RAIInsights(
+  model=trained_model,
+  train=train_df,
+  test=test_df,
+  target_column="label",
+  task_type="classification"
+)
+
+# 4 가지 분석 추가
+rai_insights.explainer.add()                                      # SHAP
+rai_insights.error_analysis.add()                                 # error tree
+rai_insights.causal.add()                                         # causal effect
+rai_insights.counterfactual.add(total_CFs=10, desired_class="opposite")
+
+rai_insights.compute()
+
+# Dashboard
+ResponsibleAIDashboard(rai_insights, locale="ko")
+EOF
+```
+
+### 학생 환경 준비
+
+```bash
+source ~/.venv-llm/bin/activate
+pip install responsibleai responsibleai-toolbox raiwidgets \
+  fairlearn aif360 \
+  model-card-toolkit datasheets-for-datasets
+
+# AI-Verify (Singapore - free)
+git clone https://github.com/IMDA-BTG/aiverify.git ~/aiverify
+```
+
+### 핵심 사용
+
+```bash
+# 1) Model Cards (Google)
+python3 << 'EOF'
+import model_card_toolkit as mctlib
+mct = mctlib.ModelCardToolkit("/tmp/model_card")
+model_card = mct.scaffold_assets()
+model_card.model_details.name = "JuiceShop XSS Classifier"
+model_card.model_details.owners = [mctlib.Owner(name="Security Team")]
+model_card.considerations.ethical_considerations = [
+  mctlib.Risk(name="Bias", mitigation_strategy="Use fairlearn weighting")
+]
+mct.update_model_card(model_card)
+mct.export_format()                                               # HTML
+EOF
+
+# 2) Fairlearn (편향 측정 / 완화)
+python3 << 'EOF'
+from fairlearn.metrics import demographic_parity_difference
+dp_diff = demographic_parity_difference(y_true, y_pred, sensitive_features=race)
+print(dp_diff)                                                    # 0 = no bias
+
+# 완화: ExponentiatedGradient
+from fairlearn.reductions import ExponentiatedGradient, DemographicParity
+mitigator = ExponentiatedGradient(estimator=clf, constraints=DemographicParity())
+mitigator.fit(X_train, y_train, sensitive_features=race_train)
+EOF
+
+# 3) AIF360 (IBM)
+python3 << 'EOF'
+from aif360.datasets import StandardDataset
+from aif360.metrics import BinaryLabelDatasetMetric
+
+dataset = StandardDataset(df, ...)
+metric = BinaryLabelDatasetMetric(dataset, ...)
+print(metric.disparate_impact())
+EOF
+
+# 4) Aequitas (US 법무부 영향 받음)
+python3 << 'EOF'
+from aequitas.audit import Audit
+audit = Audit(df, score_col="score", label_col="label", protected_col="race")
+audit.audit()
+print(audit.disparities)
+EOF
+```
+
+### EU AI Act 핵심 의무 매핑
+
+| AI Act Article | OSS 도구 |
+|----------------|---------|
+| Art.10 (Data governance) | datasheets / Great Expectations |
+| Art.11 (기술 문서) | model-cards-toolkit / OSCAL |
+| Art.12 (Logging) | Langfuse / OpenTelemetry |
+| Art.14 (Human oversight) | NeMo Guardrails Permissions |
+| Art.15 (Accuracy/Robustness) | RobustBench / TextAttack (week05) |
+| Art.16 (Cyber security) | (전체 course7 14 weekly) |
+
+학생은 본 13주차에서 **responsibleai + fairlearn + AIF360 + model-cards-toolkit + AI-Verify** 5 도구로 EU AI Act + NIST RMF 의 6 의무를 OSS 만으로 충족하는 거버넌스 흐름을 익힌다.

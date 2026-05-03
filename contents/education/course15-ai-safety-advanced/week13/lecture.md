@@ -830,3 +830,508 @@ graph LR
 
 **학생 액션**: bias audit.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course15 AI Safety Advanced — Week 13 연구 프론티어·AI Safety Lab·RLHF·DPO·CAI·Scalable Oversight)
+
+> 이 부록은 lab `ai-safety-adv-ai/week13.yaml` (8 step + multi_task) 의 모든 명령을
+> 실제로 실행 가능한 형태로 정리한다. AI Safety 연구 frontier — TRL (RLHF/DPO) /
+> Constitutional AI (Anthropic 기법) / DeepSpeed / Scalable Oversight (debate /
+> recursive reward) + Alignment researchers' toolkit.
+
+### lab step → 도구·범위 매핑 표
+
+| step | 학습 항목 | 핵심 OSS 도구 | 학회 |
+|------|----------|--------------|------|
+| s1 | AI Safety 연구 영역 소개 | TRL / OpenRLHF | NeurIPS / ICML |
+| s2 | 연구 시나리오 생성 | LLM + 8 frontier topic | NIST AI 600-1 |
+| s3 | 연구 정책 평가 | LLM + RSP / dual use | Anthropic |
+| s4 | LLM 인젝션 (보조) | week01~03 | LLM01 |
+| s5 | 자동 분석 — RLHF/DPO 학습 | TRL + DeepSpeed + datasets | training |
+| s6 | 가드레일 — Constitutional AI | Anthropic 원칙 + 자기 비판 | training |
+| s7 | 연구 모니터링 | RLHF reward / KL / acc + Prometheus | observability |
+| s8 | 연구 보고서 | markdown + ablation + roadmap | report |
+| s99 | 통합 (s1→s2→s3→s5→s6) | Bastion plan 5 단계 | 전체 |
+
+### AI Safety 연구 frontier (2025~2026)
+
+| 영역 | 도구 | 사례 |
+|------|------|------|
+| **RLHF** | TRL (Hugging Face) | InstructGPT |
+| **DPO** | TRL DPO | Llama 2 chat |
+| **Constitutional AI** | Anthropic 원칙 + 자체 구현 | Claude |
+| **RLAIF** | TRL RLAIF | Self-supervised |
+| **Scalable Oversight** | debate / recursive reward / IDA | OpenAI / Anthropic |
+| **Mechanistic Interp** | TransformerLens (week10) | Anthropic |
+| **Sparse Autoencoders** | SAE Lens | Feature discovery |
+| **Activation Steering** | RepEng / Steering vectors | Behavior control |
+| **Eval (HELM, BIG-bench)** | helm / lm-evaluation-harness | Stanford / EAI |
+| **Safety RLHF** | Llama Guard fine-tune | Meta |
+| **AI alignment forum** | community | discussion |
+
+### 학생 환경 준비
+
+```bash
+pip install --user trl peft transformers accelerate deepspeed
+pip install --user datasets wandb
+pip install --user bitsandbytes   # 4-bit 양자화
+
+# Constitutional AI / RLAIF
+git clone https://github.com/anthropics/hh-rlhf /tmp/hh-rlhf
+
+# OpenRLHF (확장)
+pip install --user openrlhf
+
+# Sparse Autoencoders
+git clone https://github.com/jbloomAus/SAELens /tmp/saelens
+
+# HELM
+pip install --user crfm-helm
+
+# lm-evaluation-harness
+pip install --user lm-eval
+```
+
+### 핵심 도구별 상세 사용법
+
+#### 도구 1: TRL — RLHF / DPO 기본 (Step 1)
+
+```python
+from datasets import load_dataset
+from transformers import AutoTokenizer, AutoModelForCausalLM
+from trl import DPOTrainer, DPOConfig
+
+# === 1. 모델 + tokenizer ===
+model_name = "EleutherAI/pythia-70m"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+tokenizer.pad_token = tokenizer.eos_token
+model = AutoModelForCausalLM.from_pretrained(model_name)
+ref_model = AutoModelForCausalLM.from_pretrained(model_name)
+
+# === 2. preference dataset ===
+dataset = load_dataset("Anthropic/hh-rlhf", split="train[:1000]")
+
+def format_dpo(example):
+    return {
+        "prompt": example['chosen'].split("\n\nAssistant:")[0] + "\n\nAssistant:",
+        "chosen": example['chosen'].split("\n\nAssistant:")[1],
+        "rejected": example['rejected'].split("\n\nAssistant:")[1],
+    }
+dataset = dataset.map(format_dpo)
+
+# === 3. DPO config ===
+config = DPOConfig(
+    output_dir="/tmp/dpo-pythia",
+    per_device_train_batch_size=4,
+    num_train_epochs=1,
+    beta=0.1,        # KL penalty
+    learning_rate=5e-7,
+    logging_steps=10,
+)
+
+# === 4. Train ===
+trainer = DPOTrainer(
+    model=model, ref_model=ref_model,
+    args=config, beta=0.1,
+    train_dataset=dataset, tokenizer=tokenizer,
+)
+trainer.train()
+trainer.save_model()
+```
+
+#### 도구 2: 시나리오 생성 (Step 2)
+
+```python
+import requests
+
+prompt = """Generate AI Safety research scenarios. 8 frontier topics:
+1. RLHF alignment (reward hacking / sycophancy)
+2. DPO scalable preference learning
+3. Constitutional AI (CAI) self-critique
+4. Mechanistic interpretability (circuit analysis)
+5. Sparse Autoencoders (feature discovery)
+6. Activation steering (behavior control)
+7. Scalable oversight (debate / IDA)
+8. AI evaluation (HELM, BIG-bench)
+
+각 topic:
+- research question
+- expected method (paper reference if exists)
+- evaluation metric
+- safety implication
+- 3-month milestone
+
+JSON: [{"topic":"...", "question":"...", "method":"...", "metric":"...", "safety":"...", "milestone":"..."}]"""
+
+r = requests.post("http://192.168.0.105:11434/api/generate",
+                 json={"model":"gpt-oss:120b","prompt":prompt,"stream":False})
+print(r.json()['response'])
+```
+
+#### 도구 3: 정책 평가 (Step 3)
+
+```python
+def eval_research_policy(policy):
+    p = f"""정책이 AI Safety 연구 운영에 견고한지 평가:
+{policy}
+
+분석:
+1. RSP (Responsible Scaling Policy) — Anthropic
+2. Dual-use 평가 (research → 악용 가능)
+3. Disclosure (vendor / regulator)
+4. Paper / code 공개 정책
+5. Compute budget 추적
+6. Alignment forum 참여
+7. Bug bounty (research 발견 → 운영 패치)
+
+JSON: {{"weaknesses":[...], "missing_defenses":[...], "rec":[...]}}"""
+
+    r = requests.post("http://192.168.0.105:11434/api/generate",
+        json={"model":"gpt-oss:120b","prompt":p,"stream":False})
+    return r.json()['response']
+
+policy = """
+1. RSP: 미수립
+2. Dual-use 평가: 안 함
+3. Paper 공개 정책: open default
+4. Compute budget: 무제한
+"""
+print(eval_research_policy(policy))
+```
+
+#### 도구 5: RLHF / DPO 학습 파이프라인 (Step 5)
+
+```python
+from trl import RewardTrainer, RewardConfig, PPOTrainer, PPOConfig
+from datasets import load_dataset
+
+# === 1. Reward Model 학습 ===
+rm_dataset = load_dataset("Anthropic/hh-rlhf", split="train[:5000]")
+
+def format_rm(ex):
+    return {"chosen": ex['chosen'], "rejected": ex['rejected']}
+
+rm_dataset = rm_dataset.map(format_rm)
+
+reward_config = RewardConfig(
+    output_dir="/tmp/reward-model",
+    per_device_train_batch_size=8,
+    num_train_epochs=1,
+    learning_rate=1e-5,
+)
+
+reward_trainer = RewardTrainer(
+    model=AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=1),
+    args=reward_config,
+    train_dataset=rm_dataset,
+    tokenizer=tokenizer,
+)
+reward_trainer.train()
+
+# === 2. PPO loop with reward model ===
+ppo_config = PPOConfig(
+    model_name=model_name,
+    learning_rate=1e-5,
+    batch_size=4,
+    mini_batch_size=2,
+    ppo_epochs=4,
+    init_kl_coef=0.2,
+)
+
+ppo_trainer = PPOTrainer(ppo_config, model, ref_model, tokenizer)
+
+reward_model = AutoModelForSequenceClassification.from_pretrained("/tmp/reward-model")
+
+for epoch in range(3):
+    for batch in dataloader:
+        # Generate response
+        response_tokens = ppo_trainer.generate(batch['input_ids'])
+
+        # Compute reward
+        reward = reward_model(response_tokens).logits.squeeze().tolist()
+
+        # PPO step
+        stats = ppo_trainer.step(batch['input_ids'], response_tokens, reward)
+        print(f"Epoch {epoch}: KL={stats['objective/kl']:.3f}, reward_mean={stats['ppo/mean_scores']:.3f}")
+```
+
+#### 도구 6: Constitutional AI (Step 6)
+
+```python
+import requests
+
+# === Anthropic-style 원칙 ===
+CONSTITUTION = """
+1. Choose response that is most helpful, harmless, and honest.
+2. Avoid responses that are harmful or unethical.
+3. Decline requests that involve illegal activity.
+4. Avoid bias against protected groups.
+5. Be transparent about being an AI.
+6. Refuse to manipulate or deceive.
+"""
+
+def cai_critique_revise(initial_response, principle):
+    """1. critique 2. revise"""
+    critique_prompt = f"""다음 응답을 다음 원칙에 따라 비판하라:
+원칙: {principle}
+응답: {initial_response}
+
+비판 (3 문장):"""
+    critique = requests.post("http://192.168.0.105:11434/api/generate",
+        json={"model":"gpt-oss:120b","prompt":critique_prompt,"stream":False}).json()['response']
+
+    revise_prompt = f"""원본 응답: {initial_response}
+비판: {critique}
+원칙: {principle}
+
+원칙을 더 잘 따르도록 응답을 수정하라:"""
+    revised = requests.post("http://192.168.0.105:11434/api/generate",
+        json={"model":"gpt-oss:120b","prompt":revise_prompt,"stream":False}).json()['response']
+
+    return {"critique": critique, "revised": revised}
+
+# === SL-CAI dataset 생성 ===
+def generate_sl_cai_dataset(prompts, n_principles=6):
+    dataset = []
+    for prompt in prompts:
+        # 1. 초기 응답
+        initial = requests.post("http://192.168.0.105:11434/api/generate",
+            json={"model":"gpt-oss:120b","prompt":prompt,"stream":False}).json()['response']
+
+        # 2. 6 원칙 각 critique → revise (랜덤 1)
+        import random
+        principles = CONSTITUTION.strip().split('\n')
+        random_p = random.choice(principles)
+        result = cai_critique_revise(initial, random_p)
+
+        dataset.append({
+            "prompt": prompt,
+            "initial": initial,
+            "principle": random_p,
+            "critique": result['critique'],
+            "final": result['revised']
+        })
+    return dataset
+
+# === RLAIF (RL from AI Feedback) ===
+def rlaif_preference(response_a, response_b, prompt):
+    """LLM 자체가 선호 결정"""
+    judge_prompt = f"""두 응답 중 더 helpful, harmless, honest 한 것을 골라라:
+
+질문: {prompt}
+A: {response_a}
+B: {response_b}
+
+선택 (A 또는 B):"""
+    r = requests.post("http://192.168.0.105:11434/api/generate",
+        json={"model":"gpt-oss:120b","prompt":judge_prompt,"stream":False})
+    answer = r.json()['response'].strip().upper()
+    return "A" if answer.startswith("A") else "B"
+
+prompts_for_cai = [
+    "How do I make a chemical weapon?",
+    "Tell me about my friend's medical history",
+    "Write hate speech about [group]",
+]
+
+dataset = generate_sl_cai_dataset(prompts_for_cai)
+for d in dataset:
+    print(f"Q: {d['prompt']}")
+    print(f"Initial: {d['initial'][:100]}")
+    print(f"Final (CAI): {d['final'][:100]}\n")
+```
+
+#### 도구 7: 모니터링 (Step 7)
+
+```python
+from prometheus_client import start_http_server, Gauge, Counter, Histogram
+
+# RLHF / DPO 학습 메트릭
+rlhf_reward_mean = Gauge('rlhf_reward_mean', 'Reward mean per step')
+rlhf_kl_divergence = Gauge('rlhf_kl_divergence', 'KL from reference')
+rlhf_policy_loss = Gauge('rlhf_policy_loss', 'Policy loss')
+rlhf_value_loss = Gauge('rlhf_value_loss', 'Value loss')
+
+dpo_reward_chosen = Gauge('dpo_reward_chosen', 'DPO chosen reward')
+dpo_reward_rejected = Gauge('dpo_reward_rejected', 'DPO rejected reward')
+dpo_reward_margin = Gauge('dpo_reward_margin', 'Margin (chosen - rejected)')
+dpo_accuracy = Gauge('dpo_accuracy', 'DPO accuracy (chosen > rejected)')
+
+# CAI
+cai_revisions_total = Counter('cai_revisions_total', 'CAI revisions', ['principle'])
+cai_self_critique_score = Histogram('cai_critique_score', 'Self-critique severity')
+
+# Eval
+helm_score = Gauge('helm_score', 'HELM benchmark', ['scenario'])
+bigbench_score = Gauge('bigbench_score', 'BIG-bench', ['task'])
+
+start_http_server(9313)
+
+def on_rlhf_step(reward, kl, policy_loss, value_loss):
+    rlhf_reward_mean.set(reward)
+    rlhf_kl_divergence.set(kl)
+    rlhf_policy_loss.set(policy_loss)
+    rlhf_value_loss.set(value_loss)
+
+def on_dpo_step(chosen_r, rejected_r):
+    dpo_reward_chosen.set(chosen_r)
+    dpo_reward_rejected.set(rejected_r)
+    dpo_reward_margin.set(chosen_r - rejected_r)
+    dpo_accuracy.set(1.0 if chosen_r > rejected_r else 0.0)
+```
+
+#### 도구 8: 연구 보고서 (Step 8)
+
+```bash
+cat > /tmp/research-report.md << 'EOF'
+# AI Safety Research Report — 2026 Q2
+
+## 1. Executive Summary
+- 8 frontier topic 중 4 진행 (RLHF, DPO, CAI, Mechanistic Interp)
+- DPO baseline acc 73% → CAI fine-tune 후 helpful 92%, harmless 88%
+- Mechanistic interp: 12 circuit 발견 (truthful / refusal / bias)
+
+## 2. RLHF / DPO 결과
+| 모델 | Reward (RM) | KL | helpful | harmless |
+|------|------------|-----|--------|---------|
+| Pythia-70m base | 2.3 | 0 | 45% | 62% |
+| + SFT (5k) | 4.8 | 12 | 67% | 71% |
+| + DPO (5k) | 6.2 | 4 | 73% | 78% |
+| + CAI critique-revise | 7.1 | 6 | 92% | 88% |
+
+## 3. Mechanistic Interp (TransformerLens)
+- L4 head 7: refusal circuit (CAI 후 강화)
+- L8 head 12: truthful answer circuit
+- L11 head 3: bias amplifier (제거 시 fairness +18%)
+
+## 4. Sparse Autoencoder (SAE)
+- 32K features 학습
+- 12K interpretable (37%)
+- Top features: emotion / negation / role / refusal
+
+## 5. 다음 분기 roadmap
+### Q3 milestones
+- Activation steering 운영 적용 (refusal 강도 control)
+- Scalable Oversight (debate) prototype
+- HELM full eval (5K scenarios)
+
+### Q4 milestones
+- RLHF + Mechanistic interp 통합
+- 자체 SAE 운영 모델 적용
+- Bug bounty (LLM 전용) 출시
+
+## 6. 권고
+### Short
+- DPO + CAI 도입 (current+5%)
+- Mechanistic interp dashboard
+- HELM CI 통합
+
+### Mid
+- Scalable Oversight (debate)
+- 자체 RLAIF dataset 5만건
+- Activation steering API
+
+### Long
+- RSP (Responsible Scaling Policy) 수립
+- AI Safety Board 구성
+- 외부 audit (Anthropic / OpenAI 협업)
+EOF
+
+pandoc /tmp/research-report.md -o /tmp/research-report.pdf \
+  --pdf-engine=xelatex -V mainfont="Noto Sans CJK KR"
+```
+
+### 점검 / 평가 / 보고 흐름 (8 step + multi_task)
+
+#### Phase A — 기본 + 시나리오 + 정책 (s1·s2·s3)
+
+```bash
+python3 /tmp/trl-dpo-basic.py
+python3 /tmp/research-scenario.py
+python3 /tmp/research-policy-eval.py
+```
+
+#### Phase B — 인젝션 + 자동화 (s4·s5)
+
+```bash
+python3 /tmp/extraction-injection.py    # week01~03
+python3 /tmp/trl-rlhf-pipeline.py
+deepspeed --num_gpus=1 /tmp/trl-rlhf-pipeline.py --deepspeed
+```
+
+#### Phase C — 가드레일 + 모니터링 + 보고 (s6·s7·s8)
+
+```bash
+python3 /tmp/cai-critique-revise.py
+python3 /tmp/research-monitor.py &
+pandoc /tmp/research-report.md -o /tmp/research-report.pdf
+```
+
+#### Phase D — 통합 (s99 multi_task)
+
+s1 → s2 → s3 → s5 → s6 를 Bastion 가:
+
+1. plan: TRL DPO → 시나리오 → 정책 → RLHF + DPO → CAI critique-revise
+2. execute: trl / hh-rlhf / pythia / cai
+3. synthesize: 5 산출물 (basic.py / scenario.json / policy.json / rlhf.log / cai-dataset.json)
+
+### 도구 비교표 — Research frontier 단계별
+
+| 분야 | 1순위 | 2순위 | 사용 |
+|------|-------|-------|------|
+| RLHF | TRL (Hugging Face) | OpenRLHF | OSS |
+| DPO | TRL DPO | trlx | OSS |
+| CAI | 자체 (Anthropic 기법) | RLAIF (TRL) | 학계 |
+| Mechanistic interp | TransformerLens | NeuronPedia | OSS |
+| Sparse AE | SAE Lens | jaxformer | OSS |
+| Activation steering | RepEng | steering-vectors | OSS |
+| Scalable oversight | debate / recursive | IDA | research |
+| Eval framework | HELM (Stanford) | lm-eval-harness (EAI) | OSS |
+| Distributed training | DeepSpeed | FSDP / Megatron | OSS |
+| Experiment tracking | Weights & Biases | MLflow | OSS / cloud |
+| 보고서 | pandoc | LaTeX | 기술 |
+
+### 도구 선택 매트릭스 — 시나리오별 권장
+
+| 시나리오 | 우선 도구 | 이유 |
+|---------|---------|------|
+| "Alignment 첫 도전" | TRL DPO | 단순 |
+| "scalable oversight" | debate framework + IDA | 학계 |
+| "interpretability" | TransformerLens + SAE Lens | 깊이 |
+| "behavior control" | Activation steering | 제어 |
+| "production safety" | RLHF + DPO + CAI 통합 | 종합 |
+| "evaluation" | HELM + lm-eval-harness | 표준 |
+| "compliance (RSP)" | Anthropic RSP + 자체 audit | 표준 |
+
+### 학생 셀프 체크리스트 (각 step 완료 기준)
+
+- [ ] s1: TRL DPO 1 epoch 학습 완료
+- [ ] s2: 8 frontier topic JSON
+- [ ] s3: 정책 평가 (7 항목)
+- [ ] s4: week01~03 인젝션 재실행
+- [ ] s5: Reward Model + PPO + DPO pipeline
+- [ ] s6: CAI critique-revise + RLAIF preference + SL-CAI dataset
+- [ ] s7: 8+ 메트릭 (rlhf reward / kl / dpo margin / cai revisions / helm)
+- [ ] s8: 연구 보고서 (RLHF / DPO / CAI / interp + roadmap)
+- [ ] s99: Bastion 가 5 작업 (basic / scenario / policy / rlhf / cai) 순차
+
+### 추가 참조 자료
+
+- **TRL (Hugging Face)** https://github.com/huggingface/trl
+- **OpenRLHF** https://github.com/OpenRLHF/OpenRLHF
+- **DPO paper (Rafailov 2023)**
+- **Constitutional AI (Anthropic 2022)**
+- **TransformerLens** https://github.com/neelnanda-io/TransformerLens
+- **SAE Lens** https://github.com/jbloomAus/SAELens
+- **RepEng** https://github.com/vgel/repeng
+- **HELM (Stanford)** https://github.com/stanford-crfm/helm
+- **lm-evaluation-harness (EleutherAI)** https://github.com/EleutherAI/lm-evaluation-harness
+- **DeepSpeed** https://github.com/microsoft/DeepSpeed
+- **Anthropic RSP** https://www.anthropic.com/news/anthropics-responsible-scaling-policy
+- **AI Alignment Forum** https://www.alignmentforum.org/
+
+위 모든 research 작업은 **격리 환경 + RSP** 로 수행한다. RLHF / DPO 학습은 GPU intensive
+— budget tracking 필수. CAI critique-revise 는 sample 당 LLM 호출 3+ — 비용 평가. SAE는
+연구 단계 — production 전 ablation 충분. Activation steering 은 강력하지만 안전 평가
+미완 — 운영 시 통계 monitoring + 분기 audit. Anthropic RSP 권고: 능력 ASL-3 이상 신중.

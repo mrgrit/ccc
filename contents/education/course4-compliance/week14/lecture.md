@@ -585,3 +585,146 @@ dataset 부재 항목 = NCR 후보:
 
 **학생 액션**: SoA 작성 시 dataset 의 framework 매핑 양식 그대로 모방. 부재 항목은 *별도 product 추가 또는 NCR 사전 확인*.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course4 Compliance — Week 14 보안 교육/인식)
+
+### 보안 교육 영역 → OSS 도구
+
+| 영역 | OSS 도구 | 강점 |
+|------|---------|------|
+| 피싱 시뮬레이션 | **gophish** + King-Phisher / SET | 캠페인 자동 |
+| 인식 평가 | **Moodle** (LMS) + LearnDash | 강의 + 시험 |
+| 사용자 행동 분석 | **Wazuh user-behavior** + osquery | 위험 사용자 식별 |
+| 사고 대응 훈련 | **CyberRange** OSS / DetectionLab / Atomic Red Team | 가상 환경 |
+| 점수 평가 | gophish dashboard / 자체 BI | 정량 측정 |
+| 인식 콘텐츠 | **Open Educational Resources** + 자체 markdown | OSINT 사례 |
+
+### 핵심 — gophish 피싱 시뮬레이션 (사용자 인식 측정)
+
+```bash
+# 설치
+mkdir -p /opt/gophish && cd /opt/gophish
+curl -sL https://github.com/gophish/gophish/releases/latest/download/gophish-v0.12.1-linux-64bit.zip -o gophish.zip
+unzip gophish.zip
+chmod +x gophish
+
+# 시작 (관리자 패널 + landing 페이지 동시)
+sudo ./gophish
+# 로그: 초기 admin password 콘솔에 출력
+# Admin: https://localhost:3333
+# Landing: http://localhost:80
+
+# 캠페인 생성 흐름:
+# 1. Sending Profile — SMTP 서버 등록
+# 2. Email Template — 피싱 메일 작성 (HTML)
+# 3. Landing Page — 피싱 사이트 (자격증명 수집 모방)
+# 4. User Group — 대상자 import (CSV)
+# 5. Campaign — 발송 + 추적
+```
+
+### 학생 환경 준비
+
+```bash
+sudo apt install -y postfix mailutils swaks
+git clone https://github.com/gophish/gophish.git ~/gophish
+
+# Moodle (학습 관리 LMS)
+docker run -d -p 80:80 -p 443:443 \
+  --name moodle \
+  -e MOODLE_USERNAME=admin \
+  -e MOODLE_PASSWORD=Pa$$w0rd \
+  bitnami/moodle:latest
+
+# Atomic Red Team (사고 시뮬)
+git clone https://github.com/redcanaryco/atomic-red-team.git ~/atomic
+pip3 install pyinvoke
+
+# DetectionLab (학습용 가상 환경)
+# https://github.com/clong/DetectionLab
+```
+
+### 핵심 도구 사용법
+
+```bash
+# 1) gophish 캠페인 흐름
+# https://localhost:3333 접속 → API 토큰 발급
+TOKEN="..."
+
+# 사용자 그룹 자동 등록
+curl -k -X POST https://localhost:3333/api/groups \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"name":"전직원","targets":[
+    {"first_name":"홍","last_name":"길동","email":"hong@company.com"},
+    {"first_name":"김","last_name":"철수","email":"kim@company.com"}
+  ]}'
+
+# 캠페인 생성 + 발송
+curl -k -X POST https://localhost:3333/api/campaigns \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "name":"Q1 피싱 훈련",
+    "template":{"name":"비밀번호 재설정"},
+    "page":{"name":"가짜 로그인 페이지"},
+    "smtp":{"name":"내부 SMTP"},
+    "groups":[{"name":"전직원"}]
+  }'
+
+# 결과 통계
+curl -k https://localhost:3333/api/campaigns/{id}/results -H "Authorization: Bearer $TOKEN" | jq
+
+# 2) Wazuh user-behavior (위험 사용자 식별)
+# /var/ossec/etc/ossec.conf 의 user-behavior 모듈 활성화
+sudo /var/ossec/bin/wazuh-control restart
+
+# 사용자별 alert 빈도 추출
+sudo jq -r '.data.srcuser // .data.dstuser // .data.user' /var/ossec/logs/alerts/alerts.json | \
+  sort | uniq -c | sort -rn | head -20
+
+# 3) Atomic Red Team — 사용자 인식 검증 (실제 공격 패턴)
+sudo invoke install-atomicredteam
+sudo invoke run-atomic-test T1566.001                            # 피싱 첨부
+sudo invoke run-atomic-test T1110.001                            # SSH brute (사용자가 의심하는지)
+
+# 4) Moodle (LMS — 보안 교육 강의 + 시험)
+# Web UI 에서 강의 작성 → 직원 자동 enroll → 시험 결과 자동 채점
+```
+
+### 보안 교육 분기 사이클
+
+```bash
+# Phase 1: 사전 교육 (Moodle)
+# 보안 정책 강의 (week13 markdown 활용) → 시험 → 합격자 인증
+
+# Phase 2: 피싱 시뮬레이션 (gophish)
+# 분기별 1회, 무작위 직원 대상
+# 측정 KPI:
+# - Click Rate: 피싱 링크 클릭 비율 (목표 < 10%)
+# - Submit Rate: 자격증명 제출 비율 (목표 < 3%)
+# - Report Rate: 피싱 신고 비율 (목표 > 30%)
+
+# Phase 3: 결과 분석 + 추가 교육
+curl -k https://gophish/api/campaigns/results | jq '.results[] | {email, status}'
+# Click 한 사용자 → 추가 교육 자동 enroll
+
+# Phase 4: 사고 대응 훈련 (TheHive + Atomic)
+# 분기별 가상 사고 → IR 팀 대응 시간 측정 (RTO/MTTR)
+
+# Phase 5: 보고
+# - 인식률 향상 추이 (분기별)
+# - 부서별/직급별 위험도
+# - 추천 후속 교육
+pandoc training-q1.md -o training-q1.pdf
+```
+
+### 사용자 인식 점수 (조직 KPI)
+
+| KPI | 측정 방법 | 목표 |
+|-----|----------|------|
+| 클릭률 | gophish 캠페인 결과 | < 10% |
+| 신고율 | 메일 신고 button + Wazuh rule | > 30% |
+| 시험 통과율 | Moodle 시험 결과 | > 90% |
+| 사고 대응 시간 | TheHive MTTR | < 4 시간 |
+
+학생은 본 14주차에서 **gophish + Wazuh user-behavior + Atomic Red Team + Moodle** 4 도구로 보안 교육의 4 단계 (학습 → 시뮬 → 측정 → 후속) 사이클을 OSS 만으로 운영한다.

@@ -621,3 +621,187 @@ PoW 부담이 *전체 운영의 1%* — 적당한 비용으로 *영구 무결성
 
 **학생 액션**: lab 에서 dataset 임의 10건의 분석 결과를 *블록체인 형식으로 기록* 하는 PoW 코드 구현.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course9 — Week 06 위협 헌팅)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | Sigma 룰 작성 | **Sigma** + sigma-cli |
+| s2 | Sigma → SIEM 변환 | pysigma backends |
+| s3 | chainsaw (Rust) | **chainsaw** Sigma engine |
+| s4 | hayabusa (Win EVTX) | **hayabusa** |
+| s5 | kestrel-lang 가설 | **kestrel-lang** |
+| s6 | Velociraptor 다중 호스트 | **Velociraptor** |
+| s7 | osquery 통합 | osquery + Fleet |
+| s8 | 통합 hunt 스크립트 | bash + jq + 위 도구들 |
+
+### 학생 환경 준비
+
+```bash
+# Sigma + sigma-cli
+pip install pysigma pysigma-backend-elasticsearch pysigma-backend-splunk pysigma-backend-loki
+git clone https://github.com/SigmaHQ/sigma ~/sigma                 # 5000+ 룰
+
+# chainsaw (Rust)
+cargo install chainsaw
+
+# hayabusa
+git clone https://github.com/Yamato-Security/hayabusa ~/hayabusa
+cd ~/hayabusa && cargo build --release
+
+# kestrel-lang
+pip install kestrel-lang kestrel-jupyter
+
+# Velociraptor
+curl -L https://github.com/Velocidex/velociraptor/releases/latest/download/velociraptor-v0.7.0-linux-amd64 -o /tmp/vr
+chmod +x /tmp/vr && sudo mv /tmp/vr /usr/local/bin/velociraptor
+
+# osquery + Fleet
+sudo apt install -y osquery
+docker run -d -p 8080:8080 fleetdm/fleet:latest
+```
+
+### 핵심 — Sigma + chainsaw (Win/Linux 통합 헌팅)
+
+```bash
+# 1) 표준 Sigma 룰 다운로드
+ls ~/sigma/rules/                                                  # windows / linux / web 등 5000+
+
+# 2) 변환 (각 SIEM 에 맞춰)
+sigma convert -t splunk ~/sigma/rules/windows/...
+sigma convert -t opensearch ~/sigma/rules/linux/...
+sigma convert -t loki ~/sigma/rules/web/...
+
+# 3) chainsaw 으로 즉시 실행 (변환 없이)
+chainsaw hunt /var/log -s ~/sigma/rules/linux/ \
+    --output json --no-banner > /tmp/hunt.json
+
+# 4) Win EVTX 파일 헌팅
+chainsaw hunt /evtx_files/ -s ~/sigma/rules/windows/ -m mapping.yml
+
+# 출력 (chainsaw):
+# [+] Detected: T1078 Valid Accounts
+#     Event: Security 4624 (logon type 3)
+#     Computer: DC01
+#     User: admin
+#     Source IP: 192.168.0.50
+
+# 5) 결과 → ATT&CK 매핑
+jq -r '.detections[].technique' /tmp/hunt.json | sort | uniq -c | sort -rn
+```
+
+### hayabusa (Windows EVTX 전용 — 매우 빠름)
+
+```bash
+cd ~/hayabusa
+./target/release/hayabusa csv-timeline -d /evtx_files -o /tmp/timeline.csv
+
+# 통계
+./target/release/hayabusa logon-summary -d /evtx_files
+
+# Sigma rules + 자체 카탈로그 (3000+)
+./target/release/hayabusa update-rules
+```
+
+### kestrel-lang (가설 기반 헌팅)
+
+```bash
+# 1) Hunt flow 작성 (자연 언어 가까움)
+cat > /tmp/lateral-hunt.huntflow << 'EOF'
+# Hypothesis: 공격자가 SSH 자격증명 brute 후 lateral 시도
+
+ssh_logins = GET process FROM stixshifter://wazuh
+            WHERE [process:name = 'sshd' AND process:command_line LIKE '%pam_unix%']
+
+# 1시간 내 5+ 실패 후 성공한 host
+suspect_hosts = ssh_logins
+              GROUP BY host_id
+              HAVING failed_attempts > 5 AND succeeded_after_failures > 0
+
+# 그 host 에서 새 process 실행
+new_proc = GET process FROM stixshifter://wazuh
+         WHERE [process:parent_ref = ssh_logins.process_id]
+
+# Show
+DISP suspect_hosts ATTR host_id, ip_address, last_login_time
+DISP new_proc ATTR process_name, command_line, user_id
+EOF
+
+# 2) 실행
+kestrel run /tmp/lateral-hunt.huntflow
+
+# 출력:
+# Hypothesis confirmed: 3 hosts compromised
+# - 10.20.30.50: 7 failed → success → spawned bash, wget
+# - 10.20.30.51: 9 failed → success → spawned python3 (메모리 only)
+# - 10.20.30.52: 12 failed → success → spawned ssh (lateral)
+```
+
+### Velociraptor (multi-host live forensic)
+
+```bash
+# 1) 서버 시작
+sudo velociraptor --config /etc/velociraptor.config.yaml frontend
+
+# 2) Web UI: https://localhost:8889
+# 3) Client 배포 (모든 endpoint 에 agent 설치)
+
+# 4) Live Hunt (모든 호스트 동시 검색)
+velociraptor query "
+SELECT 
+  pid, name, exe, cmdline, username
+FROM artifact(name='Linux.Sys.Process')
+WHERE exe LIKE '%/tmp/%' OR exe LIKE '%/dev/shm/%'
+"
+
+# 5) Hunt (yara 시그니처)
+velociraptor flow create EvidenceOfCompromise \
+    --client.id all \
+    --artifacts Generic.Detection.Yara.Process \
+    --rules ~/yara-rules/index.yar
+```
+
+### 통합 hunt 스크립트 (자율)
+
+```bash
+#!/bin/bash
+# /usr/local/bin/auto-hunt.sh
+# 매시간 실행: 다중 hunt 도구 통합 + alert 자동 생성
+
+DIR=/var/log/auto-hunt/$(date +%Y%m%d-%H)
+mkdir -p $DIR
+
+# 1) chainsaw + Sigma
+chainsaw hunt /var/log -s ~/sigma/rules/linux/ \
+    --output json > $DIR/01-chainsaw.json
+
+# 2) kestrel 가설 검증
+for h in lateral-hunt c2-hunt persistence-hunt; do
+    kestrel run /opt/hunts/$h.huntflow > $DIR/02-$h.txt
+done
+
+# 3) Velociraptor live query
+velociraptor query --format json "
+SELECT * FROM artifact(name='Linux.Sys.Process')
+WHERE exe LIKE '%/dev/shm/%' OR exe LIKE '%/tmp/.%'
+" > $DIR/03-vr-process.json
+
+# 4) osquery (모든 호스트)
+fleetctl query --hosts="hosts.label='production'" \
+    --query "SELECT * FROM users WHERE shell != '/bin/false';" \
+    > $DIR/04-osquery.json
+
+# 5) 통합 alert (LLM judge)
+python3 /opt/hunt/aggregate.py --dir $DIR --output $DIR/alerts.md
+
+# 6) Wazuh 에 alert 주입
+for alert in $(jq -c '.[]' $DIR/alerts.json); do
+    echo "$alert" >> /var/ossec/logs/api.log
+done
+```
+
+학생은 본 6주차에서 **Sigma + chainsaw + hayabusa + kestrel + Velociraptor + osquery** 6 도구로 자율 위협 헌팅의 4 단계 (룰 → 가설 → 다중 호스트 → 통합) 사이클을 익힌다.

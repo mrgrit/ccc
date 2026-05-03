@@ -667,3 +667,39 @@ CEF 7-field 표준: vendor|product|version|sigID|name|severity|extension.
 
 **학생 액션**: 본인 환경 로그 형식이 syslog/CEF/JSON winlogbeat 표준 따르는지 확인.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course5 SOC — Week 03 로그 수집)
+
+| 작업 | 도구 |
+|------|------|
+| Syslog | rsyslog / syslog-ng / journald |
+| 로그 forwarder | Filebeat / Fluentd / Fluent Bit / vector.dev |
+| Wazuh agent | wazuh-agent (built-in) |
+| 압축/순환 | logrotate / journalctl --vacuum |
+| 정규화 | grok / Logstash / vector.dev VRL |
+
+### 학생 환경 준비
+```bash
+sudo apt install -y rsyslog filebeat fluent-bit logrotate
+```
+
+### 핵심
+```bash
+# rsyslog 원격 forwarding (TCP 514 → SIEM)
+sudo tee -a /etc/rsyslog.d/00-forward.conf > /dev/null << 'EOF'
+*.*  @@10.20.30.100:514
+EOF
+sudo systemctl reload rsyslog
+
+# Filebeat — Wazuh 에 직접 forwarding
+sudo filebeat modules enable system apache
+
+# vector.dev — modern observability pipeline
+curl -1sLf https://repositories.timber.io/public/vector/cfg/setup/bash.deb.sh | sudo bash
+sudo apt install -y vector
+
+# Wazuh agent 측 로그 수집 — ossec.conf
+# <localfile><log_format>syslog</log_format><location>/var/log/auth.log</location></localfile>
+```

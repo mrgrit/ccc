@@ -976,3 +976,504 @@ graph LR
 
 **학생 액션**: watermark lab.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course15 AI Safety Advanced — Week 09 형식 검증·SMT·model checking·Z3·CBMC)
+
+> 이 부록은 lab `ai-safety-adv-ai/week09.yaml` (8 step + multi_task) 의 모든 명령을
+> 실제로 실행 가능한 형태로 정리한다. Formal Verification — Z3 / CVC5 (SMT) /
+> CBMC (C/C++) / TLA+ / Coq / Frama-C / Marabou (NN) / Cryptol (cryptographic).
+
+### lab step → 도구·범위 매핑 표
+
+| step | 학습 항목 | 핵심 OSS 도구 | 표준 |
+|------|----------|--------------|------|
+| s1 | Formal verification 기본 | Z3 SMT solver | SMT-LIB |
+| s2 | 시나리오 생성 | LLM + 검증 영역 | NIST 800-218 |
+| s3 | 정책 평가 | LLM + invariant / safety / liveness | NIST AI 600-1 |
+| s4 | LLM 인젝션 (보조) | week01~03 | LLM01 |
+| s5 | 자동 검증 파이프라인 | CBMC / Frama-C / TLA+ | software |
+| s6 | 가드레일 (검증된 코드 강제) | CI 통합 + invariant 검사 | DevSecOps |
+| s7 | 검증 모니터링 | property pass/fail + Prometheus | observability |
+| s8 | 검증 평가 보고서 | markdown + 검증 coverage | report |
+| s99 | 통합 (s1→s2→s3→s5→s6) | Bastion plan 5 단계 | 전체 |
+
+### Formal Verification 도구 매핑
+
+| 분야 | 도구 | 사용 |
+|------|------|------|
+| **SMT (general)** | Z3 / CVC5 / Yices | 일반 식 |
+| **C / C++** | CBMC / KLEE / Frama-C | bounded model checking |
+| **Java / .NET** | Java PathFinder / Pex | bytecode |
+| **Rust** | Kani / MIRAI / Prusti | safety |
+| **Go** | gobosh / Goblint | static |
+| **Cryptographic** | Cryptol / SAW / EasyCrypt | crypto |
+| **Distributed** | TLA+ / Spin / Promela | protocol |
+| **NN** | Marabou / α,β-CROWN (week08) | NN safety |
+| **HW** | Verilog formal / SVA | hardware |
+| **Theorem proving** | Coq / Lean / Isabelle / HOL | mathematical |
+| **CI 통합** | Frama-C + Jenkins / GH Actions | DevSecOps |
+
+### 학생 환경 준비
+
+```bash
+# Z3
+sudo apt-get install -y z3 libz3-dev
+pip install --user z3-solver
+
+# CVC5
+curl -L https://github.com/cvc5/cvc5/releases/latest/download/cvc5-Linux-static.zip -o cvc5.zip
+unzip cvc5.zip && sudo mv cvc5/bin/cvc5 /usr/local/bin/
+
+# CBMC (C bounded model checker)
+sudo apt-get install -y cbmc
+
+# KLEE (LLVM 기반 symbolic execution)
+sudo apt-get install -y klee
+
+# Frama-C (C analysis framework)
+sudo apt-get install -y frama-c
+
+# TLA+ (Toolbox + tlc)
+curl -LO https://github.com/tlaplus/tlaplus/releases/latest/download/TLAToolbox-linux.gtk.x86_64.zip
+
+# Coq
+sudo apt-get install -y coq coqide
+
+# Marabou (week08)
+git clone https://github.com/NeuralNetworkVerification/Marabou /tmp/marabou
+```
+
+### 핵심 도구별 상세 사용법
+
+#### 도구 1: Z3 SMT Solver — 기본 (Step 1)
+
+```python
+from z3 import *
+
+x = Int('x')
+y = Int('y')
+solver = Solver()
+solver.add(x + y == 10)
+solver.add(x * y == 21)
+
+if solver.check() == sat:
+    m = solver.model()
+    print(f"x = {m[x]}, y = {m[y]}")
+else:
+    print("UNSAT")
+
+# === 보안 속성 검증: integer overflow ===
+def verify_no_overflow(a_val, b_val, MAX=2**31 - 1):
+    a = BitVec('a', 32)
+    b = BitVec('b', 32)
+    s = Solver()
+    s.add(a == a_val, b == b_val)
+    s.add(BVAddNoOverflow(a, b, signed=True) == False)
+    if s.check() == sat:
+        return False
+    return True
+
+print(f"Overflow safe (a=2^30, b=2^30): {verify_no_overflow(2**30, 2**30)}")
+
+# === Buffer access bound 검증 ===
+i = Int('i')
+size = 100
+s = Solver()
+s.add(i < size, i >= 0)
+s.add(Or(i + 5 >= size, i - 1 < 0))   # out-of-bound 가능?
+print("Buffer access:", s.check())
+```
+
+#### 도구 2: 시나리오 생성 (Step 2)
+
+```python
+import requests
+
+prompt = """Generate a formal verification scenario:
+1. Property type (safety / liveness / invariant / functional correctness)
+2. Code/system to verify (C function / TLA+ spec / NN / smart contract)
+3. Tool selection (Z3 / CBMC / TLA+ / Frama-C / Marabou)
+4. Specification (precondition / postcondition / invariant)
+5. Expected outcome (verified / counterexample / undecidable)
+6. CI integration
+
+JSON: {"property":"...", "system":"...", "tool":"...", "spec":"...", "outcome":"...", "ci":"..."}"""
+
+r = requests.post("http://192.168.0.105:11434/api/generate",
+                 json={"model":"gpt-oss:120b","prompt":prompt,"stream":False})
+print(r.json()['response'])
+```
+
+#### 도구 3: 정책 평가 (Step 3)
+
+```python
+def eval_fv_policy(policy):
+    p = f"""정책이 formal verification 도입에 견고한지 평가:
+{policy}
+
+분석:
+1. Property 정의 (safety / liveness / functional)
+2. 검증 도구 선택 (Z3 / CBMC / TLA+ / etc.)
+3. CI 통합 (PR 시 자동 검증)
+4. Counterexample 처리 (버그 → 패치)
+5. Coverage 측정 (검증된 함수 / 총 함수)
+6. 시간 budget (CI timeout)
+
+JSON: {{"weaknesses":[...], "missing_defenses":[...], "rec":[...]}}"""
+
+    r = requests.post("http://192.168.0.105:11434/api/generate",
+        json={"model":"gpt-oss:120b","prompt":p,"stream":False})
+    return r.json()['response']
+
+policy = """
+1. Property: 미정의
+2. 도구: 없음
+3. CI: pytest 만
+4. Counterexample: N/A
+5. Coverage: 측정 안 함
+"""
+print(eval_fv_policy(policy))
+```
+
+#### 도구 5: 자동 검증 파이프라인 (Step 5) — CBMC + Frama-C + TLA+
+
+```bash
+# === CBMC (C bounded model checker) ===
+cat > /tmp/buffer.c << 'C'
+#include <stdint.h>
+#include <assert.h>
+
+void copy(char *dst, const char *src, size_t n) {
+    for (size_t i = 0; i < n; i++) {
+        dst[i] = src[i];
+    }
+}
+
+int main() {
+    char buf[10];
+    char src[20];
+    copy(buf, src, 15);   // ★ overflow!
+    return 0;
+}
+C
+
+cbmc /tmp/buffer.c --bounds-check --pointer-check --memory-leak-check
+# Output: VERIFICATION FAILED — buffer overflow at line 5
+
+# === Frama-C with WP plugin ===
+cat > /tmp/sqrt.c << 'C'
+/*@
+  requires x >= 0;
+  ensures \result * \result <= x < (\result + 1) * (\result + 1);
+*/
+unsigned int int_sqrt(unsigned int x) {
+    unsigned int r = 0;
+    while ((r+1) * (r+1) <= x) r++;
+    return r;
+}
+C
+
+frama-c -wp /tmp/sqrt.c -wp-prover alt-ergo,z3 -wp-rte
+# Output: Goal int_sqrt_post: Valid
+
+# === TLA+ (분산 시스템 protocol) ===
+cat > /tmp/Counter.tla << 'TLA'
+---- MODULE Counter ----
+EXTENDS Naturals
+VARIABLES x
+
+Init == x = 0
+Next == x' = x + 1
+Spec == Init /\ [][Next]_x
+Inv == x >= 0
+======================
+TLA
+
+cat > /tmp/Counter.cfg << 'CFG'
+INIT Init
+NEXT Next
+INVARIANT Inv
+CFG
+
+tlc /tmp/Counter.tla -config /tmp/Counter.cfg
+# Output: Invariant Inv is true
+
+# === KLEE (symbolic execution) ===
+cat > /tmp/abs.c << 'C'
+#include <klee/klee.h>
+
+int abs(int x) {
+    return x < 0 ? -x : x;
+}
+
+int main() {
+    int x;
+    klee_make_symbolic(&x, sizeof(x), "x");
+    int y = abs(x);
+    klee_assert(y >= 0);   // ★ INT_MIN 일 때 fail!
+    return 0;
+}
+C
+
+clang -emit-llvm -c -g /tmp/abs.c -o /tmp/abs.bc
+klee /tmp/abs.bc
+# Output: KLEE: ERROR: ASSERTION FAIL: y >= 0
+```
+
+#### 도구 6: 가드레일 (Step 6) — CI 통합
+
+```yaml
+# .github/workflows/verify.yml
+name: Formal Verification CI
+
+on: [pull_request]
+
+jobs:
+  cbmc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get install -y cbmc
+      - name: CBMC bounds & pointer check
+        run: |
+          for f in $(find src/ -name "*.c"); do
+            cbmc "$f" --bounds-check --pointer-check --signed-overflow-check \
+                 --unwind 10 --depth 1000 || exit 1
+          done
+
+  frama-c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get install -y frama-c alt-ergo
+      - run: frama-c -wp src/*.c -wp-prover alt-ergo,z3 -wp-rte
+
+  tlc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          tlc specs/Protocol.tla -config specs/Protocol.cfg
+```
+
+```python
+# === Property invariant 자동 검사 (runtime) ===
+import functools
+from z3 import *
+
+def verify_pre_post(pre_cond, post_cond):
+    """런타임 invariant 검사"""
+    def deco(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            assert pre_cond(*args, **kwargs), f"Precond fail: {func.__name__}"
+            result = func(*args, **kwargs)
+            assert post_cond(result, *args, **kwargs), f"Postcond fail: {func.__name__}"
+            return result
+        return wrapper
+    return deco
+
+@verify_pre_post(
+    pre_cond=lambda x: x >= 0,
+    post_cond=lambda r, x: r * r <= x < (r+1) * (r+1)
+)
+def int_sqrt(x):
+    r = 0
+    while (r+1)**2 <= x:
+        r += 1
+    return r
+
+print(int_sqrt(10))   # 3
+```
+
+#### 도구 7: 모니터링 (Step 7)
+
+```python
+from prometheus_client import start_http_server, Counter, Gauge, Histogram
+
+fv_runs = Counter('fv_runs_total', 'FV runs', ['tool', 'result'])
+fv_properties_verified = Gauge('fv_properties_verified', 'Properties', ['module'])
+fv_counterexamples = Counter('fv_counterexamples_total', 'Counterexamples', ['type'])
+fv_runtime = Histogram('fv_runtime_seconds', 'Runtime', ['tool'])
+fv_coverage = Gauge('fv_coverage_pct', 'Coverage %', ['module'])
+
+import subprocess, time
+
+def run_cbmc_with_metrics(file):
+    start = time.time()
+    r = subprocess.run(['cbmc', file, '--bounds-check', '--pointer-check'],
+                      capture_output=True, text=True)
+    fv_runtime.labels(tool="cbmc").observe(time.time() - start)
+
+    if 'VERIFICATION SUCCESSFUL' in r.stdout:
+        fv_runs.labels(tool="cbmc", result="pass").inc()
+    elif 'VERIFICATION FAILED' in r.stdout:
+        fv_runs.labels(tool="cbmc", result="fail").inc()
+        if 'array bounds' in r.stdout:
+            fv_counterexamples.labels(type="bounds").inc()
+        if 'pointer' in r.stdout:
+            fv_counterexamples.labels(type="pointer").inc()
+
+start_http_server(9308)
+```
+
+#### 도구 8: 보고서 (Step 8)
+
+```bash
+cat > /tmp/fv-eval-report.md << 'EOF'
+# Formal Verification Evaluation — 2026-Q2
+
+## 1. Executive Summary
+- 코드베이스: 1.2M LOC C / TLA+ specs / smart contracts
+- 검증 도구: CBMC / Frama-C / TLA+ / KLEE / Z3
+- 검증 coverage: 35% functions / 100% specs
+
+## 2. CI 통합
+| 도구 | 시간 | passed | failed | counter ex |
+|------|------|--------|--------|-----------|
+| CBMC | 12 min | 245 | 8 | bounds 4, ptr 4 |
+| Frama-C WP | 8 min | 87 | 3 | postcond 3 |
+| KLEE | 25 min | 156 | 12 | div-by-zero 4, INT_MIN abs 1 |
+| TLA+ | 5 min | 7 | 0 | - |
+
+## 3. 발견 (counterexample 분석)
+### Critical
+- buffer.c:5 — copy() unbounded → CVE 후보
+- abs.c:5 — INT_MIN abs() undefined behavior
+
+### High
+- Frama-C postcondition 3건 — return invariant 위반
+
+## 4. 비교 (Empirical vs Formal)
+| 방법 | 발견 | False Positive | 시간 |
+|------|------|---------------|------|
+| Unit test | 12 | 0 | 5 min |
+| Fuzz (libFuzzer) | 8 | 1 | 30 min |
+| CBMC | 8 | 0 | 12 min |
+| Frama-C WP | 3 | 0 | 8 min |
+| KLEE | 12 | 2 | 25 min |
+| 합계 | 23 unique | - | - |
+
+## 5. 권고
+### Short
+- Critical 버그 즉시 fix
+- CI 에 CBMC + Frama-C 통합 (모든 PR)
+- Coverage 측정 + dashboard
+
+### Mid
+- TLA+ 분산 protocol 모두
+- KLEE coverage 70% 목표
+- Z3 사전조건 / 사후조건 강제
+
+### Long
+- Coq 핵심 알고리즘 (theorem proving)
+- Cryptol 암호 module
+- Marabou NN 검증 (week08 통합)
+EOF
+
+pandoc /tmp/fv-eval-report.md -o /tmp/fv-eval-report.pdf \
+  --pdf-engine=xelatex -V mainfont="Noto Sans CJK KR"
+```
+
+### 점검 / 평가 / 보고 흐름 (8 step + multi_task)
+
+#### Phase A — 기본 + 시나리오 + 정책 (s1·s2·s3)
+
+```bash
+python3 /tmp/fv-z3-basic.py
+python3 /tmp/fv-scenario.py
+python3 /tmp/fv-policy-eval.py
+```
+
+#### Phase B — 인젝션 + 자동화 (s4·s5)
+
+```bash
+python3 /tmp/extraction-injection.py    # week01~03
+cbmc /tmp/buffer.c --bounds-check
+frama-c -wp /tmp/sqrt.c -wp-prover z3
+tlc /tmp/Counter.tla -config /tmp/Counter.cfg
+klee /tmp/abs.bc
+```
+
+#### Phase C — 가드레일 + 모니터링 + 보고 (s6·s7·s8)
+
+```bash
+# CI workflow 추가 (위)
+python3 /tmp/fv-runtime-checker.py
+python3 /tmp/fv-monitor.py &
+pandoc /tmp/fv-eval-report.md -o /tmp/fv-eval-report.pdf
+```
+
+#### Phase D — 통합 (s99 multi_task)
+
+s1 → s2 → s3 → s5 → s6 를 Bastion 가:
+
+1. plan: Z3 → 시나리오 → 정책 → CBMC/Frama-C/TLA+ → CI guard
+2. execute: z3 / cbmc / frama-c / tlc / klee
+3. synthesize: 5 산출물 (z3.txt / scenario.json / policy.json / verify.log / ci.yml)
+
+### 도구 비교표 — Formal Verification 단계별
+
+| 분야 | 1순위 | 2순위 | 사용 |
+|------|-------|-------|------|
+| SMT 일반 | Z3 (Microsoft) | CVC5 | OSS |
+| C bounded check | CBMC | KLEE | OSS |
+| C deductive | Frama-C WP | VeriFast | OSS |
+| Distributed | TLA+ + tlc | Spin / Promela | OSS |
+| Crypto | Cryptol + SAW | EasyCrypt | OSS |
+| Theorem proving | Coq | Lean / Isabelle | OSS |
+| Rust | Kani | Prusti / MIRAI | OSS |
+| HW | Verilog formal (SymbiYosys) | Cadence (commercial) | OSS |
+| NN | Marabou / α,β-CROWN (week08) | DNNV | OSS |
+| Smart contract | Mythril / Slither + Z3 | Manticore | OSS |
+| CI 통합 | GH Actions + 도구별 | GitLab CI | 표준 |
+| 보고서 | pandoc | Word | 기술 |
+
+### 도구 선택 매트릭스 — 시나리오별 권장
+
+| 시나리오 | 우선 도구 | 이유 |
+|---------|---------|------|
+| "C 코드 첫 검증" | CBMC + Frama-C | 빠름 |
+| "분산 시스템" | TLA+ | 표준 |
+| "암호 module" | Cryptol + SAW | 정확 |
+| "smart contract" | Mythril / Slither | 의무 |
+| "고신뢰 (의료/항공)" | Coq + Frama-C + Cryptol | 의무 |
+| "Rust safety" | Kani / Prusti | 자연 |
+| "compliance (DO-178C)" | Frama-C + Coq | 표준 |
+| "research" | Z3 + Coq | 유연 |
+
+### 학생 셀프 체크리스트 (각 step 완료 기준)
+
+- [ ] s1: Z3 SAT/UNSAT + overflow + buffer 검증
+- [ ] s2: 6 컴포넌트 시나리오
+- [ ] s3: 정책 평가 (6 항목)
+- [ ] s4: week01~03 인젝션 재실행
+- [ ] s5: CBMC + Frama-C + TLA+ + KLEE 4 도구 실행
+- [ ] s6: CI workflow + Python runtime checker decorator
+- [ ] s7: 5+ 메트릭 (runs / properties / counter ex / runtime / coverage)
+- [ ] s8: 보고서 (CI 결과 + 비교 + 권고)
+- [ ] s99: Bastion 가 5 작업 (basic / scenario / policy / verify / guard) 순차
+
+### 추가 참조 자료
+
+- **SMT-LIB** http://smtlib.cs.uiowa.edu/
+- **Z3** https://github.com/Z3Prover/z3
+- **CVC5** https://cvc5.github.io/
+- **CBMC** http://www.cprover.org/cbmc/
+- **KLEE** http://klee.github.io/
+- **Frama-C** https://www.frama-c.com/
+- **TLA+** https://lamport.azurewebsites.net/tla/tla.html
+- **Coq** https://coq.inria.fr/
+- **Cryptol / SAW** https://galois.com/
+- **Marabou** https://github.com/NeuralNetworkVerification/Marabou
+- **Kani (Rust)** https://github.com/model-checking/kani
+- **NIST SP 800-218** SSDF
+- **DO-178C** (Avionics)
+
+위 모든 formal verification 평가는 **격리 환경** 으로 수행한다. SMT 검증은 timeout
+설정 필수 — 무한 loop 가능. CBMC unwind / depth 제한이 결과 영향 — 충분히 크게 또는
+infinite (느림). 대형 코드베이스 형식 검증은 함수 단위 분할 권장. Counter example 은
+**버그 증명** — 즉시 패치 + 재검증 사이클. CI 통합 시 timeout 5~30 분 권장 (PR 차단
+방지).

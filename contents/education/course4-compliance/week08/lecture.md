@@ -505,3 +505,124 @@ ssh ccc@10.20.30.80 "  # 비밀번호 자동입력 SSH
 
 **채점 함의**: 단순 통제 list 만 제출 = 70점 / dataset 양식 + evidence count = 90+점.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course4 Compliance — Week 08 CSAP / 클라우드 인증)
+
+### 클라우드 보안 인증별 OSS 도구
+
+| 인증 | 영역 | OSS 도구 |
+|------|------|---------|
+| **CSAP** (KISA) | 클라우드 보안 인증 | OpenSCAP CSAP profile (없음, 매핑 수동) + **prowler** + Lynis |
+| **AWS Well-Architected** | 5 pillars | **prowler** (200+ check) / **scout-suite** / cloudsploit |
+| **CIS AWS Benchmark** | 80+ controls | **prowler -g cis_2.0_aws** / aws-config |
+| **Azure Security Benchmark** | 250+ controls | **scout-suite --provider azure** / Microsoft Defender |
+| **GCP CIS** | 60+ controls | **scout-suite --provider gcp** / cloudsploit |
+| **CSA STAR** | 295 questions | **CSA STAR Self-Assessment** + 자동 점검 매핑 |
+| **FedRAMP** | NIST 800-53 | **OpenSCAP fedramp profile** + chef-inspec |
+
+### 핵심 — Prowler (실습 환경에서 가능)
+
+```bash
+# Docker 로 실행 (실습에서 가장 단순)
+docker pull toniblyx/prowler:latest
+
+# AWS 점검 (모의 환경 — 실습 인프라에 AWS CLI 자격증명 입력 시)
+docker run -ti --name prowler \
+  -v ~/.aws:/root/.aws \
+  toniblyx/prowler -g cis_2.0_aws_v1
+
+# 결과: HTML/CSV/JSON 자동 생성
+# 검증된 controls 수: 200+
+
+# Azure / GCP 도 동일
+docker run -ti toniblyx/prowler -p azure --az-cli-auth
+docker run -ti toniblyx/prowler -p gcp --credentials-file /tmp/gcp-key.json
+```
+
+### 학생 환경 준비
+
+```bash
+# Docker (실습 환경에 이미 있음)
+docker --version
+
+# Docker 시뮬레이션 — 본 weekly 는 실제 클라우드 대신 docker 로 환경 모의
+# AWS LocalStack (AWS API 모방)
+docker run -d -p 4566:4566 -e SERVICES=s3,iam,ec2,cloudtrail localstack/localstack
+
+# kube-bench (K8s CIS — 클라우드 K8s 동일)
+docker run --pid=host --rm aquasec/kube-bench:latest
+
+# kubescape (NSA + MITRE Kubernetes)
+curl -s https://raw.githubusercontent.com/kubescape/kubescape/master/install.sh | bash
+kubescape scan framework nsa
+kubescape scan framework mitre
+
+# scout-suite (대안 + 멀티 클라우드)
+pip3 install scoutsuite
+scout aws --report-dir /tmp/scout-aws
+```
+
+### 핵심 도구별 사용법
+
+```bash
+# 1) Prowler — 가장 큰 OSS 클라우드 점검 (200+ checks)
+docker run --rm -v ~/.aws:/root/.aws toniblyx/prowler -M html -F report.html
+# → /workspace 에 HTML 보고서
+
+# 2) kube-bench — K8s CIS Benchmark (설치된 K8s 환경)
+docker run --pid=host --rm aquasec/kube-bench:latest run --targets master,node | tee /tmp/kube-bench.txt
+
+# 3) kubescape — NSA/MITRE
+kubescape scan framework nsa --format json --output /tmp/nsa-scan.json
+jq '.summaryDetails.frameworks[].complianceScore' /tmp/nsa-scan.json
+
+# 4) Trivy (이미지 + IaC 스캔 — Cloud 통합)
+trivy aws --account 123456789012 --region us-east-1 --severity HIGH,CRITICAL
+trivy fs --scanners config /path/to/terraform/
+
+# 5) CIS-CAT Lite (CIS 공식 무료 tool — 학습 참고)
+# https://www.cisecurity.org/cis-cat-lite (가입 필요)
+```
+
+### CSAP 점검 흐름 (한국 클라우드 보안 인증)
+
+```bash
+# Phase 1: 클라우드 인프라 자동 점검 (Prowler — AWS 기준)
+docker run --rm -v ~/.aws:/root/.aws toniblyx/prowler \
+  -g cis_2.0_aws_v1 -M html,csv,json
+
+# Phase 2: K8s/컨테이너 점검 (실습 환경)
+kube-bench run --targets master,node
+kubescape scan framework allcontrols
+
+# Phase 3: IaC drift detection
+trivy fs --scanners config terraform/
+checkov -d terraform/
+
+# Phase 4: CSAP 6 영역 매핑 (수동 — 한국 표준)
+# 1. 인프라 보안 (Prowler 결과 매핑)
+# 2. 관리체계 (chef-inspec)
+# 3. 데이터 보호 (presidio + LUKS)
+# 4. 사용자 관리 (Keycloak / IAM)
+# 5. 모니터링 (Wazuh + CloudTrail 모방)
+# 6. 침해사고 (TheHive + SOAR)
+```
+
+### CSAP 자동 점검 가능 / 불가 영역
+
+| CSAP 영역 | 자동 점검 도구 | 자동 가능? |
+|-----------|---------------|-----------|
+| 1. 정보보호 정책 | (수동 검토) | 수동 |
+| 2. 인적 보안 | (수동) | 수동 |
+| 3. 외부자 보안 | SBOM (syft) | 부분 자동 |
+| 4. 물리적 보안 | (수동, course16) | 수동 |
+| 5. 인증 및 권한관리 | Prowler IAM / Keycloak audit | 자동 |
+| 6. 접근통제 | OPA / Calico (network policy) | 자동 |
+| 7. 암호화 | testssl.sh / Vault check | 자동 |
+| 8. 정보시스템 도입/개발 | DefectDojo + ZAP | 자동 |
+| 9. 시스템 운영관리 | Lynis + Wazuh + Prowler | 자동 |
+| 10. 침해사고 대응 | TheHive + Velociraptor | 자동 |
+
+학생은 본 8주차에서 **Prowler + kube-bench + kubescape + Trivy + scout-suite** 5 도구로 클라우드 보안 인증의 80% 자동 점검 가능함을 확인하고, 나머지 20% (정책/물리/인적) 의 수동 검토 영역을 식별한다.

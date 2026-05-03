@@ -480,3 +480,81 @@ dataset 의 4-layer (regex + format + NER + Claude review) = ISO 27001:2022 의 
 
 **학생 액션**: A.13~A.14 통제 별 evidence count 측정 → SoA 정량 증거. A.8.10 은 dataset 의 4-layer 절차 그대로 도입.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course4 Compliance — Week 04 ISO 27001)
+
+### ISO 27001 Annex A 매핑 도구
+
+| Annex A | 영역 | OSS 도구 |
+|---------|------|---------|
+| A.5 정책 | 정보보호 정책 | **eramba (GRC)** / **simplerisk** / OSCAL |
+| A.6 조직 | 책임 분리 | **OPA + Casbin** |
+| A.7 인적 자원 | 교육 점검 | Wazuh user-behavior / Atomic Red Team |
+| A.8 자산 관리 | 자산 인벤토리 | **osquery** / GLPI / snipe-it |
+| A.9 접근통제 | RBAC | OPA / Keycloak / Casbin |
+| A.10 암호화 | 키 관리 | **HashiCorp Vault (OSS)** / sops / age |
+| A.11 물리 보안 | 출입통제 | (course16 와 연결) |
+| A.12 운영 보안 | 패치 관리 | **Lynis** / Wazuh / Spacewalk |
+| A.13 통신 보안 | 네트워크 분리 | nftables / cilium / Suricata |
+| A.14 시스템 개발 | SDL | **DefectDojo** / SonarQube CE |
+| A.15 공급업체 | SBOM | **syft** / cyclonedx-cli / cosign |
+| A.16 인시던트 | IR | TheHive / Velociraptor |
+| A.17 BCP/DR | 백업 | **restic** / borgbackup / bareos |
+| A.18 컴플라이언스 | 법적 준수 | **OpenSCAP iso27001 profile** / Lynis |
+
+### 핵심 — OpenSCAP ISO 27001 프로파일
+
+```bash
+# RHEL/CentOS 의 ssg-rhel*-ds.xml 에 iso27001 BSI 프로파일 포함
+sudo oscap xccdf eval \
+  --profile xccdf_org.ssgproject.content_profile_iso27001-bsi \
+  --report /tmp/iso27001-report.html \
+  /usr/share/xml/scap/ssg/content/ssg-rhel9-ds.xml
+
+# Ubuntu 환경에서는 cis_level2_server 가 가장 가까움 (커버리지 약 90%)
+sudo oscap xccdf eval --profile cis_level2_server \
+  /usr/share/xml/scap/ssg/content/ssg-ubuntu2204-ds.xml
+```
+
+### 학생 환경 준비
+
+```bash
+sudo apt install -y libopenscap1 openscap-scanner ssg-base ssg-debderived
+
+# eramba (OSS GRC platform) — 학습 참고
+docker run -d -p 8080:80 markz0r/eramba-community
+
+# osquery (자산 인벤토리)
+sudo apt install -y osquery
+
+# Vault (OSS HashiCorp — 키 관리)
+curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo apt-key add -
+sudo apt-add-repository "deb [arch=amd64] https://apt.releases.hashicorp.com $(lsb_release -cs) main"
+sudo apt install -y vault
+
+# DefectDojo (OSS vulnerability tracker)
+git clone https://github.com/DefectDojo/django-DefectDojo.git ~/dojo
+```
+
+### 점검 흐름
+
+```bash
+# Phase 1: 자동 점검 (Annex A.9, A.12, A.13 등 기술적)
+sudo oscap xccdf eval --profile cis_level2 ...
+
+# Phase 2: 자산 인벤토리 (A.8)
+osqueryi "SELECT name,version FROM os_version;"
+osqueryi "SELECT name,version FROM rpm_packages WHERE name='openssl';"
+
+# Phase 3: SBOM (A.15 공급업체)
+syft <image-name> -o spdx-json > /tmp/sbom.json
+grype <image-name>                  # 취약점 매핑
+
+# Phase 4: 키 관리 (A.10)
+vault status
+vault secrets list
+```
+
+학생은 본 4주차에서 **OpenSCAP + osquery + syft/grype + Vault** 4 도구로 ISO 27001 Annex A 18 controls 중 **기술 통제 (10개)** 를 자동 점검한다.

@@ -1124,3 +1124,467 @@ graph LR
 
 **학생 액션**: Opacus lab.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course15 AI Safety Advanced — Week 07 워터마킹·LLM watermark·model fingerprint·deepfake detection)
+
+> 이 부록은 lab `ai-safety-adv-ai/week07.yaml` (8 step + multi_task) 의 모든 명령을
+> 실제로 실행 가능한 형태로 정리한다. LLM watermarking — Kirchenbauer / SynthID-Text /
+> Maryland watermark + Image watermarking (DCT / SteGAN) + Model fingerprinting +
+> Deepfake detection (DFDC).
+
+### lab step → 도구·범위 매핑 표
+
+| step | 학습 항목 | 핵심 OSS 도구 | 표준 |
+|------|----------|--------------|------|
+| s1 | Watermarking 기본 | Kirchenbauer LLM watermark | C2PA |
+| s2 | Watermarking 시나리오 생성 | LLM + 5 카테고리 | NIST AI |
+| s3 | Watermarking 정책 평가 | LLM + robustness 검토 | C2PA |
+| s4 | Watermark 우회 시도 | paraphrase / translate / token shuffle | LLM06 |
+| s5 | 자동 watermark 분석 | text + image + model fingerprint | content |
+| s6 | 가드레일 (watermark 강제) | embedding 강제 + 검증 API | content |
+| s7 | Watermark 모니터링 | detection rate + Prometheus | observability |
+| s8 | Watermark 평가 보고서 | markdown + ASR + robustness | report |
+| s99 | 통합 (s1→s2→s3→s5→s6) | Bastion plan 5 단계 | 전체 |
+
+### Watermarking 분류표
+
+| 종류 | 사례 | 도구 | 강도 |
+|------|------|------|------|
+| **LLM text** | green-list / red-list token bias | Kirchenbauer / SynthID-Text | medium |
+| **Image (visible)** | logo overlay | OpenCV | weak |
+| **Image (invisible)** | DCT / DWT / SteGAN | invisible-watermark / SteGAN | medium |
+| **Audio** | spread spectrum | librosa / Audiowmark | medium |
+| **Video** | per-frame DWT | FFmpeg + custom | medium |
+| **Model weights** | embedded signature | watermark-nn | strong |
+| **Dataset** | synthetic poisoning | radioactive data | strong |
+| **C2PA (provenance)** | content credentials | c2patool | manifest |
+| **Deepfake detection** | inverse (탐지) | DFDC / FaceForensics++ | passive |
+
+### 학생 환경 준비
+
+```bash
+pip install --user transformers accelerate
+pip install --user invisible-watermark torch
+pip install --user opencv-python pillow numpy
+
+# C2PA
+curl -L https://github.com/contentauth/c2pa-rs/releases/latest/download/c2patool-linux.tar.gz | tar -xz
+
+# LLM watermarking (Kirchenbauer)
+git clone https://github.com/jwkirchenbauer/lm-watermarking /tmp/lm-watermark
+pip install --user -e /tmp/lm-watermark
+
+# SynthID-Text (DeepMind)
+git clone https://github.com/google-deepmind/synthid-text /tmp/synthid
+
+# Deepfake detection
+git clone https://github.com/ondyari/FaceForensics /tmp/ff
+pip install --user dlib face_recognition
+```
+
+### 핵심 도구별 상세 사용법
+
+#### 도구 1: LLM Watermarking — Kirchenbauer (Step 1)
+
+```python
+from transformers import AutoModelForCausalLM, AutoTokenizer, LogitsProcessorList
+from watermark_processor import WatermarkLogitsProcessor, WatermarkDetector
+
+model_name = "huggyllama/llama-7b"   # 또는 ollama 호환 모델
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModelForCausalLM.from_pretrained(model_name)
+
+# === Watermark 삽입 ===
+watermark_processor = WatermarkLogitsProcessor(
+    vocab=list(tokenizer.get_vocab().values()),
+    gamma=0.25,         # green list 비율
+    delta=2.0,          # green token bias
+    seeding_scheme="simple_1",
+)
+
+prompt = "The quick brown fox"
+input_ids = tokenizer.encode(prompt, return_tensors="pt")
+output = model.generate(
+    input_ids,
+    max_length=100,
+    logits_processor=LogitsProcessorList([watermark_processor]),
+)
+watermarked_text = tokenizer.decode(output[0])
+print("Watermarked:", watermarked_text)
+
+# === Watermark 검출 ===
+detector = WatermarkDetector(
+    vocab=list(tokenizer.get_vocab().values()),
+    gamma=0.25,
+    seeding_scheme="simple_1",
+    device=model.device,
+    tokenizer=tokenizer,
+    z_threshold=4.0,    # statistical threshold
+)
+
+result = detector.detect(watermarked_text)
+print(f"Detected: {result['prediction']}, p-value: {result['p_value']:.6f}, z-score: {result['z_score']:.2f}")
+
+# 비교: non-watermarked
+output_normal = model.generate(input_ids, max_length=100)
+normal_text = tokenizer.decode(output_normal[0])
+result2 = detector.detect(normal_text)
+print(f"Non-WM detected: {result2['prediction']}, p-value: {result2['p_value']:.6f}")
+```
+
+#### 도구 2: Watermarking 시나리오 생성 (Step 2)
+
+```python
+import requests
+
+prompt = """Generate a watermarking threat scenario:
+1. Content type (LLM text / image / video / model weights)
+2. Adversary objective (steal / launder / forge / evade detection)
+3. Attack mechanism (paraphrase / translate / crop / fine-tune)
+4. Watermark robustness assumption
+5. Detection signals (statistical / pattern)
+6. Defenses (multi-watermark / C2PA / model signature)
+
+JSON: {"content":"...", "attack":"...", "mechanism":"...", "robustness":"...", "detection":[...], "defenses":[...]}"""
+
+r = requests.post("http://192.168.0.105:11434/api/generate",
+                 json={"model":"gpt-oss:120b","prompt":prompt,"stream":False})
+print(r.json()['response'])
+```
+
+#### 도구 3: Watermarking 정책 평가 (Step 3)
+
+```python
+def eval_wm_policy(policy):
+    p = f"""정책이 watermarking 에 견고한지 평가:
+{policy}
+
+분석:
+1. Watermark 삽입 강제 (LLM API / 이미지 생성 API)
+2. Robust 검출 (paraphrase / crop / translate 후)
+3. C2PA 매니페스트 (출처 검증)
+4. Multi-modal watermark (text + image + audio)
+5. Detection API 공개 (외부 검증)
+6. False positive / negative 임계
+
+JSON: {{"weaknesses":[...], "missing_defenses":[...], "rec":[...]}}"""
+
+    r = requests.post("http://192.168.0.105:11434/api/generate",
+        json={"model":"gpt-oss:120b","prompt":p,"stream":False})
+    return r.json()['response']
+
+policy = """
+1. LLM API: watermark 옵션 제공 (default off)
+2. 이미지: watermark 미적용
+3. C2PA 미사용
+4. Detection API 비공개
+"""
+print(eval_wm_policy(policy))
+```
+
+#### 도구 4: Watermark 우회 시도 (Step 4)
+
+```python
+import requests
+
+# === Paraphrase 공격 ===
+def paraphrase_attack(watermarked_text):
+    p = f"""다음 텍스트를 의미를 보존하면서 다른 단어로 paraphrase 하라:
+
+원본: {watermarked_text}
+
+Paraphrased:"""
+    r = requests.post("http://192.168.0.105:11434/api/generate",
+        json={"model":"gpt-oss:120b","prompt":p,"stream":False})
+    return r.json()['response']
+
+# === Translation chain (en→ko→en) ===
+def translation_chain_attack(text):
+    en2ko = requests.post("http://192.168.0.105:11434/api/generate",
+        json={"model":"gpt-oss:120b","prompt":f"Translate to Korean: {text}","stream":False}).json()['response']
+    ko2en = requests.post("http://192.168.0.105:11434/api/generate",
+        json={"model":"gpt-oss:120b","prompt":f"Translate to English: {en2ko}","stream":False}).json()['response']
+    return ko2en
+
+# === Token shuffle ===
+def token_shuffle_attack(text):
+    import random
+    sentences = text.split('. ')
+    random.shuffle(sentences)
+    return '. '.join(sentences)
+
+# 평가
+watermarked = "The watermarked text from Step 1..."
+attacks = {
+    "paraphrase": paraphrase_attack(watermarked),
+    "translation": translation_chain_attack(watermarked),
+    "shuffle": token_shuffle_attack(watermarked),
+}
+
+for attack_name, attacked_text in attacks.items():
+    result = detector.detect(attacked_text)
+    print(f"{attack_name}: detected={result['prediction']}, z={result['z_score']:.2f}")
+```
+
+#### 도구 5: 자동 분석 — 멀티 modal (Step 5)
+
+```python
+# === 이미지 watermark — invisible-watermark ===
+import cv2
+from imwatermark import WatermarkEncoder, WatermarkDecoder
+
+img = cv2.imread('/tmp/test.jpg')
+
+# Encode (DCT)
+encoder = WatermarkEncoder()
+encoder.set_watermark('bytes', b'CCC2026')
+img_wm = encoder.encode(img, 'dwtDct')
+cv2.imwrite('/tmp/test-wm.jpg', img_wm)
+
+# Decode
+decoder = WatermarkDecoder('bytes', 32)
+img_wm_loaded = cv2.imread('/tmp/test-wm.jpg')
+wm = decoder.decode(img_wm_loaded, 'dwtDct')
+print(f"Decoded: {wm}")
+
+# === Crop 공격 후 검출 ===
+img_cropped = img_wm[100:500, 100:500]
+wm_cropped = decoder.decode(img_cropped, 'dwtDct')
+print(f"After crop: {wm_cropped}")
+
+# === C2PA 매니페스트 ===
+import subprocess
+subprocess.run(['c2patool', '/tmp/test.jpg',
+                '--manifest', 'manifest.json',
+                '--output', '/tmp/test-c2pa.jpg'])
+result = subprocess.run(['c2patool', '/tmp/test-c2pa.jpg', '--detailed'],
+                       capture_output=True, text=True)
+print(result.stdout)
+```
+
+#### 도구 6: 가드레일 (Step 6)
+
+```python
+class WatermarkGuard:
+    """LLM 출력 watermark 강제"""
+
+    def __init__(self, ollama_url, model, watermark_processor):
+        self.url = ollama_url
+        self.model = model
+        self.processor = watermark_processor
+
+    def generate_with_watermark(self, prompt):
+        # 실제 production 은 LLM 직접 호출 (HF transformers + processor)
+        # Ollama 는 logits processor 직접 지원 X
+        # → 후처리 또는 자체 inference 서버
+
+        response = requests.post(f"{self.url}/api/generate", json={
+            "model": self.model, "prompt": prompt, "stream": False
+        }).json()['response']
+
+        # 후처리 watermark (간이): 특정 단어 강제 삽입
+        return self._post_watermark(response)
+
+    def _post_watermark(self, text):
+        # green list 단어를 자연스럽게 삽입 (실제는 logits 단계)
+        return text + "\n\n[WM:CCC2026]"
+
+    def verify(self, text):
+        # 검출
+        if "[WM:CCC2026]" in text:
+            return True
+        # 또는 statistical detector
+        return False
+
+# 사용
+guard = WatermarkGuard("http://192.168.0.105:11434", "gpt-oss:120b", None)
+out = guard.generate_with_watermark("Tell me a story")
+print(out)
+print(f"Verified: {guard.verify(out)}")
+
+# === 이미지 가드 ===
+class ImageWatermarkGuard:
+    def __init__(self):
+        self.encoder = WatermarkEncoder()
+        self.decoder = WatermarkDecoder('bytes', 32)
+
+    def watermark_output(self, img, signature=b'CCC2026'):
+        self.encoder.set_watermark('bytes', signature)
+        return self.encoder.encode(img, 'dwtDct')
+
+    def verify(self, img):
+        wm = self.decoder.decode(img, 'dwtDct')
+        return wm == b'CCC2026'
+```
+
+#### 도구 7: 모니터링 (Step 7)
+
+```python
+from prometheus_client import start_http_server, Gauge, Counter, Histogram
+
+wm_inserts = Counter('watermark_inserts_total', 'Watermark inserted', ['type'])
+wm_detects = Counter('watermark_detections_total', 'Watermarks detected', ['source','result'])
+wm_robustness_score = Histogram('watermark_z_score', 'Z-score of detection')
+wm_attack_attempts = Counter('watermark_attack_attempts_total', 'Attacks', ['attack_type'])
+wm_attack_success = Counter('watermark_attack_success_total', 'Attack success', ['attack_type'])
+wm_false_positive = Counter('watermark_false_positive_total', 'False positives')
+c2pa_manifest_count = Counter('c2pa_manifest_total', 'C2PA manifests', ['action'])
+
+def on_text_generated(text, watermarked=True):
+    if watermarked:
+        wm_inserts.labels(type="text").inc()
+
+def on_detection(text, source, result, z_score):
+    wm_detects.labels(source=source, result=str(result)).inc()
+    wm_robustness_score.observe(z_score)
+
+def on_attack(attack_type, succeeded):
+    wm_attack_attempts.labels(attack_type=attack_type).inc()
+    if succeeded:
+        wm_attack_success.labels(attack_type=attack_type).inc()
+
+start_http_server(9306)
+```
+
+#### 도구 8: 보고서 (Step 8)
+
+```bash
+cat > /tmp/wm-eval-report.md << 'EOF'
+# Watermarking Evaluation — 2026-Q2
+
+## 1. Executive Summary
+- LLM watermarking (Kirchenbauer) + Image watermarking (DCT) + C2PA
+- 검출률 (no attack): 99.5%
+- 검출률 (paraphrase): 73%
+- 검출률 (translation chain): 51%
+- 검출률 (image crop 50%): 92%
+
+## 2. Robustness 매트릭스
+
+| 콘텐츠 | 공격 | 검출 유지율 | z-score |
+|--------|------|------------|---------|
+| LLM text | none | 99.5% | 12.4 |
+| LLM text | paraphrase | 73% | 5.8 |
+| LLM text | translation (en→ko→en) | 51% | 3.9 |
+| LLM text | token shuffle | 88% | 7.2 |
+| Image | none | 100% | - |
+| Image | crop 50% | 92% | - |
+| Image | re-compress JPEG | 78% | - |
+| Image | resize 50% | 65% | - |
+
+## 3. 권고
+### Short
+- LLM API watermark default ON
+- 이미지 생성 API watermark + C2PA default ON
+- Detection API 외부 공개
+
+### Mid
+- Multi-watermark (statistical + steganography)
+- Adversarial training (paraphrase robust)
+- C2PA 매니페스트 강제
+
+### Long
+- Cross-modal watermark (text + image)
+- Hardware level (camera C2PA)
+- 법규 (AI 콘텐츠 표시 의무)
+EOF
+
+pandoc /tmp/wm-eval-report.md -o /tmp/wm-eval-report.pdf \
+  --pdf-engine=xelatex -V mainfont="Noto Sans CJK KR"
+```
+
+### 점검 / 평가 / 보고 흐름 (8 step + multi_task)
+
+#### Phase A — 기본 + 시나리오 + 정책 (s1·s2·s3)
+
+```bash
+python3 /tmp/wm-llm-kirchenbauer.py
+python3 /tmp/wm-scenario.py
+python3 /tmp/wm-policy-eval.py
+```
+
+#### Phase B — 우회 + 자동화 (s4·s5)
+
+```bash
+python3 /tmp/wm-attacks.py
+python3 /tmp/wm-multimodal.py
+c2patool /tmp/test.jpg --detailed
+```
+
+#### Phase C — 가드레일 + 모니터링 + 보고 (s6·s7·s8)
+
+```bash
+python3 /tmp/wm-guard.py
+python3 /tmp/wm-monitor.py &
+pandoc /tmp/wm-eval-report.md -o /tmp/wm-eval-report.pdf
+```
+
+#### Phase D — 통합 (s99 multi_task)
+
+s1 → s2 → s3 → s5 → s6 를 Bastion 가:
+
+1. plan: WM 기본 → 시나리오 → 정책 평가 → 멀티 modal 분석 → 가드 강제
+2. execute: Kirchenbauer / invisible-watermark / c2patool / 자체 guard
+3. synthesize: 5 산출물 (basic.txt / scenario.json / policy.json / multimodal.csv / guard.py)
+
+### 도구 비교표 — Watermarking 단계별
+
+| 단계 | 1순위 | 2순위 | 사용 |
+|------|-------|-------|------|
+| LLM text WM | Kirchenbauer (Maryland) | SynthID-Text (DeepMind) | OSS / cloud |
+| LLM detect | WatermarkDetector + z-score | API | 내장 |
+| Image (invisible) | invisible-watermark | DCT custom | OSS |
+| Image (visible) | OpenCV overlay | Pillow | OSS |
+| Audio | Audiowmark | librosa custom | OSS |
+| Video | DWT per-frame | FFmpeg | OSS |
+| Model weights | watermark-nn | DeepIPR | 학계 |
+| Dataset | radioactive data | clean-label trigger | 학계 |
+| C2PA | c2patool | C2PA SDK | 표준 |
+| Deepfake detect | DFDC / FaceForensics | XceptionNet | 학계 |
+| 모니터링 | Prometheus + custom | DataDog | OSS |
+| 보고서 | pandoc | Word | 기술 |
+
+### 도구 선택 매트릭스 — 시나리오별 권장
+
+| 시나리오 | 우선 도구 | 이유 |
+|---------|---------|------|
+| "LLM 출처 표시" | Kirchenbauer + C2PA | 통합 |
+| "이미지 워터마크" | invisible-watermark + C2PA | 표준 |
+| "deepfake 대응" | C2PA + DFDC detection | 다층 |
+| "모델 도용 방지" | watermark-nn + 모델 fingerprint | 강함 |
+| "데이터셋 도용" | radioactive data + signature | 강함 |
+| "compliance (EU AI Act)" | C2PA + 모든 LLM 출력 WM | 의무 |
+| "production" | LLM WM + 이미지 WM + C2PA + monitor | 종합 |
+
+### 학생 셀프 체크리스트 (각 step 완료 기준)
+
+- [ ] s1: Kirchenbauer 삽입 + 검출 + z-score
+- [ ] s2: 6 컴포넌트 시나리오
+- [ ] s3: 정책 평가 (6 항목)
+- [ ] s4: 3+ 공격 (paraphrase / translation chain / shuffle) + ASR
+- [ ] s5: 이미지 WM (DCT) + crop 후 검출 + C2PA 매니페스트
+- [ ] s6: WatermarkGuard + ImageWatermarkGuard
+- [ ] s7: 7+ 메트릭 (insert / detect / robustness / attack / fp / c2pa)
+- [ ] s8: 보고서 (robustness 매트릭스 + 권고)
+- [ ] s99: Bastion 가 5 작업 (basic / scenario / policy / multimodal / guard) 순차
+
+### 추가 참조 자료
+
+- **C2PA** https://c2pa.org/ (Adobe / Microsoft / BBC)
+- **EU AI Act** Article 50 (Transparency)
+- **Kirchenbauer LLM watermark** https://arxiv.org/abs/2301.10226
+- **SynthID-Text (DeepMind)** https://github.com/google-deepmind/synthid-text
+- **invisible-watermark** https://github.com/ShieldMnt/invisible-watermark
+- **c2patool** https://github.com/contentauth/c2patool
+- **FaceForensics++** https://github.com/ondyari/FaceForensics
+- **DFDC** https://ai.facebook.com/datasets/dfdc/
+- **NIST AI 600-1**
+- **OWASP LLM06** (Sensitive Information Disclosure)
+
+위 모든 watermark 평가는 **격리 환경** 으로 수행한다. Watermark 우회 (paraphrase /
+translation) 는 적대 진영에서 활발히 연구 중 — 단일 watermark 의존 금지. C2PA 매니페스트는
+탈착 가능 — multimodal watermark + C2PA 병행. Deepfake detection 은 false positive
+관리 어려움 — 사람 최종 판단 + 보존 chain 필수. EU AI Act 50 조 (transparency) 시행 후 LLM
+출력 watermark 의무 — production 도입 사전 검토.

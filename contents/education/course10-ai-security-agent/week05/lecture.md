@@ -798,3 +798,230 @@ graph TB
 
 **학생 액션**: lab Bastion 시작 → 4 layer 모두 동작 확인 → dataset 100건 처리.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course10 — Week 05 에이전트 하네스)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | AgentBench OS task | **AgentBench** (THU) os/ssh os/sql |
+| s2 | AgentBench DB | AgentBench db/sql |
+| s3 | AgentBench Web | AgentBench web/json + WebShop |
+| s4 | SWE-bench (코드) | **SWE-bench** |
+| s5 | GAIA (general assistant) | **GAIA** |
+| s6 | WebArena (실제 web app) | **WebArena** |
+| s7 | OSWorld (GUI) | **OSWorld** |
+| s8 | Bastion-Bench (자체) | CCC 자체 hold-out task |
+
+### 학생 환경 준비
+
+```bash
+source ~/.venv-aagent/bin/activate
+
+# AgentBench (THU 종합)
+git clone https://github.com/THUDM/AgentBench ~/agentbench
+cd ~/agentbench
+pip install -r requirements.txt
+
+# SWE-bench (Software Engineering)
+git clone https://github.com/princeton-nlp/SWE-bench ~/swebench
+cd ~/swebench && pip install -e .
+
+# GAIA (HuggingFace)
+pip install huggingface_hub
+huggingface-cli download gaia-benchmark/GAIA --repo-type dataset
+
+# WebArena
+git clone https://github.com/web-arena-x/webarena ~/webarena
+cd ~/webarena && pip install -e .
+
+# OSWorld (가장 어려움 — GUI tasks)
+git clone https://github.com/xlang-ai/OSWorld ~/osworld
+
+# Inspect AI (UK AISI 평가 framework)
+pip install inspect-ai
+```
+
+### AgentBench 8 환경 (THU 표준)
+
+```bash
+cd ~/agentbench
+
+# === OS task (Linux SSH 명령) ===
+python3 -m src.start_task -a -t os/ssh --max-eval 50
+# 예: "Find all .conf files modified in last 24h"
+# Agent 가 SSH 로 명령 실행 → 답 도출
+
+# === DB task (SQL 쿼리) ===
+python3 -m src.start_task -a -t db/sql --max-eval 50
+# 예: "Find users who haven't logged in for 30 days"
+
+# === Web shopping (자동화) ===
+python3 -m src.start_task -a -t web/webshop --max-eval 30
+
+# === Knowledge Graph (SPARQL) ===
+python3 -m src.start_task -a -t knowledge-graph --max-eval 30
+
+# === Card Game (의사결정) ===
+python3 -m src.start_task -a -t card-game --max-eval 50
+
+# === Lateral Thinking ===
+python3 -m src.start_task -a -t lateral-thinking --max-eval 30
+
+# 결과: 모델 별 성공률
+# gpt-4o: OS 67%, DB 71%, Web 53%
+# claude-3.5-sonnet: OS 75%, DB 78%, Web 61%
+# gemma3:4b: OS 23%, DB 31%, Web 18%
+```
+
+### SWE-bench (코드 fix)
+
+```bash
+cd ~/swebench
+
+# Lite version (300 instances)
+python3 -m swebench.harness.run_evaluation \
+    --predictions_path predictions.jsonl \
+    --max_workers 4 \
+    --run_id eval_run_1
+
+# 각 instance:
+# - 실제 GitHub issue + repo
+# - Agent 가 issue 읽고 patch 작성
+# - patch 적용 후 test 통과 여부 확인
+
+# 평가 metric:
+# - Resolution rate (test 통과 비율)
+# - 평균: gpt-4o ~30%, claude-3.5-sonnet ~50%
+```
+
+### GAIA (General AI Assistant)
+
+```python
+from datasets import load_dataset
+import openai
+
+dataset = load_dataset("gaia-benchmark/GAIA", "2023_all")["validation"]
+
+client = openai.OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
+
+correct = 0
+for example in dataset:
+    question = example["Question"]
+    expected = example["Final answer"]
+    
+    # Agent 응답
+    response = client.chat.completions.create(
+        model="llama3.1:8b",
+        messages=[{"role": "user", "content": question}],
+        tools=available_tools                            # 검색, 계산기, 파일 read 등
+    )
+    
+    # 평가 (LLM-judge)
+    judge_response = client.chat.completions.create(
+        model="llama3.1:8b",
+        messages=[{
+            "role": "user",
+            "content": f"Question: {question}\nExpected: {expected}\nActual: {response}\nCorrect? (yes/no):"
+        }]
+    )
+    if "yes" in judge_response.choices[0].message.content.lower():
+        correct += 1
+
+print(f"GAIA accuracy: {correct/len(dataset)*100:.1f}%")
+```
+
+### WebArena (실제 web app 자동화)
+
+```bash
+cd ~/webarena
+
+# 1) Docker 환경 (가짜 web app)
+docker compose up -d
+# - shopping (Amazon-like)
+# - reddit (Reddit-like)
+# - gitlab (GitLab-like)
+# - openstreetmap (Maps)
+
+# 2) Agent 평가
+python3 run.py \
+    --instruction_path config_files/0.json \
+    --result_dir results/ \
+    --provider openai \
+    --model llama3.1:8b \
+    --base_url http://localhost:11434/v1
+
+# 평가 task 예:
+# - "Cancel my latest order in shopping site"
+# - "Post new issue in gitlab repo X"
+# - "Find restaurants near Brooklyn in openstreetmap"
+
+# Agent 가 browser automation (puppeteer/playwright) 으로 GUI 탐색 + 답 도출
+```
+
+### Bastion-Bench (CCC 자체 hold-out)
+
+```bash
+# CCC 의 자체 590 task 벤치 (실제 보안 시나리오)
+cd ~/ccc
+ls contents/labs/                                       # 40 카테고리
+
+# Hold-out evaluation
+python3 scripts/run_bastion_bench.py \
+    --model ollama:gemma3:4b \
+    --tasks attack web-vuln soc compliance \
+    --max-tasks 100 \
+    --output /tmp/bastion-bench-result.json
+
+# 결과 (실제 측정):
+# - attack: 67% / 75% / 82% (R1 / R2 / R3)
+# - web-vuln: 45% / 58% / 72%
+# - soc: 71% / 79% / 85%
+# - compliance: 63% / 71% / 78%
+```
+
+### Inspect AI (UK AISI 평가 framework)
+
+```bash
+pip install inspect-ai
+
+# 자체 task 작성
+cat > security_eval.py << 'EOF'
+from inspect_ai import task, Task, eval
+from inspect_ai.dataset import example_dataset
+from inspect_ai.scorer import model_graded_qa
+from inspect_ai.solver import generate, system_message
+
+@task
+def security_qa():
+    return Task(
+        dataset=[
+            {"input": "SQL injection 방어법은?",
+             "target": "Prepared statement, 입력 검증, ORM 사용"},
+            # ... 100+ samples
+        ],
+        solver=[system_message("당신은 보안 전문가다."), generate()],
+        scorer=model_graded_qa(model="ollama/llama3.1:8b")
+    )
+EOF
+
+inspect eval security_eval.py --model ollama/llama3.1:8b --limit 50
+inspect view                                            # web UI 결과 보기
+```
+
+### 도구 비교
+
+| 벤치 | 영역 | 난이도 | 측정 |
+|------|------|--------|------|
+| **AgentBench** | OS/DB/Web/KG/CardGame | 중 | 종합 능력 |
+| **SWE-bench** | 코드 fix | 매우 어려움 | 실제 issue 해결 |
+| **GAIA** | General assistant | 어려움 | 일상 task |
+| **WebArena** | Web GUI | 어려움 | browser automation |
+| **OSWorld** | Desktop GUI | 매우 어려움 | OS 자동화 |
+| **Bastion-Bench** | 보안 전문 | 중 | CCC 자체 |
+| **Inspect AI** | Custom 평가 | 변동 | 자체 task |
+
+학생은 본 5주차에서 **AgentBench + SWE-bench + GAIA + WebArena + Bastion-Bench + Inspect AI** 6 하네스로 agent 의 다축 능력 (OS / DB / Web / 코드 / GUI / 보안) 정량 평가를 익힌다.

@@ -1261,3 +1261,212 @@ graph LR
 
 **학생 액션**: lab 환경에서 nmap 으로 100.64.20.230 패턴 재현 → Wazuh 가 어느 룰을 발생시키는지 확인.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course11 Battle — Week 01 정찰)
+
+### lab step → 도구 매핑 (Red 측)
+
+| step | 학습 항목 | OSS 도구 | 명령 예 |
+|------|----------|---------|---------|
+| s1 | 호스트 발견 | nmap / fping / arp-scan | `nmap -sn 10.20.30.0/24` |
+| s2 | 포트 스캔 | nmap / masscan | `nmap -sV -p- 10.20.30.80` |
+| s3 | 서비스 식별 | nmap / amap / whatweb | `whatweb -v http://10.20.30.80:3000` |
+| s4 | OS fingerprint | nmap / xprobe2 / p0f | `nmap -O 10.20.30.80` |
+| s5 | OSINT (회사) | theHarvester / SpiderFoot | `theHarvester -d target.com -b all` |
+| s6 | Subdomain | subfinder / amass / sublist3r | `subfinder -d target.com` |
+| s7 | DNS 정보 | dig / dnsrecon / amass | `dig @target NS / dnsrecon -d target.com` |
+| s8 | 사용자 enum (sherlock) | sherlock | `sherlock john_doe` |
+
+### Blue 측 탐지
+
+| 탐지 영역 | OSS 도구 | 명령 |
+|----------|---------|------|
+| Suricata 시그니처 | Suricata + ET Open | `tail /var/log/suricata/eve.json | jq` |
+| Wazuh log 통합 | Wazuh manager | `jq '.rule.description' alerts.json` |
+| Falco syscall | Falco | `journalctl -u falco -f` |
+| crowdsec | crowdsec | `cscli decisions list` |
+
+### 학생 환경 준비
+
+```bash
+# Red (attacker VM 192.168.0.112)
+ssh ccc@192.168.0.112
+sudo apt install -y nmap masscan amap whatweb wafw00f \
+    fping arp-scan netdiscover \
+    dnsrecon dnsutils \
+    netcat-openbsd hping3
+
+# Go 도구
+go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
+go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
+go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
+
+# Python 도구
+pip install theHarvester
+git clone https://github.com/sherlock-project/sherlock ~/sherlock
+pip install -r ~/sherlock/requirements.txt
+
+# Spider Foot
+git clone https://github.com/smicallef/spiderfoot ~/spiderfoot
+cd ~/spiderfoot && pip install -r requirements.txt
+
+# Blue (defender VMs)
+ssh ccc@10.20.30.1   # secu
+sudo systemctl status suricata wazuh-manager fail2ban crowdsec
+```
+
+### Red 측 — 4 단계 정찰
+
+```bash
+# === Phase 1: 호스트 발견 ===
+# 빠른 ICMP ping
+sudo nmap -sn 10.20.30.0/24 -oG /tmp/alive.txt
+
+# ARP scan (L2 — 더 신뢰)
+sudo arp-scan -l                                       # 로컬 네트워크
+sudo arp-scan 10.20.30.0/24
+
+# fping (병렬 빠름)
+fping -a -g 10.20.30.0/24 2>/dev/null > /tmp/alive.txt
+
+# === Phase 2: 포트 스캔 ===
+# Top 1000 (빠름)
+sudo nmap -F 10.20.30.80                              # 빠른 Top 100
+sudo nmap -sS -T4 10.20.30.80                         # SYN scan, T4
+
+# 전체 포트 (느림 — 시간 있을 때)
+sudo nmap -sS -p- -T4 10.20.30.80 -oA /tmp/full
+
+# 매우 빠름 (수십초)
+sudo masscan -p1-65535 10.20.30.80 --rate=10000
+
+# === Phase 3: 서비스 + 버전 ===
+sudo nmap -sV -A 10.20.30.80 -oA /tmp/services
+# -A: OS detection + version + script + traceroute
+
+# Web 기술 스택
+whatweb -v http://10.20.30.80:3000
+whatweb -v http://10.20.30.80:80
+
+# WAF 식별
+wafw00f http://10.20.30.80:3000
+
+# === Phase 4: OSINT (외부 정보) ===
+# 이메일 / subdomain
+theHarvester -d target.example.com -b all -l 500 -f /tmp/osint.html
+
+# Subdomain (passive)
+subfinder -d target.example.com
+
+# Subdomain (active + passive)
+amass enum -d target.example.com -active
+
+# 알려진 username 다중 사이트
+python3 ~/sherlock/sherlock.py john_doe
+```
+
+### Red 정찰 결과 → exploit 단계 준비
+
+```bash
+# 발견된 정보 정리
+cat > /tmp/recon-summary.md << 'EOF'
+## 정찰 결과 — 10.20.30.80
+
+### 호스트
+- IP: 10.20.30.80
+- OS: Linux 5.x (nmap -O)
+- Hostname: web
+
+### 서비스
+| Port | Service | Version |
+|------|---------|---------|
+| 22 | OpenSSH | 8.9p1 |
+| 80 | Apache | 2.4.52 |
+| 3000 | Express | (Node.js, JuiceShop) |
+
+### 기술 스택 (whatweb)
+- JuiceShop (3000): Angular SPA + Express + Node.js
+- Apache (80): Apache 2.4.52, Ubuntu
+
+### WAF
+- ModSecurity 2.9 detected (wafw00f)
+
+### 다음 단계 (Exploit)
+1. Apache 2.4.52 CVE 검색
+2. JuiceShop 알려진 vuln (challenges)
+3. SSH brute (low priority — fail2ban 가능)
+EOF
+```
+
+### Blue 측 — 5 단계 탐지
+
+```bash
+# === Phase 1: 실시간 alert ===
+sudo tail -f /var/log/suricata/eve.json | jq 'select(.event_type=="alert")'
+# 예시 출력:
+# "ET SCAN Nmap Scripting Engine User-Agent Detected"
+# "ET SCAN nmap NSE Heartbleed Detection"
+
+# === Phase 2: Wazuh 다중 호스트 통합 ===
+sudo /var/ossec/bin/wazuh-control logtest
+sudo jq -r 'select(.rule.description | contains("scan")) | "\(.timestamp) \(.data.srcip) \(.rule.description)"' \
+    /var/ossec/logs/alerts/alerts.json | head -20
+
+# === Phase 3: Falco syscall ===
+sudo journalctl -u falco -f | grep -E 'CRITICAL|HIGH'
+# Falco 가 컨테이너 안 비정상 행위 자동 탐지
+
+# === Phase 4: crowdsec 자동 차단 ===
+sudo cscli decisions list
+sudo cscli scenarios list
+
+# === Phase 5: 통합 dashboard ===
+# Wazuh Dashboard: https://10.20.30.100:443
+# evebox (Suricata): http://10.20.30.1:5636
+```
+
+### 자동 차단 룰 (Blue 측 강화)
+
+```bash
+# nftables — port scan rate limit
+sudo nft add chain inet filter input \{ type filter hook input priority 0 \; \}
+sudo nft add rule inet filter input ct state new tcp flags syn limit rate 5/second accept
+sudo nft add rule inet filter input ct state new tcp flags syn drop
+
+# fail2ban — SSH brute 자동 차단
+# /etc/fail2ban/jail.d/sshd.conf:
+# [sshd]
+# enabled = true
+# maxretry = 3
+# findtime = 600
+# bantime = 3600
+sudo systemctl restart fail2ban
+
+# crowdsec — community CTI 자동 차단
+sudo cscli scenarios install crowdsecurity/ssh-bf crowdsecurity/http-crawl-non_statics
+sudo systemctl restart crowdsec
+```
+
+### 공방전 점수표
+
+| Red 행동 | 성공 | 점수 |
+|---------|------|------|
+| 호스트 100% 발견 | nmap -sn 결과 | +10 |
+| 포트 정확 식별 (fail2ban 회피) | -T0 timing | +10 |
+| 모든 서비스 식별 | nmap -sV | +10 |
+| OS fingerprint | nmap -O | +5 |
+| OSINT 깊이 (5+ subdomain) | subfinder/amass | +10 |
+| 은닉 (Suricata 미탐) | -f --mtu 16 | +10 |
+
+| Blue 행동 | 성공 | 점수 |
+|----------|------|------|
+| 모든 scan 탐지 (Suricata) | jq alerts | +10 |
+| 5분 내 alert | Wazuh log | +10 |
+| 자동 차단 (fail2ban/crowdsec) | nft list ruleset | +10 |
+| 시그니처 + AI 탐지 | adaptive | +5 |
+| Threat hunting (kestrel) | 가설 검증 | +10 |
+| 차단까지 자동화 | Wazuh AR | +5 |
+
+학생은 본 1주차에서 **Red (nmap + masscan + whatweb + theHarvester + amass + sherlock) ↔ Blue (Suricata + Wazuh + Falco + fail2ban + crowdsec)** 양방향 정찰 공방을 OSS 도구로 직접 수행한다.

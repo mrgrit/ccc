@@ -544,3 +544,73 @@ dataset host 가 보유한 framework `iso27001:[4,8,14,16,67-72,113-124,130-132]
 
 **학생 액션**: 본인 환경 SoA 의 *applicable 통제* 마다 dataset 처럼 *evidence count* 명시 → 심사관에게 정량 증거 제공.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course4 Compliance — Week 03 ISMS-P)
+
+### lab step → ISMS-P 매핑 도구
+
+| step | ISMS-P 항목 | lab 명령 | 자동화 도구 |
+|------|------------|---------|-----------|
+| s1 (계정 목록) | 2.5.1 | `grep -v nologin /etc/passwd` | **OpenSCAP** rule `accounts_no_uid_*` / Lynis `accounts` |
+| s2 (패스워드 만료) | 2.5.2 | `chage -l` | **OpenSCAP** rule `accounts_maximum_age_login_defs` |
+| s3 (sudo 권한) | 2.5.4 | `cat /etc/sudoers` | **Lynis** sudo plugin / `sudo -l` audit |
+| s4 (NTP 동기화) | 2.9.5 | `timedatectl status` | **Lynis** `time-and-date` / chrony status |
+| s5 (유휴 세션) | 2.5.3 | `grep ClientAlive /etc/ssh/sshd_config` | **ssh-audit** / OpenSCAP `sshd_*` rules |
+| s6 (orphan 파일) | 2.9.1 | `find -nouser -nogroup` | **Lynis** `file-integrity` / aide |
+| s7 (Apache Indexes) | 2.6.4 | `grep Indexes apache.conf` | **nuclei** `directory-listing` template |
+| s8 (auditd 로그인) | 2.9.5 | `auditctl -l` | **OpenSCAP** rule `audit_rules_login_events` / aureport |
+| s9 (종합 보고) | 통합 | bash | **OpenSCAP profile_cis** + **Wazuh SCA** + Lynis |
+
+### 학생 환경 준비
+
+```bash
+ssh ccc@10.20.30.100
+sudo apt install -y lynis libopenscap1 openscap-scanner ssg-base auditd
+pip3 install ssh-audit
+
+# OpenSCAP 컨텐츠 — Ubuntu 22.04 (실습 환경)
+ls /usr/share/xml/scap/ssg/content/ssg-ubuntu2204-ds.xml
+```
+
+### 핵심 명령
+
+```bash
+# OpenSCAP — CIS profile (ISMS-P 와 80% 매핑)
+sudo oscap xccdf eval \
+  --profile xccdf_org.ssgproject.content_profile_cis_level1_server \
+  --results-arf /tmp/oscap-results.arf \
+  --report /tmp/oscap-report.html \
+  /usr/share/xml/scap/ssg/content/ssg-ubuntu2204-ds.xml
+
+# 결과 HTML 에서 항목별 PASS/FAIL + 자동 시정 명령 (--remediate)
+sudo oscap xccdf eval --profile ... --remediate ...
+
+# Lynis — UNIX 보안 표준
+sudo lynis audit system
+
+# Wazuh SCA — 다중 호스트 자동
+sudo /var/ossec/bin/agent_control -R       # 모든 agent SCA 트리거
+sudo jq 'select(.location | contains("sca"))' /var/ossec/logs/alerts/alerts.json
+```
+
+### 점검 흐름
+
+```bash
+# Phase 1: 자동 baseline (모든 ISMS-P 분야 한 번에)
+sudo oscap xccdf eval --profile cis_level2_server --report /tmp/oscap.html ssg-ubuntu2204-ds.xml
+sudo lynis audit system
+
+# Phase 2: ISMS-P 인증 매핑 (수동 — 102 항목)
+# OpenSCAP CIS 결과 → ISMS-P 102 항목 매핑 표 작성
+# 누락 항목 (관리적/물리적) 별도 점검
+
+# Phase 3: 자동 시정 가능 항목
+sudo oscap xccdf eval --remediate --profile cis_level1_server ssg-ubuntu2204-ds.xml
+
+# Phase 4: 재점검 + 증거
+sudo lynis audit system --auditor "ISMS-P Auditor" --plugindir /etc/lynis/plugins
+```
+
+학생은 본 3주차에서 **OpenSCAP CIS profile (정량) + Lynis (정성) + Wazuh SCA (다중)** 3 축으로 ISMS-P 102 항목 중 **80% 자동 점검** 가능함을 확인한다.

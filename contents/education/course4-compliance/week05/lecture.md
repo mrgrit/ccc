@@ -500,3 +500,147 @@ ISMS-P 의 80 인증 기준 ↔ dataset 의 ISO 27001 24 control 매핑:
 
 **학생 액션**: 자체 환경의 product 마다 ISMS-P key (1~80) 매핑 표 추가 — dataset 의 11 framework 양식 모방.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course4 Compliance — Week 05 GDPR)
+
+### GDPR 핵심 조항 → OSS 도구 매핑
+
+| GDPR Article | 의무 | OSS 도구 |
+|--------------|------|---------|
+| Art.5 (DPbD) | 데이터 최소화 | **opacus** (DP) / **pii-codex** / GDPR pii-detector |
+| Art.6 (Lawfulness) | 처리 근거 | **OneTrust OSS-mirror** / iubenda alts |
+| Art.15 (Right to Access) | 데이터 주체 접근권 | **DSAR-tracker** / Privacy Hub OSS |
+| Art.17 (Right to Erasure) | 잊혀질 권리 | **PostgreSQL `DELETE` + log scrub** / **scrubadub** |
+| Art.20 (Portability) | 데이터 이동권 | **Data Liberation tools** / GDPR Tools / pyDPI |
+| Art.25 (DPbD) | 설계 단계 | **Microsoft Threat Modeling Tool** / OWASP Threat Dragon |
+| Art.30 (RoPE) | 처리활동 기록 | **CSV/yaml RoPE templates** / Privacy Hub |
+| Art.32 (Security) | 적절한 보안 조치 | Wazuh + Lynis + OpenSCAP (다른 weekly 도구 모두) |
+| Art.33 (Breach Notify) | 72h 통지 | **TheHive + n8n webhook** / IRIS-DFIR |
+| Art.35 (DPIA) | 영향평가 | **CNIL PIA tool** (free) / **Microsoft DPIA Templates** |
+
+### 핵심 — Presidio (Microsoft OSS PII 탐지)
+
+```bash
+# 설치
+pip3 install presidio-analyzer presidio-anonymizer
+python3 -m spacy download en_core_web_lg
+python3 -m spacy download ko_core_news_sm     # 한국어
+
+# PII 자동 탐지 (DSAR 응답 또는 데이터 dump 검증용)
+python3 << 'EOF'
+from presidio_analyzer import AnalyzerEngine
+from presidio_anonymizer import AnonymizerEngine
+
+text = "John's email is john@example.com and phone is 010-1234-5678"
+analyzer = AnalyzerEngine()
+results = analyzer.analyze(text=text, language='en')
+for r in results:
+    print(f"{r.entity_type}: {text[r.start:r.end]} (confidence={r.score})")
+
+anonymizer = AnonymizerEngine()
+out = anonymizer.anonymize(text=text, analyzer_results=results)
+print(out.text)
+EOF
+```
+
+### 학생 환경 준비
+
+```bash
+ssh ccc@10.20.30.100
+pip3 install presidio-analyzer presidio-anonymizer pii-codex scrubadub opacus
+
+# CNIL PIA (DPIA tool, 프랑스 정부 무료)
+# https://www.cnil.fr/en/privacy-impact-assessment-pia
+# 데스크탑 다운로드 또는 docker 이미지
+
+# DSAR tracker (Privacy 요청 추적)
+git clone https://github.com/iguazio/data-subject-rights.git ~/dsar 2>/dev/null
+
+# scrubadub (개인정보 자동 마스킹)
+pip3 install scrubadub
+```
+
+### 핵심 도구별 사용법
+
+```bash
+# 1) Presidio — 한국어 + 영문 PII 탐지
+python3 -c "
+from presidio_analyzer import AnalyzerEngine, RecognizerRegistry
+from presidio_analyzer.nlp_engine import NlpEngineProvider
+
+# 한국어 지원
+configuration = {
+    'nlp_engine_name': 'spacy',
+    'models': [{'lang_code': 'ko', 'model_name': 'ko_core_news_sm'}]
+}
+provider = NlpEngineProvider(nlp_configuration=configuration)
+nlp_engine = provider.create_engine()
+analyzer = AnalyzerEngine(nlp_engine=nlp_engine, supported_languages=['ko'])
+
+text = '홍길동의 주민번호는 901231-1234567 입니다'
+for r in analyzer.analyze(text=text, language='ko'):
+    print(r.entity_type, text[r.start:r.end])
+"
+
+# 2) scrubadub — 빠른 PII 마스킹 (DB dump 정리)
+python3 -c "
+import scrubadub
+text = 'Email: user@example.com Phone: 555-1234'
+print(scrubadub.clean(text))
+"
+
+# 3) DSAR — 데이터 주체 요청 자동 응답
+# 1. 사용자 ID 받기
+# 2. 모든 시스템 (Wazuh/OpenCTI/DB) 에서 해당 사용자 데이터 검색
+# 3. JSON/CSV 으로 export → 30일 내 응답
+sudo /var/ossec/bin/wazuh-control logtest                       # 로그 검색
+
+# 4) 데이터 삭제 검증 (Right to Erasure)
+sudo grep "user_xyz@example.com" /var/log/*.log
+sudo journalctl --vacuum-files=0 --user=user_xyz                # 사용자 로그 삭제
+# DB:
+psql -c "DELETE FROM users WHERE email = 'user_xyz@example.com';"
+psql -c "VACUUM FULL users;"                                     # 물리적 삭제
+
+# 5) 72h Breach Notification (Art.33)
+# Wazuh + Shuffle/n8n 으로 자동 알림 → DPO email
+# /var/ossec/etc/ossec.conf <integration> 섹션에 webhook 등록
+```
+
+### 본 5주차 GDPR 점검 흐름
+
+```bash
+# Phase 1: PII 자동 검색 (모든 데이터 소스에서)
+find /var/log -type f -exec scrubadub-cli {} \; | grep '[FOUND]' > /tmp/pii_log.txt
+psql -c "\copy (SELECT * FROM users) TO '/tmp/users.csv'"
+python3 -c "import scrubadub; print(scrubadub.clean(open('/tmp/users.csv').read()))" > /tmp/users_pii.txt
+
+# Phase 2: 처리활동 기록 (RoPE — Art.30)
+# 자동 매핑 — Wazuh 데이터플로 + 사람 검토 결합
+yq eval '.processing_activities' /etc/privacy/rope.yaml
+
+# Phase 3: 자동 마스킹 적용 (DPbD)
+# 신규 데이터: presidio_anonymizer 미들웨어
+# 기존 데이터: scrubadub + DB UPDATE
+
+# Phase 4: DPIA (Art.35) — 신규 처리 활동에 대해
+# CNIL PIA tool 으로 위험 평가 → JSON 산출물 → DPO 검토
+
+# Phase 5: 알림 자동화 (Art.33 — 72h 의무)
+# Wazuh rule.level >= 12 (data breach) → Shuffle workflow → DPO email + ICO 보고서 초안
+```
+
+### GDPR 핵심 "기술적 보호조치" (Art.32) 도구 매트릭스
+
+| 의무 | 도구 (이전 weekly 와 결합) |
+|------|---------------------------|
+| 가명/익명화 | presidio / scrubadub / ARX (anonymization) |
+| 암호화 (전송) | testssl.sh / sslscan (검증) |
+| 암호화 (저장) | LUKS / cryptsetup / dm-crypt |
+| 무결성 | aide / Tripwire / Wazuh FIM |
+| 가용성 | restic / borg backup (BCP) |
+| 정기 테스트 | Lynis / OpenSCAP (정기 자동 점검) |
+
+학생은 본 5주차에서 **Presidio (PII 탐지) + scrubadub (마스킹) + Wazuh (위반 탐지) + restic (백업) + Shuffle (72h 알림 자동화)** 5 도구로 GDPR 12 핵심 조항의 기술적 의무를 충족하는 흐름을 익힌다.

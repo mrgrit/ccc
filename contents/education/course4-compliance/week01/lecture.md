@@ -795,3 +795,116 @@ incidents.jsonl 의 host 노드 (예: HOST-4476):
 
 **학생 액션**: 본인 환경 1 host 의 framework 매핑 표 작성 → dataset 의 11+ 매핑 모방. ISMS-P 같은 한국 표준은 별도 매핑 표 추가.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course4 Compliance — Week 01 개인정보보호법)
+
+### lab step → 점검 도구 매핑
+
+| step | 점검 항목 (개인정보보호법) | 본문/lab 명령 | 자동화 OSS 도구 | 도구 출력 예 |
+|------|---------------------------|--------------|----------------|--------------|
+| s1 | 패스워드 최소 길이 (8자+) | `grep minlen /etc/security/pwquality.conf` | **Lynis** `audit-passwords` plugin | `[WARNING] Password minlen: 6 (KISA: 8+)` |
+| s2 | 패스워드 복잡도 | `grep ucredit lcredit dcredit ocredit` | Lynis / **OpenSCAP** ssg-rule `accounts_password_pam_*` | `xccdf:rule pwquality-minclass: pass` |
+| s3 | 패스워드 만료 (PASS_MAX_DAYS) | `grep PASS_ /etc/login.defs` | Lynis / OpenSCAP `accounts_maximum_age_login_defs` | `[OK] Max days: 90 (KISA: 180-)` |
+| s4 | SSH PermitRootLogin / MaxAuthTries | `grep PermitRoot /etc/ssh/sshd_config` | Lynis / **ssh-audit** | `(WARN) PermitRootLogin = yes` |
+| s5 | 로그 보관 (1년+) | `cat /etc/logrotate.conf` | Lynis / **auditd** rotate config | `Rotate 12 weeks (FAIL: 1년+ 필요)` |
+| s6 | auditd /etc/passwd /etc/shadow 감사 | `auditctl -l` | **auditd** + **aureport** / OpenSCAP rule `audit_rules_etc_*` | `-w /etc/passwd -p wa -k identity` |
+| s7 | 로그 파일 권한 (640-) | `stat -c '%a %n' /var/log/*` | **OpenSCAP** rule `file_permissions_var_log_*` / Lynis | `auth.log: 644 (FAIL: 640-)` |
+| s8 | Apache SSL/TLS | `grep SSLProtocol /etc/apache2/...` | **testssl.sh** / **sslscan** / Lynis | `Protocol: TLSv1.2 / TLSv1.3 ✓` |
+| s9 | 불필요한 SUID/SGID | `find /usr -perm -4000 -type f` | Lynis `kernel-process` / **rkhunter** | `[FOUND] /usr/bin/passwd (SUID legitimate)` |
+| s10 | 종합 점검 스크립트 | bash 스크립트 작성 | **OpenSCAP profile + Wazuh SCA** 활용 | `xccdf-results.xml` HTML 보고서 |
+
+### 학생 환경 준비 (한 번만 실행)
+
+```bash
+ssh ccc@10.20.30.100        # siem VM (Wazuh 이미)
+
+# Lynis (UNIX 보안 감사 표준 — KISA 권고와 매핑 우수)
+sudo apt update && sudo apt install -y lynis
+sudo lynis update info
+
+# OpenSCAP (NIST SCAP 표준)
+sudo apt install -y libopenscap1 openscap-scanner ssg-base ssg-debderived
+ls /usr/share/xml/scap/ssg/content/      # 사용 가능한 데이터스트림
+
+# auditd (Linux 감사 로그 — 개인정보보호법 접속기록 의무 충족)
+sudo apt install -y auditd audispd-plugins
+sudo systemctl enable --now auditd
+
+# ssh-audit (SSH 보안 감사)
+pipx install ssh-audit
+
+# testssl.sh (TLS 포괄 점검)
+git clone --depth 1 https://github.com/drwetter/testssl.sh.git ~/testssl
+ln -sf ~/testssl/testssl.sh ~/.local/bin/testssl
+
+# Wazuh SCA (built-in CIS + custom KISA 정책 가능)
+ls /var/ossec/ruleset/sca/        # 기본 SCA 정책
+```
+
+### 핵심 도구별 상세 사용법
+
+```bash
+# 1) Lynis — 한 명령으로 전체 점검
+sudo lynis audit system --tests-from-category authentication
+sudo lynis audit system --tests-from-category file-integrity
+sudo lynis audit system --tests-from-category logging
+# 결과 파일: /var/log/lynis-report.dat 와 /var/log/lynis.log
+
+# 2) OpenSCAP — KISA 매핑 가능한 STIG/CIS 프로파일
+sudo oscap xccdf eval \
+  --profile xccdf_org.ssgproject.content_profile_cis \
+  --report /tmp/cis-report.html \
+  /usr/share/xml/scap/ssg/content/ssg-ubuntu2204-ds.xml
+
+# 결과 HTML 에서 각 항목 PASS/FAIL + 개선 명령 자동 제시
+
+# 3) ssh-audit — SSH 만 정밀 점검
+ssh-audit 10.20.30.100
+# 출력 예:
+# (cve) CVE-2018-15473 -- (CVSSv2: 5.0) enumerate users via ...
+# (algorithms) hostkey-cert-* algorithms: removed (best practice)
+
+# 4) testssl.sh — TLS 종합
+testssl.sh https://10.20.30.100:443
+# 모든 cipher / protocol / Heartbleed / POODLE 등 자동 점검
+
+# 5) Wazuh SCA 자동 점검 (manager 가 모든 agent 에 배포)
+sudo /var/ossec/bin/agent_control -i 001 -p          # 정책 목록
+sudo /var/ossec/bin/agent_control -R -i 001          # 즉시 점검 트리거
+# 결과: /var/ossec/logs/alerts/alerts.json 에 SCA 항목별 result
+```
+
+### 본 1주차 점검 흐름 (실무 표준)
+
+```bash
+# Phase 1: 자동 baseline (5 분)
+sudo lynis audit system > /tmp/lynis.txt
+sudo oscap xccdf eval --profile xccdf_org.ssgproject.content_profile_cis \
+  --results-arf /tmp/oscap.arf /usr/share/xml/scap/ssg/content/ssg-ubuntu2204-ds.xml
+
+# Phase 2: 개인정보보호법 매핑 (수동 — KISA 점검 항목과 도구 결과 비교)
+# Lynis warning + OpenSCAP fail 을 KISA 안전조치 기준 24 항목과 매핑
+
+# Phase 3: 자동 시정 (Wazuh AR 또는 ansible)
+ansible-playbook fix-pwquality.yml      # minlen 8 자동 변경
+
+# Phase 4: 재점검 + 증거 보존
+sudo lynis audit system > /tmp/lynis-after.txt
+diff /tmp/lynis.txt /tmp/lynis-after.txt
+oscap-report → PDF 변환 → 컴플라이언스 감사 evidence
+```
+
+### 도구 비교표 — 무엇을 언제 쓸 것인가
+
+| 상황 | 권장 도구 | 이유 |
+|------|----------|------|
+| 빠른 1회 점검 | Lynis | 한 명령, KISA 매핑 우수 |
+| NIST/CIS 표준 인증 | OpenSCAP | 공식 SCAP 표준 |
+| 다중 호스트 통합 | Wazuh SCA | manager 가 모든 agent 자동 |
+| SSH 만 깊게 | ssh-audit | SSH CVE 자동 매핑 |
+| TLS 만 깊게 | testssl.sh | 사실상 업계 표준 |
+| 무결성 baseline | aide / Tripwire | 변경 감지 |
+
+학생은 본 1주차에서 **Lynis (한방) → OpenSCAP (표준) → Wazuh SCA (다중)** 3 단계로 개인정보보호법 안전조치 24 항목을 자동 점검하는 흐름을 익힌다.

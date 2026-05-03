@@ -299,7 +299,12 @@ steps:
   risk_level: low
   bastion_prompt: '[BLUE] Suricata에서 방금 발생한 정찰(스캔) 알림을 확인해줘'
 - order: 8
-  instruction: '[BLUE] Suricata eve.json에서 경보를 분석하여 공격자 IP별 알림 건수를 집계하라.'
+  instruction: '[BLUE] Suricata eve.json에서 경보를 분석하여 공격자 IP별 알림 건수를 집계하라.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/battle-ai-week01/8/eve.json 사전 주입. `jq
+    -c ''.alert'' /home/ccc/cyber-range/fixtures/battle-ai-week01/8/eve.json` 후 (1)
+    빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: jq로 JSON을 파싱한다.
   category: defense
   points: 10
@@ -334,7 +339,24 @@ steps:
   script: cat /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert") | .src_ip'
     2>/dev/null | sort | uniq -c | sort -rn | head -5
   risk_level: low
-  bastion_prompt: '[BLUE] Suricata eve.json에서 경보를 분석하여 공격자 IP별 알림 건수를 집계해줘'
+  bastion_prompt: '[BLUE] Suricata eve.json에서 경보를 분석하여 공격자 IP별 알림 건수를 집계해줘
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/battle-ai-week01/8/eve.json 사전 주입. `jq
+    -c ''.alert'' /home/ccc/cyber-range/fixtures/battle-ai-week01/8/eve.json` 후 (1)빈도·패턴
+    (2)MITRE (3)방어 3섹션. raw dump 금지.'
+  fixtures:
+  - generator: suricata_alert
+    target_vm: secu
+    path: /home/ccc/cyber-range/fixtures/battle-ai-week01/8/eve.json
+    params:
+      seed: 42
+      duration_days: 7
+      alerts_per_day: 30
+      c2_beacon_count: 12
+      metadata_attempt_count: 4
+    mode: overwrite
+    cleanup: false
 - order: 9
   instruction: '[BLUE] Wazuh에서 정찰 관련 이벤트를 확인하라.'
   hint: wazuh alerts 로그를 확인한다.
@@ -349,7 +371,9 @@ steps:
     병행하면 더 넓은 가시성을 확보한다.
   verify:
     type: output_contains
-    expect: complete
+    expect:
+    - complete
+    - description
     field: stdout
     semantic:
       intent: '[BLUE] Wazuh HIDS alerts.json 조회 — /var/ossec/logs/alerts/alerts.json

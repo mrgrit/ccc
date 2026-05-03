@@ -236,6 +236,7 @@ steps:
     - 10.20.30
     - Suricata
     - active
+    - jq
     field: stdout
     semantic:
       intent: '[BLUE] Suricata eve.json SQL Injection 경보 조회 — tail /var/log/suricata/eve.json
@@ -262,7 +263,12 @@ steps:
   risk_level: low
   bastion_prompt: '[BLUE] Suricata에서 SQL Injection 관련 알림을 확인해줘'
 - order: 7
-  instruction: '[BLUE] web 서버의 Apache access.log에서 SQL Injection 시도를 분석하라.'
+  instruction: '[BLUE] web 서버의 Apache access.log에서 SQL Injection 시도를 분석하라.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/battle-ai-week03/7/access.log 사전 주입.
+    `grep -E ''sqli|xss|\.\./|admin'' /home/ccc/cyber-range/fixtures/battle-ai-week03/7/access.log`
+    후 (1) 빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: UNION, SELECT, OR 1=1 등의 패턴을 검색한다.
   category: defense
   points: 10
@@ -274,7 +280,9 @@ steps:
     수 있다. 공격 시각, 소스 IP, 대상 URL을 확인한다.
   verify:
     type: output_contains
-    expect: union
+    expect:
+    - union
+    - grep
     field: stdout
     semantic:
       intent: '[BLUE] Apache access.log SQLi 시도 패턴 grep — grep -iE (union|select|or%201%3D1|%27)
@@ -297,7 +305,24 @@ steps:
   script: grep -iE '(union|select|or%201%3D1|%27)' /var/log/apache2/access.log 2>/dev/null
     | tail -10
   risk_level: low
-  bastion_prompt: '[BLUE] web 서버의 Apache access.log에서 SQL Injection 시도를 분석해줘'
+  bastion_prompt: '[BLUE] web 서버의 Apache access.log에서 SQL Injection 시도를 분석해줘
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/battle-ai-week03/7/access.log 사전 주입.
+    `grep -E ''sqli|xss|\.\./|admin'' /home/ccc/cyber-range/fixtures/battle-ai-week03/7/access.log`
+    후 (1)빈도·패턴 (2)MITRE (3)방어 3섹션. raw dump 금지.'
+  fixtures:
+  - generator: web_access
+    target_vm: web
+    path: /home/ccc/cyber-range/fixtures/battle-ai-week03/7/access.log
+    params:
+      seed: 42
+      duration_days: 7
+      scanner_bursts: 5
+      sqli_attempts: 12
+      xss_attempts: 8
+    mode: overwrite
+    cleanup: false
 - order: 8
   instruction: '[BLUE] ModSecurity 감사 로그에서 차단된 웹 공격을 확인하라.'
   hint: modsec_audit.log를 분석한다.

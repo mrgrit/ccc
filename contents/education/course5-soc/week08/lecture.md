@@ -585,3 +585,32 @@ echo "TTD (탐지 소요 시간): ${TTD}초"
 
 **채점 함의**: dataset 양식 (timestamp + ATT&CK + framework + evidence chain) 갖춘 답안 = 만점.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course5 SOC — Week 08 대응 절차)
+
+| 작업 | 도구 |
+|------|------|
+| 자동 차단 | Wazuh AR / fail2ban / firewall-cmd / nft |
+| 격리 | iptables -A FORWARD -j DROP / namespace isolation |
+| 프로세스 종료 | kill / Wazuh AR / runtime detection (Falco) |
+| 사용자 비활성화 | usermod -L / passwd -l / sssd disable |
+| 분리 (forensic) | dd / tar / Volatility (메모리) |
+
+### 핵심
+```bash
+# Wazuh Active Response 자동 차단
+# /var/ossec/etc/ossec.conf
+# <command><name>firewall-drop</name><executable>firewall-drop</executable></command>
+# <active-response><command>firewall-drop</command><location>local</location><level>10</level></active-response>
+
+# Volatility 3 — 메모리 포렌식
+pip3 install volatility3
+vol -f /tmp/memdump.raw windows.pslist
+vol -f /tmp/memdump.raw linux.pslist
+
+# Falco — runtime threat detection
+sudo systemctl start falco
+sudo journalctl -u falco -f | grep CRITICAL
+```

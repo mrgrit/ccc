@@ -968,3 +968,403 @@ graph LR
 
 **학생 액션**: model card 작성.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course15 AI Safety Advanced — Week 10 해석가능성·SHAP·LIME·Captum·Mechanistic Interp)
+
+> 이 부록은 lab `ai-safety-adv-ai/week10.yaml` (8 step + multi_task) 의 모든 명령을
+> 실제로 실행 가능한 형태로 정리한다. Interpretability — SHAP / LIME / Captum / IntegratedGradients /
+> Anchors / TransformerLens (mechanistic) / NeuronPedia + Bias / Fairness 통합.
+
+### lab step → 도구·범위 매핑 표
+
+| step | 학습 항목 | 핵심 OSS 도구 | 표준 |
+|------|----------|--------------|------|
+| s1 | Interpretability 기본 | SHAP / LIME tabular | NIST AI RMF |
+| s2 | 시나리오 생성 | LLM + 5 카테고리 | NIST AI 600-1 |
+| s3 | 정책 평가 | LLM + explanation 요구 | EU AI Act 13 |
+| s4 | LLM 인젝션 (보조) | week01~03 | LLM01 |
+| s5 | 자동 분석 파이프라인 | SHAP + LIME + Captum + IG | model |
+| s6 | 가드레일 (해석 강제) | uncertain / unfair 거절 | inference |
+| s7 | 모니터링 | feature importance drift + Prometheus | observability |
+| s8 | 평가 보고서 | markdown + bias / explanation coverage | report |
+| s99 | 통합 (s1→s2→s3→s5→s6) | Bastion plan 5 단계 | 전체 |
+
+### Interpretability 분류
+
+| 종류 | 도구 | 사용 |
+|------|------|------|
+| **Tabular SHAP** | shap.TreeExplainer / KernelExplainer | XGBoost / RF |
+| **Tabular LIME** | lime.LimeTabularExplainer | classifier |
+| **Image** | Captum (IntegratedGradients) / shap.DeepExplainer | CNN |
+| **Text** | shap.Explainer + transformers | NLP |
+| **Anchors** | anchor-exp | rule-based |
+| **Mechanistic (LLM)** | TransformerLens | research |
+| **Concept activation (TCAV)** | tcav | concept |
+| **Counterfactual** | DiCE | what-if |
+| **Bias / Fairness** | aif360 / fairlearn / responsibly | fairness |
+
+### 학생 환경 준비
+
+```bash
+pip install --user shap lime captum
+pip install --user transformers torch torchvision
+pip install --user transformer-lens   # mechanistic interp
+pip install --user aif360 fairlearn responsibly
+pip install --user dice-ml             # counterfactual
+pip install --user anchor-exp
+pip install --user xgboost scikit-learn
+```
+
+### 핵심 도구별 상세 사용법
+
+#### 도구 1: SHAP + LIME 기본 (Step 1)
+
+```python
+import shap, lime
+import xgboost as xgb
+from sklearn.datasets import load_breast_cancer
+
+# === SHAP TreeExplainer ===
+data = load_breast_cancer()
+X, y = data.data, data.target
+model = xgb.XGBClassifier().fit(X, y)
+
+explainer = shap.TreeExplainer(model)
+shap_values = explainer.shap_values(X[:100])
+
+# 단일 prediction 설명
+shap.force_plot(explainer.expected_value, shap_values[0], X[0],
+                feature_names=data.feature_names, matplotlib=True)
+
+# 전체 feature 중요도
+shap.summary_plot(shap_values, X[:100], feature_names=data.feature_names)
+
+# === LIME ===
+from lime.lime_tabular import LimeTabularExplainer
+
+lime_exp = LimeTabularExplainer(
+    X, feature_names=data.feature_names, class_names=['benign','malig'],
+    discretize_continuous=True
+)
+exp = lime_exp.explain_instance(X[0], model.predict_proba, num_features=10)
+exp.save_to_file('/tmp/lime-explanation.html')
+```
+
+#### 도구 2: 시나리오 생성 (Step 2)
+
+```python
+import requests
+
+prompt = """Generate an interpretability threat / use-case scenario:
+1. Use case (medical / lending / hiring / criminal justice)
+2. Stakeholder (model user / regulator / affected individual)
+3. Required explanation level (feature importance / counterfactual / mechanistic)
+4. Compliance (EU AI Act 13 / GDPR Art.22 / ECOA / Fair Housing)
+5. Risk if missing (bias / unfair / litigation)
+6. Tool selection rationale
+
+JSON: {"use_case":"...", "stakeholder":"...", "explanation":"...", "compliance":[...], "risk":"...", "tool":"..."}"""
+
+r = requests.post("http://192.168.0.105:11434/api/generate",
+                 json={"model":"gpt-oss:120b","prompt":prompt,"stream":False})
+print(r.json()['response'])
+```
+
+#### 도구 3: 정책 평가 (Step 3)
+
+```python
+def eval_interp_policy(policy):
+    p = f"""정책이 interpretability 의무 (EU AI Act 13 / GDPR Art.22) 에 견고한지 평가:
+{policy}
+
+분석:
+1. Explanation 제공 (per-prediction / global)
+2. Explanation 형식 (technical / non-technical)
+3. Counterfactual 제공 (영향 받은 사용자 권리)
+4. Bias / fairness 측정
+5. Audit log (설명 기록 보관)
+6. 사용자 권리 알림 (GDPR Art.22)
+
+JSON: {{"weaknesses":[...], "missing_defenses":[...], "rec":[...]}}"""
+
+    r = requests.post("http://192.168.0.105:11434/api/generate",
+        json={"model":"gpt-oss:120b","prompt":p,"stream":False})
+    return r.json()['response']
+
+policy = """
+1. Explanation: 미제공
+2. Counterfactual: 미제공
+3. Bias 측정: 안 함
+4. Audit log: 모델 결과만
+5. 사용자 알림: 없음
+"""
+print(eval_interp_policy(policy))
+```
+
+#### 도구 5: 자동 분석 — Captum + IG (Step 5)
+
+```python
+import torch
+from captum.attr import IntegratedGradients, DeepLift, GradientShap, NoiseTunnel
+from captum.attr import visualization as viz
+import torchvision.models as models
+from PIL import Image
+
+# === Image classification ===
+model = models.resnet50(pretrained=True)
+model.eval()
+
+img = Image.open('/tmp/cat.jpg')
+img_tensor = preprocess(img).unsqueeze(0)
+
+# Integrated Gradients
+ig = IntegratedGradients(model)
+attribution = ig.attribute(img_tensor, target=281, n_steps=50)   # cat class
+
+viz.visualize_image_attr(
+    np.transpose(attribution.squeeze().cpu().detach().numpy(), (1,2,0)),
+    np.transpose(img_tensor.squeeze().cpu().numpy(), (1,2,0)),
+    method="heat_map", sign="all", show_colorbar=True
+)
+
+# DeepLift
+dl = DeepLift(model)
+attribution_dl = dl.attribute(img_tensor, target=281)
+
+# GradientSHAP
+gs = GradientShap(model)
+baseline = torch.zeros_like(img_tensor)
+attribution_gs = gs.attribute(img_tensor, baselines=baseline, target=281)
+
+# === Text — Transformers ===
+from transformers import pipeline
+import shap
+
+model_pipeline = pipeline("sentiment-analysis", model="distilbert-base-uncased-finetuned-sst-2-english")
+explainer = shap.Explainer(model_pipeline)
+shap_values = explainer(["This movie is great!", "Terrible movie!"])
+shap.plots.text(shap_values[0])
+
+# === Mechanistic interp (TransformerLens) ===
+import transformer_lens
+from transformer_lens import HookedTransformer
+
+hooked = HookedTransformer.from_pretrained("gpt2-small")
+text = "The Eiffel Tower is in"
+tokens = hooked.to_tokens(text)
+logits, cache = hooked.run_with_cache(tokens)
+
+# Layer 별 attention pattern
+for layer in range(hooked.cfg.n_layers):
+    attn = cache[f"blocks.{layer}.attn.hook_pattern"]
+    print(f"Layer {layer} attention shape: {attn.shape}")
+```
+
+#### 도구 6: 가드레일 (Step 6)
+
+```python
+class InterpretabilityGuard:
+    """해석 불가능 prediction 거절"""
+
+    def __init__(self, model, explainer, min_confidence=0.7, fairness_threshold=0.1):
+        self.model = model
+        self.explainer = explainer
+        self.min_conf = min_confidence
+        self.fair_threshold = fairness_threshold
+
+    def predict_with_explanation(self, x):
+        proba = self.model.predict_proba(x.reshape(1, -1))[0]
+        pred = proba.argmax()
+        confidence = proba.max()
+
+        if confidence < self.min_conf:
+            return {
+                "action": "abstain",
+                "reason": f"Low confidence {confidence:.2f} < {self.min_conf}",
+                "explanation": None
+            }
+
+        shap_vals = self.explainer.shap_values(x.reshape(1, -1))
+        top_features = sorted(
+            enumerate(shap_vals[0] if isinstance(shap_vals, list) else shap_vals[0]),
+            key=lambda x: -abs(x[1])
+        )[:5]
+
+        return {
+            "action": "predict",
+            "label": int(pred),
+            "confidence": float(confidence),
+            "explanation": [{"feature_idx": idx, "shap_value": float(val)} for idx, val in top_features]
+        }
+
+    def fairness_check(self, X, sensitive_features):
+        from fairlearn.metrics import demographic_parity_difference
+        preds = self.model.predict(X)
+        dpd = demographic_parity_difference(y_true=preds, y_pred=preds,
+                                           sensitive_features=sensitive_features)
+        return {"dpd": float(dpd), "fair": abs(dpd) < self.fair_threshold}
+```
+
+#### 도구 7: 모니터링 (Step 7)
+
+```python
+from prometheus_client import start_http_server, Gauge, Counter, Histogram
+
+predictions_total = Counter('interp_predictions_total', 'Predictions', ['result'])
+abstains_total = Counter('interp_abstains_total', 'Abstains', ['reason'])
+shap_value_range = Histogram('interp_shap_value', 'SHAP magnitude')
+fairness_metric = Gauge('interp_fairness_dpd', 'Demographic parity difference', ['protected_attr'])
+explanation_drift = Gauge('interp_feature_importance_drift', 'Feature importance drift', ['feature'])
+top_feature_changes = Counter('interp_top_feature_change_total', 'Top feature changed')
+
+start_http_server(9309)
+```
+
+#### 도구 8: 보고서 (Step 8)
+
+```bash
+cat > /tmp/interp-eval-report.md << 'EOF'
+# Interpretability Evaluation — 2026-Q2
+
+## 1. Executive Summary
+- Use case: Loan approval (XGBoost)
+- 도구: SHAP + LIME + Captum + Fairlearn
+- Compliance: GDPR Art.22 + EU AI Act 13
+
+## 2. Top features (SHAP global)
+| Rank | Feature | Mean abs SHAP |
+|------|---------|---------------|
+| 1 | credit_score | 0.42 |
+| 2 | income | 0.31 |
+| 3 | debt_ratio | 0.18 |
+| 4 | employment_years | 0.12 |
+| 5 | zip_code | 0.08 ★ proxy |
+
+## 3. Bias / Fairness
+| Metric | Race | Gender |
+|--------|------|--------|
+| DPD | 0.12 ★ | 0.04 |
+| EOd | 0.18 ★★ | 0.06 |
+| Acceptance rate | white 67%, black 49% | M 62%, F 58% |
+
+★ DPD > 0.10 → unfair, 즉시 조치
+★★ EOd > 0.15 → 중대한 불평등
+
+## 4. 권고
+### Short
+- zip_code feature 제거 (proxy for race)
+- Reweighing (aif360) 적용
+- 사용자에게 SHAP 설명 + counterfactual UI
+
+### Mid
+- Adversarial debiasing (aif360)
+- Fairness 모니터링 (DPD < 0.05 SLA)
+- LIME local explanation API
+
+### Long
+- Equalized Odds Postprocessing
+- Causal interpretability (CausalML)
+- Mechanistic interp (TransformerLens) for LLM
+EOF
+
+pandoc /tmp/interp-eval-report.md -o /tmp/interp-eval-report.pdf \
+  --pdf-engine=xelatex -V mainfont="Noto Sans CJK KR"
+```
+
+### 점검 / 평가 / 보고 흐름 (8 step + multi_task)
+
+#### Phase A — 기본 + 시나리오 + 정책 (s1·s2·s3)
+
+```bash
+python3 /tmp/interp-shap-lime.py
+python3 /tmp/interp-scenario.py
+python3 /tmp/interp-policy-eval.py
+```
+
+#### Phase B — 인젝션 + 자동화 (s4·s5)
+
+```bash
+python3 /tmp/extraction-injection.py    # week01~03
+python3 /tmp/interp-captum-ig.py
+python3 /tmp/interp-transformer-lens.py
+```
+
+#### Phase C — 가드레일 + 모니터링 + 보고 (s6·s7·s8)
+
+```bash
+python3 /tmp/interp-guard.py
+python3 /tmp/interp-monitor.py &
+pandoc /tmp/interp-eval-report.md -o /tmp/interp-eval-report.pdf
+```
+
+#### Phase D — 통합 (s99 multi_task)
+
+s1 → s2 → s3 → s5 → s6 를 Bastion 가:
+
+1. plan: SHAP/LIME → 시나리오 → 정책 → Captum → guard
+2. execute: shap / lime / captum / fairlearn
+3. synthesize: 5 산출물 (basic.json / scenario.json / policy.json / pipeline.csv / guard.py)
+
+### 도구 비교표 — Interpretability 단계별
+
+| 분야 | 1순위 | 2순위 | 사용 |
+|------|-------|-------|------|
+| Tabular SHAP | shap (TreeExplainer) | KernelExplainer | OSS |
+| Tabular LIME | lime | anchors | OSS |
+| Image | Captum IntegratedGradients | DeepLift / GradCAM | OSS |
+| Text NLP | shap (transformers) | Captum | OSS |
+| Mechanistic LLM | TransformerLens | NeuronPedia | OSS |
+| Concept (TCAV) | tcav | ConceptSHAP | OSS |
+| Counterfactual | DiCE | Wachter et al. | OSS |
+| Bias / Fairness | aif360 (IBM) / fairlearn (MS) | responsibly | OSS |
+| Causal | DoWhy / CausalML | EconML | OSS |
+| 모니터링 | Prometheus + custom | Datadog | OSS |
+| 보고서 | pandoc | Word | 기술 |
+
+### 도구 선택 매트릭스 — 시나리오별 권장
+
+| 시나리오 | 우선 도구 | 이유 |
+|---------|---------|------|
+| "tabular ML 처음" | SHAP TreeExplainer | 빠름 |
+| "image classifier" | Captum IG / GradCAM | 시각 |
+| "NLP transformer" | shap + Captum | 통합 |
+| "LLM inner workings" | TransformerLens | mechanistic |
+| "compliance (GDPR)" | LIME local + DiCE counterfactual | 사용자 권리 |
+| "bias audit" | aif360 / fairlearn | 표준 |
+| "causal" | DoWhy + CausalML | 정확 |
+| "production" | SHAP + Captum + Bias monitor | 다층 |
+
+### 학생 셀프 체크리스트 (각 step 완료 기준)
+
+- [ ] s1: SHAP TreeExplainer + LIME tabular
+- [ ] s2: 6 컴포넌트 시나리오
+- [ ] s3: 정책 평가 (6 항목)
+- [ ] s4: week01~03 인젝션 재실행
+- [ ] s5: Captum IG + DeepLift + GradientSHAP + TransformerLens
+- [ ] s6: InterpretabilityGuard + fairness check
+- [ ] s7: 6+ 메트릭 (predictions / abstains / shap / dpd / drift / changes)
+- [ ] s8: 보고서 (top features / bias / 권고)
+- [ ] s99: Bastion 가 5 작업 (basic / scenario / policy / pipeline / guard) 순차
+
+### 추가 참조 자료
+
+- **EU AI Act Article 13** Transparency
+- **GDPR Article 22** Automated decision-making
+- **NIST AI RMF**
+- **SHAP** https://github.com/shap/shap
+- **LIME** https://github.com/marcotcr/lime
+- **Captum (Meta)** https://captum.ai/
+- **TransformerLens** https://github.com/neelnanda-io/TransformerLens
+- **NeuronPedia** https://neuronpedia.org/
+- **aif360 (IBM)** https://github.com/Trusted-AI/AIF360
+- **fairlearn (Microsoft)** https://fairlearn.org/
+- **DiCE** https://github.com/interpretml/DiCE
+- **DoWhy** https://github.com/py-why/dowhy
+
+위 모든 interpretability 평가는 **격리 환경** 으로 수행한다. SHAP / LIME 는 local approximation
+— global pattern 과 차이 가능. Mechanistic interp (TransformerLens) 는 research 단계 —
+production 사용 신중. Bias 측정은 **하나의 metric 만 의존 금지** — DPD + EOd + acceptance
+rate 다중 측정. fairlearn / aif360 의 mitigation algorithm 은 accuracy tradeoff 있음 —
+운영 SLA 와 비교 후 적용.

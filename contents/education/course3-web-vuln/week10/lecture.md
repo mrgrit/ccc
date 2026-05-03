@@ -520,3 +520,30 @@ done
 2. 5061 의 *Algorithm* 분포 → MD5/SHA1/RSA-1024 사용 endpoint 식별
 3. WAF log 의 `WafResponseType` (SERVER vs CLIENT) 으로 인증서 검증 누락 endpoint 자동 분류
 
+
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (lab week10 — Command Injection)
+
+| step | 카테고리 | 핵심 도구 |
+|---|---|---|
+| 1 baseline | curl -c / Burp Proxy / DVWA Low |
+| 2 ; | curl `;id` / **commix** / PayloadsAllTheThings |
+| 3 \| | curl `\|cat` / commix --level=3 / wfuzz |
+| 4 && | curl `&&whoami` / commix / Burp Intruder |
+| 5 backtick / $() | curl `` `hostname` `` / $(uname) / commix shell escape |
+| 6 Medium 우회 | URL/hex 인코딩 / **commix --tamper** / wfuzz payload processing |
+| 7 Time-based | curl `;sleep 5` + time / commix --time-sec / Burp Repeater |
+| 8 reverse shell | msfvenom / **revshells.com** / nc listener / PayloadsAllTheThings |
+| 9 WAF | OWASP CRS 932 / wafw00f / commix --tamper |
+| 10 reporting | 메타문자 표 / DefectDojo / OWASP A03 / CVSS / sha256 |
+
+### 학생 환경 준비
+```bash
+git clone --depth 1 https://github.com/commixproject/commix ~/commix
+pip install commix
+sudo apt install -y ncat netcat-openbsd metasploit-framework
+# revshells.com — 웹 브라우저
+# PayloadsAllTheThings/Methodology and Resources/Reverse Shell Cheatsheet.md
+```

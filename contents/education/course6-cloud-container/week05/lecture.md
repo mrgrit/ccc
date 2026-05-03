@@ -529,3 +529,159 @@ bridge 모드 Docker 컨테이너의 default 정책은 *"외부 통신 허용 (e
 
 **학생 액션**: lab 컨테이너에서 의도적으로 5건의 outbound 시도 — (1) 8.8.8.8:53 (정상 DNS), (2) 1.1.1.1:80 (정상 HTTP), (3) 4.4.4.4:9001 (Tor 의심), (4) 5.5.5.5:4444 (MSF 의심), (5) 6.6.6.6:16113 (random C2). Wazuh 의 5156/firewall_action 룰이 각 시도를 어떻게 분류하는지 표로 정리하고, *어느 룰이 1건도 안 잡았는지* 를 분석하여 hunt 보고서 작성.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course6 Cloud-Container — Week 05 Kubernetes 보안)
+
+### Kubernetes 보안 도구
+
+| 영역 | OSS 도구 |
+|------|---------|
+| CIS Benchmark | **kube-bench** (Aqua) |
+| 종합 점검 | **kubescape** (NSA + MITRE) / Polaris (Fairwinds) |
+| Pod Vuln 스캔 | **Trivy k8s** / Anchore / Sysdig |
+| Network Policy | **Calico** / Cilium / kube-router |
+| Admission Control | **OPA Gatekeeper** / Kyverno / Datree |
+| 런타임 보안 | **Falco** / Tracee / Tetragon |
+| Audit 로그 분석 | **k0sproject** / Fluent Bit |
+| Secret 관리 | **Sealed Secrets** / External Secrets Operator / Vault |
+| 침투 시뮬 | **kube-hunter** / peirates / kubeletctl |
+
+### 학생 환경 준비 (Docker 시뮬 또는 minikube)
+
+```bash
+# minikube — 학습용 K8s 환경
+curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+sudo install minikube-linux-amd64 /usr/local/bin/minikube
+minikube start --driver=docker
+
+# kubectl
+sudo apt install -y kubectl
+
+# kube-bench (CIS K8s)
+docker run --pid=host --rm aquasec/kube-bench:latest
+
+# kubescape (NSA + MITRE)
+curl -s https://raw.githubusercontent.com/kubescape/kubescape/master/install.sh | bash
+
+# Polaris
+curl -L https://github.com/FairwindsOps/polaris/releases/latest/download/polaris_linux_amd64.tar.gz | sudo tar xz -C /usr/local/bin
+
+# kube-hunter (공격 시뮬)
+docker pull aquasec/kube-hunter:latest
+
+# OPA Gatekeeper
+kubectl apply -f https://raw.githubusercontent.com/open-policy-agent/gatekeeper/release-3.14/deploy/gatekeeper.yaml
+
+# Falco (k8s integration)
+helm install falco falcosecurity/falco --namespace falco --create-namespace
+
+# Sealed Secrets
+kubectl apply -f https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.24.0/controller.yaml
+```
+
+### 핵심 도구 사용법
+
+```bash
+# 1) kube-bench — CIS 점검
+kube-bench run --targets master,node
+kube-bench run --benchmark cis-1.7
+
+# 2) kubescape — NSA + MITRE
+kubescape scan framework nsa
+kubescape scan framework mitre
+kubescape scan framework allcontrols --format json --output /tmp/k8s.json
+jq '.summaryDetails.frameworks[].complianceScore' /tmp/k8s.json
+
+# 3) Polaris (Fairwinds)
+polaris audit --cluster --format=json | jq '.Results[] | select(.PodResult.Results[].Success == false)'
+polaris dashboard --port 8080                               # web UI
+
+# 4) Trivy K8s
+trivy k8s --report summary cluster
+trivy k8s --report all --severity HIGH,CRITICAL cluster
+
+# 5) kube-hunter (공격 시뮬)
+docker run --rm aquasec/kube-hunter --remote 10.20.30.100
+# OR
+kube-hunter --remote 10.20.30.100 --report json --log INFO
+
+# 6) OPA Gatekeeper — 정책 자동 적용
+# 1) Constraint Template
+cat > template.yaml << 'EOF'
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8srequiredlabels
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sRequiredLabels
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            labels:
+              type: array
+              items: string
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8srequiredlabels
+        violation[{"msg": msg}] {
+          required := input.parameters.labels
+          provided := input.review.object.metadata.labels
+          missing := required[_]
+          not provided[missing]
+          msg := sprintf("Missing label: %v", [missing])
+        }
+EOF
+kubectl apply -f template.yaml
+
+# 2) Constraint
+cat > constraint.yaml << 'EOF'
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sRequiredLabels
+metadata:
+  name: pod-must-have-owner
+spec:
+  match:
+    kinds: [{apiGroups: [""], kinds: ["Pod"]}]
+  parameters:
+    labels: ["owner"]
+EOF
+kubectl apply -f constraint.yaml
+
+# 7) Sealed Secrets (Git-safe secret)
+echo -n "secretvalue" | kubectl create secret generic mysec \
+  --dry-run=client --from-file=password=/dev/stdin -o yaml > secret.yaml
+
+kubeseal -o yaml < secret.yaml > sealed-secret.yaml
+kubectl apply -f sealed-secret.yaml
+# sealed-secret.yaml 은 git 에 안전하게 저장 가능
+```
+
+### K8s 보안 점검 흐름
+
+```bash
+# Phase 1: 클러스터 baseline (kube-bench + kubescape)
+kube-bench run --targets master,node > /tmp/cis.txt
+kubescape scan framework nsa --format json --output /tmp/nsa.json
+
+# Phase 2: 워크로드 점검 (Polaris + Trivy k8s)
+polaris audit --cluster --format=json > /tmp/polaris.json
+trivy k8s --report summary cluster
+
+# Phase 3: 정책 자동화 (OPA / Kyverno)
+kubectl apply -f opa-policies/
+
+# Phase 4: 침투 시뮬 (kube-hunter)
+docker run --rm aquasec/kube-hunter --remote $(minikube ip)
+
+# Phase 5: 런타임 모니터 (Falco)
+kubectl logs -n falco -l app=falco -f
+```
+
+학생은 본 5주차에서 **kube-bench + kubescape + OPA Gatekeeper + Trivy k8s + Falco** 5 도구로 K8s 보안 4 단계 (CIS 점검 → 정책 자동 → 워크로드 점검 → 런타임) 사이클을 구축한다.

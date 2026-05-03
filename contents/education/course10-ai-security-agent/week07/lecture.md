@@ -968,3 +968,294 @@ Claude Code:
 
 **학생 액션**: Claude Code 에 dataset 분석 요청 → Bastion 결과와 비교.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course10 — Week 07 샌드박싱)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | 격리 수준 비교 | namespace / cgroup / userns / VM |
+| s2 | gVisor (kernel-level) | **gVisor** (Google) |
+| s3 | firecracker (micro-VM) | **firecracker** (AWS) |
+| s4 | nsjail (syscall filter) | **nsjail** (Google) |
+| s5 | bubblewrap (lightweight) | **bubblewrap** |
+| s6 | e2b cloud sandbox | **e2b-dev** SDK |
+| s7 | Pyodide (browser) | Pyodide |
+| s8 | 통합 격리 패턴 | 위 도구 적절 사용 |
+
+### 학생 환경 준비
+
+```bash
+# 1) gVisor (kernel-level isolation)
+curl -fsSL https://gvisor.dev/archive.key | sudo apt-key add -
+sudo add-apt-repository "deb [arch=$(dpkg --print-architecture)] https://storage.googleapis.com/gvisor/releases release main"
+sudo apt update && sudo apt install -y runsc
+# Docker runtime 으로 등록
+sudo runsc install
+sudo systemctl restart docker
+
+# 2) firecracker
+curl -L https://github.com/firecracker-microvm/firecracker/releases/latest/download/firecracker-v1.6.0-x86_64.tgz | tar xz
+sudo mv release-v1.6.0-x86_64/firecracker-v1.6.0-x86_64 /usr/local/bin/firecracker
+sudo mv release-v1.6.0-x86_64/jailer-v1.6.0-x86_64 /usr/local/bin/jailer
+
+# 3) nsjail
+sudo apt install -y nsjail
+
+# 4) bubblewrap
+sudo apt install -y bubblewrap
+
+# 5) e2b
+pip install e2b
+
+# 6) Kata Containers (대안)
+# https://github.com/kata-containers/kata-containers
+```
+
+### 격리 수준 비교
+
+| 도구 | 격리 수준 | 오버헤드 | 시작 시간 | 사용처 |
+|------|---------|---------|----------|--------|
+| Docker (default) | 약 (네임스페이스) | 1% | < 1s | 일반 컨테이너 |
+| Podman rootless | 중 (user namespace) | 1% | < 1s | 권한 격리 |
+| **gVisor** (runsc) | 강 (user-space kernel) | 5-10% | < 2s | 신뢰 안 되는 코드 |
+| **Kata Containers** | 강 (lightweight VM) | 10-15% | 2-5s | enterprise |
+| **firecracker** | 매우 강 (micro-VM) | 5% | 125ms | AWS Lambda style |
+| **nsjail** | 강 (syscall filter) | 5% | < 1s | CTF style |
+| **bubblewrap** | 중-강 (chroot+namespace) | 3% | < 1s | Flatpak 기반 |
+
+### 핵심 — gVisor (Google, Docker 통합)
+
+```bash
+# 1) Docker runtime 으로 사용
+docker run --rm --runtime=runsc -it python:3.11 \
+    python -c "import os; print(os.uname()); os.system('id')"
+
+# 출력 예 (gVisor 환경):
+# uname_result(sysname='Linux', release='4.4.0', ...)
+# uid=0(root) gid=0(root) groups=0(root)
+# (실제 host 와 다름 — gVisor 의 user-space kernel)
+
+# 2) Kubernetes RuntimeClass
+kubectl apply -f - << 'EOF'
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata: {name: gvisor}
+handler: runsc
+EOF
+
+# Pod 에서 사용
+apiVersion: v1
+kind: Pod
+metadata: {name: untrusted-agent}
+spec:
+  runtimeClassName: gvisor                            # gVisor 격리
+  containers:
+    - name: agent
+      image: myorg/agent-untrusted:v1
+```
+
+### firecracker (micro-VM, AWS Lambda style)
+
+```bash
+# 1) Setup
+mkdir -p /tmp/firecracker
+cd /tmp/firecracker
+
+# Kernel + rootfs 다운로드 (학습용)
+curl -L https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.6/x86_64/vmlinux-5.10.186 -o vmlinux
+curl -L https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.6/x86_64/ubuntu-22.04.ext4 -o rootfs.ext4
+
+# 2) Firecracker 시작
+sudo firecracker --api-sock /tmp/firecracker.sock &
+
+# 3) VM 설정 (REST API)
+curl --unix-socket /tmp/firecracker.sock -i -X PUT 'http://localhost/boot-source' \
+    -d '{"kernel_image_path": "/tmp/firecracker/vmlinux", "boot_args": "console=ttyS0 reboot=k panic=1"}'
+
+curl --unix-socket /tmp/firecracker.sock -i -X PUT 'http://localhost/drives/rootfs' \
+    -d '{"drive_id": "rootfs", "path_on_host": "/tmp/firecracker/rootfs.ext4", "is_root_device": true, "is_read_only": false}'
+
+curl --unix-socket /tmp/firecracker.sock -i -X PUT 'http://localhost/machine-config' \
+    -d '{"vcpu_count": 1, "mem_size_mib": 256}'
+
+# 4) VM 시작
+curl --unix-socket /tmp/firecracker.sock -i -X PUT 'http://localhost/actions' \
+    -d '{"action_type": "InstanceStart"}'
+
+# 5) Console 접속 (시작 시간 ~125ms)
+```
+
+### nsjail (Linux fine-grained)
+
+```bash
+# Config 파일 작성
+cat > /etc/nsjail/python.cfg << 'EOF'
+name: "python-sandbox"
+description: "Run untrusted Python code"
+
+mode: ONCE
+hostname: "sandbox"
+
+cwd: "/sandbox"
+
+# 시간/메모리 제한
+time_limit: 60
+rlimit_as: 256                                          # 256 MB
+rlimit_cpu: 30                                          # 30s CPU
+rlimit_fsize: 10                                        # 10 MB write
+
+# Mount points (chroot)
+mount {
+    src: "/usr"
+    dst: "/usr"
+    is_bind: true
+    rw: false
+}
+mount {
+    dst: "/tmp"
+    fstype: "tmpfs"
+    options: "size=10485760"
+    rw: true
+}
+
+# User
+uidmap { inside_id: "1000" outside_id: "1000" count: "1" }
+gidmap { inside_id: "1000" outside_id: "1000" count: "1" }
+
+# Seccomp
+seccomp_string: "DEFAULT ERRNO\nALLOWED read, write, mmap, brk, exit_group, ..."
+EOF
+
+# 실행
+nsjail --config /etc/nsjail/python.cfg -- /usr/bin/python3 /sandbox/untrusted.py
+```
+
+### e2b (cloud sandbox SDK — 가장 단순)
+
+```python
+from e2b import Sandbox
+
+# 1) 가장 단순
+sandbox = Sandbox(template="base")
+result = sandbox.process.run_code("import os; print(os.listdir())")
+print(result.stdout)
+sandbox.close()
+
+# 2) Custom template
+sandbox = Sandbox(template="python-data-analysis")
+result = sandbox.process.run_code("""
+import pandas as pd
+df = pd.read_csv('/tmp/data.csv')
+print(df.describe())
+""")
+
+# 3) 파일 업로드 (sandbox 안으로)
+sandbox.filesystem.write("/tmp/data.csv", local_csv_content)
+
+# 4) Process 직접 실행
+process = sandbox.process.start("nmap -sV 10.20.30.80")
+process.wait()
+print(process.output)
+
+# 5) 시간/메모리 제한 (template 에 정의)
+
+# 6) 종료
+sandbox.close()
+```
+
+### LangChain + Sandbox 통합
+
+```python
+from langchain_experimental.tools.python.tool import PythonREPLTool
+from langchain.agents import AgentExecutor
+from e2b import Sandbox
+
+class SandboxedPythonTool(PythonREPLTool):
+    """E2B sandbox 안에서 Python 실행"""
+    name = "python_sandbox"
+    description = "Run Python code in sandbox"
+    
+    def __init__(self):
+        super().__init__()
+        self.sandbox = Sandbox(template="python")
+    
+    def _run(self, code: str) -> str:
+        result = self.sandbox.process.run_code(code, timeout=30)
+        return result.stdout + (f"\nERR: {result.stderr}" if result.stderr else "")
+    
+    def __del__(self):
+        self.sandbox.close()
+
+# Agent 에 통합
+tools = [SandboxedPythonTool()]
+agent = AgentExecutor(agent=..., tools=tools, max_iterations=10)
+```
+
+### Pyodide (브라우저 Python — 추가 격리)
+
+```html
+<!DOCTYPE html>
+<script src="https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js"></script>
+<script>
+async function runUntrusted(code) {
+    const pyodide = await loadPyodide();
+    // Pyodide 는 브라우저 sandbox 안의 Python — 호스트 파일 접근 불가
+    return pyodide.runPython(code);
+}
+</script>
+```
+
+### 통합 격리 패턴 (계층화)
+
+```
+[가장 외부 — Public Internet]
+  ↓
+[Layer 1: Container] (Docker / Podman rootless)
+  ↓
+[Layer 2: gVisor] (untrusted code)
+  ↓
+[Layer 3: nsjail] (fine-grained syscall filter)
+  ↓
+[Layer 4: 자체 Python sandbox] (restricted globals)
+  ↓
+[Untrusted code 실행]
+```
+
+```python
+# 예: Agent code execution → 4 layer
+def safe_execute(code):
+    # Layer 1: Docker (이미 K8s pod 안)
+    # Layer 2: gVisor runtime
+    # Layer 3: nsjail
+    cmd = f"nsjail --config /etc/nsjail/python.cfg -- /usr/bin/python3 -c '{code}'"
+    return subprocess.run(cmd, shell=True, timeout=30, capture_output=True)
+```
+
+### 실험 — 격리 효과 측정
+
+```bash
+# 1) Docker default 환경에서 host kernel 침투 시도
+docker run --rm alpine sh -c '
+    cat /proc/version
+    ls /proc
+    cat /etc/shadow 2>&1
+'
+
+# 2) gVisor 환경 (격리 확인)
+docker run --rm --runtime=runsc alpine sh -c '
+    cat /proc/version              # → 가짜 kernel version
+    ls /proc                        # → 제한된 파일
+    cat /etc/shadow 2>&1           # → permission denied
+'
+
+# 3) Container escape 시도 (격리 검증)
+docker run --rm --runtime=runsc --privileged alpine sh -c '
+    nsenter -t 1 -m -p sh           # → gVisor 가 차단 (host kernel 진입 불가)
+'
+```
+
+학생은 본 7주차에서 **gVisor + firecracker + nsjail + bubblewrap + e2b + Pyodide** 6 격리 도구로 untrusted code 의 5 단계 격리 (namespace → cgroup → user-space kernel → micro-VM → 자체 sandbox) 통합 운영을 익힌다.

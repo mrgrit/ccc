@@ -1271,3 +1271,305 @@ graph LR
 
 **학생 액션**: lab ransom 시뮬 → 4663 burst.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course12 — Week 08 포렌식)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 | 명령 |
+|------|----------|---------|------|
+| s1 | 메모리 capture | LiME / AVML | `insmod lime.ko 'path=/forensic/mem.lime format=lime'` |
+| s2 | 메모리 분석 | **Volatility 3** | `vol -f mem.lime linux.pslist` |
+| s3 | 디스크 image | dc3dd / Guymager | `dc3dd if=/dev/sda hash=sha256 of=/forensic/disk.dd` |
+| s4 | 디스크 분석 | **Sleuth Kit (TSK)** | `fls -r -m / disk.dd > bodyfile` |
+| s5 | Timeline | **Plaso** (log2timeline) | `log2timeline.py case.plaso /evidence` |
+| s6 | Eric Zimmerman tools | (Win 전용) | KAPE, Mitre ATT&CK |
+| s7 | Network forensic | Wireshark / tshark / brim | `tshark -r capture.pcap -Y 'http.request'` |
+| s8 | Reporting | Autopsy / IRIS-DFIR | (Web UI) |
+
+### 학생 환경 준비
+
+```bash
+# === Volatility 3 (modern memory forensics) ===
+pip install volatility3
+vol -h | head
+
+# === LiME (Linux Memory Extractor) ===
+git clone https://github.com/504ensicsLabs/LiME ~/lime
+cd ~/lime/src && make
+
+# === AVML (Azure Virtual Machine Linux) — 대안 ===
+curl -L https://github.com/microsoft/avml/releases/latest/download/avml -o /tmp/avml
+chmod +x /tmp/avml && sudo mv /tmp/avml /usr/local/bin/
+
+# === Sleuth Kit + Autopsy ===
+sudo apt install -y sleuthkit autopsy
+
+# === dc3dd (forensic dd) ===
+sudo apt install -y dc3dd
+
+# === Plaso (universal timeline) ===
+sudo apt install -y plaso-tools
+# 또는 docker:
+docker pull log2timeline/plaso:latest
+
+# === Wireshark / tshark ===
+sudo apt install -y wireshark-common tshark
+
+# === Eric Zimmerman tools (Win 전용) ===
+# https://ericzimmerman.github.io/
+
+# === IRIS-DFIR (modern) ===
+git clone https://github.com/dfir-iris/iris-web ~/iris
+cd ~/iris && docker compose up -d                          # http://localhost:8443
+
+# === GRR (Google Rapid Response) ===
+git clone https://github.com/google/grr ~/grr
+```
+
+### 핵심 — Volatility 3 (메모리 포렌식 표준)
+
+```bash
+# === 1. 메모리 capture (LiME) ===
+# Target host 에서:
+sudo insmod ~/lime/src/lime-$(uname -r).ko 'path=/forensic/mem.lime format=lime'
+
+# 또는 AVML (kernel module 없이)
+sudo /usr/local/bin/avml /forensic/mem.lime
+
+# === 2. Volatility 3 — Linux 분석 ===
+vol -f /forensic/mem.lime linux.banner                  # 커널 버전 + 환경 (자동 매핑)
+
+# Process list
+vol -f /forensic/mem.lime linux.pslist
+# 출력:
+# OFFSET   PID   PPID  USER  COMMAND   CREATE_TIME
+# 0xff..   1234  1     root  sshd      2026-05-02 10:00:00
+# 0xff..   5678  1234  user  bash      2026-05-02 10:05:00 ← 의심?
+# 0xff..   9999  -     -     [hidden]  -                       ← rootkit?
+
+# Process tree
+vol -f /forensic/mem.lime linux.pstree
+
+# 의심 process — disk 없는 (memory-only)
+vol -f /forensic/mem.lime linux.malfind
+# Memory regions with executable + non-typical permissions
+
+# Bash history (메모리 only — 저장 안 됨)
+vol -f /forensic/mem.lime linux.bash
+# 출력: 모든 bash command (live + 죽은 process)
+
+# Network connections
+vol -f /forensic/mem.lime linux.netscan
+# 활성 connection (TCP/UDP)
+
+# Loaded kernel modules (rootkit 발견)
+vol -f /forensic/mem.lime linux.lsmod
+
+# Hidden modules
+vol -f /forensic/mem.lime linux.hidden_modules
+
+# Mount points
+vol -f /forensic/mem.lime linux.mount
+
+# Open files
+vol -f /forensic/mem.lime linux.lsof
+
+# YARA scan (악성 시그니처)
+vol -f /forensic/mem.lime yarascan.YaraScan \
+    --yara-file /etc/yara/malware.yar
+
+# === 3. Volatility 3 — Windows 분석 ===
+vol -f /forensic/mem.raw windows.pslist
+vol -f /forensic/mem.raw windows.malfind
+vol -f /forensic/mem.raw windows.netscan
+vol -f /forensic/mem.raw windows.cmdline             # process command-lines
+vol -f /forensic/mem.raw windows.envars              # 환경 변수
+vol -f /forensic/mem.raw windows.handles --pid 1234  # PID 1234 의 handles
+vol -f /forensic/mem.raw windows.dlllist             # 로드된 DLL
+vol -f /forensic/mem.raw windows.hashdump            # SAM hash dump (NTLM)
+vol -f /forensic/mem.raw windows.cachedump           # 캐시 자격증명
+vol -f /forensic/mem.raw windows.lsadump             # LSA 자격증명
+```
+
+### Sleuth Kit + Autopsy (디스크 포렌식)
+
+```bash
+# === 1. 디스크 image (forensic copy) ===
+sudo dc3dd if=/dev/sda \
+    hash=sha256 \
+    hashlog=/forensic/hash.log \
+    of=/forensic/disk.dd \
+    log=/forensic/dc3dd.log
+
+# Hash 검증
+sudo dc3dd if=/forensic/disk.dd hash=sha256 hashlog=/forensic/verify.log
+
+# === 2. Sleuth Kit (CLI) ===
+
+# 파일 system 정보
+sudo mmls /forensic/disk.dd                         # 파티션 layout
+sudo fsstat /forensic/disk.dd                       # FS info
+
+# 파일 목록 (timeline body)
+sudo fls -r -m / /forensic/disk.dd > /forensic/bodyfile
+
+# Timeline 생성
+sudo mactime -b /forensic/bodyfile -d > /forensic/timeline.csv
+
+# 삭제된 파일 복구
+sudo fls -r -d /forensic/disk.dd                    # deleted entries
+sudo icat /forensic/disk.dd <inode>                 # 특정 inode 복구
+
+# 파일 metadata
+sudo istat /forensic/disk.dd <inode>
+
+# === 3. Autopsy (Web GUI) ===
+sudo systemctl start autopsy
+# http://localhost:9999
+# - 새 case 생성
+# - disk image upload
+# - 자동 분석: timeline, keyword search, file system, hash 매칭
+```
+
+### Plaso (universal timeline — 모든 source)
+
+```bash
+# === 1. log2timeline (다중 source 통합) ===
+log2timeline.py /tmp/case.plaso \
+    /var/log/                                       # syslog
+    /forensic/disk.dd                               # disk image
+    /forensic/mem.lime                              # memory
+    /var/ossec/logs/                                # Wazuh logs
+    /var/log/suricata/                              # Suricata
+    /home/                                          # bash history
+
+# === 2. psort (정렬 + 출력) ===
+psort.py -o l2tcsv -w /tmp/timeline.csv /tmp/case.plaso
+
+# 또는 JSON
+psort.py -o json -w /tmp/timeline.json /tmp/case.plaso
+
+# 또는 Elastic
+psort.py -o elastic --index-name forensic-2026 \
+    --server localhost --port 9200 \
+    /tmp/case.plaso
+
+# === 3. Filter ===
+psort.py -o l2tcsv -w /tmp/critical.csv \
+    /tmp/case.plaso \
+    "date >'2026-05-01' AND source_name CONTAINS 'wazuh'"
+```
+
+### Network Forensics (Wireshark / Brim / Zeek)
+
+```bash
+# === 1. tshark (CLI) ===
+sudo tcpdump -i eth0 -w /forensic/capture.pcap
+
+# 분석
+tshark -r /forensic/capture.pcap -Y 'http.request' \
+    -T fields -e ip.src -e http.host -e http.request.uri | head
+
+# DNS query
+tshark -r /forensic/capture.pcap -Y 'dns' -T fields -e dns.qry.name | sort | uniq -c
+
+# TLS handshake (cert 정보)
+tshark -r /forensic/capture.pcap -Y 'tls.handshake.type==11' \
+    -T fields -e ip.dst -e tls.handshake.certificate
+
+# === 2. Zeek (프로토콜 분석) ===
+zeek -r /forensic/capture.pcap
+
+# 자동 생성:
+# - conn.log (모든 connection)
+# - http.log (HTTP requests)
+# - dns.log (DNS queries)
+# - ssl.log (TLS)
+# - notice.log (suspicious)
+
+# 분석
+zeek-cut -d ts uid id.orig_h id.resp_h method host uri \
+    < /forensic/zeek-logs/http.log | head
+
+# === 3. Brim / Zui (modern GUI) ===
+sudo dpkg -i ~/brim.deb
+brim                                                # /forensic/capture.pcap open
+
+# === 4. NetworkMiner (Win/Linux Mono) ===
+sudo apt install -y mono-runtime
+mono /opt/NetworkMiner.exe
+```
+
+### Forensic Cycle (자동 evidence 수집)
+
+```bash
+#!/bin/bash
+# /usr/local/bin/auto-forensic.sh
+# 침해 의심 호스트 자동 evidence 수집
+
+HOST=$1
+DIR=/forensic/$HOST-$(date +%Y%m%d-%H%M)
+mkdir -p $DIR
+
+echo "=== 1. 메모리 capture ==="
+ssh root@$HOST "insmod ~/lime/src/lime-\$(uname -r).ko 'path=/tmp/mem.lime format=lime'"
+scp root@$HOST:/tmp/mem.lime $DIR/mem.lime
+
+echo "=== 2. 디스크 image ==="
+ssh root@$HOST "dc3dd if=/dev/sda hash=sha256 of=/tmp/disk.dd hashlog=/tmp/hash.log" &
+DD_PID=$!
+echo "Disk imaging PID=$DD_PID (백그라운드 — 큰 disk 는 1+시간)"
+
+echo "=== 3. Live evidence (osquery snapshot) ==="
+ssh root@$HOST "osqueryi --json '
+SELECT \"processes\" as cat, * FROM processes;
+SELECT \"users\" as cat, * FROM logged_in_users;
+SELECT \"network\" as cat, * FROM listening_ports;
+SELECT \"crontab\" as cat, * FROM crontab;
+SELECT \"file_changes\" as cat, * FROM file_events WHERE time > $(date -d '24 hours ago' +%s);
+'" > $DIR/osquery-snapshot.json
+
+echo "=== 4. Wazuh agent logs ==="
+ssh root@$HOST "tar czf /tmp/wazuh-logs.tgz /var/ossec/logs/"
+scp root@$HOST:/tmp/wazuh-logs.tgz $DIR/
+
+echo "=== 5. Network capture (10분) ==="
+ssh root@$HOST "timeout 600 tcpdump -i eth0 -w /tmp/capture.pcap"
+scp root@$HOST:/tmp/capture.pcap $DIR/
+
+echo "=== 6. Bash history ==="
+ssh root@$HOST "cat /home/*/.bash_history /root/.bash_history 2>/dev/null" > $DIR/bash-history.txt
+
+echo "=== 7. 분석 시작 ==="
+# Memory 분석 (Volatility)
+vol -f $DIR/mem.lime linux.pslist > $DIR/01-pslist.txt
+vol -f $DIR/mem.lime linux.netscan > $DIR/02-netscan.txt
+vol -f $DIR/mem.lime linux.malfind > $DIR/03-malfind.txt
+vol -f $DIR/mem.lime linux.bash > $DIR/04-bash-mem.txt
+
+# Disk 분석 (Sleuth Kit)
+wait $DD_PID
+sudo fls -r -m / $DIR/disk.dd > $DIR/bodyfile
+sudo mactime -b $DIR/bodyfile -d > $DIR/disk-timeline.csv
+
+# Network (Zeek)
+mkdir -p $DIR/zeek-logs && cd $DIR/zeek-logs
+zeek -r $DIR/capture.pcap
+
+# Plaso (모든 source 통합)
+log2timeline.py $DIR/case.plaso $DIR/
+psort.py -o l2tcsv -w $DIR/master-timeline.csv $DIR/case.plaso
+
+echo "=== 8. 보고 ==="
+# IRIS-DFIR 또는 TheHive 에 case 생성
+curl -X POST http://iris:8443/api/case \
+    -H "Authorization: Bearer $TOKEN" \
+    -d "{\"case_name\":\"$HOST forensic $(date)\",\"case_description\":\"Auto evidence collection\"}"
+
+echo "=== 완료 — $DIR ==="
+```
+
+학생은 본 8주차에서 **Volatility 3 + LiME + AVML + Sleuth Kit + Plaso + tshark + Zeek + Autopsy + IRIS-DFIR** 9 도구로 메모리 / 디스크 / 네트워크 / 통합 timeline 의 4 영역 forensic 사이클을 OSS 만으로 익힌다.

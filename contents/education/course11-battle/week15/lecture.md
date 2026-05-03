@@ -700,3 +700,222 @@ graph LR
 
 **학생 액션**: 본인 공방전 결과를 5축 보고서로 정리.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course11 — Week 15 공방전 분석/보고)
+
+### 보고 도구
+
+| 영역 | OSS 도구 |
+|------|---------|
+| 통계 추출 | jq / pandas / matplotlib |
+| Timeline | Plaso (log2timeline) / Mermaid |
+| ATT&CK 시각화 | DeTT&CT / Navigator |
+| 보고서 | pandoc + xelatex / dradis / pwndoc |
+| Dashboard | Grafana + Prometheus / Wazuh Dashboard |
+| 다이어그램 | Mermaid CLI / PlantUML |
+
+### 종합 보고 흐름
+
+```bash
+#!/bin/bash
+# /usr/local/bin/battle-report.sh — 모든 round 종합 보고
+
+ROUND=$1
+DIR=/var/log/battle-reports/round-$ROUND
+mkdir -p $DIR
+
+# === 1. Wazuh 통계 ===
+sudo jq -r "select((.timestamp | fromdateiso8601) > $START_TS and (.timestamp | fromdateiso8601) < $END_TS)" \
+    /var/ossec/logs/alerts/alerts.json > $DIR/01-alerts.jsonl
+
+# Top 룰
+jq -s 'group_by(.rule.id) | map({rule_id: .[0].rule.id, description: .[0].rule.description, count: length}) | sort_by(.count) | reverse' \
+    $DIR/01-alerts.jsonl > $DIR/02-top-rules.json
+
+# Top src IP
+jq -r '.data.srcip' $DIR/01-alerts.jsonl 2>/dev/null | sort | uniq -c | sort -rn | head > $DIR/03-top-srcip.txt
+
+# === 2. ATT&CK 매핑 ===
+jq -r '.rule.mitre.id // empty' $DIR/01-alerts.jsonl 2>/dev/null | sort | uniq -c | sort -rn > $DIR/04-attack.txt
+
+# Navigator JSON
+python3 -c "
+import json
+with open('$DIR/04-attack.txt') as f:
+    techniques = []
+    for line in f:
+        parts = line.strip().split()
+        if len(parts) >= 2:
+            techniques.append({'techniqueID': parts[1], 'score': int(parts[0])})
+
+layer = {
+    'name': 'Round-$ROUND ATT&CK Heat Map',
+    'domain': 'enterprise-attack',
+    'techniques': techniques
+}
+print(json.dumps(layer))
+" > $DIR/05-navigator.json
+
+# === 3. Timeline (Plaso) ===
+log2timeline.py /tmp/case.plaso /var/log/ /var/ossec/logs/
+psort.py -o l2tcsv -w $DIR/06-timeline.csv /tmp/case.plaso
+
+# === 4. Suricata 통계 ===
+sudo jq -r 'select(.event_type == "alert") | .alert.signature' /var/log/suricata/eve.json | \
+    sort | uniq -c | sort -rn | head > $DIR/07-suricata.txt
+
+# === 5. Sigma rule coverage ===
+chainsaw hunt /var/log -s ~/sigma/rules/ --output json > $DIR/08-chainsaw.json
+
+# === 6. Mermaid 다이어그램 (kill chain) ===
+cat > $DIR/09-killchain.mmd << 'EOF'
+graph LR
+  A[Recon<br/>nmap] --> B[Initial Access<br/>SQLi]
+  B --> C[Execution<br/>RCE]
+  C --> D[Privesc<br/>sudo find]
+  D --> E[Persistence<br/>cron]
+  E --> F[Lateral<br/>SSH brute]
+  F --> G[Exfil<br/>DNS tunnel]
+  
+  B -.detect.-> M1[Suricata SQLi rule]
+  C -.detect.-> M2[Falco shell]
+  D -.detect.-> M3[Falco privesc]
+  E -.detect.-> M4[osquery cron]
+  G -.detect.-> M5[Suricata DNS length]
+  
+  style A fill:#f96
+  style B fill:#f96
+  style C fill:#f96
+  style D fill:#f96
+  style E fill:#f96
+  style F fill:#f96
+  style G fill:#f96
+  style M1 fill:#9f6
+  style M2 fill:#9f6
+  style M3 fill:#9f6
+  style M4 fill:#9f6
+  style M5 fill:#9f6
+EOF
+mmdc -i $DIR/09-killchain.mmd -o $DIR/09-killchain.png
+
+# === 7. Markdown 보고서 ===
+cat > $DIR/00-report.md << EOF
+# Battle Round $ROUND 종합 보고서
+
+생성 일시: $(date)
+
+## 1. 결과 요약
+
+### 1.1 Red Phase
+- 시작: $START_TS
+- 종료: $END_TS  
+- 발견 vuln: $(jq '. | length' $DIR/02-top-rules.json) categories
+- 침투 성공: ☑ (admin 자격증명 dump)
+
+### 1.2 Blue Phase
+- 탐지된 alert: $(wc -l < $DIR/01-alerts.jsonl)
+- 차단 IP: $(wc -l < $DIR/03-top-srcip.txt)
+- 5분 내 alert: ☑
+
+## 2. ATT&CK Heat Map
+
+![Kill Chain](./09-killchain.png)
+
+| Technique | 발생 횟수 | Detected |
+|-----------|----------|----------|
+$(awk '{print "| "$2" | "$1" | ✓ |"}' $DIR/04-attack.txt | head -10)
+
+## 3. Top Suricata Alerts
+\`\`\`
+$(head -10 $DIR/07-suricata.txt)
+\`\`\`
+
+## 4. Top Source IP
+\`\`\`
+$(head -10 $DIR/03-top-srcip.txt)
+\`\`\`
+
+## 5. 회고 (다음 R+1 보강 사항)
+
+1. **새 시그니처**: SQLi pattern (R$ROUND IoC) → Sigma rule 작성
+2. **방어 강화**: ModSec paranoia level 4 적용
+3. **자동 대응**: Wazuh AR + Shuffle workflow
+4. **포렌식**: 장기 보존 (90일 → 365일)
+
+## 6. 점수
+
+| 팀 | 점수 |
+|----|------|
+| Red | 78 / 110 |
+| Blue | 84 / 100 |
+| **승자** | **Blue (정확도 우위)** |
+EOF
+
+# === 8. PDF 변환 (한글) ===
+pandoc $DIR/00-report.md \
+    -o $DIR/round-$ROUND-report.pdf \
+    --pdf-engine=xelatex \
+    -V mainfont=NanumGothic \
+    -V geometry:margin=2cm \
+    --toc
+
+echo "=== 보고서 완료 — $DIR/round-$ROUND-report.pdf ==="
+```
+
+### ATT&CK Navigator 시각화
+
+```bash
+# Navigator 로컬 실행
+git clone https://github.com/mitre-attack/attack-navigator ~/navigator
+cd ~/navigator/nav-app
+npm install && npm run build
+npm run start                                              # http://localhost:4200
+
+# Layer JSON import
+# 메뉴 → "Open" → /var/log/battle-reports/round-1/05-navigator.json
+# Heat map 으로 어떤 ATT&CK 가 활성화되었는지 한눈에
+```
+
+### DeTT&CT (coverage 측정)
+
+```bash
+python3 ~/dettect/dettect.py editor                       # http://localhost:8080
+
+# 비교:
+# - Detected (R1): 12 techniques
+# - Catalog (전체): 200 techniques
+# - Coverage: 6%
+
+# Gap 식별 → 추가 시그니처 작성 우선순위
+```
+
+### 통합 dashboard (Grafana)
+
+```yaml
+# /etc/grafana/dashboards/battle.json (panel 5개)
+panels:
+  - title: Alert Volume (1h)
+    query: rate(wazuh_alerts_total[1h])
+  - title: Top ATT&CK Techniques
+    query: topk(10, sum by (mitre_id) (wazuh_alerts_total))
+  - title: Red Team Source IP (last 24h)
+    query: topk(10, sum by (src_ip) (wazuh_alerts_total))
+  - title: Blocked IP Count (crowdsec/fail2ban)
+    query: sum(crowdsec_blocked_ips) + sum(fail2ban_banned_ips)
+  - title: MTTR (mean time to respond)
+    query: avg(thehive_case_resolution_minutes)
+```
+
+### Round-by-Round 진척
+
+| Round | Red 점수 | Blue 점수 | 새 Sigma rule | ModSec mode |
+|-------|---------|----------|---------------|-------------|
+| R1 (week11) | 75 | 65 | 0 | DetectionOnly |
+| R2 (week12) | 60 (uow하 R1 차단) | 80 | 5 | On (PL3) |
+| R3 (week13 다중) | 70 | 78 | 12 | On (PL4) |
+| R4 (week14 APT) | 85 (CALDERA) | 88 | 25 | On (PL4) + sliver TLS rule |
+| **종합** | **290/440** | **311/400** | **42** | **On (strict)** |
+
+학생은 본 15주차에서 **jq + pandoc + Mermaid + Plaso + DeTT&CT + Navigator + Grafana** 7 도구로 4 round 공방전 결과 정량 분석 + 시각화 + ATT&CK 매핑 + 보고서 자동 생성 흐름을 OSS 도구로 익힌다.

@@ -723,3 +723,344 @@ graph LR
 
 **학생 액션**: lab Bastion 으로 dataset 1건을 처리 — LLM 단독 대비 작업 깊이 비교.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course10 AI Security Agent — Week 01 에이전트 기초)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 | 출력 예 |
+|------|----------|---------|--------|
+| s1 | LangChain ChatModel | **LangChain** + langchain-ollama | response str |
+| s2 | LangGraph 상태 그래프 | **LangGraph** | StateGraph compiled |
+| s3 | AutoGen multi-agent | **AutoGen** (Microsoft) | conversation log |
+| s4 | CrewAI 역할 기반 | **CrewAI** | crew.kickoff() result |
+| s5 | smolagents (HF) | **smolagents** | minimal agent |
+| s6 | OpenAI Agents SDK | OpenAI Python SDK | function calling |
+| s7 | Memory 통합 | LangChain ConversationBufferMemory | chat history |
+| s8 | Custom agent 구현 | Bastion 자체 | agent.chat() result |
+
+### 학생 환경 준비
+
+```bash
+ssh ccc@192.168.0.112
+python3 -m venv ~/.venv-aagent && source ~/.venv-aagent/bin/activate
+pip install --upgrade pip
+
+# 1) LangChain ecosystem
+pip install langchain langchain-community langchain-ollama langchain-openai
+
+# 2) LangGraph (상태 그래프)
+pip install langgraph
+
+# 3) AutoGen (Microsoft multi-agent)
+pip install autogen-agentchat 'autogen-ext[openai,ollama]'
+
+# 4) CrewAI (역할 기반)
+pip install crewai crewai-tools
+
+# 5) smolagents (HuggingFace lightweight)
+pip install smolagents
+
+# 6) Ollama 가 LLM 서버
+ollama list
+ollama pull gemma3:4b
+
+# 7) Memory backends
+pip install chromadb redis sqlalchemy
+```
+
+### 핵심 — LangChain 기본 (가장 표준)
+
+```python
+from langchain_ollama import OllamaLLM
+from langchain.schema import HumanMessage, AIMessage
+
+llm = OllamaLLM(
+    model="gemma3:4b",
+    base_url="http://localhost:11434",
+    temperature=0.7
+)
+
+# 1) 단순 호출
+response = llm.invoke("Explain SQL injection in Korean")
+print(response)
+
+# 2) Chat 형식
+from langchain.prompts import ChatPromptTemplate
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "당신은 보안 전문가다. 한국어로 답한다."),
+    ("user", "{question}")
+])
+chain = prompt | llm
+print(chain.invoke({"question": "XSS 가 뭐야?"}))
+
+# 3) Tool calling (LangChain Tool)
+from langchain.tools import tool
+
+@tool
+def nmap_scan(target: str) -> str:
+    """nmap 으로 호스트 스캔"""
+    import subprocess
+    return subprocess.run(["nmap", "-sV", target], capture_output=True, text=True).stdout
+
+# Agent 에 도구 binding
+from langchain.agents import create_react_agent, AgentExecutor
+agent = create_react_agent(llm, [nmap_scan], prompt)
+executor = AgentExecutor(agent=agent, tools=[nmap_scan], verbose=True)
+result = executor.invoke({"input": "10.20.30.80 점검해줘"})
+```
+
+### LangGraph (상태 그래프 기반 — 복잡한 흐름)
+
+```python
+from langgraph.graph import StateGraph, START, END
+from langchain_ollama import OllamaLLM
+from typing import TypedDict, Annotated, Literal
+import operator
+
+class AgentState(TypedDict):
+    messages: Annotated[list, operator.add]                 # 누적
+    target: str
+    scan_results: list
+    next_step: Literal["scan", "exploit", "report", "end"]
+
+llm = OllamaLLM(model="gemma3:4b")
+
+# Node 1: think
+def think(state):
+    last_msg = state["messages"][-1] if state["messages"] else ""
+    response = llm.invoke(f"다음 행동을 결정: {last_msg}\n옵션: scan/exploit/report/end")
+    if "scan" in response.lower():
+        return {"messages": [response], "next_step": "scan"}
+    elif "exploit" in response.lower():
+        return {"messages": [response], "next_step": "exploit"}
+    elif "report" in response.lower():
+        return {"messages": [response], "next_step": "report"}
+    return {"messages": [response], "next_step": "end"}
+
+# Node 2: scan
+def scan(state):
+    import subprocess
+    result = subprocess.run(["nmap", "-sV", state["target"]], capture_output=True, text=True).stdout
+    return {"scan_results": [result], "next_step": "think"}
+
+# Node 3: exploit
+def exploit(state):
+    # sqlmap / XSStrike / etc
+    return {"messages": ["Exploit attempted"], "next_step": "think"}
+
+# Node 4: report
+def report(state):
+    summary = llm.invoke(f"보고서 작성: scans={state['scan_results']}")
+    return {"messages": [summary], "next_step": "end"}
+
+# Graph 구성
+g = StateGraph(AgentState)
+g.add_node("think", think)
+g.add_node("scan", scan)
+g.add_node("exploit", exploit)
+g.add_node("report", report)
+
+g.add_edge(START, "think")
+g.add_conditional_edges("think", lambda s: s["next_step"], {
+    "scan": "scan",
+    "exploit": "exploit",
+    "report": "report",
+    "end": END
+})
+g.add_edge("scan", "think")
+g.add_edge("exploit", "think")
+g.add_edge("report", END)
+
+app = g.compile()
+
+# 실행
+result = app.invoke({
+    "messages": ["10.20.30.80 점검 시작"],
+    "target": "10.20.30.80",
+    "scan_results": [],
+    "next_step": "think"
+})
+```
+
+### AutoGen (Microsoft multi-agent)
+
+```python
+from autogen import AssistantAgent, UserProxyAgent, GroupChat, GroupChatManager
+
+config_list = [{
+    "model": "gemma3:4b",
+    "base_url": "http://localhost:11434/v1",
+    "api_key": "ollama",
+    "api_type": "openai"
+}]
+
+# 3 agent 정의
+recon_agent = AssistantAgent(
+    name="Recon_Specialist",
+    system_message="""당신은 정찰 전문가다.
+    - nmap, whatweb, dig 사용
+    - 결과를 다음 agent (exploit) 에 정확히 전달""",
+    llm_config={"config_list": config_list}
+)
+
+exploit_agent = AssistantAgent(
+    name="Exploit_Engineer",
+    system_message="""당신은 침투 시도 전문가다.
+    - sqlmap, XSStrike, hydra 사용
+    - 발견된 취약점에 정확한 명령 사용""",
+    llm_config={"config_list": config_list}
+)
+
+reporter = AssistantAgent(
+    name="Reporter",
+    system_message="당신은 보고서 작성자다. 한국어로 markdown 보고서 작성.",
+    llm_config={"config_list": config_list}
+)
+
+# Code execution proxy
+user = UserProxyAgent(
+    name="User",
+    code_execution_config={"work_dir": "/sandbox", "use_docker": True}
+)
+
+# Group chat
+group = GroupChat(
+    agents=[user, recon_agent, exploit_agent, reporter],
+    messages=[],
+    max_round=20
+)
+manager = GroupChatManager(groupchat=group, llm_config={"config_list": config_list})
+
+# 시작
+user.initiate_chat(
+    manager,
+    message="10.20.30.80:3000 (JuiceShop) 모의해킹 + 보고서"
+)
+```
+
+### CrewAI (역할 기반 — 더 직관적)
+
+```python
+from crewai import Agent, Task, Crew, Process
+from crewai_tools import BaseTool
+
+class NmapTool(BaseTool):
+    name: str = "nmap_scan"
+    description: str = "nmap 으로 호스트 스캔"
+    
+    def _run(self, target: str) -> str:
+        import subprocess
+        return subprocess.run(["nmap", "-sV", target], capture_output=True, text=True).stdout
+
+# Agents
+recon = Agent(
+    role="Reconnaissance Specialist",
+    goal="대상 호스트의 모든 정보 수집",
+    backstory="10년 경력의 pentester",
+    tools=[NmapTool()],
+    llm=ollama_llm
+)
+
+exploit = Agent(
+    role="Exploit Engineer",
+    goal="발견된 취약점 검증",
+    backstory="metasploit 전문가",
+    tools=[SqlmapTool(), HydraTool()],
+    llm=ollama_llm
+)
+
+# Tasks
+task1 = Task(description="10.20.30.80 정찰", agent=recon)
+task2 = Task(
+    description="발견된 취약점 검증",
+    agent=exploit,
+    context=[task1]
+)
+
+# Crew
+crew = Crew(
+    agents=[recon, exploit],
+    tasks=[task1, task2],
+    process=Process.sequential
+)
+result = crew.kickoff()
+print(result)
+```
+
+### smolagents (HuggingFace, 가장 가벼움)
+
+```python
+from smolagents import CodeAgent, HfApiModel, tool
+
+@tool
+def nmap_scan(target: str) -> str:
+    """Scan a host with nmap"""
+    import subprocess
+    return subprocess.run(["nmap", "-sV", target], capture_output=True, text=True).stdout
+
+# CodeAgent — Python 코드 직접 생성/실행
+agent = CodeAgent(
+    tools=[nmap_scan],
+    model=HfApiModel(model_id="meta-llama/Meta-Llama-3-8B-Instruct"),
+    additional_authorized_imports=["subprocess", "json"]
+)
+result = agent.run("10.20.30.80 의 모든 서비스 점검 + 보고서 작성")
+```
+
+### Custom Agent (Bastion 자체)
+
+```python
+# CCC Bastion 의 자체 agent (공개 코드 참조)
+from packages.bastion.agent import BastionAgent
+
+agent = BastionAgent(
+    model="gemma3:4b",
+    skills=["nmap", "sqlmap", "wazuh"],
+    memory_path="/var/lib/bastion/memory"
+)
+response = agent.chat(
+    user_message="10.20.30.80 점검 + Wazuh 알람 확인",
+    skills_allowed=["nmap", "wazuh"]
+)
+```
+
+### Memory 통합
+
+```python
+from langchain.memory import ConversationBufferMemory, ConversationBufferWindowMemory
+from langchain.memory import VectorStoreRetrieverMemory
+from langchain_community.vectorstores import Chroma
+
+# 1) 단순 buffer
+memory = ConversationBufferMemory(memory_key="chat_history")
+
+# 2) Window (최근 N 턴)
+memory = ConversationBufferWindowMemory(k=10)
+
+# 3) Vector (semantic search)
+vectorstore = Chroma(persist_directory="/var/lib/agent_memory")
+retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
+memory = VectorStoreRetrieverMemory(retriever=retriever)
+
+# Agent 에 통합
+agent_with_memory = AgentExecutor(
+    agent=agent, tools=tools,
+    memory=memory, verbose=True
+)
+```
+
+### 프레임워크 비교 매트릭스
+
+| 프레임워크 | 강점 | 약점 | 권장 시나리오 |
+|----------|------|------|-------------|
+| **LangChain** | 가장 큰 ecosystem, 도구 풍부 | 너무 많은 abstraction | 일반 LLM app |
+| **LangGraph** | 상태 그래프 명확 | 학습 곡선 | 복잡한 flow |
+| **AutoGen** | multi-agent 우수 | LangChain 만큼 ecosystem 없음 | multi-agent 협업 |
+| **CrewAI** | 역할 기반 직관적 | 단순 case 만 | 인간-친화 시뮬 |
+| **smolagents** | 가벼움, 코드 생성 강력 | 단순 | 빠른 prototype |
+| **Bastion 자체** | CCC 통합 | 공유 안 됨 | CCC 환경 |
+
+학생은 본 1주차에서 **LangChain + LangGraph + AutoGen + CrewAI + smolagents + Bastion** 6 프레임워크 비교 + 보안 agent 표준 패턴을 OSS 도구로 익힌다.

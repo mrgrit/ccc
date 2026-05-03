@@ -559,3 +559,140 @@ LLM 이 RAG (Retrieval Augmented Generation) 로 dataset 의 *유사 사례 5건
 
 **학생 액션**: dataset 의 message_sanitized 에서 *injection 의심 패턴의 시계열 분포* 를 그래프로 그린다. 1시간/24시간/1주의 3가지 단위로 plot 하여 — *어느 단위에서 anomaly 가 가장 잘 보이는지* 비교. 결과로 *우리 환경에 적합한 모니터링 윈도우* 추천.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course8 AI Safety — Week 03 모델 추출)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | 추출 baseline | **ml-privacy-meter** Audit |
+| s2 | Query budget 측정 | KnockoffNets / 자체 query counter |
+| s3 | Distillation attack | PyTorch + Hugging Face |
+| s4 | Membership Inference | **MIA-Bench** / ml-privacy-meter |
+| s5 | Watermark 검증 | **MarkLLM** detect / lm-watermarking |
+| s6 | Rate limiting 방어 | LiteLLM / nginx limit_req |
+| s7 | Differential Privacy 방어 | **opacus** / TF Privacy |
+| s8 | 추출 탐지 | 자체 ML on Langfuse data |
+
+### 학생 환경 준비
+
+```bash
+source ~/.venv-safety/bin/activate
+pip install ml-privacy-meter mia-benchmark opacus tensorflow-privacy
+
+git clone https://github.com/privacytrustlab/ml_privacy_meter ~/ppm
+cd ~/ppm && pip install -e .
+
+git clone https://github.com/THU-BPM/MarkLLM ~/markllm
+cd ~/markllm && pip install -e .
+```
+
+### 핵심 — ml-privacy-meter (모델 프라이버시 감사 표준)
+
+```python
+from privacy_meter.audit import Audit
+from privacy_meter.dataset import Dataset
+from privacy_meter.metric import PopulationMetric
+from privacy_meter.information_source import InformationSource
+import torch
+
+# 1) Target model + reference model 준비
+target_model = torch.load("target.pt")
+reference_models = [torch.load(f"ref{i}.pt") for i in range(5)]
+
+# 2) Member / non-member dataset
+member_data, non_member_data = load_split()
+
+# 3) Audit
+audit = Audit(
+    metrics=[PopulationMetric()],
+    inference_game_type="black_box",
+    target_info_source=InformationSource(
+        models=[target_model],
+        datasets=[member_data, non_member_data]
+    ),
+    reference_info_source=InformationSource(
+        models=reference_models,
+        datasets=[reference_data]
+    ),
+)
+result = audit.run()
+
+# 출력:
+# - Membership Inference AUC: 0.65 (높을수록 추출 위험)
+# - Per-sample MI score
+# - Vulnerable sample 식별
+```
+
+### 모델 추출 공격 시뮬
+
+```python
+# 1. Distillation (Knockoff Nets)
+import torch
+import torch.nn as nn
+import torch.optim as optim
+
+# 공격자 모델 (작은)
+clone = nn.Sequential(
+    nn.Linear(input_dim, 128), nn.ReLU(),
+    nn.Linear(128, 64), nn.ReLU(),
+    nn.Linear(64, output_dim)
+)
+
+# Target 모델에 N 회 query → soft label
+queries = torch.randn(10000, input_dim)
+with torch.no_grad():
+    labels = target_model(queries)                  # soft labels (probabilities)
+
+# Clone 학습 (KL divergence)
+optimizer = optim.Adam(clone.parameters(), lr=0.001)
+for epoch in range(100):
+    out = clone(queries)
+    loss = nn.functional.kl_div(
+        nn.functional.log_softmax(out, dim=-1),
+        nn.functional.softmax(labels, dim=-1),
+        reduction='batchmean'
+    )
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+
+# Fidelity 측정
+test_queries = torch.randn(1000, input_dim)
+target_out = torch.argmax(target_model(test_queries), dim=-1)
+clone_out = torch.argmax(clone(test_queries), dim=-1)
+fidelity = (target_out == clone_out).float().mean()
+print(f"Clone fidelity: {fidelity:.4f}")           # 0.85 = 추출 성공
+```
+
+### 방어 — DP + Rate Limit + Watermarking
+
+```python
+# 1) DP-SGD 학습 (opacus)
+from opacus import PrivacyEngine
+engine = PrivacyEngine()
+model, opt, loader = engine.make_private_with_epsilon(
+    module=model, optimizer=optimizer, data_loader=loader,
+    epochs=10, target_epsilon=1.0, target_delta=1e-5,
+    max_grad_norm=1.0
+)
+# 학습 완료 후 추출 공격 시도 → fidelity 0.85 → 0.62 (DP 효과)
+
+# 2) Rate limit (LiteLLM)
+# litellm.yaml:
+# litellm_settings:
+#   rpm_limit: 60      # 분당 60 요청 (extract 공격은 10000+ 필요)
+#   tpm_limit: 100000
+
+# 3) Watermarking (MarkLLM)
+from MarkLLM.watermark.kgw import KGW
+wm = KGW(algorithm_config='config/KGW.json',
+        transformers_config={'model_name':'gemma3:4b'})
+output = wm.generate_watermarked_text(prompt)
+# 만약 추출 → 학생 모델도 워터마크 보유 → 출처 검증 가능
+```
+
+학생은 본 3주차에서 **ml-privacy-meter + MarkLLM + opacus + LiteLLM** 4 도구로 모델 추출 공격 측정 + DP 방어 + 워터마킹 + Rate limit 의 4 layer 통합 흐름을 익힌다.

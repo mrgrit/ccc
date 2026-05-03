@@ -584,3 +584,22 @@ PYEOF
 2. 동일 endpoint 의 4xx 응답 *body 크기 분산* — 일부만 큰 body (stack trace) 면 *정보 노출* 항목으로 보고
 3. 410 vs 404 사용 비율 → 조직의 *resource lifecycle 정책 명확성* 평가
 
+
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (lab week11 — SSRF)
+
+| step | 카테고리 | 핵심 도구 |
+|---|---|---|
+| 1 식별 | curl PUT / **SSRFmap** / Burp Collaborator / **interactsh** |
+| 2 포트 스캔 | curl 시간 차이 / SSRFmap portscan / wfuzz / Burp |
+| 3 클라우드 메타 | AWS IMDS / SSRFmap aws / aws CLI / Pacu |
+| 4 IP 변환 | 10진수 / 16진수 / IPv6 / 단축 |
+| 5 URL parser | @ / # / Orange Tsai / **ssrf-king Burp** |
+| 6 DNS rebinding | **rbndr.us** / Singularity of Origin / DNSChef |
+| 7 gopher:// | **gopherus** / SSRFmap redis/fastcgi/mysql/smtp |
+| 8 allowlist | ipaddress.is_private / ssrf-req-filter / iptables / IMDSv2 |
+| 9 reporting | 8 페이로드 / DefectDojo / OWASP A10 / Capital One / sha256 |
+
+(week07 의 종합 SSRF 매트릭스 참조. week11 은 압축된 핵심 표)

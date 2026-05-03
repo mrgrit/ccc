@@ -13,23 +13,30 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: secu VM에서 suricata eve.json 이 /var/log/suricata/eve.json 으로 기록되는지 확인하시오.
+  instruction: 'secu VM에서 suricata eve.json 이 /var/log/suricata/eve.json 으로 기록되는지
+    확인하시오.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/secops-ai-week14/1/eve.json 사전 주입. `jq
+    -c ''.alert'' /home/ccc/cyber-range/fixtures/secops-ai-week14/1/eve.json` 후 (1)
+    빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: ls -la /var/log/suricata/eve.json
   category: survey
   points: 10
   answer: '🤖 프롬프트: secu VM의 suricata eve.json 파일 존재·크기를 확인해줘
 
     📎 참고 (CLI): sudo ls -la /var/log/suricata/eve.json 2>/dev/null'
-  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: secu VM에서 suricata eve.json 이 /var/log/suricata/eve.json
-    으로 기록되는지 확인하시오.'
+  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: secu VM에서 suricata eve.json 이
+    /var/log/suricata/eve.json 으로 기록되는지 확인하시오.'
   verify:
     type: output_contains
     expect: eve.json
     field: stdout
     semantic:
-      intent: Suricata eve.json 존재·크기 확인 — sudo ls -la /var/log/suricata/eve.json. 통합 아키텍처 소스 1단계 - IDS
-        이벤트 원본 파일. 파일 크기 = Suricata 가 생성한 이벤트 량, mtime = 최근 이벤트 시각. 파일 없음 = Suricata 비활성 또는 log config
-        오류. logrotate 설정 /etc/logrotate.d/suricata 에 따라 rotate 발생
+      intent: Suricata eve.json 존재·크기 확인 — sudo ls -la /var/log/suricata/eve.json.
+        통합 아키텍처 소스 1단계 - IDS 이벤트 원본 파일. 파일 크기 = Suricata 가 생성한 이벤트 량, mtime = 최근 이벤트
+        시각. 파일 없음 = Suricata 비활성 또는 log config 오류. logrotate 설정 /etc/logrotate.d/suricata
+        에 따라 rotate 발생
       success_criteria:
       - ls -la eve.json 실행
       - 파일 size·mtime 출력
@@ -47,7 +54,24 @@ steps:
   target_vm: secu
   script: sudo ls -la /var/log/suricata/eve.json 2>/dev/null
   risk_level: low
-  bastion_prompt: secu VM의 suricata eve.json 파일 존재·크기를 확인해줘
+  bastion_prompt: 'secu VM의 suricata eve.json 파일 존재·크기를 확인해줘
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/secops-ai-week14/1/eve.json 사전 주입. `jq
+    -c ''.alert'' /home/ccc/cyber-range/fixtures/secops-ai-week14/1/eve.json` 후 (1)빈도·패턴
+    (2)MITRE (3)방어 3섹션. raw dump 금지.'
+  fixtures:
+  - generator: suricata_alert
+    target_vm: secu
+    path: /home/ccc/cyber-range/fixtures/secops-ai-week14/1/eve.json
+    params:
+      seed: 42
+      duration_days: 7
+      alerts_per_day: 30
+      c2_beacon_count: 12
+      metadata_attempt_count: 4
+    mode: overwrite
+    cleanup: false
 - order: 2
   instruction: secu VM에 wazuh-agent 가 설치되어 있는지 확인하시오.
   hint: systemctl is-active wazuh-agent
@@ -55,17 +79,19 @@ steps:
   points: 10
   answer: '🤖 프롬프트: secu VM에 wazuh-agent가 동작 중인지 확인해줘
 
-    📎 참고 (CLI): systemctl is-active wazuh-agent || /var/ossec/bin/wazuh-control status 2>/dev/null | head'
-  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: secu VM에 wazuh-agent 가 설치되어 있는지 확인하시오.'
+    📎 참고 (CLI): systemctl is-active wazuh-agent || /var/ossec/bin/wazuh-control status
+    2>/dev/null | head'
+  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: secu VM에 wazuh-agent 가 설치되어 있는지
+    확인하시오.'
   verify:
     type: output_contains
     expect: wazuh
     field: stdout
     semantic:
       intent: secu VM 의 wazuh-agent 동작 확인 — systemctl is-active wazuh-agent || /var/ossec/bin/wazuh-control
-        status. wazuh-agent 는 Manager 로 로그 전송하는 client. secu VM 에 agent 있어야 Suricata eve.json → Wazuh
-        Manager → alerts.json 파이프라인 완성. agent 없으면 Suricata 이벤트가 SIEM 에 집계 안 됨. |\| fallback 으로 control
-        명령 시도
+        status. wazuh-agent 는 Manager 로 로그 전송하는 client. secu VM 에 agent 있어야 Suricata
+        eve.json → Wazuh Manager → alerts.json 파이프라인 완성. agent 없으면 Suricata 이벤트가 SIEM
+        에 집계 안 됨. |\| fallback 으로 control 명령 시도
       success_criteria:
       - wazuh-agent 상태 확인
       - active 또는 wazuh 문자열
@@ -80,28 +106,36 @@ steps:
       - fallback 누락
       - agent 아닌 서비스
   target_vm: secu
-  script: systemctl is-active wazuh-agent || /var/ossec/bin/wazuh-control status 2>/dev/null | head
+  script: systemctl is-active wazuh-agent || /var/ossec/bin/wazuh-control status 2>/dev/null
+    | head
   risk_level: low
   bastion_prompt: secu VM에 wazuh-agent가 동작 중인지 확인해줘
 - order: 3
-  instruction: secu VM 의 ossec.conf 에서 eve.json 을 수집하는 <localfile> 설정을 확인하시오.
+  instruction: 'secu VM 의 ossec.conf 에서 eve.json 을 수집하는 <localfile> 설정을 확인하시오.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/secops-ai-week14/3/eve.json 사전 주입. `jq
+    -c ''.alert'' /home/ccc/cyber-range/fixtures/secops-ai-week14/3/eve.json` 후 (1)
+    빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: grep eve.json /var/ossec/etc/ossec.conf
   category: survey
   points: 10
   answer: '🤖 프롬프트: secu VM ossec.conf에서 eve.json 을 수집하는 localfile 설정을 보여줘
 
-    📎 참고 (CLI): sudo grep -A2 -B1 eve.json /var/ossec/etc/ossec.conf 2>/dev/null | head'
-  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: secu VM 의 ossec.conf 에서 eve.json 을 수집하는 <localfile>
-    설정을 확인하시오.'
+    📎 참고 (CLI): sudo grep -A2 -B1 eve.json /var/ossec/etc/ossec.conf 2>/dev/null |
+    head'
+  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: secu VM 의 ossec.conf 에서 eve.json
+    을 수집하는 <localfile> 설정을 확인하시오.'
   verify:
     type: output_contains
     expect: eve.json
     field: stdout
     semantic:
-      intent: 'Wazuh agent ossec.conf 의 Suricata eve.json <localfile> 확인 — sudo grep -A2 -B1 eve.json
-        /var/ossec/etc/ossec.conf | head. agent 가 모니터링할 파일 목록에 Suricata 로그 포함 여부. 예: <localfile> <log_format>json</log_format>
-        <location>/var/log/suricata/eve.json</location> </localfile>. -B1 로 log_format, -A2 로 location
-        까지 컨텍스트. 미설정 시 Suricata 이벤트 수집 안 됨'
+      intent: 'Wazuh agent ossec.conf 의 Suricata eve.json <localfile> 확인 — sudo grep
+        -A2 -B1 eve.json /var/ossec/etc/ossec.conf | head. agent 가 모니터링할 파일 목록에 Suricata
+        로그 포함 여부. 예: <localfile> <log_format>json</log_format> <location>/var/log/suricata/eve.json</location>
+        </localfile>. -B1 로 log_format, -A2 로 location 까지 컨텍스트. 미설정 시 Suricata 이벤트
+        수집 안 됨'
       success_criteria:
       - grep eve.json ossec.conf 실행
       - <localfile> context 포함
@@ -118,7 +152,24 @@ steps:
   target_vm: secu
   script: sudo grep -A2 -B1 eve.json /var/ossec/etc/ossec.conf 2>/dev/null | head
   risk_level: low
-  bastion_prompt: secu VM ossec.conf에서 eve.json 을 수집하는 localfile 설정을 보여줘
+  bastion_prompt: 'secu VM ossec.conf에서 eve.json 을 수집하는 localfile 설정을 보여줘
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/secops-ai-week14/3/eve.json 사전 주입. `jq
+    -c ''.alert'' /home/ccc/cyber-range/fixtures/secops-ai-week14/3/eve.json` 후 (1)빈도·패턴
+    (2)MITRE (3)방어 3섹션. raw dump 금지.'
+  fixtures:
+  - generator: suricata_alert
+    target_vm: secu
+    path: /home/ccc/cyber-range/fixtures/secops-ai-week14/3/eve.json
+    params:
+      seed: 42
+      duration_days: 7
+      alerts_per_day: 30
+      c2_beacon_count: 12
+      metadata_attempt_count: 4
+    mode: overwrite
+    cleanup: false
 - order: 4
   instruction: siem VM에서 attacker IP({{ATTACKER_IP}})에 대한 최근 wazuh alert를 조회하시오.
   hint: grep {{ATTACKER_IP}} alerts.json
@@ -126,18 +177,20 @@ steps:
   points: 10
   answer: '🤖 프롬프트: siem VM의 wazuh alerts.json에서 10.20.30.201 관련 최근 alert를 보여줘
 
-    📎 참고 (CLI): sudo grep 10.20.30.201 /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -3'
-  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: siem VM에서 attacker IP(10.20.30.201)에 대한 최근 wazuh alert를
-    조회하시오.'
+    📎 참고 (CLI): sudo grep 10.20.30.201 /var/ossec/logs/alerts/alerts.json 2>/dev/null
+    | tail -3'
+  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: siem VM에서 attacker IP(10.20.30.201)에
+    대한 최근 wazuh alert를 조회하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: attacker IP 10.20.30.201 관련 Wazuh alert 조회 — sudo grep 10.20.30.201 /var/ossec/logs/alerts/alerts.json
-        | tail -3. End-to-end 파이프라인 검증 - Suricata 가 트래픽 탐지 → wazuh-agent 가 eve.json 읽음 → Manager 로 전송
-        → rule 매칭 → alerts.json 기록. attacker IP 가 alerts.json 에 있으면 전체 chain 정상. 0 hits = (1) Suricata
-        미탐지 (2) agent 미연결 (3) rule 미매칭
+      intent: attacker IP 10.20.30.201 관련 Wazuh alert 조회 — sudo grep 10.20.30.201
+        /var/ossec/logs/alerts/alerts.json | tail -3. End-to-end 파이프라인 검증 - Suricata
+        가 트래픽 탐지 → wazuh-agent 가 eve.json 읽음 → Manager 로 전송 → rule 매칭 → alerts.json
+        기록. attacker IP 가 alerts.json 에 있으면 전체 chain 정상. 0 hits = (1) Suricata 미탐지
+        (2) agent 미연결 (3) rule 미매칭
       success_criteria:
       - grep IP alerts.json 실행
       - tail -3 결과
@@ -153,7 +206,8 @@ steps:
       - 다른 IP 검색
       - jq 없이 평문 필터 한계
   target_vm: siem
-  script: sudo grep 10.20.30.201 /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -3
+  script: sudo grep 10.20.30.201 /var/ossec/logs/alerts/alerts.json 2>/dev/null |
+    tail -3
   risk_level: low
   bastion_prompt: siem VM의 wazuh alerts.json에서 10.20.30.201 관련 최근 alert를 보여줘
 - order: 5
@@ -163,16 +217,19 @@ steps:
   points: 10
   answer: '🤖 프롬프트: web VM ossec.conf에서 modsec_audit.log 수집 localfile 설정을 보여줘
 
-    📎 참고 (CLI): sudo grep -B1 -A2 modsec_audit /var/ossec/etc/ossec.conf 2>/dev/null | head'
-  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: web VM의 ossec.conf 에서 modsec_audit.log 수집 설정을 확인하시오.'
+    📎 참고 (CLI): sudo grep -B1 -A2 modsec_audit /var/ossec/etc/ossec.conf 2>/dev/null
+    | head'
+  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: web VM의 ossec.conf 에서 modsec_audit.log
+    수집 설정을 확인하시오.'
   verify:
     type: output_contains
     expect: modsec
     field: stdout
     semantic:
-      intent: web VM ModSecurity audit log 수집 설정 확인 — sudo grep -B1 -A2 modsec_audit /var/ossec/etc/ossec.conf
-        | head. web VM 의 wazuh-agent 가 /var/log/apache2/modsec_audit.log 파일 모니터링 설정 확인. <localfile> <log_format>multi-line</log_format>
-        (ModSec audit 는 멀티파트 포맷). 미설정 시 WAF 차단 이벤트 SIEM 에 안 감. 차단 이벤트가 Wazuh 에 integration 되면 Manager
+      intent: web VM ModSecurity audit log 수집 설정 확인 — sudo grep -B1 -A2 modsec_audit
+        /var/ossec/etc/ossec.conf | head. web VM 의 wazuh-agent 가 /var/log/apache2/modsec_audit.log
+        파일 모니터링 설정 확인. <localfile> <log_format>multi-line</log_format> (ModSec audit
+        는 멀티파트 포맷). 미설정 시 WAF 차단 이벤트 SIEM 에 안 감. 차단 이벤트가 Wazuh 에 integration 되면 Manager
         에서 correlation 가능
       success_criteria:
       - grep modsec_audit ossec.conf 실행
@@ -192,23 +249,25 @@ steps:
   risk_level: low
   bastion_prompt: web VM ossec.conf에서 modsec_audit.log 수집 localfile 설정을 보여줘
 - order: 6
-  instruction: attacker VM에서 '<script>alert(1)</script>' payload로 web VM에 요청을 보내 전체 체인을 트리거하시오.
+  instruction: attacker VM에서 '<script>alert(1)</script>' payload로 web VM에 요청을 보내 전체
+    체인을 트리거하시오.
   hint: curl …
   category: verify
   points: 10
   answer: '🤖 프롬프트: attacker VM에서 web VM으로 <script>alert(1)</script> XSS 요청을 보내줘
 
     📎 참고 (CLI): curl -sS -o /dev/null -w ''%{http_code}\n'' ''http://10.20.30.80/?q=%3Cscript%3Ealert(1)%3C%2Fscript%3E'''
-  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: attacker VM에서 ''<script>alert(1)</script>'' payload로
-    web VM에 요청을 보내 전체 체인을 트리거하시오.'
+  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: attacker VM에서 ''<script>alert(1)</script>''
+    payload로 web VM에 요청을 보내 전체 체인을 트리거하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
       intent: End-to-end XSS 트래픽 트리거 — curl -sS -o /dev/null -w %{http_code}\n http://10.20.30.80/?q=%3Cscript%3Ealert(1)%3C%2Fscript%3E.
-        통합 파이프라인 전체 구동 테스트 - attacker → web (ModSecurity 차단 403 + audit log) → wazuh-agent 수집 → Manager
-        → alerts.json. Suricata 룰(XSS 관련)도 동시 매칭 가능. 여러 보안 도구 chain 의 동시 반응 관찰
+        통합 파이프라인 전체 구동 테스트 - attacker → web (ModSecurity 차단 403 + audit log) → wazuh-agent
+        수집 → Manager → alerts.json. Suricata 룰(XSS 관련)도 동시 매칭 가능. 여러 보안 도구 chain 의
+        동시 반응 관찰
       success_criteria:
       - XSS payload 포함 curl 요청
       - 응답 코드(403/기타) 출력
@@ -228,24 +287,31 @@ steps:
   risk_level: medium
   bastion_prompt: attacker VM에서 web VM으로 <script>alert(1)</script> XSS 요청을 보내줘
 - order: 7
-  instruction: siem VM alerts.json 에서 XSS 또는 Cross-Site 관련 이벤트를 검색하시오.
+  instruction: 'siem VM alerts.json 에서 XSS 또는 Cross-Site 관련 이벤트를 검색하시오.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/secops-ai-week14/7/alerts.json 사전 주입.
+    `jq -c ''.rule'' /home/ccc/cyber-range/fixtures/secops-ai-week14/7/alerts.json`
+    후 (1) 빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: grep -i xss alerts.json
   category: analysis
   points: 10
   answer: '🤖 프롬프트: siem VM wazuh alerts.json에서 XSS/Cross-Site 관련 이벤트 최근 3건을 찾아줘
 
-    📎 참고 (CLI): sudo grep -iE ''XSS|Cross-Site|script'' /var/ossec/logs/alerts/alerts.json 2>/dev/null
-    | tail -3'
-  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: siem VM alerts.json 에서 XSS 또는 Cross-Site 관련 이벤트를 검색하시오.'
+    📎 참고 (CLI): sudo grep -iE ''XSS|Cross-Site|script'' /var/ossec/logs/alerts/alerts.json
+    2>/dev/null | tail -3'
+  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: siem VM alerts.json 에서 XSS 또는
+    Cross-Site 관련 이벤트를 검색하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
       intent: 'XSS alert 조회 - alerts.json — sudo grep -iE XSS|Cross-Site|script /var/ossec/logs/alerts/alerts.json
-        | tail -3. Wazuh rule 이 ModSec audit log 의 XSS attack 이벤트(CRS 941xxx) 를 decode 하여 alert 생성. -iE
-        로 대소문자 무시 + extended regex. XSS 탐지 rule 예: 31101(Web attack), 31102(XSS specific)· ModSecurity
-        decoder 매칭 후 level 10+ alert. 0 hits = WAF 차단 성공했지만 Wazuh 수집 파이프라인 미완성'
+        | tail -3. Wazuh rule 이 ModSec audit log 의 XSS attack 이벤트(CRS 941xxx) 를 decode
+        하여 alert 생성. -iE 로 대소문자 무시 + extended regex. XSS 탐지 rule 예: 31101(Web attack),
+        31102(XSS specific)· ModSecurity decoder 매칭 후 level 10+ alert. 0 hits = WAF
+        차단 성공했지만 Wazuh 수집 파이프라인 미완성'
       success_criteria:
       - grep -iE XSS|Cross-Site|script 실행
       - alerts.json 경로
@@ -261,28 +327,51 @@ steps:
       - 다른 공격 타입 검색
       - 대소문자 구분
   target_vm: siem
-  script: sudo grep -iE 'XSS|Cross-Site|script' /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail
-    -3
+  script: sudo grep -iE 'XSS|Cross-Site|script' /var/ossec/logs/alerts/alerts.json
+    2>/dev/null | tail -3
   risk_level: low
-  bastion_prompt: siem VM wazuh alerts.json에서 XSS/Cross-Site 관련 이벤트 최근 3건을 찾아줘
+  bastion_prompt: 'siem VM wazuh alerts.json에서 XSS/Cross-Site 관련 이벤트 최근 3건을 찾아줘
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/secops-ai-week14/7/alerts.json 사전 주입.
+    `jq -c ''.rule'' /home/ccc/cyber-range/fixtures/secops-ai-week14/7/alerts.json`
+    후 (1)빈도·패턴 (2)MITRE (3)방어 3섹션. raw dump 금지.'
+  fixtures:
+  - generator: wazuh_alert
+    target_vm: siem
+    path: /home/ccc/cyber-range/fixtures/secops-ai-week14/7/alerts.json
+    params:
+      seed: 42
+      duration_days: 7
+      alerts_per_day: 50
+      brute_force_burst: true
+      ar_trigger_count: 4
+    mode: overwrite
+    cleanup: false
 - order: 8
-  instruction: secu VM nftables 의 전체 테이블 목록에서 filter/blocklist/cti_ips 관련 상태를 확인하시오.
+  instruction: 'secu VM nftables 의 전체 테이블 목록에서 filter/blocklist/cti_ips 관련 상태를 확인하시오.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/secops-ai-week14/8/syslog 사전 주입. `grep
+    -E ''DROP|REJECT|filter'' /home/ccc/cyber-range/fixtures/secops-ai-week14/8/syslog`
+    후 (1) 빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: nft list tables
   category: analysis
   points: 10
   answer: '🤖 프롬프트: secu VM의 nftables 전체 테이블 목록을 보여줘
 
     📎 참고 (CLI): sudo nft list tables'
-  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: secu VM nftables 의 전체 테이블 목록에서 filter/blocklist/cti_ips
-    관련 상태를 확인하시오.'
+  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: secu VM nftables 의 전체 테이블 목록에서
+    filter/blocklist/cti_ips 관련 상태를 확인하시오.'
   verify:
     type: output_contains
     expect: filter
     field: stdout
     semantic:
-      intent: 'secu VM nftables 전체 테이블 — sudo nft list tables. filter(기본), blocklist(w11), cti_ips(w13
-        set 위치 - filter 안) 등 누적된 table 상태 감사. 통합 아키텍처에서 firewall 계층 전체 가시성 확인. 표준 테이블: filter(sec), nat(w3),
-        blocklist(w11)·exam(w8 cleanup 후 없음 기대). 너무 많은 table = 과거 실습 누적, cleanup 부족'
+      intent: 'secu VM nftables 전체 테이블 — sudo nft list tables. filter(기본), blocklist(w11),
+        cti_ips(w13 set 위치 - filter 안) 등 누적된 table 상태 감사. 통합 아키텍처에서 firewall 계층 전체
+        가시성 확인. 표준 테이블: filter(sec), nat(w3), blocklist(w11)·exam(w8 cleanup 후 없음
+        기대). 너무 많은 table = 과거 실습 누적, cleanup 부족'
       success_criteria:
       - nft list tables 실행
       - filter 키워드 포함
@@ -299,7 +388,24 @@ steps:
   target_vm: secu
   script: sudo nft list tables
   risk_level: low
-  bastion_prompt: secu VM의 nftables 전체 테이블 목록을 보여줘
+  bastion_prompt: 'secu VM의 nftables 전체 테이블 목록을 보여줘
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/secops-ai-week14/8/syslog 사전 주입. `grep
+    -E ''DROP|REJECT|filter'' /home/ccc/cyber-range/fixtures/secops-ai-week14/8/syslog`
+    후 (1)빈도·패턴 (2)MITRE (3)방어 3섹션. raw dump 금지.'
+  fixtures:
+  - generator: firewall_log
+    target_vm: secu
+    path: /home/ccc/cyber-range/fixtures/secops-ai-week14/8/syslog
+    params:
+      seed: 42
+      duration_days: 7
+      scan_bursts: 5
+      egress_violations: 20
+      syn_flood_count: 200
+    mode: overwrite
+    cleanup: false
 - order: 9
   instruction: secu VM의 Suricata 서비스와 wazuh-agent 서비스 모두 active 인지 확인하시오.
   hint: systemctl is-active …
@@ -308,16 +414,17 @@ steps:
   answer: '🤖 프롬프트: secu VM에서 suricata와 wazuh-agent 서비스 상태를 동시에 확인해줘
 
     📎 참고 (CLI): systemctl is-active suricata wazuh-agent 2>&1'
-  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: secu VM의 Suricata 서비스와 wazuh-agent 서비스 모두 active 인지
-    확인하시오.'
+  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: secu VM의 Suricata 서비스와 wazuh-agent
+    서비스 모두 active 인지 확인하시오.'
   verify:
     type: output_contains
     expect: active
     field: stdout
     semantic:
-      intent: secu VM 다중 서비스 상태 동시 확인 — systemctl is-active suricata wazuh-agent 2>&1. systemctl is-active
-        는 여러 서비스 동시 인자로 각각 상태 별 라인 출력. 통합 아키텍처의 secu VM 측 핵심 2 컴포넌트(IDS + SIEM agent) 동시 점검. 둘 중 하나라도
-        inactive 면 통합 chain 단절. 2>&1 로 stderr(에러 메시지) 도 확인
+      intent: secu VM 다중 서비스 상태 동시 확인 — systemctl is-active suricata wazuh-agent 2>&1.
+        systemctl is-active 는 여러 서비스 동시 인자로 각각 상태 별 라인 출력. 통합 아키텍처의 secu VM 측 핵심 2
+        컴포넌트(IDS + SIEM agent) 동시 점검. 둘 중 하나라도 inactive 면 통합 chain 단절. 2>&1 로 stderr(에러
+        메시지) 도 확인
       success_criteria:
       - is-active suricata wazuh-agent 실행
       - 각 서비스 상태 출력
@@ -337,24 +444,30 @@ steps:
   risk_level: low
   bastion_prompt: secu VM에서 suricata와 wazuh-agent 서비스 상태를 동시에 확인해줘
 - order: 10
-  instruction: siem VM alerts.json 의 최근 100건에서 rule.level 별 분포를 집계하시오.
+  instruction: 'siem VM alerts.json 의 최근 100건에서 rule.level 별 분포를 집계하시오.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/secops-ai-week14/10/alerts.json 사전 주입.
+    `jq -c ''.rule'' /home/ccc/cyber-range/fixtures/secops-ai-week14/10/alerts.json`
+    후 (1) 빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: jq '.rule.level' …
   category: reporting
   points: 10
   answer: '🤖 프롬프트: siem VM wazuh alerts.json 최근 100건에서 rule.level 별 분포를 집계해줘
 
-    📎 참고 (CLI): sudo tail -100 /var/ossec/logs/alerts/alerts.json 2>/dev/null | jq -r ''.rule.level''
-    2>/dev/null | sort | uniq -c'
-  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: siem VM alerts.json 의 최근 100건에서 rule.level 별 분포를 집계하시오.'
+    📎 참고 (CLI): sudo tail -100 /var/ossec/logs/alerts/alerts.json 2>/dev/null | jq
+    -r ''.rule.level'' 2>/dev/null | sort | uniq -c'
+  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: siem VM alerts.json 의 최근 100건에서
+    rule.level 별 분포를 집계하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: 'alert level 분포 집계(트리아지 통계) — sudo tail -100 /var/ossec/logs/alerts/alerts.json | jq -r
-        .rule.level | sort | uniq -c. 최근 100 alert 의 심각도 분포 - noise profile. Wazuh level 0-15. 정상 환경:
-        low (3-5) 다수, high (10+) 소수. high 급증 시 공격 진행 또는 새 룰 tune 필요. jq -r .rule.level 은 level 필드만 추출.
-        sort + uniq -c 로 count'
+      intent: 'alert level 분포 집계(트리아지 통계) — sudo tail -100 /var/ossec/logs/alerts/alerts.json
+        | jq -r .rule.level | sort | uniq -c. 최근 100 alert 의 심각도 분포 - noise profile.
+        Wazuh level 0-15. 정상 환경: low (3-5) 다수, high (10+) 소수. high 급증 시 공격 진행 또는 새
+        룰 tune 필요. jq -r .rule.level 은 level 필드만 추출. sort + uniq -c 로 count'
       success_criteria:
       - jq + sort + uniq -c 파이프라인
       - level 별 count 출력
@@ -370,143 +483,108 @@ steps:
       - sort 없이 count 부정확
       - tail 누락
   target_vm: siem
-  script: sudo tail -100 /var/ossec/logs/alerts/alerts.json 2>/dev/null | jq -r '.rule.level' 2>/dev/null
-    | sort | uniq -c
+  script: sudo tail -100 /var/ossec/logs/alerts/alerts.json 2>/dev/null | jq -r '.rule.level'
+    2>/dev/null | sort | uniq -c
   risk_level: low
-  bastion_prompt: siem VM wazuh alerts.json 최근 100건에서 rule.level 별 분포를 집계해줘
+  bastion_prompt: 'siem VM wazuh alerts.json 최근 100건에서 rule.level 별 분포를 집계해줘
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/secops-ai-week14/10/alerts.json 사전 주입.
+    `jq -c ''.rule'' /home/ccc/cyber-range/fixtures/secops-ai-week14/10/alerts.json`
+    후 (1)빈도·패턴 (2)MITRE (3)방어 3섹션. raw dump 금지.'
+  fixtures:
+  - generator: wazuh_alert
+    target_vm: siem
+    path: /home/ccc/cyber-range/fixtures/secops-ai-week14/10/alerts.json
+    params:
+      seed: 42
+      duration_days: 7
+      alerts_per_day: 50
+      brute_force_burst: true
+      ar_trigger_count: 4
+    mode: overwrite
+    cleanup: false
 - order: 99
-  instruction: |
-    [복합 시나리오] "End-to-End 인시던트 대응 — XSS 공격 → 5 layer 통합 추적 + IR 5 단계"
+  instruction: "[복합 시나리오] \"End-to-End 인시던트 대응 — XSS 공격 → 5 layer 통합 추적 + IR 5 단계\"\
+    \n\n## 상황 (w01-w13 시나리오 종합)\n\nABC 핀테크 SOC 신규 분석가, 14주 차 (학기 후반).\n1~10 step 으로\
+    \ 5 솔루션 (nft, Suricata, ModSec, Wazuh, OpenCTI) 연계 *상태 점검* 까지 했다.\n학습 목표 #4 —\
+    \ *\"인시던트 대응 프로세스를 수행할 수 있다\"* — 1~10 은 *모니터링 체계 점검*.\n실제 incident 가 발생했을 때 *NIST\
+    \ SP 800-61 의 IR 5 단계* 모두 수행하는 행동 증명 X.\n\n> 선임: \"통합 아키텍처 다 점검했지? 이제 *진짜 incident\
+    \ drill* 해보자. attacker 가 web 으로\n>  XSS 공격 → 5 layer 가 evidence 남기고 → SOC 가 5\
+    \ 단계 IR 절차 수행 — Detection,\n>  Containment, Eradication, Recovery, Lessons Learned.\
+    \ 이번 lab 은 종합 — 1주차 매트릭스\n>  부터 13주차 OpenCTI sync 까지 모두 활용해. 시간 잘 보고.\"\n\n학습\
+    \ 목표 #4 (IR 프로세스) 행동 증명 + w01-w13 의 종합 활용.\n\n## 임무 (5 단계 = NIST IR 5 단계, 약 35분)\n\
+    \n### Phase 1 — Detection (5분)\n\nXSS 공격 발생:\n  ```\n  attacker: curl -sI -A 'XSSAttacker/1.0'\
+    \ \"http://10.20.30.80/?q=<script>alert(document.cookie)</script>\" --max-time\
+    \ 5\n  attacker: curl -sI \"http://10.20.30.80/api/Reviews?q=<img src=x onerror=alert(1)>\"\
+    \ --max-time 5\n  ```\n\n5 layer 의 evidence 동시 수집 (5초 이내):\n  - **nft**: `ssh\
+    \ ccc@10.20.30.1 'sudo nft list table inet filter | grep counter | head -5'` (input\
+    \ chain hits)\n  - **Suricata**: `ssh ccc@10.20.30.1 'sudo tail -50 /var/log/suricata/eve.json\
+    \ | jq -c \"select(.event_type==\\\"alert\\\")\" | head -3'`\n  - **ModSec**:\
+    \ `ssh ccc@10.20.30.80 'sudo tail -50 /var/log/apache2/modsec_audit.log | grep\
+    \ -E \"942|XSS|script\"'`\n  - **Wazuh**: `ssh ccc@10.20.30.100 'sudo tail -100\
+    \ /var/ossec/logs/alerts/alerts.json | jq -c \"select(.data.url? | tostring |\
+    \ contains(\\\"<script>\\\"))\" | head -3'`\n  - **OpenCTI**: 본 incident 의 IoC\
+    \ (attacker IP 10.20.30.201) 가 OpenCTI 에 등록되어 있는지 graphql query 로 확인\n\n*시각 기록*:\
+    \ incident_t0 = 첫 alert 발생 시각.\n\n### Phase 2 — Containment (10분)\n\nOpenCTI 에\
+    \ attacker IP 를 indicator 로 추가 + cti-sync.sh 실행 (w13 의 script 재사용):\n  ```\n \
+    \ OPENCTI_TOKEN=\"<.env 의 토큰>\"\n  curl -sX POST 'http://10.20.30.100:8080/graphql'\
+    \ \\\n    -H \"Authorization: Bearer $OPENCTI_TOKEN\" \\\n    -H \"Content-Type:\
+    \ application/json\" \\\n    -d '{\"query\": \"mutation { indicatorAdd(input:\
+    \ {name: \\\"XSS attack source 10.20.30.201\\\", pattern: \\\"[ipv4-addr:value\
+    \ = $\\\\\\\"10.20.30.201$\\\\\\\"]\\\", pattern_type: \\\"stix\\\", x_opencti_main_observable_type:\
+    \ \\\"IPv4-Addr\\\"}) { id } }\"}'\n\n  ssh ccc@10.20.30.1 \"OPENCTI_TOKEN=$OPENCTI_TOKEN\
+    \ /usr/local/bin/cti-sync.sh\"\n  ```\n→ 예상: cti_ips set 에 10.20.30.201 자동 추가\
+    \ → 향후 패킷 nft drop.\n\n*시각 기록*: incident_t1 = containment 완료. **MTTC = t1 - t0**\
+    \ (목표 ≤ 10분).\n\n### Phase 3 — Eradication (5분)\n\nModSec 에 추가 XSS 보호 룰 작성 (w07\
+    \ 의 IP 조건부 패턴 응용):\n  ```\n  ssh ccc@10.20.30.80\n  sudo bash -c 'cat > /etc/modsecurity/include-after.conf\
+    \ <<\"EOF\"\n  # XSS attack source IP 별도 차단 (script 매칭 외 모든 요청 deny)\n  <LocationMatch\
+    \ \".*\">\n    SecRule REMOTE_ADDR \"@ipMatch 10.20.30.201\" \\\n      \"phase:1,id:99000099,deny,status:403,msg:\\\
+    \"Blocked XSS attack source\\\"\"\n  </LocationMatch>\n  EOF'\n  sudo systemctl\
+    \ reload apache2\n  ```\n\n검증:\n  `attacker: curl -sI 'http://10.20.30.80/?test=normal'\
+    \ --max-time 5`\n  → 예상: 403 (이전엔 200 — IP 자체 차단).\n\n### Phase 4 — Recovery (5분)\n\
+    \n공격 종료 후 정상 사용자 (예: web 자체) 의 GET 은 정상 응답하는지 확인:\n  ```\n  ssh ccc@10.20.30.80\
+    \ 'curl -sI http://localhost/ --max-time 3'\n  ```\n→ 예상: 200 (다른 IP 의 정상 트래픽\
+    \ 영향 없음).\n\n또한 이번 incident 가 *web 자체* 영향 없었는지 (XSS 는 client-side 이므로 backend\
+    \ 손상 X)\n백업 무결성 확인 (FIM 으로):\n  `ssh ccc@10.20.30.100 'sudo tail -50 /var/ossec/logs/alerts/alerts.json\
+    \ | jq -c \"select(.syscheck?)\" | head'`\n\n### Phase 5 — Lessons Learned (10분)\n\
+    \ntimeline + 회고 markdown 작성:\n\n```\n# Incident IR-2026-W14-001 — XSS Attack Response\n\
+    \n## Timeline\n- t0 (Phase 1): XSS payload curl → 5 layer evidence 발생 시각\n- t1\
+    \ (Phase 2): OpenCTI 등록 + cti-sync 완료 시각\n- **MTTC = t1 - t0 = N 분** (목표 ≤ 10분)\n\
+    - t2 (Phase 3): ModSec 룰 추가 + reload 완료\n- t3 (Phase 4): 정상 사용자 영향 없음 확인\n- t4\
+    \ (Phase 5): 보고서 작성 완료\n\n## 5 Layer Evidence Cross-check\n| Layer | Phase 1 evidence\
+    \ | 후속 (Phase 2-3) |\n|------|-----------------|------------------|\n| nft | input\
+    \ counter +N | cti_ips 에 10.20.30.201 추가 |\n| Suricata | alert ET WEB_SERVER ...\
+    \ | (변경 없음) |\n| ModSec | CRS 941110 매칭 | include-after.conf 으로 IP deny 추가 |\n\
+    | Wazuh | rule.id alert | 추가 룰 없음 (수동 IR) |\n| OpenCTI | indicator 10.20.30.201\
+    \ | sync→nft 자동 차단 |\n\n## Lessons Learned\n1. *MTTC 측정* — 본 lab 결과 N 분 (목표 ≤\
+    \ 10). 운영 시 단축 방안: AR 자동화 (w11)\n2. *5 layer cross-check 의 가치* — XSS 는 ModSec\
+    \ 이 가장 명확한 evidence (CRS rule id),\n   다른 layer 는 supporting. 유형별 *primary layer*\
+    \ 매핑 학습 (w01 의 매트릭스 갱신)\n3. *재발 방지* — 본 IR 의 룰 추가 (Phase 3 의 include-after.conf)\
+    \ + cti-sync (Phase 2)\n   의 *영구 적용* 여부. 임시 차단 vs 영구 룰 분리 정책\n\n## sha256 무결성\n\
+    sha256sum <보고서.md>\n```\n\n종료 정리:\n  ```\n  ssh ccc@10.20.30.80 'sudo rm /etc/modsecurity/include-after.conf;\
+    \ sudo systemctl reload apache2'\n  ssh ccc@10.20.30.1 'sudo nft -- flush set\
+    \ inet filter cti_ips'\n  # OpenCTI indicator 는 남아도 OK (실제 운영 IoC DB 처럼)\n  ```"
+  hint: 'Phase 1 Detection: attacker XSS curl 2회 → 5 layer evidence (nft counter +
+    Suricata eve.json + ModSec audit + Wazuh alerts + OpenCTI graphql) 동시 수집 + t0
+    기록
 
-    ## 상황 (w01-w13 시나리오 종합)
+    Phase 2 Containment: OpenCTI 에 attacker IP indicator 추가 + cti-sync.sh 실행 → cti_ips
+    자동 차단 + MTTC = t1-t0 측정
 
-    ABC 핀테크 SOC 신규 분석가, 14주 차 (학기 후반).
-    1~10 step 으로 5 솔루션 (nft, Suricata, ModSec, Wazuh, OpenCTI) 연계 *상태 점검* 까지 했다.
-    학습 목표 #4 — *"인시던트 대응 프로세스를 수행할 수 있다"* — 1~10 은 *모니터링 체계 점검*.
-    실제 incident 가 발생했을 때 *NIST SP 800-61 의 IR 5 단계* 모두 수행하는 행동 증명 X.
+    Phase 3 Eradication: web 의 ModSec include-after.conf 에 IP-specific deny 추가, apache
+    reload, 403 검증
 
-    > 선임: "통합 아키텍처 다 점검했지? 이제 *진짜 incident drill* 해보자. attacker 가 web 으로
-    >  XSS 공격 → 5 layer 가 evidence 남기고 → SOC 가 5 단계 IR 절차 수행 — Detection,
-    >  Containment, Eradication, Recovery, Lessons Learned. 이번 lab 은 종합 — 1주차 매트릭스
-    >  부터 13주차 OpenCTI sync 까지 모두 활용해. 시간 잘 보고."
-
-    학습 목표 #4 (IR 프로세스) 행동 증명 + w01-w13 의 종합 활용.
-
-    ## 임무 (5 단계 = NIST IR 5 단계, 약 35분)
-
-    ### Phase 1 — Detection (5분)
-
-    XSS 공격 발생:
-      ```
-      attacker: curl -sI -A 'XSSAttacker/1.0' "http://10.20.30.80/?q=<script>alert(document.cookie)</script>" --max-time 5
-      attacker: curl -sI "http://10.20.30.80/api/Reviews?q=<img src=x onerror=alert(1)>" --max-time 5
-      ```
-
-    5 layer 의 evidence 동시 수집 (5초 이내):
-      - **nft**: `ssh ccc@10.20.30.1 'sudo nft list table inet filter | grep counter | head -5'` (input chain hits)
-      - **Suricata**: `ssh ccc@10.20.30.1 'sudo tail -50 /var/log/suricata/eve.json | jq -c "select(.event_type==\"alert\")" | head -3'`
-      - **ModSec**: `ssh ccc@10.20.30.80 'sudo tail -50 /var/log/apache2/modsec_audit.log | grep -E "942|XSS|script"'`
-      - **Wazuh**: `ssh ccc@10.20.30.100 'sudo tail -100 /var/ossec/logs/alerts/alerts.json | jq -c "select(.data.url? | tostring | contains(\"<script>\"))" | head -3'`
-      - **OpenCTI**: 본 incident 의 IoC (attacker IP 10.20.30.201) 가 OpenCTI 에 등록되어 있는지 graphql query 로 확인
-
-    *시각 기록*: incident_t0 = 첫 alert 발생 시각.
-
-    ### Phase 2 — Containment (10분)
-
-    OpenCTI 에 attacker IP 를 indicator 로 추가 + cti-sync.sh 실행 (w13 의 script 재사용):
-      ```
-      OPENCTI_TOKEN="<.env 의 토큰>"
-      curl -sX POST 'http://10.20.30.100:8080/graphql' \
-        -H "Authorization: Bearer $OPENCTI_TOKEN" \
-        -H "Content-Type: application/json" \
-        -d '{"query": "mutation { indicatorAdd(input: {name: \"XSS attack source 10.20.30.201\", pattern: \"[ipv4-addr:value = $\\\"10.20.30.201$\\\"]\", pattern_type: \"stix\", x_opencti_main_observable_type: \"IPv4-Addr\"}) { id } }"}'
-
-      ssh ccc@10.20.30.1 "OPENCTI_TOKEN=$OPENCTI_TOKEN /usr/local/bin/cti-sync.sh"
-      ```
-    → 예상: cti_ips set 에 10.20.30.201 자동 추가 → 향후 패킷 nft drop.
-
-    *시각 기록*: incident_t1 = containment 완료. **MTTC = t1 - t0** (목표 ≤ 10분).
-
-    ### Phase 3 — Eradication (5분)
-
-    ModSec 에 추가 XSS 보호 룰 작성 (w07 의 IP 조건부 패턴 응용):
-      ```
-      ssh ccc@10.20.30.80
-      sudo bash -c 'cat > /etc/modsecurity/include-after.conf <<"EOF"
-      # XSS attack source IP 별도 차단 (script 매칭 외 모든 요청 deny)
-      <LocationMatch ".*">
-        SecRule REMOTE_ADDR "@ipMatch 10.20.30.201" \
-          "phase:1,id:99000099,deny,status:403,msg:\"Blocked XSS attack source\""
-      </LocationMatch>
-      EOF'
-      sudo systemctl reload apache2
-      ```
-
-    검증:
-      `attacker: curl -sI 'http://10.20.30.80/?test=normal' --max-time 5`
-      → 예상: 403 (이전엔 200 — IP 자체 차단).
-
-    ### Phase 4 — Recovery (5분)
-
-    공격 종료 후 정상 사용자 (예: web 자체) 의 GET 은 정상 응답하는지 확인:
-      ```
-      ssh ccc@10.20.30.80 'curl -sI http://localhost/ --max-time 3'
-      ```
-    → 예상: 200 (다른 IP 의 정상 트래픽 영향 없음).
-
-    또한 이번 incident 가 *web 자체* 영향 없었는지 (XSS 는 client-side 이므로 backend 손상 X)
-    백업 무결성 확인 (FIM 으로):
-      `ssh ccc@10.20.30.100 'sudo tail -50 /var/ossec/logs/alerts/alerts.json | jq -c "select(.syscheck?)" | head'`
-
-    ### Phase 5 — Lessons Learned (10분)
-
-    timeline + 회고 markdown 작성:
-
-    ```
-    # Incident IR-2026-W14-001 — XSS Attack Response
-
-    ## Timeline
-    - t0 (Phase 1): XSS payload curl → 5 layer evidence 발생 시각
-    - t1 (Phase 2): OpenCTI 등록 + cti-sync 완료 시각
-    - **MTTC = t1 - t0 = N 분** (목표 ≤ 10분)
-    - t2 (Phase 3): ModSec 룰 추가 + reload 완료
-    - t3 (Phase 4): 정상 사용자 영향 없음 확인
-    - t4 (Phase 5): 보고서 작성 완료
-
-    ## 5 Layer Evidence Cross-check
-    | Layer | Phase 1 evidence | 후속 (Phase 2-3) |
-    |------|-----------------|------------------|
-    | nft | input counter +N | cti_ips 에 10.20.30.201 추가 |
-    | Suricata | alert ET WEB_SERVER ... | (변경 없음) |
-    | ModSec | CRS 941110 매칭 | include-after.conf 으로 IP deny 추가 |
-    | Wazuh | rule.id alert | 추가 룰 없음 (수동 IR) |
-    | OpenCTI | indicator 10.20.30.201 | sync→nft 자동 차단 |
-
-    ## Lessons Learned
-    1. *MTTC 측정* — 본 lab 결과 N 분 (목표 ≤ 10). 운영 시 단축 방안: AR 자동화 (w11)
-    2. *5 layer cross-check 의 가치* — XSS 는 ModSec 이 가장 명확한 evidence (CRS rule id),
-       다른 layer 는 supporting. 유형별 *primary layer* 매핑 학습 (w01 의 매트릭스 갱신)
-    3. *재발 방지* — 본 IR 의 룰 추가 (Phase 3 의 include-after.conf) + cti-sync (Phase 2)
-       의 *영구 적용* 여부. 임시 차단 vs 영구 룰 분리 정책
-
-    ## sha256 무결성
-    sha256sum <보고서.md>
-    ```
-
-    종료 정리:
-      ```
-      ssh ccc@10.20.30.80 'sudo rm /etc/modsecurity/include-after.conf; sudo systemctl reload apache2'
-      ssh ccc@10.20.30.1 'sudo nft -- flush set inet filter cti_ips'
-      # OpenCTI indicator 는 남아도 OK (실제 운영 IoC DB 처럼)
-      ```
-  hint: |
-    Phase 1 Detection: attacker XSS curl 2회 → 5 layer evidence (nft counter + Suricata eve.json + ModSec audit + Wazuh alerts + OpenCTI graphql) 동시 수집 + t0 기록
-    Phase 2 Containment: OpenCTI 에 attacker IP indicator 추가 + cti-sync.sh 실행 → cti_ips 자동 차단 + MTTC = t1-t0 측정
-    Phase 3 Eradication: web 의 ModSec include-after.conf 에 IP-specific deny 추가, apache reload, 403 검증
     Phase 4 Recovery: web 정상 GET 200 + Wazuh FIM 으로 backend 손상 없음 확인
+
     Phase 5 Lessons Learned: timeline + cross-check 표 + MTTC + 재발 방지 markdown + sha256
-    포인트: NIST IR 5 단계 모두 수행. w01-w13 모든 도구 활용 (cti-sync from w13, ModSec exception from w07, etc.).
+
+    포인트: NIST IR 5 단계 모두 수행. w01-w13 모든 도구 활용 (cti-sync from w13, ModSec exception
+    from w07, etc.).
+
     종료: include-after.conf 제거 + cti_ips flush.
+
+    '
   category: integration_scenario
   points: 80
   verify:
@@ -514,10 +592,14 @@ steps:
     expect: MTTC
     field: stdout
     semantic:
-      intent: |
-        NIST SP 800-61 IR 5 단계 (Detection / Containment / Eradication / Recovery / Lessons Learned)
+      intent: 'NIST SP 800-61 IR 5 단계 (Detection / Containment / Eradication / Recovery
+        / Lessons Learned)
+
         를 XSS attack 시나리오로 모두 수행. 학습 목표 #4 (IR 프로세스) 행동 증명.
+
         w01-w13 모든 도구 종합 활용 (cti-sync / ModSec exception / Wazuh AR / 5 layer cross-check).
+
+        '
       success_criteria:
       - Phase 1 — XSS curl 2회 + 5 layer evidence 동시 수집 + t0 기록
       - Phase 2 — OpenCTI indicator 추가 + cti-sync.sh 실행 + cti_ips 갱신 + MTTC 측정
@@ -537,32 +619,32 @@ steps:
       - timeline / cross-check 표 누락
       - 정리 누락 (include-after.conf 또는 cti_ips 남김)
   target_vm: bastion
-  answer: |
-    🤖 프롬프트: NIST IR 5 단계 종합 시나리오 — XSS attack response.
+  answer: "\U0001F916 프롬프트: NIST IR 5 단계 종합 시나리오 — XSS attack response.\n\nPhase 1\
+    \ Detection: attacker curl XSS 2회 (?q=<script>alert(...)>) → 5 layer evidence\
+    \ 동시:\n  nft counter / Suricata eve.json / ModSec modsec_audit.log / Wazuh alerts.json\
+    \ / OpenCTI indicator query.\n  t0 = 첫 alert 발생 시각.\n\nPhase 2 Containment: OpenCTI\
+    \ graphql indicatorAdd attacker IP + cti-sync.sh 실행 → cti_ips 자동 차단.\n  t1 기록,\
+    \ MTTC = t1 - t0.\n\nPhase 3 Eradication: web include-after.conf 에 LocationMatch\
+    \ + SecRule REMOTE_ADDR @ipMatch deny 추가, apache reload.\n  attacker 다시 GET →\
+    \ 403 검증.\n\nPhase 4 Recovery: web 의 정상 localhost GET 200 + Wazuh FIM 무결성 확인.\n\
+    \nPhase 5 Lessons Learned: timeline + 5 layer cross-check 표 + MTTC + 재발 방지 markdown\
+    \ + sha256sum.\n\n종료: include-after.conf 제거 + cti_ips flush.\n"
+  answer_detail: '학습 목표 #4 (IR 프로세스) 행동 증명. NIST SP 800-61 의 5 단계 모두 수행. w01 의 5 layer
 
-    Phase 1 Detection: attacker curl XSS 2회 (?q=<script>alert(...)>) → 5 layer evidence 동시:
-      nft counter / Suricata eve.json / ModSec modsec_audit.log / Wazuh alerts.json / OpenCTI indicator query.
-      t0 = 첫 alert 발생 시각.
-
-    Phase 2 Containment: OpenCTI graphql indicatorAdd attacker IP + cti-sync.sh 실행 → cti_ips 자동 차단.
-      t1 기록, MTTC = t1 - t0.
-
-    Phase 3 Eradication: web include-after.conf 에 LocationMatch + SecRule REMOTE_ADDR @ipMatch deny 추가, apache reload.
-      attacker 다시 GET → 403 검증.
-
-    Phase 4 Recovery: web 의 정상 localhost GET 200 + Wazuh FIM 무결성 확인.
-
-    Phase 5 Lessons Learned: timeline + 5 layer cross-check 표 + MTTC + 재발 방지 markdown + sha256sum.
-
-    종료: include-after.conf 제거 + cti_ips flush.
-  answer_detail: |
-    학습 목표 #4 (IR 프로세스) 행동 증명. NIST SP 800-61 의 5 단계 모두 수행. w01 의 5 layer
     매트릭스 + w07 의 ModSec exception + w11 의 AR + w13 의 cti-sync 모두 종합 활용.
+
+    '
   risk_level: medium
-  bastion_prompt: |
-    NIST IR 5 단계 — XSS attack response. Phase 1 Detection: attacker XSS curl 2회 + 5 layer
+  bastion_prompt: 'NIST IR 5 단계 — XSS attack response. Phase 1 Detection: attacker
+    XSS curl 2회 + 5 layer
+
     evidence (nft/Suricata/ModSec/Wazuh/OpenCTI) 동시 수집 + t0 기록. Phase 2 Containment:
+
     OpenCTI 에 IP indicator 추가 + cti-sync.sh → cti_ips 갱신, MTTC 측정. Phase 3 Eradication:
+
     web 의 ModSec include-after.conf 에 IP-deny 룰 + reload + 403 검증. Phase 4 Recovery:
-    정상 GET 200 + Wazuh FIM 무결성. Phase 5 Lessons Learned: timeline + cross-check 표 +
-    MTTC + 재발 방지 markdown + sha256. 종료 시 include-after.conf 제거 + cti_ips flush.
+
+    정상 GET 200 + Wazuh FIM 무결성. Phase 5 Lessons Learned: timeline + cross-check 표
+    +
+
+    MTTC + 재발 방지 markdown + sha256. 종료 시 include-after.conf 제거 + cti_ips flush.'

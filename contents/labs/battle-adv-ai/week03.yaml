@@ -174,7 +174,9 @@ steps:
     인증서 체인 검증(CT 로그)으로 탐지 가능하다.
   verify:
     type: output_contains
-    expect: update.microsoft.com
+    expect:
+    - update.microsoft.com
+    - openssl
     semantic:
       intent: '[RED] HTTPS C2 자체 서명 인증서 — openssl req -x509 -newkey rsa:2048 -nodes
         -keyout c2.key -out c2.crt -days 365 -subj /CN=google.com/O=Google Inc. CN
@@ -256,7 +258,12 @@ steps:
     변동계수가 15% 미만이면 비컨 패턴으로 판정하라.'
 - order: 6
   instruction: '[BLUE] nftables로 C2 통신을 차단하는 방화벽 규칙을 작성하라. 비표준 아웃바운드 포트 차단, DNS 쿼리
-    레이트 리밋, 알려진 C2 IP 차단을 구현하라.'
+    레이트 리밋, 알려진 C2 IP 차단을 구현하라.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/battle-adv-ai-week03/6/syslog 사전 주입.
+    `grep -E ''DROP|REJECT|filter'' /home/ccc/cyber-range/fixtures/battle-adv-ai-week03/6/syslog`
+    후 (1) 빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: nft add rule 형태로 체인에 규칙을 추가한다.
   category: defense
   points: 10
@@ -299,7 +306,24 @@ steps:
     \ rate over 30/second log prefix \"DNS_FLOOD: \" drop\n  }\n}\nEOF\ncat /tmp/c2_block_rules.nft"
   risk_level: low
   bastion_prompt: '[BLUE] nftables로 C2 통신을 차단하는 방화벽 규칙을 작성하라. 비표준 아웃바운드 포트 차단, DNS
-    쿼리 레이트 리밋, 알려진 C2 IP 차단을 구현하라.'
+    쿼리 레이트 리밋, 알려진 C2 IP 차단을 구현하라.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/battle-adv-ai-week03/6/syslog 사전 주입.
+    `grep -E ''DROP|REJECT|filter'' /home/ccc/cyber-range/fixtures/battle-adv-ai-week03/6/syslog`
+    후 (1)빈도·패턴 (2)MITRE (3)방어 3섹션. raw dump 금지.'
+  fixtures:
+  - generator: firewall_log
+    target_vm: secu
+    path: /home/ccc/cyber-range/fixtures/battle-adv-ai-week03/6/syslog
+    params:
+      seed: 42
+      duration_days: 7
+      scan_bursts: 5
+      egress_violations: 20
+      syn_flood_count: 200
+    mode: overwrite
+    cleanup: false
 - order: 7
   instruction: '[BLUE] Suricata 규칙으로 DNS 터널링과 비정상 TLS 인증서를 탐지하라. DNS 쿼리 길이 이상과 자체
     서명 인증서를 탐지하는 규칙을 작성하라.'
@@ -319,7 +343,9 @@ steps:
     고빈도 통신을 탐지한다. 자체 서명 인증서의 CN 위장도 시그니처로 탐지한다.
   verify:
     type: output_contains
-    expect: C2-DETECT
+    expect:
+    - C2-DETECT
+    - rule
     semantic:
       intent: '[BLUE] Suricata DNS 터널링 + 자체 서명 TLS 탐지 — alert dns (dns.query; content:.c2.;
         pcre: DNS query length > 60) + alert tls (tls.cert_subject; content:self-signed)

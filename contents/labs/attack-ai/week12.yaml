@@ -379,7 +379,12 @@ steps:
 
     [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
 - order: 9
-  instruction: Suricata의 alert 로그를 확인하여 이전 실습에서 발생한 탐지 이벤트를 분석하라.
+  instruction: 'Suricata의 alert 로그를 확인하여 이전 실습에서 발생한 탐지 이벤트를 분석하라.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/attack-ai-week12/9/eve.json 사전 주입. `jq
+    -c ''.alert'' /home/ccc/cyber-range/fixtures/attack-ai-week12/9/eve.json` 후 (1)
+    빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: secu 서버의 /var/log/suricata/fast.log를 확인한다
   category: analysis
   points: 10
@@ -417,7 +422,24 @@ steps:
   script: ssh ccc@10.20.30.1 'tail -30 /var/log/suricata/fast.log 2>/dev/null || echo
     "No alerts found"' 2>/dev/null
   risk_level: low
-  bastion_prompt: Suricata의 alert 로그를 확인하여 이전 실습에서 발생한 탐지 이벤트를 분석해줘
+  bastion_prompt: 'Suricata의 alert 로그를 확인하여 이전 실습에서 발생한 탐지 이벤트를 분석해줘
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/attack-ai-week12/9/eve.json 사전 주입. `jq
+    -c ''.alert'' /home/ccc/cyber-range/fixtures/attack-ai-week12/9/eve.json` 후 (1)빈도·패턴
+    (2)MITRE (3)방어 3섹션. raw dump 금지.'
+  fixtures:
+  - generator: suricata_alert
+    target_vm: attacker
+    path: /home/ccc/cyber-range/fixtures/attack-ai-week12/9/eve.json
+    params:
+      seed: 42
+      duration_days: 7
+      alerts_per_day: 30
+      c2_beacon_count: 12
+      metadata_attempt_count: 4
+    mode: overwrite
+    cleanup: false
 - order: 10
   instruction: 타이밍 기반 은닉을 시연하라. 요청 간 랜덤 지연을 추가하여 IDS의 시간 기반 상관 분석을 우회하라.
   hint: sleep 명령에 랜덤 값을 사용한다
@@ -705,141 +727,247 @@ steps:
   risk_level: low
   bastion_prompt: 은닉 기법 실습 결과를 /tmp/evasion_report.txt에 정리해줘
 - order: 99
-  instruction: |
-    [복합 시나리오] "OSCP 시험 응시자 — 24시간 시험 일지 (Exam Log)"
+  instruction: '[복합 시나리오] "OSCP 시험 응시자 — 24시간 시험 일지 (Exam Log)"
 
-    ## 상황 — OSCP 시험일, 09:00 시작
+
+    ■ 상황 — OSCP 시험일, 09:00 시작
+
 
     당신은 OSCP (Offensive Security Certified Professional) 시험 응시자. 어제 잠 4시간만 자고
+
     오늘 09:00 부터 24시간 단독 시험 시작. 5개 머신 (Buffer Overflow 1 + 독립 머신 4) 합쳐 100점 중
+
     *70점 이상* 합격. 시험 종료 후 24시간 내 보고서 제출. 모든 단계 *시험 일지* 에 시간 도장 + 명령어 +
+
     스크린샷 경로 + 점수 추적.
 
-    > [Proctor 안내] "현재 시각 09:00. 24시간 후 자동 disconnect. 보고서 24시간 추가. 정확한 walkthrough
-    > + 출처·도구·명령·스크린샷 누락 시 머신당 점수 0점. 시험 동안 자료 검색 X (단 본인 노트 가능)."
+
+    ※ [Proctor 안내] "현재 시각 09:00. 24시간 후 자동 disconnect. 보고서 24시간 추가. 정확한 walkthrough
+
+    ※ + 출처·도구·명령·스크린샷 누락 시 머신당 점수 0점. 시험 동안 자료 검색 X (단 본인 노트 가능)."
+
 
     학습 목표 (lecture 5 Persistence + Anti-forensics + 포렌식 타임라인) +
+
     (lab #2 nmap 스텔스 + #3 WAF SQLi 우회 + #5 source port 위장 + #10 timing) 통합.
 
-    ## 산출물 — OSCP 24h Exam Log (시간 도장 형식, 점수 추적)
 
-    ### [09:00] T-START — 시험 시작
-    `echo "=== OSCP Exam Start: $(date '+%Y-%m-%d %H:%M:%S') ===" > /tmp/oscp_log.txt; date '+%Y-%m-%d %H:%M:%S'`
+    ■ 산출물 — OSCP 24h Exam Log (시간 도장 형식, 점수 추적)
 
-    ### [09:05] BoF (Buffer Overflow, 25점) — 우선 처리
-    > 본인 노트: "BoF 는 25점 + 가장 시간 분포 예측 가능. 첫 4시간 안에 끝내야 multi 머신 시간 확보."
-    `echo "[09:05] BoF 시작 — fuzzing → offset → bad chars → JMP ESP → shellcode (정해진 5 단계)"`
+
+    ▶ [09:00] T-START — 시험 시작
+
+    `echo "=== OSCP Exam Start: $(date ''+%Y-%m-%d %H:%M:%S'') ===" > /tmp/oscp_log.txt;
+    date ''+%Y-%m-%d %H:%M:%S''`
+
+
+    ▶ [09:05] BoF (Buffer Overflow, 25점) — 우선 처리
+
+    ※ 본인 노트: "BoF 는 25점 + 가장 시간 분포 예측 가능. 첫 4시간 안에 끝내야 multi 머신 시간 확보."
+
+    `echo "[09:05] BoF 시작 — fuzzing → offset → bad chars → JMP ESP → shellcode (정해진
+    5 단계)"`
+
     `echo "[09:05] 가상 시뮬: 본 환경엔 BoF 머신 없음. 단계 명령만 일지에 기록."`
 
-    ### [10:30] BoF root — 25점 확보 / 누적 25/100
-    `echo "[10:30] ✅ BoF root: msfvenom -p linux/x86/shell_reverse_tcp LHOST=... LPORT=... -b '\\x00' -f c"`
+
+    ▶ [10:30] BoF root — 25점 확보 / 누적 25/100
+
+    `echo "[10:30] ✅ BoF root: msfvenom -p linux/x86/shell_reverse_tcp LHOST=... LPORT=...
+    -b ''\\x00'' -f c"`
+
     `echo "[10:30] 점수 누적: 25/100 (BoF clear)"`
 
-    ### [11:00] Machine A (25점) — 정찰
-    `nmap -sT -p 22,80,443,3000,8080 --max-rtt-timeout 1000 -T2 10.20.30.80 2>&1 | head -20`
+
+    ▶ [11:00] Machine A (25점) — 정찰
+
+    `nmap -sT -p 22,80,443,3000,8080 --max-rtt-timeout 1000 -T2 10.20.30.80 2>&1 |
+    head -20`
+
     `echo "[11:00] Machine A 정찰 완료 — open: 22,80,3000,8080"`
 
-    ### [12:15] Machine A — IDS 우회 정찰 (lecture 안티포렌식 + lab #2)
-    > 본인 노트: "Suricata 가 nmap 시그니처 잡을 거. -T1 + decoy + source port 80 으로 우회."
-    `sudo -n nmap -sS -T1 -f -D 10.0.0.1,10.0.0.2,ME --source-port 80 -p 22,80,3000 10.20.30.80 2>&1 | head -10`
 
-    ### [13:00] Machine A 점심 — 11:00-13:00 정찰만 1.5시간 소비. 페이스 늦음.
-    > 본인 노트: "정찰 너무 길어. 다음 머신은 30분 정찰 cap."
+    ▶ [12:15] Machine A — IDS 우회 정찰 (lecture 안티포렌식 + lab #2)
 
-    ### [14:30] Machine A user shell — 부분 점수 10/25
+    ※ 본인 노트: "Suricata 가 nmap 시그니처 잡을 거. -T1 + decoy + source port 80 으로 우회."
+
+    `sudo -n nmap -sS -T1 -f -D 10.0.0.1,10.0.0.2,ME --source-port 80 -p 22,80,3000
+    10.20.30.80 2>&1 | head -10`
+
+
+    ▶ [13:00] Machine A 점심 — 11:00-13:00 정찰만 1.5시간 소비. 페이스 늦음.
+
+    ※ 본인 노트: "정찰 너무 길어. 다음 머신은 30분 정찰 cap."
+
+
+    ▶ [14:30] Machine A user shell — 부분 점수 10/25
+
     `echo "[14:30] ⚠️ Machine A: user shell 획득 (SQLi auth bypass), root 시도 중"`
+
     `echo "[14:30] 점수 누적: 25 + 10 = 35/100"`
 
-    ### [16:00] Machine A root — full 25점 / 누적 50/100
+
+    ▶ [16:00] Machine A root — full 25점 / 누적 50/100
+
     `echo "[16:00] ✅ Machine A root: SUID /usr/bin/find -exec /bin/sh \\\\;"`
 
-    ### [16:30] Machine B (20점) — WAF 우회 시도 (lecture #3 + lab #3)
+
+    ▶ [16:30] Machine B (20점) — WAF 우회 시도 (lecture #3 + lab #3)
+
     페이로드 변형 5종 출력 (실 전송 X — POC):
-    ```
-    1. ' OR 1=1--
-    2. ' Or 1=1--           (대소문자 우회)
-    3. '/**/OR/**/1=1--      (주석 삽입)
-    4. %27%20OR%201=1--      (URL 인코딩)
-    5. '%2520OR%25201=1--    (이중 인코딩)
+
     ```
 
-    ### [18:30] Machine B user shell — 부분 점수 10/20 / 누적 60/100
+    1. '' OR 1=1--
+
+    2. '' Or 1=1--           (대소문자 우회)
+
+    3. ''/**/OR/**/1=1--      (주석 삽입)
+
+    4. %27%20OR%201=1--      (URL 인코딩)
+
+    5. ''%2520OR%25201=1--    (이중 인코딩)
+
+    ```
+
+
+    ▶ [18:30] Machine B user shell — 부분 점수 10/20 / 누적 60/100
+
     `echo "[18:30] ⚠️ Machine B: user (10/20). root 진행 중"`
 
-    ### [21:00] Machine B 포기 — 시간 비용 vs 점수 평가
-    > 본인 노트: "B root 가 2시간 더 걸릴 듯 + Machine C 미시작. 합격선 (70) 까지 10점 부족.
-    >  C 의 user shell (10점) 만 따도 70 도달. B 포기, C 로 pivot."
 
-    ### [21:00-23:00] Machine C user (10점) — 누적 70/100 ✅ 합격선
+    ▶ [21:00] Machine B 포기 — 시간 비용 vs 점수 평가
+
+    ※ 본인 노트: "B root 가 2시간 더 걸릴 듯 + Machine C 미시작. 합격선 (70) 까지 10점 부족.
+
+    ※  C 의 user shell (10점) 만 따도 70 도달. B 포기, C 로 pivot."
+
+
+    ▶ [21:00-23:00] Machine C user (10점) — 누적 70/100 ✅ 합격선
+
     `echo "[23:00] ✅ Machine C: user shell. 점수 70/100 — 합격선 도달"`
 
-    ### [23:00-08:00] 휴식 + Machine C root + Machine D 시도
-    > 본인 노트: "70 도달했으니 안전. 5시간 수면. 04:00 기상해서 C root + D 도전."
+
+    ▶ [23:00-08:00] 휴식 + Machine C root + Machine D 시도
+
+    ※ 본인 노트: "70 도달했으니 안전. 5시간 수면. 04:00 기상해서 C root + D 도전."
+
     `echo "[04:00] 기상. C root: SUID /usr/bin/perl 활용 시도"`
+
     `echo "[06:30] ✅ C root: 추가 10점, 누적 80/100"`
 
-    ### [09:00] T-END — 24시간 종료, 점수 확정
-    `echo "=== OSCP Exam End: $(date '+%Y-%m-%d %H:%M:%S') ==="`
+
+    ▶ [09:00] T-END — 24시간 종료, 점수 확정
+
+    `echo "=== OSCP Exam End: $(date ''+%Y-%m-%d %H:%M:%S'') ==="`
+
     `echo "최종 점수: 80/100 (BoF 25 + A 25 + B 10 + C 20)"`
+
     `echo "다음 24h 보고서 제출 — 모든 명령·스크린샷·flag.txt 첨부"`
 
-    ## 회고 (Lessons Learned)
+
+    ■ 회고 (Lessons Learned)
+
     1. **잘한 점**: BoF 우선 처리 (25점 빨리 확보), Machine B 손절 (시간 비용 평가)
+
     2. **개선 점**: Machine A 정찰 너무 길었음 (다음엔 30분 cap)
+
     3. **다음 시험 준비**: WAF 우회 페이로드 노트 30개 → 100개 확장
 
+
     종료: echo "=== OSCP 24h Exam Log ===" + 시험 일지 + 회고 묶음.
-  bastion_prompt: |
-    [OSCP 24h Exam Log — w12]
+
+    '
+  bastion_prompt: '[OSCP 24h Exam Log — w12]
+
 
     24시간 시험 일지 형식 (시간 도장 + 점수 추적 + 회고).
 
+
     [09:00] T-START:
-    `echo "=== OSCP Exam Start: $(date '+%Y-%m-%d %H:%M:%S') ===" > /tmp/oscp_log.txt; date '+%Y-%m-%d %H:%M:%S'`
+
+    `echo "=== OSCP Exam Start: $(date ''+%Y-%m-%d %H:%M:%S'') ===" > /tmp/oscp_log.txt;
+    date ''+%Y-%m-%d %H:%M:%S''`
+
 
     [09:05] BoF 시작:
+
     `echo "[09:05] BoF — fuzzing → offset → bad chars → JMP ESP → shellcode"`
 
+
     [10:30] BoF root 25/100:
+
     `echo "[10:30] ✅ BoF root: msfvenom payload. 점수 25/100"`
 
+
     [11:00] Machine A 정찰:
-    `nmap -sT -p 22,80,443,3000,8080 --max-rtt-timeout 1000 -T2 10.20.30.80 2>&1 | head -20`
+
+    `nmap -sT -p 22,80,443,3000,8080 --max-rtt-timeout 1000 -T2 10.20.30.80 2>&1 |
+    head -20`
+
 
     [12:15] IDS 우회:
-    `sudo -n nmap -sS -T1 -f -D 10.0.0.1,10.0.0.2,ME --source-port 80 -p 22,80,3000 10.20.30.80 2>&1 | head -10`
+
+    `sudo -n nmap -sS -T1 -f -D 10.0.0.1,10.0.0.2,ME --source-port 80 -p 22,80,3000
+    10.20.30.80 2>&1 | head -10`
+
 
     [16:00] Machine A root 50/100:
+
     `echo "[16:00] ✅ A root: SUID find. 누적 50/100"`
 
+
     [16:30] WAF 우회 페이로드 5 변형:
-    `cat <<'EOF'
-    1. ' OR 1=1--
-    2. ' Or 1=1--
-    3. '/**/OR/**/1=1--
+
+    `cat <<''EOF''
+
+    1. '' OR 1=1--
+
+    2. '' Or 1=1--
+
+    3. ''/**/OR/**/1=1--
+
     4. %27%20OR%201=1--
-    5. '%2520OR%25201=1--
+
+    5. ''%2520OR%25201=1--
+
     EOF`
 
+
     [18:30] Machine B user 60/100, [21:00] B 포기 → C pivot.
+
     [23:00] Machine C user 70/100 ✅ 합격선.
+
     [06:30] C root 80/100.
 
+
     [09:00] T-END:
-    `echo "=== OSCP Exam End: $(date '+%Y-%m-%d %H:%M:%S') ==="`
+
+    `echo "=== OSCP Exam End: $(date ''+%Y-%m-%d %H:%M:%S'') ==="`
+
     `echo "최종 점수: 80/100"`
+
 
     회고 3 항목 (잘한 점 / 개선 점 / 다음 준비).
 
+
     종료: echo "=== OSCP 24h Exam Log ===" + 일지 + 회고.
 
+
     반드시 시간 도장 + 점수 추적 + 회고 모두 출력. 중간 종료 금지.
-  hint: |
-    24h 시험 일지 형식. 시간 도장 + 점수 추적 (BoF 25 + 머신 4).
+
+    '
+  hint: '24h 시험 일지 형식. 시간 도장 + 점수 추적 (BoF 25 + 머신 4).
+
     BoF 우선 → 머신 정찰 → 우회 → user→root → 합격선 70 도달.
+
     중간에 *손절 의사결정* (시간 비용 vs 점수) 명시.
+
     회고 3 항목 (잘한 점/개선/다음).
+
     포인트: OSCP 시험 일지 형식. 보고서 X.
+
+    '
   category: integration_scenario
   points: 50
   verify:
@@ -847,9 +975,11 @@ steps:
     expect: Exam Log
     field: stdout
     semantic:
-      intent: |
-        OSCP 24h 시험 응시자 페르소나 — 시험 일지 (시간 도장 + 점수 추적 + 합격선 70 도달 의사결정).
+      intent: 'OSCP 24h 시험 응시자 페르소나 — 시험 일지 (시간 도장 + 점수 추적 + 합격선 70 도달 의사결정).
+
         lecture w12 + lab #2·#3·#5·#10 동시 행동 증명. *Exam Log* 산출물.
+
+        '
       success_criteria:
       - T-START / T-END 시각 도장
       - BoF 25 + Machine A/B/C 점수 추적 (합격선 70 도달)
@@ -868,9 +998,12 @@ steps:
       - 의사결정 흔적 없음 (손절/우선)
   target_vm: attacker
   risk_level: low
-  answer: |
-    🤖 위 bastion_prompt 그대로. 24h 시험 일지 + 회고.
-  answer_detail: |
-    OSCP 시험 응시자 페르소나 — 24h 시험 일지. 시간 도장 + 점수 추적 + 손절 의사결정 + 회고 3.
+  answer: '🤖 위 bastion_prompt 그대로. 24h 시험 일지 + 회고.
+
+    '
+  answer_detail: 'OSCP 시험 응시자 페르소나 — 24h 시험 일지. 시간 도장 + 점수 추적 + 손절 의사결정 + 회고 3.
+
     합격선 70 도달이 핵심 의사결정점.
+
+    '
   script: ''

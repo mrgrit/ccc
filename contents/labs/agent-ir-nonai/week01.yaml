@@ -3,8 +3,8 @@ title: AI Vulnerability Storm 관전과 기준선 설정 (Non-AI)
 version: nonai
 course: agent-ir-nonai
 week: 1
-description: 과목 첫 주차. 공격 에이전트의 관전 환경을 구축하고, 방어 측에서 관찰 가능한 *기준선 신호*를 모든 VM에서 수집한다. 본 번들이 이후 15주 탐지·분석의
-  원본 데이터다. 학생이 각 단계를 수동으로 수행하고 결과를 기록합니다.
+description: 과목 첫 주차. 공격 에이전트의 관전 환경을 구축하고, 방어 측에서 관찰 가능한 *기준선 신호*를 모든 VM에서 수집한다.
+  본 번들이 이후 15주 탐지·분석의 원본 데이터다. 학생이 각 단계를 수동으로 수행하고 결과를 기록합니다.
 difficulty: hard
 duration_minutes: 150
 objectives:
@@ -15,20 +15,21 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: 4대 VM(bastion/secu/web/siem) 중 bastion에 SSH로 접속해 hostname·uptime·ip addr 출력으로 VM이 정상 기동됐는지
-    확인하시오.
+  instruction: 4대 VM(bastion/secu/web/siem) 중 bastion에 SSH로 접속해 hostname·uptime·ip
+    addr 출력으로 VM이 정상 기동됐는지 확인하시오.
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 9
   answer: hostname && uptime && ip -4 addr show | grep inet
-  answer_detail: 관전 시작 전 bastion VM의 기본 상태 점검. hostname=bastion, 분 단위 uptime, 10.20.30.201 표시가 정상.
+  answer_detail: 관전 시작 전 bastion VM의 기본 상태 점검. hostname=bastion, 분 단위 uptime, 10.20.30.201
+    표시가 정상.
   verify:
     type: output_contains
     expect: 10.20.30.201
     field: stdout
     semantic:
-      intent: '[기준선] bastion VM 상태 점검 — hostname + uptime + ip -4 addr show | grep inet. 10.20.30.201
-        IP 확인. 관전 시작 전 VM 기동 검증.'
+      intent: '[기준선] bastion VM 상태 점검 — hostname + uptime + ip -4 addr show | grep
+        inet. 10.20.30.201 IP 확인. 관전 시작 전 VM 기동 검증.'
       success_criteria:
       - 10.20.30.201 IP
       - hostname
@@ -46,7 +47,13 @@ steps:
   risk_level: low
   bastion_prompt: ''
 - order: 2
-  instruction: secu VM에서 nftables 룰셋을 출력해 방화벽이 로드된 상태인지 확인하시오. `table inet filter` 섹션이 존재해야 한다.
+  instruction: 'secu VM에서 nftables 룰셋을 출력해 방화벽이 로드된 상태인지 확인하시오. `table inet filter`
+    섹션이 존재해야 한다.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/agent-ir-nonai-week01/2/syslog 사전 주입.
+    `grep -E ''DROP|REJECT|filter'' /home/ccc/cyber-range/fixtures/agent-ir-nonai-week01/2/syslog`
+    후 (1) 빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: target_vm=secu에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 10
@@ -57,8 +64,8 @@ steps:
     expect: table
     field: stdout
     semantic:
-      intent: '[기준선] secu nftables 룰셋 — sudo nft list ruleset | head -50. table inet filter 존재 확인. 방화벽
-        로드 기준선. 이후 차단 신호 분석 전제.'
+      intent: '[기준선] secu nftables 룰셋 — sudo nft list ruleset | head -50. table inet
+        filter 존재 확인. 방화벽 로드 기준선. 이후 차단 신호 분석 전제.'
       success_criteria:
       - table 출력
       - nft list ruleset
@@ -75,6 +82,18 @@ steps:
   script: sudo nft list ruleset | head -50
   risk_level: medium
   bastion_prompt: ''
+  fixtures:
+  - generator: firewall_log
+    target_vm: secu
+    path: /home/ccc/cyber-range/fixtures/agent-ir-nonai-week01/2/syslog
+    params:
+      seed: 42
+      duration_days: 7
+      scan_bursts: 5
+      egress_violations: 20
+      syn_flood_count: 200
+    mode: overwrite
+    cleanup: false
 - order: 3
   instruction: secu VM에서 Suricata가 실행 중인지 systemctl로 확인하시오.
   hint: target_vm=secu에서 수행. 아래 CLI 예시 참고.
@@ -87,7 +106,8 @@ steps:
     expect: active
     field: stdout
     semantic:
-      intent: '[기준선] Suricata 상태 — systemctl is-active suricata. IDS 엔진 활성 확인. 경보 수집 기준선.'
+      intent: '[기준선] Suricata 상태 — systemctl is-active suricata. IDS 엔진 활성 확인. 경보
+        수집 기준선.'
       success_criteria:
       - active 출력
       - systemctl
@@ -105,7 +125,13 @@ steps:
   risk_level: medium
   bastion_prompt: ''
 - order: 4
-  instruction: web VM에서 Apache 서비스가 실행 중이며 /var/log/apache2/access.log 파일이 존재하는지 동시에 확인하시오.
+  instruction: 'web VM에서 Apache 서비스가 실행 중이며 /var/log/apache2/access.log 파일이 존재하는지
+    동시에 확인하시오.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/agent-ir-nonai-week01/4/access.log 사전
+    주입. `grep -E ''sqli|xss|\.\./|admin'' /home/ccc/cyber-range/fixtures/agent-ir-nonai-week01/4/access.log`
+    후 (1) 빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 12
@@ -116,8 +142,8 @@ steps:
     expect: active
     field: stdout
     semantic:
-      intent: '[기준선] web Apache — systemctl is-active apache2 + ls /var/log/apache2/access.log. 서비스 active
-        + 로그 파일 동시 확인. access.log 원천 로그.'
+      intent: '[기준선] web Apache — systemctl is-active apache2 + ls /var/log/apache2/access.log.
+        서비스 active + 로그 파일 동시 확인. access.log 원천 로그.'
       success_criteria:
       - active 출력
       - apache2 서비스
@@ -134,20 +160,34 @@ steps:
   script: systemctl is-active apache2 && ls -la /var/log/apache2/access.log
   risk_level: low
   bastion_prompt: ''
+  fixtures:
+  - generator: web_access
+    target_vm: web
+    path: /home/ccc/cyber-range/fixtures/agent-ir-nonai-week01/4/access.log
+    params:
+      seed: 42
+      duration_days: 7
+      scanner_bursts: 5
+      sqli_attempts: 12
+      xss_attempts: 8
+    mode: overwrite
+    cleanup: false
 - order: 5
-  instruction: siem VM에서 Wazuh Manager 데몬이 실행 중이며 https://10.20.30.100 대시보드가 응답하는지 확인하시오.
+  instruction: siem VM에서 Wazuh Manager 데몬이 실행 중이며 https://10.20.30.100 대시보드가 응답하는지
+    확인하시오.
   hint: target_vm=siem에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 13
-  answer: systemctl is-active wazuh-manager && curl -sk -o /dev/null -w 'dashboard=%{http_code}\n' https://10.20.30.100
+  answer: systemctl is-active wazuh-manager && curl -sk -o /dev/null -w 'dashboard=%{http_code}\n'
+    https://10.20.30.100
   answer_detail: Wazuh 경보 수집 기준선. active + HTTP 200/302 응답이 정상.
   verify:
     type: output_contains
     expect: active
     field: stdout
     semantic:
-      intent: '[기준선] Wazuh Manager + Dashboard — systemctl is-active wazuh-manager + curl -sk 대시보드 HTTP
-        코드. 200/302 정상. Wazuh 경보 수집 기준선.'
+      intent: '[기준선] Wazuh Manager + Dashboard — systemctl is-active wazuh-manager
+        + curl -sk 대시보드 HTTP 코드. 200/302 정상. Wazuh 경보 수집 기준선.'
       success_criteria:
       - active 출력
       - wazuh-manager + curl
@@ -161,11 +201,18 @@ steps:
       - HTTP 응답 없음
       - wazuh 누락
   target_vm: siem
-  script: systemctl is-active wazuh-manager && curl -sk -o /dev/null -w 'dashboard=%{http_code}\n' https://10.20.30.100
+  script: systemctl is-active wazuh-manager && curl -sk -o /dev/null -w 'dashboard=%{http_code}\n'
+    https://10.20.30.100
   risk_level: low
   bastion_prompt: ''
 - order: 6
-  instruction: siem의 /var/ossec/logs/alerts/alerts.json 파일에서 최근 5개 경보를 확인해 *기준선 경보 분포*를 기록하시오.
+  instruction: 'siem의 /var/ossec/logs/alerts/alerts.json 파일에서 최근 5개 경보를 확인해 *기준선 경보
+    분포*를 기록하시오.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/agent-ir-nonai-week01/6/alerts.json 사전
+    주입. `jq -c ''.rule'' /home/ccc/cyber-range/fixtures/agent-ir-nonai-week01/6/alerts.json`
+    후 (1) 빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: target_vm=siem에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 14
@@ -176,8 +223,8 @@ steps:
     expect: rule
     field: stdout
     semantic:
-      intent: '[기준선] Wazuh alerts.json 최근 5건 — sudo tail -5 /var/ossec/logs/alerts/alerts.json | head
-        -c 2000. rule.level + groups 분포 기록. 공격 관전 비교 기준.'
+      intent: '[기준선] Wazuh alerts.json 최근 5건 — sudo tail -5 /var/ossec/logs/alerts/alerts.json
+        | head -c 2000. rule.level + groups 분포 기록. 공격 관전 비교 기준.'
       success_criteria:
       - rule 출력
       - tail alerts.json
@@ -194,6 +241,18 @@ steps:
   script: sudo tail -5 /var/ossec/logs/alerts/alerts.json | head -c 2000
   risk_level: low
   bastion_prompt: ''
+  fixtures:
+  - generator: wazuh_alert
+    target_vm: siem
+    path: /home/ccc/cyber-range/fixtures/agent-ir-nonai-week01/6/alerts.json
+    params:
+      seed: 42
+      duration_days: 7
+      alerts_per_day: 50
+      brute_force_burst: true
+      ar_trigger_count: 4
+    mode: overwrite
+    cleanup: false
 - order: 7
   instruction: 'bastion에서 w01 관전 아티팩트 디렉토리 구조를 만드시오: artifacts/w01/{pcap,logs,notes,experience}.'
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
@@ -206,8 +265,8 @@ steps:
     expect: experience
     field: stdout
     semantic:
-      intent: '[설정] 아티팩트 디렉토리 — mkdir -p ~/ccc/artifacts/w01/{pcap,logs,notes,experience} + ls 확인. 4 서브디렉토리
-        관전 자료 저장소. w2~w15 동일 구조.'
+      intent: '[설정] 아티팩트 디렉토리 — mkdir -p ~/ccc/artifacts/w01/{pcap,logs,notes,experience}
+        + ls 확인. 4 서브디렉토리 관전 자료 저장소. w2~w15 동일 구조.'
       success_criteria:
       - experience 키워드
       - 4 서브디렉토리
@@ -225,21 +284,21 @@ steps:
   risk_level: low
   bastion_prompt: ''
 - order: 8
-  instruction: secu에서 tcpdump로 web 타깃(10.20.30.80)에 대한 60초 트래픽을 /tmp/w01-baseline.pcap 로 캡처하시오. 완료 후 파일
-    크기를 확인.
+  instruction: secu에서 tcpdump로 web 타깃(10.20.30.80)에 대한 60초 트래픽을 /tmp/w01-baseline.pcap
+    로 캡처하시오. 완료 후 파일 크기를 확인.
   hint: target_vm=secu에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 16
-  answer: sudo timeout 60 tcpdump -i any -nn -w /tmp/w01-baseline.pcap 'host 10.20.30.80' 2>/dev/null;
-    ls -la /tmp/w01-baseline.pcap
+  answer: sudo timeout 60 tcpdump -i any -nn -w /tmp/w01-baseline.pcap 'host 10.20.30.80'
+    2>/dev/null; ls -la /tmp/w01-baseline.pcap
   answer_detail: 기준선 트래픽 — 공격 세션 전의 정상 패턴. 이후 공격 pcap과 delta를 비교해 지문 추출.
   verify:
     type: output_contains
     expect: w01-baseline.pcap
     field: stdout
     semantic:
-      intent: '[기준선] tcpdump 60초 캡처 — sudo timeout 60 tcpdump -i any -nn -w /tmp/w01-baseline.pcap ''host
-        10.20.30.80'' + ls. 기준선 트래픽 pcap. 공격 pcap delta 비교용.'
+      intent: '[기준선] tcpdump 60초 캡처 — sudo timeout 60 tcpdump -i any -nn -w /tmp/w01-baseline.pcap
+        ''host 10.20.30.80'' + ls. 기준선 트래픽 pcap. 공격 pcap delta 비교용.'
       success_criteria:
       - w01-baseline.pcap 파일
       - timeout 60
@@ -253,8 +312,8 @@ steps:
       - host 필터 누락
       - ls 확인 없음
   target_vm: secu
-  script: sudo timeout 60 tcpdump -i any -nn -w /tmp/w01-baseline.pcap 'host 10.20.30.80' 2>/dev/null;
-    ls -la /tmp/w01-baseline.pcap
+  script: sudo timeout 60 tcpdump -i any -nn -w /tmp/w01-baseline.pcap 'host 10.20.30.80'
+    2>/dev/null; ls -la /tmp/w01-baseline.pcap
   risk_level: medium
   bastion_prompt: ''
 - order: 9
@@ -262,15 +321,16 @@ steps:
   hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 17
-  answer: sudo tail -100 /var/log/apache2/access.log | awk '{c[$9]++} END {for(k in c) print k, c[k]}'
+  answer: sudo tail -100 /var/log/apache2/access.log | awk '{c[$9]++} END {for(k in
+    c) print k, c[k]}'
   answer_detail: 기준선 상태 코드 분포. 정상 운영에선 200이 압도적, 404는 소수. 공격 중엔 403이 급증하는 패턴을 비교 기준.
   verify:
     type: output_contains
     expect: '200'
     field: stdout
     semantic:
-      intent: '[기준선] Apache 상태 코드 분포 — sudo tail -100 access.log | awk ''{c[$9]++} END {for(k in c) print
-        k, c[k]}''. 200/404/403 등 분포. 정상 vs 공격 비교 기준.'
+      intent: '[기준선] Apache 상태 코드 분포 — sudo tail -100 access.log | awk ''{c[$9]++}
+        END {for(k in c) print k, c[k]}''. 200/404/403 등 분포. 정상 vs 공격 비교 기준.'
       success_criteria:
       - 200 출력
       - awk 집계
@@ -284,7 +344,8 @@ steps:
       - 집계 없음
       - tail 누락
   target_vm: web
-  script: sudo tail -100 /var/log/apache2/access.log | awk '{c[$9]++} END {for(k in c) print k, c[k]}'
+  script: sudo tail -100 /var/log/apache2/access.log | awk '{c[$9]++} END {for(k in
+    c) print k, c[k]}'
   risk_level: low
   bastion_prompt: ''
 - order: 10
@@ -300,8 +361,9 @@ steps:
     expect: observation_started
     field: stdout
     semantic:
-      intent: '[기록] Bastion Experience JSON — mkdir + echo ''{id: w01-baseline, event: observation_started,
-        ts: date -Iseconds}'' > w01-baseline.json. 관전 시작 Experience 첫 엔트리. w11 Purple Round 연결.'
+      intent: '[기록] Bastion Experience JSON — mkdir + echo ''{id: w01-baseline, event:
+        observation_started, ts: date -Iseconds}'' > w01-baseline.json. 관전 시작 Experience
+        첫 엔트리. w11 Purple Round 연결.'
       success_criteria:
       - observation_started 키워드
       - JSON 파일
@@ -324,16 +386,16 @@ steps:
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 19
-  answer: for h in 201 1 80 100; do timeout 3 ssh -o StrictHostKeyChecking=no -o BatchMode=yes ccc@10.20.30.$h
-    'date -Iseconds' 2>/dev/null || echo skip; done
+  answer: for h in 201 1 80 100; do timeout 3 ssh -o StrictHostKeyChecking=no -o BatchMode=yes
+    ccc@10.20.30.$h 'date -Iseconds' 2>/dev/null || echo skip; done
   answer_detail: 로그 상관 분석의 기본 조건. NTP 동기화 확인. 1초 이상 어긋나면 w4·w11 타임라인 재구성이 불가능.
   verify:
     type: output_contains
     expect: T
     field: stdout
     semantic:
-      intent: '[기준선] 4 VM 시간 동기화 — for h in 201 1 80 100; ssh ccc@10.20.30.$h ''date -Iseconds''. NTP
-        ±1초 이내 확인. 로그 상관 분석 전제 조건.'
+      intent: '[기준선] 4 VM 시간 동기화 — for h in 201 1 80 100; ssh ccc@10.20.30.$h ''date
+        -Iseconds''. NTP ±1초 이내 확인. 로그 상관 분석 전제 조건.'
       success_criteria:
       - T 출력 ISO 형식
       - 4 호스트
@@ -347,7 +409,7 @@ steps:
       - ISO 형식 없음
       - 순회 없음
   target_vm: bastion
-  script: for h in 201 1 80 100; do timeout 3 ssh -o StrictHostKeyChecking=no -o BatchMode=yes ccc@10.20.30.$h
-    'date -Iseconds' 2>/dev/null || echo skip; done
+  script: for h in 201 1 80 100; do timeout 3 ssh -o StrictHostKeyChecking=no -o BatchMode=yes
+    ccc@10.20.30.$h 'date -Iseconds' 2>/dev/null || echo skip; done
   risk_level: low
   bastion_prompt: ''

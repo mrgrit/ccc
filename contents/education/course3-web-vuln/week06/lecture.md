@@ -120,6 +120,31 @@ URL: http://site.com/search?q=<script>alert(1)</script>
 
 ### 2.2 JuiceShop에서 Reflected XSS 탐지
 
+> **OSS 도구 — XSStrike / dalfox (XSS 점검 표준)**: 본 섹션의 curl + bash 페이로드는 학습용. 실제 점검은 자동 도구로:
+>
+> ```bash
+> # XSStrike (Python) — 가장 강력한 XSS scanner
+> git clone https://github.com/s0md3v/XSStrike.git ~/XSStrike
+> cd ~/XSStrike && pip3 install -r requirements.txt
+>
+> # 1) 단일 URL 자동 점검 (모든 모드)
+> python3 ~/XSStrike/xsstrike.py -u "http://10.20.30.80:3000/rest/products/search?q=test"
+>
+> # 2) Crawl 모드 — 사이트 전체 자동 점검
+> python3 ~/XSStrike/xsstrike.py -u http://10.20.30.80:3000 --crawl
+>
+> # 3) WAF 우회 모드 — encoding 자동
+> python3 ~/XSStrike/xsstrike.py -u "http://target/q=FUZZ" --skip-dom
+>
+> # dalfox (Go) — 빠르고 modern
+> go install github.com/hahwul/dalfox/v2@latest
+> dalfox url "http://10.20.30.80:3000/rest/products/search?q=test" --silence
+> ```
+>
+> XSStrike 의 강점: (1) DOM/Reflected/Stored 모두 자동 탐지, (2) WAF 우회 페이로드 자동 생성, (3) HTML/JS 컨텍스트 인식 — 컨텍스트별 페이로드 매칭. dalfox 는 Go 기반으로 더 빠르고 stored 모드 지원.
+
+
+
 > **실습 목적**: XSS와 CSRF 취약점을 탐지하고 악용 시나리오를 증명한다
 >
 > **배우는 것**: Reflected/Stored XSS 페이로드 삽입과 CSRF 토큰 부재를 확인하는 점검 기법을 배운다
@@ -562,3 +587,34 @@ ORG-1780 ::: HOST-0121=block ::: CRED-23501={
 3. CSRF 점검은 *Origin/Referer 헤더 검증* 외에 *email-link → 인증된 세션 액션* 추적 시나리오 포함
 
 
+
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (lab week06 — 인증/세션)
+
+| step | 카테고리 | 핵심 도구 |
+|---|---|---|
+| 1 auth | curl 정상/오류/미존재 / Burp Compare / sqlmap auth / 메커니즘 표 |
+| 2 brute | **hydra http-post-form** / ffuf / wfuzz / **Burp Intruder Cluster Bomb** / patator |
+| 3 password 정책 | curl 다양 / NIST 정책 / **HIBP API k-anonymity** / **zxcvbn** / hashcat |
+| 4 entropy | curl 다수 수집 / **Burp Sequencer FIPS 140-2** / **ent** / Python Shannon |
+| 5 session fixation | curl 4 단계 (획득→주입→로그인→재사용) / Burp / OWASP ZAP |
+| 6 hijacking | XSS payload / **Wireshark/tshark** / **bettercap MITM** / Ferret+Hamster |
+| 7 JWT 구조 | base64 + jq / **jwt_tool** / pyjwt / jwt.io / 클레임 표 |
+| 8 JWT 서명 우회 | jwt_tool -M at / 수동 alg:none / **hashcat -m 16500** / Burp JWT Editor |
+| 9 JWT alg 변조 | alg 변조 표 (CVE-2015-9235, CVE-2016-10555) / jwt_tool / kid LFI / jku URL |
+| 10 password reset | 8 패턴 / curl 토큰 분석 / **Host header injection** / sqlmap |
+| 11 2FA 우회 | **6 우회 패턴** / Burp Match and Replace / curl OTP brute / pyotp 시간 변조 |
+| 12 OAuth | **7 카테고리** / curl flow / Burp OAuth Scanner / **PKCE 검증** / IdP confused deputy |
+| 13 안전 세션 | **OWASP 7 권장** / Express session / Spring Security / Django / Redis |
+| 14 인증 강화 | **NIST SP 800-63B** / **Argon2id** / HIBP API / **WebAuthn FIDO2** / Redis 잠금 / **fail2ban** |
+| 15 verification | 자동 markdown / 위험도 표 / 사용 도구 / sha256 |
+
+### 학생 환경 준비
+```bash
+sudo apt install -y hydra patator ent fail2ban wireshark bettercap argon2
+pip install zxcvbn-cli pyjwt pyotp argon2-cffi webauthn redis
+git clone --depth 1 https://github.com/ticarpi/jwt_tool ~/jwt_tool
+# WebAuthn: pip install webauthn (py_webauthn)
+```

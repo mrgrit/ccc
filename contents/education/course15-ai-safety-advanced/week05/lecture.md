@@ -1091,3 +1091,466 @@ graph LR
 
 **학생 액션**: Garak full scan.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course15 AI Safety Advanced — Week 05 연합학습 보안·DP-SGD·Robust Aggregation·HE)
+
+> 이 부록은 lab `ai-safety-adv-ai/week05.yaml` (8 step + multi_task) 의 모든 명령을
+> 실제로 실행 가능한 형태로 정리한다. Federated Learning (FL) — Flower / PySyft /
+> OpenFL / TenSEAL (HE) / Opacus (DP-SGD) / robust aggregation (Krum / Median) +
+> Sybil / poisoning / membership inference 방어.
+
+### lab step → 도구·범위 매핑 표
+
+| step | 학습 항목 | 핵심 OSS 도구 | OWASP / NIST |
+|------|----------|--------------|---------------|
+| s1 | FL 보안 기본 시나리오 | Flower / PySyft 소개 | NIST AI |
+| s2 | FL 위협 시나리오 생성 | LLM + 5 카테고리 위협 | LLM03 |
+| s3 | FL 정책 평가 | LLM + DP / HE / RA 검토 | NIST AI 600-1 |
+| s4 | FL 인젝션 (LLM 측면) | week01~03 도구 재사용 | LLM01 |
+| s5 | FL 자동 분석 파이프라인 | Flower + Opacus + log aggregator | training |
+| s6 | FL 가드레일 | DP-SGD + Krum + TenSEAL | training |
+| s7 | FL 모니터링 | round-by-round metrics + Prometheus | observability |
+| s8 | FL 평가 보고서 | markdown + accuracy/privacy tradeoff | report |
+| s99 | 통합 (s1→s2→s3→s5→s6) | Bastion plan 5 단계 | 전체 |
+
+### FL 위협 분류표 (NIST AI 600-1 + 학계)
+
+| 카테고리 | 사례 | 방어 |
+|---------|------|------|
+| **데이터 poisoning** | client 가 mislabeled data | DP + RA |
+| **모델 poisoning** | client 가 악성 gradient | Krum / Trimmed Mean / Median |
+| **Backdoor injection** | trigger 학습 (DBA, BadNet-FL) | Norm clipping + RA |
+| **Sybil attack** | 다수 가짜 client | client auth + reputation |
+| **Membership inference** | server 가 client data 추정 | DP-SGD (ε ≤ 8) |
+| **Property inference** | client 의 통계적 속성 추정 | DP-SGD + Secure Agg |
+| **Free-riding** | 무임승차 (random gradient) | gradient quality 검증 |
+| **Gradient inversion** | server 가 client 입력 복원 | Secure Aggregation + HE |
+| **Model extraction** | API 통한 모델 복제 | rate limit + watermarking |
+
+### 학생 환경 준비
+
+```bash
+pip install --user flwr opacus tenseal cryptography
+pip install --user pysyft openfl
+pip install --user torch torchvision
+
+# Robust aggregation
+pip install --user robust-federated-learning   # 비공식
+git clone https://github.com/EPFML/byzantine-robust-noniid /tmp/byz-rfl
+
+# 기타
+pip install --user pandas matplotlib numpy
+```
+
+### 핵심 도구별 상세 사용법
+
+#### 도구 1: Flower 기본 FL (Step 1)
+
+```python
+# server.py
+import flwr as fl
+
+strategy = fl.server.strategy.FedAvg(
+    min_fit_clients=3,
+    min_evaluate_clients=3,
+    min_available_clients=3,
+)
+
+fl.server.start_server(
+    server_address="0.0.0.0:8080",
+    config=fl.server.ServerConfig(num_rounds=10),
+    strategy=strategy,
+)
+
+# client.py
+import flwr as fl
+import torch
+from torchvision import datasets, transforms
+
+class FlowerClient(fl.client.NumPyClient):
+    def __init__(self, model, trainloader, testloader):
+        self.model = model
+        self.trainloader = trainloader
+        self.testloader = testloader
+
+    def get_parameters(self, config):
+        return [val.cpu().numpy() for _, val in self.model.state_dict().items()]
+
+    def set_parameters(self, parameters):
+        params_dict = zip(self.model.state_dict().keys(), parameters)
+        state_dict = {k: torch.tensor(v) for k, v in params_dict}
+        self.model.load_state_dict(state_dict)
+
+    def fit(self, parameters, config):
+        self.set_parameters(parameters)
+        # training
+        return self.get_parameters(config), len(self.trainloader.dataset), {}
+
+    def evaluate(self, parameters, config):
+        self.set_parameters(parameters)
+        loss, accuracy = test(self.model, self.testloader)
+        return loss, len(self.testloader.dataset), {"accuracy": accuracy}
+
+fl.client.start_numpy_client(server_address="server-ip:8080", client=FlowerClient(...))
+```
+
+#### 도구 2: FL 위협 시나리오 생성 (Step 2)
+
+```python
+import requests
+
+prompt = """Generate a federated learning security threat scenario:
+1. Threat type (data poisoning / model poisoning / backdoor / Sybil / inference)
+2. Adversary capability (1 client, K clients, 30% clients)
+3. Attack mechanism (label flip / gradient direction / trigger)
+4. Impact (accuracy drop, backdoor success rate, privacy leak)
+5. Detection signals (gradient norm, accuracy curve, client distribution)
+6. Defenses (DP / RA / HE / client auth)
+
+JSON: {"scenario":"...", "threat":"...", "mechanism":"...", "impact":"...", "detection":[...], "defenses":[...]}
+"""
+
+r = requests.post("http://192.168.0.105:11434/api/generate",
+                 json={"model":"gpt-oss:120b","prompt":prompt,"stream":False})
+print(r.json()['response'])
+```
+
+#### 도구 3: FL 정책 평가 (Step 3)
+
+```python
+def eval_fl_policy(policy):
+    p = f"""정책이 FL 위협에 견고한지 평가:
+{policy}
+
+분석:
+1. Differential Privacy (ε / δ / clip norm / noise multiplier)
+2. Robust Aggregation (FedAvg / Krum / Median / Trimmed Mean)
+3. Homomorphic Encryption (CKKS / BFV)
+4. Client authentication (TLS, JWT)
+5. Reputation system
+6. Norm bounding (gradient clipping)
+7. Secure Aggregation (SecAgg)
+
+JSON: {{"weaknesses":[...], "missing_defenses":[...], "rec":[...]}}"""
+
+    r = requests.post("http://192.168.0.105:11434/api/generate",
+        json={"model":"gpt-oss:120b","prompt":p,"stream":False})
+    return r.json()['response']
+
+policy = """
+1. Aggregation: FedAvg (no robust)
+2. DP 미적용
+3. Client 인증: 단순 IP whitelist
+4. Norm clipping 미적용
+5. HE 미적용
+"""
+print(eval_fl_policy(policy))
+```
+
+#### 도구 5: 자동 분석 파이프라인 (Step 5) — Opacus DP-SGD
+
+```python
+from opacus import PrivacyEngine
+import torch
+from torch.utils.data import DataLoader
+
+model = ...   # pytorch model
+optimizer = torch.optim.SGD(model.parameters(), lr=0.05)
+data_loader = DataLoader(train_dataset, batch_size=64)
+
+privacy_engine = PrivacyEngine()
+model, optimizer, data_loader = privacy_engine.make_private_with_epsilon(
+    module=model,
+    optimizer=optimizer,
+    data_loader=data_loader,
+    target_epsilon=8.0,        # ε ≤ 8 (적당히 강한 privacy)
+    target_delta=1e-5,
+    epochs=10,
+    max_grad_norm=1.0,         # gradient clipping
+)
+
+for epoch in range(10):
+    for batch in data_loader:
+        optimizer.zero_grad()
+        output = model(batch.x)
+        loss = criterion(output, batch.y)
+        loss.backward()
+        optimizer.step()
+
+    epsilon = privacy_engine.get_epsilon(delta=1e-5)
+    print(f"Epoch {epoch}: ε = {epsilon:.2f}, δ = 1e-5")
+```
+
+#### 도구 6: 가드레일 (Step 6) — Krum + TenSEAL HE
+
+```python
+import numpy as np
+import tenseal as ts
+
+# === Krum (Byzantine-robust aggregation) ===
+def krum(updates, num_byzantine):
+    """Krum: 다수 Byzantine 에 robust"""
+    n = len(updates)
+    distances = np.zeros((n, n))
+    for i in range(n):
+        for j in range(i+1, n):
+            d = np.linalg.norm(updates[i] - updates[j])**2
+            distances[i, j] = distances[j, i] = d
+
+    # 각 update 의 closest n-num_byzantine-2 score
+    scores = []
+    for i in range(n):
+        sorted_d = sorted(distances[i])
+        scores.append(sum(sorted_d[:n-num_byzantine-2]))
+
+    selected = np.argmin(scores)
+    return updates[selected]
+
+# Trimmed Mean
+def trimmed_mean(updates, trim_ratio=0.1):
+    arr = np.stack(updates)
+    return np.mean(np.sort(arr, axis=0)[int(len(updates)*trim_ratio):
+                                         int(len(updates)*(1-trim_ratio))], axis=0)
+
+# Median
+def median_aggregate(updates):
+    return np.median(np.stack(updates), axis=0)
+
+# === TenSEAL — Secure Aggregation (HE) ===
+context = ts.context(ts.SCHEME_TYPE.CKKS, poly_modulus_degree=8192,
+                    coeff_mod_bit_sizes=[60, 40, 40, 60])
+context.global_scale = 2**40
+context.generate_galois_keys()
+
+# Client 측: encrypt
+def client_encrypt(gradient, context):
+    return ts.ckks_vector(context, gradient.tolist())
+
+# Server 측: encrypted aggregation
+def server_aggregate_encrypted(encrypted_grads):
+    agg = encrypted_grads[0]
+    for g in encrypted_grads[1:]:
+        agg = agg + g
+    return agg / len(encrypted_grads)
+
+# Client 측: decrypt
+def client_decrypt(encrypted_result):
+    return np.array(encrypted_result.decrypt())
+
+# === 통합 pipeline ===
+class RobustFL:
+    def __init__(self, num_byzantine=2, use_he=True, use_dp=True):
+        self.num_byzantine = num_byzantine
+        self.use_he = use_he
+        self.use_dp = use_dp
+        if use_he:
+            self.context = ts.context(ts.SCHEME_TYPE.CKKS, poly_modulus_degree=8192,
+                                     coeff_mod_bit_sizes=[60,40,40,60])
+            self.context.global_scale = 2**40
+
+    def aggregate(self, updates):
+        if self.use_he:
+            encrypted = [ts.ckks_vector(self.context, u.tolist()) for u in updates]
+            return self.aggregate_encrypted(encrypted)
+
+        # Krum 또는 Median
+        if self.num_byzantine > 0:
+            return krum(updates, self.num_byzantine)
+        else:
+            return median_aggregate(updates)
+```
+
+#### 도구 7: 모니터링 (Step 7)
+
+```python
+from prometheus_client import start_http_server, Gauge, Counter, Histogram
+import threading, time
+
+fl_round = Gauge('fl_current_round', 'Current FL round')
+fl_clients = Gauge('fl_active_clients', 'Active FL clients')
+fl_accuracy = Gauge('fl_global_accuracy', 'Global model accuracy')
+fl_byzantine_detected = Counter('fl_byzantine_detected_total', 'Byzantine clients detected')
+fl_gradient_norm = Histogram('fl_gradient_norm', 'Gradient L2 norm', ['client_id'])
+fl_dp_epsilon = Gauge('fl_dp_epsilon', 'Current DP epsilon')
+fl_he_overhead_ms = Histogram('fl_he_overhead_ms', 'HE encryption overhead ms')
+
+class FLMonitor:
+    def __init__(self):
+        self.round_history = []
+
+    def on_round_start(self, round_num):
+        fl_round.set(round_num)
+
+    def on_client_join(self, client_id):
+        fl_clients.inc()
+
+    def on_gradient_received(self, client_id, gradient):
+        norm = float(np.linalg.norm(gradient))
+        fl_gradient_norm.labels(client_id=client_id).observe(norm)
+        if norm > 100:
+            fl_byzantine_detected.inc()
+            print(f"  ★ Byzantine suspected: client {client_id}, norm {norm:.2f}")
+
+    def on_round_end(self, accuracy, epsilon):
+        fl_accuracy.set(accuracy)
+        fl_dp_epsilon.set(epsilon)
+        self.round_history.append((accuracy, epsilon))
+        if len(self.round_history) > 2:
+            prev_acc = self.round_history[-2][0]
+            if accuracy < prev_acc * 0.95:
+                print(f"  ★ Accuracy regression: {prev_acc:.3f} → {accuracy:.3f}")
+
+start_http_server(9304)
+```
+
+#### 도구 8: 보고서 (Step 8)
+
+```bash
+cat > /tmp/fl-eval-report.md << 'EOF'
+# Federated Learning Security Evaluation — 2026-Q2
+
+## 1. Executive Summary
+- 50 clients, 100 rounds, MNIST baseline
+- 공격 시나리오: 5 카테고리 (poisoning / backdoor / Sybil / membership inference / gradient inversion)
+- 방어: DP-SGD (ε=8) + Krum + TenSEAL HE
+
+## 2. 공격 ASR (방어 적용 전)
+| 공격 | ASR | 노트 |
+|------|-----|------|
+| Label flip (10 client) | 18% acc loss | mild |
+| Backdoor (DBA, 5 client) | 78% trigger success | severe |
+| Sybil (50 fake client) | acc 90% → 12% | catastrophic |
+| Membership inference | 73% (random=50%) | high |
+| Gradient inversion (image) | PSNR 32 (recovered) | severe |
+
+## 3. 방어 효과
+| 방어 | 공격 차단율 | 비용 |
+|------|------------|------|
+| DP-SGD (ε=8) | inference 73→55% | acc -3% |
+| Krum | poisoning 18→2%, Sybil 88→3% | round 시간 +20% |
+| TenSEAL HE | gradient inversion 32→0 | 100x compute |
+| Norm clipping (1.0) | backdoor 78→23% | acc -1% |
+| Client auth (TLS+JWT) | Sybil 88→5% | infra 추가 |
+| **종합** | 모든 공격 5% 이하 | acc -5%, latency 2x |
+
+## 4. accuracy / privacy tradeoff
+- ε=∞ (no DP): acc 99% / privacy 0
+- ε=8: acc 96% / privacy 적당
+- ε=1: acc 88% / privacy 강
+- ε=0.1: acc 60% / privacy 매우 강
+
+## 5. 권고
+### Short
+- DP-SGD ε=8 즉시 적용
+- Norm clipping 1.0
+- TLS + 인증서 client
+
+### Mid
+- Krum / Median aggregation 도입
+- Reputation system (round 마다 client score)
+- TenSEAL HE for sensitive feature
+
+### Long
+- Secure Aggregation 프로토콜 (Bonawitz)
+- Differential Privacy budget 누적 추적
+- Zero-knowledge proof for client integrity
+EOF
+
+pandoc /tmp/fl-eval-report.md -o /tmp/fl-eval-report.pdf \
+  --pdf-engine=xelatex -V mainfont="Noto Sans CJK KR"
+```
+
+### 점검 / 평가 / 보고 흐름 (8 step + multi_task)
+
+#### Phase A — 기본 + 시나리오 + 정책 (s1·s2·s3)
+
+```bash
+python3 /tmp/fl-server.py &
+python3 /tmp/fl-client.py &
+python3 /tmp/fl-scenario.py
+python3 /tmp/fl-policy-eval.py
+```
+
+#### Phase B — 인젝션 + 자동화 (s4·s5)
+
+```bash
+python3 /tmp/extraction-injection.py    # week01~03 재사용
+python3 /tmp/fl-dpsgd.py
+```
+
+#### Phase C — 가드레일 + 모니터링 + 보고 (s6·s7·s8)
+
+```bash
+python3 /tmp/fl-robust-aggregation.py
+python3 /tmp/fl-monitor.py &
+pandoc /tmp/fl-eval-report.md -o /tmp/fl-eval-report.pdf
+```
+
+#### Phase D — 통합 (s99 multi_task)
+
+s1 → s2 → s3 → s5 → s6 를 Bastion 가:
+
+1. plan: FL 기본 → 시나리오 → 정책 평가 → DP-SGD → Robust agg + HE
+2. execute: Flower / Opacus / Krum / TenSEAL
+3. synthesize: 5 산출물 (basic.txt / scenario.json / policy.json / dpsgd-results.csv / robust-defenses.py)
+
+### 도구 비교표 — FL 단계별
+
+| 단계 | 1순위 | 2순위 | 사용 |
+|------|-------|-------|------|
+| FL framework | Flower | PySyft / OpenFL | OSS |
+| DP-SGD | Opacus (Meta) | TF-Privacy | OSS |
+| Robust Aggregation | Krum / Trimmed Mean | Median / Multi-Krum | 학계 |
+| Homomorphic Encryption | TenSEAL (Microsoft SEAL) | HElib | OSS |
+| Secure Aggregation | Bonawitz protocol | SecAgg+ | 학계 |
+| Client auth | TLS + JWT | mTLS + cert | 표준 |
+| Reputation | 자체 구현 | FedRep | 학계 |
+| 모니터링 | Prometheus + custom | TensorBoard | OSS |
+| Evaluation | accuracy / ε / ASR / fairness | MLflow | 종합 |
+| 보고서 | pandoc | Word | 기술 |
+
+### 도구 선택 매트릭스 — 시나리오별 권장
+
+| 시나리오 | 우선 도구 | 이유 |
+|---------|---------|------|
+| "FL 첫 도입" | Flower + Opacus DP | 학습 |
+| "Byzantine 가능성" | Krum / Median | robust |
+| "사용자 데이터 강한 보호" | TenSEAL HE + DP | 민감 |
+| "다수 client (1000+)" | Bonawitz Secure Agg | 확장 |
+| "compliance (GDPR)" | DP-SGD ε≤8 + Reputation + 감사 | 규제 |
+| "research" | PySyft + OpenMined | 학계 |
+| "production" | Flower + Opacus + Krum + TenSEAL + reputation | 종합 |
+
+### 학생 셀프 체크리스트 (각 step 완료 기준)
+
+- [ ] s1: Flower server + 3 client + 10 round
+- [ ] s2: 6 컴포넌트 위협 시나리오 (5 카테고리)
+- [ ] s3: 정책 평가 (7 항목)
+- [ ] s4: week01~03 인젝션 재실행
+- [ ] s5: Opacus DP-SGD + ε 추적
+- [ ] s6: Krum + Median + TenSEAL HE 통합
+- [ ] s7: 7+ Prometheus 메트릭 (round / clients / acc / Byzantine / norm / ε / HE)
+- [ ] s8: 보고서 (5 공격 ASR + 방어 효과 + tradeoff + 권고)
+- [ ] s99: Bastion 가 5 작업 (basic / scenario / policy / dpsgd / robust+he) 순차
+
+### 추가 참조 자료
+
+- **NIST AI 600-1** (Generative AI Risk Management)
+- **OWASP LLM Top 10** (LLM03 Training Data Poisoning)
+- **Flower** https://flower.dev/
+- **PySyft** https://github.com/OpenMined/PySyft
+- **OpenFL** https://github.com/securefederatedai/openfl
+- **Opacus (Meta)** https://opacus.ai/
+- **TenSEAL** https://github.com/OpenMined/TenSEAL
+- **Microsoft SEAL** https://github.com/Microsoft/SEAL
+- **Bonawitz Secure Aggregation** (2017)
+- **Krum (Blanchard)** (2017)
+- **Backdoor in FL (Bagdasaryan)** (2020)
+- **Gradient inversion (Geiping)** (2020)
+
+위 모든 FL 평가는 **격리 환경** 으로 수행한다. DP-SGD ε 은 한 번 소비되면 영구히 누적 —
+ε budget 추적 필수. HE 는 100x compute overhead — 민감 feature 만 선택적 적용. Krum 의
+num_byzantine 가정 (n/2 미만) 은 실제 Sybil 공격 시 깨질 수 있음 — client auth 와 병용.
+gradient inversion 공격은 batch size 1 일 때 가장 강력 — micro-batch 1 회피.

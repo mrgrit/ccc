@@ -863,3 +863,289 @@ graph LR
 
 **학생 액션**: lab DVWA chain exploit.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course13 — Week 02 OSINT 고급)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | theHarvester (이메일 / subdomain) | theHarvester |
+| s2 | SpiderFoot (자동 multi-source) | SpiderFoot |
+| s3 | Maltego CE (graph) | Maltego CE |
+| s4 | sherlock + maigret (username) | sherlock / maigret |
+| s5 | amass (subdomain enum) | amass |
+| s6 | Shodan / Censys CLI | shodan-cli / censys-cli |
+| s7 | Recon-NG (자동) | recon-ng |
+| s8 | OSINT-SAN (한국 특화) | OSINT-SAN |
+
+### 학생 환경 준비
+
+```bash
+# === theHarvester ===
+sudo apt install -y theharvester
+# 또는 latest:
+git clone https://github.com/laramies/theHarvester ~/harvester
+cd ~/harvester && pip install -r requirements.txt
+
+# === SpiderFoot ===
+git clone https://github.com/smicallef/spiderfoot ~/spiderfoot
+cd ~/spiderfoot && pip install -r requirements.txt
+python3 sf.py -l 0.0.0.0:5001                            # http://localhost:5001
+
+# === Maltego CE (community edition) ===
+sudo apt install -y maltego                              # 또는 deb 다운로드
+# Web UI: maltego (GUI 시작)
+
+# === sherlock + maigret ===
+git clone https://github.com/sherlock-project/sherlock ~/sherlock
+pip install -r ~/sherlock/requirements.txt
+
+pip install maigret                                       # sherlock 강화판
+
+# === amass ===
+go install -v github.com/owasp-amass/amass/v4/...@master
+amass --version
+
+# === subfinder + httpx ===
+go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
+go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
+
+# === Shodan / Censys ===
+pip install shodan censys
+shodan init <API_KEY>
+
+# === Recon-NG ===
+sudo apt install -y recon-ng
+
+# === OSINT-SAN (한국 OSINT 전문) ===
+git clone https://github.com/JoaoFortini/OSINT-SAN ~/osint-san
+```
+
+### theHarvester (이메일 + subdomain 표준)
+
+```bash
+# === 1. 모든 source 동시 ===
+theHarvester -d target.com -b all -l 500 -f /tmp/osint
+
+# Source list:
+# - bing, google, duckduckgo
+# - linkedin, github, baidu
+# - hunter, intelx
+# - shodan, censys (API key 필요)
+# - dnsdumpster, threatcrowd
+# - virustotal
+
+# === 2. 특정 source ===
+theHarvester -d target.com -b google,bing -l 500
+theHarvester -d target.com -b linkedin,github
+
+# === 3. 결과 저장 (HTML + XML + JSON) ===
+theHarvester -d target.com -b all -l 500 \
+    -f /tmp/osint                                         # html, xml, json 자동
+```
+
+### SpiderFoot (가장 종합 — 200+ module)
+
+```bash
+# === 1. CLI ===
+cd ~/spiderfoot
+python3 sf.py -s target.com -t DOMAIN_NAME
+
+# === 2. Web UI ===
+python3 sf.py -l 0.0.0.0:5001                            # http://localhost:5001
+
+# Web UI 에서:
+# - New Scan
+# - Target: target.com
+# - Use cases: Footprint / Investigate / Passive
+# - 200+ module 중 선택 (또는 자동)
+# - Start
+
+# === 3. CLI 직접 ===
+python3 sf.py -m sfp_dnsresolve,sfp_dnsbrute,sfp_email,sfp_emailrep \
+    -s target.com -t DOMAIN_NAME -F html
+
+# === 4. 결과 export ===
+# Web UI 에서:
+# - Graph 시각화
+# - CSV/JSON export
+# - Tag 별 분류
+```
+
+### Amass (subdomain 표준 — passive + active)
+
+```bash
+# === 1. Passive (가장 빠름) ===
+amass enum --passive -d target.com -o /tmp/subdomains.txt
+
+# === 2. Active (DNS brute + cert) ===
+amass enum -active -d target.com -src
+
+# === 3. Track (시간 흐름 따라) ===
+amass track -d target.com
+
+# === 4. Visualization (graph) ===
+amass viz -d target.com -d3                              # D3.js HTML
+amass viz -d target.com -gephi                           # Gephi GraphML
+amass viz -d target.com -graphistry                      # Graphistry
+
+# === 5. DB 통합 ===
+amass intel -addr 1.2.3.0/24                             # IP block 의 도메인
+amass intel -asn 12345                                    # ASN 의 도메인
+```
+
+### sherlock + maigret (Username 다중 사이트)
+
+```bash
+# === sherlock (사용자명을 350+ 사이트에서 찾기) ===
+python3 ~/sherlock/sherlock.py john_doe
+# 출력:
+# [+] john_doe @ Twitter: https://twitter.com/john_doe
+# [+] john_doe @ Instagram: https://instagram.com/john_doe
+# [+] john_doe @ GitHub: https://github.com/john_doe
+# [-] john_doe @ Reddit: not found
+
+# === maigret (sherlock 강화판 — 3000+ 사이트) ===
+maigret john_doe
+
+# 또는 다중 username
+maigret john_doe john.doe johnny_doe
+
+# Result HTML/PDF
+maigret john_doe --html --pdf
+```
+
+### Shodan / Censys (인터넷 자산 검색)
+
+```bash
+# === Shodan ===
+shodan init <API_KEY>
+
+# 도메인 의 모든 서버
+shodan domain target.com
+
+# 특정 IP
+shodan host 1.2.3.4
+
+# Search query
+shodan search "apache 2.4.49 country:KR" --limit 100
+
+# Country + product
+shodan search "country:KR product:apache" --limit 50
+
+# === Censys ===
+censys config <API_ID> <API_SECRET>
+
+censys search "services.tls.certificates.leaf_data.subject_dn: target.com"
+censys search "services.banner: nginx country: KR"
+```
+
+### Recon-NG (Metasploit 스타일 자동)
+
+```bash
+recon-ng
+
+# Module workspace
+[recon-ng] > workspaces create target
+[recon-ng] [target] > modules search
+
+# 모듈 실행 예
+[recon-ng] [target] > modules load recon/domains-hosts/google_site_web
+[recon-ng] [target] (google_site_web) > options set source target.com
+[recon-ng] [target] (google_site_web) > run
+
+# 결과 저장 (DB)
+[recon-ng] [target] > db schema
+[recon-ng] [target] > show hosts
+[recon-ng] [target] > show contacts
+
+# Marketplace 에서 모듈 install
+[recon-ng] > marketplace search
+[recon-ng] > marketplace install all
+```
+
+### Maltego CE (Graph-based OSINT)
+
+```bash
+# === GUI 실행 ===
+maltego &
+
+# Web UI 에서:
+# 1. New Graph
+# 2. Entity Palette → Domain → "target.com" drag
+# 3. Right click → Run Transform → "To DNS Names"
+# 4. 결과 노드들에 추가 transforms:
+#    - To IP Addresses
+#    - To Email Addresses
+#    - To Person (LinkedIn)
+# 5. Graph 자동 시각화
+```
+
+### 통합 OSINT 자동 흐름
+
+```bash
+#!/bin/bash
+# /opt/scripts/osint-auto.sh
+TARGET=$1
+DIR=/var/log/osint/$TARGET-$(date +%Y%m%d)
+mkdir -p $DIR
+
+# === 1. Domain → Subdomain (3 도구 병행) ===
+amass enum --passive -d $TARGET -o $DIR/01-amass.txt
+subfinder -d $TARGET -o $DIR/02-subfinder.txt
+
+theHarvester -d $TARGET -b all -l 500 -f $DIR/03-harvester &
+
+# === 2. Email enum ===
+theHarvester -d $TARGET -b google,bing,linkedin -l 200 \
+    -f $DIR/04-emails
+
+# === 3. SpiderFoot 종합 ===
+python3 ~/spiderfoot/sf.py -s $TARGET -t DOMAIN_NAME -F json -o /tmp/sf-result.json
+
+# === 4. Username 발견 (이메일 → username) ===
+emails=$(grep -oE '[a-zA-Z0-9._-]+@'"$TARGET" $DIR/04-emails*)
+for u in $emails; do
+    username=$(echo $u | cut -d'@' -f1)
+    python3 ~/sherlock/sherlock.py $username --print-found
+done > $DIR/05-sherlock.txt
+
+# === 5. Shodan (이미 발견된 IP) ===
+ips=$(grep -oE '\b[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\b' $DIR/01-amass.txt | sort -u)
+for ip in $ips; do
+    shodan host $ip
+done > $DIR/06-shodan.txt
+
+# === 6. Subdomain 활성 검증 (httpx) ===
+cat $DIR/01-amass.txt $DIR/02-subfinder.txt | sort -u | \
+    httpx -title -tech-detect -status-code -o $DIR/07-active.txt
+
+# === 7. 통합 보고서 ===
+cat > $DIR/00-report.md << EOF
+# OSINT Report — $TARGET
+
+## Subdomains
+- amass: $(wc -l < $DIR/01-amass.txt)
+- subfinder: $(wc -l < $DIR/02-subfinder.txt)
+- 통합 unique: $(cat $DIR/01-amass.txt $DIR/02-subfinder.txt | sort -u | wc -l)
+
+## 활성 호스트 (httpx)
+- Total: $(wc -l < $DIR/07-active.txt)
+
+## 발견 이메일
+$(cat $DIR/04-emails*)
+
+## Username (sherlock)
+$(grep -E '\[\+\]' $DIR/05-sherlock.txt | head)
+
+## Shodan 정보
+$(head -50 $DIR/06-shodan.txt)
+EOF
+
+echo "=== OSINT 완료 — $DIR ==="
+```
+
+학생은 본 2주차에서 **theHarvester + SpiderFoot + amass + subfinder + sherlock + maigret + Shodan + Censys + Maltego CE + Recon-NG** 10 도구로 OSINT 의 advanced multi-source 자동 수집 + graph 시각화 + 보고서 자동 생성을 OSS 만으로 익힌다.

@@ -1133,3 +1133,608 @@ graph LR
 
 **학생 액션**: Elastic 룰 5개 작성.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course14 SOC Advanced — Week 01 SOC 성숙도 모델·KPI·자가진단)
+
+> 이 부록은 lab `soc-adv-ai/week01.yaml` (10 step + multi_task) 의 모든 명령을
+> 실제로 실행 가능한 형태로 도구·옵션·예상 출력·해석을 정리한다. SOC-CMM 5단계 평가 +
+> Wazuh/Suricata/nftables 의 KPI 측정 + 5 도메인 (Business/People/Process/Technology/
+> Services) 자가진단 + Level 4 목표 gap 분석 + 3/6/12개월 로드맵 작성을 다룬다.
+
+### lab step → 도구·SOC-CMM 매핑 표
+
+| step | SOC-CMM 도메인 | 학습 항목 | 핵심 OSS 도구 / 명령 | KPI |
+|------|---------------|----------|---------------------|-----|
+| s1 | Technology | Wazuh agent 연결 상태 | `curl -k https://siem:55000/agents`, dashboard | agent active rate |
+| s2 | Technology | Wazuh 룰 카탈로그 (custom + base) | `wazuh-control` + jq, `/var/ossec/ruleset/rules/` | rule count, custom ratio |
+| s3 | Technology | nftables ruleset (default policy) | `nft list ruleset`, `nft -j` | input/output drop rate |
+| s4 | Technology | Suricata 룰 + 카테고리 | `suricatasc -c rules-stats`, `suricata -T` | rule active count |
+| s5 | Process | Suricata 24h alert 통계 | `jq '.alert' /var/log/suricata/eve.json` | alert by category |
+| s6 | Process | Wazuh 고위험 (level ≥ 10) 알림 | Dashboard query, OpenSearch API | high-severity / day |
+| s7 | Process | SOC KPI 기준선 (MTTD/MTTR/FP) | dashboard 위젯, `wazuh-stats` | MTTD, MTTR, accuracy |
+| s8 | Business + People + Process + Technology + Services | 5 도메인 평가 | SOC-CMM 자가진단 spreadsheet | 도메인별 1-5 score |
+| s9 | All domains | Gap 분석 (Level 4 목표) | spreadsheet + radar chart | gap score per domain |
+| s10 | All domains | 3/6/12개월 로드맵 | RACI + Gantt (mermaid) | milestone + owner |
+| s99 | 통합 다단계 (s1→s2→s3→s4→s5) | Bastion plan: agent→rule→nft→suricata→eve | 다중 | KPI 통합 |
+
+### 학생 환경 준비 (Wazuh + Suricata + KPI 도구 풀세트)
+
+```bash
+# === [s1·s2·s6·s7] Wazuh API + CLI ===
+ssh ccc@10.20.30.100
+sudo /var/ossec/bin/wazuh-control status
+# wazuh-modulesd is running
+# wazuh-monitord is running
+# wazuh-logcollector is running
+# wazuh-remoted is running
+# wazuh-syscheckd is running
+# wazuh-analysisd is running
+# wazuh-execd is running
+# wazuh-db is running
+# wazuh-authd is running
+
+# === Wazuh API (요청 통과를 위한 토큰 획득) ===
+TOKEN=$(curl -s -k -u wazuh:wazuh -X POST "https://10.20.30.100:55000/security/user/authenticate?raw=true")
+echo $TOKEN
+
+# 모든 agent 조회
+curl -s -k -H "Authorization: Bearer $TOKEN" "https://10.20.30.100:55000/agents?pretty" | \
+  jq '.data.affected_items[] | {id,name,ip,status,os,version}'
+
+# 활성 룰 통계
+curl -s -k -H "Authorization: Bearer $TOKEN" "https://10.20.30.100:55000/rules?pretty&limit=500&q=status=enabled" | \
+  jq '.data.total_affected_items'
+
+# === [s3] nftables ===
+sudo apt install -y nftables
+ssh ccc@10.20.30.1 'sudo nft list ruleset'
+ssh ccc@10.20.30.1 'sudo nft -j list ruleset' | jq '.nftables[]'
+
+# === [s4·s5] Suricata ===
+ssh ccc@10.20.30.1 'suricata -V'
+# Suricata 6.0.x
+
+ssh ccc@10.20.30.1 'sudo suricatasc -c uptime'
+ssh ccc@10.20.30.1 'sudo suricatasc -c rules-stats'
+ssh ccc@10.20.30.1 'sudo suricatasc -c iface-stat eth0'
+
+# 룰 카운트
+ssh ccc@10.20.30.1 'cat /etc/suricata/rules/*.rules | grep -v ^#  | wc -l'
+
+# eve.json 분석
+ssh ccc@10.20.30.1 'sudo tail -100 /var/log/suricata/eve.json | jq -r ".alert.signature" | sort | uniq -c | sort -rn'
+
+# === [s8·s9] SOC-CMM 자가진단 ===
+mkdir -p ~/soc-cmm-assessment
+cat > ~/soc-cmm-assessment/template.md << 'TPL'
+# SOC-CMM Self-Assessment
+
+## 5 Domains × N Aspects × 1-5 Score
+
+### Business
+- B.1 Strategy & Mission       [_]
+- B.2 Charter                  [_]
+- B.3 Funding                  [_]
+- B.4 Stakeholders             [_]
+
+### People
+- P.1 Roles & Responsibilities [_]
+- P.2 Skills & Training        [_]
+- P.3 Career Path              [_]
+- P.4 Retention                [_]
+- P.5 Diversity                [_]
+
+### Process
+- PR.1 Use Case Management     [_]
+- PR.2 IR Process              [_]
+- PR.3 Threat Hunting          [_]
+- PR.4 Forensics               [_]
+- PR.5 Lessons Learned         [_]
+
+### Technology
+- T.1 SIEM                     [_]
+- T.2 SOAR                     [_]
+- T.3 EDR/XDR                  [_]
+- T.4 TIP                      [_]
+- T.5 Sandbox                  [_]
+- T.6 NDR                      [_]
+
+### Services
+- S.1 Monitoring               [_]
+- S.2 Detection                [_]
+- S.3 Response                 [_]
+- S.4 Threat Intel             [_]
+- S.5 Vulnerability Mgmt       [_]
+- S.6 Reporting                [_]
+TPL
+
+# === [s9] Radar chart 시각화 ===
+pip install --user matplotlib numpy pyyaml
+
+# === [s10] 로드맵 ===
+sudo apt install -y graphviz
+npm install -g @mermaid-js/mermaid-cli
+
+# === Bonus: ATT&CK Navigator ===
+git clone https://github.com/mitre-attack/attack-navigator /tmp/nav
+cd /tmp/nav/nav-app && npm install && npm run start &
+```
+
+### 핵심 도구별 상세 사용법
+
+#### 도구 1: Wazuh API — agent + 룰 + 알림 통계 (Step 1·2·6·7)
+
+```bash
+# === 인증 토큰 획득 ===
+TOKEN=$(curl -s -k -u wazuh:wazuh -X POST "https://10.20.30.100:55000/security/user/authenticate?raw=true")
+
+# === 1. Agent 인벤토리 ===
+curl -s -k -H "Authorization: Bearer $TOKEN" \
+  "https://10.20.30.100:55000/agents?pretty&select=id,name,ip,status,os.name,os.version,version" | \
+  jq '.data.affected_items'
+
+# 상태별 집계
+curl -s -k -H "Authorization: Bearer $TOKEN" \
+  "https://10.20.30.100:55000/agents/summary/status?pretty" | jq '.data'
+# {
+#   "total": 4,
+#   "active": 4,
+#   "disconnected": 0,
+#   "never_connected": 0,
+#   "pending": 0
+# }
+
+# === 2. 룰 카탈로그 ===
+curl -s -k -H "Authorization: Bearer $TOKEN" \
+  "https://10.20.30.100:55000/rules?pretty&limit=1" | \
+  jq '.data.total_affected_items'
+
+curl -s -k -H "Authorization: Bearer $TOKEN" \
+  "https://10.20.30.100:55000/rules?status=enabled&pretty&limit=1" | \
+  jq '.data.total_affected_items'
+
+curl -s -k -H "Authorization: Bearer $TOKEN" \
+  "https://10.20.30.100:55000/rules?filename=local_rules.xml&pretty&limit=500" | \
+  jq '.data.affected_items[] | {id,level,description,groups}'
+
+# === 3. 알림 통계 (high severity) ===
+INDEX_HOST=10.20.30.100
+curl -s -k -u admin:admin "https://$INDEX_HOST:9200/wazuh-alerts-*/_search?pretty" -H 'Content-Type: application/json' -d '{
+  "size": 0,
+  "query": {
+    "bool": {
+      "must": [
+        {"range": {"@timestamp": {"gte": "now-24h"}}},
+        {"range": {"rule.level": {"gte": 10}}}
+      ]
+    }
+  },
+  "aggs": {
+    "by_rule": {
+      "terms": {"field": "rule.id", "size": 20}
+    }
+  }
+}' | jq '.aggregations.by_rule.buckets'
+
+# === 4. SOC KPI 기준선 ===
+# MTTD = 사고 발생 시각 - 알림 발생 시각 (sub-minute target)
+# MTTR = 알림 발생 시각 - close 시각 (Level 4 SOC: < 1 hour)
+curl -s -k -u admin:admin "https://$INDEX_HOST:9200/wazuh-alerts-*/_search" -H 'Content-Type: application/json' -d '{
+  "size": 0,
+  "query": {"range": {"@timestamp": {"gte": "now-7d"}}},
+  "aggs": {
+    "rule_levels": {
+      "terms": {"field": "rule.level", "size": 16},
+      "aggs": {"avg_lag": {"avg": {"field": "decoder.parent.delay_ms"}}}
+    }
+  }
+}'
+```
+
+#### 도구 2: nftables — 방화벽 정책 + drop rate (Step 3)
+
+```bash
+# 전체 ruleset
+ssh ccc@10.20.30.1 'sudo nft list ruleset'
+# table inet filter {
+#   chain input {
+#     type filter hook input priority 0; policy drop;
+#     ct state {established, related} accept
+#     iifname "lo" accept
+#     tcp dport {22, 443, 80} accept
+#     ip saddr 10.20.30.0/24 accept
+#   }
+#   chain output { type filter hook output priority 0; policy accept; }
+#   chain forward { type filter hook forward priority 0; policy drop; }
+# }
+
+# Default policy 확인
+ssh ccc@10.20.30.1 'sudo nft -j list table inet filter' | \
+  jq '.nftables[] | select(.chain) | {name: .chain.name, policy: .chain.policy}'
+
+# Counter 확인 (drop rate 측정용)
+ssh ccc@10.20.30.1 'sudo nft list counter inet filter input_dropped'
+
+# Drop rate 계산
+DROP_PKT=$(ssh ccc@10.20.30.1 'sudo nft -j list counters inet filter' | jq '.nftables[] | select(.counter.name == "input_dropped").counter.packets')
+TOTAL_PKT=$(ssh ccc@10.20.30.1 'cat /proc/net/dev | grep eth0 | awk "{print \$3}"')
+echo "Drop rate: $((DROP_PKT * 100 / TOTAL_PKT))%"
+
+# 룰 추가
+ssh ccc@10.20.30.1 'sudo nft add rule inet filter input ip saddr 192.168.0.10 drop counter'
+
+# Audit log
+ssh ccc@10.20.30.1 'sudo nft add rule inet filter input log prefix "NFT_DROP " level info'
+ssh ccc@10.20.30.1 'sudo journalctl -t kernel | grep NFT_DROP | tail -20'
+
+# 영구화
+ssh ccc@10.20.30.1 'sudo nft list ruleset > /etc/nftables.conf'
+ssh ccc@10.20.30.1 'sudo systemctl enable nftables'
+```
+
+#### 도구 3: Suricata — IDS 룰 + 알림 분석 (Step 4·5)
+
+```bash
+# === 룰 통계 ===
+ssh ccc@10.20.30.1 'sudo suricatasc -c uptime'
+ssh ccc@10.20.30.1 'sudo suricatasc -c rules-stats'
+# {"return": "OK", "message": {"loaded": 25437, "active": 25320, "disabled": 117}}
+
+# 룰 파일별 카운트
+ssh ccc@10.20.30.1 'for f in /etc/suricata/rules/*.rules; do
+  count=$(grep -v "^#\|^$" $f | wc -l)
+  echo "$count $(basename $f)"
+done | sort -rn | head -10'
+
+# 카테고리별
+ssh ccc@10.20.30.1 'grep -h "metadata:" /etc/suricata/rules/*.rules | \
+  grep -oP "attack_target [^,]+" | sort | uniq -c | sort -rn | head -10'
+
+# === 24h alert 분석 ===
+ssh ccc@10.20.30.1 'sudo tail -10000 /var/log/suricata/eve.json | jq -r "select(.event_type==\"alert\") | .alert.category" | sort | uniq -c | sort -rn'
+
+# Severity 분포
+ssh ccc@10.20.30.1 'sudo tail -10000 /var/log/suricata/eve.json | jq -r "select(.event_type==\"alert\") | .alert.severity" | sort | uniq -c'
+
+# Source IP top 10
+ssh ccc@10.20.30.1 'sudo tail -10000 /var/log/suricata/eve.json | jq -r "select(.event_type==\"alert\") | .src_ip" | sort | uniq -c | sort -rn | head -10'
+
+# 시간대별
+ssh ccc@10.20.30.1 'sudo tail -10000 /var/log/suricata/eve.json | jq -r "select(.event_type==\"alert\") | .timestamp" | cut -dT -f2 | cut -d: -f1 | sort | uniq -c'
+
+# === Lua 스크립트 — 사용자 정의 logic ===
+cat > /etc/suricata/rules/custom-lua.rules << 'RULE'
+alert http any any -> $HOME_NET any (msg:"Custom Lua check"; lua:check_admin.lua; sid:1000001;)
+RULE
+
+cat > /etc/suricata/lua/check_admin.lua << 'LUA'
+function init (args)
+  return {http_request_line = tostring(true)}
+end
+function match(args)
+  local line = tostring(args["http.request_line"])
+  if line:match("/admin") and not line:match("Authorization:") then
+    return 1
+  end
+  return 0
+end
+LUA
+
+ssh ccc@10.20.30.1 'sudo suricata -T -c /etc/suricata/suricata.yaml'
+ssh ccc@10.20.30.1 'sudo systemctl reload suricata'
+```
+
+#### 도구 4: SOC-CMM 자가진단 + Radar Chart (Step 8·9)
+
+```bash
+# === 5 도메인 점수 입력 ===
+cat > ~/soc-cmm-scores.yaml << 'YAML'
+domains:
+  Business:
+    Strategy_Mission: 3
+    Charter: 2
+    Funding: 2
+    Stakeholders: 3
+    avg: 2.5
+  People:
+    Roles_Responsibilities: 4
+    Skills_Training: 3
+    Career_Path: 2
+    Retention: 3
+    Diversity: 2
+    avg: 2.8
+  Process:
+    Use_Case_Management: 2
+    IR_Process: 3
+    Threat_Hunting: 2
+    Forensics: 1
+    Lessons_Learned: 2
+    avg: 2.0
+  Technology:
+    SIEM: 4
+    SOAR: 1
+    EDR_XDR: 3
+    TIP: 2
+    Sandbox: 1
+    NDR: 3
+    avg: 2.3
+  Services:
+    Monitoring: 4
+    Detection: 3
+    Response: 2
+    Threat_Intel: 2
+    Vulnerability_Mgmt: 3
+    Reporting: 2
+    avg: 2.7
+
+target_level: 4
+overall_avg: 2.46
+gap_to_target: 1.54
+YAML
+
+# === Radar chart (matplotlib) ===
+python3 << 'PY'
+import matplotlib.pyplot as plt
+import numpy as np
+import yaml
+
+with open('/home/ccc/soc-cmm-scores.yaml') as f:
+    data = yaml.safe_load(f)
+
+domains = ["Business", "People", "Process", "Technology", "Services"]
+current = [data["domains"][d]["avg"] for d in domains]
+target = [data["target_level"]] * len(domains)
+
+angles = np.linspace(0, 2*np.pi, len(domains), endpoint=False).tolist()
+current += current[:1]; target += target[:1]; angles += angles[:1]
+
+fig, ax = plt.subplots(figsize=(8,8), subplot_kw=dict(polar=True))
+ax.plot(angles, current, 'o-', linewidth=2, label='Current', color='#3b82f6')
+ax.fill(angles, current, alpha=0.25, color='#3b82f6')
+ax.plot(angles, target, 'o-', linewidth=2, label=f'Target (L{data["target_level"]})', color='#ef4444', linestyle='--')
+ax.fill(angles, target, alpha=0.10, color='#ef4444')
+
+ax.set_xticks(angles[:-1])
+ax.set_xticklabels(domains, fontsize=12)
+ax.set_ylim(0, 5)
+ax.set_yticks([1,2,3,4,5])
+ax.set_yticklabels(['L1 Initial','L2 Defined','L3 Managed','L4 Quantitative','L5 Optimized'], fontsize=9)
+ax.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1))
+plt.title('SOC-CMM Maturity Radar — Current vs Target', fontsize=14, pad=20)
+plt.savefig('/tmp/socmm-radar.png', dpi=150, bbox_inches='tight')
+print("Saved: /tmp/socmm-radar.png")
+PY
+
+# === Gap 표 생성 ===
+python3 << 'PY'
+import yaml
+with open('/home/ccc/soc-cmm-scores.yaml') as f: d = yaml.safe_load(f)
+
+target = d["target_level"]
+print(f"{'Domain':<14} {'Current':>8} {'Target':>8} {'Gap':>6} {'Priority':>10}")
+print("-" * 60)
+for dom in ["Business","People","Process","Technology","Services"]:
+    cur = d["domains"][dom]["avg"]
+    gap = target - cur
+    pri = "***" if gap >= 1.5 else ("**" if gap >= 1.0 else "*")
+    print(f"{dom:<14} {cur:>8.1f} {target:>8.1f} {gap:>6.1f} {pri:>10}")
+PY
+# Domain         Current   Target    Gap   Priority
+# ------------------------------------------------------------
+# Business           2.5      4.0    1.5        ***
+# People             2.8      4.0    1.2         **
+# Process            2.0      4.0    2.0        ***
+# Technology         2.3      4.0    1.7        ***
+# Services           2.7      4.0    1.3         **
+
+cat > /tmp/soc_gap_analysis.txt << 'EOF'
+=== SOC-CMM Gap Analysis ===
+Assessment Date: 2026-05-02
+Current Overall: 2.46  → Target: Level 4.0  → Total Gap: 1.54
+
+Priority Domain Order (gap descending):
+1. Process (gap 2.0)     *** — Use case mgmt + Forensics + Lessons Learned 부재
+2. Technology (gap 1.7)  *** — SOAR / Sandbox 미보유
+3. Business (gap 1.5)    *** — Charter, Funding 미정
+4. Services (gap 1.3)     ** — Response, TIP 부족
+5. People (gap 1.2)       ** — Career Path, Diversity
+
+Quick Wins (≤3개월):
+- Process: Use Case Management 도구 도입 (MaGMA UCM)
+- Technology: TheHive + Cortex (open source SOAR) 배포
+- Services: Threat Intel 자동화 (MISP + OpenCTI)
+
+Long Term (≤12개월):
+- Business: 임원 sponsor + 별도 budget code
+- Process: Tier 3 Threat Hunting 정규 program
+- People: 분기별 training + CTF 참가
+EOF
+cat /tmp/soc_gap_analysis.txt
+```
+
+#### 도구 5: 로드맵 + Gantt + RACI (Step 10)
+
+```bash
+# === Mermaid Gantt ===
+cat > /tmp/roadmap.mmd << 'M'
+gantt
+    title SOC Maturity Roadmap — Level 2.46 → 4.0
+    dateFormat  YYYY-MM-DD
+    section 단기 (3개월)
+      Use Case Mgmt 도구 도입(MaGMA)     :crit, a1, 2026-05-15, 30d
+      TheHive + Cortex 배포              :crit, a2, 2026-05-15, 45d
+      MISP + OpenCTI 활성화              :       a3, after a2, 30d
+      Wazuh 알림 룰 50→200건 확장        :       a4, 2026-05-15, 60d
+    section 중기 (6개월)
+      EDR 도입 (Wazuh Active Response)   :       b1, after a3, 60d
+      Suricata + Zeek 통합 NDR           :       b2, 2026-08-01, 60d
+      분기별 IR drill 시작                :       b3, 2026-08-15, 90d
+      KPI dashboard (Grafana) 구축       :       b4, 2026-08-15, 30d
+    section 장기 (12개월)
+      Threat Hunting 정규 program        :       c1, after b3, 120d
+      24x7 Tier 1 outsource 또는 직접     :       c2, 2026-11-01, 120d
+      Sandbox (Cuckoo + ANY.RUN) 배포     :       c3, 2026-12-01, 60d
+      Lessons Learned + retrospective     :       c4, 2027-01-01, 90d
+M
+
+mmdc -i /tmp/roadmap.mmd -o /tmp/roadmap.png
+
+# === RACI 표 ===
+cat > /tmp/raci.md << 'MD'
+## RACI (Responsible / Accountable / Consulted / Informed)
+
+| 항목 | SOC Lead | Tier 1 | Tier 2 | Tier 3 | Engineer | CISO |
+|------|---------|--------|--------|--------|----------|------|
+| Use Case Mgmt    | A   | C   | R   | C   | I   | I   |
+| SIEM 룰 작성     | C   | I   | R   | A   | C   | I   |
+| IR drill         | A   | C   | R   | R   | C   | C   |
+| Threat Hunting   | C   | -   | I   | A/R | C   | C   |
+| KPI 보고         | R   | I   | I   | I   | C   | A   |
+| Tooling 평가     | C   | -   | C   | R   | A   | I   |
+MD
+
+# === KPI dashboard 위젯 (Wazuh 내장 OpenSearch) ===
+# Dashboard → Visualize → New → Metric/Pie/Line
+# - Active agents (gauge)
+# - Alerts last 24h (line)
+# - High severity (≥10) heatmap (rule.id × hour)
+# - Top source IPs (data table)
+# - MTTD / MTTR (custom calculated field)
+```
+
+### 점검 / 평가 / 로드맵 흐름 (10 step + multi_task 통합)
+
+#### Phase A — Infra inventory (s1·s2·s3·s4·s5)
+
+```bash
+# 1. Wazuh agent + 룰
+TOKEN=$(curl -s -k -u wazuh:wazuh -X POST "https://10.20.30.100:55000/security/user/authenticate?raw=true")
+AGENT_COUNT=$(curl -s -k -H "Authorization: Bearer $TOKEN" "https://10.20.30.100:55000/agents/summary/status" | jq '.data.active')
+RULE_COUNT=$(curl -s -k -H "Authorization: Bearer $TOKEN" "https://10.20.30.100:55000/rules?limit=1" | jq '.data.total_affected_items')
+CUSTOM=$(curl -s -k -H "Authorization: Bearer $TOKEN" "https://10.20.30.100:55000/rules?filename=local_rules.xml&limit=1" | jq '.data.total_affected_items')
+
+# 2. nftables policy
+NFT_DROP=$(ssh ccc@10.20.30.1 'sudo nft -j list ruleset' | jq '[.nftables[] | select(.chain) | select(.chain.policy == "drop")] | length')
+
+# 3. Suricata
+SURI_RULES=$(ssh ccc@10.20.30.1 'sudo suricatasc -c rules-stats' | jq '.message.active')
+SURI_ALERTS_24H=$(ssh ccc@10.20.30.1 'sudo grep -c "\"event_type\":\"alert\"" /var/log/suricata/eve.json')
+
+# 4. baseline 출력
+cat > /tmp/soc-baseline.txt << EOF
+=== SOC Baseline ($(date +%F)) ===
+Wazuh agents (active):  $AGENT_COUNT
+Wazuh total rules:      $RULE_COUNT
+Wazuh custom rules:     $CUSTOM
+nftables drop chains:   $NFT_DROP / 3
+Suricata active rules:  $SURI_RULES
+Suricata 24h alerts:    $SURI_ALERTS_24H
+EOF
+cat /tmp/soc-baseline.txt
+```
+
+#### Phase B — KPI 측정 + 알림 분석 (s6·s7)
+
+```bash
+# 1. 고위험 알림 (Level ≥ 10)
+HIGH_SEV=$(curl -s -k -u admin:admin "https://10.20.30.100:9200/wazuh-alerts-*/_count?q=rule.level:>=10" | jq '.count')
+
+# 2. MTTD (평균 알림 발생 지연)
+MTTD=$(curl -s -k -u admin:admin "https://10.20.30.100:9200/wazuh-alerts-*/_search" -H 'Content-Type: application/json' -d '{
+  "size":0,
+  "aggs": {"avg_lag": {"avg": {"script": "doc[\"@timestamp\"].value.toInstant().toEpochMilli() - doc[\"decoder.timestamp\"].value.toInstant().toEpochMilli()"}}}
+}' | jq '.aggregations.avg_lag.value')
+
+echo "High severity (24h): $HIGH_SEV"
+echo "MTTD avg ms:         $MTTD"
+```
+
+#### Phase C — 자가진단 + Gap + 로드맵 (s8·s9·s10)
+
+```bash
+# 1. 5 도메인 score 입력
+vi ~/soc-cmm-scores.yaml
+
+# 2. Radar chart 생성
+python3 /tmp/gen-radar.py
+
+# 3. Gap analysis
+python3 /tmp/gen-gap.py > /tmp/soc_gap_analysis.txt
+cat /tmp/soc_gap_analysis.txt
+
+# 4. 로드맵
+mmdc -i /tmp/roadmap.mmd -o /tmp/roadmap.png
+
+# 5. 종합 보고서 (markdown → PDF)
+pandoc -o /tmp/soc-cmm-report.pdf --pdf-engine=xelatex \
+  /tmp/soc-baseline.txt /tmp/soc_gap_analysis.txt /tmp/raci.md
+```
+
+#### Phase D — 통합 시나리오 (s99 multi_task)
+
+s1 → s2 → s3 → s4 → s5 를 Bastion 가 한 번에:
+
+1. **plan**: agent inventory → 룰 카운트 → nft policy → suricata 통계 → eve.json 분석
+2. **execute**: Wazuh API + nft list + suricatasc + jq 일괄
+3. **synthesize**: 5 KPI 통합 (agent_active / rule_count / nft_drop_chain / suricata_active / alert_24h)
+
+### 도구 비교표 — SOC 요소별 측정·관리 도구
+
+| SOC 요소 | 1순위 도구 | 2순위 (보완) | 사용 조건 |
+|---------|-----------|-------------|----------|
+| SIEM | Wazuh | Splunk / Elastic | 무료 + 통합 |
+| EDR | Wazuh Active Response | Velociraptor / OSSEC | OSS 우선 |
+| SOAR | TheHive + Cortex | StackStorm / n8n | 자동화 |
+| TIP | OpenCTI / MISP | YETI | OpenCTI 가 GUI 더 풍부 |
+| NDR | Suricata + Zeek | Wireshark + ELK | full pcap 시 Zeek |
+| IDS/IPS | Suricata | Snort 3 | EVE JSON 이 좋음 |
+| Firewall | nftables | iptables (legacy) | nftables 권장 |
+| WAF | ModSecurity + OWASP CRS | Coraza | nginx 통합 시 ModSec |
+| Dashboard | Wazuh / OpenSearch Dashboard | Grafana | KPI 시각화 |
+| 자가진단 | SOC-CMM (van Os 2017) | NIST CSF 2.0 self-assess | 다층 매핑 |
+| 룰 관리 | MaGMA UCM | Detection-as-Code (Sigma + GitOps) | 성숙 SOC 시 DaC |
+| 로드맵 | mermaid Gantt | MS Project / GitLab Roadmap | OSS 우선 |
+| 보고 | pandoc / markdown | LaTeX / Beamer | 코드 + 한글 |
+
+### 도구 선택 매트릭스 — SOC 성숙도별 권장
+
+| 성숙도 (SOC-CMM) | 우선 도구 | 이유 |
+|----|----|----|
+| L1 Initial (점수 1) | Wazuh + Suricata + nftables | 무료 풀 스택 즉시 배포 |
+| L2 Defined (점수 2) | + OpenCTI + ATT&CK Navigator | TIP + TTP 매핑 |
+| L3 Managed (점수 3) | + TheHive + Cortex + Wazuh Dashboard 룰 200+ | 자동화 + 알림 confidence |
+| L4 Quantitative (점수 4) | + Sigma DaC + Velociraptor + Detection-as-Code | KPI 측정 + 회귀 |
+| L5 Optimizing (점수 5) | + ML detection + 분기 IR drill + retrospective | 지속 개선 + 외부 검증 |
+
+### 학생 셀프 체크리스트 (각 step 완료 기준)
+
+- [ ] s1: Wazuh API token + agent count + status 확인
+- [ ] s2: 전체 룰 수 + custom 룰 수 (local_rules.xml) 비교
+- [ ] s3: nft list ruleset + 3 chain (input/output/forward) 의 default policy
+- [ ] s4: Suricata rules-stats + 카테고리별 분포 top 5
+- [ ] s5: eve.json 24h alert 카테고리 + severity + source IP top 10
+- [ ] s6: Level ≥ 10 알림 수 + 룰 ID top 20
+- [ ] s7: MTTD/MTTR/FP rate 측정 (또는 baseline 부재 시 산정 방법)
+- [ ] s8: 5 도메인 × N aspects 모두 1-5 점 입력 (radar chart)
+- [ ] s9: `/tmp/soc_gap_analysis.txt` (gap descending + priority + quick win)
+- [ ] s10: 3/6/12개월 로드맵 (mermaid Gantt + RACI 표)
+- [ ] s99: Bastion 가 5 작업 (agent+rule+nft+suricata+eve) 통합 KPI 산출
+
+### 추가 참조 자료
+
+- **SOC-CMM** (Rob van Os, 2017) https://www.soc-cmm.com/
+- **NIST CSF 2.0** Cybersecurity Framework
+- **MITRE ATT&CK Navigator**
+- **MaGMA UCM** (Use Case Management) https://www.betaalvereniging.nl/en/safety/magma/
+- **Sigma rules** Generic Detection Format https://github.com/SigmaHQ/sigma
+- **Wazuh API Reference** https://documentation.wazuh.com/current/user-manual/api/reference.html
+- **Suricata Threat Detection Rules** https://github.com/OISF/suricata
+- **TheHive Project** https://thehive-project.org/
+- **OpenCTI** https://www.opencti.io/
+- **MITRE D3FEND** https://d3fend.mitre.org/
+
+위 모든 측정 작업은 *SOC 관리자 권한* 또는 *읽기 전용 API token* 으로만 수행한다. nft / suricata 의
+룰 추가·수정은 학습 시 *변경 윈도우* 사전 공지 + 운영 서비스 영향 사전 평가. 자가진단은
+*절대 자기 평가 점수를 부풀리지 말 것* — 외부 audit 시 발각되면 신뢰 붕괴 + 제재 가능.

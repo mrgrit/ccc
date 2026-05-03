@@ -942,3 +942,194 @@ graph TB
 
 **학생 액션**: 본인 에이전트의 4 축을 dataset 100건 으로 측정.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course10 — Week 12 에이전트 평가)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | HELM 종합 | **HELM** (Stanford CRFM) |
+| s2 | BIG-bench | google-bigbench |
+| s3 | DeepEval (단위) | DeepEval (week09 재사용) |
+| s4 | Ragas (RAG) | Ragas (week04, week09 재사용) |
+| s5 | TruLens | TruLens |
+| s6 | AgentBench (능력) | AgentBench (week05 재사용) |
+| s7 | OpenAI Evals | OpenAI Evals |
+| s8 | Custom benchmark | Bastion-Bench |
+
+### 학생 환경 준비
+
+```bash
+# HELM (가장 종합적)
+git clone https://github.com/stanford-crfm/helm ~/helm
+cd ~/helm && pip install -e .
+
+# BIG-bench
+git clone https://github.com/google/BIG-bench ~/bigbench
+cd ~/bigbench && pip install -e .
+
+# 다른 도구 (week09 에 이미 설치)
+```
+
+### HELM (Stanford 종합 평가)
+
+```bash
+cd ~/helm
+
+# 1) Suite 정의
+helm-run \
+    --suite security_eval_2026q2 \
+    --models gemma3-4b,llama3-8b,qwen2.5-7b \
+    --max-eval-instances 200 \
+    --scenarios mmlu,gsm8k,truthful_qa,real_toxicity_prompts,bbq
+
+# 2) 결과 요약
+helm-summarize --suite security_eval_2026q2
+
+# 3) Web leaderboard
+helm-server --suite security_eval_2026q2
+# http://localhost:8000
+# - 모델 별 / 시나리오 별 점수
+# - Per-instance 분석
+# - Cost 비교
+```
+
+### Bastion-Bench (CCC 자체 — 보안 특화)
+
+```bash
+cd /opt/ccc
+
+# 1) 자체 590 task (실제 보안 시나리오)
+ls contents/labs/                                       # 40 카테고리
+
+# 2) 평가 실행
+python3 scripts/run_bastion_bench.py \
+    --model ollama:gemma3:4b \
+    --tasks attack web-vuln soc compliance ai-security \
+    --max-tasks 200 \
+    --max-turns 10 \
+    --output /tmp/bastion-bench-result.json
+
+# 3) 결과 분석
+python3 scripts/analyze_bench_results.py /tmp/bastion-bench-result.json
+# 출력:
+# - 카테고리 별 success rate
+# - Tool 사용 분포
+# - Failure 패턴 (5 카테고리)
+# - 평균 latency / cost
+```
+
+### 종합 evaluation pipeline
+
+```python
+# /opt/eval/comprehensive_eval.py
+import asyncio
+from helm.benchmark.executor import Executor
+from helm.benchmark.runner import Runner
+
+async def comprehensive_eval(model_name: str):
+    results = {}
+    
+    # 1) HELM (지식·추론)
+    runner = Runner(scenarios=["mmlu", "gsm8k"], model=model_name, max_instances=200)
+    results["helm"] = runner.run()
+    
+    # 2) AgentBench (능력)
+    results["agentbench"] = run_agentbench(model_name)
+    
+    # 3) Bastion-Bench (보안)
+    results["bastion"] = run_bastion_bench(model_name)
+    
+    # 4) Ragas (RAG)
+    results["ragas"] = run_ragas(model_name)
+    
+    # 5) DeepEval custom (회사 정책)
+    results["deepeval"] = run_deepeval_suite(model_name)
+    
+    # 6) Safety (garak)
+    results["garak"] = run_garak(model_name)
+    
+    return results
+
+# 모든 모델 비교
+models = ["gemma3:4b", "llama3.1:8b", "qwen2.5:7b"]
+for m in models:
+    print(f"\n=== {m} ===")
+    print(asyncio.run(comprehensive_eval(m)))
+```
+
+### 평가 매트릭스 (production 배포 결정)
+
+| 모델 | HELM | AgentBench | Bastion | Ragas | Safety (garak) | Cost/1k tokens |
+|------|------|-----------|---------|-------|---------------|----------------|
+| gemma3:4b | 0.61 | 0.32 | 0.45 | 0.71 | 0.78 (ASR 22%) | $0 (local) |
+| llama3.1:8b | 0.74 | 0.51 | 0.62 | 0.83 | 0.85 (ASR 15%) | $0 (local) |
+| qwen2.5:7b | 0.70 | 0.48 | 0.59 | 0.79 | 0.81 (ASR 19%) | $0 (local) |
+| gpt-4o-mini | 0.82 | 0.73 | 0.78 | 0.91 | 0.92 (ASR 8%) | $0.15/1M |
+| claude-3.5-sonnet | 0.86 | 0.78 | 0.83 | 0.93 | 0.94 (ASR 6%) | $3/1M |
+
+### Custom Benchmark 작성 (DeepEval g-eval)
+
+```python
+from deepeval import evaluate
+from deepeval.metrics import GEval
+from deepeval.test_case import LLMTestCase, LLMTestCaseParams
+
+# 회사 정책 specific eval
+metric = GEval(
+    name="Korean Security Compliance",
+    criteria="""
+    응답이 다음 기준 모두 만족하는가?
+    1. 한국어로 응답 (영어 mix 안 됨)
+    2. KISA 기준 인용
+    3. 구체적 명령 (curl/sudo 등) 포함
+    4. 법적 경고 (필요 시)
+    """,
+    evaluation_params=[LLMTestCaseParams.INPUT, LLMTestCaseParams.ACTUAL_OUTPUT],
+    threshold=0.7,
+    model="ollama/llama3.1:8b"
+)
+
+# Test cases
+test_cases = [
+    LLMTestCase(
+        input="비밀번호 정책 점검",
+        actual_output=agent.run("비밀번호 정책 점검")
+    ),
+    # ... 100+ test cases
+]
+
+results = evaluate(test_cases, metrics=[metric])
+print(f"Pass rate: {results.pass_rate}")
+```
+
+### Continuous evaluation (CI 통합)
+
+```yaml
+# .gitlab-ci.yml
+eval:
+  stage: eval
+  script:
+    # 1. HELM 핵심 시나리오 (10분)
+    - cd ~/helm && helm-run --suite ci --models $MODEL --max-eval-instances 50 --scenarios mmlu,truthful_qa
+    
+    # 2. Bastion-Bench (5분)
+    - python3 scripts/run_bastion_bench.py --model $MODEL --max-tasks 50
+    
+    # 3. promptfoo regression (5분)
+    - promptfoo eval --config /opt/eval/agent-eval.yaml
+    
+    # 4. garak safety (10분)
+    - python3 -m garak --model_type ollama --model_name ${MODEL#ollama:} --probes promptinject,dan
+    
+    # 5. 임계치 검증
+    - python3 scripts/check_thresholds.py --bench ci.json --threshold-bastion 0.6 --threshold-safety 0.8
+
+deploy:
+  needs: [eval]
+```
+
+학생은 본 12주차에서 **HELM + AgentBench + Bastion-Bench + Ragas + TruLens + DeepEval g-eval + garak** 7 도구로 agent 의 6 차원 (지식/추론/도구/RAG/보안/회사정책) 정량 평가 + production 배포 결정 사이클을 익힌다.

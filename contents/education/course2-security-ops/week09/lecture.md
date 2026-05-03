@@ -750,3 +750,57 @@ dataset 으로부터 학생이 본인 Wazuh setup 에 *반드시 활성* 해야 
 3. 38만 events / agent 수 비율 측정 — 학생 환경 기준 *agent 당 적절한 event volume* 산정
 
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course2 SecOps — Week 09 Wazuh SIEM)
+
+| 작업 | 도구 |
+|------|------|
+| Wazuh 컴포넌트 | wazuh-manager / wazuh-indexer (OpenSearch) / wazuh-dashboard |
+| 에이전트 관리 | wazuh-agent / agent_control / wazuh-control |
+| 로그 수집 (대안) | Filebeat / Fluent Bit / Fluentd / rsyslog |
+| 인덱서 | OpenSearch (default) / Elasticsearch (legacy) |
+| Dashboard | Wazuh Dashboard / Kibana / Grafana + Loki |
+| 감사 도구 | OSSEC (Wazuh fork 원본) / Falco (kernel-level) |
+
+### 학생 환경 준비
+```bash
+ssh ccc@10.20.30.100   # siem VM (Wazuh 이미 설치됨)
+systemctl status wazuh-manager wazuh-indexer wazuh-dashboard
+
+# Wazuh agent 설치 — 다른 VM 들에서
+ssh ccc@10.20.30.80    # web VM
+curl -s https://packages.wazuh.com/key/GPG-KEY-WAZUH | sudo apt-key add -
+echo "deb https://packages.wazuh.com/4.x/apt/ stable main" | sudo tee /etc/apt/sources.list.d/wazuh.list
+sudo apt update && sudo apt install -y wazuh-agent
+sudo sed -i 's/MANAGER_IP/10.20.30.100/' /var/ossec/etc/ossec.conf
+sudo systemctl enable --now wazuh-agent
+
+# Falco — kernel 레벨 보안 모니터 (Wazuh 보완)
+curl -s https://falco.org/repo/falcosecurity-packages.asc | sudo apt-key add -
+echo "deb https://download.falco.org/packages/deb stable main" | sudo tee /etc/apt/sources.list.d/falcosecurity.list
+sudo apt update && sudo apt install -y falco
+```
+
+### 핵심 도구 사용법
+```bash
+# Wazuh CLI
+sudo /var/ossec/bin/wazuh-control status
+sudo /var/ossec/bin/agent_control -l                            # 에이전트 목록
+sudo /var/ossec/bin/agent_control -i 001                        # 에이전트 정보
+
+# Wazuh API (modern 추천 — REST + JWT)
+TOKEN=$(curl -s -k -u wazuh-wui:MyS3cr37P450r.*- -X POST "https://10.20.30.100:55000/security/user/authenticate?raw=true")
+curl -s -k -H "Authorization: Bearer $TOKEN" "https://10.20.30.100:55000/agents" | jq '.data.affected_items[]'
+
+# Filebeat → Wazuh indexer (custom 로그 수집)
+sudo apt install -y filebeat
+# /etc/filebeat/filebeat.yml output.elasticsearch hosts: ["10.20.30.100:9200"]
+
+# Falco — runtime threat detection
+sudo systemctl start falco
+sudo journalctl -u falco -f
+```
+
+학생은 본 9주차에서 **Wazuh manager + agent + API** 의 3 컴포넌트를 직접 운용하고, 보완 도구로 **Falco / Filebeat** 를 도입한다.

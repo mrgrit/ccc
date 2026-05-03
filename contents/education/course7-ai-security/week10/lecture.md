@@ -461,3 +461,131 @@ RL 의 정확한 메커니즘 — 각 playbook 실행 후 *결과의 평가 (rew
 
 **학생 액션**: Bastion 의 playbook 디렉토리 (예: `apps/bastion/playbooks/`) 를 확인하고, dataset 의 mo_name=Data Theft 사례 5건을 입력하여 — *어느 playbook 이 매칭되는지, 매칭 안 되면 새 playbook 으로 저장되는지* 추적. 추적 결과를 *"우리 lab Bastion 이 RL 학습 사이클을 완성하는가"* 1문단 정리.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course7 AI Security — Week 10 LLM 배포 보안)
+
+### LLM 배포 OSS 도구
+
+| 영역 | OSS 도구 |
+|------|---------|
+| 추론 서버 | **vLLM** / TGI / Ollama / RayServe / Triton Inference Server |
+| OpenAI-compatible | vLLM / Ollama / Llama.cpp server |
+| Multi-model gateway | **LiteLLM proxy** / Helicone-OSS |
+| Auto-scaling | KServe (Kubeflow) / Ray Serve / Knative |
+| Quantization | **GGUF** + llama.cpp / GPTQ / AWQ |
+| 모델 buffering | vLLM PagedAttention / SGLang |
+| 인증 | Keycloak + 미들웨어 / API key + LiteLLM |
+
+### 핵심 — vLLM (production 표준)
+
+```bash
+# Docker
+docker run --gpus all -p 8000:8000 \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  vllm/vllm-openai:latest \
+  --model meta-llama/Meta-Llama-3-8B-Instruct \
+  --tensor-parallel-size 1 \
+  --max-model-len 4096
+
+# OpenAI-compatible API
+curl http://localhost:8000/v1/chat/completions -d '{
+  "model":"meta-llama/Meta-Llama-3-8B-Instruct",
+  "messages":[{"role":"user","content":"hi"}]
+}'
+
+# Throughput 측정
+python3 -m vllm.entrypoints.benchmarks.benchmark_serving \
+  --backend vllm --model meta-llama/Meta-Llama-3-8B \
+  --num-prompts 100
+```
+
+### 학생 환경 준비
+
+```bash
+# vLLM (GPU 필요)
+docker pull vllm/vllm-openai:latest
+
+# 또는 Ollama (CPU 가능 — 실습 환경)
+ollama pull gemma3:4b
+
+# llama.cpp (CPU 양자화 추론)
+git clone https://github.com/ggerganov/llama.cpp.git ~/llama.cpp
+cd ~/llama.cpp && make -j
+
+# GGUF 모델 변환
+python3 convert-hf-to-gguf.py /path/to/model
+./quantize model-f16.gguf model-q4.gguf Q4_K_M
+./server -m model-q4.gguf -c 4096 --port 8080
+
+# RayServe
+pip install "ray[serve]"
+```
+
+### 핵심 사용
+
+```bash
+# 1) vLLM 배포 (Kubernetes)
+kubectl apply -f - << 'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-llama3
+spec:
+  replicas: 2
+  template:
+    spec:
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:latest
+          args:
+            - --model
+            - meta-llama/Meta-Llama-3-8B-Instruct
+          resources:
+            limits: {nvidia.com/gpu: 1}
+EOF
+
+# 2) LiteLLM 으로 통합
+cat > litellm.yaml << 'EOF'
+model_list:
+  - model_name: gpt-4
+    litellm_params:
+      model: openai/meta-llama/Meta-Llama-3-8B-Instruct
+      api_base: http://vllm:8000/v1
+      api_key: dummy
+
+litellm_settings:
+  callbacks: ["langfuse"]                                         # 자동 모니터링
+
+router_settings:
+  fallbacks:
+    - {"gpt-4": ["gpt-3.5-turbo"]}                                # 자동 폴백
+  retry_policy:
+    BadRequestErrorRetries: 3
+EOF
+
+# 3) Auto-scale (KServe)
+kubectl apply -f - << 'EOF'
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: llama3
+spec:
+  predictor:
+    minReplicas: 1
+    maxReplicas: 10
+    scaleTarget: 50
+    scaleMetric: concurrency
+    pytorch:
+      storageUri: gs://models/llama3
+EOF
+
+# 4) Quantization (메모리 절감)
+# Llama-3-8B FP16: 16GB → Q4: 4GB
+python3 ~/llama.cpp/convert-hf-to-gguf.py /path/to/llama3
+~/llama.cpp/quantize model-f16.gguf model-q4_k_m.gguf Q4_K_M
+~/llama.cpp/server -m model-q4_k_m.gguf -c 4096 -np 4 --port 8080
+```
+
+학생은 본 10주차에서 **vLLM + LiteLLM + KServe + llama.cpp + Knative** 5 도구로 LLM 배포의 4 영역 (추론 서버 / proxy / auto-scale / quantization) 통합 흐름을 익힌다.

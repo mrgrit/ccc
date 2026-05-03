@@ -628,3 +628,34 @@ done
 2. 점검 도구 UA 를 *기본 그대로 두기* (탐지 룰 검증 목적) vs *위장* (회피 효과 평가) 두 모드로 점검 — 본 dataset 은 *기본 UA 가 그대로 남는다* 는 증거
 
 
+
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (lab week02 — SQL Injection)
+
+| step | 카테고리 | 핵심 도구 |
+|---|---|---|
+| 1 sqli_detection | curl 수동 페이로드 / **sqlmap --batch --level --risk** / **ghauri** / **wapiti** |
+| 2 sqli_error | curl 페이로드 / sqlmap --technique=E / DBMS 별 에러 매핑 (MySQL/PostgreSQL/SQLite/MSSQL/Oracle) |
+| 3 sqli_auth_bypass | curl 다양 페이로드 / sqlmap --forms / **Burp Intruder** / payload-list github |
+| 4 sqli_union | ORDER BY 컬럼 결정 / sqlmap --tables / **DBeaver GUI** |
+| 5 sqli_union dump | curl + jq / sqlmap --dump / **hashid** / DBeaver |
+| 6 sqli_blind boolean | curl size 비교 / sqlmap --string --not-string / **bbqsql** |
+| 7 sqli_blind time | curl + time / sqlmap --technique=T / **sqlninja** (MSSQL 전용) |
+| 8 sqli_tool | sqlmap 종합 (level/risk/technique/dbs/tables/dump/tamper/cookie/POST/RCE) |
+| 9 second-order | curl 2 단계 / sqlmap --second-url / PortSwigger Academy |
+| 10 file r/w | DBMS 함수 매핑 / sqlmap --file-read --file-write --os-shell |
+| 11 header SQLi | curl -H / sqlmap --headers --level=5 / **Burp Active Scan** |
+| 12 defense | 5층 방어 / **bandit** Python / **semgrep** / **sqlfluff** / ModSecurity |
+| 13 WAF | **wafw00f** / OWASP CRS 942 / sqlmap --tamper / nuclei waf-detect |
+| 14 hash crack | **hashid** / **hashcat** / **john** / 알고리즘 강도 비교 표 |
+| 15 verification | sqlmap session / markdown 통합 / sha256 / asciinema PoC |
+
+### 학생 환경 준비
+```bash
+sudo apt install -y sqlmap hashid hashcat john wapiti exploitdb wafw00f
+pip install ghauri bbqsql bandit semgrep sqlfluff
+git clone --depth 1 https://github.com/swisskyrepo/PayloadsAllTheThings.git ~/PATT
+# DBeaver: snap install dbeaver-ce
+```

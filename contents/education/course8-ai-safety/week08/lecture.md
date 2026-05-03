@@ -573,3 +573,151 @@ graph TB
 
 **학생 액션**: 본인이 만든 LLM 시스템에 위 7 카테고리 공격을 각 50건씩 시도. 차단율을 표로 정리하고, false negative 사례의 패턴을 분석하여 *후속 개선 방향* 을 1페이지 보고서로 작성. 시험 답안의 핵심.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course8 AI Safety — Week 08 인증된 강건성)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | Adversarial baseline | **TextAttack** / advtorch |
+| s2 | Randomized smoothing | **smoothing** (Cohen et al.) |
+| s3 | Certified radius | smoothing certify() |
+| s4 | CROWN bound | **alpha-beta-CROWN** |
+| s5 | ERAN abstract | **ERAN** (ETH) |
+| s6 | Marabou verification | **Marabou** SMT-based |
+| s7 | Lipschitz bound | **lipschitz-bounds** |
+| s8 | 통합 평가 | RobustBench |
+
+### 학생 환경 준비
+
+```bash
+pip install advtorch RobustBench
+
+# Smoothing (Locuslab/CMU)
+git clone https://github.com/locuslab/smoothing ~/smoothing
+cd ~/smoothing && pip install -r requirements.txt
+
+# alpha-beta-CROWN
+git clone https://github.com/Verified-Intelligence/alpha-beta-CROWN ~/abcrown
+cd ~/abcrown/complete_verifier && pip install -r requirements.txt
+
+# Marabou (NN formal verification)
+git clone https://github.com/NeuralNetworkVerification/Marabou ~/marabou
+cd ~/marabou && cmake . && make -j
+
+# ERAN
+git clone https://github.com/eth-sri/eran ~/eran
+```
+
+### 핵심 — Randomized Smoothing (인증된 강건성)
+
+```python
+import torch
+from smoothing import Smooth
+
+# 1) Base classifier (일반 모델)
+base_classifier = torch.load("model.pt").eval().cuda()
+
+# 2) Smooth wrapper
+smoothed = Smooth(
+    base_classifier=base_classifier,
+    num_classes=10,
+    sigma=0.25                                      # noise std
+)
+
+# 3) Certify
+x = test_image.cuda()
+prediction, certified_radius = smoothed.certify(
+    x=x,
+    n0=100,                                         # 초기 sample
+    n=1000,                                         # certification sample
+    alpha=0.001,                                    # type I error
+    batch_size=400
+)
+
+print(f"Predicted class: {prediction}")
+print(f"Certified L2 radius: {certified_radius:.4f}")
+# 의미: 입력에 L2 norm < certified_radius 의 perturbation 이 있어도
+#       모델 예측이 변하지 않음 (수학적 증명)
+```
+
+### CROWN bound (alpha-beta-CROWN)
+
+```bash
+# Config 파일
+cat > /tmp/abcrown.yaml << 'EOF'
+general:
+  device: cuda
+  loss_reduction_func: sum
+  conv_mode: matrix
+
+model:
+  path: model.pt
+  
+specification:
+  norm: .inf
+  epsilon: 0.03                                     # L∞ perturbation
+EOF
+
+# 검증 실행
+cd ~/abcrown/complete_verifier
+python3 abcrown.py --config /tmp/abcrown.yaml
+
+# 출력:
+# - safe: 입력 X 에 대해 모든 ‖δ‖∞ < 0.03 perturbation 안전
+# - unsafe: counter-example 발견
+# - unknown: time/memory 한계
+```
+
+### Marabou (SMT-based formal verification)
+
+```python
+from maraboupy import Marabou, MarabouCore
+
+# NN load
+network = Marabou.read_onnx("model.onnx")
+
+# Property: 입력 x ∈ [0, 1]^n
+for i, var in enumerate(network.inputVars[0].flatten()):
+    network.setLowerBound(var, 0.0)
+    network.setUpperBound(var, 1.0)
+
+# Property: 출력 0 (class A) > 출력 1 (class B)
+network.addInequality([network.outputVars[0][0], network.outputVars[0][1]],
+                      [-1, 1], 0)                   # out[1] - out[0] <= 0
+
+# Solve
+options = Marabou.createOptions()
+result, vals, stats = network.solve(options=options)
+
+if result == "sat":
+    print("Counter-example found!")
+elif result == "unsat":
+    print("Property verified — model is robust")
+```
+
+### 강건성 / 정확도 trade-off
+
+```bash
+# 일반 모델
+python3 -m torchattacks --model model.pt --attack PGD --eps 0.031
+# Standard accuracy: 0.95
+# Adversarial accuracy: 0.12 (PGD attack)
+
+# Adversarial training
+python3 train_adversarial.py --output adv_model.pt
+python3 -m torchattacks --model adv_model.pt --attack PGD --eps 0.031
+# Standard accuracy: 0.83 (감소)
+# Adversarial accuracy: 0.65 (증가)
+
+# Smoothing (certified)
+python3 ~/smoothing/certify.py --model model.pt --sigma 0.25
+# Standard accuracy: 0.85
+# Certified accuracy @ r=0.5: 0.42
+# (수학적으로 보장된 강건성)
+```
+
+학생은 본 8주차에서 **smoothing + alpha-beta-CROWN + Marabou + ERAN + RobustBench** 5 도구로 4 단계 (적대적 → empirical 방어 → certified bound → formal verification) 강건성 평가를 익힌다.

@@ -500,3 +500,162 @@ dataset framework 키에 `hipaa` 부재 = 의료 데이터 처리 환경 별도.
 
 **학생 액션**: SOC 2 Type II 감사 시 dataset 양식 모방 + 1 (Security) + 5 (Privacy) 별도 product 매핑 추가.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course4 Compliance — Week 13 보안정책 문서)
+
+### 정책 문서 작성 → OSS 도구
+
+| 문서 유형 | OSS 도구 | 강점 |
+|----------|---------|------|
+| 정책 (markdown) | **pandoc** + GitLab CE / GitHub | 버전관리 |
+| 절차 (workflow) | **Mermaid** + PlantUML / draw.io desktop | 다이어그램 |
+| 표 (control) | **markdown table** + LaTeX (longtable) | 인쇄 |
+| OSCAL 표준 | **OSCAL CLI** + NIST OSCAL tools | 정부/대형 기업 |
+| GRC 통합 | **eramba** / simplerisk / GRC-PHP | 정책 + 통제 + 위험 |
+| 정책 검증 | **OPA** + chef-inspec | 자동 enforcement |
+| 다국어 | DeepL API + 자체 번역 | 한·영 동시 |
+
+### 핵심 — pandoc + Mermaid 파이프라인
+
+```bash
+# 설치
+sudo apt install -y pandoc texlive-xetex mermaid-cli
+pip install mermaid-cli || npm install -g @mermaid-js/mermaid-cli
+
+# 1) 정책 markdown 작성
+cat > /tmp/security-policy.md << 'EOF'
+---
+title: "정보보호 정책 v1.0"
+author: "보안팀"
+date: "2026-04-29"
+header-includes:
+  - \usepackage[hangul]{kotex}
+mainfont: NanumGothic
+---
+
+# 1. 목적
+본 정책은 회사의 정보자산을 외부 위협으로부터 보호한다.
+
+# 2. 적용 범위
+모든 직원, 외주, 파트너에 적용한다.
+
+# 3. 정보분류 체계
+
+| 등급 | 설명 | 처리 방법 |
+|------|------|----------|
+| 극비 | 사업 핵심 정보 | 암호화 + 격리 망 |
+| 비밀 | 영업 정보 | 암호화 + 접근통제 |
+| 대외비 | 내부 운영 정보 | 접근통제 |
+| 일반 | 공개 가능 | 무제한 |
+
+# 4. 통제 활동
+
+```mermaid
+graph LR
+  A[정보자산] --> B{분류}
+  B -->|극비| C[암호화]
+  B -->|비밀| D[접근통제]
+  B -->|대외비| E[모니터링]
+  C --> F[정기 감사]
+  D --> F
+  E --> F
+```
+EOF
+
+# 2) Mermaid → PNG 자동 변환
+mmdc -i /tmp/security-policy.md -o /tmp/security-policy-with-img.md
+
+# 3) Markdown → PDF (한글 지원)
+pandoc /tmp/security-policy-with-img.md -o /tmp/security-policy.pdf \
+  --pdf-engine=xelatex \
+  -V mainfont=NanumGothic \
+  -V geometry:margin=2cm \
+  --toc
+
+# 4) Markdown → HTML (사내 portal 게시)
+pandoc /tmp/security-policy-with-img.md -o /tmp/security-policy.html \
+  --toc --self-contained
+```
+
+### 학생 환경 준비
+
+```bash
+sudo apt install -y \
+  pandoc texlive-xetex texlive-fonts-recommended \
+  texlive-fonts-extra texlive-lang-cjk \
+  fonts-nanum fonts-nanum-coding \
+  npm graphviz
+
+npm install -g @mermaid-js/mermaid-cli
+
+# OSCAL CLI (NIST 정부 표준)
+go install github.com/usnistgov/OSCAL-tools-go@latest 2>/dev/null
+
+# eramba GRC (다중 정책 통합)
+docker pull markz0r/eramba-community
+docker run -d -p 8080:80 markz0r/eramba-community
+
+# OPA — 정책 자동 enforcement
+curl -L -o opa https://openpolicyagent.org/downloads/v0.62.0/opa_linux_amd64_static
+chmod +x opa && sudo mv opa /usr/local/bin/
+```
+
+### 핵심 도구별 사용법
+
+```bash
+# 1) pandoc — 다중 포맷 변환
+pandoc policy.md -o policy.pdf --pdf-engine=xelatex
+pandoc policy.md -o policy.html
+pandoc policy.md -o policy.docx                          # Word
+
+# 2) Mermaid — 절차 다이어그램
+mmdc -i flow.mmd -o flow.png
+# flow.mmd 예:
+# sequenceDiagram
+#   User->>+Server: 로그인 요청
+#   Server-->>-User: JWT
+#   User->>+API: GET /data + JWT
+
+# 3) OSCAL — 정부·대형 기업 표준
+oscal-cli convert -i ssp.xml -o ssp.json -f json
+
+# 4) OPA — 정책을 코드로 (Policy as Code)
+cat > /etc/opa/policies/access.rego << 'EOF'
+package access
+default allow = false
+allow { input.user.role == "admin" }
+allow { input.user.department == input.resource.owner }
+EOF
+opa eval -d /etc/opa/policies "data.access.allow" \
+  --input '{"user":{"role":"admin"},"resource":{}}'
+
+# 5) chef-inspec — 정책 자동 검증
+inspec exec security-baseline-profile --reporter json
+```
+
+### 정책 → 통제 → 자동화 흐름
+
+```bash
+# Phase 1: 정책 작성 (Markdown + Mermaid)
+$EDITOR /repo/policies/access-control.md
+git add /repo/policies/ && git commit -m "Update access control policy v1.1"
+git push                                                       # 변경 이력 자동
+
+# Phase 2: 통제 매핑 (OSCAL 또는 chef-inspec)
+inspec exec /repo/inspec-policies                              # markdown 정책 → 자동 점검
+
+# Phase 3: 자동 enforcement (OPA + admission control)
+# k8s admission webhook 으로 OPA 정책 강제
+kubectl apply -f opa-gatekeeper-constraints.yaml
+
+# Phase 4: 정기 verification
+chef-inspec exec ... --reporter html:/tmp/inspec-report.html
+oscap xccdf eval --profile policy-mapping ...
+
+# Phase 5: 보고 (pandoc)
+pandoc /tmp/audit.md -o /tmp/quarterly-report.pdf
+```
+
+학생은 본 13주차에서 **pandoc + Mermaid + OSCAL + chef-inspec + OPA** 5 도구로 정보보호 정책을 markdown 으로 작성·버전관리하고, 통제 항목을 자동 검증·enforcement 까지 연결하는 "정책 as 코드" 흐름을 OSS 만으로 익힌다.

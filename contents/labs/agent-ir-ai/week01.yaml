@@ -52,8 +52,13 @@ steps:
   bastion_prompt: 4대 VM(bastion/secu/web/siem) 중 bastion에 SSH로 접속해 hostname·uptime·ip
     addr 출력으로 VM이 정상 기동됐는지 확인하시오.
 - order: 2
-  instruction: secu VM에서 nftables 룰셋을 출력해 방화벽이 로드된 상태인지 확인하시오. `table inet filter`
+  instruction: 'secu VM에서 nftables 룰셋을 출력해 방화벽이 로드된 상태인지 확인하시오. `table inet filter`
     섹션이 존재해야 한다.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/agent-ir-ai-week01/2/syslog 사전 주입. `grep
+    -E ''DROP|REJECT|filter'' /home/ccc/cyber-range/fixtures/agent-ir-ai-week01/2/syslog`
+    후 (1) 빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: target_vm=secu에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 10
@@ -82,8 +87,25 @@ steps:
   target_vm: secu
   script: sudo nft list ruleset | head -50
   risk_level: medium
-  bastion_prompt: secu VM에서 nftables 룰셋을 출력해 방화벽이 로드된 상태인지 확인하시오. `table inet filter`
+  bastion_prompt: 'secu VM에서 nftables 룰셋을 출력해 방화벽이 로드된 상태인지 확인하시오. `table inet filter`
     섹션이 존재해야 한다.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/agent-ir-ai-week01/2/syslog 사전 주입. `grep
+    -E ''DROP|REJECT|filter'' /home/ccc/cyber-range/fixtures/agent-ir-ai-week01/2/syslog`
+    후 (1)빈도·패턴 (2)MITRE (3)방어 3섹션. raw dump 금지.'
+  fixtures:
+  - generator: firewall_log
+    target_vm: secu
+    path: /home/ccc/cyber-range/fixtures/agent-ir-ai-week01/2/syslog
+    params:
+      seed: 42
+      duration_days: 7
+      scan_bursts: 5
+      egress_violations: 20
+      syn_flood_count: 200
+    mode: overwrite
+    cleanup: false
 - order: 3
   instruction: secu VM에서 Suricata가 실행 중인지 systemctl로 확인하시오.
   hint: target_vm=secu에서 수행. 아래 CLI 예시 참고.
@@ -117,8 +139,13 @@ steps:
   risk_level: medium
   bastion_prompt: secu VM에서 Suricata가 실행 중인지 systemctl로 확인하시오.
 - order: 4
-  instruction: web VM에서 Apache 서비스가 실행 중이며 /var/log/apache2/access.log 파일이 존재하는지 동시에
-    확인하시오.
+  instruction: 'web VM에서 Apache 서비스가 실행 중이며 /var/log/apache2/access.log 파일이 존재하는지
+    동시에 확인하시오.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/agent-ir-ai-week01/4/access.log 사전 주입.
+    `grep -E ''sqli|xss|\.\./|admin'' /home/ccc/cyber-range/fixtures/agent-ir-ai-week01/4/access.log`
+    후 (1) 빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 12
@@ -146,8 +173,25 @@ steps:
   target_vm: web
   script: systemctl is-active apache2 && ls -la /var/log/apache2/access.log
   risk_level: low
-  bastion_prompt: web VM에서 Apache 서비스가 실행 중이며 /var/log/apache2/access.log 파일이 존재하는지
+  bastion_prompt: 'web VM에서 Apache 서비스가 실행 중이며 /var/log/apache2/access.log 파일이 존재하는지
     동시에 확인하시오.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/agent-ir-ai-week01/4/access.log 사전 주입.
+    `grep -E ''sqli|xss|\.\./|admin'' /home/ccc/cyber-range/fixtures/agent-ir-ai-week01/4/access.log`
+    후 (1)빈도·패턴 (2)MITRE (3)방어 3섹션. raw dump 금지.'
+  fixtures:
+  - generator: web_access
+    target_vm: web
+    path: /home/ccc/cyber-range/fixtures/agent-ir-ai-week01/4/access.log
+    params:
+      seed: 42
+      duration_days: 7
+      scanner_bursts: 5
+      sqli_attempts: 12
+      xss_attempts: 8
+    mode: overwrite
+    cleanup: false
 - order: 5
   instruction: siem VM에서 Wazuh Manager 데몬이 실행 중이며 https://10.20.30.100 대시보드가 응답하는지
     확인하시오.
@@ -183,8 +227,13 @@ steps:
   bastion_prompt: siem VM에서 Wazuh Manager 데몬이 실행 중이며 https://10.20.30.100 대시보드가 응답하는지
     확인하시오.
 - order: 6
-  instruction: siem의 /var/ossec/logs/alerts/alerts.json 파일에서 최근 5개 경보를 확인해 *기준선 경보
+  instruction: 'siem의 /var/ossec/logs/alerts/alerts.json 파일에서 최근 5개 경보를 확인해 *기준선 경보
     분포*를 기록하시오.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/agent-ir-ai-week01/6/alerts.json 사전 주입.
+    `jq -c ''.rule'' /home/ccc/cyber-range/fixtures/agent-ir-ai-week01/6/alerts.json`
+    후 (1) 빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: target_vm=siem에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 14
@@ -215,8 +264,25 @@ steps:
   target_vm: siem
   script: sudo tail -5 /var/ossec/logs/alerts/alerts.json | head -c 2000
   risk_level: low
-  bastion_prompt: siem의 /var/ossec/logs/alerts/alerts.json 파일에서 최근 5개 경보를 확인해 *기준선
+  bastion_prompt: 'siem의 /var/ossec/logs/alerts/alerts.json 파일에서 최근 5개 경보를 확인해 *기준선
     경보 분포*를 기록하시오.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/agent-ir-ai-week01/6/alerts.json 사전 주입.
+    `jq -c ''.rule'' /home/ccc/cyber-range/fixtures/agent-ir-ai-week01/6/alerts.json`
+    후 (1)빈도·패턴 (2)MITRE (3)방어 3섹션. raw dump 금지.'
+  fixtures:
+  - generator: wazuh_alert
+    target_vm: siem
+    path: /home/ccc/cyber-range/fixtures/agent-ir-ai-week01/6/alerts.json
+    params:
+      seed: 42
+      duration_days: 7
+      alerts_per_day: 50
+      brute_force_burst: true
+      ar_trigger_count: 4
+    mode: overwrite
+    cleanup: false
 - order: 7
   instruction: 'bastion에서 w01 관전 아티팩트 디렉토리 구조를 만드시오: artifacts/w01/{pcap,logs,notes,experience}.'
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.

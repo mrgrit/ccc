@@ -622,3 +622,204 @@ L3 운영의 KPI 는 *4가지 동시 만족* 이 필요. 자동 처리율만 높
 
 **학생 액션**: dataset 의 일일 13K 신호 환경에서, 본인이 만든 시스템의 자율 수준 (L0~L5) 을 측정. 4 KPI 모두 표로 정리.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course9 Autonomous Security — Week 01 강화학습 기초)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 | 도구 출력 예 |
+|------|----------|---------|--------------|
+| s1 | RL 환경 정의 (보안 시나리오) | **Gymnasium** (구 OpenAI Gym) | env.observation_space, env.action_space |
+| s2 | DQN baseline | **stable-baselines3** | training rewards 곡선 |
+| s3 | PPO 학습 | stable-baselines3 PPO | mean reward / episode length |
+| s4 | Reward shaping | 자체 step function | 보안 metric 기반 reward |
+| s5 | 다중 환경 vec | sb3 SubprocVecEnv | parallel rollout |
+| s6 | TensorBoard 추적 | tensorboard | learning curves |
+| s7 | 모델 저장/로드 | sb3 save/load | model.zip |
+| s8 | RLlib (Ray) 비교 | **Ray RLlib** | distributed training |
+
+### 학생 환경 준비
+
+```bash
+ssh ccc@192.168.0.112
+python3 -m venv ~/.venv-autosec && source ~/.venv-autosec/bin/activate
+pip install --upgrade pip
+
+# 1) Gymnasium (RL 환경 표준)
+pip install gymnasium[classic-control,box2d,atari]
+
+# 2) stable-baselines3 (가장 표준)
+pip install stable-baselines3[extra]
+
+# 3) Ray RLlib (distributed RL)
+pip install "ray[rllib]"
+
+# 4) CleanRL (single-file 구현, 학습용)
+git clone https://github.com/vwxyzjn/cleanrl ~/cleanrl
+
+# 5) PettingZoo (multi-agent RL)
+pip install pettingzoo[classic]
+
+# 6) TensorBoard
+pip install tensorboard
+```
+
+### 핵심 — 보안 RL 환경 자체 구현
+
+```python
+import gymnasium as gym
+from gymnasium import spaces
+import numpy as np
+
+class SecurityEnv(gym.Env):
+    """
+    보안 운영 RL 환경:
+    - State: 현재 alert 수, 활성 connection, CPU, ...
+    - Action: [no-op, block-IP, escalate, allow]
+    - Reward: blocked attack +10 / FP -5 / missed attack -20
+    """
+    def __init__(self):
+        super().__init__()
+        # 8-dim observation
+        self.observation_space = spaces.Box(low=0, high=1, shape=(8,), dtype=np.float32)
+        # 4 discrete actions
+        self.action_space = spaces.Discrete(4)
+        
+    def reset(self, seed=None):
+        super().reset(seed=seed)
+        self.state = self._get_state_from_wazuh()
+        return self.state, {}
+    
+    def step(self, action):
+        # Action 실행
+        if action == 1:    # block-IP
+            self._call_wazuh_ar("block")
+        elif action == 2:  # escalate
+            self._call_thehive_create_case()
+        elif action == 3:  # allow
+            pass
+        
+        # 다음 state 가져오기
+        self.state = self._get_state_from_wazuh()
+        
+        # Reward 계산
+        reward = self._compute_reward(action)
+        
+        # 종료 조건
+        terminated = self._is_attack_blocked()
+        truncated = False
+        info = {}
+        return self.state, reward, terminated, truncated, info
+    
+    def _get_state_from_wazuh(self):
+        import requests
+        r = requests.get("http://wazuh-api/alerts/recent", auth=("user", "pass"))
+        # 8 features 정규화
+        return np.array([...], dtype=np.float32)
+    
+    def _compute_reward(self, action):
+        # blocked attack +10, FP -5, missed -20
+        return ...
+```
+
+### Stable-Baselines3 학습
+
+```python
+from stable_baselines3 import PPO, DQN
+from stable_baselines3.common.vec_env import SubprocVecEnv
+from stable_baselines3.common.callbacks import EvalCallback
+
+# 1) 환경 (병렬 8개)
+def make_env(rank):
+    def _init():
+        return SecurityEnv()
+    return _init
+
+vec_env = SubprocVecEnv([make_env(i) for i in range(8)])
+
+# 2) PPO 모델
+model = PPO(
+    "MlpPolicy",
+    vec_env,
+    learning_rate=3e-4,
+    n_steps=2048,
+    batch_size=64,
+    n_epochs=10,
+    gamma=0.99,
+    verbose=1,
+    tensorboard_log="/tmp/ppo_security_tb/"
+)
+
+# 3) Eval callback (주기적 평가)
+eval_env = SecurityEnv()
+eval_callback = EvalCallback(
+    eval_env,
+    best_model_save_path="/tmp/best_model/",
+    log_path="/tmp/eval_logs/",
+    eval_freq=1000,
+    deterministic=True
+)
+
+# 4) 학습
+model.learn(total_timesteps=100_000, callback=eval_callback)
+
+# 5) 저장
+model.save("/tmp/security_ppo")
+
+# 6) TensorBoard 시각화
+# tensorboard --logdir /tmp/ppo_security_tb/
+```
+
+### Ray RLlib (distributed)
+
+```python
+import ray
+from ray.rllib.algorithms.ppo import PPOConfig
+
+ray.init()
+
+config = (
+    PPOConfig()
+    .environment(SecurityEnv)
+    .framework("torch")
+    .resources(num_gpus=0)
+    .rollouts(num_rollout_workers=4)
+    .training(
+        gamma=0.99,
+        lr=3e-4,
+        num_sgd_iter=10
+    )
+)
+
+algo = config.build()
+for i in range(100):
+    result = algo.train()
+    print(f"Iter {i}: reward={result['episode_reward_mean']:.2f}")
+```
+
+### CleanRL (single-file 학습용 — 교육 목적)
+
+```bash
+# CleanRL 의 PPO single-file 구현
+python3 ~/cleanrl/cleanrl/ppo.py \
+    --env-id SecurityEnv-v0 \
+    --total-timesteps 100000 \
+    --learning-rate 3e-4
+
+# Wandb 통합 (실험 추적)
+python3 ~/cleanrl/cleanrl/ppo.py --track --wandb-project-name autosec
+```
+
+### 보안 RL 시나리오 카탈로그
+
+| 시나리오 | State | Action | Reward |
+|---------|-------|--------|--------|
+| 자동 차단 | alert/conn 패턴 | block/allow | TP+10, FP-5, FN-20 |
+| 룰 자동 생성 | log pattern | new rule / no-op | detected attacks - FP |
+| Patch 우선순위 | CVE list + criticality | patch order | exploit prevented |
+| Honeypot 동적 | 공격자 행동 | 페이지 변경 / 차단 | 시간 지연 + 정보 수집 |
+| Phishing detection | URL + email features | block / quarantine / allow | TP - FP cost |
+
+학생은 본 1주차에서 **Gymnasium + stable-baselines3 + Ray RLlib + CleanRL + TensorBoard** 5 도구로 보안 운영의 4 단계 RL 사이클 (환경 정의 → 학습 → 추적 → 배포) 을 OSS 만으로 익힌다.

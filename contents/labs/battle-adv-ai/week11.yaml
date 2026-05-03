@@ -80,13 +80,15 @@ steps:
 
     📎 참고 (CLI): mkdir -p /tmp/insider_staging && cp /etc/passwd /tmp/insider_staging/
     2>/dev/null && cp /etc/hosts /tmp/insider_staging/ 2>/dev/null && echo "INSIDER_EXFIL_DATA"
-    > /tmp/insider_staging/secret.txt && tar czf /tmp/insider_archive.tar.gz -C /tmp
+    ※ /tmp/insider_staging/secret.txt && tar czf /tmp/insider_archive.tar.gz -C /tmp
     insider_staging && ls -la /tmp/insider_archive.tar.gz && echo "Data staged successfully"'
   answer_detail: 데이터 스테이징(T1074)은 유출 전 데이터를 하나의 위치에 수집하고 압축하는 단계이다. 내부자는 정상 권한으로 접근
     가능한 파일을 조용히 수집한다.
   verify:
     type: output_contains
-    expect: Data staged
+    expect:
+    - Data staged
+    - tar
     semantic:
       intent: '[RED] 내부자 데이터 스테이징 — mkdir /tmp/.stage + cp /etc/passwd /etc/hosts
         /etc/ssh/sshd_config /var/log/*.log /tmp/.stage/ + tar czf /tmp/exfil.tar.gz
@@ -108,7 +110,7 @@ steps:
   target_vm: attacker
   script: mkdir -p /tmp/insider_staging && cp /etc/passwd /tmp/insider_staging/ 2>/dev/null
     && cp /etc/hosts /tmp/insider_staging/ 2>/dev/null && echo "INSIDER_EXFIL_DATA"
-    > /tmp/insider_staging/secret.txt && tar czf /tmp/insider_archive.tar.gz -C /tmp
+    ※ /tmp/insider_staging/secret.txt && tar czf /tmp/insider_archive.tar.gz -C /tmp
     insider_staging && ls -la /tmp/insider_archive.tar.gz && echo "Data staged successfully"
   risk_level: medium
   bastion_prompt: '[RED] 데이터 스테이징 — 민감 파일을 수집하여 하나의 아카이브로 압축하라. /etc/passwd, 설정 파일,
@@ -133,7 +135,9 @@ steps:
     등이 있다. UBA는 이러한 기준선 이탈을 탐지한다.
   verify:
     type: output_contains
-    expect: Off-hours
+    expect:
+    - Off-hours
+    - ssh
     semantic:
       intent: '[RED] 비인가 시간대 접근 — export FAKE_TIME=2026-04-21 02:30:00 (새벽 2시 시뮬)
         + ssh ccc@secu whoami (업무 외 시간 내부 이동). 실제 시계 조작 대신 로그 타임스탬프 시뮬레이션. 내부자의 비정상

@@ -579,3 +579,151 @@ dataset host 의 `set_roles`:
 
 **학생 액션**: 본인 환경 자산의 suspicion_score 분포 측정 → 리스크 매트릭스 매핑 + role 별 가중치 적용.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course4 Compliance — Week 10 보안감사)
+
+### 보안감사 도구 매트릭스
+
+| 감사 영역 | OSS 도구 | 강점 |
+|----------|---------|------|
+| 시스템 baseline | **Lynis** + OpenSCAP | 한 명령으로 종합 |
+| 무결성 | **AIDE** + Tripwire / Wazuh FIM | 변경 감지 |
+| 사용자 활동 | **auditd** + ausearch / Wazuh user-behavior | kernel-level |
+| 네트워크 | **Suricata** + Zeek + Velociraptor | flow + packet |
+| 로그 통합 | **Wazuh** + lnav + jq | indexer + 검색 |
+| Forensic | **Velociraptor** + osquery + Sleuth Kit | live evidence |
+| 보고 | **pandoc** + dradis + Mermaid | PDF/HTML |
+
+### 핵심 — auditd 표준 audit rule (KISA·ISMS·SOX 공통)
+
+```bash
+sudo apt install -y auditd audispd-plugins
+
+# /etc/audit/rules.d/audit.rules — 종합 표준 룰
+sudo tee /etc/audit/rules.d/audit.rules > /dev/null << 'EOF'
+# 시스템 부팅·종료
+-w /sbin/shutdown -p x -k power
+-w /sbin/reboot -p x -k power
+-w /sbin/halt -p x -k power
+
+# 사용자 계정 변경 (ISMS 2.5)
+-w /etc/passwd -p wa -k identity
+-w /etc/shadow -p wa -k identity
+-w /etc/group -p wa -k identity
+-w /etc/gshadow -p wa -k identity
+-w /etc/security/opasswd -p wa -k identity
+
+# sudo 실행
+-w /etc/sudoers -p wa -k actions
+-w /etc/sudoers.d/ -p wa -k actions
+-a always,exit -F arch=b64 -S execve -F euid=0 -F auid>=1000 -F auid!=4294967295 -k sudo_log
+
+# 권한 변경 (ISMS 2.5.4)
+-a always,exit -F arch=b64 -S setuid -S setgid -S setreuid -S setregid -k privesc
+
+# SSH 관련
+-w /etc/ssh/sshd_config -p wa -k sshd
+
+# 네트워크
+-a always,exit -F arch=b64 -S socket -F a0=10 -k network_ipv6
+-a always,exit -F arch=b64 -S connect -F a2=16 -k network_connect
+
+# 파일 무결성 (ISMS 2.9.3)
+-w /var/log/audit/ -p wa -k audit_log
+
+# 모드 잠금 (변경 불가)
+-e 2
+EOF
+
+sudo augenrules --load
+sudo systemctl restart auditd
+
+# 검증
+sudo auditctl -l | head
+sudo auditctl -s
+```
+
+### 학생 환경 준비
+
+```bash
+sudo apt install -y \
+  auditd audispd-plugins \
+  aide tripwire \
+  fail2ban \
+  velociraptor osquery \
+  sleuthkit \
+  pandoc
+
+# auditd 자동 시작
+sudo systemctl enable --now auditd
+```
+
+### 핵심 도구별 사용법
+
+```bash
+# 1) ausearch — audit log 검색
+sudo ausearch -k identity -i | head                              # 사용자 변경
+sudo ausearch -k sshd -i --start today
+sudo ausearch -k privesc --start "07:00:00" --end "08:00:00"
+
+# 2) aureport — 통계 보고
+sudo aureport --auth -i                                          # 인증 시도
+sudo aureport --user -i                                          # 사용자별
+sudo aureport --executable -i | head                             # 실행된 binary
+
+# 3) AIDE — 무결성 baseline
+sudo aide --init
+sudo cp /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+
+# 변경 후
+sudo aide --check
+# 출력: Added/Removed/Changed 분류
+
+# 4) Wazuh — 다중 호스트 통합
+sudo /var/ossec/bin/wazuh-control logtest
+sudo jq '.event_type' /var/ossec/logs/alerts/alerts.json | sort | uniq -c
+
+# 5) Velociraptor — live forensic + audit
+velociraptor flow create EvidenceOfCompromise
+velociraptor query "SELECT * FROM glob(globs='/etc/*passwd*')"
+
+# 6) osquery — SQL-like 시스템 점검
+osqueryi "SELECT * FROM users WHERE shell LIKE '%bash%';"
+osqueryi "SELECT * FROM listening_ports;"
+osqueryi "SELECT * FROM passwd_changes;" 2>/dev/null
+osqueryi "SELECT name, version, install_time FROM rpm_packages;"
+```
+
+### 보안감사 실행 흐름 (분기별)
+
+```bash
+# Phase 1: 환경 점검 (Lynis + OpenSCAP)
+sudo lynis audit system --auditor "Q1 Audit" --plugindir /etc/lynis/plugins
+sudo oscap xccdf eval --profile cis_level2_server \
+  --report /tmp/oscap-q1.html ssg-ubuntu2204-ds.xml
+
+# Phase 2: 무결성 검증
+sudo aide --check
+sudo /var/ossec/bin/agent_control -R                              # Wazuh FIM 트리거
+
+# Phase 3: 활동 audit (auditd)
+sudo aureport --auth --start "2024-01-01" --end "2024-03-31" -i
+sudo ausearch -k privesc --start "2024-01-01" -i | wc -l
+
+# Phase 4: 권한 review
+osqueryi "SELECT * FROM users WHERE shell != '/bin/false'" 
+sudo /var/ossec/bin/agent_control -A | grep -v "Active"          # 비활성 agent
+
+# Phase 5: 침해사고 review (Wazuh)
+sudo jq -r 'select(.rule.level >= 12) | "\(.timestamp) [\(.rule.level)] \(.rule.description)"' \
+  /var/ossec/logs/alerts/alerts.json | sort -u
+
+# Phase 6: 보고서 (pandoc + Mermaid)
+pandoc audit-q1.md -o audit-q1.pdf --pdf-engine=xelatex \
+  -V geometry:margin=2cm \
+  -V mainfont="NanumGothic"
+```
+
+학생은 본 10주차에서 **auditd + AIDE + Wazuh + Velociraptor + osquery + Lynis + OpenSCAP** 7 도구로 보안감사의 4 단계 (자동 점검 → 무결성 → 활동 audit → 보고서) 를 통합 운영하는 분기별 사이클을 익힌다.

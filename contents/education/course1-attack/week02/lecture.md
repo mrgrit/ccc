@@ -990,3 +990,53 @@ curl -s -I -L URL | grep -i '^HTTP\|^Location'
 3. 본 dataset 의 *54 포트 묶음* 을 점검 도구 wordlist 로 추가 (실세계 정찰의 실제 표적 포트)
 
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course1 Attack — Week 02 정찰)
+
+| 단계 / 주제 | lab step | 본문/lab 주요 명령 | OSS 도구 옵션 (강조) | 비고 |
+|------------|----------|-------------------|---------------------|------|
+| TCP Connect 스캔 | s1 | `nmap -sT` | nmap / masscan / unicornscan | 기본 권장: nmap |
+| SYN (Half-open) | s2 | `nmap -sS` | nmap (sudo 필요) / hping3 -S | 빠르고 흔적 적음 |
+| 전체 65535 포트 | s3 | `nmap -p- -T4` | nmap / masscan -p1-65535 | masscan 가 압도적으로 빠름 |
+| 서비스 버전 탐지 | s4 | `nmap -sV` | nmap -sV / nmap --script banner / amap | -sV 가 사실상 표준 |
+| OS 핑거프린팅 | s5 | `nmap -O` | nmap -O / xprobe2 / p0f (수동) | TCP/IP 스택 분석 |
+| UDP 스캔 | s6 | `nmap -sU --top-ports 20` | nmap -sU / unicornscan | UDP 는 느림 |
+| NSE 기본 스크립트 | s7 | `nmap -sC` | nmap NSE / vulscan / nmap-vulners | NSE = Nmap Scripting Engine |
+| 웹 디렉토리 열거 | s8 | `nmap --script http-enum` | gobuster / ffuf / dirb / nikto -C all | 웹 디렉토리 brute |
+| ACK 스캔 (방화벽) | s9 | `nmap -sA` | nmap -sA / hping3 -A | filtered/unfiltered 구분 |
+| 네트워크 fast scan | s10 | `nmap -F 10.20.30.0/24` | nmap -F / fping -g / arp-scan | 빠른 sweep |
+| XML 결과 저장 | s11 | `nmap -oX` | nmap -oA / -oN/-oG/-oX | -oA = 모든 형식 |
+| vuln 스크립트 | s12 | `nmap --script vuln` | nmap NSE vuln / nuclei | nuclei 가 더 신뢰도 높음 |
+| 특정 포트만 | s13 | `nmap -p 443,9400` | nmap / netcat -zv | |
+| Idle (Zombie) 스캔 | s14 | `hping3` + `nmap -sI` | hping3 / nmap -sI <zombie> | 고급 은닉 기법 |
+| 스캔 결과 정리 | s15 | text 정리 | nmap-parse-output / xmlstarlet / jc | XML→JSON 변환 도구 |
+
+### 학생 환경 준비 (한 번만 실행)
+
+```bash
+ssh ccc@192.168.0.112    # attacker VM (pw: 1)
+
+sudo apt update && sudo apt install -y \
+  nmap masscan unicornscan amap hping3 fping arp-scan \
+  netcat-openbsd \
+  gobuster ffuf dirb nikto \
+  xmlstarlet jc
+
+# nuclei (서명 기반 vuln 스캐너 — pip 또는 Go)
+go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest 2>/dev/null || \
+  curl -sSL https://github.com/projectdiscovery/nuclei/releases/latest/download/nuclei_3.2.0_linux_amd64.zip -o /tmp/nuc.zip
+nuclei -update-templates 2>/dev/null
+```
+
+### 본문 → 동등 도구 빠른 표
+
+| 작업 | 본문에 있는 명령 | 더 강력한 도구 명령 |
+|------|----------------|--------------------|
+| 1만 호스트 스캔 | `nmap 10.0.0.0/16` | `masscan -p1-65535 10.0.0.0/16 --rate=10000` (수십초) |
+| 웹 banner | `curl -I` | `whatweb -v http://target` |
+| http 디렉토리 열거 | `nmap --script http-enum` | `gobuster dir -w common.txt -t 50` |
+| TLS 진단 | `nmap --script ssl-enum-ciphers` | `testssl.sh https://target` |
+
+학생은 **2주차에 배운 nmap 으로 모든 작업이 가능**함을 확인하고, 그 다음 **각 작업 영역별 전문 도구**가 더 빠르고 정확하다는 것을 이해한다.

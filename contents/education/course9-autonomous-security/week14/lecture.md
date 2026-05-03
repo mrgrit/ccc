@@ -693,3 +693,188 @@ RL Steering 의 결과는 *해석 가능* — 가중치 변화에 도메인 의�
 
 **학생 액션**: Bastion skill_weights 에 dataset 50 사례로 RL Steering 적용 → 가중치 변화 측정.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course9 — Week 14 배포와 운영)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | Docker | docker / podman |
+| s2 | Kubernetes | kubernetes / k3s (lightweight) |
+| s3 | Helm chart | **Helm** |
+| s4 | GitOps | **Argo CD** / Flux CD |
+| s5 | Auto-scaling | KServe / Knative |
+| s6 | 통합 모니터링 | Prometheus + Grafana + Loki |
+| s7 | 배포 자동화 | Terraform / Ansible |
+| s8 | Disaster recovery | Velero + restic |
+
+### 학생 환경 준비
+
+```bash
+# k3s (lightweight K8s — 단일 노드 실습 환경)
+curl -sfL https://get.k3s.io | sh -
+sudo k3s kubectl get nodes
+
+# Helm
+curl https://baltocdn.com/helm/signing.asc | sudo apt-key add -
+echo "deb https://baltocdn.com/helm/stable/debian/ all main" | sudo tee /etc/apt/sources.list.d/helm.list
+sudo apt update && sudo apt install -y helm
+
+# Argo CD
+kubectl create namespace argocd
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+
+# kubectl access
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+kubectl port-forward svc/argocd-server -n argocd 8080:443
+# https://localhost:8080
+```
+
+### 핵심 — Auto-defense agent K8s 배포
+
+```yaml
+# /opt/charts/auto-defense/Chart.yaml
+apiVersion: v2
+name: auto-defense
+version: 1.0.0
+description: Autonomous Security Agent
+
+# /opt/charts/auto-defense/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: auto-defense}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels: {app: auto-defense}
+  template:
+    metadata:
+      labels: {app: auto-defense}
+    spec:
+      containers:
+        - name: rl-agent
+          image: myorg/auto-defense:{{ .Values.image.tag }}
+          env:
+            - name: WAZUH_API
+              value: http://wazuh-manager:55000
+            - name: OPA_URL
+              value: http://opa:8181
+            - name: NATS_URL
+              value: nats://nats:4222
+            - name: LANGFUSE_HOST
+              value: http://langfuse:3000
+          resources:
+            requests: {cpu: 200m, memory: 512Mi}
+            limits: {cpu: 1000m, memory: 2Gi}
+          livenessProbe:
+            httpGet: {path: /health, port: 8000}
+          readinessProbe:
+            httpGet: {path: /ready, port: 8000}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: {name: auto-defense-hpa}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: auto-defense
+  minReplicas: 2
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource: {name: cpu, target: {type: Utilization, averageUtilization: 70}}
+    - type: External
+      external:
+        metric:
+          name: wazuh_alerts_per_second
+        target: {type: Value, averageValue: "10"}
+```
+
+```bash
+# Helm 으로 배포
+helm install auto-defense /opt/charts/auto-defense \
+    --namespace security \
+    --create-namespace \
+    --set replicaCount=3 \
+    --set image.tag=v2.1.0
+```
+
+### Argo CD GitOps
+
+```yaml
+# argocd-app.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: auto-defense
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/myorg/security-charts
+    targetRevision: main
+    path: auto-defense
+    helm:
+      valueFiles: [values-prod.yaml]
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: security
+  syncPolicy:
+    automated:
+      prune: true                                   # 삭제된 resource 도 자동 정리
+      selfHeal: true                                # drift 자동 시정
+    syncOptions:
+      - CreateNamespace=true
+```
+
+```bash
+kubectl apply -f argocd-app.yaml
+# 이제 Git push → Argo CD 자동 배포
+```
+
+### 통합 모니터링 stack
+
+```bash
+# kube-prometheus-stack 설치
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm install prom prometheus-community/kube-prometheus-stack \
+    --namespace monitoring --create-namespace
+
+# Loki (logs)
+helm install loki grafana/loki-stack \
+    --namespace monitoring \
+    --set grafana.enabled=false
+
+# Grafana dashboard
+kubectl port-forward svc/prom-grafana -n monitoring 3000:80
+# admin / 자동 생성 password
+```
+
+### Disaster Recovery (Velero)
+
+```bash
+# Velero 설치
+curl -L https://github.com/vmware-tanzu/velero/releases/latest/download/velero-v1.13.0-linux-amd64.tar.gz | sudo tar xz -C /tmp
+sudo mv /tmp/velero-*/velero /usr/local/bin/
+
+velero install \
+    --provider aws \
+    --plugins velero/velero-plugin-for-aws:v1.8.0 \
+    --bucket security-backup \
+    --secret-file ./aws-credentials \
+    --backup-location-config region=us-east-1
+
+# 백업
+velero backup create security-daily-$(date +%Y%m%d) \
+    --include-namespaces security,monitoring,argocd \
+    --ttl 720h
+
+# 복원
+velero restore create --from-backup security-daily-20260502
+```
+
+학생은 본 14주차에서 **k3s + Helm + Argo CD + KServe + Velero** 5 도구로 자율 보안 agent 의 production 배포 (GitOps + auto-scale + monitoring + DR) 사이클을 익힌다.

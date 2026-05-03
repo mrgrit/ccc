@@ -553,3 +553,136 @@ ssh ccc@10.20.30.80 "  # 비밀번호 자동입력 SSH
 
 **학생 액션**: 본인 환경 ISMS-P 점검 시 *모든 항목에 evidence count* 추가 — dataset 처럼 정량 baseline 갖추기.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course4 Compliance — Week 06 PCI-DSS)
+
+### PCI-DSS v4.0 12 요구사항 → OSS 도구
+
+| 요구사항 | 의무 | OSS 도구 |
+|---------|------|---------|
+| Req.1 | 방화벽 구성 | **nftables** + Lynis firewall-config |
+| Req.2 | 기본 설정 변경 | **Lynis** + OpenSCAP `scap-pci-dss profile` |
+| Req.3 | 카드데이터 보호 (저장) | **LUKS** (저장 암호화) / **HashiCorp Vault** |
+| Req.4 | 전송 암호화 | **testssl.sh** + sslscan (TLS 1.2+ 검증) |
+| Req.5 | 안티바이러스 | **ClamAV** + Wazuh integration |
+| Req.6 | 보안 시스템 개발 | **DefectDojo** + SonarQube CE + OWASP ZAP |
+| Req.7 | 접근통제 (Need-to-know) | **OPA** + Casbin + Keycloak |
+| Req.8 | 사용자 식별/인증 | Wazuh user-behavior + ssh-audit |
+| Req.9 | 물리 접근 (course16) | (별도 코스) |
+| Req.10 | 로그/모니터링 | **Wazuh** + Suricata + audit |
+| Req.11 | 정기 보안 테스트 | **OpenSCAP pci-dss profile** + nmap + nikto |
+| Req.12 | 정보보호 정책 | **OSCAL** / eramba GRC |
+
+### 핵심 — OpenSCAP PCI-DSS 자동 점검
+
+```bash
+sudo apt install -y libopenscap1 openscap-scanner ssg-base ssg-debderived
+
+# PCI-DSS profile 적용
+sudo oscap xccdf eval \
+  --profile xccdf_org.ssgproject.content_profile_pci-dss \
+  --report /tmp/pci-dss-report.html \
+  --results-arf /tmp/pci-dss.arf \
+  /usr/share/xml/scap/ssg/content/ssg-ubuntu2204-ds.xml
+
+# 자동 시정
+sudo oscap xccdf eval --profile pci-dss --remediate \
+  /usr/share/xml/scap/ssg/content/ssg-ubuntu2204-ds.xml
+```
+
+### 학생 환경 준비
+
+```bash
+ssh ccc@10.20.30.100
+sudo apt install -y libopenscap1 openscap-scanner ssg-base \
+  clamav clamav-daemon clamav-freshclam \
+  cryptsetup-bin
+
+# ClamAV 시그니처 다운로드
+sudo freshclam
+
+# Vault (PCI Req.3 — 키 관리)
+curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo apt-key add -
+sudo apt-add-repository "deb [arch=amd64] https://apt.releases.hashicorp.com $(lsb_release -cs) main"
+sudo apt install -y vault
+
+# DefectDojo (PCI Req.6 — vuln tracker)
+git clone https://github.com/DefectDojo/django-DefectDojo.git ~/dojo
+cd ~/dojo && docker-compose up -d
+```
+
+### 핵심 도구별 사용법
+
+```bash
+# Req.1 — 방화벽 룰셋 검증
+sudo nft -j list ruleset | jq '.nftables[].chain | select(.policy=="accept") | .name'
+# accept policy 가 있으면 PCI Req.1.2.1 위반 가능
+
+# Req.2 — 기본 설정 (Lynis + OpenSCAP)
+sudo lynis audit system | grep -E "DEFA|DEFAULT|VENDOR"
+
+# Req.3 — 저장 암호화 검증
+lsblk -f                                                  # 모든 파티션 확인
+sudo cryptsetup luksDump /dev/sda3                        # LUKS 활성?
+vault kv get secret/pci/card-storage-key                  # 키 보관 위치
+
+# Req.4 — 전송 암호화
+testssl.sh --severity HIGH https://10.20.30.80:443
+# 결과에서 NOT secure 항목 = PCI 위반
+
+# Req.5 — 안티바이러스
+sudo systemctl status clamav-daemon
+sudo clamscan -r /var/www/                                # 웹 디렉토리 스캔
+sudo freshclam                                            # 시그니처 갱신
+
+# Req.10 — 로그/모니터링 (Wazuh + audit)
+sudo /var/ossec/bin/agent_control -ls                     # 모든 agent 상태
+sudo aureport --auth -i | head -20
+
+# Req.11 — 정기 보안 테스트
+nikto -h http://10.20.30.80 -o /tmp/nikto.txt
+nmap -sV -A 10.20.30.80 -oA /tmp/nmap-pci
+nuclei -u http://10.20.30.80 -severity high,critical
+```
+
+### PCI-DSS 점검 사이클 (분기별)
+
+```bash
+# Phase 1: 자동 baseline (1시간)
+sudo oscap xccdf eval --profile pci-dss \
+  --report /tmp/pci-q1.html ssg-ubuntu2204-ds.xml
+
+# Phase 2: 외부 스캔 (Req.11.3 — 분기별 ASV scan 모방)
+nmap -sV -p- -sC 10.20.30.80
+nikto -h http://10.20.30.80
+# 외부 ASV (Approved Scanning Vendor) 와 동등 OSS 점검
+
+# Phase 3: 내부 vuln scan (Req.11.3.2)
+nuclei -u http://10.20.30.80 -severity high
+ClamAV scan all servers
+
+# Phase 4: 침투테스트 시뮬레이션 (Req.11.4 — 연 1회 + 변경 후)
+# Course13 attack-advanced 와 연계
+sqlmap -u "http://10.20.30.80/api?id=1" --batch
+```
+
+### PCI-DSS 미준수 → 자동 시정 흐름
+
+```bash
+# Wazuh rule 으로 PCI 위반 탐지 → Shuffle workflow → 자동 시정
+# /var/ossec/etc/ossec.conf
+# <rule id="100500" level="12">
+#   <if_sid>5710</if_sid>
+#   <description>PCI Req.10.2.4 violation: failed SSH</description>
+# </rule>
+
+# Shuffle workflow:
+# 1. Wazuh alert (PCI rule_id) → trigger
+# 2. PCI-DSS Mapping → DPO email
+# 3. Auto-remediate → ansible-playbook
+# 4. Re-scan → OpenSCAP delta report
+```
+
+학생은 본 6주차에서 **OpenSCAP PCI-DSS profile + ClamAV + testssl.sh + nikto + nuclei** 5 도구로 PCI-DSS 12 요구사항을 자동 점검 + 자동 시정 + 분기별 보고 가능한 운영 사이클을 익힌다.

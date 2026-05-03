@@ -275,7 +275,12 @@ steps:
       - 헤더 조합 없음
   target_vm: attacker
 - order: 9
-  instruction: Suricata의 alert 로그를 확인하여 이전 실습에서 발생한 탐지 이벤트를 분석하라.
+  instruction: 'Suricata의 alert 로그를 확인하여 이전 실습에서 발생한 탐지 이벤트를 분석하라.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/attack-nonai-week12/9/eve.json 사전 주입.
+    `jq -c ''.alert'' /home/ccc/cyber-range/fixtures/attack-nonai-week12/9/eve.json`
+    후 (1) 빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: secu 서버의 /var/log/suricata/fast.log를 확인한다
   category: analysis
   points: 10
@@ -303,6 +308,18 @@ steps:
       - tail/cat 없음
       - 분석 맥락 없음
   target_vm: attacker
+  fixtures:
+  - generator: suricata_alert
+    target_vm: attacker
+    path: /home/ccc/cyber-range/fixtures/attack-nonai-week12/9/eve.json
+    params:
+      seed: 42
+      duration_days: 7
+      alerts_per_day: 30
+      c2_beacon_count: 12
+      metadata_attempt_count: 4
+    mode: overwrite
+    cleanup: false
 - order: 10
   instruction: 타이밍 기반 은닉을 시연하라. 요청 간 랜덤 지연을 추가하여 IDS의 시간 기반 상관 분석을 우회하라.
   hint: sleep 명령에 랜덤 값을 사용한다
@@ -510,76 +527,129 @@ steps:
       - 강화 방안 없음
   target_vm: attacker
 - order: 99
-  instruction: |
-    [복합 시나리오] "OSCP 시험 응시자 — 24시간 시험 일지 (Exam Log)"
+  instruction: '[복합 시나리오] "OSCP 시험 응시자 — 24시간 시험 일지 (Exam Log)"
 
-    ## 상황 — OSCP 시험일, 09:00 시작
+
+    ■ 상황 — OSCP 시험일, 09:00 시작
+
 
     OSCP 응시자. 24h 단독 시험. 5머신 (BoF 25 + 머신 4) 100점 중 *70점 이상 합격*.
+
     시험 일지 시간 도장 + 점수 추적.
 
-    > [Proctor] "현재 09:00. 24h 자동 disconnect. 보고서 24h 추가. 명령·스크린샷·flag.txt 누락 시 0점."
 
-    학습 목표 (lecture 5 Persistence + Anti-forensics + 포렌식 타임라인) + (lab #2·#3·#5·#10) 통합.
+    ※ [Proctor] "현재 09:00. 24h 자동 disconnect. 보고서 24h 추가. 명령·스크린샷·flag.txt 누락 시 0점."
 
-    ## 산출물 — 24h Exam Log
+
+    학습 목표 (lecture 5 Persistence + Anti-forensics + 포렌식 타임라인) + (lab #2·#3·#5·#10)
+    통합.
+
+
+    ■ 산출물 — 24h Exam Log
+
 
     Non-AI 트랙: ssh ccc@10.20.30.201 (attacker VM) 직접 실행.
 
-    ### [09:00] T-START
-    `echo "=== OSCP Exam Start: $(date '+%Y-%m-%d %H:%M:%S') ===" > /tmp/oscp_log.txt; date '+%Y-%m-%d %H:%M:%S'`
 
-    ### [09:05] BoF 시작 (25점 우선)
+    ▶ [09:00] T-START
+
+    `echo "=== OSCP Exam Start: $(date ''+%Y-%m-%d %H:%M:%S'') ===" > /tmp/oscp_log.txt;
+    date ''+%Y-%m-%d %H:%M:%S''`
+
+
+    ▶ [09:05] BoF 시작 (25점 우선)
+
     `echo "[09:05] BoF — fuzzing → offset → bad chars → JMP ESP → shellcode"`
 
-    ### [10:30] BoF root 25/100 ✅
+
+    ▶ [10:30] BoF root 25/100 ✅
+
     `echo "[10:30] ✅ BoF root: msfvenom payload. 점수 25/100"`
 
-    ### [11:00] Machine A 정찰
-    `nmap -sT -p 22,80,443,3000,8080 --max-rtt-timeout 1000 -T2 10.20.30.80 2>&1 | head -20`
 
-    ### [12:15] IDS 우회 (lab #2·#5·#10)
-    > 본인 노트: "Suricata 가 nmap 시그니처 잡을 거. -T1 + decoy + source port 80 우회."
-    `sudo -n nmap -sS -T1 -f -D 10.0.0.1,10.0.0.2,ME --source-port 80 -p 22,80,3000 10.20.30.80 2>&1 | head -10`
+    ▶ [11:00] Machine A 정찰
 
-    ### [16:00] Machine A root 50/100 ✅
+    `nmap -sT -p 22,80,443,3000,8080 --max-rtt-timeout 1000 -T2 10.20.30.80 2>&1 |
+    head -20`
+
+
+    ▶ [12:15] IDS 우회 (lab #2·#5·#10)
+
+    ※ 본인 노트: "Suricata 가 nmap 시그니처 잡을 거. -T1 + decoy + source port 80 우회."
+
+    `sudo -n nmap -sS -T1 -f -D 10.0.0.1,10.0.0.2,ME --source-port 80 -p 22,80,3000
+    10.20.30.80 2>&1 | head -10`
+
+
+    ▶ [16:00] Machine A root 50/100 ✅
+
     `echo "[16:00] ✅ A root: SUID find. 누적 50/100"`
 
-    ### [16:30] Machine B WAF 우회 5 변형 (lab #3)
-    `cat <<'EOF'
-    1. ' OR 1=1--
-    2. ' Or 1=1--           (대소문자)
-    3. '/**/OR/**/1=1--      (주석)
+
+    ▶ [16:30] Machine B WAF 우회 5 변형 (lab #3)
+
+    `cat <<''EOF''
+
+    1. '' OR 1=1--
+
+    2. '' Or 1=1--           (대소문자)
+
+    3. ''/**/OR/**/1=1--      (주석)
+
     4. %27%20OR%201=1--      (URL 인코딩)
-    5. '%2520OR%25201=1--    (이중 인코딩)
+
+    5. ''%2520OR%25201=1--    (이중 인코딩)
+
     EOF`
 
-    ### [18:30] Machine B user 60/100 ⚠️
-    ### [21:00] B 손절 → C pivot
-    > 본인 노트: "B root 2시간 더 + Machine C 미시작. C user 만 따도 70 합격선. B 포기."
 
-    ### [23:00] Machine C user 70/100 ✅ 합격선
+    ▶ [18:30] Machine B user 60/100 ⚠️
+
+    ▶ [21:00] B 손절 → C pivot
+
+    ※ 본인 노트: "B root 2시간 더 + Machine C 미시작. C user 만 따도 70 합격선. B 포기."
+
+
+    ▶ [23:00] Machine C user 70/100 ✅ 합격선
+
     `echo "[23:00] ✅ Machine C: user. 점수 70/100 — 합격선"`
 
-    ### [04:00-06:30] 휴식 5h + Machine C root
+
+    ▶ [04:00-06:30] 휴식 5h + Machine C root
+
     `echo "[06:30] ✅ C root: SUID perl. 누적 80/100"`
 
-    ### [09:00] T-END
-    `echo "=== OSCP Exam End: $(date '+%Y-%m-%d %H:%M:%S') ==="`
+
+    ▶ [09:00] T-END
+
+    `echo "=== OSCP Exam End: $(date ''+%Y-%m-%d %H:%M:%S'') ==="`
+
     `echo "최종 점수: 80/100 (BoF 25 + A 25 + B 10 + C 20)"`
 
-    ## 회고 (Lessons Learned 3 항목)
+
+    ■ 회고 (Lessons Learned 3 항목)
+
     1. **잘한 점**: BoF 우선 + B 손절 (시간 비용 평가)
+
     2. **개선 점**: Machine A 정찰 1.5h 너무 김 (다음엔 30분 cap)
+
     3. **다음 준비**: WAF 우회 페이로드 노트 30→100 확장
 
+
     종료: echo "=== OSCP 24h Exam Log ===" + 일지 + 회고.
-  hint: |
-    24h 시험 일지. 시간 도장 + 점수 추적 (BoF 25 + 머신 4).
+
+    '
+  hint: '24h 시험 일지. 시간 도장 + 점수 추적 (BoF 25 + 머신 4).
+
     BoF 우선 → 머신 → 우회 → 합격선 70 도달.
+
     *손절 의사결정* (시간 vs 점수) 명시.
+
     회고 3 항목.
+
     포인트: Exam Log 형식. 보고서 X.
+
+    '
   category: integration_scenario
   points: 50
   verify:
@@ -587,9 +657,11 @@ steps:
     expect: Exam Log
     field: stdout
     semantic:
-      intent: |
-        OSCP 응시자 — 24h 시험 일지 (시간 도장 + 점수 추적 + 합격선 70 + 손절 의사결정).
+      intent: 'OSCP 응시자 — 24h 시험 일지 (시간 도장 + 점수 추적 + 합격선 70 + 손절 의사결정).
+
         lecture w12 + lab #2·#3·#5·#10 동시 행동 증명. *Exam Log* 산출물.
+
+        '
       success_criteria:
       - T-START / T-END 시각 도장
       - BoF 25 + 머신 점수 추적 (합격선 70 도달)
@@ -608,5 +680,6 @@ steps:
       - 의사결정 흔적 없음
   target_vm: attacker
   risk_level: low
-  answer_detail: |
-    학생이 ssh attacker 직접. OSCP 시험 일지 — 시간 도장 + 점수 추적 + 손절 의사결정 + 회고.
+  answer_detail: '학생이 ssh attacker 직접. OSCP 시험 일지 — 시간 도장 + 점수 추적 + 손절 의사결정 + 회고.
+
+    '

@@ -563,3 +563,31 @@ ORG-1657 ::: {
 2. 4670 / 5136 spike 시점에 *당시 logon user* 와 *변경 대상 객체* 매핑 표 작성
 3. 5140 의 *동일 user 의 share-target hopping* 시퀀스 → 점검 보고서의 *수평 이동 시도* 항목
 
+
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (lab week09 — Insecure Deserialization)
+
+| step | 카테고리 | 핵심 도구 |
+|---|---|---|
+| 1 JWT 추출 | curl SQLi / sqlmap --forms / Burp Repeater / pyjwt 디코딩 |
+| 2 JWT 분석 | base64 + jq / **jwt_tool** / pyjwt / jwt.io |
+| 3 alg:none | jwt_tool -X a / 수동 변조 / **Burp JWT Editor** / hashcat -m 16500 |
+| 4 쿠키 분석 | curl -c / DevTools Application / Burp / 보안 속성 표 |
+| 5 쿠키 변조 | curl -b / Burp Match and Replace / DevTools / **EditThisCookie** |
+| 6 BOLA/IDOR | curl for-loop / Burp Intruder / **autorize 확장** / **idor-cli** |
+| 7 Prototype Pollution | __proto__ / constructor.prototype / **Burp PP Scanner** / **PortSwigger PP-finder** / nuclei -tags pp |
+| 8 Node 직렬화 | node-serialize IIFE / **ysoserial.net** / **ysoserial Java** / **ph-cli Python pickle** / **gadgetinspector** |
+| 9 WAF 방어 | curl 80 vs 3000 / OWASP CRS 933 / wafw00f |
+| 10 reporting | DefectDojo / OWASP A08 / sha256 |
+
+### 학생 환경 준비
+```bash
+git clone --depth 1 https://github.com/ticarpi/jwt_tool ~/jwt_tool
+git clone --depth 1 https://github.com/frohoff/ysoserial ~/ysoserial-java
+git clone --depth 1 https://github.com/pwntester/ysoserial.net ~/ysoserial-net
+pip install pyjwt
+# Burp BApp Store: JWT Editor, autorize, Server Side Prototype Pollution Scanner
+# EditThisCookie: Chrome 확장
+```

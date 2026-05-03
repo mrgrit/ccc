@@ -3,7 +3,8 @@ title: 보안 솔루션 인프라 점검 (AI 지원)
 version: ai
 course: secops-ai
 week: 1
-description: 실습 환경의 보안 솔루션(nftables, Suricata, ModSecurity, Wazuh, OpenCTI)이 각 VM에 어떻게 배치·동작하는지 확인한다.
+description: 실습 환경의 보안 솔루션(nftables, Suricata, ModSecurity, Wazuh, OpenCTI)이 각 VM에
+  어떻게 배치·동작하는지 확인한다.
 difficulty: easy
 duration_minutes: 120
 objectives:
@@ -13,7 +14,12 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: secu VM({{SECU_IP}})의 nftables 테이블 목록을 확인하시오.
+  instruction: 'secu VM({{SECU_IP}})의 nftables 테이블 목록을 확인하시오.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/secops-ai-week01/1/syslog 사전 주입. `grep
+    -E ''DROP|REJECT|filter'' /home/ccc/cyber-range/fixtures/secops-ai-week01/1/syslog`
+    후 (1) 빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: nft list tables
   category: survey
   points: 10
@@ -26,9 +32,10 @@ steps:
     expect: table
     field: stdout
     semantic:
-      intent: 'secu VM nftables 테이블 목록 확인 — nft list tables 로 현재 로드된 netfilter tables (family + name)
-        열거. 기본 family: inet(IPv4+IPv6 공통), ip/ip6, arp, bridge, netdev. CCC 환경의 방화벽 룰셋 구조 파악의 시작점. iptables-nft
-        compatibility 모드 시 filter/nat/mangle 등 legacy 테이블 매핑 확인'
+      intent: 'secu VM nftables 테이블 목록 확인 — nft list tables 로 현재 로드된 netfilter tables
+        (family + name) 열거. 기본 family: inet(IPv4+IPv6 공통), ip/ip6, arp, bridge, netdev.
+        CCC 환경의 방화벽 룰셋 구조 파악의 시작점. iptables-nft compatibility 모드 시 filter/nat/mangle
+        등 legacy 테이블 매핑 확인'
       success_criteria:
       - nft list tables 실행
       - 테이블 family 와 name 출력
@@ -45,7 +52,24 @@ steps:
   target_vm: secu
   script: nft list tables
   risk_level: low
-  bastion_prompt: secu VM의 nftables 테이블 목록을 확인해줘
+  bastion_prompt: 'secu VM의 nftables 테이블 목록을 확인해줘
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/secops-ai-week01/1/syslog 사전 주입. `grep
+    -E ''DROP|REJECT|filter'' /home/ccc/cyber-range/fixtures/secops-ai-week01/1/syslog`
+    후 (1)빈도·패턴 (2)MITRE (3)방어 3섹션. raw dump 금지.'
+  fixtures:
+  - generator: firewall_log
+    target_vm: secu
+    path: /home/ccc/cyber-range/fixtures/secops-ai-week01/1/syslog
+    params:
+      seed: 42
+      duration_days: 7
+      scan_bursts: 5
+      egress_violations: 20
+      syn_flood_count: 200
+    mode: overwrite
+    cleanup: false
 - order: 2
   instruction: secu VM에서 Suricata 서비스 상태를 확인하시오.
   hint: systemctl is-active suricata
@@ -60,9 +84,10 @@ steps:
     expect: suricata
     field: stdout
     semantic:
-      intent: 'secu VM Suricata 서비스 상태 확인 — systemctl status suricata --no-pager | head -15 로 Active:
-        active (running), Main PID, 최근 log line 출력. Suricata 는 IDS/IPS 로 네트워크 트래픽 실시간 분석 + alert 생성. --no-pager
-        로 ssh 세션에서 pager block 방지. 비활성이면 Suricata 탐지 공백 발생'
+      intent: 'secu VM Suricata 서비스 상태 확인 — systemctl status suricata --no-pager |
+        head -15 로 Active: active (running), Main PID, 최근 log line 출력. Suricata 는
+        IDS/IPS 로 네트워크 트래픽 실시간 분석 + alert 생성. --no-pager 로 ssh 세션에서 pager block 방지.
+        비활성이면 Suricata 탐지 공백 발생'
       success_criteria:
       - systemctl 또는 service 명령 실행
       - active 또는 inactive 상태 출력
@@ -89,15 +114,17 @@ steps:
   answer: '🤖 프롬프트: web VM의 Apache ModSecurity 모듈이 로드되어 있는지 확인해줘
 
     📎 참고 (CLI): apachectl -M 2>/dev/null | grep -i security'
-  answer_detail: '보안 솔루션 인프라 점검: web VM(10.20.30.80)에서 Apache + ModSecurity 모듈 로드 상태를 확인하시오.'
+  answer_detail: '보안 솔루션 인프라 점검: web VM(10.20.30.80)에서 Apache + ModSecurity 모듈 로드
+    상태를 확인하시오.'
   verify:
     type: output_contains
     expect: security
     field: stdout
     semantic:
-      intent: web VM Apache ModSecurity 모듈 로드 확인 — apachectl -M 2>/dev/null | grep -i security 로 security2_module
-        로드 여부 검사. ModSecurity 는 Apache/Nginx 용 WAF, OWASP CRS(Core Rule Set) 와 함께 SQLi·XSS·RFI 등 Layer-7
-        공격 차단. 모듈 없으면 WAF 기능 OFF. apache2 의 경우 mods-enabled/security2.conf 존재 + LoadModule 지시어 확인
+      intent: web VM Apache ModSecurity 모듈 로드 확인 — apachectl -M 2>/dev/null | grep
+        -i security 로 security2_module 로드 여부 검사. ModSecurity 는 Apache/Nginx 용 WAF,
+        OWASP CRS(Core Rule Set) 와 함께 SQLi·XSS·RFI 등 Layer-7 공격 차단. 모듈 없으면 WAF 기능
+        OFF. apache2 의 경우 mods-enabled/security2.conf 존재 + LoadModule 지시어 확인
       success_criteria:
       - apachectl -M 또는 apache2ctl -M 실행
       - security2_module 또는 mod_security 문자열 포함
@@ -130,9 +157,10 @@ steps:
     expect: active
     field: stdout
     semantic:
-      intent: 'siem VM Wazuh Manager 서비스 상태 — systemctl is-active wazuh-manager 로 active/inactive/failed
-        판정. Wazuh Manager 는 SIEM 의 핵심 엔진: 에이전트 로그 수신 → decoder/rule 매칭 → alert 생성 → alerts.json 저장. 비활성이면
-        모든 SOC 탐지 기능 마비. || echo inactive 로 실패 시 명확한 출력'
+      intent: 'siem VM Wazuh Manager 서비스 상태 — systemctl is-active wazuh-manager 로
+        active/inactive/failed 판정. Wazuh Manager 는 SIEM 의 핵심 엔진: 에이전트 로그 수신 → decoder/rule
+        매칭 → alert 생성 → alerts.json 저장. 비활성이면 모든 SOC 탐지 기능 마비. || echo inactive 로
+        실패 시 명확한 출력'
       success_criteria:
       - systemctl is-active wazuh-manager 실행
       - active/inactive 문자열 출력
@@ -159,15 +187,17 @@ steps:
   answer: '🤖 프롬프트: siem VM에서 Wazuh Indexer가 9200 포트로 리스닝하는지 확인해줘
 
     📎 참고 (CLI): ss -tlnp 2>/dev/null | grep -E '':9200|wazuh'''
-  answer_detail: '보안 솔루션 인프라 점검: siem VM에서 Wazuh Indexer(OpenSearch) 포트(9200) 리스닝 상태를 확인하시오.'
+  answer_detail: '보안 솔루션 인프라 점검: siem VM에서 Wazuh Indexer(OpenSearch) 포트(9200) 리스닝
+    상태를 확인하시오.'
   verify:
     type: output_contains
     expect: '9200'
     field: stdout
     semantic:
-      intent: siem VM Wazuh Indexer(OpenSearch) 9200 포트 리스닝 확인 — ss -tlnp 2>/dev/null | grep -E ":9200|wazuh"
-        로 TCP listening 소켓 검사. Wazuh Indexer 는 OpenSearch fork 로 alerts/events 저장, Wazuh Dashboard 가 9200
-        API 로 조회. 리스닝 없으면 dashboard 쿼리 실패 + 인덱싱 중단. 로컬만(127.0.0.1) vs 외부(0.0.0.0) 바인딩 구분
+      intent: siem VM Wazuh Indexer(OpenSearch) 9200 포트 리스닝 확인 — ss -tlnp 2>/dev/null
+        | grep -E ":9200|wazuh" 로 TCP listening 소켓 검사. Wazuh Indexer 는 OpenSearch
+        fork 로 alerts/events 저장, Wazuh Dashboard 가 9200 API 로 조회. 리스닝 없으면 dashboard
+        쿼리 실패 + 인덱싱 중단. 로컬만(127.0.0.1) vs 외부(0.0.0.0) 바인딩 구분
       success_criteria:
       - ss 또는 netstat 실행
       - :9200 포트 LISTEN 확인
@@ -193,17 +223,18 @@ steps:
   points: 10
   answer: '🤖 프롬프트: siem VM에서 OpenCTI가 동작 중인지 확인해줘
 
-    📎 참고 (CLI): docker ps --format ''{{.Names}}\t{{.Status}}'' 2>/dev/null | grep -i opencti || systemctl
-    is-active opencti'
+    📎 참고 (CLI): docker ps --format ''{{.Names}}\t{{.Status}}'' 2>/dev/null | grep
+    -i opencti || systemctl is-active opencti'
   answer_detail: '보안 솔루션 인프라 점검: siem VM에서 OpenCTI 서비스(또는 docker 컨테이너) 상태를 확인하시오.'
   verify:
     type: output_contains
     expect: opencti
     field: stdout
     semantic:
-      intent: 'siem VM OpenCTI 서비스/컨테이너 상태 — docker ps --format으로 opencti 컨테이너 목록, 또는 systemctl is-active
-        opencti(native 설치 시). OpenCTI 는 CTI 플랫폼, STIX 2.1 기반 threat intelligence 관리(MITRE ATT&CK·IOC·actors·campaigns).
-        다중 컨테이너(platform·worker·elastic·redis·rabbitmq·minio) 구성. 헬스체크: curl localhost:8080/graphql'
+      intent: 'siem VM OpenCTI 서비스/컨테이너 상태 — docker ps --format으로 opencti 컨테이너 목록,
+        또는 systemctl is-active opencti(native 설치 시). OpenCTI 는 CTI 플랫폼, STIX 2.1 기반
+        threat intelligence 관리(MITRE ATT&CK·IOC·actors·campaigns). 다중 컨테이너(platform·worker·elastic·redis·rabbitmq·minio)
+        구성. 헬스체크: curl localhost:8080/graphql'
       success_criteria:
       - docker ps 또는 systemctl 실행
       - opencti 컨테이너/서비스 이름 출력
@@ -219,8 +250,8 @@ steps:
       - Up 상태 판정 누락
       - OpenCTI vs 다른 플랫폼 혼동
   target_vm: siem
-  script: docker ps --format '{{.Names}}\t{{.Status}}' 2>/dev/null | grep -i opencti || systemctl is-active
-    opencti
+  script: docker ps --format '{{.Names}}\t{{.Status}}' 2>/dev/null | grep -i opencti
+    || systemctl is-active opencti
   risk_level: low
   bastion_prompt: siem VM에서 OpenCTI가 동작 중인지 확인해줘
 - order: 7
@@ -231,15 +262,16 @@ steps:
   answer: '🤖 프롬프트: attacker VM에서 secu VM(10.20.30.1)으로 ping 테스트를 수행해줘
 
     📎 참고 (CLI): ping -c 2 10.20.30.1'
-  answer_detail: '보안 솔루션 인프라 점검: attacker VM(10.20.30.201)에서 secu VM으로 ping이 가능한지 확인하시오.'
+  answer_detail: '보안 솔루션 인프라 점검: attacker VM(10.20.30.201)에서 secu VM으로 ping이 가능한지
+    확인하시오.'
   verify:
     type: output_contains
     expect: bytes
     field: stdout
     semantic:
-      intent: attacker VM → secu VM ICMP 도달성 검증 — ping -c 2 10.20.30.1 로 2 패킷 전송, bytes from 응답·RTT·loss
-        확인. 네트워크 연결성 baseline (CCC VM 간 내부 10.20.30.0/24 네트워크). 방화벽 INPUT chain 에서 ICMP 허용 여부와도 연관. 0%
-        loss 정상, 100% loss 면 라우팅/방화벽 점검 필요
+      intent: attacker VM → secu VM ICMP 도달성 검증 — ping -c 2 10.20.30.1 로 2 패킷 전송,
+        bytes from 응답·RTT·loss 확인. 네트워크 연결성 baseline (CCC VM 간 내부 10.20.30.0/24 네트워크).
+        방화벽 INPUT chain 에서 ICMP 허용 여부와도 연관. 0% loss 정상, 100% loss 면 라우팅/방화벽 점검 필요
       success_criteria:
       - ping -c 2 실행
       - bytes from 또는 응답 시간 출력
@@ -266,15 +298,17 @@ steps:
   answer: '🤖 프롬프트: secu VM의 Suricata 룰 파일 개수를 확인해줘
 
     📎 참고 (CLI): ls /etc/suricata/rules/*.rules 2>/dev/null | wc -l'
-  answer_detail: '보안 솔루션 인프라 점검: secu VM에서 Suricata 기본 룰셋 수(/etc/suricata/rules 내 .rules 파일 합계)를 확인하시오.'
+  answer_detail: '보안 솔루션 인프라 점검: secu VM에서 Suricata 기본 룰셋 수(/etc/suricata/rules 내
+    .rules 파일 합계)를 확인하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: secu VM Suricata 룰셋 개수 확인 — ls /etc/suricata/rules/*.rules 2>/dev/null | wc -l 로 .rules
-        파일 수 카운트. Emerging Threats Open 룰셋 보통 30-60개 파일(emerging-exploit.rules, emerging-malware.rules,
-        emerging-web_server.rules 등). suricata-update 로 카테고리별 ruleset 로드. 파일 수 0 이면 룰셋 로드 실패
+      intent: secu VM Suricata 룰셋 개수 확인 — ls /etc/suricata/rules/*.rules 2>/dev/null
+        | wc -l 로 .rules 파일 수 카운트. Emerging Threats Open 룰셋 보통 30-60개 파일(emerging-exploit.rules,
+        emerging-malware.rules, emerging-web_server.rules 등). suricata-update 로 카테고리별
+        ruleset 로드. 파일 수 0 이면 룰셋 로드 실패
       success_criteria:
       - ls | wc -l 또는 find | wc -l 실행
       - 숫자(룰 파일 개수) 출력
@@ -308,8 +342,9 @@ steps:
     expect: rules
     field: stdout
     semantic:
-      intent: 'web VM ModSecurity CRS 룰 디렉토리 확인 — ls /etc/modsecurity/crs/rules/ 또는 /usr/share/modsecurity-crs/rules/
-        head -5. OWASP CRS(Core Rule Set) 룰 파일 구성: REQUEST-901-INITIALIZATION·REQUEST-942-APPLICATION-ATTACK-SQLI·REQUEST-941-APPLICATION-ATTACK-XSS
+      intent: 'web VM ModSecurity CRS 룰 디렉토리 확인 — ls /etc/modsecurity/crs/rules/ 또는
+        /usr/share/modsecurity-crs/rules/ head -5. OWASP CRS(Core Rule Set) 룰 파일 구성:
+        REQUEST-901-INITIALIZATION·REQUEST-942-APPLICATION-ATTACK-SQLI·REQUEST-941-APPLICATION-ATTACK-XSS
         등 번호 체계로 분류. 디렉토리 없으면 CRS 미설치, Apache <IncludeOptional> 으로 로드'
       success_criteria:
       - ls 명령으로 rules 디렉토리 내용 출력
@@ -331,7 +366,12 @@ steps:
   risk_level: low
   bastion_prompt: web VM의 ModSecurity CRS 룰 디렉터리 내용을 확인해줘
 - order: 10
-  instruction: siem VM에서 Wazuh Manager의 최근 alert 파일 존재 여부를 확인하시오.
+  instruction: 'siem VM에서 Wazuh Manager의 최근 alert 파일 존재 여부를 확인하시오.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/secops-ai-week01/10/alerts.json 사전 주입.
+    `jq -c ''.rule'' /home/ccc/cyber-range/fixtures/secops-ai-week01/10/alerts.json`
+    후 (1) 빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: ls /var/ossec/logs/alerts/ 2>/dev/null | head
   category: analysis
   points: 10
@@ -344,9 +384,10 @@ steps:
     expect: alert
     field: stdout
     semantic:
-      intent: siem VM Wazuh alerts 로그 디렉토리 확인 — ls /var/ossec/logs/alerts/ 2>/dev/null | head -3 으로 alerts.json(실시간
-        append)·alerts.log(syslog 포맷)·연/월/일별 디렉토리 구조 확인. Wazuh Manager 의 alert 출력 저장 위치. 파일이 비어있거나 디렉토리가
-        없으면 alert pipeline 문제(decoder·rule 없음·analysisd 중단)
+      intent: siem VM Wazuh alerts 로그 디렉토리 확인 — ls /var/ossec/logs/alerts/ 2>/dev/null
+        | head -3 으로 alerts.json(실시간 append)·alerts.log(syslog 포맷)·연/월/일별 디렉토리 구조
+        확인. Wazuh Manager 의 alert 출력 저장 위치. 파일이 비어있거나 디렉토리가 없으면 alert pipeline 문제(decoder·rule
+        없음·analysisd 중단)
       success_criteria:
       - ls /var/ossec/logs/alerts 실행
       - alerts.json 또는 alerts.log 파일명 확인
@@ -364,122 +405,89 @@ steps:
   target_vm: siem
   script: ls /var/ossec/logs/alerts/ 2>/dev/null | head -3
   risk_level: low
-  bastion_prompt: siem VM의 Wazuh alerts 로그 디렉터리를 확인해줘
+  bastion_prompt: 'siem VM의 Wazuh alerts 로그 디렉터리를 확인해줘
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/secops-ai-week01/10/alerts.json 사전 주입.
+    `jq -c ''.rule'' /home/ccc/cyber-range/fixtures/secops-ai-week01/10/alerts.json`
+    후 (1)빈도·패턴 (2)MITRE (3)방어 3섹션. raw dump 금지.'
+  fixtures:
+  - generator: wazuh_alert
+    target_vm: siem
+    path: /home/ccc/cyber-range/fixtures/secops-ai-week01/10/alerts.json
+    params:
+      seed: 42
+      duration_days: 7
+      alerts_per_day: 50
+      brute_force_burst: true
+      ar_trigger_count: 4
+    mode: overwrite
+    cleanup: false
 - order: 99
-  instruction: |
-    [복합 시나리오] SOC 첫 출근 — "5 layer 다 켜져 있는데 왜 침해를 놓치지?"
+  instruction: "[복합 시나리오] SOC 첫 출근 — \"5 layer 다 켜져 있는데 왜 침해를 놓치지?\"\n\n## 상황 (몰입을\
+    \ 위한 배경)\n\n당신은 ABC 핀테크 회사 SOC (Security Operations Center) 의 신규 분석가다.\n오늘 첫 출근.\
+    \ 인수인계 자료에는 한 줄만 적혀 있다:\n\n> \"우리 SOC 는 5 layer Defense in Depth — nftables 방화벽\
+    \ + Suricata IDS +\n>  ModSecurity WAF + Wazuh SIEM + OpenCTI Threat Intel — 모두\
+    \ 운영 중.\"\n\n옆 자리 선임이 커피를 쥐고 와서 한 마디 흘리고 갔다.\n\n> \"5 layer 다 켜져 있다고 다 일하고 있다는\
+    \ 뜻은 아냐. 지난달 ransomware 침해는\n>  4번째 layer (Wazuh) 에서 잡았어. 만약 우리가 firewall 만 봤다면\
+    \ evidence 의\n>  5.7% 만 보고 흘려보냈을 거야. 너 들어왔으니, 매트릭스 한 번 그려봐 —\n>  5 layer 가 *진짜*\
+    \ 일하고 있는지, 어느 vector 가 어느 layer 에 흔적 남기는지.\n>  다음 주 첫 incident drill 전에 팀에 보고해.\"\
+    \n\n교안 §\"실제 사례 — 1개 보안 layer 만 있으면 어떤 일이 벌어지나\" 에서 본 그 5.7%.\n실제 운영 SOC 1년치 데이터로\
+    \ 검증된 수치다. 이제 본인 환경에서 검증할 차례다.\n\n## 임무 (4 단계, 약 35분)\n\n### Phase A — \"5 layer\
+    \ 가 정말 살아있는가\" (10분)\n\n여기서 함정 — `systemctl is-active` 만 확인하면 안 된다. 살아있어도 룰셋이\
+    \ 비어있으면\n*dead 와 동일* 하다 (예: nftables active 인데 룰 0개면 모든 트래픽 통과).\n\n각 layer 한\
+    \ 줄씩 표 작성:\n\n  | layer | active? | 룰셋 카운트 | 최근 1h 로그 entry |\n  | nft     | ?\
+    \       | ?           | ?                  |\n  | Suricata| ?       | ?      \
+    \     | ?                  |\n  | ModSec  | ?       | ?           | ?        \
+    \          |\n  | Wazuh   | ?       | ?           | ?                  |\n  |\
+    \ OpenCTI | ?       | ?           | ?                  |\n\n어느 한 항목이라도 0/dead\
+    \ 면 그 layer 는 사실상 무용 (Phase D 에서 보고 항목).\n\n### Phase B — \"5 attack vector 시뮬레이션\"\
+    \ (5분)\n\n실제 침해까지는 아니지만 *각 layer 가 신호 발생할 만큼만* 시도한다. destructive 금지 —\nlog/alert\
+    \ 만 발생시키는 수준. 5 vector 각각 1분 내:\n\n1. **포트 스캔** (네트워크 정찰)\n   `nmap -sS -F 10.20.30.80`\
+    \ (attacker → web, 100 포트)\n   *예상*: nft counter 증가 + Suricata \"ET SCAN\" alert.\n\
+    \n2. **SQL Injection 시도** (애플리케이션 공격)\n   `curl 'http://10.20.30.80:3000/rest/products/search?q=1%27+OR+1=1--'`\n\
+    \   *예상*: ModSec CRS 942100 매칭 + Apache access log.\n\n3. **SSH Brute Force**\
+    \ (인증 공격, 3 시도만)\n   `hydra -l ccc -P /tmp/3pwds.txt ssh://10.20.30.80 -t 1`\n\
+    \   *예상*: Wazuh authentication_failed rule 발화.\n\n4. **Phishing 도메인 DNS 조회** (CTI\
+    \ 매칭)\n   `dig +short malicious-test.invalid @10.20.30.100`\n   *예상*: OpenCTI\
+    \ threat indicator 매칭 (feed 활성 시).\n\n5. **EICAR 멀웨어 다운로드 시도** (signature 매칭)\n\
+    \   `curl http://eicar-test.local/test.txt -o /tmp/x.test`\n   *예상*: Suricata\
+    \ + Wazuh FIM (파일 생성 감지).\n\n각 시뮬 직후 2~5초 정도 뒤 5 layer 의 로그/alert 확인:\n  - nft:\
+    \ `nft list ruleset | grep counter`\n  - Suricata: `tail -50 /var/log/suricata/eve.json\
+    \ | grep -c alert`\n  - ModSec: `tail -50 /var/log/apache2/modsec_audit.log`\n\
+    \  - Wazuh: `tail -100 /var/ossec/logs/alerts/alerts.log`\n  - OpenCTI: `curl\
+    \ http://10.20.30.100:8080/api/observables/recent`\n\n### Phase C — \"Cross-layer\
+    \ matrix\" (15분, 가장 중요)\n\nPhase B 의 5 vector × Phase A 의 5 layer = **25 cell\
+    \ 매트릭스** 작성.\n각 cell 에 4 가지 중 하나 + evidence 출처:\n\n  - **block** — 차단됨 (예: \"\
+    nft input chain DROP, counter +12\")\n  - **detect** — alert 발생, 트래픽은 통과 (예: \"\
+    Suricata eve.json SID=2010937, 3 alert\")\n  - **log** — 기록만, alert 없음 (예: \"\
+    Apache access.log line 42, no rule match\")\n  - **none** — 흔적 없음 (이 layer 가 못\
+    \ 봄)\n\n| Vector \\\\ Layer | nft | Suricata | ModSec | Wazuh | OpenCTI |\n|-----------------|-----|----------|--------|-------|---------|\n\
+    | port scan       | ?   | ?        | ?      | ?     | ?       |\n| SQLi      \
+    \      | ?   | ?        | ?      | ?     | ?       |\n| SSH brute       | ?  \
+    \ | ?        | ?      | ?     | ?       |\n| phishing DNS    | ?   | ?       \
+    \ | ?      | ?     | ?       |\n| EICAR DL        | ?   | ?        | ?      |\
+    \ ?     | ?       |\n\n### Phase D — \"선임에게 3줄 보고\" (5분)\n\n매트릭스 완성 후, 옆 선임에게\
+    \ 보낼 *3 줄 메모*:\n\n1. **가장 활발한 layer**: 어느 layer 가 가장 많은 cell 에 evidence 를 남겼나?\n\
+    \   (예: \"Wazuh 가 5/5 vector 모두 log 또는 detect — 본 SOC 의 핵심 가시성 layer\")\n\n2.\
+    \ **dead layer**: none 만 5개인 layer 가 있나? 있으면 다음 주까지 보강해야 함.\n   (예: \"OpenCTI\
+    \ 가 5/5 none — feed 활성화 안 됨, 다음 주 incident drill 전 enrichment 무용\")\n\n3. **다음\
+    \ 주 drill 전 보강 우선순위 1개**: dead layer 가 가장 우선. 또는 1 vector 가\n   0 evidence 면 그\
+    \ vector 의 detection rule 추가가 우선.\n\n## 학습 포인트 (Phase D 직후 학생이 갖게 되는 통찰)\n\n교안의\
+    \ \"1 layer 만이면 5.7%\" 는 dataset 평균 — 본인 환경은 layer 별 활성도와 룰셋\n현황에 따라 다르다. **이\
+    \ 매트릭스가 본인 SOC 의 실제 가시성 점수다.**\n다음 주차 (w02 nftables 심화) 부터는 매주 이 매트릭스를 갱신해 가시성\
+    \ 변화를 추적한다."
+  hint: 'Phase A: 5 layer × (active? + 룰셋 카운트 + 1h 로그 entry) — 한 표로 정리
 
-    ## 상황 (몰입을 위한 배경)
-
-    당신은 ABC 핀테크 회사 SOC (Security Operations Center) 의 신규 분석가다.
-    오늘 첫 출근. 인수인계 자료에는 한 줄만 적혀 있다:
-
-    > "우리 SOC 는 5 layer Defense in Depth — nftables 방화벽 + Suricata IDS +
-    >  ModSecurity WAF + Wazuh SIEM + OpenCTI Threat Intel — 모두 운영 중."
-
-    옆 자리 선임이 커피를 쥐고 와서 한 마디 흘리고 갔다.
-
-    > "5 layer 다 켜져 있다고 다 일하고 있다는 뜻은 아냐. 지난달 ransomware 침해는
-    >  4번째 layer (Wazuh) 에서 잡았어. 만약 우리가 firewall 만 봤다면 evidence 의
-    >  5.7% 만 보고 흘려보냈을 거야. 너 들어왔으니, 매트릭스 한 번 그려봐 —
-    >  5 layer 가 *진짜* 일하고 있는지, 어느 vector 가 어느 layer 에 흔적 남기는지.
-    >  다음 주 첫 incident drill 전에 팀에 보고해."
-
-    교안 §"실제 사례 — 1개 보안 layer 만 있으면 어떤 일이 벌어지나" 에서 본 그 5.7%.
-    실제 운영 SOC 1년치 데이터로 검증된 수치다. 이제 본인 환경에서 검증할 차례다.
-
-    ## 임무 (4 단계, 약 35분)
-
-    ### Phase A — "5 layer 가 정말 살아있는가" (10분)
-
-    여기서 함정 — `systemctl is-active` 만 확인하면 안 된다. 살아있어도 룰셋이 비어있으면
-    *dead 와 동일* 하다 (예: nftables active 인데 룰 0개면 모든 트래픽 통과).
-
-    각 layer 한 줄씩 표 작성:
-
-      | layer | active? | 룰셋 카운트 | 최근 1h 로그 entry |
-      | nft     | ?       | ?           | ?                  |
-      | Suricata| ?       | ?           | ?                  |
-      | ModSec  | ?       | ?           | ?                  |
-      | Wazuh   | ?       | ?           | ?                  |
-      | OpenCTI | ?       | ?           | ?                  |
-
-    어느 한 항목이라도 0/dead 면 그 layer 는 사실상 무용 (Phase D 에서 보고 항목).
-
-    ### Phase B — "5 attack vector 시뮬레이션" (5분)
-
-    실제 침해까지는 아니지만 *각 layer 가 신호 발생할 만큼만* 시도한다. destructive 금지 —
-    log/alert 만 발생시키는 수준. 5 vector 각각 1분 내:
-
-    1. **포트 스캔** (네트워크 정찰)
-       `nmap -sS -F 10.20.30.80` (attacker → web, 100 포트)
-       *예상*: nft counter 증가 + Suricata "ET SCAN" alert.
-
-    2. **SQL Injection 시도** (애플리케이션 공격)
-       `curl 'http://10.20.30.80:3000/rest/products/search?q=1%27+OR+1=1--'`
-       *예상*: ModSec CRS 942100 매칭 + Apache access log.
-
-    3. **SSH Brute Force** (인증 공격, 3 시도만)
-       `hydra -l ccc -P /tmp/3pwds.txt ssh://10.20.30.80 -t 1`
-       *예상*: Wazuh authentication_failed rule 발화.
-
-    4. **Phishing 도메인 DNS 조회** (CTI 매칭)
-       `dig +short malicious-test.invalid @10.20.30.100`
-       *예상*: OpenCTI threat indicator 매칭 (feed 활성 시).
-
-    5. **EICAR 멀웨어 다운로드 시도** (signature 매칭)
-       `curl http://eicar-test.local/test.txt -o /tmp/x.test`
-       *예상*: Suricata + Wazuh FIM (파일 생성 감지).
-
-    각 시뮬 직후 2~5초 정도 뒤 5 layer 의 로그/alert 확인:
-      - nft: `nft list ruleset | grep counter`
-      - Suricata: `tail -50 /var/log/suricata/eve.json | grep -c alert`
-      - ModSec: `tail -50 /var/log/apache2/modsec_audit.log`
-      - Wazuh: `tail -100 /var/ossec/logs/alerts/alerts.log`
-      - OpenCTI: `curl http://10.20.30.100:8080/api/observables/recent`
-
-    ### Phase C — "Cross-layer matrix" (15분, 가장 중요)
-
-    Phase B 의 5 vector × Phase A 의 5 layer = **25 cell 매트릭스** 작성.
-    각 cell 에 4 가지 중 하나 + evidence 출처:
-
-      - **block** — 차단됨 (예: "nft input chain DROP, counter +12")
-      - **detect** — alert 발생, 트래픽은 통과 (예: "Suricata eve.json SID=2010937, 3 alert")
-      - **log** — 기록만, alert 없음 (예: "Apache access.log line 42, no rule match")
-      - **none** — 흔적 없음 (이 layer 가 못 봄)
-
-    | Vector \\ Layer | nft | Suricata | ModSec | Wazuh | OpenCTI |
-    |-----------------|-----|----------|--------|-------|---------|
-    | port scan       | ?   | ?        | ?      | ?     | ?       |
-    | SQLi            | ?   | ?        | ?      | ?     | ?       |
-    | SSH brute       | ?   | ?        | ?      | ?     | ?       |
-    | phishing DNS    | ?   | ?        | ?      | ?     | ?       |
-    | EICAR DL        | ?   | ?        | ?      | ?     | ?       |
-
-    ### Phase D — "선임에게 3줄 보고" (5분)
-
-    매트릭스 완성 후, 옆 선임에게 보낼 *3 줄 메모*:
-
-    1. **가장 활발한 layer**: 어느 layer 가 가장 많은 cell 에 evidence 를 남겼나?
-       (예: "Wazuh 가 5/5 vector 모두 log 또는 detect — 본 SOC 의 핵심 가시성 layer")
-
-    2. **dead layer**: none 만 5개인 layer 가 있나? 있으면 다음 주까지 보강해야 함.
-       (예: "OpenCTI 가 5/5 none — feed 활성화 안 됨, 다음 주 incident drill 전 enrichment 무용")
-
-    3. **다음 주 drill 전 보강 우선순위 1개**: dead layer 가 가장 우선. 또는 1 vector 가
-       0 evidence 면 그 vector 의 detection rule 추가가 우선.
-
-    ## 학습 포인트 (Phase D 직후 학생이 갖게 되는 통찰)
-
-    교안의 "1 layer 만이면 5.7%" 는 dataset 평균 — 본인 환경은 layer 별 활성도와 룰셋
-    현황에 따라 다르다. **이 매트릭스가 본인 SOC 의 실제 가시성 점수다.**
-    다음 주차 (w02 nftables 심화) 부터는 매주 이 매트릭스를 갱신해 가시성 변화를 추적한다.
-  hint: |
-    Phase A: 5 layer × (active? + 룰셋 카운트 + 1h 로그 entry) — 한 표로 정리
     Phase B: 5 vector 각각 1분 내 시뮬, 직후 5 layer 로그 확인
+
     Phase C: 5×5 = 25 cell matrix, 각 cell 에 block/detect/log/none + evidence path
+
     Phase D: 3줄 메모 — 가장 활발 layer / dead layer / 다음 보강 우선순위 1개
+
     포인트: 살아있어도 룰셋 0개면 dead. dataset 평균 5.7% 는 본인 환경에서 다를 수 있음.
+
+    '
   category: integration_scenario
   points: 50
   verify:
@@ -487,22 +495,27 @@ steps:
     expect: matrix
     field: stdout
     semantic:
-      intent: |
-        SOC 신규 분석가 day-1 시나리오 — 인계받은 5 layer (nft/Suricata/ModSec/Wazuh/OpenCTI)
+      intent: 'SOC 신규 분석가 day-1 시나리오 — 인계받은 5 layer (nft/Suricata/ModSec/Wazuh/OpenCTI)
+
         의 가동·룰셋 검증 + 5 attack vector × 5 layer cross-layer evidence matrix 작성.
+
         교안의 "1 layer 만 있으면 5.7% evidence" 주장을 본인 환경에서 검증.
+
+        '
       success_criteria:
       - 5 layer service 각각 systemctl is-active 확인 (5건)
-      - 5 layer 각각 룰셋 카운트 (nft 룰 / suricata-update 룰셋 / CRS rules / Wazuh local_rules / OpenCTI feeds)
-      - 5 attack vector 각각 시뮬 (nmap -sS, sqlmap or curl SQLi, hydra 시도, dig phishing-test, curl
-        EICAR test) — 실 destructive 금지, 1분 내 최소 시도
-      - 5×5 cross-layer matrix 작성 (25 cell, 각 cell 에 detect/block/log/none 중 하나 + evidence path)
+      - 5 layer 각각 룰셋 카운트 (nft 룰 / suricata-update 룰셋 / CRS rules / Wazuh local_rules
+        / OpenCTI feeds)
+      - 5 attack vector 각각 시뮬 (nmap -sS, sqlmap or curl SQLi, hydra 시도, dig phishing-test,
+        curl EICAR test) — 실 destructive 금지, 1분 내 최소 시도
+      - 5×5 cross-layer matrix 작성 (25 cell, 각 cell 에 detect/block/log/none 중 하나 +
+        evidence path)
       - 통합 1줄 보고 (가장 활발 layer, dead layer, 다음 보강 우선순위)
       acceptable_methods:
       - 5 layer 각각 ssh + systemctl is-active
       - nft list ruleset | wc -l
-      - "suricata --list-app-layer-protos | head 또는 ls /etc/suricata/rules/*.rules | xargs -I{} sh\
-        \ -c 'echo {}; wc -l < {}'"
+      - suricata --list-app-layer-protos | head 또는 ls /etc/suricata/rules/*.rules
+        | xargs -I{} sh -c 'echo {}; wc -l < {}'
       - apachectl -M | grep security 또는 ls /etc/modsecurity/crs/rules/ | wc -l
       - /var/ossec/bin/wazuh-control info 또는 cat /var/ossec/etc/rules/local_rules.xml
       - curl -s http://siem:8080/api/feeds (OpenCTI)
@@ -515,54 +528,95 @@ steps:
       - 통합 보고 누락 또는 1줄 미만
       - attack 시뮬 0건 (이론상 매핑만)
   target_vm: bastion
-  answer: |
-    🤖 프롬프트:
+  answer: '🤖 프롬프트:
+
 
     [복합 시나리오] 당신은 SOC 신규 분석가다. 5 layer 보안 인프라가 가동 중인지 + 5 attack vector
+
     가 어느 layer 에 evidence 남기는지 cross-layer matrix 를 작성하라.
 
+
     Phase A — Layer 가동 검증 (5건):
+
     1) secu(10.20.30.1) nftables — `nft list ruleset | wc -l` (룰 수)
-    2) secu Suricata — `systemctl is-active suricata` + `ls /etc/suricata/rules/*.rules | wc -l`
-    3) web(10.20.30.80) ModSecurity — `apachectl -M | grep security` + `ls /etc/modsecurity/crs/rules/ | wc -l`
-    4) siem(10.20.30.100) Wazuh Manager — `systemctl is-active wazuh-manager` + `wc -l < /var/ossec/etc/rules/local_rules.xml`
+
+    2) secu Suricata — `systemctl is-active suricata` + `ls /etc/suricata/rules/*.rules
+    | wc -l`
+
+    3) web(10.20.30.80) ModSecurity — `apachectl -M | grep security` + `ls /etc/modsecurity/crs/rules/
+    | wc -l`
+
+    4) siem(10.20.30.100) Wazuh Manager — `systemctl is-active wazuh-manager` + `wc
+    -l < /var/ossec/etc/rules/local_rules.xml`
+
     5) siem OpenCTI — `curl -s http://localhost:8080/api/feeds | jq length`
 
+
     Phase B — 5 attack vector 시뮬 (1분 내):
+
     1) Port scan — `nmap -sS -F 10.20.30.80` (attacker→web)
-    2) SQLi — `curl 'http://10.20.30.80:3000/rest/products/search?q=1%27+OR+1=1--'`
+
+    2) SQLi — `curl ''http://10.20.30.80:3000/rest/products/search?q=1%27+OR+1=1--''`
+
     3) Brute force — `hydra -l ccc -P /tmp/3pwds.txt ssh://10.20.30.80 -t 1` (3개만)
+
     4) Phishing domain DNS — `dig +short malicious-test.invalid @10.20.30.100`
-    5) EICAR malware test — `curl http://eicar.test/test.txt -o /tmp/eicar.test 2>&1 | head`
+
+    5) EICAR malware test — `curl http://eicar.test/test.txt -o /tmp/eicar.test 2>&1
+    | head`
+
 
     Phase C — Cross-layer matrix:
+
     | Vector \\ Layer | nft | Suricata | ModSec | Wazuh | OpenCTI |
+
     | port scan      | ?   | ?        | ?      | ?     | ?       |
+
     | SQLi           | ?   | ?        | ?      | ?     | ?       |
+
     | brute force    | ?   | ?        | ?      | ?     | ?       |
+
     | phishing DNS   | ?   | ?        | ?      | ?     | ?       |
+
     | EICAR DL       | ?   | ?        | ?      | ?     | ?       |
 
+
     각 cell: detect (alert 발생) / block (차단) / log (로깅만) / none.
+
     evidence path 함께 (예 "Suricata `eve.json` SID=2010937" 또는 "nft counter +N").
 
+
     Phase D — 통합 보고 (1줄): 가장 활발한 layer / dead layer / 다음 보강 우선순위.
-  answer_detail: |
-    이 step 은 본 lab 의 1~10번 step 모두를 *cross-layer evidence 관점* 으로 묶는다.
+
+    '
+  answer_detail: '이 step 은 본 lab 의 1~10번 step 모두를 *cross-layer evidence 관점* 으로 묶는다.
+
     각 layer 점검 (1~10번) 만으로는 "왜 5 layer 가 필요한지" 못 깨닫지만,
+
     matrix 작성으로 "한 attack 이 여러 layer 에 흔적 남김 + 일부 vector 는 1-2 layer 에서만 보임"
+
     을 직접 입증한다. 교안 §"실제 사례" 의 5.7% 주장을 본인 환경에서 검증.
+
+    '
   risk_level: low
-  bastion_prompt: |
-    SOC 신규 분석가로 5 layer 보안 인프라 가시성 검증을 day-1 에 수행한다.
+  bastion_prompt: 'SOC 신규 분석가로 5 layer 보안 인프라 가시성 검증을 day-1 에 수행한다.
+
 
     Phase A: secu 의 nftables 룰 수 / Suricata systemctl is-active + 룰 파일 수 / web 의
-    ModSecurity 로드 + CRS 룰 디렉토리 수 / siem 의 Wazuh Manager active + local_rules 행 수 /
+
+    ModSecurity 로드 + CRS 룰 디렉토리 수 / siem 의 Wazuh Manager active + local_rules 행 수
+    /
+
     OpenCTI feeds API 응답 수 — 5건 모두 한 번에 수집.
 
+
     Phase B: attacker→web 으로 nmap -sS -F / curl SQLi 페이로드 / hydra ssh 3-pwd / dig
+
     malicious-test.invalid / curl eicar.test — 5 vector 1분 내 시뮬.
 
-    Phase C: 5×5 cross-layer matrix markdown 표 작성. 각 cell 에 detect/block/log/none + evidence path.
 
-    Phase D: 1줄 통합 보고 — 가장 활발 layer, dead layer, 다음 주 drill 보강 우선순위 1개.
+    Phase C: 5×5 cross-layer matrix markdown 표 작성. 각 cell 에 detect/block/log/none
+    + evidence path.
+
+
+    Phase D: 1줄 통합 보고 — 가장 활발 layer, dead layer, 다음 주 drill 보강 우선순위 1개.'

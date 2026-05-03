@@ -618,3 +618,55 @@ Week 03에서는 nftables의 실전 기능을 다룬다:
 3. nft `counter` 로 자체 환경의 block ratio 측정 → dataset 의 4.7% 대비 정상/비정상 baseline 확립
 
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course2 SecOps — Week 02 nftables 기초)
+
+| 작업 | 본문 도구 | OSS 도구 옵션 | 비고 |
+|------|----------|---------------|------|
+| 테이블 생성 | `nft add table inet lab` | nftables (nft) / iptables-translate | translate 로 iptables → nft 변환 |
+| 체인 정의 | `nft add chain inet lab input` | nft / firewalld | firewalld 가 GUI 추상화 |
+| 포트 차단 | `nft add rule ... drop` | nft / fail2ban / OpenSnitch | fail2ban 동적 차단 |
+| 룰 listing | `nft list ruleset` | nft -a / nft -j (JSON) / scapy | -j JSON 으로 파싱 |
+| 룰 저장/복원 | `nft -f /etc/nftables.conf` | nft / netfilter-persistent | persistent 가 부팅시 자동 |
+| 모니터링 | `nft monitor` | nft monitor / conntrack / iftop | 실시간 |
+| 통계 | `nft list ruleset -a` | nft -a counter / nfacct | 룰별 카운터 |
+| 로깅 | `nft add ... log` | nft log / ulogd2 / nflog | ulogd2 = userspace log |
+| iptables 호환 | `iptables-translate` | iptables-translate / iptables-restore-translate | 마이그레이션 도구 |
+
+### 학생 환경 준비
+
+```bash
+ssh ccc@10.20.30.1
+
+sudo apt update && sudo apt install -y \
+  nftables iptables-nftables-compat \
+  ulogd2 conntrack \
+  fail2ban
+```
+
+### 도구 핵심 사용법
+
+```bash
+# nft - JSON 출력 (자동 파싱용)
+sudo nft -j list ruleset | jq '.nftables[] | select(.rule)'
+
+# iptables → nft 변환 (legacy 환경에서 마이그레이션)
+sudo iptables-translate -A INPUT -p tcp --dport 22 -j ACCEPT
+# → nft add rule ip filter INPUT tcp dport 22 counter accept
+
+# fail2ban — 동적 IP 차단 (sshd brute 자동 차단)
+sudo fail2ban-client status sshd
+sudo fail2ban-client set sshd unbanip 1.2.3.4
+
+# conntrack — 연결 상태 추적
+sudo conntrack -L                                  # 모든 연결
+sudo conntrack -E                                  # 실시간 이벤트
+sudo conntrack -D -s 10.20.30.80                   # 특정 src 연결 강제 종료
+
+# nft monitor — 룰 변경 실시간 감지
+sudo nft monitor ruleset
+```
+
+학생은 본 2주차에서 **nft + fail2ban + conntrack** 의 3 도구로 정적 룰 + 동적 차단 + 연결 추적을 통합한다.

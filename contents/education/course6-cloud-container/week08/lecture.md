@@ -577,3 +577,178 @@ graph LR
 
 **학생 액션**: 자신이 본 lecture 시리즈에서 분석한 Docker 침해 사례 1건을 골라, 위 5축 표를 채워본다. 각 축마다 *baseline 숫자 + 사례에서 관찰된 비정상 수치 + 둘의 차이의 보안 의미* 를 한 줄씩 작성하면 시험 답안의 모범이 된다.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course6 Cloud-Container — Week 08 스토리지 보안)
+
+### 컨테이너 스토리지 보안 도구
+
+| 영역 | OSS 도구 |
+|------|---------|
+| Persistent Volume | **Rook** (Ceph) / Longhorn / OpenEBS / Portworx OSS |
+| Secret 관리 | **Sealed Secrets** / External Secrets Operator (ESO) / Vault Agent / SOPS |
+| 암호화 | **dm-crypt LUKS** (volume) / **age** (file) / sops (yaml) / **Vault transit** |
+| Backup | **Velero** + restic / Stash / Kanister |
+| 권한 | RBAC + OPA / Kyverno / `securityContext` |
+| etcd 암호화 | k8s `EncryptionConfiguration` / KMS provider |
+
+### 핵심 — Sealed Secrets (Git-safe)
+
+```bash
+# Controller 설치
+kubectl apply -f https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.24.0/controller.yaml
+
+# CLI 설치
+curl -L https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.24.0/kubeseal-0.24.0-linux-amd64.tar.gz | sudo tar xz -C /usr/local/bin
+
+# Secret 생성 + sealing
+echo -n "supersecret" | kubectl create secret generic mysec \
+  --dry-run=client --from-file=password=/dev/stdin -o yaml > secret.yaml
+
+kubeseal -o yaml < secret.yaml > sealed-secret.yaml
+# sealed-secret.yaml 은 git 에 안전하게 commit 가능
+kubectl apply -f sealed-secret.yaml
+
+# Controller 가 Secret 자동 생성
+kubectl get secret mysec -o yaml
+```
+
+### 학생 환경 준비
+
+```bash
+# Velero (백업)
+curl -L https://github.com/vmware-tanzu/velero/releases/latest/download/velero-v1.13.0-linux-amd64.tar.gz | sudo tar xz -C /tmp
+sudo mv /tmp/velero-v1.13.0-linux-amd64/velero /usr/local/bin/
+
+# External Secrets Operator
+helm repo add external-secrets https://charts.external-secrets.io
+helm install external-secrets external-secrets/external-secrets \
+  -n external-secrets --create-namespace
+
+# SOPS (Mozilla — 파일 단위 암호화)
+sudo curl -L https://github.com/getsops/sops/releases/latest/download/sops-v3.8.0.linux.amd64 -o /usr/local/bin/sops
+sudo chmod +x /usr/local/bin/sops
+
+# age (modern crypto, GPG 대안)
+curl -L https://github.com/FiloSottile/age/releases/latest/download/age-v1.1.1-linux-amd64.tar.gz | tar xz
+sudo mv age/age age/age-keygen /usr/local/bin/
+
+# Vault (HashiCorp OSS)
+curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo apt-key add -
+sudo apt-add-repository "deb [arch=amd64] https://apt.releases.hashicorp.com $(lsb_release -cs) main"
+sudo apt install -y vault
+
+# Longhorn (k8s native PV)
+kubectl apply -f https://raw.githubusercontent.com/longhorn/longhorn/v1.6.0/deploy/longhorn.yaml
+```
+
+### 핵심 사용법
+
+```bash
+# 1) Velero — k8s 백업
+velero install --provider aws --bucket k8s-backup \
+  --secret-file ./credentials --backup-location-config region=us-east-1
+
+velero backup create demo-backup --include-namespaces production
+velero backup get
+velero restore create --from-backup demo-backup
+
+# 2) External Secrets Operator (Vault → k8s Secret 자동)
+cat > eso.yaml << 'EOF'
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: vault-backend
+spec:
+  provider:
+    vault:
+      server: "http://vault:8200"
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: myapp
+EOF
+kubectl apply -f eso.yaml
+
+# Secret 동기화
+cat > es.yaml << 'EOF'
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: db-credentials
+spec:
+  secretStoreRef:
+    name: vault-backend
+    kind: SecretStore
+  target:
+    name: db-credentials                                            # k8s Secret 자동 생성
+  data:
+    - secretKey: password
+      remoteRef:
+        key: secret/data/db
+        property: password
+EOF
+kubectl apply -f es.yaml
+
+# 3) SOPS — 파일 단위 암호화 (yaml/json/env)
+sops --age age1xyz... -e secrets.yaml > secrets.enc.yaml
+git add secrets.enc.yaml                                            # 안전하게 commit
+sops -d secrets.enc.yaml                                            # 복호화
+
+# 4) age — 단순 암호화
+age-keygen -o key.txt
+age -r $(cat key.txt | grep public | cut -d' ' -f4) secret.txt > secret.txt.age
+age -d -i key.txt secret.txt.age > secret.txt
+
+# 5) Vault — secret + transit 암호화
+vault server -dev -dev-root-token-id=root
+export VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=root
+vault kv put secret/db password=Pa$$w0rd
+
+# 동적 secret (DB 사용자 자동 생성)
+vault secrets enable database
+vault write database/config/postgresql \
+  plugin_name=postgresql-database-plugin \
+  allowed_roles="readonly" \
+  connection_url="postgresql://{{username}}:{{password}}@postgres:5432/mydb"
+
+# 6) etcd 암호화 (k8s)
+cat > /etc/kubernetes/encryption.yaml << 'EOF'
+apiVersion: apiserver.config.k8s.io/v1
+kind: EncryptionConfiguration
+resources:
+  - resources: ["secrets"]
+    providers:
+      - aescbc:
+          keys:
+            - name: key1
+              secret: $(head -c 32 /dev/urandom | base64)
+      - identity: {}
+EOF
+# kube-apiserver --encryption-provider-config=/etc/kubernetes/encryption.yaml
+```
+
+### 스토리지 보안 흐름
+
+```bash
+# Phase 1: PV 생성 + 암호화 (LUKS)
+sudo cryptsetup luksFormat /dev/sdb
+sudo cryptsetup luksOpen /dev/sdb encrypted-pv
+sudo mkfs.ext4 /dev/mapper/encrypted-pv
+
+# Phase 2: Secret 관리
+# Git → SOPS / Sealed Secrets / ESO + Vault
+# 절대 평문 secret commit 금지
+
+# Phase 3: 백업 (Velero + restic)
+velero backup create daily-$(date +%Y%m%d) --ttl 720h
+
+# Phase 4: 복원 모의
+velero restore create --from-backup daily-2024-04-01
+
+# Phase 5: etcd 정기 백업 + 암호화
+ETCDCTL_API=3 etcdctl snapshot save /backup/etcd-$(date +%Y%m%d).db
+```
+
+학생은 본 8주차에서 **Sealed Secrets + ESO + Vault + SOPS + Velero** 5 도구로 컨테이너 스토리지의 3 영역 (secret 관리 / 데이터 암호화 / 백업) 통합 흐름을 OSS 만으로 운영한다.

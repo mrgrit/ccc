@@ -572,3 +572,125 @@ Layer 4: Claude review (LLM 보조 사람 검토)
 - 단순 finding 나열 (framework 매핑 없음) = 감점
 
 
+
+---
+
+## 부록: 종합 학습 OSS 도구 매트릭스 (Course1 Attack — Week 15 종합 모의해킹)
+
+본 15주차는 **1~14주차의 모든 도구를 종합적으로 사용**하여 모의해킹 라이프사이클 전체를 완수하는 단계이다. 아래는 모의해킹 단계별 도구 카탈로그이다.
+
+### 1) Reconnaissance (정찰)
+
+| 작업 | 도구 |
+|------|------|
+| 호스트 발견 | nmap -sn / arp-scan / fping |
+| 포트 스캔 | nmap / masscan / unicornscan |
+| 서비스 식별 | nmap -sV / amap / whatweb |
+| OSINT | theHarvester / sherlock / maigret / Spiderfoot |
+| DNS | dig / dnsrecon / amass |
+| Subdomain | subfinder / amass / sublist3r |
+
+### 2) Vulnerability Identification
+
+| 작업 | 도구 |
+|------|------|
+| 웹 vuln 자동 스캔 | nikto / nuclei / wapiti |
+| 디렉토리 enum | gobuster / ffuf / dirb / dirsearch |
+| TLS 점검 | testssl.sh / sslscan |
+| Exploit 검색 | searchsploit / cve-search |
+| 보안 헤더 | nuclei -t http/misconfiguration/ |
+
+### 3) Exploitation
+
+| 카테고리 | 도구 |
+|---------|------|
+| SQLi | sqlmap |
+| XSS | XSStrike / dalfox |
+| JWT | jwt_tool |
+| 인증 brute | hydra / medusa / patator / netexec |
+| 해시 크랙 | john / hashcat |
+| 통합 익스플로잇 | metasploit / sliver / pwncat-cs |
+| Payload | msfvenom / donut / shellter |
+
+### 4) Post-Exploitation
+
+| 작업 | 도구 |
+|------|------|
+| Linux privesc | LinPEAS / pspy / linux-exploit-suggester / GTFOBins |
+| Win privesc | WinPEAS / Seatbelt / PowerUp |
+| Persistence | crontab / systemd / weevely / sliver |
+| AD enum | BloodHound / SharpHound / impacket / netexec |
+| Lateral | ssh -L/D / chisel / sshuttle / proxychains / netexec |
+
+### 5) Exfiltration & Evasion
+
+| 카테고리 | 도구 |
+|---------|------|
+| HTTP/HTTPS exfil | curl / pwncat-cs |
+| DNS tunnel | iodine / dnscat2 |
+| ICMP tunnel | ptunnel |
+| Stego | steghide / outguess |
+| 인코딩 | msfvenom -e / shellter |
+| Process 위장 | exec -a / LD_PRELOAD |
+
+### 6) Reporting
+
+| 형식 | 도구 |
+|------|------|
+| 발견 사항 추적 | dradis / serpico / faraday / pwndoc |
+| 통계/매핑 | bloodhound (AD path) / faraday (multi-tool) |
+| 마크다운 보고서 | pandoc + 직접 작성 |
+| 클라이언트 통보 | TLP 분류 + PGP 암호화 |
+
+### 종합 환경 준비 (한 번만 실행)
+
+```bash
+ssh ccc@192.168.0.112
+
+# 1~14주차에서 설치한 도구가 모두 있어야 함
+which nmap masscan whatweb nikto nuclei sqlmap ffuf gobuster dirb \
+      hydra medusa john hashcat jwt_tool \
+      msfconsole searchsploit \
+      tcpdump tshark wireshark mitmproxy \
+      ssh sshuttle chisel proxychains4 \
+      iodine ptunnel steghide \
+      theHarvester sherlock airodump-ng
+
+# 보고 도구
+sudo apt install -y pandoc texlive-xetex
+git clone https://github.com/dradis/dradis-ce.git ~/dradis 2>/dev/null
+git clone https://github.com/SecuraBV/icebreaker.git ~/faraday 2>/dev/null
+```
+
+### 모의해킹 표준 흐름 (15주차 lab 의 권장 sequence)
+
+```bash
+# Phase 1: 정찰 (1시간)
+nmap -sn 10.20.30.0/24 -oG /tmp/p1_alive.txt
+nmap -sV -O -A 10.20.30.80 -oA /tmp/p1_full
+whatweb -v http://10.20.30.80:3000
+
+# Phase 2: 취약점 식별 (1시간)
+nikto -h http://10.20.30.80:3000 -o /tmp/p2_nikto.txt
+nuclei -u http://10.20.30.80:3000 -severity critical,high -o /tmp/p2_nuclei.txt
+ffuf -w /usr/share/wordlists/dirb/big.txt -u http://10.20.30.80:3000/FUZZ -o /tmp/p2_ffuf.json
+
+# Phase 3: 익스플로잇 (2시간)
+sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=apple" --batch --dbs
+python3 ~/XSStrike/xsstrike.py -u "http://10.20.30.80:3000/..."
+hydra -l admin@juice-sh.op -P /usr/share/wordlists/rockyou.txt 10.20.30.80 -s 3000 \
+  http-post-form '/rest/user/login:{"email":"^USER^","password":"^PASS^"}:invalid'
+
+# Phase 4: Post-exploit (1시간)
+~/peass/linpeas.sh > /tmp/p4_linpeas.txt
+pspy64 -p -f &
+ssh-copy-id ccc@target
+
+# Phase 5: 보고 (1시간)
+# 모든 결과를 마크다운으로 정리
+pandoc /tmp/report.md -o /tmp/report.pdf --pdf-engine=xelatex
+```
+
+학생은 본 15주차에서 **14주 동안 익힌 50+ 도구를 흐름에 따라 사용**하면서, 모의해킹 보고서를 직접 작성한다. 보고서 양식은 OWASP Testing Guide / PTES (Penetration Testing Execution Standard) 표준을 따른다.
+
+> 학습 목표: 본 과목을 마치면 학생은 **OSS 도구만으로** 합법적 모의해킹 프로젝트의 정찰부터 보고까지 전 과정을 단독 수행할 수 있다.

@@ -620,3 +620,57 @@ Week 05에서는 Suricata 룰을 직접 작성한다:
 3. anomalous_behavior 비율 baseline (0.05%) 대비 자체 환경 측정 — 5배 spike 시 *anomaly storm* 분석
 
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course2 SecOps — Week 04 Suricata 설치·구성)
+
+| 작업 | 도구 |
+|------|------|
+| Suricata 설치 | `apt install suricata` / Snort3 (대안) |
+| 룰 업데이트 | suricata-update / pulledpork3 (snort 용) |
+| 인터페이스 모드 | af-packet (기본) / nfqueue (IPS) / pcap |
+| 룰셋 | ET Open / ET Pro / OISF 자체 |
+| 로그 분석 | evebox (Web GUI) / scirius (SELKS) / kibana |
+| 알람 검증 | suricatasc / sockss / 직접 jq |
+| 성능 모니터링 | suricata stats.log / suricata.yaml profiling |
+
+### 학생 환경 준비
+```bash
+ssh ccc@10.20.30.1
+sudo apt install -y suricata suricata-update jq
+sudo suricata-update                                  # 룰 다운로드
+sudo systemctl enable --now suricata
+
+# evebox (Suricata 로그 GUI)
+curl -L https://evebox.org/files/release/latest/evebox-latest-amd64.deb -o /tmp/evebox.deb
+sudo dpkg -i /tmp/evebox.deb
+sudo systemctl start evebox
+# → http://localhost:5636
+
+# SELKS (Suricata + Elastic + Kibana + Scirius — all-in-one VM, 참고)
+# https://github.com/StamusNetworks/SELKS
+```
+
+### 핵심 도구 사용
+```bash
+sudo suricata-update list-sources
+sudo suricata-update enable-source et/open
+sudo suricata-update                                  # 룰 다운로드 + merge
+sudo systemctl reload suricata
+
+# eve.json (모든 이벤트, JSON)
+sudo tail -f /var/log/suricata/eve.json | jq 'select(.event_type=="alert")'
+sudo jq -r 'select(.event_type=="alert") | "\(.timestamp) \(.alert.signature)"' /var/log/suricata/eve.json | sort -u | head
+
+# suricatasc — Unix socket 제어
+sudo suricatasc -c "iface-list"
+sudo suricatasc -c "iface-stat enp0s3"
+sudo suricatasc -c "reload-rules"
+
+# 알람 시뮬레이션
+curl http://10.20.30.80/                              # User-Agent 룰 트리거
+curl -A "Nikto/2.1.5" http://10.20.30.80/
+```
+
+학생은 본 4주차에서 **suricata-update + evebox + suricatasc** 의 3 도구로 룰 관리 + 시각화 + 운영을 통합한다.

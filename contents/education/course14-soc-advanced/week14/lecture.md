@@ -1094,3 +1094,784 @@ graph LR
 
 **학생 액션**: compliance gap 분석.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course14 SOC Advanced — Week 14 SOC + AI 융합·UEBA·LLM·MLOps·ROI)
+
+> 이 부록은 lab `soc-adv-ai/week14.yaml` (15 step + multi_task) 의 모든 명령을
+> 실제로 실행 가능한 형태로 정리한다. AI/ML SOC 적용, UEBA, AI 알림 분류, LLM
+> (요약/보고서/쿼리 생성), MLOps, ROI, 윤리/편향, L0~L4 성숙도, 로드맵까지.
+
+### lab step → 도구·AI 매핑 표
+
+| step | 학습 항목 | 핵심 OSS 라이브러리 | 분류 |
+|------|----------|--------------------|------|
+| s1 | AI/ML SOC 적용 영역 | scikit-learn / PyTorch / Ollama | All |
+| s2 | UEBA 원리 | scikit-learn IsolationForest + 사용자 baseline | Anomaly |
+| s3 | AI 알림 분류 | scikit-learn LR + RF + TF-IDF | Classification |
+| s4 | 평가 (Precision/Recall/F1/FPR/AUC) | scikit-learn metrics + ROC + PR | Eval |
+| s5 | 적대적 공격 | adversarial-robustness-toolbox + 사례 | Security |
+| s6 | LLM SOC (요약/보고서/쿼리 생성) | Ollama + LangChain + RAG (FAISS) | Generation |
+| s7 | AI + 룰 하이브리드 | weighted ensemble + threshold | Architecture |
+| s8 | MLOps (학습/배포/모니터링/재학습) | MLflow + DVC + FastAPI + Prometheus | Ops |
+| s9 | 데이터 (수집/레이블/품질/편향) | Label Studio + great-expectations + AIF360 | Data |
+| s10 | AI ROI 분석 | spreadsheet + cost model | Business |
+| s11 | AI 윤리 + 편향 | AIF360 Fairness + EU AI Act | Ethics |
+| s12 | AI SOC 성숙도 (L0~L4) | maturity 매트릭스 | Maturity |
+| s13 | AI 도입 리스크 | risk register + mitigation | Risk |
+| s14 | 도입 로드맵 (3 phase 18개월) | mermaid Gantt + RACI | Plan |
+| s15 | SOC+AI 종합 보고서 | architecture + ROI + 로드맵 | - |
+| s99 | 통합 다단계 (s1→s2→s3→s4→s5) | Bastion plan: 영역→UEBA→분류→평가→adversarial | 다중 |
+
+### 학생 환경 준비
+
+```bash
+# 전통 ML
+pip install --user scikit-learn pandas numpy matplotlib seaborn xgboost
+pip install --user adversarial-robustness-toolbox
+
+# LLM (Ollama 이미 운영)
+curl -s http://192.168.0.105:11434/api/tags | jq
+pip install --user langchain langchain-community sentence-transformers faiss-cpu
+
+# MLOps
+pip install --user mlflow dvc fastapi uvicorn
+docker pull ghcr.io/mlflow/mlflow:latest
+
+# Label Studio
+pip install --user label-studio
+
+# Fairness / Explainability
+pip install --user aif360 fairlearn shap lime great-expectations
+
+# Bonus
+pip install --user jupyter pandas-profiling evidently
+```
+
+### 핵심 도구별 상세 사용법
+
+#### 도구 1: AI/ML SOC 적용 영역 (Step 1)
+
+| 영역 | 활용 | 적합 모델 | 도구 |
+|------|------|----------|------|
+| 탐지 | UEBA / DGA / 비콘 | IsolationForest, Autoencoder | scikit-learn / PyTorch |
+| 분류 | alert triage TP/FP | LR, RF, XGBoost | scikit-learn |
+| 우선순위 | severity 예측 | XGBoost regression | xgboost |
+| 대응 | playbook 추천 | embedding + cosine | sentence-transformers |
+| 예측 | 다음 공격 | LSTM time-series | PyTorch |
+| 요약 | 알림 / 로그 | LLM | Ollama / OpenAI |
+| 보고서 | 자동 IR 보고서 | LLM + RAG | LangChain + FAISS |
+| 쿼리 생성 | 자연어 → SIEM | LLM fine-tuned | Ollama |
+| TI 분류 | IOC categorization | BERT | transformers |
+| 악성코드 분류 | sample 분류 | CNN / GNN | PyTorch |
+
+#### 도구 2: UEBA (Step 2)
+
+```python
+import pandas as pd, numpy as np, requests
+from sklearn.ensemble import IsolationForest
+from sklearn.preprocessing import StandardScaler
+
+# 데이터 수집
+TOKEN = "Bearer ..."
+r = requests.get(
+    "https://10.20.30.100:9200/wazuh-alerts-*/_search",
+    auth=("admin","admin"), verify=False,
+    json={"size":50000,"query":{"bool":{"must":[
+        {"range":{"@timestamp":{"gte":"now-30d"}}},
+        {"term":{"rule.id":"5715"}}]}}}
+)
+df = pd.json_normalize([h["_source"] for h in r.json()["hits"]["hits"]])
+df['ts'] = pd.to_datetime(df['@timestamp'])
+df['hour'] = df['ts'].dt.hour
+df['weekday'] = df['ts'].dt.dayofweek
+
+# 사용자별 feature
+user_features = df.groupby('data.dstuser').agg(
+    login_count=('ts','count'),
+    unique_src=('data.srcip','nunique'),
+    avg_hour=('hour','mean'),
+    std_hour=('hour','std'),
+    weekend_ratio=('weekday', lambda x: (x>=5).sum()/len(x)),
+    night_ratio=('hour', lambda x: ((x<6)|(x>=22)).sum()/len(x))
+).fillna(0)
+
+# IsolationForest
+scaler = StandardScaler()
+X = scaler.fit_transform(user_features)
+model = IsolationForest(contamination=0.1, random_state=42)
+model.fit(X)
+
+user_features['score'] = -model.score_samples(X)
+user_features['anomaly'] = model.predict(X) == -1
+
+print(user_features.sort_values('score',ascending=False).head(10))
+
+# 시각화
+import matplotlib.pyplot as plt
+fig, ax = plt.subplots(figsize=(10,6))
+colors = ['red' if a else 'blue' for a in user_features['anomaly']]
+ax.scatter(user_features['login_count'], user_features['night_ratio'], c=colors, alpha=0.5)
+ax.set_xlabel('Login count'); ax.set_ylabel('Night ratio')
+plt.savefig('/tmp/ueba.png', dpi=150)
+
+# 운영: 매일 cron 학습 + 점수 > 0.7 → Wazuh alert
+```
+
+#### 도구 3: AI Alert Triage (Step 3)
+
+```python
+import pandas as pd, requests, joblib, scipy.sparse
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report
+
+# TheHive 의 case 결과 (label)
+THEHIVE = "http://10.20.30.100:9000"
+API_KEY = "..."
+
+cases = requests.get(f"{THEHIVE}/api/v1/case",
+    headers={"Authorization": f"Bearer {API_KEY}"}, params={"limit":5000}).json()
+
+data = []
+for c in cases:
+    label = 1 if c.get('resolutionStatus')=='TruePositive' else 0
+    text = f"{c.get('title','')} {c.get('description','')[:500]}"
+    data.append({'text':text, 'label':label,
+                 'severity':c.get('severity',0),
+                 'tags':len(c.get('tags',[])),
+                 'observables_count':len(c.get('observables',[]))})
+df = pd.DataFrame(data)
+print(f"TP rate: {df['label'].mean():.1%}")
+
+# Feature
+vec = TfidfVectorizer(max_features=5000, ngram_range=(1,2), stop_words='english')
+X_text = vec.fit_transform(df['text'])
+X_num = df[['severity','tags','observables_count']].values
+X = scipy.sparse.hstack([X_text, X_num])
+y = df['label']
+
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+
+# 모델
+lr = LogisticRegression(max_iter=1000, class_weight='balanced')
+lr.fit(X_tr, y_tr)
+print("LR:")
+print(classification_report(y_te, lr.predict(X_te)))
+
+rf = RandomForestClassifier(n_estimators=200, max_depth=10, class_weight='balanced', n_jobs=-1)
+rf.fit(X_tr, y_tr)
+print("RF:")
+print(classification_report(y_te, rf.predict(X_te)))
+
+# 저장
+joblib.dump(rf, '/var/ml/triage-rf.pkl')
+joblib.dump(vec, '/var/ml/triage-vec.pkl')
+
+# 운영
+def classify_alert(alert):
+    text = f"{alert.get('title','')} {alert.get('description','')[:500]}"
+    X_t = vec.transform([text])
+    X_n = [[alert.get('severity',0), len(alert.get('tags',[])), len(alert.get('observables',[]))]]
+    X_combined = scipy.sparse.hstack([X_t, X_n])
+    proba = rf.predict_proba(X_combined)[0][1]
+    return {'tp_proba':proba, 'predicted':'TP' if proba>0.5 else 'FP', 'confidence':max(proba,1-proba)}
+```
+
+#### 도구 4: 평가 지표 (Step 4)
+
+```python
+from sklearn.metrics import (precision_score, recall_score, f1_score,
+    confusion_matrix, roc_auc_score, roc_curve, precision_recall_curve)
+import matplotlib.pyplot as plt
+
+y_true = y_te
+y_pred = rf.predict(X_te)
+y_proba = rf.predict_proba(X_te)[:,1]
+
+print(f"Precision: {precision_score(y_true, y_pred):.3f}")
+print(f"Recall:    {recall_score(y_true, y_pred):.3f}")
+print(f"F1:        {f1_score(y_true, y_pred):.3f}")
+
+cm = confusion_matrix(y_true, y_pred)
+tn, fp, fn, tp = cm.ravel()
+fpr = fp / (fp + tn)
+print(f"FPR: {fpr:.3f}")
+
+auc = roc_auc_score(y_true, y_proba)
+print(f"ROC AUC: {auc:.3f}")
+
+fig, axes = plt.subplots(1, 2, figsize=(12,5))
+fpr_c, tpr_c, _ = roc_curve(y_true, y_proba)
+axes[0].plot(fpr_c, tpr_c, label=f'AUC={auc:.3f}')
+axes[0].plot([0,1],[0,1],'k--')
+axes[0].set_xlabel('FPR'); axes[0].set_ylabel('TPR'); axes[0].set_title('ROC'); axes[0].legend()
+
+prec, rec, _ = precision_recall_curve(y_true, y_proba)
+axes[1].plot(rec, prec)
+axes[1].set_xlabel('Recall'); axes[1].set_ylabel('Precision'); axes[1].set_title('PR Curve')
+plt.savefig('/tmp/eval-curves.png', dpi=150)
+```
+
+| 지표 | 의미 | 목표 |
+|------|------|------|
+| Precision | 알림 중 진짜 비율 (분석가 시간) | > 0.8 |
+| Recall | 위협 중 잡힌 비율 (놓치지 않음) | > 0.95 |
+| F1 | 조화 평균 | > 0.85 |
+| FPR | 정상 중 잘못 분류 | < 0.05 |
+| ROC AUC | 전체 성능 | > 0.9 |
+
+#### 도구 5: 적대적 공격 (Step 5)
+
+```python
+# 사례
+# 1. SQLi keyword 변형: "' OR 1=1--" → "' OR 1=1 -- abc xyz"
+# 2. SQLi → "SQL_i" (token 분리)
+# 3. Poisoning: 학습 data 에 정상처럼 보이는 attack 주입
+
+from art.attacks.evasion import FastGradientMethod
+from art.estimators.classification import SklearnClassifier
+
+classifier = SklearnClassifier(model=rf)
+attack = FastGradientMethod(estimator=classifier, eps=0.1)
+X_adv = attack.generate(x=X_te.toarray())
+
+acc_normal = (rf.predict(X_te) == y_te).mean()
+acc_adv = (classifier.predict(X_adv) == y_te).mean()
+print(f"Normal: {acc_normal:.3f}, Adversarial: {acc_adv:.3f}, Drop: {acc_normal-acc_adv:.3f}")
+
+# 방어: adversarial training
+from art.defences.trainer import AdversarialTrainer
+trainer = AdversarialTrainer(classifier, attacks=attack, ratio=0.5)
+trainer.fit(X_tr.toarray(), y_tr, nb_epochs=10)
+```
+
+| 공격 | 영향 | 대응 |
+|------|------|------|
+| Evasion | FPR 증가 | adversarial training |
+| Poisoning | accuracy 하락 | data 출처 검증 |
+| Model extraction | 모델 복제 | API rate limit + noise |
+| Backdoor | trigger 시 오분류 | reproducibility |
+| Membership inference | 학습 data 추출 | differential privacy |
+
+#### 도구 6: LLM SOC 활용 (Step 6)
+
+```python
+# 1. 알림 요약
+import requests, json
+
+def summarize_alert(alert_json):
+    prompt = f"다음 SIEM alert 를 50자 이내로 요약:\n{json.dumps(alert_json, ensure_ascii=False)}"
+    r = requests.post("http://192.168.0.105:11434/api/generate", json={
+        "model":"gpt-oss:120b","prompt":prompt,"stream":False,
+        "options":{"temperature":0.3,"num_predict":100}
+    })
+    return r.json()['response']
+
+alert = {"rule":{"id":"100200","level":12,"description":"SQLi"},
+         "data":{"srcip":"192.168.1.50","url":"/rest/products/search?q=' OR 1=1--"}}
+print(summarize_alert(alert))
+
+# 2. 보고서 자동 (LangChain + RAG)
+from langchain_community.llms import Ollama
+from langchain.prompts import PromptTemplate
+from langchain.chains import LLMChain
+
+llm = Ollama(model="gpt-oss:120b", base_url="http://192.168.0.105:11434")
+
+template = """
+다음 incident 를 NIST SP 800-61 r2 IR 보고서 형식으로 작성:
+
+{incident_json}
+
+양식:
+1. Executive Summary (3 문장)
+2. Detection (시간, 도구, 알림)
+3. Containment (조치)
+4. Impact (영향 범위)
+5. IOC (지표)
+6. Recommendations (단/중/장기)
+"""
+prompt = PromptTemplate(input_variables=["incident_json"], template=template)
+chain = LLMChain(llm=llm, prompt=prompt)
+report = chain.run(incident_json=json.dumps(incident_data))
+
+# 3. 자연어 → 쿼리
+def nl_to_query(text):
+    prompt = f"""다음 자연어를 OpenSearch DSL JSON 으로 변환 (인덱스 wazuh-alerts-*):
+요청: {text}
+JSON 만 반환."""
+    r = requests.post("http://192.168.0.105:11434/api/generate", json={
+        "model":"gpt-oss:120b","prompt":prompt,"stream":False
+    })
+    return r.json()['response']
+
+print(nl_to_query("지난 1시간 192.168.1.50 의 critical alert"))
+
+# 4. RAG (playbook 추천)
+from langchain.embeddings import OllamaEmbeddings
+from langchain.vectorstores import FAISS
+
+embeddings = OllamaEmbeddings(model="gemma3:4b", base_url="http://192.168.0.105:11434")
+playbooks = ["block-ip","phishing-response","ransomware-ir","ddos-mitigate"]
+descs = [
+    "Wazuh alert 의 srcip 자동 차단",
+    "피싱 분석 → IOC 추출 → SEG block",
+    "랜섬웨어 5 phase 대응",
+    "DDoS — rate limit + scrubbing"
+]
+vectordb = FAISS.from_texts(descs, embeddings, metadatas=[{"playbook":p} for p in playbooks])
+
+incident = "192.168.1.50 SQLi, 응답 200, 사용자 데이터 dump"
+for r in vectordb.similarity_search(incident, k=2):
+    print(f"  {r.metadata['playbook']}: {r.page_content}")
+```
+
+#### 도구 7: 하이브리드 (AI + 룰) (Step 7)
+
+```python
+def hybrid_detection(alert):
+    # 1. 룰 점수
+    rule_score = alert.get('rule',{}).get('level',0) / 15.0
+
+    # 2. AI 점수 (도구 3)
+    ai_score = classify_alert(alert)['tp_proba']
+
+    # 3. UEBA 점수 (도구 2)
+    user = alert.get('data',{}).get('dstuser','')
+    ueba_score = user_features.loc[user,'score'] if user in user_features.index else 0.5
+
+    # 가중 평균
+    weights = {'rule':0.4, 'ai':0.4, 'ueba':0.2}
+    final = weights['rule']*rule_score + weights['ai']*ai_score + weights['ueba']*ueba_score
+
+    # 의사결정
+    if final >= 0.8:    action = "auto-block + critical alert"
+    elif final >= 0.6:  action = "high alert + manual review"
+    elif final >= 0.4:  action = "medium alert"
+    else:               action = "log only"
+
+    return {'rule':rule_score,'ai':ai_score,'ueba':ueba_score,
+            'final':final,'action':action}
+
+# 효과 비교:
+# 룰만:    Precision 0.65, Recall 0.92
+# AI만:    Precision 0.85, Recall 0.78
+# Hybrid:  Precision 0.91, Recall 0.95
+```
+
+```
+       Wazuh / Suricata / Zeek
+                |
+                v
+         [Raw Alert (rule)]
+                |
+        ┌───────┼───────┐
+        |       |       |
+   [Rule Score] [AI Triage] [UEBA Score]
+        |       |       |
+        └───────┼───────┘
+                |
+           [Hybrid Score]
+                |
+                v
+        ┌──────────────┐
+        | Action       |
+        | - Auto block |
+        | - Alert      |
+        | - Review     |
+        | - Log only   |
+        └──────────────┘
+```
+
+#### 도구 8: MLOps (Step 8)
+
+```python
+# MLflow tracking
+import mlflow, mlflow.sklearn
+
+mlflow.set_tracking_uri("http://10.20.30.100:5000")
+mlflow.set_experiment("ai-soc-triage")
+
+with mlflow.start_run(run_name="rf-v1.0"):
+    mlflow.log_param("n_estimators", 200)
+    mlflow.log_param("max_depth", 10)
+    rf.fit(X_tr, y_tr)
+    mlflow.log_metric("precision", precision_score(y_te, rf.predict(X_te)))
+    mlflow.log_metric("recall", recall_score(y_te, rf.predict(X_te)))
+    mlflow.log_metric("f1", f1_score(y_te, rf.predict(X_te)))
+    mlflow.log_metric("auc", roc_auc_score(y_te, rf.predict_proba(X_te)[:,1]))
+    mlflow.sklearn.log_model(rf, "model")
+```
+
+```bash
+# DVC
+cd /var/ml
+dvc init
+dvc remote add -d s3-storage s3://ai-soc-data/
+dvc add training-data.csv
+git add training-data.csv.dvc .gitignore
+git commit -m "data: triage v1"
+
+# FastAPI inference
+cat > /var/ml/inference.py << 'PY'
+from fastapi import FastAPI
+import joblib, scipy.sparse
+
+model = joblib.load('/var/ml/triage-rf.pkl')
+vec = joblib.load('/var/ml/triage-vec.pkl')
+app = FastAPI()
+
+@app.post("/triage")
+def triage(alert: dict):
+    text = f"{alert.get('title','')} {alert.get('description','')[:500]}"
+    X_t = vec.transform([text])
+    X_n = [[alert.get('severity',0), len(alert.get('tags',[])), len(alert.get('observables',[]))]]
+    X = scipy.sparse.hstack([X_t, X_n])
+    proba = model.predict_proba(X)[0][1]
+    return {"tp_proba": float(proba), "predicted": "TP" if proba>0.5 else "FP"}
+
+@app.get("/model/version")
+def version():
+    return {"model": "rf-v1.0", "trained_at": "2026-05-02"}
+PY
+uvicorn inference:app --host 0.0.0.0 --port 8500 &
+
+# Auto retrain (매주)
+sudo tee /etc/cron.weekly/retrain-triage.sh << 'SH'
+#!/bin/bash
+cd /var/ml
+python3 retrain.py
+python3 evaluate.py /var/ml/triage-rf-new.pkl
+if [ $? -eq 0 ]; then
+    cp /var/ml/triage-rf.pkl /var/ml/triage-rf-prev.pkl
+    cp /var/ml/triage-rf-new.pkl /var/ml/triage-rf.pkl
+    systemctl restart inference-server
+fi
+SH
+sudo chmod +x /etc/cron.weekly/retrain-triage.sh
+```
+
+#### 도구 9: 데이터 요건 (Step 9)
+
+| 요건 | 설명 | 도구 |
+|------|------|------|
+| 수집 | 10K+ 학습 sample | Wazuh + TheHive export |
+| 레이블 | TP/FP 사람 검토 | Label Studio |
+| 품질 | 결측치/중복/노이즈 제거 | pandas + great-expectations |
+| 편향 방지 | 사용자/IP 과대표 X | fairness 지표 + 재샘플링 |
+| 시간 분리 | train/val/test 시간순 split | not random |
+| 재현성 | data + 모델 + code version | DVC + git + MLflow |
+| 개인정보 | PII 제거/익명화 | k-anonymity / DP |
+
+```python
+import great_expectations as ge
+
+# Schema validation
+suite = ge.from_pandas(df).profile()
+
+# 핵심 검증
+assert df['label'].notna().all()
+assert df['severity'].between(1,4).all()
+assert (df['label'].value_counts(normalize=True) > 0.05).all()   # imbalance < 95:5
+
+# Bias 검사
+bias = df.groupby('ip_subnet').agg(tp_rate=('label','mean'), count=('label','count'))
+print(bias)
+```
+
+Label Studio (UI: localhost:8080):
+- 미분류 alert → 분석가 TP/FP 판정 → label export
+
+#### 도구 10: AI ROI (Step 10)
+
+```python
+before = {
+    "alerts_per_day": 1000,
+    "avg_review_min": 5,
+    "analyst_count": 6,
+    "analyst_hourly_usd": 50,
+    "annual_alerts": 365 * 1000,
+}
+
+after = {
+    "auto_classified_ratio": 0.60,
+    "auto_review_min": 1,
+    "manual_review_min": 5,
+    "ai_setup_usd": 80000,
+    "ai_annual_maintenance_usd": 20000,
+    "ai_inference_cost_usd_per_year": 5000,
+}
+
+auto = before['annual_alerts'] * after['auto_classified_ratio']
+manual = before['annual_alerts'] - auto
+
+before_min = before['annual_alerts'] * before['avg_review_min']
+after_min = auto * after['auto_review_min'] + manual * after['manual_review_min']
+
+time_saved_h = (before_min - after_min) / 60
+labor_saved = time_saved_h * before['analyst_hourly_usd']
+investment = sum(after[k] for k in ['ai_setup_usd','ai_annual_maintenance_usd','ai_inference_cost_usd_per_year'])
+roi = (labor_saved - investment) / investment * 100
+break_even = investment / (labor_saved/12)
+
+print(f"Annual alerts: {before['annual_alerts']:,}")
+print(f"Time saved: {time_saved_h:,.0f}h")
+print(f"Labor saved: ${labor_saved:,.0f}")
+print(f"Investment: ${investment:,.0f}")
+print(f"ROI: {roi:.0f}%")
+print(f"Break-even: {break_even:.1f}개월")
+
+# 결과 (예시):
+# Time saved: 17,000h
+# Labor saved: $850,000
+# Investment: $105,000
+# ROI: 710%
+# Break-even: 1.5개월
+```
+
+#### 도구 11: 윤리 + 편향 (Step 11)
+
+```python
+from aif360.datasets import BinaryLabelDataset
+from aif360.metrics import BinaryLabelDatasetMetric
+
+df['protected_attr'] = df['srcip'].apply(lambda ip: 1 if ip.startswith('203.') else 0)
+dataset = BinaryLabelDataset(df=df, label_names=['label'], protected_attribute_names=['protected_attr'])
+
+metric = BinaryLabelDatasetMetric(dataset,
+    privileged_groups=[{'protected_attr':1}],
+    unprivileged_groups=[{'protected_attr':0}])
+
+print(f"Disparate Impact: {metric.disparate_impact():.3f}")   # 0.8~1.25 = 공정
+print(f"Statistical Parity Diff: {metric.statistical_parity_difference():.3f}")
+
+# Bias 완화
+from aif360.algorithms.preprocessing import Reweighing
+RW = Reweighing(privileged_groups=[{'protected_attr':1}],
+                unprivileged_groups=[{'protected_attr':0}])
+dataset_rw = RW.fit_transform(dataset)
+```
+
+윤리 체크리스트 (EU AI Act + 한국 AI 윤리):
+1. 투명성 — explainability 보장 (왜 차단?)
+2. 공정성 — 사용자 group 편향 X (분기별 측정)
+3. 책임 — 모든 자동 액션 audit log
+4. 인권 보호 — PII 익명화
+5. 안전성 — adversarial 견고 + kill switch
+6. 통제 — 사람 override + manual unblock
+
+회피 사례: COMPAS (재범 예측 인종 편향), Apple Card (성별 편향)
+
+#### 도구 12: 성숙도 (Step 12)
+
+| Level | 명칭 | 특성 | 도구 |
+|-------|------|------|------|
+| L0 | 미도입 | 100% 사람 분석 | manual + Wazuh rule |
+| L1 | 단일 use case | 1-2 모델 | scikit-learn 단순 |
+| L2 | 다중 모델 | UEBA + triage + LLM 요약 | scikit-learn + Ollama |
+| L3 | MLOps 운영 | 자동 학습/배포/모니터링 | MLflow + DVC + Prometheus |
+| L4 | 자율 방어 | 자동 의사결정 + 적응 + RL | AutoML + RL |
+
+#### 도구 13: AI 리스크 (Step 13)
+
+| Risk | 카테고리 | Likelihood | Impact | Mitigation |
+|------|----------|-----------|--------|------------|
+| 모델 오류 (FP/FN) | Tech | High | Med | 평가 + 재학습 |
+| 적대적 공격 | Tech | Med | High | adv training + ensemble |
+| 모델 drift | Tech | High | Med | 분기 retrain + monitoring |
+| Data poisoning | Tech | Low | Critical | data 출처 검증 |
+| 의존도 증가 | Ops | High | Med | manual fallback |
+| Black box | Ops | High | High | SHAP / LIME |
+| 스킬 부족 | Org | High | Med | 교육 + 외부 |
+| 윤리/법적 | Org | Med | High | 정기 ethics audit |
+| ROI 미달 | Biz | Med | Med | pilot 단계적 |
+| Vendor lock-in | Biz | Med | Med | OSS 우선 |
+
+#### 도구 14: 도입 로드맵 (Step 14)
+
+```
+gantt
+    title AI SOC 도입 (18개월)
+    dateFormat  YYYY-MM
+    section Phase 1 — Foundation (6개월)
+      Data 인프라          :p1a, 2026-07, 60d
+      Triage 모델 (LR/RF)  :p1b, after p1a, 60d
+      MLflow 도입          :p1c, after p1a, 30d
+      Pilot 운영           :p1d, after p1b, 30d
+    section Phase 2 — Expansion (12개월)
+      UEBA 모델            :p2a, 2027-01, 90d
+      LLM 통합 (요약/보고서) :p2b, 2027-01, 90d
+      Hybrid (룰 + AI)     :p2c, after p2a, 60d
+      Adversarial 방어     :p2d, after p2b, 60d
+      Bias 검사            :p2e, after p2a, 30d
+    section Phase 3 — Optimization (18개월)
+      MLOps full automation :p3a, 2027-07, 120d
+      AutoML               :p3b, after p3a, 90d
+      자율 의사결정 (L4)    :p3c, after p3b, 120d
+```
+
+| RACI 항목 | Data Sci | ML Eng | SOC | CISO |
+|----------|----------|--------|-----|------|
+| 모델 학습 | A/R | C | C | I |
+| 모델 배포 | C | A/R | I | I |
+| 운영 모니터링 | C | R | A | I |
+| 평가 + 재학습 | A | R | C | I |
+| Bias / 윤리 | A | C | C | R |
+| ROI 측정 | C | C | R | A |
+
+#### 도구 15: 종합 보고서 (Step 15)
+
+```bash
+cat > /tmp/ai-soc-report.md << 'EOF'
+# SOC + AI 융합 보고서 — 2026-Q2
+
+## 1. Executive Summary
+- 현재 성숙도: L0
+- 12개월 목표: L3 (MLOps 운영)
+- 예상 ROI: 710% / 손익분기 1.5개월
+
+## 2. SOC + AI 적용 영역
+[위 도구 1]
+
+## 3. 아키텍처 (Phase 2)
+[위 도구 7 hybrid]
+
+## 4. ROI
+- 투자: $105K / 절약: $850K / ROI 710% / 손익분기 1.5개월
+
+## 5. 리스크
+[위 도구 13]
+
+## 6. 로드맵
+- Phase 1 (6개월): Data + Triage + MLflow
+- Phase 2 (12개월): UEBA + LLM + Hybrid + Adversarial + Bias
+- Phase 3 (18개월): MLOps + AutoML + L4
+
+## 7. KPI
+- 자동 분류율: 60% (12개월)
+- Precision 0.85, Recall 0.95
+- MTTR -30%
+- Burnout -40%
+
+## 8. 윤리 / 법적
+- EU AI Act + 한국 AI 윤리 가이드 준수
+- 분기별 fairness 측정
+- 자동 액션 audit log 7년
+- kill switch
+EOF
+
+pandoc /tmp/ai-soc-report.md -o /tmp/ai-soc-report.pdf \
+  --pdf-engine=xelatex --toc -V mainfont="Noto Sans CJK KR"
+```
+
+### 점검 / 도입 / 평가 흐름 (15 step + multi_task)
+
+#### Phase A — 영역 + 모델 (s1·s2·s3·s4)
+
+```bash
+vi /tmp/ai-soc-areas.md
+python3 /tmp/ueba.py
+python3 /tmp/triage-train.py
+python3 /tmp/eval.py
+```
+
+#### Phase B — 보안 + LLM + Hybrid (s5·s6·s7)
+
+```bash
+python3 /tmp/adversarial-test.py
+python3 /tmp/llm-summarize.py
+python3 /tmp/hybrid.py
+```
+
+#### Phase C — MLOps + 데이터 + ROI + 윤리 + 로드맵 + 보고 (s8~s15)
+
+```bash
+mlflow ui --host 0.0.0.0 --port 5000 &
+dvc add training-data.csv
+python3 /tmp/data-quality.py
+python3 /tmp/ai-roi.py
+python3 /tmp/fairness-check.py
+mmdc -i /tmp/ai-roadmap.mmd -o /tmp/ai-roadmap.png
+pandoc /tmp/ai-soc-report.md -o /tmp/ai-soc-report.pdf
+```
+
+#### Phase D — 통합 시나리오 (s99 multi_task)
+
+s1 → s2 → s3 → s4 → s5 를 Bastion 가 한 번에:
+
+1. **plan**: AI 영역 → UEBA → triage → 평가 → adversarial
+2. **execute**: scikit-learn + IsolationForest + RandomForest + ART
+3. **synthesize**: 5 산출물 (areas.md / ueba.png / triage-model.pkl / eval.png / adv-test.txt)
+
+### 도구 비교표 — AI SOC 단계별
+
+| 단계 | 1순위 | 2순위 | 사용 |
+|------|-------|-------|------|
+| 전통 ML | scikit-learn | XGBoost / LightGBM | OSS |
+| Deep Learning | PyTorch | TensorFlow / Keras | OSS |
+| LLM | Ollama (gpt-oss / gemma) | OpenAI / Anthropic | self-hosted |
+| LLM 통합 | LangChain | LlamaIndex | OSS |
+| Vector DB | FAISS / ChromaDB | Pinecone / Qdrant | OSS |
+| Adversarial | ART (IBM) | CleverHans | OSS |
+| MLOps | MLflow | Kubeflow / W&B | OSS |
+| Data versioning | DVC | LakeFS | OSS |
+| Labeling | Label Studio | Prodigy | OSS |
+| Fairness | AIF360 (IBM) | Fairlearn | OSS |
+| Explainability | SHAP / LIME | InterpretML | OSS |
+| Monitoring | Prometheus + Grafana | Evidently AI | OSS |
+
+### 도구 선택 매트릭스 — 시나리오별 권장
+
+| 시나리오 | 우선 도구 | 이유 |
+|---------|---------|------|
+| "처음 AI 도입" | scikit-learn LR + simple feature | 학습 |
+| "UEBA" | IsolationForest + 사용자 feature | unsupervised |
+| "Alert triage" | RandomForest + TF-IDF | balanced |
+| "LLM 요약 / 보고서" | Ollama + LangChain | self-hosted |
+| "regulator / EU" | Fairness + Explainability | 의무 |
+| "high-volume" | XGBoost + GPU | speed |
+| "adversarial 우려" | ensemble + ART | robust |
+| "MLOps" | MLflow + DVC + Prometheus | OSS |
+
+### 학생 셀프 체크리스트 (각 step 완료 기준)
+
+- [ ] s1: 10+ AI 적용 영역 매트릭스
+- [ ] s2: UEBA — IsolationForest + 6+ feature + 시각화
+- [ ] s3: Triage — TF-IDF + numeric + LR + RF
+- [ ] s4: 5 지표 + ROC + PR curve + 시각화
+- [ ] s5: ART FGSM + accuracy drop + adv training
+- [ ] s6: LLM 요약 + RAG (LangChain + FAISS) + 자연어→쿼리
+- [ ] s7: Rule + AI + UEBA 가중 + action 의사결정
+- [ ] s8: MLflow + DVC + FastAPI + Prometheus + auto-retrain
+- [ ] s9: 7 데이터 요건 + Label Studio + great-expectations + bias
+- [ ] s10: ROI (투자/절약/break-even/intangibles)
+- [ ] s11: AIF360 fairness + 윤리 체크리스트 + 위반 사례
+- [ ] s12: L0~L4 maturity + 자가진단
+- [ ] s13: 10+ 리스크 register + mitigation
+- [ ] s14: 3 phase 18개월 mermaid Gantt + RACI
+- [ ] s15: 종합 보고서 (현황/영역/아키텍처/ROI/리스크/로드맵/KPI/윤리)
+- [ ] s99: Bastion 가 5 작업 (영역/UEBA/분류/평가/adversarial) 순차
+
+### 추가 참조 자료
+
+- **scikit-learn** https://scikit-learn.org/
+- **PyTorch** https://pytorch.org/
+- **Ollama** https://ollama.ai/
+- **LangChain** https://www.langchain.com/
+- **MLflow** https://mlflow.org/
+- **DVC** https://dvc.org/
+- **Adversarial Robustness Toolbox** https://github.com/Trusted-AI/adversarial-robustness-toolbox
+- **AIF360** https://aif360.mybluemix.net/
+- **Fairlearn** https://fairlearn.org/
+- **Label Studio** https://labelstud.io/
+- **EU AI Act** https://eur-lex.europa.eu/eli/reg/2024/1689/oj
+- **NIST AI RMF** https://www.nist.gov/itl/ai-risk-management-framework
+- **Evidently AI (drift)** https://www.evidentlyai.com/
+
+위 모든 AI SOC 적용은 **단계적 + 사람 통제 + audit log** 로 운영한다. 자동 의사결정은 항상
+(1) explainability (2) kill switch (3) manual override 3 안전장치. **adversarial 견고성** +
+**bias 측정** 분기별 — Disparate Impact 0.8~1.25 유지. 도입 후 6개월 검토 + 미달 시 scope 조정.

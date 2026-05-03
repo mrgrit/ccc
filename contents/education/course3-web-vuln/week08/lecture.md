@@ -589,3 +589,30 @@ for c in sorted(data, key=lambda x: x.get('difficulty', 0)):  # 반복문 시작
 
 **시험 채점 기준 함의**: 본 record 가 보여주는 *5-field asset · multi-role · framework 매핑 · multi-vendor 통합* 4축이 학생 보고서에도 갖춰져야 만점 보고서.
 
+
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (lab week08 — XXE)
+
+| step | 카테고리 | 핵심 도구 |
+|---|---|---|
+| 1 식별 | curl + CT:application/xml / Burp Repeater / **nuclei -tags xxe** / OWASP ZAP / nikto |
+| 2 기본 XXE | 수동 DOCTYPE + ENTITY / **XXEinjector** / **PayloadsAllTheThings/XXE** / Burp XXE Generator |
+| 3 file read | file:// SYSTEM / XXEinjector --enumports / **xxeftp** (FTP-based OOB) / Burp Active Scan |
+| 4 XXE→SSRF | http://localhost SYSTEM / **gopher:// with XXE** / **interactsh OOB** / SSRFmap 결합 |
+| 5 PHP wrapper | **php://filter** convert.base64-encode / php://input / **expect:// RCE** / **phar://** deserialization |
+| 6 Billion Laughs | 중첩 엔티티 (lol1→lol9) / xmlbomb / **lxml huge_tree=False** 방어 / Quadratic Blowup |
+| 7 CT 변경 | curl -H Content-Type:xml / Burp Match and Replace / Accept 헤더 / Swagger fuzz |
+| 8 SVG XXE | SVG DOCTYPE / `<image xlink:href='file://'>` / exiftool / **ImageTragick CVE-2016-3714** |
+| 9 WAF | **OWASP CRS rule 920180** / wafw00f / curl 80 vs 3000 비교 |
+| 10 보고서 | 페이로드 카탈로그 (5종) / **DefectDojo** / OWASP A05 매핑 / **CVSS v3.1** / sha256 |
+
+### 학생 환경 준비
+```bash
+git clone --depth 1 https://github.com/enjoiz/XXEinjector ~/XXEinjector
+git clone --depth 1 https://github.com/swisskyrepo/PayloadsAllTheThings ~/PATT
+pip install lxml defusedxml  # defusedxml 은 안전한 XML 파서
+# Burp XXE Generator extension: BApp Store
+# ImageTragick PoC: https://imagetragick.com
+```

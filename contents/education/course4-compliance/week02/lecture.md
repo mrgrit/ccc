@@ -462,3 +462,104 @@ ASA Firewall 만의 cover (network 중심):
 
 **학생 액션**: 본인 환경의 product (Wazuh + Suricata + ModSec + nft + OpenCTI) 마다 *cover ISO 27001 control 번호 list* 작성 → dataset 양식 모방.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course4 Compliance — Week 02 정보통신망법)
+
+### lab step → 점검 도구 매핑
+
+| step | 점검 항목 | 본문/lab 명령 | 자동화 OSS 도구 | 확장 도구 |
+|------|----------|--------------|----------------|----------|
+| s1 | nftables 활성/룰셋 조회 | `nft list ruleset` | **Lynis** `firewall-config` / **nft -j** JSON | scapy 검증 |
+| s2 | 기본 정책 DROP | `nft list ruleset \| grep policy` | OpenSCAP rule `service_iptables_*` / Lynis | firewalld 점검 |
+| s3 | Suricata 동작 | `systemctl status suricata` | **suricatasc** Unix socket / Wazuh integration | evebox |
+| s4 | Suricata 룰 파일 수 | `grep rule-files /etc/suricata/suricata.yaml` | **suricata-update** list-sources | scirius (web) |
+| s5 | 최근 알림 | `tail /var/log/suricata/fast.log` | **jq** + eve.json / **evebox-cli** alerts | kibana |
+| s6 | LISTEN 포트 | `ss -tlnp` | **Lynis** `network-services` / nmap localhost | netstat |
+| s7 | rsyslog 원격 전송 | `grep '@@\|@' /etc/rsyslog.*` | **Lynis** `logging` / Wazuh agent integration | Filebeat |
+| s8 | HTTP 보안 헤더 | `curl -sI \| grep -iE X-Frame X-Content` | **nuclei** -t http/misconfiguration/http-missing-security-headers | securityheaders.com (online) |
+| s9 | 종합 점검 스크립트 | bash 작성 | **OpenSCAP** + **Lynis** + Wazuh SCA 통합 | dradis 보고 |
+
+### 학생 환경 준비
+
+```bash
+ssh ccc@10.20.30.1     # secu VM
+sudo apt update && sudo apt install -y \
+  nftables iproute2 \
+  suricata suricata-update \
+  rsyslog \
+  lynis \
+  jq
+
+# Suricata + evebox
+curl -L https://evebox.org/files/release/latest/evebox-latest-amd64.deb -o /tmp/evebox.deb
+sudo dpkg -i /tmp/evebox.deb && sudo systemctl start evebox
+
+# nuclei (HTTP 보안 헤더 자동 점검)
+curl -L https://github.com/projectdiscovery/nuclei/releases/latest/download/nuclei_3.2.0_linux_amd64.zip -o /tmp/n.zip
+unzip /tmp/n.zip -d /tmp && sudo mv /tmp/nuclei /usr/local/bin/
+nuclei -update-templates
+```
+
+### 핵심 도구별 사용법
+
+```bash
+# 1) nft -j (JSON 출력 — 자동 검증용)
+sudo nft -j list ruleset | jq '.nftables[] | select(.chain.policy=="drop")'
+# → 모든 chain 의 default policy 가 drop 인지 자동 확인
+
+# 2) suricatasc (Unix socket 제어)
+sudo suricatasc -c "iface-list"
+sudo suricatasc -c "ruleset-stats"
+sudo suricatasc -c "reload-rules"
+
+# 3) suricata-update (룰셋 자동 갱신 — 정보통신망법 준수에 권장)
+sudo suricata-update list-sources
+sudo suricata-update enable-source et/open
+sudo suricata-update                                           # 다운로드 + merge
+sudo systemctl reload suricata
+
+# 4) evebox CLI (알림 검색)
+evebox-cli --addr http://localhost:5636 alerts --since "6h ago" | head -20
+evebox-cli --addr http://localhost:5636 reports --since "1d" --output json
+
+# 5) nuclei — HTTP 보안 헤더 자동 점검 (X-Frame, HSTS, CSP)
+nuclei -u http://10.20.30.80 -t http/misconfiguration/http-missing-security-headers.yaml
+nuclei -u http://10.20.30.80 -tags hsts,csp,xss-protection
+```
+
+### 본 2주차 점검 흐름
+
+```bash
+# Phase 1: 방화벽 baseline (정보통신망법 침입차단시스템 의무)
+sudo nft -j list ruleset > /tmp/fw.json
+jq '.nftables[].chain | {name, type, policy}' /tmp/fw.json
+# 모든 input/forward chain 이 default DROP 인지
+
+# Phase 2: IDS 운영 점검 (정보통신망법 침입탐지시스템)
+sudo systemctl is-active suricata
+sudo suricatasc -c "ruleset-stats"
+sudo jq '.event_type' /var/log/suricata/eve.json | sort | uniq -c
+
+# Phase 3: 로그 수집/원격 전송 (위변조 방지 의무)
+grep -rn "@@\|@" /etc/rsyslog.conf /etc/rsyslog.d/
+# Wazuh agent 의 ossec.conf 에서 manager forwarding 도 점검
+
+# Phase 4: 웹 보안 헤더 (개인정보 처리 페이지)
+nuclei -u http://10.20.30.80 -tags misconfig -severity high -o /tmp/headers.txt
+
+# Phase 5: 종합 보고
+sudo lynis audit system --tests-from-group networking,firewalls > /tmp/lynis.txt
+```
+
+### 정보통신망법 매핑
+
+| 법령 항목 | OSS 도구 |
+|----------|---------|
+| §28 침입차단/탐지시스템 운영 | nftables + Suricata |
+| §28 접근통제 | nftables + ssh-audit + Lynis auth |
+| §28 위변조 방지 (로그) | rsyslog 원격 + Wazuh + auditd |
+| §29 백업 | restic / borg / bareos |
+
+학생은 본 2주차에서 **nft + suricatasc + evebox + nuclei + Lynis** 5 도구로 정보통신망법 §28 의 4 핵심 의무 (차단/탐지/접근/위변조) 를 자동 점검한다.

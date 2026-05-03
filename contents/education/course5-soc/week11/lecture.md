@@ -688,3 +688,38 @@ ENDSSH
 
 **학생 액션**: PowerShell 4103/4104 + Sysmon EID 1/3/7 추가 → dataset 한계 보충.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course5 SOC — Week 11 위협 인텔리전스)
+
+| 작업 | 도구 |
+|------|------|
+| CTI 플랫폼 | OpenCTI / MISP / TheHive |
+| IoC 형식 | STIX 2.1 / TAXII / MISP attribute / OpenIOC |
+| 자동 검색 | pycti / pymisp / curl GraphQL |
+| Sigma 통합 | pysigma + sigma-cli |
+| 외부 평판 | abuseipdb / virustotal / urlscan.io / threatfox |
+
+### 핵심
+```bash
+# OpenCTI 에서 최근 IoC export
+python3 << 'EOF'
+from pycti import OpenCTIApiClient
+c = OpenCTIApiClient("http://10.20.30.100:8080", "TOKEN")
+for ind in c.indicator.list(first=100, search="ransomware"):
+    print(ind["pattern"])
+EOF
+
+# MISP 동시 사용
+python3 << 'EOF'
+from pymisp import PyMISP
+m = PyMISP("https://misp.local", "API_KEY", False)
+events = m.search(controller='attributes', value='1.2.3.4')
+EOF
+
+# Wazuh 에 IoC watchlist 자동 등록
+# /var/ossec/etc/lists/blocked_ips.txt
+echo "1.2.3.4" >> /var/ossec/etc/lists/blocked_ips.txt
+sudo /var/ossec/bin/wazuh-control restart
+```

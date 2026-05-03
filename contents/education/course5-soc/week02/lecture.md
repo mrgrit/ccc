@@ -565,3 +565,41 @@ ORG-1657 ::: {
 
 **학생 액션**: 본인 환경 4625 audit policy 강제 활성 → SOC 의 logon brute force 탐지 가능 baseline 확보.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course5 SOC — Week 02 SIEM/Wazuh 기초)
+
+| 작업 | 도구 |
+|------|------|
+| Wazuh manager 운영 | wazuh-control / agent_control / Wazuh API + curl |
+| 인덱서 (OpenSearch) | curl Indexer API / opensearch-cli / esquery |
+| Dashboard | Wazuh Dashboard / Kibana / Grafana |
+| 대안 SIEM | OSSEC (원본) / Elastic Stack / Graylog |
+| 로그 검색 (대안) | Loki + Grafana / Splunk Free | 
+
+### 학생 환경 준비
+```bash
+ssh ccc@10.20.30.100
+pip3 install opensearch-py wazuh-rest
+
+# Graylog (대안 SIEM, 학습 참고)
+# https://docs.graylog.org/docs/centos
+```
+
+### 핵심 사용법
+```bash
+# Wazuh API
+TOKEN=$(curl -s -k -u wazuh-wui:Pa$$w0rd -X POST "https://localhost:55000/security/user/authenticate?raw=true")
+curl -s -k -H "Authorization: Bearer $TOKEN" "https://localhost:55000/agents" | jq .data.affected_items
+
+# OpenSearch 직접 query
+curl -s -k -u admin:admin "https://localhost:9200/_cat/indices?v"
+curl -s -k -u admin:admin -X POST "https://localhost:9200/wazuh-alerts-*/_search" \
+  -H "Content-Type: application/json" \
+  -d '{"query":{"match":{"rule.level":12}}, "size":10}' | jq
+
+# wazuh-control 일상
+sudo /var/ossec/bin/wazuh-control status
+sudo /var/ossec/bin/wazuh-control restart
+```

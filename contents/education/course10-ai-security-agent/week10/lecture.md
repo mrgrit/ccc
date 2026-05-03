@@ -835,3 +835,378 @@ graph TB
 
 **학생 액션**: lab Bastion 에 SubAgent 2개 동시 띄워 dataset 200건 처리 — 단일 대비 시간 측정.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course10 — Week 10 에이전트 배포)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | API 서버 | **FastAPI** + Uvicorn |
+| s2 | LLM gateway | **LiteLLM** proxy |
+| s3 | Auth (OIDC) | **Keycloak** + python-jose |
+| s4 | Container | Docker / Podman |
+| s5 | K8s deploy | kubectl + Helm |
+| s6 | Auto-scale | KServe / Knative |
+| s7 | Observability | OpenTelemetry + Langfuse |
+| s8 | GitOps | Argo CD |
+
+### 학생 환경 준비
+
+```bash
+pip install fastapi uvicorn 'litellm[proxy]' python-jose[cryptography]
+
+# Keycloak
+docker run -d -p 8090:8080 \
+    -e KEYCLOAK_ADMIN=admin -e KEYCLOAK_ADMIN_PASSWORD=Pa\$\$w0rd \
+    quay.io/keycloak/keycloak:latest start-dev
+
+# k3s (lightweight K8s)
+curl -sfL https://get.k3s.io | sh -
+
+# Helm
+sudo apt install -y helm
+
+# Argo CD
+kubectl create namespace argocd
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+```
+
+### 핵심 — FastAPI + LiteLLM + Keycloak + Langfuse 통합
+
+```python
+# /opt/agent-server/main.py
+from fastapi import FastAPI, Depends, HTTPException, Header
+from fastapi.middleware.cors import CORSMiddleware
+from langgraph.graph import StateGraph
+from openai import OpenAI
+from langfuse.openai import openai as lf_openai
+from langfuse.callback import CallbackHandler
+from jose import jwt, JWTError
+import requests
+import os
+
+app = FastAPI(title="Security Agent API", version="1.0")
+app.add_middleware(CORSMiddleware, allow_origins=["*"])
+
+# === Keycloak JWT 검증 ===
+KEYCLOAK_URL = os.environ["KEYCLOAK_URL"]
+KEYCLOAK_REALM = "security"
+
+def get_public_key():
+    """Keycloak 의 공개키 가져오기"""
+    return requests.get(f"{KEYCLOAK_URL}/realms/{KEYCLOAK_REALM}").json()["public_key"]
+
+def verify_token(authorization: str = Header(None)):
+    """JWT 검증"""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(401, "Missing token")
+    token = authorization.replace("Bearer ", "")
+    try:
+        public_key = f"-----BEGIN PUBLIC KEY-----\n{get_public_key()}\n-----END PUBLIC KEY-----"
+        payload = jwt.decode(token, public_key, algorithms=["RS256"], audience="security-agent")
+        return payload
+    except JWTError as e:
+        raise HTTPException(401, f"Invalid token: {e}")
+
+# === LiteLLM client (인증 + rate limit + 로깅 자동) ===
+client = lf_openai.OpenAI(
+    base_url=os.environ["LITELLM_URL"],
+    api_key=os.environ["LITELLM_KEY"]
+)
+
+# === Langfuse 자동 trace ===
+@app.middleware("http")
+async def add_trace(request, call_next):
+    response = await call_next(request)
+    return response
+
+# === Endpoints ===
+@app.post("/agent/run")
+async def run_agent(req: dict, user=Depends(verify_token)):
+    # User 별 권한 체크 (OPA)
+    user_roles = user.get("realm_access", {}).get("roles", [])
+    
+    handler = CallbackHandler(
+        user_id=user["sub"],
+        session_id=req.get("session_id", "default"),
+        tags=user_roles
+    )
+    
+    response = client.chat.completions.create(
+        model="gpt-4",                                    # LiteLLM 이 모델 라우팅
+        messages=[{"role": "user", "content": req["task"]}],
+        # 자동 trace + cost + rate limit
+    )
+    
+    return {
+        "result": response.choices[0].message.content,
+        "tokens": response.usage.total_tokens,
+        "user": user["preferred_username"]
+    }
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+@app.get("/ready")
+async def ready():
+    # 의존성 체크
+    try:
+        client.chat.completions.create(model="gpt-4", messages=[{"role":"user","content":"ping"}], max_tokens=1)
+        return {"status": "ready"}
+    except:
+        raise HTTPException(503, "Not ready")
+```
+
+```bash
+# 실행
+uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
+```
+
+### LiteLLM proxy 설정 (인증 + rate limit + 로깅 통합)
+
+```yaml
+# /etc/litellm/litellm.yaml
+model_list:
+  - model_name: gpt-4
+    litellm_params:
+      model: ollama/gemma3:4b
+      api_base: http://ollama:11434
+  
+  - model_name: gpt-4-fast
+    litellm_params:
+      model: ollama/llama3.1:8b
+      api_base: http://ollama:11434
+
+litellm_settings:
+  callbacks: ["langfuse", "prometheus"]
+  
+  # 입출력 안전 필터
+  pre_call_checks:
+    - type: prompt_injection
+    - type: pii_detection
+  
+  post_call_checks:
+    - type: sensitive_data
+    - type: bias_detection
+  
+  # 자동 폴백
+  fallbacks:
+    - {"gpt-4": ["gpt-4-fast"]}
+  
+  # 재시도
+  retry_policy:
+    BadRequestErrorRetries: 3
+    TimeoutErrorRetries: 3
+
+router_settings:
+  routing_strategy: latency-based-routing               # 가장 빠른 모델 자동
+  cooldown_time: 60                                     # 실패한 모델 1분 cooldown
+
+general_settings:
+  master_key: "sk-master-secret"
+  
+  # Rate limit per user (tier 별)
+  rpm_limit: 60
+  tpm_limit: 100000
+  
+  # Cost limit
+  max_budget: 100.0                                     # $100/day
+  budget_duration: "1d"
+  
+  # Keycloak OIDC 통합
+  jwt_auth_settings:
+    enabled: true
+    public_key_url: "http://keycloak/realms/security/protocol/openid-connect/certs"
+    user_id_jwt_field: "sub"
+    user_email_jwt_field: "email"
+    user_roles_jwt_field: "realm_access.roles"
+```
+
+```bash
+litellm --config /etc/litellm/litellm.yaml --port 4000
+```
+
+### Container 빌드 + 보안 (Trivy + cosign)
+
+```dockerfile
+# Dockerfile
+FROM python:3.11-slim AS builder
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --user -r requirements.txt
+
+FROM gcr.io/distroless/python3-debian12                  # 가장 작고 안전
+WORKDIR /app
+COPY --from=builder /root/.local /root/.local
+COPY main.py .
+ENV PATH=/root/.local/bin:$PATH
+USER nonroot                                              # 비루트 실행
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+```bash
+# 1) Build
+docker build -t myorg/agent-server:v1.2.3 .
+
+# 2) CVE 스캔
+trivy image --severity HIGH,CRITICAL --exit-code 1 myorg/agent-server:v1.2.3
+
+# 3) 서명
+cosign sign --key cosign.key myorg/agent-server:v1.2.3
+
+# 4) Push
+docker push myorg/agent-server:v1.2.3
+
+# 5) 검증 (배포 전)
+cosign verify --key cosign.pub myorg/agent-server:v1.2.3
+```
+
+### Kubernetes 배포 (Helm chart)
+
+```yaml
+# /opt/charts/agent-server/values.yaml
+replicaCount: 3
+
+image:
+  repository: myorg/agent-server
+  tag: "v1.2.3"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8000
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  hosts:
+    - host: agent.example.com
+      paths: [{path: /, pathType: Prefix}]
+  tls:
+    - secretName: agent-tls
+      hosts: [agent.example.com]
+
+resources:
+  requests: {cpu: 200m, memory: 512Mi}
+  limits: {cpu: 1000m, memory: 2Gi}
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 20
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# Pod Security
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+env:
+  - name: LITELLM_URL
+    value: http://litellm.default.svc:4000
+  - name: KEYCLOAK_URL
+    value: http://keycloak.auth.svc:8080
+  - name: LANGFUSE_HOST
+    value: http://langfuse.observability.svc:3000
+
+# Service Mesh (Istio sidecar 자동)
+podAnnotations:
+  sidecar.istio.io/inject: "true"
+```
+
+```bash
+helm install agent-server /opt/charts/agent-server \
+    --namespace ai \
+    --create-namespace \
+    -f /opt/charts/agent-server/values-prod.yaml
+```
+
+### Auto-scale (KServe — LLM 모델 자체 scale)
+
+```yaml
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata: {name: llm-server}
+spec:
+  predictor:
+    minReplicas: 2
+    maxReplicas: 10
+    scaleTarget: 70                                      # CPU 70% target
+    scaleMetric: cpu
+    
+    # 또는 concurrency-based
+    # scaleMetric: concurrency
+    # scaleTarget: 50
+    
+    pytorch:
+      storageUri: gs://models/llama3-8b
+      resources:
+        requests: {cpu: 2, memory: 16Gi}
+        limits: {cpu: 4, memory: 32Gi, nvidia.com/gpu: 1}
+```
+
+### GitOps (Argo CD)
+
+```yaml
+# argocd-app.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: agent-server
+  namespace: argocd
+spec:
+  project: ai
+  source:
+    repoURL: https://github.com/myorg/security-charts
+    targetRevision: main
+    path: charts/agent-server
+    helm:
+      valueFiles: [values-prod.yaml]
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ai
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+```
+
+```bash
+kubectl apply -f argocd-app.yaml
+# Git push → 자동 배포
+# Drift 감지 시 자동 시정
+```
+
+### 배포 흐름 요약
+
+```
+[Developer Git push]
+  → CI: trivy + cosign sign
+  → Container registry (Harbor)
+  → Argo CD detects new tag
+  → K8s rolling update (HelmChart)
+  → KServe auto-scale (load 따라 LLM replica 변동)
+  → Service mesh (Istio mTLS)
+  → Ingress (TLS, cert-manager)
+  → User
+```
+
+학생은 본 10주차에서 **FastAPI + LiteLLM + Keycloak + Helm + KServe + Argo CD + Langfuse** 7 도구로 agent production 배포의 5 단계 (인증 / proxy / 컨테이너 / auto-scale / GitOps) 통합 운영을 익힌다.

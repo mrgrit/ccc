@@ -878,3 +878,274 @@ graph LR
 
 **학생 액션**: 본인의 자율 IR 에이전트로 dataset 392 사례 처리 → 4 KPI 측정.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course10 — Week 13 에이전트 거버넌스)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | OPA agent 정책 | **OPA** Rego |
+| s2 | Casbin (RBAC) | **Casbin** |
+| s3 | Cedar (AWS OSS) | **Cedar** |
+| s4 | Model card | model-cards-toolkit |
+| s5 | Threat modeling | OWASP Threat Dragon / pytm |
+| s6 | Audit log | Langfuse + OSCAL |
+| s7 | Cost guardrail | LiteLLM cost limit |
+| s8 | 통합 거버넌스 | OPA + Langfuse + Audit |
+
+### OPA — Agent 권한 정책 (가장 표준)
+
+```rego
+# /etc/opa/agent_governance.rego
+package agent.governance
+
+import future.keywords
+
+default allow = false
+
+# === Tool 권한 (whitelist) ===
+allowed_tools := {
+    "user": ["nmap_scan", "wazuh_query", "search_kb"],
+    "soc_analyst": ["nmap_scan", "wazuh_query", "search_kb", "thehive_create_case", "fail2ban_unban"],
+    "soc_engineer": ["all_user_tools", "wazuh_admin", "rule_modify", "block_ip"],
+    "soc_admin": ["all_engineer_tools", "delete_rule", "modify_config", "shutdown_service"]
+}
+
+# === Action 허용 ===
+allow if {
+    user_role := input.user.role
+    requested_tool := input.tool
+    
+    # 1. Tool 이 사용자 role 의 whitelist 에 있는가?
+    requested_tool in allowed_tools[user_role]
+    
+    # 2. Target 검증
+    is_authorized_target(input.args.target)
+    
+    # 3. Cost limit 체크
+    input.estimated_cost <= input.user.budget_remaining
+    
+    # 4. Rate limit
+    input.user.recent_calls <= input.user.rate_limit
+    
+    # 5. Time window (업무시간 외 destructive 차단)
+    not (is_destructive(requested_tool) and not in_business_hours())
+}
+
+is_authorized_target(target) if {
+    allowed_subnets := ["10.20.30.0/24", "192.168.0.0/24"]
+    net_contains(allowed_subnets[_], target)
+}
+
+is_destructive(tool) if {
+    tool in ["delete_rule", "shutdown_service", "modify_config"]
+}
+
+in_business_hours() if {
+    h := time.clock([time.now_ns(), "Asia/Seoul"])[0]
+    h >= 9
+    h <= 18
+}
+
+# === Decision rationale (audit 용) ===
+decision_reason := reason if {
+    not allow
+    reason := sprintf("Tool %v denied: role=%v target=%v cost=%v",
+        [input.tool, input.user.role, input.args.target, input.estimated_cost])
+} else := "Allowed"
+```
+
+```python
+# Python 통합
+import requests
+
+def check_agent_action(user, tool, args, estimated_cost):
+    response = requests.post(
+        "http://opa:8181/v1/data/agent/governance/allow",
+        json={"input": {
+            "user": user,
+            "tool": tool,
+            "args": args,
+            "estimated_cost": estimated_cost
+        }}
+    )
+    result = response.json()["result"]
+    return result["allow"], result.get("decision_reason", "")
+
+allowed, reason = check_agent_action(
+    user={"role": "soc_analyst", "budget_remaining": 1.5, "rate_limit": 10, "recent_calls": 3},
+    tool="block_ip",
+    args={"target": "10.20.30.80"},
+    estimated_cost=0.01
+)
+if not allowed:
+    raise PermissionError(reason)
+```
+
+### Casbin (다중 RBAC + ABAC)
+
+```python
+import casbin
+
+# 1) Model 정의 (RBAC + ABAC 통합)
+e = casbin.Enforcer("/etc/casbin/model.conf", "/etc/casbin/policy.csv")
+
+# /etc/casbin/policy.csv
+# p, admin, /agent/*, *, *
+# p, soc_analyst, /agent/run, POST, $time:9-18
+# p, soc_analyst, /agent/scan, POST, *
+# p, user, /agent/query, POST, *
+# 
+# g, alice, soc_analyst
+# g, bob, user
+
+# 2) 권한 검사
+allowed = e.enforce("alice", "/agent/run", "POST")
+allowed = e.enforce("bob", "/agent/scan", "POST")     # False (권한 없음)
+```
+
+### Cedar (AWS OSS — modern, formal verification)
+
+```python
+import cedarpy
+
+# Cedar policy
+cedar_policy = """
+permit (
+    principal in Role::"soc_analyst",
+    action == Action::"runTool",
+    resource
+)
+when {
+    resource.type == "tool" &&
+    resource.name in ["nmap_scan", "wazuh_query"] &&
+    context.estimated_cost <= principal.budget_remaining
+};
+"""
+
+# 정책 평가
+result = cedarpy.is_authorized(
+    policies=cedar_policy,
+    entities=[
+        {"uid": {"type": "User", "id": "alice"}, "attrs": {"budget_remaining": 1.5}, "parents": [{"type": "Role", "id": "soc_analyst"}]},
+        {"uid": {"type": "Tool", "id": "nmap_scan"}, "attrs": {"name": "nmap_scan"}, "parents": []},
+    ],
+    request={
+        "principal": {"type": "User", "id": "alice"},
+        "action": {"type": "Action", "id": "runTool"},
+        "resource": {"type": "Tool", "id": "nmap_scan"},
+        "context": {"estimated_cost": 0.01}
+    }
+)
+print(result.allowed)                               # True
+```
+
+### Model Card + Threat Model (week13 / week12 재사용)
+
+```python
+# Model card
+import model_card_toolkit as mctlib
+
+mct = mctlib.ModelCardToolkit("/var/lib/models/agent-v1.2.3")
+mc = mct.scaffold_assets()
+
+mc.model_details.name = "CCC Security Agent v1.2.3"
+mc.model_details.owners = [mctlib.Owner(name="Security Team", contact="security@ync.ac.kr")]
+mc.model_details.references = [mctlib.Reference(reference="https://github.com/ccc/agent")]
+
+mc.considerations.use_cases = [
+    mctlib.UseCase(description="JuiceShop / 내부 시스템 점검 자동화"),
+    mctlib.UseCase(description="Wazuh alert 자동 분류 + 대응"),
+]
+mc.considerations.limitations = [
+    mctlib.Limitation(description="외부 시스템 점검 불가 — 내부 네트워크 한정"),
+    mctlib.Limitation(description="Critical decision 은 manual review 필요"),
+]
+mc.considerations.ethical_considerations = [
+    mctlib.Risk(name="Excessive agency", mitigation_strategy="OPA + NeMo Guardrails"),
+    mctlib.Risk(name="Bias", mitigation_strategy="fairlearn 분기별 측정"),
+]
+mc.quantitative_analysis.performance_metrics = [
+    mctlib.PerformanceMetric(type="Bastion-Bench accuracy", value="0.78"),
+    mctlib.PerformanceMetric(type="garak safety ASR", value="0.15"),
+]
+
+mct.update_model_card(mc)
+mct.export_format()                                  # HTML 자동 생성
+```
+
+### Audit log (OSCAL 통합)
+
+```python
+from langfuse import Langfuse
+import json
+
+# 1) 모든 agent 호출 자동 audit
+langfuse = Langfuse(...)
+
+def audit_agent_call(user, tool, args, result, decision_reason):
+    langfuse.event(
+        name="agent_action",
+        user_id=user["id"],
+        metadata={
+            "tool": tool,
+            "args": args,
+            "decision": "allowed" if result else "denied",
+            "reason": decision_reason,
+            "policy_version": "1.2",
+            "cost_usd": result.get("cost", 0),
+        },
+        tags=["audit", "compliance"]
+    )
+
+# 2) OSCAL audit log export (NIST 표준)
+def export_oscal_log(start_date, end_date):
+    traces = langfuse.fetch_traces(
+        from_timestamp=start_date,
+        to_timestamp=end_date
+    )
+    
+    oscal = {
+        "schema": "https://nist.gov/oscal/assessment-results/v1",
+        "metadata": {"title": "Agent Audit Log Q2 2026"},
+        "results": [
+            {
+                "uuid": t.id,
+                "timestamp": t.start_time,
+                "user": t.user_id,
+                "action": t.metadata.get("tool"),
+                "decision": t.metadata.get("decision"),
+                "reason": t.metadata.get("reason"),
+            }
+            for t in traces
+        ]
+    }
+    
+    with open(f"/var/log/oscal-audit-{start_date.year}Q{start_date.month//3+1}.json", "w") as f:
+        json.dump(oscal, f, indent=2)
+```
+
+### Cost Guardrail (LiteLLM)
+
+```yaml
+# litellm.yaml
+litellm_settings:
+  max_budget: 100.0                                  # $100/day total
+  budget_duration: "1d"
+  
+  # User 별 budget
+  user_max_budget: 10.0                              # $10/user/day
+  
+  # 자동 차단 (budget 초과 시)
+  enable_max_budget_per_user: true
+  
+  # Cost alert (Slack)
+  alert_to_email: "security@ync.ac.kr"
+  alert_threshold:
+    budget_usage: 0.8                                # 80% 도달 시 alert
+```
+
+학생은 본 13주차에서 **OPA + Casbin + Cedar + model-cards-toolkit + Threat Dragon + Langfuse + LiteLLM cost** 7 도구로 agent 거버넌스의 5 영역 (권한 / 책임 AI / 위협모델 / audit / 비용) 통합 운영을 익힌다.

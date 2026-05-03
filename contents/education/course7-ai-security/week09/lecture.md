@@ -502,3 +502,91 @@ dataset 392건의 Data Theft 사례를 그대로 KG 에 저장하면 — KG 가 
 
 **학생 액션**: Bastion 을 lab 에 띄우고, dataset 의 임의 50건을 신호로 입력. (a) RAG 비활성화 모드, (b) RAG 활성화 모드 두 가지로 분류시킨다. 두 모드의 정확도를 비교 측정하고 — *"우리 환경에서 RAG 의 효과가 lecture 가 말한 +9% 와 일치하는가"* 를 검증.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course7 AI Security — Week 09 LLM 설명가능성)
+
+### XAI / Interpretability OSS 도구
+
+| 영역 | OSS 도구 |
+|------|---------|
+| Feature attribution | **SHAP** / **LIME** / **Captum** (PyTorch) / IntegratedGradients |
+| Transformer 내부 | **TransformerLens** (Anthropic 영향) / circuitsvis |
+| Sparse Autoencoders | **sae-lens** / dictionary_learning |
+| Probing | linear-probes / Anthropic interpretability tools |
+| Counterfactual | **DiCE** / what-if-tool |
+| Audit | InterpretML / Aequitas / Fairlearn |
+| Visualization | bertviz / circuitsvis / plotly |
+
+### 핵심 — TransformerLens (LLM 내부 분석)
+
+```bash
+pip install transformer_lens
+
+python3 << 'EOF'
+import transformer_lens
+model = transformer_lens.HookedTransformer.from_pretrained("gpt2")
+
+# Activation 추출
+text = "The Eiffel Tower is in"
+tokens = model.to_tokens(text)
+logits, cache = model.run_with_cache(tokens)
+
+# 각 layer activation
+print(cache["resid_post", 5].shape)                               # layer 5 residual
+print(cache["attn_out", 3].shape)                                 # attention output
+
+# Attention pattern 시각화
+import circuitsvis as cv
+attn = cache["pattern", 3]                                        # layer 3 attention
+cv.attention.attention_patterns(tokens=model.to_str_tokens(text), attention=attn[0])
+EOF
+```
+
+### 학생 환경 준비
+
+```bash
+source ~/.venv-llm/bin/activate
+pip install shap lime captum transformer_lens circuitsvis
+pip install sae_lens
+pip install interpret aequitas fairlearn
+pip install dice-ml
+```
+
+### 핵심 사용
+
+```bash
+# 1) SHAP (모델-agnostic feature attribution)
+python3 << 'EOF'
+import shap
+explainer = shap.Explainer(model, masker=shap.maskers.Text(tokenizer))
+shap_values = explainer(["This movie is great"])
+shap.plots.text(shap_values)
+EOF
+
+# 2) LIME
+python3 << 'EOF'
+from lime.lime_text import LimeTextExplainer
+explainer = LimeTextExplainer(class_names=["neg","pos"])
+exp = explainer.explain_instance("great movie", classifier_fn, num_features=5)
+exp.show_in_notebook()
+EOF
+
+# 3) Captum (PyTorch)
+python3 << 'EOF'
+from captum.attr import IntegratedGradients
+ig = IntegratedGradients(model)
+attributions = ig.attribute(input, target=label)
+EOF
+
+# 4) Sparse Autoencoders (Anthropic 스타일 — neuron interpretation)
+python3 << 'EOF'
+from sae_lens import SAE
+sae, cfg, _ = SAE.from_pretrained(release="gpt2-small-res-jb", sae_id="blocks.5.hook_resid_pre")
+features = sae.encode(activations)
+# 각 feature 가 무엇을 representation 하는지 분석
+EOF
+```
+
+학생은 본 9주차에서 **SHAP + LIME + TransformerLens + sae-lens + Captum** 5 도구로 LLM 의 5 단계 해석 (feature → token → layer → circuit → SAE feature) 분석을 OSS 만으로 익힌다.

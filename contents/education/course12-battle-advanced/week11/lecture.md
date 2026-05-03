@@ -730,3 +730,286 @@ graph LR
 
 **학생 액션**: 각 단계 차단 룰 작성.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course12 — Week 11 내부자 위협)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | Wazuh user-behavior | Wazuh + UBA module |
+| s2 | osquery 다중 호스트 | osquery + Fleet |
+| s3 | Falco user activity | Falco user behavior rules |
+| s4 | DLP-style alerting | 자체 + Suricata egress |
+| s5 | Time anomaly | Wazuh frequency rule |
+| s6 | Geo anomaly | MaxMind GeoIP |
+| s7 | Privilege misuse | osquery sudo + auditd |
+| s8 | 통합 UEBA | Wazuh + LLM scoring |
+
+### 학생 환경 준비
+
+```bash
+# === Wazuh user-behavior 모듈 ===
+# /var/ossec/etc/ossec.conf 의 user-behavior 모듈 활성
+
+# === osquery + Fleet ===
+sudo apt install -y osquery
+docker run -d -p 8080:8080 fleetdm/fleet:latest
+fleetctl setup --email admin@x.com --password Pa\$\$w0rd --org-name CCC
+
+# === Falco ===
+sudo apt install -y falco
+
+# === MaxMind GeoIP DB ===
+sudo apt install -y geoip-bin geoipupdate
+sudo geoipupdate
+
+# === auditd ===
+sudo apt install -y auditd audispd-plugins
+sudo systemctl enable --now auditd
+```
+
+### 핵심 — Wazuh user-behavior rule
+
+```xml
+<!-- /var/ossec/etc/rules/user-behavior.xml -->
+
+<group name="user-behavior,uba,">
+
+  <!-- 비정상 시간 로그인 (00:00-06:00) -->
+  <rule id="100900" level="10">
+    <if_sid>5715</if_sid>
+    <time>00:00 - 06:00</time>
+    <description>Off-hours login: $(srcuser) from $(srcip)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+  
+  <!-- 비정상 위치 로그인 (외부 IP) -->
+  <rule id="100901" level="12">
+    <if_sid>5715</if_sid>
+    <field name="srcip" negate="yes">^(10\.|172\.16\.|192\.168\.)</field>
+    <description>External login: $(srcuser) from $(srcip)</description>
+    <mitre>
+      <id>T1078.004</id>
+    </mitre>
+  </rule>
+  
+  <!-- 동시 다중 위치 (impossible travel) -->
+  <rule id="100902" level="13" frequency="2" timeframe="600">
+    <if_matched_sid>5715</if_matched_sid>
+    <same_user/>
+    <different_srcip/>
+    <description>Impossible travel: $(srcuser) from multiple IPs in 10min</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+  
+  <!-- 권한 외 명령 (sudo abuse) -->
+  <rule id="100903" level="11">
+    <if_sid>5402</if_sid>
+    <user>!authorized_admins</user>
+    <description>Unauthorized sudo: $(user) ran $(command)</description>
+    <mitre>
+      <id>T1548.003</id>
+    </mitre>
+  </rule>
+  
+  <!-- 대용량 다운로드 (data exfil 의심) -->
+  <rule id="100904" level="12" frequency="50" timeframe="60">
+    <if_matched_sid>31100</if_matched_sid>
+    <same_user/>
+    <description>Bulk file download: $(srcuser) — 50+ files in 60s</description>
+    <mitre>
+      <id>T1530</id>
+    </mitre>
+  </rule>
+  
+  <!-- USB 장치 연결 (data exfil 매개) -->
+  <rule id="100905" level="10">
+    <decoded_as>linux-audit</decoded_as>
+    <field name="key">usb-device</field>
+    <description>USB device attached: $(srcuser)</description>
+    <mitre>
+      <id>T1052.001</id>
+    </mitre>
+  </rule>
+
+</group>
+```
+
+### osquery (UBA query)
+
+```bash
+# === 1. 활성 사용자 ===
+osqueryi 'SELECT user, host, time FROM logged_in_users;'
+
+# === 2. 비정상 활동 사용자 (24h 동안 100+ command) ===
+osqueryi 'SELECT username, COUNT(*) as cmd_count
+          FROM shell_history
+          WHERE time > (strftime("%s","now") - 86400)
+          GROUP BY username
+          HAVING cmd_count > 100;'
+
+# === 3. 의심 명령 history ===
+osqueryi 'SELECT username, history, command
+          FROM shell_history
+          WHERE command LIKE "%curl http%" 
+             OR command LIKE "%wget%"
+             OR command LIKE "%nc -%"
+             OR command LIKE "%/dev/tcp%";'
+
+# === 4. 다중 sudo 실행 ===
+osqueryi 'SELECT user, COUNT(*) as count
+          FROM file_events
+          WHERE path = "/var/log/sudo.log"
+          GROUP BY user;'
+
+# === 5. 파일 접근 패턴 ===
+osqueryi 'SELECT username, path, time
+          FROM file_events
+          WHERE path LIKE "/data/sensitive/%"
+          ORDER BY time DESC LIMIT 50;'
+
+# === 6. 비정상 시간 활동 ===
+osqueryi 'SELECT user, time, command
+          FROM shell_history
+          WHERE strftime("%H", datetime(time, "unixepoch")) BETWEEN "00" AND "06";'
+```
+
+### Falco user activity rules
+
+```yaml
+# /etc/falco/falco_rules.local.yaml
+
+- rule: User Access Sensitive File
+  desc: Sensitive 파일 접근
+  condition: >
+    open_read and 
+    fd.directory startswith "/data/sensitive" and
+    user.uid >= 1000 and 
+    not user.name in (sensitive_data_owners)
+  output: "Sensitive file access (user=%user.name file=%fd.name)"
+  priority: WARNING
+
+- rule: User Bulk Download
+  desc: 단시간 다중 파일 read
+  condition: >
+    open_read and 
+    user.uid >= 1000 and
+    proc.name in (rsync, scp, sftp, curl, wget, tar)
+  output: "Bulk download (user=%user.name proc=%proc.name file=%fd.name)"
+  priority: WARNING
+
+- rule: Off-hours Activity
+  desc: 업무 시간 외 활동
+  condition: >
+    spawned_process and 
+    user.uid >= 1000 and
+    (current_time.hour < 7 or current_time.hour > 19)
+  output: "Off-hours activity (user=%user.name cmd=%proc.cmdline)"
+  priority: NOTICE
+
+- rule: Privilege Escalation Attempt
+  desc: sudo/su 사용
+  condition: >
+    spawned_process and 
+    proc.name in (sudo, su) and
+    user.uid >= 1000
+  output: "Privesc attempt (user=%user.name cmd=%proc.cmdline)"
+  priority: WARNING
+```
+
+### Geo anomaly (MaxMind + Wazuh)
+
+```python
+# /opt/scripts/geo-uba.py
+import json
+import geoip2.database
+from datetime import datetime
+import requests
+
+reader = geoip2.database.Reader('/usr/share/GeoIP/GeoLite2-Country.mmdb')
+
+# Wazuh API
+WAZUH = "https://wazuh:55000"
+TOKEN = "..."
+
+# 1) 사용자 별 IP 패턴 추출 (24h)
+r = requests.get(f"{WAZUH}/security/users", headers={"Authorization": f"Bearer {TOKEN}"}, verify=False)
+users = r.json()
+
+for user in users:
+    # 1) 사용자 별 최근 login IP
+    r = requests.get(f"{WAZUH}/alerts?q=data.srcuser:{user.id}", headers={"Authorization": f"Bearer {TOKEN}"})
+    alerts = r.json()['data']
+    
+    # 2) 각 IP 의 country
+    countries = set()
+    for a in alerts:
+        ip = a.get('data', {}).get('srcip')
+        if ip:
+            try:
+                country = reader.country(ip).country.iso_code
+                countries.add(country)
+            except: pass
+    
+    # 3) 다중 country → impossible travel
+    if len(countries) > 1:
+        print(f"⚠ User {user.name}: logins from {countries}")
+        # → Wazuh alert / Slack
+```
+
+### 통합 UEBA (LLM augmented)
+
+```python
+# /opt/scripts/uba-llm.py
+from langchain_ollama import OllamaLLM
+import json
+
+llm = OllamaLLM(model="gemma3:4b")
+
+# 1) 모든 사용자 활동 (24h) 가져오기
+with open('/var/ossec/logs/alerts/alerts.json') as f:
+    alerts = [json.loads(l) for l in f if l.strip()]
+
+# 2) 사용자 별 활동 요약
+user_activity = {}
+for a in alerts:
+    user = a.get('data', {}).get('srcuser')
+    if user:
+        user_activity.setdefault(user, []).append({
+            'time': a['timestamp'],
+            'srcip': a.get('data', {}).get('srcip'),
+            'rule': a['rule']['description']
+        })
+
+# 3) LLM 으로 anomaly score
+for user, events in user_activity.items():
+    prompt = f"""
+다음은 사용자 '{user}' 의 24h 보안 이벤트입니다:
+{json.dumps(events[:50], indent=2)}
+
+평가:
+1. Risk score (0-100): 가장 의심스러운 활동
+2. 가장 의심스러운 이벤트 1-3개
+3. 권고 사항 (block / monitor / 무시)
+
+JSON 형식으로 응답:
+{{
+  "risk_score": <0-100>,
+  "suspicious_events": [...],
+  "recommendation": "..."
+}}
+"""
+    response = llm.invoke(prompt)
+    print(f"=== {user} ===")
+    print(response)
+    print()
+```
+
+학생은 본 11주차에서 **Wazuh user-behavior + osquery + Falco + MaxMind GeoIP + auditd + LLM augmented** 6 도구로 내부자 위협 탐지의 6 영역 (시간 anomaly / 위치 anomaly / 권한 misuse / 대용량 download / sensitive 접근 / impossible travel) 통합 운영을 익힌다.

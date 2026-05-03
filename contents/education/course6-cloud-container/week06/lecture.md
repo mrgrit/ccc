@@ -597,3 +597,153 @@ graph TB
 
 **학생 액션**: 본인이 작성한 docker-compose.yml 에서 `environment:` 섹션의 평문 시크릿을 골라내고, (1) `secrets:` 블록 또는 (2) `.env_file:` 로 변경. 변경 전후의 5분간 audit 이벤트 수를 측정하여 차이를 표로 정리하고, *"compose 보안 모니터링이 왜 룰 기반이어야 하는가"* 1문단으로 정리.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course6 Cloud-Container — Week 06 IAM/접근제어)
+
+### IAM/접근제어 OSS 도구
+
+| 영역 | OSS 도구 |
+|------|---------|
+| Identity Provider | **Keycloak** (RH SSO) / Authelia / Authentik / Dex |
+| OIDC / SAML | Keycloak / Authentik / OpenLDAP + 위 IdP |
+| K8s RBAC | kubectl auth / **rbac-tool** (Insightly) / kubectl-who-can |
+| 인가 정책 | **OPA** / Casbin / Keto (ory) |
+| K8s admission | **OPA Gatekeeper** / Kyverno |
+| 자격증명 보관 | **Vault** / SOPS / age |
+| Service Account 분석 | rakkess / kubectl-who-can / aquasec rbac analyzer |
+
+### 핵심 — Keycloak (사실상 OSS IdP 표준)
+
+```bash
+# Docker 로 시작
+docker run -d --name keycloak \
+  -e KEYCLOAK_ADMIN=admin \
+  -e KEYCLOAK_ADMIN_PASSWORD=Pa$$w0rd \
+  -p 8090:8080 \
+  quay.io/keycloak/keycloak:latest start-dev
+# Web UI: http://localhost:8090
+
+# CLI 자동화
+docker exec -it keycloak /opt/keycloak/bin/kcadm.sh \
+  config credentials --server http://localhost:8080 --realm master \
+  --user admin --password Pa$$w0rd
+
+# Realm 생성
+docker exec -it keycloak /opt/keycloak/bin/kcadm.sh \
+  create realms -s realm=demo -s enabled=true
+
+# Client 등록 (k8s OIDC 통합)
+docker exec -it keycloak /opt/keycloak/bin/kcadm.sh \
+  create clients -r demo -s clientId=k8s-cluster \
+  -s 'redirectUris=["https://k8s.local/*"]' -s publicClient=true
+```
+
+### 학생 환경 준비
+
+```bash
+# Keycloak (OIDC IdP)
+docker pull quay.io/keycloak/keycloak:latest
+
+# OPA + Casbin (정책 엔진)
+curl -L -o opa https://openpolicyagent.org/downloads/v0.62.0/opa_linux_amd64_static
+chmod +x opa && sudo mv opa /usr/local/bin/
+
+pip3 install casbin
+
+# rbac-tool (k8s RBAC 분석)
+curl -L https://github.com/alcideio/rbac-tool/releases/latest/download/rbac-tool-linux-amd64.gz | gunzip > rbac-tool
+chmod +x rbac-tool && sudo mv rbac-tool /usr/local/bin/
+
+# kubectl-who-can
+curl -L https://github.com/aquasecurity/kubectl-who-can/releases/latest/download/kubectl-who-can_linux_x86_64.tar.gz | sudo tar xz -C /usr/local/bin/
+
+# rakkess (k8s 권한 매트릭스)
+curl -L https://github.com/corneliusweig/rakkess/releases/latest/download/rakkess-amd64-linux.gz | gunzip > rakkess
+chmod +x rakkess && sudo mv rakkess /usr/local/bin/
+
+# Vault (HashiCorp OSS — 자격증명 관리)
+curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo apt-key add -
+sudo apt-add-repository "deb [arch=amd64] https://apt.releases.hashicorp.com $(lsb_release -cs) main"
+sudo apt install -y vault
+```
+
+### 핵심 사용법
+
+```bash
+# 1) Keycloak — OIDC 흐름
+# 1. Realm 생성 → Client 등록 (k8s 또는 web app)
+# 2. User 생성 + Role 매핑
+# 3. Application 에서 OIDC discovery URL 사용
+#    http://keycloak/realms/demo/.well-known/openid-configuration
+
+# 2) k8s API server 에 OIDC 통합
+# /etc/kubernetes/manifests/kube-apiserver.yaml 에 추가
+# --oidc-issuer-url=http://keycloak/realms/demo
+# --oidc-client-id=k8s-cluster
+# --oidc-username-claim=preferred_username
+
+# 3) RBAC 분석 — kubectl-who-can
+kubectl who-can list pods                                         # 누가 list pods 권한이 있나
+kubectl who-can delete deployments
+
+# 4) rakkess — 권한 매트릭스
+rakkess
+# 출력: 모든 user/SA × 모든 resource × verb 매트릭스
+
+# 5) rbac-tool — RBAC 분석
+rbac-tool show
+rbac-tool whoami
+
+# 6) OPA — 정책 작성
+cat > /tmp/policy.rego << 'EOF'
+package k8s.deny
+deny[msg] {
+  input.kind == "Pod"
+  not input.spec.securityContext.runAsNonRoot
+  msg := "Pod must run as non-root"
+}
+EOF
+opa eval -d /tmp/policy.rego -i /tmp/pod.yaml "data.k8s.deny"
+
+# 7) Vault (k8s secret integration)
+vault server -dev -dev-root-token-id=root
+export VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=root
+vault kv put secret/db password=Pa$$w0rd
+vault kv get secret/db
+
+# k8s 와 통합 (vault-k8s-auth)
+vault auth enable kubernetes
+vault write auth/kubernetes/config \
+  kubernetes_host="https://k8s-api"
+vault write auth/kubernetes/role/myrole \
+  bound_service_account_names=myapp \
+  bound_service_account_namespaces=default \
+  policies=mypolicy ttl=24h
+```
+
+### IAM 점검 흐름
+
+```bash
+# Phase 1: User/Role 인벤토리
+kubectl get clusterrolebindings -o json | jq '.items[].subjects[]'
+rakkess --output json > /tmp/rbac.json
+
+# Phase 2: 과도한 권한 식별
+kubectl who-can '*' '*' --all-namespaces                          # cluster-admin 보유자
+kubectl who-can delete clusterrolebindings
+
+# Phase 3: ServiceAccount 정리
+kubectl get sa --all-namespaces -o json \
+  | jq '.items[] | select(.metadata.name != "default") | .metadata.namespace'
+
+# Phase 4: 정책 자동 적용 (OPA Gatekeeper / Kyverno)
+kubectl apply -f gatekeeper-policies/
+
+# Phase 5: Secret 관리 (Vault → k8s sync)
+vault kv put secret/myapp password=$(openssl rand -base64 32)
+# k8s 가 vault-injector 로 자동 mount
+```
+
+학생은 본 6주차에서 **Keycloak + OPA + rbac-tool + Vault + kubectl-who-can** 5 도구로 IAM 의 4 단계 (인증 → 인가 → 권한 분석 → secret 관리) 통합 운영을 익힌다.

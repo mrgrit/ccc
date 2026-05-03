@@ -739,3 +739,53 @@ rule.level >= 10
 3. Active Response 의 24h block 정책 외에 *manual override* 절차 (오탐 시 unblock) 학생 syllabus 추가
 
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course2 SecOps — Week 11 Wazuh FIM/SCA/AR)
+
+| 작업 | 도구 |
+|------|------|
+| FIM | Wazuh syscheck / Tripwire / AIDE / Samhain |
+| SCA | Wazuh SCA (CIS benchmarks) / OpenSCAP / Lynis |
+| Active Response | Wazuh AR / fail2ban / shorewall / OSSEC AR |
+| 무결성 baseline | wazuh-syscheckd / aide --init |
+| 컨테이너 무결성 | Falco / Tetragon / Tracee |
+
+### 학생 환경 준비
+```bash
+ssh ccc@10.20.30.80
+sudo apt install -y aide tripwire lynis
+sudo apt install -y libopenscap1 openscap-scanner
+# Tracee — kernel-level (eBPF)
+curl -L https://github.com/aquasecurity/tracee/releases/latest/download/tracee.tar.gz -o /tmp/tracee.tar.gz
+```
+
+### 핵심 시나리오
+```bash
+# 1) Wazuh FIM — 핵심 디렉토리 모니터링
+sudo nano /var/ossec/etc/ossec.conf
+# <syscheck> <directories check_all="yes">/etc</directories> ...
+sudo systemctl restart wazuh-agent
+
+# 2) AIDE 초기 baseline
+sudo aide --init
+sudo cp /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+# 일정 후
+sudo aide --check                                                # 변경 보고
+
+# 3) Lynis — 시스템 hardening 점검
+sudo lynis audit system
+
+# 4) OpenSCAP — CIS benchmark 자동 점검
+sudo apt install -y libopenscap1 openscap-scanner ssg-base
+sudo oscap xccdf eval --profile xccdf_org.ssgproject.content_profile_cis \
+  --report /tmp/scan-report.html /usr/share/xml/scap/ssg/content/ssg-ubuntu2204-ds.xml
+
+# 5) Wazuh Active Response (자동 차단)
+# /var/ossec/etc/ossec.conf
+# <command>name=firewall-drop, executable=firewall-drop, ...</command>
+# <active-response>command=firewall-drop, location=local, level=10</active-response>
+```
+
+학생은 본 11주차에서 **FIM (AIDE/Wazuh) + SCA (Lynis/OpenSCAP) + Active Response (Wazuh AR/fail2ban)** 의 3 축 통합을 익힌다.

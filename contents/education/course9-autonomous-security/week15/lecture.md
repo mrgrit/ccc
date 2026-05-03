@@ -790,3 +790,120 @@ graph LR
 
 **학생 액션**: lab 에서 Red + Blue Purple Team 24h 운영 → 5축 보고서 작성. 본 lecture 의 최종 산출물.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course9 — Week 15 종합)
+
+본 15주차는 1-14주차 모든 도구를 통합 운영하는 종합 평가.
+
+### 통합 도구 매트릭스 (60+ OSS)
+
+| Layer | 핵심 OSS 도구 |
+|-------|--------------|
+| RL 학습 | stable-baselines3 · Ray RLlib · CleanRL · Gymnasium |
+| 메모리 | ChromaDB · Qdrant · pgvector · Redis Stack · sentence-transformers |
+| 자동 스캔 | python-nmap · nuclei · Faraday · Airflow |
+| 자가 치유 | Wazuh AR · Ansible · Salt · Falco · K8s Operator |
+| 적응형 방어 | crowdsec · River · Evidently · NannyML |
+| 위협 헌팅 | Sigma · chainsaw · hayabusa · kestrel · Velociraptor · osquery |
+| SOAR | Shuffle · TheHive + Cortex · n8n · StackStorm |
+| 의사결정 | OPA · Casbin · Keto · Gatekeeper · Kyverno |
+| 통신 | NATS · RabbitMQ · Redis · Kafka · Consul |
+| Escalation | TheHive · Grafana OnCall · Karma · Slack |
+| 지속 학습 | MLflow · DVC · River · Evidently · KServe |
+| 시뮬 | CALDERA · Atomic Red Team · Stratus · DeTT&CT |
+| 평가 | DeTT&CT · ATT&CK Navigator · DSOMM · SOC-CMM |
+| 배포 | k3s · Helm · Argo CD · KServe · Velero |
+
+### 종합 평가 시나리오
+
+```bash
+#!/bin/bash
+# /usr/local/bin/autosec-master.sh
+TS=$(date +%Y%m%d-%H%M)
+DIR=/var/log/autosec/$TS
+mkdir -p $DIR
+
+# === Phase 1: 자율 학습 모델 ===
+mlflow models serve -m models:/auto-defense-prod/Production -p 5000 &
+echo "RL model deployed"
+
+# === Phase 2: 메모리 ===
+python3 << 'EOF'
+import chromadb
+client = chromadb.PersistentClient(path="/var/lib/security_memory")
+print(f"Memory size: {client.get_collection('security_incidents').count()}")
+EOF
+
+# === Phase 3: 자동 스캔 (Airflow DAG 정기) ===
+airflow dags trigger auto_security_scan
+
+# === Phase 4: 적응형 방어 ===
+sudo cscli decisions list > $DIR/01-blocks.txt
+sudo cscli alerts list >> $DIR/01-blocks.txt
+
+# === Phase 5: 위협 헌팅 ===
+chainsaw hunt /var/log -s ~/sigma/rules/ --output json > $DIR/02-hunt.json
+
+# === Phase 6: 시뮬 (CALDERA APT29) ===
+python3 ~/caldera/server.py --insecure &
+sleep 5
+curl -X POST http://localhost:8888/api/rest \
+    -H "KEY: ADMIN123" \
+    -d '{"index": "operations", "name": "test-apt29", "adversary_id": "apt29"}'
+
+# === Phase 7: 평가 (DeTT&CT) ===
+python3 ~/dettect/dettect.py d -fd /opt/data-sources.yaml \
+    --output-filename $DIR/03-coverage.json
+
+# === Phase 8: KPI ===
+COVERAGE=$(jq '[.techniques[] | select(.score >= 2)] | length' $DIR/03-coverage.json)
+TOTAL=$(jq '.techniques | length' $DIR/03-coverage.json)
+echo "Coverage: $COVERAGE / $TOTAL ($(echo "scale=1; $COVERAGE/$TOTAL*100" | bc)%)" > $DIR/00-summary.txt
+
+# MTTD / MTTR (Prometheus query)
+MTTD=$(curl -s 'http://prometheus:9090/api/v1/query?query=soc_mttd_seconds' | jq '.data.result[0].value[1]')
+MTTR=$(curl -s 'http://prometheus:9090/api/v1/query?query=soc_mttr_seconds' | jq '.data.result[0].value[1]')
+echo "MTTD: ${MTTD}s, MTTR: ${MTTR}s" >> $DIR/00-summary.txt
+
+# === Phase 9: 보고서 ===
+pandoc $DIR/00-summary.txt -o $DIR/master.pdf \
+    --pdf-engine=xelatex -V mainfont=NanumGothic
+
+echo "=== 종합 평가 완료 — $DIR ==="
+```
+
+### 평가 등급
+
+| 등급 | MTTD | MTTR | ATT&CK Coverage | Auto-resolve | Drift detection |
+|------|------|------|-----------------|--------------|-----------------|
+| A | < 5분 | < 10분 | > 90% | > 80% | < 5% |
+| B | < 10분 | < 30분 | > 75% | > 60% | < 10% |
+| C | < 30분 | < 1시간 | > 50% | > 40% | < 20% |
+| F | ≥ 30분 | ≥ 1시간 | < 50% | < 40% | ≥ 20% |
+
+### 자율보안 5 단계 모델 (학생 목표)
+
+```
+1. Reactive (수동 대응)
+   - 사람이 alert 보고 수동 조치
+
+2. Automated (스크립트)
+   - cron + bash 자동화
+
+3. Adaptive (룰 기반)
+   - Wazuh AR + crowdsec
+   - 정해진 룰로 자동 차단
+
+4. Predictive (ML 기반)
+   - River online learning
+   - drift detection + retrain
+
+5. Autonomous (RL agent)
+   - sb3 PPO + 환경 자체
+   - 정책 자체 학습 + OPA 안전 가드
+   ★ 본 과목 목표
+```
+
+학생은 본 15주차 종합 평가에서 **OSS 60+ 도구 통합 운용** 으로 자율 보안 5 단계 사이클 을 직접 구축·운영·평가한다.

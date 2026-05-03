@@ -1031,4 +1031,51 @@ suspicion_score: 0.92
 
 **과목 진행 안내**: 본 dataset 의 *2.07M signals* 중 학생은 14주 동안 *수십~수백 건* 만 직접 보게 됨. 나머지는 *통계 비교 baseline* 으로 사용. 학생 본인 실습 결과를 본 dataset 에 *대조* 하면서 점검 능력 향상.
 
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course1 Attack — Week 01)
+
+본 과목 1주차는 보안 개론 + 인프라 소개 위주이므로 도구가 적다. 다만 **2주차부터 본격적으로 사용할 도구의 환경 준비**를 미리 해 둔다.
+
+| 단계/주제 | 본문에서 사용 | OSS 도구 옵션 | 설치 명령 | 비고 |
+|----------|--------------|---------------|----------|------|
+| SSH 접속 | `ssh ccc@<ip>` | openssh-client (기본) / mosh / sshpass | `sudo apt install openssh-client mosh sshpass` | mosh 는 끊김에 강함 |
+| 호스트 생존 | `ping`, bash `/dev/tcp` | fping / hping3 / nmap -sn | `sudo apt install fping hping3 nmap` | 1주차에 미리 설치 |
+| 웹 응답 헤더 | `curl -I` | httpie / whatweb | `sudo apt install httpie whatweb` | 2주차부터 본격 |
+| JSON 파싱 | `python3 -m json.tool` | jq / yq | `sudo apt install jq yq` | 모든 weekly 공통 |
+| 네트워크 탐색 | `ip route`, `ss`, `netstat` | iproute2 (기본) / mtr / traceroute | `sudo apt install mtr-tiny traceroute` | |
+| Bastion API | `curl http://localhost:9100` | httpie / curl + jq | (위와 동일) | `/ask`, `/evidence` |
+| Git 작업 | `git clone` | git + lazygit | `sudo apt install git` | 14주차 보고서 제출 |
+
+### 학생 환경 준비 (한 번만 실행, attacker VM 192.168.0.112)
+
+```bash
+# attacker VM 접속
+ssh ccc@192.168.0.112   # pw: 1
+
+# 1주차 + 향후 weekly 공통 도구 일괄 설치
+sudo apt update && sudo apt install -y \
+  openssh-client mosh sshpass \
+  fping hping3 nmap netcat-openbsd arp-scan \
+  httpie whatweb wafw00f httpx-toolkit \
+  curl jq yq \
+  mtr-tiny traceroute \
+  git
+```
+
+### 본문 본 강의 → 후속 주차 도구 매핑
+
+본 1주차 본문 실습은 **bash + curl + ssh** 만 사용한다. 학생은 우선 이 기본기를 확실히 익히고, 다음 주차부터는 **동일 작업을 도구로 어떻게 더 효율적으로 하는지** 학습한다:
+
+| 본 1주차 본문 작업 | 다음 주차에 같은 작업을 할 때 사용할 도구 |
+|---------------------|------------------------------------------|
+| `bash /dev/tcp` 포트 확인 | **2주차** nmap (-sS/-sV/-sU/--script) |
+| `curl -I` 헤더 확인 | **2주차** whatweb · **3주차** nikto / nuclei |
+| `curl /robots.txt` 등 경로 확인 | **3주차** gobuster · ffuf · dirb |
+| `dig`, `nslookup` | **2주차** dnsrecon · theharvester · amass |
+| `ssh ccc@<ip>` 접속 | **5주차** hydra (인증 brute) |
+| 패킷 캡처 | **6주차** tcpdump · wireshark · tshark |
+
+학생이 1주차에 직접 손으로 한 작업이 **다음 주차에 도구로 자동화·확장**되는 흐름을 의식하면서 학습한다.
+
 

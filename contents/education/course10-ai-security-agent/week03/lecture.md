@@ -841,3 +841,264 @@ graph TB
 
 **학생 액션**: lab LLM 에 4 prompt 변형 (4가지 구성) 으로 dataset 100건 분류 후 정확도 비교.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course10 — Week 03 멀티 에이전트)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | AutoGen 기초 | **AutoGen** GroupChat |
+| s2 | CrewAI 역할 | **CrewAI** sequential/hierarchical |
+| s3 | LangGraph multi-agent | LangGraph + 분기 |
+| s4 | MetaGPT (소프트웨어 SDLC) | **MetaGPT** |
+| s5 | SuperAGI | SuperAGI |
+| s6 | 통신 패턴 | NATS / Redis pub-sub (course9 재사용) |
+| s7 | Coordination | Round-robin / hierarchical / blackboard |
+| s8 | 통합 시나리오 | AutoGen + 자체 NATS |
+
+### 학생 환경 준비
+
+```bash
+pip install autogen-agentchat 'autogen-ext[openai,ollama]' \
+    crewai crewai-tools \
+    metagpt superagi
+```
+
+### 핵심 — AutoGen v0.4 (GroupChat 표준)
+
+```python
+import asyncio
+from autogen_agentchat.agents import AssistantAgent, UserProxyAgent
+from autogen_agentchat.teams import RoundRobinGroupChat, SelectorGroupChat
+from autogen_agentchat.task import Console
+from autogen_ext.models.openai import OpenAIChatCompletionClient
+
+# Ollama 호환 OpenAI client
+model_client = OpenAIChatCompletionClient(
+    model="llama3.1:8b",
+    base_url="http://localhost:11434/v1",
+    api_key="ollama"
+)
+
+# === Agents ===
+recon = AssistantAgent(
+    name="Recon",
+    model_client=model_client,
+    system_message="""당신은 정찰 전문가다.
+- nmap, whatweb, dig 사용
+- 결과를 명확하게 다음 agent (Exploit) 에 전달
+- 당신의 task 가 끝나면 'RECON_DONE' 출력"""
+)
+
+exploit = AssistantAgent(
+    name="Exploit",
+    model_client=model_client,
+    system_message="""당신은 침투 전문가다.
+- sqlmap, XSStrike, hydra 사용 (allowed target 만)
+- Recon 결과를 받아 vuln 검증
+- 'EXPLOIT_DONE' 출력"""
+)
+
+reporter = AssistantAgent(
+    name="Reporter",
+    model_client=model_client,
+    system_message="""한국어 보고서 작성자.
+- markdown 형식
+- ATT&CK 매핑 포함
+- 'REPORT_DONE' 출력"""
+)
+
+# === Team (RoundRobin) ===
+async def main():
+    team = RoundRobinGroupChat(
+        [recon, exploit, reporter],
+        max_turns=10,
+        termination_condition=lambda msg: "REPORT_DONE" in msg.content
+    )
+    
+    await Console(team.run_stream(
+        task="10.20.30.80:3000 (JuiceShop) 모의해킹 + 한국어 보고서"
+    ))
+
+asyncio.run(main())
+```
+
+### Selector GroupChat (LLM 이 다음 agent 선택)
+
+```python
+from autogen_agentchat.teams import SelectorGroupChat
+
+# Selector — manager LLM 이 다음 turn 의 agent 선택
+selector_prompt = """다음 메시지를 보고 가장 적절한 agent 를 선택:
+- Recon: 정찰 / 정보 수집 필요 시
+- Exploit: 취약점 검증 필요 시
+- Reporter: 결과 정리 / 보고서 작성 시
+
+대화: {conversation}
+
+다음 agent 이름만 출력:"""
+
+team = SelectorGroupChat(
+    [recon, exploit, reporter],
+    model_client=model_client,
+    selector_prompt=selector_prompt,
+    max_turns=15
+)
+```
+
+### CrewAI (역할 기반 — 더 직관적)
+
+```python
+from crewai import Agent, Task, Crew, Process
+from crewai_tools import BaseTool
+
+class NmapTool(BaseTool):
+    name: str = "nmap_scan"
+    description: str = "nmap 으로 호스트 포트 + 서비스 스캔"
+    
+    def _run(self, target: str) -> str:
+        return subprocess.run(["nmap", "-sV", target], capture_output=True, text=True).stdout
+
+class SqlmapTool(BaseTool):
+    name: str = "sqlmap_test"
+    description: str = "sqlmap 으로 URL 의 SQLi 점검"
+    
+    def _run(self, url: str) -> str:
+        return subprocess.run(["sqlmap", "-u", url, "--batch"], capture_output=True, text=True).stdout
+
+# === Agents ===
+recon = Agent(
+    role="Reconnaissance Specialist",
+    goal="대상 호스트의 모든 정보 수집 (포트/서비스/기술스택)",
+    backstory="10년 경력의 pentester. 효율적인 정찰 전문가",
+    tools=[NmapTool()],
+    llm=ollama_llm,
+    verbose=True
+)
+
+exploit = Agent(
+    role="Exploit Engineer",
+    goal="발견된 취약점 검증 + PoC 생성",
+    backstory="metasploit 전문가. 안전하게 vuln 검증",
+    tools=[SqlmapTool()],
+    llm=ollama_llm,
+    verbose=True
+)
+
+reporter = Agent(
+    role="Security Report Writer",
+    goal="명확한 한국어 모의해킹 보고서 작성",
+    backstory="OWASP 보고서 표준 전문가",
+    llm=ollama_llm,
+    verbose=True
+)
+
+# === Tasks ===
+task1 = Task(
+    description="10.20.30.80 정찰 — 포트, 서비스, 기술 스택 식별",
+    agent=recon,
+    expected_output="발견된 서비스 목록 (포트, 버전, 기술)"
+)
+
+task2 = Task(
+    description="발견된 vuln 검증 (SQLi/XSS/etc)",
+    agent=exploit,
+    context=[task1],
+    expected_output="검증된 vuln + PoC 명령"
+)
+
+task3 = Task(
+    description="모의해킹 보고서 작성 (한국어, markdown, ATT&CK 매핑)",
+    agent=reporter,
+    context=[task1, task2],
+    expected_output="완성된 markdown 보고서"
+)
+
+# === Crew (Sequential) ===
+crew = Crew(
+    agents=[recon, exploit, reporter],
+    tasks=[task1, task2, task3],
+    process=Process.sequential,                  # 또는 Process.hierarchical
+    verbose=True
+)
+
+result = crew.kickoff()
+print(result)
+
+# Hierarchical (manager 가 task 분배)
+crew_h = Crew(
+    agents=[recon, exploit, reporter],
+    tasks=[task1, task2, task3],
+    process=Process.hierarchical,
+    manager_llm=ollama_llm,                      # manager 모델 별도
+    verbose=True
+)
+```
+
+### LangGraph multi-agent (가장 유연)
+
+```python
+from langgraph.graph import StateGraph, END
+from typing import TypedDict, Literal
+
+class State(TypedDict):
+    messages: list
+    next_agent: Literal["recon", "exploit", "report", "end"]
+    findings: dict
+
+def supervisor(state):
+    """Manager 가 다음 agent 결정"""
+    last_msg = state["messages"][-1] if state["messages"] else "Start"
+    decision = ollama.invoke(f"다음 agent 선택: {last_msg}\n옵션: recon/exploit/report/end")
+    return {"next_agent": decision.strip()}
+
+def recon_node(state):
+    target = extract_target(state["messages"])
+    result = subprocess.run(["nmap", "-sV", target], capture_output=True, text=True).stdout
+    return {
+        "messages": state["messages"] + [{"role": "recon", "content": result}],
+        "findings": {**state["findings"], "scan": result}
+    }
+
+def exploit_node(state):
+    findings = state["findings"]
+    # sqlmap / XSStrike 등
+    return {...}
+
+def report_node(state):
+    summary = ollama.invoke(f"보고서: {state['findings']}")
+    return {"messages": state["messages"] + [{"role": "report", "content": summary}]}
+
+g = StateGraph(State)
+g.add_node("supervisor", supervisor)
+g.add_node("recon", recon_node)
+g.add_node("exploit", exploit_node)
+g.add_node("report", report_node)
+
+g.set_entry_point("supervisor")
+g.add_conditional_edges("supervisor", lambda s: s["next_agent"], {
+    "recon": "recon", "exploit": "exploit", "report": "report", "end": END
+})
+g.add_edge("recon", "supervisor")
+g.add_edge("exploit", "supervisor")
+g.add_edge("report", END)
+
+app = g.compile()
+```
+
+### Multi-agent 통신 패턴 비교
+
+| 패턴 | 도구 | 사용 |
+|------|------|------|
+| **Round-robin** | AutoGen RoundRobinGroupChat | 단순 순차 |
+| **Selector (LLM-decided)** | AutoGen SelectorGroupChat | 동적 분기 |
+| **Sequential** | CrewAI Process.sequential | 명확한 순서 |
+| **Hierarchical** | CrewAI Process.hierarchical | manager 가 분배 |
+| **Graph** | LangGraph | 가장 유연 |
+| **Pub-sub** | NATS + 개별 agent | 분산 / 비동기 |
+| **Blackboard** | 공유 vector DB | 학습 / consensus |
+
+학생은 본 3주차에서 **AutoGen + CrewAI + LangGraph + MetaGPT + NATS** 5 도구로 멀티 agent 의 5 패턴 (round-robin / selector / sequential / hierarchical / graph) 통합 운영을 익힌다.

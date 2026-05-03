@@ -24,7 +24,12 @@ pass_threshold: 0.6
 steps:
 - order: 1
   instruction: '[BLUE] SOAR 아키텍처를 설계하라. 탐지(Suricata/Wazuh) -> 판단(규칙 엔진) -> 대응(nftables/프로세스
-    종료) -> 알림(로그/보고)의 자동화 파이프라인을 문서화하라.'
+    종료) -> 알림(로그/보고)의 자동화 파이프라인을 문서화하라.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/battle-adv-ai-week09/1/syslog 사전 주입.
+    `grep -E ''DROP|REJECT|filter'' /home/ccc/cyber-range/fixtures/battle-adv-ai-week09/1/syslog`
+    후 (1) 빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: 각 단계의 입력, 처리, 출력을 정의한다.
   category: defense
   points: 10
@@ -46,7 +51,9 @@ steps:
     위협 심각도에 따라 자동/반자동/수동 대응을 분류한다.
   verify:
     type: output_contains
-    expect: SOAR Architecture
+    expect:
+    - SOAR Architecture
+    - SOAR
     semantic:
       intent: '[BLUE] SOAR 아키텍처 설계 /tmp/soar_architecture.txt — 3계층 (Detection: Suricata
         eve.json + Wazuh alerts · Decision: jq 룰 엔진 or Python classifier · Response:
@@ -82,10 +89,32 @@ steps:
     \ to /evidence/\nEOF\ncat /tmp/soar_architecture.txt"
   risk_level: low
   bastion_prompt: '[BLUE] SOAR 아키텍처를 설계하라. 탐지(Suricata/Wazuh) -> 판단(규칙 엔진) -> 대응(nftables/프로세스
-    종료) -> 알림(로그/보고)의 자동화 파이프라인을 문서화하라.'
+    종료) -> 알림(로그/보고)의 자동화 파이프라인을 문서화하라.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/battle-adv-ai-week09/1/syslog 사전 주입.
+    `grep -E ''DROP|REJECT|filter'' /home/ccc/cyber-range/fixtures/battle-adv-ai-week09/1/syslog`
+    후 (1)빈도·패턴 (2)MITRE (3)방어 3섹션. raw dump 금지.'
+  fixtures:
+  - generator: firewall_log
+    target_vm: siem
+    path: /home/ccc/cyber-range/fixtures/battle-adv-ai-week09/1/syslog
+    params:
+      seed: 42
+      duration_days: 7
+      scan_bursts: 5
+      egress_violations: 20
+      syn_flood_count: 200
+    mode: overwrite
+    cleanup: false
 - order: 2
   instruction: '[BLUE] 자동 IP 차단 스크립트를 작성하라. Suricata eve.json에서 severity 1(Critical)
-    이벤트 발생 시 nftables로 해당 IP를 즉시 차단하는 스크립트를 구현하라.'
+    이벤트 발생 시 nftables로 해당 IP를 즉시 차단하는 스크립트를 구현하라.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/battle-adv-ai-week09/2/eve.json 사전 주입.
+    `jq -c ''.alert'' /home/ccc/cyber-range/fixtures/battle-adv-ai-week09/2/eve.json`
+    후 (1) 빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: tail -f와 jq로 eve.json을 실시간 파싱하여 nft add element로 차단한다.
   category: defense
   points: 10
@@ -141,7 +170,24 @@ steps:
     verified - ready for deployment" SCRIPT bash /tmp/auto_block.sh'
   risk_level: low
   bastion_prompt: '[BLUE] 자동 IP 차단 스크립트를 작성하라. Suricata eve.json에서 severity 1(Critical)
-    이벤트 발생 시 nftables로 해당 IP를 즉시 차단하는 스크립트를 구현하라.'
+    이벤트 발생 시 nftables로 해당 IP를 즉시 차단하는 스크립트를 구현하라.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/battle-adv-ai-week09/2/eve.json 사전 주입.
+    `jq -c ''.alert'' /home/ccc/cyber-range/fixtures/battle-adv-ai-week09/2/eve.json`
+    후 (1)빈도·패턴 (2)MITRE (3)방어 3섹션. raw dump 금지.'
+  fixtures:
+  - generator: suricata_alert
+    target_vm: secu
+    path: /home/ccc/cyber-range/fixtures/battle-adv-ai-week09/2/eve.json
+    params:
+      seed: 42
+      duration_days: 7
+      alerts_per_day: 30
+      c2_beacon_count: 12
+      metadata_attempt_count: 4
+    mode: overwrite
+    cleanup: false
 - order: 3
   instruction: '[BLUE] SQL Injection 공격 발생 시의 IR 플레이북을 작성하라. 확인 -> 격리 -> 증거 수집 ->
     분석 -> 복구 -> 보고의 단계를 정의하라.'
@@ -216,7 +262,7 @@ steps:
     }" echo "  [1.2] ss -K dst $SUSPECT_IP" echo "" echo "Phase 2: COLLECT EVIDENCE"
     echo "  [2.1] tcpdump -i any host $SUSPECT_IP -w /evidence/pcap.pcap" echo "  [2.2]
     ps auxf > /evidence/processes.txt" echo "  [2.3] journalctl --since \"1 hour ago\"
-    > /evidence/journal.txt" echo "" echo "Phase 3: NOTIFY" echo "  [3.1] Slack #security-incidents"
+    ※ /evidence/journal.txt" echo "" echo "Phase 3: NOTIFY" echo "  [3.1] Slack #security-incidents"
     echo "  [3.2] Create incident ticket" echo "" echo "SOAR workflow completed in
     <10 seconds" SCRIPT bash /tmp/soar_workflow.sh'
   answer_detail: SOAR 자동화는 알림부터 차단, 증거 수집, 알림 전송까지 10초 이내에 완료한다. 수동 대응 대비 극적으로 빠른
@@ -252,7 +298,7 @@ steps:
     }" echo "  [1.2] ss -K dst $SUSPECT_IP" echo "" echo "Phase 2: COLLECT EVIDENCE"
     echo "  [2.1] tcpdump -i any host $SUSPECT_IP -w /evidence/pcap.pcap" echo "  [2.2]
     ps auxf > /evidence/processes.txt" echo "  [2.3] journalctl --since \"1 hour ago\"
-    > /evidence/journal.txt" echo "" echo "Phase 3: NOTIFY" echo "  [3.1] Slack #security-incidents"
+    ※ /evidence/journal.txt" echo "" echo "Phase 3: NOTIFY" echo "  [3.1] Slack #security-incidents"
     echo "  [3.2] Create incident ticket" echo "" echo "SOAR workflow completed in
     <10 seconds" SCRIPT bash /tmp/soar_workflow.sh'
   risk_level: low
@@ -321,7 +367,9 @@ steps:
   answer_detail: SOAR 검증을 위해 실제 공격을 수행하고 자동 탐지/차단 파이프라인이 동작하는지 확인한다.
   verify:
     type: output_contains
-    expect: SOAR Validation
+    expect:
+    - SOAR Validation
+    - nmap
     semantic:
       intent: '[RED] SOAR 검증용 라이브 공격 — nmap -sS --top-ports 50 (포트 스캔 → Suricata 탐지
         → auto_block.sh 트리거) + curl SQLi payload (→ ModSec 차단 → Wazuh level 10 경보

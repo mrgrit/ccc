@@ -818,3 +818,257 @@ graph LR
 
 **학생 액션**: OSINT 5 카테고리 적용.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course13 Attack Advanced — Week 01 APT 킬체인 분석/시뮬)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | MITRE ATT&CK 매핑 | ATT&CK Navigator |
+| s2 | DeTT&CT (공격자 측) | DeTT&CT |
+| s3 | CALDERA (시뮬) | CALDERA |
+| s4 | Atomic Red Team | atomic-red-team |
+| s5 | APT29 시나리오 | CALDERA built-in |
+| s6 | Custom adversary | YAML 작성 |
+| s7 | Stealth metric | jitter / timing 측정 |
+| s8 | Purple team coverage | DeTT&CT export |
+
+### 학생 환경 준비
+
+```bash
+# === ATT&CK Navigator ===
+git clone https://github.com/mitre-attack/attack-navigator ~/navigator
+cd ~/navigator/nav-app && npm install && npm run build && npm run start &
+
+# === DeTT&CT ===
+git clone https://github.com/rabobank-cdc/DeTTECT ~/dettect
+cd ~/dettect && pip install -r requirements.txt
+
+# === CALDERA ===
+git clone https://github.com/mitre/caldera --recursive ~/caldera
+cd ~/caldera && pip install -r requirements.txt
+python3 server.py --insecure &                            # http://localhost:8888
+
+# === Atomic Red Team ===
+git clone https://github.com/redcanaryco/atomic-red-team ~/atomic
+sudo invoke install-atomicredteam
+
+# === Threat Intelligence (APT 정보) ===
+git clone https://github.com/CyberMonitor/APT_CyberCriminal_Campagin_Collections ~/apt-info
+git clone https://github.com/aptnotes/data ~/aptnotes
+```
+
+### MITRE ATT&CK 14 Tactics (공격자 관점)
+
+| Tactic | 도구 |
+|--------|------|
+| TA0043 Reconnaissance | nmap, theHarvester, sherlock, amass, SpiderFoot |
+| TA0042 Resource Development | gophish, msfvenom, Sliver implant |
+| TA0001 Initial Access | sqlmap, hydra, gophish, exploits |
+| TA0002 Execution | msfconsole, Sliver, pwncat-cs, Empire |
+| TA0003 Persistence | crontab, systemd, weevely, Sliver beacon |
+| TA0004 Privilege Escalation | LinPEAS, GTFOBins, kernel exploits |
+| TA0005 Defense Evasion | shellter, msfvenom -e, shred, chattr, LOTL |
+| TA0006 Credential Access | mimikatz, hashcat, jwt_tool, kerbrute |
+| TA0007 Discovery | LinPEAS, BloodHound, ADRecon |
+| TA0008 Lateral Movement | impacket, NetExec, evil-winrm, chisel, BloodHound |
+| TA0009 Collection | tar, scrot (screenshot), audio recording |
+| TA0011 Command and Control | Sliver, Mythic, Havoc, dnscat2 |
+| TA0010 Exfiltration | iodine, dnscat2, age, rclone |
+| TA0040 Impact | shred (wiper), msfvenom ransomware sim |
+
+### 핵심 — APT29 (Cozy Bear) 시뮬
+
+```bash
+# === CALDERA 에서 ===
+# Web UI: http://localhost:8888 → Adversaries → APT29
+
+# 또는 REST API
+OPERATION_ID=$(curl -X POST http://localhost:8888/api/v2/operations \
+    -H "KEY: ADMIN123" \
+    -d '{
+        "name": "APT29-Sim",
+        "adversary": {"adversary_id": "0f4c3c67-845e-49a0-927e-90ed33c044e0"},
+        "group": "linux",
+        "planner": {"planner_id": "atomic"}
+    }' | jq -r .id)
+
+# === APT29 의 주요 TTP (실제 SolarWinds 사건 기반) ===
+# T1583.001 Acquire Domains
+# T1566.001 Phishing - Spearphishing Attachment
+# T1059.001 PowerShell
+# T1059.005 Visual Basic
+# T1547.001 Boot/Logon Autostart - Registry Run Keys
+# T1003.001 LSASS Memory
+# T1003.002 Security Account Manager
+# T1003.006 DCSync
+# T1018 Remote System Discovery
+# T1021.001 Remote Desktop Protocol
+# T1021.002 SMB/Windows Admin Shares
+# T1021.006 Windows Remote Management
+# T1027 Obfuscated Files or Information
+# T1041 Exfiltration Over C2 Channel
+# T1071.001 Application Layer Protocol - Web Protocols
+# T1090 Proxy
+```
+
+### Atomic Red Team — APT29 Atomic 시뮬
+
+```bash
+# APT29 의 주요 atomic
+APT29_TESTS=(
+    "T1059.001"     # PowerShell (가장 많이 사용)
+    "T1059.005"     # VBA
+    "T1547.001"     # Boot/Logon Autostart
+    "T1003.001"     # LSASS Memory
+    "T1003.006"     # DCSync
+    "T1021.001"     # RDP
+    "T1021.006"     # WinRM
+    "T1027"         # Obfuscated Files
+    "T1041"         # Exfil over C2
+    "T1071.001"     # HTTP/S C2
+    "T1090"         # Proxy chain
+    "T1018"         # Remote System Discovery
+)
+
+for t in "${APT29_TESTS[@]}"; do
+    echo "=== Running $t ==="
+    sudo invoke run-atomic-test $t
+    sleep 30
+done
+
+# Cleanup
+for t in "${APT29_TESTS[@]}"; do
+    sudo invoke cleanup-atomic-test $t
+done
+```
+
+### DeTT&CT — 공격자 측 분석
+
+```bash
+cd ~/dettect
+
+# === Web editor ===
+python3 dettect.py editor                                 # http://localhost:8080
+
+# === Tab 1: Threat actor profile ===
+# - Group ID: G0016 (APT29)
+# - 가장 자주 사용하는 technique 매핑
+# - 공격자 sophistication score
+
+# === Tab 2: 우리 환경에서의 위협 가능성 ===
+# - 각 technique 의 likelihood (low / medium / high)
+# - 자산 가치 (asset value)
+
+# === Risk score ===
+# Risk = Likelihood × Asset Value × Detection Coverage 부족
+
+# === Export → ATT&CK Navigator JSON ===
+python3 dettect.py g -ft /opt/group-apt29.yaml \
+    --output-filename /tmp/apt29-techniques.json
+
+# === 시각화 ===
+# Navigator 에서 import → APT29 의 가능한 모든 TTP heat map
+```
+
+### Custom Adversary YAML (자체 위협 모델)
+
+```yaml
+# ~/caldera/data/adversaries/custom-financial-apt.yml
+id: custom-financial-apt-2026
+name: 한국 금융권 표적 APT
+description: |
+  실제 위협 모델 기반 (한국 금융위원회 보고):
+  - 1차: 공급망 (oss 패키지 typosquat)
+  - 2차: 내부망 phishing (협력사 이메일 사칭)
+  - 3차: 자격증명 탈취 + lateral
+  - 4차: SWIFT / 결제 시스템 침해
+  - 5차: 데이터 exfil (DNS tunnel + cloud sync)
+
+atomic_ordering:
+  # === Phase 1: Initial Access ===
+  - T1190                                                  # Exploit Public-Facing
+  - T1566.001                                              # Spearphishing Attachment
+  - T1078.002                                              # Domain Accounts (탈취된 자격증명)
+  
+  # === Phase 2: Execution ===
+  - T1059.001                                              # PowerShell
+  - T1059.003                                              # Windows Cmd Shell
+  - T1059.004                                              # Bash
+  
+  # === Phase 3: Persistence ===
+  - T1547.001                                              # Boot/Logon Autostart
+  - T1505.003                                              # Web Shell
+  - T1098                                                  # Account Manipulation
+  
+  # === Phase 4: Defense Evasion ===
+  - T1027                                                  # Obfuscated Files
+  - T1070.004                                              # File Deletion
+  - T1218                                                  # Signed Binary Proxy
+  
+  # === Phase 5: Credential Access ===
+  - T1003.001                                              # LSASS Memory
+  - T1003.008                                              # /etc/passwd /etc/shadow
+  - T1110.003                                              # Password Spraying
+  
+  # === Phase 6: Discovery ===
+  - T1018                                                  # Remote System Discovery
+  - T1057                                                  # Process Discovery
+  - T1083                                                  # File/Directory Discovery
+  
+  # === Phase 7: Lateral Movement ===
+  - T1021.001                                              # RDP
+  - T1021.002                                              # SMB Admin Shares
+  - T1021.004                                              # SSH
+  
+  # === Phase 8: Collection ===
+  - T1005                                                  # Data from Local System
+  - T1039                                                  # Data from Network Share
+  
+  # === Phase 9: Exfiltration ===
+  - T1041                                                  # Exfil Over C2
+  - T1048.003                                              # Exfil Over Unencrypted
+  
+  # === Phase 10: Impact ===
+  - T1486                                                  # Data Encrypted (Ransomware sim)
+```
+
+### Stealth Metric (시뮬 후 측정)
+
+```bash
+# 1) Operation 의 jitter 측정
+curl http://localhost:8888/api/v2/operations/$OPERATION_ID \
+    -H "KEY: ADMIN123" | jq '.completed_tasks[].run_finished_time' | \
+    awk 'NR>1 {print $1 - prev} {prev=$1}' | \
+    python3 -c "import sys, statistics; data=[float(l) for l in sys.stdin]; print(f'mean: {statistics.mean(data)}, stdev: {statistics.stdev(data)}')"
+
+# 낮은 stdev = 정해진 패턴 → 탐지 쉬움
+# 높은 stdev (jitter) = 랜덤 → 탐지 어려움
+
+# 2) 탐지 시도된 비율 (Wazuh + Suricata)
+EXECUTED=$(curl http://localhost:8888/api/v2/operations/$OPERATION_ID -H "KEY: ADMIN123" | \
+    jq -r '.completed_tasks[].technique.technique_id' | sort -u)
+
+DETECTED=$(sudo jq -r 'select(.rule.mitre.id) | .rule.mitre.id' \
+    /var/ossec/logs/alerts/alerts.json | sort -u)
+
+GAP=$(comm -23 <(echo "$EXECUTED" | sort) <(echo "$DETECTED" | sort))
+GAP_COUNT=$(echo "$GAP" | wc -l)
+TOTAL=$(echo "$EXECUTED" | wc -l)
+
+STEALTH_SCORE=$(echo "scale=1; $GAP_COUNT / $TOTAL * 100" | bc)
+echo "Stealth score: $STEALTH_SCORE% (탐지 안 된 technique 비율)"
+```
+
+### 학생 학습 포인트
+
+학생은 본 1주차에서 **MITRE ATT&CK Navigator + DeTT&CT + CALDERA + Atomic Red Team** 4 도구로:
+
+1. APT 14 tactics 매핑 + 14 OSS 도구 매핑
+2. 실제 APT (APT29) TTP 시뮬
+3. Custom adversary YAML 작성 (자체 위협 모델)
+4. Stealth metric 측정 (jitter + 탐지율)
+5. Purple team cycle 의 advanced 운영

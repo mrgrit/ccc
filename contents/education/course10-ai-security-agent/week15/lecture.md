@@ -835,3 +835,151 @@ graph LR
 
 **학생 액션**: 본인의 교육 Agent + dataset 으로 최종 시연 → 5 축 평가 보고서.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course10 — Week 15 종합)
+
+본 15주차는 1-14주차 모든 OSS 도구를 통합 운영하는 종합 평가.
+
+### 통합 도구 매트릭스 (60+ OSS, course10 전 영역)
+
+| Layer | 핵심 OSS 도구 |
+|-------|--------------|
+| Framework | LangChain · LangGraph · AutoGen · CrewAI · smolagents · Bastion 자체 |
+| Tool 표준 | MCP · OpenAI tools · function calling |
+| RAG | llama-index · Chroma · Qdrant · pgvector · Ragas · bge-reranker |
+| 보안 필터 | llm-guard · NeMo Guardrails · Rebuff · agent-armor |
+| Sandbox | gVisor · firecracker · nsjail · bubblewrap · e2b · Pyodide |
+| Monitoring | Langfuse · Phoenix · OpenLLMetry · LiteLLM cost |
+| Eval | promptfoo · DeepEval · Ragas · TruLens · AgentBench · HELM · Bastion-Bench |
+| Deploy | FastAPI · LiteLLM · Keycloak · Helm · KServe · Argo CD |
+| Workflow | Temporal · LangGraph · Airflow · Prefect · dagster |
+| Governance | OPA · Casbin · Cedar · model-cards-toolkit · Threat Dragon |
+| Supply Chain | sigstore · cosign · syft · grype · modelscan · safetensors · gitleaks · pip-audit |
+
+### 종합 평가 시나리오
+
+```bash
+#!/bin/bash
+# /usr/local/bin/agent-master.sh
+TS=$(date +%Y%m%d-%H%M)
+DIR=/var/log/agent-master/$TS
+mkdir -p $DIR
+
+source ~/.venv-aagent/bin/activate
+
+# === Phase 1: Supply Chain (Build-time) ===
+gitleaks detect --no-git --source /opt/agent > $DIR/01-secrets.json
+pip-audit -r /opt/agent/requirements.txt > $DIR/02-pyaudit.txt
+syft dir:/opt/agent -o spdx-json > $DIR/03-sbom.json
+modelscan -p /opt/agent/models/ > $DIR/04-modelscan.txt
+trivy image my-agent:latest --severity HIGH,CRITICAL > $DIR/05-trivy.txt
+cosign verify --key cosign.pub my-agent:latest > $DIR/06-cosign.txt 2>&1
+
+# === Phase 2: Code quality ===
+semgrep --config=auto /opt/agent --json > $DIR/07-semgrep.json
+bandit -r /opt/agent -f json -o $DIR/08-bandit.json
+
+# === Phase 3: Red team (garak — agent 외부) ===
+python3 -m garak --model_type ollama --model_name gemma3:4b \
+    --probes promptinject,dan,encoding,goodside \
+    --report_prefix $DIR/09-garak
+
+# === Phase 4: Agent benchmark ===
+cd ~/agentbench
+python3 -m src.start_task -a -t os/ssh os/sql web/json --max-eval 30 \
+    > $DIR/10-agentbench.txt
+
+# === Phase 5: Bastion-Bench (CCC 자체) ===
+python3 /opt/ccc/scripts/run_bastion_bench.py \
+    --model ollama:gemma3:4b --max-tasks 50 \
+    --output $DIR/11-bastion-bench.json
+
+# === Phase 6: Quality eval ===
+promptfoo eval --config /opt/eval/agent-eval.yaml --output $DIR/12-promptfoo.json
+pytest /opt/agent/tests/ -v --junit-xml=$DIR/13-deepeval.xml
+
+# === Phase 7: Sandbox 검증 ===
+docker run --rm --runtime=runsc my-agent-image \
+    python -c "import os; print(os.system('whoami'))" > $DIR/14-sandbox.txt
+
+# === Phase 8: Monitoring ===
+curl -s http://langfuse:3001/api/public/traces?lookback=24h \
+    -u "pk:sk" > $DIR/15-traces.json
+
+ALERT_COUNT=$(jq '[.data[] | select(.tags | contains(["alert"]))] | length' $DIR/15-traces.json)
+
+# === Phase 9: Governance ===
+opa eval -d /etc/opa/agent.rego \
+    --input '{"user":{"role":"user","budget":1.0,"recent_calls":3,"rate_limit":10},"tool":"shutdown_service","args":{"target":"production"}}' \
+    "data.agent.governance.allow" > $DIR/16-opa.txt
+
+# === Phase 10: 종합 보고서 ===
+cat > $DIR/00-report.md << EOF
+# Agent 종합 평가 — $(date)
+
+## Supply Chain
+- Secrets: $(jq '[.findings[]] | length' $DIR/01-secrets.json) findings
+- Python CVE: $(grep -c VULNER $DIR/02-pyaudit.txt)
+- Container CRITICAL: $(grep -c CRITICAL $DIR/05-trivy.txt)
+- Cosign verified: $(grep -q "Verified OK" $DIR/06-cosign.txt && echo PASS || echo FAIL)
+- Modelscan: $(grep -c CRITICAL $DIR/04-modelscan.txt) issues
+
+## Red Team
+- garak ASR: $(jq '[.[] | select(.entry_type=="attempt" and .response.score > 0.5)] | length' $DIR/09-garak.*.report.jsonl 2>/dev/null | head -1)
+
+## Benchmarks
+- AgentBench: $(grep "success rate" $DIR/10-agentbench.txt)
+- Bastion-Bench: $(jq '.summary.success_rate' $DIR/11-bastion-bench.json)
+- Quality (promptfoo): $(jq '.summary.passing' $DIR/12-promptfoo.json) / $(jq '.summary.total' $DIR/12-promptfoo.json)
+
+## Monitoring
+- 24h alerts: $ALERT_COUNT
+
+## Governance
+- OPA shutdown_service test: $(jq -r '.result' $DIR/16-opa.txt) (expected: false)
+EOF
+
+pandoc $DIR/00-report.md -o $DIR/master.pdf \
+    --pdf-engine=xelatex -V mainfont=NanumGothic
+
+echo "=== 종합 평가 완료 — $DIR ==="
+```
+
+### 평가 등급
+
+| 등급 | Supply chain | Red team ASR | Bench | Quality | Sandbox | Governance |
+|------|-------------|-------------|-------|---------|---------|-----------|
+| A | 0 critical | < 5% | > 80% | > 90% pass | runsc/firecracker | OPA 100% |
+| B | < 3 critical | < 15% | > 60% | > 80% pass | gVisor | OPA 95%+ |
+| C | < 10 critical | < 30% | > 40% | > 70% pass | docker | OPA 90% |
+| F | ≥ 10 critical | ≥ 30% | < 40% | < 70% pass | none | OPA < 90% |
+
+### Agent 보안 11 layer 종합
+
+```
+1. Framework (LangChain/LangGraph)
+   ↓
+2. Tool 표준 (MCP)
+   ↓
+3. RAG 보안 (llama-index + Presidio + Ragas)
+   ↓
+4. Hardness (AgentBench / Bastion-Bench)
+   ↓
+5. 보안 filter (llm-guard / NeMo)
+   ↓
+6. Sandbox (gVisor / firecracker)
+   ↓
+7. Monitoring (Langfuse / Phoenix)
+   ↓
+8. Eval (promptfoo / DeepEval / Ragas)
+   ↓
+9. Deploy (FastAPI / LiteLLM / Helm)
+   ↓
+10. Workflow (Temporal / LangGraph)
+   ↓
+11. Governance (OPA + Cosign + Audit)
+```
+
+학생은 본 15주차 종합 평가에서 **OSS 60+ 도구 통합 운용** 으로 AI Agent 의 11 layer 보안 사이클 (framework → tool → RAG → sandbox → monitoring → eval → deploy → workflow → governance → supply chain) 을 직접 구축·평가한다.

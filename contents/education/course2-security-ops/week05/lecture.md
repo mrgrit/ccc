@@ -623,3 +623,61 @@ WAF GET 4018건 의 CEF 형식: `CEF:0|...|WAF|1220|1000|GET|5|...`
 3. 모든 룰에 `metadata: mitre_attack T<ID>` 첨부 — dataset 의 attack_techniques 필드와 호환
 
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course2 SecOps — Week 05 Suricata 룰 작성)
+
+| 작업 | 도구 |
+|------|------|
+| 룰 syntax 검증 | suricata -T -c suricata.yaml / suricata-verify |
+| 룰 generator | sigma-cli / yara2suricata / brim-rule-builder |
+| 룰 카탈로그 | ET Open (`/etc/suricata/rules/`) / OISF / proofpoint |
+| 룰 테스트 | suricata-verify / pcap replay (tcpreplay) / scapy |
+| 시그니처 변환 | sigma → suricata / snort → suricata |
+| 룰 IDE | brim (GUI) / scirius (Web) | 
+
+### 학생 환경 준비
+```bash
+ssh ccc@10.20.30.1
+sudo apt install -y tcpreplay scapy
+
+# Sigma — 범용 SIEM 시그니처 표준
+pip3 install pysigma pysigma-backend-suricata
+# 변환: sigma → suricata
+sigma convert -t suricata --target suricata /opt/sigma/rules/...
+
+# suricata-verify (테스트용)
+git clone https://github.com/OISF/suricata-verify.git ~/suricata-verify
+
+# brim (현대 pcap GUI, Go)
+curl -L https://www.brimdata.io/release/brim-linux-amd64-v1.7.0.deb -o /tmp/brim.deb
+sudo dpkg -i /tmp/brim.deb
+```
+
+### 핵심 시나리오
+```bash
+# 1) 룰 syntax 검증
+sudo suricata -T -c /etc/suricata/suricata.yaml -v
+
+# 2) 새 룰 작성
+sudo tee /etc/suricata/rules/local.rules > /dev/null << 'EOF'
+alert http any any -> $HOME_NET any (msg:"BadBot UA detected"; flow:established,to_server; http.user_agent; content:"BadBot"; sid:1000101; rev:1;)
+alert http any any -> $HOME_NET any (msg:"SQLi UNION attempt"; flow:established,to_server; http.uri; content:"union select"; nocase; sid:1000102; rev:1;)
+EOF
+sudo systemctl reload suricata
+
+# 3) pcap 으로 룰 테스트
+tcpreplay -i enp0s3 /opt/test.pcap                     # 패킷 재생
+sudo tail /var/log/suricata/fast.log
+
+# 4) Sigma → Suricata 변환
+echo 'title: Test
+detection:
+  selection:
+    src_ip: 10.0.0.1
+  condition: selection' > /tmp/sig.yml
+sigma convert -t suricata /tmp/sig.yml
+```
+
+학생은 본 5주차에서 **Sigma 표준 + Suricata 룰 + pcap 테스트** 의 통합 흐름을 익힌다 (Sigma 가 SIEM-agnostic 이므로 향후 11주차 Wazuh 와도 호환).

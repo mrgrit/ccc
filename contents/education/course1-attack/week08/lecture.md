@@ -510,3 +510,96 @@ Week 09부터 Blue Team 시각으로 전환한다.
 3. 채점 기준에 *재현 가능성* (partition + node ID 명시) 포함
 
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course1 Attack — Week 08 권한 상승)
+
+| 공격 유형 | lab step | 본문 도구 | OSS 도구 옵션 (강조) | 비고 |
+|----------|----------|----------|---------------------|------|
+| Linux 자동 enum | s1,2 | `linpeas / lse` | LinPEAS / lse.sh / linux-exploit-suggester / pspy | LinPEAS 가장 유명 |
+| SUID 검색 | s3 | `find -perm -u=s` | find / GTFOBins (web) / linpeas | GTFOBins 검색 필수 |
+| Sudo 미스컨피그 | s4 | `sudo -l` | sudo -l + GTFOBins / linpeas | GTFOBins 매칭 |
+| Cron 분석 | s5 | `cat /etc/cron*` | pspy / cronos / linpeas | pspy 가 실시간 모니터 |
+| 커널 익스플로잇 | s6 | `linux-exploit-suggester` | linux-exploit-suggester / linux-exploit-suggester-2 / les.sh | uname -r 매칭 |
+| writable PATH/file | s7 | `find -writable` | linpeas / write-perm-checker | |
+| Capabilities | s8 | `getcap -r /` | linpeas / capabilities CLI | CAP_SETUID 등 |
+| Docker breakout | s9 | `cat /.dockerenv` | deepce / amicontained | 컨테이너 탈출 |
+| Windows enum (참고) | s10 | `winPEAS` | WinPEAS / Seatbelt / PowerUp | Win 환경 |
+| AD 권한 점검 | s11 | `bloodhound-python` | BloodHound / SharpHound / ADRecon | AD 환경 |
+| 자격증명 dump | s12 | `mimikatz / lsass dump` | mimikatz / pypykatz / lazagne | Win 환경 |
+| GTFOBins 자동 매칭 | s13 | manual lookup | linpeas (auto-match) / GTFOBlookup | |
+| 보고 | s15 | text | linpeas html report / json | -j JSON 출력 |
+
+### 학생 환경 준비 (한 번만 실행)
+
+```bash
+ssh ccc@192.168.0.112
+
+# LinPEAS / WinPEAS (모든 OS 권한 enum 표준)
+mkdir -p ~/peass && cd ~/peass
+curl -L https://github.com/peass-ng/PEASS-ng/releases/latest/download/linpeas.sh -o linpeas.sh
+chmod +x linpeas.sh
+
+curl -L https://github.com/peass-ng/PEASS-ng/releases/latest/download/winPEAS.exe -o winPEAS.exe
+
+# pspy — 비루트 process 모니터
+mkdir -p ~/.local/bin
+curl -L https://github.com/DominicBreuker/pspy/releases/latest/download/pspy64 -o ~/.local/bin/pspy64
+chmod +x ~/.local/bin/pspy64
+
+# linux-exploit-suggester
+git clone https://github.com/mzet-/linux-exploit-suggester.git ~/les
+ln -sf ~/les/linux-exploit-suggester.sh ~/.local/bin/les
+
+# GTFOBlookup — GTFOBins CLI
+pip3 install gtfobins
+
+# BloodHound / SharpHound (AD 환경, 참고)
+sudo apt install -y bloodhound bloodhound.py 2>/dev/null
+
+# pypykatz (mimikatz Python port)
+pip3 install pypykatz
+```
+
+### 도구별 사용법
+
+```bash
+# LinPEAS — 가장 종합적
+~/peass/linpeas.sh -a -d 10.20.30.80      # all + DNS check
+~/peass/linpeas.sh -j > /tmp/linpeas.json  # JSON 출력
+
+# pspy — 실시간 cron/process 모니터 (5분 정도 돌림)
+pspy64 -p -f
+# 출력 예: 2025-... CMD: UID=0 PID=12345 /usr/bin/python3 /opt/secret.py
+# → root 가 5초마다 돌리는 cron 발견
+
+# linux-exploit-suggester
+les --kernel $(uname -r)
+les --uname --gcc                          # 시스템 정보 자동
+
+# GTFOBins — sudoers 와 매칭
+sudo -l                                    # 내 sudo 권한 확인
+# /usr/bin/find 가 NOPASSWD 면:
+gtfobins find sudo                         # 자동 매칭
+# → 결과: sudo find . -exec /bin/sh \; -quit
+
+# Capabilities
+getcap -r / 2>/dev/null
+# CAP_SETUID 가 보이면 → privesc 가능
+```
+
+### 권한 상승 흐름 (실무)
+
+```
+1. linpeas / lse 자동 enum → 의심 항목 list
+2. sudo -l + GTFOBins 매칭
+3. SUID + GTFOBins 매칭
+4. cron + pspy 실시간 관찰
+5. capabilities + writable file
+6. linux-exploit-suggester 커널 매칭
+7. Docker/k8s breakout (deepce)
+8. 보고 — 발견된 모든 경로 + impact
+```
+
+학생은 본 8주차에서 **enum 도구 → GTFOBins 매핑 → 직접 escalation** 의 3 단계 사이클을 반복하며 도구의 역할을 체득한다.

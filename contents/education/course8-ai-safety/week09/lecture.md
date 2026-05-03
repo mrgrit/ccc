@@ -623,3 +623,132 @@ graph LR
 
 **학생 액션**: lab 의 LLM 분석기에 — 정상 query 분포 100건, *boundary 근처 query* 100건을 시뮬레이트. 두 분포의 차이를 plot 하고 — *분포 anomaly 가 즉시 보이는지* 평가. 결과를 *"우리 환경에서 분포 기반 모델 도난 탐지가 가능한가"* 로 결론.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course8 AI Safety — Week 09 안전 모니터링)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | Trace baseline | **Langfuse** (OSS) self-host |
+| s2 | LLM call instrumentation | langfuse.openai wrapper |
+| s3 | Anomaly detection | Langfuse + 자체 ML / Phoenix |
+| s4 | Cost tracking | LiteLLM cost callback |
+| s5 | Prompt history | Langfuse prompts |
+| s6 | Quality metric | Ragas / DeepEval / TruLens |
+| s7 | Real-time alert | Langfuse + Slack webhook |
+| s8 | 통합 dashboard | Langfuse + Grafana |
+
+### 학생 환경 준비
+
+```bash
+# Langfuse self-host (week06 에 이미)
+docker run -d -p 3001:3000 \
+  -e DATABASE_URL=postgresql://lf:secret@db:5432/lf \
+  -e SALT=secret -e NEXTAUTH_SECRET=secret \
+  langfuse/langfuse:latest
+
+pip install langfuse phoenix-arize ragas deepeval trulens-eval
+
+# Phoenix (Arize OSS)
+python3 -m phoenix.server.main serve
+# http://localhost:6006
+```
+
+### 핵심 — Langfuse 통합 (모든 LLM call 자동 trace)
+
+```python
+from langfuse import Langfuse
+from langfuse.openai import openai
+
+langfuse = Langfuse(
+    host="http://localhost:3001",
+    public_key="pk-xxx",
+    secret_key="sk-xxx",
+)
+
+client = openai.OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
+
+# 모든 호출 자동 기록
+for prompt in user_prompts:
+    response = client.chat.completions.create(
+        model="gemma3:4b",
+        messages=[{"role":"user","content":prompt}],
+        # 자동 trace: prompt, response, tokens, latency
+    )
+```
+
+### Anomaly Detection (자체 ML on Langfuse data)
+
+```python
+import requests
+from sklearn.ensemble import IsolationForest
+import numpy as np
+
+# 1) Langfuse 에서 24h trace fetch
+r = requests.get(
+    "http://localhost:3001/api/public/traces",
+    auth=("pk-xxx", "sk-xxx"),
+    params={"limit": 1000, "lookback": "24h"}
+)
+traces = r.json()['data']
+
+# 2) Feature 추출 (각 trace 별)
+features = np.array([[
+    t['totalCost'],
+    t['promptTokens'] + t['completionTokens'],
+    (parse(t['endTime']) - parse(t['startTime'])).total_seconds(),
+    len(t.get('observations', [])),
+] for t in traces])
+
+# 3) Isolation Forest
+clf = IsolationForest(contamination=0.05)
+anomaly_labels = clf.fit_predict(features)
+
+# 4) 비정상 trace 알람
+for t, label in zip(traces, anomaly_labels):
+    if label == -1:                          # anomaly
+        print(f"Anomaly: {t['id']} cost={t['totalCost']}")
+        # → Slack/PagerDuty webhook
+```
+
+### Quality 평가 (Ragas + DeepEval)
+
+```python
+from ragas import evaluate
+from ragas.metrics import faithfulness, answer_relevancy
+
+# RAG 응답 품질 (week04 에 이어)
+test_data = [
+    {
+        "question": q,
+        "answer": llm_response,
+        "contexts": retrieved_docs,
+        "ground_truth": expected,
+    } for q, llm_response, retrieved_docs, expected in production_logs
+]
+
+result = evaluate(test_data, metrics=[faithfulness, answer_relevancy])
+print(result)
+# → 매일 점수 추적 → 하락 시 alert
+```
+
+### Real-time Alert (Langfuse + Slack)
+
+```python
+# Langfuse webhook 설정 (web UI)
+# → 특정 score threshold 미만 시 Slack 호출
+
+import requests
+
+def alert_handler(trace):
+    if trace.scores.get('safety', 1.0) < 0.5:
+        requests.post(SLACK_WEBHOOK, json={
+            "text": f"⚠ Safety alert: trace {trace.id}",
+            "attachments": [{"text": trace.input[:200]}]
+        })
+```
+
+학생은 본 9주차에서 **Langfuse + Phoenix + Ragas + Slack webhook + Isolation Forest** 5 도구로 LLM observability 4 축 (trace / quality / anomaly / alert) 통합 모니터링을 익힌다.

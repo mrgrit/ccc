@@ -675,3 +675,67 @@ dataset 의 graph metadata:
 3. mo_name 의 단순 라벨 (Data Theft) 을 *세분 ATT&CK technique* (T1041/T1567/T1071) 으로 *수기* 재분류 — w14 통합 아키텍처 의 reference
 
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course2 SecOps — Week 13 OpenCTI 활용)
+
+| 작업 | 도구 |
+|------|------|
+| IoC 검색 | pycti / GraphQL / curl |
+| 위협 분석 | OpenCTI Knowledge / MISP Correlation / IBM X-Force (참고) |
+| 자동 enrichment | OpenCTI connectors (VirusTotal/Shodan/Censys/...) |
+| YARA / Sigma | OpenCTI YARA rule export / Sigma → MISP / Sigma → OpenCTI |
+| Threat Hunt | sigma-cli + Wazuh / OpenCTI search → Wazuh query |
+
+### 학생 환경 준비
+```bash
+ssh ccc@10.20.30.100
+pip3 install pycti pymisp yara-python
+
+# YARA rule store
+git clone https://github.com/Yara-Rules/rules.git ~/yara-rules
+git clone https://github.com/Neo23x0/signature-base.git ~/signature-base
+```
+
+### 핵심 시나리오
+```bash
+# 1) IoC 조회
+python3 << 'EOF'
+from pycti import OpenCTIApiClient
+c = OpenCTIApiClient("http://10.20.30.100:8080", "TOKEN")
+
+# IP 평판 조회
+ind = c.indicator.list(filters={
+  "mode": "and",
+  "filters": [{"key": "pattern", "values": ["1.2.3.4"], "operator": "wildcard"}],
+  "filterGroups": []
+})
+for i in ind: print(i)
+EOF
+
+# 2) VirusTotal / AbuseIPDB connector
+# OpenCTI UI → Data → Connectors → enable
+# 새 IoC 가 자동으로 enriched
+
+# 3) Threat Hunt — Sigma 룰을 OpenCTI 의 IoC 와 결합
+# 1) OpenCTI 에서 최근 7일 IP 인디케이터 export
+# 2) Wazuh 에 watchlist 로 inject
+python3 << 'EOF'
+from pycti import OpenCTIApiClient
+c = OpenCTIApiClient(...)
+ips = []
+for ind in c.indicator.list(first=500, after="2025-04-25"):
+    if "ipv4-addr" in ind["pattern"]:
+        ip = ind["pattern"].split("'")[1]
+        ips.append(ip)
+print("\n".join(ips))
+EOF
+> /tmp/cti_ips.txt
+# Wazuh 에 watchlist 로 사용 → 매치 시 alert
+
+# 4) YARA rule 로 파일 sample 매칭
+yara ~/signature-base/yara/apt_apt29.yar /tmp/sample.bin
+```
+
+학생은 본 13주차에서 **OpenCTI → Wazuh → 자동 룰** 의 CTI-driven detection pipeline 을 도구로 익힌다.

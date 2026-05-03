@@ -1015,3 +1015,793 @@ graph LR
 
 **학생 액션**: scikit-learn 분류기.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course14 SOC Advanced — Week 12 로그 엔지니어링·decoder·정규화·EPS·ATT&CK 매핑)
+
+> 이 부록은 lab `soc-adv-ai/week12.yaml` (15 step + multi_task) 의 모든 명령을
+> 실제로 실행 가능한 형태로 정리한다. Wazuh decoder 작성, 로그 정규화 (CIM/ECS),
+> 보관 (Hot/Warm/Cold), 무결성 (해시 체인 + WORM), EPS 측정, ATT&CK 데이터 소스 매핑까지.
+
+### lab step → 도구·로그 매핑 표
+
+| step | 학습 항목 | 핵심 OSS 도구 | 표준 |
+|------|----------|--------------|------|
+| s1 | 로그 소스 인벤토리 | journalctl + ls /var/log + Wazuh agent | - |
+| s2 | Wazuh agent 설정 최적화 | ossec.conf localfile + 누락 로그 추가 | Wazuh |
+| s3 | 커스텀 decoder | local_decoder.xml + regex | Wazuh |
+| s4 | 로그 정규화 (CIM/ECS) | Wazuh decoder field 매핑 | ECS / CIM |
+| s5 | 필터링 + 집계 (EPS 절감) | Wazuh ignore + Suricata threshold | - |
+| s6 | 보관 (Hot/Warm/Cold) | OpenSearch ILM + S3 Glacier | NIST SP 800-92 |
+| s7 | 무결성 (해시 체인 + 원격) | rsyslog TLS + WORM + journald | NIST SP 800-92 |
+| s8 | EPS / latency / 손실률 | wazuh-stats + osquery | - |
+| s9 | ATT&CK Data Source 매핑 | DeTT&CT + Data Source 매트릭스 | MITRE |
+| s10 | JSON 파싱 최적화 (eve.json) | Wazuh json decoder + jq | - |
+| s11 | enrichment (GeoIP/DNS/asset/TI) | Wazuh wodle + Logstash | - |
+| s12 | 로그 품질 dashboard | Grafana + Prometheus + OpenSearch | - |
+| s13 | Audit log 정책 (auditd) | auditctl 룰 (10 카테고리) | NIST SP 800-92 |
+| s14 | 로그 아키텍처 리뷰 | 확장성 / 내결함성 / 보안 평가 | - |
+| s15 | 로그 엔지니어링 종합 보고서 | markdown + ATT&CK Coverage + 로드맵 | - |
+| s99 | 통합 다단계 (s1→s2→s3→s4→s5) | Bastion plan: 인벤토리→agent→decoder→정규화→필터 | 다중 |
+
+### 학생 환경 준비
+
+```bash
+# Wazuh
+ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-control status'
+ssh ccc@10.20.30.100 'ls /var/ossec/etc/decoders/'
+
+# Suricata + jq
+ssh ccc@10.20.30.1 'suricatasc -c rules-stats'
+sudo apt install -y jq
+
+# OpenSearch ILM
+curl -s -k -u admin:admin "https://10.20.30.100:9200/_ilm/policy"
+
+# rsyslog
+sudo apt install -y rsyslog rsyslog-gnutls
+
+# DeTT&CT
+git clone https://github.com/rabobank-cdc/DeTTECT /tmp/dettect 2>/dev/null
+
+# Grafana + Prometheus (이미 설치)
+# auditd
+sudo apt install -y auditd audispd-plugins
+sudo systemctl enable --now auditd
+```
+
+### 핵심 도구별 상세 사용법
+
+#### 도구 1: 로그 소스 인벤토리 (Step 1)
+
+```bash
+for host in 10.20.30.1 10.20.30.80 10.20.30.100 10.20.30.112; do
+    echo "=== $host ==="
+    ssh ccc@$host '
+      ls -la /var/log/ | grep -v "^d" | head -20
+      sudo journalctl --disk-usage
+      sudo systemctl list-units --type=service --state=running | head -20
+    '
+done
+
+# Wazuh agent active logs
+ssh ccc@10.20.30.80 'sudo cat /var/ossec/etc/ossec.conf | grep -A 3 "<localfile>" | head -30'
+```
+
+| Host | 주요 로그 | 위치 | 형식 | 용도 |
+|------|----------|------|------|------|
+| **secu** | Suricata eve.json | /var/log/suricata/ | JSON | NIDS alert |
+| | nft drop | journald | syslog | firewall |
+| | auth.log | /var/log/ | syslog | SSH/sudo |
+| **web** | Apache access | /var/log/apache2/ | combined | HTTP |
+| | MySQL general | /var/log/mysql/ | text | DB query |
+| | auth.log | /var/log/ | syslog | SSH/sudo |
+| **siem** | Wazuh alerts | /var/ossec/logs/alerts/alerts.json | JSON | SIEM |
+| | Wazuh archives | /var/ossec/logs/archives/ | JSON | 모든 이벤트 |
+| **attacker** | auth.log | /var/log/ | syslog | 학습용 |
+
+#### 도구 2: Wazuh agent 최적화 (Step 2)
+
+```bash
+ssh ccc@10.20.30.80 'sudo tee -a /var/ossec/etc/ossec.conf' << 'XML'
+<localfile>
+  <log_format>apache</log_format>
+  <location>/var/log/apache2/access.log</location>
+</localfile>
+<localfile>
+  <log_format>syslog</log_format>
+  <location>/var/log/apache2/error.log</location>
+</localfile>
+<localfile>
+  <log_format>syslog</log_format>
+  <location>/var/log/mysql/general.log</location>
+</localfile>
+<localfile>
+  <log_format>json</log_format>
+  <location>/var/log/suricata/eve.json</location>
+</localfile>
+<localfile>
+  <log_format>audit</log_format>
+  <location>/var/log/audit/audit.log</location>
+</localfile>
+<localfile>
+  <log_format>json</log_format>
+  <location>/var/log/myapp/security.json</location>
+</localfile>
+XML
+
+ssh ccc@10.20.30.80 'sudo /var/ossec/bin/wazuh-control restart'
+ssh ccc@10.20.30.80 'sudo cat /var/ossec/logs/ossec.log | tail -20 | grep -i "tail"'
+```
+
+#### 도구 3: 커스텀 decoder (Step 3)
+
+```bash
+ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/decoders/local_decoder.xml' << 'XML'
+<!-- CCC API: 2026-05-02T14:00:01.234Z [INFO] api=POST /students user_id=admin remote_ip=192.168.1.50 status=201 -->
+
+<decoder name="ccc-api">
+  <prematch>^\d+-\d+-\d+T\d+:\d+:\d+\.\d+Z \[\w+\] api=</prematch>
+</decoder>
+
+<decoder name="ccc-api-fields">
+  <parent>ccc-api</parent>
+  <regex>api=(\S+) user_id=(\S+) remote_ip=(\S+) status=(\d+)$</regex>
+  <order>method_path,user_id,srcip,status_code</order>
+</decoder>
+XML
+
+# 테스트
+ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-logtest' << 'TEST'
+2026-05-02T14:00:01.234Z [INFO] api=POST /students user_id=admin remote_ip=192.168.1.50 status=201
+TEST
+# decoder: 'ccc-api', method_path: 'POST', srcip: '192.168.1.50', status_code: '201'
+
+# Rule
+ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/rules/local_rules.xml' << 'XML'
+<group name="custom,ccc-api,">
+  <rule id="100700" level="3">
+    <decoded_as>ccc-api</decoded_as>
+    <description>CCC API access</description>
+  </rule>
+  <rule id="100701" level="9">
+    <if_sid>100700</if_sid>
+    <field name="status_code">^4\d{2}$</field>
+    <description>CCC API 4xx error — possible attack</description>
+  </rule>
+  <rule id="100702" level="11" frequency="5" timeframe="60">
+    <if_sid>100701</if_sid>
+    <same_source_ip />
+    <description>CCC API 4xx 다발 — brute/scan</description>
+    <mitre><id>T1110</id></mitre>
+  </rule>
+</group>
+XML
+
+ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-control restart'
+```
+
+#### 도구 4: 정규화 (CIM / ECS) (Step 4)
+
+| 원본 | ECS 필드 | 변환 |
+|------|----------|------|
+| Apache: %h | source.ip | 직접 |
+| Apache: %u | user.name | 직접 |
+| Apache: "%r" | url.original | "GET /path HTTP/1.1" |
+| Apache: %>s | http.response.status_code | int |
+| MySQL: User@host | user.name + source.ip | split @ |
+| Suricata: src_ip | source.ip | 직접 |
+| Suricata: dest_port | destination.port | int |
+| Wazuh: srcip | source.ip | 직접 |
+| Wazuh: dstuser | user.target.name | 직접 |
+| auditd: a0/a1/a2 | process.command_line | join |
+
+```bash
+# Wazuh decoder field 매핑
+ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/decoders/local_decoder.xml' << 'XML'
+<decoder name="suricata-ecs-mapper">
+  <parent>json</parent>
+  <regex>"src_ip":"([^"]+)"</regex>
+  <order>source.ip</order>
+</decoder>
+XML
+
+# Logstash 대안
+cat > /tmp/logstash-ecs.conf << 'LS'
+filter {
+  mutate {
+    rename => {
+      "src_ip" => "[source][ip]"
+      "dest_ip" => "[destination][ip]"
+      "dest_port" => "[destination][port]"
+    }
+  }
+}
+LS
+```
+
+#### 도구 5: 필터링 + 집계 (Step 5)
+
+```bash
+# Wazuh ignore
+ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/rules/local_rules.xml' << 'XML'
+<rule id="100800" level="0">
+  <if_sid>2902</if_sid>
+  <user>root</user>
+  <regex>/usr/bin/python3 /opt/scheduler.py</regex>
+  <description>Scheduled job — ignored</description>
+</rule>
+
+<rule id="100801" level="0">
+  <if_sid>31100</if_sid>
+  <regex>"GET /health HTTP/1.1" 200</regex>
+  <srcip>10.20.30.250</srcip>
+  <description>Health check — ignored</description>
+</rule>
+XML
+
+# Suricata threshold
+ssh ccc@10.20.30.1 'sudo tee /etc/suricata/threshold.config' << 'CFG'
+suppress gen_id 1, sig_id 2024793, track by_dst
+threshold gen_id 1, sig_id 2003070, type both, track by_src, count 5, seconds 60
+CFG
+ssh ccc@10.20.30.1 'sudo suricatasc -c reload-rules'
+
+# 효과 측정
+# Before: 100K events/h
+# After:  30K events/h (70% reduction)
+# Storage: 4GB/day → 1.2GB/day
+# Analyst burden: 1500/h → 450/h
+```
+
+#### 도구 6: 보관 정책 (Hot/Warm/Cold) (Step 6)
+
+```bash
+# OpenSearch ILM
+curl -X PUT "https://10.20.30.100:9200/_ilm/policy/wazuh-alerts-policy" \
+  -k -u admin:admin -H "Content-Type: application/json" -d '{
+  "policy": {
+    "phases": {
+      "hot": {"actions":{"rollover":{"max_size":"30gb","max_age":"7d"}}},
+      "warm": {"min_age":"7d","actions":{"shrink":{"number_of_shards":1},"forcemerge":{"max_num_segments":1}}},
+      "cold": {"min_age":"30d","actions":{"freeze":{}}},
+      "delete": {"min_age":"365d","actions":{"delete":{}}}
+    }
+  }
+}'
+
+# 인덱스 템플릿
+curl -X PUT "https://10.20.30.100:9200/_index_template/wazuh-template" \
+  -k -u admin:admin -H "Content-Type: application/json" -d '{
+  "index_patterns": ["wazuh-alerts-*"],
+  "template": {"settings": {"index.lifecycle.name": "wazuh-alerts-policy"}}
+}'
+
+# S3 Glacier
+aws s3api put-bucket-lifecycle-configuration --bucket wazuh-cold-storage \
+  --lifecycle-configuration '{"Rules":[{"ID":"ToGlacier","Status":"Enabled",
+    "Transitions":[{"Days":90,"StorageClass":"GLACIER"},{"Days":180,"StorageClass":"DEEP_ARCHIVE"}],
+    "Expiration":{"Days":2555}}]}'
+```
+
+| Tier | 기간 | 매체 | 접근 시간 | 비용 |
+|------|------|------|----------|------|
+| Hot | 0-7일 | SSD (OpenSearch) | <100ms | 높음 |
+| Warm | 7-30일 | HDD | <10s | 중 |
+| Cold | 30-365일 | S3 / Glacier | <1h | 낮음 |
+| Archive | 1-7년 | Deep Archive | <12h | 매우 낮음 |
+| Delete | 7년+ | (정리) | - | - |
+
+규제: PIPA 3년 / 전자금융 5년 / PCI 1년 / HIPAA 6년 / SOC 2 1년 / GDPR 6년
+
+비용: $50K/year (all-Hot) → $10K/year (tier 분리, -80%)
+
+#### 도구 7: 무결성 (Step 7)
+
+```bash
+# 1. rsyslog TLS (송신)
+ssh ccc@10.20.30.80 'sudo tee /etc/rsyslog.d/01-remote.conf' << 'RSY'
+$DefaultNetstreamDriver gtls
+$DefaultNetstreamDriverCAFile /etc/ssl/certs/siem-ca.pem
+$DefaultNetstreamDriverCertFile /etc/ssl/certs/web.pem
+$DefaultNetstreamDriverKeyFile /etc/ssl/private/web.key
+
+*.* action(type="omfwd"
+  Target="siem.corp.example" Port="6514" Protocol="tcp"
+  StreamDriver="gtls" StreamDriverMode="1" StreamDriverAuthMode="x509/name")
+RSY
+ssh ccc@10.20.30.80 'sudo systemctl restart rsyslog'
+
+# 2. 수신 측
+ssh ccc@10.20.30.100 'sudo tee /etc/rsyslog.d/01-recv.conf' << 'RCV'
+$ModLoad imtcp
+$InputTCPServerStreamDriverMode 1
+$InputTCPServerStreamDriverAuthMode x509/name
+$InputTCPServerRun 6514
+
+template(name="RemoteFiles" type="list") {
+  constant(value="/var/log/remote/")
+  property(name="hostname")
+  constant(value=".log")
+}
+*.* ?RemoteFiles
+RCV
+
+# 3. 해시 체인 (매시간)
+sudo tee /etc/cron.hourly/log-hash-chain.sh << 'SH'
+#!/bin/bash
+LOG=/var/log/remote
+PREV=$(cat $LOG/.last_hash 2>/dev/null || echo "GENESIS")
+HOUR=$(date +%Y%m%d%H)
+CURRENT=$(find $LOG -newer $LOG/.timestamp 2>/dev/null | xargs sha256sum | sha256sum | cut -d' ' -f1)
+NEW=$(echo "$PREV $CURRENT" | sha256sum | cut -d' ' -f1)
+echo "$HOUR $NEW (prev=$PREV)" >> $LOG/.hash_chain
+echo "$NEW" > $LOG/.last_hash
+touch $LOG/.timestamp
+SH
+sudo chmod +x /etc/cron.hourly/log-hash-chain.sh
+
+# 4. WORM
+sudo mkdir /var/log/worm
+sudo chattr +a /var/log/worm
+
+# 5. S3 Object Lock
+aws s3api put-object-lock-configuration \
+  --bucket wazuh-worm-storage \
+  --object-lock-configuration '{"ObjectLockEnabled":"Enabled",
+    "Rule":{"DefaultRetention":{"Mode":"COMPLIANCE","Years":7}}}'
+
+# Wazuh 자체 hash chain (built-in)
+ssh ccc@10.20.30.100 'sudo cat /var/ossec/logs/alerts/alerts.log | head -3'
+```
+
+#### 도구 8: EPS / latency / 손실률 (Step 8)
+
+```bash
+ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-control info'
+ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-stats -m'
+# Maximum events per second: 12,847 / Average: 5,234
+
+# 직접 측정
+ssh ccc@10.20.30.100 'sudo wc -l /var/ossec/logs/alerts/alerts.json'
+sleep 3600
+ssh ccc@10.20.30.100 'sudo wc -l /var/ossec/logs/alerts/alerts.json'
+
+# Latency (Python)
+python3 << 'PY'
+import json
+from datetime import datetime
+alerts = []
+with open('/var/ossec/logs/alerts/alerts.json') as f:
+    for line in f:
+        try:
+            a = json.loads(line)
+            event_ts = a.get('decoder',{}).get('parent',{}).get('timestamp','')
+            alert_ts = a.get('@timestamp','')
+            if event_ts and alert_ts:
+                e = datetime.fromisoformat(event_ts.replace('Z','+00:00'))
+                t = datetime.fromisoformat(alert_ts.replace('Z','+00:00'))
+                alerts.append((t-e).total_seconds()*1000)
+        except: pass
+a = sorted(alerts)
+print(f"Latency: avg={sum(a)/len(a):.1f} p50={a[len(a)//2]:.1f} p95={a[int(len(a)*0.95)]:.1f} p99={a[int(len(a)*0.99)]:.1f}")
+PY
+
+# 손실률 (Zeek)
+zeek-cut acks_loss percent_lost < /tmp/zeek-out/capture_loss.log
+
+# 병목
+ssh ccc@10.20.30.100 'top -p $(pgrep wazuh-analysisd) -b -n 1 | head -10'
+ssh ccc@10.20.30.100 'sudo iotop -ao -d 5 | head -20'
+```
+
+#### 도구 9: ATT&CK Data Source 매핑 (Step 9)
+
+```bash
+cd /tmp/dettect
+python dettect.py editor   # GUI
+
+# CLI
+cat > /tmp/data-sources-current.yaml << 'YML'
+version: 1.2
+file_type: data-source-administration
+domain: enterprise-attack
+name: SOC Data Source Coverage
+data_sources:
+  - data_source_name: Process Creation
+    products: [auditd, sysmon]
+    available_for_data_analytics: true
+    data_quality:
+      device_completeness: 4
+      data_field_completeness: 5
+      timeliness: 5
+      consistency: 5
+      retention: 4
+  - data_source_name: Network Connection Creation
+    products: [suricata, zeek]
+    available_for_data_analytics: true
+    data_quality: {device_completeness: 5, data_field_completeness: 5, timeliness: 5, consistency: 5, retention: 5}
+YML
+
+python dettect.py d -fd /tmp/data-sources-current.yaml -l
+```
+
+| Data Source | 수집 | 로그 | Cover |
+|------------|------|------|-------|
+| Process Creation | ✓ | auditd execve + Sysmon EID 1 | High |
+| Process Termination | ✓ | auditd | Medium |
+| Command Execution | ✓ | bash_history + auditd | High |
+| File Creation | ✓ | inotifywait + auditd PATH | Medium |
+| File Modification | ✓ | auditd + Wazuh syscheck | High |
+| File Access | ✗ | (auditd watch 추가 필요) | None |
+| Network Connection | ✓ | Suricata + Zeek conn.log | High |
+| Network Traffic Content | ✓ | Suricata + tshark | High |
+| Network Traffic Flow | ✓ | NetFlow + Zeek | High |
+| Authentication | ✓ | auth.log + Wazuh | High |
+| Account Modification | ✓ | auditd /etc/passwd | Medium |
+| Service Creation | ✗ | (systemd 추가 필요) | None |
+| Logon Session | ✓ | last + wtmp | High |
+| Module Load | ✗ | (auditd kernel module) | None |
+| Cloud API Calls | ✗ | (CloudTrail) | None |
+
+총 8/38 High = 21%, 14/38 Medium+ = 37%
+우선 보강: File Access, Service, Module Load, Cloud API
+
+#### 도구 10: JSON 파싱 최적화 (Step 10)
+
+```bash
+# Suricata eve 필요 필드만
+ssh ccc@10.20.30.1 'sudo tee /etc/suricata/eve-minimal.yaml' << 'YML'
+outputs:
+  - eve-log:
+      enabled: yes
+      filename: eve.json
+      types:
+        - alert: {tagged-packets: no, payload-printable: yes, http: yes, tls: yes}
+        - http: {extended: no}
+        - dns: {version: 2}
+        - tls: {extended: no}
+YML
+
+# jq 빠른 분석
+ssh ccc@10.20.30.1 'sudo jq -c "select(.event_type==\"alert\") | {ts:.timestamp,src:.src_ip,sig:.alert.signature}" /var/log/suricata/eve.json | head'
+
+# alert 만 카운트
+ssh ccc@10.20.30.1 'sudo grep -c "\"event_type\":\"alert\"" /var/log/suricata/eve.json'
+```
+
+#### 도구 11: Enrichment pipeline (Step 11)
+
+```bash
+# Wazuh wodle (간단)
+ssh ccc@10.20.30.100 'sudo tee /var/ossec/integrations/asset-lookup.sh' << 'SH'
+#!/bin/bash
+TODAY_IPS=$(jq -r '.data.srcip // empty' /var/ossec/logs/alerts/alerts.json | sort -u)
+for ip in $TODAY_IPS; do
+    geo=$(geoiplookup -d /var/ossec/etc/lists "$ip" | head -1)
+    dns=$(dig +short -x "$ip" 2>/dev/null | head -1)
+    asset=$(grep "$ip" /etc/cmdb.csv | cut -d, -f2 || echo "unknown")
+    echo "$ip:$geo|$dns|$asset"
+done > /var/ossec/etc/lists/asset-enrichment
+sudo /var/ossec/bin/wazuh-make_cdb /var/ossec/etc/lists/asset-enrichment
+SH
+
+ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/ossec.conf' << 'XML'
+<wodle name="command">
+  <disabled>no</disabled>
+  <tag>asset-enrich</tag>
+  <command>/var/ossec/integrations/asset-lookup.sh</command>
+  <interval>1d</interval>
+</wodle>
+XML
+
+# Logstash 대안 (강력)
+cat > /tmp/logstash-enrich.conf << 'LS'
+filter {
+  if [source][ip] {
+    geoip { source => "[source][ip]"; target => "[source][geo]" }
+    dns { reverse => ["[source][ip]"]; action => "append"; target => "[source][hostname]" }
+    translate {
+      field => "[source][ip]"
+      destination => "[source][asset]"
+      dictionary_path => "/etc/logstash/cmdb.yml"
+    }
+    elasticsearch {
+      hosts => ["opencti:9200"]
+      query => "indicator.value:%{[source][ip]}"
+      fields => {"threat.actor" => "[threat][actor]"}
+    }
+  }
+}
+LS
+```
+
+#### 도구 12: 로그 품질 dashboard (Step 12)
+
+```python
+from prometheus_client import start_http_server, Gauge
+import requests, time
+
+agents_active = Gauge('wazuh_agents_active', 'Active agents')
+alerts_total = Gauge('wazuh_alerts_total', 'Total alerts last hour')
+parse_errors = Gauge('wazuh_parse_errors_total', 'Parse errors')
+eps_current = Gauge('wazuh_eps_current', 'EPS')
+
+def collect():
+    token = requests.post('https://siem:55000/security/user/authenticate?raw=true',
+                          auth=('wazuh','wazuh'), verify=False).text
+    r = requests.get('https://siem:55000/agents/summary/status',
+                    headers={'Authorization': f'Bearer {token}'}, verify=False).json()
+    agents_active.set(r['data']['active'])
+    r = requests.post('https://siem:9200/wazuh-alerts-*/_count',
+                     auth=('admin','admin'), verify=False,
+                     json={'query':{'range':{'@timestamp':{'gte':'now-1h'}}}}).json()
+    alerts_total.set(r['count'])
+
+if __name__ == "__main__":
+    start_http_server(9101)
+    while True:
+        try: collect()
+        except: pass
+        time.sleep(30)
+```
+
+Grafana dashboard 패널:
+- Active Agents (gauge)
+- EPS current (stat)
+- Alerts/hour 추이 (graph)
+- Parse errors (stat)
+- Alert by rule_id × hour (heatmap)
+- Top sources (table)
+- ILM Hot/Warm/Cold (graph)
+- Latency p50/p95/p99 (graph)
+
+#### 도구 13: Audit log 정책 (Step 13)
+
+```bash
+sudo tee /etc/audit/rules.d/security.rules << 'RULES'
+# 1. 권한 상승
+-a always,exit -F arch=b64 -S setuid,setgid,setresuid,setresgid -F a0=0 -k privilege_escalation
+
+# 2. /etc 변경
+-w /etc/passwd -p wa -k user_change
+-w /etc/group -p wa -k group_change
+-w /etc/shadow -p wa -k password_change
+-w /etc/sudoers -p wa -k sudoers_change
+-w /etc/ssh/sshd_config -p wa -k sshd_change
+
+# 3. 권한
+-a always,exit -F arch=b64 -S chmod,chown,fchmod,fchown,fchmodat,fchownat,setxattr,lsetxattr,fsetxattr -F auid>=1000 -F auid!=4294967295 -k file_perm_change
+-a always,exit -F arch=b64 -S capset -k capability_change
+
+# 4. 모듈
+-a always,exit -F arch=b64 -S init_module,delete_module -k kernel_module
+
+# 5. 네트워크
+-w /etc/network -p wa -k network_change
+-w /etc/hosts -p wa -k hosts_change
+-w /etc/resolv.conf -p wa -k dns_change
+
+# 6. execve
+-a always,exit -F arch=b64 -S execve -F auid!=4294967295 -k user_command
+
+# 7. 파일 삭제
+-a always,exit -F arch=b64 -S unlink,unlinkat,rename,renameat -F auid>=1000 -F auid!=4294967295 -k file_delete
+
+# 8. 시간 변경
+-a always,exit -F arch=b64 -S adjtimex,settimeofday,clock_settime -k time_change
+
+# 9. SSH key
+-w /etc/ssh -p wa -k ssh_config
+-w /home -p wa -k home_change
+
+# 10. Immutable (최후)
+-e 2
+RULES
+
+sudo augenrules --load
+sudo auditctl -l
+
+# Wazuh 통합
+ssh ccc@10.20.30.80 'sudo tee -a /var/ossec/etc/ossec.conf' << 'XML'
+<localfile>
+  <log_format>audit</log_format>
+  <location>/var/log/audit/audit.log</location>
+</localfile>
+XML
+ssh ccc@10.20.30.80 'sudo /var/ossec/bin/wazuh-control restart'
+```
+
+#### 도구 14: 아키텍처 리뷰 (Step 14)
+
+| 영역 | 현재 | 한계 | 개선 |
+|------|------|------|------|
+| 확장성 | ~5K EPS (단일 manager) | ~10K | cluster mode (master/worker), Logstash |
+| 내결함성 | 단일 SIEM (SPOF) | 가용성 위험 | HA (active/passive), 3-node OpenSearch, daily snapshot |
+| 보안 | TLS + agent mTLS + Wazuh hash | WORM 미적용 | chattr +a + S3 Object Lock |
+| 감사 | (관리자 액션 audit 부재) | 추적 불가 | auditd 추가 + Wazuh 통합 |
+| 데이터 품질 | 21% High Cover, parse 96%, p95 2.3s | 부족 | DeTT&CT 50% target, decoder 보강 |
+
+비용: 현재 $5K/월 (단일) → 개선 후 $15K/월 (3-node + DR), incident 회피 1회 = $1M+
+
+#### 도구 15: 종합 보고서 (Step 15)
+
+```bash
+cat > /tmp/log-engineering-report.md << 'EOF'
+# Log Engineering Report — 2026-Q2
+
+## 1. Executive Summary
+- 현재 EPS: 5K avg / 12K peak (목표 10K)
+- ATT&CK Coverage: 37% (목표 50%)
+- Parse 성공률: 96% (목표 99%)
+- Latency p95: 2.3s (목표 1s)
+
+## 2. 인프라
+- 4 hosts × Wazuh agent
+- Suricata eve.json
+- 단일 manager + OpenSearch single-node
+
+## 3. 최적화
+### Decoder
+- 신규 3개 (CCC API, MyApp, Custom CSV)
+- Parse: 92% → 96% (+4pt)
+
+### 필터링
+- alert volume: 100K/h → 30K/h (-70%)
+- 분석가 burden: 1500/h → 450/h
+- 스토리지: 4GB/day → 1.2GB/day
+
+### Retention
+- ILM: Hot 7d / Warm 30d / Cold 365d / Archive 7y
+- 비용: $50K/year → $10K/year (-80%)
+
+### 무결성
+- rsyslog TLS ✓
+- Wazuh hash chain (built-in) ✓
+- WORM 미적용 (개선)
+
+## 4. ATT&CK Coverage 매트릭스 (38 sources)
+- High: 8 / Medium+: 14 / 미보유: 24
+
+## 5. 측정
+- EPS avg 5,234 / max 12,847
+- Latency p50=0.8s p95=2.3s p99=5.1s
+- Parse error 4%
+- Disk 1.2GB/day
+- Active agents 4/4
+
+## 6. 로드맵
+### Q3
+- WORM 추가
+- ATT&CK 5개 보강 (50%)
+- Wazuh cluster plan
+
+### Q4
+- Wazuh 3-node cluster
+- DR cluster
+- 30K EPS
+
+### 2027 Q1
+- Logstash enrichment
+- ML anomaly (week06 + ML)
+
+## 7. 부록 (전문)
+- A. Decoder XML
+- B. ILM 정책 JSON
+- C. auditd 룰
+- D. Grafana dashboard
+- E. ATT&CK Coverage Layer
+EOF
+
+pandoc /tmp/log-engineering-report.md -o /tmp/log-engineering-report.pdf \
+  --pdf-engine=xelatex --toc -V mainfont="Noto Sans CJK KR"
+```
+
+### 점검 / 최적화 / 측정 흐름 (15 step + multi_task)
+
+#### Phase A — 인벤토리 + 수집 (s1·s2·s3·s4)
+
+```bash
+for h in 10.20.30.{1,80,100,112}; do
+    ssh ccc@$h 'ls /var/log/ | head'
+done
+ssh ccc@10.20.30.80 'sudo cat /var/ossec/etc/ossec.conf | grep localfile'
+ssh ccc@10.20.30.100 'sudo vi /var/ossec/etc/decoders/local_decoder.xml'
+```
+
+#### Phase B — 최적화 + 보관 (s5·s6·s7·s8·s10)
+
+```bash
+ssh ccc@10.20.30.100 'sudo vi /var/ossec/etc/rules/local_rules.xml'
+curl -X PUT "https://10.20.30.100:9200/_ilm/policy/wazuh-policy" -k -u admin:admin -d '...'
+ssh ccc@10.20.30.80 'sudo systemctl restart rsyslog'
+ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-stats -m'
+```
+
+#### Phase C — 매핑 + Enrichment + Dashboard + 보고 (s9·s11·s12·s13·s14·s15)
+
+```bash
+python /tmp/dettect/dettect.py d -fd /tmp/data-sources-current.yaml -l
+ssh ccc@10.20.30.100 'sudo cp /tmp/asset-lookup.sh /var/ossec/integrations/'
+sudo systemctl restart wazuh-prometheus-exporter
+sudo cp /tmp/security.rules /etc/audit/rules.d/
+sudo augenrules --load
+pandoc /tmp/log-engineering-report.md -o /tmp/log-engineering-report.pdf
+```
+
+#### Phase D — 통합 시나리오 (s99 multi_task)
+
+s1 → s2 → s3 → s4 → s5 를 Bastion 가 한 번에:
+
+1. **plan**: 인벤토리 → agent 최적화 → custom decoder → 정규화 → 필터링
+2. **execute**: ssh + cat /var/log + vi ossec.conf + decoder XML + jq
+3. **synthesize**: 5 산출물 (inventory.md / agent-config.diff / decoder.xml / normalization.md / filter.xml)
+
+### 도구 비교표 — 로그 엔지니어링 단계별
+
+| 단계 | 1순위 | 2순위 | 사용 조건 |
+|------|-------|-------|----------|
+| 수집 (host) | Wazuh agent | Filebeat | OSS |
+| 수집 (network) | Suricata + Zeek | Snort | OSS |
+| 정규화 | Wazuh decoder + ECS | Logstash filter | depth |
+| 집계 | Wazuh frequency + Suricata threshold | Logstash aggregate | 자체 |
+| Storage Hot | OpenSearch | Elasticsearch | OSS |
+| Storage Warm/Cold | OpenSearch ILM + S3 | Splunk lifecycle | OSS |
+| 무결성 | rsyslog TLS + Wazuh + WORM | journald sealing | 다층 |
+| Forwarder | rsyslog | syslog-ng / Fluentd / Vector | 표준 |
+| Enrichment | Wazuh wodle + GeoIP | Logstash | depth |
+| Audit | auditd | osquery + Falco | 깊이 |
+| Dashboard | Grafana + Prometheus | Wazuh / Splunk native | OSS |
+| ATT&CK 매핑 | DeTT&CT + Navigator | manual | 자동 |
+
+### 도구 선택 매트릭스 — 시나리오별 권장
+
+| 시나리오 | 우선 도구 | 이유 |
+|---------|---------|------|
+| "처음 SIEM 도입" | Wazuh + Suricata + auditd | OSS 풀스택 |
+| "EPS 30K+" | Wazuh cluster + Logstash | scale |
+| "regulator audit" | rsyslog TLS + WORM + 7년 retention | 무결성 |
+| "Cloud + on-prem" | Splunk Cloud / Sumo | hybrid |
+| "ATT&CK Coverage" | DeTT&CT + Navigator + 보강 | 정량 |
+| "분석가 burnout" | 필터 + 집계 + 우선순위 | volume |
+| "비용 절감" | ILM + S3 Glacier | tier |
+| "신속 enrichment" | Logstash + GeoIP + TI | pipeline |
+
+### 학생 셀프 체크리스트 (각 step 완료 기준)
+
+- [ ] s1: 4 호스트 인벤토리 (위치/형식/용도)
+- [ ] s2: Wazuh agent localfile 5+ 추가 + 검증
+- [ ] s3: 사용자 decoder + rule (CCC API)
+- [ ] s4: ECS 매핑 매트릭스 + decoder field 변환
+- [ ] s5: ignore 룰 + Suricata threshold + 70% 절감
+- [ ] s6: ILM 정책 + 비용 추정
+- [ ] s7: rsyslog TLS + Wazuh hash + WORM
+- [ ] s8: EPS / latency p50/p95/p99 / 손실률 + 병목
+- [ ] s9: Data Source 38 매트릭스 + DeTT&CT layer
+- [ ] s10: Suricata eve 필요 필드만 + jq
+- [ ] s11: GeoIP + DNS + Asset + TI 4종
+- [ ] s12: Prometheus exporter + Grafana 8 패널
+- [ ] s13: auditd 10 카테고리 + immutable + Wazuh 통합
+- [ ] s14: 4 평가 + 개선 권고
+- [ ] s15: 종합 보고서 (현황/최적화/Coverage/측정/로드맵)
+- [ ] s99: Bastion 가 5 작업 (인벤토리/agent/decoder/정규화/필터) 순차
+
+### 추가 참조 자료
+
+- **NIST SP 800-92** Computer Security Log Management
+- **MITRE ATT&CK Data Sources** https://attack.mitre.org/datasources/
+- **Elastic Common Schema** https://www.elastic.co/guide/en/ecs/current/
+- **Splunk CIM** https://docs.splunk.com/Documentation/CIM/
+- **Wazuh Decoders** https://documentation.wazuh.com/current/user-manual/ruleset/ruleset-xml-syntax/decoders.html
+- **OpenSearch ILM** https://opensearch.org/docs/latest/im-plugin/ism/
+- **DeTT&CT** https://github.com/rabobank-cdc/DeTTECT
+- **rsyslog TLS** https://www.rsyslog.com/doc/v8-stable/tutorials/tls.html
+- **Logstash** https://www.elastic.co/logstash
+- **Vector** https://vector.dev/
+- **Fluentd** https://www.fluentd.org/
+- **Grafana** https://grafana.com/
+
+위 모든 로그 엔지니어링은 **무결성 우선 + 보존 정책 준수** 로 운영한다. rsyslog TLS + WORM +
+Wazuh hash chain 3중. 보존은 규제 (PIPA 3년 / 전자금융 5년) 최소 + 회사 정책 더 엄격.
+**ATT&CK Coverage 분기 측정** — DeTT&CT + Navigator. EPS / latency 일일 모니터링.

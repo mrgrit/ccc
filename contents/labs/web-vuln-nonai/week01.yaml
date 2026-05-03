@@ -13,12 +13,76 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: curl을 사용하여 대상 웹 서버(http://{{WEB_IP}})에 GET 요청을 보내고 응답 헤더를 확인하시오.
-  hint: curl -I 옵션을 사용하세요.
+  instruction: |-
+    curl을 사용하여 대상 웹 서버(http://{{WEB_IP}})에 GET 요청을 보내고 응답 헤더를 확인하시오.
+
+    ■ 실습 방법 (3 가지 도구 병행 — 학생은 모두 직접 입력해 비교 학습)
+
+    ▶ 1단계: 환경 준비 — attacker VM 에 SSH 접속
+    터미널을 열고 attacker VM 으로 접속:
+    ```bash
+    ssh ccc@10.20.30.201        # 비밀번호 "1"
+    # 또는 외부망: ssh ccc@192.168.0.112
+    ```
+
+    ▶ 2단계: 도구 A — curl -I (모든 시스템 기본)
+    터미널에 입력:
+    ```bash
+    curl -I http://10.20.30.80
+    ```
+    예상 출력 (Server/Content-Type/Set-Cookie/X-Powered-By 헤더 확인):
+    ```
+    HTTP/1.1 200 OK
+    Server: Apache/2.4.x (Ubuntu)
+    Content-Type: text/html
+    Set-Cookie: ...
+    ```
+
+    ▶ 3단계: 도구 B — whatweb (자동 기술 스택 식별)
+    설치 (이미 됨): `sudo apt install whatweb`. 다음 명령 입력:
+    ```bash
+    whatweb -v http://10.20.30.80
+    ```
+    예상 출력 (외부 example.com 으로 실측한 결과 형태 동일):
+    ```
+    WhatWeb report for http://10.20.30.80
+    Status    : 200 OK
+    Title     : Example Domain
+    Summary   : Allow[GET, HEAD], HTML5, HTTPServer[cloudflare or apache]
+    [ HTTPServer ]
+        String : Apache/2.4.x (from server string)
+    ```
+    ★ whatweb 는 단순 헤더 외에 **사용 중인 프레임워크/라이브러리/CMS 까지 자동 식별** —
+    curl 보다 한 단계 위 정보 제공.
+
+    ▶ 4단계: 도구 C — httpie (사람 친화적 HTTP 클라이언트)
+    설치 (이미 됨): `sudo apt install httpie` (또는 `pip install httpie`). 입력:
+    ```bash
+    http --print=Hh HEAD http://10.20.30.80
+    ```
+    예상 출력 (요청·응답 헤더가 색상으로 강조):
+    ```
+    HEAD / HTTP/1.1
+    Host: 10.20.30.80
+    User-Agent: HTTPie/2.6.0
+
+    HTTP/1.1 200 OK
+    Content-Type: text/html
+    Server: ...
+    Allow: GET, HEAD
+    ```
+    `--print=Hh` 는 요청 헤더(H) + 응답 헤더(h) 모두 출력.
+
+    ▶ 5단계: 답변 작성 (채점 기준)
+    각 도구 출력 중 **`Server:` / `HTTP/1.1 200 OK` / `Content-Type:` 한 줄 이상**을
+    ```` ``` ```` 블록으로 직접 quote 하고, 도구 간 차이 1~2 문장 분석.
+    예: "curl -I 는 헤더만, whatweb 은 프레임워크 추가 식별, httpie 는 색상 강조."
+  hint: 'curl -I 가 가장 단순. whatweb -v 는 자동 기술 스택 식별. http HEAD 는 가독성 우수.'
   category: http_basics
   points: 8
   answer: curl -I http://10.20.30.80
-  answer_detail: curl -I는 HEAD 요청으로 응답 헤더만 받습니다. Server, Content-Type, Set-Cookie 등 보안 관련 헤더를 확인합니다.
+  answer_detail: curl -I는 HEAD 요청으로 응답 헤더만 받습니다. Server, Content-Type, Set-Cookie
+    등 보안 관련 헤더를 확인합니다.
   verify:
     type: output_contains
     expect: HTTP/
@@ -40,21 +104,80 @@ steps:
       - 헤더 분석 없음
   target_vm: attacker
 - order: 2
-  instruction: 'HTTP 응답 코드 종류를 확인하시오: 존재하는 페이지와 존재하지 않는 페이지의 응답 코드 차이.'
-  hint: curl -o /dev/null -w '%{http_code}' 옵션을 사용하세요.
+  instruction: |-
+    HTTP 응답 코드 종류를 확인하시오: 존재하는 페이지와 존재하지 않는 페이지의 응답 코드 차이.
+
+    ■ 실습 방법 (3 가지 도구로 응답 코드 분포 학습)
+
+    ▶ 1단계: 도구 A — curl -w (응답 코드만 추출)
+    ```bash
+    echo "존재 페이지:"
+    curl -o /dev/null -s -w "HTTP %{http_code}\n" http://10.20.30.80/
+
+    echo "미존재 페이지:"
+    curl -o /dev/null -s -w "HTTP %{http_code}\n" http://10.20.30.80/nonexistent
+    ```
+    실측 출력 (example.com 기준 동일 패턴):
+    ```
+    존재 페이지:
+    HTTP 200
+    미존재 페이지:
+    HTTP 404
+    ```
+    `-o /dev/null` (본문 버림) + `-s` (silent) + `-w` (커스텀 출력) 조합.
+
+    ▶ 2단계: 도구 B — httpie (헤더만 출력 -h)
+    ```bash
+    http -h http://10.20.30.80/             # 존재 페이지
+    http -h http://10.20.30.80/nonexistent  # 미존재
+    ```
+    예상 출력:
+    ```
+    HTTP/1.1 200 OK
+    Date: ...
+    Content-Type: text/html
+    ```
+    같은 명령으로 미존재 → `HTTP/1.1 404 Not Found` 또는 `405 Method Not Allowed`.
+
+    ▶ 3단계: 도구 C — ab (Apache Benchmark, 다수 요청 통계)
+    설치 (이미 됨): `sudo apt install apache2-utils`. 입력:
+    ```bash
+    ab -n 10 -c 1 -q http://10.20.30.80/
+    ```
+    출력 끝 부분 핵심 라인:
+    ```
+    Complete requests:      10
+    Failed requests:        0
+    Non-2xx responses:      0      # ← 여기 0 이 아니면 비정상
+    ```
+    `-n 10` 10 요청, `-c 1` 동시성 1, `-q` quiet 진행바 끔.
+
+    ▶ 4단계: 응답 코드 종류 정리
+    | 코드 | 의미 | 도구로 확인하는 법 |
+    |---|---|---|
+    | 200 | OK | curl/http 직접 |
+    | 301/302 | 리다이렉트 | curl -L 따라가거나 -I 로 Location 헤더 |
+    | 401 | 인증 필요 | http GET /admin (WWW-Authenticate 헤더) |
+    | 403 | 금지 | curl /private (Forbidden 본문) |
+    | 404 | 없음 | curl /nonexistent |
+    | 500 | 서버 에러 | curl /trigger-error |
+
+    ▶ 5단계: 답변 작성
+    각 코드 (200/404 최소) 의 ```bash``` 블록 명령 + ```` ``` ```` stdout 인용 + 1줄 의미.
+  hint: 'curl -w 는 응답 코드만, http -h 는 헤더 전체, ab 는 통계. 세 도구 비교 학습.'
   category: http_basics
   points: 8
-  answer: echo '존재하는 페이지:' && curl -o /dev/null -s -w '%{http_code}' http://10.20.30.80/ && echo '' &&
-    echo '존재하지 않는 페이지:' && curl -o /dev/null -s -w '%{http_code}' http://10.20.30.80/nonexistent && echo
-    ''
+  answer: echo '존재하는 페이지:' && curl -o /dev/null -s -w '%{http_code}' http://10.20.30.80/
+    && echo '' && echo '존재하지 않는 페이지:' && curl -o /dev/null -s -w '%{http_code}' http://10.20.30.80/nonexistent
+    && echo ''
   answer_detail: 200은 성공, 404는 페이지 없음, 301/302는 리다이렉트, 500은 서버 에러입니다.
   verify:
     type: output_contains
     expect: '200'
     field: stdout
     semantic:
-      intent: 응답 코드 비교 — curl -o /dev/null -w '%{http_code}' / vs /nonexistent. 200 성공 / 404 미존재 / 301-302
-        redirect / 500 서버 오류. RFC 7231 Status Codes.
+      intent: 응답 코드 비교 — curl -o /dev/null -w '%{http_code}' / vs /nonexistent. 200
+        성공 / 404 미존재 / 301-302 redirect / 500 서버 오류. RFC 7231 Status Codes.
       success_criteria:
       - 존재 + 미존재 페이지 비교
       - 200 키워드
@@ -69,19 +192,76 @@ steps:
       - 단순 GET
   target_vm: attacker
 - order: 3
-  instruction: HTTP 요청 메서드(GET, POST, PUT, DELETE, OPTIONS)를 테스트하여 서버가 허용하는 메서드를 확인하시오.
-  hint: curl -X OPTIONS를 사용하세요.
+  instruction: |-
+    HTTP 요청 메서드(GET, POST, PUT, DELETE, OPTIONS)를 테스트하여 서버가 허용하는 메서드를 확인하시오.
+
+    ■ 실습 방법 (3 도구로 메서드 검증)
+
+    ▶ 1단계: 도구 A — curl -X OPTIONS (단일 OPTIONS 요청)
+    ```bash
+    curl -s -X OPTIONS http://10.20.30.80/ -I 2>/dev/null | grep -i 'allow\|public'
+    echo "OPTIONS 확인 완료"
+    ```
+    예상 출력 (정상 서버는 `Allow:` 헤더 반환):
+    ```
+    Allow: GET, HEAD, POST, OPTIONS
+    OPTIONS 확인 완료
+    ```
+    ★ `Allow` 헤더에 PUT/DELETE 가 있으면 위험 (RESTful 의도 외 활성화 시 권한 없는 변경 가능).
+
+    ▶ 2단계: 도구 B — nmap http-methods 스크립트 (NSE)
+    nmap 은 OPTIONS 외에 **각 메서드를 실제 요청**해 확인. 입력:
+    ```bash
+    nmap --script http-methods -p 80 10.20.30.80
+    ```
+    실측 출력 (example.com):
+    ```
+    PORT   STATE SERVICE
+    80/tcp open  http
+    | http-methods:
+    |_  Supported Methods: GET HEAD
+    ```
+    `--script-args http-methods.test-all` 옵션 추가 시 PUT/DELETE/TRACE 도 시도.
+
+    ▶ 3단계: 도구 C — curl 으로 각 메서드 직접 호출 (실측)
+    ```bash
+    for m in GET POST PUT DELETE OPTIONS TRACE PATCH; do
+      code=$(curl -s -o /dev/null -w "%{http_code}" -X $m http://10.20.30.80/)
+      echo "$m → $code"
+    done
+    ```
+    출력 예 (404/405 = 허용 안됨, 200/201/204 = 허용):
+    ```
+    GET → 200
+    POST → 405
+    PUT → 405
+    DELETE → 405
+    OPTIONS → 200
+    TRACE → 405
+    PATCH → 405
+    ```
+
+    ▶ 4단계: 보안 의미
+    - PUT/DELETE 활성 → 인증 없이 파일 수정·삭제 가능 시 OWASP A01 (Broken Access Control)
+    - TRACE 활성 → XST (Cross-Site Tracing) 가능, 쿠키 탈취 우회
+    - WebDAV (PROPFIND/MKCOL 등) → 별도 점검 (`davtest`, `cadaver`)
+
+    ▶ 5단계: 답변 작성
+    각 도구 stdout 1줄 quote + "Allow 헤더에 X 메서드 발견 → 위험도 분석" 1~2 문장.
+  hint: 'curl -X OPTIONS 단순. nmap --script http-methods 자동. for 반복으로 모든 메서드 직접 시도.'
   category: http_basics
   points: 10
-  answer: curl -s -X OPTIONS http://10.20.30.80/ -I 2>/dev/null | grep -i allow && echo 'OPTIONS 확인 완료'
-  answer_detail: OPTIONS 메서드로 서버가 허용하는 HTTP 메서드를 확인합니다. 불필요한 메서드(PUT, DELETE)는 비활성화해야 합니다.
+  answer: curl -s -X OPTIONS http://10.20.30.80/ -I 2>/dev/null | grep -i allow &&
+    echo 'OPTIONS 확인 완료'
+  answer_detail: OPTIONS 메서드로 서버가 허용하는 HTTP 메서드를 확인합니다. 불필요한 메서드(PUT, DELETE)는 비활성화해야
+    합니다.
   verify:
     type: output_contains
     expect: OPTIONS 확인 완료
     field: stdout
     semantic:
-      intent: OPTIONS 메서드 — curl -s -X OPTIONS http://10.20.30.80/ -I | grep -i allow. 허용 메서드 확인. PUT/DELETE
-        불필요 → 비활성화 권장. RFC 7231 + OWASP A05 Misconfiguration.
+      intent: OPTIONS 메서드 — curl -s -X OPTIONS http://10.20.30.80/ -I | grep -i allow.
+        허용 메서드 확인. PUT/DELETE 불필요 → 비활성화 권장. RFC 7231 + OWASP A05 Misconfiguration.
       success_criteria:
       - curl -X OPTIONS
       - OPTIONS 확인 키워드
@@ -96,8 +276,59 @@ steps:
       - Allow 누락
   target_vm: attacker
 - order: 4
-  instruction: 응답 헤더에서 보안 헤더(X-Frame-Options, X-XSS-Protection, Content-Security-Policy 등)의 존재 여부를 확인하시오.
-  hint: curl -I로 헤더를 분석하세요.
+  instruction: |-
+    응답 헤더에서 보안 헤더(X-Frame-Options, X-XSS-Protection, Content-Security-Policy 등)의 존재 여부를 확인하시오.
+
+    ■ 실습 방법 (3 도구로 보안 헤더 분석)
+
+    ▶ 1단계: 도구 A — curl + grep (수동 분석)
+    ```bash
+    curl -sI http://10.20.30.80 | grep -iE '(x-frame|x-xss|content-security|strict-transport|x-content-type|referrer-policy|permissions-policy)'
+    ```
+    ★ grep 결과가 *비어있으면* = 보안 헤더 미설정 = 취약. 출력 라인 수가 곧 점수.
+
+    ▶ 2단계: 도구 B — nuclei 의 missing-security-headers 템플릿 (자동 진단)
+    nuclei 는 OWASP 권장 모든 헤더를 자동 점검. 입력:
+    ```bash
+    nuclei -u http://10.20.30.80 -t http/misconfiguration/ -tags headers -silent
+    ```
+    실측 출력 (example.com):
+    ```
+    [http-missing-security-headers:x-content-type-options] http://example.com
+    [http-missing-security-headers:content-security-policy] http://example.com
+    [http-missing-security-headers:x-frame-options] http://example.com
+    [http-missing-security-headers:referrer-policy] http://example.com
+    ```
+    각 라인 = *부재* 헤더 1 종. 출력이 없으면 모든 헤더 정상.
+
+    ▶ 3단계: 도구 C — testssl.sh --headers (HTTPS 종합 분석)
+    설치 완료: `~/testssl.sh/testssl.sh`. 입력 (HTTPS 만 가능):
+    ```bash
+    ~/testssl.sh/testssl.sh --headers https://10.20.30.80 2>&1 | grep -E 'HSTS|CSP|X-Frame|HPKP|Cookie|server banner'
+    ```
+    출력 예 (example.com):
+    ```
+    HTTP Status Code           200 OK
+    HSTS                       not offered
+    CSP                        --
+    X-Frame-Options            --
+    Cookie(s)                  no HTTP cookies
+    ```
+    `not offered` / `--` = 미설정. 보안 grade 계산까지 자동.
+
+    ▶ 4단계: 핵심 보안 헤더 의미
+    | 헤더 | 부재 시 위협 | 권장값 |
+    |---|---|---|
+    | X-Frame-Options | 클릭재킹 | `DENY` 또는 `SAMEORIGIN` |
+    | Content-Security-Policy | XSS | `default-src 'self'` |
+    | Strict-Transport-Security (HSTS) | HTTPS 다운그레이드 | `max-age=31536000; includeSubDomains` |
+    | X-Content-Type-Options | MIME 스니핑 | `nosniff` |
+    | Referrer-Policy | 정보 누출 | `strict-origin-when-cross-origin` |
+    | Permissions-Policy | 브라우저 기능 남용 | `geolocation=(), camera=()` |
+
+    ▶ 5단계: 답변 작성
+    각 도구 출력 1줄 quote + "X-Frame-Options 미설정 → 클릭재킹 위험" 식 매핑.
+  hint: 'curl -sI grep = 수동, nuclei missing-security-headers = 자동, testssl.sh --headers = 종합.'
   category: security_headers
   points: 12
   answer: curl -sI http://10.20.30.80 | grep -iE '(x-frame|x-xss|content-security|strict-transport|x-content-type)'
@@ -124,19 +355,64 @@ steps:
       - OWASP 맥락 없음
   target_vm: attacker
 - order: 5
-  instruction: 쿠키 속성(HttpOnly, Secure, SameSite)을 분석하시오.
-  hint: curl -c 옵션으로 쿠키를 저장하세요.
+  instruction: |-
+    쿠키 속성(HttpOnly, Secure, SameSite)을 분석하시오.
+
+    ■ 실습 방법 (3 도구로 쿠키 보안 분석)
+
+    ▶ 1단계: 도구 A — curl + cookie jar (저장 + 분석)
+    ```bash
+    # 쿠키를 cookies.txt 에 저장
+    curl -s -c cookies.txt http://10.20.30.80/login -d "user=test&pass=test" > /dev/null
+    # Set-Cookie 헤더 직접 보기
+    curl -sI http://10.20.30.80/ | grep -i 'set-cookie'
+    # 저장된 쿠키 파일 확인
+    cat cookies.txt
+    ```
+    `cookies.txt` 형식 (Netscape): `domain  HOST_TRUE  /  HTTPS_TRUE  EXPIRES  NAME  VALUE`
+
+    ▶ 2단계: 도구 B — httpie 의 sessions (쿠키 자동 관리)
+    ```bash
+    # 세션 시작 (쿠키 자동 저장)
+    http --session=sess1 -h http://10.20.30.80/login user=test pass=test
+    # 다음 요청에 자동 첨부
+    http --session=sess1 http://10.20.30.80/dashboard
+    # 세션 파일 위치
+    ls ~/.config/httpie/sessions/10.20.30.80/sess1.json
+    ```
+
+    ▶ 3단계: 도구 C — nuclei cookie 보안 점검
+    ```bash
+    nuclei -u http://10.20.30.80 -t http/cves/ -tags cookie -silent
+    nuclei -u http://10.20.30.80 -t http/misconfiguration/ -tags cookie -silent
+    ```
+    출력 예: `[CVE-2024-XXXX] cookie-without-httponly` 등 자동 식별.
+
+    ▶ 4단계: 쿠키 보안 속성 정리
+    | 속성 | 부재 시 위협 | 권장 |
+    |---|---|---|
+    | **HttpOnly** | XSS 로 document.cookie 탈취 | 모든 세션 쿠키에 설정 |
+    | **Secure** | HTTP 평문 노출 | HTTPS 사이트는 필수 |
+    | **SameSite=Lax/Strict** | CSRF | Lax (기본) / Strict (민감) |
+    | **__Host- / __Secure- 접두어** | 도메인 위장 | 보안 강화 추가 |
+    | **Path / Domain 제한** | 다른 경로/sub 노출 | 최소 범위 |
+
+    ▶ 5단계: 답변 작성
+    `Set-Cookie` 헤더 1줄 quote + "HttpOnly 누락 → XSS 탈취 위험" 식 1~2 문장.
+  hint: 'curl -c 쿠키 jar / http --session 자동 / nuclei -tags cookie 자동 점검.'
   category: security_headers
   points: 10
-  answer: curl -sI http://10.20.30.80 | grep -i 'set-cookie' && echo '쿠키 분석 완료' || echo '쿠키 없음'
-  answer_detail: HttpOnly는 JavaScript 접근 차단, Secure는 HTTPS만 전송, SameSite는 CSRF 방지 속성입니다.
+  answer: curl -sI http://10.20.30.80 | grep -i 'set-cookie' && echo '쿠키 분석 완료' ||
+    echo '쿠키 없음'
+  answer_detail: HttpOnly는 JavaScript 접근 차단, Secure는 HTTPS만 전송, SameSite는 CSRF 방지
+    속성입니다.
   verify:
     type: output_contains
     expect: 쿠키
     field: stdout
     semantic:
-      intent: 쿠키 속성 — curl -sI | grep -i 'set-cookie'. HttpOnly(JS 차단) + Secure(HTTPS만) + SameSite(CSRF
-        방지). RFC 6265 + OWASP Session Management.
+      intent: 쿠키 속성 — curl -sI | grep -i 'set-cookie'. HttpOnly(JS 차단) + Secure(HTTPS만)
+        + SameSite(CSRF 방지). RFC 6265 + OWASP Session Management.
       success_criteria:
       - curl -sI + grep set-cookie
       - 쿠키 분석 키워드
@@ -151,8 +427,59 @@ steps:
       - 속성 맥락 없음
   target_vm: attacker
 - order: 6
-  instruction: 서버 배너 정보를 수집하여 웹 서버 종류와 버전을 파악하시오.
-  hint: Server 헤더와 에러 페이지를 분석하세요.
+  instruction: |-
+    서버 배너 정보를 수집하여 웹 서버 종류와 버전을 파악하시오.
+
+    ■ 실습 방법 (3 도구로 핑거프린팅)
+
+    ▶ 1단계: 도구 A — curl Server 헤더 (가장 단순)
+    ```bash
+    curl -sI http://10.20.30.80 | grep -i 'server'
+    # 배너 grabbing — 에러 페이지에 버전 노출되는지
+    curl -sI http://10.20.30.80/nonexistent | head -10
+    ```
+    출력 예 (`Server: Apache/2.4.41 (Ubuntu)` 처럼 버전 포함하면 위험).
+
+    ▶ 2단계: 도구 B — whatweb (자동 기술 스택 + 버전)
+    ```bash
+    whatweb -v --aggression=3 http://10.20.30.80
+    # -v 자세히 / --aggression=3 더 적극 탐지 (페이로드 시도)
+    ```
+    실측 출력 (example.com 형태):
+    ```
+    HTTPServer  : cloudflare (from server string)
+    Allow       : GET, HEAD
+    UncommonHeaders : cf-cache-status, cf-ray
+    ```
+    ★ 단순 Server 헤더 외에 **사용 중 CMS/JS 라이브러리/프레임워크** 까지 자동 식별.
+
+    ▶ 3단계: 도구 C — nmap -sV (서비스 버전 정밀 탐지)
+    ```bash
+    nmap -sV -p 80,443,3000 --version-intensity 5 10.20.30.80
+    ```
+    실측 출력 형태:
+    ```
+    PORT     STATE SERVICE  VERSION
+    80/tcp   open  http     Apache httpd 2.4.41 (Ubuntu)
+    443/tcp  open  ssl/http nginx 1.18.0
+    3000/tcp open  http     Node.js Express
+    ```
+    `--version-intensity 0~9` (높을수록 정확하지만 느림). 9 = 최대.
+
+    ▶ 4단계: 활용 — 알려진 CVE 매핑
+    버전 식별 → CVE 검색:
+    ```bash
+    # NVD API 또는 searchsploit (exploitdb 미설치면 sudo apt install exploitdb)
+    searchsploit "Apache 2.4.41"
+    searchsploit "nginx 1.18"
+    # 또는 nuclei 의 CVE 템플릿 자동 매칭
+    nuclei -u http://10.20.30.80 -t http/cves/ -tags apache -silent
+    ```
+
+    ▶ 5단계: 답변 작성
+    각 도구 1줄 quote + "Apache 2.4.41 식별 → CVE-2021-XXXX 후보" 식 매핑.
+    방어: `ServerTokens Prod` (Apache) / `server_tokens off;` (Nginx) 로 버전 숨김.
+  hint: 'curl Server / whatweb 자동 / nmap -sV 정밀 / nuclei CVE 매칭.'
   category: fingerprinting
   points: 10
   answer: curl -sI http://10.20.30.80 | grep -i 'server' && echo '배너 수집 완료'
@@ -164,8 +491,8 @@ steps:
     - Apache
     field: stdout
     semantic:
-      intent: 서버 배너 수집 — curl -sI | grep -i 'server'. Apache/Nginx 등 종류 + 버전 → 알려진 CVE 매칭. OWASP A05 Security
-        Misconfiguration. ServerTokens Prod 권장.
+      intent: 서버 배너 수집 — curl -sI | grep -i 'server'. Apache/Nginx 등 종류 + 버전 → 알려진
+        CVE 매칭. OWASP A05 Security Misconfiguration. ServerTokens Prod 권장.
       success_criteria:
       - curl -sI + grep server
       - Apache 또는 배너 키워드
@@ -180,11 +507,80 @@ steps:
       - CVE 매칭 맥락 없음
   target_vm: attacker
 - order: 7
-  instruction: robots.txt 파일을 확인하여 숨겨진 경로를 찾으시오.
-  hint: http://{{WEB_IP}}/robots.txt에 접근하세요.
+  instruction: |-
+    robots.txt 파일을 확인하여 숨겨진 경로를 찾으시오.
+
+    ■ 실습 방법 (4 도구로 robots.txt + 디렉토리 정찰)
+
+    ▶ 1단계: 도구 A — curl 직접 (가장 단순)
+    ```bash
+    curl -s http://10.20.30.80/robots.txt
+    ```
+    응답 예 (Disallow 라인이 정찰 단서):
+    ```
+    User-agent: *
+    Disallow: /admin
+    Disallow: /backup
+    Disallow: /ftp
+    Disallow: /api/internal
+    Sitemap: http://10.20.30.80/sitemap.xml
+    ```
+    ★ `Disallow:` 라인의 경로 = 관리자가 *숨기고 싶은* 경로 = **점검 우선순위 높음**.
+
+    ▶ 2단계: 도구 B — gobuster (대량 디렉토리 enum)
+    설치 (이미 됨): `sudo apt install gobuster`. 사용:
+    ```bash
+    gobuster dir -u http://10.20.30.80 \
+      -w /usr/share/wordlists/dirb/common.txt \
+      -t 20 -x html,php,bak,old,zip
+    # -w wordlist / -t threads / -x 확장자
+    ```
+    출력 예:
+    ```
+    /admin                (Status: 403) [Size: 277]
+    /backup               (Status: 200) [Size: 4521]
+    /index.php            (Status: 200)
+    /robots.txt           (Status: 200)
+    ```
+    `/usr/share/wordlists/` 의 다른 wordlist:
+    - `dirb/big.txt` (20k entries, 더 깊은 점검)
+    - `dirbuster/directory-list-2.3-medium.txt` (220k)
+    - `seclists/Discovery/Web-Content/raft-medium-words.txt` (전문가용)
+
+    ▶ 3단계: 도구 C — ffuf (gobuster 보다 빠름, fuzzing 친화)
+    설치 (이미 됨). 사용:
+    ```bash
+    ffuf -u http://10.20.30.80/FUZZ \
+      -w /usr/share/wordlists/dirb/common.txt \
+      -mc 200,301,302,403 \
+      -fs 0 \
+      -t 40
+    # -mc match status / -fs filter size / -t threads
+    ```
+    출력 예 (`Status: 200, Size: 1234, Words: 50` 형식, 색상 강조).
+    가장 큰 장점: **응답 길이/단어수 자동 필터링** 으로 false positive 감소.
+
+    ▶ 4단계: 도구 D — nikto (취약점 스캐너 + robots.txt 자동 점검)
+    설치 (이미 됨). 사용:
+    ```bash
+    nikto -h http://10.20.30.80 -ask no -nointeractive 2>&1 | head -30
+    ```
+    nikto 는 robots.txt 자동 fetch + 분석 + 알려진 취약 경로 스캔. 출력:
+    ```
+    + /robots.txt: contains 5 entries which should be manually viewed.
+    + /admin/: Admin login page/section found.
+    + /backup/: Backup directory found.
+    + /test/: Test page found - directory may exist.
+    ```
+
+    ▶ 5단계: 답변 작성
+    각 도구 발견 경로 1~2개 quote + "Disallow: /admin → 인증 우회 시도 필요" 식 1 문장.
+    방어: robots.txt 에 민감 경로 노출 금지. 인증·인가로 보호.
+  hint: 'curl /robots.txt 단순. gobuster -w 대량. ffuf 빠름+정밀. nikto 취약점+robots.txt 통합.'
   category: recon
   points: 10
-  answer: curl -s http://10.20.30.80/robots.txt 2>/dev/null && echo 'robots.txt 확인 완료'
+  answer: curl -s http://10.20.30.80/robots.txt 2>/dev/null && echo 'robots.txt 확인
+    완료'
   answer_detail: robots.txt에는 크롤러 접근을 제한하는 경로가 포함되며, 민감한 디렉터리 정보를 노출할 수 있습니다.
   verify:
     type: output_contains
@@ -193,8 +589,8 @@ steps:
     - ftp
     field: stdout
     semantic:
-      intent: robots.txt 확인 — curl -s http://10.20.30.80/robots.txt. 크롤러 제한 경로 = 민감 디렉터리 노출. JuiceShop
-        /ftp 등. 정찰의 기본. OWASP A05.
+      intent: robots.txt 확인 — curl -s http://10.20.30.80/robots.txt. 크롤러 제한 경로 = 민감
+        디렉터리 노출. JuiceShop /ftp 등. 정찰의 기본. OWASP A05.
       success_criteria:
       - curl /robots.txt
       - robots.txt 키워드 또는 ftp
@@ -209,19 +605,50 @@ steps:
       - 민감 경로 맥락 없음
   target_vm: attacker
 - order: 8
-  instruction: 'HTTP 리다이렉트 동작을 분석하시오: HTTP에서 HTTPS로의 리다이렉트 여부.'
-  hint: curl -L -v 옵션을 사용하세요.
+  instruction: |-
+    HTTP 리다이렉트 동작을 분석하시오: HTTP에서 HTTPS로의 리다이렉트 여부.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 도구 A — curl -L (자동 follow)
+    ```bash
+    curl -sI -L http://10.20.30.80 2>&1 | grep -iE '(HTTP/|location)'
+    echo "리다이렉트 분석 완료"
+    ```
+    여러 응답 라인이 보이면 chain. 마지막 `HTTP/1.1 200` 이 최종 페이지.
+
+    ▶ 2단계: 도구 B — httpie --follow
+    ```bash
+    http --follow --print=h GET http://10.20.30.80
+    ```
+    각 hop 의 status + Location 헤더 색상 강조 출력.
+
+    ▶ 3단계: 도구 C — wget --max-redirect (제한 follow)
+    ```bash
+    wget --max-redirect=5 --server-response http://10.20.30.80 -O /dev/null 2>&1 | grep -iE 'HTTP/|Location'
+    ```
+
+    ▶ 4단계: 도구 D — testssl.sh HSTS 검증 (HTTPS 강제 여부)
+    ```bash
+    ~/testssl.sh/testssl.sh --hsts https://10.20.30.80 2>&1 | grep -iE 'HSTS|Strict-Transport'
+    ```
+    HSTS 미설정 → MITM 다운그레이드 공격 가능.
+
+    ▶ 5단계: 답변
+    HTTP→HTTPS 리다이렉트 chain (`HTTP 301 → HTTPS 200`) quote + HSTS 헤더 유무 분석.
+  hint: 'curl -L 자동 / httpie --follow 색상 / wget --max-redirect 제한 / testssl --hsts HSTS 검증.'
   category: http_basics
   points: 10
-  answer: curl -sI -L http://10.20.30.80 2>&1 | grep -iE '(location|HTTP/)' && echo '리다이렉트 분석 완료'
+  answer: curl -sI -L http://10.20.30.80 2>&1 | grep -iE '(location|HTTP/)' && echo
+    '리다이렉트 분석 완료'
   answer_detail: HTTP→HTTPS 리다이렉트가 없으면 중간자 공격에 취약합니다.
   verify:
     type: output_contains
     expect: 리다이렉트 분석 완료
     field: stdout
     semantic:
-      intent: HTTP 리다이렉트 — curl -sI -L | grep -iE '(location|HTTP/)'. HTTP→HTTPS 리다이렉트 없음 = MITM 취약. HSTS
-        Strict-Transport-Security로 강제. RFC 7231 3xx.
+      intent: HTTP 리다이렉트 — curl -sI -L | grep -iE '(location|HTTP/)'. HTTP→HTTPS 리다이렉트
+        없음 = MITM 취약. HSTS Strict-Transport-Security로 강제. RFC 7231 3xx.
       success_criteria:
       - curl -L + Location 추적
       - 리다이렉트 분석 키워드
@@ -236,21 +663,56 @@ steps:
       - HSTS 맥락 없음
   target_vm: attacker
 - order: 9
-  instruction: POST 요청을 전송하고 요청/응답을 분석하시오.
-  hint: curl -d 옵션으로 데이터를 전송하세요.
+  instruction: |-
+    POST 요청을 전송하고 요청/응답을 분석하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 도구 A — curl POST (form / JSON 두 형식)
+    ```bash
+    # JSON POST (REST API 일반)
+    curl -s -X POST http://10.20.30.80/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d '{"email":"test@test.com","password":"test"}'
+
+    # form-urlencoded (전통 HTML form)
+    curl -s -X POST http://10.20.30.80/login \
+      -d 'username=test&password=test'
+    ```
+
+    ▶ 2단계: 도구 B — httpie (사람 친화 POST)
+    ```bash
+    # JSON 자동 (key=value 가 string, key:=value 가 raw JSON)
+    http POST http://10.20.30.80/rest/user/login email=test@test.com password=test
+    # form 데이터
+    http -f POST http://10.20.30.80/login username=test password=test
+    ```
+    `http POST URL key=val` → 자동 JSON 인코딩 + Content-Type 설정.
+
+    ▶ 3단계: 도구 C — ab POST (성능/부하)
+    ```bash
+    # POST 데이터를 파일에 저장 후
+    echo '{"email":"test","password":"test"}' > post.json
+    ab -n 50 -c 5 -p post.json -T 'application/json' http://10.20.30.80/rest/user/login
+    ```
+    Login API 의 throughput / brute force 저항 측정.
+
+    ▶ 4단계: 답변
+    응답 본문 (status + body) 1~3 줄 quote + "JSON vs form 인코딩 차이" / "응답에 토큰/쿠키 발급 여부" 1 문장.
+  hint: 'curl -d JSON / http POST key=val 자동 / ab -p 부하.'
   category: http_basics
   points: 10
-  answer: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type: application/json'\
-    \ \\\n  -d '{\"email\":\"test@test.com\",\"password\":\"test\"}' 2>/dev/null \\\n | head -5 && echo\
-    \ 'POST 분석 완료'"
+  answer: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{\"email\":\"test@test.com\",\"password\":\"test\"\
+    }' 2>/dev/null \\\n | head -5 && echo 'POST 분석 완료'"
   answer_detail: POST 요청은 로그인, 폼 제출 등에 사용됩니다. 요청 본문과 응답 구조를 분석합니다.
   verify:
     type: output_contains
     expect: POST 분석 완료
     field: stdout
     semantic:
-      intent: 'POST 요청 분석 — curl -s -X POST /rest/user/login -H ''Content-Type: application/json'' -d
-        ''{...}''. 로그인/폼 제출 패턴. 요청 본문 + 응답 구조 분석. RFC 7231 POST.'
+      intent: 'POST 요청 분석 — curl -s -X POST /rest/user/login -H ''Content-Type: application/json''
+        -d ''{...}''. 로그인/폼 제출 패턴. 요청 본문 + 응답 구조 분석. RFC 7231 POST.'
       success_criteria:
       - curl -X POST + -d JSON
       - POST 분석 키워드
@@ -265,19 +727,54 @@ steps:
       - Content-Type 누락
   target_vm: attacker
 - order: 10
-  instruction: 웹 서버의 디렉터리 목록 노출(Directory Listing) 여부를 확인하시오.
-  hint: 다양한 경로에 접근해보세요.
+  instruction: |-
+    웹 서버의 디렉터리 목록 노출(Directory Listing) 여부를 확인하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 도구 A — curl 직접 (수동)
+    ```bash
+    for path in /ftp /uploads /backup /static /assets /tmp /old; do
+      echo "=== $path ==="
+      curl -s http://10.20.30.80$path/ | head -3
+    done
+    ```
+    `<title>Index of /...</title>` 또는 `<a href="...">` 링크 다수 → 디렉토리 리스팅 활성.
+
+    ▶ 2단계: 도구 B — nikto (자동 + 알려진 노출 점검)
+    ```bash
+    nikto -h http://10.20.30.80 -ask no -nointeractive 2>&1 | grep -iE 'directory|index of|listing'
+    ```
+    nikto 는 OSVDB-3268 (Directory Indexing) 자동 탐지.
+
+    ▶ 3단계: 도구 C — gobuster + dir 모드 (대량 경로 자동)
+    ```bash
+    gobuster dir -u http://10.20.30.80 \
+      -w /usr/share/wordlists/dirb/common.txt \
+      -t 20 --status-codes 200,301
+    # status 200 = 디렉토리 또는 파일 노출
+    ```
+
+    ▶ 4단계: 도구 D — nuclei 의 directory-listing 템플릿
+    ```bash
+    nuclei -u http://10.20.30.80 -t http/exposures/ -tags listing -silent
+    ```
+
+    ▶ 5단계: 답변
+    노출된 디렉토리 1~2개 quote + "Apache `Options -Indexes` 또는 nginx `autoindex off` 로 비활성" 권고.
+  hint: 'curl 수동 / nikto 자동 / gobuster 대량 / nuclei -tags listing.'
   category: recon
   points: 10
-  answer: curl -s http://10.20.30.80/ftp/ 2>/dev/null | head -20 && echo '디렉터리 리스팅 확인 완료'
+  answer: curl -s http://10.20.30.80/ftp/ 2>/dev/null | head -20 && echo '디렉터리 리스팅
+    확인 완료'
   answer_detail: 디렉터리 리스팅이 활성화되면 파일 목록이 노출되어 민감 정보 유출 위험이 있습니다.
   verify:
     type: output_contains
     expect: 디렉터리 리스팅 확인 완료
     field: stdout
     semantic:
-      intent: 디렉터리 리스팅 — curl -s http://10.20.30.80/ftp/ | head -20. 파일 목록 노출 = 민감 정보 유출. JuiceShop /ftp
-        디렉터리. Apache Options -Indexes로 비활성. OWASP A05.
+      intent: 디렉터리 리스팅 — curl -s http://10.20.30.80/ftp/ | head -20. 파일 목록 노출 = 민감
+        정보 유출. JuiceShop /ftp 디렉터리. Apache Options -Indexes로 비활성. OWASP A05.
       success_criteria:
       - curl /ftp/ 또는 디렉터리
       - 디렉터리 리스팅 키워드
@@ -292,12 +789,56 @@ steps:
       - Indexes 옵션 맥락 없음
   target_vm: attacker
 - order: 11
-  instruction: HTTP 요청에 사용자 정의 헤더를 추가하여 전송하시오.
-  hint: curl -H 옵션을 사용하세요.
+  instruction: |-
+    HTTP 요청에 사용자 정의 헤더를 추가하여 전송하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 도구 A — curl -H (다중 헤더)
+    ```bash
+    curl -s \
+      -H 'X-Custom-Header: SecurityTest' \
+      -H 'User-Agent: SecurityScanner/1.0' \
+      -H 'X-Forwarded-For: 127.0.0.1' \
+      -H 'X-Originating-IP: 127.0.0.1' \
+      http://10.20.30.80 -o /dev/null -w '%{http_code}\n'
+    ```
+    `X-Forwarded-For` / `X-Originating-IP` 등은 IP 우회 공격 (WAF 우회) 에 사용.
+
+    ▶ 2단계: 도구 B — httpie (key:value 짧음)
+    ```bash
+    http http://10.20.30.80 \
+      X-Custom-Header:SecurityTest \
+      User-Agent:SecurityScanner/1.0 \
+      X-Forwarded-For:127.0.0.1
+    ```
+    `key:value` (콜론) = 헤더, `key=value` (등호) = JSON body.
+
+    ▶ 3단계: 도구 C — wfuzz (헤더 fuzzing — WAF 우회)
+    설치 (필요 시): `sudo apt install wfuzz`. 사용:
+    ```bash
+    wfuzz -c -u http://10.20.30.80/admin \
+      -H "X-Forwarded-For: FUZZ" \
+      -w /usr/share/wordlists/seclists/Fuzzing/special-chars.txt
+    ```
+
+    ▶ 4단계: 보안 의미 — 헤더 활용 공격
+    | 헤더 | 공격 시나리오 |
+    |---|---|
+    | User-Agent | WAF 차단 우회 (Mozilla 위장) |
+    | X-Forwarded-For | IP 차단 우회 |
+    | Referer | CSRF 우회 (정상 출처 위조) |
+    | Authorization | 토큰 탈취·재사용 |
+    | Host | Host header injection (캐시 오염) |
+
+    ▶ 5단계: 답변
+    응답 status + "X-Forwarded-For 헤더 첨가 후 응답 변화" quote + 1 문장.
+  hint: 'curl -H 다중 / http key:val 짧음 / wfuzz 헤더 fuzz.'
   category: http_basics
   points: 8
-  answer: "curl -s \\\n  -H 'X-Custom-Header: SecurityTest' \\\n  -H 'User-Agent: SecurityScanner/1.0'\
-    \ http://10.20.30.80 \\\n  -o /dev/null \\\n  -w '%{http_code}' && echo '' && echo '커스텀 헤더 테스트 완료'"
+  answer: "curl -s \\\n  -H 'X-Custom-Header: SecurityTest' \\\n  -H 'User-Agent:\
+    \ SecurityScanner/1.0' http://10.20.30.80 \\\n  -o /dev/null \\\n  -w '%{http_code}'\
+    \ && echo '' && echo '커스텀 헤더 테스트 완료'"
   answer_detail: 커스텀 헤더는 WAF 우회, 인증 토큰 전달 등에 사용됩니다.
   verify:
     type: output_contains
@@ -306,8 +847,8 @@ steps:
     - Header
     field: stdout
     semantic:
-      intent: '커스텀 헤더 — curl -H ''X-Custom-Header: SecurityTest'' -H ''User-Agent: SecurityScanner/1.0''.
-        WAF 우회 (UA 위장) + 인증 토큰 전달. RFC 7230 헤더 확장.'
+      intent: '커스텀 헤더 — curl -H ''X-Custom-Header: SecurityTest'' -H ''User-Agent:
+        SecurityScanner/1.0''. WAF 우회 (UA 위장) + 인증 토큰 전달. RFC 7230 헤더 확장.'
       success_criteria:
       - curl -H 다중 헤더
       - 커스텀 헤더 또는 Header 키워드
@@ -322,20 +863,63 @@ steps:
       - WAF 우회 맥락 없음
   target_vm: attacker
 - order: 12
-  instruction: HTTPS 연결의 TLS 인증서 정보를 확인하시오.
-  hint: openssl s_client를 사용하세요.
+  instruction: |-
+    HTTPS 연결의 TLS 인증서 정보를 확인하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 도구 A — openssl s_client (가장 정밀)
+    ```bash
+    echo | openssl s_client -connect 10.20.30.80:443 -servername 10.20.30.80 2>/dev/null \
+      | openssl x509 -text -noout 2>/dev/null | head -25
+    echo "TLS 인증서 확인 완료"
+    ```
+    핵심 출력:
+    ```
+    Issuer: CN = Let's Encrypt R3
+    Validity
+        Not Before: Jan  1 00:00:00 2026 GMT
+        Not After : Apr  1 00:00:00 2026 GMT
+    Subject: CN = 10.20.30.80
+    X509v3 Subject Alternative Name: DNS:example.com, DNS:www.example.com
+    ```
+
+    ▶ 2단계: 도구 B — sslscan (간략한 cipher + 인증서)
+    설치 (이미 됨). 사용:
+    ```bash
+    sslscan --no-failed --no-cipher-details 10.20.30.80
+    ```
+    cipher suite 목록 + 인증서 만료일 + Heartbleed/POODLE 등 알려진 취약점 자동 점검.
+
+    ▶ 3단계: 도구 C — testssl.sh (가장 종합 — A~F 등급)
+    설치 (이미 됨): `~/testssl.sh/testssl.sh`. 사용:
+    ```bash
+    ~/testssl.sh/testssl.sh --severity HIGH https://10.20.30.80
+    ```
+    HIGH 이상 취약점만 출력 (Heartbleed, BEAST, POODLE, Logjam, FREAK, BREACH 등).
+    `--severity LOW` 로 모든 점검 가능.
+
+    ▶ 4단계: 도구 D — nmap ssl-cert NSE
+    ```bash
+    nmap --script ssl-cert,ssl-enum-ciphers -p 443 10.20.30.80
+    ```
+
+    ▶ 5단계: 답변
+    인증서 Subject/Issuer/Validity 1~2 줄 quote + 만료 임박/약한 cipher 등 발견사항 1 문장.
+  hint: 'openssl s_client 정밀 / sslscan 간략 / testssl.sh 종합 등급 / nmap NSE 자동.'
   category: tls
   points: 10
-  answer: echo | openssl s_client -connect 10.20.30.80:443 2>/dev/null | openssl x509 -text -noout 2>/dev/null
-    | head -15 || echo 'TLS 인증서 확인 완료'
+  answer: echo | openssl s_client -connect 10.20.30.80:443 2>/dev/null | openssl x509
+    -text -noout 2>/dev/null | head -15 || echo 'TLS 인증서 확인 완료'
   answer_detail: TLS 인증서의 유효기간, 발급자, CN/SAN을 확인하여 위조 인증서를 탐지합니다.
   verify:
     type: output_contains
     expect: 인증서 확인 완료
     field: stdout
     semantic:
-      intent: TLS 인증서 — echo | openssl s_client -connect 10.20.30.80:443 | openssl x509 -text -noout |
-        head -15. 유효기간/발급자/CN/SAN. 위조 인증서 탐지. RFC 5246 TLS + RFC 5280 X.509.
+      intent: TLS 인증서 — echo | openssl s_client -connect 10.20.30.80:443 | openssl
+        x509 -text -noout | head -15. 유효기간/발급자/CN/SAN. 위조 인증서 탐지. RFC 5246 TLS + RFC
+        5280 X.509.
       success_criteria:
       - openssl s_client
       - x509 인증서 파싱
@@ -350,20 +934,63 @@ steps:
       - 인증서 분석 없음
   target_vm: attacker
 - order: 13
-  instruction: 웹 애플리케이션의 기술 스택을 식별하시오.
-  hint: 응답 헤더, HTML 소스, 쿠키 이름 등에서 단서를 찾으세요.
+  instruction: |-
+    웹 애플리케이션의 기술 스택을 식별하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 도구 A — whatweb (가장 종합)
+    ```bash
+    whatweb -v --aggression=3 http://10.20.30.80
+    ```
+    출력 항목 — HTTPServer / X-Powered-By / 프레임워크 (Express, Django, Rails) /
+    JS 라이브러리 (React, Angular, Vue, jQuery) / CMS (WordPress, Drupal) / Cookie 패턴.
+
+    ▶ 2단계: 도구 B — wappalyzer-cli (브라우저 분석 수준)
+    설치: `npm install -g wappalyzer` (Node.js 필요). 사용:
+    ```bash
+    wappalyzer http://10.20.30.80 -P
+    ```
+    JSON 출력으로 각 카테고리 (Programming Language / Framework / DB / Analytics 등) 식별.
+
+    ▶ 3단계: 도구 C — wpscan (WordPress 전용)
+    설치: `gem install wpscan` 또는 `docker run wpscanteam/wpscan`. 사용 (WordPress 의심 시):
+    ```bash
+    wpscan --url http://10.20.30.80 --enumerate u,p,t \
+      --random-user-agent --no-update
+    # u=users, p=plugins, t=themes
+    ```
+
+    ▶ 4단계: 도구 D — 수동 grep (HTML/JS 단서)
+    ```bash
+    curl -s http://10.20.30.80 | grep -ioE '(angular|react|vue|jquery|express|django|rails|wordpress|drupal)' | sort -u
+    curl -sI http://10.20.30.80 | grep -iE '(server|x-powered|x-aspnet|x-django|set-cookie)'
+    ```
+
+    ▶ 5단계: 활용 — CVE 매핑
+    ```bash
+    # 식별된 컴포넌트로 CVE 검색
+    nuclei -u http://10.20.30.80 -t http/cves/ -tags <식별된기술명> -silent
+    # 예: -tags wordpress / -tags express / -tags struts
+    ```
+
+    ▶ 6단계: 답변
+    각 도구 식별 결과 (Server/X-Powered-By/JS lib) 1~2개 quote + "Express 4.x 식별 → CVE-2024-XXXX 후보" 매핑.
+  hint: 'whatweb 종합 / wappalyzer 브라우저급 / wpscan WP 전용 / 수동 grep + nuclei CVE.'
   category: fingerprinting
   points: 10
-  answer: curl -sI http://10.20.30.80 | grep -iE '(server|x-powered|set-cookie)' && curl -s http://10.20.30.80
-    | grep -ioE '(angular|react|vue|jquery|express)' | sort -u && echo '기술 스택 식별 완료'
+  answer: curl -sI http://10.20.30.80 | grep -iE '(server|x-powered|set-cookie)' &&
+    curl -s http://10.20.30.80 | grep -ioE '(angular|react|vue|jquery|express)' |
+    sort -u && echo '기술 스택 식별 완료'
   answer_detail: 기술 스택 식별로 프레임워크별 알려진 취약점을 매칭할 수 있습니다.
   verify:
     type: output_contains
     expect: 기술 스택 식별 완료
     field: stdout
     semantic:
-      intent: 기술 스택 식별 — curl -sI + grep '(server|x-powered|set-cookie)' + curl -s | grep -ioE '(angular|react|vue|jquery|express)'.
-        헤더 + JS 라이브러리 핑거프린팅. CVE 매칭. wapiti/whatweb 자동.
+      intent: 기술 스택 식별 — curl -sI + grep '(server|x-powered|set-cookie)' + curl -s
+        | grep -ioE '(angular|react|vue|jquery|express)'. 헤더 + JS 라이브러리 핑거프린팅. CVE
+        매칭. wapiti/whatweb 자동.
       success_criteria:
       - 헤더 + JS 라이브러리 grep
       - 기술 스택 키워드
@@ -378,8 +1005,55 @@ steps:
       - 프레임워크 분석 없음
   target_vm: attacker
 - order: 14
-  instruction: 웹 서버의 에러 페이지를 분석하여 정보 누출 여부를 확인하시오.
-  hint: 잘못된 경로, 잘못된 파라미터로 에러를 유발하세요.
+  instruction: |-
+    웹 서버의 에러 페이지를 분석하여 정보 누출 여부를 확인하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 도구 A — curl 으로 다양한 에러 유발
+    ```bash
+    # NULL byte / 잘못된 파라미터 / 존재하지 않는 path
+    for url in "/%00" "/api/error" "/admin/../../etc/passwd" "/?id=1'" "/api/users/999999"; do
+      echo "=== $url ==="
+      curl -s "http://10.20.30.80${url}" 2>/dev/null | head -10
+    done
+    echo "에러 페이지 분석 완료"
+    ```
+    응답 본문에 **stack trace / 파일 경로 / DB 쿼리 / 라이브러리 버전** 등 노출되면 CWE-209.
+
+    ▶ 2단계: 도구 B — nikto (default 에러 점검)
+    ```bash
+    nikto -h http://10.20.30.80 -nointeractive 2>&1 | grep -iE 'error|debug|trace|stack|server-info'
+    ```
+    nikto 는 `/server-info`, `/server-status`, `/.git/`, `/phpinfo.php` 등 default 정보 누출 페이지 자동 점검.
+
+    ▶ 3단계: 도구 C — nuclei 의 exposures 템플릿
+    ```bash
+    nuclei -u http://10.20.30.80 -t http/exposures/ -silent
+    ```
+    출력 예: `[exposed-django-debug] http://target/?error=1` 등 자동 식별.
+
+    ▶ 4단계: 도구 D — gitdumper (git 노출 시)
+    ```bash
+    # /.git/ 응답이 있으면
+    curl -sI http://10.20.30.80/.git/config | grep -i '200\|HTTP'
+    # 노출 시 git 디렉토리 dump (gitdumper.sh)
+    git clone https://github.com/internetwache/GitTools.git ~/GitTools 2>/dev/null
+    bash ~/GitTools/Dumper/gitdumper.sh http://10.20.30.80/.git/ ~/dumped-git
+    ```
+
+    ▶ 5단계: 일반적 정보 누출 패턴
+    | 패턴 | 의미 |
+    |---|---|
+    | `Stack trace at /var/www/...` | 절대 경로 노출 |
+    | `pymysql.OperationalError: ...` | DB 종류 + 라이브러리 노출 |
+    | `<title>phpinfo()</title>` | PHP 환경 변수 전체 노출 |
+    | `Apache Server at ... Port 80` | 기본 에러 페이지 (Server 헤더 제거 안됨) |
+    | `Whitelabel Error Page` (Spring) | Spring Boot 식별 |
+
+    ▶ 6단계: 답변
+    1~2 에러 페이지 quote + "Stack trace 노출 → 절대 경로 정보 노출 (CWE-209)" 식 분석.
+  hint: 'curl 다양 path / nikto default / nuclei exposures / gitdumper git 노출.'
   category: recon
   points: 12
   answer: curl -s 'http://10.20.30.80/%00' 2>/dev/null | head -20 && curl -s 'http://10.20.30.80/api/error'
@@ -390,8 +1064,8 @@ steps:
     expect: 에러 페이지 분석 완료
     field: stdout
     semantic:
-      intent: 에러 페이지 분석 — curl -s 'http://10.20.30.80/%00' + /api/error. 잘못된 경로/파라미터로 에러 유발. 상세 에러 = 서버
-        경로/스택 트레이스/DB 정보 노출. CWE-209 Information Exposure.
+      intent: 에러 페이지 분석 — curl -s 'http://10.20.30.80/%00' + /api/error. 잘못된 경로/파라미터로
+        에러 유발. 상세 에러 = 서버 경로/스택 트레이스/DB 정보 노출. CWE-209 Information Exposure.
       success_criteria:
       - 에러 유발 (NULL byte 또는 잘못 경로)
       - 에러 페이지 분석 키워드
@@ -406,22 +1080,90 @@ steps:
       - 정보 노출 맥락 없음
   target_vm: attacker
 - order: 15
-  instruction: HTTP 기초 분석 종합 보고서를 작성하시오.
-  hint: 서버 정보, 보안 헤더, 취약점 요약을 포함하세요.
+  instruction: |-
+    HTTP 기초 분석 종합 보고서를 작성하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 데이터 수집 (자동 통합 스크립트)
+    ```bash
+    TARGET=http://10.20.30.80
+    REPORT=~/wsr-week01-$(date +%F).md
+
+    cat > $REPORT <<EOF
+    # HTTP 기초 분석 보고서
+    대상: $TARGET
+    점검자: $(whoami)
+    일자: $(date -Iseconds)
+
+    ■ 1. 서버 정보
+    \`\`\`
+    $(whatweb -v $TARGET 2>&1 | head -8)
+    \`\`\`
+
+    ■ 2. 응답 코드
+    \`\`\`
+    $(for p in / /robots.txt /admin /api/users; do
+      code=\$(curl -o /dev/null -s -w '%{http_code}' \$TARGET\$p)
+      echo "\$p \$code"
+    done)
+    \`\`\`
+
+    ■ 3. 보안 헤더
+    \`\`\`
+    $(curl -sI $TARGET | grep -iE '(x-frame|x-content|x-xss|strict-transport|content-security|referrer)')
+    \`\`\`
+
+    ■ 4. 노출 점검 (nuclei)
+    \`\`\`
+    $(nuclei -u $TARGET -t http/exposures/ -silent 2>&1 | head -10)
+    \`\`\`
+    EOF
+
+    cat $REPORT
+    sha256sum $REPORT
+    echo "보고서 완료"
+    ```
+
+    ▶ 2단계: 도구별 보고서 자동 생성기
+    - **nikto -o report.html -Format html** — HTML 보고서
+    - **nuclei -j -o report.jsonl** — JSONL (jq 로 후처리)
+    - **whatweb --log-json=out.json** — JSON 로그
+    - **wapiti --output=report.html --format=html** — Wapiti HTML 리포트
+
+    ▶ 3단계: 무결성 + 윤리 진술
+    ```bash
+    # 보고서 sha256
+    sha256sum $REPORT > $REPORT.sha256
+    # 윤리 footer 추가
+    cat >> $REPORT <<EOF
+
+    ■ 윤리·법적 진술
+    - 허가 범위: 사전 서면 허가 받은 host (10.20.30.80) only
+    - 점검 단계: 정보 수집 까지. exploit 미수행
+    - 법적 근거: 정보통신망법 제48조 — 허가 범위 내 점검은 적용 제외
+    - 로그 보존: 본 transcript + 결과 24개월 보존
+    EOF
+    ```
+
+    ▶ 4단계: 답변
+    보고서 핵심 섹션 (서버/응답코드/헤더/노출) 1~2줄씩 quote + sha256 해시값.
+  hint: '통합 스크립트 / nikto·nuclei JSON 출력 / sha256sum 무결성 / 윤리 footer.'
   category: verification
   points: 12
-  answer: 'echo ''=== HTTP 기초 분석 보고서 ==='' && echo ''대상: http://10.20.30.80'' && echo ''[서버 정보]'' && curl
-    -sI http://10.20.30.80 | grep -i server && echo ''[보안 헤더]'' && curl -sI http://10.20.30.80 | grep
-    -icE ''(x-frame|x-xss|csp|hsts)'' && echo ''[응답 코드]'' && curl -o /dev/null -s -w ''%{http_code}''
-    http://10.20.30.80 && echo '''' && echo ''=== 보고서 완료 ==='''
+  answer: 'echo ''=== HTTP 기초 분석 보고서 ==='' && echo ''대상: http://10.20.30.80'' && echo
+    ''[서버 정보]'' && curl -sI http://10.20.30.80 | grep -i server && echo ''[보안 헤더]''
+    && curl -sI http://10.20.30.80 | grep -icE ''(x-frame|x-xss|csp|hsts)'' && echo
+    ''[응답 코드]'' && curl -o /dev/null -s -w ''%{http_code}'' http://10.20.30.80 &&
+    echo '''' && echo ''=== 보고서 완료 ==='''
   answer_detail: HTTP 분석 결과를 체계적으로 정리하여 후속 취약점 진단의 기초 자료로 활용합니다.
   verify:
     type: output_contains
     expect: 보고서 완료
     field: stdout
     semantic:
-      intent: 'HTTP 분석 보고서 — echo + curl 종합: [서버 정보] + [보안 헤더 카운트] + [응답 코드]. HTTP 분석 결과 체계화. 후속 취약점 진단
-        기초. PTES Reporting.'
+      intent: 'HTTP 분석 보고서 — echo + curl 종합: [서버 정보] + [보안 헤더 카운트] + [응답 코드]. HTTP
+        분석 결과 체계화. 후속 취약점 진단 기초. PTES Reporting.'
       success_criteria:
       - 보고서 완료 키워드
       - 서버/헤더/응답 3섹션
@@ -436,99 +1178,54 @@ steps:
       - 체계 부족
   target_vm: attacker
 - order: 99
-  instruction: |
-    [복합 시나리오] "JuiceShop 첫 점검 — OWASP Testing Guide 정찰 단계 + 점검 보고서 + 윤리 진술"
+  instruction: "[복합 시나리오] \"JuiceShop 첫 점검 — OWASP Testing Guide 정찰 단계 + 점검 보고서 +\
+    \ 윤리 진술\"\n\n## 상황 (web-vuln 첫 주)\n\n당신은 ABC 핀테크 회사의 *외부 보안 컨설팅사* 신입 점검원. 첫 임무는\
+    \ client 의 JuiceShop\n인스턴스 (http://10.20.30.80:3000) 첫 점검.\n\n> 멘토: \"1~15 step\
+    \ 으로 HTTP 기초 도구는 익혔지? 이제 *진짜 점검* 흐름 — OWASP Testing\n>  Guide v4 의 Information\
+    \ Gathering 직접 수행하고, *해킹이 아닌 점검* 의 윤리적 경계를\n>  보고서 끝에 명시해. 우리 일은 *허가받은 범위 안에서*\
+    \ 취약점 *식별*. exploit 까지 가는\n>  게 아니야. 보고서 형식이 client 에게 넘기는 첫 산출물이라 깔끔해야 해.\"\n\
+    \n학습 목표 #1 (해킹↔점검 차이) + #2 (법·윤리) + #3 (OWASP TG 흐름) 행동 증명.\n\n※ Non-AI 트랙: 학생\
+    \ 직접 SSH + transcript paste.\n\n## 임무 (3 단계, 약 25분)\n\n### Phase A — OWASP TG\
+    \ WSTG-INFO 4단계 정찰 (15분)\n\n학생이 attacker(10.20.30.201) SSH 후:\n  ```\n  ssh ccc@10.20.30.201\n\
+    \n  # WSTG-INFO-01 — Search engine recon (현실 환경 가정 1줄 메모)\n  echo \"현실 환경: site:juiceshop.com\
+    \ filetype:txt 등 외부 검색\"\n\n  # WSTG-INFO-02 — Server fingerprint\n  curl -sI\
+    \ http://10.20.30.80:3000/ | head -20\n  curl -sI http://10.20.30.80:3000/ | grep\
+    \ -iE 'server|x-powered-by|x-aspnet'\n  whatweb -a 1 http://10.20.30.80:3000/\
+    \ 2>/dev/null || echo \"whatweb 미설치\"\n\n  # WSTG-INFO-03 — Metafiles\n  curl\
+    \ -s http://10.20.30.80:3000/robots.txt\n  curl -s http://10.20.30.80:3000/sitemap.xml\n\
+    \  curl -sI http://10.20.30.80:3000/.git/config\n  curl -s http://10.20.30.80:3000/security.txt\n\
+    \n  # WSTG-INFO-04 — Entry points\n  curl -s http://10.20.30.80:3000/ | grep -oE\
+    \ 'href=\"[^\"]+\"' | sort -u | head -20\n  curl -s http://10.20.30.80:3000/api/Users\
+    \ | head -200\n  curl -s http://10.20.30.80:3000/api/Products | head -200\n  ```\n\
+    \n### Phase B — 발견 사항 분석 (5분)\n\n위험도 분류 표:\n\n| 발견 항목 | 위험도 | 근거 (OWASP TG / CWE)\
+    \ |\n|---------|--------|---------------------|\n| Server header X-Powered-By\
+    \ | Low | Information Disclosure (CWE-200) |\n| robots.txt 의 /admin path | Medium\
+    \ | 숨겨진 경로 노출 |\n| /api/Users 인증 없이 접근 | High | Broken Access Control (OWASP A01)\
+    \ |\n| /sitemap.xml 누락 | Info | (방어자 입장 +) |\n\n*주의*: 점검 단계는 *exploit X*. \"/api/Users\
+    \ 가 응답한다는 사실\" 만 기록.\n\n### Phase C — 점검 보고서 + 윤리 진술 + sha256 (5분)\n\n```\n# WSTG-INFO\
+    \ Report — JuiceShop @ 10.20.30.80:3000\n점검자: <id> / 일자: 2026-MM-DD / 점검 범위: HTTP/HTTPS\
+    \ port 3000 only\n\n## Phase A — 4단계 결과\n[WSTG-INFO-02/03/04 결과 인용 1줄씩]\n\n##\
+    \ Phase B — 발견 표 [위 표]\n\n## 권고 (방어자 향)\n1. Server / X-Powered-By 헤더 제거\n2. robots.txt\
+    \ 에 진짜 민감 경로 적지 말기\n3. /api/Users 인증 게이트 추가\n\n## 윤리·법적 진술 (필수)\n*본 점검은 다음 조건에서만\
+    \ 수행되었다*:\n- **허가 범위**: 사전 서면 허가 받은 host (10.20.30.80) + port (3000) 만\n- **점검\
+    \ 단계**: 정보 수집·분류 까지. exploit / data exfil 미수행\n- **법적 근거**: 정보통신망법 제48조 — 허가 범위\
+    \ 내 점검은 적용 제외\n- **해킹과 점검 차이**: 본 작업은 *식별* 만. exploit/payload 사용은 *별도 허가* 필요\n\
+    - **로그 보존**: 본 점검 transcript + 결과 24개월 보존\n\n## 무결성\nsha256sum WSTG-INFO-Report.md\
+    \ > .sha256\n```\n\n종료 정리 없음 (조회만).\n\n\n[도구 권장] **curl 단독 의존 금지**. 카테고리 `integration_scenario`\
+    \ 에 적합한 도구: 여러 도구 chain — 정찰 (whatweb/nmap) → 식별 (sqlmap/xsstrike) → 후속 작업. 도구\
+    \ 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과."
+  hint: 'Phase A: WSTG-INFO 4 sub-section (01 search 메모 + 02 fingerprint + 03 metafiles
+    + 04 entry points)
 
-    ## 상황 (web-vuln 첫 주)
-
-    당신은 ABC 핀테크 회사의 *외부 보안 컨설팅사* 신입 점검원. 첫 임무는 client 의 JuiceShop
-    인스턴스 (http://10.20.30.80:3000) 첫 점검.
-
-    > 멘토: "1~15 step 으로 HTTP 기초 도구는 익혔지? 이제 *진짜 점검* 흐름 — OWASP Testing
-    >  Guide v4 의 Information Gathering 직접 수행하고, *해킹이 아닌 점검* 의 윤리적 경계를
-    >  보고서 끝에 명시해. 우리 일은 *허가받은 범위 안에서* 취약점 *식별*. exploit 까지 가는
-    >  게 아니야. 보고서 형식이 client 에게 넘기는 첫 산출물이라 깔끔해야 해."
-
-    학습 목표 #1 (해킹↔점검 차이) + #2 (법·윤리) + #3 (OWASP TG 흐름) 행동 증명.
-
-    ※ Non-AI 트랙: 학생 직접 SSH + transcript paste.
-
-    ## 임무 (3 단계, 약 25분)
-
-    ### Phase A — OWASP TG WSTG-INFO 4단계 정찰 (15분)
-
-    학생이 attacker(10.20.30.201) SSH 후:
-      ```
-      ssh ccc@10.20.30.201
-
-      # WSTG-INFO-01 — Search engine recon (현실 환경 가정 1줄 메모)
-      echo "현실 환경: site:juiceshop.com filetype:txt 등 외부 검색"
-
-      # WSTG-INFO-02 — Server fingerprint
-      curl -sI http://10.20.30.80:3000/ | head -20
-      curl -sI http://10.20.30.80:3000/ | grep -iE 'server|x-powered-by|x-aspnet'
-      whatweb -a 1 http://10.20.30.80:3000/ 2>/dev/null || echo "whatweb 미설치"
-
-      # WSTG-INFO-03 — Metafiles
-      curl -s http://10.20.30.80:3000/robots.txt
-      curl -s http://10.20.30.80:3000/sitemap.xml
-      curl -sI http://10.20.30.80:3000/.git/config
-      curl -s http://10.20.30.80:3000/security.txt
-
-      # WSTG-INFO-04 — Entry points
-      curl -s http://10.20.30.80:3000/ | grep -oE 'href="[^"]+"' | sort -u | head -20
-      curl -s http://10.20.30.80:3000/api/Users | head -200
-      curl -s http://10.20.30.80:3000/api/Products | head -200
-      ```
-
-    ### Phase B — 발견 사항 분석 (5분)
-
-    위험도 분류 표:
-
-    | 발견 항목 | 위험도 | 근거 (OWASP TG / CWE) |
-    |---------|--------|---------------------|
-    | Server header X-Powered-By | Low | Information Disclosure (CWE-200) |
-    | robots.txt 의 /admin path | Medium | 숨겨진 경로 노출 |
-    | /api/Users 인증 없이 접근 | High | Broken Access Control (OWASP A01) |
-    | /sitemap.xml 누락 | Info | (방어자 입장 +) |
-
-    *주의*: 점검 단계는 *exploit X*. "/api/Users 가 응답한다는 사실" 만 기록.
-
-    ### Phase C — 점검 보고서 + 윤리 진술 + sha256 (5분)
-
-    ```
-    # WSTG-INFO Report — JuiceShop @ 10.20.30.80:3000
-    점검자: <id> / 일자: 2026-MM-DD / 점검 범위: HTTP/HTTPS port 3000 only
-
-    ## Phase A — 4단계 결과
-    [WSTG-INFO-02/03/04 결과 인용 1줄씩]
-
-    ## Phase B — 발견 표 [위 표]
-
-    ## 권고 (방어자 향)
-    1. Server / X-Powered-By 헤더 제거
-    2. robots.txt 에 진짜 민감 경로 적지 말기
-    3. /api/Users 인증 게이트 추가
-
-    ## 윤리·법적 진술 (필수)
-    *본 점검은 다음 조건에서만 수행되었다*:
-    - **허가 범위**: 사전 서면 허가 받은 host (10.20.30.80) + port (3000) 만
-    - **점검 단계**: 정보 수집·분류 까지. exploit / data exfil 미수행
-    - **법적 근거**: 정보통신망법 제48조 — 허가 범위 내 점검은 적용 제외
-    - **해킹과 점검 차이**: 본 작업은 *식별* 만. exploit/payload 사용은 *별도 허가* 필요
-    - **로그 보존**: 본 점검 transcript + 결과 24개월 보존
-
-    ## 무결성
-    sha256sum WSTG-INFO-Report.md > .sha256
-    ```
-
-    종료 정리 없음 (조회만).
-  hint: |
-    Phase A: WSTG-INFO 4 sub-section (01 search 메모 + 02 fingerprint + 03 metafiles + 04 entry points)
     Phase B: 위험도 표 (Low/Med/High + OWASP/CWE 근거)
+
     Phase C: 보고서 markdown + 권고 + 윤리 진술 5요소 + sha256
+
     포인트: 점검 = 식별까지. exploit 별도 허가. 윤리 진술 필수.
+
     종료: 조회만이라 정리 없음.
+
+    '
   category: integration_scenario
   points: 50
   verify:
@@ -536,10 +1233,13 @@ steps:
     expect: WSTG
     field: stdout
     semantic:
-      intent: |
-        OWASP WSTG-INFO 4 sub-section 직접 수행 + 점검 보고서 + 윤리·법적 진술. 학습 목표
+      intent: 'OWASP WSTG-INFO 4 sub-section 직접 수행 + 점검 보고서 + 윤리·법적 진술. 학습 목표
+
         #1 (해킹↔점검 차이) + #2 (법·윤리) + #3 (OWASP TG 흐름) 행동 증명.
+
         Non-AI 트랙: 학생 직접 SSH + transcript paste.
+
+        '
       success_criteria:
       - WSTG-INFO 4 sub-section 모두 수행
       - 위험도 분류 표 (Low/Med/High + OWASP/CWE)
@@ -558,6 +1258,8 @@ steps:
   target_vm: bastion
   risk_level: low
   answer: ''
-  answer_detail: |
-    학습 목표 #1+#2+#3 통합 행동 증명. 1~15 step 이 HTTP 도구 익히기였다면 99 는 첫 점검 산출물.
+  answer_detail: '학습 목표 #1+#2+#3 통합 행동 증명. 1~15 step 이 HTTP 도구 익히기였다면 99 는 첫 점검 산출물.
+
     윤리 진술 필수.
+
+    '

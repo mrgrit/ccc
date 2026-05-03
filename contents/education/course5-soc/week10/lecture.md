@@ -645,3 +645,46 @@ echo "TTD (탐지 소요 시간): ${TTD}초"
 
 **학생 액션**: WAF audit log 의 cookie 평문 logging 차단 + JSESSIONID *cross-src 추적* 룰 작성.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course5 SOC — Week 10 악성코드 분석)
+
+| 작업 | 도구 |
+|------|------|
+| 정적 분석 | yara / Detect-It-Easy (DiE) / pe-bear / strings / file |
+| 동적 분석 | Cuckoo Sandbox / DRAKVUF / any.run (commercial) |
+| 디스어셈블 | radare2 / ghidra / cutter (radare GUI) |
+| 디버거 | gdb / x64dbg (Win) / radare2 r2 |
+| Unpacker | upx / Detect-It-Easy / binwalk |
+| API tracing | strace / ltrace / Frida / Sysmon (Win) |
+
+### 학생 환경 준비
+```bash
+sudo apt install -y \
+  yara radare2 binwalk upx-ucl \
+  ghidra strace ltrace
+pip3 install yara-python frida frida-tools
+
+# Cuckoo Sandbox (학습 참고)
+# https://cuckoosandbox.org/
+```
+
+### 핵심
+```bash
+# 정적 — yara
+yara ~/yara-rules/index.yar /tmp/sample.exe
+
+# 디스어셈블 — radare2
+r2 -A /tmp/sample.exe
+> aaa
+> afl                                                 # 함수 목록
+> pdf @main                                           # main 디스어셈블
+> ?
+
+# Frida — runtime instrumentation
+frida -l hook.js /tmp/sample.exe
+
+# Cuckoo / sandbox 결과 분석
+curl http://cuckoo.local/api/tasks/list | jq
+```

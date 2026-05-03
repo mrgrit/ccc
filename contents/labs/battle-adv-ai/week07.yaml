@@ -78,7 +78,12 @@ steps:
     검증하기 위한 데이터 소스, 분석 방법, 탐지 기준을 포함하는 헌팅 계획을 작성해줘'
 - order: 2
   instruction: '[BLUE] DNS 헌팅을 실행하라. tcpdump로 DNS 쿼리를 캡처하고 Suricata eve.json에서 DNS
-    이벤트를 분석하라.'
+    이벤트를 분석하라.
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/battle-adv-ai-week07/2/eve.json 사전 주입.
+    `jq -c ''.alert'' /home/ccc/cyber-range/fixtures/battle-adv-ai-week07/2/eve.json`
+    후 (1) 빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
   hint: tcpdump로 DNS 트래픽을 캡처하고 도메인별 쿼리 빈도를 집계한다.
   category: analysis
   points: 10
@@ -121,7 +126,24 @@ steps:
     2>&1
   risk_level: low
   bastion_prompt: '[BLUE] DNS 헌팅을 실행하라. tcpdump로 DNS 쿼리를 캡처하고 Suricata eve.json에서
-    DNS 이벤트를 분석해줘'
+    DNS 이벤트를 분석해줘
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/battle-adv-ai-week07/2/eve.json 사전 주입.
+    `jq -c ''.alert'' /home/ccc/cyber-range/fixtures/battle-adv-ai-week07/2/eve.json`
+    후 (1)빈도·패턴 (2)MITRE (3)방어 3섹션. raw dump 금지.'
+  fixtures:
+  - generator: suricata_alert
+    target_vm: secu
+    path: /home/ccc/cyber-range/fixtures/battle-adv-ai-week07/2/eve.json
+    params:
+      seed: 42
+      duration_days: 7
+      alerts_per_day: 30
+      c2_beacon_count: 12
+      metadata_attempt_count: 4
+    mode: overwrite
+    cleanup: false
 - order: 3
   instruction: '[BLUE] Sigma 규칙을 작성하여 base64 디코딩 및 동적 실행 명령을 탐지하라.'
   hint: Sigma YAML 형식으로 process_creation 이벤트를 탐지한다.
@@ -237,7 +259,9 @@ steps:
     공격자는 /dev/shm(RAM 디스크)에 도구를 숨기는 경우가 많다.
   verify:
     type: output_contains
-    expect: File System Hunting
+    expect:
+    - File System Hunting
+    - find
     semantic:
       intent: '[BLUE] 파일 시스템 헌팅 — find / -type f -newer /etc/shadow -executable 2>/dev/null
         (기준 파일 이후 새 실행 파일) + find / -name .* -type f -not -path */.*/* (최상위 숨김 파일)

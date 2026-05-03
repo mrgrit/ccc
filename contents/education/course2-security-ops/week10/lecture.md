@@ -763,3 +763,72 @@ rule.id >= 100000
 3. `<if_sid>` chain 으로 *base rule + correlation rule* 분리 (level 분리)
 
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course2 SecOps — Week 10 Wazuh 탐지 룰)
+
+| 작업 | 도구 |
+|------|------|
+| 룰 작성 | Wazuh 자체 XML / Sigma → Wazuh 변환 |
+| 룰 테스트 | wazuh-logtest / 직접 echo 주입 |
+| Sigma 변환 | sigma-cli + pysigma-backend-elastic / sigma → Wazuh custom backend |
+| 룰 카탈로그 | Wazuh ruleset (built-in 4000+) / SOCFortress / Atomic Red Team mappings |
+| ATT&CK 매핑 | Wazuh MITRE field / Sigma matrix |
+| Decoder 작성 | wazuh-logtest / decoder.xml |
+
+### 학생 환경 준비
+```bash
+ssh ccc@10.20.30.100
+
+# Sigma (모든 SIEM 호환 시그니처 표준)
+pip3 install pysigma pysigma-backend-elasticsearch
+git clone https://github.com/SigmaHQ/sigma.git ~/sigma
+
+# SOCFortress 룰 (Wazuh 용 커뮤니티 룰)
+git clone https://github.com/socfortress/Wazuh-Rules.git ~/socfortress-rules
+
+# Atomic Red Team — 공격 시뮬레이션
+git clone https://github.com/redcanaryco/atomic-red-team.git ~/atomic
+pip3 install invoke pyinvoke
+```
+
+### 핵심 시나리오
+```bash
+# 1) 자체 룰 작성 — local_rules.xml
+sudo tee -a /var/ossec/etc/rules/local_rules.xml > /dev/null << 'EOF'
+<group name="custom_ssh_brute,">
+  <rule id="100100" level="10">
+    <if_sid>5710</if_sid>
+    <match>Failed password</match>
+    <description>SSH brute-force attempt</description>
+    <mitre><id>T1110</id></mitre>
+  </rule>
+</group>
+EOF
+sudo /var/ossec/bin/wazuh-control restart
+
+# 2) wazuh-logtest 로 검증
+sudo /var/ossec/bin/wazuh-logtest
+# 입력: Apr 30 12:00:01 sshd[1234]: Failed password for root from 1.2.3.4 port 22
+# → rule 100100 매칭 확인
+
+# 3) Sigma → Wazuh
+cat > /tmp/test.yml << 'EOF'
+title: SSH Failed Login
+detection:
+    selection:
+        process_name: sshd
+        message|contains: "Failed password"
+    condition: selection
+EOF
+sigma convert -t elasticsearch /tmp/test.yml
+# → Wazuh OpenSearch 에 직접 사용 가능한 query
+
+# 4) Atomic Red Team 으로 룰 테스트
+sudo invoke install-atomicredteam
+sudo /var/atomic-red-team/atomics/T1110.001/T1110.001.yaml -test         # SSH brute 시뮬
+sudo /var/ossec/logs/alerts/alerts.json | jq 'select(.rule.id=="100100")'
+```
+
+학생은 본 10주차에서 **Sigma 표준 + Wazuh local rules + Atomic Red Team 검증** 의 통합 흐름으로 룰 작성·테스트·검증 사이클을 익힌다.

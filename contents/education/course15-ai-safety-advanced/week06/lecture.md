@@ -1054,3 +1054,419 @@ graph LR
 
 **학생 액션**: MITRE ATLAS.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course15 AI Safety Advanced — Week 06 차분 프라이버시·DP-SGD·SmartNoise·OpenDP)
+
+> 이 부록은 lab `ai-safety-adv-ai/week06.yaml` (8 step + multi_task) 의 모든 명령을
+> 실제로 실행 가능한 형태로 정리한다. Differential Privacy (DP) — Opacus / TF-Privacy /
+> Diffprivlib / OpenDP / SmartNoise + RAPPOR / Google DP + (ε, δ) budget 추적.
+
+### lab step → 도구·범위 매핑 표
+
+| step | 학습 항목 | 핵심 OSS 도구 | 표준 |
+|------|----------|--------------|------|
+| s1 | DP 기본 시나리오 | Diffprivlib (IBM) 통계 query | NIST SP 800-188 |
+| s2 | DP 위협 시나리오 | LLM + (ε, δ) tradeoff | NIST AI |
+| s3 | DP 정책 평가 | LLM + budget 검토 | NIST AI 600-1 |
+| s4 | DP 인젝션 (LLM 측면) | week01~03 도구 | LLM06 |
+| s5 | DP 자동 분석 파이프라인 | OpenDP + Pipeline | training |
+| s6 | DP 가드레일 | DP-SGD + DP query | training |
+| s7 | DP 모니터링 | (ε, δ) budget tracker + Prometheus | observability |
+| s8 | DP 평가 보고서 | markdown + accuracy/privacy curve | report |
+| s99 | 통합 (s1→s2→s3→s5→s6) | Bastion plan 5 단계 | 전체 |
+
+### DP 개념·도구 매핑
+
+| 개념 | 정의 | 도구 |
+|------|------|------|
+| **(ε, δ)-DP** | ε small = 강한 privacy, δ ≈ 0 | Opacus / Diffprivlib |
+| **Laplace 메커니즘** | 결정적 query 에 noise | Diffprivlib |
+| **Gaussian 메커니즘** | gradient 에 noise | Opacus DP-SGD |
+| **Exponential 메커니즘** | top-k 선택 | OpenDP |
+| **Composition** | ε / δ 누적 | RDP / GDP / PRV accountant |
+| **Local DP** | client 가 noise 추가 | RAPPOR / Apple DP |
+| **Central DP** | server 가 noise 추가 | SmartNoise |
+| **Federated DP** | DP + FL | Opacus + Flower |
+| **Privacy budget** | ε ≤ 8 (적당), ε ≤ 1 (강함) | budget tracker |
+| **Hybrid** | Local + Central | shuffle DP |
+
+### 학생 환경 준비
+
+```bash
+pip install --user opacus tensorflow-privacy
+pip install --user diffprivlib pydp
+pip install --user opendp opendp-smartnoise
+
+# Google DP
+git clone https://github.com/google/differential-privacy /tmp/google-dp
+
+# RAPPOR (Local DP)
+pip install --user rappor
+```
+
+### 핵심 도구별 상세 사용법
+
+#### 도구 1: Diffprivlib (IBM) — 통계 query (Step 1)
+
+```python
+from diffprivlib import mechanisms
+import numpy as np
+
+# Laplace mechanism
+laplace = mechanisms.Laplace(epsilon=1.0, sensitivity=1.0)
+print(f"True count: 100, DP count: {laplace.randomise(100):.2f}")
+
+# Gaussian mechanism
+gaussian = mechanisms.Gaussian(epsilon=1.0, delta=1e-5, sensitivity=1.0)
+print(f"DP count (Gaussian): {gaussian.randomise(100):.2f}")
+
+# DP queries
+from diffprivlib import tools
+data = np.random.normal(50, 10, 1000)
+
+dp_mean = tools.mean(data, epsilon=1.0, bounds=(0, 100))
+dp_var = tools.var(data, epsilon=1.0, bounds=(0, 100))
+print(f"DP mean: {dp_mean:.2f} (true: {data.mean():.2f})")
+print(f"DP var: {dp_var:.2f} (true: {data.var():.2f})")
+
+# DP histogram
+hist, bins = tools.histogram(data, epsilon=0.5, bins=10, range=(0, 100))
+```
+
+#### 도구 2: DP 위협 시나리오 (Step 2)
+
+```python
+import requests
+
+prompt = """Generate a Differential Privacy threat scenario:
+1. Attack type (membership inference / reconstruction / re-identification)
+2. Adversary (insider with access / external query / both)
+3. Privacy budget (ε ≤ 1 / ≤ 8 / unconstrained)
+4. Mitigation (DP query / DP-SGD / shuffle / local DP)
+5. Impact (utility loss vs privacy guarantee)
+6. Detection signals (query patterns / abnormal frequency)
+
+JSON: {"attack":"...", "adversary":"...", "epsilon":"...", "mitigation":"...", "impact":"...", "detection":[...]}"""
+
+r = requests.post("http://192.168.0.105:11434/api/generate",
+                 json={"model":"gpt-oss:120b","prompt":prompt,"stream":False})
+print(r.json()['response'])
+```
+
+#### 도구 3: DP 정책 평가 (Step 3)
+
+```python
+def eval_dp_policy(policy):
+    p = f"""정책이 DP 위협에 견고한지 평가:
+{policy}
+
+분석:
+1. (ε, δ) 선택 (NIST 800-188 기준 ε ≤ 8)
+2. Sensitivity bounding
+3. Composition (RDP / GDP accountant)
+4. Privacy budget 누적 추적
+5. Query rate limiting
+6. Local vs Central DP 선택
+
+JSON: {{"weaknesses":[...], "missing_defenses":[...], "rec":[...]}}"""
+
+    r = requests.post("http://192.168.0.105:11434/api/generate",
+        json={"model":"gpt-oss:120b","prompt":p,"stream":False})
+    return r.json()['response']
+
+policy = """
+1. ε = 100 (실질적 privacy 없음)
+2. Sensitivity 미설정
+3. Composition 추적 안 함
+4. Query rate 무제한
+5. Central DP only
+"""
+print(eval_dp_policy(policy))
+```
+
+#### 도구 5: 자동 분석 파이프라인 (Step 5) — OpenDP
+
+```python
+import opendp.prelude as dp
+
+dp.enable_features("contrib")
+
+# OpenDP transformation chain
+preprocessor = (
+    dp.t.make_split_dataframe(separator=",", col_names=["age", "income"])
+    >> dp.t.make_select_column(key="age", TOA=str)
+    >> dp.t.then_cast_default(TOA=int)
+    >> dp.t.then_clamp(bounds=(0, 100))
+    >> dp.t.then_resize(size=1000, constant=50)
+    >> dp.t.then_mean()
+)
+
+# DP measurement
+dp_mean_query = preprocessor >> dp.m.then_laplace(scale=1.0)
+
+# Run
+csv_data = "age,income\n25,50000\n30,60000\n..."
+result = dp_mean_query(csv_data)
+print(f"DP mean age: {result}")
+
+# Privacy budget calculation
+epsilon = dp_mean_query.map(d_in=1)   # adjacent dataset = 1 row diff
+print(f"ε spent: {epsilon}")
+```
+
+#### 도구 6: DP 가드레일 (Step 6) — DP-SGD + DP query
+
+```python
+# === DP-SGD 학습 (week05 Opacus) ===
+from opacus import PrivacyEngine
+import torch
+
+model = ...
+optimizer = torch.optim.SGD(model.parameters(), lr=0.05)
+data_loader = ...
+
+privacy_engine = PrivacyEngine()
+model, optimizer, data_loader = privacy_engine.make_private_with_epsilon(
+    module=model, optimizer=optimizer, data_loader=data_loader,
+    target_epsilon=8.0, target_delta=1e-5,
+    epochs=10, max_grad_norm=1.0,
+)
+
+for epoch in range(10):
+    for batch in data_loader:
+        optimizer.zero_grad()
+        loss = criterion(model(batch.x), batch.y)
+        loss.backward()
+        optimizer.step()
+    print(f"ε = {privacy_engine.get_epsilon(delta=1e-5):.2f}")
+
+# === DP query API wrapper ===
+from diffprivlib import tools as dp_tools
+
+class PrivateAnalytics:
+    def __init__(self, epsilon_budget=10.0):
+        self.budget = epsilon_budget
+        self.spent = 0.0
+        self.queries = []
+
+    def check_budget(self, epsilon):
+        if self.spent + epsilon > self.budget:
+            raise Exception(f"Privacy budget exceeded: spent={self.spent}, requested={epsilon}, budget={self.budget}")
+
+    def dp_count(self, data, epsilon):
+        self.check_budget(epsilon)
+        from diffprivlib.mechanisms import Laplace
+        m = Laplace(epsilon=epsilon, sensitivity=1.0)
+        result = m.randomise(len(data))
+        self.spent += epsilon
+        self.queries.append({"type":"count","epsilon":epsilon,"result":result})
+        return result
+
+    def dp_mean(self, data, epsilon, bounds):
+        self.check_budget(epsilon)
+        result = dp_tools.mean(data, epsilon=epsilon, bounds=bounds)
+        self.spent += epsilon
+        self.queries.append({"type":"mean","epsilon":epsilon,"result":result})
+        return result
+
+    def remaining_budget(self):
+        return self.budget - self.spent
+
+# 사용
+analytics = PrivateAnalytics(epsilon_budget=10.0)
+print(analytics.dp_count(data, epsilon=1.0))
+print(analytics.dp_mean(data, epsilon=2.0, bounds=(0,100)))
+print(f"Remaining: {analytics.remaining_budget():.2f}")
+```
+
+#### 도구 7: 모니터링 — (ε, δ) budget tracker (Step 7)
+
+```python
+from prometheus_client import start_http_server, Gauge, Counter, Histogram
+import time
+
+dp_epsilon_spent = Gauge('dp_epsilon_spent', 'Privacy budget spent', ['user_id'])
+dp_epsilon_remaining = Gauge('dp_epsilon_remaining', 'Privacy budget remaining', ['user_id'])
+dp_query_count = Counter('dp_query_total', 'DP queries', ['user_id', 'type'])
+dp_noise_added = Histogram('dp_noise_magnitude', 'Noise added', ['mechanism'])
+dp_budget_violations = Counter('dp_budget_violations_total', 'Budget exceeded')
+
+class DPBudgetTracker:
+    def __init__(self, total_budget=10.0):
+        self.budgets = {}
+        self.total = total_budget
+
+    def get_or_init(self, user_id):
+        if user_id not in self.budgets:
+            self.budgets[user_id] = {"spent": 0.0, "queries": []}
+            dp_epsilon_remaining.labels(user_id=user_id).set(self.total)
+        return self.budgets[user_id]
+
+    def query(self, user_id, epsilon, query_type, mechanism):
+        b = self.get_or_init(user_id)
+        if b['spent'] + epsilon > self.total:
+            dp_budget_violations.inc()
+            return None
+
+        b['spent'] += epsilon
+        b['queries'].append({"epsilon":epsilon,"type":query_type,"ts":time.time()})
+
+        dp_epsilon_spent.labels(user_id=user_id).set(b['spent'])
+        dp_epsilon_remaining.labels(user_id=user_id).set(self.total - b['spent'])
+        dp_query_count.labels(user_id=user_id, type=query_type).inc()
+        dp_noise_added.labels(mechanism=mechanism).observe(1.0/epsilon)
+        return True
+
+start_http_server(9305)
+tracker = DPBudgetTracker(total_budget=10.0)
+```
+
+#### 도구 8: 보고서 (Step 8)
+
+```bash
+cat > /tmp/dp-eval-report.md << 'EOF'
+# Differential Privacy Evaluation — 2026-Q2
+
+## 1. Executive Summary
+- Dataset: 1M records (synthetic salary survey)
+- DP-SGD 학습 + DP query analytics
+- ε budget: 10.0 (사용자당)
+- 권장: ε ≤ 8 (NIST 800-188)
+
+## 2. accuracy / privacy tradeoff
+| ε | acc (DP-SGD) | inference attack ASR | utility |
+|---|--------------|---------------------|---------|
+| ∞ (no DP) | 99% | 73% (high leak) | full |
+| 8 | 96% | 55% | excellent |
+| 1 | 88% | 51% | good |
+| 0.1 | 60% | 50.3% | poor |
+
+## 3. Query API ε 사용 패턴 (1 month)
+| 사용자 | ε spent | 위반 | 비고 |
+|--------|---------|------|------|
+| analyst-001 | 7.8 | 0 | 정상 |
+| analyst-002 | 9.95 | 1 | 차단 |
+| auditor | 4.2 | 0 | 정상 |
+
+## 4. 발견
+### Critical
+- 1 user 가 budget 한계 시도 (차단됨)
+- 동일 query 반복 (composition 효과)
+
+### Mid
+- ε=8 권장 vs 일부 query ε=2 사용 (강함)
+- Local DP 미적용 (raw data 노출)
+
+## 5. 권고
+### Short
+- ε=8 default + composition 자동 추적
+- Query rate limit (10 queries/h)
+- Sensitivity bounding 강제
+
+### Mid
+- Local DP 옵션 (RAPPOR / Apple DP)
+- Composition accountant (RDP)
+- Audit log full
+
+### Long
+- Hybrid (Local + Central) DP
+- Synthetic data generation (DP-GAN)
+- Federated DP (week05 Flower 통합)
+EOF
+
+pandoc /tmp/dp-eval-report.md -o /tmp/dp-eval-report.pdf \
+  --pdf-engine=xelatex -V mainfont="Noto Sans CJK KR"
+```
+
+### 점검 / 평가 / 보고 흐름 (8 step + multi_task)
+
+#### Phase A — 기본 + 시나리오 + 정책 (s1·s2·s3)
+
+```bash
+python3 /tmp/dp-basic-diffprivlib.py
+python3 /tmp/dp-scenario.py
+python3 /tmp/dp-policy-eval.py
+```
+
+#### Phase B — 인젝션 + 자동화 (s4·s5)
+
+```bash
+python3 /tmp/extraction-injection.py    # week01~03 재사용
+python3 /tmp/dp-opendp-pipeline.py
+```
+
+#### Phase C — 가드레일 + 모니터링 + 보고 (s6·s7·s8)
+
+```bash
+python3 /tmp/dp-private-analytics.py
+python3 /tmp/dp-budget-tracker.py &
+pandoc /tmp/dp-eval-report.md -o /tmp/dp-eval-report.pdf
+```
+
+#### Phase D — 통합 (s99 multi_task)
+
+s1 → s2 → s3 → s5 → s6 를 Bastion 가:
+
+1. plan: DP 기본 → 시나리오 → 정책 평가 → OpenDP pipeline → DP-SGD + query API
+2. execute: Diffprivlib / OpenDP / Opacus
+3. synthesize: 5 산출물 (basic.txt / scenario.json / policy.json / pipeline.csv / dp-api.py)
+
+### 도구 비교표 — DP 단계별
+
+| 단계 | 1순위 | 2순위 | 사용 |
+|------|-------|-------|------|
+| 통계 query DP | Diffprivlib (IBM) | PyDP (Google bind) | OSS |
+| ML 학습 DP | Opacus (Meta) | TF-Privacy (Google) | OSS |
+| Pipeline | OpenDP (Harvard) | SmartNoise (Microsoft) | OSS |
+| Local DP | RAPPOR | Apple DP | OSS |
+| Composition accountant | RDP / GDP | Privacy Risk Profiles | 학계 |
+| Budget tracker | 자체 구현 | OpenDP framework | 자유 |
+| Synthetic data | DP-GAN / DP-SGD-GAN | Synthetic Data Vault | 학계 |
+| 모니터링 | Prometheus + custom | Datadog | OSS |
+| Compliance | NIST 800-188 / GDPR | HIPAA | 표준 |
+| 보고서 | pandoc | Word | 기술 |
+
+### 도구 선택 매트릭스 — 시나리오별 권장
+
+| 시나리오 | 우선 도구 | 이유 |
+|---------|---------|------|
+| "통계 dashboard DP" | Diffprivlib + budget tracker | 단순 |
+| "ML 학습 DP" | Opacus DP-SGD | Meta 표준 |
+| "production pipeline" | OpenDP / SmartNoise | 검증 |
+| "사용자 client DP" | RAPPOR (Local DP) | 강함 |
+| "FL + DP" | Opacus + Flower (week05) | 통합 |
+| "compliance (HIPAA)" | OpenDP + NIST 800-188 | 규제 |
+| "데이터 공개" | DP-GAN / Synthetic | 강함 |
+
+### 학생 셀프 체크리스트 (각 step 완료 기준)
+
+- [ ] s1: Laplace + Gaussian + DP query (mean / var / histogram)
+- [ ] s2: 6 컴포넌트 시나리오
+- [ ] s3: 정책 평가 (6 항목)
+- [ ] s4: week01~03 인젝션 재실행
+- [ ] s5: OpenDP transformation chain + ε 추적
+- [ ] s6: DP-SGD + PrivateAnalytics class
+- [ ] s7: 5+ 메트릭 (spent / remaining / queries / noise / violations)
+- [ ] s8: 보고서 (tradeoff curve + 사용 패턴 + 권고)
+- [ ] s99: Bastion 가 5 작업 (basic / scenario / policy / pipeline / api) 순차
+
+### 추가 참조 자료
+
+- **NIST SP 800-188** (De-Identification of Personal Information)
+- **NIST AI 600-1** (Generative AI RMF)
+- **Diffprivlib (IBM)** https://github.com/IBM/differential-privacy-library
+- **Opacus (Meta)** https://opacus.ai/
+- **TF-Privacy (Google)** https://github.com/tensorflow/privacy
+- **OpenDP (Harvard)** https://opendp.org/
+- **SmartNoise (Microsoft)** https://github.com/opendp/smartnoise-sdk
+- **PyDP (Google)** https://github.com/OpenMined/PyDP
+- **RAPPOR (Google)** https://github.com/google/rappor
+- **Apple DP** (학습 자료 only)
+- **GDPR Art.32** Anonymization
+
+위 모든 DP 평가는 **격리 환경** 으로 수행한다. ε 은 한 번 소비되면 영구히 누적 — 사용자별
+budget 관리 필수. ε ≤ 8 권장 (NIST 800-188), ε ≤ 1 강함, ε > 100 은 실질적 privacy 없음.
+Composition 은 단순 합 (basic) 또는 RDP / GDP accountant (tight) 두 가지 — production 은
+RDP 권장. Local DP 는 더 강하지만 utility 손실 큼 — sensitive feature 만 선택적 적용.

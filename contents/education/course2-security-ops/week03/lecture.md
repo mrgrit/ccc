@@ -625,3 +625,68 @@ table inet nat {
 3. conntrack table 의 *zone* 분리로 DMZ ↔ Outside ↔ Trust 3-zone NAT 구현
 
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course2 SecOps — Week 03 nftables 실전)
+
+| 기능 | 본문 도구 | OSS 도구 옵션 | 비고 |
+|------|----------|---------------|------|
+| NAT (DNAT/SNAT) | `nft ... nat` | nft / iptables-translate | masquerade vs source nat |
+| Whitelist set | `nft add set` | nft set / ipset (legacy) | named set |
+| Rate limit | `nft ... limit rate` | nft limit / iptables -m limit / fail2ban | nft 기본 |
+| GeoIP 차단 | manual | nftables + xtables-addons / geoipupdate / cloudflare-ips | OSS GeoIP DB |
+| Anti-DDoS | nft synflood | nft / synproxy / Suricata IPS / modsec | 14주차 통합 |
+| Dynamic ban | manual | fail2ban / crowdsec / ipset-ipsum | crowdsec = community CTI |
+| Country block | manual | nftables + maxmind / iptables-geoip | DB 다운로드 필요 |
+| Anomaly 감지 | manual | nflog → ulogd2 → fluentd → SIEM | 9~11주차 연결 |
+
+### 학생 환경 준비
+
+```bash
+ssh ccc@10.20.30.1
+
+sudo apt install -y \
+  nftables ipset fail2ban \
+  geoip-bin geoipupdate \
+  ulogd2
+
+# crowdsec — 현대적 fail2ban 대안 (Go, community CTI)
+curl -s https://install.crowdsec.net | sudo sh
+sudo apt install -y crowdsec
+sudo systemctl start crowdsec
+sudo cscli decisions list                          # 현재 차단 IP
+
+# GeoIP DB (Maxmind)
+sudo geoipupdate -v
+```
+
+### 핵심 시나리오
+
+```bash
+# 1) DNAT — 외부 트래픽을 내부 호스트로
+sudo nft add rule ip nat prerouting tcp dport 8080 dnat to 10.20.30.80:80
+
+# 2) Set 기반 whitelist (동적 update 가능)
+sudo nft add set inet filter trusted '{ type ipv4_addr; flags interval; }'
+sudo nft add element inet filter trusted '{ 10.20.30.0/24, 192.168.0.0/24 }'
+sudo nft add rule inet filter input ip saddr @trusted accept
+
+# 3) Rate limit — synflood 방어
+sudo nft add rule inet filter input tcp flags syn limit rate 10/second accept
+sudo nft add rule inet filter input tcp flags syn drop
+
+# 4) crowdsec — community CTI 기반 자동 차단
+sudo cscli scenarios list
+# → ssh-bf, http-cve-2021-41773, etc 자동 매칭
+sudo cscli alerts list
+
+# 5) fail2ban + nft (jail.d/sshd.conf)
+[sshd]
+backend = systemd
+banaction = nftables-multiport
+findtime = 600
+maxretry = 3
+```
+
+학생은 본 3주차에서 **정적 룰 (nft set) + 동적 차단 (fail2ban/crowdsec) + Rate limit + GeoIP** 의 4중 layer 를 도구로 통합한다.

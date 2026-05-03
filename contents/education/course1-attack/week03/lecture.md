@@ -889,3 +889,54 @@ dataset incident `e5578610` 의 host 노드:
 3. 본 dataset 의 7-layer 정보를 *학습 환경에서 동일 추출* 가능한지 측정 (도구 부족 layer 식별)
 
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course1 Attack — Week 03 취약점 스캐닝)
+
+| 단계 / 주제 | lab step | 본문/lab 주요 명령 | OSS 도구 옵션 | 비고 |
+|------------|----------|-------------------|---------------|------|
+| 웹 취약점 스캔 (JuiceShop) | s1 | `nikto -h http://target:3000` | nikto / nuclei / wpscan (WordPress 한정) | nuclei 가 신호 정확도 우수 |
+| Apache 취약점 스캔 | s2 | `nikto -h http://target:80 -o nikto.txt` | nikto / nuclei -t exposures/ | -o 파일 저장 |
+| Exploit 검색 | s3,4,13 | `searchsploit juice` | searchsploit / cve-search / exploitalert | exploit-db 로컬 DB |
+| http-sql-injection 스캔 | s5 | `nmap --script http-sql-injection` | nmap NSE / sqlmap --batch / Wapiti | sqlmap 이 본격 |
+| API 정보 노출 점검 | s6,7,11,14 | `curl /api/...` | nuclei -t exposures/apis/ / Postman | nuclei 가 자동화에 적합 |
+| TLS cipher 분석 | s8 | `nmap --script ssl-enum-ciphers` | testssl.sh / sslscan / sslyze | testssl.sh 사실상 표준 |
+| SQLi 에러 유도 | s9 | `curl ?q='` | sqlmap -u "..." --crawl=2 / Wapiti | 자동 점검 |
+| 디렉토리 brute | s10 | `dirb / gobuster` | gobuster / ffuf / dirb / dirsearch | gobuster 빠름 |
+| 보안 헤더 점검 | s12 | `nmap --script http-headers` | nuclei -t http/misconfiguration/http-missing-security-headers / curl -I | nuclei 자동화 |
+| 종합 보고 | s15 | text 정리 | dradis / serpico / faraday | 점검 보고 도구 |
+
+### 학생 환경 준비 (한 번만 실행)
+
+```bash
+ssh ccc@192.168.0.112
+
+sudo apt update && sudo apt install -y \
+  nikto sqlmap dirb gobuster ffuf wapiti \
+  whatweb wafw00f \
+  sslscan testssl-script \
+  exploitdb           # searchsploit 포함
+
+# searchsploit DB 업데이트
+sudo searchsploit -u
+
+# nuclei (이미 2주차에 설치)
+nuclei -update-templates
+
+# testssl.sh (Git 권장 — 최신 cipher DB)
+git clone --depth 1 https://github.com/drwetter/testssl.sh.git ~/testssl 2>/dev/null
+ln -sf ~/testssl/testssl.sh ~/.local/bin/testssl 2>/dev/null
+```
+
+### 본문 → 도구 권장 (작업 흐름)
+
+| 작업 단계 | 권장 도구 흐름 (좌→우) |
+|----------|----------------------|
+| **1. 자동 스캔** | nikto · nuclei · whatweb 으로 first-pass |
+| **2. 발견된 vulnerability 검증** | sqlmap (SQLi) / XSStrike (XSS) / nuclei -id 특정 템플릿 |
+| **3. exploit 검색** | searchsploit · CVE-Mitre.org 검색 |
+| **4. TLS 별도** | testssl.sh / sslscan |
+| **5. 보고서** | dradis / serpico / 직접 markdown |
+
+학생은 본 3주차에서 **자동 스캐너의 신호 → 수동 검증 → exploit 매칭** 의 3단계 흐름을 도구로 직접 수행한다.

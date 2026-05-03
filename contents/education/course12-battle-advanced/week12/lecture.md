@@ -749,3 +749,362 @@ graph LR
 
 **학생 액션**: OTX feed 1개 import → match 측정.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course12 — Week 12 공급망 공격)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | SBOM 생성 + 비교 | syft / cyclonedx-cli |
+| s2 | 의존성 CVE | grype / Trivy / pip-audit |
+| s3 | 모델 검증 | modelscan / picklescan / safetensors |
+| s4 | 코드 서명 | sigstore + cosign |
+| s5 | YARA 룰 | yara / yara-x |
+| s6 | Typosquatting | guarddog / oss-fuzz / 자체 |
+| s7 | Dependency confusion | 자체 detection |
+| s8 | Admission control | OPA Gatekeeper (cosign verify) |
+
+### 학생 환경 준비
+
+```bash
+# === sigstore + cosign ===
+sudo curl -L https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64 -o /usr/local/bin/cosign
+sudo chmod +x /usr/local/bin/cosign
+
+# === syft + grype ===
+curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sudo sh -s -- -b /usr/local/bin
+curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sudo sh -s -- -b /usr/local/bin
+
+# === Trivy ===
+sudo apt install -y trivy
+
+# === modelscan + picklescan ===
+pip install modelscan picklescan safetensors
+
+# === YARA ===
+sudo apt install -y yara
+git clone https://github.com/Yara-Rules/rules ~/yara-rules
+
+# === guarddog (Datadog OSS — typosquatting/malicious package) ===
+pip install guarddog
+
+# === Python 의존성 점검 ===
+pip install pip-audit safety bandit semgrep
+```
+
+### 핵심 — 공급망 공격 6 통제
+
+#### 1. cosign (코드/모델/이미지 서명 — 가장 강력)
+
+```bash
+# === Key 생성 ===
+cosign generate-key-pair                                  # cosign.key + cosign.pub
+
+# === Container image 서명 ===
+docker push registry.example.com/agent:v1.2.3
+cosign sign --key cosign.key registry.example.com/agent:v1.2.3
+
+# === Model 파일 서명 ===
+cosign sign-blob --key cosign.key model.bin > model.bin.sig
+cosign verify-blob --key cosign.pub --signature model.bin.sig model.bin
+
+# === Keyless (OIDC, GitHub Actions) ===
+# Signature 가 Sigstore Rekor 의 transparency log 에 자동 기록
+cosign sign --identity-token=$ID_TOKEN registry.example.com/agent:v1.2.3
+
+# === Verification (배포 전 강제) ===
+cosign verify --key cosign.pub registry.example.com/agent:v1.2.3
+# → 서명 안 되어 있으면 fail
+```
+
+#### 2. SBOM (syft + cyclonedx-cli)
+
+```bash
+# === Container image SBOM ===
+syft my-agent:latest -o spdx-json > sbom-image.json
+syft my-agent:latest -o cyclonedx-json > sbom-cdx.json
+syft my-agent:latest -o table                              # human-readable
+
+# === Filesystem SBOM ===
+syft dir:/opt/agent -o spdx-json > sbom-fs.json
+
+# === Python project SBOM ===
+syft scan dir:. -o spdx-json
+# 모든 Python deps + version + license 자동
+
+# === SBOM diff (전 버전 vs 현재) ===
+syft my-agent:v1 -o spdx-json > sbom-v1.json
+syft my-agent:v2 -o spdx-json > sbom-v2.json
+diff <(jq '.packages[] | "\(.name)@\(.versionInfo)"' sbom-v1.json | sort) \
+     <(jq '.packages[] | "\(.name)@\(.versionInfo)"' sbom-v2.json | sort)
+
+# === SBOM → CVE (grype) ===
+grype sbom:./sbom.json --severity-threshold high
+```
+
+#### 3. 의존성 CVE (grype + Trivy + pip-audit)
+
+```bash
+# === grype (가장 정확) ===
+grype my-agent:latest --severity-threshold high \
+    --output json > /tmp/grype-result.json
+
+# Fix 가능한 CVE 만
+grype my-agent:latest --only-fixed
+
+# CI 통합 (CRITICAL 발견 시 fail)
+grype my-agent:latest --fail-on critical
+
+# === Trivy (대안) ===
+trivy image --severity HIGH,CRITICAL my-agent:latest
+
+# === pip-audit (Python 전용 — PyPA 공식) ===
+pip-audit -r requirements.txt
+pip-audit -r requirements.txt --fix --dry-run             # 자동 fix 제안
+
+# === safety (PyUp.io) ===
+safety check -r requirements.txt --json > /tmp/safety.json
+
+# === bandit (코드 정적 분석) ===
+bandit -r src/
+```
+
+#### 4. ModelScan (악성 pickle/model 탐지)
+
+```bash
+# === Pickle scan ===
+modelscan -p model.pkl
+modelscan -p model.pt
+modelscan -p model.h5
+
+# 출력 예 (악성):
+# CRITICAL: Suspicious operator detected: os.system call in pickle
+# HIGH: Unsafe pickle.loads call
+# MEDIUM: Globals access detected
+
+# === URL (Hugging Face 직접) ===
+modelscan -url https://huggingface.co/user/model/resolve/main/pytorch_model.bin
+
+# === 디렉토리 일괄 ===
+modelscan -p /opt/models/
+
+# === JSON 출력 (CI 통합) ===
+modelscan -p /opt/models/ --format json > /tmp/modelscan.json
+
+# === picklescan (대안) ===
+picklescan -p model.pkl
+```
+
+#### 5. Safetensors (안전한 형식 — pickle 대체)
+
+```python
+from safetensors.torch import save_file, load_file
+import torch
+
+# Save (pickle 대신)
+weights = model.state_dict()
+save_file(weights, "model.safetensors")
+
+# Load (코드 실행 불가능 — 안전)
+weights = load_file("model.safetensors")
+
+# 비교:
+# torch.save (pickle) → 임의 코드 실행 가능 (보안 위험)
+# safetensors → 단순 binary 형식 (안전)
+```
+
+#### 6. YARA (악성 시그니처)
+
+```bash
+# === 룰 작성 ===
+cat > /tmp/malware.yar << 'YEOF'
+rule sliver_implant
+{
+    meta:
+        description = "Detects Sliver C2 implant"
+    strings:
+        $a = "sliver-server" wide ascii
+        $b = "BeaconJitter" wide ascii
+        $c = { 53 6c 69 76 65 72 }                       // "Sliver"
+    condition:
+        any of them
+}
+
+rule mimikatz_signature
+{
+    strings:
+        $s1 = "sekurlsa::logonpasswords"
+        $s2 = "kerberos::list"
+        $s3 = "lsadump::sam"
+    condition:
+        any of them
+}
+
+rule typosquat_python_package
+{
+    meta:
+        description = "Suspicious Python package (typosquatting requests, urllib3, etc)"
+    strings:
+        $s1 = "subprocess.Popen"
+        $s2 = "urllib.request.urlopen"
+        $s3 = "/etc/passwd"
+        $s4 = "AWS_ACCESS_KEY"
+    condition:
+        $s1 and ($s2 or $s3 or $s4)
+}
+YEOF
+
+# === Scan ===
+yara /tmp/malware.yar /tmp/sample.exe
+yara -r /tmp/malware.yar /tmp/                            # 재귀
+
+# === yara-x (Rust, 빠름) ===
+~/yara-x/target/release/yr scan /tmp/malware.yar /tmp/
+
+# === 카탈로그 ===
+yara -r ~/yara-rules/index.yar /tmp/sample
+```
+
+#### 7. Typosquatting / Dependency Confusion 탐지
+
+```bash
+# === guarddog (Datadog) — 악성 PyPI/npm 패키지 ===
+pip install guarddog
+
+# Specific package
+guarddog pypi scan requests
+guarddog npm scan lodash
+
+# 자체 패키지 점검
+guarddog pypi scan-local /path/to/setup.py
+
+# === 자체 typosquat detection ===
+python3 << 'PEOF'
+# 흔한 패키지 + 1 char 변경 (typosquat 후보)
+TARGETS = ["requests", "urllib3", "numpy", "pandas", "tensorflow"]
+import requests as req
+
+for target in TARGETS:
+    # PyPI 의 모든 패키지 목록
+    all_pkgs = req.get("https://pypi.org/simple/").text  # 매우 큼
+    # ... typosquat candidates 비교 (Levenshtein distance) ...
+PEOF
+
+# === Dependency confusion (private + public 같은 이름) ===
+# 1) Internal package list
+INTERNAL=$(pip list --format=json | jq -r '.[].name')
+
+# 2) PyPI public 에서 같은 이름 확인
+for p in $INTERNAL; do
+    if curl -s "https://pypi.org/pypi/$p/json" | jq -e .info > /dev/null 2>&1; then
+        echo "⚠ Internal package '$p' also on public PyPI — confusion risk"
+    fi
+done
+
+# Private registry 사용 강제
+echo "[global]" > ~/.pip/pip.conf
+echo "index-url = https://internal-pypi.example.com/simple/" >> ~/.pip/pip.conf
+```
+
+#### 8. CI/CD 통합 (전체 supply chain pipeline)
+
+```yaml
+# .gitlab-ci.yml
+stages: [scan, build, sign, deploy]
+
+# === Phase 1: Pre-build ===
+secret_scan:
+  stage: scan
+  script:
+    - gitleaks detect --no-git --source . --report-path gitleaks.json
+
+dep_check:
+  stage: scan
+  script:
+    - pip-audit -r requirements.txt
+    - safety check -r requirements.txt
+    - bandit -r src/
+    - guarddog pypi scan-local setup.py
+
+model_scan:
+  stage: scan
+  script:
+    - modelscan -p ./models/
+    - picklescan -p ./models/*.pkl
+
+# === Phase 2: Build ===
+build:
+  stage: build
+  script:
+    - docker build -t $CI_REGISTRY/$IMAGE:$CI_COMMIT_SHA .
+
+# === Phase 3: Sign + SBOM + CVE ===
+container_scan:
+  stage: sign
+  script:
+    - trivy image --severity HIGH,CRITICAL --exit-code 1 $CI_REGISTRY/$IMAGE:$CI_COMMIT_SHA
+
+sbom:
+  stage: sign
+  script:
+    - syft $CI_REGISTRY/$IMAGE:$CI_COMMIT_SHA -o spdx-json > sbom.json
+    - grype $CI_REGISTRY/$IMAGE:$CI_COMMIT_SHA --severity-threshold high
+  artifacts:
+    paths: [sbom.json]
+
+cosign_sign:
+  stage: sign
+  script:
+    - cosign sign --key $COSIGN_KEY $CI_REGISTRY/$IMAGE:$CI_COMMIT_SHA
+  
+# === Phase 4: Deploy (admission control) ===
+deploy:
+  stage: deploy
+  script:
+    - cosign verify --key $COSIGN_PUB $CI_REGISTRY/$IMAGE:$CI_COMMIT_SHA
+    - kubectl apply -f deploy.yaml
+```
+
+#### 9. Kubernetes Admission (cosign verify 강제)
+
+```yaml
+# OPA Gatekeeper 정책
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata: {name: requirecosignverification}
+spec:
+  crd:
+    spec:
+      names: {kind: RequireCosignVerification}
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package requirecosignverification
+        violation[{"msg": msg}] {
+          input.review.object.kind == "Pod"
+          image := input.review.object.spec.containers[_].image
+          not has_cosign_signature(image)
+          msg := sprintf("Image %v missing cosign signature", [image])
+        }
+        
+        has_cosign_signature(image) {
+          response := http.send({
+            "method": "GET",
+            "url": sprintf("https://cosign-verifier/verify?image=%v", [image])
+          })
+          response.body.verified == true
+        }
+---
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: RequireCosignVerification
+metadata: {name: production-image-must-be-signed}
+spec:
+  match:
+    namespaces: [production]
+    kinds: [{apiGroups: [""], kinds: ["Pod"]}]
+```
+
+학생은 본 12주차에서 **sigstore + cosign + syft + grype + Trivy + modelscan + safetensors + YARA + guarddog + pip-audit + safety + bandit** 12 도구로 공급망 공격의 8 위협 (악성 pickle / 백도어 / 변조 / CVE / secret / 데이터 / typosquat / dependency confusion) 통합 방어 + CI/CD 통합 sigchain 을 익힌다.

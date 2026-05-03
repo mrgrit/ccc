@@ -627,3 +627,45 @@ echo "TTD (탐지 소요 시간): ${TTD}초"
 
 **학생 액션**: IR playbook 작성 시 단계별 *expected dataset events* 목록화 → 자동 검증.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course5 SOC — Week 09 포렌식)
+
+| 작업 | 도구 |
+|------|------|
+| 디스크 이미징 | dd / dc3dd / FTK Imager (Win) / Guymager |
+| 메모리 캡처 | LiME / AVML / WinPMEM |
+| 메모리 분석 | Volatility 3 / Rekall (legacy) |
+| 디스크 분석 | Sleuth Kit (TSK) / Autopsy / FTK |
+| 타임라인 | Plaso (log2timeline) / Eric Zimmerman (Win) |
+| 네트워크 pcap | wireshark / tshark / brim |
+
+### 학생 환경 준비
+```bash
+sudo apt install -y \
+  sleuthkit autopsy \
+  ewf-tools \
+  plaso-tools \
+  volatility3 \
+  guymager
+pip3 install volatility3
+```
+
+### 핵심
+```bash
+# 디스크 이미징
+sudo dc3dd if=/dev/sda hash=sha256 hashlog=/tmp/hash.log of=/tmp/disk.dd
+
+# Sleuth Kit
+sudo fls -r -m / /tmp/disk.dd > /tmp/bodyfile
+sudo mactime -b /tmp/bodyfile -d > /tmp/timeline.csv
+
+# Volatility 3 메모리
+sudo vol -f /tmp/mem.raw windows.pslist
+sudo vol -f /tmp/mem.raw windows.netscan
+
+# Plaso — universal timeline
+log2timeline.py --storage-file /tmp/case.plaso /tmp/disk.dd
+psort.py -o l2tcsv -w /tmp/timeline.csv /tmp/case.plaso
+```

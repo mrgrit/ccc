@@ -726,3 +726,187 @@ ReAct loop 의 위험은 *turn 수 폭증* 이다. LLM 이 모호한 신호 앞�
 
 **학생 액션**: lab Bastion 으로 dataset 신호 10건 처리 시 평균 turn 수 + 평균 처리 시간 측정. MAX_TURNS=6 적용 vs 미적용 비교.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course9 — Week 02 경험 메모리)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | Vector embedding | **sentence-transformers** (HuggingFace) |
+| s2 | Local vector DB | **ChromaDB** |
+| s3 | 분산 vector DB | **Qdrant** / Weaviate / Milvus |
+| s4 | Postgres 통합 | **pgvector** |
+| s5 | Similarity search | ChromaDB query |
+| s6 | Redis 통합 (캐싱) | Redis Stack vector search |
+| s7 | RAG 통합 | LangChain RetrievalQA |
+| s8 | Memory compaction | 자체 (cluster + summarize) |
+
+### 학생 환경 준비
+
+```bash
+source ~/.venv-autosec/bin/activate
+pip install sentence-transformers chromadb qdrant-client weaviate-client \
+            pgvector psycopg redis langchain langchain-community
+
+# Postgres + pgvector
+docker run -d --name pgvector \
+    -e POSTGRES_PASSWORD=secret \
+    -p 5432:5432 \
+    pgvector/pgvector:pg16
+
+# Qdrant
+docker run -d -p 6333:6333 qdrant/qdrant
+
+# Redis Stack (vector search)
+docker run -d -p 6379:6379 redis/redis-stack:latest
+
+# Weaviate
+docker run -d -p 8080:8080 -e DEFAULT_VECTORIZER_MODULE=none cr.weaviate.io/semitechnologies/weaviate:latest
+```
+
+### 핵심 — ChromaDB (단순/로컬)
+
+```python
+import chromadb
+from sentence_transformers import SentenceTransformer
+
+# 1) Embedding 모델 (CPU 가능)
+embedder = SentenceTransformer("all-MiniLM-L6-v2")        # 384-dim, 작음
+# 또는 "all-mpnet-base-v2" (768-dim, 더 정확)
+
+# 2) Persistent ChromaDB
+client = chromadb.PersistentClient(path="/var/lib/security_memory")
+
+# 3) Collection (보안 사고 메모리)
+collection = client.get_or_create_collection(
+    name="security_incidents",
+    metadata={"hnsw:space": "cosine"}
+)
+
+# 4) 사고 기록 (incident → embedding → 저장)
+incidents = [
+    {"id": "i1", "text": "SQL injection on /login.php from 1.2.3.4. Blocked by ModSec.", 
+     "metadata": {"severity": "high", "category": "web", "timestamp": "2026-04-15"}},
+    {"id": "i2", "text": "SSH brute force from 5.6.7.8. fail2ban triggered.", 
+     "metadata": {"severity": "medium", "category": "auth", "timestamp": "2026-04-20"}},
+    {"id": "i3", "text": "Phishing email with malicious .docx attachment.", 
+     "metadata": {"severity": "high", "category": "phishing", "timestamp": "2026-04-25"}},
+]
+
+embeds = embedder.encode([i["text"] for i in incidents]).tolist()
+
+collection.add(
+    ids=[i["id"] for i in incidents],
+    documents=[i["text"] for i in incidents],
+    embeddings=embeds,
+    metadatas=[i["metadata"] for i in incidents],
+)
+
+# 5) 새 사고 발생 시 유사 과거 사고 검색
+new_alert = "SQLi attempt on /api/user from 9.10.11.12"
+new_embed = embedder.encode([new_alert]).tolist()
+
+results = collection.query(
+    query_embeddings=new_embed,
+    n_results=3,
+    where={"severity": "high"}                                 # 필터 가능
+)
+print(results['documents'])
+print(results['distances'])
+# 출력: 가장 유사한 i1 (SQLi) 자동 매칭 → playbook 추천
+```
+
+### Qdrant (production grade)
+
+```python
+from qdrant_client import QdrantClient
+from qdrant_client.models import VectorParams, Distance, PointStruct
+
+client = QdrantClient(host="localhost", port=6333)
+
+# 1) Collection 생성
+client.create_collection(
+    collection_name="incidents",
+    vectors_config=VectorParams(size=384, distance=Distance.COSINE)
+)
+
+# 2) Upsert
+points = [
+    PointStruct(id=1, vector=embed, payload={"text": text, "severity": "high"})
+    for embed, text in zip(embeds, texts)
+]
+client.upsert(collection_name="incidents", points=points)
+
+# 3) 검색
+results = client.search(
+    collection_name="incidents",
+    query_vector=new_embed,
+    limit=5,
+    query_filter={"must": [{"key": "severity", "match": {"value": "high"}}]}
+)
+```
+
+### pgvector (SQL + vector)
+
+```sql
+-- 1) Extension 설치
+CREATE EXTENSION vector;
+
+-- 2) Schema
+CREATE TABLE incidents (
+    id SERIAL PRIMARY KEY,
+    text TEXT,
+    severity VARCHAR(20),
+    timestamp TIMESTAMP,
+    embedding vector(384)
+);
+
+-- 3) Index (HNSW for fast similarity)
+CREATE INDEX ON incidents USING hnsw (embedding vector_cosine_ops);
+
+-- 4) 검색 (SQL 표준 + vector)
+SELECT id, text, severity, embedding <=> '[0.1, 0.2, ...]'::vector AS distance
+FROM incidents
+WHERE severity = 'high'
+ORDER BY distance
+LIMIT 5;
+```
+
+### Memory Compaction (오래된 사고 → 요약 insight)
+
+```python
+from langchain_ollama import OllamaLLM
+from sklearn.cluster import KMeans
+import numpy as np
+
+# 1) 오래된 incident (> 30일) cluster
+old_incidents = collection.get(
+    where={"timestamp": {"$lt": "2026-04-01"}},
+    include=["embeddings", "documents"]
+)
+
+# 2) K-means clustering
+kmeans = KMeans(n_clusters=5)
+clusters = kmeans.fit_predict(np.array(old_incidents['embeddings']))
+
+# 3) 각 cluster 별 요약 (LLM)
+llm = OllamaLLM(model="gemma3:4b")
+for cluster_id in range(5):
+    cluster_docs = [d for d, c in zip(old_incidents['documents'], clusters) if c == cluster_id]
+    summary = llm.invoke(f"다음 보안 사고들의 공통 패턴을 1-2 문장으로 요약: {cluster_docs}")
+    
+    # Insight 노드 저장
+    collection.add(
+        ids=[f"insight-{cluster_id}-{datetime.now()}"],
+        documents=[summary],
+        metadatas=[{"type": "insight", "cluster": cluster_id, "incidents_count": len(cluster_docs)}]
+    )
+    
+    # 원본 incident 삭제 (compaction)
+    collection.delete(ids=[d["id"] for d in cluster_docs])
+```
+
+학생은 본 2주차에서 **ChromaDB + sentence-transformers + Qdrant + pgvector + LangChain RetrievalQA** 5 도구로 보안 메모리의 4 단계 (저장 → 검색 → RAG → 압축) 통합 운영을 익힌다.

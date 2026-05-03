@@ -1146,3 +1146,224 @@ graph LR
 
 **학생 액션**: lab 시스템에 CIS bench 적용 → audit 신호 변화.
 
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course11 — Week 10 공방전 환경 구축)
+
+### 환경 도구
+
+| 영역 | 도구 |
+|------|------|
+| 컨테이너 환경 | docker-compose / podman-compose |
+| K8s 환경 | kind / k3d / minikube |
+| 자동 환경 | DetectionLab / SELKS (all-in-one) |
+| 환경 자동화 | Terraform / Ansible / Vagrant |
+| Battle engine | CCC battle-engine 자체 |
+
+### 학생 환경 준비
+
+```bash
+# Docker compose
+sudo apt install -y docker-compose-plugin
+
+# Vagrant + libvirt (다중 VM)
+sudo apt install -y vagrant libvirt-daemon-system
+vagrant plugin install vagrant-libvirt
+
+# kind (lightweight k8s)
+go install sigs.k8s.io/kind@latest
+
+# DetectionLab (학습용 실전 환경)
+git clone https://github.com/clong/DetectionLab ~/dlab
+```
+
+### docker-compose 자체 공방 환경
+
+```yaml
+# /opt/battle/docker-compose.yml
+version: '3.8'
+
+networks:
+  red-net:
+    driver: bridge
+  blue-net:
+    driver: bridge
+
+services:
+  # === Red 측 ===
+  attacker:
+    image: kalilinux/kali-rolling
+    container_name: attacker
+    privileged: true
+    networks: [red-net, blue-net]
+    volumes:
+      - ~/wordlists:/usr/share/wordlists
+      - ~/tools:/opt/tools
+    command: tail -f /dev/null
+  
+  # === 공격 대상 ===
+  juiceshop:
+    image: bkimminich/juice-shop
+    container_name: juiceshop
+    networks: [blue-net]
+    ports: ["3000:3000"]
+  
+  apache:
+    image: httpd:2.4
+    container_name: apache
+    networks: [blue-net]
+    ports: ["80:80"]
+    volumes:
+      - ./web:/usr/local/apache2/htdocs
+  
+  ssh-target:
+    image: linuxserver/openssh-server
+    container_name: ssh-target
+    networks: [blue-net]
+    environment:
+      USER_NAME: admin
+      PASSWORD_ACCESS: "true"
+      USER_PASSWORD: weakpass
+    ports: ["2222:2222"]
+  
+  # === Blue 측 ===
+  wazuh-manager:
+    image: wazuh/wazuh-manager:4.7.0
+    container_name: wazuh-manager
+    networks: [blue-net]
+    ports: ["55000:55000"]
+  
+  wazuh-indexer:
+    image: wazuh/wazuh-indexer:4.7.0
+    networks: [blue-net]
+    ports: ["9200:9200"]
+  
+  wazuh-dashboard:
+    image: wazuh/wazuh-dashboard:4.7.0
+    networks: [blue-net]
+    ports: ["443:5601"]
+  
+  suricata:
+    image: jasonish/suricata:latest
+    container_name: suricata
+    network_mode: host
+    cap_add: [NET_ADMIN, NET_RAW, SYS_NICE]
+    volumes:
+      - ./suricata/rules:/etc/suricata/rules
+      - suricata-logs:/var/log/suricata
+  
+  thehive:
+    image: strangebee/thehive:5.2
+    container_name: thehive
+    networks: [blue-net]
+    ports: ["9000:9000"]
+  
+  shuffle:
+    image: ghcr.io/shuffle/shuffle-frontend:latest
+    networks: [blue-net]
+    ports: ["3001:3001"]
+
+volumes:
+  suricata-logs:
+```
+
+```bash
+# 환경 시작
+cd /opt/battle
+docker compose up -d
+
+# 상태 확인
+docker compose ps
+
+# Red 접속
+docker exec -it attacker bash
+# 안에서:
+nmap -sV juiceshop apache ssh-target
+sqlmap -u "http://juiceshop:3000/rest/products/search?q=test" --batch
+
+# Blue 모니터
+docker exec -it wazuh-manager /var/ossec/bin/wazuh-control logtest
+docker exec -it suricata tail -f /var/log/suricata/eve.json | jq
+```
+
+### Vagrant + multi-VM (실전 격리)
+
+```ruby
+# Vagrantfile
+Vagrant.configure("2") do |config|
+  
+  # === Attacker VM ===
+  config.vm.define "attacker" do |a|
+    a.vm.box = "kalilinux/rolling"
+    a.vm.network "private_network", ip: "192.168.56.100"
+    a.vm.provider "libvirt" do |v|
+      v.cpus = 2
+      v.memory = 4096
+    end
+  end
+  
+  # === Defender VM (secu — Suricata + Wazuh agent) ===
+  config.vm.define "secu" do |s|
+    s.vm.box = "ubuntu/jammy64"
+    s.vm.network "private_network", ip: "192.168.56.10"
+    s.vm.provision "shell", inline: <<-SHELL
+      apt update && apt install -y suricata wazuh-agent fail2ban
+      systemctl enable --now suricata wazuh-agent fail2ban
+    SHELL
+  end
+  
+  # === Web target VM ===
+  config.vm.define "web" do |w|
+    w.vm.box = "ubuntu/jammy64"
+    w.vm.network "private_network", ip: "192.168.56.20"
+    w.vm.provision "shell", inline: <<-SHELL
+      apt update && apt install -y docker.io
+      docker run -d -p 3000:3000 bkimminich/juice-shop
+    SHELL
+  end
+  
+  # === SIEM VM ===
+  config.vm.define "siem" do |i|
+    i.vm.box = "ubuntu/jammy64"
+    i.vm.network "private_network", ip: "192.168.56.50"
+    i.vm.provider "libvirt" do |v|
+      v.cpus = 4
+      v.memory = 8192
+    end
+  end
+end
+```
+
+```bash
+vagrant up
+vagrant ssh attacker
+# 모든 VM 자동 격리된 네트워크에서 동작
+```
+
+### CCC battle-engine
+
+```bash
+# CCC 자체 battle 시스템 (이미 구축)
+cd /home/opsclaw/ccc
+./battle-cli.sh new --course course11 --week 10
+./battle-cli.sh start round1
+
+./battle-cli.sh status
+./battle-cli.sh report round1 > /tmp/r1-report.md
+
+# Multi-team 자율 공방 (P12 — 자율 공방전)
+./battle-cli.sh autonomous --teams 4 --duration 1h
+```
+
+### 환경 비교
+
+| 도구 | 강점 | 약점 | 용도 |
+|------|------|------|------|
+| **docker-compose** | 가장 빠름, 단순 | 격리 약함 | 단일 호스트 학습 |
+| **kind / k3d** | K8s 학습 | 복잡 | 컨테이너 보안 |
+| **Vagrant + libvirt** | 진짜 VM 격리 | 무거움 | 실전급 격리 |
+| **DetectionLab** | 설정 완료된 환경 | 사양 필요 | Win/AD 환경 |
+| **CCC battle-engine** | CCC 통합 | CCC 한정 | 코스 표준 |
+
+학생은 본 10주차에서 **docker-compose + Vagrant + kind + CCC battle-engine** 4 도구로 11~15주 공방 round 의 환경을 자동 구축한다.

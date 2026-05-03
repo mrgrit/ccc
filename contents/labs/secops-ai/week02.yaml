@@ -394,81 +394,50 @@ steps:
   risk_level: low
   bastion_prompt: secu VM에서 nftables 테이블 목록을 확인해줘
 - order: 99
-  instruction: |
-    [복합 시나리오] "내가 짠 방화벽 룰, 정말 일하나?" — attacker 에서 trigger 검증
+  instruction: "[복합 시나리오] \"내가 짠 방화벽 룰, 정말 일하나?\" — attacker 에서 trigger 검증\n\n## 상황\
+    \ (w01 시나리오 연속)\n\n당신은 ABC 핀테크 SOC 신규 분석가. 둘째 주.\n\n어제까지 1~10번 step 으로 nftables\
+    \ 의 *문법* 을 배웠다 — 테이블 만들고, 체인 걸고,\n포트 차단 룰 작성하고, 다시 삭제까지. 명령어는 익혔다.\n\n오늘 아침 선임이\
+    \ 옆에 와서 한 마디:\n\n> \"룰 syntax 익힌 건 알겠어. 그런데 그 룰이 *진짜* 외부 트래픽을 차단하는지 확인했어?\n> \
+    \ 내가 처음 nftables 했을 때 input chain 에 drop 룰 넣어놓고도 telnet 이 통하길래\n>  당황했었거든. priority\
+    \ / hook / family 가 안 맞으면 룰은 silently 무용지물이야.\n>  attacker(10.20.30.201) 에서 직접\
+    \ 시도해보고, 어느 룰이 어떤 trigger 를 잡는지 매핑해봐.\"\n\n학습 목표 #2 — *\"input 체인에서 특정 포트를 허용/차단할\
+    \ 수 있다\"* — 의 *증명* 단계.\nsyntax 가 아니라 *효과* 를 본인 손으로 trigger 해서 확인하는 것.\n\n## 임무\
+    \ (3 단계, 약 20분)\n\n### Phase A — 검증용 룰셋 다시 구성 (5분)\n\n1~10번 step 에서 lab 테이블을 *삭제*\
+    \ 했으므로, 검증을 위해 동일 룰셋을 다시\n작성한다. 이번엔 이름을 `verify` 로 (실 운영 룰셋과 충돌 방지):\n\n  - `nft\
+    \ add table inet verify`\n  - `nft add chain inet verify input { type filter hook\
+    \ input priority 0 \\\\; policy accept \\\\; }`\n  - `nft add rule inet verify\
+    \ input ct state established,related accept`\n  - `nft add rule inet verify input\
+    \ iif lo accept`\n  - `nft add rule inet verify input tcp dport 22 accept`   \
+    \      # SSH 허용\n  - `nft add rule inet verify input tcp dport 23 drop`      \
+    \      # telnet 차단\n  - `nft list table inet verify`     # 작성된 룰셋 확인 (counter\
+    \ 초기값 0)\n\n### Phase B — attacker 에서 3 trigger 시도 (10분)\n\nattacker(10.20.30.201)\
+    \ 에서 secu(10.20.30.1) 로 3 가지 시도. 각 시도 직후 secu 의\nnft counter 를 확인해 *어느 룰이 hit\
+    \ 되었는지* 매핑.\n\n1. **telnet 차단 검증** (drop 룰 효과)\n   - attacker: `nc -vz -w 3 10.20.30.1\
+    \ 23` (telnet 포트)\n   - 예상: connection refused / timeout\n   - secu 확인: `nft list\
+    \ table inet verify | grep -A1 'tcp dport 23'` (counter +1?)\n\n2. **SSH 허용 검증**\
+    \ (accept 룰 효과)\n   - attacker: `ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no\
+    \ ccc@10.20.30.1 'echo ok' 2>&1 | head`\n   - 예상: 인증 프롬프트 또는 정상 응답\n   - secu\
+    \ 확인: `nft list table inet verify | grep -A1 'tcp dport 22'` (counter +1?)\n\n\
+    3. **established 룰 동작 확인** (상태 기반 룰)\n   - SSH 접속 유지하면서: `nft list table inet\
+    \ verify | grep -A1 'ct state'` (counter 큼)\n   - 의미: 한 번 ssh 가 accept 되면 그 후\
+    \ 패킷은 *established* 룰에서 빠르게 처리\n\n### Phase C — 결과 회고 (5분)\n\nmatrix 형식이 아니라 *문장\
+    \ 회고* 1~2 단락:\n\n1. **Phase B 의 3 trigger 각각 어느 룰이 hit 되었나** — counter 변동 명시\n\
+    2. **예상과 다른 결과가 있었나** — 예: telnet 차단됐는데 counter 증가 안 함 (룰 순서·priority 문제)\n3.\
+    \ **다음에 룰 작성할 때 주의할 점 1가지** (예: \"policy accept 인 chain 끝에 drop 룰 두면\n   그 위 accept\
+    \ 룰이 우선됨\")\n\nPhase A 의 verify 테이블은 lab 종료 시 정리: `nft delete table inet verify`\n\
+    \n## 학습 포인트\n\n이 step 의 핵심은 *명령어 sequence 의 정확성* 이 아니라 *룰의 효과를 본인이 trigger 해\n\
+    봤다는 경험*. w03 부터는 더 복잡한 룰셋 (NAT, masquerade, set 기반 IP 차단) 을 다루는데,\n문법 만으로는 룰이\
+    \ 일하는지 모른다는 것을 이번 주에 체득해 둬야 한다."
+  hint: 'Phase A: lab 대신 verify 테이블에 동일 룰셋 다시 작성 (1~10번 step 의 syntax 재현)
 
-    ## 상황 (w01 시나리오 연속)
+    Phase B: attacker(10.20.30.201) 에서 nc telnet (차단 예상) / ssh (허용 예상) / established
+    시도, secu 의 nft counter 변동 확인
 
-    당신은 ABC 핀테크 SOC 신규 분석가. 둘째 주.
-
-    어제까지 1~10번 step 으로 nftables 의 *문법* 을 배웠다 — 테이블 만들고, 체인 걸고,
-    포트 차단 룰 작성하고, 다시 삭제까지. 명령어는 익혔다.
-
-    오늘 아침 선임이 옆에 와서 한 마디:
-
-    > "룰 syntax 익힌 건 알겠어. 그런데 그 룰이 *진짜* 외부 트래픽을 차단하는지 확인했어?
-    >  내가 처음 nftables 했을 때 input chain 에 drop 룰 넣어놓고도 telnet 이 통하길래
-    >  당황했었거든. priority / hook / family 가 안 맞으면 룰은 silently 무용지물이야.
-    >  attacker(10.20.30.201) 에서 직접 시도해보고, 어느 룰이 어떤 trigger 를 잡는지 매핑해봐."
-
-    학습 목표 #2 — *"input 체인에서 특정 포트를 허용/차단할 수 있다"* — 의 *증명* 단계.
-    syntax 가 아니라 *효과* 를 본인 손으로 trigger 해서 확인하는 것.
-
-    ## 임무 (3 단계, 약 20분)
-
-    ### Phase A — 검증용 룰셋 다시 구성 (5분)
-
-    1~10번 step 에서 lab 테이블을 *삭제* 했으므로, 검증을 위해 동일 룰셋을 다시
-    작성한다. 이번엔 이름을 `verify` 로 (실 운영 룰셋과 충돌 방지):
-
-      - `nft add table inet verify`
-      - `nft add chain inet verify input { type filter hook input priority 0 \\; policy accept \\; }`
-      - `nft add rule inet verify input ct state established,related accept`
-      - `nft add rule inet verify input iif lo accept`
-      - `nft add rule inet verify input tcp dport 22 accept`         # SSH 허용
-      - `nft add rule inet verify input tcp dport 23 drop`            # telnet 차단
-      - `nft list table inet verify`     # 작성된 룰셋 확인 (counter 초기값 0)
-
-    ### Phase B — attacker 에서 3 trigger 시도 (10분)
-
-    attacker(10.20.30.201) 에서 secu(10.20.30.1) 로 3 가지 시도. 각 시도 직후 secu 의
-    nft counter 를 확인해 *어느 룰이 hit 되었는지* 매핑.
-
-    1. **telnet 차단 검증** (drop 룰 효과)
-       - attacker: `nc -vz -w 3 10.20.30.1 23` (telnet 포트)
-       - 예상: connection refused / timeout
-       - secu 확인: `nft list table inet verify | grep -A1 'tcp dport 23'` (counter +1?)
-
-    2. **SSH 허용 검증** (accept 룰 효과)
-       - attacker: `ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no ccc@10.20.30.1 'echo ok' 2>&1 | head`
-       - 예상: 인증 프롬프트 또는 정상 응답
-       - secu 확인: `nft list table inet verify | grep -A1 'tcp dport 22'` (counter +1?)
-
-    3. **established 룰 동작 확인** (상태 기반 룰)
-       - SSH 접속 유지하면서: `nft list table inet verify | grep -A1 'ct state'` (counter 큼)
-       - 의미: 한 번 ssh 가 accept 되면 그 후 패킷은 *established* 룰에서 빠르게 처리
-
-    ### Phase C — 결과 회고 (5분)
-
-    matrix 형식이 아니라 *문장 회고* 1~2 단락:
-
-    1. **Phase B 의 3 trigger 각각 어느 룰이 hit 되었나** — counter 변동 명시
-    2. **예상과 다른 결과가 있었나** — 예: telnet 차단됐는데 counter 증가 안 함 (룰 순서·priority 문제)
-    3. **다음에 룰 작성할 때 주의할 점 1가지** (예: "policy accept 인 chain 끝에 drop 룰 두면
-       그 위 accept 룰이 우선됨")
-
-    Phase A 의 verify 테이블은 lab 종료 시 정리: `nft delete table inet verify`
-
-    ## 학습 포인트
-
-    이 step 의 핵심은 *명령어 sequence 의 정확성* 이 아니라 *룰의 효과를 본인이 trigger 해
-    봤다는 경험*. w03 부터는 더 복잡한 룰셋 (NAT, masquerade, set 기반 IP 차단) 을 다루는데,
-    문법 만으로는 룰이 일하는지 모른다는 것을 이번 주에 체득해 둬야 한다.
-  hint: |
-    Phase A: lab 대신 verify 테이블에 동일 룰셋 다시 작성 (1~10번 step 의 syntax 재현)
-    Phase B: attacker(10.20.30.201) 에서 nc telnet (차단 예상) / ssh (허용 예상) / established 시도, secu 의 nft counter 변동 확인
     Phase C: 3 trigger 의 hit 룰 매핑 + 예상 외 결과 + 룰 작성 시 주의점
+
     포인트: syntax 만 익히면 안 됨, *효과* 를 직접 trigger 해서 확인.
+
+    '
   category: integration_scenario
   points: 50
   verify:
@@ -476,9 +445,11 @@ steps:
     expect: counter
     field: stdout
     semantic:
-      intent: |
-        nftables 룰의 *효과* 를 attacker→secu 실 trigger 로 검증. 학습 목표 #2 (input 체인
+      intent: 'nftables 룰의 *효과* 를 attacker→secu 실 trigger 로 검증. 학습 목표 #2 (input 체인
+
         포트 허용/차단) 의 행동 증명. syntax 단계에서 효과 검증 단계로 전환.
+
+        '
       success_criteria:
       - verify 테이블 + input 체인 + 4 룰 (established / lo / 22 accept / 23 drop) 작성
       - attacker→secu 3 trigger (nc telnet 23 / ssh 22 / 상태 유지) 실행
@@ -495,37 +466,30 @@ steps:
       - 회고 누락 또는 1줄 미만
       - lab 테이블 (1~10번에서 삭제됨) 그대로 재사용 시도
   target_vm: bastion
-  answer: |
-    🤖 프롬프트:
+  answer: "\U0001F916 프롬프트:\n\n[복합 시나리오] 이번 주 배운 nftables 룰의 *효과* 를 attacker→secu\
+    \ trigger 로 검증한다.\n\nPhase A — secu 에 verify 테이블 다시 구성 (1~10번 lab 테이블은 삭제됐으니):\n\
+    \  - nft add table inet verify\n  - nft add chain inet verify input { type filter\
+    \ hook input priority 0 \\; policy accept \\; }\n  - nft add rule inet verify\
+    \ input ct state established,related accept\n  - nft add rule inet verify input\
+    \ iif lo accept\n  - nft add rule inet verify input tcp dport 22 accept\n  - nft\
+    \ add rule inet verify input tcp dport 23 drop\n  - nft list table inet verify\n\
+    \nPhase B — attacker(10.20.30.201) 에서 3 trigger:\n  1) nc -vz -w 3 10.20.30.1\
+    \ 23                  # telnet drop 검증\n  2) ssh -o ConnectTimeout=3 ccc@10.20.30.1\
+    \ 'echo ok'  # ssh accept 검증\n  3) (ssh 유지 상태에서) nft list table inet verify |\
+    \ grep -A1 'ct state'  # established hit\n\n각 trigger 직후 secu 의 nft list table\
+    \ inet verify | grep counter 로 변동 확인.\n\nPhase C — 회고 markdown 1~2 단락: 어느 룰이 어느\
+    \ trigger 를 잡았나 / 예상 외 결과 /\n다음 룰 작성 시 주의점.\n\n종료 후 정리: nft delete table inet\
+    \ verify.\n"
+  answer_detail: '이 step 은 학습 목표 #2 ("input 체인 포트 허용/차단") 의 행동 증명. 1~10번 step 이
 
-    [복합 시나리오] 이번 주 배운 nftables 룰의 *효과* 를 attacker→secu trigger 로 검증한다.
-
-    Phase A — secu 에 verify 테이블 다시 구성 (1~10번 lab 테이블은 삭제됐으니):
-      - nft add table inet verify
-      - nft add chain inet verify input { type filter hook input priority 0 \; policy accept \; }
-      - nft add rule inet verify input ct state established,related accept
-      - nft add rule inet verify input iif lo accept
-      - nft add rule inet verify input tcp dport 22 accept
-      - nft add rule inet verify input tcp dport 23 drop
-      - nft list table inet verify
-
-    Phase B — attacker(10.20.30.201) 에서 3 trigger:
-      1) nc -vz -w 3 10.20.30.1 23                  # telnet drop 검증
-      2) ssh -o ConnectTimeout=3 ccc@10.20.30.1 'echo ok'  # ssh accept 검증
-      3) (ssh 유지 상태에서) nft list table inet verify | grep -A1 'ct state'  # established hit
-
-    각 trigger 직후 secu 의 nft list table inet verify | grep counter 로 변동 확인.
-
-    Phase C — 회고 markdown 1~2 단락: 어느 룰이 어느 trigger 를 잡았나 / 예상 외 결과 /
-    다음 룰 작성 시 주의점.
-
-    종료 후 정리: nft delete table inet verify.
-  answer_detail: |
-    이 step 은 학습 목표 #2 ("input 체인 포트 허용/차단") 의 행동 증명. 1~10번 step 이
     syntax 익히기였다면 99 번은 효과 검증. attacker→secu trigger 로 nft counter 변동을 직접
+
     봐서 "내가 짠 룰이 진짜 일한다"는 경험을 얻는다.
+
+    '
   risk_level: low
-  bastion_prompt: |
-    nftables 룰의 효과 검증. secu 에 verify 테이블 + 4 룰 (established/lo/22accept/23drop)
+  bastion_prompt: 'nftables 룰의 효과 검증. secu 에 verify 테이블 + 4 룰 (established/lo/22accept/23drop)
+
     재구성 후, attacker(10.20.30.201) 에서 nc 23 / ssh 22 / established 3 trigger 실행.
-    각 trigger 직후 secu 의 nft counter 변동 확인 후 1~2 단락 회고. 종료 시 verify 테이블 삭제.
+
+    각 trigger 직후 secu 의 nft counter 변동 확인 후 1~2 단락 회고. 종료 시 verify 테이블 삭제.'
