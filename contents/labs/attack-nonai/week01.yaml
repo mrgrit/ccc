@@ -15,7 +15,19 @@ pass_threshold: 0.6
 steps:
 - order: 1
   instruction: ping을 사용하여 대상 호스트 {{WEB_IP}}이 활성 상태인지 확인하라. ICMP 응답을 3회만 보내라.
-  hint: ping -c 옵션으로 횟수를 제한할 수 있다
+  hint: |
+    ping -c 옵션으로 횟수를 제한할 수 있다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: ping -c 3 10.20.30.80
+    2) 미설치 시: sudo apt install -y iputils-ping (Debian/Ubuntu) 또는 sudo yum install -y iputils (RHEL)
+    3) ICMP 차단/실패 시 fallback (순서대로):
+       - fping -c 3 10.20.30.80 (병렬 ICMP)
+       - sudo hping3 --icmp -c 3 10.20.30.80 (방화벽 우회)
+       - sudo nmap -sn 10.20.30.80 (ARP+ICMP+TCP 결합)
+       - tcping -c 3 10.20.30.80 80 (TCP-only)
+       - python3 -c "import socket; s=socket.socket(); s.settimeout(2); print('alive' if s.connect_ex(('10.20.30.80',80))==0 else 'no reply')"
+    4) 검증: TTL=64 (Linux) / 128 (Windows). 0% loss = 활성.
   category: recon
   points: 5
   answer: ping -c 3 10.20.30.80
@@ -52,7 +64,19 @@ steps:
   target_vm: attacker
 - order: 2
   instruction: nslookup 또는 dig를 사용하여 실습 네트워크의 DNS 서버에 {{WEB_IP}}의 역방향 DNS 조회를 수행하라.
-  hint: dig -x 옵션으로 역방향 조회가 가능하다
+  hint: |
+    dig -x 옵션으로 역방향 조회가 가능하다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: dig -x 10.20.30.80 +short
+    2) 미설치 시: sudo apt install -y dnsutils 또는 sudo yum install -y bind-utils
+    3) 실패/대안:
+       - host 10.20.30.80 (간결)
+       - nslookup 10.20.30.80 (legacy)
+       - drill -x 10.20.30.80 (BIND 대안)
+       - python3 -c "import dns.reversename, dns.resolver; addr = dns.reversename.from_address('10.20.30.80'); print(dns.resolver.resolve(addr, 'PTR')[0])"
+       - getent hosts 10.20.30.80 (의존성 zero, NSS)
+    4) 검증: PTR 레코드 → 명명 규칙 → 역할 추정.
   category: recon
   points: 10
   answer: dig -x 10.20.30.80
@@ -90,7 +114,20 @@ steps:
   target_vm: attacker
 - order: 3
   instruction: curl을 사용하여 웹서버({{WEB_IP}}:3000)의 HTTP 헤더만 확인하라. 서버 소프트웨어 정보를 파악하라.
-  hint: curl -I 옵션은 HEAD 요청을 보내 헤더만 가져온다
+  hint: |
+    curl -I 옵션은 HEAD 요청을 보내 헤더만 가져온다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: curl -I http://10.20.30.80:3000
+    2) 미설치 시: sudo apt install -y curl
+    3) 실패/대안:
+       - wget --server-response --spider http://10.20.30.80:3000 (BusyBox)
+       - http --headers HEAD http://10.20.30.80:3000 (httpie)
+       - echo http://10.20.30.80:3000 | httpx -title -tech-detect -silent
+       - whatweb -v http://10.20.30.80:3000 (200+ plugin)
+       - sudo nmap -sV -p 3000 10.20.30.80 (NSE)
+       - python3 -c "import urllib.request; r=urllib.request.urlopen('http://10.20.30.80:3000'); print(dict(r.headers))"
+    4) 검증: Server/X-Powered-By/Set-Cookie → 기술 스택 → CVE 검색.
   category: recon
   points: 10
   answer: curl -I http://10.20.30.80:3000
@@ -128,7 +165,20 @@ steps:
   target_vm: attacker
 - order: 4
   instruction: curl로 웹서버({{WEB_IP}}:3000)의 robots.txt 파일을 확인하여 숨겨진 경로를 찾아라.
-  hint: robots.txt는 웹 루트에 위치한다
+  hint: |
+    robots.txt는 웹 루트에 위치한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: curl -s http://10.20.30.80:3000/robots.txt
+    2) 미설치 시: sudo apt install -y curl
+    3) 실패/대안:
+       - wget -qO- http://10.20.30.80:3000/robots.txt
+       - http GET http://10.20.30.80:3000/robots.txt (httpie)
+       - echo 10.20.30.80:3000 | httpx -path /robots.txt -silent
+       - feroxbuster -u http://10.20.30.80:3000 -w common.txt -x txt
+       - python3 -c "import urllib.request; print(urllib.request.urlopen('http://10.20.30.80:3000/robots.txt').read().decode())"
+    4) 후속: Disallow 경로 자동 fuzz (curl + grep + xargs).
+    5) 검증: Disallow 라인 → 관리자/백업/숨겨진 API.
   category: recon
   points: 10
   answer: curl -s http://10.20.30.80:3000/robots.txt
@@ -164,7 +214,20 @@ steps:
   target_vm: attacker
 - order: 5
   instruction: curl을 사용하여 {{WEB_IP}}:3000 웹 애플리케이션의 기술 스택을 핑거프린팅하라.
-  hint: curl -sI로 응답 헤더를 확인하고 Server 등의 정보를 추출한다
+  hint: |
+    curl -sI로 응답 헤더를 확인하고 Server 등의 정보를 추출한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: curl -sI http://10.20.30.80:3000 | grep -iE "(Server|X-Powered-By|X-Frame|Content-Type|Set-Cookie)"
+    2) 미설치 시: sudo apt install -y curl
+    3) 실패/대안:
+       - whatweb -v http://10.20.30.80:3000 (200+ plugin)
+       - wappalyzer http://10.20.30.80:3000 --pretty (1500+ tech)
+       - echo http://10.20.30.80:3000 | httpx -title -tech-detect -status-code -silent
+       - sudo nmap -p 3000 --script http-headers,http-server-header 10.20.30.80
+       - python3 EyeWitness.py -f targets.txt --web -d /tmp/ew (스크린샷)
+       - aquatone (HTML report + 시각)
+    4) 검증: 보안 헤더 (HSTS/CSP/X-Frame) 누락 시 finding 후보.
   category: recon
   points: 10
   answer: curl -sI http://10.20.30.80:3000 | grep -iE "(Server|X-Powered-By|X-Frame|Content-Type|Set-Cookie)"
@@ -200,7 +263,20 @@ steps:
   target_vm: attacker
 - order: 6
   instruction: curl을 사용하여 JuiceShop의 /ftp 디렉토리에 접근하여 공개된 파일 목록을 확인하라.
-  hint: /ftp 경로로 GET 요청을 보내라
+  hint: |
+    /ftp 경로로 GET 요청을 보내라.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: curl -s http://10.20.30.80:3000/ftp
+    2) 미설치 시: sudo apt install -y curl
+    3) 실패/대안:
+       - wget -qO- http://10.20.30.80:3000/ftp
+       - feroxbuster -u http://10.20.30.80:3000/ftp/ -w raft-medium-files.txt -x md,txt,bak
+       - gobuster dir -u http://10.20.30.80:3000/ftp -x md,txt
+       - ffuf -u http://10.20.30.80:3000/ftp/FUZZ -w common.txt -mc 200
+       - katana -u http://10.20.30.80:3000 -jc -kf all
+       - python3 -c "import urllib.request, re; html=urllib.request.urlopen('http://10.20.30.80:3000/ftp').read().decode(); print(re.findall(r'href=\"([^\"]+)\"', html))"
+    4) 검증: .md/.bak/.config 파일명 추출. announcement_encrypted.md = 암호화 backup.
   category: recon
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
@@ -239,7 +315,20 @@ steps:
 - order: 7
   instruction: ping과 ip route를 사용하여 attacker에서 web({{WEB_IP}})까지의 네트워크 경로와 연결 상태를
     확인하라.
-  hint: ping -c 1으로 연결을 확인하고 ip route get으로 라우팅 경로를 파악한다
+  hint: |
+    ping -c 1으로 연결을 확인하고 ip route get으로 라우팅 경로를 파악한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: ping -c 1 10.20.30.80 && ip route get 10.20.30.80
+    2) 미설치 시: sudo apt install -y iputils-ping iproute2
+    3) 실패/대안:
+       - traceroute -n 10.20.30.80 (ICMP/UDP hop)
+       - sudo tcptraceroute 10.20.30.80 80 (ICMP 차단 시)
+       - mtr -n -c 10 10.20.30.80 (real-time + 통계)
+       - sudo nmap --traceroute 10.20.30.80 -p 80
+       - paris-traceroute -m 5 10.20.30.80 (ECMP)
+       - python3 -c "from scapy.all import *; res, _ = traceroute('10.20.30.80', maxttl=5); res.summary()"
+    4) 검증: TTL=64 (Linux). hop=1 = 같은 서브넷.
   category: recon
   points: 10
   answer: ping -c 1 10.20.30.80 && echo "--- Routing ---" && ip route get 10.20.30.80
@@ -275,7 +364,21 @@ steps:
   target_vm: attacker
 - order: 8
   instruction: netcat(nc)을 사용하여 {{WEB_IP}}의 포트 3000에 접속하여 배너를 그래빙하라.
-  hint: nc로 접속 후 HTTP 요청을 수동으로 보내라
+  hint: |
+    nc로 접속 후 HTTP 요청을 수동으로 보내라.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: echo -e 'HEAD / HTTP/1.0\r\n\r\n' | nc -w 3 10.20.30.80 3000
+    2) 미설치 시: sudo apt install -y netcat-openbsd 또는 sudo yum install -y nmap-ncat
+    3) 실패/대안:
+       - ncat -C -w 3 10.20.30.80 3000 < /dev/null (modern)
+       - telnet 10.20.30.80 3000 (interactive)
+       - curl -v http://10.20.30.80:3000 2>&1 | head -20
+       - openssl s_client -connect 10.20.30.80:443 (HTTPS)
+       - amap -1 -B 10.20.30.80 3000 (정밀)
+       - sudo nmap -sV --version-intensity 9 -p 3000 10.20.30.80
+       - python3 -c "import socket; s=socket.socket(); s.connect(('10.20.30.80',3000)); s.send(b'HEAD / HTTP/1.0\r\n\r\n'); print(s.recv(4096).decode())"
+    4) 검증: HTTP/1.x 상태 + Server 헤더. raw protocol 학습.
   category: recon
   points: 10
   answer: echo -e 'HEAD / HTTP/1.0\r\n\r\n' | nc -w 3 10.20.30.80 3000
@@ -314,7 +417,19 @@ steps:
 - order: 9
   instruction: curl로 JuiceShop의 REST API(/api/Products)에 접근하여 제품 목록을 가져오고, python3으로
     JSON을 파싱하여 제품 수를 세어라.
-  hint: curl 출력을 python3 -c로 파이프하여 JSON 파싱한다
+  hint: |
+    curl 출력을 python3 -c로 파이프하여 JSON 파싱한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: curl -s http://10.20.30.80:3000/api/Products | python3 -c "import sys,json; d=json.load(sys.stdin); print('Total products:', len(d.get('data',[])))"
+    2) 미설치 시: sudo apt install -y curl python3
+    3) 실패/대안:
+       - curl -s ... | jq '.data | length' (jq 더 간결, sudo apt install -y jq)
+       - http GET http://10.20.30.80:3000/api/Products | jq '.data | length'
+       - python3 -c "import urllib.request, json; d=json.loads(urllib.request.urlopen('http://10.20.30.80:3000/api/Products').read()); print(len(d.get('data',[])))"
+       - wget -qO- http://10.20.30.80:3000/api/Products | python3 -m json.tool
+    4) 후속: katana (자동 endpoint), Arjun (파라미터).
+    5) 검증: Total products: 36.
   category: recon
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
@@ -355,7 +470,20 @@ steps:
   target_vm: attacker
 - order: 10
   instruction: curl을 사용하여 웹서버({{WEB_IP}}) 포트 80의 Apache 서버 헤더 정보를 확인하라.
-  hint: 포트 80의 HTTP 서버도 확인해 보라
+  hint: |
+    포트 80의 HTTP 서버도 확인해 보라.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: curl -I http://10.20.30.80:80
+    2) 미설치 시: sudo apt install -y curl
+    3) 실패/대안:
+       - wget --server-response --spider http://10.20.30.80
+       - http --headers HEAD http://10.20.30.80 (httpie)
+       - whatweb -v http://10.20.30.80:80 (Apache 모듈)
+       - nikto -h http://10.20.30.80:80 (Apache 전용 200+ 체크)
+       - sudo nmap -sV -p 80 10.20.30.80
+       - wafw00f http://10.20.30.80:80 (WAF 식별)
+    4) 검증: Server: Apache/X.Y → 80 vs 3000 stack diff.
   category: recon
   points: 10
   answer: curl -I http://10.20.30.80:80
@@ -391,7 +519,22 @@ steps:
   target_vm: attacker
 - order: 11
   instruction: arp-scan 또는 ping sweep으로 10.20.30.0/24 네트워크에서 활성화된 호스트 목록을 작성하라.
-  hint: nmap -sn 옵션으로 핑 스윕을 수행할 수 있다
+  hint: |
+    nmap -sn 옵션으로 핑 스윕을 수행할 수 있다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: sudo nmap -sn 10.20.30.0/24
+    2) 미설치 시: sudo apt install -y nmap
+    3) 실패/대안:
+       - sudo arp-scan --localnet --interface=eth0 (LAN ARP)
+       - fping -a -g 10.20.30.0/24 2>/dev/null
+       - sudo masscan 10.20.30.0/24 -p1-65535 --rate=10000
+       - rustscan -a 10.20.30.0/24 --top -- -sV
+       - naabu -host 10.20.30.0/24 -top-ports 100
+       - sudo netdiscover -p -i eth0 -t 30 (passive)
+       - for i in {1..254}; do (ping -c 1 -W 1 10.20.30.$i &>/dev/null && echo "10.20.30.$i alive" &); done; wait
+       - python3 -c "from scapy.all import *; ans, _ = arping('10.20.30.0/24', verbose=0); [print(r[1].psrc) for r in ans]"
+    4) 검증: Nmap scan report 행 = 활성 호스트 수.
   category: recon
   points: 10
   answer: nmap -sn 10.20.30.0/24
@@ -429,7 +572,20 @@ steps:
 - order: 12
   instruction: curl로 JuiceShop의 /rest/admin/application-version 엔드포인트에 접근하여 애플리케이션
     버전을 확인하라.
-  hint: REST API 엔드포인트에 GET 요청을 보내라
+  hint: |
+    REST API 엔드포인트에 GET 요청을 보내라.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: curl -s http://10.20.30.80:3000/rest/admin/application-version
+    2) 미설치 시: sudo apt install -y curl
+    3) 실패/대안:
+       - wget -qO- http://10.20.30.80:3000/rest/admin/application-version
+       - http GET http://10.20.30.80:3000/rest/admin/application-version
+       - echo http://10.20.30.80:3000/rest/admin/application-version | httpx -response-in-json -silent
+       - python3 -c "import urllib.request; print(urllib.request.urlopen('http://10.20.30.80:3000/rest/admin/application-version').read().decode())"
+       - nuclei -u http://10.20.30.80:3000 -t /usr/share/nuclei-templates/technologies/
+    4) 후속 CVE: searchsploit juiceshop / NVD API.
+    5) 검증: {"version":"15.5.2"} 같은 JSON.
   category: recon
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
@@ -468,7 +624,21 @@ steps:
 - order: 13
   instruction: curl을 사용하여 JuiceShop의 main.js 파일을 다운로드하고, grep으로 'admin' 키워드가 포함된 라인을
     검색하라.
-  hint: JuiceShop의 JavaScript 번들은 /main.js 경로에 있다
+  hint: |
+    JuiceShop의 JavaScript 번들은 /main.js 경로에 있다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: curl -s http://10.20.30.80:3000/main.js | grep -i 'admin' | head -20
+    2) 미설치 시: sudo apt install -y curl
+    3) 실패/대안:
+       - wget -qO- http://10.20.30.80:3000/main.js | grep -i 'admin'
+       - python3 LinkFinder.py -i http://10.20.30.80:3000/main.js -o cli (regex endpoint)
+       - python3 SecretFinder.py -i http://10.20.30.80:3000/main.js -o cli (API key/secret)
+       - katana -u http://10.20.30.80:3000 -jc -kf all
+       - trufflehog url --include-paths 'main.js' (secret scan)
+       - JSParser (Burp Pro)
+       - Chrome DevTools → Sources → main.js
+    4) 검증: hardcoded admin path, JWT secret, API endpoint 추출.
   category: recon
   points: 15
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
@@ -509,7 +679,21 @@ steps:
   target_vm: attacker
 - order: 14
   instruction: JuiceShop의 /rest/memories 엔드포인트에 접근하여 사용자가 업로드한 파일 정보를 수집하라.
-  hint: 인증 없이 접근 가능한 API를 탐색하라
+  hint: |
+    인증 없이 접근 가능한 API를 탐색하라.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: curl -s http://10.20.30.80:3000/rest/memories | python3 -m json.tool | head -30
+    2) 미설치 시: sudo apt install -y curl python3
+    3) 실패/대안:
+       - curl -s ... | jq '.data[].User.email' (sudo apt install -y jq)
+       - http GET http://10.20.30.80:3000/rest/memories
+       - python3 -c "import urllib.request, json; d=json.loads(urllib.request.urlopen('http://10.20.30.80:3000/rest/memories').read()); print(json.dumps(d, indent=2))"
+       - katana -u http://10.20.30.80:3000 -jc -kf all
+       - Arjun -u http://10.20.30.80:3000/rest/memories (파라미터 자동)
+       - Burp Intruder Pitchfork (ID brute → IDOR)
+       - ffuf -u http://10.20.30.80:3000/rest/FUZZ -w api-paths.txt
+    4) 검증: data 배열 + User 필드 (email) 노출 → 인증 없이 PII. IDOR finding 후보.
   category: recon
   points: 15
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
@@ -551,7 +735,21 @@ steps:
 - order: 15
   instruction: 수집한 모든 정보를 정리하여 /tmp/recon_report.txt 파일로 저장하라. 대상 IP, 열린 포트, 서버 기술
     스택, 발견된 API 엔드포인트를 포함하라.
-  hint: echo와 리다이렉션(>>, >)으로 파일을 생성할 수 있다
+  hint: |
+    echo와 리다이렉션(>>, >)으로 파일을 생성할 수 있다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: echo -e '=== Recon Report ===\nTarget: 10.20.30.80\nPorts: 80,3000\n...' > /tmp/recon_report.txt && cat /tmp/recon_report.txt
+    2) 미설치 시: bash 기본 (의존성 zero)
+    3) 실패/대안:
+       - heredoc: cat > /tmp/recon_report.txt << EOF\n...\nEOF
+       - tee: echo "..." | tee /tmp/recon_report.txt (화면 + 파일)
+       - python3 -c "open('/tmp/recon_report.txt','w').write('...')"
+       - markdown + pandoc → PDF: pandoc /tmp/recon_report.md -o /tmp/recon.pdf
+       - Dradis (collaborative): web UI Project → Findings
+       - Faraday IDE (70+ tool integration)
+       - DefectDojo Engagement (web dashboard)
+    4) 검증: cat /tmp/recon_report.txt 으로 5 카테고리 (Target/Ports/Tech/APIs/Network) 모두 포함.
   category: recon
   points: 15
   answer: 'echo -e ''=== Recon Report ===\nTarget: 10.20.30.80\nPorts: 80(Apache),
