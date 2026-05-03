@@ -33,10 +33,12 @@ verify.semantic 의 fail-safe 다양성 확보 + 학생 자료로 직접 활용 
 - [x] week07 ai (478→524줄, 9 step × 9 method, multi_task + Bastion KG anchor 통합)
 - [x] week08 nonai (286→318줄, 8 step × 8 method) — 중간 평가: nmap/sshpass/USB HID/임플란트/Findings/secu enum/Exec Summary/network map
 - [x] week08 ai (452→494줄, 9 step × 9 method, multi_task E2E kill chain + Bastion 자동 보고서)
-- [ ] week09~15 nonai
-- [ ] week09~15 ai
+- [x] week09 nonai (308→355줄, 8 step × 8 method) — RF/SDR: 고정 코드/롤링 코드/RollJam/Sub-GHz/IoT 스캔/Flipper/RF 감사/재밍 탐지
+- [x] week09 ai (501→547줄, 9 step × 9 method, multi_task RF chain + Bastion KG anchor)
+- [ ] week10~15 nonai
+- [ ] week10~15 ai
 
-**Next concrete step**: physical-pentest-nonai/week09.yaml 보강.
+**Next concrete step**: physical-pentest-nonai/week10.yaml 보강.
 
 **Files**: `contents/labs/physical-pentest-nonai/week*.yaml`,
          `contents/labs/physical-pentest-ai/week*.yaml`
