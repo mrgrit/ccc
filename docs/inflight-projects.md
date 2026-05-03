@@ -29,10 +29,12 @@ verify.semantic 의 fail-safe 다양성 확보 + 학생 자료로 직접 활용 
 - [x] week05 ai (501줄, AI workflow 통합)
 - [x] week06 nonai (308→341줄, 8 step × 8~9 method) — WPA2 PMK/사전공격/AP스캔/인터페이스/Deauth/강도평가/감사/aircrack
 - [x] week06 ai (399→523줄, 9 step × 9 method, multi_task 포함)
-- [ ] week07~15 nonai
-- [ ] week07~15 ai
+- [x] week07 nonai (308→342줄, 8 step × 8~9 method) — Evil Twin/ARP MITM/Captive Portal/IP forward/HTTP/HSTS/ARP detect/MITM defense
+- [x] week07 ai (478→524줄, 9 step × 9 method, multi_task + Bastion KG anchor 통합)
+- [ ] week08~15 nonai
+- [ ] week08~15 ai
 
-**Next concrete step**: physical-pentest-nonai/week07.yaml 보강 (정성껏 step 별 도구+명령+출력+해석).
+**Next concrete step**: physical-pentest-nonai/week08.yaml 보강.
 
 **Files**: `contents/labs/physical-pentest-nonai/week*.yaml`,
          `contents/labs/physical-pentest-ai/week*.yaml`
