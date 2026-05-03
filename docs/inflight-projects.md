@@ -40,15 +40,17 @@
 - [x] week08 ai (16 step × 9 method, hint 보강, multi_task PenTest팀 시니어 5 슬라이드 발표 - 중간고사)
 - [x] week09 nonai (16 step × 8 method, hint 보강) — 지속성: SSH keys/cron/systemd/.bashrc/hidden/PAM/LD_PRELOAD/UID 0/bind shell/web shell/at job/sshd_config/trojan binary/persistence hunt/report/Purple Team Adversary Sim
 - [x] week09 ai (16 step × 9 method, hint 보강, multi_task Purple Team Operator Timeline + Coverage Matrix + AAR)
-- [ ] week10~15 nonai
-- [ ] week10~15 ai
+- [x] week10 nonai (16 step × 8 method, hint 보강) — 측면 이동: SSH -L/-D/원격nmap/sshpass재사용/-R/known_hosts/-J jump/grep cred/ip route/socat tunnel/원격 portscan/ARP/sshuttle VPN/IoC/lateral report/Adversary Emulation Slack
+- [x] week10 ai (16 step × 9 method, hint 보강, multi_task Adversary Emulation 컨설턴트 Slack DM transcript)
+- [ ] week11~15 nonai
+- [ ] week11~15 ai
 
 **구조 확정** (2단계 검증):
 - answer / bastion_prompt = 추상 prompt (1차 검증: 학습자/AI 능력)
 - hint = 도구 우선순위 + 설치 명령 + fallback list (2차 검증)
 - acceptable_methods = 도구 + 명령 + 출력 + 해석 (검증 시 다양성)
 
-**Next concrete step**: attack-nonai/week10.yaml + attack-ai/week10.yaml 보강.
+**Next concrete step**: attack-nonai/week11.yaml + attack-ai/week11.yaml 보강.
 
 **Files**: `contents/labs/attack-nonai/week*.yaml`, `contents/labs/attack-ai/week*.yaml`
 
