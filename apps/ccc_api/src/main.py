@@ -2088,7 +2088,32 @@ def start_lab(body: LabStart):
             )
             conn.commit()
             row = cur.fetchone()
-    return {"lab": dict(row)}
+
+    # Fixture inject — student-id 결정론 seed 로 학생별 다른 합성 데이터 생성.
+    # lab_id 형식: "<course>-week<NN>" → contents/labs/<course>/week<NN>.yaml
+    fixture_info: dict | None = None
+    try:
+        import subprocess as _sp
+        m = _re.match(r"^(.+?)-week(\d{1,2})$", body.lab_id)
+        if m:
+            course = m.group(1)
+            week_num = int(m.group(2))
+            lab_yaml = os.path.join(_LABS_DIR, course, f"week{week_num:02d}.yaml")
+            if os.path.exists(lab_yaml):
+                proj_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+                inject = _sp.run(
+                    ["python3", os.path.join(proj_root, "scripts/lab_fixture_inject.py"),
+                     "--lab", lab_yaml, "--local-only",
+                     "--student-id", body.student_id],
+                    capture_output=True, text=True, timeout=60, cwd=proj_root,
+                )
+                fixture_info = {
+                    "rc": inject.returncode,
+                    "summary": inject.stdout.strip().splitlines()[-1] if inject.stdout else "",
+                }
+    except Exception as e:
+        fixture_info = {"error": str(e)}
+    return {"lab": dict(row), "fixture": fixture_info}
 
 @app.post("/labs/submit", dependencies=[Depends(verify_api_key)])
 def submit_lab(body: LabSubmit):

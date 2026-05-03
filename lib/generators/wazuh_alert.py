@@ -20,6 +20,9 @@ _RULES = [
     (100200, 12, "Custom: SUID binary modification detected", "syscheck,attack"),
     (100400, 10, "Custom: Suspicious payment-app field anomaly", "json_decoder,attack"),
     (100500, 8, "Custom: DNS query length > 100 bytes (possible exfil)", "dns,exfiltration"),
+    (100501, 6, "Custom: DNS query to high-entropy domain (DGA suspect)", "dns,attack"),
+    (100502, 5, "Custom: DNS NXDOMAIN burst (>100 in 60s)", "dns,recon"),
+    (100503, 7, "Custom: DNS TXT record query exceeded threshold", "dns,exfiltration"),
     (594, 10, "Multiple authentication failures", "authentication_failures"),
     (5104, 7, "FIM: Configuration file changed", "syscheck,config_change"),
     (550, 7, "FIM: File added to monitored directory", "syscheck"),
@@ -62,7 +65,7 @@ def generate(seed: int = 42,
         for _ in range(alerts_per_day):
             ts = _ts(start, d, rng.randint(0, 23), rng)
             rule = rng.choices(_RULES,
-                                weights=[20, 5, 15, 12, 4, 1, 1, 2, 3, 8, 6, 5, 1])[0]
+                                weights=[18, 5, 15, 10, 4, 1, 1, 6, 5, 4, 4, 3, 8, 6, 5, 1])[0]
             agent = rng.choice(_AGENTS)
             seq += 1
             src_ip = rng.choice(["203.0.113.42", "198.51.100.99", "10.20.30.5"])

@@ -18,19 +18,36 @@ Schema (lab YAML 의 step 내):
         cleanup: false              # task 종료 후 삭제 여부
 
 사용:
-    # task 1개 fixture 주입 (local only)
+    # task 1개 fixture 주입 (local only, 매번 random seed)
     python3 scripts/lab_fixture_inject.py \\
         --lab contents/labs/secops-ai/week08.yaml --order 9
 
-    # 모든 lab 의 fixtures 일괄 생성 (local)
+    # 학생 id 결정론 (같은 학생/같은 task = 같은 데이터)
+    python3 scripts/lab_fixture_inject.py --lab ... --order ... \\
+        --student-id alice@ync.ac.kr
+
+    # 명시 seed 재현 (디버깅·결과 재현)
+    python3 scripts/lab_fixture_inject.py --lab ... --order ... --seed 42
+
+    # 모든 lab 의 fixtures 일괄 생성 (local, random)
     python3 scripts/lab_fixture_inject.py --all --local-only
 
     # ssh 가능 환경에서 target VM 에 실 주입
     python3 scripts/lab_fixture_inject.py --lab ... --order ... --ssh
+
+Seed 정책 (resolve_seed):
+  --seed N        > --student-id S        > random
+  명시 (재현)    > 학생별 결정론        > 매번 다름 (외우기 방지)
+
+Mode (lab YAML 의 fixtures[].mode):
+  overwrite (기본) — 매 호출 시 파일 덮어쓰기. 결정론적 학습.
+  append          — 기존 파일에 새 events 누적. 시간 흐름 시뮬레이션.
 """
 from __future__ import annotations
 import argparse
+import hashlib
 import importlib
+import random
 import sys
 import yaml
 from pathlib import Path
@@ -56,10 +73,29 @@ def load_generator(name: str):
     return module.generate
 
 
-def generate_to_local(spec: dict, lab_id: str, order: int) -> Path:
+def resolve_seed(spec: dict, lab_id: str, order: int,
+                  student_id: str | None, override_seed: int | None) -> int:
+    """seed 결정 정책.
+
+    우선순위: --seed N > --student-id S (deterministic per student) > params.seed (legacy) > random.
+
+    student_id 결정론은 hash(student_id|lab_id|order) — 같은 학생/같은 task 는 같은 데이터.
+    """
+    if override_seed is not None:
+        return override_seed
+    if student_id:
+        h = hashlib.sha256(f"{student_id}|{lab_id}|{order}".encode()).hexdigest()
+        return int(h[:8], 16) % (2 ** 31 - 1)
+    # legacy params.seed 무시 — 매번 random (외우기 방지)
+    return random.randint(1, 2 ** 31 - 1)
+
+
+def generate_to_local(spec: dict, lab_id: str, order: int,
+                       seed: int) -> Path:
     """fixture spec 처리 → local 파일에 저장. Path 반환."""
     gen_name = spec["generator"]
-    params = spec.get("params", {}) or {}
+    params = dict(spec.get("params", {}) or {})
+    params["seed"] = seed  # 결정된 seed 로 override
     generator = load_generator(gen_name)
 
     out_dir = FIXTURE_DIR / lab_id / str(order)
@@ -67,13 +103,17 @@ def generate_to_local(spec: dict, lab_id: str, order: int) -> Path:
     filename = Path(spec["path"]).name
     out_file = out_dir / filename
 
-    with out_file.open("w") as f:
+    mode = spec.get("mode", "overwrite")  # default overwrite (재현)
+    file_mode = "a" if mode == "append" else "w"
+
+    with out_file.open(file_mode) as f:
         count = 0
         for line in generator(**params):
             f.write(line + "\n")
             count += 1
 
-    print(f"  ✓ {gen_name} → {out_file} ({count} lines)")
+    final_lines = sum(1 for _ in out_file.open()) if mode == "append" else count
+    print(f"  ✓ {gen_name} → {out_file} (+{count} lines, mode={mode}, seed={seed}, total={final_lines})")
     return out_file
 
 
@@ -110,7 +150,9 @@ def inject_to_vm(spec: dict, local_file: Path, dry_run: bool = False) -> bool:
 
 
 def process_lab(lab_path: Path, only_order: int | None = None,
-                local_only: bool = False, dry_run: bool = False) -> int:
+                local_only: bool = False, dry_run: bool = False,
+                student_id: str | None = None,
+                override_seed: int | None = None) -> int:
     """lab YAML 의 fixtures 처리. 처리한 fixture 수 반환."""
     with lab_path.open() as f:
         lab = yaml.safe_load(f)
@@ -127,7 +169,8 @@ def process_lab(lab_path: Path, only_order: int | None = None,
         print(f"[{lab_id}/{order}] fixtures: {len(fixtures)}")
         for spec in fixtures:
             try:
-                local_file = generate_to_local(spec, lab_id, order)
+                seed = resolve_seed(spec, lab_id, order, student_id, override_seed)
+                local_file = generate_to_local(spec, lab_id, order, seed)
                 if not local_only:
                     inject_to_vm(spec, local_file, dry_run=dry_run)
                 n_processed += 1
@@ -146,6 +189,10 @@ def main():
     p.add_argument("--ssh", action="store_true",
                     help="ssh 주입 시도 (기본은 local-only)")
     p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--seed", type=int, default=None,
+                    help="명시 seed (재현용). 없으면 random 또는 student-id 결정론.")
+    p.add_argument("--student-id",
+                    help="학생 ID (있으면 hash(id|lab|order) 결정론). 학생 lab 시작 시 사용.")
     args = p.parse_args()
 
     local_only = args.local_only or not args.ssh
@@ -159,10 +206,18 @@ def main():
         p.error("--lab 또는 --all 필요")
 
     total = 0
-    print(f"=== Fixture Inject {datetime.now().isoformat()} (local_only={local_only}) ===")
+    seed_policy = (
+        f"seed={args.seed}" if args.seed is not None
+        else f"student={args.student_id}" if args.student_id
+        else "random"
+    )
+    print(f"=== Fixture Inject {datetime.now().isoformat()} "
+          f"(local_only={local_only}, policy={seed_policy}) ===")
     for lab in targets:
         total += process_lab(lab, only_order=args.order,
-                              local_only=local_only, dry_run=args.dry_run)
+                              local_only=local_only, dry_run=args.dry_run,
+                              student_id=args.student_id,
+                              override_seed=args.seed)
     print(f"=== Total fixtures processed: {total} ===")
 
 

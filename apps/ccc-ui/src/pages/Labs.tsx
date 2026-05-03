@@ -1,8 +1,41 @@
 import React, { useEffect, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { api } from '../api.ts'
 import { getUser, isAdmin } from '../auth.ts'
 
 const diffColor: Record<string, string> = { easy: '#3fb950', medium: '#d29922', hard: '#f85149' }
+
+function Md({ children }: { children: string }) {
+  return (
+    <div className="lab-md">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          h1: ({ children }) => <div style={{ fontSize: 16, fontWeight: 700, color: '#e6edf3', margin: '8px 0 4px' }}>{children}</div>,
+          h2: ({ children }) => <div style={{ fontSize: 15, fontWeight: 700, color: '#58a6ff', margin: '8px 0 4px' }}>{children}</div>,
+          h3: ({ children }) => <div style={{ fontSize: 14, fontWeight: 700, color: '#7ee787', margin: '6px 0 4px' }}>{children}</div>,
+          h4: ({ children }) => <div style={{ fontSize: 14, fontWeight: 600, color: '#d29922', margin: '6px 0 2px' }}>{children}</div>,
+          p: ({ children }) => <div style={{ margin: '4px 0', lineHeight: 1.55 }}>{children}</div>,
+          ul: ({ children }) => <ul style={{ margin: '4px 0', paddingLeft: 22 }}>{children}</ul>,
+          ol: ({ children }) => <ol style={{ margin: '4px 0', paddingLeft: 22 }}>{children}</ol>,
+          li: ({ children }) => <li style={{ margin: '2px 0' }}>{children}</li>,
+          code: ({ inline, children }: any) => inline
+            ? <code style={{ background: '#161b22', padding: '1px 6px', borderRadius: 3, color: '#79c0ff', fontFamily: 'Consolas,Monaco,monospace', fontSize: '0.92em' }}>{children}</code>
+            : <code style={{ display: 'block', background: '#161b22', padding: '8px 10px', borderRadius: 4, color: '#c9d1d9', fontFamily: 'Consolas,Monaco,monospace', fontSize: 12.5, whiteSpace: 'pre-wrap', overflowX: 'auto' }}>{children}</code>,
+          pre: ({ children }) => <pre style={{ background: '#161b22', padding: '8px 10px', borderRadius: 4, margin: '4px 0', overflowX: 'auto' }}>{children}</pre>,
+          table: ({ children }) => <table style={{ borderCollapse: 'collapse', margin: '6px 0', fontSize: 13 }}>{children}</table>,
+          th: ({ children }) => <th style={{ border: '1px solid #30363d', padding: '4px 8px', background: '#161b22', textAlign: 'left' }}>{children}</th>,
+          td: ({ children }) => <td style={{ border: '1px solid #30363d', padding: '4px 8px' }}>{children}</td>,
+          strong: ({ children }) => <strong style={{ color: '#f0f6fc' }}>{children}</strong>,
+          em: ({ children }) => <em style={{ color: '#d2a8ff' }}>{children}</em>,
+        }}
+      >
+        {children}
+      </ReactMarkdown>
+    </div>
+  )
+}
 
 export default function Labs() {
   const [groups, setGroups] = useState<any[]>([])
@@ -380,15 +413,16 @@ export default function Labs() {
                   </div>
                 </div>
 
-                <div style={{ fontSize: 14, color: '#e6edf3', marginBottom: 10, lineHeight: 1.5, whiteSpace: 'pre-wrap' as const }}>
-                  <strong>Q{s.order}.</strong> {s.instruction}
+                <div style={{ fontSize: 14, color: '#e6edf3', marginBottom: 10, lineHeight: 1.5 }}>
+                  <strong>Q{s.order}.</strong>
+                  <Md>{s.instruction || ''}</Md>
                 </div>
 
                 {/* AI 버전: bastion 자연어 요청 */}
                 {s.bastion_prompt && (
                   <div style={{ background: '#0d1f0d', border: '1px solid #238636', borderRadius: 6, padding: '10px 14px', marginBottom: 10 }}>
                     <div style={{ fontSize: 12, color: '#3fb950', fontWeight: 700, marginBottom: 4 }}>🤖 bastion에 입력하세요</div>
-                    <div style={{ fontSize: 14, color: '#e6edf3', whiteSpace: 'pre-wrap' as const }}>{s.bastion_prompt}</div>
+                    <div style={{ fontSize: 14, color: '#e6edf3' }}><Md>{s.bastion_prompt}</Md></div>
                   </div>
                 )}
 
@@ -396,7 +430,7 @@ export default function Labs() {
                   <div style={{ background: '#0d1117', borderLeft: '3px solid #bc8cff', borderRadius: 6, padding: '10px 14px', marginBottom: 10 }}>
                     <div style={{ fontSize: 13, color: '#bc8cff', fontWeight: 700, marginBottom: 6 }}>📖 학습 포인트</div>
                     {s.learning.intent && (
-                      <div style={{ fontSize: 14, color: '#e6edf3', lineHeight: 1.5, marginBottom: 8, whiteSpace: 'pre-wrap' as const }}>{s.learning.intent}</div>
+                      <div style={{ fontSize: 14, color: '#e6edf3', lineHeight: 1.5, marginBottom: 8 }}><Md>{s.learning.intent}</Md></div>
                     )}
                     {s.learning.success_criteria?.length > 0 && (
                       <div style={{ marginTop: 6 }}>
@@ -423,12 +457,18 @@ export default function Labs() {
                 )}
 
                 {s.hint && (
-                  <div style={{ fontSize: 14, color: '#58a6ff', background: '#0d1f3c', borderRadius: 6, padding: '8px 12px', marginBottom: 8, whiteSpace: 'pre-wrap' as const }}>
-                    Hint: {s.hint}
+                  <div style={{ fontSize: 14, color: '#58a6ff', background: '#0d1f3c', borderRadius: 6, padding: '8px 12px', marginBottom: 8 }}>
+                    <strong>Hint:</strong>
+                    <Md>{s.hint}</Md>
                   </div>
                 )}
 
-                {/* 답변 입력 */}
+                {/* 답변 입력 (legacy: textarea fallback). 권장: SubAgent transcript 자동 캡처 또는 paste 모드 */}
+                {!sessionActive && (
+                  <div style={{ marginBottom: 4, fontSize: 11, color: '#fb8500' }}>
+                    ⚠ 레거시 모드 — [Lab 시작] 으로 SubAgent 캡처 (또는 paste) 모드 권장
+                  </div>
+                )}
                 <textarea
                   value={answers[s.order] || ''}
                   onChange={e => setAnswers({ ...answers, [s.order]: e.target.value })}
@@ -439,6 +479,7 @@ export default function Labs() {
                     background: '#0d1117', color: '#e6edf3', border: '1px solid #30363d',
                     borderRadius: 6, padding: '10px 12px', fontSize: 15,
                     fontFamily: 'Consolas, Monaco, monospace',
+                    opacity: sessionActive ? 0.7 : 1,
                   }}
                 />
 
@@ -447,7 +488,7 @@ export default function Labs() {
                   <div style={{ marginTop: 8, background: '#1a0a0a', border: '1px solid #f8514966', borderRadius: 6, padding: '10px 12px' }}>
                     <div style={{ fontSize: 13, color: '#f85149', fontWeight: 700, marginBottom: 4 }}>정답 (Admin)</div>
                     {s.answer && <div style={{ fontSize: 14, color: '#e6edf3', fontFamily: 'Consolas,Monaco,monospace', whiteSpace: 'pre-wrap' as const }}>{s.answer}</div>}
-                    {s.answer_detail && <div style={{ fontSize: 13, color: '#8b949e', marginTop: 6, whiteSpace: 'pre-wrap' as const }}>{s.answer_detail}</div>}
+                    {s.answer_detail && <div style={{ fontSize: 13, color: '#8b949e', marginTop: 6 }}><Md>{s.answer_detail}</Md></div>}
                   </div>
                 )}
 

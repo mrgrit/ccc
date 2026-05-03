@@ -474,6 +474,7 @@ def judge(events, step):
 def update_progress(course: str, week: int, order: int, status: str, skill: str, elapsed: float):
     d = json.load(open(PROGRESS))
     wkey = f"week{week:02d}"
+    d.setdefault("results", {}).setdefault(course, {}).setdefault(wkey, {})
     cur = d["results"][course][wkey]
     prev = cur.get(str(order)) if str(order) in cur else cur.get(order)
     is_new = prev in (None, {}) or (isinstance(prev, dict) and not prev.get("status"))
