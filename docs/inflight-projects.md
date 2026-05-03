@@ -37,10 +37,12 @@ verify.semantic 의 fail-safe 다양성 확보 + 학생 자료로 직접 활용 
 - [x] week09 ai (501→547줄, 9 step × 9 method, multi_task RF chain + Bastion KG anchor)
 - [x] week10 nonai (332→363줄, 8 step × 8 method) — CCTV/접근 통제: RTSP/웹 관리/취약점/RTSP path/default cred/access audit/keyword grep/단계별 권고
 - [x] week10 ai (456→565줄, 9 step × 9 method, multi_task CCTV chain + Bastion 자동 Jira 통합)
-- [ ] week11~15 nonai
-- [ ] week11~15 ai
+- [x] week11 nonai (335→367줄, 8 step × 8 method) — 감시 시스템 심화: RTSP auth/ONVIF/카메라 takeover/cred brute/CVE/UPnP/감사 보고서/VLAN 설계
+- [x] week11 ai (522→595줄, 9 step × 9 method, multi_task IP camera chain + Bastion KG correlation)
+- [ ] week12~15 nonai
+- [ ] week12~15 ai
 
-**Next concrete step**: physical-pentest-nonai/week11.yaml 보강.
+**Next concrete step**: physical-pentest-nonai/week12.yaml 보강.
 
 **Files**: `contents/labs/physical-pentest-nonai/week*.yaml`,
          `contents/labs/physical-pentest-ai/week*.yaml`
