@@ -32,15 +32,17 @@
 - [x] week04 ai (799→1142줄, 16 step × 9 method, hint 보강, multi_task SQLi+UNION+Mass chain)
 - [x] week05 nonai (16 step × 9 method, hint 보강) — 인증 공격: user enum/manual brute/hydra SSH/john MD5/보안질문/JWT none/hashcat SHA-256/JWT secret/ED25519/credstuff/shadow/NTLM/secq query/rate limit/auth report
 - [x] week05 ai (16 step × 9 method, hint 보강, multi_task H1 Bug Bounty disclosure 90일)
-- [ ] week06~15 nonai
-- [ ] week06~15 ai
+- [x] week06 nonai (16 step × 8 method, hint 보강) — 네트워크 공격: tcpdump/-A/ARP/nmap MAC/ARP cap/DNS cap/scapy ICMP/scapy ARP/pcap save/traceroute/ss/SYN flood/nft 원격/scapy SYN/report/STRIDE
+- [x] week06 ai (16 step × 9 method, hint 보강, multi_task STRIDE Threat Model 6 카테고리)
+- [ ] week07~15 nonai
+- [ ] week07~15 ai
 
 **구조 확정** (2단계 검증):
 - answer / bastion_prompt = 추상 prompt (1차 검증: 학습자/AI 능력)
 - hint = 도구 우선순위 + 설치 명령 + fallback list (2차 검증)
 - acceptable_methods = 도구 + 명령 + 출력 + 해석 (검증 시 다양성)
 
-**Next concrete step**: attack-nonai/week06.yaml + attack-ai/week06.yaml 보강.
+**Next concrete step**: attack-nonai/week07.yaml + attack-ai/week07.yaml 보강.
 
 **Files**: `contents/labs/attack-nonai/week*.yaml`, `contents/labs/attack-ai/week*.yaml`
 

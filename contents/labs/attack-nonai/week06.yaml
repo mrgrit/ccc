@@ -15,7 +15,19 @@ pass_threshold: 0.6
 steps:
 - order: 1
   instruction: tcpdump를 사용하여 {{WEB_IP}}으로 향하는 HTTP 트래픽(포트 3000)을 캡처하라. 10개 패킷만 캡처하라.
-  hint: tcpdump -c 옵션으로 캡처 수를 제한하고 host와 port 필터를 사용한다
+  hint: |
+    tcpdump -c 옵션으로 캡처 수를 제한하고 host와 port 필터를 사용한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: sudo tcpdump -c 10 -i any host 10.20.30.80 and port 3000 -nn
+    2) 미설치: sudo apt install -y tcpdump
+    3) 실패/대안:
+       - tshark -f "host 10.20.30.80 and port 3000" -c 10
+       - Wireshark GUI capture filter
+       - tcpflow -i any host 10.20.30.80 port 3000
+       - dumpcap -f "BPF" -c 10
+       - ngrep -d any -W byline "" host 10.20.30.80
+    4) 검증: IP 헤더 + TCP flag 출력. CWE-319.
   category: analysis
   points: 10
   answer: sudo tcpdump -c 10 -i any host 10.20.30.80 and port 3000 -nn
@@ -33,9 +45,14 @@ steps:
       - -c 10 + host + port 3000 필터
       - -nn 옵션
       acceptable_methods:
-      - sudo tcpdump + BPF
-      - tshark -f 'BPF'
-      - Wireshark GUI
+      - "sudo tcpdump -c 10 -i any host IP and port 3000 -nn (수기 baseline)."
+      - "tshark -f 'BPF' -c 10."
+      - "Wireshark GUI capture filter."
+      - "tcpflow -i any host IP port 3000."
+      - "dumpcap -f BPF -c 10."
+      - "ngrep -d any -W byline."
+      - "termshark TUI."
+      - "Bastion AI 패킷 캡처 orchestrator."
       negative_signs:
       - BPF 필터 없음
       - -c 패킷 제한 없음
@@ -43,7 +60,19 @@ steps:
 - order: 2
   instruction: tcpdump로 HTTP 요청/응답의 ASCII 내용을 캡처하라. {{WEB_IP}}:3000에 대한 트래픽을 5개 패킷만
     캡처하라.
-  hint: -A 옵션은 패킷 내용을 ASCII로 출력한다
+  hint: |
+    -A 옵션은 패킷 내용을 ASCII로 출력한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: curl -s http://10.20.30.80:3000/ > /dev/null & sudo tcpdump -c 5 -A -i any host 10.20.30.80 and port 3000 -nn 2>&1 | head -50
+    2) 미설치: sudo apt install -y tcpdump curl
+    3) 실패/대안:
+       - tshark -V (verbose 디코드)
+       - Wireshark Follow TCP Stream
+       - tcpflow -c (콘솔 ASCII)
+       - ngrep -W byline -d any "GET|POST" port 3000
+       - tcpdump -X (HEX+ASCII 동시)
+    4) 검증: GET/Host/User-Agent 평문. HTTPS 필요성. CWE-319.
   category: analysis
   points: 10
   answer: curl -s http://10.20.30.80:3000/ > /dev/null & sudo tcpdump -c 5 -A -i any
@@ -62,16 +91,33 @@ steps:
       - -A ASCII 출력
       - curl 백그라운드 + tcpdump
       acceptable_methods:
-      - tcpdump -A
-      - tshark -V
-      - Wireshark Follow TCP Stream
+      - "sudo tcpdump -c 5 -A (수기 baseline)."
+      - "tshark -V verbose."
+      - "Wireshark Follow TCP Stream."
+      - "tcpflow -c."
+      - "ngrep -W byline -d any."
+      - "tcpdump -X (HEX+ASCII)."
+      - "termshark TUI."
+      - "Bastion AI 평문 스니퍼 orchestrator."
       negative_signs:
       - -A 없음
       - HTTP 평문 맥락 없음
   target_vm: attacker
 - order: 3
   instruction: ARP 테이블을 확인하여 실습 네트워크의 MAC 주소 매핑을 조사하라.
-  hint: arp -a 또는 ip neigh 명령으로 ARP 캐시를 확인한다
+  hint: |
+    arp -a 또는 ip neigh 명령으로 ARP 캐시를 확인한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: ip neigh show && echo '---' && arp -a
+    2) 미설치: sudo apt install -y iproute2 net-tools
+    3) 실패/대안:
+       - arp-scan --localnet
+       - netdiscover -r 10.20.30.0/24 -P
+       - nmap -sn -PR 10.20.30.0/24 (ARP ping)
+       - fping -a -g 10.20.30.0/24
+       - python scapy ARPing
+    4) 검증: 동일 MAC → 여러 IP = 스푸핑 징후.
   category: recon
   points: 10
   answer: ip neigh show && echo '---' && arp -a 2>/dev/null
@@ -89,16 +135,34 @@ steps:
       - ip neigh 또는 arp -a
       - MAC 매핑 조회
       acceptable_methods:
-      - ip neigh show
-      - arp -a
-      - arp-scan --localnet
+      - "ip neigh show + arp -a (수기 baseline)."
+      - "arp-scan --localnet."
+      - "netdiscover -r."
+      - "nmap -sn -PR (ARP ping)."
+      - "fping -a -g."
+      - "scapy ARPing()."
+      - "Wireshark ARP 디스플레이 필터."
+      - "Bastion AI ARP 자산 audit."
       negative_signs:
       - ARP 조회 없음
       - ARP 스푸핑 맥락 없음
   target_vm: attacker
 - order: 4
   instruction: nmap을 사용하여 실습 네트워크(10.20.30.0/24)의 모든 호스트의 MAC 주소를 수집하라.
-  hint: nmap -sn 옵션은 호스트 발견 시 MAC 주소도 표시한다
+  hint: |
+    nmap -sn 옵션은 호스트 발견 시 MAC 주소도 표시한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: sudo nmap -sn 10.20.30.0/24
+    2) 미설치: sudo apt install -y nmap
+    3) 실패/대안:
+       - arp-scan -l (자동 인터페이스)
+       - netdiscover -r 10.20.30.0/24
+       - fping -a -g 10.20.30.0/24
+       - masscan --ping
+       - rustscan -a 10.20.30.0/24 -- -sn
+       - scapy ARPing("10.20.30.0/24")
+    4) 검증: MAC + 벤더 OUI + IP 매핑.
   category: recon
   points: 10
   answer: sudo nmap -sn 10.20.30.0/24
@@ -116,16 +180,33 @@ steps:
       - nmap -sn + /24
       - MAC 주소 맥락
       acceptable_methods:
-      - nmap -sn
-      - arp-scan -l
-      - netdiscover -r
+      - "sudo nmap -sn /24 (수기 baseline)."
+      - "arp-scan -l."
+      - "netdiscover -r."
+      - "fping -a -g."
+      - "masscan --ping."
+      - "rustscan -a /24 -- -sn."
+      - "scapy ARPing()."
+      - "Bastion AI 자산 발견 orchestrator."
       negative_signs:
       - -sn 없음
       - MAC 수집 맥락 없음
   target_vm: attacker
 - order: 5
   instruction: tcpdump를 사용하여 ARP 패킷을 캡처하라. 네트워크에서 ARP 요청과 응답을 10개 관찰하라.
-  hint: tcpdump arp 필터를 사용한다
+  hint: |
+    tcpdump arp 필터를 사용한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: sudo tcpdump -c 10 -i any arp -nn
+    2) 미설치: sudo apt install -y tcpdump
+    3) 실패/대안:
+       - tshark -Y arp -c 10
+       - Wireshark display filter 'arp'
+       - arpwatch 데몬 (변화 모니터)
+       - arping -c 5 + tcpdump
+       - scapy sniff(filter='arp', count=10)
+    4) 검증: who-has / is-at + 비정상 gratuitous ARP. T1557.002.
   category: analysis
   points: 10
   answer: sudo tcpdump -c 10 -i any arp -nn
@@ -143,16 +224,34 @@ steps:
       - tcpdump arp 필터
       - -c 10 제한
       acceptable_methods:
-      - tcpdump arp
-      - tshark -Y arp
-      - arpwatch 데몬
+      - "sudo tcpdump -i any arp -nn (수기 baseline)."
+      - "tshark -Y arp."
+      - "Wireshark 'arp' 필터."
+      - "arpwatch 데몬."
+      - "arping + tcpdump."
+      - "scapy sniff(filter='arp')."
+      - "Suricata ARP 룰."
+      - "Bastion AI ARP 변화 탐지 orchestrator."
       negative_signs:
       - arp 필터 없음
       - ARP 스푸핑 탐지 맥락 없음
   target_vm: attacker
 - order: 6
   instruction: DNS 조회 패킷을 tcpdump로 캡처하라. dig 명령으로 DNS 쿼리를 발생시키면서 동시에 캡처하라.
-  hint: tcpdump port 53 필터를 사용하고, 별도 터미널에서 dig를 실행한다
+  hint: |
+    tcpdump port 53 필터를 사용하고, 별도 터미널에서 dig를 실행한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: dig google.com @8.8.8.8 > /dev/null 2>&1 & sudo tcpdump -c 4 -i any port 53 -nn 2>&1 | head -20
+    2) 미설치: sudo apt install -y tcpdump dnsutils
+    3) 실패/대안:
+       - tshark -Y dns -f "port 53" -c 4
+       - Wireshark dns.flags 필터
+       - dnstop -l 5 eth0
+       - scapy sniff(filter='udp port 53')
+       - dnschef + 캡처
+       - host -v / nslookup
+    4) 검증: question/answer + UDP 평문. DNSSEC 필요성. T1557.002.
   category: analysis
   points: 10
   answer: dig google.com @8.8.8.8 > /dev/null 2>&1 & sudo tcpdump -c 4 -i any port
@@ -171,16 +270,33 @@ steps:
       - port 53 필터
       - dig + tcpdump 동시
       acceptable_methods:
-      - tcpdump port 53
-      - tshark dns.flags
-      - dnschef + 캡처
+      - "sudo tcpdump port 53 (수기 baseline)."
+      - "tshark -Y dns -f 'port 53'."
+      - "Wireshark dns.flags 필터."
+      - "dnstop -l 5."
+      - "scapy sniff(filter='udp port 53')."
+      - "dnschef + 캡처."
+      - "host -v + 캡처."
+      - "Bastion AI DNS 평문 분석 orchestrator."
       negative_signs:
       - port 53 없음
       - DNS 스푸핑 맥락 없음
   target_vm: attacker
 - order: 7
   instruction: scapy(python3)를 사용하여 커스텀 ICMP 패킷을 생성하고 {{WEB_IP}}에 전송하라.
-  hint: scapy의 IP()/ICMP() 레이어를 조합한다
+  hint: |
+    scapy의 IP()/ICMP() 레이어를 조합한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: sudo python3 -c "from scapy.all import *; pkt=IP(dst='10.20.30.80')/ICMP(); resp=sr1(pkt, timeout=3, verbose=0); print(f'src:{resp.src} TTL:{resp.ttl}')"
+    2) 미설치: sudo apt install -y python3-scapy
+    3) 실패/대안:
+       - hping3 -1 10.20.30.80 (--icmp)
+       - ping -c 3 -t 64 10.20.30.80
+       - nping --icmp --icmp-type 8 10.20.30.80
+       - python3 raw socket SOCK_RAW
+       - fping 10.20.30.80
+    4) 검증: ICMP echo reply + TTL.
   category: exploit
   points: 10
   answer: 'sudo python3 -c "from scapy.all import *; pkt=IP(dst=''10.20.30.80'')/ICMP();
@@ -200,16 +316,33 @@ steps:
       - scapy IP/ICMP + sr1
       - TTL 확인
       acceptable_methods:
-      - scapy + sr1
-      - hping3 --icmp
-      - ping 기본 ICMP
+      - "scapy IP()/ICMP() + sr1 (수기 baseline)."
+      - "hping3 -1 (ICMP)."
+      - "ping -c 3."
+      - "nping --icmp --icmp-type 8."
+      - "fping."
+      - "python raw SOCK_RAW."
+      - "C 자작 ICMP packet."
+      - "Bastion AI 패킷 위조 orchestrator."
       negative_signs:
       - scapy 없음
       - ICMP 맥락 없음
   target_vm: attacker
 - order: 8
   instruction: scapy를 사용하여 ARP 요청 패킷을 생성하고 {{WEB_IP}}의 MAC 주소를 확인하라.
-  hint: ARP(pdst='타겟IP') 패킷을 Ether(dst='ff:ff:ff:ff:ff:ff')와 조합한다
+  hint: |
+    ARP(pdst='타겟IP') 패킷을 Ether(dst='ff:ff:ff:ff:ff:ff')와 조합한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: sudo python3 -c "from scapy.all import *; ans,_=srp(Ether(dst='ff:ff:ff:ff:ff:ff')/ARP(pdst='10.20.30.80'), timeout=3, verbose=0); [print(f'IP:{r[1].psrc} MAC:{r[1].hwsrc}') for r in ans]"
+    2) 미설치: sudo apt install -y python3-scapy
+    3) 실패/대안:
+       - arping -c 1 10.20.30.80
+       - arp-scan 10.20.30.80
+       - nmap -sn -PR 10.20.30.80
+       - arpspoof -i eth0 -t (단순 송신)
+       - bettercap arp.spoof
+    4) 검증: hwsrc / vendor OUI. T1557.002.
   category: exploit
   points: 10
   answer: 'sudo python3 -c "from scapy.all import *; ans,_=srp(Ether(dst=''ff:ff:ff:ff:ff:ff'')/ARP(pdst=''10.20.30.80''),
@@ -229,16 +362,34 @@ steps:
       - Ether(dst=ff:...)/ARP(pdst)
       - srp 브로드캐스트
       acceptable_methods:
-      - scapy srp + ARP
-      - arping -c 1
-      - arpspoof 도구
+      - "scapy srp + Ether/ARP brd (수기 baseline)."
+      - "arping -c 1."
+      - "arp-scan IP."
+      - "nmap -sn -PR."
+      - "arpspoof."
+      - "bettercap arp.spoof."
+      - "ettercap -T -M arp."
+      - "Bastion AI ARP 검증 orchestrator."
       negative_signs:
       - Ether/ARP 없음
       - 브로드캐스트 맥락 없음
   target_vm: attacker
 - order: 9
   instruction: tcpdump로 HTTP 트래픽을 pcap 파일로 저장하라. /tmp/capture.pcap에 20개 패킷을 저장하라.
-  hint: -w 옵션으로 pcap 파일에 저장한다
+  hint: |
+    -w 옵션으로 pcap 파일에 저장한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: curl -s http://10.20.30.80:3000/ > /dev/null & sudo tcpdump -c 20 -i any host 10.20.30.80 -w /tmp/capture.pcap; echo 'Captured:' && tcpdump -r /tmp/capture.pcap | wc -l
+    2) 미설치: sudo apt install -y tcpdump
+    3) 실패/대안:
+       - tshark -w /tmp/capture.pcap
+       - dumpcap -w /tmp/capture.pcap -c 20
+       - Wireshark Save As pcap
+       - editcap (pcap 자르기)
+       - mergecap (병합)
+       - python pyshark FileCapture
+    4) 검증: pcap magic + read 시 패킷 수 확인.
   category: analysis
   points: 10
   answer: curl -s http://10.20.30.80:3000/ > /dev/null & sudo tcpdump -c 20 -i any
@@ -258,16 +409,34 @@ steps:
       - -w /tmp/capture.pcap + -r
       - 패킷 수 확인
       acceptable_methods:
-      - tcpdump -w/-r
-      - tshark -w
-      - Wireshark Save As
+      - "tcpdump -w/-r (수기 baseline)."
+      - "tshark -w."
+      - "dumpcap -w."
+      - "Wireshark Save As."
+      - "editcap 자르기."
+      - "mergecap 병합."
+      - "pyshark FileCapture."
+      - "Bastion AI pcap 보존/분석."
       negative_signs:
       - -w 저장 없음
       - pcap 포맷 맥락 없음
   target_vm: attacker
 - order: 10
   instruction: nmap의 --traceroute 옵션을 사용하여 {{WEB_IP}}까지의 경로를 매핑하고, 중간 네트워크 장비를 식별하라.
-  hint: nmap --traceroute 옵션은 포트 스캔과 동시에 경로를 추적한다
+  hint: |
+    nmap --traceroute 옵션은 포트 스캔과 동시에 경로를 추적한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: sudo nmap --traceroute -sn 10.20.30.80
+    2) 미설치: sudo apt install -y nmap traceroute mtr
+    3) 실패/대안:
+       - traceroute 10.20.30.80
+       - tracepath 10.20.30.80
+       - mtr -rwc 10 10.20.30.80
+       - tcptraceroute 10.20.30.80 3000
+       - paris-traceroute (multipath)
+       - scapy traceroute()
+    4) 검증: hop list + RTT. MITM 위치 식별.
   category: recon
   points: 10
   answer: sudo nmap --traceroute -sn 10.20.30.80
@@ -285,17 +454,34 @@ steps:
       - --traceroute + -sn
       - 경로 매핑
       acceptable_methods:
-      - nmap --traceroute
-      - traceroute
-      - mtr
-      - tcptraceroute
+      - "sudo nmap --traceroute -sn (수기 baseline)."
+      - "traceroute."
+      - "tracepath."
+      - "mtr -rwc."
+      - "tcptraceroute."
+      - "paris-traceroute."
+      - "scapy traceroute()."
+      - "Bastion AI 토폴로지 매핑."
       negative_signs:
       - --traceroute 없음
       - MITM 위치 맥락 없음
   target_vm: attacker
 - order: 11
   instruction: netstat 또는 ss 명령으로 현재 시스템의 네트워크 연결 상태를 확인하라. ESTABLISHED 상태의 연결만 필터링하라.
-  hint: ss -tn state established 명령을 사용한다
+  hint: |
+    ss -tn state established 명령을 사용한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: ss -tn state established
+    2) 미설치: sudo apt install -y iproute2 net-tools
+    3) 실패/대안:
+       - netstat -tn | grep ESTAB
+       - lsof -i -P -n | grep ESTABLISHED
+       - ss -tnp (PID/process 함께)
+       - conntrack -L
+       - /proc/net/tcp 직접 파싱
+       - osquery process_open_sockets 테이블
+    4) 검증: 외부 IP/PID. C2/IoC 비교.
   category: analysis
   points: 10
   answer: ss -tn state established
@@ -313,9 +499,14 @@ steps:
       - ss -tn state established
       - 활성 연결 필터
       acceptable_methods:
-      - ss -tn state established
-      - netstat -tn | grep ESTAB
-      - lsof -i -P -n
+      - "ss -tn state established (수기 baseline)."
+      - "netstat -tn | grep ESTAB."
+      - "lsof -i -P -n."
+      - "ss -tnp (process)."
+      - "conntrack -L."
+      - "/proc/net/tcp 직접 파싱."
+      - "osquery process_open_sockets."
+      - "Bastion AI C2 탐지 orchestrator."
       negative_signs:
       - state established 필터 없음
       - C2/IoC 맥락 없음
@@ -323,7 +514,20 @@ steps:
 - order: 12
   instruction: hping3를 사용하여 SYN Flood 공격을 시뮬레이션하라. {{WEB_IP}}:3000에 소스 IP를 랜덤으로 설정하여
     5개 SYN 패킷만 전송하라.
-  hint: hping3 --rand-source -S -p 포트 -c 횟수 옵션을 사용한다
+  hint: |
+    hping3 --rand-source -S -p 포트 -c 횟수 옵션을 사용한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: sudo hping3 --rand-source -S -p 3000 -c 5 10.20.30.80
+    2) 미설치: sudo apt install -y hping3
+    3) 실패/대안:
+       - scapy IP(src=RandIP())/TCP(flags='S')
+       - nmap --max-rate (단순 SYN 스캔, 부하 X)
+       - Metasploit auxiliary/dos/tcp/synflood
+       - t50 (다중 프로토콜 stress)
+       - mz / mausezahn (raw packet)
+       - python3 raw socket SYN
+    4) 검증: 5 SYN packets sent. T1498. SYN cookie 방어.
   category: exploit
   points: 10
   answer: sudo hping3 --rand-source -S -p 3000 -c 5 10.20.30.80
@@ -341,18 +545,41 @@ steps:
       - --rand-source + -S + -p 3000
       - -c 5 제한
       acceptable_methods:
-      - hping3 --rand-source
-      - scapy Dot11 SYN flood
-      - Metasploit auxiliary/dos/tcp/synflood
+      - "hping3 --rand-source -S -p (수기 baseline)."
+      - "scapy IP(src=RandIP())/TCP(flags='S')."
+      - "Metasploit auxiliary/dos/tcp/synflood."
+      - "t50 multi-protocol."
+      - "mausezahn / mz."
+      - "python raw socket SYN."
+      - "C 자작 SYN flood."
+      - "Bastion AI DoS 시뮬 orchestrator."
       negative_signs:
       - --rand-source 없음
       - SYN Flood 맥락 없음
       - DoS 방어 맥락 없음
   target_vm: attacker
 - order: 13
-  instruction: nftables 방화벽 서버({{SECU_IP}})의 방화벽 규칙을 원격으로 확인하라. SSH로 접속하여 nft list
+  instruction: 'nftables 방화벽 서버({{SECU_IP}})의 방화벽 규칙을 원격으로 확인하라. SSH로 접속하여 nft list
     ruleset 명령을 실행하라.
-  hint: sshpass를 사용하여 원격 명령을 실행한다
+
+
+    [FIXTURE] /home/ccc/cyber-range/fixtures/attack-nonai-week06/13/syslog 사전 주입.
+    `grep -E ''DROP|REJECT|filter'' /home/ccc/cyber-range/fixtures/attack-nonai-week06/13/syslog`
+    후 (1) 빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
+  hint: |
+    sshpass를 사용하여 원격 명령을 실행한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: ssh ccc@10.20.30.1 'sudo nft list ruleset' 2>/dev/null | head -40
+    2) 미설치: sudo apt install -y openssh-client sshpass nftables
+    3) 실패/대안:
+       - sshpass -p 1 ssh ccc@SECU_IP 'sudo nft list ruleset'
+       - ansible secu -m shell -a 'sudo nft list ruleset'
+       - paramiko python ssh
+       - fabric run('sudo nft list ruleset')
+       - kubectl exec (컨테이너화 시)
+       - syslog grep -E 'DROP|REJECT'
+    4) 검증: table inet filter / chain input. ISMS-P 통제.
   category: analysis
   points: 10
   answer: ssh ccc@10.20.30.1 'sudo nft list ruleset' 2>/dev/null | head -40
@@ -370,17 +597,46 @@ steps:
       - ssh + sudo nft list ruleset
       - 원격 규칙 조회
       acceptable_methods:
-      - ssh + nft
-      - ssh + iptables -L
-      - Ansible ad-hoc nft
+      - "ssh + sudo nft list ruleset (수기 baseline)."
+      - "sshpass + ssh."
+      - "ssh + iptables -L."
+      - "ansible secu -m shell -a 'sudo nft list ruleset'."
+      - "paramiko / fabric python ssh."
+      - "syslog grep DROP/REJECT 분석 (FIXTURE)."
+      - "OSSEC / Wazuh 룰셋 분석."
+      - "Bastion AI 방화벽 audit orchestrator."
       negative_signs:
       - ssh 원격 실행 없음
       - nft 명령 없음
   target_vm: attacker
+  fixtures:
+  - generator: firewall_log
+    target_vm: attacker
+    path: /home/ccc/cyber-range/fixtures/attack-nonai-week06/13/syslog
+    params:
+      seed: 42
+      duration_days: 7
+      scan_bursts: 5
+      egress_violations: 20
+      syn_flood_count: 200
+    mode: overwrite
+    cleanup: false
 - order: 14
   instruction: scapy를 사용하여 TCP SYN 패킷을 수동으로 생성하고 {{WEB_IP}}:3000에 전송하라. SYN-ACK 응답의
     시퀀스 번호를 확인하라.
-  hint: IP()/TCP(dport=3000, flags='S') 패킷을 생성한다
+  hint: |
+    IP()/TCP(dport=3000, flags='S') 패킷을 생성한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: sudo python3 -c "from scapy.all import *; pkt=IP(dst='10.20.30.80')/TCP(dport=3000, flags='S'); resp=sr1(pkt, timeout=3, verbose=0); print(f'flags:{resp[TCP].flags} seq:{resp[TCP].seq} ack:{resp[TCP].ack}')"
+    2) 미설치: sudo apt install -y python3-scapy
+    3) 실패/대안:
+       - hping3 -S -p 3000 -c 1 (SYN 단일)
+       - nmap -sS -p 3000 (저수준)
+       - python raw socket TCP
+       - nping --tcp -p 3000 --flags syn
+       - mausezahn -t tcp -A SYN
+    4) 검증: SYN-ACK = 0x12 (flag SA). ISN 랜덤화 검증. T1499.
   category: exploit
   points: 15
   answer: 'sudo python3 -c "from scapy.all import *; pkt=IP(dst=''10.20.30.80'')/TCP(dport=3000,
@@ -401,9 +657,14 @@ steps:
       - TCP(dport=3000, flags='S')
       - seq/ack 확인
       acceptable_methods:
-      - scapy IP/TCP + sr1
-      - hping3 -S -p 3000
-      - nmap -sS -p 3000 수동
+      - "scapy IP/TCP(flags='S') + sr1 (수기 baseline)."
+      - "hping3 -S -p 3000."
+      - "nmap -sS -p 3000."
+      - "python raw socket TCP."
+      - "nping --tcp --flags syn."
+      - "mausezahn -t tcp -A SYN."
+      - "C 자작 SYN packet."
+      - "Bastion AI TCP handshake 분석."
       negative_signs:
       - flags='S' 없음
       - seq/ack 없음
@@ -412,7 +673,20 @@ steps:
 - order: 15
   instruction: 네트워크 공격 실습 결과를 /tmp/network_attack_report.txt에 정리하라. 수행한 공격, 캡처된 데이터,
     방어 방안을 포함하라.
-  hint: 각 공격 기법의 결과와 대응 방안을 정리한다
+  hint: |
+    각 공격 기법의 결과와 대응 방안을 정리한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: heredoc/echo -e > /tmp/network_attack_report.txt 후 [Attacks]/[Findings]/[Recommendations] 3섹션. L2-L7 계층별 방어 명시.
+    2) 미설치: 기본 coreutils
+    3) 실패/대안:
+       - python jinja2 template
+       - dradis 보고서 도구
+       - markdown + pandoc
+       - serpico 보고서 자동화
+       - Faraday IDE
+       - cherrytree note-taking
+    4) 검증: cat 으로 3 섹션. MITRE ATT&CK Network. ISMS-P 통제.
   category: analysis
   points: 15
   answer: 'echo -e ''=== Network Attack Report ===\n\n[Attacks Performed]\n1. Packet
@@ -438,72 +712,131 @@ steps:
       - Attacks + Findings + Recommendations 3섹션
       - L2-L7 계층 방어
       acceptable_methods:
-      - echo > 보고서
-      - MITRE ATT&CK Network
-      - PTES Network Report
+      - "heredoc > 보고서 (수기 baseline)."
+      - "echo -e 다줄."
+      - "MITRE ATT&CK Network 매핑."
+      - "PTES Network Report."
+      - "python jinja2 markdown."
+      - "dradis 보고서 도구."
+      - "serpico 자동 보고서."
+      - "Bastion AI 보고서 자동 생성."
       negative_signs:
       - 3섹션 없음
       - 계층별 방어 없음
   target_vm: attacker
 - order: 99
-  instruction: |
-    [복합 시나리오] "빅테크 Red Team 신입 — 사내 네트워크 STRIDE Threat Model 작성"
+  instruction: '[복합 시나리오] "빅테크 Red Team 신입 — 사내 네트워크 STRIDE Threat Model 작성"
 
-    ## 상황 — 입사 한 달, Threat Modeling 첫 과제
+
+    ■ 상황 — 입사 한 달, Threat Modeling 첫 과제
+
 
     당신은 빅테크 Red Team 신입. 멘토:
 
-    > "신입은 PoC 부터 만들고 싶어 하지. 그건 시니어가 해. 너는 *모델링* 부터.
-    > JuiceShop (10.20.30.80) 트래픽의 STRIDE 6 카테고리 분류. PoC 가 부족해도 모델 정확하면 합격."
 
-    학습 목표 (lecture #2·#3 약한 인증 + #4 JWT) + (lab #1·#2·#5·#10·#13 tcpdump/ARP/scapy) 통합.
+    ※ "신입은 PoC 부터 만들고 싶어 하지. 그건 시니어가 해. 너는 *모델링* 부터.
 
-    ## 산출물 — STRIDE Threat Model 6 카테고리
+    ※ JuiceShop (10.20.30.80) 트래픽의 STRIDE 6 카테고리 분류. PoC 가 부족해도 모델 정확하면 합격."
+
+
+    학습 목표 (lecture #2·#3 약한 인증 + #4 JWT) + (lab #1·#2·#5·#10·#13 tcpdump/ARP/scapy)
+    통합.
+
+
+    ■ 산출물 — STRIDE Threat Model 6 카테고리
+
 
     Non-AI 트랙: ssh ccc@10.20.30.201 (attacker VM) 직접 실행.
 
+
     각 카테고리: (a) 위협 + (b) ATT&CK ID + (c) PoC 결과 + (d) 완화.
 
-    ### S — Spoofing (ARP poisoning)
+
+    ▶ S — Spoofing (ARP poisoning)
+
     위협: ARP 캐시 변조. T1557.002.
+
     PoC: `ip neigh show 2>&1 | head -5; arp -a 2>/dev/null | head -5`
+
     `sudo -n nmap -sn -PR 10.20.30.0/24 2>&1 | grep -A 1 "scan report" | head -10`
+
     완화: DAI + 802.1X NAC.
 
-    ### T — Tampering (평문 트래픽 변조)
+
+    ▶ T — Tampering (평문 트래픽 변조)
+
     위협: HTTP :3000 평문 → MITM 변조. T1565.002.
-    PoC (수동 캡처만): `sudo -n timeout 5 tcpdump -i any -c 10 -nn 'tcp port 3000' 2>&1 | head -15`
+
+    PoC (수동 캡처만): `sudo -n timeout 5 tcpdump -i any -c 10 -nn ''tcp port 3000'' 2>&1
+    | head -15`
+
     완화: HSTS + TLS 1.2+ + Cert pinning.
 
-    ### R — Repudiation (토큰 회전 부재)
+
+    ▶ R — Repudiation (토큰 회전 부재)
+
     위협: 짧은 회전 없는 JWT → 로그아웃 후 재사용.
-    PoC: `JWT=$(curl -s -X POST -H "Content-Type: application/json" -d '{"email":"admin@juice-sh.op","password":"admin123"}' http://10.20.30.80:3000/rest/user/login | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])")`
-    `echo "$JWT" | cut -d. -f2 | base64 -d 2>/dev/null | python3 -m json.tool 2>&1 | head -10`
+
+    PoC: `JWT=$(curl -s -X POST -H "Content-Type: application/json" -d ''{"email":"admin@juice-sh.op","password":"admin123"}''
+    http://10.20.30.80:3000/rest/user/login | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")`
+
+    `echo "$JWT" | cut -d. -f2 | base64 -d 2>/dev/null | python3 -m json.tool 2>&1
+    | head -10`
+
     완화: access 15분 + refresh rotation + audit log.
 
-    ### I — Info Disclosure (sniffing)
+
+    ▶ I — Info Disclosure (sniffing)
+
     위협: 평문 토큰/쿠키 노출. T1040.
-    PoC: `sudo -n timeout 5 tcpdump -i any -c 5 -A -nn 'tcp port 3000' 2>&1 | head -30`
+
+    PoC: `sudo -n timeout 5 tcpdump -i any -c 5 -A -nn ''tcp port 3000'' 2>&1 | head
+    -30`
+
     완화: TLS + Network Segmentation + DLP.
 
-    ### D — DoS (SYN flood)
+
+    ▶ D — DoS (SYN flood)
+
     위협: SYN Half-open 자원 고갈. T1498.
-    PoC (5개만): `sudo -n hping3 -S -p 3000 -c 5 --rand-source 10.20.30.80 2>&1 | tail -10`
+
+    PoC (5개만): `sudo -n hping3 -S -p 3000 -c 5 --rand-source 10.20.30.80 2>&1 | tail
+    -10`
+
     완화: SYN cookie + rate limit + nftables ct state.
 
-    ### E — Elevation (token reuse)
+
+    ▶ E — Elevation (token reuse)
+
     위협: 캡처 토큰으로 위장. T1550.001.
-    PoC: `curl -s -H "Authorization: Bearer $JWT" http://10.20.30.80:3000/rest/user/whoami | head -c 200`
+
+    PoC: `curl -s -H "Authorization: Bearer $JWT" http://10.20.30.80:3000/rest/user/whoami
+    | head -c 200`
+
     완화: token binding (IP/UA/device) + MFA step-up.
 
+
     [멘토 review 체크리스트]
+
     - 6 카테고리 모두 채움 / ATT&CK ID 매핑 / PoC 실행 / 기술적 완화
 
-    종료: echo "=== STRIDE Threat Model ===" 헤더 + 6 카테고리.
+
+    종료: echo "=== STRIDE Threat Model ===" 헤더 + 6 카테고리.'
   hint: |
     S/T/I/D 는 sudo. R/E 는 일반 권한.
     각 카테고리 위협+ATT&CK+PoC+완화. 6개 모두 채워야 합격.
     포인트: STRIDE 6 카테고리 모델 산출물.
+
+    📎 도구 우선순위 (힌트):
+    1) S Spoofing: ip neigh + arp -a + nmap -sn -PR. T1557.002 + DAI/802.1X.
+    2) T Tampering: sudo tcpdump -i any 'tcp port 3000'. T1565.002 + HSTS/TLS pinning.
+    3) R Repudiation: curl JWT 발급 + cut/base64 디코드 (exp 확인). T1078 + refresh rotation/audit log.
+    4) I Info Disclosure: sudo tcpdump -A -c 5 'tcp port 3000'. T1040 + TLS/segmentation/DLP.
+    5) D DoS: sudo hping3 -S --rand-source -c 5. T1498 + SYN cookie/rate limit/ct state.
+    6) E Elevation: curl -H "Authorization: Bearer $JWT". T1550.001 + token binding/MFA.
+    7) 미설치 시: sudo apt install -y tcpdump nmap hping3 curl python3
+    8) Threat Model 도구: Microsoft TMT, OWASP Threat Dragon, IriusRisk.
+    9) MITRE ATT&CK Navigator: https://mitre-attack.github.io/attack-navigator/
   category: integration_scenario
   points: 50
   verify:
@@ -511,9 +844,11 @@ steps:
     expect: STRIDE
     field: stdout
     semantic:
-      intent: |
-        Red Team 신입 — STRIDE Threat Model 6 카테고리. 각 위협+ATT&CK+PoC+완화.
+      intent: 'Red Team 신입 — STRIDE Threat Model 6 카테고리. 각 위협+ATT&CK+PoC+완화.
+
         lecture w06 + lab #1·#2·#5·#10·#13 동시 행동 증명. *STRIDE 모델* 산출물.
+
+        '
       success_criteria:
       - S Spoofing + DAI 완화
       - T Tampering + HSTS 완화
@@ -522,10 +857,14 @@ steps:
       - D DoS + SYN cookie 완화
       - E Elevation + MFA step-up 완화
       acceptable_methods:
-      - tcpdump / arp / hping3 / nmap
-      - sudo -n / timeout
-      - JWT decode + curl Bearer
-      - heredoc 6 카테고리
+      - "S Spoofing: ip neigh + nmap -sn -PR (수기 baseline)."
+      - "T Tampering: tcpdump tcp port 3000."
+      - "R Repudiation: JWT cut + base64 decode."
+      - "I Info Disclosure: tcpdump -A."
+      - "D DoS: hping3 -S --rand-source."
+      - "E Elevation: curl -H Authorization Bearer."
+      - "Microsoft TMT / OWASP Threat Dragon / IriusRisk."
+      - "MITRE ATT&CK Navigator 매핑."
       negative_signs:
       - 카테고리 5개 이하
       - ATT&CK ID 누락
@@ -534,5 +873,6 @@ steps:
       - 매트릭스 형식
   target_vm: attacker
   risk_level: low
-  answer_detail: |
-    학생이 ssh attacker 직접. STRIDE 6 카테고리 + ATT&CK + 기술적 완화 산출물.
+  answer_detail: '학생이 ssh attacker 직접. STRIDE 6 카테고리 + ATT&CK + 기술적 완화 산출물.
+
+    '
