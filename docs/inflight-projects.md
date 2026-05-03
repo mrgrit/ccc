@@ -38,15 +38,17 @@
 - [x] week07 ai (16 step × 9 method, hint 보강, multi_task CTF 동아리 walkthrough+FAQ)
 - [x] week08 nonai (16 step × 8 method, hint 보강) — 권한 상승: id/sudo -l/SUID/world-writable/passwd shells/cron/capabilities/shadow/env/PATH hijack/docker.sock/internal port/bash_history/LinPEAS oneliner/privesc report/Executive Briefing
 - [x] week08 ai (16 step × 9 method, hint 보강, multi_task PenTest팀 시니어 5 슬라이드 발표 - 중간고사)
-- [ ] week09~15 nonai
-- [ ] week09~15 ai
+- [x] week09 nonai (16 step × 8 method, hint 보강) — 지속성: SSH keys/cron/systemd/.bashrc/hidden/PAM/LD_PRELOAD/UID 0/bind shell/web shell/at job/sshd_config/trojan binary/persistence hunt/report/Purple Team Adversary Sim
+- [x] week09 ai (16 step × 9 method, hint 보강, multi_task Purple Team Operator Timeline + Coverage Matrix + AAR)
+- [ ] week10~15 nonai
+- [ ] week10~15 ai
 
 **구조 확정** (2단계 검증):
 - answer / bastion_prompt = 추상 prompt (1차 검증: 학습자/AI 능력)
 - hint = 도구 우선순위 + 설치 명령 + fallback list (2차 검증)
 - acceptable_methods = 도구 + 명령 + 출력 + 해석 (검증 시 다양성)
 
-**Next concrete step**: attack-nonai/week09.yaml + attack-ai/week09.yaml 보강.
+**Next concrete step**: attack-nonai/week10.yaml + attack-ai/week10.yaml 보강.
 
 **Files**: `contents/labs/attack-nonai/week*.yaml`, `contents/labs/attack-ai/week*.yaml`
 
