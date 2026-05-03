@@ -12,6 +12,33 @@
 
 ## In-Progress
 
+### P18. course16-17 physical-pentest acceptable_methods OSS 도구 보강 [STATUS: 진행 중, week06 완료]
+
+**동기**: 사용자 지시 (2026-05-03) — Cyber Range = UI /labs 메뉴 = `contents/labs/` 자체.
+acceptable_methods 가 도구명만 적힌 상태 → "도구 + 구체 명령 + 예상 출력 + 해석" 수준으로 재작성.
+verify.semantic 의 fail-safe 다양성 확보 + 학생 자료로 직접 활용 가능한 quality.
+
+**원칙**:
+- 병렬/스크립트/템플릿/자동화 금지 (사용자 명시)
+- 매 주차 instruction/script 읽고 그 주제에 딱 맞게 정성껏 수기
+- 한 step 당 8~9개 도구 (nonai 8, ai 9 — 마지막 1개는 Bastion AI orchestrator/KG 활용 항목)
+- 각 도구: 정확한 실행 명령 + 실제 출력 예시 + 해석/맥락
+
+**진행**:
+- [x] week05 nonai (306→342줄, 9 step × 6~8 method)
+- [x] week05 ai (501줄, AI workflow 통합)
+- [x] week06 nonai (308→341줄, 8 step × 8~9 method) — WPA2 PMK/사전공격/AP스캔/인터페이스/Deauth/강도평가/감사/aircrack
+- [x] week06 ai (399→523줄, 9 step × 9 method, multi_task 포함)
+- [ ] week07~15 nonai
+- [ ] week07~15 ai
+
+**Next concrete step**: physical-pentest-nonai/week07.yaml 보강 (정성껏 step 별 도구+명령+출력+해석).
+
+**Files**: `contents/labs/physical-pentest-nonai/week*.yaml`,
+         `contents/labs/physical-pentest-ai/week*.yaml`
+
+---
+
 ### P17. KG-Integrated bastion agent (R5 학습 loop) [STATUS: deployed, monitoring 첫 record]
 
 **동기**: 사용자 지시 (2026-05-02) — bastion agent 의 모든 작업이 KG 를
