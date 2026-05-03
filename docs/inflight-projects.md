@@ -35,10 +35,12 @@ verify.semantic 의 fail-safe 다양성 확보 + 학생 자료로 직접 활용 
 - [x] week08 ai (452→494줄, 9 step × 9 method, multi_task E2E kill chain + Bastion 자동 보고서)
 - [x] week09 nonai (308→355줄, 8 step × 8 method) — RF/SDR: 고정 코드/롤링 코드/RollJam/Sub-GHz/IoT 스캔/Flipper/RF 감사/재밍 탐지
 - [x] week09 ai (501→547줄, 9 step × 9 method, multi_task RF chain + Bastion KG anchor)
-- [ ] week10~15 nonai
-- [ ] week10~15 ai
+- [x] week10 nonai (332→363줄, 8 step × 8 method) — CCTV/접근 통제: RTSP/웹 관리/취약점/RTSP path/default cred/access audit/keyword grep/단계별 권고
+- [x] week10 ai (456→565줄, 9 step × 9 method, multi_task CCTV chain + Bastion 자동 Jira 통합)
+- [ ] week11~15 nonai
+- [ ] week11~15 ai
 
-**Next concrete step**: physical-pentest-nonai/week10.yaml 보강.
+**Next concrete step**: physical-pentest-nonai/week11.yaml 보강.
 
 **Files**: `contents/labs/physical-pentest-nonai/week*.yaml`,
          `contents/labs/physical-pentest-ai/week*.yaml`
