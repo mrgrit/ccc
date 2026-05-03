@@ -15,7 +15,20 @@ pass_threshold: 0.6
 steps:
 - order: 1
   instruction: nmap을 사용하여 {{WEB_IP}}의 가장 일반적인 1000개 포트에 대해 TCP Connect 스캔을 수행하라.
-  hint: nmap의 기본 스캔은 TCP Connect 스캔이다
+  hint: |
+    nmap의 기본 스캔은 TCP Connect 스캔이다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: nmap -sT 10.20.30.80
+    2) 미설치 시: sudo apt install -y nmap
+    3) 실패/대안:
+       - nmap -sT --top-ports 100 10.20.30.80 (빠른 첫 정찰)
+       - sudo masscan 10.20.30.80 -p1-1000 --rate=1000 (100배 빠름)
+       - rustscan -a 10.20.30.80 --top -- -sV (Rust binary chain)
+       - naabu -host 10.20.30.80 -top-ports 1000 (ProjectDiscovery)
+       - python3 -c "import socket; [print(p, 'open' if not socket.socket().connect_ex(('10.20.30.80', p)) else 'closed') for p in [22,80,443,3000]]" (의존성 zero)
+       - for p in 22 80 443 3000; do ncat -zv -w 1 10.20.30.80 $p; done
+    4) 검증: PORT/STATE/SERVICE 컬럼 + open 표시. -sT = 완전 3-way handshake → IDS 탐지 쉬움.
   category: recon
   points: 5
   answer: nmap -sT 10.20.30.80
@@ -32,16 +45,34 @@ steps:
       - nmap -sT
       - TCP Connect
       acceptable_methods:
-      - nmap -sT
-      - hping3 -S
-      - masscan (연결 기반)
+      - "nmap -sT (수기 baseline): 명령 `nmap -sT 10.20.30.80`. 출력 `PORT    STATE SERVICE\\n22/tcp  open  ssh\\n80/tcp  open  http\\n3000/tcp open  ppp` → 완전 3-way handshake. root 권한 X. 연결 로그 남음 → IDS 탐지 쉬움."
+      - "nmap -sT --top-ports: 명령 `nmap -sT --top-ports 100 10.20.30.80`. top 100 only. 빠른 첫 정찰."
+      - "hping3 -S (TCP SYN scan): 명령 `sudo hping3 -S -p 22 -c 1 10.20.30.80`. SYN 스캔 single-shot. 결과 `flags=SA` = open, `RA` = closed."
+      - "masscan (대량): 명령 `sudo masscan 10.20.30.80 -p1-1000 --rate=1000`. 100배 빠름. -sT 와 유사하지만 자체 stack."
+      - "rustscan: 명령 `rustscan -a 10.20.30.80 --top -- -sV`. masscan + nmap chain. Rust binary."
+      - "naabu: 명령 `naabu -host 10.20.30.80 -top-ports 1000`. ProjectDiscovery."
+      - "Python socket scan: 명령 `python3 -c \"import socket; [print(p, 'open' if not socket.socket().connect_ex(('10.20.30.80', p)) else 'closed') for p in [22,80,443,3000]]\"`. 의존성 zero."
+      - "ncat scan: 명령 `for p in 22 80 443 3000; do ncat -zv -w 1 10.20.30.80 $p; done`. nmap modern nc."
+      - "Burp Discover ports: Pro Engagement Tools. manual."
       negative_signs:
       - -sT 또는 TCP 맥락 없음
       - 연결 방식 맥락 없음
   target_vm: attacker
 - order: 2
   instruction: sudo 권한으로 SYN 스캔(Half-open 스캔)을 수행하여 {{WEB_IP}}의 열린 포트를 확인하라.
-  hint: SYN 스캔은 -sS 옵션이며 root 권한이 필요하다
+  hint: |
+    SYN 스캔은 -sS 옵션이며 root 권한이 필요하다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: sudo nmap -sS 10.20.30.80
+    2) 미설치 시: sudo apt install -y nmap
+    3) 실패/대안:
+       - sudo masscan 10.20.30.80 -p1-1000 --rate=1000 (자체 SYN stack, 100배 빠름)
+       - sudo zmap -p 80 10.20.30.0/24 (인터넷 스케일)
+       - sudo hping3 -S -p 22 -c 1 10.20.30.80 (single-shot SYN, flags=SA = open)
+       - rustscan -a 10.20.30.80 --top (sudo 없는 환경 — Connect fallback)
+       - python scapy: python3 -c "from scapy.all import *; r=sr1(IP(dst='10.20.30.80')/TCP(dport=22, flags='S'), timeout=2, verbose=0); print('open' if r and r[TCP].flags=='SA' else 'closed')"
+    4) 검증: SYN-ACK 응답만 확인 → handshake 완료 X → 로그 회피 (IDS 일부 탐지 가능).
   category: recon
   points: 10
   answer: sudo nmap -sS 10.20.30.80
@@ -58,16 +89,35 @@ steps:
       - sudo nmap -sS
       - SYN 스캔
       acceptable_methods:
-      - sudo nmap -sS
-      - masscan -sS
-      - zmap
+      - "sudo nmap -sS (수기 baseline): 명령 `sudo nmap -sS 10.20.30.80`. 출력 `PORT  STATE SERVICE\\n22/tcp open ssh\\n80/tcp open http\\n3000/tcp open ppp` → SYN-ACK 만 확인. handshake 미완료 → 로그 일부 회피."
+      - "sudo masscan -sS: 명령 `sudo masscan 10.20.30.80 -p1-1000 --rate=1000`. 자체 SYN stack 사용. 100배 빠름. 광범위."
+      - "sudo zmap: 명령 `sudo zmap -p 80 10.20.30.0/24 -B 10M`. 인터넷 스케일. /24 = 1초."
+      - "sudo hping3 -S: 명령 `sudo hping3 -S -p 22 -c 1 10.20.30.80`. single-shot SYN. flags=SA = open, RA = closed."
+      - "rustscan + nmap: 명령 `rustscan -a 10.20.30.80 --top -- -sS`. masscan + nmap chain."
+      - "naabu -p- (SYN): 명령 `sudo naabu -host 10.20.30.80 -p - -scan-type s`. ProjectDiscovery."
+      - "python scapy SYN: `python3 -c \"from scapy.all import *; r=sr1(IP(dst='10.20.30.80')/TCP(dport=22, flags='S'), timeout=2, verbose=0); print('open' if r and r[TCP].flags=='SA' else 'closed')\"`. 의존성 zero."
+      - "Snort / Suricata 검출: 같은 SYN 스캔이라도 IDS rule (`alert tcp any any -> $HOME_NET any (flags:S; threshold:type both, count 5)`) 으로 탐지. 방어자 시각."
+      - "FW 우회 가능 시나리오: 1port/sec rate-limit (-T1) + decoy IP (-D) + fragmentation (-f) 조합 → 탐지 회피."
       negative_signs:
       - -sS 없음
       - half-open 맥락 없음
   target_vm: attacker
 - order: 3
   instruction: '{{WEB_IP}}에 대해 포트 1-65535 전체 범위의 SYN 스캔을 수행하라. 속도를 위해 T4 타이밍을 사용하라.'
-  hint: -p- 옵션은 전체 포트 범위를 의미한다
+  hint: |
+    -p- 옵션은 전체 포트 범위를 의미한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: sudo nmap -sS -p- -T4 10.20.30.80
+    2) 미설치 시: sudo apt install -y nmap
+    3) 실패/대안 (속도 환경별):
+       - sudo masscan 10.20.30.80 -p1-65535 --rate=10000 (10배 빠름, 1분 이내)
+       - rustscan -a 10.20.30.80 -r 1-65535 -- -sS (Rust + nmap chain, 가장 빠름)
+       - sudo naabu -host 10.20.30.80 -p - (ProjectDiscovery)
+       - sudo nmap -sS -p- --min-rate 10000 (rate 직접 지정)
+       - sudo nmap -sS -p- -T5 (가장 공격적, 패킷 손실 위험)
+    4) 타이밍 가이드: -T0 paranoid → -T5 insane. 실전 IDS 환경: -T2 polite. 실습: -T4 aggressive.
+    5) 검증: 1-65535 전체 → 숨겨진 service (8080 admin / 9090 monitor 등) 발견.
   category: recon
   points: 10
   answer: sudo nmap -sS -p- -T4 10.20.30.80
@@ -84,16 +134,36 @@ steps:
       - -p- 전체 포트
       - -T4 타이밍
       acceptable_methods:
-      - nmap -sS -p-
-      - masscan -p1-65535
-      - rustscan -r 1-65535
+      - "sudo nmap -sS -p- -T4 (수기 baseline): 명령 `sudo nmap -sS -p- -T4 10.20.30.80`. 출력 `Discovered open port 22/tcp...\\nNot shown: 65532 closed tcp ports\\nPORT  STATE SERVICE\\n22/tcp open ssh\\n80/tcp open http\\n3000/tcp open ppp\\n8080/tcp open http-proxy`. T4 = aggressive timing."
+      - "sudo masscan -p1-65535: 명령 `sudo masscan 10.20.30.80 -p1-65535 --rate=10000 -oG /tmp/m.gnmap`. 1분 이내. 자체 SYN."
+      - "rustscan -r 1-65535: 명령 `rustscan -a 10.20.30.80 -r 1-65535 -- -sS -sV`. Rust + nmap chain."
+      - "sudo naabu -p -: 명령 `sudo naabu -host 10.20.30.80 -p -`. ProjectDiscovery."
+      - "sudo nmap -sS -p- --min-rate 10000: rate 직접 지정. 5초 내 전체."
+      - "zmap (단일 포트 인터넷): 명령 `sudo zmap -p 22 -B 10M 0.0.0.0/0`. 단일 포트만. 4시간 인터넷 스캔."
+      - "scapy port scan: python3 + Random subset → 자동화."
+      - "분할 전략: nmap -sS -p1-1000 + masscan -p1001-65535 동시 실행. 시간 단축."
+      - "stealth 변형: -T0 + -f (fragment) + decoy IP (-D RND:10) → IDS 회피."
       negative_signs:
       - -p- 없음
       - 전체 포트 맥락 없음
   target_vm: attacker
 - order: 4
   instruction: 서비스 버전 탐지(-sV)를 수행하여 {{WEB_IP}}에서 실행 중인 서비스의 이름과 버전을 식별하라.
-  hint: -sV 옵션은 서비스 프로브를 전송하여 버전 정보를 수집한다
+  hint: |
+    -sV 옵션은 서비스 프로브를 전송하여 버전 정보를 수집한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: sudo nmap -sV 10.20.30.80
+    2) 미설치 시: sudo apt install -y nmap
+    3) 실패/대안:
+       - sudo nmap -sV --version-intensity 9 10.20.30.80 (9단계 probe, 가장 정밀)
+       - sudo nmap -A 10.20.30.80 (-sV + -O + -sC + traceroute 종합)
+       - whatweb -v http://10.20.30.80:3000 (web 만)
+       - amap -B 10.20.30.80 22,80,3000 (banner only)
+       - sudo nmap -sV --script=banner 10.20.30.80 (NSE 추가)
+       - rustscan -a 10.20.30.80 --top -- -sV
+    4) 후속 CVE 검색: searchsploit <service-version> / NVD API / vulners.
+    5) 검증: VERSION 컬럼 + Apache/X.Y, OpenSSH/X.Y 확인.
   category: recon
   points: 10
   answer: sudo nmap -sV 10.20.30.80
@@ -110,16 +180,34 @@ steps:
       - -sV 옵션
       - 버전 탐지
       acceptable_methods:
-      - nmap -sV
-      - nmap -A (버전+OS+스크립트)
-      - whatweb (웹)
+      - "sudo nmap -sV (수기 baseline): 명령 `sudo nmap -sV 10.20.30.80`. 출력 `PORT  STATE SERVICE   VERSION\\n22/tcp open ssh OpenSSH 9.6p1\\n80/tcp open http Apache httpd 2.4.58\\n3000/tcp open http nodejs Express`. CVE 검색 base."
+      - "nmap -sV --version-intensity 9: 9단계 probe (0~9). 가장 정밀. 9 = 모든 probe 송신."
+      - "nmap -A: -sV + -O + -sC + --traceroute 종합."
+      - "whatweb -v http://...: 200+ plugin (web only)."
+      - "amap -B: banner only, 정밀."
+      - "nmap --script=banner: NSE banner extraction."
+      - "rustscan -- -sV: chain."
+      - "Wappalyzer CLI: 1500+ tech (web)."
+      - "후속 CVE 매칭: searchsploit / NVD / vulners API → 자동 finding."
       negative_signs:
       - -sV 없음
       - 버전 탐지 맥락 없음
   target_vm: attacker
 - order: 5
   instruction: OS 핑거프린팅(-O)을 수행하여 {{WEB_IP}}의 운영체제를 추정하라.
-  hint: -O 옵션은 root 권한이 필요하다
+  hint: |
+    -O 옵션은 root 권한이 필요하다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: sudo nmap -O 10.20.30.80
+    2) 미설치 시: sudo apt install -y nmap
+    3) 실패/대안:
+       - sudo nmap -O --osscan-guess 10.20.30.80 (불확실해도 추정)
+       - sudo nmap -A 10.20.30.80 (OS + 버전 + 스크립트 + traceroute)
+       - sudo p0f -i eth0 (passive OS fingerprinting)
+       - sudo xprobe2 10.20.30.80 (legacy active OS detection)
+       - TTL only (간이): ping -c 1 10.20.30.80 → ttl=64 (Linux), ttl=128 (Windows), ttl=255 (Cisco/router)
+    4) 검증: OS details + Aggressive OS guesses 라인. 일치도 % 확인.
   category: recon
   points: 10
   answer: sudo nmap -O 10.20.30.80
@@ -136,16 +224,35 @@ steps:
       - -O 옵션
       - OS 추정
       acceptable_methods:
-      - nmap -O
-      - p0f passive
-      - xprobe2
+      - "sudo nmap -O (수기 baseline): 명령 `sudo nmap -O 10.20.30.80`. 출력 `Running: Linux 5.X\\nOS CPE: cpe:/o:linux:linux_kernel:5\\nOS details: Linux 5.0 - 5.15`. TCP/IP stack 특성 분석."
+      - "nmap -O --osscan-guess: 불확실해도 추정 (정상 모드는 정확도 부족 시 무응답)."
+      - "sudo nmap -A: OS + 버전 + NSE + traceroute 종합."
+      - "p0f passive: 명령 `sudo p0f -i eth0`. 트래픽 청취 → OS fingerprint. 자체 트래픽 0 (stealth)."
+      - "xprobe2 (legacy): 명령 `sudo xprobe2 10.20.30.80`. ICMP 기반 active. 90년대 표준."
+      - "TTL 간이: `ping -c 1 ... | grep ttl`. ttl=64 Linux, 128 Windows, 255 Cisco. 빠른 추정."
+      - "scapy IP fingerprint: Python `from scapy.all import *; r=sr1(IP(dst='10.20.30.80')/ICMP()); print(r.ttl)`."
+      - "ettercap fingerprint: GUI/CLI. ARP poisoning 환경에서 통합."
+      - "Wireshark + ja3: TLS handshake 로 OS 추정 가능 (cipher suite 순서)."
       negative_signs:
       - -O 없음
       - OS 추정 맥락 없음
   target_vm: attacker
 - order: 6
   instruction: UDP 스캔을 수행하여 {{WEB_IP}}의 상위 20개 UDP 포트 상태를 확인하라.
-  hint: -sU 옵션으로 UDP 스캔을 수행하고 --top-ports로 상위 포트를 지정한다
+  hint: |
+    -sU 옵션으로 UDP 스캔을 수행하고 --top-ports로 상위 포트를 지정한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: sudo nmap -sU --top-ports 20 10.20.30.80
+    2) 미설치 시: sudo apt install -y nmap
+    3) 실패/대안:
+       - sudo nmap -sU -p 53,67,68,69,123,161,162,500,514 10.20.30.80 (지정 포트만 빠름)
+       - sudo nmap -sU --top-ports 100 --max-rtt-timeout 100ms 10.20.30.80 (timeout 단축)
+       - sudo udp-proto-scanner.pl 10.20.30.80 (perl, 표준 protocol probe)
+       - sudo hping3 --udp -p 53 -c 3 10.20.30.80 (UDP single)
+       - sudo masscan -pU:53,161,500 10.20.30.80 (자체 UDP)
+       - sudo nmap -sU --version-intensity 0 (가장 빠름, 정확도 낮음)
+    4) 주의: UDP 는 응답 없으면 open|filtered. 정확도 낮음. SNMP(161), DNS(53), DHCP(67/68) 핵심.
   category: recon
   points: 10
   answer: sudo nmap -sU --top-ports 20 10.20.30.80
@@ -162,16 +269,36 @@ steps:
       - -sU + --top-ports
       - UDP 스캔
       acceptable_methods:
-      - nmap -sU
-      - udp-proto-scanner
-      - hping3 --udp
+      - "sudo nmap -sU --top-ports (수기 baseline): 명령 `sudo nmap -sU --top-ports 20 10.20.30.80`. 출력 `PORT  STATE     SERVICE\\n53/udp  open|filtered domain\\n123/udp open|filtered ntp\\n161/udp open|filtered snmp`. open|filtered = 응답 없음."
+      - "nmap -sU + --max-rtt-timeout: 100ms 단축. 빠른 스캔."
+      - "udp-proto-scanner.pl: 명령 `udp-proto-scanner.pl 10.20.30.80`. perl 표준 probe. 다양한 protocol probe 자동."
+      - "hping3 --udp: 명령 `sudo hping3 --udp -p 53 -c 3 10.20.30.80`. single-shot UDP."
+      - "sudo masscan -pU: 자체 UDP stack. 빠름."
+      - "snmpwalk -v2c -c public: SNMP enum (UDP 161 active)."
+      - "dnsenum 10.20.30.80: DNS UDP probe."
+      - "scapy UDP scan: Python."
+      - "Wireshark + UDP filter: passive capture → 활성 UDP 식별."
       negative_signs:
       - -sU 없음
       - UDP 맥락 없음
   target_vm: attacker
 - order: 7
   instruction: nmap 스크립트 엔진(NSE)의 기본 스크립트를 사용하여 {{WEB_IP}}을 스캔하라.
-  hint: -sC 옵션은 기본 NSE 스크립트를 실행한다
+  hint: |
+    -sC 옵션은 기본 NSE 스크립트를 실행한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: sudo nmap -sC -sV 10.20.30.80
+    2) 미설치 시: sudo apt install -y nmap
+    3) 실패/대안 (NSE 카테고리 확장):
+       - sudo nmap -A 10.20.30.80 (-sC + -sV + -O + traceroute)
+       - sudo nmap --script=default 10.20.30.80 (= -sC)
+       - sudo nmap --script=safe 10.20.30.80 (안전 스크립트만, default 보다 광범위)
+       - sudo nmap --script=auth,brute 10.20.30.80 (인증 + brute force)
+       - sudo nmap --script=discovery,version 10.20.30.80 (discovery)
+       - sudo nmap --script=vuln 10.20.30.80 (취약점 스캔)
+    4) NSE 카테고리: auth/broadcast/brute/default/discovery/dos/exploit/external/fuzzer/intrusive/malware/safe/version/vuln (14종).
+    5) 검증: |_ 라인 = NSE 스크립트 결과. 인증 method, SSL cert, http-title 등 자동 추출.
   category: recon
   points: 10
   answer: sudo nmap -sC -sV 10.20.30.80
@@ -188,16 +315,36 @@ steps:
       - -sC + -sV
       - NSE 실행
       acceptable_methods:
-      - nmap -sC
-      - nmap -A (종합)
-      - nmap --script=default
+      - "sudo nmap -sC -sV (수기 baseline): 명령 `sudo nmap -sC -sV 10.20.30.80`. 출력 `22/tcp open ssh OpenSSH 9.6\\n| ssh-hostkey: 2048 SHA256:abc...\\n| ssh-auth-methods: publickey,password\\n80/tcp open http\\n|_http-title: Welcome\\n|_http-server-header: Apache/2.4.58`. NSE default 자동."
+      - "nmap -A: -sC + -sV + -O + --traceroute 종합."
+      - "nmap --script=default (= -sC): 명시적 카테고리."
+      - "nmap --script=safe: default 보다 광범위 안전 카테고리."
+      - "nmap --script=auth,brute: 인증 + brute force."
+      - "nmap --script=discovery,version: discovery + version."
+      - "nmap --script=vuln: 취약점 스캔 (다음 step)."
+      - "nmap --script=external: 외부 DB 활용 (Shodan/Censys 등)."
+      - "사용자 정의 NSE: /usr/share/nmap/scripts/ 의 .nse 파일 직접 작성. Lua 기반."
       negative_signs:
       - -sC 없음
       - NSE 맥락 없음
   target_vm: attacker
 - order: 8
   instruction: nmap의 http-enum 스크립트를 사용하여 {{WEB_IP}}:3000의 웹 디렉토리를 열거하라.
-  hint: --script http-enum 옵션을 사용하고 포트를 지정한다
+  hint: |
+    --script http-enum 옵션을 사용하고 포트를 지정한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: nmap --script http-enum -p 3000 10.20.30.80
+    2) 미설치 시: sudo apt install -y nmap
+    3) 실패/대안 (디렉토리 brute 도구별):
+       - gobuster dir -u http://10.20.30.80:3000 -w /usr/share/wordlists/dirb/common.txt -x html,php,bak (Go, 빠름)
+       - feroxbuster -u http://10.20.30.80:3000 -w common.txt -x html,php (Rust, 재귀)
+       - ffuf -u http://10.20.30.80:3000/FUZZ -w common.txt -mc 200 (Go, fast)
+       - dirb http://10.20.30.80:3000 /usr/share/wordlists/dirb/common.txt (legacy)
+       - wfuzz -c -z file,common.txt --hc 404 http://10.20.30.80:3000/FUZZ (Python)
+       - katana -u http://10.20.30.80:3000 -d 5 -jc -kf all (ProjectDiscovery, JS-aware)
+    4) wordlist: SecLists (/usr/share/seclists/Discovery/Web-Content/) 의 common/raft/big.
+    5) 검증: 발견 디렉토리 → 각 status code (200/301/403) 분석.
   category: recon
   points: 10
   answer: nmap --script http-enum -p 3000 10.20.30.80
@@ -215,17 +362,36 @@ steps:
       - --script http-enum
       - 디렉토리 열거
       acceptable_methods:
-      - nmap --script http-enum
-      - gobuster dir
-      - ffuf
-      - feroxbuster
+      - "nmap --script http-enum (수기 baseline): 명령 `nmap --script http-enum -p 3000 10.20.30.80`. 출력 `3000/tcp open http\\n| http-enum:\\n|   /admin/: Possible admin folder\\n|   /api/: API endpoint\\n|_  /backup/: Backup directory`. nmap NSE 표준."
+      - "gobuster dir: 명령 `gobuster dir -u http://10.20.30.80:3000 -w common.txt -x html,php,bak`. Go binary, 빠름."
+      - "feroxbuster: 명령 `feroxbuster -u http://10.20.30.80:3000 -w raft-medium-words.txt -x html,php -d 3`. Rust + 재귀."
+      - "ffuf: 명령 `ffuf -u http://10.20.30.80:3000/FUZZ -w common.txt -mc 200`. Go, fastest."
+      - "dirb (legacy): 명령 `dirb http://10.20.30.80:3000 /usr/share/wordlists/dirb/common.txt`."
+      - "wfuzz: 명령 `wfuzz -c -z file,common.txt --hc 404 http://10.20.30.80:3000/FUZZ`. Python."
+      - "katana: 명령 `katana -u http://10.20.30.80:3000 -d 5 -jc -kf all`. ProjectDiscovery, JS-aware."
+      - "Burp Pro Crawl: spider + JS-rendered."
+      - "OWASP ZAP Spider: 자동 + AJAX spider."
       negative_signs:
       - http-enum 없음
       - 디렉토리 열거 맥락 없음
   target_vm: attacker
 - order: 9
   instruction: 방화벽 서버({{SECU_IP}})에 대해 ACK 스캔을 수행하여 방화벽 규칙(필터링 여부)을 파악하라.
-  hint: -sA 옵션은 ACK 스캔으로 방화벽 규칙을 매핑한다
+  hint: |
+    -sA 옵션은 ACK 스캔으로 방화벽 규칙을 매핑한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: sudo nmap -sA 10.20.30.1
+    2) 미설치 시: sudo apt install -y nmap
+    3) 실패/대안 (방화벽 우회/탐지 기법별):
+       - sudo nmap -sW 10.20.30.1 (Window scan, ACK 변형)
+       - sudo nmap -sM 10.20.30.1 (Maimon scan, FIN/ACK)
+       - sudo hping3 -A -p 22 -c 1 10.20.30.1 (ACK single)
+       - sudo hping3 -F -p 22 -c 1 10.20.30.1 (FIN scan, stealth)
+       - sudo nmap -sN 10.20.30.1 (NULL scan, 모든 flag clear)
+       - sudo nmap -sX 10.20.30.1 (Xmas scan, FIN+PSH+URG)
+    4) 결과 해석: RST 응답 = unfiltered (방화벽 미통과 또는 stateless). 응답 없음/ICMP error = filtered (stateful 방화벽).
+    5) 검증: PORT/STATE 컬럼에 unfiltered/filtered. 방화벽 vs stateful 방화벽 구분.
   category: recon
   points: 10
   answer: sudo nmap -sA 10.20.30.1
@@ -242,16 +408,34 @@ steps:
       - -sA 옵션
       - 방화벽 매핑
       acceptable_methods:
-      - nmap -sA
-      - nmap -sW window scan
-      - hping3 -A
+      - "sudo nmap -sA (수기 baseline): 명령 `sudo nmap -sA 10.20.30.1`. 출력 `PORT  STATE       SERVICE\\n22/tcp unfiltered ssh\\n80/tcp unfiltered http\\n443/tcp filtered  https`. unfiltered = RST 응답, filtered = 응답 없음."
+      - "nmap -sW (Window scan): TCP Window 필드 분석. ACK 변형."
+      - "nmap -sM (Maimon): FIN/ACK 조합. BSD 시스템 식별."
+      - "hping3 -A: 명령 `sudo hping3 -A -p 22 -c 1 10.20.30.1`. ACK single-shot."
+      - "hping3 -F (FIN): stealth scan."
+      - "nmap -sN (NULL): 모든 flag clear. RFC 793 비호환 호스트 탐지."
+      - "nmap -sX (Xmas): FIN+PSH+URG. 고전적 stealth."
+      - "scapy ACK probe: Python 자동화."
+      - "방화벽 추론: unfiltered 패턴 → ACL rule 매핑."
       negative_signs:
       - -sA 없음
       - 방화벽 매핑 맥락 없음
   target_vm: attacker
 - order: 10
   instruction: 10.20.30.0/24 네트워크 전체에 대해 빠른 스캔(-F)을 수행하여 활성 호스트와 열린 포트를 한 번에 확인하라.
-  hint: -F 옵션은 상위 100개 포트만 스캔하여 속도를 높인다
+  hint: |
+    -F 옵션은 상위 100개 포트만 스캔하여 속도를 높인다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: sudo nmap -sS -F 10.20.30.0/24
+    2) 미설치 시: sudo apt install -y nmap
+    3) 실패/대안 (속도 환경별):
+       - sudo nmap -sS --top-ports 100 10.20.30.0/24 (= -F 명시)
+       - sudo masscan --top-ports 100 10.20.30.0/24 --rate=10000 (10배 빠름)
+       - rustscan -a 10.20.30.0/24 --top -- -sS (Rust binary)
+       - sudo naabu -host 10.20.30.0/24 -top-ports 100 (ProjectDiscovery)
+       - sudo nmap -sn 10.20.30.0/24 (호스트 발견만, 더 빠름)
+    4) 검증: 활성 호스트 별 PORT/STATE. /24 = 254 호스트 빠른 개요.
   category: recon
   points: 10
   answer: sudo nmap -sS -F 10.20.30.0/24
@@ -268,15 +452,33 @@ steps:
       - -F Fast
       - /24 네트워크
       acceptable_methods:
-      - nmap -sS -F
-      - masscan --top-ports 100
-      - rustscan -r 1-100
+      - "sudo nmap -sS -F (수기 baseline): 명령 `sudo nmap -sS -F 10.20.30.0/24`. 출력 `Nmap scan report for 10.20.30.1\\nPORT STATE SERVICE\\n22/tcp open ssh\\nNmap scan report for 10.20.30.80\\n80/tcp open http\\n3000/tcp open ppp`. -F = top 100."
+      - "nmap --top-ports 100: -F 명시."
+      - "sudo masscan --top-ports 100: rate 10000 → 10배 빠름."
+      - "rustscan --top: chain 형식."
+      - "sudo naabu -top-ports: ProjectDiscovery."
+      - "sudo nmap -sn: 호스트 발견만 (포트 X). 더 빠름."
+      - "sudo arp-scan --localnet: ARP 직접. LAN 환경 빠름."
+      - "fping -a -g + nmap chain: 활성 호스트 → 포트."
+      - "Bash + parallel: for + & 병렬."
       negative_signs:
       - -F 또는 CIDR 없음
   target_vm: attacker
 - order: 11
   instruction: nmap 스캔 결과를 XML 형식으로 /tmp/scan_result.xml에 저장하라. 대상은 {{WEB_IP}}이다.
-  hint: -oX 옵션으로 XML 출력을 지정한다
+  hint: |
+    -oX 옵션으로 XML 출력을 지정한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: sudo nmap -sV -oX /tmp/scan_result.xml 10.20.30.80
+    2) 미설치 시: sudo apt install -y nmap
+    3) 실패/대안 (출력 형식 확장):
+       - sudo nmap -sV -oA /tmp/scan_full 10.20.30.80 (.nmap+.gnmap+.xml 동시)
+       - sudo nmap -sV -oN /tmp/scan.txt 10.20.30.80 (normal text)
+       - sudo nmap -sV -oG /tmp/scan.gnmap 10.20.30.80 (grep 친화)
+       - sudo nmap -sV -oJ /tmp/scan.json 10.20.30.80 (JSON, nmap 7.95+)
+    4) 후속 활용: ndiff scan_old.xml scan_new.xml (변경 추적). xsltproc + nmap-bootstrap.xsl (HTML 변환). msfconsole > db_import scan.xml (Metasploit). dradis-cli import nmap.xml.
+    5) 검증: XML 헤더 `<?xml version="1.0"?>` + `<nmaprun>` 루트.
   category: recon
   points: 10
   answer: sudo nmap -sV -oX /tmp/scan_result.xml 10.20.30.80 && head -20 /tmp/scan_result.xml
@@ -294,16 +496,35 @@ steps:
       - -oX 옵션
       - /tmp/scan_result.xml
       acceptable_methods:
-      - nmap -oX
-      - nmap -oA (all formats)
-      - XML → Dradis/Faraday import
+      - "sudo nmap -oX (수기 baseline): 명령 `sudo nmap -sV -oX /tmp/scan_result.xml 10.20.30.80 && head -20 /tmp/scan_result.xml`. 출력 `<?xml version=\"1.0\"?>\\n<nmaprun ...>`. XML 표준."
+      - "nmap -oA: .nmap+.gnmap+.xml 동시. 모든 도구 호환."
+      - "nmap -oN: normal text (사람 읽기)."
+      - "nmap -oG: grep 친화. awk/grep 자동화."
+      - "nmap -oJ: JSON (7.95+). jq 친화."
+      - "ndiff scan_old.xml scan_new.xml: 변경 추적."
+      - "xsltproc nmap-bootstrap.xsl: XML → HTML 변환."
+      - "msfconsole db_import: Metasploit 자동 import."
+      - "dradis-cli / faraday-cli import: 자동 vuln management."
       negative_signs:
       - -oX 없음
       - XML 저장 맥락 없음
   target_vm: attacker
 - order: 12
   instruction: nmap의 vuln 카테고리 스크립트를 사용하여 {{WEB_IP}}:3000에 대한 간단한 취약점 스캔을 수행하라.
-  hint: --script vuln 옵션으로 취약점 탐지 스크립트를 실행한다
+  hint: |
+    --script vuln 옵션으로 취약점 탐지 스크립트를 실행한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: nmap --script vuln -p 3000 10.20.30.80
+    2) 미설치 시: sudo apt install -y nmap
+    3) 실패/대안 (취약점 스캔 도구별):
+       - sudo nmap --script vulners -sV 10.20.30.80 (Vulners DB 통합, CVE 자동 매칭)
+       - nuclei -u http://10.20.30.80:3000 -t /usr/share/nuclei-templates/cves/ -severity critical,high (CVE 템플릿)
+       - nikto -h http://10.20.30.80:3000 (200+ 보안 체크, web 전용)
+       - nessus / OpenVAS (상용/오픈 vuln scanner, web UI)
+       - openvas-cli scan (가장 종합)
+       - searchsploit <service-version> (local Exploit-DB)
+    4) 검증: VULNERABLE 라인 + CVE-XXXX-YYYY 매칭. 정확도 보다 false positive 우려.
   category: recon
   points: 10
   answer: nmap --script vuln -p 3000 10.20.30.80
@@ -320,16 +541,35 @@ steps:
       - --script vuln
       - 취약점 검사
       acceptable_methods:
-      - nmap --script vuln
-      - nuclei -t cves
-      - Nessus 스캔
+      - "nmap --script vuln (수기 baseline): 명령 `nmap --script vuln -p 3000 10.20.30.80`. 출력 `3000/tcp open\\n| http-csrf: ...\\n| http-stored-xss: Couldn't find any stored XSS\\n|_http-vuln-cve2014-3704: ...`. NSE vuln category."
+      - "nmap --script vulners: Vulners API 통합. CVE 자동."
+      - "nuclei -t cves/: ProjectDiscovery. 6000+ CVE template."
+      - "nikto -h: 200+ web 보안 체크."
+      - "Nessus (상용): 가장 종합. enterprise 표준."
+      - "OpenVAS (오픈): web UI."
+      - "Vuls (cli): CVE 기반 audit."
+      - "searchsploit: local Exploit-DB."
+      - "Wapiti / w3af / arachni: web vuln scanner."
       negative_signs:
       - vuln 스크립트 없음
       - CVE 검사 맥락 없음
   target_vm: attacker
 - order: 13
   instruction: SIEM 서버({{SECU_IP}}00)의 포트 443(Wazuh)과 9400(OpenCTI)이 열려 있는지 특정 포트만 지정하여 스캔하라.
-  hint: -p 옵션으로 특정 포트를 콤마로 구분하여 지정한다
+  hint: |
+    -p 옵션으로 특정 포트를 콤마로 구분하여 지정한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: nmap -sT -p 443,9400 10.20.30.100
+    2) 미설치 시: sudo apt install -y nmap
+    3) 실패/대안 (특정 포트 확인 빠른 도구):
+       - nc -zv 10.20.30.100 443 9400 (zero I/O scan, 의존성 zero)
+       - for p in 443 9400; do timeout 2 bash -c "echo > /dev/tcp/10.20.30.100/$p" && echo "$p open" || echo "$p closed"; done (bash 만)
+       - sudo hping3 -S -p 443 -c 1 10.20.30.100 (single-shot)
+       - python3 -c "import socket; [print(p, 'open' if not socket.socket().connect_ex(('10.20.30.100', p)) else 'closed') for p in [443,9400]]"
+       - ncat -zv -w 1 10.20.30.100 443 9400 (modern nc)
+       - sudo masscan 10.20.30.100 -p443,9400 --rate=1000
+    4) 검증: open/closed 명확. -p 콤마 구분 정확. 효율 ↑ (불필요 트래픽 ↓).
   category: recon
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://SIEM_IP:8080 접속 → 해당 메뉴 탐색
@@ -348,9 +588,15 @@ steps:
       - -p 443,9400
       - 특정 포트
       acceptable_methods:
-      - nmap -p 콤마 구분
-      - nc -zv
-      - hping3 -p
+      - "nmap -sT -p 콤마 (수기 baseline): 명령 `nmap -sT -p 443,9400 10.20.30.100`. 출력 `PORT  STATE SERVICE\\n443/tcp open https\\n9400/tcp open opencti`. 효율 ↑."
+      - "nc -zv: zero I/O scan. 의존성 zero."
+      - "bash /dev/tcp: bash 만. for + timeout."
+      - "hping3 -S -p: single-shot SYN."
+      - "python3 socket: 의존성 zero."
+      - "ncat -zv: nmap modern nc."
+      - "masscan -pPORT,PORT: 자체 SYN."
+      - "rustscan -p 443,9400: Rust binary."
+      - "Burp Engagement Tools: manual."
       negative_signs:
       - 특정 포트 없음
       - 효율 맥락 없음
@@ -358,7 +604,20 @@ steps:
 - order: 14
   instruction: Idle 스캔(Zombie 스캔)의 원리를 이해하기 위해, 먼저 {{SECU_IP}}의 IP ID 값 변화를 확인하라. hping3를 사용하여 SYN 패킷을
     3회 보내라.
-  hint: hping3 -S -p 포트 -c 3 옵션을 사용한다
+  hint: |
+    hping3 -S -p 포트 -c 3 옵션을 사용한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: sudo hping3 -S -p 22 -c 3 10.20.30.1
+    2) 미설치 시: sudo apt install -y hping3
+    3) 실패/대안 (Idle scan 단계별):
+       - sudo nmap -sI 10.20.30.1:22 10.20.30.80 (full Idle scan, zombie + target)
+       - sudo nmap -O --osscan-guess 10.20.30.1 (IP ID generation 추정)
+       - python3 scapy: `from scapy.all import *; [sr1(IP(dst='10.20.30.1')/TCP(dport=22, flags='S'), timeout=1, verbose=0).id for _ in range(3)]` (raw IP ID)
+       - sudo hping3 -S -p 22 -c 10 -i u1000 10.20.30.1 (10회, 1ms 간격)
+       - tcpdump 분석: `sudo tcpdump -ni eth0 -c 10 'host 10.20.30.1 and tcp port 22'` (응답 캡처 → IP ID 추출)
+    4) Idle scan 원리: Zombie 의 IP ID 가 순차 증가 (incremental) → spoofed SYN 후 IP ID 변화로 target 포트 open/closed 추정. 공격자 IP 은닉.
+    5) 검증: id=N → id=N+1 → id=N+2 패턴 (incremental) 또는 random. random 이면 Zombie 부적합.
   category: recon
   points: 15
   answer: sudo hping3 -S -p 22 -c 3 10.20.30.1
@@ -376,9 +635,15 @@ steps:
       - hping3 -S -p 22
       - IP ID 변화
       acceptable_methods:
-      - hping3 -S
-      - nmap -sI zombie
-      - scapy IP ID probe
+      - "sudo hping3 -S (수기 baseline): 명령 `sudo hping3 -S -p 22 -c 3 10.20.30.1`. 출력 `len=46 ip=10.20.30.1 ttl=64 id=12345 ... flags=SA\\nlen=46 ip=10.20.30.1 ttl=64 id=12346 ... flags=SA\\nlen=46 ip=10.20.30.1 ttl=64 id=12347`. id 순차 증가 = Zombie 후보."
+      - "sudo nmap -sI: full Idle scan (zombie:port target). Idle scan 자동."
+      - "nmap -O --osscan-guess: IP ID 생성 패턴 추정."
+      - "scapy IP ID probe: Python 객체. id 추출 자동화."
+      - "hping3 -i u1000: 1ms 간격 fast probe."
+      - "tcpdump 캡처 + analysis: passive IP ID 추출."
+      - "Wireshark IP ID 시계열: 시각."
+      - "scanrand: 빠른 SYN. legacy."
+      - "Decoy IP 결합 (-D RND:10): IP 은닉 추가."
       negative_signs:
       - hping3 없음
       - Idle 스캔 맥락 없음
@@ -386,7 +651,20 @@ steps:
   target_vm: attacker
 - order: 15
   instruction: 모든 스캔 결과를 종합하여 /tmp/port_scan_report.txt에 정리하라. 각 호스트별 열린 포트, 서비스명, 버전을 기록하라.
-  hint: nmap -oN 옵션으로 일반 텍스트 출력을 저장할 수도 있다
+  hint: |
+    nmap -oN 옵션으로 일반 텍스트 출력을 저장할 수도 있다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선 사용: sudo nmap -sV -p- -T4 -oN /tmp/port_scan_report.txt 10.20.30.1 10.20.30.80 10.20.30.100
+    2) 미설치 시: sudo apt install -y nmap
+    3) 실패/대안 (보고서 형식별):
+       - sudo nmap -sV -p- -T4 -oA /tmp/port_scan 10.20.30.1 10.20.30.80 10.20.30.100 (.nmap+.gnmap+.xml)
+       - sudo nmap -sV -p- -T4 -oG /tmp/port_scan.gnmap (grep 친화)
+       - sudo nmap -sV -p- -T4 -oX /tmp/port_scan.xml + xsltproc nmap-bootstrap.xsl > /tmp/report.html (HTML)
+       - msfconsole > db_import /tmp/port_scan.xml (Metasploit DB)
+       - dradis-cli import /tmp/port_scan.xml (Dradis collaborative)
+       - faraday-cli plugin nmap /tmp/port_scan.xml (Faraday)
+    4) 검증: cat /tmp/port_scan_report.txt 으로 3 호스트 별 열린 포트 + 서비스 + 버전.
   category: recon
   points: 10
   answer: sudo nmap -sV -p- -T4 -oN /tmp/port_scan_report.txt 10.20.30.1 10.20.30.80 10.20.30.100 && head
@@ -404,9 +682,15 @@ steps:
       - -oN + /tmp/port_scan_report.txt
       - 3개 호스트
       acceptable_methods:
-      - nmap -oN
-      - nmap -oA 전체
-      - Dradis 보고서 생성
+      - "nmap -oN (수기 baseline): 명령 `sudo nmap -sV -p- -T4 -oN /tmp/port_scan_report.txt 10.20.30.1 10.20.30.80 10.20.30.100 && head -50 /tmp/port_scan_report.txt`. 출력 normal text + 3 호스트."
+      - "nmap -oA: 모든 포맷 (.nmap+.gnmap+.xml)."
+      - "nmap -oG: grep 친화."
+      - "nmap -oX + xsltproc: HTML 변환."
+      - "msfconsole db_import: Metasploit 자동 import."
+      - "dradis-cli import: collaborative."
+      - "faraday-cli plugin nmap: 자동 vuln management."
+      - "AttackForge / Plextrac (상용): enterprise."
+      - "DefectDojo Engagement: web dashboard."
       negative_signs:
       - -oN 없음
       - 보고서 저장 없음
@@ -415,27 +699,27 @@ steps:
   instruction: |
     [복합 시나리오] "스텔스 정찰 — 5종 nmap 스캔 비교 + 방화벽 탐지 + ATT&CK Recon 매트릭스"
 
-    ## 상황 (w01 → w02 시나리오 연속)
+    ■ 상황 (w01 → w02 시나리오 연속)
 
-    > 선임: "본격 스캔. Connect / SYN / FIN 스캔 별로 *탐지 가능성* 비교 + ACK 로 방화벽 룰 추정.
-    > 마지막엔 ATT&CK Recon 매트릭스로 매핑."
+    ※ 선임: "본격 스캔. Connect / SYN / FIN 스캔 별로 *탐지 가능성* 비교 + ACK 로 방화벽 룰 추정.
+    ※ 마지막엔 ATT&CK Recon 매트릭스로 매핑."
 
     학습 목표 (lecture #3 nmap 5종 + #6 디렉터리 + #7 ATT&CK Recon) + (lab #1·#2·#9 Connect/SYN/ACK) 통합.
 
-    ## 임무 (3 단계, 약 35분)
+    ■ 임무 (3 단계, 약 35분)
 
     Non-AI 트랙: ssh ccc@10.20.30.201 (attacker VM) 직접 실행.
 
-    ### Phase A — Connect vs SYN
+    ▶ Phase A — Connect vs SYN
     `nmap -sT -p 22,80,443,3000,3306,8080 --max-rtt-timeout 1000 10.20.30.80 2>&1 | head -15`
     `sudo -n nmap -sS -p 22,80,443,3000,3306,8080 --max-rtt-timeout 1000 10.20.30.80 2>&1 | head -15`
     Connect (-sT) → 3-way handshake → SIEM 로그. SYN (-sS) → Half-open → 회피.
 
-    ### Phase B — ACK + Version
+    ▶ Phase B — ACK + Version
     `sudo -n nmap -sA -p 22,80,3000,3306 --max-rtt-timeout 1000 10.20.30.1 2>&1 | head -15`
     `nmap -sV -p 22,80,3000,8080 --version-light 10.20.30.80 2>&1 | head -15`
 
-    ### Phase C — ATT&CK Recon 매트릭스
+    ▶ Phase C — ATT&CK Recon 매트릭스
     | ATT&CK 기법 | 사용 도구 | 결과 | 탐지 가능성 |
     | T1595.001 Active Scanning - IP | nmap -sS | open ports | 중 |
     | T1595.002 Vulnerability Scanning | nmap --script=vuln | known CVE | 높음 |
@@ -450,6 +734,14 @@ steps:
     Phase B: -sA ACK. unfiltered/filtered.
     Phase C: 5행 ATT&CK 매트릭스 + 권고.
     포인트: 스캔별 탐지 + ATT&CK 매핑.
+
+    📎 도구 우선순위 (힌트):
+    1) Phase A: nmap -sT (Connect, sudo X) vs sudo nmap -sS (SYN, sudo). 같은 -p 옵션 양쪽.
+    2) Phase B: sudo nmap -sA (ACK, 방화벽 매핑) + nmap -sV --version-light (가벼운 버전).
+    3) Phase C: markdown table (ATT&CK ID 컬럼 필수 — T1595.001/T1595.002/T1592.002/T1590.005/T1018).
+    4) 미설치 시: sudo apt install -y nmap hping3
+    5) 추가 도구: masscan/rustscan/naabu (스캔 가속). attackcti --search active-scanning (ATT&CK lookup).
+    6) ATT&CK Navigator: matrix.mitre.org → layer JSON export → 시각.
   category: integration_scenario
   points: 50
   verify:
@@ -465,10 +757,15 @@ steps:
       - Phase B — -sA + -sV
       - Phase C — 5행 ATT&CK + 권고
       acceptable_methods:
-      - nmap -sT / -sS / -sA / -sV / -sU
-      - sudo / sudo -n
-      - markdown table T-id
-      - masscan / rustscan 가능
+      - "Phase A Connect vs SYN (수기 baseline): nmap -sT vs sudo nmap -sS. 출력 양쪽 다 PORT/STATE 동일하나 SIEM 로그에서는 -sT 가 connection 완료 → 탐지 쉽고 -sS 는 half-open → 회피."
+      - "Phase B ACK + Version: sudo nmap -sA (방화벽 매핑) + nmap -sV --version-light (버전)."
+      - "Phase C ATT&CK 매트릭스: markdown 5행 + ATT&CK ID 컬럼."
+      - "ATT&CK 표준 매핑: T1595.001 (Active IP) / T1595.002 (Vuln Scanning) / T1592.002 (Software) / T1590.005 (IP Addresses) / T1018 (Remote System Discovery)."
+      - "attackcti --search: 명령 자동 ATT&CK lookup."
+      - "MITRE ATT&CK Navigator: layer JSON export → matrix.mitre.org 시각."
+      - "스캔 속도/스텔스 trade-off: -T0 paranoid (stealth) ~ -T5 insane (속도). decoy IP (-D RND:10) + fragmentation (-f)."
+      - "방어자 시각: Snort/Suricata rule 작성. SIEM (Wazuh/Elastic) alert."
+      - "Bastion AI orchestrator: 모든 스캔 결과 + ATT&CK 매핑 자동 + KG anchor."
       negative_signs:
       - 1~2 스캔만
       - ATT&CK ID 누락

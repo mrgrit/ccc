@@ -22,12 +22,19 @@
 - 한 step 당 8~9개 도구 (nonai 8, ai 9)
 
 **진행**:
-- [x] week01 nonai (544→682줄, 16 step × 8~9 method) — 정찰 기초: ping/DNS reverse/HTTP banner/robots.txt/fingerprint/디렉토리/경로/nc/REST/Apache/sweep/version/main.js/memories/recon report
-- [x] week01 ai (709→789줄, 16 step × 9 method, multi_task RoE+Phase A/B/C + Bastion KG anchor)
-- [ ] week02~15 nonai
-- [ ] week02~15 ai
+- [x] week01 nonai (544→880줄, 16 step × 8~9 method, hint 도구 우선순위/설치/fallback 포함) — 정찰 기초
+- [x] week01 ai (709→987줄, 16 step × 9 method, hint 보강, multi_task RoE+Phase A/B/C)
+- [x] week02 nonai (480→777줄, 16 step × 9 method, hint 보강) — 포트스캐닝: -sT/-sS/-p-/-sV/-O/-sU/NSE/http-enum/-sA/-F/-oX/vuln/포트/Idle/보고서
+- [x] week02 ai (709→1012줄, 16 step × 9 method, hint 보강, multi_task ATT&CK Recon)
+- [ ] week03~15 nonai
+- [ ] week03~15 ai
 
-**Next concrete step**: attack-nonai/week02.yaml 보강.
+**구조 확정** (2단계 검증):
+- answer / bastion_prompt = 추상 prompt (1차 검증: 학습자/AI 능력)
+- hint = 도구 우선순위 + 설치 명령 + fallback list (2차 검증)
+- acceptable_methods = 도구 + 명령 + 출력 + 해석 (검증 시 다양성)
+
+**Next concrete step**: attack-nonai/week03.yaml 보강.
 
 **Files**: `contents/labs/attack-nonai/week*.yaml`, `contents/labs/attack-ai/week*.yaml`
 
