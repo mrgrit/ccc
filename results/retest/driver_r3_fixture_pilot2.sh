@@ -2,9 +2,9 @@
 # R3 fixture pilot driver — task 시작 직전 fixture inject + retest.
 # fixtures 필드 있는 step 만 대상. 일반 driver 와 동일하지만 fixture pre-hook 추가.
 cd /home/opsclaw/ccc
-Q=results/retest/queue_r3_fixture_pilot.tsv
-C=results/retest/cursor_r3_fixture_pilot.txt
-L=results/retest/run_r3_fixture_pilot.log
+Q=results/retest/queue_r3_fixture_pilot2.tsv
+C=results/retest/cursor_r3_fixture_pilot2.txt
+L=results/retest/run_r3_fixture_pilot2.log
 H="http://192.168.0.103:8003/health"
 
 [ -f "$C" ] || echo 0 > "$C"

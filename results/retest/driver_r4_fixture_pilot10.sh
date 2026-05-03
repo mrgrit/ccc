@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# R3 fixture pilot driver — task 시작 직전 fixture inject + retest.
+# R4 fixture pilot10 driver — task 시작 직전 fixture inject + retest.
 # fixtures 필드 있는 step 만 대상. 일반 driver 와 동일하지만 fixture pre-hook 추가.
 cd /home/opsclaw/ccc
-Q=results/retest/queue_r3_fixture_pilot.tsv
-C=results/retest/cursor_r3_fixture_pilot.txt
-L=results/retest/run_r3_fixture_pilot.log
+Q=results/retest/queue_r4_fixture_pilot10.tsv
+C=results/retest/cursor_r4_fixture_pilot10.txt
+L=results/retest/run_r4_fixture_pilot10.log
 H="http://192.168.0.103:8003/health"
 
 [ -f "$C" ] || echo 0 > "$C"
 cur=$(cat "$C")
 total=$(wc -l < "$Q")
-echo "=== R3 fixture pilot driver start $(date -Iseconds) cursor=$cur total=$total pid=$$ ===" >> "$L"
+echo "=== R4 fixture pilot10 driver start $(date -Iseconds) cursor=$cur total=$total pid=$$ ===" >> "$L"
 
 wait_for_bastion() {
   for i in 1 2 3 4 5 6 7 8 9 10; do
@@ -37,7 +37,7 @@ while IFS=$'\t' read -r course_path order; do
   fi
 
   ts=$(date -Iseconds)
-  echo "[$ts] FIXTURE-PILOT #$idx/$total $course w$wk o$order" >> "$L"
+  echo "[$ts] R4-PILOT10 #$idx/$total $course w$wk o$order" >> "$L"
 
   # ★ Fixture pre-hook — local generation + bastion sync
   echo "  [fixture-inject] $course/week${wk}.yaml order=$order" >> "$L"
@@ -70,4 +70,4 @@ while IFS=$'\t' read -r course_path order; do
   echo "$idx" > "$C"
   sleep 1
 done < "$Q"
-echo "=== R3 fixture pilot DONE $(date -Iseconds) ===" >> "$L"
+echo "=== R4 fixture pilot10 DONE $(date -Iseconds) ===" >> "$L"
