@@ -12,7 +12,7 @@
 
 ## In-Progress
 
-### P19. course1 attack acceptable_methods OSS 도구 보강 [STATUS: 진행 중]
+### P19. course1 attack acceptable_methods OSS 도구 보강 [STATUS: ai 15/15 완료, nonai week01~11 완료, nonai week12~15 미진행]
 
 **동기**: P18 (physical-pentest) 완료 후속. course1 attack 이 학생 첫 수강 과목 + 메모리 "multi_task 재작성 — attack 6" 일부 진행 중. 동일 패턴 (도구명 → 도구 + 명령 + 출력 + 해석) 으로 재작성.
 
@@ -42,17 +42,48 @@
 - [x] week09 ai (16 step × 9 method, hint 보강, multi_task Purple Team Operator Timeline + Coverage Matrix + AAR)
 - [x] week10 nonai (16 step × 8 method, hint 보강) — 측면 이동: SSH -L/-D/원격nmap/sshpass재사용/-R/known_hosts/-J jump/grep cred/ip route/socat tunnel/원격 portscan/ARP/sshuttle VPN/IoC/lateral report/Adversary Emulation Slack
 - [x] week10 ai (16 step × 9 method, hint 보강, multi_task Adversary Emulation 컨설턴트 Slack DM transcript)
-- [ ] week11~15 nonai
-- [ ] week11~15 ai
+- [x] **week11~15 ai 모두 완료** (872~1129 lines, 16 step × 9 method, multi_task) — 2026-05-04 확인
+- [x] **week11 nonai 완료** (840 lines, 16 step × 8 method)
+- [ ] **week12~15 nonai 미진행** (현재 600~680 lines = 보강 전 baseline) ← **다음 세션 next concrete step**
+  - week12 nonai (685 lines) — 12주차 주제 instruction/script 읽고 16 step × 8 method 수기 보강
+  - week13 nonai (661 lines) — 동일 패턴
+  - week14 nonai (656 lines) — 동일 패턴
+  - week15 nonai (607 lines) — 동일 패턴
 
 **구조 확정** (2단계 검증):
 - answer / bastion_prompt = 추상 prompt (1차 검증: 학습자/AI 능력)
 - hint = 도구 우선순위 + 설치 명령 + fallback list (2차 검증)
 - acceptable_methods = 도구 + 명령 + 출력 + 해석 (검증 시 다양성)
 
-**Next concrete step**: attack-nonai/week11.yaml + attack-ai/week11.yaml 보강.
+**Next concrete step**: attack-nonai/week12.yaml 부터 시작.
+
+**원칙 재강조 (사용자 2026-05-04)**:
+- **병렬/스크립트/템플릿/자동화 금지**
+- week12 instruction/script 정독 후 12주차 **고유 주제**에 맞게 16 step × 8 method 수기 작성
+- 합리적 방향만 찾지 말고 **제대로** — 나중에 재작업 덜 하도록
+- ai 버전은 모두 완료됨 (참조용으로 봐도 되나 그대로 복사 X)
 
 **Files**: `contents/labs/attack-nonai/week*.yaml`, `contents/labs/attack-ai/week*.yaml`
+
+---
+
+### P20. course3-web-vuln lecture 본문 도구 매핑 [STATUS: week01 만 보강, week02~15 미진행]
+
+**동기**: lecture.md 본문에 "도구 + 명령 + 출력 + 해석" 패턴 강화. P19 와 동일 원칙.
+
+**원칙 (사용자 재강조 2026-05-04)** — P18/P19 와 동일:
+- **병렬 작업 / 스크립트 일괄 처리 / 템플릿 적용 / 자동화 금지**
+- 매 주차 내용 instruction/script 잘 보고 그 주제에 **딱 맞게** 정성껏 작성
+- 합리적 방향만 찾지 말고 **제대로** — 나중에 재작업 덜 하도록
+- 한 사이클에 1 주차만 (또는 일부)
+
+**현황 측정 (2026-05-04)** — `예상 출력 / 출력:` 패턴 빈도:
+- week01: 6회 ✅ (보강됨)
+- week02~15: **0회** (모두 미진행) ← **다음 세션 next concrete step**
+
+**Next concrete step**: `contents/education/course3-web-vuln/week02/lecture.md` 부터 시작. **week02 의 instruction 을 정독 후** 그 주제에 맞는 도구·명령·출력·해석을 수기 작성 (week01 패턴을 그대로 복사 X). 1 주차 완료 후 다음 주차로.
+
+**Files**: `contents/education/course3-web-vuln/week*/lecture.md`
 
 ---
 
