@@ -15,7 +15,21 @@ pass_threshold: 0.6
 steps:
 - order: 1
   instruction: web 서버({{WEB_IP}})에 SSH로 접속하여 현재 사용자의 권한과 그룹 정보를 확인하라.
-  hint: id, whoami, groups 명령을 사용한다
+  hint: |
+    id, whoami, groups 명령을 사용한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: id && whoami && groups
+    2) 미설치: 기본 coreutils
+    3) 실패/대안:
+       - cat /proc/self/status (Uid/Gid/Groups)
+       - python3 -c "import os; print(os.geteuid(), os.getegid(), os.getgroups())"
+       - getent passwd $USER
+       - LinPEAS (자동 user enum)
+       - linenum.sh
+       - linux-smart-enumeration
+       - sudo cat /etc/sudoers
+    4) 검증: docker/lxd/disk 그룹 → 즉시 LPE 후보.
   category: recon
   points: 5
   answer: id && whoami && groups
@@ -33,17 +47,32 @@ steps:
       - id + whoami + groups 조합
       - LPE 맥락
       acceptable_methods:
-      - id + whoami + groups
-      - cat /proc/self/status
-      - python os.geteuid
-      negative_signs:
-      - id 없음
-      - LPE 맥락 없음
-      - 그룹 조사 없음
+      - "id + whoami + groups (수기 baseline)."
+      - "cat /proc/self/status."
+      - "python3 os.geteuid + getgroups."
+      - "getent passwd $USER."
+      - "LinPEAS user enum."
+      - "linenum.sh."
+      - "linux-smart-enumeration."
+      - "Bastion AI user audit."
   target_vm: web
 - order: 2
   instruction: web 서버에서 sudo -l 명령으로 현재 사용자가 sudo로 실행할 수 있는 명령을 확인하라.
-  hint: sudo -l은 현재 사용자의 sudo 권한을 표시한다
+  hint: |
+    sudo -l은 현재 사용자의 sudo 권한을 표시한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: echo 1 | sudo -S -l 2>/dev/null
+    2) 미설치: sudo apt install -y sudo
+    3) 실패/대안:
+       - sudo -ll (long format)
+       - sudo cat /etc/sudoers (root 시)
+       - LinPEAS (sudo check)
+       - linenum.sh
+       - sudo-tool / SUDO_KILLER
+       - GTFOBins 조회 (수동 매핑)
+       - polkit pkexec 검증
+    4) 검증: NOPASSWD + 와일드카드 + 위험 바이너리. CWE-732.
   category: recon
   points: 10
   answer: echo 1 | sudo -S -l 2>/dev/null
@@ -61,16 +90,33 @@ steps:
       - sudo -l 실행
       - NOPASSWD 조사 맥락
       acceptable_methods:
-      - sudo -l
-      - linpeas.sh + sudo check
-      - GTFOBins 조회
-      negative_signs:
-      - sudo -l 없음
-      - GTFOBins 맥락 없음
+      - "sudo -l (수기 baseline)."
+      - "sudo -ll (long format)."
+      - "sudo cat /etc/sudoers."
+      - "LinPEAS sudo check."
+      - "linenum.sh."
+      - "SUDO_KILLER."
+      - "GTFOBins 조회."
+      - "polkit pkexec 검증."
   target_vm: web
 - order: 3
   instruction: web 서버에서 SUID 비트가 설정된 모든 바이너리를 검색하고, 비정상적인 항목을 식별하라.
-  hint: find / -perm -4000 -type f로 검색한다
+  hint: |
+    find / -perm -4000 -type f로 검색한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: find / -perm -4000 -type f 2>/dev/null | sort
+    2) 미설치: 기본 coreutils
+    3) 실패/대안:
+       - find / -perm -u=s -type f
+       - find / -perm /4000 (any SUID)
+       - LinPEAS auto SUID enum
+       - linux-smart-enumeration
+       - linenum.sh
+       - GTFOBins 매핑 (python3/vim/find/awk/nmap)
+       - linux-exploit-suggester
+       - pwnkit-detector (CVE-2021-4034)
+    4) 검증: 비표준 SUID → 즉시 root.
   category: recon
   points: 10
   answer: find / -perm -4000 -type f 2>/dev/null | sort
@@ -88,16 +134,32 @@ steps:
       - find / -perm -4000 -type f
       - 정렬 출력
       acceptable_methods:
-      - find -perm -4000
-      - find -u+s
-      - linpeas.sh
-      negative_signs:
-      - -perm -4000 없음
-      - SUID 맥락 없음
+      - "find / -perm -4000 -type f (수기 baseline)."
+      - "find / -perm -u=s."
+      - "find / -perm /4000."
+      - "LinPEAS auto SUID."
+      - "linux-smart-enumeration (lse.sh)."
+      - "linenum.sh."
+      - "GTFOBins 매핑."
+      - "pwnkit-detector / linux-exploit-suggester."
   target_vm: web
 - order: 4
   instruction: web 서버에서 world-writable 파일을 검색하라. 특히 root가 소유한 world-writable 파일에 주목하라.
-  hint: find / -writable -type f로 검색한다
+  hint: |
+    find / -writable -type f로 검색한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: find / -writable -type f -not -path "/proc/*" -not -path "/sys/*" 2>/dev/null | head -20
+    2) 미설치: 기본 coreutils
+    3) 실패/대안:
+       - find / -perm -o=w -type f (other write)
+       - find / -perm /o+w -not -path /proc -not -path /sys
+       - find / -uid 0 -perm -o+w -type f (root + ww)
+       - LinPEAS world-writable check
+       - linenum.sh
+       - linux-smart-enumeration
+       - getfacl 점검
+    4) 검증: root 소유 + ww → 악성 코드 삽입 → root.
   category: recon
   points: 10
   answer: find / -writable -type f -not -path "/proc/*" -not -path "/sys/*" 2>/dev/null | head -20
@@ -115,16 +177,31 @@ steps:
       - find -writable + -not -path proc/sys
       - world-writable 맥락
       acceptable_methods:
-      - find -writable -not -path
-      - find -perm -o+w
-      - linpeas.sh
-      negative_signs:
-      - -writable 없음
-      - proc/sys 제외 없음
+      - "find / -writable -not -path proc/sys (수기 baseline)."
+      - "find / -perm -o=w."
+      - "find / -uid 0 -perm -o+w (root + ww)."
+      - "LinPEAS world-writable check."
+      - "linenum.sh."
+      - "linux-smart-enumeration."
+      - "getfacl 점검."
+      - "Bastion AI ww audit orchestrator."
   target_vm: web
 - order: 5
   instruction: web 서버의 /etc/passwd 파일에서 셸 접근이 가능한 사용자를 나열하라.
-  hint: /bin/bash 또는 /bin/sh가 설정된 사용자를 필터링한다
+  hint: |
+    /bin/bash 또는 /bin/sh가 설정된 사용자를 필터링한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: grep -E "/bin/(bash|sh|zsh)$" /etc/passwd
+    2) 미설치: 기본 coreutils
+    3) 실패/대안:
+       - awk -F: '$7 ~ /bash|sh/' /etc/passwd
+       - getent passwd | grep -E "/bin/(bash|sh)"
+       - cut -d: -f1,7 /etc/passwd
+       - lastlog (로그인 이력)
+       - last -F (성공 로그인)
+       - python3 pwd.getpwall()
+    4) 검증: nologin/false 미배정 user → 잠재 공격 대상.
   category: recon
   points: 10
   answer: grep -E "/bin/(bash|sh|zsh)$" /etc/passwd
@@ -141,16 +218,32 @@ steps:
       - /etc/passwd + /bin/(bash|sh|zsh)
       - grep -E 정규식
       acceptable_methods:
-      - grep /etc/passwd
-      - 'awk -F: ''$7 ~ /bash/'''
-      - getent passwd
-      negative_signs:
-      - /etc/passwd 없음
-      - 셸 필터 없음
+      - "grep -E /bin/(bash|sh|zsh) /etc/passwd (수기 baseline)."
+      - "awk -F: '$7 ~ /bash/'."
+      - "getent passwd."
+      - "cut -d: -f1,7."
+      - "lastlog."
+      - "last -F (성공 로그인)."
+      - "python pwd.getpwall()."
+      - "Bastion AI 사용자 audit."
   target_vm: web
 - order: 6
   instruction: web 서버의 crontab과 cron 디렉토리를 검사하여 root로 실행되는 예약 작업을 찾아라.
-  hint: /etc/crontab, /etc/cron.d/, /var/spool/cron/ 디렉토리를 확인한다
+  hint: |
+    /etc/crontab, /etc/cron.d/, /var/spool/cron/ 디렉토리를 확인한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: cat /etc/crontab 2>/dev/null; echo ---; ls -la /etc/cron.d/ 2>/dev/null; echo ---; ls -la /var/spool/cron/crontabs/ 2>/dev/null
+    2) 미설치: 기본 cron
+    3) 실패/대안:
+       - systemctl list-timers --all (systemd timer)
+       - pspy 프로세스 모니터
+       - LinPEAS cron enum
+       - linenum.sh
+       - linux-smart-enumeration
+       - /etc/cron.{daily,hourly,weekly,monthly}
+       - auditctl -w /var/spool/cron
+    4) 검증: root cron + writable script → LPE.
   category: recon
   points: 10
   answer: cat /etc/crontab 2>/dev/null; echo ---; ls -la /etc/cron.d/ 2>/dev/null; echo ---; ls -la /var/spool/cron/crontabs/
@@ -169,16 +262,32 @@ steps:
       - /etc/crontab + /etc/cron.d + /var/spool/cron/crontabs
       - 3개 경로 조사
       acceptable_methods:
-      - cat + ls cron 경로
-      - systemctl list-timers
-      - pspy 프로세스 모니터
-      negative_signs:
-      - cron 경로 조사 없음
-      - root cronjob 맥락 없음
+      - "cat /etc/crontab + ls /etc/cron.d + /var/spool/cron (수기 baseline)."
+      - "systemctl list-timers."
+      - "pspy 프로세스 모니터."
+      - "LinPEAS cron enum."
+      - "linenum.sh."
+      - "linux-smart-enumeration."
+      - "/etc/cron.{daily,hourly,weekly,monthly}."
+      - "auditctl -w /var/spool/cron."
   target_vm: web
 - order: 7
   instruction: web 서버에서 capabilities가 설정된 바이너리를 검색하라. 특수 capability는 SUID와 유사한 권한 상승에 사용될 수 있다.
-  hint: getcap -r / 명령으로 검색한다
+  hint: |
+    getcap -r / 명령으로 검색한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: getcap -r / 2>/dev/null
+    2) 미설치: sudo apt install -y libcap2-bin
+    3) 실패/대안:
+       - find / -type f -exec getcap {} \; 2>/dev/null
+       - LinPEAS capabilities check
+       - linenum.sh
+       - linux-smart-enumeration (lse.sh)
+       - GTFOBins capabilities 매핑
+       - capsh --print
+       - python ctypes prctl PR_CAPBSET_READ
+    4) 검증: cap_setuid+ep / cap_dac_override → SUID 없이 LPE.
   category: recon
   points: 10
   answer: getcap -r / 2>/dev/null
@@ -196,16 +305,32 @@ steps:
       - getcap -r /
       - Linux Capabilities 맥락
       acceptable_methods:
-      - getcap -r
-      - linpeas capability check
-      - GTFOBins Capabilities
-      negative_signs:
-      - getcap 없음
-      - cap_setuid 맥락 없음
+      - "getcap -r / 2>/dev/null (수기 baseline)."
+      - "find / -type f -exec getcap."
+      - "LinPEAS capabilities check."
+      - "linenum.sh."
+      - "linux-smart-enumeration."
+      - "GTFOBins capabilities."
+      - "capsh --print."
+      - "python ctypes prctl."
   target_vm: web
 - order: 8
   instruction: web 서버에서 /etc/shadow 파일의 읽기 권한을 확인하라. 일반 사용자가 읽을 수 있으면 오프라인 크래킹이 가능하다.
-  hint: ls -la /etc/shadow로 권한을 확인한다
+  hint: |
+    ls -la /etc/shadow로 권한을 확인한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: ls -la /etc/shadow; cat /etc/shadow 2>/dev/null || echo "Permission denied (normal)"
+    2) 미설치: 기본 coreutils
+    3) 실패/대안:
+       - stat /etc/shadow (Access/Uid/Gid)
+       - getfacl /etc/shadow (ACL 점검)
+       - LinPEAS file check
+       - linenum.sh
+       - linux-smart-enumeration
+       - python os.access(file, R_OK)
+       - shadow-utils pwconv/pwck
+    4) 검증: 0640 root:shadow vs 0644 = LPE. CVE-2023-4911.
   category: analysis
   points: 10
   answer: ls -la /etc/shadow; cat /etc/shadow 2>/dev/null || echo "Permission denied (normal)"
@@ -223,16 +348,33 @@ steps:
       - ls -la /etc/shadow + cat 시도
       - 권한 조사
       acceptable_methods:
-      - ls -la + cat
-      - stat /etc/shadow
-      - linpeas file check
-      negative_signs:
-      - shadow 권한 조사 없음
-      - 해시 크래킹 맥락 없음
+      - "ls -la /etc/shadow + cat 시도 (수기 baseline)."
+      - "stat /etc/shadow."
+      - "getfacl /etc/shadow."
+      - "LinPEAS file check."
+      - "linenum.sh."
+      - "linux-smart-enumeration."
+      - "python os.access(R_OK)."
+      - "shadow-utils pwconv/pwck."
   target_vm: web
 - order: 9
   instruction: web 서버에서 환경변수에 민감한 정보(비밀번호, API 키)가 포함되어 있는지 확인하라.
-  hint: env 또는 printenv 명령으로 환경변수를 확인한다
+  hint: |
+    env 또는 printenv 명령으로 환경변수를 확인한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: env | grep -iE "(pass|key|secret|token|api)"; echo '---'; cat /proc/1/environ 2>/dev/null | tr "\0" "\n" | grep -iE "(pass|key|secret)"
+    2) 미설치: 기본 coreutils
+    3) 실패/대안:
+       - printenv | grep -iE
+       - /proc/<PID>/environ + tr (process별)
+       - sudo systemctl show <service> | grep Env
+       - docker inspect <container> | jq .Config.Env
+       - kubectl get pod -o jsonpath='{.spec.containers[*].env}'
+       - dotenv-linter (.env 파일)
+       - trufflehog 시크릿 스캔
+       - gitleaks (git 이력 시크릿)
+    4) 검증: 비밀번호/API 키 노출. CWE-798.
   category: recon
   points: 10
   answer: env | grep -iE "(pass|key|secret|token|api)"; echo '---'; cat /proc/1/environ 2>/dev/null |
@@ -253,16 +395,32 @@ steps:
       - env + /proc/1/environ
       - pass/key/secret/token/api grep
       acceptable_methods:
-      - env + grep
-      - cat /proc/$PID/environ
-      - linpeas env check
-      negative_signs:
-      - env 조사 없음
-      - Docker/컨테이너 맥락 없음
+      - "env + grep -iE pass/key/secret + /proc/1/environ (수기 baseline)."
+      - "printenv | grep -iE."
+      - "/proc/<PID>/environ + tr."
+      - "systemctl show <service>."
+      - "docker inspect | jq Config.Env."
+      - "kubectl get pod -o jsonpath."
+      - "trufflehog 시크릿 스캔."
+      - "gitleaks (git 이력)."
   target_vm: web
 - order: 10
   instruction: web 서버에서 PATH 하이재킹 가능성을 확인하라. 현재 사용자가 쓸 수 있는 디렉토리가 PATH에 포함되어 있는지 확인하라.
-  hint: echo $PATH로 PATH를 확인하고, 각 디렉토리의 쓰기 권한을 확인한다
+  hint: |
+    echo $PATH로 PATH를 확인하고, 각 디렉토리의 쓰기 권한을 확인한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: IFS=:; for d in $PATH; do echo -n "$d -> "; test -w "$d" && echo "WRITABLE" || echo "not writable"; done
+    2) 미설치: 기본 coreutils
+    3) 실패/대안:
+       - find $(echo $PATH | tr ':' ' ') -writable
+       - python3 -c "import os; [print(p, os.access(p,os.W_OK)) for p in os.environ['PATH'].split(':')]"
+       - LinPEAS PATH check
+       - linenum.sh
+       - linux-smart-enumeration
+       - GTFOBins PATH escape
+       - relative path call audit
+    4) 검증: writable in PATH = LPE 벡터.
   category: analysis
   points: 10
   answer: IFS=:; for d in $PATH; do echo -n "$d -> "; test -w "$d" && echo "WRITABLE" || echo "not writable";
@@ -281,16 +439,33 @@ steps:
       - 'IFS=: + for d in $PATH'
       - writable 테스트
       acceptable_methods:
-      - 'IFS=: + test -w'
-      - find $PATH -writable
-      - linpeas PATH check
-      negative_signs:
-      - $PATH 순회 없음
-      - writable 테스트 없음
+      - "IFS=: + for + test -w (수기 baseline)."
+      - "find $PATH -writable."
+      - "python os.access W_OK."
+      - "LinPEAS PATH check."
+      - "linenum.sh."
+      - "linux-smart-enumeration."
+      - "GTFOBins PATH escape."
+      - "Bastion AI PATH audit."
   target_vm: web
 - order: 11
   instruction: web 서버에서 Docker 소켓이 일반 사용자에게 접근 가능한지 확인하라. docker.sock 접근이 가능하면 컨테이너 탈출로 root를 획득할 수 있다.
-  hint: ls -la /var/run/docker.sock 또는 docker ps를 실행한다
+  hint: |
+    ls -la /var/run/docker.sock 또는 docker ps를 실행한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: ls -la /var/run/docker.sock 2>/dev/null; docker ps 2>/dev/null || echo "Docker not accessible"
+    2) 미설치: sudo apt install -y docker.io
+    3) 실패/대안:
+       - groups | grep docker (그룹 멤버십)
+       - cat /etc/group | grep docker
+       - curl --unix-socket /var/run/docker.sock http://localhost/version
+       - deepce.sh 컨테이너 열거
+       - cdk.sh (Container DucK)
+       - Docker exploit cheatsheet
+       - kubelet API (10250 포트)
+       - LinPEAS container check
+    4) 검증: docker run --privileged -v /:/mnt → 호스트 root.
   category: analysis
   points: 10
   answer: ls -la /var/run/docker.sock 2>/dev/null; docker ps 2>/dev/null || echo "Docker not accessible"
@@ -308,16 +483,32 @@ steps:
       - /var/run/docker.sock + docker ps
       - 컨테이너 탈출 맥락
       acceptable_methods:
-      - ls /var/run/docker.sock
-      - docker ps
-      - deepce.sh 컨테이너 열거
-      negative_signs:
-      - docker.sock 없음
-      - 컨테이너 탈출 맥락 없음
+      - "ls /var/run/docker.sock + docker ps (수기 baseline)."
+      - "groups | grep docker."
+      - "curl --unix-socket /var/run/docker.sock /version."
+      - "deepce.sh 컨테이너 열거."
+      - "cdk.sh (Container DucK)."
+      - "Docker exploit cheatsheet."
+      - "kubelet API audit."
+      - "LinPEAS container check."
   target_vm: web
 - order: 12
   instruction: web 서버의 네트워크 서비스 중 내부 전용 서비스(localhost에만 바인딩)를 확인하라. 포트 포워딩으로 접근할 수 있는 서비스를 식별하라.
-  hint: ss -tlnp 명령으로 리스닝 포트를 확인한다
+  hint: |
+    ss -tlnp 명령으로 리스닝 포트를 확인한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: ss -tlnp 2>/dev/null
+    2) 미설치: sudo apt install -y iproute2 net-tools
+    3) 실패/대안:
+       - netstat -tlnp
+       - lsof -i -P -n | grep LISTEN
+       - nmap localhost -p 1-65535 (자체 점검)
+       - /proc/net/tcp 직접 파싱
+       - osquery listening_ports
+       - ss -tunap (UDP 포함)
+       - ngrep -d any "" tcp port any
+    4) 검증: 127.0.0.1 바인딩 → SSH -L 포워딩 / proxychains.
   category: recon
   points: 10
   answer: ss -tlnp 2>/dev/null
@@ -335,16 +526,33 @@ steps:
       - ss -tlnp
       - 내부 서비스 맥락
       acceptable_methods:
-      - ss -tlnp
-      - netstat -tlnp
-      - lsof -i -P
-      negative_signs:
-      - LISTEN 없음
-      - 127.0.0.1 내부 서비스 맥락 없음
+      - "ss -tlnp (수기 baseline)."
+      - "netstat -tlnp."
+      - "lsof -i -P -n LISTEN."
+      - "nmap localhost 1-65535."
+      - "/proc/net/tcp 파싱."
+      - "osquery listening_ports."
+      - "ss -tunap (UDP 포함)."
+      - "Bastion AI 포트 audit."
   target_vm: web
 - order: 13
   instruction: web 서버에서 history 파일을 확인하여 이전에 실행된 명령 중 민감한 정보(비밀번호, 토큰)가 포함된 것이 있는지 찾아라.
-  hint: .bash_history 파일을 확인한다
+  hint: |
+    .bash_history 파일을 확인한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: cat ~/.bash_history 2>/dev/null | grep -iE "(pass|key|secret|token|mysql|psql)" | head -10
+    2) 미설치: 기본 bash
+    3) 실패/대안:
+       - history 명령
+       - cat ~/.zsh_history (zsh)
+       - cat /root/.bash_history (root 시)
+       - find / -name "*.history" 2>/dev/null
+       - LinPEAS history check
+       - linenum.sh
+       - python3 readline parser
+       - trufflehog filesystem
+    4) 검증: mysql -u root -p<pw>. T1552.003.
   category: recon
   points: 10
   answer: cat ~/.bash_history 2>/dev/null | grep -iE "(pass|key|secret|token|mysql|psql)" | head -10;
@@ -365,16 +573,33 @@ steps:
       - .bash_history + grep
       - 자격 증명 수집 맥락
       acceptable_methods:
-      - cat ~/.bash_history
-      - grep history 파일
-      - linpeas history check
-      negative_signs:
-      - history 조사 없음
-      - 자격 증명 맥락 없음
+      - "cat ~/.bash_history + grep (수기 baseline)."
+      - "history 명령."
+      - "cat ~/.zsh_history."
+      - "cat /root/.bash_history."
+      - "find / -name '*.history'."
+      - "LinPEAS history check."
+      - "linenum.sh."
+      - "trufflehog filesystem."
   target_vm: web
 - order: 14
   instruction: LinPEAS 스크립트의 주요 검사 항목을 수동으로 재현하라. 커널 버전, SUID, sudo, cron, 네트워크를 한 번에 검사하는 원라이너를 작성하라.
-  hint: 여러 검사 명령을 세미콜론으로 연결한다
+  hint: |
+    여러 검사 명령을 세미콜론으로 연결한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: echo "=== Kernel ==="; uname -a; echo "=== SUID ==="; find / -perm -4000 -type f 2>/dev/null | wc -l; echo "=== Sudo ==="; echo 1 | sudo -S -l 2>/dev/null | tail -5; echo "=== Cron ==="; ls /etc/cron.d/ 2>/dev/null; echo "=== Listening ==="; ss -tlnp 2>/dev/null | head -10
+    2) 미설치: 기본 coreutils
+    3) 실패/대안:
+       - linpeas.sh -a (모든 검사)
+       - linenum.sh
+       - linux-smart-enumeration (lse.sh -l 2)
+       - linux-exploit-suggester
+       - bashark (post-exploit)
+       - peass-ng (PEASS-ng 통합)
+       - PrivescCheck (Windows but 컨셉 동일)
+       - manualenum.sh (구현)
+    4) 검증: 5+ 섹션 (Kernel/SUID/Sudo/Cron/Listening). 통합.
   category: analysis
   points: 15
   answer: echo "=== Kernel ==="; uname -a; echo "=== SUID ==="; find / -perm -4000 -type f 2>/dev/null
@@ -394,17 +619,32 @@ steps:
       - 5개 이상 섹션 (Kernel/SUID/Sudo/Cron/Listening)
       - 통합 검사
       acceptable_methods:
-      - echo 섹션 구분 + 명령
-      - linpeas.sh
-      - LinEnum.sh
-      - lse.sh
-      negative_signs:
-      - 섹션 3개 이하
-      - LPE 벡터 맥락 없음
+      - "echo 섹션 + 5+ 명령 (수기 baseline)."
+      - "linpeas.sh -a."
+      - "linenum.sh."
+      - "linux-smart-enumeration (lse.sh)."
+      - "linux-exploit-suggester."
+      - "bashark post-exploit."
+      - "peass-ng 통합."
+      - "Bastion AI LPE audit orchestrator."
   target_vm: web
 - order: 15
   instruction: 권한 상승 공격 결과를 /tmp/privesc_report.txt에 정리하라. 발견된 벡터, 성공한 기법, 방어 권고를 포함하라.
-  hint: 발견된 모든 권한 상승 벡터를 위험도 순으로 정리한다
+  hint: |
+    발견된 모든 권한 상승 벡터를 위험도 순으로 정리한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: heredoc/echo -e > /tmp/privesc_report.txt 후 [Vectors Found]/[Successful Techniques]/[Recommendations] 3섹션. 위험도 순서.
+    2) 미설치: 기본 coreutils
+    3) 실패/대안:
+       - python jinja2 markdown
+       - dradis 보고서 도구
+       - serpico 자동 보고서
+       - Faraday IDE export
+       - markdown + pandoc PDF
+       - MITRE ATT&CK Privilege Escalation 매핑
+       - SELinux/AppArmor 권고 추가
+    4) 검증: cat 으로 3 섹션 + 5 벡터 + 5 대책.
   category: analysis
   points: 10
   answer: 'echo -e ''=== Privilege Escalation Report ===\n\n[Vectors Found]\n1. sudo misconfig: 위험한 바이너리
@@ -428,9 +668,14 @@ steps:
       - Vectors + Successful + Recommendations 3섹션
       - 벡터 5개 이상
       acceptable_methods:
-      - echo > 보고서
-      - DefectDojo Finding
-      - PTES Privilege Escalation Report
+      - "heredoc > /tmp/privesc_report.txt (수기 baseline)."
+      - "DefectDojo Finding."
+      - "PTES Privilege Escalation Report."
+      - "MITRE ATT&CK PE 매핑."
+      - "SELinux/AppArmor 권고."
+      - "python jinja2 markdown."
+      - "dradis 보고서 도구."
+      - "serpico 자동 보고서."
       negative_signs:
       - 섹션 2개 이하
       - 벡터 3개 이하
@@ -440,21 +685,21 @@ steps:
   instruction: |
     [복합 시나리오 — 중간고사] "정보보안기업 PenTest팀 시니어 — Executive Briefing 5 슬라이드"
 
-    ## 상황 — 화요일 오전 10시, C-level 발표 준비
+    ■ 상황 — 화요일 오전 10시, C-level 발표 준비
 
     당신은 *시큐리티엠피러* PenTest팀 시니어 5년차. 외주 클라이언트 CISO·CFO 가 오후 2시 *7주차 진행 보고*.
     분량: 5 슬라이드. 그 이상 안 봄.
 
-    > 팀장: "임원진 발표는 *결과 한 페이지* + *증거* + *경영 의사결정*. 2분 30초.
-    > Critical 1 / High 2 / Medium 1. 5번째 슬라이드는 *예산 요청*."
+    ※ 팀장: "임원진 발표는 *결과 한 페이지* + *증거* + *경영 의사결정*. 2분 30초.
+    ※ Critical 1 / High 2 / Medium 1. 5번째 슬라이드는 *예산 요청*."
 
     학습 목표 (lecture w08 중간 종합) + (lab 권한 상승 #1·#2·#3·#6) 통합.
 
-    ## 산출물 — 5 슬라이드
+    ■ 산출물 — 5 슬라이드
 
     Non-AI 트랙: ssh ccc@10.20.30.201 (attacker VM) 직접 실행.
 
-    ### Slide 1/5 — Title & Mission Summary
+    ▶ Slide 1/5 — Title & Mission Summary
     ```
     ┌──────────────────────────────────────────────────────────────────┐
     │ JuiceShop 모의해킹 7주차 중간 보고                                │
@@ -467,7 +712,7 @@ steps:
     └──────────────────────────────────────────────────────────────────┘
     ```
 
-    ### Slide 2 — Critical: Auth Rate Limit + Timing chain
+    ▶ Slide 2 — Critical: Auth Rate Limit + Timing chain
     `JWT=$(curl -s -X POST -H "Content-Type: application/json" -d '{"email":"admin@juice-sh.op","password":"admin123"}' http://10.20.30.80:3000/rest/user/login | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])")`
     `for i in $(seq 1 30); do curl -s -o /dev/null -w "%{http_code} " -X POST -H "Content-Type: application/json" -d '{"email":"x@x.com","password":"wrong"}' http://10.20.30.80:3000/rest/user/login; done | tr ' ' '\n' | sort | uniq -c`
     ```
@@ -476,7 +721,7 @@ steps:
     영향: 30분 admin 탈취 가능
     ```
 
-    ### Slide 3 — High × 2: Info Disclosure
+    ▶ Slide 3 — High × 2: Info Disclosure
     `curl -s "http://10.20.30.80:3000/api/Users/" | python3 -m json.tool 2>/dev/null | head -20`
     `for p in '/.git/' '/.env' '/encryptionkeys/' '/ftp/'; do echo -n "$p: "; curl -s -o /dev/null -w "%{http_code}\n" "http://10.20.30.80:3000$p"; done`
     ```
@@ -484,14 +729,14 @@ steps:
     🟠 High (CVSS 7.5) — /encryptionkeys, /ftp 직접 접근
     ```
 
-    ### Slide 4 — Medium: Privesc 정찰
+    ▶ Slide 4 — Medium: Privesc 정찰
     `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 ccc@10.20.30.80 'id; sudo -n -l 2>&1 | head -5; find /usr/bin -perm -4000 2>/dev/null | head -10' 2>&1 | head -20 || echo "[ssh 차단 — local 시뮬]: id; sudo -l; find /usr/bin -perm -4000 | head -10"`
     ```
     🟡 Medium (CVSS 5.5) — SUID 비정상 / sudo 매트릭스
     후속: w09 LinPEAS + 실 상승 시연
     ```
 
-    ### Slide 5 — 예산 & 결정 요청
+    ▶ Slide 5 — 예산 & 결정 요청
     ```
     💰 Day 1 (~0원): rate limit + DTO + autoindex off + Server 헤더
     📅 1주차 ₩200만: 보안 헤더 5종 + Prepared Statement + JWT 회전
@@ -504,6 +749,17 @@ steps:
     슬라이드 1 title + 요약 / 2 Critical / 3 High×2 / 4 Medium / 5 예산.
     각 슬라이드 30초 분량. 실 명령 결과 첨부.
     포인트: 5 슬라이드 임원 발표 양식. 매트릭스 X.
+
+    📎 도구 우선순위 (힌트):
+    1) Slide 1 Title: heredoc ASCII box + 4줄 요약 (대상/기간/발견/결론).
+    2) Slide 2 Critical: curl JWT + 30회 login + sort/uniq -c (rate limit X).
+    3) Slide 3 High: curl /api/Users + multi-path 4종 (.git/.env/encryptionkeys/ftp).
+    4) Slide 4 Medium: ssh + sudo -l + SUID + cron 점검 결과.
+    5) Slide 5 예산: Day1/1주/1개월 의사결정 (₩0/₩200만/₩2000만).
+    6) 미설치 시: sudo apt install -y curl python3
+    7) Executive 발표 도구: PowerPoint, Keynote, Marp (markdown→slides).
+    8) CVSS Calculator + DREAD/STRIDE 표 첨부.
+    9) PTES Reporting 표준 (executive_summary section).
   category: integration_scenario
   points: 50
   verify:
@@ -521,10 +777,14 @@ steps:
       - Slide 4 Medium Privesc SSH/시뮬
       - Slide 5 예산 (Day1/1주/1개월) + 의사결정
       acceptable_methods:
-      - heredoc ASCII box
-      - curl + JWT + python3
-      - ssh + local 시뮬 fallback
-      - markdown 헤더
+      - "Slide 1 heredoc ASCII box (수기 baseline)."
+      - "Slide 2 curl JWT + 30회 login + sort/uniq."
+      - "Slide 3 curl /api/Users + multi-path 4종."
+      - "Slide 4 ssh + sudo -l + SUID + cron."
+      - "Slide 5 Day1/1주/1개월 예산표."
+      - "Marp (markdown → slides)."
+      - "CVSS Calculator + DREAD."
+      - "PTES Executive Summary 표준."
       negative_signs:
       - 슬라이드 4개 이하
       - 예산 누락
