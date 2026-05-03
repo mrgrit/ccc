@@ -43,10 +43,12 @@ verify.semantic 의 fail-safe 다양성 확보 + 학생 자료로 직접 활용 
 - [x] week12 ai (459→502줄, 9 step × 9 method, multi_task OSINT chain + Bastion 다중 framework 매핑)
 - [x] week13 nonai (313→345줄, 8 step × 8 method) — 보고서 자동 생성: evidence/배너/SHA256/Findings/Python 보고서/exec brief/risk matrix/QA
 - [x] week13 ai (510→564줄, 9 step × 9 method, multi_task report chain + Bastion 자동 PDF + GPG + IPFS)
-- [ ] week14~15 nonai
-- [ ] week14~15 ai
+- [x] week14 nonai (372→411줄, 8 step × 9 method) — 물리 방어: 방화벽/이상 탐지/보안 인식 퀴즈/보안 설정 검증/보안 정책/사고 대응/ROI/체크리스트
+- [x] week14 ai (572→628줄, 9 step × 9~10 method, multi_task 방어 chain + Bastion 자동 정책 + Jira 통합)
+- [ ] week15 nonai
+- [ ] week15 ai
 
-**Next concrete step**: physical-pentest-nonai/week14.yaml 보강.
+**Next concrete step**: physical-pentest-nonai/week15.yaml 보강 (마지막 주차).
 
 **Files**: `contents/labs/physical-pentest-nonai/week*.yaml`,
          `contents/labs/physical-pentest-ai/week*.yaml`
