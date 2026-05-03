@@ -12,7 +12,7 @@
 
 ## In-Progress
 
-### P18. course16-17 physical-pentest acceptable_methods OSS 도구 보강 [STATUS: 진행 중, week06 완료]
+### P18. course16-17 physical-pentest acceptable_methods OSS 도구 보강 [STATUS: ✅ COMPLETE — week05~15 전부 완료]
 
 **동기**: 사용자 지시 (2026-05-03) — Cyber Range = UI /labs 메뉴 = `contents/labs/` 자체.
 acceptable_methods 가 도구명만 적힌 상태 → "도구 + 구체 명령 + 예상 출력 + 해석" 수준으로 재작성.
@@ -45,10 +45,12 @@ verify.semantic 의 fail-safe 다양성 확보 + 학생 자료로 직접 활용 
 - [x] week13 ai (510→564줄, 9 step × 9 method, multi_task report chain + Bastion 자동 PDF + GPG + IPFS)
 - [x] week14 nonai (372→411줄, 8 step × 9 method) — 물리 방어: 방화벽/이상 탐지/보안 인식 퀴즈/보안 설정 검증/보안 정책/사고 대응/ROI/체크리스트
 - [x] week14 ai (572→628줄, 9 step × 9~10 method, multi_task 방어 chain + Bastion 자동 정책 + Jira 통합)
-- [ ] week15 nonai
-- [ ] week15 ai
+- [x] week15 nonai (376→425줄, 10 step × 9 method) — 종합 평가: 정찰/SSH/USB HID/임플란트/방어/보고서/Exec brief/역량 자가 진단/Next steps/최종 체크
+- [x] week15 ai (655→676줄, 11 step × 9 method, multi_task E2E + Bastion R5 round 완료 anchor)
 
-**Next concrete step**: physical-pentest-nonai/week15.yaml 보강 (마지막 주차).
+**최종 결과**: week05~15 (11 주차) × 2 (nonai+ai) = 22 yaml 보강 완료.
+nonai: 평균 360줄, 8 step × 8~9 method.
+ai: 평균 555줄, 9~11 step × 9 method, Bastion AI orchestrator + KG anchor 통합.
 
 **Files**: `contents/labs/physical-pentest-nonai/week*.yaml`,
          `contents/labs/physical-pentest-ai/week*.yaml`
