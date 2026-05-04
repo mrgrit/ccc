@@ -40,6 +40,74 @@ steps:
       - docker compose ps(compose 관리)
       - docker inspect 로 단일 컨테이너 상세
       - kubectl get pods(K8s 환경)
+      - |
+        **[OSS] docker ps + format (표준)** — 컨테이너 상태 진단.
+          # 1. 실행 중 컨테이너
+          docker ps --format '{{.Names}}\t{{.Status}}\t{{.Image}}' | head
+          # 2. 전체 (exited 포함)
+          docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.RunningFor}}'
+          # 3. compose 프로젝트 별
+          cd /opt/opencti && docker compose ps
+          # 4. health 상태 추가
+          docker ps --format '{{.Names}}\t{{.Status}}\t{{.Ports}}'
+        예상 출력 `opencti  Up 2 days (healthy)  0.0.0.0:8080->8080/tcp / opencti-redis  Up 2 days  6379/tcp`.
+        운영 해석: Up 외 (Restarting / Exited) = 즉시 진단. (healthy) = healthcheck 통과. 시간 = uptime.
+      - |
+        **[OSS] Portainer (Docker GUI)** — 운영자 표준.
+          # 1. Portainer 설치
+          docker run -d -p 9443:9443 --name portainer \
+              --restart=always \
+              -v /var/run/docker.sock:/var/run/docker.sock \
+              -v portainer_data:/data \
+              portainer/portainer-ce:latest
+          # 2. https://10.20.30.100:9443 접속
+          # 3. UI:
+          # - Container 목록 + 상태
+          # - 단일 클릭 → logs / stats / inspect
+          # - 시작/중지/재시작 버튼
+          # - Stack (compose) 관리
+        UI 동작: Docker 환경 통합 GUI. CLI 없이 운영 가능.
+        운영 해석: SOC NOC 표준. 다중 host 관리.
+      - |
+        **[OSS] lazydocker (terminal TUI)** — 가벼운 GUI.
+          # 1. 설치
+          curl https://raw.githubusercontent.com/jesseduffield/lazydocker/master/scripts/install_update_linux.sh | bash
+          # 2. 실행
+          lazydocker
+          # 3. UI:
+          # - 좌측: 컨테이너/Image/Volume 트리
+          # - 우측: logs/stats/info tab
+          # - 키보드: r=restart / d=stop / s=start
+        UI 동작: ncurses TUI. SSH 환경에서도 사용.
+        운영 해석: Portainer 가 안 되는 air-gap 환경. 터미널 친화.
+      - |
+        **[OSS] docker compose (multi-container)** — Stack 관리.
+          # 1. compose 파일 위치 찾기
+          find / -name "docker-compose*.yml" 2>/dev/null | grep -i opencti | head
+          # 2. compose 디렉토리에서 ps
+          cd /opt/opencti
+          docker compose ps
+          docker compose top   # 프로세스 정보
+          # 3. service 별 logs
+          docker compose logs opencti --tail 20
+          docker compose logs --follow worker
+        예상 출력 `NAME COMMAND SERVICE STATUS PORTS / opencti-platform Up 2 days opencti running 0.0.0.0:8080->8080/tcp`.
+        운영 해석: docker compose = stack 단위 관리. 단일 컨테이너 docker ps 보다 의도 명확.
+      - |
+        **[OSS] cAdvisor (Container metrics)** — Prometheus 통합.
+          # 1. cAdvisor 설치
+          docker run -d --name=cadvisor \
+              -p 8085:8080 \
+              -v /var/run:/var/run:ro \
+              -v /sys:/sys:ro \
+              -v /var/lib/docker:/var/lib/docker:ro \
+              gcr.io/cadvisor/cadvisor:latest
+          # 2. http://localhost:8085 접속
+          # - 컨테이너별 CPU/Memory/Network/Disk
+          # 3. Prometheus scrape (자동)
+          curl -s http://localhost:8085/metrics | grep -E "container_cpu|container_memory" | head
+        UI 동작: 실시간 metric dashboard.
+        운영 해석: 100+ 컨테이너 운영 환경 표준. Prometheus + Grafana 통합.
       negative_signs:
       - running 외 포함하여 혼동
       - format 없이 긴 출력
@@ -75,6 +143,65 @@ steps:
       - docker compose -f docker-compose.yml ps
       - docker ps --filter name=opencti
       - docker inspect --format {{.Name}} $(docker ps -q) | grep opencti
+      - |
+        **[OSS] docker ps --filter** — 컨테이너 정밀 필터.
+          # 1. name 필터
+          docker ps --filter name=opencti --format 'table {{.Names}}\t{{.Status}}'
+          # 2. label 필터 (compose project 단위)
+          docker ps --filter "label=com.docker.compose.project=opencti"
+          # 3. health 상태 필터
+          docker ps --filter health=healthy
+          # 4. status 필터
+          docker ps --filter status=running --filter name=opencti
+        예상 출력 `NAMES STATUS / opencti Up 2 days (healthy) / opencti-redis Up 2 days / opencti-elastic Up 2 days`.
+        운영 해석: --filter = grep 보다 정확. label 필터 = compose project 통합.
+      - |
+        **[OSS] docker compose ps** — stack 단위.
+          # 1. compose 디렉토리에서
+          cd /opt/opencti
+          docker compose ps
+          # 2. 모든 서비스 (running + stopped)
+          docker compose ps -a
+          # 3. JSON 출력 (자동화)
+          docker compose ps --format json | jq
+          # 4. 특정 service 만
+          docker compose ps opencti redis
+        예상 출력 `NAME SERVICE STATUS PORTS / opencti-platform-1 opencti running 0.0.0.0:8080->8080`.
+        운영 해석: compose project 의 *모든* 서비스 통합 view. 단일 docker ps 보다 의도 명확.
+      - |
+        **[OSS] grep + sort 조합** — 분석.
+          # 1. opencti 관련 컨테이너 + 상태
+          docker ps --format '{{.Names}}\t{{.Status}}' | grep -i opencti | sort
+          # 2. 컨테이너 수 카운트
+          docker ps --format '{{.Names}}' | grep -c -i opencti
+          # 3. 상태별 분류
+          docker ps --format '{{.Names}}\t{{.Status}}' | grep -i opencti | awk '{print $2}' | sort | uniq -c
+          # 4. unhealthy 만
+          docker ps --format '{{.Names}}\t{{.Status}}' | grep -E "opencti.*unhealthy"
+        예상 출력 `8 opencti containers / 8 Up`.
+        운영 해석: 단순 grep 외 통계 + 분류. 운영 KPI 측정.
+      - |
+        **[OSS] watch + docker ps (실시간)** — 모니터링.
+          # 1. 1초 간격 watch
+          watch -n 1 'docker ps --format "{{.Names}}\t{{.Status}}" | grep -i opencti'
+          # 2. status 변화 감지
+          watch -d 'docker ps --filter name=opencti --format "{{.Names}} {{.Status}}"'
+          # -d = 변경 highlight
+          # 3. health check 실시간
+          watch -n 5 'docker inspect --format "{{.Name}} {{.State.Health.Status}}" $(docker ps -q --filter name=opencti)'
+        UI 동작: 실시간 컨테이너 상태 추적.
+        운영 해석: restart loop / health degradation 즉시 인지.
+      - |
+        **[OSS] Portainer GUI 필터** — 시각적.
+          # 1. https://10.20.30.100:9443 → Containers
+          # 2. UI 검색 box: opencti
+          # 3. 결과 표:
+          # - Name / Status / Ports / Image / Created
+          # - 정렬 (column 클릭)
+          # - bulk action (start/stop/restart 다중 선택)
+          # 4. label 필터: com.docker.compose.project = opencti
+        UI 동작: 시각적 필터 + bulk action.
+        운영 해석: CLI 보다 빠른 운영 + 다중 컨테이너 동시 관리.
       negative_signs:
       - opencti 매칭 없이 일반 grep
       - 필터 없이 전체 docker ps
@@ -112,6 +239,73 @@ steps:
       - docker logs -f <container>(follow)
       - docker compose logs opencti
       - kubectl logs -l app=opencti (K8s)
+      - |
+        **[OSS] docker logs (표준)** — 단일 컨테이너 분석.
+          # 1. tail
+          docker logs --tail 20 opencti 2>&1 | tail -20
+          # 2. 시간 범위
+          docker logs --since 5m opencti
+          docker logs --since 2026-05-06T10:00:00 opencti
+          # 3. 실시간 follow
+          docker logs -f opencti
+          # 4. 라인 카운트
+          docker logs --tail 100 opencti 2>&1 | wc -l
+        예상 출력 `2026-05-06T14:23 INFO Server listening on port 4000 / Connected to Redis`.
+        운영 해석: --since = 시간 기반. -f = realtime. 2>&1 = stdout + stderr 통합.
+      - |
+        **[OSS] docker compose logs (multi-service)** — stack.
+          # 1. compose 의 모든 서비스 통합
+          cd /opt/opencti && docker compose logs --tail 20
+          # 2. 특정 서비스 만
+          docker compose logs opencti --tail 50
+          # 3. multi-service 동시
+          docker compose logs opencti redis elastic
+          # 4. 시간 표시 + 색상
+          docker compose logs --timestamps --no-log-prefix opencti
+        예상 출력 `opencti  | 2026-05-06T14:23 INFO ... / opencti-redis  | 1:M 06 May 14:23 ...`.
+        운영 해석: 다중 서비스 동시 추적. service 별 prefix 자동.
+      - |
+        **[OSS] dozzle (web log viewer)** — GUI.
+          # 1. Dozzle 설치
+          docker run -d --name=dozzle \
+              -v /var/run/docker.sock:/var/run/docker.sock \
+              -p 9999:8080 \
+              amir20/dozzle:latest
+          # 2. http://localhost:9999 접속
+          # 3. UI:
+          # - 컨테이너 목록 + 검색
+          # - 단일 컨테이너 → realtime logs
+          # - search box (in-log search)
+          # - level filter (ERROR/WARN/INFO)
+          # 4. multi-container 비교 view
+        UI 동작: web 기반 log viewer. portainer 의 logs 만 특화.
+        운영 해석: 다중 컨테이너 동시 모니터링. SOC 분석가 친화.
+      - |
+        **[OSS] lnav (log analysis)** — terminal TUI.
+          # 1. 컨테이너 logs 를 lnav 로
+          docker logs opencti 2>&1 | sudo tee /tmp/opencti.log
+          sudo lnav /tmp/opencti.log
+          # 2. 자동 timestamp 파싱 + level highlight
+          # 3. SQL query
+          # :;SELECT count(*), log_level FROM logline GROUP BY log_level
+          # 4. 검색
+          # /ERROR
+        UI 동작: ncurses + SQL query.
+        운영 해석: 다량 log 분석 표준. JSON 자동 파싱 + 시간 분포.
+      - |
+        **[OSS] Loki + Grafana (log aggregation)** — enterprise.
+          # 1. Promtail 로 Docker logs → Loki
+          # /etc/promtail/config.yml:
+          # scrape_configs:
+          # - job_name: docker
+          #   docker_sd_configs:
+          #   - host: unix:///var/run/docker.sock
+          # 2. Loki 적재
+          docker run -d --name=loki -p 3100:3100 grafana/loki:latest
+          # 3. Grafana 의 Loki datasource
+          # LogQL: {container="opencti"} |= "ERROR"
+        UI 동작: 다중 host 의 모든 컨테이너 log 통합.
+        운영 해석: enterprise 표준. ELK 의 Prometheus 생태계 대안.
       negative_signs:
       - container 이름 오타
       - 모든 컨테이너 로그 한번에
@@ -149,6 +343,65 @@ steps:
       - lsof -i:8080
       - curl http://localhost:8080 응답 확인
       - docker port <container> 로 매핑 확인
+      - |
+        **[OSS] ss + lsof (포트 진단)** — 표준.
+          # 1. ss 로 LISTEN 상태
+          sudo ss -tlnp | grep ':8080'
+          # 2. lsof 로 프로세스 상세
+          sudo lsof -i :8080 -P -n
+          # 3. 활성 connection 카운트 (active session)
+          sudo ss -tn 'sport = :8080' | wc -l
+          # 4. listen 주소 (0.0.0.0 vs 127.0.0.1)
+          sudo ss -tlnp | awk '$5 ~ /:8080/ {print $5}'
+        예상 출력 `LISTEN 0:8080 docker-proxy / docker-proxy 12345 root TCP *:8080 (LISTEN)`.
+        운영 해석: docker-proxy = 호스트 → 컨테이너 포트 포워딩. *:8080 = 외부 접근. 127.0.0.1:8080 = 로컬만.
+      - |
+        **[OSS] docker port (포트 매핑)** — 컨테이너 매핑.
+          # 1. 단일 컨테이너 포트 매핑
+          docker port opencti
+          # 2. inspect 로 상세 매핑
+          docker inspect opencti --format '{{range $p, $conf := .NetworkSettings.Ports}}{{$p}} -> {{(index $conf 0).HostPort}}{{"\n"}}{{end}}'
+          # 3. compose 의 service 매핑
+          cd /opt/opencti && docker compose port opencti 8080
+          # 4. 모든 컨테이너의 포트 매핑
+          docker ps --format 'table {{.Names}}\t{{.Ports}}'
+        예상 출력 `8080/tcp -> 0.0.0.0:8080`.
+        운영 해석: container:8080 → host:8080 매핑. host 의 ss 와 일치 검증.
+      - |
+        **[OSS] curl health check** — application layer.
+          # 1. HTTP 응답
+          curl -sS -o /dev/null -w "Status: %{http_code} / Time: %{time_total}s\n" http://localhost:8080
+          # 2. health endpoint (있는 경우)
+          curl -sS http://localhost:8080/health
+          # 3. GraphQL endpoint (OpenCTI 의 API)
+          curl -sS -X POST http://localhost:8080/graphql \
+              -H "Content-Type: application/json" \
+              -d '{"query":"{about{version}}"}'
+        예상 출력 `Status: 200 / Time: 0.123s / {"data":{"about":{"version":"6.x.x"}}}`.
+        운영 해석: 200 = UI 정상. GraphQL 응답 = backend 연결 정상.
+      - |
+        **[OSS] firewall + ss 통합 진단** — 외부 접근 검증.
+          # 1. host 포트 LISTEN
+          sudo ss -tlnp | grep :8080
+          # 2. firewall 차단 여부 (nft)
+          sudo nft list ruleset | grep -E "8080|filter"
+          # 3. 외부에서 접근 시뮬
+          # attacker host 에서:
+          curl -sS -o /dev/null -w "%{http_code}\n" http://10.20.30.100:8080
+          # 4. tcpdump 로 inbound 패킷 캡처
+          sudo tcpdump -i any -nn 'tcp port 8080' -c 10
+        예상 결과: 외부 접근 시 200 = firewall 통과. timeout = nft drop / 방화벽 차단.
+        운영 해석: 단순 LISTEN 외 *외부 접근 가능* 검증. firewall + Docker 양쪽 일관성.
+      - |
+        **[OSS] Portainer endpoints** — GUI.
+          # 1. https://10.20.30.100:9443 → Containers → opencti → 클릭
+          # 2. UI:
+          # - "Network" tab: 포트 매핑 + IP
+          # - "Ports": container:host 매핑 시각
+          # - Console 접속 (web shell)
+          # 3. Stats tab: 실시간 트래픽
+        UI 동작: 컨테이너 네트워크 GUI.
+        운영 해석: ss / docker port 의 GUI 통합.
       negative_signs:
       - 다른 포트 확인
       - :8080 매칭 실패
@@ -185,6 +438,67 @@ steps:
       - curl http://localhost:9200/_cluster/health(elastic)
       - docker exec redis redis-cli ping
       - docker exec minio mc admin info
+      - |
+        **[OSS] docker exec + service-specific health check** — 정밀 진단.
+          # 1. Redis health (PING/PONG)
+          docker exec opencti-redis redis-cli ping
+          docker exec opencti-redis redis-cli info server | grep uptime
+          # 2. ElasticSearch cluster health
+          docker exec opencti-elastic curl -s localhost:9200/_cluster/health | jq
+          # 3. RabbitMQ status
+          docker exec opencti-rabbitmq rabbitmqctl status | head -20
+          # 4. MinIO health
+          docker exec opencti-minio mc admin info local 2>/dev/null
+        예상 출력 `PONG / "status":"green" / Status of node rabbit@... / Server: ONLINE`.
+        운영 해석: 각 서비스의 *내부* health. docker ps 의 "Up" 외 application-level 검증.
+      - |
+        **[OSS] Redis CLI (cache + pub/sub 진단)** — 성능 KPI.
+          # 1. Redis 상태
+          docker exec opencti-redis redis-cli info | grep -E "connected_clients|used_memory|keyspace"
+          # 2. 활성 connection
+          docker exec opencti-redis redis-cli client list | wc -l
+          # 3. key 통계
+          docker exec opencti-redis redis-cli dbsize
+          # 4. memory 사용
+          docker exec opencti-redis redis-cli info memory | grep used_memory_human
+        예상 출력 `connected_clients:5 / used_memory_human:128M / keys:10000`.
+        운영 해석: Redis = OpenCTI 의 cache + pub/sub. memory 80%+ 시 eviction 시작.
+      - |
+        **[OSS] ElasticSearch cluster diagnostic** — 핵심 backend.
+          # 1. cluster health
+          docker exec opencti-elastic curl -s localhost:9200/_cluster/health?pretty | jq
+          # 2. nodes 정보
+          docker exec opencti-elastic curl -s localhost:9200/_cat/nodes?v
+          # 3. indices 통계
+          docker exec opencti-elastic curl -s localhost:9200/_cat/indices?v | head
+          # 4. JVM heap
+          docker exec opencti-elastic curl -s localhost:9200/_nodes/jvm?pretty | head
+        예상 출력 `status:green / cluster_name:opencti / heap_used:60% / 30 indices`.
+        운영 해석: ES = OpenCTI 의 graph + search backend. green=정상, yellow=replica 부족, red=shard fail.
+      - |
+        **[OSS] RabbitMQ management UI** — message queue.
+          # 1. 컨테이너 상태
+          docker exec opencti-rabbitmq rabbitmqctl status | head -20
+          # 2. queue 목록 (worker 처리량)
+          docker exec opencti-rabbitmq rabbitmqctl list_queues name messages consumers | head
+          # 3. cluster status
+          docker exec opencti-rabbitmq rabbitmqctl cluster_status
+          # 4. management UI (port 15672)
+          # http://localhost:15672 (guest/guest)
+        예상 출력 `RabbitMQ 3.x / amq.gen-xxx 0 messages 1 consumer / Running cluster`.
+        운영 해석: RabbitMQ = OpenCTI worker 의 task queue. messages 누적 = worker 부하 / lag.
+      - |
+        **[OSS] Portainer 의 stack health** — GUI 통합.
+          # 1. https://10.20.30.100:9443 → Stacks → opencti
+          # 2. UI 시각화:
+          # - 서비스 별 status (Up/Down/Restarting)
+          # - 의존 그래프 (compose 의 depends_on)
+          # - 로그 통합 view
+          # - 자원 사용량
+          # 3. drill-down: 개별 서비스
+          # - logs / stats / inspect / exec
+        UI 동작: stack 단위 통합 view.
+        운영 해석: docker compose 의 GUI. 다중 서비스 동시 모니터링.
       negative_signs:
       - 일부만 확인(모두 필요)
       - Up 아닌 상태 무시
@@ -221,6 +535,63 @@ steps:
       - ps auxf | grep docker-compose 로 실행 중인 파일 경로
       - systemctl cat opencti (service 파일 경로 확인)
       - docker inspect --format {{.Config.Labels}} opencti
+      - |
+        **[OSS] find + grep (파일 검색)** — 표준.
+          # 1. 전체 파일시스템 스캔
+          sudo find / -name "docker-compose*.yml" 2>/dev/null | grep -i cti
+          # 2. 일반 위치 우선 (faster)
+          sudo find /opt /home /srv -name "docker-compose*.yml" 2>/dev/null | grep -i cti
+          # 3. locate (mlocate 인덱스 사용, 빠름)
+          sudo updatedb && locate docker-compose | grep opencti
+          # 4. 발견 후 디렉토리 진입
+          DIR=$(sudo find / -name "docker-compose*.yml" 2>/dev/null | grep -i cti | head -1 | xargs dirname)
+          cd "$DIR" && docker compose ps
+        예상 출력 `/opt/opencti/docker-compose.yml`.
+        운영 해석: 설치 경로 환경마다 다름. find 가 가장 안전. locate 는 빠름 (단, daily index update 후).
+      - |
+        **[OSS] docker inspect (label 추출)** — 메타정보.
+          # 1. label 에서 compose 위치 추출
+          docker inspect opencti --format '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}'
+          # 2. compose project 이름
+          docker inspect opencti --format '{{ index .Config.Labels "com.docker.compose.project" }}'
+          # 3. 모든 label
+          docker inspect opencti --format '{{json .Config.Labels}}' | jq
+        예상 출력 `/opt/opencti / opencti / {"com.docker.compose.project":"opencti","com.docker.compose.service":"opencti"}`.
+        운영 해석: docker label 이 compose 메타정보 보존. find 보다 정확 + 빠름.
+      - |
+        **[OSS] systemd-cgls (service 트리)** — process 기반 추적.
+          # 1. systemd cgroup 트리
+          systemd-cgls
+          # 2. docker.service 의 자식 processes
+          systemctl status docker
+          # 3. 컨테이너의 host PID
+          docker inspect opencti --format '{{.State.Pid}}'
+          PID=$(docker inspect opencti --format '{{.State.Pid}}')
+          ls -la /proc/$PID/cwd
+        예상 출력 `/opt/opencti (working directory of container init)`.
+        운영 해석: 컨테이너의 working dir = compose 위치 (대부분 환경).
+      - |
+        **[OSS] Portainer Stack** — GUI.
+          # 1. https://10.20.30.100:9443 → Stacks → opencti
+          # 2. UI:
+          # - Stack name + compose path
+          # - Editor 탭: docker-compose.yml 직접 보기 + 편집
+          # - Web Editor + Save
+          # 3. CLI 검증
+          ssh ccc@10.20.30.100 "find / -name docker-compose.yml | grep opencti"
+        UI 동작: stack 의 compose 파일 시각화 + edit.
+        운영 해석: GUI 로 docker-compose.yml 직접 편집 가능. 위험하므로 git 관리 환경 권장.
+      - |
+        **[OSS] etckeeper / git (compose 변경 추적)** — version control.
+          # 1. /opt/opencti 가 git 관리되는지 확인
+          cd /opt/opencti
+          sudo git log --oneline docker-compose.yml | head
+          # 2. 최근 변경 diff
+          sudo git diff HEAD~1 HEAD docker-compose.yml
+          # 3. 파일 변경 history
+          sudo git blame docker-compose.yml | head -20
+        예상 출력 `commit abc123 + Add connector / commit def456 - Initial setup`.
+        운영 해석: enterprise 환경 표준. compose 변경 audit + rollback.
       negative_signs:
       - find / 전체 스캔 너무 느림(권한 많은 디렉토리)
       - compose 확장자(yaml) 놓침
@@ -262,6 +633,61 @@ steps:
       - curl --resolve 로 hostname 테스트
       - wget -qO- http://localhost:8080/graphql(API endpoint)
       - docker exec opencti curl -v localhost:4000(내부)
+      - |
+        **[OSS] curl (다단계 HTTP probe)** — 표준 HTTP client.
+          # 1. 응답 코드 + 응답 시간 + 크기 한 줄
+          curl -sS -o /dev/null -w 'code=%{http_code} time=%{time_total}s size=%{size_download}\n' http://localhost:8080
+          # 2. redirect 추적 (login page 여부)
+          curl -sIL http://localhost:8080 | grep -E '^HTTP|^Location'
+          # 3. graphql endpoint 테스트
+          curl -sS -X POST http://localhost:8080/graphql -H 'Content-Type: application/json' -d '{"query":"{about{version}}"}'
+        예상 출력 `code=200 time=0.215s size=14523 / about.version=6.x.x`.
+        운영 해석: 응답 코드 + 시간 + 크기 한 줄 + GraphQL 까지 살아있음 검증. SOC smoke check 표준.
+      - |
+        **[OSS] httpie (사람 친화 HTTP client)** — JSON 자동 + 컬러.
+          # 1. 설치 + 헤더 자세히
+          sudo apt install -y httpie
+          http --headers GET http://localhost:8080
+          # 2. JSON body 응답
+          http POST http://localhost:8080/graphql query='{about{version}}'
+          # 3. 인증 토큰 사용
+          http -A bearer -a $TOKEN GET http://localhost:8080/api
+        예상 출력 `HTTP/1.1 200 OK / Content-Type: text/html / Server: nginx`.
+        운영 해석: curl 보다 가독성 우수. JSON 응답 자동 pretty-print. trainee 친화.
+      - |
+        **[OSS] wget + tee (응답 저장)** — 응답 본문 보관.
+          # 1. 응답 본문 저장 + 코드
+          wget -S -O /tmp/opencti-response.html http://localhost:8080 2>&1 | grep 'HTTP/'
+          # 2. 헤더만
+          wget --server-response --spider http://localhost:8080 2>&1 | head
+          # 3. 응답 크기 확인
+          ls -la /tmp/opencti-response.html
+        예상 출력 `HTTP/1.1 200 OK / Length: 14523 (14K) [text/html]`.
+        운영 해석: 응답을 디스크에 저장 → grep 으로 token/error/title 추출. evidence 보관.
+      - |
+        **[OSS] nc (raw HTTP probe)** — TCP 레벨 디버깅.
+          # 1. 수동 HTTP/1.1 GET 요청
+          (echo -e 'GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n'; sleep 1) | nc localhost 8080 | head
+          # 2. 포트 listening 확인
+          nc -zv localhost 8080
+          # 3. SSL 여부 확인 (없어야 정상 — HTTP 포트)
+          openssl s_client -connect localhost:8080 -timeout 2 < /dev/null
+        예상 출력 `HTTP/1.1 200 OK / connection failed (SSL — 정상)`.
+        운영 해석: TLS handshake fail 정상 — 8080 은 HTTP. raw socket 으로 protocol 검증.
+      - |
+        **[OSS] OpenCTI GraphQL API + jq** — platform 내부 health.
+          # 1. GraphQL endpoint POST
+          TOKEN=$(sudo grep ^OPENCTI_ADMIN_TOKEN /opt/opencti/.env | cut -d= -f2)
+          curl -sS -X POST http://localhost:8080/graphql \
+            -H "Authorization: Bearer $TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d '{"query":"{ about { version dependencies { name version } } }"}' | jq .
+          # 2. 인증 없이 health
+          curl -sS http://localhost:8080/health
+          # 3. me query (token 검증)
+          curl -sS -X POST http://localhost:8080/graphql -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"query":"{ me { name } }"}' | jq .data.me
+        예상 출력 `version=6.x.x / dependencies redis ok elastic ok / me=admin`.
+        운영 해석: HTTP 200 외에 platform 내부 dep 상태 + token 유효성까지 검증. 종합 health.
       negative_signs:
       - 응답 코드 확인 없음
       - HTTPS 로 요청(HTTP 포트)
@@ -304,6 +730,66 @@ steps:
       - docker logs | grep -iE error|critical|fatal
       - Elastic Kibana 또는 Loki 로 중앙 집계
       - Prometheus docker exporter + alert
+      - |
+        **[OSS] docker logs + grep 패턴 분석** — 정량 + 정성.
+          # 1. ERROR/CRITICAL/FATAL 카운트
+          C=$(docker ps --format '{{.Names}}' | grep -i '^opencti$' | head -1)
+          docker logs --tail 50 $C 2>&1 | grep -cE 'ERROR|CRITICAL|FATAL'
+          # 2. ERROR 라인 + 직전·직후 컨텍스트 5줄
+          docker logs --tail 200 $C 2>&1 | grep -B 2 -A 5 ERROR
+          # 3. ERROR 코드별 빈도 집계
+          docker logs $C 2>&1 | grep -oP 'ERROR.*?(?=\s|$)' | sort | uniq -c | sort -rn | head
+        예상 출력 `count=2 / ECONNREFUSED 1 / TimeoutError 1`.
+        운영 해석: 카운트만으로 부족 — context + 빈도 + 패턴별 분류. ERROR 종류 파악으로 root cause.
+      - |
+        **[OSS] lnav (멀티 로그 분석)** — 인터랙티브.
+          # 1. 설치 + docker logs 파일로 추출
+          sudo apt install -y lnav
+          docker logs --since 24h opencti 2>&1 > /tmp/opencti.log
+          # 2. lnav 로 색상 + 자동 파싱
+          lnav /tmp/opencti.log
+          # 3. lnav 안에서 SQL 쿼리 (lnav 명령 모드)
+          # :create-search-table errors '(ERROR.*)'
+          # ;SELECT count(*), log_level FROM errors GROUP BY log_level
+        예상 출력 `lnav 인터랙티브 모드 + 시계열 막대 + 검색`.
+        운영 해석: 로그를 SQL 처럼 쿼리 + 컬러 시계열. 중대 incident 시 분석 도구.
+      - |
+        **[OSS] dozzle (web log viewer)** — 컨테이너 로그 GUI.
+          # 1. 설치 (web 또는 siem)
+          docker run -d --name dozzle -p 9999:8080 -v /var/run/docker.sock:/var/run/docker.sock amir20/dozzle:latest
+          # 2. http://10.20.30.100:9999 접속 → opencti 컨테이너 클릭
+          # 3. 우측 검색창에 "ERROR" 입력 → 실시간 필터
+          # 4. CLI 검증: 갯수와 시간 비교
+          docker logs --since 24h opencti 2>&1 | grep -c ERROR
+        UI 동작: 다중 컨테이너 실시간 로그 + 검색 + 다운로드.
+        운영 해석: tail -F + grep 보다 운영자 친화. 동료에게 보여줄 때 효과.
+      - |
+        **[OSS] Loki + Promtail + Grafana** — 중앙 집계.
+          # 1. promtail 설정 (docker_sd_configs)
+          # /etc/promtail/promtail.yaml:
+          #   scrape_configs:
+          #     - job_name: docker
+          #       docker_sd_configs:
+          #         - host: unix:///var/run/docker.sock
+          #       relabel_configs:
+          #         - source_labels: [__meta_docker_container_name]
+          #           target_label: container
+          # 2. Grafana → Loki datasource → query
+          # {container="opencti"} |~ "ERROR"
+          # 3. alert: count_over_time({container="opencti"} |= "ERROR"[5m]) > 10
+        예상 출력 `Grafana 대시보드 + 시계열 + alert rule 발동`.
+        운영 해석: 50개 컨테이너 ERROR 동시 모니터링. SOC 표준 stack.
+      - |
+        **[OSS] ctop (컨테이너 top + log viewer)** — 종합.
+          # 1. 설치
+          sudo apt install -y ctop
+          # 2. 인터랙티브 컨테이너 모니터
+          ctop
+          # 3. opencti 선택 → l (logs) → ERROR 검색
+          # 4. CLI 모드 (자동화)
+          ctop -i -s mem
+        예상 출력 `top 와 유사 + CPU/MEM/NET 시각 + 로그 통합`.
+        운영 해석: docker stats + docker logs 합본. 운영자 daily driver.
       negative_signs:
       - --tail 없이 전체 로그
       - ERROR 외 WARN 혼동
@@ -342,6 +828,66 @@ steps:
       - cat /sys/fs/cgroup/memory/docker/.../memory.usage_in_bytes
       - systemctl status docker 로 전체 리소스
       - Prometheus cadvisor 로 시계열 모니터링
+      - |
+        **[OSS] docker stats (snapshot + 정렬)** — 표준.
+          # 1. CPU 내림차순 + 컬럼 지정
+          docker stats --no-stream --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}'
+          # 2. JSON 출력 → jq 정렬
+          docker stats --no-stream --format '{"name":"{{.Name}}","cpu":"{{.CPUPerc}}","mem":"{{.MemUsage}}"}' | jq -s 'sort_by(.cpu)|reverse'
+          # 3. 합계 계산 (자원 차지 검증)
+          docker stats --no-stream --format '{{.MemUsage}}' | awk -F'/' '{print $1}'
+        예상 출력 `opencti 12.3% 1.8GiB / 2GiB 90% / elastic 8.5% 4.2GiB / 8GiB 52%`.
+        운영 해석: 컨테이너별 CPU/MEM 순위. ElasticSearch 와 platform 이 가장 무거움 정상.
+      - |
+        **[OSS] ctop (top-like 컨테이너 모니터)** — 인터랙티브.
+          # 1. 설치
+          sudo apt install -y ctop
+          # 2. 인터랙티브 모드
+          ctop
+          # 3. 정렬: m (메모리) / c (CPU) / n (네트워크)
+          # 4. 컨테이너 선택 → s (stats) / l (logs)
+          # 5. 한 번 캡처 (자동화)
+          ctop -1 > /tmp/ctop-snapshot.txt
+        예상 출력 `top 와 유사 + CPU/MEM/NET I/O 컬러 막대`.
+        운영 해석: docker stats + htop 합본. 정렬·필터·로그 통합. 운영자 표준.
+      - |
+        **[OSS] cAdvisor (Google 컨테이너 모니터)** — Prometheus 호환.
+          # 1. 설치 (호스트)
+          docker run -d --name cadvisor -p 8081:8080 \
+            --volume=/:/rootfs:ro --volume=/var/run:/var/run:ro \
+            --volume=/sys:/sys:ro --volume=/var/lib/docker/:/var/lib/docker:ro \
+            gcr.io/cadvisor/cadvisor:latest
+          # 2. http://siem:8081 접속 → 컨테이너별 graph
+          # 3. Prometheus 메트릭 endpoint
+          curl -sS http://localhost:8081/metrics | grep container_memory_usage_bytes | head
+          # 4. Grafana datasource 로 추가 → 대시보드
+        예상 출력 `container_memory_usage_bytes{name="opencti"} 1.9e+09`.
+        운영 해석: 시계열 메트릭 + Grafana 통합. 분 단위 추세 추적.
+      - |
+        **[OSS] lazydocker (TUI 종합 도구)** — 종합 관리.
+          # 1. 설치
+          curl -fsSL https://raw.githubusercontent.com/jesseduffield/lazydocker/master/scripts/install_update_linux.sh | bash
+          # 2. 실행
+          lazydocker
+          # 3. 화면: 컨테이너 list / Logs / Stats(CPU/MEM 그래프) / Config
+          # 4. 단축키: x (메뉴), r (restart), s (stop)
+        예상 출력 `TUI: 4 panel + 그래프 + 인터랙티브`.
+        운영 해석: stats + logs + restart 한 화면. 매뉴얼 운영자에게 ctop 보다 풍부.
+      - |
+        **[OSS] systemd-cgtop (cgroup 자원 사용)** — kernel 레벨.
+          # 1. 인터랙티브 cgroup top
+          systemd-cgtop
+          # 2. docker.service 자식만
+          systemd-cgtop /docker
+          # 3. 한 번 출력
+          systemd-cgtop -n 1 --order=memory
+          # 4. 컨테이너 PID 별
+          for c in $(docker ps -q); do
+            pid=$(docker inspect $c --format '{{.State.Pid}}')
+            cat /proc/$pid/status | grep VmRSS
+          done
+        예상 출력 `/docker/abc123: Tasks 12 CPU 8.5% Memory 1.8G`.
+        운영 해석: docker abstraction 우회 → kernel cgroup 직접 조회. enterprise debug.
       negative_signs:
       - --no-stream 없이 인터랙티브 모드
       - format 없이 wide 출력
@@ -379,6 +925,70 @@ steps:
       - docker events --filter container=opencti 로 재시작 이벤트
       - kubectl describe pod 로 Restart Count(K8s)
       - Prometheus container_start_time_seconds 알림
+      - |
+        **[OSS] docker inspect (안정성 종합)** — 표준.
+          # 1. RestartCount + RestartPolicy + StartedAt + Status 한 번에
+          C=$(docker ps --format '{{.Names}}' | grep -i opencti | head -1)
+          docker inspect $C --format '{{.Name}} restart={{.RestartCount}} policy={{.HostConfig.RestartPolicy.Name}} max={{.HostConfig.RestartPolicy.MaximumRetryCount}} started={{.State.StartedAt}} status={{.State.Status}}'
+          # 2. 모든 OpenCTI stack 컨테이너 RestartCount 비교
+          for c in $(docker ps --format '{{.Names}}' | grep -i opencti); do
+            echo "$c: $(docker inspect $c --format '{{.RestartCount}}')"
+          done
+          # 3. 마지막 종료 사유
+          docker inspect $C --format 'exitCode={{.State.ExitCode}} oomKilled={{.State.OOMKilled}} error={{.State.Error}}'
+        예상 출력 `opencti restart=0 policy=unless-stopped max=0 status=running / exitCode=0 oomKilled=false`.
+        운영 해석: RestartCount 0 + policy unless-stopped + status running = 안정. oomKilled=true 면 메모리 부족.
+      - |
+        **[OSS] docker events (실시간 이벤트 stream)** — 시계열.
+          # 1. 최근 24h restart 이벤트
+          docker events --since 24h --until now --filter event=restart --filter container=opencti
+          # 2. die 이벤트 (비정상 종료)
+          docker events --since 24h --filter event=die
+          # 3. 실시간 monitor (백그라운드)
+          docker events --filter event=restart > /tmp/restart-events.log &
+          # 4. 종료 코드별 집계
+          docker events --since 7d --filter event=die | awk '{print $NF}' | sort | uniq -c
+        예상 출력 `2026-05-04T10:23:11 container restart opencti / exitCode=137 (OOM) 3건`.
+        운영 해석: 정확한 시간 + 종료 코드. exitCode 137=OOM, 143=SIGTERM. timeline reconstruct.
+      - |
+        **[OSS] healthcheck + restart-policy 분석** — config 검증.
+          # 1. healthcheck 정의 확인
+          docker inspect $C --format 'health={{json .Config.Healthcheck}}'
+          # 2. 최근 healthcheck 결과 (최근 5건)
+          docker inspect $C --format 'health={{range .State.Health.Log}}exitCode={{.ExitCode}} time={{.End}} ; {{end}}'
+          # 3. RestartPolicy + on-failure 한도
+          docker inspect $C --format 'policy={{.HostConfig.RestartPolicy}}'
+          # 4. healthcheck 강제 실행
+          docker inspect $C --format '{{(index .Config.Healthcheck.Test 1)}}' | xargs -I {} docker exec $C sh -c '{}'
+        예상 출력 `health.Test=[CMD curl -f http://localhost:4000] / Status=healthy`.
+        운영 해석: healthy = restart 불필요. unhealthy 누적 → restart trigger 판단.
+      - |
+        **[OSS] Portainer (UI 컨테이너 관리)** — GUI.
+          # 1. 설치 + 접속
+          docker run -d --name portainer -p 9443:9443 -v /var/run/docker.sock:/var/run/docker.sock portainer/portainer-ce
+          # 2. https://10.20.30.100:9443 → Containers → opencti
+          # 3. Container details → Restart Count + Last Started 확인
+          # 4. Stats 탭: 시계열 그래프
+          # 5. Logs 탭: 검색 + 필터
+          # CLI 검증
+          docker inspect opencti --format '{{.RestartCount}}'
+        UI 동작: 컨테이너 메타정보 GUI + 그래프 + 로그.
+        운영 해석: Manager 가 비기술 SOC 분석가에게 보여줄 때 적합.
+      - |
+        **[OSS] Prometheus + cAdvisor + Alertmanager** — 자동 알람.
+          # 1. cAdvisor 메트릭 — container_start_time_seconds
+          curl -sS http://localhost:8081/metrics | grep container_start_time_seconds | grep opencti
+          # 2. Prometheus rule (잦은 restart 알람)
+          # /etc/prometheus/rules.yaml:
+          #   - alert: ContainerFlapping
+          #     expr: changes(container_start_time_seconds{name="opencti"}[10m]) > 2
+          #     for: 5m
+          #     annotations:
+          #       summary: "opencti restarted >2 in 10min"
+          # 3. Alertmanager → Slack 통합
+          curl -sS -X POST http://alertmanager:9093/api/v1/alerts -d '...'
+        예상 출력 `container_start_time_seconds 1.714e+09 / Alert FIRING — Container Flapping`.
+        운영 해석: 이벤트 주도 관제. 24/7 감시. SOC 표준.
       negative_signs:
       - --format 없이 긴 JSON 출력
       - State 대신 Health 확인
@@ -553,6 +1163,115 @@ steps:
       - import: curl POST /graphql + Authorization Bearer + mutation indicatorAdd
       - 검색: curl POST /graphql + query indicators(search)
       - 또는 OpenCTI Web UI Data → Import 메뉴 (스크린샷 paste)
+      - |
+        **[OSS] stix2 (Python 라이브러리, 공식)** — STIX 객체 검증·작성.
+          # 1. 설치
+          pip3 install stix2
+          # 2. Python 으로 indicator 작성 (검증 자동)
+          python3 <<'PY'
+          import stix2, json
+          ind1 = stix2.Indicator(
+            name="Malicious IP — APT29 C2",
+            pattern="[ipv4-addr:value = '198.51.100.66']",
+            pattern_type="stix",
+            indicator_types=["malicious-activity"],
+            valid_from="2026-05-01T00:00:00Z"
+          )
+          ind2 = stix2.Indicator(
+            name="Phishing domain",
+            pattern="[domain-name:value = 'evil-test.invalid']",
+            pattern_type="stix",
+            indicator_types=["malicious-activity"],
+            valid_from="2026-05-01T00:00:00Z"
+          )
+          ind3 = stix2.Indicator(
+            name="Ransomware hash",
+            pattern="[file:hashes.'SHA-256' = '275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f']",
+            pattern_type="stix",
+            indicator_types=["malicious-activity"],
+            valid_from="2026-05-01T00:00:00Z"
+          )
+          bundle = stix2.Bundle(ind1, ind2, ind3)
+          open('/tmp/stix-import/3-iocs.json','w').write(bundle.serialize(pretty=True))
+          PY
+          cat /tmp/stix-import/3-iocs.json | python3 -m json.tool | head
+        예상 출력 `bundle--<uuid> + 3 indicator + spec_version 2.1`.
+        운영 해석: 수동 cat <<EOF 보다 STIX 검증 자동. invalid pattern 즉시 exception.
+      - |
+        **[OSS] pycti (OpenCTI 공식 client)** — REST API 추상화.
+          # 1. 설치
+          pip3 install pycti
+          # 2. Python 으로 indicator import
+          python3 <<'PY'
+          from pycti import OpenCTIApiClient
+          import os
+          token = os.popen("ssh ccc@10.20.30.100 'sudo grep ^OPENCTI_ADMIN_TOKEN /opt/opencti/.env'").read().split('=')[1].strip()
+          client = OpenCTIApiClient("http://10.20.30.100:8080", token)
+          for pattern, name, mtype in [
+            ("[ipv4-addr:value = '198.51.100.66']", "APT29 C2 IP", "IPv4-Addr"),
+            ("[domain-name:value = 'evil-test.invalid']", "Phishing domain", "Domain-Name"),
+            ("[file:hashes.'SHA-256' = '275a02...0f']", "Ransomware hash", "StixFile")
+          ]:
+            r = client.indicator.create(name=name, pattern=pattern, pattern_type="stix", x_opencti_main_observable_type=mtype)
+            print(f"{r['id']} {r['name']}")
+          PY
+        예상 출력 `indicator--abc123 APT29 C2 IP / indicator--def456 Phishing ...`.
+        운영 해석: Connector 가 사용하는 client. 운영 자동화의 표준.
+      - |
+        **[OSS] curl + jq (raw GraphQL)** — 디버깅 + 학습.
+          # 1. token 추출
+          TOKEN=$(ssh ccc@10.20.30.100 'sudo grep ^OPENCTI_ADMIN_TOKEN /opt/opencti/.env' | cut -d= -f2)
+          # 2. STIX bundle import (전체 bundle)
+          curl -sS -X POST http://10.20.30.100:8080/graphql \
+            -H "Authorization: Bearer $TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d "$(jq -Rs '{query:"mutation { stixDomainObjectsAdd(input:{type:\"bundle\", body:.})}"}' < /tmp/stix-import/3-iocs.json)" | jq .
+          # 3. 검색
+          curl -sS -X POST http://10.20.30.100:8080/graphql \
+            -H "Authorization: Bearer $TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d '{"query":"{ indicators(first:10){ edges{ node{ id name pattern x_opencti_score } } } }"}' | jq '.data.indicators.edges[].node'
+          # 4. 단일 indicator 추가 (간단)
+          curl -sS -X POST http://10.20.30.100:8080/graphql \
+            -H "Authorization: Bearer $TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d '{"query":"mutation { indicatorAdd(input:{name:\"Test\", pattern:\"[ipv4-addr:value = '\''198.51.100.66'\'']\", pattern_type:\"stix\", x_opencti_main_observable_type:\"IPv4-Addr\"}) { id name } }"}' | jq .
+        예상 출력 `data.indicatorAdd.id=indicator--xxx / .name="Test"`.
+        운영 해석: API 직접 호출. trainee 가 STIX/GraphQL 구조 학습. error message 분석.
+      - |
+        **[OSS] OpenCTI Web UI (Data → Import 메뉴)** — 운영자 표준.
+          # 1. http://10.20.30.100:8080 접속, admin 로그인
+          # 2. Data → Import → Upload a file → /tmp/stix-import/3-iocs.json
+          # 3. Mark as TLP:WHITE 체크
+          # 4. Import
+          # 5. Analyses → Reports → 새 indicator 표시
+          # 검증 (CLI):
+          TOKEN=$(ssh ccc@10.20.30.100 'sudo grep ^OPENCTI_ADMIN_TOKEN /opt/opencti/.env' | cut -d= -f2)
+          curl -sS -X POST http://10.20.30.100:8080/graphql \
+            -H "Authorization: Bearer $TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d '{"query":"{ indicators(first:5){ edges{ node{ name } } } }"}' | jq .
+        UI 동작: file upload → worker 큐 → indicator 생성. 화면 새로고침 후 표시.
+        운영 해석: SOC 분석가 daily workflow. CLI 보다 직관적.
+      - |
+        **[OSS] TAXII 2.1 server / client (공식 transport)** — 자동 polling 흉내.
+          # 1. 설치
+          pip3 install taxii2-client
+          # 2. TAXII server 흉내 (medallion 또는 OpenCTI 의 TAXII collection)
+          python3 <<'PY'
+          from taxii2client.v21 import Server, Collection
+          server = Server("https://otx.alienvault.com/taxii/", user="api", password="key")
+          for ap in server.api_roots:
+            for col in ap.collections:
+              print(f"Collection: {col.id} {col.title}")
+              # 최근 24h IoC
+              import time
+              objs = col.get_objects(added_after=str(int(time.time()-86400)))
+              print(f"  objects: {len(objs.get('objects',[]))}")
+          PY
+          # 3. OpenCTI 도 TAXII server 모드 — Connectors → TAXII feed
+        예상 출력 `Collection: c-123 AlienVault Pulses / objects: 1230`.
+        운영 해석: STIX = data, TAXII = transport. 자동 polling 으로 Connector 가 동작.
       negative_signs:
       - STIX bundle 작성 누락 (indicator 0건)
       - admin token 없이 Authorization 헤더 빠뜨림 (401 error)
