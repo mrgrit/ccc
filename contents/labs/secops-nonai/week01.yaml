@@ -41,6 +41,70 @@ steps:
       - iptables -L (legacy)
       - firewall-cmd --list-all (firewalld)
       - /etc/nftables.conf 직접 조회
+      - |
+        **[OSS] nft (모던 표준 + JSON)** — 표준.
+          # 1. 모든 table 요약
+          sudo nft list tables
+          # 2. set/chain 요약
+          sudo nft list sets
+          sudo nft list chains
+          # 3. JSON 구조화 (자동화 친화)
+          sudo nft -j list ruleset | jq '[.nftables[] | select(.table) | .table.name]'
+          # 4. 룰 갯수 정량
+          sudo nft -j list ruleset | jq '[.nftables[] | select(.rule)] | length'
+        예상 출력 `table inet filter / table ip nat / 룰 갯수 23개`.
+        운영 해석: nft 가 iptables 후속 표준. JSON 으로 자동화·dashboard 통합 가능.
+      - |
+        **[OSS] iptables / iptables-translate (legacy 마이그레이션)** — 비교.
+          # 1. legacy iptables 룰셋
+          sudo iptables -L -nv --line-numbers
+          # 2. 환경에 ip6tables 도 있으면 동시
+          sudo ip6tables -L -nv
+          # 3. iptables → nft 자동 변환
+          sudo iptables -L | head
+          sudo iptables-translate -L INPUT -nv | head
+          # 4. 변환 결과를 nft 룰로 적용
+          sudo iptables-save | iptables-translate-restore
+        예상 출력 `Chain INPUT (policy ACCEPT) / nft 등가 룰 출력`.
+        운영 해석: 기존 iptables 환경 → nft 마이그레이션 path. 운영 분석.
+      - |
+        **[OSS] firewalld (RHEL/CentOS 표준)** — distro 별 alt.
+          # 1. firewalld 상태 + zone 목록
+          sudo firewall-cmd --state
+          sudo firewall-cmd --get-active-zones
+          # 2. 각 zone 의 활성 룰
+          sudo firewall-cmd --list-all-zones | head -30
+          # 3. 백엔드 확인 (nft 또는 iptables)
+          sudo firewall-cmd --get-default-zone
+          firewall-cmd --version
+          # 4. 기본 정책
+          sudo firewall-cmd --info-zone=public
+        예상 출력 `running / public (active) / target: default / interfaces ens33`.
+        운영 해석: firewalld 는 zone 기반 추상. 멀티 인터페이스 정책 친화.
+      - |
+        **[OSS] /etc/nftables.conf + git audit** — IaC.
+          # 1. 영구 정책 파일 조회
+          sudo cat /etc/nftables.conf
+          # 2. syntax 검증
+          sudo nft -c -f /etc/nftables.conf && echo "VALID"
+          # 3. systemd unit 활성화 상태
+          systemctl is-enabled nftables
+          # 4. /etc 변경 history (etckeeper)
+          cd /etc && sudo git log --oneline nftables.conf | head -5
+        예상 출력 `flush ruleset / table inet filter ... / VALID / enabled`.
+        운영 해석: 재부팅 후 보존되는 영구 정책. git 으로 audit.
+      - |
+        **[OSS] nstat / ss (커널 통계)** — 효과 측정.
+          # 1. nf_conntrack 통계
+          sudo cat /proc/sys/net/netfilter/nf_conntrack_count
+          # 2. ss 로 active 연결 (상태별)
+          ss -s
+          # 3. nstat 으로 IP/TCP 통계
+          nstat -a | head
+          # 4. 방화벽 drop 카운터 (전체)
+          sudo nft list ruleset | grep -E 'counter|policy'
+        예상 출력 `nf_conntrack_count 1234 / Total: 567 / IP/TCP 통계`.
+        운영 해석: 룰뿐 아니라 효과(연결 수, drop 빈도) 도 동시 측정.
       negative_signs:
       - 명령 실행 없이 이론
       - nft list 이외 도구
@@ -82,6 +146,68 @@ steps:
       - systemctl status suricata --no-pager
       - ps aux | grep suricata
       - suricatasc -c version
+      - |
+        **[OSS] systemctl (서비스 상태 표준)** — 표준.
+          # 1. 활성 여부 (exit code 친화)
+          systemctl is-active suricata && echo ACTIVE
+          # 2. 자세한 상태 + 최근 로그
+          systemctl status suricata --no-pager --lines=10
+          # 3. 메타정보 (uptime + memory + cgroup)
+          systemctl show suricata --property=ActiveState,ActiveEnterTimestamp,MemoryCurrent
+          # 4. 부팅시 자동 시작 여부
+          systemctl is-enabled suricata
+        예상 출력 `ACTIVE / Active: active (running) / uptime 2h memory 256MB / enabled`.
+        운영 해석: is-active = 자동화. show = 메트릭. enabled = 부팅 자동 시작.
+      - |
+        **[OSS] suricatasc (Suricata 내부 socket)** — 정밀.
+          # 1. socket 경로
+          sudo ls -la /var/run/suricata/
+          # 2. version + uptime
+          sudo suricatasc -c version
+          sudo suricatasc -c uptime
+          # 3. iface 통계 (packet count + drop)
+          sudo suricatasc -c iface-stat-dump
+          # 4. counters dump (alert, decode, flow)
+          sudo suricatasc -c dump-counters | jq '.detect_alert, .decoder_pkt'
+        예상 출력 `version: 7.0.x / uptime: 2h / packets received: 12345, drops: 0 / alerts: 234`.
+        운영 해석: process internal 메트릭. drops 증가 = NIC 병목.
+      - |
+        **[OSS] journalctl (서비스 로그 종합)** — 진단.
+          # 1. 최근 1시간 로그
+          sudo journalctl -u suricata --since '1h ago' --no-pager
+          # 2. error 만
+          sudo journalctl -u suricata -p err --since today
+          # 3. 시작·정지·reload 이벤트
+          sudo journalctl -u suricata | grep -E 'Started|Stopped|Reload|Configuration'
+          # 4. live tail
+          sudo journalctl -u suricata -f
+        예상 출력 `Started Suricata IDS / Configuration loaded / Reloading rules`.
+        운영 해석: systemd journal = 기본 로그. start/stop/reload + error 감지.
+      - |
+        **[OSS] ps + cgroup 통합 (process tree)** — 진단.
+          # 1. process list (자식 포함)
+          ps auxf | grep -E 'suricata|Suricata' | grep -v grep
+          # 2. systemd cgroup tree
+          systemd-cgls /system.slice/suricata.service
+          # 3. PID + open file descriptor
+          PID=$(pgrep -x suricata | head -1)
+          ls /proc/$PID/fd 2>/dev/null | wc -l
+          # 4. memory + CPU 시계열
+          top -b -n 1 -p $PID
+        예상 출력 `suricata PID 1234 RSS 256MB / FDs 128 / CPU 8%`.
+        운영 해석: PID + FD + memory. memory leak 조기 감지.
+      - |
+        **[OSS] eve.json 활성도 (실시간 검증)** — 데이터.
+          # 1. 파일 존재 + mtime (최근 갱신?)
+          sudo ls -la /var/log/suricata/eve.json
+          # 2. 최근 5초 갱신 여부 (활성 트래픽)
+          sudo find /var/log/suricata -name 'eve.json' -mmin -1
+          # 3. event_type 분포 (최근 1000건)
+          sudo tail -1000 /var/log/suricata/eve.json | jq -r .event_type | sort | uniq -c
+          # 4. inotifywait 으로 실시간 변경
+          sudo timeout 5 inotifywait -m -e modify /var/log/suricata/eve.json
+        예상 출력 `eve.json 12MB mtime 1초 전 / event_type 분포 flow 80% alert 5%`.
+        운영 해석: systemctl active 외 데이터 흐름까지 검증. dead 와 운영 구분.
       negative_signs:
       - 명령 실행 없이 이론
       - Wazuh/other 서비스 혼동
@@ -112,6 +238,72 @@ steps:
       - apache2ctl -M (Debian)
       - httpd -M (RHEL)
       - /etc/apache2/mods-enabled/ 디렉토리 조회
+      - |
+        **[OSS] apachectl + grep (모듈 로드 표준)** — 표준.
+          # 1. ModSecurity 모듈 검색
+          sudo apachectl -M 2>/dev/null | grep -i security
+          # 2. 모든 모듈 (검토)
+          sudo apachectl -M 2>/dev/null | head -30
+          # 3. mods-enabled 직접 (Debian/Ubuntu)
+          sudo ls -la /etc/apache2/mods-enabled/ | grep -i security
+          # 4. apache2 binary 정보 (compile-in 모듈)
+          sudo apache2 -V 2>&1 | head
+        예상 출력 `security2_module (shared)`.
+        운영 해석: shared = .so 동적 로드. compile-in 보다 운영 친화 (재기동 없이 비활성).
+      - |
+        **[OSS] modsecurity 설정 검증** — 표준.
+          # 1. modsecurity 설정 디렉토리
+          sudo cat /etc/modsecurity/modsecurity.conf | grep -E '^SecRuleEngine|^SecAuditEngine'
+          # 2. CRS 룰 갯수
+          sudo ls /etc/modsecurity/crs/rules/REQUEST-*.conf 2>/dev/null | wc -l
+          # 3. 설치된 패키지
+          dpkg -l | grep -E 'modsecurity|apache2' | head
+          # 4. ldd 로 .so 의존성
+          ldd /usr/lib/apache2/modules/mod_security2.so | head -5
+        예상 출력 `SecRuleEngine On / SecAuditEngine RelevantOnly / 룰 23개`.
+        운영 해석: SecRuleEngine On = 차단 모드. DetectionOnly = log only. 운영 정책.
+      - |
+        **[OSS] Apache 동작 검증 (응답 헤더)** — 동작.
+          # 1. Apache 응답 + Server 헤더
+          curl -sI http://localhost/ | head
+          # 2. ModSecurity 가 차단 트리거 (간단 SQLi)
+          curl -sI 'http://localhost/?q=test%27+OR+1=1--'
+          # 3. ModSecurity 의 audit log 살펴보기
+          sudo tail -10 /var/log/apache2/modsec_audit.log
+          # 4. error.log 의 ModSec 메시지
+          sudo tail -20 /var/log/apache2/error.log | grep -i modsec
+        예상 출력 `HTTP/1.1 200 OK / 두 번째: 403 Forbidden / [client] ModSecurity ...`.
+        운영 해석: 단순 응답 + 단순 SQLi → 403 동작 = 활성화 + 정책 정상.
+      - |
+        **[OSS] ModSecurity packaging + compile flag** — 진단.
+          # 1. 설치된 ModSecurity 버전
+          dpkg -s libapache2-mod-security2 2>/dev/null | grep -E 'Version|Status'
+          # 2. CRS 버전
+          sudo head -5 /etc/modsecurity/crs/crs-setup.conf | grep -i version
+          sudo head -5 /usr/share/modsecurity-crs/rules/REQUEST-901-INITIALIZATION.conf 2>/dev/null
+          # 3. apache2 의 listening port
+          sudo ss -tlnp | grep apache2
+          # 4. ModSec 통계 (audit log 크기 + count)
+          sudo wc -l /var/log/apache2/modsec_audit.log
+          sudo du -sh /var/log/apache2/
+        예상 출력 `Version 2.9.x / CRS v3.3 / Listening 80,443 / audit 12345 lines`.
+        운영 해석: 버전·CRS·port·로그 전체 가시화. SOC 표준 점검.
+      - |
+        **[OSS] WAF 효과 (테스트 페이로드)** — 검증.
+          # 1. CRS 룰 ID 별 매칭 (audit log)
+          sudo grep -oE 'id "[0-9]+"' /var/log/apache2/modsec_audit.log | sort | uniq -c | sort -rn | head
+          # 2. paranoia level 확인
+          sudo grep -E 'paranoia_level' /etc/modsecurity/crs/crs-setup.conf
+          # 3. 차단 응답 확인 (curl 다양 payload)
+          for p in '<script>' "' OR 1=1--" "../../etc/passwd"; do
+            ENC=$(python3 -c "import urllib.parse;print(urllib.parse.quote('$p'))")
+            CODE=$(curl -sS -o /dev/null -w '%{http_code}' "http://localhost/?q=$ENC")
+            echo "$p → $CODE"
+          done
+          # 4. ModSec 매칭 통계
+          sudo grep -c 'Access denied' /var/log/apache2/modsec_audit.log
+        예상 출력 `941100: 12 / 942100: 8 / paranoia 1 / 403,403,403 / Access denied: 23`.
+        운영 해석: CRS 룰별 매칭 빈도 + paranoia 수준 + 실제 차단. WAF 운영 효과.
       negative_signs:
       - apachectl 미사용
       - grep security 필터 없음
@@ -143,6 +335,67 @@ steps:
       - systemctl status wazuh-manager --no-pager
       - /var/ossec/bin/wazuh-control status
       - Wazuh API /manager/status
+      - |
+        **[OSS] systemctl + wazuh-control (이중 검증)** — 표준.
+          # 1. systemd unit 활성
+          systemctl is-active wazuh-manager && echo "ACTIVE"
+          # 2. wazuh 자체 control (모든 sub-daemon 확인)
+          sudo /var/ossec/bin/wazuh-control status
+          # 3. analysisd / remoted / monitord / db / api 등
+          sudo /var/ossec/bin/wazuh-control status | grep -E 'is running|not running'
+          # 4. 시작 시간
+          systemctl show wazuh-manager --property=ActiveEnterTimestamp,ActiveState
+        예상 출력 `wazuh-analysisd is running / wazuh-remoted is running / ... 8 daemons`.
+        운영 해석: systemctl + wazuh-control 둘 다 정상 = 8 daemon 모두 ready.
+      - |
+        **[OSS] Wazuh API /manager/status (REST)** — 운영자 표준.
+          # 1. token 획득
+          T=$(curl -sk -u admin:<pass> -X POST 'https://10.20.30.100:55000/security/user/authenticate?raw=true')
+          # 2. manager status
+          curl -sk -H "Authorization: Bearer $T" 'https://10.20.30.100:55000/manager/status' | jq .
+          # 3. info (버전 + cluster)
+          curl -sk -H "Authorization: Bearer $T" 'https://10.20.30.100:55000/manager/info' | jq .
+          # 4. version
+          curl -sk -H "Authorization: Bearer $T" 'https://10.20.30.100:55000/manager/version/check' | jq .
+        예상 출력 `wazuh-analysisd: running / wazuh-remoted: running / version 4.x.y`.
+        운영 해석: API 응답 = manager 가 외부 통신 ready. dashboard 도 동일 backend.
+      - |
+        **[OSS] Wazuh Dashboard (UI)** — 분석가 표준.
+          # 1. 브라우저 → https://10.20.30.100 → admin 로그인
+          # 2. Server management → Status
+          # 3. 8 daemon 상태 panel (analysisd, remoted, monitord, db, api, exec, modulesd, integrator)
+          # 4. CLI 검증
+          T=$(curl -sk -u admin:<pass> -X POST 'https://10.20.30.100:55000/security/user/authenticate?raw=true')
+          curl -sk -H "Authorization: Bearer $T" 'https://10.20.30.100:55000/manager/status' | jq -r '.data.affected_items[] | "\(.process)\t\(.status)"'
+        UI 동작: panel 별 상태 + 시계열 + uptime.
+        운영 해석: 비기술 운영자 표준 dashboard. SOC daily 점검.
+      - |
+        **[OSS] journalctl + Wazuh 자체 로그** — 진단.
+          # 1. systemd 로그
+          sudo journalctl -u wazuh-manager --since '1h ago' --no-pager
+          # 2. Wazuh 자체 ossec.log
+          sudo tail -50 /var/ossec/logs/ossec.log
+          # 3. error 만 (analysisd · remoted · db)
+          sudo grep -E 'error|critical|warn' /var/ossec/logs/ossec.log | tail -20
+          # 4. integrity check
+          sudo grep -E 'integrity check' /var/ossec/logs/ossec.log | tail
+        예상 출력 `Started Wazuh manager / 8 daemons running / no errors`.
+        운영 해석: systemd journal + 자체 ossec.log 두 channel. start/stop + error 즉시 감지.
+      - |
+        **[OSS] 8 daemon process tree** — 정밀.
+          # 1. wazuh- 로 시작하는 모든 process
+          ps auxf | grep wazuh- | grep -v grep
+          # 2. systemd cgroup tree
+          systemd-cgls /system.slice/wazuh-manager.service
+          # 3. PID + memory + uptime per daemon
+          for d in wazuh-analysisd wazuh-remoted wazuh-monitord wazuh-db; do
+            PID=$(pgrep -x $d | head -1)
+            [ -n "$PID" ] && echo "$d PID=$PID RSS=$(ps -o rss= -p $PID | tr -d ' ') KB"
+          done
+          # 4. open file descriptor 누계
+          for PID in $(pgrep wazuh-); do echo "PID $PID FDs $(ls /proc/$PID/fd 2>/dev/null | wc -l)"; done
+        예상 출력 `analysisd 256MB / remoted 64MB / monitord 32MB / db 128MB`.
+        운영 해석: daemon 별 자원 사용 + FD 누수 조기 감지.
       negative_signs:
       - wazuh-agent 확인 (다른 데몬)
       - systemctl 없이 ps
@@ -174,6 +427,66 @@ steps:
       - netstat -tlnp | grep 9200
       - lsof -i :9200
       - curl -k https://localhost:9200 응답
+      - |
+        **[OSS] ss (모던 socket statistics)** — 표준.
+          # 1. listening + process 표시
+          sudo ss -tlnp | grep 9200
+          # 2. 모든 wazuh 관련 listening
+          sudo ss -tlnp | grep -E ':9200|:55000|:1514|:1515'
+          # 3. 활성 연결 (현재 dashboard·agent 연결)
+          sudo ss -tn state established sport = :9200
+          # 4. 연결 통계 요약
+          ss -s
+        예상 출력 `LISTEN 0 1024 0.0.0.0:9200 / java pid=1234 / 5 connections established`.
+        운영 해석: 9200 listen + java process = OpenSearch 정상. 연결 수로 부하 추정.
+      - |
+        **[OSS] curl (HTTPS health check)** — 동작 검증.
+          # 1. 9200 직접 응답 (cluster info)
+          curl -sk https://localhost:9200/ -u admin:<pass>
+          # 2. cluster health
+          curl -sk https://localhost:9200/_cluster/health -u admin:<pass> | jq .
+          # 3. wazuh-alerts 인덱스 확인
+          curl -sk 'https://localhost:9200/_cat/indices?v' -u admin:<pass> | grep wazuh
+          # 4. node 정보
+          curl -sk https://localhost:9200/_cluster/state -u admin:<pass> | jq .nodes
+        예상 출력 `cluster_name: wazuh-cluster / status: green / wazuh-alerts-2026.05 12345 docs`.
+        운영 해석: listen 만으로 부족 — HTTPS 응답 + green status 까지 검증.
+      - |
+        **[OSS] netstat (legacy alt)** — 호환.
+          # 1. legacy
+          sudo netstat -tlnp | grep 9200
+          # 2. 모든 listen + 외부 연결
+          sudo netstat -tunap | grep 9200
+          # 3. lsof 로 PID + 사용자
+          sudo lsof -i :9200
+          # 4. tcpdump 으로 9200 트래픽 capture
+          sudo timeout 5 tcpdump -i any -nn 'port 9200' -c 10
+        예상 출력 `tcp 0 0 0.0.0.0:9200 0.0.0.0:* LISTEN 1234/java`.
+        운영 해석: ss 보다 친숙. tcpdump 으로 실 트래픽 검증.
+      - |
+        **[OSS] systemctl + journalctl (Indexer 서비스)** — 진단.
+          # 1. wazuh-indexer service 활성
+          systemctl is-active wazuh-indexer
+          # 2. uptime
+          systemctl show wazuh-indexer --property=ActiveEnterTimestamp,MemoryCurrent
+          # 3. 최근 startup 로그
+          sudo journalctl -u wazuh-indexer --since '10min ago' --no-pager | tail -20
+          # 4. error 검색
+          sudo journalctl -u wazuh-indexer -p err | tail
+        예상 출력 `active / uptime 2h memory 4GB / Started OpenSearch / no errors`.
+        운영 해석: process active + memory ≥ 2GB = ready (OpenSearch 는 heap 의존).
+      - |
+        **[OSS] OpenSearch native CLI / dashboard health** — 종합.
+          # 1. API health
+          curl -sk https://localhost:9200/_cluster/health?pretty -u admin:<pass>
+          # 2. 인덱스 통계
+          curl -sk https://localhost:9200/_cat/count/wazuh-alerts-*?v -u admin:<pass>
+          # 3. shard 분포
+          curl -sk https://localhost:9200/_cat/shards/wazuh-alerts-*?v -u admin:<pass> | head
+          # 4. node stats (메모리·디스크)
+          curl -sk https://localhost:9200/_nodes/stats/jvm,fs?pretty -u admin:<pass> | jq '.nodes[] | {jvm:.jvm.mem.heap_used_percent, fs:.fs.total.available_in_bytes}'
+        예상 출력 `status green / 12345 docs / 5 shards primary 5 replica / heap 45% disk 30G`.
+        운영 해석: green + heap < 75% + disk free. SOC 일일 점검.
       negative_signs:
       - 포트 확인 없이 서비스 체크만
       - 9200 아닌 다른 포트
@@ -206,6 +519,70 @@ steps:
       - docker compose ps
       - systemctl is-active opencti
       - curl http://localhost:8080 UI 응답
+      - |
+        **[OSS] docker ps + docker compose (compose stack)** — 표준.
+          # 1. 모든 OpenCTI 관련 컨테이너 + 상태
+          docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}' | grep -i opencti
+          # 2. compose 단위 점검
+          cd /opt/opencti && sudo docker compose ps
+          # 3. 의존 서비스 (redis, elastic, rabbit, minio)
+          docker ps --format '{{.Names}} {{.Status}}' | grep -iE 'opencti|redis|elastic|rabbit|minio'
+          # 4. 모든 컨테이너 (Exited 포함)
+          docker ps -a --format '{{.Names}} {{.Status}}' | grep -i opencti
+        예상 출력 `opencti Up 2h / opencti-redis Up / opencti-elasticsearch Up / 5 컨테이너 정상`.
+        운영 해석: 5 의존 서비스 모두 Up = 운영 ready. Exited 면 즉시 조사.
+      - |
+        **[OSS] curl + jq (UI + API health)** — 동작 검증.
+          # 1. UI 응답 코드
+          curl -sS -o /dev/null -w 'code=%{http_code}\n' http://localhost:8080
+          # 2. GraphQL about (인증 불필요)
+          curl -sS -X POST http://localhost:8080/graphql -H 'Content-Type: application/json' \
+            -d '{"query":"{ about { version dependencies { name version } } }"}' | jq .data.about
+          # 3. 의존 서비스 상태 (graphql)
+          curl -sS -X POST http://localhost:8080/graphql -H 'Content-Type: application/json' \
+            -d '{"query":"{ settings { platform_organization } }"}' | jq .
+          # 4. 인증 후 me query
+          T=$(sudo grep ^OPENCTI_ADMIN_TOKEN /opt/opencti/.env | cut -d= -f2)
+          curl -sS -X POST http://localhost:8080/graphql -H "Authorization: Bearer $T" -H 'Content-Type: application/json' -d '{"query":"{ me { name } }"}' | jq .data.me
+        예상 출력 `code=200 / version 6.x.x / me.name=admin`.
+        운영 해석: HTTP 200 + GraphQL 응답 + token 인증. 3축 health.
+      - |
+        **[OSS] docker logs + ERROR 패턴** — 진단.
+          # 1. opencti platform 로그 (최근 ERROR)
+          docker logs --tail 100 opencti 2>&1 | grep -iE 'error|critical' | tail -10
+          # 2. 의존 서비스 ERROR 갯수
+          for c in opencti opencti-elasticsearch opencti-redis opencti-rabbitmq opencti-minio; do
+            ERR=$(docker logs --tail 100 $c 2>&1 | grep -ic error)
+            echo "$c: $ERR errors"
+          done
+          # 3. 시작 시간 기준 안정성
+          docker inspect opencti --format '{{.State.StartedAt}} restarts: {{.RestartCount}}'
+          # 4. 최근 활동
+          docker logs --since 5m opencti 2>&1 | wc -l
+        예상 출력 `opencti: 0 errors / restarts: 0 / 200 lines/5min`.
+        운영 해석: ERROR 0 + restart 0 + active = 안정 운영.
+      - |
+        **[OSS] docker stats + cAdvisor** — 자원 모니터.
+          # 1. snapshot
+          docker stats --no-stream --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}' | grep -i opencti
+          # 2. 정렬 (메모리 큰 순)
+          docker stats --no-stream --format '{{.Name}}\t{{.MemPerc}}' | sort -k2 -rh | head
+          # 3. cAdvisor 메트릭 (시계열, 설치된 경우)
+          curl -sS http://localhost:8081/metrics 2>/dev/null | grep container_memory_usage_bytes | grep opencti
+          # 4. portainer GUI 도 가능 (https://10.20.30.100:9443)
+        예상 출력 `opencti CPU 8% MEM 1.8GB/2GB 90% / elastic 4GB / 메모리 분포`.
+        운영 해석: ElasticSearch 가 가장 무거움 정상. opencti 메모리 90%+ = scale up.
+      - |
+        **[OSS] OpenCTI Web UI 직접 접속** — 분석가 표준.
+          # 1. 브라우저 → http://10.20.30.100:8080 → admin 로그인
+          # 2. Settings → System info → 버전·의존성·worker 상태
+          # 3. Data → Connectors → 활성 connector
+          # 4. Activity → 최근 활동 (Indicator 생성, login 등)
+          # 5. CLI 검증
+          T=$(sudo grep ^OPENCTI_ADMIN_TOKEN /opt/opencti/.env | cut -d= -f2)
+          curl -sS -X POST http://10.20.30.100:8080/graphql -H "Authorization: Bearer $T" -H 'Content-Type: application/json' -d '{"query":"{ about { version } connectors { name active } }"}' | jq .
+        UI 동작: System info + Connectors + Activity log.
+        운영 해석: 비기술 사용자에게 직관적. SOC daily check.
       negative_signs:
       - docker 없이 systemctl 만 + 미가동
       - 컨테이너 상태 확인 누락
@@ -235,6 +612,66 @@ steps:
       - ping -c 4 -W 2
       - hping3 -c 2 (방화벽 ICMP 차단 시)
       - fping 10.20.30.1
+      - |
+        **[OSS] ping (ICMP 표준)** — 표준.
+          # 1. 기본 ping (응답 시간 + 손실)
+          ping -c 4 -W 2 10.20.30.1
+          # 2. 통계 한 줄 요약
+          ping -c 4 -W 2 10.20.30.1 | tail -1
+          # 3. flooding (관리자 전용, 부하 테스트)
+          # sudo ping -f -c 100 10.20.30.1
+          # 4. IPv6 (필요 시)
+          ping6 -c 2 fe80::1%ens33
+        예상 출력 `4 packets transmitted, 4 received, 0% packet loss, time 3005ms / rtt min/avg/max = 0.5/0.7/1.0 ms`.
+        운영 해석: 0% loss + RTT < 5ms = LAN 정상. 100% loss = 차단·다운.
+      - |
+        **[OSS] hping3 (TCP/UDP probe)** — ICMP 차단 시.
+          # 1. 설치
+          sudo apt install -y hping3
+          # 2. TCP SYN ping (port 22 SSH)
+          sudo hping3 -S -p 22 -c 3 10.20.30.1
+          # 3. UDP ping (DNS port 53)
+          sudo hping3 -2 -p 53 -c 2 10.20.30.1
+          # 4. ACK ping (방화벽 우회 가능)
+          sudo hping3 -A -p 80 -c 2 10.20.30.1
+        예상 출력 `len=46 ip=10.20.30.1 ttl=64 DF id=0 sport=22 flags=SA seq=0 win=29200 rtt=0.5 ms`.
+        운영 해석: ICMP 차단해도 TCP/UDP 로 도달성 검증. SOC 표준.
+      - |
+        **[OSS] fping (대량 호스트)** — 효율.
+          # 1. 설치
+          sudo apt install -y fping
+          # 2. 단일 + 통계
+          fping -c 4 10.20.30.1
+          # 3. 서브넷 sweep
+          fping -a -g 10.20.30.0/24 2>/dev/null
+          # 4. 호스트 list
+          fping -a -f /tmp/hosts.txt
+        예상 출력 `10.20.30.1 : xmt/rcv/%loss = 4/4/0% / 10.20.30.1 alive (sweep)`.
+        운영 해석: subnet 빠른 sweep. 자산 발견 표준.
+      - |
+        **[OSS] mtr (route + RTT 시계열)** — 정밀.
+          # 1. 설치
+          sudo apt install -y mtr
+          # 2. mtr 단발성 (10회)
+          mtr -c 10 -r 10.20.30.1
+          # 3. JSON 출력
+          mtr -j -c 10 10.20.30.1 | jq .
+          # 4. 인터랙티브 (TUI)
+          mtr 10.20.30.1
+        예상 출력 `Hop 1: 10.20.30.1 0.5ms 0.7ms 1.0ms / loss 0%`.
+        운영 해석: ping 보다 풍부 — hop·loss·RTT 시계열. 네트워크 진단.
+      - |
+        **[OSS] nmap host discovery** — 종합.
+          # 1. 단일 host alive 검증
+          nmap -sn 10.20.30.1
+          # 2. 서브넷 alive sweep
+          nmap -sn 10.20.30.0/24
+          # 3. ICMP echo + TCP SYN + ACK 다중
+          nmap -PE -PS22,80 -PA80 -sn 10.20.30.1
+          # 4. ARP 기반 (LAN 정밀)
+          sudo nmap -PR -sn 10.20.30.0/24
+        예상 출력 `Host is up (0.001s latency) / 24 hosts up`.
+        운영 해석: 다중 probe (ICMP+TCP+ACK+ARP) 로 우회 도달성 검증.
       negative_signs:
       - ping 없이 traceroute
       - 대상 IP 혼동
@@ -264,6 +701,68 @@ steps:
       - find /etc/suricata/rules -name '*.rules' | wc -l
       - suricata-update list-sources
       - /etc/suricata/suricata.yaml 의 rule-files 섹션 조회
+      - |
+        **[OSS] ls + wc (룰 파일 수)** — 표준.
+          # 1. 파일 갯수
+          sudo ls /etc/suricata/rules/*.rules 2>/dev/null | wc -l
+          # 2. 통합 룰 파일 (suricata-update 결과)
+          sudo wc -l /var/lib/suricata/rules/suricata.rules 2>/dev/null
+          # 3. enabled 룰 only (alert / drop)
+          sudo grep -cE '^(alert|drop)' /var/lib/suricata/rules/suricata.rules 2>/dev/null
+          # 4. 분류별 파일
+          sudo ls -la /etc/suricata/rules/ | head
+        예상 출력 `12 .rules files / 30,234 total rules / 25,000 enabled`.
+        운영 해석: ET Open + Local + Custom. 활성화된 룰 갯수 = 탐지 coverage.
+      - |
+        **[OSS] suricata-update (룰 관리 표준)** — 표준.
+          # 1. 활성 source 목록
+          sudo suricata-update list-sources --enabled
+          # 2. 사용 가능한 source 전체
+          sudo suricata-update list-sources | head -20
+          # 3. 룰 갱신
+          sudo suricata-update
+          # 4. enabled.conf / disabled.conf 조회 (정책)
+          sudo cat /etc/suricata/enable.conf 2>/dev/null
+          sudo cat /etc/suricata/disable.conf 2>/dev/null
+        예상 출력 `et/open / sslbl/ssl-fp-blacklist / 30,234 룰 다운로드`.
+        운영 해석: ET Open = community 표준. 매일 cron 으로 update 권장.
+      - |
+        **[OSS] suricata.yaml 의 rule-files 분석** — 정확.
+          # 1. yaml 의 rule-files 섹션
+          sudo grep -A 20 '^rule-files:' /etc/suricata/suricata.yaml
+          # 2. default-rule-path 확인
+          sudo grep -E '^default-rule-path' /etc/suricata/suricata.yaml
+          # 3. yq 로 정확 파싱
+          sudo apt install -y yq
+          sudo yq '.["rule-files"]' /etc/suricata/suricata.yaml
+          # 4. 활성 .rules 파일 ↔ default-path 매칭
+          sudo find $(sudo grep -E '^default-rule-path' /etc/suricata/suricata.yaml | awk '{print $2}') -name '*.rules' | wc -l
+        예상 출력 `rule-files: - suricata.rules / default-rule-path: /var/lib/suricata/rules`.
+        운영 해석: yaml 의 rule-files 와 실제 파일 개수가 일치해야 정상.
+      - |
+        **[OSS] suricatasc 로 활성 룰 갯수** — runtime.
+          # 1. process 가 실제 로드한 룰 수
+          sudo suricatasc -c reload-rules
+          sudo suricatasc -c dump-counters | jq '.detect | {rules_loaded, alerts}'
+          # 2. iface 별 통계
+          sudo suricatasc -c iface-stat-dump
+          # 3. 룰 reload 후 변화
+          # ... 새 룰 추가 후 reload-rules → counter 재시작
+          sudo suricatasc -c uptime
+        예상 출력 `rules_loaded: 30234 / alerts: 234 / uptime 2h`.
+        운영 해석: runtime 룰 갯수 = 실제 적용. 파일 갯수와 일치 확인.
+      - |
+        **[OSS] rule classification + sid 분포** — 분석.
+          # 1. classtype 별 룰 수 (어떤 공격 유형 강한가)
+          sudo grep -hoE 'classtype:[a-z-]+' /etc/suricata/rules/*.rules /var/lib/suricata/rules/*.rules 2>/dev/null | sort | uniq -c | sort -rn | head
+          # 2. 활성 sid 범위
+          sudo grep -hoE 'sid:[0-9]+' /var/lib/suricata/rules/suricata.rules 2>/dev/null | sort -u | head
+          # 3. 우리 local 룰만
+          sudo grep -hoE 'sid:[0-9]+' /etc/suricata/rules/local.rules 2>/dev/null | wc -l
+          # 4. 가장 많은 카테고리 (.rules 파일 별)
+          for f in /etc/suricata/rules/*.rules; do echo "$(basename $f): $(grep -c '^alert' $f)"; done | sort -t: -k2 -rn | head
+        예상 출력 `web-application-attack 5234 / trojan-activity 3210 / emerging-malware.rules 4500`.
+        운영 해석: classification 분포 = SOC 의 강·약점. local.rules 만 자체 룰.
       negative_signs:
       - 파일 카운트 없이 목록만
       - '*.rules 필터 누락'
@@ -294,6 +793,72 @@ steps:
       - ls /usr/share/modsecurity-crs/rules/
       - find / -name 'REQUEST-*.conf' 2>/dev/null
       - apt list --installed | grep modsecurity
+      - |
+        **[OSS] ls + find (CRS 디렉토리 표준)** — 표준.
+          # 1. 두 표준 위치 모두 확인
+          sudo ls /etc/modsecurity/crs/rules/ 2>/dev/null | head -10
+          sudo ls /usr/share/modsecurity-crs/rules/ 2>/dev/null | head -10
+          # 2. REQUEST + RESPONSE 분류
+          sudo ls /usr/share/modsecurity-crs/rules/ | grep -E '^REQUEST|^RESPONSE' | wc -l
+          # 3. .conf 파일 갯수 (총 룰셋 갯수)
+          sudo find /usr/share/modsecurity-crs/rules/ -name '*.conf' | wc -l
+          # 4. find 으로 시스템 전체 검색
+          sudo find / -name 'REQUEST-901-INITIALIZATION.conf' 2>/dev/null
+        예상 출력 `crs-setup.conf REQUEST-901 ... RESPONSE-959 / 23 conf files`.
+        운영 해석: REQUEST-9xx = inbound 검사, RESPONSE-9xx = outbound. 합 23 .conf.
+      - |
+        **[OSS] CRS 룰 갯수 + paranoia level** — 정량.
+          # 1. SecRule 갯수 (모든 conf)
+          sudo grep -c '^SecRule' /usr/share/modsecurity-crs/rules/*.conf 2>/dev/null | awk -F: '{sum+=$2}END{print "Total SecRule:", sum}'
+          # 2. paranoia level (1-4)
+          sudo grep -E 'tx.paranoia_level' /etc/modsecurity/crs/crs-setup.conf | head
+          # 3. paranoia 별 룰 분포
+          for p in 1 2 3 4; do
+            cnt=$(sudo grep -c "tag:'paranoia-level/$p'" /usr/share/modsecurity-crs/rules/*.conf 2>/dev/null | awk -F: '{sum+=$2}END{print sum}')
+            echo "Paranoia $p: $cnt rules"
+          done
+          # 4. CRS 버전
+          sudo grep 'rule \"id:900990\"' /etc/modsecurity/crs/crs-setup.conf | head
+        예상 출력 `Total SecRule: 1234 / paranoia_level=1 / Paranoia 1: 600 / 2: 300 / 3: 200 / 4: 134`.
+        운영 해석: paranoia level 높을수록 strict + FP 많음. 1=안전 default, 2=권장.
+      - |
+        **[OSS] dpkg / apt (패키지 정보)** — 환경.
+          # 1. 설치된 ModSec 패키지
+          dpkg -l | grep -iE 'modsecurity|crs'
+          # 2. 패키지 파일 목록
+          dpkg -L modsecurity-crs | head
+          # 3. 버전 + maintainer
+          apt show modsecurity-crs | head
+          apt show libapache2-mod-security2 | head
+          # 4. 설치된 ModSec 의 의존 라이브러리
+          dpkg -L libapache2-mod-security2 | grep '\.so'
+        예상 출력 `modsecurity-crs 3.3.2 / libapache2-mod-security2 2.9.6 / mod_security2.so`.
+        운영 해석: 버전·의존성 명확. CVE 대비 + upgrade plan.
+      - |
+        **[OSS] git clone OWASP CRS (최신 룰)** — 운영.
+          # 1. 공식 OWASP CRS clone
+          git clone https://github.com/coreruleset/coreruleset.git /tmp/crs-latest
+          cd /tmp/crs-latest
+          # 2. 룰 파일 비교 (현재 vs 최신)
+          diff -q /usr/share/modsecurity-crs/rules /tmp/crs-latest/rules | head
+          # 3. 최신 release tag
+          git tag --sort=-creatordate | head -5
+          # 4. 변경된 룰 ID (어느 룰 추가/수정?)
+          git log --oneline rules/ | head -10
+        예상 출력 `v4.0.0 v3.3.5 v3.3.4 / Only in /tmp/crs-latest: REQUEST-922-MULTIPART-ATTACK.conf`.
+        운영 해석: 최신 룰 추적. 분기별 update 권장.
+      - |
+        **[OSS] crs-setup.conf 정책 검토** — 정확.
+          # 1. crs-setup.conf 의 핵심 정책
+          sudo grep -E '^[^#].*tx\.' /etc/modsecurity/crs/crs-setup.conf | head -10
+          # 2. anomaly_score threshold
+          sudo grep -E 'inbound_anomaly_score|outbound_anomaly_score' /etc/modsecurity/crs/crs-setup.conf
+          # 3. exclude_directives (성능 우회)
+          sudo grep -E '^SecAction.*900' /etc/modsecurity/crs/crs-setup.conf
+          # 4. before-crs / after-crs 사용자 설정
+          sudo ls /etc/modsecurity/include-before*.conf /etc/modsecurity/include-after*.conf 2>/dev/null
+        예상 출력 `paranoia_level=1 / inbound_anomaly_score_threshold=5 / outbound_anomaly_score_threshold=4`.
+        운영 해석: anomaly threshold 가 차단 결정 — 룰 score 합 >= threshold 시 block.
       negative_signs:
       - 디렉토리 미확인
       - CRS 경로 혼동
@@ -330,6 +895,68 @@ steps:
       - find /var/ossec/logs/alerts -type f
       - stat /var/ossec/logs/alerts/alerts.json
       - Dashboard Security events UI 대체
+      - |
+        **[OSS] ls + stat (파일 메타정보 표준)** — 표준.
+          # 1. alerts/ 디렉토리
+          sudo ls -la /var/ossec/logs/alerts/
+          # 2. alerts.json + alerts.log 정밀
+          sudo stat /var/ossec/logs/alerts/alerts.json
+          sudo stat /var/ossec/logs/alerts/alerts.log
+          # 3. 일별 백업 (archives)
+          sudo ls -la /var/ossec/logs/archives/ 2>/dev/null | head
+          # 4. 디스크 사용량
+          sudo du -sh /var/ossec/logs/
+        예상 출력 `alerts.json 256MB mtime 1초 전 / alerts.log 128MB / 12 archives / total 10GB`.
+        운영 해석: mtime 최근 = 활성 SIEM. archives 일별 백업 = 장기 보존.
+      - |
+        **[OSS] tail + jq (alert 실시간 + 구조화)** — 검증.
+          # 1. 최근 alert 실시간 stream (10초)
+          sudo timeout 10 tail -F /var/ossec/logs/alerts/alerts.json | head -3
+          # 2. 최근 5건 alert
+          sudo tail -5 /var/ossec/logs/alerts/alerts.json | jq -c '{time:.timestamp, rule:.rule.description, level:.rule.level}'
+          # 3. event 빈도 (최근 1000건)
+          sudo tail -1000 /var/ossec/logs/alerts/alerts.json | wc -l
+          # 4. high level (≥10) 갯수
+          sudo tail -1000 /var/ossec/logs/alerts/alerts.json | jq -c 'select(.rule.level>=10)' | wc -l
+        예상 출력 `최근 alerts JSON 3건 / 1000 lines / 12 high-level`.
+        운영 해석: tail -F = 실시간 stream. jq = 구조화 파싱.
+      - |
+        **[OSS] Wazuh Dashboard Security events** — UI.
+          # 1. https://10.20.30.100 → Security events
+          # 2. 시간 범위 last 24h
+          # 3. KQL: rule.level:>=10 (high level)
+          # 4. CSV / JSON export
+          # 5. CLI 검증
+          curl -sk -u admin:<pass> 'https://10.20.30.100:9200/wazuh-alerts-*/_count' | jq .count
+          curl -sk -u admin:<pass> 'https://10.20.30.100:9200/wazuh-alerts-*/_search?size=5' | jq '.hits.hits[]._source | {ts:.["@timestamp"], rule:.rule.description}'
+        UI 동작: timeline + KQL + chart + saved search.
+        운영 해석: 분석가 daily driver. CLI 보다 풍부한 시각·필터.
+      - |
+        **[OSS] Wazuh API (REST)** — 자동화.
+          # 1. token
+          T=$(curl -sk -u admin:<pass> -X POST 'https://10.20.30.100:55000/security/user/authenticate?raw=true')
+          # 2. manager 통계
+          curl -sk -H "Authorization: Bearer $T" 'https://10.20.30.100:55000/manager/stats/analysisd' | jq .
+          # 3. 최근 alert (Indexer 직접)
+          curl -sk -u admin:<pass> 'https://10.20.30.100:9200/wazuh-alerts-*/_search?size=5&sort=@timestamp:desc' | jq '.hits.hits[]._source.rule.description'
+          # 4. agent 별 alert 갯수
+          curl -sk -u admin:<pass> 'https://10.20.30.100:9200/wazuh-alerts-*/_search' -H 'Content-Type: application/json' -d '{
+            "size":0, "aggs":{"by_agent":{"terms":{"field":"agent.name"}}}
+          }' | jq .aggregations.by_agent.buckets
+        예상 출력 `analysisd events_processed 12345 / agent secu 234 web 156 siem 89`.
+        운영 해석: API 자동화. SLA 측정·SOC 보고서.
+      - |
+        **[OSS] logrotate + archives (장기 보존)** — 운영.
+          # 1. logrotate 설정
+          sudo cat /etc/logrotate.d/wazuh-manager 2>/dev/null
+          # 2. archives 일별 보관
+          sudo ls /var/ossec/logs/archives/ | head
+          # 3. 압축 + 영구 보존 (30일+)
+          sudo find /var/ossec/logs/archives -name '*.gz' | wc -l
+          # 4. 디스크 사용 추세
+          sudo du -d 1 -h /var/ossec/logs/ | sort -rh | head
+        예상 출력 `daily / archives 30 directories / 365 .gz files / total 10GB`.
+        운영 해석: SOC 30 ~ 365 일 보관 의무 (KISA, ISMS-P). archives 가 핵심.
       negative_signs:
       - 경로 혼동 (/var/log/wazuh)
       - 파일 존재 확인 없이 내용만
@@ -452,6 +1079,125 @@ steps:
       - 학생이 직접 ssh + 각 명령 실행, transcript paste
       - Phase A 표 + Phase C 25 cell matrix markdown 제출
       - 결과 캡처: textarea 에 `$ cmd` 줄 + 출력 줄 paste 형식
+      - |
+        **[OSS] Phase A — 5 layer health check 통합 script** — 표준.
+          # 1. /tmp/layer-check.sh
+          tee /tmp/layer-check.sh <<'SCRIPT'
+          #!/bin/bash
+          echo "=== 5 LAYER HEALTH MATRIX ==="
+          # nft (secu)
+          NFT_RULES=$(ssh ccc@10.20.30.1 'sudo nft -j list ruleset 2>/dev/null | jq "[.nftables[] | select(.rule)] | length"')
+          NFT_ACTIVE=$(ssh ccc@10.20.30.1 'systemctl is-active nftables 2>/dev/null')
+          echo "nft: active=$NFT_ACTIVE rules=$NFT_RULES"
+          # Suricata
+          SURI_ACTIVE=$(ssh ccc@10.20.30.1 'systemctl is-active suricata')
+          SURI_RULES=$(ssh ccc@10.20.30.1 'sudo wc -l < /var/lib/suricata/rules/suricata.rules 2>/dev/null')
+          echo "Suricata: active=$SURI_ACTIVE rules=$SURI_RULES"
+          # ModSec (web)
+          MODSEC=$(ssh ccc@10.20.30.80 'sudo apachectl -M 2>/dev/null | grep -c security')
+          MODSEC_RULES=$(ssh ccc@10.20.30.80 'sudo ls /usr/share/modsecurity-crs/rules/*.conf 2>/dev/null | wc -l')
+          echo "ModSec: active=$MODSEC rules=$MODSEC_RULES"
+          # Wazuh
+          WAZUH_ACTIVE=$(ssh ccc@10.20.30.100 'systemctl is-active wazuh-manager')
+          WAZUH_RULES=$(ssh ccc@10.20.30.100 'sudo wc -l < /var/ossec/etc/rules/local_rules.xml 2>/dev/null')
+          echo "Wazuh: active=$WAZUH_ACTIVE rules=$WAZUH_RULES"
+          # OpenCTI
+          OCTI=$(curl -sS http://10.20.30.100:8080/graphql -X POST -H 'Content-Type: application/json' -d '{"query":"{about{version}}"}' | jq -r .data.about.version 2>/dev/null)
+          echo "OpenCTI: version=$OCTI"
+          SCRIPT
+          chmod +x /tmp/layer-check.sh
+          /tmp/layer-check.sh
+        예상 출력 `nft active=active rules=23 / Suricata rules=30234 / ModSec=1 / Wazuh active=active / OpenCTI=6.x.x`.
+        운영 해석: 5 layer 한 번에. 각 layer 의 활성·룰셋 갯수 종합.
+      - |
+        **[OSS] Phase B — 5 attack vector 시뮬 표준** — 표준.
+          # 1. Vector 1: 포트 스캔
+          nmap -sS -F 10.20.30.80 -oG /tmp/v1-portscan.txt
+          # 2. Vector 2: SQLi
+          curl -sS 'http://10.20.30.80:3000/rest/products/search?q=1%27+OR+1=1--' -o /tmp/v2-sqli.html
+          # 3. Vector 3: SSH brute force (3 시도만, 실수 회피)
+          echo -e "ccc\nadmin\nroot" > /tmp/3pwds.txt
+          hydra -l ccc -P /tmp/3pwds.txt ssh://10.20.30.80 -t 1 -f 2>&1 | head
+          # 4. Vector 4: phishing DNS
+          dig +short malicious-test.invalid @10.20.30.100
+          # 5. Vector 5: EICAR
+          curl -sS 'http://eicar-test.local/test.txt' -o /tmp/eicar.txt 2>/dev/null
+          # 시뮬 후 5초 대기
+          sleep 5
+        예상 출력 `nmap 100 ports / SQLi 200/403 / hydra 3 attempts / DNS NXDOMAIN / EICAR file`.
+        운영 해석: 5 vector 모두 destructive 아님. log/alert 만 발생.
+      - |
+        **[OSS] Phase C — 25 cell evidence 자동 수집** — 자동.
+          # 1. /tmp/matrix-collect.sh
+          tee /tmp/matrix-collect.sh <<'SCRIPT'
+          #!/bin/bash
+          echo "=== 25 CELL MATRIX EVIDENCE ==="
+          # 5 layer 의 최근 5분 evidence 동시 캡처
+          # nft counters
+          ssh ccc@10.20.30.1 'sudo nft -j list ruleset | jq ".nftables[] | select(.rule) | .rule.expr[]? | select(.counter)"' > /tmp/m-nft.json
+          # Suricata alerts (최근 5분)
+          ssh ccc@10.20.30.1 'sudo tail -200 /var/log/suricata/eve.json | jq -c "select(.event_type==\"alert\")"' > /tmp/m-suri.json
+          # ModSec audit
+          ssh ccc@10.20.30.80 'sudo tail -200 /var/log/apache2/modsec_audit.log' > /tmp/m-modsec.txt
+          # Wazuh alerts
+          ssh ccc@10.20.30.100 'sudo tail -200 /var/ossec/logs/alerts/alerts.json' > /tmp/m-wazuh.json
+          # OpenCTI recent
+          T=$(ssh ccc@10.20.30.100 'sudo grep ^OPENCTI_ADMIN_TOKEN /opt/opencti/.env | cut -d= -f2')
+          curl -sS http://10.20.30.100:8080/graphql -X POST -H "Authorization: Bearer $T" -H 'Content-Type: application/json' -d '{"query":"{ stixCoreObjects(first:5,orderBy:created_at,orderMode:desc){edges{node{id entity_type}}}}"}' > /tmp/m-octi.json
+          # 5 vector 별 매칭 (간단 grep)
+          for v in nmap sqli ssh dig eicar; do
+            cnt_nft=$(grep -c "$v" /tmp/m-nft.json 2>/dev/null || echo 0)
+            cnt_suri=$(grep -ic "$v" /tmp/m-suri.json 2>/dev/null || echo 0)
+            cnt_modsec=$(grep -ic "$v" /tmp/m-modsec.txt 2>/dev/null || echo 0)
+            cnt_wazuh=$(grep -c "$v" /tmp/m-wazuh.json 2>/dev/null || echo 0)
+            echo "$v: nft=$cnt_nft suri=$cnt_suri modsec=$cnt_modsec wazuh=$cnt_wazuh"
+          done
+          SCRIPT
+          chmod +x /tmp/matrix-collect.sh
+          /tmp/matrix-collect.sh
+        예상 출력 `nmap: nft=12 suri=5 wazuh=3 / sqli: modsec=1 wazuh=1 / 5×4 cell evidence`.
+        운영 해석: 25 cell 의 raw evidence 자동 수집. 학생은 cell 분류만.
+      - |
+        **[OSS] Phase D — 3줄 보고 markdown generator** — 보고.
+          # 1. 매트릭스 분석 + 자동 보고서
+          python3 <<'PY'
+          import json
+          # 가정: 25 cell 결과 dict
+          matrix = {
+              ('port_scan', 'nft'): 'detect', ('port_scan', 'Suricata'): 'detect',
+              ('port_scan', 'ModSec'): 'none', ('port_scan', 'Wazuh'): 'log', ('port_scan', 'OpenCTI'): 'none',
+              ('SQLi', 'nft'): 'none', ('SQLi', 'Suricata'): 'detect',
+              ('SQLi', 'ModSec'): 'block', ('SQLi', 'Wazuh'): 'detect', ('SQLi', 'OpenCTI'): 'none',
+              # ... 5 vector × 5 layer
+          }
+          layers = ['nft', 'Suricata', 'ModSec', 'Wazuh', 'OpenCTI']
+          # 가장 활발 layer (none 이 가장 적은)
+          most_active = max(layers, key=lambda l: sum(1 for v in matrix.values() if matrix.get((v,l)) and matrix[(v,l)] != 'none'))
+          # dead layer (none 이 5/5)
+          dead = [l for l in layers if all(matrix.get((v,l), 'none') == 'none' for v in ['port_scan','SQLi','SSH_brute','phishing','EICAR'])]
+          print(f"## 3줄 보고")
+          print(f"1. 가장 활발: **{most_active}**")
+          print(f"2. dead layer: {', '.join(dead) if dead else '없음'}")
+          print(f"3. 다음 우선순위: {dead[0] if dead else 'OpenCTI feed 활성화'}")
+          PY
+        예상 출력 `1. 가장 활발: Wazuh / 2. dead layer: OpenCTI / 3. 우선: OpenCTI feed 활성화`.
+        운영 해석: 자동 분류 → 결정 근거. SOC 의사결정 표준.
+      - |
+        **[OSS] sha256 + git 보존 (제출 무결성)** — 표준.
+          # 1. report 작성 (Phase A + B + C + D 통합)
+          REPORT=/tmp/lab-week01-report.md
+          # ... markdown 작성
+          sha256sum $REPORT > /tmp/lab-week01.sha256
+          # 2. git 보존
+          mkdir -p ~/lab-submissions/week01 && cd ~/lab-submissions/week01
+          cp $REPORT . && git init && git add lab-week01-report.md
+          git commit -m "Week01 secops-nonai lab — 5 layer matrix"
+          git tag -a w01-v1 -m "Week01 submission"
+          # 3. 제출 (textarea paste)
+          cat $REPORT
+          cat /tmp/lab-week01.sha256
+        예상 출력 `sha256: abc123 / commit / tag w01-v1 / 제출 가능`.
+        운영 해석: 보고서 무결성 + 학기 동안 누적 (w02~w15 동일).
       negative_signs:
       - 단일 layer 만 검증 후 종료
       - 룰셋 카운트 누락 (활성/dead 구분 못함)
