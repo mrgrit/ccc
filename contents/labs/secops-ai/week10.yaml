@@ -41,6 +41,74 @@ steps:
       - dpkg -L wazuh-manager | grep rules | wc -l
       - ls 후 grep *.xml | wc
       - Wazuh Dashboard Management Rules 개수 확인
+      - |
+        **[OSS] find + wc (CRS 룰 카운트)** — 표준 텍스트 분석.
+          # 1. ruleset/rules 의 .xml 파일 수
+          sudo find /var/ossec/ruleset/rules -name "*.xml" -type f | wc -l
+          # 2. 카테고리 별 분포 (0001-0950 prefix)
+          sudo ls /var/ossec/ruleset/rules/ | awk -F- '{print $1}' | sort | uniq -c
+          # 3. 룰 라인 수 (총 SecRule)
+          sudo grep -c '<rule ' /var/ossec/ruleset/rules/*.xml | awk -F: '{s+=$2} END {print s}'
+          # 4. 카테고리 별 룰 수 (file 별)
+          for f in /var/ossec/ruleset/rules/*.xml; do
+              n=$(sudo grep -c '<rule ' "$f")
+              echo "$n $(basename $f)"
+          done | sort -rn | head
+        예상 출력 `200 / 0080-sshd_rules.xml: 25 rules / 0250-apache_rules.xml: 30 rules / Total 3500 rules`.
+        운영 해석: builtin ruleset 분포. 0080 = sshd, 0250 = apache, 0450 = firewalld 등 service 별 매핑.
+      - |
+        **[OSS] xmllint (XML 룰 검증)** — 표준 검증.
+          # 1. 모든 룰 파일 syntax 검증
+          for f in /var/ossec/ruleset/rules/*.xml; do
+              sudo xmllint --noout "$f" 2>&1 | head -1
+          done
+          # 2. 단일 파일 룰 수 추출
+          sudo xmllint --xpath "count(//rule)" /var/ossec/ruleset/rules/0080-sshd_rules.xml
+          # 3. 모든 룰 ID 목록
+          sudo xmllint --xpath "//rule/@id" /var/ossec/ruleset/rules/0080-sshd_rules.xml | tr ' ' '\n' | head
+          # 4. 특정 level 룰 추출
+          sudo xmllint --xpath "//rule[@level='10']" /var/ossec/ruleset/rules/0080-sshd_rules.xml | head
+        예상 출력 `25 / id="5710" id="5712" id="5715" / level="10" rule samples`.
+        운영 해석: XML 구조 인식 정밀 query. grep 보다 정확.
+      - |
+        **[OSS] Wazuh Dashboard Management Rules** — GUI.
+          # 1. https://10.20.30.100/ → Server management → Rules
+          # 2. UI 동작:
+          # - Rules 탭: 모든 룰 list (built-in + custom)
+          # - 검색: keyword / level / group
+          # - 필터: id / level / group
+          # - "Edit" 버튼: 룰 직접 수정
+          # 3. 카테고리 별 분포 시각화
+          # 4. CSV export
+        UI 동작: 200+ 룰셋 GUI 분석. category drill-down + 검색 통합.
+        운영 해석: SOC 분석가 표준. CLI grep 보다 카테고리 + level + group 동시 분석.
+      - |
+        **[OSS] Wazuh API rules endpoint** — programmatic.
+          # 1. JWT 토큰
+          TOKEN=$(curl -sk -u wazuh-wui:wazuh-wui -X POST "https://localhost:55000/security/user/authenticate?raw=true")
+          # 2. 모든 룰 list (페이지 단위)
+          curl -sk -H "Authorization: Bearer $TOKEN" "https://localhost:55000/rules?limit=10" | jq
+          # 3. 룰 ID 별 상세
+          curl -sk -H "Authorization: Bearer $TOKEN" "https://localhost:55000/rules?rule_ids=5710,5712" | jq
+          # 4. category 별 카운트
+          curl -sk -H "Authorization: Bearer $TOKEN" "https://localhost:55000/rules?status=enabled" | jq '.data.total_affected_items'
+        예상 출력 `Total: 3500 / [{id:5710, level:5, description:"sshd:authentication failed"}]`.
+        운영 해석: REST API 자동화 표준. 외부 도구 통합 + custom dashboard.
+      - |
+        **[OSS] git + ruleset 관리** — enterprise.
+          # 1. 사내 룰 git repo
+          mkdir -p /var/ossec/etc/rules-git && cd /var/ossec/etc/rules-git
+          sudo git init
+          # 2. local_rules.xml 을 git 추적
+          sudo git add local_rules.xml
+          sudo git commit -m "Initial custom rules"
+          # 3. 변경 history
+          sudo git log --oneline | head
+          # 4. Wazuh 가 etc/rules/local_rules.xml 사용
+          # symlink 또는 copy hook
+          sudo ln -sf /var/ossec/etc/rules-git/local_rules.xml /var/ossec/etc/rules/local_rules.xml
+        예상 출력: 룰 변경 git history.
+        운영 해석: enterprise 표준. 룰 변경 audit + rollback + CI 통합.
       negative_signs:
       - etc/rules 경로 혼동
       - wc 누락
@@ -78,6 +146,69 @@ steps:
       - sudo xmllint --format local_rules.xml
       - Wazuh Dashboard Management Rules local 필터
       - git log --oneline /var/ossec/etc/rules/ (버전관리 시)
+      - |
+        **[OSS] cat + xmllint (XML 정렬 view)** — 표준.
+          # 1. 단순 cat
+          sudo cat /var/ossec/etc/rules/local_rules.xml
+          # 2. xmllint 로 pretty-print
+          sudo xmllint --format /var/ossec/etc/rules/local_rules.xml
+          # 3. 룰 ID 만 추출
+          sudo xmllint --xpath "//rule/@id" /var/ossec/etc/rules/local_rules.xml | tr ' ' '\n'
+          # 4. 그룹 별 룰 수
+          sudo xmllint --xpath "//group/@name" /var/ossec/etc/rules/local_rules.xml | tr ' ' '\n' | sort | uniq -c
+        예상 출력 `<group name="local,syslog,sshd,"> / <rule id="100001" level="5"> / id="100001" id="100002" / 5 local`.
+        운영 해석: builtin (ruleset/rules) 보존 + custom (etc/rules) 분리 = update 시 custom 보존.
+      - |
+        **[OSS] Wazuh Dashboard Rules editor** — GUI 표준.
+          # 1. https://10.20.30.100/ → Server management → Rules
+          # 2. UI 동작:
+          # - Custom rules tab → local_rules.xml 내용
+          # - 각 룰 클릭 → 상세 + edit 버튼
+          # - "Add new rule" 버튼
+          # - syntax validate + save
+          # 3. 변경 후 자동 manager restart
+          # 4. CLI 검증
+          ssh ccc@10.20.30.100 "sudo cat /var/ossec/etc/rules/local_rules.xml"
+        UI 동작: 시각적 룰 편집 + auto validate + restart.
+        운영 해석: 직접 sed 편집 위험 회피. validate 실패 시 변경 자동 롤백.
+      - |
+        **[OSS] git diff (변경 추적)** — version control.
+          # 1. /var/ossec/etc/rules 가 git 관리 시
+          cd /var/ossec/etc/rules
+          sudo git log --oneline local_rules.xml | head
+          # 2. 변경 history
+          sudo git log --all --oneline -- local_rules.xml
+          # 3. 특정 commit 의 내용
+          sudo git show HEAD:local_rules.xml | head
+          # 4. 모든 분기 변경 비교
+          sudo git diff main..feature-branch -- local_rules.xml
+        예상 출력 `commit abc123 + Add sudo brute rule / commit def456 - Initial / removed/added 라인`.
+        운영 해석: 룰 변경 audit 표준. 누가 언제 무엇을 변경했는지 + rollback 가능.
+      - |
+        **[OSS] Wazuh API rules detail** — programmatic.
+          # 1. JWT 토큰
+          TOKEN=$(curl -sk -u wazuh-wui:wazuh-wui -X POST "https://localhost:55000/security/user/authenticate?raw=true")
+          # 2. local rules 조회
+          curl -sk -H "Authorization: Bearer $TOKEN" "https://localhost:55000/rules?relative_dirname=etc/rules" | jq
+          # 3. 특정 rule 상세
+          curl -sk -H "Authorization: Bearer $TOKEN" "https://localhost:55000/rules?rule_ids=100001" | jq
+          # 4. 룰 그룹 별
+          curl -sk -H "Authorization: Bearer $TOKEN" "https://localhost:55000/rules/groups" | jq
+        예상 출력 `[{filename:"local_rules.xml", id:100001, level:5, description:...}]`.
+        운영 해석: API 자동화. CI 통합 + 외부 dashboard.
+      - |
+        **[OSS] etckeeper (변경 audit)** — git history.
+          # 1. 변경 전 commit
+          sudo etckeeper commit "before custom rule change"
+          # 2. 변경
+          sudo vim /var/ossec/etc/rules/local_rules.xml
+          # 3. 변경 후 commit + restart
+          sudo etckeeper commit "Add sudo brute rule (jira: SEC-1234)"
+          sudo systemctl restart wazuh-manager
+          # 4. diff
+          sudo etckeeper vcs diff HEAD~1 HEAD -- /var/ossec/etc/rules/local_rules.xml
+        예상 출력 `+<rule id="100100" level="10">...</rule>`.
+        운영 해석: 변경 audit 표준. compliance + rollback.
       negative_signs:
       - ruleset/rules 와 혼동
       - XML 구조 이해 없이 실행
@@ -125,6 +256,109 @@ steps:
       - Ansible blockinfile 모듈
       - Wazuh Dashboard Rules editor
       - git-managed rules + CI
+      - |
+        **[OSS] heredoc + tee (룰 추가 표준)** — XML append.
+          # 1. heredoc 으로 추가
+          sudo bash -c 'cat >> /var/ossec/etc/rules/local_rules.xml << "EOF"
+          <group name="local,syslog,sudo,">
+            <rule id="100100" level="10" frequency="3" timeframe="120">
+              <if_matched_sid>5402</if_matched_sid>
+              <description>Multiple sudo failures (custom)</description>
+              <mitre>
+                <id>T1548.003</id>
+              </mitre>
+            </rule>
+          </group>
+          EOF'
+          # 2. syntax 검증
+          sudo /var/ossec/bin/wazuh-analysisd -t
+          # 3. restart 적용
+          sudo systemctl restart wazuh-manager
+        예상 출력 `Configuration loaded / wazuh-manager active`.
+        운영 해석: append + validate + restart 의 3단계. heredoc = 정확한 XML 보존.
+      - |
+        **[OSS] Ansible blockinfile (IaC)** — 자동화.
+          # playbook
+          - name: Add custom Wazuh rule for sudo brute
+            ansible.builtin.blockinfile:
+              path: /var/ossec/etc/rules/local_rules.xml
+              insertbefore: '</group>'
+              marker: "<!-- {mark} ANSIBLE MANAGED rule 100100 -->"
+              backup: yes
+              block: |
+                <group name="local,syslog,sudo,">
+                  <rule id="100100" level="10" frequency="3" timeframe="120">
+                    <if_matched_sid>5402</if_matched_sid>
+                    <description>Multiple sudo failures</description>
+                  </rule>
+                </group>
+            notify: restart wazuh-manager
+          handlers:
+            - name: restart wazuh-manager
+              ansible.builtin.systemd:
+                name: wazuh-manager
+                state: restarted
+          # 실행
+          ansible-playbook -i inventory.yml wazuh-rules.yml --diff
+        예상 출력 `changed: [siem] / +<rule id="100100" level="10">...`.
+        운영 해석: 다중 host 일관 룰 배포. marker 로 idempotent + rollback.
+      - |
+        **[OSS] Wazuh Dashboard Rules Editor** — GUI.
+          # 1. https://10.20.30.100/ → Server management → Rules → Custom rules
+          # 2. UI 동작:
+          # - "Add new rule" 버튼
+          # - 폼: id / level / group / description / decoder match
+          # - "Validate" 버튼 → wazuh-analysisd -t 자동 호출
+          # - "Save and restart manager" 버튼
+          # 3. CLI 검증
+          ssh ccc@10.20.30.100 "sudo grep 'id=\"100100\"' /var/ossec/etc/rules/local_rules.xml"
+        UI 동작: 시각적 룰 작성 + validate + auto restart.
+        운영 해석: 신규 분석가도 안전 작성. XML syntax error 사전 차단.
+      - |
+        **[OSS] sigma → Wazuh** — 표준 룰 변환.
+          # 1. Sigma 룰 작성 (sudo brute)
+          cat > /tmp/sudo-brute.yml << 'EOF'
+          title: Multiple Sudo Failures
+          status: experimental
+          logsource:
+              product: linux
+              category: process_creation
+          detection:
+              selection:
+                  process: sudo
+                  field|contains: 'incorrect password'
+              count: 3
+              timeframe: 2m
+              condition: selection
+          level: high
+          tags:
+              - attack.privilege_escalation
+              - attack.t1548.003
+          EOF
+          # 2. Wazuh 변환 (community backend)
+          sigma convert -t wazuh /tmp/sudo-brute.yml
+        예상 출력 `<rule id="..." level="high"> ... <if_matched_sid>5402</if_matched_sid> ... <mitre><id>T1548.003</id></mitre> </rule>`.
+        운영 해석: Sigma 표준 = 다중 SIEM 호환. 1 룰 → Wazuh + Suricata + Elastic 모두 변환.
+      - |
+        **[OSS] Wazuh API POST rules** — programmatic.
+          # 1. JWT 토큰
+          TOKEN=$(curl -sk -u wazuh-wui:wazuh-wui -X POST "https://localhost:55000/security/user/authenticate?raw=true")
+          # 2. 룰 추가 (PUT to file)
+          curl -sk -X PUT -H "Authorization: Bearer $TOKEN" \
+              "https://localhost:55000/rules/files/local_rules.xml" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary @- << 'EOF'
+          <group name="local,syslog,sudo,">
+            <rule id="100100" level="10" frequency="3" timeframe="120">
+              <if_matched_sid>5402</if_matched_sid>
+              <description>Multiple sudo failures</description>
+            </rule>
+          </group>
+          EOF
+          # 3. manager restart
+          curl -sk -H "Authorization: Bearer $TOKEN" -X PUT "https://localhost:55000/manager/restart"
+        예상 출력 `{"data":{"affected_items":["local_rules.xml"],"updated":1}}`.
+        운영 해석: REST API 룰 추가. CI/CD 파이프라인 통합 표준.
       negative_signs:
       - group 태그 누락(XML 오류)
       - if_matched_sid 없음(correlation 불가)
@@ -191,6 +425,80 @@ steps:
       - xmllint --noout local_rules.xml 로 XML 문법만
       - CI syntax check + pre-commit hook
       - wazuh-logtest -t (조합)
+      - |
+        **[OSS] wazuh-analysisd -t (룰 통합 검증)** — 표준.
+          # 1. 전체 ruleset + decoder 검증
+          sudo /var/ossec/bin/wazuh-analysisd -t 2>&1 | tail -10
+          # 2. 결과
+          # 성공: "Configuration provided was successfully loaded."
+          # 실패: "Error: Could not parse rule X at line N"
+          # 3. 자동 검증 (CI)
+          sudo /var/ossec/bin/wazuh-analysisd -t && echo "OK" || { echo "FAIL"; exit 1; }
+          # 4. 변경 후 즉시 재검증 cycle
+          sudo vim /var/ossec/etc/rules/local_rules.xml && \
+              sudo /var/ossec/bin/wazuh-analysisd -t && \
+              sudo systemctl restart wazuh-manager
+        예상 출력 `Configuration provided was successfully loaded.`.
+        운영 해석: restart 직전 *반드시* 실행. syntax error 시 service 시작 실패 = SOC 마비.
+      - |
+        **[OSS] xmllint (XML syntax 단독)** — 빠른 검증.
+          # 1. 단순 XML syntax 확인
+          sudo xmllint --noout /var/ossec/etc/rules/local_rules.xml
+          # 2. validation against XSD (있다면)
+          sudo xmllint --noout --schema /var/ossec/etc/rules/wazuh-rule.xsd local_rules.xml
+          # 3. 모든 custom 룰 일괄 검증
+          for f in /var/ossec/etc/rules/*.xml; do
+              sudo xmllint --noout "$f" 2>&1 | head -1
+          done
+        예상 출력 `(no output) = OK / parser error : ... line 12: not well-formed`.
+        운영 해석: wazuh-analysisd 보다 빠름. XML syntax 만 빠르게 확인. 단, rule logic (if_matched_sid 등) 미검증.
+      - |
+        **[OSS] CI pre-commit hook (validation)** — git 통합.
+          # .git/hooks/pre-commit
+          sudo tee /var/ossec/etc/rules/.git/hooks/pre-commit << 'EOF'
+          #!/bin/bash
+          set -e
+          for f in $(git diff --cached --name-only --diff-filter=AM | grep "\.xml$"); do
+              xmllint --noout "$f" || exit 1
+          done
+          # 또는 wazuh-analysisd -t (root 권한 시)
+          sudo /var/ossec/bin/wazuh-analysisd -t > /dev/null
+          EOF
+          chmod +x .git/hooks/pre-commit
+        결과: git commit 직전 자동 syntax 검증. 잘못된 XML commit 방지.
+        운영 해석: enterprise 표준. PR review 전 자동 차단.
+      - |
+        **[OSS] GitHub Actions / GitLab CI (PR 검증)** — 자동화.
+          # .github/workflows/wazuh-rules.yml
+          name: Validate Wazuh Rules
+          on: [pull_request]
+          jobs:
+            validate:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v3
+                - run: sudo apt install -y libxml2-utils
+                - run: |
+                    for f in $(find . -name "*.xml" -path "*/wazuh-rules/*"); do
+                        xmllint --noout "$f"
+                    done
+                # docker 로 wazuh-analysisd 검증 (옵션)
+                - run: |
+                    docker run --rm -v $(pwd):/rules wazuh/wazuh-manager \
+                        /var/ossec/bin/wazuh-analysisd -t
+        결과: PR 마다 자동 검증. main merge 전 차단.
+        운영 해석: enterprise 룰 lifecycle. validation → review → deploy.
+      - |
+        **[OSS] Wazuh Dashboard validate** — GUI 자동.
+          # 1. https://10.20.30.100/ → Rules editor
+          # 2. 룰 작성 후 "Validate" 버튼 클릭
+          # 3. 자동으로 wazuh-analysisd -t 호출
+          # 4. 결과 표시:
+          # - OK: "Rules validated successfully"
+          # - Error: "Line N: ..."
+          # 5. validate 통과 후에만 "Save" 버튼 활성화
+        UI 동작: 자동 validate + 시각적 결과 + save block.
+        운영 해석: 신규 분석가도 안전 작성. CLI 미숙해도 syntax error 사전 차단.
       negative_signs:
       - -t 없이 analysisd 실행(foreground)
       - 에러 무시
@@ -228,6 +536,80 @@ steps:
       - service wazuh-manager restart (init.d)
       - Wazuh API POST /manager/restart
       - journalctl -u wazuh-manager -f 로 실시간
+      - |
+        **[OSS] systemctl + is-active (표준)** — 검증 통합.
+          # 1. restart + 검증
+          sudo systemctl restart wazuh-manager && systemctl is-active wazuh-manager
+          # 2. restart 시간 측정
+          time sudo systemctl restart wazuh-manager
+          # 3. is-active retry
+          for i in 1 2 3; do
+              sleep 2
+              if systemctl is-active wazuh-manager | grep -q "^active$"; then echo "OK after $i"; break; fi
+          done
+          # 4. 모든 wazuh service 일괄
+          for svc in wazuh-manager wazuh-indexer wazuh-dashboard; do
+              echo -n "$svc: "
+              systemctl is-active $svc
+          done
+        예상 출력 `active / real 0m3.234s / wazuh-manager: active / wazuh-indexer: active`.
+        운영 해석: 3-5초 정상. 10초+ 시 OOM / 룰 컴파일 부하 의심.
+      - |
+        **[OSS] wazuh-control restart (자체 도구)** — 통합.
+          # 1. wazuh-control 로 restart
+          sudo /var/ossec/bin/wazuh-control restart
+          # 2. 모든 데몬 status 검증
+          sudo /var/ossec/bin/wazuh-control status
+          # 3. journal 로 startup 확인
+          sudo journalctl -u wazuh-manager --since "1 min ago" | grep -E "Starting|Started"
+          # 4. 단일 데몬 restart (예: analysisd 만)
+          sudo /var/ossec/bin/wazuh-control stop
+          sudo /var/ossec/bin/wazuh-control start
+        예상 출력 `Stopping... wazuh-modulesd: Stopped / Starting wazuh-analysisd... started`.
+        운영 해석: systemd vs wazuh-control = 동등. wazuh-control 이 데몬별 status 더 명확.
+      - |
+        **[OSS] Wazuh API restart endpoint** — programmatic.
+          # 1. JWT 토큰
+          TOKEN=$(curl -sk -u wazuh-wui:wazuh-wui -X POST "https://localhost:55000/security/user/authenticate?raw=true")
+          # 2. restart
+          curl -sk -X PUT -H "Authorization: Bearer $TOKEN" "https://localhost:55000/manager/restart" | jq
+          # 3. restart 결과 polling
+          for i in 1..30; do
+              sleep 1
+              status=$(curl -sk -H "Authorization: Bearer $TOKEN" "https://localhost:55000/manager/status" | jq -r '.data.affected_items[0].wazuh_manager')
+              echo "$status"
+              [ "$status" = "running" ] && break
+          done
+        예상 출력 `{"data":{"affected_items":["restarted"]}} / running`.
+        운영 해석: REST API 자동화. SOAR / CI/CD 통합 표준.
+      - |
+        **[OSS] journalctl -f (실시간 monitor)** — restart 실패 진단.
+          # 1. 실시간 watch
+          sudo journalctl -u wazuh-manager -f &
+          # 2. 다른 터미널에서 restart
+          sudo systemctl restart wazuh-manager
+          # 3. journal 출력 분석
+          # - Started Wazuh manager... → 정상
+          # - failed to start → 분석
+          # 4. error 만 추출
+          sudo journalctl -u wazuh-manager --since "5 min ago" -p err
+        예상 출력 `Stopped Wazuh manager / Starting Wazuh manager... / Started Wazuh manager`.
+        운영 해석: restart 실패 시 즉시 root cause 식별. ossec.log 와 함께 사용.
+      - |
+        **[OSS] monit (자동 재시작 watchdog)** — 운영.
+          # 1. /etc/monit/conf.d/wazuh-manager
+          sudo tee /etc/monit/conf.d/wazuh-manager << 'EOF'
+          check process wazuh-manager with pidfile /var/ossec/var/run/wazuh-manager.pid
+              start program = "/bin/systemctl start wazuh-manager"
+              stop program = "/bin/systemctl stop wazuh-manager"
+              if not exists then restart
+              if 5 restarts within 5 cycles then alert
+          EOF
+          sudo systemctl reload monit
+          # 2. 상태
+          sudo monit status wazuh-manager
+        예상 출력 `Process 'wazuh-manager' / status: Running / monitoring status: Monitored`.
+        운영 해석: OOM / crash 자동 복구. 5회 실패 후 alert (loop 방지).
       negative_signs:
       - reload 로 시도(Wazuh 는 reload unsupported)
       - is-active 검증 누락
@@ -272,6 +654,78 @@ steps:
       - /var/ossec/bin/wazuh-logtest -U
       - cat /var/log/auth.log | wazuh-logtest
       - 실제 로그 주입 + tail alerts.json
+      - |
+        **[OSS] wazuh-logtest (룰 단위 테스트)** — 표준 도구.
+          # 1. stdin 으로 sample log 주입
+          echo 'Feb 01 12:34:56 host sudo:    root : 3 incorrect password attempts' | \
+              sudo /var/ossec/bin/wazuh-logtest 2>&1 | tail -15
+          # 2. verbose 모드 (decoder + rule 단계별)
+          echo 'sample' | sudo /var/ossec/bin/wazuh-logtest -v
+          # 3. quiet 모드 (자동화)
+          echo 'sample' | sudo /var/ossec/bin/wazuh-logtest -q | tail -3
+          # 4. 다중 sample 일괄 테스트
+          cat /tmp/sample-logs.txt | sudo /var/ossec/bin/wazuh-logtest
+        예상 출력 `**Phase 1: Completed pre-decoding / **Phase 2: Completed decoding / **Phase 3: Completed filtering / Rule id: '5402' / Description: 'sudo authentication failure'`.
+        운영 해석: 룰 unit test 표준. CI 통합 + decoder 추적.
+      - |
+        **[OSS] wazuh-logtest -t (test mode)** — CI 친화.
+          # 1. test mode 실행 (test cases 파일)
+          # /tmp/test-cases.json:
+          # [
+          #   {"description":"sudo brute","rule_id":"100100","logs":["Feb 01 ... sudo: root : 3 incorrect password attempts"]},
+          #   ...
+          # ]
+          # 2. Python script 로 통합
+          python3 << 'EOF'
+          import subprocess, json
+          tests = json.load(open('/tmp/test-cases.json'))
+          for t in tests:
+              for log in t['logs']:
+                  result = subprocess.run(['/var/ossec/bin/wazuh-logtest'], input=log.encode(), capture_output=True)
+                  if t['rule_id'] in result.stdout.decode():
+                      print(f"PASS: {t['description']}")
+                  else:
+                      print(f"FAIL: {t['description']}")
+          EOF
+        결과: 자동 PASS/FAIL 보고서.
+        운영 해석: 룰 회귀 테스트 표준. CI 통합 + PR 마다 자동.
+      - |
+        **[OSS] 실제 로그 주입 + tail alerts.json** — end-to-end test.
+          # 1. 실제 sudo 시도 시뮬 (web VM 에서)
+          ssh ccc@10.20.30.80 "for i in 1 2 3; do echo 'wrongpw' | sudo -S /bin/true 2>&1 | head -1; done"
+          # 2. wazuh-agent 가 auth.log 수집 + manager 전송
+          # 3. siem 의 alerts.json 에서 rule.id 100100 확인 (1-2분 지연)
+          ssh ccc@10.20.30.100 "sudo grep -c '\"id\":\"100100\"' /var/ossec/logs/alerts/alerts.json"
+          # 4. 또는 wazuh-logtest 로 즉시 검증
+          echo 'log sample' | sudo /var/ossec/bin/wazuh-logtest
+        예상 출력 `wrong / wrong / wrong / alerts.json: 1 (rule 100100 fired)`.
+        운영 해석: end-to-end (agent → manager → alerts.json) 검증 표준. 단순 logtest 보다 실 운영 환경 검증.
+      - |
+        **[OSS] Wazuh Dashboard rule simulator** — GUI.
+          # 1. https://10.20.30.100/ → Server management → Decoders/Rules
+          # 2. UI 동작:
+          # - "Test ruleset" 버튼
+          # - sample log 입력 (textarea)
+          # - "Test" 클릭
+          # - 결과 표시:
+          #   - matched decoder
+          #   - matched rule
+          #   - level, description
+          #   - 파일명 + 라인
+          # 3. 다중 sample 일괄 테스트
+        UI 동작: 시각적 룰 테스트.
+        운영 해석: 신규 분석가도 빠른 검증. CLI wazuh-logtest 와 동등 기능.
+      - |
+        **[OSS] sigma test framework (multi-rule)** — Sigma 표준.
+          # 1. Sigma 룰 + test cases
+          # rules/sudo-brute.yml + tests/sudo-brute_test.json
+          # 2. sigma-cli test
+          sigma test --target wazuh /tmp/sigma-rules/sudo-brute.yml --testdata /tmp/sigma-rules/sudo-brute_test.json
+          # 3. CI 통합
+          # script:
+          #   - sigma test --target wazuh rules/ --testdata tests/
+        결과: Sigma 룰 + Wazuh 변환 + 회귀 테스트 통합.
+        운영 해석: Sigma 표준 환경의 룰 lifecycle 표준.
       negative_signs:
       - sample log format 오류(syslog 포맷 필수)
       - sudo 없이 실행(권한 오류)
@@ -316,6 +770,75 @@ steps:
       - Wazuh Dashboard filter rule.id:100100
       - curl Wazuh API /alerts?rule.id=100100
       - Kibana Discover + rule.id
+      - |
+        **[OSS] jq + grep (rule.id 정밀 검색)** — 표준.
+          # 1. 단순 grep + tail
+          sudo grep '"id":"100100"' /var/ossec/logs/alerts/alerts.json | tail -5
+          # 2. jq 정밀 (rule.id 정확 매칭)
+          sudo jq -c 'select(.rule.id=="100100")' /var/ossec/logs/alerts/alerts.json | tail -5
+          # 3. 핵심 필드만 추출
+          sudo jq -r 'select(.rule.id=="100100") | [.timestamp, .agent.name, .full_log] | @tsv' /var/ossec/logs/alerts/alerts.json
+          # 4. 시간 범위 + count
+          sudo jq -c --arg since "$(date -u -d '1 hour ago' +%FT%T)" \
+              'select(.rule.id=="100100" and .timestamp > $since)' \
+              /var/ossec/logs/alerts/alerts.json | wc -l
+        예상 출력 `5 alerts / 2026-05-06T14:23:00 secu sudo failed 3x / 1h count: 2`.
+        운영 해석: jq = JSON 정확. grep = 빠른 검색. 둘 다 운영 표준.
+      - |
+        **[OSS] Wazuh Dashboard rule.id 검색** — GUI.
+          # 1. https://10.20.30.100/ → Security events
+          # 2. KQL 검색
+          # rule.id: "100100"
+          # 3. 시간 범위 + filter
+          # rule.id: "100100" and rule.level >= 10
+          # 4. drill-down: 각 alert 클릭 → 원본 raw event + decoder
+          # 5. CSV / JSON export
+        UI 동작: 시각적 검색 + drill-down.
+        운영 해석: SOC 분석가 1차 도구. CLI 보다 빠른 검색 + 시간대 분포.
+      - |
+        **[OSS] Wazuh API (alerts query)** — programmatic.
+          # 1. JWT 토큰
+          TOKEN=$(curl -sk -u wazuh-wui:wazuh-wui -X POST "https://localhost:55000/security/user/authenticate?raw=true")
+          # 2. Indexer 직접 (alerts query)
+          curl -sk -u admin:admin -X POST "https://localhost:9200/wazuh-alerts-*/_search" \
+              -H "Content-Type: application/json" \
+              -d '{
+                "query": {"term": {"rule.id": "100100"}},
+                "sort": [{"timestamp": "desc"}],
+                "size": 5
+              }' | jq '.hits.hits[]._source | {ts: .timestamp, agent: .agent.name, rule: .rule.description}'
+        예상 출력 `[{ts:"...", agent:"secu", rule:"Multiple sudo failures"}, ...]`.
+        운영 해석: 자동화 + custom dashboard 통합 표준.
+      - |
+        **[OSS] OpenSearch _search aggregation** — 통계.
+          # 1. rule.id 100100 의 시간대 별 발생
+          curl -sk -u admin:admin -X POST "https://localhost:9200/wazuh-alerts-*/_search" \
+              -H "Content-Type: application/json" \
+              -d '{
+                "size":0,
+                "query":{"term":{"rule.id":"100100"}},
+                "aggs":{
+                  "by_hour":{
+                    "date_histogram":{"field":"timestamp","calendar_interval":"hour"}
+                  },
+                  "by_agent":{
+                    "terms":{"field":"agent.name"}
+                  }
+                }
+              }' | jq '.aggregations'
+        예상 출력 `{"by_hour":[{"key_as_string":"2026-05-06T14:00:00","doc_count":3},...],"by_agent":[{"key":"secu","doc_count":5}]}`.
+        운영 해석: 시간대 + agent 분포 자동 집계. SOC 분석가 표준.
+      - |
+        **[OSS] evebox / scirius (multi-source hunt)** — 다중 도구.
+          # 1. evebox 의 검색 (Suricata 기반이지만 Wazuh JSON 도 호환)
+          # 2. 또는 lnav 로 alerts.json + ossec.log 동시 view
+          sudo lnav /var/ossec/logs/alerts/alerts.json /var/ossec/logs/ossec.log
+          # 3. 내장 SQL query
+          # :;SELECT count(*), rule_id FROM ossec_log GROUP BY rule_id ORDER BY 1 DESC LIMIT 10;
+          # 4. 검색 + 점프
+          # /100100
+        UI 동작: 다중 source 통합.
+        운영 해석: GUI 없는 SSH 환경 표준. evebox 의 wazuh 버전.
       negative_signs:
       - 따옴표 이스케이프 실수
       - alerts.log(text) 와 혼동
@@ -370,6 +893,71 @@ steps:
       - journalctl -u wazuh-manager -p err
       - sudo tail -f /var/ossec/logs/ossec.log | grep ERROR
       - Wazuh Dashboard Management Logs
+      - |
+        **[OSS] grep (ERROR 라인 검색)** — 표준.
+          # 1. ERROR + tail
+          sudo grep -i ERROR /var/ossec/logs/ossec.log | tail -5
+          # 2. 다중 키워드 (ERROR/WARNING/CRITICAL)
+          sudo grep -iE "ERROR|CRITICAL|WARNING" /var/ossec/logs/ossec.log | tail -10
+          # 3. 시간 범위 (오늘 기록)
+          sudo grep "$(date '+%Y/%m/%d')" /var/ossec/logs/ossec.log | grep -i ERROR
+          # 4. 카운트 (ERROR 발생 빈도)
+          sudo grep -c ERROR /var/ossec/logs/ossec.log
+          # 5. 컨텍스트 (-B / -A 로 전후 라인)
+          sudo grep -B 2 -A 2 ERROR /var/ossec/logs/ossec.log | tail -20
+        예상 출력 `2026/05/06 14:23:00 wazuh-analysisd: ERROR: ... / Total ERROR count: 5`.
+        운영 해석: 정기 점검 표준. ERROR 폭증 시 즉시 분석.
+      - |
+        **[OSS] journalctl + priority filter** — systemd journal.
+          # 1. wazuh-manager 의 ERROR 만
+          sudo journalctl -u wazuh-manager -p err --since today
+          # 2. 모든 wazuh service 통합
+          sudo journalctl -u 'wazuh-*' -p err --since today
+          # 3. 실시간
+          sudo journalctl -u wazuh-manager -p err -f
+          # 4. error level 통계
+          sudo journalctl -u wazuh-manager --since today --output=json | jq -r '.PRIORITY' | sort | uniq -c
+        예상 출력 `Mar 6 14:23 secu wazuh-analysisd: ERROR: ... / 5 ERROR / 12 WARNING`.
+        운영 해석: ossec.log + journal 양쪽 확인. journalctl 이 systemd 친화적 + structured.
+      - |
+        **[OSS] Wazuh Dashboard Management Logs** — GUI.
+          # 1. https://10.20.30.100/ → Server management → Logs
+          # 2. UI:
+          # - 로그 type 필터: error / warning / info / debug
+          # - daemon 별 필터: analysisd / remoted / monitord
+          # - 시간 범위 필터
+          # - 검색 box: "ERROR" 키워드
+          # 3. 결과를 CSV / JSON export
+        UI 동작: 시각적 로그 분석 + 다중 필터.
+        운영 해석: SOC 분석가 표준. CLI grep 보다 daemon + level 동시 필터.
+      - |
+        **[OSS] lnav (terminal log viewer)** — air-gap.
+          # 1. lnav 로 ossec.log 열기
+          sudo lnav /var/ossec/logs/ossec.log
+          # 2. 자동 timestamp 파싱 + level highlight
+          # 3. 내장 SQL query
+          # :;SELECT count(*), log_level FROM ossec_log GROUP BY log_level
+          # 4. 검색
+          # /ERROR
+          # 5. 시간 범위 필터
+          # :filter-in last 1 hour
+        UI 동작: ncurses + 자동 파싱 + SQL.
+        운영 해석: GUI 없는 환경. ssh 만으로 분석.
+      - |
+        **[OSS] Prometheus alerts (자동 모니터링)** — 시계열.
+          # 1. wazuh-exporter 로 ossec.log error 카운트 metric
+          # 2. Prometheus alert rule
+          # /etc/prometheus/rules/wazuh.yml:
+          # groups:
+          # - name: wazuh
+          #   rules:
+          #   - alert: WazuhManagerErrorSpike
+          #     expr: increase(wazuh_manager_errors_total[5m]) > 10
+          #     annotations:
+          #       summary: "Wazuh Manager error spike"
+          # 3. AlertManager 로 Slack/email 알림
+        결과: ERROR 급증 시 자동 알림.
+        운영 해석: 24h 자동 감시. ossec.log 의 ERROR 변화 추세 추적.
       negative_signs:
       - 다른 로그 파일(alerts.json)
       - 전체 ossec.log cat
@@ -407,6 +995,69 @@ steps:
       - xmlstarlet ed -d //rule[@id="100100"] local_rules.xml
       - vim 수동 편집
       - git revert 커밋(rule 추가 전 상태)
+      - |
+        **[OSS] sed range pattern** — 표준.
+          # 1. 백업
+          sudo cp /var/ossec/etc/rules/local_rules.xml{,.bak}
+          # 2. <group> 블록 단위 삭제
+          sudo sed -i '/<group name="local,syslog,sudo,">/,/<\/group>/d' /var/ossec/etc/rules/local_rules.xml
+          # 3. 또는 <rule id="100100"> 시작 ~ </group>
+          sudo sed -i '/<rule id="100100"/,/<\/group>/d' /var/ossec/etc/rules/local_rules.xml
+          # 4. 검증
+          sudo grep -c '100100' /var/ossec/etc/rules/local_rules.xml   # 0 = OK
+          sudo /var/ossec/bin/wazuh-analysisd -t
+        예상 출력 `0 / Configuration loaded`.
+        운영 해석: range pattern 정확. 시작/끝 매칭 잘못하면 너무 많이 삭제.
+      - |
+        **[OSS] xmlstarlet (XML 정밀 삭제)** — 표준.
+          # 1. xmlstarlet 설치
+          sudo apt install xmlstarlet
+          # 2. XPath 로 정확 매칭 + 삭제
+          sudo xmlstarlet ed -d "//rule[@id='100100']" /var/ossec/etc/rules/local_rules.xml > /tmp/local_rules-new.xml
+          sudo mv /tmp/local_rules-new.xml /var/ossec/etc/rules/local_rules.xml
+          # 3. 부모 group 도 비어있으면 함께 삭제
+          sudo xmlstarlet ed -d "//group[count(rule)=0]" /var/ossec/etc/rules/local_rules.xml
+        예상 출력: 정확히 rule id 100100 만 삭제. 다른 룰 영향 없음.
+        운영 해석: sed 보다 정확. XML 구조 인식 = 다른 rule 우연 삭제 방지.
+      - |
+        **[OSS] Wazuh Dashboard Rules editor** — GUI.
+          # 1. https://10.20.30.100/ → Rules → Custom rules
+          # 2. UI 동작:
+          # - rule id 100100 검색
+          # - 결과 클릭 → "Delete" 버튼
+          # - confirm dialog → 변경 사유 입력
+          # - "Save and restart" 자동 호출
+          # 3. CLI 검증
+          ssh ccc@10.20.30.100 "sudo grep '100100' /var/ossec/etc/rules/local_rules.xml"
+        UI 동작: 시각적 삭제 + audit log + auto restart.
+        운영 해석: 신규 분석가도 안전. CLI sed range 오타 위험 회피.
+      - |
+        **[OSS] git revert (rollback)** — version control.
+          # 1. /var/ossec/etc/rules 가 git 관리 시
+          cd /var/ossec/etc/rules
+          # 2. rule 추가 commit 찾기
+          sudo git log --oneline | grep "100100"
+          # 3. revert 또는 checkout
+          sudo git revert <commit_hash> --no-edit
+          # 또는 즉시 복원
+          sudo git checkout HEAD~1 -- local_rules.xml
+          # 4. restart
+          sudo systemctl restart wazuh-manager
+        예상 출력 `Revert "Add sudo brute rule" / [main abc123] Revert ...`.
+        운영 해석: git 관리 환경 표준 rollback. 1-command 복원.
+      - |
+        **[OSS] Ansible (state=absent IaC)** — 자동화.
+          # playbook
+          - name: Remove rule 100100 from local_rules.xml
+            ansible.builtin.blockinfile:
+              path: /var/ossec/etc/rules/local_rules.xml
+              marker: "<!-- {mark} ANSIBLE MANAGED rule 100100 -->"
+              state: absent
+            notify: restart wazuh-manager
+          # 실행
+          ansible-playbook -i inventory.yml remove-rule.yml --diff
+        예상 출력 `changed: [siem] / removed: <group name="local,syslog,sudo,">...</group>`.
+        운영 해석: 다중 host 일관 cleanup. marker 로 정확 매칭.
       negative_signs:
       - range 끝 pattern 오타(group 이 아닌 다른 태그)
       - 너무 넓게 삭제 (전체 group 섹션)
@@ -447,6 +1098,67 @@ steps:
       - Wazuh API POST /manager/restart
       - wazuh-analysisd -t 로 사전 검증 후 restart
       - journalctl -u wazuh-manager -f 로 실시간 모니터링
+      - |
+        **[OSS] systemctl restart + 사전 검증** — production 표준.
+          # 1. 사전 검증 (syntax error 시 service down 방지)
+          sudo /var/ossec/bin/wazuh-analysisd -t || { echo "FAIL: 룰 syntax error"; exit 1; }
+          # 2. restart
+          sudo systemctl restart wazuh-manager
+          # 3. is-active 검증 (3 retry)
+          for i in 1 2 3; do
+              sleep 2
+              if systemctl is-active wazuh-manager | grep -q "^active$"; then echo "OK"; break; fi
+          done
+        예상 출력 `Configuration loaded / OK`.
+        운영 해석: validate → restart → verify 의 3 단계. validate 없이 restart 위험.
+      - |
+        **[OSS] wazuh-control restart (자체 도구)** — daemon 단위.
+          # 1. 모든 데몬 stop + start
+          sudo /var/ossec/bin/wazuh-control restart
+          # 2. 데몬 별 status
+          sudo /var/ossec/bin/wazuh-control status
+          # 3. analysisd 만 restart (rule 변경 시)
+          sudo /var/ossec/bin/wazuh-control stop
+          sudo /var/ossec/bin/wazuh-control start
+        예상 출력 `wazuh-modulesd: Stopped / wazuh-analysisd: Started ... All daemons started`.
+        운영 해석: systemctl 보다 데몬 별 진단 명확.
+      - |
+        **[OSS] Wazuh API restart endpoint** — programmatic.
+          # 1. JWT 토큰
+          TOKEN=$(curl -sk -u wazuh-wui:wazuh-wui -X POST "https://localhost:55000/security/user/authenticate?raw=true")
+          # 2. restart
+          curl -sk -X PUT -H "Authorization: Bearer $TOKEN" "https://localhost:55000/manager/restart"
+          # 3. polling 으로 status 확인
+          for i in 1..30; do
+              sleep 1
+              status=$(curl -sk -H "Authorization: Bearer $TOKEN" "https://localhost:55000/manager/info" 2>/dev/null | jq -r '.data.affected_items[0].status' 2>/dev/null)
+              [ "$status" = "running" ] && break
+          done
+        예상 출력 `{"data":{"affected_items":["restarted"]}} / running`.
+        운영 해석: SOAR / CI 통합. Wazuh GUI 가 사용하는 동일 API.
+      - |
+        **[OSS] journalctl -f (실시간 monitor)** — 진단.
+          # 1. 별도 터미널에서 watch
+          sudo journalctl -u wazuh-manager -f &
+          # 2. restart 실행
+          sudo systemctl restart wazuh-manager
+          # 3. journal 출력 분석:
+          # - "Stopped Wazuh manager" → "Started Wazuh manager" 정상
+          # - "failed to start" → 분석 필요
+          # 4. error 만 추출
+          sudo journalctl -u wazuh-manager --since "5 min ago" -p err
+        예상 출력 `Stopped wazuh manager / Starting... / Started wazuh manager`.
+        운영 해석: restart 실패 시 즉시 root cause 식별.
+      - |
+        **[OSS] /var/ossec/logs/ossec.log 실시간 + tail** — 보조 진단.
+          # 1. ossec.log 실시간
+          sudo tail -f /var/ossec/logs/ossec.log
+          # 2. restart 직후 startup 메시지
+          sudo grep "Started" /var/ossec/logs/ossec.log | tail -5
+          # 3. ERROR 발생 시
+          sudo grep -A 3 "ERROR" /var/ossec/logs/ossec.log | tail -20
+        예상 출력 `2026/05/06 14:23:00 wazuh-modulesd: Started / 2026/05/06 14:23:01 wazuh-analysisd: Started`.
+        운영 해석: journalctl + ossec.log 양쪽 확인. systemd 외 wazuh 자체 로그 = 더 상세.
       negative_signs:
       - restart 후 검증 누락
       - active 아님에도 정상 판정
@@ -536,6 +1248,112 @@ steps:
       - siem 에서 sudo /var/ossec/bin/wazuh-analysisd -t 검증
       - siem 에서 echo JSON | sudo /var/ossec/bin/wazuh-logtest
       - siem 에서 echo JSON | sudo tee -a payment-app.log + alerts.json 확인
+      - |
+        **[OSS] localfile + decoder + rule chain (Wazuh 표준)** — full pipeline.
+          # Phase A: ossec.conf 의 localfile 등록
+          sudo tee -a /var/ossec/etc/ossec.conf << 'EOF'
+          <ossec_config>
+            <localfile>
+              <log_format>json</log_format>
+              <location>/var/log/payment-app.log</location>
+            </localfile>
+          </ossec_config>
+          EOF
+
+          # Phase B: decoder + rule
+          sudo tee -a /var/ossec/etc/decoders/local_decoder.xml << 'EOF'
+          <decoder name="payment-app">
+            <prematch>"event":"</prematch>
+          </decoder>
+          <decoder name="payment-app-fields">
+            <parent>payment-app</parent>
+            <regex>"event":"(\S+)","user":"(\S+)","src":"(\S+)"</regex>
+            <order>event_name,user,src_ip</order>
+          </decoder>
+          EOF
+
+          sudo tee -a /var/ossec/etc/rules/local_rules.xml << 'EOF'
+          <group name="payment-app,custom,">
+            <rule id="100400" level="10">
+              <decoded_as>payment-app</decoded_as>
+              <field name="event_name">login_fail</field>
+              <description>Payment app login failure</description>
+            </rule>
+          </group>
+          EOF
+
+          # Phase C: 검증
+          sudo /var/ossec/bin/wazuh-analysisd -t
+          sudo systemctl restart wazuh-manager
+        예상 출력 `Configuration loaded / wazuh-manager active`.
+        운영 해석: localfile + decoder + rule = Wazuh 의 *표준 custom log* pipeline.
+      - |
+        **[OSS] wazuh-logtest (3 phase 검증)** — pipeline test.
+          # Phase 1 (pre-decoding) + Phase 2 (decoding) + Phase 3 (filtering rule)
+          echo '{"event":"login_fail","user":"alice","src":"1.2.3.4"}' | sudo /var/ossec/bin/wazuh-logtest 2>&1 | tail -20
+          # 단계별 출력:
+          # Phase 1: full event = 'JSON 자체'
+          # Phase 2: decoder 'payment-app' / extracted fields (event_name=login_fail, user=alice, src_ip=1.2.3.4)
+          # Phase 3: matched rule id 100400, level 10, description "Payment app login failure"
+        예상 출력 (3 phase 모두 매칭):
+        ```
+        **Phase 1: Completed pre-decoding.
+               full event: '{"event":"login_fail",...'
+        **Phase 2: Completed decoding.
+               name: 'payment-app'
+               event_name: 'login_fail'
+        **Phase 3: Completed filtering (rules).
+               Rule id: '100400'
+        ```
+        운영 해석: 3 phase 단계별 추적. phase 2 부재 = decoder 문제. phase 3 부재 = rule logic 문제.
+      - |
+        **[OSS] tee + tail + jq (end-to-end log 주입)** — 통합 검증.
+          # 1. log 파일에 직접 JSON 주입
+          echo '{"event":"login_fail","user":"alice","src":"1.2.3.4"}' | sudo tee -a /var/log/payment-app.log
+          # 2. 1-2 분 대기 (wazuh-agent 가 manager 전송)
+          sleep 30
+          # 3. alerts.json 에서 rule.id 100400 확인
+          sudo tail -50 /var/ossec/logs/alerts/alerts.json | jq -c 'select(.rule.id=="100400")'
+          # 4. 다중 event 일괄 시뮬
+          for u in alice bob carol; do
+              echo "{\"event\":\"login_fail\",\"user\":\"$u\",\"src\":\"1.2.3.4\"}" | sudo tee -a /var/log/payment-app.log
+          done
+        예상 출력 `{"rule":{"id":"100400","description":"Payment app login failure"},"data":{"event_name":"login_fail","user":"alice","src_ip":"1.2.3.4"}}`.
+        운영 해석: end-to-end test = 실제 운영 환경 검증. logtest 만으론 불충분.
+      - |
+        **[OSS] Wazuh Dashboard Decoders editor** — GUI.
+          # 1. https://10.20.30.100/ → Server management → Decoders
+          # 2. UI 동작:
+          # - Custom decoders tab → local_decoder.xml
+          # - "Add new decoder" 버튼
+          # - 폼: name / prematch / parent / regex / order
+          # - "Test decoder" 으로 sample log 검증
+          # 3. Rules tab 에서 decoded_as 매칭 룰 작성
+          # 4. CLI 검증
+          ssh ccc@10.20.30.100 "sudo cat /var/ossec/etc/decoders/local_decoder.xml"
+        UI 동작: decoder + rule 통합 GUI.
+        운영 해석: 신규 분석가도 안전. CLI XML 편집 위험 회피.
+      - |
+        **[OSS] sigma → Wazuh decoder pattern** — 표준 룰.
+          # 1. Sigma 룰 작성 (JSON 형식 매칭)
+          cat > /tmp/payment-fail.yml << 'EOF'
+          title: Payment App Login Failure
+          status: experimental
+          logsource:
+              product: payment-app
+          detection:
+              selection:
+                  event: login_fail
+              condition: selection
+          level: high
+          tags:
+              - attack.credential_access
+              - attack.t1110.001
+          EOF
+          # 2. Wazuh 변환 (decoder + rule 동시)
+          sigma convert -t wazuh /tmp/payment-fail.yml
+        예상 출력 `<decoder name="..."><parent>...</parent></decoder><rule id="..."><decoded_as>...</decoded_as><field name="event">login_fail</field></rule>`.
+        운영 해석: Sigma 표준 → Wazuh decoder + rule 자동 변환. 다중 SIEM 호환.
       negative_signs:
       - decoder 없이 rule 만 (decoded_as 매칭 안 됨)
       - wazuh-logtest 단계 1/2/3 미검증
