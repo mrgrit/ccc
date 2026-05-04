@@ -43,6 +43,68 @@ steps:
       - cat /var/lib/suricata/update/cache/index.yaml
       - apt/dnf 로 snort rules 대체
       - git clone ET rules 수동
+      - |
+        **[OSS] suricata-update list-sources** — OISF 공식 룰셋 인덱스 도구.
+          # 1. 모든 사용 가능한 source (free + commercial)
+          sudo suricata-update list-sources 2>&1 | head -30
+          # 2. 카테고리별 (free 만)
+          sudo suricata-update list-sources --free
+          # 3. 활성화된 source 만
+          sudo suricata-update list-enabled-sources
+          # 4. source 상세 정보 (license / vendor)
+          sudo suricata-update list-sources --search emerging
+        예상 출력 `et/open / Vendor: Proofpoint / Summary: Emerging Threats Open Ruleset / License: MIT`.
+        운영 해석: 운영 환경에서 적절한 source 선택의 시작점. 무료 (et/open) vs 유료 (et/pro) 비교 + license 확인 표준.
+      - |
+        **[OSS] suricata-update index 직접 검색** — yaml 카탈로그.
+          # 1. cache 된 index 직접 보기
+          sudo cat /var/lib/suricata/update/cache/index.yaml | head -30
+          # 2. yq 로 source 추출
+          sudo yq '.sources | keys' /var/lib/suricata/update/cache/index.yaml
+          # 3. 특정 source 의 url 확인
+          sudo yq '.sources["et/open"]' /var/lib/suricata/update/cache/index.yaml
+          # 4. index 갱신 (네트워크 접근)
+          sudo suricata-update update-sources
+        예상 출력 `["et/open", "et/pro", "oisf/trafficid", "ptresearch/attackdetection", ...]`.
+        운영 해석: yaml 직접 분석 = 자동화 script 작성 시 source 메타정보 추출.
+      - |
+        **[OSS] scirius (룰 source 통합 GUI)** — Stamus Networks 표준.
+          # 1. https://scirius:8000/sources 접속
+          # 2. UI 동작:
+          # - 새 source 추가: "+ Add Source" 버튼
+          # - source type 선택: HTTP URL / Local file / git
+          # - 자동 fetch 주기 설정 (daily / weekly)
+          # - 활성/비활성 toggle
+          # 3. ruleset 기반 카테고리화
+          # - et/open → 30K 룰을 카테고리 (web / sql / dos) 별로 enable/disable
+        UI 동작: source 추가 + ruleset 분리 관리. 룰별 enable/disable.
+        운영 해석: 30K 룰 환경에서 사람이 *불필요한 카테고리* 비활성 = 성능 + FP 감소.
+      - |
+        **[OSS] OPNsense / pfSense Suricata plugin** — production GUI.
+          # OPNsense web UI
+          # 1. Services → Intrusion Detection → Download
+          # 2. 사용 가능 ruleset 목록 (et/open, abuse-ch, OISF 등)
+          # 3. 다운로드 버튼 클릭 → 자동 적용
+          # 4. CLI 검증 (BSD)
+          ssh root@opnsense
+          ls /usr/local/etc/suricata/rules/
+          /usr/local/etc/rc.d/suricata onestatus
+        결과: GUI 의 ruleset 목록 + 다운로드 진행 상태.
+        운영 해석: enterprise firewall appliance 표준. nft + Suricata 통합. lab 환경의 Linux 패키지와 동일 source 다른 frontend.
+      - |
+        **[OSS] git clone (custom private rule repo)** — enterprise 환경.
+          # 1. 사내 사설 ruleset git repo 사용
+          mkdir -p /var/lib/suricata/private-rules
+          cd /var/lib/suricata/private-rules
+          git clone https://gitlab.internal.example.com/security/suricata-rules.git .
+          # 2. suricata-update source 등록
+          sudo suricata-update enable-source private https://gitlab.internal.example.com/security/suricata-rules.git
+          # 3. 자동 sync (cron)
+          echo "0 3 * * * cd /var/lib/suricata/private-rules && git pull && suricata-update" | sudo crontab -
+          # 4. git 변경 audit
+          git -C /var/lib/suricata/private-rules log --oneline -10
+        결과: 사내 룰셋의 git history + 매일 자동 sync.
+        운영 해석: 사내 customized rule (회사 자체 attack pattern) 관리 표준. git audit + CI 통합.
       negative_signs:
       - list-sources 명령 오타
       - head 없이 너무 많은 출력
@@ -82,6 +144,75 @@ steps:
       - vim /etc/suricata/update.yaml 에 sources 블록 수동
       - Ansible community.general.suricata_rule_source 모듈
       - suricata-update disable-source / remove-source 대응
+      - |
+        **[OSS] suricata-update enable-source (공식 source 활성)** — 표준.
+          # 1. et/open 활성화
+          sudo suricata-update enable-source et/open
+          # 2. 활성 status 검증
+          sudo suricata-update list-enabled-sources
+          # 3. update.yaml 자동 갱신 검증
+          sudo cat /var/lib/suricata/update/sources.yaml
+          # 4. 즉시 다운로드 (다음 sync 까지 안 기다림)
+          sudo suricata-update --no-test
+        예상 출력 `Source: et/open / Status: enabled / 30000 rules loaded`.
+        운영 해석: enable-source 후 *반드시* suricata-update 실행 = 룰 다운로드. enable 만으로는 룰 적재 X.
+      - |
+        **[OSS] suricata-update add-source (사설 source)** — 사설 ruleset.
+          # 1. 사설 URL source 추가
+          sudo suricata-update add-source private-rules https://gitlab.internal.example.com/security/rules.tar.gz
+          # 2. authentication (HTTP basic / Bearer token)
+          sudo suricata-update add-source private-rules https://...rules.tar.gz \
+            --http-header "Authorization: Bearer $TOKEN"
+          # 3. checksum 검증 (security)
+          sudo suricata-update add-source private-rules https://...rules.tar.gz --checksum sha256
+        예상 출력 `Source: private-rules / URL: https://... / Status: added`.
+        운영 해석: 사내 사설 룰셋 환경. checksum 검증 = 룰 변조 방지 (supply chain attack 대비).
+      - |
+        **[OSS] scirius (web GUI source enable)** — 시각적 관리.
+          # 1. https://scirius:8000/sources 접속
+          # 2. UI 동작:
+          # - et/open source 옆 "Enable" toggle
+          # - 자동 fetch interval 선택 (daily / weekly)
+          # - SHA256 checksum 자동 검증
+          # 3. activity log 자동 audit
+          # - "Source et/open enabled by alice@example.com on 2026-05-06"
+          # 4. CLI 검증
+          ssh ccc@10.20.30.1 "sudo suricata-update list-enabled-sources"
+        UI 동작: enable + 자동 sync 설정 + audit log 통합.
+        운영 해석: 다중 source 환경 + 변경 audit 표준. compliance (누가 언제 무엇을 활성화) 자동.
+      - |
+        **[OSS] Ansible (community.general 모듈)** — IaC.
+          # playbook
+          - name: Enable et/open Suricata source
+            ansible.builtin.command:
+              cmd: suricata-update enable-source et/open
+            register: result
+            changed_when: "'has been enabled' in result.stdout"
+            notify: update suricata rules
+          - name: Disable noisy source
+            ansible.builtin.command:
+              cmd: suricata-update disable-source noisy/source
+          handlers:
+            - name: update suricata rules
+              ansible.builtin.command: suricata-update --no-test
+          # 실행
+          ansible-playbook -i inventory.yml suricata-source.yml --diff
+        예상 출력 `changed: [secu] / et/open enabled / rules updated`.
+        운영 해석: 다중 host 일관 enable. IaC 표준.
+      - |
+        **[OSS] suricata-update update.yaml 직접 편집** — fine-grained 제어.
+          # 1. /etc/suricata/update.yaml 편집
+          sudo vim /etc/suricata/update.yaml
+          # 또는 yq 로 in-place
+          sudo yq -i '.sources += [{"name":"et/open","enabled":true}]' /etc/suricata/update.yaml
+          # 2. 적용
+          sudo suricata-update --no-test
+          # 3. 영속 검증
+          sudo cat /etc/suricata/update.yaml
+          # 4. etckeeper 로 변경 audit
+          sudo etckeeper commit "Enable et/open Suricata source"
+        예상 출력 `sources: [{name: et/open, enabled: true, http-header: ..., checksum: sha256}]`.
+        운영 해석: 직접 yaml 편집 = 모든 옵션 (header, checksum, license) 세밀 제어. enable-source 명령은 일부 옵션 미지원.
       negative_signs:
       - enable 대신 add-source 오용
       - 다른 source 활성화
@@ -121,6 +252,86 @@ steps:
       - sudo suricata-update --etoro-url 로 custom ET url
       - 'cron: 0 3 * * * root /usr/bin/suricata-update && systemctl reload suricata'
       - CI/CD 파이프라인에 rule sync
+      - |
+        **[OSS] suricata-update + reload (production cycle)** — 일일 갱신 표준.
+          # 1. 다운로드 + merge + suricata -T 자동 검증
+          sudo suricata-update 2>&1 | tail -10
+          # 2. 검증 통과 후 즉시 reload (무중단)
+          sudo suricatasc -c reload-rules
+          # 3. 적재 룰 수 검증
+          sudo suricatasc -c "ruleset-stats" | jq
+        예상 출력 `Done. Loaded 30001 rules. / Writing rules to /var/lib/suricata/rules/suricata.rules / Testing with suricata -T...OK / {"loaded":30001,"failed":0}`.
+        운영 해석: production daily cycle. --no-test 옵션은 위험 (검증 skip).
+      - |
+        **[OSS] cron (자동 일일 갱신)** — production 운영 표준.
+          # 1. /etc/cron.d/suricata-update 작성
+          sudo tee /etc/cron.d/suricata-update << 'EOF'
+          # daily Suricata rule update at 3am
+          0 3 * * * root /usr/bin/suricata-update --no-progress 2>&1 | logger -t suricata-update && /usr/bin/suricatasc -c reload-rules >> /var/log/suricata/update.log 2>&1
+          EOF
+          # 2. 다음 실행 시각 확인
+          systemctl list-timers --all | grep suricata
+          # 3. 실행 로그 모니터링
+          sudo tail -f /var/log/suricata/update.log
+        예상 출력 `0 3 * * * root /usr/bin/suricata-update ... / Last log: 2026-05-06T03:00:01 - 30001 rules loaded`.
+        운영 해석: 매일 새벽 3시 자동 갱신 + reload. logger 로 syslog 기록 = SIEM 연동 자동.
+      - |
+        **[OSS] systemd timer (cron 대안)** — modern systemd 환경.
+          # 1. timer + service 작성
+          sudo tee /etc/systemd/system/suricata-update.service << 'EOF'
+          [Unit]
+          Description=Suricata Ruleset Update
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/bin/suricata-update --no-progress
+          ExecStartPost=/usr/bin/suricatasc -c reload-rules
+          EOF
+          sudo tee /etc/systemd/system/suricata-update.timer << 'EOF'
+          [Unit]
+          Description=Daily Suricata Update
+          [Timer]
+          OnCalendar=daily
+          RandomizedDelaySec=1h
+          Persistent=true
+          [Install]
+          WantedBy=timers.target
+          EOF
+          # 2. 활성화
+          sudo systemctl daemon-reload
+          sudo systemctl enable --now suricata-update.timer
+          # 3. 다음 실행 시각
+          systemctl list-timers suricata-update.timer
+        예상 출력 `Tue 2026-05-07 03:30:00 KST 16h left / suricata-update.timer / suricata-update.service`.
+        운영 해석: cron 대안. RandomizedDelaySec = 다중 host 동시 갱신 방지 (네트워크 부하 분산).
+      - |
+        **[OSS] CI/CD pipeline (git-driven rule sync)** — enterprise 표준.
+          # GitLab CI 예시 (.gitlab-ci.yml)
+          stages: [validate, deploy]
+          validate-rules:
+            stage: validate
+            script:
+              - sudo suricata-update --no-test
+              - sudo suricata -T -c /etc/suricata/suricata.yaml
+              - ftw run --include tests/   # 회귀 테스트
+          deploy-rules:
+            stage: deploy
+            only: [main]
+            script:
+              - ansible-playbook -i inventory.yml deploy-rules.yml
+        결과: PR 마다 자동 검증 + main merge 시 자동 배포.
+        운영 해석: 룰 변경의 *전체 lifecycle* 자동화. validation → review → deploy → audit 통합.
+      - |
+        **[OSS] suricata-update dry-run / verbose** — 디버깅.
+          # 1. dry-run (다운로드만, disk 미적용)
+          sudo suricata-update --dry-run
+          # 2. verbose (상세 로그)
+          sudo suricata-update -v --no-test
+          # 3. 특정 source 만 (디버깅 시)
+          sudo suricata-update --source-include et/open
+          # 4. cache 강제 갱신
+          sudo suricata-update --force
+        예상 출력 `Source: et/open / Downloading https://rules.emergingthreats.net/... / Loaded 30001 rules / Skipping save (--dry-run)`.
+        운영 해석: 룰 변경 영향 사전 분석. dry-run 으로 어떤 룰이 추가/제거되는지 미리 확인.
       negative_signs:
       - 출력 무시
       - 네트워크 에러 무시
@@ -161,6 +372,72 @@ steps:
       - sudo grep -cv ^# /var/lib/suricata/rules/suricata.rules(비주석 라인)
       - sudo du -sh /var/lib/suricata/rules/
       - ls -l /var/lib/suricata/rules/*.rules
+      - |
+        **[OSS] wc / grep (룰 카운트)** — 표준 텍스트 분석.
+          # 1. 전체 라인 (룰 + 주석 + 빈 라인)
+          sudo wc -l /var/lib/suricata/rules/suricata.rules
+          # 2. 실제 룰만 (주석 제외)
+          sudo grep -cE '^(alert|drop|reject|pass)' /var/lib/suricata/rules/suricata.rules
+          # 3. action 별 분포
+          sudo awk '/^[a-z]/ {print $1}' /var/lib/suricata/rules/suricata.rules | sort | uniq -c | sort -rn
+          # 4. category 별 분포 (sid 기준)
+          sudo grep -oE 'sid:[0-9]+' /var/lib/suricata/rules/suricata.rules | awk -F: '{print substr($2,1,3)"xxxxxx"}' | sort | uniq -c | sort -rn
+        예상 출력 `35042 / 30001 / 28500 alert / 1500 drop / 1 pass`.
+        운영 해석: action 별 분포로 ruleset 의 *공격적 정도* 측정. drop 다수 = production-ready ruleset.
+      - |
+        **[OSS] suricata --engine-analysis (룰 적재 통계)** — 공식 분석 도구.
+          # 1. 모든 룰의 keyword 분석
+          sudo suricata --engine-analysis -c /etc/suricata/suricata.yaml 2>&1 | tee /tmp/engine-analysis.log
+          # 2. 룰별 적재 시간 + 메모리
+          grep "loaded successfully" /tmp/engine-analysis.log
+          # 3. 비효율 룰 식별 (slow rule)
+          grep -A2 "slow rule" /tmp/engine-analysis.log
+          # 4. payload-only 룰 vs full 룰 분포
+          grep -E "payload-only|sticky" /tmp/engine-analysis.log | sort | uniq -c
+        예상 출력 `30001 rules loaded / 145 slow rules / 12500 payload-only rules`.
+        운영 해석: 단순 카운트 외 룰 *품질* 측정. slow rule 식별 → 튜닝 우선순위.
+      - |
+        **[OSS] sigma stats (Sigma 룰 통계)** — Sigma 룰 분석.
+          # 1. Sigma 룰 → Suricata 변환 후 카운트
+          sigma convert -t suricata /tmp/sigma/rules/ -o /tmp/sigma-suricata.rules
+          wc -l /tmp/sigma-suricata.rules
+          # 2. logsource 별 분포
+          for f in /tmp/sigma/rules/*.yml; do
+              yq '.logsource.product' "$f" 2>/dev/null
+          done | sort | uniq -c | sort -rn
+          # 3. severity 별 분포
+          for f in /tmp/sigma/rules/*.yml; do
+              yq '.level' "$f" 2>/dev/null
+          done | sort | uniq -c
+        예상 출력 `2500 sigma rules / 1200 windows / 800 linux / 500 web / level: 50 critical / 200 high / 1500 medium`.
+        운영 해석: Sigma 카탈로그 통계. 환경에 맞는 logsource 만 import = 무관 룰 제거.
+      - |
+        **[OSS] yq + jq (룰 메타데이터 추출)** — 자동화 분석.
+          # 1. JSON 으로 변환 (suricata 룰을 line-by-line)
+          awk '/^alert|^drop/ {print $0}' /var/lib/suricata/rules/suricata.rules | head -100 > /tmp/sample.rules
+          # 2. Python 으로 룰 파싱 + JSON 변환
+          python3 << 'EOF'
+          import re, json
+          with open('/tmp/sample.rules') as f:
+              rules = []
+              for line in f:
+                  m = re.search(r'sid:(\d+).*msg:"([^"]+)"', line)
+                  if m: rules.append({'sid': int(m.group(1)), 'msg': m.group(2)})
+              print(json.dumps(rules[:5], indent=2))
+          EOF
+        예상 출력 `[{"sid": 2003068, "msg": "ET POLICY GoToMyPC..."}, ...]`.
+        운영 해석: 룰 메타데이터 자동 추출 = inventory + audit 표준.
+      - |
+        **[OSS] scirius (web GUI 룰 통계)** — dashboard.
+          # 1. https://scirius:8000/dashboard 접속
+          # 2. UI 동작:
+          # - 좌측: total rules / enabled / disabled 카운트
+          # - 우측: ruleset 별 분포 (et/open / private / sigma)
+          # - timeline: 룰 변경 history
+          # - 카테고리별 drill-down
+          # 3. CSV / PDF 보고서 export
+        UI 동작: 대시보드 + drill-down + 보고서.
+        운영 해석: 일일/주간 ruleset 보고서 자동 생성. 경영진 보고용 표준.
       negative_signs:
       - 잘못된 경로(/etc/suricata/rules)
       - wc 대신 cat(너무 많은 출력)
@@ -205,6 +482,67 @@ steps:
       - Wazuh dashboard rule.groups suricata + top rule.description
       - python Counter(signatures).most_common(5)
       - awk 로 alert 라인 파싱(jq 없을 때)
+      - |
+        **[OSS] jq + sort/uniq pipeline (top N signature)** — SOC 분석 표준.
+          # 1. 최근 500 alert 의 signature 집계
+          sudo tail -500 /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert") | .alert.signature' 2>/dev/null | sort | uniq -c | sort -rn | head -10
+          # 2. 시간 범위 + signature_id 까지 (자동 ID lookup)
+          sudo jq -r 'select(.event_type=="alert" and .timestamp > "'$(date -u -d '1 hour ago' +%FT%T)'") | "\(.alert.signature_id)\t\(.alert.signature)"' /var/log/suricata/eve.json | sort | uniq -c | sort -rn | head
+          # 3. JSON 출력 (자동화 입력)
+          sudo jq -s '[.[] | select(.event_type=="alert") | .alert.signature] | group_by(.) | map({signature: .[0], count: length}) | sort_by(.count) | reverse | .[0:5]' /var/log/suricata/eve.json
+        예상 출력 `145 ET POLICY HTTP / 89 ET SCAN Nikto / 67 SQLi union select / 12 ET MALWARE Emotet`.
+        운영 해석: SOC 분석가 1차 도구. 빈도 분석 = (1) FP 의심 (2) 실제 공격 식별.
+      - |
+        **[OSS] evebox stats (web UI 통계 dashboard)** — alert hunt + aggregation.
+          # 1. evebox web UI (http://localhost:5636)
+          # 2. UI 동작:
+          # - 좌측 메뉴: Reports → Alerts by Signature
+          # - 시간 범위 선택 (1h / 24h / 7d)
+          # - 자동 top N 차트 + table
+          # 3. CLI 동등 query
+          evebox-cli search "event_type:alert" --max-events 1000 | jq -r '.alert.signature' | sort | uniq -c | sort -rn | head
+        UI 동작: 자동 차트 + drill-down. 마우스 클릭으로 signature 별 상세.
+        운영 해석: jq pipeline 의 GUI 버전. SOC 분석가 표준.
+      - |
+        **[OSS] Wazuh Dashboard (Suricata 통합 통계)** — SIEM dashboard.
+          # 1. https://10.20.30.100/app/wazuh#/overview 접속
+          # 2. Modules → Suricata 탭
+          # 3. KQL aggregation:
+          # rule.groups: "suricata" | top rule.description | size: 10
+          # 4. 시각적 통계:
+          # - bar chart: top signature
+          # - geo map: alert source 위치
+          # - timeline: 시간대별 alert 발생
+        UI 동작: enterprise SIEM dashboard. 다중 source (Suricata + Wazuh + Apache) 통합 통계.
+        운영 해석: 단일 IDS 외 *전체 보안 stack* 통합 view. 경영진 보고용 표준.
+      - |
+        **[OSS] scirius hunt (Suricata 전용 통계)** — Stamus.
+          # 1. https://scirius:8000/hunt 접속
+          # 2. UI 동작:
+          # - 자동 top signature 차트
+          # - signature 클릭 → 상세 (src/dst/payload/timeline)
+          # - "Investigate" 버튼 → flow 추적
+          # - drill-down: 시간대 / IP / payload 별
+          # 3. 빠른 필터:
+          # - signature_severity:1 (high)
+          # - last hour
+          # - top 10 src
+        UI 동작: Suricata 특화 hunt. evebox 보다 분석 기능 풍부.
+        운영 해석: Suricata 만 운영하는 환경의 표준. SELKS distro 의 핵심.
+      - |
+        **[OSS] Elastic Stack (ELK + Filebeat)** — 대규모 분석.
+          # 1. Filebeat 로 eve.json → Elasticsearch 전송
+          sudo apt install filebeat
+          sudo filebeat modules enable suricata
+          sudo systemctl start filebeat
+          # 2. Kibana 에서 aggregation
+          # - Discover → suricata-* 인덱스
+          # - Visualize → terms aggregation on alert.signature
+          # - Dashboard → top signature pie chart + timeline
+          # 3. KQL 검색
+          # event.dataset:"suricata.eve" and suricata.eve.event_type:"alert"
+        UI 동작: 다중 host 의 eve.json 통합 분석. PB 규모 가능.
+        운영 해석: 100+ Suricata sensor 환경의 표준. real-time aggregation.
       negative_signs:
       - event_type 필터 없음(dns/http/flow 포함)
       - 집계 없이 단순 출력
@@ -267,6 +605,72 @@ steps:
       - Splunk | stats count by src_ip
       - sort 기준 -nr 혹은 -rn 동일
       - Python pandas groupby(src_ip).size()
+      - |
+        **[OSS] jq + sort/uniq (top src IP)** — SOC 표준 분석.
+          # 1. alert 발생 src IP top 10
+          sudo tail -500 /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert") | .src_ip' 2>/dev/null | sort | uniq -c | sort -rn | head
+          # 2. signature + src 교차 분석 (반복 src 의 행동 패턴)
+          sudo jq -r 'select(.event_type=="alert") | "\(.src_ip)\t\(.alert.signature)"' /var/log/suricata/eve.json | sort | uniq -c | sort -rn | head
+          # 3. CIDR 별 집계 (whole subnet 분석)
+          sudo jq -r 'select(.event_type=="alert") | .src_ip' /var/log/suricata/eve.json | awk -F. '{print $1"."$2"."$3".0/24"}' | sort | uniq -c | sort -rn | head
+        예상 출력 `123 10.20.30.201 / 45 192.168.1.5 / 123 10.20.30.201 ET SCAN Nikto / 45 192.168.1.5 SQLi`.
+        운영 해석: top src IP = 차단 1순위 후보. signature 교차 = 진양성 (pattern 다양) vs 오탐 (single signature 반복) 구분.
+      - |
+        **[OSS] geoiplookup / mmdblookup (geographic 분석)** — IP geolocation.
+          # 1. IP geolocation
+          for ip in $(sudo jq -r 'select(.event_type=="alert") | .src_ip' /var/log/suricata/eve.json | sort -u | head); do
+              country=$(geoiplookup "$ip" 2>/dev/null | awk -F: '{print $2}')
+              echo "$ip: $country"
+          done
+          # 2. mmdblookup (modern MaxMind)
+          mmdblookup --file /var/lib/GeoIP/GeoLite2-City.mmdb --ip 8.8.8.8
+          # 3. ASN 분석
+          mmdblookup --file /var/lib/GeoIP/GeoLite2-ASN.mmdb --ip 8.8.8.8
+        예상 출력 `8.8.8.8: US, United States / ASN 15169 - Google LLC`.
+        운영 해석: src IP 의 출처 + ASN = 공격 출처 분석. 특정 국가/ASN 일괄 차단 정책 결정.
+      - |
+        **[OSS] Wazuh Dashboard (geo map + top src)** — 시각적 분석.
+          # 1. https://10.20.30.100/app/wazuh#/overview/?tab=general
+          # 2. UI 동작:
+          # - "Top alerts source IP" widget: 자동 top 10
+          # - "Geographic map": 세계 지도에 src IP 표시
+          # - 클릭 → 해당 IP 의 모든 alert drill-down
+          # 3. KQL 필터
+          # rule.groups: "suricata" | aggregate data.srcip | size: 10
+        UI 동작: 자동 geo map + drill-down. 클릭만으로 분석.
+        운영 해석: 단일 IP 외 *지리적 분포* 파악. 다국적 공격 식별.
+      - |
+        **[OSS] threatfox / abuseipdb API 통합** — IP reputation 자동 lookup.
+          # 1. abuseipdb API key 발급 (https://www.abuseipdb.com)
+          # 2. top src IP 일괄 reputation 조회
+          for ip in $(sudo jq -r 'select(.event_type=="alert") | .src_ip' /var/log/suricata/eve.json | sort | uniq -c | sort -rn | head -5 | awk '{print $2}'); do
+              score=$(curl -s -H "Key: $ABUSEIPDB_KEY" "https://api.abuseipdb.com/api/v2/check?ipAddress=$ip" | jq -r '.data.abuseConfidenceScore')
+              echo "$ip: AbuseIPDB score=$score"
+          done
+          # 3. ThreatFox 의 IOC database 조회 (free)
+          curl -X POST -d '{"query": "search_ioc", "search_term": "10.20.30.201"}' https://threatfox-api.abuse.ch/api/v1/
+        예상 출력 `1.2.3.4: AbuseIPDB score=85 (high) / 5.6.7.8: score=10 (clean)`.
+        운영 해석: top src IP 의 *외부 reputation* 자동 enrich. 이미 known-bad IP 면 즉시 차단.
+      - |
+        **[OSS] Python pandas + matplotlib (대규모 분석)** — 데이터 사이언스.
+          # 1. Python script
+          python3 << 'EOF'
+          import pandas as pd
+          import json
+          # eve.json 을 dataframe 으로 로드
+          alerts = []
+          with open('/var/log/suricata/eve.json') as f:
+              for line in f:
+                  e = json.loads(line)
+                  if e.get('event_type') == 'alert':
+                      alerts.append({'src': e['src_ip'], 'sig': e['alert']['signature']})
+          df = pd.DataFrame(alerts)
+          # top src + signature 매트릭스
+          top = df.groupby(['src','sig']).size().reset_index(name='count').sort_values('count', ascending=False).head(10)
+          print(top)
+          EOF
+        예상 출력: pandas DataFrame 표 (src / sig / count).
+        운영 해석: 대용량 (1M+ alert) 분석 표준. matplotlib heatmap 으로 시각화 가능.
       negative_signs:
       - dst_ip 추출(방향 혼동)
       - IP 아닌 hostname 집계
@@ -323,6 +727,77 @@ steps:
       - sudo tail -f /var/log/suricata/stats.log | grep -E drops|errors
       - Prometheus suricata_exporter 로 시계열
       - ss -s 로 버퍼 용량 확인
+      - |
+        **[OSS] suricatasc dump-counters (런타임 메트릭)** — production 표준.
+          # 1. 모든 카운터 dump
+          sudo suricatasc -c "dump-counters" 2>&1 | jq '.message' > /tmp/counters.json
+          # 2. drop 관련 키만
+          sudo suricatasc -c "dump-counters" 2>&1 | jq '.message' | grep -iE "drop|loss|kernel"
+          # 3. interface 별 통계
+          sudo suricatasc -c "iface-stat ens33"
+          # 4. 1초 간격 모니터 (drop rate 계산)
+          watch -n 1 "sudo suricatasc -c 'iface-stat ens33' 2>&1 | jq '.message | {pkts, drop, bypassed}'"
+        예상 출력 `{"pkts": 12345678, "drop": 0, "bypassed": 0}` (drop 0 = 정상).
+        운영 해석: stats.log (8초 간격) 보다 정밀. 1초 간격으로 SLA 모니터링.
+      - |
+        **[OSS] Prometheus suricata_exporter** — 시계열 모니터링 표준.
+          # 1. exporter 설치
+          go install github.com/corelight/suricata_exporter@latest
+          # 2. 실행 (suricatasc 와 통신)
+          /usr/local/bin/suricata_exporter --suricata.socket=/var/run/suricata/suricata-command.socket
+          # 3. Prometheus scrape
+          # /etc/prometheus/prometheus.yml
+          - job_name: suricata
+            static_configs:
+              - targets: ['localhost:9917']
+          # 4. metric 확인
+          curl -s http://localhost:9917/metrics | grep -E "suricata_capture|suricata_detect"
+        예상 출력 `suricata_capture_kernel_drops_total{interface="ens33"} 0 / suricata_capture_kernel_packets_total 12345678`.
+        운영 해석: 시계열 db 에 저장 = 추세 분석 + alert 임계값 (drop rate > 0.1%) 자동 알림.
+      - |
+        **[OSS] Grafana suricata dashboard** — 시각화 표준.
+          # 1. Grafana 의 Suricata dashboard import (Dashboard ID: 16722)
+          # 2. UI 시각화:
+          # - Time series: capture.kernel_packets / capture.kernel_drops
+          # - Drop rate %: (drops / (drops + packets)) × 100
+          # - Top alerts by signature
+          # - Throughput (Mbps)
+          # 3. Alert 룰:
+          # WHEN max(drop_rate) > 0.1% FOR 5m THEN PagerDuty
+        UI 동작: 실시간 dashboard + automated alert.
+        운영 해석: SOC NOC 표준. drop rate 가 임계 초과 시 자동 알림.
+      - |
+        **[OSS] netdata (zero-config 모니터링)** — 빠른 진단.
+          # 1. netdata 설치
+          bash <(curl -Ss https://my-netdata.io/kickstart.sh)
+          # 2. Suricata 모듈 활성화 (자동 감지)
+          # /etc/netdata/python.d/suricata.conf:
+          # enabled: yes
+          # 3. http://localhost:19999 접속
+          # - "Suricata" panel 자동 생성
+          # - capture.kernel_packets / drops / mem 실시간 그래프
+          # 4. Anomaly detection (Netdata ML 자동)
+        UI 동작: 1초 간격 실시간 그래프 + ML 기반 anomaly 자동 표시.
+        운영 해석: Prometheus 보다 가벼움. 단일 host 빠른 진단 표준.
+      - |
+        **[OSS] suricata-stats-parse (Python script)** — 텍스트 분석.
+          # 1. stats.log 파싱 script
+          python3 << 'EOF'
+          import re
+          with open('/var/log/suricata/stats.log') as f:
+              counters = {}
+              for line in f:
+                  m = re.match(r'^([\w\.]+)\s*\|\s*\w+\s*\|\s*(\d+)$', line)
+                  if m:
+                      counters[m.group(1)] = int(m.group(2))
+              print(f"Packets: {counters.get('capture.kernel_packets', 0)}")
+              print(f"Drops: {counters.get('capture.kernel_drops', 0)}")
+              total = counters.get('capture.kernel_packets', 0) + counters.get('capture.kernel_drops', 0)
+              if total > 0:
+                  print(f"Drop rate: {counters.get('capture.kernel_drops', 0) / total * 100:.4f}%")
+          EOF
+        예상 출력 `Packets: 12345678 / Drops: 0 / Drop rate: 0.0000%`.
+        운영 해석: 자동화 + 임계값 비교. cron 으로 매분 실행 + Slack 알림.
       negative_signs:
       - 다른 로그(eve.log 등) 확인
       - 단일 시점만(추세 무시)
@@ -365,6 +840,86 @@ steps:
       - sudo awk $NF > "[1:" /var/log/suricata/fast.log(priority 1만)
       - 'grep Priority: 1 /var/log/suricata/fast.log'
       - sudo journalctl -u suricata | tail
+      - |
+        **[OSS] tail -f + grep (실시간 모니터)** — SOC 분석가 표준.
+          # 1. 최근 20 alert
+          sudo tail -20 /var/log/suricata/fast.log
+          # 2. 실시간 stream
+          sudo tail -f /var/log/suricata/fast.log
+          # 3. priority 1 (high) 만 실시간
+          sudo tail -f /var/log/suricata/fast.log | grep --line-buffered "Priority: 1"
+          # 4. multi-tail (eve.json + fast.log + suricata.log)
+          sudo multitail /var/log/suricata/fast.log /var/log/suricata/eve.json
+        예상 출력 `02/16/2024-14:23:00.123  [**] [1:1000101:1] Suspicious UA BadBot [**] [Classification: A Network Trojan was detected] [Priority: 1] {TCP} 10.20.30.201:54321 -> 10.20.30.80:80`.
+        운영 해석: 1줄 = 1 alert 텍스트 형식. eve.json 보다 빠른 사람 기반 모니터.
+      - |
+        **[OSS] lnav (terminal log viewer)** — fast.log 자동 파싱.
+          # 1. lnav 로 fast.log 열기
+          sudo lnav /var/log/suricata/fast.log
+          # 2. 자동 timestamp 파싱 + highlight
+          # 3. 내장 SQL query (Suricata 형식 자동 인식)
+          # :;SELECT count(*), priority FROM suricata_log GROUP BY priority
+          # 4. 검색 + 점프 (/Priority: 1)
+          # 5. 시간 범위 필터 (:filter-in 14:30 → 15:00)
+        UI 동작: ncurses + 자동 파싱. 키보드 단축키로 navigate.
+        운영 해석: GUI 없는 SSH 환경 표준. evebox 못 쓰는 air-gap.
+      - |
+        **[OSS] ccze (실시간 컬러)** — 가독성 향상.
+          # 1. ccze 설치
+          sudo apt install ccze
+          # 2. 실시간 컬러 stream
+          sudo tail -f /var/log/suricata/fast.log | ccze -A
+          # 3. priority 별 컬러 강조 (custom)
+          sudo tail -f /var/log/suricata/fast.log | awk '
+              /Priority: 1/ {print "\033[31m" $0 "\033[0m"; next}
+              /Priority: 2/ {print "\033[33m" $0 "\033[0m"; next}
+              {print}
+          '
+          # 4. 패키지 후처리 (less +F)
+          sudo tail -1000 /var/log/suricata/fast.log | ccze -A | less -R
+        UI 동작: 자동 syslog/log 색상 분류.
+        운영 해석: 운영자가 실시간 stream 모니터링 시 가독성 ↑. priority 1 즉시 식별.
+      - |
+        **[OSS] fluentd / vector (alert 전송)** — log shipping 표준.
+          # 1. vector 로 fast.log → 외부 SIEM 전송
+          sudo tee /etc/vector/vector.toml << 'EOF'
+          [sources.suricata_fast]
+          type = "file"
+          include = ["/var/log/suricata/fast.log"]
+          [transforms.parse]
+          type = "remap"
+          inputs = ["suricata_fast"]
+          source = '''
+            . = parse_regex!(.message, r"^(?P<ts>\S+)\s+\[\*\*\]\s+\[(?P<sid>[\d:]+)\]\s+(?P<msg>.+?)\s+\[\*\*\].*Priority:\s+(?P<priority>\d+)")
+          '''
+          [sinks.elasticsearch]
+          type = "elasticsearch"
+          inputs = ["parse"]
+          endpoint = "http://elastic:9200"
+          EOF
+          sudo systemctl restart vector
+        예상 결과: fast.log 의 alert 가 자동으로 Elasticsearch 인덱싱.
+        운영 해석: SIEM 통합 표준. 다중 host 의 fast.log 통합 검색.
+      - |
+        **[OSS] grafana loki (log aggregation)** — Prometheus 생태계.
+          # 1. loki + promtail 설치
+          # promtail 이 fast.log 를 loki 로 전송
+          # /etc/promtail/config.yml:
+          # scrape_configs:
+          # - job_name: suricata
+          #   static_configs:
+          #   - targets: [localhost]
+          #     labels:
+          #       job: suricata
+          #       __path__: /var/log/suricata/fast.log
+          # 2. Grafana 의 Loki datasource 추가
+          # 3. LogQL 검색
+          # {job="suricata"} |= "Priority: 1"
+          # 4. Grafana dashboard
+          # - alert rate / time
+          # - top signature
+        UI 동작: Grafana 통합 dashboard. metrics + logs 한 화면.
+        운영 해석: Prometheus + Loki = 통합 observability. SOC NOC 표준.
       negative_signs:
       - eve.json 을 fast.log 로 혼동
       - tail 없이 cat(전체)
@@ -419,6 +974,70 @@ steps:
       - cat /etc/suricata/threshold.config 로 실제 내용
       - suricata --dump-config | grep threshold
       - sed -n /threshold/p suricata.yaml
+      - |
+        **[OSS] yq (threshold-file 정확 추출)** — yaml 파싱.
+          # 1. threshold-file 경로
+          sudo yq '."threshold-file"' /etc/suricata/suricata.yaml
+          # 2. 모든 threshold 관련 설정
+          sudo yq '. | with_entries(select(.key | test("threshold|suppress")))' /etc/suricata/suricata.yaml
+          # 3. 실제 적용된 (런타임)
+          sudo suricata --dump-config 2>&1 | grep -i threshold
+        예상 출력 `"/etc/suricata/threshold.config"`.
+        운영 해석: yaml 의 threshold-file 경로 + 런타임 적용 일치 확인.
+      - |
+        **[OSS] threshold.config 직접 분석** — 룰 별 suppression.
+          # 1. 적용된 모든 suppress / threshold 룰
+          sudo cat /etc/suricata/threshold.config | grep -v '^#' | head -20
+          # 2. type 별 분류 (suppress / threshold limit / threshold both)
+          sudo grep -E "^(suppress|threshold)" /etc/suricata/threshold.config | awk '{print $1}' | sort | uniq -c
+          # 3. 특정 sid 의 suppression 검색
+          sudo grep "sig_id 1000101" /etc/suricata/threshold.config
+          # 4. sigaffect 의 by_src/by_dst 분포
+          sudo grep -oE "track by_(src|dst|rule)" /etc/suricata/threshold.config | sort | uniq -c
+        예상 출력 `5 suppress / 12 threshold / 3 by_src / 2 by_dst`.
+        운영 해석: suppress 규칙 분포 = 운영 환경의 *FP 패턴* indicator. 100+ suppress 면 ruleset 부적합.
+      - |
+        **[OSS] scirius (web GUI threshold 관리)** — 시각적 관리.
+          # 1. https://scirius:8000/ → Rules → 특정 sid 클릭
+          # 2. UI 동작:
+          # - "Add suppression" 버튼
+          # - track: by_src / by_dst / by_rule 선택
+          # - IP / CIDR 입력
+          # - 변경 사유 + ticket ID 입력 (audit log)
+          # 3. "Push" → SSH 통해 secu 의 threshold.config 자동 갱신
+          # 4. CLI 검증
+          ssh ccc@10.20.30.1 "sudo cat /etc/suricata/threshold.config | grep 1000101"
+        UI 동작: suppression 추가 + audit log 자동 기록.
+        운영 해석: 다중 분석가 환경 표준. 누가 언제 어떤 sid 를 suppress 했는지 추적.
+      - |
+        **[OSS] Ansible (threshold.config IaC)** — 자동화.
+          # playbook
+          - name: Add suppression for sid 1000301
+            ansible.builtin.lineinfile:
+              path: /etc/suricata/threshold.config
+              line: "suppress gen_id 1, sig_id 1000301, track by_src, ip 10.20.30.0/24"
+              regexp: '.*sig_id 1000301,.*'
+              backup: yes
+            notify: reload suricata
+          # 실행
+          ansible-playbook -i inventory.yml suricata-threshold.yml --diff
+        예상 출력 `+suppress gen_id 1, sig_id 1000301, track by_src, ip 10.20.30.0/24`.
+        운영 해석: 다중 host 일관 suppression 적용. inventory + role 분리.
+      - |
+        **[OSS] threshold.config validator (custom script)** — syntax 검증.
+          # 1. validation script
+          python3 << 'EOF'
+          import re
+          with open('/etc/suricata/threshold.config') as f:
+              for n, line in enumerate(f, 1):
+                  if line.strip().startswith('#') or not line.strip(): continue
+                  if not re.match(r'^(suppress|threshold)\s+gen_id\s+\d+,\s+sig_id\s+\d+,', line):
+                      print(f"Line {n}: SYNTAX ERROR - {line.strip()}")
+          EOF
+          # 2. suricata -T 가 threshold.config 도 검증
+          sudo suricata -T -c /etc/suricata/suricata.yaml
+        예상 출력 `Line 12: SYNTAX ERROR - supress gen_id 1, sig_id 1000301 (typo: supress→suppress)`.
+        운영 해석: 잘못된 syntax = Suricata 시작 실패. 사전 검증 표준.
       negative_signs:
       - threshold.config 파일 확인만(yaml 연결 없이)
       - suppression 개념 부재
@@ -456,6 +1075,76 @@ steps:
       - sudo suricatasc -c iface-stat <interface>
       - sudo suricatasc -c reload-rules(livereload)
       - ps -p $(pidof suricata) -o etime= (프로세스 uptime)
+      - |
+        **[OSS] suricatasc (Unix socket CLI)** — 운영 표준 도구.
+          # 1. uptime (초 단위)
+          sudo suricatasc -c uptime
+          # 2. 사람 친화 시간 형식
+          sudo suricatasc -c uptime 2>&1 | jq -r '.message' | awk '{
+              days=int($1/86400); hours=int(($1%86400)/3600); mins=int(($1%3600)/60);
+              printf "%dd %dh %dm\n", days, hours, mins
+          }'
+          # 3. 다른 명령들
+          sudo suricatasc -c help        # 모든 명령 목록
+          sudo suricatasc -c memcap-list # memcap 상태
+          sudo suricatasc -c version     # Suricata 버전
+        예상 출력 `{"return":"OK","message":86400} / 1d 0h 0m`.
+        운영 해석: 운영자가 실시간 통신. systemd 가 보여주는 service uptime 과 다를 수 있음 (engine 자체 uptime).
+      - |
+        **[OSS] systemctl + ps (process uptime)** — 비교 검증.
+          # 1. systemd 의 service active 시간
+          systemctl show suricata --property=ActiveEnterTimestamp
+          # 2. process uptime (etime)
+          ps -p $(pidof suricata) -o etime=
+          # 3. 부팅부터 (uptime 명령)
+          uptime
+          # 4. 비교: suricatasc uptime vs etime
+          # 차이 = engine restart 한 번 (suricata 가 reload 시 새 PID)
+        예상 출력 `Tue 2026-05-05 03:00:01 KST / 1-00:00:01 / up 25 hours`.
+        운영 해석: systemd uptime 과 engine uptime 비교. 차이 큰 경우 = restart 빈번 = OOM 의심.
+      - |
+        **[OSS] suricatasc dump-counters (JSON 통계 표준)** — full metrics.
+          # 1. 모든 카운터 dump
+          sudo suricatasc -c "dump-counters" 2>&1 | jq '.message' > /tmp/all-counters.json
+          # 2. 핵심 카테고리 추출
+          sudo suricatasc -c "dump-counters" 2>&1 | jq '.message | {capture: {kernel_packets, kernel_drops}, detect: {alert, accept, drop}, app_layer: {flow, tx}}'
+          # 3. 시간 별 변화 (1초 간격)
+          while true; do
+              sudo suricatasc -c "dump-counters" 2>&1 | jq '.message | {ts:now, capture}'
+              sleep 1
+          done | head
+        예상 출력 `{"capture":{"kernel_packets":12345678,"kernel_drops":0},"detect":{"alert":1450,"accept":12000,"drop":12}}`.
+        운영 해석: 100+ 카운터의 full metrics. Prometheus / Grafana 자동 import 표준 source.
+      - |
+        **[OSS] suricatasc helper script (운영 자동화)** — 헬스체크.
+          # 1. 헬스체크 script
+          sudo tee /usr/local/bin/suricata-health << 'EOF'
+          #!/bin/bash
+          uptime=$(suricatasc -c uptime 2>&1 | jq -r '.message')
+          drops=$(suricatasc -c "dump-counters" 2>&1 | jq -r '.message["capture.kernel_drops"]')
+          alerts=$(suricatasc -c "dump-counters" 2>&1 | jq -r '.message["detect.alert"]')
+          echo "Uptime: ${uptime}s / Drops: $drops / Alerts: $alerts"
+          # health 판정
+          if [ "$drops" -gt 1000 ]; then echo "WARN: high drops"; exit 1; fi
+          EOF
+          sudo chmod +x /usr/local/bin/suricata-health
+          # 2. cron 으로 매분 실행
+          echo "* * * * * /usr/local/bin/suricata-health | logger -t suricata-health" | sudo crontab -
+        예상 출력 `Uptime: 86400s / Drops: 0 / Alerts: 1450`.
+        운영 해석: 매분 헬스체크 + syslog 기록. SIEM 연동 자동.
+      - |
+        **[OSS] Suricata REST API (suricata.yaml unix-command)** — 외부 통합.
+          # 1. unix-command 활성화
+          # /etc/suricata/suricata.yaml:
+          # unix-command:
+          #   enabled: yes
+          #   filename: /var/run/suricata/suricata-command.socket
+          # 2. socat 으로 socket → TCP bridge (외부 도구 연동)
+          sudo socat TCP-LISTEN:8055,fork UNIX-CONNECT:/var/run/suricata/suricata-command.socket &
+          # 3. 외부에서 TCP 통신
+          echo '{"command":"uptime"}' | nc localhost 8055
+        예상 출력 `{"return":"OK","message":86400}`.
+        운영 해석: Unix socket → TCP bridge = 다른 host 의 SIEM 도구 연동. 단, 보안 위험 (인증 없음 = 내부 망만).
       negative_signs:
       - suricatasc 소켓 없음 무시
       - -c 누락(command 없음)
@@ -533,6 +1222,92 @@ steps:
       - secu 에서 jq + sort + uniq 으로 top source 분석
       - secu 에서 threshold.config suppress 룰 추가 + restart
       - secu 에서 grep eve.json 으로 alert 카운트 비교
+      - |
+        **[OSS] threshold.config suppress (FP 억제 표준)** — production 운영.
+          # 1. suppress 룰 형식
+          # suppress gen_id <generator>, sig_id <sid>, track <by_src|by_dst|by_rule>, ip <CIDR>
+          # 2. 본 시나리오 — 내부 망의 sid 1000301 alert 모두 suppress
+          sudo bash -c 'echo "suppress gen_id 1, sig_id 1000301, track by_src, ip 10.20.30.0/24" >> /etc/suricata/threshold.config'
+          # 3. 적용 + 검증
+          sudo systemctl restart suricata
+          sudo grep "1000301" /etc/suricata/threshold.config
+          # 4. suppress 효과 확인 (alert 카운트 비교)
+          before=$(sudo tail -200 /var/log/suricata/eve.json | grep -c "sid.:1000301")
+          # ... trigger ...
+          after=$(sudo tail -200 /var/log/suricata/eve.json | grep -c "sid.:1000301")
+          echo "Before: $before / After: $after"
+        예상 출력 `Before: 5 / After: 5` (after 가 변화 없음 = suppress 적용).
+        운영 해석: FP 억제 표준 도구. by_src vs by_dst 결정이 핵심.
+      - |
+        **[OSS] threshold.config threshold (rate limit alert)** — suppress 대안.
+          # 1. threshold limit (5초 내 1 alert만)
+          # threshold gen_id <gen>, sig_id <sid>, type limit, track <track>, count <N>, seconds <sec>
+          sudo bash -c 'echo "threshold gen_id 1, sig_id 1000301, type limit, track by_src, count 1, seconds 60" >> /etc/suricata/threshold.config'
+          sudo systemctl restart suricata
+          # 2. 효과: 같은 src 의 1000301 alert 가 60초당 최대 1건만
+          # 3. type 종류
+          # - limit: 시간당 N건 만
+          # - threshold: N건 발생 후 1건 alert (배치)
+          # - both: 둘 다 적용
+        예상 결과: alert 폭주 방지 + 패턴 감지는 유지.
+        운영 해석: suppress 는 *완전 차단*, threshold limit 는 *비율 제한*. 진짜 공격 놓치기 위험은 limit 가 낮음.
+      - |
+        **[OSS] scirius hunt (FP 패턴 분석 + suppress)** — GUI workflow.
+          # 1. https://scirius:8000/hunt 접속
+          # 2. UI 동작:
+          # - signature 별 시간대 분포 차트
+          # - "Generate suppression" 버튼
+          # - track + IP CIDR 자동 추천
+          # - 변경 사유 + ticket 입력
+          # 3. "Push" → SSH 통해 secu 의 threshold.config 자동 갱신
+          # 4. CLI 검증
+          ssh ccc@10.20.30.1 "sudo cat /etc/suricata/threshold.config"
+        UI 동작: alert 패턴 → suppress 자동 추천 + audit log.
+        운영 해석: FP 분석 + suppress 작성 워크플로우 통합. 신규 분석가도 안전 수정.
+      - |
+        **[OSS] evebox (FP 식별 + escalate)** — 협업 워크플로우.
+          # 1. evebox 의 alert detail
+          # 2. UI 동작:
+          # - "False Positive" 버튼 클릭
+          # - 사유 입력 (예: "정상 트래픽, 룰 광범위")
+          # - 다른 분석가에게 review 요청
+          # - approver 가 suppress 룰 자동 생성
+          # 3. CLI 동등 (commenting)
+          evebox-cli comment-add --event-id <id> --comment "FP - too broad rule"
+        UI 동작: alert FP 라벨링 + 협업 review.
+        운영 해석: 단순 차단 X, *FP 분석 패턴* 누적 = 룰 개선 evidence.
+      - |
+        **[OSS] Wazuh false_positive 처리** — SIEM 측 억제.
+          # 1. Wazuh manager 의 룰 변경
+          # /var/ossec/etc/rules/local_rules.xml:
+          # <rule id="100501" level="0">
+          #   <if_sid>86601</if_sid>  <!-- Suricata alert base rule -->
+          #   <field name="alert.signature_id">1000301</field>
+          #   <description>FP suppression - too broad sid 1000301</description>
+          # </rule>
+          # 2. level 0 = 알림 X. SIEM 측에서 차단.
+          sudo systemctl restart wazuh-manager
+        결과: Suricata alert 는 발생하나 Wazuh 가 무시.
+        운영 해석: SIEM 측 fallback. Suricata 룰 수정 위험할 때 SIEM 단계에서 억제.
+      - |
+        **[OSS] CI integration (FP cycle 자동화)** — enterprise.
+          # GitLab CI 예시
+          # .gitlab-ci.yml:
+          stages: [analyze, suppress, deploy]
+          analyze-fp:
+            stage: analyze
+            script:
+              # 자동 FP 후보 발견 (시간당 100건 초과)
+              - sudo jq -r 'select(.event_type=="alert") | .alert.signature_id' /var/log/suricata/eve.json | sort | uniq -c | sort -rn | head -5 | awk '$1 > 100' > /tmp/fp-candidates.txt
+              - test -s /tmp/fp-candidates.txt && cat /tmp/fp-candidates.txt
+          suppress:
+            stage: suppress
+            when: manual
+            script:
+              - python3 generate-suppress.py < /tmp/fp-candidates.txt
+              - ansible-playbook deploy-threshold.yml
+        결과: 매일 자동 FP 후보 식별 + 분석가 manual approve 후 suppress 배포.
+        운영 해석: enterprise 자동화 표준. FP cycle 의 *자동 식별 + manual review* 균형.
       negative_signs:
       - suppress 전 alert 수만 측정 + 후 측정 누락
       - threshold.config 수정 누락 (룰만 제거)
