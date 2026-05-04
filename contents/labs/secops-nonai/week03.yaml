@@ -39,6 +39,78 @@ steps:
       - iptables -P INPUT DROP (legacy)
       - firewalld drop zone
       - NIST SP 800-41 deny-all default
+      - |
+        **[OSS] nft (Zero Trust 표준)** — 표준.
+          # 1. table + chain policy drop
+          sudo nft add table inet whitelist
+          sudo nft 'add chain inet whitelist input { type filter hook input priority 0 ; policy drop ; }'
+          # 2. SSH lockout 회피 룰 (필수)
+          sudo nft 'add rule inet whitelist input tcp dport 22 ip saddr 10.20.30.0/24 counter accept'
+          # 3. 검증
+          sudo nft -j list table inet whitelist | jq '.nftables[] | select(.chain) | {policy, hook}'
+          # 4. atomic 적용 (실패 시 rollback)
+          sudo nft -c -f /tmp/wl.nft
+        예상 출력 `chain { policy: drop, hook: input } / SSH accept rule`.
+        운영 해석: policy drop = Zero Trust. SSH lockout 회피 룰 필수.
+      - |
+        **[OSS] firewalld drop zone (RHEL/CentOS)** — 표준 alt.
+          # 1. drop zone 활성화 (deny-all)
+          sudo firewall-cmd --permanent --new-zone=whitelist 2>/dev/null
+          sudo firewall-cmd --permanent --zone=whitelist --set-target=DROP
+          # 2. SSH 만 허용
+          sudo firewall-cmd --permanent --zone=whitelist --add-service=ssh
+          # 3. apply
+          sudo firewall-cmd --reload
+          # 4. 검증
+          sudo firewall-cmd --info-zone=whitelist
+        예상 출력 `target: DROP / services: ssh`.
+        운영 해석: zone target DROP = 명시적 허용 외 차단. enterprise.
+      - |
+        **[OSS] iptables -P INPUT DROP (legacy)** — 마이그레이션.
+          # 1. legacy 표준
+          sudo iptables -P INPUT DROP
+          sudo iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+          sudo iptables -A INPUT -i lo -j ACCEPT
+          sudo iptables -A INPUT -p tcp --dport 22 -s 10.20.30.0/24 -j ACCEPT
+          # 2. 검증
+          sudo iptables -L INPUT -nv --line-numbers | head
+          # 3. nft 변환
+          iptables-save | iptables-translate-restore | head
+        예상 출력 `Chain INPUT (policy DROP) / 4 rules`.
+        운영 해석: 동일 의미 — nft 가 표현 풍부. 마이그레이션 path.
+      - |
+        **[OSS] Ansible community.general (멀티 호스트)** — IaC.
+          # 1. /etc/ansible/playbooks/whitelist-base.yml
+          # ---
+          # - hosts: all
+          #   tasks:
+          #     - name: ensure whitelist table + drop policy
+          #       community.general.nftables_table: {family: inet, name: whitelist, state: present}
+          #     - name: ensure input chain
+          #       community.general.nftables_chain:
+          #         family: inet
+          #         table: whitelist
+          #         name: input
+          #         type: filter
+          #         hook: input
+          #         priority: 0
+          #         policy: drop
+          # 2. 실행
+          ansible-playbook -i inventory whitelist-base.yml --diff
+        예상 출력 `changed=2 / chain policy drop applied`.
+        운영 해석: 멀티 호스트 표준화. PR review.
+      - |
+        **[OSS] policy drop 효과 검증 (필수 안전)** — 안전.
+          # 1. 적용 전: 모든 ICMP 응답
+          ping -c 1 -W 1 10.20.30.1
+          # 2. policy drop 적용 후 즉시 검증 (lockout 회피 핵심)
+          ssh -o ConnectTimeout=3 ccc@10.20.30.1 'echo SSH OK' || echo "WARN: SSH lockout"
+          # 3. 외부 IP 차단 검증 (시뮬)
+          # ssh ccc@10.20.30.201 'nc -zv -w 2 10.20.30.1 80' (모든 외부 차단 확인)
+          # 4. 룰 효과 (counter 변동)
+          sudo nft list chain inet whitelist input | grep counter
+        예상 출력 `ping no response / SSH OK (lockout 회피) / 외부 차단`.
+        운영 해석: policy drop 후 본인 SSH 즉시 검증 필수. lockout = lab 종료.
       negative_signs:
       - policy accept (화이트리스트 의미 없음)
       - 테이블 이름 혼동
@@ -69,6 +141,103 @@ steps:
       - ipset create (legacy)
       - nft add set + flags interval (CIDR)
       - JSON API nft -j
+      - |
+        **[OSS] nft set (다양한 옵션)** — 표준.
+          # 1. 기본 set (단일 IP)
+          sudo nft 'add set inet whitelist allowed_ips { type ipv4_addr ; }'
+          # 2. CIDR 지원 (interval)
+          sudo nft 'add set inet whitelist allowed_cidrs { type ipv4_addr ; flags interval ; }'
+          # 3. timeout 지원 (자동 만료)
+          sudo nft 'add set inet whitelist allowed_temp { type ipv4_addr ; flags timeout ; timeout 1h ; }'
+          # 4. 검증
+          sudo nft list sets | grep whitelist
+          sudo nft -j list set inet whitelist allowed_ips | jq .
+        예상 출력 `set allowed_ips { type ipv4_addr } / 3 sets created`.
+        운영 해석: 단일 / CIDR / timeout 별 set 분리 = 명확한 정책.
+      - |
+        **[OSS] ipset (legacy hash:net 비교)** — 마이그레이션.
+          # 1. ipset 설치
+          sudo apt install -y ipset
+          # 2. hash:ip set (단일 IP)
+          sudo ipset create allowed_ips_legacy hash:ip counters comment
+          # 3. hash:net (CIDR)
+          sudo ipset create allowed_cidrs_legacy hash:net
+          # 4. iptables 연동
+          sudo iptables -I INPUT -m set --match-set allowed_ips_legacy src -j ACCEPT
+          sudo ipset list allowed_ips_legacy | head
+        예상 출력 `Number of entries: 0 / counters / iptables 매칭 룰 추가`.
+        운영 해석: legacy 환경 alternative. nft 마이그레이션 path.
+      - |
+        **[OSS] nft -j list set + jq (set 분석)** — 자동화.
+          # 1. JSON 으로 set 갯수
+          sudo nft -j list ruleset | jq '[.nftables[] | select(.set)] | length'
+          # 2. set 별 element 갯수
+          sudo nft -j list ruleset | jq '.nftables[] | select(.set) | "\(.set.name): \((.set.elem // []) | length) elements"'
+          # 3. 특정 set 의 type / flags
+          sudo nft -j list set inet whitelist allowed_ips | jq '.nftables[1].set | {type, flags}'
+          # 4. 모든 set 의 메타정보 dump
+          sudo nft -j list ruleset | jq '[.nftables[] | select(.set) | {name: .set.name, type: .set.type, flags: .set.flags // []}]'
+        예상 출력 `set count 3 / allowed_ips: 0 elements / type: ipv4_addr`.
+        운영 해석: JSON 으로 정량 분석 + dashboard.
+      - |
+        **[OSS] Ansible community.general.nftables_set** — IaC.
+          # 1. /etc/ansible/playbooks/wl-set.yml
+          # ---
+          # - hosts: secu
+          #   tasks:
+          #     - name: ensure allowed_ips set
+          #       community.general.nftables_set:
+          #         family: inet
+          #         table: whitelist
+          #         name: allowed_ips
+          #         type: ipv4_addr
+          #         state: present
+          #     - name: ensure allowed_cidrs set
+          #       community.general.nftables_set:
+          #         family: inet
+          #         table: whitelist
+          #         name: allowed_cidrs
+          #         type: ipv4_addr
+          #         flags: [interval]
+          #         state: present
+          # 2. 실행
+          ansible-playbook -i inventory wl-set.yml --diff
+        예상 출력 `changed=2 / 2 sets created`.
+        운영 해석: idempotent + 다중 set 동시. 표준화.
+      - |
+        **[OSS] /etc/nftables.conf 영구 정의 + git** — IaC.
+          # 1. /etc/nftables.whitelist.conf
+          sudo tee /etc/nftables.whitelist.conf <<'EOF'
+          table inet whitelist {
+            set allowed_ips {
+              type ipv4_addr
+            }
+            set allowed_cidrs {
+              type ipv4_addr
+              flags interval
+            }
+            set allowed_temp {
+              type ipv4_addr
+              flags timeout
+              timeout 1h
+            }
+            chain input {
+              type filter hook input priority 0; policy drop;
+              ct state established,related accept
+              iifname lo accept
+              ip saddr @allowed_ips counter accept
+              ip saddr @allowed_cidrs counter accept
+            }
+          }
+          EOF
+          # 2. syntax 검증
+          sudo nft -c -f /etc/nftables.whitelist.conf
+          # 3. apply
+          sudo nft -f /etc/nftables.whitelist.conf
+          # 4. git audit
+          cd /etc && sudo git add nftables.whitelist.conf && sudo git commit -m "Add whitelist sets"
+        예상 출력 `valid syntax / applied / git commit`.
+        운영 해석: IaC + git audit. 변경 history + rollback.
       negative_signs:
       - type 지정 없음
       - set 개념 없음
@@ -98,6 +267,90 @@ steps:
       - echo 'IP' | nft add element file
       - ansible ad-hoc 대량 등록
       - ipset add legacy 명령
+      - |
+        **[OSS] nft add element (단일 + 다중 atomic)** — 표준.
+          # 1. 단일 IP
+          sudo nft add element inet whitelist allowed_ips '{ 10.20.30.201 }'
+          # 2. 다중 atomic
+          sudo nft add element inet whitelist allowed_ips '{ 10.20.30.100, 10.20.30.80, 10.20.30.201 }'
+          # 3. comment 로 출처 추적
+          sudo nft 'add element inet whitelist allowed_ips { 10.20.30.201 comment "attacker-vm-2026-w03" }'
+          # 4. JSON RPC batch (대량)
+          echo '{"nftables":[{"add":{"element":{"family":"inet","table":"whitelist","name":"allowed_ips","elem":[{"set_elem":{"val":"10.20.30.201","comment":"attacker"}}]}}}]}' | sudo nft -j -f -
+        예상 출력 `elements = { 10.20.30.201 comment "attacker..." }`.
+        운영 해석: comment = 출처. atomic = 다중 IP 한 번에. JSON = 자동화.
+      - |
+        **[OSS] 대량 등록 (file 기반 + script)** — 운영.
+          # 1. 파일에 IP 목록
+          tee /tmp/allowed.txt <<EOF
+          10.20.30.100
+          10.20.30.80
+          10.20.30.201
+          198.51.100.10
+          198.51.100.20
+          EOF
+          # 2. for loop 으로 일괄 추가
+          for ip in $(cat /tmp/allowed.txt); do
+            sudo nft add element inet whitelist allowed_ips "{ $ip }" 2>/dev/null
+          done
+          # 3. atomic batch (nft -f)
+          (echo "add element inet whitelist allowed_ips { $(paste -sd, /tmp/allowed.txt) }") | sudo nft -f -
+          # 4. 검증
+          sudo nft list set inet whitelist allowed_ips | head
+        예상 출력 `5 IPs in elements / atomic batch 성공`.
+        운영 해석: 대량 IP 운영 = atomic batch 권장. 일부 실패 시 rollback.
+      - |
+        **[OSS] Ansible nftables_set elements** — IaC.
+          # 1. /etc/ansible/playbooks/wl-elements.yml
+          # ---
+          # - hosts: secu
+          #   tasks:
+          #     - name: add IPs to allowed_ips
+          #       community.general.nftables_set:
+          #         family: inet
+          #         table: whitelist
+          #         name: allowed_ips
+          #         elements:
+          #           - 10.20.30.201
+          #           - 10.20.30.100
+          #           - 10.20.30.80
+          #         state: present
+          # 2. 실행
+          ansible-playbook -i inventory wl-elements.yml --diff
+          # 3. idempotent
+          ansible-playbook -i inventory wl-elements.yml --check
+        예상 출력 `changed=1 / 3 IPs / 2회 실행: ok`.
+        운영 해석: idempotent + diff 모드. PR review.
+      - |
+        **[OSS] CTI feed 자동 등록 (실제 운영)** — 자동화.
+          # 1. OpenCTI 에서 score>=70 IP 추출
+          T=$(ssh ccc@10.20.30.100 'sudo grep ^OPENCTI_ADMIN_TOKEN /opt/opencti/.env | cut -d= -f2')
+          curl -sS -X POST http://10.20.30.100:8080/graphql \
+            -H "Authorization: Bearer $T" -H 'Content-Type: application/json' \
+            -d '{"query":"{ indicators(first:200,filters:{mode:and,filters:[{key:\"x_opencti_main_observable_type\",values:[\"IPv4-Addr\"]}],filterGroups:[]}){edges{node{pattern}}}}"}' \
+            | jq -r '.data.indicators.edges[].node.pattern' | grep -oE "'[0-9.]+'" | tr -d "'" > /tmp/threat-ips.txt
+          # 2. 자동 set 갱신 (CTI feed → blacklist)
+          # for ip in $(cat /tmp/threat-ips.txt); do
+          #   sudo nft add element inet whitelist blacklist "{ $ip timeout 30d }" 2>/dev/null
+          # done
+          # 3. 검증
+          wc -l /tmp/threat-ips.txt
+        예상 출력 `12 threat IPs from OpenCTI`.
+        운영 해석: 외부 CTI feed 자동 통합. 운영 표준.
+      - |
+        **[OSS] etckeeper / git audit (변경 추적)** — IaC.
+          # 1. 매 set 변경 시 commit (자동)
+          sudo nft list set inet whitelist allowed_ips > /etc/nftables.allowed_ips.snapshot
+          cd /etc && sudo git add nftables.allowed_ips.snapshot
+          sudo git commit -m "Add 10.20.30.201 (attacker) to allowed_ips"
+          # 2. 변경 history
+          sudo git log --oneline nftables.allowed_ips.snapshot | head
+          # 3. diff (이전 vs 현재)
+          sudo git log -p nftables.allowed_ips.snapshot | head -30
+          # 4. rollback (실수 복구)
+          # sudo git checkout <sha> -- nftables.allowed_ips.snapshot
+        예상 출력 `commit abc123 Add 10.20.30.201 / + 10.20.30.201 added`.
+        운영 해석: 누가·언제·왜 추가했는지 audit. compliance.
       negative_signs:
       - IP 혼동
       - set 이름 혼동
@@ -128,6 +381,70 @@ steps:
       - iptables + ipset match set
       - firewalld source address rule
       - XDP/eBPF 대량 처리 최적화
+      - |
+        **[OSS] nft set match (saddr/daddr 표준)** — 표준.
+          # 1. saddr (source) 매칭 — 화이트리스트
+          sudo nft 'add rule inet whitelist input ip saddr @allowed_ips counter accept'
+          # 2. daddr (destination) 매칭 — 특정 서버 접근 제한
+          sudo nft 'add rule inet whitelist input ip daddr @allowed_dests counter accept'
+          # 3. 결합 (saddr AND daddr)
+          sudo nft 'add rule inet whitelist input ip saddr @allowed_ips ip daddr @critical_servers tcp dport 22 counter accept'
+          # 4. 검증
+          sudo nft -a list chain inet whitelist input | head
+        예상 출력 `ip saddr @allowed_ips counter accept # handle 5`.
+        운영 해석: saddr = 누가 접속, daddr = 어디로 접속. 다층 정책.
+      - |
+        **[OSS] iptables + ipset match (legacy)** — 마이그레이션.
+          # 1. ipset 의 set 매칭
+          sudo iptables -A INPUT -m set --match-set allowed_ips_legacy src -j ACCEPT
+          # 2. 다중 set 매칭
+          sudo iptables -A INPUT -m set --match-set allowed_src src -m set --match-set critical_dst dst -j ACCEPT
+          # 3. iptables-translate
+          iptables-translate -A INPUT -m set --match-set allowed_ips_legacy src -j ACCEPT
+        예상 출력 `nft equivalent: ip saddr @allowed_ips_legacy counter accept`.
+        운영 해석: iptables m set = nft @set. 동일 의미.
+      - |
+        **[OSS] log + accept (audit 패턴)** — audit.
+          # 1. log + accept (자동 감사)
+          sudo nft 'add rule inet whitelist input ip saddr @allowed_ips log prefix "[WL-ACCEPT] " counter accept'
+          # 2. journalctl 로 감사
+          sudo journalctl -k -f | grep WL-ACCEPT
+          # 3. rsyslog 분리 file
+          sudo tee /etc/rsyslog.d/wl-accept.conf > /dev/null <<'EOF'
+          :msg, contains, "[WL-ACCEPT]" -/var/log/wl-accept.log
+          & stop
+          EOF
+          sudo systemctl restart rsyslog
+          # 4. 통계 (top10 source IP)
+          sudo grep WL-ACCEPT /var/log/wl-accept.log | grep -oP 'SRC=\S+' | sort | uniq -c | sort -rn | head
+        예상 출력 `[WL-ACCEPT] SRC=10.20.30.201 ... / top10 분포`.
+        운영 해석: 화이트리스트 통과한 source 의 분포. anomaly 식별.
+      - |
+        **[OSS] 화이트리스트 효과 검증 (실측)** — 검증.
+          # 1. 화이트리스트 IP 에서 접속 (정상)
+          ssh -o ConnectTimeout=3 ccc@10.20.30.1 'echo OK from whitelist'
+          # 2. counter 증가 확인
+          sudo nft list chain inet whitelist input | grep '@allowed_ips'
+          # 3. 비-화이트리스트 시뮬 (drop 검증)
+          # ssh ccc@10.20.30.201 'nc -zv -w 2 198.51.100.10 22' (비-화이트 IP)
+          # 4. tcpdump 으로 packet 검증
+          sudo tcpdump -i any -nn 'host 10.20.30.201 and port 22' -c 5
+        예상 출력 `OK from whitelist / counter +1 / SYN from 201 → SYN-ACK`.
+        운영 해석: 화이트 → accept (counter+1+SYN-ACK), 비-화이트 → drop (no SYN-ACK).
+      - |
+        **[OSS] eBPF / XDP (대량 처리 최적화)** — 고급.
+          # 1. eBPF 기반 화이트리스트 (kernel 수준 가속)
+          # XDP 가 nftables 보다 빠름 (NIC 수준)
+          # 패키지: bpfcc-tools, libbpf-dev
+          sudo apt install -y bpfcc-tools
+          # 2. nftables 의 vmap (벡터 매핑) 으로 정책 분기
+          sudo nft 'add rule inet whitelist input ip saddr vmap @policy_map'
+          # 3. 성능 측정 (pps)
+          sudo iperf3 -s &
+          iperf3 -c 10.20.30.1 -u -b 1G -t 5
+          # 4. nftables 의 jhash, set 자동화
+        예상 출력 `eBPF/XDP 1M+ pps / 일반 nft 100K pps`.
+        운영 해석: 대규모 트래픽 = XDP. 일반 운영 = nft 충분.
       negative_signs:
       - '@ 접두어 없음'
       - saddr 대신 daddr 혼동
@@ -159,6 +476,81 @@ steps:
       - iptables -m limit --limit
       - fail2ban + nftables backend
       - sshd_config MaxAuthTries 병행
+      - |
+        **[OSS] nft limit rate (다양한 단위)** — 표준.
+          # 1. rate 3/minute (분당 3개 신규 연결)
+          sudo nft 'add rule inet whitelist input tcp dport 22 ct state new limit rate 3/minute counter accept'
+          # 2. burst 옵션 (순간 burst 허용)
+          sudo nft 'add rule inet whitelist input tcp dport 22 ct state new limit rate 3/minute burst 5 packets counter accept'
+          # 3. 초과 시 drop 룰 (반드시 limit 다음에)
+          sudo nft 'add rule inet whitelist input tcp dport 22 ct state new counter drop comment "ssh-rate-exceeded"'
+          # 4. 검증 (룰 순서)
+          sudo nft -a list chain inet whitelist input | grep -E 'dport 22|limit'
+        예상 출력 `[1] dport 22 ct state new limit 3/minute accept / [2] ct state new drop`.
+        운영 해석: limit 룰 + 초과 drop 룰 = 완전한 rate limit. burst 로 정상 사용 보호.
+      - |
+        **[OSS] fail2ban + nft 통합 (자동 차단)** — 운영.
+          # 1. /etc/fail2ban/jail.local
+          sudo tee -a /etc/fail2ban/jail.local <<'EOF'
+          [sshd]
+          enabled = true
+          maxretry = 3
+          findtime = 5m
+          bantime = 1h
+          banaction = nftables-multiport
+          EOF
+          # 2. nftables-multiport 액션 활성
+          sudo systemctl restart fail2ban
+          # 3. 차단 IP
+          sudo fail2ban-client status sshd
+          # 4. nft set 으로 차단 IP 추적
+          sudo nft list set inet f2b-sshd | head
+        예상 출력 `Currently banned: 5 / IP list`.
+        운영 해석: rate limit 우회 시도 → fail2ban 자동 차단. 다층 방어.
+      - |
+        **[OSS] CrowdSec (커뮤니티 reputation + rate limit)** — 보충.
+          # 1. CrowdSec 설치
+          sudo apt install -y crowdsec crowdsec-firewall-bouncer-nftables
+          # 2. SSH brute force scenario
+          sudo cscli scenarios install crowdsecurity/ssh-bf
+          sudo systemctl restart crowdsec
+          # 3. 차단 결정
+          sudo cscli decisions list --scenario ssh-bf
+          # 4. nft set 통합
+          sudo nft list set inet crowdsec crowdsec-blacklists | head
+        예상 출력 `decisions: 12 / set 200+ IPs`.
+        운영 해석: 자체 rate limit + community feed. 다층 방어.
+      - |
+        **[OSS] sshd 자체 rate limit (MaxAuthTries)** — 보충.
+          # 1. /etc/ssh/sshd_config 검토
+          sudo grep -E '^MaxAuthTries|^LoginGraceTime|^MaxStartups' /etc/ssh/sshd_config
+          # 2. 권장값
+          sudo tee -a /etc/ssh/sshd_config.d/rate-limit.conf > /dev/null <<EOF
+          MaxAuthTries 3
+          LoginGraceTime 30
+          MaxStartups 10:30:60
+          EOF
+          # 3. 적용
+          sudo systemctl restart sshd
+          # 4. 검증 (현재 세션 영향 X)
+          sudo grep -i maxauth /etc/ssh/sshd_config.d/*
+        예상 출력 `MaxAuthTries 3 / 시도 4번째에 disconnect`.
+        운영 해석: nft + sshd config 다층. nft 가 IP 차단, sshd 가 password 시도 차단.
+      - |
+        **[OSS] rate limit 효과 검증 (hydra)** — 검증.
+          # 1. hydra 로 빠른 시도
+          # ssh ccc@10.20.30.201
+          echo -e "wrong1\nwrong2\nwrong3\nwrong4\nwrong5" > /tmp/5pwds.txt
+          hydra -l ccc -P /tmp/5pwds.txt ssh://10.20.30.1 -t 1 -W 1
+          # 2. secu 의 counter 변동
+          sudo nft list chain inet whitelist input | grep -E 'limit|drop'
+          # 3. 시간 후 재시도 (window 갱신)
+          sleep 65
+          hydra -l ccc -P /tmp/5pwds.txt ssh://10.20.30.1 -t 1 -W 1
+          # 4. counter 비교
+          sudo nft list chain inet whitelist input | grep -E 'limit|drop'
+        예상 출력 `시도 5: limit +3 drop +2 / 1분 뒤: limit +6 drop +4`.
+        운영 해석: 시간 윈도우 내 3개 통과 + 초과 drop. 1분 뒤 갱신.
       negative_signs:
       - ct state 조건 없이
       - limit 없이 단순 accept
@@ -192,6 +584,70 @@ steps:
       - iptables -t nat -A POSTROUTING -j MASQUERADE
       - firewalld --add-masquerade
       - IP forwarding + masquerade 조합
+      - |
+        **[OSS] nft NAT masquerade (표준 SNAT)** — 표준.
+          # 1. NAT 테이블 + postrouting chain
+          sudo nft add table inet nat
+          sudo nft 'add chain inet nat postrouting { type nat hook postrouting priority 100 ; }'
+          # 2. masquerade (동적 외부 IP)
+          sudo nft 'add rule inet nat postrouting oifname "ens33" masquerade'
+          # 3. SNAT (정적 외부 IP, 약간 빠름)
+          sudo nft 'add rule inet nat postrouting oifname "ens33" snat to 192.168.0.103'
+          # 4. 검증
+          sudo nft list table inet nat
+        예상 출력 `oifname "ens33" masquerade / chain postrouting priority 100`.
+        운영 해석: masquerade = 동적 IP 자동. SNAT = 정적 IP 명시. 정적이면 SNAT 가 빠름.
+      - |
+        **[OSS] IP forwarding 활성 (필수 전제)** — 표준.
+          # 1. 현재 상태
+          sysctl net.ipv4.ip_forward
+          # 2. 임시 활성
+          sudo sysctl -w net.ipv4.ip_forward=1
+          # 3. 영구 활성 (/etc/sysctl.conf)
+          echo 'net.ipv4.ip_forward=1' | sudo tee -a /etc/sysctl.d/99-ipforward.conf
+          sudo sysctl -p /etc/sysctl.d/99-ipforward.conf
+          # 4. IPv6 도 (필요 시)
+          echo 'net.ipv6.conf.all.forwarding=1' | sudo tee -a /etc/sysctl.d/99-ipforward.conf
+          sysctl net.ipv4.ip_forward net.ipv6.conf.all.forwarding
+        예상 출력 `net.ipv4.ip_forward = 1 / net.ipv6.conf.all.forwarding = 1`.
+        운영 해석: forwarding 없으면 NAT 불가. 라우터 동작 전제.
+      - |
+        **[OSS] iptables NAT (legacy)** — 마이그레이션.
+          # 1. legacy
+          sudo iptables -t nat -A POSTROUTING -o ens33 -j MASQUERADE
+          # 2. SNAT
+          sudo iptables -t nat -A POSTROUTING -o ens33 -j SNAT --to-source 192.168.0.103
+          # 3. nft 변환
+          iptables-translate -t nat -A POSTROUTING -o ens33 -j MASQUERADE
+          # 4. 영구화
+          sudo iptables-save | sudo tee /etc/iptables/rules.v4
+        예상 출력 `nft equivalent: oifname ens33 masquerade`.
+        운영 해석: iptables -t nat = nft type nat. 동일 동작.
+      - |
+        **[OSS] firewalld --add-masquerade** — distro alt.
+          # 1. zone 별 masquerade 활성
+          sudo firewall-cmd --permanent --zone=external --add-masquerade
+          # 2. 또는 default zone
+          sudo firewall-cmd --permanent --add-masquerade
+          # 3. apply
+          sudo firewall-cmd --reload
+          # 4. 검증
+          sudo firewall-cmd --query-masquerade
+          sudo firewall-cmd --info-zone=external
+        예상 출력 `yes / external (active interfaces ens33 masquerade: yes)`.
+        운영 해석: zone 기반 NAT. 멀티 인터페이스 정책 친화.
+      - |
+        **[OSS] tcpdump으로 NAT 효과 검증** — 정밀.
+          # 1. 외부 인터페이스 확인
+          ip -br link show
+          # 2. tcpdump 으로 outbound capture (NAT 후 src IP)
+          sudo tcpdump -i ens33 -nn 'host 10.20.30.80' -c 10
+          # 3. 내부 인터페이스 capture (NAT 전 src IP)
+          sudo tcpdump -i ens34 -nn 'host 10.20.30.80' -c 10
+          # 4. 비교 (NAT 전 src=10.20.30.80, NAT 후 src=192.168.0.103)
+          # 같은 패킷이 두 인터페이스에서 다른 src 로 보임
+        예상 출력 `ens33: src=192.168.0.103 (NAT 후) / ens34: src=10.20.30.80 (NAT 전)`.
+        운영 해석: counter 만으로 부족, tcpdump 으로 src IP 변환 직접 확인.
       negative_signs:
       - type filter (NAT 아님)
       - hook postrouting 누락
@@ -220,6 +676,70 @@ steps:
       - nft -j list table (JSON)
       - nft -n list table (숫자)
       - ansible assert 룰 존재
+      - |
+        **[OSS] nft list table + handle + JSON** — 표준.
+          # 1. 텍스트
+          sudo nft list table inet whitelist
+          # 2. handle 포함
+          sudo nft -a list table inet whitelist
+          # 3. JSON 파싱
+          sudo nft -j list table inet whitelist | jq '.nftables[] | select(.rule)'
+          # 4. set + chain + rule 분리
+          sudo nft -j list table inet whitelist | jq '{sets: [.nftables[]|select(.set)|.set.name], chains: [.nftables[]|select(.chain)|.chain.name], rule_count: ([.nftables[]|select(.rule)]|length)}'
+        예상 출력 `set allowed_ips / chain input / 5 rules`.
+        운영 해석: 종합 검증. JSON = 자동화·dashboard.
+      - |
+        **[OSS] nft -j + jq 카운터 분석 (룰 효과)** — 정량.
+          # 1. counter 추출 (drop/accept 빈도)
+          sudo nft -j list table inet whitelist | jq '.nftables[] | select(.rule) | .rule.expr[]? | select(.counter) | .counter'
+          # 2. 룰별 packets·bytes 집계
+          sudo nft -j list table inet whitelist | jq '.nftables[] | select(.rule) | {chain: .rule.chain, counter: (.rule.expr[]?|select(.counter))}'
+          # 3. 0 counter 룰 식별 (dead rule)
+          sudo nft -j list table inet whitelist | jq '.nftables[] | select(.rule) | select((.rule.expr[]?|select(.counter)|.counter.packets) == 0)'
+        예상 출력 `accept counter packets 12 / drop counter packets 3 / dead rules`.
+        운영 해석: 사용 안 되는 룰 식별 (FP 룰 또는 over-engineered).
+      - |
+        **[OSS] watch + diff (실시간 변동)** — 모니터.
+          # 1. 1초마다 룰셋 변경 watch
+          watch -n 1 -d 'sudo nft list table inet whitelist'
+          # 2. 시계열 스냅샷
+          while true; do
+            sudo nft list table inet whitelist > /tmp/wl-$(date +%s).txt
+            sleep 30
+          done &
+          # 3. 변경 비교
+          ls -t /tmp/wl-*.txt | head -2 | xargs diff
+        예상 출력 `watch 인터랙티브 + 변경 highlight`.
+        운영 해석: 학습 + 변경 추적. 변경 빈도 지표.
+      - |
+        **[OSS] Ansible assert (정합성 검증)** — IaC.
+          # 1. /etc/ansible/playbooks/wl-verify.yml
+          # ---
+          # - hosts: secu
+          #   tasks:
+          #     - shell: nft list table inet whitelist
+          #       register: wl
+          #     - assert:
+          #         that:
+          #           - "'allowed_ips' in wl.stdout"
+          #           - "'policy drop' in wl.stdout"
+          #           - "'limit rate 3/minute' in wl.stdout"
+          #         success_msg: "whitelist verified"
+          # 2. 실행
+          ansible-playbook -i inventory wl-verify.yml
+        예상 출력 `assertion passed / verified`.
+        운영 해석: PR review + CI 검증. 정책 보장.
+      - |
+        **[OSS] etckeeper + diff (변경 audit)** — IaC.
+          # 1. snapshot 저장
+          sudo nft list table inet whitelist > /etc/nftables.whitelist.snapshot
+          cd /etc && sudo etckeeper commit "snapshot whitelist"
+          # 2. 변경 history
+          sudo git log --oneline nftables.whitelist.snapshot | head
+          # 3. diff
+          sudo git log -p nftables.whitelist.snapshot | head -30
+        예상 출력 `commit abc123 + 5 rules / commit def456 - 1 rule`.
+        운영 해석: 정책 history + audit. enterprise.
       negative_signs:
       - list 실행 안 함
       - 테이블 이름 혼동
@@ -249,6 +769,67 @@ steps:
       - nft -j list table nat
       - grep masquerade 필터
       - conntrack -L 활성 연결 확인
+      - |
+        **[OSS] nft list NAT + counter** — 표준.
+          # 1. 텍스트
+          sudo nft list table inet nat
+          # 2. masquerade 룰만 grep
+          sudo nft list table inet nat | grep masquerade
+          # 3. handle 포함
+          sudo nft -a list table inet nat
+          # 4. counter (NAT 처리 횟수)
+          sudo nft -j list table inet nat | jq '.nftables[] | select(.rule) | .rule.expr[]? | select(.counter)'
+        예상 출력 `oifname "ens33" masquerade # handle 5 / counter packets 234`.
+        운영 해석: counter = 실제 NAT 적용 횟수. 0 면 dead 룰.
+      - |
+        **[OSS] conntrack (NAT 활성 연결)** — 검증.
+          # 1. 활성 NAT 연결 (ASSURED state)
+          sudo conntrack -L | grep ASSURED | head
+          # 2. NAT 변환 정보 (src=internal → external)
+          sudo conntrack -L --src 10.20.30.80 | head
+          # 3. 통계
+          sudo conntrack -S
+          # 4. 특정 외부 호스트 NAT 추적
+          sudo conntrack -L -d 8.8.8.8
+        예상 출력 `tcp ESTABLISHED src=10.20.30.80 ... [snat → 192.168.0.103] ASSURED`.
+        운영 해석: snat 표시 = NAT 적용. ASSURED = 양방향 통신 정상.
+      - |
+        **[OSS] tcpdump 으로 NAT 변환 직접 확인** — 정밀.
+          # 1. 외부 인터페이스 capture (NAT 후)
+          sudo tcpdump -i ens33 -nn 'host 8.8.8.8' -c 10
+          # 2. 내부 인터페이스 capture (NAT 전)
+          sudo tcpdump -i ens34 -nn 'host 8.8.8.8' -c 10
+          # 3. 변환 비교
+          # ens33: src=192.168.0.103 / ens34: src=10.20.30.80
+          # 4. pcap 저장
+          sudo tcpdump -i ens33 -nn -w /tmp/nat-out.pcap 'host 8.8.8.8' -c 20
+        예상 출력 `ens33: 192.168.0.103.<port> > 8.8.8.8.53 / ens34: 10.20.30.80.<port>`.
+        운영 해석: NAT 효과는 packet capture 로 확실. counter 만으로 부족.
+      - |
+        **[OSS] iptables -t nat -L (legacy)** — alt.
+          # 1. legacy NAT 표
+          sudo iptables -t nat -L POSTROUTING -nv --line-numbers
+          # 2. 통계
+          sudo iptables -t nat -L -nv | grep -E 'MASQUERADE|SNAT'
+          # 3. nft 변환
+          sudo iptables-save -t nat | iptables-translate-restore | head
+        예상 출력 `Chain POSTROUTING / 1 MASQUERADE all -- 0.0.0.0/0`.
+        운영 해석: legacy 환경. nft 가 표현 풍부. 마이그레이션.
+      - |
+        **[OSS] Wazuh decoder + alert (NAT 감사)** — SIEM.
+          # 1. /etc/conntrackd/conntrackd.conf 활성 (변경 audit)
+          # 2. nft monitor 으로 NAT 변경 추적
+          sudo nft monitor > /tmp/nat-monitor.log &
+          # 3. Wazuh decoder
+          # /var/ossec/etc/decoders/local_decoder.xml:
+          # <decoder name="nft-nat-event"><prematch>masquerade|snat|dnat</prematch></decoder>
+          # 4. Wazuh rule (변경 alert)
+          # <rule id="100400" level="5">
+          #   <decoded_as>nft-nat-event</decoded_as>
+          #   <description>NAT rule changed</description>
+          # </rule>
+        예상 출력 `Wazuh alert: NAT rule modified at 10.20.30.1`.
+        운영 해석: 정책 변경을 SIEM 감사. compliance.
       negative_signs:
       - NAT 테이블 아닌 filter
       - masquerade 출력 누락
@@ -278,6 +859,87 @@ steps:
       - nft flush ruleset (전체)
       - systemctl restart nftables (설정 초기화)
       - /etc/nftables.conf 재로드
+      - |
+        **[OSS] nft delete + atomic batch** — 표준.
+          # 1. 단일 테이블
+          sudo nft delete table inet whitelist
+          sudo nft delete table inet nat
+          # 2. atomic 배치 (한 번에 삭제)
+          sudo nft -f - <<'EOF'
+          delete table inet whitelist
+          delete table inet nat
+          EOF
+          # 3. idempotent (있을 때만 삭제)
+          for tbl in whitelist nat; do
+            sudo nft delete table inet $tbl 2>/dev/null && echo "$tbl removed"
+          done
+          # 4. destroy (idempotent — 없어도 무시)
+          sudo nft destroy table inet whitelist 2>/dev/null
+        예상 출력 `whitelist removed / nat removed`.
+        운영 해석: atomic batch = 일부 실패 시 rollback. destroy = idempotent.
+      - |
+        **[OSS] systemd ExecStop (자동 cleanup)** — 안전.
+          # 1. service 가 정의된 경우
+          sudo systemctl stop nftables-whitelist.service nftables-nat.service 2>/dev/null
+          sudo systemctl disable nftables-whitelist.service nftables-nat.service 2>/dev/null
+          # 2. service file 제거
+          sudo rm -f /etc/systemd/system/nftables-whitelist.service
+          sudo rm -f /etc/systemd/system/nftables-nat.service
+          sudo systemctl daemon-reload
+          # 3. 검증
+          sudo nft list tables | head
+        예상 출력 `service stopped + removed / table cleaned`.
+        운영 해석: ExecStop 정의 = 자동 정리. lifecycle 표준.
+      - |
+        **[OSS] Ansible cleanup playbook** — IaC.
+          # 1. /etc/ansible/playbooks/wl-nat-cleanup.yml
+          # ---
+          # - hosts: secu
+          #   tasks:
+          #     - name: remove whitelist + nat tables
+          #       community.general.nftables_table:
+          #         family: inet
+          #         name: "{{ item }}"
+          #         state: absent
+          #       loop:
+          #         - whitelist
+          #         - nat
+          # 2. 실행
+          ansible-playbook -i inventory wl-nat-cleanup.yml --diff
+          # 3. idempotent (이미 없어도 ok)
+          ansible-playbook -i inventory wl-nat-cleanup.yml --check
+        예상 출력 `changed=2 / ok=2 changed=0 (재실행)`.
+        운영 해석: idempotent + 다중 동시. 표준화.
+      - |
+        **[OSS] git revert (IaC rollback)** — enterprise.
+          # 1. /etc/nftables.conf 가 git 관리 환경
+          cd /etc && sudo git log --oneline nftables.conf | head
+          # 2. whitelist + nat commit revert
+          sudo git revert <commit-sha-of-add>
+          # 3. apply
+          sudo nft -f /etc/nftables.conf
+          # 4. 또는 systemd reload
+          sudo systemctl reload nftables
+        예상 출력 `Revert applied / table cleaned`.
+        운영 해석: 변경 history 기반 rollback. 안전.
+      - |
+        **[OSS] cleanup 검증 script (안전 cleanup)** — 표준.
+          # 1. /usr/local/bin/wl-nat-cleanup.sh
+          sudo tee /usr/local/bin/wl-nat-cleanup.sh > /dev/null <<'SCRIPT'
+          #!/bin/bash
+          set -e
+          # cleanup
+          sudo nft delete table inet whitelist 2>/dev/null && echo "whitelist removed"
+          sudo nft delete table inet nat 2>/dev/null && echo "nat removed"
+          # 검증
+          sudo nft list tables | grep -E 'whitelist|nat' && echo "WARN: still exists" || echo "OK: cleaned"
+          # SSH 정상 (lockout 검증)
+          ss -tn state established sport = :22 | head
+          SCRIPT
+          sudo chmod +x /usr/local/bin/wl-nat-cleanup.sh
+          sudo /usr/local/bin/wl-nat-cleanup.sh
+        예상 출력 `whitelist removed / nat removed / OK: cleaned / SSH session OK`.
+        운영 해석: cleanup + 사후 검증 + lockout 회피. 안전.
       negative_signs:
       - 단일 테이블만 삭제
       - flush 로 전체 삭제 (과도)
@@ -311,6 +973,72 @@ steps:
       - nft -j list tables (JSON)
       - grep -c 'whitelist\|nat' 0
       - ansible assert
+      - |
+        **[OSS] nft list tables (정리 검증)** — 표준.
+          # 1. 모든 테이블 목록
+          sudo nft list tables
+          # 2. 실습 테이블 부재 검증 (exit code)
+          sudo nft list tables | grep -E ' (whitelist|nat)$' && echo "WARN: still exists" || echo "OK: cleaned"
+          # 3. 직접 list 시 에러 = 삭제 성공
+          sudo nft list table inet whitelist 2>&1 | head
+          # 4. JSON 으로 정확
+          sudo nft -j list tables | jq '.nftables[] | select(.table) | .table | select(.name | test("^(whitelist|nat)$"))'
+        예상 출력 `OK: cleaned / Error: No such file (정상)`.
+        운영 해석: 에러 = 삭제 성공. JSON = 자동화 친화.
+      - |
+        **[OSS] for loop + check (idempotent 검증)** — 자동화.
+          # 1. 모든 lab 테이블 일괄 확인
+          for tbl in whitelist nat verify_wl verify_rl verify_nat; do
+            if sudo nft list table inet $tbl 2>/dev/null > /dev/null; then
+              echo "$tbl: STILL EXISTS"
+            else
+              echo "$tbl: REMOVED"
+            fi
+          done
+          # 2. 운영 테이블만 남은지 검증
+          sudo nft list tables | grep -vE ' (whitelist|nat|verify)' | head
+        예상 출력 `whitelist: REMOVED / nat: REMOVED / 운영 테이블만 표시`.
+        운영 해석: 일괄 idempotent 검증. CI 통합.
+      - |
+        **[OSS] Ansible assert (정합성 검증)** — IaC.
+          # 1. /etc/ansible/playbooks/cleanup-verify.yml
+          # ---
+          # - hosts: secu
+          #   tasks:
+          #     - shell: nft list tables
+          #       register: tbls
+          #     - assert:
+          #         that:
+          #           - "'whitelist' not in tbls.stdout"
+          #           - "'nat' not in tbls.stdout"
+          #         success_msg: "cleanup verified"
+          #         fail_msg: "lab tables still exist"
+          # 2. 실행
+          ansible-playbook -i inventory cleanup-verify.yml
+        예상 출력 `assertion passed / cleanup verified`.
+        운영 해석: PR-time + cron 검증. CI 통합.
+      - |
+        **[OSS] etckeeper diff (cleanup 변경 audit)** — 추적.
+          # 1. /etc/nftables.conf 변경 감지
+          cd /etc && sudo git diff HEAD~1 -- nftables.conf | head
+          # 2. cleanup commit 확인
+          sudo git log --oneline nftables.conf | grep -iE 'remove|delete|cleanup' | head
+          # 3. before/after diff
+          sudo git log -p nftables.conf | head -30
+        예상 출력 `commit abc123 cleanup whitelist + nat`.
+        운영 해석: cleanup audit. 누가·언제 정리했는지.
+      - |
+        **[OSS] nftables-state diff (운영 정합성)** — 종합.
+          # 1. baseline (운영 default)
+          sudo nft -j list tables > /tmp/tables-now.json
+          jq -S . /tmp/tables-now.json > /tmp/tables-now-sorted.json
+          # 2. baseline 와 비교 (운영 환경에서 사전 저장한 baseline)
+          # diff /tmp/baseline-tables.json /tmp/tables-now-sorted.json
+          # 3. 차이 = drift (cleanup 누락 또는 추가)
+          # 4. CI 통합 (cron 5분 주기)
+          # */5 * * * * /usr/local/bin/nft-drift-check.sh
+        예상 출력 `0 differences (정합) / 차이 발견 시 alert`.
+        운영 해석: 운영 정합성 자동 검증. drift = 즉시 알람.
       negative_signs:
       - list tables 실행 안 함
       - 부재 검증 없이 단순 나열
@@ -398,6 +1126,98 @@ steps:
       - secu 에서 sudo nft add/delete element 로 set 동적 변경
       - attacker 에서 nc -vz / curl trigger
       - secu 에서 sudo nft list set + nft list table 검증
+      - |
+        **[OSS] Phase A — verify_wl 안전 작성 (lockout 회피)** — 표준.
+          # 1. atomic build script (안전한 순서)
+          ssh ccc@10.20.30.1 'sudo tee /tmp/wl-build.nft' <<'EOF'
+          add table inet verify_wl
+          add chain inet verify_wl input { type filter hook input priority 0 ; policy drop ; }
+          add set inet verify_wl allowed_ips { type ipv4_addr ; }
+          add rule inet verify_wl input ct state established,related counter accept
+          add rule inet verify_wl input iifname lo counter accept
+          add rule inet verify_wl input tcp dport 22 counter accept
+          add rule inet verify_wl input ip saddr @allowed_ips counter accept
+          EOF
+          # 2. atomic apply (실패 시 rollback)
+          ssh ccc@10.20.30.1 'sudo nft -c -f /tmp/wl-build.nft && sudo nft -f /tmp/wl-build.nft'
+          # 3. SSH 자체 검증 (lockout 회피 핵심)
+          ssh -o ConnectTimeout=3 ccc@10.20.30.1 'echo SSH OK'
+          # 4. 검증
+          ssh ccc@10.20.30.1 'sudo nft list table inet verify_wl'
+        예상 출력 `valid / applied / SSH OK / 5 rules`.
+        운영 해석: atomic = 일부 실패 시 rollback. SSH 검증 = lockout 회피 보증.
+      - |
+        **[OSS] Phase B — set 동적 변경 + counter 추적** — 검증.
+          # 1. /tmp/wl-trigger.sh
+          ssh ccc@10.20.30.201 'tee /tmp/wl-trigger.sh' <<'SCRIPT'
+          #!/bin/bash
+          echo "=== State A: set empty ==="
+          nc -vz -w 3 10.20.30.1 8080 2>&1 | head
+          echo
+          echo "=== State B: after add element ==="
+          # secu 에서 추가 (별도 세션)
+          # sudo nft add element inet verify_wl allowed_ips { 10.20.30.201 }
+          read -p "Add 10.20.30.201 to set, then press Enter..."
+          nc -vz -w 3 10.20.30.1 8080 2>&1 | head
+          echo
+          echo "=== State C: after delete element ==="
+          # sudo nft delete element inet verify_wl allowed_ips { 10.20.30.201 }
+          read -p "Delete 10.20.30.201 from set, then press Enter..."
+          nc -vz -w 3 10.20.30.1 8080 2>&1 | head
+          SCRIPT
+          # 2. counter 변동 추적 (secu 측)
+          for state in A B C; do
+            echo "=== After State $state ==="
+            ssh ccc@10.20.30.1 'sudo nft list chain inet verify_wl input | grep saddr'
+          done
+        예상 출력 `A: counter 0 / B: counter 1 / C: counter 1 (변화 없음)`.
+        운영 해석: 추가 → counter 증가, 삭제 → 정지. dynamic effect 직접 확인.
+      - |
+        **[OSS] tcpdump 으로 packet-level 검증** — 정밀.
+          # 1. secu 에서 capture
+          ssh ccc@10.20.30.1 'sudo timeout 60 tcpdump -i any -nn "host 10.20.30.201 and port 8080" -c 30 -w /tmp/wl-test.pcap' &
+          # 2. attacker 측 trigger (3 state)
+          # ssh ccc@10.20.30.201 'bash /tmp/wl-trigger.sh'
+          # 3. pcap 분석 (drop 확인 = SYN 만, accept = SYN-ACK)
+          ssh ccc@10.20.30.1 'sudo tcpdump -r /tmp/wl-test.pcap -nn 2>/dev/null | head -30'
+          # 4. SYN vs SYN-ACK 분포
+          ssh ccc@10.20.30.1 'sudo tcpdump -r /tmp/wl-test.pcap -nn "tcp[tcpflags] & tcp-syn != 0" 2>/dev/null | wc -l'
+        예상 출력 `State A: SYN only (drop) / B: SYN+SYN-ACK (accept) / C: SYN only`.
+        운영 해석: packet capture 로 drop/accept 확실. counter 보다 정밀.
+      - |
+        **[OSS] nft monitor (실시간 변경 추적)** — audit.
+          # 1. 백그라운드 monitor
+          ssh ccc@10.20.30.1 'sudo nft monitor > /tmp/nft-mon.log' &
+          # 2. set 변경 (3 state)
+          ssh ccc@10.20.30.1 'sudo nft add element inet verify_wl allowed_ips { 10.20.30.201 }'
+          ssh ccc@10.20.30.1 'sudo nft delete element inet verify_wl allowed_ips { 10.20.30.201 }'
+          # 3. monitor 로그
+          ssh ccc@10.20.30.1 'tail /tmp/nft-mon.log'
+          # 4. timeline 추출
+          # ssh ccc@10.20.30.1 'cat /tmp/nft-mon.log' | grep -E '^(add|delete) element'
+        예상 출력 `add element ... 10.20.30.201 / delete element ... 10.20.30.201`.
+        운영 해석: 정책 변경 audit timeline. 누가·언제 변경.
+      - |
+        **[OSS] Phase C — 회고 markdown 자동 생성** — 보고.
+          # 1. 결과 종합 markdown
+          tee /tmp/wl-report.md <<'EOF'
+          # Week03 Whitelist Effect Verification
+          ## Phase A — verify_wl 작성
+          - atomic build + SSH 자체 검증 (lockout 회피)
+          ## Phase B — 3 state 동적 변경
+          | State | set | counter Δ | nc 8080 결과 |
+          |-------|-----|-----------|-------------|
+          | A: empty | 0 IPs | 0 | timeout (drop) |
+          | B: 201 added | 1 IP | +1 | timeout (8080 미listen, drop 아님) |
+          | C: 201 removed | 0 IPs | 0 | timeout (drop) |
+          ## Phase C — 회고
+          1. counter 동작: 추가 시 saddr 룰 매칭 (+1), 삭제 시 정지
+          2. lockout 위험: SSH accept 룰 빠뜨리면 본인 세션도 차단
+          3. 운영 주의: nft monitor 로 실시간 audit 필수
+          EOF
+          sha256sum /tmp/wl-report.md
+        예상 출력 `보고서 생성 + sha256`.
+        운영 해석: 자동 보고서 + 무결성. 학기 누적.
       negative_signs:
       - SSH accept 룰 누락 (lockout 위험 무시)
       - set 추가/삭제 1번만 — 동적 검증 누락
@@ -472,6 +1292,87 @@ steps:
       - attacker 에서 hydra ssh + 패스워드 파일
       - secu 에서 sudo nft list table + grep counter
       - sleep 65 후 재시도 + counter 비교
+      - |
+        **[OSS] Phase A — verify_rl 작성 + lockout 회피** — 표준.
+          # 1. atomic build (rate limit + 초과 drop)
+          ssh ccc@10.20.30.1 'sudo tee /tmp/rl-build.nft' <<'EOF'
+          add table inet verify_rl
+          add chain inet verify_rl input { type filter hook input priority 0 ; policy accept ; }
+          add rule inet verify_rl input ct state established,related counter accept
+          add rule inet verify_rl input iifname lo counter accept
+          add rule inet verify_rl input tcp dport 22 ct state new limit rate 3/minute counter accept
+          add rule inet verify_rl input tcp dport 22 ct state new counter drop comment "ssh-rate-exceed"
+          EOF
+          # 2. atomic apply
+          ssh ccc@10.20.30.1 'sudo nft -c -f /tmp/rl-build.nft && sudo nft -f /tmp/rl-build.nft'
+          # 3. 룰 순서 검증
+          ssh ccc@10.20.30.1 'sudo nft -a list chain inet verify_rl input | grep -E "limit|drop"'
+        예상 출력 `[1] established / [2] lo / [3] limit 3/min accept / [4] drop`.
+        운영 해석: limit + drop 두 룰 모두 필수. limit 만 있으면 초과 패킷이 그냥 통과 (policy accept).
+      - |
+        **[OSS] Phase B — hydra 빠른 시도 + counter 추적** — 검증.
+          # 1. 5 비밀번호 파일
+          ssh ccc@10.20.30.201 'echo -e "wrong1\nwrong2\nwrong3\nwrong4\nwrong5" > /tmp/5pwds.txt'
+          # 2. counter before
+          BEFORE_LIMIT=$(ssh ccc@10.20.30.1 'sudo nft list chain inet verify_rl input | grep "limit rate" | grep -oP "packets \K\d+"')
+          BEFORE_DROP=$(ssh ccc@10.20.30.1 'sudo nft list chain inet verify_rl input | grep "ssh-rate-exceed" | grep -oP "packets \K\d+"')
+          # 3. hydra (1 thread, 5 시도)
+          ssh ccc@10.20.30.201 'hydra -l ccc -P /tmp/5pwds.txt ssh://10.20.30.1 -t 1 -W 1 2>&1 | head -10'
+          sleep 5
+          # 4. counter after (limit +3, drop +2 예상)
+          AFTER_LIMIT=$(ssh ccc@10.20.30.1 'sudo nft list chain inet verify_rl input | grep "limit rate" | grep -oP "packets \K\d+"')
+          AFTER_DROP=$(ssh ccc@10.20.30.1 'sudo nft list chain inet verify_rl input | grep "ssh-rate-exceed" | grep -oP "packets \K\d+"')
+          echo "limit Δ: $((AFTER_LIMIT - BEFORE_LIMIT)) (expect 3)"
+          echo "drop Δ: $((AFTER_DROP - BEFORE_DROP)) (expect 2)"
+        예상 출력 `limit Δ 3 / drop Δ 2`.
+        운영 해석: 정확한 분류 — 처음 3개 통과, 4-5번째 drop. window 검증 핵심.
+      - |
+        **[OSS] window 갱신 검증 (1분 sleep 후 재시도)** — 정밀.
+          # 1. 즉시 재시도 (window 미갱신)
+          ssh ccc@10.20.30.201 'hydra -l ccc -P /tmp/5pwds.txt ssh://10.20.30.1 -t 1 -W 1 2>&1 | head -5'
+          # → 모두 drop (3+2 → +0+5 = 누적 limit 3 drop 7)
+          # 2. 1분 sleep 후 재시도
+          sleep 65
+          ssh ccc@10.20.30.201 'hydra -l ccc -P /tmp/5pwds.txt ssh://10.20.30.1 -t 1 -W 1 2>&1 | head -5'
+          # → 다시 처음 3개 통과 (limit +3 → 누적 6)
+          # 3. counter 다시 비교
+          ssh ccc@10.20.30.1 'sudo nft list chain inet verify_rl input | grep -E "limit|drop"'
+        예상 출력 `즉시 재시도: limit 3 drop 7 / 1분 후: limit 6 drop 9`.
+        운영 해석: 시간 윈도우 (1분) 갱신. 운영에서는 적절한 burst 허용 필요.
+      - |
+        **[OSS] tcpdump packet-level (정밀 검증)** — 정밀.
+          # 1. secu 에서 capture
+          ssh ccc@10.20.30.1 'sudo timeout 60 tcpdump -i any -nn "host 10.20.30.201 and port 22" -c 50 -w /tmp/rl-test.pcap' &
+          # 2. attacker 에서 hydra
+          ssh ccc@10.20.30.201 'hydra -l ccc -P /tmp/5pwds.txt ssh://10.20.30.1 -t 1 -W 1'
+          # 3. pcap 분석 — SYN 갯수 vs SYN-ACK 갯수
+          ssh ccc@10.20.30.1 'sudo tcpdump -r /tmp/rl-test.pcap -nn "tcp[tcpflags] & tcp-syn != 0 and not tcp[tcpflags] & tcp-ack != 0" 2>/dev/null | wc -l'
+          ssh ccc@10.20.30.1 'sudo tcpdump -r /tmp/rl-test.pcap -nn "tcp[tcpflags] & tcp-syn != 0 and tcp[tcpflags] & tcp-ack != 0" 2>/dev/null | wc -l'
+        예상 출력 `SYN: 5, SYN-ACK: 3 (3개만 통과)`.
+        운영 해석: packet 레벨로 정확. 3개만 SYN-ACK = rate limit 작동.
+      - |
+        **[OSS] Phase C — 회고 + 운영 권장** — 보고.
+          # 1. 결과 markdown
+          tee /tmp/rl-report.md <<'EOF'
+          # Week03 Rate Limit Verification
+          ## Phase B 결과
+          | 시점 | limit Δ | drop Δ | 의미 |
+          |------|---------|--------|------|
+          | 첫 5 시도 | +3 | +2 | window 내 3 통과 |
+          | 즉시 재 5 시도 | +0 | +5 | window 안 갱신 |
+          | 1분 후 5 시도 | +3 | +5 | window 갱신 → 다시 3 통과 |
+          ## 운영 권장 limit rate 값
+          - 정상 사용자 burst (재로그인 2-3회) 허용
+          - SSH brute force 5+회/분 차단
+          - 권장: 5/minute burst 10 (정상 사용자 보호)
+          ## 다층 방어 권장
+          - nft rate limit (TCP 레벨)
+          - sshd MaxAuthTries 3 (password 시도)
+          - fail2ban (장기 IP 차단)
+          EOF
+          sha256sum /tmp/rl-report.md
+        예상 출력 `보고서 + 다층 방어 권장`.
+        운영 해석: rate limit 만으론 부족. sshd + fail2ban 다층.
       negative_signs:
       - hydra 시도만 + counter 확인 누락
       - 1분 sleep 없이 즉시 재시도 (window 갱신 미검증)
@@ -554,6 +1455,90 @@ steps:
       - secu 에서 sudo tcpdump -i <iface> -n host <web>
       - web 에서 ping / curl 외부 시도
       - secu 에서 nft list table | grep counter (보조)
+      - |
+        **[OSS] Phase A — verify_nat + 외부 인터페이스 식별** — 표준.
+          # 1. 외부 인터페이스 식별
+          IFACE=$(ssh ccc@10.20.30.1 "ip -br link show | grep -v '^lo' | awk '{print \$1}' | head -1")
+          echo "External iface: $IFACE"
+          # 2. atomic build
+          ssh ccc@10.20.30.1 "sudo tee /tmp/nat-build.nft" <<EOF
+          add table inet verify_nat
+          add chain inet verify_nat postrouting { type nat hook postrouting priority 100 ; }
+          add rule inet verify_nat postrouting oifname "$IFACE" counter masquerade
+          EOF
+          # 3. atomic apply
+          ssh ccc@10.20.30.1 'sudo nft -c -f /tmp/nat-build.nft && sudo nft -f /tmp/nat-build.nft'
+          # 4. IP forwarding 활성 (전제 조건)
+          ssh ccc@10.20.30.1 'sudo sysctl -w net.ipv4.ip_forward=1'
+        예상 출력 `External iface: ens33 / valid / applied / ip_forward = 1`.
+        운영 해석: 외부 인터페이스 자동 식별 + IP forwarding 필수.
+      - |
+        **[OSS] Phase B — tcpdump 양방향 capture** — 정밀.
+          # 1. 외부 인터페이스 (NAT 후) capture
+          ssh ccc@10.20.30.1 'sudo timeout 60 tcpdump -i ens33 -nn "host 10.20.30.80 and (icmp or port 80)" -c 30 -w /tmp/nat-out.pcap' &
+          # 2. 내부 인터페이스 (NAT 전) capture
+          ssh ccc@10.20.30.1 'sudo timeout 60 tcpdump -i ens34 -nn "host 10.20.30.80" -c 30 -w /tmp/nat-in.pcap' &
+          sleep 2
+          # 3. web 에서 외부 트래픽 발생
+          ssh ccc@10.20.30.80 'ping -c 3 -W 2 8.8.8.8 || curl -m 5 -sI http://example.com'
+          sleep 3
+          # 4. pcap 분석 (src IP 변환 확인)
+          echo "=== Outbound (NAT 후) ==="
+          ssh ccc@10.20.30.1 'sudo tcpdump -r /tmp/nat-out.pcap -nn 2>/dev/null | head -10'
+          echo "=== Inbound (NAT 전) ==="
+          ssh ccc@10.20.30.1 'sudo tcpdump -r /tmp/nat-in.pcap -nn 2>/dev/null | head -10'
+        예상 출력 `out: src=192.168.0.103 / in: src=10.20.30.80`.
+        운영 해석: 같은 패킷 두 인터페이스 다른 src = NAT 작동 정밀 증명.
+      - |
+        **[OSS] conntrack 으로 NAT 매핑 확인** — 검증.
+          # 1. 활성 NAT 연결 (web → 외부)
+          ssh ccc@10.20.30.1 'sudo conntrack -L --src 10.20.30.80 | head'
+          # 2. snat 표시 확인
+          ssh ccc@10.20.30.1 'sudo conntrack -L | grep -i snat | head'
+          # 3. 통계 (NAT 처리 갯수)
+          ssh ccc@10.20.30.1 'sudo conntrack -S'
+          # 4. 특정 외부 호스트 NAT 추적
+          ssh ccc@10.20.30.1 'sudo conntrack -L -d 8.8.8.8'
+        예상 출력 `tcp src=10.20.30.80 ... [snat → 192.168.0.103] / inserted 234`.
+        운영 해석: snat 표시 = NAT 매핑 활성. inserted 갯수 = 처리량.
+      - |
+        **[OSS] iperf3 으로 NAT 처리 성능 측정** — 부하.
+          # 1. 외부 호스트 (참고 — 실제로는 secu 내부에서)
+          # iperf3 -s -1 (server) - 외부 측
+          # 2. web 에서 외부로 부하 (NAT 통과)
+          ssh ccc@10.20.30.80 'iperf3 -c iperf-server -t 5 -R'
+          # 3. secu 의 nft counter 변화
+          ssh ccc@10.20.30.1 'sudo nft list chain inet verify_nat postrouting | grep masquerade'
+          # 4. conntrack 처리량
+          ssh ccc@10.20.30.1 'sudo conntrack -S | grep -E "inserted|searched"'
+        예상 출력 `1Gbps / counter packets 100K / inserted 5000`.
+        운영 해석: 부하 시 NAT 성능. 운영 capacity 측정.
+      - |
+        **[OSS] Phase C — 회고 + SNAT vs masquerade 결정** — 보고.
+          # 1. 결과 markdown
+          tee /tmp/nat-report.md <<'EOF'
+          # Week03 NAT masquerade Verification
+          ## Phase B 결과
+          | 인터페이스 | src IP | 의미 |
+          |-----------|--------|------|
+          | ens34 (내부) | 10.20.30.80 | NAT 전 (web 내부 IP) |
+          | ens33 (외부) | 192.168.0.103 | NAT 후 (secu 외부 IP) |
+          ## priority 100 의미
+          - postrouting 의 default 우선순위
+          - filter chain (priority 0) 후 NAT 적용
+          - 룰 순서: filter → mangle → NAT
+          ## SNAT vs masquerade 선택
+          | 구분 | 사용 케이스 | 성능 |
+          |------|-------------|------|
+          | masquerade | 동적 외부 IP (DHCP) | 약간 느림 (IP 조회) |
+          | SNAT | 정적 외부 IP | 약간 빠름 |
+          ## 운영 권장
+          - masquerade: home/SOHO 네트워크
+          - SNAT: 정적 IP enterprise 환경
+          EOF
+          sha256sum /tmp/nat-report.md
+        예상 출력 `보고서 + sha256`.
+        운영 해석: NAT 효과 packet level 검증 + 운영 결정 기준.
       negative_signs:
       - tcpdump 없이 nft counter 만 (변환 결과 미입증)
       - web outbound 시도 누락
