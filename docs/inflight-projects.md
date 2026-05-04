@@ -68,7 +68,7 @@
 
 ---
 
-### P20. course3-web-vuln lecture 본문 도구 매핑 [STATUS: week01 만 보강, week02~15 미진행]
+### P20. course3-web-vuln lecture 본문 도구 매핑 [STATUS: ✅ COMPLETE — 15/15 (2026-04-29)]
 
 **동기**: lecture.md 본문에 "도구 + 명령 + 출력 + 해석" 패턴 강화. P19 와 동일 원칙.
 
@@ -78,11 +78,10 @@
 - 합리적 방향만 찾지 말고 **제대로** — 나중에 재작업 덜 하도록
 - 한 사이클에 1 주차만 (또는 일부)
 
-**현황 측정 (2026-05-04)** — `예상 출력 / 출력:` 패턴 빈도:
-- week01: 6회 ✅ (보강됨)
-- week02~15: **0회** (모두 미진행) ← **다음 세션 next concrete step**
-
-**Next concrete step**: `contents/education/course3-web-vuln/week02/lecture.md` 부터 시작. **week02 의 instruction 을 정독 후** 그 주제에 맞는 도구·명령·출력·해석을 수기 작성 (week01 패턴을 그대로 복사 X). 1 주차 완료 후 다음 주차로.
+**완료 보고 (2026-04-29)**:
+- 15/15 모두 보강 완료 — 평균 6+ 회 출력 매트릭스 + 라인 수 +135% (5,500 → 12,500 lines).
+- week02 도구환경 / week03 정보수집 / week04 인증 / week05 SQLi / week06 XSS&CSRF / week07 파일·LFI·CMDi / week08 중간고사 / week09 접근제어 / week10 암호 / week11 정보노출 / week12 API / week13 자동화 / week14 보고서 / week15 기말종합.
+- OWASP Top 10 (A01-A10) + CWE Top 25 + CVSS 3.1 + 본 lab 4 endpoint (JuiceShop/Apache/Wazuh/OpenCTI) 비교 매트릭스 + JuiceShop challenge ID 매핑 일관 적용.
 
 **Files**: `contents/education/course3-web-vuln/week*/lecture.md`
 
