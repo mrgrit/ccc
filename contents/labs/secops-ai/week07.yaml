@@ -41,6 +41,62 @@ steps:
       - httpd -M 2>&1 | grep security(CentOS)
       - ls /etc/apache2/mods-enabled/security2.*
       - dpkg -l | grep libapache2-mod-security
+      - |
+        **[OSS] apachectl -M (모듈 목록)** — Apache 표준 진단.
+          # 1. 로드된 모든 모듈
+          sudo apachectl -M 2>&1 | head -20
+          # 2. ModSecurity 만 grep
+          sudo apachectl -M 2>&1 | grep -i security
+          # 3. shared vs static 구분
+          sudo apachectl -M 2>&1 | grep "(shared)"
+          # 4. 모듈 의존성 dump
+          sudo apachectl -t -D DUMP_INCLUDES 2>&1 | grep -i security
+        예상 출력 `security2_module (shared)` (ModSec v2 정상 로드).
+        운영 해석: shared = 동적 로드 (정상). static (없음) = 컴파일 통합. ModSec 미로드 시 패키지 + a2enmod 검사.
+      - |
+        **[OSS] wafw00f (외부 black-box 검증)** — 침투테스터 표준.
+          # 1. WAF fingerprinting
+          wafw00f http://10.20.30.80
+          # 2. 다중 URL 테스트
+          for path in / /login /admin; do
+              wafw00f "http://10.20.30.80$path"
+          done
+          # 3. verbose (어떤 패턴으로 식별했는지)
+          wafw00f -v http://10.20.30.80
+        예상 출력 `The site is behind a Apache (Apache Software Foundation) / The site appears to be behind a WAF`.
+        운영 해석: 외부에서 본 WAF 탐지. wafw00f 가 응답 헤더 + 차단 패턴으로 fingerprint. ModSec 식별되면 운영 시 expose 줄여야 (Server 헤더 hide).
+      - |
+        **[OSS] curl 응답 헤더 분석** — Server 헤더 + 차단 응답.
+          # 1. Server 헤더 + 정상 응답
+          curl -sI http://10.20.30.80/ | head
+          # 2. ModSec 차단 응답 (악성 payload 시 추가 헤더)
+          curl -sI 'http://10.20.30.80/?id=1+UNION+SELECT' | head
+          # 3. Server 헤더 hide 검증 (보안 권장: ServerTokens Prod)
+          curl -sI http://10.20.30.80/ | grep -i server
+        예상 출력 `Server: Apache/2.4.41 (Ubuntu) / X-Mod-Security: drop` (차단 시 추가 헤더).
+        운영 해석: Server 헤더 = 침투 정보 노출. `ServerTokens Prod` 설정으로 `Apache` 만 표시. ModSec 차단 응답에 X-* 헤더 추가 가능.
+      - |
+        **[OSS] dpkg / apt (패키지 메타정보)** — 설치 출처.
+          # 1. ModSec 패키지 + 의존
+          dpkg -l | grep -E "modsec|apache2"
+          # 2. 설치된 파일 목록
+          dpkg -L libapache2-mod-security2 | head
+          # 3. 패키지 출처 (PPA / official)
+          apt show libapache2-mod-security2 2>/dev/null | grep -E "Origin|Maintainer"
+          # 4. 보안 패치 가능 여부
+          apt list --upgradable 2>/dev/null | grep modsec
+        예상 출력 `ii libapache2-mod-security2 2.9.5-1 / Origin: Debian / Maintainer: Alberto Gonzalez Iniesta`.
+        운영 해석: ModSec v2 (Apache module) vs ModSec v3 (libmodsecurity, Nginx 호환). 신규 환경은 v3 권장.
+      - |
+        **[OSS] cockpit + apache module page** — GUI 진단.
+          # 1. Cockpit 접속 (https://10.20.30.80:9090)
+          # 2. 좌측 Services → apache2.service 확인
+          # 3. Logs 페이지에서 ModSec 관련 메시지 검색
+          sudo journalctl -u apache2 --since "1 hour ago" | grep -i modsec
+          # 4. Cockpit terminal 에서 모듈 검증
+          # apache2ctl -M | grep security
+        UI 동작: GUI 로 service status + log 검색.
+        운영 해석: GUI 운영자 표준. CLI 모르는 매니저도 빠른 진단.
       negative_signs:
       - Nginx 확인(다른 웹서버)
       - 패키지만 확인(로드 검증 없음)
@@ -78,6 +134,71 @@ steps:
       - sudo apachectl -S 로 config dump
       - echo check | ModSecurity test-rules 스크립트
       - curl localhost/test 후 log 관찰
+      - |
+        **[OSS] grep (다중 파일 + line number)** — config 정밀 검색.
+          # 1. 모든 ModSec 관련 파일 search
+          sudo grep -rHn "SecRuleEngine" /etc/modsecurity/ /etc/apache2/
+          # 2. 주석 제외 (실제 적용 라인만)
+          sudo grep -rHn -v "^\s*#" /etc/modsecurity/ /etc/apache2/ 2>/dev/null | grep "SecRuleEngine"
+          # 3. 중복 정의 check (마지막 값이 우선 적용)
+          sudo grep -rHn "^SecRuleEngine" /etc/modsecurity/ /etc/apache2/
+        예상 출력 `/etc/modsecurity/modsecurity.conf:7: SecRuleEngine On`.
+        운영 해석: 다중 파일에 정의 시 *마지막 로드된 라인* 적용. apache2.conf → modsecurity.conf → security2.conf 순.
+      - |
+        **[OSS] apachectl -t -D DUMP_RUN_CFG (런타임 적용 config)** — 진실의 단일 출처.
+          # 1. 런타임 적용된 directive 만 dump
+          sudo apachectl -t -D DUMP_RUN_CFG 2>&1 | grep -i SecRuleEngine
+          # 2. 모든 IfModule + Include 처리 후 최종 config
+          sudo apachectl -t -D DUMP_VHOSTS
+          # 3. config 파일 syntax 검증
+          sudo apachectl configtest
+        예상 출력 `SecRuleEngine On / Syntax OK`.
+        운영 해석: grep 은 텍스트, apachectl -D 는 *런타임* 적용. IfModule directive 가 중간에 비활성 시 grep 으로 못 잡음.
+      - |
+        **[OSS] ModSec 자체 status page (mod_status)** — 런타임 검증.
+          # 1. mod_status 활성화 (한 번만 설정)
+          sudo a2enmod status
+          # 2. /etc/apache2/mods-enabled/status.conf 에 ExtendedStatus On 추가
+          sudo systemctl reload apache2
+          # 3. localhost 에서 status 페이지 접근
+          curl -s "http://localhost/server-status?auto" | head
+          # 4. ModSec 자체 status (community module)
+          curl -s "http://localhost/modsec-status"
+        UI 동작: server-status 페이지에 active connection / request rate / module 상태.
+        운영 해석: production 모니터링 표준. RequestsPerSecond / BusyWorkers 추적.
+      - |
+        **[OSS] Ansible (SecRuleEngine IaC)** — 자동 설정.
+          # playbook
+          - name: Set ModSecurity to On
+            ansible.builtin.lineinfile:
+              path: /etc/modsecurity/modsecurity.conf
+              regexp: '^SecRuleEngine\s+'
+              line: 'SecRuleEngine On'
+              backup: yes
+              validate: 'apache2ctl -t'
+            notify: restart apache2
+          handlers:
+            - name: restart apache2
+              ansible.builtin.systemd:
+                name: apache2
+                state: restarted
+          # 실행
+          ansible-playbook -i inventory.yml modsec-config.yml --diff
+        예상 출력 `changed: [web] / -SecRuleEngine DetectionOnly / +SecRuleEngine On`.
+        운영 해석: validate = 잘못된 syntax 적용 후 service 다운 방지. backup 으로 즉시 롤백.
+      - |
+        **[OSS] etckeeper (config 변경 audit)** — git history.
+          # 1. 변경 전 commit
+          sudo etckeeper commit "before SecRuleEngine change"
+          # 2. 변경
+          sudo sed -i 's/SecRuleEngine DetectionOnly/SecRuleEngine On/' /etc/modsecurity/modsecurity.conf
+          sudo systemctl restart apache2
+          # 3. 변경 후 commit
+          sudo etckeeper commit "SecRuleEngine: DetectionOnly -> On (jira: SEC-1234)"
+          # 4. 변경 history
+          sudo etckeeper vcs log --oneline -- /etc/modsecurity/modsecurity.conf
+        예상 출력 `commit abc123 SecRuleEngine: DetectionOnly -> On / commit def456 before SecRuleEngine change`.
+        운영 해석: 누가 언제 SecRuleEngine 변경했는지 audit. compliance 표준.
       negative_signs:
       - 기본 기대 값(On) 가정
       - 파일 여러 개 중 하나만 확인
@@ -116,6 +237,67 @@ steps:
       - find /usr/share/modsecurity-crs -name "*.conf" | wc -l
       - dpkg -L modsecurity-crs | grep rules | wc -l
       - apt policy modsecurity-crs 로 버전 확인 후 릴리스 노트 참조
+      - |
+        **[OSS] find / wc (CRS 룰 카운트 + 분류)** — 표준 분석.
+          # 1. CRS 디렉토리의 .conf 파일 수
+          sudo find /usr/share/modsecurity-crs/rules -name "*.conf" | wc -l
+          # 2. 카테고리 별 분포 (REQUEST-9xx)
+          sudo ls /usr/share/modsecurity-crs/rules/ | awk -F- '{print $2}' | sort | uniq -c
+          # 3. 룰 라인 수 (총 SecRule)
+          sudo grep -hc "^SecRule " /usr/share/modsecurity-crs/rules/*.conf | awk '{s+=$1} END {print s}'
+          # 4. 카테고리 별 룰 수
+          for f in /usr/share/modsecurity-crs/rules/*.conf; do
+              n=$(grep -c "^SecRule " "$f" 2>/dev/null)
+              echo "$n $(basename $f)"
+          done | sort -rn | head
+        예상 출력 `40 / SQLI: 12 / XSS: 10 / 200 SecRule / REQUEST-942-APPLICATION-ATTACK-SQLI.conf 56`.
+        운영 해석: 카테고리별 분포 확인. 942 (SQLi) 가 가장 많음 = 가장 정밀한 보호.
+      - |
+        **[OSS] OWASP CRS official documentation 검증** — 공식 git repo.
+          # 1. CRS 공식 repo clone
+          git clone https://github.com/coreruleset/coreruleset /tmp/crs
+          cd /tmp/crs
+          # 2. 설치 버전과 비교
+          cat util/regression-tests/CHANGES.md | head
+          # 3. 룰 변경 history
+          git log --oneline rules/REQUEST-942-APPLICATION-ATTACK-SQLI.conf | head
+          # 4. 설치 버전 신구 확인
+          dpkg -l modsecurity-crs | awk '/^ii/ {print $3}'
+          # 최신 비교: https://coreruleset.org/installation/
+        예상 출력 `CRS 4.4.0 / 50 commits / installed: 4.0.0 → 4.4.0 upgrade 가능`.
+        운영 해석: 보안 패치 누락 여부 확인. CRS upstream 자주 갱신 (월 1-2회).
+      - |
+        **[OSS] coraza-cli (modern CRS 호환 도구)** — Go 기반 ModSec 후속.
+          # 1. coraza 설치
+          go install github.com/corazawaf/coraza-cli@latest
+          # 2. CRS 룰 syntax 검증
+          coraza-cli match --rules /usr/share/modsecurity-crs/rules/ --input "id=1 union select"
+          # 3. 룰 별 적재 분석
+          coraza-cli rules-info --directory /usr/share/modsecurity-crs/
+        예상 출력 `Loaded 200 rules / Match: rule 942100 fired`.
+        운영 해석: ModSec v3 후속. Nginx + Coraza 환경에서 CRS 그대로 사용 가능.
+      - |
+        **[OSS] ftw (CRS regression test 표준)** — 회귀 검증.
+          # 1. ftw + CRS test corpus 설치
+          pip install ftw
+          git clone https://github.com/coreruleset/coreruleset /tmp/crs
+          # 2. 모든 회귀 테스트 실행
+          ftw run --include /tmp/crs/util/regression-tests/tests/REQUEST-942-APPLICATION-ATTACK-SQLI/
+          # 3. 결과 분석 (PASS/FAIL count)
+          ftw run --include /tmp/crs/util/regression-tests/tests/ -o json | jq '.summary'
+        예상 출력 `Tests passed: 856 / Tests failed: 0 / Total: 856`.
+        운영 해석: CRS 룰 수정 후 *기존 테스트 회귀* 자동 검증. CI 표준.
+      - |
+        **[OSS] sigma → ModSec 변환** — 표준 룰 → CRS 추가.
+          # 1. Sigma 의 web 카테고리 룰
+          ls /tmp/sigma/rules/web/ | wc -l
+          # 2. Sigma → ModSec 변환 (community backend)
+          pip install pysigma-backend-modsecurity
+          sigma convert -t modsecurity /tmp/sigma/rules/web/web_xss_keywords.yml
+          # 3. 결과 ModSec 룰 추가
+          sigma convert -t modsecurity /tmp/sigma/rules/web/ | sudo tee /etc/modsecurity/sigma-rules.conf
+        예상 출력 `SecRule ARGS "@rx (?i)(script|alert|onload)" "id:9999001,phase:2,deny,..."`.
+        운영 해석: Sigma 표준 → ModSec 변환. multi-tool 룰 관리 표준.
       negative_signs:
       - 파일 개수 숫자 확인 안 함
       - wc 대신 ls(리스트만)
@@ -155,6 +337,82 @@ steps:
       - vim + :%s/DetectionOnly/On/ 수동
       - ansible lineinfile + state=present
       - paranoia_level 조정과 함께 단계적 전환
+      - |
+        **[OSS] sed in-place + backup** — 표준 변경.
+          # 1. 백업 + 변경
+          sudo cp /etc/modsecurity/modsecurity.conf{,.bak}
+          sudo sed -i 's/^SecRuleEngine DetectionOnly/SecRuleEngine On/' /etc/modsecurity/modsecurity.conf
+          # 2. diff 확인
+          sudo diff /etc/modsecurity/modsecurity.conf{,.bak}
+          # 3. apachectl configtest 로 검증
+          sudo apachectl configtest
+          # 4. 적용 + 검증
+          sudo systemctl reload apache2
+          sudo grep "^SecRuleEngine" /etc/modsecurity/modsecurity.conf
+        예상 출력 `SecRuleEngine On / Syntax OK / 1c1 < SecRuleEngine DetectionOnly / > SecRuleEngine On`.
+        운영 해석: backup → 변경 → diff → configtest → reload 의 5단계 = production 표준.
+      - |
+        **[OSS] Ansible (lineinfile + validate)** — IaC 표준.
+          # playbook
+          - name: Enable ModSecurity blocking mode
+            ansible.builtin.lineinfile:
+              path: /etc/modsecurity/modsecurity.conf
+              regexp: '^SecRuleEngine\s+'
+              line: 'SecRuleEngine On'
+              backup: yes
+              validate: 'apache2ctl -t'
+            register: modsec_change
+            notify: restart apache2
+          - name: Verify
+            ansible.builtin.command:
+              cmd: grep "^SecRuleEngine" /etc/modsecurity/modsecurity.conf
+            changed_when: false
+            register: verify
+          - debug: msg="{{ verify.stdout }}"
+          # 실행
+          ansible-playbook -i inventory.yml modsec-enable.yml --check  # dry-run
+          ansible-playbook -i inventory.yml modsec-enable.yml --diff
+        예상 출력 `changed: [web] / SecRuleEngine On (verified)`.
+        운영 해석: validate 실패 시 변경 자동 롤백. backup 으로 추가 안전망.
+      - |
+        **[OSS] etckeeper (변경 audit + rollback)** — git 기반.
+          # 1. 변경 전 commit
+          sudo etckeeper commit "before SecRuleEngine On"
+          # 2. 변경 + 적용
+          sudo sed -i 's/^SecRuleEngine DetectionOnly/SecRuleEngine On/' /etc/modsecurity/modsecurity.conf
+          sudo systemctl reload apache2
+          # 3. 변경 후 commit (변경 사유 명시)
+          sudo etckeeper commit "SecRuleEngine: DetectionOnly -> On (jira: SEC-1234, approver: alice@example.com)"
+          # 4. rollback 시
+          sudo etckeeper vcs revert HEAD
+          sudo systemctl reload apache2
+        결과: git history + 1-command rollback.
+        운영 해석: 변경 cycle (전 → 적용 → 후) 표준 audit. compliance + 문제 발생 시 즉시 rollback.
+      - |
+        **[OSS] scirius (web GUI ModSec 설정)** — 시각적 관리.
+          # 1. https://scirius:8000/modsec 접속 (Stamus enterprise)
+          # 2. UI 동작:
+          # - SecRuleEngine 설정 dropdown (On / DetectionOnly / Off)
+          # - 변경 사유 + ticket ID 입력
+          # - Push to web hosts (다중 host 일괄)
+          # - rollback 버튼
+          # 3. CLI 검증
+          ssh ccc@10.20.30.80 "sudo grep '^SecRuleEngine' /etc/modsecurity/modsecurity.conf"
+        UI 동작: GUI 변경 + audit log + multi-host push.
+        운영 해석: 다중 web host 환경 표준. compliance + audit 자동.
+      - |
+        **[OSS] paranoia-level 조정 (단계적 전환)** — CRS 권장.
+          # CRS 의 paranoia_level (1-4) 조정으로 점진적 보안 강화
+          # 1. 현재 paranoia level 확인
+          sudo grep "tx.paranoia_level" /etc/modsecurity/crs/crs-setup.conf
+          # 2. PL1 → PL2 점진적 상향
+          sudo sed -i 's/setvar:tx.paranoia_level=1/setvar:tx.paranoia_level=2/' /etc/modsecurity/crs/crs-setup.conf
+          sudo systemctl reload apache2
+          # 3. 적용 효과 측정 (24시간 FP 카운트)
+          sudo grep -c "PARANOIA-LEVEL" /var/log/apache2/modsec_audit.log
+          # 4. PL3, PL4 단계적 적용
+        예상 출력 `setvar:tx.paranoia_level=2`.
+        운영 해석: SecRuleEngine On 외 paranoia_level 조정으로 *민감도* 변화. 1=basic, 2=tighter, 3=strict, 4=paranoid.
       negative_signs:
       - ^ anchor 없이 주석 매칭
       - grep 검증 누락
@@ -197,6 +455,81 @@ steps:
       - sudo apachectl graceful(프로세스 유지하며 재로드)
       - sudo apachectl -t 로 config test 먼저
       - journalctl -u apache2 -n 20 로 로그 확인
+      - |
+        **[OSS] apachectl graceful (무중단 reload)** — production 표준.
+          # 1. config test 먼저 (필수)
+          sudo apachectl -t
+          # 2. graceful reload (기존 connection 유지 + 새 worker 로 fresh 설정)
+          sudo apachectl graceful
+          # 3. 적용 검증 (PID 변화 + ModSec 재로드)
+          sudo apache2ctl -V | grep -i modsec
+          sudo grep "Graceful" /var/log/apache2/error.log | tail
+          # 4. systemctl 동등
+          sudo systemctl reload apache2
+        예상 출력 `Syntax OK / [notice] Graceful restart requested`.
+        운영 해석: restart 는 1-3 초 downtime, graceful 은 0 초. 기존 request 처리 중인 worker 는 *완료 후* 종료.
+      - |
+        **[OSS] apachectl configtest (config 검증)** — 사전 점검 필수.
+          # 1. 단순 syntax check
+          sudo apachectl -t
+          # 2. 전체 config dump (적용 우선순위)
+          sudo apachectl -S
+          # 3. 모든 IfModule + Include 처리 후 전체 directive
+          sudo apachectl -t -D DUMP_RUN_CFG | head -30
+          # 4. 빠른 check (CI 통합)
+          sudo apachectl -t && echo "OK" || echo "FAIL"
+        예상 출력 `Syntax OK / VirtualHost configuration: 10.20.30.80:80 default-server`.
+        운영 해석: restart 직전 *반드시* 실행. syntax error 시 service 시작 실패 = downtime.
+      - |
+        **[OSS] systemctl restart + watchdog** — 자동 복구.
+          # 1. 일반 restart
+          sudo systemctl restart apache2
+          # 2. is-active + 자동 재시도
+          for i in 1 2 3; do
+              sleep 2
+              if systemctl is-active apache2 | grep -q "^active$"; then
+                  echo "OK after attempt $i"; break
+              fi
+              [ $i -eq 3 ] && echo "FAIL"
+          done
+          # 3. systemd unit override 로 자동 복구
+          sudo systemctl edit apache2
+          # [Service]
+          # Restart=on-failure
+          # RestartSec=5s
+          # 4. 재시작 시간 측정
+          time sudo systemctl restart apache2
+        예상 출력 `OK after attempt 1 / real 0m1.234s`.
+        운영 해석: 1초 내 복구 정상. 5초+ 시 OOM 또는 lock contention 의심.
+      - |
+        **[OSS] curl health check + watchdog** — application-level.
+          # 1. health endpoint check
+          curl -sI http://localhost/server-status?auto -o /dev/null -w "%{http_code}\n"
+          # 2. multi-attempt health check
+          for i in 1 2 3 4 5; do
+              status=$(curl -sI -o /dev/null -w "%{http_code}" http://localhost/ --max-time 3)
+              echo "Attempt $i: $status"
+              [ "$status" = "200" ] && exit 0
+              sleep 1
+          done
+          # 3. monit 자동 재시작
+          # /etc/monit/conf.d/apache2:
+          # check process apache with pidfile /var/run/apache2/apache2.pid
+          #   if failed host localhost port 80 protocol http for 2 cycles then restart
+        예상 출력 `Attempt 1: 200`.
+        운영 해석: process active 외 *application response* 검증. apache active 인데 response 0 인 경우 발견 가능.
+      - |
+        **[OSS] journalctl + tail -f (실시간 모니터)** — restart 직후 로그.
+          # 1. restart 후 로그 실시간 watch
+          sudo journalctl -u apache2 -f &
+          # 2. error.log 동시 monitor
+          sudo tail -f /var/log/apache2/error.log /var/log/apache2/modsec_audit.log
+          # 3. 최근 30 라인
+          sudo journalctl -u apache2 -n 30 --no-pager
+          # 4. ModSec 관련 에러만
+          sudo journalctl -u apache2 | grep -i "modsec\|error" | tail
+        예상 출력 `[notice] Apache/2.4.41 (Ubuntu) configured -- resuming normal operations / [info] ModSecurity for Apache/2.9.5 ... configured`.
+        운영 해석: restart 직후 ModSec 정상 로드 evidence. error 발생 시 즉시 인지.
       negative_signs:
       - restart 실패 무시
       - configtest 생략
@@ -243,6 +576,73 @@ steps:
       - Burp Intruder + payload list
       - nikto -h http://<IP> 로 웹 취약점 스캔
       - OWASP ZAP active scan
+      - |
+        **[OSS] sqlmap (자동 SQLi 시뮬)** — 표준 침투 도구.
+          # 1. 기본 SQLi 시도 (CRS 942 매칭 검증)
+          sqlmap -u "http://10.20.30.80/?id=1" --batch --level 1 --risk 1
+          # 2. 다양한 tamper (룰 우회 시도)
+          sqlmap -u "http://10.20.30.80/?id=1" --tamper=space2comment,charunicodeencode --level 3
+          # 3. 결과 분석 (어떤 payload 가 차단됐는지)
+          sqlmap -u "http://10.20.30.80/?id=1" --random-agent --batch -v 3 2>&1 | grep -E "blocked|403"
+          # 4. 자동 보고서
+          sqlmap -u "http://10.20.30.80/?id=1" --batch --output-dir=/tmp/sqlmap-out
+        예상 출력 `[INFO] testing 'AND boolean-based blind' / [WARNING] target appears to be protected by 'Apache (mod_security)'`.
+        운영 해석: ModSec 보호 자동 식별. tamper 옵션으로 우회 시도 = 룰 *완전성* 측정.
+      - |
+        **[OSS] Burp Suite (수동 정밀 시뮬)** — 침투테스터 표준.
+          # 1. Burp 실행 + browser proxy 설정
+          burpsuite &
+          # 2. Repeater 탭에서 payload 시험
+          # GET /?id=1+UNION+SELECT+1,2 HTTP/1.1
+          # 3. Intruder 탭에서 변형 패턴 일괄 시험
+          # - Position: GET /?id=§payload§
+          # - Payload list:
+          #   - 1+union+select+1,2
+          #   - 1+UnIoN+SeLeCt+1,2
+          #   - 1/**/union/**/select/**/1,2
+          #   - 1' UNION SELECT 1,2 --
+          #   - 1' UnIoN(SELECT(1),2)--
+          # 4. 응답 비교 (403 vs 200) 표
+        UI 동작: payload 변형 자동화 + 응답 비교.
+        운영 해석: 자동화 도구 (sqlmap) 가 못 잡는 변형 수동 정밀 시뮬.
+      - |
+        **[OSS] nikto (다중 취약점 스캐너)** — quick assessment.
+          # 1. 기본 스캔 (모든 vuln)
+          nikto -h http://10.20.30.80 -nointeractive
+          # 2. SQLi 카테고리 만 (Tuning 9)
+          nikto -h http://10.20.30.80 -Tuning 9
+          # 3. 결과 분석
+          nikto -h http://10.20.30.80 -o /tmp/nikto-report.txt -Format txt
+          # 4. WAF 우회 시도 (-evasion)
+          nikto -h http://10.20.30.80 -evasion 1
+        예상 출력 `+ Server: Apache/2.4.41 / + 5 SQL injection points blocked / + Found mod_security / 50 alerts captured`.
+        운영 해석: 자동 vuln 스캔. WAF 차단된 항목 자동 식별 = 운영 효과 자동 측정.
+      - |
+        **[OSS] gotestwaf (WAF 우회 테스트 종합)** — WAF testing 표준.
+          # 1. 설치
+          docker pull wallarm/gotestwaf
+          # 2. 1000+ 페이로드 자동 시험 (SQLi/XSS/RCE/...)
+          docker run --network=host -v /tmp:/tmp wallarm/gotestwaf \
+            --url http://10.20.30.80 \
+            --reportPath /tmp/gotestwaf-report \
+            --reportFormat html
+          # 3. 결과 보고서 (PDF/HTML)
+          firefox /tmp/gotestwaf-report/*.html
+          # 4. CI 통합 (정기 회귀 측정)
+          # GitHub Actions / GitLab CI 에 매주 자동 실행
+        예상 출력 `Total tests: 1000 / Bypassed: 50 (5%) / Blocked: 950 (95%)`.
+        운영 해석: WAF *전체 효과* 측정. 우회된 5% 분석 = 룰 강화 우선순위.
+      - |
+        **[OSS] ftw (CRS 회귀 테스트)** — 룰 변경 후 검증.
+          # 1. CRS 공식 test suite
+          git clone https://github.com/coreruleset/coreruleset /tmp/crs
+          # 2. 942 (SQLi) 테스트 실행
+          cd /tmp/crs/util/regression-tests
+          ftw run --include tests/REQUEST-942-APPLICATION-ATTACK-SQLI/
+          # 3. 결과 분석
+          ftw run --include tests/ -o json | jq '.summary'
+        예상 출력 `Tests passed: 856 / Tests failed: 0 / SQLi tests: 200 PASS`.
+        운영 해석: CRS 룰 변경 후 *모든 정의된 패턴* 자동 검증. CI 표준.
       negative_signs:
       - 응답 코드 확인 없음
       - 단순 GET(payload 없음)
@@ -287,6 +687,79 @@ steps:
       - Burp XSS Reflector plugin
       - XSStrike 자동 탐지 도구
       - Selenium 기반 DOM XSS 테스트
+      - |
+        **[OSS] XSStrike (자동 XSS 탐지)** — XSS 전용 도구.
+          # 1. 설치
+          git clone https://github.com/s0md3v/XSStrike /tmp/xsstrike
+          cd /tmp/xsstrike && pip install -r requirements.txt
+          # 2. 단순 XSS 시도 (CRS 941 매칭 검증)
+          python3 xsstrike.py -u "http://10.20.30.80/?q=test"
+          # 3. WAF 식별 + 우회 페이로드 자동 생성
+          python3 xsstrike.py -u "http://10.20.30.80/?q=test" --skip-dom
+          # 4. 모든 XSS 변형 시도
+          python3 xsstrike.py -u "http://10.20.30.80/?q=test" --crawl
+        예상 출력 `[+] WAF Detected: ModSecurity / [-] Reflection found! / [!] Payload blocked by WAF`.
+        운영 해석: XSS 특화 도구. ModSec 자동 식별 + 우회 페이로드 시도 = 룰 정확도 평가.
+      - |
+        **[OSS] dalfox (modern XSS scanner)** — Go 기반 차세대.
+          # 1. 설치
+          go install github.com/hahwul/dalfox/v2@latest
+          # 2. URL fuzzing
+          dalfox url "http://10.20.30.80/?q=test"
+          # 3. POST body XSS
+          dalfox url "http://10.20.30.80/login" --data "user=test&q=FUZZ"
+          # 4. WAF 우회 시도
+          dalfox url "http://10.20.30.80/?q=test" --waf-bypass
+        예상 출력 `[VULN] Reflected XSS / [BLOCKED] Payload caught by WAF / Response: 403`.
+        운영 해석: XSStrike 대안. Go 기반 = 빠름. CI 통합 표준.
+      - |
+        **[OSS] Burp Suite XSS Validator + Reflector** — 수동 정밀.
+          # 1. Burp 실행 + browser proxy
+          # 2. Repeater 탭 payload 변형:
+          # <script>alert(1)</script>
+          # <img src=x onerror=alert(1)>
+          # <svg onload=alert(1)>
+          # javascript:alert(1)
+          # <iframe src="javascript:alert(1)">
+          # <body onload=alert(1)>
+          # 3. encoding 변형:
+          # <ScRiPt>alert(1)</ScRiPt>
+          # %3Cscript%3Ealert(1)%3C/script%3E
+          # &#60;script&#62;alert(1)&#60;/script&#62;
+          # 4. 응답 비교 (403 vs 200)
+        UI 동작: payload 변형 + 응답 비교. WAF 룰의 *완전성* 평가.
+        운영 해석: 인코딩별 차단 효과 비교. CRS 941 룰의 weakness 식별.
+      - |
+        **[OSS] OWASP ZAP active scan (free)** — Burp 대안.
+          # 1. ZAP 실행 (GUI)
+          zaproxy &
+          # 2. CLI active scan
+          zap-cli quick-scan -s xss -u http://10.20.30.80
+          # 3. CI 통합 (Docker)
+          docker run -t owasp/zap2docker-stable zap-baseline.py \
+            -t http://10.20.30.80 \
+            -r /tmp/zap-report.html
+        예상 출력 `Active Scan: 1000 requests / Cross Site Scripting (Reflected) - Found 1 / WAF blocked: 95%`.
+        운영 해석: ZAP 의 active scan 으로 자동 보안 평가. Burp 의 무료 대안. CI/CD 통합.
+      - |
+        **[OSS] Selenium DOM XSS test** — JavaScript 실행 검증.
+          # 1. Selenium + Python
+          pip install selenium
+          # 2. DOM XSS 시뮬 script
+          python3 << 'EOF'
+          from selenium import webdriver
+          from selenium.webdriver.common.alert import Alert
+          driver = webdriver.Firefox()
+          driver.get("http://10.20.30.80/#<script>alert(1)</script>")
+          try:
+              alert = Alert(driver)
+              print(f"DOM XSS executed! alert text: {alert.text}")
+          except:
+              print("WAF blocked or no XSS")
+          driver.quit()
+          EOF
+        예상 출력 `WAF blocked or no XSS` (CRS 941 차단 정상).
+        운영 해석: stored/reflected XSS 외 *DOM XSS* 검증. JavaScript 실제 실행 여부 확인.
       negative_signs:
       - script tag 인코딩 누락(차단 안 되는 이유 오해)
       - 응답 코드 확인 없음
@@ -327,6 +800,77 @@ steps:
       - sudo cat /var/log/apache2/modsec_audit.log | awk /--[a-f0-9]+-A--/,/--[a-f0-9]+-Z--/
       - mlogc 로 원격 수집
       - ModSecurity JSON logging(SecAuditLogFormat JSON) 후 jq
+      - |
+        **[OSS] tail + grep (audit log 분석)** — 표준 도구.
+          # 1. 최근 30줄
+          sudo tail -30 /var/log/apache2/modsec_audit.log
+          # 2. 차단 알림만 (ModSec [id "rule-id"] 패턴)
+          sudo grep -E '\[id "[0-9]+"\]' /var/log/apache2/modsec_audit.log | tail -10
+          # 3. 단일 transaction 의 multi-section view (-A boundary)
+          sudo awk '/--[a-f0-9]+-A--/,/--[a-f0-9]+-Z--/' /var/log/apache2/modsec_audit.log | tail -50
+          # 4. 시간대 별 차단 빈도
+          sudo grep -oE '\[[0-9]+\]' /var/log/apache2/modsec_audit.log | head
+        예상 출력 `--abc1234-A-- / [02/Mar/2024:14:23:00] / --abc1234-B-- / GET /?id=1+UNION+SELECT / --abc1234-H-- / Message: Access denied... id "942100"`.
+        운영 해석: ModSec audit log 의 multi-part 형식 (A-K). H section 이 룰 매칭 결과 = 분석 핵심.
+      - |
+        **[OSS] ModSec JSON logging (modern)** — 자동화 친화.
+          # 1. /etc/modsecurity/modsecurity.conf 의 SecAuditLogFormat JSON 설정
+          sudo sed -i 's/SecAuditLogFormat .*/SecAuditLogFormat JSON/' /etc/modsecurity/modsecurity.conf
+          sudo systemctl reload apache2
+          # 2. JSON 형식 audit log 분석 (jq)
+          sudo tail -3 /var/log/apache2/modsec_audit.log | jq '{ts:.transaction.time, src:.transaction.client_ip, rule_id:.messages[0].details.ruleId, msg:.messages[0].message}'
+          # 3. 통계 (rule_id 별)
+          sudo jq -r '.messages[].details.ruleId' /var/log/apache2/modsec_audit.log 2>/dev/null | sort | uniq -c | sort -rn | head
+        예상 출력 `{"ts":"02/Mar/2024","src":"10.20.30.201","rule_id":"942100","msg":"SQL Injection Attack..."}`.
+        운영 해석: text 형식보다 자동화 친화. SIEM 자동 import + jq 분석 표준.
+      - |
+        **[OSS] modsec-audit-log-parser (Python)** — multi-section 파싱.
+          # 1. 파싱 스크립트
+          pip install python-modsecurity
+          # 2. 분석 script
+          python3 << 'EOF'
+          import re
+          with open('/var/log/apache2/modsec_audit.log') as f:
+              log = f.read()
+          # multi-part section 분리
+          transactions = re.split(r'--[a-f0-9]+-A--', log)
+          for t in transactions[-5:]:
+              # B section: request, H section: rules
+              h_match = re.search(r'--[a-f0-9]+-H--(.*?)--[a-f0-9]+-Z--', t, re.DOTALL)
+              if h_match:
+                  rules = re.findall(r'\[id "([0-9]+)"\] (.*?)\.', h_match.group(1))
+                  for rule_id, msg in rules:
+                      print(f"  Rule {rule_id}: {msg[:80]}")
+          EOF
+        예상 출력: 최근 5 transaction 의 룰 매칭 요약.
+        운영 해석: ModSec audit log 의 복잡한 multi-section 자동 파싱. 분석 자동화 표준.
+      - |
+        **[OSS] mlogc (ModSec log centralization)** — 다중 host 통합.
+          # 1. mlogc 설치
+          sudo apt install modsecurity-tools-mlogc
+          # 2. /etc/modsecurity/mlogc.conf 설정
+          sudo tee /etc/modsecurity/mlogc.conf << 'EOF'
+          ConsoleURI "http://central-siem:8888/rpc/auditLogReceiver"
+          SensorUsername "web01"
+          SensorPassword "secret"
+          LogStorageDir /var/log/modsec/
+          EOF
+          # 3. modsecurity.conf 의 SecAuditLogStorageDir + Pipe 설정
+          # SecAuditLog "|/usr/bin/mlogc /etc/modsecurity/mlogc.conf"
+          sudo systemctl reload apache2
+        결과: 다중 web host 의 audit log 가 중앙 SIEM 으로 자동 전송.
+        운영 해석: enterprise 표준. 100+ web host 환경에서 audit log 통합.
+      - |
+        **[OSS] WAF-FLE / Filebeat (audit log shipping)** — modern.
+          # 1. Filebeat 의 ModSec module
+          sudo filebeat modules enable modsecurity
+          # 2. Filebeat → Elasticsearch 자동 전송
+          sudo systemctl restart filebeat
+          # 3. Kibana 에서 ModSec dashboard import
+          # GET /app/discover#/?_a=(filters:!((query:(match_phrase:(event.dataset:modsecurity)))))
+          # 4. 시간대 별 룰 매칭 시각화
+        UI 동작: Kibana 자동 dashboard. rule.id 별 분포 + geo map.
+        운영 해석: 다중 host audit log 통합 + 시각화 표준. ELK stack.
       negative_signs:
       - 경로 오타
       - error.log 와 혼동
@@ -365,6 +909,76 @@ steps:
       - Kibana aggregation rule.id field starts with 942
       - splunk | stats count by rule_id where rule_id LIKE 942%
       - Elastic SIEM rule 942* alerts count
+      - |
+        **[OSS] grep + awk (CRS 942 통계)** — 표준 텍스트 분석.
+          # 1. 942 rule 매칭 개수
+          sudo grep -c '\[id "942' /var/log/apache2/modsec_audit.log
+          # 2. 세부 rule id 별 (942100, 942130, 942260 등)
+          sudo grep -oE '\[id "94[0-9]+"\]' /var/log/apache2/modsec_audit.log | sort | uniq -c | sort -rn | head
+          # 3. 시간대 별 분포 (peak 식별)
+          sudo grep '\[id "942' /var/log/apache2/modsec_audit.log | grep -oE '\[[0-9]+\]' | head
+          # 4. CRS rule category 별 카운트 (941/942/943/944 등)
+          for cat in 941 942 943 944 949; do
+              count=$(sudo grep -c "\[id \"$cat" /var/log/apache2/modsec_audit.log)
+              echo "$cat: $count"
+          done
+        예상 출력 `942100: 12 / 942150: 5 / 942260: 3 / 941: 8 / 942: 20 / 943: 0`.
+        운영 해석: 카테고리 별 분포 = 공격 패턴 fingerprint. 942 다수 = SQLi 공격 집중.
+      - |
+        **[OSS] jq (JSON audit log 분석)** — modern format.
+          # 1. JSON format audit log (SecAuditLogFormat JSON 설정)
+          sudo jq '.messages[] | select(.details.ruleId | startswith("942"))' /var/log/apache2/modsec_audit.log
+          # 2. 942 카테고리 카운트
+          sudo jq -r '.messages[].details.ruleId' /var/log/apache2/modsec_audit.log | grep '^942' | wc -l
+          # 3. 룰별 + src IP 교차 분석
+          sudo jq -r 'select(.messages[].details.ruleId | startswith("942")) | "\(.transaction.client_ip)\t\(.messages[].details.ruleId)"' /var/log/apache2/modsec_audit.log | sort | uniq -c | sort -rn
+        예상 출력 `12 10.20.30.201 942100 / 5 10.20.30.201 942150`.
+        운영 해석: JSON 형식 = 자동화 친화. 정확한 필드 추출 + 통계.
+      - |
+        **[OSS] Kibana (Elastic Stack 표준 dashboard)** — 통합 분석.
+          # 1. Filebeat 의 ModSec module → Elasticsearch
+          # 2. Kibana KQL 검색
+          # event.dataset:"modsecurity" and rule.id: ("942100" OR "942150" OR "942260")
+          # 3. Visualize → terms aggregation on rule.id starts with 942
+          # 4. Dashboard:
+          # - bar chart: top 942xxx rules
+          # - line chart: 시간대 별 분포
+          # - geo map: src IP 위치
+          # 5. Saved query 저장 + alert 룰
+          # WHEN count(942*) > 100 THEN PagerDuty
+        UI 동작: 통합 dashboard + automated alert.
+        운영 해석: enterprise 환경 표준. 다중 web host 의 942 통계 통합.
+      - |
+        **[OSS] grafana + loki (log aggregation)** — Prometheus 생태계.
+          # 1. promtail 로 modsec_audit.log → loki
+          # /etc/promtail/config.yml:
+          # scrape_configs:
+          # - job_name: modsec
+          #   static_configs:
+          #   - targets: [localhost]
+          #     labels: { job: modsec, log_type: audit }
+          # 2. Grafana 의 Loki datasource
+          # 3. LogQL 검색
+          # {job="modsec"} |~ '\\[id "942[0-9]+"\\]'
+          # 4. Grafana dashboard
+          # - rule.id 별 카운트
+          # - 시간대 분포
+        UI 동작: Grafana 통합 dashboard. metrics + logs 한 화면.
+        운영 해석: SOC 의 통합 observability. ELK 의 Prometheus 대안.
+      - |
+        **[OSS] WAF-FLE (ModSec 전용 dashboard)** — community OSS.
+          # 1. WAF-FLE 설치 (modsec 전용 web UI)
+          docker run -d --name waf-fle -p 8888:80 \
+              -v /var/log/apache2:/logs \
+              klaubert/waf-fle
+          # 2. http://localhost:8888 접속
+          # 3. UI 동작:
+          # - rule.id 별 통계
+          # - "942" 카테고리 drill-down
+          # - 시간대 별 매칭 그래프
+          # - rule 별 source IP 분포
+        UI 동작: ModSec 전용 dashboard. 룰 ID 기반 분석에 최적.
+        운영 해석: ELK 보다 가벼움. 단일 host ModSec 분석 표준.
       negative_signs:
       - 다른 rule id(941/943) 카운트
       - -c 없이 grep 라인 출력
@@ -405,6 +1019,94 @@ steps:
       - synthetic monitoring(Datadog/Pingdom)
       - 정기 smoke test 스크립트 in CI/CD
       - selenium 기반 사용자 시나리오 테스트
+      - |
+        **[OSS] curl smoke test (정상 요청 검증)** — FP 회귀 검증.
+          # 1. 단순 GET / 검증
+          curl -sS -o /dev/null -w "%{http_code}\n" http://10.20.30.80/
+          # 2. 다중 path smoke test
+          for path in / /index.html /robots.txt /sitemap.xml; do
+              code=$(curl -sS -o /dev/null -w "%{http_code}" "http://10.20.30.80$path" --max-time 5)
+              echo "$path: $code"
+          done
+          # 3. 정상 query string (FP 후보)
+          for q in "?lang=en" "?page=2" "?id=123" "?search=hello"; do
+              code=$(curl -sS -o /dev/null -w "%{http_code}" "http://10.20.30.80/$q" --max-time 5)
+              echo "$q: $code"
+          done
+        예상 출력 `/: 200 / /index.html: 200 / ?id=123: 200 / ?search=hello: 200`.
+        운영 해석: 정상 트래픽 모두 200 = FP 0. 403 발견 시 즉시 분석 + exception 룰 추가.
+      - |
+        **[OSS] ab (apache benchmark, 부하 + FP 측정)** — 정량 검증.
+          # 1. 100 요청 동시 (concurrency 10)
+          ab -n 100 -c 10 http://10.20.30.80/
+          # 2. 결과 분석
+          # Complete requests: 100
+          # Failed requests: 0
+          # Non-2xx responses: 0
+          # Time per request: 5.234 ms
+          # 3. FP 의심 시 응답 코드 확인
+          ab -n 100 -c 10 -v 2 http://10.20.30.80/ 2>&1 | grep "HTTP/"
+        예상 출력 `Complete requests: 100 / Failed: 0 / Non-2xx: 0`.
+        운영 해석: 정상 트래픽 100/100 = 200 = FP 0%. Non-2xx > 0 면 운영 영향.
+      - |
+        **[OSS] Synthetic monitoring (Datadog / Pingdom / Grafana)** — 24시간 SLA.
+          # 1. Datadog synthetic test
+          # GUI: Monitors → New Synthetic Test → API Test
+          # - URL: http://10.20.30.80/
+          # - Frequency: 1 minute
+          # - Assertions: status_code is 200, body contains "Welcome"
+          # 2. Grafana 의 Blackbox exporter 대안 (free)
+          # /etc/blackbox/blackbox.yml:
+          # modules:
+          #   http_2xx:
+          #     prober: http
+          # 3. Prometheus scrape:
+          # - job_name: blackbox
+          #   metrics_path: /probe
+          #   params:
+          #     module: [http_2xx]
+          #     target: [http://10.20.30.80/]
+        결과: 1분 간격 연속 응답 코드 모니터링.
+        운영 해석: 24시간 자동 감시. 응답 코드 변화 (200→403) = FP 발생 즉시 알림.
+      - |
+        **[OSS] CI/CD smoke test (PR 마다 자동)** — regression 방지.
+          # GitHub Actions 예시 (.github/workflows/waf-test.yml)
+          name: WAF Regression Test
+          on: [pull_request]
+          jobs:
+            smoke-test:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v3
+                - run: |
+                    # 룰 변경 후 정상 트래픽 회귀 테스트
+                    for path in / /api/users /products /search; do
+                        code=$(curl -sS -o /dev/null -w "%{http_code}" "$WEB_URL$path")
+                        [ "$code" = "200" ] || { echo "FP at $path"; exit 1; }
+                    done
+        결과: PR 마다 자동 smoke test. 룰 변경으로 FP 발생 시 merge 차단.
+        운영 해석: 룰 변경의 *FP 영향* 자동 검증. enterprise CI 표준.
+      - |
+        **[OSS] Selenium (실제 사용자 시나리오)** — full UX test.
+          # 1. selenium + Python
+          pip install selenium webdriver-manager
+          # 2. 사용자 시나리오 자동화
+          python3 << 'EOF'
+          from selenium import webdriver
+          driver = webdriver.Firefox()
+          # 1. 메인 페이지 로드
+          driver.get("http://10.20.30.80/")
+          assert "Welcome" in driver.title
+          # 2. 로그인 시도 (정상 form submission)
+          driver.find_element_by_id("username").send_keys("alice")
+          driver.find_element_by_id("password").send_keys("password123")
+          driver.find_element_by_id("submit").click()
+          # 3. 응답 페이지 확인
+          assert "Dashboard" in driver.page_source
+          driver.quit()
+          EOF
+        결과: 실제 user 시나리오 자동 실행 + 결과 검증.
+        운영 해석: curl 보다 실 사용자 행동 시뮬. WAF 가 form/AJAX 등 차단하면 발견.
       negative_signs:
       - 응답 코드 확인 없이 통과
       - 정상 요청 외 payload 포함
@@ -533,6 +1235,99 @@ steps:
       - attacker 에서 curl SQLi 페이로드
       - web 에서 tail modsec_audit.log + grep
       - 두 방법 모두 시도 (전체 + 조건부)
+      - |
+        **[OSS] SecRuleRemoveById (전체 exclude)** — 위험한 방법.
+          # 1. include-after.conf 작성 (CRS 적용 *후* 실행)
+          sudo tee /etc/modsecurity/include-after.conf << 'EOF'
+          # FP exception — 사내 시스템 942100 룰 전체 제거
+          SecRuleRemoveById 942100
+          EOF
+          # 2. apache2 가 후처리하도록 IfModule 안에 위치
+          # /etc/apache2/mods-enabled/security2.conf 의 끝에 IncludeOptional /etc/modsecurity/include-after.conf 추가
+          # 3. reload + 적용 검증
+          sudo systemctl reload apache2
+          sudo grep "942100" /etc/modsecurity/include-after.conf
+          # 4. 효과 검증 (모든 IP 에서 942100 통과)
+          curl -sI 'http://10.20.30.80/?id=1+OR+1=1--' | head -1
+        예상 출력 `HTTP/1.1 200 OK` (이전 403 → 200).
+        운영 해석: *모든* source IP 에서 942100 비활성. 진짜 SQLi 도 통과 = 위험. 반드시 ipMatch 와 함께.
+      - |
+        **[OSS] ctl:ruleRemoveById + ipMatch (조건부 exclude)** — 안전한 방법.
+          # 1. include-after.conf 의 SecRule 작성
+          sudo tee /etc/modsecurity/include-after.conf << 'EOF'
+          # 내부 IP (10.20.30.0/24) 만 942100 제거
+          SecRule REMOTE_ADDR "@ipMatch 10.20.30.0/24" \
+              "phase:1,id:99000001,nolog,pass,ctl:ruleRemoveById=942100"
+          EOF
+          sudo systemctl reload apache2
+          # 2. 내부 IP 에서 시도 (10.20.30.201)
+          curl -sI 'http://10.20.30.80/?id=1+OR+1=1--' | head -1
+          # → 200 (exception 적용)
+          # 3. 외부 IP 시뮬 (X-Forwarded-For)
+          curl -sI -H 'X-Forwarded-For: 8.8.8.8' 'http://10.20.30.80/?id=1+OR+1=1--' | head -1
+          # → 여전히 403 (REMOTE_ADDR 은 attacker IP, X-Forwarded-For 는 별도 변수)
+        예상 출력: 내부 → 200, 외부 시뮬 → 403.
+        운영 해석: 안전한 exception. RemoteIPHeader 미설정 시 X-Forwarded-For 우회 불가 = 안전.
+      - |
+        **[OSS] SecRuleUpdateTargetById (특정 변수만 제외)** — 더 정밀한 방법.
+          # 1. 특정 변수만 검사 제외 (예: ARGS:report_id 만 942100 제외)
+          sudo tee -a /etc/modsecurity/include-after.conf << 'EOF'
+          # report_id 변수만 942100 검사 제외 (다른 변수는 정상 차단)
+          SecRuleUpdateTargetById 942100 "!ARGS:report_id"
+          EOF
+          sudo systemctl reload apache2
+          # 2. report_id 변수에 SQLi → 통과
+          curl -sI "http://10.20.30.80/?report_id=1+OR+1=1--" | head -1
+          # → 200 (이 변수만 exception)
+          # 3. 다른 변수에 SQLi → 차단
+          curl -sI "http://10.20.30.80/?other_id=1+OR+1=1--" | head -1
+          # → 403 (정상 차단)
+        예상 출력: report_id 만 200, 다른 변수는 403.
+        운영 해석: 가장 정밀한 exception. *전체 룰* 비활성 X, *특정 변수* 만 비활성 = 최소 영향.
+      - |
+        **[OSS] paranoia_level 조정** — 룰 *기본 발동* 제어.
+          # 1. CRS paranoia level (1-4) 조정
+          # /etc/modsecurity/crs/crs-setup.conf:
+          # SecAction "id:900000,phase:1,nolog,pass,t:none,setvar:tx.paranoia_level=1"
+          # 2. PL1 = 가장 보수적 (FP 적음, FN 다수)
+          # PL2 = 균형 (운영 기본)
+          # PL3 = strict (대부분 환경 과도)
+          # PL4 = paranoid (only 고보안 환경)
+          sudo sed -i 's/setvar:tx.paranoia_level=2/setvar:tx.paranoia_level=1/' /etc/modsecurity/crs/crs-setup.conf
+          sudo systemctl reload apache2
+          # 3. 효과 측정 (24시간 FP 카운트)
+          before=$(sudo grep -c "942100" /var/log/apache2/modsec_audit.log)
+          # ... 24h ...
+          after=$(sudo grep -c "942100" /var/log/apache2/modsec_audit.log)
+          echo "Reduction: $((before-after))"
+        예상 결과: PL2→PL1 변경 시 FP 50%↓.
+        운영 해석: 단일 룰 exception 보다 *전체 룰셋 민감도* 조정. 시스템 전반에 영향.
+      - |
+        **[OSS] WAF rule modification UI (scirius / ModSecurity Console)** — GUI.
+          # 1. scirius 의 WAF rules 페이지 (Stamus enterprise)
+          # https://scirius:8000/waf
+          # 2. UI 동작:
+          # - rule 942100 검색 → "Add Exception" 버튼
+          # - source IP CIDR 입력 (10.20.30.0/24)
+          # - 변경 사유 + ticket ID 입력
+          # - Push to web hosts (다중 호스트 일괄)
+          # 3. CLI 검증
+          ssh ccc@10.20.30.80 "sudo cat /etc/modsecurity/include-after.conf"
+        UI 동작: GUI exception 작성 + audit log 자동 기록.
+        운영 해석: 다중 분석가 환경 표준. compliance + audit 자동.
+      - |
+        **[OSS] Coraza WAF (modern OSS 후속)** — Go 기반 ModSec 호환.
+          # 1. Coraza 는 ModSec rule 호환 + 새 기능
+          # 2. SecRuleRemoveById 동등
+          coraza-cli rules-disable --rule-id 942100
+          # 3. ipMatch 동등 + 더 풍부한 condition
+          # /etc/coraza/include-after.conf:
+          # SecAction "id:99000001,phase:1,setvar:tx.exception_active=1"
+          # SecRule REMOTE_ADDR "@ipMatch 10.20.30.0/24" "id:99000002,phase:1,ctl:ruleRemoveById=942100"
+          # 4. ModSec → Coraza 마이그레이션
+          # Apache → Caddy 전환 시 Coraza 권장
+        결과: ModSec 호환 syntax 그대로 사용 가능.
+        운영 해석: ModSec v2 (legacy) 후속. Caddy / Nginx 환경에서 Coraza 권장.
       negative_signs:
       - 한 방법만 (SecRuleRemoveById 만 또는 ipMatch 만)
       - exception 적용 후 효과 검증 누락 (차단→통과 확인 X)
