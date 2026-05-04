@@ -123,28 +123,69 @@
 ```bash
 # JuiceShop의 robots.txt 확인
 curl -s http://10.20.30.80:3000/robots.txt
-
-# Apache의 robots.txt 확인
-curl -s http://10.20.30.80:80/robots.txt
+echo '---'
+# Apache 의 robots.txt 비교
+curl -s -o /dev/null -w "Apache code=%{http_code}\n" http://10.20.30.80:80/robots.txt
 ```
 
-**보안 관점**: robots.txt에 `Disallow`로 지정된 경로는 오히려 민감한 페이지의 힌트가 된다.
-검색엔진 크롤러는 지시를 따르지만 공격자는 따르지 않는다.
+**예상 출력**:
+```
+User-agent: *
+Disallow: /ftp
+---
+Apache code=404
+```
+
+> **해석 — robots.txt 가 점검자에게 주는 정보**: JuiceShop 의 `Disallow: /ftp` 는 **점검 시작점**. 운영자가 검색엔진에서 숨기려 명시 = 그 자체가 노출 신호. 공격자는 무시 → 직접 접근. **/ftp 가 200 이면 디렉토리 리스팅 + 백업 파일 가능성** (week06 LFI 학습 재료). Apache 의 404 = robots.txt 미배치 = 양호 (또는 Apache 자체가 정적 정보 없음). 양 서비스 비교 = 점검 첫 순간의 공격 표면 정량화.
+
+> **OSS 대안 — robots.txt + sitemap 일괄 추출**:
+>
+> ```bash
+> # waybackurls — Wayback Machine 의 과거 robots.txt 도 추출 (운영자가 삭제한 경로 찾기)
+> echo http://10.20.30.80:3000 | waybackurls | grep -E 'robots|sitemap'
+>
+> # gau (GetAllUrls) — 다중 source (Wayback/CommonCrawl/AlienVault) 통합
+> echo example.com | gau | head -20
+> ```
 
 ### 2.2 sitemap.xml 확인
 
 ```bash
-curl -s http://10.20.30.80:3000/sitemap.xml            # silent 모드
-curl -s http://10.20.30.80:80/sitemap.xml              # silent 모드
+curl -s -o /tmp/sitemap_3000.xml -w "code=%{http_code} size=%{size_download}\n" http://10.20.30.80:3000/sitemap.xml
+curl -s -o /tmp/sitemap_80.xml -w "code=%{http_code} size=%{size_download}\n" http://10.20.30.80:80/sitemap.xml
+head -3 /tmp/sitemap_3000.xml 2>/dev/null
 ```
+
+**예상 출력**:
+```
+code=404 size=139
+code=404 size=274
+<!DOCTYPE html>
+<html lang="en">
+```
+
+> **해석**: 둘 다 404 = sitemap.xml 미배포. body 가 HTML (404 페이지 자체) 인지 확인 (`head -3` 결과). **운영 환경에서는 200 + XML 본문**. sitemap 의 `<url><loc>` 태그가 모든 공개 경로 노출 → 점검 1차 매핑. SEO 친화 + 공격 표면 노출 trade-off — 점검자는 운영자에게 *공개 페이지만* sitemap 권장.
 
 ### 2.3 .well-known 디렉터리
 
 ```bash
-# 보안 관련 공개 정보
-curl -s http://10.20.30.80:3000/.well-known/security.txt  # silent 모드
-curl -s http://10.20.30.80:3000/.well-known/openid-configuration  # silent 모드
+# RFC 8615 표준 경로들
+for path in security.txt openid-configuration change-password apple-app-site-association assetlinks.json; do
+  code=$(curl -o /dev/null -s -w "%{http_code}" "http://10.20.30.80:3000/.well-known/$path")
+  echo "$code  /.well-known/$path"
+done
 ```
+
+**예상 출력**:
+```
+404  /.well-known/security.txt
+404  /.well-known/openid-configuration
+404  /.well-known/change-password
+404  /.well-known/apple-app-site-association
+404  /.well-known/assetlinks.json
+```
+
+> **해석**: 모든 경로 404 = JuiceShop 미배포. **security.txt** (RFC 9116) = 보안 신고 채널 — 200 이면 PGP 키·연락처 노출 (양호 / 운영자 식별). **openid-configuration** = OAuth/OIDC 자동 발견 — 200 이면 issuer/jwks_uri 노출 → JWT 분석 입력 (week04 인증 우회). **apple-app-site-association** = iOS Universal Link — 모바일 + 웹 자산 연결. 모두 404 = 점검 대상 단순. 운영 환경이면 *security.txt 만 권장* (책임 있는 disclosure).
 
 ---
 
@@ -219,45 +260,86 @@ done < /tmp/webdirs.txt
 
 ### 3.3 JuiceShop 숨겨진 경로 탐색
 
-반복문으로 여러 대상에 대해 일괄 작업을 수행합니다.
+JuiceShop 특화 경로 sweep — code + size 동시 측정.
 
 ```bash
-# JuiceShop에 특화된 경로 목록
 for path in \
-  "ftp" \
-  "api/Products/1" \
-  "rest/products/search?q=test" \
-  "rest/user/whoami" \
-  "api/SecurityQuestions" \
-  "api/Challenges" \
-  "api/Complaints" \
-  "api/Feedbacks" \
-  "api/Quantitys" \
-  "rest/languages" \
-  "rest/memories" \
-  "rest/chatbot/status" \
-  "metrics" \
-  "promotion" \
-  "video" \
-  "encryptionkeys" \
+  "ftp" "api/Products/1" "rest/products/search?q=test" \
+  "rest/user/whoami" "api/SecurityQuestions" "api/Challenges" \
+  "api/Complaints" "api/Feedbacks" "api/Quantitys" \
+  "rest/languages" "rest/memories" "rest/chatbot/status" \
+  "metrics" "promotion" "video" "encryptionkeys" \
   "assets/public/images/uploads"; do
-  code=$(curl -o /dev/null -s -w "%{http_code}" "http://10.20.30.80:3000/$path")
-  size=$(curl -o /dev/null -s -w "%{size_download}" "http://10.20.30.80:3000/$path")
+  read code size < <(curl -o /dev/null -s -w "%{http_code} %{size_download}" "http://10.20.30.80:3000/$path")
   echo "[${code}] (${size}B) /$path"
 done
 ```
 
+**예상 출력 (발췌)**:
+```
+[200] (1987B) /ftp
+[200] (435B) /api/Products/1
+[200] (8421B) /rest/products/search?q=test
+[401] (87B) /rest/user/whoami
+[200] (5621B) /api/SecurityQuestions
+[200] (245B) /api/Challenges
+[401] (87B) /api/Complaints
+[200] (12340B) /api/Feedbacks
+[404] (139B) /api/Quantitys
+[200] (892B) /rest/languages
+[401] (87B) /rest/memories
+[404] (139B) /rest/chatbot/status
+[200] (1234B) /metrics
+[404] (139B) /promotion
+[200] (3128B) /encryptionkeys
+[200] (245B) /assets/public/images/uploads
+```
+
+> **해석 — code + size 두 축 분석**: **200 (정상 응답)** = 즉시 노출. **401** = 인증 필요 (존재 확인됨, week04 의 인증 우회 입력). **404 size=139B** = 동일 크기 = JuiceShop 의 통일 404 페이지 — 다른 size 면 false-positive. **/encryptionkeys** = 암호화 키 디렉토리 — 운영 환경 노출 = 즉시 critical. **/metrics** = Prometheus endpoint? = 운영 정보 노출. **/api/Feedbacks 12KB** = 다수 피드백 데이터 노출 (BOLA week05). **/api/Quantitys 404** = 오타 명시 (*Quantity 정상 / 의도적 typo) — JuiceShop 의 challenge.
+
 ### 3.4 FTP 디렉터리 탐색
 
 ```bash
-# JuiceShop의 /ftp 디렉터리는 파일 목록을 노출할 수 있다
-curl -s http://10.20.30.80:3000/ftp/ | python3 -m json.tool 2>/dev/null || \
-  curl -s http://10.20.30.80:3000/ftp/                 # silent 모드
-
-# FTP에 있는 파일 다운로드 시도
-curl -s http://10.20.30.80:3000/ftp/legal.md           # silent 모드
-curl -s http://10.20.30.80:3000/ftp/acquisitions.md    # silent 모드
+# JuiceShop /ftp 디렉토리 listing 확인
+curl -s http://10.20.30.80:3000/ftp/ | head -30
+echo '---'
+# 백업 파일 직접 다운
+curl -s -o /tmp/legal.md -w "legal.md code=%{http_code} size=%{size_download}\n" http://10.20.30.80:3000/ftp/legal.md
+curl -s -o /tmp/acquisitions.md -w "acquisitions.md code=%{http_code} size=%{size_download}\n" http://10.20.30.80:3000/ftp/acquisitions.md
+ls -l /tmp/legal.md /tmp/acquisitions.md 2>/dev/null
 ```
+
+**예상 출력**:
+```
+<html><head><title>listing directory /ftp</title></head>
+<body>
+<h1>files within directory /ftp</h1>
+<ul>
+  <li><a href="acquisitions.md">acquisitions.md</a></li>
+  <li><a href="announcement_encrypted.md">announcement_encrypted.md</a></li>
+  <li><a href="coupons_2013.md.bak">coupons_2013.md.bak</a></li>
+  <li><a href="eastere.gg">eastere.gg</a></li>
+  <li><a href="encrypt.pyc">encrypt.pyc</a></li>
+  <li><a href="incident-support.kdbx">incident-support.kdbx</a></li>
+  <li><a href="legal.md">legal.md</a></li>
+  <li><a href="package.json.bak">package.json.bak</a></li>
+  <li><a href="suspicious_errors.yml">suspicious_errors.yml</a></li>
+</ul>
+---
+legal.md code=200 size=1834
+acquisitions.md code=200 size=2956
+```
+
+> **해석 — 디렉토리 리스팅 + 백업 파일**: **`Apache Directory Listing`** = OWASP A05 Security Misconfiguration. 9 파일 노출 = 즉시 비고서 critical 항목. **package.json.bak** = Node.js 의존성 + 버전 노출 → SCA + CVE 매핑 (week08). **incident-support.kdbx** = KeePass DB 파일 → 마스터 비번 brute (week04). **coupons_2013.md.bak** = 백업 = 옛 데이터 = 영업 비밀 가능. **suspicious_errors.yml** = 운영자가 'suspicious' 라고 명시한 파일 = JuiceShop 의 의도적 challenge. *모든 .bak/.old/.swp 확장자는 자동 점검 항목*.
+
+> **OSS 대안 — 백업 확장자 brute**:
+>
+> ```bash
+> # ffuf 의 확장자 fuzzing (점검 표준)
+> ffuf -u http://10.20.30.80:3000/FUZZ -w wordlist.txt -e .bak,.old,.swp,.zip,.tar.gz,.tar
+> # 또는 파일명·확장자 동시 fuzzing
+> ffuf -u http://10.20.30.80:3000/FUZZ.FUZZ2 -w names.txt:FUZZ -w exts.txt:FUZZ2 -mode pitchfork
+> ```
 
 ### 3.5 디렉터리 스캔 결과 분석
 
@@ -279,11 +361,23 @@ curl -s http://10.20.30.80:3000/ftp/acquisitions.md    # silent 모드
 # 응답 헤더에서 기술 스택 정보 추출
 echo "=== JuiceShop (포트 3000) ==="
 curl -sI http://10.20.30.80:3000 | grep -iE "server|x-powered|x-generator|x-aspnet|set-cookie"
-
 echo ""
 echo "=== Apache (포트 80) ==="
 curl -sI http://10.20.30.80:80 | grep -iE "server|x-powered|x-generator|x-aspnet|set-cookie"
 ```
+
+**예상 출력**:
+```
+=== JuiceShop (포트 3000) ===
+X-Powered-By: Express
+Set-Cookie: language=en; Path=/
+
+=== Apache (포트 80) ===
+Server: Apache/2.4.52 (Ubuntu)
+Set-Cookie: PHPSESSID=abc123; path=/; HttpOnly
+```
+
+> **해석 — 헤더 1줄당 1개 CVE 후보**: **`X-Powered-By: Express`** = Node.js + Express 백엔드. Express 기본 헤더 = `app.disable('x-powered-by')` 1줄로 제거 가능 — 미제거 = OWASP A05 노출. **`Server: Apache/2.4.52 (Ubuntu)`** = Apache 정확 버전 + OS 노출. CVE 자동 매핑: `searchsploit Apache 2.4.52` → CVE-2022-22720 (HTTP Smuggling) 등. 운영 시 `ServerTokens Prod` 설정으로 `Apache` 만 노출. **`PHPSESSID`** = PHP 7+ 사용 → DVWA endpoint 라는 신호. **`connect.sid`** 쿠키가 보이면 Express, **`JSESSIONID`** = Java/Tomcat. 헤더만으로 stack 90% 식별.
 
 **OSS 도구로 자동화** (whatweb/httpx 추천):
 ```bash
@@ -299,16 +393,39 @@ whatweb 의 출력은 한 줄에 **프레임워크 + 라이브러리 + CMS + 서
 ### 4.2 쿠키 분석
 
 ```bash
-# 쿠키 이름으로 기술 스택 추측
+# 쿠키 이름 + Secure/HttpOnly/SameSite 플래그 동시 점검
 curl -sI http://10.20.30.80:3000 | grep -i set-cookie
-
-# 쿠키 이름 → 기술 스택 매핑
-# PHPSESSID → PHP
-# JSESSIONID → Java (Tomcat/Spring)
-# ASP.NET_SessionId → ASP.NET
-# connect.sid → Node.js (Express)
-# token → JWT 기반 인증
+echo '---'
+# 다양한 endpoint 의 쿠키 차이
+for path in "/" "/rest/products/search?q=test" "/api/Users"; do
+  echo "[$path]"
+  curl -sI "http://10.20.30.80:3000$path" | grep -i 'set-cookie' || echo '(no Set-Cookie)'
+done
 ```
+
+**예상 출력**:
+```
+Set-Cookie: language=en; Path=/
+---
+[/]
+Set-Cookie: language=en; Path=/
+[/rest/products/search?q=test]
+(no Set-Cookie)
+[/api/Users]
+(no Set-Cookie)
+```
+
+> **해석 — 쿠키 이름 → 기술 스택 + 플래그 누락 = 즉시 취약**:
+> - **`language=en`** = JuiceShop 의 i18n 쿠키. 비표준 명 = JuiceShop 자체 구현 (Express middleware).
+> - **누락 플래그**: `HttpOnly` 없음 → JS 접근 가능 → XSS 시 쿠키 탈취. `Secure` 없음 → HTTP 평문 전송. `SameSite=Strict` 없음 → CSRF 가능.
+> - **쿠키 이름 → 스택 매핑** (이름 보면 즉시 식별):
+>   - `PHPSESSID` → PHP (DVWA)
+>   - `JSESSIONID` → Java/Tomcat/Spring
+>   - `ASP.NET_SessionId` → ASP.NET
+>   - `connect.sid` → Node.js Express
+>   - `_csrf`, `XSRF-TOKEN` → CSRF token 사용
+>   - `token`, `accessToken` → JWT Bearer (Authorization 헤더)
+> - **JuiceShop 은 JWT 사용** (`Authorization: Bearer eyJ...`) — Set-Cookie X = stateless 인증 패턴 식별.
 
 ### 4.3 에러 페이지 분석
 
@@ -329,15 +446,55 @@ curl -s http://10.20.30.80:3000/api/Products/abc
 
 ```bash
 # HTML에서 JS 파일 경로 추출
-curl -s http://10.20.30.80:3000 | grep -oE 'src="[^"]*\.js"' | head -10  # silent 모드
-
-# main.js 등에서 API 엔드포인트 추출
+curl -s http://10.20.30.80:3000 | grep -oE 'src="[^"]*\.js"' | head -10
+echo '---'
+# main.js 등에서 API 엔드포인트 + secret 패턴 추출
 MAIN_JS=$(curl -s http://10.20.30.80:3000 | grep -oE 'src="[^"]*main[^"]*\.js"' | head -1 | sed 's/src="//;s/"//')
-if [ -n "$MAIN_JS" ]; then
-  echo "Main JS: $MAIN_JS"
-  curl -s "http://10.20.30.80:3000/$MAIN_JS" | grep -oE '/api/[a-zA-Z/]+|/rest/[a-zA-Z/]+' | sort -u | head -20  # silent 모드
-fi
+echo "Main JS: $MAIN_JS"
+curl -s "http://10.20.30.80:3000/$MAIN_JS" | grep -oE '/api/[a-zA-Z/]+|/rest/[a-zA-Z/]+' | sort -u | head -10
+echo '---'
+# 노출된 secret/key 패턴 정규식 검색
+curl -s "http://10.20.30.80:3000/$MAIN_JS" | grep -oE '(AKIA[0-9A-Z]{16}|sk_live_[0-9a-zA-Z]{24,}|api[_-]?key[\"'\'' :=]+[a-zA-Z0-9]{16,})' | head -5
 ```
+
+**예상 출력**:
+```
+src="runtime.6271bf12036d6dd16b56.js"
+src="polyfills.4dd0bf48c11ddd96fa1f.js"
+src="main.bb5070bf0f9ce9b58d7c.js"
+---
+Main JS: main.bb5070bf0f9ce9b58d7c.js
+/api/Addresss
+/api/BasketItems
+/api/Cards
+/api/Challenges
+/api/Complaints
+/api/Feedbacks
+/api/Quantitys
+/api/Recycles
+/api/SecurityAnswers
+/api/SecurityQuestions
+---
+```
+
+> **해석 — JS bundle 이 점검자에게 주는 보물**:
+> - **endpoint 추출 10+** = REST API 매핑 자동화 — 수기 brute force 보다 100% 정확.
+> - **`/api/Quantitys` (오타 — Quantities 정상)** = 의도적 이름. JuiceShop challenge.
+> - **secret 패턴**: AKIA (AWS), sk_live (Stripe), api_key= 노출 없음 = 양호. 운영 환경에서는 **truffleHog / gitleaks** 정규식 200+ 패턴 자동 검색.
+> - JS bundle 의 hash (`bb5070bf...`) = **build fingerprint** — 동일 hash 면 재빌드 X (운영자 게으름 신호).
+
+> **OSS 대안 — JS bundle 분석 자동화**:
+>
+> ```bash
+> # LinkFinder (Python) — JS 에서 endpoint·URL·variable 자동 추출
+> pip install jsbeautifier && python3 LinkFinder.py -i http://10.20.30.80:3000/main.js -o cli
+>
+> # SecretFinder — JS 에서 secret/key 정규식 자동 매치
+> python3 SecretFinder.py -i http://target/main.js -o cli
+>
+> # truffleHog v3 — 정규식 + 엔트로피 기반 secret hunting (file/git/url 모드)
+> trufflehog filesystem /path/to/cloned/site
+> ```
 
 ### 4.5 기술 스택 정리 템플릿
 
@@ -400,13 +557,36 @@ testssl.sh 는 **CVE-2014-0160 (Heartbleed)** 등 알려진 TLS 취약점을 한
 ### 5.3 curl로 TLS 정보 확인
 
 ```bash
-# HTTPS 사이트의 인증서 정보 (참고용 외부 사이트)
-# curl -vI https://www.google.com 2>&1 | grep -E "SSL|TLS|subject|expire|issuer"
-
-# HTTP 전용 서버에 HTTPS 시도 (에러 확인)
-curl -vI https://10.20.30.80:3000 2>&1 | head -10
-# 예상: SSL 관련 에러 → HTTPS 미지원 확인
+# Wazuh Dashboard 의 HTTPS 인증서 (실습 가능 대상)
+curl -vI -k https://10.20.30.100:443 2>&1 | grep -E "SSL|TLS|subject|expire|issuer|ALPN" | head -10
+echo '---'
+# JuiceShop 은 HTTP 전용 — HTTPS 시도 시 에러 확인
+curl -vI https://10.20.30.80:3000 2>&1 | head -8
 ```
+
+**예상 출력**:
+```
+*  ALPN: server accepted h2
+* TLSv1.3 (IN), TLS handshake, Server hello (2):
+* TLSv1.3 (OUT), TLS change cipher, Change cipher spec (1):
+*  subject: CN=wazuh-dashboard
+*  start date: Jan  1 00:00:00 2026 GMT
+*  expire date: Dec 31 23:59:59 2027 GMT
+*  issuer: CN=wazuh-dashboard
+---
+*   Trying 10.20.30.80:3000...
+* Connected to 10.20.30.80 (10.20.30.80) port 3000
+* ALPN: curl offers h2,http/1.1
+* (304) (OUT), TLS handshake, Client hello (1):
+* OpenSSL/3.0.2: error:0A00010B:SSL routines::wrong version number
+* Closed connection
+```
+
+> **해석 — HTTPS 점검 vs 미지원**:
+> - **Wazuh (10.20.30.100:443)**: TLS 1.3 ✓ + ALPN h2 (HTTP/2) ✓ — 표준 정상 통신. 그러나 **`subject: CN=wazuh-dashboard` + `issuer: CN=wazuh-dashboard`** = **자체 서명 인증서** = 운영 환경에서는 critical (CA 검증 X = MITM 가능). `-k` 가 없으면 curl 거부 = 운영자가 인증서 신뢰 체인 무시 신호.
+> - **expire date** 가 1년 이상이면 정상 (Let's Encrypt 90일 / 일반 1년).
+> - **JuiceShop HTTPS 시도**: `wrong version number` = HTTP 평문 응답을 TLS 로 파싱 → HTTPS 미지원 확정. 운영 환경에서 HTTP 전용 = OWASP A02 Cryptographic Failures. **HSTS preload list** 등록도 못함.
+> - **점검 보고서**: HTTP-only 서비스 = critical, 자체 서명 cert = high, 만료 임박 = high.
 
 ### 5.4 점검 체크리스트
 
