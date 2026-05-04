@@ -43,6 +43,68 @@ steps:
       - sudo xmllint --xpath //syscheck/directories ossec.conf
       - Wazuh Dashboard Configuration Integrity Monitoring
       - agent-level 설정은 agent.conf 에서
+      - |
+        **[OSS] grep + xmllint (syscheck 정밀 추출)** — 표준.
+          # 1. 단순 grep
+          sudo grep -E '<directories' /var/ossec/etc/ossec.conf
+          # 2. xmllint XPath
+          sudo xmllint --xpath '//syscheck/directories/text()' /var/ossec/etc/ossec.conf
+          # 3. realtime 속성 추출
+          sudo xmllint --xpath '//syscheck/directories[@realtime="yes"]' /var/ossec/etc/ossec.conf
+          # 4. 모든 감시 경로 + 속성 한 번에
+          sudo xmllint --xpath '//syscheck/directories' /var/ossec/etc/ossec.conf
+        예상 출력 `<directories check_all="yes" realtime="yes">/etc,/usr/bin,/usr/sbin</directories>`.
+        운영 해석: realtime="yes" = inotify 기반 즉시 감지. check_all="yes" = size+perm+owner+md5+sha1+sha256.
+      - |
+        **[OSS] inotifywait (kernel layer 직접 검증)** — FIM 동작 mechanism.
+          # 1. inotify-tools 설치
+          sudo apt install inotify-tools
+          # 2. /etc 의 변경 실시간 watch
+          sudo inotifywait -mr /etc -e modify,attrib,create,delete | head
+          # 3. 다른 터미널에서 변경 발생
+          sudo touch /etc/test-inotify
+          # 4. 첫 줄에 inotify event 보임
+          # /etc/ CREATE test-inotify
+        예상 출력 `/etc/ CREATE test-inotify / /etc/ MODIFY test-inotify`.
+        운영 해석: Wazuh syscheck 가 사용하는 *kernel layer* 메커니즘. inotify event = FIM alert 의 source.
+      - |
+        **[OSS] Wazuh Dashboard Integrity Monitoring** — GUI.
+          # 1. https://10.20.30.100/ → Modules → Integrity Monitoring
+          # 2. UI 동작:
+          # - Inventory: 모든 감시 파일 + last_check
+          # - Files: 실시간 변경 timeline
+          # - Stats: 변경 횟수 / 디렉토리 별
+          # - Settings: agent 별 syscheck 설정 view + edit
+          # 3. drill-down: 단일 파일 클릭 → 변경 history
+          # 4. 인벤토리 export
+        UI 동작: FIM 이벤트 통합 view + drill-down.
+        운영 해석: SOC 분석가 표준. CLI grep 보다 시각적 + history 추적.
+      - |
+        **[OSS] auditd (Linux audit subsystem 통합)** — 보완 layer.
+          # 1. auditd 설치 + watch 룰
+          sudo apt install auditd
+          sudo auditctl -w /etc/passwd -p wa -k passwd_change
+          sudo auditctl -w /etc/shadow -p wa -k shadow_change
+          # 2. 변경 trigger
+          sudo touch /etc/passwd
+          # 3. audit log 검색
+          sudo ausearch -k passwd_change --start today | head
+          # 4. Wazuh 가 audit.log 도 수집
+          sudo grep "ausearch" /var/log/audit/audit.log | head
+        예상 출력 `type=PATH msg=audit(1234567890.123:456) item=0 name="/etc/passwd"`.
+        운영 해석: auditd = kernel-level 표준 audit. Wazuh syscheck 와 다른 mechanism. 양쪽 비교 표준.
+      - |
+        **[OSS] Wazuh API syscheck endpoint** — programmatic.
+          # 1. JWT 토큰
+          TOKEN=$(curl -sk -u wazuh-wui:wazuh-wui -X POST "https://localhost:55000/security/user/authenticate?raw=true")
+          # 2. agent 의 syscheck inventory
+          curl -sk -H "Authorization: Bearer $TOKEN" "https://localhost:55000/syscheck/000?limit=10" | jq
+          # 3. 특정 파일 last_check
+          curl -sk -H "Authorization: Bearer $TOKEN" "https://localhost:55000/syscheck/000?file=/etc/passwd" | jq
+          # 4. agent 별 last_scan
+          curl -sk -H "Authorization: Bearer $TOKEN" "https://localhost:55000/syscheck/000/last_scan" | jq
+        예상 출력 `[{file:"/etc/passwd", size:2456, sha256:"abc123...", last_scan:"2026-05-06T14:23:00"}]`.
+        운영 해석: REST API 자동화. CI 통합 + 정기 inventory 보고.
       negative_signs:
       - <directories> 대신 다른 태그
       - 전체 syscheck 블록 cat(과다)
@@ -81,6 +143,64 @@ steps:
       - sudo sqlite3 fim.db "SELECT count(*) FROM file_entry"(레코드 수)
       - sudo stat /var/ossec/queue/fim/db/fim.db
       - Wazuh Dashboard Security events 로 간접 확인
+      - |
+        **[OSS] sqlite3 (FIM DB 직접 query)** — 표준.
+          # 1. db 존재 + 크기
+          sudo ls -lh /var/ossec/queue/fim/db/fim.db
+          # 2. schema 확인
+          sudo sqlite3 /var/ossec/queue/fim/db/fim.db ".schema"
+          # 3. 모니터링 파일 수
+          sudo sqlite3 /var/ossec/queue/fim/db/fim.db "SELECT count(*) FROM file_entry;"
+          # 4. 특정 파일 hash
+          sudo sqlite3 /var/ossec/queue/fim/db/fim.db "SELECT path, sha256 FROM file_entry WHERE path='/etc/passwd';"
+        예상 출력 `Total monitored: 12345 files / sha256: abc123...`.
+        운영 해석: FIM DB = SQLite. 모든 baseline hash 저장. 직접 query 로 수동 검증.
+      - |
+        **[OSS] stat + ls (파일 메타정보)** — 빠른 진단.
+          # 1. 파일 상태 + 권한
+          sudo stat /var/ossec/queue/fim/db/fim.db
+          # 2. 마지막 변경 시각 (last sync)
+          sudo stat -c '%y' /var/ossec/queue/fim/db/fim.db
+          # 3. 디스크 사용량 (FIM DB 크기 추세)
+          sudo du -h /var/ossec/queue/fim/db/
+          # 4. 권한 검증 (wazuh user 만 읽기/쓰기)
+          sudo ls -la /var/ossec/queue/fim/db/
+        예상 출력 `Modify: 2026-05-06 14:23:00 / 50M / -rw-rw---- 1 wazuh wazuh`.
+        운영 해석: 정기 점검 표준. db 크기 1GB+ 시 syscheck 감시 디렉토리 너무 많음.
+      - |
+        **[OSS] sqlite-utils (Python 통합)** — 자동화.
+          # 1. sqlite-utils 설치
+          pip install sqlite-utils
+          # 2. CSV export (분석)
+          sudo sqlite-utils dump /var/ossec/queue/fim/db/fim.db | head
+          # 3. 특정 dir 의 모든 파일
+          sudo sqlite-utils memory /var/ossec/queue/fim/db/fim.db "SELECT * FROM file_entry WHERE path LIKE '/etc/%' LIMIT 5"
+          # 4. JSON 출력
+          sudo sqlite-utils memory /var/ossec/queue/fim/db/fim.db "SELECT count(*) c, substr(path,1,5) p FROM file_entry GROUP BY p ORDER BY c DESC" --json
+        예상 출력 `[{"c":5234,"p":"/etc/"},{"c":2145,"p":"/usr/"}]`.
+        운영 해석: 디렉토리 별 모니터링 파일 분포 분석. 자동화 친화.
+      - |
+        **[OSS] inotifywait + diff (실시간 변경 검증)** — kernel level.
+          # 1. inotify 로 fim.db 자체 변경 watch (Wazuh 가 어떻게 update 하는지)
+          sudo inotifywait -m /var/ossec/queue/fim/db/ -e modify,attrib | head
+          # 2. 다른 터미널에서 /etc 변경
+          sudo touch /etc/test-fim
+          # 3. fim.db 변경 즉시 발생 확인
+          # /var/ossec/queue/fim/db/ MODIFY fim.db
+        예상 출력 `MODIFY fim.db (Wazuh syscheckd 가 baseline 업데이트)`.
+        운영 해석: FIM 동작 mechanism 직접 관찰. fim.db 가 변경 감지 시 즉시 update = realtime 정상.
+      - |
+        **[OSS] Wazuh Dashboard FIM Inventory** — GUI 검증.
+          # 1. https://10.20.30.100/ → Modules → Integrity Monitoring → Inventory
+          # 2. UI:
+          # - 전체 모니터링 파일 list (fim.db 의 시각적 view)
+          # - 파일 hash + last_check + size + permissions
+          # - 검색: path / sha256 / agent
+          # 3. 통계:
+          # - 변경된 파일 24h
+          # - 카테고리 별 분포
+        UI 동작: GUI 로 fim.db 내용 시각화.
+        운영 해석: CLI sqlite3 의 GUI 버전. SOC 분석가 친화적.
       negative_signs:
       - 잘못된 경로
       - 파일 없어도 정상 판정
@@ -118,6 +238,77 @@ steps:
       - stat /etc/ccc-fim-test 로 inode 정보
       - '기존 파일 수정: echo test >> /etc/test-existing'
       - chmod 으로 permission 변경(FIM 감지)
+      - |
+        **[OSS] touch + ls (표준 trigger)** — 가장 단순.
+          # 1. 파일 생성 + 검증
+          sudo touch /etc/ccc-fim-test && ls -la /etc/ccc-fim-test
+          # 2. 변경 trigger (touch 외 다양)
+          # a) write
+          echo "test" | sudo tee /etc/ccc-fim-test
+          # b) permission
+          sudo chmod 644 /etc/ccc-fim-test
+          # c) ownership
+          sudo chown root:root /etc/ccc-fim-test
+          # d) attribute
+          sudo chattr +i /etc/ccc-fim-test
+        예상 출력 `-rw-r--r-- 1 root root 0 May 06 14:23 /etc/ccc-fim-test`.
+        운영 해석: FIM 은 *모든 변경* 감지. touch (mtime), chmod (perm), echo (size+md5) 모두 alert 발생.
+      - |
+        **[OSS] chattr + lsattr (immutable 시뮬)** — 고급 trigger.
+          # 1. immutable 속성 추가
+          sudo chattr +i /etc/ccc-fim-test
+          # 2. 검증
+          sudo lsattr /etc/ccc-fim-test
+          # 3. 정상 (immutable 시 변경 불가)
+          sudo rm /etc/ccc-fim-test
+          # → "Operation not permitted"
+          # 4. 해제
+          sudo chattr -i /etc/ccc-fim-test
+        예상 출력 `----i--------e----- /etc/ccc-fim-test / Operation not permitted`.
+        운영 해석: FIM 이 chattr +i 변경도 감지 (extended attributes). rootkit 의 자기 보호 패턴 탐지.
+      - |
+        **[OSS] dd / fallocate (대량 변경 시뮬)** — performance test.
+          # 1. 큰 파일 생성 (FIM hash 계산 부하)
+          sudo dd if=/dev/zero of=/etc/big-fim-test bs=1M count=10
+          # 2. fallocate 로 빠른 생성
+          sudo fallocate -l 100M /etc/big-fim-test
+          # 3. FIM 응답 시간 측정
+          time sudo cp /etc/big-fim-test /etc/big-fim-test-copy
+          # 4. cleanup
+          sudo rm /etc/big-fim-test*
+        예상 결과: 10MB 파일은 sha256 계산 1-2초. 1GB+ 시 분 단위.
+        운영 해석: 큰 파일 다수 변경 시 FIM 부하 측정. 디스크 + CPU 영향.
+      - |
+        **[OSS] inotifywait (FIM event 직접 관찰)** — kernel 검증.
+          # 1. /etc 의 모든 변경 watch
+          sudo inotifywait -mr /etc -e modify,attrib,create,delete,move 2>&1 &
+          # 2. 다른 터미널에서 trigger
+          sudo touch /etc/ccc-fim-test
+          # 3. 첫 줄 inotify event 확인
+          # /etc/ CREATE ccc-fim-test
+          # 4. Wazuh 의 syscheckd 가 같은 event 수신 후 alert 생성
+          sudo grep "ccc-fim-test" /var/ossec/logs/ossec.log | head
+        예상 출력 `/etc/ CREATE ccc-fim-test / wazuh-syscheckd: file added: ccc-fim-test`.
+        운영 해석: kernel inotify event 가 source. Wazuh 의 syscheckd 가 받아서 baseline 비교.
+      - |
+        **[OSS] python 자동화 trigger** — CI test.
+          # 1. multi-event trigger
+          python3 << 'EOF'
+          import os, time
+          for i in range(3):
+              fname = f"/etc/fim-test-{i}"
+              os.system(f"sudo touch {fname}")
+              time.sleep(2)
+              os.system(f"sudo chmod 600 {fname}")
+              time.sleep(2)
+              os.system(f"sudo rm {fname}")
+              print(f"Trigger {i}: create + chmod + delete")
+          EOF
+          # 2. alert 검증
+          sleep 30
+          sudo grep -c "fim-test" /var/ossec/logs/alerts/alerts.json
+        예상 출력 `9 alerts (3 trigger × 3 event types)`.
+        운영 해석: 자동화 회귀 테스트. CI 통합 + FIM coverage 정량 측정.
       negative_signs:
       - 감시 디렉토리 외 위치(/tmp)
       - ls 없이 touch 만(생성 확인 없음)
@@ -162,6 +353,66 @@ steps:
       - Wazuh Dashboard Security Events Module Integrity Monitoring
       - Wazuh API GET /syscheck/<agent_id>
       - sudo tail -f alerts.json 으로 실시간
+      - |
+        **[OSS] grep + jq (FIM alert 검색)** — 표준.
+          # 1. sleep + grep (FIM detection 대기)
+          sleep 10 && sudo grep ccc-fim-test /var/ossec/logs/alerts/alerts.json | tail
+          # 2. jq 정밀 (rule.id 554 = file added)
+          sudo jq -c 'select(.rule.id=="554" and (.syscheck.path|test("ccc-fim-test")))' /var/ossec/logs/alerts/alerts.json | tail
+          # 3. 핵심 필드만
+          sudo jq -r 'select(.syscheck.path|test("ccc-fim-test")) | [.timestamp, .rule.id, .syscheck.event, .syscheck.path] | @tsv' /var/ossec/logs/alerts/alerts.json
+          # 4. realtime 모니터
+          sudo tail -f /var/ossec/logs/alerts/alerts.json | grep --line-buffered ccc-fim-test
+        예상 출력 `2026-05-06T14:23 / 554 / added / /etc/ccc-fim-test`.
+        운영 해석: FIM rule id 분포: 550=changed, 553=deleted, 554=added. 분류 표준.
+      - |
+        **[OSS] Wazuh Dashboard FIM Events** — GUI.
+          # 1. https://10.20.30.100/ → Modules → Integrity Monitoring → Files
+          # 2. UI 검색
+          # path: /etc/ccc-fim-test
+          # 3. 결과:
+          # - 시간 + event type (added/modified/deleted)
+          # - 변경 전후 hash 비교
+          # - drill-down: who changed (auditd 통합 시)
+          # 4. 시간대 별 분포
+        UI 동작: FIM event 시각화 + 변경 history.
+        운영 해석: SOC 분석가 표준. CLI grep 보다 변경 patterns 시각적 분석.
+      - |
+        **[OSS] Wazuh API syscheck** — programmatic.
+          # 1. JWT 토큰
+          TOKEN=$(curl -sk -u wazuh-wui:wazuh-wui -X POST "https://localhost:55000/security/user/authenticate?raw=true")
+          # 2. agent 의 특정 file
+          curl -sk -H "Authorization: Bearer $TOKEN" "https://localhost:55000/syscheck/000?file=/etc/ccc-fim-test" | jq
+          # 3. 변경된 모든 파일 (last_check 기준)
+          curl -sk -H "Authorization: Bearer $TOKEN" "https://localhost:55000/syscheck/000?limit=10&sort=-last_check" | jq
+        예상 출력 `[{file:"/etc/ccc-fim-test", date:"2026-05-06", changes:0, sha256:"..."}]`.
+        운영 해석: REST API 자동화 표준. CI 통합 + 외부 dashboard.
+      - |
+        **[OSS] OpenSearch query (Indexer 직접)** — 빠른 검색.
+          # 1. Indexer 직접 query
+          curl -sk -u admin:admin -X POST "https://localhost:9200/wazuh-alerts-*/_search" \
+              -H "Content-Type: application/json" \
+              -d '{
+                "query":{"bool":{"must":[
+                  {"term":{"rule.id":"554"}},
+                  {"match":{"syscheck.path":"ccc-fim-test"}}
+                ]}},
+                "size":5,
+                "sort":[{"timestamp":"desc"}]
+              }' | jq '.hits.hits[]._source | {ts:.timestamp, path:.syscheck.path, event:.syscheck.event}'
+        예상 출력 `[{ts:"...", path:"/etc/ccc-fim-test", event:"added"}]`.
+        운영 해석: Indexer 직접 query = 빠름. multi-condition + sort + aggregation.
+      - |
+        **[OSS] auditd 와 cross-check** — 누가 변경했는지 추적.
+          # 1. auditd 의 watch 설정 (FIM 보완)
+          sudo auditctl -w /etc/ccc-fim-test -p wa -k fim_test
+          # 2. 변경 후
+          sudo touch /etc/ccc-fim-test
+          # 3. audit log 에서 user/process 추출
+          sudo ausearch -k fim_test --start today | grep -E "uid|proc"
+          # 4. Wazuh 가 이 audit log 도 수집 (logsource: audit)
+        예상 출력 `uid=0(root) proctitle=746F756368... (touch /etc/ccc-fim-test)`.
+        운영 해석: FIM = *무엇이 변경*, auditd = *누가 어떻게 변경*. 두 layer 결합 표준.
       negative_signs:
       - sleep 없이 즉시 grep(아직 이벤트 없음)
       - alerts.log 와 혼동
@@ -218,6 +469,68 @@ steps:
       - sudo xmllint --xpath //sca ossec.conf
       - Wazuh Dashboard Security Configuration Assessment
       - Wazuh API GET /sca/<agent_id>
+      - |
+        **[OSS] awk + xmllint (SCA 설정 추출)** — 표준.
+          # 1. SCA 블록 추출
+          sudo awk '/<sca>/,/<\/sca>/' /var/ossec/etc/ossec.conf
+          # 2. xmllint XPath
+          sudo xmllint --xpath '//sca/enabled/text()' /var/ossec/etc/ossec.conf
+          # 3. SCA 정책 파일 목록
+          sudo xmllint --xpath '//sca/policies/policy/text()' /var/ossec/etc/ossec.conf
+          # 4. SCA scan interval
+          sudo xmllint --xpath 'string(//sca/interval)' /var/ossec/etc/ossec.conf
+        예상 출력 `<sca><enabled>yes</enabled><interval>12h</interval><policies><policy>cis_debian10.yml</policy></policies></sca>`.
+        운영 해석: enabled=yes 필수. interval 12h = 일 2회. policies = CIS benchmark 파일.
+      - |
+        **[OSS] SCA policy file 직접 분석** — CIS benchmark.
+          # 1. 적용된 SCA policy 파일 목록
+          ls /var/ossec/ruleset/sca/
+          # 2. 단일 policy 의 check 수
+          sudo grep -c "^- id:" /var/ossec/ruleset/sca/cis_debian10.yml
+          # 3. 카테고리 별 check 수 (yaml format)
+          sudo yq '.checks | length' /var/ossec/ruleset/sca/cis_debian10.yml
+          # 4. specific check 상세
+          sudo yq '.checks[] | select(.id == 31000)' /var/ossec/ruleset/sca/cis_debian10.yml
+        예상 출력 `cis_debian10.yml: 250 checks / cis_debian11.yml: 280 checks`.
+        운영 해석: CIS Benchmark 의 *250+ check* 자동 평가. 시스템 hardening gap 식별.
+      - |
+        **[OSS] Wazuh Dashboard SCA module** — GUI.
+          # 1. https://10.20.30.100/ → Modules → Security Configuration Assessment
+          # 2. UI:
+          # - Inventory: 모든 agent 의 SCA 결과
+          # - Score: passed / failed / not_applicable
+          # - Drill-down: 단일 check 의 결과 + remediation
+          # - Filter: by agent / policy / result
+          # 3. CIS Benchmark 매핑
+          # 4. CSV / JSON export
+        UI 동작: SCA 결과 시각화 + remediation guide.
+        운영 해석: SOC + 컴플라이언스 표준. CIS benchmark 자동 평가.
+      - |
+        **[OSS] OpenSCAP (대안 도구)** — 비교 표준.
+          # 1. OpenSCAP 설치
+          sudo apt install openscap-scanner libopenscap-utils
+          # 2. SCAP datastream 다운로드
+          wget https://www.cisecurity.org/cis-scap-datastream/...
+          # 3. scan 실행
+          sudo oscap xccdf eval --profile xccdf_org.cisecurity.benchmarks_profile_Level_1_-_Server \
+              --results /tmp/scan-results.xml \
+              ssg-debian10-ds.xml
+          # 4. HTML 보고서
+          sudo oscap xccdf generate report /tmp/scan-results.xml > /tmp/report.html
+        예상 출력 `Score: 45.67% / Passed: 100/250 / Failed: 150/250 / Report saved`.
+        운영 해석: OpenSCAP = NIST 공식. Wazuh SCA 와 동등 기능 다른 도구. multi-tool audit.
+      - |
+        **[OSS] Wazuh API SCA endpoint** — programmatic.
+          # 1. JWT 토큰
+          TOKEN=$(curl -sk -u wazuh-wui:wazuh-wui -X POST "https://localhost:55000/security/user/authenticate?raw=true")
+          # 2. agent 의 SCA 결과 요약
+          curl -sk -H "Authorization: Bearer $TOKEN" "https://localhost:55000/sca/000" | jq
+          # 3. failed checks 만
+          curl -sk -H "Authorization: Bearer $TOKEN" "https://localhost:55000/sca/000/checks/cis_debian10?result=failed" | jq
+          # 4. compliance 매핑 (PCI/HIPAA/NIST)
+          curl -sk -H "Authorization: Bearer $TOKEN" "https://localhost:55000/sca/000/checks/cis_debian10?compliance=pci_dss" | jq
+        예상 출력 `[{id:31000, title:"Ensure...", result:"failed", remediation:"Edit /etc/..."}]`.
+        운영 해석: REST API. compliance audit 보고서 자동 생성. PCI / HIPAA / NIST 매핑.
       negative_signs:
       - 다른 섹션(vulnerability-detector) 확인
       - awk range 오타
@@ -261,6 +574,67 @@ steps:
       - Wazuh Dashboard SCA 모듈 직접 조회
       - curl Wazuh API /sca/<agent>/checks?result=failed
       - 'policy file parsing: cat /var/ossec/ruleset/sca/cis_*.yml'
+      - |
+        **[OSS] jq + grep (SCA alert 검색)** — 표준.
+          # 1. SCA alert 만 추출
+          sudo jq -c 'select(.rule.groups[]?=="sca")' /var/ossec/logs/alerts/alerts.json | tail -3
+          # 2. failed check 만
+          sudo jq -c 'select(.data.sca.check.result=="failed")' /var/ossec/logs/alerts/alerts.json | tail
+          # 3. policy 별 통계 (passed / failed)
+          sudo jq -r '.data.sca.policy_id + " " + .data.sca.check.result' /var/ossec/logs/alerts/alerts.json 2>/dev/null | sort | uniq -c | sort -rn | head
+          # 4. compliance 매핑 (PCI 영향 check)
+          sudo jq -c 'select(.data.sca.check.compliance.pci_dss)' /var/ossec/logs/alerts/alerts.json | tail
+        예상 출력 `cis_debian10 passed: 100 / failed: 50 / not_applicable: 20`.
+        운영 해석: failed 의 비율 = 시스템 hardening gap. PCI/HIPAA 매핑 = compliance 보고.
+      - |
+        **[OSS] Wazuh Dashboard SCA Inventory** — GUI 분석.
+          # 1. https://10.20.30.100/ → Modules → SCA → Inventory
+          # 2. UI:
+          # - Total checks / Passed / Failed
+          # - Score (0-100%)
+          # - Top failed checks (priority)
+          # - 각 check 상세 + remediation
+          # 3. policy 별 분류
+          # 4. CSV / PDF report export
+        UI 동작: SCA 결과 시각화 + remediation guide.
+        운영 해석: SOC + 컴플라이언스 분석가 표준 view. CIS benchmark 점수 추적.
+      - |
+        **[OSS] OpenSCAP report 비교** — multi-tool audit.
+          # 1. OpenSCAP scan + HTML report
+          sudo oscap xccdf eval --profile xccdf_org.cisecurity_Level_1 \
+              --results /tmp/oscap.xml \
+              ssg-debian10-ds.xml
+          sudo oscap xccdf generate report /tmp/oscap.xml > /tmp/oscap.html
+          # 2. Wazuh SCA 결과와 cross-check
+          # - 같은 CIS check (예: 1.1.1) 양쪽 비교
+          # - 결과 차이 발생 시 root cause 분석
+        결과: 두 도구의 평가 결과 비교 = 신뢰성 향상.
+        운영 해석: enterprise audit 표준. 하나의 도구 결과만 의존 X.
+      - |
+        **[OSS] Wazuh API failed checks** — automation.
+          # 1. JWT 토큰
+          TOKEN=$(curl -sk -u wazuh-wui:wazuh-wui -X POST "https://localhost:55000/security/user/authenticate?raw=true")
+          # 2. failed checks 정렬
+          curl -sk -H "Authorization: Bearer $TOKEN" \
+              "https://localhost:55000/sca/000/checks/cis_debian10?result=failed&limit=10" | \
+              jq '.data.affected_items[] | {id, title, remediation}'
+          # 3. compliance 별 (PCI / HIPAA / NIST)
+          curl -sk -H "Authorization: Bearer $TOKEN" \
+              "https://localhost:55000/sca/000/checks/cis_debian10?compliance=pci_dss&result=failed"
+          # 4. 자동 보고서 (cron)
+          # daily SCA report → 이메일
+        예상 출력 `[{id:31000, title:"Ensure mounting of cramfs filesystems is disabled", remediation:"echo 'install cramfs /bin/true' >> /etc/modprobe.d/..."}]`.
+        운영 해석: 자동화 + remediation guide 통합. compliance 자동 보고 표준.
+      - |
+        **[OSS] CIS-CAT (commercial 호환)** — enterprise.
+          # CIS Center for Internet Security 의 공식 도구
+          # 1. CIS-CAT Pro (free + paid tiers)
+          # https://www.cisecurity.org/cis-cat-pro
+          # 2. JSON 결과 export → Wazuh SCA 와 비교
+          # 3. multi-host fleet audit
+          /opt/CIS-CAT/Assessor-CLI.sh -b benchmarks/CIS_Debian_Linux_10_Benchmark.xml -r /tmp/cis-cat-results
+        예상 출력: HTML/JSON/CSV 보고서.
+        운영 해석: CIS 공식 도구. Wazuh SCA + OpenSCAP 와 함께 = triple validation.
       negative_signs:
       - sca 필터 없이 alerts.json 전체
       - 빈 결과 정상 판정
@@ -318,6 +692,76 @@ steps:
       - ls /var/ossec/active-response/bin/ 로 스크립트 확인
       - Wazuh Dashboard Active Response
       - 'Custom AR script 작성: /var/ossec/active-response/bin/'
+      - |
+        **[OSS] awk + xmllint (AR 설정 추출)** — 표준.
+          # 1. AR 블록 전체
+          sudo awk '/<active-response>/,/<\/active-response>/' /var/ossec/etc/ossec.conf
+          # 2. xmllint XPath
+          sudo xmllint --xpath '//active-response' /var/ossec/etc/ossec.conf
+          # 3. command + rules_id + timeout 추출
+          sudo xmllint --xpath '//active-response/command/text()' /var/ossec/etc/ossec.conf
+          sudo xmllint --xpath '//active-response/rules_id/text()' /var/ossec/etc/ossec.conf
+          # 4. 모든 command 정의
+          sudo awk '/<command>/,/<\/command>/' /var/ossec/etc/ossec.conf
+        예상 출력 `<command>firewall-drop</command><location>local</location><rules_id>5712</rules_id><timeout>600</timeout>`.
+        운영 해석: command = AR 스크립트 이름. rules_id = 트리거 룰. timeout = 자동 해제 시간 (초).
+      - |
+        **[OSS] AR 스크립트 직접 분석** — 동작 검증.
+          # 1. 사용 가능 AR 스크립트 목록
+          sudo ls /var/ossec/active-response/bin/
+          # 2. firewall-drop 스크립트 내용
+          sudo cat /var/ossec/active-response/bin/firewall-drop
+          # 3. 스크립트 실행 권한 + 소유자
+          sudo ls -la /var/ossec/active-response/bin/
+          # 4. 다른 표준 AR
+          # disable-account: 계정 비활성화
+          # restart-wazuh: Wazuh restart
+          # route-null: null route 추가
+        예상 출력 `firewall-drop / disable-account / restart-wazuh / route-null / host-deny`.
+        운영 해석: AR 스크립트 = bash/python. add 모드 = 차단, delete 모드 = 해제. timeout 시 자동 delete 호출.
+      - |
+        **[OSS] Wazuh Dashboard Active Response** — GUI.
+          # 1. https://10.20.30.100/ → Server management → Active Response
+          # 2. UI:
+          # - 활성 AR commands 목록
+          # - rule.id 트리거 매핑
+          # - 활성 AR 통계 (last 24h)
+          # - location: local / server / defined-agent
+          # 3. CSV / log export
+          # 4. AR 트리거 history
+        UI 동작: AR 설정 + 실행 history 시각화.
+        운영 해석: SOC 분석가 표준 view. AR 효과 측정 (얼마나 자동 차단됐나).
+      - |
+        **[OSS] active-responses.log (AR 실행 history)** — 검증.
+          # 1. AR 실행 로그
+          sudo tail -20 /var/ossec/logs/active-responses.log
+          # 2. 특정 AR command 만
+          sudo grep "firewall-drop" /var/ossec/logs/active-responses.log | tail -10
+          # 3. agent 별 분포
+          sudo awk '{print $4}' /var/ossec/logs/active-responses.log | sort | uniq -c | sort -rn | head
+          # 4. 시간대 별 (peak hour)
+          sudo awk '{print substr($1,1,13)}' /var/ossec/logs/active-responses.log | sort | uniq -c | sort -rn | head
+        예상 출력 `2026 May 06 14:23:00 secu firewall-drop add 1.2.3.4 / 12 firewall-drop / 5 disable-account`.
+        운영 해석: AR 실행 audit 표준. 누가 언제 어떤 IP 를 차단했는지 evidence.
+      - |
+        **[OSS] custom AR script (운영 자동화)** — 확장.
+          # 1. /var/ossec/active-response/bin/notify-slack.sh 작성
+          sudo tee /var/ossec/active-response/bin/notify-slack.sh << 'EOF'
+          #!/bin/bash
+          ACTION=$1
+          USER=$2
+          IP=$3
+          # Slack webhook 호출
+          curl -X POST -H 'Content-type: application/json' \
+              --data "{\"text\":\"Wazuh AR: $ACTION on $IP (rule trigger)\"}" \
+              "$SLACK_WEBHOOK_URL"
+          EOF
+          sudo chmod 750 /var/ossec/active-response/bin/notify-slack.sh
+          sudo chown root:wazuh /var/ossec/active-response/bin/notify-slack.sh
+          # 2. ossec.conf 의 command + active-response 추가
+          # 3. restart 적용
+        예상 결과: 알림 자동 Slack 전송.
+        운영 해석: SOC SOAR 통합. 차단 + 알림 + ticket 생성 자동화.
       negative_signs:
       - active-response 블록 아닌 다른
       - AR script 실행 경로 미인지
@@ -368,6 +812,78 @@ steps:
       - 'timeout 추가: set { type ipv4_addr ; timeout 1h ; }'
       - Wazuh firewall-drop 스크립트와 통합 - script 가 nft add element 호출
       - ipset + iptables legacy 대체
+      - |
+        **[OSS] nft set + drop rule (AR 통합 표준)** — Wazuh + nft.
+          # 1. table + set + rule 한 번에
+          sudo nft add table inet filter 2>/dev/null
+          sudo nft 'add set inet filter blocklist { type ipv4_addr ; flags timeout ; }' 2>/dev/null
+          sudo nft add rule inet filter input ip saddr @blocklist drop
+          # 2. timeout 옵션 활성 (Wazuh AR 의 timeout 자동 적용)
+          sudo nft 'add set inet filter blocklist { type ipv4_addr ; flags timeout ; }'
+          # 3. 검증
+          sudo nft list set inet filter blocklist
+          # 4. 영속화
+          sudo netfilter-persistent save
+        예상 출력 `set blocklist { type ipv4_addr; flags timeout; }`.
+        운영 해석: timeout 기반 set = Wazuh AR 와 자연스러운 통합. 1h timeout 시 알아서 자동 해제.
+      - |
+        **[OSS] ipset + iptables (legacy 환경)** — 호환 layer.
+          # 1. ipset 으로 set 생성
+          sudo ipset create blocklist hash:ip family inet maxelem 65536 timeout 3600
+          # 2. iptables 로 룰 추가
+          sudo iptables -I INPUT -m set --match-set blocklist src -j DROP
+          # 3. 검증
+          sudo ipset list blocklist | head
+          # 4. 영속화
+          sudo ipset save > /etc/iptables/ipsets
+          sudo iptables-save > /etc/iptables/rules.v4
+        예상 출력 `Name: blocklist / Type: hash:ip / timeout: 3600`.
+        운영 해석: legacy 환경 (older Linux + iptables). 신규 환경은 nft 권장.
+      - |
+        **[OSS] firewalld ipset + zone source** — RHEL 표준.
+          # 1. ipset 생성
+          sudo firewall-cmd --permanent --new-ipset=blocklist --type=hash:ip --option=timeout=3600
+          sudo firewall-cmd --reload
+          # 2. zone 의 drop target + ipset source
+          sudo firewall-cmd --permanent --zone=drop --add-source=ipset:blocklist
+          sudo firewall-cmd --reload
+          # 3. 검증
+          sudo firewall-cmd --info-ipset=blocklist
+          sudo firewall-cmd --zone=drop --list-all
+        예상 출력 `blocklist (hash:ip, timeout=3600) / zone drop: sources: ipset:blocklist`.
+        운영 해석: firewalld zone 모델 = nft 의 backend. RHEL/CentOS 표준.
+      - |
+        **[OSS] Wazuh firewall-drop 스크립트 분석** — AR 동작 검증.
+          # 1. firewall-drop 스크립트 내용
+          sudo cat /var/ossec/active-response/bin/firewall-drop
+          # 2. 호출 형식 (Wazuh 가 자동 호출)
+          # /var/ossec/active-response/bin/firewall-drop add - 1.2.3.4 1 5712 1
+          # arg1: action (add/delete)
+          # arg2: user (-)
+          # arg3: srcip
+          # arg4: alertid
+          # arg5: rule_id
+          # arg6: agentid
+          # 3. 직접 시뮬 (테스트)
+          sudo /var/ossec/active-response/bin/firewall-drop add - 10.20.30.201 1 5712 1
+          # 4. 검증 (set 에 IP 추가됨)
+          sudo nft list set inet filter blocklist
+        예상 출력 `set blocklist { type ipv4_addr; flags timeout; elements = { 10.20.30.201 timeout 3000s }; }`.
+        운영 해석: AR 스크립트가 nft add element 호출. timeout 자동 적용.
+      - |
+        **[OSS] crowdsec firewall-bouncer (대안 AR)** — community.
+          # 1. crowdsec 의 nftables bouncer
+          sudo apt install crowdsec-firewall-bouncer-nftables
+          sudo cscli bouncers add nft-bouncer
+          # 2. crowdsec 결정 → nft set 자동 sync
+          sudo systemctl enable --now crowdsec-firewall-bouncer
+          # 3. nft set 자동 생성 검증
+          sudo nft list set inet crowdsec crowdsec-blacklists | wc -l
+          # 4. Wazuh AR 와 차이
+          # - crowdsec: 이벤트 → 결정 → bouncer → nft (지연 분 단위)
+          # - Wazuh AR: 룰 매칭 → 즉시 nft add element (지연 초 단위)
+        예상 결과: 100+ known-bad IP 자동 nft set 적재.
+        운영 해석: Wazuh AR + crowdsec 양쪽 layer. Wazuh = 사이트별 alert, crowdsec = 글로벌 IOC.
       negative_signs:
       - table 없이 set 생성(에러)
       - drop 룰 누락(set 만으로는 차단 안 됨)
@@ -432,6 +948,71 @@ steps:
       - 'timeout: { 10.20.30.201 timeout 1h }'
       - Wazuh firewall-drop 스크립트 트리거 재현
       - 'Active Response 시뮬레이션: echo test:dstip=10.20.30.201 | wazuh-logtest'
+      - |
+        **[OSS] nft add element (set 동적 추가)** — 표준.
+          # 1. 단일 IP 추가
+          sudo nft add element inet filter blocklist '{ 10.20.30.201 }'
+          # 2. 다중 IP 일괄
+          sudo nft add element inet filter blocklist '{ 10.20.30.201, 10.20.30.202, 10.20.30.203 }'
+          # 3. timeout 지정 (1시간 후 자동 해제)
+          sudo nft add element inet filter blocklist '{ 10.20.30.201 timeout 1h }'
+          # 4. 검증
+          sudo nft list set inet filter blocklist
+        예상 출력 `elements = { 10.20.30.201 timeout 3600s }`.
+        운영 해석: timeout = 자동 해제. Wazuh AR 의 표준 패턴.
+      - |
+        **[OSS] firewall-drop 직접 호출 (AR 시뮬)** — 통합 검증.
+          # 1. Wazuh AR 스크립트 시뮬 (Wazuh 가 자동 호출하는 형식)
+          sudo /var/ossec/active-response/bin/firewall-drop add - 10.20.30.201 1 5712 1
+          # 2. set 에 추가됨 검증
+          sudo nft list set inet filter blocklist
+          # 3. AR 로그 확인
+          sudo tail -5 /var/ossec/logs/active-responses.log
+          # 4. timeout 후 자동 해제 (1h 대기 후)
+          sleep 3600
+          sudo nft list set inet filter blocklist
+        예상 출력 `Wazuh AR called → set updated → 1h 후 set empty`.
+        운영 해석: AR 의 *실제 호출 형식* 시뮬. 운영 환경 동일 동작.
+      - |
+        **[OSS] Wazuh API agent restart (AR 트리거)** — programmatic.
+          # 1. JWT 토큰
+          TOKEN=$(curl -sk -u wazuh-wui:wazuh-wui -X POST "https://localhost:55000/security/user/authenticate?raw=true")
+          # 2. AR 명령 직접 실행 (Wazuh API)
+          curl -sk -X PUT -H "Authorization: Bearer $TOKEN" \
+              "https://localhost:55000/active-response?agents_list=001" \
+              -H "Content-Type: application/json" \
+              -d '{
+                "command": "firewall-drop",
+                "arguments": ["10.20.30.201"],
+                "alert": {"data": {"srcip": "10.20.30.201"}}
+              }'
+          # 3. 검증
+          sudo nft list set inet filter blocklist
+        예상 출력 `{"data":{"affected_items":["001"]}} / set 에 IP 추가`.
+        운영 해석: API 자동화 = SOAR 통합 표준. Wazuh GUI 도 동일 API 사용.
+      - |
+        **[OSS] crowdsec cscli decisions (alternative)** — community.
+          # 1. crowdsec 의 결정 (자동 + 수동)
+          sudo cscli decisions add --ip 10.20.30.201 --duration 1h --reason "manual block"
+          # 2. nft set 자동 sync (bouncer 가 5분 내)
+          sudo nft list set inet crowdsec crowdsec-blacklists | grep "10.20.30.201"
+          # 3. 결정 목록
+          sudo cscli decisions list --ip 10.20.30.201
+          # 4. 자동 만료 (duration 후)
+        예상 출력 `Action: ban / Source: cscli / Duration: 59m45s`.
+        운영 해석: Wazuh AR 외 crowdsec 도 동일 효과. 다중 layer 차단.
+      - |
+        **[OSS] nft monitor (실시간 set 변경 watch)** — audit.
+          # 1. monitor 시작
+          sudo nft monitor sets &
+          # 2. element 추가
+          sudo nft add element inet filter blocklist '{ 10.20.30.201 }'
+          # 3. monitor 출력
+          # add element inet filter blocklist { 10.20.30.201 }
+          # 4. 변경 timestamp 추적
+          sudo journalctl -u nftables --since "5 min ago"
+        UI 동작: 실시간 set 변경 stream.
+        운영 해석: 누가 언제 set 변경했는지 audit. Wazuh AR vs 수동 변경 구분.
       negative_signs:
       - element 대신 rule 추가
       - list 검증 없음
@@ -473,6 +1054,71 @@ steps:
       - timeout 옵션으로 자동 해제 기대
       - destroy element 로 idempotent 삭제
       - Wazuh Active Response timeout 기반 해제
+      - |
+        **[OSS] nft delete element (단일 제거)** — 표준 cleanup.
+          # 1. 단일 element 제거
+          sudo nft delete element inet filter blocklist '{ 10.20.30.201 }'
+          # 2. 다중 element 일괄
+          sudo nft delete element inet filter blocklist '{ 10.20.30.201, 10.20.30.202 }'
+          # 3. 검증 (set 자체는 유지, element 만 제거)
+          sudo nft list set inet filter blocklist
+          # 4. set 전체 비우기 (위험)
+          sudo nft flush set inet filter blocklist
+        예상 출력 `elements = { } 또는 변경된 IP 목록`.
+        운영 해석: delete element = 특정 IP 만 해제. flush set = 전체 비우기 (잘못된 IP 다수 차단 시).
+      - |
+        **[OSS] firewall-drop delete (Wazuh AR 자동 해제)** — timeout 패턴.
+          # 1. AR delete 모드 직접 호출 (Wazuh 가 timeout 후 자동 호출)
+          sudo /var/ossec/active-response/bin/firewall-drop delete - 10.20.30.201 1 5712 1
+          # 2. AR 로그 확인
+          sudo tail -5 /var/ossec/logs/active-responses.log
+          # 3. set 검증
+          sudo nft list set inet filter blocklist
+          # 4. timeout 자동 해제 (수동 호출 없이)
+          # ossec.conf 의 <timeout>3600</timeout> 시 1h 후 자동
+        예상 출력 `Active response delete called / set element removed`.
+        운영 해석: AR 의 delete 모드 = 자동 해제 mechanism. timeout 옵션 + 자동 호출.
+      - |
+        **[OSS] Wazuh API AR delete** — programmatic.
+          # 1. JWT 토큰
+          TOKEN=$(curl -sk -u wazuh-wui:wazuh-wui -X POST "https://localhost:55000/security/user/authenticate?raw=true")
+          # 2. AR 해제 (자동 호출 외 수동)
+          # active-response 종료는 일반적으로 Wazuh 가 timeout 후 자동
+          # 수동: nft 직접 호출 또는 ossec.conf 의 timeout 단축
+          # 3. 검증
+          curl -sk -H "Authorization: Bearer $TOKEN" \
+              "https://localhost:55000/active-response/log?agents_list=001&limit=5" | jq
+        예상 출력 `최근 AR 실행 로그 (add/delete history)`.
+        운영 해석: AR 자체는 timeout 자동. 수동 해제는 nft 직접 + AR 로그 audit.
+      - |
+        **[OSS] crowdsec cscli decisions delete** — alternative.
+          # 1. 단일 결정 해제
+          sudo cscli decisions delete --ip 10.20.30.201
+          # 2. 다중 결정 해제
+          sudo cscli decisions delete --scenario crowdsecurity/ssh-bf
+          # 3. 모든 결정 해제 (위험)
+          sudo cscli decisions delete --all
+          # 4. 검증
+          sudo cscli decisions list
+        예상 출력 `Decision deleted / 1 decision deleted`.
+        운영 해석: crowdsec 측 결정 해제. nft set 도 5분 내 자동 sync.
+      - |
+        **[OSS] timeout-based auto-cleanup** — 운영 권장.
+          # 1. nft set 의 timeout flags 활성
+          sudo nft 'add set inet filter blocklist { type ipv4_addr ; flags timeout ; }'
+          # 2. 추가 시 timeout 지정
+          sudo nft add element inet filter blocklist '{ 10.20.30.201 timeout 1h }'
+          # 3. 자동 해제 검증 (1h 후)
+          sleep 3600
+          sudo nft list set inet filter blocklist
+          # → element 자동 사라짐
+          # 4. Wazuh AR timeout 도 동일 패턴
+          # ossec.conf:
+          # <active-response>
+          #   <timeout>3600</timeout>
+          # </active-response>
+        결과: 1h 후 자동 cleanup. 수동 개입 불필요.
+        운영 해석: production 표준. timeout = 자동 운영. 수동 cleanup 은 비상시.
       negative_signs:
       - set 자체 삭제(blocklist set 소실)
       - flush 와 delete element 혼동
@@ -559,6 +1205,102 @@ steps:
       - siem 에서 sudo tail alerts.json + active-responses.log
       - siem 에서 sudo iptables -L -n
       - sleep 65 후 iptables 재확인
+      - |
+        **[OSS] AR 설정 + restart (Phase A)** — 표준.
+          # 1. backup
+          sudo cp /var/ossec/etc/ossec.conf{,.bak}
+          # 2. AR command + active-response 추가
+          sudo tee -a /var/ossec/etc/ossec.conf << 'EOF'
+          <command>
+            <name>verify-firewall-drop</name>
+            <executable>firewall-drop</executable>
+            <timeout_allowed>yes</timeout_allowed>
+          </command>
+          <active-response>
+            <command>verify-firewall-drop</command>
+            <location>local</location>
+            <rules_id>5710,5712</rules_id>
+            <timeout>60</timeout>
+          </active-response>
+          EOF
+          # 3. restart 적용
+          sudo systemctl restart wazuh-manager && sleep 5
+          # 4. 검증
+          sudo grep verify-firewall-drop /var/ossec/etc/ossec.conf
+        예상 출력 `Configuration loaded / verify-firewall-drop active`.
+        운영 해석: rules_id 5710 (SSH brute) + 5712 (multiple SSH fail) 트리거. timeout=60 = 1분 차단.
+      - |
+        **[OSS] sshpass + 7회 fail (Phase B trigger)** — brute 시뮬.
+          # 1. 패스워드 파일
+          for pw in wrong1 wrong2 wrong3 wrong4 wrong5 wrong6 wrong7; do
+              sshpass -p "$pw" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=2 \
+                  ccc@10.20.30.80 'echo ok' 2>&1 | grep -E "Permission denied|denied" | head -1
+          done
+          # 2. 또는 hydra
+          echo -e "wrong1\nwrong2\n...\nwrong7" > /tmp/7pwds.txt
+          hydra -l ccc -P /tmp/7pwds.txt ssh://10.20.30.80 -t 1 -W 1
+        예상 출력 `Permission denied ×7`.
+        운영 해석: 5+ fail = rule 5712 (multiple SSH auth fail) 매칭 → AR 발동 → IP 자동 차단.
+      - |
+        **[OSS] 4 단계 evidence 검증 (cross-check)** — 통합.
+          # 단계 1: Wazuh alert 발생 (rule 5710/5712)
+          sudo jq -c 'select(.rule.id|test("^571"))' /var/ossec/logs/alerts/alerts.json | tail -3
+          # 단계 2: AR 스크립트 호출 evidence
+          sudo tail -5 /var/ossec/logs/active-responses.log
+          # 단계 3: 실제 차단 (iptables / nftables)
+          sudo iptables -L INPUT -n -v | grep "10.20.30.201"
+          # 또는 nft (modern)
+          sudo nft list ruleset | grep "10.20.30.201"
+          # 단계 4: 60초 후 자동 해제
+          sleep 65
+          sudo iptables -L INPUT -n -v | grep -c "10.20.30.201"  # 0 = 해제됨
+        결과: 4 단계 모두 evidence 확보 + 자동 해제 검증.
+        운영 해석: AR 의 *전체 cycle* 검증 표준. 어느 단계에서 실패해도 root cause 파악.
+      - |
+        **[OSS] Wazuh Dashboard AR Timeline** — GUI 시각화.
+          # 1. https://10.20.30.100/ → Modules → Active Response
+          # 2. UI:
+          # - timeline: AR 호출 시각
+          # - rule trigger: 5710/5712 등
+          # - target IP + agent
+          # - timeout 진행 상태
+          # - delete 자동 호출 시각
+          # 3. cross-reference with Security Events
+        UI 동작: AR cycle 시각화. timeline + drill-down.
+        운영 해석: SOC 분석가 표준. 어떤 alert 가 어떤 차단 호출했는지 매핑.
+      - |
+        **[OSS] 수동 vs 자동 비교** — 운영 분석.
+          # 비교표
+          # ┌────────────────┬────────┬────────┐
+          # │ 지표          │ 수동   │ 자동   │
+          # ├────────────────┼────────┼────────┤
+          # │ 차단 시간     │ 분~시간│ 초     │
+          # │ MTTR          │ 30분   │ 30초   │
+          # │ FP 위험       │ 낮음   │ 높음   │
+          # │ 분석가 부담   │ 큼     │ 적음   │
+          # │ 24h 운영      │ 어려움 │ 쉬움   │
+          # └────────────────┴────────┴────────┘
+          # 통계 측정
+          sudo grep "firewall-drop add" /var/ossec/logs/active-responses.log | wc -l
+          # 자동 차단 횟수 (24h)
+        예상 결과: 자동 차단 횟수 100+/일 = AR 효과 정량.
+        운영 해석: AR 효과 측정 표준. SOC dashboard 의 핵심 KPI.
+      - |
+        **[OSS] AR 위험 + 완화** — 운영 best practice.
+          # 1. FP 위험: 정상 IP 차단
+          # - 완화: 룰 5710 의 frequency 임계 + timeout 짧게
+          # - 권장: timeout 60-300 (1-5분)
+          # 2. lockout 위험: SOC 분석가 자신 IP 차단
+          # - 완화: ossec.conf 의 white_list 추가
+          # /etc/ossec/lists/whitelist.cdb:
+          # 10.20.30.0/24
+          # 10.20.30.100
+          # 3. cascade 위험: AR 가 다른 alert 트리거
+          # - 완화: AR rule.id 매칭에 negative condition
+          # 4. 모니터링
+          sudo cat /var/ossec/logs/active-responses.log | wc -l
+        예상 결과: AR 운영 best practice 적용 시 FP < 1%.
+        운영 해석: AR 의 *운영 안전성*. timeout + whitelist + monitoring 3 요소.
       negative_signs:
       - 4 단계 중 일부만 (예: alerts.json 만)
       - 자동 해제 (timeout) 검증 누락
