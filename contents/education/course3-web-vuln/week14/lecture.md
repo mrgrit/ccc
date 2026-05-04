@@ -223,6 +223,28 @@ PYEOF
 ENDSSH
 ```
 
+**예상 출력**:
+```
+취약점                              CVSS   등급
+-------------------------------------------------------
+SQL Injection (로그인 우회)         9.8    Critical
+  Vector: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N
+Stored XSS (상품 리뷰)              5.4    Medium
+  Vector: CVSS:3.1/AV:N/AC:L/PR:L/UI:R/S:C/C:L/I:L/A:N
+IDOR (주문 정보 접근)               6.5    Medium
+  Vector: CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N
+보안 헤더 누락 (CSP)                4.7    Medium
+  Vector: CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:L/I:L/A:N
+```
+
+> **해석 — CVSS vector 8 metric → 점수 변환 검증**:
+> - **SQL Injection 9.8** = AV:N (네트워크) + AC:L (간단) + PR:N (인증 X) + UI:N (사용자 액션 X) + S:U + C/I/H = 최고 위험.
+> - **Stored XSS 5.4** = PR:L (인증 필요) + UI:R (피해자 클릭) → 점수 ↓. 그러나 S:C (Scope Changed) 로 영향 범위 ↑.
+> - **IDOR 6.5** = SQLi 와 동일 AV:N/AC:L 이지만 PR:L (인증 후) → 6.5. C:H (Confidentiality High) 만 = Integrity/Availability 영향 X.
+> - **보안 헤더 4.7** = AC:H (공격 성공 어려움) + UI:R (사용자 클릭) → 점수 ↓ but Medium 등급 유지.
+> - **online calculator**: https://www.first.org/cvss/calculator/3.1 — vector 입력 → 점수 자동. 본 Python 함수와 일치 검증 가능.
+> - **점검 보고서 §3 입력**: 위 표 그대로 + 각 취약점의 Vector 문자열 명시 = 표준 포맷.
+
 ---
 
 ## 3. 취약점 상세 기술 작성 (25분)
@@ -299,6 +321,37 @@ except:
 " 2>/dev/null
 ENDSSH
 ```
+
+**예상 출력**:
+```
+=== 취약점 카드 작성 실습 ===
+--- Step 1: 정상 로그인 시도 ---
+{
+    "error": {
+        "name": "Error",
+        "message": "Invalid email or password."
+    }
+}
+--- Step 2: SQLi 페이로드 로그인 ---
+{
+    "authentication": {
+        "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9...",
+        "bid": 1,
+        "umail": "admin@juice-sh.op"
+    }
+}
+--- Step 3: 응답 분석 ---
+인증 토큰 발급됨: eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJzdGF0dXMi...
+사용자 이메일: admin@juice-sh.op
+=> SQL Injection으로 인증 우회 확인
+```
+
+> **해석 — 취약점 카드 §3 (재현 절차) 직접 입력 형식**:
+> - **Step 1 = baseline**: 정상 시도 시 401 + 'Invalid' 메시지. 점검자가 *정상 응답을 먼저 확인* = false positive 방어.
+> - **Step 2 = exploit**: `' OR 1=1--` 페이로드 = 200 + JWT 토큰. 차이가 *1 줄 페이로드* 만 = 재현 단순도 ★.
+> - **Step 3 = impact**: admin@juice-sh.op 토큰 = 관리자 계정 인증 우회. 보고서에 'umail=admin@juice-sh.op' 명시 = 결정적 증거.
+> - **취약점 카드 형식**: 정상 → 공격 → 결과 3 step 일관 적용. 모든 V-XXX 항목에 동일 구조.
+> - **증거 보존**: 위 출력을 그대로 보고서 §4 (증거) 첨부. 추가 *시간 도장* + *공격자 IP* 필요.
 
 ### 3.3 보고서 자동 생성 스크립트
 
@@ -397,6 +450,37 @@ PYEOF
 ENDSSH
 ```
 
+**예상 출력**:
+```
+================================================================
+        웹 취약점 점검 보고서
+================================================================
+프로젝트: JuiceShop 보안 점검
+점검 일시: 2026-04-29 14:32
+점검 대상: http://localhost:3000 (OWASP JuiceShop)
+점검 방법: OWASP Testing Guide v4.2
+점검 도구: curl, Python, 수동 점검
+================================================================
+
+1. 요약 (Executive Summary)
+----------------------------------------------------------------
+총 발견 취약점: 5건
+  - Critical: 1건
+  - High:     1건
+  - Medium:   2건
+  - Low:      1건
+...
+보고서 저장: /tmp/vuln_report.txt
+```
+
+> **해석 — 자동 보고서 생성 = 일관 형식 + 시간 절약**:
+> - **자동화의 가치**: 50 step 수동 점검 결과 → Python 스크립트 1회 실행 = 형식 일관 보고서.
+> - **헤더 6 필드**: 프로젝트명/일시/대상/방법/도구 = 모든 보고서 표준.
+> - **§1 요약**: 통계 + Top 3 + 위험도 = 경영진용 1페이지.
+> - **§3 발견사항**: V-001/V-002 카드 형식 = 재현·영향·권고 3축.
+> - **저장 경로 `/tmp/vuln_report.txt`**: PDF 변환 (`pandoc -o report.pdf`) + 무결성 (`sha256sum`) + GPG 서명 = client deliverable.
+> - **확장**: Markdown 형식으로 작성 후 `pandoc -o report.html` / `pandoc -o report.docx` 다중 포맷 변환.
+
 ---
 
 ## 4. 권고사항 작성과 우선순위화 (20분)
@@ -468,6 +552,42 @@ PYEOF
 ENDSSH
 ```
 
+**예상 출력**:
+```
+======================================================================
+권고사항 상세
+======================================================================
+
+[R-001] V-001 SQL Injection
+  우선순위: 즉시 시행
+  위험도: Critical / 구현 난이도: Low
+  권고: Parameterized Query 적용
+  수정 전: db.query('SELECT * FROM users WHERE email="' + email + '"')
+  수정 후: db.query('SELECT * FROM users WHERE email = ?', [email])
+
+[R-002] V-002 Stored XSS
+  우선순위: 즉시 시행
+  위험도: High / 구현 난이도: Low
+  권고: 출력 인코딩 + CSP 헤더
+  수정 전: element.innerHTML = userReview
+  수정 후: element.textContent = userReview  // 또는 DOMPurify.sanitize()
+
+[R-003] V-003 IDOR
+  우선순위: 계획 수립
+  위험도: Medium / 구현 난이도: Medium
+  권고: 서버사이드 권한 검증
+  수정 전: GET /api/orders/:id  (id만 확인)
+  수정 후: GET /api/orders/:id  (id + 세션 사용자 소유 확인)
+```
+
+> **해석 — 권고사항 코드 before/after = 가장 효과적 보고서 형식**:
+> - **R-001 SQLi → Parameterized Query** = 1줄 변경. 'Low' 구현 난이도 = 즉시 적용 권장.
+> - **R-002 XSS → DOMPurify** = innerHTML → textContent (1단어 변경) + DOMPurify lib 추가.
+> - **R-003 IDOR → 권한 검증 middleware** = Medium 난이도 = 코드 구조 변경 필요.
+> - **개발자 친화 형식**: '코드 수정 전/후' = 즉시 commit 가능한 형태. 추상 권고 ('보안 강화 필요') 보다 압도적 효과적.
+> - **우선순위 매트릭스**: 위험도(Critical/High/Medium/Low) × 난이도(Low/Medium/High) = 4×4 quadrant. 우상단 (높은 위험 + 낮은 난이도) = 즉시 시행.
+> - **OSS 도구 — DefectDojo Finding 형식**: 본 권고사항을 그대로 import 가능 (CSV/JSON).
+
 ---
 
 ## 5. LLM을 활용한 보고서 자동화 (20분)
@@ -478,7 +598,7 @@ ENDSSH
 # Ollama LLM으로 취약점 설명 자동 생성
 curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{                                                # 요청 데이터(body)
+  -d '{
     "model": "gemma3:12b",
     "messages": [
       {"role": "system", "content": "보안 컨설턴트입니다. 취약점 점검 보고서를 작성합니다. 한국어로 전문적이고 간결하게 작성하세요."},
@@ -487,6 +607,38 @@ curl -s http://localhost:8003/v1/chat/completions \
     "temperature": 0.3
   }' | python3 -c "import json,sys; print(json.load(sys.stdin)['choices'][0]['message']['content'])"
 ```
+
+**예상 출력**:
+```
+[설명]
+JuiceShop 의 로그인 API (`POST /rest/user/login`) 의 email 파라미터에 SQL
+Injection 취약점이 존재합니다. 사용자 입력이 SQL 쿼리에 직접 삽입되어
+악성 페이로드 (`' OR 1=1--`) 로 인증 로직을 우회할 수 있습니다.
+백엔드 (Sequelize ORM) 가 parameterized query 를 사용하지 않은 것이
+근본 원인입니다.
+
+[영향]
+공격자가 임의 사용자 (관리자 포함) 계정으로 인증 우회 가능합니다.
+admin@juice-sh.op 계정 권한 획득 시 전체 사용자 정보, 주문 내역,
+결제 정보가 노출되며, 추가 공격 (UNION SQLi 통한 DB 전체 추출,
+서버 파일 읽기) 으로 확대될 수 있습니다.
+CVSS 9.8 (Critical) 등급으로 즉시 조치가 필요합니다.
+
+[권고사항]
+1. Parameterized Query 사용: `db.query('SELECT * FROM users WHERE email = ?', [email])`
+2. ORM 의 raw query 모드 X — `User.findOne({ where: { email } })` 표준 사용
+3. 입력값 검증 (이메일 형식 regex) + ModSecurity CRS 942100 룰 추가
+4. 응답에서 stack trace 제거 (NODE_ENV=production)
+```
+
+> **해석 — LLM 자동화로 취약점 보고서 §3 본문 수 분 내 작성**:
+> - **temperature: 0.3** = 결정적 응답 (창의성 ↓, 일관성 ↑). 보고서용은 0.2~0.4 권장.
+> - **system prompt** = "보안 컨설턴트 / 한국어 / 전문적 / 간결" = 톤 + 형식 강제.
+> - **3 섹션 ([설명], [영향], [권고사항])** = 보고서 표준 = LLM 가 일관되게 생성.
+> - **수동 작성**: 한 취약점 약 30분 → **LLM**: 30초. 50배 가속 (단, 검증 필수).
+> - **검증 항목**: (1) CVSS 점수 정확성 (LLM 추측 X, 사용자가 입력), (2) 페이로드 정확 인용, (3) 권고 코드 syntax (linter 검증).
+> - **gemma3:12b 한국어 품질**: 보고서 톤 + 기술 용어 모두 준수. local LLM 운영 = 점검 데이터 외부 유출 X.
+> - **본 lab 의 Bastion AI**: gpt-oss:120b (Manager) + gemma3:4b (SubAgent) 사용 중.
 
 ### 5.2 권고사항 코드 자동 생성
 
@@ -503,9 +655,39 @@ curl -s http://localhost:8003/v1/chat/completions \
   }' | python3 -c "import json,sys; print(json.load(sys.stdin)['choices'][0]['message']['content'])"
 ```
 
----
+**예상 출력**:
+```javascript
+// ❌ 취약 — 사용자 입력이 SQL 쿼리에 직접 삽입됨
+const query = "SELECT * FROM Users WHERE email = '" + req.body.email + "'";
+db.query(query);
 
-## 6. 보고서 품질 체크리스트 (10분)
+// ✅ 수정 — Sequelize ORM 의 Model.findOne 사용 (parameterized 자동 적용)
+const user = await User.findOne({
+  where: { email: req.body.email }
+});
+if (!user || !await bcrypt.compare(req.body.password, user.password)) {
+  return res.status(401).json({ error: 'Invalid email or password.' });
+}
+const token = jwt.sign(
+  { id: user.id, email: user.email },
+  privateKey,
+  { algorithm: 'RS256', expiresIn: '1h' }
+);
+res.json({ authentication: { token, bid: user.basketId, umail: user.email } });
+
+// 추가 보안 강화:
+// 1. express-rate-limit middleware (week12)
+// 2. helmet middleware (CSP/HSTS 자동)
+// 3. NODE_ENV=production (stack trace 차단)
+```
+
+> **해석 — LLM 가 생성한 권고 코드 = 즉시 commit 가능 형태**:
+> - **`User.findOne({ where: { email } })`** = Sequelize 가 내부적으로 parameterized query 사용 = SQLi 면역.
+> - **`bcrypt.compare`** = MD5 (week04 학습 = 1초 크래킹) → bcrypt (cost=12 = 250ms 검증) 변경.
+> - **`jwt.sign(... RS256, expiresIn: '1h')`** = exp 1시간 (week04 학습 = JuiceShop 기본 6시간 → 1시간).
+> - **에러 메시지 일반화** = 'Invalid email or password.' (week11 학습 — 사용자 열거 차단).
+> - **temperature: 0.2** = 코드는 결정적이어야 = 0.2 권장. 0.7+ = 무작위 코드 생성 (위험).
+> - **검증 의무**: LLM 코드는 *반드시* linter (eslint) + 단위 테스트 통과 후 commit. 자동 적용 X.
 
 ### 6.1 자가 점검 항목
 
