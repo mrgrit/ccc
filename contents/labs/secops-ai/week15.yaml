@@ -43,6 +43,116 @@ steps:
       - /etc/nftables.conf 에 선언 후 nft -f
       - ansible nftables role
       - Terraform 으로 IaC 관리
+      - |
+        **[OSS] nft (table + chain default-deny)** — 표준.
+          # 1. table + chain (policy drop)
+          sudo nft add table inet final
+          sudo nft 'add chain inet final input { type filter hook input priority 0 ; policy drop ; }'
+          # 2. counter 추가 (drop 횟수 측정)
+          sudo nft 'add chain inet final input { type filter hook input priority 0 ; policy drop ; counter ; }'
+          # 3. 검증
+          sudo nft -a list table inet final
+          # 4. JSON 검증
+          sudo nft -j list table inet final | jq '.nftables[] | select(.chain) | {chain: .chain.name, policy: .chain.policy, hook: .chain.hook}'
+        예상 출력 `chain input { type filter hook input priority 0; policy drop; }`.
+        운영 해석: policy drop = Zero Trust 시작. 모든 트래픽 명시적 허용 외 차단.
+      - |
+        **[OSS] /etc/nftables.conf + IaC (영구 관리)** — 표준.
+          # 1. /etc/nftables.conf 파일 정의
+          sudo tee /etc/nftables.final.conf > /dev/null <<'EOF'
+          #!/usr/sbin/nft -f
+          flush table inet final 2>/dev/null
+          table inet final {
+            chain input {
+              type filter hook input priority 0; policy drop;
+              # rules will be added later
+            }
+          }
+          EOF
+          # 2. syntax 검증 + apply
+          sudo nft -c -f /etc/nftables.final.conf && sudo nft -f /etc/nftables.final.conf
+          # 3. 영구화 (재부팅 후 자동 로드)
+          sudo cat /etc/nftables.final.conf | sudo tee -a /etc/nftables.conf
+          sudo systemctl enable --now nftables
+          # 4. 검증
+          sudo nft list ruleset | grep -A 5 'table inet final'
+        예상 출력 `flush + table created / nftables active`.
+        운영 해석: 재부팅 보존 + git 관리. enterprise 표준.
+      - |
+        **[OSS] Ansible nftables role (멀티 호스트)** — IaC.
+          # 1. /etc/ansible/playbooks/final-table.yml
+          # ---
+          # - hosts: secu
+          #   roles:
+          #     - role: ansible.posix.nftables
+          #       vars:
+          #         nftables_table:
+          #           - name: final
+          #             family: inet
+          #             chains:
+          #               - name: input
+          #                 type: filter
+          #                 hook: input
+          #                 priority: 0
+          #                 policy: drop
+          # 2. 실행 + diff
+          ansible-playbook -i inventory final-table.yml --diff
+          # 3. idempotent 검증
+          ansible-playbook -i inventory final-table.yml --check
+        예상 출력 `changed=1 → ok=1 changed=0 (idempotent)`.
+        운영 해석: 멀티 호스트 표준화. CI/CD 통합.
+      - |
+        **[OSS] Terraform + nftables provider** — IaC.
+          # 1. main.tf
+          # terraform {
+          #   required_providers {
+          #     nftables = { source = "ansible-collections/nftables" }
+          #   }
+          # }
+          # resource "nftables_table" "final" {
+          #   family = "inet"
+          #   name = "final"
+          # }
+          # resource "nftables_chain" "input" {
+          #   table = nftables_table.final.name
+          #   family = "inet"
+          #   name = "input"
+          #   type = "filter"
+          #   hook = "input"
+          #   priority = 0
+          #   policy = "drop"
+          # }
+          # 2. apply
+          terraform init && terraform plan && terraform apply -auto-approve
+          # 3. state file 로 drift 추적
+          terraform state list
+          # 4. destroy (cleanup)
+          terraform destroy -auto-approve
+        예상 출력 `Plan: 2 to add / Apply complete!`.
+        운영 해석: Plan-Apply 분리 → review 워크플로우. 클라우드 IaC 와 동일 패턴.
+      - |
+        **[OSS] systemd unit + ExecStartPre validation** — 안전.
+          # 1. /etc/systemd/system/nftables-final.service
+          sudo tee /etc/systemd/system/nftables-final.service > /dev/null <<EOF
+          [Unit]
+          Description=Final exam nftables policy
+          Before=network-pre.target
+          [Service]
+          Type=oneshot
+          ExecStartPre=/usr/sbin/nft -c -f /etc/nftables.final.conf
+          ExecStart=/usr/sbin/nft -f /etc/nftables.final.conf
+          ExecStop=/usr/sbin/nft delete table inet final
+          RemainAfterExit=yes
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+          # 2. enable
+          sudo systemctl daemon-reload
+          sudo systemctl enable --now nftables-final
+          # 3. 상태
+          systemctl status nftables-final
+        예상 출력 `Active: active (exited) / start succeeded`.
+        운영 해석: ExecStartPre = syntax 검증 → 실패 시 ExecStart skip. safe deployment.
       negative_signs:
       - policy accept(Zero Trust 위반)
       - hook 누락
@@ -87,6 +197,97 @@ steps:
       - timeout + interval 조합
       - ipset hash:net 대체(legacy)
       - ansible nftables set module
+      - |
+        **[OSS] nft set + element + rule (3-step CIDR)** — 표준.
+          # 1. CIDR set 생성 (flags interval 필수)
+          sudo nft 'add set inet final whitelist_ips { type ipv4_addr ; flags interval ; }'
+          # 2. CIDR element 추가 (다중 가능)
+          sudo nft 'add element inet final whitelist_ips { 10.20.30.0/24, 192.168.0.0/24 }'
+          # 3. accept rule (saddr 매칭)
+          sudo nft 'add rule inet final input ip saddr @whitelist_ips counter accept'
+          # 4. 검증
+          sudo nft list set inet final whitelist_ips
+          sudo nft -a list chain inet final input
+        예상 출력 `elements = { 10.20.30.0/24, 192.168.0.0/24 } / rule ip saddr @whitelist_ips counter accept`.
+        운영 해석: flags interval = CIDR 지원. counter = 정책 효과 측정.
+      - |
+        **[OSS] ipset hash:net (legacy 환경)** — 대체.
+          # 1. 설치
+          sudo apt install -y ipset
+          # 2. CIDR set 생성 (hash:net)
+          sudo ipset create whitelist_legacy hash:net counters comment
+          sudo ipset add whitelist_legacy 10.20.30.0/24 comment "internal LAN"
+          # 3. iptables 연동
+          sudo iptables -I INPUT 1 -m set --match-set whitelist_legacy src -j ACCEPT
+          # 4. 영구화
+          sudo apt install -y iptables-persistent ipset-persistent
+          sudo ipset save | sudo tee /etc/iptables/ipsets
+          sudo iptables-save | sudo tee /etc/iptables/rules.v4
+        예상 출력 `Number of entries: 1 / 10.20.30.0/24 comment "internal LAN" counters`.
+        운영 해석: ipset 은 nft 이전 표준. 일부 distro 에서 여전히 운영. 마이그레이션 path.
+      - |
+        **[OSS] Ansible community.general.nftables_set** — IaC.
+          # 1. /etc/ansible/playbooks/whitelist.yml
+          # ---
+          # - hosts: secu
+          #   tasks:
+          #     - name: ensure whitelist_ips set + rule
+          #       community.general.nftables_set:
+          #         family: inet
+          #         table: final
+          #         name: whitelist_ips
+          #         type: ipv4_addr
+          #         flags: [interval]
+          #         elements:
+          #           - 10.20.30.0/24
+          #           - 192.168.0.0/24
+          #         state: present
+          #     - name: ensure accept rule
+          #       community.general.nftables_rule:
+          #         family: inet
+          #         table: final
+          #         chain: input
+          #         rule: ip saddr @whitelist_ips counter accept
+          #         state: present
+          # 2. 실행
+          ansible-playbook -i inventory whitelist.yml --diff
+        예상 출력 `changed=2 / set + rule 동시 보장`.
+        운영 해석: idempotent + diff. 멀티 호스트.
+      - |
+        **[OSS] nftables.conf 영구 정의 + git** — IaC + audit.
+          # 1. /etc/nftables.final.conf 추가
+          sudo tee -a /etc/nftables.final.conf > /dev/null <<'EOF'
+          table inet final {
+            set whitelist_ips {
+              type ipv4_addr
+              flags interval
+              elements = { 10.20.30.0/24, 192.168.0.0/24 }
+            }
+            chain input {
+              type filter hook input priority 0; policy drop;
+              ip saddr @whitelist_ips counter accept comment "trusted CIDRs"
+            }
+          }
+          EOF
+          # 2. git commit (etckeeper)
+          cd /etc && sudo git add nftables.final.conf && sudo git commit -m "Add whitelist 10.20.30.0/24 + 192.168.0.0/24"
+          # 3. apply + 검증
+          sudo nft -c -f /etc/nftables.final.conf && sudo nft -f /etc/nftables.final.conf
+        예상 출력 `commit abc123 / nft applied / accept counter 0`.
+        운영 해석: git = 변경 audit. enterprise 표준.
+      - |
+        **[OSS] 화이트리스트 효과 검증 (curl + counter)** — 검증.
+          # 1. 화이트리스트 IP (10.20.30.x) 에서 ping
+          # ssh ccc@10.20.30.100 (siem) → secu 로 ping
+          ssh ccc@10.20.30.100 'ping -c 3 10.20.30.1'
+          # 2. counter 증가 확인 (secu 측)
+          sudo nft list chain inet final input | grep whitelist_ips
+          # 3. 외부 IP 시뮬레이션 (drop 검증)
+          ssh ccc@10.20.30.201 'ping -c 1 -W 2 10.20.30.1' || echo "blocked"
+          # 4. attacker 측에서 drop 측정
+          sudo nft -j list chain inet final input | jq '.nftables[] | select(.rule) | .rule.expr[]? | select(.counter)'
+        예상 출력 `ping 정상 / counter +3 packets / blocked / drop counter +1`.
+        운영 해석: 화이트리스트 작동 + 비-CIDR drop = Zero Trust 정책 검증.
       negative_signs:
       - flags interval 누락(CIDR 오류)
       - rule 없이 set+element 만
@@ -132,6 +333,93 @@ steps:
       - timeout 30d 추가
       - index 0 명시
       - ipset hash:ip 대체
+      - |
+        **[OSS] nft blacklist + insert (먼저 평가)** — 표준.
+          # 1. blacklist set (timeout 30d, comment)
+          sudo nft 'add set inet final blacklist_ips { type ipv4_addr ; flags timeout ; timeout 30d ; }'
+          # 2. drop 룰을 input 0번 위치에 prepend (whitelist 보다 먼저)
+          sudo nft 'insert rule inet final input ip saddr @blacklist_ips log prefix "[BLOCK] " counter drop'
+          # 3. 룰 순서 검증 (blacklist 가 가장 먼저)
+          sudo nft -a list chain inet final input
+          # 4. JSON 으로 순서 확인
+          sudo nft -j list chain inet final input | jq '.nftables[] | select(.rule)'
+        예상 출력 `[1] blacklist drop / [2] whitelist accept / [3] (default drop)`.
+        운영 해석: insert = 0번 위치 prepend. blacklist 가 whitelist 보다 먼저 평가.
+      - |
+        **[OSS] Wazuh AR + nft (자동 blacklist 추가)** — 자동화.
+          # 1. AR custom script (web/secu 측)
+          sudo tee /var/ossec/active-response/bin/nft-block.sh > /dev/null <<'SCRIPT'
+          #!/bin/bash
+          # $1 = action (add/delete), $4 = srcip
+          ACTION="$1"; SRCIP="$4"
+          if [ "$ACTION" = "add" ]; then
+            sudo /usr/sbin/nft add element inet final blacklist_ips "{ $SRCIP timeout 30d }"
+            logger -t wazuh-ar "Blocked $SRCIP via nft blacklist_ips"
+          fi
+          SCRIPT
+          sudo chmod +x /var/ossec/active-response/bin/nft-block.sh
+          # 2. ossec.conf <command> + <active-response>
+          # <command><name>nft-block</name><executable>nft-block.sh</executable></command>
+          # <active-response>
+          #   <command>nft-block</command>
+          #   <location>local</location>
+          #   <rules_id>5710</rules_id>  <!-- SSH brute force -->
+          # </active-response>
+          sudo systemctl restart wazuh-manager
+          # 3. 검증
+          sudo tail -F /var/ossec/logs/active-responses.log
+        예상 출력 `Blocked 10.20.30.201 via nft blacklist_ips`.
+        운영 해석: 무인 자동 차단. 야간·휴일에도 즉시 반응.
+      - |
+        **[OSS] OpenCTI → blacklist 자동 sync (w13 응용)** — 자동화.
+          # 1. /usr/local/bin/blacklist-sync.sh (cti-sync 와 별도 set)
+          sudo tee /usr/local/bin/blacklist-sync.sh > /dev/null <<'SH'
+          #!/bin/bash
+          T=$(sudo grep ^OPENCTI_ADMIN_TOKEN /opt/opencti/.env | cut -d= -f2)
+          IPS=$(curl -sS -X POST http://10.20.30.100:8080/graphql \
+            -H "Authorization: Bearer $T" -H 'Content-Type: application/json' \
+            -d '{"query":"{ indicators(first:200,filters:{mode:and,filters:[{key:\"x_opencti_main_observable_type\",values:[\"IPv4-Addr\"]},{key:\"x_opencti_score\",values:[\"70\"],operator:gte}],filterGroups:[]}){edges{node{pattern x_opencti_score}}}}"}' \
+            | jq -r '.data.indicators.edges[].node.pattern' | grep -oE "'[0-9.]+'" | tr -d "'" | sort -u)
+          sudo nft flush set inet final blacklist_ips
+          for ip in $IPS; do
+            sudo nft add element inet final blacklist_ips "{ $ip timeout 30d }" 2>/dev/null
+          done
+          echo "synced $(echo "$IPS" | wc -w) IPs to blacklist_ips"
+          SH
+          sudo chmod +x /usr/local/bin/blacklist-sync.sh
+          # 2. systemd timer
+          # ... cti-sync 와 같은 패턴
+        예상 출력 `synced 12 IPs to blacklist_ips`.
+        운영 해석: w13 의 cti_ips 와 분리된 blacklist 운영. score≥70 만.
+      - |
+        **[OSS] CrowdSec firewall bouncer (커뮤니티 reputation)** — 보충.
+          # 1. CrowdSec engine + nftables bouncer
+          sudo apt install -y crowdsec crowdsec-firewall-bouncer-nftables
+          # 2. 자동 set + chain (CrowdSec 가 만들고 sync)
+          sudo systemctl enable --now crowdsec-firewall-bouncer
+          sudo nft list set inet crowdsec crowdsec-blacklists | head
+          # 3. 결정 확인 (커뮤니티 + local)
+          sudo cscli decisions list --type ban
+          # 4. final.input 에 crowdsec set 추가 (먼저 drop)
+          sudo nft 'insert rule inet final input ip saddr @crowdsec-blacklists drop'
+        예상 출력 `decisions ban 1234 IPs / set crowdsec-blacklists active`.
+        운영 해석: CrowdSec 의 community feed + 자체 blacklist 합집합. 다층 reputation.
+      - |
+        **[OSS] log + drop + audit log forwarding** — audit.
+          # 1. log + drop 룰 (이미 위에 포함)
+          # ... ip saddr @blacklist_ips log prefix "[BLOCK] " drop
+          # 2. rsyslog 로 별도 file (audit)
+          sudo tee /etc/rsyslog.d/blacklist-audit.conf > /dev/null <<'EOF'
+          :msg, contains, "[BLOCK]" -/var/log/blacklist-block.log
+          & stop
+          EOF
+          sudo systemctl restart rsyslog
+          # 3. 통계 (top10 차단 IP)
+          sudo grep BLOCK /var/log/blacklist-block.log | grep -oP 'SRC=\S+' | sort | uniq -c | sort -rn | head
+          # 4. Wazuh decoder + rule (alert level 7)
+          # /var/ossec/etc/decoders/local_decoder.xml: <decoder name="nft-block"><prematch>\[BLOCK\]</prematch></decoder>
+        예상 출력 `[BLOCK] SRC=203.0.113.77 / top10 IP 분포`.
+        운영 해석: drop + audit + SIEM. 차단 효과 정량 + 사후 분석.
       negative_signs:
       - add rule(append) 로 순서 오류
       - accept 대신 drop
@@ -179,6 +467,79 @@ steps:
       - 'content: cmd= ; pcre로 payload 구체 매칭'
       - ModSecurity CRS 932xxx(RCE) 대체
       - Sigma rule → Suricata 변환
+      - |
+        **[OSS] Suricata local.rules + reload** — 표준.
+          # 1. 룰 추가 (http_uri sticky buffer + content)
+          echo 'alert http any any -> any any (msg:"Final exam - cmd injection"; flow:established,to_server; content:"cmd="; http_uri; sid:1000301; rev:1; classtype:web-application-attack; metadata:created_at 2026-05-04;)' | sudo tee -a /etc/suricata/rules/local.rules
+          # 2. syntax 검증
+          sudo suricata -T -c /etc/suricata/suricata.yaml -v
+          # 3. reload (재시작 없이 룰만)
+          sudo systemctl reload suricata
+          # 또는 suricatasc 로 hot-reload
+          sudo suricatasc -c reload-rules
+          # 4. 룰 로드 검증
+          sudo grep 1000301 /etc/suricata/rules/local.rules
+          sudo suricatasc -c reload-rules | jq .
+        예상 출력 `Configuration provided was successfully loaded / 1000301 rule loaded`.
+        운영 해석: -T 로 syntax 검증 → 실패 시 reload 안전. suricatasc 로 process 재시작 없이 룰만 갱신.
+      - |
+        **[OSS] Sigma → Suricata 변환** — 표준 룰.
+          # 1. Sigma rule 정의
+          # /opt/sigma/rules/web/cmd_injection.yml:
+          # title: Web CMD Injection
+          # logsource: {category: web}
+          # detection:
+          #   selection:
+          #     uri|contains: ['cmd=', 'exec=', '${IFS}']
+          #   condition: selection
+          # 2. sigma-cli 설치 + 변환
+          pip3 install sigma-cli pysigma-backend-suricata
+          sigma convert -t suricata /opt/sigma/rules/web/cmd_injection.yml
+          # 3. 출력된 룰을 local.rules 에 추가
+          sigma convert -t suricata /opt/sigma/rules/web/cmd_injection.yml | sudo tee -a /etc/suricata/rules/local.rules
+          sudo systemctl reload suricata
+        예상 출력 `alert http any any -> any any (msg:"Web CMD Injection"; ...)`.
+        운영 해석: vendor-neutral Sigma → 다양한 SIEM/IDS 룰 동시 생성. 표준화.
+      - |
+        **[OSS] suricata-update + ET Open ruleset** — 룰 관리.
+          # 1. ET Open 룰셋 활성화
+          sudo suricata-update enable-source et/open
+          sudo suricata-update list-sources
+          # 2. ET 룰셋 다운로드 + 적용
+          sudo suricata-update
+          # 3. 사용자 정의 룰셋 분리
+          sudo suricata-update add-source local file:///etc/suricata/rules/local.rules
+          # 4. 활성 룰 갯수
+          sudo grep -c '^alert' /var/lib/suricata/rules/suricata.rules
+          sudo suricatasc -c reload-rules
+        예상 출력 `Loaded 25,432 rules / local.rules + ET Open`.
+        운영 해석: ET Open 30,000+ 룰 + 자체 룰. 자동 갱신 (cron).
+      - |
+        **[OSS] FlowBits + threshold (정교한 탐지)** — 룰 quality.
+          # 1. flowbits 로 sequence 매칭
+          echo 'alert http any any -> any any (msg:"CMD probe"; content:"cmd="; http_uri; flowbits:set,cmd_probe; flowbits:noalert; sid:1000302;)' | sudo tee -a /etc/suricata/rules/local.rules
+          echo 'alert http any any -> any any (msg:"CMD execution after probe"; content:"id"; http_uri; flowbits:isset,cmd_probe; sid:1000303;)' | sudo tee -a /etc/suricata/rules/local.rules
+          # 2. threshold (중복 alert 억제)
+          echo 'alert http any any -> any any (msg:"Final exam - cmd injection (rate limited)"; content:"cmd="; http_uri; threshold:type limit,track by_src,count 1,seconds 60; sid:1000304; rev:1;)' | sudo tee -a /etc/suricata/rules/local.rules
+          # 3. reload + 검증
+          sudo suricata -T -v
+          sudo systemctl reload suricata
+        예상 출력 `flowbits chain / threshold 1/60s 동작`.
+        운영 해석: 단순 content 보다 정교. FP 회피 + sequence 탐지.
+      - |
+        **[OSS] Suricata 룰 테스트 (replay pcap)** — 검증.
+          # 1. attack pcap 캡처
+          sudo tcpdump -i any -nn -w /tmp/attack.pcap -c 100 'host 10.20.30.201 and port 80' &
+          curl 'http://10.20.30.80/index.php?cmd=ls'
+          sudo pkill tcpdump
+          # 2. Suricata 로 pcap replay
+          sudo suricata -r /tmp/attack.pcap -l /tmp/suricata-test/
+          # 3. 결과 (eve.json + fast.log)
+          jq -c '.alert | select(.signature_id==1000301)' /tmp/suricata-test/eve.json | head
+          # 4. SOC 표준 검증 워크플로우
+          # PR → ruleset 변경 → pcap test → review → merge → deploy
+        예상 출력 `signature_id 1000301 매칭 / 1 alert in pcap replay`.
+        운영 해석: 룰 변경 → pcap 회귀 테스트. 운영 환경 영향 전 검증. CI 권장.
       negative_signs:
       - http_uri 없이 raw match(FP 많음)
       - reload 누락
@@ -226,6 +587,74 @@ steps:
       - Burp + Intruder sniper mode
       - commix 자동 RCE 도구
       - 'Python requests.get(params={cmd: ls})'
+      - |
+        **[OSS] curl (다양한 cmd= payload)** — 표준.
+          # 1. 단순 cmd=ls
+          curl -sS -o /dev/null -w 'code=%{http_code}\n' 'http://10.20.30.80/index.php?cmd=ls'
+          # 2. 다양한 명령
+          for c in ls whoami id 'cat /etc/passwd' 'uname -a'; do
+            ENC=$(python3 -c "import urllib.parse;print(urllib.parse.quote('$c'))")
+            curl -sS -o /dev/null -w "$c → code=%{http_code}\n" "http://10.20.30.80/index.php?cmd=$ENC"
+          done
+          # 3. uri 위치 다양화 (sticky buffer 검증)
+          curl -sS -o /dev/null -w 'code=%{http_code}\n' 'http://10.20.30.80/admin/cmd.php?cmd=ls'
+          curl -sS -o /dev/null -w 'code=%{http_code}\n' -X POST 'http://10.20.30.80/index.php' -d 'cmd=ls'
+          # 4. 우회 시도 (룰 한계 측정)
+          curl -sS -o /dev/null -w 'code=%{http_code}\n' 'http://10.20.30.80/index.php?cmd%3D=ls'
+          curl -sS -o /dev/null -w 'code=%{http_code}\n' 'http://10.20.30.80/index.php?CMD=ls'
+        예상 출력 `code=200 (룰은 alert 만, drop X) / 다양한 vector / 일부 우회 가능`.
+        운영 해석: 룰 정확도 측정. 우회 가능 = 룰 강화 필요.
+      - |
+        **[OSS] commix (RCE 자동 탐색)** — pentest.
+          # 1. 설치
+          sudo apt install -y commix
+          # 2. 자동 cmd injection 탐색
+          commix -u 'http://10.20.30.80/index.php?cmd=test' --batch
+          # 3. 모든 파라미터 자동 fuzz
+          commix -u 'http://10.20.30.80/index.php' --data='cmd=test&user=admin' --batch --level 3
+          # 4. 결과 + Suricata alert 카운트
+          ssh ccc@10.20.30.1 'sudo grep -c signature_id\":1000301 /var/log/suricata/eve.json'
+        예상 출력 `[+] command injection found / Suricata 30+ alerts`.
+        운영 해석: 자동 RCE fuzzer 로 룰 robustness 검증. 30+ alert 정상.
+      - |
+        **[OSS] OWASP ZAP active scan (auto fuzz)** — pentest.
+          # 1. ZAP daemon
+          docker run -d -p 8090:8090 --name zap owasp/zap2docker-stable zap.sh -daemon -host 0.0.0.0 -port 8090 -config api.disablekey=true
+          # 2. spider scan
+          curl -sS 'http://localhost:8090/JSON/spider/action/scan?url=http://10.20.30.80'
+          # 3. active scan (RCE plugin 자동 활성)
+          curl -sS 'http://localhost:8090/JSON/ascan/action/scan?url=http://10.20.30.80'
+          # 4. 결과
+          curl -sS 'http://localhost:8090/JSON/core/view/alerts?baseurl=http://10.20.30.80' | jq '.alerts[] | select(.name | contains("Command"))'
+        예상 출력 `Command Injection alerts: 5 / risk: high`.
+        운영 해석: pentest 표준. WAF/IDS 효과 정량 측정.
+      - |
+        **[OSS] Python requests + payload 다양화** — 자동화.
+          # 1. Python script
+          python3 <<'PY'
+          import requests, urllib.parse
+          payloads = ['ls', 'whoami', 'cat /etc/passwd', '`id`', '${IFS}cat${IFS}/etc/passwd', 'ls;cat /etc/passwd']
+          for p in payloads:
+              r = requests.get('http://10.20.30.80/index.php', params={'cmd': p}, timeout=5)
+              print(f"{r.status_code} - cmd={p[:30]}")
+          PY
+          # 2. Suricata alert 검증
+          ssh ccc@10.20.30.1 'sudo tail -50 /var/log/suricata/eve.json | jq -c "select(.alert.signature_id==1000301)" | wc -l'
+        예상 출력 `200 (룰 alert) / 200 (cmd=ls) ... / Suricata 6 alerts`.
+        운영 해석: Python 으로 정밀 control. CI 회귀 테스트.
+      - |
+        **[OSS] Burp Suite + Intruder (수동 fuzz)** — 학습.
+          # 1. Burp 실행 (community edition)
+          # 2. Proxy 설정 (browser → 8080 → Burp)
+          # 3. 요청 capture: GET /index.php?cmd=test
+          # 4. Intruder → Sniper mode → § 마커 추가 (cmd 파라미터)
+          # 5. Payload list (built-in or wordlist)
+          # 6. Start attack → 응답 코드 + 길이로 영향도 분석
+          # 또는 Repeater 탭에서 수동 변형
+          # CLI 검증
+          ssh ccc@10.20.30.1 'sudo tail /var/log/suricata/eve.json | jq -c "select(.alert.signature_id==1000301) | .src_ip"'
+        UI 동작: Sniper/Cluster bomb/Pitchfork 모드.
+        운영 해석: pentest 표준 도구. 학습 단계 권장.
       negative_signs:
       - cmd= 파라미터 생략
       - 응답 확인 없음
@@ -269,6 +698,74 @@ steps:
       - sudo grep Final exam fast.log
       - suricatasc -c iface-stat 에서 alert 수 증가
       - Elastic 검색 alert.signature_id:1000301
+      - |
+        **[OSS] grep + jq (signature_id 정밀 매칭)** — 표준.
+          # 1. signature_id 1000301 매칭 alert
+          sudo grep '"signature_id":1000301' /var/log/suricata/eve.json | tail -3
+          # 2. jq 로 alert 객체 + src/dest IP
+          sudo jq -c 'select(.alert.signature_id==1000301) | {time: .timestamp, src: .src_ip, dest: .dest_ip, uri: .http.url}' /var/log/suricata/eve.json | tail -10
+          # 3. 시간대별 빈도
+          sudo jq -r 'select(.alert.signature_id==1000301) | .timestamp[:13]' /var/log/suricata/eve.json | sort | uniq -c
+          # 4. 상위 attacker IP
+          sudo jq -r 'select(.alert.signature_id==1000301) | .src_ip' /var/log/suricata/eve.json | sort | uniq -c | sort -rn | head
+        예상 출력 `signature_id 1000301 matched / src=10.20.30.201 / 시간 분포 / top attacker`.
+        운영 해석: jq = 정확. src IP top10 = 공격원 식별. 자동 차단 후보.
+      - |
+        **[OSS] fast.log + suricatasc** — alternative.
+          # 1. fast.log (사람 친화 1줄)
+          sudo grep 'Final exam' /var/log/suricata/fast.log | tail
+          # 2. suricatasc 로 process 통계
+          sudo suricatasc -c iface-stat-dump
+          sudo suricatasc -c dump-counters | jq '.detect_alert'
+          # 3. 룰 reload 후 alert 재시작 확인
+          sudo suricatasc -c reload-rules
+          # 4. SQL-like 쿼리 (suricatactl)
+          sudo suricatactl filestore -d /var/log/suricata/files prune
+        예상 출력 `[1:1000301:1] Final exam - cmd injection / detect_alert: 12345 / packets: ...`.
+        운영 해석: fast.log = 빠른 검토. suricatasc = process 내부 메트릭.
+      - |
+        **[OSS] OpenSearch / Elastic 인덱스** — 중앙.
+          AUTH='-u admin:SecretPassword'
+          # 1. signature_id 1000301 matching alert (Wazuh-Suricata 통합 인덱스)
+          curl -sk $AUTH 'https://10.20.30.100:9200/wazuh-alerts-*/_search' -H 'Content-Type: application/json' -d '{
+            "size":10,
+            "query":{"term":{"data.alert.signature_id":"1000301"}},
+            "sort":[{"@timestamp":"desc"}]
+          }' | jq '.hits.hits[]._source | {ts:.["@timestamp"], src:.data.src_ip, signature:.data.alert.signature}'
+          # 2. 빈도 집계
+          curl -sk $AUTH 'https://10.20.30.100:9200/wazuh-alerts-*/_count?q=data.alert.signature_id:1000301'
+          # 3. 시간대별 buckets
+          curl -sk $AUTH 'https://10.20.30.100:9200/wazuh-alerts-*/_search' -H 'Content-Type: application/json' -d '{
+            "size":0, "query":{"term":{"data.alert.signature_id":"1000301"}},
+            "aggs":{"per_min":{"date_histogram":{"field":"@timestamp","calendar_interval":"minute"}}}
+          }' | jq .aggregations.per_min.buckets
+        예상 출력 `Wazuh count 12 / hourly buckets`.
+        운영 해석: 인덱스 검색 = 즉시. dashboard 통합.
+      - |
+        **[OSS] EveBox (Suricata 전용 dashboard)** — UI.
+          # 1. 설치 (docker)
+          docker run -d --name evebox -p 5636:5636 \
+            -e EVEBOX_AUTH_USERNAME=admin -e EVEBOX_AUTH_PASSWORD=secret \
+            -v /var/log/suricata:/var/log/suricata jasonish/evebox:latest \
+            evebox -e /var/log/suricata/eve.json
+          # 2. http://10.20.30.1:5636 접속
+          # 3. 검색: signature_id:1000301
+          # 4. comment / archive / escalate 워크플로우
+          # CLI 검증
+          curl -sk -u admin:secret 'http://10.20.30.1:5636/api/event-query?queryString=signature_id:1000301'
+        UI 동작: alert timeline + filter + comment + escalate.
+        운영 해석: ELK 보다 가벼운 Suricata 전용 UI. 분석가 친화.
+      - |
+        **[OSS] scirius (Suricata 룰 + alert 종합)** — 통합.
+          # 1. 설치 (docker SELKS stack)
+          # https://github.com/StamusNetworks/SELKS
+          # 2. Scirius UI: http://10.20.30.1/scirius/
+          # 3. Rules → 1000301 검색 → enable/disable + 통계
+          # 4. Hunt → signature_id 1000301 alert 분석
+          # 5. CLI 검증
+          curl -sk 'https://10.20.30.1/rest/rules/rule/?sid=1000301' | jq .
+        예상 출력 `룰 정의 + alert 통계 + GUI 분석`.
+        운영 해석: 룰 관리 + alert 분석 통합. enterprise SELKS stack.
       negative_signs:
       - 0 hits 정상 판정
       - 잘못된 sid
@@ -332,6 +829,82 @@ steps:
       - Wazuh Dashboard Security Events filter
       - curl Wazuh API /alerts?data.alert.signature_id=1000301
       - Kibana saved search suricata cmd injection
+      - |
+        **[OSS] grep + jq (Wazuh alerts.json 정밀)** — 표준.
+          # 1. grep 빠른 필터
+          sudo grep -iE 'cmd injection|1000301' /var/ossec/logs/alerts/alerts.json | tail -5
+          # 2. jq 정확 매칭 (Suricata signature_id)
+          sudo jq -c 'select(.data.alert.signature_id=="1000301") | {ts:.timestamp, src:.data.src_ip, signature:.data.alert.signature, level:.rule.level}' /var/ossec/logs/alerts/alerts.json | tail
+          # 3. Wazuh rule.id 별 분포 (Suricata decoder 적용)
+          sudo jq -r 'select(.data.alert.signature_id=="1000301") | .rule.id' /var/ossec/logs/alerts/alerts.json | sort | uniq -c
+          # 4. end-to-end 검증 (Suricata → Wazuh 둘 다)
+          SURI=$(ssh ccc@10.20.30.1 'sudo grep -c signature_id\":1000301 /var/log/suricata/eve.json')
+          WAZUH=$(sudo grep -c '"signature_id":"1000301"' /var/ossec/logs/alerts/alerts.json)
+          echo "Suricata: $SURI / Wazuh: $WAZUH (목표: 비슷)"
+        예상 출력 `Suricata 12 / Wazuh 12 / 일치 = 파이프라인 정상`.
+        운영 해석: 양 파이프라인 갯수 비교. Wazuh < Suricata = agent 지연·drop.
+      - |
+        **[OSS] OpenSearch 인덱스 쿼리** — 중앙.
+          AUTH='-u admin:SecretPassword'
+          # 1. signature_id 1000301 매칭
+          curl -sk $AUTH 'https://10.20.30.100:9200/wazuh-alerts-*/_search' -H 'Content-Type: application/json' -d '{
+            "size":10,
+            "query":{"term":{"data.alert.signature_id":"1000301"}},
+            "_source":["@timestamp","data.src_ip","data.alert.signature","rule.level"]
+          }' | jq '.hits.hits[]._source'
+          # 2. count
+          curl -sk $AUTH 'https://10.20.30.100:9200/wazuh-alerts-*/_count?q=data.alert.signature_id:1000301' | jq .count
+          # 3. 시간대별 + src_ip 별 aggregation
+          curl -sk $AUTH 'https://10.20.30.100:9200/wazuh-alerts-*/_search' -H 'Content-Type: application/json' -d '{
+            "size":0, "query":{"term":{"data.alert.signature_id":"1000301"}},
+            "aggs":{"by_src":{"terms":{"field":"data.src_ip","size":10}}}
+          }' | jq .aggregations.by_src.buckets
+        예상 출력 `count 12 / top src 10.20.30.201:8 198.51.100.10:4`.
+        운영 해석: 인덱스 검색 = 즉시. attacker IP 식별.
+      - |
+        **[OSS] Wazuh API (REST)** — 자동화.
+          T=$(curl -sk -u admin:<pass> -X POST 'https://10.20.30.100:55000/security/user/authenticate?raw=true')
+          # 1. rule 조회 (Suricata decoder 활용 룰)
+          curl -sk -H "Authorization: Bearer $T" 'https://10.20.30.100:55000/rules?search=suricata' | jq '.data.affected_items[] | {id, description}'
+          # 2. agent 별 통계
+          curl -sk -H "Authorization: Bearer $T" 'https://10.20.30.100:55000/agents/<id>/stats/agent' | jq .
+          # 3. analysisd 통계 (룰 매칭 빈도)
+          curl -sk -H "Authorization: Bearer $T" 'https://10.20.30.100:55000/manager/stats/analysisd' | jq .
+        예상 출력 `Suricata 룰 23개 / events_processed 12345 / events_dropped 0`.
+        운영 해석: API 자동화. dashboard·alert 통합.
+      - |
+        **[OSS] Wazuh Dashboard KQL Discover** — 분석가 UI.
+          # 1. 브라우저 → https://10.20.30.100 → Security events
+          # 2. KQL: data.alert.signature_id:"1000301"
+          # 3. 또는 rule.groups:"suricata" + rule.level:>=10
+          # 4. 시각: timeline / src_ip 분포 / signature 분포
+          # 5. CSV export → 보고서
+          # CLI 검증
+          curl -sk -u admin:<pass> 'https://10.20.30.100:9200/wazuh-alerts-*/_count?q=data.alert.signature_id:1000301' | jq .count
+        UI 동작: KQL + saved search + dashboard.
+        운영 해석: 분석가 daily. 시각·시간·필터 통합.
+      - |
+        **[OSS] Sigma rule + Wazuh decoder (표준 룰)** — 룰 관리.
+          # 1. Sigma rule (vendor-neutral)
+          # /opt/sigma/rules/network/cmd_injection.yml
+          # 2. Wazuh decoder 변환 (custom)
+          # /var/ossec/etc/decoders/local_decoder.xml:
+          # <decoder name="suricata-cmd-injection">
+          #   <parent>json</parent>
+          #   <field name="data.alert.signature_id">^1000301$</field>
+          # </decoder>
+          # 3. local rule (level 매핑)
+          # <rule id="100301" level="10">
+          #   <decoded_as>suricata-cmd-injection</decoded_as>
+          #   <description>Suricata: CMD injection (sid 1000301)</description>
+          #   <group>web,attack,suricata</group>
+          #   <mitre><id>T1059.004</id></mitre>
+          # </rule>
+          sudo systemctl restart wazuh-manager
+          # 검증
+          sudo /var/ossec/bin/wazuh-logtest <<<"$(tail -1 /var/log/suricata/eve.json | grep 1000301)"
+        예상 출력 `decoder: suricata-cmd-injection / rule: 100301 / level 10`.
+        운영 해석: vendor-neutral Sigma → SIEM rule 정책. 표준화.
       negative_signs:
       - Suricata eve.json 만 확인(agent 체크 없음)
       - grep 필터 틀림
@@ -390,6 +963,110 @@ steps:
       - MISP + PyMISP 로 IOC feed 동기화
       - timeout 옵션으로 자동 만료
       - Wazuh Active Response custom script
+      - |
+        **[OSS] nft add element + comment + timeout** — 표준.
+          # 1. timeout + comment (출처 추적)
+          sudo nft add element inet final blacklist_ips '{ 203.0.113.77 timeout 30d comment "OpenCTI ind-2026-W15-001" }'
+          # 2. 다중 element atomic
+          sudo nft add element inet final blacklist_ips '{ 203.0.113.77, 198.51.100.66, 198.51.100.99 }'
+          # 3. JSON RPC batch
+          echo '{"nftables":[{"add":{"element":{"family":"inet","table":"final","name":"blacklist_ips","elem":[{"set_elem":{"val":"203.0.113.77","timeout":2592000,"comment":"opencti"}}]}}}]}' | sudo nft -j -f -
+          # 4. 검증
+          sudo nft list set inet final blacklist_ips
+        예상 출력 `elements = { 203.0.113.77 expires 29d23h59m comment "OpenCTI..." }`.
+        운영 해석: timeout + comment + atomic. 출처 + 만료 추적.
+      - |
+        **[OSS] pycti + Python (OpenCTI → blacklist 자동)** — 운영.
+          # 1. 설치 + token
+          pip3 install pycti
+          T=$(sudo grep ^OPENCTI_ADMIN_TOKEN /opt/opencti/.env | cut -d= -f2)
+          # 2. 자동 sync script (final.blacklist_ips)
+          sudo tee /usr/local/bin/blacklist-sync.py > /dev/null <<PY
+          #!/usr/bin/env python3
+          import os, re, subprocess
+          from pycti import OpenCTIApiClient
+          c = OpenCTIApiClient("http://10.20.30.100:8080", "$T")
+          inds = c.indicator.list(first=200, filters={"mode":"and","filters":[{"key":"x_opencti_main_observable_type","values":["IPv4-Addr"]},{"key":"x_opencti_score","values":["80"],"operator":"gte"}],"filterGroups":[]})
+          ips = set()
+          for ind in inds:
+              if ind.get('revoked'): continue
+              m = re.search(r"'([0-9.]+)'", ind.get('pattern') or "")
+              if m: ips.add(m.group(1))
+          subprocess.run(['sudo','nft','flush','set','inet','final','blacklist_ips'])
+          for ip in ips:
+              subprocess.run(['sudo','nft','add','element','inet','final','blacklist_ips','{ %s timeout 30d }' % ip])
+          print(f"synced {len(ips)} IPs to final.blacklist_ips")
+          PY
+          sudo chmod +x /usr/local/bin/blacklist-sync.py
+          sudo /usr/local/bin/blacklist-sync.py
+        예상 출력 `synced 12 IPs to final.blacklist_ips`.
+        운영 해석: score≥80 만 → false-positive 회피. 운영 표준.
+      - |
+        **[OSS] MISP + PyMISP (alternative threat platform)** — feed.
+          # 1. PyMISP 설치
+          pip3 install pymisp
+          MISP_KEY=<API key>
+          # 2. IP IoC 조회 + nft 추가
+          python3 <<PY
+          from pymisp import PyMISP
+          import subprocess
+          misp = PyMISP("https://misp.local", "$MISP_KEY", False)
+          for evt in misp.search(controller="attributes", type_attribute=["ip-src","ip-dst"], to_ids=1, limit=500):
+              for a in evt.get("Attribute", []):
+                  ip = a["value"]
+                  subprocess.run(['sudo','nft','add','element','inet','final','blacklist_ips','{ %s timeout 30d }' % ip], check=False)
+          PY
+          # 3. 검증
+          sudo nft list set inet final blacklist_ips | head
+        예상 출력 `MISP IoC 200건 → nft 200건 추가`.
+        운영 해석: OpenCTI 외 MISP feed 도. 다중 source 합집합.
+      - |
+        **[OSS] Wazuh AR (이벤트 → 자동 차단)** — 자동.
+          # 1. AR script
+          sudo tee /var/ossec/active-response/bin/blacklist-add.sh > /dev/null <<'SCRIPT'
+          #!/bin/bash
+          # $4 = src IP from rule trigger
+          SRC="$4"
+          [ -z "$SRC" ] && exit 0
+          sudo /usr/sbin/nft add element inet final blacklist_ips "{ $SRC timeout 7d }" 2>/dev/null
+          logger -t wazuh-ar "Auto-blocked $SRC into final.blacklist_ips"
+          SCRIPT
+          sudo chmod +x /var/ossec/active-response/bin/blacklist-add.sh
+          # 2. ossec.conf <command> + <active-response>
+          # <command><name>blacklist-add</name><executable>blacklist-add.sh</executable></command>
+          # <active-response>
+          #   <command>blacklist-add</command>
+          #   <location>local</location>
+          #   <rules_id>100301</rules_id>  <!-- Suricata cmd injection -->
+          # </active-response>
+          sudo systemctl restart wazuh-manager
+        예상 출력 `cmd injection 탐지 → 5초 내 자동 차단`.
+        운영 해석: 무인 자동 IR. 야간·휴일 즉시 반응.
+      - |
+        **[OSS] systemd timer (15분 주기 자동 sync)** — cron.
+          # 1. service + timer (w13 패턴 재사용)
+          sudo tee /etc/systemd/system/blacklist-sync.service > /dev/null <<EOF
+          [Unit]
+          Description=OpenCTI to final.blacklist_ips sync
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/bin/blacklist-sync.py
+          EOF
+          sudo tee /etc/systemd/system/blacklist-sync.timer > /dev/null <<EOF
+          [Unit]
+          Description=15min blacklist sync
+          [Timer]
+          OnBootSec=2min
+          OnUnitActiveSec=15min
+          [Install]
+          WantedBy=timers.target
+          EOF
+          sudo systemctl daemon-reload
+          sudo systemctl enable --now blacklist-sync.timer
+          systemctl list-timers blacklist-sync*
+          journalctl -u blacklist-sync --since '1h ago'
+        예상 출력 `NEXT 14:15 / synced 12 IPs (logs)`.
+        운영 해석: 정기적 sync. cron 보다 logging·dependency 표준.
       negative_signs:
       - list set 검증 누락
       - 잘못된 set 이름(whitelist 혼동)
@@ -430,6 +1107,77 @@ steps:
       - sudo nft -j list table inet final | jq
       - 구성 스냅샷 저장 + diff
       - git-managed nftables.conf 와 대조
+      - |
+        **[OSS] nft list table + handle (전체 구조)** — 표준.
+          # 1. 텍스트 출력
+          sudo nft list table inet final
+          # 2. handle 포함 (룰 식별자)
+          sudo nft -a list table inet final
+          # 3. 구조화 + 룰 순서 확인
+          sudo nft -j list table inet final | jq '.nftables[] | select(.rule) | {chain: .rule.chain, expr: .rule.expr}'
+          # 4. set 별 element 갯수
+          sudo nft -j list table inet final | jq -r '.nftables[] | select(.set) | "\(.set.name): \((.set.elem // []) | length) elements"'
+        예상 출력 `chain input { handle 1 blacklist drop / handle 2 whitelist accept } / sets: blacklist 12 whitelist 2`.
+        운영 해석: handle = 룰 ID. 정확한 추가/삭제. JSON = 자동화.
+      - |
+        **[OSS] 구성 무결성 (nft -c + git diff)** — IaC.
+          # 1. 현재 상태 dump → 파일
+          sudo nft list table inet final > /tmp/final-current.nft
+          # 2. 의도 (git 관리 파일) 와 diff
+          sudo diff /etc/nftables.final.conf /tmp/final-current.nft
+          # 3. dump 파일 → 적용 가능 여부 검증
+          sudo nft -c -f /tmp/final-current.nft && echo "Re-applicable"
+          # 4. JSON dump (기계 비교)
+          sudo nft -j list table inet final > /tmp/final-current.json
+          jq -S . /tmp/final-current.json > /tmp/final-sorted.json
+          diff /tmp/final-baseline.json /tmp/final-sorted.json
+        예상 출력 `0 differences (정상) / 또는 + add / - remove`.
+        운영 해석: drift 감지. 실제 != 의도 = 즉시 조사.
+      - |
+        **[OSS] nft monitor (실시간 변경 감지)** — audit.
+          # 1. 백그라운드 모니터
+          sudo nft monitor > /tmp/final-events.log &
+          # 2. 변경 발생 시 실시간 캡처
+          sudo nft add element inet final blacklist_ips '{ 198.51.100.99 }'
+          sudo nft delete element inet final blacklist_ips '{ 198.51.100.99 }'
+          # 3. 결과 (사용자 + 명령 + 시간)
+          tail /tmp/final-events.log
+          # 4. auditd 로 nft 명령 추적 (감사)
+          sudo auditctl -w /usr/sbin/nft -p x -k nft-final
+          sudo ausearch -k nft-final | head
+        예상 출력 `add element ... / delete element ... / auditd 사용자 ID + 시각`.
+        운영 해석: 누가·언제·무엇을 변경. SOC audit.
+      - |
+        **[OSS] Prometheus exporter (set_size 메트릭)** — 시계열.
+          # 1. textfile collector
+          sudo tee /etc/cron.d/final-metrics > /dev/null <<EOF
+          */1 * * * * root nft -j list table inet final | jq -r '.nftables[] | select(.set) | "nft_set_size{table=\"final\",set=\"\(.set.name)\"} \((.set.elem // []) | length)"' > /var/lib/node_exporter/textfile/final.prom
+          EOF
+          # 2. 메트릭 노출
+          curl -sS http://localhost:9100/metrics | grep nft_set_size
+          # 3. Grafana alert
+          # - alert: BlacklistEmpty
+          #   expr: nft_set_size{table="final",set="blacklist_ips"} == 0
+          #   for: 10m
+        예상 출력 `nft_set_size{set="blacklist_ips"} 12 / nft_set_size{set="whitelist_ips"} 2`.
+        운영 해석: 시계열 추적. 0 으로 떨어지면 sync 끊김 = alert.
+      - |
+        **[OSS] etckeeper / git (정책 audit history)** — IaC.
+          # 1. 설치 + init
+          sudo apt install -y etckeeper
+          sudo etckeeper init
+          # 2. /etc/nftables.final.conf 변경 → 자동 commit
+          sudo nft list table inet final > /etc/nftables.final.conf
+          sudo etckeeper commit "snapshot final 2026-05-04 14:30"
+          # 3. history
+          cd /etc && sudo git log --oneline nftables.final.conf
+          # 4. 특정 시점 diff
+          sudo git log -p nftables.final.conf | head -50
+          # 5. rollback (실수 복구)
+          # sudo git checkout <sha> -- nftables.final.conf
+          # sudo nft -f /etc/nftables.final.conf
+        예상 출력 `commit abc123 add blacklist 203.0.113.77 / commit def456 ...`.
+        운영 해석: 변경 history + diff + rollback. enterprise 표준.
       negative_signs:
       - 구조 확인 없이 실행만
       - 다른 table 확인
@@ -469,6 +1217,104 @@ steps:
       - 'ansible playbook tags: cleanup'
       - 3 명령 독립 실행(에러 유연 처리)
       - snapshot 복구
+      - |
+        **[OSS] 3-step cleanup chain** — 표준.
+          # 1. nft cleanup (table cascade delete = chain + set + rule 모두)
+          sudo nft delete table inet final
+          # 2. Suricata 룰 sed 삭제
+          sudo sed -i '/sid:1000301/d' /etc/suricata/rules/local.rules
+          # 3. Suricata reload
+          sudo systemctl reload suricata
+          # 4. 검증 (모두 cleaned 확인)
+          sudo nft list tables | grep -v final
+          sudo grep 1000301 /etc/suricata/rules/local.rules || echo "rule removed"
+          sudo suricatasc -c reload-rules
+        예상 출력 `final table gone / rule removed / Suricata reloaded`.
+        운영 해석: cascade delete 로 set·chain·rule 동시 정리. 3-step 안전.
+      - |
+        **[OSS] git revert (IaC 롤백)** — enterprise.
+          # 1. /etc/nftables.final.conf + /etc/suricata/rules/local.rules 가 git 관리되는 환경
+          cd /etc && sudo git log --oneline nftables.final.conf | head
+          # 2. 특정 commit 으로 revert (PR 워크플로우)
+          sudo git revert <commit-sha-of-final-add>
+          # 3. apply
+          sudo nft -f /etc/nftables.final.conf  # 또는 nft delete table
+          sudo systemctl reload suricata
+          # 4. /etc/suricata/rules/local.rules 도 revert
+          cd /etc/suricata/rules && sudo git revert <sid-1000301-commit>
+          sudo systemctl reload suricata
+        예상 출력 `Revert applied / final table cleaned / Suricata reloaded`.
+        운영 해석: 변경 history 기반 안전 rollback. 실수 → 즉시 복구.
+      - |
+        **[OSS] Ansible cleanup playbook (idempotent)** — IaC.
+          # 1. /etc/ansible/playbooks/final-cleanup.yml
+          # ---
+          # - hosts: secu
+          #   tasks:
+          #     - name: remove final table
+          #       community.general.nftables_table:
+          #         family: inet
+          #         name: final
+          #         state: absent
+          #     - name: remove sid 1000301 from local.rules
+          #       lineinfile:
+          #         path: /etc/suricata/rules/local.rules
+          #         regexp: 'sid:1000301'
+          #         state: absent
+          #       notify: reload suricata
+          #   handlers:
+          #     - name: reload suricata
+          #       systemd:
+          #         name: suricata
+          #         state: reloaded
+          # 2. 실행
+          ansible-playbook -i inventory final-cleanup.yml --tags=cleanup --diff
+        예상 출력 `changed=2 / handler triggered / suricata reloaded`.
+        운영 해석: PR 워크플로우 + idempotent. 멀티 호스트 동시 cleanup.
+      - |
+        **[OSS] systemd nftables-final.service 비활성화** — 안전.
+          # 1. service 가 정의된 경우 stop + disable
+          sudo systemctl stop nftables-final.service
+          sudo systemctl disable nftables-final.service
+          # ExecStop 이 정의되어 있으면 자동 cleanup
+          # 2. service file 제거 (필요 시)
+          sudo rm -f /etc/systemd/system/nftables-final.service
+          sudo systemctl daemon-reload
+          # 3. Suricata 룰 cleanup
+          sudo sed -i '/sid:1000301/d' /etc/suricata/rules/local.rules
+          sudo systemctl reload suricata
+          # 4. 검증
+          systemctl status nftables-final 2>/dev/null || echo "removed"
+          sudo nft list tables
+        예상 출력 `nftables-final removed / suricata reloaded`.
+        운영 해석: systemd lifecycle 으로 안전 cleanup. ExecStop 정의 = 자동.
+      - |
+        **[OSS] cleanup script + 검증 루프** — 안전.
+          # 1. /usr/local/bin/final-cleanup.sh
+          sudo tee /usr/local/bin/final-cleanup.sh > /dev/null <<'SCRIPT'
+          #!/bin/bash
+          set -e
+          # Step 1: nft
+          sudo nft delete table inet final 2>/dev/null && echo "nft: final table removed"
+          # Step 2: Suricata rule
+          if grep -q 'sid:1000301' /etc/suricata/rules/local.rules; then
+            sudo sed -i '/sid:1000301/d' /etc/suricata/rules/local.rules
+            echo "suricata: sid 1000301 removed"
+          fi
+          # Step 3: reload
+          sudo systemctl reload suricata && echo "suricata: reloaded"
+          # 검증 루프
+          for i in 1 2 3; do
+            sudo nft list tables 2>/dev/null | grep -q final && echo "WARN: final table still exists" || echo "OK: final table gone"
+            sudo grep -q 1000301 /etc/suricata/rules/local.rules && echo "WARN: 1000301 still in rules" || echo "OK: rule removed"
+            sudo suricatasc -c reload-rules > /dev/null 2>&1 && echo "OK: suricata responsive" || echo "WARN: suricata not responsive"
+            break
+          done
+          SCRIPT
+          sudo chmod +x /usr/local/bin/final-cleanup.sh
+          sudo /usr/local/bin/final-cleanup.sh
+        예상 출력 `nft removed / sid removed / OK x 3`.
+        운영 해석: 안전 cleanup + 사후 검증. CI 회귀 테스트.
       negative_signs:
       - 1-2 단계 누락
       - reload 없이 룰 그대로
@@ -557,6 +1403,120 @@ steps:
       - Plan 형식 — Strategy/derives_from/Todo/measures/timeline/realizes 모두 포함
       - sha256sum capstone.md
       - KG bastion API endpoint 명시 (POST /api/graph/node)
+      - |
+        **[OSS] Phase A — 25 cell maturity 자동 측정 도구** — 객관화.
+          # 1. /usr/local/bin/maturity-scan.sh (각 cell 자동 점수 산정)
+          sudo tee /usr/local/bin/maturity-scan.sh > /dev/null <<'SCRIPT'
+          #!/bin/bash
+          # Layer x Mechanism 자동 측정
+          declare -A SCORE
+          # nft Deploy: table 존재 여부
+          sudo nft list tables | grep -q final && SCORE["nft.Deploy"]=4 || SCORE["nft.Deploy"]=2
+          # nft Monitor: counter 존재 여부
+          sudo nft -j list ruleset | jq '.nftables[] | select(.rule) | .rule.expr[]? | select(.counter)' > /dev/null && SCORE["nft.Monitor"]=4 || SCORE["nft.Monitor"]=2
+          # nft Detect: blacklist set + rule
+          sudo nft list set inet final blacklist_ips 2>/dev/null > /dev/null && SCORE["nft.Detect"]=4 || SCORE["nft.Detect"]=2
+          # nft Respond: cti-sync script + timer
+          systemctl is-enabled blacklist-sync.timer 2>/dev/null | grep -q enabled && SCORE["nft.Respond"]=5 || SCORE["nft.Respond"]=2
+          # nft Improve: git history 존재
+          cd /etc && sudo git log --oneline nftables.conf 2>/dev/null | head -1 > /dev/null && SCORE["nft.Improve"]=3 || SCORE["nft.Improve"]=1
+          # ... Suricata, ModSec, Wazuh, OpenCTI 동일 패턴
+          # 출력
+          for k in "${!SCORE[@]}"; do echo "$k: ${SCORE[$k]}"; done | sort
+          SCRIPT
+          sudo chmod +x /usr/local/bin/maturity-scan.sh
+          sudo /usr/local/bin/maturity-scan.sh
+        예상 출력 `nft.Deploy: 4 / nft.Monitor: 4 / ... / 25 line`.
+        운영 해석: 주관적 자가 진단 → 객관적 자동 측정. 매분기 추적.
+      - |
+        **[OSS] markdown table generator (Phase A 보고서)** — 표 생성.
+          # 1. /usr/local/bin/maturity-table.py
+          python3 <<'PY'
+          scores = {
+              ('nft', 'Deploy'): 4, ('nft', 'Monitor'): 4, ('nft', 'Detect'): 4, ('nft', 'Respond'): 5, ('nft', 'Improve'): 3,
+              ('Suricata', 'Deploy'): 5, ('Suricata', 'Monitor'): 4, ('Suricata', 'Detect'): 5, ('Suricata', 'Respond'): 3, ('Suricata', 'Improve'): 2,
+              ('ModSec', 'Deploy'): 5, ('ModSec', 'Monitor'): 3, ('ModSec', 'Detect'): 5, ('ModSec', 'Respond'): 3, ('ModSec', 'Improve'): 2,
+              ('Wazuh', 'Deploy'): 5, ('Wazuh', 'Monitor'): 5, ('Wazuh', 'Detect'): 4, ('Wazuh', 'Respond'): 4, ('Wazuh', 'Improve'): 3,
+              ('OpenCTI', 'Deploy'): 4, ('OpenCTI', 'Monitor'): 3, ('OpenCTI', 'Detect'): 3, ('OpenCTI', 'Respond'): 4, ('OpenCTI', 'Improve'): 2,
+          }
+          layers = ['nft','Suricata','ModSec','Wazuh','OpenCTI']
+          mechs = ['Deploy','Monitor','Detect','Respond','Improve']
+          print("| Layer\\Mech |", " | ".join(mechs), "| Sum |")
+          print("|" + "---|" * (len(mechs)+2))
+          for l in layers:
+              row = [l] + [str(scores[(l,m)]) for m in mechs] + [str(sum(scores[(l,m)] for m in mechs))]
+              print("| " + " | ".join(row) + " |")
+          col_sums = [sum(scores[(l,m)] for l in layers) for m in mechs]
+          total = sum(scores.values())
+          print("| Sum |", " | ".join(map(str, col_sums)), f"| **{total}/125** |")
+          PY
+        예상 출력 `25-cell markdown table + 합계 / 합 95/125`.
+        운영 해석: 보고서 자동 생성. weakness 식별 직관적.
+      - |
+        **[OSS] Phase B — Plan 9-tier 형식 generator** — KG.
+          # 1. /usr/local/bin/plan-template.py
+          python3 <<'PY'
+          import yaml, sys
+          plan = {
+              "type": "Plan",
+              "id": "plan-2026-Q3-001",
+              "title": "OpenCTI Improve 점수 5점 도달",
+              "derives_from": "strategy-2026-soc-maturity-up",
+              "realizes": "통합 보안 운영 효율화",
+              "quarter": "Q+1 (2026-Q3)",
+              "responsible": "SOC team lead",
+              "measures": [
+                  {"kpi": "OpenCTI FP review 자동화 비율", "target": ">= 80%"},
+                  {"kpi": "신규 IoC 적용 평균 지연", "target": "<= 5분"},
+                  {"kpi": "OpenCTI Improve 점수", "target": "5"}
+              ],
+              "todos": [
+                  {"id":"todo-A", "title":"분기별 IoC FP rate review 회고 + 통계"},
+                  {"id":"todo-B", "title":"OpenCTI score 임계치 ≥ 80 자동 sync (현재 70)"},
+                  {"id":"todo-C", "title":"AS 화이트리스트 + 사내 IP 등록 자동 검증"}
+              ],
+              "timeline_weeks": 12,
+              "predecessor": "plan-2026-Q2-cti-sync"
+          }
+          print(yaml.safe_dump(plan, allow_unicode=True, sort_keys=False))
+          PY > /tmp/plan-Q3-001.yaml
+        예상 출력 `Plan YAML — Strategy/Todo/KPI/timeline 완비`.
+        운영 해석: 9-tier KG 의 Plan 표준. KG 등록 직접 가능.
+      - |
+        **[OSS] Phase C — KG 등록 (Bastion API)** — 운영 도입.
+          # 1. Bastion KG endpoint 으로 Plan 등록
+          BASTION_URL=http://192.168.0.103:8003
+          curl -sS -X POST $BASTION_URL/api/graph/node \
+            -H 'Content-Type: application/json' \
+            -d "$(cat /tmp/plan-Q3-001.yaml | python3 -c 'import sys,yaml,json;print(json.dumps(yaml.safe_load(sys.stdin)))')"
+          # 2. derives_from edge 추가
+          curl -sS -X POST $BASTION_URL/api/graph/edge \
+            -H 'Content-Type: application/json' \
+            -d '{"source":"plan-2026-Q3-001","target":"strategy-2026-soc-maturity-up","relation":"derives_from"}'
+          # 3. KG audit
+          curl -sS $BASTION_URL/api/graph/node/plan-2026-Q3-001 | jq .
+          # 4. 시각화
+          # 브라우저 → Bastion Knowledge UI → Plan 노드 표시
+        예상 출력 `Plan 노드 등록 / derives_from edge / Knowledge UI 표시`.
+        운영 해석: capstone → 실제 KG → 다음 분기 운영 첫걸음.
+      - |
+        **[OSS] sha256 + git tag (capstone 무결성)** — 보존.
+          # 1. capstone 보고서 작성 + sha256
+          REPORT=/tmp/capstone-2026-spring.md
+          # ... markdown 작성
+          sha256sum $REPORT > /tmp/capstone.sha256
+          cat /tmp/capstone.sha256
+          # 2. git 보존
+          mkdir -p ~/capstone-2026-spring && cd ~/capstone-2026-spring
+          git init && cp $REPORT . && git add capstone-2026-spring.md
+          git commit -m "Capstone — SOC maturity self-assessment + Q+1 Plan"
+          git tag -a v1.0 -m "Final capstone 2026-spring"
+          # 3. KG 에 Anchor 로 등록 (압축 면역 보존)
+          curl -sS -X POST $BASTION_URL/api/history/anchor \
+            -H 'Content-Type: application/json' \
+            -d '{"kind":"capstone","content_sha256":"'$(awk "{print \$1}" /tmp/capstone.sha256)'","title":"Capstone 2026-Spring"}'
+        예상 출력 `sha256: abc123 / git tag v1.0 / Anchor 등록`.
+        운영 해석: 보고서 무결성 + 영구 보존. 학기 학습 evidence.
       negative_signs:
       - 25 cell 중 일부만 채움 (5+ 빈 셀)
       - 각 cell 점수만 + 근거 1줄 누락
