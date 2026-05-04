@@ -39,6 +39,62 @@ steps:
       - ps auxf | grep wazuh-
       - curl -k https://localhost:55000 (Wazuh API health)
       - journalctl -u wazuh-manager --since 10min
+      - |
+        **[OSS] systemctl + wazuh-control (이중 확인)** — service + daemon 단위.
+          # 1. systemd 단위 체크
+          systemctl is-active wazuh-manager
+          # 2. wazuh 자체 도구 (모든 데몬 status)
+          sudo /var/ossec/bin/wazuh-control status
+          # 3. journal 최근 로그 (실패 원인 분석)
+          sudo journalctl -u wazuh-manager --since "10 min ago" --no-pager | tail -20
+          # 4. enable + start 일괄
+          sudo systemctl enable --now wazuh-manager
+        예상 출력 `active / wazuh-analysisd is running... / wazuh-remoted is running... / wazuh-monitord is running...`.
+        운영 해석: systemctl 만으로는 *내부 데몬* 상태 모름. wazuh-control 로 5+ 데몬 (analysisd/remoted/monitord/execd/modulesd) 개별 확인 필수.
+      - |
+        **[OSS] Wazuh API (REST 헬스체크)** — programmatic 진단.
+          # 1. JWT 토큰 발급
+          TOKEN=$(curl -sk -u wazuh-wui:wazuh-wui -X POST "https://localhost:55000/security/user/authenticate?raw=true")
+          # 2. manager 정보 조회
+          curl -sk -H "Authorization: Bearer $TOKEN" "https://localhost:55000/manager/info" | jq
+          # 3. manager 서비스 상태
+          curl -sk -H "Authorization: Bearer $TOKEN" "https://localhost:55000/manager/status" | jq
+          # 4. 헬스체크 1줄
+          curl -sk "https://localhost:55000/" -o /dev/null -w "API %{http_code}\n"
+        예상 출력 `{"version":"v4.7.5","compilation_date":"2024-...","status":"running"} / API 200`.
+        운영 해석: API 응답 = manager 정상. systemctl active 인데 API 응답 X = JWT 인증 시스템 (Wazuh-RBAC) 문제.
+      - |
+        **[OSS] Wazuh Dashboard (web GUI)** — 운영자 표준.
+          # 1. https://10.20.30.100/ 접속 (admin/SecretPassword)
+          # 2. Server management → Status 메뉴
+          # - Manager: green
+          # - Indexer: green
+          # - Dashboard: green
+          # 3. agents 통계 (active / disconnected / never connected)
+          # 4. Latest events stream
+        UI 동작: 통합 status panel + agents + events.
+        운영 해석: SOC 운영자가 매일 첫 화면. CLI 보다 빠른 종합 진단.
+      - |
+        **[OSS] netstat / ss (Wazuh 포트 확인)** — 네트워크 layer.
+          # 1. Wazuh 의 모든 포트 (1514 agent, 1515 enrollment, 55000 API, 9200 indexer, 443 dashboard)
+          sudo ss -tlnp | grep -E "1514|1515|55000|9200|443"
+          # 2. agent 연결 통계
+          sudo ss -an | grep ":1514" | awk '{print $5}' | wc -l
+          # 3. 포트 충돌 검사
+          sudo lsof -i :1514 -P -n
+          # 4. firewall 룰 (다른 host 의 agent 가 도달 가능?)
+          sudo nft list ruleset | grep -E "1514|1515"
+        예상 출력 `LISTEN 0:1514 wazuh-remoted / LISTEN 0:55000 wazuh-server / 25 active agent connections`.
+        운영 해석: 1514 (UDP/TCP) = agent 통신. 1515 = enrollment (initial registration). 55000 = REST API.
+      - |
+        **[OSS] cockpit + Wazuh service** — 통합 GUI.
+          # 1. https://10.20.30.100:9090 접속
+          # 2. Services 페이지 → wazuh-manager / wazuh-indexer / wazuh-dashboard 검색
+          # 3. 각 service status + logs + restart 버튼
+          # 4. CLI 검증 (Cockpit Terminal 에서)
+          # systemctl list-units --type=service --state=running | grep wazuh
+        UI 동작: 모든 service GUI 통합 관리.
+        운영 해석: Wazuh Dashboard 와 별개. systemd 자체 GUI. service 시작 실패 원인 빠른 진단.
       negative_signs:
       - wazuh-agent 확인(다른 컴포넌트)
       - 상태 문자열 확인 안 함
@@ -75,6 +131,69 @@ steps:
       - sudo /usr/share/wazuh-indexer/bin/opensearch-cluster-manager
       - journalctl -u wazuh-indexer -n 20
       - GET /_cat/nodes?v API
+      - |
+        **[OSS] OpenSearch cluster API** — 표준 진단.
+          # 1. cluster health (color status: green/yellow/red)
+          curl -sk -u admin:admin https://localhost:9200/_cluster/health | jq
+          # 2. node 정보 (단일 / cluster mode)
+          curl -sk -u admin:admin https://localhost:9200/_cat/nodes?v
+          # 3. 인덱스 목록 (wazuh-alerts-* 자동 생성)
+          curl -sk -u admin:admin https://localhost:9200/_cat/indices/wazuh-alerts-*?v
+          # 4. shard 분배 (cluster mode)
+          curl -sk -u admin:admin https://localhost:9200/_cat/shards?v | head
+        예상 출력 `{"cluster_name":"wazuh-cluster","status":"green","number_of_nodes":1,"active_shards":3} / wazuh-alerts-4.x-2026.05.06 green`.
+        운영 해석: green=정상, yellow=replica 부족, red=primary shard 장애. red 즉시 조치 (디스크 / 메모리).
+      - |
+        **[OSS] Cerebro / elasticvue (cluster GUI)** — 시각화 표준.
+          # Cerebro 설치 + 실행
+          # docker run -d -p 9000:9000 lmenezes/cerebro
+          # http://localhost:9000 → Connect 에 https://10.20.30.100:9200 입력
+          # UI 동작:
+          # - Overview: cluster health (green/yellow/red)
+          # - Nodes: 각 node 의 heap/disk/load
+          # - Indices: index 별 doc count + size
+          # - Shards: shard 분배 시각화
+          # elasticvue (browser extension) 도 동등
+        UI 동작: cluster + indices 통합 GUI. shard relocation 시 시각화.
+        운영 해석: 100+ index 환경 표준. CLI 보다 시각적 분석.
+      - |
+        **[OSS] netstat / ss (9200 + 9300)** — port 진단.
+          # 1. 9200 (REST API) + 9300 (cluster transport) 둘 다 확인
+          sudo ss -tlnp | grep -E "9200|9300"
+          # 2. java 프로세스 확인
+          ps aux | grep wazuh-indexer | grep -v grep
+          # 3. 메모리 사용량 (JVM heap)
+          ps -o pid,rss,vsz,cmd -p $(pgrep -f wazuh-indexer) | head
+          # 4. 디스크 사용 (data path)
+          sudo du -sh /var/lib/wazuh-indexer/
+        예상 출력 `LISTEN 0:9200 java(wazuh-indexer) / LISTEN 0:9300 / RSS 2GB / Data 5GB`.
+        운영 해석: 9200 = client API. 9300 = cluster 내부 통신 (multi-node). disk 80%+ 시 indexing 중단.
+      - |
+        **[OSS] Wazuh Dashboard (Indexer 통합 view)** — 운영 GUI.
+          # 1. https://10.20.30.100/ 접속
+          # 2. Indexer Management → Index management
+          # - Indices 목록 + size + doc count
+          # - lifecycle policy (rollover/delete)
+          # 3. Discover 탭에서 index 검색
+          # event_type:"alert" and rule.level:>=10
+          # 4. CLI 검증
+          curl -sk -u admin:admin https://localhost:9200/_cat/indices?v
+        UI 동작: index 관리 + 검색 통합. SOC 분석가 표준.
+        운영 해석: 100+ days 데이터 환경 표준. ILM 으로 cold/warm tier 자동 분배.
+      - |
+        **[OSS] opensearch-cli (공식 CLI)** — 자동화 표준.
+          # 1. opensearch-cli 설치
+          go install github.com/opensearch-project/opensearch-cli@latest
+          # 2. cluster profile 등록
+          opensearch-cli profile create --name wazuh \
+              --endpoint https://localhost:9200 \
+              --user admin --password admin --insecure
+          # 3. cluster query
+          opensearch-cli curl get --path "/_cluster/health" --profile wazuh
+          # 4. 인덱스 통계
+          opensearch-cli curl get --path "/_stats" --profile wazuh | jq '._all.total'
+        예상 출력 `{"status":"green","number_of_nodes":1} / Total docs: 1500000`.
+        운영 해석: curl + auth 자동화. 다중 cluster 환경 profile 분리.
       negative_signs:
       - indexer 대신 other service 확인
       - API health 확인 없이 systemctl 만
@@ -111,6 +230,70 @@ steps:
       - ss -tlnp | grep :443|:5601
       - journalctl -u wazuh-dashboard
       - docker ps | grep dashboard (container 모드)
+      - |
+        **[OSS] Wazuh Dashboard 헬스체크** — 표준 운영.
+          # 1. systemd 서비스
+          systemctl is-active wazuh-dashboard
+          # 2. HTTP endpoint 응답
+          curl -sk -o /dev/null -w "Dashboard: %{http_code}\n" https://localhost/app/wazuh
+          # 3. listening port (443 or 5601)
+          sudo ss -tlnp | grep -E ":443|:5601"
+          # 4. plugin 적재 확인
+          sudo ls /usr/share/wazuh-dashboard/plugins/ | grep -i wazuh
+          # 5. journal 로그 (시작 실패 시)
+          sudo journalctl -u wazuh-dashboard --since "5 min ago" | grep -iE "error|warning"
+        예상 출력 `active / Dashboard: 200 / LISTEN 0:443 / wazuh / wazuhCheckUpdates`.
+        운영 해석: 200 = 정상, 503 = backend (Indexer) 미준비. plugin 누락 시 Wazuh 메뉴 비활성.
+      - |
+        **[OSS] OpenSearch Dashboards (frontend)** — backend.
+          # Wazuh Dashboard = OpenSearch Dashboards + Wazuh plugin
+          # 1. /etc/wazuh-dashboard/opensearch_dashboards.yml 설정
+          sudo cat /etc/wazuh-dashboard/opensearch_dashboards.yml | grep -E "host|port"
+          # 2. node 시작 옵션
+          sudo cat /usr/share/wazuh-dashboard/config/node.options | head
+          # 3. 메모리 사용량
+          ps -o pid,rss,cmd -p $(pgrep -f wazuh-dashboard)
+        예상 출력 `server.host: "0.0.0.0" / server.port: 443 / Memory: 800MB`.
+        운영 해석: OpenSearch Dashboards = Kibana fork. Node.js + plugins. memory leak 의심 시 PID restart.
+      - |
+        **[OSS] curl + JSON API (자동화 진단)** — programmatic.
+          # 1. Dashboard API endpoint
+          curl -sk https://localhost/api/status | jq '.status.overall'
+          # 2. plugin 목록
+          curl -sk https://localhost/api/stats | jq '.process'
+          # 3. login + session API
+          curl -sk -X POST https://localhost/auth/login \
+              -H "Content-Type: application/json" \
+              -d '{"username":"admin","password":"admin"}'
+        예상 출력 `{"state":"green","title":"Green"} / process_uptime: 86400`.
+        운영 해석: Dashboard 의 health API 로 자동 진단. monit 등 watchdog 통합 표준.
+      - |
+        **[OSS] cockpit + nginx reverse proxy** — multi-tenancy.
+          # 1. nginx 가 wazuh-dashboard 앞단 프록시 (production)
+          sudo cat /etc/nginx/sites-enabled/wazuh-dashboard.conf
+          # location / {
+          #   proxy_pass https://localhost:5601;
+          #   proxy_ssl_verify off;
+          # }
+          # 2. nginx + dashboard 동시 health check
+          curl -sk https://localhost/ -o /dev/null -w "nginx %{http_code}\n"
+          curl -sk https://localhost:5601/ -o /dev/null -w "dashboard %{http_code}\n"
+          # 3. nginx access.log 의 dashboard 응답 분석
+          sudo tail -f /var/log/nginx/access.log | grep "wazuh"
+        UI 동작: nginx 가 SSL 종단 + 인증 + load balance.
+        운영 해석: production 표준. multi-host dashboard cluster 환경.
+      - |
+        **[OSS] Wazuh Dashboard plugins 관리** — 확장 + 사용자화.
+          # 1. plugin 목록
+          sudo /usr/share/wazuh-dashboard/bin/opensearch-dashboards-plugin list
+          # 2. plugin 설치 (예: alerting)
+          sudo /usr/share/wazuh-dashboard/bin/opensearch-dashboards-plugin install \
+              https://artifacts.opensearch.org/.../alertingDashboards-2.x.zip
+          # 3. plugin 적재 후 restart
+          sudo systemctl restart wazuh-dashboard
+          # 4. UI: Settings → Plugins → 추가/비활성
+        예상 출력 `wazuh, alerting, anomalyDetection`.
+        운영 해석: Wazuh 외 추가 OpenSearch plugin 통합 가능. 룰 기반 alert + ML anomaly detection.
       negative_signs:
       - dashboard 대신 manager 확인
       - URL 접근 없이 systemctl 만
@@ -149,6 +332,66 @@ steps:
       - rpm -q wazuh-manager
       - curl -k https://localhost:55000/security/user/authenticate -u wazuh-wui:...
         (API version)
+      - |
+        **[OSS] wazuh-control info (공식 도구)** — 표준 진단.
+          # 1. 버전 + 메타 정보
+          sudo /var/ossec/bin/wazuh-control info
+          # 2. 출력 분석
+          # WAZUH_VERSION="v4.7.5"
+          # WAZUH_REVISION="40700"
+          # WAZUH_TYPE="server"
+          # 3. shell 변수로 사용
+          source <(sudo /var/ossec/bin/wazuh-control info)
+          echo "Version: $WAZUH_VERSION / Revision: $WAZUH_REVISION"
+        예상 출력 `WAZUH_VERSION="v4.7.5" / WAZUH_REVISION="40700" / WAZUH_TYPE="server"`.
+        운영 해석: shell 친화적 변수 형식. CI script 에 source 로 import. server / agent type 구분.
+      - |
+        **[OSS] Wazuh API (manager/info endpoint)** — REST.
+          # 1. JWT 토큰
+          TOKEN=$(curl -sk -u wazuh-wui:wazuh-wui -X POST "https://localhost:55000/security/user/authenticate?raw=true")
+          # 2. manager 정보 조회
+          curl -sk -H "Authorization: Bearer $TOKEN" "https://localhost:55000/manager/info" | jq
+          # 3. version 만 추출
+          curl -sk -H "Authorization: Bearer $TOKEN" "https://localhost:55000/manager/info" | jq -r '.data.affected_items[0].version'
+        예상 출력 `{"version":"v4.7.5","compilation_date":"2024-01-15","openssl_support":"yes"}`.
+        운영 해석: REST API 로 자동화 친화. multi-host fleet 의 버전 일관성 확인 표준.
+      - |
+        **[OSS] dpkg / apt (패키지 메타정보)** — 패키지 관리자.
+          # 1. dpkg 로 설치 버전
+          dpkg -l wazuh-manager | grep '^ii'
+          # 2. 설치 출처 확인
+          apt-cache policy wazuh-manager
+          # 3. 의존성 트리
+          apt-cache depends wazuh-manager
+          # 4. 패키지 내 파일 목록
+          dpkg -L wazuh-manager | head
+          # 5. 업그레이드 가능 버전
+          apt list --upgradable 2>/dev/null | grep wazuh
+        예상 출력 `ii wazuh-manager 4.7.5-1 amd64 / Origin: https://packages.wazuh.com/4.x/apt`.
+        운영 해석: 공식 wazuh repo vs 사용자 build 출처 식별. supply chain 보안.
+      - |
+        **[OSS] Wazuh manifest + git revision** — build 추적.
+          # 1. manifest.json (build 메타)
+          sudo cat /var/ossec/.manifest.json | jq
+          # 2. git revision (소스 빌드 시)
+          sudo /var/ossec/bin/wazuh-control info | grep -oE '[a-f0-9]{8}'
+          # 3. 호환 가능 client 버전
+          curl -sk "https://localhost:55000/manager/info" | jq -r '.data.affected_items[0].compatibility'
+        예상 출력 `{"version":"4.7.5","revision":"40700","build_date":"2024-01-15"}`.
+        운영 해석: revision = build 번호. 같은 version 도 revision 다르면 patch 차이.
+      - |
+        **[OSS] Ansible Wazuh role (다중 host 버전 일관성)** — IaC.
+          # playbook
+          - name: Verify Wazuh version on all hosts
+            ansible.builtin.command:
+              cmd: /var/ossec/bin/wazuh-control info
+            register: wazuh_ver
+            changed_when: false
+          - debug: msg="{{ inventory_hostname }}: {{ wazuh_ver.stdout_lines | select('match', 'WAZUH_VERSION') | first }}"
+          # 실행
+          ansible-playbook -i inventory.yml verify-wazuh.yml
+        예상 출력 `web01: WAZUH_VERSION="v4.7.5" / web02: WAZUH_VERSION="v4.7.5" / siem: WAZUH_VERSION="v4.7.5"`.
+        운영 해석: 100+ host 일괄 버전 확인. 버전 mismatch = 호환성 이슈 즉시 발견.
       negative_signs:
       - wazuh-control status(다른 명령)
       - version 정보 무시
@@ -186,6 +429,82 @@ steps:
       - /var/ossec/bin/manage_agents 대화형
       - Wazuh Dashboard → Management → Agents
       - wazuh-ansible playbook 으로 자동화
+      - |
+        **[OSS] agent_control (Wazuh 표준 도구)** — 일괄 조회.
+          # 1. 모든 agent 목록
+          sudo /var/ossec/bin/agent_control -l
+          # 2. 상태 별 필터 (active 만)
+          sudo /var/ossec/bin/agent_control -l | grep -i active
+          # 3. 단일 agent 상세 (ID 001)
+          sudo /var/ossec/bin/agent_control -i 001
+          # 4. 모든 agent 통계
+          sudo /var/ossec/bin/agent_control -s
+        예상 출력 `ID: 000, Name: siem (server), IP: 127.0.0.1 / ID: 001, Name: secu, IP: 10.20.30.1, Active / ID: 002, Name: web, IP: 10.20.30.80, Active`.
+        운영 해석: 표준 CLI. ID 000 = Manager 자체. 다른 ID = 외부 agent. 상태 (Active/Disconnected/Never connected) 가 핵심.
+      - |
+        **[OSS] Wazuh API (REST 기반 agent 관리)** — 자동화.
+          # 1. JWT 토큰
+          TOKEN=$(curl -sk -u wazuh-wui:wazuh-wui -X POST "https://localhost:55000/security/user/authenticate?raw=true")
+          # 2. 모든 agent 목록 (JSON)
+          curl -sk -H "Authorization: Bearer $TOKEN" "https://localhost:55000/agents?limit=100" | jq '.data.affected_items[] | {id, name, ip, status, last_keep_alive}'
+          # 3. 특정 status 만 필터
+          curl -sk -H "Authorization: Bearer $TOKEN" "https://localhost:55000/agents?status=active" | jq '.data.affected_items | length'
+          # 4. agent OS 분포
+          curl -sk -H "Authorization: Bearer $TOKEN" "https://localhost:55000/agents/summary/os" | jq
+        예상 출력 `[{"id":"001","name":"secu","ip":"10.20.30.1","status":"active","last_keep_alive":"2026-05-06T14:23:00Z"}]`.
+        운영 해석: REST API = 외부 통합 표준. SOAR / Slack bot / 커스텀 dashboard 통합.
+      - |
+        **[OSS] Wazuh Dashboard agents view** — GUI.
+          # 1. https://10.20.30.100/ → Agents
+          # 2. UI 시각화:
+          # - 상단 통계: total / active / disconnected / never connected
+          # - geo map: agent 위치
+          # - 필터: status / OS / group / version
+          # - 클릭: agent 상세 (rules / FIM / SCA)
+          # 3. agents pre-existing 등록 시 (mass deployment)
+          # API + REST → bulk register → group assignment
+        UI 동작: agent fleet 시각화 + drill-down + bulk action.
+        운영 해석: 100+ agent 환경 표준. 시각적 fleet management.
+      - |
+        **[OSS] manage_agents (대화형 TUI)** — agent 등록.
+          # 1. 대화형 TUI 시작
+          sudo /var/ossec/bin/manage_agents
+          # 메뉴:
+          # (A) Add an agent
+          # (E) Extract key for an agent
+          # (L) List agents
+          # (R) Remove agent
+          # (Q) Quit
+          # 2. agent 추가
+          # A → Name: web02 → IP: 10.20.30.81 → ID 자동 할당
+          # 3. key 추출 (agent 측에 입력)
+          # E → ID 입력 → Base64 key 출력
+          # 4. agent 측에 key 등록
+          # /var/ossec/bin/manage_agents → I → key 입력
+        UI 동작: ncurses TUI. agent 등록 + key 관리.
+        운영 해석: 단일 agent 등록 시 표준. 대규모는 API + Ansible.
+      - |
+        **[OSS] Ansible wazuh-ansible role (mass deployment)** — IaC.
+          # 1. wazuh-ansible 설치
+          ansible-galaxy install wazuh.wazuh_agent
+          # 2. inventory 정의
+          # inventory.yml:
+          # all:
+          #   children:
+          #     wazuh_agents:
+          #       hosts:
+          #         secu: { ansible_host: 10.20.30.1 }
+          #         web: { ansible_host: 10.20.30.80 }
+          # 3. playbook (자동 등록 + 시작)
+          # - hosts: wazuh_agents
+          #   roles:
+          #     - role: wazuh.wazuh_agent
+          #       wazuh_managers:
+          #         - address: 10.20.30.100
+          # 4. 실행
+          ansible-playbook -i inventory.yml deploy-agents.yml
+        예상 출력 `secu: agent 등록됨 (ID:001) / web: agent 등록됨 (ID:002)`.
+        운영 해석: enterprise mass deployment 표준. 100+ host 일괄 등록 + 그룹 자동 분류.
       negative_signs:
       - Manager 만 보고 agent 없다고 판단
       - -l 누락
@@ -223,6 +542,62 @@ steps:
       - sudo sed -n /<global>/,/<\/global>/p ossec.conf
       - grep -A 30 <global> ossec.conf
       - Wazuh Dashboard → Management → Configuration 편집
+      - |
+        **[OSS] awk range (XML 섹션 추출)** — 표준 텍스트.
+          # 1. <global> ~ </global> 범위 추출
+          sudo awk '/<global>/,/<\/global>/' /var/ossec/etc/ossec.conf
+          # 2. 다중 ossec_config 블록 처리
+          sudo awk '/<ossec_config>/{f=1} f; /<\/ossec_config>/{f=0}' /var/ossec/etc/ossec.conf | head -50
+          # 3. 특정 directive 만 추출
+          sudo awk '/<global>/,/<\/global>/' /var/ossec/etc/ossec.conf | grep -E "logall|jsonout|email"
+        예상 출력 `<global> / <jsonout_output>yes</jsonout_output> / <alerts_log>yes</alerts_log> / <logall>no</logall> / <email_notification>no</email_notification> / </global>`.
+        운영 해석: XML 섹션 단위 분석 표준. global 외 alerts/syscheck/rootcheck 등도 동일 패턴.
+      - |
+        **[OSS] xmllint (XPath 정밀 query)** — XML 표준.
+          # 1. xmllint 설치
+          sudo apt install libxml2-utils
+          # 2. XPath 로 global 섹션
+          sudo xmllint --xpath '//ossec_config/global' /var/ossec/etc/ossec.conf
+          # 3. 특정 element 만
+          sudo xmllint --xpath 'string(//ossec_config/global/jsonout_output)' /var/ossec/etc/ossec.conf
+          # 4. XML 검증 (syntax)
+          sudo xmllint --noout /var/ossec/etc/ossec.conf
+        예상 출력 `<global><jsonout_output>yes</jsonout_output>...</global> / yes`.
+        운영 해석: awk 보다 *XML 구조 인식*. 다중 ossec_config 환경에서 정확.
+      - |
+        **[OSS] yq (XML → YAML 변환)** — modern.
+          # 1. yq 의 XML 지원 (기본 yaml + JSON + xml)
+          sudo yq -p xml '.ossec_config.global' /var/ossec/etc/ossec.conf
+          # 2. 특정 키 추출
+          sudo yq -p xml '.ossec_config.global.jsonout_output' /var/ossec/etc/ossec.conf
+          # 3. JSON 으로 변환 (자동화 친화)
+          sudo yq -p xml -o json '.ossec_config.global' /var/ossec/etc/ossec.conf
+        예상 출력 `jsonout_output: "yes" / alerts_log: "yes"`.
+        운영 해석: yaml + JSON 통합 query. CI 통합 + script 친화.
+      - |
+        **[OSS] Wazuh Dashboard config editor (GUI)** — 운영자 표준.
+          # 1. https://10.20.30.100/ 접속
+          # 2. Server management → Configuration 메뉴
+          # 3. Edit configuration 버튼
+          # - 다양한 섹션 GUI
+          # - global / alerts / cluster / vulnerability-detector
+          # 4. 변경 후 "Restart manager" 버튼 자동 호출
+          # 5. CLI 검증
+          ssh ccc@10.20.30.100 "sudo grep -A 5 '<global>' /var/ossec/etc/ossec.conf"
+        UI 동작: GUI 편집 + 자동 validate + restart.
+        운영 해석: CLI 위험 감소. 직접 sed 편집 시 syntax error → Manager 시작 실패.
+      - |
+        **[OSS] etckeeper (config 변경 audit)** — git 기반.
+          # 1. 변경 전 commit
+          sudo etckeeper commit "before global config change"
+          # 2. 변경
+          sudo sed -i 's|<jsonout_output>no</jsonout_output>|<jsonout_output>yes</jsonout_output>|' /var/ossec/etc/ossec.conf
+          # 3. 변경 후 commit
+          sudo etckeeper commit "Enable JSON output (jira: SEC-1234)"
+          # 4. diff
+          sudo etckeeper vcs diff HEAD~1 HEAD -- /var/ossec/etc/ossec.conf
+        예상 출력 `-<jsonout_output>no</jsonout_output> / +<jsonout_output>yes</jsonout_output>`.
+        운영 해석: 변경 audit 표준. compliance + rollback.
       negative_signs:
       - 다른 섹션(ruleset/syscheck) 확인
       - awk range 오타
@@ -260,6 +635,64 @@ steps:
       - cat 후 수동 검색
       - Wazuh Dashboard Configuration editor
       - /var/ossec/etc/rules/*.xml 에서 rule level 분포
+      - |
+        **[OSS] grep + line number (정확한 위치)** — 표준.
+          # 1. log_alert_level 값 + 라인 번호
+          sudo grep -nE "log_alert_level|email_alert_level" /var/ossec/etc/ossec.conf
+          # 2. <alerts> 블록 전체
+          sudo awk '/<alerts>/,/<\/alerts>/' /var/ossec/etc/ossec.conf
+          # 3. 환경 변수로 값 추출
+          LEVEL=$(sudo grep -oP '<log_alert_level>\K[0-9]+' /var/ossec/etc/ossec.conf)
+          echo "Current log alert level: $LEVEL"
+        예상 출력 `42:    <log_alert_level>3</log_alert_level> / 43:    <email_alert_level>12</email_alert_level>`.
+        운영 해석: log_alert_level 3 = 기본. 5+ 면 noise 줄임 but 일부 alert 누락. 12+ 면 오로지 critical 만.
+      - |
+        **[OSS] xmllint XPath (정밀)** — XML query 표준.
+          # 1. log_alert_level 값
+          sudo xmllint --xpath 'string(//ossec_config/alerts/log_alert_level)' /var/ossec/etc/ossec.conf
+          # 2. 모든 alert 관련 설정
+          sudo xmllint --xpath '//ossec_config/alerts' /var/ossec/etc/ossec.conf
+          # 3. email_alert_level 별도 추출
+          sudo xmllint --xpath 'string(//ossec_config/alerts/email_alert_level)' /var/ossec/etc/ossec.conf
+        예상 출력 `3 / <alerts><log_alert_level>3</log_alert_level><email_alert_level>12</email_alert_level></alerts> / 12`.
+        운영 해석: log = file 저장 임계, email = 메일 발송 임계. log 3, email 12 가 표준 권장.
+      - |
+        **[OSS] /var/ossec/etc/rules/ 의 rule level 분포** — 룰 카탈로그 분석.
+          # 1. 모든 rule level 빈도
+          sudo grep -oE 'level="[0-9]+"' /var/ossec/ruleset/rules/*.xml | sort | uniq -c | sort -rn | head
+          # 2. 특정 level 룰 (예: critical = 12+)
+          sudo grep -B2 'level="12"' /var/ossec/ruleset/rules/*.xml | head
+          # 3. 룰 ID 별 level 매핑
+          sudo grep -oE 'id="[0-9]+" level="[0-9]+"' /var/ossec/ruleset/rules/*.xml | head
+        예상 출력 `1500 level="3" / 800 level="5" / 200 level="10" / 50 level="12" / 5 level="15"`.
+        운영 해석: 룰 분포 = log_alert_level 임계 결정 근거. level 3 = 일반 audit, level 12+ = 즉시 대응.
+      - |
+        **[OSS] Wazuh Dashboard Threshold tuning** — GUI.
+          # 1. https://10.20.30.100/ → Settings → Configuration
+          # 2. Alerts 섹션:
+          # - log_alert_level
+          # - email_alert_level
+          # 3. 변경 후 "Restart manager" 자동 호출
+          # 4. 효과 측정
+          # - alerts.json 라인 수 변화 (전후 비교)
+          # 5. 권장 단계적 조정
+          # - 기본 3 → 운영 안정 후 5 (noise 감소)
+          # - 5 → critical 환경에서 7
+        UI 동작: GUI 편집 + auto restart + audit log.
+        운영 해석: 신규 분석가도 안전한 threshold 조정. CLI 직접 sed 편집 위험 회피.
+      - |
+        **[OSS] log alert level 효과 측정** — 정량 비교.
+          # 1. 변경 전 alert 수 측정
+          before=$(sudo wc -l < /var/ossec/logs/alerts/alerts.json)
+          # 2. log_alert_level 변경 (3 → 5)
+          sudo sed -i 's|<log_alert_level>3</log_alert_level>|<log_alert_level>5</log_alert_level>|' /var/ossec/etc/ossec.conf
+          sudo systemctl restart wazuh-manager
+          # 3. 24시간 후 변경 후 alert 수
+          sleep 86400  # 또는 cron 으로
+          after=$(sudo wc -l < /var/ossec/logs/alerts/alerts.json)
+          echo "Reduction: $((before-after)) ($(echo "scale=2;($before-$after)/$before*100" | bc)%)"
+        예상 출력 `Before: 5000 / After: 1500 / Reduction: 70%`.
+        운영 해석: 정량 효과 측정 표준. 단순 임계 변경의 *실제 영향* 파악.
       negative_signs:
       - email_alert_level 과 혼동
       - ossec.conf 외 다른 파일
@@ -302,6 +735,65 @@ steps:
       - sudo jq .rule.description /var/ossec/logs/alerts/alerts.json | tail
       - Wazuh Dashboard Security Events → Latest alerts
       - API GET /alerts?limit=2
+      - |
+        **[OSS] tail + jq (alert 분석 표준)** — JSON-per-line.
+          # 1. 단순 tail
+          sudo tail -2 /var/ossec/logs/alerts/alerts.json
+          # 2. jq 로 핵심 필드만
+          sudo tail -2 /var/ossec/logs/alerts/alerts.json | jq '{ts:.timestamp, agent:.agent.name, rule:{id:.rule.id, level:.rule.level, desc:.rule.description}, src:.data.srcip}'
+          # 3. 실시간 stream
+          sudo tail -f /var/ossec/logs/alerts/alerts.json | jq '{ts:.timestamp, rule:.rule.description}'
+          # 4. 시간대 별 통계
+          sudo jq -r '.timestamp[0:13]' /var/ossec/logs/alerts/alerts.json | sort | uniq -c | sort -rn | head
+        예상 출력 `{"ts":"2026-05-06T14:23:00.123","agent":"secu","rule":{"id":"5710","level":5,"desc":"Failed password"},"src":"10.20.30.201"}`.
+        운영 해석: SOC 분석가 1차 도구. timestamp + rule + src 가 핵심 3 요소.
+      - |
+        **[OSS] Wazuh Dashboard Security Events** — GUI.
+          # 1. https://10.20.30.100/ → Security events
+          # 2. UI:
+          # - 시간 범위 (Last 1h / 24h / 7d)
+          # - KQL 검색: rule.level >= 10
+          # - timeline + table view
+          # - drill-down: 단일 alert 클릭 → raw event
+          # 3. CSV / JSON export
+          # 4. 자동 새로고침 (실시간 monitoring)
+        UI 동작: 다중 alert 통합 + 검색 + 시각화.
+        운영 해석: SOC 분석가 표준 view. 매일 첫 화면.
+      - |
+        **[OSS] Wazuh API (alerts endpoint)** — programmatic.
+          # 1. JWT 토큰
+          TOKEN=$(curl -sk -u wazuh-wui:wazuh-wui -X POST "https://localhost:55000/security/user/authenticate?raw=true")
+          # 2. 최근 N alert 조회
+          curl -sk -H "Authorization: Bearer $TOKEN" "https://localhost:55000/manager/logs?limit=2" | jq
+          # 3. Indexer API 직접 (alert query)
+          curl -sk -u admin:admin "https://localhost:9200/wazuh-alerts-*/_search?size=2&sort=timestamp:desc" | jq '.hits.hits[]._source'
+        예상 출력 `[{"timestamp":"...","rule":{"id":"5710","description":"..."}},...]`.
+        운영 해석: API = 외부 SIEM/SOAR 통합 표준. 자동화 + custom dashboard.
+      - |
+        **[OSS] alerts.log (text 형식 + grep)** — 빠른 분석.
+          # 1. text 형식 (사람 친화)
+          sudo tail -50 /var/ossec/logs/alerts/alerts.log
+          # 2. 특정 rule.id 만
+          sudo grep -A 3 "Rule: 5710" /var/ossec/logs/alerts/alerts.log | head
+          # 3. level 별 카운트
+          sudo grep -oE "Level: [0-9]+" /var/ossec/logs/alerts/alerts.log | sort | uniq -c | sort -rn
+          # 4. 실시간 + 컬러
+          sudo tail -f /var/ossec/logs/alerts/alerts.log | ccze -A
+        예상 출력 `** Alert 1234567890.987: mail - syslog,sshd / Rule: 5710 (level 5) / SSHD authentication failed`.
+        운영 해석: alerts.json 보다 사람 친화. SSH 환경에서 빠른 grep + 실시간 stream.
+      - |
+        **[OSS] lnav (terminal log viewer)** — 통합.
+          # 1. lnav 설치
+          sudo apt install lnav
+          # 2. alerts.json + alerts.log 동시 view
+          sudo lnav /var/ossec/logs/alerts/alerts.json /var/ossec/logs/alerts/alerts.log
+          # 3. 자동 timestamp 파싱 + JSON pretty print
+          # 4. 내장 SQL query
+          # :;SELECT count(*), rule_description FROM ossec_log WHERE rule_level > 5 GROUP BY rule_description LIMIT 10
+          # 5. 검색 + 점프
+          # /Failed password
+        UI 동작: 모든 wazuh log 통합 + SQL + 검색.
+        운영 해석: GUI 없는 SSH 환경 표준. evebox 의 wazuh 버전.
       negative_signs:
       - ossec.log 와 alerts.json 혼동
       - 권한 에러
@@ -357,6 +849,71 @@ steps:
       - ss -tlnp | grep 9200 또는 netstat -tlnp
       - lsof -i:9200 로 프로세스 확인
       - systemctl is-active wazuh-indexer
+      - |
+        **[OSS] curl (Indexer REST 표준)** — auth + health.
+          # 1. cluster info
+          curl -sk -u admin:admin https://localhost:9200/ | jq
+          # 2. cluster health
+          curl -sk -u admin:admin https://localhost:9200/_cluster/health | jq
+          # 3. nodes
+          curl -sk -u admin:admin https://localhost:9200/_cat/nodes?v
+          # 4. 빠른 헬스체크 (응답 코드만)
+          curl -sk -o /dev/null -w "Indexer: %{http_code}\n" https://localhost:9200/ -u admin:admin
+        예상 출력 `{"name":"node-01","cluster_name":"wazuh-cluster","version":{"number":"2.10.0"}} / status:green / Indexer: 200`.
+        운영 해석: 200 = 정상, 401 = 인증 실패. -sk = silent + insecure (self-signed cert 허용).
+      - |
+        **[OSS] ss / netstat (포트 LISTEN 검증)** — network layer.
+          # 1. 9200 + 9300 동시 확인
+          sudo ss -tlnp | grep -E ":9200|:9300"
+          # 2. 활성 connection
+          sudo ss -tn | grep ":9200"
+          # 3. 프로세스 + UID
+          sudo lsof -i :9200 -P -n | head
+          # 4. listen 주소 (0.0.0.0 외부 / 127.0.0.1 로컬)
+          sudo ss -tln 'sport = :9200'
+        예상 출력 `LISTEN 0:9200 java(wazuh-indexer) UID=1001 / LISTEN 0:9300 (cluster transport)`.
+        운영 해석: 9200 = client API (HTTPS), 9300 = inter-node cluster (TCP). bind address 가 0.0.0.0 면 외부 접근 가능.
+      - |
+        **[OSS] OpenSearch Dashboards Discover** — 데이터 검증.
+          # 1. https://10.20.30.100/ → Discover (또는 Dev Tools)
+          # 2. Index pattern 선택: wazuh-alerts-*
+          # 3. 시간 범위 + 검색
+          # rule.level: >=10
+          # 4. Dev Tools 에서 직접 query
+          # GET /wazuh-alerts-*/_search
+          # { "query": { "match_all": {} }, "size": 5 }
+        UI 동작: Indexer 의 데이터를 GUI 검색.
+        운영 해석: API 응답 외 *실제 데이터* 검증. alert pipeline (Manager → Indexer → Dashboard) 전체 진단.
+      - |
+        **[OSS] cluster monitoring (cerebro / elasticvue)** — visualization.
+          # 1. Cerebro 설치 + 실행
+          docker run -d -p 9000:9000 lmenezes/cerebro
+          # http://localhost:9000 → Connect: https://10.20.30.100:9200 (admin/admin)
+          # 2. UI:
+          # - Overview: cluster status
+          # - Nodes: heap/disk/load
+          # - Indices: doc count + size
+          # 3. elasticvue (browser extension) 도 동등
+          # 4. Wazuh 전용 monitoring index
+          # GET /.opendistro_security/_search   # security plugin metadata
+        UI 동작: Indexer 통합 GUI. 다중 cluster 환경 표준.
+        운영 해석: 100+ index 환경 시각적 분석.
+      - |
+        **[OSS] Prometheus + opensearch-exporter** — 시계열.
+          # 1. exporter 설치
+          docker run -d -p 9114:9114 \
+              quay.io/prometheuscommunity/elasticsearch-exporter \
+              --es.uri=https://admin:admin@localhost:9200 \
+              --es.ssl-skip-verify
+          # 2. Prometheus scrape
+          # /etc/prometheus/prometheus.yml:
+          # - job_name: opensearch
+          #   static_configs:
+          #     - targets: ['localhost:9114']
+          # 3. metric 확인
+          curl -s http://localhost:9114/metrics | grep -E "elasticsearch_cluster_health|elasticsearch_indices"
+        예상 출력 `elasticsearch_cluster_health_status{color="green"} 1 / elasticsearch_indices_docs 1500000`.
+        운영 해석: 시계열 모니터링 + alert. cluster status 변화 자동 알림.
       negative_signs:
       - HTTP 로 요청(HTTPS 필수)
       - -k 없이 cert 오류
@@ -399,6 +956,81 @@ steps:
       - sudo jq -s length /var/ossec/logs/alerts/alerts.json
       - Wazuh Dashboard 시간대별 alert count 대시보드
       - ls -lh /var/ossec/logs/alerts/*.json.gz 로 archived 확인
+      - |
+        **[OSS] wc + jq (라인 수 + 시간 범위)** — 표준.
+          # 1. 단순 라인 수
+          sudo wc -l /var/ossec/logs/alerts/alerts.json
+          # 2. 최근 1시간 alert만 (timestamp 기반)
+          sudo jq --arg since "$(date -u -d '1 hour ago' +%FT%T)" \
+              -c 'select(.timestamp > $since)' \
+              /var/ossec/logs/alerts/alerts.json | wc -l
+          # 3. level 별 분포
+          sudo jq -r '.rule.level' /var/ossec/logs/alerts/alerts.json | sort | uniq -c | sort -rn
+          # 4. agent 별 alert 수
+          sudo jq -r '.agent.name' /var/ossec/logs/alerts/alerts.json | sort | uniq -c | sort -rn | head
+        예상 출력 `Total: 1500 / Last 1h: 250 / level 5: 1200 / level 10: 150 / level 12: 50 / agent secu: 800`.
+        운영 해석: 시간 범위 지정 = 일일/시간 trend 분석. 급증 시 공격 의심.
+      - |
+        **[OSS] Wazuh Dashboard alert dashboard** — GUI.
+          # 1. https://10.20.30.100/ → Modules → Security events
+          # 2. UI 시각화:
+          # - 시간대 별 timeline
+          # - top rule.id (10 most frequent)
+          # - top agent.name
+          # - severity 분포
+          # 3. 시간 범위 필터 (relative / absolute)
+          # 4. KQL 검색
+          # rule.level >= 10
+          # 5. CSV / JSON export
+        UI 동작: SOC 분석가 표준 dashboard.
+        운영 해석: 매일 첫 화면. 시간대별 trend + 비정상 spike 즉시 인지.
+      - |
+        **[OSS] OpenSearch _count API (정확한 카운트)** — Indexer 활용.
+          # 1. 모든 alert 카운트
+          curl -sk -u admin:admin "https://localhost:9200/wazuh-alerts-*/_count" | jq '.count'
+          # 2. 최근 1시간 alert
+          curl -sk -u admin:admin -X POST "https://localhost:9200/wazuh-alerts-*/_count" \
+              -H "Content-Type: application/json" \
+              -d '{"query":{"range":{"timestamp":{"gte":"now-1h","lte":"now"}}}}'
+          # 3. level 별 aggregation
+          curl -sk -u admin:admin -X POST "https://localhost:9200/wazuh-alerts-*/_search" \
+              -H "Content-Type: application/json" \
+              -d '{"size":0,"aggs":{"by_level":{"terms":{"field":"rule.level"}}}}' | jq '.aggregations'
+        예상 출력 `{"count": 1500} / level 5: 1200 / level 10: 150 / level 12: 50`.
+        운영 해석: Indexer 의 aggregation 활용. wc -l 보다 정밀 (시간 범위 + 다중 조건).
+      - |
+        **[OSS] logrotate + 시간 분포** — disk + retention.
+          # 1. logrotate 설정
+          sudo cat /etc/logrotate.d/wazuh
+          # 2. 압축된 archive 분포
+          sudo ls -lh /var/ossec/logs/alerts/2026/ | head
+          # 3. 일별 alert 수 (압축 file 라인 수)
+          for f in /var/ossec/logs/alerts/2026/*/ossec-alerts-*.log.gz; do
+              date=$(basename "$f" | grep -oE '[0-9]+')
+              count=$(sudo zcat "$f" 2>/dev/null | wc -l)
+              echo "$date: $count"
+          done | head
+          # 4. 디스크 사용량
+          sudo du -sh /var/ossec/logs/alerts/
+        예상 출력 `2026/Mar/01: 5000 / 2026/Mar/02: 6500 / Total: 5GB`.
+        운영 해석: 일별 trend = baseline 측정. 급증 시 anomaly. retention 정책 점검 표준.
+      - |
+        **[OSS] Prometheus + Wazuh exporter** — 시계열 모니터.
+          # 1. wazuh-exporter (community)
+          # docker run -d -p 9100:9100 \
+          #     -e WAZUH_URL=https://10.20.30.100:55000 \
+          #     -e WAZUH_USERNAME=wazuh-wui \
+          #     -e WAZUH_PASSWORD=secret \
+          #     wazuh/wazuh-prometheus-exporter
+          # 2. Prometheus scrape
+          # 3. metric 확인
+          curl -s http://localhost:9100/metrics | grep -E "wazuh_alerts|wazuh_agent"
+          # 4. Grafana dashboard
+          # - alert rate (per second)
+          # - 시간대별 trend
+          # - alert level 분포
+        예상 출력 `wazuh_alerts_total 1500 / wazuh_alerts_last_hour 250`.
+        운영 해석: 시계열 + alert. spike 자동 감지. SOC NOC 표준.
       negative_signs:
       - 라인 수 0 정상 판정
       - 잘못된 경로
@@ -508,6 +1140,69 @@ steps:
       - web 에서 sudo tail auth.log
       - web 에서 sudo systemctl is-active wazuh-agent
       - siem 에서 sudo tail alerts.json + jq
+      - |
+        **[OSS] sshpass + ssh (Phase B brute trigger)** — SSH brute 시뮬.
+          # 1. 패스워드 변형 5 회
+          for pw in wrong1 wrong2 wrong3 wrong4 wrong5; do
+              sshpass -p "$pw" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=2 \
+                  ccc@10.20.30.80 'echo' 2>&1 | grep -E "Permission denied|denied"
+          done
+          # 2. 또는 hydra (병렬)
+          echo -e "wrong1\nwrong2\nwrong3\nwrong4\nwrong5" > /tmp/5pwds.txt
+          hydra -l ccc -P /tmp/5pwds.txt ssh://10.20.30.80 -t 1 -W 1
+        예상 출력 `Permission denied (publickey,password) ×5`.
+        운영 해석: SSH 인증 실패 5회 → web auth.log + wazuh-agent → manager. event flow 의 시작점.
+      - |
+        **[OSS] 4 단계 evidence 동시 측정 (cross-check)** — 통합 검증.
+          # 단계 1: web 의 auth.log (raw event)
+          ssh ccc@10.20.30.80 "sudo grep 'Failed password' /var/log/auth.log | tail -5"
+          # 단계 2: web 의 wazuh-agent active (전송 layer)
+          ssh ccc@10.20.30.80 "sudo systemctl is-active wazuh-agent"
+          # 단계 3: siem 의 archives (옵션 - logall=yes 시)
+          ssh ccc@10.20.30.100 "sudo grep 'Failed password' /var/ossec/logs/archives/archives.log 2>/dev/null | tail"
+          # 단계 4: siem 의 alerts.json (Manager 처리 결과)
+          ssh ccc@10.20.30.100 "sudo jq -c 'select(.rule.id|test(\"^571\"))' /var/ossec/logs/alerts/alerts.json | tail"
+        결과: 4 단계 evidence 모두 확보 = event flow 정상.
+        운영 해석: 단계 별 evidence 부재 = trouble shoot 출발점. 단계 1 부재 = sshd 미설정. 단계 2 부재 = agent 통신 끊김.
+      - |
+        **[OSS] Wazuh Dashboard agent timeline** — GUI 시각화.
+          # 1. https://10.20.30.100/ → Agents → web (10.20.30.80)
+          # 2. UI 시각화:
+          # - Last keep alive 시각
+          # - Active rules + group
+          # - Inventory (FIM / vulnerability detector)
+          # - Logs 탭에서 archives 검색
+          # 3. event flow 시각화 (timeline 탭)
+          # 4. 단일 alert drill-down → 원본 raw event 까지 추적
+        UI 동작: agent 별 event flow 통합 view. SOC 분석가 표준.
+        운영 해석: 4 단계 evidence 가 GUI 한 페이지에. CLI cross-check 의 자동화 버전.
+      - |
+        **[OSS] mermaid (event flow 다이어그램)** — Phase C 보고.
+          # diagram.mmd
+          # graph LR
+          #   A[attacker 5x ssh wrong] --> B[web sshd: auth.log]
+          #   B --> C[web wazuh-agent]
+          #   C -->|TCP 1514| D[siem wazuh-manager]
+          #   D --> E[analysisd: rule 5710 매칭]
+          #   E --> F[siem alerts.json]
+          # mermaid CLI 로 PNG 렌더
+          mmdc -i diagram.mmd -o diagram.png
+          # 또는 https://mermaid.live/ 에 paste
+        결과: event flow 다이어그램 PNG.
+        운영 해석: 분석가 보고서 표준. 신규 분석가 onboarding 자료.
+      - |
+        **[OSS] Wazuh API timeline + audit** — programmatic.
+          # 1. agent 의 event 통계
+          TOKEN=$(curl -sk -u wazuh-wui:wazuh-wui -X POST "https://localhost:55000/security/user/authenticate?raw=true")
+          curl -sk -H "Authorization: Bearer $TOKEN" "https://localhost:55000/agents/002/stats/agent" | jq
+          # 2. agent 의 last keep alive
+          curl -sk -H "Authorization: Bearer $TOKEN" "https://localhost:55000/agents?agents_list=002" | jq '.data.affected_items[0] | {name, last_keep_alive, status}'
+          # 3. Indexer 직접 query (alerts)
+          curl -sk -u admin:admin -X POST "https://localhost:9200/wazuh-alerts-*/_search" \
+              -H "Content-Type: application/json" \
+              -d '{"query":{"bool":{"must":[{"term":{"agent.id":"002"}},{"range":{"timestamp":{"gte":"now-1h"}}}]}},"size":10}'
+        예상 출력: agent 별 alert + connection 통계.
+        운영 해석: API 자동화 = SOAR 통합. 비정상 agent 탐지 + 자동 알림.
       negative_signs:
       - 4 단계 중 1-2개만 (예: alerts.json 만)
       - SSH fail 5회 미만
