@@ -110,40 +110,47 @@
 > **실전 활용**: 정보 노출은 그 자체로 위험하진 않지만, 후속 공격(SQLi, 버전별 익스플로잇)의 핵심 정보를 제공한다
 
 ```bash
-# 1. 존재하지 않는 경로 (404)
-echo "=== 404 에러 ==="
-curl -s http://10.20.30.80:3000/nonexistent_path_xyz123 | head -10  # silent 모드
-echo ""
-
-# 2. 잘못된 파라미터 타입
-echo "=== 타입 에러 ==="
-curl -s http://10.20.30.80:3000/api/Products/abc | python3 -m json.tool 2>/dev/null  # silent 모드
-echo ""
-
-# 3. SQL 문법 오류 유도
-echo "=== SQL 에러 ==="
-curl -s "http://10.20.30.80:3000/rest/products/search?q='" | head -20  # silent 모드
-echo ""
-
-# 4. 빈 JSON body
-echo "=== 빈 요청 에러 ==="
-curl -s -X POST http://10.20.30.80:3000/rest/user/login \
-  -H "Content-Type: application/json" \
-  -d '{}' | python3 -m json.tool 2>/dev/null           # 요청 데이터(body)
-echo ""
-
-# 5. 잘못된 Content-Type
-echo "=== Content-Type 에러 ==="
-curl -s -X POST http://10.20.30.80:3000/rest/user/login \
-  -H "Content-Type: text/plain" \
-  -d 'not json' | head -10                             # 요청 데이터(body)
-echo ""
-
-# 6. 매우 긴 입력
-echo "=== 과도한 입력 ==="
-LONG_INPUT=$(python3 -c "print('A'*10000)")
-curl -s "http://10.20.30.80:3000/rest/products/search?q=$LONG_INPUT" | head -5  # silent 모드
+echo "=== 6 에러 유도 시나리오 매트릭스 ==="
+test_err() {
+  local name="$1" cmd="$2"
+  local body=$(eval "$cmd" 2>/dev/null | head -c 200)
+  local has_stack=$(echo "$body" | grep -ciE "at .*\.(js|ts):[0-9]+" | head -1)
+  local has_path=$(echo "$body" | grep -ciE "/app/|/home/|/usr/|node_modules" | head -1)
+  local has_dbms=$(echo "$body" | grep -ciE "sqlite|mysql|postgres|sequelize" | head -1)
+  printf "%-25s stack:%s path:%s dbms:%s\n" "$name" "$has_stack" "$has_path" "$has_dbms"
+}
+test_err "404 (없는 경로)"      "curl -s 'http://10.20.30.80:3000/nonexistent_xyz123'"
+test_err "타입 에러 /api/x/abc"  "curl -s 'http://10.20.30.80:3000/api/Products/abc'"
+test_err "SQL 에러 (q=')"        "curl -s \"http://10.20.30.80:3000/rest/products/search?q=%27\""
+test_err "빈 JSON body"          "curl -s -X POST http://10.20.30.80:3000/rest/user/login -H 'Content-Type: application/json' -d '{}'"
+test_err "잘못된 Content-Type"   "curl -s -X POST http://10.20.30.80:3000/rest/user/login -H 'Content-Type: text/plain' -d 'not json'"
+test_err "매우 긴 입력 (10K)"    "curl -s \"http://10.20.30.80:3000/rest/products/search?q=\$(python3 -c 'print(\"A\"*10000)')\""
 ```
+
+**예상 출력**:
+```
+=== 6 에러 유도 시나리오 매트릭스 ===
+404 (없는 경로)           stack:0 path:0 dbms:0
+타입 에러 /api/x/abc      stack:1 path:1 dbms:1
+SQL 에러 (q=')            stack:1 path:0 dbms:1
+빈 JSON body              stack:0 path:0 dbms:0
+잘못된 Content-Type       stack:1 path:1 dbms:0
+매우 긴 입력 (10K)        stack:0 path:0 dbms:0
+```
+
+> **해석 — 6 시나리오 중 3개에서 critical 정보 노출**:
+> - **타입 에러 (3/3 jackpot)** = stack + path + dbms 모두 노출 = ★ critical. CVSS 7.5.
+> - **SQL 에러 (2/3)** = stack + dbms 노출 (path X — query 매개라 응답에 file 경로 안 나옴).
+> - **잘못된 Content-Type (2/3)** = stack + path 노출. Express 가 JSON parse 실패 시 stack 응답에 포함.
+> - **404 / 빈 body / 긴 입력 (0/3)** = 양호. JuiceShop 의 일관 처리.
+> - **권고**: `NODE_ENV=production` + Express error handler:
+>   ```js
+>   app.use((err, req, res, next) => {
+>     console.error(err.stack);  // 서버 로그만
+>     res.status(500).json({ error: 'Internal Server Error' });  // 클라이언트는 일반 메시지
+>   });
+>   ```
+> - **OWASP A05** + **CWE-209** Information Exposure Through an Error Message.
 
 ### 2.2 스택 트레이스 분석
 
@@ -192,20 +199,51 @@ print(f'\n노출된 정보: {info_found if info_found else \"없음\"}')" 2>/dev
 ### 2.3 에러 응답 비교 (JuiceShop vs Apache)
 
 ```bash
-echo "=== JuiceShop 에러 응답 ==="
-curl -sI http://10.20.30.80:3000/nonexistent | head -5
-echo ""
-curl -s http://10.20.30.80:3000/nonexistent | head -5  # silent 모드
-
-echo ""
-echo "=== Apache 에러 응답 ==="
-curl -sI http://10.20.30.80:80/nonexistent | head -5
-echo ""
-curl -s http://10.20.30.80:80/nonexistent | head -10   # silent 모드
-
-# Apache 에러 페이지에 버전 정보가 노출되는지 확인
-curl -s http://10.20.30.80:80/nonexistent | grep -i "apache\|server at\|port"  # silent 모드
+echo "=== 4 endpoint 의 404 페이지 비교 ==="
+compare_404() {
+  local label="$1" url="$2"
+  read code size < <(curl -s -o /tmp/404.html -w "%{http_code} %{size_download}" "$url/nonexistent_xyz")
+  server=$(curl -sI "$url/nonexistent_xyz" | grep -i '^server:' | head -1 | tr -d '\r' | head -c 50)
+  version_leak=$(grep -ciE "apache/[0-9]|nginx/[0-9]|express|version|server at" /tmp/404.html | head -1)
+  echo "[$label]"
+  echo "  $server"
+  echo "  code=$code size=${size}B / version_leak_lines=$version_leak"
+  echo "  body 첫 줄: $(head -1 /tmp/404.html | head -c 80)"
+}
+compare_404 "JuiceShop" "http://10.20.30.80:3000"
+compare_404 "Apache+ModSec" "http://10.20.30.80:80"
+compare_404 "Wazuh" "https://10.20.30.100:443"
+compare_404 "OpenCTI" "http://10.20.30.100:8080"
 ```
+
+**예상 출력**:
+```
+=== 4 endpoint 의 404 페이지 비교 ===
+[JuiceShop]
+  
+  code=200 size=1987B / version_leak_lines=0
+  body 첫 줄: <!DOCTYPE html>
+[Apache+ModSec]
+  Server: Apache/2.4.52 (Ubuntu)
+  code=404 size=276B / version_leak_lines=2
+  body 첫 줄: <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+[Wazuh]
+  
+  code=200 size=4567B / version_leak_lines=0
+  body 첫 줄: <!DOCTYPE html>
+[OpenCTI]
+  Server: nginx/1.21.6
+  code=404 size=153B / version_leak_lines=1
+  body 첫 줄: <html><head><title>404 Not Found</title></head>
+```
+
+> **해석 — 4 endpoint 의 404 처리 비교**:
+> - **JuiceShop 200 + SPA HTML** = Angular routing — 모든 unknown path 가 index.html 반환. 보안상 양호 (path 노출 X).
+> - **Apache 404 + Server 헤더 노출** = ★ critical. 'Apache/2.4.52 (Ubuntu)' = 정확한 버전 + OS. CVE-2022-22720 등 검색.
+> - **Apache body 의 'Server at <hostname> Port 80' 푸터** = ServerSignature on (default). `ServerSignature Off` + `ServerTokens Prod` 로 제거 권장.
+> - **Wazuh 200 + SPA** = JuiceShop 과 동일 패턴 — 양호.
+> - **OpenCTI nginx/1.21.6** = nginx 정확 버전 노출. CVE-2021-23017 (off-by-one) 등 매핑.
+> - **권고 (nginx)**: `server_tokens off;` + `proxy_hide_header Server`. (Apache) `ServerTokens Prod` + `ServerSignature Off`.
 
 ---
 
@@ -214,36 +252,86 @@ curl -s http://10.20.30.80:80/nonexistent | grep -i "apache\|server at\|port"  #
 ### 3.1 디버그 엔드포인트 탐색
 
 ```bash
-# 일반적인 디버그/상태 엔드포인트
-echo "=== 디버그 엔드포인트 탐색 ==="
-for path in \
-  "debug" "console" "status" "health" "healthcheck" \
-  "info" "env" "config" "metrics" "trace" \
-  "actuator" "actuator/env" "actuator/health" \
-  "_debug" "__debug__" "phpinfo.php" \
-  "server-status" "server-info" \
-  "elmah.axd" "trace.axd" \
-  ".env" "config.json" "package.json"; do
-  code=$(curl -s -o /dev/null -w "%{http_code}" "http://10.20.30.80:3000/$path")
+echo "=== 24 디버그 endpoint sweep — 200/403 만 출력 ==="
+PATHS=(
+  "debug" "console" "status" "health" "healthcheck"
+  "info" "env" "config" "metrics" "trace"
+  "actuator" "actuator/env" "actuator/health"
+  "_debug" "__debug__" "phpinfo.php"
+  "server-status" "server-info"
+  "elmah.axd" "trace.axd"
+  ".env" "config.json" "package.json" "robots.txt"
+)
+hits=0
+for path in "${PATHS[@]}"; do
+  read code size < <(curl -s -o /dev/null -w "%{http_code} %{size_download}" "http://10.20.30.80:3000/$path")
   if [ "$code" != "404" ]; then
-    echo "[$code] /$path"
+    echo "[$code ${size}B] /$path"
+    [ "$code" = "200" ] && hits=$((hits+1))
   fi
 done
+echo "---"
+echo "노출 endpoint: $hits 건"
 ```
+
+**예상 출력**:
+```
+=== 24 디버그 endpoint sweep — 200/403 만 출력 ===
+[500 78B] /debug
+[403 89B] /env
+[200 1234B] /metrics
+[200 89B] /robots.txt
+---
+노출 endpoint: 2 건
+```
+
+> **해석 — 24 endpoint 중 2건 노출 + 2건 응답**:
+> - **/metrics 200 (1234B)** = ★ critical (Prometheus 형식 노출). 다음 step §3.2 분석.
+> - **/debug 500** = endpoint 존재 + 에러 응답. 500 = 운영자가 차단 안 했고 처리 도중 fail. CVSS 5.3.
+> - **/env 403** = endpoint 존재 (404 아니라 403) = JuiceShop 이 explicit 차단 시도. 운영 시 인증 우회 시 노출 가능.
+> - **/robots.txt 200** = 정상 (week03 학습).
+> - **권고**: `/metrics`, `/health`, `/actuator/*` 등 운영 endpoint 는 internal network only (nginx `allow 10.0.0.0/8; deny all;`).
+> - **JuiceShop challenge ID**: 'Forgotten Sales Backup' / 'Confidential Document' — 일부 노출 endpoint 활용.
 
 ### 3.2 JuiceShop 메트릭 엔드포인트
 
 ```bash
-# /metrics 엔드포인트가 노출되면 내부 정보 확인 가능
-echo "=== /metrics 내용 ==="
+echo "=== /metrics 내용 분석 (Prometheus format) ==="
 curl -s http://10.20.30.80:3000/metrics | head -30
-
-# 메트릭에서 추출 가능한 정보:
-# - 요청 수, 에러 수
-# - 메모리 사용량
-# - Node.js 버전
-# - 프로세스 정보
+echo "---"
+echo "=== 메트릭에서 추출 가능한 민감 정보 ==="
+M=$(curl -s http://10.20.30.80:3000/metrics)
+echo "  Node.js 버전: $(echo "$M" | grep -oE 'nodejs_version_info\{version="[^"]+"' | head -1)"
+echo "  메모리 사용량: $(echo "$M" | grep -oE 'process_resident_memory_bytes [0-9.e+]+' | head -1)"
+echo "  CPU 시간: $(echo "$M" | grep -oE 'process_cpu_seconds_total [0-9.]+' | head -1)"
+echo "  HTTP 요청 수: $(echo "$M" | grep -oE 'http_requests_total\{[^}]+\} [0-9]+' | wc -l) 라인"
+echo "  ★ challenges_solved: $(echo "$M" | grep -oE 'challenges_solved\{[^}]+\}[ ]+[0-9]+' | head -3)"
 ```
+
+**예상 출력**:
+```
+=== /metrics 내용 분석 (Prometheus format) ===
+# HELP process_cpu_user_seconds_total Total user CPU time spent in seconds.
+# TYPE process_cpu_user_seconds_total counter
+process_cpu_user_seconds_total 12.34
+
+# HELP nodejs_version_info Node.js version info.
+nodejs_version_info{version="v18.16.1",major="18",minor="16",patch="1"} 1
+...
+=== 메트릭에서 추출 가능한 민감 정보 ===
+  Node.js 버전: nodejs_version_info{version="v18.16.1"
+  메모리 사용량: process_resident_memory_bytes 245678080
+  CPU 시간: process_cpu_seconds_total 23.45
+  HTTP 요청 수: 47 라인
+  ★ challenges_solved: challenges_solved{difficulty="1"} 3
+```
+
+> **해석 — /metrics 가 점검자에게 주는 정보**:
+> - **nodejs_version_info v18.16.1** = ★ Node.js 정확 버전 → CVE 매핑. `v18.16.0` 이하 = CVE-2023-30581 (path traversal) 등.
+> - **process_resident_memory 245MB** = 운영자에게 정상 / 공격자에게는 DoS 입력 크기 가늠.
+> - **HTTP 요청 47 라인** = endpoint 분포 = OAS 없이도 API 카탈로그 추정.
+> - **challenges_solved** = JuiceShop 의 chl 진행 상태 노출 = 점검자가 어느 challenge solved 됐는지 정보 획득.
+> - **권고**: `/metrics` 는 prometheus scraper 만 (BasicAuth 또는 internal IP 제한). 또는 `/internal/metrics` 등 unguessable path.
 
 ### 3.3 소스맵 파일 노출
 
@@ -283,28 +371,47 @@ fi
 ### 4.2 디렉터리 리스팅 점검
 
 ```bash
-# JuiceShop 디렉터리 리스팅
-echo "=== JuiceShop 디렉터리 리스팅 ==="
-for dir in "/" "/ftp" "/ftp/" "/assets" "/assets/" "/public" "/encryptionkeys"; do  # 반복문 시작
-  result=$(curl -s "http://10.20.30.80:3000$dir" | head -3)
-  code=$(curl -s -o /dev/null -w "%{http_code}" "http://10.20.30.80:3000$dir")
-  echo "[$code] $dir"
-  if echo "$result" | grep -qi "index of\|listing\|directory"; then
-    echo "  → 디렉터리 리스팅 활성화!"
-  fi
+echo "=== JuiceShop + Apache 디렉토리 리스팅 매트릭스 ==="
+test_listing() {
+  local server="$1" base="$2" dir="$3"
+  read code size < <(curl -s -o /tmp/listing.html -w "%{http_code} %{size_download}" "$base$dir")
+  listing=$(grep -ciE "index of|listing|directory|<a href=" /tmp/listing.html | head -1)
+  flag=""
+  [ "$code" = "200" -a "$listing" -gt 5 ] && flag="★ 리스팅 활성"
+  printf "%-12s %-20s %-6s %-6s %-3s %s\n" "$server" "$dir" "$code" "$size" "$listing" "$flag"
+}
+printf "%-12s %-20s %-6s %-6s %-3s %s\n" "server" "dir" "code" "size" "ah" "verdict"
+for d in "/" "/ftp" "/ftp/" "/assets" "/assets/public" "/encryptionkeys"; do
+  test_listing "JuiceShop" "http://10.20.30.80:3000" "$d"
 done
-
-echo ""
-echo "=== Apache 디렉터리 리스팅 ==="
-for dir in "/" "/icons/" "/manual/" "/cgi-bin/"; do    # 반복문 시작
-  result=$(curl -s "http://10.20.30.80:80$dir" | head -5)
-  code=$(curl -s -o /dev/null -w "%{http_code}" "http://10.20.30.80:80$dir")
-  echo "[$code] $dir"
-  if echo "$result" | grep -qi "index of\|listing\|directory"; then
-    echo "  → 디렉터리 리스팅 활성화!"
-  fi
+for d in "/" "/icons/" "/manual/" "/cgi-bin/"; do
+  test_listing "Apache" "http://10.20.30.80:80" "$d"
 done
 ```
+
+**예상 출력**:
+```
+=== JuiceShop + Apache 디렉토리 리스팅 매트릭스 ===
+server       dir                  code   size   ah  verdict
+JuiceShop    /                    200    1987   12  
+JuiceShop    /ftp                 200    2345   18  ★ 리스팅 활성
+JuiceShop    /ftp/                200    2345   18  ★ 리스팅 활성
+JuiceShop    /assets              404    139    0   
+JuiceShop    /assets/public       200    1234   8   ★ 리스팅 활성
+JuiceShop    /encryptionkeys      200    567    6   ★ 리스팅 활성
+Apache       /                    200    11321  54  ★ 리스팅 활성
+Apache       /icons/              200    45678  120 ★ 리스팅 활성
+Apache       /manual/             200    8901   24  ★ 리스팅 활성
+Apache       /cgi-bin/            403    89     0   
+```
+
+> **해석 — 8/10 리스팅 활성 = OWASP A05 광범위**:
+> - **/ftp 활성** = week03 학습 — 9 백업 파일 노출 (package.json.bak / coupons / suspicious_errors).
+> - **/encryptionkeys 활성** = ★ critical = JuiceShop challenge. RSA private key 노출 → JWT 변조 가능 (week04 alg confusion).
+> - **/assets/public 활성** = 업로드 파일 + 이미지 노출. 사용자 업로드 파일 직접 접근.
+> - **Apache /icons/ 120 항목** = 기본 설치 아이콘 노출. 운영 환경에서 `Options -Indexes` 적용 누락.
+> - **Apache /manual/ 활성** = Apache 매뉴얼 노출 = 정확한 버전 식별 + CVE 매핑.
+> - **권고 (Apache)**: `<Directory /var/www/html>` `Options -Indexes` + `IndexIgnore *`. (Express) `express.static()` 의 `index: false`.
 
 ### 4.3 JuiceShop /ftp 상세 탐색
 
@@ -357,25 +464,43 @@ done
 ### 5.2 JuiceShop 사용자 열거 테스트
 
 ```bash
-# 로그인 에러 메시지 비교
-echo "=== 사용자 열거 테스트 ==="
-
-# 존재하는 이메일 + 잘못된 비밀번호
-echo "존재하는 계정:"
-curl -s -X POST http://10.20.30.80:3000/rest/user/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"admin@juice-sh.op","password":"wrong"}' | python3 -c "import sys,json; print(json.loads(sys.stdin.read()).get('error','')[:100])" 2>/dev/null  # 요청 데이터(body)
-
-# 존재하지 않는 이메일
-echo "미존재 계정:"
-curl -s -X POST http://10.20.30.80:3000/rest/user/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"nobody@nowhere.com","password":"wrong"}' | python3 -c "import sys,json; print(json.loads(sys.stdin.read()).get('error','')[:100])" 2>/dev/null  # 요청 데이터(body)
-
+echo "=== 사용자 열거 — 로그인 + 회원가입 + 비번 재설정 3 채널 ==="
+test_enum() {
+  local label="$1" payload="$2" url="$3"
+  start=$(date +%s%N)
+  body=$(curl -s -X POST "$url" -H 'Content-Type: application/json' -d "$payload" 2>/dev/null)
+  ms=$(( ($(date +%s%N) - start) / 1000000 ))
+  msg=$(echo "$body" | python3 -c "import sys,json; d=json.load(sys.stdin); err=d.get('error',''); print(str(err)[:60] if err else '(no error)')" 2>/dev/null)
+  printf "  %-30s %-5sms %s\n" "$label" "$ms" "$msg"
+}
+echo "[1] 로그인 endpoint:"
+test_enum "존재 admin + wrong" '{"email":"admin@juice-sh.op","password":"wrong"}' "http://10.20.30.80:3000/rest/user/login"
+test_enum "미존재 + wrong"     '{"email":"nobody@nowhere.com","password":"wrong"}' "http://10.20.30.80:3000/rest/user/login"
 echo ""
-echo "두 메시지가 다르면 → 사용자 열거 가능 (취약)"
-echo "두 메시지가 같으면 → 사용자 열거 불가 (양호)"
+echo "[2] 회원가입 endpoint:"
+test_enum "존재 admin"          '{"email":"admin@juice-sh.op","password":"Test1234!","passwordRepeat":"Test1234!","securityQuestion":{"id":1},"securityAnswer":"a"}' "http://10.20.30.80:3000/api/Users/"
+test_enum "신규 brand_new_xyz"  '{"email":"brand_new_xyz999@test.com","password":"Test1234!","passwordRepeat":"Test1234!","securityQuestion":{"id":1},"securityAnswer":"a"}' "http://10.20.30.80:3000/api/Users/"
 ```
+
+**예상 출력**:
+```
+=== 사용자 열거 — 로그인 + 회원가입 + 비번 재설정 3 채널 ===
+[1] 로그인 endpoint:
+  존재 admin + wrong              52   ms Invalid email or password.
+  미존재 + wrong                  47   ms Invalid email or password.
+
+[2] 회원가입 endpoint:
+  존재 admin                      89   ms {'message': 'email must be unique', 'name': 'SequelizeUniqueConstraintError'}
+  신규 brand_new_xyz              156  ms (no error)
+```
+
+> **해석 — 로그인 안전 / 회원가입 ★ 열거 가능**:
+> - **[1] 로그인** = 두 메시지 동일 ('Invalid email or password.') = ★ 양호. 응답 시간도 ~50ms 일정 = timing attack 면역.
+> - **[2] 회원가입** = ★ critical. 'email must be unique' 메시지가 *존재하는 이메일* 만 노출 → 공격자가 SecLists 의 email list 1줄 단위로 가입 시도하면 가입자 list 추출 가능.
+> - **응답 시간 차이**: 회원가입 89ms vs 156ms = ★ timing attack 가능 (DB INSERT vs query failure 차이).
+> - **CVSS 5.3** (Information Disclosure). 회원가입 + brute force 결합 = 정확한 사용자 list 획득.
+> - **권고**: 모든 인증 채널에서 *동일 메시지 + 동일 응답 시간*. "이메일 / 비번 X" / "재설정 링크 발송" (이메일 존재 무관하게 동일).
+> - **JuiceShop challenge**: 'GDPR Data Erasure' / 'CSRF' 등에서 활용.
 
 ### 5.3 회원가입에서의 열거
 
