@@ -35,6 +35,90 @@ steps:
       - echo 'add table inet lab' | sudo nft -f -
       - /etc/nftables.conf 편집 후 systemctl restart
       - ansible ansible.posix.nftables
+      - |
+        **[OSS] nft (테이블 생성 + 검증)** — 표준.
+          # 1. 테이블 생성 (idempotent 아님)
+          sudo nft add table inet lab
+          # 2. 즉시 검증
+          sudo nft list tables | grep lab
+          # 3. JSON 으로 family 확인
+          sudo nft -j list tables | jq '.nftables[] | select(.table) | {name: .table.name, family: .table.family}'
+          # 4. 이미 있으면 무시 (idempotent 패턴)
+          sudo nft list table inet lab > /dev/null 2>&1 || sudo nft add table inet lab
+        예상 출력 `inet lab / family=inet name=lab / table 생성 완료`.
+        운영 해석: inet = IPv4+IPv6 통합. ip / ip6 / arp / netdev 별 family. 명시 필수.
+      - |
+        **[OSS] nft -f script (배치 + 트랜잭션)** — atomic.
+          # 1. script 파일 작성
+          tee /tmp/lab.nft <<'EOF'
+          add table inet lab
+          # 추후 chain/rule 추가
+          EOF
+          # 2. syntax 검증 (-c) → 실행 (-f)
+          sudo nft -c -f /tmp/lab.nft && sudo nft -f /tmp/lab.nft
+          # 3. JSON 형식도 가능
+          echo '{"nftables":[{"add":{"table":{"family":"inet","name":"lab"}}}]}' | sudo nft -j -f -
+          # 4. 검증
+          sudo nft list tables
+        예상 출력 `Configuration loaded successfully / inet lab created`.
+        운영 해석: 다중 명령 한 번에 + atomic. 일부 실패 시 전체 rollback.
+      - |
+        **[OSS] /etc/nftables.conf + systemd (영구화)** — 재부팅 보존.
+          # 1. /etc/nftables.lab.conf 편집
+          sudo tee -a /etc/nftables.lab.conf <<'EOF'
+          #!/usr/sbin/nft -f
+          table inet lab {
+            # chain/rule 정의
+          }
+          EOF
+          # 2. syntax 검증
+          sudo nft -c -f /etc/nftables.lab.conf
+          # 3. 영구 적용 (/etc/nftables.conf 에 include)
+          echo "include \"/etc/nftables.lab.conf\"" | sudo tee -a /etc/nftables.conf
+          # 4. systemd unit 재시작
+          sudo systemctl restart nftables
+          systemctl status nftables --no-pager
+        예상 출력 `nft -c valid / nftables active`.
+        운영 해석: 재부팅 후 보존. enterprise 표준.
+      - |
+        **[OSS] Ansible community.general.nftables_table** — IaC.
+          # 1. /etc/ansible/playbooks/lab-table.yml
+          # ---
+          # - hosts: secu
+          #   tasks:
+          #     - name: ensure lab table
+          #       community.general.nftables_table:
+          #         family: inet
+          #         name: lab
+          #         state: present
+          # 2. 실행
+          ansible-playbook -i inventory lab-table.yml
+          # 3. idempotent 검증 (2회 실행 → ok)
+          ansible-playbook -i inventory lab-table.yml --check
+          # 4. dry-run 으로 변경 없음 확인
+          ansible-playbook -i inventory lab-table.yml --diff --check
+        예상 출력 `changed=1 (1회) / ok=1 changed=0 (2회)`.
+        운영 해석: 멀티 호스트 동시 표준화. PR-driven 운영.
+      - |
+        **[OSS] systemd-tmpfiles + ExecStartPre 검증 패턴** — 안전.
+          # 1. /etc/systemd/system/nftables-lab.service
+          sudo tee /etc/systemd/system/nftables-lab.service > /dev/null <<EOF
+          [Unit]
+          Description=Lab nftables table
+          [Service]
+          Type=oneshot
+          ExecStartPre=/usr/sbin/nft -c -f /etc/nftables.lab.conf
+          ExecStart=/usr/sbin/nft -f /etc/nftables.lab.conf
+          ExecStop=/usr/sbin/nft delete table inet lab
+          RemainAfterExit=yes
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+          sudo systemctl daemon-reload
+          sudo systemctl enable --now nftables-lab
+          systemctl status nftables-lab --no-pager
+        예상 출력 `Active: active (exited) / ExecStart succeeded`.
+        운영 해석: ExecStartPre = syntax 검증 → 실패 시 ExecStart skip. safe deploy.
       negative_signs:
       - ip 또는 ip6 family 만
       - table 명 다름
@@ -67,6 +151,80 @@ steps:
       - /etc/nftables.conf 에 체인 정의
       - nft -f script.nft
       - JSON API nft -j
+      - |
+        **[OSS] nft add chain (체인 표준 정의)** — 표준.
+          # 1. input chain (filter / hook input / priority 0 / accept)
+          sudo nft 'add chain inet lab input { type filter hook input priority 0 ; policy accept ; }'
+          # 2. -a 로 handle 포함 검증
+          sudo nft -a list chain inet lab input
+          # 3. JSON 검증 (자동화 친화)
+          sudo nft -j list chain inet lab input | jq '.nftables[] | select(.chain) | {name, hook, priority, policy}'
+          # 4. counter 추가 (drop 빈도 측정)
+          sudo nft 'add chain inet lab input { type filter hook input priority 0 ; policy accept ; counter ; }'
+        예상 출력 `chain input { type filter hook input priority 0; policy accept; }`.
+        운영 해석: hook 위치 (prerouting/input/forward/output/postrouting). priority = 평가 순서.
+      - |
+        **[OSS] hook + priority 종합 비교** — 학습.
+          # 1. 표준 hook 별 정책 그래프
+          # prerouting → input → output → postrouting (방향 고려)
+          # forward 는 다른 호스트 향하는 트래픽
+          # 2. priority 권장 (낮을수록 먼저)
+          # raw=-300 / mangle=-150 / nat=-100 / filter=0 / security=50
+          # 3. 모든 hook 에 chain 생성 (학습)
+          for h in input forward output; do
+            sudo nft "add chain inet lab $h { type filter hook $h priority 0 ; policy accept ; }"
+          done
+          # 4. 검증
+          sudo nft -j list table inet lab | jq '.nftables[] | select(.chain) | {name, hook}'
+        예상 출력 `input,forward,output 3 chain / hook 위치 종합`.
+        운영 해석: 패킷이 통과하는 hook 매핑. forward 는 router 역할 시 핵심.
+      - |
+        **[OSS] nft -f atomic batch (chain 생성)** — 안전.
+          # 1. 다중 chain atomic 작성
+          sudo nft -f - <<'EOF'
+          add chain inet lab input { type filter hook input priority 0 ; policy accept ; }
+          add chain inet lab forward { type filter hook forward priority 0 ; policy drop ; }
+          add chain inet lab output { type filter hook output priority 0 ; policy accept ; }
+          EOF
+          # 2. 검증
+          sudo nft list chains | grep -E 'lab.*(input|forward|output)'
+          # 3. syntax 검증
+          sudo nft -c -f /tmp/chains.nft
+        예상 출력 `3 chain atomic 생성 / syntax valid`.
+        운영 해석: 중간 실패 시 전체 rollback. 운영 표준.
+      - |
+        **[OSS] policy drop vs accept (Zero Trust 비교)** — 정책.
+          # 1. policy accept (기본 허용) — 학습용
+          sudo nft 'add chain inet lab input_accept { type filter hook input priority 5 ; policy accept ; }'
+          # 2. policy drop (Zero Trust) — 운영 권장
+          sudo nft 'add chain inet lab input_drop { type filter hook input priority 10 ; policy drop ; }'
+          # 3. 두 chain 비교
+          sudo nft list chains
+          # 4. 운영 환경에서 policy drop 권장 — 명시적 허용 외 모두 차단
+          sudo nft -j list table inet lab | jq '.nftables[] | select(.chain) | {name, policy}'
+        예상 출력 `input_accept policy=accept / input_drop policy=drop`.
+        운영 해석: policy drop = enterprise default. 명시적 allow 룰 필수.
+      - |
+        **[OSS] Ansible community.general.nftables_chain** — IaC.
+          # 1. /etc/ansible/playbooks/lab-chain.yml
+          # ---
+          # - hosts: secu
+          #   tasks:
+          #     - name: ensure input chain
+          #       community.general.nftables_chain:
+          #         family: inet
+          #         table: lab
+          #         name: input
+          #         type: filter
+          #         hook: input
+          #         priority: 0
+          #         policy: accept
+          # 2. 실행
+          ansible-playbook -i inventory lab-chain.yml --diff
+          # 3. idempotent
+          ansible-playbook -i inventory lab-chain.yml --check
+        예상 출력 `changed=1 / 2회 실행: ok=1 changed=0`.
+        운영 해석: 멀티 호스트 chain 표준화. PR review 워크플로우.
       negative_signs:
       - type/hook/priority 누락
       - policy 미지정
@@ -98,6 +256,70 @@ steps:
       - iptables -A INPUT -p tcp --dport 23 -j DROP
       - firewalld --add-rich-rule
       - ansible nftables rule
+      - |
+        **[OSS] nft add rule (TCP 포트 차단)** — 표준.
+          # 1. telnet (23) drop + counter + log
+          sudo nft 'add rule inet lab input tcp dport 23 counter log prefix "[telnet-drop] " drop'
+          # 2. 검증
+          sudo nft -a list chain inet lab input
+          # 3. counter 추적 (실시간 매칭 횟수)
+          sudo nft list chain inet lab input | grep 'tcp dport 23'
+          # 4. 다중 포트 (telnet + ftp 평문 프로토콜)
+          sudo nft 'add rule inet lab input tcp dport { 21, 23, 80 } counter drop comment "plaintext-block"'
+        예상 출력 `tcp dport 23 counter packets 0 bytes 0 log prefix "[telnet-drop] " drop`.
+        운영 해석: counter + log = 차단 감사. set 으로 다중 포트 1줄.
+      - |
+        **[OSS] iptables-translate (legacy → nft 변환)** — 마이그레이션.
+          # 1. legacy iptables 명령 작성
+          IPT='iptables -A INPUT -p tcp --dport 23 -j DROP'
+          # 2. nft 등가 룰 변환
+          iptables-translate -A INPUT -p tcp --dport 23 -j DROP
+          # 3. iptables-save 전체 변환
+          sudo iptables-save | iptables-translate-restore | head
+          # 4. 변환 결과 적용
+          iptables-translate -A INPUT -p tcp --dport 23 -j DROP | sudo nft -f -
+        예상 출력 `nft add rule ip filter INPUT tcp dport 23 counter drop`.
+        운영 해석: 기존 iptables script → nft 자동 변환. 마이그레이션 path.
+      - |
+        **[OSS] firewalld rich-rule (zone 기반)** — alt distro.
+          # 1. firewalld zone 별 telnet 차단
+          sudo firewall-cmd --permanent --zone=public --add-rich-rule='rule family="ipv4" port port=23 protocol=tcp drop'
+          # 2. apply
+          sudo firewall-cmd --reload
+          # 3. 검증
+          sudo firewall-cmd --list-rich-rules
+          # 4. service 별 차단도 가능
+          sudo firewall-cmd --permanent --zone=public --remove-service=telnet
+        예상 출력 `rule family="ipv4" port port="23" protocol="tcp" drop`.
+        운영 해석: RHEL/CentOS 표준. zone + rich-rule 추상.
+      - |
+        **[OSS] log prefix + journalctl (차단 audit)** — audit.
+          # 1. log + drop 룰
+          sudo nft 'add rule inet lab input tcp dport 23 log prefix "[telnet-drop] " level warn drop'
+          # 2. journalctl 로 매칭 로그
+          sudo journalctl -k -f | grep telnet-drop
+          # 3. rsyslog 로 별도 file
+          sudo tee /etc/rsyslog.d/telnet-drop.conf > /dev/null <<'EOF'
+          :msg, contains, "[telnet-drop]" -/var/log/telnet-drop.log
+          & stop
+          EOF
+          sudo systemctl restart rsyslog
+          # 4. 통계 (top10 source IP)
+          sudo grep telnet-drop /var/log/telnet-drop.log | grep -oP 'SRC=\S+' | sort | uniq -c | sort -rn | head
+        예상 출력 `[telnet-drop] IN=ens33 SRC=10.20.30.201 DST=... DPT=23`.
+        운영 해석: drop 효과 정량 + source IP 식별. 자동 차단 후보.
+      - |
+        **[OSS] tcpdump 으로 차단 효과 검증** — 트래픽.
+          # 1. attacker 측에서 telnet 시도 (시뮬)
+          # ssh ccc@10.20.30.201 'nc -vz -w 2 10.20.30.1 23'
+          # 2. secu 측에서 packet capture
+          sudo tcpdump -i any -nn 'tcp port 23' -c 5
+          # 3. 응답 없음 = drop 성공
+          # SYN 만 보이고 SYN-ACK 없으면 drop
+          # 4. counter 변화
+          sudo nft list chain inet lab input | grep 'dport 23'
+        예상 출력 `tcp 23 SYN seen / no SYN-ACK / counter packets 1 bytes 60`.
+        운영 해석: tcpdump SYN 만 + counter 증가 = drop 성공.
       negative_signs:
       - drop 대신 accept
       - 포트 번호 혼동
@@ -126,6 +348,72 @@ steps:
       - sudo nft list ruleset | grep lab
       - nft -n list table (숫자)
       - nft -j list table (JSON)
+      - |
+        **[OSS] nft list (텍스트 + handle + JSON)** — 표준.
+          # 1. 텍스트 출력
+          sudo nft list table inet lab
+          # 2. handle 포함 (룰 식별자)
+          sudo nft -a list table inet lab
+          # 3. JSON 출력 → jq 파싱
+          sudo nft -j list table inet lab | jq '.nftables[] | select(.rule)'
+          # 4. 특정 룰 grep
+          sudo nft list table inet lab | grep -E 'dport|drop|accept'
+        예상 출력 `chain input { ip ... tcp dport 23 drop # handle 5 }`.
+        운영 해석: handle = 룰 ID. JSON = 자동화. grep = 빠른 확인.
+      - |
+        **[OSS] nft monitor (실시간 변경)** — audit.
+          # 1. 백그라운드 모니터
+          sudo nft monitor > /tmp/nft-events.log &
+          MON=$!
+          # 2. 변경 발생 시 즉시 캡처
+          sudo nft add rule inet lab input tcp dport 80 accept
+          # 3. 결과
+          tail /tmp/nft-events.log
+          # 4. 종료
+          kill $MON
+        예상 출력 `add rule inet lab input tcp dport 80 accept`.
+        운영 해석: 실시간 audit. 누가 룰 추가했는지 추적.
+      - |
+        **[OSS] auditd 로 nft 명령 추적** — 감사.
+          # 1. nft 실행 추적 (kernel audit)
+          sudo auditctl -w /usr/sbin/nft -p x -k nft-cmd
+          # 2. 누가·언제·무엇을
+          sudo ausearch -k nft-cmd -ts recent | head
+          # 3. summary
+          sudo aureport --executable | grep nft
+          # 4. JSON 출력
+          sudo ausearch -k nft-cmd --format json | jq .
+        예상 출력 `time=2026-05-04 user=ccc cmd=nft list ...`.
+        운영 해석: 모든 nft 명령 추적. compliance 감사.
+      - |
+        **[OSS] nft -j + 정량 비교 (drift 감지)** — IaC.
+          # 1. baseline (의도) JSON dump
+          sudo nft -j list ruleset > /tmp/baseline.json
+          # 2. 임의 변경 후 비교
+          sudo nft add rule inet lab input tcp dport 8080 accept
+          sudo nft -j list ruleset > /tmp/current.json
+          diff <(jq -S . /tmp/baseline.json) <(jq -S . /tmp/current.json)
+          # 3. drift 자동 감지 (cron)
+          # */5 * * * * /usr/local/bin/nft-drift-check.sh
+          # 4. baseline 복원
+          sudo nft delete rule inet lab input handle <handle>
+        예상 출력 `+ tcp dport 8080 accept (drift 감지)`.
+        운영 해석: 정책 변경 감지. SOC audit · CI 검증.
+      - |
+        **[OSS] watch + diff (변동 추적)** — 모니터.
+          # 1. 1초마다 룰셋 변경 감시
+          watch -n 1 -d 'sudo nft list table inet lab'
+          # 2. 시계열 스냅샷 저장
+          while true; do
+            sudo nft list table inet lab > /tmp/lab-$(date +%s).txt
+            sleep 30
+          done &
+          # 3. 가장 최근 두 스냅샷 diff
+          ls -t /tmp/lab-*.txt | head -2 | xargs diff
+          # 4. 변경 인스턴스 카운트
+          ls /tmp/lab-*.txt | wc -l
+        예상 출력 `watch 인터랙티브 + diff 변경 표시`.
+        운영 해석: 단순 시각 모니터. 학습용 + 변동 추적.
       negative_signs:
       - list 하지 않고 다른 조회
       - table 이름 혼동
@@ -156,6 +444,66 @@ steps:
       - iptables -I INPUT -m state --state ESTABLISHED,RELATED
       - conntrack 기반 상태 추적
       - firewalld default established
+      - |
+        **[OSS] nft insert rule (stateful + counter)** — 표준.
+          # 1. ct state 룰을 chain 0번 위치 prepend (성능 최우선)
+          sudo nft 'insert rule inet lab input ct state established,related counter accept'
+          # 2. 검증 (룰 순서 확인)
+          sudo nft -a list chain inet lab input
+          # 3. invalid 별도 처리 (stateful 표준)
+          sudo nft 'insert rule inet lab input ct state invalid counter drop'
+          # 4. counter 증가 = stateful 작동
+          sudo nft list chain inet lab input | grep 'ct state'
+        예상 출력 `[1] ct state invalid drop / [2] ct state est,related accept`.
+        운영 해석: invalid drop + established/related accept = stateful 표준.
+      - |
+        **[OSS] conntrack (연결 상태 가시화)** — 진단.
+          # 1. 설치
+          sudo apt install -y conntrack
+          # 2. 현재 활성 연결
+          sudo conntrack -L | head
+          # 3. 통계
+          sudo conntrack -S
+          # 4. 특정 호스트의 연결 추적
+          sudo conntrack -L -d 10.20.30.1 | head
+        예상 출력 `tcp 6 ESTABLISHED src=10.20.30.201 ... ASSURED / connections found: 5`.
+        운영 해석: ct table 의 실시간 가시화. troubleshooting.
+      - |
+        **[OSS] /proc/net/nf_conntrack (커널 직접)** — 정밀.
+          # 1. 활성 conntrack entry
+          sudo cat /proc/net/nf_conntrack | head
+          # 2. 연결 수
+          sudo cat /proc/sys/net/netfilter/nf_conntrack_count
+          # 3. table 최대 크기
+          sudo cat /proc/sys/net/netfilter/nf_conntrack_max
+          # 4. timeout 값
+          sudo sysctl net.netfilter.nf_conntrack_tcp_timeout_established
+        예상 출력 `count: 234 / max: 65536 / tcp est timeout: 432000s`.
+        운영 해석: connection table 한계 (max). 부하 시 모니터링 필수.
+      - |
+        **[OSS] iptables -m state (legacy 비교)** — 마이그레이션.
+          # 1. legacy iptables 등가
+          sudo iptables -I INPUT 1 -m state --state ESTABLISHED,RELATED -j ACCEPT
+          sudo iptables -I INPUT 1 -m state --state INVALID -j DROP
+          # 2. nft 변환
+          iptables-translate -I INPUT 1 -m state --state ESTABLISHED,RELATED -j ACCEPT
+          # 3. 비교
+          sudo iptables -L -nv | head
+          sudo nft list chain inet lab input | head
+        예상 출력 `nft equivalent: ct state established,related counter accept`.
+        운영 해석: 같은 동작 — nft 가 표현 풍부. 마이그레이션 path.
+      - |
+        **[OSS] tcpdump 으로 stateful 효과 검증** — 트래픽.
+          # 1. attacker 에서 ssh 시도
+          # ssh ccc@10.20.30.201 'ssh -o ConnectTimeout=3 ccc@10.20.30.1 echo ok'
+          # 2. secu 측에서 packet 분석
+          sudo tcpdump -i any -nn 'host 10.20.30.201' -c 10
+          # 3. 첫 SYN = NEW state, 이후 ACK = ESTABLISHED (counter 증가)
+          sudo nft list chain inet lab input | grep -E 'ct state|counter'
+          # 4. conntrack 으로 연결 확인
+          sudo conntrack -L -s 10.20.30.201 | head
+        예상 출력 `SYN/ACK pairs / counter packets +N / ESTABLISHED state`.
+        운영 해석: 첫 패킷만 룰 평가, 이후 stateful fast path. 성능 우월.
       negative_signs:
       - ct state 없이 단순 accept
       - append (뒤) insert 대신
@@ -185,6 +533,68 @@ steps:
       - iptables -A INPUT -i lo -j ACCEPT
       - firewalld trusted zone 포함
       - ansible iifname 매개변수
+      - |
+        **[OSS] nft iifname (interface 기반 룰)** — 표준.
+          # 1. loopback 허용 (counter + accept)
+          sudo nft 'add rule inet lab input iifname lo counter accept'
+          # 2. 검증
+          sudo nft list chain inet lab input | grep 'iifname lo'
+          # 3. 다중 인터페이스 (set)
+          sudo nft 'add rule inet lab input iifname { "lo", "ens33" } counter accept'
+          # 4. interface 와 IP 조합
+          sudo nft 'add rule inet lab input iifname lo ip saddr 127.0.0.0/8 counter accept'
+        예상 출력 `iifname lo counter packets 0 bytes 0 accept`.
+        운영 해석: loopback = 로컬 process 통신. 차단 시 system 내부 fail.
+      - |
+        **[OSS] ip + ss (interface 정보)** — 진단.
+          # 1. 모든 인터페이스
+          ip -br link show
+          ip addr show lo
+          # 2. loopback 트래픽
+          sudo ss -tlnp | grep '127.0.0.1\|::1'
+          # 3. lo 통계
+          ip -s link show lo
+          # 4. 활성 loopback 서비스 (예: postgres, mysql)
+          sudo lsof -i @localhost | head
+        예상 출력 `lo UP 127.0.0.1/8 / postgresql 127.0.0.1:5432 / 패킷 통계`.
+        운영 해석: lo 차단 → postgres / mysql / redis 등 로컬 서비스 fail.
+      - |
+        **[OSS] iptables -i lo (legacy)** — 마이그레이션.
+          # 1. legacy
+          sudo iptables -A INPUT -i lo -j ACCEPT
+          # 2. nft 변환
+          iptables-translate -A INPUT -i lo -j ACCEPT
+          # 3. 검증
+          sudo iptables -L INPUT -nv | grep lo
+        예상 출력 `nft equivalent: iifname lo counter accept`.
+        운영 해석: iptables -i = nft iifname. 동일 의미.
+      - |
+        **[OSS] firewalld trusted zone (lo 포함)** — distro alt.
+          # 1. trusted zone (모든 트래픽 허용)
+          sudo firewall-cmd --get-zones | grep trusted
+          # 2. lo 가 trusted zone 인지 확인
+          sudo firewall-cmd --zone=trusted --list-interfaces
+          # 3. 명시적 lo 추가 (안전)
+          sudo firewall-cmd --permanent --zone=trusted --add-interface=lo
+          sudo firewall-cmd --reload
+          # 4. 검증
+          sudo firewall-cmd --get-active-zones
+        예상 출력 `trusted (interfaces lo) / 모든 패킷 허용`.
+        운영 해석: firewalld 는 zone 기반. trusted = 화이트리스트.
+      - |
+        **[OSS] tcpdump 으로 lo 트래픽 가시화** — 검증.
+          # 1. lo 패킷 캡처
+          sudo tcpdump -i lo -nn -c 5
+          # 2. 로컬 서비스 통신 확인
+          sudo tcpdump -i lo 'port 5432' -c 5
+          # 3. iperf3 으로 lo 성능 (참고)
+          sudo apt install -y iperf3
+          iperf3 -s -1 &
+          sleep 1; iperf3 -c localhost -t 3 -V
+          # 4. lo 차단 시 영향 시뮬 (위험 - 학습용)
+          # sudo nft delete rule inet lab input handle <iifname-lo handle>
+        예상 출력 `lo: 127.0.0.1.5432 > 127.0.0.1.<random> / iperf3 30Gbps`.
+        운영 해석: lo = 30Gbps 메모리 속도. 차단 = 로컬 서비스 marshalling 단절.
       negative_signs:
       - iifname 누락
       - lo 대신 127.0.0.1 IP
@@ -215,6 +625,78 @@ steps:
       - nft add rule tcp dport 22 ip saddr 10.20.30.0/24 accept
       - iptables -A INPUT -p tcp --dport 22 -j ACCEPT
       - fail2ban + nft 통합
+      - |
+        **[OSS] nft SSH 허용 (source 제한 권장)** — 표준.
+          # 1. 단순 SSH 허용 (open)
+          sudo nft 'add rule inet lab input tcp dport 22 counter accept'
+          # 2. source CIDR 제한 (권장)
+          sudo nft 'add rule inet lab input ip saddr 10.20.30.0/24 tcp dport 22 counter accept'
+          # 3. source 외부는 drop (Zero Trust)
+          sudo nft 'add rule inet lab input tcp dport 22 counter drop comment "ssh-deny-default"'
+          # 4. rate limit (brute force 회피)
+          sudo nft 'add rule inet lab input tcp dport 22 ct state new limit rate 5/minute counter accept'
+        예상 출력 `tcp dport 22 accept / ip saddr 10.20.30.0/24 + dport 22 accept`.
+        운영 해석: source 제한 + rate limit + Zero Trust 가 운영 권장.
+      - |
+        **[OSS] fail2ban (SSH brute force 자동 차단)** — 운영.
+          # 1. 설치
+          sudo apt install -y fail2ban
+          # 2. /etc/fail2ban/jail.local
+          sudo tee -a /etc/fail2ban/jail.local <<'EOF'
+          [sshd]
+          enabled = true
+          maxretry = 5
+          findtime = 10m
+          bantime = 1h
+          banaction = nftables-multiport
+          EOF
+          # 3. 활성화
+          sudo systemctl enable --now fail2ban
+          # 4. 차단 IP 조회
+          sudo fail2ban-client status sshd
+        예상 출력 `Currently banned: 5 / 198.51.100.66 banned`.
+        운영 해석: SSH brute → 자동 IP 차단. nft set 으로 적용.
+      - |
+        **[OSS] sshguard (대안 brute force 방지)** — alt.
+          # 1. 설치
+          sudo apt install -y sshguard
+          # 2. 설정 (whitelist + threshold)
+          sudo tee /etc/sshguard/whitelist > /dev/null <<EOF
+          10.20.30.0/24
+          127.0.0.0/8
+          EOF
+          # 3. 활성화
+          sudo systemctl enable --now sshguard
+          # 4. 차단 IP
+          sudo journalctl -u sshguard | grep -i blocking | tail
+        예상 출력 `Blocking 198.51.100.66:4 for 120 seconds`.
+        운영 해석: fail2ban 보다 가볍고 빠름. 자동 임계치 적응.
+      - |
+        **[OSS] CrowdSec (커뮤니티 reputation + nft)** — 보충.
+          # 1. CrowdSec engine + bouncer
+          sudo apt install -y crowdsec crowdsec-firewall-bouncer-nftables
+          sudo systemctl enable --now crowdsec
+          # 2. SSH brute force scenario 설치
+          sudo cscli scenarios install crowdsecurity/ssh-bf
+          sudo systemctl restart crowdsec
+          # 3. 차단 결정
+          sudo cscli decisions list | grep ssh
+          # 4. 커뮤니티 blocklist
+          sudo cscli decisions list --origin CAPI | head
+        예상 출력 `ssh-bf 차단 12 IPs / community blocklist 5000 IPs`.
+        운영 해석: 자체 + community blocklist. nft 자동 sync.
+      - |
+        **[OSS] sshd 자체 보안 강화 (포트 변경 등)** — 다층.
+          # 1. /etc/ssh/sshd_config 검토
+          sudo grep -E '^Port|^PermitRootLogin|^PasswordAuth|^MaxAuthTries' /etc/ssh/sshd_config
+          # 2. 권장: Port 22 → 다른 포트 + key auth only
+          # Port 2222 / PermitRootLogin no / PasswordAuthentication no
+          # 3. nft 룰 갱신 (변경 포트)
+          # sudo nft add rule inet lab input tcp dport 2222 accept
+          # 4. 변경 후 sshd restart (현 세션 유지)
+          # sudo systemctl restart sshd
+        예상 출력 `Port 22 / PermitRootLogin yes (위험) → no / PasswordAuth no`.
+        운영 해석: 방화벽 + sshd config 다층 강화. key auth 권장.
       negative_signs:
       - 포트 번호 혼동
       - source IP 제한 없이 전체 허용 주의 부족
@@ -243,6 +725,70 @@ steps:
       - sudo nft -n list ruleset
       - sudo nft -j list ruleset (JSON)
       - sudo nft -s list ruleset (stateless)
+      - |
+        **[OSS] nft list ruleset (전체 정책 dump)** — 표준.
+          # 1. 텍스트 출력
+          sudo nft list ruleset
+          # 2. handle 포함 + 숫자만 (DNS 미해석)
+          sudo nft -a -n list ruleset
+          # 3. JSON 백업
+          sudo nft -j list ruleset > /tmp/nft-backup-$(date +%Y%m%d-%H%M).json
+          # 4. stateless 출력 (counter 제외, diff 친화)
+          sudo nft -s list ruleset > /tmp/nft-stateless.nft
+        예상 출력 `table inet lab { ... } / table ip filter { ... }`.
+        운영 해석: -s = counter 무시 → diff 비교 가능. -j = 자동화.
+      - |
+        **[OSS] backup + restore 패턴** — IaC.
+          # 1. backup
+          sudo nft list ruleset > /tmp/nft-backup.nft
+          # 2. syntax 검증 (재현 가능?)
+          sudo nft -c -f /tmp/nft-backup.nft && echo "Re-applicable"
+          # 3. 가상 적용 (dry-run)
+          sudo nft -c -f /tmp/nft-backup.nft -e
+          # 4. 실제 복원 (전체 reset 후)
+          # sudo nft flush ruleset
+          # sudo nft -f /tmp/nft-backup.nft
+        예상 출력 `Re-applicable / 0 errors`.
+        운영 해석: backup 의 재현 가능성 검증. DR 표준.
+      - |
+        **[OSS] nft -j list ruleset + jq 분석** — 자동화.
+          # 1. 모든 table 이름 + family
+          sudo nft -j list ruleset | jq '[.nftables[] | select(.table) | {family: .table.family, name: .table.name}]'
+          # 2. 모든 chain + policy
+          sudo nft -j list ruleset | jq '[.nftables[] | select(.chain) | {table: .chain.table, name: .chain.name, hook: .chain.hook, policy: .chain.policy}]'
+          # 3. 룰 갯수 / table
+          sudo nft -j list ruleset | jq '[.nftables[] | select(.rule)] | length'
+          # 4. counter 통계 (drop 효과)
+          sudo nft -j list ruleset | jq '.nftables[] | select(.rule) | .rule.expr[]? | select(.counter)'
+        예상 출력 `tables 2 / chains 5 / rules 23 / counters JSON`.
+        운영 해석: 정량 분석 + dashboard. 자동화 표준.
+      - |
+        **[OSS] etckeeper / git (정책 audit history)** — IaC.
+          # 1. etckeeper init (이미 init 안 된 경우)
+          sudo apt install -y etckeeper
+          sudo etckeeper init 2>/dev/null
+          # 2. 현재 ruleset 을 /etc 에 dump + commit
+          sudo nft list ruleset > /etc/nftables.dump
+          sudo etckeeper commit "snapshot ruleset 2026-05-04"
+          # 3. 변경 history
+          cd /etc && sudo git log --oneline nftables.dump | head
+          # 4. diff (특정 시점 vs 현재)
+          sudo git log -p nftables.dump | head -50
+        예상 출력 `commit abc123 add lab table / commit def456 ...`.
+        운영 해석: 변경 history + rollback. enterprise 표준.
+      - |
+        **[OSS] nstat / proc/net (커널 통계 종합)** — 효과.
+          # 1. nf_conntrack 메트릭
+          cat /proc/sys/net/netfilter/nf_conntrack_count
+          cat /proc/sys/net/netfilter/nf_conntrack_max
+          # 2. nstat (IP/TCP 통계)
+          nstat -a | grep -E 'TcpExtSyncookiesSent|IpExtInOctets'
+          # 3. 모든 chain counter 합계 (효과 정량)
+          sudo nft -j list ruleset | jq '[.nftables[] | select(.rule) | .rule.expr[]? | select(.counter) | .counter.packets] | add'
+          # 4. 시간대별 counter 변화 (cron snapshot)
+          # */1 * * * * sudo nft -j list ruleset | jq '[.nftables[] | select(.rule) | .rule.expr[]? | select(.counter) | .counter.packets] | add' >> /var/log/nft-counter-trend.log
+        예상 출력 `conntrack 234/65536 / total dropped packets 12345`.
+        운영 해석: 정책뿐 아니라 효과 (drop 패킷 수) 까지 시계열.
       negative_signs:
       - 특정 테이블만 조회
       - ruleset 아닌 table 키워드
@@ -271,6 +817,73 @@ steps:
       - sudo nft flush ruleset (전체)
       - systemctl stop nftables (임시)
       - /etc/nftables.conf 편집 후 재로드
+      - |
+        **[OSS] nft delete table (cascade 삭제)** — 표준.
+          # 1. 단일 table 삭제 (chain·set·rule 모두)
+          sudo nft delete table inet lab
+          # 2. 검증
+          sudo nft list tables | grep -v ^ip
+          # 3. flush 만 (구조 유지, 룰만 비움)
+          # sudo nft flush table inet lab
+          # 4. destroy (idempotent — 없어도 무시)
+          sudo nft destroy table inet lab 2>/dev/null
+        예상 출력 `lab table removed / list tables: filter, nat`.
+        운영 해석: delete = cascade. flush = 룰만. destroy = idempotent.
+      - |
+        **[OSS] nft flush + reset (테스트 환경)** — 위험 주의.
+          # 1. 특정 chain 의 룰만 비움 (구조 유지)
+          sudo nft flush chain inet lab input
+          # 2. 특정 set 의 element 만 비움
+          sudo nft flush set inet lab my_set 2>/dev/null
+          # 3. 전체 ruleset 초기화 (위험!)
+          # sudo nft flush ruleset  # SSH 차단 위험
+          # 4. counter reset
+          sudo nft reset counters table inet lab
+        예상 출력 `chain input flushed / counter reset`.
+        운영 해석: flush ruleset 은 SSH 차단 위험. cleanup 시 주의.
+      - |
+        **[OSS] systemd-managed cleanup (안전)** — 표준.
+          # 1. service stop = ExecStop 자동 실행
+          sudo systemctl stop nftables-lab.service 2>/dev/null
+          sudo systemctl disable nftables-lab.service 2>/dev/null
+          # 2. service file 제거
+          sudo rm -f /etc/systemd/system/nftables-lab.service
+          sudo systemctl daemon-reload
+          # 3. /etc/nftables.lab.conf 제거
+          sudo rm -f /etc/nftables.lab.conf
+          # 4. 검증
+          sudo nft list tables | grep -v lab
+        예상 출력 `service stopped + removed / lab table gone`.
+        운영 해석: systemd lifecycle 표준. ExecStop 자동.
+      - |
+        **[OSS] Ansible cleanup playbook** — IaC.
+          # 1. /etc/ansible/playbooks/lab-cleanup.yml
+          # ---
+          # - hosts: secu
+          #   tasks:
+          #     - name: remove lab table
+          #       community.general.nftables_table:
+          #         family: inet
+          #         name: lab
+          #         state: absent
+          # 2. 실행
+          ansible-playbook -i inventory lab-cleanup.yml --diff
+          # 3. idempotent (이미 없어도 ok)
+          ansible-playbook -i inventory lab-cleanup.yml --check
+        예상 출력 `changed=1 / 2회: ok=1 changed=0`.
+        운영 해석: idempotent + 멀티 호스트 동시 cleanup. PR 워크플로우.
+      - |
+        **[OSS] git revert (IaC rollback)** — enterprise.
+          # 1. /etc/nftables.conf 가 git 관리 환경
+          cd /etc && sudo git log --oneline nftables.conf | head
+          # 2. lab table 추가 commit revert
+          sudo git revert <commit-sha>
+          # 3. apply
+          sudo nft -f /etc/nftables.conf
+          # 4. 또는 systemd reload
+          sudo systemctl reload nftables
+        예상 출력 `Revert applied / lab table cleaned`.
+        운영 해석: 변경 history 기반 안전 rollback. PR review.
       negative_signs:
       - flush 대신 delete 아님
       - 테이블 이름 혼동
@@ -299,6 +912,73 @@ steps:
       - nft list table inet lab (에러 확인)
       - nft list ruleset | grep -c 'table inet lab'
       - ansible assert 모듈
+      - |
+        **[OSS] nft list tables (삭제 검증)** — 표준.
+          # 1. 모든 table 목록
+          sudo nft list tables
+          # 2. lab 부재 검증 (exit code 친화)
+          sudo nft list tables | grep -v ' lab$' | head
+          # 3. 직접 list 시 에러 = 삭제 성공
+          sudo nft list table inet lab 2>&1 | head
+          # 4. JSON 으로 정확 검증
+          sudo nft -j list tables | jq '.nftables[] | select(.table) | .table | select(.name == "lab")' | head -1
+        예상 출력 `inet filter / inet nat (lab 없음) / Error: No such file or directory`.
+        운영 해석: 에러 = 삭제 성공. 그레프 패턴 + JSON 두 검증.
+      - |
+        **[OSS] nft + grep (idempotent 검증)** — 자동화.
+          # 1. exit code 친화 검증 (스크립트 통합)
+          if sudo nft list table inet lab 2>/dev/null > /dev/null; then
+            echo "STILL EXISTS"
+            exit 1
+          else
+            echo "REMOVED"
+          fi
+          # 2. ruleset 전체 검색
+          sudo nft list ruleset | grep -c 'table inet lab'
+          # 3. systemd-test 로 검증 (ExecStartPre)
+          # ExecStartPre=/bin/sh -c "! nft list table inet lab"
+        예상 출력 `REMOVED / 0 (count)`.
+        운영 해석: exit code 기반 검증. CI 통합.
+      - |
+        **[OSS] Ansible assert (idempotent 검증)** — IaC.
+          # 1. /etc/ansible/playbooks/verify-cleanup.yml
+          # ---
+          # - hosts: secu
+          #   tasks:
+          #     - name: query nftables tables
+          #       ansible.builtin.shell: nft list tables
+          #       register: nft_tables
+          #     - name: assert lab not present
+          #       ansible.builtin.assert:
+          #         that: "'lab' not in nft_tables.stdout"
+          #         fail_msg: "lab table still exists - cleanup incomplete"
+          #         success_msg: "lab table removed - cleanup verified"
+          # 2. 실행
+          ansible-playbook -i inventory verify-cleanup.yml
+        예상 출력 `assertion passed / cleanup verified`.
+        운영 해석: assertion 으로 idempotent 검증. CI 통합.
+      - |
+        **[OSS] etckeeper / git diff (변경 audit)** — 추적.
+          # 1. /etc/nftables.conf 변경 감지
+          cd /etc && sudo git diff HEAD~1 -- nftables.conf | head
+          # 2. lab table 제거 commit 확인
+          sudo git log --oneline nftables.conf | grep -i 'remove\|delete' | head
+          # 3. before/after diff
+          sudo git log -p nftables.conf | head -30
+        예상 출력 `commit abc123 Remove lab table cleanup`.
+        운영 해석: 변경 audit + diff. 누가·언제 cleanup.
+      - |
+        **[OSS] systemd-test (cleanup 후 시스템 정합성)** — 종합.
+          # 1. nftables service 상태
+          systemctl is-active nftables
+          # 2. 다른 service 영향 없음 (예: ssh, web)
+          systemctl is-active sshd apache2 2>/dev/null
+          # 3. 네트워크 도달성 (cleanup 이 차단 안 됐는지)
+          nc -zv 10.20.30.1 22
+          # 4. 사용자 세션 정상 (lockout 회피)
+          who; ss -tn state established sport = :22
+        예상 출력 `nftables active / ssh active / 22 open / 1 active session`.
+        운영 해석: cleanup 후 정합성 + lockout 검증. SOC 표준.
       negative_signs:
       - 삭제 검증 없음
       - grep 필터 없음
@@ -377,6 +1057,104 @@ steps:
       - attacker 에서 nc -vz / ssh ConnectTimeout
       - secu nft counter 확인 (sudo nft list table inet verify | grep counter)
       - 회고 markdown 1~2 단락
+      - |
+        **[OSS] Phase A — atomic verify 테이블 작성 script** — 표준.
+          # 1. /tmp/verify-build.nft (atomic 작성)
+          ssh ccc@10.20.30.1 'sudo tee /tmp/verify-build.nft' <<'EOF'
+          add table inet verify
+          add chain inet verify input { type filter hook input priority 0 ; policy accept ; }
+          add rule inet verify input ct state established,related counter accept
+          add rule inet verify input iifname lo counter accept
+          add rule inet verify input tcp dport 22 counter accept
+          add rule inet verify input tcp dport 23 counter drop
+          EOF
+          # 2. syntax 검증 + atomic apply
+          ssh ccc@10.20.30.1 'sudo nft -c -f /tmp/verify-build.nft && sudo nft -f /tmp/verify-build.nft'
+          # 3. 검증
+          ssh ccc@10.20.30.1 'sudo nft -a list table inet verify'
+        예상 출력 `verify table + 4 rules + counters 0`.
+        운영 해석: atomic 적용 → 일부 실패 시 전체 rollback. 안전.
+      - |
+        **[OSS] Phase B — attacker → secu trigger script** — 표준.
+          # 1. /tmp/trigger.sh (attacker 측 실행)
+          tee /tmp/trigger.sh <<'SCRIPT'
+          #!/bin/bash
+          set -x
+          echo "=== Trigger 1: telnet drop test ==="
+          nc -vz -w 3 10.20.30.1 23 2>&1 | head
+          echo
+          echo "=== Trigger 2: ssh accept test ==="
+          ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no ccc@10.20.30.1 'echo ok' 2>&1 | head -2
+          echo
+          echo "=== Trigger 3: established test ==="
+          ssh -o ConnectTimeout=3 ccc@10.20.30.1 'for i in 1 2 3; do echo "ping $i"; sleep 1; done' 2>&1 | head -5
+          SCRIPT
+          chmod +x /tmp/trigger.sh
+          ssh ccc@10.20.30.201 'bash -s' < /tmp/trigger.sh
+        예상 출력 `nc 23: Connection refused / ssh 22: ok / established: ping 1 ping 2 ping 3`.
+        운영 해석: 자동화 script — 3 trigger 한 번에 실행 + 결과 캡처.
+      - |
+        **[OSS] secu counter 변동 추적 (실시간)** — 검증.
+          # 1. trigger 직후 counter 캡처
+          ssh ccc@10.20.30.1 'sudo nft -j list table inet verify' | jq '.nftables[] | select(.rule) | .rule.expr[]? | select(.counter)'
+          # 2. dport 23 counter 만 grep
+          ssh ccc@10.20.30.1 'sudo nft list chain inet verify input | grep -E "dport (22|23)"'
+          # 3. before/after diff
+          ssh ccc@10.20.30.1 'sudo nft list table inet verify' > /tmp/before.txt
+          # ... attacker trigger ...
+          ssh ccc@10.20.30.1 'sudo nft list table inet verify' > /tmp/after.txt
+          diff /tmp/before.txt /tmp/after.txt
+          # 4. counter 시계열 (실시간 watch)
+          # ssh ccc@10.20.30.1 'watch -n 1 -d "sudo nft list table inet verify"'
+        예상 출력 `dport 23 counter packets 1 bytes 60 (drop trigger 매칭) / dport 22 counter packets 5 (ssh accept)`.
+        운영 해석: counter 변동 = 룰 hit 증명. drop · accept 매칭 정확.
+      - |
+        **[OSS] tcpdump 으로 packet-level 검증** — 정밀.
+          # 1. secu 에서 packet capture
+          ssh ccc@10.20.30.1 'sudo tcpdump -i any -nn "host 10.20.30.201 and (port 22 or port 23)" -c 20 -w /tmp/verify.pcap' &
+          # 2. attacker 에서 trigger
+          ssh ccc@10.20.30.201 'nc -vz 10.20.30.1 23; ssh -o ConnectTimeout=3 ccc@10.20.30.1 echo ok'
+          # 3. pcap 분석
+          ssh ccc@10.20.30.1 'sudo tcpdump -r /tmp/verify.pcap -nn 2>/dev/null | head -20'
+          # 4. drop 효과 검증 (port 23 SYN 만, SYN-ACK 없음)
+          ssh ccc@10.20.30.1 'sudo tcpdump -r /tmp/verify.pcap "port 23"' | head
+        예상 출력 `port 23: 1 SYN from 201 → no response (drop) / port 22: SYN, SYN-ACK, ACK (accept)`.
+        운영 해석: packet 레벨로 drop / accept 동작 확인. 가장 확실한 증명.
+      - |
+        **[OSS] Phase C — 회고 보고서 자동 generator** — 보고.
+          # 1. /tmp/report-week02.md 생성
+          tee /tmp/report-week02.md <<'EOF'
+          # Week02 nftables Effect Verification
+          ## Phase A — verify 테이블 작성
+          - 4 rules: established/lo/22-accept/23-drop
+          - atomic apply: nft -c -f && nft -f
+          ## Phase B — 3 Trigger
+          | Trigger | Hit Rule | Counter Δ | 결과 |
+          |---------|----------|-----------|------|
+          | nc 23 | dport 23 drop | +1 | refused (drop 효과) |
+          | ssh 22 | dport 22 accept | +1 (NEW) | ok (accept 효과) |
+          | est ping | ct state est | +N | fast path |
+          ## Phase C — 회고
+          1. Hit 매핑: 23 → drop, 22 → accept (counter +1), est → ct state (counter +N)
+          2. 예상 외: ssh 첫 패킷만 dport 22 매칭, 이후 ct state 매칭 (성능 최적화)
+          3. 주의점: policy accept chain 끝에 drop 두면 위 accept 룰이 우선
+          ## sha256
+          # sha256sum /tmp/report-week02.md
+          EOF
+          sha256sum /tmp/report-week02.md
+        예상 출력 `보고서 + sha256 abc123`.
+        운영 해석: 표준 보고서 + 무결성. 학기 누적 가능.
+      - |
+        **[OSS] cleanup script (Phase 종료)** — 안전.
+          # 1. verify 테이블 cascade 삭제
+          ssh ccc@10.20.30.1 'sudo nft delete table inet verify'
+          # 2. 검증
+          ssh ccc@10.20.30.1 'sudo nft list tables | grep -v verify'
+          # 3. /tmp 정리
+          ssh ccc@10.20.30.1 'sudo rm -f /tmp/verify-build.nft /tmp/verify.pcap'
+          rm -f /tmp/before.txt /tmp/after.txt /tmp/trigger.sh
+        예상 출력 `verify removed / 정리 완료`.
+        운영 해석: 종료 정리 = 다음 lab 충돌 회피.
       negative_signs:
       - 룰 작성만 + trigger 시도 누락
       - trigger 실행했지만 counter 확인 안 함
