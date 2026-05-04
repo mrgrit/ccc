@@ -41,10 +41,14 @@ steps:
       - 테이블 family 와 name 출력
       - table 키워드 포함
       acceptable_methods:
-      - nft list tables
-      - iptables-nft -L (compat 모드)
-      - cat /etc/nftables.conf 로 선언 확인
-      - systemctl status nftables 에서 로드 상태 확인
+      - '`sudo nft list tables` — 로드된 모든 family/name 출력. 예시 출력 `table inet filter` `table ip nat`. inet family 가 있으면 IPv4+IPv6 공통 룰셋 운용 중.'
+      - '`sudo nft list ruleset | grep "^table"` — `list ruleset` 의 첫 줄만 추출하여 테이블 목록만 빠르게 식별. 룰셋 전체 dump 없이 카운트만 필요시.'
+      - '`sudo nft -j list tables | jq -r ".nftables[].table | \"\\(.family) \\(.name)\""` — JSON 출력 후 jq 로 family/name 만 정규화. 자동화 파이프라인 입력으로 적합.'
+      - '`cat /etc/nftables.conf | grep -E "^table"` — 영속 설정 파일 기준의 *선언* 확인. 부팅 시 자동 로드 대상. 런타임과 다르면 `nft -f` 미적용 또는 임시 추가.'
+      - '`systemctl is-active nftables && systemctl status nftables --no-pager | head -10` — 서비스 활성 + 최근 로그 확인. inactive 시 `systemctl start nftables`.'
+      - '`iptables-nft -L -v -n` — iptables compat 모드로 본 nft 룰. legacy iptables 명령에 익숙한 운영자 호환.'
+      - '`sudo journalctl -t kernel -g "nft" --since "1 hour ago"` — drop 룰의 `log prefix` 트래픽 흐름 검증 — 룰이 실제 매치되는지의 evidence.'
+      - '`sudo nft list set inet filter blacklist 2>/dev/null` — set 객체가 룰셋에 있는지 확인. CTI IOC 차단 set 운용 시 필수.'
       negative_signs:
       - nft 명령어 없이 개념 설명
       - family 구분 없이 table 이름만
@@ -93,11 +97,14 @@ steps:
       - active 또는 inactive 상태 출력
       - suricata 문자열 포함
       acceptable_methods:
-      - systemctl status suricata --no-pager
-      - systemctl is-active suricata
-      - ps auxf | grep -i suricata
-      - suricatasc -c uptime 으로 ring 상태
-      - journalctl -u suricata -n 20
+      - '`systemctl status suricata --no-pager | head -15` — Active 상태 + Main PID + 최근 로그 한 번에. 예상 출력 `Active: active (running) since ...`. inactive 시 즉시 `systemctl start suricata`.'
+      - '`systemctl is-active suricata` — active/inactive/failed 한 단어만 출력. 자동화 헬스체크에 적합.'
+      - '`ps auxf | grep -E "[s]uricata" | head -3` — 프로세스 트리에서 실제 PID 확인. `[s]` 트릭으로 grep 자기 자신 제외.'
+      - '`sudo suricatasc -c uptime` — Unix socket 으로 런타임 통계. 출력 예시 `{"return":"OK","message":{"days":2,"hours":4}}`. 데몬 응답성 확인.'
+      - '`sudo journalctl -u suricata -n 20 --no-pager` — 최근 20 로그 라인. 시작 실패 시 root cause 즉시 식별.'
+      - '`sudo grep -E "engine|Notice|Error" /var/log/suricata/suricata.log | tail -10` — 데몬 자체 로그. 룰 컴파일 오류, NIC 바인딩 실패 등 식별.'
+      - '`pgrep -a suricata | wc -l` — Suricata 프로세스 카운트. multi-thread 모드 + management thread 확인. 0 = 정지.'
+      - '`sudo ss -lp | grep suricata` — Suricata 가 listening 중인 unix socket (`/var/run/suricata-command.socket`) 확인. `suricatasc` 가 동작하는지 역추적.'
       negative_signs:
       - 다른 서비스(wazuh 등) 확인
       - active/inactive 판정 결과 누락
@@ -130,11 +137,14 @@ steps:
       - security2_module 또는 mod_security 문자열 포함
       - 출력에 security 키워드
       acceptable_methods:
-      - apachectl -M | grep -i security
-      - apache2ctl -M | grep security
-      - ls /etc/apache2/mods-enabled/ | grep security
-      - httpd -t -D DUMP_MODULES
-      - 'curl localhost -H X-Attack: test; grep 차단 로그'
+      - '`sudo apachectl -M 2>/dev/null | grep -i security` — 정확히 `security2_module (shared)` 한 줄 출력 = ModSec 로드. 빈 출력 = WAF OFF.'
+      - '`sudo apache2ctl -M 2>/dev/null | grep -i security` — Debian/Ubuntu 표기 명령. 같은 결과지만 일부 환경에서 apachectl 미존재.'
+      - '`ls -la /etc/apache2/mods-enabled/ | grep -E "security2|modsecurity"` — symlink 존재 확인. `security2.conf` + `security2.load` 두 파일 모두 있어야 정상 활성화.'
+      - '`sudo grep -r "SecRuleEngine" /etc/apache2/mods-enabled/ 2>/dev/null` — `SecRuleEngine On` 확인 = 차단 모드. `DetectionOnly` 면 alert 만 + 차단 X.'
+      - '`curl -s -o /dev/null -w "%{http_code}\n" "http://10.20.30.80:8082/?id=1%27+OR+1%3D1--"` — 실제 SQLi 페이로드 테스트. 403 = ModSec 차단 정상, 200 = WAF 미작동.'
+      - '`sudo grep -E "ModSecurity:|secaction" /var/log/apache2/error.log | tail -3` — 최근 ModSec 차단 로그. 룰 ID + msg + matched data 확인.'
+      - '`sudo apache2ctl -t -D DUMP_INCLUDES 2>&1 | grep -i security` — 설정 파일 트리에서 ModSec 관련 include 확인. 잘못된 위치에 룰 추가 시 식별.'
+      - '`sudo grep -c "^[^#]*Include" /etc/modsecurity/*.conf 2>/dev/null` — CRS 룰 include 카운트. 30+ = OWASP CRS 정상 적재, 5 미만 = 룰셋 미설치.'
       negative_signs:
       - 모듈 이름 미확인
       - Nginx 에서 검색(잘못된 VM)
@@ -166,11 +176,14 @@ steps:
       - active/inactive 문자열 출력
       - 상태 판정 결과 명확
       acceptable_methods:
-      - systemctl is-active wazuh-manager
-      - systemctl status wazuh-manager --no-pager
-      - /var/ossec/bin/wazuh-control status
-      - ps auxf | grep wazuh
-      - curl -k https://localhost:55000 Wazuh API health
+      - '`systemctl is-active wazuh-manager` — `active`/`inactive`/`failed` 한 단어. 헬스체크 자동화에 가장 적합.'
+      - '`systemctl status wazuh-manager --no-pager | head -15` — Active 상태 + 최근 로그. Main PID + Memory + Tasks 한 번에 확인.'
+      - '`sudo /var/ossec/bin/wazuh-control status` — Wazuh 자체 도구. wazuh-analysisd / wazuh-execd / wazuh-remoted / wazuh-monitord / wazuh-modulesd 5+ 데몬 개별 상태.'
+      - '`ps auxf | grep -E "[w]azuh-(analysis|remote|exec|monitor)d" | wc -l` — 핵심 데몬 4 개 모두 실행 중인지. 4 미만 = 부분 장애.'
+      - '`sudo curl -s -k -u wazuh-wui:wazuh-wui "https://localhost:55000/?pretty=true"` — Wazuh API 헬스체크. response `{"data": {"title": "Wazuh API REST"}}` 반환되면 정상.'
+      - '`sudo journalctl -u wazuh-manager -n 30 --no-pager` — 최근 30 로그. crash, rule load error, agent connection drop 식별.'
+      - '`sudo tail -10 /var/ossec/logs/ossec.log` — Manager 자체 로그. ERROR 라인이 있으면 즉시 조치.'
+      - '`sudo /var/ossec/bin/wazuh-analysisd -t` — analysisd 단독 syntax check. local_rules.xml 변경 후 재시작 전 검증.'
       negative_signs:
       - wazuh-agent 확인(서버 측 아님)
       - active 판정 없이 로그만 출력
@@ -203,11 +216,14 @@ steps:
       - :9200 포트 LISTEN 확인
       - java 또는 wazuh 프로세스 매핑
       acceptable_methods:
-      - ss -tlnp | grep :9200
-      - netstat -tlnp | grep 9200
-      - lsof -i:9200
-      - curl -k -u admin:pass https://localhost:9200 로 API 응답
-      - systemctl status wazuh-indexer
+      - '`sudo ss -tlnp | grep -E ":9200|wazuh-indexer"` — TCP LISTEN 소켓 + 프로세스 매핑. 출력 `LISTEN 0 128 *:9200 *:* users:(("java",pid=1234,fd=298))`.'
+      - '`sudo netstat -tlnp 2>/dev/null | grep 9200` — netstat 호환 방식. Local Address 가 `0.0.0.0:9200` 이면 외부, `127.0.0.1` 이면 로컬만.'
+      - '`sudo lsof -i :9200 -P -n | head -5` — 9200 사용 프로세스 + 사용자 권한 확인. wazuh-indexer 사용자가 java 프로세스 운영 중인지.'
+      - '`curl -k -u admin:admin "https://localhost:9200/_cluster/health?pretty"` — cluster 상태 (status:green/yellow/red). yellow 이상이면 데이터 안전.'
+      - '`curl -k -u admin:admin "https://localhost:9200/_cat/indices?v" | grep wazuh` — wazuh-alerts 인덱스 존재 + doc count 확인. 0 docs = alert 미수신.'
+      - '`systemctl status wazuh-indexer --no-pager | head -10` — 서비스 상태. JVM heap OOM 등 메모리 이슈 식별.'
+      - '`sudo grep -E "ERROR|FATAL" /var/log/wazuh-indexer/wazuh-cluster.log | tail -5` — Indexer 자체 로그. cluster 분리, mapping 충돌 등.'
+      - '`sudo journalctl -u wazuh-indexer --since "10 min ago" | grep -i error` — 최근 시작 에러. JVM 옵션 / 디스크 / 권한 이슈 식별.'
       negative_signs:
       - 다른 포트 확인
       - 9200 LISTEN 판정 없음
@@ -240,11 +256,14 @@ steps:
       - opencti 컨테이너/서비스 이름 출력
       - 상태(Up/active) 확인
       acceptable_methods:
-      - docker ps --format Table 필터링
-      - docker compose ps in opencti 디렉토리
-      - systemctl is-active opencti
-      - curl -s localhost:8080/health
-      - journalctl -u opencti 로 최근 로그
+      - '`sudo docker ps --format "{{.Names}}\t{{.Status}}" | grep -i opencti` — 컨테이너 이름과 상태. 정상 시 6+ 컨테이너 (platform/worker/elastic/redis/rabbitmq/minio).'
+      - '`sudo docker compose -f /opt/opencti/docker-compose.yml ps` — opencti 디렉토리 컨텍스트로 compose ps. 모든 서비스의 health 한눈에.'
+      - '`curl -s -o /dev/null -w "OpenCTI=%{http_code}\n" http://localhost:9400/health` — REST endpoint 헬스체크. 200 = 정상, 503 = 의존 서비스 (DB) 미준비.'
+      - '`curl -s -X POST http://localhost:9400/graphql -H "Content-Type: application/json" -d ''{"query":"{about{version}}"}'' | jq` — GraphQL 동작 확인. 버전 응답 시 platform 정상.'
+      - '`sudo docker logs opencti-platform --tail 20 2>&1 | grep -iE "ready|error"` — 시작 완료 로그 확인. `ready` 출력 = healthy.'
+      - '`sudo docker stats --no-stream | grep opencti` — 컨테이너 CPU/MEM 사용량. ElasticSearch 가 메모리 많이 사용 (8GB+).'
+      - '`sudo docker exec opencti-elasticsearch curl -s "localhost:9200/_cluster/health?pretty"` — 내부 ES cluster 상태. red 이면 OpenCTI 인덱스 손상 가능.'
+      - '`sudo systemctl is-active docker && sudo docker network ls | grep opencti` — Docker 데몬 + 전용 네트워크 (`opencti_default`) 존재 확인. 네트워크 누락 시 컨테이너 간 통신 실패.'
       negative_signs:
       - 컨테이너 이름 없이 서비스 확인만
       - Up 상태 판정 누락
@@ -277,11 +296,14 @@ steps:
       - bytes from 또는 응답 시간 출력
       - 0% packet loss 또는 도달 가능 확인
       acceptable_methods:
-      - ping -c 2 <IP>
-      - ping6 <IPv6> (IPv6 환경)
-      - fping -c 2 <IP>
-      - traceroute <IP> 로 hop 점검
-      - nc -zv <IP> <port> 로 TCP 도달성
+      - '`ping -c 2 -W 2 10.20.30.1` — 2 패킷 + 2초 timeout. 출력 `2 packets transmitted, 2 received, 0% packet loss, time 1001ms`. RTT < 5ms 면 양호.'
+      - '`ping -c 4 -i 0.5 10.20.30.1` — 0.5 초 간격 4 패킷 = 빠른 RTT 분포 측정. jitter (mdev) 확인.'
+      - '`fping -c 2 -t 1000 10.20.30.1 10.20.30.80 10.20.30.100` — 다중 host 동시 ping. lab 인프라 전체 도달성 한 번에.'
+      - '`traceroute -n -m 5 10.20.30.1` — hop 경로. 1 hop 직접 도달이면 같은 segment, 2+ hop 면 router 경유.'
+      - '`nc -zv -w 2 10.20.30.1 22` — SSH 포트 도달성. ICMP 차단 환경에서도 TCP 검증 가능.'
+      - '`nmap -sn -PE -PP 10.20.30.0/24 | grep "host up"` — 24 net 의 살아있는 host 카운트. lab 인프라 전체 인벤토리.'
+      - '`mtr -c 2 -r -n 10.20.30.1` — ping + traceroute 결합. hop 별 loss/jitter/avg.'
+      - '`ip route get 10.20.30.1` — 라우팅 테이블 조회. via 가 표시되면 gateway 경유, 없으면 direct connected.'
       negative_signs:
       - ping 0 패킷 전송
       - 100% loss 무시
@@ -314,11 +336,14 @@ steps:
       - 숫자(룰 파일 개수) 출력
       - 비정상(0) 여부 판정 가능
       acceptable_methods:
-      - ls /etc/suricata/rules/*.rules | wc -l
-      - find /etc/suricata/rules -name *.rules | wc -l
-      - suricata-update list-sources
-      - grep -c alert /etc/suricata/rules/*.rules 로 총 룰 개수
-      - cat /var/log/suricata/suricata.log | grep loaded
+      - '`ls /etc/suricata/rules/*.rules 2>/dev/null | wc -l` — rules 파일 개수. ET Open 표준 30-60 개. 0 = suricata-update 미실행.'
+      - '`find /etc/suricata/rules /var/lib/suricata/rules -name "*.rules" -type f | wc -l` — 시스템 + suricata-update 병합 디렉토리 둘 다 검색. 표준 위치 외 누락 방지.'
+      - '`grep -hc "^alert\|^drop\|^reject" /etc/suricata/rules/*.rules 2>/dev/null | awk "{s+=\$1} END {print s}"` — 룰 라인 합계. 보통 30K-50K 룰.'
+      - '`sudo suricata-update list-sources --enabled 2>/dev/null | head -10` — 활성화된 룰 source 목록 (et/open, abuse-ch 등). 0 source = 룰 비어있음.'
+      - '`sudo grep -E "rules loaded|signatures? loaded" /var/log/suricata/suricata.log | tail -3` — Suricata 시작 로그. `30000 signatures loaded` 형식. 룰 컴파일 통과 evidence.'
+      - '`sudo suricatasc -c "ruleset-stats" 2>/dev/null | jq` — 런타임 ruleset 통계 (loaded / failed / skipped).'
+      - '`ls -lh /etc/suricata/rules/*.rules | awk "{print \$5, \$9}" | sort -h | tail -10` — 가장 큰 룰 파일 top 10. emerging-malware.rules 등 핵심 카테고리 식별.'
+      - '`find /etc/suricata/rules -name "local.rules" -newer /etc/suricata/suricata.yaml -ls 2>/dev/null` — 설정 변경 후 추가된 커스텀 룰. lab 환경에서 작성한 룰 추적.'
       negative_signs:
       - 파일 리스트만 출력(개수 없음)
       - 다른 디렉토리 검사
@@ -351,11 +376,14 @@ steps:
       - REQUEST-9xx 또는 RESPONSE 파일명 포함
       - rules 문자열 확인
       acceptable_methods:
-      - ls /etc/modsecurity/crs/rules/ | head
-      - ls /usr/share/modsecurity-crs/rules/
-      - find / -name *APPLICATION-ATTACK* 2>/dev/null
-      - cat /etc/apache2/mods-enabled/security2.conf | grep IncludeOptional
-      - apt list --installed | grep modsec
+      - '`ls /etc/modsecurity/crs/rules/ 2>/dev/null | head -10` — Debian 표준 위치. 출력 예 `REQUEST-901-INITIALIZATION.conf REQUEST-941-APPLICATION-ATTACK-XSS.conf`.'
+      - '`ls /usr/share/modsecurity-crs/rules/ 2>/dev/null | wc -l` — 다른 distro 또는 패키지 설치 위치. 30+ 파일 = OWASP CRS 4.x 정상.'
+      - '`find / -name "REQUEST-942-*" -type f 2>/dev/null | head -3` — SQLi 룰 파일 직접 검색. CRS 어디에 있든 위치 식별.'
+      - '`grep -hc "^SecRule " /etc/modsecurity/crs/rules/*.conf 2>/dev/null | head -5` — 각 룰 파일의 SecRule 라인 수. 0 = 빈 파일.'
+      - '`grep -rl "942100" /etc/modsecurity 2>/dev/null` — 특정 룰 ID (SQLi 1차 룰) 가 어떤 파일에 정의되었는지 추적.'
+      - '`apt list --installed 2>/dev/null | grep -E "modsecurity|crs"` — 패키지 설치 상태. `modsecurity-crs/4.x.x` 형식 출력.'
+      - '`grep -E "Include.*crs" /etc/apache2/mods-enabled/security2.conf` — Apache 가 CRS 룰을 include 하는지. include 누락 시 룰 적재 X.'
+      - '`curl -s -o /dev/null -w "%{http_code}\n" "http://10.20.30.80:8082/?id=1%27+UNION+SELECT--"` — SQLi 페이로드로 CRS 942 그룹 동작 검증. 403 = 정상.'
       negative_signs:
       - 파일 내용 확인만(리스트 안 함)
       - Suricata 룰 검사
@@ -393,11 +421,14 @@ steps:
       - alerts.json 또는 alerts.log 파일명 확인
       - alert 문자열 포함
       acceptable_methods:
-      - ls /var/ossec/logs/alerts/ | head
-      - tail -1 /var/ossec/logs/alerts/alerts.json
-      - find /var/ossec/logs -name alerts.* -mtime -1
-      - wc -l /var/ossec/logs/alerts/alerts.json
-      - jq . /var/ossec/logs/alerts/alerts.json | head
+      - '`sudo ls -la /var/ossec/logs/alerts/ | head -10` — 디렉토리 내용 + 권한. `alerts.json` `alerts.log` 두 파일 + `2026/` 연간 디렉토리.'
+      - '`sudo tail -1 /var/ossec/logs/alerts/alerts.json | jq .rule.id,.rule.description` — 최신 alert 1건 핵심 정보. JSON 파싱 = pipeline 정상 evidence.'
+      - '`sudo find /var/ossec/logs/alerts -name "alerts.*" -mtime -1 -type f -ls` — 24h 내 갱신된 파일. mtime 가 오래되면 alert 미수신.'
+      - '`sudo wc -l /var/ossec/logs/alerts/alerts.json` — alert 누적 건수. 0 = pipeline 단절.'
+      - '`sudo jq -r ".rule.level" /var/ossec/logs/alerts/alerts.json | sort | uniq -c | sort -rn` — level 별 분포. level 12+ 누적 카운트 = 고심각 alert 수.'
+      - '`sudo du -sh /var/ossec/logs/alerts/` — 디렉토리 총 크기. 1GB+ 시 logrotate 정책 점검.'
+      - '`sudo /var/ossec/bin/wazuh-control status | grep analysisd` — alert 생성 데몬 상태. inactive 시 alerts.json 미갱신.'
+      - '`sudo jq -c "select(.timestamp > \"$(date -u -d \"5 min ago\" +%FT%T)\")" /var/ossec/logs/alerts/alerts.json | wc -l` — 최근 5 분 alert 건수. live pipeline evidence.'
       negative_signs:
       - 다른 경로 탐색(ossec 외부)
       - 파일 내용 열람만(존재 확인 없음)
@@ -512,15 +543,16 @@ steps:
         evidence path)
       - 통합 1줄 보고 (가장 활발 layer, dead layer, 다음 보강 우선순위)
       acceptable_methods:
-      - 5 layer 각각 ssh + systemctl is-active
-      - nft list ruleset | wc -l
-      - suricata --list-app-layer-protos | head 또는 ls /etc/suricata/rules/*.rules
-        | xargs -I{} sh -c 'echo {}; wc -l < {}'
-      - apachectl -M | grep security 또는 ls /etc/modsecurity/crs/rules/ | wc -l
-      - /var/ossec/bin/wazuh-control info 또는 cat /var/ossec/etc/rules/local_rules.xml
-      - curl -s http://siem:8080/api/feeds (OpenCTI)
-      - 시뮬: nmap -sS 10.20.30.0/24 / sqlmap -u http://web/?id=1 --batch / hydra ssh
-      - matrix 형식 — markdown table 또는 CSV. 25 cell 모두 채워야 함
+      - '`ssh ccc@<vm> "systemctl is-active <service>"` x 5 layer = 5 명령 = Phase A 활성 검증의 최소 단위.'
+      - '`sudo nft list ruleset | grep -c "^\\s*ip\\|tcp\\|udp"` — nft 의 실제 매칭 룰 수 (테이블/체인 헤더 제외). 0 이면 nft active 라도 dead.'
+      - '`sudo grep -hc "^alert\\|^drop" /etc/suricata/rules/*.rules | awk "{s+=\$1} END {print s}"` — Suricata 룰 라인 합계. 30K+ 정상.'
+      - '`sudo grep -c "^SecRule " /etc/modsecurity/crs/rules/*.conf 2>/dev/null | awk -F: "{s+=\$2} END {print s}"` — CRS SecRule 라인 합계. 200+ = OWASP CRS 기본 룰셋.'
+      - '`sudo grep -c "^  <rule " /var/ossec/etc/rules/local_rules.xml` — Wazuh 커스텀 룰 카운트. 60+ = lab 환경 기본.'
+      - '`curl -s -X POST http://localhost:9400/graphql -H "Content-Type: application/json" -d "{\"query\":\"{indicators(first:1){pageInfo{globalCount}}}\"}" | jq -r ".data.indicators.pageInfo.globalCount"` — OpenCTI 의 IOC 총 카운트. 0 = feed 미설정.'
+      - '`nmap -sS -F -Pn 10.20.30.80` (attacker → web) — Phase B 의 1 vector. 5 vector 모두 1 분 내 시뮬.'
+      - '`curl -s "http://10.20.30.80:3000/rest/products/search?q=1%27+OR+1%3D1--"` — SQLi vector. ModSec WAF 가 403 반환 시 detect/block.'
+      - '직후 5 layer 동시 grep — `tail -50 /var/log/suricata/eve.json + tail -50 /var/log/apache2/modsec_audit.log + tail -50 /var/ossec/logs/alerts/alerts.log` — Phase C 의 cell 채우기 evidence.'
+      - 'Markdown 5×5 matrix + 각 cell 에 [block/detect/log/none] + evidence path. 빈 cell 0 개 = matrix 완성.'
       negative_signs:
       - 단일 layer 만 검증 후 종료
       - 룰셋 카운트 누락 (활성/dead 구분 못함)
