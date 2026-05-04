@@ -47,6 +47,67 @@ steps:
       - sudo du -sh /var/log/suricata/
       - sudo find /var/log/suricata -name *.json -mmin -5
       - sudo wc -l eve.json
+      - |
+        **[OSS] ls/stat (메타정보 종합)** — 표준.
+          # 1. 크기 + mtime + 권한
+          sudo ls -la /var/log/suricata/eve.json
+          # 2. 정밀 stat (atime/mtime/ctime + inode)
+          sudo stat /var/log/suricata/eve.json
+          # 3. mtime 기준 최근 5분 내 갱신된 *.json
+          sudo find /var/log/suricata -name '*.json' -mmin -5
+          # 4. 줄 수 + 디스크 사용량
+          sudo wc -l /var/log/suricata/eve.json
+          sudo du -sh /var/log/suricata/
+        예상 출력 `-rw-r----- 1 root root 12M /var/log/suricata/eve.json (mtime: 2분 전) / 5,234 lines`.
+        운영 해석: 크기·mtime·줄수 = Suricata 가 활발히 기록 중. 0byte 또는 오래된 mtime = 비활성.
+      - |
+        **[OSS] inotifywait (파일 변경 실시간 감지)** — 모니터링.
+          # 1. 설치
+          sudo apt install -y inotify-tools
+          # 2. eve.json 변경 실시간 감시 (10초)
+          sudo timeout 10 inotifywait -m -e modify /var/log/suricata/eve.json
+          # 3. 변경 빈도 = Suricata 활성도
+          sudo timeout 30 inotifywait -m -e modify --timefmt '%H:%M:%S' --format '%T %e' /var/log/suricata/eve.json | wc -l
+          # 4. 변경 멈추면 alert
+          sudo inotifywatch -t 60 /var/log/suricata/eve.json
+        예상 출력 `MODIFY 변경 12회/30초 → 활성 / 0회 → 의심`.
+        운영 해석: 파일 크기 변화 빈도 = 트래픽 활동도. 변경 멈춤 = Suricata 정지·NIC 변경.
+      - |
+        **[OSS] tail -F + jq (실시간 stream)** — 살아있음 검증.
+          # 1. 최근 5건 기다리며 표시 (timeout 으로 제한)
+          sudo timeout 10 tail -F /var/log/suricata/eve.json | head -5
+          # 2. alert 만 필터
+          sudo timeout 15 tail -F /var/log/suricata/eve.json | jq -c 'select(.event_type=="alert")'
+          # 3. event_type 별 빈도 (최근 1000건)
+          sudo tail -1000 /var/log/suricata/eve.json | jq -r .event_type | sort | uniq -c
+        예상 출력 `123 flow / 45 dns / 12 alert / 5 tls`.
+        운영 해석: event_type 분포 = Suricata 가 무엇을 수집 중인가. alert 0 = 룰 미매칭.
+      - |
+        **[OSS] suricatasc (Suricata socket control)** — 내부 상태.
+          # 1. socket 경로
+          sudo ls -la /var/run/suricata/suricata-command.socket
+          # 2. uptime + 버전
+          sudo suricatasc -c uptime
+          sudo suricatasc -c version
+          # 3. 실시간 stats (memcap/drop)
+          sudo suricatasc -c iface-stat-dump
+          sudo suricatasc -c memcap-list
+          # 4. 룰 reload 가능
+          sudo suricatasc -c reload-rules
+        예상 출력 `uptime: 2h / version: 7.0.x / packets received: 12345 / drops: 0`.
+        운영 해석: process internal 상태. drops 증가 = NIC 또는 worker 부하.
+      - |
+        **[OSS] logrotate + journalctl (rotate 이력)** — 운영.
+          # 1. logrotate 설정
+          cat /etc/logrotate.d/suricata
+          # 2. logrotate dry-run
+          sudo logrotate -d /etc/logrotate.d/suricata
+          # 3. rotate 이력
+          ls -la /var/log/suricata/*.gz /var/log/suricata/*.1 2>/dev/null
+          # 4. systemd journal 의 Suricata 시작·정지 이력
+          sudo journalctl -u suricata --since '24h ago' | grep -E 'Started|Stopped|Reload'
+        예상 출력 `daily / rotate 7 / suricata-2026-05-04.log.gz / Started 2026-05-04 ...`.
+        운영 해석: rotate 정상 = 디스크 충만 회피. 잦은 restart 는 의심.
       negative_signs:
       - 다른 경로
       - 파일 없는데 정상 판정
@@ -101,6 +162,71 @@ steps:
       - ps auxf | grep wazuh-agentd
       - /var/ossec/bin/agent_control -l(manager 에서)
       - curl Manager API GET /agents?name=secu
+      - |
+        **[OSS] systemctl + wazuh-control (이중 검증)** — 표준.
+          # 1. systemd unit 상태
+          systemctl is-active wazuh-agent && echo "ACTIVE" || echo "DOWN"
+          # 2. wazuh 자체 control (RC + status text)
+          sudo /var/ossec/bin/wazuh-control status
+          # 3. 종합 (둘 다 OK 여야 정상)
+          systemctl is-active wazuh-agent && sudo /var/ossec/bin/wazuh-control status | grep -E 'wazuh-agentd is running|wazuh-execd is running'
+          # 4. 마지막 시작 시각
+          systemctl show wazuh-agent --property=ActiveEnterTimestamp
+        예상 출력 `ACTIVE / wazuh-agentd is running / wazuh-execd is running`.
+        운영 해석: systemctl + wazuh-control 둘 다 정상 = 운영 ready. 한쪽만 OK 면 부분 fail.
+      - |
+        **[OSS] ps + journalctl (process + log 추적)** — 진단.
+          # 1. wazuh agent process tree
+          ps auxf | grep wazuh- | grep -v grep
+          # 2. process 별 메모리·CPU
+          ps -o pid,comm,rss,pcpu --pid $(pgrep wazuh-agentd) 2>/dev/null
+          # 3. 최근 1시간 로그
+          sudo journalctl -u wazuh-agent --since '1h ago' --no-pager | tail -20
+          # 4. error 만
+          sudo journalctl -u wazuh-agent --since '24h ago' | grep -iE 'error|fail'
+        예상 출력 `wazuh-agentd PID 1234 RSS 12MB / Started agent / no errors`.
+        운영 해석: process + log 통합. agent crash 시 즉시 진단.
+      - |
+        **[OSS] Wazuh Manager API (중앙 조회)** — manager 측.
+          # 1. token 획득 (manager 측에서)
+          # ssh ccc@10.20.30.100
+          TOKEN=$(curl -sk -u admin:<pass> -X POST 'https://10.20.30.100:55000/security/user/authenticate?raw=true')
+          # 2. agent 목록 (secu 만)
+          curl -sk -H "Authorization: Bearer $TOKEN" 'https://10.20.30.100:55000/agents?name=secu' | jq .data.affected_items
+          # 3. agent 마지막 keepalive (활성도)
+          curl -sk -H "Authorization: Bearer $TOKEN" 'https://10.20.30.100:55000/agents?name=secu' | jq '.data.affected_items[0] | {id, status, lastKeepAlive}'
+          # 4. group 정보
+          curl -sk -H "Authorization: Bearer $TOKEN" 'https://10.20.30.100:55000/agents/<id>/group/is_sync' | jq .
+        예상 출력 `id=001 status=active lastKeepAlive=2분전`.
+        운영 해석: manager 가 agent 인식 = 통신 정상. lastKeepAlive 30초 이상 = disconnected.
+      - |
+        **[OSS] /var/ossec/queue/sockets (IPC 검증)** — 내부.
+          # 1. queue/socket 디렉토리
+          sudo ls -la /var/ossec/queue/sockets/
+          # 2. 각 socket 의 최근 활동
+          sudo ls -la /var/ossec/queue/sockets/queue
+          sudo ls -la /var/ossec/queue/sockets/agentd
+          # 3. agent buffer 가득 (Manager 통신 끊김 시)
+          sudo cat /var/ossec/var/run/wazuh-agentd.state 2>/dev/null
+          # 4. 통계 (수집·전송)
+          sudo grep -E 'msg_sent|msg_buffered' /var/ossec/var/run/wazuh-agentd.state 2>/dev/null
+        예상 출력 `socket queue 0 byte / msg_sent 12345 msg_buffered 0`.
+        운영 해석: msg_buffered > 0 = Manager 통신 지연. 사고 진단의 핵심 지표.
+      - |
+        **[OSS] Prometheus wazuh_exporter** — 메트릭화.
+          # 1. exporter 설치 (wazuh-exporter)
+          docker run -d --name wazuh-exporter -p 9097:9097 \
+            -e WAZUH_API_URL=https://10.20.30.100:55000 -e WAZUH_USER=admin -e WAZUH_PASS=<pass> \
+            wazuh/exporter:latest
+          # 2. 메트릭 확인
+          curl -sS http://localhost:9097/metrics | grep wazuh_agent_status
+          # 3. Prometheus rule (agent down 알림)
+          # - alert: WazuhAgentDown
+          #   expr: wazuh_agent_status{status="active"} == 0
+          #   for: 5m
+          # 4. Grafana dashboard
+        예상 출력 `wazuh_agent_status{name="secu",status="active"} 1`.
+        운영 해석: 시계열 모니터 + alert. 50개 agent 의 상태 동시 관리.
       negative_signs:
       - wazuh-manager 와 혼동
       - fallback 누락
@@ -145,6 +271,62 @@ steps:
       - sudo xmllint --xpath //ossec_config/localfile ossec.conf
       - sudo awk /<localfile>/,/<\/localfile>/ ossec.conf | grep eve
       - Wazuh agent group configuration via API
+      - |
+        **[OSS] grep + 컨텍스트 (eve.json localfile)** — 표준.
+          # 1. eve.json 주변 컨텍스트
+          sudo grep -B1 -A2 eve.json /var/ossec/etc/ossec.conf
+          # 2. 모든 <localfile> 블록 dump
+          sudo awk '/<localfile>/,/<\/localfile>/' /var/ossec/etc/ossec.conf
+          # 3. log_format json 확인 (eve.json 은 json 포맷이어야 함)
+          sudo grep -B1 'eve.json' /var/ossec/etc/ossec.conf | grep log_format
+        예상 출력 `<localfile><log_format>json</log_format><location>/var/log/suricata/eve.json</location></localfile>`.
+        운영 해석: log_format json 필수 - syslog 면 Suricata 의 JSON 구조 못 파싱.
+      - |
+        **[OSS] xmllint (XML 정밀 파싱)** — 표준.
+          # 1. ossec.conf 의 모든 localfile XPath
+          sudo xmllint --xpath '//ossec_config/localfile/location/text()' /var/ossec/etc/ossec.conf
+          # 2. eve.json 인 localfile 블록만
+          sudo xmllint --xpath '//localfile[location="/var/log/suricata/eve.json"]' /var/ossec/etc/ossec.conf 2>/dev/null
+          # 3. log_format 검증
+          sudo xmllint --xpath 'string(//localfile[contains(location,"eve.json")]/log_format)' /var/ossec/etc/ossec.conf
+          # 4. ossec.conf syntax 검증
+          sudo xmllint --noout /var/ossec/etc/ossec.conf && echo "VALID XML"
+        예상 출력 `json / VALID XML`.
+        운영 해석: grep 보다 정확. XML 구조 보장. 자동화·CI 권장.
+      - |
+        **[OSS] yq + 변환 (XML→YAML 친화)** — 가독성.
+          # 1. yq 로 XML 파싱 (xq 모드)
+          sudo apt install -y yq
+          sudo cat /var/ossec/etc/ossec.conf | xq '.ossec_config.localfile[] | select(.location // "" | contains("eve.json"))'
+          # 2. log_format 만 추출
+          sudo cat /var/ossec/etc/ossec.conf | xq -r '.ossec_config.localfile[]? | select(.location // "" | contains("eve.json")) | .log_format'
+          # 3. 모든 localfile 의 location 목록
+          sudo cat /var/ossec/etc/ossec.conf | xq -r '.ossec_config.localfile[]?.location // empty'
+        예상 출력 `{"location":"/var/log/suricata/eve.json","log_format":"json"} / json`.
+        운영 해석: jq 익숙한 분석가에게 친화. JSON 으로 변환해 dashboard 통합.
+      - |
+        **[OSS] Wazuh API agent config 조회** — 중앙.
+          # 1. token (manager 측에서)
+          T=$(curl -sk -u admin:<pass> -X POST 'https://10.20.30.100:55000/security/user/authenticate?raw=true')
+          # 2. agent 의 active configuration 조회
+          curl -sk -H "Authorization: Bearer $T" 'https://10.20.30.100:55000/agents/001/config/syscheck/syscheck' | jq .
+          # 3. localfile 설정 (logcollector)
+          curl -sk -H "Authorization: Bearer $T" 'https://10.20.30.100:55000/agents/001/config/logcollector/localfile' | jq '.data.localfile[] | select(.file | contains("eve.json"))'
+          # 4. group config 와 동일한지
+          curl -sk -H "Authorization: Bearer $T" 'https://10.20.30.100:55000/agents/001/group/is_sync' | jq .
+        예상 출력 `{"file":"/var/log/suricata/eve.json","logformat":"json"}`.
+        운영 해석: agent 측 ossec.conf + 활성 config 동기화 검증. group 미동기화 = 설정 미적용.
+      - |
+        **[OSS] Wazuh Dashboard (Management → Configuration)** — UI.
+          # 1. 브라우저 → https://10.20.30.100 → 로그인
+          # 2. Management → Configuration → Agents → secu (id=001) 선택
+          # 3. Wazuh agent 카드 → Modules → Log collection → Files
+          # 4. /var/log/suricata/eve.json 항목 확인 (json log_format)
+          # 5. CLI 검증
+          T=$(curl -sk -u admin:<pass> -X POST 'https://10.20.30.100:55000/security/user/authenticate?raw=true')
+          curl -sk -H "Authorization: Bearer $T" 'https://10.20.30.100:55000/agents/001/config/logcollector/localfile' | jq -r '.data.localfile[] | "\(.file)\t\(.logformat)"' | column -t
+        UI 동작: agent 별 모니터링 파일 목록 + status.
+        운영 해석: 50개 agent 의 설정 한 화면. SOC 표준.
       negative_signs:
       - 다른 로그 파일 검색
       - 설정 없는데 정상 판정
@@ -201,6 +383,68 @@ steps:
       - Wazuh Dashboard filter data.srcip:10.20.30.201
       - Kibana Discover + srcip field
       - Wazuh API GET /alerts?data.srcip=10.20.30.201
+      - |
+        **[OSS] grep + jq (정밀 IP 필터)** — 표준.
+          # 1. grep 빠른 지표
+          sudo grep -F 10.20.30.201 /var/ossec/logs/alerts/alerts.json | tail -3
+          # 2. jq 정확한 src/dest IP 매칭
+          sudo jq -c 'select(.data.srcip=="10.20.30.201") | {timestamp, rule:.rule.description, level:.rule.level}' /var/ossec/logs/alerts/alerts.json | tail -10
+          # 3. 매칭 룰 분포 (top10)
+          sudo jq -r 'select(.data.srcip=="10.20.30.201") | .rule.description' /var/ossec/logs/alerts/alerts.json | sort | uniq -c | sort -rn | head
+          # 4. 시간대별 분포
+          sudo jq -r 'select(.data.srcip=="10.20.30.201") | .timestamp[:13]' /var/ossec/logs/alerts/alerts.json | sort | uniq -c
+        예상 출력 `12 Web attack / 5 Multiple authentication failures / 시간대별 막대`.
+        운영 해석: jq = 구조화 + 빈도. attacker 행동 패턴 식별.
+      - |
+        **[OSS] OpenSearch / Elastic 쿼리 (Wazuh Indexer)** — 중앙.
+          # 1. token 또는 basic auth
+          AUTH='-u admin:SecretPassword'
+          # 2. attacker IP 의 최근 alert
+          curl -sk $AUTH 'https://10.20.30.100:9200/wazuh-alerts-*/_search' -H 'Content-Type: application/json' -d '{
+            "size": 10,
+            "query": {"term": {"data.srcip": "10.20.30.201"}},
+            "sort": [{"@timestamp": "desc"}]
+          }' | jq '.hits.hits[]._source | {timestamp,rule:.rule.description}'
+          # 3. 시간대별 집계
+          curl -sk $AUTH 'https://10.20.30.100:9200/wazuh-alerts-*/_search' -H 'Content-Type: application/json' -d '{
+            "size":0, "query":{"term":{"data.srcip":"10.20.30.201"}},
+            "aggs":{"per_hour":{"date_histogram":{"field":"@timestamp","calendar_interval":"hour"}}}
+          }' | jq .aggregations.per_hour.buckets
+        예상 출력 `최근 10건 + 시간별 buckets [{key_as_string:..., doc_count:5}]`.
+        운영 해석: 인덱스 검색 = 수십억 건도 즉시. 운영 SOC 표준.
+      - |
+        **[OSS] Wazuh Dashboard Discover (GUI)** — 분석가 UI.
+          # 1. 브라우저 → https://10.20.30.100 → Security events
+          # 2. KQL: data.srcip:"10.20.30.201"
+          # 3. 시간 범위 (Last 24 hours)
+          # 4. 룰 그룹 별 panel: rule.groups, rule.level, location
+          # 5. CSV/JSON export
+          # CLI 검증
+          curl -sk -u admin:<pass> 'https://10.20.30.100:9200/wazuh-alerts-*/_count?q=data.srcip:10.20.30.201' | jq .count
+        UI 동작: 시각 + KQL + chart + export.
+        운영 해석: 분석가 daily driver. 시간 + 호스트 + 룰 다축 분석.
+      - |
+        **[OSS] Wazuh Manager API (rule-based 조회)** — REST.
+          # 1. token
+          T=$(curl -sk -u admin:<pass> -X POST 'https://10.20.30.100:55000/security/user/authenticate?raw=true')
+          # 2. rule_id 별 alert 조회 (예: 31100=web attack)
+          curl -sk -H "Authorization: Bearer $T" 'https://10.20.30.100:55000/manager/stats/analysisd' | jq .
+          # 3. agent 별 통계
+          curl -sk -H "Authorization: Bearer $T" 'https://10.20.30.100:55000/agents/001/stats/agent' | jq .
+        예상 출력 `analysisd events_processed 12345 / agent secu lastKeepAlive 2분`.
+        운영 해석: REST API 로 모든 통계 자동화. dashboard + alert 통합.
+      - |
+        **[OSS] alerts.json correlation (jq + 시각화)** — 분석.
+          # 1. attacker IP 의 모든 alert + level 분포
+          sudo jq -c 'select(.data.srcip=="10.20.30.201") | {time:.timestamp, level:.rule.level, rule_id:.rule.id, desc:.rule.description}' /var/ossec/logs/alerts/alerts.json
+          # 2. high level (>=10) 만
+          sudo jq -c 'select(.data.srcip=="10.20.30.201" and .rule.level>=10)' /var/ossec/logs/alerts/alerts.json | wc -l
+          # 3. unique rule.id 목록 (공격 다양성)
+          sudo jq -r 'select(.data.srcip=="10.20.30.201") | .rule.id' /var/ossec/logs/alerts/alerts.json | sort -u
+          # 4. terminal 시각화 (gnuplot)
+          sudo jq -r 'select(.data.srcip=="10.20.30.201") | .timestamp[:13]' /var/ossec/logs/alerts/alerts.json | sort | uniq -c | gnuplot -p -e 'plot "<cat" with histeps'
+        예상 출력 `12 unique rule.id 발견 / 시간 분포 막대`.
+        운영 해석: 단일 IP 의 공격 다양성 + 시간 분포. APT 판단 기초.
       negative_signs:
       - 0 hits 정상 판정
       - 다른 IP 검색
@@ -240,6 +484,64 @@ steps:
       - sudo xmllint --xpath //localfile[location[contains(., modsec)]] ossec.conf
       - Wazuh ruleset 에 ModSecurity decoder 매칭 확인
       - Wazuh Dashboard Management Groups agent.conf 확인
+      - |
+        **[OSS] grep + 컨텍스트 (modsec_audit localfile)** — 표준.
+          # 1. modsec_audit 주변 컨텍스트
+          sudo grep -B1 -A3 modsec_audit /var/ossec/etc/ossec.conf
+          # 2. 모든 localfile 블록 dump
+          sudo awk '/<localfile>/,/<\/localfile>/' /var/ossec/etc/ossec.conf | grep -B1 -A3 modsec
+          # 3. log_format 검증 (multi-line 필수)
+          sudo grep -B1 -A3 modsec_audit /var/ossec/etc/ossec.conf | grep log_format
+          # 4. ModSec audit 파일 자체 확인
+          sudo ls -la /var/log/apache2/modsec_audit.log
+        예상 출력 `<log_format>multi-line</log_format><location>/var/log/apache2/modsec_audit.log</location>`.
+        운영 해석: ModSec audit 는 멀티파트 (A-Z 섹션). multi-line 또는 multi-line-regex 필수.
+      - |
+        **[OSS] xmllint XPath (XML 정밀)** — 정확.
+          # 1. modsec 관련 localfile XPath
+          sudo xmllint --xpath '//localfile[contains(location, "modsec_audit")]' /var/ossec/etc/ossec.conf
+          # 2. log_format 추출
+          sudo xmllint --xpath 'string(//localfile[contains(location, "modsec")]/log_format)' /var/ossec/etc/ossec.conf
+          # 3. 모든 모니터 파일 + 포맷 한 줄로
+          sudo xmllint --xpath '//localfile' /var/ossec/etc/ossec.conf 2>/dev/null
+          # 4. syntax 검증
+          sudo xmllint --noout /var/ossec/etc/ossec.conf && echo "VALID"
+        예상 출력 `multi-line / VALID`.
+        운영 해석: XML 구조 보장. CI 검증·자동화 권장.
+      - |
+        **[OSS] ModSecurity audit log 직접 검증** — 데이터.
+          # 1. ModSec audit 파일 존재
+          sudo ls -la /var/log/apache2/modsec_audit.log
+          # 2. 최근 audit entry (멀티파트)
+          sudo tail -100 /var/log/apache2/modsec_audit.log | head
+          # 3. attack 카운트
+          sudo grep -cE 'CRS|Attack' /var/log/apache2/modsec_audit.log
+          # 4. SecAuditEngine 설정 확인
+          sudo grep -E 'SecAuditEngine|SecAuditLog' /etc/modsecurity/*.conf
+        예상 출력 `SecAuditEngine On / SecAuditLog /var/log/apache2/modsec_audit.log / CRS 매칭 12건`.
+        운영 해석: ossec.conf 설정 + 실제 file + ModSec config 3축 검증.
+      - |
+        **[OSS] Wazuh decoder 검증 (ModSecurity ruleset)** — manager.
+          # 1. ModSec decoder
+          sudo grep -A 5 -i modsecurity /var/ossec/ruleset/decoders/0125-modsecurity_decoders.xml | head -30
+          # 2. ModSec rule (level 매핑)
+          sudo grep -A 3 'modsec' /var/ossec/ruleset/rules/0250-modsecurity_rules.xml | head -30
+          # 3. local_decoder.xml 추가 (커스텀)
+          sudo cat /var/ossec/etc/decoders/local_decoder.xml | grep -A 3 modsec
+          # 4. 적용된 decoder 테스트
+          sudo /var/ossec/bin/wazuh-logtest <<<"$(tail -1 /var/log/apache2/modsec_audit.log)"
+        예상 출력 `decoder: modsecurity / rule: 31100 (Web attack) / level: 7`.
+        운영 해석: agent ossec.conf 의 localfile + manager decoder 둘 다 있어야 alert.
+      - |
+        **[OSS] Wazuh Dashboard Management → Configuration** — UI.
+          # 1. https://10.20.30.100 → Management → Configuration
+          # 2. Agents → web (id=002) → Modules → Log collection
+          # 3. modsec_audit.log 항목 확인 + log_format 표시
+          # 4. CLI 검증 (manager API)
+          T=$(curl -sk -u admin:<pass> -X POST 'https://10.20.30.100:55000/security/user/authenticate?raw=true')
+          curl -sk -H "Authorization: Bearer $T" 'https://10.20.30.100:55000/agents/002/config/logcollector/localfile' | jq -r '.data.localfile[] | select(.file | contains("modsec")) | "\(.file)\t\(.logformat)"'
+        UI 동작: 시각 표시 + 활성 config 동기화 상태.
+        운영 해석: agent config drift 감지. group 미동기화 = 설정 미적용 가능.
       negative_signs:
       - log_format 확인 누락(multi-line 필수)
       - siem VM 에서 실행(web 아님)
@@ -278,6 +580,75 @@ steps:
       - XSStrike / OWASP ZAP 능동 스캔
       - Python requests + payload 다양화
       - Python headless selenium 으로 brow-based
+      - |
+        **[OSS] curl (URL-encoded XSS payload)** — 표준.
+          # 1. 가장 단순 payload (대문자 small)
+          curl -sS -o /dev/null -w 'code=%{http_code}\n' 'http://10.20.30.80/?q=%3Cscript%3Ealert(1)%3C%2Fscript%3E'
+          # 2. img tag onerror (CRS 다른 룰 트리거)
+          curl -sS -o /dev/null -w 'code=%{http_code}\n' 'http://10.20.30.80/?q=%3Cimg%20src%3Dx%20onerror%3Dalert(1)%3E'
+          # 3. POST body
+          curl -sS -o /dev/null -w 'code=%{http_code}\n' -X POST http://10.20.30.80/login -d 'username=<script>alert(1)</script>&password=test'
+          # 4. User-Agent 에 payload (위치 다양화)
+          curl -sS -o /dev/null -w 'code=%{http_code}\n' -A '<script>alert(1)</script>' http://10.20.30.80/
+          # 5. encoded payload (이중 인코딩)
+          curl -sS -o /dev/null -w 'code=%{http_code}\n' "http://10.20.30.80/?q=%253Cscript%253Ealert(1)%253C%252Fscript%253E"
+        예상 출력 `code=403 (정상 차단) / 다양한 vector → 다양한 룰 매칭`.
+        운영 해석: 단순/벡터 다양/위치 다양 → ModSec CRS 941xxx 룰 다양 매칭.
+      - |
+        **[OSS] OWASP ZAP active scan (자동 fuzzing)** — pentest.
+          # 1. ZAP daemon 모드 시작
+          docker run -d -p 8090:8090 --name zap owasp/zap2docker-stable zap.sh -daemon -host 0.0.0.0 -port 8090 -config api.disablekey=true
+          # 2. spider scan
+          curl -sS 'http://localhost:8090/JSON/spider/action/scan?url=http://10.20.30.80'
+          # 3. active scan (XSS scanner included)
+          curl -sS 'http://localhost:8090/JSON/ascan/action/scan?url=http://10.20.30.80&scanPolicyName=Default+Policy'
+          # 4. 결과 (alerts)
+          curl -sS 'http://localhost:8090/JSON/core/view/alerts?baseurl=http://10.20.30.80' | jq '.alerts[] | select(.name | contains("XSS"))'
+        예상 출력 `XSS alerts: 5 / risk: high`.
+        운영 해석: 학생용 자동 XSS 탐색. WAF 효과 정량 측정.
+      - |
+        **[OSS] XSStrike (XSS 전용 fuzzer)** — 정밀.
+          # 1. 설치
+          git clone https://github.com/s0md3v/XSStrike /opt/xsstrike
+          cd /opt/xsstrike && pip3 install -r requirements.txt
+          # 2. URL 파라미터 자동 fuzzing
+          python3 xsstrike.py -u 'http://10.20.30.80/?q=test'
+          # 3. crawler 모드 + WAF detection
+          python3 xsstrike.py -u 'http://10.20.30.80' --crawl --skip-poc
+          # 4. WAF bypass 시도 (ModSec 우회 payload)
+          python3 xsstrike.py -u 'http://10.20.30.80/?q=test' --json
+        예상 출력 `[!] WAF detected: ModSecurity / [+] Payload generated 23 / [-] Blocked: 23/23`.
+        운영 해석: ModSec 차단 100% = 정상. 학생이 다양한 payload 가 모두 막히는 경험.
+      - |
+        **[OSS] sqlmap + tamper script (XSS 응용)** — 변형.
+          # 1. sqlmap 의 tamper script 로 payload 인코딩 다양화
+          sqlmap -u 'http://10.20.30.80/?q=test' --tamper=charunicodeencode,space2comment --batch --crawl=2
+          # 2. 동시 ModSec audit 모니터 (web 측)
+          # ssh ccc@10.20.30.80 'sudo tail -F /var/log/apache2/modsec_audit.log' &
+          # 3. 차단된 payload 카운트
+          ssh ccc@10.20.30.80 'sudo grep -c "Access denied" /var/log/apache2/modsec_audit.log'
+        예상 출력 `Access denied 23회`.
+        운영 해석: SQL injection 도구로 XSS payload 위장 → WAF 정책 robustness 확인.
+      - |
+        **[OSS] Python requests + payload library** — 자동화.
+          # 1. Python script
+          python3 <<'PY'
+          import requests
+          payloads = [
+              "<script>alert(1)</script>",
+              "<img src=x onerror=alert(1)>",
+              "<svg/onload=alert(1)>",
+              "javascript:alert(1)",
+              "<iframe src=javascript:alert(1)>",
+          ]
+          for p in payloads:
+              r = requests.get("http://10.20.30.80/", params={"q": p}, timeout=5)
+              print(f"{r.status_code} - {p[:30]}")
+          PY
+          # 2. ModSec 측 매칭 룰 분석
+          ssh ccc@10.20.30.80 'sudo tail -50 /var/log/apache2/modsec_audit.log | grep -oE "id \"[0-9]+\"" | sort | uniq -c'
+        예상 출력 `403 / 941100 941110 941160 941180 ... 5건 매칭`.
+        운영 해석: 다양한 vector → CRS 941xxx 룰 다수 매칭. 측정 가능한 WAF coverage.
       negative_signs:
       - script tag 인코딩 누락(WAF 차단 안 됨)
       - 응답 코드 확인 없음
@@ -322,6 +693,78 @@ steps:
       - Wazuh Dashboard rule.groups:attack 필터
       - Elastic 검색 rule.id:(31101 OR 31102)
       - MITRE T1059.007 기반 correlation
+      - |
+        **[OSS] grep + jq (XSS rule 매칭 alert)** — 표준.
+          # 1. 빠른 grep
+          sudo grep -iE 'XSS|Cross-Site|script' /var/ossec/logs/alerts/alerts.json | tail -3
+          # 2. jq 정확 매칭
+          sudo jq -c 'select(.rule.description | test("XSS|Cross-Site"; "i")) | {timestamp, rule:.rule.description, level:.rule.level, srcip:.data.srcip}' /var/ossec/logs/alerts/alerts.json | tail -10
+          # 3. CRS 941xxx 룰 ID 별 매칭
+          sudo jq -r 'select(.rule.id | tostring | startswith("941")) | .rule.id' /var/ossec/logs/alerts/alerts.json | sort | uniq -c
+          # 4. MITRE ATT&CK ID 매핑
+          sudo jq -r 'select(.rule.description | test("XSS"; "i")) | .rule.mitre.id[]?' /var/ossec/logs/alerts/alerts.json | sort -u
+        예상 출력 `941100 12 / 941110 5 / T1059.007 / T1190`.
+        운영 해석: rule.id 분포 + MITRE ID = 공격 유형 표준화.
+      - |
+        **[OSS] OpenSearch / Elastic 쿼리** — 인덱스.
+          AUTH='-u admin:SecretPassword'
+          # 1. XSS 룰 매칭 alert
+          curl -sk $AUTH 'https://10.20.30.100:9200/wazuh-alerts-*/_search' -H 'Content-Type: application/json' -d '{
+            "size":10,
+            "query":{"query_string":{"query":"rule.description:(XSS OR Cross-Site)"}},
+            "sort":[{"@timestamp":"desc"}]
+          }' | jq '.hits.hits[]._source | {ts:.["@timestamp"], rule:.rule.description}'
+          # 2. CRS 941xxx 매칭 룰 카운트
+          curl -sk $AUTH 'https://10.20.30.100:9200/wazuh-alerts-*/_count?q=rule.id:941*'
+          # 3. MITRE technique 별 분포
+          curl -sk $AUTH 'https://10.20.30.100:9200/wazuh-alerts-*/_search' -H 'Content-Type: application/json' -d '{
+            "size":0, "aggs":{"by_mitre":{"terms":{"field":"rule.mitre.id"}}}
+          }' | jq .aggregations.by_mitre.buckets
+        예상 출력 `XSS alert 12건 / T1059.007 → 8 / T1190 → 4`.
+        운영 해석: MITRE 매핑 = 공격 패턴 표준 분류. 운영 보고서.
+      - |
+        **[OSS] Wazuh Dashboard KQL Discover** — 분석가.
+          # 1. 브라우저 → https://10.20.30.100 → Security events
+          # 2. KQL 입력:
+          #   rule.description: ("XSS" or "Cross-Site")
+          # 3. 또는 rule.id:941* (CRS 941 family)
+          # 4. 시간 범위 last 24h
+          # 5. CSV export
+          # 또는 rule.mitre.id:T1059* 으로 MITRE 기반 필터
+          # CLI 검증
+          curl -sk -u admin:<pass> 'https://10.20.30.100:9200/wazuh-alerts-*/_count?q=rule.description:(XSS+OR+Cross-Site)' | jq .count
+        UI 동작: KQL + chart + filter + saved search.
+        운영 해석: SOC 분석가 daily. 공격 유형 visual 검토.
+      - |
+        **[OSS] Sigma rule + sigmac (탐지 표준)** — 룰 표준.
+          # 1. Sigma rule 정의
+          # /opt/sigma/rules/web/web_xss_attempt.yml:
+          # title: XSS Attempt
+          # logsource: {product: webserver}
+          # detection:
+          #   selection:
+          #     url: ['*<script>*', '*onerror=*']
+          #   condition: selection
+          # 2. ElasticSearch 쿼리로 변환
+          pip3 install sigma-cli
+          sigma convert -t elasticsearch -p ecs_zeek /opt/sigma/rules/web/web_xss_attempt.yml
+          # 3. Wazuh decoder 로 변환 (custom)
+          sigma convert -t wazuh /opt/sigma/rules/web/web_xss_attempt.yml
+          # 4. github.com/SigmaHQ/sigma 의 모든 web rule 적용
+          sigma list rules /opt/sigma/rules/web | wc -l
+        예상 출력 `wazuh rule XML / SigmaHQ 200+ web rules`.
+        운영 해석: 룰을 vendor-neutral 표준 (Sigma) 으로 작성 → 벤더 변경 시 재사용.
+      - |
+        **[OSS] Wazuh API alerts 통계** — REST.
+          T=$(curl -sk -u admin:<pass> -X POST 'https://10.20.30.100:55000/security/user/authenticate?raw=true')
+          # 1. rule.id 별 카운트
+          curl -sk -H "Authorization: Bearer $T" 'https://10.20.30.100:55000/manager/stats/analysisd' | jq .
+          # 2. 가장 빈도 높은 룰
+          curl -sk -H "Authorization: Bearer $T" 'https://10.20.30.100:55000/rules?level=10' | jq '.data.affected_items | length'
+          # 3. group: attack 만
+          curl -sk -H "Authorization: Bearer $T" 'https://10.20.30.100:55000/rules/groups' | jq '.data.affected_items[] | select(.name=="attack")'
+        예상 출력 `analysisd events_processed 12345 / level>=10 룰 23개`.
+        운영 해석: API 로 통계 자동화. 운영 보고서·SLA 측정.
       negative_signs:
       - 0 hits 정상 판정
       - 다른 공격 타입 검색
@@ -381,6 +824,79 @@ steps:
       - sudo nft -a list tables
       - sudo nft list ruleset(너무 많음)
       - sudo nft list sets 로 모든 set 요약
+      - |
+        **[OSS] nft list (table/set/chain 요약)** — 표준.
+          # 1. 모든 table
+          sudo nft list tables
+          # 2. 모든 set 요약 (table 별)
+          sudo nft list sets
+          # 3. 모든 chain 요약
+          sudo nft list chains
+          # 4. JSON 으로 종합
+          sudo nft -j list ruleset | jq '{tables: [.nftables[] | select(.table) | .table.name], sets: [.nftables[] | select(.set) | .set.name], chains: [.nftables[] | select(.chain) | .chain.name]}'
+        예상 출력 `inet filter / inet nat / sets [cti_ips, blocklist] / chains [input, forward, output]`.
+        운영 해석: 4 line 으로 전체 정책 요약. cleanup·migration 평가.
+      - |
+        **[OSS] nft -a list ruleset (handle 포함 전체)** — audit.
+          # 1. 전체 정책 + handle (룰 식별자)
+          sudo nft -a list ruleset
+          # 2. table 별 분리
+          for tbl in $(sudo nft list tables | awk '{print $2, $3}'); do
+            echo "=== $tbl ==="
+            sudo nft -a list table $tbl
+          done
+          # 3. backup (재현 가능)
+          sudo nft list ruleset > /tmp/nft-backup-$(date +%Y%m%d-%H%M).nft
+          # 4. backup 적용 검증
+          sudo nft -c -f /tmp/nft-backup-*.nft && echo "VALID BACKUP"
+        예상 출력 `table inet filter { set cti_ips {...} chain input { handle 5 ... } }`.
+        운영 해석: handle 으로 정확한 룰 삭제 가능. 백업·재현 표준.
+      - |
+        **[OSS] nft monitor (실시간 변경 감지)** — audit.
+          # 1. 백그라운드 모니터
+          sudo nft monitor > /tmp/nft-events.log &
+          MON=$!
+          # 2. 변경 발생 시 즉시 캡처
+          sudo nft add element inet filter cti_ips '{ 198.51.100.99 }'
+          sudo nft delete element inet filter cti_ips '{ 198.51.100.99 }'
+          # 3. 결과 확인
+          tail /tmp/nft-events.log
+          # 4. 종료
+          kill $MON
+        예상 출력 `add element ... 198.51.100.99 / delete element ...`.
+        운영 해석: 정책 변경 실시간 audit. SOC 변경 추적.
+      - |
+        **[OSS] nftables JSON 메트릭화** — 자동화.
+          # 1. set element 갯수 + chain rule 갯수
+          sudo nft -j list ruleset | jq '
+            .nftables[] | select(.set) | "set \(.set.name) elements=\((.set.elem // []) | length)"
+          '
+          sudo nft -j list ruleset | jq '
+            .nftables[] | select(.rule) | .rule.chain
+          ' | sort | uniq -c
+          # 2. counter 정렬 (가장 많이 매칭된 룰)
+          sudo nft -j list ruleset | jq '.nftables[] | select(.rule) | {chain: .rule.chain, counter: (.rule.expr[]? | select(.counter) | .counter)}' 2>/dev/null | head
+          # 3. Prometheus 메트릭으로 export
+          sudo nft -j list ruleset | jq -r '.nftables[] | select(.set) | "nft_set_size{set=\"\(.set.name)\"} \((.set.elem // []) | length)"' > /var/lib/node_exporter/textfile/nft.prom
+        예상 출력 `set cti_ips elements=12 / set blocklist elements=5 / counter packets 234`.
+        운영 해석: Prometheus + Grafana → set 크기 시계열, 카운터 추세, alert.
+      - |
+        **[OSS] etckeeper (정책 변경 history)** — IaC.
+          # 1. 설치 + git init
+          sudo apt install -y etckeeper
+          sudo etckeeper init
+          # 2. /etc/nftables.conf 변경 시 자동 commit
+          sudo nft list ruleset > /etc/nftables.conf
+          sudo etckeeper commit "snapshot ruleset 2026-05-04"
+          # 3. 변경 history
+          cd /etc && sudo git log --oneline nftables.conf | head
+          # 4. 특정 시점 diff
+          sudo git log -p nftables.conf | head -50
+          # 5. rollback
+          # sudo git checkout <commit-sha> -- nftables.conf
+          # sudo systemctl reload nftables
+        예상 출력 `commit abc123 add cti_ips / commit def456 cleanup blocklist`.
+        운영 해석: 정책 변경 history + diff + rollback. enterprise IaC.
       negative_signs:
       - 잘못된 명령
       - filter 없으면 cleanup 다 됨 (의도와 다를 수도)
@@ -435,6 +951,84 @@ steps:
       - systemctl status suricata wazuh-agent --no-pager
       - Prometheus systemd exporter
       - Ansible service module assert
+      - |
+        **[OSS] systemctl 다중 서비스 일괄** — 표준.
+          # 1. is-active (다중 서비스, 한 줄씩)
+          systemctl is-active suricata wazuh-agent
+          # 2. is-failed (반대 — 죽은 서비스만)
+          systemctl is-failed suricata wazuh-agent
+          # 3. show 으로 정량 메트릭 (uptime + memory)
+          for s in suricata wazuh-agent; do
+            systemctl show $s --property=ActiveState,SubState,ActiveEnterTimestamp,MemoryCurrent,CPUUsageNSec
+          done
+          # 4. 한 번에 status (시각 검토)
+          systemctl status suricata wazuh-agent --no-pager --lines=5
+        예상 출력 `active / active / 둘 다 활성 / uptime 2h memory 12MB`.
+        운영 해석: is-active = exit code 기반. 자동화·alert 친화. show 로 정밀 메트릭.
+      - |
+        **[OSS] systemd-cgls (cgroup 통합 view)** — process.
+          # 1. systemd cgroup 트리
+          systemd-cgls --no-pager | grep -A 2 -E 'suricata|wazuh'
+          # 2. cgroup 별 자원
+          systemd-cgtop -n 1 | grep -E 'suricata|wazuh'
+          # 3. process 트리 (자식 process 까지)
+          ps auxf | grep -E 'suricata|wazuh' | grep -v grep
+          # 4. open file descriptor
+          for s in suricata wazuh-agent; do
+            pid=$(systemctl show $s --property=MainPID --value)
+            [ "$pid" != "0" ] && echo "$s PID=$pid FDs=$(ls /proc/$pid/fd 2>/dev/null | wc -l)"
+          done
+        예상 출력 `suricata.service / wazuh-agent.service / FDs=128`.
+        운영 해석: cgroup 자원 + FD 누적. memory leak·FD 누수 조기 감지.
+      - |
+        **[OSS] journalctl (서비스 로그 종합)** — 진단.
+          # 1. 두 서비스 로그 시간순
+          sudo journalctl -u suricata -u wazuh-agent --since '1h ago' --no-pager
+          # 2. error 만
+          sudo journalctl -u suricata -u wazuh-agent --since 'today' -p err --no-pager
+          # 3. 시작·정지 이벤트
+          sudo journalctl -u suricata -u wazuh-agent | grep -E 'Started|Stopped|Reload|Failed'
+          # 4. 빈도 통계
+          sudo journalctl -u suricata -u wazuh-agent --since '24h ago' | grep -oE '^[A-Za-z]+ [0-9]+ [0-9:]+' | head -100 | awk '{print $3}' | cut -d: -f1 | sort | uniq -c
+        예상 출력 `Started 2회, Reload 5회, no errors`.
+        운영 해석: 시작·종료 이벤트 분석 → 안정성 평가. 잦은 restart = 의심.
+      - |
+        **[OSS] Prometheus systemd_exporter** — 메트릭화.
+          # 1. systemd_exporter 설치
+          sudo apt install -y prometheus-systemd-exporter
+          sudo systemctl enable --now prometheus-systemd-exporter
+          # 2. 메트릭 endpoint
+          curl -sS http://localhost:9558/metrics | grep -E 'systemd_unit_state.*(suricata|wazuh-agent)'
+          # 3. Prometheus rule (down 알림)
+          # - alert: ServiceDown
+          #   expr: systemd_unit_state{name=~"(suricata|wazuh-agent).service",state="active"} == 0
+          #   for: 2m
+          # 4. Grafana panel
+        예상 출력 `systemd_unit_state{name="suricata.service",state="active"} 1`.
+        운영 해석: 시계열 + alert. 50개 호스트 다중 서비스 동시 모니터.
+      - |
+        **[OSS] Ansible health-check playbook** — IaC + 검증.
+          # 1. /etc/ansible/playbooks/health-check.yml
+          # ---
+          # - hosts: secu
+          #   tasks:
+          #     - name: check services
+          #       systemd:
+          #         name: "{{ item }}"
+          #         state: started
+          #       loop: [suricata, wazuh-agent]
+          #       check_mode: yes
+          #     - name: assert active
+          #       assert:
+          #         that: ansible_facts.services["{{ item }}"]["state"] == "running"
+          #       loop: [suricata, wazuh-agent]
+          # 2. 실행
+          ansible-playbook -i inventory health-check.yml
+          # 3. CI 통합 (실패 시 PR block)
+          # 4. 결과 (json) → SIEM
+          ansible-playbook -i inventory health-check.yml -v --tags=verify > /tmp/health.json
+        예상 출력 `ok=2 changed=0 failed=0`.
+        운영 해석: PR-time + cron 양쪽 검증. 정책 drift 자동 감지.
       negative_signs:
       - 한 서비스씩 따로 확인
       - is-active 대신 status 전체 출력
@@ -478,6 +1072,92 @@ steps:
       - Kibana histogram aggregation on rule.level
       - Splunk | stats count by rule_level
       - Python pandas value_counts
+      - |
+        **[OSS] jq + sort + uniq 파이프라인** — 표준.
+          # 1. 최근 100건 level 분포
+          sudo tail -100 /var/ossec/logs/alerts/alerts.json | jq -r .rule.level | sort -n | uniq -c
+          # 2. level 별 + 룰 그룹 도수
+          sudo tail -100 /var/ossec/logs/alerts/alerts.json | jq -r '"\(.rule.level)\t\(.rule.groups[0])"' | sort | uniq -c | sort -rn
+          # 3. high level (>=10) 만
+          sudo tail -1000 /var/ossec/logs/alerts/alerts.json | jq -c 'select(.rule.level>=10)' | wc -l
+          # 4. 시간대별 level 분포
+          sudo tail -1000 /var/ossec/logs/alerts/alerts.json | jq -r '"\(.timestamp[:13])\t\(.rule.level)"' | sort | uniq -c
+        예상 출력 `5: 45 / 7: 23 / 10: 12 / 12: 5 / 시간대별 분포`.
+        운영 해석: level 분포 = noise profile. high level 급증 = 공격 진행. 시간대별 = APT 패턴.
+      - |
+        **[OSS] OpenSearch / Elastic histogram aggregation** — 인덱스.
+          AUTH='-u admin:SecretPassword'
+          # 1. level 분포 aggregation
+          curl -sk $AUTH 'https://10.20.30.100:9200/wazuh-alerts-*/_search' -H 'Content-Type: application/json' -d '{
+            "size":0,
+            "aggs":{
+              "by_level":{"terms":{"field":"rule.level","size":20}},
+              "by_hour":{"date_histogram":{"field":"@timestamp","calendar_interval":"hour"}},
+              "high_level":{"filter":{"range":{"rule.level":{"gte":10}}}}
+            }
+          }' | jq '{levels: .aggregations.by_level.buckets, high_count: .aggregations.high_level.doc_count}'
+          # 2. level 별 시간대 (heatmap)
+          curl -sk $AUTH 'https://10.20.30.100:9200/wazuh-alerts-*/_search' -H 'Content-Type: application/json' -d '{
+            "size":0,
+            "aggs":{"per_hour":{"date_histogram":{"field":"@timestamp","calendar_interval":"hour"},
+              "aggs":{"by_level":{"terms":{"field":"rule.level"}}}}}
+          }' | jq .aggregations.per_hour.buckets
+        예상 출력 `levels [{key:5,doc_count:120},{key:7,doc_count:50}] / high_count: 12`.
+        운영 해석: index 검색 = 수십억 대상. dashboard 표준 query.
+      - |
+        **[OSS] Wazuh Dashboard Visualize (heatmap)** — 시각.
+          # 1. https://10.20.30.100 → Visualize → Create
+          # 2. Heatmap: Y=rule.level, X=@timestamp histogram
+          # 3. Pie: by rule.groups
+          # 4. Bar: top 10 rule.id
+          # 5. Saved search → daily report
+          # CLI 검증
+          curl -sk -u admin:<pass> 'https://10.20.30.100:9200/wazuh-alerts-*/_search' -H 'Content-Type: application/json' -d '{
+            "size":0, "aggs":{"by_level":{"terms":{"field":"rule.level"}}}
+          }' | jq -r '.aggregations.by_level.buckets[] | "\(.key)\t\(.doc_count)"' | column -t
+        UI 동작: heatmap·pie·bar·timeline 종합.
+        운영 해석: SOC 일일 리포트 자동화. 보고서 표준.
+      - |
+        **[OSS] Python pandas (오프라인 분석)** — 데이터.
+          # 1. python script
+          python3 <<'PY'
+          import pandas as pd, json
+          rows = []
+          with open('/var/ossec/logs/alerts/alerts.json') as f:
+              for line in f:
+                  try:
+                      d = json.loads(line)
+                      rows.append({'ts': d['timestamp'], 'level': d['rule']['level'], 'group': d['rule']['groups'][0] if d['rule'].get('groups') else None})
+                  except: pass
+          df = pd.DataFrame(rows[-1000:])
+          df['ts'] = pd.to_datetime(df['ts'])
+          print("Level distribution:")
+          print(df['level'].value_counts().sort_index())
+          print("\nHourly high-level:")
+          print(df[df['level']>=10].groupby(df['ts'].dt.hour)['level'].count())
+          PY
+          # 2. CSV/Excel export
+          # df.to_csv('/tmp/wazuh-analysis.csv')
+        예상 출력 `level 5: 120 / level 10: 12 / hour 14:5 hour 15:3`.
+        운영 해석: pandas 로 정밀 분석 + CSV 보고서. data scientist 친화.
+      - |
+        **[OSS] gnuplot / matplotlib (시각화)** — 즉석.
+          # 1. terminal histogram (gnuplot)
+          sudo tail -1000 /var/ossec/logs/alerts/alerts.json | jq -r .rule.level | sort -n | uniq -c | gnuplot -p -e "set terminal dumb; set xlabel 'level'; set ylabel 'count'; plot '<cat' using 2:1 with histeps"
+          # 2. Python matplotlib (.png 저장)
+          python3 <<'PY'
+          import json, collections, matplotlib.pyplot as plt
+          c = collections.Counter()
+          with open('/var/ossec/logs/alerts/alerts.json') as f:
+              for line in f:
+                  try: c[json.loads(line)['rule']['level']] += 1
+                  except: pass
+          plt.bar(c.keys(), c.values()); plt.xlabel('level'); plt.ylabel('count')
+          plt.savefig('/tmp/level-dist.png')
+          PY
+          ls -la /tmp/level-dist.png
+        예상 출력 `terminal 막대 + .png 200KB`.
+        운영 해석: 즉석 시각화 → 상사·동료에게 공유.
       negative_signs:
       - jq 없이 평문 파싱
       - sort 없이 count 부정확
@@ -613,6 +1293,116 @@ steps:
       - OpenCTI graphql mutation + cti-sync.sh
       - web 의 sudo cat > include-after.conf + apache reload
       - markdown timeline + sha256sum
+      - |
+        **[OSS] Phase 1 — 5 layer evidence 통합 수집 script** — Detection.
+          # 1. /usr/local/bin/ir-detect.sh
+          sudo tee /usr/local/bin/ir-detect.sh > /dev/null <<'SCRIPT'
+          #!/bin/bash
+          T0=$(date -Iseconds)
+          mkdir -p /tmp/ir-$T0
+          # Layer 1: nft counter
+          ssh ccc@10.20.30.1 'sudo nft -j list chain inet filter input' > /tmp/ir-$T0/1-nft.json
+          # Layer 2: Suricata eve.json (alert only)
+          ssh ccc@10.20.30.1 'sudo tail -100 /var/log/suricata/eve.json | jq -c "select(.event_type==\"alert\")"' > /tmp/ir-$T0/2-suricata.json
+          # Layer 3: ModSec audit
+          ssh ccc@10.20.30.80 'sudo tail -200 /var/log/apache2/modsec_audit.log | grep -E "942|941|XSS"' > /tmp/ir-$T0/3-modsec.txt
+          # Layer 4: Wazuh alerts
+          ssh ccc@10.20.30.100 'sudo tail -100 /var/ossec/logs/alerts/alerts.json | jq -c "select(.data.url? // \"\" | tostring | test(\"<script>\";\"i\"))"' > /tmp/ir-$T0/4-wazuh.json
+          # Layer 5: OpenCTI indicator query
+          T=$(ssh ccc@10.20.30.100 'sudo grep ^OPENCTI_ADMIN_TOKEN /opt/opencti/.env | cut -d= -f2')
+          curl -sS -X POST http://10.20.30.100:8080/graphql -H "Authorization: Bearer $T" -H 'Content-Type: application/json' \
+            -d '{"query":"{ indicators(first:5,filters:{mode:and,filters:[{key:\"x_opencti_main_observable_type\",values:[\"IPv4-Addr\"]}],filterGroups:[]}){ edges { node { id name pattern } } } }"}' > /tmp/ir-$T0/5-opencti.json
+          echo "T0=$T0" > /tmp/ir-$T0/timestamps.txt
+          ls -la /tmp/ir-$T0/
+          SCRIPT
+          sudo chmod +x /usr/local/bin/ir-detect.sh
+          sudo /usr/local/bin/ir-detect.sh
+        예상 출력 `/tmp/ir-2026-05-04T...12:00 / 5 evidence file 동시 수집`.
+        운영 해석: 단일 script 로 5 layer 동시 캡처. forensic baseline.
+      - |
+        **[OSS] Phase 2 — OpenCTI indicator + cti-sync.sh** — Containment.
+          # 1. attacker IP indicator 추가
+          T=$(ssh ccc@10.20.30.100 'sudo grep ^OPENCTI_ADMIN_TOKEN /opt/opencti/.env | cut -d= -f2')
+          IND=$(curl -sS -X POST http://10.20.30.100:8080/graphql \
+            -H "Authorization: Bearer $T" -H 'Content-Type: application/json' \
+            -d '{"query":"mutation { indicatorAdd(input:{name:\"XSS-attacker IR-2026-W14-001\",pattern:\"[ipv4-addr:value = \\\"10.20.30.201\\\"]\",pattern_type:\"stix\",x_opencti_main_observable_type:\"IPv4-Addr\",x_opencti_score:90}) { id } }"}' | jq -r .data.indicatorAdd.id)
+          echo "Indicator ID: $IND"
+          # 2. cti-sync 실행 (w13)
+          ssh ccc@10.20.30.1 "OPENCTI_TOKEN=$T sudo /usr/local/bin/cti-sync.sh"
+          # 3. T1 (containment 완료) 기록
+          T1=$(date -Iseconds)
+          # 4. MTTC 계산
+          T0=$(grep T0 /tmp/ir-*/timestamps.txt | tail -1 | cut -d= -f2)
+          MTTC=$(( $(date -d "$T1" +%s) - $(date -d "$T0" +%s) ))
+          echo "MTTC = $MTTC seconds (target ≤ 600)"
+        예상 출력 `Indicator ID: indicator--abc / synced 1 IP / MTTC = 487 seconds`.
+        운영 해석: MTTC = Mean Time To Contain. 운영 KPI. < 10분 목표.
+      - |
+        **[OSS] Phase 3 — ModSec exception rule (Eradication)** — 표준.
+          # 1. /etc/modsecurity/include-after.conf 작성
+          ssh ccc@10.20.30.80 'sudo bash -c "cat > /etc/modsecurity/include-after.conf <<EOF
+          # IR-2026-W14-001 attacker block
+          <LocationMatch \".*\">
+            SecRule REMOTE_ADDR \"@ipMatch 10.20.30.201\" \\
+              \"phase:1,id:99000099,deny,status:403,msg:\\\"Blocked: IR-2026-W14-001 (XSS source)\\\",tag:\\\"incident-response\\\"\"
+          </LocationMatch>
+          EOF"'
+          # 2. apache config test + reload
+          ssh ccc@10.20.30.80 'sudo apachectl configtest && sudo systemctl reload apache2'
+          # 3. attacker 측에서 검증
+          curl -sS -o /dev/null -w 'code=%{http_code}\n' http://10.20.30.80/?test=normal
+          # 4. ModSec audit 에 매칭 확인
+          ssh ccc@10.20.30.80 'sudo tail -20 /var/log/apache2/modsec_audit.log | grep 99000099'
+        예상 출력 `Syntax OK / reloaded / code=403 / matched id 99000099`.
+        운영 해석: 임시 차단 → 영구 정책 변환. 운영 IR 표준.
+      - |
+        **[OSS] Phase 4 — 정상 트래픽 무영향 검증 (Recovery)** — 표준.
+          # 1. web 자체 (다른 IP) 정상 응답
+          ssh ccc@10.20.30.80 'curl -sS -o /dev/null -w "code=%{http_code}\n" http://localhost/'
+          # 2. Wazuh FIM 으로 backend 무결성
+          ssh ccc@10.20.30.100 'sudo tail -100 /var/ossec/logs/alerts/alerts.json | jq -c "select(.syscheck?)"' | wc -l
+          # 3. Suricata 의 정상 트래픽 비율
+          ssh ccc@10.20.30.1 'sudo tail -1000 /var/log/suricata/eve.json | jq -r .event_type | sort | uniq -c'
+          # 4. SLA 검증 (응답 시간)
+          for i in 1 2 3; do
+            curl -sS -o /dev/null -w 'time=%{time_total}s\n' http://10.20.30.80/
+          done
+        예상 출력 `code=200 / 0 syscheck change / flow 80%, alert 5% / time 0.05s`.
+        운영 해석: 정상 사용자 영향 없음 + backend 무결성 확인 = recovery 완료.
+      - |
+        **[OSS] Phase 5 — IR report 자동 생성 (Lessons Learned)** — 보고.
+          # 1. /usr/local/bin/ir-report.sh
+          sudo tee /usr/local/bin/ir-report.sh > /dev/null <<'SCRIPT'
+          #!/bin/bash
+          T0=$1; T1=$2; T2=$3
+          MTTC=$(( $(date -d "$T1" +%s) - $(date -d "$T0" +%s) ))
+          cat <<MD > /tmp/ir-report-$T0.md
+          # Incident IR-2026-W14-001 — XSS Attack Response
+          ## Timeline
+          - t0 ($T0): XSS payload curl → 5 layer evidence 수집
+          - t1 ($T1): OpenCTI indicator + cti-sync 완료
+          - **MTTC = $MTTC s ($(($MTTC/60)) 분)** (target ≤ 10분)
+          - t2 ($T2): ModSec exception rule + reload + 403 검증
+          ## 5 Layer Evidence
+          | Layer | Phase 1 | Phase 2-3 |
+          |-------|---------|-----------|
+          | nft | counter +N | cti_ips +10.20.30.201 |
+          | Suricata | alert 12건 | (no change) |
+          | ModSec | CRS 941110 | id 99000099 (IP deny) |
+          | Wazuh | rule 31100 | (manual IR) |
+          | OpenCTI | indicator query | indicator add + sync |
+          ## Lessons Learned
+          1. MTTC = $((MTTC/60)) 분 — 단축: AR 자동화
+          2. 5 layer cross-check — XSS = ModSec primary
+          3. 재발 방지 — include-after.conf + cti-sync 영구화
+          MD
+          # sha256
+          sha256sum /tmp/ir-report-$T0.md
+          SCRIPT
+          sudo chmod +x /usr/local/bin/ir-report.sh
+          sudo /usr/local/bin/ir-report.sh "<T0>" "<T1>" "<T2>"
+        예상 출력 `IR report 생성 + sha256 abc123...`.
+        운영 해석: IR 보고서 표준 템플릿 + 무결성 (sha256). 감사·교훈 정리.
       negative_signs:
       - 5 단계 중 일부만 (예: Detection + Containment 만)
       - MTTC 측정 누락
