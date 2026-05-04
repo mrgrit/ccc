@@ -40,6 +40,59 @@ steps:
       - dpkg -l suricata 또는 rpm -q suricata
       - systemctl show suricata --property=Version
       - apt policy suricata
+      - |
+        **[OSS] suricata --build-info** — 컴파일 옵션 + 라이브러리 의존성 진단.
+          # 1. build 정보 전체
+          suricata --build-info | head -30
+          # 2. 핵심 옵션 grep
+          suricata --build-info | grep -E "AF_PACKET|HYPERSCAN|LUA|RUST"
+          # 3. CPU SIMD 지원 (성능 영향)
+          suricata --build-info | grep -E "SIMD|hyperscan"
+        예상 출력 `Suricata version 7.0.4 / Features: AF_PACKET HYPERSCAN PCRE2_JIT RUST / Hyperscan support: yes`.
+        운영 해석: HYPERSCAN=yes 면 PCRE 매칭 5-10x 빠름. RUST=yes 면 modern protocol parser. 설치 환경 성능 baseline.
+      - |
+        **[OSS] dpkg / apt (Debian 패키지 메타정보)** — 설치 출처 + 의존성.
+          # 1. 설치된 버전 + 출처
+          dpkg -l suricata | grep '^ii'
+          # 2. 패키지 의존성 트리
+          apt-cache depends suricata
+          # 3. 설치 파일 목록 (config / binary 위치 확인)
+          dpkg -L suricata | head -10
+          # 4. 패키지 release date
+          apt show suricata 2>/dev/null | grep -E "Version|Origin|Maintainer"
+        예상 출력 `ii  suricata  1:7.0.4-1   amd64   Next Generation Intrusion Detection ... / Origin: Debian / Maintainer: Pierre Chifflier`.
+        운영 해석: 공식 repo (Debian) vs OISF PPA 출처 차이. PPA 가 더 신규 버전 (7.x) 제공 — 실무 권장.
+      - |
+        **[OSS] systemctl show (systemd unit 상세)** — service 메타 점검.
+          # 1. 핵심 properties
+          systemctl show suricata --property=Version,FragmentPath,ExecStart,LoadState
+          # 2. unit 파일 직접 view
+          systemctl cat suricata
+          # 3. 환경 변수 + drop-in
+          systemctl show suricata --property=Environment,DropInPaths
+        예상 출력 `FragmentPath=/lib/systemd/system/suricata.service / ExecStart=...suricata -c /etc/suricata/suricata.yaml --pidfile /run/suricata.pid -i ens33`.
+        운영 해석: ExecStart 의 -i 옵션이 캡처 인터페이스 결정. 잘못 지정 시 트래픽 캡처 못함.
+      - |
+        **[OSS] OISF suricata-update** — 룰 + 버전 통합 관리 표준.
+          # 1. 도구 자체 버전
+          suricata-update --version
+          # 2. 호환 가능한 Suricata 엔진 버전 확인
+          suricata-update list-sources --enabled | head
+          # 3. 신규 버전 업그레이드 가능 여부 (apt 우회)
+          curl -s https://oisf-pkg-mirror.s3.amazonaws.com/Release | grep -E "Version|Suite"
+        예상 출력 `suricata-update 1.3.0 / Source: et/open / Version: 7.0.x compatible`.
+        운영 해석: 룰 source 와 Suricata 엔진 버전 호환성 확인. 7.x 룰을 6.x 엔진에 적용 시 일부 keyword 무효.
+      - |
+        **[OSS] OPNsense / pfSense Suricata plugin** — production GUI 환경.
+          # OPNsense web UI 기준
+          # 1. Services → Intrusion Detection → Administration
+          # 2. 우상단 버전 표시 (예: 7.0.5)
+          # 3. CLI 검증 (BSD)
+          pkg info suricata
+          ssh root@opnsense
+          /usr/local/etc/rc.d/suricata onestatus
+        결과: GUI 의 "Suricata 7.0.5 / Engine: ON / Logger: ON" status panel.
+        운영 해석: enterprise firewall appliance 표준. nft + Suricata 통합 관리. lab 환경의 Linux Suricata 와 동일 엔진 다른 frontend.
       negative_signs:
       - 패키지 매니저만 확인(실행파일 아님)
       - 다른 IDS(Snort) 버전 확인
@@ -75,6 +128,69 @@ steps:
       - yq .vars.address-groups.HOME_NET suricata.yaml
       - sed -n /vars:/,/^ *[^ ]/p suricata.yaml
       - suricata --dump-config | grep HOME_NET
+      - |
+        **[OSS] yq (YAML 정밀 query)** — yaml 파싱 표준.
+          # 1. yq 설치
+          sudo snap install yq    # 또는 pip install yq
+          # 2. HOME_NET 값만 추출
+          sudo yq '.vars.address-groups.HOME_NET' /etc/suricata/suricata.yaml
+          # 3. 모든 address-groups 변수 dump
+          sudo yq '.vars.address-groups' /etc/suricata/suricata.yaml
+          # 4. 수정 (in-place)
+          sudo yq -i '.vars.address-groups.HOME_NET = "[10.20.30.0/24]"' /etc/suricata/suricata.yaml
+        예상 출력 `"[10.20.30.0/24, 192.168.1.0/24]"`.
+        운영 해석: grep 보다 정확. multi-line CIDR 리스트도 한 번에. CI/CD pipeline 의 config validation 표준.
+      - |
+        **[OSS] suricata --dump-config** — 런타임 사용 중인 모든 설정 dump.
+          # 1. 전체 설정 (hierarchical)
+          sudo suricata --dump-config 2>&1 | head -50
+          # 2. HOME_NET 만 grep
+          sudo suricata --dump-config 2>&1 | grep -i home-net
+          # 3. var 전체 (vars+address-groups+port-groups)
+          sudo suricata --dump-config 2>&1 | grep -E "vars\.|address-group|port-group"
+        예상 출력 `vars.address-groups.HOME_NET = [10.20.30.0/24]`.
+        운영 해석: yaml 파일 + override 합쳐진 *진짜 적용된* 값. trouble shoot 시 yaml 과 비교 검증.
+      - |
+        **[OSS] scirius (web GUI)** — Suricata 룰/설정 통합 관리 OSS.
+          # 1. SELKS 배포판에 포함 (또는 docker)
+          docker run -d -p 8000:8000 stamus/scirius
+          # 2. https://scirius:8000/appliances/suricata 접속
+          # 3. UI: Sources → suricata.yaml → Vars → HOME_NET 시각 편집
+          # 4. SSH ruleset push (변경 시 자동 반영)
+        UI 동작: HOME_NET 의 CIDR 리스트를 GUI 로 추가/삭제. 변경 시 git history 자동 commit.
+        운영 해석: enterprise 환경 표준. multi-host Suricata 통합 관리.
+      - |
+        **[OSS] Ansible (community.general.suricata 모듈)** — IaC 표준.
+          # playbook
+          - name: Set Suricata HOME_NET
+            ansible.builtin.lineinfile:
+              path: /etc/suricata/suricata.yaml
+              regexp: '^(\s*HOME_NET:)\s*'
+              line: '    HOME_NET: "[10.20.30.0/24]"'
+              backup: yes
+              validate: 'suricata -T -c %s'
+            notify: restart suricata
+          # 실행
+          ansible-playbook -i inventory.yml suricata-config.yml --diff
+        예상 출력 `changed: [secu] / -- HOME_NET: ... / ++ HOME_NET: [10.20.30.0/24]`.
+        운영 해석: validate 옵션이 핵심 — 잘못된 yaml 적용 후 service 다운 방지. backup 으로 롤백 가능.
+      - |
+        **[OSS] suricata.yaml validator (외부 lint)** — yamllint + 커스텀 규칙.
+          # 1. yamllint 기본 검사
+          yamllint /etc/suricata/suricata.yaml
+          # 2. 사용자 정의 규칙 (.yamllint)
+          cat > .yamllint << 'EOF'
+          extends: default
+          rules:
+            line-length: { max: 200 }
+            indentation: { spaces: 2 }
+          EOF
+          # 3. CI 통합 (GitLab CI 예시)
+          # script:
+          #   - yamllint suricata.yaml
+          #   - suricata -T -c suricata.yaml
+        예상 출력 `12:5 warning trailing spaces (trailing-spaces) / 24:81 error line too long (line-length)`.
+        운영 해석: yaml syntax 가 valid 해도 indentation 오류는 변수 무효화. CI 표준 lint.
       negative_signs:
       - HOME_NET 검색 없이 전체 yaml 출력
       - HTTP_PORTS 등 다른 변수
@@ -112,6 +228,61 @@ steps:
       - yq .af-packet suricata.yaml
       - suricata --list-runmodes 로 캡처 모드 확인
       - ip link show 로 사용 가능한 NIC 확인
+      - |
+        **[OSS] yq (af-packet 블록 정밀 추출)** — yaml hierarchical query.
+          # 1. af-packet 블록 전체
+          sudo yq '.["af-packet"]' /etc/suricata/suricata.yaml
+          # 2. 첫 인터페이스의 cluster-type
+          sudo yq '.["af-packet"][0].interface' /etc/suricata/suricata.yaml
+          sudo yq '.["af-packet"][0]."cluster-type"' /etc/suricata/suricata.yaml
+          # 3. threads 설정 (CPU 병렬)
+          sudo yq '.["af-packet"][] | select(.threads != null) | .threads' /etc/suricata/suricata.yaml
+        예상 출력 `interface: ens33 / cluster-type: cluster_flow / threads: auto`.
+        운영 해석: `cluster_flow` = 흐름 별 hash 로 thread 분배 (대부분 환경 권장). threads=auto = nproc 대로.
+      - |
+        **[OSS] ethtool (NIC 능력 진단)** — Suricata 캡처 성능 결정.
+          # 1. 인터페이스 link 정보
+          sudo ethtool ens33
+          # 2. RX/TX queue 수 (multi-queue NIC)
+          sudo ethtool -l ens33
+          # 3. ring buffer 크기 (드롭 방지)
+          sudo ethtool -g ens33
+          # 4. offload 상태 (TSO/LRO 등 — Suricata 와 충돌 가능)
+          sudo ethtool -k ens33 | grep -E "tcp-segmentation-offload|large-receive-offload"
+          # 5. driver 정보
+          sudo ethtool -i ens33
+        예상 출력 `Speed: 1000Mb/s / Duplex: Full / Combined: 4 / RX: 256 ... / large-receive-offload: on`.
+        운영 해석: LRO=on 이면 Suricata 가 TCP reassembly 잘못 인식. `sudo ethtool -K ens33 lro off` 로 끄기 권장. RX ring buffer 256 = SYN flood 시 부족, 4096 권장.
+      - |
+        **[OSS] dmesg (NIC driver 메시지)** — 하드웨어 레벨 진단.
+          # 1. NIC 관련 최근 로그
+          sudo dmesg -T | grep -i ens33 | tail -10
+          # 2. NIC 에러 (frame drops, link flap)
+          sudo dmesg -T | grep -iE "ens33.*error|tx full|rx full"
+          # 3. 부팅 시 driver 로드
+          sudo dmesg | grep -i e1000
+        예상 출력 `[Tue May  6 14:00:00] e1000 0000:02:01.0 ens33: NIC Link is Up 1000 Mbps`.
+        운영 해석: link flap 자주 발생 시 Suricata 캡처 단절. driver bug 또는 케이블 이슈 진단 표준.
+      - |
+        **[OSS] ip link / ip -s (인터페이스 통계)** — drop 카운터 모니터링.
+          # 1. 인터페이스 목록 + 상태
+          ip -br link show
+          # 2. statistics (RX/TX bytes/packets/errors/drops)
+          ip -s link show ens33
+          # 3. 실시간 (1초 간격)
+          watch -n 1 "ip -s link show ens33"
+        예상 출력 `RX: bytes packets errors dropped overrun mcast / 12345678 6789 0 0 0 ... `.
+        운영 해석: dropped > 0 면 Suricata thread 부족 또는 NIC ring buffer 부족. errors > 0 면 ethtool -k 의 offload 설정 점검.
+      - |
+        **[OSS] suricata --list-runmodes** — 사용 가능 캡처 모드.
+          # 1. 모든 runmode 표시
+          suricata --list-runmodes
+          # 2. af-packet 의 사용 가능한 runmode
+          suricata --list-runmodes 2>&1 | grep -A1 af-packet
+          # 3. 현재 실행 중 runmode 확인
+          ps aux | grep suricata | grep -- "-q\|-i\|--af-packet"
+        예상 출력 `af-packet runmodes: workers / autofp / single ...` (af-packet 의 3 모드).
+        운영 해석: `workers` 모드 = 모든 thread 가 RX-side queue 처리 (성능 최고). `autofp` = flow pinning 자동. 일반 환경 workers 권장.
       negative_signs:
       - pcap 블록 출력(af-packet 아님)
       - interface 값 확인 없음
@@ -152,6 +323,85 @@ steps:
       - vim + append 수동 편집
       - ansible lineinfile 모듈
       - suricata-update 로 sources 추가(outofbox 룰)
+      - |
+        **[OSS] suricata-update + custom source** — 룰 source 등록 + 자동 fetch.
+          # 1. 로컬 디렉토리를 source 로 등록
+          sudo mkdir -p /var/lib/suricata/rules-custom
+          sudo tee /etc/suricata/update.yaml << 'EOF'
+          sources:
+            - name: local-icmp
+              url: file:///var/lib/suricata/rules-custom/local.rules
+          EOF
+          # 2. 커스텀 룰 작성 + 적용
+          echo 'alert icmp any any -> any any (msg:"ICMP ping"; sid:1000001; rev:1;)' | \
+            sudo tee /var/lib/suricata/rules-custom/local.rules
+          sudo suricata-update --no-test
+          # 3. 결과 검증
+          sudo grep "sid:1000001" /var/lib/suricata/rules/suricata.rules
+        예상 출력 `Loaded 30001 rules. / 1 new rule added.`
+        운영 해석: suricata-update 가 모든 룰을 단일 파일로 병합. CI pipeline 에서 git commit → suricata-update 자동.
+      - |
+        **[OSS] sigma-cli (Sigma 룰 → Suricata 변환)** — 표준 IDS 룰 언어.
+          # 1. sigma-cli 설치
+          pip install sigma-cli pysigma-backend-suricata
+          # 2. Sigma 룰 작성 (icmp.yml)
+          cat > /tmp/icmp.yml << 'EOF'
+          title: ICMP Ping Detection
+          status: experimental
+          logsource:
+              category: network_connection
+              product: linux
+          detection:
+              selection:
+                  protocol: icmp
+              condition: selection
+          level: low
+          EOF
+          # 3. Suricata 룰로 변환
+          sigma convert --target suricata /tmp/icmp.yml
+          # 4. 결과를 local.rules 에 추가
+          sigma convert --target suricata /tmp/icmp.yml | sudo tee -a /etc/suricata/rules/local.rules
+        예상 출력 `alert ip any any -> any any (msg: "ICMP Ping Detection"; ...; sid: 1; rev: 1;)`.
+        운영 해석: Sigma 룰 = SIEM/IDS 표준 lingua franca. Sigma 1개 작성 → Suricata/Wazuh/Elastic 다 동일 룰 자동 변환.
+      - |
+        **[OSS] scirius (web GUI 룰 작성)** — 시각적 룰 편집.
+          # 1. SELKS 배포판에 포함 또는 docker
+          docker run -d -p 8000:8000 stamus/scirius
+          # 2. https://scirius:8000 접속 → Sources → My Custom Rules
+          # 3. UI 동작:
+          # - "Create Rule" 버튼 → action=alert / proto=icmp / src=any / dst=any
+          # - msg/sid/rev 필드 입력
+          # - "Validate" 버튼 → suricata -T 자동 실행
+          # - "Push to ruleset" → SSH 통해 secu 에 배포
+        UI 동작: 폼 입력 → 변환 → push 까지 1 click.
+        운영 해석: 룰 syntax 모르는 신규 분석가가 GUI 로 작성. 배포 시 git commit + audit log.
+      - |
+        **[OSS] Ansible (lineinfile / blockinfile)** — IaC 룰 관리.
+          # playbook
+          - name: Add ICMP detection rule
+            ansible.builtin.lineinfile:
+              path: /etc/suricata/rules/local.rules
+              line: 'alert icmp any any -> any any (msg:"ICMP ping"; sid:1000001; rev:1;)'
+              regexp: '^.*sid:1000001.*$'    # sid 기반 idempotent
+              state: present
+              backup: yes
+              validate: 'suricata -T -S %s'   # 룰 syntax 검증
+            notify: reload suricata
+          # 실행
+          ansible-playbook -i inventory.yml suricata-rules.yml --diff
+        예상 출력 `changed: [secu] / +sid:1000001`.
+        운영 해석: validate 가 핵심 — 잘못된 룰로 Suricata 가 시작 실패하는 사고 방지.
+      - |
+        **[OSS] vim + suricata.vim (syntax highlighting)** — 룰 작성 편집기.
+          # 1. suricata.vim 설치 (~/.vim/syntax/suricata.vim)
+          mkdir -p ~/.vim/syntax ~/.vim/ftdetect
+          curl -o ~/.vim/syntax/suricata.vim https://raw.githubusercontent.com/dyrnq/suricata-vim/main/syntax/suricata.vim
+          echo "au BufRead,BufNewFile *.rules set filetype=suricata" > ~/.vim/ftdetect/suricata.vim
+          # 2. 룰 편집
+          sudo vim /etc/suricata/rules/local.rules
+          # 3. 편집 도중 syntax check (':!suricata -T -S %')
+        결과: keyword (alert/drop/msg/sid) 색상 구분 + content/pcre quote 자동 검출.
+        운영 해석: 100+ 룰 운영 시 syntax error 사전 발견. vim 외 vscode 도 suricata-language plugin 존재.
       negative_signs:
       - sid 중복(1000001 이 다른 룰과 충돌)
       - 쌍따옴표 이스케이프 실수
@@ -192,6 +442,61 @@ steps:
       - yq .rule-files[] suricata.yaml | grep local
       - awk /rule-files:/,/^[^ -]/ suricata.yaml
       - suricata --list-rulefiles 또는 --dump-config | grep rule
+      - |
+        **[OSS] yq (rule-files 리스트 정확 추출)** — yaml 배열 query.
+          # 1. rule-files 배열 전체
+          sudo yq '.["rule-files"]' /etc/suricata/suricata.yaml
+          # 2. local.rules 포함 여부 (boolean)
+          sudo yq '.["rule-files"] | contains(["local.rules"])' /etc/suricata/suricata.yaml
+          # 3. 미포함 시 자동 추가 (in-place)
+          sudo yq -i '.["rule-files"] += ["local.rules"]' /etc/suricata/suricata.yaml
+        예상 출력 `["suricata.rules", "local.rules"]` 또는 `true`.
+        운영 해석: grep 은 단순 문자열 매칭, yq 는 yaml 구조 인식. 주석에 `local.rules` 가 있어도 false positive 안남.
+      - |
+        **[OSS] suricata --dump-config (런타임 적용 룰 파일)** — 진실의 단일 출처.
+          # 1. 적용된 모든 rule-files
+          sudo suricata --dump-config 2>&1 | grep -E "rule-files|rules-dir"
+          # 2. default-rule-path 와 결합된 절대 경로 추출
+          sudo suricata --dump-config 2>&1 | grep -E "default-rule-path"
+          # 3. 룰 파일별 적재된 룰 수 (--engine-analysis)
+          sudo suricata --engine-analysis 2>&1 | grep "rules loaded"
+        예상 출력 `default-rule-path = /var/lib/suricata/rules / rule-files.0 = local.rules`.
+        운영 해석: yaml 의 rule-files 가 *상대 경로* 면 default-rule-path 와 결합. 실제 절대 경로를 dump-config 가 보여줌.
+      - |
+        **[OSS] scirius (rule-files 시각 관리)** — GUI 의 source 리스트.
+          # 1. https://scirius:8000/appliances/<id>/sources 접속
+          # 2. UI 동작:
+          # - "Add Source" 버튼 → name=local-rules / type=local / file=local.rules
+          # - 드래그 & 드롭으로 우선순위 변경
+          # - "Update" 누르면 SSH 통해 secu 에 yaml 자동 갱신
+          # 3. 적용 결과 검증
+          ssh ccc@10.20.30.1 "sudo grep -A5 rule-files /etc/suricata/suricata.yaml"
+        UI 동작: 룰 파일 활성/비활성 toggle. 비활성 시 yaml 에 주석 처리.
+        운영 해석: 100+ 룰 source 환경에서 GUI 로 enable/disable. CLI 로 관리 시 sed 오타 위험 큰데 GUI 가 안전.
+      - |
+        **[OSS] selks (Stamus Networks SELKS distro)** — Suricata 통합 environment.
+          # SELKS = Suricata + Elasticsearch + Logstash + Kibana + Scirius (한 ISO)
+          # 1. SELKS 의 scirius UI 에서 ruleset 통합 view
+          # 2. CLI 검증
+          ssh root@selks
+          /usr/local/bin/scirius-shell ruleset list
+          # 3. yaml 자동 생성 검증
+          cat /etc/suricata/suricata.yaml | grep -A20 rule-files
+        결과: SELKS 가 자동으로 rule-files 섹션 + scirius 가 관리하는 모든 source 포함.
+        운영 해석: lab 환경 Linux 패키지 vs SELKS 의 production stack 비교. 학생이 enterprise 표준 OSS 학습.
+      - |
+        **[OSS] yamllint (rule-files 형식 검증)** — yaml 문법 + style 검사.
+          # 1. yamllint 설치 + 실행
+          pip install yamllint
+          yamllint /etc/suricata/suricata.yaml
+          # 2. 특정 섹션만 검증 (line range)
+          yamllint -d "{rules: {line-length: 200}}" /etc/suricata/suricata.yaml
+          # 3. CI 통합
+          # script:
+          #   - yamllint suricata.yaml
+          #   - yq '.["rule-files"] | length' suricata.yaml | grep -E "^[1-9]"
+        예상 출력 `12:5 warning trailing spaces (trailing-spaces)`.
+        운영 해석: rule-files 가 indentation 잘못되면 Suricata 가 무시. yamllint 로 사전 점검.
       negative_signs:
       - rule-files section 위치 확인 없이 단순 grep
       - 참조 없을 때 판정 누락
@@ -235,6 +540,76 @@ steps:
       - sudo suricata -T -S /etc/suricata/rules/local.rules(특정 룰만)
       - suricata-update check-versions + check-rules
       - systemctl is-active suricata + journalctl -u suricata -n 20
+      - |
+        **[OSS] suricata -T (config + rule 통합 검증)** — production 표준.
+          # 1. 전체 검증 (yaml + rules)
+          sudo suricata -T -c /etc/suricata/suricata.yaml 2>&1 | tail -5
+          # 2. 특정 룰 파일만 검증
+          sudo suricata -T -S /etc/suricata/rules/local.rules -c /etc/suricata/suricata.yaml
+          # 3. 자동 검증 (CI / pre-commit hook)
+          # script:
+          #   - sudo suricata -T -c suricata.yaml || exit 1
+        예상 출력 `Configuration provided was successfully loaded. Exiting.` (성공) 또는 `Error: Failed to parse rule "..." line: 42` (실패).
+        운영 해석: 운영 변경 직전 *반드시* 실행. -T 없이 restart 시 서비스 다운 위험.
+      - |
+        **[OSS] suricata-update check-rules** — 룰셋 syntax + sid 충돌 검사.
+          # 1. 모든 source 룰 다운로드 (메모리만, disk 미적용)
+          sudo suricata-update --no-test --dry-run
+          # 2. 적재된 룰 수
+          sudo suricata-update --no-test 2>&1 | grep "rules loaded"
+          # 3. sid 충돌 체크
+          sudo suricata-update list-enabled | sort | uniq -d
+        예상 출력 `Loaded 30001 rules. / Disabled by user: 12. / Sid conflict: 0`.
+        운영 해석: suricata-update 가 다중 source 통합 시 sid 충돌 자동 처리. 하지만 local.rules 의 custom sid 와 충돌 가능성 있어 사전 점검 필수.
+      - |
+        **[OSS] ftw (Framework for Testing rules)** — 회귀 테스트 표준.
+          # 1. 설치
+          pip install ftw
+          # 2. 테스트 케이스 yaml 작성
+          cat > /tmp/test-icmp.yml << 'EOF'
+          ---
+          meta:
+              author: SOC
+              enabled: true
+              name: Test ICMP rule sid:1000001
+          tests:
+              -   test_title: ICMP detection
+                  stages:
+                      -   stage:
+                              input:
+                                  protocol: icmp
+                              output:
+                                  alert: ["1000001"]
+          EOF
+          # 3. 실행
+          ftw run --include /tmp/test-icmp.yml --suricata-bin /usr/bin/suricata
+        예상 출력 `Tests passed: 1 / Tests failed: 0`.
+        운영 해석: 룰 변경 후 *기존 룰 회귀* 자동 테스트. CI 표준. ModSecurity 의 ftw 와 같은 도구지만 yaml 형식 일치.
+      - |
+        **[OSS] yamllint + sigma-cli combined** — 통합 lint pipeline.
+          # 1. yaml syntax 검증
+          yamllint /etc/suricata/suricata.yaml
+          # 2. sigma 룰 syntax 검증 (sigma 룰 사용 시)
+          sigma check /etc/sigma/rules/*.yml
+          # 3. Suricata config + rule 통합 검증
+          sudo suricata -T -c /etc/suricata/suricata.yaml
+          # 4. 전체 pipeline 종합 (Makefile)
+          make lint && make test && make deploy
+        예상 출력: 각 단계별 PASS/FAIL.
+        운영 해석: 학생이 lab 환경 외 *enterprise CI/CD pipeline* 표준 학습.
+      - |
+        **[OSS] systemd-analyze (config 부하 측정)** — Suricata 시작 시간 진단.
+          # 1. 단위별 시작 시간
+          systemd-analyze critical-chain suricata.service
+          # 2. 변경 후 비교
+          before=$(systemd-analyze | head -1)
+          # ...config 변경 + restart...
+          after=$(systemd-analyze | head -1)
+          echo "Before: $before / After: $after"
+          # 3. 자세한 timing
+          systemd-analyze blame | grep suricata
+        예상 출력 `suricata.service @45.2s +12.3s` (start delay 12.3 초).
+        운영 해석: 룰셋 30K 추가 시 startup 시간 5x 증가 가능. 모니터링 표준.
       negative_signs:
       - -T 없이 --init 실행(production 시작)
       - 에러 있는데 정상 판정
@@ -277,6 +652,71 @@ steps:
       - sudo kill -USR2 $(pidof suricata) 로 livereload
       - sudo suricatasc -c reload-rules
       - sudo systemctl status suricata --no-pager
+      - |
+        **[OSS] suricatasc (live rule reload, 무중단)** — Unix socket CLI.
+          # 1. ruleset 무중단 reload (restart 보다 빠름, 캡처 끊김 없음)
+          sudo suricatasc -c reload-rules
+          # 2. 현재 적재된 룰 수 (reload 전후 비교)
+          sudo suricatasc -c "ruleset-stats" | jq
+          # 3. 동시에 통계 reset (clean slate)
+          sudo suricatasc -c "reset-counters"
+        예상 출력 `{"return":"OK","message":"done"}` + `{"loaded":30001,"failed":0}`.
+        운영 해석: production 의 가장 안전한 방법. systemctl restart 는 캡처 1-3초 끊김 = SYN flood 시 패킷 누락. suricatasc 는 캡처 유지하며 rule 만 재로드.
+      - |
+        **[OSS] kill -USR2 (signal 기반 reload)** — suricatasc 미설치 환경.
+          # 1. PID 찾기 + USR2 signal
+          sudo kill -USR2 $(pidof suricata)
+          # 2. 또는 systemd reload (= USR2 signal 호출)
+          sudo systemctl reload suricata
+          # 3. journal 에서 reload 확인
+          sudo journalctl -u suricata --since "1 min ago" | grep -i reload
+        예상 출력 `[1234] notice: Live rule reload starting / [1234] notice: Live rule reload complete - 30001 rules loaded successfully`.
+        운영 해석: signal 기반 reload 의 표준 메커니즘. systemctl reload 가 결국 이걸 호출.
+      - |
+        **[OSS] evebox (alert 모니터링)** — restart 후 룰 동작 검증.
+          # 1. evebox 설치
+          curl -fsSL https://evebox.org/files/release.asc | sudo apt-key add -
+          echo "deb [arch=amd64] https://evebox.org/files/debian stable main" | sudo tee /etc/apt/sources.list.d/evebox.list
+          sudo apt update && sudo apt install evebox
+          # 2. evebox server 실행
+          sudo evebox server -c /etc/evebox/evebox.yaml --datastore sqlite:///var/lib/evebox/evebox.sqlite
+          # 3. http://localhost:5636 접속 → restart 후 첫 alert 시간 확인
+          # 4. CLI 로 alert 검색
+          evebox-cli search "alert.signature_id:1000001" | head -5
+        UI 동작: alert dashboard 의 timeline 으로 restart 시점 (gap) + 복구 시간 시각화.
+        운영 해석: restart 후 5분 내 alert 없으면 룰 미적재 또는 캡처 미동작. SOC 표준 모니터링.
+      - |
+        **[OSS] monit (자동 재시작 + 알림)** — service 모니터링 표준.
+          # 1. monit 설치 + Suricata 모니터 정의
+          sudo apt install monit
+          sudo tee /etc/monit/conf.d/suricata << 'EOF'
+          check process suricata with pidfile /run/suricata.pid
+              start program = "/bin/systemctl start suricata"
+              stop program = "/bin/systemctl stop suricata"
+              if not exists then restart
+              if 5 restarts within 5 cycles then alert
+          EOF
+          sudo systemctl reload monit
+          # 2. 상태 확인
+          sudo monit status suricata
+        예상 출력 `Process 'suricata' / status: Running / monitoring status: Monitored / pid: 1234`.
+        운영 해석: Suricata 가 OOM/crash 으로 죽어도 monit 가 자동 재시작. enterprise 환경 표준.
+      - |
+        **[OSS] systemd unit override (재시작 동작 customize)** — drop-in 설정.
+          # 1. drop-in 디렉토리에 override 추가
+          sudo systemctl edit suricata
+          # /etc/systemd/system/suricata.service.d/override.conf 자동 생성
+          # 추가 내용:
+          # [Service]
+          # Restart=on-failure
+          # RestartSec=5s
+          # StartLimitInterval=60s
+          # StartLimitBurst=3
+          # 2. 재시작 후 검증
+          sudo systemctl daemon-reload
+          systemctl show suricata --property=Restart,RestartSec
+        예상 출력 `Restart=on-failure / RestartSec=5s`.
+        운영 해석: monit 없이 systemd 자체 자동 재시작. 5회 실패 후 stop = crash loop 방지.
       negative_signs:
       - restart 후 검증 없음
       - sleep 없이 바로 체크(초기화 중)
@@ -317,6 +757,60 @@ steps:
       - ping -c 3 10.20.30.1
       - ping -c 3 -i 0.2 (interval 조정)
       - hping3 -1 -c 3 <IP> 로 ICMP 생성
+      - |
+        **[OSS] hping3 (정밀 ICMP 패킷 제어)** — 침투테스터/네트워크 진단 표준.
+          # 1. ICMP echo (ping 와 유사)
+          sudo hping3 -1 -c 3 10.20.30.1
+          # 2. 다양한 ICMP type 시뮬 (type 8 = echo request, 13 = timestamp)
+          sudo hping3 --icmp-type 13 -c 3 10.20.30.1
+          # 3. 패킷 크기 조정 (큰 ICMP = MTU 시험)
+          sudo hping3 -1 -d 1400 -c 3 10.20.30.1
+          # 4. spoof source IP (탐지 룰의 source 매칭 시험)
+          sudo hping3 -1 -a 192.168.99.99 -c 3 10.20.30.1
+        예상 출력 `len=46 ip=10.20.30.1 ttl=64 id=12345 icmp_seq=0 rtt=0.5 ms`.
+        운영 해석: ping 보다 정밀. spoof source 로 룰의 false positive 검증. payload 크기로 fragmentation 룰 trigger.
+      - |
+        **[OSS] nping (Nmap 팀 네트워크 패킷 생성기)** — Nmap 통합.
+          # 1. ICMP echo 3 회
+          sudo nping --icmp -c 3 10.20.30.1
+          # 2. ICMP + 커스텀 source MAC (L2 시험)
+          sudo nping --icmp --source-mac 00:11:22:33:44:55 -c 3 10.20.30.1
+          # 3. delay + count (rate-limit 룰 시험)
+          sudo nping --icmp --delay 100ms -c 10 10.20.30.1
+          # 4. 통계 + RTT
+          sudo nping --icmp -c 5 10.20.30.1 --output-format text
+        예상 출력 `Max rtt: 0.50ms | Min rtt: 0.30ms | Avg rtt: 0.40ms / Raw packets sent: 3 (84B) | Rcvd: 3 (84B) | Lost: 0 (0.00%)`.
+        운영 해석: 표준 ping 보다 statistics 풍부. nmap 과 같이 사용해 reconnaissance + ICMP 시험 통합.
+      - |
+        **[OSS] mtr (My Traceroute, ping + traceroute 결합)** — 경로 진단.
+          # 1. report mode (-r) 로 secu 까지 경로
+          mtr -r -c 5 -n 10.20.30.1
+          # 2. 실시간 watch
+          mtr 10.20.30.1
+          # 3. JSON output (자동화)
+          mtr -j -c 3 -n 10.20.30.1 | jq
+        예상 출력 `HOST: attacker / Loss% Snt Last Avg Best Wrst StDev / 1.|-- 10.20.30.1   0.0%   5  0.5  0.5  0.4  0.7   0.1`.
+        운영 해석: 단순 도달성 외 *경로 손실율 + jitter* 진단. NAT 환경에서 hop 수 + each-hop 응답 시간 측정.
+      - |
+        **[OSS] paping (TCP-only ping)** — ICMP 차단 환경의 도달성 검증.
+          # 1. 22 포트 (SSH) 도달성
+          paping 10.20.30.1 -p 22 -c 3
+          # 2. 80 포트 (HTTP)
+          paping 10.20.30.1 -p 80 -c 3
+          # 3. 응답 시간 통계
+          paping 10.20.30.1 -p 22 -c 100 -i 100   # 100회, 100ms 간격
+        예상 출력 `Connecting to 10.20.30.1:22 ... Connected to 10.20.30.1:22, time=0.5ms / 3 connections, 3 successful, avg=0.5ms`.
+        운영 해석: 어떤 환경은 ICMP 차단. TCP SYN 으로 도달성 검증 = paping. SSH 포트 검증 시 표준.
+      - |
+        **[OSS] fping (다중 host 동시 ping)** — 인벤토리 sweep.
+          # 1. 다중 host 동시 ping
+          fping -c 3 10.20.30.1 10.20.30.80 10.20.30.100
+          # 2. CIDR sweep (lab 인프라 전체)
+          fping -g 10.20.30.0/24 -a -q 2>/dev/null
+          # 3. 통계 모드
+          fping -s -c 3 10.20.30.1
+        예상 출력 `10.20.30.1 : xmt/rcv/%loss = 3/3/0%, min/avg/max = 0.4/0.5/0.6 / 10.20.30.80 : ...`.
+        운영 해석: 100+ host 동시 ping. lab 인프라 전체 health check 표준. cron 으로 매분 실행.
       - nping --icmp -c 3 <IP>
       - arping <IP> 로 L2 확인
       negative_signs:
@@ -363,6 +857,63 @@ steps:
       - sudo tail -f /var/log/suricata/eve.json | grep ICMP
       - sudo grep ICMP /var/log/suricata/fast.log
       - suricatasc -c iface-stat eth0
+      - |
+        **[OSS] jq (JSON-line 정밀 query)** — eve.json 분석 표준.
+          # 1. ICMP 룰 1000001 매칭 alert 만
+          sudo jq -c 'select(.event_type=="alert" and .alert.signature_id==1000001)' /var/log/suricata/eve.json | tail -3
+          # 2. 시간 + signature + src/dst 핵심 필드만
+          sudo jq -r 'select(.event_type=="alert") | [.timestamp, .alert.signature, .src_ip, .dest_ip] | @tsv' /var/log/suricata/eve.json | tail
+          # 3. signature 별 카운트
+          sudo jq -r 'select(.event_type=="alert") | .alert.signature' /var/log/suricata/eve.json | sort | uniq -c | sort -rn
+        예상 출력 `2026-05-06T14:23:00 / "ICMP ping" / 10.20.30.201 / 10.20.30.1`.
+        운영 해석: SOC 분석가 1차 도구. tabular 출력으로 spreadsheet 처럼. 100+ alert 분석 시 핵심.
+      - |
+        **[OSS] evebox (eve.json web UI)** — alert hunt 표준 GUI.
+          # 1. evebox 설치 + 데이터 import
+          sudo evebox server -c /etc/evebox/evebox.yaml --datastore sqlite:///var/lib/evebox/evebox.sqlite
+          # 2. http://localhost:5636 접속
+          # 3. UI 동작:
+          # - 좌측 panel: alert / events / flows / hunts
+          # - 검색 box: alert.signature_id:1000001
+          # - 시간 범위: Last 1 hour / Last 24 hours / Custom
+          # - "Escalate" 버튼: 중요 alert 표시
+          # 4. CLI 검색
+          evebox-cli search "alert.signature:ICMP*" | head
+        UI 동작: alert timeline + filter + drill-down. SOC 분석가 표준.
+        운영 해석: jq CLI 보다 검색 + 시각화 통합. 신규 분석가 학습 곡선 짧음.
+      - |
+        **[OSS] lnav (log navigator)** — 모든 log 통합 view.
+          # 1. lnav 설치
+          sudo apt install lnav
+          # 2. eve.json + suricata.log 동시 view
+          sudo lnav /var/log/suricata/eve.json /var/log/suricata/suricata.log
+          # 3. 내장 query (SQL-like)
+          # :;SELECT count(*), alert_signature FROM suricata_log WHERE alert_signature LIKE 'ICMP%' GROUP BY alert_signature
+          # 4. 자동 필터 + highlight
+          # /ICMP   (검색)
+          # &t (timestamp 정렬)
+        UI 동작: ncurses 기반 log viewer. 자동 timestamp 파싱 + JSON pretty print.
+        운영 해석: SSH 접속한 운영자가 GUI 없이 log 분석. evebox 가 안되는 air-gap 환경.
+      - |
+        **[OSS] suricata fast.log (sid 빠른 grep)** — alert 단순 텍스트 형식.
+          # 1. fast.log 형식 (eve.json 보다 간단)
+          sudo tail -20 /var/log/suricata/fast.log
+          # 2. ICMP alert 만
+          sudo grep -i icmp /var/log/suricata/fast.log
+          # 3. sid 별 카운트
+          sudo grep -oE 'sid:[0-9]+' /var/log/suricata/fast.log | sort | uniq -c | sort -rn
+        예상 출력 `02/16/2024-14:23:00.123456  [**] [1:1000001:1] ICMP ping [**] [Classification: ...] [Priority: 3] {ICMP} 10.20.30.201:0 -> 10.20.30.1:0`.
+        운영 해석: eve.json 보다 구조 단순 (1줄 = 1 alert). 빠른 grep + script 친화적. 다만 metadata 부족 = depth 분석은 eve.json.
+      - |
+        **[OSS] suricatasc 통계 (alert 발생 검증)** — 런타임 metric.
+          # 1. 전체 통계 dump
+          sudo suricatasc -c "dump-counters" 2>&1 | jq '.message' | grep -E "alert|drop|error" | head
+          # 2. interface 별 stat
+          sudo suricatasc -c "iface-stat ens33"
+          # 3. 룰별 적재 통계 (engine analysis 모드)
+          sudo suricata --engine-analysis -c /etc/suricata/suricata.yaml
+        예상 출력 `detect.alert : 5 / detect.alert.queue_id : 0 / capture.kernel_packets : 12345`.
+        운영 해석: alert 0 일 때 trouble shoot. capture.kernel_packets > 0 면 패킷 도달, alert 0 면 룰 매칭 안됨.
       negative_signs:
       - eve.json 경로 오타
       - grep 아닌 단순 tail(필터 없음)
@@ -419,6 +970,71 @@ steps:
       - grep -v sid:1000001 rules > new && mv new rules
       - git revert 로 룰 롤백(버전 관리 있다면)
       - suricatasc -c reload-rules 로 livereload
+      - |
+        **[OSS] suricata-update disable-source** — 룰 source 단위 disable.
+          # 1. 활성 source 목록
+          sudo suricata-update list-enabled
+          # 2. 특정 source disable (custom local source)
+          sudo suricata-update disable-source local-icmp
+          # 3. 또는 sid 단위 disable (영속)
+          sudo tee -a /etc/suricata/disable.conf << 'EOF'
+          # disable specific sids
+          1000001
+          EOF
+          sudo suricata-update --no-test
+        예상 출력 `Disabled source: local-icmp / Sid 1000001 disabled`.
+        운영 해석: 룰 *영속 disable* 표준. cleanup 후에도 disable.conf 에 명시 = 다음 update 시 자동 재추가 방지.
+      - |
+        **[OSS] scirius (web GUI 룰 disable)** — 시각적 룰 관리.
+          # 1. https://scirius:8000 접속 → Rules → search "1000001"
+          # 2. UI 동작:
+          # - 룰 우상단 "Disable" toggle
+          # - 또는 "Delete" 영구 삭제
+          # - 변경 사유 입력 (audit log)
+          # 3. "Push to ruleset" 버튼 → SSH 통해 secu 자동 적용
+          # 4. CLI 검증
+          ssh ccc@10.20.30.1 "sudo grep sid:1000001 /etc/suricata/rules/*"
+        UI 동작: rule 시각화 + audit trail 자동 기록.
+        운영 해석: 변경 사유 기록 = compliance 표준. 다중 분석가 환경에서 누가 언제 disable 했는지 추적.
+      - |
+        **[OSS] Ansible (lineinfile state=absent)** — IaC 룰 제거.
+          # playbook
+          - name: Remove ICMP test rule sid:1000001
+            ansible.builtin.lineinfile:
+              path: /etc/suricata/rules/local.rules
+              regexp: '.*sid:1000001.*'
+              state: absent
+              backup: yes
+              validate: 'suricata -T -S %s'
+            notify: reload suricata
+          # 실행
+          ansible-playbook -i inventory.yml suricata-cleanup.yml --diff
+        예상 출력 `changed: [secu] / -alert icmp any any -> any any ... sid:1000001 ...`.
+        운영 해석: IaC 표준 cleanup. validate 가 잘못된 변경 사전 차단. 다중 host 일관 cleanup.
+      - |
+        **[OSS] etckeeper (cleanup 영속 audit)** — git history.
+          # 1. cleanup 전 commit
+          sudo etckeeper commit "before cleanup sid:1000001"
+          # 2. cleanup 실행
+          sudo sed -i '/sid:1000001/d' /etc/suricata/rules/local.rules
+          sudo systemctl reload suricata
+          # 3. cleanup 후 commit
+          sudo etckeeper commit "removed sid:1000001 ICMP test rule"
+          # 4. diff 확인
+          sudo etckeeper vcs log --oneline -- /etc/suricata/rules/local.rules | head
+          sudo etckeeper vcs diff HEAD~1 HEAD -- /etc/suricata/rules/local.rules
+        예상 출력 `commit abc123 - removed sid:1000001 / -alert icmp ... sid:1000001 ...`.
+        운영 해석: 룰 변경 영속 audit. 누가 언제 무엇을 제거했는지 evidence. compliance 표준.
+      - |
+        **[OSS] suricatasc reload-rules (무중단 cleanup)** — 가장 안전한 방법.
+          # 1. 룰 파일에서 sid 제거
+          sudo sed -i '/sid:1000001/d' /etc/suricata/rules/local.rules
+          # 2. live reload (Suricata 끊김 0)
+          sudo suricatasc -c reload-rules
+          # 3. 적재 룰 수 검증
+          sudo suricatasc -c "ruleset-stats" | jq
+        예상 출력 `{"loaded":30000,"failed":0}` (1 룰 줄어듦).
+        운영 해석: production 표준 cleanup. systemctl reload 보다 더 안전 (signal 미전달 race condition 방지).
       negative_signs:
       - reload 누락(룰 여전히 로드)
       - 다른 sid 삭제(실수)
@@ -500,6 +1116,68 @@ steps:
       - secu 에서 suricata -q 0 -D 또는 systemd unit 수정
       - attacker 에서 ping -c 3 -W 1
       - secu 에서 tail eve.json + grep
+      - |
+        **[OSS] suricata -q (NFQUEUE inline mode 실행)** — IPS 모드 표준.
+          # 1. nft 의 NFQUEUE 룰이 먼저 (priority -150 < filter 0)
+          sudo nft add table inet verify_ips
+          sudo nft add chain inet verify_ips input '{ type filter hook input priority -150; }'
+          sudo nft add rule inet verify_ips input ip protocol icmp queue num 0
+          # 2. IDS 정지 + IPS 데몬 시작
+          sudo systemctl stop suricata
+          sudo suricata -q 0 -c /etc/suricata/suricata.yaml -D
+          # 3. IPS 동작 검증
+          sudo suricatasc -c "iface-stat all" | jq
+          ps aux | grep "suricata -q"
+          # 4. cleanup
+          sudo pkill -f "suricata -q"
+          sudo systemctl start suricata
+        예상 출력 `suricata -q 0 -c /etc/suricata/suricata.yaml -D / Active: nfqueue queue=0`.
+        운영 해석: -q 0 = NFQUEUE 0 번 큐에 바인딩. -D 데몬 모드. drop 룰 *진짜* 효력.
+      - |
+        **[OSS] hping3 (IPS 차단 검증)** — IPS drop 시점 정밀 측정.
+          # 1. IDS 모드에서 ICMP (응답 받음)
+          sudo hping3 -1 -c 3 10.20.30.1
+          # 2. IPS 전환 후 ICMP (timeout)
+          sudo hping3 -1 -c 3 -W 2 10.20.30.1
+          # 3. drop 이전/이후 RTT 비교
+          sudo hping3 -1 -c 5 -W 1 10.20.30.1 --output-format text
+        예상 출력 (IDS): `5 packets transmitted, 5 received, 0% packet loss`.
+        예상 출력 (IPS): `5 packets transmitted, 0 received, 100% packet loss, time 5005ms`.
+        운영 해석: hping3 의 정확한 패킷 카운팅 = IPS drop rate 측정 표준. fail-open vs fail-close 정책 효과 정량.
+      - |
+        **[OSS] tcpdump (NFQUEUE 동작 확인)** — wire-level 검증.
+          # 1. ICMP 패킷이 secu 에 도달하는지 (NFQUEUE 진입)
+          sudo tcpdump -i ens33 -nn icmp -c 5
+          # 2. NFQUEUE 통과 후 응답 패킷 (또는 drop)
+          sudo tcpdump -i ens33 -nn 'icmp and (icmp[icmptype]=8 or icmp[icmptype]=0)'
+          # 3. 동시에 drop 패킷 카운터 (nft)
+          sudo nft list ruleset | grep -E "queue|counter"
+        예상 출력 (IDS): echo request + echo reply 양방향 보임.
+        예상 출력 (IPS): echo request 만 보임 + reply 없음 (Suricata drop).
+        운영 해석: tcpdump 가 NIC 의 *원시 트래픽* 보여줌. IPS drop 후 reply 부재 = 진짜 차단 evidence.
+      - |
+        **[OSS] evebox (drop event 시각화)** — IDS vs IPS 비교 dashboard.
+          # 1. evebox 의 alert dashboard 에서 alert.action 필드 비교
+          # http://localhost:5636 → search: alert.action:drop
+          # 2. CLI 로 drop event count
+          sudo jq -c 'select(.alert.action=="drop")' /var/log/suricata/eve.json | wc -l
+          # 3. alert vs drop 비율
+          sudo jq -r '.alert.action' /var/log/suricata/eve.json | sort | uniq -c
+        예상 출력 `145 allowed (alert) / 12 drop`.
+        운영 해석: SOC dashboard 표준. drop 비율 = IPS 효과 KPI. drop 0 시 IDS 모드 또는 NFQUEUE 룰 누락.
+      - |
+        **[OSS] iptables -t mangle / nft NFQUEUE 통계** — queue 처리 메트릭.
+          # 1. NFQUEUE 통계 (kernel)
+          cat /proc/net/netfilter/nfnetlink_queue
+          # 형식: queue_num peer_pid queue_total copy_mode copy_range queue_dropped queue_user_dropped id_sequence userspace_lost
+          # 2. 각 필드 의미
+          # - queue_total: 큐에 들어간 패킷 수
+          # - queue_dropped: 큐가 가득 차 drop 된 패킷 (Suricata 처리 부하)
+          # - userspace_lost: Suricata 응답 실패
+          # 3. 모니터링 (1초 간격)
+          watch -n 1 "cat /proc/net/netfilter/nfnetlink_queue"
+        예상 출력 `0 1234 100  2  65535  0  0  100  0` (queue 0, pid 1234, 100 패킷, 0 drop).
+        운영 해석: queue_dropped > 0 = Suricata 처리 부하 = thread 증설 필요. IPS 운영의 핵심 SLA 지표.
       negative_signs:
       - alert→drop 변경만 + NFQUEUE 룰 없음 (Suricata 가 패킷 못 받음)
       - NFQUEUE priority 미지정 또는 nft filter 보다 늦게 (-150 등)
