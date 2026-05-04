@@ -333,7 +333,34 @@ EOF
 
 ```bash
 echo 1 | sudo -S cat /etc/suricata/rules/local.rules
+echo '---'
+echo "총 커스텀 룰 수: $(echo 1 | sudo -S grep -c '^alert\|^drop' /etc/suricata/rules/local.rules)"
+echo "sid 분포:"
+echo 1 | sudo -S grep -oE 'sid:[0-9]+' /etc/suricata/rules/local.rules | sort -u
 ```
+
+**예상 출력**:
+```
+alert http $HOME_NET any -> any any (msg:"CUSTOM - SQL Injection in URI (union select)"; ... sid:9000010; rev:1;)
+alert http $HOME_NET any -> any any (msg:"CUSTOM - XSS attempt (script tag)"; ... sid:9000011; rev:1;)
+alert http $HOME_NET any -> any any (msg:"CUSTOM - Directory Traversal attempt"; ... sid:9000012; rev:1;)
+alert tcp any any -> $HOME_NET 22 (msg:"CUSTOM - SSH brute force attempt"; ... sid:9000013; rev:1;)
+drop http any any -> $HOME_NET any (msg:"CUSTOM - Block /etc/passwd access"; ... sid:9000014; rev:1;)
+---
+총 커스텀 룰 수: 5
+sid 분포:
+sid:9000010
+sid:9000011
+sid:9000012
+sid:9000013
+sid:9000014
+```
+
+> **해석 — 룰 카탈로그 검증**:
+> - **5 룰 = 4 alert + 1 drop**. drop 은 IPS 모드 (NFQUEUE 또는 inline) 에서만 차단 동작.
+> - **sid 9000000~9999999** = 커스텀 범위 표준. 1~99999 = ET (Emerging Threats), 100000~999999 = SourceFire/Snort.
+> - **rev:1** = 룰 버전 (수정 시 rev 증가 권장 — `rev:2`).
+> - **운영 권고**: 룰 ID 명명 규칙 표준화 — `9000010` (SQLi), `9000020` (Multi-content), `9000030` (flowbits) 같은 카테고리별 100단위 그룹.
 
 ---
 
@@ -342,8 +369,19 @@ echo 1 | sudo -S cat /etc/suricata/rules/local.rules
 ### 7.1 설정 검증
 
 ```bash
-echo 1 | sudo -S suricata -T -c /etc/suricata/suricata.yaml
+echo 1 | sudo -S suricata -T -c /etc/suricata/suricata.yaml 2>&1 | tail -5
 ```
+
+**예상 출력**:
+```
+26/04/29 14:32:00 - <Notice> - Configuration provided was successfully loaded. Exiting.
+```
+
+> **해석 — `-T` (test mode) = 룰 syntax 검증 only**:
+> - 'successfully loaded. Exiting.' = ★ 모든 룰 syntax OK.
+> - 오류 시: `Error: Failed to parse rule "alert http..." at line N` 같은 라인 표시 → 해당 룰 수정.
+> - **CI/CD 통합**: `suricata -T` 를 git pre-commit hook 으로 등록 = 룰 syntax 오류 commit 차단.
+> - **운영 권고**: 룰 추가 후 reload 전 반드시 `-T` 검증. 실수로 잘못된 syntax → reload 시 전체 룰 fail.
 
 오류가 있으면 해당 룰의 문법을 수정한다.
 
@@ -374,28 +412,69 @@ echo 1 | sudo -S tail -5 /var/log/suricata/suricata.log
 ```bash
 # web 서버(JuiceShop)에 SQL Injection 패턴 요청
 curl -s "http://10.20.30.80/?q=1%20union%20select%201,2,3" > /dev/null
-
-# 알림 확인
-echo 1 | sudo -S tail -3 /var/log/suricata/fast.log
+sleep 1
+# 알림 확인 — 본 룰의 sid 9000010 매치 여부
+echo 1 | sudo -S tail -5 /var/log/suricata/fast.log | grep -E "9000010|SQL"
 ```
 
-**예상 출력:**
+**예상 출력**:
 ```
-03/27/2026-11:00:01.123  [**] [1:9000010:1] CUSTOM - SQL Injection in URI (union select) [**] ...
+04/29/2026-14:32:18.123456  [**] [1:9000010:1] CUSTOM - SQL Injection in URI (union select) [**] [Classification: Web Application Attack] [Priority: 1] {TCP} 10.20.30.201:54321 -> 10.20.30.80:80
 ```
+
+> **해석 — fast.log 형식 분석**:
+> - **`[1:9000010:1]`** = `[gen_id:sid:rev]` = 본 커스텀 룰 매치 확정.
+> - **Classification: Web Application Attack** = `classtype:web-application-attack` 매핑.
+> - **Priority: 1** = 최고 우선순위 (1~4 중).
+> - **`{TCP} src:port -> dst:port`** = 공격자(10.20.30.201) → web(10.20.30.80) 5-tuple 식별.
+> - **시간 도장** = SOC 분석 시 incident timeline 입력.
 
 ### 8.2 XSS 테스트
 
 ```bash
-curl -s "http://10.20.30.80/?q=%3Cscript%3Ealert(1)%3C/script%3E" > /dev/null  # silent 모드
-
-echo 1 | sudo -S tail -3 /var/log/suricata/fast.log
+curl -s "http://10.20.30.80/?q=%3Cscript%3Ealert(1)%3C/script%3E" > /dev/null
+sleep 1
+echo 1 | sudo -S tail -3 /var/log/suricata/fast.log | grep -E "9000011|XSS"
 ```
+
+**예상 출력**:
+```
+04/29/2026-14:32:25.789  [**] [1:9000011:1] CUSTOM - XSS attempt (script tag) [**] [Classification: Web Application Attack] [Priority: 1] {TCP} 10.20.30.201:54322 -> 10.20.30.80:80
+```
+
+> **해석 — XSS 룰 동작**:
+> - **`%3Cscript%3E` URL 인코딩** = Suricata 가 자동 디코딩 후 `http.uri` 매치.
+> - **`content:"<script"; nocase`** = `<SCRIPT`, `<Script` 등 모든 변형 매치.
+> - **한계 (룰 본문 명시)**: `<img onerror=`, `<svg onload=`, `javascript:` 등 다른 XSS 벡터 미매치 → 추가 룰 필요 (week06 학습).
 
 ### 8.3 디렉터리 트래버설 테스트
 
 ```bash
-curl -s "http://10.20.30.80/../../etc/passwd" > /dev/null  # silent 모드
+curl -s "http://10.20.30.80/../../etc/passwd" > /dev/null
+sleep 1
+echo 1 | sudo -S tail -3 /var/log/suricata/fast.log | grep -E "9000012|Traversal"
+echo '---'
+echo '[3 룰 매치 통계]'
+echo 1 | sudo -S grep -c 9000010 /var/log/suricata/fast.log 2>/dev/null
+echo 1 | sudo -S grep -c 9000011 /var/log/suricata/fast.log 2>/dev/null
+echo 1 | sudo -S grep -c 9000012 /var/log/suricata/fast.log 2>/dev/null
+```
+
+**예상 출력**:
+```
+04/29/2026-14:32:30.456  [**] [1:9000012:1] CUSTOM - Directory Traversal attempt [**] [Classification: Web Application Attack] [Priority: 1] {TCP} 10.20.30.201:54323 -> 10.20.30.80:80
+---
+[3 룰 매치 통계]
+1
+1
+1
+```
+
+> **해석 — 3 커스텀 룰 모두 정상 동작 확인**:
+> - **3/3 매치 = 룰 syntax + 패턴 모두 OK**.
+> - **오탐 가능성**: `../` 가 정상 URL (예: `/static/img/../icon.png`) 에 포함될 수 있음 — 실 운영에서는 `../../../` (3+ 단계) 또는 `../etc/`, `../../proc/` 같은 정확한 패턴 권장.
+> - **`grep -c sid` 통계** = 룰 hit 빈도 측정 = 가장 매치되는 룰 = top-N 위협.
+> - **운영 통합**: `cron` 으로 `/var/log/suricata/fast.log` 일일 통계 → SIEM 대시보드 (Wazuh/Elastic) 자동 import.
 
 echo 1 | sudo -S tail -3 /var/log/suricata/fast.log
 ```

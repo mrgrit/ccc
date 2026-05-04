@@ -214,13 +214,66 @@ table inet filter {
 
 ```bash
 echo 1 | sudo -S nft list table inet filter
+echo '---'
+echo 1 | sudo -S nft list table ip nat | head -10
 ```
+
+**예상 출력**:
+```
+table inet filter {
+    chain input {
+        type filter hook input priority filter; policy accept;
+        ct state established,related accept
+        iif "lo" accept
+        tcp dport 22 accept
+    }
+    ...
+}
+---
+table ip nat {
+    chain prerouting {
+        type nat hook prerouting priority dstnat; policy accept;
+        tcp dport 80 dnat to 10.20.30.80:80
+        tcp dport 3000 dnat to 10.20.30.80:3000
+    }
+    chain postrouting {
+        type nat hook postrouting priority srcnat; policy accept;
+        oifname "ens33" masquerade
+    }
+}
+```
+
+> **해석 — 본 lab secu (10.20.30.1) 의 2 테이블 분석**:
+> - **inet filter** = IPv4+IPv6 통합 패킷 필터 = 표준 권장. ct state 가 가장 위 = conntrack 우선.
+> - **ip nat** = NAT 전용 (postrouting + prerouting). DNAT (외부 IP:80 → 내부 web:80) + masquerade (출구 IP 변환).
+> - **prerouting**: 들어오는 패킷의 destination 변경 = port forwarding.
+> - **postrouting**: 나가는 패킷의 source 변경 = SNAT/masquerade.
+> - **inet 가 ip 보다 권장**: ipv6 도 동시 처리. 운영 시 inet 우선.
 
 ### 4.3 특정 체인만 보기
 
 ```bash
-echo 1 | sudo -S nft list chain inet filter input
+# input 체인만 (-a 옵션 = handle 번호 표시)
+echo 1 | sudo -S nft -a list chain inet filter input
 ```
+
+**예상 출력**:
+```
+table inet filter {
+    chain input {
+        type filter hook input priority filter; policy accept;
+        ct state established,related accept # handle 2
+        iif "lo" accept # handle 3
+        tcp dport 22 accept # handle 4
+    }
+}
+```
+
+> **해석 — handle 번호 = 룰 식별자**:
+> - 룰 삭제 시 handle 번호 필수. line 번호 X (line 변동 가능, handle 영구).
+> - **순서 의미**: 위에서 아래로 first-match. ct state 가 가장 위 = 기존 연결 즉시 통과 = 성능 ↑.
+> - **`iif "lo" accept`** = loopback 인터페이스 통과. 자기 자신 통신 (예: 127.0.0.1) 위해 필수.
+> - **`tcp dport 22 accept`** = SSH (포트 22) 허용. **policy 가 drop 으로 변경되어도 SSH 유지**.
 
 ---
 
