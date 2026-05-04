@@ -441,18 +441,30 @@ function markdownToHtml(md: string): string {
     .replace(/\n/g, '<br/>')
 
   // 6. 코드블록 복원 — 언어가 bash/sh면 terminal 그린, 그 외는 중립 흰색
-  codeBlocks.forEach(({ lang, body }, i) => {
+  // split/join 으로 모든 등장 치환 (string.replace 첫 매치 한정 회피)
+  const renderCode = (lang: string, body: string): string => {
     const escaped = body.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     const isShell = /^(bash|sh|shell|console|terminal|zsh)$/.test(lang)
     const color = isShell ? '#3fb950' : '#e6edf3'
     const label = lang ? `<div style="position:absolute;top:6px;right:10px;font-size:11px;color:#8b949e;font-family:system-ui;text-transform:uppercase;letter-spacing:0.5px">${lang}</div>` : ''
-    const pre = `<div style="position:relative;margin:14px 0">${label}<pre style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:16px 20px;font-size:14px;line-height:1.55;overflow-x:auto;color:${color};margin:0;font-family:'D2Coding','Nanum Gothic Coding',Consolas,Monaco,'Courier New',monospace;white-space:pre;tab-size:4;letter-spacing:0">${escaped}</pre></div>`
-    html = html.replace(`__CODE_${i}__`, pre)
+    return `<div style="position:relative;margin:14px 0">${label}<pre style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:16px 20px;font-size:14px;line-height:1.55;overflow-x:auto;color:${color};margin:0;font-family:'D2Coding','Nanum Gothic Coding',Consolas,Monaco,'Courier New',monospace;white-space:pre;tab-size:4;letter-spacing:0">${escaped}</pre></div>`
+  }
+  codeBlocks.forEach(({ lang, body }, i) => {
+    html = html.split(`__CODE_${i}__`).join(renderCode(lang, body))
+  })
+  // 6.5. 안전망 — 어떤 이유로든 남은 placeholder 가 있으면 정규식 fallback
+  html = html.replace(/__CODE_(\d+)__/g, (_, idx) => {
+    const cb = codeBlocks[parseInt(idx, 10)]
+    return cb ? renderCode(cb.lang, cb.body) : _
   })
 
   // 7. Mermaid 복원
   mermaidBlocks.forEach((code, i) => {
-    html = html.replace(`__MERMAID_${i}__`, `<div class="mermaid">${code}</div>`)
+    html = html.split(`__MERMAID_${i}__`).join(`<div class="mermaid">${code}</div>`)
+  })
+  html = html.replace(/__MERMAID_(\d+)__/g, (_, idx) => {
+    const code = mermaidBlocks[parseInt(idx, 10)]
+    return code ? `<div class="mermaid">${code}</div>` : _
   })
 
   return html
