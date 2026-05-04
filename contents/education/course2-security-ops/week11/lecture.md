@@ -344,6 +344,22 @@ echo "=== 불필요한 서비스 ==="
 echo 1 | sudo -S systemctl list-unit-files --state=enabled | grep -E "telnet|rsh|rlogin"
 ```
 
+**예상 출력**:
+```
+=== SSH 설정 ===
+#PermitRootLogin prohibit-password
+=== 패스워드 정책 ===
+PASS_MAX_DAYS	99999
+=== 불필요한 서비스 ===
+```
+
+> **해석 — 학생 호스트의 SCA 항목 즉시 진단**:
+> - **`#PermitRootLogin`** 이 주석 (#) 처리 = SCA id 6012 `Ensure SSH root login is disabled` **fail** 가능성 높음. 조치: 주석 해제 + `PermitRootLogin no` 명시.
+> - **`PASS_MAX_DAYS 99999`** = 비밀번호 만료 사실상 없음 = CIS 5.4.1.1 `Ensure password expiration is 365 days or less` **fail**. 조치: `PASS_MAX_DAYS 90` 또는 365 미만으로 변경.
+> - **불필요 서비스 출력 비어있음** = telnet/rsh/rlogin 미설치 = CIS 2.1.x **pass**. 양호.
+> - 이 3 항목 = SCA report 의 fail 항목 중 가장 빈번한 것 = 학습 우선순위 top.
+> - SCA 자동 결과 (§ 4.4) 와 비교 — score 가 65 미만이면 즉시 본 항목들 조치 후 재실행.
+
 ---
 
 ## 5. Active Response (자동 대응)
@@ -460,11 +476,41 @@ echo 1 | sudo -S iptables -L -n | grep 192.168.99.99
 echo 1 | sudo -S /var/ossec/active-response/bin/firewall-drop delete - 192.168.99.99 1234 5712
 ```
 
+**예상 출력 — `add` 직후**:
+```
+DROP       all  --  192.168.99.99        0.0.0.0/0
+```
+
+**예상 출력 — `delete` 직후**:
+```
+(출력 없음 — 룰 제거됨)
+```
+
+> **해석 — Active Response 동작 검증**:
+> - **`DROP all 192.168.99.99 → 0.0.0.0/0`** = `firewall-drop` 스크립트가 `iptables -I INPUT -s 192.168.99.99 -j DROP` 실행 = 정상 동작.
+> - **delete 후 출력 없음** = 룰 자동 해제 = `timeout` 또는 `delete` 액션 정상.
+> - 운영 위험: `firewall-drop` 은 INPUT chain 에 INSERT 하므로 우선순위가 가장 높음 → **자기 IP 실수 차단 시 SSH 즉시 끊김**. 화이트리스트 (`/var/ossec/etc/lists/whitelist.cdb`) 등록 필수.
+> - nftables 환경에서는 `firewall-drop` 이 `iptables-translate` 호환 모드로 동작 = `nft list ruleset | grep 99.99` 로도 확인.
+
 ### 5.6 Active Response 로그 확인
 
 ```bash
 echo 1 | sudo -S cat /var/ossec/logs/active-responses.log | tail -10
 ```
+
+**예상 출력**:
+```
+Wed May  6 14:22:18 KST 2026 add 192.168.99.99 Rule:5712
+Wed May  6 14:22:18 KST 2026 BLOCKED 192.168.99.99
+Wed May  6 14:22:35 KST 2026 delete 192.168.99.99 Rule:5712
+Wed May  6 14:22:35 KST 2026 UNBLOCKED 192.168.99.99
+```
+
+> **해석 — AR audit trail**:
+> - **add → BLOCKED → delete → UNBLOCKED** = 4 줄 1 cycle = 정상.
+> - **timestamp 17 초 간격** = 수동 테스트 (delete 즉시 실행). 실제 운영은 `<timeout>600</timeout>` 으로 10 분 후 자동 unblock.
+> - **Rule:5712** = SSH 브루트포스 룰 매치로 트리거된 사실 기록 = 사후 분석 / 컴플라이언스 evidence.
+> - 본 로그 미출력 시: ① `<active-response>` 설정 누락, ② `manage_agents` 비활성, ③ wazuh-execd 데몬 inactive 점검.
 
 ---
 

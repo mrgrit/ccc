@@ -292,6 +292,38 @@ wazuh-analysisd: Configuration check passed. Exiting.
 
 오류가 있으면 해당 줄 번호와 메시지가 출력된다.
 
+### 5.3-1 적재 룰 카운트 — 8 룰 모두 등록되었는가
+
+```bash
+# rule id 100001~100008 카운트
+echo 1 | sudo -S grep -E '<rule id="10000[1-8]"' /var/ossec/etc/rules/local_rules.xml | wc -l
+# id별 description 한눈에 확인
+echo 1 | sudo -S grep -E '(<rule id="10000|<description>)' /var/ossec/etc/rules/local_rules.xml | head -16
+# Manager reload — 변경 반영
+echo 1 | sudo -S systemctl reload wazuh-manager && echo "reload OK"
+```
+
+**예상 출력**:
+```
+8
+  <rule id="100001" level="10">
+    <description>경고: root 사용자 SSH 직접 로그인 감지</description>
+  <rule id="100002" level="8">
+    <description>주의: 업무시간 외 SSH 로그인 감지</description>
+  <rule id="100003" level="5">
+    <description>sudo 명령 실행 감지</description>
+  <rule id="100004" level="12">
+    <description>심각: 위험한 sudo 명령 실행 감지</description>
+reload OK
+```
+
+> **해석 — 8 룰 적재 검증**:
+> - **8** = id 100001~100008 모두 파일에 존재 = `tee` 작성 누락 없음.
+> - **rule level 분포** = 5/7/8/10/12 의 다단계 = 정상 SOC tiering 패턴 (level 5 noise → 12 alarm).
+> - **id 100001 root SSH = level 10** = 정책상 root 직접 로그인 금지 = 감지 즉시 분석가 호출.
+> - **id 100004 위험 sudo = level 12** = `rm -rf|mkfs` 등 = 자동 차단 (Active Response) 후보 가장 높음.
+> - **reload OK** = `systemctl restart` 대신 `reload` = 알림 수신 끊김 없이 룰만 갱신.
+
 ---
 
 ## 6. wazuh-logtest로 룰 테스트
@@ -537,6 +569,33 @@ for line in sys.stdin:                                 # 반복문 시작
     except: pass
 "
 ```
+
+### 9.3-1 트리거 + 알림 검증 — 2 시나리오 동시 발생
+
+```bash
+# 시나리오 A: root SSH 직접 로그인 (rule 100001)
+ssh -o StrictHostKeyChecking=no root@10.20.30.100 "exit" 2>/dev/null || true
+# 시나리오 B: 위험 sudo 명령 (rule 100004) — 안전한 dry-run
+ssh ccc@10.20.30.100 "echo 1 | sudo -S /bin/echo 'rm -rf /tmp/dummy'" 2>/dev/null
+sleep 3
+# alerts.json 에서 100001 / 100004 매칭만 추출 — 최근 60s
+echo 1 | sudo -S jq -r --arg since "$(date -u -d '60 sec ago' +%FT%TZ)" \
+  'select(.timestamp > $since) | select(.rule.id|test("^10000[14]")) | [.timestamp, .rule.id, .rule.level, .rule.description] | @tsv' \
+  /var/ossec/logs/alerts/alerts.json | head -5
+```
+
+**예상 출력**:
+```
+2026-05-06T13:42:11.892+0000    100001    10    경고: root 사용자 SSH 직접 로그인 감지
+2026-05-06T13:42:14.213+0000    100004    12    심각: 위험한 sudo 명령 실행 감지
+```
+
+> **해석 — 2 시나리오 알림 검증**:
+> - **rule 100001 + level 10** = root SSH 패스워드 로그인 시도 매치 = `<if_sid>5715</if_sid> + <user>root</user>` 룰 동작 정상.
+> - **rule 100004 + level 12** = `rm -rf` 패턴 매치 = `<match>rm -rf|mkfs|...</match>` 룰 동작 정상.
+> - **timestamp delta = 2.3s** = 두 알림 거의 동시 = analysisd 가 syslog → alerts.json 처리 latency 양호.
+> - **alerts.json 미생성** 시: ① agent → manager 통신 (1514/1515 port), ② analysisd 데몬 active, ③ logall_json=true 설정 순서로 점검.
+> - 운영 노트: 100001 매치 후 30 일 archives.json 보관 → 감사 대비 evidence.
 
 ---
 
