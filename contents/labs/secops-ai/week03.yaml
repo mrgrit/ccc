@@ -43,6 +43,66 @@ steps:
       - /etc/nftables.conf 에 table+chain 선언 후 reload
       - Ansible ansible.posix.firewalld 또는 nftables role
       - iptables -P INPUT DROP 으로 legacy 기본 정책 변경
+      - |
+        **[OSS] firewalld** — RHEL/Fedora 표준 동적 방화벽 관리 도구. zone 모델로 default-deny 구현.
+          # 1. firewalld 활성 + 현재 zone 확인
+          sudo systemctl enable --now firewalld && sudo firewall-cmd --get-default-zone
+          # 2. 새 whitelist zone 생성 + target=DROP (= nft policy drop)
+          sudo firewall-cmd --permanent --new-zone=whitelist
+          sudo firewall-cmd --permanent --zone=whitelist --set-target=DROP
+          sudo firewall-cmd --reload
+          # 3. zone 적용 검증 — target=DROP 확인
+          sudo firewall-cmd --zone=whitelist --list-all | grep -E "target|interfaces|services"
+        예상 출력: `target: DROP / interfaces: / services:` (서비스 비어있음 = whitelist 비어있음).
+        운영 해석: zone 단위 관리는 인터페이스 별로 다른 정책 가능 (예: trusted zone = lo / public zone = ens33). RHEL 운영 표준.
+      - |
+        **[OSS] ufw** — Ubuntu/Debian 의 단순화 frontend. nft backend 자동 적용.
+          # 1. 현재 상태
+          sudo ufw status verbose
+          # 2. default policy = deny incoming + allow outgoing (= whitelist 모델 기본)
+          sudo ufw default deny incoming
+          sudo ufw default allow outgoing
+          # 3. lockout 방지 — SSH 먼저 허용
+          sudo ufw allow ssh
+          sudo ufw enable
+          # 4. 적용 확인
+          sudo ufw status numbered
+        예상 출력 `Default: deny (incoming), allow (outgoing) / [1] 22/tcp ALLOW IN Anywhere`.
+        운영 해석: ufw 가 가장 학생 친화적. service 이름 (`ssh`, `http`, `https`) 으로 룰 작성 가능. backend 는 결국 nft.
+      - |
+        **[OSS] Ansible (ansible.posix.firewalld 모듈)** — IaC 자동 배포 표준.
+          # playbook.yml
+          - name: Setup whitelist zone with default-deny
+            ansible.posix.firewalld:
+              zone: whitelist
+              target: DROP
+              state: enabled
+              permanent: yes
+              immediate: yes
+          # 실행
+          ansible-playbook -i inventory.yml whitelist-zone.yml --check  # dry-run
+          ansible-playbook -i inventory.yml whitelist-zone.yml
+        예상 출력: `changed: [secu]` (변경 발생) / `ok: [secu]` (이미 적용됨, idempotent).
+        운영 해석: 다중 host 에 동일 정책 배포 + git 으로 history 추적. `--check` 로 dry-run 가능.
+      - |
+        **[OSS] fwbuilder** — GUI 기반 firewall object modeling.
+          # 설치 + 실행
+          sudo apt install fwbuilder
+          fwbuilder &
+          # 1. File → New Firewall → name=secu, platform=nftables
+          # 2. Firewall → Settings → Default policy → INPUT: Drop
+          # 3. Save → File → Install → SSH 통해 secu 에 룰 배포
+        예상 결과: GUI 의 Firewall view 에서 INPUT 체인 trash 아이콘 (drop) + 0 룰. compile 후 nft `policy drop` 명령 미리보기.
+        운영 해석: 룰셋이 복잡할 때 (수십~수백 룰) 시각적 관리 효과적. 변경 후 git commit 으로 변경 이력 보관.
+      - |
+        **[OSS] cockpit-firewall** — Cockpit web UI 의 Networking 모듈.
+          # 설치
+          sudo apt install cockpit cockpit-networkmanager
+          sudo systemctl enable --now cockpit.socket
+          # 접속
+          # browser → https://10.20.30.1:9090 → Networking → Firewall
+        UI 동작: 좌측 Default zone 변경 (drop) → Add zone → name=whitelist target=DROP → Save.
+        운영 해석: SSH 권한 있는 운영자가 GUI 로 빠르게 점검 가능. `cockpit-podman`, `cockpit-machines` 등 통합 운영 stack.
       negative_signs:
       - policy accept(default-allow, whitelist 의미 없음)
       - chain type nat 오염
@@ -85,6 +145,78 @@ steps:
       - timeout 3600s 추가해 동적 expiry
       - /etc/nftables.conf 에 set allowed_ips { ... } 블록
       - named set 대신 anonymous set 사용(성능 동등)
+      - |
+        **[OSS] ipset (legacy)** — iptables 시대의 set 관리 도구. nft set 의 전신.
+          # 1. set 생성 (hash:ip = O(1) lookup)
+          sudo ipset create allowed_ips hash:ip family inet maxelem 65536
+          # 2. set 목록 + 헤더 정보
+          sudo ipset list allowed_ips -terse
+          # 3. iptables 와 연결 (legacy 환경)
+          sudo iptables -I INPUT -m set --match-set allowed_ips src -j ACCEPT
+        예상 출력 `Name: allowed_ips / Type: hash:ip / Header: family inet hashsize 1024 maxelem 65536 / Size in memory: 216 / Number of entries: 0`.
+        운영 해석: ipset 은 iptables compatible. 신규 환경은 nft set 사용, 레거시 환경 운영 시 ipset 명령 익숙해야 함. `ipset save > /etc/ipset.rules` 로 영속화.
+      - |
+        **[OSS] firewalld ipset** — firewalld 의 zone-aware set 관리.
+          # 1. ipset 생성 (firewalld managed)
+          sudo firewall-cmd --permanent --new-ipset=allowed_ips --type=hash:ip
+          sudo firewall-cmd --reload
+          # 2. zone source 로 ipset 연결 — whitelist 효과
+          sudo firewall-cmd --permanent --zone=trusted --add-source=ipset:allowed_ips
+          sudo firewall-cmd --reload
+          # 3. ipset 정보
+          sudo firewall-cmd --info-ipset=allowed_ips
+        예상 출력: `allowed_ips / type: hash:ip / options: / entries:` (요소 비어있음).
+        운영 해석: firewalld 와 통합 운영 시 가장 편리. zone source 로 연결 = 이 set 의 IP 는 trusted zone 으로 분류 = 자동 accept.
+      - |
+        **[OSS] crowdsec / cscli** — 협업형 IDS/IPS. 차단 결정을 nft set 에 자동 sync.
+          # 1. crowdsec + bouncer 설치
+          curl -s https://install.crowdsec.net | sudo sh
+          sudo apt install crowdsec-firewall-bouncer-nftables
+          # 2. bouncer API 키 등록 + bouncer 시작
+          sudo cscli bouncers add nft-bouncer
+          sudo systemctl restart crowdsec-firewall-bouncer
+          # 3. 현재 차단 결정 목록 (다른 community 가 공유한 IP 포함)
+          sudo cscli decisions list -o json | jq '.[] | {ip:.value, scenario, duration}'
+          # 4. nft set 자동 생성 검증
+          sudo nft list set inet crowdsec crowdsec-blacklists | head -10
+        예상 출력: `[{"ip":"1.2.3.4","scenario":"crowdsecurity/ssh-bf","duration":"4h"}, ...]` 수십~수백 건.
+        운영 해석: AbuseIPDB 와 유사한 협업형 IOC 공유. 본인 환경에서 발견한 attack 도 community 에 자동 보고 (anonymized).
+      - |
+        **[OSS] OpenCTI feed → nft set 동기화 스크립트** — pycti 라이브러리로 CTI 자동화.
+          # 1. pycti 설치
+          pip install pycti
+          # 2. Python 스크립트
+          cat > /tmp/sync_iocs.py << 'EOF'
+          from pycti import OpenCTIApiClient
+          import subprocess
+          c = OpenCTIApiClient("http://10.20.30.100:9400", "TOKEN")
+          for ind in c.indicator.list(filters=[{"key":"x_opencti_main_observable_type","values":["IPv4-Addr"]}]):
+              ip = ind['pattern'].split("'")[1]  # [ipv4-addr:value = '1.2.3.4'] → 1.2.3.4
+              subprocess.run(["sudo", "nft", "add", "element", "inet", "whitelist", "allowed_ips", f"{{ {ip} }}"])
+          EOF
+          # 3. cron 으로 매시간 동기화
+          echo "0 * * * * /usr/bin/python3 /tmp/sync_iocs.py" | crontab -
+        예상 출력: pycti 가 OpenCTI GraphQL API 호출 → 100개+ IOC 추출 → nft set 자동 추가.
+        운영 해석: SOC pipeline 의 CTI 자동화 표준. OpenCTI → nft set → 실시간 차단 효과. timeout 추가 시 만료 자동 처리.
+      - |
+        **[OSS] fail2ban (set 기반 차단)** — userspace 차단 daemon. nft set 자동 관리.
+          # 1. fail2ban 설치 + nftables backend 설정
+          sudo apt install fail2ban
+          sudo tee /etc/fail2ban/jail.local << 'EOF'
+          [DEFAULT]
+          banaction = nftables-allports
+          bantime  = 1h
+          findtime = 10m
+          maxretry = 5
+          [sshd]
+          enabled = true
+          EOF
+          sudo systemctl restart fail2ban
+          # 2. 차단 IP 목록 (fail2ban 이 nft set 으로 변환)
+          sudo fail2ban-client status sshd
+          sudo nft list set inet fail2ban f2b-sshd 2>/dev/null
+        예상 출력: `Status for jail: sshd / Currently banned: 3 / IP list: 1.2.3.4 5.6.7.8 9.10.11.12`.
+        운영 해석: fail2ban 이 SSH 로그 분석 → 5회 실패 시 nft set 추가 → 1시간 후 자동 제거. `sshd`, `apache-auth`, `nginx-http-auth` 등 multi-service 지원.
       negative_signs:
       - type 미지정(오류)
       - set 대신 개별 rule 여러 개(비효율)
@@ -125,6 +257,73 @@ steps:
       - '파일 기반 로드: nft -f 로 element 선언문'
       - 'timeout 추가: { IP timeout 1h }'
       - curl/pin CTI feed 로 자동 업데이트 스크립트
+      - |
+        **[OSS] ipset add** — legacy ipset CLI 로 element 추가.
+          # 1. element 추가
+          sudo ipset add allowed_ips 10.20.30.201
+          # 2. 확인 (entries 1)
+          sudo ipset list allowed_ips | head -8
+          # 3. 영속화 (재부팅 후에도 유지)
+          sudo ipset save > /etc/iptables/ipsets
+        예상 출력 `Number of entries: 1 / Members: 10.20.30.201`.
+        운영 해석: nft set 보다 옵션이 풍부 (`hash:net`, `bitmap:port` 등). 학생이 ipset 를 한 번 다뤄봐야 nft set 의 단순함을 비교 학습.
+      - |
+        **[OSS] firewalld ipset entry** — zone-aware 영속 추가.
+          # 1. entry 추가 + 영속
+          sudo firewall-cmd --permanent --ipset=allowed_ips --add-entry=10.20.30.201
+          sudo firewall-cmd --reload
+          # 2. entry 확인
+          sudo firewall-cmd --permanent --ipset=allowed_ips --get-entries
+          # 3. 100+ IP 일괄 추가 (file 기반)
+          echo -e "10.20.30.201\n10.20.30.202\n..." > /tmp/ips.txt
+          sudo firewall-cmd --permanent --ipset=allowed_ips --add-entries-from-file=/tmp/ips.txt
+        예상 출력 `10.20.30.201` (단일 entry) 또는 `100 entries added`.
+        운영 해석: 영속 (`--permanent`) + reload 로 재부팅 안전. file 기반 일괄 추가 = 대량 IOC import 표준.
+      - |
+        **[OSS] crowdsec decision** — 협업형 IDS 의 명시적 결정 추가.
+          # 1. whitelist 결정 (24h 만료)
+          sudo cscli decisions add --ip 10.20.30.201 --type whitelist --duration 24h \
+            --reason "lab attacker VM"
+          # 2. 결정 목록 검증
+          sudo cscli decisions list --ip 10.20.30.201
+          # 3. bouncer 가 nft set 자동 sync
+          sudo nft list set inet crowdsec crowdsec-whitelists
+        예상 출력 `Action: whitelist / Source: cscli / Until: 2026-05-05T... / Reason: lab attacker VM`.
+        운영 해석: `--type ban`, `--type whitelist`, `--type captcha` 3 가지 결정 type. duration 으로 자동 만료 = 시간 제한 IOC 운영 표준.
+      - |
+        **[OSS] MISP feed** — Threat Intel platform 에서 IOC export.
+          # 1. MISP API 토큰 + Python 클라이언트
+          pip install pymisp
+          # 2. Python 스크립트로 IOC export → nft 명령 변환
+          python3 << 'EOF'
+          from pymisp import PyMISP
+          m = PyMISP("https://misp.example.com", "TOKEN", verify=False)
+          attrs = m.search('attributes', type='ip-src', tags='tlp:white', published=True)
+          with open('/tmp/misp_iocs.nft', 'w') as f:
+              for a in attrs['Attribute']:
+                  f.write(f"add element inet whitelist allowed_ips {{ {a['value']} }}\n")
+          EOF
+          # 3. nft 일괄 import
+          sudo nft -f /tmp/misp_iocs.nft
+        예상 출력: `/tmp/misp_iocs.nft` 에 100~1000 줄 (community feed 양에 따라).
+        운영 해석: tlp:white = 공유 가능한 IOC. published=True = MISP 검토 완료. CTI 운영 표준 import 워크플로우.
+      - |
+        **[OSS] Ansible (community.general.nftables_set)** — IaC 기반 set element 관리.
+          # playbook.yml
+          - name: Sync allowed_ips set
+            community.general.nftables_set:
+              table: whitelist
+              name: allowed_ips
+              family: inet
+              elements:
+                - 10.20.30.201
+                - 10.20.30.202
+                - 10.20.30.203
+              state: present
+          # 실행
+          ansible-playbook -i inventory.yml whitelist-sync.yml
+        예상 출력 `changed: [secu] - elements: 3 added`.
+        운영 해석: inventory 의 `allowed_ips` 변수만 갱신 → 모든 host 에 자동 반영. git commit 으로 변경 이력. enterprise 자동화 표준.
       negative_signs:
       - element 대신 rule 추가(의미 다름)
       - IP 문자열 없음
@@ -165,6 +364,79 @@ steps:
       - 'meta iifname 조건과 AND: meta iifname eth0 ip saddr @set accept'
       - ipset + iptables legacy 로 동등 구현
       - Wazuh active-response + set 동기화
+      - |
+        **[OSS] firewalld rich-rule (ipset 기반 accept)** — set 매칭 zone 룰.
+          # 1. ipset → zone source 또는 rich-rule 적용
+          sudo firewall-cmd --permanent --add-rich-rule='rule source ipset="allowed_ips" accept'
+          sudo firewall-cmd --reload
+          # 2. 적용 확인
+          sudo firewall-cmd --list-rich-rules
+          # 3. 효과 검증 — allowed_ips 의 IP 면 accept, 아니면 default zone 정책
+          sudo firewall-cmd --zone=public --list-all
+        예상 출력 `rule source ipset="allowed_ips" accept` 라인 출력.
+        운영 해석: rich-rule 는 zone 정책보다 우선. `accept` 외 `drop`/`reject`/`mark`/`limit value="3/m"` 등 다양한 action.
+      - |
+        **[OSS] Wazuh active-response (nft set 동기화)** — SIEM alert 시 자동 차단/허용.
+          # 1. /var/ossec/etc/ossec.conf 의 active-response 정의 (manager)
+          <active-response>
+            <command>firewall-drop</command>
+            <location>local</location>
+            <rules_id>5712</rules_id>  <!-- SSH brute force -->
+            <timeout>1800</timeout>
+          </active-response>
+          # 2. agent 측 firewall-drop 스크립트 (/var/ossec/active-response/bin/firewall-drop)
+          # 이 스크립트가 nft add element 호출
+          # 3. SOC 검증
+          sudo /var/ossec/bin/agent_control -a -i 001
+          sudo nft list set inet whitelist blocked_ips
+        예상 출력: brute-force alert 발생 시 attacker IP 가 자동으로 nft set 에 추가됨.
+        운영 해석: SIEM↔FW 양방향 통합. 30분 timeout 후 자동 제거. 근본은 nft set 동적 관리.
+      - |
+        **[OSS] crowdsec bouncer (nft 자동 동기화)** — community 기반 차단 결정 → nft 자동 적용.
+          # 1. bouncer 설치 + nftables backend 설정
+          sudo apt install crowdsec-firewall-bouncer-nftables
+          sudo cscli bouncers add nft-bouncer
+          # /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml 의 mode: nftables
+          sudo systemctl enable --now crowdsec-firewall-bouncer
+          # 2. crowdsec 의 결정이 nft set 에 자동 sync
+          sudo nft list set inet crowdsec crowdsec-blacklists | wc -l
+          # 3. set 기반 룰 (bouncer 가 자동 추가)
+          sudo nft list ruleset | grep crowdsec
+        예상 출력: `set crowdsec-blacklists { type ipv4_addr ; flags timeout ; elements = { 1.2.3.4, 5.6.7.8 ... } }`.
+        운영 해석: cscli decisions 의 결정이 5분 이내 nft set 에 자동 반영. timeout flag 로 만료된 IP 자동 제거.
+      - |
+        **[OSS] keepalived check_script (HA 환경)** — active/passive HA 의 룰 동기화.
+          # /etc/keepalived/keepalived.conf
+          vrrp_script chk_nft {
+              script "/usr/bin/nft list table inet whitelist >/dev/null 2>&1"
+              interval 5
+              rise 2 fall 2
+          }
+          vrrp_instance VI_1 {
+              state MASTER
+              interface ens33
+              virtual_router_id 51
+              track_script { chk_nft }
+              notify_master "/etc/keepalived/sync-nft.sh master"
+              notify_backup "/etc/keepalived/sync-nft.sh backup"
+          }
+        sync 스크립트: master 가 nft ruleset 을 backup 에 rsync.
+        운영 해석: HA firewall 환경에서 active node 의 set 변경을 passive node 에 자동 sync. failover 시 룰 손실 방지.
+      - |
+        **[OSS] Suricata + reputation IP list (양방향 sync)** — Suricata 의 reputation 시스템과 nft set 통합.
+          # 1. Suricata reputation list 설정 (/etc/suricata/suricata.yaml)
+          reputation-categories-file: /etc/suricata/iprep/categories.txt
+          default-reputation-path: /etc/suricata/iprep
+          reputation-files:
+            - reputation.list
+          # 2. nft set 의 IP 를 Suricata reputation list 로 export (cron)
+          sudo nft -j list set inet whitelist allowed_ips | jq -r '.nftables[].set.elem[]' | \
+            awk '{print $1",1,90"}' > /etc/suricata/iprep/reputation.list
+          sudo kill -USR2 $(pidof suricata)  # 룰 reload
+          # 3. Suricata 룰에서 reputation 매칭
+          # alert ip $EXTERNAL_NET any -> $HOME_NET any (msg:"BAD REP"; iprep:src,malicious,>,80; sid:9000001;)
+        예상 효과: nft set 변경 → Suricata 가 같은 IP 에 high reputation score 부여 → alert 자동 발생.
+        운영 해석: nft (L3 차단) + Suricata (L7 detect) 양 layer 가 동일 IOC 셋 공유 = 일관성. 운영 표준.
       negative_signs:
       - '@ 없이 set 이름 참조(syntax 오류)'
       - drop action(로직 반대)
@@ -207,6 +479,78 @@ steps:
       - limit 구문 + counter 추가해 통계 수집
       - fail2ban + recidive 로 userspace 대체
       - iptables -m recent --set/--update ... --hitcount 5 --seconds 60
+      - |
+        **[OSS] fail2ban** — userspace SSH brute-force 차단 daemon. nft set 동기화.
+          # 1. 설치 + nftables backend
+          sudo apt install fail2ban
+          sudo tee /etc/fail2ban/jail.d/sshd-nft.local << 'EOF'
+          [sshd]
+          enabled = true
+          banaction = nftables-allports
+          maxretry = 3
+          findtime = 60
+          bantime = 600
+          EOF
+          sudo systemctl restart fail2ban
+          # 2. 차단 IP 목록 + 통계
+          sudo fail2ban-client status sshd
+          # 3. nft set 검증
+          sudo nft list set inet fail2ban f2b-sshd
+        예상 출력 `Currently banned: 2 / Total banned: 47 / Banned IP list: 1.2.3.4 5.6.7.8`.
+        운영 해석: nftables limit 룰 (network layer) + fail2ban (application log layer) 이중 방어. nftables 는 SYN 까지 통제, fail2ban 은 인증 실패 후 차단.
+      - |
+        **[OSS] sshguard** — fail2ban 대안. 가벼운 C 기반 daemon.
+          # 1. 설치 (Debian/Ubuntu)
+          sudo apt install sshguard
+          sudo systemctl enable --now sshguard
+          # 2. /etc/sshguard/sshguard.conf 의 BACKEND
+          BACKEND="/usr/libexec/sshg-fw-nft-sets"
+          # 3. 차단 IP 통계
+          sudo journalctl -u sshguard | grep "Blocking"
+          # 4. nft set 검증
+          sudo nft list set inet sshguard attackers
+        예상 출력 `Blocking 1.2.3.4:4 for >630secs (3 attacks ...)`.
+        운영 해석: 메모리 사용량 fail2ban 대비 1/10. SSH 만 보호 시 sshguard 권장. 다중 service (Apache/Nginx) 보호 시 fail2ban.
+      - |
+        **[OSS] crowdsec sshd scenario** — AI 기반 anomaly + crowd-sourced 차단.
+          # 1. SSH brute-force scenario 활성화
+          sudo cscli scenarios install crowdsecurity/ssh-bf
+          sudo cscli scenarios install crowdsecurity/ssh-slow-bf
+          sudo systemctl restart crowdsec
+          # 2. 시뮬레이션 (10번 SSH 실패 시 trigger)
+          for i in {1..10}; do ssh wronguser@10.20.30.1 2>/dev/null; done
+          # 3. 결정 확인
+          sudo cscli decisions list --scenario crowdsecurity/ssh-bf
+          # 4. metrics
+          sudo cscli metrics
+        예상 출력: `crowdsecurity/ssh-bf trigger / IP: 10.20.30.201 / duration: 4h / reason: 10 ssh failures in 60s`.
+        운영 해석: scenario 의 logic 이 yaml 로 명시 (`/etc/crowdsec/scenarios/`). 본 환경에서 발견한 attacker IP 가 community 에 공유되어 다른 organization 도 보호.
+      - |
+        **[OSS] AbuseIPDB feed → nft set 사전 차단** — known-bad reputation 기반 사전 방어.
+          # 1. AbuseIPDB API 키 발급 (https://www.abuseipdb.com)
+          # 2. 매일 cron 으로 known-bad IP 다운로드
+          curl -s -G "https://api.abuseipdb.com/api/v2/blacklist" \
+               -H "Key: $ABUSEIPDB_KEY" -H "Accept: application/json" \
+               -d "confidenceMinimum=90" | jq -r '.data[].ipAddress' > /tmp/badips.txt
+          # 3. nft set 갱신
+          sudo nft flush set inet whitelist badlist
+          while read ip; do sudo nft add element inet whitelist badlist { $ip }; done < /tmp/badips.txt
+          # 4. cron 등록
+          echo "0 3 * * * /usr/local/bin/abuseipdb-sync.sh" | sudo crontab -
+        예상 결과: 10K+ known-bad IP 의 SSH 시도가 *접속 시도 자체* 차단됨 (rate limit 까지 안 가도 됨).
+        운영 해석: rate limit 는 *행위 후* 차단, AbuseIPDB feed 는 *사전* 차단. 두 layer 결합이 강력.
+      - |
+        **[OSS] DenyHosts** — TCPwrapper 기반 (legacy). 학습 비교용.
+          # 1. 설치
+          sudo apt install denyhosts
+          # 2. /etc/denyhosts.conf 주요 옵션
+          DENY_THRESHOLD_INVALID = 5    # 5회 실패 시 차단
+          PURGE_DENY = 4h                # 4시간 후 해제
+          BLOCK_SERVICE = sshd
+          # 3. 차단 IP 확인
+          sudo cat /etc/hosts.deny | grep sshd
+        예상 출력 `sshd: 1.2.3.4 # DenyHosts: Tue May 6 14:23:00 2026 | Detected attempt: 5/5`.
+        운영 해석: legacy SSH only. 신규 환경은 fail2ban/crowdsec 권장. 학생이 DenyHosts 비교로 *layer 추적의 진화* 학습.
       negative_signs:
       - ct state 없음(established 도 제한)
       - limit 대신 drop 일괄
@@ -252,6 +596,77 @@ steps:
       - /etc/nftables.conf 에 nat 테이블 블록 선언
       - systemctl enable --now nftables + sysctl net.ipv4.ip_forward=1
       - iptables -t nat -A POSTROUTING -o ens33 -j MASQUERADE
+      - |
+        **[OSS] firewalld masquerade** — zone-based 영속 NAT.
+          # 1. external zone 의 masquerade 활성화
+          sudo firewall-cmd --zone=external --add-masquerade --permanent
+          sudo firewall-cmd --reload
+          # 2. ip_forward 자동 활성화 검증
+          sysctl net.ipv4.ip_forward
+          # 3. 적용 확인
+          sudo firewall-cmd --zone=external --query-masquerade
+          sudo firewall-cmd --zone=external --list-all
+        예상 출력 `yes` (masquerade 활성) / `masquerade: yes` (zone 정보).
+        운영 해석: zone 단위 NAT 정책. internal zone (no masquerade) + external zone (masquerade) 분리 운영. backend 는 결국 nft postrouting masquerade.
+      - |
+        **[OSS] ufw NAT (before.rules 편집)** — Ubuntu 환경 NAT 설정.
+          # 1. /etc/default/ufw 편집
+          sudo sed -i 's/DEFAULT_FORWARD_POLICY="DROP"/DEFAULT_FORWARD_POLICY="ACCEPT"/' /etc/default/ufw
+          # 2. /etc/ufw/before.rules 의 *filter 블록 위에 *nat block 추가
+          sudo tee -a /etc/ufw/before.rules.nat << 'EOF'
+          *nat
+          :POSTROUTING ACCEPT [0:0]
+          -A POSTROUTING -s 10.20.30.0/24 -o ens33 -j MASQUERADE
+          COMMIT
+          EOF
+          # 3. ip_forward 활성
+          sudo sed -i 's/#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/' /etc/ufw/sysctl.conf
+          sudo ufw disable && sudo ufw enable
+        예상 결과: ufw reload 후 nft 의 ip nat table 에 자동 변환됨.
+        운영 해석: ufw 는 단순 firewall frontend 라 NAT 는 raw rule 편집 필요. 복잡도 증가 시 firewalld 권장.
+      - |
+        **[OSS] NetworkManager nmcli (shared mode)** — desktop hotspot 패턴.
+          # 1. ens33 을 shared mode 로 (자동 NAT + DHCP + DNS)
+          sudo nmcli connection modify ens33 ipv4.method shared
+          sudo nmcli connection up ens33
+          # 2. 자동 생성된 NAT 룰 검증 (nm 이 nft masquerade 자동 추가)
+          sudo nft list ruleset | grep masquerade
+          # 3. dhcp/dns 동시 활성 확인
+          sudo ss -lnup | grep -E "67|53"
+        예상 출력 `oifname ens33 masquerade` (NAT 룰) + `*:67 (dhcp), *:53 (dns)`.
+        운영 해석: laptop hotspot, 임시 NAT gateway 패턴. NetworkManager 가 nft+dnsmasq+isc-dhcp 자동 통합.
+      - |
+        **[OSS] dnsmasq (DHCP + DNS + masquerade gateway)** — 통합 NAT gateway.
+          # 1. dnsmasq 설치
+          sudo apt install dnsmasq
+          # 2. /etc/dnsmasq.conf 편집
+          sudo tee /etc/dnsmasq.conf << 'EOF'
+          interface=ens33
+          dhcp-range=10.20.30.100,10.20.30.200,12h
+          dhcp-option=3,10.20.30.1
+          dhcp-option=6,8.8.8.8
+          domain=lab.local
+          EOF
+          sudo systemctl restart dnsmasq
+          # 3. nft masquerade 와 결합
+          sudo nft add rule inet nat postrouting oifname ens33 masquerade
+          sudo sysctl -w net.ipv4.ip_forward=1
+          # 4. 운영 확인
+          sudo dnsmasq --test
+          sudo journalctl -u dnsmasq -f
+        예상 결과: internal client 가 DHCP 로 IP 받고, dnsmasq 가 DNS 캐싱 + nft 가 outbound NAT.
+        운영 해석: 소규모 lab/branch office 의 표준 패키지. SOHO router 의 모든 기능을 1 daemon 으로.
+      - |
+        **[OSS] OPNsense / pfSense (BSD pf 기반 GUI firewall)** — production 표준.
+          # OPNsense 기준 (web GUI: https://opnsense.local)
+          # 1. Firewall → NAT → Outbound → Mode = Hybrid
+          # 2. Add → Source: 10.20.30.0/24 / Translation: Interface address (= masquerade)
+          # 3. Apply changes
+          # 4. CLI 검증 (BSD)
+          ssh root@opnsense
+          pfctl -s nat | grep masquerade
+        예상 출력: `nat on em0 from 10.20.30.0/24 to any -> (em0)` (BSD pf 문법).
+        운영 해석: GUI 기반 enterprise firewall. nft 와 동일 NAT 개념을 다른 backend (BSD pf) 로. ISP/data center 환경 표준.
       negative_signs:
       - priority 누락 또는 잘못된 값
       - postrouting 대신 prerouting(DNAT 용)
@@ -293,6 +708,56 @@ steps:
       - sudo nft -a list table inet whitelist(handle 번호)
       - sudo nft -j list table inet whitelist | jq
       - sudo nft list set inet whitelist allowed_ips(set 내용만)
+      - |
+        **[OSS] firewalld --list-all** — 의미적 zone view 표준.
+          # 1. zone 전체 정보 (service/port/rich-rule/ipset/source)
+          sudo firewall-cmd --zone=whitelist --list-all
+          # 2. 영속 vs runtime 비교
+          sudo firewall-cmd --permanent --zone=whitelist --list-all
+          sudo firewall-cmd --zone=whitelist --list-all
+          diff <(sudo firewall-cmd --permanent --zone=whitelist --list-all) \
+               <(sudo firewall-cmd --zone=whitelist --list-all)
+        예상 출력 `whitelist (active) / target: DROP / interfaces: ens33 / sources: ipset:allowed_ips / services: ssh / rich rules: rule source ipset="allowed_ips" accept`.
+        운영 해석: nft 의 raw 출력보다 *zone 의도* 가 명확. 영속/runtime diff 로 미저장 변경 발견.
+      - |
+        **[OSS] cockpit Networking** — web GUI 시각화.
+          # 1. Cockpit 접속 (https://10.20.30.1:9090)
+          # 2. 좌측 Networking → Firewall 메뉴
+          # 3. zone 선택 (whitelist) → Services / Ports / Rich rules tab
+          # 4. ipset 내용 확인: ipsets tab → allowed_ips → entries 목록
+        UI 동작: 각 zone 의 services 목록 + masquerade toggle + add rule 버튼.
+        운영 해석: SSH 권한 있는 매니저가 GUI 로 빠르게 점검. CLI 익숙치 않은 운영자 표준.
+      - |
+        **[OSS] fwbuilder reload + visualize** — GUI compile.
+          # 1. fwbuilder 실행 후 Object → Firewall → secu 선택
+          # 2. Tools → Reload from system → SSH 통해 nft list 가져오기
+          # 3. 룰셋 GUI view (chain → rule → set 트리)
+          # 4. 룰 순서 변경 (drag & drop) 후 Compile → 미리보기 nft 명령 출력
+        결과: GUI 의 Rules tab 에서 set element + rule 위치 시각적 확인.
+        운영 해석: 100+ 룰 환경 시 시각화가 필수. 변경 후 git commit 으로 history.
+      - |
+        **[OSS] nft graph 시각화** — community graph 도구.
+          # 1. 도구 설치 (nft2dot 은 GitHub 의 community tool)
+          pip install nft-visualizer
+          # 2. 룰셋 → DOT format
+          sudo nft -j list table inet whitelist > /tmp/wl.json
+          nft-visualizer /tmp/wl.json | dot -Tpng > /tmp/wl.png
+          # 3. 결과 image 보기 (xdg-open 또는 SCP)
+          xdg-open /tmp/wl.png
+        결과: chain → rule → set element graph. set 이 어떤 룰에서 참조되는지 화살표로 표시.
+        운영 해석: 복잡한 cross-chain reference 환경에서 유용. 룰 의존성 한눈에.
+      - |
+        **[OSS] nflog + ulogd2 (실제 매칭 패킷 evidence)** — counter 만으로 부족할 때.
+          # 1. ulogd2 설치
+          sudo apt install ulogd2
+          # 2. nft 룰에 nflog action 추가 (counter 와 함께)
+          sudo nft add rule inet whitelist input ip saddr @allowed_ips counter log group 0 prefix \"WL-MATCH \" accept
+          # 3. ulogd 가 NFLOG group 0 을 캡처
+          sudo systemctl start ulogd2
+          # 4. 매칭 패킷 evidence 보기
+          sudo tail -20 /var/log/ulog/syslogemu.log | grep WL-MATCH
+        예상 출력 `WL-MATCH IN=ens33 OUT= SRC=10.20.30.201 DST=10.20.30.1 PROTO=TCP SPT=44321 DPT=22`.
+        운영 해석: counter 는 횟수만, ulogd2 는 *어떤 패킷* 인지. compliance audit 시 evidence.
       negative_signs:
       - 다른 테이블 출력
       - grep 없이 무조건 실행 후 판정 누락
@@ -330,6 +795,64 @@ steps:
       - conntrack -L 로 NAT conntrack 엔트리
       - cat /proc/sys/net/ipv4/ip_forward 가 1 인지
       - iptables -t nat -L -n -v 로 legacy 확인
+      - |
+        **[OSS] conntrack-tools** — NAT translation entry 표준 도구.
+          # 1. 모든 NAT entry
+          sudo conntrack -L --any-nat | head -20
+          # 2. SRC NAT (masquerade) entry 만 필터
+          sudo conntrack -L --src-nat
+          # 3. 실시간 모니터 (새 NAT entry watch)
+          sudo conntrack -E -e new -p tcp
+          # 4. 통계
+          sudo conntrack -S
+        예상 출력 `tcp 6 86400 ESTABLISHED src=10.20.30.80 dst=8.8.8.8 sport=44321 dport=80 src=8.8.8.8 dst=10.20.30.1 sport=80 dport=44321 [ASSURED]`.
+        운영 해석: NAT 정상 시 양방향 src↔dst 변환이 보임. 첫 번째 src (web 내부) → 두 번째 src (8.8.8.8) 가 답신할 dst (secu 외부 IP). nft list 의 counter 보다 ground truth.
+      - |
+        **[OSS] firewalld masquerade query** — zone 영속 설정 점검.
+          # 1. masquerade 활성 zone 찾기
+          for z in $(sudo firewall-cmd --get-zones); do
+            echo -n "$z: "; sudo firewall-cmd --zone=$z --query-masquerade
+          done
+          # 2. 영속 설정 확인
+          sudo firewall-cmd --permanent --zone=external --query-masquerade
+          # 3. ip_forward 자동 활성 검증
+          cat /proc/sys/net/ipv4/ip_forward
+        예상 출력 `external: yes / public: no / trusted: no / 1`.
+        운영 해석: firewalld 가 masquerade 활성 시 ip_forward 자동 1 설정. 영속 vs runtime 일치 확인.
+      - |
+        **[OSS] iproute2 (ip route + ip rule)** — policy routing 통합 환경.
+          # 1. NAT 관련 라우팅
+          ip route show table all
+          # 2. 기본 라우팅 (default gateway)
+          ip route show
+          # 3. 정책 기반 라우팅 (PBR) — NAT 와 함께 쓰일 때
+          ip rule list
+          # 4. 인터페이스 IP (NAT 의 src)
+          ip -br addr show ens33
+        예상 출력 `default via 10.20.0.1 dev ens33 / ens33 UP 10.20.30.1/24`.
+        운영 해석: NAT 만으론 부족, 라우팅이 같이 맞아야. default route 없으면 outbound 패킷 자체가 못 나감.
+      - |
+        **[OSS] sysctl-explorer (포괄 검증)** — 모든 forwarding 옵션 한 번에.
+          # 1. IPv4 + IPv6 forwarding 설정
+          sudo sysctl -a 2>/dev/null | grep -E "(forward|rp_filter|conntrack)" | head -20
+          # 2. 영속 설정
+          cat /etc/sysctl.conf /etc/sysctl.d/*.conf | grep -E "forward"
+          # 3. 영속 적용
+          sudo sysctl --system
+        예상 출력 `net.ipv4.ip_forward = 1 / net.ipv6.conf.all.forwarding = 0 / net.netfilter.nf_conntrack_max = 262144`.
+        운영 해석: forwarding 외 conntrack_max (= NAT 동시 연결 수 한도) 도 중요. SYN flood 시 conntrack 가 가득 차면 NAT 자체 정지.
+      - |
+        **[OSS] OPNsense / pfSense Diagnostics** — GUI 기반 NAT state 시각화.
+          # OPNsense web UI 기준
+          # 1. Firewall → Diagnostics → States
+          # 2. NAT (Source) tab → 현재 변환 중 connection 시각화
+          # 3. State Summary tab → conntrack 사용량 / 만료 시각
+          # 4. CLI (BSD pf)
+          ssh root@opnsense
+          pfctl -s state | grep nat
+          pfctl -s state -i em0 | head -10
+        결과: GUI 의 NAT translations 표 (src → translation → dst) 시각화.
+        운영 해석: production firewall 의 표준 진단 도구. nft conntrack 과 동일 개념을 다른 backend (BSD pf) 로.
       negative_signs:
       - 다른 table 확인
       - masquerade 없음을 정상 판정
@@ -367,6 +890,70 @@ steps:
       - sudo nft flush ruleset(전체 비움, 위험)
       - systemctl restart nftables 로 /etc/nftables.conf 기준 재로드
       - for t in whitelist nat; do sudo nft delete table inet $t; done
+      - |
+        **[OSS] firewalld zone delete + masquerade remove** — 통합 cleanup.
+          # 1. zone 단위 cleanup
+          sudo firewall-cmd --permanent --delete-zone=whitelist
+          sudo firewall-cmd --permanent --zone=external --remove-masquerade
+          sudo firewall-cmd --reload
+          # 2. ipset cleanup
+          sudo firewall-cmd --permanent --delete-ipset=allowed_ips
+          sudo firewall-cmd --reload
+          # 3. 영속 검증
+          sudo firewall-cmd --get-zones | tr ' ' '\n' | grep -c whitelist
+        예상 출력 `0` (zone 부재).
+        운영 해석: zone + ipset + masquerade 3 layer 동시 cleanup. 영속 + runtime 동시 적용.
+      - |
+        **[OSS] etckeeper (git history)** — cleanup 전후 영속 설정 diff.
+          # 1. etckeeper 설치 + 초기 commit
+          sudo apt install etckeeper
+          sudo etckeeper init
+          sudo etckeeper commit "initial state"
+          # 2. cleanup 전후 commit
+          sudo etckeeper commit "before cleanup"
+          # ... cleanup 실행 ...
+          sudo etckeeper commit "after cleanup"
+          # 3. diff
+          sudo etckeeper vcs log --oneline /etc/nftables.conf | head -5
+          sudo etckeeper vcs diff HEAD~1 HEAD -- /etc/nftables.conf
+        예상 출력: removed lines `table inet whitelist { ... }` `table inet nat { ... }`.
+        운영 해석: cleanup audit trail. 누가 언제 무엇을 제거했는지 git history. compliance 표준.
+      - |
+        **[OSS] Ansible IaC cleanup** — declarative state=absent.
+          # playbook.yml
+          - name: Remove whitelist + nat tables
+            community.general.nftables_table:
+              name: "{{ item }}"
+              family: inet
+              state: absent
+            loop:
+              - whitelist
+              - nat
+          # 실행
+          ansible-playbook -i inventory.yml cleanup.yml --diff
+        예상 출력 `changed: [secu] / removed: ['whitelist', 'nat']`.
+        운영 해석: 다중 host 일관 cleanup. inventory 의 변수 갱신만으로 enterprise 환경 자동화.
+      - |
+        **[OSS] ipset destroy (legacy 동시 cleanup)** — nft + ipset 양쪽 정리.
+          # 1. ipset 목록
+          sudo ipset list -name
+          # 2. 개별 destroy (사용 중이면 실패 = iptables 룰 먼저 삭제 필요)
+          sudo ipset destroy allowed_ips
+          # 3. 일괄 destroy
+          sudo ipset destroy
+          # 4. 영속 cleanup
+          sudo rm -f /etc/iptables/ipsets
+        예상 결과: `ipset list -name` 빈 목록 또는 시스템 default set 만.
+        운영 해석: ipset 와 nft set 둘 다 사용한 환경에서 양쪽 모두 정리 필요. 한쪽만 정리 시 stale state.
+      - |
+        **[OSS] cockpit Networking zone delete** — GUI 안전 cleanup.
+          # 1. Cockpit web UI 접속
+          # 2. Networking → Firewall → Zones → whitelist 클릭
+          # 3. Action → Delete zone (confirm dialog)
+          # 4. ipsets tab → allowed_ips → Delete
+          # 5. 변경 사항 자동 영속화 (firewall-cmd --runtime-to-permanent 자동 호출)
+        UI 동작: zone 삭제 confirm 시 firewalld API 호출 + 적용.
+        운영 해석: 명령어 오타로 실수 삭제 방지. GUI 의 confirm dialog + audit log.
       negative_signs:
       - 한 테이블만 삭제
       - '&& 로 실패 시 두 번째 skip'
@@ -406,6 +993,58 @@ steps:
       - sudo nft list tables | grep -vE whitelist|^table inet nat$
       - diff <(cat before.txt) <(nft list tables)
       - sudo nft -j list tables | jq .nftables[].table.name
+      - |
+        **[OSS] firewalld zone list** — 단순 빠른 검증.
+          # 1. zone 목록 (whitelist 부재 검증)
+          sudo firewall-cmd --get-zones
+          # 2. whitelist 부재 자동 검증 (script)
+          if sudo firewall-cmd --get-zones | tr ' ' '\n' | grep -qE '^(whitelist|nat)$'; then
+            echo FAIL; else echo OK; fi
+          # 3. ipset 부재 검증
+          sudo firewall-cmd --get-ipsets | grep -c allowed_ips
+        예상 출력 `block dmz drop external home internal public trusted work / OK / 0`.
+        운영 해석: shell script 자동화 → cron 으로 daily cleanup 검증. lab 환경 잔여물 발견 시 alert.
+      - |
+        **[OSS] auditd (nft 명령 실행 audit)** — 누가 언제 삭제했는지 evidence.
+          # 1. audit rule 추가 (nft 명령 실행 추적)
+          sudo auditctl -w /usr/sbin/nft -p x -k nft_exec
+          # 2. cleanup 후 audit log 검색
+          sudo ausearch -k nft_exec --start today | head -30
+          # 3. 사용자 + 명령 + 시각
+          sudo ausearch -k nft_exec --start today | aureport --executable -i
+        예상 출력 `time->Tue May 6 14:23:00 2026 / type=EXECVE msg=audit(...) argc=4 a0="nft" a1="delete" a2="table" a3="inet whitelist"`.
+        운영 해석: compliance 감사 시 evidence. 의심 cleanup 발생 시 user account + tty + 시각 추적.
+      - |
+        **[OSS] etckeeper diff (영속 설정 cleanup 검증)** — 영속 파일의 변화 확인.
+          # 1. 최근 commit 들의 변경
+          sudo etckeeper vcs log --oneline /etc/nftables.conf | head -5
+          # 2. cleanup 전후 비교
+          sudo etckeeper vcs diff HEAD~3 HEAD -- /etc/nftables.conf
+          # 3. /etc 전체 변화
+          sudo etckeeper vcs diff HEAD~3 HEAD --stat
+        예상 출력: removed `table inet whitelist {...}` block (전체 라인 제거).
+        운영 해석: runtime cleanup + 영속 cleanup 일치 검증. 영속 파일에 남아있으면 다음 부팅 시 다시 살아남.
+      - |
+        **[OSS] cockpit Logs (systemd journal)** — cleanup 명령 실행 evidence.
+          # 1. Cockpit Logs 페이지에서 unit=firewalld 또는 nftables 검색
+          # 2. 또는 CLI
+          sudo journalctl -u firewalld --since "1 hour ago" | grep -E "delete|remove"
+          sudo journalctl -u nftables --since "1 hour ago"
+          # 3. systemd-analyze 로 영속 적용 여부
+          systemd-analyze critical-chain firewalld.service
+        예상 출력 `Removed zone whitelist / Removed ipset allowed_ips`.
+        운영 해석: GUI 또는 CLI 로 cleanup 시점 traceability.
+      - |
+        **[OSS] osquery (분산 모니터링)** — 실시간 firewall 상태 query.
+          # 1. osquery 설치 + 실행
+          sudo apt install osquery
+          sudo systemctl start osqueryd
+          # 2. 모든 host 의 iptables/nftables 룰 query
+          osqueryi "SELECT chain, target, src_ip, dst_port FROM iptables WHERE chain='INPUT';"
+          # 3. fleet 매니저 (Kolide/Fleet) 와 통합 시 모든 host query
+          fleetctl query --hosts secu,web,siem --query "iptables_count.sql"
+        예상 출력 `chain | target | src_ip | dst_port` 표 형식.
+        운영 해석: 100+ host 환경의 cleanup 검증 표준. 모든 host 에 동일 cleanup 적용 여부 단번에.
       negative_signs:
       - list ruleset 으로 대체(overkill)
       - before 스냅샷 없이 판단
@@ -498,6 +1137,60 @@ steps:
       - secu 에서 nft add/delete element 로 set 동적 변경
       - attacker 에서 nc -vz / curl 로 trigger
       - secu 에서 nft list set + nft list table 으로 counter/element 검증
+      - |
+        **[OSS] nmap (Phase B 다중 trigger)** — 침투테스터 표준 scan.
+          # 1. 다중 포트 동시 scan (set 매칭 trigger)
+          nmap -p 8080,22,80 -Pn 10.20.30.1
+          # 2. 더 광범위 (1-1000 포트)
+          nmap -p 1-1000 -Pn -T4 10.20.30.1
+          # 3. service detection (set 매칭 후 도달 가능한 service 식별)
+          nmap -sV -p 22 10.20.30.1
+        예상 출력: set 비었을 때 모든 포트 `filtered`, set 추가 후 SSH 만 `open`.
+        운영 해석: nmap 의 결과 차이 = set policy 효과 직접 evidence. 침투테스터/red team 표준 도구.
+      - |
+        **[OSS] hping3 (정밀 1-패킷 trigger)** — counter 변동 정확히 측정.
+          # 1. SYN 1 개만 (set 매칭 정확히 +0 또는 +1)
+          sudo hping3 -S -p 8080 -c 1 10.20.30.1
+          # 2. flood 시 set rate-limit 효과
+          sudo hping3 -S -p 22 --flood -c 100 10.20.30.1
+          # 3. UDP scan (다른 패킷 type 매칭)
+          sudo hping3 --udp -p 53 -c 1 10.20.30.1
+        예상 출력 `1 packet sent, X received, ...% loss`.
+        운영 해석: nmap 보다 패킷 단위 정확. counter 가 정확히 +1 인지 검증 시 필수.
+      - |
+        **[OSS] nft monitor (실시간 set 변경 watch)** — audit 표준.
+          # 1. 별도 터미널에서 monitor 시작
+          sudo nft monitor
+          # 2. (다른 터미널) set element 추가
+          sudo nft add element inet whitelist allowed_ips { 10.20.30.201 }
+          # 3. monitor 출력에서 event 확인
+          # add element inet whitelist allowed_ips { 10.20.30.201 }
+          # 4. 특정 event 만 monitor (rules / sets / objects)
+          sudo nft monitor sets
+        예상 출력: 각 set element add/delete 가 실시간 출력.
+        운영 해석: 누가 언제 set 변경했는지 실시간 audit. 의심 변경 즉시 인지.
+      - |
+        **[OSS] tcpdump (wire-level 도달성 검증)** — set 효과의 ground truth.
+          # 1. set 비었을 때 attacker → secu 패킷이 도달조차 안함
+          sudo tcpdump -i any -nn "host 10.20.30.201" -c 5
+          # 2. set 추가 후 패킷 도달 + drop 차이
+          sudo tcpdump -i any -nn "host 10.20.30.201 and tcp" -c 10 -w /tmp/capture.pcap
+          # 3. wireshark 로 분석
+          wireshark /tmp/capture.pcap
+        예상 출력: set 빈 채로 SYN 만 보임 + RST 응답 없음 = drop. set 추가 후 SYN+ACK 양방향 = accept.
+        운영 해석: counter 는 *얼마나* 매칭됐는지, tcpdump 는 *어떤 패킷* 인지. 동시 사용 표준.
+      - |
+        **[OSS] auditd (set 변경 행위 audit)** — accountability.
+          # 1. nft 명령 실행 자동 audit
+          sudo auditctl -w /usr/sbin/nft -p x -k nft_change
+          # 2. attacker IP 추가 후
+          sudo nft add element inet verify_wl allowed_ips { 10.20.30.201 }
+          # 3. audit log 검색
+          sudo ausearch -k nft_change --start today | tail -20
+          # 4. 사용자 + 명령 매핑
+          sudo aureport --executable -i | grep nft
+        예상 출력: `EXECVE msg=audit(...) argc=5 a0="nft" a1="add" a2="element" a3="inet verify_wl allowed_ips" a4="{ 10.20.30.201 }"`.
+        운영 해석: lab 환경에서는 단순 evidence, production 에서는 compliance 필수. multi-user 환경에서 누가 set 변경했는지 추적.
       negative_signs:
       - SSH accept 룰 누락 (lockout 위험 무시)
       - set 추가/삭제 1번만 — 동적 검증 누락
@@ -593,6 +1286,80 @@ steps:
       - attacker 에서 hydra ssh + 패스워드 파일
       - secu 에서 nft list table + grep counter
       - sleep 65 후 재시도 + counter 비교
+      - |
+        **[OSS] hydra (다중 protocol brute-force)** — 침투테스터 표준 도구.
+          # 1. 패스워드 파일 준비
+          echo -e "wrong1\nwrong2\nwrong3\nwrong4\nwrong5" > /tmp/5pwds.txt
+          # 2. SSH 직렬 brute (rate limit trigger)
+          hydra -l ccc -P /tmp/5pwds.txt ssh://10.20.30.1 -t 1 -W 1 -V
+          # 3. 결과 분석
+          # [22][ssh] host: 10.20.30.1   login: ccc   password: ...
+          # 4. 다른 프로토콜 (FTP/HTTP-form 등도 동일 syntax)
+          hydra -l admin -P /tmp/5pwds.txt http-post-form://10.20.30.80/login:user=^USER^&pass=^PASS^:F=invalid
+        예상 출력: 처음 3 시도 connection 통과 (limit accept) + 4-5 시도 connection refused (limit drop).
+        운영 해석: -t 1 (직렬) -W 1 (1초 wait) 으로 rate limit 의 시간 단위 효과 정확히 trigger.
+      - |
+        **[OSS] medusa (parallel brute-force)** — hydra 대안. 빠른 시도.
+          # 1. parallel 5 thread (rate limit 더 빨리 trigger)
+          medusa -h 10.20.30.1 -u ccc -P /tmp/5pwds.txt -M ssh -t 5 -v 6
+          # 2. 결과 분석
+          # ACCOUNT FOUND: [ssh] Host: 10.20.30.1 User: ccc Password: ...
+          # 3. domain user / multiple host
+          medusa -H /tmp/hosts.txt -U /tmp/users.txt -P /tmp/pwds.txt -M ssh -t 10
+        예상 출력: 동시 5 시도 → rate limit 즉시 1 초 내 trigger → 4 connection drop.
+        운영 해석: hydra (느림, robust) vs medusa (빠름, 가끔 false negative). 도구 선택 학습.
+      - |
+        **[OSS] ncrack (Nmap 팀의 brute-force)** — timing template 정밀.
+          # 1. ssh brute with paranoid timing (rate limit 우회 시도)
+          ncrack -p 22 --user ccc -P /tmp/5pwds.txt -T0 10.20.30.1
+          # 2. 일반 timing (rate limit trigger)
+          ncrack -p 22 --user ccc -P /tmp/5pwds.txt -T4 10.20.30.1
+          # 3. 결과 분석
+          # Discovered credentials: 10.20.30.1:22 ccc:correct_password
+        예상 출력: -T4 (aggressive) → rate limit trigger. -T0 (paranoid, 5분 간격) → rate limit 우회 가능.
+        운영 해석: timing template (-T0~-T5) 로 detection 회피 학습. 운영 측 lesson = limit rate 외 *시간 분산* 공격 대비 추가 layer 필요.
+      - |
+        **[OSS] patator (Python 기반 multi-protocol)** — modular brute 표준.
+          # 1. SSH brute
+          patator ssh_login host=10.20.30.1 user=ccc password=FILE0 0=/tmp/5pwds.txt
+          # 2. 결과 + 시간 분석
+          # output: success/failure status + time elapsed for each
+          # 3. http-form brute
+          patator http_fuzz url=http://10.20.30.80/login method=POST body='user=admin&pass=FILE0' 0=/tmp/5pwds.txt
+        예상 출력: time + status code 표 형식. rate limit trigger 시 timeout/ECONNREFUSED.
+        운영 해석: 결과 정렬 + 통계 자동 = SOC 분석가가 brute pattern 분석 시 유용.
+      - |
+        **[OSS] watch + nft list (실시간 counter 시각화)** — 시간 윈도우 효과 직접 관찰.
+          # 1. 별도 터미널에서 watch 시작
+          sudo watch -n 1 "nft list table inet verify_rl | grep -E 'counter|limit' | head -10"
+          # 2. 다른 터미널에서 brute (hydra/medusa)
+          hydra -l ccc -P /tmp/5pwds.txt ssh://10.20.30.1 -t 1 -W 1
+          # 3. watch 화면에서 counter 실시간 변동 관찰
+          # Phase 1: limit accept counter +1 +1 +1 (3 통과)
+          # Phase 2: drop counter +1 +1 (2 차단)
+          # Phase 3: 1분 sleep 후 재시도 → limit accept 다시 +3
+        예상 출력: 1초마다 counter 갱신.
+        운영 해석: rate limit 의 시간 윈도우 효과를 사람이 *눈으로* 직접 학습. 강의 시 데모 효과.
+      - |
+        **[OSS] fail2ban-client (userspace 차단 비교)** — nft rate limit 와 layer 비교.
+          # 1. fail2ban 활성 시
+          sudo fail2ban-client status sshd
+          # 2. 차단 IP + 차단 사유
+          sudo fail2ban-client get sshd banip
+          # 3. nft rate limit 와 fail2ban 의 차이 비교
+          # nft: SYN packet 단계에서 즉시 drop (network layer)
+          # fail2ban: SSH 인증 실패 *후* 차단 (application layer)
+        예상 출력 `Status for jail: sshd / Currently banned: 1 / IP list: 10.20.30.201`.
+        운영 해석: nft rate limit (사전) + fail2ban (사후) 이중 방어 = 운영 표준. 두 layer 의 응답 시간 / 정확도 차이 학습.
+      - |
+        **[OSS] ss + watch (실시간 SSH connection state)** — limit 의 connection 단계 효과.
+          # 1. 진행 중 SYN-RECV connection 추적
+          sudo watch -n 0.5 "ss -tn state syn-recv 'sport = :22'"
+          # 2. brute 도중 SYN_RECV 가 limit 룰 매칭 시 즉시 timeout
+          # 3. 정상 SYN_RECV → ESTABLISHED 전환 비율 측정
+          sudo ss -s
+        예상 출력: brute 도중 SYN-RECV 갯수 0~3 (limit accept 통과 분), 그 외는 절대 보이지 않음.
+        운영 해석: connection state 로 limit 의 *언제 차단되는지* 정확히 학습. SYN_RECV → ESTABLISHED transition 이 limit pass 의 evidence.
       negative_signs:
       - hydra 시도만 + counter 확인 누락
       - 1분 sleep 없이 즉시 재시도 (window 갱신 미검증)
@@ -687,6 +1454,88 @@ steps:
       - secu 에서 sudo tcpdump -i <iface> -n host <web>
       - web 에서 ping / curl 외부 시도
       - secu 에서 nft list table | grep counter (보조)
+      - |
+        **[OSS] tcpdump (외부 인터페이스 캡처)** — NAT 변환 ground truth.
+          # 1. 외부 인터페이스 (secu 의 ens33) 에서 outbound 캡처
+          sudo tcpdump -i ens33 -nn -c 20 'host 10.20.30.80 or src 10.20.30.0/24'
+          # 2. pcap 파일로 저장 (분석용)
+          sudo tcpdump -i ens33 -nn -w /tmp/nat-test.pcap -c 50 host 10.20.30.80
+          # 3. 저장된 pcap 분석
+          sudo tcpdump -r /tmp/nat-test.pcap -nn | head -10
+        예상 출력 (NAT 정상): `IP 192.168.1.1.44321 > 8.8.8.8.80: SYN ...` (src 가 secu 의 외부 IP, web 의 내부 IP 가 아님).
+        운영 해석: src=10.20.30.80 으로 보이면 NAT 미적용. NAT 의 *진실* 은 외부 인터페이스 캡처에서만 확인.
+      - |
+        **[OSS] wireshark (GUI 분석)** — 학습용 시각 도구.
+          # 1. 별도 host 에서 SSH X11 forwarding 으로 wireshark 실행
+          ssh -X ccc@10.20.30.1 "sudo wireshark -i ens33 -k -f 'host 10.20.30.80'"
+          # 2. GUI 사용
+          # - Statistics → Conversations → IPv4 tab : src/dst 집계
+          # - Statistics → Endpoints → IPv4 : 어떤 IP 에서 트래픽 발생
+          # - Filter: ip.src == 192.168.1.1 (NAT 변환 후 src 만 보기)
+          # 3. 패킷 디테일 패널 → Network Layer → Source/Destination 시각 비교
+        결과: 패킷 하나하나의 IP src/dst 시각 비교 = NAT 효과 가장 명확.
+        운영 해석: 학생이 NAT 학습 시 가장 효과적인 도구. CLI tcpdump 보다 시각화로 즉시 이해.
+      - |
+        **[OSS] tshark (TUI/script)** — 자동화 분석 표준.
+          # 1. src/dst IP 만 추출 (표 형태)
+          sudo tshark -i ens33 -nn -c 30 "host 10.20.30.80" -T fields -e ip.src -e ip.dst
+          # 2. CSV 출력 (분석 도구 연동)
+          sudo tshark -i ens33 -nn -c 100 "host 10.20.30.80" -T fields -E separator=, \
+            -e ip.src -e ip.dst -e tcp.dstport -e ip.proto > /tmp/nat-flow.csv
+          # 3. NAT 변환 통계 (src 별 카운트)
+          awk -F, '{print $1}' /tmp/nat-flow.csv | sort | uniq -c | sort -rn
+        예상 출력: `192.168.1.1 → 8.8.8.8` (NAT 변환 후 src 만 카운트).
+        운영 해석: 자동화 + CSV 출력 = SIEM/Splunk 연동 표준. 학생이 wireshark GUI 다음 단계로 학습.
+      - |
+        **[OSS] conntrack-tools (NAT entry view)** — NAT 의 conntrack table.
+          # 1. NAT translation entry 표시
+          sudo conntrack -L --any-nat | head
+          # 2. 특정 IP 의 NAT entry
+          sudo conntrack -L --src 10.20.30.80 --any-nat
+          # 3. 실시간 NAT entry 모니터
+          sudo conntrack -E -e new --any-nat
+        예상 출력 `tcp 6 ESTABLISHED src=10.20.30.80 dst=8.8.8.8 sport=44321 dport=80 src=8.8.8.8 dst=192.168.1.1 sport=80 dport=44321 [ASSURED]`.
+        운영 해석: 첫 번째 src/dst (변환 전) + 두 번째 src/dst (변환 후) 양방향 동시. NAT 운영의 ground truth.
+      - |
+        **[OSS] mtr (NAT 통과 hop trace)** — outbound 경로 진단.
+          # 1. web 에서 외부 NAT 통과 trace
+          ssh ccc@10.20.30.80 "mtr --no-dns --report-cycles 3 8.8.8.8"
+          # 2. report 출력 형식
+          # HOST: web                       Loss%   Snt   Avg
+          # 1.|-- 10.20.30.1 (secu)         0.0%      3   0.5  ← NAT gateway
+          # 2.|-- 192.168.1.1               0.0%      3   2.1
+          # 3.|-- 8.8.8.8                   0.0%      3  15.4
+          # 3. JSON 출력 (자동화)
+          ssh ccc@10.20.30.80 "mtr -j -c 3 8.8.8.8"
+        예상 출력: 1 hop 이 secu (10.20.30.1) 면 NAT gateway 정상 통과.
+        운영 해석: web 의 default route 가 secu 인지 + masquerade 가 외부 IP 까지 forwarding 되는지 한 번에.
+      - |
+        **[OSS] scapy (Python 기반 정밀 분석)** — 자동화 검증 표준.
+          # 1. Python script
+          cat > /tmp/nat-monitor.py << 'PYEOF'
+          from scapy.all import sniff
+          def cb(p):
+              if p.haslayer('IP'):
+                  print(f"src={p['IP'].src} dst={p['IP'].dst}")
+          sniff(iface="ens33", count=5, prn=cb, filter="host 10.20.30.80")
+          PYEOF
+          # 2. 실행
+          sudo python3 /tmp/nat-monitor.py
+          # 3. 자동화 검증 (NAT 정상 여부 판정)
+          # if any packet has src in 10.20.30.0/24 → NAT failed
+          # if all packet src is external IP → NAT OK
+        예상 출력: `src=192.168.1.1 dst=8.8.8.8` (NAT 정상).
+        운영 해석: tcpdump 보다 programmable. 운영 환경 자동 검증 script 작성에 표준.
+      - |
+        **[OSS] iftop / nload (실시간 대역폭)** — NAT 통과 트래픽 시각화.
+          # 1. iftop (text-based 실시간 대역폭)
+          sudo iftop -i ens33 -nNB -P
+          # 2. nload (간단한 in/out graph)
+          sudo nload ens33
+          # 3. NAT 통과 트래픽만 필터
+          sudo iftop -i ens33 -f 'src net 10.20.30.0/24'
+        UI 동작: 양방향 트래픽 실시간 그래프. NAT 정상 시 secu 의 ens33 에서 web 의 outbound 트래픽 가시.
+        운영 해석: 패킷 디테일 보다 *전체 트래픽* 흐름 이해. NAT 가 bottleneck 인지 visual 진단.
       negative_signs:
       - tcpdump 없이 nft counter 만 확인 (변환 결과 미입증)
       - web outbound 시도 누락
