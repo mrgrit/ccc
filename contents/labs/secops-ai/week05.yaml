@@ -44,6 +44,93 @@ steps:
       - 'Snort 호환 syntax: content: BadBot ; http_header; (덜 구체)'
       - YARA User-Agent 규칙 (Zeek 이벤트 스트림)
       - Sigma rule + sigmac 으로 Suricata 변환
+      - |
+        **[OSS] sigma-cli (표준 IDS 룰 → Suricata 변환)** — Sigma 표준.
+          # 1. 설치
+          pip install sigma-cli pysigma-backend-suricata
+          # 2. Sigma 룰 작성 (badbot.yml)
+          cat > /tmp/badbot.yml << 'EOF'
+          title: Suspicious BadBot User-Agent
+          status: experimental
+          logsource:
+              category: webserver
+          detection:
+              selection:
+                  cs-user-agent: '*BadBot*'
+              condition: selection
+          level: medium
+          tags:
+              - attack.command_and_control
+              - attack.t1071.001
+          EOF
+          # 3. Suricata 룰로 변환
+          sigma convert -t suricata /tmp/badbot.yml
+          # 4. 결과를 local.rules 에 추가
+          sigma convert -t suricata /tmp/badbot.yml | sudo tee -a /etc/suricata/rules/local.rules
+        예상 출력 `alert http any any -> any any (msg: "Suspicious BadBot User-Agent"; http.user_agent; content: "BadBot"; sid: 1; rev: 1;)`.
+        운영 해석: 1 Sigma 룰 → Suricata + Wazuh + Elastic + Splunk 모두 자동 변환. multi-SIEM 환경 표준.
+      - |
+        **[OSS] scirius (web GUI 로 룰 작성)** — 시각적 작성 + push.
+          # 1. https://scirius:8000 접속 → Sources → My Custom Rules → New Rule
+          # 2. UI 동작:
+          # - action: alert
+          # - protocol: http
+          # - src/dst: any/any
+          # - msg: Suspicious UA BadBot
+          # - sticky-buffer: http.user_agent
+          # - content: BadBot
+          # - sid: 1000101 / rev: 1
+          # 3. "Validate" → suricata -T 자동 호출
+          # 4. "Push to ruleset" → SSH 통해 secu 자동 배포
+          # 5. CLI 검증
+          ssh ccc@10.20.30.1 "sudo grep sid:1000101 /etc/suricata/rules/local.rules"
+        UI 동작: 폼 입력 → 실시간 검증 → push 까지 1 click.
+        운영 해석: SOC 분석가 표준. 룰 작성 시 자동 syntax check + audit log + git commit.
+      - |
+        **[OSS] OISF suricata-update + custom source** — git 기반 룰 관리.
+          # 1. 사설 git 저장소에 룰 push (회사 룰 repo)
+          mkdir -p /var/lib/suricata/custom-rules && cd /var/lib/suricata/custom-rules
+          git init
+          echo 'alert http any any -> any any (msg:"Suspicious UA BadBot"; content:"BadBot"; http_user_agent; sid:1000101; rev:1;)' > local.rules
+          git add . && git commit -m "Add BadBot UA detection"
+          # 2. suricata-update source 등록
+          sudo suricata-update enable-source /var/lib/suricata/custom-rules/
+          sudo suricata-update --no-test
+          # 3. 적재 검증
+          sudo grep "sid:1000101" /var/lib/suricata/rules/suricata.rules
+        예상 출력 `Loaded 30001 rules. / 1 new rule from custom-rules`.
+        운영 해석: git history 로 룰 변경 audit. CI pipeline 의 git push → suricata-update 자동.
+      - |
+        **[OSS] Ansible (lineinfile + validate)** — IaC 룰 배포.
+          # playbook
+          - name: Add BadBot UA detection rule
+            ansible.builtin.lineinfile:
+              path: /etc/suricata/rules/local.rules
+              line: 'alert http any any -> any any (msg:"Suspicious UA BadBot"; content:"BadBot"; http_user_agent; sid:1000101; rev:1;)'
+              regexp: '.*sid:1000101.*'
+              state: present
+              backup: yes
+              validate: 'suricata -T -S %s'
+            notify: reload suricata
+          # 실행
+          ansible-playbook -i inventory.yml suricata-rules.yml --diff --check  # dry-run
+          ansible-playbook -i inventory.yml suricata-rules.yml
+        예상 출력 `changed: [secu] / +alert http any any -> any any (msg:"Suspicious UA BadBot"; ...)`.
+        운영 해석: validate 옵션이 핵심 — 잘못된 룰로 service 다운 방지. 다중 host 일관 배포.
+      - |
+        **[OSS] vim + suricata.vim (syntax highlight + lint)** — 룰 작성 표준 편집기.
+          # 1. suricata.vim 설치
+          mkdir -p ~/.vim/{syntax,ftdetect}
+          curl -o ~/.vim/syntax/suricata.vim https://raw.githubusercontent.com/dyrnq/suricata-vim/main/syntax/suricata.vim
+          echo "au BufRead,BufNewFile *.rules set filetype=suricata" > ~/.vim/ftdetect/suricata.vim
+          # 2. 룰 편집
+          sudo vim /etc/suricata/rules/local.rules
+          # 3. 편집 도중 syntax check (':!sudo suricata -T -S %')
+          # 4. ALE plugin 으로 실시간 lint
+          # ~/.vimrc:
+          # let g:ale_linters = {'suricata': ['suricata']}
+        결과: action/keyword 색상 구분 + content/pcre quote 자동 검출 + 실시간 lint 에러 표시.
+        운영 해석: 100+ 룰 운영 시 syntax error 사전 발견. vim 외 vscode 도 suricata-language extension.
       negative_signs:
       - http_user_agent 없이 단순 content 매칭
       - sid 중복(1000001 재사용)
@@ -88,6 +175,86 @@ steps:
       - 'pcre: /union\s+select/i 로 공백 변형 대응'
       - ModSecurity CRS rule 942100(더 포괄적)
       - libinjection + modsec 로 intention-based 탐지
+      - |
+        **[OSS] sigma-cli (SQLi 룰 자동 변환)** — 표준 룰 → Suricata.
+          # 1. Sigma 의 공식 SQL injection 룰 catalog
+          git clone https://github.com/SigmaHQ/sigma /tmp/sigma
+          ls /tmp/sigma/rules/web/web_sql_injection_*.yml
+          # 2. 단일 룰 변환
+          sigma convert -t suricata /tmp/sigma/rules/web/web_sql_injection_keywords.yml
+          # 3. 일괄 변환 (디렉토리 전체)
+          sigma convert -t suricata /tmp/sigma/rules/web/ --output /tmp/sigma-suricata.rules
+          # 4. local.rules 에 추가
+          cat /tmp/sigma-suricata.rules | sudo tee -a /etc/suricata/rules/local.rules
+        예상 출력: 50+ SQLi 변형 패턴 룰 자동 생성 (union/select/exec/sleep/sqlmap 등).
+        운영 해석: 단일 룰만 작성 X. SigmaHQ 공식 catalog 의 SQL 룰 50+ 일괄 import = 즉시 SOC baseline.
+      - |
+        **[OSS] libinjection + ModSecurity CRS** — 정확한 SQLi 탐지 (false positive 적음).
+          # 1. 단순 content 매칭 보완 — Suricata 의 lua 스크립트 + libinjection
+          sudo apt install libinjection-dev
+          # 2. lua 스크립트 (/etc/suricata/lua/sqli.lua)
+          cat > /etc/suricata/lua/sqli.lua << 'EOF'
+          local libinjection = require("libinjection")
+          function init () return {http_uri=tostring} end
+          function match (args)
+              local uri = tostring(args["http_uri"])
+              if libinjection.sqli(uri) then return 1 end
+              return 0
+          end
+          EOF
+          # 3. Suricata 룰에서 lua 호출
+          echo 'alert http any any -> any any (msg:"libinjection SQLi"; lua:sqli.lua; sid:1000200; rev:1;)' | sudo tee -a /etc/suricata/rules/local.rules
+        예상 결과: false positive 90%↓. simple content 룰은 `select * from products` 같은 정상 쿼리도 매칭, libinjection 은 *공격 의도* 분석.
+        운영 해석: 단순 content vs 의도 분석 트레이드오프. 정확도 ↑ but CPU 오버헤드 ↑.
+      - |
+        **[OSS] sqlmap (SQLi rule 검증 도구)** — 침투테스터 표준.
+          # 1. 일반 sqlmap 시도 (룰 발화 검증)
+          sqlmap -u "http://10.20.30.80/?id=1" --level 1 --risk 1 --batch
+          # 2. tamper script (룰 우회 시도) — encoding/comment 변형
+          sqlmap -u "http://10.20.30.80/?id=1" --tamper=space2comment,charunicodeencode --level 3
+          # 3. 우회 성공 시 → Suricata 룰의 false negative 발견 → 룰 강화
+          # 4. 룰 강화 후 재시도 → 모든 tamper 가 차단되는지 확인
+        예상 출력 `Parameter: id (GET) / Type: UNION query / Title: Generic UNION query`.
+        운영 해석: sqlmap 으로 룰 자체 검증. tamper 옵션 = 룰 회피 시뮬. 룰의 *완전성* 측정 표준.
+      - |
+        **[OSS] pcregrep / pcre2grep (정규표현식 정밀 매칭)** — 룰 syntax pre-test.
+          # 1. 룰 작성 전 패턴 시험
+          echo "/?id=1 union select 1,2" | pcregrep -i 'union\s+select'
+          # 2. 변형 패턴 매칭 (Suricata pcre 와 동일 syntax)
+          echo "/?id=1 union/**/select 1,2" | pcregrep -i 'union[\s/*]+select'
+          # 3. 정상 패턴 false positive 확인
+          echo "/products?category=union" | pcregrep -i 'union\s+select'  # 0 매치 = 정상
+          # 4. Suricata 룰에 적용
+          echo 'alert http any any -> any any (msg:"SQLi union+select pcre"; pcre:"/union[\s\/\*]+select/i"; http.uri; sid:1000202; rev:1;)' | sudo tee -a /etc/suricata/rules/local.rules
+        예상 출력: 매칭 성공/실패 검증.
+        운영 해석: pcre 는 false positive 위험 큼. 룰 작성 전 pcregrep 으로 *정상 트래픽* 미포함 검증 필수.
+      - |
+        **[OSS] ftw (룰 회귀 테스트)** — CI 통합 검증.
+          # 1. 룰 테스트 yaml
+          cat > /tmp/test-sqli.yml << 'EOF'
+          ---
+          tests:
+              -   test_title: SQLi union select detection
+                  desc: sid:1000102 should fire on URL with 'union select'
+                  stages:
+                      -   stage:
+                              input:
+                                  uri: /?id=1 union select 1,2
+                                  protocol: http
+                              output:
+                                  alert: ["1000102"]
+              -   test_title: Normal URL must not trigger
+                  stages:
+                      -   stage:
+                              input:
+                                  uri: /products?category=electronics
+                              output:
+                                  alert: []
+          EOF
+          # 2. 실행
+          ftw run --include /tmp/test-sqli.yml --suricata-bin /usr/bin/suricata
+        예상 출력 `Tests passed: 2 / 2 / SQLi detection: PASS / Normal URL: PASS`.
+        운영 해석: 룰 변경 후 *기존 룰 회귀* 자동 테스트. CI 표준. positive (탐지) + negative (false positive) 양쪽 검증.
       negative_signs:
       - http_uri 없이 content 단독(전체 payload)
       - nocase 누락(대소문자 우회)
@@ -130,6 +297,67 @@ steps:
       - alert tcp $EXTERNAL_NET any -> $HOME_NET 445 (범위 제한)
       - nftables tcp dport 445 drop(더 저렴)
       - Zeek smb 프로토콜 분석 + notice.log
+      - |
+        **[OSS] Zeek (Bro) — SMB 분석 표준** — application-layer protocol parser.
+          # 1. Zeek 설치
+          sudo apt install zeek
+          # 2. SMB 분석 활성화 (/usr/local/zeek/share/zeek/site/local.zeek)
+          @load policy/protocols/smb
+          # 3. 실시간 SMB 분석
+          sudo zeek -i ens33 LogAscii::use_json=T
+          # 4. SMB 로그 분석 (smb_*.log 자동 생성)
+          tail -f /opt/zeek/logs/current/smb_files.log
+          tail -f /opt/zeek/logs/current/smb_mapping.log
+        예상 출력 `ts=2026-05-06T14:23:00 / id.orig_h=10.20.30.201 / id.resp_h=10.20.30.1 / id.resp_p=445 / action=SMB::FILE_READ / name=secret.docx`.
+        운영 해석: Suricata 가 5-tuple 매칭, Zeek 은 *프로토콜 컨텐츠* 분석. SMB share 이름·파일명까지 추적. Suricata 보완 도구.
+      - |
+        **[OSS] suricata SMB protocol parser** — Suricata 자체 SMB 분석.
+          # 1. /etc/suricata/suricata.yaml 의 app-layer SMB 활성화
+          app-layer:
+            protocols:
+              smb:
+                enabled: yes
+                detection-ports:
+                  dp: 445
+          # 2. eve.json 의 smb event 확인
+          sudo tail -f /var/log/suricata/eve.json | jq 'select(.event_type=="smb")'
+          # 3. SMB 룰 강화 (5-tuple 외 protocol field 활용)
+          echo 'alert smb any any -> any any (msg:"SMB write to admin share"; smb.share; content:"ADMIN$"; sid:1000300; rev:1;)' | sudo tee -a /etc/suricata/rules/local.rules
+        예상 출력 `event_type:"smb" / smb: {dialect:"3.0.2", command:"write", share:"\\10.20.30.1\\share"}`.
+        운영 해석: Suricata 6.0+ 의 SMB parser. content 룰보다 정확. ADMIN$ / IPC$ 같은 관리 share 접근 탐지 표준.
+      - |
+        **[OSS] Wireshark / tshark SMB 디스플레이 필터** — 패킷 분석 표준.
+          # 1. SMB2 트래픽만 캡처
+          sudo tshark -i ens33 -Y "smb2" -c 20
+          # 2. 특정 SMB 명령 필터
+          sudo tshark -i ens33 -Y "smb2.cmd == 0x05" -c 5  # CREATE 명령
+          # 3. SMB session setup (인증)
+          sudo tshark -i ens33 -Y "smb2.cmd == 0x01" -T fields -e ip.src -e smb2.user
+        예상 출력 `1   0.123  10.20.30.201 → 10.20.30.1   SMB2  Create Request File: secret.docx`.
+        운영 해석: SMB 통신의 와이어 레벨 분석. EternalBlue 등 특정 SMB exploit 패턴 탐지.
+      - |
+        **[OSS] nftables tcp 445 drop (network 차단)** — Suricata 룰의 대안.
+          # 1. 외부에서 445 차단 (nft 직접)
+          sudo nft add rule inet filter input ip saddr != 10.20.30.0/24 tcp dport 445 drop
+          # 2. log + drop (alert 대체)
+          sudo nft add rule inet filter input ip saddr != 10.20.30.0/24 tcp dport 445 log prefix "SMB-EXT-DROP " drop
+          # 3. nft 통계 + ulogd 로그 확인
+          sudo journalctl -k -g "SMB-EXT-DROP" --since "1 hour ago"
+        예상 출력 `[SMB-EXT-DROP] IN=ens33 SRC=10.20.30.201 DST=10.20.30.1 PROTO=TCP DPT=445`.
+        운영 해석: Suricata alert vs nft drop. nft 가 더 빠름 (커널 레이어). 명백한 차단 = nft, 분석 필요 = Suricata alert.
+      - |
+        **[OSS] crowdsec smb-bf scenario** — community 기반 SMB brute-force 탐지.
+          # 1. SMB scenario 활성화
+          sudo cscli scenarios install crowdsecurity/smb-bf
+          # 2. acquisition.yaml 로 nft log → crowdsec 분석
+          # /etc/crowdsec/acquis.yaml:
+          # - filenames: [/var/log/syslog]
+          #   labels:
+          #     type: syslog
+          # 3. 차단 결정 + nft set 자동 sync
+          sudo cscli decisions list --scenario crowdsecurity/smb-bf
+        예상 출력 `crowdsecurity/smb-bf trigger / IP: 10.20.30.201 / duration: 4h / reason: 5 SMB auth failures in 60s`.
+        운영 해석: 단순 5-tuple 차단 외 행동 패턴 (brute force) 탐지. Suricata 룰의 보완 layer.
       negative_signs:
       - 5-tuple 외 content 과다(필요 없음)
       - dst port 대신 src port 445(방향 오류)
@@ -171,6 +399,77 @@ steps:
       - suricatasc -c ruleset-reload-rules (live reload test)
       - CI 파이프라인에 suricata -T + sigmac 검증
       - python-suricatalogs library 로 룰 검증
+      - |
+        **[OSS] suricata-verify (회귀 테스트 표준)** — 공식 회귀 테스트 스위트.
+          # 1. clone OISF 의 verify 도구
+          git clone https://github.com/OISF/suricata-verify /tmp/suricata-verify
+          cd /tmp/suricata-verify
+          # 2. 테스트 케이스 작성 (자체 룰)
+          mkdir -p tests/local-1000101
+          cp /etc/suricata/rules/local.rules tests/local-1000101/test.rules
+          # pcap 트래픽 + expected output 작성
+          # 3. 모든 테스트 실행
+          ./run.py --suricata=/usr/bin/suricata
+          # 4. 단일 테스트
+          ./run.py --suricata=/usr/bin/suricata local-1000101
+        예상 출력 `Total: 1 / Passed: 1 / Failed: 0 / Skipped: 0`.
+        운영 해석: OISF 공식 도구. 룰 변경 시 *기존 룰 회귀* 자동 검증. CI 파이프라인 통합 표준.
+      - |
+        **[OSS] suricata-update check-versions** — 룰 호환성 자동 검사.
+          # 1. 룰 source 별 버전 호환 확인
+          sudo suricata-update check-versions
+          # 2. 신규 룰 다운로드 + 호환성 검증 (--no-test 빼면 자동 검증)
+          sudo suricata-update
+          # 3. 결과
+          # - "rules with errors" 카운트
+          # - syntax error 라인 + sid
+          # 4. error 발생 시 자동 disable
+          sudo cat /etc/suricata/disable.conf
+        예상 출력 `Suricata version: 7.0.4 / Compatible: yes / 30000 rules / 0 errors`.
+        운영 해석: 자동 룰 업데이트 시 호환성 사전 검증. 7.x 룰을 6.x 엔진에 적용 시 일부 keyword 무효 → 자동 disable.
+      - |
+        **[OSS] sigma check (Sigma 룰 syntax 검증)** — 표준 룰 lint.
+          # 1. Sigma 룰 syntax check
+          sigma check /tmp/sigma-rules/*.yml
+          # 2. 추가 검증 (logsource consistency)
+          sigma check --validate /tmp/sigma-rules/*.yml
+          # 3. CI 통합 (.gitlab-ci.yml)
+          # script:
+          #   - sigma check rules/
+          #   - sigma convert -t suricata rules/ -o /tmp/converted.rules
+          #   - sudo suricata -T -S /tmp/converted.rules
+        예상 출력 `100 rules checked / Errors: 0 / Warnings: 2 (deprecated logsource)`.
+        운영 해석: Sigma 표준 룰 작성 시 Suricata 변환 *전* 검증. yaml syntax + sigma logic 양쪽.
+      - |
+        **[OSS] yamllint (suricata.yaml + Sigma 룰)** — yaml 형식 검증.
+          # 1. yamllint 실행 (suricata.yaml)
+          yamllint /etc/suricata/suricata.yaml
+          # 2. Sigma 룰 일괄 lint
+          yamllint /tmp/sigma-rules/
+          # 3. 사용자 정의 규칙 (.yamllint)
+          cat > .yamllint << 'EOF'
+          extends: default
+          rules:
+            line-length: { max: 200 }
+          EOF
+        예상 출력 `12:5 warning trailing spaces / 24:81 error line too long`.
+        운영 해석: yaml syntax 가 valid 해도 indentation 오류는 변수 무효화. CI 표준 lint.
+      - |
+        **[OSS] CI integration (GitHub Actions / GitLab CI)** — 자동 룰 검증 파이프라인.
+          # GitHub Actions (.github/workflows/suricata.yml)
+          name: Suricata Rule Validation
+          on: [push, pull_request]
+          jobs:
+            validate:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v3
+                - run: sudo apt install -y suricata
+                - run: yamllint suricata.yaml
+                - run: sudo suricata -T -S local.rules
+                - run: ftw run --include tests/
+        결과: PR 마다 자동으로 룰 syntax + 회귀 테스트 + lint.
+        운영 해석: production 룰 배포 표준. 잘못된 룰이 main branch 에 merge 안되도록 차단.
       negative_signs:
       - -T 없이 production 재시작
       - error 메시지 무시
@@ -209,6 +508,58 @@ steps:
       - sudo suricatasc -c reload-rules (Unix socket control)
       - sudo suricatasc -c reload-rules-and-threshold
       - sudo systemctl restart suricata (overkill)
+      - |
+        **[OSS] suricatasc reload-rules (무중단 reload)** — production 표준.
+          # 1. ruleset 무중단 reload (capture 끊김 X)
+          sudo suricatasc -c reload-rules
+          # 2. reload + threshold 동시 (룰 + 임계값 변경 시)
+          sudo suricatasc -c reload-rules-and-threshold
+          # 3. 적재 룰 수 비교 (전후)
+          before=$(sudo suricatasc -c "ruleset-stats" | jq -r '.message.loaded')
+          # ... reload ...
+          after=$(sudo suricatasc -c "ruleset-stats" | jq -r '.message.loaded')
+          echo "Before: $before / After: $after"
+        예상 출력 `{"return":"OK","message":"done"} / Before: 30000 / After: 30001`.
+        운영 해석: production 의 가장 안전한 방법. systemctl restart 는 1-3초 캡처 끊김. suricatasc 는 0초.
+      - |
+        **[OSS] kill -USR2 (signal 기반 reload)** — suricatasc 미설치 환경.
+          # 1. PID 확인 + USR2 signal
+          sudo kill -USR2 $(pidof suricata)
+          # 2. journal 에서 reload 확인
+          sudo journalctl -u suricata --since "1 min ago" | grep -i "live rule reload"
+          # 3. systemctl reload 와 동등 (systemd 가 USR2 호출)
+          sudo systemctl reload suricata
+        예상 출력 `[1234] notice: Live rule reload starting / [1234] notice: Live rule reload complete - 30001 rules loaded successfully`.
+        운영 해석: signal 기반 reload 의 표준. systemctl reload 가 결국 이걸 호출. 단일 PID 환경 강제.
+      - |
+        **[OSS] evebox monitor (reload 후 alert 발생 검증)** — SOC 표준.
+          # 1. evebox 의 alert dashboard
+          # http://localhost:5636 → Last 5 minutes
+          # 2. CLI 로 reload 직후 첫 alert
+          evebox-cli search "alert.signature_id:1000101" --max-events 5
+          # 3. reload 후 alert 가 다시 들어오는지 timeline 비교
+          # GUI: Charts → Time histogram of alerts
+        UI 동작: alert timeline 의 reload 시점 (gap) + 복구 시간 시각화.
+        운영 해석: reload 후 5분 내 alert 0 = 룰 미적재 또는 capture 미동작. SOC 모니터링 표준.
+      - |
+        **[OSS] systemd-analyze (reload 시간 측정)** — 성능 진단.
+          # 1. service 시작 시간 (reload 영향 측정 baseline)
+          systemd-analyze critical-chain suricata.service
+          # 2. 시간 비교 — reload 전후
+          time sudo systemctl reload suricata
+          # 3. journal 의 정확한 시각
+          sudo journalctl -u suricata --since "5 min ago" | grep -E "reload|started"
+        예상 출력 `real 0m1.234s` (1초 reload).
+        운영 해석: 30K 룰 reload = 1-3초 (시스템 따라). 5초 이상이면 thread 부족 또는 디스크 I/O 병목.
+      - |
+        **[OSS] watch + suricatasc (실시간 모니터)** — reload 영향 시각화.
+          # 1. 별도 터미널에서 통계 watch
+          sudo watch -n 1 'suricatasc -c "dump-counters" 2>&1 | jq ".message" | grep -E "alert|drop|capture.kernel" | head'
+          # 2. (다른 터미널) reload 실행
+          sudo suricatasc -c reload-rules
+          # 3. watch 화면에서 capture.kernel_packets 카운터 *유지* 확인 (reload 동안에도 증가)
+        예상 출력: 매 1초 capture/alert 카운터 갱신.
+        운영 해석: capture.kernel_packets 가 reload 도중 *유지* = 캡처 끊김 0 = production reload 완벽 동작 evidence.
       negative_signs:
       - reload 없이 룰 추가만
       - is-active 검증 누락
@@ -255,6 +606,62 @@ steps:
       - wget --user-agent=BadBot http://<IP>/
       - 'curl -H "User-Agent: BadBot" http://<IP>/'
       - 'python -c import requests; requests.get(..., headers={User-Agent: BadBot})'
+      - |
+        **[OSS] nikto (UA 변경 + 다중 시그니처 시뮬)** — 웹 vuln 스캐너 표준.
+          # 1. 기본 nikto (BadBot UA 자동 사용)
+          nikto -h http://10.20.30.80 -useragent "BadBot"
+          # 2. UA 외 추가 패턴 (User-Agent + paths + headers)
+          nikto -h http://10.20.30.80 -Tuning 4567 -useragent "BadBot/1.0"
+          # 3. evade 모드 (룰 우회 시뮬)
+          nikto -h http://10.20.30.80 -evasion 1 -useragent "BadBot"
+        예상 출력 `+ Server: Apache/2.4.41 / + Found 5 vulnerabilities / 100 requests in 30 sec`.
+        운영 해석: BadBot UA 외 다양한 attack pattern 동시 시뮬. SOC 분석가의 룰 자체 검증 표준.
+      - |
+        **[OSS] gobuster / dirb (UA 변경 + path enumeration)** — 디렉토리 스캐너.
+          # 1. gobuster directory enumeration with custom UA
+          gobuster dir -u http://10.20.30.80 -w /usr/share/wordlists/dirb/common.txt \
+            -a "BadBot/1.0" -t 10
+          # 2. dirb 대안
+          dirb http://10.20.30.80 /usr/share/wordlists/dirb/common.txt -a "BadBot"
+          # 3. 결과 분석
+          # /admin (Status: 200)
+          # /backup (Status: 403)
+        예상 출력 `Found: /admin (Status: 200) / Found: /backup (Status: 403)`.
+        운영 해석: 정찰 도구 + custom UA. Suricata 가 BadBot 탐지하면 정찰 차단 = 다음 단계 공격 사전 차단.
+      - |
+        **[OSS] Burp Suite Community (intercept + repeat)** — 침투테스터 표준.
+          # 1. Burp 실행 + browser proxy 설정 (127.0.0.1:8080)
+          # 2. Repeater 탭에서 요청 capture
+          # GET / HTTP/1.1
+          # Host: 10.20.30.80
+          # User-Agent: BadBot
+          # 3. Send 버튼 → 응답 + Suricata alert 동시 확인
+          # 4. Intruder 탭 → User-Agent 다중 변형 (BadBot1, BadBot2, ...) 일괄 시험
+        UI 동작: Request 편집 → Send → Response 비교. UA 변경 시 alert 발생 정확도 측정.
+        운영 해석: 침투테스터 표준 GUI 도구. 룰의 *변형 패턴 매칭* 검증.
+      - |
+        **[OSS] httpie (사람 친화 HTTP CLI)** — curl 대안.
+          # 1. 단순 GET with UA
+          http -p hH GET http://10.20.30.80/ User-Agent:BadBot
+          # 2. POST + JSON body + UA
+          http POST http://10.20.30.80/api/login User-Agent:BadBot user=admin pwd=test
+          # 3. session 유지 (cookie)
+          http --session=test GET http://10.20.30.80/ User-Agent:BadBot
+        예상 출력 `GET / HTTP/1.1 / User-Agent: BadBot / Host: 10.20.30.80 / HTTP/1.1 200 OK`.
+        운영 해석: curl 보다 가독성 ↑. 학생이 HTTP 학습 시 표준. Postman 의 CLI 버전.
+      - |
+        **[OSS] hey (HTTP load test + custom UA)** — apache bench 대안.
+          # 1. 1 초 동안 100 요청 (rate limit 룰 시험)
+          hey -c 10 -n 100 -H "User-Agent: BadBot" http://10.20.30.80/
+          # 2. 응답 시간 분포
+          # Status code distribution: [200] 100 responses
+          # Latency distribution: 50% in 5ms / 95% in 50ms
+          # 3. 다중 UA 변형 (script)
+          for ua in BadBot BadBot/1.0 EvilBadBot; do
+            hey -c 5 -n 20 -H "User-Agent: $ua" http://10.20.30.80/
+          done
+        예상 출력 `Summary: Total: 100 / Slowest: 0.10s / Fastest: 0.005s / Average: 0.02s`.
+        운영 해석: 다량 발생 시 룰 매칭 신뢰성 검증. 100/100 alert 발생 = 룰 100% 정확도.
       negative_signs:
       - User-Agent 변경 없이 기본값 사용
       - curl 실패 무시
@@ -297,6 +704,70 @@ steps:
       - sudo grep -F BadBot /var/log/suricata/fast.log
       - Wazuh dashboard 에서 Suricata rule.groups 필터
       - suricatasc -c iface-stat | grep alerts
+      - |
+        **[OSS] jq (eve.json 정밀 query)** — alert 분석 표준.
+          # 1. BadBot signature 매칭 alert 만
+          sudo jq -c 'select(.event_type=="alert" and .alert.signature_id==1000101)' /var/log/suricata/eve.json | tail -3
+          # 2. timestamp + src + UA 추출 (table)
+          sudo jq -r 'select(.event_type=="alert" and .alert.signature_id==1000101) | [.timestamp, .src_ip, .http.http_user_agent] | @tsv' /var/log/suricata/eve.json | tail
+          # 3. UA 별 카운트 (BadBot, BadBot/1.0 등 변형)
+          sudo jq -r 'select(.event_type=="alert" and .alert.signature_id==1000101) | .http.http_user_agent' /var/log/suricata/eve.json | sort | uniq -c | sort -rn
+        예상 출력 `2026-05-06T14:23:00 / 10.20.30.201 / BadBot / 5 BadBot / 2 BadBot/1.0`.
+        운영 해석: SOC 1차 분석 도구. UA 변형 통계 = 공격자 도구 fingerprinting.
+      - |
+        **[OSS] evebox (alert hunt UI)** — 표준 dashboard.
+          # 1. evebox 접속 (http://localhost:5636)
+          # 2. 검색 box 사용
+          # alert.signature_id:1000101
+          # alert.signature:BadBot
+          # http.http_user_agent:*BadBot*
+          # 3. CLI 로 동일 검색
+          evebox-cli search "alert.signature_id:1000101" --max-events 10 --tabular
+          # 4. "Comment" 기능: 분석 결과 alert 에 첨부 (audit log)
+          # 5. "Escalate" 버튼: 중요 alert 표시 → 다른 분석가가 우선 처리
+        UI 동작: timeline / table / detail 3 view 통합. comment + escalate 워크플로우.
+        운영 해석: SOC 분석가 표준. jq CLI 보다 분석 + 협업 효율적.
+      - |
+        **[OSS] scirius hunt** — Suricata 통합 hunt 도구.
+          # 1. https://scirius:8000/hunt 접속
+          # 2. UI 동작:
+          # - 좌측: signatures (드릴다운)
+          # - 우측: timeline (alert 발생 추세)
+          # - 상단: filter (sid:1000101 + src_ip:10.20.30.201)
+          # 3. 단일 signature 의 *행동 패턴* 분석
+          # - 시간대 별 alert 분포 (peak 시각)
+          # - src_ip 분포 (공격자 IP)
+          # - dst_ip 분포 (피해 host)
+          # - http URL 분포 (공격 경로)
+        UI 동작: alert hunting workflow 통합. SELKS 의 핵심.
+        운영 해석: 단일 alert 가 아닌 *패턴* 분석 표준. 100+ alert 중 의미있는 group 추출.
+      - |
+        **[OSS] lnav (terminal log navigator)** — air-gap 환경.
+          # 1. lnav 설치
+          sudo apt install lnav
+          # 2. eve.json + fast.log 동시 view
+          sudo lnav /var/log/suricata/eve.json /var/log/suricata/fast.log
+          # 3. 내장 SQL query
+          # :;SELECT count(*), alert_signature_id FROM suricata_log WHERE alert_signature LIKE '%BadBot%' GROUP BY alert_signature_id;
+          # 4. 검색 + highlight
+          # /BadBot   (검색)
+          # &t (timestamp 정렬)
+        UI 동작: ncurses 기반 + 자동 timestamp 파싱 + JSON pretty print.
+        운영 해석: GUI 없는 SSH 환경. evebox/scirius 못 쓰는 air-gap 운영자.
+      - |
+        **[OSS] Wazuh Dashboard (Suricata 통합 view)** — SIEM-IDS 통합.
+          # 1. Wazuh agent 가 eve.json 자동 수집 (/etc/ossec.conf)
+          # <localfile>
+          #   <log_format>json</log_format>
+          #   <location>/var/log/suricata/eve.json</location>
+          # </localfile>
+          # 2. https://10.20.30.100/app/wazuh#/overview 접속
+          # 3. Modules → Suricata 탭에서 alert 통계
+          # 4. KQL 검색
+          # rule.groups: "suricata" and rule.description: *BadBot*
+          # 5. 5분 내 BadBot alert + src IP 상관분석
+        UI 동작: Suricata alert 가 Wazuh rule 으로 변환되어 SIEM-style alert 통합 관리.
+        운영 해석: Suricata + Wazuh 통합 환경. SOC 가 multi-source alert 통합 분석.
       negative_signs:
       - 0 match 무시
       - 잘못된 경로(eve.log 등)
@@ -359,6 +830,86 @@ steps:
       - sqlmap -u "http://<IP>/?id=1" --level 1 --risk 1
       - 'Burp Intruder payload: union select 1,2'
       - 'Python requests.get(..., params={id: 1 union select 1,2 })'
+      - |
+        **[OSS] sqlmap (자동 SQLi 시뮬)** — 침투테스터 표준.
+          # 1. 기본 모드 (단일 URL)
+          sqlmap -u "http://10.20.30.80/?id=1" --batch --level 1 --risk 1
+          # 2. tamper script (룰 우회 시도)
+          sqlmap -u "http://10.20.30.80/?id=1" --tamper=space2comment,charunicodeencode --level 3
+          # 3. 다양한 페이로드 시도 (수십 가지 변형)
+          sqlmap -u "http://10.20.30.80/?id=1" --technique=BEUSTQ --batch
+          # 4. 결과 분석
+          # 어떤 payload 가 차단됐고 (룰 발화) 어떤 payload 가 통과했는지 (룰 약점)
+        예상 출력 `Parameter: id (GET) / Type: UNION query / Payload: id=-1 UNION ALL SELECT 1,2,3`.
+        운영 해석: 룰 작성 후 sqlmap 으로 실제 payload 변형 100+ 시뮬. 룰의 *완전성* 측정 표준.
+      - |
+        **[OSS] Burp Suite (intercept + intruder)** — 수동 정밀 시뮬.
+          # 1. Burp 실행 + browser proxy 설정
+          # 2. Repeater 탭에서 single payload 시험
+          # GET /?id=1+union+select+1,2 HTTP/1.1
+          # 3. Intruder 탭에서 다중 payload (룰 회피 시뮬)
+          # - Position: GET /?id=§payload§
+          # - Payload list:
+          #   - 1+union+select+1,2
+          #   - 1+UNION+SELECT+1,2
+          #   - 1/**/union/**/select/**/1,2
+          #   - 1+UnIoN+SeLeCt+1,2
+          #   - 1+%55nion+%53elect+1,2 (URL encoded)
+          # 4. Start attack → 각 payload 별 응답 + Suricata alert 비교
+        UI 동작: payload 변형 자동화 + 응답 비교 표.
+        운영 해석: 수동 정밀 시뮬. 자동화 도구 (sqlmap) 가 못 잡는 변형 패턴 시험.
+      - |
+        **[OSS] ffuf / wfuzz (HTTP fuzzing 표준)** — 빠른 다중 시뮬.
+          # 1. payload 파일 준비
+          cat > /tmp/sqli-payloads.txt << 'EOF'
+          1 union select 1,2
+          1 UNION SELECT 1,2
+          1/**/union/**/select/**/1,2
+          1+union+select+1,2
+          1' union select 1,2 --
+          EOF
+          # 2. ffuf 다중 fuzzing
+          ffuf -w /tmp/sqli-payloads.txt -u "http://10.20.30.80/?id=FUZZ" -mc all -t 5
+          # 3. wfuzz 대안
+          wfuzz -c -z file,/tmp/sqli-payloads.txt --hl 0 "http://10.20.30.80/?id=FUZZ"
+        예상 출력 `[Status: 403, Size: 215, Words: 24] (1 union select 1,2) / [Status: 403, ...] / ...`.
+        운영 해석: 100+ payload 동시 시뮬. 변형 별 응답 (403 vs 200) 비교 = 룰 정확도 평가.
+      - |
+        **[OSS] Python requests + asyncio** — programmable 시뮬.
+          # 1. 단순 동기 시뮬
+          python3 -c '
+          import requests
+          payloads = ["1 union select 1,2", "1 UNION SELECT 1,2", "1/**/union/**/select 1,2"]
+          for p in payloads:
+              r = requests.get("http://10.20.30.80/", params={"id": p})
+              print(f"{p[:30]}... -> {r.status_code}")'
+          # 2. asyncio 비동기 (rate limit 시뮬)
+          python3 << 'EOF'
+          import aiohttp, asyncio
+          async def attack(s, p):
+              async with s.get("http://10.20.30.80/", params={"id":p}) as r:
+                  return r.status
+          async def main():
+              async with aiohttp.ClientSession() as s:
+                  results = await asyncio.gather(*[attack(s, f"1 union select {i}") for i in range(50)])
+                  print(f"Total: {len(results)}, 403 count: {results.count(403)}")
+          asyncio.run(main())
+          EOF
+        예상 출력 `Total: 50, 403 count: 50`.
+        운영 해석: 자동화 + 통계. CI 통합 + 룰 정확도 회귀 측정 표준.
+      - |
+        **[OSS] OWASP ZAP (GUI + CLI)** — Burp 대안 OSS.
+          # 1. ZAP 실행 (GUI)
+          zaproxy &
+          # 2. CLI active scan (sqlmap 와 유사)
+          zap-cli quick-scan --self-contained \
+            --start-options '-config api.disablekey=true' \
+            -o '-config scanner.attackOnStart=true' \
+            "http://10.20.30.80/?id=1"
+          # 3. 결과 보기
+          zap-cli alerts -l Medium
+        예상 출력 `Active Scan complete / SQL Injection found in /?id=1 / Alert level: High`.
+        운영 해석: 무료 OSS 대안. 학습/lab 환경 표준. enterprise 는 Burp Pro.
       negative_signs:
       - union 없이 정상 요청
       - POST body 에 payload(URI 아님)
@@ -408,6 +959,59 @@ steps:
       - sudo grep -F "SQLi" /var/log/suricata/fast.log
       - Kibana Suricata 대시보드 필터
       - Wazuh alerts.json 에서 rule.description
+      - |
+        **[OSS] jq (eve.json SQLi alert 정밀 분석)** — alert 분석 표준.
+          # 1. SQLi signature 매칭 + URL + UA 추출
+          sudo jq -c 'select(.event_type=="alert" and .alert.signature_id==1000102) | {ts:.timestamp, src:.src_ip, url:.http.url, ua:.http.http_user_agent}' /var/log/suricata/eve.json | tail -5
+          # 2. payload 변형 통계 (URL 별)
+          sudo jq -r 'select(.alert.signature_id==1000102) | .http.url' /var/log/suricata/eve.json | sort | uniq -c | sort -rn | head
+          # 3. src IP 별 alert 빈도 (반복 공격자 식별)
+          sudo jq -r 'select(.alert.signature_id==1000102) | .src_ip' /var/log/suricata/eve.json | sort | uniq -c | sort -rn
+        예상 출력 `5 /?id=1+union+select+1,2 / 3 /?id=1+UNION+SELECT+1,2 / 12 from 10.20.30.201`.
+        운영 해석: payload 변형 통계 = 공격자 도구 fingerprinting. src IP 빈도 = 차단 우선순위.
+      - |
+        **[OSS] evebox (SQLi hunt)** — alert detail + 관련 events.
+          # 1. evebox 접속 → 검색 box
+          # alert.signature_id:1000102
+          # http.url:*union*
+          # 2. alert 상세 view (timestamp + raw payload + flow context)
+          # 3. "Show related events" 클릭 → 같은 src_ip 의 다른 alert 동시 view
+          # 4. "Comment" 첨부: "확인됨, attacker IP 차단 권장"
+          # 5. "Escalate" → 다른 분석가에게 전달
+        UI 동작: alert detail + flow + 관련 events 통합 view.
+        운영 해석: 단일 alert 가 아닌 *공격 컨텍스트* 분석 표준.
+      - |
+        **[OSS] Wazuh Dashboard (Suricata SQLi alert)** — SIEM-IDS 통합 dashboard.
+          # 1. Wazuh agent 가 eve.json 자동 수집
+          # 2. https://10.20.30.100/app/wazuh#/overview 접속
+          # 3. KQL 검색
+          # rule.groups: "suricata" and rule.description: *SQLi*
+          # rule.id: 86603 (Suricata SQLi alert 매핑)
+          # 4. 5분 내 SQLi + 같은 src 의 다른 alert 상관분석
+          # 5. Modules → Threat Hunting → MITRE ATT&CK → T1190 (Exploit Public-Facing Application)
+        UI 동작: SQLi alert 가 Wazuh rule 으로 normalize → SIEM-style dashboard.
+        운영 해석: Suricata + Wazuh 통합 환경의 표준. multi-source (FW + IDS + WAF) alert 통합.
+      - |
+        **[OSS] scirius hunt (SQLi 패턴 분석)** — Suricata 통합 hunt.
+          # 1. https://scirius:8000/hunt 접속
+          # 2. signature 필터: "SQLi"
+          # 3. timeline 분석:
+          # - 시간대 별 발생 분포 (peak 시각)
+          # - src IP 별 빈도
+          # - URL 별 변형 패턴
+          # 4. drill-down: 단일 src IP 클릭 → 해당 IP 의 모든 alert + flow
+        UI 동작: alert hunting workflow 통합. SOC 분석가 표준.
+        운영 해석: 단일 alert 외 *공격 캠페인* 식별. 1 IP 가 50+ SQLi → APT 의심.
+      - |
+        **[OSS] suricata-stats (alert 발생 검증)** — 룰 동작 metric.
+          # 1. 전체 통계 dump
+          sudo suricatasc -c "dump-counters" 2>&1 | jq '.message' | grep -E "alert|drop|detect"
+          # 2. 룰별 매칭 통계 (engine analysis)
+          sudo suricata --engine-analysis -c /etc/suricata/suricata.yaml 2>&1 | grep "1000102"
+          # 3. 룰 처리 부하 (top 10)
+          sudo suricatasc -c "ruleset-stats" | jq '.message.rules_per_loaded[] | select(.match_count>0)' | head
+        예상 출력 `detect.alert: 12 / capture.kernel_packets: 50000 / sid 1000102 matches: 12`.
+        운영 해석: alert 0 시 trouble shoot. capture.kernel_packets > 0 면 패킷 도달, alert 0 면 룰 매칭 실패.
       negative_signs:
       - UNION SELECT 대소문자 미매칭(nocase 못 잡음)
       - http 파싱 에러 무시
@@ -464,6 +1068,78 @@ steps:
       - grep -v sid:100010[1-3] local.rules > new && mv new local.rules
       - for s in 1000101 1000102 1000103; do sudo sed -i /sid:$s/d ...; done
       - git checkout local.rules && systemctl reload (버전 관리)
+      - |
+        **[OSS] suricata-update disable-source (다중 룰 영속 disable)** — 표준 cleanup.
+          # 1. 다중 sid 영속 disable
+          sudo tee /etc/suricata/disable.conf << 'EOF'
+          # disable test rules
+          1000101
+          1000102
+          1000103
+          EOF
+          # 2. 적용
+          sudo suricata-update --no-test
+          # 3. 검증
+          sudo grep -E "sid:100010[1-3]" /var/lib/suricata/rules/suricata.rules
+          # → 출력 없음 = 모두 disable
+        예상 출력 `Disabled by user: 3 / Loaded 30000 rules`.
+        운영 해석: 룰 *영속 disable* 표준. cleanup 후에도 disable.conf 에 명시 → 다음 update 시 자동 재추가 방지.
+      - |
+        **[OSS] scirius (web GUI 다중 룰 일괄 cleanup)** — 시각적 관리.
+          # 1. https://scirius:8000 → Rules → search "sid:100010"
+          # 2. UI 동작:
+          # - 결과 3 룰 모두 선택 (체크박스)
+          # - "Bulk action" → "Disable" or "Delete"
+          # - 변경 사유 입력
+          # 3. "Push to ruleset" → SSH 통해 secu 자동 적용
+          # 4. CLI 검증
+          ssh ccc@10.20.30.1 "sudo grep -cE sid:100010[1-3] /etc/suricata/rules/local.rules"
+          # → 0 출력
+        UI 동작: 다중 선택 + bulk action + audit log 자동 기록.
+        운영 해석: 다중 룰 cleanup 표준. 변경 사유 기록 = compliance.
+      - |
+        **[OSS] Ansible (lineinfile loop, IaC cleanup)** — 자동화.
+          # playbook
+          - name: Remove test rules sid 1000101-1000103
+            ansible.builtin.lineinfile:
+              path: /etc/suricata/rules/local.rules
+              regexp: '.*sid:{{ item }}.*'
+              state: absent
+              backup: yes
+              validate: 'suricata -T -S %s'
+            loop:
+              - 1000101
+              - 1000102
+              - 1000103
+            notify: reload suricata
+          # 실행
+          ansible-playbook -i inventory.yml suricata-cleanup.yml --diff
+        예상 출력 `changed: [secu] / -alert http ... sid:1000101 ... / -alert http ... sid:1000102 ... / -alert tcp ... sid:1000103 ...`.
+        운영 해석: validate 옵션 + 다중 host 일관 cleanup. IaC 표준.
+      - |
+        **[OSS] etckeeper (cleanup 영속 audit)** — git history.
+          # 1. cleanup 전 commit
+          sudo etckeeper commit "before cleanup test rules sid 1000101-1000103"
+          # 2. cleanup 실행
+          sudo sed -i '/sid:100010[1-3]/d' /etc/suricata/rules/local.rules
+          sudo systemctl reload suricata
+          # 3. cleanup 후 commit
+          sudo etckeeper commit "removed test rules sid 1000101-1000103"
+          # 4. diff 확인
+          sudo etckeeper vcs diff HEAD~1 HEAD -- /etc/suricata/rules/local.rules
+        예상 출력 `removed 3 lines: alert http ... sid:1000101 ... / alert http ... sid:1000102 ... / alert tcp ... sid:1000103 ...`.
+        운영 해석: 누가 언제 무엇을 제거했는지 audit. compliance 표준.
+      - |
+        **[OSS] suricatasc reload (무중단 cleanup)** — production 표준.
+          # 1. 룰 파일에서 다중 sid 제거
+          sudo sed -i '/sid:100010[1-3]/d' /etc/suricata/rules/local.rules
+          # 2. live reload (Suricata 끊김 0)
+          sudo suricatasc -c reload-rules
+          # 3. 적재 룰 수 검증
+          sudo suricatasc -c "ruleset-stats" | jq
+          # → 3 룰 줄어듦
+        예상 출력 `{"loaded":29997,"failed":0}` (3 룰 감소).
+        운영 해석: production 표준. systemctl reload 보다 안전.
       negative_signs:
       - 한 룰만 삭제
       - reload 누락
@@ -566,6 +1242,85 @@ steps:
       - secu 에서 nft NFQUEUE 룰 + suricata -q 0 -D 재기동
       - attacker 에서 curl SQLi 페이로드 + tcpdump 'tcp-rst' 캡처
       - secu 에서 tail eve.json + grep
+      - |
+        **[OSS] suricata -q (NFQUEUE inline mode)** — IPS 모드 표준.
+          # 1. nft NFQUEUE 룰 (priority -150 < filter 0 으로 먼저 실행)
+          sudo nft add table inet verify_w5
+          sudo nft add chain inet verify_w5 forward '{ type filter hook forward priority -150; }'
+          sudo nft add rule inet verify_w5 forward ip protocol tcp tcp dport 3000 queue num 0
+          # 2. IDS 정지 + IPS 데몬 시작
+          sudo systemctl stop suricata
+          sudo suricata -q 0 -c /etc/suricata/suricata.yaml -D
+          # 3. 동작 검증
+          ps aux | grep "suricata -q"
+          sudo cat /proc/net/netfilter/nfnetlink_queue   # queue stats
+          # 4. cleanup
+          sudo pkill -f "suricata -q"
+          sudo nft delete table inet verify_w5
+          sudo systemctl start suricata
+        예상 출력 `suricata -q 0 -c .. -D / queue 0 active / 0 packets dropped`.
+        운영 해석: alert→drop→reject 모든 액션이 NFQUEUE 모드에서만 *진짜* 효력. IDS 모드는 alert 만 가능.
+      - |
+        **[OSS] curl exit code 비교 (action 별 응답 차이)** — 클라이언트 영향 측정.
+          # 1. alert 모드 (응답 옴)
+          curl -sI 'http://10.20.30.80:3000/?id=1+union+select+1,2' --max-time 5
+          echo "exit: $?"
+          # → exit: 0 (정상 응답 / curl 성공)
+          # 2. drop 모드 (timeout)
+          curl -sI 'http://10.20.30.80:3000/?id=1+union+select+1,2' --max-time 5
+          echo "exit: $?"
+          # → exit: 28 (Operation timed out)
+          # 3. reject 모드 (즉시 RST)
+          curl -sI 'http://10.20.30.80:3000/?id=1+union+select+1,2' --max-time 5
+          echo "exit: $?"
+          # → exit: 56 (Connection reset by peer) 또는 7 (Couldn't connect)
+        예상 출력: exit 0 / 28 / 56 (alert / drop / reject).
+        운영 해석: action 별 클라이언트 응답이 *완전히 다름*. drop 은 스캐너 혼란 (timeout = no response = unreachable?), reject 는 명시적 차단.
+      - |
+        **[OSS] tcpdump (RST flag 캡처)** — reject 액션의 wire-level evidence.
+          # 1. RST flag 만 필터
+          sudo tcpdump -i any -n -c 10 'host 10.20.30.80 and (tcp[tcpflags] & tcp-rst != 0)'
+          # 2. attacker 에서 SQLi 시도 (별도 터미널)
+          curl 'http://10.20.30.80:3000/?id=1+union+select+1,2' --max-time 5
+          # 3. tcpdump 출력에 RST 패킷 보이면 reject 동작 확인
+          # 4. drop 모드에서는 RST 안 보임 (조용히 폐기)
+        예상 출력 (reject): `IP 10.20.30.80.3000 > 10.20.30.201.44321: Flags [R.], seq ... ack ...`.
+        예상 출력 (drop): `(no RST packets, only SYN re-tries from attacker)`.
+        운영 해석: RST flag 캡처가 reject 의 진짜 evidence. drop 과 wire-level 차이 직접 확인.
+      - |
+        **[OSS] evebox (action 별 alert 분류)** — alert.action 필드 분석.
+          # 1. evebox 검색 box
+          # alert.action:allowed   (alert mode)
+          # alert.action:dropped   (drop mode)
+          # 2. CLI 통계
+          sudo jq -r '.alert.action' /var/log/suricata/eve.json | sort | uniq -c
+          # 3. timeline 분석 (3 액션 시간대 별)
+          sudo jq -c 'select(.event_type=="alert") | {ts:.timestamp, action:.alert.action, sid:.alert.signature_id}' /var/log/suricata/eve.json | tail -10
+        예상 출력 `145 allowed / 5 dropped / 3 (reject 는 dropped 로 표기)`.
+        운영 해석: alert.action 필드로 IDS/IPS 모드 구분. SOC dashboard 의 핵심 KPI.
+      - |
+        **[OSS] /proc/net/netfilter/nfnetlink_queue (NFQUEUE 통계)** — kernel 레벨 metric.
+          # 1. queue 통계 dump
+          cat /proc/net/netfilter/nfnetlink_queue
+          # 2. 형식
+          # queue_num peer_pid total copy_mode copy_range queue_dropped userspace_dropped seq userspace_lost
+          # 0         1234     150   2         65535      0              0                 150  0
+          # 3. 모니터링 (1초 간격)
+          watch -n 1 "cat /proc/net/netfilter/nfnetlink_queue"
+          # 4. queue_dropped > 0 = Suricata 처리 부하
+        예상 출력 `0 1234 150 2 65535 0 0 150 0` (queue 0, 150 패킷, 0 drop).
+        운영 해석: queue_dropped > 0 = thread 부족 → 증설 필요. IPS 운영의 핵심 SLA 지표.
+      - |
+        **[OSS] iptables -t mangle / nft NFQUEUE 비교** — 룰 우선순위 진단.
+          # 1. priority 값 확인 (NFQUEUE 가 filter 보다 먼저)
+          sudo nft list ruleset | grep -E "priority|queue"
+          # 2. 우선순위 잘못 설정 시 (filter 가 먼저 = drop 룰 무시됨)
+          # priority -150 < 0 (filter) — 정확
+          # priority 100 > 0 — Suricata 못 받음
+          # 3. priority 의미
+          # raw=-300, mangle=-150, NFQUEUE=-150, filter=0, srcnat=100
+        예상 출력 `chain forward { type filter hook forward priority -150; ... ip protocol tcp tcp dport 3000 queue num 0 }`.
+        운영 해석: NFQUEUE priority 가 *filter 보다 먼저* 여야 Suricata 가 패킷을 받음. 순서 틀리면 IPS 무용.
       negative_signs:
       - 3 액션 중 1-2개만 (예: alert + drop, reject 누락)
       - 클라이언트 응답 차이 측정 누락 (timeout vs RST 미비교)
