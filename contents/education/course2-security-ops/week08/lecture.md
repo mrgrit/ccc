@@ -142,13 +142,41 @@ echo 1 | sudo -S nft add rule inet exam_filter input \
 ```bash
 # 룰셋 확인
 echo 1 | sudo -S nft list table inet exam_filter
-
+echo '---'
+# 외부에서 8000 차단 검증 (10.20.30.0/24 외부)
+curl -s -o /dev/null --max-time 2 -w "외부→8000: %{http_code}\n" http://10.20.30.1:8000/ || echo "외부→8000: 차단됨 (정상)"
 # SSH 연결 유지 확인
-echo "SSH OK"
-
-# ping 테스트
-ping -c 1 10.20.30.1
+echo 1 | sudo -S ss -tlnp | grep ':22 '
 ```
+
+**예상 출력**:
+```
+table inet exam_filter {
+    chain input {
+        type filter hook input priority filter; policy drop;
+        ct state established,related accept
+        ct state invalid drop
+        iif "lo" accept
+        tcp dport 22 accept
+        tcp dport { 80, 443 } accept
+        icmp type echo-request accept
+        ip saddr 10.20.30.0/24 tcp dport 8000 accept
+        log prefix "[EXAM-DROP] " level warn
+    }
+    ...
+}
+---
+외부→8000: 차단됨 (정상)
+LISTEN 0 128 0.0.0.0:22 0.0.0.0:* users:(("sshd",pid=...))
+```
+
+> **해석 — 채점 4 항목 검증**:
+> - **policy drop** = 기본 차단 = 화이트리스트 방식 (4점).
+> - **ct state established,related accept + invalid drop** = 양호 conntrack 패턴 (4점).
+> - **tcp dport { 80, 443 } accept** = anonymous set 사용 = nft 모던 syntax (4점).
+> - **`ip saddr 10.20.30.0/24 tcp dport 8000`** = 내부 네트워크만 8000 허용 (3점).
+> - **log prefix "[EXAM-DROP] "** = drop 로그 = `journalctl -k | grep EXAM-DROP` 으로 확인 가능 (3점).
+> - SSH 연결 유지 = 첫 룰에 SSH 허용 X 였다면 즉시 끊김 → **시험 fail**.
 
 ---
 
@@ -197,6 +225,37 @@ echo 1 | sudo -S nft add rule inet exam_filter forward \
 # IP 포워딩 활성화
 echo 1 | sudo -S sysctl -w net.ipv4.ip_forward=1
 ```
+
+### 1-2-1 NAT 검증 — DNAT/SNAT/forwarding 동작 확인
+
+```bash
+# 1. NAT 룰 적재 확인
+echo 1 | sudo -S nft list table inet exam_nat
+# 2. ip_forward 활성 확인
+sysctl net.ipv4.ip_forward
+# 3. DNAT 동작 — 외부에서 secu:8080 호출 → web:80 응답 받기
+curl -s -o /dev/null --max-time 3 -w "DNAT(8080→web:80): HTTP=%{http_code} time=%{time_total}s\n" http://10.20.30.1:8080/
+# 4. SNAT 검증 — web 서버 access.log 의 src IP = secu(10.20.30.1) 인지
+ssh ccc@10.20.30.80 "tail -1 /var/log/apache2/access.log" | awk '{print "web 본 src IP:", $1}'
+```
+
+**예상 출력**:
+```
+table inet exam_nat {
+    chain prerouting { type nat hook prerouting priority -100; policy accept; tcp dport 8080 dnat to 10.20.30.80:80 }
+    chain postrouting { type nat hook postrouting priority 100; policy accept; ip saddr 10.20.30.0/24 masquerade }
+}
+net.ipv4.ip_forward = 1
+DNAT(8080→web:80): HTTP=200 time=0.034s
+web 본 src IP: 10.20.30.1
+```
+
+> **해석 — 채점 4 항목 검증**:
+> - **net.ipv4.ip_forward = 1** = 커널 forwarding 활성 = NAT 동작 전제 (6점 중 일부).
+> - **DNAT HTTP=200** = `secu:8080` → `web:80` 패킷 포워딩 성공 = `tcp dport 8080 dnat to 10.20.30.80:80` 룰 동작 (8점).
+> - **web access.log src=10.20.30.1** = masquerade 가 src IP 를 secu 의 IP 로 변환 = SNAT 정상 (6점).
+> - **만약 src=원본 외부 IP** = masquerade 미동작 = NAT 룰 적재 실패 → 시험 감점.
+> - 추가 검증: `conntrack -L | grep dnat` 으로 NAT translation entry 확인 가능.
 
 ---
 
@@ -257,6 +316,37 @@ curl -s -A "sqlmap/1.0" "http://10.20.30.80/" > /dev/null  # silent 모드
 # 결과 확인
 echo 1 | sudo -S tail -10 /var/log/suricata/fast.log
 ```
+
+**예상 출력**:
+```
+05/06/2026-09:32:18  [**] [1:9100001:1] EXAM - Directory Traversal [**] [Classification: Web Application Attack] [Priority: 1] {TCP} 10.20.30.201:54321 -> 10.20.30.80:80
+05/06/2026-09:32:25  [**] [1:9100002:1] EXAM - XSS script tag [**] [Classification: Web Application Attack] [Priority: 1] {TCP} 10.20.30.201:54322 -> 10.20.30.80:80
+05/06/2026-09:32:30  [**] [1:9100003:1] EXAM - Scanner detected (nikto) [**] [Classification: Web Application Attack] [Priority: 1] {TCP} 10.20.30.201:54323 -> 10.20.30.80:80
+05/06/2026-09:32:35  [**] [1:9100004:1] EXAM - Scanner detected (sqlmap) [**] [Classification: Web Application Attack] [Priority: 1] {TCP} 10.20.30.201:54324 -> 10.20.30.80:80
+```
+
+> **해석 — 채점 (시나리오별 2점)**:
+> - **9100001 매치** = `/../../etc/passwd` URI 에서 `../` content 매치 = ★ 정답 (2점).
+> - **9100002 매치** = `<script` URI 매치 = ★ 정답 (2점).
+> - **9100003 매치** = `User-Agent: nikto/2.1.6` content 매치 = ★ 정답 (2점).
+> - **9100004 매치** = `User-Agent: sqlmap/1.0` content 매치 = ★ 정답 (2점).
+> - **9100005 (SSH brute force) 미매치** = 정상. threshold = 10/60s 라 단일 시도는 매치 X. 추가 검증: `for i in $(seq 1 15); do nc -zv 10.20.30.1 22; done` → 9100005 매치.
+> - **만점 8/8 (4 명시 + 4 검증)**.
+
+### 2-2-1 룰 검증 — `suricata -T` 통과 출력
+
+```bash
+echo 1 | sudo -S suricata -T -c /etc/suricata/suricata.yaml 2>&1 | grep -E "Notice|Error" | tail -5
+```
+
+**예상 출력**:
+```
+26/05/06 09:30:15 - <Notice> - Configuration provided was successfully loaded. Exiting.
+```
+
+> **해석 — `-T` (test mode) 통과 = 채점 3점**:
+> - 'successfully loaded' = 5 룰 syntax 모두 OK.
+> - Error 출력 시: `Error: Failed to parse rule "alert http..." at line N` = 해당 룰 syntax 오류 → 시험 감점.
 
 ---
 
@@ -329,6 +419,35 @@ echo 1 | sudo -S apache2ctl -M 2>/dev/null | grep security
 # WAF 테스트: curl -s -o /dev/null -w "%{http_code}" "http://10.20.30.80:8082/?id=1'+OR+1=1--"
 # 403이면 WAF 정상 동작
 ```
+
+### 3-2-1 진단 결과 — 3 layer 정상성 통합 출력
+
+```bash
+# 1. nftables — 80 허용 룰 + 패킷 카운터
+echo 1 | sudo -S nft list ruleset | grep -E "dport (80|443)" | head -3
+# 2. Suricata — active + kernel_drops 추세
+echo 1 | sudo -S systemctl is-active suricata
+echo 1 | sudo -S grep "capture.kernel_drops" /var/log/suricata/stats.log | tail -1
+# 3. Apache + ModSecurity — security2 module + WAF block 테스트
+ssh ccc@10.20.30.80 "systemctl is-active apache2 && apache2ctl -M 2>/dev/null | grep security2"
+curl -s -o /dev/null -w "WAF SQLi 테스트: %{http_code}\n" "http://10.20.30.80:8082/?id=1%27+OR+1%3D1--"
+```
+
+**예상 출력**:
+```
+                tcp dport { 80, 443 } accept
+active
+capture.kernel_drops                          | Total                     | 0
+active
+ security2_module (shared)
+WAF SQLi 테스트: 403
+```
+
+> **해석 — 채점 3 항목 (각 5점)**:
+> - **nft `tcp dport { 80, 443 } accept`** = 80/443 허용 룰 적재됨 (5점). 미출력 시 → `nft add rule inet exam_filter input tcp dport 80 accept` 추가.
+> - **suricata active + kernel_drops=0** = IPS 가동 + 패킷 누락 X (5점). drops>0 시 → `af-packet threads` 증설 또는 NIC ring buffer 확장.
+> - **security2_module + WAF=403** = ModSecurity 가 SQLi 차단 (5점). 200 응답 시 → `SecRuleEngine On` 확인 + CRS 942100 룰 활성화 점검.
+> - **3 layer 모두 PASS** = 트러블슈팅 만점 15/15. 한 layer fail 시 해당 layer 의 stderr/journalctl 로 root cause 추적.
 
 ---
 
@@ -523,5 +642,26 @@ sudo tail /var/log/apache2/modsec_audit.log
 sudo systemctl status nftables suricata apache2
 sudo evebox-cli --addr http://localhost:5636 alerts                        # 콘솔 dashboard
 ```
+
+### 시나리오 1 검증 — Nikto 알람 트리거 결과
+
+```bash
+ssh ccc@10.20.30.1 "echo 1 | sudo -S jq -r 'select(.event_type==\"alert\") | [.timestamp, .alert.signature_id, .alert.signature, .src_ip] | @tsv' /var/log/suricata/eve.json | tail -3"
+ssh ccc@10.20.30.1 "echo 1 | sudo -S grep 'EXAM' /var/log/suricata/fast.log | wc -l"
+```
+
+**예상 출력**:
+```
+2026-05-06T11:14:22.318712+0900    9100003    EXAM - Scanner detected (nikto)    10.20.30.201
+2026-05-06T11:14:23.041208+0900    9100003    EXAM - Scanner detected (nikto)    10.20.30.201
+2026-05-06T11:14:23.812447+0900    9100003    EXAM - Scanner detected (nikto)    10.20.30.201
+3
+```
+
+> **해석 — 통합 운용 동작 검증**:
+> - **3 건 알람** = `User-Agent: Nikto/2.1.5` 헤더가 3 패킷 (curl 3 요청) 모두 sid 9100003 매치 = nft 23 차단 룰 통과 + Suricata 7 layer 검사 정상.
+> - **`signature_id=9100003`** = lecture § 2-1 작성한 학생 룰이 운영 환경 (eve.json) 에 적재됨 = "통합 운용" 평가 합격.
+> - **`src_ip=10.20.30.201`** = bastion 에서 발송한 nmap/curl 트래픽 = 학생 attacker host 출처 일치.
+> - 매트릭스 평가: 학생이 **2주차 nft + 5주차 sid 9100003 + 7주차 jq 추출** 의 3 도구를 한 흐름에 결합 = 8주차 평가 핵심.
 
 학생은 8주차에서 **2-7주차의 모든 도구를 흐름에 따라 사용**해 종합 보안 인프라를 운영한다.

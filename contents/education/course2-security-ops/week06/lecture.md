@@ -137,8 +137,26 @@ echo 1 | sudo -S tail -20 /var/log/suricata/fast.log
 ```bash
 # 가장 많이 발생한 알림 TOP 10
 echo 1 | sudo -S cat /var/log/suricata/fast.log | \
-  awk -F'\\]' '{print $2}' | sort | uniq -c | sort -rn | head -10  # 텍스트 필드 처리
+  awk -F'\\]' '{print $2}' | sort | uniq -c | sort -rn | head -10
 ```
+
+**예상 출력**:
+```
+    234  [1:2010937:5
+     87  [1:9000010:1
+     65  [1:9000011:1
+     43  [1:2024897:4
+     21  [1:9000012:1
+     12  [1:9000013:1
+      5  [1:2025033:2
+```
+
+> **해석 — TOP 10 alert 분포 = SOC 첫 단서**:
+> - **234회 sid 2010937 (ET SCAN nmap)** = ★ 가장 많은 alert = 정찰 시도 대량.
+> - **87회 sid 9000010 (커스텀 SQLi)** = 본 lab 의 의도적 SQL Injection 시도 — week05 학습 결과.
+> - **65회 sid 9000011 (커스텀 XSS)** = SQLi 다음으로 흔한 공격.
+> - **43회 sid 2024897 (ET WEB SQLi)** = ET ruleset 의 SQLi (커스텀 9000010 과 중복 매치 가능).
+> - **TOP 10 = SOC 분석가 일일 brief 자료**. 매일 cron 으로 추출 → Slack/이메일 자동 발송.
 
 ### 3.3 특정 SID 검색
 
@@ -264,8 +282,28 @@ for line in sys.stdin:                                 # 반복문 시작
 ### 5.1 Suricata 엔진 통계
 
 ```bash
-echo 1 | sudo -S cat /var/log/suricata/stats.log | tail -40
+echo 1 | sudo -S cat /var/log/suricata/stats.log | tail -40 | grep -E "decoder|capture|tcp|alert"
 ```
+
+**예상 출력**:
+```
+decoder.pkts                                  | Total              | 12345678
+decoder.bytes                                 | Total              | 8765432109
+decoder.invalid                               | Total              | 23
+capture.kernel_packets                        | Total              | 12345678
+capture.kernel_drops                          | Total              | 1234
+tcp.sessions                                  | Total              | 234567
+tcp.ssn_memcap_drop                           | Total              | 0
+detect.alert                                  | Total              | 466
+```
+
+> **해석 — Suricata 성능 지표 5축**:
+> - **`decoder.pkts: 12.3M`** = 처리한 패킷 총 수.
+> - **`decoder.invalid: 23`** = 잘못된 패킷 (정상 — 외부 노이즈).
+> - **`capture.kernel_drops: 1234`** = ★ 핵심 지표. 커널이 처리 못 해 드롭한 패킷. **드롭율 = 1234/12345678 = 0.01%** = 양호 (운영 임계치 < 0.1%).
+> - **`tcp.ssn_memcap_drop: 0`** = TCP 세션 메모리 한계 도달 횟수 = 0 = 양호. 운영 시 1+ 발생 시 `stream.memcap` 증가 필요.
+> - **`detect.alert: 466`** = 총 alert 수 (TOP 10 + 기타 합산).
+> - **운영 임계치**: drop > 0.1% / memcap_drop > 0 = 즉시 튜닝 필요 (NFQUEUE size, threads, AF_PACKET cluster).
 
 **주요 지표:**
 
