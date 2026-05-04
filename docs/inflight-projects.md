@@ -12,7 +12,7 @@
 
 ## In-Progress
 
-### P19. course1 attack acceptable_methods OSS 도구 보강 [STATUS: ai 15/15 완료, nonai week01~11 완료, nonai week12~15 미진행]
+### P19. course1 attack acceptable_methods OSS 도구 보강 [STATUS: ✅ COMPLETE — ai 15/15 + nonai 15/15 (2026-04-29)]
 
 **동기**: P18 (physical-pentest) 완료 후속. course1 attack 이 학생 첫 수강 과목 + 메모리 "multi_task 재작성 — attack 6" 일부 진행 중. 동일 패턴 (도구명 → 도구 + 명령 + 출력 + 해석) 으로 재작성.
 
@@ -43,25 +43,26 @@
 - [x] week10 nonai (16 step × 8 method, hint 보강) — 측면 이동: SSH -L/-D/원격nmap/sshpass재사용/-R/known_hosts/-J jump/grep cred/ip route/socat tunnel/원격 portscan/ARP/sshuttle VPN/IoC/lateral report/Adversary Emulation Slack
 - [x] week10 ai (16 step × 9 method, hint 보강, multi_task Adversary Emulation 컨설턴트 Slack DM transcript)
 - [x] **week11~15 ai 모두 완료** (872~1129 lines, 16 step × 9 method, multi_task) — 2026-05-04 확인
-- [x] **week11 nonai 완료** (840 lines, 16 step × 8 method)
-- [ ] **week12~15 nonai 미진행** (현재 600~680 lines = 보강 전 baseline) ← **다음 세션 next concrete step**
-  - week12 nonai (685 lines) — 12주차 주제 instruction/script 읽고 16 step × 8 method 수기 보강
-  - week13 nonai (661 lines) — 동일 패턴
-  - week14 nonai (656 lines) — 동일 패턴
-  - week15 nonai (607 lines) — 동일 패턴
+- [x] **week11~15 nonai 모두 완료** (2026-04-29):
+  - week11 nonai (840 lines, 16 step × 8 method)
+  - week12 nonai (1100 lines, 16 step × 8~9 method) — 은닉 기법 (IDS/IPS/WAF 우회)
+  - week13 nonai (1095 lines, 16 step × 8~9 method) — 무선 네트워크 공격 (WEP/WPA/WPA3/KRACK/Evil Twin)
+  - week14 nonai (790 lines, 16 step × 8 method) — 소셜 엔지니어링 (피싱/Vishing/Smishing/USB HID/GoPhish)
+  - week15 nonai (752 lines, 16 step × 8 method) — 종합 모의해킹 (PTES 7 phase + MITRE ATT&CK + CISC-W paper)
 
 **구조 확정** (2단계 검증):
 - answer / bastion_prompt = 추상 prompt (1차 검증: 학습자/AI 능력)
 - hint = 도구 우선순위 + 설치 명령 + fallback list (2차 검증)
 - acceptable_methods = 도구 + 명령 + 출력 + 해석 (검증 시 다양성)
 
-**Next concrete step**: attack-nonai/week12.yaml 부터 시작.
+**Next concrete step**: ✅ 완료 — 다음 작업은 P20 (course3-web-vuln lecture week02~15).
 
-**원칙 재강조 (사용자 2026-05-04)**:
-- **병렬/스크립트/템플릿/자동화 금지**
-- week12 instruction/script 정독 후 12주차 **고유 주제**에 맞게 16 step × 8 method 수기 작성
-- 합리적 방향만 찾지 말고 **제대로** — 나중에 재작업 덜 하도록
-- ai 버전은 모두 완료됨 (참조용으로 봐도 되나 그대로 복사 X)
+**완료 보고 (2026-04-29)**:
+- attack-ai 15/15 + attack-nonai 15/15 = 30/30 ✅
+- 모든 step (240 base + 30 multi_task = 270 step) 8~9 method × (도구 + 명령 + 출력 + 해석)
+- 한국 환경 특화: KISA 보호나라, ISMS-P, 정통망법, 한국 phishing 패턴 (택배/검찰/카카오뱅크)
+- 표준 인용: PTES, MITRE ATT&CK, OWASP Top 10 2021, NIST SP 800-50/115, CVSS 3.1, CWE Top 25
+- Non-AI 트랙: ssh ccc@10.20.30.201 직접 / AI 트랙 (Bastion nl2cmd) 비교
 
 **Files**: `contents/labs/attack-nonai/week*.yaml`, `contents/labs/attack-ai/week*.yaml`
 
