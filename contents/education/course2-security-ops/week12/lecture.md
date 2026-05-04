@@ -273,6 +273,28 @@ curl -s -X POST http://10.20.30.100:9400/graphql \
   }' | python3 -m json.tool
 ```
 
+**예상 출력**:
+```json
+{
+    "data": {
+        "indicators": {
+            "edges": [
+                {"node": {"name": "Malicious IP - Lazarus C2", "pattern": "[ipv4-addr:value = '185.62.190.5']", "valid_from": "2026-04-12T00:00:00.000Z"}},
+                {"node": {"name": "Phishing domain - Operation DreamJob", "pattern": "[domain-name:value = 'dream-careers.example.com']", "valid_from": "2026-04-15T00:00:00.000Z"}},
+                {"node": {"name": "Cobalt Strike beacon hash", "pattern": "[file:hashes.'SHA-256' = 'a1b2c3d4...']", "valid_from": "2026-04-18T00:00:00.000Z"}}
+            ]
+        }
+    }
+}
+```
+
+> **해석 — Indicator API 응답 분석**:
+> - **`pattern: [ipv4-addr:value = '...']`** = STIX 2.1 패턴 syntax = Wazuh CDB / Suricata content 룰로 직접 변환 가능.
+> - **3 종 IOC 타입** (ipv4-addr, domain-name, file SHA-256) = 일반적 SOC 운영 IOC 분포 = OpenCTI 실제 사용성 검증.
+> - **valid_from** = STIX 의 *유효 시작* 메타데이터 = 너무 오래된 IOC (2년+) 는 false positive 가능성 ↑ → 자동 만료 룰 권장.
+> - **edges/node** = GraphQL relay 표준 페이지네이션 패턴 = 100+ IOC 시 `cursor` 파라미터로 추가 조회.
+> - 빈 응답 (edges: []) 시 = ① connector 가 데이터 미적재, ② token 권한 부족 (OpenCTI Profile > Capabilities 점검).
+
 ### 6.3 위협 행위자 조회
 
 ```bash
@@ -309,6 +331,26 @@ curl -s -X POST http://10.20.30.100:9400/graphql \
     "query": "{ connectors { id name active connector_type updated_at } }"
   }' | python3 -m json.tool
 ```
+
+**예상 출력**:
+```json
+{
+    "data": {
+        "connectors": [
+            {"id": "mitre-attack", "name": "MITRE ATT&CK", "active": true, "connector_type": "EXTERNAL_IMPORT", "updated_at": "2026-05-06T08:00:00Z"},
+            {"id": "cve", "name": "CVE", "active": true, "connector_type": "EXTERNAL_IMPORT", "updated_at": "2026-05-06T07:00:00Z"},
+            {"id": "alienvault", "name": "AlienVault", "active": false, "connector_type": "EXTERNAL_IMPORT", "updated_at": "2026-04-29T10:00:00Z"}
+        ]
+    }
+}
+```
+
+> **해석 — 커넥터 상태 모니터링**:
+> - **MITRE ATT&CK active=true** = 공격 기법 카탈로그 자동 동기화 중 (4대 기본 connector). techniques 메뉴 결과의 source.
+> - **CVE active=true** = 신규 CVE 자동 import = OpenCTI 의 `vulnerabilities` 에 매일 갱신.
+> - **AlienVault active=false + updated_at 7 일 전** = OTX API 키 만료 또는 rate limit 초과 가능성 = 즉시 점검 (1차: 환경변수 `OTX_API_KEY` 갱신, 2차: docker logs 확인).
+> - **운영 규칙**: 모든 connector 의 `updated_at` 이 24h 이내가 정상. 그렇지 않으면 stale data → IOC 누락 위험.
+> - 추가 진단: `docker logs opencti-connector-alienvault --tail 50 | grep ERROR`.
 
 ### 7.3 MITRE ATT&CK 커넥터
 
