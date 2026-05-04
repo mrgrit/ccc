@@ -39,6 +39,11 @@ steps:
       - echo add table inet lab | sudo nft -f -
       - /etc/nftables.conf 에 table inet lab {} 추가 후 systemctl restart nftables
       - nft create table inet lab(idempotent 아님)
+      - '**[OSS] firewalld** — `sudo firewall-cmd --new-zone=lab --permanent && firewall-cmd --reload` 로 RHEL 계열 표준 도구로 같은 개념의 zone (= nft table 매핑) 생성. zone 추가 시 backend 가 nft 의 ip family table 자동 생성.'
+      - '**[OSS] fwbuilder** — `fwbuilder` GUI 로 firewall object 모델링. Object → Firewall 추가 → compile 시 nft 룰 자동 생성. 시각적으로 table/chain 구조 설계.'
+      - '**[OSS] nftables-svc / netfilter-persistent** — `sudo netfilter-persistent save` 로 메모리 룰을 영속화. 부팅 후에도 lab 테이블 유지. 운영자 표준 영속화 도구.'
+      - '**[OSS] iptables-translate** — `iptables-translate -A INPUT -p tcp --dport 23 -j DROP` 로 legacy iptables 명령을 nft 명령으로 변환 보여주기. 학습용 도구.'
+      - '**[OSS] nft (시각화: -j JSON)** — `sudo nft -j list tables | jq` 로 JSON 출력 후 jq 처리. 자동화·구조 분석에 가장 흔히 쓰는 형식.'
       negative_signs:
       - ip 또는 ip6 family 만 사용(v4/v6 분리 필요 시 제외 OK)
       - sudo 없이 permission denied 무시
@@ -81,6 +86,11 @@ steps:
       - /etc/nftables.conf 에 chain 블록 정의 후 nft -f 로드
       - nft edit 명령어 사용
       - 'base chain priority: -300(raw), -150(mangle), -100(dstnat), 0(filter), 100(srcnat)'
+      - '**[OSS] firewalld** — `firewall-cmd --zone=lab --add-interface=eth0` 으로 zone 에 인터페이스 binding = nft chain hook 효과. RHEL/CentOS 운영자 표준.'
+      - '**[OSS] fwbuilder** — GUI 의 Firewall → Policy 탭에서 chain 추가 + hook/priority 시각적 설정. compile 시 nft 명령어 자동 생성·확인.'
+      - '**[OSS] nftables-yaml-config** — YAML 로 chain 정의하는 community tool. `nft-yaml apply chain.yaml` 으로 IaC 형태 룰 관리. GitOps 운영 적합.'
+      - '**[OSS] netfilter-utils (iptables-nft 변환)** — `iptables-nft-save | nft -f -` 로 기존 iptables 룰을 nft chain 으로 마이그레이션. 레거시 환경 통합 표준.'
+      - '**[OSS] systemd nftables.service** — `systemctl edit nftables` 로 unit override + drop-in 으로 chain 정의. 부팅 시 자동 적용.'
       negative_signs:
       - hook 지정 없이 regular chain 생성(동작 안 함)
       - semicolon 이스케이프 실수로 문법 오류
@@ -123,6 +133,11 @@ steps:
       - iptables -A INPUT -p tcp --dport 23 -j DROP
       - ufw deny 23/tcp
       - firewalld rich-rule 로 차단
+      - '**[OSS] ufw (Ubuntu)** — `sudo ufw deny 23/tcp` 한 줄로 telnet 차단 + nft backend 자동 변환. 입문자가 가장 많이 쓰는 frontend.'
+      - '**[OSS] firewalld** — `sudo firewall-cmd --add-rich-rule="rule port port=23 protocol=tcp drop" --permanent && firewall-cmd --reload` 로 영속 차단. Cockpit GUI 와 통합.'
+      - '**[OSS] fail2ban** — `/etc/fail2ban/jail.d/telnet.conf` 에 telnet jail 정의. drop 룰 + 자동 차단 시간 + 화이트리스트 통합 처리.'
+      - '**[OSS] crowdsec** — `cscli decisions add --ip 0.0.0.0/0 --type ban --reason "telnet block"` 협업형 IDS/IPS. 차단 결정 → nft set 자동 동기화.'
+      - '**[OSS] cockpit-firewall** — Cockpit web UI 에서 Networking → Firewall → Add services 메뉴로 GUI 차단 룰 관리. 비전문가도 운영 가능.'
       negative_signs:
       - udp 포트 차단
       - accept action(차단 아님)
@@ -161,6 +176,11 @@ steps:
       - sudo nft -a list table inet lab(handle 번호 표시)
       - sudo nft -j list table inet lab | jq
       - sudo nft list chain inet lab input(특정 chain 만)
+      - '**[OSS] firewalld** — `sudo firewall-cmd --list-all-zones` 로 zone 별 service/port/rich-rule 한눈에. nft list 보다 의미적 관점.'
+      - '**[OSS] fwbuilder** — GUI 의 Firewall → 룰셋 view 로 시각적 표시. drag & drop 으로 룰 순서 조정 후 compile 시 nft 명령 미리보기.'
+      - '**[OSS] nft-config (Cockpit plugin)** — Cockpit web UI 의 Networking → Firewall 패널. nft 룰셋을 사람이 읽기 쉬운 형태로 표시 + edit 가능.'
+      - '**[OSS] iptables-nft-save** — `sudo iptables-nft-save -t filter` 로 nft 룰을 iptables-format 으로 export. 레거시 도구 익숙한 운영자 호환.'
+      - '**[OSS] nflog + ulogd2** — `sudo nft add rule inet lab input log prefix "DROP-23 "` 로 룰 매치 시 ulogd2 가 capture → 룰 동작 evidence 시각화.'
       negative_signs:
       - 다른 테이블 출력
       - 룰 내용 확인 없이 테이블명만
@@ -198,6 +218,11 @@ steps:
       - /etc/nftables.conf 에 첫 룰로 배치 후 reload
       - nft add rule ... index 0 ... 형태
       - iptables -I INPUT 1 -m state --state ESTABLISHED,RELATED -j ACCEPT
+      - '**[OSS] conntrack-tools** — `sudo conntrack -L | head -20` 로 현재 ESTABLISHED/RELATED state 의 connection 실제 표시. stateful firewall 의 *효과* 를 보는 표준 도구.'
+      - '**[OSS] firewalld** — `firewall-cmd --runtime-to-permanent` 로 conntrack 룰 영속화. firewalld 는 default 로 stateful 처리 (자동 추가).'
+      - '**[OSS] ufw** — `ufw default allow outgoing && ufw default deny incoming` 의 stateful policy = 자동으로 ESTABLISHED/RELATED 룰 prepend. 사람 친화적 syntax.'
+      - '**[OSS] conntrackd** — `sudo systemctl start conntrackd` HA 환경의 connection table replication. failover 시 stateful session 유지.'
+      - '**[OSS] cockpit + Networking** — GUI 의 Connection → Active connections 탭으로 conntrack table 시각화. GUI 운영자가 stateful 동작 이해.'
       negative_signs:
       - add 로 맨 뒤 추가(순서 중요한데)
       - ct state 없이 단순 accept
@@ -237,6 +262,11 @@ steps:
       - iptables -A INPUT -i lo -j ACCEPT
       - nft add rule ... iif lo accept (interface index)
       - ip addr show lo 로 127.0.0.1 확인 후 source/dest 기반 룰
+      - '**[OSS] ufw** — `sudo ufw allow in on lo` 한 줄 = lo 트래픽 허용. ufw 는 default 로 lo allow 추가하지만 명시 시 가시성 높아짐.'
+      - '**[OSS] firewalld** — `firewall-cmd --zone=trusted --add-interface=lo` zone-based loopback trust. trusted zone = 모든 트래픽 허용 = lo 의 표준 분류.'
+      - '**[OSS] iproute2 (ip)** — `ip -br link show lo` 로 lo 인터페이스 정상 (UP) 확인. lo down 이면 방화벽 룰과 무관하게 IPC 실패.'
+      - '**[OSS] netcat (nc) localhost test** — `nc -vz 127.0.0.1 22` 로 lo 통한 SSH 도달성 확인. 룰 적용 후 IPC 정상 작동 검증.'
+      - '**[OSS] ss / lsof** — `sudo ss -tnlp | grep -E "127\\.0\\.0\\.1|::1"` lo 에 binding 된 서비스 확인. 룰 차단 시 영향 받을 서비스 사전 식별.'
       negative_signs:
       - lo 인터페이스 드롭
       - iifname 오타(iifnamelo 등)
@@ -278,6 +308,11 @@ steps:
       - iptables -A INPUT -p tcp --dport 22 -j ACCEPT
       - ufw allow 22/tcp
       - 'rate limit 포함: tcp dport 22 limit rate 5/minute accept'
+      - '**[OSS] ufw** — `sudo ufw allow ssh` 또는 `ufw allow 22/tcp`. service 이름으로도 인식 (`/etc/services` 참조). 가장 자주 쓰는 frontend.'
+      - '**[OSS] firewalld** — `firewall-cmd --add-service=ssh --permanent && firewall-cmd --reload`. service 정의 (`/usr/lib/firewalld/services/ssh.xml`) 활용 = 표준 워크플로우.'
+      - '**[OSS] fail2ban** — `/etc/fail2ban/jail.d/sshd.conf` SSH brute-force 자동 차단. nft accept 룰 + fail2ban dynamic block = 운영 권장 조합.'
+      - '**[OSS] crowdsec** — `cscli collections install crowdsecurity/sshd` SSH 보호 collection 설치. AI 기반 anomaly detection + 협업 차단 목록.'
+      - '**[OSS] sshguard** — fail2ban 대안 OSS. `sudo apt install sshguard` 후 자동으로 SSH 로그 분석 → nft 차단 룰 동적 생성. 가벼운 daemon.'
       negative_signs:
       - drop/reject action
       - 잘못된 포트 번호(2222 등)
@@ -316,6 +351,11 @@ steps:
       - sudo nft -j list ruleset | jq
       - sudo nft list ruleset > /etc/nftables.conf.backup 으로 백업
       - iptables-save 로 legacy 덤프
+      - '**[OSS] firewalld** — `firewall-cmd --list-all-zones --permanent` 로 영속 설정 전체 dump. zone/service/port/rich-rule 모든 layer.'
+      - '**[OSS] fwbuilder** — File → Print 으로 룰셋을 PDF 출력. 컴플라이언스 감사 시 표준 도구. firewall-as-document 워크플로우.'
+      - '**[OSS] netfilter-persistent** — `sudo netfilter-persistent save` + `cat /etc/iptables/rules.v4` 영속화 파일 직접 검토. 부팅 후 재현 가능 상태 확인.'
+      - '**[OSS] nftables-graphviz** — `nft list ruleset --json | nft2dot | dot -Tpng` (community tool) 룰셋 의존 관계를 graph 시각화. 복잡한 chain/jump 구조 파악.'
+      - '**[OSS] yq + jq** — `nft -j list ruleset | jq -r ".nftables[] | select(.table) | .table.name"` 으로 table 이름만 추출. 자동화 monitoring 표준.'
       negative_signs:
       - 특정 테이블만 확인(전체 아님)
       - 출력 없이 단순 실행만
@@ -351,6 +391,11 @@ steps:
       - sudo nft destroy table inet lab(없어도 에러 안 남)
       - sudo nft flush table inet lab(룰만 삭제, 테이블 유지)
       - echo delete table inet lab | sudo nft -f -
+      - '**[OSS] firewalld** — `firewall-cmd --delete-zone=lab --permanent && firewall-cmd --reload` zone 단위 삭제. 의미적 cleanup.'
+      - '**[OSS] ufw reset** — `sudo ufw reset` 으로 ufw 가 관리하던 모든 룰 초기화. backend nft 도 함께 cleanup.'
+      - '**[OSS] netfilter-persistent flush** — `sudo iptables -F` (legacy) 또는 `sudo nft flush ruleset` 으로 전체 비우기. 위험하므로 backup 후 사용.'
+      - '**[OSS] etckeeper** — `/etc/nftables.conf` 변경 추적 도구. lab 추가/삭제 모두 git history. `etckeeper vcs log /etc/nftables.conf` 로 변경 이력.'
+      - '**[OSS] cockpit-firewall** — Cockpit GUI 의 zone 삭제 버튼. CLI 익숙치 않은 운영자가 안전한 cleanup.'
       negative_signs:
       - delete 대신 flush(테이블 남음)
       - 다른 테이블 삭제(오타)
@@ -385,6 +430,11 @@ steps:
       - sudo nft list tables | grep -c lab (0 이어야)
       - sudo nft list table inet lab 2>&1 | grep No such(없음 확인)
       - diff before.txt after.txt 로 변화 확인
+      - '**[OSS] firewalld** — `firewall-cmd --get-zones | tr " " "\n" | grep -c "^lab$"` 로 lab zone 부재 확인. 0 = 삭제 성공.'
+      - '**[OSS] fwbuilder** — Reload from system 후 GUI 의 firewall list 에서 lab 부재 시각 확인.'
+      - '**[OSS] etckeeper** — `etckeeper vcs diff HEAD~1 /etc/nftables.conf` 로 삭제 직전/직후 diff 확인.'
+      - '**[OSS] cockpit-firewall** — Cockpit Networking → Firewall 페이지 새로고침 → lab zone 부재 GUI 확인.'
+      - '**[OSS] auditd** — `sudo ausearch -k nft_changes --start today` 로 nftables 변경 audit log. 누가/언제 lab 삭제했는지 evidence.'
       negative_signs:
       - list ruleset 으로 대체(overkill)
       - 삭제 전 목록과 비교 없음
@@ -460,6 +510,13 @@ steps:
       - attacker 에서 nc -vz / ssh ConnectTimeout / curl
       - secu nft counter 확인 (nft list table inet verify | grep counter)
       - 회고 markdown 1~2 단락
+      - '**[OSS] nmap (Phase B trigger)** — `nmap -p 22,23,80 -Pn 10.20.30.1` 로 3 포트 동시 스캔. SYN 패킷이 nft 의 각 룰에 trigger 되어 counter 변동. 침투테스터 표준.'
+      - '**[OSS] hping3 (정밀 trigger)** — `sudo hping3 -S -p 23 -c 3 10.20.30.1` SYN-only 패킷 정확히 3 개 = counter 정확히 +3. drop 룰 효과 정량 측정.'
+      - '**[OSS] masscan** — 대규모 trigger 시 `masscan 10.20.30.1 -p 1-100 --rate 100` 으로 100 포트 스캔 → 차단·허용 룰 양쪽 동시 검증.'
+      - '**[OSS] tcpdump (secu 측 wire-level)** — `sudo tcpdump -i any -nn "host 10.20.30.201"` 로 attacker 트래픽 wire-level 캡처. drop 룰이 *진짜로* 패킷을 떨어뜨리는지 패킷 부재로 검증.'
+      - '**[OSS] wireshark/tshark** — `sudo tshark -i any -c 30 "tcp port 23"` telnet trigger 시 SYN 만 보이고 SYN-ACK 없으면 drop 정상.'
+      - '**[OSS] iftop / nload (실시간 효과 시각화)** — Phase B trigger 중 secu 의 `iftop -i any` 에서 attacker 트래픽 표시. 차단된 트래픽은 0 bps.'
+      - '**[OSS] conntrack -E (이벤트 모니터)** — `sudo conntrack -E -e new,destroy` 로 conntrack 이벤트 실시간 watch. accept 트래픽만 NEW 이벤트 발생, drop 은 부재.'
       negative_signs:
       - 룰 작성만 + trigger 시도 누락
       - trigger 실행했지만 counter 확인 안 함
