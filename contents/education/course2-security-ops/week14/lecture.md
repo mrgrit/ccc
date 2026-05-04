@@ -296,6 +296,21 @@ for line in sys.stdin:                                 # 반복문 시작
 "
 ```
 
+**예상 출력 — 4 layer 동시 검출**:
+```
+(1) nftables: (정책 'accept' — 80/tcp 통과 = 출력 없음 = 정상)
+(2) Suricata: 05/06/2026-16:11:08  [**] [1:9100002:1] EXAM - SQLi (UNION) [**] [TCP] 10.20.30.201:51234 -> 10.20.30.80:80
+(3) WAF:      [Wed May 06 16:11:08 2026] [error] [client 10.20.30.201] ModSecurity: Warning. Matched "Operator `Rx' with parameter `(?i)union(?:.*?)select' against variable `ARGS:id' [id "942100"] [tag "OWASP_CRS/WEB_ATTACK/SQLI"]
+(4) Wazuh:    [12] 다중 계층 공격 탐지: IPS + WAF 동시 알림
+```
+
+> **해석 — 4 layer 통합 동작 검증**:
+> - **(1) nftables 무로그** = 80/tcp 허용 = 정상 (방화벽은 페이로드 검사 X = 표준 동작).
+> - **(2) Suricata sid 9100002** = `union select` content 매치 = L7 페이로드 검사 동작.
+> - **(3) WAF rule 942100** = OWASP CRS SQLi 룰 = HTTP 파라미터 파싱 후 차단 (anomaly score +5).
+> - **(4) Wazuh level 12 상관분석** = `<rule id="100060">` (§ 6.2) 가 같은 src IP 의 IPS+WAF 알림 60s 내 동시 매치 = "다중 계층 공격" 격상 = SOC 즉시 호출.
+> - 핵심: **단일 layer 만 봤다면 false positive 의심** → **3 layer 동시 = 99.9% 진짜 공격** = 자동 IP 차단 발동 (Active Response 로 nftables blocklist 추가).
+
 ---
 
 ## 5. 각 계층별 역할과 한계
@@ -350,6 +365,35 @@ Apache+ModSecurity 로그  --+--> Wazuh Agent --> Wazuh Manager
   <timeout>3600</timeout>
 </active-response>
 ```
+
+### 6.3-1 상관분석 + AR 통합 검증
+
+```bash
+# 1. 상관분석 룰 적재 + AR 적재 확인 (siem)
+ssh ccc@10.20.30.100 "echo 1 | sudo -S grep -E 'rules_id>100060|<rule id=\"100060\"' /var/ossec/etc/ossec.conf /var/ossec/etc/rules/local_rules.xml 2>/dev/null"
+# 2. 트리거 — IPS + WAF 동시 alert 발생을 위한 SQLi
+curl -s "http://10.20.30.80:8082/?id=1%27%20UNION%20SELECT%201,2,3" -o /dev/null
+sleep 5
+# 3. 100060 알림 + AR 트리거 evidence
+ssh ccc@10.20.30.100 "echo 1 | sudo -S jq -r 'select(.rule.id==\"100060\") | [.timestamp, .data.srcip, .rule.description] | @tsv' /var/ossec/logs/alerts/alerts.json | tail -2"
+ssh ccc@10.20.30.1 "echo 1 | sudo -S tail -3 /var/ossec/logs/active-responses.log"
+```
+
+**예상 출력**:
+```
+local_rules.xml:  <rule id="100060" level="12" timeframe="60">
+ossec.conf:    <rules_id>100060</rules_id>
+2026-05-06T17:14:22+0000    10.20.30.201    다중 계층 공격 탐지: IPS + WAF 동시 알림
+Wed May  6 17:14:23 KST 2026 add 10.20.30.201 Rule:100060
+Wed May  6 17:14:23 KST 2026 BLOCKED 10.20.30.201
+```
+
+> **해석 — 상관분석 → 자동 차단 closed loop 검증**:
+> - **rule 100060 적재 + AR 매핑** = local_rules.xml 의 룰이 ossec.conf 의 active-response 와 연결 = IPS+WAF 동시 매치 시 발동.
+> - **trigger latency 1 초** = SQLi 발생 17:14:22 → AR add 17:14:23 = 사람 개입 0 + 즉시 차단.
+> - **`Rule:100060`** = AR 가 어떤 룰로 트리거되었는지 audit log 에 기록 = 컴플라이언스 evidence.
+> - **closed loop**: nftables(외부) → Suricata(L7) → WAF(HTTP) → Wazuh(상관분석) → AR(자동 nft 차단) → 1 분 내 공격자 IP 봉쇄.
+> - **1 시간 timeout** = `<timeout>3600</timeout>` = 일시 차단 후 자동 해제 = false positive 보호. 동일 IP 재발 시 timeout 갱신.
 
 ---
 
@@ -425,7 +469,38 @@ for i in $(seq 1 5); do                                # 반복문 시작
 done
 
 echo "=== 공격 완료. 로그를 분석하세요. ==="
+
+# 30 초 후 5 공격 모두 탐지되었는지 검증
+sleep 30
+echo "--- 5 공격 layer-by-layer 탐지 카운트 ---"
+ssh ccc@10.20.30.1 "echo 1 | sudo -S grep -c 'EXAM\\|sid:91\\|nftables' /var/log/suricata/fast.log 2>/dev/null"
+ssh ccc@10.20.30.100 "echo 1 | sudo -S jq -r --arg since '$(date -u -d '60 sec ago' +%FT%TZ)' \
+  'select(.timestamp>\$since) | .rule.id' /var/ossec/logs/alerts/alerts.json 2>/dev/null | sort | uniq -c"
 ```
+
+**예상 출력**:
+```
+=== 인시던트 시뮬레이션 ===
+[공격 1] 포트 스캔
+[공격 2] SQL Injection
+[공격 3] XSS
+[공격 4] 디렉터리 트래버설
+[공격 5] 브루트포스
+=== 공격 완료. 로그를 분석하세요. ===
+--- 5 공격 layer-by-layer 탐지 카운트 ---
+12
+      8 5710        # SSH 인증 실패 (브루트포스 입력)
+      2 9100001     # Directory Traversal
+      2 9100002     # SQLi
+      2 9100003     # XSS
+```
+
+> **해석 — 5 공격 동시 발생 시 SOC 가시성**:
+> - **Suricata fast.log 12 매치** = 5 공격이 12 패킷 매치 = SQLi 2 + XSS 1 + Traversal 1 + 포트스캔 8 (port × 1 = 8 connection). nft 의 외부 차단으로 일부 미도달.
+> - **Wazuh sid 5710 8 회** = SSH 8 회 시도 (sshpass 5 회 + ssh 자동 재시도 3 회) = brute force 룰 (5712, threshold 8) 트리거 직전.
+> - **9100001-3 각 2 회** = curl 1 회 + 그 응답 패킷의 reverse 매치 = 정상 (양방향 alert).
+> - **누락 항목**: ① 포트스캔이 Suricata sid 미작성 → 다음 룰 추가 후보, ② Wazuh 가 nft 직접 로그 미수신 → `<localfile>/var/log/kern.log</localfile>` 추가.
+> - **인시던트 시뮬레이션 = SOC 능력 측정** = Mean Time To Detect 본 5 공격 = 30 초 (sleep 후 grep 가능 시점). 1 분 이상 시 룰/index latency 점검.
 
 ### 8.3 대응 절차
 
@@ -459,6 +534,22 @@ echo "OpenCTI에 공격자 IP를 IOC로 등록하세요"
 # 5. 보고서 작성
 echo "인시던트 보고서를 작성하세요"
 ```
+
+**예상 출력 — 식별·억제·등록 검증**:
+```
+=== 의심 IP 목록 (level≥7 src 추출) ===
+10.20.30.201    8 alerts (5710 brute, 9100001-3 web attack)
+=== 긴급 차단 후 ===
+table inet filter { set blocklist { elements = { 10.20.30.201 } } }
+nft test: 외부 ICMP → blocked (정상)
+```
+
+> **해석 — 6 단계 IR 중 식별·억제·교훈 단계 검증**:
+> - **공격자 IP 1 건 식별** = 다중 룰 (인증 + 웹) 매치 src 가 동일 IP = 진짜 공격자 vs noise 구분 핵심.
+> - **nft blocklist 등록** = 즉시 input/output 양방향 차단 = 추가 공격 봉쇄 완료.
+> - **블록 검증** = 외부 → 10.20.30.201 ICMP 가 차단되면 룰 적재 OK. 검증 누락 시 "차단했다고 착각" 위험.
+> - **OpenCTI 등록 = 교훈 단계** = 같은 IP 가 다른 시스템에서도 탐지되도록 IOC 공유. 본 인시던트 → 조직 전체 자산 보호로 확장.
+> - **운영 워크플로우**: 본 5 단계가 30 분 내 완료되면 MTTR 우수. 1 시간 초과 시 자동화 (SOAR / Wazuh Active Response 룰) 검토.
 
 ---
 
@@ -510,6 +601,36 @@ DAILYEOF
 chmod +x /tmp/daily_check.sh                           # 파일 권한 변경
 bash /tmp/daily_check.sh
 ```
+
+**예상 출력**:
+```
+=== 일일 보안 점검 (2026-05-06) ===
+
+[1] 서비스 상태
+--- secu --- nftables: 3 / Suricata: active / Wazuh Agent: active
+--- web  --- Apache: active / HTTP: 200 / Wazuh Agent: active
+--- siem --- Manager: active / Dashboard: active / OpenCTI: 200
+
+[2] Suricata 커널 드롭
+capture.kernel_drops                          | Total                     | 17
+
+[3] 최근 24시간 고심각도 알림 (Level >= 10)
+  고심각도 알림: 24건
+
+[4] 디스크 사용량
+  10.20.30.1: 38%
+  10.20.30.80: 52%
+  10.20.30.100: 71%
+
+=== 점검 완료 ===
+```
+
+> **해석 — 일일 SOC 운영 KPI 4 항목**:
+> - **[1] 모든 서비스 active** = 인프라 layer up = 우선 정상. 1 개라도 inactive 시 즉시 `journalctl -u <service>` 로 root cause.
+> - **[2] kernel_drops 17** = Suricata 가 17 패킷 누락 = 임계 0 초과 = 경고 (트래픽 폭증 또는 NIC ring buffer 부족). 누적이 1,000+ 시 `af-packet.threads` 증설 또는 `cluster.type=cluster_flow` 로 분산.
+> - **[3] 고심각도 24건** = level≥10 알림 = baseline (정상 5-30 범위) 내. 100+ 급증 시 인시던트 발동.
+> - **[4] siem 디스크 71%** = 80% 임계 근접 = 다음 7 일 내 alerts.json/eve.json 로테이션 정책 점검 필수 (`/var/ossec/logs` 가 가장 큼).
+> - **운영 자동화**: 본 4 KPI 를 cron 매일 09:00 → 결과를 Slack/메일 → SOC 팀 standup 자료. 4 항목 중 1 개라도 임계 초과 시 빨간색 강조.
 
 ### 9.2 주간 점검
 

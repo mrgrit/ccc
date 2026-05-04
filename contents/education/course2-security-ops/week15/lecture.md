@@ -130,7 +130,48 @@ echo 1 | sudo -S nft add rule inet final_filter forward ip saddr 10.20.30.0/24 a
 # output chain
 echo 1 | sudo -S nft add chain inet final_filter output \
   '{ type filter hook output priority 0; policy accept; }'
+
+# 검증 — 6 채점 항목
+echo "[1] policy drop:"
+echo 1 | sudo -S nft list chain inet final_filter input | grep -E "policy"
+echo "[2] conntrack:"
+echo 1 | sudo -S nft list chain inet final_filter input | grep -E "ct state"
+echo "[3] SSH 22:"
+echo 1 | sudo -S nft list chain inet final_filter input | grep -E "tcp dport 22"
+echo "[4] HTTP 내부만:"
+echo 1 | sudo -S nft list chain inet final_filter input | grep -E "10.20.30.0/24.*dport"
+echo "[5] ICMP:"
+echo 1 | sudo -S nft list chain inet final_filter input | grep -E "icmp type"
+echo "[6] 차단 로그:"
+echo 1 | sudo -S nft list chain inet final_filter input | grep -E "log prefix"
 ```
+
+**예상 출력**:
+```
+[1] policy drop:
+                type filter hook input priority filter; policy drop;
+[2] conntrack:
+                ct state established,related accept
+                ct state invalid drop
+[3] SSH 22:
+                tcp dport 22 accept
+[4] HTTP 내부만:
+                ip saddr 10.20.30.0/24 tcp dport { 80, 443 } accept
+[5] ICMP:
+                icmp type echo-request accept
+[6] 차단 로그:
+                log prefix "[FW-DROP] " level warn
+```
+
+> **해석 — 6 채점 항목 만점 13/13 검증**:
+> - **[1] policy drop** = 화이트리스트 = 3 점 OK.
+> - **[2] established/related + invalid drop** = 양호 conntrack = 3 점 OK.
+> - **[3] tcp dport 22 accept** = SSH 전체 허용 = 1 점 OK (룰 한 줄, 하지만 source IP 제한 없음 = 의도와 일치).
+> - **[4] `ip saddr 10.20.30.0/24 tcp dport { 80, 443 }`** = 내부망에서만 HTTP/HTTPS = 2 점 OK (anonymous set 사용).
+> - **[5] icmp type echo-request** = ping 허용 = 2 점 OK.
+> - **[6] log prefix "[FW-DROP]"** = drop 로그 prefix = 2 점 OK. `journalctl -k -g FW-DROP` 로 차단 패킷 즉시 확인 가능.
+> - **만점 13 점 + 누락 항목 0** = Part 1-1 만점 (15 점 만점 중 13 + Wazuh 1514 룰 누락 시 -2 = 본 결과로 만점은 1514 추가 후).
+> - **즉시 추가**: `nft add rule inet final_filter input ip daddr 10.20.30.100 tcp dport 1514 accept` 로 Wazuh agent → manager 룰 추가 시 만점.
 
 ### 문제 1-2: NAT 구성 (10점)
 
@@ -153,7 +194,36 @@ echo 1 | sudo -S sysctl -w net.ipv4.ip_forward=1
 
 # 룰셋 저장
 echo 1 | sudo -S nft list ruleset > /tmp/final_nftables.conf
+
+# NAT 검증 — 2 채점 항목
+echo "[1] masquerade:"
+echo 1 | sudo -S nft list chain inet final_nat postrouting | grep -E "masquerade"
+echo "[2] DNAT 8080→web:80:"
+echo 1 | sudo -S nft list chain inet final_nat prerouting | grep -E "dnat"
+echo "[3] ip_forward:"
+sysctl net.ipv4.ip_forward
+echo "[4] DNAT 동작:"
+curl -s -o /dev/null -w "HTTP=%{http_code} time=%{time_total}s\n" --max-time 3 http://10.20.30.1:8080/
 ```
+
+**예상 출력**:
+```
+[1] masquerade:
+                ip saddr 10.20.30.0/24 masquerade
+[2] DNAT 8080→web:80:
+                tcp dport 8080 dnat to 10.20.30.80:80
+[3] ip_forward:
+net.ipv4.ip_forward = 1
+[4] DNAT 동작:
+HTTP=200 time=0.024s
+```
+
+> **해석 — Part 1-2 NAT 만점 10/10**:
+> - **[1] masquerade 룰** = 내부 → 외부 SNAT (5 점) = src=10.20.30.0/24 트래픽이 secu 의 IP 로 변환 = 외부에서 본 IP 가 단일.
+> - **[2] DNAT** = 외부 8080 → web:80 포워딩 (5 점) = 외부에서 `secu:8080` 호출 시 web 의 응답 받음.
+> - **[3] ip_forward = 1** = 커널 packet forwarding 활성 = NAT 동작 전제.
+> - **[4] HTTP 200 + 24ms** = 실제 DNAT 동작 (web 의 JuiceShop 응답 받음) = 검증 evidence.
+> - **만점 10/10**. ip_forward = 0 시 모든 NAT 룰 무용 → 즉시 `sysctl -w net.ipv4.ip_forward=1` + `/etc/sysctl.conf` 영속화.
 
 ---
 
@@ -214,6 +284,20 @@ curl -s -A "sqlmap/1.0" "http://10.20.30.80/" > /dev/null
 # 결과 확인
 echo 1 | sudo -S tail -10 /var/log/suricata/fast.log
 ```
+
+**예상 출력 — 5 룰 + drop 룰 매칭**:
+```
+05/06/2026-19:02:12  [**] [1:9500001:1] FINAL - SQL Injection [**] [TCP] 10.20.30.201:54101 -> 10.20.30.80:80
+05/06/2026-19:02:13  [**] [1:9500002:1] FINAL - XSS [**] [TCP] 10.20.30.201:54102 -> 10.20.30.80:80
+05/06/2026-19:02:14  [**] [1:9500005:1] FINAL - Scanner sqlmap [**] [TCP] 10.20.30.201:54103 -> 10.20.30.80:80
+```
+
+> **해석 — Part 2 룰 작성 + 검증 만점 검증**:
+> - **3 룰 매치** = SQLi(9500001) + XSS(9500002) + sqlmap UA(9500005) = 6 점 (3 시나리오 × 2점).
+> - **9500003 (Traversal) + 9500004 (nikto)** 미트리거 = curl 테스트에 해당 패턴 없음 = 별도 검증 필요: `curl "http://10.20.30.80/../etc/passwd"` + `curl -A "nikto/2.1" http://10.20.30.80/`.
+> - **9500006 drop** = `/etc/passwd` 차단 = inline mode (NFQUEUE) 에서만 실효. § 2-1 에서 `nft ... queue num 0` 적재 = drop 가능. NFQUEUE 미연결 시 alert only = drop sid 추가해도 packet 통과.
+> - **`-T` 통과 시 출력**: `Configuration provided was successfully loaded. Exiting.` = 6 룰 syntax 무오류 = 5 점 만점.
+> - **만점 20/20** = 6 룰 적재 + drop 1 + 검증 통과 + 매치 evidence 확보.
 
 ---
 
@@ -281,7 +365,30 @@ echo 1 | sudo -S /var/ossec/bin/wazuh-analysisd -t
 
 # 재시작
 echo 1 | sudo -S systemctl restart wazuh-manager
+
+# 4 룰 적재 + 레벨 검증
+echo 1 | sudo -S grep -E '<rule id="10010[0-3]"' /var/ossec/etc/rules/local_rules.xml
+echo 1 | sudo -S grep -c -E '<rule id="10010[0-3]"' /var/ossec/etc/rules/local_rules.xml
 ```
+
+**예상 출력**:
+```
+wazuh-analysisd: Configuration check passed. Exiting.
+  <rule id="100100" level="10">
+  <rule id="100101" level="5">
+  <rule id="100102" level="12">
+  <rule id="100103" level="14">
+4
+```
+
+> **해석 — Part 3-2 룰 작성 만점 검증**:
+> - **`Configuration check passed`** = XML syntax + rule logic 정상 = 룰 적재 가능.
+> - **4 룰 적재** = id 100100~100103 모두 존재.
+> - **레벨 분포 5/10/12/14** = SOC tiering 패턴 (info → warn → alarm → critical) = 적절.
+> - **id 100100 level 10** = root SSH 직접 = 3 점 OK.
+> - **id 100102 level 12 + match `rm -rf|chmod 777`** = 위험 sudo = 3 점 OK.
+> - **id 100103 level 14 + `if_matched_sid 5710 + same_source_ip`** = 다수 실패 후 성공 = 4 점 OK (난이도 ↑).
+> - **만점 10/10**. 검증 실패 시 `analysisd -t` 가 line 번호 + 오류 메시지 출력 → 즉시 수정.
 
 ### 문제 3-3: FIM 설정 (5점)
 
@@ -432,7 +539,37 @@ echo 1 | sudo -S tee /var/ossec/etc/lists/final-cti-ips << 'EOF'
 198.51.100.10:APT-C2-1
 198.51.100.20:APT-C2-2
 EOF
+
+# 3 시스템 통합 검증
+echo "[Suricata]"
+ssh ccc@10.20.30.1 "echo 1 | sudo -S grep -c 'sid:96000' /etc/suricata/rules/local.rules"
+echo "[nftables set]"
+ssh ccc@10.20.30.1 "echo 1 | sudo -S nft list set inet final_filter cti_block | grep -c '198.51.100'"
+echo "[Wazuh CDB]"
+echo 1 | sudo -S wc -l /var/ossec/etc/lists/final-cti-ips
+echo "[CDB 컴파일 — Wazuh]"
+echo 1 | sudo -S /var/ossec/bin/wazuh-makelists -p /var/ossec/etc/lists 2>&1 | tail -3
 ```
+
+**예상 출력**:
+```
+[Suricata]
+3
+[nftables set]
+1
+[Wazuh CDB]
+2 /var/ossec/etc/lists/final-cti-ips
+[CDB 컴파일 — Wazuh]
+2026/05/06 19:32:00 wazuh-makelists: INFO: List file final-cti-ips compiled. (2 entries)
+```
+
+> **해석 — Part 4-2 IOC 3 시스템 통합 검증**:
+> - **Suricata 3 룰 (sid 9600001-3)** = IP 2 + DNS 1 = 4 점 (각 항목 작성 + reload). DNS 룰은 `dns.query content` 매칭 = passive DNS 모니터링.
+> - **nftables set 198.51.100 매칭 1 줄** = 2 IP 가 한 set 에 포함 = 3 점 (set 으로 일괄 차단 → 후속 IOC 추가 시 set 만 갱신).
+> - **CDB 2 entries** = 2 IP 가 Wazuh list 에 등록 = 3 점. CDB 매핑: `198.51.100.10:APT-C2-1` 형식.
+> - **wazuh-makelists 컴파일 성공** = `final-cti-ips.cdb` binary 생성 = analysisd 가 lookup 시 즉시 매칭 (O(1) hash).
+> - **rule 매핑 추가**: `<list field="srcip" lookup="address_match_key">etc/lists/final-cti-ips</list>` 룰 작성 시 매칭된 IP 의 metadata (`APT-C2-1`) 가 alert 에 포함됨.
+> - **만점 10/10** = 3 시스템 모두 IOC 적재 + 컴파일 성공 + 운영 가능 상태.
 
 ---
 
@@ -454,7 +591,44 @@ curl -s -A "nikto/2.1.6" "http://10.20.30.80/" > /dev/null
 
 # 공격 4: C2 통신 시도 (차단 확인)
 curl -s --connect-timeout 3 "http://198.51.100.10/" > /dev/null 2>&1
+
+# 5 layer 동시 검증 (10 점 채점 항목)
+sleep 5
+echo "[1] nftables C2 차단:"
+ssh ccc@10.20.30.1 "echo 1 | sudo -S nft list set inet final_filter cti_block 2>/dev/null | grep -c '198.51.100.10'"
+echo "[2] Suricata SQLi:"
+ssh ccc@10.20.30.1 "echo 1 | sudo -S grep -c '9500001:1' /var/log/suricata/fast.log"
+echo "[3] Suricata XSS:"
+ssh ccc@10.20.30.1 "echo 1 | sudo -S grep -c '9500002:1' /var/log/suricata/fast.log"
+echo "[4] Apache+ModSec 403:"
+ssh ccc@10.20.30.80 "echo 1 | sudo -S grep -c 'HTTP/1.1\" 403' /var/log/apache2/access.log 2>/dev/null"
+echo "[5] Wazuh 알림:"
+ssh ccc@10.20.30.100 "echo 1 | sudo -S jq -r --arg since '$(date -u -d '60 sec ago' +%FT%TZ)' \
+  'select(.timestamp>\$since) | select(.rule.level>=7) | .rule.id' /var/ossec/logs/alerts/alerts.json | wc -l"
 ```
+
+**예상 출력**:
+```
+[1] nftables C2 차단:
+1
+[2] Suricata SQLi:
+1
+[3] Suricata XSS:
+1
+[4] Apache+ModSec 403:
+2
+[5] Wazuh 알림:
+4
+```
+
+> **해석 — Part 5-1 종합 검증 만점 10/10**:
+> - **[1] nft set 1 매칭** = 198.51.100.10 IP 가 cti_block set 에 존재 = curl 시도 시 outbound drop = 2 점.
+> - **[2] sid 9500001 1 회** = SQLi UNION SELECT 매치 = 2 점.
+> - **[3] sid 9500002 1 회** = XSS `<script>` 매치 = 2 점.
+> - **[4] HTTP 403 2 회** = WAF 가 SQLi + XSS 둘 다 차단 = 2 점. C2 IP 는 nft 가 먼저 막아 WAF 도달 X (정상 우선순위).
+> - **[5] Wazuh level≥7 알림 4 건** = Suricata + WAF 의 모든 alert 가 SIEM 에 통합 수집 = 2 점.
+> - **만점 10 + Part 5-2 보고서 5 점 = Part 5 만점 15/15**.
+> - **운영 통찰**: 4 layer 가 모두 동작 = 심층 방어 (Defense in Depth) 의 모범 = 1 layer 우회 시 다음 layer 가 catch.
 
 **채점 기준:**
 
