@@ -146,33 +146,102 @@ ENDPOINTS=(
   "promotion" "video" "redirect" "snippets"
 )
 
-printf "%-45s %s\n" "엔드포인트" "코드"
-printf "%-45s %s\n" "---" "---"
-for ep in "${ENDPOINTS[@]}"; do                        # 반복문 시작
-  code=$(curl -s -o /dev/null -w "%{http_code}" "http://10.20.30.80:3000/$ep")
+printf "%-45s %-6s %-8s %s\n" "엔드포인트" "code" "size" "분류"
+echo "------------------------------------------------------------------"
+discovered=0
+for ep in "${ENDPOINTS[@]}"; do
+  read code size < <(curl -s -o /dev/null -w "%{http_code} %{size_download}" "http://10.20.30.80:3000/$ep")
   if [ "$code" != "404" ]; then
-    printf "%-45s %s\n" "/$ep" "$code"
+    cat=""
+    case "$code" in
+      200) cat="공개"; discovered=$((discovered+1));;
+      401|403) cat="보호";;
+      400|405) cat="존재 (입력/메서드 X)";;
+      *) cat="?";;
+    esac
+    printf "%-45s %-6s %-8s %s\n" "/$ep" "$code" "$size" "$cat"
   fi
 done
+echo "------------------------------------------------------------------"
+echo "총 발견: $discovered / 시도 ${#ENDPOINTS[@]} = $((discovered*100/${#ENDPOINTS[@]}))%"
 ```
+
+**예상 출력**:
+```
+엔드포인트                                    code   size     분류
+------------------------------------------------------------------
+/api/Products                                 200    9876     공개
+/api/Products/1                               200    234      공개
+/api/Users                                    200    5621     공개
+/api/Users/1                                  401    87       보호
+/api/Feedbacks                                401    87       보호
+/api/Challenges                               200    12340    공개
+/api/Complaints                               401    87       보호
+/api/Recycles                                 200    245      공개
+/api/SecurityQuestions                        200    5621     공개
+/rest/products/search?q=test                  200    8421     공개
+/rest/user/whoami                             401    87       보호
+/rest/basket/1                                401    87       보호
+/rest/saveLoginIp                             401    87       보호
+/rest/wallet/balance                          401    87       보호
+/rest/order-history                           401    87       보호
+/rest/languages                               200    892      공개
+/rest/memories                                401    87       보호
+/rest/chatbot/status                          503    78       존재 (입력/메서드 X)
+/rest/continue-code                           401    87       보호
+/rest/deluxe-membership                       401    87       보호
+/profile                                      200    1987     공개
+/file-upload                                  500    78       존재 (입력/메서드 X)
+/promotion                                    200    245      공개
+/snippets                                     500    78       존재 (입력/메서드 X)
+------------------------------------------------------------------
+총 발견: 11 / 시도 33 = 33%
+```
+
+> **해석 — 33 endpoint 중 11개 (33%) 노출 매트릭스**:
+> - **/api/Users 200 (5621B)** = ★ critical = 인증 X 사용자 list (week09 학습).
+> - **/api/SecurityQuestions 200** = 보안 질문 노출 → 비번 재설정 우회.
+> - **/api/Products 200 (9876B)** = 38 상품 — 공개 의도. 정상.
+> - **/api/Recycles 200** = 관리자 의도 endpoint 가 인증 없이 노출.
+> - **/profile 200** = HTML 페이지 (사용자 프로필 페이지).
+> - **/file-upload 500** = endpoint 존재 + body 미충족. POST + 파일 첨부 시 정상 응답 (week07).
+> - **/snippets 500** = JuiceShop challenge 'Code Snippet' 입력 endpoint.
+> - **OWASP API1 (BOLA) + API3 (Object Property) + API5 (Function Level Auth) 동시** 위배.
 
 ### 2.2 HTTP 메서드별 응답 확인
 
 ```bash
-# 각 API의 지원 메서드 확인
-echo "=== Products API 메서드 ==="
-for method in GET POST PUT DELETE PATCH OPTIONS; do    # 반복문 시작
-  code=$(curl -s -o /dev/null -w "%{http_code}" -X "$method" http://10.20.30.80:3000/api/Products/)
-  echo "  $method: HTTP $code"
-done
-
-echo ""
-echo "=== Users API 메서드 ==="
-for method in GET POST PUT DELETE PATCH OPTIONS; do    # 반복문 시작
-  code=$(curl -s -o /dev/null -w "%{http_code}" -X "$method" http://10.20.30.80:3000/api/Users/)
-  echo "  $method: HTTP $code"
-done
+echo "=== 3 endpoint × 6 메서드 매트릭스 (인증 X) ==="
+printf "%-25s %-6s %-6s %-6s %-6s %-6s %-6s\n" "endpoint" "GET" "POST" "PUT" "DELETE" "PATCH" "OPTIONS"
+test_methods() {
+  local ep="$1"
+  printf "%-25s" "$ep"
+  for method in GET POST PUT DELETE PATCH OPTIONS; do
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X "$method" "http://10.20.30.80:3000$ep")
+    printf " %-6s" "$code"
+  done
+  echo
+}
+test_methods "/api/Products/"
+test_methods "/api/Users/"
+test_methods "/api/Feedbacks/"
 ```
+
+**예상 출력**:
+```
+=== 3 endpoint × 6 메서드 매트릭스 (인증 X) ===
+endpoint                  GET    POST   PUT    DELETE PATCH  OPTIONS
+/api/Products/            200    400    401    405    405    204
+/api/Users/               200    400    405    405    405    204
+/api/Feedbacks/           401    400    405    405    405    204
+```
+
+> **해석 — 메서드별 인가 검증 비일관**:
+> - **/api/Products/ GET 200 + POST 400** = GET 공개 (정상) + POST 입력 검증 후 400. 그러나 *인증 검증 X* = 400 ≠ 401 → ★ critical (write 가능 가능성).
+> - **/api/Users/ POST 400** = ★ 회원가입은 인증 X (정상) 인데 PUT/DELETE 405 = 메서드 차단. 그러나 admin token 으로는 PUT/DELETE 허용 가능 (week09 학습).
+> - **/api/Feedbacks/ GET 401** = 인가 정상 / POST 400 = ★ 인증 X 입력 검증만. 401 이어야 함 (인증 후 입력 검증).
+> - **OPTIONS 204 모두** = CORS preflight 응답. allow-methods 헤더 노출 = endpoint 식별 보조.
+> - **OWASP API5 Broken Function Level Authorization** = 메서드별 인가 검증 차이 = ★ classic 패턴.
 
 ---
 
@@ -221,32 +290,49 @@ PYEOF
 
 ```bash
 TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"student@test.com","password":"Test1234!"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])" 2>/dev/null)  # 요청 데이터(body)
+  -H 'Content-Type: application/json' \
+  -d '{"email":"student@test.com","password":"Test1234!"}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])" 2>/dev/null)
 
-echo "=== 토큰 조작 테스트 ==="
-
-# 정상 토큰
-echo "정상 토큰:"
-curl -s http://10.20.30.80:3000/rest/user/whoami \
-  -H "Authorization: Bearer $TOKEN" | python3 -c "import sys,json; print(json.load(sys.stdin).get('user',{}).get('email','실패'))" 2>/dev/null  # 인증 토큰
-
-# 만료된 토큰 (한 글자 변경)
-TAMPERED="${TOKEN:0:-5}XXXXX"
-echo "변조 토큰:"
-curl -s http://10.20.30.80:3000/rest/user/whoami \
-  -H "Authorization: Bearer $TAMPERED" | head -3       # 인증 토큰
-
-# 빈 토큰
-echo "빈 토큰:"
-curl -s http://10.20.30.80:3000/rest/user/whoami \
-  -H "Authorization: Bearer " | head -3                # 인증 토큰
-
-# 다른 인증 스킴
-echo "Basic 인증 시도:"
-curl -s http://10.20.30.80:3000/rest/user/whoami \
-  -H "Authorization: Basic YWRtaW46YWRtaW4=" | head -3  # 인증 토큰
+echo "=== 토큰 조작 5 시나리오 매트릭스 ==="
+test_token() {
+  local label="$1" auth="$2"
+  read code < <(curl -s -o /tmp/whoami.json -w "%{http_code}" \
+    http://10.20.30.80:3000/rest/user/whoami -H "Authorization: $auth")
+  email=$(python3 -c "import json; d=json.load(open('/tmp/whoami.json')); print(d.get('user',{}).get('email','-'))" 2>/dev/null || echo '-')
+  printf "  %-30s [%s] email=%s\n" "$label" "$code" "$email"
+}
+test_token "정상 토큰"           "Bearer $TOKEN"
+test_token "변조 (마지막 5자)"    "Bearer ${TOKEN:0:-5}XXXXX"
+test_token "변조 (header alg=none)" "Bearer eyJhbGciOiJub25lIn0.${TOKEN#*.}"
+test_token "빈 Bearer"            "Bearer "
+test_token "Basic 시도"           "Basic YWRtaW46YWRtaW4="
+test_token "인증 없음"            ""
 ```
+
+**예상 출력**:
+```
+=== 토큰 조작 5 시나리오 매트릭스 ===
+  정상 토큰                       [200] email=student@test.com
+  변조 (마지막 5자)               [401] email=-
+  변조 (header alg=none)          [401] email=-
+  빈 Bearer                       [401] email=-
+  Basic 시도                      [401] email=-
+  인증 없음                       [401] email=-
+```
+
+> **해석 — 6 시나리오 모두 정상 차단 = 양호**:
+> - **변조 토큰 401** = signature 검증 정상 동작. RS256 (week04) → 공개키로 검증 → 변조 즉시 거부.
+> - **alg=none 공격 401** = ★ 양호. JuiceShop 의 jsonwebtoken middleware 가 alg=none 명시 차단 (CVE-2015-9235 mitigation).
+> - **Basic 시도 401** = JWT 외 다른 인증 스킴 거부. 양호.
+> - **운영 점검**: 만약 alg=none 이 200 = ★ critical (week04 학습). 본 lab 은 정상.
+> - **추가 점검 항목**: (1) JWT alg confusion (RS256 → HS256 + 공개키 secret), (2) JWT key ID 변조 (kid path traversal), (3) refresh token rotation.
+
+> **OSS 도구 — jwt_tool 자동 점검**:
+>
+> ```bash
+> python3 ~/jwt_tool/jwt_tool.py "$TOKEN" -T -M at  # 모든 attack mode 자동
+> ```
 
 ### 3.3 API 키 노출 점검
 
@@ -274,26 +360,43 @@ Rate Limiting은 특정 시간 내 요청 수를 제한하여 무차별 대입, 
 ### 4.2 로그인 API Rate Limiting 테스트
 
 ```bash
-echo "=== 로그인 API Rate Limiting 테스트 ==="
-echo "30회 연속 잘못된 로그인 시도:"
-
-for i in $(seq 1 30); do                               # 반복문 시작
+echo "=== 로그인 30 회 연속 시도 — Rate Limit / 응답 시간 분석 ==="
+declare -A code_count
+total_ms=0
+first_429=0
+for i in $(seq 1 30); do
+  start=$(date +%s%N)
   code=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://10.20.30.80:3000/rest/user/login \
-    -H "Content-Type: application/json" \
-    -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"wrong$i\"}")  # 요청 데이터(body)
-  if [ "$code" = "429" ]; then
-    echo "시도 $i: HTTP $code (Rate Limited!)"
-    echo "Rate Limiting 활성화됨 ($i 회째에서 차단)"
-    break
-  elif [ "$i" -eq 10 ] || [ "$i" -eq 20 ] || [ "$i" -eq 30 ]; then
-    echo "시도 $i: HTTP $code"
+    -H 'Content-Type: application/json' \
+    -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"wrong$i\"}")
+  ms=$(( ($(date +%s%N) - start) / 1000000 ))
+  total_ms=$((total_ms + ms))
+  code_count[$code]=$((${code_count[$code]:-0} + 1))
+  if [ "$code" = "429" ] && [ "$first_429" = "0" ]; then
+    first_429=$i
   fi
 done
-
-echo ""
-echo "30회 모두 401이면 → Rate Limiting 없음 (취약)"
-echo "429가 나오면 → Rate Limiting 있음 (양호)"
+echo "응답 코드 분포:"
+for k in "${!code_count[@]}"; do echo "  $k: ${code_count[$k]} 회"; done
+echo "평균 응답 시간: $((total_ms / 30))ms"
+[ "$first_429" != "0" ] && echo "첫 429: $first_429 회째" || echo "★ 30/30 모두 통과 = Rate Limit 없음 (CRITICAL)"
 ```
+
+**예상 출력**:
+```
+=== 로그인 30 회 연속 시도 — Rate Limit / 응답 시간 분석 ===
+응답 코드 분포:
+  401: 30 회
+평균 응답 시간: 48ms
+★ 30/30 모두 통과 = Rate Limit 없음 (CRITICAL)
+```
+
+> **해석 — Rate Limit 부재 확정**:
+> - **401 30/30 + 평균 48ms 일정** = ★ critical. 점진 지연 (1s → 2s → 4s) 도 없음 = brute force 무제한 가능.
+> - **CVSS 7.5 (CWE-307)** = Improper Restriction of Excessive Authentication Attempts.
+> - **공격 시나리오**: hydra `-t 4` (4 thread) → 1초당 약 80 시도 → SecLists rockyou.txt 14M 비번 = 약 50시간 = ★ 가능.
+> - **OWASP API4 Unrestricted Resource Consumption**.
+> - **권고**: `express-rate-limit` 또는 `express-brute` middleware. 5회 fail / 5분 = lockout 30분. nginx `limit_req_zone` 보조.
 
 ### 4.3 검색 API Rate Limiting 테스트
 
@@ -337,20 +440,56 @@ done
 ### 5.1 Swagger UI 탐색
 
 ```bash
-# Swagger/OpenAPI 문서 경로 탐색
-echo "=== Swagger/API 문서 탐색 ==="
-for path in \
-  "swagger" "swagger-ui" "swagger-ui.html" "swagger.json" "swagger.yaml" \
-  "api-docs" "api/docs" "v1/api-docs" "v2/api-docs" "v3/api-docs" \
-  "openapi.json" "openapi.yaml" "docs" "redoc" \
-  "graphql" "graphiql" "playground" \
-  "api/swagger" "api/openapi" "_api" "api/v1" "api/v2"; do
-  code=$(curl -s -o /dev/null -w "%{http_code}" "http://10.20.30.80:3000/$path")
+echo "=== Swagger/OpenAPI/GraphQL 22 경로 sweep ==="
+PATHS=(
+  "swagger" "swagger-ui" "swagger-ui.html" "swagger.json" "swagger.yaml"
+  "api-docs" "api/docs" "v1/api-docs" "v2/api-docs" "v3/api-docs"
+  "openapi.json" "openapi.yaml" "docs" "redoc"
+  "graphql" "graphiql" "playground"
+  "api/swagger" "api/openapi" "_api" "api/v1" "api/v2"
+)
+hits=0
+for path in "${PATHS[@]}"; do
+  read code size < <(curl -s -o /dev/null -w "%{http_code} %{size_download}" "http://10.20.30.80:3000/$path")
   if [ "$code" != "404" ]; then
-    echo "[$code] /$path"
+    echo "  [$code ${size}B] /$path"
+    [ "$code" = "200" ] && hits=$((hits+1))
   fi
 done
+echo "---"
+echo "공개 문서: $hits / ${#PATHS[@]} 경로"
 ```
+
+**예상 출력**:
+```
+=== Swagger/OpenAPI/GraphQL 22 경로 sweep ===
+  [200 12345B] /api-docs
+  [200 12345B] /docs
+  [200 89B] /redoc
+  [400 78B] /graphql
+---
+공개 문서: 3 / 22 경로
+```
+
+> **해석 — API 문서 노출 = 공격 표면 확장**:
+> - **/api-docs 200 (12KB)** = ★ critical. JuiceShop 의 Swagger UI 자체 노출. 모든 endpoint + 파라미터 + 응답 schema 공개.
+> - **/docs 200** = 동일 Swagger 다른 경로 alias.
+> - **/redoc 200 (89B)** = redoc UI = Swagger 의 modern alternative.
+> - **/graphql 400** = endpoint 존재 (404 ≠ 400). GraphQL 일 가능성 = introspection query 시도 → 전체 schema 추출 가능.
+> - **OWASP API9 Improper Inventory Management** = production 에 dev 문서 노출.
+> - **공격 활용**: Swagger 에서 admin endpoint 발견 (예: `/api/admin/users`) → 직접 호출 시도 → 인증/인가 검증 부재 시 critical.
+> - **권고**: production 환경에서 `/api-docs` 자체 비활성화 또는 BasicAuth 강제. **OAS 사양**: `securityDefinitions` 명시.
+
+> **OSS 도구 — Swagger 자동 분석**:
+>
+> ```bash
+> # OWASP zap 의 OpenAPI add-on
+> docker run -v $(pwd):/zap/wrk owasp/zap2docker-stable zap-api-scan.py \
+>   -t http://10.20.30.80:3000/api-docs -f openapi -r api_report.html
+>
+> # KiteRunner — REST API discovery
+> kr scan http://10.20.30.80:3000 -w routes-large.kite
+> ```
 
 ### 5.2 Swagger 문서가 노출된 경우의 위험
 
@@ -433,20 +572,41 @@ except:
 ### 6.2 대량 데이터 조회 (Pagination 부재)
 
 ```bash
-# 전체 데이터 조회 시 페이지네이션 여부
-echo "=== 페이지네이션 점검 ==="
-
-# 전체 사용자 조회
-result=$(curl -s http://10.20.30.80:3000/api/Users/ \
-  -H "Authorization: Bearer $TOKEN")                   # 인증 토큰
-count=$(echo "$result" | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('data',[])))" 2>/dev/null)
-echo "Users API: ${count}건 반환 (제한 없이 전체?)"
-
-# 전체 상품 조회
-result=$(curl -s http://10.20.30.80:3000/api/Products/)
-count=$(echo "$result" | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('data',[])))" 2>/dev/null)
-echo "Products API: ${count}건 반환"
+echo "=== Pagination 부재 점검 — 전체 데이터 한 번에 반환 ==="
+test_pagination() {
+  local label="$1" url="$2"
+  read code size < <(curl -s -o /tmp/page.json -w "%{http_code} %{size_download}" "$url" -H "Authorization: Bearer $TOKEN")
+  count=$(python3 -c "import json; d=json.load(open('/tmp/page.json')).get('data',[]); print(len(d) if isinstance(d,list) else 'N/A')" 2>/dev/null)
+  has_meta=$(python3 -c "import json; d=json.load(open('/tmp/page.json')); print(any(k in d for k in ['meta','pagination','next','prev','total']))" 2>/dev/null)
+  printf "  %-30s code=%s size=%-7s items=%-5s meta=%s\n" "$label" "$code" "${size}B" "$count" "$has_meta"
+}
+test_pagination "/api/Users (전체)"        "http://10.20.30.80:3000/api/Users/"
+test_pagination "/api/Products (전체)"     "http://10.20.30.80:3000/api/Products/"
+test_pagination "/api/Feedbacks (전체)"    "http://10.20.30.80:3000/api/Feedbacks/"
+test_pagination "/api/Challenges (전체)"   "http://10.20.30.80:3000/api/Challenges/"
+test_pagination "/api/SecurityQuestions"   "http://10.20.30.80:3000/api/SecurityQuestions/"
 ```
+
+**예상 출력**:
+```
+=== Pagination 부재 점검 — 전체 데이터 한 번에 반환 ===
+  /api/Users (전체)              code=200 size=5621B  items=20    meta=False
+  /api/Products (전체)           code=200 size=9876B  items=38    meta=False
+  /api/Feedbacks (전체)          code=200 size=12340B items=42    meta=False
+  /api/Challenges (전체)         code=200 size=234567B items=110  meta=False
+  /api/SecurityQuestions         code=200 size=5621B  items=20    meta=False
+```
+
+> **해석 — 5/5 모두 pagination 부재 = OWASP API4**:
+> - **/api/Challenges 234KB / 110 items** = ★ DoS 위험. 운영 환경에서 1M+ 데이터면 메모리 폭발.
+> - **meta=False 모두** = `?page=1&limit=20` 같은 표준 pagination 없음. 클라이언트가 모든 데이터 한 번에 받아야 함.
+> - **공격 시나리오**: 대량 동시 요청 (`ab -n 1000 -c 50`) = 서버 메모리/CPU 폭주 → DoS.
+> - **OWASP API4 Unrestricted Resource Consumption** + **API3 Excessive Data Exposure**.
+> - **권고**:
+>   - REST: `?page=N&limit=20` (max=100) + `Link` 헤더 (next/prev)
+>   - GraphQL: `first: 20` 강제 + `complexity score limit`
+>   - 응답 필드 최소화 (Sequelize `attributes:['id','name']`)
+> - **JuiceShop challenge 'GDPR Data Erasure'** = 사용자 list 무제한 조회 = GDPR §17 위반 시나리오.
 
 ---
 
