@@ -47,6 +47,71 @@ steps:
       - GraphiQL 웹 UI http://localhost:8080/graphql
       - 'Python pycti SDK: OpenCTIApiClient'
       - wget --post-data
+      - |
+        **[OSS] curl + jq (raw GraphQL probe)** — 표준.
+          # 1. about.version 만 (인증 불필요)
+          curl -sS -X POST http://localhost:8080/graphql \
+            -H 'Content-Type: application/json' \
+            -d '{"query":"{ about { version dependencies { name version } } }"}' | jq .data.about
+          # 2. 응답 코드 + 시간
+          curl -sS -o /dev/null -w 'code=%{http_code} time=%{time_total}s\n' -X POST http://localhost:8080/graphql -H 'Content-Type: application/json' -d '{"query":"{__typename}"}'
+          # 3. 인증 query (token 필요)
+          T=$(sudo grep ^OPENCTI_ADMIN_TOKEN /opt/opencti/.env | cut -d= -f2)
+          curl -sS -X POST http://localhost:8080/graphql -H "Authorization: Bearer $T" -H 'Content-Type: application/json' -d '{"query":"{ me { name capabilities { name } } }"}' | jq .data.me
+        예상 출력 `version=6.x.x / dependencies=[redis,elastic,...] / me.name=admin`.
+        운영 해석: about(public) + me(인증) 두 단계로 API 살아있음 + token 유효성 검증.
+      - |
+        **[OSS] httpie (사람 친화 client)** — 가독성.
+          # 1. 인증 + JSON body
+          T=$(sudo grep ^OPENCTI_ADMIN_TOKEN /opt/opencti/.env | cut -d= -f2)
+          http POST http://localhost:8080/graphql Authorization:"Bearer $T" query='{ about { version } }'
+          # 2. 컬러 출력 + 헤더
+          http -v POST http://localhost:8080/graphql query='{ me { name } }'
+          # 3. Sessions 로 token 저장
+          http --session=opencti POST http://localhost:8080/graphql Authorization:"Bearer $T" query='{me{name}}'
+          http --session=opencti POST http://localhost:8080/graphql query='{about{version}}'
+        예상 출력 `HTTP/1.1 200 OK + JSON pretty + 컬러`.
+        운영 해석: trainee 가 GraphQL 응답 구조 한눈에. session 으로 token 재사용.
+      - |
+        **[OSS] OpenCTI GraphiQL Web UI** — 인터랙티브.
+          # 1. 브라우저 → http://10.20.30.100:8080/graphql
+          # 2. 우측 Docs 탭: schema 자동 탐색
+          # 3. 좌측 query 작성:
+          #   { indicators(first: 5) { edges { node { id name pattern } } } }
+          # 4. Headers 탭에 Authorization: Bearer <token>
+          # 5. ▶ Run 버튼 → JSON 응답
+          # CLI 검증:
+          curl -sS http://10.20.30.100:8080/graphql -X POST -H 'Content-Type: application/json' -d '{"query":"{__schema{types{name}}}"}'  | jq '.data.__schema.types | length'
+        UI 동작: schema introspection + 자동완성 + 응답 JSON 컬러.
+        운영 해석: 학습 단계 최적. trainee 가 schema 탐색 → query 만들기 → 결과 즉시.
+      - |
+        **[OSS] pycti (OpenCTI 공식 Python client)** — 운영 자동화.
+          # 1. 설치
+          pip3 install pycti
+          # 2. 연결 + version 확인
+          python3 <<PY
+          from pycti import OpenCTIApiClient
+          c = OpenCTIApiClient("http://10.20.30.100:8080", "$T")
+          print(c.get_about())
+          print(c.indicator.list(first=5))
+          PY
+          # 3. 인증 실패 처리
+          python3 -c "from pycti import OpenCTIApiClient; OpenCTIApiClient('http://10.20.30.100:8080', 'wrong')" 2>&1 | head
+        예상 출력 `{'version':'6.x.x',...} / 5 indicators / wrong → AuthError`.
+        운영 해석: Connector 가 사용하는 SDK. 운영 자동화 표준. raw GraphQL 보다 추상.
+      - |
+        **[OSS] graphql-cli / gq (GraphQL 전용 CLI)** — 모던.
+          # 1. 설치
+          npm install -g graphqurl
+          # 2. introspection (schema 구조)
+          gq http://localhost:8080/graphql --introspect > /tmp/opencti-schema.graphql
+          # 3. 쿼리 (헤더 포함)
+          T=$(sudo grep ^OPENCTI_ADMIN_TOKEN /opt/opencti/.env | cut -d= -f2)
+          gq http://localhost:8080/graphql -H "Authorization: Bearer $T" -q '{ me { name } indicators(first: 3) { edges { node { name } } } }'
+          # 4. 자동완성 모드 (interactive)
+          gq http://localhost:8080/graphql -H "Authorization: Bearer $T"
+        예상 출력 `me.name=admin / indicators=[3건]`.
+        운영 해석: schema 다운로드 + 자동완성. CI/CD 통합 + script 친화.
       negative_signs:
       - GET 요청(GraphQL 은 POST)
       - Content-Type 누락
@@ -88,6 +153,91 @@ steps:
       - flags interval 로 CIDR 지원
       - /etc/nftables.conf 에 영구 정의
       - ipset + iptables legacy 대체
+      - |
+        **[OSS] nft (CTI 전용 set 생성)** — 표준.
+          # 1. table 보장 + cti_ips set 생성 (timeout 자동 만료 포함)
+          sudo nft add table inet filter 2>/dev/null
+          sudo nft 'add set inet filter cti_ips { type ipv4_addr ; flags timeout ; timeout 30d ; }'
+          # 2. CIDR 지원 set (옵션)
+          sudo nft 'add set inet filter cti_cidrs { type ipv4_addr ; flags interval ; }'
+          # 3. 검증
+          sudo nft list set inet filter cti_ips
+          # 4. JSON 형식
+          sudo nft -j list set inet filter cti_ips | jq .
+        예상 출력 `set cti_ips { type ipv4_addr; flags timeout; timeout 30d; elements = { } }`.
+        운영 해석: timeout 30d → CTI 신뢰도 시간 감소 자동 만료. flags interval 별도 set 으로 CIDR 차단.
+      - |
+        **[OSS] ipset (legacy 대체, 풍부 기능)** — 비교/마이그레이션.
+          # 1. 설치
+          sudo apt install -y ipset
+          # 2. hash:ip set 생성 (timeout, counters)
+          sudo ipset create cti_ips_legacy hash:ip timeout 2592000 counters
+          # 3. 추가 + 만료
+          sudo ipset add cti_ips_legacy 203.0.113.66 timeout 2592000
+          # 4. 조회 (counters 표시)
+          sudo ipset list cti_ips_legacy
+          # 5. iptables 연동
+          sudo iptables -I INPUT -m set --match-set cti_ips_legacy src -j DROP
+        예상 출력 `Number of entries: 1 / 203.0.113.66 timeout 2591998 packets 0 bytes 0`.
+        운영 해석: counter 로 차단 효과 측정 + 자동 만료. nft set 대체. 일부 환경에 유리.
+      - |
+        **[OSS] nftables.conf (영구 정의)** — 재부팅 보존.
+          # 1. /etc/nftables.conf 편집
+          sudo tee -a /etc/nftables.conf > /dev/null <<'EOF'
+          table inet filter {
+            set cti_ips {
+              type ipv4_addr
+              flags timeout
+              timeout 30d
+            }
+          }
+          EOF
+          # 2. syntax 검증
+          sudo nft -c -f /etc/nftables.conf
+          # 3. apply + 재시작 활성
+          sudo systemctl enable --now nftables
+          sudo systemctl reload nftables
+          # 4. 검증
+          sudo nft list ruleset | grep -A 3 cti_ips
+        예상 출력 `set cti_ips { ... } / nftables loaded`.
+        운영 해석: 재부팅 후에도 set 정의 보존. CI/CD git 관리 가능.
+      - |
+        **[OSS] firewalld (RHEL/CentOS)** — distro 별 alternative.
+          # 1. 설치 (Ubuntu 도 가능)
+          sudo apt install -y firewalld
+          sudo systemctl enable --now firewalld
+          # 2. ipset 생성
+          sudo firewall-cmd --permanent --new-ipset=cti_ips --type=hash:ip --option=timeout=2592000
+          # 3. blocklist drop zone 등록
+          sudo firewall-cmd --permanent --zone=drop --add-source=ipset:cti_ips
+          # 4. apply
+          sudo firewall-cmd --reload
+          # 5. 검증
+          sudo firewall-cmd --get-ipsets
+          sudo firewall-cmd --info-ipset=cti_ips
+        예상 출력 `cti_ips / type: hash:ip / timeout: 2592000`.
+        운영 해석: zone 기반 정책 → blocklist 가 zone 단위 격리. 멀티 인터페이스 정책 시 강점.
+      - |
+        **[OSS] Ansible community.general.nftables_set** — IaC.
+          # 1. /etc/ansible/playbooks/cti-set.yml
+          # ---
+          # - hosts: secu
+          #   tasks:
+          #     - name: ensure cti_ips set
+          #       community.general.nftables_set:
+          #         family: inet
+          #         table: filter
+          #         name: cti_ips
+          #         type: ipv4_addr
+          #         flags: [timeout]
+          #         timeout: 30d
+          #         state: present
+          # 2. 적용
+          ansible-playbook -i inventory cti-set.yml
+          # 3. idempotent 검증 (2회 실행 → ok 만)
+          ansible-playbook -i inventory cti-set.yml --check
+        예상 출력 `changed=1 (1회) / ok=1 changed=0 (2회)`.
+        운영 해석: 멀티 호스트 표준화 + idempotent. enterprise 운영 표준.
       negative_signs:
       - table 없이 set 생성(에러)
       - type 미지정
@@ -131,6 +281,83 @@ steps:
       - sudo nft add rule ... index 0(위치 지정)
       - iptables -I INPUT 1 로 prepend
       - '룰 순서: CTI drop → allow 룰 → 기본 drop'
+      - |
+        **[OSS] nft insert rule (앞쪽 prepend + counter)** — 표준.
+          # 1. input chain 보장
+          sudo nft add chain inet filter input '{ type filter hook input priority 0 ; }' 2>/dev/null
+          # 2. CTI drop 룰을 chain 0번 위치에 삽입 + counter 추가
+          sudo nft insert rule inet filter input ip saddr @cti_ips counter drop comment '"CTI blocklist (auto-sync)"'
+          # 3. 룰 순서 확인
+          sudo nft -a list chain inet filter input
+          # 4. counter 값 (drop 횟수)
+          sudo nft list chain inet filter input | grep cti_ips
+        예상 출력 `ip saddr @cti_ips counter packets 0 bytes 0 drop comment "CTI blocklist..."`.
+        운영 해석: counter 로 차단 효과 측정. comment 로 운영자 식별. handle 로 후일 삭제.
+      - |
+        **[OSS] log-and-drop 패턴 (CTI 매칭 시 로그)** — audit.
+          # 1. log + drop (단일 룰)
+          sudo nft insert rule inet filter input ip saddr @cti_ips log prefix '"[CTI-DROP] "' level warn drop
+          # 2. journalctl 로 매칭 로그
+          sudo journalctl -k -f | grep CTI-DROP
+          # 3. rsyslog 별도 file
+          # /etc/rsyslog.d/cti-drop.conf:
+          #   :msg, contains, "[CTI-DROP]" -/var/log/cti-drop.log
+          #   & stop
+          sudo systemctl restart rsyslog
+          tail -F /var/log/cti-drop.log
+          # 4. 통계 (10분 간격 매칭 IP top10)
+          journalctl -k --since "10 min ago" | grep CTI-DROP | grep -oP 'SRC=\S+' | sort | uniq -c | sort -rn | head
+        예상 출력 `[CTI-DROP] IN=ens33 SRC=203.0.113.66 DST=...`.
+        운영 해석: 단순 drop 보다 audit trail. SOC 가 CTI 효과 정량화 가능.
+      - |
+        **[OSS] iptables-legacy + ipset (마이그레이션 환경)** — alt.
+          # 1. iptables 와 ipset 연동
+          sudo iptables -I INPUT 1 -m set --match-set cti_ips_legacy src -j LOG --log-prefix '[CTI-DROP] '
+          sudo iptables -I INPUT 2 -m set --match-set cti_ips_legacy src -j DROP
+          # 2. 정책 영구화
+          sudo iptables-save | sudo tee /etc/iptables/rules.v4
+          sudo apt install -y iptables-persistent
+          # 3. 검증
+          sudo iptables -L INPUT -nv --line-numbers
+          # 4. 마이그레이션 (iptables → nft)
+          sudo iptables-translate -I INPUT 1 -m set --match-set cti_ips_legacy src -j DROP
+        예상 출력 `nft insert rule ip filter input ip saddr @cti_ips_legacy drop`.
+        운영 해석: legacy 환경 + iptables-translate 으로 nft 변환. 운영 마이그레이션 path.
+      - |
+        **[OSS] nftables.conf (영구 룰)** — 재부팅 보존.
+          # 1. /etc/nftables.conf 추가
+          sudo tee -a /etc/nftables.conf > /dev/null <<'EOF'
+          table inet filter {
+            chain input {
+              type filter hook input priority 0; policy drop;
+              ip saddr @cti_ips counter drop comment "CTI blocklist"
+              # ... 정상 룰
+            }
+          }
+          EOF
+          # 2. syntax 검증
+          sudo nft -c -f /etc/nftables.conf
+          # 3. apply
+          sudo systemctl reload nftables
+          # 4. 검증
+          sudo nft list ruleset | grep -A 5 'chain input'
+        예상 출력 `chain input { ... ip saddr @cti_ips counter drop ... }`.
+        운영 해석: 재부팅 보존 + git 관리. enterprise IaC.
+      - |
+        **[OSS] CrowdSec (커뮤니티 IP reputation + nft bouncer)** — 보충.
+          # 1. CrowdSec engine 설치 + nftables bouncer
+          sudo apt install -y crowdsec
+          sudo apt install -y crowdsec-firewall-bouncer-nftables
+          # 2. 자동 차단 set + chain (CrowdSec 가 만들고 sync)
+          sudo systemctl enable --now crowdsec-firewall-bouncer
+          sudo nft list set inet crowdsec crowdsec-blacklists
+          # 3. 차단 결정 확인
+          sudo cscli decisions list
+          # 4. CTI 정책 추가 (예: 외부 OpenCTI feed 통합)
+          # /etc/crowdsec/notifications/opencti.yaml 으로 OpenCTI → CrowdSec 동기화 가능
+          sudo cscli alerts list
+        예상 출력 `decisions: 1234 IPs / set crowdsec-blacklists { ... }`.
+        운영 해석: 커뮤니티 reputation + 자체 CTI 동시 적용. 세트 분리로 정책 충돌 회피.
       negative_signs:
       - add rule(append) 로 순서 오류
       - '@ 없이 set 참조'
@@ -171,6 +398,74 @@ steps:
       - sudo nft -j list set inet filter cti_ips | jq
       - sudo nft list sets 로 모든 set 요약
       - sudo ipset list cti_ips(ipset 대체)
+      - |
+        **[OSS] nft list set + jq (구조화 출력)** — 표준.
+          # 1. 텍스트 출력
+          sudo nft list set inet filter cti_ips
+          # 2. JSON 출력 → jq 파싱
+          sudo nft -j list set inet filter cti_ips | jq '.nftables[1].set'
+          # 3. 원소 갯수만
+          sudo nft -j list set inet filter cti_ips | jq '.nftables[1].set.elem | length'
+          # 4. 모든 cti 관련 set 한 번에
+          sudo nft list sets | grep cti
+        예상 출력 `set cti_ips {type ipv4_addr; flags timeout; elements = { 203.0.113.66 expires 29d23h... }}`.
+        운영 해석: 일반 출력은 사람용, JSON 은 자동화·통계용. expires 로 timeout 잔여 시간 시각화.
+      - |
+        **[OSS] nft monitor (실시간 변경 추적)** — diff.
+          # 1. 백그라운드 모니터 시작
+          sudo nft monitor sets > /tmp/nft-set-events.log &
+          # 2. 변경 발생 시 실시간 로그
+          tail -F /tmp/nft-set-events.log &
+          # 3. 외부에서 element 추가 시뮬
+          sudo nft add element inet filter cti_ips '{ 198.51.100.1 }'
+          # 4. 종료
+          kill %1 %2
+          # 5. 또는 audit 로그 (auditd)
+          sudo auditctl -w /usr/sbin/nft -p x -k nft-cmd
+          sudo ausearch -k nft-cmd | head
+        예상 출력 `add element inet filter cti_ips { 198.51.100.1 }`.
+        운영 해석: set 변경 사건 실시간 watch. SOC 감사 로그.
+      - |
+        **[OSS] watch + diff (전후 비교)** — 변동 추적.
+          # 1. 1초마다 set 내용 조회
+          watch -n 1 'sudo nft list set inet filter cti_ips'
+          # 2. 변경 이력 파일 저장
+          while true; do
+            sudo nft list set inet filter cti_ips > /tmp/cti.$(date +%s).txt
+            sleep 30
+          done &
+          # 3. 가장 최근 두 스냅샷 diff
+          ls -t /tmp/cti.*.txt | head -2 | xargs diff
+        예상 출력 `+ 198.51.100.1 / 변경 발생`.
+        운영 해석: 시계열 set 변동 + diff 기록. 단순한 audit.
+      - |
+        **[OSS] OpenCTI 와 nft set 비교 (정합성)** — sync 검증.
+          # 1. nft set 의 IP 추출
+          NFT_IPS=$(sudo nft -j list set inet filter cti_ips | jq -r '.nftables[1].set.elem[]?.elem.val // .nftables[1].set.elem[]? // empty')
+          # 2. OpenCTI 의 IPv4 indicator pattern
+          T=$(sudo grep ^OPENCTI_ADMIN_TOKEN /opt/opencti/.env | cut -d= -f2)
+          OCTI_IPS=$(curl -sS -X POST http://10.20.30.100:8080/graphql \
+            -H "Authorization: Bearer $T" -H 'Content-Type: application/json' \
+            -d '{"query":"{ indicators(first:200, filters:{mode:and,filters:[{key:\"x_opencti_main_observable_type\",values:[\"IPv4-Addr\"]}],filterGroups:[]}) { edges { node { pattern } } } }"}' \
+            | jq -r '.data.indicators.edges[].node.pattern' | grep -oE '[0-9.]+' | grep -E '^[0-9]+\.')
+          # 3. diff
+          comm -13 <(echo "$NFT_IPS"|sort) <(echo "$OCTI_IPS"|sort)  # OpenCTI 만 (nft 누락)
+          comm -23 <(echo "$NFT_IPS"|sort) <(echo "$OCTI_IPS"|sort)  # nft 만 (OpenCTI 삭제됨)
+        예상 출력 `2 IPs in OpenCTI not yet in nft (sync 누락)`.
+        운영 해석: OpenCTI = source of truth, nft = enforcement. 정합성 깨지면 sync script 점검.
+      - |
+        **[OSS] Prometheus exporter — nft_set_size** — 메트릭화.
+          # 1. textfile collector 디렉토리
+          sudo mkdir -p /var/lib/node_exporter/textfile
+          # 2. cron 으로 5분마다 메트릭 export
+          sudo tee /etc/cron.d/nft-cti-metrics > /dev/null <<'EOF'
+          */5 * * * * root nft -j list set inet filter cti_ips | jq -r '"# HELP nft_set_size Elements\n# TYPE nft_set_size gauge\nnft_set_size{set=\"cti_ips\"} \(.nftables[1].set.elem|length)"' > /var/lib/node_exporter/textfile/nft.prom
+          EOF
+          # 3. node_exporter 로 노출
+          curl -sS http://localhost:9100/metrics | grep nft_set_size
+          # 4. Grafana 알람: 평소 100건 → 0건 갑자기 (sync 문제)
+        예상 출력 `nft_set_size{set="cti_ips"} 5`.
+        운영 해석: set 크기 시계열. 0 으로 떨어지면 sync 끊김. SOC 알람.
       negative_signs:
       - 다른 set 확인
       - 출력 구조 이해 없이 실행
@@ -211,6 +506,101 @@ steps:
       - Python script + pycti SDK + subprocess
       - MISP + PyMISP API 로 자동화
       - Ansible module community.general.nftables_set
+      - |
+        **[OSS] nft add element (timeout + comment + atomic)** — 표준.
+          # 1. timeout 30일 + comment 로 출처 표시
+          sudo nft add element inet filter cti_ips '{ 203.0.113.66 timeout 30d comment "OpenCTI ind-abc123" }'
+          # 2. 다중 element atomic 추가
+          sudo nft add element inet filter cti_ips '{ 203.0.113.66, 198.51.100.10, 198.51.100.20 }'
+          # 3. 검증 + comment 표시
+          sudo nft list set inet filter cti_ips
+          # 4. JSON RPC 로 batch (대량)
+          echo '{"nftables":[{"add":{"element":{"family":"inet","table":"filter","name":"cti_ips","elem":[{"set_elem":{"val":"203.0.113.66","timeout":2592000}}]}}}]}' | sudo nft -j -f -
+        예상 출력 `elements = { 203.0.113.66 timeout 30d expires 29d23h59m comment "OpenCTI..." }`.
+        운영 해석: timeout + comment + atomic. 출처 추적 + 자동 만료.
+      - |
+        **[OSS] pycti + Python (자동 sync)** — OpenCTI → nft 자동.
+          # 1. 설치
+          pip3 install pycti
+          # 2. 자동 추가 script
+          sudo tee /usr/local/bin/cti-add.py > /dev/null <<'PY'
+          #!/usr/bin/env python3
+          import os, subprocess, re
+          from pycti import OpenCTIApiClient
+          token = open('/opt/opencti/.env').read().split('OPENCTI_ADMIN_TOKEN=')[1].split('\n')[0]
+          c = OpenCTIApiClient("http://10.20.30.100:8080", token)
+          inds = c.indicator.list(filters={"mode":"and","filters":[{"key":"x_opencti_main_observable_type","values":["IPv4-Addr"]}],"filterGroups":[]}, first=200)
+          for ind in inds:
+              m = re.search(r"'([0-9.]+)'", ind['pattern'] or "")
+              if m:
+                  ip = m.group(1)
+                  subprocess.run(['sudo','nft','add','element','inet','filter','cti_ips', '{ %s }' % ip], check=False)
+                  print(f"added {ip}")
+          PY
+          sudo chmod +x /usr/local/bin/cti-add.py
+          sudo /usr/local/bin/cti-add.py
+        예상 출력 `added 203.0.113.66 / added 198.51.100.10 / ...`.
+        운영 해석: OpenCTI → IPv4 indicator → pattern 파싱 → nft 추가. 운영 자동화.
+      - |
+        **[OSS] MISP + PyMISP** — alternative threat platform.
+          # 1. PyMISP 설치 + token
+          pip3 install pymisp
+          MISP_KEY=<API key from MISP admin>
+          # 2. IP IOC 조회
+          python3 <<PY
+          from pymisp import PyMISP
+          misp = PyMISP("https://misp.local", "$MISP_KEY", False)
+          for evt in misp.search(controller="attributes", type_attribute=["ip-src","ip-dst"], to_ids=1, limit=200):
+              for a in evt.get("Attribute", []):
+                  print(a["value"])
+          PY > /tmp/misp-ips.txt
+          # 3. nft 일괄 추가
+          for ip in $(cat /tmp/misp-ips.txt); do
+            sudo nft add element inet filter cti_ips "{ $ip }" 2>/dev/null
+          done
+        예상 출력 `203.0.113.66 / 198.51.100.10 / ...`.
+        운영 해석: OpenCTI 외 MISP 도 동일 패턴. ISAC/통신부서가 MISP 쓰면 통합.
+      - |
+        **[OSS] Ansible community.general.nftables_set** — IaC.
+          # 1. /etc/ansible/playbooks/cti-add-ip.yml
+          # ---
+          # - hosts: secu
+          #   tasks:
+          #     - name: add CTI IP to nft set
+          #       community.general.nftables_set:
+          #         family: inet
+          #         table: filter
+          #         name: cti_ips
+          #         elements:
+          #           - 203.0.113.66
+          #           - 198.51.100.10
+          #         state: present
+          # 2. 실행
+          ansible-playbook -i inventory cti-add-ip.yml
+          # 3. idempotent + diff 모드
+          ansible-playbook -i inventory cti-add-ip.yml --diff --check
+        예상 출력 `changed=1 elements=[203.0.113.66, 198.51.100.10]`.
+        운영 해석: GitOps. PR → review → 적용. 변경 audit.
+      - |
+        **[OSS] OpenCTI Stream Connector (실시간)** — pub/sub.
+          # 1. OpenCTI Live Stream URL
+          curl -sS http://10.20.30.100:8080/stream/live -H "Authorization: Bearer $T" -N
+          # 2. Python 으로 stream 처리 + nft 추가
+          python3 <<PY
+          import requests, re, subprocess, json
+          T = open('/opt/opencti/.env').read().split('OPENCTI_ADMIN_TOKEN=')[1].split('\n')[0]
+          with requests.get("http://10.20.30.100:8080/stream", headers={"Authorization":f"Bearer {T}"}, stream=True) as r:
+              for line in r.iter_lines():
+                  if not line or not line.startswith(b'data:'): continue
+                  evt = json.loads(line[5:].decode())
+                  if evt.get("type") == "create" and "ipv4-addr" in str(evt).lower():
+                      m = re.search(r"'([0-9.]+)'", str(evt))
+                      if m:
+                          subprocess.run(['sudo','nft','add','element','inet','filter','cti_ips','{ %s }' % m.group(1)])
+                          print(f"streamed: {m.group(1)}")
+          PY
+        예상 출력 `streamed: 203.0.113.66 (실시간 즉시 반영)`.
+        운영 해석: cron 5분 → 실시간 ms 단위. SOC 즉시 차단.
       negative_signs:
       - list set 검증 누락
       - 잘못된 IP 포맷
@@ -249,6 +639,73 @@ steps:
       - sudo nft -j list set ... | jq .nftables[].set.elem
       - sudo nft get element inet filter cti_ips { 203.0.113.66 }(존재 여부)
       - diff before.txt after.txt 로 변화 확인
+      - |
+        **[OSS] nft + grep (특정 IP 존재 검증)** — 표준.
+          # 1. 텍스트 검색
+          sudo nft list set inet filter cti_ips | grep -F 203.0.113.66 && echo "FOUND" || echo "MISSING"
+          # 2. 정확한 element 조회 (RC 0=있음, 1=없음)
+          sudo nft get element inet filter cti_ips '{ 203.0.113.66 }' && echo "FOUND"
+          # 3. JSON 으로 자동화 친화 검증
+          sudo nft -j list set inet filter cti_ips | jq -e '.nftables[1].set.elem | map(.elem.val // .) | any(. == "203.0.113.66")'
+        예상 출력 `FOUND / exit code 0`.
+        운영 해석: get element 가 가장 안정적. CI 검증 + 알람 자동화.
+      - |
+        **[OSS] before/after diff (변경 정량화)** — audit.
+          # 1. 추가 전 스냅샷
+          sudo nft list set inet filter cti_ips > /tmp/cti-before.txt
+          # 2. 추가
+          sudo nft add element inet filter cti_ips '{ 203.0.113.66 }'
+          # 3. 추가 후 스냅샷
+          sudo nft list set inet filter cti_ips > /tmp/cti-after.txt
+          # 4. diff
+          diff /tmp/cti-before.txt /tmp/cti-after.txt
+          # 5. 새 IP 만 추출
+          comm -13 <(grep -oE '[0-9.]+' /tmp/cti-before.txt|sort) <(grep -oE '[0-9.]+' /tmp/cti-after.txt|sort)
+        예상 출력 `> 203.0.113.66 / new: 203.0.113.66`.
+        운영 해석: 변경 감사 + delta 추적. trainee 가 변동을 시각화.
+      - |
+        **[OSS] tcpdump 으로 차단 효과 검증** — 트래픽 레벨.
+          # 1. 차단 대상 IP 시뮬레이션 (lab 안전)
+          # attacker (10.20.30.201) 에서: ping 10.20.30.1
+          # secu 의 cti_ips 에 attacker IP 추가 → ping 실패
+          sudo nft add element inet filter cti_ips '{ 10.20.30.201 timeout 1m }'
+          # 2. secu 에서 packet capture
+          sudo tcpdump -i any -nn 'src 10.20.30.201 and icmp' -c 10
+          # 3. nftables counter (drop 횟수 증가)
+          sudo nft list chain inet filter input | grep cti_ips
+          # 4. attacker 측에서 ping → unreachable
+          # 정리
+          sudo nft delete element inet filter cti_ips '{ 10.20.30.201 }'
+        예상 출력 `tcpdump: 0 packets received (drop) / counter: packets X bytes Y`.
+        운영 해석: counter 증가 + tcpdump 0 packet → 실제 차단 동작 확인.
+      - |
+        **[OSS] nftables JSON 출력 + jq query** — 자동화.
+          # 1. set 의 모든 element list
+          sudo nft -j list set inet filter cti_ips | jq -r '.nftables[1].set.elem[] | .elem.val // .'
+          # 2. timeout 시간 정렬 (만료 임박)
+          sudo nft -j list set inet filter cti_ips | jq '.nftables[1].set.elem | sort_by(.elem.expires)[:5]'
+          # 3. 특정 prefix 만 필터
+          sudo nft -j list set inet filter cti_ips | jq -r '.nftables[1].set.elem[] | (.elem.val // .) | select(startswith("198.51.100"))'
+          # 4. Prometheus 메트릭으로
+          sudo nft -j list set inet filter cti_ips | jq '.nftables[1].set.elem | length'
+        예상 출력 `203.0.113.66 / 198.51.100.10 / 5건 (count)`.
+        운영 해석: jq 로 set 데이터 다양한 가공. 운영 dashboard 통합.
+      - |
+        **[OSS] Wazuh nftables decoder (자동 차단 audit)** — SIEM.
+          # /var/ossec/etc/decoders/local_decoder.xml:
+          # <decoder name="nftables-cti">
+          #   <prematch>\[CTI-DROP\]</prematch>
+          # </decoder>
+          # /var/ossec/etc/rules/local_rules.xml:
+          # <rule id="100200" level="6">
+          #   <decoded_as>nftables-cti</decoded_as>
+          #   <description>CTI blocklist hit on $(srcip)</description>
+          # </rule>
+          sudo systemctl restart wazuh-manager
+          # 검증: tail kernel log + Wazuh alert
+          tail -F /var/ossec/logs/alerts/alerts.log | grep CTI
+        예상 출력 `Alert: CTI blocklist hit on 203.0.113.66 / level=6`.
+        운영 해석: SIEM 통합. CTI 매칭 = 보안 사건. 분석가 큐.
       negative_signs:
       - set 내용 확인 없이 판정
       - 다른 set 조회
@@ -288,6 +745,81 @@ steps:
       - 'curl Bearer <token> -d "{query: indicators{edges{node{id pattern}}}}" http://localhost:8080/graphql'
       - Python pycti opencti_api_client.indicator.list()
       - Kibana audit log
+      - |
+        **[OSS] docker logs + grep (Indicator 이벤트)** — 표준.
+          # 1. platform 컨테이너의 Indicator 관련 로그
+          C=$(docker ps --format '{{.Names}}' | grep -i '^opencti$' | head -1)
+          docker logs --tail 200 $C 2>&1 | grep -i indicator | tail -5
+          # 2. 생성/업데이트/삭제 분류
+          docker logs $C 2>&1 | grep -E 'Indicator (created|updated|deleted)' | tail -10
+          # 3. ERROR 만 (parse 실패)
+          docker logs $C 2>&1 | grep -i indicator | grep -i error
+          # 4. 시간 분포 (시간대별 빈도)
+          docker logs --since 24h $C 2>&1 | grep -i 'Indicator created' | awk '{print $1, $2}' | cut -d: -f1 | sort | uniq -c
+        예상 출력 `Indicator created id=indicator--abc... pattern=[ipv4-addr:value = '...']`.
+        운영 해석: 시간 분포 → CTI feed 수신 패턴. ERROR → parse 문제 즉시 감지.
+      - |
+        **[OSS] OpenCTI GraphQL indicators query** — API 정공법.
+          # 1. token + URL
+          T=$(sudo grep ^OPENCTI_ADMIN_TOKEN /opt/opencti/.env | cut -d= -f2)
+          U=http://localhost:8080/graphql
+          # 2. 최근 5개 indicator
+          curl -sS -X POST $U \
+            -H "Authorization: Bearer $T" -H 'Content-Type: application/json' \
+            -d '{"query":"{ indicators(first:5, orderBy: created_at, orderMode: desc) { edges { node { id name pattern created_at } } } }"}' | jq .data.indicators.edges
+          # 3. 특정 type 만 (IPv4)
+          curl -sS -X POST $U -H "Authorization: Bearer $T" -H 'Content-Type: application/json' \
+            -d '{"query":"{ indicators(first:5, filters:{mode:and,filters:[{key:\"x_opencti_main_observable_type\",values:[\"IPv4-Addr\"]}],filterGroups:[]}) { edges { node { id pattern } } } }"}' | jq .
+          # 4. 특정 indicator detail
+          curl -sS -X POST $U -H "Authorization: Bearer $T" -H 'Content-Type: application/json' \
+            -d '{"query":"{ indicator(id:\"indicator--abc\") { name pattern createdBy { name } objectMarking { edges { node { definition } } } } }"}' | jq .
+        예상 출력 `5건 indicator JSON / IPv4 만 / detail 상세`.
+        운영 해석: 로그보다 정확. id + createdBy + marking 까지.
+      - |
+        **[OSS] pycti.indicator.list (Python)** — 운영 자동화.
+          # 1. 설치 + token
+          pip3 install pycti
+          T=$(sudo grep ^OPENCTI_ADMIN_TOKEN /opt/opencti/.env | cut -d= -f2)
+          # 2. 최근 5건 + 시간 정렬
+          python3 <<PY
+          from pycti import OpenCTIApiClient
+          c = OpenCTIApiClient("http://10.20.30.100:8080", "$T")
+          inds = c.indicator.list(first=5, orderBy="created_at", orderMode="desc")
+          for i in inds:
+              print(f"{i['created_at']} {i['name']} {i['pattern']}")
+          PY
+          # 3. 특정 IP 가 indicator 인지 확인
+          python3 -c "from pycti import OpenCTIApiClient; c=OpenCTIApiClient('http://10.20.30.100:8080','$T'); print(c.indicator.read(filters={'mode':'and','filters':[{'key':'pattern','values':['[ipv4-addr:value = \\'203.0.113.66\\']']}],'filterGroups':[]}))"
+        예상 출력 `2026-05-04T12:34 APT29 C2 IP [ipv4-addr:value = '203.0.113.66']`.
+        운영 해석: pycti = 표준 client. orderBy + filter 풍부. SOC 자동 trigger.
+      - |
+        **[OSS] OpenCTI Web UI Activity log** — UI.
+          # 1. 브라우저 → http://10.20.30.100:8080 → 로그인
+          # 2. Settings → Activity → 최근 활동 (Indicator 생성 events)
+          # 3. Filter: Activity types = creation, Entity types = Indicator
+          # 4. 시계열 + 사용자 + 사실 표시
+          # 5. CSV export 가능
+          # CLI 검증
+          T=$(sudo grep ^OPENCTI_ADMIN_TOKEN /opt/opencti/.env | cut -d= -f2)
+          curl -sS -X POST http://10.20.30.100:8080/graphql -H "Authorization: Bearer $T" -H 'Content-Type: application/json' -d '{"query":"{ logs(first:5) { edges { node { id event_type event_message context_data { id, value } } } } }"}' | jq .
+        UI 동작: timeline + filter + CSV + Excel.
+        운영 해석: 분석가가 사용자 활동·CTI 추가 사건을 시각화. 감사용.
+      - |
+        **[OSS] Wazuh + dockerd log forwarding** — 중앙 SIEM.
+          # 1. /etc/docker/daemon.json — syslog driver
+          # {"log-driver":"syslog","log-opts":{"syslog-address":"udp://10.20.30.100:514","tag":"docker/{{.Name}}"}}
+          sudo systemctl restart docker
+          # 2. Wazuh decoder (docker tag 인식)
+          # /var/ossec/etc/decoders/local_decoder.xml:
+          # <decoder name="docker-opencti"><prematch>docker/opencti</prematch></decoder>
+          # 3. Wazuh rule (Indicator 생성 alert)
+          # <rule id="100201" level="3"><decoded_as>docker-opencti</decoded_as>
+          #   <match>Indicator created</match>
+          #   <description>OpenCTI new indicator</description></rule>
+          # 4. alert 확인
+          tail -F /var/ossec/logs/alerts/alerts.log | grep OpenCTI
+        예상 출력 `Wazuh Alert: OpenCTI new indicator (level 3)`.
+        운영 해석: Indicator 생성을 SIEM 사건화. 모든 CTI 흐름 감사.
       negative_signs:
       - platform 외 연계 컨테이너 혼동
       - grep 없이 긴 로그
@@ -328,6 +860,78 @@ steps:
       - docker compose logs connector-misp -f (특정 connector)
       - OpenCTI Dashboard Data Connectors 화면
       - curl GraphQL { connectors { name active } }
+      - |
+        **[OSS] docker ps + grep (connector 컨테이너 목록)** — 표준.
+          # 1. connector 컨테이너만 + 상태
+          docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}' | grep -i connector
+          # 2. 모든 stack 컨테이너 (platform/worker/connector)
+          docker ps --format 'table {{.Names}}\t{{.Status}}' | grep -iE 'opencti|connector'
+          # 3. health 상태 (Up + healthy)
+          for c in $(docker ps --format '{{.Names}}' | grep -i connector); do
+            docker inspect $c --format '{{.Name}}: {{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}n/a{{end}}'
+          done
+          # 4. 모든 컨테이너 (Exited 포함)
+          docker ps -a --format '{{.Names}} {{.Status}}' | grep -i connector
+        예상 출력 `connector-misp Up 2h healthy / connector-otx Up 1h healthy / connector-mitre Exited (1)`.
+        운영 해석: Up + healthy = 정상. Exited 는 즉시 조사. -a 로 죽은 컨테이너도 보임.
+      - |
+        **[OSS] docker compose ps + logs (connector-별 분리)** — 표준.
+          # 1. 모든 service 상태
+          cd /opt/opencti
+          sudo docker compose ps
+          # 2. connector service 만 필터
+          sudo docker compose ps --services | grep -i connector
+          # 3. 특정 connector 의 로그 stream
+          sudo docker compose logs --tail 100 -f connector-misp
+          # 4. 모든 connector 의 ERROR
+          for c in $(sudo docker compose ps --services | grep -i connector); do
+            echo "=== $c ==="
+            sudo docker compose logs --tail 50 $c 2>&1 | grep -iE 'error|failed' | tail -5
+          done
+        예상 출력 `connector-misp running / connector-otx running / ERROR ...`.
+        운영 해석: docker compose 단위로 service 추적. connector 별 isolation.
+      - |
+        **[OSS] OpenCTI GraphQL connectors query** — 정공법.
+          # 1. token
+          T=$(sudo grep ^OPENCTI_ADMIN_TOKEN /opt/opencti/.env | cut -d= -f2)
+          # 2. 모든 connector 상태
+          curl -sS -X POST http://localhost:8080/graphql \
+            -H "Authorization: Bearer $T" -H 'Content-Type: application/json' \
+            -d '{"query":"{ connectors { id name active connector_type updated_at } }"}' | jq '.data.connectors'
+          # 3. 활성 connector 만
+          curl -sS -X POST http://localhost:8080/graphql \
+            -H "Authorization: Bearer $T" -H 'Content-Type: application/json' \
+            -d '{"query":"{ connectors { name active } }"}' | jq '.data.connectors[] | select(.active == true)'
+          # 4. RabbitMQ queue 상태
+          curl -sS -X POST http://localhost:8080/graphql -H "Authorization: Bearer $T" -H 'Content-Type: application/json' -d '{"query":"{ rabbitMQMetrics { queues { name messages_count } } }"}' | jq .
+        예상 출력 `connector-misp active=true type=EXTERNAL_IMPORT / queue messages 0`.
+        운영 해석: docker 상태(Up) ≠ logical 상태(active). 둘 다 봐야 정확.
+      - |
+        **[OSS] Portainer / lazydocker / dozzle (UI)** — GUI.
+          # 1. Portainer (웹)
+          docker run -d --name portainer -p 9443:9443 -v /var/run/docker.sock:/var/run/docker.sock portainer/portainer-ce
+          # https://10.20.30.100:9443 → Containers → connector-* 필터
+          # 2. lazydocker (TUI)
+          curl -fsSL https://raw.githubusercontent.com/jesseduffield/lazydocker/master/scripts/install_update_linux.sh | bash
+          lazydocker
+          # 3. dozzle (실시간 로그)
+          docker run -d --name dozzle -p 9999:8080 -v /var/run/docker.sock:/var/run/docker.sock amir20/dozzle
+          # http://10.20.30.100:9999 → 로그 + 검색
+          # CLI 검증
+          docker ps --format '{{.Names}}' | grep -i connector | wc -l
+        UI 동작: connector 별 컬러 시각화 + 로그 검색 + restart.
+        운영 해석: 비기술 운영자도 connector 상태 한 화면. SOC 일상 도구.
+      - |
+        **[OSS] OpenCTI Web UI Data → Connectors** — 표준 UI.
+          # 1. 브라우저 → http://10.20.30.100:8080 → 로그인
+          # 2. Data → Connectors 메뉴
+          # 3. 화면: connector 이름 + type (Import/Export/Stream) + 상태 + 마지막 활동
+          # 4. 각 connector 클릭 → 상세 (상태/queue/error)
+          # 5. CLI 검증
+          T=$(sudo grep ^OPENCTI_ADMIN_TOKEN /opt/opencti/.env | cut -d= -f2)
+          curl -sS -X POST http://localhost:8080/graphql -H "Authorization: Bearer $T" -H 'Content-Type: application/json' -d '{"query":"{ connectors { name active updated_at } }"}' | jq -r '.data.connectors[] | "\(.name)\t\(.active)\t\(.updated_at)"' | column -t
+        UI 동작: 시각 + 시간 + queue 상태.
+        운영 해석: SOC 분석가 daily check. 분기적 상태 한 눈에.
       negative_signs:
       - platform 또는 worker 와 혼동
       - Exited 상태 무시
@@ -369,6 +973,102 @@ steps:
       - timeout 기반 자동 만료(실운영 권장)
       - OpenCTI stream listener + auto remove script
       - destroy element 로 idempotent
+      - |
+        **[OSS] nft delete element + flush + destroy** — 표준.
+          # 1. 단일 IP 제거
+          sudo nft delete element inet filter cti_ips '{ 203.0.113.66 }'
+          # 2. set 전체 비움 (rule 유지)
+          sudo nft flush set inet filter cti_ips
+          # 3. set 자체 삭제 (rule 도 같이 정리 필요)
+          sudo nft delete set inet filter cti_ips  # rule 참조 있으면 에러
+          # 4. idempotent 제거 (없을 때 에러 무시)
+          sudo nft destroy element inet filter cti_ips '{ 203.0.113.66 }'
+          # 5. 검증
+          sudo nft list set inet filter cti_ips | grep 203.0.113.66 || echo "removed"
+        예상 출력 `removed (검증 통과)`.
+        운영 해석: delete = 1건, flush = 전체, destroy = idempotent (있으면 삭제 없으면 무시). 운영시 destroy 권장.
+      - |
+        **[OSS] timeout 기반 자동 만료** — 권장.
+          # 1. set 정의에 timeout 명시 (생성 시)
+          sudo nft 'add set inet filter cti_ips_auto { type ipv4_addr ; flags timeout ; timeout 30d ; }'
+          # 2. element 추가 시 timeout 가능 (set timeout 보다 짧게)
+          sudo nft add element inet filter cti_ips_auto '{ 203.0.113.66 timeout 1h }'
+          # 3. 만료 임박 element 조회
+          sudo nft -j list set inet filter cti_ips_auto | jq '.nftables[1].set.elem[] | select(.elem.expires < 3600)'
+          # 4. cron 으로 만료 모니터 + Slack 알람
+          # */15 * * * * /usr/local/bin/nft-expiry-alert.sh
+        예상 출력 `203.0.113.66 expires 59m / 자동 만료`.
+        운영 해석: 수동 cleanup 없이 신뢰도 시간 감소. 운영 best practice.
+      - |
+        **[OSS] OpenCTI stream + auto remove (이벤트 기반)** — 동기화.
+          # 1. OpenCTI stream listener (Indicator 삭제·revoke 이벤트)
+          T=$(sudo grep ^OPENCTI_ADMIN_TOKEN /opt/opencti/.env | cut -d= -f2)
+          sudo tee /usr/local/bin/cti-stream-cleanup.py > /dev/null <<PY
+          #!/usr/bin/env python3
+          import requests, re, subprocess, json
+          T = "$T"
+          with requests.get("http://10.20.30.100:8080/stream", headers={"Authorization":f"Bearer {T}"}, stream=True) as r:
+              for line in r.iter_lines():
+                  if not line.startswith(b'data:'): continue
+                  evt = json.loads(line[5:].decode())
+                  if evt.get('type') in ('delete', 'update'):
+                      m = re.search(r"'([0-9.]+)'", str(evt.get('data','')))
+                      if m and ('revoked' in str(evt) or evt['type']=='delete'):
+                          subprocess.run(['sudo','nft','destroy','element','inet','filter','cti_ips','{ %s }' % m.group(1)])
+          PY
+          sudo chmod +x /usr/local/bin/cti-stream-cleanup.py
+          sudo /usr/local/bin/cti-stream-cleanup.py &
+        예상 출력 `revoked → nft destroy element 203.0.113.66`.
+        운영 해석: OpenCTI 가 IoC false-positive 판정 → 자동 차단 해제. SOC 부담 감소.
+      - |
+        **[OSS] systemd timer (15분 주기 auto sync)** — cron 대안.
+          # 1. service unit
+          sudo tee /etc/systemd/system/cti-sync.service > /dev/null <<EOF
+          [Unit]
+          Description=OpenCTI to nft sync
+          [Service]
+          Type=oneshot
+          Environment="OPENCTI_TOKEN=$T"
+          ExecStart=/usr/local/bin/cti-sync.sh
+          EOF
+          # 2. timer unit
+          sudo tee /etc/systemd/system/cti-sync.timer > /dev/null <<EOF
+          [Unit]
+          Description=Run cti-sync every 15min
+          [Timer]
+          OnBootSec=5min
+          OnUnitActiveSec=15min
+          Persistent=true
+          [Install]
+          WantedBy=timers.target
+          EOF
+          # 3. enable
+          sudo systemctl daemon-reload
+          sudo systemctl enable --now cti-sync.timer
+          # 4. 다음 trigger 확인
+          systemctl list-timers cti-sync*
+        예상 출력 `NEXT 2026-05-04 14:15 LAST 2026-05-04 14:00 cti-sync.timer`.
+        운영 해석: cron 대비 logging + dependency + persistence 표준.
+      - |
+        **[OSS] Ansible nftables_set state=absent** — IaC.
+          # 1. /etc/ansible/playbooks/cti-cleanup.yml
+          # ---
+          # - hosts: secu
+          #   tasks:
+          #     - name: remove specific IP from cti_ips
+          #       community.general.nftables_set:
+          #         family: inet
+          #         table: filter
+          #         name: cti_ips
+          #         elements:
+          #           - 203.0.113.66
+          #         state: absent
+          # 2. 실행
+          ansible-playbook -i inventory cti-cleanup.yml --diff
+          # 3. False Positive 처리 워크플로우 (PR → review → 적용)
+          # git commit -m "Remove 203.0.113.66 (false positive)"
+        예상 출력 `changed=1 / removed: 203.0.113.66`.
+        운영 해석: 변경 audit + review. 잘못 차단된 IP 안전하게 제거.
       negative_signs:
       - set 자체 삭제
       - 다른 IP 오타 제거
@@ -409,6 +1109,82 @@ steps:
       - sudo nft -a list chain inet filter input(handle)
       - sudo nft list ruleset | grep -A 10 chain input
       - Wazuh AR custom script 연동
+      - |
+        **[OSS] nft list chain + handle (전체 룰 점검)** — 표준.
+          # 1. input chain 룰 list (handle 포함)
+          sudo nft -a list chain inet filter input
+          # 2. counter 값 (drop/accept 빈도)
+          sudo nft list chain inet filter input | grep -E 'counter|cti_ips'
+          # 3. 룰 갯수
+          sudo nft -j list chain inet filter input | jq '.nftables | length'
+          # 4. handle 로 특정 룰 삭제 (필요 시)
+          sudo nft -a list chain inet filter input | grep cti_ips
+          # sudo nft delete rule inet filter input handle <num>
+        예상 출력 `chain input { ... ip saddr @cti_ips counter packets 0 bytes 0 drop # handle 5 }`.
+        운영 해석: handle = 룰 식별자. 정확한 삭제·수정. counter = 운영 효과 정량화.
+      - |
+        **[OSS] nft list ruleset (전체 정책 dump)** — 종합.
+          # 1. 전체 정책 출력
+          sudo nft list ruleset
+          # 2. 입력 체인 부분만 추출
+          sudo nft list ruleset | sed -n '/chain input {/,/}/p'
+          # 3. JSON 으로 전체 dump (백업)
+          sudo nft -j list ruleset > /tmp/nft-backup-$(date +%Y%m%d-%H%M).json
+          # 4. 백업 → restore (재현 검증)
+          # sudo nft -f /tmp/nft-backup.nft  # 텍스트 형식이어야 -f 가능
+          sudo nft list ruleset > /tmp/nft-current.nft
+          sudo nft -c -f /tmp/nft-current.nft  # syntax 검증
+        예상 출력 `table inet filter { set cti_ips {...} chain input {...} ... }`.
+        운영 해석: 정책 백업 + 복원 가능. git 관리 + audit.
+      - |
+        **[OSS] counter 통계 + tcpdump 검증** — 효과 측정.
+          # 1. counter 추출 (drop 이 실제 발생)
+          sudo nft -j list chain inet filter input | jq '.nftables[] | select(.rule.expr) | .rule.expr[] | select(.counter)'
+          # 2. counter 변화 monitor (10초 간격)
+          while true; do
+            B=$(sudo nft list chain inet filter input | grep cti_ips | grep -oP 'packets \K\d+')
+            sleep 10
+            A=$(sudo nft list chain inet filter input | grep cti_ips | grep -oP 'packets \K\d+')
+            echo "Δ packets in 10s: $((A-B))"
+          done
+          # 3. tcpdump 으로 secu 의 NIC 실제 트래픽
+          sudo tcpdump -i any -nn -c 50 'host 203.0.113.66' 2>&1 | head
+        예상 출력 `counter packets 12 bytes 720 / Δ 3 / no packets seen (drop 효과)`.
+        운영 해석: counter Δ = 실시간 차단 효과. tcpdump 0 packets = 침투 차단.
+      - |
+        **[OSS] Wazuh nftables decoder + Active Response** — SIEM 연동.
+          # 1. Wazuh decoder (nft 로그)
+          # /var/ossec/etc/decoders/local_decoder.xml:
+          # <decoder name="nft-cti-drop"><prematch>\[CTI-DROP\]</prematch></decoder>
+          # 2. Wazuh rule (CTI 매칭 alert level 6)
+          # <rule id="100200" level="6">
+          #   <decoded_as>nft-cti-drop</decoded_as>
+          #   <description>CTI blocklist matched</description>
+          # </rule>
+          # 3. Active Response (자동 추가 차단)
+          # /var/ossec/etc/ossec.conf <command><name>nft-add</name><executable>nft-add.sh</executable></command>
+          # /var/ossec/active-response/bin/nft-add.sh: sudo nft add element inet filter cti_ips "{ $1 }"
+          sudo systemctl restart wazuh-manager
+          # 검증
+          tail -F /var/ossec/logs/alerts/alerts.log | grep -i 'CTI'
+        예상 출력 `Alert: CTI blocklist matched / level=6 / src=203.0.113.66`.
+        운영 해석: SIEM → SOC 분석가 알림. Wazuh AR 로 자동 추가 차단까지.
+      - |
+        **[OSS] gitops — /etc/nftables.conf 버전 관리** — IaC.
+          # 1. /etc/nftables.conf git init + commit
+          sudo apt install -y etckeeper
+          sudo etckeeper init
+          sudo etckeeper commit "initial nftables config"
+          # 2. 변경 시 자동 commit
+          sudo nft list ruleset > /etc/nftables.conf
+          sudo etckeeper commit "add CTI cti_ips drop rule"
+          # 3. 변경 history
+          cd /etc && sudo git log --oneline nftables.conf | head
+          # 4. PR 워크플로우 (원격 repo)
+          sudo git remote add origin git@gitlab.local:secu/etc.git
+          sudo git push origin main
+        예상 출력 `commit abc123 add CTI cti_ips drop rule`.
+        운영 해석: 정책 변경 audit + rollback + review. enterprise IaC.
       negative_signs:
       - 다른 chain 확인
       - cti_ips 룰 삭제됐는지 미인지
@@ -557,6 +1333,136 @@ steps:
       - sync script — graphql query + jq + nft flush set + nft add element
       - nft list set 으로 검증
       - cron syntax 권장 (*/5 * * * *)
+      - |
+        **[OSS] curl + jq + nft (raw 자동 sync 파이프라인)** — 표준.
+          # 1. token + URL
+          T=$(sudo grep ^OPENCTI_ADMIN_TOKEN /opt/opencti/.env | cut -d= -f2)
+          U=http://10.20.30.100:8080/graphql
+          # 2. GraphQL 으로 모든 IPv4 indicator pattern 조회
+          curl -sS -X POST $U -H "Authorization: Bearer $T" -H 'Content-Type: application/json' \
+            -d '{"query":"{ indicators(first:200, filters:{mode:and,filters:[{key:\"x_opencti_main_observable_type\",values:[\"IPv4-Addr\"]}],filterGroups:[]}) { edges { node { pattern x_opencti_score revoked } } } }"}' \
+            > /tmp/cti.json
+          # 3. score>=70 + revoked=false 만 jq filter → IP 추출
+          jq -r '.data.indicators.edges[].node | select(.revoked != true and (.x_opencti_score // 100) >= 70) | .pattern' /tmp/cti.json \
+            | grep -oE "'[0-9.]+'" | tr -d "'" | sort -u > /tmp/cti-ips.txt
+          # 4. atomic update (flush + add)
+          sudo nft flush set inet filter cti_ips
+          for ip in $(cat /tmp/cti-ips.txt); do
+            sudo nft add element inet filter cti_ips "{ $ip }" 2>/dev/null
+          done
+          echo "synced $(wc -l < /tmp/cti-ips.txt) IPs"
+          sudo nft list set inet filter cti_ips
+        예상 출력 `synced 5 IPs / set 에 5건`.
+        운영 해석: score + revoked 필터링 = false-positive 회피. 운영 권장.
+      - |
+        **[OSS] pycti + Python (안정적 sync)** — 운영 표준.
+          # 1. pycti SDK
+          pip3 install pycti
+          # 2. /usr/local/bin/cti-sync.py
+          T=$(sudo grep ^OPENCTI_ADMIN_TOKEN /opt/opencti/.env | cut -d= -f2)
+          sudo tee /usr/local/bin/cti-sync.py > /dev/null <<PY
+          #!/usr/bin/env python3
+          import os, re, subprocess, sys
+          from pycti import OpenCTIApiClient
+          T = "$T"
+          c = OpenCTIApiClient("http://10.20.30.100:8080", T)
+          inds = c.indicator.list(first=200, filters={"mode":"and","filters":[{"key":"x_opencti_main_observable_type","values":["IPv4-Addr"]}],"filterGroups":[]})
+          ips = set()
+          for ind in inds:
+              if ind.get('revoked') or (ind.get('x_opencti_score') or 100) < 70:
+                  continue
+              m = re.search(r"'([0-9.]+)'", ind.get('pattern') or "")
+              if m: ips.add(m.group(1))
+          subprocess.run(['sudo','nft','flush','set','inet','filter','cti_ips'], check=True)
+          for ip in ips:
+              subprocess.run(['sudo','nft','add','element','inet','filter','cti_ips','{ %s }' % ip])
+          print(f"synced {len(ips)} IPs")
+          PY
+          sudo chmod +x /usr/local/bin/cti-sync.py
+          sudo /usr/local/bin/cti-sync.py
+        예상 출력 `synced 5 IPs (Python 기반)`.
+        운영 해석: pycti = error handling + retry + 표준. cron + 운영 표준.
+      - |
+        **[OSS] systemd timer (15분 주기)** — cron 대안.
+          # 1. service unit
+          sudo tee /etc/systemd/system/cti-sync.service > /dev/null <<EOF
+          [Unit]
+          Description=OpenCTI to nft sync
+          [Service]
+          Type=oneshot
+          Environment="OPENCTI_TOKEN=$T"
+          ExecStart=/usr/local/bin/cti-sync.sh
+          StandardOutput=journal
+          EOF
+          # 2. timer
+          sudo tee /etc/systemd/system/cti-sync.timer > /dev/null <<EOF
+          [Unit]
+          Description=Run cti-sync every 15min
+          [Timer]
+          OnBootSec=5min
+          OnUnitActiveSec=15min
+          Persistent=true
+          [Install]
+          WantedBy=timers.target
+          EOF
+          sudo systemctl daemon-reload
+          sudo systemctl enable --now cti-sync.timer
+          # 3. log + 다음 실행 시간
+          systemctl list-timers cti-sync*
+          journalctl -u cti-sync --since '1h ago'
+        예상 출력 `NEXT 14:15 / synced 5 IPs (logs)`.
+        운영 해석: cron 대비 logging·dependency·retry 표준. enterprise.
+      - |
+        **[OSS] OpenCTI Live Stream + nft (실시간 sync)** — push 방식.
+          # 1. stream listener (이전 cron 5분 → ms 단위)
+          T=$(sudo grep ^OPENCTI_ADMIN_TOKEN /opt/opencti/.env | cut -d= -f2)
+          sudo tee /usr/local/bin/cti-stream.py > /dev/null <<PY
+          #!/usr/bin/env python3
+          import requests, re, subprocess, json
+          T = "$T"
+          with requests.get("http://10.20.30.100:8080/stream", headers={"Authorization":f"Bearer {T}"}, stream=True) as r:
+              for line in r.iter_lines():
+                  if not line.startswith(b'data:'): continue
+                  evt = json.loads(line[5:].decode())
+                  if evt.get('type') == 'create' and 'indicator' in str(evt).lower():
+                      m = re.search(r"'([0-9.]+)'", str(evt.get('data',{})))
+                      if m and not evt.get('data',{}).get('revoked'):
+                          subprocess.run(['sudo','nft','add','element','inet','filter','cti_ips','{ %s }' % m.group(1)])
+                  elif evt.get('type') == 'delete':
+                      m = re.search(r"'([0-9.]+)'", str(evt.get('data',{})))
+                      if m:
+                          subprocess.run(['sudo','nft','destroy','element','inet','filter','cti_ips','{ %s }' % m.group(1)])
+          PY
+          sudo chmod +x /usr/local/bin/cti-stream.py
+          # 2. systemd service 로 영구 실행
+          sudo tee /etc/systemd/system/cti-stream.service > /dev/null <<EOF
+          [Unit]
+          Description=OpenCTI live stream → nft
+          After=network-online.target
+          [Service]
+          ExecStart=/usr/local/bin/cti-stream.py
+          Restart=always
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+          sudo systemctl enable --now cti-stream
+        예상 출력 `streamed: 198.51.100.66 / removed: 203.0.113.66`.
+        운영 해석: pull(cron) → push(stream). 분 단위 → 초 단위. 적시성 향상.
+      - |
+        **[OSS] CrowdSec + OpenCTI 통합** — 보충.
+          # 1. CrowdSec 설치 + nftables bouncer + OpenCTI scenario
+          sudo apt install -y crowdsec crowdsec-firewall-bouncer-nftables
+          # 2. OpenCTI scenario 추가 (CrowdSec hub)
+          sudo cscli hub update
+          sudo cscli scenarios install crowdsecurity/opencti-import
+          # 3. /etc/crowdsec/scenarios/opencti.yaml — OpenCTI URL + token
+          sudo systemctl restart crowdsec
+          # 4. blocklist 자동 sync (set: crowdsec-blacklists 와 cti_ips 분리)
+          sudo cscli decisions list | grep opencti
+          # 5. cti_ips 와 합집합 정책
+          sudo nft list ruleset | grep -E 'crowdsec-blacklists|cti_ips'
+        예상 출력 `decisions: 1230 IPs (opencti origin) / 2 separate sets`.
+        운영 해석: CrowdSec 의 community feed + OpenCTI 자체 feed 합집합. 다층 방어.
       negative_signs:
       - script 작성 누락 (수동 nft add 만)
       - 5 IP 추가만 + sync 검증 누락
