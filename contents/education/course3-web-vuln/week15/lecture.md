@@ -146,6 +146,41 @@ except: print('  package.json 파싱 실패')
 ENDSSH
 ```
 
+**예상 출력**:
+```
+=== 점검 대상 시스템 정보 ===
+--- 서비스 상태 ---
+JuiceShop: HTTP 200
+x-powered-by: Express
+content-type: text/html; charset=utf-8
+
+--- API 엔드포인트 탐색 ---
+  /rest/products/search?q= -> HTTP 200
+  /api/Users -> HTTP 200
+  /api/Products -> HTTP 200
+  /api/Challenges -> HTTP 200
+  /api-docs -> HTTP 200
+  /ftp -> HTTP 200
+
+--- 기술 스택 식별 ---
+  앱: juice-shop v15.0.0
+  의존성: express ^4.17.1
+  의존성: sequelize ^6.6.5
+  의존성: jsonwebtoken ^8.5.1
+  의존성: angular ^16.0.0
+  의존성: bcrypt ^5.0.1
+```
+
+> **해석 — Phase 1 결과 = 보고서 §1 (개요) + §2 (총평) 입력**:
+> - **6/6 endpoint 200** = 모두 노출 = 광범위 공격 표면.
+> - **/api/Users 200** = ★ critical (week09 학습) — 인증 X 사용자 list.
+> - **/api-docs 200** = Swagger UI = OWASP API9 (week12 학습).
+> - **/ftp 200** = 디렉토리 listing = 백업 파일 노출 (week03 학습).
+> - **package.json 직접 노출** = ★ critical = SCA + CVE 매핑 가능. Express 4.17.1 / Sequelize 6.6.5 / jsonwebtoken 8.5.1 모두 정확 버전.
+> - **CVE 매핑**: Express 4.17.1 → CVE-2024-29041 (open redirect), Sequelize 6.6.5 → CVE-2023-22578.
+> - **bcrypt 5.0.1** = ★ 양호 (week10 학습 — bcrypt 사용 권장).
+> - 그러나 JuiceShop 실제 DB 는 MD5 (week04 학습 — 의도적 challenge).
+
 ### 2.2 점검 계획서 작성
 
 원격 서버에 접속하여 명령을 실행합니다.
@@ -224,6 +259,34 @@ done
 ENDSSH
 ```
 
+**예상 출력**:
+```
+=== 보안 헤더 점검 ===
+[OK] X-Frame-Options: SAMEORIGIN
+[OK] X-Content-Type-Options: nosniff
+[MISSING] Content-Security-Policy
+[MISSING] Strict-Transport-Security
+[MISSING] X-XSS-Protection
+[MISSING] Referrer-Policy
+
+=== 디렉토리/파일 노출 점검 ===
+[SAFE] /.git/HEAD (HTTP 404)
+[SAFE] /.env (HTTP 404)
+[EXPOSED] /package.json (HTTP 200)
+[EXPOSED] /robots.txt (HTTP 200)
+[EXPOSED] /api-docs (HTTP 200)
+[EXPOSED] /ftp (HTTP 200)
+```
+
+> **해석 — Phase 2 결과 = 보고서 V-005 + V-007**:
+> - **보안 헤더 2/6 (D 등급)** = V-005 보안 헤더 누락 (CVSS 4.3 Medium).
+> - **노출 파일 4/6** = V-007 (package.json) + V-005 추가 (api-docs/ftp).
+> - **/.git/HEAD 404** = 양호 (소스 트리 노출 없음).
+> - **/.env 404** = 양호 (DB credentials/API key 노출 없음).
+> - **/package.json 200** = SCA 매핑 시작점 (week08/12 학습).
+> - **/api-docs 200** = OWASP API9 (week12 학습) — Swagger UI 가 모든 endpoint + 파라미터 + 인증 방식 노출.
+> - **/ftp 200** = 디렉토리 listing (week03 학습) — 9 백업 파일 (package.json.bak / coupons / suspicious_errors).
+
 ### 3.2 HTTP 메서드 및 서버 정보
 
 원격 서버에 접속하여 명령을 실행합니다.
@@ -251,6 +314,30 @@ for cred in "admin@juice-sh.op:admin123" "admin:admin" "test@test.com:test"; do 
 done
 ENDSSH
 ```
+
+**예상 출력**:
+```
+=== HTTP 메서드 점검 ===
+  GET /api/Products -> HTTP 200
+  POST /api/Products -> HTTP 400
+  PUT /api/Products -> HTTP 401
+  DELETE /api/Products -> HTTP 405
+  OPTIONS /api/Products -> HTTP 204
+  TRACE /api/Products -> HTTP 405
+  PATCH /api/Products -> HTTP 405
+
+=== 디폴트 계정 점검 ===
+  [VULN] admin@juice-sh.op / admin123 -> 로그인 성공
+  [SAFE] admin / admin -> 실패
+  [SAFE] test@test.com / test -> 실패
+```
+
+> **해석 — Phase 2 후반 = 보고서 critical 발견**:
+> - **HTTP 메서드 매트릭스**: GET 200 / POST 400 (입력 검증) / PUT 401 (인증 필요) / TRACE 405 (양호) — week13 학습.
+> - **OPTIONS 204** = CORS preflight = allow-methods 노출.
+> - **★ admin@juice-sh.op / admin123 로그인 성공** = ★ critical (week04 학습 — 약한 비밀번호). **CVSS 9.8** if combined with 인증 우회.
+> - **이 발견 자체가 V-001 candidate** — JuiceShop 의 의도적 challenge ID 'Login Admin'.
+> - **추가 시도 권장**: SecLists Top1000-passwords.txt + hydra brute force = ~50 시도 만에 admin / admin / Password1 등 발견 가능 (week04 학습).
 
 ---
 
@@ -289,6 +376,29 @@ echo "  정상: ${NORMAL}B / SQLi: ${SQLI}B"
 [ "$SQLI" -gt "$NORMAL" ] && echo "  [HIGH] 검색 SQLi 취약" || echo "  [SAFE] 검색 SQLi 안전"
 ENDSSH
 ```
+
+**예상 출력**:
+```
+=== SQL Injection 점검 ===
+--- 로그인 SQLi ---
+[CRITICAL] 로그인 SQLi -> 인증 우회 성공
+  이메일: admin@juice-sh.op
+  토큰: eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9...
+
+--- 검색 SQLi ---
+  정상: 245B / SQLi: 9876B
+  [HIGH] 검색 SQLi 취약
+```
+
+> **해석 — Phase 3 SQLi 결과 = V-001 핵심 증거**:
+> - **로그인 SQLi 인증 우회 성공** = ★ Critical (CVSS 9.8). admin@juice-sh.op 토큰 획득 = 도메인 전체 장악. week05 학습.
+> - **검색 SQLi 응답 크기 245→9876B (40배)** = UNION SQLi 가능 = ★ High (CVSS 9.1).
+> - **week05 의 학습 결과 통합**: 인증 우회 + 데이터 추출 = 2 critical 동시 발견.
+> - **재현 절차** (보고서 V-001 §3 입력):
+>   1. POST /rest/user/login
+>   2. body: `{"email":"\\' OR 1=1--","password":"x"}`
+>   3. 응답: 200 + admin JWT
+> - **자동화 도구**: sqlmap `--batch --level=3 --risk=2` 로 동일 결과 자동 검출 + 시간 단축.
 
 ### 4.2 XSS 및 접근제어 점검
 
@@ -330,6 +440,34 @@ for pw in "1" "abc" "a"; do                            # 반복문 시작
 done
 ENDSSH
 ```
+
+**예상 출력**:
+```
+=== XSS 점검 ===
+  [HIGH] 반사형 XSS: <script>alert(1)</script>
+  [HIGH] 반사형 XSS: <img src=x onerror=alert(1)>
+  [HIGH] 반사형 XSS: <svg onload=alert(1)>
+
+=== 접근제어 점검 ===
+--- 인증 없이 API 접근 ---
+  /api/Users -> HTTP 200
+    [MEDIUM] 인증 없이 접근 가능
+  /api/Challenges -> HTTP 200
+    [MEDIUM] 인증 없이 접근 가능
+  /api/Quantitys -> HTTP 404
+
+--- 패스워드 정책 ---
+  [MEDIUM] 약한 패스워드 허용: '1'
+  [MEDIUM] 약한 패스워드 허용: 'abc'
+  [MEDIUM] 약한 패스워드 허용: 'a'
+```
+
+> **해석 — Phase 3 후반 발견 = V-002, V-003, V-004**:
+> - **XSS 3/3 반사** = V-002 High (CVSS 7.1). week06 학습.
+> - **/api/Users 200 (인증 X)** = V-003 Medium (CVSS 5.3) — BOLA. week09 학습.
+> - **약한 패스워드 3/3 통과** = V-004 Medium (CVSS 5.3) — '1' / 'abc' / 'a' 모두 가입 성공. week04 학습.
+> - **NIST SP 800-63B 권고**: 최소 8자 + 사전 단어 차단 + breach DB (HIBP) 검증.
+> - **chain 공격 시나리오**: V-001 (SQLi) + V-002 (Stored XSS) → 관리자 세션 탈취. CVSS 9.8 escalation.
 
 ### 4.3 인증 및 세션 점검
 
@@ -478,6 +616,92 @@ print(report)
 PYEOF
 ENDSSH
 ```
+
+**예상 출력**:
+```
+======================================================================
+          종합 웹 취약점 점검 보고서
+======================================================================
+프로젝트: 기말 종합 점검
+대상: OWASP JuiceShop (http://10.20.30.80:3000)
+일시: 2026-04-29 14:32
+방법론: OWASP Testing Guide v4.2
+
+1. 요약
+   총 발견: 7건
+     Critical: 1건
+     High: 1건
+     Medium: 4건
+     Low: 1건
+
+2. 발견사항 상세
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+[V-001] SQL Injection (로그인 우회)
+  심각도: Critical (CVSS 9.8)
+  CWE: CWE-89
+  위치: POST /rest/user/login (email)
+  권고: Parameterized Query 또는 ORM 사용
+
+[V-002] XSS (검색 반사형)
+  심각도: High (CVSS 7.1)
+  CWE: CWE-79
+  위치: GET /rest/products/search (q)
+  권고: 출력 인코딩, CSP 헤더
+
+[V-003] API 접근제어 부재
+  심각도: Medium (CVSS 5.3)
+  CWE: CWE-284
+  위치: GET /api/Users
+  권고: JWT 인증 필수화
+
+[V-004] 약한 패스워드 정책
+  심각도: Medium (CVSS 5.3)
+  CWE: CWE-521
+  위치: POST /api/Users
+  권고: 최소 8자, 복잡도 요구
+
+[V-005] 보안 헤더 누락
+  심각도: Medium (CVSS 4.3)
+  CWE: CWE-693
+  위치: 전체 응답
+  권고: CSP, X-Frame-Options 등 헤더 추가
+
+[V-006] 계정 잠금 부재
+  심각도: Medium (CVSS 5.3)
+  CWE: CWE-307
+  위치: POST /rest/user/login
+  권고: 5회 실패 시 잠금 또는 CAPTCHA
+
+[V-007] package.json 노출
+  심각도: Low (CVSS 3.1)
+  CWE: CWE-200
+  위치: GET /package.json
+  권고: 정적 파일 접근 제한
+
+3. 권고사항 우선순위
+   [즉시] V-001 SQL Injection 수정
+   [즉시] V-002 XSS 출력 인코딩
+   [단기] V-003 API 인증 강화
+   [단기] V-004 패스워드 정책
+   [단기] V-006 계정 잠금 정책
+   [일반] V-005 보안 헤더
+   [일반] V-007 파일 노출 차단
+======================================================================
+```
+
+> **해석 — 기말 보고서 = 모든 주차 학습 결과 통합**:
+> - **7 발견 / Critical 1 + High 1 + Medium 4 + Low 1** = 평균 CVSS 5.7 (High 등급).
+> - **OWASP 분포**: A03 (Injection × 2 — V-001, V-002), A05 (Misconfig × 2 — V-005, V-007), A07 (Auth × 2 — V-004, V-006), A01 (Access × 1 — V-003).
+> - **CWE 분포**: 89, 79, 284, 521, 693, 307, 200 = 7 분류 모두 다른 = 광범위.
+> - **Top 3 권고**: SQLi 즉시 수정 + XSS 출력 인코딩 + API 인증 강화 = 가장 효과적 3 조치.
+> - **본 보고서 = 14주 학습의 결과**:
+>   - week03 정보수집 → V-005, V-007
+>   - week04 인증 → V-004, V-006
+>   - week05 SQLi → V-001
+>   - week06 XSS → V-002
+>   - week09 접근제어 → V-003
+> - **deliverable**: `/tmp/vuln_report.txt` + `pandoc -o report.pdf` + sha256 + GPG 서명 (week14 학습) → 클라이언트 제출.
 
 ---
 
