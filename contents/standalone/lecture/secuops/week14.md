@@ -1,164 +1,371 @@
-# Week 14 — OpenCTI (3) — Threat Hunting (Sightings + Reports)
+# Week 14 — MISP + OpenCTI 양방향 sync + Threat Hunting + Sightings + Report
 
-> 본 주차는 OpenCTI 의 **위협 헌팅 워크플로** 실습. Hypothesis → Investigation →
-> Sightings 등록 → Report 작성 → 공유의 한 사이클. 단순 IOC 매칭 (W13) 에서 한
-> 단계 더 나아가 능동적 헌팅.
+> **본 주차의 한 줄 요약**
+>
+> **MISP (Malware Information Sharing Platform, Luxembourg CIRCL)** 의 **양방향 IOC
+> sharing** 모델 + **OpenCTI ↔ MISP Connector** 로 양방향 sync + **Threat Hunting 워크
+> 플로** (Hypothesis → Investigation → Sighting 등록 → Report 작성 → community 공유).
+> 단순 IOC 매칭 (W13) 에서 **능동적 헌팅** 으로 진화.
+>
+> **운영자 한 줄 결론**: external feed 만 받으면 consumer. Hunting + Sighting 등록 +
+> Report 공유로 contributor 가 되면 CTI 의 진짜 가치 실현.
+
+---
 
 ## 학습 목표
 
-1. Threat Hunting 의 4 단계 (Hypothesis / Investigation / Outcome / Sharing)
-2. OpenCTI 의 Sightings (관측 결과) 등록 + 분석
-3. Report / Note / Opinion 의 차이 + 활용
-4. MITRE ATT&CK 매핑 + Killchain 시각화
-5. ISMS-P 2.12 (보안위반 사고 대응) 표준 매핑
-6. 한국 KISA 보호나라 사례 분석 패턴
+1. **MISP 정체성** + OpenCTI 와의 비교 (sharing-focused vs platform-focused).
+2. **MISP 의 핵심 객체** — Event / Attribute / Object / Tag / Galaxy.
+3. **OpenCTI ↔ MISP 양방향 sync** (Connector 양방향 + circular loop 회피).
+4. **Threat Hunting 워크플로 5 단계** — Hypothesis → Investigation → Sighting →
+   Report → Share.
+5. **MISP Galaxy** — APT / Malware family / Threat Actor 의 분류 체계.
+6. **community sharing** — TLP (Traffic Light Protocol) + ISAC / CERT 연계.
+7. **R/B/P** — Red 의 새 공격 패턴 발견 → Blue Hunting → Sighting 등록 → Report 작성.
 
-## 1. Threat Hunting 4 단계
+---
 
-### 1.1 Hypothesis (가설)
+## 1. MISP 정체성 + OpenCTI 비교
 
-CTI 데이터 (TTP / IOC) 를 기반으로 "본 환경에 이런 공격이 있을 수도 있다" 가설 수립.
+### 1.1 MISP
 
-예: "APT29 의 표적 캠페인 보고 → 우리 환경에 같은 IOC 가 있는가?"
+- Luxembourg CIRCL (Computer Incident Response Center Luxembourg) 개발
+- AGPLv3 license
+- 2012~ — sharing-focused (양방향 community sharing 의 시초)
+- 200+ MISP 인스턴스 운영 (정부 CERT / 금융 / 방산 / 통신 등)
+- **PHP + MySQL** 기반
 
-### 1.2 Investigation (조사)
+### 1.2 MISP vs OpenCTI
 
-기존 데이터 (Wazuh alerts.json, Suricata eve.json, osquery snapshot) 에 가설 검증.
+| 항목 | MISP | OpenCTI |
+|------|------|---------|
+| 라이선스 | AGPLv3 | Apache 2.0 |
+| 모델 | sharing-focused (양방향) | platform-focused (analyst UI) |
+| 데이터 | Event-based (incident 중심) | STIX 2.1 object (entity 중심) |
+| backend | PHP + MySQL | GraphQL + Elasticsearch |
+| 강점 | community sharing + ISAC / CERT 연계 | visualization + Knowledge graph |
+| 약점 | UI 복잡 | sharing 제한적 |
+| 호환성 | STIX 2.1 export | MISP Connector import/export |
 
-```
-# Wazuh alerts 에 APT29 의 IOC 매치 검색
-sudo grep "1.2.3.4" /var/ossec/logs/alerts/alerts.json
+**보완 운영 — production 의 표준 패턴**:
+- MISP = feed source + sharing endpoint
+- OpenCTI = analyst UI + correlation + enrichment
 
-# Suricata eve.json 의 dest_ip 매치
-sudo grep "5.6.7.8" /var/log/suricata/eve.json
-```
+---
 
-### 1.3 Outcome (결론)
+## 2. MISP 핵심 객체 5
 
-가설 검증 결과:
-- 매치 → 침해 사실 확인 → IR (Incident Response) 시작
-- 미매치 → 가설 기각 + 추가 데이터 수집 / 다른 가설
+### 2.1 Event
 
-### 1.4 Sharing (공유)
-
-OpenCTI 에 Report / Sighting 등록 + 팀 / 산업 group 공유.
-
-## 2. OpenCTI 의 Sightings
-
-**Sightings = "본 환경에서 IOC 가 관측됨"** 의 기록. STIX 의 sighting-of relationship.
-
-### 2.1 등록 방법
-
-OpenCTI UI: Indicator 선택 → "Add sighting" → 시간 / 위치 / 도구 / 횟수 입력.
-
-API:
-```
-curl -sk -X POST "https://opencti/api/...sightings" \
-    -H "Authorization: Bearer $TOKEN" \
-    -d '{
-      "indicator_id": "...",
-      "first_seen": "...",
-      "last_seen": "...",
-      "count": 3,
-      "source_organization": "6v6 학교"
-    }'
-```
-
-### 2.2 가치
-
-같은 IOC 가 여러 조직에서 sighting 등록 → **신뢰도 (confidence) 자동 상승**. 한 조직만 보고
-하면 false-positive 가능성, 10 조직 보고 시 신뢰도 95%+.
-
-## 3. Report / Note / Opinion
-
-| Object | 의미 |
-|--------|------|
-| Report | 공식 보고서 (IR 결과, 분석 산출물) |
-| Note | 개인 메모 (조사 중) |
-| Opinion | 동료의 의견 (peer review) |
-
-Report 는 정식 산출물, Note 는 임시, Opinion 은 다중 분석가의 시각.
-
-## 4. MITRE ATT&CK + Killchain 매핑
-
-각 Threat Actor / Attack Pattern 에 MITRE ATT&CK Tactic / Technique 매핑. OpenCTI 가
-시각화.
-
-예: "APT29 의 Spearphishing Attachment (T1566.001) → 사용자가 첨부 파일 클릭 → C2 통신
-(T1071.001) → Lateral Movement (T1021.001)"
-
-Cyber Kill Chain 7 단계 (Lockheed Martin) 와 ATT&CK 매핑:
-
-| Kill Chain | ATT&CK Tactic |
-|------------|---------------|
-| Reconnaissance | TA0043 |
-| Weaponization | (Pre-ATT&CK) |
-| Delivery | TA0042 |
-| Exploitation | TA0001 (Initial Access) |
-| Installation | TA0003 (Persistence) |
-| Command & Control | TA0011 |
-| Actions on Objectives | TA0009 (Collection), TA0010 (Exfiltration) |
-
-## 5. ISMS-P 2.12 (보안위반 사고 대응)
-
-한국 ISMS-P 의 2.12 통제:
-- 2.12.1 사고 인지·신고 절차
-- 2.12.2 사고 대응 체계
-- 2.12.3 사고 분석·복구
-- 2.12.4 사고 사후 관리
-
-OpenCTI 의 Report / Sighting 가 이 4 sub-control 모두에 입증 자료.
-
-## 6. KISA 보호나라 사례 분석 패턴
-
-KISA 의 침해사고 분석 보고서 1건 선택 → 본 환경의 데이터로 동일 시나리오 시뮬 →
-OpenCTI 에 가상 Report 작성.
+incident 중심. 한 침해 / 캠페인 / APT 의 단위.
 
 ```
-보고서 제목: "2024 Q3 한국 금융권 SQLi 공격 캠페인 대응"
-요약: APT 그룹이 한국 은행 5곳 대상 SQLi 시도, 우리 환경의 ModSec 가 차단
-IOC: 1.2.3.4 (C2), sqlmap UA (도구)
-TTP: T1190 (Exploit Public-Facing Application)
-Sightings: 5건 (2024-09-01 ~ 2024-09-15)
-Outcome: 차단 100%, 침해 0
+Event ID 12345
+  - Date: 2026-05-12
+  - Threat Level: Medium
+  - Analysis: Initial
+  - Distribution: Connected communities
+  - Tags: tlp:amber, apt28, malware:emotet
 ```
 
-## 7. 실습 1~5
+### 2.2 Attribute
 
-### 1 — 가설 수립 + Wazuh 검색
-
-```
-# 가설: "최근 SSH brute force 가 있었는가?"
-ssh 6v6-siem 'sudo grep "5712\|sshd.*Failed" /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -5'
-```
-
-### 2 — Suricata eve.json 매칭
+Event 내의 단일 IOC.
 
 ```
-ssh 6v6-ips 'sudo tail -500 /var/log/suricata/eve.json | grep "alert" | jq -r .src_ip | sort | uniq -c | sort -rn | head'
+Attribute (Event 12345 안)
+  - Type: ip-src
+  - Value: 192.168.99.99
+  - Category: Network activity
+  - Comment: APT28 C2
+  - to_ids: yes
 ```
 
-### 3 — osquery 의 sshd login history
+### 2.3 Object
+
+Attribute 묶음 (file + hash + filename + size 등).
 
 ```
-ssh 6v6-bastion 'sudo osqueryi --json "SELECT user, host, time FROM last LIMIT 10;"'
+Object: file
+  - filename: malware.exe
+  - md5: abc...
+  - sha256: def...
+  - size: 1234567
+  - mimetype: application/x-dosexec
 ```
 
-### 4 — 통합 timeline 작성
+### 2.4 Tag — Taxonomy
 
-(3 source 의 데이터를 시간순 정렬)
+표준 분류 (TLP / kill-chain / MITRE 등).
 
-### 5 — Report 작성 (Markdown)
+```
+tlp:white / tlp:green / tlp:amber / tlp:red
+kill-chain:reconnaissance / weaponization / delivery
+mitre-attack:T1059
+malware_classification:trojan
+```
 
-가상 보고서 작성: 가설 + 조사 + 결과 + 권장.
+### 2.5 Galaxy — Threat 분류
 
-## 8. 과제
+APT 그룹 / Malware family / Threat Actor 분류 체계 (MISP-galaxy github).
 
-A. 헌팅 사례 (필수) — 본 환경의 데이터로 1 시나리오 헌팅 + 가설→조사→결론 1페이지
-B. KISA 사례 매핑 (심화) — 2024 KISA 사례 1건 + 본 환경 적용 가설
-C. ISMS-P 2.12 매핑 (정성) — 본 주차의 헌팅이 2.12 sub-control 어느 만족하는가
+```
+galaxy-cluster:threat-actor:APT28
+galaxy-cluster:malware:Emotet
+galaxy-cluster:rat:Cobalt-Strike
+```
 
-## 9. W15 (기말) 예고
+---
 
-전체 5 종 솔루션 + 호스트 가시화 + CTI 통합의 종합 시험. APT 대응 1 사이클
-시나리오.
+## 3. OpenCTI ↔ MISP 양방향 sync
+
+### 3.1 OpenCTI 의 MISP Connector
+
+- Type: **external-import**
+- source: MISP API (REST + API key)
+- 가져오는 객체: Event → STIX 2.1 변환 → OpenCTI 의 Indicator / Threat Actor / Malware
+
+### 3.2 MISP 의 OpenCTI Export Connector
+
+- Type: **export**
+- source: OpenCTI STIX 2.1 객체
+- MISP Event 로 변환 → MISP DB 적재
+
+### 3.3 양방향 sync 의 위험 — circular loop
+
+```mermaid
+graph LR
+    M[MISP Event 12345] -->|import| O[OpenCTI Indicator]
+    O -->|export| M2[MISP Event 12346 (다시)]
+    M2 -->|import| O2[OpenCTI duplicate]
+    style M fill:#f85149,color:#fff
+```
+
+**해결**:
+- ID 추적 (source_ref / target_ref)
+- timestamp 기반 diff (already exists check)
+- per-direction filter (특정 tag 만 export, 다른 tag 만 import)
+
+---
+
+## 4. Threat Hunting 워크플로 5 단계
+
+```mermaid
+graph TB
+    H[1. Hypothesis<br/>가설 설정]
+    I[2. Investigation<br/>가설 검증]
+    S[3. Sighting<br/>실 매치 등록]
+    R[4. Report<br/>분석 보고서]
+    SHARE[5. Share<br/>community 공유]
+    H --> I
+    I --> S
+    S --> R
+    R --> SHARE
+    SHARE -.-> H
+    style H fill:#bc8cff,color:#fff
+    style SHARE fill:#3fb950,color:#fff
+```
+
+### 4.1 Hypothesis (가설)
+
+예: "최근 APT28 의 lateral movement TTP (T1078 + T1021) 가 본 환경에서 발견될 가능성".
+
+데이터 source: 최근 외부 보고서 (Mandiant / CrowdStrike / KISA) + community sharing.
+
+### 4.2 Investigation (조사)
+
+- OpenCTI 의 Investigations 화면 + STIX object 묶음
+- Wazuh alerts 의 1-3 개월 검색 (rule.id / agent.name / data.alert.signature 매칭)
+- osquery / sysmon 의 host log 분석
+- 의심 사례 1-N 건 식별
+
+### 4.3 Sighting (실 매치 등록)
+
+OpenCTI 의 Sighting object — "이 IOC 가 이 환경에서 이 시각에 발견됨".
+
+```json
+{
+  "type": "sighting",
+  "spec_version": "2.1",
+  "sighting_of_ref": "indicator--abc-...-001",
+  "first_seen": "2026-05-12T10:00:00Z",
+  "last_seen": "2026-05-12T11:30:00Z",
+  "count": 5,
+  "where_sighted_refs": ["identity--6v6-secuops"]
+}
+```
+
+Sighting 이 분석가의 **실 매치 증거**. community 공유 시 신뢰도 향상.
+
+### 4.4 Report (분석 보고서)
+
+OpenCTI 의 Report object — 사람 친화 분석 문서.
+
+```json
+{
+  "type": "report",
+  "name": "APT28 lateral movement in 6v6 environment - W14",
+  "report_types": ["threat-report"],
+  "published": "2026-05-12T12:00:00Z",
+  "object_refs": [
+    "indicator--abc-...-001",
+    "threat-actor--abc-...-003",
+    "attack-pattern--abc-...-004",
+    "sighting--abc-...-005"
+  ]
+}
+```
+
+PDF 첨부 + 분석 narrative.
+
+### 4.5 Share (community 공유)
+
+- MISP — Event 로 변환 + TLP 적용 (보통 tlp:amber)
+- OpenCTI export → TAXII 2.1 server (있다면)
+- ISAC / CERT 직접 공유 (이메일 / API)
+
+---
+
+## 5. MISP Galaxy — Threat 분류 체계
+
+### 5.1 Galaxy 카테고리
+
+| Galaxy | 예 |
+|--------|-----|
+| threat-actor | APT28 / APT29 / Lazarus / FIN7 / Conti |
+| malware | Emotet / TrickBot / Mirai / WannaCry / SolarWinds |
+| ransomware | LockBit / REvil / Ryuk / DarkSide |
+| rat | Cobalt-Strike / Metasploit-Meterpreter / Sliver |
+| sector | finance / government / healthcare / energy |
+| country | Russia / North Korea / China / Iran |
+
+### 5.2 Galaxy 활용
+
+분석가가 IOC → Galaxy 매핑 → APT attribution 자동화.
+
+```
+Indicator (192.168.99.99) + Galaxy (threat-actor:APT28)
+  ↓ MITRE Technique
+TA0001 (Recon) — T1595 (Active Scanning)
+TA0011 (C2) — T1071 (Application Layer Protocol)
+```
+
+---
+
+## 6. TLP (Traffic Light Protocol)
+
+community sharing 의 표준 분류.
+
+| TLP | 의미 | 공유 범위 |
+|-----|------|----------|
+| **tlp:white** | 공개 | 무제한 |
+| **tlp:green** | community | 분야 (sector) 안 |
+| **tlp:amber** | limited | 특정 조직 + need-to-know |
+| **tlp:red** | restricted | 받은 사람만 |
+
+운영 권장 — 외부 공유 시 **tlp:amber** 가 default.
+
+---
+
+## 7. ISAC / CERT 연계 — 한국
+
+### 7.1 한국의 주요 sharing community
+
+- **KISA** — 한국인터넷진흥원 C-TAS (Cyber Threat Analysis System)
+- **금융보안원** FSEC — 금융권 ISAC
+- **K-ISAC** — 통신 / 방송 / 인터넷 ISAC
+- **EnergyKISC** — 에너지 산업 ISAC
+
+### 7.2 연계 방법
+
+- 각 ISAC 의 회원 가입 + 자체 MISP 운영
+- MISP feeds — 정기 IOC sharing (보통 TAXII 2.1 또는 직접 다운로드)
+- 신뢰망 — 24시간 emergency alert
+
+### 7.3 sharing 의 의무
+
+- KISA 의 침해 사고 신고 의무 (개인정보보호법 제 34 조)
+- 금융기관의 금감원 신고
+- 사고 보고 → ISAC 공유 → community-wide hunting
+
+---
+
+## 8. R/B/P — 새 공격 발견 → Hunting → Sighting → Report
+
+```mermaid
+graph LR
+    R[Red — 새 APT TTP 시뮬<br/>T1059.004 + T1071]
+    DETECT[Wazuh alert]
+    H[Hypothesis — APT28 의심]
+    INV[Investigation — host + network 분석]
+    SIGHT[Sighting 등록 OpenCTI]
+    REP[Report 작성]
+    SHARE[community 공유 MISP/TLP amber]
+    R --> DETECT
+    DETECT --> H
+    H --> INV
+    INV --> SIGHT
+    SIGHT --> REP
+    REP --> SHARE
+    style R fill:#f85149,color:#fff
+    style SHARE fill:#3fb950,color:#fff
+```
+
+본 lab 의 Step 5 에서 시뮬.
+
+---
+
+## 9. 사례 분석
+
+### 9.1 ISMS-P / NIST / KISA
+
+- ISMS-P 2.9.5 (위협정보 수집·공유) — 본 주차의 핵심
+- NIST CSF ID.RA-3 (Threat Communication)
+- KISA C-TAS 연계
+
+### 9.2 운영 사고 사례
+
+**사례 1 — circular loop 사고**:
+```
+운영자: MISP ↔ OpenCTI 양방향 sync 활성 → 중복 객체 polymorph 폭증
+복구: tag 기반 filter (source 별)
+```
+
+**사례 2 — TLP 위반**:
+```
+운영자: tlp:amber 데이터를 tlp:white community 에 공유 → 신뢰 침해
+복구: TLP 자동 검증 + community 별 분리
+```
+
+**사례 3 — Sighting 누락**:
+```
+운영자: IOC 매치 발생했으나 Sighting 등록 안 함 → community 에 false negative report
+복구: 자동 Sighting 생성 (rule 매치 → Sighting API call)
+```
+
+---
+
+## 10. 과제
+
+### A. MISP + OpenCTI sync 설계 (필수, 30점)
+
+양방향 sync 의 6 단계 + circular loop 회피 + filter 정의.
+
+### B. STIX Sighting 객체 작성 (심화, 30점)
+
+본 환경의 실 alert (예: Suricata sid 9009001) 의 Sighting object.
+
+### C. Threat Hunting 보고서 (정성, 30점)
+
+가상 Hypothesis (APT28 의 lateral movement) → Investigation → Sighting → Report 1 cycle.
+
+### D. TLP 적용 (정성, 10점)
+
+본인이 작성한 Report 의 TLP 분류 + 정당화 근거.
+
+---
+
+## 11. 다음 주차 (W15) 예고
+
+- **주제**: 기말 — W01-W14 통합 시험 + 6-stage 종합 시나리오
+- **연결**: 14 주차 학습을 R/B/P 1 cycle 로 통합 평가

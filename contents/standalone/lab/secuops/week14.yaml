@@ -1,123 +1,386 @@
 lab_id: standalone-secuops-week14
-title: OpenCTI Threat Hunting — Sightings + Reports + R/B/P
+title: MISP + OpenCTI 양방향 sync + Threat Hunting + Sighting + Report + R/B/P
 version: standalone-non-ai
 course: secuops
 week: 14
 description: |
-  본 환경의 3 source (Wazuh / Suricata / osquery) 통합 헌팅. 가설 수립 → 3 source
-  조사 → timeline 통합 → Report 작성 한 cycle.
-difficulty: hard
-duration_minutes: 150
+  MISP 도입 + OpenCTI ↔ MISP 양방향 sync (circular loop 회피) + Threat Hunting 5
+  단계 + Sighting 등록 + Report 작성 + community 공유 (TLP) + ISAC 연계. 종합 보고서.
+difficulty: medium
+duration_minutes: 180
 prerequisites: [W13]
 objectives:
-  - "가설 기반 헌팅 4 단계 (Hypothesis / Investigation / Outcome / Sharing)"
-  - "3 source (Wazuh / Suricata / osquery) 통합"
-  - "timeline 시간순 정렬"
-  - "Report 작성 (Markdown 표)"
+  - "MISP 정체성 + OpenCTI 비교"
+  - "MISP 핵심 객체 5 (Event / Attribute / Object / Tag / Galaxy)"
+  - "OpenCTI ↔ MISP 양방향 sync + loop 회피"
+  - "Threat Hunting 5 단계"
+  - "Sighting object 작성"
+  - "Report object 작성"
+  - "TLP + ISAC 연계"
+  - "R/B/P Hunting 1 cycle"
 pass_threshold: 0.7
 steps:
 
   - order: 1
     instruction: |
-      ## 🎯 MISSION (가설 + 조사)
+      ## 🎯 MISSION — MISP 도입 계획 + OpenCTI 비교
 
-      가설: "지난 1시간 안에 SSH brute force 시도가 있었다." 3 source 조사로 검증.
-
-      ## 💻 실행 명령
-
-      ```bash
-      # Source 1: Wazuh alerts.json (rule 5710/5712)
-      ssh 6v6-siem 'sudo grep -E "5710|5712|sshd.*Failed" /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -5'
-
-      # Source 2: Suricata eve.json (dport 22)
-      ssh 6v6-ips 'sudo tail -500 /var/log/suricata/eve.json | jq -c "select(.dest_port==22) | {ts:.timestamp, src:.src_ip}" 2>/dev/null | tail -3'
-
-      # Source 3: osquery 의 logged_in_users + last
-      ssh 6v6-bastion 'sudo osqueryi --json "SELECT user, host, time FROM last LIMIT 5;"'
       ```
+      MISP 도입:
+        - PHP + MySQL backend
+        - Web UI :443
+        - REST API + API key
+        - TAXII 2.1 server (export)
 
-      ## 📋 확인 사항
-
-      - Wazuh: 5710 매치 라인 수
-      - Suricata: dport 22 flow 수
-      - osquery last: 최근 로그인 history
-
-      ## 💡 왜 이걸 하는가?
-
-      Threat Hunting 의 표준 — 단일 source 가 아닌 **3+ source 교차 검증**. 한 source
-      만 보면 false-positive 또는 단편 정보.
-
-      ## 🔍 결과 해석
-
-      - **가설 검증**: 3 source 모두 SSH brute 흔적 → 침해 가능성
-      - **가설 기각**: 3 source 모두 빈 결과 → 정상
-    hint: 3 source 조사
-    category: investigation
-    points: 30
+      OpenCTI vs MISP 매트릭스:
+        | 항목 | MISP | OpenCTI |
+        | 모델 | sharing-focused | platform-focused |
+        | backend | PHP + MySQL | GraphQL + Elasticsearch |
+        | 데이터 | Event-based | STIX object |
+        | 강점 | community + ISAC | UI + correlation |
+        보완 운영 — MISP feed + OpenCTI analyst UI
+      ```
+    hint: 'MISP PHP + MySQL vs OpenCTI GraphQL + Elasticsearch'
+    category: planning
+    points: 15
     answer: |
-      ssh 6v6-siem 'sudo grep -E "5710|5712|sshd.*Failed" /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -5'
-      ssh 6v6-ips 'sudo tail -500 /var/log/suricata/eve.json | jq -c "select(.dest_port==22) | {ts:.timestamp, src:.src_ip}" 2>/dev/null | tail -3'
-      ssh 6v6-bastion 'sudo osqueryi --json "SELECT user, host, time FROM last LIMIT 5;"'
-    answer_detail: 3 source 가설 검증.
+      cat <<'EOF'
+      MISP: PHP/MySQL/Web UI :443/REST/TAXII export
+      OpenCTI vs MISP:
+        sharing vs platform / PHP/MySQL vs GraphQL/ES
+      보완: MISP feed + OpenCTI UI
+      EOF
+    answer_detail: 'MISP 도입 + OpenCTI 비교'
     verify:
       type: output_contains
-      expect: '\['
+      expect: MISP
       field: stdout
       semantic:
-        intent: "3 source 헌팅"
-        success_criteria: ["3 source 출력"]
+        intent: "MISP + OpenCTI 비교"
+        success_criteria: ["매트릭스", "보완 운영"]
         acceptable_methods:
-          - "**[OSS] Wazuh alerts.json grep**"
-          - "**[OSS] Suricata eve.json jq**"
-          - "**[OSS] osquery last 테이블**"
-          - "**[OSS] timeline 통합 (timestamp 정렬)**"
-          - "**[OSS] src_ip 빈도 분석**"
-          - "**[OSS] OpenCTI Sighting 등록**"
-          - "**[OSS] MITRE ATT&CK T1110 Brute Force 매핑**"
-          - "**[OSS] AAR 작성**"
+          - "**[CTI] MISP CIRCL 2012**"
+          - "**[CTI] PHP + MySQL backend**"
+          - "**[CTI] TAXII 2.1 export**"
+          - "**[CTI] Event-based**"
+          - "**[CTI] OpenCTI STIX-based**"
+          - "**[CTI] 양 platform 보완**"
+          - "**[CTI] sharing 의무 (법적)**"
+          - "**[CTI] AGPLv3 vs Apache 2.0**"
     target_vm: bastion
 
   - order: 2
     instruction: |
-      ## 🎯 MISSION (Report 작성)
+      ## 🎯 MISSION — MISP 핵심 객체 5 (Event / Attribute / Object / Tag / Galaxy)
 
-      STEP 1 의 조사 결과를 종합 — 1페이지 Markdown 보고서.
-
-      ## 💻 산출물 형식
-
-      ```markdown
-      # Threat Hunting Report — SSH Brute (W14, 학번)
-
-      ## 1. Hypothesis
-      "지난 1시간 안에 SSH brute force 시도"
-
-      ## 2. Investigation
-      - Wazuh 5710: N건
-      - Suricata dport 22: N flow
-      - osquery last: 정상 / 비정상 entry
-
-      ## 3. Outcome
-      가설 검증 / 기각 + 근거
-
-      ## 4. MITRE ATT&CK
-      T1110 Brute Force / T1078 Valid Accounts
-
-      ## 5. Recommendations
-      - CDB list (W13) 의 attacker IP 등록
-      - Active Response (W10) 자동 차단
-      - sshd MaxAuthTries 제한
+      ```json
+      {
+        "Event": {
+          "id": "12345",
+          "date": "2026-05-12",
+          "threat_level": 2,
+          "distribution": 1,
+          "tags": ["tlp:amber", "apt28", "malware:emotet"],
+          "Attribute": [
+            {"type": "ip-src", "value": "192.168.99.99", "category": "Network activity", "to_ids": true}
+          ],
+          "Object": [
+            {"name": "file", "Attribute": [
+              {"type": "filename", "value": "malware.exe"},
+              {"type": "md5", "value": "abc..."},
+              {"type": "sha256", "value": "def..."}
+            ]}
+          ],
+          "Galaxy": [
+            "galaxy-cluster:threat-actor:APT28",
+            "galaxy-cluster:malware:Emotet"
+          ]
+        }
+      }
       ```
-    hint: Markdown 4 단계 보고서
-    category: synthesis
-    points: 25
-    answer: 위 형식
-    answer_detail: 헌팅 4 단계 표준 보고서.
+    hint: 'Event + Attribute + Object + Tag + Galaxy'
+    category: configuration
+    points: 15
+    answer: |
+      cat <<'EOF'
+      MISP Event 12345:
+        date: 2026-05-12
+        tags: tlp:amber, apt28, emotet
+        Attribute: ip-src=192.168.99.99
+        Object: file {filename, md5, sha256}
+        Galaxy: threat-actor:APT28, malware:Emotet
+      EOF
+    answer_detail: 'MISP 5 핵심 객체'
+    verify:
+      type: output_contains
+      expect: Attribute
+      field: stdout
+      semantic:
+        intent: "MISP 5 핵심 객체"
+        success_criteria: ["Event / Attribute / Object / Tag / Galaxy"]
+        acceptable_methods:
+          - "**[MISP] Event incident 중심**"
+          - "**[MISP] Attribute IOC**"
+          - "**[MISP] Object 묶음 (file/registry/network)**"
+          - "**[MISP] Tag (TLP / kill-chain / MITRE)**"
+          - "**[MISP] Galaxy (threat-actor / malware / sector)**"
+          - "**[MISP] to_ids flag**"
+          - "**[MISP] distribution level**"
+          - "**[MISP] sharing group**"
+    target_vm: bastion
+
+  - order: 3
+    instruction: |
+      ## 🎯 MISSION — 양방향 sync + circular loop 회피
+
+      ```
+      OpenCTI ↔ MISP 양방향 sync:
+        1. MISP Connector (OpenCTI 측) — external-import: MISP API 호출
+        2. OpenCTI Export Connector (MISP 측) — STIX 2.1 export
+
+      circular loop 위험:
+        MISP Event → OpenCTI Indicator → MISP Event 재진입 → 중복 누적
+
+      해결 3:
+        1. ID 추적 (source_ref / target_ref 의 STIX ID)
+        2. timestamp diff (modified 시각 기반)
+        3. per-direction filter:
+           - OpenCTI → MISP: tag "publish-to-misp" 만 export
+           - MISP → OpenCTI: tag "from-trusted-source" 만 import
+      ```
+    hint: 'MISP ↔ OpenCTI sync + circular loop 회피 3 방법'
+    category: integration
+    points: 15
+    answer: |
+      cat <<'EOF'
+      양방향 sync:
+        OpenCTI MISP Connector (import)
+        MISP STIX export
+      circular loop 회피:
+        1. STIX ID 추적
+        2. timestamp diff
+        3. per-direction filter (tag 기반)
+      EOF
+    answer_detail: '양방향 sync + 3 loop 회피'
+    verify:
+      type: output_contains
+      expect: circular
+      field: stdout
+      semantic:
+        intent: "양방향 sync + circular loop 회피"
+        success_criteria: ["3 방법"]
+        acceptable_methods:
+          - "**[CTI] OpenCTI MISP Connector**"
+          - "**[CTI] MISP STIX 2.1 export**"
+          - "**[CTI] STIX ID 추적**"
+          - "**[CTI] modified timestamp diff**"
+          - "**[CTI] per-direction tag filter**"
+          - "**[CTI] publish-to-misp / from-trusted**"
+          - "**[CTI] duplicate detection**"
+          - "**[CTI] sharing group + distribution**"
+    target_vm: bastion
+
+  - order: 4
+    instruction: |
+      ## 🎯 MISSION — Sighting + Report STIX object 작성
+
+      ```json
+      {
+        "type": "sighting",
+        "spec_version": "2.1",
+        "id": "sighting--w14-001",
+        "sighting_of_ref": "indicator--abc-...-001",
+        "first_seen": "2026-05-12T10:00:00Z",
+        "last_seen": "2026-05-12T11:30:00Z",
+        "count": 5,
+        "where_sighted_refs": ["identity--6v6-secuops"]
+      }
+      ```
+
+      ```json
+      {
+        "type": "report",
+        "spec_version": "2.1",
+        "id": "report--w14-002",
+        "name": "APT28 lateral movement in 6v6 - W14",
+        "report_types": ["threat-report"],
+        "published": "2026-05-12T12:00:00Z",
+        "object_refs": [
+          "indicator--abc-...-001",
+          "threat-actor--abc-...-003",
+          "sighting--w14-001"
+        ]
+      }
+      ```
+    hint: 'Sighting + Report STIX object'
+    category: configuration
+    points: 15
+    answer: |
+      cat <<'EOF'
+      Sighting: indicator 매치 증거 + count + where_sighted
+      Report: name + types + published + object_refs (Sighting + Indicator + ThreatActor)
+      EOF
+    answer_detail: 'Sighting + Report STIX 작성'
+    verify:
+      type: output_contains
+      expect: sighting
+      field: stdout
+      semantic:
+        intent: "Sighting + Report"
+        success_criteria: ["Sighting JSON", "Report JSON"]
+        acceptable_methods:
+          - "**[STIX] sighting_of_ref**"
+          - "**[STIX] first_seen / last_seen / count**"
+          - "**[STIX] where_sighted_refs identity**"
+          - "**[STIX] Report object_refs**"
+          - "**[STIX] report_types**"
+          - "**[STIX] published timestamp**"
+          - "**[STIX] PDF 첨부 + narrative**"
+          - "**[STIX] TLP marking_definition**"
+    target_vm: bastion
+
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION — R/B/P Threat Hunting 5 단계 시뮬
+
+      ```
+      [Hypothesis] APT28 lateral movement (T1078 + T1021) 가 본 환경에 발생 가능성
+
+      [Investigation]
+        - Wazuh alerts.json (rule.id 86601 + 5712 + 60xxx) 1 주 분량 검색
+        - osquery 의 새 user / authorized_keys / cron entry 점검
+        - sysmon (W11 설치 후) 의 ProcessCreate (sshd 부모) + NetworkConnect (외부 IP)
+        - 의심 사례 2-3 건 식별
+
+      [Sighting]
+        - OpenCTI Sighting object 등록
+        - sighting_of_ref: 매치된 indicator
+        - where_sighted: 6v6-secuops identity
+
+      [Report]
+        - OpenCTI Report object
+        - name: "APT28 lateral movement in 6v6"
+        - object_refs: indicator + threat-actor + sighting
+
+      [Share]
+        - MISP Event 생성 + tlp:amber
+        - community 공유 (ISAC 또는 trusted partners)
+        - publish-to-misp tag → OpenCTI Connector 자동 export
+      ```
+    hint: 'Threat Hunting 5 단계 R/B/P'
+    category: redblue
+    points: 20
+    answer: |
+      cat <<'EOF'
+      [Hypothesis] APT28 lateral (T1078+T1021)
+      [Investigation] Wazuh + osquery + sysmon 1주 검색
+      [Sighting] OpenCTI Sighting object
+      [Report] APT28 in 6v6 + Sighting refs
+      [Share] MISP Event + tlp:amber + ISAC
+      EOF
+    answer_detail: 'Threat Hunting 5 단계 시뮬'
     verify:
       type: output_contains
       expect: Hypothesis
       field: stdout
       semantic:
-        intent: "Report 작성"
-        success_criteria: ["4 단계 보고서"]
-        acceptable_methods: ["**[관리적]** PTES / ISMS-P 2.12 매핑"]
+        intent: "Threat Hunting 5 단계"
+        success_criteria: ["5 단계"]
+        acceptable_methods:
+          - "**[OSS] Hypothesis 데이터 source**"
+          - "**[OSS] Investigation multi-source 검색**"
+          - "**[OSS] Sighting STIX object**"
+          - "**[OSS] Report STIX object + PDF**"
+          - "**[OSS] Share TLP amber**"
+          - "**[OSS] MISP Event + community**"
+          - "**[OSS] ISAC / CERT 연계**"
+          - "**[OSS] feedback loop (다음 Hypothesis)**"
+    target_vm: bastion
+
+  - order: 6
+    instruction: |
+      ## 🎯 MISSION — TLP 적용 + 운영 사고 분석
+
+      ```
+      TLP 적용:
+        tlp:white  — 무제한 공개
+        tlp:green  — community (sector)
+        tlp:amber  — limited + need-to-know (default)
+        tlp:red    — restricted (받은 사람만)
+
+      운영 사고 3:
+        1. circular loop → tag filter
+        2. TLP 위반 → 자동 검증
+        3. Sighting 누락 → 자동 생성 (rule 매치 시 API call)
+      ```
+    hint: 'TLP 4 + 사고 3'
+    category: operations
+    points: 10
+    answer: |
+      cat <<'EOF'
+      TLP: white / green / amber (default) / red
+      사고 3: circular loop / TLP 위반 / Sighting 누락
+      EOF
+    answer_detail: 'TLP + 사고 3'
+    verify:
+      type: output_contains
+      expect: tlp
+      field: stdout
+      semantic:
+        intent: "TLP + 운영 사고"
+        success_criteria: ["TLP 4", "사고 3"]
+        acceptable_methods:
+          - "**[관리적] TLP white/green/amber/red**"
+          - "**[관리적] amber default**"
+          - "**[관리적] need-to-know 원칙**"
+          - "**[관리적] circular loop tag filter**"
+          - "**[관리적] TLP 자동 검증**"
+          - "**[관리적] Sighting auto 생성**"
+          - "**[관리적] ISAC 연계 community**"
+          - "**[관리적] KISA C-TAS / FSEC-CTI**"
+    target_vm: bastion
+
+  - order: 7
+    instruction: |
+      ## 🎯 MISSION — W14 종합 보고서
+
+      ```markdown
+      # 6v6 W14 MISP + Threat Hunting 보고서
+
+      ## 1. STEP 1-6 결과
+      ## 2. MISP vs OpenCTI 비교
+      ## 3. 5 핵심 객체 + 양방향 sync
+      ## 4. Threat Hunting 5 단계
+      ## 5. Sighting + Report
+      ## 6. TLP + ISAC 연계
+      ## 7. W15 (기말) 준비도
+      ## 8. 본인 학습 gap
+      ```
+    hint: 마크다운
+    category: synthesis
+    points: 10
+    answer: |
+      cat <<'EOF'
+      # 6v6 W14 MISP 보고서
+      ## 1-6 STEP
+      ## 7 W15 준비도
+      ## 8 gap
+      EOF
+    answer_detail: 종합 보고서
+    verify:
+      type: output_contains
+      expect: MISP
+      field: stdout
+      semantic:
+        intent: "W14 종합"
+        success_criteria: ["8 섹션"]
+        acceptable_methods:
+          - "**[관리적] 마크다운 8 섹션**"
+          - "**[관리적] ISMS-P 2.9.5 공유 의무**"
+          - "**[관리적] NIST CSF ID.RA-3**"
+          - "**[관리적] KISA C-TAS 연계**"
+          - "**[관리적] community 의무**"
+          - "**[관리적] W15 (기말) logical flow**"
+          - "**[관리적] 본인 gap**"
+          - "**[관리적] feedback loop**"
     target_vm: bastion
