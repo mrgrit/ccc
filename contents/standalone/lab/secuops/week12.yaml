@@ -1,0 +1,70 @@
+lab_id: standalone-secuops-week12
+title: OpenCTI 개론 — STIX 2.1 / TAXII 2.1
+version: standalone-non-ai
+course: secuops
+week: 12
+description: |
+  OpenCTI 본격 설치 전 STIX / TAXII 표준 + 무료 IOC feed 5종 분석.
+  본 lab 은 외부 demo 활용 + 사전 설계.
+difficulty: medium
+duration_minutes: 120
+prerequisites: [W11 통과]
+objectives:
+  - STIX 2.1 Object 형식 분석
+  - TAXII 2.1 collection 조회 (public demo)
+  - 무료 IOC feed 5종 평가
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: STIX 2.1 의 Indicator + Relationship JSON 분석
+    hint: |
+      curl -s https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/enterprise-attack.json | jq ".objects[0]"
+    category: analysis
+    points: 25
+    answer: |
+      ssh 6v6-attacker 'curl -s https://urlhaus.abuse.ch/downloads/csv_recent/ 2>&1 | head -5'
+      ssh 6v6-attacker 'curl -s https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/enterprise-attack.json 2>&1 | jq ".objects | length"'
+    answer_detail: STIX JSON 분석
+    verify:
+      type: output_contains
+      expect: object
+      field: stdout
+      semantic:
+        intent: STIX Object 분석
+        success_criteria: [STIX JSON 다운로드]
+        acceptable_methods:
+          - "**[OSS] MITRE ATT&CK STIX 다운로드 + jq**"
+          - "**[OSS] URLhaus CSV → STIX 변환 패턴**"
+          - "**[OSS] STIX 2.1 18 Object 종류 review**"
+          - "**[OSS] Relationship 의 source/target_ref**"
+          - "**[OSS] Bundle 의 STIX 묶음 형식**"
+          - "**[OSS] kill chain phase 매핑**"
+          - "**[OSS] indicator pattern syntax**"
+          - "**[OSS] labels / indicator_types**"
+    target_vm: attacker
+
+  - order: 2
+    instruction: TAXII 2.1 public collection 조회
+    hint: curl -H "Accept: application/taxii+json;version=2.1" https://app.opencti.io/taxii2/
+    category: analysis
+    points: 15
+    answer: |
+      ssh 6v6-attacker 'curl -s -H "Accept: application/taxii+json;version=2.1" https://app.opencti.io/taxii2/ 2>&1 | jq 2>&1 | head -20'
+    answer_detail: TAXII 서버 메타
+    verify:
+      type: output_contains
+      expect: api
+      field: stdout
+      semantic:
+        intent: TAXII 통신
+        success_criteria: [TAXII 응답]
+        acceptable_methods:
+          - "**[OSS] curl + Accept header**"
+          - "**[OSS] /taxii2/api1/collections 조회**"
+          - "**[OSS] /taxii2/api1/collections/<id>/objects 다운로드**"
+          - "**[OSS] Bearer auth (인증 필요 시)**"
+          - "**[OSS] match[type]=indicator filter**"
+          - "**[OSS] added_after 시간 filter**"
+          - "**[OSS] pagination (limit / next)**"
+          - "**[OSS] cabby python 라이브러리 (TAXII client)**"
+    target_vm: attacker
