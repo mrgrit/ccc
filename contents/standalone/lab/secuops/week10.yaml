@@ -1,185 +1,1012 @@
 lab_id: standalone-secuops-week10
-title: Wazuh agent — FIM / SCA / Active Response + R/B/P
+title: Wazuh dashboard + 통합 운영 — osquery / ModSec audit / FIM / Active Response / R/B/P
 version: standalone-non-ai
 course: secuops
 week: 10
 description: |
-  Wazuh agent 의 3 기능 — File Integrity Monitoring (FIM) + Security Configuration
-  Assessment (SCA) + Active Response (자동 IP 차단). Red 가 /etc/passwd 변경 →
-  Blue 가 syscheck alert 추적 → Purple 가 Active Response 권장.
+  6v6 의 dashboard (5601) + indexer (9200) + 통합 운영 — ModSec audit ship 설정 +
+  osquery 통합 설계 + syscheck FIM + Active Response 시뮬 + 6v6 운영 갭 4 (인증 /
+  ModSec ship / osquery daemon / sysmon 미설치) + R/B/P (XSS 5 burst → 5 source
+  dashboard 통합) + 종합 보고서. 한 cycle.
 difficulty: medium
-duration_minutes: 150
+duration_minutes: 200
 prerequisites: [W09]
-objectives: ["FIM 변경 감지", "SCA scorecard", "Active Response 시뮬"]
+objectives:
+  - "dashboard + indexer 접근 + 인증"
+  - "5 main panel (Overview / Agents / Modules / Discovery / Rules) 인지"
+  - "OpenSearch 색인 + KQL 쿼리"
+  - "ModSec audit ship 설계 + 검증"
+  - "osquery 통합 설계 (osqueryd + ship)"
+  - "syscheck FIM directives"
+  - "Active Response 시뮬"
+  - "R/B/P — XSS → 5 source 통합"
+  - "트러블슈팅 + 종합 보고서"
 pass_threshold: 0.7
 steps:
 
   - order: 1
     instruction: |
-      ## 🎯 MISSION (FIM 검증)
+      ## 🎯 MISSION — dashboard 접근 + 인증 + OpenSearch indexer 활성 검증
 
-      web agent 의 `<syscheck>` 설정 + /etc/hosts 변경 트리거 + alerts.json 의 FIM
-      alert 추적.
+      6v6 의 dashboard / indexer / filebeat 3 컨테이너 활성 + 외부 접근 검증.
 
       ## 💻 실행 명령
 
       ```bash
-      # syscheck 설정 확인
-      ssh 6v6-web 'sudo grep -A8 "<syscheck>" /var/ossec/etc/ossec.conf | head -15'
+      # 1. 3 컨테이너 활성
+      ssh 6v6-bastion 'docker ps --format "{{.Names}}\t{{.Status}}" | grep -E "siem|wazuh-indexer|wazuh-dashboard"'
 
-      # Red — /etc/hosts 변경 (FIM 트리거)
-      ssh 6v6-web 'echo "# fim_test_$(date +%s)" | sudo tee -a /etc/hosts'
+      # 2. dashboard listen port (컨테이너 내부)
+      ssh 6v6-wazuh-dashboard 'sudo ss -tlnp 2>&1 | grep 5601 | head' 2>/dev/null || echo "ss 미설치 — netstat 대체"
 
-      # 대기 후 alert 확인 (realtime 또는 frequency 기반)
-      sleep 60
-      ssh 6v6-siem 'sudo grep -E "syscheck|550|554" /var/ossec/logs/alerts/alerts.json | tail -2 | head -1'
+      # 3. HAProxy 의 dashboard backend
+      ssh 6v6-fw 'sudo grep -A2 "backend dashboard" /etc/haproxy/haproxy.cfg'
+
+      # 4. 외부 접근 (학생 PC 가 siem.6v6.lab 로)
+      curl -k -o /dev/null -s -w "HTTPS: %{http_code}\n" -H "Host: siem.6v6.lab" "https://10.20.30.1/"
+      curl -k -L -o /dev/null -s -w "redirect: %{http_code}\n" -H "Host: siem.6v6.lab" "https://10.20.30.1/login"
+
+      # 5. indexer 활성 (manager 측에서 internal)
+      ssh 6v6-siem 'curl -k -u admin:admin https://10.20.32.110:9200/_cluster/health 2>&1 | head -3'
+
+      # 6. filebeat 상태
+      ssh 6v6-siem 'sudo systemctl status filebeat 2>&1 | head -5' 2>/dev/null || echo "service 다른 형태"
       ```
 
       ## 📋 확인 사항
 
-      - syscheck 설정에 `<directories ... realtime="yes">/etc</directories>`
-      - alerts.json 에 rule.id 550 (Integrity checksum changed)
-      - syscheck.path = `/etc/hosts`
+      - 3 컨테이너 (siem / wazuh-indexer / wazuh-dashboard) 모두 Up
+      - dashboard 의 5601 listen
+      - HAProxy 의 backend dashboard (TLS passthrough)
+      - 외부 접근 → 302 또는 401 (인증 필요)
+      - indexer 의 cluster health (auth 후)
+      - filebeat ship 동작
 
       ## 💡 왜 이걸 하는가?
 
-      FIM 은 호스트 변조 검출의 표준 — APT 의 backdoor 추가 / config 변조 즉시 감지.
+      운영 인수 30초 — dashboard + indexer + filebeat 가 살아 있어야 SIEM 의 운영 가시성
+      유지.
 
       ## 🔍 결과 해석
 
-      - **정상**: 60초 안 alert 발생 (realtime=yes 면 즉시)
-      - **비정상**: alert 없음 → ossec.conf 의 syscheck 비활성 또는 inotify limit 부족
-    hint: FIM + /etc/hosts 변경 + alerts.json
-    category: monitoring
-    points: 20
+      - **정상**: 3 컨테이너 Up + 302/401 응답 + cluster health green/yellow
+      - **비정상 1**: dashboard 5601 미열림 → 컨테이너 entrypoint 점검
+      - **비정상 2**: 401 Unauthorized but auth 정확 → password reset (wazuh-passwords-tool)
+      - **비정상 3**: cluster health red → indexer 부하 / disk full
+    hint: 'dashboard 5601 + HAProxy backend dashboard + indexer 9200'
+    category: survey
+    points: 12
     answer: |
-      ssh 6v6-web 'sudo grep -A8 "<syscheck>" /var/ossec/etc/ossec.conf | head -15'
-      ssh 6v6-web 'echo "# fim_test_$(date +%s)" | sudo tee -a /etc/hosts'
-      sleep 60
-      ssh 6v6-siem 'sudo grep -E "syscheck|550" /var/ossec/logs/alerts/alerts.json | tail -2 | head -1'
-    answer_detail: syscheck realtime + /etc/hosts 변경 → 550 (Integrity changed) alert.
+      ssh 6v6-bastion 'docker ps --format "{{.Names}}\t{{.Status}}" | grep -E "siem|wazuh-indexer|wazuh-dashboard"'
+      ssh 6v6-fw 'sudo grep -A2 "backend dashboard" /etc/haproxy/haproxy.cfg'
+      curl -k -o /dev/null -s -w "HTTPS: %{http_code}\n" -H "Host: siem.6v6.lab" "https://10.20.30.1/"
+      curl -k -L -o /dev/null -s -w "redirect: %{http_code}\n" -H "Host: siem.6v6.lab" "https://10.20.30.1/login"
+      ssh 6v6-siem 'curl -k -u admin:admin https://10.20.32.110:9200/_cluster/health 2>&1 | head -3'
+    answer_detail: 'dashboard / indexer / filebeat 3 컨테이너 + HAProxy backend + 외부 접근 302/401'
     verify:
       type: output_contains
-      expect: syscheck
+      expect: dashboard
       field: stdout
       semantic:
-        intent: "FIM 동작"
-        success_criteria: ["syscheck alert"]
+        intent: "dashboard / indexer 활성 + 외부 접근"
+        success_criteria: ["3 컨테이너 Up", "5601 listen", "HAProxy backend", "302/401 응답"]
         acceptable_methods:
-          - "**[OSS] /var/ossec/etc/ossec.conf <syscheck>**"
-          - "**[OSS] realtime=yes (inotify 즉시 감지)**"
-          - "**[OSS] report_changes=yes (변경 diff 포함)**"
-          - "**[OSS] whodata (audit subsystem)**"
-          - "**[OSS] rule 550/554 (changed/added)**"
-          - "**[OSS] dashboard Integrity Monitoring**"
-          - "**[OSS] inotify limit (max_user_watches)**"
-          - "**[OSS] ignore + nodiff 패턴**"
-    target_vm: web
+          - "**[OSS] docker ps grep dashboard**"
+          - "**[OSS] HAProxy backend dashboard TLS passthrough**"
+          - "**[OSS] curl -H Host: siem.6v6.lab**"
+          - "**[OSS] OpenSearch _cluster/health**"
+          - "**[OSS] filebeat ship 검증**"
+          - "**[OSS] dashboard 의 /usr/share/wazuh-dashboard/data/wazuh/**"
+          - "**[OSS] internal_users.yml password hash**"
+          - "**[OSS] wazuh-passwords-tool**"
+    target_vm: bastion
 
   - order: 2
     instruction: |
-      ## 🎯 MISSION (SCA scorecard)
+      ## 🎯 MISSION — 5 main panel (Overview / Agents / Modules / Discovery / Rules) 인지
 
-      Wazuh API 로 web agent 의 **SCA scorecard** (CIS Ubuntu 22.04 점검) 조회.
+      dashboard 의 5 main panel 의 역할 + 접근 URL (학습용 시뮬, 실 인증 후 사용).
 
       ## 💻 실행 명령
 
       ```bash
-      ssh 6v6-siem '
-      TOKEN=$(sudo curl -sk -u wazuh-wui:MyS3cr37P450r.*- -X POST https://localhost:55000/security/user/authenticate | python3 -c "import json,sys; print(json.load(sys.stdin)[\"data\"][\"token\"])")
-      sudo curl -sk -H "Authorization: Bearer $TOKEN" "https://localhost:55000/sca/001?pretty=true" 2>&1 | head -50
-      '
+      # 1. 5 panel URL 패턴
+      cat <<'EOF'
+      Overview         — https://siem.6v6.lab/app/wazuh#/overview
+      Agents           — https://siem.6v6.lab/app/wazuh#/agents
+      Modules          — https://siem.6v6.lab/app/wazuh#/modules
+        ├── Security events
+        ├── Integrity monitoring (FIM)
+        ├── Vulnerability detection
+        ├── Configuration assessment (SCA)
+        ├── Regulatory compliance (PCI/HIPAA/GDPR)
+        └── MITRE ATT&CK
+      Discovery        — https://siem.6v6.lab/app/discover
+      Management/Rules — https://siem.6v6.lab/app/wazuh#/manager/?tab=ruleset
+      EOF
+
+      # 2. indexer 의 wazuh-alerts-* 색인
+      ssh 6v6-siem 'curl -k -u admin:admin "https://10.20.32.110:9200/_cat/indices/wazuh-*?h=index,docs.count,store.size" 2>&1 | head -10'
+
+      # 3. KQL 쿼리 예시 (시뮬)
+      cat <<'EOF'
+      KQL 쿼리 예 (Discovery panel):
+        rule.level >= 7
+        rule.id: "86601" AND agent.name: "ips"
+        data.alert.signature_id: "9009001"
+        timestamp: [now-1h TO now]
+      EOF
+
+      # 4. dashboard 의 RBAC roles (시뮬)
+      cat <<'EOF'
+      RBAC roles 예:
+        admin       — all access
+        readonly    — view only
+        analyst     — view + investigate
+        responder   — view + Active Response 실행
+      EOF
       ```
 
       ## 📋 확인 사항
 
-      - SCA 정책 (cis_ubuntu22-04.yml) 적용
-      - score / pass / fail / total_checks 표시
-      - dashboard `/app/wazuh` 의 SCA 메뉴에서 시각화
+      - 5 panel URL 패턴
+      - indexer 의 wazuh-alerts-* 색인 (alerts.json 의 doc 수)
+      - KQL 쿼리 syntax 인지
+      - RBAC roles 4 예시
 
       ## 💡 왜 이걸 하는가?
 
-      CIS Linux benchmark 100+ 점검 자동화. ISMS-P 2.9 (시스템 운영) 의 표준 점검.
+      SOC 분석가의 일상 작업 — dashboard 의 5 panel 항상 사용. URL + KQL 익숙해지면
+      5분 → 30초로 분석 시간 단축.
 
       ## 🔍 결과 해석
 
-      - **정상**: 100+ 검사 + score 60-80%
-      - **fail 항목**: 운영 강화 candidate
-    hint: Wazuh API + SCA
-    category: monitoring
-    points: 20
+      - **정상**: 5 panel 모두 인지 + wazuh-alerts-* 색인 + KQL 4 예
+      - **운영 권장**:
+        - RBAC 활용 — analyst / responder 분리
+        - dashboard 의 saved searches + dashboard 저장
+        - alert level >= 7 default filter
+    hint: 'dashboard 5 panel URL + KQL + RBAC'
+    category: navigation
+    points: 12
     answer: |
-      ssh 6v6-siem '
-      TOKEN=$(sudo curl -sk -u wazuh-wui:MyS3cr37P450r.*- -X POST https://localhost:55000/security/user/authenticate | python3 -c "import json,sys; print(json.load(sys.stdin)[\"data\"][\"token\"])")
-      sudo curl -sk -H "Authorization: Bearer $TOKEN" "https://localhost:55000/sca/001?pretty=true" 2>&1 | head -50
-      '
-    answer_detail: Wazuh API + JWT + /sca/001.
+      echo "=== 5 panel ==="
+      cat <<'EOF'
+      Overview / Agents / Modules / Discovery / Rules
+      Modules: Security events / FIM / VD / SCA / Regulatory / MITRE
+      EOF
+      ssh 6v6-siem 'curl -k -u admin:admin "https://10.20.32.110:9200/_cat/indices/wazuh-*?h=index,docs.count,store.size" 2>&1 | head -10'
+      echo "=== KQL 예 ==="
+      cat <<'EOF'
+      rule.level >= 7
+      rule.id: "86601" AND agent.name: "ips"
+      data.alert.signature_id: "9009001"
+      timestamp: [now-1h TO now]
+      EOF
+      echo "=== RBAC ==="
+      echo "admin / readonly / analyst / responder"
+    answer_detail: '5 panel + wazuh-alerts-* + KQL 4 예 + RBAC 4 roles'
     verify:
       type: output_contains
-      expect: 'sca\|score\|policy'
+      expect: Discovery
       field: stdout
       semantic:
-        intent: "SCA scorecard"
-        success_criteria: ["score 또는 sca"]
+        intent: "5 panel + KQL + RBAC"
+        success_criteria: ["5 panel", "KQL 예", "RBAC"]
         acceptable_methods:
-          - "**[OSS] Wazuh API + JWT 인증**"
-          - "**[OSS] /sca/{agent_id}**"
-          - "**[OSS] /var/ossec/logs/wodle_sca.log**"
-          - "**[OSS] /var/ossec/ruleset/sca/cis_*.yml**"
-          - "**[OSS] policy 별 score (CIS/PCI/GDPR)**"
-          - "**[OSS] fail 항목 상세 조회**"
-          - "**[OSS] dashboard SCA scorecard**"
-          - "**[OSS] 정기 scan 주기 (12h)**"
-    target_vm: siem
+          - "**[OSS] /app/wazuh#/overview 등 URL**"
+          - "**[OSS] /_cat/indices/wazuh-***"
+          - "**[OSS] KQL rule.level / rule.id / agent.name**"
+          - "**[OSS] saved searches + dashboard save**"
+          - "**[OSS] RBAC roles**"
+          - "**[OSS] Modules 의 sub-panel**"
+          - "**[OSS] MITRE ATT&CK navigator export**"
+          - "**[OSS] Regulatory Compliance (PCI/HIPAA/GDPR)**"
+    target_vm: bastion
 
   - order: 3
     instruction: |
-      ## 🎯 MISSION (Active Response 시뮬)
+      ## 🎯 MISSION — ModSec audit ship 설계 + 패치 시뮬
 
-      Active Response 설정 검증 + firewall-drop 명령 시뮬.
+      lecture §4 — web agent 의 ossec.conf 의 localfile 추가 + decoder 매핑 + 적용 후
+      검증 흐름.
 
       ## 💻 실행 명령
 
       ```bash
-      ssh 6v6-siem 'sudo grep -A4 "<command>\|<active-response>" /var/ossec/etc/ossec.conf | head -30'
-      ssh 6v6-siem 'sudo ls /var/ossec/active-response/bin/'
+      # 1. 현재 상태 — web 의 ossec.conf 에 modsec_audit 없음 확인
+      echo "=== 현재 상태 ==="
+      ssh 6v6-web 'sudo grep -c "modsec_audit" /var/ossec/etc/ossec.conf'    # 0 예상
+
+      # 2. patch 시뮬 (실 적용 X — 학습용)
+      echo
+      echo "=== Patch 시뮬 ==="
+      cat <<'EOF'
+      # /var/ossec/etc/ossec.conf 의 <ossec_config> 안 (web agent)
+      <localfile>
+        <log_format>json</log_format>
+        <location>/var/log/apache2/modsec_audit.log</location>
+      </localfile>
+      EOF
+
+      # 3. Wazuh ruleset 의 Apache 룰 활성 확인
+      echo
+      echo "=== Wazuh apache rule 활성 ==="
+      ssh 6v6-siem 'sudo ls /var/ossec/ruleset/rules/ | grep -iE "apache|modsec" | head'
+      ssh 6v6-siem 'sudo head -10 /var/ossec/ruleset/rules/0250-apache_rules.xml 2>&1'
+
+      # 4. 적용 절차 (시뮬, 실 적용 시 단계)
+      echo
+      echo "=== 적용 절차 (시뮬) ==="
+      cat <<'EOF'
+      1. ossec.conf 패치 (web agent)
+      2. wazuh-control restart (web)
+      3. attacker XSS 트리거
+      4. alerts.json 의 web agent + apache 룰 매치 검증
+      EOF
+
+      # 5. 실 적용 시 검증 명령 (학습용)
+      echo
+      echo "=== 검증 명령 (실 적용 후) ==="
+      echo "BEFORE=\$(ssh 6v6-siem 'sudo wc -l /var/ossec/logs/alerts/alerts.json')"
+      echo "ssh 6v6-attacker 'curl -H \"Host: juice.6v6.lab\" http://10.20.30.1/?q=<script>'"
+      echo "AFTER=\$(...) — agent.name web 매치 확인"
       ```
 
       ## 📋 확인 사항
 
-      - `<command>` 정의 (firewall-drop 등)
-      - `<active-response>` 의 rules_id + timeout
-      - /var/ossec/active-response/bin/ 에 firewall-drop.sh 존재
+      - 현재 web agent 에 modsec_audit 미설정 (count 0)
+      - Patch 시뮬 (3 라인 localfile)
+      - Wazuh 의 0250-apache_rules.xml 활성
+      - 적용 절차 + 검증 명령 인지
 
       ## 💡 왜 이걸 하는가?
 
-      Active Response 는 자동 차단 — incident response 의 분 단위 대응.
+      6v6 의 운영 갭 보완 — ModSec audit log 가 manager 로 ship 되어야 dashboard 의
+      Modules > Security events 에 web agent 의 알람 표시.
 
       ## 🔍 결과 해석
 
-      - **정상**: command + active-response 정의 + script 존재
-      - **운영 권장**: timeout 600 (10분) + 알람 통보
-    hint: Active Response 설정
+      - **정상**: 현재 미설정 인지 + patch 시뮬 + 검증 명령
+      - **운영 권장**:
+        - manager 측 shared agent.conf (default group) 로 web agent group 설정
+        - DetectionOnly 1주 모니터 후 실 적용
+        - audit log size logrotate
+        - Wazuh ruleset 의 0250 + 0260 (modsec) + 0285 (Apache) 모두 활성
+    hint: 'web ossec.conf 의 localfile + modsec_audit.log + 0250-apache_rules.xml'
+    category: integration
+    points: 15
+    answer: |
+      ssh 6v6-web 'sudo grep -c "modsec_audit" /var/ossec/etc/ossec.conf'
+      echo "Patch:"
+      cat <<'EOF'
+      <localfile>
+        <log_format>json</log_format>
+        <location>/var/log/apache2/modsec_audit.log</location>
+      </localfile>
+      EOF
+      ssh 6v6-siem 'sudo ls /var/ossec/ruleset/rules/ | grep -iE "apache|modsec" | head'
+      ssh 6v6-siem 'sudo head -10 /var/ossec/ruleset/rules/0250-apache_rules.xml 2>&1'
+    answer_detail: 'web ossec.conf 의 modsec_audit localfile patch 시뮬 + Wazuh 0250 룰'
+    verify:
+      type: output_contains
+      expect: apache
+      field: stdout
+      semantic:
+        intent: "ModSec audit ship 설계 + 패치 시뮬"
+        success_criteria: ["미설정 인지", "patch 시뮬", "0250 활성"]
+        acceptable_methods:
+          - "**[OSS] ossec.conf <localfile> log_format json**"
+          - "**[OSS] modsec_audit.log path**"
+          - "**[OSS] /var/ossec/ruleset/rules/0250-apache**"
+          - "**[OSS] manager shared agent.conf**"
+          - "**[OSS] DetectionOnly 1주 검증**"
+          - "**[OSS] logrotate audit log**"
+          - "**[OSS] Wazuh 의 audit_data.messages parse**"
+          - "**[OSS] anomaly score 매핑**"
+    target_vm: bastion
+
+  - order: 4
+    instruction: |
+      ## 🎯 MISSION — osquery 통합 설계 (osqueryd enable + log ship)
+
+      lecture §5 — 6v6 osquery 의 ad-hoc only → daemon 운영 + Wazuh ship 의 3 단계.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # 1. 현재 상태 (W07 에서 확인)
+      ssh 6v6-web 'sudo systemctl status osqueryd 2>&1 | head -3'
+      ssh 6v6-web 'sudo ls /etc/osquery 2>&1'
+      ssh 6v6-web 'sudo ls /var/log/osquery 2>&1'
+
+      # 2. 통합 설계 — 3 단계
+      echo
+      echo "=== 3 단계 통합 설계 ==="
+      cat <<'EOF'
+      [1] osquery.conf 작성 (4 호스트 공통)
+        - file_paths (system_etc / ssh_keys / cron_paths)
+        - schedule (process_snapshot / new_users / listening_ports / file_changes)
+        - logger_path /var/log/osquery
+
+      [2] osqueryd enable
+        sudo systemctl enable --now osqueryd
+        sudo systemctl status osqueryd
+
+      [3] Wazuh agent 의 localfile 추가
+        <localfile>
+          <log_format>json</log_format>
+          <location>/var/log/osquery/osqueryd.results.log</location>
+        </localfile>
+      EOF
+
+      # 3. Wazuh ruleset 의 osquery 룰 활성 확인
+      echo
+      echo "=== Wazuh osquery rule ==="
+      ssh 6v6-siem 'sudo ls /var/ossec/ruleset/rules/ | grep osquery'
+      ssh 6v6-siem 'sudo grep -l "osquery" /var/ossec/ruleset/decoders/* | head -3'
+
+      # 4. 통합 후 효과
+      echo
+      echo "=== 통합 후 효과 ==="
+      cat <<'EOF'
+      - dashboard 의 Modules > File Integrity Monitoring 에 osquery file_events 표시
+      - Discovery 에서 rule.groups: "osquery" 필터
+      - new_users alert 자동 발생 (60-600초 polling)
+      - baseline 의 diff 분기 검토
+      EOF
+      ```
+
+      ## 📋 확인 사항
+
+      - osqueryd 미운영 + /etc/osquery 없음 (현재 상태)
+      - 3 단계 통합 설계
+      - Wazuh 의 0545-osquery_rules.xml 활성
+      - 통합 후 효과 4 항목
+
+      ## 💡 왜 이걸 하는가?
+
+      W07 의 osquery (ad-hoc only) → 운영 grade 통합 (daemon + scheduled + ship +
+      dashboard). production 시 매주 baseline diff + anomaly alert.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 3 단계 설계 + Wazuh 룰 활성 확인 + 효과 명시
+      - **운영 권장**:
+        - 4 호스트 (bastion / fw / ips / web) 모두 osqueryd
+        - schedule_splay_percent — load 분산
+        - host_identifier hostname — alerts.json 의 agent 매핑
+        - daily / weekly differential — baseline diff
+    hint: 'osquery.conf + osqueryd enable + Wazuh agent localfile + 0545-osquery rule'
+    category: integration
+    points: 15
+    answer: |
+      ssh 6v6-web 'sudo systemctl status osqueryd 2>&1 | head -3'
+      ssh 6v6-web 'sudo ls /etc/osquery 2>&1'
+      echo "=== 3 단계 설계 ==="
+      cat <<'EOF'
+      [1] osquery.conf — file_paths / schedule / logger_path
+      [2] systemctl enable --now osqueryd
+      [3] <localfile><log_format>json</log_format><location>/var/log/osquery/osqueryd.results.log</location></localfile>
+      EOF
+      ssh 6v6-siem 'sudo ls /var/ossec/ruleset/rules/ | grep osquery'
+      ssh 6v6-siem 'sudo grep -l "osquery" /var/ossec/ruleset/decoders/* | head -3'
+    answer_detail: '3 단계 통합 설계 + Wazuh 0545 osquery 룰 + 효과 4'
+    verify:
+      type: output_contains
+      expect: osquery
+      field: stdout
+      semantic:
+        intent: "osquery 통합 설계 — daemon + ship"
+        success_criteria: ["현재 미운영 인지", "3 단계 설계", "Wazuh osquery 룰"]
+        acceptable_methods:
+          - "**[OSS] systemctl enable --now osqueryd**"
+          - "**[OSS] /etc/osquery/osquery.conf**"
+          - "**[OSS] file_paths + schedule + logger_path**"
+          - "**[OSS] Wazuh agent localfile json**"
+          - "**[OSS] /var/ossec/ruleset/rules/0545-osquery**"
+          - "**[OSS] schedule_splay_percent**"
+          - "**[OSS] host_identifier hostname**"
+          - "**[OSS] daily/weekly differential**"
+    target_vm: bastion
+
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION — syscheck FIM directives + 트리거 + alerts.json 검증
+
+      lecture §6 — Wazuh 자체 FIM (syscheck daemon) + 트리거 후 rule 550 매치.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # 1. manager 의 syscheck 설정
+      ssh 6v6-siem 'sudo grep -B1 -A15 "<syscheck>" /var/ossec/etc/ossec.conf 2>&1 | head -30'
+
+      # 2. agent 측 (web) 의 syscheck 활성
+      ssh 6v6-web 'sudo grep -B1 -A5 "<syscheck>" /var/ossec/etc/ossec.conf 2>&1 | head -15'
+
+      # 3. baseline alerts.json
+      BEFORE=$(ssh 6v6-siem 'sudo wc -l /var/ossec/logs/alerts/alerts.json | awk "{print \$1}"')
+      echo "baseline: $BEFORE"
+
+      # 4. 파일 변경 트리거 (web /etc/passwd touch)
+      ssh 6v6-web 'sudo bash -c "touch /etc/passwd"'   # mtime 변경
+      sleep 15   # syscheck realtime + ship + analysisd
+
+      # 5. rule 550 검색
+      AFTER=$(ssh 6v6-siem 'sudo wc -l /var/ossec/logs/alerts/alerts.json | awk "{print \$1}"')
+      echo "after: $AFTER  delta: $((AFTER - BEFORE))"
+      ssh 6v6-siem 'sudo tail -20 /var/ossec/logs/alerts/alerts.json | jq "select(.rule.groups | contains([\"syscheck\"])) | {rule_id:.rule.id, desc:.rule.description, agent:.agent.name}"' 2>&1 | head
+
+      # 6. realtime vs scheduled (frequency 차이)
+      echo
+      echo "=== syscheck 의 두 모드 ==="
+      cat <<'EOF'
+      realtime="yes"  — inotify 즉시 (1-2초 지연)
+      frequency 3600  — 1시간 마다 전체 스캔 (hash 비교)
+      EOF
+      ```
+
+      ## 📋 확인 사항
+
+      - manager + agent 의 syscheck 정의 (보통 /etc/ + /root/.ssh 등)
+      - baseline / after delta (1+ 가 syscheck 동작 흔적)
+      - rule 550 또는 비슷한 syscheck rule 매치
+      - realtime vs scheduled 차이
+
+      ## 💡 왜 이걸 하는가?
+
+      Wazuh 자체 FIM 동작 + alerts.json 적재 검증. dashboard 의 Modules > Integrity
+      monitoring 에서 시각화.
+
+      ## 🔍 결과 해석
+
+      - **정상**: rule 550+ 매치 + agent.name 정확
+      - **운영 권장**:
+        - 핵심 path (/etc/passwd, /etc/shadow, /root/.ssh, /etc/cron.d) realtime
+        - 광범위 path (/usr/bin) 는 frequency
+        - ignore 룰 — /etc/mtab / /etc/resolv.conf (자주 변경, FP)
+        - report_changes — 변경 내용 (diff) 포함
+    hint: 'syscheck directives + touch /etc/passwd + rule 550'
     category: configuration
     points: 15
     answer: |
-      ssh 6v6-siem 'sudo grep -A4 "<command>\|<active-response>" /var/ossec/etc/ossec.conf | head -30'
-      ssh 6v6-siem 'sudo ls /var/ossec/active-response/bin/'
-    answer_detail: Active Response 설정 + script 가용성.
+      ssh 6v6-siem 'sudo grep -B1 -A15 "<syscheck>" /var/ossec/etc/ossec.conf 2>&1 | head -30'
+      ssh 6v6-web 'sudo grep -B1 -A5 "<syscheck>" /var/ossec/etc/ossec.conf 2>&1 | head -15'
+      BEFORE=$(ssh 6v6-siem 'sudo wc -l /var/ossec/logs/alerts/alerts.json | awk "{print \$1}"')
+      echo "baseline: $BEFORE"
+      ssh 6v6-web 'sudo bash -c "touch /etc/passwd"'
+      sleep 15
+      AFTER=$(ssh 6v6-siem 'sudo wc -l /var/ossec/logs/alerts/alerts.json | awk "{print \$1}"')
+      echo "after: $AFTER  delta: $((AFTER - BEFORE))"
+      ssh 6v6-siem 'sudo tail -20 /var/ossec/logs/alerts/alerts.json | jq "select(.rule.groups | contains([\"syscheck\"])) | {rule_id:.rule.id, desc:.rule.description, agent:.agent.name}"' 2>&1 | head
+    answer_detail: 'syscheck 설정 + 트리거 + rule 550 매치'
     verify:
       type: output_contains
-      expect: response
+      expect: 'syscheck\|delta'
       field: stdout
       semantic:
-        intent: "Active Response 설정"
-        success_criteria: ["command 또는 active-response"]
+        intent: "syscheck FIM 트리거 + alerts.json 매치"
+        success_criteria: ["syscheck 정의", "트리거", "rule 550 매치"]
         acceptable_methods:
-          - "**[OSS] <command> + executable**"
-          - "**[OSS] <active-response> + rules_id + timeout**"
-          - "**[OSS] firewall-drop / disable-account / host-deny**"
-          - "**[OSS] /var/ossec/active-response/bin/**"
-          - "**[OSS] manager 가 agent 에 명령 전송**"
-          - "**[OSS] agent 가 script 실행 (firewall / user / log)**"
-          - "**[OSS] timeout 600s (자동 해제)**"
-          - "**[OSS] dashboard 의 Active Response 메뉴**"
-    target_vm: siem
+          - "**[OSS] <syscheck><directories realtime=yes>**"
+          - "**[OSS] touch /etc/passwd 트리거**"
+          - "**[OSS] alerts.json delta**"
+          - "**[OSS] rule.groups syscheck**"
+          - "**[OSS] rule 550 / 551 / 553 / 554**"
+          - "**[OSS] realtime vs frequency**"
+          - "**[OSS] ignore directive (FP 회피)**"
+          - "**[OSS] report_changes diff 포함**"
+    target_vm: bastion
+
+  - order: 6
+    instruction: |
+      ## 🎯 MISSION — Active Response 시뮬 + active-responses.log
+
+      lecture §7 — manager 측 <active-response> + agent 측 firewall-drop 스크립트 +
+      nftables 통합 시뮬 (실 적용 X — 환경 위험).
+
+      ## 💻 실행 명령
+
+      ```bash
+      # 1. manager 의 active-response 설정
+      ssh 6v6-siem 'sudo grep -B1 -A8 "<active-response>" /var/ossec/etc/ossec.conf 2>&1 | head -30'
+
+      # 2. agent 의 firewall-drop 스크립트 (자동 생성)
+      ssh 6v6-web 'sudo ls /var/ossec/active-response/bin/ 2>&1'
+      ssh 6v6-web 'sudo cat /var/ossec/active-response/bin/firewall-drop 2>&1 | head -20'
+
+      # 3. active-responses.log
+      ssh 6v6-web 'sudo tail -10 /var/ossec/logs/active-responses.log 2>&1'
+
+      # 4. AR 활성 시뮬 (시뮬 — 실 적용 안 함)
+      echo
+      echo "=== AR 활성 패치 (시뮬) ==="
+      cat <<'EOF'
+      <!-- /var/ossec/etc/ossec.conf -->
+      <active-response>
+          <command>firewall-drop</command>
+          <location>local</location>
+          <rules_id>5712,9009001</rules_id>
+          <timeout>600</timeout>
+      </active-response>
+
+      <allow_list>
+          <ip>192.168.0.0/24</ip>      <!-- 운영자 PC subnet -->
+          <ip>10.20.30.201</ip>         <!-- bastion -->
+      </allow_list>
+      EOF
+
+      # 5. 운영 위험 + 권장
+      echo
+      echo "=== 운영 위험 + 권장 5 ==="
+      cat <<'EOF'
+      위험 1: 운영자 IP 자기 차단 → allow_list 사전 정의 필수
+      위험 2: timeout 너무 짧음 (1분) → 정상 사용자도 차단 지속
+      위험 3: timeout 너무 김 (1일) → 정상 사용자 장기 차단
+      위험 4: false-positive 매치 시 정상 IP 차단
+      위험 5: AR 의 race condition (동시 alert)
+
+      권장: timeout 600 (10분) + allow_list + DetectionOnly 1주 시뮬 + active-responses.log audit
+      EOF
+      ```
+
+      ## 📋 확인 사항
+
+      - manager 의 active-response 설정 (활성 또는 비활성)
+      - agent 의 firewall-drop 스크립트
+      - active-responses.log (비어 있을 수도)
+      - AR 활성 패치 시뮬
+      - 위험 5 + 권장
+
+      ## 💡 왜 이걸 하는가?
+
+      자동 차단의 운영 위험. AR 도입 전 allow_list + timeout + DetectionOnly 사전 검증 필수.
+
+      ## 🔍 결과 해석
+
+      - **정상**: AR 설정 + firewall-drop 스크립트 + log 확인
+      - **운영 권장**: §7.4 의 5 항목
+    hint: '<active-response> + firewall-drop + active-responses.log + allow_list'
+    category: configuration
+    points: 15
+    answer: |
+      ssh 6v6-siem 'sudo grep -B1 -A8 "<active-response>" /var/ossec/etc/ossec.conf 2>&1 | head -30'
+      ssh 6v6-web 'sudo ls /var/ossec/active-response/bin/ 2>&1'
+      ssh 6v6-web 'sudo cat /var/ossec/active-response/bin/firewall-drop 2>&1 | head -20'
+      ssh 6v6-web 'sudo tail -10 /var/ossec/logs/active-responses.log 2>&1'
+      cat <<'EOF'
+      <active-response>
+          <command>firewall-drop</command>
+          <location>local</location>
+          <rules_id>5712,9009001</rules_id>
+          <timeout>600</timeout>
+      </active-response>
+      <allow_list><ip>192.168.0.0/24</ip></allow_list>
+      EOF
+    answer_detail: 'AR 설정 + firewall-drop 스크립트 + 위험 5 + 권장'
+    verify:
+      type: output_contains
+      expect: active-response
+      field: stdout
+      semantic:
+        intent: "Active Response 시뮬 + 위험"
+        success_criteria: ["AR 설정", "firewall-drop", "위험 5", "권장"]
+        acceptable_methods:
+          - "**[OSS] <active-response> + command + location + rules_id**"
+          - "**[OSS] firewall-drop 스크립트**"
+          - "**[OSS] /var/ossec/logs/active-responses.log**"
+          - "**[OSS] <allow_list> 운영자 IP**"
+          - "**[OSS] timeout 600 (10분)**"
+          - "**[OSS] DetectionOnly 1주 시뮬**"
+          - "**[OSS] git audit AR 변경**"
+          - "**[OSS] disable-account / route-null AR**"
+    target_vm: bastion
+
+  - order: 7
+    instruction: |
+      ## 🎯 MISSION — **R/B/P** XSS 5 burst → 5 source dashboard 통합
+
+      **Red** 5 XSS → **Blue** 5 source alert (Suricata / ModSec / Apache access log /
+      osquery / syscheck) 통합 추적 → **Purple** dashboard 권장.
+
+      ## 💻 실행 명령
+
+      ```bash
+      BEFORE=$(ssh 6v6-siem 'sudo wc -l /var/ossec/logs/alerts/alerts.json | awk "{print \$1}"')
+      echo "baseline: $BEFORE"
+
+      # Red 5 burst
+      echo "=== Red 5 XSS ==="
+      for i in 1 2 3 4 5; do
+        code=$(ssh 6v6-attacker "curl -s -o /dev/null -w '%{http_code}' -H 'Host: juice.6v6.lab' 'http://10.20.30.1/?q=<script>alert($i)</script>'")
+        echo "  burst $i → $code"
+      done
+      sleep 10
+
+      # Blue — alerts.json delta + source 분석
+      AFTER=$(ssh 6v6-siem 'sudo wc -l /var/ossec/logs/alerts/alerts.json | awk "{print \$1}"')
+      DELTA=$((AFTER - BEFORE))
+      echo "Blue: delta = $DELTA"
+
+      # rule.groups 분포 (source 별)
+      echo
+      echo "=== source 분포 ==="
+      ssh 6v6-siem "sudo tail -$DELTA /var/ossec/logs/alerts/alerts.json 2>/dev/null | jq -r '.rule.groups | join(\",\")' | sort | uniq -c | sort -rn | head -10"
+
+      # agent.name 분포
+      echo
+      echo "=== agent 분포 ==="
+      ssh 6v6-siem "sudo tail -$DELTA /var/ossec/logs/alerts/alerts.json 2>/dev/null | jq -r '.agent.name' | sort | uniq -c"
+
+      # rule.id top 5
+      echo
+      echo "=== rule.id top 5 ==="
+      ssh 6v6-siem "sudo tail -$DELTA /var/ossec/logs/alerts/alerts.json 2>/dev/null | jq -r '.rule.id' | sort | uniq -c | sort -rn | head -5"
+
+      # Purple — dashboard 권장
+      echo
+      echo "=== Purple 권장 5 ==="
+      cat <<'EOF'
+      1. Discovery panel — rule.level >= 5 default filter
+      2. Saved search — XSS 공격 패턴 (rule.id 86xxx OR 30xxx)
+      3. Modules > Security events — 시간 별 timeline
+      4. MITRE ATT&CK panel — T1190 매핑
+      5. RBAC — analyst 권한으로 SOC tier 1 access
+      EOF
+      ```
+
+      ## 📋 확인 사항
+
+      - delta 5+ (Suricata 10 + ModSec 5 + 기타 source)
+      - source 분포 — ids / suricata / apache / web-application-attack 등
+      - agent 분포 — ips 다수 + web (modsec ship 활성 시)
+      - rule.id top 5
+      - Purple 권장 5
+
+      ## 💡 왜 이걸 하는가?
+
+      multi-source SIEM 의 표준 R/B/P. 동일 공격이 여러 source 매치 → 통합 분석.
+
+      ## 🔍 결과 해석
+
+      - **정상**: delta 5+ + multi-source + 다양 rule.id
+      - **운영 권장**: dashboard 의 Discovery / Modules / MITRE panel
+    hint: 'XSS 5 burst → alerts.json delta + source / agent / rule.id 분포'
+    category: redblue
+    points: 25
+    answer: |
+      BEFORE=$(ssh 6v6-siem 'sudo wc -l /var/ossec/logs/alerts/alerts.json | awk "{print \$1}"')
+      echo "baseline: $BEFORE"
+      for i in 1 2 3 4 5; do
+        code=$(ssh 6v6-attacker "curl -s -o /dev/null -w '%{http_code}' -H 'Host: juice.6v6.lab' 'http://10.20.30.1/?q=<script>alert($i)</script>'")
+        echo "  burst $i → $code"
+      done
+      sleep 10
+      AFTER=$(ssh 6v6-siem 'sudo wc -l /var/ossec/logs/alerts/alerts.json | awk "{print \$1}"')
+      DELTA=$((AFTER - BEFORE))
+      echo "delta: $DELTA"
+      echo "=== source 분포 ==="
+      ssh 6v6-siem "sudo tail -$DELTA /var/ossec/logs/alerts/alerts.json 2>/dev/null | jq -r '.rule.groups | join(\",\")' | sort | uniq -c | sort -rn | head -10"
+      echo "=== agent ==="
+      ssh 6v6-siem "sudo tail -$DELTA /var/ossec/logs/alerts/alerts.json 2>/dev/null | jq -r '.agent.name' | sort | uniq -c"
+      echo "=== rule.id top 5 ==="
+      ssh 6v6-siem "sudo tail -$DELTA /var/ossec/logs/alerts/alerts.json 2>/dev/null | jq -r '.rule.id' | sort | uniq -c | sort -rn | head -5"
+      echo "Purple 권장 5: Discovery filter / Saved search / Modules timeline / MITRE / RBAC analyst"
+    answer_detail: 'XSS 5 burst → delta + multi-source 분포 + Purple 권장 5'
+    verify:
+      type: output_contains
+      expect: delta
+      field: stdout
+      semantic:
+        intent: "R/B/P — multi-source dashboard 통합"
+        success_criteria: ["delta 5+", "source 분포", "agent 분포", "Purple 권장 5"]
+        acceptable_methods:
+          - "**[OSS] alerts.json delta**"
+          - "**[OSS] rule.groups 분포**"
+          - "**[OSS] agent.name 분포**"
+          - "**[OSS] rule.id top**"
+          - "**[OSS] dashboard Discovery + filter**"
+          - "**[OSS] saved searches**"
+          - "**[OSS] MITRE ATT&CK panel**"
+          - "**[OSS] RBAC analyst / responder**"
+    target_vm: bastion
+
+  - order: 8
+    instruction: |
+      ## 🎯 MISSION — 트러블슈팅 (login 실패 / panel 빈 화면 / alert 지연)
+
+      lecture §8 의 4 패턴 중 3 진단.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # 패턴 1 — login 실패 진단
+      echo "=== 패턴 1: login 실패 ==="
+      ssh 6v6-wazuh-dashboard 'sudo ls /var/log/wazuh-dashboard/ 2>&1 | head'
+      cat <<'EOF'
+      진단:
+        - dashboard container log
+        - indexer 의 internal_users.yml 의 password hash
+        - wazuh-passwords-tool 로 reset
+      EOF
+
+      # 패턴 2 — indexer 색인 (filebeat → indexer)
+      echo
+      echo "=== 패턴 2: panel 빈 화면 ==="
+      ssh 6v6-siem 'sudo ps -ef | grep filebeat | grep -v grep | head -2' 2>/dev/null
+      ssh 6v6-siem 'curl -k -u admin:admin "https://10.20.32.110:9200/_cat/indices/wazuh-*?h=index,docs.count" 2>&1 | head'
+
+      # 패턴 3 — alert 지연 (manager 부하)
+      echo
+      echo "=== 패턴 3: alert 지연 ==="
+      ssh 6v6-siem 'sudo ls /var/ossec/queue/sockets/ 2>&1 | head'
+      ssh 6v6-siem 'sudo wc -l /var/ossec/logs/alerts/alerts.json /var/ossec/logs/alerts/alerts.log 2>&1'
+
+      # 진단 cheat sheet
+      echo
+      echo "=== cheat sheet ==="
+      cat <<'EOF'
+      login 실패     → dashboard log + internal_users.yml + passwords-tool
+      panel 빈 화면 → filebeat + indexer 색인 + time range
+      alert 지연    → manager queue + filebeat spool + indexer disk I/O
+      RBAC 권한    → dashboard 의 Security > Roles
+      EOF
+      ```
+
+      ## 📋 확인 사항
+
+      - dashboard log 위치 + login 진단
+      - filebeat + indexer 색인 활성
+      - manager queue + alerts log 크기
+      - cheat sheet
+
+      ## 💡 왜 이걸 하는가?
+
+      운영 중 dashboard 가 갑자기 안 보임 → 30초 진단 cheat sheet.
+
+      ## 🔍 결과 해석
+
+      - **정상**: filebeat + indexer 모두 활성
+      - **운영 권장**:
+        - wazuh-passwords-tool 매년 password rotate
+        - filebeat queue 모니터 (1000+ items 면 부하)
+        - indexer SSD + RAID
+    hint: 'dashboard log + filebeat + indexer indices + queue'
+    category: troubleshooting
+    points: 13
+    answer: |
+      echo "=== 패턴 1 login ==="
+      ssh 6v6-wazuh-dashboard 'sudo ls /var/log/wazuh-dashboard/ 2>&1 | head'
+      echo "=== 패턴 2 indexer ==="
+      ssh 6v6-siem 'sudo ps -ef | grep filebeat | grep -v grep | head -2' 2>/dev/null
+      ssh 6v6-siem 'curl -k -u admin:admin "https://10.20.32.110:9200/_cat/indices/wazuh-*?h=index,docs.count" 2>&1 | head'
+      echo "=== 패턴 3 alert 지연 ==="
+      ssh 6v6-siem 'sudo wc -l /var/ossec/logs/alerts/alerts.json'
+      cat <<'EOF'
+      cheat sheet:
+        login → dashboard log + internal_users.yml + passwords-tool
+        panel → filebeat + indexer 색인 + time range
+        alert → queue + filebeat spool + disk I/O
+      EOF
+    answer_detail: '3 패턴 진단 + cheat sheet'
+    verify:
+      type: output_contains
+      expect: filebeat
+      field: stdout
+      semantic:
+        intent: "dashboard 트러블슈팅 4 패턴"
+        success_criteria: ["login 진단", "indexer 검증", "queue 점검", "cheat sheet"]
+        acceptable_methods:
+          - "**[OSS] /var/log/wazuh-dashboard/**"
+          - "**[OSS] wazuh-passwords-tool**"
+          - "**[OSS] filebeat status + queue**"
+          - "**[OSS] /_cat/indices/wazuh-***"
+          - "**[OSS] /var/ossec/queue/sockets/**"
+          - "**[OSS] dashboard 의 time range**"
+          - "**[OSS] indexer disk I/O 모니터**"
+          - "**[OSS] RBAC roles 검증**"
+    target_vm: bastion
+
+  - order: 9
+    instruction: |
+      ## 🎯 MISSION — sysmon-for-linux 미설치 인지 + W11 준비도
+
+      lecture §9 + W07 §10 비교 — sysmon vs osquery. 6v6 의 sysmon 미설치 + W11 사전 작업.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # 1. sysmon 설치 상태 (4 호스트)
+      for h in fw ips web bastion; do
+        printf "%-8s " "$h"
+        ssh 6v6-$h 'command -v sysmon 2>/dev/null || echo NOT_INSTALLED'
+      done
+
+      # 2. Wazuh 의 sysmon 룰 활성
+      echo
+      echo "=== Wazuh sysmon 룰 ==="
+      ssh 6v6-siem 'sudo ls /var/ossec/ruleset/rules/ | grep sysmon'
+
+      # 3. W11 설계 — 설치 + decoder + log ship
+      echo
+      echo "=== W11 사전 설계 ==="
+      cat <<'EOF'
+      [1] sysmon-for-linux 설치 (4 호스트):
+          curl -O https://github.com/Sysinternals/SysmonForLinux/releases/...
+          sudo dpkg -i sysmon-for-linux_*.deb
+
+      [2] sysmon config (config.xml):
+          - ProcessCreate event
+          - NetworkConnect event
+          - FileCreate event
+
+      [3] sysmon 시작 + log path:
+          sudo sysmon -accepteula -i config.xml
+          # log: /var/log/syslog 또는 journal
+
+      [4] Wazuh agent 의 localfile:
+          <localfile>
+              <log_format>syslog</log_format>
+              <location>/var/log/syslog</location>
+          </localfile>
+
+      [5] Wazuh 룰 활성 (이미 default):
+          /var/ossec/ruleset/rules/0800-sysmon_id_1.xml (ProcessCreate)
+          /var/ossec/ruleset/rules/0810-sysmon_id_3.xml (NetworkConnect)
+          /var/ossec/ruleset/rules/0830-sysmon_id_11.xml (FileCreate)
+      EOF
+
+      # 4. sysmon vs osquery 비교 (운영 권장)
+      echo
+      echo "=== sysmon vs osquery 운영 비교 ==="
+      cat <<'EOF'
+      sysmon-for-linux  — event stream (실시간, low latency)
+      osquery           — snapshot (scheduled, query 유연)
+      운영 권장: 둘 다 동시 운영 (보완 관계)
+      EOF
+      ```
+
+      ## 📋 확인 사항
+
+      - 4 호스트 모두 sysmon 미설치
+      - Wazuh ruleset 의 0800/0810/0830 등 sysmon 룰 활성
+      - W11 설계 5 단계
+      - sysmon vs osquery 비교
+
+      ## 💡 왜 이걸 하는가?
+
+      W11 의 본격 설치 전 사전 설계 + 운영 갭 인지. sysmon 의 event stream 이 osquery
+      의 snapshot 을 보완.
+
+      ## 🔍 결과 해석
+
+      - **정상**: sysmon 미설치 인지 + Wazuh 룰 활성 + 5 단계 설계
+      - **운영 권장**: W11 에서 4 호스트 모두 sysmon 설치 + decoder + ship
+    hint: 'sysmon 미설치 + Wazuh 0800/0810/0830 룰 + W11 설계'
+    category: planning
+    points: 13
+    answer: |
+      for h in fw ips web bastion; do
+        printf "%-8s " "$h"
+        ssh 6v6-$h 'command -v sysmon 2>/dev/null || echo NOT_INSTALLED'
+      done
+      ssh 6v6-siem 'sudo ls /var/ossec/ruleset/rules/ | grep sysmon'
+      cat <<'EOF'
+      W11 설계:
+      1. sysmon-for-linux 설치 (4 호스트)
+      2. config.xml (ProcessCreate / NetworkConnect / FileCreate)
+      3. sysmon -accepteula -i config.xml
+      4. Wazuh agent localfile syslog
+      5. Wazuh 룰 0800/0810/0830 (default 활성)
+      EOF
+    answer_detail: 'sysmon 4 호스트 미설치 + Wazuh 룰 + W11 5 단계 설계'
+    verify:
+      type: output_contains
+      expect: sysmon
+      field: stdout
+      semantic:
+        intent: "sysmon-for-linux 사전 설계 (W11 예고)"
+        success_criteria: ["미설치 인지", "Wazuh 룰", "W11 설계"]
+        acceptable_methods:
+          - "**[OSS] sysmon -accepteula -i config.xml**"
+          - "**[OSS] sysmon-for-linux deb 패키지**"
+          - "**[OSS] /var/log/syslog 또는 journal**"
+          - "**[OSS] Wazuh agent localfile syslog**"
+          - "**[OSS] /var/ossec/ruleset/rules/0800-sysmon_id_1**"
+          - "**[OSS] ProcessCreate / NetworkConnect / FileCreate**"
+          - "**[OSS] sysmon vs osquery 보완**"
+          - "**[OSS] config.xml RuleGroup**"
+    target_vm: bastion
+
+  - order: 10
+    instruction: |
+      ## 🎯 MISSION — W10 종합 보고서
+
+      ## 💻 산출물 형식
+
+      ```markdown
+      # 6v6 W10 dashboard + 통합 운영 보고서
+
+      ## 1. STEP 1-9 결과 표
+      | Step | 영역 | 결과 |
+      | 1 | dashboard 접근 + 인증 + indexer | pass |
+      | 2 | 5 panel + KQL + RBAC | pass |
+      | 3 | ModSec audit ship 설계 | pass |
+      | 4 | osquery 통합 설계 | pass |
+      | 5 | syscheck FIM 트리거 + rule 550 | pass |
+      | 6 | Active Response 시뮬 | pass |
+      | 7 | R/B/P XSS 5 burst → multi-source | pass |
+      | 8 | 트러블슈팅 3 패턴 | pass |
+      | 9 | sysmon W11 사전 설계 | pass |
+
+      ## 2. 6v6 운영 갭 4 + 보완
+      | 갭 | 현재 | W10 보완 |
+      | dashboard 인증 | admin/admin | RBAC + LDAP (권장) |
+      | ModSec ship | 미설정 | localfile 추가 (Step 3) |
+      | osquery daemon | 미운영 | 3 단계 설계 (Step 4) |
+      | sysmon | 미설치 | W11 (Step 9) |
+
+      ## 3. R/B/P 측정 (STEP 7)
+      - delta multi-source + agent / rule.id 분포
+
+      ## 4. 운영 권장 5
+      1. dashboard 인증 강화 + RBAC
+      2. ModSec ship 적용 (DetectionOnly 1주 후 On)
+      3. osquery daemon enable
+      4. Active Response + allow_list
+      5. sysmon 설치 (W11)
+
+      ## 5. W11 (sysmon) 준비도
+      - 4 호스트 설치 계획
+      - config.xml ProcessCreate/NetworkConnect/FileCreate
+      - Wazuh 룰 0800/0810/0830 활성
+      - 본인 gap: ...
+
+      ## 6. 본인 학습 gap
+      ...
+      ```
+
+      ## 📋 확인 사항
+
+      - 6 섹션 + 9 step 표 + 6v6 갭 4 + R/B/P + 권장 5 + W11 준비도
+
+      ## 💡 왜 이걸 하는가?
+
+      dashboard + 통합 운영 audit 표준.
+
+      ## 🔍 결과 해석
+
+      - **A**: 6 섹션 + 9 step + 갭 4 + 권장 5 + gap
+    hint: 마크다운 1페이지
+    category: synthesis
+    points: 15
+    answer: |
+      cat <<'EOF'
+      # 6v6 W10 dashboard + 통합 보고서
+
+      ## 1. STEP 1-9 (9 row 표)
+      ## 2. 6v6 운영 갭 4 (인증/ModSec/osquery/sysmon)
+      ## 3. R/B/P (STEP 7) — multi-source ingest
+      ## 4. 운영 권장 5
+      ## 5. W11 (sysmon) 준비도
+      ## 6. 본인 gap
+      EOF
+    answer_detail: 종합 보고서
+    verify:
+      type: output_contains
+      expect: dashboard
+      field: stdout
+      semantic:
+        intent: "W10 종합"
+        success_criteria: ["9 step", "갭 4", "R/B/P", "권장 5", "W11 준비도"]
+        acceptable_methods:
+          - "**[관리적] 마크다운 6 섹션**"
+          - "**[관리적] ISMS-P 2.9.4 / 2.9.6 / 2.10.3 매핑**"
+          - "**[관리적] NIST CSF RS.RP (Response Planning)**"
+          - "**[관리적] MITRE ATT&CK + Active Response**"
+          - "**[관리적] alert fatigue + SOC tier 분리**"
+          - "**[관리적] 운영 권장 5 + 갭 보완 계획**"
+          - "**[관리적] W11 (sysmon) logical flow**"
+          - "**[관리적] 본인 학습 gap**"
+    target_vm: bastion
