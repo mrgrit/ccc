@@ -1,0 +1,103 @@
+lab_id: standalone-secuops-week09
+title: Wazuh manager 구성·디코더·룰 (6v6-siem)
+version: standalone-non-ai
+course: secuops
+week: 9
+description: |
+  Wazuh 4.10 manager 의 16 daemon + decoder + rule 두 단계 처리 흐름 +
+  사용자 정의 룰 (local_rules.xml) 작성 + 트리거. 등록 agent 3 대 (fw/ips/web)
+  의 1514 통신 검증.
+difficulty: medium
+duration_minutes: 180
+prerequisites:
+  - W01-W08 통과
+  - sudo NOPASSWD on siem
+objectives:
+  - 16 daemon 핵심 5종 (analysisd / remoted / monitord / modulesd / db) 가시화
+  - decoder + rule 처리 흐름 분석
+  - 사용자 정의 룰 작성 + 트리거 + alerts.json 검증
+  - agent 통신 (1514/1515/55000) 검증
+pass_threshold: 0.7
+steps:
+  - order: 1
+    instruction: Wazuh manager 의 16 daemon + 등록 agent + alerts.json
+    hint: ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control status'
+    category: survey
+    points: 15
+    answer: |
+      ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control status'
+      ssh 6v6-siem 'sudo /var/ossec/bin/agent_control -l'
+      ssh 6v6-siem 'sudo tail -3 /var/ossec/logs/alerts/alerts.json | head -1 | jq ".rule.id, .rule.description, .agent.name"'
+    answer_detail: 16 daemon + 3 agent Active + alert 1건
+    verify:
+      type: output_contains
+      expect: running
+      field: stdout
+      semantic:
+        intent: 16 daemon 가동 + 3 agent + alert 검증
+        success_criteria:
+          - running 키워드
+          - Active
+          - rule.id
+        acceptable_methods:
+          - |
+            **[OSS] wazuh-control + agent_control + alerts.json** — 표준.
+              ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control status'
+              ssh 6v6-siem 'sudo /var/ossec/bin/agent_control -l'
+              ssh 6v6-siem 'sudo tail -3 /var/ossec/logs/alerts/alerts.json | head -1 | jq'
+            예상 출력 `11 daemon running / 3 agent Active / alert event`.
+          - |
+            **[OSS] API + token** — 표준 (JSON).
+              ssh 6v6-siem 'TOKEN=$(curl -sk -u wazuh-wui:MyS3cr37P450r.*- -X POST https://localhost:55000/security/user/authenticate | jq -r .data.token); curl -sk -H "Authorization: Bearer $TOKEN" https://localhost:55000/agents | jq ".data.affected_items | length"'
+            예상 출력 `4 (server + 3 agent)`.
+          - "**[OSS] manager + indexer 통합** — filebeat 동작 검증"
+          - "**[OSS] 1514 listen 검증**"
+          - "**[OSS] /var/ossec/logs/ossec.log 시작 메시지**"
+          - "**[OSS] manager memory 확인**"
+          - "**[OSS] dashboard URL 확인**"
+          - "**[OSS] alert level 분포**"
+    target_vm: siem
+
+  - order: 2
+    instruction: 사용자 정의 룰 추가 + 트리거 + alert 검증
+    hint: |
+      cat /var/ossec/etc/rules/local_rules.xml 에 <rule id="100100"...> 추가 후 restart
+    category: manipulation
+    points: 25
+    answer: |
+      ssh 6v6-siem 'cat > /tmp/local_rules.xml <<EOF
+      <group name="6v6,custom,">
+        <rule id="100100" level="8">
+          <if_sid>31115</if_sid>
+          <url>/admin</url>
+          <description>6v6 - Unauthorized admin access</description>
+        </rule>
+      </group>
+      EOF
+      sudo cp /tmp/local_rules.xml /var/ossec/etc/rules/local_rules.xml
+      sudo chown root:wazuh /var/ossec/etc/rules/local_rules.xml
+      sudo /var/ossec/bin/wazuh-control restart'
+      sleep 8
+      ssh 6v6-attacker 'curl -s -o /dev/null -H "Host: juice.6v6.lab" http://10.20.30.1/admin'
+      sleep 5
+      ssh 6v6-siem 'sudo grep "100100" /var/ossec/logs/alerts/alerts.json | tail -1 | jq'
+    answer_detail: 룰 100100 + 트리거 + alert
+    verify:
+      type: output_contains
+      expect: '100100'
+      field: stdout
+      semantic:
+        intent: 사용자 정의 룰
+        success_criteria:
+          - rule id 100100
+          - alert 생성
+        acceptable_methods:
+          - "**[OSS] local_rules.xml + restart + 트리거**"
+          - "**[OSS] /admin URL 매치 + apache 31115 chain**"
+          - "**[OSS] alert level 8 (medium-high)**"
+          - "**[OSS] if_sid chain 의 의미**"
+          - "**[OSS] same_source_ip / frequency 응용**"
+          - "**[OSS] timeframe 의 동작**"
+          - "**[OSS] rule reload vs restart**"
+          - "**[OSS] alert rotation 확인**"
+    target_vm: siem
