@@ -1,0 +1,191 @@
+lab_id: standalone-secuops-week08
+title: 중간고사 — 보안 솔루션 + 호스트 가시화 종합 실기 (90분)
+version: standalone-non-ai
+course: secuops
+week: 8
+description: |
+  W01-W07 의 종합 실기 시험. 5 시나리오 × 20점 = 100점. 90분 시간 제한.
+  fw nftables / Suricata 룰 / ModSec 공격 시뮬 / osquery 헌팅 / 침해 1 사이클
+  통합 분석.
+difficulty: hard
+duration_minutes: 90
+audience: 보안 솔루션 운영 중급 (8주차 중간고사)
+prerequisites:
+  - W01-W07 모두 통과
+  - bastion ProxyJump 정상
+  - sudo NOPASSWD on fw/ips/web/bastion
+objectives:
+  - 6v6 4 컨테이너의 보안 솔루션 통합 운영
+  - 공격 → 차단 → 분석 → 보고 1 사이클 수행
+pass_threshold: 0.7
+
+steps:
+
+  - order: 1
+    instruction: |
+      [시나리오 1, 20점] fw 의 inet six_filter input chain 의 position 0 에
+      `ip saddr 10.20.30.202 tcp dport 80 counter drop` 룰 추가 → attacker 의
+      80/tcp 가 timeout 되는지 검증 → 다른 host (web) 의 80/tcp 는 정상 → 룰 삭제.
+    hint: ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 tcp dport 80 counter drop'
+    category: exam
+    points: 20
+    answer: |
+      # 1. 룰 추가
+      ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 tcp dport 80 counter drop'
+      # 2. attacker 검증 (timeout 예상)
+      ssh 6v6-attacker 'timeout 4 curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" http://10.20.30.1/'
+      # 3. 다른 host (web) 검증
+      ssh 6v6-web 'curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" http://10.20.30.1/' || true
+      # 4. counter 검증
+      ssh 6v6-fw 'sudo nft list chain inet six_filter input | grep 10.20.30.202'
+      # 5. 룰 삭제
+      HANDLE=$(ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep "10.20.30.202" | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
+      ssh 6v6-fw "sudo nft delete rule inet six_filter input handle $HANDLE"
+      # 6. 정상화 검증
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" http://10.20.30.1/'
+    answer_detail: 시나리오 1 의 4 평가 항목 (룰 / 검증 / counter / cleanup)
+    verify:
+      type: output_contains
+      expect: '200'
+      field: stdout
+      semantic:
+        intent: |
+          시나리오 1 종합 평가. 룰 추가 → drop 효과 검증 → counter > 0 → 삭제 →
+          정상화 4 단계 통과.
+        success_criteria:
+          - 룰 추가 OK
+          - drop 효과 (attacker timeout)
+          - counter > 0
+          - 정상화 200
+        acceptable_methods:
+          - 시나리오 1 의 6 명령 시퀀스
+    target_vm: fw
+
+  - order: 2
+    instruction: |
+      [시나리오 2, 20점] Suricata 룰 작성 — HTTP URI 에 `' OR '1'='1` SQLi 패턴 매치.
+      sid 9008001, classtype web-application-attack, threshold limit by_src 60초 1번.
+      트리거 + alert eve.json + cleanup.
+    hint: |
+      alert http any any -> any any (msg:"SQLi tautology"; http.uri; pcre:"/'\\s*OR\\s*'1'='1/i"; threshold:type limit, track by_src, count 1, seconds 60; classtype:web-application-attack; sid:9008001;)
+    category: exam
+    points: 20
+    answer: |
+      ssh 6v6-ips 'echo "alert http any any -> any any (msg:\"SQLi tautology pattern\"; http.uri; pcre:\"/'\''\\s*OR\\s*'\''1'\''='\''1/i\"; threshold:type limit, track by_src, count 1, seconds 60; classtype:web-application-attack; sid:9008001; rev:1;)" | sudo tee -a /etc/suricata/rules/local.rules'
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules'
+      sleep 2
+      ssh 6v6-attacker "curl -s -o /dev/null -H 'Host: juice.6v6.lab' \"http://10.20.30.1/?q=1' OR '1'='1\""
+      sleep 4
+      ssh 6v6-ips 'sudo grep sid.:9008001 /var/log/suricata/eve.json | head -1 | jq .alert'
+    answer_detail: 시나리오 2 의 4 평가 항목
+    verify:
+      type: output_contains
+      expect: '9008001'
+      field: stdout
+      semantic:
+        intent: |
+          Suricata 룰 작성 종합. pcre / threshold / classtype / sid 모두 정확.
+        success_criteria:
+          - sid 9008001
+          - SQLi 매치
+          - threshold 적용
+        acceptable_methods:
+          - 위 명령 시퀀스
+    target_vm: ips
+
+  - order: 3
+    instruction: |
+      [시나리오 3, 20점] ModSec 공격 시뮬 — XSS / SQLi / LFI 3 페이로드 → 403 응답 +
+      매치 룰 ID 추출.
+    hint: |
+      ssh 6v6-attacker "curl -H 'Host: juice.6v6.lab' 'http://10.20.30.1/?q=<script>'"
+    category: exam
+    points: 20
+    answer: |
+      # XSS
+      ssh 6v6-attacker "curl -s -o /dev/null -w 'XSS: %{http_code}\n' -H 'Host: juice.6v6.lab' 'http://10.20.30.1/?q=<script>alert(1)</script>'"
+      # SQLi
+      ssh 6v6-attacker "curl -s -o /dev/null -w 'SQLi: %{http_code}\n' -H 'Host: juice.6v6.lab' \"http://10.20.30.1/?q=1' OR '1'='1\""
+      # LFI
+      ssh 6v6-attacker "curl -s -o /dev/null -w 'LFI: %{http_code}\n' -H 'Host: juice.6v6.lab' 'http://10.20.30.1/?file=../../../etc/passwd'"
+      sleep 2
+      # 매치 룰 ID 추출
+      ssh 6v6-web 'sudo tail -3 /var/log/apache2/modsec_audit.log | head -1 | jq -r ".transaction.messages[].id" | sort -u | head'
+    answer_detail: 3 공격 모두 403 + 룰 ID
+    verify:
+      type: output_contains
+      expect: '403'
+      field: stdout
+      semantic:
+        intent: |
+          ModSec 공격 시뮬레이션 종합.
+        success_criteria:
+          - 3 차단 모두 403
+          - 941/942/930 룰 ID
+        acceptable_methods:
+          - 위 시퀀스
+    target_vm: web
+
+  - order: 4
+    instruction: |
+      [시나리오 4, 20점] osquery 4 헌팅 쿼리.
+    hint: ssh 6v6-web 'sudo osqueryi --json "SELECT pid FROM processes WHERE on_disk = 0;"'
+    category: exam
+    points: 20
+    answer: |
+      ssh 6v6-web 'sudo osqueryi --json "SELECT pid, name FROM processes WHERE on_disk = 0;"'
+      ssh 6v6-web 'sudo osqueryi --json "SELECT username, uid, shell FROM users WHERE uid >= 1000;"'
+      ssh 6v6-web 'sudo osqueryi --json "SELECT l.port, p.name FROM listening_ports l, processes p WHERE l.pid = p.pid AND l.port IN (22, 80, 443);"'
+      ssh 6v6-web 'sudo osqueryi --json "SELECT path FROM suid_bin WHERE path NOT LIKE '\''/usr/bin/%'\'';"'
+    answer_detail: 4 SQL + 분석
+    verify:
+      type: output_contains
+      expect: '['
+      field: stdout
+      semantic:
+        intent: |
+          osquery 헌팅 종합.
+        success_criteria:
+          - 4 SQL 모두 실행
+        acceptable_methods:
+          - 위 4 쿼리
+    target_vm: web
+
+  - order: 5
+    instruction: |
+      [시나리오 5, 20점] 통합 시나리오 — sqlmap 으로 SQLi 4회 시도 후 4 도구 (fw /
+      Suricata / ModSec / Wazuh manager) 의 로그·alert 통합 분석.
+    hint: |
+      ssh 6v6-attacker 'for i in 1 2 3 4; do curl -A "sqlmap" "http://10.20.30.1/?q=1 UNION SELECT" -H "Host: juice.6v6.lab"; sleep 1; done'
+    category: exam
+    points: 20
+    answer: |
+      # 1. 침해 시뮬
+      ssh 6v6-attacker 'for i in 1 2 3 4; do curl -s -o /dev/null -A "sqlmap/1.5" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=1+UNION+SELECT+user,pass+FROM+users--"; sleep 1; done'
+      sleep 3
+      # 2. fw HAProxy log
+      echo "--- fw ---"
+      ssh 6v6-fw 'sudo tail -5 /var/log/haproxy.log 2>/dev/null | tail -3'
+      # 3. ips Suricata alert
+      echo "--- ips ---"
+      ssh 6v6-ips 'sudo tail -100 /var/log/suricata/eve.json | grep -E "alert|sqlmap" | head -3'
+      # 4. web ModSec audit
+      echo "--- web ---"
+      ssh 6v6-web 'sudo tail -3 /var/log/apache2/modsec_audit.log | head -1 | jq ".transaction.response.http_code"'
+      # 5. Wazuh manager alert
+      echo "--- siem ---"
+      ssh 6v6-siem 'sudo tail -100 /var/ossec/logs/alerts/alerts.json 2>/dev/null | grep -m1 sqlmap | jq ".rule.id"' || echo "no Wazuh integration yet"
+    answer_detail: 4 도구 통합 분석 timeline
+    verify:
+      type: output_contains
+      expect: alert
+      field: stdout
+      semantic:
+        intent: |
+          침해 1 사이클의 4 도구 가시화 + 통합 분석.
+        success_criteria:
+          - 4 도구 로그 모두 확인
+          - timeline 구성
+        acceptable_methods:
+          - 위 시퀀스
+    target_vm: bastion
