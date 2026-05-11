@@ -1,0 +1,63 @@
+lab_id: standalone-attack-week09
+title: 네트워크 공격 + 패킷 분석 (tcpdump + scapy)
+version: standalone-non-ai
+course: attack
+week: 9
+description: L2-L4 네트워크 공격 + scapy + ARP / DNS / TCP RST.
+difficulty: medium
+duration_minutes: 150
+prerequisites: [W08]
+objectives: [tcpdump, scapy, ARP / DNS]
+pass_threshold: 0.7
+steps:
+  - order: 1
+    instruction: tcpdump 캡처 + filter
+    hint: sudo tcpdump -ni eth0 -c 10
+    category: capture
+    points: 20
+    answer: |
+      ssh 6v6-attacker 'sudo timeout 4 tcpdump -ni eth0 -c 10 2>&1 | tail -15'
+    answer_detail: 10 packet 캡처
+    verify:
+      type: output_contains
+      expect: IP
+      field: stdout
+      semantic:
+        intent: tcpdump
+        success_criteria: [IP packet 출력]
+        acceptable_methods:
+          - "**[OSS] tcpdump 기본 syntax**"
+          - "**[OSS] BPF filter (host/port/proto)**"
+          - "**[OSS] -A ASCII 모드**"
+          - "**[OSS] -X hex+ASCII**"
+          - "**[OSS] -w pcap 저장**"
+          - "**[OSS] -r pcap 재생**"
+          - "**[OSS] Wireshark 분석**"
+          - "**[OSS] tshark CLI 대안**"
+    target_vm: attacker
+
+  - order: 2
+    instruction: scapy 로 SYN 패킷 송신
+    hint: python3 -c "from scapy.all import *; sr1(IP(dst='10.20.30.1')/TCP(dport=80, flags='S'))"
+    category: exploit
+    points: 25
+    answer: |
+      ssh 6v6-attacker 'sudo python3 -c "from scapy.all import *; r=sr1(IP(dst=\"10.20.30.1\")/TCP(dport=80, flags=\"S\"), timeout=2, verbose=0); print(r.summary() if r else \"no response\")" 2>&1 | tail -5'
+    answer_detail: SYN 응답
+    verify:
+      type: output_contains
+      expect: SA
+      field: stdout
+      semantic:
+        intent: scapy SYN
+        success_criteria: [SYN-ACK 응답]
+        acceptable_methods:
+          - "**[OSS] sr1 (send + recv 1)**"
+          - "**[OSS] IP / TCP / UDP / ICMP layer**"
+          - "**[OSS] flags S / SA / R / F**"
+          - "**[OSS] timeout / verbose**"
+          - "**[OSS] sniff() 캡처**"
+          - "**[OSS] IPv6 / ARP / DNS layer**"
+          - "**[OSS] custom Raw payload**"
+          - "**[OSS] Suricata 의 detection**"
+    target_vm: attacker
