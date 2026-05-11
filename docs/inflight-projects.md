@@ -676,6 +676,20 @@ Architecture) 모두 비어있음.
 
 ## Closed (누적 완료)
 
+### 2026-05-11 — standalone 6v6 콘텐츠 lab MISSION 형식 전수 변환 (secuops 15 + attack 15)
+
+**범위**: `contents/standalone/lab/{secuops,attack}/week01-15.yaml` 30 주차 lab 의 모든 step 을 5-section MISSION 형식 (🎯 MISSION + 💻 실행 명령 + 📋 확인 사항 + 💡 왜 + 🔍 결과 해석) 으로 통일.
+
+**완료**:
+- [x] secuops W01-W15 (commit b29bdef8 + 선행 batch) — 6v6 4-tier topology / nftables / Suricata / ModSec+CRS / Wazuh / osquery / sysmon-for-linux / OpenCTI 운영 흐름
+- [x] attack W01-W08 (commit 27e94e2b) — PTES 1~5 단계 + 중간 시험
+- [x] attack W09-W15 (commit b89593c7) — tcpdump+scapy / IDS·WAF bypass / LinPEAS+GTFOBins / persistence+osquery detection / Caldera ability·adversary yaml / Purple Coverage Matrix+AAR / PTES 7 단계 기말 (180분 100점)
+- [x] 6v6 인프라 4 Dockerfile 패치 적용 (bastion docker-cli / fw iptables+conntrack / 4 hosts osquery / web SecAuditLogFormat=JSON)
+- [x] ccc-ui `Standalone6v6.tsx` + ccc-api `/standalone/*` endpoints (admin masking 포함) + mermaid 렌더링
+- [x] mrgrit/ccc 전 배치 push 완료
+
+**원칙**: 병렬/스크립트/자동화/템플릿 금지, 매 주차 수기, 6v6 실 인프라(192.168.0.110) end-to-end 검증 결과를 콘텐츠에 반영.
+
 ### 2026-04-30 23:55 — R3 fix #1/#2/#3 일괄 적용 + 인프라 IP 변동 (bastion 0.115→0.103)
 
 **진단 (R3 V2 + low-3 supplemental fail 분석)**:
