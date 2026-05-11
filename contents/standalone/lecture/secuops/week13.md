@@ -1,178 +1,299 @@
-# Week 13 — OpenCTI (2) — IOC Feed → Wazuh 통합
+# Week 13 — OpenCTI 운영 — Connector 활성 + IOC enrichment + Wazuh 본격 통합
 
-> W12 의 STIX/TAXII 기초 위에, 실제 외부 IOC feed 를 Wazuh manager 의 **CDB list +
-> rule** 로 통합하여 alert 자동 부여. CTI ↔ SIEM 의 가장 단순하고 강력한 통합 패턴.
+> **본 주차의 한 줄 요약**
+>
+> W12 의 OpenCTI 도입 위에서 **실 운영** — 4 external Connector 활성 (MITRE ATT&CK / OTX
+> / URLhaus / AbuseIPDB), Internal Enrichment Connector (VirusTotal / GeoIP / WHOIS),
+> Stream Connector (Wazuh CDB list 자동 sync). **OpenCTI Web UI 의 핵심 6 화면**
+> (Analyst Workbench / Investigations / Knowledge / Observables / Threats /
+> Connectors). 학습 마지막에 IOC enrichment 가 alert 분석에 어떻게 가치 추가하는지
+> R/B/P 로 검증.
+>
+> **운영자 한 줄 결론**: external feed 만으로는 noise. Internal enrichment + analyst
+> workbench 가 CTI 의 진짜 가치.
+
+---
 
 ## 학습 목표
 
-1. Wazuh 의 CDB list (Constant Database) 구조 + 사용 방법
-2. OpenCTI / AbuseIPDB / OTX 의 IOC feed → CDB list 변환
-3. ossec.conf 의 `<list>` 등록 + rule 의 `list` matching
-4. cron 으로 매시간 자동 갱신 패턴
-5. IOC 매치 시 alert level 자동 상승 (level 4 → 12)
+1. **4 external Connector** — MITRE ATT&CK / OTX / URLhaus / AbuseIPDB 활성 + 작동 원리.
+2. **Internal Enrichment Connector** 3 — VirusTotal / GeoIP / WHOIS.
+3. **Stream Connector** — OpenCTI → Wazuh CDB list 자동 sync (Python).
+4. **OpenCTI 6 화면** — Analyst Workbench / Investigations / Knowledge / Observables /
+   Threats / Connectors.
+5. **MITRE ATT&CK Navigator** 통합 — 본 환경 alert 의 TTP 매트릭스.
+6. **IOC enrichment 흐름** — raw IP → GeoIP + WHOIS + VT scan + APT attribution.
+7. **R/B/P** — Red 의 의심 IP → OpenCTI 자동 enrichment → Wazuh alert level 격상.
 
-## 1. Wazuh CDB list
+---
 
-CDB list 는 Wazuh 의 key-value lookup 자료구조. 빠른 lookup (O(1)) + rule 에서 참조.
+## 1. external Connector 4 — 활성 + 동작
 
-### 1.1 형식 (단순 텍스트)
+### 1.1 MITRE ATT&CK Connector
 
-```
-# /var/ossec/etc/lists/malicious-ips
-1.2.3.4:malicious
-5.6.7.8:c2
-9.10.11.12:botnet
-```
+- source: https://github.com/mitre/cti
+- 가져오는 객체: Tactics / Techniques / Sub-techniques / Mitigations / Groups
+- 14 Tactics + 200+ Techniques + 600+ Sub-techniques
+- 업데이트: 분기별 자동
 
-key:value. key = IOC, value = 분류 또는 source.
+### 1.2 OTX (AlienVault) Connector
 
-### 1.2 등록 (ossec.conf)
+- source: AT&T Cybersecurity OTX (무료)
+- API key 필요 (otx.alienvault.com 가입)
+- 가져오는 객체: Indicator (IP / Domain / File hash / URL)
+- Pulse (분석 보고서) 의 IOC
 
-```
-<ossec_config>
-  <ruleset>
-    <list>etc/lists/malicious-ips</list>
-  </ruleset>
-</ossec_config>
-```
+### 1.3 URLhaus Connector (abuse.ch)
 
-### 1.3 매칭 후 자동 빌드
+- source: urlhaus.abuse.ch
+- 무료 + TAXII 2.1 지원
+- 실시간 malware URL feed (분당 100+ 신규)
+- Indicator: URL + 관련 hash + tags
 
-```
-sudo /var/ossec/bin/wazuh-control restart
-# 또는 단순 reload
-sudo /var/ossec/bin/wazuh-control reload
-```
+### 1.4 AbuseIPDB Connector
 
-자동으로 `etc/lists/malicious-ips.cdb` (binary index) 생성.
+- source: abuseipdb.com
+- API key 필요
+- IP reputation score (0-100)
+- abuse confidence + 보고 timestamp
 
-## 2. rule 에서 CDB list lookup
+---
 
-```
-<rule id="100300" level="12">
-  <if_sid>5710</if_sid>             <!-- 기존 룰 (SSH failed login) -->
-  <list field="srcip" lookup="address_match_key">etc/lists/malicious-ips</list>
-  <description>SSH login from KNOWN malicious IP</description>
-</rule>
-```
+## 2. Internal Enrichment Connector 3
 
-- `list field="srcip"` : 어떤 필드를 lookup 할지
-- `lookup="address_match_key"` : IP 매칭 방식
-- `etc/lists/malicious-ips` : 위에 등록한 CDB list
+### 2.1 VirusTotal Connector
 
-이제 SSH failed login (rule 5710) 이 매치된 후, srcip 가 malicious-ips 리스트에 있으면
-level 12 critical alert 자동 부여.
+- 새 Indicator (file hash / URL / domain) 가 OpenCTI 에 들어오면 자동 enrichment
+- VT scan 결과 attach (detection ratio + AV vendor 이름)
+- API key 필요 (vt.com 무료 plan)
 
-## 3. IOC feed → CDB 변환 스크립트
+### 2.2 IP GeoIP
 
-### 3.1 AbuseIPDB 의 daily blacklist
+- MaxMind GeoLite2 DB 활용 (무료)
+- IP → 국가 / 도시 / ASN / 위도/경도
+- attribution 분석에 활용 (APT 의 출신 국가 추정)
 
-```
-#!/bin/bash
-# /usr/local/bin/wazuh-ioc-update.sh
-set -e
-URL="https://lists.blocklist.de/lists/all.txt"
-OUT="/var/ossec/etc/lists/malicious-ips"
+### 2.3 WHOIS Connector
 
-curl -s "$URL" | grep -v "^#" | grep -v "^$" | head -1000 | \
-    awk '{print $1 ":blocklist.de"}' > "${OUT}.new"
+- Domain → 등록자 / 등록 시각 / 등록자 email
+- 새 도메인 (< 30일) 검출 — phishing 의심
 
-mv "${OUT}.new" "$OUT"
-/var/ossec/bin/wazuh-control reload
-```
+---
 
-cron 으로 매시간:
+## 3. Stream Connector — Wazuh CDB list 자동 sync
 
-```
-0 * * * * /usr/local/bin/wazuh-ioc-update.sh
-```
+### 3.1 Python connector 구조
 
-### 3.2 OpenCTI 의 IOC feed (W14 에서)
+```python
+# /opt/opencti/connectors/wazuh-stream/main.py
+import pycti, time, os
+from datetime import datetime, timedelta
 
-OpenCTI 의 REST API 로 indicator export → CDB list 변환.
+helper = pycti.OpenCTIConnectorHelper(config)
 
-```
-curl -sk -H "Authorization: Bearer $TOKEN" \
-  "https://opencti.local/api/v2/indicators?pattern_type=stix&type=ipv4-addr" | \
-  jq -r ".data[].pattern" | sed -E "s/.*= '([^']+)'.*/\1:opencti/" > /var/ossec/etc/lists/opencti-ips
-```
+def sync_to_wazuh():
+    # 1. 최근 7일 indicator 추출
+    indicators = helper.api.indicator.list(
+        filters=[
+            {"key": "valid_from", "values": [(datetime.now() - timedelta(days=7)).isoformat()]},
+            {"key": "indicator_types", "values": ["malicious-activity"]}
+        ],
+        first=10000
+    )
 
-## 4. 알람 매트릭스 (CTI 통합 효과)
+    # 2. CDB 형식 변환
+    cdb_lines = []
+    for ind in indicators:
+        if "ipv4-addr:value" in ind["pattern"]:
+            ip = ind["pattern"].split("'")[1]
+            labels = ",".join(ind.get("labels", []))
+            cdb_lines.append(f"{ip}: {labels}")
 
-| event | rule_id | level (전) | level (후, IOC 매치) |
-|-------|---------|------------|---------------------|
-| SSH failed login | 5710 | 5 (medium) | 12 (critical) |
-| Web 404 sequence | 31151 | 4 | 12 |
-| HTTP unknown UA | 31115 | 3 | 10 |
+    # 3. CDB list 갱신
+    with open("/var/ossec/etc/lists/opencti-iocs", "w") as f:
+        f.write("\n".join(cdb_lines))
 
-IOC 매치 1건만으로 alert 우선순위 자동 상승 → SOC 분석가의 효율 향상.
+    # 4. Wazuh reload
+    os.system("/var/ossec/bin/ossec-makelists")
+    os.system("/var/ossec/bin/wazuh-control reload")
 
-## 5. 실습 1~5
+    helper.log_info(f"Synced {len(cdb_lines)} indicators")
 
-### 1 — CDB list 작성
-
-```
-ssh 6v6-siem 'sudo mkdir -p /var/ossec/etc/lists; cat <<EOF | sudo tee /var/ossec/etc/lists/malicious-ips
-1.2.3.4:c2_server
-5.6.7.8:botnet
-185.156.73.31:abuse.ch
-EOF
-'
+while True:
+    sync_to_wazuh()
+    time.sleep(1800)
 ```
 
-### 2 — ossec.conf 의 <list> 등록
+### 3.2 운영 권장
+
+- 1800초 (30분) 주기 sync
+- diff sync (added / removed) → CDB 부분 갱신
+- error handling + logging (helper.log_info)
+- 7-30일 retention (오래된 IOC 자동 제거)
+
+---
+
+## 4. OpenCTI Web UI — 6 핵심 화면
+
+### 4.1 Analyst Workbench (대시보드)
+
+- 최근 indicators / observables / reports
+- analyst 별 할당 case
+- timeline + recent activity
+
+### 4.2 Investigations (조사)
+
+- case 별 STIX object 묶음
+- evidence + narrative + timeline
+- analyst 노트 + 동료 review
+
+### 4.3 Knowledge — 4 sub
+
+- **Threats**: Threat Actor / Intrusion Set / Campaign / Tool / Malware
+- **Arsenal**: Tool / Attack Pattern / Vulnerability
+- **Techniques**: MITRE ATT&CK 14 Tactics × 200+ Techniques
+- **Entities**: Identity / Location / Sector
+
+### 4.4 Observables
+
+- Indicator + Stix Cyber Observable (IP / Domain / Hash / URL / Email / 등)
+- 검색 + 필터
+
+### 4.5 Threats — Threat Actor 의 매트릭스
+
+- APT28 의 TTP 매트릭스 (어느 Technique 사용)
+- Indicator 통계
+
+### 4.6 Connectors — 통합 관리
+
+- 4 external + 3 enrichment + 1 stream 활성 상태
+- 마지막 sync timestamp
+- error log
+
+---
+
+## 5. MITRE ATT&CK Navigator 통합
+
+OpenCTI 의 MITRE matrix 가 dashboard 의 Modules > MITRE ATT&CK 와 매핑.
 
 ```
-ssh 6v6-siem '
-# 중복 확인
-sudo grep -q "malicious-ips" /var/ossec/etc/ossec.conf || sudo sed -i "/<ruleset>/a\\    <list>etc\\/lists\\/malicious-ips<\\/list>" /var/ossec/etc/ossec.conf
-sudo grep -A2 "<ruleset>" /var/ossec/etc/ossec.conf | head
-'
+OpenCTI: Threat Actor APT28
+  ├── uses Technique T1059.004 (Unix Shell)
+  ├── uses Technique T1071 (Application Layer Protocol)
+  └── uses Technique T1078 (Valid Accounts)
+
+dashboard: Modules > MITRE ATT&CK
+  → 본 환경에서 매치된 alert 의 Technique 가시화
+  → APT28 의 매트릭스 와 overlay → coverage gap 식별
 ```
 
-### 3 — 사용자 룰 작성 (CDB lookup)
+운영 권장 — 매월 MITRE coverage report (어느 Technique 가 alert 됐는지) + 분석.
 
-```
-ssh 6v6-siem 'cat <<EOF | sudo tee /var/ossec/etc/rules/local_rules.xml
-<group name="6v6,custom,">
-  <rule id="100300" level="12">
-    <if_sid>5710</if_sid>
-    <list field="srcip" lookup="address_match_key">etc/lists/malicious-ips</list>
-    <description>6v6 - SSH login from malicious IP (CTI)</description>
-  </rule>
-</group>
-EOF
-sudo /var/ossec/bin/wazuh-control reload
-'
-```
+---
 
-### 4 — 트리거 시뮬
+## 6. IOC enrichment 흐름
 
-```
-# malicious-ips 에 등록된 IP 로 SSH 시도 시뮬 (예시)
-# 실 환경에선 cron 으로 자동 갱신
-```
-
-### 5 — IOC 자동 갱신 cron
-
-```
-ssh 6v6-siem 'cat <<EOF | sudo tee /usr/local/bin/wazuh-ioc-update.sh
-#!/bin/bash
-curl -s https://lists.blocklist.de/lists/all.txt | grep -v "^#" | head -500 | \
-    awk "{print \\\$1 \":blocklist.de\"}" > /var/ossec/etc/lists/malicious-ips
-/var/ossec/bin/wazuh-control reload
-EOF
-sudo chmod +x /usr/local/bin/wazuh-ioc-update.sh
-'
+```mermaid
+graph LR
+    RAW[raw IP 192.168.99.99]
+    OPENCTI[OpenCTI Platform]
+    VT[VirusTotal scan]
+    GEO[GeoIP lookup]
+    WHOIS[WHOIS lookup]
+    APT[APT attribution]
+    OPENCTI -->|trigger| VT
+    OPENCTI -->|trigger| GEO
+    OPENCTI -->|trigger| WHOIS
+    OPENCTI -->|relationship| APT
+    RAW --> OPENCTI
+    style OPENCTI fill:#1f6feb,color:#fff
 ```
 
-## 6. 과제
+원본 raw IP → OpenCTI 의 Indicator 객체 → 3 enrichment trigger → APT attribution
 
-A. CDB list 작성 (필수) — 3 카테고리 (malicious-ips / malicious-hashes / malicious-domains) 각각 10+ entry
-B. rule 작성 (심화) — CDB list 3개 각각 매칭 rule + level 12
-C. 자동 갱신 (정성) — 본인이 선택한 무료 feed (AbuseIPDB / OTX / Disrupt) 의 갱신 스크립트
+**enrichment 후 정보**:
+- IP: 192.168.99.99
+- GeoIP: Russia / Moscow / AS12345 (RuNet ISP)
+- WHOIS: 등록 2020-01-15 / suspicious-registrar.ru
+- VirusTotal: detection 45/72 (positive ratio 62%)
+- Tags: apt28-c2, emotet-distributor
+- MITRE: T1071.001 (Web Protocols)
 
-## 7. W14 (Threat Hunting) 예고
+이게 IOC enrichment 의 가치 — raw IP 한 줄이 풀 context.
 
-OpenCTI 본격 설치 + Sightings (관측 결과) 등록 + Reports / Notes 등록 + 헌팅
-워크플로 (Hypothesis → Investigation → Outcome).
+---
+
+## 7. R/B/P — 의심 IP enrichment → alert 격상
+
+```mermaid
+graph LR
+    R[Red — attacker 가 외부 IP 와 통신]
+    SURI[Suricata alert<br/>dest_ip = 외부 IP]
+    OPENCTI[OpenCTI<br/>indicator + enrichment]
+    AGT[Wazuh agent + manager]
+    ALERTS[alerts.json<br/>level 10 + context]
+    R --> SURI
+    SURI --> AGT
+    OPENCTI -->|CDB sync 30분 주기| AGT
+    AGT --> ALERTS
+    style OPENCTI fill:#1f6feb,color:#fff
+```
+
+본 lab Step 5 에서 시뮬.
+
+---
+
+## 8. 사례 분석
+
+### 8.1 ISMS-P / NIST / KISA
+
+- ISMS-P 2.9.5 / 2.9.6 (지속)
+- NIST CSF ID.RA-2 / DE.AE-3 (Event Analysis)
+- KISA C-TAS + FSEC-CTI feed 통합
+
+### 8.2 운영 사고 3 사례
+
+**사례 1 — Connector noise 폭증**:
+```
+운영자: OTX Connector 활성 → 분당 1000+ indicator import → CDB 갱신 부담
+복구: filter (high confidence only) + 30분 sync interval
+```
+
+**사례 2 — IOC retention 부재**:
+```
+운영자: 1년 누적 IOC → CDB 크기 100MB+ → Wazuh 매칭 성능 부담
+복구: 30일 retention + 자동 expire
+```
+
+**사례 3 — VT API rate limit**:
+```
+운영자: VirusTotal 무료 plan (분당 4 query) → enrichment 대기열 폭증
+복구: 유료 plan 또는 enrichment 우선순위 (high confidence only)
+```
+
+---
+
+## 9. 과제
+
+### A. Connector 활성 계획 (필수, 30점)
+
+4 external + 3 enrichment + 1 stream = 8 Connector 활성 + API key 필요 표 + 우선순위.
+
+### B. Python Stream Connector (심화, 30점)
+
+§3.1 의 Python connector 보강 — diff sync + error handling + log + retention.
+
+### C. R/B/P 보고서 (정성, 25점)
+
+§7 의 시나리오 + enrichment 가 alert 분석에 추가한 가치.
+
+### D. MITRE matrix coverage (정성, 15점)
+
+본 환경 alert (1 주 분량) 의 MITRE Technique 매트릭스 + coverage gap.
+
+---
+
+## 10. 다음 주차 (W14) 예고
+
+- **주제**: MISP + OpenCTI 양방향 sync + IOC sharing community
+- **연결**: W13 의 OpenCTI 단일 platform → W14 의 community sharing

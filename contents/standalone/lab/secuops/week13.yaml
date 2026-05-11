@@ -1,174 +1,395 @@
 lab_id: standalone-secuops-week13
-title: OpenCTI ↔ Wazuh CDB list 통합 — IOC 매치 시 alert level 격상
+title: OpenCTI 운영 — Connector 활성 + IOC enrichment + Wazuh 본격 통합 + R/B/P
 version: standalone-non-ai
 course: secuops
 week: 13
 description: |
-  Wazuh 의 CDB list 자료구조 활용 + 외부 IOC feed (blocklist.de) 자동 갱신 + 룰의
-  list lookup 으로 alert level 자동 격상.
+  W12 의 도입 위에서 실 운영 — 4 external Connector + 3 enrichment + 1 stream + 6 UI
+  화면 + MITRE matrix + R/B/P enrichment 흐름. 종합 보고서.
 difficulty: medium
-duration_minutes: 150
-prerequisites: [W09, W12]
+duration_minutes: 180
+prerequisites: [W12]
 objectives:
-  - "CDB list 작성 + ossec.conf 등록"
-  - "rule 의 <list> lookup 매핑"
-  - "외부 IOC feed 자동 갱신 cron"
-  - "alert level 5 → 12 자동 격상"
+  - "4 external Connector (MITRE / OTX / URLhaus / AbuseIPDB)"
+  - "3 enrichment (VT / GeoIP / WHOIS)"
+  - "Stream Connector → CDB sync"
+  - "6 UI 화면 (Workbench / Investigation / Knowledge / Observables / Threats / Connectors)"
+  - "MITRE Navigator 통합"
+  - "IOC enrichment 흐름"
+  - "R/B/P enrichment + alert 격상"
 pass_threshold: 0.7
 steps:
 
   - order: 1
     instruction: |
-      ## 🎯 MISSION
+      ## 🎯 MISSION — 4 external Connector 활성 계획
 
-      `/var/ossec/etc/lists/malicious-ips` CDB list 작성 + ossec.conf 의 `<list>` 등록.
+      ## 💻 산출물
 
-      ## 💻 실행 명령
-
-      ```bash
-      ssh 6v6-siem '
-      sudo mkdir -p /var/ossec/etc/lists
-      sudo bash -c "cat > /var/ossec/etc/lists/malicious-ips" <<EOF
-      1.2.3.4:c2_server
-      5.6.7.8:botnet
-      10.20.30.202:test_attacker
-      EOF
-      sudo cat /var/ossec/etc/lists/malicious-ips'
-
-      # ossec.conf 에 <list> 등록 (이미 있으면 skip)
-      ssh 6v6-siem 'sudo grep -q "malicious-ips" /var/ossec/etc/ossec.conf || sudo sed -i "0,/<ruleset>/{s|<ruleset>|<ruleset>\n    <list>etc/lists/malicious-ips</list>|}" /var/ossec/etc/ossec.conf'
+      ```
+      Connector 매트릭스:
+      | Connector | source | API key | 무료/유료 | 매일 신규 IOC |
+      | MITRE ATT&CK | github | 불요 | 무료 | 분기별 1회 |
+      | OTX (AlienVault) | otx.alienvault.com | 필요 | 무료 | 1000+ |
+      | URLhaus (abuse.ch) | TAXII 2.1 | 불요 | 무료 | 100+ |
+      | AbuseIPDB | abuseipdb.com | 필요 | 무료 (1000/day) | 100+ |
       ```
 
       ## 📋 확인 사항
-
-      - /var/ossec/etc/lists/malicious-ips 에 3 entry (key:value)
-      - ossec.conf 의 <ruleset> 내부에 `<list>etc/lists/malicious-ips</list>`
-
-      ## 💡 왜 이걸 하는가?
-
-      CDB list 는 O(1) lookup 자료구조 — 1000+ IOC 도 룰 매칭 시 즉시 검사 가능.
-      production CTI ↔ SIEM 통합의 가장 단순/강력 패턴.
-
-      ## 🔍 결과 해석
-
-      - **정상**: list 파일 + ossec.conf 등록
-      - **다음 step**: rule 의 <list field="srcip" lookup="address_match_key"> 작성
-    hint: CDB list + ossec.conf <list>
-    category: configuration
-    points: 20
+      - 4 connector 매트릭스 + API 키 + 우선순위
+    hint: 'MITRE / OTX / URLhaus / AbuseIPDB'
+    category: planning
+    points: 12
     answer: |
-      ssh 6v6-siem '
-      sudo mkdir -p /var/ossec/etc/lists
-      sudo bash -c "cat > /var/ossec/etc/lists/malicious-ips" <<EOF
-      1.2.3.4:c2_server
-      5.6.7.8:botnet
-      10.20.30.202:test_attacker
+      cat <<'EOF'
+      MITRE ATT&CK | github  | 불요 | 무료 | 분기별
+      OTX          | otx api | 필요 | 무료 | 1000+/일
+      URLhaus      | TAXII   | 불요 | 무료 | 100+/일
+      AbuseIPDB    | api     | 필요 | 무료 | 100+/일
       EOF
-      sudo cat /var/ossec/etc/lists/malicious-ips'
-      ssh 6v6-siem 'sudo grep -q "malicious-ips" /var/ossec/etc/ossec.conf || sudo sed -i "0,/<ruleset>/{s|<ruleset>|<ruleset>\n    <list>etc/lists/malicious-ips</list>|}" /var/ossec/etc/ossec.conf'
-    answer_detail: CDB list 3 entry + ossec.conf 등록.
+    answer_detail: '4 external Connector 매트릭스'
     verify:
       type: output_contains
-      expect: malicious
+      expect: 'MITRE'
       field: stdout
       semantic:
-        intent: "CDB list 작성"
-        success_criteria: ["list 파일", "ossec.conf 등록"]
+        intent: "4 external Connector 활성 계획"
+        success_criteria: ["4 connector 매트릭스"]
         acceptable_methods:
-          - "**[OSS] /var/ossec/etc/lists/ + key:value**"
-          - "**[OSS] ossec.conf <list> 태그**"
-          - "**[OSS] wazuh-control reload + .cdb binary 자동 생성**"
-          - "**[OSS] address_match_key (IP lookup)**"
-          - "**[OSS] match_key (string lookup)**"
-          - "**[OSS] cron 자동 갱신 (AbuseIPDB / blocklist.de)**"
-          - "**[OSS] OpenCTI 의 indicator export → CDB**"
-          - "**[OSS] OWASP / SANS feed 통합**"
-    target_vm: siem
+          - "**[CTI] MITRE ATT&CK github cti**"
+          - "**[CTI] OTX (AlienVault) — Pulse**"
+          - "**[CTI] URLhaus (abuse.ch) — TAXII**"
+          - "**[CTI] AbuseIPDB — IP reputation**"
+          - "**[CTI] API key 관리**"
+          - "**[CTI] 우선순위 + filter**"
+          - "**[CTI] rate limit 인지**"
+          - "**[CTI] retention 7-30일**"
+    target_vm: bastion
 
   - order: 2
     instruction: |
-      ## 🎯 MISSION
+      ## 🎯 MISSION — 3 enrichment Connector (VT / GeoIP / WHOIS)
 
-      rule 100300 작성 — SSH failed (5710 chain) + CDB list 매치 시 **level 12 격상**.
+      ## 💻 산출물
 
-      ## 💻 실행 명령
-
-      ```bash
-      ssh 6v6-siem '
-      sudo cat > /tmp/local_rules.xml <<EOF
-      <group name="6v6,custom,">
-        <rule id="100300" level="12">
-          <if_sid>5710</if_sid>
-          <list field="srcip" lookup="address_match_key">etc/lists/malicious-ips</list>
-          <description>6v6 W13 - SSH login from KNOWN malicious IP (CTI)</description>
-        </rule>
-      </group>
-      EOF
-      sudo cp /tmp/local_rules.xml /var/ossec/etc/rules/local_rules.xml
-      sudo chown root:wazuh /var/ossec/etc/rules/local_rules.xml
-      sudo /var/ossec/bin/wazuh-control restart'
-      sleep 10
-      # 트리거: 10.20.30.202 (CDB 매치) SSH 시도
-      for i in 1 2 3; do
-        ssh 6v6-attacker 'timeout 3 sshpass -p wrongpass ssh -o ConnectTimeout=2 -o StrictHostKeyChecking=no ccc@10.20.32.80 hostname 2>&1' | head -1
-      done
-      sleep 5
-      ssh 6v6-siem 'sudo grep "100300" /var/ossec/logs/alerts/alerts.json | tail -1' | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); print(json.dumps({'rule':d.get('rule',{}).get('id'),'level':d.get('rule',{}).get('level'),'srcip':d.get('data',{}).get('srcip')}, ensure_ascii=False))" 2>&1 | head
       ```
-
-      ## 📋 확인 사항
-
-      - rule 100300 + level 12 alert
-      - srcip 10.20.30.202 가 CDB list 매치
-      - 일반 5710 (level 5) 가 100300 (level 12) 으로 격상
-
-      ## 💡 왜 이걸 하는가?
-
-      CTI ↔ SIEM 통합의 핵심 — IOC 매치 1건만으로 alert priority 자동 격상. SOC 분석가
-      가 high-priority alert 만 보면 됨 (alert fatigue 해소).
-
-      ## 🔍 결과 해석
-
-      - **정상**: 100300 + level 12 alert 발생
-      - **비정상**: 100300 alert 없음 → CDB list 의 address_match_key syntax / chown 점검
-    hint: rule + <list> + lookup + chown + restart
-    category: manipulation
-    points: 30
+      Enrichment 매트릭스:
+      | Connector | input | output |
+      | VirusTotal | hash/URL/domain | detection ratio + AV 결과 |
+      | GeoIP | IPv4 | country / city / ASN |
+      | WHOIS | domain | 등록자 / 등록 시각 / email |
+      ```
+    hint: 'VT + GeoIP + WHOIS'
+    category: planning
+    points: 12
     answer: |
-      ssh 6v6-siem '
-      sudo cat > /tmp/local_rules.xml <<EOF
-      <group name="6v6,custom,">
-        <rule id="100300" level="12">
-          <if_sid>5710</if_sid>
-          <list field="srcip" lookup="address_match_key">etc/lists/malicious-ips</list>
-          <description>6v6 W13 - SSH login from KNOWN malicious IP (CTI)</description>
-        </rule>
-      </group>
+      cat <<'EOF'
+      VirusTotal | hash/URL/domain | detection + AV
+      GeoIP      | IPv4             | country/city/ASN
+      WHOIS      | domain           | 등록자/시각/email
       EOF
-      sudo cp /tmp/local_rules.xml /var/ossec/etc/rules/local_rules.xml
-      sudo chown root:wazuh /var/ossec/etc/rules/local_rules.xml
-      sudo /var/ossec/bin/wazuh-control restart'
-      sleep 10
-      for i in 1 2 3; do
-        ssh 6v6-attacker 'timeout 3 sshpass -p wrongpass ssh -o ConnectTimeout=2 -o StrictHostKeyChecking=no ccc@10.20.32.80 hostname 2>&1' | head -1
-      done
-      sleep 5
-      ssh 6v6-siem 'sudo grep "100300" /var/ossec/logs/alerts/alerts.json | tail -1'
-    answer_detail: SSH brute → 5710 매치 → CDB lookup → 100300 level 12 alert 격상.
+    answer_detail: '3 enrichment Connector'
     verify:
       type: output_contains
-      expect: '100300\|5710'
+      expect: 'enrichment'
       field: stdout
       semantic:
-        intent: "CDB list rule lookup"
-        success_criteria: ["100300 rule"]
+        intent: "3 enrichment Connector"
+        success_criteria: ["VT / GeoIP / WHOIS"]
         acceptable_methods:
-          - "**[OSS] <list field=srcip lookup=address_match_key>**"
-          - "**[OSS] if_sid 5710 chain**"
-          - "**[OSS] level 12 (critical) 격상**"
-          - "**[OSS] chown root:wazuh** (필수)"
-          - "**[OSS] /var/ossec/queue/db/global.db**"
-          - "**[OSS] alerts.json 의 rule.list 필드**"
-          - "**[OSS] dashboard 의 high-priority 필터**"
-          - "**[OSS] AbuseIPDB / OpenCTI 통합 cron**"
-    target_vm: siem
+          - "**[CTI] VirusTotal API + detection ratio**"
+          - "**[CTI] MaxMind GeoLite2**"
+          - "**[CTI] WHOIS lookup**"
+          - "**[CTI] Shodan (별 enrichment)**"
+          - "**[CTI] HaveIBeenPwned (별 enrichment)**"
+          - "**[CTI] 새 domain (<30일) 의심**"
+          - "**[CTI] enrichment 우선순위**"
+          - "**[CTI] rate limit + retry**"
+    target_vm: bastion
+
+  - order: 3
+    instruction: |
+      ## 🎯 MISSION — Python Stream Connector (CDB sync)
+
+      lecture §3 의 Python 구조 + diff sync 보강.
+
+      ## 💻 산출물
+
+      ```python
+      import pycti, time, os
+      from datetime import datetime, timedelta
+
+      helper = pycti.OpenCTIConnectorHelper(config)
+
+      def sync_to_wazuh():
+          # 최근 7일 indicator
+          indicators = helper.api.indicator.list(
+              filters=[
+                  {"key": "valid_from", "values": [(datetime.now() - timedelta(days=7)).isoformat()]},
+                  {"key": "indicator_types", "values": ["malicious-activity"]}
+              ],
+              first=10000
+          )
+
+          # diff sync
+          cdb_path = "/var/ossec/etc/lists/opencti-iocs"
+          existing = set()
+          if os.path.exists(cdb_path):
+              with open(cdb_path) as f:
+                  existing = set(l.split(":")[0].strip() for l in f if l.strip())
+
+          new_iocs = []
+          for ind in indicators:
+              if "ipv4-addr:value" in ind["pattern"]:
+                  ip = ind["pattern"].split("'")[1]
+                  labels = ",".join(ind.get("labels", []))
+                  new_iocs.append(f"{ip}: {labels}")
+
+          # 갱신
+          with open(cdb_path, "w") as f:
+              f.write("\n".join(new_iocs))
+
+          os.system("/var/ossec/bin/ossec-makelists")
+          os.system("/var/ossec/bin/wazuh-control reload")
+
+          helper.log_info(f"synced {len(new_iocs)} (was {len(existing)})")
+
+      while True:
+          try:
+              sync_to_wazuh()
+          except Exception as e:
+              helper.log_error(f"sync failed: {e}")
+          time.sleep(1800)
+      ```
+    hint: 'pycti + diff sync + error handling + 30분 polling'
+    category: integration
+    points: 15
+    answer: |
+      cat <<'EOF'
+      Stream Connector (Python)
+      - indicator.list filter
+      - CDB diff sync (existing vs new)
+      - ossec-makelists + reload
+      - 30분 polling
+      - error handling + helper.log_info
+      EOF
+    answer_detail: 'Python Stream Connector + diff + error'
+    verify:
+      type: output_contains
+      expect: 'Connector'
+      field: stdout
+      semantic:
+        intent: "Python Stream Connector"
+        success_criteria: ["골격", "diff sync", "error handling"]
+        acceptable_methods:
+          - "**[OSS] pycti SDK**"
+          - "**[OSS] indicator.list filter**"
+          - "**[OSS] diff sync (set)**"
+          - "**[OSS] ossec-makelists + reload**"
+          - "**[OSS] try-except + log_error**"
+          - "**[OSS] 30분 polling**"
+          - "**[OSS] retention 7일**"
+          - "**[OSS] labels 매핑**"
+    target_vm: bastion
+
+  - order: 4
+    instruction: |
+      ## 🎯 MISSION — OpenCTI 6 UI 화면 + MITRE Navigator 통합
+
+      ## 💻 산출물
+
+      ```
+      6 화면:
+      1. Analyst Workbench — 최근 활동 + 할당 case
+      2. Investigations — case 별 STIX object 묶음
+      3. Knowledge — Threats / Arsenal / Techniques / Entities
+      4. Observables — Indicator + Cyber Observable
+      5. Threats — Threat Actor 매트릭스
+      6. Connectors — 통합 관리 + sync status
+
+      MITRE Navigator 통합:
+        OpenCTI (Threat Actor APT28 의 TTP) ↔ Wazuh dashboard MITRE panel
+        → 본 환경 매치된 Technique overlay → coverage gap 식별
+        → 매월 coverage report
+      ```
+    hint: '6 화면 + MITRE Navigator overlay'
+    category: navigation
+    points: 12
+    answer: |
+      cat <<'EOF'
+      OpenCTI 6 화면: Workbench / Investigation / Knowledge / Observables / Threats / Connectors
+      MITRE Navigator: APT TTP ↔ Wazuh dashboard MITRE panel overlay → coverage gap
+      EOF
+    answer_detail: '6 UI + MITRE Navigator 통합'
+    verify:
+      type: output_contains
+      expect: MITRE
+      field: stdout
+      semantic:
+        intent: "OpenCTI UI + MITRE 통합"
+        success_criteria: ["6 화면", "MITRE Navigator"]
+        acceptable_methods:
+          - "**[OSS] Analyst Workbench**"
+          - "**[OSS] Investigations**"
+          - "**[OSS] Knowledge Threats/Arsenal/Techniques**"
+          - "**[OSS] Observables**"
+          - "**[OSS] Threats matrix**"
+          - "**[OSS] Connectors 관리**"
+          - "**[OSS] MITRE Navigator export**"
+          - "**[OSS] coverage gap 분석**"
+    target_vm: bastion
+
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION — R/B/P IOC enrichment → alert 격상
+
+      ## 💻 시뮬
+
+      ```
+      [Red] attacker (10.20.30.202) → 외부 IP 192.168.99.99 통신
+      [Suricata] alert level 3
+      [Wazuh] 4751 룰 매치 → level 3
+      [CDB] opencti-iocs 에 192.168.99.99 있음 (OpenCTI 가 sync) → 100100 룰 매치 → level 10
+      [OpenCTI enrichment]:
+        - GeoIP: Russia / Moscow / AS12345
+        - WHOIS: 등록 2020-01-15 / suspicious.ru
+        - VirusTotal: 45/72 (62% positive)
+        - Tags: apt28-c2, emotet-distributor
+        - MITRE: T1071.001
+      [Purple]
+        - dashboard: level 10 critical alert
+        - context: APT28 attribution + Emotet
+        - Active Response: attacker IP 차단
+        - report 자동 생성 (analyst workbench)
+      ```
+    hint: '시뮬 — Red IP 통신 → CDB 매치 → level 10 + enrichment context'
+    category: redblue
+    points: 22
+    answer: |
+      cat <<'EOF'
+      [Red] attacker → 192.168.99.99
+      [Suricata] level 3 alert
+      [CDB 매치] → level 10
+      [OpenCTI] enrichment:
+        - GeoIP Russia/Moscow/AS12345
+        - WHOIS 2020-01-15 suspicious.ru
+        - VT 45/72 (62%)
+        - Tags apt28-c2 emotet
+        - MITRE T1071.001
+      [Purple] dashboard + APT 매핑 + AR + report
+      EOF
+    answer_detail: 'R/B/P enrichment 시뮬 + context + 운영 권장'
+    verify:
+      type: output_contains
+      expect: 'GeoIP\|VirusTotal\|enrichment'
+      field: stdout
+      semantic:
+        intent: "R/B/P enrichment"
+        success_criteria: ["enrichment 3 source", "level 격상", "context"]
+        acceptable_methods:
+          - "**[OSS] CDB list 매치 → level 격상**"
+          - "**[OSS] GeoIP + WHOIS + VT 3 enrichment**"
+          - "**[OSS] APT attribution**"
+          - "**[OSS] MITRE Technique 매핑**"
+          - "**[OSS] dashboard critical alert**"
+          - "**[OSS] Active Response IP 차단**"
+          - "**[OSS] OpenCTI report 자동 생성**"
+          - "**[OSS] coverage gap 분석**"
+    target_vm: bastion
+
+  - order: 6
+    instruction: |
+      ## 🎯 MISSION — 운영 사고 분석 + 권장
+
+      lecture §8.2 의 3 사례.
+
+      ## 💻 산출물
+
+      ```
+      사례 1 — Connector noise 폭증:
+        문제: OTX 활성 → 분당 1000+ → CDB 갱신 부담
+        해결: filter (high confidence only) + 30분 interval
+      사례 2 — IOC retention 부재:
+        문제: 1년 누적 100MB+
+        해결: 30일 retention + auto-expire
+      사례 3 — VT API rate limit:
+        문제: 분당 4 query → 대기열 폭증
+        해결: 유료 plan 또는 우선순위
+      ```
+    hint: '3 사고 사례 + 해결'
+    category: operations
+    points: 12
+    answer: |
+      cat <<'EOF'
+      사례 1 — OTX noise: filter + interval
+      사례 2 — retention 부재: 30일 + expire
+      사례 3 — VT rate limit: 유료 plan / 우선순위
+      EOF
+    answer_detail: '3 사고 사례 + 해결'
+    verify:
+      type: output_contains
+      expect: '사례'
+      field: stdout
+      semantic:
+        intent: "운영 사고 3 + 해결"
+        success_criteria: ["3 사례", "해결"]
+        acceptable_methods:
+          - "**[관리적] Connector noise filter**"
+          - "**[관리적] retention 정책**"
+          - "**[관리적] rate limit 대응**"
+          - "**[관리적] 우선순위 enrichment**"
+          - "**[관리적] auto-expire**"
+          - "**[관리적] OpenCTI 의 worker scale**"
+          - "**[관리적] Elasticsearch 디스크 모니터**"
+          - "**[관리적] backup + restore**"
+    target_vm: bastion
+
+  - order: 7
+    instruction: |
+      ## 🎯 MISSION — W13 종합 보고서
+
+      ```markdown
+      # 6v6 W13 OpenCTI 운영 보고서
+
+      ## 1. STEP 1-6 결과
+      ## 2. 4 external + 3 enrichment + 1 stream connector 매트릭스
+      ## 3. Python Stream Connector 골격
+      ## 4. 6 UI 화면 + MITRE Navigator 통합
+      ## 5. R/B/P enrichment 흐름
+      ## 6. 운영 사고 3 + 해결
+      ## 7. W14 (MISP) 준비도
+      ## 8. 본인 학습 gap
+      ```
+    hint: 마크다운
+    category: synthesis
+    points: 15
+    answer: |
+      cat <<'EOF'
+      # 6v6 W13 OpenCTI 운영 보고서
+      ## 1. STEP 1-6
+      ## 2. 8 Connector 매트릭스
+      ## 3. Python Stream
+      ## 4. 6 UI + MITRE
+      ## 5. R/B/P enrichment
+      ## 6. 사고 3
+      ## 7. W14 준비도
+      ## 8. gap
+      EOF
+    answer_detail: 종합 보고서
+    verify:
+      type: output_contains
+      expect: OpenCTI
+      field: stdout
+      semantic:
+        intent: "W13 종합"
+        success_criteria: ["8 섹션"]
+        acceptable_methods:
+          - "**[관리적] 마크다운 8 섹션**"
+          - "**[관리적] ISMS-P 2.9.5 / 2.9.6**"
+          - "**[관리적] NIST DE.AE-3 / RA-2/RA-3**"
+          - "**[관리적] MITRE ATT&CK 매핑**"
+          - "**[관리적] W14 (MISP) logical flow**"
+          - "**[관리적] coverage gap 분석**"
+          - "**[관리적] alert fatigue + SOC tier**"
+          - "**[관리적] 본인 gap**"
+    target_vm: bastion
