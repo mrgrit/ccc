@@ -12,6 +12,35 @@
 
 ## In-Progress
 
+### P21. secuops 콘텐츠 W03-W15 W01 깊이로 전면 재작성 [STATUS: ✅ COMPLETE — 13/13 (2026-05-12)]
+
+**동기**: 사용자 지적 "보안솔루션운영 3주차부터 부실, 그 뒤엔 진행 안 됨". W01 (lecture
+1306 + lab 1599 = 2905 줄) 의 깊이/분량/실측 기준으로 W03-W15 전면 재작성. 완료.
+
+**원칙**: 분량보다 신호 밀도, 6v6 실측 데이터, R/B/P + cleanup 1 cycle.
+
+**완료 13/13**:
+- [x] W03 nftables NAT + Docker NAT 공존 + conntrack 운영 (commit 135b2a84)
+- [x] W04 Suricata 데몬 + eve.json 8 type + flowbits 통합 추적 (commit 9ac0d12d)
+- [x] W05 룰 심화 — pcre/fast_pattern/flowbits/threshold/suppression (commit a8a3ce6a)
+- [x] W06 ModSecurity v2 + CRS 3.3.2 + audit log + anomaly score 15 (commit 4c5f3ab8)
+- [x] W07 osquery 4 호스트 + 158 테이블 + 헌팅 + FIM (commit cf745c95)
+- [x] W08 중간고사 — W01-W07 통합 5 단계 (commit a040b3f7)
+- [x] W09 Wazuh manager 4.10 + 11 daemon + 3 agent + decoder/rule (commit e3a49cdc)
+- [x] W10 dashboard + 통합 운영 + 5 panel + 6v6 운영 갭 4 (commit 40eddf48)
+- [x] W11 sysmon-for-linux + eBPF + Event ID 6 + Wazuh 통합 (commit 401cfee7)
+- [x] W12 OpenCTI 도입 + STIX 2.1 + TAXII 2.1 + CDB list (commit f1619a20)
+- [x] W13 OpenCTI 운영 + 4+3+1 Connector + IOC enrichment (commit c6853e54)
+- [x] W14 MISP + Threat Hunting 5 단계 + Sighting + Report (commit eb699be2)
+- [x] W15 기말 — APT 5 단계 통합 (Recon → Initial Access → Execution+Lateral → C2+Exfil → Response) (commit 471e7dc1)
+
+**핵심 통계**:
+- 13 주차 lecture/lab × 평균 800~1500 줄 = 약 23,000+ 줄 신규 작성
+- 모든 6v6 실측 데이터 반영 (Wazuh 4.10.0 + 65,898 Suricata 룰 + CRS 3.3.2 + osquery 5.23.0 등)
+- 운영 갭 4 인지 (osqueryd 미운영 / sysmon 미설치 / OpenCTI/MISP 미설치 / bastion agent 미등록)
+- R/B/P + cleanup 1 cycle 모든 주차 적용
+- MITRE ATT&CK 14 Tactic 매핑
+
 ### P19. course1 attack acceptable_methods OSS 도구 보강 [STATUS: ✅ COMPLETE — ai 15/15 + nonai 15/15 (2026-04-29)]
 
 **동기**: P18 (physical-pentest) 완료 후속. course1 attack 이 학생 첫 수강 과목 + 메모리 "multi_task 재작성 — attack 6" 일부 진행 중. 동일 패턴 (도구명 → 도구 + 명령 + 출력 + 해석) 으로 재작성.
