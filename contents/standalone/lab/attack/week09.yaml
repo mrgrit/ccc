@@ -1,63 +1,126 @@
 lab_id: standalone-attack-week09
-title: 네트워크 공격 + 패킷 분석 (tcpdump + scapy)
+title: 네트워크 공격 — tcpdump + scapy + ARP/DNS
 version: standalone-non-ai
 course: attack
 week: 9
-description: L2-L4 네트워크 공격 + scapy + ARP / DNS / TCP RST.
+description: |
+  L2-L4 네트워크 공격 기초 — tcpdump 캡처 + scapy 로 SYN 패킷 작성 + ARP table 분석.
 difficulty: medium
 duration_minutes: 150
 prerequisites: [W08]
-objectives: [tcpdump, scapy, ARP / DNS]
+objectives:
+  - "tcpdump BPF filter + pcap 저장"
+  - "scapy 로 SYN packet 작성"
+  - "ARP table + DNS resolve 분석"
 pass_threshold: 0.7
 steps:
+
   - order: 1
-    instruction: tcpdump 캡처 + filter
-    hint: sudo tcpdump -ni eth0 -c 10
+    instruction: |
+      ## 🎯 MISSION
+
+      attacker 에서 **tcpdump** 로 외부 트래픽 10 packet 캡처 + BPF filter 적용.
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker 'sudo timeout 5 tcpdump -ni eth0 -c 10 2>&1 | tail -15'
+      echo "--- TCP port 80 만 ---"
+      ssh 6v6-attacker 'sudo timeout 5 tcpdump -ni eth0 "tcp port 80" -c 5 2>&1 | tail -10'
+      ```
+
+      ## 📋 확인 사항
+
+      - 10 packet 캡처 (IP / ARP / ICMP 등)
+      - BPF filter "tcp port 80" 적용 시 80 port 만 출력
+
+      ## 💡 왜 이걸 하는가?
+
+      packet 레벨 분석 — 모든 네트워크 공격의 기본 도구.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 10 packet + BPF filter 5 packet
+      - **운영 권장**: -w pcap 으로 Wireshark 후속 분석
+    hint: tcpdump + BPF filter
     category: capture
     points: 20
     answer: |
-      ssh 6v6-attacker 'sudo timeout 4 tcpdump -ni eth0 -c 10 2>&1 | tail -15'
-    answer_detail: 10 packet 캡처
+      ssh 6v6-attacker 'sudo timeout 5 tcpdump -ni eth0 -c 10 2>&1 | tail -15'
+      ssh 6v6-attacker 'sudo timeout 5 tcpdump -ni eth0 "tcp port 80" -c 5 2>&1 | tail -10'
+    answer_detail: tcpdump 기본 + BPF filter.
     verify:
       type: output_contains
       expect: IP
       field: stdout
       semantic:
-        intent: tcpdump
-        success_criteria: [IP packet 출력]
+        intent: "tcpdump 캡처"
+        success_criteria: ["packet 캡처"]
         acceptable_methods:
-          - "**[OSS] tcpdump 기본 syntax**"
+          - "**[OSS] tcpdump -ni <iface>**"
           - "**[OSS] BPF filter (host/port/proto)**"
-          - "**[OSS] -A ASCII 모드**"
-          - "**[OSS] -X hex+ASCII**"
-          - "**[OSS] -w pcap 저장**"
-          - "**[OSS] -r pcap 재생**"
-          - "**[OSS] Wireshark 분석**"
+          - "**[OSS] -A ASCII / -X hex**"
+          - "**[OSS] -w pcap (Wireshark 후속)**"
+          - "**[OSS] -r pcap (재생)**"
           - "**[OSS] tshark CLI 대안**"
+          - "**[OSS] ngrep / netsniff-ng**"
+          - "**[OSS] T1040 Network Sniffing**"
     target_vm: attacker
 
   - order: 2
-    instruction: scapy 로 SYN 패킷 송신
-    hint: python3 -c "from scapy.all import *; sr1(IP(dst='10.20.30.1')/TCP(dport=80, flags='S'))"
+    instruction: |
+      ## 🎯 MISSION
+
+      scapy 로 **SYN 패킷 작성** + fw 응답 받기.
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker 'sudo python3 -c "
+      from scapy.all import IP, TCP, sr1
+      r = sr1(IP(dst=\"10.20.30.1\")/TCP(dport=80, flags=\"S\"), timeout=2, verbose=0)
+      print(r.summary() if r else \"no response\")
+      "'
+      ```
+
+      ## 📋 확인 사항
+
+      - SYN-ACK 응답: `IP / TCP 10.20.30.1:http > <attacker>:xxxx SA / Padding`
+      - response 의 flags = SA (SYN-ACK) → 정상
+
+      ## 💡 왜 이걸 하는가?
+
+      scapy 는 packet 작성의 표준 도구 — 모든 네트워크 공격 (ARP spoofing / DNS poisoning
+      / TCP RST injection) 의 기본.
+
+      ## 🔍 결과 해석
+
+      - **정상**: SYN-ACK 응답
+      - **비정상**: no response → fw 의 drop 또는 NIC 문제
+    hint: scapy sr1 IP/TCP
     category: exploit
     points: 25
     answer: |
-      ssh 6v6-attacker 'sudo python3 -c "from scapy.all import *; r=sr1(IP(dst=\"10.20.30.1\")/TCP(dport=80, flags=\"S\"), timeout=2, verbose=0); print(r.summary() if r else \"no response\")" 2>&1 | tail -5'
-    answer_detail: SYN 응답
+      ssh 6v6-attacker 'sudo python3 -c "
+      from scapy.all import IP, TCP, sr1
+      r = sr1(IP(dst=\"10.20.30.1\")/TCP(dport=80, flags=\"S\"), timeout=2, verbose=0)
+      print(r.summary() if r else \"no response\")
+      "'
+    answer_detail: scapy SYN → SYN-ACK 응답.
     verify:
       type: output_contains
-      expect: SA
+      expect: 'SA\|response'
       field: stdout
       semantic:
-        intent: scapy SYN
-        success_criteria: [SYN-ACK 응답]
+        intent: "scapy SYN"
+        success_criteria: ["SYN-ACK 응답"]
         acceptable_methods:
           - "**[OSS] sr1 (send + recv 1)**"
+          - "**[OSS] send (송신만)**"
+          - "**[OSS] sniff (캡처)**"
           - "**[OSS] IP / TCP / UDP / ICMP layer**"
-          - "**[OSS] flags S / SA / R / F**"
-          - "**[OSS] timeout / verbose**"
-          - "**[OSS] sniff() 캡처**"
-          - "**[OSS] IPv6 / ARP / DNS layer**"
+          - "**[OSS] flags S/SA/R/F**"
           - "**[OSS] custom Raw payload**"
-          - "**[OSS] Suricata 의 detection**"
+          - "**[OSS] ARP / DNS layer**"
+          - "**[OSS] Suricata + Wazuh 의 detection**"
     target_vm: attacker

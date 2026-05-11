@@ -1,23 +1,31 @@
 lab_id: standalone-attack-week13
-title: MITRE Caldera (1) — Adversary Emulation (신규)
+title: MITRE Caldera (1) — Adversary Emulation 자동화 (개념)
 version: standalone-non-ai
 course: attack
 week: 13
-description: Caldera 아키텍처 + ability/adversary 작성 + ATT&CK 매핑.
+description: |
+  MITRE Caldera 의 ability + adversary profile + operation 개념 학습. 본 lab 은
+  Caldera 설치 전 yaml 패턴 설계 + ATT&CK 매핑 중심 (실 Caldera 설치는 별 lab).
 difficulty: medium
-duration_minutes: 150
-prerequisites: [W12]
-objectives: [ability 작성, adversary, ATT&CK 매핑]
+duration_minutes: 120
+prerequisites: [W11-W12]
+objectives:
+  - "Caldera 아키텍처 (Server + Agent + Abilities + Adversary)"
+  - "ability yaml 작성 (ATT&CK 매핑)"
+  - "adversary profile 작성"
 pass_threshold: 0.6
 steps:
+
   - order: 1
-    instruction: 6v6 환경에 적합한 ability 3 작성
-    hint: yaml 형식 + ATT&CK Technique ID
-    category: design
-    points: 35
-    answer: |
-      cat <<'EOF'
-      # /tmp/abilities.yml
+    instruction: |
+      ## 🎯 MISSION
+
+      6v6 환경에 적합한 **3 ability yaml** 작성 (Discovery 카테고리).
+
+      ## 💻 산출물
+
+      ```yaml
+      # /tmp/abilities.yml — 6v6 Discovery abilities
       - id: 6v6-001
         name: 6v6 File Discovery
         tactic: discovery
@@ -47,34 +55,56 @@ steps:
             sh:
               command: |
                 ss -tnp 2>/dev/null | head -10
-      EOF
-    answer_detail: 3 ability + ATT&CK Technique
+      ```
+
+      ## 📋 확인 사항
+
+      - 3 ability 작성 (T1083 / T1057 / T1018)
+      - yaml syntax 정확
+      - platforms.linux.sh.command 정의
+
+      ## 💡 왜 이걸 하는가?
+
+      Caldera 의 ability 는 ATT&CK Technique 와 1:1 매핑. yaml 패턴 학습이 자동화의
+      첫 단계.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 3 ability 정의 + ATT&CK 매핑
+      - **확장**: T1059 (Command Execution) / T1071 (C2) 등 추가 ability
+    hint: 3 ability yaml + ATT&CK
+    category: design
+    points: 30
+    answer: 위 yaml 형식
+    answer_detail: 3 Discovery ability.
     verify:
       type: output_contains
       expect: T1083
       field: stdout
       semantic:
-        intent: ability 작성
-        success_criteria: [3 ability + ATT&CK]
+        intent: "ability yaml 작성"
+        success_criteria: ["3 ability"]
         acceptable_methods:
-          - "**[OSS] yaml 형식 표준**"
+          - "**[OSS] Caldera ability yaml 형식**"
           - "**[OSS] tactic + technique 분리**"
-          - "**[OSS] ATT&CK Technique ID**"
-          - "**[OSS] platforms 별 command**"
-          - "**[OSS] linux/windows/darwin 다중**"
-          - "**[OSS] parser (output → fact 추출)**"
+          - "**[OSS] ATT&CK Technique ID (T1XXX)**"
+          - "**[OSS] platforms (linux/windows/darwin)**"
+          - "**[OSS] command + parser (fact 추출)**"
           - "**[OSS] requirements (변수)**"
           - "**[OSS] cleanup 명령**"
+          - "**[OSS] obfuscator (plain/base64/caesar)**"
     target_vm: attacker
 
   - order: 2
-    instruction: adversary profile + operation 시뮬
-    hint: atomic_ordering + 6v6-001/002/003
-    category: design
-    points: 25
-    answer: |
-      cat <<'EOF'
-      # /tmp/adversary.yml
+    instruction: |
+      ## 🎯 MISSION
+
+      adversary profile + operation 설계.
+
+      ## 💻 산출물
+
+      ```yaml
+      # adversary profile
       - id: 6v6-adv-01
         name: 6v6 Recon Adversary
         description: 6v6 학습용 정찰 적
@@ -83,25 +113,48 @@ steps:
           - 6v6-002
           - 6v6-003
 
-      # operation 시뮬:
-      # operation.start(adversary=6v6-adv-01, agents=[sandcat-attacker])
-      # 결과: 3 ability 순차 실행
+      # operation (실 Caldera UI 또는 API 로 시작)
+      # POST /api/v2/operations
+      # body: { adversary_id: "6v6-adv-01", agents: [...], obfuscator: "plain-text" }
+      ```
+
+      ## 📋 확인 사항
+
+      - adversary 가 atomic_ordering 으로 3 ability 순차 실행
+      - operation 시뮬 (실 Caldera 설치 시 동작)
+
+      ## 💡 왜 이걸 하는가?
+
+      adversary = APT 그룹 의 행동 패턴. 6v6-adv-01 가 Recon 적의 표준 행동.
+
+      ## 🔍 결과 해석
+
+      - **정상**: profile yaml + operation 패턴
+      - **운영**: Caldera UI / API 에서 operation 시작 + 실시간 visibility
+    hint: adversary + operation
+    category: design
+    points: 20
+    answer: |
+      cat <<'EOF'
+      - id: 6v6-adv-01
+        name: 6v6 Recon Adversary
+        atomic_ordering: [6v6-001, 6v6-002, 6v6-003]
       EOF
-    answer_detail: adversary + operation
+    answer_detail: adversary profile yaml.
     verify:
       type: output_contains
       expect: adversary
       field: stdout
       semantic:
-        intent: adversary
-        success_criteria: [profile + operation]
+        intent: "adversary profile"
+        success_criteria: ["yaml 형식"]
         acceptable_methods:
           - "**[OSS] adversary profile yaml**"
           - "**[OSS] atomic_ordering 순차**"
-          - "**[OSS] objectives goals**"
-          - "**[OSS] operation 모드 (atomic / batch)**"
+          - "**[OSS] objectives / goals**"
+          - "**[OSS] operation atomic / batch 모드**"
           - "**[OSS] agent group filter**"
-          - "**[OSS] obfuscator (plain-text / base64 / caesar)**"
-          - "**[OSS] visibility (real-time UI)**"
+          - "**[OSS] obfuscator (3 종)**"
+          - "**[OSS] real-time UI visibility**"
           - "**[OSS] report 생성**"
     target_vm: attacker

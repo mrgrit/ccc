@@ -1,77 +1,133 @@
 lab_id: standalone-attack-week12
-title: 지속성 + 안티포렌식
+title: 지속성 + 안티포렌식 — 5 패턴 + osquery detection
 version: standalone-non-ai
 course: attack
 week: 12
-description: 5 persistence 패턴 + anti-forensics + osquery detection (시뮬).
+description: |
+  Persistence 5 패턴 (cron / systemd / .bashrc / SSH key / web shell) 시뮬 (실 적용 X)
+  + osquery + Wazuh FIM 으로 detection 권장.
 difficulty: medium
 duration_minutes: 120
 prerequisites: [W11]
-objectives: [5 패턴 시뮬, detection]
+objectives: ["5 patterns 시뮬", "detection 권장"]
 pass_threshold: 0.6
 steps:
+
   - order: 1
-    instruction: 5 persistence 패턴 시뮬 (실 적용 X)
-    hint: cron / systemd / .bashrc / authorized_keys / web shell 검사
-    category: simulation
-    points: 30
-    answer: |
+    instruction: |
+      ## 🎯 MISSION (5 persistence 패턴 검사)
+
+      bastion 의 5 persistence 카테고리를 **읽기 전용 검사** — 실 적용 X.
+
+      ## 💻 실행 명령
+
+      ```bash
       ssh 6v6-bastion '
       echo "=== 1. cron ==="
-      cat /etc/crontab 2>&1 | head
-      ls /etc/cron.d/ 2>&1
-      echo "=== 2. systemd ==="
+      cat /etc/crontab 2>&1 | head; ls /etc/cron.d/ 2>&1 | head
+      echo "=== 2. systemd unit ==="
       systemctl list-unit-files --type=service 2>&1 | head -10
-      echo "=== 3. .bashrc ==="
-      tail -5 ~/.bashrc
-      echo "=== 4. ssh keys ==="
+      echo "=== 3. .bashrc / .profile ==="
+      tail -5 ~/.bashrc; tail -3 ~/.profile 2>/dev/null
+      echo "=== 4. ssh authorized_keys ==="
       cat ~/.ssh/authorized_keys 2>&1 | head -3
-      echo "=== 5. web shell 검사 ==="
-      ls /var/www/landing/ 2>&1 | head -5
+      echo "=== 5. web shell 검사 (없어야 함) ==="
+      find /var/www -name "*.php" 2>/dev/null | head
       '
-    answer_detail: 5 패턴 검사
+      ```
+
+      ## 📋 확인 사항
+
+      - 5 카테고리 모두 검사 (변경 X)
+      - 정상 baseline 확보
+
+      ## 💡 왜 이걸 하는가?
+
+      PTES 6 — Persistence (T1543/T1547/T1098 등). 운영 측은 osquery + Wazuh FIM 으로
+      detection.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 5 카테고리 표준 entry
+      - **의심**: 예상 외 cron / .bashrc 한 줄 추가 / authorized_keys 새 entry
+    hint: 5 persistence 읽기 전용
+    category: simulation
+    points: 25
+    answer: |
+      ssh 6v6-bastion '
+      echo "=== cron ==="; cat /etc/crontab 2>&1 | head; ls /etc/cron.d/ 2>&1
+      echo "=== systemd ==="; systemctl list-unit-files --type=service 2>&1 | head -10
+      echo "=== .bashrc ==="; tail -5 ~/.bashrc
+      echo "=== authorized_keys ==="; cat ~/.ssh/authorized_keys 2>&1 | head -3
+      echo "=== web shell ==="; find /var/www -name "*.php" 2>/dev/null | head
+      '
+    answer_detail: 5 패턴 검사.
     verify:
       type: output_contains
       expect: cron
       field: stdout
       semantic:
-        intent: persistence 검사
-        success_criteria: [5 카테고리]
+        intent: "5 persistence 검사"
+        success_criteria: ["5 카테고리 검사"]
         acceptable_methods:
-          - "**[OSS] /etc/crontab + cron.d**"
-          - "**[OSS] systemd unit + timer**"
+          - "**[OSS] /etc/crontab + /etc/cron.d/**"
+          - "**[OSS] systemd unit / timer**"
           - "**[OSS] .bashrc / .profile / .zshrc**"
           - "**[OSS] ssh authorized_keys**"
-          - "**[OSS] /var/www 의 .php shell**"
-          - "**[OSS] LD_PRELOAD 검사**"
-          - "**[OSS] /etc/ld.so.preload**"
+          - "**[OSS] /var/www/*.php (web shell)**"
+          - "**[OSS] LD_PRELOAD / ld.so.preload**"
           - "**[OSS] DKMS kernel module**"
+          - "**[OSS] T1053/T1543/T1547/T1098/T1505**"
     target_vm: bastion
 
   - order: 2
-    instruction: osquery + Wazuh FIM 으로 detection
-    hint: osquery crontab / authorized_keys + FIM /root /etc
+    instruction: |
+      ## 🎯 MISSION
+
+      osquery 로 5 카테고리 detection 쿼리 작성.
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-web 'sudo osqueryi --json "SELECT command, path FROM crontab LIMIT 10;"'
+      ssh 6v6-web 'sudo osqueryi --json "SELECT * FROM authorized_keys LIMIT 5;"' 2>&1 | head
+      ssh 6v6-web 'sudo osqueryi --json "SELECT name, status FROM systemd_units LIMIT 10;"' 2>&1 | head
+      ```
+
+      ## 📋 확인 사항
+
+      - crontab + authorized_keys + systemd_units 쿼리 결과
+
+      ## 💡 왜 이걸 하는가?
+
+      Blue Team — osquery 로 persistence 5 카테고리 자동 detection. Wazuh FIM 과
+      결합 시 즉시 알람.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 정상 baseline
+      - **의심**: 비인가 cron entry 또는 새 SSH key → 즉시 IR
+    hint: osquery 5 detection
     category: defense
     points: 25
     answer: |
-      ssh 6v6-web 'sudo osqueryi --json "SELECT command, path FROM crontab;" 2>&1 | head'
-      ssh 6v6-web 'sudo osqueryi --json "SELECT * FROM authorized_keys LIMIT 5;" 2>&1 | head'
-      ssh 6v6-web 'sudo grep -A5 "<syscheck>" /var/ossec/etc/ossec.conf 2>&1 | head -15'
-    answer_detail: osquery + FIM
+      ssh 6v6-web 'sudo osqueryi --json "SELECT command, path FROM crontab LIMIT 10;"'
+      ssh 6v6-web 'sudo osqueryi --json "SELECT * FROM authorized_keys LIMIT 5;"' 2>&1 | head
+    answer_detail: osquery detection.
     verify:
       type: output_contains
-      expect: '['
+      expect: '\['
       field: stdout
       semantic:
-        intent: detection
-        success_criteria: [osquery + FIM]
+        intent: "persistence detection"
+        success_criteria: ["osquery 결과"]
         acceptable_methods:
           - "**[OSS] osquery crontab**"
-          - "**[OSS] osquery authorized_keys**"
-          - "**[OSS] osquery startup_items**"
+          - "**[OSS] authorized_keys 테이블**"
+          - "**[OSS] systemd_units**"
+          - "**[OSS] startup_items / launch_agents**"
           - "**[OSS] Wazuh FIM /root /etc**"
           - "**[OSS] sysmon ProcessCreate**"
-          - "**[OSS] Wazuh syscheck 룰 550**"
-          - "**[OSS] dashboard Integrity Monitoring**"
+          - "**[OSS] Wazuh syscheck rule 550**"
           - "**[OSS] alert level 7+ filter**"
     target_vm: web

