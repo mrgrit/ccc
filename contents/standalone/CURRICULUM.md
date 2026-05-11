@@ -183,7 +183,24 @@ Host 6v6-*
 - `secuops/W14` — ✅ DONE (Threat Hunting Sightings, commit 336ef1e)
 - `secuops/W15` — ✅ DONE (기말 APT 5 단계, commit 73a1d77)
 - **secuops 15/15 완료. attack 시작.**
-- `attack/W01` — IN-PROGRESS
+- `attack/W01–W15` — ✅ ALL DONE (2026-05-11)
+  - W01 6v6 환경 + PTES + ATT&CK (commit 5351215)
+  - W02 정찰 nmap/nikto/dirb (commit cf75ad2)
+  - W03 웹 앱 + Burp + JuiceShop (commit a60fb7e)
+  - W04 SQLi sqlmap (commit 902b7c1)
+  - W05 XSS 3 타입 (commit 968cda5)
+  - W06 hydra/JWT/IDOR (commit 78af83b)
+  - W07 SSRF/파일업로드/Path (commit 37a8d0f)
+  - W08 중간고사 CTF (commit 30d88ff)
+  - W09 네트워크 tcpdump/scapy (commit bf8b32a)
+  - W10 IDS/WAF 우회 (commit 4e3be0c)
+  - W11 권한 상승 (commit 0fca549)
+  - W12 지속성 + 안티포렌식 (commit 91396bd)
+  - W13 Caldera 신규 (commit 9f00fd2)
+  - W14 Purple Team 신규 (commit bedc0db)
+  - W15 기말 PTES 종합
+
+**전체 30주차 작성 완료** (secuops 15 + attack 15).
 - 나머지 — PENDING
 
 각 주차 완료 시 본 표 갱신 + git commit + push.
