@@ -1,0 +1,92 @@
+lab_id: standalone-secuops-week13
+title: OpenCTI (2) — IOC Feed → Wazuh CDB list 통합
+version: standalone-non-ai
+course: secuops
+week: 13
+description: |
+  Wazuh 의 CDB list 자료구조 + IOC feed 통합 + rule 의 list lookup. 외부 IOC 가
+  Wazuh alert 의 level 을 자동 상승시키는 가장 단순/강력한 CTI ↔ SIEM 패턴.
+difficulty: medium
+duration_minutes: 150
+prerequisites: [W12 통과]
+objectives:
+  - CDB list 작성 + ossec.conf 등록
+  - rule 의 list lookup 매핑
+  - IOC feed cron 자동화
+pass_threshold: 0.7
+steps:
+  - order: 1
+    instruction: CDB list 3 파일 작성 + ossec.conf 등록
+    hint: |
+      /var/ossec/etc/lists/malicious-ips 에 key:value 작성
+    category: configuration
+    points: 25
+    answer: |
+      ssh 6v6-siem 'sudo mkdir -p /var/ossec/etc/lists; cat > /tmp/lists.sh <<"EOF"
+      cat > /var/ossec/etc/lists/malicious-ips <<LIST
+      1.2.3.4:c2_server
+      5.6.7.8:botnet
+      185.156.73.31:abuse.ch
+      LIST
+      EOF
+      sudo bash /tmp/lists.sh'
+      ssh 6v6-siem 'sudo cat /var/ossec/etc/lists/malicious-ips'
+      ssh 6v6-siem 'sudo grep -q "malicious-ips" /var/ossec/etc/ossec.conf && echo "already registered" || sudo sed -i "0,/<ruleset>/{s|<ruleset>|<ruleset>\n    <list>etc/lists/malicious-ips</list>|}" /var/ossec/etc/ossec.conf'
+    answer_detail: CDB list + ossec.conf 등록
+    verify:
+      type: output_contains
+      expect: malicious
+      field: stdout
+      semantic:
+        intent: CDB list 등록
+        success_criteria: [list 파일, ossec.conf 등록]
+        acceptable_methods:
+          - "**[OSS] /var/ossec/etc/lists/ 디렉토리 + key:value**"
+          - "**[OSS] ossec.conf <list> 태그**"
+          - "**[OSS] wazuh-control reload 후 .cdb binary 자동 생성**"
+          - "**[OSS] 카테고리별 list 분리 (ips / hashes / domains)**"
+          - "**[OSS] address_match_key vs match_key 차이**"
+          - "**[OSS] /var/ossec/queue/db/global.db 확인**"
+          - "**[OSS] list 갱신 후 reload 단계**"
+          - "**[OSS] cron 자동화 패턴**"
+    target_vm: siem
+
+  - order: 2
+    instruction: rule 100300 작성 — SSH login 매치 + CDB list lookup
+    hint: |
+      <rule id="100300" level="12"><if_sid>5710</if_sid><list field="srcip" lookup="address_match_key">etc/lists/malicious-ips</list></rule>
+    category: manipulation
+    points: 25
+    answer: |
+      ssh 6v6-siem 'cat > /tmp/local_rules.xml <<"EOF"
+      <group name="6v6,custom,">
+        <rule id="100300" level="12">
+          <if_sid>5710</if_sid>
+          <list field="srcip" lookup="address_match_key">etc/lists/malicious-ips</list>
+          <description>6v6 - SSH login from KNOWN malicious IP (CTI)</description>
+        </rule>
+      </group>
+      EOF
+      sudo cp /tmp/local_rules.xml /var/ossec/etc/rules/local_rules.xml
+      sudo chown root:wazuh /var/ossec/etc/rules/local_rules.xml
+      sudo /var/ossec/bin/wazuh-control reload'
+      sleep 5
+      ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-logtest 2>&1 | head -3' || echo "wazuh-logtest not available"
+    answer_detail: rule 100300 작성 + reload
+    verify:
+      type: output_contains
+      expect: '100300'
+      field: stdout
+      semantic:
+        intent: CDB list rule
+        success_criteria: [rule 100300 정의]
+        acceptable_methods:
+          - "**[OSS] /var/ossec/etc/rules/local_rules.xml 작성**"
+          - "**[OSS] <list field=...> lookup**"
+          - "**[OSS] if_sid 5710 (SSH failed login) chain**"
+          - "**[OSS] level 12 (critical) 부여**"
+          - "**[OSS] wazuh-logtest 로 사전 검증**"
+          - "**[OSS] CTI 매치 시 dashboard 의 highlight**"
+          - "**[OSS] level 자동 상승 비교 (5 → 12)**"
+          - "**[OSS] alerts.json 의 rule.list 필드**"
+    target_vm: siem
