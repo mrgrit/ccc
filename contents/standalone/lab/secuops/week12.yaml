@@ -1,120 +1,538 @@
 lab_id: standalone-secuops-week12
-title: OpenCTI 개론 — STIX 2.1 / TAXII 2.1
+title: OpenCTI 도입 — STIX 2.1 + TAXII 2.1 + Connector + Wazuh CDB list 시뮬
 version: standalone-non-ai
 course: secuops
 week: 12
 description: |
-  OpenCTI 본격 설치 전 STIX 2.1 데이터 모델 + TAXII 2.1 collection 분석. MITRE
-  ATT&CK STIX bundle + URLhaus IOC feed + 공개 TAXII server 조회.
+  OpenCTI 의 STIX 2.1 4 객체 + TAXII 2.1 client/server + 3 Connector (external /
+  internal / stream) + Wazuh CDB list 통합 흐름. 6v6 에 OpenCTI 미설치 → 설치 계획 +
+  STIX 객체 작성 + CDB list 작성 + R/B/P (known IOC 매칭) 시뮬. 종합 보고서.
 difficulty: medium
-duration_minutes: 120
+duration_minutes: 180
 prerequisites: [W11]
 objectives:
-  - "STIX 2.1 18 Object + Relationship 구조"
-  - "TAXII 2.1 collection 조회"
-  - "MITRE ATT&CK STIX bundle 분석"
-  - "무료 IOC feed (URLhaus / AbuseIPDB / OTX) 평가"
-pass_threshold: 0.6
+  - "CTI 의 자리 + OpenCTI 정체성"
+  - "STIX 2.1 4 객체 (Indicator / Malware / Threat Actor / Attack Pattern)"
+  - "TAXII 2.1 client/server + collection"
+  - "OpenCTI 아키텍처 (6 컨테이너)"
+  - "3 Connector (external / internal / stream)"
+  - "Wazuh CDB list 통합 흐름"
+  - "R/B/P known IOC 매칭 시뮬"
+  - "종합 보고서"
+pass_threshold: 0.7
 steps:
 
   - order: 1
     instruction: |
-      ## 🎯 MISSION
-
-      MITRE ATT&CK 의 STIX 2.1 bundle 다운로드 + Object 갯수 분석.
+      ## 🎯 MISSION — OpenCTI 미설치 인지 + 도입 계획
 
       ## 💻 실행 명령
 
       ```bash
-      ssh 6v6-attacker 'curl -s https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/enterprise-attack.json | jq ".objects | length"'
-      ssh 6v6-attacker 'curl -s https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/enterprise-attack.json | jq -r ".objects[] | .type" | sort | uniq -c | sort -rn | head -10'
+      ssh 6v6-bastion 'docker ps --format "{{.Names}}" | grep -i "opencti\|misp" || echo "OpenCTI/MISP NOT_INSTALLED"'
+
+      cat <<'EOF'
+      OpenCTI 도입 6 컨테이너:
+        - opencti/platform (Web UI + GraphQL API) :8080
+        - elasticsearch:8.10.0 :9200
+        - redis:7
+        - rabbitmq:3-management :15672
+        - minio (S3 호환)
+        - postgres or graph DB
+
+      디스크 요구: 50+ GB
+      메모리 요구: 8+ GB
+      EOF
       ```
 
       ## 📋 확인 사항
 
-      - 명령 1: object 갯수 1000+ (MITRE ATT&CK enterprise 의 모든 Tactic + Technique + Sub-technique)
-      - 명령 2: type 분포 — attack-pattern (Technique), course-of-action, intrusion-set, malware, tool, x-mitre-tactic 등
+      - 6v6 에 OpenCTI/MISP 미설치
+      - 6 컨테이너 + 의존성
 
       ## 💡 왜 이걸 하는가?
 
-      STIX 2.1 표준 데이터 — OpenCTI / Wazuh / SIEM 모두 이 표준 사용. Object type
-      이해가 CTI 통합의 첫 단계.
-
-      ## 🔍 결과 해석
-
-      - **정상**: 1000+ object + 10+ type
-      - attack-pattern 가 가장 많음 (200+ Technique)
-    hint: STIX bundle jq 분석
-    category: analysis
-    points: 25
+      운영 갭 인지 + 도입 계획 수립.
+    hint: 'OpenCTI 미설치 + 6 컨테이너 + 의존성'
+    category: planning
+    points: 12
     answer: |
-      ssh 6v6-attacker 'curl -s https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/enterprise-attack.json | jq ".objects | length"'
-      ssh 6v6-attacker 'curl -s https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/enterprise-attack.json | jq -r ".objects[] | .type" | sort | uniq -c | sort -rn | head -10'
-    answer_detail: MITRE ATT&CK STIX bundle 의 object 통계.
+      ssh 6v6-bastion 'docker ps --format "{{.Names}}" | grep -i "opencti\|misp" || echo "NOT_INSTALLED"'
+      cat <<'EOF'
+      OpenCTI: platform / ES / Redis / RabbitMQ / MinIO / postgres
+      8 GB+ RAM, 50 GB+ disk
+      EOF
+    answer_detail: 'OpenCTI 미설치 + 6 컨테이너 도입 계획'
     verify:
       type: output_contains
-      expect: attack-pattern
+      expect: 'OpenCTI\|NOT_INSTALLED'
       field: stdout
       semantic:
-        intent: "STIX bundle 분석"
-        success_criteria: ["object 갯수", "type 분포"]
+        intent: "OpenCTI 도입 계획"
+        success_criteria: ["미설치 인지", "6 컨테이너"]
         acceptable_methods:
-          - "**[OSS] MITRE CTI GitHub repo**"
-          - "**[OSS] STIX 2.1 18 Object 종류**"
-          - "**[OSS] attack-pattern (Technique)**"
-          - "**[OSS] course-of-action (대응)**"
-          - "**[OSS] intrusion-set (APT 그룹)**"
-          - "**[OSS] malware / tool (도구)**"
-          - "**[OSS] x-mitre-tactic (custom MITRE)**"
-          - "**[OSS] relationship (Object 간 연결)**"
-    target_vm: attacker
+          - "**[OSS] docker-compose-opencti.yml**"
+          - "**[OSS] opencti/platform image**"
+          - "**[OSS] elasticsearch 8.x**"
+          - "**[OSS] redis + rabbitmq + minio**"
+          - "**[OSS] postgres / graph DB**"
+          - "**[OSS] 메모리 / 디스크 요구**"
+          - "**[OSS] 포트 매핑 :8080**"
+          - "**[OSS] Wazuh 통합 + CDB**"
+    target_vm: bastion
 
   - order: 2
     instruction: |
-      ## 🎯 MISSION
+      ## 🎯 MISSION — STIX 2.1 4 객체 작성
 
-      TAXII 2.1 의 public demo (OpenCTI app.opencti.io) 조회.
+      lecture §2 — Indicator / Malware / Threat Actor / Attack Pattern.
 
-      ## 💻 실행 명령
+      ## 💻 산출물
 
-      ```bash
-      ssh 6v6-attacker 'curl -s -H "Accept: application/taxii+json;version=2.1" https://app.opencti.io/taxii2/ 2>&1 | head -20'
+      ```json
+      [
+        {
+          "type": "indicator",
+          "spec_version": "2.1",
+          "id": "indicator--abc-...-001",
+          "created": "2026-05-12T00:00:00Z",
+          "valid_from": "2026-05-12T00:00:00Z",
+          "pattern_type": "stix",
+          "pattern": "[ipv4-addr:value = '192.168.99.99']",
+          "indicator_types": ["malicious-activity"],
+          "labels": ["malicious-activity", "apt28-c2"],
+          "kill_chain_phases": [
+            {"kill_chain_name": "mitre-attack", "phase_name": "command-and-control"}
+          ]
+        },
+        {
+          "type": "malware",
+          "spec_version": "2.1",
+          "id": "malware--abc-...-002",
+          "name": "Emotet",
+          "malware_types": ["trojan", "banker"],
+          "is_family": true
+        },
+        {
+          "type": "threat-actor",
+          "spec_version": "2.1",
+          "id": "threat-actor--abc-...-003",
+          "name": "APT28",
+          "aliases": ["Fancy Bear", "Sofacy"],
+          "threat_actor_types": ["nation-state"]
+        },
+        {
+          "type": "attack-pattern",
+          "spec_version": "2.1",
+          "id": "attack-pattern--abc-...-004",
+          "name": "Command and Scripting Interpreter",
+          "external_references": [
+            {"source_name": "mitre-attack", "external_id": "T1059"}
+          ]
+        }
+      ]
       ```
 
       ## 📋 확인 사항
 
-      - TAXII 2.1 server 메타 응답 (title / api_roots)
-      - api_roots URL (예: `/taxii2/api1/`)
+      - 4 객체 모두 작성 (Indicator / Malware / Threat Actor / Attack Pattern)
+      - STIX 2.1 spec_version
+      - kill_chain_phases / mitre-attack 매핑
+      - relationship 객체는 W13 에서 본격
 
       ## 💡 왜 이걸 하는가?
 
-      TAXII 2.1 표준 통신 학습. production 환경에서 OpenCTI / MISP 가 TAXII 로 IOC 자동
-      교환.
-
-      ## 🔍 결과 해석
-
-      - **정상**: TAXII server 메타 JSON
-      - **비정상**: HTTP 404 → 시점에 따라 demo 서버 변경 가능
-    hint: TAXII 2.1 server 메타
-    category: analysis
-    points: 15
+      STIX 표준 객체 작성 — CTI 분석가의 표준 작업.
+    hint: 'Indicator / Malware / Threat Actor / Attack Pattern 4 객체 JSON'
+    category: configuration
+    points: 18
     answer: |
-      ssh 6v6-attacker 'curl -s -H "Accept: application/taxii+json;version=2.1" https://app.opencti.io/taxii2/ 2>&1 | head -20'
-    answer_detail: TAXII server 메타 조회.
+      cat <<'EOF'
+      [
+        {"type":"indicator","pattern":"[ipv4-addr:value = '192.168.99.99']","labels":["malicious-activity","apt28-c2"]},
+        {"type":"malware","name":"Emotet","malware_types":["trojan","banker"]},
+        {"type":"threat-actor","name":"APT28","aliases":["Fancy Bear","Sofacy"]},
+        {"type":"attack-pattern","name":"Command and Scripting","external_references":[{"source_name":"mitre-attack","external_id":"T1059"}]}
+      ]
+      EOF
+    answer_detail: 'STIX 2.1 4 객체 JSON'
     verify:
       type: output_contains
-      expect: 'api\|taxii'
+      expect: 'indicator'
       field: stdout
       semantic:
-        intent: "TAXII 조회"
-        success_criteria: ["api_roots 또는 taxii 키워드"]
+        intent: "STIX 2.1 4 객체 작성"
+        success_criteria: ["4 객체 type", "STIX 2.1"]
         acceptable_methods:
-          - "**[OSS] TAXII 2.1 server 메타 (/taxii2/)**"
-          - "**[OSS] /taxii2/api1/collections (collection 목록)**"
-          - "**[OSS] /taxii2/api1/collections/<id>/objects (IOC 다운로드)**"
-          - "**[OSS] Bearer auth (인증 필요 시)**"
-          - "**[OSS] match[type]=indicator filter**"
-          - "**[OSS] added_after 시간 filter**"
-          - "**[OSS] pagination (limit / next)**"
-          - "**[OSS] cabby python TAXII client**"
-    target_vm: attacker
+          - "**[STIX] indicator pattern STIX language**"
+          - "**[STIX] malware family + types**"
+          - "**[STIX] threat-actor aliases**"
+          - "**[STIX] attack-pattern + mitre external_references**"
+          - "**[STIX] kill_chain_phases**"
+          - "**[STIX] spec_version 2.1**"
+          - "**[STIX] relationship 객체 (W13)**"
+          - "**[STIX] Campaign / Intrusion Set / Tool**"
+    target_vm: bastion
+
+  - order: 3
+    instruction: |
+      ## 🎯 MISSION — TAXII 2.1 client/server + collection
+
+      ## 💻 산출물
+
+      ```bash
+      cat <<'EOF'
+      TAXII server endpoints:
+        /taxii2/                  (root)
+        /api-root/
+        /api-root/collections/
+        /api-root/collections/<id>/objects/
+
+      TAXII client 요청 예 (curl):
+        curl -H "Accept: application/taxii+json;version=2.1" \
+             -u user:pass \
+             "https://taxii.misp.local/api-root/collections/<id>/objects/?added_after=2026-05-01"
+      EOF
+
+      cat <<'EOF'
+      자주 쓰는 TAXII source:
+        - MISP TAXII 2.1 server
+        - Anomali ThreatStream
+        - Recorded Future
+        - AlienVault OTX (무료)
+        - abuse.ch URLhaus, ThreatFox (무료)
+      EOF
+      ```
+
+      ## 📋 확인 사항
+
+      - 4 endpoint
+      - curl 명령 예
+      - 5+ TAXII source
+
+      ## 💡 왜 이걸 하는가?
+
+      TAXII 의 client/server 모델 + OpenCTI 가 client 로 외부 source poll.
+    hint: 'TAXII /api-root/collections/<id>/objects/ + curl'
+    category: configuration
+    points: 12
+    answer: |
+      cat <<'EOF'
+      TAXII endpoints: /taxii2/ /api-root/ /api-root/collections/ /api-root/collections/<id>/objects/
+
+      curl -H "Accept: application/taxii+json;version=2.1" -u user:pass \
+        "https://taxii.misp.local/api-root/collections/<id>/objects/?added_after=2026-05-01"
+
+      Source: MISP / Anomali / Recorded Future / OTX (무료) / URLhaus (무료)
+      EOF
+    answer_detail: 'TAXII endpoints + curl + 5 source'
+    verify:
+      type: output_contains
+      expect: 'taxii'
+      field: stdout
+      semantic:
+        intent: "TAXII 2.1 client/server"
+        success_criteria: ["4 endpoint", "curl 예", "source"]
+        acceptable_methods:
+          - "**[TAXII] /api-root/collections/<id>/objects/**"
+          - "**[TAXII] Accept: application/taxii+json**"
+          - "**[TAXII] Bearer Token / Basic Auth**"
+          - "**[TAXII] added_after filter**"
+          - "**[TAXII] MISP TAXII server**"
+          - "**[TAXII] OTX / URLhaus 무료**"
+          - "**[TAXII] envelope + pagination**"
+          - "**[TAXII] rate limit + retry**"
+    target_vm: bastion
+
+  - order: 4
+    instruction: |
+      ## 🎯 MISSION — Wazuh CDB list 작성 + 룰 100100
+
+      ## 💻 산출물
+
+      ```bash
+      # 1. CDB list 시뮬 (실 적용 X)
+      cat <<'EOF'
+      # /var/ossec/etc/lists/known-malicious-ips
+      192.168.99.99: apt28-c2
+      1.2.3.4: emotet
+      5.6.7.8: malware-distribution
+      203.0.113.10: known-scanner
+      198.51.100.50: ransomware-c2
+      EOF
+
+      # 2. CDB list 컴파일 (시뮬)
+      echo "sudo /var/ossec/bin/ossec-makelists"
+
+      # 3. Wazuh 룰 100100 (시뮬 — /var/ossec/etc/rules/local_rules.xml)
+      cat <<'EOF'
+      <group name="local,ioc,">
+        <rule id="100100" level="10">
+          <if_sid>4751</if_sid>
+          <list field="srcip" lookup="address_match_key">etc/lists/known-malicious-ips</list>
+          <description>IOC 매칭 (level 10 critical): $(srcip)</description>
+          <mitre>
+            <id>T1071</id>
+            <id>T1090</id>
+          </mitre>
+        </rule>
+      </group>
+      EOF
+      ```
+
+      ## 📋 확인 사항
+
+      - CDB list 5+ entry
+      - 룰 100100 + if_sid + list match + MITRE 매핑
+
+      ## 💡 왜 이걸 하는가?
+
+      OpenCTI 의 indicator → Wazuh CDB list 자동 sync → 룰이 자동 격상.
+    hint: 'CDB list known-malicious-ips + 룰 100100 + list address_match_key'
+    category: configuration
+    points: 15
+    answer: |
+      cat <<'EOF'
+      # /var/ossec/etc/lists/known-malicious-ips
+      192.168.99.99: apt28-c2
+      1.2.3.4: emotet
+      5.6.7.8: malware-distribution
+
+      sudo /var/ossec/bin/ossec-makelists
+
+      <rule id="100100" level="10">
+        <if_sid>4751</if_sid>
+        <list field="srcip" lookup="address_match_key">etc/lists/known-malicious-ips</list>
+        <description>IOC 매칭: $(srcip)</description>
+        <mitre><id>T1071</id></mitre>
+      </rule>
+      EOF
+    answer_detail: 'CDB list + 룰 100100 + level 10 + MITRE'
+    verify:
+      type: output_contains
+      expect: 'CDB\|100100'
+      field: stdout
+      semantic:
+        intent: "Wazuh CDB list + 룰 100100"
+        success_criteria: ["CDB list", "룰 100100", "level 10"]
+        acceptable_methods:
+          - "**[Wazuh] CDB list key-value**"
+          - "**[Wazuh] ossec-makelists 컴파일**"
+          - "**[Wazuh] <list lookup=address_match_key>**"
+          - "**[Wazuh] if_sid Suricata 4751 chain**"
+          - "**[Wazuh] level 10 critical**"
+          - "**[Wazuh] MITRE 매핑 T1071/T1090**"
+          - "**[Wazuh] local_rules.xml**"
+          - "**[Wazuh] field srcip / dstip / domain**"
+    target_vm: bastion
+
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION — Stream Connector 설계 (OpenCTI → CDB list 자동 sync)
+
+      ## 💻 산출물
+
+      ```python
+      # OpenCTI Stream Connector (시뮬, Python)
+      import requests, time
+      from pycti import OpenCTIConnectorHelper
+
+      def main():
+          helper = OpenCTIConnectorHelper(config)
+          while True:
+              # OpenCTI 의 indicator (Type IPv4) 모두 추출
+              indicators = helper.api.indicator.list(
+                  filters=[{"key": "indicator_types", "values": ["malicious-activity"]}]
+              )
+
+              # CDB list 형식으로 변환
+              lines = []
+              for ind in indicators:
+                  if "ipv4-addr:value" in ind["pattern"]:
+                      ip = ind["pattern"].split("'")[1]
+                      labels = ",".join(ind.get("labels", []))
+                      lines.append(f"{ip}: {labels}")
+
+              # /var/ossec/etc/lists/known-malicious-ips 갱신
+              with open("/var/ossec/etc/lists/known-malicious-ips", "w") as f:
+                  f.write("\n".join(lines))
+
+              # Wazuh 측 — list compile + reload
+              os.system("sudo /var/ossec/bin/ossec-makelists")
+              os.system("sudo /var/ossec/bin/wazuh-control reload")
+
+              time.sleep(1800)   # 30분
+      ```
+
+      ## 📋 확인 사항
+
+      - Python Connector 골격
+      - OpenCTI API 사용 (pycti SDK)
+      - CDB list 갱신 + 컴파일 + reload
+      - 30분 polling
+
+      ## 💡 왜 이걸 하는가?
+
+      자동 sync 의 표준 패턴 — 30분 마다 OpenCTI 의 indicator → CDB list 갱신.
+    hint: 'Python pycti + indicator list + CDB 갱신 + reload'
+    category: integration
+    points: 15
+    answer: |
+      cat <<'EOF'
+      # OpenCTI Stream Connector
+      import pycti, time, os
+      helper = pycti.OpenCTIConnectorHelper(config)
+      while True:
+          indicators = helper.api.indicator.list(filters=[{"key":"indicator_types","values":["malicious-activity"]}])
+          lines = []
+          for ind in indicators:
+              if "ipv4-addr:value" in ind["pattern"]:
+                  ip = ind["pattern"].split("'")[1]
+                  labels = ",".join(ind.get("labels", []))
+                  lines.append(f"{ip}: {labels}")
+          open("/var/ossec/etc/lists/known-malicious-ips","w").write("\n".join(lines))
+          os.system("sudo /var/ossec/bin/ossec-makelists; sudo /var/ossec/bin/wazuh-control reload")
+          time.sleep(1800)
+      EOF
+    answer_detail: 'Stream Connector Python — OpenCTI → CDB list 30분 sync'
+    verify:
+      type: output_contains
+      expect: 'OpenCTI'
+      field: stdout
+      semantic:
+        intent: "Stream Connector 설계"
+        success_criteria: ["Python 골격", "OpenCTI API", "CDB 갱신"]
+        acceptable_methods:
+          - "**[OSS] pycti OpenCTIConnectorHelper**"
+          - "**[OSS] indicator.list + filters**"
+          - "**[OSS] pattern parse (ipv4-addr)**"
+          - "**[OSS] CDB list 형식 (key: value)**"
+          - "**[OSS] ossec-makelists + reload**"
+          - "**[OSS] 30분 polling interval**"
+          - "**[OSS] error handling + logging**"
+          - "**[OSS] diff sync (added/removed)**"
+    target_vm: bastion
+
+  - order: 6
+    instruction: |
+      ## 🎯 MISSION — R/B/P known IOC 매칭 시뮬
+
+      ## 💻 시뮬
+
+      ```bash
+      cat <<'EOF'
+      [Red] attacker (10.20.30.202) 가 known IOC (192.168.99.99) 와 통신 시도
+      → 시뮬: ssh 6v6-attacker 'curl -s http://192.168.99.99/' (unreachable, but Suricata 가 outbound packet 감지)
+
+      [Suricata] eve.json 의 alert event 발생
+      → src_ip: 10.20.30.202 / dest_ip: 192.168.99.99
+
+      [Wazuh agent ship → manager → analysisd]
+      → 룰 4751 (Suricata Alert) 매치
+      → 룰 100100 chain — <if_sid>4751 + <list field="srcip">
+        - srcip = 10.20.30.202 — CDB list 에 없음 (정상)
+      → 룰 100101 (dstip 매치) — <list field="dstip">
+        - dstip = 192.168.99.99 — CDB list 에 있음! (apt28-c2 label)
+      → level 10 (critical) alert 발생
+
+      [Purple]
+      - dashboard 의 MITRE panel — T1071 (Application Layer Protocol) 매핑
+      - OpenCTI 의 indicator 페이지 — 192.168.99.99 의 context (APT28 / Emotet)
+      - Active Response — attacker IP 자동 차단
+      EOF
+      ```
+
+      ## 📋 확인 사항
+
+      - Red 시뮬 (실 차단 X)
+      - 룰 chain (4751 → 100101)
+      - level 10 격상
+      - Purple 권장
+
+      ## 💡 왜 이걸 하는가?
+
+      CTI 통합의 핵심 효과 — Suricata alert 의 level 3 → CDB 매칭 → level 10 격상.
+    hint: 'Red IOC IP → Suricata 4751 → CDB 100100 → level 10'
+    category: redblue
+    points: 20
+    answer: |
+      cat <<'EOF'
+      [Red] attacker → 192.168.99.99 통신 시도
+      [Suricata] eve.json alert (src/dst)
+      [Wazuh] 룰 4751 → 100101 (dstip CDB 매치) → level 10
+      [Purple]
+        - MITRE T1071 매핑
+        - OpenCTI 의 APT28 attribution
+        - Active Response — IP 차단
+      EOF
+    answer_detail: 'IOC 매칭 시나리오 — level 3 → 10 격상 + Purple'
+    verify:
+      type: output_contains
+      expect: 'level'
+      field: stdout
+      semantic:
+        intent: "R/B/P IOC 매칭 시뮬"
+        success_criteria: ["룰 chain", "level 10", "Purple 권장"]
+        acceptable_methods:
+          - "**[OSS] Suricata 4751 → 100100/100101 chain**"
+          - "**[OSS] CDB list srcip/dstip 매칭**"
+          - "**[OSS] level 10 critical**"
+          - "**[OSS] MITRE ATT&CK 매핑**"
+          - "**[OSS] OpenCTI indicator context**"
+          - "**[OSS] APT28 / Emotet attribution**"
+          - "**[OSS] Active Response IP 차단**"
+          - "**[OSS] dashboard MITRE panel**"
+    target_vm: bastion
+
+  - order: 7
+    instruction: |
+      ## 🎯 MISSION — W12 종합 보고서
+
+      ## 💻 산출물
+
+      ```markdown
+      # 6v6 W12 OpenCTI 도입 보고서
+
+      ## 1. STEP 1-6 결과 (6 row 표)
+      ## 2. 6v6 운영 갭 (OpenCTI / MISP / CDB list 미설치)
+      ## 3. STIX 2.1 4 객체 + relationship
+      ## 4. TAXII 2.1 client/server + 5 source
+      ## 5. CDB list + 룰 100100 + MITRE 매핑
+      ## 6. R/B/P 시뮬 — IOC 매칭 → level 10 격상
+      ## 7. W13 (OpenCTI 운영) 준비도
+      ## 8. 본인 학습 gap
+      ```
+    hint: 마크다운 1페이지
+    category: synthesis
+    points: 8
+    answer: |
+      cat <<'EOF'
+      # 6v6 W12 OpenCTI 도입 보고서
+
+      ## 1. STEP 1-6 표
+      ## 2. 6v6 운영 갭 (OpenCTI/MISP/CDB 미설치)
+      ## 3. STIX 4 객체
+      ## 4. TAXII + source
+      ## 5. CDB + 룰 100100
+      ## 6. R/B/P IOC 매칭
+      ## 7. W13 준비도
+      ## 8. gap
+      EOF
+    answer_detail: 종합 보고서
+    verify:
+      type: output_contains
+      expect: OpenCTI
+      field: stdout
+      semantic:
+        intent: "W12 종합"
+        success_criteria: ["8 섹션"]
+        acceptable_methods:
+          - "**[관리적] 마크다운 8 섹션**"
+          - "**[관리적] ISMS-P 2.9.5 / 2.9.6**"
+          - "**[관리적] NIST CSF ID.RA-2 / RA-3**"
+          - "**[관리적] MITRE ATT&CK 매핑**"
+          - "**[관리적] 운영 권장 5+**"
+          - "**[관리적] KISA C-TAS + FSEC-CTI**"
+          - "**[관리적] W13 (운영) logical flow**"
+          - "**[관리적] 본인 gap**"
+    target_vm: bastion
