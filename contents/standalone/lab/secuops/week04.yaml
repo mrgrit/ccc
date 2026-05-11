@@ -1,0 +1,731 @@
+lab_id: standalone-secuops-week04
+title: Suricata IDS 기초 (6v6-ips)
+version: standalone-non-ai
+course: secuops
+week: 4
+description: |
+  6v6-ips 의 Suricata 6.0.4 가 af-packet 으로 두 NIC (pipe + dmz) 를 sniff 하고
+  eve.json 으로 7+ event_type 을 출력하는 흐름을 단계별 검증한다. 데몬 가동
+  → 설정 파일 → 룰셋 → eve.json 분석 → suricatasc 메트릭 → 새 alert 룰 추가
+  까지의 한 사이클을 학생이 직접 수행한다.
+difficulty: medium
+duration_minutes: 180
+audience: 보안 솔루션 운영 중급 (4주차)
+prerequisites:
+  - W01–W03 통과 (특히 fw 의 nft/HAProxy 정상)
+  - bastion ProxyJump
+  - sudo NOPASSWD on ips
+
+objectives:
+  - Suricata 데몬 가동 상태 + af-packet 두 NIC 확인
+  - suricata.yaml 의 핵심 키 (af-packet / outputs / rule-files) 분석
+  - eve.json event_type 분포 분석 (alert / http / dns / flow / tls / fileinfo / stats)
+  - suricatasc 로 데몬 메트릭 (uptime / dump-counters / version) 조회
+  - 새 alert 룰 작성 → reload → 트리거 → eve.json 검증
+
+pass_threshold: 0.7
+
+steps:
+
+  # ============================================================
+  # STEP 1 — 데몬 가동 + 두 NIC sniff
+  # ============================================================
+  - order: 1
+    instruction: |
+      `6v6-ips` 의 Suricata 데몬이 `-i eth0 -i eth1` 두 NIC sniff 중인지 확인한다.
+      autofp runmode + /var/log/suricata 출력 + eve.json 작성을 같이 검증한다.
+    hint: ssh 6v6-ips 'pgrep -a Suricata'
+    category: survey
+    points: 10
+    answer: |
+      ssh 6v6-ips 'pgrep -a Suricata; sudo suricatasc -c version; sudo suricatasc -c uptime'
+    answer_detail: Suricata 프로세스 + version + uptime 출력
+    verify:
+      type: output_contains
+      expect: Suricata
+      field: stdout
+      semantic:
+        intent: |
+          Suricata 데몬이 두 NIC af-packet sniff 중인지 확인. version + uptime 으로
+          데몬 활성 검증. runmode=autofp 로 flow 별 thread pinning 활성.
+        success_criteria:
+          - Suricata 프로세스 가동
+          - version 출력
+          - uptime 1초 이상
+        acceptable_methods:
+          - |
+            **[OSS] pgrep + ps** — 표준.
+              ssh 6v6-ips 'pgrep -a Suricata'
+              # -i eth0 -i eth1 --runmode autofp 옵션 확인
+              ssh 6v6-ips 'ps -o pid,vsz,rss,pcpu,cmd -p $(pgrep Suricata) 2>/dev/null'
+            예상 출력 `29 suricata -i eth1 -i eth0 -c /etc/suricata/suricata.yaml --runmode autofp -l /var/log/suricata`.
+            운영 해석: 두 NIC + autofp + log 위치 확인.
+          - |
+            **[OSS] suricatasc -c version + uptime** — 내부.
+              ssh 6v6-ips 'sudo suricatasc -c version'
+              ssh 6v6-ips 'sudo suricatasc -c uptime'
+            예상 출력 `{"message":"6.0.4 RELEASE","return":"OK"} / {"message":12345,"return":"OK"}`.
+            운영 해석: socket 통신으로 internal 메트릭 조회. JSON 응답.
+          - |
+            **[OSS] systemctl + journalctl (서비스 모드 비교)** — 진단.
+              # 컨테이너는 entrypoint.sh 시작 → systemd 미사용
+              ssh 6v6-ips 'sudo systemctl status suricata --no-pager 2>&1 | head -5 || echo "container mode"'
+              # 컨테이너 로그
+              ssh 6v6-bastion docker logs --tail 30 6v6-ips 2>&1 | grep -iE "suricata|engine" | head
+            예상 출력 `(systemctl 미사용) / suricata: Suricata starting / engine running`.
+            운영 해석: 호스트는 systemd, 컨테이너는 entrypoint.sh 차이.
+          - |
+            **[OSS] /var/log/suricata 디렉토리** — 로그.
+              ssh 6v6-ips 'sudo ls -la /var/log/suricata/'
+              # eve.json, suricata.log, stats.log 위치
+            예상 출력 `eve.json (size) / suricata.log / stats.log / fast.log`.
+            운영 해석: 4 출력 파일. eve.json 이 메인 분석 대상.
+          - |
+            **[OSS] /etc/suricata/suricata.yaml head** — config 위치.
+              ssh 6v6-ips 'sudo head -20 /etc/suricata/suricata.yaml'
+              # YAML 의 첫 키들 (vars / af-packet / outputs)
+            예상 출력 `%YAML 1.1 / vars: / af-packet: / outputs: / ...`.
+            운영 해석: 메인 config. 데몬 시작 시 `-c` 옵션으로 로드.
+          - |
+            **[OSS] ss -tlnp / netstat** — listening.
+              # Suricata 가 직접 listen 하는 포트는 없음 (sniff 모드)
+              ssh 6v6-ips 'sudo ss -tlnp 2>&1 | head -10'
+              # Unix socket 만 보임: /var/run/suricata/suricata-command.socket
+              ssh 6v6-ips 'sudo ls /var/run/suricata/'
+            예상 출력 `(TCP listening 거의 없음) / suricata-command.socket`.
+            운영 해석: Suricata 는 promisc sniff 만. 외부에 listen 포트 없음.
+          - |
+            **[OSS] tcpdump (sniff 비교 검증)** — 동적.
+              # Suricata 가 보는 트래픽을 tcpdump 도 본다
+              ssh 6v6-ips 'sudo timeout 3 tcpdump -ni eth0 -c 5 2>&1 | head'
+              ssh 6v6-ips 'sudo timeout 3 tcpdump -ni eth1 -c 5 2>&1 | head'
+            예상 출력 `5 packets captured / 5 packets captured`.
+            운영 해석: tcpdump 가 캡처 가능하면 Suricata 도 캡처 가능.
+          - |
+            **[OSS] 메모리 + CPU 사용량** — 자원.
+              ssh 6v6-bastion 'docker stats --no-stream --format "{{.Name}} {{.CPUPerc}} {{.MemUsage}}" 6v6-ips'
+            예상 출력 `6v6-ips 5.2% 800MiB / 5.8GiB`.
+            운영 해석: 메모리 800MB+ 정상 (룰셋 로드). CPU 는 sniff 트래픽에 비례.
+        negative_signs:
+          - Suricata 프로세스 없음
+          - NIC 1개만 sniff
+          - version 응답 없음
+    target_vm: ips
+
+  # ============================================================
+  # STEP 2 — suricata.yaml 핵심 키 분석
+  # ============================================================
+  - order: 2
+    instruction: |
+      suricata.yaml 에서 (1) af-packet 인터페이스 정의, (2) outputs 의 eve-log 설정,
+      (3) default-rule-path + rule-files: 룰 위치, (4) HOME_NET 변수 4 key 를
+      찾아 출력한다.
+    hint: |
+      ssh 6v6-ips 'sudo grep -E "^(af-packet|outputs|default-rule-path|HOME_NET)" /etc/suricata/suricata.yaml | head'
+    category: configuration
+    points: 10
+    answer: |
+      ssh 6v6-ips 'sudo grep -A2 "af-packet:" /etc/suricata/suricata.yaml | head -10'
+      ssh 6v6-ips 'sudo grep -E "default-rule-path|rule-files" /etc/suricata/suricata.yaml'
+      ssh 6v6-ips 'sudo grep -A3 "outputs:" /etc/suricata/suricata.yaml | head -15'
+      ssh 6v6-ips 'sudo grep -E "HOME_NET|EXTERNAL_NET" /etc/suricata/suricata.yaml | head -5'
+    answer_detail: 4 핵심 키 출력
+    verify:
+      type: output_contains
+      expect: af-packet
+      field: stdout
+      semantic:
+        intent: |
+          suricata.yaml 의 4 핵심 key 구조 파악. af-packet 의 interface 정의 +
+          outputs 의 eve.json 출력 + rule-files: 의 룰 로드 + HOME_NET 변수.
+        success_criteria:
+          - af-packet 섹션
+          - default-rule-path / rule-files
+          - HOME_NET / EXTERNAL_NET 변수
+        acceptable_methods:
+          - |
+            **[OSS] grep -A af-packet** — 표준.
+              ssh 6v6-ips 'sudo grep -A5 "af-packet:" /etc/suricata/suricata.yaml | head -15'
+            예상 출력 `af-packet: / - interface: eth0 / # Number of receive threads / ... / - interface: eth1`.
+            운영 해석: af-packet 의 interface 정의가 두 개 (eth0 + eth1). thread / cluster-id /
+            cluster-type / defrag 등 옵션.
+          - |
+            **[OSS] outputs 의 eve-log** — 출력.
+              ssh 6v6-ips 'sudo grep -A10 "outputs:" /etc/suricata/suricata.yaml | head -20'
+              # eve-log 의 enabled / filename / types
+              ssh 6v6-ips 'sudo grep -A5 "eve-log:" /etc/suricata/suricata.yaml | head -15'
+            예상 출력 `outputs: / - fast: / - eve-log: enabled: yes filename: eve.json / types: [alert, http, dns, tls, files, ...]`.
+            운영 해석: eve-log 의 types 가 어느 event 를 기록할지. alert + http + dns
+            기본 활성.
+          - |
+            **[OSS] HOME_NET 변수** — 정책 변수.
+              ssh 6v6-ips 'sudo grep -E "HOME_NET|EXTERNAL_NET" /etc/suricata/suricata.yaml | head -5'
+            예상 출력 `HOME_NET: "[10.0.0.0/8,172.16.0.0/12,192.168.0.0/16]" / EXTERNAL_NET: "!$HOME_NET"`.
+            운영 해석: 룰의 $HOME_NET / $EXTERNAL_NET 매크로 정의. 6v6 환경은 10.20.x.x
+            가 HOME_NET 에 포함.
+          - |
+            **[OSS] rule-files + classification** — 룰셋 로드.
+              ssh 6v6-ips 'sudo grep -B1 -A5 "rule-files:" /etc/suricata/suricata.yaml | head -10'
+              ssh 6v6-ips 'sudo grep "default-rule-path" /etc/suricata/suricata.yaml'
+            예상 출력 `default-rule-path: /var/lib/suricata/rules / rule-files: / - suricata.rules / - local.rules (있다면)`.
+            운영 해석: 모든 룰이 /var/lib/suricata/rules 디렉토리에서 로드. local.rules
+            는 사용자 정의 추가 위치.
+          - |
+            **[OSS] yaml syntax 검증** — 운영.
+              ssh 6v6-ips 'sudo suricata -T -c /etc/suricata/suricata.yaml 2>&1 | head'
+              # -T (test mode) 로 syntax 검증
+            예상 출력 `Configuration provided was successfully loaded. Exiting.`.
+            운영 해석: 변경 후 reload 전 -T 로 syntax 확인. production 필수.
+          - |
+            **[OSS] flow / app-layer 섹션** — 디코더.
+              ssh 6v6-ips 'sudo grep -A2 "app-layer:" /etc/suricata/suricata.yaml | head -15'
+              # 어떤 프로토콜 디코더가 활성?
+            예상 출력 `app-layer: / protocols: / tls: / enabled: yes ...`.
+            운영 해석: app-layer 디코더가 활성된 프로토콜만 detection 가능 (예: tls
+            decoder 비활성 시 TLS handshake 정보 추출 안 됨).
+          - |
+            **[OSS] logging.outputs** — log 채널.
+              ssh 6v6-ips 'sudo grep -A5 "logging:" /etc/suricata/suricata.yaml | head -10'
+              # console / file / syslog 출력 채널
+            예상 출력 `logging: / default-log-level: notice / outputs: / - console: enabled: yes ...`.
+            운영 해석: Suricata 자체 로그 (eve.json 와 별도). suricata.log.
+          - |
+            **[OSS] sensor-name 변수** — 식별.
+              ssh 6v6-ips 'sudo grep -E "sensor-name|cluster" /etc/suricata/suricata.yaml | head -3'
+            예상 출력 `# sensor-name: suricata1 / cluster-id: 99 ...`.
+            운영 해석: 다중 sensor 환경에서 식별. eve.json 의 모든 event 에 sensor-name
+            태깅.
+        negative_signs:
+          - af-packet 누락
+          - rule-files 누락
+        target_vm: ips
+
+  # ============================================================
+  # STEP 3 — eve.json event_type 분포
+  # ============================================================
+  - order: 3
+    instruction: |
+      eve.json 의 최근 500 event 의 event_type 분포를 jq 로 분석한다. flow / http /
+      dns / tls / alert / stats 등 어떤 type 이 가장 많은지 확인하고, 운영 환경의
+      정상 분포를 학습한다.
+    hint: |
+      ssh 6v6-ips 'sudo tail -500 /var/log/suricata/eve.json | jq -r .event_type | sort | uniq -c | sort -rn'
+    category: monitoring
+    points: 10
+    answer: |
+      ssh 6v6-ips 'sudo tail -500 /var/log/suricata/eve.json | jq -r .event_type | sort | uniq -c | sort -rn'
+    answer_detail: event_type 4+ 종류 분포 출력
+    verify:
+      type: output_contains
+      expect: flow
+      field: stdout
+      semantic:
+        intent: |
+          eve.json 의 event_type 분포로 Suricata 의 데이터 흐름 정상 동작 확인.
+          flow 가 가장 많음 (모든 conn) → http/tls (decoder 가 식별) → stats (10초
+          주기) → alert (룰 매치 시).
+        success_criteria:
+          - 3 이상의 event_type
+          - flow 키워드
+          - 분포 카운트 출력
+        acceptable_methods:
+          - |
+            **[OSS] jq + sort + uniq** — 표준.
+              ssh 6v6-ips 'sudo tail -500 /var/log/suricata/eve.json | jq -r .event_type | sort | uniq -c | sort -rn'
+            예상 출력 `350 flow / 100 http / 30 tls / 15 dns / 4 stats / 1 alert`.
+            운영 해석: flow 가 압도적 (모든 conn), 다음 protocol decoder events.
+          - |
+            **[OSS] event_type 별 갯수 (대규모)** — 종합.
+              ssh 6v6-ips 'sudo wc -l /var/log/suricata/eve.json'
+              # 1시간 분량
+              ssh 6v6-ips 'sudo grep -c ''"event_type":"flow"'' /var/log/suricata/eve.json'
+              ssh 6v6-ips 'sudo grep -c ''"event_type":"alert"'' /var/log/suricata/eve.json'
+            예상 출력 `12345 / 8000 / 50`.
+            운영 해석: alert / flow 비율 = 룰 정밀도. alert 가 flow 의 1% 미만이면
+            정상.
+          - |
+            **[OSS] timestamp 기반 시간순 분석** — 트렌드.
+              # 최근 1분
+              NOW=$(date +%s)
+              ssh 6v6-ips "sudo tail -200 /var/log/suricata/eve.json | jq -r 'select((.timestamp | sub(\"\\\\..*\";\"\") | strptime(\"%Y-%m-%dT%H:%M:%S\") | mktime) > ($NOW - 60)) | .event_type' | sort | uniq -c | sort -rn" 2>&1 | head
+            예상 출력 `(최근 1분 event_type 분포)`.
+            운영 해석: 트래픽 burst 시 어느 type 이 증가? alert burst 면 룰 매치
+            현황 분석 필요.
+          - |
+            **[OSS] flow_id 별 event 그룹** — flow 추적.
+              # 한 flow 의 모든 event (flow + http + alert)
+              FLOW_ID=$(ssh 6v6-ips 'sudo tail -100 /var/log/suricata/eve.json | jq -r "select(.event_type==\"http\") | .flow_id" | head -1')
+              ssh 6v6-ips "sudo tail -1000 /var/log/suricata/eve.json | jq -r \"select(.flow_id==$FLOW_ID) | .event_type + \\\" \\\" + (.timestamp // \\\"\\\")\""
+            예상 출력 `flow 2026-... / http 2026-... / http 2026-...`.
+            운영 해석: 한 conn 이 여러 event 를 생성. flow_id 로 그루핑.
+          - |
+            **[OSS] in_iface 별 분포** — 두 NIC 균형.
+              ssh 6v6-ips 'sudo tail -500 /var/log/suricata/eve.json | jq -r .in_iface | sort | uniq -c | sort -rn'
+            예상 출력 `300 eth0 / 200 eth1`.
+            운영 해석: 두 NIC 모두 트래픽 sniff. 한쪽이 0 면 promisc 또는 link down.
+          - |
+            **[OSS] src_ip 별 top 5** — 트래픽 발생원.
+              ssh 6v6-ips 'sudo tail -500 /var/log/suricata/eve.json | jq -r .src_ip | sort | uniq -c | sort -rn | head -5'
+            예상 출력 `200 10.20.30.202 / 150 10.20.32.1 / 100 10.20.32.80 / ...`.
+            운영 해석: attacker (10.20.30.202) 가 자주 출발지 → 학생 트래픽 정상.
+          - |
+            **[OSS] alert.signature 빈도** — 매치 룰.
+              ssh 6v6-ips 'sudo grep ''"event_type":"alert"'' /var/log/suricata/eve.json | jq -r .alert.signature 2>/dev/null | sort | uniq -c | sort -rn | head'
+            예상 출력 `5 ET SCAN nmap script / 2 ET WEB_SERVER ... / ...`.
+            운영 해석: 가장 자주 매치되는 룰 → false-positive 후보 또는 실제 공격.
+          - |
+            **[OSS] stats event 의 메트릭** — 데몬 self-monitor.
+              ssh 6v6-ips 'sudo grep -m1 ''"event_type":"stats"'' /var/log/suricata/eve.json | jq ".stats.capture, .stats.detect, .stats.flow" 2>/dev/null'
+            예상 출력 `{"kernel_packets":12345,"kernel_drops":0} / {"alert":50} / {"memuse":..}`.
+            운영 해석: stats event 가 10초마다 데몬 내부 메트릭 dump.
+        negative_signs:
+          - event_type 1개 (decoder 미동작)
+          - flow 없음 (sniff 미동작)
+    target_vm: ips
+
+  # ============================================================
+  # STEP 4 — alert event 추출
+  # ============================================================
+  - order: 4
+    instruction: |
+      eve.json 에서 alert event 만 추출하여 timestamp / src_ip / dest_ip /
+      alert.signature / alert.severity 5 필드를 jq 로 표 형식으로 정리한다.
+    hint: |
+      ssh 6v6-ips 'sudo grep ''"event_type":"alert"'' /var/log/suricata/eve.json | jq "{ts:.timestamp,src:.src_ip,dst:.dest_ip,sig:.alert.signature,sev:.alert.severity}" | head -10'
+    category: analysis
+    points: 10
+    answer: |
+      ssh 6v6-ips 'sudo grep ''"event_type":"alert"'' /var/log/suricata/eve.json | jq "{ts:.timestamp,src:.src_ip,dst:.dest_ip,sig:.alert.signature,sev:.alert.severity}" | head -30'
+    answer_detail: alert 5건 이상 (또는 없으면 STEP 6 의 룰 트리거 후) 의 5 필드 출력
+    verify:
+      type: output_contains
+      expect: alert
+      field: stdout
+      semantic:
+        intent: |
+          alert event 의 핵심 필드 추출 학습. SIEM 통합 시 사용하는 typical
+          fields. timestamp + src/dest + signature + severity 가 사고 분석의
+          기본.
+        success_criteria:
+          - alert event 1+
+          - signature / severity 필드
+        acceptable_methods:
+          - |
+            **[OSS] jq 조합 (5 필드)** — 표준.
+              ssh 6v6-ips 'sudo grep ''"event_type":"alert"'' /var/log/suricata/eve.json | jq "{ts:.timestamp,src:.src_ip,dst:.dest_ip,sig:.alert.signature,sev:.alert.severity}" 2>/dev/null | head -20'
+            예상 출력 `{"ts":"...","src":"10.20.30.202","dst":"10.20.32.80","sig":"ET SCAN nmap","sev":2}`.
+            운영 해석: 5 필드가 사고 분석의 기본 구조. SIEM 통합 시 자동 추출.
+          - |
+            **[OSS] severity 별 분포** — 우선순위.
+              ssh 6v6-ips 'sudo grep ''"event_type":"alert"'' /var/log/suricata/eve.json | jq .alert.severity 2>/dev/null | sort | uniq -c | sort -rn'
+              # severity: 1=high, 2=medium, 3=low
+            예상 출력 `50 3 / 20 2 / 5 1`.
+            운영 해석: severity 1 (high) 가 5건이면 우선 분석. 3 (low) 는 일괄 batch.
+          - |
+            **[OSS] alert.signature_id (sid) top 10** — 매치 룰.
+              ssh 6v6-ips 'sudo grep ''"event_type":"alert"'' /var/log/suricata/eve.json | jq .alert.signature_id 2>/dev/null | sort | uniq -c | sort -rn | head'
+            예상 출력 `30 2024966 / 25 2017934 / ...`.
+            운영 해석: sid 가 ETOpen 카테고리 식별 (2000xxx = SCAN, 2010xxx = WEB).
+            가장 빈번한 sid 가 false-positive 또는 실제 공격.
+          - |
+            **[OSS] alert + http context** — 종합.
+              # alert 가 발생한 conn 의 http event 도 같이 조회
+              ssh 6v6-ips 'sudo grep ''"event_type":"alert"'' /var/log/suricata/eve.json | jq "select(.http) | {ts:.timestamp,sig:.alert.signature,url:.http.url,ua:.http.http_user_agent}" 2>/dev/null | head -10'
+            예상 출력 `{"ts":"...","sig":"...","url":"/?q=...","ua":"sqlmap/1.0"}`.
+            운영 해석: alert 가 HTTP 트래픽이면 url + user-agent 도 같이 추출.
+            사고 분석의 context.
+          - |
+            **[OSS] alert 의 packet 정보 (raw)** — 디버그.
+              # alert 가 packet 자체를 포함하기도 함 (packet 필드)
+              ssh 6v6-ips 'sudo grep ''"event_type":"alert"'' /var/log/suricata/eve.json | jq -r ".packet // empty" 2>/dev/null | head -1'
+              # base64 인코딩된 packet
+            예상 출력 `base64 인코딩된 raw packet`.
+            운영 해석: alert event 가 packet base64 포함 시 decode 후 분석 가능 (eve.json 의
+            metadata).
+          - |
+            **[OSS] alert 와 flow_id 매칭** — 추적.
+              FLOW=$(ssh 6v6-ips 'sudo grep -m1 ''"event_type":"alert"'' /var/log/suricata/eve.json | jq -r .flow_id')
+              ssh 6v6-ips "sudo tail -1000 /var/log/suricata/eve.json | jq -r \"select(.flow_id==$FLOW) | .event_type\""
+            예상 출력 `flow / http / alert / http / ...`.
+            운영 해석: alert 의 flow_id 로 같은 conn 의 모든 event 추적.
+          - |
+            **[OSS] alert 가 0 일 때 STEP 6 의 트리거로 발생** — 학습.
+              # STEP 6 에서 새 룰 추가 + 트리거 후 다시 본 step 수행
+              echo "현재 alert 0 → STEP 6 로 이동 → 다시 step 4 분석"
+            예상 출력 `(절차 설명)`.
+            운영 해석: 학습 환경에선 트래픽 적어 alert 발생 안 함. STEP 6 의 룰 추가
+            후 트리거.
+          - |
+            **[OSS] alerts.fast (간단 alert)** — 보조 출력.
+              ssh 6v6-ips 'sudo tail -10 /var/log/suricata/fast.log 2>/dev/null | head'
+            예상 출력 `<time> [**] [1:9000001:1] 6v6 curl UA detected [**] [Classification: ...] [Priority: 3] {TCP} 10.20.30.202:43210 -> 10.20.32.1:80`.
+            운영 해석: fast.log 는 사람이 읽기 쉬운 한 줄 alert. eve.json 보다 빠른
+            인지용.
+        negative_signs:
+          - alert 출력 없음 (STEP 6 룰 추가 전이라면 정상)
+          - signature 필드 누락
+    target_vm: ips
+
+  # ============================================================
+  # STEP 5 — suricatasc 메트릭 + stats.log
+  # ============================================================
+  - order: 5
+    instruction: |
+      suricatasc dump-counters 로 데몬 내부 메트릭 (capture / detect / flow / decoder)
+      을 조회하고, /var/log/suricata/stats.log 의 10초 주기 메트릭과 비교한다.
+    hint: |
+      ssh 6v6-ips 'sudo suricatasc -c dump-counters 2>&1 | jq ".message | with_entries(select(.value>0)) | to_entries | sort_by(-.value) | .[:20]"'
+    category: monitoring
+    points: 15
+    answer: |
+      ssh 6v6-ips 'sudo suricatasc -c dump-counters 2>&1 | jq ".message | with_entries(select(.value>0)) | to_entries | sort_by(-.value) | .[:20]"'
+      ssh 6v6-ips 'sudo tail -30 /var/log/suricata/stats.log'
+    answer_detail: counter 20개 + stats.log tail 출력
+    verify:
+      type: output_contains
+      expect: capture
+      field: stdout
+      semantic:
+        intent: |
+          suricatasc 의 dump-counters 가 데몬 내부 carte (10+ 카테고리, 100+ 카운터)
+          제공. 운영 시 capture.kernel_packets (캡처 패킷 수) 와 capture.kernel_drops
+          (drop 패킷 수) 비율이 핵심 지표.
+        success_criteria:
+          - capture 카운터
+          - detect 또는 flow 카운터
+          - 값 > 0
+        acceptable_methods:
+          - |
+            **[OSS] suricatasc dump-counters** — 표준.
+              ssh 6v6-ips 'sudo suricatasc -c dump-counters 2>&1 | jq ".message" | head -60'
+              # capture.kernel_packets / capture.kernel_drops / decoder.invalid 등
+            예상 출력 `{"capture.kernel_packets":12345,"capture.kernel_drops":0,"detect.alert":5,"flow_mgr.flows_checked":7000,...}`.
+            운영 해석: kernel_drops > 0 이면 NIC ring buffer 부족. detect.alert 가 룰
+            매치 수.
+          - |
+            **[OSS] capture.kernel_drops 비율** — 핵심 지표.
+              # drops / total packets * 100 = drop %
+              ssh 6v6-ips 'sudo suricatasc -c dump-counters 2>&1 | jq ".message | (.\"capture.kernel_drops\" / .\"capture.kernel_packets\" * 100)"'
+            예상 출력 `0` 또는 `0.05` (수 %).
+            운영 해석: drop % > 1 이면 운영 alarm. ring buffer 증액 또는 sniff
+            interface 분리.
+          - |
+            **[OSS] stats.log (10초 주기)** — 시간순.
+              ssh 6v6-ips 'sudo tail -30 /var/log/suricata/stats.log'
+              # 10초 간격으로 기록
+            예상 출력 `<time> | counter name | total value`.
+            운영 해석: 트렌드 분석. ingest rate 변화 + drop 발생 시점.
+          - |
+            **[OSS] suricatasc -c reload-rules (운영 명령)** — 변경 적용.
+              # 룰 추가 후 reload (재시작 없이)
+              ssh 6v6-ips 'sudo suricatasc -c reload-rules'
+              # 응답: {"message":"done","return":"OK"}
+            예상 출력 `{"message":"done","return":"OK"}`.
+            운영 해석: 새 룰 추가 시 자주 사용. 재시작 없이 적용 → downtime 0.
+          - |
+            **[OSS] suricatasc 다른 명령 목록** — 가용.
+              ssh 6v6-ips 'sudo suricatasc -c help 2>&1 | head -20'
+              # 또는
+              ssh 6v6-ips 'sudo suricatasc -h 2>&1 | head'
+            예상 출력 `available commands: shutdown, command-list, ...`.
+            운영 해석: 다양한 internal 명령. shutdown / reload-rules / dump-counters
+            등.
+          - |
+            **[OSS] /proc/<pid>/status (OS view)** — 시스템.
+              ssh 6v6-ips 'sudo cat /proc/$(pgrep Suricata)/status 2>&1 | grep -E "VmRSS|Threads"'
+            예상 출력 `VmRSS: 800000 kB / Threads: 12`.
+            운영 해석: thread 수 = af-packet thread + flow worker + output writer.
+            메모리 사용량 = 룰셋 + flow table.
+          - |
+            **[OSS] systemtap / ebpf (커널 측 메트릭)** — 고급.
+              # ebpf 로 Suricata 가 사용하는 시스템 콜 추적
+              # bpftrace -e 'tracepoint:syscalls:sys_enter_recvfrom { @[comm] = count(); }' (시연용)
+              echo "ebpf 로 systemcall level 추적 가능"
+            예상 출력 `(설명)`.
+            운영 해석: 운영 환경의 deep monitoring.
+          - |
+            **[OSS] watch 로 dump-counters 실시간** — 라이브.
+              # 10초 간격 모니터링
+              # watch -n 10 'ssh 6v6-ips "sudo suricatasc -c dump-counters 2>&1 | jq -r .message | grep packets"' (시연)
+              echo "watch + suricatasc 로 실시간 메트릭 모니터링"
+            예상 출력 `(설명)`.
+            운영 해석: 운영 dashboard 의 raw 데이터 source.
+        negative_signs:
+          - counter 없음
+          - capture.kernel_packets = 0 (sniff 미동작)
+    target_vm: ips
+
+  # ============================================================
+  # STEP 6 — 새 alert 룰 작성 + 트리거
+  # ============================================================
+  - order: 6
+    instruction: |
+      `/etc/suricata/rules/local.rules` 에 새 alert 룰 (User-Agent 가 curl 인 HTTP
+      요청 매치) 을 추가하고, suricata.yaml 의 rule-files: 에 등록 + suricatasc 로
+      reload + attacker 에서 트리거 + eve.json 에서 alert 확인 한 사이클.
+    hint: |
+      ssh 6v6-ips 'echo ''alert http any any -> any any (msg:"6v6 curl UA"; http.user_agent; content:"curl"; sid:9000001; rev:1;)'' | sudo tee -a /etc/suricata/rules/local.rules'
+    category: manipulation
+    points: 20
+    answer: |
+      # 룰 추가
+      ssh 6v6-ips 'sudo mkdir -p /etc/suricata/rules; echo "alert http any any -> any any (msg:\"6v6 curl UA detected\"; http.user_agent; content:\"curl\"; sid:9000001; rev:1;)" | sudo tee /etc/suricata/rules/local.rules'
+      # yaml 에 rule-files 추가 (이미 있으면 skip)
+      ssh 6v6-ips 'sudo grep -q "local.rules" /etc/suricata/suricata.yaml || sudo sed -i "/rule-files:/a\\  - /etc/suricata/rules/local.rules" /etc/suricata/suricata.yaml'
+      # reload
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules'
+      sleep 2
+      # 트리거
+      ssh 6v6-attacker 'curl -s -o /dev/null -A "curl/8.5" -H "Host: juice.6v6.lab" http://10.20.30.1/'
+      sleep 3
+      # alert 확인
+      ssh 6v6-ips 'sudo tail -100 /var/log/suricata/eve.json | grep -m1 sid.:9000001 | jq'
+    answer_detail: 새 alert 룰 추가 + reload + 트리거 + eve.json alert 출력
+    verify:
+      type: output_contains
+      expect: '9000001'
+      field: stdout
+      semantic:
+        intent: |
+          local.rules 에 새 alert 룰 추가 → reload-rules → 트리거 → eve.json 의
+          alert event 등장 까지 한 사이클. production 운영의 룰 작성 워크플로.
+        success_criteria:
+          - 룰 추가 (파일 변경)
+          - reload-rules 응답 OK
+          - eve.json 에 sid:9000001 alert
+        acceptable_methods:
+          - |
+            **[OSS] local.rules 작성** — 표준.
+              ssh 6v6-ips 'sudo mkdir -p /etc/suricata/rules'
+              ssh 6v6-ips 'echo "alert http any any -> any any (msg:\"6v6 curl UA detected\"; http.user_agent; content:\"curl\"; sid:9000001; rev:1;)" | sudo tee /etc/suricata/rules/local.rules'
+              # cat 확인
+              ssh 6v6-ips 'sudo cat /etc/suricata/rules/local.rules'
+            예상 출력 `alert http any any -> any any (msg:"6v6 curl UA detected"; http.user_agent; content:"curl"; sid:9000001; rev:1;)`.
+            운영 해석: alert action, http proto, msg + content + sid + rev 4 필수 키.
+          - |
+            **[OSS] suricata.yaml 의 rule-files: 등록** — 로딩.
+              # 이미 등록되어 있으면 skip
+              ssh 6v6-ips 'sudo grep -q "local.rules" /etc/suricata/suricata.yaml || sudo sed -i "/rule-files:/a\\  - /etc/suricata/rules/local.rules" /etc/suricata/suricata.yaml'
+              ssh 6v6-ips 'sudo grep -A5 "rule-files:" /etc/suricata/suricata.yaml | head -10'
+            예상 출력 `rule-files: / - suricata.rules / - /etc/suricata/rules/local.rules`.
+            운영 해석: rule-files 에 등록되지 않으면 reload 해도 데몬이 load 안 함.
+          - |
+            **[OSS] reload-rules** — 적용.
+              ssh 6v6-ips 'sudo suricatasc -c reload-rules'
+              # 응답: {"message":"done","return":"OK"}
+            예상 출력 `{"message":"done","return":"OK"}`.
+            운영 해석: 데몬 재시작 없이 룰셋 다시 로드. 다운타임 0.
+          - |
+            **[OSS] 트리거 (attacker curl)** — 검증.
+              ssh 6v6-attacker 'curl -s -o /dev/null -A "curl/8.5" -H "Host: juice.6v6.lab" http://10.20.30.1/'
+              sleep 3
+              # eve.json 확인
+              ssh 6v6-ips 'sudo tail -200 /var/log/suricata/eve.json | grep "sid.:9000001" | head -1 | jq'
+            예상 출력 `{"timestamp":"...","event_type":"alert","alert":{"signature":"6v6 curl UA detected","sid":9000001,"severity":3,...},"http":{...}}`.
+            운영 해석: alert event 의 alert.signature + sid + http context 가 같이 기록.
+          - |
+            **[OSS] fast.log 확인** — 보조.
+              ssh 6v6-ips 'sudo tail -5 /var/log/suricata/fast.log | grep 9000001'
+            예상 출력 `<time> [**] [1:9000001:1] 6v6 curl UA detected [**] {TCP} 10.20.30.202:xx -> 10.20.32.1:80`.
+            운영 해석: fast.log 는 1줄 alert. 빠른 인지 + tail -f 친화.
+          - |
+            **[OSS] 룰 syntax 검증** — 사전 검증.
+              # 룰 적용 전 -T (test mode) 로 검증
+              ssh 6v6-ips 'sudo suricata -T -S /etc/suricata/rules/local.rules 2>&1 | tail -5'
+              # -S 가 룰 파일 단독 지정
+            예상 출력 `Configuration provided was successfully loaded. Exiting.`.
+            운영 해석: production 배포 전 syntax 검증 필수.
+          - |
+            **[OSS] suricatasc 의 다른 명령** — 진단.
+              # ruleset-stats 로 룰 로드 상태
+              ssh 6v6-ips 'sudo suricatasc -c ruleset-stats 2>&1 | jq'
+              # 응답에 loaded / failed / disabled rule count
+            예상 출력 `{"loaded":75000,"failed":0,"skipped":0,"return":"OK"}`.
+            운영 해석: failed > 0 면 syntax error 룰 존재. 즉시 fix.
+          - |
+            **[OSS] 룰 trigger rate 확인** — 효과 측정.
+              # 트리거 5번 발생 후 count
+              for i in 1 2 3 4 5; do ssh 6v6-attacker "curl -s -o /dev/null -A curl/8.5 -H Host:juice.6v6.lab http://10.20.30.1/"; done
+              sleep 3
+              ssh 6v6-ips 'sudo grep -c sid.:9000001 /var/log/suricata/eve.json'
+            예상 출력 `5+ (curl 호출 횟수 ≥ alert 발생 횟수)`.
+            운영 해석: 룰 매치율 검증. 룰 정확성.
+        negative_signs:
+          - reload-rules 실패
+          - eve.json 에 9000001 없음
+          - 트리거 후 3초 지났는데 미발생
+    cleanup: |
+      ssh 6v6-ips 'sudo rm -f /etc/suricata/rules/local.rules' 2>/dev/null || true
+    target_vm: ips
+
+  # ============================================================
+  # STEP 7 — suricata-update + ETOpen 룰셋 관리
+  # ============================================================
+  - order: 7
+    instruction: |
+      suricata-update 도구로 가용 룰 소스 (list-sources) + 활성 소스 (list-enabled)
+      를 조회한다. 실 update 는 시간 소요 → 본 step 은 상태 확인까지.
+    hint: ssh 6v6-ips 'sudo suricata-update list-sources 2>&1 | head'
+    category: configuration
+    points: 10
+    answer: |
+      ssh 6v6-ips 'sudo suricata-update list-sources 2>&1 | head -15'
+      ssh 6v6-ips 'sudo suricata-update list-enabled-sources 2>&1 | head -5'
+    answer_detail: 가용 + 활성 소스 출력
+    verify:
+      type: output_contains
+      expect: et/open
+      field: stdout
+      semantic:
+        intent: |
+          ETOpen 룰셋 관리 도구 사용. suricata-update 가 ETOpen / Abuse.ch /
+          Sslbl 등 무료 룰 소스를 통합 관리. production 운영은 cron 으로 자동 update
+          + reload.
+        success_criteria:
+          - et/open 소스 표시
+          - list-sources 응답
+        acceptable_methods:
+          - |
+            **[OSS] suricata-update list-sources** — 표준.
+              ssh 6v6-ips 'sudo suricata-update list-sources 2>&1 | head -20'
+            예상 출력 `Name: et/open / Vendor: Proofpoint / Summary: Emerging Threats Open Ruleset / ...`.
+            운영 해석: et/open 이 기본 무료 룰 소스.
+          - |
+            **[OSS] list-enabled-sources** — 활성.
+              ssh 6v6-ips 'sudo suricata-update list-enabled-sources 2>&1'
+            예상 출력 `Enabled sources: / - et/open`.
+            운영 해석: 활성 소스만 update 대상.
+          - |
+            **[OSS] suricata-update --no-test (dry-run 없음)** — 실 update.
+              # 실 update 는 인터넷 + 시간 소요. 시연용으로만
+              # ssh 6v6-ips 'sudo suricata-update --no-test 2>&1 | tail'
+              echo "실 update 는 운영 시 cron 으로 자동 (매일)"
+            예상 출력 `(설명)`.
+            운영 해석: 매일 자동 update 가 표준. cron + slack alarm.
+          - |
+            **[OSS] enable/disable source** — 소스 관리.
+              # 새 소스 추가
+              # ssh 6v6-ips 'sudo suricata-update enable-source abuse.ch/sslbl'
+              # 소스 비활성
+              # ssh 6v6-ips 'sudo suricata-update disable-source et/open'
+              echo "abuse.ch / sslbl / oisf 등 추가 소스 enable 가능"
+            예상 출력 `(설명)`.
+            운영 해석: 다중 소스로 detection coverage 확장.
+          - |
+            **[OSS] /var/lib/suricata/update/** — 작업 디렉토리.
+              ssh 6v6-ips 'sudo ls /var/lib/suricata/update/ 2>&1 | head'
+            예상 출력 `cache/ / sources/ / config.yaml`.
+            운영 해석: suricata-update 의 작업 디렉토리. cache 에 다운로드 파일.
+          - |
+            **[OSS] disable.conf / enable.conf** — 룰별 토글.
+              # 특정 룰 비활성화 (false-positive 제거)
+              # echo "2003020" | sudo tee -a /etc/suricata/disable.conf
+              # 활성화
+              # echo "2010001" | sudo tee -a /etc/suricata/enable.conf
+              echo "ETOpen 룰 중 false-positive 가 잦은 룰은 disable.conf 추가"
+            예상 출력 `(절차)`.
+            운영 해석: 운영 환경 튜닝의 핵심. 다음 W05 에서 심화.
+          - |
+            **[OSS] 룰 카운트** — 통계.
+              ssh 6v6-ips 'sudo wc -l /var/lib/suricata/rules/suricata.rules'
+              # 활성 룰 (주석 제외)
+              ssh 6v6-ips 'sudo grep -v "^#" /var/lib/suricata/rules/suricata.rules | grep -c "^alert\|^drop"'
+            예상 출력 `30000+ / 25000+ (활성)`.
+            운영 해석: ETOpen 기본 30,000+ 룰. 일부 disabled 로 25,000 활성.
+          - |
+            **[OSS] 카테고리별 룰 카운트** — 정성.
+              ssh 6v6-ips 'sudo grep -oE ''msg:"ET [A-Z_]+'' /var/lib/suricata/rules/suricata.rules 2>/dev/null | sort | uniq -c | sort -rn | head -10'
+            예상 출력 `5000 msg:"ET INFO / 4000 msg:"ET WEB_SERVER / 3000 msg:"ET TROJAN / ...`.
+            운영 해석: 카테고리별 룰 수. INFO 가 가장 많음 (low-severity).
+        negative_signs:
+          - et/open 누락
+          - suricata-update 명령 실패
+    target_vm: ips
+
+  # ============================================================
+  # STEP 8 — 종합 보고서
+  # ============================================================
+  - order: 8
+    instruction: |
+      앞 7 step 결과 + 본인이 추가한 새 룰 1개 (STEP 6 외) + production 운영
+      권장 사항 3+ 항목 + 다음 주차 (룰 작성 심화) 준비도.
+    hint: 마크다운 표 + 인사이트
+    category: synthesis
+    points: 15
+    answer: 8 step 종합 + 본인 룰 1 + 운영 권장 3+
+    answer_detail: 종합 보고서
+    verify:
+      type: output_contains
+      expect: Suricata
+      field: stdout
+      semantic:
+        intent: |
+          4주차 종합 보고서. 7 step 결과 + 본인 룰 + 운영 권장.
+        success_criteria:
+          - 7 step 표
+          - 본인 룰 1 + 트리거 결과
+          - 운영 권장 3+
+        acceptable_methods:
+          - |
+            **[관리적 보고서]** — 마크다운.
+              ## 1. Step 결과
+              | Step | 결과 |
+              |------|------|
+              | 1 데몬 가동 | pass (eth0+eth1) |
+              | 2 yaml 키 | af-packet/outputs/HOME_NET |
+              | 3 event_type | flow 350 / http 100 / tls 30 / ... |
+              | 4 alert 추출 | 5 필드 출력 |
+              | 5 메트릭 | capture.kernel_packets 12345 / drops 0 |
+              | 6 새 룰 트리거 | sid 9000001 alert 발생 |
+              | 7 ETOpen | et/open 활성, 25000+ 룰 |
+              ## 2. 본인 추가 룰
+              ex) alert http any any -> any any (msg:"sqlmap detected"; http.user_agent; content:"sqlmap"; sid:9000002; rev:1;)
+              ## 3. 운영 권장
+              1. capture.kernel_drops 모니터링 → > 1% 시 alarm
+              2. 매일 suricata-update cron + reload-rules
+              3. local.rules 는 sid 1M+ + git 관리
+              4. eve.json → Wazuh / ELK 통합 (W09 예고)
+              5. disable.conf 으로 false-positive 룰 격리
+            예상 출력 `보고서`.
+            운영 해석: production 운영의 최소 운영 권장 5+.
+          - |
+            **[관리적 분석] NIST CSF + ISMS-P 매핑** — 표준.
+              # NIST DE.CM-1 (Network monitoring)
+              # ISMS-P 2.6.4 (네트워크 침입탐지)
+              # Suricata 가 두 통제를 어떻게 만족하는가
+            운영 해석: 표준 통제 매핑.
+          - |
+            **[관리적 분석] MITRE D3FEND** — 방어.
+              # D3-NTA (Network Traffic Analysis)
+              # 공격 ATT&CK 의 거의 모든 T 에 대응
+            운영 해석: Suricata 가 D3FEND 의 어느 좌표.
+          - |
+            **[관리적 분석] KISA 사례** — 한국.
+              # 2024 KISA 사고 1건 + Suricata 로 어떻게 사전 탐지 가능
+              # 예: APT C2 통신 → ET TROJAN 룰셋 매치
+            운영 해석: 실제 사례.
+          - |
+            **[관리적 분석] W05 (룰 작성 심화) 준비** — 다음.
+              # pcre / fast_pattern / hyperscan / threshold.config
+              # 본 주차의 단순 content 매칭 → 다음의 정규식·rate-limit
+            운영 해석: 다음 주차 학습 logical flow.
+          - |
+            **[종합] 학습 진도** — 누적.
+              # secuops 15 주 중 4 주 완료
+              # 5 종 솔루션 중 fw (W02-03) + ips (W04) 까지
+              # 다음 W05-06 룰 심화 → W07 host 가시화 (osquery)
+            운영 해석: 15 주 진도 가시화.
+          - |
+            **[관리적 분석] alert fatigue 방지** — 운영 위험.
+              # 25000 룰 + 하루 5000 alert → 분석 인력 burnout
+              # 해결: severity 별 필터 + suppression 룰 + 자동 ack
+            운영 해석: 운영의 인적 한계.
+          - |
+            **[관리적 분석] 본인 학습 gap** — 발전.
+              # eve.json 의 fileinfo / files 분석 미숙
+              # pcre 정규식 syntax 부족
+              # hyperscan 의 성능 효과 미체험
+            운영 해석: 학습 gap 자가 진단.
+        negative_signs:
+          - 종합 표 누락
+    target_vm: ips

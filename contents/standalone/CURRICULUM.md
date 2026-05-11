@@ -169,7 +169,8 @@ Host 6v6-*
 
 - `secuops/W01` — ✅ DONE (2026-05-11, 14 step 실측 통과, commit 428a850)
 - `secuops/W02` — ✅ DONE (2026-05-11, 8 step + nft table 이름 fix, commit aa6c5ff)
-- `secuops/W03` — IN-PROGRESS
+- `secuops/W03` — ✅ DONE (2026-05-11, 8 step DNAT/SNAT + HAProxy 협업, commit 9f47680)
+- `secuops/W04` — IN-PROGRESS
 - 나머지 — PENDING
 
 각 주차 완료 시 본 표 갱신 + git commit + push.
