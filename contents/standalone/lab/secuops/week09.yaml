@@ -1,258 +1,891 @@
 lab_id: standalone-secuops-week09
-title: Wazuh manager — decoder + 사용자 정의 룰 + R/B/P SIEM 통합
+title: Wazuh manager 도입 — 11 daemon + 3 agent + 룰·디코더 + alerts.json 통합 R/B/P
 version: standalone-non-ai
 course: secuops
 week: 9
 description: |
-  6v6-siem 의 Wazuh manager 의 16 daemon + decoder + rule 처리 흐름 학습. 사용자
-  정의 룰 (local_rules.xml) 작성 + reload + 트리거 + alerts.json 검증. R/B/P (Red
-  가 SSH brute → Blue 가 사용자 룰 추가 → Purple 가 alert level 격상).
+  6v6-siem 의 Wazuh manager 4.10.0 + 11 default daemon + 3 agent (web/ips/fw) +
+  bastion 누락 인지 + decoder/rule 구조 + alerts.json 의 정확한 4 sub-section + Suricata
+  decoder 매핑 + R/B/P (XSS 5 burst → ips agent ingest → manager alerts.json 추적) +
+  운영 트러블슈팅 + 종합 보고서.
 difficulty: medium
-duration_minutes: 180
-prerequisites: [W07-W08]
+duration_minutes: 200
+prerequisites: [W04-W08]
 objectives:
-  - "Wazuh manager 11 daemon + 3 agent 통신"
-  - "decoder + rule 처리 흐름"
-  - "사용자 정의 룰 (sid 100xxx) 작성 + reload"
-  - "R/B/P — SSH brute → 사용자 룰 → level 12 격상"
+  - "Wazuh 4.10 manager + 11 running daemon + 5 optional"
+  - "3 agent (web/ips/fw) + bastion 미등록 인지"
+  - "decoder + rule 디렉토리 구조"
+  - "alerts.json 4 sub-section (rule + agent + manager + data)"
+  - "Suricata decoder 매핑 (rule id 86601)"
+  - "rule level 0-15 우선순위"
+  - "R/B/P — XSS → alerts.json 통합 추적"
+  - "트러블슈팅 + 종합 보고서"
 pass_threshold: 0.7
 steps:
 
   - order: 1
     instruction: |
-      ## 🎯 MISSION
+      ## 🎯 MISSION — manager 11 daemon + version + 3 agent baseline
 
-      Wazuh manager 의 **11 daemon + 3 agent + 3 listening port + cluster health**
-      4 항목 헬스체크.
+      Wazuh manager 4.10.0 의 11 default + 5 optional daemon 점검 + 3 agent 등록 +
+      bastion 누락 인지.
 
       ## 💻 실행 명령
 
       ```bash
-      ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control status'
-      ssh 6v6-siem 'sudo /var/ossec/bin/agent_control -l'
-      ssh 6v6-siem 'sudo ss -tlnp | grep -E ":(1514|1515|55000)"'
-      ssh 6v6-bastion 'docker exec 6v6-wazuh-indexer curl -sk -u admin:SecretPassword https://localhost:9200/_cluster/health | jq -c "{status, nodes:.number_of_nodes, shards:.active_shards}"'
+      ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control status 2>&1 | head -20'
+      ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control info | head -5'
+      ssh 6v6-siem 'sudo /var/ossec/bin/agent_control -lc'
+      ssh 6v6-siem 'sudo ss -tlnp 2>&1 | grep -E "1514|1515|55000"'
       ```
 
-      ## 📋 확인 사항
+      ## 📋 확인 사항 (실측 2026-05-12)
 
-      - daemon 11 running (modulesd/monitord/logcollector/remoted/syscheckd/analysisd/
-        execd/db/authd/apid + control)
-      - 3 agent Active (001 web / 002 ips / 003 fw)
-      - 1514 + 1515 + 55000 listen
-      - cluster green + 1 node + 16 shards
+      - **11 daemon running**: modulesd / monitord / logcollector / remoted /
+        syscheckd / analysisd / execd / db / authd / apid (+ vulnerability-detector)
+      - **5 optional not running**: clusterd / maild / agentlessd / integratord /
+        csyslogd
+      - **version**: `WAZUH_VERSION="v4.10.0"`, `WAZUH_TYPE="server"`
+      - **agent 4**: 000 manager (Active/Local), 005 web (Active), 006 ips (Active), 007 fw (Active)
+      - **listen ports**: 1514 (remoted), 1515 (authd), 55000 (apid)
+      - **bastion 누락** — 미등록 agent
 
       ## 💡 왜 이걸 하는가?
 
-      SIEM 운영 1순위 — manager 다운 시 모든 source alert 손실.
+      운영 인수 30초 점검. SIEM 의 핵심 — daemon + agent + port 모두 활성이어야.
 
       ## 🔍 결과 해석
 
-      - **정상**: 4 항목 모두 매치
-      - **비정상**: agent Never connected → 해당 agent 컨테이너 점검
-    hint: wazuh-control + agent_control + ss + cluster
+      - **정상**: 11 daemon + 3 agent + 3 port
+      - **운영 권장**:
+        - clusterd 활성 (HA 권장)
+        - integratord 활성 (Slack / Virustotal SOAR)
+        - bastion agent 등록 (보안 보강)
+    hint: 'wazuh-control status + agent_control -lc'
     category: survey
-    points: 15
+    points: 10
     answer: |
-      ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control status'
-      ssh 6v6-siem 'sudo /var/ossec/bin/agent_control -l'
-      ssh 6v6-siem 'sudo ss -tlnp | grep -E ":(1514|1515|55000)"'
-      ssh 6v6-bastion 'docker exec 6v6-wazuh-indexer curl -sk -u admin:SecretPassword https://localhost:9200/_cluster/health'
-    answer_detail: 4 항목 종합 헬스체크.
+      ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control status 2>&1 | head -20'
+      ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control info | head -5'
+      ssh 6v6-siem 'sudo /var/ossec/bin/agent_control -lc'
+      ssh 6v6-siem 'sudo ss -tlnp 2>&1 | grep -E "1514|1515|55000"'
+    answer_detail: 'Wazuh 4.10.0 + 11 running + 3 agent + 3 listen port + bastion 누락'
     verify:
       type: output_contains
-      expect: running
+      expect: 'analysisd'
       field: stdout
       semantic:
-        intent: "Wazuh 헬스체크"
-        success_criteria: ["11 daemon", "3 agent", "cluster green"]
-        acceptable_methods: ["**[OSS] wazuh-control**", "**[OSS] agent_control**", "**[OSS] _cluster/health**"]
-    target_vm: siem
+        intent: "Wazuh manager 11 daemon + 3 agent baseline"
+        success_criteria:
+          - "11 running daemon"
+          - "4.10.0 version"
+          - "3 agent + manager"
+          - "1514/1515/55000 listen"
+          - "bastion 미등록 인지"
+        acceptable_methods:
+          - "**[OSS] wazuh-control status**"
+          - "**[OSS] wazuh-control info**"
+          - "**[OSS] agent_control -lc**"
+          - "**[OSS] ss -tlnp**"
+          - "**[OSS] 16 daemon 중 11 running 인지**"
+          - "**[OSS] clusterd / integratord 권장**"
+          - "**[OSS] bastion agent 등록 계획**"
+          - "**[OSS] REST API 55000/tcp HTTPS**"
+    target_vm: bastion
 
   - order: 2
     instruction: |
-      ## 🎯 MISSION
+      ## 🎯 MISSION — alerts.json 의 4 sub-section + 정확한 JSON 구조
 
-      `/var/ossec/etc/rules/local_rules.xml` 에 **사용자 정의 룰** 추가 — Apache 4xx
-      매치 (apache 31100 chain) 후 `/admin` URL 매치 시 level 12 격상.
+      alerts.json 의 한 라인 = 한 alert. rule + agent + manager + data 4 sub-section.
 
       ## 💻 실행 명령
 
       ```bash
-      ssh 6v6-siem 'cat > /tmp/local_rules.xml <<EOF
-      <group name="6v6,custom,">
-        <rule id="100100" level="12">
-          <if_sid>31100</if_sid>
-          <url>/admin</url>
-          <description>6v6 W09 - Unauthorized admin path access</description>
-        </rule>
-      </group>
-      EOF
-      sudo cp /tmp/local_rules.xml /var/ossec/etc/rules/local_rules.xml
-      sudo chown root:wazuh /var/ossec/etc/rules/local_rules.xml
-      sudo /var/ossec/bin/wazuh-control restart'
-      sleep 10
+      # 1. alerts.json keys (4 sub-section)
+      ssh 6v6-siem 'sudo tail -1 /var/ossec/logs/alerts/alerts.json | jq "keys"'
 
-      # 트리거 (Red — admin path)
-      ssh 6v6-attacker 'curl -s -o /dev/null -H "Host: juice.6v6.lab" http://10.20.30.1/admin'
-      sleep 5
+      # 2. rule sub-section
+      ssh 6v6-siem 'sudo tail -1 /var/ossec/logs/alerts/alerts.json | jq ".rule"'
 
-      # alert 확인
-      ssh 6v6-siem 'sudo grep "100100" /var/ossec/logs/alerts/alerts.json | tail -1' | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); print(json.dumps({'rule_id':d.get('rule',{}).get('id'),'level':d.get('rule',{}).get('level'),'desc':d.get('rule',{}).get('description'),'agent':d.get('agent',{}).get('name')}, ensure_ascii=False))"
+      # 3. agent sub-section
+      ssh 6v6-siem 'sudo tail -1 /var/ossec/logs/alerts/alerts.json | jq ".agent"'
+
+      # 4. data sub-section (decoded fields)
+      ssh 6v6-siem 'sudo tail -1 /var/ossec/logs/alerts/alerts.json | jq ".data" | head -20'
+
+      # 5. 최근 10 alert 의 rule.id 분포
+      ssh 6v6-siem 'sudo tail -50 /var/ossec/logs/alerts/alerts.json 2>/dev/null | jq -r ".rule.id" | sort | uniq -c | sort -rn | head -10'
+
+      # 6. 최근 10 alert 의 level 분포
+      ssh 6v6-siem 'sudo tail -50 /var/ossec/logs/alerts/alerts.json 2>/dev/null | jq -r ".rule.level" | sort | uniq -c'
       ```
 
-      ## 📋 확인 사항
+      ## 📋 확인 사항 (실측)
 
-      - 룰 작성 + chown root:wazuh + restart
-      - 트리거 후 alerts.json 에 `rule_id:100100` + `level:12` + `agent:web`
-      - chain: 31100 (Apache 4xx) → 100100 (사용자 정의)
+      - **keys**: `["agent", "data", "manager", "rule", "timestamp", ...]`
+      - **rule**: `{level, description, id, firedtimes, mail, groups}`
+        - id 86601 = Suricata Alert (다른 sid 도 있음)
+      - **agent**: `{id, name, ip}` — 005/006/007 중 하나
+      - **data**: decoded fields (원본 eve.json / modsec_audit / 등)
+      - **rule.id 분포**: 86601 (Suricata) + 5712 (SSH) + 651 (apache) 등
+      - **level 분포**: 3 (informational) + 5 (important) + 7 (high) 등
 
       ## 💡 왜 이걸 하는가?
 
-      Wazuh 의 기본 decoder 는 ModSec 941/942 룰 ID 를 specific 룰로 격상하지 않는다.
-      사용자 정의 local_rules.xml 추가가 표준 — production 운영 1순위.
+      alerts.json 이 SIEM 의 source of truth. 운영자가 매 cycle 첫 점검.
 
       ## 🔍 결과 해석
 
-      - **정상**: alerts.json 에 rule_id 100100 + level 12
-      - **비정상**: restart 후 룰 미적용 → /var/ossec/logs/ossec.log 의 syntax error
-        점검
-    hint: local_rules.xml + chown + restart + trigger
-    category: manipulation
-    points: 25
+      - **정상**: 4 sub-section + 분포 다양
+      - **운영 활용**:
+        - rule.id top 10 — alert flood 식별
+        - level 분포 — 우선순위 + dashboard filter
+        - groups — 카테고리 별 분석 (ids / suricata / apache 등)
+    hint: 'jq keys / .rule / .agent / .data'
+    category: analysis
+    points: 15
     answer: |
-      ssh 6v6-siem 'cat > /tmp/local_rules.xml <<EOF
-      <group name="6v6,custom,">
-        <rule id="100100" level="12">
-          <if_sid>31100</if_sid>
-          <url>/admin</url>
-          <description>6v6 W09 - Unauthorized admin path access</description>
-        </rule>
-      </group>
-      EOF
-      sudo cp /tmp/local_rules.xml /var/ossec/etc/rules/local_rules.xml
-      sudo chown root:wazuh /var/ossec/etc/rules/local_rules.xml
-      sudo /var/ossec/bin/wazuh-control restart'
-      sleep 10
-      ssh 6v6-attacker 'curl -s -o /dev/null -H "Host: juice.6v6.lab" http://10.20.30.1/admin'
-      sleep 5
-      ssh 6v6-siem 'sudo grep "100100" /var/ossec/logs/alerts/alerts.json | tail -1'
-    answer_detail: 사용자 정의 룰 100100 + level 12 + chain 31100. chown 필수.
+      ssh 6v6-siem 'sudo tail -1 /var/ossec/logs/alerts/alerts.json | jq "keys"'
+      ssh 6v6-siem 'sudo tail -1 /var/ossec/logs/alerts/alerts.json | jq ".rule"'
+      ssh 6v6-siem 'sudo tail -1 /var/ossec/logs/alerts/alerts.json | jq ".agent"'
+      ssh 6v6-siem 'sudo tail -1 /var/ossec/logs/alerts/alerts.json | jq ".data" | head -20'
+      ssh 6v6-siem 'sudo tail -50 /var/ossec/logs/alerts/alerts.json 2>/dev/null | jq -r ".rule.id" | sort | uniq -c | sort -rn | head -10'
+      ssh 6v6-siem 'sudo tail -50 /var/ossec/logs/alerts/alerts.json 2>/dev/null | jq -r ".rule.level" | sort | uniq -c'
+    answer_detail: 'alerts.json 4 sub-section + rule.id top 10 + level 분포'
     verify:
       type: output_contains
-      expect: '100100'
+      expect: 'rule'
       field: stdout
       semantic:
-        intent: "Wazuh 사용자 정의 룰"
-        success_criteria: ["rule 100100", "level 12"]
+        intent: "alerts.json 4 sub-section + 분포"
+        success_criteria: ["4 sub-section", "rule.id 분포", "level 분포"]
         acceptable_methods:
-          - "**[OSS] /var/ossec/etc/rules/local_rules.xml**"
-          - "**[OSS] chown root:wazuh** (manager 가 읽기 권한 필요)"
-          - "**[OSS] wazuh-control restart (rule 변경 시)**"
-          - "**[OSS] <if_sid>chain</if_sid>** — 기존 룰 chain"
-          - "**[OSS] <url>, <field>, <match> 등 추가 조건**"
-          - "**[OSS] frequency + timeframe — rate-limit 룰**"
-          - "**[OSS] same_source_ip — IP 별 추적**"
-          - "**[OSS] /var/ossec/logs/ossec.log syntax check**"
-    target_vm: siem
+          - "**[OSS] jq keys**"
+          - "**[OSS] jq .rule / .agent / .manager / .data**"
+          - "**[OSS] rule.id top 10**"
+          - "**[OSS] rule.level 분포**"
+          - "**[OSS] rule.groups 카테고리**"
+          - "**[OSS] timestamp 시간순 분석**"
+          - "**[OSS] firedtimes 누적 카운트**"
+          - "**[OSS] mail false 인지 (maild 미운영)**"
+    target_vm: bastion
 
   - order: 3
     instruction: |
-      ## 🎯 MISSION (R/B/P)
+      ## 🎯 MISSION — decoder + rule 디렉토리 + Suricata decoder 매핑
 
-      **Red** 가 SSH brute 시뮬 (5 conn 시도) → **Blue** 가 Wazuh 의 5710 (SSH failed)
-      알람 추적 → **Purple** 이 level 격상 권장.
+      /var/ossec/etc/decoders/ 와 rules/ 디렉토리 구조 + Suricata 0200 decoder 매핑.
 
       ## 💻 실행 명령
 
       ```bash
-      # Red — SSH connect 시도 (실패 인증)
-      for i in 1 2 3; do
-        ssh 6v6-attacker 'timeout 3 sshpass -p wrongpass ssh -o StrictHostKeyChecking=no -o ConnectTimeout=2 ccc@10.20.32.80 hostname 2>&1' | head -1
-        sleep 1
-      done
-      sleep 5
+      # 1. decoder 파일 수 + 카테고리
+      ssh 6v6-siem 'sudo ls /var/ossec/etc/decoders/ | wc -l'
+      ssh 6v6-siem 'sudo ls /var/ossec/etc/decoders/ | head -20'
 
-      # Blue — Wazuh 의 SSH 관련 alert
-      ssh 6v6-siem 'sudo grep -E "5710|5712|sshd" /var/ossec/logs/alerts/alerts.json | tail -3'
+      # 2. rule 파일 수 + 카테고리
+      ssh 6v6-siem 'sudo ls /var/ossec/etc/rules/ | wc -l'
+      ssh 6v6-siem 'sudo ls /var/ossec/etc/rules/ | head -20'
 
-      # Purple — alert level 분포
-      ssh 6v6-siem 'sudo tail -500 /var/ossec/logs/alerts/alerts.json | python3 -c "
-      import json,sys
-      levels={}
-      for line in sys.stdin:
-          try:
-              d=json.loads(line)
-              l=d.get(\"rule\",{}).get(\"level\")
-              levels[l]=levels.get(l,0)+1
-          except: pass
-      print(sorted(levels.items()))"'
+      # 3. Suricata decoder 확인
+      ssh 6v6-siem 'sudo head -30 /var/ossec/etc/decoders/0200-suricata_decoders.xml 2>&1'
+
+      # 4. Suricata rule 확인
+      ssh 6v6-siem 'sudo head -30 /var/ossec/etc/rules/0235-suricata_rules.xml 2>&1'
+
+      # 5. 룰 86601 정확한 정의
+      ssh 6v6-siem 'sudo grep -B2 -A5 "id=\"86601\"" /var/ossec/etc/rules/0235-suricata_rules.xml 2>&1 | head -15'
+
+      # 6. local_rules.xml + local_decoder.xml (사용자 정의 자리)
+      ssh 6v6-siem 'sudo ls -la /var/ossec/etc/rules/local_rules.xml /var/ossec/etc/decoders/local_decoder.xml 2>&1'
       ```
 
       ## 📋 확인 사항
 
-      - Red 3 시도 후 web 의 sshd 가 인증 실패 (또는 ccc 비밀번호 일치하면 성공)
-      - Blue alerts.json 에 5710/5712 룰 매치
-      - Purple level 분포 표시
+      - decoder: 100+ 파일 (apache / sshd / suricata / osquery / etc)
+      - rule: 100+ 파일 (apache / sshd / suricata / osquery / web / system / etc)
+      - 0200-suricata_decoders.xml — Suricata eve.json 매핑
+      - 0235-suricata_rules.xml — rule id 86600-86699 범위
+      - rule 86601 = "Suricata: Alert" — Suricata 의 alert event 매칭
+      - local_rules.xml / local_decoder.xml — 사용자 정의 위치
 
       ## 💡 왜 이걸 하는가?
 
-      Purple Team — SSH brute 같은 표준 공격에 Wazuh 5710/5712 룰이 동작하는지 검증.
-      level 5 → 12 격상은 W13 의 CDB list 결합 시 자동.
+      decoder + rule 의 구조 인지. 새 source ingest 시 어디에 추가하는지 (보통 local_rules.xml).
 
       ## 🔍 결과 해석
 
-      - **정상**: 5710 alert 발생 + level 5 (medium)
-      - **운영 권장**: W13 의 CDB list 매치 시 level 12 자동 격상 (`<list field="srcip">malicious-ips</list>`)
-    hint: SSH brute + 5710 alert
-    category: redblue
-    points: 25
+      - **정상**: decoder/rule 디렉토리 다수 파일 + Suricata 0200/0235 활성
+      - **운영 권장**:
+        - local_rules.xml 만 수정 (default rule 직접 수정 금지 — 업그레이드 시 충돌)
+        - 새 source 추가 시 wazuh-logtest 로 검증
+        - rule 번호 100000+ 사용자 정의 권장
+    hint: 'ls decoders/ + grep "id=86601" rules/0235'
+    category: configuration
+    points: 15
     answer: |
-      for i in 1 2 3; do
-        ssh 6v6-attacker 'timeout 3 sshpass -p wrongpass ssh -o StrictHostKeyChecking=no -o ConnectTimeout=2 ccc@10.20.32.80 hostname 2>&1' | head -1
-        sleep 1
-      done
-      sleep 5
-      ssh 6v6-siem 'sudo grep -E "5710|5712|sshd" /var/ossec/logs/alerts/alerts.json | tail -3'
-    answer_detail: SSH 인증 실패 → 5710 (SSH failed login) alert. level 5 기본.
+      ssh 6v6-siem 'sudo ls /var/ossec/etc/decoders/ | wc -l'
+      ssh 6v6-siem 'sudo ls /var/ossec/etc/decoders/ | head -20'
+      ssh 6v6-siem 'sudo ls /var/ossec/etc/rules/ | wc -l'
+      ssh 6v6-siem 'sudo ls /var/ossec/etc/rules/ | head -20'
+      ssh 6v6-siem 'sudo head -30 /var/ossec/etc/decoders/0200-suricata_decoders.xml 2>&1'
+      ssh 6v6-siem 'sudo head -30 /var/ossec/etc/rules/0235-suricata_rules.xml 2>&1'
+      ssh 6v6-siem 'sudo grep -B2 -A5 "id=\"86601\"" /var/ossec/etc/rules/0235-suricata_rules.xml 2>&1 | head -15'
+      ssh 6v6-siem 'sudo ls -la /var/ossec/etc/rules/local_rules.xml /var/ossec/etc/decoders/local_decoder.xml 2>&1'
+    answer_detail: 'decoder/rule 디렉토리 + Suricata 0200/0235 + rule 86601 정의 + local 파일'
     verify:
       type: output_contains
-      expect: ssh
+      expect: suricata
       field: stdout
       semantic:
-        intent: "SSH brute + Wazuh alert"
-        success_criteria: ["5710 또는 sshd alert"]
+        intent: "decoder + rule 구조 + Suricata 매핑"
+        success_criteria: ["decoder 파일", "rule 파일", "0200/0235 Suricata", "rule 86601"]
         acceptable_methods:
-          - "**[OSS] sshpass + 잘못된 비밀번호**"
-          - "**[OSS] hydra (W06 attack)**"
-          - "**[OSS] 5710 SSH authentication failed**"
-          - "**[OSS] 5712 SSH brute force (frequency)**"
-          - "**[OSS] /var/log/auth.log 의 Failed password**"
-          - "**[OSS] Wazuh CDB list (W13) — IP 매치 시 level 12**"
-          - "**[OSS] Active Response — 자동 IP block (W10)**"
-          - "**[OSS] fail2ban 통합 가능**"
+          - "**[OSS] ls /var/ossec/etc/decoders/**"
+          - "**[OSS] ls /var/ossec/etc/rules/**"
+          - "**[OSS] grep id=86601 0235-suricata_rules.xml**"
+          - "**[OSS] local_rules.xml / local_decoder.xml**"
+          - "**[OSS] rule 100000+ 사용자 정의 범위**"
+          - "**[OSS] wazuh-logtest 로 검증**"
+          - "**[OSS] default rule 수정 금지**"
+          - "**[OSS] decoder hierarchy (parent → child)**"
     target_vm: bastion
 
   - order: 4
     instruction: |
-      ## 🎯 MISSION
+      ## 🎯 MISSION — wazuh-logtest 로 decoder 매핑 디버그
 
-      W09 종합 보고서 + 사용자 정의 룰 3개 작성 권장 + W10 (FIM/SCA/AR) 준비도.
+      Suricata alert log 의 한 라인을 wazuh-logtest 로 decoder + rule 매칭 디버깅.
 
-      ## 💻 산출물
+      ## 💻 실행 명령
+
+      ```bash
+      # 1. 최근 Suricata alert event 1 라인 추출
+      RECENT_EVE=$(ssh 6v6-ips 'sudo grep "\"event_type\":\"alert\"" /var/log/suricata/eve.json | tail -1')
+      echo "최근 Suricata alert event:"
+      echo "$RECENT_EVE" | head -c 200
+
+      # 2. wazuh-logtest 로 디코딩 시뮬
+      echo
+      echo "=== wazuh-logtest --quiet 사용 (단발 검증) ==="
+      ssh 6v6-siem "echo '$RECENT_EVE' | sudo /var/ossec/bin/wazuh-logtest --quiet 2>&1 | head -30" 2>&1
+
+      # 3. wazuh-logtest 의 표준 인터랙티브 모드 — 정보 출력
+      echo
+      echo "=== wazuh-logtest 도움말 ==="
+      ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-logtest --help 2>&1 | head -10'
+      ```
+
+      ## 📋 확인 사항
+
+      - 최근 Suricata alert event 가 eve.json 에서 추출됨
+      - wazuh-logtest 의 출력:
+        - **decoder**: `suricata` matched
+        - **rule**: `86601` matched (또는 다른 86xxx)
+        - **level**: 3 (예상)
+      - wazuh-logtest 의 옵션 출력
+
+      ## 💡 왜 이걸 하는가?
+
+      새 source 의 decoder 매핑 디버그 시 표준 도구. log line 입력 → decoder 매핑 →
+      rule 매핑 단계 가시화.
+
+      ## 🔍 결과 해석
+
+      - **정상**: decoder + rule 모두 매핑 + level 출력
+      - **비정상**: "No decoder matched" → decoder 작성 필요 (local_decoder.xml)
+      - **운영 권장**: 새 log source 도입 시 항상 wazuh-logtest 로 사전 검증
+    hint: 'echo <log line> | wazuh-logtest --quiet'
+    category: debugging
+    points: 15
+    answer: |
+      RECENT_EVE=$(ssh 6v6-ips 'sudo grep "\"event_type\":\"alert\"" /var/log/suricata/eve.json | tail -1' 2>/dev/null)
+      echo "최근 alert event:"
+      echo "$RECENT_EVE" | head -c 200
+      echo
+      ssh 6v6-siem "echo '$RECENT_EVE' | sudo /var/ossec/bin/wazuh-logtest --quiet 2>&1 | head -30" 2>&1
+      echo
+      ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-logtest --help 2>&1 | head -10'
+    answer_detail: 'wazuh-logtest 로 decoder/rule 매핑 디버그. Suricata alert event → 86601 매핑.'
+    verify:
+      type: output_contains
+      expect: wazuh-logtest
+      field: stdout
+      semantic:
+        intent: "wazuh-logtest 로 decoder 매핑 디버그"
+        success_criteria: ["log line 입력", "decoder/rule 매핑"]
+        acceptable_methods:
+          - "**[OSS] wazuh-logtest --quiet** — 단발 검증"
+          - "**[OSS] wazuh-logtest** — 인터랙티브"
+          - "**[OSS] wazuh-logtest --help** — 옵션"
+          - "**[OSS] decoder matched → field 추출**"
+          - "**[OSS] rule matched → level + description**"
+          - "**[OSS] No decoder matched → local_decoder.xml 작성**"
+          - "**[OSS] No rule matched → local_rules.xml 작성**"
+          - "**[OSS] 새 source 도입 시 사전 검증**"
+    target_vm: bastion
+
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION — agent.conf 점검 + ossec.conf 의 localfile
+
+      Wazuh manager 가 배포하는 agent.conf 점검 + agent 의 ossec.conf 의 localfile 정의.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # 1. manager 측 agent.conf (default group)
+      ssh 6v6-siem 'sudo cat /var/ossec/etc/shared/default/agent.conf 2>&1 | head -40'
+
+      # 2. ips agent 의 ossec.conf 의 localfile (eve.json 모니터링)
+      ssh 6v6-ips 'sudo grep -B1 -A3 "<localfile>" /var/ossec/etc/ossec.conf 2>&1 | head -30'
+
+      # 3. web agent 의 ossec.conf 의 localfile (modsec_audit.log 모니터링)
+      ssh 6v6-web 'sudo grep -B1 -A3 "<localfile>" /var/ossec/etc/ossec.conf 2>&1 | head -30'
+
+      # 4. fw agent 의 ossec.conf
+      ssh 6v6-fw 'sudo grep -B1 -A3 "<localfile>" /var/ossec/etc/ossec.conf 2>&1 | head -20'
+
+      # 5. agent 의 logcollector 동작 확인
+      ssh 6v6-ips 'sudo cat /var/ossec/logs/ossec.log | grep -iE "monitoring|reading" | tail -5'
+      ```
+
+      ## 📋 확인 사항
+
+      - default agent.conf: 공통 source (보통 기본 시스템 log)
+      - ips: eve.json 모니터링
+      - web: modsec_audit.log 모니터링 (W06 에서 점검 — 미설정일 수도)
+      - fw: haproxy 또는 nftables log
+      - logcollector 가 정상 source 읽고 있음 (ossec.log)
+
+      ## 💡 왜 이걸 하는가?
+
+      각 agent 의 source 정의 + manager 가 배포하는 default group 의 공통 설정 분석.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 3 agent 모두 localfile 정의 + logcollector 동작
+      - **운영 권장**:
+        - ips 의 eve.json (이미 동작 중)
+        - web 의 modsec_audit.log (W10 에서 본격)
+        - fw 의 nftables log + haproxy access (W10 보완)
+        - bastion 의 ossec.conf (agent 등록 후)
+    hint: '/var/ossec/etc/shared/default/agent.conf + 각 agent 의 ossec.conf <localfile>'
+    category: configuration
+    points: 12
+    answer: |
+      ssh 6v6-siem 'sudo cat /var/ossec/etc/shared/default/agent.conf 2>&1 | head -40'
+      ssh 6v6-ips 'sudo grep -B1 -A3 "<localfile>" /var/ossec/etc/ossec.conf 2>&1 | head -30'
+      ssh 6v6-web 'sudo grep -B1 -A3 "<localfile>" /var/ossec/etc/ossec.conf 2>&1 | head -30'
+      ssh 6v6-fw 'sudo grep -B1 -A3 "<localfile>" /var/ossec/etc/ossec.conf 2>&1 | head -20'
+      ssh 6v6-ips 'sudo cat /var/ossec/logs/ossec.log | grep -iE "monitoring|reading" | tail -5'
+    answer_detail: 'manager agent.conf + 3 agent 의 localfile + logcollector 동작'
+    verify:
+      type: output_contains
+      expect: localfile
+      field: stdout
+      semantic:
+        intent: "agent.conf + ossec.conf localfile 점검"
+        success_criteria: ["3 agent localfile", "logcollector 동작"]
+        acceptable_methods:
+          - "**[OSS] /var/ossec/etc/shared/default/agent.conf**"
+          - "**[OSS] /var/ossec/etc/ossec.conf**"
+          - "**[OSS] <localfile> + <log_format>**"
+          - "**[OSS] logcollector ossec.log**"
+          - "**[OSS] agent group 별 다른 config**"
+          - "**[OSS] manager 배포 변경 → agent polling**"
+          - "**[OSS] log_format json / apache / syslog / command**"
+          - "**[OSS] dynamic monitoring command frequency**"
+    target_vm: bastion
+
+  - order: 6
+    instruction: |
+      ## 🎯 MISSION — Suricata alert ingest 흐름 추적 (eve.json → alerts.json)
+
+      lecture §5 의 흐름 검증 — eve.json 의 alert 가 어떻게 alerts.json 에 적재되는지.
+      timing + decoder + rule 매핑.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # 1. Suricata 룰 활성 (sqlmap UA)
+      ssh 6v6-ips 'sudo bash -c "cat > /etc/suricata/rules/local.rules <<EOF
+      alert http any any -> any any (msg:\"W09 sqlmap UA ingest test\"; http.user_agent; content:\"sqlmap\"; nocase; classtype:web-application-attack; priority:2; sid:9009001; rev:1;)
+      EOF"'
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules'
+      sleep 2
+
+      # 2. baseline — alerts.json 의 라인 수
+      BEFORE=$(ssh 6v6-siem 'sudo wc -l /var/ossec/logs/alerts/alerts.json | awk "{print \$1}"')
+      echo "baseline alerts.json lines: $BEFORE"
+
+      # 3. attacker 가 sqlmap UA 트리거
+      ssh 6v6-attacker 'curl -s -o /dev/null -A "sqlmap/1.5" -H "Host: juice.6v6.lab" http://10.20.30.1/'
+      sleep 6   # Wazuh agent ship + manager analysisd 시간
+
+      # 4. after
+      AFTER=$(ssh 6v6-siem 'sudo wc -l /var/ossec/logs/alerts/alerts.json | awk "{print \$1}"')
+      echo "after: $AFTER  delta: $((AFTER - BEFORE))"
+
+      # 5. 최근 alert 중 9009001 sid 확인
+      echo
+      echo "=== 최근 W09 alert ==="
+      ssh 6v6-siem 'sudo tail -20 /var/ossec/logs/alerts/alerts.json | jq "select(.data.alert.sid==9009001) | {ts:.timestamp, rule_id:.rule.id, level:.rule.level, desc:.rule.description, agent:.agent.name, sid:.data.alert.sid}"' 2>&1 | head -20
+
+      # Cleanup
+      ssh 6v6-ips 'sudo rm -f /etc/suricata/rules/local.rules'
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules'
+      ```
+
+      ## 📋 확인 사항
+
+      - baseline → after delta: 1+ (양 NIC sniff 일 수도 있어 2+ 가능)
+      - W09 alert 의:
+        - `rule.id`: 86601 또는 비슷 (Suricata decoder 의 generic alert rule)
+        - `rule.level`: 3 (informational)
+        - `rule.description`: "Suricata: Alert - W09 sqlmap UA ingest test"
+        - `agent.name`: ips
+        - `data.alert.sid`: 9009001
+
+      ## 💡 왜 이걸 하는가?
+
+      end-to-end ingest 흐름 검증. Suricata 의 새 alert 가 SIEM 으로 통합되는 시간 +
+      decoder/rule 매핑 + alert structure.
+
+      ## 🔍 결과 해석 + 운영 측정
+
+      - **정상**: delta 1+ + W09 alert 가 alerts.json 에 등장
+      - **운영 측정**:
+        - latency: Suricata alert 생성 → alerts.json 반영 시간 (보통 < 5초)
+        - duplicate: 양 NIC 라 2 라인 가능
+        - rule level 3 = informational (Suricata alert 의 default level)
+      - **운영 권장**:
+        - level 격상 (5+ 로 — local_rules.xml 의 override 사용 시)
+        - groups 활용 — `ids` + `suricata` + `web-application-attack`
+    hint: 'sqlmap UA → eve.json → Wazuh agent → alerts.json → jq select sid==9009001'
+    category: integration
+    points: 20
+    answer: |
+      ssh 6v6-ips 'sudo bash -c "cat > /etc/suricata/rules/local.rules <<EOF
+      alert http any any -> any any (msg:\"W09 sqlmap UA\"; http.user_agent; content:\"sqlmap\"; nocase; sid:9009001; rev:1;)
+      EOF"'
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules'
+      sleep 2
+      BEFORE=$(ssh 6v6-siem 'sudo wc -l /var/ossec/logs/alerts/alerts.json | awk "{print \$1}"')
+      echo "baseline: $BEFORE"
+      ssh 6v6-attacker 'curl -s -o /dev/null -A "sqlmap/1.5" -H "Host: juice.6v6.lab" http://10.20.30.1/'
+      sleep 6
+      AFTER=$(ssh 6v6-siem 'sudo wc -l /var/ossec/logs/alerts/alerts.json | awk "{print \$1}"')
+      echo "after: $AFTER  delta: $((AFTER - BEFORE))"
+      ssh 6v6-siem 'sudo tail -20 /var/ossec/logs/alerts/alerts.json | jq "select(.data.alert.sid==9009001) | {ts:.timestamp, rule_id:.rule.id, level:.rule.level, desc:.rule.description, agent:.agent.name}"' 2>&1 | head
+      ssh 6v6-ips 'sudo rm -f /etc/suricata/rules/local.rules'
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules'
+    answer_detail: 'end-to-end ingest — eve.json sid 9009001 → alerts.json rule 86601 + level 3 + agent ips'
+    verify:
+      type: output_contains
+      expect: '9009001'
+      field: stdout
+      semantic:
+        intent: "Suricata → manager ingest 흐름 검증"
+        success_criteria:
+          - "delta 1+"
+          - "rule.id 86xxx"
+          - "agent ips"
+          - "sid 9009001"
+        acceptable_methods:
+          - "**[OSS] eve.json → Wazuh agent → manager**"
+          - "**[OSS] alerts.json delta 측정**"
+          - "**[OSS] jq select sid 매칭**"
+          - "**[OSS] rule.id Wazuh 의 80000-89000 범위**"
+          - "**[OSS] data.alert.sid 의 Suricata sid 보존**"
+          - "**[OSS] latency 측정 (eve.json timestamp → alerts.json timestamp)**"
+          - "**[OSS] 양 NIC sniff 효과 (2 라인 가능)**"
+          - "**[OSS] level 3 (informational) — override 권장**"
+    cleanup: |
+      ssh 6v6-ips 'sudo rm -f /etc/suricata/rules/local.rules' 2>/dev/null
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules' 2>/dev/null
+      true
+    target_vm: bastion
+
+  - order: 7
+    instruction: |
+      ## 🎯 MISSION — **R/B/P** XSS 5 burst → 4-tier ingest (web modsec + ips eve.json → alerts.json)
+
+      **Red** 가 5 XSS 공격 → **Blue** 가 manager alerts.json 의 통합 ingest 추적 (Suricata
+      + ModSec 두 source) → **Purple** 의 우선순위 + Active Response 권장.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # 1. baseline
+      BEFORE=$(ssh 6v6-siem 'sudo wc -l /var/ossec/logs/alerts/alerts.json | awk "{print \$1}"')
+      echo "baseline: $BEFORE"
+
+      # 2. Red — 5 XSS burst
+      echo "=== Red 5 XSS ==="
+      for i in 1 2 3 4 5; do
+        code=$(ssh 6v6-attacker "curl -s -o /dev/null -w '%{http_code}' -H 'Host: juice.6v6.lab' 'http://10.20.30.1/?q=<script>alert($i)</script>'")
+        echo "  burst $i → $code"
+      done
+      sleep 8
+
+      # 3. Blue — alerts.json delta
+      AFTER=$(ssh 6v6-siem 'sudo wc -l /var/ossec/logs/alerts/alerts.json | awk "{print \$1}"')
+      DELTA=$((AFTER - BEFORE))
+      echo "Blue: delta = $DELTA (예상 5 ~ 15 — Suricata 양 NIC + ModSec audit)"
+
+      # 4. Blue — 최근 alert 의 rule.id 분포
+      echo "=== rule.id 분포 (delta 만) ==="
+      ssh 6v6-siem "sudo tail -$DELTA /var/ossec/logs/alerts/alerts.json 2>/dev/null | jq -r '.rule.id' | sort | uniq -c | sort -rn | head -10"
+
+      # 5. Blue — agent.name 분포
+      echo "=== agent 분포 ==="
+      ssh 6v6-siem "sudo tail -$DELTA /var/ossec/logs/alerts/alerts.json 2>/dev/null | jq -r '.agent.name' | sort | uniq -c"
+
+      # 6. Blue — level 분포
+      echo "=== level 분포 ==="
+      ssh 6v6-siem "sudo tail -$DELTA /var/ossec/logs/alerts/alerts.json 2>/dev/null | jq -r '.rule.level' | sort | uniq -c"
+
+      # 7. Purple — 권장
+      echo
+      echo "=== Purple 권장 ==="
+      cat <<'EOF'
+      1. level 격상 — local_rules.xml 의 rule override (Suricata XSS → level 7)
+      2. Active Response — level 7+ 시 attacker IP nftables drop set 추가
+      3. dashboard 의 Suricata + ModSec panel 통합 (W10)
+      4. integratord 활성 — Slack 알림
+      5. CDB list — known attacker IP 자동 분류
+      EOF
+      ```
+
+      ## 📋 확인 사항
+
+      - delta 5+ (Suricata 양 NIC × 5 = 10 + ModSec audit 5 = 15 가능)
+      - rule.id 분포 — 86xxx (Suricata) + 다른 (ModSec)
+      - agent 분포 — ips 다수 + web (ModSec audit 가 활성이면)
+      - level 분포 — 대부분 3 (informational)
+      - Purple 권장 5
+
+      ## 💡 왜 이걸 하는가?
+
+      multi-source SIEM 통합의 표준 cycle. 동일 공격이 Suricata + ModSec 두 source 모두 매치 →
+      manager 가 통합 → 상관 분석. W10 의 dashboard 가 본격적인 통합 visualization.
+
+      ## 🔍 결과 해석 + 5 권장
+
+      - **정상**: delta 5+ + multi-source agent 분포 + level 분포
+      - **권장 1**: level override — Suricata XSS 의 default level 3 → 7
+      - **권장 2**: Active Response — level 7+ 시 attacker IP drop (10분)
+      - **권장 3**: dashboard panel 통합 (W10)
+      - **권장 4**: integratord — Slack / Virustotal 통합
+      - **권장 5**: CDB list — known IOC 자동 격상
+    hint: 'XSS 5 burst → alerts.json delta + rule.id / agent / level 분포 + Purple 권장 5'
+    category: redblue
+    points: 25
+    answer: |
+      BEFORE=$(ssh 6v6-siem 'sudo wc -l /var/ossec/logs/alerts/alerts.json | awk "{print \$1}"')
+      echo "baseline: $BEFORE"
+      echo "=== Red 5 XSS ==="
+      for i in 1 2 3 4 5; do
+        code=$(ssh 6v6-attacker "curl -s -o /dev/null -w '%{http_code}' -H 'Host: juice.6v6.lab' 'http://10.20.30.1/?q=<script>alert($i)</script>'")
+        echo "  burst $i → $code"
+      done
+      sleep 8
+      AFTER=$(ssh 6v6-siem 'sudo wc -l /var/ossec/logs/alerts/alerts.json | awk "{print \$1}"')
+      DELTA=$((AFTER - BEFORE))
+      echo "delta: $DELTA"
+      echo "rule.id 분포:"
+      ssh 6v6-siem "sudo tail -$DELTA /var/ossec/logs/alerts/alerts.json 2>/dev/null | jq -r '.rule.id' | sort | uniq -c | sort -rn | head"
+      echo "agent 분포:"
+      ssh 6v6-siem "sudo tail -$DELTA /var/ossec/logs/alerts/alerts.json 2>/dev/null | jq -r '.agent.name' | sort | uniq -c"
+      echo "level 분포:"
+      ssh 6v6-siem "sudo tail -$DELTA /var/ossec/logs/alerts/alerts.json 2>/dev/null | jq -r '.rule.level' | sort | uniq -c"
+      echo
+      echo "Purple 권장 5"
+    answer_detail: 'XSS 5 burst → delta 5+ → rule.id/agent/level 분포 → 5 권장 (level / Active Response / dashboard / integratord / CDB)'
+    verify:
+      type: output_contains
+      expect: 'delta'
+      field: stdout
+      semantic:
+        intent: "R/B/P — XSS 5 burst → multi-source SIEM 통합"
+        success_criteria: ["delta 5+", "rule.id 분포", "agent 분포", "level 분포", "Purple 5"]
+        acceptable_methods:
+          - "**[OSS] alerts.json delta 측정**"
+          - "**[OSS] jq -r .rule.id | sort | uniq -c**"
+          - "**[OSS] jq -r .agent.name | sort | uniq -c**"
+          - "**[OSS] jq -r .rule.level | sort | uniq -c**"
+          - "**[OSS] level override local_rules.xml**"
+          - "**[OSS] Active Response firewall-drop**"
+          - "**[OSS] integratord Slack**"
+          - "**[OSS] CDB list 의 known IOC**"
+    target_vm: bastion
+
+  - order: 8
+    instruction: |
+      ## 🎯 MISSION — bastion agent 등록 계획 (시뮬)
+
+      6v6 에서 bastion agent 미등록 인지 → 등록 절차 시뮬 (실 등록은 환경 변경 필요).
+
+      ## 💻 실행 명령
+
+      ```bash
+      # 1. bastion 의 Wazuh agent 패키지 설치 여부
+      ssh 6v6-bastion 'sudo dpkg -l | grep wazuh 2>&1 | head -3'
+      ssh 6v6-bastion 'sudo ls /var/ossec 2>&1 | head -5'
+
+      # 2. manager 측 agent_control 의 등록 가능 ID 범위
+      ssh 6v6-siem 'sudo /var/ossec/bin/agent_control -lc | tail -5'
+
+      # 3. 등록 절차 시뮬
+      echo
+      echo "=== bastion agent 등록 절차 (시뮬, 실 적용 X) ==="
+      cat <<'EOF'
+      # 1. bastion 측 — Wazuh agent 패키지 설치 (필요 시)
+      sudo dpkg -i wazuh-agent_4.10.0-1_amd64.deb
+
+      # 2. ossec.conf 의 manager IP 설정
+      sudo sed -i 's|<address>localhost</address>|<address>10.20.32.100</address>|' /var/ossec/etc/ossec.conf
+
+      # 3. 자동 enrollment (authd 가 manager 측에서 실행 중)
+      sudo /var/ossec/bin/agent-auth -m 10.20.32.100 -A bastion
+
+      # 4. 시작
+      sudo /var/ossec/bin/wazuh-control start
+
+      # 5. manager 측 확인
+      ssh 6v6-siem 'sudo /var/ossec/bin/agent_control -lc | grep bastion'
+      EOF
+
+      # 4. 보안 고려
+      echo
+      echo "=== 보안 고려 ==="
+      cat <<'EOF'
+      - authd 의 pre-shared key 사용 (random key)
+      - manager 의 1515 port 는 enrollment 후 닫기 (필요 시만 open)
+      - agent 의 ossec.conf 의 manager IP 는 hard-code (DNS 의존 회피)
+      - 등록 후 agent 가 manager 와 1514 만으로 통신 (encrypted)
+      EOF
+      ```
+
+      ## 📋 확인 사항
+
+      - bastion 의 wazuh-agent 패키지 설치 여부 (현재는 미설치 또는 설치만 + 미등록)
+      - 등록 절차 5 단계
+      - 보안 고려 4 항목
+
+      ## 💡 왜 이걸 하는가?
+
+      운영 환경의 모든 호스트에 agent 등록 → 통합 가시성. bastion 의 SSH login event /
+      sudo audit 가 manager 로 ship → 권한 상승 alert 가능.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 등록 절차 5 + 보안 고려 4 모두 작성
+      - **운영 권장**:
+        - bastion agent 등록 후 SSH brute force 룰 활성 (5712)
+        - sudo audit decoder 활성 (W10)
+        - Active Response — failed login 5회 후 nftables drop
+    hint: 'bastion agent 등록 절차 + authd 보안'
+    category: planning
+    points: 10
+    answer: |
+      ssh 6v6-bastion 'sudo dpkg -l | grep wazuh 2>&1 | head -3'
+      ssh 6v6-bastion 'sudo ls /var/ossec 2>&1 | head -5'
+      ssh 6v6-siem 'sudo /var/ossec/bin/agent_control -lc | tail -5'
+      cat <<'EOF'
+      등록 절차:
+      1. dpkg -i wazuh-agent_4.10.0
+      2. sed manager IP 10.20.32.100
+      3. agent-auth -m 10.20.32.100 -A bastion
+      4. wazuh-control start
+      5. manager 측 agent_control -lc 검증
+
+      보안 고려:
+      - authd pre-shared key
+      - 1515 port enrollment 후 close
+      - manager IP hard-code
+      - 1514 encrypted only
+      EOF
+    answer_detail: 'bastion agent 등록 절차 5 + 보안 고려 4'
+    verify:
+      type: output_contains
+      expect: bastion
+      field: stdout
+      semantic:
+        intent: "bastion agent 등록 계획 (시뮬)"
+        success_criteria: ["등록 절차 5", "보안 4"]
+        acceptable_methods:
+          - "**[OSS] agent-auth -m manager_ip -A name**"
+          - "**[OSS] authd pre-shared key**"
+          - "**[OSS] ossec.conf manager address hard-code**"
+          - "**[OSS] 1515 enrollment port close**"
+          - "**[OSS] 1514 encrypted 만 사용**"
+          - "**[OSS] /var/ossec/etc/client.keys**"
+          - "**[OSS] SSH brute force rule 5712**"
+          - "**[OSS] Active Response firewall-drop**"
+    target_vm: bastion
+
+  - order: 9
+    instruction: |
+      ## 🎯 MISSION — 트러블슈팅 (agent disconnected + alert flood + 새 decoder)
+
+      lecture §9 의 4 패턴 중 자주 발생하는 3 패턴 시뮬 + 진단.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # 패턴 1 — agent 연결 상태 점검
+      echo "=== 패턴 1: agent 연결 상태 ==="
+      ssh 6v6-siem 'sudo /var/ossec/bin/agent_control -lc'
+      ssh 6v6-siem 'sudo /var/ossec/bin/agent_control -i 005 2>&1 | head -10'  # web agent info
+
+      # 패턴 2 — alert flood 식별 (rule.id top + level 분포)
+      echo
+      echo "=== 패턴 2: alert flood 식별 ==="
+      ssh 6v6-siem 'sudo wc -l /var/ossec/logs/alerts/alerts.json'
+      ssh 6v6-siem 'sudo tail -500 /var/ossec/logs/alerts/alerts.json 2>/dev/null | jq -r ".rule.id" | sort | uniq -c | sort -rn | head -5'
+
+      # 패턴 3 — manager log 점검 (crash / restart 등)
+      echo
+      echo "=== 패턴 3: manager log ==="
+      ssh 6v6-siem 'sudo tail -20 /var/ossec/logs/ossec.log | grep -iE "ERROR|WARN|critical" | tail -5'
+
+      # 패턴 4 — wazuh-logtest 디버그 (Step 4 의 핵심 도구 재확인)
+      echo
+      echo "=== 패턴 4: 새 decoder 디버그 (cheat sheet) ==="
+      cat <<'EOF'
+      증상: 새 source 의 alert 안 보임
+        1. agent 의 logcollector 가 source 읽는지 — /var/ossec/logs/ossec.log
+        2. wazuh-logtest 로 log line 디버그
+        3. local_decoder.xml 작성 (필요 시)
+        4. local_rules.xml 작성 (rule_level 부여)
+        5. wazuh-control restart + alerts.json 재확인
+      EOF
+      ```
+
+      ## 📋 확인 사항
+
+      - 4 agent 모두 Active
+      - alerts.json 의 rule.id top 5
+      - manager ossec.log 의 ERROR/WARN
+      - 새 decoder 디버그 cheat sheet
+
+      ## 💡 왜 이걸 하는가?
+
+      운영 중 가장 자주 발생하는 트러블 4 패턴. 진단 명령 30초 cheat sheet.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 4 agent Active + ERROR 없음
+      - **운영 권장**:
+        - alert flood — local_rules.xml 의 frequency / threshold
+        - agent disconnect — 자동 재시작 cron
+        - manager crash — clusterd 활성 + 자동 failover
+    hint: 'agent_control + rule.id top + ossec.log ERROR + wazuh-logtest'
+    category: troubleshooting
+    points: 13
+    answer: |
+      ssh 6v6-siem 'sudo /var/ossec/bin/agent_control -lc'
+      ssh 6v6-siem 'sudo /var/ossec/bin/agent_control -i 005 2>&1 | head -10'
+      ssh 6v6-siem 'sudo wc -l /var/ossec/logs/alerts/alerts.json'
+      ssh 6v6-siem 'sudo tail -500 /var/ossec/logs/alerts/alerts.json 2>/dev/null | jq -r ".rule.id" | sort | uniq -c | sort -rn | head -5'
+      ssh 6v6-siem 'sudo tail -20 /var/ossec/logs/ossec.log | grep -iE "ERROR|WARN|critical" | tail -5'
+      cat <<'EOF'
+      새 decoder 디버그:
+      1. agent logcollector — ossec.log
+      2. wazuh-logtest log line
+      3. local_decoder.xml
+      4. local_rules.xml + level
+      5. wazuh-control restart
+      EOF
+    answer_detail: '4 패턴 진단 — agent 연결 / alert flood / manager log / 새 decoder'
+    verify:
+      type: output_contains
+      expect: agent
+      field: stdout
+      semantic:
+        intent: "Wazuh 운영 트러블슈팅 4 패턴"
+        success_criteria: ["agent 연결", "alert flood", "manager log", "decoder 디버그"]
+        acceptable_methods:
+          - "**[OSS] agent_control -lc / -i**"
+          - "**[OSS] alerts.json rule.id top**"
+          - "**[OSS] ossec.log ERROR/WARN**"
+          - "**[OSS] wazuh-logtest**"
+          - "**[OSS] wazuh-control restart**"
+          - "**[OSS] /var/ossec/logs/api.log**"
+          - "**[OSS] /var/ossec/queue/agentd 의 ship buffer**"
+          - "**[OSS] frequency / threshold rule**"
+    target_vm: bastion
+
+  - order: 10
+    instruction: |
+      ## 🎯 MISSION — W09 종합 보고서
+
+      ## 💻 산출물 형식
 
       ```markdown
-      # W09 Wazuh manager + 사용자 룰 보고서
-      ## 1. 11 daemon + 3 agent + cluster green
-      ## 2. 사용자 정의 룰 100100 (Apache 4xx + /admin)
-      ## 3. R/B/P (SSH brute → 5710 → level 5)
-      ## 4. 운영 권장 — sid 100xxx + chown + restart
-      ## 5. W10 (FIM/SCA/AR) 학습 logical flow
+      # 6v6 W09 Wazuh manager 도입 보고서
+
+      ## 1. STEP 1-9 결과 표
+      | Step | 영역 | 결과 |
+      | 1 | 11 daemon + 3 agent + bastion 누락 | pass |
+      | 2 | alerts.json 4 sub-section + 분포 | pass |
+      | 3 | decoder + rule 구조 + Suricata 0200/0235 | pass |
+      | 4 | wazuh-logtest 디버그 | pass |
+      | 5 | agent.conf + localfile | pass |
+      | 6 | Suricata ingest 흐름 (sid 9009001) | pass |
+      | 7 | R/B/P XSS 5 burst → multi-source ingest | pass |
+      | 8 | bastion agent 등록 계획 | pass |
+      | 9 | 트러블슈팅 4 패턴 | pass |
+
+      ## 2. R/B/P 측정 (STEP 7)
+      - Red 5 XSS → delta N (Suricata + ModSec multi-source)
+      - rule.id top 3
+      - level 분포
+
+      ## 3. 운영 권장 5
+      1. clusterd + integratord 활성 (HA + SOAR)
+      2. bastion agent 등록 (보안 보강)
+      3. Suricata XSS alert level 격상 (3 → 7)
+      4. Active Response — level 7+ attacker IP drop
+      5. dashboard panel 통합 (W10)
+
+      ## 4. W10 (dashboard + 통합) 준비도
+      - dashboard 5601 HTTPS 접근
+      - OpenSearch 색인 + filter
+      - osquery + ModSec audit 통합 ingest (현재 미설정)
+      - 본인 gap: dashboard 의 visualization 표현
+
+      ## 5. 본인 학습 gap
+      ...
       ```
-    hint: 마크다운
+
+      ## 📋 확인 사항
+
+      - 5 섹션 + 9 step 표 + R/B/P + 운영 권장 5 + W10 준비도
+
+      ## 💡 왜 이걸 하는가?
+
+      SIEM 도입 + 운영 audit 표준. 매 분기 검토 + git PR.
+
+      ## 🔍 결과 해석
+
+      - **A**: 5 섹션 + 9 step + R/B/P + 권장 5 + gap
+    hint: 마크다운 1페이지
     category: synthesis
-    points: 10
-    answer: 위 형식
+    points: 15
+    answer: |
+      cat <<'EOF'
+      # 6v6 W09 Wazuh manager 보고서
+
+      ## 1. STEP 1-9 결과 (9 row 표)
+      ## 2. R/B/P (STEP 7) — XSS 5 → delta multi-source
+      ## 3. 운영 권장 5 — clusterd / bastion agent / level / AR / dashboard
+      ## 4. W10 준비도
+      ## 5. 본인 gap
+      EOF
     answer_detail: 종합 보고서
     verify:
       type: output_contains
@@ -260,6 +893,14 @@ steps:
       field: stdout
       semantic:
         intent: "W09 종합"
-        success_criteria: ["5 섹션"]
-        acceptable_methods: ["**[관리적]** 마크다운 보고서"]
-    target_vm: siem
+        success_criteria: ["9 step", "R/B/P", "운영 권장 5", "W10 준비도"]
+        acceptable_methods:
+          - "**[관리적] 마크다운 5 섹션**"
+          - "**[관리적] ISMS-P 2.9.2 / 2.10.3 / 2.6.4 매핑**"
+          - "**[관리적] NIST CSF DE.AE (Anomalies and Events)**"
+          - "**[관리적] MITRE ATT&CK 매핑**"
+          - "**[관리적] alert fatigue + SOC tier**"
+          - "**[관리적] 운영 권장 5+ (clusterd/integratord/bastion agent/level/AR/dashboard)**"
+          - "**[관리적] W10 (dashboard) logical flow**"
+          - "**[관리적] 본인 학습 gap**"
+    target_vm: bastion
