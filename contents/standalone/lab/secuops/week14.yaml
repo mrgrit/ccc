@@ -1,0 +1,91 @@
+lab_id: standalone-secuops-week14
+title: OpenCTI (3) — Threat Hunting (Sightings + Reports)
+version: standalone-non-ai
+course: secuops
+week: 14
+description: |
+  헌팅 워크플로 (Hypothesis → Investigation → Outcome → Sharing) 실습.
+  본 환경의 3 source (Wazuh / Suricata / osquery) 통합 timeline + Report 작성.
+difficulty: hard
+duration_minutes: 150
+prerequisites: [W13]
+objectives:
+  - 가설 수립 + 3 source 조사
+  - timeline 통합
+  - Report 작성
+pass_threshold: 0.7
+steps:
+  - order: 1
+    instruction: 가설 — "최근 SSH brute force 시도가 있었는가" + 3 source 조사
+    hint: ssh 6v6-siem 'sudo grep "5712\|sshd" /var/ossec/logs/alerts/alerts.json | tail'
+    category: investigation
+    points: 25
+    answer: |
+      ssh 6v6-siem 'sudo grep -E "(5710|5712|sshd.*Failed)" /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -5 | head'
+      ssh 6v6-ips 'sudo tail -500 /var/log/suricata/eve.json | jq -r "select(.event_type==\"alert\" and (.dest_port == 22)) | {ts: .timestamp, src: .src_ip}" 2>/dev/null | head'
+      ssh 6v6-bastion 'sudo osqueryi --json "SELECT user, host, time FROM last LIMIT 5;"'
+    answer_detail: 3 source 조사
+    verify:
+      type: output_contains
+      expect: '['
+      field: stdout
+      semantic:
+        intent: 조사
+        success_criteria: [3 source 출력]
+        acceptable_methods:
+          - "**[OSS] Wazuh alerts.json 의 5710/5712 룰**"
+          - "**[OSS] Suricata eve.json 의 dport 22**"
+          - "**[OSS] osquery 의 last 테이블**"
+          - "**[OSS] timeline 통합 (timestamp 정렬)**"
+          - "**[OSS] src_ip 빈도 분석**"
+          - "**[OSS] OpenCTI 의 indicator 등록**"
+          - "**[OSS] Sighting 추가 절차**"
+          - "**[OSS] confidence 자동 상승**"
+    target_vm: bastion
+
+  - order: 2
+    instruction: 가상 Report 작성 (Markdown) — 가설 + 조사 + 결론 + 권장
+    hint: |
+      # Report: SSH brute force 가설 검증
+      ## 1. Hypothesis
+      ## 2. Investigation
+      ## 3. Outcome
+      ## 4. Recommendations
+    category: synthesis
+    points: 25
+    answer: |
+      cat <<'EOF'
+      # 가상 Threat Hunting Report (W14)
+      ## 1. Hypothesis
+      KISA 2024 Q3 보고서에 따르면 한국 SMB 환경에 SSH brute force 캠페인 증가.
+      본 환경에 동일 IOC (특정 src_ip 빈도) 가 관측되는가?
+      ## 2. Investigation
+      - Wazuh alerts.json: 5712 rule 매치 N건
+      - Suricata eve.json: dport 22 alert N건
+      - osquery last: 비정상 시간 로그인 0건
+      ## 3. Outcome
+      가설 기각 — 본 환경의 SSH brute 시도는 N건 모두 attacker (10.20.30.202)
+      에서 발생 (학습 환경 정상). 외부 IOC 매치 0.
+      ## 4. Recommendations
+      - W13 의 CDB list 자동 갱신 cron 적용 (AbuseIPDB)
+      - rule 100300 의 level 12 alert 모니터링
+      - bastion ProxyJump 의 sshd_config MaxAuthTries=3 적용
+      EOF
+    answer_detail: 1페이지 헌팅 보고서
+    verify:
+      type: output_contains
+      expect: Hypothesis
+      field: stdout
+      semantic:
+        intent: Report
+        success_criteria: [4 단계 모두]
+        acceptable_methods:
+          - "**[관리적 보고서] 4 단계 Markdown**"
+          - "**[관리적] OpenCTI UI Report 등록**"
+          - "**[관리적] STIX bundle export**"
+          - "**[관리적] KISA / ISMS-P 매핑**"
+          - "**[관리적] confidence 1-100 부여**"
+          - "**[관리적] MITRE ATT&CK 매핑**"
+          - "**[관리적] timeline 시각화**"
+          - "**[관리적] 팀 공유 + 산업 group**"
+    target_vm: bastion
