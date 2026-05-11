@@ -172,7 +172,8 @@ Host 6v6-*
 - `secuops/W03` — ✅ DONE (2026-05-11, 8 step DNAT/SNAT + HAProxy 협업, commit 9f47680)
 - `secuops/W04` — ✅ DONE (2026-05-11, 8 step Suricata IDS + 새 alert 룰 트리거, commit f114967)
 - `secuops/W05` — ✅ DONE (2026-05-11, 8 step pcre/fast_pattern/flowbits/threshold/suppression, commit 8ed0e58)
-- `secuops/W06` — IN-PROGRESS
+- `secuops/W06` — ✅ DONE (2026-05-11, 8 step Apache+ModSec+CRS + XSS/SQLi/LFI 차단, commit 241e1a4)
+- `secuops/W07` — IN-PROGRESS
 - 나머지 — PENDING
 
 각 주차 완료 시 본 표 갱신 + git commit + push.
