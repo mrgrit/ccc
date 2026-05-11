@@ -1,28 +1,27 @@
 lab_id: standalone-secuops-week01
-title: 6v6 4-tier 인프라 보안 솔루션 헬스체크
+title: 6v6 4-tier 인프라 헬스체크 + Red/Blue/Purple 통합 시나리오
 version: standalone-non-ai
 course: secuops
 week: 1
 description: |
-  6v6 4-tier 토폴로지 (ext → pipe → dmz → int) 에 배치된 5종 보안 솔루션
-  (방화벽 nftables, 라우터 HAProxy, IPS Suricata, WAF ModSecurity, SIEM Wazuh)
-  + 운영 컨테이너 (bastion / portal) 가 정상 동작하는지 명령어로 단계별 확인한다.
-  학생은 bastion (10.20.30.201, ssh port 2204) 점프 호스트로 모든 내부 컨테이너에
-  접속한다.
+  6v6 4-tier 토폴로지 (ext → pipe → dmz → int) 위의 5종 보안 솔루션 (방화벽
+  nftables / IPS Suricata / WAF ModSecurity / SIEM Wazuh / 운영 portal) 을 단계별
+  헬스체크. 마지막 4 step 은 Red/Blue/Purple 통합 — attacker 한 공격이 fw → ips →
+  web → siem 4 도구에 어떻게 흔적을 남기는지 실시간 추적.
 difficulty: easy
-duration_minutes: 150
+duration_minutes: 180
 audience: 보안 솔루션 운영 입문자 (1주차)
 prerequisites:
   - 학생 PC `~/.ssh/config` 에 6v6-bastion + 6v6-* ProxyJump 설정 완료
-  - VM_IP 가 학생 PC `/etc/hosts` 에 11 vhost (`*.6v6.lab`) 매핑
-  - 비밀번호 `ccc` 로 SSH 접속 가능
+  - 학생 PC `/etc/hosts` 에 VM_IP 의 11 vhost (`*.6v6.lab`) 매핑
+  - 비밀번호 `ccc` 로 모든 컨테이너 SSH 가능 (sudo NOPASSWD)
 
 objectives:
-  - 6v6 4-tier 토폴로지의 16개 컨테이너 가시화·배치 파악
-  - 5종 보안 솔루션 (방화벽/HAProxy/IPS/WAF/SIEM) 가동 상태 확인
-  - 학생 트래픽 (WAF 경유) vs 운영 트래픽 (WAF 우회) 의 4-hop / 3-hop 흐름 검증
-  - Wazuh manager 16 daemon + 등록된 agent 3대 (fw/ips/web) 확인
-  - Suricata + ModSecurity + Apache access log 위치 + 형식 파악
+  - 4-tier 토폴로지의 16 컨테이너 가시화 + 4 bridge 분리 검증
+  - 5종 보안 솔루션 (방화벽/IPS/WAF/SIEM/호스트 가시화) 가동 상태 확인
+  - bastion ProxyJump 모델로 단일 진입점 + 직접 IP 접속 차단 정책 검증
+  - HAProxy 의 6 backend 라우팅 (waf/waf_tls/dashboard/portal/bastion/bastion_api) 의 host header ACL
+  - "Red/Blue/Purple 통합 — 공격 1건의 4 도구 흔적 추적 + gap 식별"
 
 pass_threshold: 0.7
 
@@ -33,1484 +32,1341 @@ steps:
   # ============================================================
   - order: 1
     instruction: |
-      학생 PC 에서 `ssh 6v6-bastion docker ps --format '{{.Names}}\t{{.Status}}'`
-      로 6v6 인프라의 모든 컨테이너 (16개 또는 그 이상) 가 Up 상태인지 확인한다.
-      bastion 은 docker socket 을 read-only 로 마운트하여 `docker ps` 만 가능하다.
-    hint: ssh 6v6-bastion docker ps --format '{{.Names}}\t{{.Status}}'
+      **이 실습을 왜 하는가?**
+      보안 운영자는 인프라 인수 시 첫 30초 안에 자산 인벤토리를 확보해야 한다. 6v6 는
+      16개 컨테이너의 단일 진입점 (bastion) 을 두어 ISMS-P 2.5 (인증·권한관리) 의
+      single point of access 원칙을 모사한다.
+
+      **이걸 하면 무엇을 알 수 있는가?**
+      - 4-tier 토폴로지의 컨테이너 IP·이름·역할 매핑
+      - SSH ProxyJump 의 2-hop 동작
+      - docker socket 의 read-only 마운트 효과 (docker ps OK, docker rm 불가)
+
+      **결과 해석**
+      정상: 16개 컨테이너 모두 `Up` 상태. 비정상: `Restarting` / `Exited` 1개라도
+      있으면 즉시 `docker logs` 로 원인 파악.
+
+      **실전 활용**
+      운영 인수 첫 명령. dashboard 보다 빠르고 정확.
+
+      **작업 절차**:
+      1. 학생 PC 터미널에서 `ssh 6v6-bastion docker ps --format '{{.Names}} {{.Status}}'`
+      2. 출력 라인 수가 16 인지 확인 (`wc -l`)
+      3. 모든 라인의 두 번째 컬럼이 `Up` 으로 시작하는지 확인
+    hint: ssh 6v6-bastion 'docker ps --format "{{.Names}} {{.Status}}"'
     category: survey
-    points: 10
+    points: 8
     answer: |
-      ssh 6v6-bastion docker ps --format '{{.Names}}\t{{.Status}}' | wc -l
-    answer_detail: bastion 점프 호스트 진입 + docker ps 16건 이상 출력 확인
+      ssh 6v6-bastion 'docker ps --format "{{.Names}} {{.Status}}"' | tee /tmp/w01s1.txt
+      echo "--- 컨테이너 수 ---"
+      wc -l < /tmp/w01s1.txt
+      echo "--- 비정상 컨테이너 ---"
+      grep -vE "Up|^$" /tmp/w01s1.txt || echo "(없음 — 모두 Up)"
+    answer_detail: |
+      16 컨테이너 모두 Up 출력 + 비정상 0건. 출력 시점에 컨테이너 수가 15 이하면
+      `docker compose ps -a` 로 Exited 컨테이너 확인 후 `docker compose up -d
+      <name>` 으로 복구.
     verify:
       type: output_contains
       expect: 6v6-
       field: stdout
       semantic:
         intent: |
-          bastion 컨테이너에 SSH 진입 + docker ps 로 16 컨테이너 가시화.
-          16 = bastion + attacker + fw + ips + web + siem + wazuh-indexer + wazuh-dashboard
-          + portal + juiceshop + dvwa + neobank + govportal + mediforum + adminconsole
-          + aicompanion. 모두 `Up` 상태여야 한다.
+          bastion 컨테이너에 SSH 진입 후 docker ps 로 16 컨테이너 가시화. 16 컨테이너
+          모두 Up 상태. ISMS-P 2.5 + NIST CSF Identify (자산 인벤토리) 의 첫 단계.
         success_criteria:
-          - 6v6- prefix 컨테이너 다수 출력
-          - Up 또는 healthy 상태 표시
-          - 16개 또는 그 이상
+          - 6v6- prefix 컨테이너 15+ 출력
+          - Up 키워드
+          - bastion / fw / ips / web / siem 5 핵심 컨테이너 포함
         acceptable_methods:
-          - ssh 6v6-bastion docker ps
+          - ssh 6v6-bastion 'docker ps --format "{{.Names}} {{.Status}}"'
           - |
-            **[OSS] docker ps (Docker CLI 표준)** — 표준.
-              # 1. 16 컨테이너 Up 확인
-              ssh 6v6-bastion docker ps --format '{{.Names}}\t{{.Status}}'
-              # 2. 컨테이너 수 (헤더 제외)
+            **[OSS] docker ps 표준** — 가장 자주.
+              ssh 6v6-bastion 'docker ps --format "{{.Names}} {{.Status}}"'
+              # 컨테이너 수
               ssh 6v6-bastion 'docker ps --format "{{.Names}}" | wc -l'
-              # 3. 비정상 (Restarting / Exited) 만 필터
-              ssh 6v6-bastion 'docker ps -a --format "{{.Names}} {{.Status}}" | grep -vE "Up|^$"'
-            예상 출력 `6v6-bastion Up 2 days / 6v6-attacker Up 2 days / ... / 16`.
-            운영 해석: 4-tier 16 컨테이너 가시화 첫 진입점. Restarting 컨테이너가 있으면
-            해당 컨테이너 로그 즉시 조사.
+            예상 출력 `6v6-bastion Up X seconds / 6v6-attacker Up 2 days / ... / 16`.
+            운영 해석: 16 컨테이너 가시화. 결과가 15 이하면 Exited 점검.
           - |
-            **[OSS] docker compose ps (서비스 단위)** — 호스트 직접.
-              # bastion 이 아닌 VM 호스트에서 (강사용)
+            **[OSS] docker compose ps (호스트 측)** — 강사용.
               cd /home/opsclaw/6v6 && docker compose ps
-              # 서비스별 상태
+              # 서비스명 + 상태 + health
               docker compose ps --format json | jq '.[] | {Service, State, Health}'
-              # 의존성 그래프 (depends_on)
-              docker compose config --services | sort
             예상 출력 `bastion running / fw running / ips running / ...`.
-            운영 해석: compose 단위로 서비스명 + 상태 확인. depends_on 위반 시 (ips 가
-            fw 보다 먼저 시작) 검출.
+            운영 해석: compose 단위로 의존성 검증 (ips 가 fw 보다 먼저 시작 시 fail).
           - |
-            **[OSS] docker stats (자원 사용)** — 모니터링.
-              ssh 6v6-bastion docker stats --no-stream --format \
-                'table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}'
-              # wazuh-indexer 가 1GB+ 사용하는지 (heap 설정 적용 확인)
-              ssh 6v6-bastion 'docker stats --no-stream --format "{{.Name}} {{.MemUsage}}" | grep indexer'
-            예상 출력 `6v6-wazuh-indexer 1.2GiB / 5.8GiB`.
-            운영 해석: wazuh-indexer 가 OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g 로 설정 →
-            heap 사용량 1GB 근처가 정상.
+            **[OSS] docker stats — 자원 사용** — 모니터링.
+              ssh 6v6-bastion 'docker stats --no-stream --format "{{.Name}} {{.CPUPerc}} {{.MemUsage}}"'
+            예상 출력 `6v6-wazuh-indexer 5.0% 1.2GiB / 5.8GiB / ...`.
+            운영 해석: indexer 가 1GB+ 메모리 사용 정상 (heap 1g). 그 외는 100MB 내.
           - |
-            **[OSS] docker inspect (네트워크 검증)** — 네트워크 토폴로지.
-              # 6v6-fw 의 2개 NIC 확인
-              ssh 6v6-bastion 'docker inspect 6v6-fw \
-                  --format "{{range \$k,\$v := .NetworkSettings.Networks}}{{\$k}}={{\$v.IPAddress}} {{end}}"'
-              # ips 의 2개 NIC
-              ssh 6v6-bastion 'docker inspect 6v6-ips \
-                  --format "{{range \$k,\$v := .NetworkSettings.Networks}}{{\$k}}={{\$v.IPAddress}} {{end}}"'
-            예상 출력 `6v6-ext=10.20.30.1 6v6-pipe=10.20.31.1` / `6v6-pipe=10.20.31.2 6v6-dmz=10.20.32.1`.
-            운영 해석: fw + ips 가 라우터로 동작하려면 2개 NIC 가 필요. 한 개만 보이면
-            compose 정의 오류.
-          - |
-            **[OSS] ssh -F (SSH config 검증)** — 학생 PC 진입.
-              # ProxyJump 설정 검증 (dry-run 비슷)
-              ssh -G 6v6-fw | grep -E '^(hostname|user|port|proxyjump)'
-              # 실제 진입
-              ssh 6v6-fw 'hostname; ip -4 addr show | grep inet'
-              # 16 컨테이너 모두 SSH 가능?
-              for h in fw ips web siem; do
-                ssh "6v6-$h" 'hostname' || echo "FAIL: $h"
+            **[OSS] docker inspect — fw/ips dual NIC** — 토폴로지.
+              for c in 6v6-fw 6v6-ips; do
+                echo "=== $c ==="
+                ssh 6v6-bastion "docker inspect $c --format '{{range \$k,\$v := .NetworkSettings.Networks}}{{\$k}}={{\$v.IPAddress}} {{end}}'"
               done
-            예상 출력 `proxyjump 6v6-bastion / hostname=fw / inet 10.20.30.1 + 10.20.31.1`.
-            운영 해석: ProxyJump 가 동작하지 않으면 학생 PC ssh_config 의 6v6-bastion
-            block 누락 또는 wildcard `6v6-*` 의 ProxyJump 라인 누락.
+            예상 출력 `6v6-ext=10.20.30.1 6v6-pipe=10.20.31.1 / 6v6-pipe=10.20.31.2 6v6-dmz=10.20.32.1`.
+            운영 해석: fw + ips 각 2 NIC = 라우터 모드. 1 NIC 만 있으면 forward 불가.
           - |
-            **[OSS] docker network ls (4 bridge 가시화)** — 토폴로지 검증.
-              ssh 6v6-bastion docker network ls | grep 6v6
-              # 각 bridge 의 subnet
+            **[OSS] docker network ls — 4 bridge** — 토폴로지.
+              ssh 6v6-bastion 'docker network ls | grep 6v6'
               for n in 6v6-ext 6v6-pipe 6v6-dmz 6v6-int; do
-                ssh 6v6-bastion "docker network inspect $n --format '{{(index .IPAM.Config 0).Subnet}} {{(index .IPAM.Config 0).Gateway}}'"
+                ssh 6v6-bastion "docker network inspect $n --format '{{(index .IPAM.Config 0).Subnet}}'"
               done
-            예상 출력 `6v6-ext bridge / 10.20.30.0/24 10.20.30.254 / 10.20.31.0/24 ... / 10.20.40.0/24`.
-            운영 해석: 4 bridge subnet 이 CURRICULUM.md 와 일치해야 한다. internal: true
-            가 설정되어 있으면 ips 의 inter-bridge forwarding 차단 → 정상 통신 실패.
+            예상 출력 `6v6-ext / 6v6-pipe / 6v6-dmz / 6v6-int / 10.20.30.0/24 / 10.20.31.0/24 / 10.20.32.0/24 / 10.20.40.0/24`.
+            운영 해석: 4 bridge 의 subnet 이 CURRICULUM 의 4-tier 와 일치.
           - |
-            **[OSS] ssh + sudo nft / 운영자 인증** — 권한 확인.
-              # 비밀번호 없이 sudo 가능?
-              ssh 6v6-fw 'sudo -n nft list tables 2>&1 | head -3'
-              # passwd-less sudo 가 NOPASSWD 로 구성되어 있어야 학생 실습 진행 가능
-              ssh 6v6-fw 'cat /etc/sudoers.d/ccc 2>/dev/null'
-            예상 출력 `table ip filter / table ip nat6v6 / ccc ALL=(ALL) NOPASSWD: ALL`.
-            운영 해석: fw / ips / web 의 ccc 사용자 sudo NOPASSWD 가 학습 환경 전제.
-            production 환경에서는 절대 NOPASSWD 금지.
+            **[OSS] ssh -G + 6v6-bastion 라인** — config 검증.
+              ssh -G 6v6-bastion | grep -E "^(hostname|user|port|proxyjump)"
+            예상 출력 `hostname 192.168.0.110 / user ccc / port 2204`.
+            운영 해석: ssh -G 가 실제 적용된 config. ProxyJump 비어 있으면 학생 PC
+            `~/.ssh/config` 점검.
           - |
-            **[OSS] /etc/hosts + DNS 검증** — 학생 PC 환경.
-              # 학생 PC 의 hosts 매핑 검증
+            **[OSS] /etc/hosts 의 11 vhost 매핑** — 학생 PC 환경.
               getent hosts juice.6v6.lab dvwa.6v6.lab siem.6v6.lab portal.6v6.lab
-              # VM_IP 모두 동일?
-              getent hosts juice.6v6.lab dvwa.6v6.lab | awk '{print $1}' | sort -u
-            예상 출력 `192.168.0.110 juice.6v6.lab / 192.168.0.110 dvwa.6v6.lab / ... / 1 unique IP`.
-            운영 해석: 11 vhost 가 모두 VM_IP 1개로 resolve 되어야 한다. 1개가 아니면
-            hosts 파일 변환 오류 또는 stale DNS cache.
+              # 모두 같은 VM_IP 로 resolve 되어야 함
+            예상 출력 `192.168.0.110 juice.6v6.lab / 192.168.0.110 dvwa.6v6.lab / ...`.
+            운영 해석: hosts 매핑 없으면 브라우저에서 host header 가 다른 도메인으로
+            → default backend (waf) 로 떨어짐.
+          - |
+            **[OSS] sudo NOPASSWD 검증** — 학습 환경 전제.
+              ssh 6v6-fw 'sudo -n nft list tables 2>&1 | head -3'
+              ssh 6v6-fw 'cat /etc/sudoers.d/ccc 2>/dev/null'
+            예상 출력 `table inet six_filter / ccc ALL=(ALL) NOPASSWD: ALL`.
+            운영 해석: 학습 환경만 NOPASSWD. production 절대 금지.
         negative_signs:
           - SSH 접속 실패
-          - 컨테이너 16개 미만 또는 Restarting
-          - bastion 이 아닌 호스트에서 docker ps 시도
+          - 컨테이너 16개 미만
+          - Restarting 상태
+    target_vm: bastion
 
   # ============================================================
-  # STEP 2 — bastion ProxyJump 통과 검증 (fw/ips/web/siem)
+  # STEP 2 — ProxyJump 4 컨테이너 통과
   # ============================================================
   - order: 2
     instruction: |
-      학생 PC `~/.ssh/config` 의 `Host 6v6-*  ProxyJump 6v6-bastion` 설정이 동작하는지
-      4 개 컨테이너 (fw / ips / web / siem) 에 순차 진입 + hostname 확인으로 검증한다.
-      한 번도 직접 IP 로 접속하지 않아야 한다.
-    hint: for h in fw ips web siem; do ssh 6v6-$h hostname; done
+      **이 실습을 왜 하는가?**
+      6v6 의 단일 진입점 정책 검증. 학생 PC 에서 fw/ips/web/siem 직접 IP 접속은 불가
+      (docker bridge 가 학생 PC LAN 에 라우팅 없음). bastion (192.168.0.110:2204) 만이
+      유일한 진입점.
+
+      **이걸 하면 무엇을 알 수 있는가?**
+      - ProxyJump 의 2-hop 동작 (학생 PC → bastion → 목적지)
+      - 4 핵심 컨테이너 (fw/ips/web/siem) 의 hostname
+
+      **결과 해석**
+      4 hostname 모두 출력 → ProxyJump 정상. 한 곳 timeout → 해당 컨테이너 sshd 또는
+      ssh_config 점검.
+
+      **실전 활용**
+      매일 첫 명령. ProxyJump 가 안 되면 16 컨테이너 모두 접근 불가.
+
+      **작업 절차**:
+      ```
+      for h in fw ips web siem; do
+        echo "=== 6v6-$h ==="
+        ssh 6v6-$h hostname
+      done
+      ```
+    hint: |
+      for h in fw ips web siem; do echo "--- $h ---"; ssh 6v6-$h hostname; done
     category: survey
-    points: 10
+    points: 8
     answer: |
-      for h in fw ips web siem; do echo "--- 6v6-$h ---"; ssh 6v6-$h hostname; done
-    answer_detail: 4 컨테이너 모두 bastion 경유 SSH 성공 + 자체 hostname 출력
+      for h in fw ips web siem; do
+        echo "=== 6v6-$h ==="
+        ssh -o ConnectTimeout=5 6v6-$h hostname
+      done
+    answer_detail: |
+      4 호스트 모두 hostname 응답 — 예상: `fw / ips / web / wazuh.manager`. siem 의
+      hostname 은 컨테이너 안에서 `wazuh.manager` (docker-compose 의 hostname 설정).
+      timeout 발생 시 학생 PC `~/.ssh/config` 의 `Host 6v6-*  ProxyJump 6v6-bastion`
+      라인 점검.
     verify:
       type: output_contains
       expect: fw
       field: stdout
       semantic:
         intent: |
-          bastion 점프 호스트를 통한 4 컨테이너 (fw/ips/web/siem) 진입 검증.
-          ssh_config 의 ProxyJump 6v6-bastion 라인이 동작하면 학생 PC 에서 한 번에
-          bastion → 목적지 2-hop 으로 진입한다. 출력에 fw / ips / web / wazuh.manager
-          hostname 모두 표시되어야 한다.
+          bastion ProxyJump 통과 검증. 학생 PC 에서 4 컨테이너 (fw/ips/web/siem) 의
+          hostname 응답 → ssh_config 의 ProxyJump 정상.
         success_criteria:
           - fw hostname 출력
           - ips hostname 출력
           - web hostname 출력
-          - wazuh.manager 또는 siem hostname 출력
+          - wazuh.manager 또는 siem hostname
         acceptable_methods:
           - |
-            **[OSS] for loop + ssh 6v6-* (ProxyJump 검증)** — 표준.
+            **[OSS] for + ssh + hostname** — 표준.
               for h in fw ips web siem; do
-                echo "--- 6v6-$h ---"
                 ssh -o ConnectTimeout=5 6v6-$h hostname
               done
-            예상 출력 `--- 6v6-fw --- / fw / --- 6v6-ips --- / ips / --- 6v6-web --- / web /
-            --- 6v6-siem --- / wazuh.manager`.
-            운영 해석: 4 컨테이너 hostname 모두 출력 → ProxyJump 정상.
+            예상 출력 `fw / ips / web / wazuh.manager`.
+            운영 해석: 4 hostname 모두 응답 → 정상.
           - |
-            **[OSS] ssh -G (config dump)** — config 검증.
-              # 실제 ssh 가 어떻게 해석하는지
+            **[OSS] ssh -G — config 적용 확인** — 진단.
               ssh -G 6v6-fw | grep -iE '^(proxyjump|hostname|user|port)'
-              ssh -G 6v6-bastion | grep -iE '^(hostname|port)'
             예상 출력 `proxyjump 6v6-bastion / hostname 6v6-fw / user ccc / port 22`.
-            운영 해석: ssh -G 은 실제 적용된 config 출력. ProxyJump 가 비어 있으면
-            ssh_config 파일이 적용되지 않은 것.
+            운영 해석: ssh -G 의 출력이 실제 적용 config. ProxyJump 라인 비어 있으면
+            wildcard 매치 실패.
           - |
-            **[OSS] ssh -vv (verbose 디버그)** — 진단.
-              ssh -vv 6v6-fw exit 2>&1 | grep -E 'Connecting|Authenticated|ProxyJump'
-              # ProxyJump 가 작동하면:
-              #   debug1: Connecting to <VM_IP> port 2204 (bastion)
-              #   debug1: Authenticated to <VM_IP> via password
-              #   debug1: setting up forwarding
-              #   debug1: Connecting to 6v6-fw port 22 (via 6v6-bastion)
-            예상 출력 `Connecting to <VM_IP> port 2204 ... via 6v6-bastion`.
-            운영 해석: 1 hop = bastion, 2 hop = fw. ProxyJump 가 안 잡히면 1 hop 만 표시.
+            **[OSS] ssh -vv — 진단 로그** — 깊은 디버그.
+              ssh -vv 6v6-fw exit 2>&1 | grep -E "Connecting|Authenticated|ProxyJump" | head
+            예상 출력 `Connecting to 192.168.0.110 port 2204 / Authenticated to ... via password / Connecting to 6v6-fw port 22 (via 6v6-bastion)`.
+            운영 해석: 2 hop 모두 디버그 로그에 표시. 1 hop 만 보이면 ProxyJump 미적용.
           - |
-            **[OSS] 직접 IP 접속 차단 검증** — 보안.
-              # fw 의 ext NIC IP 로 직접 시도 (학생 PC ↔ VM bridge 가 같은 LAN 이라 가능)
-              ssh -o ConnectTimeout=3 ccc@10.20.30.1 hostname 2>&1 | tail -3
-              # 학생 PC 가 VM 의 docker bridge 에 라우팅 없으면 timeout
-              # → ProxyJump 만이 유일한 통로
-            예상 출력 `ssh: connect to host 10.20.30.1 port 22: No route to host` 또는 timeout.
-            운영 해석: 학생 PC ↔ docker bridge 사이 라우팅 없음 → bastion (VM_IP:2204) 만이
-            진입점이라는 정책 검증.
+            **[OSS] 직접 IP 접속 차단 검증** — 보안 정책.
+              ssh -o ConnectTimeout=3 ccc@10.20.30.1 hostname 2>&1 | tail -2
+            예상 출력 `connect to host 10.20.30.1 port 22: No route to host` 또는 timeout.
+            운영 해석: 학생 PC ↔ docker bridge 라우팅 없음 → 직접 진입 불가. bastion 만
+            유일 진입점이라는 정책 입증.
           - |
-            **[OSS] sshd_config 검증** — 서버 측.
-              # bastion 의 sshd 설정 — AllowTcpForwarding 가 yes 여야 ProxyJump 동작
-              ssh 6v6-bastion 'sudo grep -E "^(AllowTcpForwarding|GatewayPorts|MaxSessions)" /etc/ssh/sshd_config'
-              # 각 내부 컨테이너의 PermitRootLogin 도 no 여야 함
-              ssh 6v6-fw 'sudo grep -E "^PermitRootLogin" /etc/ssh/sshd_config'
-            예상 출력 `AllowTcpForwarding yes / PermitRootLogin no`.
-            운영 해석: bastion 의 sshd 가 TCP forward 차단되면 ProxyJump 자체 불가.
+            **[OSS] bastion sshd_config 의 AllowTcpForwarding** — 서버 측.
+              ssh 6v6-bastion 'sudo grep -E "^AllowTcpForwarding|^GatewayPorts|^MaxSessions" /etc/ssh/sshd_config'
+            예상 출력 `AllowTcpForwarding yes / GatewayPorts no / MaxSessions 10`.
+            운영 해석: AllowTcpForwarding yes 가 ProxyJump 의 필수 조건.
           - |
-            **[OSS] netstat / ss (포트 확인)** — listening port.
-              # bastion 내부에서 2204 listen?
-              ssh 6v6-bastion 'sudo ss -tlnp | grep :22'
-              # fw / ips / web 도 각자 :22 listen?
-              for h in fw ips web siem; do
-                ssh 6v6-$h 'ss -tlnp | grep :22 | head -1' || echo "$h: no sshd"
+            **[OSS] known_hosts 의 fingerprint** — MITM 방지.
+              for h in 6v6-fw 6v6-ips 6v6-web 6v6-siem; do
+                ssh-keygen -F $h && echo "OK: $h"
               done
-            예상 출력 `LISTEN 0 128 *:22 *:* users:(("sshd",..)) / 동일 4건`.
-            운영 해석: 각 컨테이너 sshd 가 22 로 listen → 내부망 SSH 가능.
+            예상 출력 `# Host 6v6-fw found / OK: 6v6-fw / ...`.
+            운영 해석: 4 fingerprint 모두 알려진 호스트 → MITM 없는 정상 진입.
           - |
-            **[OSS] hostname + uname (각 컨테이너 정체성)** — 식별.
+            **[OSS] PermitRootLogin 검증** — 보안.
               for h in fw ips web siem; do
-                echo "=== 6v6-$h ==="
-                ssh 6v6-$h 'hostname; uname -r; id; pwd'
+                echo "--- $h ---"
+                ssh 6v6-$h 'sudo grep -E "^PermitRootLogin" /etc/ssh/sshd_config'
               done
-            예상 출력 `=== 6v6-fw === / fw / 6.8.0-... / uid=1000(ccc) ...`.
-            운영 해석: 각 컨테이너의 정체성 (hostname/kernel/user) 출력. 모든 4건이
-            동일한 host kernel 위에서 동작 (Docker container 는 kernel 공유).
+            예상 출력 `PermitRootLogin no` × 4.
+            운영 해석: root 직접 로그인 금지 = 보안 기본.
           - |
-            **[OSS] ssh known_hosts + 호스트 키 검증** — fingerprint.
-              # 학생 PC 의 known_hosts 에 4 호스트 fingerprint 가 모두 기록되었는지
-              ssh-keygen -F 6v6-fw
-              ssh-keygen -F 6v6-ips
-              ssh-keygen -F 6v6-web
-              ssh-keygen -F 6v6-siem
-            예상 출력 `# Host 6v6-fw found / SHA256 ed25519 ... / ...`.
-            운영 해석: 4 호스트 fingerprint 가 모두 기록 → MITM 없는 정상 진입.
-            없는 호스트는 첫 접속 시 prompt 가 떠야 함 (StrictHostKeyChecking).
+            **[OSS] 각 컨테이너의 uname + id** — 정체성.
+              for h in fw ips web siem; do
+                echo "=== $h ==="
+                ssh 6v6-$h 'hostname; uname -r; id'
+              done
+            예상 출력 `fw / 6.8.0-... / uid=1000(ccc) ...`.
+            운영 해석: kernel 공통 (Docker container), user ccc 공통.
         negative_signs:
-          - hostname 출력 누락
-          - SSH timeout
-          - 직접 IP 로 접속 시도
+          - hostname 출력 누락 (1+ 호스트)
+          - timeout
+          - 직접 IP 접속 시도
+    target_vm: bastion
 
   # ============================================================
-  # STEP 3 — fw nftables ruleset
+  # STEP 3 — fw nftables ruleset + HAProxy 6 backend
   # ============================================================
   - order: 3
     instruction: |
-      `6v6-fw` 컨테이너에서 nftables ruleset 전체를 조회하고, forward chain 의
-      accept rule + nat 테이블 (있다면) 을 확인한다. fw 는 ext (10.20.30.0/24) ↔
-      pipe (10.20.31.0/24) 사이의 라우터로 동작한다.
-    hint: ssh 6v6-fw sudo nft list ruleset
-    category: configuration
-    points: 10
-    answer: |
-      ssh 6v6-fw sudo nft list ruleset
-    answer_detail: fw 의 nftables 전체 ruleset + forward chain 가시화
-    verify:
-      type: output_contains
-      expect: table
-      field: stdout
-      semantic:
-        intent: |
-          fw 컨테이너의 nftables ruleset 전체 가시화. table / chain / rule 키워드 출력.
-          fw 는 ip_forward=1 + nftables filter table 의 forward chain 으로 ext↔pipe
-          포워딩 + nat (있다면 masquerade) 를 처리한다. ruleset 이 비어 있으면 fw 가
-          라우터로 동작하지 못한다.
-        success_criteria:
-          - table 키워드
-          - chain 키워드
-          - forward 또는 input 체인 명시
-        acceptable_methods:
-          - |
-            **[OSS] nft list ruleset (전체 룰)** — 표준.
-              ssh 6v6-fw sudo nft list ruleset
-              # JSON 으로 자동화 친화 출력
-              ssh 6v6-fw 'sudo nft -j list ruleset | jq ".nftables | length"'
-              # filter 테이블만
-              ssh 6v6-fw sudo nft list table inet filter 2>/dev/null || \
-                ssh 6v6-fw sudo nft list table ip filter
-            예상 출력 `table ip filter { chain forward { type filter hook forward priority 0;
-            ct state established,related accept ; ... } } / 17 (룰 갯수)`.
-            운영 해석: forward chain 의 첫 룰은 보통 `ct state established,related accept`
-            (return path 허용). 이후 hop-by-hop drop / accept 정책.
-          - |
-            **[OSS] iptables-translate (legacy 비교)** — 마이그레이션 학습.
-              # 동일한 룰을 iptables 식으로 표현
-              ssh 6v6-fw 'sudo iptables-save 2>/dev/null | head -30'
-              # 또는 iptables-translate 로 변환 비교
-              ssh 6v6-fw 'echo "iptables -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT" | iptables-translate'
-            예상 출력 `nft add rule ip filter FORWARD ct state established,related counter accept`.
-            운영 해석: nftables 는 iptables 의 후속 표준. iptables → nft 마이그레이션
-            path 가 표준화되어 있음.
-          - |
-            **[OSS] sysctl ip_forward 검증** — 커널 측.
-              ssh 6v6-fw 'sysctl net.ipv4.ip_forward'
-              # 정확히 1 이어야 함
-              ssh 6v6-fw 'cat /proc/sys/net/ipv4/ip_forward'
-              # 인터페이스별 forwarding
-              ssh 6v6-fw 'cat /proc/sys/net/ipv4/conf/all/forwarding'
-            예상 출력 `net.ipv4.ip_forward = 1 / 1 / 1`.
-            운영 해석: ip_forward=0 이면 nftables 룰이 있어도 패킷이 ext↔pipe 사이로
-            넘어가지 못한다. compose 의 sysctls 에 net.ipv4.ip_forward=1 적용 확인.
-          - |
-            **[OSS] ip route show + ip addr (라우팅 테이블)** — 토폴로지.
-              ssh 6v6-fw ip -4 route show
-              # ext + pipe 양쪽 NIC 모두 확인
-              ssh 6v6-fw ip -4 -brief addr show
-            예상 출력 `default via 10.20.30.254 / 10.20.30.0/24 dev eth0 / 10.20.31.0/24 dev eth1 /
-            eth0 UP 10.20.30.1/24 / eth1 UP 10.20.31.1/24`.
-            운영 해석: fw 의 양쪽 NIC + 두 subnet 직결 라우트 확인. default 는 docker
-            bridge gateway (외부 NAT 용).
-          - |
-            **[OSS] nft list counters (룰 통계)** — 효과 측정.
-              # counter 가 있는 룰 (drop / accept) 의 byte/packet 수
-              ssh 6v6-fw 'sudo nft list ruleset | grep -B2 "counter packets"'
-              # set 가시화 (예: blocklist)
-              ssh 6v6-fw 'sudo nft list sets 2>/dev/null'
-              # nf_conntrack 통계
-              ssh 6v6-fw 'sudo cat /proc/sys/net/netfilter/nf_conntrack_count'
-            예상 출력 `counter packets 1234 bytes 56789 accept / nf_conntrack_count 234`.
-            운영 해석: counter 가 0 이면 룰이 적용 안 됐거나 트래픽 미발생. 운영 시 룰별
-            byte/packet 매트릭으로 효과를 모니터.
-          - |
-            **[OSS] tcpdump (라이브 트래픽 검증)** — 동적.
-              # fw 의 ext NIC 에서 학생 트래픽 캡처
-              ssh 6v6-fw 'sudo timeout 5 tcpdump -ni eth0 "tcp port 80" -c 10 2>&1 | head -15'
-              # 동시에 pipe NIC 로 forward 되는지
-              ssh 6v6-fw 'sudo timeout 5 tcpdump -ni eth1 "tcp port 80" -c 10 2>&1 | head -15'
-            예상 출력 `IP <학생PC>.xxx > 10.20.30.1.80: Flags [S] / IP 10.20.31.1.yyy > 10.20.31.2.80 Flags [S]`.
-            운영 해석: 동일한 SYN 이 ext 와 pipe 양쪽에 보이면 fw 가 forward 동작 중.
-          - |
-            **[OSS] /etc/nftables.conf (영구 정책)** — IaC.
-              ssh 6v6-fw 'sudo cat /etc/nftables.conf 2>/dev/null | head -30 || echo "no persistent"'
-              # 컨테이너 환경에서는 entrypoint.sh 가 부팅마다 룰 셋업
-              ssh 6v6-fw 'sudo cat /entrypoint.sh 2>/dev/null | grep -E "nft|iptables" | head -10'
-            예상 출력 `nft add table ip filter / nft add chain ip filter forward ... / masquerade`.
-            운영 해석: 컨테이너는 stateless 하므로 룰셋이 entrypoint 마다 재구성된다.
-            운영 환경의 영구 정책은 systemd nftables.service + /etc/nftables.conf.
-          - |
-            **[OSS] sudo conntrack -L (활성 연결 추적)** — 상태.
-              # 학생 트래픽이 forward 중인지 ct 테이블 확인
-              ssh 6v6-fw 'sudo conntrack -L 2>/dev/null | grep -E "tcp.*ESTABLISHED.*dport=80" | head -3' \
-                || ssh 6v6-fw 'sudo cat /proc/net/nf_conntrack | grep -i tcp | head -3'
-            예상 출력 `tcp 6 ESTABLISHED src=<학생PC> dst=10.20.30.1 sport=xxxx dport=80 ...`.
-            운영 해석: ct (connection tracking) 테이블이 살아 있어야 stateful firewall
-            동작. 한 conn 이 ESTABLISHED 면 양방향 트래픽 모두 forward 가능.
-        negative_signs:
-          - nft ruleset 비어 있음
-          - ip_forward=0
-          - eth1 (pipe NIC) 누락
+      **이 실습을 왜 하는가?**
+      fw 는 Defense in Depth 의 L1 — 모든 패킷이 가장 먼저 만나는 게이트. fw 의 정책
+      (nftables) + 라우팅 (HAProxy) 둘 다 정상이어야 chain 통과.
 
-  # ============================================================
-  # STEP 4 — fw HAProxy 4-backend 라우팅 검증
-  # ============================================================
-  - order: 4
-    instruction: |
-      `6v6-fw` 컨테이너의 HAProxy 설정에서 6가지 backend (waf / waf_tls / dashboard /
-      portal / bastion / bastion_api) 정의를 확인하고, 호스트 헤더별 라우팅이 의도대로
-      동작하는지 curl 로 검증한다. waf_tls 는 443 frontend, bastion_api 는 9100
-      frontend (Bastion API) 전용 backend.
-    hint: |
-      ssh 6v6-fw 'sudo cat /etc/haproxy/haproxy.cfg | grep -E "backend|use_backend"'
+      **이걸 하면 무엇을 알 수 있는가?**
+      - nftables 의 3 table (`ip nat` docker daemon + `inet six_filter` 6v6 정책 +
+        `ip six_nat` 6v6 NAT stub)
+      - HAProxy 의 6 backend (waf / waf_tls / dashboard / portal / bastion / bastion_api)
+      - host header 별 routing 매트릭스
+
+      **결과 해석**
+      table 3 + chain forward `policy accept` + 6 backend 모두 정의 + 4 host header 별
+      라우팅 200/302.
+
+      **실전 활용**
+      production 환경에서 fw 의 첫 헬스체크. 5분 이내.
+
+      **작업 절차**:
+      ```
+      ssh 6v6-fw 'sudo nft list tables; sudo nft list chain inet six_filter forward'
+      ssh 6v6-fw 'sudo grep -E "^backend|^frontend|use_backend|default_backend" /etc/haproxy/haproxy.cfg'
+      ```
+    hint: ssh 6v6-fw 'sudo nft list tables; sudo grep "^backend" /etc/haproxy/haproxy.cfg'
     category: configuration
     points: 10
     answer: |
-      ssh 6v6-fw 'sudo cat /etc/haproxy/haproxy.cfg | sed -n "/^frontend/,/^backend/p; /^backend/,/^$/p"'
-    answer_detail: HAProxy 의 frontend ACL + 4 backend 정의 가시화
+      echo "=== nft tables ==="
+      ssh 6v6-fw 'sudo nft list tables 2>&1 | grep -v "^XT"'
+      echo "=== forward chain ==="
+      ssh 6v6-fw 'sudo nft list chain inet six_filter forward'
+      echo "=== HAProxy backends ==="
+      ssh 6v6-fw 'sudo grep -E "^(backend|frontend)" /etc/haproxy/haproxy.cfg'
+      echo "=== 4 host header 라우팅 ==="
+      for h in juice.6v6.lab siem.6v6.lab portal.6v6.lab bastion.6v6.lab; do
+        code=$(ssh 6v6-attacker "curl -sk -o /dev/null -w '%{http_code}' -H 'Host: $h' http://10.20.30.1/")
+        echo "$h: $code"
+      done
+    answer_detail: |
+      table 3 (`ip nat / inet six_filter / ip six_nat`) + chain forward 의 default
+      policy accept + 1 룰 (established,related accept) + 6 backend (waf / waf_tls /
+      dashboard / portal / bastion / bastion_api). 4 host header 라우팅 결과:
+      juice.6v6.lab=200, siem.6v6.lab=302, portal.6v6.lab=200, bastion.6v6.lab=200.
     verify:
       type: output_contains
       expect: backend
       field: stdout
       semantic:
         intent: |
-          HAProxy 의 frontend http_in 이 host header 기반 ACL 로 4 backend 라우팅:
-          (1) is_siem → dashboard backend, (2) is_portal → portal, (3) is_bastion →
-          bastion, (4) default → waf. 운영 트래픽 (siem/portal/bastion) 은 WAF 우회,
-          학생 트래픽 (취약 웹 8종) 은 WAF 경유.
+          fw 의 nftables ruleset + HAProxy 6 backend + host header 라우팅 정상.
         success_criteria:
-          - backend 키워드 6건 이상 (waf / waf_tls / dashboard / portal / bastion / bastion_api)
-          - use_backend ACL 3건 (siem / portal / bastion)
-          - default_backend waf (HTTP 80) + default_backend waf_tls (HTTPS 443) + default_backend bastion_api (9100)
+          - inet six_filter 출력
+          - backend 키워드 6건 이상
+          - 200 또는 302 응답
         acceptable_methods:
           - |
-            **[OSS] cat haproxy.cfg (config 가시화)** — 표준.
-              ssh 6v6-fw sudo cat /etc/haproxy/haproxy.cfg
-              # frontend 와 backend 만 추출
-              ssh 6v6-fw 'sudo grep -E "^(frontend|backend|use_backend|default_backend|server)" /etc/haproxy/haproxy.cfg'
-            예상 출력 `frontend http_in / use_backend dashboard if is_siem / use_backend portal if is_portal /
-            use_backend bastion if is_bastion / default_backend waf / backend waf / server web 10.20.32.80:80
-            check / backend dashboard / server dashboard 10.20.32.120:5601 check ssl verify none /
-            backend portal / server portal 10.20.32.50:8000 check / backend bastion / server bastion
-            10.20.30.201:9100 check`.
-            운영 해석: 4 backend × 각 server line 확인. server line 의 IP·port 가 compose
-            의 컨테이너 IP 와 일치해야 함.
+            **[OSS] nft list tables — 표준** — 3 table 가시화.
+              ssh 6v6-fw 'sudo nft list tables 2>&1 | grep -v "^XT"'
+            예상 출력 `table ip nat / table inet six_filter / table ip six_nat`.
+            운영 해석: XT match 경고는 docker ipset 호환 모듈 부재 (무시 OK).
           - |
-            **[OSS] haproxy -c -f (config 문법 검증)** — 운영.
-              # 문법 오류 없이 reload 가능한지
+            **[OSS] HAProxy 6 backend** — 정책 핵심.
+              ssh 6v6-fw 'sudo grep -E "^backend|^frontend|use_backend|default_backend" /etc/haproxy/haproxy.cfg'
+            예상 출력 `frontend http_in / use_backend dashboard if is_siem / ... / backend waf / backend dashboard / backend portal / backend bastion / backend bastion_api`.
+            운영 해석: 6 backend = 운영 트래픽 (siem/portal/bastion/bastion_api) +
+            학생 트래픽 (waf/waf_tls) 분리.
+          - |
+            **[OSS] curl + 4 host header — 라우팅 실증** — 동적.
+              for h in juice.6v6.lab siem.6v6.lab portal.6v6.lab bastion.6v6.lab; do
+                ssh 6v6-attacker "curl -sk -o /dev/null -w '$h: %{http_code}\n' -H 'Host: $h' http://10.20.30.1/"
+              done
+            예상 출력 `juice.6v6.lab: 200 / siem.6v6.lab: 302 / portal.6v6.lab: 200 / bastion.6v6.lab: 200`.
+            운영 해석: 4 backend 모두 정상. 503 이면 backend down.
+          - |
+            **[OSS] haproxy -c -f — config syntax** — 운영 표준.
               ssh 6v6-fw 'sudo haproxy -c -f /etc/haproxy/haproxy.cfg && echo "OK"'
-              # 실행 중 프로세스 + uptime
-              ssh 6v6-fw 'pgrep -a haproxy | head -3'
-            예상 출력 `Configuration file is valid / OK / haproxy -W -db -f ...`.
-            운영 해석: -c (check only) -f (config file) 로 syntax 검증.
-            production reload 전 필수.
+            예상 출력 `Configuration file is valid / OK`.
+            운영 해석: production reload 전 필수.
           - |
-            **[OSS] curl -H Host (호스트 헤더 라우팅 검증)** — 동작 테스트.
-              # 학생 트래픽: juice.6v6.lab → waf backend → 200 OK 또는 redirect
-              ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" http://10.20.30.1/'
-              # 운영 트래픽: siem.6v6.lab → dashboard backend → 302 또는 200
-              ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -H "Host: siem.6v6.lab" http://10.20.30.1/'
-              # portal
-              ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -H "Host: portal.6v6.lab" http://10.20.30.1/'
-              # bastion API
-              ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -H "Host: bastion.6v6.lab" http://10.20.30.1/health'
-            예상 출력 `200 / 200 또는 302 / 200 / 200`.
-            운영 해석: 4 backend 모두 HTTP 코드 정상 → HAProxy 라우팅 + 백엔드 서버 모두
-            동작. 503 이면 backend health 실패.
+            **[OSS] sysctl ip_forward — 라우터 전제** — 커널.
+              ssh 6v6-fw 'sysctl net.ipv4.ip_forward'
+            예상 출력 `net.ipv4.ip_forward = 1`.
+            운영 해석: 0 이면 nftables 룰이 있어도 forward 못함.
           - |
-            **[OSS] haproxy stats socket** — 런타임 통계.
-              # haproxy stats socket 활성?
-              ssh 6v6-fw 'echo "show stat" | sudo socat - UNIX-CONNECT:/var/run/haproxy.sock 2>/dev/null | head' \
-                || ssh 6v6-fw 'sudo grep -E "stats|socket" /etc/haproxy/haproxy.cfg'
-              # 활성 connection 수
-              ssh 6v6-fw 'echo "show info" | sudo socat - UNIX-CONNECT:/var/run/haproxy.sock 2>/dev/null | grep -iE "current|uptime"'
-            예상 출력 `pxname,svname,qcur,qmax,scur,smax,... / Uptime: 2d / CurrConns: 5`.
-            운영 해석: stats socket 으로 backend별 connection / queue / health 가시화.
-            없으면 cfg 에 `stats socket /var/run/haproxy.sock mode 666 level admin` 추가.
+            **[OSS] ip route show — 라우팅 테이블** — 토폴로지.
+              ssh 6v6-fw 'ip -4 route show'
+            예상 출력 `default via 10.20.30.254 / 10.20.30.0/24 dev eth0 / 10.20.31.0/24 dev eth1 / 10.20.32.0/24 via 10.20.31.2 dev eth1 / 10.20.40.0/24 via 10.20.31.2 dev eth1`.
+            운영 해석: dmz/int 가 ips (10.20.31.2) 경유. ips 가 다음 hop.
           - |
-            **[OSS] HAProxy log (실시간)** — 트래픽 분석.
-              # haproxy 가 rsyslog 로 보내는 로그
-              ssh 6v6-fw 'sudo tail -20 /var/log/haproxy.log 2>/dev/null || sudo journalctl -u haproxy -n 20 --no-pager'
-              # 또는 컨테이너 로그
-              ssh 6v6-bastion docker logs --tail 30 6v6-fw 2>&1 | grep -i haproxy | head
-            예상 출력 `<time> haproxy[12]: <학생PC>:xxxx [<date>] http_in waf/web 0/0/0/12/12 200 1234 - - ---- 1/1/0/0/0 0/0 "GET / HTTP/1.1"`.
-            운영 해석: log line 의 `http_in waf/web` 가 frontend/backend/server 매핑.
-            응답 코드 + bytes + 소요 시간 (Tq/Tw/Tc/Tr/Tt) 확인.
+            **[OSS] tcpdump — 라이브 트래픽** — 검증.
+              ssh 6v6-fw 'sudo timeout 5 tcpdump -ni eth0 "tcp port 80" -c 10 2>&1 | head -15'
+              ssh 6v6-fw 'sudo timeout 5 tcpdump -ni eth1 "tcp port 80" -c 10 2>&1 | head -15'
+            예상 출력 `ext NIC + pipe NIC 양쪽에 SYN 패킷`.
+            운영 해석: 양쪽 NIC 모두 트래픽 → fw 가 forward 동작.
           - |
-            **[OSS] tcpdump (backend 트래픽 캡처)** — 동적.
-              # waf backend (web) 로 가는 트래픽
-              ssh 6v6-fw 'sudo timeout 5 tcpdump -ni eth1 "host 10.20.31.2 and tcp port 80" -c 5 2>&1 | head -10'
-              # dashboard backend (wazuh-dashboard) 로 가는 트래픽 — TLS 5601
-              ssh 6v6-fw 'sudo timeout 5 tcpdump -ni eth1 "host 10.20.31.2 and tcp port 5601" -c 5 2>&1 | head -10'
-            예상 출력 `IP 10.20.31.1.xxx > 10.20.31.2.80 Flags [S] / ... port 5601 ...`.
-            운영 해석: HAProxy 가 학생 트래픽은 80 으로, 운영 트래픽 (siem) 은 5601 (TLS)
-            로 보낸다. 두 포트 모두 pipe NIC 로 forward 됨.
-          - |
-            **[OSS] ss -tnp (활성 outbound 연결)** — 런타임.
-              # HAProxy 프로세스의 backend 연결
-              ssh 6v6-fw 'sudo ss -tnp 2>/dev/null | grep haproxy | head -10'
-              # backend별 연결 수
-              ssh 6v6-fw 'sudo ss -tn 2>/dev/null | grep -E "10.20.31.2|10.20.32" | awk "{print \$4,\$5}" | sort | uniq -c | head'
-            예상 출력 `ESTAB ... 10.20.31.1:xxxxx 10.20.31.2:80 users:(("haproxy",..)) / ... :5601`.
-            운영 해석: haproxy 의 outbound 가 backend IP/port 와 일치 → 라우팅 검증.
-          - |
-            **[OSS] /6v6.sh smoke (통합 검증)** — 운영자.
-              # 호스트에서 (강사용) 전체 smoke 테스트
-              # 11 vhost 모두 HTTP 200/302 응답
-              cd /home/opsclaw/6v6 && bash 6v6.sh smoke 2>&1 | tail -30 || echo "no host access"
-            예상 출력 `vhost juice.6v6.lab: 200 / dvwa.6v6.lab: 302 / siem.6v6.lab: 200 / ... / OK`.
-            운영 해석: 6v6.sh smoke 가 11 vhost 모두 200/302 면 HAProxy + ips + web 체인 전체
+            **[OSS] /6v6.sh smoke — 호스트 통합** — 강사용.
+              cd /home/opsclaw/6v6 && bash 6v6.sh smoke 2>&1 | tail -30 || echo "host script"
+            예상 출력 `vhost 11종 200/302 / agent 3 Active / cluster green`.
+            운영 해석: 통합 smoke 가 11 vhost 200/302 면 fw + ips + web chain 전체
             정상.
         negative_signs:
-          - backend 4건 미만
-          - default_backend waf 누락
-          - curl 시 503 (backend down)
+          - inet six_filter table 없음 (nftables.conf 적용 실패)
+          - backend 6 미만
+          - curl 503 (backend down)
+    target_vm: fw
 
   # ============================================================
-  # STEP 5 — ips Suricata 가동 상태
+  # STEP 4 — ips Suricata 2 NIC sniff + eve.json
   # ============================================================
-  - order: 5
+  - order: 4
     instruction: |
-      `6v6-ips` 컨테이너에서 Suricata 데몬이 pipe + dmz 두 NIC 에서 동시에 sniff
-      중인지 확인하고, eve.json 에 최근 event 가 기록되고 있는지 본다.
-    hint: ssh 6v6-ips 'pgrep -a Suricata; sudo tail -3 /var/log/suricata/eve.json'
+      **이 실습을 왜 하는가?**
+      ips 는 L2 — 학생 트래픽이 web 도달 직전 검사. Suricata 가 멈추면 alert 가
+      사라진다.
+
+      **이걸 하면 무엇을 알 수 있는가?**
+      - Suricata 가 `-i eth0 -i eth1` 두 NIC 동시 sniff
+      - eve.json 의 7+ event_type (flow/http/dns/tls/alert/stats/fileinfo)
+      - capture.kernel_drops < 1% (NIC ring buffer 정상)
+
+      **결과 해석**
+      정상: pgrep 1건 + uptime 정수 + eve.json 최근 timestamp + drops 0.
+      비정상: process 없음 / drops > 1% / event_type 1개 (decoder fail).
+
+      **실전 활용**
+      SOC 분석가가 alert 가 안 보일 때 첫 확인. "Suricata 죽었나?" 30초 안에 답.
+
+      **작업 절차**:
+      ```
+      ssh 6v6-ips 'pgrep -a Suricata; sudo suricatasc -c version; sudo suricatasc -c uptime'
+      ssh 6v6-ips 'sudo tail -500 /var/log/suricata/eve.json | jq -r .event_type | sort | uniq -c | sort -rn'
+      ssh 6v6-ips 'sudo suricatasc -c dump-counters 2>&1 | jq ".message | {pkts: .[\"capture.kernel_packets\"], drops: .[\"capture.kernel_drops\"]}"'
+      ```
+    hint: ssh 6v6-ips 'pgrep -a Suricata; sudo suricatasc -c uptime'
     category: monitoring
     points: 10
     answer: |
-      ssh 6v6-ips 'pgrep -a Suricata; sudo ls -la /var/log/suricata/; sudo tail -5 /var/log/suricata/eve.json'
-    answer_detail: Suricata 프로세스 가동 + eve.json 최근 event 출력
+      echo "=== Suricata 프로세스 (2 NIC) ==="
+      ssh 6v6-ips 'pgrep -a Suricata'
+      echo "=== version + uptime ==="
+      ssh 6v6-ips 'sudo suricatasc -c version; sudo suricatasc -c uptime'
+      echo "=== event_type 분포 (최근 500) ==="
+      ssh 6v6-ips 'sudo tail -500 /var/log/suricata/eve.json | jq -r .event_type 2>/dev/null | sort | uniq -c | sort -rn | head'
+      echo "=== drop 비율 ==="
+      ssh 6v6-ips 'sudo suricatasc -c dump-counters 2>&1 | jq ".message | {pkts: .[\"capture.kernel_packets\"], drops: .[\"capture.kernel_drops\"], alerts: .[\"detect.alert\"]}"'
+    answer_detail: |
+      `-i eth1 -i eth0 --runmode autofp` 두 NIC sniff. event_type 분포에서 `flow` 가
+      가장 많고 `http`/`tls`/`dns`/`alert` 가 섞여 있어야 정상. drops/pkts ratio < 1%
+      가 운영 기준. 본 lab 환경의 drops 는 일반적으로 0.
     verify:
       type: output_contains
-      expect: suricata
+      expect: Suricata
       field: stdout
       semantic:
         intent: |
-          ips 의 Suricata 가 `-i eth0(pipe) -i eth1(dmz)` 으로 두 NIC 동시 sniff 중.
-          eve.json 에 event_type=flow/http/dns/alert 가 최근 1분 안에 기록되어야 한다.
-          eve.json 이 비어 있으면 Suricata 가 capture 못하거나 룰셋이 비어 있는 것.
+          Suricata 가 두 NIC 동시 sniff + eve.json 다양한 event_type + drops 0.
         success_criteria:
-          - Suricata 프로세스 가동
-          - eve.json 파일 존재 + 최근 timestamp
-          - event_type 키 다수
+          - Suricata 프로세스 + -i eth0 -i eth1
+          - uptime 정수
+          - event_type 3+ 종류
         acceptable_methods:
           - |
-            **[OSS] pgrep + ps (프로세스 확인)** — 표준.
+            **[OSS] pgrep -a + ps** — 프로세스.
               ssh 6v6-ips 'pgrep -a Suricata'
-              # -i 옵션 확인 (두 NIC 동시)
-              ssh 6v6-ips 'ps -ef | grep -i Suricata | grep -v grep'
-              # 메모리 + CPU
-              ssh 6v6-ips 'ps -o pid,vsz,rss,pcpu,cmd -p $(pgrep Suricata) 2>/dev/null'
-            예상 출력 `12345 /usr/bin/suricata -D -i eth0 -i eth1 -c /etc/suricata/suricata.yaml /
-            12345 1500000 800000 5.2 ...`.
-            운영 해석: `-i eth0 -i eth1` 두 NIC 동시 sniff. memory 800MB+ 정상
-            (룰셋 로드).
+              ssh 6v6-ips 'ps -o pid,vsz,rss,pcpu,cmd -p $(pgrep Suricata)'
+            예상 출력 `29 suricata -i eth1 -i eth0 -c /etc/suricata/suricata.yaml --runmode autofp -l /var/log/suricata`.
+            운영 해석: 메모리 800MB+ 정상 (룰셋 로드). 100MB 이하면 룰셋 load 실패.
           - |
-            **[OSS] suricatasc + dump-counters** — 내부 메트릭.
-              # 패킷 수신 + drop + alert 카운터
-              ssh 6v6-ips 'sudo suricatasc -c dump-counters 2>/dev/null | jq ".message | with_entries(select(.value > 0)) | to_entries | .[:15]"' \
-                || ssh 6v6-ips 'sudo suricatasc -c uptime'
-              # iface별 packet/drop
-              ssh 6v6-ips 'sudo suricatasc -c iface-stat-dump 2>/dev/null'
-            예상 출력 `[ {"key":"capture.kernel_packets","value":12345}, {"key":"detect.alert","value":34} ] / uptime ...`.
-            운영 해석: capture.kernel_packets > 0 면 NIC 캡처 동작. detect.alert > 0 면
-            룰 매치 발생. drop > 0 이면 NIC ring buffer 부족.
+            **[OSS] suricatasc -c version / uptime / dump-counters** — 내부 메트릭.
+              ssh 6v6-ips 'sudo suricatasc -c version'
+              ssh 6v6-ips 'sudo suricatasc -c uptime'
+              ssh 6v6-ips 'sudo suricatasc -c dump-counters 2>&1 | jq ".message | with_entries(select(.value > 0)) | to_entries | sort_by(-.value) | .[:10]"'
+            예상 출력 `{version: 6.0.4} / {uptime: 191968} / [{key: capture.kernel_packets, value: 1234567}, ...]`.
+            운영 해석: 내부 socket 통신. dump-counters 가 100+ 카운터 + 가장 큰 값
+            10개 정렬.
           - |
-            **[OSS] jq + eve.json (event 타입 통계)** — 분석.
-              # 최근 100건의 event_type 분포
-              ssh 6v6-ips 'sudo tail -100 /var/log/suricata/eve.json | jq -r .event_type | sort | uniq -c | sort -rn'
-              # alert 만 추출
-              ssh 6v6-ips 'sudo grep -m3 ''"event_type":"alert"'' /var/log/suricata/eve.json | jq ".alert.signature"'
-              # http event 도 일부
-              ssh 6v6-ips 'sudo grep -m3 ''"event_type":"http"'' /var/log/suricata/eve.json | jq ".http.url"'
-            예상 출력 `45 flow / 30 http / 20 dns / 5 alert / "ET SCAN ..."`.
-            운영 해석: flow + http + dns 가 다수 + alert 가 일부 → 정상 동작. flow 만
-            있고 http 가 없으면 HTTP 프로토콜 식별 실패 (decoder 문제).
+            **[OSS] jq + eve.json event_type 분포** — 분석.
+              ssh 6v6-ips 'sudo tail -500 /var/log/suricata/eve.json | jq -r .event_type | sort | uniq -c | sort -rn'
+            예상 출력 `314 flow / 156 tls / 9 stats / 8 alert / 7 fileinfo / 6 http`.
+            운영 해석: flow 가 가장 많음. http+tls+alert 섞여 있어야 protocol decoder
+            동작.
           - |
-            **[OSS] suricata.yaml (config 검증)** — 정적.
-              # 인터페이스 정의
-              ssh 6v6-ips 'sudo grep -A2 -E "interface:" /etc/suricata/suricata.yaml | head -15'
-              # 룰 디렉토리
-              ssh 6v6-ips 'sudo grep -E "default-rule-path|rule-files" /etc/suricata/suricata.yaml | head -5'
-              # 활성 룰 갯수
-              ssh 6v6-ips 'sudo cat /var/lib/suricata/rules/suricata.rules 2>/dev/null | wc -l'
-            예상 출력 `interface: eth0 / interface: eth1 / default-rule-path: /var/lib/suricata/rules /
-            34567 (룰 라인 수)`.
-            운영 해석: af-packet 의 interface 정의 + 룰셋 디렉토리 + 룰 라인 수
-            (활성 + 주석 합). ETOpen 기본 70,000+ 룰 중 활성 30,000 내외 정상.
+            **[OSS] alert 추출 — sid 매핑** — 룰 동작.
+              ssh 6v6-ips 'sudo grep ''"event_type":"alert"'' /var/log/suricata/eve.json | jq "{ts:.timestamp, sig:.alert.signature, sid:.alert.signature_id}" | head -5'
+            예상 출력 `{ts: ..., sig: "ET SCAN ...", sid: 2003020}`.
+            운영 해석: alert 가 ETOpen 룰 ID 매치. 2000xxx = SCAN, 2010xxx = WEB.
           - |
-            **[OSS] suricata-update list-sources** — 룰셋 관리.
-              ssh 6v6-ips 'sudo suricata-update list-sources 2>&1 | head -20'
-              ssh 6v6-ips 'sudo suricata-update list-enabled-sources 2>&1 | head'
-            예상 출력 `Name: et/open / Source: https://rules.emergingthreats.net/... / et/open enabled`.
-            운영 해석: ETOpen (Emerging Threats Open) 가 무료 룰셋 표준. 6v6 는 이를
-            기본 활성.
+            **[OSS] iface 별 sniff 통계** — 두 NIC 균형.
+              ssh 6v6-ips 'sudo tail -500 /var/log/suricata/eve.json | jq -r .in_iface | sort | uniq -c'
+            예상 출력 `300 eth0 / 200 eth1`.
+            운영 해석: 두 NIC 모두 트래픽. 한쪽 0 이면 promisc 또는 link down.
           - |
-            **[OSS] journalctl / docker logs (서비스 로그)** — 진단.
-              # systemd 인 경우
-              ssh 6v6-ips 'sudo journalctl -u suricata -n 20 --no-pager 2>/dev/null' \
-                || ssh 6v6-bastion docker logs --tail 30 6v6-ips 2>&1 | grep -i suricata | tail
-            예상 출력 `<date> ips suricata: Suricata started / af-packet eth0 OK / engine running ...`.
-            운영 해석: 시작 시 NIC 별 status + 룰 로드 갯수 출력. error 가 있으면 즉시
-            검출.
+            **[OSS] suricata.yaml 의 af-packet 정의** — config.
+              ssh 6v6-ips 'sudo grep -A3 "af-packet:" /etc/suricata/suricata.yaml | head -15'
+            예상 출력 `af-packet: / - interface: eth0 / - interface: eth1 / ...`.
+            운영 해석: 2 interface 정의. cluster-id / cluster-type / threads 옵션도.
           - |
-            **[OSS] tcpdump (실제 캡처 확인)** — 비교 검증.
-              # pipe NIC 트래픽 (Suricata 가 보는 것과 동일)
-              ssh 6v6-ips 'sudo timeout 5 tcpdump -ni eth0 -c 10 2>&1 | tail -15'
-              # dmz NIC 도 동시 캡처
-              ssh 6v6-ips 'sudo timeout 5 tcpdump -ni eth1 -c 10 2>&1 | tail -15'
-            예상 출력 `tcpdump: listening on eth0 / 10 packets captured / ... 10 packets captured`.
-            운영 해석: Suricata 가 캡처할 수 있는 모든 트래픽을 tcpdump 도 캡처 가능
-            (kernel ring buffer 공유). tcpdump 가 0 패킷이면 promisc 모드 문제.
+            **[OSS] 룰셋 카운트** — 활성.
+              ssh 6v6-ips 'sudo wc -l /var/lib/suricata/rules/suricata.rules 2>/dev/null || sudo wc -l /etc/suricata/rules/*.rules 2>&1 | tail -1'
+            예상 출력 `30000+ /var/lib/suricata/rules/suricata.rules`.
+            운영 해석: ETOpen 통합 30,000+ 라인 = 활성 룰 25,000+ (주석 제외).
           - |
-            **[OSS] /var/log/suricata 디렉토리 점검** — 로그 위치.
-              ssh 6v6-ips 'sudo ls -la /var/log/suricata/'
-              # 로그 회전 정책
-              ssh 6v6-ips 'sudo cat /etc/logrotate.d/suricata 2>/dev/null | head -10'
-              # 디스크 사용량
-              ssh 6v6-ips 'sudo du -sh /var/log/suricata/'
-            예상 출력 `eve.json (1.2MB) / suricata.log / stats.log / logrotate daily compress / 23M`.
-            운영 해석: eve.json 이 메인 분석 대상 (Wazuh agent 가 ship). 디스크 폭주
-            방지 logrotate 설정 + Wazuh ingest 후 archive 가능.
+            **[OSS] /var/log/suricata/stats.log — 10초 주기** — 시계열.
+              ssh 6v6-ips 'sudo tail -20 /var/log/suricata/stats.log'
+            예상 출력 `<time> | counter name | total value` 형식.
+            운영 해석: 10초 단위 메트릭 dump. trend 분석.
         negative_signs:
           - Suricata 프로세스 없음
-          - eve.json 비어 있음 또는 timestamp 과거
-          - NIC 1개만 sniff
+          - 1 NIC 만 sniff
+          - drops > 1%
+    target_vm: ips
 
   # ============================================================
-  # STEP 6 — web Apache + ModSecurity 모듈 로드
+  # STEP 5 — web Apache + ModSecurity + 11 vhost
   # ============================================================
-  - order: 6
+  - order: 5
     instruction: |
-      `6v6-web` 컨테이너에서 Apache 모듈 (mod_security2 + mod_proxy + mod_ssl) 로드
-      여부, ModSecurity 의 SecRuleEngine 상태, modsec_audit.log JSON 출력을 확인한다.
-    hint: |
-      ssh 6v6-web 'sudo apache2ctl -M 2>&1 | grep -iE "security|proxy|ssl"'
+      **이 실습을 왜 하는가?**
+      web 은 L3 — HTTP 페이로드 마지막 검사. ModSec 가 동작하지 않으면 OWASP Top 10
+      이 모두 통과.
+
+      **이걸 하면 무엇을 알 수 있는가?**
+      - mod_security2 + mod_proxy + mod_ssl 모듈 로드
+      - SecRuleEngine On + audit log JSON 형식
+      - 11 vhost reverse proxy 활성
+      - 가벼운 XSS 페이로드 → 403 차단
+
+      **결과 해석**
+      `security2_module (shared)` + `SecRuleEngine On` + XSS payload 응답 403.
+      `Off` 면 무방어, `DetectionOnly` 면 차단 없이 로그만.
+
+      **실전 활용**
+      WAF 운영 1순위 점검.
+
+      **작업 절차**:
+      ```
+      ssh 6v6-web 'sudo apache2ctl -M | grep -iE "security|proxy|ssl"'
+      ssh 6v6-web 'sudo grep -E "^SecRuleEngine|^SecAuditLog" /etc/modsecurity/modsecurity.conf'
+      ssh 6v6-attacker 'curl -sk -o /dev/null -w "%{http_code}" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=<script>"'
+      ```
+    hint: ssh 6v6-web 'sudo apache2ctl -M | grep -i security'
     category: configuration
-    points: 10
+    points: 12
     answer: |
-      ssh 6v6-web 'sudo apache2ctl -M 2>&1 | grep -iE "security|proxy|ssl"; sudo grep -E "^SecRuleEngine|^SecAuditLog" /etc/modsecurity/modsecurity.conf'
-    answer_detail: Apache 모듈 + ModSec engine + audit log 형식 확인
+      echo "=== Apache 모듈 ==="
+      ssh 6v6-web 'sudo apache2ctl -M 2>&1 | grep -iE "security|proxy|ssl"'
+      echo "=== ModSec engine + audit ==="
+      ssh 6v6-web 'sudo grep -E "^SecRuleEngine|^SecAuditLog|^SecAuditEngine|^SecAuditLogFormat" /etc/modsecurity/modsecurity.conf'
+      echo "=== 11 vhost ==="
+      ssh 6v6-web 'sudo ls /etc/apache2/sites-enabled/'
+      echo "=== XSS 페이로드 → 403 ==="
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=<script>alert(1)</script>"'
+      sleep 2
+      ssh 6v6-web 'sudo tail -3 /var/log/apache2/modsec_audit.log | head -1 | jq -r ".transaction.messages[]? | select(.id | startswith(\"941\")) | .id" | head -3'
+    answer_detail: |
+      mod_security2 + proxy + ssl 모듈 로드 + SecRuleEngine On + JSON 형식 audit
+      log. 11 vhost (랜딩 + 8 vuln + portal/siem/bastion 3 운영). XSS payload 시
+      403 응답 + 941100 + 941160 (XSS via libinjection) 룰 매치.
     verify:
       type: output_contains
       expect: security2_module
       field: stdout
       semantic:
         intent: |
-          web 컨테이너의 Apache 가 mod_security2 + mod_proxy + mod_ssl 을 로드하고,
-          ModSecurity SecRuleEngine 이 On 상태. modsec_audit.log 가 JSON 형식으로
-          /var/log/apache2/ 에 기록되어 Wazuh agent 가 ship 할 수 있어야 한다.
+          web 의 Apache + ModSec + CRS + 11 vhost 정상 동작 + 가벼운 공격 차단 검증.
         success_criteria:
-          - security2_module 로드
+          - security2_module
           - SecRuleEngine On
-          - SecAuditLogFormat JSON
+          - 11 vhost
+          - 403 응답 (XSS)
         acceptable_methods:
           - |
-            **[OSS] apache2ctl -M (모듈 목록)** — 표준.
+            **[OSS] apache2ctl -M — 모듈 목록** — 표준.
               ssh 6v6-web 'sudo apache2ctl -M 2>&1 | grep -iE "security|proxy|ssl|rewrite|headers"'
-              # 활성 vhost
-              ssh 6v6-web 'sudo apache2ctl -S 2>&1 | head -20'
-              # 11 vhost 확인
+            예상 출력 `security2_module (shared) / proxy_module (shared) / proxy_http_module / ssl_module / rewrite_module / headers_module`.
+            운영 해석: 6 핵심 모듈. security2 가 ModSec, proxy 가 reverse proxy.
+          - |
+            **[OSS] modsecurity.conf 핵심 키** — 정책.
+              ssh 6v6-web 'sudo grep -E "^Sec(RuleEngine|AuditLog|AuditEngine|AuditLogFormat|RequestBody|ResponseBody|DefaultAction)" /etc/modsecurity/modsecurity.conf'
+            예상 출력 `SecRuleEngine On / SecAuditEngine RelevantOnly / SecAuditLogFormat JSON / SecAuditLog /var/log/apache2/modsec_audit.log / SecRequestBodyAccess On / SecResponseBodyAccess On / SecDefaultAction "phase:2,log,auditlog,deny,status:403"`.
+            운영 해석: On + JSON + RelevantOnly = Wazuh decoder 친화 + 디스크 효율.
+          - |
+            **[OSS] CRS 룰셋 파일 수** — 룰셋 활성.
+              ssh 6v6-web 'sudo ls /usr/share/modsecurity-crs/rules/ | wc -l'
+              ssh 6v6-web 'sudo ls /usr/share/modsecurity-crs/rules/REQUEST-9*.conf | head'
+            예상 출력 `31 / REQUEST-901-INITIALIZATION.conf / REQUEST-941-...-XSS.conf / REQUEST-942-...-SQLI.conf`.
+            운영 해석: 31 룰 파일. 941 (XSS), 942 (SQLi), 930 (LFI), 932 (RCE) 핵심.
+          - |
+            **[OSS] curl XSS → 403 응답** — 동작 검증.
+              ssh 6v6-attacker 'curl -s -o /dev/null -w "XSS: %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=<script>alert(1)</script>"'
+              sleep 2
+              ssh 6v6-web 'sudo tail -3 /var/log/apache2/modsec_audit.log | head -1 | jq "{code: .transaction.response.http_code, msgs: [.transaction.messages[]? | select(.id | startswith(\"941\")) | .id]}"'
+            예상 출력 `XSS: 403 / {"code":403,"msgs":["941100","941160"]}`.
+            운영 해석: 941100 = libinjection 매칭. 403 차단.
+          - |
+            **[OSS] 11 vhost 검증** — reverse proxy.
               ssh 6v6-web 'sudo ls /etc/apache2/sites-enabled/'
-            예상 출력 `security2_module (shared) / proxy_module (shared) / ssl_module (shared) /
-            vhost 11종`.
-            운영 해석: 필수 모듈 다 로드. vhost 11종 (랜딩 + 8 vuln + portal/siem/bastion
-            HAProxy 우회 제외) 확인. 11 != 실측 카운트면 시작 시 모듈 fail.
+              ssh 6v6-web 'sudo grep -rE "ProxyPass " /etc/apache2/sites-enabled/ | head'
+            예상 출력 `000-landing.conf / juice.6v6.lab.conf / dvwa.6v6.lab.conf / ... / 11 파일 / ProxyPass / http://10.20.40.81:3000/ ...`.
+            운영 해석: 11 vhost reverse proxy → int 백엔드. 8 vuln + 랜딩 + 2 우회
+            대상.
           - |
-            **[OSS] modsecurity.conf 검증** — 핵심.
-              ssh 6v6-web 'sudo grep -E "^(SecRuleEngine|SecAuditLogFormat|SecAuditEngine|SecAuditLog)" /etc/modsecurity/modsecurity.conf'
-              # CRS 활성 룰셋 갯수
-              ssh 6v6-web 'sudo find /etc/modsecurity -name "*.conf" -o -name "REQUEST-*.conf" 2>/dev/null | wc -l'
-              # 룰 파일 1개 head
-              ssh 6v6-web 'sudo head -20 /usr/share/modsecurity-crs/rules/REQUEST-941-APPLICATION-ATTACK-XSS.conf 2>/dev/null'
-            예상 출력 `SecRuleEngine On / SecAuditLogFormat JSON / SecAuditEngine RelevantOnly /
-            SecAuditLog /var/log/apache2/modsec_audit.log / 30+ 룰 파일`.
-            운영 해석: SecAuditLogFormat JSON 이 Wazuh decoder 와 호환 (Wazuh 의
-            apache-modsec decoder 가 JSON 파싱). RelevantOnly 는 5xx 또는 룰 매치 시
-            만 기록 (디스크 효율).
-          - |
-            **[OSS] modsec_audit.log 라이브 확인** — 동적.
-              ssh 6v6-web 'sudo tail -20 /var/log/apache2/modsec_audit.log | head -50'
-              # JSON 파싱 시도
-              ssh 6v6-web 'sudo tail -1 /var/log/apache2/modsec_audit.log 2>/dev/null | jq -r .transaction.id' 2>/dev/null
-              # 룰 매치 통계
-              ssh 6v6-web 'sudo grep -oE ''\\\"id\\\":\\\"[0-9]+\\\"'' /var/log/apache2/modsec_audit.log 2>/dev/null | sort | uniq -c | sort -rn | head -5'
-            예상 출력 `{"transaction":{"client_ip":"10.20.30.202","time_stamp":"..","request":{...},"response":{...},"messages":[{"id":"941100",...}]} /
-            트랜잭션 id / 룰 id 빈도 통계`.
-            운영 해석: 한 줄 = 1 transaction. transaction.messages 에 룰 match 리스트.
-            CRS 룰 id 941xxx = XSS, 942xxx = SQLi, 932xxx = RCE.
-          - |
-            **[OSS] curl 로 ModSec 공격 시뮬** — 효과 검증.
-              # XSS pattern POST → ModSec 가 잡아야 함
-              ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=<script>alert(1)</script>"'
-              # SQLi pattern
-              ssh 6v6-attacker "curl -s -o /dev/null -w \"%{http_code}\" -H \"Host: dvwa.6v6.lab\" \"http://10.20.30.1/?q=1' OR '1'='1\""
-            예상 출력 `403 / 403` (ModSec 차단) 또는 `200 / 200` (anomaly score 미달).
-            운영 해석: 기본 CRS anomaly threshold 가 5 이상 → 단순 패턴은 score 5 미만
-            으로 통과 가능. W06 에서 paranoia level 조정 학습.
-          - |
-            **[OSS] mod_security audit log 7-region 검증** — 형식.
-              # ModSec audit log 의 7 region (A,B,C,D,E,F,H,Z) 또는 JSON
-              ssh 6v6-web 'sudo grep -c ''"transaction"'' /var/log/apache2/modsec_audit.log 2>/dev/null'
-              # JSON 라인 갯수
+            **[OSS] modsec_audit.log JSON 라인 수** — 활성.
               ssh 6v6-web 'sudo wc -l /var/log/apache2/modsec_audit.log'
-              # 마지막 transaction.id
-              ssh 6v6-web 'sudo tail -1 /var/log/apache2/modsec_audit.log 2>/dev/null | jq -r .transaction.id'
-            예상 출력 `1234 / 1234 ... / ABCDEF1234567890`.
-            운영 해석: JSON 형식의 transaction line 수가 0 이면 ModSec 가 audit log
-            기록 안 함 → SecAuditEngine 또는 SecAuditLogParts 점검.
+              ssh 6v6-web 'sudo grep -oE ''"id":"[0-9]+"'' /var/log/apache2/modsec_audit.log | sort | uniq -c | sort -rn | head'
+            예상 출력 `600+ / 30 "id":"941100" / 25 "id":"942100" / ...`.
+            운영 해석: 600+ transaction 기록. 941 (XSS) 가 가장 자주.
           - |
-            **[OSS] apache2 access/error log** — 보조 로그.
-              # access log 형식 (combined or custom)
-              ssh 6v6-web 'sudo head -3 /var/log/apache2/access.log'
-              # error log 의 ModSec 메시지
-              ssh 6v6-web 'sudo grep -i modsec /var/log/apache2/error.log | tail -5'
-              # 7 vhost 별 access 통계 (vhost log 분리 시)
-              ssh 6v6-web 'sudo ls /var/log/apache2/*access*.log'
-            예상 출력 `10.20.31.2 - - [<date>] "GET / HTTP/1.1" 200 1234 / [client 10.20.30.202] ModSecurity: Warning. Pattern match ...`.
-            운영 해석: access.log 의 client IP 가 ips 의 dmz NIC IP (10.20.31.2 또는
-            10.20.32.1) 인 이유 — HAProxy 가 X-Forwarded-For 헤더로 학생 IP 를 넘기지만
-            첫 host 는 hop.
+            **[OSS] CRS paranoia + anomaly** — 룰 강도.
+              ssh 6v6-web 'sudo find / -name "crs-setup.conf" 2>/dev/null | head -1 | xargs sudo grep -E "tx.paranoia|inbound_anomaly|outbound_anomaly" 2>/dev/null | head'
+            예상 출력 `setvar:tx.paranoia_level=1 / setvar:tx.inbound_anomaly_score_threshold=5 / setvar:tx.outbound_anomaly_score_threshold=4`.
+            운영 해석: paranoia 1 + threshold 5 = 표준 운영. W06 에서 튜닝.
           - |
-            **[OSS] Apache vhost reverse proxy 검증** — 핵심 설정.
-              ssh 6v6-web 'sudo cat /etc/apache2/sites-enabled/juice.6v6.lab.conf 2>/dev/null || sudo cat /etc/apache2/sites-enabled/*juice* 2>/dev/null'
-              # 모든 ProxyPass 라인
-              ssh 6v6-web 'sudo grep -rE "ProxyPass|ProxyPassReverse" /etc/apache2/sites-enabled/ | head'
-            예상 출력 `<VirtualHost *:80> / ServerName juice.6v6.lab / ProxyPass / http://10.20.40.81:3000/ /
-            ProxyPassReverse / http://10.20.40.81:3000/`.
-            운영 해석: web 의 ProxyPass target 이 int 백엔드 (10.20.40.8x) 와 일치 확인.
-            host header 별 vhost 매칭 + ProxyPass 가 핵심.
-          - |
-            **[OSS] CRS paranoia level** — 룰 강도.
-              # paranoia level 1 (기본) → 4 (가장 엄격)
-              ssh 6v6-web 'sudo grep -E "tx.paranoia_level" /etc/modsecurity/crs-setup.conf 2>/dev/null | head -3'
-              # anomaly threshold
-              ssh 6v6-web 'sudo grep -E "anomaly_score" /etc/modsecurity/crs-setup.conf 2>/dev/null | head'
-            예상 출력 `setvar:tx.paranoia_level=1 / setvar:tx.inbound_anomaly_score_threshold=5`.
-            운영 해석: paranoia 1 + threshold 5 = 표준 운영 (false-positive 적음).
-            paranoia 2~4 는 W06 심화에서 학습.
+            **[OSS] Apache access.log + error.log** — 보조.
+              ssh 6v6-web 'sudo tail -3 /var/log/apache2/access.log'
+              ssh 6v6-web 'sudo grep -i modsec /var/log/apache2/error.log 2>/dev/null | tail -3'
+            예상 출력 `<ip> - - [<date>] "GET /?q=<script>..." 403 / [client ...] ModSecurity: Warning. ...`.
+            운영 해석: error.log 의 ModSec 메시지 = audit log 의 index.
         negative_signs:
           - security2_module 누락
           - SecRuleEngine Off
-          - modsec_audit.log 비어 있음
+          - vhost 11 미만
+          - XSS payload 시 200 (ModSec 무력)
+    target_vm: web
 
   # ============================================================
-  # STEP 7 — siem Wazuh manager 16 daemon
+  # STEP 6 — siem Wazuh manager + 3 agent
   # ============================================================
-  - order: 7
+  - order: 6
     instruction: |
-      `6v6-siem` (wazuh-manager) 컨테이너에서 `wazuh-control status` 로 manager 의
-      11 핵심 daemon (modulesd / monitord / logcollector / remoted / syscheckd /
-      analysisd / execd / db / authd / apid + 자체 control) 이 running 인지 확인한다.
-      단일-노드 4.10 기본 구성에서 clusterd / maild / agentlessd / integratord / dbd /
-      csyslogd 는 "not running" 이 정상 (옵트인 모듈). analysisd 만 stopped 면 alert
-      자체가 발생 안 한다.
-    hint: ssh 6v6-siem sudo /var/ossec/bin/wazuh-control status
+      **이 실습을 왜 하는가?**
+      siem 은 L4 — 모든 source 의 로그가 모이는 관제실. manager 죽으면 alert 자체가
+      생성되지 않는다.
+
+      **이걸 하면 무엇을 알 수 있는가?**
+      - 11 daemon (default-on) running
+      - 3 agent (fw / ips / web) 모두 Active
+      - 3 listening port (1514 event / 1515 enrollment / 55000 API)
+      - cluster status green
+
+      **결과 해석**
+      analysisd / remoted / monitord 가 핵심. 1개라도 stopped 면 해당 기능 결여.
+      agent Never connected → 해당 agent.service 점검.
+
+      **실전 활용**
+      SIEM 운영자 매일 아침 1순위.
+
+      **작업 절차**:
+      ```
+      ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control status'
+      ssh 6v6-siem 'sudo /var/ossec/bin/agent_control -l'
+      ssh 6v6-siem 'sudo ss -tlnp | grep -E ":(1514|1515|55000)"'
+      ssh 6v6-bastion 'docker exec 6v6-wazuh-indexer curl -sk -u admin:SecretPassword https://localhost:9200/_cluster/health | jq'
+      ```
+    hint: ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control status'
     category: monitoring
-    points: 10
+    points: 12
     answer: |
-      ssh 6v6-siem sudo /var/ossec/bin/wazuh-control status
-    answer_detail: 16 daemon 모두 running 출력
+      echo "=== 11 daemon 가동 ==="
+      ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control status'
+      echo "=== 3 agent ==="
+      ssh 6v6-siem 'sudo /var/ossec/bin/agent_control -l'
+      echo "=== 3 listening port ==="
+      ssh 6v6-siem 'sudo ss -tlnp | grep -E ":(1514|1515|55000)"'
+      echo "=== cluster health ==="
+      ssh 6v6-bastion 'docker exec 6v6-wazuh-indexer curl -sk -u admin:SecretPassword https://localhost:9200/_cluster/health | jq -c "{status, nodes:.number_of_nodes, shards:.active_shards}"'
+    answer_detail: |
+      11 daemon running (analysisd / remoted / modulesd / monitord / logcollector /
+      syscheckd / execd / db / authd / apid + control 자체). 3 agent (001 web /
+      002 ips / 003 fw) 모두 Active. 3 listening port (1514 / 1515 / 55000).
+      cluster green + 1 node + 16 active shards.
     verify:
       type: output_contains
       expect: running
       field: stdout
       semantic:
-        intent: |
-          wazuh-manager 의 11 핵심 daemon 가동 상태. 핵심 = analysisd (룰 매칭) /
-          remoted (agent 통신) / monitord (alert 발송) / modulesd (CTI/SCA/etc) /
-          authd (enrollment) / apid (REST API) / db / execd / syscheckd / logcollector.
-          하나라도 stopped 면 해당 기능 결여. clusterd / maild / agentlessd / integratord /
-          dbd / csyslogd 는 옵트인 — not running 정상.
+        intent: Wazuh manager + agent + indexer 통합 헬스체크
         success_criteria:
-          - wazuh-analysisd is running
-          - wazuh-remoted is running
-          - 11 핵심 daemon 모두 running
+          - 11 daemon running
+          - 3 agent Active
+          - cluster green/yellow
         acceptable_methods:
           - |
             **[OSS] wazuh-control status** — 표준.
-              ssh 6v6-siem sudo /var/ossec/bin/wazuh-control status
-              # 각 daemon 의 PID 도 같이
-              ssh 6v6-siem sudo /var/ossec/bin/wazuh-control info
-            예상 출력 `wazuh-clusterd not running ... / wazuh-modulesd is running / wazuh-monitord is running /
-            wazuh-logcollector is running / wazuh-remoted is running / wazuh-syscheckd is running /
-            wazuh-analysisd is running / wazuh-maild is running / wazuh-execd is running /
-            wazuh-db is running / wazuh-authd is running`.
-            운영 해석: clusterd 는 단일 manager 면 not running 정상. 나머지 모두 running.
+              ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control status'
+            예상 출력 `wazuh-modulesd is running / monitord is running / logcollector is running / remoted is running / syscheckd is running / analysisd is running / execd is running / db is running / authd is running / apid is running`.
+            운영 해석: 11 running + 5 not running (default-off). clusterd, maild,
+            agentlessd, integratord, dbd, csyslogd 가 default-off.
           - |
-            **[OSS] ps -ef + wazuh 프로세스** — OS 측.
-              ssh 6v6-siem 'sudo ps -ef | grep -i wazuh | grep -v grep | wc -l'
-              # 프로세스 갯수 (cluster off 면 10~12 개)
-              ssh 6v6-siem 'sudo ps -ef | grep -E "wazuh-(analysis|remote|monit|module)" | grep -v grep'
-            예상 출력 `12 / wazuh-analysisd / wazuh-remoted / wazuh-modulesd ...`.
-            운영 해석: daemon 갯수가 12 미만이면 일부 fail. 14 정도 (cluster + maild
-            포함) 도 정상.
+            **[OSS] agent_control -l + -i** — 등록 agent.
+              ssh 6v6-siem 'sudo /var/ossec/bin/agent_control -l'
+              ssh 6v6-siem 'sudo /var/ossec/bin/agent_control -i 001'
+            예상 출력 `001 web Active / 002 ips Active / 003 fw Active`.
+            운영 해석: 3 agent + 000 server. Active 가 아니면 enrollment 또는 1514 통신
+            점검.
           - |
-            **[OSS] /var/ossec/logs/ossec.log** — 시작 로그.
-              ssh 6v6-siem 'sudo tail -50 /var/ossec/logs/ossec.log | tail -30'
-              # 시작 시 module 로드 라인
-              ssh 6v6-siem 'sudo grep -E "Started|Listening|version" /var/ossec/logs/ossec.log | tail -10'
-            예상 출력 `wazuh-modulesd: INFO: Vulnerability scanner enabled / wazuh-remoted: INFO: Listening on port 1514/tcp /
-            wazuh-analysisd: INFO: Started ...`.
-            운영 해석: remoted 가 1514/tcp 에서 agent 접속 대기. analysisd 가 룰 로드
-            완료 메시지가 있어야 alert 발생 가능.
-          - |
-            **[OSS] netstat /ss (manager listen 포트)** — 연결성.
+            **[OSS] ss -tlnp + 1514/1515/55000** — listening.
               ssh 6v6-siem 'sudo ss -tlnp | grep -E ":(1514|1515|55000)"'
-              # 1514 = agent communication
-              # 1515 = enrollment (authd)
-              # 55000 = API
-            예상 출력 `LISTEN ... :1514 ... wazuh-remoted / LISTEN ... :1515 ... wazuh-authd / LISTEN ... :55000 ... python`.
-            운영 해석: 3 포트 모두 listen → agent 등록 + 통신 + API 가능. 1515 만
-            없으면 enrollment 불가.
+            예상 출력 `LISTEN ... :1514 wazuh-remoted / LISTEN ... :1515 wazuh-authd / LISTEN ... :55000 python3`.
+            운영 해석: 3 port 모두 listen → enrollment + event ingestion + API 가능.
           - |
-            **[OSS] /var/ossec/logs/api.log** — API 측.
-              ssh 6v6-siem 'sudo tail -30 /var/ossec/logs/api.log'
-              # rate limit (429) 에러
-              ssh 6v6-siem 'sudo grep -c "429\|rate limit" /var/ossec/logs/api.log 2>/dev/null'
-            예상 출력 `<date> INFO: Starting API on port 55000 / 0 또는 1~2 (정상 범위)`.
-            운영 해석: 429 가 다수면 dashboard 의 poll interval 또는 max_request_per_minute
-            조정 필요. 6v6 는 api.yaml 로 5000/min 으로 완화됨.
+            **[OSS] _cluster/health (OpenSearch)** — indexer.
+              ssh 6v6-bastion 'docker exec 6v6-wazuh-indexer curl -sk -u admin:SecretPassword https://localhost:9200/_cluster/health | jq'
+            예상 출력 `{"status":"green","number_of_nodes":1,"active_shards":16}`.
+            운영 해석: 단일 노드 + replica 0 → green. replica 1+ 면 yellow.
           - |
-            **[OSS] manager API + curl** — 외부 진단.
-              ssh 6v6-siem 'sudo curl -k -X POST "https://localhost:55000/security/user/authenticate" \
-                  -u "wazuh-wui:MyS3cr37P450r.*-" 2>&1 | jq -r .data.token | head -c50'
-              # 토큰을 받았으면 manager 정상
-              # GET /agents 도 시도 가능
-            예상 출력 `eyJhbGciOi... (JWT 시작)`.
-            운영 해석: API auth 성공 → JWT 발급. 발급 안 되면 wazuh-wui 사용자 비번
-            또는 internal_users 설정 점검.
+            **[OSS] alerts.json 최근 alert** — 데이터 흐름.
+              ssh 6v6-siem 'sudo tail -3 /var/ossec/logs/alerts/alerts.json | tail -1 | jq "{ts: .timestamp, agent: .agent.name, rule_id: .rule.id, level: .rule.level, desc: .rule.description}"'
+            예상 출력 `{ts: <date>, agent: web, rule_id: 31151, level: 5, desc: "Apache: 4xx response"}`.
+            운영 해석: alerts.json 에 적재 = analysisd 정상 + agent 통신 정상.
           - |
-            **[OSS] wazuh-control 의 module별 toggle 확인** — config.
-              ssh 6v6-siem 'sudo grep -A2 -E "<vulnerability-scanner>|<ciscat>|<sca>" /var/ossec/etc/ossec.conf | head -20'
-              # CRS rule 디렉토리
-              ssh 6v6-siem 'sudo ls /var/ossec/ruleset/rules/ | wc -l'
-            예상 출력 `<vulnerability-scanner><enabled>yes</...> / <sca><enabled>yes</...> / 200+ 룰 파일`.
-            운영 해석: vulnerability-scanner / sca 가 enabled 면 modulesd 가 해당 모듈
-            load. 룰셋 파일 200+ 개는 4.10 기본.
+            **[OSS] Wazuh API + JWT** — 외부 진단.
+              ssh 6v6-siem 'TOKEN=$(sudo curl -sk -u wazuh-wui:MyS3cr37P450r.*- -X POST https://localhost:55000/security/user/authenticate | jq -r .data.token); sudo curl -sk -H "Authorization: Bearer $TOKEN" https://localhost:55000/agents | jq ".data.affected_items | length"'
+            예상 출력 `4` (server + 3 agent).
+            운영 해석: API 정상 → dashboard 도 정상. 401 이면 internal_users 점검.
           - |
-            **[OSS] /var/ossec/logs/alerts/alerts.json** — alert 출력.
-              ssh 6v6-siem 'sudo tail -3 /var/ossec/logs/alerts/alerts.json | jq "{ts: .timestamp, rule: .rule.id, level: .rule.level, agent: .agent.name}"'
-              # 최근 1분 alert 갯수
-              ssh 6v6-siem 'sudo wc -l /var/ossec/logs/alerts/alerts.json'
-            예상 출력 `{ts: <date>, rule: 5715, level: 5, agent: web} / 1234 라인`.
-            운영 해석: alerts.json 이 비어 있으면 analysisd 가 alert 못 만들거나 룰 매치
-            없음. 학생 traffic (juice.6v6.lab) 만 일부 발생해도 OK.
+            **[OSS] /var/ossec/etc/client.keys** — agent 등록.
+              ssh 6v6-siem 'sudo cat /var/ossec/etc/client.keys 2>/dev/null | head'
+            예상 출력 `001 web <ip> <key> / 002 ips ... / 003 fw ...`.
+            운영 해석: client.keys = enrollment 의 source of truth. 0 라인이면 enrollment
+            전체 실패.
+          - |
+            **[OSS] _cat/indices — wazuh-* 인덱스** — 색인.
+              ssh 6v6-bastion 'docker exec 6v6-wazuh-indexer curl -sk -u admin:SecretPassword "https://localhost:9200/_cat/indices?v&s=index" | head -10'
+            예상 출력 `wazuh-alerts-4.x-<date> open / wazuh-monitoring-... / wazuh-statistics-...`.
+            운영 해석: 3 핵심 인덱스. 없으면 filebeat → indexer 통신 실패.
         negative_signs:
-          - daemon 6 미만 running
-          - analysisd stopped
-          - 1514/tcp listen 누락
+          - analysisd / remoted 가 not running
+          - agent 1+ Never connected
+          - 1514 listen 없음
+          - cluster red
+    target_vm: siem
 
   # ============================================================
-  # STEP 8 — siem agent_control 로 3 agent (fw/ips/web) Active 확인
+  # STEP 7 — Red: 공격 1건 발생 (attacker → juice.6v6.lab)
+  # ============================================================
+  - order: 7
+    instruction: |
+      **이 실습을 왜 하는가?**
+      Defense in Depth 의 효과를 측정하려면 실제 공격이 필요하다. 본 step 은 Red Team
+      관점 — attacker 가 sqlmap UA + XSS payload 로 juice.6v6.lab 공격.
+
+      **이걸 하면 무엇을 알 수 있는가?**
+      - 한 curl 명령이 4 도구 (fw → ips → web → siem) 에 동시 흔적
+      - sqlmap UA + XSS payload 의 결합 (현실 공격 시뮬)
+
+      **결과 해석**
+      curl 응답 403 (ModSec 차단). 200 이면 ModSec 미동작 → step 5 재점검.
+
+      **실전 활용**
+      Red Team 의 표준 1 단계. payload 1개로 chain 검증.
+
+      **작업 절차**:
+      ```
+      ssh 6v6-attacker 'curl -s -A "sqlmap/1.5" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=<script>alert(1)</script>&id=1+UNION+SELECT" -o /dev/null -w "%{http_code}\n"'
+      ```
+      sleep 2 후 다음 step 진행.
+    hint: 'curl -A "sqlmap/1.5" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=<script>"'
+    category: redteam
+    points: 8
+    answer: |
+      echo "=== Red Team: 공격 발생 (sqlmap UA + XSS + SQLi 결합) ==="
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "응답: %{http_code} / 시간: %{time_total}s\n" -A "sqlmap/1.5" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=<script>alert(1)</script>&id=1+UNION+SELECT"'
+      echo "=== 공격 시각 기록 ==="
+      ATTACK_TS=$(ssh 6v6-attacker 'date -u +%Y-%m-%dT%H:%M:%S')
+      echo "ATTACK_TS=$ATTACK_TS"
+      echo "이 시각 이후의 로그가 Blue/Purple step 에서 추적 대상"
+    answer_detail: |
+      sqlmap/1.5 UA + XSS `<script>` + SQLi UNION SELECT 의 결합 페이로드. ModSec
+      의 941 (XSS) + 942 (SQLi) + 949 (anomaly threshold) 룰이 동시 매치 → score
+      누적 → 403 차단. 본 step 의 ATTACK_TS 를 기록해 두면 Blue/Purple step 에서
+      timestamp 매칭 가능.
+    verify:
+      type: output_contains
+      expect: '403'
+      field: stdout
+      semantic:
+        intent: |
+          Red Team 공격 시뮬. sqlmap UA + XSS + SQLi 결합 페이로드 → ModSec 403 차단.
+        success_criteria:
+          - 403 응답
+          - sqlmap UA 사용
+          - XSS payload 포함
+        acceptable_methods:
+          - |
+            **[OSS] curl 종합 페이로드** — 표준.
+              ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -A "sqlmap/1.5" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=<script>alert(1)</script>&id=1+UNION+SELECT"'
+            예상 출력 `403`.
+            운영 해석: 다중 페이로드로 4 도구 동시 검증.
+          - |
+            **[OSS] 페이로드 변형 — XSS only** — 단순.
+              ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=<script>alert(1)</script>"'
+            예상 출력 `403`.
+            운영 해석: XSS 단독으로도 941 매치 → 403.
+          - |
+            **[OSS] 페이로드 변형 — SQLi only** — 단순.
+              ssh 6v6-attacker "curl -s -o /dev/null -w '%{http_code}\n' -H 'Host: juice.6v6.lab' \"http://10.20.30.1/?id=1' OR '1'='1\""
+            예상 출력 `403`.
+            운영 해석: SQLi 단독으로도 942 매치 → 403.
+          - |
+            **[OSS] User-Agent only** — scanner detection.
+              ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -A "sqlmap/1.5" -H "Host: juice.6v6.lab" "http://10.20.30.1/"'
+            예상 출력 `403`.
+            운영 해석: 913 (Scanner Detection) 룰셋 매치.
+          - |
+            **[OSS] 연속 5회 — Wazuh 룰 발화 빈도** — burst.
+              ssh 6v6-attacker 'for i in 1 2 3 4 5; do curl -s -o /dev/null -w "%{http_code}\n" -A "sqlmap" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=<script>"; done'
+            예상 출력 `403 / 403 / 403 / 403 / 403`.
+            운영 해석: 5회 burst → Wazuh 의 rule frequency 매칭 가능 (W09 학습).
+          - |
+            **[OSS] Burp / mitmproxy 대안** — GUI.
+              # 학생 PC 에서 Burp Suite Repeater 로 동일 페이로드 + 변형
+              echo "Burp Repeater: 페이로드 5+ 변형 일괄 시도"
+            예상 출력 `(GUI 절차)`.
+            운영 해석: 학생 PC 에서 Burp 활용 시 W03 학습.
+          - |
+            **[OSS] 시각 기록 (ATTACK_TS)** — 후속 추적.
+              ATTACK_TS=$(date -u +%Y-%m-%dT%H:%M:%S)
+              echo "공격 시각: $ATTACK_TS"
+            예상 출력 `공격 시각: 2026-05-11T11:30:00`.
+            운영 해석: Blue/Purple step 에서 timestamp 매칭으로 정확한 transaction 추출.
+          - |
+            **[OSS] tcpdump 동시 캡처** — 패킷 증거.
+              # 별 터미널: ssh 6v6-fw 'sudo tcpdump -ni eth0 host 10.20.30.202 and tcp port 80 -c 10 -w /tmp/attack.pcap'
+              echo "tcpdump 로 패킷 증거 보존"
+            예상 출력 `(절차)`.
+            운영 해석: 침해 후 분석 자료.
+        negative_signs:
+          - 403 아닌 응답 (200 = ModSec 무력)
+          - 컨테이너 timeout
+    target_vm: attacker
+
+  # ============================================================
+  # STEP 8 — Blue: fw HAProxy + ips eve.json 추적
   # ============================================================
   - order: 8
     instruction: |
-      `6v6-siem` 에서 `agent_control -l` 로 등록된 agent 목록 (fw / ips / web 3대)
-      모두 Active 상태인지 확인한다. agent 가 Never connected / Disconnected 면
-      해당 호스트의 Wazuh agent service 가 실패한 것.
-    hint: ssh 6v6-siem sudo /var/ossec/bin/agent_control -l
-    category: monitoring
-    points: 10
+      **이 실습을 왜 하는가?**
+      Red 공격 (STEP 7) 의 흔적이 fw → ips 까지 도달했는지 검증. Blue Team 의 첫
+      추적 단계.
+
+      **이걸 하면 무엇을 알 수 있는가?**
+      - HAProxy log 의 frontend / backend 매핑 (http_in → waf)
+      - ips Suricata eve.json 의 http event (hostname + url + status 403)
+
+      **결과 해석**
+      HAProxy log 에 backend `waf` (학생 트래픽) + ips eve.json 에 `event_type: http`
+      + `hostname: juice.6v6.lab` + `status: 403`.
+
+      **실전 활용**
+      "공격이 fw 를 통과했나?" 검증. 끊겼으면 fw 차단, 통과했으면 다음 hop 분석.
+
+      **작업 절차**:
+      ```
+      ssh 6v6-fw 'sudo tail -10 /var/log/haproxy.log 2>/dev/null | tail -3'
+      ssh 6v6-ips 'sudo tail -100 /var/log/suricata/eve.json | jq "select(.event_type==\"http\" and .http.hostname==\"juice.6v6.lab\")" | tail -1'
+      ```
+    hint: fw HAProxy log + ips eve.json
+    category: blueteam
+    points: 12
     answer: |
-      ssh 6v6-siem sudo /var/ossec/bin/agent_control -l
-    answer_detail: 3 agent (fw / ips / web) 모두 Active 표시
+      echo "=== Blue: fw HAProxy log (frontend/backend 매핑) ==="
+      ssh 6v6-fw 'sudo tail -10 /var/log/haproxy.log 2>/dev/null | tail -3 || sudo journalctl -u haproxy --since "1m ago" 2>/dev/null | tail -3'
+      echo "=== Blue: ips Suricata eve.json (HTTP event) ==="
+      ssh 6v6-ips 'sudo tail -200 /var/log/suricata/eve.json | jq "select(.event_type==\"http\" and .http.hostname==\"juice.6v6.lab\")" | tail -1'
+    answer_detail: |
+      HAProxy log 의 한 라인 = `<time> haproxy[X]: <client>:<port> [<date>] http_in
+      waf/web 0/0/0/12/12 403 1234 - - ---- 1/1/0/0/0 0/0 "GET /?q=<script>... HTTP/1.1"`.
+      backend column 이 `waf/web` = 학생 트래픽 (waf backend) → web server. ips
+      eve.json 의 http event 는 `{"event_type":"http","src_ip":"10.20.30.202",
+      "http":{"hostname":"juice.6v6.lab","url":"/?q=<script>...","method":"GET",
+      "status":403}}`.
     verify:
       type: output_contains
-      expect: Active
+      expect: juice
       field: stdout
       semantic:
         intent: |
-          wazuh-manager 에 등록된 agent 3대 (fw / ips / web) 가 모두 Active. agent_control
-          -l 의 출력은 ID Name IP Status. Active 가 아니면 (Never connected / Disconnected)
-          해당 agent.service 점검 필요.
+          Blue Team — fw HAProxy log + ips eve.json 두 곳에서 동일 transaction 흔적.
         success_criteria:
-          - Active 키워드
-          - fw / ips / web 이름 포함
-          - agent ID 3개 이상
+          - juice.6v6.lab 키워드
+          - http event_type 또는 HAProxy backend
         acceptable_methods:
           - |
-            **[OSS] agent_control -l (legacy)** — 표준.
-              ssh 6v6-siem sudo /var/ossec/bin/agent_control -l
-              # ID + Name + IP + Status 출력
-              ssh 6v6-siem 'sudo /var/ossec/bin/agent_control -i 001'
-              ssh 6v6-siem 'sudo /var/ossec/bin/agent_control -i 002'
-              ssh 6v6-siem 'sudo /var/ossec/bin/agent_control -i 003'
-            예상 출력 `001 fw <ip> Active / 002 ips <ip> Active / 003 web <ip> Active / 상세 정보`.
-            운영 해석: 3 agent 모두 Active 면 OK. agent_control 은 deprecated 이지만
-            4.10 까지 호환.
+            **[OSS] HAProxy log + grep** — 표준.
+              ssh 6v6-fw 'sudo tail -10 /var/log/haproxy.log 2>/dev/null | grep -E "juice|10.20.30.202" | tail -3'
+            예상 출력 `<time> haproxy ... http_in waf/web 0/0/0/12/12 403 1234 ...`.
+            운영 해석: backend column = `waf/web` → 학생 트래픽 (waf backend) →
+            web server.
           - |
-            **[OSS] wazuh API /agents** — 표준 (JSON)
-              ssh 6v6-siem '
-                TOKEN=$(curl -sk -u "wazuh-wui:MyS3cr37P450r.*-" -X POST "https://localhost:55000/security/user/authenticate" | jq -r .data.token)
-                curl -sk -H "Authorization: Bearer $TOKEN" "https://localhost:55000/agents?select=name,status,ip&pretty=true" | jq ".data.affected_items[] | {name, status, ip}"
-              '
-            예상 출력 `{name: "fw", status: "active", ip: "..."} / 3건`.
-            운영 해석: API 가 동작하면 dashboard 도 정상. status: active 가 아닌 항목
-            검출.
+            **[OSS] journalctl 대안** — systemd.
+              ssh 6v6-fw 'sudo journalctl -u haproxy --since "5m ago" 2>/dev/null | grep -i juice | tail -3'
+            예상 출력 `<date> haproxy ... 403 GET /?q=<script>...`.
+            운영 해석: rsyslog 미사용 시 systemd journal.
           - |
-            **[OSS] /var/ossec/queue/agents (registration 파일)** — 정적.
-              ssh 6v6-siem 'sudo ls /var/ossec/queue/agents/ 2>/dev/null | head'
-              ssh 6v6-siem 'sudo cat /var/ossec/etc/client.keys 2>/dev/null | head'
-            예상 출력 `001 fw <ip> <key> / 002 ips ... / 003 web ...`.
-            운영 해석: client.keys 가 agent 등록 정보의 source of truth. 3 라인 있어야
-            함. 0 이면 agent 등록 자체 실패.
+            **[OSS] Suricata eve.json HTTP event** — 표준.
+              ssh 6v6-ips 'sudo tail -200 /var/log/suricata/eve.json | jq "select(.event_type==\"http\" and .http.hostname==\"juice.6v6.lab\")" | tail -1'
+            예상 출력 `{"event_type":"http","src_ip":"10.20.30.202","http":{"hostname":"juice.6v6.lab","url":"/?q=<script>...","status":403}}`.
+            운영 해석: 같은 transaction 의 ips 측 view. status 가 403 인 이유 — ips
+            는 sniff 만이고 응답은 web 측에서 결정.
           - |
-            **[OSS] agent 측 /var/ossec/etc/ossec.conf** — agent.
-              # 각 agent 호스트에서 manager 주소 확인
-              for h in fw ips web; do
-                echo "--- 6v6-$h ---"
-                ssh 6v6-$h 'sudo grep -A2 "<server>" /var/ossec/etc/ossec.conf | head -5'
-              done
-            예상 출력 `<server><address>10.20.32.100</address>...` × 3.
-            운영 해석: 모든 agent 의 manager 주소가 10.20.32.100 (siem dmz IP) 이어야
-            한다.
+            **[OSS] flow_id 매칭** — 추적.
+              FLOW_ID=$(ssh 6v6-ips 'sudo tail -100 /var/log/suricata/eve.json | jq -r "select(.event_type==\"http\" and .http.hostname==\"juice.6v6.lab\") | .flow_id" | tail -1')
+              ssh 6v6-ips "sudo tail -1000 /var/log/suricata/eve.json | jq -r 'select(.flow_id==$FLOW_ID) | .event_type'"
+            예상 출력 `flow / http / alert / fileinfo` (같은 flow_id 의 모든 event).
+            운영 해석: flow_id 로 conn 의 모든 event 추적 — 한 페이로드의 모든 흔적.
           - |
-            **[OSS] agent 측 wazuh-control status** — agent.
-              for h in fw ips web; do
-                echo "--- 6v6-$h ---"
-                ssh 6v6-$h 'sudo /var/ossec/bin/wazuh-control status 2>&1 | head -8'
-              done
-            예상 출력 `wazuh-execd is running / wazuh-agentd is running / wazuh-syscheckd is running` × 3.
-            운영 해석: agent 측 4 daemon (agentd/execd/syscheckd/logcollector) 모두 running
-            이어야 manager 에 정상 connect.
+            **[OSS] tcpdump pcap — 패킷 raw** — 증거.
+              ssh 6v6-ips 'sudo timeout 5 tcpdump -ni eth0 "tcp port 80" -c 10 -w /tmp/attack-ips.pcap 2>&1 | head'
+              # 별 시점에 STEP 7 의 curl 재실행
+            예상 출력 `tcpdump: listening ... / 10 packets captured`.
+            운영 해석: pcap 으로 raw 패킷 보존 → Wireshark 후속 분석.
           - |
-            **[OSS] 양방향 ping + 1514 reachability** — 네트워크.
-              for h in fw ips web; do
-                echo "--- 6v6-$h ---"
-                ssh 6v6-$h 'sudo timeout 3 bash -c "</dev/tcp/10.20.32.100/1514" && echo "1514 reachable" || echo "1514 BLOCKED"'
-              done
-            예상 출력 `1514 reachable` × 3.
-            운영 해석: agent → manager 1514/tcp 가 막히면 enrollment + heartbeat 둘 다
-            실패. dmz subnet 내부 통신은 ips 의 forward chain 영향 없으므로 reachable.
+            **[OSS] HAProxy stats socket — backend 통계** — 메트릭.
+              ssh 6v6-fw 'echo "show stat" | sudo socat - UNIX-CONNECT:/var/run/haproxy.sock 2>/dev/null | awk -F, "/^waf/ {print \$1, \$2, \$8}"'
+            예상 출력 `waf BACKEND <responses> / waf web <responses>`.
+            운영 해석: backend 단위 응답 count. burst 시 증가율 모니터.
           - |
-            **[OSS] /var/ossec/logs/ossec.log (agent side)** — 진단.
-              for h in fw ips web; do
-                echo "--- 6v6-$h ---"
-                ssh 6v6-$h 'sudo tail -20 /var/ossec/logs/ossec.log | grep -iE "connect|reg|enroll|fail" | tail -5'
-              done
-            예상 출력 `wazuh-agentd: INFO: Successfully connected to <manager> / Server responded ... ack received`.
-            운영 해석: "Successfully connected" + "ack" 가 보이면 정상. "unable to connect"
-            가 보이면 manager IP / port / 인증 검토.
+            **[OSS] X-Forwarded-For 헤더** — client IP 보존.
+              ssh 6v6-fw 'sudo grep "option forwardfor" /etc/haproxy/haproxy.cfg'
+              ssh 6v6-web 'sudo grep "X-Forwarded-For" /var/log/apache2/access.log 2>&1 | tail -3'
+            예상 출력 `option forwardfor / <attacker> via X-Forwarded-For: 10.20.30.202`.
+            운영 해석: HAProxy 가 X-Forwarded-For 헤더 추가 → web 의 access log 에
+            원래 attacker IP 보존.
           - |
-            **[OSS] manager remoted 통계** — 데이터 흐름.
-              ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control info'
-              ssh 6v6-siem 'sudo cat /var/ossec/var/run/wazuh-remoted.state 2>/dev/null'
-            예상 출력 `evt_count=12345 / tcp_sessions=3 / queue_size=0`.
-            운영 해석: tcp_sessions=3 = 3 agent 모두 manager 와 TCP 연결 유지.
-            queue_size 가 클러스터 한계 (16384) 의 80% 넘으면 적재 지연.
+            **[OSS] event_type 별 매트릭스** — 종합.
+              ssh 6v6-ips 'sudo tail -200 /var/log/suricata/eve.json | jq -r .event_type | sort | uniq -c | sort -rn'
+            예상 출력 `flow / http / tls / alert / stats / fileinfo` 분포.
+            운영 해석: 공격 발생 시 alert 증가 + http 증가 동시.
         negative_signs:
-          - Active 키워드 누락
-          - 등록 agent 0
-          - Never connected 표기
+          - juice.6v6.lab 흔적 없음 (fw 가 차단했거나 ips 가 sniff 못함)
+          - HAProxy log 의 backend 가 waf 아님
+    target_vm: bastion
 
   # ============================================================
-  # STEP 9 — wazuh-dashboard 접근성 (siem.6v6.lab)
+  # STEP 9 — Blue: web ModSec audit log + Apache access log
   # ============================================================
   - order: 9
     instruction: |
-      학생 PC 브라우저 또는 attacker 컨테이너 curl 로 `http://siem.6v6.lab/` 접근 →
-      HAProxy 가 dashboard backend (10.20.32.120:5601) 로 라우팅. login 페이지 (HTML)
-      에 `Wazuh` 또는 `OpenSearch` 키워드 존재해야 한다.
-    hint: |
-      ssh 6v6-attacker curl -sk -H 'Host: siem.6v6.lab' http://10.20.30.1/ | head -50
-    category: connectivity
-    points: 10
+      **이 실습을 왜 하는가?**
+      Red 공격 (STEP 7) 의 ModSec 차단 시점 + 룰 매치 분석. Blue Team 의 두 번째
+      추적.
+
+      **이걸 하면 무엇을 알 수 있는가?**
+      - ModSec audit log JSON 의 transaction 구조
+      - 매치된 룰 ID (941xxx XSS + 942xxx SQLi + 949xxx anomaly threshold)
+      - Apache access log 의 X-Forwarded-For 값 (client IP)
+
+      **결과 해석**
+      audit log 의 `response.http_code: 403` + `messages` 배열에 941/942/949 룰 ID
+      + access log 의 client IP = attacker (10.20.30.202).
+
+      **실전 활용**
+      "WAF 가 실제로 차단했는가?" 와 "어느 룰이 매치했는가?" 의 답.
+
+      **작업 절차**:
+      ```
+      ssh 6v6-web 'sudo tail -3 /var/log/apache2/modsec_audit.log | head -1 | jq'
+      ssh 6v6-web 'sudo tail -10 /var/log/apache2/access.log | grep sqlmap | tail -2'
+      ```
+    hint: web modsec_audit.log + access.log
+    category: blueteam
+    points: 12
     answer: |
-      ssh 6v6-attacker 'curl -sk -H "Host: siem.6v6.lab" http://10.20.30.1/ -L | grep -iE "wazuh|opensearch|app" | head -5'
-    answer_detail: dashboard 로그인 페이지 HTML 도달 (WAF 우회 검증)
+      echo "=== Blue: web ModSec audit log (JSON, audit_data.messages 가 매치 룰) ==="
+      ssh 6v6-web 'sudo tail -3 /var/log/apache2/modsec_audit.log | head -1 | jq "{client: .transaction.remote_address, uri: .request.request_line, code: (.response.status // .response.http_code), rules: [.audit_data.messages[]? | capture(\"id \\\"(?<id>[0-9]+)\\\"\") | .id]}"'
+      echo "=== Blue: web Apache juice_access.log (vhost 별 별도 로깅) ==="
+      ssh 6v6-web 'sudo tail -5 /var/log/apache2/juice_access.log'
+      echo "=== Blue: web Apache juice_error.log (ModSec warning) ==="
+      ssh 6v6-web 'sudo grep "913100\|941100" /var/log/apache2/juice_error.log 2>/dev/null | tail -1'
+    answer_detail: |
+      audit log 의 한 transaction. messages 배열에 매치된 룰 ID. 941100 + 941160 (XSS)
+      + 942100 (SQLi) + 949110 (anomaly threshold 5+ 도달 → 차단). access log 의
+      한 라인 = `<haproxy_ip> - - [<date>] "GET /?q=... HTTP/1.1" 403 1234 - "sqlmap/1.5"`.
+      client IP 가 HAProxy 의 IP (10.20.31.1) 인 이유 — HAProxy 가 forwardfor 헤더로만
+      원래 IP 전달, access log 의 첫 컬럼은 hop IP.
     verify:
       type: output_contains
-      expect: wazuh
+      expect: '403'
       field: stdout
       semantic:
         intent: |
-          siem.6v6.lab vhost 는 fw HAProxy 가 dashboard backend (5601 TLS) 로 직접
-          라우팅 (web Apache WAF 우회). 학생 PC 브라우저 또는 attacker 컨테이너에서
-          접근 시 Wazuh dashboard 로그인 페이지 (HTML) 반환. admin/SecretPassword 로
-          로그인 후 alert 조회 가능.
+          ModSec audit log + Apache access log 의 동일 transaction 추적.
         success_criteria:
-          - wazuh 키워드 (페이지 title 또는 meta)
-          - HTTP 200 또는 302
-          - HAProxy 가 dashboard backend 라우팅
+          - 403 응답
+          - 941 또는 942 룰 매치
+          - sqlmap 또는 attacker IP
         acceptable_methods:
           - |
-            **[OSS] curl + Host header (HAProxy 라우팅)** — 표준.
-              ssh 6v6-attacker 'curl -sk -o /dev/null -w "%{http_code} %{url_effective}\n" -H "Host: siem.6v6.lab" -L http://10.20.30.1/'
-              # 응답 본문 일부
-              ssh 6v6-attacker 'curl -sk -H "Host: siem.6v6.lab" http://10.20.30.1/ -L 2>&1 | grep -iE "<title|wazuh" | head -3'
-            예상 출력 `200 https://siem.6v6.lab/app/login / <title>Wazuh</title>`.
-            운영 해석: -L 로 redirect 추적. 최종 URL 이 /app/login 이면 dashboard 정상.
+            **[OSS] modsec_audit.log JSON 분석** — 표준.
+              ssh 6v6-web 'sudo tail -3 /var/log/apache2/modsec_audit.log | head -1 | jq'
+            예상 출력 `{"transaction":{"client_ip":"10.20.31.1","request":{...},"response":{"http_code":403},"messages":[{"id":"941100",..},...]}}`.
+            운영 해석: JSON 의 transaction.messages 가 매치 룰 배열. 룰 ID 의
+            prefix 가 카테고리 (941 XSS, 942 SQLi).
           - |
-            **[OSS] 브라우저 (학생 PC)** — UX.
-              # 학생 PC 에서 직접
-              # 1. 브라우저 주소창에 http://siem.6v6.lab/
-              # 2. self-signed cert 경고 → 진행
-              # 3. 로그인 화면 → admin / SecretPassword
-              # 4. /app/wazuh → Security Events → 최근 alert 확인
-            예상 출력 `로그인 화면 → 대시보드 진입 → alert 표 출력`.
-            운영 해석: 학생 PC ↔ VM_IP 가 LAN bridge 라 hosts 1 줄 + 브라우저로
-            접근. HTTPS 자체 인증서이므로 첫 진입 시 경고 무시.
+            **[OSS] 매치 룰 통계** — 분류.
+              ssh 6v6-web 'sudo tail -100 /var/log/apache2/modsec_audit.log | grep -oE ''"id":"[0-9]+"'' | sort | uniq -c | sort -rn | head'
+            예상 출력 `30 "id":"941100" / 25 "id":"942100" / 20 "id":"949110" / ...`.
+            운영 해석: 941 (XSS) 가 가장 자주 = XSS 공격이 빈번 또는 false-positive.
           - |
-            **[OSS] HAProxy 백엔드 ssl verify none** — TLS 전환.
-              # haproxy.cfg 의 dashboard server 라인 검증
-              ssh 6v6-fw 'sudo grep -A2 "backend dashboard" /etc/haproxy/haproxy.cfg'
-              # backend 가 ssl verify none 이어야 self-signed 통과
-            예상 출력 `backend dashboard / server dashboard 10.20.32.120:5601 check ssl verify none`.
-            운영 해석: dashboard 가 TLS 5601 listen → HAProxy 는 ssl verify none 으로
-            인증서 검증 skip + 평문 80 으로 받은 요청을 TLS 로 backend 전달.
+            **[OSS] Apache access.log + grep** — 표준.
+              ssh 6v6-web 'sudo tail -10 /var/log/apache2/access.log | grep -E "sqlmap|10.20.30.202"'
+            예상 출력 `<haproxy_ip> - - [<date>] "GET /?q=<script>... HTTP/1.1" 403 ... "sqlmap/1.5"`.
+            운영 해석: client IP 가 HAProxy hop. UA 가 sqlmap 으로 가시화.
           - |
-            **[OSS] dashboard 컨테이너 헬스** — 직접.
-              # dashboard 컨테이너 내부에서 5601 listen 검증
-              ssh 6v6-bastion docker exec 6v6-wazuh-dashboard ss -tlnp 2>&1 | grep 5601
-              # 또는 ping
-              ssh 6v6-fw 'curl -sk -o /dev/null -w "%{http_code}\n" https://10.20.32.120:5601/'
-            예상 출력 `LISTEN ... 5601 ... / 200 또는 302`.
-            운영 해석: dashboard 가 5601 (TLS) 만 listen. 80 으로 접근 시 connection
-            refused.
+            **[OSS] X-Forwarded-For — 원래 client IP** — 헤더 보존.
+              ssh 6v6-web 'sudo grep "X-Forwarded-For" /var/log/apache2/access.log 2>&1 | tail -3'
+              # 또는 audit log 의 헤더
+              ssh 6v6-web 'sudo tail -3 /var/log/apache2/modsec_audit.log | head -1 | jq -r ".transaction.request.headers.\"X-Forwarded-For\""'
+            예상 출력 `10.20.30.202`.
+            운영 해석: HAProxy 가 forwardfor 헤더로 원래 IP 전달.
           - |
-            **[OSS] dashboard 로그** — 진단.
-              ssh 6v6-bastion docker logs --tail 30 6v6-wazuh-dashboard 2>&1 | grep -iE "ready|error|warn" | head -10
-              # 메모리 사용량
-              ssh 6v6-bastion 'docker stats --no-stream --format "{{.MemUsage}}" 6v6-wazuh-dashboard'
-            예상 출력 `Server running at https://0.0.0.0:5601 / 800MB / 1.5GB`.
-            운영 해석: "Server running" 이 떴다면 dashboard 준비 완료. 초기 startup 약
-            30~60초 소요.
+            **[OSS] response.http_code 분포** — WAF 효과.
+              ssh 6v6-web 'sudo cat /var/log/apache2/modsec_audit.log | jq -r .transaction.response.http_code 2>/dev/null | sort | uniq -c'
+            예상 출력 `400 200 / 50 403 / 5 500`.
+            운영 해석: 403 비율 = WAF 차단 효과. 100% 면 모든 트래픽 차단 = 운영 위험.
           - |
-            **[OSS] API rate limit 429 검증** — 알려진 이슈.
-              # 빠르게 6번 호출 → rate limit 검증
-              ssh 6v6-attacker 'for i in 1 2 3 4 5 6; do curl -sk -o /dev/null -w "%{http_code}\n" -H "Host: siem.6v6.lab" http://10.20.30.1/; done'
-              # api.yaml 의 max_request_per_minute=5000 → 429 발생 안 해야 함
-              ssh 6v6-siem 'sudo cat /var/ossec/api/configuration/api.yaml 2>/dev/null | grep -E "max_request|max_login|block_time"'
-            예상 출력 `200 × 6 / max_request_per_minute: 5000 / max_login_attempts: 100 / block_time: 60`.
-            운영 해석: api.yaml 의 완화된 limit 가 적용되면 6연속 호출에도 429 없음.
-            기본값 (300/min) 이면 일부 429 발생.
+            **[OSS] Apache error.log 의 ModSec 메시지** — 보조.
+              ssh 6v6-web 'sudo grep -i modsec /var/log/apache2/error.log | tail -3'
+            예상 출력 `[client 10.20.31.1] ModSecurity: Warning. detected XSS...`.
+            운영 해석: error.log 가 audit log 의 인덱스 — 빠른 시각 검색.
           - |
-            **[OSS] curl /app/wazuh API 직접** — 분석.
-              # dashboard 의 /api/status 같은 health
-              ssh 6v6-attacker 'curl -sk -H "Host: siem.6v6.lab" "http://10.20.30.1/api/status" 2>&1 | head -5' \
-                || ssh 6v6-attacker 'curl -sk -L -H "Host: siem.6v6.lab" "http://10.20.30.1/" | head -50 | grep -iE "wazuh|kibana|opensearch"'
-            예상 출력 `<title>Wazuh dashboard</title>` 또는 health JSON.
-            운영 해석: dashboard 가 OpenSearch Dashboards 기반이므로 /app/login,
-            /app/wazuh, /api 같은 path 존재.
+            **[OSS] severity 분석** — 우선순위.
+              ssh 6v6-web 'sudo tail -3 /var/log/apache2/modsec_audit.log | head -1 | jq -r ".transaction.messages[].severity"'
+            예상 출력 `2 / 2 / 4` (CRITICAL=2, ERROR=3, WARNING=4).
+            운영 해석: severity 2 (CRITICAL) 가 confirmed attack.
           - |
-            **[OSS] DNS resolve 검증 (학생 PC 측)** — 진입.
-              # 학생 PC 에서
-              getent hosts siem.6v6.lab
-              # nslookup 도 가능
-              # 학생 PC /etc/hosts 에 siem.6v6.lab 매핑 필요
-            예상 출력 `<VM_IP> siem.6v6.lab`.
-            운영 해석: /etc/hosts 에 매핑 없으면 브라우저에서 호스트 헤더 자체가 다른
-            도메인으로 가서 default_backend (waf) 로 라우팅 → 잘못된 화면 (juice/dvwa
-            랜딩).
+            **[OSS] payload 의 정확한 매치 데이터** — 정밀.
+              ssh 6v6-web 'sudo tail -3 /var/log/apache2/modsec_audit.log | head -1 | jq -r ".transaction.messages[] | .data"'
+            예상 출력 `Matched Data: <script> found within ARGS:q ...`.
+            운영 해석: 매치된 정확한 페이로드 → false-positive 판단.
         negative_signs:
-          - 502 / 503 (backend down)
-          - HAProxy 라우팅 누락 (default waf 로 떨어짐)
-          - dashboard 미가동
+          - 403 응답 없음
+          - 941/942 룰 매치 없음
+    target_vm: web
 
   # ============================================================
-  # STEP 10 — wazuh-indexer cluster health
+  # STEP 10 — Blue: siem Wazuh alerts.json 추적
   # ============================================================
   - order: 10
     instruction: |
-      `6v6-wazuh-indexer` (OpenSearch) 의 cluster health 가 green / yellow 인지
-      확인한다. red 면 인덱스 일부 손실, yellow 는 replica 미할당 (단일 노드면 정상).
-    hint: |
-      ssh 6v6-bastion docker exec 6v6-wazuh-indexer curl -sk -u admin:SecretPassword \
-        https://localhost:9200/_cluster/health | jq
-    category: monitoring
+      **이 실습을 왜 하는가?**
+      Wazuh manager 가 web agent 의 ModSec audit log 를 받아 alert 생성. Blue Team
+      의 마지막 추적 — SIEM 통합 검증.
+
+      **이걸 하면 무엇을 알 수 있는가?**
+      - Wazuh agent on web 의 audit log 디코더 매칭
+      - alerts.json 에 적재된 alert 구조 (agent / rule / data)
+      - dashboard 에서 alert 시각화 가능 여부
+
+      **결과 해석**
+      alerts.json 에 `agent.name: web` + `rule.id: 31100` (Apache 4xx) 또는 사용자
+      정의 ModSec 룰 매치. 없으면 Wazuh decoder 가 modsec_audit.log 를 파싱하지 못함.
+
+      **실전 활용**
+      SIEM 의 raison d'être — 모든 source 의 통합 alert. 빈약하면 디코더 추가 (W09).
+
+      **작업 절차**:
+      ```
+      ssh 6v6-siem 'sudo tail -200 /var/ossec/logs/alerts/alerts.json | grep -E "sqlmap|941|942|10.20.30.202" | tail -2 | head -1 | jq'
+      ```
+    hint: siem alerts.json
+    category: blueteam
     points: 10
     answer: |
-      ssh 6v6-bastion 'docker exec 6v6-wazuh-indexer curl -sk -u admin:SecretPassword https://localhost:9200/_cluster/health'
-    answer_detail: cluster status (green/yellow) + active_shards 출력
+      echo "=== Blue: siem Wazuh alerts.json (통합 alert) ==="
+      ssh 6v6-siem 'sudo tail -500 /var/ossec/logs/alerts/alerts.json | grep -E "sqlmap|941|942|10.20.30.202" | tail -3 | head -1 | jq "{ts: .timestamp, agent: .agent.name, rule_id: .rule.id, level: .rule.level, desc: .rule.description, data: .data}"' || echo "(no alert — decoder 미정의 가능, W09 학습)"
+    answer_detail: |
+      예상 alert 구조: `{ts: <date>, agent: web, rule_id: 31100 (Apache 4xx),
+      level: 5, desc: "Apache: Attempt to access forbidden file", data: {srcip:
+      10.20.30.202, ...}}`. ModSec 의 941/942 룰을 직접 받으려면 Wazuh 의 decoder
+      추가 필요 (W09 의 사용자 정의 decoder). 본 step 에서 alert 가 없거나 일반
+      Apache 31100 만 있으면 정상. 941/942 specific alert 가 보이면 decoder 가
+      이미 매핑된 것.
     verify:
       type: output_contains
-      expect: cluster_name
+      expect: agent
       field: stdout
       semantic:
         intent: |
-          wazuh-indexer 의 OpenSearch cluster health. 6v6 단일 노드 + replica 0 설정
-          (internal_users.yml 의 default 값) → 모든 shard 가 primary 만 할당 →
-          status 가 GREEN 으로 나온다. replica 가 1+ 설정된 환경에서는 단일 노드면
-          YELLOW. red 면 wazuh-* 인덱스 일부가 unassigned/failed → 데이터 누락.
+          Wazuh alerts.json 에 web agent 의 alert 적재 검증.
         success_criteria:
-          - cluster_name 키
-          - status green 또는 yellow
-          - number_of_nodes >= 1
+          - agent.name web
+          - rule.id 숫자
         acceptable_methods:
           - |
-            **[OSS] _cluster/health (OpenSearch API)** — 표준.
-              ssh 6v6-bastion 'docker exec 6v6-wazuh-indexer \
-                curl -sk -u admin:SecretPassword https://localhost:9200/_cluster/health | jq'
-            예상 출력 `{"cluster_name":"wazuh-cluster","status":"yellow","number_of_nodes":1,"active_shards":15,...}`.
-            운영 해석: 단일 노드 → status yellow + replica 0 정상. green 까지 가려면
-            노드 2개 이상 + replica 1 할당.
+            **[OSS] alerts.json + jq** — 표준.
+              ssh 6v6-siem 'sudo tail -500 /var/ossec/logs/alerts/alerts.json | grep -E "web|sqlmap" | tail -3 | head -1 | jq'
+            예상 출력 `{"agent":{"name":"web",..},"rule":{"id":"31100",..,"description":"..."},"data":{"srcip":"10.20.30.202",..}}`.
+            운영 해석: agent.name=web, rule.id=Apache 룰. data.srcip = 원래 attacker.
           - |
-            **[OSS] _cat/indices (인덱스 목록)** — 데이터 확인.
-              ssh 6v6-bastion 'docker exec 6v6-wazuh-indexer \
-                curl -sk -u admin:SecretPassword "https://localhost:9200/_cat/indices?v&s=index" | head -10'
-            예상 출력 `health status index ... / yellow open wazuh-alerts-4.x-<date> ... / yellow open wazuh-monitoring-... `.
-            운영 해석: wazuh-alerts / wazuh-monitoring / wazuh-statistics 3 종 인덱스
-            존재 + 모두 yellow open.
+            **[OSS] dashboard URL — 시각화** — UX.
+              # 브라우저: https://siem.6v6.lab/ → Security Events
+              # 필터: agent.name:web AND rule.level >= 5
+              echo "dashboard 의 Security Events 메뉴 → filter"
+            예상 출력 `(UX 절차)`.
+            운영 해석: dashboard 가 alerts.json 의 시각화 + 필터 + drill-down.
           - |
-            **[OSS] _cat/nodes (노드 정보)** — 토폴로지.
-              ssh 6v6-bastion 'docker exec 6v6-wazuh-indexer \
-                curl -sk -u admin:SecretPassword "https://localhost:9200/_cat/nodes?v"'
-            예상 출력 `ip heap.percent ram.percent cpu load_1m node.role master name / 10.20.32.110 45 78 ...`.
-            운영 해석: 단일 노드. heap 80% 넘으면 OPENSEARCH_JAVA_OPTS=-Xms2g -Xmx2g
-            증액 검토.
+            **[OSS] Wazuh API /agents/{id}/stats** — agent 통신.
+              ssh 6v6-siem 'TOKEN=$(sudo curl -sk -u wazuh-wui:MyS3cr37P450r.*- -X POST https://localhost:55000/security/user/authenticate | jq -r .data.token); sudo curl -sk -H "Authorization: Bearer $TOKEN" "https://localhost:55000/agents/001/stats/logcollector" 2>&1 | head'
+            예상 출력 `{"data":{"events":1234,"bytes":..}}` 또는 다음 endpoint.
+            운영 해석: agent 의 log 수집 통계.
           - |
-            **[OSS] /var/log/wazuh-indexer/** — 로그.
-              ssh 6v6-bastion docker exec 6v6-wazuh-indexer tail -20 /var/log/wazuh-indexer/wazuh-cluster.log 2>&1 | tail
-            예상 출력 `started / cluster.routing.allocation: balanced / index recovery completed`.
-            운영 해석: "started" 라인 이후 운영. recovery 로그가 계속 나오면 디스크
-            read 지연.
+            **[OSS] rule.id 별 분포** — 트렌드.
+              ssh 6v6-siem 'sudo tail -500 /var/ossec/logs/alerts/alerts.json | jq -r .rule.id 2>/dev/null | sort | uniq -c | sort -rn | head'
+            예상 출력 `50 31100 / 30 31115 / 25 31151 / ...`.
+            운영 해석: 31100 = Apache 4xx, 31115 = unknown UA, 31151 = path 매치.
           - |
-            **[OSS] /proc/sys/vm/max_map_count** — 커널 튜닝.
-              # 호스트 측 검증
-              cat /proc/sys/vm/max_map_count 2>/dev/null
-              # OpenSearch 권장 262144 이상
-            예상 출력 `262144`.
-            운영 해석: max_map_count < 262144 면 wazuh-indexer 시작 fail (Mmap exception).
-            6v6.sh check_kernel 가 자동 설정.
+            **[OSS] level 별 분포** — 우선순위.
+              ssh 6v6-siem 'sudo tail -500 /var/ossec/logs/alerts/alerts.json | jq -r .rule.level | sort | uniq -c | sort -rn'
+            예상 출력 `200 3 / 100 5 / 30 7 / 5 12 / ...`.
+            운영 해석: level >= 7 (medium+) 가 분석 대상.
           - |
-            **[OSS] _opendistro/_security/api/account** — 보안.
-              ssh 6v6-bastion 'docker exec 6v6-wazuh-indexer \
-                curl -sk -u admin:SecretPassword "https://localhost:9200/_plugins/_security/api/account" | jq .user_name'
-            예상 출력 `"admin"`.
-            운영 해석: security plugin 동작 + admin 인증 성공. failed 면 internal_users
-            매핑 오류.
+            **[OSS] _cat/indices + wazuh-alerts-* 인덱스** — indexer 측.
+              ssh 6v6-bastion 'docker exec 6v6-wazuh-indexer curl -sk -u admin:SecretPassword "https://localhost:9200/wazuh-alerts-*/_count?pretty"'
+            예상 출력 `{"count":1234,..}`.
+            운영 해석: indexer 에 적재된 총 alert 수.
           - |
-            **[OSS] _cat/shards** — shard 분포.
-              ssh 6v6-bastion 'docker exec 6v6-wazuh-indexer \
-                curl -sk -u admin:SecretPassword "https://localhost:9200/_cat/shards?v" | head -20'
-            예상 출력 `index shard prirep state docs store ip node / wazuh-alerts-4.x-* 0 p STARTED 1234 5mb ...`.
-            운영 해석: STARTED 면 정상. UNASSIGNED 가 있으면 single-node 라 replica
-            allocate 실패 (yellow 의 원인).
+            **[OSS] _search 쿼리 — 정밀** — analyst.
+              ssh 6v6-bastion 'docker exec 6v6-wazuh-indexer curl -sk -u admin:SecretPassword "https://localhost:9200/wazuh-alerts-*/_search?q=data.srcip:10.20.30.202&size=2&pretty"'
+            예상 출력 `{"hits":{"total":{"value":N,..},"hits":[..attacker IP 매칭..]}}`.
+            운영 해석: indexer DSL 로 attacker IP 별 분석.
           - |
-            **[OSS] _search 쿼리 (실제 alert 검색)** — 데이터 검증.
-              ssh 6v6-bastion 'docker exec 6v6-wazuh-indexer \
-                curl -sk -u admin:SecretPassword \
-                "https://localhost:9200/wazuh-alerts-*/_search?size=1&pretty" | jq ".hits.total.value, .hits.hits[0]._source.rule.id"'
-            예상 출력 `1234 / "5715"`.
-            운영 해석: hits.total > 0 = alert 가 indexer 에 적재됨. 0 이면 manager 의
-            filebeat 가 indexer 로 못 보내거나, agent 미연결.
+            **[OSS] decoder 매핑 점검 (gap)** — W09 예고.
+              ssh 6v6-siem 'sudo grep -l "modsec\|apache.*audit" /var/ossec/ruleset/decoders/*.xml 2>/dev/null | head'
+            예상 출력 `(decoder 파일) 또는 빈 결과 (decoder 미정의)`.
+            운영 해석: 빈 결과면 W09 에서 사용자 정의 decoder 추가.
         negative_signs:
-          - status red
-          - number_of_nodes 0
-          - 인덱스 wazuh-alerts-* 없음
+          - alerts.json 비어 있음
+          - agent.name web 흔적 없음
+    target_vm: siem
 
   # ============================================================
-  # STEP 11 — portal 운영 대시보드 (portal.6v6.lab)
+  # STEP 11 — Purple: 4 도구 통합 + Coverage Matrix + Gap
   # ============================================================
   - order: 11
     instruction: |
-      `portal.6v6.lab` 의 FastAPI + HTMX 기반 운영 대시보드에 접근 → 컨테이너 상태
-      / Wazuh alert / Suricata flow / Bastion API 위젯이 표시되는지 확인.
-    hint: |
-      ssh 6v6-attacker curl -s -H 'Host: portal.6v6.lab' http://10.20.30.1/ | head -50
-    category: connectivity
-    points: 10
+      **이 실습을 왜 하는가?**
+      Red 공격 1건 → Blue 4 도구 추적 → Purple 이 detection coverage 측정 + gap 식별.
+      운영 환경의 standard purple cycle.
+
+      **이걸 하면 무엇을 알 수 있는가?**
+      - 각 도구가 같은 transaction 을 어떻게 다른 방식으로 기록
+      - 통합 분석을 위한 correlation key (timestamp / IP / URI / flow_id)
+      - 미탐지 gap (어느 도구가 무엇을 놓치는가)
+
+      **결과 해석**
+      4 도구 모두 흔적 = chain 완전. 1 곳이라도 누락 = 해당 도구의 룰/디코더 점검.
+
+      **실전 활용**
+      Purple Team 의 standard. W04+ 에서 룰 추가 → 재 cycle.
+
+      **작업 절차**: Coverage Matrix 작성:
+      ```
+      | 도구 | 흔적 | 매치 키 | 기록 형식 |
+      | fw HAProxy log | ✓ | client IP + URI | text (rsyslog) |
+      | ips Suricata | ✓ | flow_id + hostname | JSON (eve.json) |
+      | web ModSec | ✓ | transaction.id + 룰 ID | JSON (audit log) |
+      | web Apache | ✓ | client IP + X-Forwarded-For | text (combined) |
+      | siem Wazuh | ? | agent + rule.id | JSON (alerts.json) |
+      ```
+    hint: Coverage Matrix + Gap 분석
+    category: purpleteam
+    points: 14
     answer: |
-      ssh 6v6-attacker curl -s -H 'Host: portal.6v6.lab' http://10.20.30.1/
-    answer_detail: portal HTML 출력 + 위젯 키워드 확인
+      echo "=== Purple Team Coverage Matrix ==="
+      cat <<'EOF'
+      | 도구                   | 흔적 | 매치 키                      | 기록 형식         |
+      |-----------------------|------|-----------------------------|------------------|
+      | fw HAProxy log         | ✓    | client IP + URI             | text (rsyslog)   |
+      | ips Suricata eve.json  | ✓    | flow_id + hostname          | JSON line        |
+      | web ModSec audit.log   | ✓    | transaction.id + 룰 ID       | JSON line        |
+      | web Apache access.log  | ✓    | client IP + X-Forwarded-For | text (combined)  |
+      | siem Wazuh alerts.json | ?    | agent + rule.id              | JSON line        |
+      EOF
+      echo ""
+      echo "=== Gap 분석 ==="
+      echo "1. Wazuh 의 ModSec decoder 가 941/942 룰 ID 를 자체 룰로 격상하지 않으면"
+      echo "   alerts.json 에는 일반 Apache 31100 만 보임 → W09 사용자 정의 decoder 필요"
+      echo "2. X-Forwarded-For 헤더가 없으면 web access.log 의 client IP 가 HAProxy hop"
+      echo "   IP (10.20.31.1) → 원래 attacker 추적 불가 → HAProxy 의 forwardfor 옵션 필수"
+      echo "3. fw HAProxy log 가 rsyslog 미설정 시 journalctl 만 → log retention 제한"
+      echo ""
+      echo "=== 권장 조치 (W09-10 학습) ==="
+      echo "- W09: Wazuh 사용자 정의 decoder + local_rules.xml 추가 (rule 100100+)"
+      echo "- W10: agent 측 syscheck (FIM) + Active Response 통합"
+      echo "- W13: CDB list 로 attacker IP 자동 등록 → level 12 alert 격상"
+    answer_detail: |
+      Coverage Matrix 5 행 작성 후 gap 분석. 표준 분석:
+      (1) 4 도구 모두 흔적 = chain 완전 / 통합 분석 가능.
+      (2) Wazuh 의 ModSec decoder 미정의 = SIEM 측 ModSec 룰 ID 격상 불가 (W09 의
+          local_rules.xml 추가 필요).
+      (3) HAProxy forwardfor 옵션 부재 = client IP loss.
+      (4) flow_id (Suricata) + transaction.id (ModSec) + agent (Wazuh) 의
+          correlation 키 정리.
     verify:
       type: output_contains
-      expect: portal
+      expect: Coverage
       field: stdout
       semantic:
         intent: |
-          portal.6v6.lab vhost 는 fw HAProxy 가 portal backend (10.20.32.50:8000) 로
-          직접 라우팅 (WAF 우회). FastAPI 가 컨테이너 상태 / alert / flow / bastion
-          API 4 위젯을 HTMX 로 갱신한다.
+          Purple Team — 4 도구 흔적의 통합 + gap 식별 + 권장 조치.
         success_criteria:
-          - portal 또는 6v6 키워드
-          - 200 응답
-          - 위젯 또는 HTMX 키워드 (hx-get 등)
+          - Coverage Matrix 표
+          - Gap 분석 1+
+          - 권장 조치 1+
         acceptable_methods:
           - |
-            **[OSS] curl + Host header** — 표준.
-              ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -H "Host: portal.6v6.lab" http://10.20.30.1/'
-              ssh 6v6-attacker 'curl -s -H "Host: portal.6v6.lab" http://10.20.30.1/ | head -30'
-            예상 출력 `200 / <!DOCTYPE html> <html><head><title>6v6 Portal</title> ...`.
-            운영 해석: 학생이 브라우저로 http://portal.6v6.lab/ 접근 시 동일 출력.
+            **[관리적 보고서] Coverage Matrix 5 행** — 표준.
+              | 도구 | 흔적 | 매치 키 | 기록 형식 |
+              | fw HAProxy | ✓ | IP+URI | text |
+              | ips Suricata | ✓ | flow_id | JSON |
+              | web ModSec | ✓ | tx.id+rule | JSON |
+              | web Apache | ✓ | IP+XFF | text |
+              | siem Wazuh | ? | agent+rule.id | JSON |
+            운영 해석: 5 행 매트릭스. 가시화로 운영자 보고.
           - |
-            **[OSS] portal 컨테이너 직접** — backend health.
-              ssh 6v6-bastion 'docker exec 6v6-portal curl -s http://localhost:8000/health' 2>/dev/null \
-                || ssh 6v6-bastion 'docker exec 6v6-portal ss -tlnp | grep 8000'
-            예상 출력 `{"status":"ok","containers":16} 또는 LISTEN 8000`.
-            운영 해석: portal 가 8000 listen + /health endpoint 정상.
+            **[관리적] Gap 분석 3 카테고리** — 정밀.
+              1. Wazuh decoder 미정의 → ModSec 룰 ID 격상 불가
+              2. forwardfor 옵션 → client IP loss
+              3. rsyslog 미설정 → HAProxy log retention 부족
+            운영 해석: 3 gap 모두 W09-13 학습 대상.
           - |
-            **[OSS] HTMX 위젯 endpoint** — 동적.
-              # portal 가 hx-get 으로 부르는 endpoint 들
-              ssh 6v6-attacker 'curl -s -H "Host: portal.6v6.lab" "http://10.20.30.1/widget/containers"' | head -20
-              ssh 6v6-attacker 'curl -s -H "Host: portal.6v6.lab" "http://10.20.30.1/widget/alerts"' | head -20
-              ssh 6v6-attacker 'curl -s -H "Host: portal.6v6.lab" "http://10.20.30.1/widget/flows"' | head -20
-            예상 출력 `<table><tr><td>6v6-fw</td><td>Up</td></tr> ... / <table>...wazuh alerts ... / Suricata flow ...`.
-            운영 해석: 각 위젯이 HTML fragment 반환. 동적 갱신은 hx-get + hx-trigger.
+            **[관리적] 통합 correlation 키** — 분석.
+              - timestamp (ms 단위, 4 도구 모두)
+              - client IP / X-Forwarded-For
+              - flow_id (Suricata)
+              - transaction.id (ModSec)
+              - rule.id (Wazuh)
+              - URI / hostname / UA
+            운영 해석: 4 도구 의 transaction 매칭에 사용.
           - |
-            **[OSS] portal Bastion API 통합** — 다운스트림.
-              # portal 이 bastion API 호출 (BASTION_API_URL=http://10.20.30.201:9100)
-              ssh 6v6-bastion 'docker exec 6v6-portal env | grep BASTION'
-              # bastion API 의 /health
-              ssh 6v6-attacker 'curl -s -H "Host: bastion.6v6.lab" "http://10.20.30.1/health" -H "X-API-Key: ccc-api-key-2026"'
-            예상 출력 `BASTION_API_URL=http://10.20.30.201:9100 / BASTION_API_KEY=ccc-api-key-2026 /
-            {"status":"ok","kg":...}`.
-            운영 해석: portal 이 bastion API 를 호출 → CCC Bastion KG 연동.
+            **[관리적] MITRE ATT&CK 매핑** — 표준.
+              본 공격: T1190 (Exploit Public-Facing) + T1059.007 (JS) + T1190.x SQLi
+              방어: D3-WAF (ModSec) + D3-NTA (Suricata) + D3-NTPM (fw)
+            운영 해석: 공격 매트릭스 (ATT&CK) + 방어 매트릭스 (D3FEND) 매핑.
           - |
-            **[OSS] portal volume 매핑** — 데이터 소스.
-              ssh 6v6-bastion docker inspect 6v6-portal --format '{{range .Mounts}}{{.Source}}:{{.Destination}}{{"\n"}}{{end}}'
-              # /data/suricata-logs / /data/apache-logs / /data/wazuh
-            예상 출력 `/var/.../ips-suricata-logs:/data/suricata-logs / .../web-apache-logs:/data/apache-logs / .../wazuh-manager-logs:/data/wazuh`.
-            운영 해석: portal 은 4 컨테이너의 로그 볼륨 read-only 마운트 → 한 곳에서
-            로그 통합 조회.
+            **[관리적] ISMS-P 사후 조치** — 한국 표준.
+              2.12.1 사고 인지: ✓ (4 도구 alert)
+              2.12.2 대응 체계: ✓ (Wazuh Active Response, W10)
+              2.12.3 사고 분석: ✓ (본 step 의 5 추적)
+              2.12.4 사후 관리: 권장 (Report 작성, W14)
+            운영 해석: 사고 대응 표준 만족도.
           - |
-            **[OSS] FastAPI / Uvicorn 로그** — 진단.
-              ssh 6v6-bastion docker logs --tail 30 6v6-portal 2>&1 | tail -15
-            예상 출력 `Uvicorn running on http://0.0.0.0:8000 / INFO: 10.20.31.2:xxxxx - "GET / HTTP/1.1" 200`.
-            운영 해석: portal 의 client IP 가 ips 의 dmz NIC (10.20.32.1) 또는 fw 의
-            pipe NIC (10.20.31.1) 이어야 한다 (HAProxy hop).
+            **[관리적] 권장 조치 우선순위** — 운영.
+              P1: Wazuh decoder 추가 (W09)
+              P2: HAProxy forwardfor 적용 (영구)
+              P3: rsyslog → SIEM 통합
+              P4: CDB list 자동 갱신 (W13)
+              P5: 분기별 false-positive 룰 리뷰
+            운영 해석: 5+ 권장 + 우선순위.
           - |
-            **[OSS] 브라우저 (학생 PC)** — UX.
-              # 1. http://portal.6v6.lab/ 접근
-              # 2. 4 위젯 (컨테이너 / Wazuh alert / Suricata flow / Bastion KG)
-              # 3. HTMX 자동 갱신 (5초 주기)
-              # 4. 클릭 시 상세 페이지 (/container/6v6-fw, /alert/<id>) 진입
-            예상 출력 `4 위젯 표시 + 자동 갱신`.
-            운영 해석: 학생이 운영자 시점으로 인프라 가시화. AWS Console 풍 UX.
+            **[관리적] AAR (After-Action Report)** — 표준.
+              # AAR — 6v6 W01 Red/Blue/Purple Cycle
+              ## Operation 요약: sqlmap UA + XSS + SQLi payload 1건
+              ## Coverage: 4/5 (Wazuh decoder 미정의)
+              ## Gap: ModSec → Wazuh decoder
+              ## Action: W09 의 local_rules 추가
+              ## Next cycle: 1주일 후
+            운영 해석: 1페이지 AAR 형식.
           - |
-            **[OSS] portal Dockerfile / 의존성** — 정적.
-              ssh 6v6-bastion docker exec 6v6-portal cat /app/requirements.txt 2>/dev/null | head -10 \
-                || ssh 6v6-bastion docker exec 6v6-portal pip list 2>/dev/null | grep -iE "fastapi|uvicorn|jinja" | head
-            예상 출력 `fastapi==0.111.0 / uvicorn==0.30.0 / jinja2==3.1.4 / httpx==0.27.0`.
-            운영 해석: FastAPI + Uvicorn 표준 + jinja 템플릿 + httpx (Bastion API 호출).
+            **[관리적] 학습 진도** — 연속.
+              본 step 의 gap 들이 W04-W14 의 학습 동기.
+              W04: Suricata 사용자 룰 (gap 1)
+              W06: ModSec exception (gap 2)
+              W09: Wazuh decoder + rule (gap 3)
+              W13: CDB list 자동 갱신 (gap 4)
+              W14: Purple Team 정기 cycle
+            운영 해석: 학습 logical flow.
         negative_signs:
-          - portal 키워드 없음
-          - 503 / connection refused
-          - HTMX 위젯 endpoint 누락
+          - Coverage Matrix 누락
+          - Gap 분석 0건
+    target_vm: bastion
 
   # ============================================================
-  # STEP 12 — 학생 트래픽 4-hop 검증 (juice.6v6.lab)
+  # STEP 12 — 종합 헬스체크 + 자가 보고서
   # ============================================================
   - order: 12
     instruction: |
-      `juice.6v6.lab` 접근 시 패킷이 `학생PC → fw → ips → web(WAF) → int juiceshop`
-      4-hop 을 모두 통과하는지 검증한다. 각 hop 에서 tcpdump / log 로 같은 요청을
-      관찰할 수 있어야 한다.
-    hint: |
-      ssh 6v6-attacker curl -s -H 'Host: juice.6v6.lab' http://10.20.30.1/ | head -10
-    category: integration
-    points: 15
-    answer: |
-      ssh 6v6-attacker curl -s -o /dev/null -w 'http=%{http_code} time=%{time_total}\n' -H 'Host: juice.6v6.lab' http://10.20.30.1/
-    answer_detail: 학생 트래픽이 4-hop 모두 통과 + HTTP 200 응답
-    verify:
-      type: output_contains
-      expect: '200'
-      field: stdout
-      semantic:
-        intent: |
-          학생 트래픽 (juice.6v6.lab) 의 4-hop chain 검증. fw HAProxy → ips inline →
-          web Apache (WAF) → int juiceshop. 각 hop 의 access log / suricata flow /
-          modsec audit 에 동일 transaction 흔적이 남아야 한다.
-        success_criteria:
-          - HTTP 200 응답
-          - 4-hop 중 최소 3 hop log 흔적
-          - ModSec audit log 에 transaction 기록 (RelevantOnly 라 200 OK 면 없을 수도)
-        acceptable_methods:
-          - |
-            **[OSS] curl 응답 코드 + 시간** — 표준.
-              ssh 6v6-attacker 'curl -s -o /dev/null -w "HTTP: %{http_code}\nTotal time: %{time_total}s\nFirst byte: %{time_starttransfer}s\nRedirect count: %{num_redirects}\n" -H "Host: juice.6v6.lab" -L http://10.20.30.1/'
-            예상 출력 `HTTP: 200 / Total time: 0.150s / First byte: 0.120s / Redirect count: 1`.
-            운영 해석: 4-hop 이므로 총 시간 100ms 이상 정상. 1ms 면 HAProxy 캐시 또는
-            우회 의심.
-          - |
-            **[OSS] 4 hop 동시 tcpdump (멀티 SSH)** — 동적.
-              # 새 터미널 4개 (학생 PC) 에서 동시 실행
-              # T1: ssh 6v6-fw 'sudo tcpdump -ni eth0 "tcp port 80" -c 5'
-              # T2: ssh 6v6-ips 'sudo tcpdump -ni eth0 "tcp port 80" -c 5'
-              # T3: ssh 6v6-ips 'sudo tcpdump -ni eth1 "tcp port 80" -c 5'
-              # T4: ssh 6v6-web 'sudo tcpdump -ni eth0 "tcp port 80" -c 5'
-              # 다른 터미널: curl 발생
-            예상 출력 `각 hop 에 동일한 client IP / time stamp 패킷 캡처`.
-            운영 해석: 4 hop 모두 capture 되어야 패킷이 실제로 chain 통과.
-          - |
-            **[OSS] fw HAProxy log + ips eve.json + web access.log 의 transaction matching** — 분석.
-              # 동일한 curl 의 footprint 를 3 곳에서 추적
-              TS=$(date +%s)
-              ssh 6v6-attacker "curl -s -H 'Host: juice.6v6.lab' -H 'X-Trace: trace-$TS' http://10.20.30.1/ -o /dev/null"
-              # fw haproxy log
-              ssh 6v6-fw "sudo grep -E 'trace-$TS' /var/log/haproxy.log 2>/dev/null || sudo tail -5 /var/log/haproxy.log"
-              # ips eve.json — flow 로 매치
-              ssh 6v6-ips 'sudo tail -50 /var/log/suricata/eve.json | jq "select(.event_type==\"http\")" | tail -3'
-              # web Apache access
-              ssh 6v6-web 'sudo grep -E "trace-'$TS'" /var/log/apache2/access.log 2>/dev/null | tail -3 || sudo tail -3 /var/log/apache2/access.log'
-            예상 출력 `각 위치에서 동일 transaction (X-Trace 헤더 또는 timestamp) 매치`.
-            운영 해석: X-Trace 헤더로 분산 추적. 운영 환경에서는 OpenTelemetry trace ID
-            도 가능.
-          - |
-            **[OSS] web access.log 의 client IP 분석** — 헤더 보존.
-              ssh 6v6-web 'sudo tail -10 /var/log/apache2/access.log | head -3'
-              # X-Forwarded-For 헤더 검증
-              ssh 6v6-attacker 'curl -s -H "Host: juice.6v6.lab" http://10.20.30.1/ -o /dev/null'
-              ssh 6v6-web 'sudo grep -E "X-Forwarded-For" /var/log/apache2/access.log 2>/dev/null | tail -3' \
-                || ssh 6v6-web 'sudo tail -3 /var/log/apache2/access.log'
-            예상 출력 `<client IP> - - [<date>] "GET / HTTP/1.1" 200 1234 ... / X-Forwarded-For: 10.20.30.202`.
-            운영 해석: HAProxy 가 X-Forwarded-For 헤더 추가 → web Apache 의 log 에 원래
-            attacker IP 보존. 헤더 없으면 ips/fw 의 hop IP 만 보임.
-          - |
-            **[OSS] juiceshop 백엔드 log** — 최종 hop.
-              ssh 6v6-bastion docker logs --tail 20 6v6-juiceshop 2>&1 | tail -10
-            예상 출력 `GET / 200 1.234ms / express middleware ...`.
-            운영 해석: juiceshop 가 요청 받음 → 4-hop 최종 검증.
-          - |
-            **[OSS] 동일 transaction 이 ips Suricata 의 flow event 에 기록** — IDS view.
-              ssh 6v6-ips 'sudo tail -100 /var/log/suricata/eve.json | jq "select(.event_type==\"http\" and .http.hostname==\"juice.6v6.lab\")"' | tail -3
-            예상 출력 `{"event_type":"http","http":{"hostname":"juice.6v6.lab","url":"/","status":200,"protocol":"HTTP/1.1"},...}`.
-            운영 해석: Suricata 는 protocol decoder 로 HTTP 페이로드를 별도 event 로
-            기록. hostname / url / status 모두 정확해야 함.
-          - |
-            **[OSS] HAProxy stats — backend waf 통계** — 메트릭.
-              ssh 6v6-fw 'echo "show stat" | sudo socat - UNIX-CONNECT:/var/run/haproxy.sock 2>/dev/null | awk -F, "/^waf/ {print \$1, \$2, \$5, \$8, \$58}"'
-            예상 출력 `waf BACKEND 0 5 200 / waf web 0 5 200`.
-            운영 해석: BACKEND 의 8th column = response count (200). 1xx/2xx/3xx/4xx/5xx
-            분포 확인.
-          - |
-            **[OSS] Wazuh alert 가 학생 트래픽으로 발생** — 통합.
-              # juice.6v6.lab 에 공격성 URL 접근 → ModSec 가 alert → Wazuh ingest
-              ssh 6v6-attacker 'curl -s -o /dev/null -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=<script>alert(1)</script>"'
-              sleep 3
-              ssh 6v6-siem 'sudo tail -20 /var/ossec/logs/alerts/alerts.json | jq "select(.agent.name==\"web\")"' | tail
-            예상 출력 `{"agent":{"name":"web",...}, "rule":{"id":"941100",...}, "data":{"url":"...","modsecurity":..}}`.
-            운영 해석: web agent → manager → alerts.json 에 ModSec id 941100 기록 →
-            chain 통합 완성.
-        negative_signs:
-          - HTTP 5xx
-          - 한 hop 이라도 log 흔적 없음
-          - juiceshop 백엔드 log 없음
+      **이 실습을 왜 하는가?**
+      11 step 결과 + R/B/P 통합 결과 + 본인 발견 1건 의 자가 보고서. 운영자의 첫
+      산출물.
 
-  # ============================================================
-  # STEP 13 — 운영 트래픽 3-hop 검증 (siem.6v6.lab — WAF 우회)
-  # ============================================================
-  - order: 13
-    instruction: |
-      `siem.6v6.lab` 접근 시 패킷이 `학생PC → fw → ips → wazuh-dashboard` 3-hop
-      (WAF 우회) 인지 검증한다. web Apache access log 에는 흔적이 없어야 하며,
-      ips eve.json 에는 5601 (또는 TLS) 흐름이 보여야 한다.
-    hint: |
-      ssh 6v6-attacker 'curl -sk -o /dev/null -w "%{http_code}\n" -H "Host: siem.6v6.lab" http://10.20.30.1/'
-    category: integration
-    points: 15
-    answer: |
-      ssh 6v6-attacker 'curl -sk -o /dev/null -w "%{http_code}\n" -H "Host: siem.6v6.lab" http://10.20.30.1/; ssh 6v6-web sudo tail -5 /var/log/apache2/access.log'
-    answer_detail: siem 접근이 web access log 에 안 남음 (WAF 우회) + dashboard 응답
-    verify:
-      type: output_contains
-      expect: '200'
-      field: stdout
-      semantic:
-        intent: |
-          운영 트래픽 (siem.6v6.lab) 은 fw HAProxy 가 dashboard backend 로 직접
-          라우팅 → web Apache 의 access.log 에 흔적이 없어야 한다 (WAF 우회 검증).
-          단, ips Suricata 는 dmz 트래픽을 sniff 하므로 eve.json 에는 흐름 흔적 있음.
-        success_criteria:
-          - HTTP 200 또는 302 응답
-          - web access.log 에 siem.6v6.lab 흔적 없음
-          - ips eve.json 에 5601 또는 dashboard 흐름 있음
-        acceptable_methods:
-          - |
-            **[OSS] curl 응답 코드 측정** — 표준.
-              ssh 6v6-attacker 'curl -sk -o /dev/null -w "HTTP: %{http_code}, time: %{time_total}\n" -H "Host: siem.6v6.lab" -L http://10.20.30.1/'
-            예상 출력 `HTTP: 200, time: 0.080s`.
-            운영 해석: 3-hop 이라 4-hop 보다 약간 빠를 수 있음. 가격 차이는 50~100ms.
-          - |
-            **[OSS] web access.log 에 siem 흔적 없음 검증 (negative)** — WAF 우회.
-              # siem 접근 직전 access.log 라인 수
-              before=$(ssh 6v6-web 'sudo wc -l /var/log/apache2/access.log | awk "{print \$1}"')
-              ssh 6v6-attacker 'curl -sk -H "Host: siem.6v6.lab" http://10.20.30.1/' -o /dev/null
-              sleep 2
-              after=$(ssh 6v6-web 'sudo wc -l /var/log/apache2/access.log | awk "{print \$1}"')
-              echo "Before: $before, After: $after, Diff: $((after - before))"
-              # Diff 가 0 이어야 WAF 우회 검증
-              ssh 6v6-web 'sudo grep "siem.6v6.lab" /var/log/apache2/access.log 2>/dev/null | wc -l'
-            예상 출력 `Before: 1234, After: 1234, Diff: 0 / 0`.
-            운영 해석: 핵심 negative test. 우회 정책이 적용되지 않으면 access.log 에
-            siem.6v6.lab vhost 가 기록되어 false-positive WAF alert 폭증.
-          - |
-            **[OSS] HAProxy log 의 backend dashboard 흔적** — positive.
-              ssh 6v6-fw 'sudo grep "dashboard" /var/log/haproxy.log 2>/dev/null | tail -3' \
-                || ssh 6v6-fw 'sudo journalctl -u haproxy --since "1m ago" 2>/dev/null | grep -i dashboard | tail'
-            예상 출력 `<time> haproxy ... http_in dashboard/dashboard 0/0/0/...`.
-            운영 해석: HAProxy log 의 backend column 이 dashboard 면 우회 라우팅 적용.
-          - |
-            **[OSS] ips eve.json 의 5601 흐름** — IDS 측 검증.
-              ssh 6v6-ips 'sudo tail -100 /var/log/suricata/eve.json | jq "select(.dest_port==5601)" | tail -3'
-              # 또는 TLS 흐름
-              ssh 6v6-ips 'sudo tail -100 /var/log/suricata/eve.json | jq "select(.event_type==\"flow\" and (.dest_port==5601 or .dest_port==443))" | tail -3'
-            예상 출력 `{"event_type":"flow","src_ip":"10.20.31.1","dest_ip":"10.20.32.120","dest_port":5601,...}`.
-            운영 해석: ips 가 fw → wazuh-dashboard 흐름을 sniff. 패킷 자체가 ips 를
-            통과해야 dmz 에 도달 가능.
-          - |
-            **[OSS] fw → wazuh-dashboard 직접 ping** — 단순 연결.
-              ssh 6v6-fw 'curl -sk -o /dev/null -w "%{http_code}\n" https://10.20.32.120:5601/'
-              # 5601 TLS 만 listen
-              ssh 6v6-fw 'curl -s -o /dev/null -w "%{http_code}\n" http://10.20.32.120:5601/'
-            예상 출력 `200 / 000 (plain HTTP refused)`.
-            운영 해석: HAProxy 가 TLS 로 backend 호출하므로 dashboard 의 5601 TLS 만
-            응답.
-          - |
-            **[OSS] HAProxy frontend ACL 매칭 검증** — 라우팅 로직.
-              # ACL 이 host header 로만 매치
-              ssh 6v6-attacker 'curl -sk -o /dev/null -w "%{http_code}\n" -H "Host: SIEM.6v6.LAB" http://10.20.30.1/'
-              # -i (case-insensitive) 옵션 검증
-              ssh 6v6-attacker 'curl -sk -o /dev/null -w "%{http_code}\n" -H "Host: SiEm.6V6.LaB" http://10.20.30.1/'
-            예상 출력 `200 / 200`.
-            운영 해석: HAProxy ACL 의 -i 옵션 (case-insensitive) 으로 대소문자 무관
-            매칭. 정상.
-          - |
-            **[OSS] backend health 가 down 일 때 fallback** — failure.
-              # dashboard backend 가 down 이면 503 ← WAF 로 fallback 되지 않아야 함
-              # (실험 후 즉시 복구)
-              # 강사용: docker stop 6v6-wazuh-dashboard
-              # 학생용: 직접 5601 안 됨 검증
-              ssh 6v6-attacker 'curl -sk -o /dev/null -w "%{http_code}\n" http://10.20.32.120:5601/' 2>&1
-            예상 출력 `200 (정상) 또는 000 (down 시)`.
-            운영 해석: backend 가 down 이면 HAProxy 가 default_backend (waf) 로 떨어
-            지지 않음 (ACL 매치되면 무조건 named backend). 503 응답.
-          - |
-            **[OSS] dashboard 로그 — 실제 접근 기록** — 최종 hop.
-              ssh 6v6-bastion 'docker logs --tail 30 6v6-wazuh-dashboard 2>&1 | grep -iE "GET|POST" | tail -5'
-            예상 출력 `<date> [http] GET / 200 ...`.
-            운영 해석: dashboard 가 실제 요청 받았는지 확인. 받지 않았다면 HAProxy 가
-            라우팅 실패.
-        negative_signs:
-          - web access.log 에 siem 흔적 (WAF 우회 실패)
-          - HTTP 503 (backend down)
-          - HAProxy log 에 waf backend 로 매칭
+      **이걸 하면 무엇을 알 수 있는가?**
+      - 본 환경의 baseline 정확도 (5 솔루션 모두 정상 vs 일부 비정상)
+      - 본인 학습 gap 자가 진단
+      - W02 의 학습 준비도
 
-  # ============================================================
-  # STEP 14 — 통합 헬스체크 보고서 (자가 점검)
-  # ============================================================
-  - order: 14
-    instruction: |
-      앞 13 단계 결과를 모아 1페이지 헬스체크 보고서를 작성한다. 다음 항목 모두
-      pass / fail / partial 표시 + 본인이 발견한 비정상 1건 (없으면 "정상" + 근거).
-    hint: |
-      각 step 의 핵심 출력 1줄 + 종합 표 작성
+      **결과 해석**
+      종합 pass = 5 솔루션 + R/B/P 모두 OK + 본인 분석 1건. partial = 일부 비정상.
+
+      **실전 활용**
+      운영자 매일 아침 헬스체크 표.
+
+      **작업 절차**: Markdown 보고서 작성.
+    hint: 마크다운 표 + 분석
     category: synthesis
-    points: 15
+    points: 14
     answer: |
-      # 보고서 항목:
-      # 1. bastion docker ps 16건
-      # 2. ProxyJump fw/ips/web/siem 4건
-      # 3. fw nft + HAProxy 4 backend
-      # 4. ips Suricata 2 NIC sniff + eve.json
-      # 5. web Apache + ModSec audit JSON
-      # 6. siem 16 daemon + 3 agent Active
-      # 7. wazuh-dashboard 접근 가능
-      # 8. wazuh-indexer cluster yellow + alerts 인덱스
-      # 9. portal 4 위젯
-      # 10. 학생 트래픽 4-hop 통과
-      # 11. 운영 트래픽 3-hop 우회
-      # 12. 본인 발견 비정상 1건
-    answer_detail: 1페이지 헬스체크 보고서 작성 + 본인 발견 1건
+      cat <<'EOF'
+      # 6v6 W01 헬스체크 + R/B/P 보고서
+
+      ## 1. 인프라 헬스 표
+      | Step | 영역 | 결과 | 근거 |
+      |------|------|------|------|
+      | 1 | bastion + 16 컨테이너 | pass | docker ps 16건 Up |
+      | 2 | ProxyJump 4 노드 | pass | fw/ips/web/siem hostname 응답 |
+      | 3 | fw nft + HAProxy | pass | 3 table + 6 backend + 4 라우팅 |
+      | 4 | ips Suricata 2 NIC | pass | -i eth0 -i eth1 + drops 0 |
+      | 5 | web Apache + ModSec | pass | security2 + SecRuleEngine On + 403 차단 |
+      | 6 | siem 11 daemon + 3 agent | pass | wazuh-control + Active × 3 |
+
+      ## 2. R/B/P 시나리오
+      | Step | 팀 | 결과 |
+      |------|-----|------|
+      | 7 | Red — sqlmap UA + XSS + SQLi | 403 차단 |
+      | 8 | Blue — fw HAProxy + ips eve.json | 흔적 ✓ |
+      | 9 | Blue — web ModSec audit + access | 941/942 룰 매치 ✓ |
+      | 10 | Blue — siem alerts.json | agent web alert ✓ |
+      | 11 | Purple — Coverage + Gap | 4/5 + W09 decoder 필요 |
+
+      ## 3. 본인 발견 비정상 / 의문점 1건
+      예: "ModSec audit log 의 client_ip 가 HAProxy hop (10.20.31.1) 인데, X-Forwarded-For
+      헤더가 있어야 원래 attacker IP (10.20.30.202) 추적 가능. 운영 환경은
+      `option forwardfor` 가 HAProxy.cfg 에 반드시 설정되어야 한다."
+
+      ## 4. W02 준비도 자가 진단
+      - nftables 기초 OK
+      - tcpdump BPF filter OK
+      - HAProxy host header ACL OK
+      - 부족: nft monitor trace 실 사용 경험 → W03 추가 학습 계획
+
+      ## 5. 운영 권장 (W02-W14 학습 대상)
+      1. W09: Wazuh ModSec 사용자 정의 decoder 추가
+      2. W13: CDB list 자동 갱신 (AbuseIPDB / OpenCTI)
+      3. W14: Purple Team 분기별 정기 cycle
+      EOF
+    answer_detail: |
+      1페이지 보고서. 6 step 헬스 + 5 step R/B/P + 본인 발견 1건 + W02 준비도 +
+      운영 권장 3+. 모든 항목 명시.
     verify:
       type: output_contains
-      expect: pass
+      expect: '6v6'
       field: stdout
       semantic:
-        intent: |
-          1주차 헬스체크 보고서. 13 단계 결과를 종합한 1페이지 자가 진단 문서.
-          각 step pass/fail/partial + 본인 분석. 종합 등급 (5종 솔루션 모두 정상
-          = pass / 일부 불완 = partial / 핵심 daemon 실패 = fail).
+        intent: 종합 보고서
         success_criteria:
-          - 13 step 종합 표
-          - pass/fail/partial 표기
-          - 본인 발견 1건 (정상도 가능, 근거 필요)
+          - 6 step 표
+          - R/B/P 5 step 표
+          - 본인 발견 1건
         acceptable_methods:
           - |
-            **[관리적 보고서] 마크다운 표 + 본인 분석** — 표준.
-              # 헬스체크 보고서 (Week 01)
-              | Step | 항목 | 결과 | 근거 |
-              |------|------|------|------|
-              | 1 | bastion docker ps | pass | 16 컨테이너 Up |
-              | 2 | ProxyJump 4 노드 | pass | fw/ips/web/siem hostname 출력 |
-              | 3 | fw nftables + HAProxy | pass | forward chain accept + 4 backend |
-              | ... | ... | ... | ... |
-              | 12 | 본인 발견 | partial | 비정상 1건 또는 정상 |
-
-              ## 본인 분석
-              발견: <자유 서술>
-              MITRE ATT&CK 매핑: <T1xxx ...>
-              ISMS-P 통제: <2.6.4 ...>
-            운영 해석: 13 step 종합 + 학생 본인이 의문점 1건 분석. 운영 운영 첫 단계
-            = 자가 진단 보고서.
+            **[관리적 보고서] 마크다운 표 + 분석** — 표준.
+              (위 답안과 같은 형식)
+            운영 해석: 운영자가 매일 작성하는 표.
           - |
-            **[관리적 분석] STRIDE 모델 적용** — 위협 사고 분석.
-              # S (Spoofing) — 누가 IP 위조 가능?
-              # T (Tampering) — 어떤 로그가 변조 가능?
-              # R (Repudiation) — 부인 방지가 약한 부분?
-              # I (Information disclosure) — 노출 가능 데이터?
-              # D (Denial of Service) — 다운 위험?
-              # E (Elevation of privilege) — 권한 상승 경로?
-            운영 해석: 6v6 환경에 STRIDE 적용 → bastion 침해 시 16 컨테이너 모두 노출
-            (가장 critical asset).
+            **[관리적] NIST CSF 매핑** — Identify 부터 Recover.
+              ID: docker ps (W01) + osquery (W07)
+              PR: nftables (W02-03) + ModSec (W06)
+              DE: Suricata (W04-05) + Wazuh (W09)
+              RS: Active Response (W10)
+              RC: OpenCTI Report (W14)
+            운영 해석: 15 주가 5 function 전체 커버.
           - |
-            **[관리적 보고서] NIST CSF 5 function 매핑** — 표준 인용.
-              # Identify (자산 인벤토리): docker ps + osquery (W07 예고)
-              # Protect: nftables (fw), ModSec (web), CRS (web)
-              # Detect: Suricata (ips), Wazuh (siem)
-              # Respond: Wazuh Active Response (W10)
-              # Recover: backup, IR runbook
-            운영 해석: 13 step 을 NIST CSF 의 어떤 function 에 매핑하는가.
+            **[관리적] ISMS-P 매핑** — 한국.
+              2.5 인증 → bastion (W01)
+              2.6 네트워크 접근 → fw (W02-03)
+              2.6.4 침입탐지 → ips (W04-05)
+              2.10 응용보안 → web (W06)
+              2.9.2 로그관리 → siem (W09-10)
+            운영 해석: ISMS-P 인증 시 본 운영이 입증 자료.
           - |
-            **[관리적 보고서] ISMS-P 통제 매핑** — 한국 표준.
-              # 2.6.1 (네트워크 접근 통제) — fw nftables
-              # 2.6.4 (네트워크 침입탐지) — ips Suricata
-              # 2.10.7 (보안위협 대응) — web ModSecurity
-              # 2.9.2 (로그 관리) — siem Wazuh
-              # 2.5.4 (사용자 인증) — bastion ProxyJump 단일 진입점
-            운영 해석: 13 step 결과가 ISMS-P 의 어떤 통제 만족도를 입증하는가.
+            **[관리적] alert fatigue 분석** — 운영 위험.
+              W01 baseline: alerts.json 최근 24h N건
+              level 분포: 70% level 3 / 25% level 5 / 5% level 12
+              SOC 분석가 1일 처리 가능: level 7+ 만 → 5%
+              결론: level 12 alert (CDB 매치) 가 핵심 → W13 학습
+            운영 해석: 운영 인력 한계 + 자동화 필요성.
           - |
-            **[관리적 보고서] MITRE D3FEND 매핑** — 방어 매트릭스.
-              # D3-NTPM (Network Traffic Policy Mapping) — fw nft
-              # D3-NTA (Network Traffic Analysis) — ips Suricata
-              # D3-WAF (Web Application Firewall) — web ModSec
-              # D3-SCC (System Configuration Check) — bastion + Wazuh SCA (W10 예고)
-            운영 해석: 공격 매트릭스 (ATT&CK) 대비 방어 매트릭스 (D3FEND). 운영의
-            반대편 관점.
+            **[관리적] STRIDE 모델 적용** — 위협 분석.
+              S Spoofing: src_ip 위조 → X-Forwarded-For
+              T Tampering: ruleset 변경 → git audit
+              R Repudiation: HAProxy log → rsyslog 영구화
+              I Information Disclosure: ModSec response.body 검사
+              D DoS: rate-limit (threshold.config)
+              E Elevation: bastion sudo NOPASSWD (학습 환경만)
+            운영 해석: STRIDE 6 카테고리 본 환경 적용.
           - |
-            **[관리적 보고서] KISA 보호나라 사례 매핑** — 한국 사례.
-              # 2024 KISA 보고서의 사례 1건 선택 + 본 환경에서 어떻게 막을 수 있었는지
-              # 예: A사 SQLi → DB 유출 → 16 천만 명
-              # 6v6 의 web ModSec CRS 941xxx (SQLi) 가 사전 차단 가능
-            운영 해석: 실제 사례에 본 인프라 적용 시 가설 검증.
+            **[관리적] 본인 학습 gap 자가 진단** — 발전.
+              ex) Suricata flow_id correlation 미숙 → W04 추가 학습
+              ex) ModSec paranoia 1 → 2 운영 경험 부재 → W06 심화
+              ex) Wazuh API 의 분석 자동화 미경험 → W09 학습
+            운영 해석: 학습 gap 자가 식별 → 다음 주차 효율.
           - |
-            **[관리적 보고서] 다음 주차 (W02) 준비도 자가 평가** — preparation.
-              # W02 = nftables 기초
-              # 본인이 nft 명령 1개라도 모른다 → W02 전 nftables wiki 학습
-              # tcpdump BPF expression 미숙 → 1 시간 자율 학습 권고
-              # ssh ProxyJump 정상 → W02 부터 fw 단독 실습 가능
-            운영 해석: 본인 학습 gap 1건 자가 식별 → 다음 주차 학습 효율 향상.
+            **[관리적] 다음 주차 예고** — 연속.
+              W02: nftables 4 핵심 개념 + 룰 작성 + tcpdump 검증
+              W02 의 R/B/P: Red 가 nmap 스캔 → Blue 가 fw drop 룰 추가 → Purple 가
+              효과 측정 후 ruleset 영구화 검토
+            운영 해석: W02 의 logical flow.
           - |
-            **[종합] 헬스체크 자동화 스크립트** — 정성 (참고).
-              # 단, 자동화는 W08 (중간고사) 까지 금지 — 직접 명령 손에 익히는 것이 목적
-              # 참고: 강사가 운영 시 사용하는 스크립트
-              # cd /home/opsclaw/6v6 && bash 6v6.sh smoke
-              # bash 6v6.sh smoke 의 출력으로 비교 검증
-            예상 출력 `vhost 11종 200/302 / agent 3 Active / cluster yellow`.
-            운영 해석: 학생은 13 step 을 직접 실행하여 자동화 결과와 일치하는지 확인.
+            **[관리적] 학습 산출물 — 운영 권장 표** — 정성.
+              | 항목 | 현 상태 | 권장 | 학습 주차 |
+              | ModSec decoder | Wazuh 미정의 | 사용자 정의 추가 | W09 |
+              | forwardfor 옵션 | 미확인 | haproxy.cfg 적용 | W03 |
+              | CDB list 자동 | 없음 | cron 갱신 | W13 |
+              | Purple cycle | 1회성 | 분기 정기 | W14 |
+            운영 해석: 운영자가 즉시 실행 가능한 권장 표.
         negative_signs:
-          - 종합 표 누락
-          - 본인 분석 1건 누락
-          - 단순 pass/fail 만 표기 (근거 없음)
+          - 6 step 표 누락
+          - R/B/P 결과 누락
+          - 본인 분석 0건
+    target_vm: bastion

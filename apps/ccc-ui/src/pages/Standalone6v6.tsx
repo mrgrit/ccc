@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { api } from '../api.ts'
+import { isAdmin } from '../auth.ts'
 import { markdownToHtml } from '../markdown.ts'
 import mermaid from 'mermaid'
 
@@ -67,7 +68,8 @@ export default function Standalone6v6() {
         .then(d => { setContent(d.content); setLabParsed(null) })
         .catch(() => setContent('# 강의안을 로드할 수 없습니다.'))
     } else if (viewParam === 'lab') {
-      api(`/api/standalone/${courseId}/lab/${weekParam}`)
+      const qs = isAdmin() ? '?admin=1' : ''
+      api(`/api/standalone/${courseId}/lab/${weekParam}${qs}`)
         .then(d => { setContent(d.raw); setLabParsed(d.parsed) })
         .catch(() => { setContent('# 실습 자료를 로드할 수 없습니다.'); setLabParsed(null) })
     }

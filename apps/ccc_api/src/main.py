@@ -1917,8 +1917,8 @@ def get_standalone_lecture(course_id: str, week: int):
 
 
 @app.get("/standalone/{course_id}/lab/{week}", dependencies=[Depends(verify_api_key)])
-def get_standalone_lab(course_id: str, week: int):
-    """주차별 실습 YAML (raw + 파싱)."""
+def get_standalone_lab(course_id: str, week: int, request: Request):
+    """주차별 실습 YAML (raw + 파싱). admin=1 쿼리 파라미터 시 answer/answer_detail 노출."""
     if course_id not in _STANDALONE_COURSES:
         raise HTTPException(404, "Course not found")
     if not (1 <= week <= 30):
@@ -1934,7 +1934,35 @@ def get_standalone_lab(course_id: str, week: int):
         parsed = _yaml.safe_load(raw)
     except Exception:
         parsed = None
-    return {"course_id": course_id, "week": week, "raw": raw, "parsed": parsed, "kind": "lab"}
+    # admin 이 아니면 answer / answer_detail 마스킹 (raw 도 노출 제한)
+    is_admin = request.query_params.get("admin") in ("true", "1")
+    if not is_admin and isinstance(parsed, dict):
+        steps = parsed.get("steps") or []
+        for s in steps:
+            if isinstance(s, dict):
+                s.pop("answer", None)
+                s.pop("answer_detail", None)
+        # raw 도 정답 라인 제거 (학생 모드)
+        out_lines = []
+        skip = False
+        indent = 0
+        for line in raw.splitlines():
+            stripped = line.lstrip()
+            cur_indent = len(line) - len(stripped)
+            if skip and cur_indent <= indent and stripped and not stripped.startswith("#"):
+                skip = False
+            if stripped.startswith("answer:") or stripped.startswith("answer_detail:"):
+                skip = True
+                indent = cur_indent
+                out_lines.append(" " * cur_indent + "# (answer hidden — login as admin to view)")
+                continue
+            if not skip:
+                out_lines.append(line)
+        raw = "\n".join(out_lines)
+    return {
+        "course_id": course_id, "week": week, "raw": raw, "parsed": parsed,
+        "kind": "lab", "has_answers": is_admin,
+    }
 
 
 # ══════════════════════════════════════════════════
@@ -5138,3 +5166,4 @@ if _ui_dist.exists():
         return FileResponse(str(_ui_dist / "index.html"))
 
     app.mount("/app", StaticFiles(directory=str(_ui_dist), html=True), name="ui")
+# touch
