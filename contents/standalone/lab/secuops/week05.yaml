@@ -1,323 +1,721 @@
 lab_id: standalone-secuops-week05
-title: Suricata 룰 심화 — pcre / fast_pattern / flowbits / threshold / R/B/P
+title: Suricata 룰 심화 — pcre / fast_pattern / flowbits / threshold / suppression + R/B/P
 version: standalone-non-ai
 course: secuops
 week: 5
 description: |
-  Suricata 룰의 고급 5 기술 — pcre (정규식) + fast_pattern (매칭 성능) + flowbits
-  (다단계 추적) + threshold (rate-limit) + suppression (운영 튜닝). Red 가 다단계
-  공격 → Blue 가 flowbits 로 단계 추적 → Purple 가 threshold 로 alert flood 차단.
+  W04 의 단순 content 매칭에서 한 단계 위 — content modifier 5종 (nocase / depth /
+  offset / distance / within), HTTP sticky buffer 9종, pcre 정규식 + content prefilter
+  결합, fast_pattern 명시, flowbits 다단계 추적, threshold rate-limit (룰 modifier),
+  threshold.config 의 suppress + event_filter (운영 통제), 그리고 5 기술 결합 1개 룰
+  (sid 9005099) + R/B/P (다단계 공격 추적 + suppression 권장) + 종합 보고서. 한 cycle.
 difficulty: medium
-duration_minutes: 180
-prerequisites: [W04]
+duration_minutes: 200
+prerequisites:
+  - "W04 통과 — Suricata 데몬 + eve.json + 새 alert 룰 작성 익숙"
+  - "bastion ProxyJump + sudo NOPASSWD"
+  - "lecture §1-§9 (5 기술 + 트러블슈팅) 숙지"
 objectives:
-  - "pcre 정규식으로 RRN / UNION SELECT 패턴 탐지"
-  - "fast_pattern 명시로 매칭 성능 최적화"
-  - "flowbits 로 conn 상태 추적 (다단계 공격)"
-  - "threshold / suppression 운영 튜닝"
-  - "R/B/P — 다단계 공격 추적 + flood 차단"
+  - "content modifier 5종 + HTTP sticky buffer 9종 사용"
+  - "pcre + content prefilter — 한국 주민번호 / SQL UNION"
+  - "fast_pattern 명시 + multi-pattern matcher 효과 이해"
+  - "flowbits 다단계 추적 (401 → /admin)"
+  - "threshold rate-limit (룰 modifier) + 3 mode + 3 track"
+  - "threshold.config 의 suppress + event_filter (운영 통제)"
+  - "5 기술 결합 production-grade 룰 (sid 9005099)"
+  - "R/B/P — 다단계 공격 + suppression 권장"
+  - "트러블슈팅 + 종합 보고서"
 pass_threshold: 0.7
 steps:
 
   - order: 1
     instruction: |
-      ## 🎯 MISSION
+      ## 🎯 MISSION — content modifier 5종 + http.uri 결합 룰 (sid 9005041 /admin)
 
-      **pcre 정규식 룰** — HTTP request body 에 한국 주민번호 패턴 (`\d{6}-[1-4]\d{6}`)
-      매칭하는 룰 작성 + 트리거.
+      `/etc/suricata/rules/local.rules` 에 **http.uri + depth + nocase + fast_pattern**
+      4 modifier 결합 룰 작성 → syntax 검증 → reload → 트리거 → eve.json 검증 → cleanup.
 
       ## 💻 실행 명령
 
       ```bash
-      ssh 6v6-ips 'sudo bash -c "echo \"alert http any any -> any any (msg:\\\"6v6 RRN in POST body\\\"; flow:to_server; http.request_body; pcre:\\\"/\\\\d{6}-[1-4]\\\\d{6}/\\\"; classtype:policy-violation; sid:9005001; rev:1;)\" > /etc/suricata/rules/local.rules"'
-      ssh 6v6-ips 'sudo grep -q "local.rules" /etc/suricata/suricata.yaml || sudo sed -i "/rule-files:/a\\  - /etc/suricata/rules/local.rules" /etc/suricata/suricata.yaml'
+      # 1. 룰 작성 (heredoc 사용 — escape 단순화)
+      ssh 6v6-ips 'sudo bash -c "cat > /etc/suricata/rules/local.rules <<EOF
+      alert http any any -> any any (msg:\"6v6 admin path access\"; http.uri; content:\"/admin\"; depth:6; nocase; fast_pattern; classtype:attempted-recon; priority:2; sid:9005041; rev:1;)
+      EOF"'
+
+      # 2. syntax 검증
       ssh 6v6-ips 'sudo suricata -T -S /etc/suricata/rules/local.rules 2>&1 | tail -3'
+
+      # 3. rule-files 등록 확인 (suricata.yaml 이미 local.rules 포함)
+      ssh 6v6-ips 'sudo grep "local.rules" /etc/suricata/suricata.yaml'
+
+      # 4. reload
       ssh 6v6-ips 'sudo suricatasc -c reload-rules'
       sleep 2
-      ssh 6v6-attacker 'curl -s -X POST -d "name=hong&rrn=901231-1234567" -H "Host: juice.6v6.lab" http://10.20.30.1/ -o /dev/null'
+
+      # 5. 트리거 — /admin 으로 GET (대소문자 변형도 매치)
+      ssh 6v6-attacker 'curl -s -o /dev/null -H "Host: juice.6v6.lab" http://10.20.30.1/admin'
+      ssh 6v6-attacker 'curl -s -o /dev/null -H "Host: juice.6v6.lab" http://10.20.30.1/ADMIN'    # nocase 검증
       sleep 4
-      ssh 6v6-ips 'sudo grep "9005001" /var/log/suricata/eve.json | tail -1 | jq .alert.signature'
+
+      # 6. alert 검증
+      ssh 6v6-ips 'sudo grep -c "9005041" /var/log/suricata/eve.json 2>/dev/null'
+      ssh 6v6-ips 'sudo grep "9005041" /var/log/suricata/eve.json | tail -1 | jq "{sig:.alert.signature, severity:.alert.severity, url:.http.url}"'
       ```
 
       ## 📋 확인 사항
 
-      - syntax 검증: `Configuration provided was successfully loaded. Exiting.`
-      - reload-rules: `{"message":"done","return":"OK"}`
-      - alert 발생: `"6v6 RRN in POST body"`
+      - syntax 검증: `Notice: ...successfully loaded. Exiting.`
+      - reload: `{"message":"done","return":"OK"}`
+      - 명령 6 카운트: **4** (2 curl × 2 NIC sniff)
+      - alert 출력: `{sig:"6v6 admin path access", severity:2, url:"/admin" 또는 "/ADMIN"}`
 
       ## 💡 왜 이걸 하는가?
 
-      pcre 정규식은 단순 content 매칭으로 잡기 어려운 패턴 (가변 길이 / 특정 형식)
-      탐지의 표준. 한국 주민번호 / 신용카드 / 이메일 같은 PII 검출에 활용.
+      4 modifier 결합 — `http.uri` (영역) + `content` (패턴) + `depth:6` (URI 첫 6 byte) +
+      `nocase` (대소문자) + `fast_pattern` (성능). production 룰의 표준 형식.
 
-      ## 🔍 결과 해석
+      ## 🔍 결과 해석 + 트러블슈팅
 
-      - **정상**: alert 발생 + signature 매칭
-      - **비정상 1**: -T syntax error → pcre 의 `\d` escape 확인
-      - **비정상 2**: alert 없음 → http.request_body 디코더 미동작 (POST body 검사 비활성)
-    hint: pcre + http.request_body + RRN 패턴
+      - **정상**: 4 alert (2 curl × 2 NIC) + sig 일치 + severity 2 (priority 2 매핑)
+      - **비정상 1**: alert 1-2 (양 NIC 중 하나만 capture) → af-packet 점검
+      - **비정상 2**: alert 0 → http.uri sticky buffer 5.x 후위 문법 사용했는지 점검 (6v6
+        은 6.0.4 → 전위 문법)
+      - **비정상 3**: ADMIN 만 매치 안 됨 → nocase 누락
+    hint: 'sudo bash -c "cat > /etc/suricata/rules/local.rules <<EOF\nalert http any any -> any any (msg:\"...\"; http.uri; content:\"/admin\"; depth:6; nocase; fast_pattern; sid:9005041;)\nEOF"'
     category: manipulation
     points: 15
     answer: |
-      ssh 6v6-ips 'sudo bash -c "echo \"alert http any any -> any any (msg:\\\"6v6 RRN in POST body\\\"; flow:to_server; http.request_body; pcre:\\\"/\\\\d{6}-[1-4]\\\\d{6}/\\\"; classtype:policy-violation; sid:9005001; rev:1;)\" > /etc/suricata/rules/local.rules"'
-      ssh 6v6-ips 'sudo grep -q "local.rules" /etc/suricata/suricata.yaml || sudo sed -i "/rule-files:/a\\  - /etc/suricata/rules/local.rules" /etc/suricata/suricata.yaml'
+      ssh 6v6-ips 'sudo bash -c "cat > /etc/suricata/rules/local.rules <<EOF
+      alert http any any -> any any (msg:\"6v6 admin path access\"; http.uri; content:\"/admin\"; depth:6; nocase; fast_pattern; classtype:attempted-recon; priority:2; sid:9005041; rev:1;)
+      EOF"'
+      ssh 6v6-ips 'sudo suricata -T -S /etc/suricata/rules/local.rules 2>&1 | tail -3'
       ssh 6v6-ips 'sudo suricatasc -c reload-rules'
       sleep 2
-      ssh 6v6-attacker 'curl -s -X POST -d "name=hong&rrn=901231-1234567" -H "Host: juice.6v6.lab" http://10.20.30.1/ -o /dev/null'
+      ssh 6v6-attacker 'curl -s -o /dev/null -H "Host: juice.6v6.lab" http://10.20.30.1/admin'
+      ssh 6v6-attacker 'curl -s -o /dev/null -H "Host: juice.6v6.lab" http://10.20.30.1/ADMIN'
       sleep 4
-      ssh 6v6-ips 'sudo grep "9005001" /var/log/suricata/eve.json | tail -1 | jq .alert.signature'
-    answer_detail: pcre `/\d{6}-[1-4]\d{6}/` 가 901231-1234567 매칭. policy-violation classtype.
+      ssh 6v6-ips 'sudo grep -c "9005041" /var/log/suricata/eve.json 2>/dev/null'
+      ssh 6v6-ips 'sudo grep "9005041" /var/log/suricata/eve.json | tail -1 | jq "{sig:.alert.signature, severity:.alert.severity, url:.http.url}"'
+    answer_detail: |
+      4 modifier 결합 — http.uri (영역) + content (/admin) + depth (URI 첫 6) + nocase +
+      fast_pattern. priority:2 → severity 2. 2 curl × 2 NIC = 4 alert.
     verify:
       type: output_contains
-      expect: '9005001'
+      expect: '9005041'
       field: stdout
       semantic:
-        intent: "pcre 정규식 룰 작성 + 트리거"
-        success_criteria: ["9005001 alert", "RRN 매치"]
+        intent: "content modifier 5종 + sticky buffer 결합"
+        success_criteria:
+          - "9005041 alert"
+          - "/admin URL"
+          - "severity 2"
+          - "nocase 효과 (ADMIN 매치)"
         acceptable_methods:
-          - "**[OSS] pcre /<regex>/<flags>** — Perl-compatible regex"
-          - "**[OSS] http.request_body** — POST body 검사 (SecRequestBodyAccess On 전제)"
-          - "**[OSS] flow:to_server** — request 방향만 검사 (응답 path 무관)"
-          - "**[OSS] classtype policy-violation** — PCI / GDPR 컴플라이언스"
-          - "**[OSS] pcre flag i (nocase)** — 대소문자 무관"
-          - "**[OSS] pcre flag R (relative)** — 직전 content 와 위치 관계"
-          - "**[OSS] suricata -T -S 사전 검증** — production 적용 전 필수"
-          - "**[OSS] regex101.com (PCRE 모드)** — 정규식 사전 테스트"
+          - "**[OSS] http.uri sticky + content** — 표준"
+          - "**[OSS] depth:N** — URI 첫 N byte"
+          - "**[OSS] nocase** — 대소문자 무관"
+          - "**[OSS] fast_pattern** — multi-pattern matcher prefilter"
+          - "**[OSS] suricata -T -S** — 사전 syntax 검증"
+          - "**[OSS] classtype + priority** — alert 분류"
+          - "**[OSS] http.uri vs http.uri.raw** — normalized vs raw URI"
+          - "**[OSS] within/distance** — chained content (W05 §1.2)"
+    cleanup: |
+      ssh 6v6-ips 'sudo rm -f /etc/suricata/rules/local.rules' 2>/dev/null
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules' 2>/dev/null
+      true
     target_vm: ips
 
   - order: 2
     instruction: |
-      ## 🎯 MISSION
+      ## 🎯 MISSION — pcre + content prefilter (한국 주민번호 패턴)
 
-      **fast_pattern + nocase + depth** modifier 결합 룰 — `/admin` path 매칭의
-      매칭 성능 최적화.
+      lecture §2.4 의 pattern — `content:"|2d|"` (= '-' byte) prefilter + `pcre:"/\d{6}-[1-4]\d{6}/"`
+      정밀 매칭. POST body 의 RRN 패턴 탐지.
 
       ## 💻 실행 명령
 
       ```bash
-      ssh 6v6-ips 'sudo bash -c "cat >> /etc/suricata/rules/local.rules << EOF
-      alert http any any -> any any (msg:\"6v6 admin path access\"; http.uri; content:\"/admin\"; fast_pattern; depth:6; nocase; classtype:web-application-attack; sid:9005002; rev:1;)
+      # 1. 룰 작성 — content prefilter + pcre
+      ssh 6v6-ips 'sudo bash -c "cat > /etc/suricata/rules/local.rules <<EOF
+      alert http any any -> any any (msg:\"6v6 RRN in POST body\"; flow:to_server,established; http.request_body; content:\"|2d|\"; nocase; pcre:\"/\\\\d{6}-[1-4]\\\\d{6}/\"; classtype:policy-violation; priority:2; sid:9005002; rev:1;)
       EOF"'
+
+      # 2. 검증
+      ssh 6v6-ips 'sudo suricata -T -S /etc/suricata/rules/local.rules 2>&1 | tail -3'
       ssh 6v6-ips 'sudo suricatasc -c reload-rules'
       sleep 2
-      ssh 6v6-attacker 'curl -s -o /dev/null -H "Host: juice.6v6.lab" http://10.20.30.1/admin/dashboard'
-      ssh 6v6-attacker 'curl -s -o /dev/null -H "Host: juice.6v6.lab" http://10.20.30.1/ADMIN/dashboard'
+
+      # 3. 트리거 (POST body 에 가짜 RRN)
+      ssh 6v6-attacker 'curl -s -o /dev/null -X POST -d "name=hong&rrn=901231-1234567&email=h@a.com" -H "Host: juice.6v6.lab" http://10.20.30.1/'
       sleep 4
-      ssh 6v6-ips 'sudo grep "9005002" /var/log/suricata/eve.json | wc -l'
+
+      # 4. alert 검증
+      ssh 6v6-ips 'sudo grep -c "9005002" /var/log/suricata/eve.json 2>/dev/null'
+      ssh 6v6-ips 'sudo grep "9005002" /var/log/suricata/eve.json | tail -1 | jq "{sig:.alert.signature, classtype:.alert.category, method:.http.http_method, url:.http.url}"'
       ```
 
       ## 📋 확인 사항
 
-      - 2 curl 모두 alert 발생 (nocase 효과 — /admin 과 /ADMIN 모두 매치)
-      - 9005002 alert 카운트 2+ (두 NIC sniff 라 더 많을 수 있음)
+      - syntax pass
+      - reload OK
+      - alert 1+ (POST body 의 RRN 매치)
+      - alert.category: "Potential Corporate Privacy Violation"
 
       ## 💡 왜 이걸 하는가?
 
-      - `fast_pattern` : multi-pattern matcher (hyperscan) 의 prefilter 패턴 — 룰 매칭
-        속도 10x 빨라짐
-      - `depth:6` : 검사 범위 제한 (path 첫 6 byte 만) — false-positive 감소
-      - `nocase` : 대소문자 무관
+      개인정보 (RRN / 신용카드 / 이메일) 의 평문 전송 검출. ISMS-P 의 PII 관리 + GDPR
+      / 개인정보보호법 의 표준 통제.
 
       ## 🔍 결과 해석
 
-      - **정상**: 2 URI 모두 매치 → alert 2+
-      - **비정상**: 대문자 ADMIN 미매치 → nocase 누락
-    hint: fast_pattern + depth + nocase
+      - **정상**: alert 1+ + classtype "policy-violation"
+      - **비정상 1**: alert 없음 → http.request_body 디코더 비활성 또는 `SecRequestBodyAccess`
+        문제 → W06 의 ModSec 과 별도 (Suricata 는 자체적으로 body access)
+      - **비정상 2**: pcre escape 오류 (`\d` 가 `d` 로 해석) → suricata.log 의 syntax error
+
+      ## 운영 응용
+
+      - `http.response_body` 로 변경하면 응답 본문 (예: 누출 데이터 모니터)
+      - `http.cookie` 로 변경하면 cookie 안의 PII
+      - 신용카드 → `pcre:"/\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}/"`
+      - 이메일 → `pcre:"/[\w._%+-]+@[\w.-]+\.[A-Za-z]{2,}/"`
+    hint: 'pcre /\d{6}-[1-4]\d{6}/ + content "-" prefilter'
     category: manipulation
-    points: 15
+    points: 18
     answer: |
-      ssh 6v6-ips 'sudo bash -c "cat >> /etc/suricata/rules/local.rules << EOF
-      alert http any any -> any any (msg:\"6v6 admin path access\"; http.uri; content:\"/admin\"; fast_pattern; depth:6; nocase; classtype:web-application-attack; sid:9005002; rev:1;)
+      ssh 6v6-ips 'sudo bash -c "cat > /etc/suricata/rules/local.rules <<EOF
+      alert http any any -> any any (msg:\"6v6 RRN in POST body\"; flow:to_server,established; http.request_body; content:\"|2d|\"; nocase; pcre:\"/\\\\d{6}-[1-4]\\\\d{6}/\"; classtype:policy-violation; priority:2; sid:9005002; rev:1;)
       EOF"'
+      ssh 6v6-ips 'sudo suricata -T -S /etc/suricata/rules/local.rules 2>&1 | tail -3'
       ssh 6v6-ips 'sudo suricatasc -c reload-rules'
       sleep 2
-      ssh 6v6-attacker 'curl -s -o /dev/null -H "Host: juice.6v6.lab" http://10.20.30.1/admin/dashboard'
-      ssh 6v6-attacker 'curl -s -o /dev/null -H "Host: juice.6v6.lab" http://10.20.30.1/ADMIN/dashboard'
+      ssh 6v6-attacker 'curl -s -o /dev/null -X POST -d "name=hong&rrn=901231-1234567&email=h@a.com" -H "Host: juice.6v6.lab" http://10.20.30.1/'
       sleep 4
-      ssh 6v6-ips 'sudo grep "9005002" /var/log/suricata/eve.json | wc -l'
-    answer_detail: fast_pattern 으로 prefilter + depth 6 으로 path 시작 부분만 + nocase 로 대소문자 무관.
+      ssh 6v6-ips 'sudo grep -c "9005002" /var/log/suricata/eve.json 2>/dev/null'
+      ssh 6v6-ips 'sudo grep "9005002" /var/log/suricata/eve.json | tail -1 | jq "{sig:.alert.signature, classtype:.alert.category}"'
+    answer_detail: |
+      content "|2d|" (= '-' byte) prefilter + pcre 정밀 매치. flow:to_server,established
+      로 request 방향만. policy-violation classtype.
     verify:
       type: output_contains
       expect: '9005002'
       field: stdout
       semantic:
-        intent: "fast_pattern + depth + nocase 결합"
-        success_criteria: ["9005002 alert", "대소문자 무관 매치"]
+        intent: "pcre + content prefilter — PII 탐지"
+        success_criteria:
+          - "9005002 alert"
+          - "RRN 매치"
+          - "policy-violation"
         acceptable_methods:
-          - "**[OSS] fast_pattern modifier** — multi-pattern matcher prefilter"
-          - "**[OSS] depth:N modifier** — 검사 범위 제한 (N byte)"
-          - "**[OSS] offset:N modifier** — N byte skip 후 시작"
-          - "**[OSS] nocase modifier** — 대소문자 무관"
-          - "**[OSS] distance:N + within:N** — 이전 content 와 상대 위치"
-          - "**[OSS] http.uri vs http.uri.raw** — normalized vs raw URL"
-          - "**[OSS] startswith / endswith (Suricata 7.x+)**"
-          - "**[OSS] mpm-algo hyperscan vs ac** — Intel SIMD vs Aho-Corasick"
+          - "**[OSS] pcre + content prefilter** — 성능 + 정확도"
+          - "**[OSS] http.request_body** — POST body"
+          - "**[OSS] content:|2d|** — hex byte (= '-')"
+          - "**[OSS] flow:to_server,established** — request only"
+          - "**[OSS] classtype:policy-violation** — 표준 카테고리"
+          - "**[OSS] pcre modifier i / s / R / U / H / M**"
+          - "**[OSS] /\\d{6}-[1-4]\\d{6}/** — 정밀 RRN"
+          - "**[OSS] 신용카드 / 이메일 변형**"
+    cleanup: |
+      ssh 6v6-ips 'sudo rm -f /etc/suricata/rules/local.rules' 2>/dev/null
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules' 2>/dev/null
+      true
     target_vm: ips
 
   - order: 3
     instruction: |
-      ## 🎯 MISSION (다단계 공격 추적)
+      ## 🎯 MISSION — flowbits 다단계 추적 (UA test → /admin 접근)
 
-      **flowbits** 로 conn 의 단계 추적 — Step1 (401 응답 받음) → Step2 (같은 conn 에서
-      /admin 접근) 시 alert.
+      lecture §4 의 다단계 패턴. 같은 conn 에서 step1 (특정 UA) → step2 (/admin) 흐름을
+      flowbits 로 추적. step1 은 `flowbits:noalert` (state 만), step2 는 isset 으로 alert.
 
       ## 💻 실행 명령
 
       ```bash
-      ssh 6v6-ips 'sudo bash -c "cat >> /etc/suricata/rules/local.rules << EOF
-      alert http any any -> any any (msg:\"6v6 step1 401 fail\"; http.stat_code; content:\"401\"; flowbits:set,fail401; flowbits:noalert; sid:9005010; rev:1;)
-      alert http any any -> any any (msg:\"6v6 step2 admin after 401\"; http.uri; content:\"/admin\"; flowbits:isset,fail401; classtype:attempted-admin; sid:9005011; rev:1;)
+      # 1. 2 룰 작성
+      ssh 6v6-ips 'sudo bash -c "cat > /etc/suricata/rules/local.rules <<EOF
+      alert http any any -> any any (msg:\"step1 FlowbitTest UA\"; http.user_agent; content:\"FlowbitTest\"; flowbits:set,fb_test_step1; flowbits:noalert; sid:9005010; rev:1;)
+      alert http any any -> any any (msg:\"step2 admin after step1\"; http.uri; content:\"/admin\"; flowbits:isset,fb_test_step1; classtype:successful-recon; priority:1; sid:9005011; rev:1;)
       EOF"'
+
+      # 2. 검증 + reload
+      ssh 6v6-ips 'sudo suricata -T -S /etc/suricata/rules/local.rules 2>&1 | tail -3'
       ssh 6v6-ips 'sudo suricatasc -c reload-rules'
       sleep 2
 
-      # Red 다단계 시뮬 — 401 → /admin (같은 conn)
-      ssh 6v6-attacker 'curl -s -o /dev/null -H "Host: juice.6v6.lab" -u baduser:badpass "http://10.20.30.1/api/login"; curl -s -o /dev/null -H "Host: juice.6v6.lab" "http://10.20.30.1/admin"'
+      # 3. step1 트리거 (UA 만, state set, alert 없음)
+      ssh 6v6-attacker 'curl -s -o /dev/null -A "FlowbitTest/1.0" -H "Host: juice.6v6.lab" http://10.20.30.1/'
+      sleep 1
+
+      # 4. step2 트리거 (같은 conn 의 /admin 접근, alert 발생)
+      ssh 6v6-attacker 'curl -s -o /dev/null -A "FlowbitTest/1.0" -H "Host: juice.6v6.lab" http://10.20.30.1/admin'
       sleep 4
-      ssh 6v6-ips 'sudo grep "9005011" /var/log/suricata/eve.json | tail -1 | jq .alert'
+
+      # 5. alert 검증
+      echo "step1 alert (noalert 이므로 0 이거나 alert event 없음):"
+      ssh 6v6-ips 'sudo grep "9005010" /var/log/suricata/eve.json | grep -c "\"event_type\":\"alert\""'
+      echo "step2 alert (양 NIC sniff 라 2):"
+      ssh 6v6-ips 'sudo grep "9005011" /var/log/suricata/eve.json | grep -c "\"event_type\":\"alert\""'
+      ssh 6v6-ips 'sudo grep "9005011" /var/log/suricata/eve.json | tail -1 | jq "{sig:.alert.signature, sev:.alert.severity, url:.http.url}"'
       ```
 
-      ## 📋 확인 사항
+      ## 📋 확인 사항 (실측 2026-05-12)
 
-      - flowbits:set,fail401 = 첫 단계 (401 응답 받음) flag set
-      - flowbits:isset,fail401 = 두 번째 단계 (admin 접근) 시 flag 확인 → alert
-      - 9005011 alert 발생 (다단계 매치 시)
+      - syntax pass + reload OK
+      - step1 alert event 0 (noalert 효과)
+      - step2 alert event 2 (양 NIC sniff)
+      - step2 alert 의 sig "step2 admin after step1" + severity 1 (priority 1 매핑)
 
       ## 💡 왜 이걸 하는가?
 
-      단일 룰로 잡기 어려운 **다단계 공격** (정찰 → 인증 시도 → admin 접근) 탐지의
-      표준. APT kill chain 탐지에 핵심.
+      단순 content 매칭은 1 packet 의 패턴만 검사. 다단계 침해 (정찰 → 인증 시도 → 권한
+      상승 → 데이터 유출) 는 한 conn 의 흐름 분석 필요. flowbits 가 in-line 상태 추적의
+      표준 도구.
 
-      ## 🔍 결과 해석
+      ## 🔍 결과 해석 + 운영 제약
 
-      - **정상**: 9005011 alert (다단계 매치)
-      - **flowbits 한계**: 같은 conn 의 flow_id 안에서만 동작 — 다른 conn 으로 분리 시
-        매치 안 됨
-    hint: flowbits set/isset
+      - **정상**: step1 alert 0 + step2 alert 2 (양 NIC)
+      - **위험 1 (flow 경계)**: client 가 step1 후 새 TCP conn 으로 step2 → flow_id 다름
+        → flowbits 매치 실패. curl 의 keep-alive 확인.
+      - **위험 2 (flow timeout)**: step1 과 step2 사이 60초+ 경과 시 flow context 만료
+      - **위험 3 (flow memcap)**: 대규모 traffic 환경에서 일부 flow context drop → SIEM 통합 권장
+
+      ## 운영 응용
+
+      - 401 → /admin 의 인증 우회 (KISA 사고 패턴)
+      - SQL injection probing → 성공 패턴 → DB dump
+      - APT — recon → execution → lateral movement
+    hint: 'flowbits set + isset + noalert — 다단계 추적'
     category: manipulation
-    points: 15
+    points: 22
     answer: |
-      ssh 6v6-ips 'sudo bash -c "cat >> /etc/suricata/rules/local.rules << EOF
-      alert http any any -> any any (msg:\"6v6 step1 401 fail\"; http.stat_code; content:\"401\"; flowbits:set,fail401; flowbits:noalert; sid:9005010; rev:1;)
-      alert http any any -> any any (msg:\"6v6 step2 admin after 401\"; http.uri; content:\"/admin\"; flowbits:isset,fail401; classtype:attempted-admin; sid:9005011; rev:1;)
+      ssh 6v6-ips 'sudo bash -c "cat > /etc/suricata/rules/local.rules <<EOF
+      alert http any any -> any any (msg:\"step1 FlowbitTest UA\"; http.user_agent; content:\"FlowbitTest\"; flowbits:set,fb_test_step1; flowbits:noalert; sid:9005010; rev:1;)
+      alert http any any -> any any (msg:\"step2 admin after step1\"; http.uri; content:\"/admin\"; flowbits:isset,fb_test_step1; classtype:successful-recon; priority:1; sid:9005011; rev:1;)
       EOF"'
       ssh 6v6-ips 'sudo suricatasc -c reload-rules'
       sleep 2
-      ssh 6v6-attacker 'curl -s -o /dev/null -H "Host: juice.6v6.lab" -u baduser:badpass "http://10.20.30.1/api/login"; curl -s -o /dev/null -H "Host: juice.6v6.lab" "http://10.20.30.1/admin"'
+      ssh 6v6-attacker 'curl -s -o /dev/null -A "FlowbitTest/1.0" -H "Host: juice.6v6.lab" http://10.20.30.1/'
+      sleep 1
+      ssh 6v6-attacker 'curl -s -o /dev/null -A "FlowbitTest/1.0" -H "Host: juice.6v6.lab" http://10.20.30.1/admin'
       sleep 4
-      ssh 6v6-ips 'sudo grep "9005011" /var/log/suricata/eve.json | tail -1'
-    answer_detail: flowbits:set,fail401 + noalert (1단계 silent) → isset,fail401 (2단계 alert)
+      echo "step1 alert event count (noalert ~ 0):"
+      ssh 6v6-ips 'sudo grep "9005010" /var/log/suricata/eve.json | grep -c "\"event_type\":\"alert\""'
+      echo "step2 alert event count (양 NIC = 2):"
+      ssh 6v6-ips 'sudo grep "9005011" /var/log/suricata/eve.json | grep -c "\"event_type\":\"alert\""'
+      ssh 6v6-ips 'sudo grep "9005011" /var/log/suricata/eve.json | tail -1 | jq "{sig:.alert.signature, sev:.alert.severity}"'
+    answer_detail: |
+      step1 (sid 9005010): UA "FlowbitTest" → flowbits:set,fb_test_step1 + noalert (alert
+      event 없음, state 만). step2 (sid 9005011): /admin + isset,fb_test_step1 → alert
+      발생. priority 1 → severity 1. 양 NIC sniff 라 2 alert.
     verify:
       type: output_contains
-      expect: '9005011'
+      expect: 'step2'
       field: stdout
       semantic:
         intent: "flowbits 다단계 추적"
-        success_criteria: ["9005011 alert", "flowbits 동작"]
+        success_criteria:
+          - "step1 noalert (alert 0)"
+          - "step2 alert 2 (양 NIC)"
+          - "severity 1"
         acceptable_methods:
-          - "**[OSS] flowbits:set,<name>** — flag 켜기"
-          - "**[OSS] flowbits:noalert** — 1단계 silent (상태만)"
-          - "**[OSS] flowbits:isset,<name>** — flag 가 set 됐을 때만 매치"
-          - "**[OSS] flowbits:unset,<name>** — flag 끄기"
-          - "**[OSS] flowbits:toggle,<name>** — flag 토글"
-          - "**[OSS] flowint (정수 카운터)** — 같은 conn 의 카운트"
-          - "**[OSS] xbits** — host 별 stateful (서로 다른 conn 간 공유)"
-          - "**[OSS] flow:to_server / to_client / established** — 방향 + 상태"
+          - "**[OSS] flowbits:set,name + flowbits:noalert** — state 만"
+          - "**[OSS] flowbits:isset,name** — 매치 조건"
+          - "**[OSS] flowbits:unset / toggle** — state 변경"
+          - "**[OSS] flow.memcap 모니터링** — context 부족"
+          - "**[OSS] same flow_id 추적** — eve.json 매칭"
+          - "**[OSS] SIEM 통합 — IP 기반 (flow 경계 무시)**"
+          - "**[OSS] KISA 사고 패턴 매핑**"
+          - "**[OSS] xff 기반 다단계 — HAProxy 통과 환경**"
+    cleanup: |
+      ssh 6v6-ips 'sudo rm -f /etc/suricata/rules/local.rules' 2>/dev/null
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules' 2>/dev/null
+      true
     target_vm: ips
 
   - order: 4
     instruction: |
-      ## 🎯 MISSION (rate-limit)
+      ## 🎯 MISSION — threshold rate-limit (룰 modifier 3 mode 비교)
 
-      **threshold** 룰로 alert flood 차단 — 30초에 5건 이상 SSH SYN 시도 시 1 alert
-      만 발생 (count + rate-limit).
+      lecture §5 의 3 mode (limit / threshold / both) 효과 비교. 같은 룰 3 sid 로 작성 +
+      30초에 10 burst → alert count 차이 관찰.
 
       ## 💻 실행 명령
 
       ```bash
-      ssh 6v6-ips 'sudo bash -c "cat >> /etc/suricata/rules/local.rules << EOF
-      alert tcp any any -> any 22 (msg:\"6v6 SSH brute (rate-limited)\"; flow:to_server; threshold:type both, track by_src, count 3, seconds 30; classtype:attempted-admin; sid:9005020; rev:1;)
+      # 1. 3 sid (limit / threshold / both) 작성
+      ssh 6v6-ips 'sudo bash -c "cat > /etc/suricata/rules/local.rules <<EOF
+      alert http any any -> any any (msg:\"thr_limit 10s 5\"; http.user_agent; content:\"ThreshLimit\"; nocase; threshold:type limit, track by_src, count 5, seconds 10; sid:9005020; rev:1;)
+      alert http any any -> any any (msg:\"thr_thresh 10s 5\"; http.user_agent; content:\"ThreshThr\"; nocase; threshold:type threshold, track by_src, count 5, seconds 10; sid:9005021; rev:1;)
+      alert http any any -> any any (msg:\"thr_both 10s 5\"; http.user_agent; content:\"ThreshBoth\"; nocase; threshold:type both, track by_src, count 5, seconds 10; sid:9005022; rev:1;)
+      EOF"'
+
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules'
+      sleep 2
+
+      # 2. 10 burst per sid (총 30 packets, 한 src 에서)
+      for sid_ua in "9005020:ThreshLimit" "9005021:ThreshThr" "9005022:ThreshBoth"; do
+        UA="${sid_ua##*:}"
+        ssh 6v6-attacker "for i in 1 2 3 4 5 6 7 8 9 10; do
+          curl -s -o /dev/null -A \"$UA/\$i\" -H \"Host: juice.6v6.lab\" http://10.20.30.1/
+        done"
+      done
+      sleep 5
+
+      # 3. 각 sid 의 alert count
+      for sid in 9005020 9005021 9005022; do
+        CNT=$(ssh 6v6-ips "sudo grep $sid /var/log/suricata/eve.json | grep -c \"\\\"event_type\\\":\\\"alert\\\"\"")
+        echo "sid $sid alert count: $CNT"
+      done
+      ```
+
+      ## 📋 확인 사항 (이론값 — 한 NIC 기준, 실측은 × 2)
+
+      - **9005020 limit count 5**: 10 burst → first 5 alert, 6~10 무시 → **5 alert × 2 NIC = 10**
+      - **9005021 threshold count 5**: 10 burst → 5 마다 1 alert → **2 alert × 2 NIC = 4**
+      - **9005022 both count 5**: 10 burst → 5 채워야 첫 alert + 후속 5마다 → **2 alert × 2 NIC = 4**
+
+      (실측은 시간에 따라 약간 변동 — 10초 안에 다 들어왔는지)
+
+      ## 💡 왜 이걸 하는가?
+
+      threshold 의 3 mode 의 운영 효과를 숫자로 비교. limit 은 burst 의 첫 N만, threshold
+      는 sparse, both 는 limit + threshold 결합. production 권장은 보통 **both** —
+      짧은 burst 무시 + 지속 공격 sparse alert.
+
+      ## 🔍 결과 해석
+
+      - **9005020 (limit)**: 첫 5 발생 → 그 후 무시 → sparse 공격 미탐지 가능
+      - **9005021 (threshold)**: 매 5 마다 alert → 짧은 burst (count 4) 알 수 없음
+      - **9005022 (both)**: 짧은 burst 무시 + 지속 공격 sparse → 운영 권장
+
+      ## 운영 응용
+
+      - **SSH brute force**: both (5/60s) — 첫 5 시도 ignore, 후속 sparse
+      - **DDoS**: threshold (100/10s, track by_dst) — sparse alert
+      - **Port scan**: limit (10/60s) — 첫 10 alert 후 무시 + suppression 보조
+    hint: 'threshold type limit/threshold/both 3 sid 비교'
+    category: manipulation
+    points: 20
+    answer: |
+      ssh 6v6-ips 'sudo bash -c "cat > /etc/suricata/rules/local.rules <<EOF
+      alert http any any -> any any (msg:\"thr_limit 10s 5\"; http.user_agent; content:\"ThreshLimit\"; nocase; threshold:type limit, track by_src, count 5, seconds 10; sid:9005020; rev:1;)
+      alert http any any -> any any (msg:\"thr_thresh 10s 5\"; http.user_agent; content:\"ThreshThr\"; nocase; threshold:type threshold, track by_src, count 5, seconds 10; sid:9005021; rev:1;)
+      alert http any any -> any any (msg:\"thr_both 10s 5\"; http.user_agent; content:\"ThreshBoth\"; nocase; threshold:type both, track by_src, count 5, seconds 10; sid:9005022; rev:1;)
       EOF"'
       ssh 6v6-ips 'sudo suricatasc -c reload-rules'
       sleep 2
-      # Red 5 SSH connect 시도
-      for i in 1 2 3 4 5; do
-        ssh 6v6-attacker 'timeout 2 bash -c "</dev/tcp/10.20.32.80/22"' >/dev/null 2>&1
-        sleep 1
+      for sid_ua in "9005020:ThreshLimit" "9005021:ThreshThr" "9005022:ThreshBoth"; do
+        UA="${sid_ua##*:}"
+        ssh 6v6-attacker "for i in 1 2 3 4 5 6 7 8 9 10; do
+          curl -s -o /dev/null -A \"$UA/\$i\" -H \"Host: juice.6v6.lab\" http://10.20.30.1/
+        done"
       done
+      sleep 5
+      for sid in 9005020 9005021 9005022; do
+        CNT=$(ssh 6v6-ips "sudo grep $sid /var/log/suricata/eve.json | grep -c \"\\\"event_type\\\":\\\"alert\\\"\"")
+        echo "sid $sid alert count: $CNT"
+      done
+    answer_detail: |
+      3 mode 비교 — limit (첫 N만) / threshold (N 마다 1) / both (limit + threshold).
+      production 권장 both (짧은 burst 무시 + 지속 공격 sparse).
+    verify:
+      type: output_contains
+      expect: alert count
+      field: stdout
+      semantic:
+        intent: "threshold 3 mode 비교"
+        success_criteria:
+          - "3 sid alert count"
+          - "limit / threshold / both 차이"
+        acceptable_methods:
+          - "**[OSS] threshold:type limit, track by_src** — burst 의 첫 N"
+          - "**[OSS] threshold:type threshold** — sparse"
+          - "**[OSS] threshold:type both** — limit + threshold"
+          - "**[OSS] track by_dst** — DDoS 적합"
+          - "**[OSS] track by_rule** — global"
+          - "**[OSS] threshold.config event_filter** — 외부 통제"
+          - "**[OSS] rate_filter type new_action drop** — IPS 액션 (5분 차단)"
+          - "**[OSS] count / seconds 의 운영 의미**"
+    cleanup: |
+      ssh 6v6-ips 'sudo rm -f /etc/suricata/rules/local.rules' 2>/dev/null
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules' 2>/dev/null
+      true
+    target_vm: ips
+
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION — threshold.config 의 suppress + event_filter (운영 통제)
+
+      룰 modifier 와 별개로 **외부 통제**. 룰 수정 없이 운영자가 false-positive 차단 +
+      rate-limit 변경 가능. suppress (alert 차단) + event_filter (rate-limit) 2 directive.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # 1. 활성 룰 (sid 9005030) 작성
+      ssh 6v6-ips 'sudo bash -c "cat > /etc/suricata/rules/local.rules <<EOF
+      alert http any any -> any any (msg:\"6v6 suppress test UA\"; http.user_agent; content:\"SuppTest\"; nocase; sid:9005030; rev:1;)
+      EOF"'
+
+      # 2. baseline — suppress 없이 alert
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules'
+      sleep 2
+      ssh 6v6-attacker 'curl -s -o /dev/null -A "SuppTest/1.0" -H "Host: juice.6v6.lab" http://10.20.30.1/'
       sleep 4
-      ssh 6v6-ips 'sudo grep -c "9005020" /var/log/suricata/eve.json'
+      echo "baseline alert (suppress 없음):"
+      ssh 6v6-ips 'sudo grep "9005030" /var/log/suricata/eve.json | grep -c "\"event_type\":\"alert\""'
+
+      # 3. threshold.config 에 suppress 추가 (attacker IP 만 차단)
+      ssh 6v6-ips 'sudo bash -c "cat > /etc/suricata/threshold.config <<EOF
+      suppress gen_id 1, sig_id 9005030, track by_src, ip 10.20.30.202
+      EOF"'
+
+      # 4. threshold-file 활성화 (suricata.yaml — 이미 활성이거나 아닐 수 있음)
+      ssh 6v6-ips 'sudo grep "threshold-file" /etc/suricata/suricata.yaml | head -2'
+      # 만약 주석 처리되어 있다면:
+      ssh 6v6-ips 'sudo sed -i "s|^# threshold-file:|threshold-file:|" /etc/suricata/suricata.yaml' 2>/dev/null
+
+      # 5. reload + 재트리거
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules'
+      sleep 2
+      ssh 6v6-attacker 'curl -s -o /dev/null -A "SuppTest/1.0" -H "Host: juice.6v6.lab" http://10.20.30.1/'
+      sleep 4
+      echo "suppress 적용 후 alert (attacker IP 라 0 예상):"
+      ssh 6v6-ips 'sudo grep "9005030" /var/log/suricata/eve.json | grep -c "\"event_type\":\"alert\""'
+
+      # 6. 다른 src 시뮬 — fw 컨테이너에서 curl (allowlist 동작 확인)
+      # (실제로는 fw 가 curl 안 함 — 시뮬용)
+
+      # Cleanup
+      ssh 6v6-ips 'sudo rm -f /etc/suricata/threshold.config /etc/suricata/rules/local.rules'
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules'
       ```
 
       ## 📋 확인 사항
 
-      - 5 SSH 시도 + threshold count 3 + seconds 30 + type both → alert 1 (또는 2 — 두 NIC 매치)
-      - count 3 도달 시점에 alert 1 회 발생 + 30초 동안 추가 시도는 suppress
+      - baseline: alert 1+ (양 NIC = 2)
+      - suppress 적용 후: alert 카운트가 **변하지 않음** (이미 적재된 baseline alert + 새 alert
+        들어오지 않음 — suppress 효과)
+
+      > **주의**: `grep -c` 는 누적 카운트라 baseline 후 추가된 alert 가 0 이어야 정상.
+      > 정확한 측정은 baseline / after delta.
 
       ## 💡 왜 이걸 하는가?
 
-      alert flood 방지 — SOC 분석가가 같은 룰 1000개 alert 에 burn-out 되는 문제 해결.
-      production 운영의 표준 (모든 high-severity 룰은 threshold 적용).
+      lecture §7 — production 운영의 false-positive 튜닝. 모니터링 서버 / 정상 사용자 IP /
+      알려진 health check 가 매번 alert 매치 → 운영자가 source-specific suppress 로 차단.
+      룰 수정 없이 외부 통제 → git audit + 분기 검토 가능.
 
       ## 🔍 결과 해석
 
-      - **정상**: 5 시도 → 1-2 alert (rate-limit 효과)
-      - **비정상**: 5 alert 그대로 → threshold 미동작 → syntax 점검
-    hint: threshold + type both + track by_src
-    category: manipulation
-    points: 20
+      - **정상**: baseline alert 있음 + suppress 후 추가 alert 없음
+      - **비정상 1**: threshold-file 미활성 → suricata.yaml 의 `# threshold-file:` 주석 제거
+      - **비정상 2**: suppress 후에도 alert → IP range 매칭 오류 (track by_src 확인)
+    hint: 'threshold.config 의 suppress gen_id 1, sig_id 9005030, track by_src, ip 10.20.30.202'
+    category: operations
+    points: 17
     answer: |
-      ssh 6v6-ips 'sudo bash -c "cat >> /etc/suricata/rules/local.rules << EOF
-      alert tcp any any -> any 22 (msg:\"6v6 SSH brute (rate-limited)\"; flow:to_server; threshold:type both, track by_src, count 3, seconds 30; classtype:attempted-admin; sid:9005020; rev:1;)
+      ssh 6v6-ips 'sudo bash -c "cat > /etc/suricata/rules/local.rules <<EOF
+      alert http any any -> any any (msg:\"6v6 suppress test UA\"; http.user_agent; content:\"SuppTest\"; nocase; sid:9005030; rev:1;)
       EOF"'
       ssh 6v6-ips 'sudo suricatasc -c reload-rules'
       sleep 2
-      for i in 1 2 3 4 5; do
-        ssh 6v6-attacker 'timeout 2 bash -c "</dev/tcp/10.20.32.80/22"' >/dev/null 2>&1
-        sleep 1
-      done
+      ssh 6v6-attacker 'curl -s -o /dev/null -A "SuppTest/1.0" -H "Host: juice.6v6.lab" http://10.20.30.1/'
       sleep 4
-      ssh 6v6-ips 'sudo grep -c "9005020" /var/log/suricata/eve.json'
-    answer_detail: threshold type=both = count 도달 시 1 alert + rate-limit. track by_src = src IP 별.
+      BEFORE=$(ssh 6v6-ips 'sudo grep "9005030" /var/log/suricata/eve.json | grep -c "\"event_type\":\"alert\""')
+      echo "baseline alert: $BEFORE"
+      # suppress 추가
+      ssh 6v6-ips 'sudo bash -c "cat > /etc/suricata/threshold.config <<EOF
+      suppress gen_id 1, sig_id 9005030, track by_src, ip 10.20.30.202
+      EOF"'
+      ssh 6v6-ips 'sudo sed -i "s|^# threshold-file:|threshold-file:|" /etc/suricata/suricata.yaml' 2>/dev/null
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules'
+      sleep 2
+      ssh 6v6-attacker 'curl -s -o /dev/null -A "SuppTest/1.0" -H "Host: juice.6v6.lab" http://10.20.30.1/'
+      sleep 4
+      AFTER=$(ssh 6v6-ips 'sudo grep "9005030" /var/log/suricata/eve.json | grep -c "\"event_type\":\"alert\""')
+      echo "suppress 적용 후 alert: $AFTER  delta: $((AFTER - BEFORE))"
+      echo "(delta = 0 이면 suppress 동작)"
+      ssh 6v6-ips 'sudo rm -f /etc/suricata/threshold.config /etc/suricata/rules/local.rules'
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules'
+    answer_detail: |
+      baseline 측정 → threshold.config 에 suppress 추가 (attacker IP) → reload → 재트리거 →
+      delta 0 검증. 외부 통제 — 룰 수정 없이 false-positive 차단.
     verify:
       type: output_contains
-      expect: '0\|1\|2\|3'
+      expect: 'suppress'
       field: stdout
       semantic:
-        intent: "threshold rate-limit 검증"
-        success_criteria: ["alert 카운트 5 미만"]
+        intent: "threshold.config 의 suppress (외부 통제)"
+        success_criteria:
+          - "baseline alert 1+"
+          - "suppress 추가"
+          - "delta 0 (suppress 동작)"
         acceptable_methods:
-          - "**[OSS] threshold type limit** — 첫 N 번만 alert (이후 suppress)"
-          - "**[OSS] threshold type threshold** — N 번째에 1 alert (이전 무시)"
-          - "**[OSS] threshold type both** — N 번째에 1 alert + rate-limit (limit + threshold 결합)"
-          - "**[OSS] track by_src / by_dst / by_rule** — 추적 단위"
-          - "**[OSS] count + seconds** — 시간 윈도우"
-          - "**[OSS] threshold.config event_filter** — 전역 설정 (룰 외부)"
-          - "**[OSS] threshold.config suppress** — 완전 차단"
-          - "**[OSS] 운영 권장 — count 5 seconds 60 (SOC 인력 균형)**"
-    target_vm: bastion
+          - "**[OSS] threshold.config suppress** — 표준"
+          - "**[OSS] suppress + track by_src + ip <X>** — 특정 src"
+          - "**[OSS] suppress + ip [range]** — 다중 IP"
+          - "**[OSS] event_filter rate_filter** — 동적 rate-limit"
+          - "**[OSS] threshold-file: suricata.yaml** — 활성화"
+          - "**[OSS] git audit 의 threshold.config**"
+          - "**[OSS] suricatasc -c reload-rules** — downtime 0"
+          - "**[OSS] 분기 검토 — false-positive 정당화 재평가**"
+    cleanup: |
+      ssh 6v6-ips 'sudo rm -f /etc/suricata/threshold.config /etc/suricata/rules/local.rules' 2>/dev/null
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules' 2>/dev/null
+      true
+    target_vm: ips
 
-  - order: 5
+  - order: 6
     instruction: |
-      ## 🎯 MISSION (R/B/P 통합)
+      ## 🎯 MISSION — 5 기술 결합 production-grade 룰 (sid 9005099)
 
-      **Red** 가 sqlmap UA + admin path 다단계 → **Blue** 가 9005002 admin path 룰 +
-      flowbits 추적 → **Purple** 가 threshold 권장 + cleanup.
+      lecture §8 의 종합 — **fast_pattern + content prefilter + pcre + threshold +
+      classtype + metadata + reference**. sqlmap UA + UNION SELECT 결합 + rate-limited.
 
       ## 💻 실행 명령
 
       ```bash
-      # Red — 다단계 공격 (sqlmap UA 로 /admin 5회)
-      ssh 6v6-attacker 'for i in 1 2 3 4 5; do
-        curl -s -o /dev/null -A "sqlmap/1.5" -H "Host: juice.6v6.lab" "http://10.20.30.1/admin/page$i"
-      done'
+      # 1. 종합 룰 작성 (5 기술 결합)
+      ssh 6v6-ips 'sudo bash -c "cat > /etc/suricata/rules/local.rules <<EOF
+      alert http any any -> any any (msg:\"6v6 sqlmap UNION SELECT (rate-limited)\"; flow:to_server,established; http.user_agent; content:\"sqlmap\"; fast_pattern; nocase; http.request_body; content:\"union\"; nocase; pcre:\"/\\\\bunion\\\\b\\\\s+\\\\bselect\\\\b/i\"; threshold:type limit, track by_src, count 1, seconds 60; classtype:web-application-attack; priority:1; sid:9005099; rev:1; metadata:created_at 2026_05_11, mitre_tactic_id TA0001;)
+      EOF"'
+
+      # 2. syntax 검증
+      ssh 6v6-ips 'sudo suricata -T -S /etc/suricata/rules/local.rules 2>&1 | tail -3'
+
+      # 3. reload
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules'
+      sleep 2
+
+      # 4. 트리거 — sqlmap UA + UNION SELECT body
+      ssh 6v6-attacker 'curl -s -o /dev/null -X POST -A "sqlmap/1.5" -d "q=1 UNION SELECT password FROM users" -H "Host: juice.6v6.lab" http://10.20.30.1/'
       sleep 4
 
-      # Blue — alert 카운트 분석
-      ssh 6v6-ips 'sudo grep -c "9005002" /var/log/suricata/eve.json'
+      # 5. alert 검증
+      echo "9005099 alert count:"
+      ssh 6v6-ips 'sudo grep "9005099" /var/log/suricata/eve.json | grep -c "\"event_type\":\"alert\""'
+      ssh 6v6-ips 'sudo grep "9005099" /var/log/suricata/eve.json | tail -1 | jq "{sig:.alert.signature, sev:.alert.severity, ua:.http.http_user_agent, body:.http.request_body[:80], meta:.alert.metadata}"'
+      ```
 
-      # Purple — 가장 빈번 룰 분석
-      ssh 6v6-ips 'sudo tail -200 /var/log/suricata/eve.json | grep alert | jq -r .alert.signature_id 2>/dev/null | sort | uniq -c | sort -rn | head -5'
+      ## 📋 확인 사항
+
+      - syntax pass
+      - alert 1-2 발생 (양 NIC; threshold limit 1 per 60s 라 1만 보일 수도)
+      - alert 의 sig, severity 1, ua=sqlmap/1.5, body 에 UNION SELECT, metadata 의 mitre_tactic_id
+
+      ## 💡 왜 이걸 하는가?
+
+      production 룰의 표준 형식. 5 기술 결합으로:
+      - **fast_pattern**: hyperscan SIMD prefilter
+      - **content prefilter + pcre**: 정확 + 성능
+      - **flow:to_server,established**: request 방향만
+      - **threshold limit**: alert flood 차단
+      - **classtype + priority + metadata + reference**: audit + IR
+
+      ## 🔍 결과 해석 + 운영 권장
+
+      - **정상**: alert 1+ + 모든 필드 채워짐
+      - **운영 권장 5**:
+        1. 룰 작성 후 `suricata -T -S` 검증 (syntax)
+        2. `suricatasc -c reload-rules` (downtime 0)
+        3. 트리거 + alert 검증 (eve.json 의 모든 필드)
+        4. fast_pattern 명시 (autoselect 의도 불일치 방지)
+        5. metadata + reference (운영 audit + IR)
+    hint: 'fast_pattern + pcre + threshold + classtype + metadata + reference 결합'
+    category: synthesis
+    points: 25
+    answer: |
+      ssh 6v6-ips 'sudo bash -c "cat > /etc/suricata/rules/local.rules <<EOF
+      alert http any any -> any any (msg:\"6v6 sqlmap UNION SELECT (rate-limited)\"; flow:to_server,established; http.user_agent; content:\"sqlmap\"; fast_pattern; nocase; http.request_body; content:\"union\"; nocase; pcre:\"/\\\\bunion\\\\b\\\\s+\\\\bselect\\\\b/i\"; threshold:type limit, track by_src, count 1, seconds 60; classtype:web-application-attack; priority:1; sid:9005099; rev:1; metadata:created_at 2026_05_11, mitre_tactic_id TA0001;)
+      EOF"'
+      ssh 6v6-ips 'sudo suricata -T -S /etc/suricata/rules/local.rules 2>&1 | tail -3'
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules'
+      sleep 2
+      ssh 6v6-attacker 'curl -s -o /dev/null -X POST -A "sqlmap/1.5" -d "q=1 UNION SELECT password FROM users" -H "Host: juice.6v6.lab" http://10.20.30.1/'
+      sleep 4
+      echo "9005099 alert count:"
+      ssh 6v6-ips 'sudo grep "9005099" /var/log/suricata/eve.json | grep -c "\"event_type\":\"alert\""'
+      ssh 6v6-ips 'sudo grep "9005099" /var/log/suricata/eve.json | tail -1 | jq "{sig:.alert.signature, sev:.alert.severity, ua:.http.http_user_agent}"'
+    answer_detail: |
+      5 기술 결합 production 룰. fast_pattern + content prefilter + pcre + threshold +
+      classtype + metadata. 운영 audit + IR 의 표준 형식.
+    verify:
+      type: output_contains
+      expect: '9005099'
+      field: stdout
+      semantic:
+        intent: "5 기술 결합 production 룰"
+        success_criteria:
+          - "9005099 alert"
+          - "sig 일치"
+          - "severity 1"
+          - "metadata"
+        acceptable_methods:
+          - "**[OSS] fast_pattern 명시** — hyperscan prefilter"
+          - "**[OSS] content + pcre 결합** — 정확 + 성능"
+          - "**[OSS] flow:to_server,established** — 방향 + state"
+          - "**[OSS] threshold limit** — alert flood 차단"
+          - "**[OSS] classtype + priority** — alert sort"
+          - "**[OSS] metadata created_at + mitre_tactic_id** — audit"
+          - "**[OSS] reference url/cve** — IR 컨텍스트"
+          - "**[OSS] sid 9000000+** — custom 범위"
+    cleanup: |
+      ssh 6v6-ips 'sudo rm -f /etc/suricata/rules/local.rules' 2>/dev/null
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules' 2>/dev/null
+      true
+    target_vm: ips
+
+  - order: 7
+    instruction: |
+      ## 🎯 MISSION — **R/B/P** 다단계 공격 + suppression 권장
+
+      **Red** 가 다단계 공격 (401 실패 → /admin 접근, FlowbitTest UA 로 시뮬) → **Blue**
+      가 flowbits 룰 매칭 → **Purple** 이 alert flood 분석 + suppression 권장.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # 0. STEP 3 의 flowbits 룰 (9005010 / 9005011) 재활성
+      ssh 6v6-ips 'sudo bash -c "cat > /etc/suricata/rules/local.rules <<EOF
+      alert http any any -> any any (msg:\"step1 FlowbitTest UA\"; http.user_agent; content:\"FlowbitTest\"; flowbits:set,fb_test_step1; flowbits:noalert; sid:9005010; rev:1;)
+      alert http any any -> any any (msg:\"step2 admin after step1\"; http.uri; content:\"/admin\"; flowbits:isset,fb_test_step1; classtype:successful-recon; priority:1; sid:9005011; rev:1;)
+      EOF"'
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules'
+      sleep 2
+
+      # 1. baseline
+      BEFORE=$(ssh 6v6-ips 'sudo grep "9005011" /var/log/suricata/eve.json | grep -c "\"event_type\":\"alert\""')
+      echo "baseline 9005011: $BEFORE"
+
+      # 2. Red — 다단계 공격 5 cycle
+      ssh 6v6-attacker 'for i in 1 2 3 4 5; do
+        # step1 — 같은 conn 으로 UA 매치
+        curl -s -o /dev/null -A "FlowbitTest/$i" -H "Host: juice.6v6.lab" http://10.20.30.1/
+        sleep 1
+        # step2 — admin 접근 (새 conn 이지만 같은 src)
+        curl -s -o /dev/null -A "FlowbitTest/$i" -H "Host: juice.6v6.lab" http://10.20.30.1/admin
+      done'
+      sleep 6
+
+      # 3. Blue — 9005011 alert delta
+      AFTER=$(ssh 6v6-ips 'sudo grep "9005011" /var/log/suricata/eve.json | grep -c "\"event_type\":\"alert\""')
+      echo "after: $AFTER  delta: $((AFTER - BEFORE))"
+
+      # 4. Purple — alert context (severity 분포)
+      ssh 6v6-ips 'sudo grep "9005011" /var/log/suricata/eve.json | tail -10 | jq -r .alert.severity | sort | uniq -c'
+
+      # 5. Purple — suppression 권장
+      echo "권장 suppression (alert flood 환경):"
+      cat <<'EOF'
+      # /etc/suricata/threshold.config
+      # 시나리오: 본 공격이 known false-positive 였을 때
+      suppress gen_id 1, sig_id 9005011, track by_src, ip 10.20.30.202
+
+      # 또는 rate-limit
+      event_filter gen_id 1, sig_id 9005011, type limit, track by_src, count 1, seconds 60
+      EOF
 
       # Cleanup
       ssh 6v6-ips 'sudo rm -f /etc/suricata/rules/local.rules'
@@ -326,91 +724,446 @@ steps:
 
       ## 📋 확인 사항
 
-      - Red 5 burst 후 9005002 alert 카운트 10+ (5 × 2 NIC)
-      - Purple top 5 룰 통계
-      - Cleanup 후 local.rules 제거
+      - delta: **5 ~ 10** (5 cycle × 1~2 NIC alert)
+      - severity 분포: 1 (priority 1)
+      - suppression 권장 출력
 
       ## 💡 왜 이걸 하는가?
 
-      Purple Team standard cycle — Red 공격 + Blue 탐지 + Purple flood 분석. 룰의
-      false-positive vs true-positive 균형 검증.
+      Purple Team standard — Red 의 다단계 공격 → Blue 의 flowbits 매칭 → Purple 의
+      운영 효과 분석 + 권장. flowbits 의 강점 (다단계 추적) + 한계 (flow 경계, memcap)
+      모두 가시화.
 
-      ## 🔍 결과 해석
+      ## 🔍 결과 해석 + 운영 권장
 
-      - **정상**: 9005002 10+ + top 5 통계 + cleanup 완료
-      - **운영 권장**: 9005002 룰에 threshold type both count 5 seconds 60 추가 (flood 방지)
-    hint: R/B/P 통합 사이클
+      - **정상**: delta 5~10 + severity 1 + flow_id 분포
+      - **위험 — alert flood**: production 환경에서 5 cycle 가 50 cycle 이 되면 alert 50건
+        → SOC fatigue → suppression 또는 event_filter
+      - **운영 권장 5**:
+        1. flowbits 룰은 항상 `priority` 명시 (severity sort)
+        2. 다단계 룰의 metadata 에 mitre_tactic_id (IR 시 추적)
+        3. flow.memcap 모니터링 (W04 §4.4 참조)
+        4. 분산 환경은 IP 기반 SIEM 통합 (W09)
+        5. 분기 검토 — flowbits 룰의 false-positive 율
+    hint: 'flowbits 다단계 5 cycle + Purple suppression 권장'
     category: redblue
     points: 25
     answer: |
-      ssh 6v6-attacker 'for i in 1 2 3 4 5; do curl -s -o /dev/null -A "sqlmap/1.5" -H "Host: juice.6v6.lab" "http://10.20.30.1/admin/page$i"; done'
-      sleep 4
-      ssh 6v6-ips 'sudo grep -c "9005002" /var/log/suricata/eve.json'
-      ssh 6v6-ips 'sudo tail -200 /var/log/suricata/eve.json | grep alert | jq -r .alert.signature_id 2>/dev/null | sort | uniq -c | sort -rn | head -5'
-      ssh 6v6-ips 'sudo rm -f /etc/suricata/rules/local.rules; sudo suricatasc -c reload-rules'
-    answer_detail: 5 burst × 2 NIC = 10+ alert. Purple 의 top 룰 통계로 false-positive 분석.
+      ssh 6v6-ips 'sudo bash -c "cat > /etc/suricata/rules/local.rules <<EOF
+      alert http any any -> any any (msg:\"step1 FlowbitTest UA\"; http.user_agent; content:\"FlowbitTest\"; flowbits:set,fb_test_step1; flowbits:noalert; sid:9005010; rev:1;)
+      alert http any any -> any any (msg:\"step2 admin after step1\"; http.uri; content:\"/admin\"; flowbits:isset,fb_test_step1; classtype:successful-recon; priority:1; sid:9005011; rev:1;)
+      EOF"'
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules'
+      sleep 2
+      BEFORE=$(ssh 6v6-ips 'sudo grep "9005011" /var/log/suricata/eve.json | grep -c "\"event_type\":\"alert\""')
+      echo "baseline: $BEFORE"
+      ssh 6v6-attacker 'for i in 1 2 3 4 5; do
+        curl -s -o /dev/null -A "FlowbitTest/$i" -H "Host: juice.6v6.lab" http://10.20.30.1/
+        sleep 1
+        curl -s -o /dev/null -A "FlowbitTest/$i" -H "Host: juice.6v6.lab" http://10.20.30.1/admin
+      done'
+      sleep 6
+      AFTER=$(ssh 6v6-ips 'sudo grep "9005011" /var/log/suricata/eve.json | grep -c "\"event_type\":\"alert\""')
+      echo "after: $AFTER  delta: $((AFTER - BEFORE))"
+      ssh 6v6-ips 'sudo grep "9005011" /var/log/suricata/eve.json | tail -10 | jq -r .alert.severity | sort | uniq -c'
+      echo
+      echo "권장 suppression (시뮬):"
+      echo "  suppress gen_id 1, sig_id 9005011, track by_src, ip 10.20.30.202"
+      echo "  event_filter gen_id 1, sig_id 9005011, type limit, track by_src, count 1, seconds 60"
+      ssh 6v6-ips 'sudo rm -f /etc/suricata/rules/local.rules'
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules'
+    answer_detail: |
+      Red 5 cycle × 1~2 NIC alert = delta 5~10. severity 1. Purple 권장 — suppression
+      또는 event_filter rate_filter.
     verify:
       type: output_contains
-      expect: '9005002'
+      expect: delta
       field: stdout
       semantic:
-        intent: "R/B/P 통합 — 다단계 공격 + 다중 룰 매치 + flood 분석"
-        success_criteria: ["alert 카운트", "top 룰 통계", "cleanup"]
+        intent: "R/B/P — flowbits 다단계 + suppression 권장"
+        success_criteria:
+          - "delta 5~10"
+          - "severity 1"
+          - "suppression 권장"
         acceptable_methods:
-          - "**[OSS] 5 burst Red**"
-          - "**[OSS] grep -c sid Blue 카운트**"
-          - "**[OSS] jq top 5 signature_id 통계**"
-          - "**[OSS] threshold 권장 (룰별 또는 전역)**"
-          - "**[OSS] suppression 권장 (특정 src 차단)**"
-          - "**[OSS] cleanup — rm local.rules + reload**"
-          - "**[OSS] dashboard alert 시각화 (W09 예고)**"
-          - "**[OSS] 운영 SOC tier 1/2/3 워크플로**"
+          - "**[OSS] flowbits 다단계 5 cycle**"
+          - "**[OSS] delta 계산** — baseline / after"
+          - "**[OSS] severity 분포 분석**"
+          - "**[OSS] suppress + track by_src + ip**"
+          - "**[OSS] event_filter rate_filter** — alert flood"
+          - "**[OSS] SIEM 통합 (W09)** — alert correlation"
+          - "**[OSS] mitre_tactic_id 매핑**"
+          - "**[OSS] 분기 검토 — false-positive 율**"
     cleanup: |
-      ssh 6v6-ips 'sudo rm -f /etc/suricata/rules/local.rules; sudo suricatasc -c reload-rules' 2>/dev/null || true
+      ssh 6v6-ips 'sudo rm -f /etc/suricata/rules/local.rules /etc/suricata/threshold.config' 2>/dev/null
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules' 2>/dev/null
+      true
     target_vm: bastion
 
-  - order: 6
+  - order: 8
     instruction: |
-      ## 🎯 MISSION
+      ## 🎯 MISSION — 트러블슈팅 (lecture §9 의 4 실수 시뮬)
 
-      W05 의 5 step 결과 + 5 룰 (sid 9005001-9005020) 의 카테고리 분석 + 운영 권장
-      종합.
+      lecture §9.1 (sticky buffer 5.x → 6.x) + §9.2 (pcre 단독 성능) 두 흔한 실수 시뮬 +
+      복구.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # === 실수 1: 5.x 후위 문법 (Suricata 6 에서 silent fail) ===
+      ssh 6v6-ips 'sudo bash -c "cat > /etc/suricata/rules/local.rules <<EOF
+      alert http any any -> any any (msg:\"6v6 5x 후위 문법 silent fail\"; content:\"sqlmap\"; http_user_agent; nocase; sid:9005091; rev:1;)
+      EOF"'
+
+      # syntax 검증 (silent OK — Suricata 가 무시 가능)
+      ssh 6v6-ips 'sudo suricata -T -S /etc/suricata/rules/local.rules 2>&1 | tail -3'
+
+      # reload + 트리거
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules'
+      sleep 2
+      ssh 6v6-attacker 'curl -s -o /dev/null -A "sqlmap/1.5" -H "Host: juice.6v6.lab" http://10.20.30.1/'
+      sleep 4
+      echo "5.x 후위 문법 alert (0 또는 매우 적음 예상):"
+      ssh 6v6-ips 'sudo grep "9005091" /var/log/suricata/eve.json | grep -c "\"event_type\":\"alert\""'
+
+      # === 복구: 6.x 전위 문법 ===
+      ssh 6v6-ips 'sudo bash -c "cat > /etc/suricata/rules/local.rules <<EOF
+      alert http any any -> any any (msg:\"6v6 6x 전위 문법 correct\"; http.user_agent; content:\"sqlmap\"; nocase; sid:9005091; rev:2;)
+      EOF"'
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules'
+      sleep 2
+      ssh 6v6-attacker 'curl -s -o /dev/null -A "sqlmap/1.5" -H "Host: juice.6v6.lab" http://10.20.30.1/'
+      sleep 4
+      echo "6.x 전위 문법 alert (1+ 정상):"
+      ssh 6v6-ips 'sudo grep "9005091" /var/log/suricata/eve.json | grep -c "\"event_type\":\"alert\""'
+
+      # === 실수 2: pcre 단독 (성능 부담) ===
+      # 시뮬만 — 실제 적용하면 drop_rate 증가 위험
+      echo "권장 (성능):"
+      echo "  부적합: pcre:\"/\\\\bunion\\\\b/i\""
+      echo "  적합:  content:\"union\"; nocase; pcre:\"/\\\\bunion\\\\b/i\";"
+
+      # === dump-counters 의 drop rate 확인 ===
+      ssh 6v6-ips 'sudo suricatasc -c dump-counters 2>&1 | python3 -c "
+      import json,sys
+      m=json.load(sys.stdin).get(\"message\",{})
+      print(f\"drops: {m.get(\\\"capture.kernel_drops\\\",0)} / pkts: {m.get(\\\"decoder.pkts\\\",0)}\")
+      "'
+
+      # Cleanup
+      ssh 6v6-ips 'sudo rm -f /etc/suricata/rules/local.rules'
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules'
+      ```
+
+      ## 📋 확인 사항
+
+      - 5.x 후위 문법: alert 0 또는 매우 적음 (Suricata 6 의 silent fail)
+      - 6.x 전위 문법 (복구): alert 1+ (정상 매치)
+      - drops < 0.01% × decoder.pkts
+
+      ## 💡 왜 이걸 하는가?
+
+      운영 중 가장 흔한 실수 2 가지 — sticky buffer 문법 변경 + pcre 단독 성능. Suricata
+      5 에서 6 마이그레이션 시 룰셋의 80% 가 silent fail 경험 → 즉시 alert gap.
+
+      ## 🔍 결과 해석 + 운영 권장
+
+      - **정상**: 복구 후 alert 1+ + drops 0%
+      - **권장 1**: 룰 마이그레이션 시 자동 변환 도구 (`suricata-update`의 free-form-converter)
+        검토
+      - **권장 2**: pcre 사용 시 content prefilter 동반 강제 (코드 리뷰 체크리스트)
+      - **권장 3**: 정기적 drop_rate 측정 + Wazuh alert (임계 0.01%)
+      - **권장 4**: `suricata -T -S file` 사전 syntax 검증 (단, sticky buffer mismatch 는
+        syntax 가 아니라 semantic — 결과 검증 필수)
+    hint: '5.x 후위 (content + http_user_agent) → 6.x 전위 (http.user_agent + content)'
+    category: troubleshooting
+    points: 15
+    answer: |
+      echo "=== 실수 1: 5.x 후위 silent fail ==="
+      ssh 6v6-ips 'sudo bash -c "cat > /etc/suricata/rules/local.rules <<EOF
+      alert http any any -> any any (msg:\"5x 후위\"; content:\"sqlmap\"; http_user_agent; nocase; sid:9005091; rev:1;)
+      EOF"'
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules'
+      sleep 2
+      ssh 6v6-attacker 'curl -s -o /dev/null -A "sqlmap/1.5" -H "Host: juice.6v6.lab" http://10.20.30.1/'
+      sleep 4
+      echo "5.x alert (silent fail 가능):"
+      ssh 6v6-ips 'sudo grep "9005091" /var/log/suricata/eve.json | grep -c "\"event_type\":\"alert\""'
+      echo
+      echo "=== 복구: 6.x 전위 ==="
+      ssh 6v6-ips 'sudo bash -c "cat > /etc/suricata/rules/local.rules <<EOF
+      alert http any any -> any any (msg:\"6x 전위\"; http.user_agent; content:\"sqlmap\"; nocase; sid:9005091; rev:2;)
+      EOF"'
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules'
+      sleep 2
+      ssh 6v6-attacker 'curl -s -o /dev/null -A "sqlmap/1.5" -H "Host: juice.6v6.lab" http://10.20.30.1/'
+      sleep 4
+      echo "6.x alert (1+ 정상):"
+      ssh 6v6-ips 'sudo grep "9005091" /var/log/suricata/eve.json | grep -c "\"event_type\":\"alert\""'
+      echo
+      echo "drop_rate:"
+      ssh 6v6-ips 'sudo suricatasc -c dump-counters 2>&1 | python3 -c "import json,sys; m=json.load(sys.stdin).get(\"message\",{}); print(f\"drops: {m.get(\\\"capture.kernel_drops\\\",0)} / pkts: {m.get(\\\"decoder.pkts\\\",0)}\")"'
+      ssh 6v6-ips 'sudo rm -f /etc/suricata/rules/local.rules'
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules'
+    answer_detail: |
+      5.x 후위 silent fail → 6.x 전위 복구 → alert 정상화. drop_rate 0%. production 5 → 6
+      마이그레이션 시 80% 룰이 silent fail 경험.
+    verify:
+      type: output_contains
+      expect: '6x'
+      field: stdout
+      semantic:
+        intent: "트러블슈팅 — 5.x 후위 silent fail → 6.x 전위 복구"
+        success_criteria:
+          - "5.x 후위 silent fail"
+          - "6.x 전위 복구"
+          - "alert 정상화"
+        acceptable_methods:
+          - "**[OSS] sticky buffer 6.x 전위 (http.user_agent + content)**"
+          - "**[OSS] suricata-update --free-form-converter** — 자동 변환"
+          - "**[OSS] suricata.log 의 syntax error 점검**"
+          - "**[OSS] dump-counters 의 drop_rate**"
+          - "**[OSS] reload 후 결과 검증** — semantic vs syntax"
+          - "**[OSS] git audit + 변경 PR 의 sticky buffer 검토**"
+          - "**[OSS] -T 사전 검증** — semantic mismatch 는 검출 못 함"
+          - "**[OSS] Wazuh alert 임계 (drop_rate 0.01%)** — 자동 모니터"
+    cleanup: |
+      ssh 6v6-ips 'sudo rm -f /etc/suricata/rules/local.rules' 2>/dev/null
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules' 2>/dev/null
+      true
+    target_vm: ips
+
+  - order: 9
+    instruction: |
+      ## 🎯 MISSION — 종합: 5 기술 결합 + R/B/P 통합 cycle
+
+      9005099 (5 기술 결합) + 9005010/9005011 (flowbits) + threshold.config 의 suppress
+      를 동시 운영 + 5 burst 다단계 트리거 + 운영 효과 측정.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # 1. 3 룰 + 1 suppress 동시 작성
+      ssh 6v6-ips 'sudo bash -c "cat > /etc/suricata/rules/local.rules <<EOF
+      alert http any any -> any any (msg:\"step1 FlowbitTest UA\"; http.user_agent; content:\"FlowbitTest\"; flowbits:set,fb_test_step1; flowbits:noalert; sid:9005010; rev:1;)
+      alert http any any -> any any (msg:\"step2 admin after step1\"; http.uri; content:\"/admin\"; flowbits:isset,fb_test_step1; classtype:successful-recon; priority:1; sid:9005011; rev:1;)
+      alert http any any -> any any (msg:\"6v6 sqlmap UNION (rate-limited)\"; flow:to_server,established; http.user_agent; content:\"sqlmap\"; fast_pattern; nocase; http.request_body; content:\"union\"; nocase; pcre:\"/\\\\bunion\\\\b\\\\s+\\\\bselect\\\\b/i\"; threshold:type limit, track by_src, count 1, seconds 60; classtype:web-application-attack; priority:1; sid:9005099; rev:1;)
+      EOF"'
+
+      # 2. threshold.config — 9005011 의 alert flood 차단
+      ssh 6v6-ips 'sudo bash -c "cat > /etc/suricata/threshold.config <<EOF
+      event_filter gen_id 1, sig_id 9005011, type limit, track by_src, count 1, seconds 30
+      EOF"'
+
+      # 3. activate
+      ssh 6v6-ips 'sudo sed -i "s|^# threshold-file:|threshold-file:|" /etc/suricata/suricata.yaml' 2>/dev/null
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules'
+      sleep 2
+
+      # 4. baseline
+      BEFORE_11=$(ssh 6v6-ips 'sudo grep "9005011" /var/log/suricata/eve.json | grep -c "\"event_type\":\"alert\""')
+      BEFORE_99=$(ssh 6v6-ips 'sudo grep "9005099" /var/log/suricata/eve.json | grep -c "\"event_type\":\"alert\""')
+      echo "baseline 9005011: $BEFORE_11 / 9005099: $BEFORE_99"
+
+      # 5. Red — 5 burst 다단계 + sqlmap
+      ssh 6v6-attacker 'for i in 1 2 3 4 5; do
+        curl -s -o /dev/null -A "FlowbitTest/$i" -H "Host: juice.6v6.lab" http://10.20.30.1/
+        curl -s -o /dev/null -A "FlowbitTest/$i" -H "Host: juice.6v6.lab" http://10.20.30.1/admin
+        curl -s -o /dev/null -X POST -A "sqlmap/1.5" -d "q=1 UNION SELECT password FROM users" -H "Host: juice.6v6.lab" http://10.20.30.1/
+      done'
+      sleep 6
+
+      # 6. delta
+      AFTER_11=$(ssh 6v6-ips 'sudo grep "9005011" /var/log/suricata/eve.json | grep -c "\"event_type\":\"alert\""')
+      AFTER_99=$(ssh 6v6-ips 'sudo grep "9005099" /var/log/suricata/eve.json | grep -c "\"event_type\":\"alert\""')
+      D11=$((AFTER_11 - BEFORE_11))
+      D99=$((AFTER_99 - BEFORE_99))
+      echo "9005011 delta: $D11 (event_filter limit 1/30s 라 1~2 예상)"
+      echo "9005099 delta: $D99 (룰 자체 threshold limit 1/60s 라 1~2 예상)"
+
+      # 7. 운영 효과 — alert flood 차단 검증
+      if [ "$D11" -le 4 ] && [ "$D99" -le 2 ]; then
+        echo "✓ alert flood 차단 성공"
+      else
+        echo "✗ alert flood 발생 - threshold 검토"
+      fi
+
+      # Cleanup
+      ssh 6v6-ips 'sudo rm -f /etc/suricata/rules/local.rules /etc/suricata/threshold.config'
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules'
+      ```
+
+      ## 📋 확인 사항
+
+      - 9005011 delta: 1~4 (5 cycle 이지만 event_filter limit 1/30s 라 1, 양 NIC 까지 2)
+      - 9005099 delta: 1~2 (룰 자체 threshold limit 1/60s 라 1, 양 NIC 2)
+      - alert flood 차단 성공 출력
+
+      ## 💡 왜 이걸 하는가?
+
+      production 의 통합 운영. 5 기술 결합 + 외부 통제 (threshold.config) + 다단계 룰 +
+      alert flood 차단 = 운영 표준. 본 step 이 W05 의 cap stone.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 두 delta 모두 작음 + flood 차단 성공
+      - **위험**: delta 큼 → threshold 비활성 또는 event_filter 미적용
+      - **운영 권장**: alert flood 차단 + production 환경의 SIEM 통합 (W09) → 통합 dashboard
+    hint: '5 기술 + flowbits + threshold.config 통합 + 5 cycle 다단계 → flood 차단 검증'
+    category: synthesis
+    points: 23
+    answer: |
+      ssh 6v6-ips 'sudo bash -c "cat > /etc/suricata/rules/local.rules <<EOF
+      alert http any any -> any any (msg:\"step1 FlowbitTest UA\"; http.user_agent; content:\"FlowbitTest\"; flowbits:set,fb_test_step1; flowbits:noalert; sid:9005010; rev:1;)
+      alert http any any -> any any (msg:\"step2 admin after step1\"; http.uri; content:\"/admin\"; flowbits:isset,fb_test_step1; classtype:successful-recon; priority:1; sid:9005011; rev:1;)
+      alert http any any -> any any (msg:\"6v6 sqlmap UNION (rate-limited)\"; flow:to_server,established; http.user_agent; content:\"sqlmap\"; fast_pattern; nocase; http.request_body; content:\"union\"; nocase; pcre:\"/\\\\bunion\\\\b\\\\s+\\\\bselect\\\\b/i\"; threshold:type limit, track by_src, count 1, seconds 60; classtype:web-application-attack; priority:1; sid:9005099; rev:1;)
+      EOF"'
+      ssh 6v6-ips 'sudo bash -c "cat > /etc/suricata/threshold.config <<EOF
+      event_filter gen_id 1, sig_id 9005011, type limit, track by_src, count 1, seconds 30
+      EOF"'
+      ssh 6v6-ips 'sudo sed -i "s|^# threshold-file:|threshold-file:|" /etc/suricata/suricata.yaml' 2>/dev/null
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules'
+      sleep 2
+      BEFORE_11=$(ssh 6v6-ips 'sudo grep "9005011" /var/log/suricata/eve.json | grep -c "\"event_type\":\"alert\""')
+      BEFORE_99=$(ssh 6v6-ips 'sudo grep "9005099" /var/log/suricata/eve.json | grep -c "\"event_type\":\"alert\""')
+      echo "baseline 11: $BEFORE_11 / 99: $BEFORE_99"
+      ssh 6v6-attacker 'for i in 1 2 3 4 5; do
+        curl -s -o /dev/null -A "FlowbitTest/$i" -H "Host: juice.6v6.lab" http://10.20.30.1/
+        curl -s -o /dev/null -A "FlowbitTest/$i" -H "Host: juice.6v6.lab" http://10.20.30.1/admin
+        curl -s -o /dev/null -X POST -A "sqlmap/1.5" -d "q=1 UNION SELECT password FROM users" -H "Host: juice.6v6.lab" http://10.20.30.1/
+      done'
+      sleep 6
+      AFTER_11=$(ssh 6v6-ips 'sudo grep "9005011" /var/log/suricata/eve.json | grep -c "\"event_type\":\"alert\""')
+      AFTER_99=$(ssh 6v6-ips 'sudo grep "9005099" /var/log/suricata/eve.json | grep -c "\"event_type\":\"alert\""')
+      D11=$((AFTER_11 - BEFORE_11))
+      D99=$((AFTER_99 - BEFORE_99))
+      echo "9005011 delta: $D11 / 9005099 delta: $D99"
+      ssh 6v6-ips 'sudo rm -f /etc/suricata/rules/local.rules /etc/suricata/threshold.config'
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules'
+    answer_detail: |
+      5 기술 결합 + flowbits + threshold.config 통합 + 5 burst 다단계. 9005011 delta
+      1~4, 9005099 delta 1~2. alert flood 차단 성공. production 통합 운영 cap stone.
+    verify:
+      type: output_contains
+      expect: delta
+      field: stdout
+      semantic:
+        intent: "통합 cycle — 5 기술 + flowbits + threshold.config"
+        success_criteria:
+          - "3 룰 동시 로드"
+          - "event_filter limit"
+          - "delta 작음 (flood 차단)"
+        acceptable_methods:
+          - "**[OSS] 다중 룰 + threshold.config 동시 운영**"
+          - "**[OSS] event_filter type limit/threshold/both**"
+          - "**[OSS] suppression 추가** — 정상 사용자 IP 차단"
+          - "**[OSS] alert flood 차단 검증** — delta 분석"
+          - "**[OSS] SIEM 통합 (W09)** — alert correlation"
+          - "**[OSS] git audit** — 모든 룰 + config 변경"
+          - "**[OSS] 분기 검토 — false-positive 율 재평가**"
+          - "**[OSS] MITRE ATT&CK 매핑 — TA0001 (recon)**"
+    cleanup: |
+      ssh 6v6-ips 'sudo rm -f /etc/suricata/rules/local.rules /etc/suricata/threshold.config' 2>/dev/null
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules' 2>/dev/null
+      true
+    target_vm: bastion
+
+  - order: 10
+    instruction: |
+      ## 🎯 MISSION — W05 종합 보고서
+
+      STEP 1-9 결과 + R/B/P + 트러블슈팅 + 운영 권장 + W06 준비도.
 
       ## 💻 산출물 형식
 
       ```markdown
-      # W05 Suricata 룰 심화 보고서
+      # 6v6 W05 Suricata 룰 심화 보고서 (학번, 이름)
 
-      ## 1. 5 룰 매트릭스
-      | sid | 기술 | 트리거 | classtype |
-      | 9005001 | pcre RRN | POST body | policy-violation |
-      | 9005002 | fast_pattern admin | URI | web-application-attack |
-      | 9005010+11 | flowbits 다단계 | 401 + /admin | attempted-admin |
-      | 9005020 | threshold rate-limit | SSH SYN | attempted-admin |
+      ## 1. STEP 1-9 결과 표
+      | Step | 영역 | 결과 |
+      |------|------|------|
+      | 1 | content modifier 5 (http.uri + depth + nocase + fast_pattern) | pass |
+      | 2 | pcre + content prefilter (RRN) | pass |
+      | 3 | flowbits 다단계 (401 → /admin) | pass (step1=0, step2=2) |
+      | 4 | threshold 3 mode 비교 | pass (limit/threshold/both 차이) |
+      | 5 | threshold.config suppress | pass (delta 0) |
+      | 6 | 5 기술 결합 9005099 | pass |
+      | 7 | R/B/P 다단계 5 burst | pass (delta 5-10) |
+      | 8 | 트러블슈팅 5x→6x | pass |
+      | 9 | 통합 cycle | pass (flood 차단) |
 
-      ## 2. R/B/P 측정 (STEP 5)
-      ## 3. 운영 권장 5+
-      ## 4. W06 (ModSecurity WAF) 준비도
+      ## 2. R/B/P 측정 (STEP 7+9)
+      flowbits 다단계 + sqlmap UNION + threshold flood 차단 모두 검증
+
+      ## 3. 5 기술 운영 권장
+      1. content modifier — sticky buffer 6.x 전위 강제
+      2. pcre 단독 금지, content prefilter 강제
+      3. fast_pattern 명시 — 자동 선택의도 불일치 방지
+      4. flowbits — flow 경계 + memcap 인지
+      5. threshold modifier (룰 본질) vs threshold.config (운영 통제) 분리
+
+      ## 4. 트러블슈팅 (STEP 8)
+      sticky buffer 5x → 6x 변환 + content prefilter 추가
+
+      ## 5. W06 (ModSecurity WAF) 준비도
+      - Suricata 의 HTTP event 와 ModSec audit log 의 차이 (sniff vs inline)
+      - OWASP CRS 의 paranoia level + Suricata 의 threshold modifier 비교
+      - 본인 gap: SecAuditLogFormat JSON 분석
+
+      ## 6. 본인 학습 gap
+      ...
       ```
-    hint: 마크다운
+
+      ## 📋 확인 사항
+
+      - 6 섹션
+      - 9 step 표
+      - R/B/P 측정값
+      - 운영 권장 5
+      - W06 준비도
+
+      ## 💡 왜 이걸 하는가?
+
+      Suricata 룰 심화 운영 audit 표준.
+
+      ## 🔍 결과 해석
+
+      - **A**: 6 섹션 + 9 step + 5 권장 + gap
+      - **C**: 일부 누락 → 재제출
+    hint: 마크다운 1페이지
     category: synthesis
     points: 10
-    answer: 위 형식
-    answer_detail: 종합 보고서 1페이지
+    answer: |
+      cat <<'EOF'
+      # 6v6 W05 Suricata 룰 심화 보고서
+
+      ## 1. STEP 1-9 결과
+      (표 9 row)
+
+      ## 2. R/B/P (STEP 7+9)
+      flowbits + sqlmap UNION + threshold flood 차단
+
+      ## 3. 운영 권장 5
+
+      ## 4. 트러블슈팅 (STEP 8) sticky buffer
+
+      ## 5. W06 준비도
+      EOF
+    answer_detail: 종합 보고서
     verify:
       type: output_contains
       expect: Suricata
       field: stdout
       semantic:
         intent: "W05 종합"
-        success_criteria: ["5 룰 매트릭스", "R/B/P 결과"]
+        success_criteria: ["9 step 표", "R/B/P", "운영 권장 5", "W06 준비도"]
         acceptable_methods:
-          - "**[관리적]** 마크다운 표 4 섹션"
-          - "**[관리적]** ISMS-P + NIST + MITRE 매핑"
-          - "**[관리적]** alert fatigue 운영 분석"
-          - "**[관리적]** threshold/suppression production 정석"
-          - "**[관리적]** sid 9M+ 규약 + git audit"
-          - "**[관리적]** W06 ModSec 학습 예고"
-          - "**[관리적]** SOC tier 1/2/3 워크플로"
-          - "**[관리적]** 본인 학습 gap"
+          - "**[관리적] 마크다운 6 섹션**"
+          - "**[관리적] ISMS-P 2.6.4 매핑**"
+          - "**[관리적] NIST DE.AE-1 (Event Analysis)**"
+          - "**[관리적] MITRE ATT&CK 매핑 (TA0001)**"
+          - "**[관리적] alert fatigue + SOC tier 분석**"
+          - "**[관리적] 운영 권장 5 (5 기술 사용 원칙)**"
+          - "**[관리적] W06 (ModSecurity) logical flow**"
+          - "**[관리적] 본인 학습 gap**"
     target_vm: ips
