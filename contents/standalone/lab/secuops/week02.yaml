@@ -32,27 +32,38 @@ steps:
   # ============================================================
   - order: 1
     instruction: |
-      **이 실습을 왜 하는가?**
-      6v6-fw 의 nftables 가 어떤 family + 어떤 table 을 가지고 있는지 첫 가시화.
-      운영 인수 시 첫 5분 명령.
+      ## 🎯 MISSION
 
-      **이걸 하면 무엇을 알 수 있는가?**
-      - 3 table 의 명명 규칙 (`ip nat` Docker / `inet six_filter` 6v6 정책 / `ip six_nat` NAT stub)
-      - family (ip / ip6 / inet / arp / bridge / netdev) 의 의미
-      - `XT match` 경고는 docker 의 ipset 호환 모듈 부재 (무시 OK)
+      6v6-fw 의 nftables 에 정의된 **3 table** (ip nat / inet six_filter / ip six_nat)
+      을 확인한다.
 
-      **결과 해석**
-      정상: 3 table 모두 출력. 비정상: `inet six_filter` 누락 → entrypoint 의 `nft -f`
-      적용 실패 → 컨테이너 logs 점검.
+      ## 💻 실행 명령
 
-      **실전 활용**
-      production 환경에서 운영자가 새 호스트 인수 시 첫 명령.
-
-      **작업 절차**:
-      ```
+      ```bash
+      # 1. table 목록 (XT 경고 제거)
       ssh 6v6-fw 'sudo nft list tables 2>&1 | grep -v "^XT"'
-      ssh 6v6-fw 'sudo nft -j list tables | jq ".nftables[] | select(.table) | .table | {family, name}"'
+
+      # 2. JSON 형식으로 family + name 추출
+      ssh 6v6-fw 'sudo nft -j list tables | jq "[.nftables[] | select(.table) | .table | {family, name}]"'
       ```
+
+      ## 📋 확인 사항
+
+      - 명령 1 출력: `table ip nat` + `table inet six_filter` + `table ip six_nat` 3 행
+      - 명령 2 출력: `[{"family":"ip","name":"nat"}, {"family":"inet","name":"six_filter"},
+        {"family":"ip","name":"six_nat"}]`
+
+      ## 💡 왜 이걸 하는가?
+
+      운영 인수 시 첫 5분 명령. fw 가 어떤 family + 어떤 table 을 가지고 있는지 가시화
+      해야 정책 분석 가능. `inet` family 는 IPv4+IPv6 통합 (가장 유연).
+
+      ## 🔍 결과 해석
+
+      - **정상**: 3 table 모두 출력
+      - **비정상**: `inet six_filter` 누락 → entrypoint 의 `nft -f /etc/nftables.conf`
+        적용 실패 → `docker logs 6v6-fw` 로 syntax error 확인 + nftables.conf 수정 + 재배포
+      - `XT match` 경고는 docker 의 ipset 호환 모듈 부재 잡음 (무시 OK)
     hint: ssh 6v6-fw sudo nft list tables
     category: survey
     points: 10
@@ -132,29 +143,43 @@ steps:
   # ============================================================
   - order: 2
     instruction: |
-      **이 실습을 왜 하는가?**
-      chain 의 4 attribute (type / hook / priority / policy) + 룰의 handle + counter
-      를 정확히 읽을 줄 알아야 룰 추가/삭제·통계 분석 가능.
+      ## 🎯 MISSION
 
-      **이걸 하면 무엇을 알 수 있는가?**
-      - chain header 의 4 attribute 의미
-      - handle 은 nft 가 자동 부여한 룰 고유 ID (삭제 시 사용)
-      - counter 는 룰별 packet/byte 통계 (W02 의 핵심 분석 도구)
+      forward chain 의 **4 attribute (type/hook/priority/policy)** + 룰의 **handle** +
+      **counter** 를 직접 가시화한다.
 
-      **결과 해석**
-      `chain forward { # handle 2` 가 chain 자체의 handle, 룰 끝의 `# handle 8` 이
-      그 룰의 handle. counter 는 트래픽 발생 시 증가.
+      ## 💻 실행 명령
 
-      **실전 활용**
-      운영 시 룰 단위 효과 측정. 한 번도 매치 안 된 룰은 candidate for removal.
-
-      **작업 절차**:
-      ```
+      ```bash
+      # 1. handle 포함 chain 출력 (-a 옵션)
       ssh 6v6-fw 'sudo nft -a list chain inet six_filter forward'
+
+      # 2. counter 초기화 (운영 측정 전 baseline)
       ssh 6v6-fw 'sudo nft reset counters table inet six_filter'
-      # 트래픽 발생 후
-      ssh 6v6-fw 'sudo nft list chain inet six_filter forward | grep counter'
+
+      # 3. 트래픽 발생 후 counter 변화
+      ssh 6v6-attacker 'curl -s -o /dev/null -H "Host: juice.6v6.lab" http://10.20.30.1/' >/dev/null
+      sleep 2
+      ssh 6v6-fw 'sudo nft list chain inet six_filter forward | grep -B1 counter'
       ```
+
+      ## 📋 확인 사항
+
+      - 명령 1 출력에 `chain forward { # handle 2` + `ct state established,related accept # handle 8`
+        (각 룰의 `# handle N` 표기)
+      - chain header: `type filter hook forward priority filter; policy accept;`
+      - 명령 3 출력의 counter 가 0 이상 (트래픽 발생 후 증가)
+
+      ## 💡 왜 이걸 하는가?
+
+      handle 은 룰 삭제 시 필수 ID. counter 는 룰별 효과 측정 (한 번도 매치 안 된
+      룰은 candidate for removal). production 운영의 표준 분석 도구.
+
+      ## 🔍 결과 해석
+
+      - **정상**: handle + counter 모두 정수
+      - **비정상**: handle 미표시 → `-a` 옵션 빠짐
+      - counter 0 (트래픽 발생 후) → 룰이 packet 매치 못함 → ruleset 점검
     hint: ssh 6v6-fw 'sudo nft -a list chain inet six_filter forward'
     category: monitoring
     points: 15
@@ -241,28 +266,42 @@ steps:
   # ============================================================
   - order: 3
     instruction: |
-      **이 실습을 왜 하는가?**
-      legacy iptables 룰셋을 nftables 로 변환하는 표준 도구 활용. 운영 환경의 마이
-      그레이션 절차 학습.
+      ## 🎯 MISSION
 
-      **이걸 하면 무엇을 알 수 있는가?**
-      - iptables-translate 가 한 줄 변환 + 의미 보존
-      - `-A INPUT` → `add rule ip filter INPUT`
-      - `-m state` → `ct state`
-      - 변환 결과의 `counter accept` 같은 추가 옵션
+      legacy iptables 룰 **3 건** 을 `iptables-translate` 로 nftables 명령으로 변환
+      하고 각 변환의 의미를 한글 1줄로 해설.
 
-      **결과 해석**
-      3 변환 결과 모두 `nft add rule ip filter ...` 형식. 각 변환의 한글 의미 분석.
+      ## 💻 실행 명령
 
-      **실전 활용**
-      RHEL 7 → 8 마이그레이션, Debian 9 → 10 의 표준 step.
-
-      **작업 절차**:
-      ```
+      ```bash
+      # 변환 1: 사내망 ACCEPT
       ssh 6v6-fw 'iptables-translate -A INPUT -s 192.168.1.0/24 -j ACCEPT'
+
+      # 변환 2: DNS outbound (UDP 53)
       ssh 6v6-fw 'iptables-translate -A OUTPUT -p udp --dport 53 -j ACCEPT'
+
+      # 변환 3: stateful 응답 path
       ssh 6v6-fw 'iptables-translate -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT'
       ```
+
+      ## 📋 확인 사항
+
+      - 변환 1 결과: `nft add rule ip filter INPUT ip saddr 192.168.1.0/24 counter accept`
+      - 변환 2 결과: `nft add rule ip filter OUTPUT udp dport 53 counter accept`
+      - 변환 3 결과: `nft add rule ip filter FORWARD ct state related,established counter accept`
+      - 변환 3 의 `-m state` → `ct state` 매핑 인지 (가장 중요한 변환)
+
+      ## 💡 왜 이걸 하는가?
+
+      RHEL 7 → 8, Debian 9 → 10 마이그레이션의 표준 절차. legacy iptables 룰셋을
+      nftables 로 안전하게 옮길 때 자동 변환 + 사람이 의미 검증.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 3 변환 모두 `nft add rule ip filter ...` 형식 + counter accept 자동
+        추가
+      - **비정상**: `iptables-translate: command not found` → fw Dockerfile 의 iptables
+        패키지 누락 (이미 설치됨, 정상)
     hint: ssh 6v6-fw iptables-translate -A INPUT -s 192.168.1.0/24 -j ACCEPT
     category: migration
     points: 15
@@ -356,29 +395,50 @@ steps:
   # ============================================================
   - order: 4
     instruction: |
-      **이 실습을 왜 하는가?**
-      실 운영 incident response 의 핵심 — 특정 IP 즉시 차단. nft 의 `insert rule
-      position 0` + counter + log prefix 결합.
+      ## 🎯 MISSION
 
-      **이걸 하면 무엇을 알 수 있는가?**
-      - `insert rule position 0` 가 chain 의 최상단 (가장 먼저 평가)
-      - counter 로 drop 효과 측정
-      - log prefix 가 kernel ring buffer 에 기록 (dmesg)
+      attacker IP (10.20.30.202) 의 fw 접근을 차단하는 **drop 룰** 을 input chain 의
+      position 0 에 추가하고, 효과 (counter / timeout) 를 검증 후 cleanup.
 
-      **결과 해석**
-      drop 룰 추가 후 attacker 의 fw:80 시도가 timeout (HTTP 000). counter packets
-      증가. dmesg 에 `DROP-ATTACKER: ...` 라인.
+      ## 💻 실행 명령
 
-      **실전 활용**
-      incident response 시 분 단위 IP block.
+      ```bash
+      # 1. drop 룰 추가 (input chain 최상단)
+      ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 \
+          ip saddr 10.20.30.202 counter log prefix "W02-DROP: " drop'
 
-      **작업 절차**:
-      ```
-      ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter log prefix "W02-DROP: " drop'
-      ssh 6v6-attacker 'timeout 5 curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" http://10.20.30.1/'
+      # 2. attacker → fw:80 시도 (timeout 예상)
+      ssh 6v6-attacker 'timeout 5 curl -s -o /dev/null -w "%{http_code} %{time_total}s\n" \
+          -H "Host: juice.6v6.lab" http://10.20.30.1/'
+
+      # 3. counter 증가 확인
       ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep W02-DROP'
-      ssh 6v6-fw 'sudo dmesg | tail -5 | grep W02-DROP'
+
+      # 4. cleanup — handle 식별 후 정확한 삭제
+      HANDLE=$(ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep W02-DROP | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
+      ssh 6v6-fw "sudo nft delete rule inet six_filter input handle $HANDLE"
+
+      # 5. 복귀 검증
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" http://10.20.30.1/'
       ```
+
+      ## 📋 확인 사항
+
+      - 명령 2 출력: `000 5.0s` (timeout, 5초 후 종료)
+      - 명령 3 출력: `ip saddr 10.20.30.202 counter packets 3 bytes 180 ... drop # handle <N>` (실측: packets 3 = SYN + retry 2)
+      - 명령 5 출력: `200` (cleanup 후 정상 복귀)
+
+      ## 💡 왜 이걸 하는가?
+
+      실 운영 incident response 의 핵심 — 특정 IP 즉시 차단. `insert rule position 0`
+      이 chain 의 최상단 (가장 먼저 평가). counter 로 효과 측정.
+
+      ## 🔍 결과 해석
+
+      - **정상**: timeout (000) + counter packets 3+ + cleanup 후 200 복귀
+      - **dmesg 경고**: 6v6 컨테이너 안에서 `sudo dmesg` 는 `Operation not permitted`
+        (docker container 의 kernel ring buffer 권한 제한). production host 는 정상.
+      - **비정상**: timeout 안 됨 → 룰이 chain 다른 위치 또는 syntax 오류
     hint: |
       ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter log prefix "W02-DROP: " drop'
     category: manipulation
@@ -480,29 +540,49 @@ steps:
   # ============================================================
   - order: 5
     instruction: |
-      **이 실습을 왜 하는가?**
-      drop 룰의 효과를 패킷 단위로 가시화. tcpdump 로 fw 의 두 NIC 양쪽에서 같은
-      패킷을 동시 캡처 — drop 룰 적용 시 한쪽만 보임.
+      ## 🎯 MISSION
 
-      **이걸 하면 무엇을 알 수 있는가?**
-      - fw 의 eth0 (ext NIC) 에 SYN 진입 + eth1 (pipe NIC) 에 SYN 미통과 (forward 단계 drop)
-      - drop 룰 삭제 후 양쪽 NIC 에 SYN + SYN-ACK 정상
+      drop 룰의 효과를 **packet 레벨** 로 가시화. tcpdump 로 fw 의 ext NIC (eth0) 에
+      SYN 진입은 보이지만 input chain 의 drop 으로 후속 처리 없음을 확인.
 
-      **결과 해석**
-      룰 적용: eth0 에 SYN 보이고 eth1 에 안 보임. 룰 삭제 후: 양쪽 SYN 매치.
+      ## 💻 실행 명령 (3 터미널 동시)
 
-      **실전 활용**
-      packet level 디버깅. ruleset 변경의 immediate 영향 측정.
+      ```bash
+      # T1 (학생 PC) — drop 룰 추가
+      ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 \
+          ip saddr 10.20.30.202 counter drop'
 
-      **작업 절차** (3 터미널 동시):
+      # T2 (다른 학생 PC 터미널) — eth0 캡처 5건
+      ssh 6v6-fw 'sudo timeout 8 tcpdump -ni eth0 host 10.20.30.202 and tcp port 80 -c 5'
+
+      # T3 (또 다른 터미널) — curl 트리거
+      sleep 1
+      ssh 6v6-attacker 'timeout 5 curl -s -o /dev/null -w "%{http_code}\n" \
+          -H "Host: juice.6v6.lab" http://10.20.30.1/'
+
+      # 룰 cleanup
+      HANDLE=$(ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep "10.20.30.202.*drop" | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
+      ssh 6v6-fw "sudo nft delete rule inet six_filter input handle $HANDLE"
+
+      # 정상 복귀 검증
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" http://10.20.30.1/'
       ```
-      # T1: eth0 캡처
-      ssh 6v6-fw 'sudo timeout 10 tcpdump -ni eth0 host 10.20.30.202 -c 5'
-      # T2: eth1 캡처
-      ssh 6v6-fw 'sudo timeout 10 tcpdump -ni eth1 host 10.20.30.202 -c 5'
-      # T3: 트래픽 발생 (룰 있을 때, 룰 없을 때)
-      ssh 6v6-attacker 'curl -H "Host: juice.6v6.lab" http://10.20.30.1/'
-      ```
+
+      ## 📋 확인 사항
+
+      - tcpdump 출력: `IP <attacker_ip>.xxxx > 10.20.30.1.80: Flags [S]` SYN 5건
+      - SYN-ACK 응답 없음 (`Flags [S.]` 0건) → drop 효과
+      - cleanup 후 curl 200 복귀
+
+      ## 💡 왜 이걸 하는가?
+
+      packet 레벨 디버깅. ruleset 변경의 immediate 영향 측정. 운영 환경의 incident
+      response 시 "차단된 것 같은데 진짜 끊겼나?" 의 답.
+
+      ## 🔍 결과 해석
+
+      - **정상**: SYN 캡처 + SYN-ACK 없음 + cleanup 후 200
+      - **비정상**: SYN-ACK 보임 → 룰이 매치 안 됨 (chain 위치 잘못 또는 IP 다름)
     hint: ssh 6v6-fw sudo timeout 5 tcpdump -ni eth0 host 10.20.30.202 -c 5
     category: monitoring
     points: 15
@@ -591,36 +671,55 @@ steps:
   # ============================================================
   - order: 6
     instruction: |
-      **이 실습을 왜 하는가?**
-      실 운영 시 발생하는 incident: 외부 호스트가 fw 로 무차별 포트 스캔. Red 가
-      이 공격을 흘려 보내고, Blue 가 즉시 drop 룰 추가, Purple 가 효과 측정 후
-      영구화 검토. R/B/P 표준 cycle.
+      ## 🎯 MISSION (R/B/P 통합)
 
-      **이걸 하면 무엇을 알 수 있는가?**
-      - Red 의 nmap 출력 변화 (drop 룰 적용 전 vs 후)
-      - Blue 의 룰 추가 명령 + log prefix
-      - Purple 의 counter 측정 + 영구화 patch 검토
+      **Red** 가 attacker 에서 fw 로 nmap 무차별 스캔 → **Blue** 가 nftables 의 drop
+      룰을 추가 → **Purple** 이 counter / port state 비교 + 영구화 검토.
 
-      **결과 해석**
-      Red 의 nmap 결과 — drop 룰 없을 때: 4 port 모두 응답 (open / closed / filtered).
-      drop 룰 적용 후: 4 port 모두 filtered (응답 없음). counter 가 5+ 증가. dmesg 에
-      "RBP-DROP" 라인.
+      ## 💻 실행 명령
 
-      **실전 활용**
-      Purple Team 의 standard cycle. 분기별 정기 실행 + 룰 효과 측정.
-
-      **작업 절차**:
-      ```
-      # Red 1차 — 룰 없이
+      ```bash
+      # === Red 1차: drop 룰 없는 상태 nmap ===
       ssh 6v6-attacker 'sudo nmap -sS -p 22,80,443,9100 10.20.30.1'
-      # Blue — drop 룰 추가
-      ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter log prefix "RBP-DROP: " drop'
-      # Red 2차 — 룰 적용 후
+      # 예상: 일부 port open (22 ssh / 80 http / 443 https / 9100 bastion api)
+
+      # === Blue: drop + log 룰 추가 ===
+      ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 \
+          ip saddr 10.20.30.202 counter log prefix "RBP-DROP: " drop'
+
+      # === Red 2차: drop 룰 적용 후 nmap ===
       ssh 6v6-attacker 'sudo nmap -sS -p 22,80,443,9100 10.20.30.1'
-      # Purple — counter + dmesg + 영구화 검토
-      ssh 6v6-fw 'sudo nft list chain inet six_filter input | grep RBP-DROP'
-      ssh 6v6-fw 'sudo dmesg | tail -20 | grep RBP-DROP | wc -l'
+      # 예상: 모든 port filtered (응답 없음)
+
+      # === Purple 측정 ===
+      ssh 6v6-fw 'sudo nft list chain inet six_filter input | grep -B1 RBP-DROP'
+      # counter packets N bytes M (N = nmap probe 수)
+
+      # === Cleanup ===
+      HANDLE=$(ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep RBP-DROP | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
+      ssh 6v6-fw "sudo nft delete rule inet six_filter input handle $HANDLE"
       ```
+
+      ## 📋 확인 사항
+
+      - Red 1차 nmap 결과: 22/80/443/9100 중 일부 open
+      - Red 2차 nmap 결과: 모든 port `filtered` (drop = 응답 없음)
+      - Purple counter: `packets 5+` (nmap 의 SYN probe 갯수)
+      - Cleanup 후 attacker → web 정상 200 복귀
+
+      ## 💡 왜 이걸 하는가?
+
+      Purple Team 의 standard cycle. 분기별 정기 실행으로 룰 효과 측정 + production
+      환경 영구화 검토. incident response 의 표준 절차.
+
+      ## 🔍 결과 해석 + 영구화 절차
+
+      - **정상**: Red 1차 → 2차 의 port state 차이 + counter 증가
+      - **영구화 (production)**:
+        1. `/home/opsclaw/6v6/fw/nftables.conf` 의 chain input 끝에 영구 룰 추가
+        2. `git add fw/nftables.conf && git commit && git push`
+        3. VM 에서 `docker compose build fw && docker compose up -d --force-recreate fw`
+        4. canary 검증 + 정상 트래픽 영향 측정 + rollback 절차 준비
     hint: nmap → drop 룰 → counter + dmesg + nftables.conf patch
     category: redblue
     points: 20
@@ -739,14 +838,50 @@ steps:
   # ============================================================
   - order: 7
     instruction: |
-      **이 실습을 왜 하는가?**
-      6 step 결과 + R/B/P cycle 결과 + 본인 학습 gap + W03 준비도 의 자가 보고서.
+      ## 🎯 MISSION
 
-      **결과 해석**
-      6 step 모두 pass + R/B/P 측정 결과 + 운영 권장 3+.
+      STEP 1-6 의 모든 결과 + R/B/P cycle 측정값 + 본인 학습 gap 을 종합한 1페이지
+      보고서를 Markdown 으로 작성.
 
-      **실전 활용**
-      운영자 매일 작성하는 표.
+      ## 💻 산출물 형식
+
+      ```markdown
+      # 6v6 W02 nftables 기초 + R/B/P 보고서 (학번, 이름)
+
+      ## 1. STEP 1-6 결과 표
+      | Step | 영역 | 결과 (pass/partial/fail) | 핵심 출력 |
+      ...
+
+      ## 2. R/B/P 측정 (STEP 6)
+      - Red 1차 nmap: <port state>
+      - Blue 룰 추가 후: <port state>
+      - Purple counter packets: <N>
+
+      ## 3. 본인 발견 비정상 / 의문점 1+
+
+      ## 4. W03 준비도 자가 진단
+      - nft NAT chain 이해 정도
+      - conntrack -L 양방향 변환 매핑
+
+      ## 5. 운영 권장 3+
+      ```
+
+      ## 📋 확인 사항
+
+      - 5 섹션 모두 작성
+      - STEP 1-6 의 모든 출력이 표에 근거로 인용
+      - 본인 발견 1+ 또는 "정상" + 근거
+      - W03 준비도 자가 진단 2+
+
+      ## 💡 왜 이걸 하는가?
+
+      운영자 매일 작성하는 표 — 매일 아침 인프라 헬스 + 룰 변경 audit.
+
+      ## 🔍 결과 해석
+
+      - **A**: 5 섹션 + 운영 권장 5+
+      - **B**: 5 섹션 + 권장 3
+      - **C**: 일부 섹션 누락 → 재제출
     hint: 마크다운 표 + R/B/P 결과 + 운영 권장
     category: synthesis
     points: 15
