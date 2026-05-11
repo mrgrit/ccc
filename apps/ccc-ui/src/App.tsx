@@ -16,10 +16,12 @@ import Profile from './pages/Profile.tsx'
 import ChatBot from './components/ChatBot.tsx'
 import Search from './pages/Search.tsx'
 import Papers from './pages/Papers.tsx'
+import Standalone6v6 from './pages/Standalone6v6.tsx'
 
 const navItems = [
   { to: '/dashboard', label: 'Dashboard', icon: '📊' },
   { to: '/training', label: 'Training', icon: '📚' },
+  { to: '/standalone-6v6', label: '6v6 Training', icon: '🧪' },
   { to: '/labs', label: 'Cyber Range', icon: '🎯' },
   { to: '/my-infra', label: 'My Infra', icon: '🖥️' },
   { to: '/battle', label: 'Battlefield', icon: '⚔️' },
@@ -167,6 +169,7 @@ export default function App() {
           <Route path="/admin" element={<Admin />} />
           <Route path="/knowledge" element={<Knowledge />} />
           <Route path="/papers" element={<Papers />} />
+          <Route path="/standalone-6v6" element={<Standalone6v6 />} />
           <Route path="/search" element={<Search />} />
           <Route path="/profile" element={<Profile />} />
         </Routes>

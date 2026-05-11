@@ -1789,6 +1789,154 @@ def list_training_weeks(course_id: str):
 def get_training_lecture(course_id: str, week: int):
     return get_lecture(course_id, week)
 
+
+# ══════════════════════════════════════════════════
+#  6v6 Training — standalone 단일 VM Docker 인프라 컨텐츠
+#  contents/standalone/{lecture,lab}/{secuops,attack}/weekNN.{md,yaml}
+# ══════════════════════════════════════════════════
+_STANDALONE_DIR = os.path.join(_CONTENT_DIR, "standalone")
+
+_STANDALONE_COURSES = {
+    "secuops": {
+        "title": "보안 솔루션 운영 (6v6 4-tier)",
+        "description": "nftables / Suricata / ModSecurity / Wazuh / osquery / sysmon / OpenCTI 를 6v6 4-tier 인프라 (ext → fw → ips → dmz → int) 에서 단계별 운영한다.",
+        "icon": "🛡️",
+        "color": "#3fb950",
+    },
+    "attack": {
+        "title": "사이버 공격 (6v6 7 vuln + attacker)",
+        "description": "정찰 → OWASP Top 10 → 권한 상승 → MITRE Caldera 자동화까지, 6v6 8 vuln 웹 + attacker 컨테이너에서 합법적 침투 테스트를 실습한다.",
+        "icon": "⚔️",
+        "color": "#f85149",
+    },
+}
+
+
+def _safe_standalone_join(*parts: str) -> str:
+    """Path traversal 방어."""
+    p = os.path.realpath(os.path.join(_STANDALONE_DIR, *parts))
+    base = os.path.realpath(_STANDALONE_DIR)
+    if not (p == base or p.startswith(base + os.sep)):
+        raise HTTPException(404, "Not found")
+    return p
+
+
+@app.get("/standalone/courses", dependencies=[Depends(verify_api_key)])
+def list_standalone_courses():
+    """6v6 Training 2 코스 (secuops, attack) 메타 + 주차 수."""
+    import glob as _glob
+    result = []
+    for cid, meta in _STANDALONE_COURSES.items():
+        lecture_files = sorted(_glob.glob(os.path.join(_STANDALONE_DIR, "lecture", cid, "week*.md")))
+        lab_files = sorted(_glob.glob(os.path.join(_STANDALONE_DIR, "lab", cid, "week*.yaml")))
+        # 1~15 주차 매핑
+        lecture_weeks = set()
+        for f in lecture_files:
+            m = _re.search(r"week(\d+)", os.path.basename(f))
+            if m:
+                lecture_weeks.add(int(m.group(1)))
+        lab_weeks = set()
+        for f in lab_files:
+            m = _re.search(r"week(\d+)", os.path.basename(f))
+            if m:
+                lab_weeks.add(int(m.group(1)))
+        all_weeks = sorted(lecture_weeks | lab_weeks)
+        result.append({
+            "course_id": cid,
+            "title": meta["title"],
+            "description": meta["description"],
+            "icon": meta["icon"],
+            "color": meta["color"],
+            "lecture_weeks": sorted(lecture_weeks),
+            "lab_weeks": sorted(lab_weeks),
+            "max_week": max(all_weeks) if all_weeks else 0,
+            "expected_total": 15,
+        })
+    return {"courses": result, "infra": "6v6", "vm_ip_hint": "192.168.0.110"}
+
+
+@app.get("/standalone/{course_id}/weeks", dependencies=[Depends(verify_api_key)])
+def list_standalone_weeks(course_id: str):
+    """과목의 1~15 주차 리스트 + 각 주차의 lecture/lab 존재 + 제목."""
+    if course_id not in _STANDALONE_COURSES:
+        raise HTTPException(404, "Course not found")
+    weeks = []
+    for w in range(1, 16):
+        lecture_path = os.path.join(_STANDALONE_DIR, "lecture", course_id, f"week{w:02d}.md")
+        lab_path = os.path.join(_STANDALONE_DIR, "lab", course_id, f"week{w:02d}.yaml")
+        # title 은 lecture 첫 줄 또는 lab title 필드에서 추출
+        title = ""
+        if os.path.isfile(lecture_path):
+            try:
+                with open(lecture_path, "r", encoding="utf-8") as f:
+                    first = f.readline().strip()
+                    title = first.lstrip("# ").lstrip()
+                    # 'Week 01 — XXX' 형식이면 XXX 부분만
+                    title = _re.sub(r"^Week\s*\d+\s*[—:\-]\s*", "", title)
+            except Exception:
+                pass
+        if not title and os.path.isfile(lab_path):
+            try:
+                with open(lab_path, "r", encoding="utf-8") as f:
+                    for ln in f:
+                        if ln.startswith("title:"):
+                            title = ln.split(":", 1)[1].strip()
+                            break
+            except Exception:
+                pass
+        weeks.append({
+            "week": w,
+            "title": title or f"Week {w}",
+            "has_lecture": os.path.isfile(lecture_path),
+            "has_lab": os.path.isfile(lab_path),
+        })
+    meta = _STANDALONE_COURSES[course_id]
+    return {
+        "course_id": course_id,
+        "title": meta["title"],
+        "description": meta["description"],
+        "icon": meta["icon"],
+        "color": meta["color"],
+        "weeks": weeks,
+    }
+
+
+@app.get("/standalone/{course_id}/lecture/{week}", dependencies=[Depends(verify_api_key)])
+def get_standalone_lecture(course_id: str, week: int):
+    """주차별 강의안 markdown."""
+    if course_id not in _STANDALONE_COURSES:
+        raise HTTPException(404, "Course not found")
+    if not (1 <= week <= 30):
+        raise HTTPException(400, "Invalid week")
+    p = _safe_standalone_join("lecture", course_id, f"week{week:02d}.md")
+    if not os.path.isfile(p):
+        raise HTTPException(404, "Lecture not found")
+    with open(p, "r", encoding="utf-8") as f:
+        content = f.read()
+    return {"course_id": course_id, "week": week, "content": content, "kind": "lecture"}
+
+
+@app.get("/standalone/{course_id}/lab/{week}", dependencies=[Depends(verify_api_key)])
+def get_standalone_lab(course_id: str, week: int):
+    """주차별 실습 YAML (raw + 파싱)."""
+    if course_id not in _STANDALONE_COURSES:
+        raise HTTPException(404, "Course not found")
+    if not (1 <= week <= 30):
+        raise HTTPException(400, "Invalid week")
+    p = _safe_standalone_join("lab", course_id, f"week{week:02d}.yaml")
+    if not os.path.isfile(p):
+        raise HTTPException(404, "Lab not found")
+    with open(p, "r", encoding="utf-8") as f:
+        raw = f.read()
+    parsed = None
+    try:
+        import yaml as _yaml
+        parsed = _yaml.safe_load(raw)
+    except Exception:
+        parsed = None
+    return {"course_id": course_id, "week": week, "raw": raw, "parsed": parsed, "kind": "lab"}
+
+
 # ══════════════════════════════════════════════════
 #  Papers (admin 전용 — git-ignored)
 # ══════════════════════════════════════════════════
