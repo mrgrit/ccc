@@ -1,0 +1,69 @@
+lab_id: standalone-attack-week05
+title: XSS (Reflected / Stored / DOM)
+version: standalone-non-ai
+course: attack
+week: 5
+description: XSS 3 타입 + 6 payload + CSP 분석 + ModSec 941 차단.
+difficulty: medium
+duration_minutes: 120
+prerequisites: [W04]
+objectives: [3 XSS 타입, 6 payload, CSP 우회]
+pass_threshold: 0.7
+steps:
+  - order: 1
+    instruction: 6 payload 시도 + ModSec 차단 카운트
+    hint: curl -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=<script>"
+    category: exploit
+    points: 30
+    answer: |
+      ssh 6v6-attacker '
+      for p in "<script>alert(1)</script>" "<img+src=x+onerror=alert(1)>" "<svg+onload=alert(1)>" "<iframe+src=javascript:alert(1)>" "<body+onload=alert(1)>"; do
+        code=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=$p")
+        echo "$code | $p"
+      done
+      '
+    answer_detail: 5 payload + 응답 코드 매트릭스
+    verify:
+      type: output_contains
+      expect: '403'
+      field: stdout
+      semantic:
+        intent: XSS payload
+        success_criteria: [403 ModSec 차단]
+        acceptable_methods:
+          - "**[OSS] <script>alert(1)</script>**"
+          - "**[OSS] <img onerror>**"
+          - "**[OSS] <svg onload>**"
+          - "**[OSS] <iframe javascript:>**"
+          - "**[OSS] <body onload>**"
+          - "**[OSS] URL encoding %3C%3E**"
+          - "**[OSS] HTML entity &#60;**"
+          - "**[OSS] ModSec 941100 libinjection**"
+    target_vm: attacker
+
+  - order: 2
+    instruction: ModSec audit log 의 941 rule + CSP header
+    hint: jq .transaction.messages
+    category: analysis
+    points: 20
+    answer: |
+      ssh 6v6-web 'sudo tail -10 /var/log/apache2/modsec_audit.log | head -1 | jq ".transaction.messages[] | select(.id | startswith(\"941\")) | {id, data}"' || ssh 6v6-web 'sudo tail -3 /var/log/apache2/modsec_audit.log'
+      ssh 6v6-attacker 'curl -sI -H "Host: juice.6v6.lab" http://10.20.30.1/ 2>&1 | grep -iE "csp|security"'
+    answer_detail: ModSec 941 + CSP header
+    verify:
+      type: output_contains
+      expect: '941'
+      field: stdout
+      semantic:
+        intent: 941 분석
+        success_criteria: [941 룰 매치]
+        acceptable_methods:
+          - "**[OSS] audit log JSON jq**"
+          - "**[OSS] CSP header 분석**"
+          - "**[OSS] X-XSS-Protection (deprecated)**"
+          - "**[OSS] X-Content-Type-Options: nosniff**"
+          - "**[OSS] X-Frame-Options**"
+          - "**[OSS] Referrer-Policy**"
+          - "**[OSS] HSTS**"
+          - "**[OSS] CORS Access-Control-Allow-Origin**"
+    target_vm: web
