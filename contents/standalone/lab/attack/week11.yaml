@@ -1,0 +1,63 @@
+lab_id: standalone-attack-week11
+title: Linux 권한 상승 (LinPEAS / SUID / cron)
+version: standalone-non-ai
+course: attack
+week: 11
+description: 5 카테고리 enum + LinPEAS + GTFOBins.
+difficulty: medium
+duration_minutes: 150
+prerequisites: [W10]
+objectives: [enum, SUID, cron, capabilities]
+pass_threshold: 0.7
+steps:
+  - order: 1
+    instruction: 5 카테고리 수동 enum
+    hint: id; sudo -l; find / -perm -4000
+    category: enumeration
+    points: 30
+    answer: |
+      ssh 6v6-bastion 'echo "--- id ---"; id; echo "--- sudo -l ---"; sudo -l 2>&1 | head; echo "--- SUID ---"; find / -perm -4000 -type f 2>/dev/null | head -10; echo "--- caps ---"; getcap -r / 2>/dev/null | head -5; echo "--- cron ---"; cat /etc/crontab; ls /etc/cron.d/ 2>/dev/null'
+    answer_detail: 5 카테고리 enum
+    verify:
+      type: output_contains
+      expect: ccc
+      field: stdout
+      semantic:
+        intent: enum
+        success_criteria: [SUID + cron + caps]
+        acceptable_methods:
+          - "**[OSS] id + sudo -l**"
+          - "**[OSS] find -perm -4000 SUID**"
+          - "**[OSS] getcap -r capabilities**"
+          - "**[OSS] /etc/crontab + cron.d**"
+          - "**[OSS] /etc/passwd / shadow**"
+          - "**[OSS] ssh authorized_keys**"
+          - "**[OSS] systemd unit files**"
+          - "**[OSS] world-writable files (find -perm -002)**"
+    target_vm: bastion
+
+  - order: 2
+    instruction: GTFOBins 활용 시뮬
+    hint: find . -exec /bin/sh \;
+    category: exploit
+    points: 25
+    answer: |
+      ssh 6v6-bastion 'echo "--- SUID binary 중 GTFOBins ---"; for b in $(find / -perm -4000 -type f 2>/dev/null | head -5); do echo "$b"; done; echo "--- 가설: vim/find/awk SUID 시 root shell 가능 ---"'
+    answer_detail: SUID + GTFOBins 검토
+    verify:
+      type: output_contains
+      expect: SUID
+      field: stdout
+      semantic:
+        intent: GTFOBins
+        success_criteria: [SUID 분석]
+        acceptable_methods:
+          - "**[OSS] gtfobins.github.io 검색**"
+          - "**[OSS] vim -c ':!/bin/sh'**"
+          - "**[OSS] find . -exec /bin/sh \\;**"
+          - "**[OSS] awk system()**"
+          - "**[OSS] python -c 'os.system'**"
+          - "**[OSS] tar checkpoint-action**"
+          - "**[OSS] nmap --interactive**"
+          - "**[OSS] sudo + GTFOBins 결합**"
+    target_vm: bastion
