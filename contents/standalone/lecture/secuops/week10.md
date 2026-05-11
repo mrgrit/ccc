@@ -472,39 +472,109 @@ Active Response 가 RS.RP-1 의 자동화 구현.
 ### 실습 1 — dashboard 접근 + 인증
 
 ```bash
-# 외부에서 dashboard 응답 확인
-curl -k -o /dev/null -s -w "%{http_code}\n" -H "Host: siem.6v6.lab" "https://10.20.30.1/"
-# 302 또는 401 — 인증 페이지로 리다이렉트
+# Wazuh dashboard 의 외부 응답 — HAProxy 의 is_siem ACL 매칭 검증
+#   -k: self-signed cert 무시 (학습 환경)
+#   -o /dev/null: body 버림 (응답 코드만 확인)
+#   -w "%{http_code}": HTTP 응답 코드 출력
+#   -H "Host: siem.6v6.lab": HAProxy 가 dashboard backend 라우팅
+curl -k -o /dev/null -s -w "%{http_code}\n" \
+    -H "Host: siem.6v6.lab" "https://10.20.30.1/"
+# 예상 응답:
+#   302 → /app/login 으로 redirect (정상)
+#   401 → 인증 필요
+#   503 → backend (dashboard 컨테이너) down
+#   200 → 이미 인증된 세션
 
-# 학생 PC 브라우저로 https://siem.6v6.lab 접근 → admin/admin
+# 학생 PC 브라우저로 https://siem.6v6.lab 접근
+#   credential: admin / admin (default — production 즉시 변경)
+#   첫 로그인 후 5 main panel (Overview / Agents / Modules / Discover / Settings)
 ```
 
 ### 실습 2 — OpenSearch indexer 의 색인
 
 ```bash
-ssh 6v6-wazuh-indexer 'curl -k -u admin:<pw> "https://localhost:9200/_cat/indices/wazuh-*?h=index,docs.count"'
+# Wazuh manager 가 alerts.json 을 filebeat 로 → wazuh-indexer 가 색인
+#   wazuh-* 인덱스 패턴: wazuh-alerts-4.x-YYYY.MM.DD (일별 분리)
+#   _cat/indices: 모든 인덱스 list (-h 로 출력 필드 제한)
+#     index: 인덱스 이름
+#     docs.count: 색인된 alert 갯수
+docker exec 6v6-wazuh-indexer curl -k \
+    -u admin:SecretPassword \
+    "https://localhost:9200/_cat/indices/wazuh-*?h=index,docs.count"
+# 예상 출력:
+#   wazuh-alerts-4.x-2026.05.12 1234
+#   wazuh-monitoring-4.x-2026.05.W19 567
+#   wazuh-statistics-4.x-2026.05.W19 89
+# docs.count = 0 면 manager → indexer ingestion 실패 (filebeat 점검)
 ```
 
 ### 실습 3 — ModSec audit ship (web agent.conf 패치 시뮬)
 
-§4 의 patch + 검증.
+```bash
+# web 의 Wazuh agent 가 modsec_audit.log 를 manager 에 ship 하려면 localfile 추가
+#   /var/ossec/etc/agent.conf 또는 manager 의 shared/default/agent.conf 에 추가:
+#     <localfile>
+#       <log_format>json</log_format>
+#       <location>/var/log/apache2/modsec_audit.log</location>
+#     </localfile>
+ssh 6v6-web 'sudo cat /var/ossec/etc/ossec.conf | grep -A3 modsec | head -10'
+# 적용 후 wazuh-agent restart → manager 의 0245-modsec_rules.xml 가 매칭
+# 검증: tail -f /var/ossec/logs/alerts/alerts.json | grep modsecurity
+```
 
 ### 실습 4 — osquery 통합 설계 (시뮬, 실 적용은 W11)
 
-§5 의 3 단계 + 시뮬.
+```bash
+# osquery → Wazuh agent localfile → manager → alerts.json 흐름
+# 3 단계:
+#   1. osquery daemon enable: systemctl enable --now osqueryd
+#   2. /var/log/osquery/osqueryd.results.log 가 JSON 라인 형식 출력
+#   3. agent.conf 의 localfile 추가:
+#      <localfile>
+#        <log_format>json</log_format>
+#        <location>/var/log/osquery/osqueryd.results.log</location>
+#      </localfile>
+ssh 6v6-web 'sudo ls -la /var/log/osquery/ 2>/dev/null || echo "osqueryd 미시작"'
+# 결과: 디렉토리 비어있음 → osqueryd 비활성 → W11 에서 활성화 후 통합
+```
 
 ### 실습 5 — syscheck FIM 검증
 
 ```bash
+# manager 의 ossec.conf 의 syscheck 섹션 확인
+#   <syscheck>
+#     <disabled>no</disabled>
+#     <frequency>43200</frequency>      # 12시간 주기
+#     <directories realtime="yes">/etc</directories>  # inotify 즉시 감지
+#     <directories>/usr/bin,/usr/sbin</directories>   # 주기적 hash 비교
 ssh 6v6-siem 'sudo grep -B1 -A5 "<syscheck>" /var/ossec/etc/ossec.conf | head -20'
-# 파일 변경 트리거 + 60초 후 alerts.json 의 rule 550 매치
+
+# 변경 트리거 — web 에서 /etc/hosts 끝에 주석 추가
+ssh 6v6-web 'echo "# fim_test_$(date +%s)" | sudo tee -a /etc/hosts'
+sleep 60
+# 60초 후 alert (realtime=yes 면 즉시, frequency 면 12시간)
+ssh 6v6-siem 'sudo grep -m1 "rule.*550" /var/ossec/logs/alerts/alerts.json | jq ".syscheck"'
+# 예상 출력:
+#   {"path":"/etc/hosts","md5_before":"abc","md5_after":"def","size_after":...}
 ```
 
 ### 실습 6 — Active Response 시뮬
 
 ```bash
+# Active Response 설정 — 특정 룰 매치 시 자동 명령 실행
+#   <command>: 실행 binary 정의
+#   <active-response>: trigger 룰 + location (local/agent) + timeout
 ssh 6v6-siem 'sudo grep -B1 -A5 "active-response" /var/ossec/etc/ossec.conf | head -15'
-# AR 활성 시뮬 + alert 발생 + active-responses.log 확인
+# 예상:
+#   <command><name>firewall-drop</name><executable>firewall-drop</executable></command>
+#   <active-response><command>firewall-drop</command><rules_id>5712</rules_id>
+#                    <timeout>600</timeout></active-response>
+
+# Active Response 발생 history
+ssh 6v6-siem 'sudo tail -20 /var/ossec/logs/active-responses.log 2>/dev/null'
+# 예상:
+#   <date> ossec-execd: firewall-drop add 10.20.30.99 (rule 5712)
+#   <date+600> ossec-execd: firewall-drop delete 10.20.30.99 (timeout)
 ```
 
 ### 실습 7 — **R/B/P** XSS 5 burst → 5 source 통합

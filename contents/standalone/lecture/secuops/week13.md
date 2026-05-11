@@ -86,42 +86,62 @@
 
 ```python
 # /opt/opencti/connectors/wazuh-stream/main.py
+#
+# OpenCTI 의 indicator → Wazuh CDB list 자동 동기화 connector
+# 30분 주기 polling 으로 최근 7일 IOC 만 CDB 변환
+
 import pycti, time, os
 from datetime import datetime, timedelta
 
+# OpenCTIConnectorHelper — OpenCTI server 와 통신하는 helper class
+#   config = environment variable + connector.yml 의 통합
+#   helper 가 API + log + telemetry 제공
 helper = pycti.OpenCTIConnectorHelper(config)
 
 def sync_to_wazuh():
-    # 1. 최근 7일 indicator 추출
+    """OpenCTI → Wazuh CDB list 1 사이클 sync"""
+
+    # 1. 최근 7일 + malicious-activity 라벨의 indicator 조회
+    #    filters: STIX 2.1 의 filter syntax (key/values)
+    #    first=10000: 페이지당 최대 10K (대규모 환경 paginate 필요)
     indicators = helper.api.indicator.list(
         filters=[
-            {"key": "valid_from", "values": [(datetime.now() - timedelta(days=7)).isoformat()]},
-            {"key": "indicator_types", "values": ["malicious-activity"]}
+            {"key": "valid_from",
+             "values": [(datetime.now() - timedelta(days=7)).isoformat()]},
+            {"key": "indicator_types",
+             "values": ["malicious-activity"]}
         ],
         first=10000
     )
 
-    # 2. CDB 형식 변환
+    # 2. STIX pattern → CDB list 의 "key:value" 형식 변환
+    #    STIX pattern 예: [ipv4-addr:value = '1.2.3.4']
+    #    CDB row: 1.2.3.4: opencti,c2,malware
     cdb_lines = []
     for ind in indicators:
         if "ipv4-addr:value" in ind["pattern"]:
+            # split("'")[1] = '1.2.3.4' 부분 추출
             ip = ind["pattern"].split("'")[1]
+            # labels = comma-separated (CDB 의 value 부분)
             labels = ",".join(ind.get("labels", []))
             cdb_lines.append(f"{ip}: {labels}")
 
-    # 3. CDB list 갱신
+    # 3. CDB list 파일 갱신 (atomic write — 임시 파일 → mv 권장)
     with open("/var/ossec/etc/lists/opencti-iocs", "w") as f:
         f.write("\n".join(cdb_lines))
 
-    # 4. Wazuh reload
+    # 4. Wazuh CDB 재컴파일 + reload
+    #    ossec-makelists: 텍스트 → .cdb (binary index) 변환
+    #    wazuh-control reload: ruleset 다시 load (재시작 없음)
     os.system("/var/ossec/bin/ossec-makelists")
     os.system("/var/ossec/bin/wazuh-control reload")
 
     helper.log_info(f"Synced {len(cdb_lines)} indicators")
 
+# 무한 polling loop
 while True:
     sync_to_wazuh()
-    time.sleep(1800)
+    time.sleep(1800)   # 30분 (1800초) 주기 — IOC 신규성 vs server 부하 균형
 ```
 
 ### 3.2 운영 권장

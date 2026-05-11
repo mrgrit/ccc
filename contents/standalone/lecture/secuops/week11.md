@@ -140,11 +140,20 @@ graph LR
 ### 5.1 패키지 (Ubuntu 22.04)
 
 ```bash
+# Microsoft 공식 APT 저장소 추가 (sysmonforlinux 가 여기 있음)
+#   1단계: GPG 키 다운로드 + dearmor (binary 형식 변환)
 sudo wget -O- https://packages.microsoft.com/keys/microsoft.asc | \
     sudo gpg --dearmor -o /usr/share/keyrings/microsoft.gpg
+
+# 2단계: 저장소 source list 추가
+#   arch=amd64: x86_64 만 (ARM 환경 별도)
+#   signed-by: 위 단계의 키로 서명 검증
 echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft.gpg] \
     https://packages.microsoft.com/ubuntu/22.04/prod jammy main" | \
     sudo tee /etc/apt/sources.list.d/microsoft.list
+
+# 3단계: 패키지 index 갱신 + sysmonforlinux 설치
+#   의존성: libbpf, libxml2, BCC (eBPF Compiler Collection)
 sudo apt-get update
 sudo apt-get install -y sysmonforlinux
 ```
@@ -152,16 +161,37 @@ sudo apt-get install -y sysmonforlinux
 ### 5.2 config + 시작
 
 ```bash
-sudo wget -O /etc/sysmon.xml https://raw.githubusercontent.com/.../sysmon-config-linux.xml
+# config XML 다운로드 — SwiftOnSecurity 의 Linux 포팅 (noise 제거)
+#   주요 filter: apt/cron/systemd-* 제외 + 22/80/443 만 NetworkConnect
+sudo wget -O /etc/sysmon.xml \
+    https://raw.githubusercontent.com/.../sysmon-config-linux.xml
+
+# 첫 실행 — EULA accept + config install
+#   -accepteula: EULA 자동 동의 (production 도 동일)
+#   -i: install + config 적용
 sudo sysmon -accepteula -i /etc/sysmon.xml
+
+# systemd 의 sysmon.service 활성 + 시작
+#   enable: 부팅 자동 시작
+#   --now: 즉시 시작
 sudo systemctl enable --now sysmon
 ```
 
 ### 5.3 검증
 
 ```bash
+# sysmon -s: 현재 적용된 config 출력 (디버깅용)
+#   출력에 ProcessCreate / NetworkConnect / FileCreate 등 filter 표시
 sudo sysmon -s
+
+# journalctl 의 sysmon 로그 (최근 5분)
+#   --since "5 min ago": 시간 filter
+#   sysmon 시작 / EBPF probe / 종료 시점 가시화
 sudo journalctl -u sysmon --since "5 min ago" | head
+
+# /var/log/syslog 의 sysmon event 라인
+#   sysmon 의 event 는 syslog facility user.notice 로 출력
+#   sysmonforlinux 의 prefix: "sysmon: <Event JSON>"
 sudo tail /var/log/syslog | grep -i sysmon | head
 ```
 
