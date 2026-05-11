@@ -1,0 +1,77 @@
+lab_id: standalone-attack-week12
+title: 지속성 + 안티포렌식
+version: standalone-non-ai
+course: attack
+week: 12
+description: 5 persistence 패턴 + anti-forensics + osquery detection (시뮬).
+difficulty: medium
+duration_minutes: 120
+prerequisites: [W11]
+objectives: [5 패턴 시뮬, detection]
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: 5 persistence 패턴 시뮬 (실 적용 X)
+    hint: cron / systemd / .bashrc / authorized_keys / web shell 검사
+    category: simulation
+    points: 30
+    answer: |
+      ssh 6v6-bastion '
+      echo "=== 1. cron ==="
+      cat /etc/crontab 2>&1 | head
+      ls /etc/cron.d/ 2>&1
+      echo "=== 2. systemd ==="
+      systemctl list-unit-files --type=service 2>&1 | head -10
+      echo "=== 3. .bashrc ==="
+      tail -5 ~/.bashrc
+      echo "=== 4. ssh keys ==="
+      cat ~/.ssh/authorized_keys 2>&1 | head -3
+      echo "=== 5. web shell 검사 ==="
+      ls /var/www/landing/ 2>&1 | head -5
+      '
+    answer_detail: 5 패턴 검사
+    verify:
+      type: output_contains
+      expect: cron
+      field: stdout
+      semantic:
+        intent: persistence 검사
+        success_criteria: [5 카테고리]
+        acceptable_methods:
+          - "**[OSS] /etc/crontab + cron.d**"
+          - "**[OSS] systemd unit + timer**"
+          - "**[OSS] .bashrc / .profile / .zshrc**"
+          - "**[OSS] ssh authorized_keys**"
+          - "**[OSS] /var/www 의 .php shell**"
+          - "**[OSS] LD_PRELOAD 검사**"
+          - "**[OSS] /etc/ld.so.preload**"
+          - "**[OSS] DKMS kernel module**"
+    target_vm: bastion
+
+  - order: 2
+    instruction: osquery + Wazuh FIM 으로 detection
+    hint: osquery crontab / authorized_keys + FIM /root /etc
+    category: defense
+    points: 25
+    answer: |
+      ssh 6v6-web 'sudo osqueryi --json "SELECT command, path FROM crontab;" 2>&1 | head'
+      ssh 6v6-web 'sudo osqueryi --json "SELECT * FROM authorized_keys LIMIT 5;" 2>&1 | head'
+      ssh 6v6-web 'sudo grep -A5 "<syscheck>" /var/ossec/etc/ossec.conf 2>&1 | head -15'
+    answer_detail: osquery + FIM
+    verify:
+      type: output_contains
+      expect: '['
+      field: stdout
+      semantic:
+        intent: detection
+        success_criteria: [osquery + FIM]
+        acceptable_methods:
+          - "**[OSS] osquery crontab**"
+          - "**[OSS] osquery authorized_keys**"
+          - "**[OSS] osquery startup_items**"
+          - "**[OSS] Wazuh FIM /root /etc**"
+          - "**[OSS] sysmon ProcessCreate**"
+          - "**[OSS] Wazuh syscheck 룰 550**"
+          - "**[OSS] dashboard Integrity Monitoring**"
+          - "**[OSS] alert level 7+ filter**"
+    target_vm: web
