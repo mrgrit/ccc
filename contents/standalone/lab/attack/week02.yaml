@@ -1,95 +1,197 @@
 lab_id: standalone-attack-week02
-title: 정찰 (nmap + nikto + dirb)
+title: 정찰 (Reconnaissance) — nmap + nikto + dirb + R/B/P
 version: standalone-non-ai
 course: attack
 week: 2
 description: |
-  attacker 컨테이너에서 6v6 환경 자산 가시화 + 웹 정찰 + ATT&CK Recon Technique
-  매핑.
+  PTES 2 단계 — attacker 에서 nmap (TCP scan) + nikto (웹 스캐너) + dirb (디렉토리
+  brute) 로 6v6 자산 가시화. Red 가 nmap → Blue 가 fw nftables drop 룰 추가 →
+  Purple 이 효과 측정.
 difficulty: easy
 duration_minutes: 120
 prerequisites: [W01]
 objectives:
-  - nmap 5 핵심 스캔
-  - nikto / dirb 웹 정찰
-  - 자산 표 작성
+  - "nmap 5 핵심 스캔 (-sT/-sS/-sV/-O/-sU)"
+  - "nikto 웹 스캐너"
+  - "dirb / ffuf 디렉토리 brute"
+  - "R/B/P — 정찰 detection + drop"
 pass_threshold: 0.7
 steps:
+
   - order: 1
-    instruction: nmap TCP connect + 서비스 버전
-    hint: ssh 6v6-attacker 'nmap -sT -p 22,80,443 10.20.30.1'
+    instruction: |
+      ## 🎯 MISSION
+
+      attacker 에서 **fw (10.20.30.1) 의 5 핵심 포트** (22/80/443/2204/9100) nmap 스캔.
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker 'nmap -sT -p 22,80,443,2204,9100 10.20.30.1 2>&1 | tail -10'
+      ssh 6v6-attacker 'sudo nmap -sV -p 80,443 10.20.30.1 2>&1 | tail -10'
+      ```
+
+      ## 📋 확인 사항
+
+      - -sT (TCP connect) 출력: 22 open / 80 open / 443 open / 2204 closed (host 측 SSH) / 9100 open
+      - -sV (서비스 버전): HAProxy / nginx-like banner
+
+      ## 💡 왜 이걸 하는가?
+
+      PTES 2 단계 — Recon. 외부 노출 포트 + 서비스 버전 정찰. 운영 환경에선 IDS 가 즉시
+      탐지 (Suricata ET SCAN).
+
+      ## 🔍 결과 해석
+
+      - **정상**: 4 port open + banner
+      - **비정상**: 모든 port filtered → fw 의 drop 룰 활성 (Blue 의 사전 대응)
+    hint: nmap -sT + -sV
     category: scanning
     points: 20
     answer: |
-      ssh 6v6-attacker 'nmap -sT -p 22,80,443 10.20.30.1 2>&1 | tail -10'
-      ssh 6v6-attacker 'sudo nmap -sV -p 80 10.20.30.1 2>&1 | tail -10'
-    answer_detail: nmap 결과 표
+      ssh 6v6-attacker 'nmap -sT -p 22,80,443,2204,9100 10.20.30.1 2>&1 | tail -10'
+      ssh 6v6-attacker 'sudo nmap -sV -p 80,443 10.20.30.1 2>&1 | tail -10'
+    answer_detail: nmap 결과 + 서비스 버전.
     verify:
       type: output_contains
       expect: open
       field: stdout
       semantic:
-        intent: nmap scan
-        success_criteria: [open port]
+        intent: "fw 포트 스캔"
+        success_criteria: ["open port"]
         acceptable_methods:
           - "**[OSS] nmap -sT (TCP connect, 권한 불필요)**"
-          - "**[OSS] nmap -sS (stealth SYN, root 필요)**"
+          - "**[OSS] nmap -sS (SYN stealth, root 필요)**"
           - "**[OSS] nmap -sV (서비스 버전)**"
           - "**[OSS] nmap -O (OS detection)**"
-          - "**[OSS] nmap -sU (UDP scan)**"
+          - "**[OSS] nmap -sU (UDP)**"
           - "**[OSS] nmap --script (NSE)**"
           - "**[OSS] nmap -oN/-oX/-oG (출력 형식)**"
-          - "**[OSS] ATT&CK T1595.001 매핑**"
+          - "**[OSS] T1595.001 Active Scanning**"
     target_vm: attacker
 
   - order: 2
-    instruction: ping sweep + 살아 있는 host
-    hint: nmap -sn 10.20.30.0/24
+    instruction: |
+      ## 🎯 MISSION
+
+      nikto 로 juice.6v6.lab **웹 스캐너** 실행 — 알려진 취약점 + 잘못된 설정 + 헤더
+      분석.
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker 'timeout 30 nikto -h http://10.20.30.1/ -Tuning 4,5,9 2>&1 | tail -25' || echo "nikto timeout"
+      ```
+
+      ## 📋 확인 사항
+
+      - nikto 가 30초 안 일부 결과 출력 (전체 scan 은 5-10분)
+      - Tuning 4 (Injection) / 5 (XSS) / 9 (SQL Injection) 만 선택 (시간 절약)
+      - Apache + ModSec 차단 메시지 (대부분 403)
+
+      ## 💡 왜 이걸 하는가?
+
+      자동화 웹 스캐너 — 수동 nikto 출력 분석 → 잠재 취약점 후보 도출.
+
+      ## 🔍 결과 해석
+
+      - **정상**: nikto 가 nice cookie / banner / 403 차단 등 보고
+      - **비정상**: nikto 자체 timeout → -Tuning 으로 범위 축소
+    hint: nikto + 30s timeout + Tuning
     category: scanning
     points: 15
     answer: |
-      ssh 6v6-attacker 'nmap -sn 10.20.30.0/24 2>&1 | tail -10'
-    answer_detail: alive host
+      ssh 6v6-attacker 'timeout 30 nikto -h http://10.20.30.1/ -Tuning 4,5,9 2>&1 | tail -25' || echo "nikto timeout"
+    answer_detail: nikto Tuning 4/5/9 (Injection/XSS/SQLi) 30초 출력.
     verify:
       type: output_contains
-      expect: 10.20.30
+      expect: 'Apache\|Server'
       field: stdout
       semantic:
-        intent: ping sweep
-        success_criteria: [host 출력]
+        intent: "웹 스캐너"
+        success_criteria: ["스캐너 결과"]
         acceptable_methods:
-          - "**[OSS] nmap -sn (ping sweep)**"
-          - "**[OSS] nmap -PE (ICMP echo)**"
-          - "**[OSS] nmap -PA (ACK ping)**"
-          - "**[OSS] nmap -PS (SYN ping)**"
-          - "**[OSS] ARP scan (local subnet)**"
-          - "**[OSS] /16 vs /24 vs /28**"
-          - "**[OSS] -T0..-T5 timing**"
-          - "**[OSS] ATT&CK T1018 Remote System Discovery**"
+          - "**[OSS] nikto -h + -Tuning**"
+          - "**[OSS] -p N (포트)**"
+          - "**[OSS] -Format json (자동화)**"
+          - "**[OSS] OWASP ZAP (GUI 대안)**"
+          - "**[OSS] w3af / arachni**"
+          - "**[OSS] burpsuite scanner (Pro)**"
+          - "**[OSS] T1595.002 Vulnerability Scanning**"
+          - "**[OSS] ModSec 403 차단 → -p 또는 헤더 변경**"
     target_vm: attacker
 
   - order: 3
-    instruction: dirb 웹 디렉토리 brute
-    hint: dirb http://10.20.30.1/ wordlist
-    category: scanning
-    points: 15
+    instruction: |
+      ## 🎯 MISSION (R/B/P)
+
+      **Red** 가 nmap 무차별 스캔 → **Blue** 가 fw 의 drop 룰 추가 → **Red 2차**
+      → port 모두 filtered → **Purple** 이 효과 측정.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # Red 1차
+      ssh 6v6-attacker 'sudo nmap -sS -p 22,80,443 10.20.30.1 2>&1 | tail -10'
+
+      # Blue — fw 의 input chain 에 drop
+      ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter drop'
+
+      # Red 2차
+      ssh 6v6-attacker 'sudo nmap -sS -p 22,80,443 10.20.30.1 2>&1 | tail -10'
+
+      # Purple — counter
+      ssh 6v6-fw 'sudo nft list chain inet six_filter input | grep -B1 "10.20.30.202.*drop"'
+
+      # Cleanup
+      HANDLE=$(ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep "10.20.30.202.*drop" | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
+      ssh 6v6-fw "sudo nft delete rule inet six_filter input handle $HANDLE"
+
+      # 정상화
+      ssh 6v6-attacker 'sudo nmap -sT -p 80 10.20.30.1 2>&1 | tail -5'
+      ```
+
+      ## 📋 확인 사항
+
+      - Red 1차: 3 port open
+      - Red 2차: 모든 port filtered
+      - Purple: counter packets 5+ (nmap probe)
+      - Cleanup 후 정상 복귀
+
+      ## 💡 왜 이걸 하는가?
+
+      Purple Team standard — Red 가 정찰 → Blue 가 drop 으로 차단 → Purple 이 효과
+      검증. incident response 의 표준.
+
+      ## 🔍 결과 해석
+
+      - **정상**: Red 1차 open → 2차 filtered → cleanup 후 open 복귀
+      - **MITRE ATT&CK**: T1595 (Active Scanning) → 방어 D3-NTPM (Network Traffic Policy Mapping)
+    hint: nmap → drop → 효과 측정
+    category: redblue
+    points: 25
     answer: |
-      ssh 6v6-attacker 'timeout 30 dirb http://10.20.30.1/ /usr/share/dirb/wordlists/common.txt -H "Host: juice.6v6.lab" 2>&1 | tail -20' || ssh 6v6-attacker 'echo dirb timed out'
-    answer_detail: dirb 결과
+      ssh 6v6-attacker 'sudo nmap -sS -p 22,80,443 10.20.30.1 2>&1 | tail -10'
+      ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter drop'
+      ssh 6v6-attacker 'sudo nmap -sS -p 22,80,443 10.20.30.1 2>&1 | tail -10'
+      ssh 6v6-fw 'sudo nft list chain inet six_filter input | grep -B1 "10.20.30.202.*drop"'
+      HANDLE=$(ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep "10.20.30.202.*drop" | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
+      ssh 6v6-fw "sudo nft delete rule inet six_filter input handle $HANDLE"
+    answer_detail: R/B/P 통합.
     verify:
       type: output_contains
-      expect: '+'
+      expect: 'filtered\|open'
       field: stdout
       semantic:
-        intent: 웹 디렉토리
-        success_criteria: [+ 발견 path]
+        intent: "R/B/P nmap"
+        success_criteria: ["nmap 결과 + drop 효과"]
         acceptable_methods:
-          - "**[OSS] dirb + common.txt wordlist**"
-          - "**[OSS] ffuf 모던 대안**"
-          - "**[OSS] gobuster**"
-          - "**[OSS] dirsearch + recursion**"
-          - "**[OSS] burp suite intruder + wordlist**"
-          - "**[OSS] -X 확장자 (.php / .bak)**"
-          - "**[OSS] ATT&CK T1594 Search Victim-Owned Websites**"
-          - "**[OSS] WAF (ModSec) 의 dirb detection (W06)**"
-    target_vm: attacker
+          - "**[OSS] nmap -sS stealth**"
+          - "**[OSS] nft insert rule input drop**"
+          - "**[OSS] counter packets 증가**"
+          - "**[OSS] cleanup handle 식별**"
+          - "**[OSS] ATT&CK T1595 + D3-NTPM**"
+          - "**[OSS] ISMS-P 2.6.1 (네트워크 접근 통제)**"
+          - "**[OSS] Suricata ET SCAN 자동 detection**"
+          - "**[OSS] Wazuh + CDB list (W13 secuops) 연동**"
+    target_vm: bastion

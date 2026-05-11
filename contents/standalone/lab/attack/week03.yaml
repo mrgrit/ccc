@@ -1,70 +1,138 @@
 lab_id: standalone-attack-week03
-title: 웹 앱 구조 + Burp + JuiceShop
+title: 웹 앱 구조 + Burp + JuiceShop API + JWT 디코드
 version: standalone-non-ai
 course: attack
 week: 3
 description: |
-  HTTP method / header + Burp Suite proxy + JuiceShop REST API + JWT 디코드.
+  JuiceShop 의 REST API + JWT 인증 + cookie 분석. HTTP method/header 의 의미 +
+  Burp Suite Proxy 워크플로 + JWT alg=none 우회 시나리오 (W06 학습).
 difficulty: easy
 duration_minutes: 120
 prerequisites: [W02]
 objectives:
-  - JuiceShop API 분석
-  - JWT 디코드
-  - Burp Suite 워크플로
+  - "JuiceShop REST API 매핑 (/api, /rest)"
+  - "JWT 디코드 (base64 → JSON)"
+  - "HTTP method (GET/POST) 차이"
+  - "Burp Suite 워크플로"
 pass_threshold: 0.7
 steps:
+
   - order: 1
-    instruction: JuiceShop API 접근
-    hint: curl -H "Host: juice.6v6.lab" http://10.20.30.1/api/Products
+    instruction: |
+      ## 🎯 MISSION
+
+      JuiceShop 의 REST API endpoint **3 카테고리** 응답 조회.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # /api/Products
+      ssh 6v6-attacker 'curl -s -H "Host: juice.6v6.lab" http://10.20.30.1/api/Products 2>&1 | head -c 300'
+      echo
+      # /api/Users
+      ssh 6v6-attacker 'curl -s -H "Host: juice.6v6.lab" http://10.20.30.1/api/Users 2>&1 | head -c 300'
+      echo
+      # /rest/user/whoami (인증 없이 → 빈 결과 또는 redirect)
+      ssh 6v6-attacker 'curl -s -H "Host: juice.6v6.lab" http://10.20.30.1/rest/user/whoami 2>&1 | head -c 200'
+      ```
+
+      ## 📋 확인 사항
+
+      - /api/Products: JSON 배열 (제품 목록)
+      - /api/Users: JSON 배열 (사용자 — IDOR 가능!)
+      - /rest/user/whoami: 빈 사용자 (인증 없음)
+
+      ## 💡 왜 이걸 하는가?
+
+      JuiceShop 은 80+ challenge 의 vuln 웹앱. API 매핑은 모든 후속 공격의 전제.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 3 endpoint 모두 응답
+      - **IDOR 가능성**: /api/Users 가 인증 없이 사용자 목록 노출 (W06 학습)
+    hint: JuiceShop API 3 endpoint
     category: analysis
-    points: 25
+    points: 20
     answer: |
-      ssh 6v6-attacker 'curl -s -H "Host: juice.6v6.lab" http://10.20.30.1/api/Products 2>&1 | jq -r ".data | length // \"no data\""'
-      ssh 6v6-attacker 'curl -s -H "Host: juice.6v6.lab" http://10.20.30.1/api/Challenges 2>&1 | jq -r ".data | length"'
-    answer_detail: API 응답 카운트
+      ssh 6v6-attacker 'curl -s -H "Host: juice.6v6.lab" http://10.20.30.1/api/Products 2>&1 | head -c 300'
+      ssh 6v6-attacker 'curl -s -H "Host: juice.6v6.lab" http://10.20.30.1/api/Users 2>&1 | head -c 300'
+      ssh 6v6-attacker 'curl -s -H "Host: juice.6v6.lab" http://10.20.30.1/rest/user/whoami 2>&1 | head -c 200'
+    answer_detail: 3 REST endpoint 응답 매핑.
     verify:
       type: output_contains
       expect: data
       field: stdout
       semantic:
-        intent: REST API 분석
-        success_criteria: [응답 카운트]
+        intent: "REST API 매핑"
+        success_criteria: ["JSON 응답"]
         acceptable_methods:
-          - "**[OSS] curl -H Host header + path**"
-          - "**[OSS] jq 응답 분석**"
-          - "**[OSS] /api/Users / /api/Products / /api/Challenges**"
+          - "**[OSS] /api/Products (제품 목록)**"
+          - "**[OSS] /api/Users (IDOR 가능)**"
+          - "**[OSS] /api/Challenges (score-board)**"
           - "**[OSS] /rest/user/login (POST)**"
-          - "**[OSS] /rest/user/whoami (인증 필요)**"
-          - "**[OSS] /api/Quantities (admin 권한)**"
-          - "**[OSS] OPTIONS preflight**"
+          - "**[OSS] /rest/user/whoami**"
+          - "**[OSS] /api/Cards / /api/Addresses (admin)**"
+          - "**[OSS] OPTIONS preflight CORS**"
           - "**[OSS] WebSocket /socket.io**"
     target_vm: attacker
 
   - order: 2
-    instruction: 로그인 + JWT 디코드
-    hint: curl -X POST -d '{"email":"...","password":"..."}' /rest/user/login
+    instruction: |
+      ## 🎯 MISSION
+
+      JuiceShop admin 계정 로그인 + **JWT payload 디코드**.
+
+      ## 💻 실행 명령
+
+      ```bash
+      JWT=$(ssh 6v6-attacker 'curl -s -X POST -H "Host: juice.6v6.lab" -H "Content-Type: application/json" -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"admin123\"}" http://10.20.30.1/rest/user/login 2>&1 | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"authentication\",{}).get(\"token\",\"\"))" 2>/dev/null')
+      echo "JWT 받음 (앞 50): ${JWT:0:50}..."
+      echo
+      echo "=== JWT header ==="
+      echo "$JWT" | cut -d. -f1 | base64 -d 2>/dev/null
+      echo
+      echo "=== JWT payload ==="
+      echo "$JWT" | cut -d. -f2 | base64 -d 2>/dev/null
+      ```
+
+      ## 📋 확인 사항
+
+      - JWT 받음 (3 부분: header.payload.signature)
+      - header: `{"alg":"RS256","typ":"JWT"}` 또는 `{"alg":"HS256",...}`
+      - payload: `{"status":"success","data":{"id":1,"email":"admin@juice-sh.op",...}}`
+
+      ## 💡 왜 이걸 하는가?
+
+      JWT 는 stateless 인증 표준. base64 decoded → JSON 평문 (서명만 검증). W06 의 JWT
+      alg=none 우회의 전제.
+
+      ## 🔍 결과 해석
+
+      - **정상**: JWT 3 부분 디코드 가능 + payload 의 user id / email
+      - **W06 학습**: alg=none 으로 변조 시 일부 라이브러리 인증 우회
+    hint: JWT 받기 + base64 디코드
     category: analysis
     points: 25
     answer: |
-      JWT=$(ssh 6v6-attacker 'curl -s -X POST -H "Host: juice.6v6.lab" -H "Content-Type: application/json" -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"admin123\"}" http://10.20.30.1/rest/user/login 2>&1 | jq -r ".authentication.token // empty"')
+      JWT=$(ssh 6v6-attacker 'curl -s -X POST -H "Host: juice.6v6.lab" -H "Content-Type: application/json" -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"admin123\"}" http://10.20.30.1/rest/user/login 2>&1 | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"authentication\",{}).get(\"token\",\"\"))" 2>/dev/null')
       echo "JWT: ${JWT:0:50}..."
-      ssh 6v6-attacker "echo $JWT | cut -d. -f2 | base64 -d 2>/dev/null | jq" 2>&1 | head
-    answer_detail: JWT payload 디코드
+      echo "$JWT" | cut -d. -f1 | base64 -d 2>/dev/null
+      echo "$JWT" | cut -d. -f2 | base64 -d 2>/dev/null
+    answer_detail: JWT 3 부분 디코드. payload 의 user 정보 추출.
     verify:
       type: output_contains
       expect: JWT
       field: stdout
       semantic:
-        intent: JWT 디코드
-        success_criteria: [JWT 받음]
+        intent: "JWT 디코드"
+        success_criteria: ["JWT 받음", "header/payload 디코드"]
         acceptable_methods:
           - "**[OSS] /rest/user/login POST**"
-          - "**[OSS] cut -d. -f2 + base64 -d**"
+          - "**[OSS] base64 -d (또는 base64url)**"
           - "**[OSS] jwt.io 외부 디코더**"
-          - "**[OSS] jwt-tool (자동화 도구)**"
-          - "**[OSS] payload 의 iat / exp / aud / iss**"
-          - "**[OSS] signature 검증**"
-          - "**[OSS] alg:none 시도 (W06)**"
-          - "**[OSS] HS256 secret brute (W06)**"
+          - "**[OSS] jwt_tool (자동화)**"
+          - "**[OSS] payload exp/iat/aud/iss**"
+          - "**[OSS] signature 검증 (RS256/HS256)**"
+          - "**[OSS] alg:none 우회 (W06)**"
+          - "**[OSS] HS256 secret brute (W06 hashcat -m 16500)**"
     target_vm: attacker

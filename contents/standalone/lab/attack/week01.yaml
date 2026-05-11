@@ -1,52 +1,113 @@
 lab_id: standalone-attack-week01
-title: 6v6 침투 테스트 환경 (Attacker)
+title: 침투 테스트 환경 점검 — 6v6 attacker 컨테이너 + 8 vuln + RoE
 version: standalone-non-ai
 course: attack
 week: 1
 description: |
-  attacker 컨테이너의 13 도구 + 8 vuln 사이트 가시화 + 본 과목 RoE 학습. PTES
-  + MITRE ATT&CK 매핑 + 학습 계획 수립.
+  6v6-attacker 컨테이너의 13 침투 도구 가용성 + 8 vuln 사이트 도달성 + PTES 7 단계
+  + MITRE ATT&CK 14 Tactic + RoE (Rules of Engagement) 학습.
 difficulty: easy
 duration_minutes: 90
-prerequisites: [W01 secuops 통과 — 6v6 환경 인지]
+prerequisites:
+  - "secuops W01 통과 — 6v6 4-tier 인프라 인지"
+  - "bastion ProxyJump + attacker 직접 진입 (2202)"
 objectives:
-  - attacker 13 도구 가시화
-  - 8 vuln 사이트 도달성 검증
-  - RoE 이해
+  - "13 침투 도구 (nmap/sqlmap/hydra/nikto/ffuf/burp/msfconsole/john/hashcat/scapy/...)"
+  - "8 vuln 사이트 (juice/dvwa/neobank/govportal/mediforum/admin/ai/landing) 도달성"
+  - "PTES 7 단계 + MITRE ATT&CK 14 Tactic 매핑"
+  - "RoE — 본 환경 내부만 합법, 외부 공격 금지"
 pass_threshold: 0.7
 steps:
+
   - order: 1
-    instruction: attacker 13 도구 + which 명령
-    hint: ssh 6v6-attacker 'which nmap sqlmap hydra nikto'
+    instruction: |
+      ## 🎯 MISSION
+
+      attacker 컨테이너의 **13 침투 도구 가용성** 확인.
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker '
+      for tool in nmap sqlmap hydra nikto ffuf john hashcat tcpdump scapy msfconsole searchsploit dirb gobuster; do
+        which $tool >/dev/null 2>&1 && echo "✓ $tool: $(which $tool)" || echo "✗ $tool: 미설치"
+      done
+      '
+      ```
+
+      ## 📋 확인 사항
+
+      - 13 도구 중 10+ 가 ✓ 표시
+      - nmap / sqlmap / hydra / nikto / ffuf 핵심 5개 모두 가용
+
+      ## 💡 왜 이걸 하는가?
+
+      W02-W15 의 모든 실습이 이 13 도구로 진행. 첫 step 에서 도구 가용성 확보가 필수.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 핵심 5+ 도구 가용
+      - **비정상**: 1+ 도구 누락 → attacker Dockerfile 의 apt 패키지 추가 + 재빌드 필요
+    hint: which 13 도구
     category: survey
     points: 15
     answer: |
-      ssh 6v6-attacker 'which nmap nikto sqlmap hydra john hashcat ffuf'
-      ssh 6v6-attacker 'which msfconsole searchsploit metasploit 2>/dev/null'
-      ssh 6v6-attacker 'which scapy tcpdump 2>/dev/null'
-    answer_detail: 13 도구 path 출력
+      ssh 6v6-attacker '
+      for tool in nmap sqlmap hydra nikto ffuf john hashcat tcpdump scapy msfconsole searchsploit dirb gobuster; do
+        which $tool >/dev/null 2>&1 && echo "✓ $tool: $(which $tool)" || echo "✗ $tool: 미설치"
+      done
+      '
+    answer_detail: 13 도구 가용성 매트릭스.
     verify:
       type: output_contains
-      expect: /usr/bin
+      expect: 'nmap'
       field: stdout
       semantic:
-        intent: 13 도구
-        success_criteria: [10+ 도구]
+        intent: "13 도구 가용성"
+        success_criteria: ["핵심 5+ 도구"]
         acceptable_methods:
-          - "**[OSS] which / type 명령**"
-          - "**[OSS] dpkg -l | grep nmap**"
-          - "**[OSS] apt list --installed 2>&1 | grep -E nmap|sqlmap**"
+          - "**[OSS] which / type / command -v**"
+          - "**[OSS] apt list --installed | grep nmap**"
+          - "**[OSS] dpkg -l nmap**"
+          - "**[OSS] 도구별 --version**"
           - "**[OSS] PATH 환경변수 확인**"
-          - "**[OSS] 도구 버전 (--version)**"
           - "**[OSS] msfconsole 진입 (대화형)**"
-          - "**[OSS] searchsploit DB 위치**"
-          - "**[OSS] /opt/ 디렉토리 (수동 설치 도구)**"
+          - "**[OSS] /opt/ 디렉토리 수동 설치 도구**"
+          - "**[OSS] Kali Linux 기본 도구셋 대비**"
     target_vm: attacker
 
   - order: 2
-    instruction: 8 vuln 사이트 도달성 + 응답 코드
-    hint: |
-      for h in juice dvwa ...; do curl -H "Host: $h.6v6.lab" http://10.20.30.1/; done
+    instruction: |
+      ## 🎯 MISSION
+
+      8 vuln 사이트 (juice / dvwa / neobank / govportal / mediforum / admin / ai +
+      6v6.lab 랜딩) 의 응답 코드 매트릭스.
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker '
+      for h in juice dvwa neobank govportal mediforum admin ai 6v6; do
+        code=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: $h.6v6.lab" http://10.20.30.1/)
+        echo "$h.6v6.lab: $code"
+      done
+      '
+      ```
+
+      ## 📋 확인 사항
+
+      - 8 vhost 모두 200 또는 302 (3xx redirect 도 정상)
+      - 500/503 이면 backend 다운
+
+      ## 💡 왜 이걸 하는가?
+
+      W02-W15 의 모든 공격 실습이 이 8 사이트 대상. 첫 step 에서 도달성 확보.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 8 vhost 모두 200/302
+      - **비정상**: 503 → 해당 vhost 의 int 백엔드 다운 (`docker logs 6v6-juiceshop` 등)
+    hint: 8 vhost 응답 매트릭스
     category: survey
     points: 15
     answer: |
@@ -56,67 +117,67 @@ steps:
         echo "$h.6v6.lab: $code"
       done
       '
-    answer_detail: 8 vhost 모두 응답
+    answer_detail: 8 vhost 응답 매트릭스.
     verify:
       type: output_contains
-      expect: '200'
+      expect: '200\|302'
       field: stdout
       semantic:
-        intent: 8 vhost 도달성
-        success_criteria: [200/302 응답]
+        intent: "8 vuln 도달성"
+        success_criteria: ["200 또는 302"]
         acceptable_methods:
-          - "**[OSS] curl -w 응답 코드**"
-          - "**[OSS] Host header 별 라우팅**"
-          - "**[OSS] HAProxy backend health**"
-          - "**[OSS] ModSec 영향 (403 가능)**"
-          - "**[OSS] DNS resolve 검증**"
-          - "**[OSS] 6v6.lab 의 랜딩 페이지**"
-          - "**[OSS] Wazuh / portal 우회 정책**"
-          - "**[OSS] HTTPS 시도 (자체 서명)**"
+          - "**[OSS] curl -H Host + 응답 코드**"
+          - "**[OSS] HAProxy backend health (W01 secuops)**"
+          - "**[OSS] docker ps (int 백엔드 가동)**"
+          - "**[OSS] Apache vhost 11 (W01 secuops)**"
+          - "**[OSS] DNS resolve (/etc/hosts 의 *.6v6.lab)**"
+          - "**[OSS] 학생 PC 브라우저 (Burp Suite Proxy)**"
+          - "**[OSS] OWASP Juice Shop / DVWA challenge**"
+          - "**[OSS] ModSec 가 403 차단 시 (W06)**"
     target_vm: attacker
 
   - order: 3
-    instruction: PTES 7 단계 매핑 + ATT&CK 14 Tactic 매핑
-    hint: 표 작성
-    category: synthesis
-    points: 15
-    answer: |
-      cat <<'EOF'
-      # PTES 매핑
-      | PTES | 주차 |
-      | 1 Pre-engagement | W01 |
-      | 2 Recon | W02 |
-      | 3 Threat Modeling | W03 |
-      | 4 Vuln Analysis | W04-07 |
-      | 5 Exploit | W04-09 |
-      | 6 Post Exploit | W11-12 |
-      | 7 Reporting | W15 |
-      # ATT&CK
-      | Tactic | 주차 |
-      | TA0043 Recon | W02 |
-      | TA0001 Initial Access | W04-07 |
-      | TA0002 Execution | W11 |
-      | TA0004 PrivEsc | W11 |
-      | TA0003 Persistence | W12 |
-      | TA0005 Defense Evasion | W10 |
-      | TA0008 Lateral | W09 |
-      | TA0011 C2 | W13 (Caldera) |
-      EOF
-    answer_detail: PTES + ATT&CK 매핑
+    instruction: |
+      ## 🎯 MISSION
+
+      PTES 7 단계 + MITRE ATT&CK 14 Tactic + 15 주차 매핑 표 작성.
+
+      ## 💻 산출물
+
+      ```markdown
+      # PTES 7 단계 매핑
+      | PTES | 주차 | ATT&CK Tactic |
+      | 1 Pre-engagement | W01 | (RoE) |
+      | 2 Recon | W02 | TA0043 |
+      | 3 Threat Modeling | W03 | — |
+      | 4 Vuln Analysis | W04-W07 | TA0001 |
+      | 5 Exploitation | W04-W09 | TA0002 |
+      | 6 Post Exploit | W11-W12 | TA0004, TA0003 |
+      | 7 Reporting | W15 | — |
+
+      # 추가 학습 (신규)
+      - W13 Caldera 1 — Adversary Emulation
+      - W14 Caldera 2 — Purple Team coverage
+      ```
+    hint: PTES + ATT&CK 매핑
+    category: design
+    points: 20
+    answer: 위 형식
+    answer_detail: PTES + ATT&CK + 주차 매트릭스.
     verify:
       type: output_contains
       expect: PTES
       field: stdout
       semantic:
-        intent: 매핑
-        success_criteria: [PTES + ATT&CK]
+        intent: "PTES + ATT&CK 매핑"
+        success_criteria: ["7 단계 + 14 Tactic"]
         acceptable_methods:
-          - "**[OSS] PTES wiki 통독**"
+          - "**[OSS] PTES 7 단계 wiki**"
           - "**[OSS] MITRE ATT&CK Navigator**"
-          - "**[OSS] enterprise-attack.json 다운로드**"
-          - "**[OSS] 매핑 표 작성**"
-          - "**[OSS] kill chain 7 단계 비교**"
-          - "**[OSS] OWASP Top 10 매핑**"
-          - "**[OSS] CWE Top 25 매핑**"
-          - "**[OSS] 한국 KISA 매핑**"
+          - "**[OSS] enterprise-attack.json 직접 분석 (W12 secuops)**"
+          - "**[OSS] Cyber Kill Chain 7 단계 (Lockheed Martin) 비교**"
+          - "**[OSS] OWASP Testing Guide v4**"
+          - "**[OSS] CWE Top 25**"
+          - "**[OSS] CVSS 3.1 점수**"
+          - "**[OSS] 한국 KISA / ISMS-P 매핑**"
     target_vm: attacker
