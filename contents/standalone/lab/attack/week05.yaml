@@ -1,69 +1,135 @@
 lab_id: standalone-attack-week05
-title: XSS (Reflected / Stored / DOM)
+title: XSS — Reflected / Stored / DOM + CSP + ModSec 941 차단
 version: standalone-non-ai
 course: attack
 week: 5
-description: XSS 3 타입 + 6 payload + CSP 분석 + ModSec 941 차단.
+description: |
+  XSS 3 타입 (Reflected / Stored / DOM-based) + 6 payload 변형 + CSP 헤더 분석 +
+  ModSec 941xxx 룰 차단.
 difficulty: medium
 duration_minutes: 120
 prerequisites: [W04]
-objectives: [3 XSS 타입, 6 payload, CSP 우회]
+objectives:
+  - "XSS 3 타입 + 6 payload 변형"
+  - "CSP 헤더 분석"
+  - "ModSec 941 차단 카운트"
 pass_threshold: 0.7
 steps:
+
   - order: 1
-    instruction: 6 payload 시도 + ModSec 차단 카운트
-    hint: curl -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=<script>"
-    category: exploit
-    points: 30
-    answer: |
+    instruction: |
+      ## 🎯 MISSION
+
+      XSS **6 payload 변형** → 403 응답 + 941xxx 룰 매치 카운트.
+
+      ## 💻 실행 명령
+
+      ```bash
       ssh 6v6-attacker '
-      for p in "<script>alert(1)</script>" "<img+src=x+onerror=alert(1)>" "<svg+onload=alert(1)>" "<iframe+src=javascript:alert(1)>" "<body+onload=alert(1)>"; do
+      for p in "<script>alert(1)</script>" "<img+src=x+onerror=alert(1)>" "<svg+onload=alert(1)>" "<iframe+src=javascript:alert(1)>" "<body+onload=alert(1)>" "<a+href=javascript:alert(1)>click</a>"; do
         code=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=$p")
         echo "$code | $p"
       done
       '
-    answer_detail: 5 payload + 응답 코드 매트릭스
+      sleep 3
+      ssh 6v6-web 'sudo grep -c "941" /var/log/apache2/modsec_audit.log'
+      ```
+
+      ## 📋 확인 사항
+
+      - 6 payload 모두 403
+      - ModSec 941 매치 카운트 증가
+
+      ## 💡 왜 이걸 하는가?
+
+      OWASP A03 XSS — 가장 흔한 클라이언트 측 취약점. payload 변형 학습 — script /
+      img / svg / iframe / body / a (event handler).
+
+      ## 🔍 결과 해석
+
+      - **정상**: 6 × 403
+      - **W10**: case mixing / nested / encoding 우회 시도
+    hint: XSS 6 변형
+    category: exploit
+    points: 25
+    answer: |
+      ssh 6v6-attacker '
+      for p in "<script>alert(1)</script>" "<img+src=x+onerror=alert(1)>" "<svg+onload=alert(1)>" "<iframe+src=javascript:alert(1)>" "<body+onload=alert(1)>" "<a+href=javascript:alert(1)>click</a>"; do
+        code=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=$p")
+        echo "$code | $p"
+      done
+      '
+    answer_detail: 6 XSS payload → 403.
     verify:
       type: output_contains
       expect: '403'
       field: stdout
       semantic:
-        intent: XSS payload
-        success_criteria: [403 ModSec 차단]
+        intent: "XSS 6 변형"
+        success_criteria: ["6 × 403"]
         acceptable_methods:
           - "**[OSS] <script>alert(1)</script>**"
-          - "**[OSS] <img onerror>**"
-          - "**[OSS] <svg onload>**"
+          - "**[OSS] <img src=x onerror=>**"
+          - "**[OSS] <svg onload=>**"
           - "**[OSS] <iframe javascript:>**"
-          - "**[OSS] <body onload>**"
-          - "**[OSS] URL encoding %3C%3E**"
+          - "**[OSS] <body onload=>**"
+          - "**[OSS] event handler 변형 (onerror/onload/onmouseover)**"
+          - "**[OSS] URL encoding %3C %3E**"
           - "**[OSS] HTML entity &#60;**"
-          - "**[OSS] ModSec 941100 libinjection**"
     target_vm: attacker
 
   - order: 2
-    instruction: ModSec audit log 의 941 rule + CSP header
-    hint: jq .transaction.messages
+    instruction: |
+      ## 🎯 MISSION
+
+      CSP / X-Frame-Options / X-Content-Type-Options 헤더 분석 + ModSec audit log
+      의 941 룰 데이터.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # 응답 헤더 분석
+      ssh 6v6-attacker 'curl -sI -H "Host: juice.6v6.lab" http://10.20.30.1/ 2>&1 | grep -iE "content-security|x-frame|x-content|referrer|hsts"'
+
+      # ModSec audit 의 941 룰
+      ssh 6v6-web 'sudo tail -20 /var/log/apache2/modsec_audit.log | jq -r ".audit_data.messages[]?" 2>/dev/null | grep -E "941" | head -3'
+      ```
+
+      ## 📋 확인 사항
+
+      - CSP 헤더 (있다면 default-src 'self' 등)
+      - 941xxx 룰의 메시지 (XSS via libinjection / Script Tag Vector 등)
+
+      ## 💡 왜 이걸 하는가?
+
+      defense-in-depth — ModSec 외에 클라이언트 측 CSP 가 XSS 차단. CSP 미설정 시
+      XSS 우회 위험.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 941 룰 메시지 출력
+      - **운영 권장**: CSP 헤더 설정 (Apache 의 mod_headers)
+    hint: CSP 헤더 + ModSec 941 데이터
     category: analysis
     points: 20
     answer: |
-      ssh 6v6-web 'sudo tail -10 /var/log/apache2/modsec_audit.log | head -1 | jq ".transaction.messages[] | select(.id | startswith(\"941\")) | {id, data}"' || ssh 6v6-web 'sudo tail -3 /var/log/apache2/modsec_audit.log'
-      ssh 6v6-attacker 'curl -sI -H "Host: juice.6v6.lab" http://10.20.30.1/ 2>&1 | grep -iE "csp|security"'
-    answer_detail: ModSec 941 + CSP header
+      ssh 6v6-attacker 'curl -sI -H "Host: juice.6v6.lab" http://10.20.30.1/ 2>&1 | grep -iE "content-security|x-frame|x-content|referrer|hsts"'
+      ssh 6v6-web 'sudo tail -20 /var/log/apache2/modsec_audit.log | jq -r ".audit_data.messages[]?" 2>/dev/null | grep -E "941" | head -3'
+    answer_detail: CSP 헤더 + ModSec 941 분석.
     verify:
       type: output_contains
-      expect: '941'
+      expect: '941\|content'
       field: stdout
       semantic:
-        intent: 941 분석
-        success_criteria: [941 룰 매치]
+        intent: "헤더 + 941 분석"
+        success_criteria: ["headers 또는 941"]
         acceptable_methods:
-          - "**[OSS] audit log JSON jq**"
-          - "**[OSS] CSP header 분석**"
-          - "**[OSS] X-XSS-Protection (deprecated)**"
-          - "**[OSS] X-Content-Type-Options: nosniff**"
-          - "**[OSS] X-Frame-Options**"
+          - "**[OSS] CSP default-src 'self'**"
+          - "**[OSS] X-Frame-Options DENY (clickjacking 방어)**"
+          - "**[OSS] X-Content-Type-Options nosniff**"
+          - "**[OSS] HSTS Strict-Transport-Security**"
           - "**[OSS] Referrer-Policy**"
-          - "**[OSS] HSTS**"
-          - "**[OSS] CORS Access-Control-Allow-Origin**"
-    target_vm: web
+          - "**[OSS] ModSec 941100 XSS via libinjection**"
+          - "**[OSS] 941110 Script Tag Vector**"
+          - "**[OSS] 941160 NoScript**"
+    target_vm: bastion

