@@ -1,0 +1,107 @@
+lab_id: standalone-attack-week13
+title: MITRE Caldera (1) — Adversary Emulation (신규)
+version: standalone-non-ai
+course: attack
+week: 13
+description: Caldera 아키텍처 + ability/adversary 작성 + ATT&CK 매핑.
+difficulty: medium
+duration_minutes: 150
+prerequisites: [W12]
+objectives: [ability 작성, adversary, ATT&CK 매핑]
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: 6v6 환경에 적합한 ability 3 작성
+    hint: yaml 형식 + ATT&CK Technique ID
+    category: design
+    points: 35
+    answer: |
+      cat <<'EOF'
+      # /tmp/abilities.yml
+      - id: 6v6-001
+        name: 6v6 File Discovery
+        tactic: discovery
+        technique: { attack_id: T1083 }
+        platforms:
+          linux:
+            sh:
+              command: |
+                find /etc -name "*.conf" -type f | head -10
+
+      - id: 6v6-002
+        name: 6v6 Process Discovery
+        tactic: discovery
+        technique: { attack_id: T1057 }
+        platforms:
+          linux:
+            sh:
+              command: |
+                ps -ef | head -20
+
+      - id: 6v6-003
+        name: 6v6 Network Discovery
+        tactic: discovery
+        technique: { attack_id: T1018 }
+        platforms:
+          linux:
+            sh:
+              command: |
+                ss -tnp 2>/dev/null | head -10
+      EOF
+    answer_detail: 3 ability + ATT&CK Technique
+    verify:
+      type: output_contains
+      expect: T1083
+      field: stdout
+      semantic:
+        intent: ability 작성
+        success_criteria: [3 ability + ATT&CK]
+        acceptable_methods:
+          - "**[OSS] yaml 형식 표준**"
+          - "**[OSS] tactic + technique 분리**"
+          - "**[OSS] ATT&CK Technique ID**"
+          - "**[OSS] platforms 별 command**"
+          - "**[OSS] linux/windows/darwin 다중**"
+          - "**[OSS] parser (output → fact 추출)**"
+          - "**[OSS] requirements (변수)**"
+          - "**[OSS] cleanup 명령**"
+    target_vm: attacker
+
+  - order: 2
+    instruction: adversary profile + operation 시뮬
+    hint: atomic_ordering + 6v6-001/002/003
+    category: design
+    points: 25
+    answer: |
+      cat <<'EOF'
+      # /tmp/adversary.yml
+      - id: 6v6-adv-01
+        name: 6v6 Recon Adversary
+        description: 6v6 학습용 정찰 적
+        atomic_ordering:
+          - 6v6-001
+          - 6v6-002
+          - 6v6-003
+
+      # operation 시뮬:
+      # operation.start(adversary=6v6-adv-01, agents=[sandcat-attacker])
+      # 결과: 3 ability 순차 실행
+      EOF
+    answer_detail: adversary + operation
+    verify:
+      type: output_contains
+      expect: adversary
+      field: stdout
+      semantic:
+        intent: adversary
+        success_criteria: [profile + operation]
+        acceptable_methods:
+          - "**[OSS] adversary profile yaml**"
+          - "**[OSS] atomic_ordering 순차**"
+          - "**[OSS] objectives goals**"
+          - "**[OSS] operation 모드 (atomic / batch)**"
+          - "**[OSS] agent group filter**"
+          - "**[OSS] obfuscator (plain-text / base64 / caesar)**"
+          - "**[OSS] visibility (real-time UI)**"
+          - "**[OSS] report 생성**"
+    target_vm: attacker
