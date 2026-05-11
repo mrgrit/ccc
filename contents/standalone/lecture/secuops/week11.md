@@ -1,229 +1,259 @@
-# Week 11 — sysmon-for-linux — eBPF 기반 호스트 이벤트 (신규)
+# Week 11 — sysmon-for-linux — Event Stream 기반 호스트 가시화
 
-> 본 주차는 **Microsoft Sysmon for Linux (sysmonforlinux)** 가 학습 대상. Windows
-> Sysmon 의 Linux 포팅으로, eBPF + auditd 기반 process create / network connect /
-> file create 같은 호스트 이벤트를 실시간 stream 한다. osquery (W07) 가 query-based
-> snapshot 이라면 sysmon 은 event-driven stream — 보완 관계.
+> **본 주차의 한 줄 요약**
+>
+> Microsoft Sysinternals 의 **Sysmon for Linux** (eBPF + auditd 기반) 으로 **event stream**
+> 호스트 가시화. W07 osquery (snapshot, ad-hoc query) 와 보완 관계. 6v6 의 **4 호스트
+> 모두 sysmon 미설치** (실측 2026-05-12) — 본 주차에서 설치 + config.xml + Wazuh 통합
+> + 6 핵심 Event (ProcessCreate / NetworkConnect / FileCreate / ProcessTerminate /
+> ImageLoad / ProcessAccess) + R/B/P. 학습 마지막에 Red 가 base64 payload 실행 →
+> sysmon Event 1 → Wazuh rule 0800-sysmon_id_1 매치 → dashboard.
+>
+> **운영자 한 줄 결론**: osquery 는 "지금 상태", sysmon 은 "방금 무슨 일이 있었는가".
+> 두 도구 동시 운영이 호스트 가시화의 정답.
+
+---
 
 ## 학습 목표
 
-1. sysmon-for-linux 의 eBPF 기반 동작 원리
-2. osquery vs sysmon 의 query-based vs event-driven 차이
-3. ProcessCreate / NetworkConnect / FileCreate 3 핵심 EventID
-4. config XML 작성 + filter 로 noise 감소
-5. /var/log/sysmonforlinux.log 의 분석
-6. Wazuh agent 의 localfile 로 통합 (manager decoder 매핑)
+1. sysmon vs osquery 비교 — event stream vs snapshot, low latency vs flexible query.
+2. Sysmon for Linux 의 eBPF + auditd 기반 아키텍처.
+3. 9+ Event ID 의미 + Linux 활용 6 핵심 (1 / 3 / 5 / 7 / 10 / 11).
+4. config.xml 의 RuleGroup + Include / Exclude 패턴.
+5. 설치 절차 (4 호스트) — apt / .deb / 의존성 (libbpf, auditd).
+6. sysmon log → Wazuh agent → manager 의 0800-sysmon_id_1 등 default 룰 매핑.
+7. R/B/P — Red base64 payload → sysmon Event 1 → Wazuh alert.
 
-## 1. sysmon-for-linux 가 등장한 이유
+---
 
-Windows 환경의 Sysmon 은 SOC 의 핵심 도구로 자리잡았으나, Linux 에는 동급 도구가
-없었다. auditd / falco / osquery 가 부분 대안이었지만 각각 한계:
+## 1. sysmon vs osquery — 보완 관계
 
-- **auditd** : 커널 audit 표준이나 출력 형식 비통일, 룰 작성 복잡
-- **falco** : CNCF 프로젝트, Kubernetes 친화, 호스트 단독 사용 어색
-- **osquery** : snapshot 기반, 짧은 시간 이벤트 (mlocate 등) 놓침
-- **Sysmon for Linux** (2021, Microsoft) : Sysmon 호환 EventID + eBPF 성능 + Linux native
+| 항목 | osquery (W07) | sysmon-for-linux (W11) |
+|------|---------------|-------------------------|
+| 모델 | **snapshot** (시점) | **event stream** (실시간) |
+| query | SQL (interactive) | config.xml + auditd |
+| 데이터 source | 158 테이블 | eBPF + auditd |
+| schedule | osquery.conf 의 schedule | 항상 실시간 |
+| 강점 | flexible / SQL JOIN | low-latency / process tree |
+| 약점 | event 지연 | XML config 복잡 |
+| 6v6 상태 | 설치 (osqueryi only) | **미설치** (W11 본격) |
 
-## 2. eBPF 기반의 강점
+**운영 권장**: 두 도구 동시 운영.
 
-eBPF (extended Berkeley Packet Filter) 는 커널 내부에서 사용자 정의 코드를 안전하게
-실행하는 framework. sysmon-for-linux 는 eBPF probe 로 syscall + kernel event 를 hooking
-→ user-space 로 stream.
+---
 
-```
-syscall execve()    →    eBPF probe    →    /var/log/sysmonforlinux.log
-fork() / exit()
-connect() / accept()
-open() / write() / unlink()
-```
+## 2. Sysmon for Linux 아키텍처
 
-- 커널 buffer 활용 → user-space 로의 데이터 복사 최소
-- 동기/비동기 모드 선택
-- 호환 layer: BCC (BPF Compiler Collection)
-
-## 3. 3 핵심 EventID
-
-Windows Sysmon 의 EventID 와 호환.
-
-| EventID | 의미 |
-|---------|------|
-| 1 | ProcessCreate |
-| 3 | NetworkConnect |
-| 11 | FileCreate |
-| 5 | ProcessTerminate |
-| 8 | CreateRemoteThread (Linux 무관) |
-| 12-14 | RegistryEvent (Linux 무관) |
-| 22 | DnsQuery |
-| 23 | FileDelete |
-
-### 3.1 ProcessCreate (EventID 1)
-
-```
-<Event>
-  <System>
-    <EventID>1</EventID>
-    <TimeCreated SystemTime="..."/>
-  </System>
-  <EventData>
-    <Data Name="ProcessGuid">{...}</Data>
-    <Data Name="Image">/usr/bin/sshd</Data>
-    <Data Name="CommandLine">sshd: ccc@pts/0</Data>
-    <Data Name="User">ccc</Data>
-    <Data Name="ParentImage">/usr/sbin/sshd</Data>
-    <Data Name="ParentCommandLine">/usr/sbin/sshd -D</Data>
-  </EventData>
-</Event>
+```mermaid
+graph LR
+    KERN[Linux kernel]
+    EBPF[eBPF probe]
+    AUD[auditd subsystem]
+    SYSMON[sysmon process]
+    LOG["/var/log/syslog 또는 journald"]
+    AGT[Wazuh agent]
+    MGR[manager]
+    KERN --> EBPF
+    KERN --> AUD
+    EBPF --> SYSMON
+    AUD --> SYSMON
+    SYSMON --> LOG
+    LOG --> AGT
+    AGT -->|1514| MGR
+    style SYSMON fill:#3fb950,color:#fff
 ```
 
-부모 process tree 까지 추적 → "ssh 가 어떻게 spawn 됐는지" 가시화.
+- **eBPF**: 커널 verified bytecode, low overhead
+- **auditd**: Linux audit subsystem
+- sysmon 이 두 source 결합 → 통일 XML event → syslog ship → Wazuh
 
-### 3.2 NetworkConnect (EventID 3)
+---
 
-```
-<Event>
-  <System>
-    <EventID>3</EventID>
-  </System>
-  <EventData>
-    <Data Name="Image">/usr/bin/curl</Data>
-    <Data Name="DestinationIp">192.168.0.110</Data>
-    <Data Name="DestinationPort">80</Data>
-    <Data Name="Protocol">tcp</Data>
-  </EventData>
-</Event>
-```
+## 3. 9+ Event ID — Linux 핵심 6
 
-어떤 binary 가 어디로 conn 했는지. LOLBin (정상 binary 의 악성 사용) 추적.
+| Event ID | 의미 | 운영 활용 |
+|----------|------|-----------|
+| **1** | ProcessCreate | malware 실행 / 의심 cmdline |
+| 2 | FileCreateTime | 파일 시각 변조 |
+| **3** | NetworkConnect | C2 callback / outbound 443 |
+| 4 | Sysmon state | sysmon 자체 시작/정지 |
+| **5** | ProcessTerminate | 종료 (정상 vs SIGKILL) |
+| 6 | DriverLoad | 커널 모듈 (rootkit) |
+| **7** | ImageLoad | DLL/.so 로드 |
+| 8 | CreateRemoteThread | code injection |
+| **10** | ProcessAccess | LSASS dump 등 |
+| **11** | FileCreate | 새 파일 (webshell / dropper) |
 
-### 3.3 FileCreate (EventID 11)
+핵심 6 (Linux): 1 / 3 / 5 / 7 / 10 / 11.
 
-```
-<Event>
-  <System>
-    <EventID>11</EventID>
-  </System>
-  <EventData>
-    <Data Name="Image">/usr/bin/curl</Data>
-    <Data Name="TargetFilename">/tmp/shell.sh</Data>
-  </EventData>
-</Event>
-```
+---
 
-malware 가 dropper 로 /tmp 에 file 생성 → 즉시 감지.
+## 4. config.xml — RuleGroup + Include/Exclude
 
-## 4. config XML 의 filter
-
-기본 설치 시 모든 event 기록 → noise 폭증. filter 로 노이즈 감소.
-
-```
-<Sysmon schemaversion="4.81">
+```xml
+<Sysmon schemaversion="4.40">
   <EventFiltering>
-    <ProcessCreate onmatch="exclude">
-      <Image condition="contains">apt</Image>      <!-- apt update noise -->
-      <Image condition="end with">/cron</Image>     <!-- cron noise -->
-    </ProcessCreate>
+    <RuleGroup name="" groupRelation="or">
 
-    <NetworkConnect onmatch="include">
-      <DestinationPort condition="is">22</DestinationPort>
-      <DestinationPort condition="is">80</DestinationPort>
-      <DestinationPort condition="is">443</DestinationPort>
-    </NetworkConnect>
+      <!-- Event 1 - ProcessCreate -->
+      <ProcessCreate onmatch="include">
+        <CommandLine condition="contains">base64</CommandLine>
+        <CommandLine condition="contains">wget</CommandLine>
+        <CommandLine condition="contains">curl</CommandLine>
+        <ParentImage condition="end with">sshd</ParentImage>
+      </ProcessCreate>
+
+      <!-- Event 3 - NetworkConnect -->
+      <NetworkConnect onmatch="include">
+        <DestinationPort>443</DestinationPort>
+        <DestinationPort>4444</DestinationPort>
+        <DestinationPort>8080</DestinationPort>
+      </NetworkConnect>
+
+      <!-- Event 11 - FileCreate -->
+      <FileCreate onmatch="include">
+        <TargetFilename condition="contains">.php</TargetFilename>
+        <TargetFilename condition="contains">.jsp</TargetFilename>
+        <TargetFilename condition="begin with">/tmp/</TargetFilename>
+      </FileCreate>
+
+      <!-- Exclude noise -->
+      <ProcessCreate onmatch="exclude">
+        <Image>/usr/lib/systemd/systemd</Image>
+        <Image>/usr/sbin/cron</Image>
+      </ProcessCreate>
+
+    </RuleGroup>
   </EventFiltering>
 </Sysmon>
 ```
 
-## 5. 운영 권장 config (SwiftOnSecurity 패턴)
+- `groupRelation="or"` — OR 조건
+- `onmatch="include"` — 매치 시 기록
+- `onmatch="exclude"` — 매치 시 무시 (noise 차단)
+- condition: `contains` / `begin with` / `end with` / `is` / `not contains`
 
-Windows Sysmon 의 표준 config 는 SwiftOnSecurity 의 sysmonconfig-export.xml. Linux
-도 비슷한 community config 가용. 핵심 필터:
+---
 
-- `apt`, `dpkg`, `cron`, `systemd-` 같은 noise 제외
-- 22 / 80 / 443 등 핵심 port 만 NetworkConnect 기록
-- `/tmp/*`, `/var/tmp/*`, `/dev/shm/*` 의 FileCreate 우선 (dropper 영역)
+## 5. 설치 절차 (4 호스트)
 
-## 6. osquery vs sysmon 비교
+### 5.1 패키지 (Ubuntu 22.04)
 
-| 측면 | osquery | sysmon |
-|------|---------|--------|
-| 모델 | query-based (SQL) | event-driven (XML/JSON stream) |
-| 시점 | snapshot (특정 시각) | 실시간 event stream |
-| 핵심 강점 | 헌팅 쿼리, 인벤토리 | "어떤 process 가 spawn 됐나" 시간순 |
-| 데이터 | 50+ 테이블 | 30+ EventID |
-| 운영 부담 | 낮음 | eBPF probe 부담 |
-| 통합 | Wazuh localfile | Wazuh localfile + 별 decoder |
-| 권장 조합 | 둘 다 (보완) | |
-
-## 7. Wazuh 통합
-
-agent 측 `/var/ossec/etc/ossec.conf` 에:
-
+```bash
+sudo wget -O- https://packages.microsoft.com/keys/microsoft.asc | \
+    sudo gpg --dearmor -o /usr/share/keyrings/microsoft.gpg
+echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft.gpg] \
+    https://packages.microsoft.com/ubuntu/22.04/prod jammy main" | \
+    sudo tee /etc/apt/sources.list.d/microsoft.list
+sudo apt-get update
+sudo apt-get install -y sysmonforlinux
 ```
+
+### 5.2 config + 시작
+
+```bash
+sudo wget -O /etc/sysmon.xml https://raw.githubusercontent.com/.../sysmon-config-linux.xml
+sudo sysmon -accepteula -i /etc/sysmon.xml
+sudo systemctl enable --now sysmon
+```
+
+### 5.3 검증
+
+```bash
+sudo sysmon -s
+sudo journalctl -u sysmon --since "5 min ago" | head
+sudo tail /var/log/syslog | grep -i sysmon | head
+```
+
+### 5.4 Wazuh agent 통합
+
+```xml
 <localfile>
   <log_format>syslog</log_format>
-  <location>/var/log/sysmonforlinux.log</location>
+  <location>/var/log/syslog</location>
 </localfile>
 ```
 
-manager 측 decoder 가 sysmon XML 파싱:
+Wazuh 의 `0330-sysmon_rules.xml` + `0800-sysmon_id_1.xml` default 매칭.
+
+---
+
+## 6. Wazuh sysmon 룰 — 실측
 
 ```
-<decoder name="sysmon-event1">
-  <prematch>EventID: 1</prematch>
-  <regex>Image: (\S+).*?CommandLine: (.+?) User: (\S+)</regex>
-  <order>image, commandline, user</order>
-</decoder>
+0330-sysmon_rules.xml            (base + 공통)
+0800-sysmon_id_1.xml             (ProcessCreate)  ← Linux 핵심
+0810-sysmon_id_3.xml             (NetworkConnect) ← Linux 핵심
+0820-sysmon_id_7.xml             (ImageLoad)
+0830-sysmon_id_11.xml            (FileCreate)     ← Linux 핵심
+0860-sysmon_id_13.xml            (Registry — Windows)
+0870-sysmon_id_8.xml             (CreateRemoteThread)
+0945-sysmon_id_10.xml            (ProcessAccess)
+0950-sysmon_id_20.xml            (WmiEventConsumer — Windows)
 ```
 
-룰:
+핵심 4 (Linux): **0800 / 0810 / 0830 / 0945**.
 
-```
-<rule id="100200" level="6">
-  <decoded_as>sysmon-event1</decoded_as>
-  <field name="image">/tmp/</field>
-  <description>Sysmon: ProcessCreate from /tmp (의심)</description>
-</rule>
-```
+---
 
-## 8. 실습 1~6
+## 7. R/B/P — base64 payload 실행 → Event 1 → alert
 
-### 1 — sysmon-for-linux 설치 확인
+```bash
+# Red — 무해한 base64 payload (학습용)
+ssh 6v6-web 'echo "echo W11_TEST" | base64 -d | sh'
 
-```
-ssh 6v6-web 'which sysmon 2>&1 || apt-cache policy sysmonforlinux 2>&1 | head'
-```
+# Blue — sysmon Event 1 + Wazuh alert
+ssh 6v6-web 'sudo journalctl -u sysmon --since "1 min ago" | grep "EventID.*1\b" | tail -3'
+ssh 6v6-siem 'sudo tail -30 /var/ossec/logs/alerts/alerts.json | jq "select(.rule.id | startswith(\"80\")) | {rule_id:.rule.id, desc:.rule.description}"'
 
-> 본 lab 환경에 sysmon-for-linux 가 사전 설치되어 있지 않을 수 있다. 인프라 단계에서
-> 추가 필요. 학습용으로 패턴 + 통합 흐름 중심.
-
-### 2 — config 작성
-
-(시연용 — 실 설치 후 적용)
-
-### 3 — 트리거 + log
-
-```
-ssh 6v6-web 'sudo touch /tmp/sysmon_test.sh'
-sleep 2
-ssh 6v6-web 'sudo tail -3 /var/log/sysmonforlinux.log 2>/dev/null | head' || echo "sysmon not installed"
+# Purple — 분석
+# - cmdline base64 -d | sh
+# - parent process (sshd / apache / cron / 등)
+# - 시각 + user id
+# - Active Response 권장 (level 7+ → process kill 또는 user disable)
 ```
 
-### 4 — Wazuh 통합 시뮬
+---
 
-(localfile 설정 + decoder 매핑)
+## 8. 트러블슈팅
 
-### 5 — osquery + sysmon 비교
+- **sysmon 미시작**: eBPF 의존성 또는 auditd 충돌 → kernel >= 4.18 + audit 동시 운영
+- **event 없음**: config 의 condition 매칭 안 됨 → `sysmon -s` 검토
+- **alert 없음**: Wazuh 룰 미로드 → `wazuh-logtest`
+- **noise 폭증**: Event 1 분당 1000+ → exclude 룰 추가 (systemd / cron 등)
 
-(같은 process 변화를 두 도구로 관찰)
+---
 
-### 6 — 운영 권장 config 적용 시뮬
+## 9. 사례 분석
 
-## 9. 과제
+- ISMS-P 2.9.6 (이상 행위 감지)
+- NIST DE.CM-7 + DE.AE-2 (Event Analysis)
+- KISA 2024 — APT lateral movement 의 sysmon Event 1 + 3 매칭
 
-A. sysmon vs osquery 비교 분석 (필수) — 같은 행동 (예: /tmp 에 binary 생성) 을 두 도구로 어떻게 잡는가
-B. config XML 작성 (심화) — 본 lab 환경에 맞는 filter 5+
-C. Wazuh decoder + rule 작성 (정성) — sysmon 의 ProcessCreate event 를 Wazuh alert 로
+---
 
-## 10. W12-14 (OpenCTI) 예고
+## 10. 과제
 
-다음 3 주차는 OpenCTI 로 외부 위협 인텔리전스 (CTI) 통합 — IOC feed 자동 ingest +
-Wazuh 와의 통합 + 위협 헌팅.
+### A. 4 호스트 sysmon 설치 + 검증 (필수, 40점)
+### B. config.xml 작성 (심화, 30점)
+### C. R/B/P 보고서 (정성, 30점)
+
+---
+
+## 11. 다음 주차 (W12) 예고
+
+- **주제**: OpenCTI 도입 + STIX 2.1 + TAXII 2.1
+- **연결**: 외부 위협 정보 (APT 그룹 / IOC / TTP) → 본 환경 SIEM 통합
+
+---
+
+## 부록 — Wazuh sysmon rule id 매핑
+
+```
+0330 — base
+0800 — ProcessCreate (rule id 80100+)
+0810 — NetworkConnect (80200+)
+0820 — ImageLoad (80300+)
+0830 — FileCreate (80400+)
+0945 — ProcessAccess (80700+)
+```

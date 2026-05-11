@@ -1,167 +1,579 @@
 lab_id: standalone-secuops-week11
-title: sysmon-for-linux — eBPF 호스트 이벤트 (osquery 와 비교)
+title: sysmon-for-linux — 설치 + config + Wazuh 통합 + 6 핵심 Event + R/B/P
 version: standalone-non-ai
 course: secuops
 week: 11
 description: |
-  Microsoft Sysmon for Linux 의 eBPF 기반 ProcessCreate / NetworkConnect / FileCreate
-  이벤트 학습. osquery (query-based, W07) 와의 보완 관계. 본 lab 은 패턴 학습 중심
-  (실 sysmon 설치는 별 패키지 — 학습 환경 시뮬).
+  6v6 의 4 호스트 (bastion / fw / ips / web) 의 sysmon-for-linux 미설치 인지 + 설치
+  계획 + config.xml + Wazuh 통합 + 9 Event ID + Linux 핵심 6 (1/3/5/7/10/11) + R/B/P
+  (Red 가 base64 payload → sysmon Event 1 → Wazuh 0800 rule 80100+ → alerts.json
+  → dashboard). 종합 보고서.
 difficulty: medium
-duration_minutes: 120
-prerequisites: [W07, W10]
+duration_minutes: 200
+prerequisites: [W10]
 objectives:
-  - "sysmon 의 3 핵심 EventID (1 ProcessCreate / 3 NetworkConnect / 11 FileCreate)"
-  - "osquery snapshot vs sysmon event-stream 비교"
-  - "Wazuh 의 sysmon decoder + 사용자 룰 통합 path"
-pass_threshold: 0.6
+  - "sysmon vs osquery 비교 (event stream vs snapshot)"
+  - "9 Event ID + Linux 핵심 6"
+  - "config.xml RuleGroup + Include/Exclude"
+  - "설치 절차 (4 호스트, 의존성)"
+  - "Wazuh 0800/0810/0830 룰 활성 확인"
+  - "R/B/P — base64 payload → Event 1 → alert"
+  - "트러블슈팅 + 종합 보고서"
+pass_threshold: 0.7
 steps:
 
   - order: 1
     instruction: |
-      ## 🎯 MISSION
-
-      web 호스트에서 **osquery 의 processes 테이블** (snapshot) + **process_events
-      테이블** (daemon mode stream) 차이 가시화.
+      ## 🎯 MISSION — 4 호스트 sysmon 설치 상태 + Wazuh 룰 활성 확인
 
       ## 💻 실행 명령
 
       ```bash
-      # 1. snapshot (현재 시점의 모든 process)
-      ssh 6v6-web 'sudo osqueryi --json "SELECT count(*) AS total FROM processes;"'
+      # 1. 4 호스트 sysmon 설치 상태
+      for h in bastion fw ips web; do
+        printf "%-8s " "$h"
+        ssh 6v6-$h 'command -v sysmon 2>/dev/null || echo NOT_INSTALLED'
+      done
 
-      # 2. 최근 1분 안에 시작된 process
-      ssh 6v6-web 'sudo osqueryi --json "SELECT pid, name, start_time FROM processes WHERE start_time > (strftime(\"%s\", \"now\") - 60);"'
+      # 2. Wazuh manager 의 sysmon 룰
+      ssh 6v6-siem 'sudo ls /var/ossec/ruleset/rules/ | grep sysmon'
 
-      # 3. (osqueryd 가 활성이면) process_events 테이블 — event stream
-      ssh 6v6-web 'sudo osqueryi --json "SELECT count(*) FROM process_events;" 2>&1 | head'
+      # 3. 9 Event ID + Linux 핵심
+      cat <<'EOF'
+      ID 1  ProcessCreate    ← Linux 핵심
+      ID 3  NetworkConnect   ← Linux 핵심
+      ID 5  ProcessTerminate ← Linux 핵심
+      ID 7  ImageLoad        ← Linux 핵심
+      ID 10 ProcessAccess    ← Linux 핵심
+      ID 11 FileCreate       ← Linux 핵심
+      ID 13 RegistryEvent (Windows)
+      ID 22 DNSEvent (Windows)
+      EOF
       ```
 
       ## 📋 확인 사항
 
-      - 명령 1: 정수 (총 프로세스 수, 예: 30+)
-      - 명령 2: 최근 spawn 된 process (보통 1-3 건, sshd 등)
-      - 명령 3: process_events 가 osqueryd 가 활성이면 다수, 비활성이면 0
+      - 4 호스트 모두 NOT_INSTALLED (현재 상태)
+      - Wazuh 의 sysmon 룰 (0330 / 0800 / 0810 / 0820 / 0830 / 0945)
+      - 9 Event ID 의미
 
       ## 💡 왜 이걸 하는가?
 
-      osquery 의 query-based 모델 — snapshot (정적) + process_events (스트림). sysmon
-      은 event-stream native (eBPF 기반). 두 모델의 trade-off.
-
-      ## 🔍 결과 해석
-
-      - **snapshot**: 한 시점의 상태
-      - **event stream**: 시간순 event (sysmon 의 강점)
-    hint: osquery snapshot + process_events
-    category: comparison
-    points: 20
+      운영 갭 인지 — sysmon 미설치 = host event stream 가시화 부재. W11 본격 설치 필요.
+    hint: 'command -v sysmon + ls /var/ossec/ruleset/rules/ | grep sysmon'
+    category: survey
+    points: 10
     answer: |
-      ssh 6v6-web 'sudo osqueryi --json "SELECT count(*) AS total FROM processes;"'
-      ssh 6v6-web 'sudo osqueryi --json "SELECT pid, name, start_time FROM processes WHERE start_time > (strftime(\"%s\", \"now\") - 60);"'
-    answer_detail: snapshot + 최근 1분 process 비교.
+      for h in bastion fw ips web; do
+        printf "%-8s " "$h"
+        ssh 6v6-$h 'command -v sysmon 2>/dev/null || echo NOT_INSTALLED'
+      done
+      ssh 6v6-siem 'sudo ls /var/ossec/ruleset/rules/ | grep sysmon'
+    answer_detail: '4 호스트 미설치 + Wazuh 0330/0800/0810/0820/0830/0945 룰 활성'
     verify:
       type: output_contains
-      expect: total
+      expect: NOT_INSTALLED
       field: stdout
       semantic:
-        intent: "osquery snapshot vs stream"
-        success_criteria: ["total 카운트", "start_time 필터"]
+        intent: "sysmon 미설치 인지 + Wazuh 룰 활성"
+        success_criteria: ["4 호스트 NOT_INSTALLED", "Wazuh sysmon 룰"]
         acceptable_methods:
-          - "**[OSS] processes 테이블 (snapshot)**"
-          - "**[OSS] process_events 테이블 (daemon mode stream)**"
-          - "**[OSS] start_time / on_disk 컬럼 활용**"
-          - "**[OSS] osqueryd schedule 의 interval (몇 초마다 snapshot)**"
-          - "**[OSS] sysmon Event ID 1 (ProcessCreate) — event-stream native**"
-          - "**[OSS] auditd / falco / Tetragon — Linux 이벤트 비교**"
-          - "**[OSS] eBPF probe — kernel hook + user-space stream**"
-          - "**[OSS] BCC + bpftrace — 직접 eBPF 작성**"
-    target_vm: web
+          - "**[OSS] command -v sysmon**"
+          - "**[OSS] ls /var/ossec/ruleset/rules/ | grep sysmon**"
+          - "**[OSS] 9 Event ID + Linux 핵심 6**"
+          - "**[OSS] osquery vs sysmon 비교**"
+          - "**[OSS] event stream vs snapshot**"
+          - "**[OSS] eBPF + auditd**"
+          - "**[OSS] Wazuh 0800/0810/0830/0945**"
+          - "**[OSS] W11 본격 설치 계획**"
+    target_vm: bastion
 
   - order: 2
     instruction: |
-      ## 🎯 MISSION (sysmon EventID 3 종 학습)
+      ## 🎯 MISSION — 설치 계획 + 의존성 (시뮬)
 
-      sysmon 의 3 EventID 패턴 (1 ProcessCreate / 3 NetworkConnect / 11 FileCreate)
-      과 Wazuh 의 sysmon decoder + 사용자 룰 통합 path 학습.
+      lecture §5 의 4 단계 설치 절차 시뮬. 실 설치는 별 PR (W11 후 운영 환경에 적용).
 
-      ## 💻 산출물 (시뮬)
+      ## 💻 산출물
 
-      ```xml
-      <!-- sysmon EventID 1 (ProcessCreate) XML 패턴 -->
-      <Event>
-        <EventID>1</EventID>
-        <EventData>
-          <Data Name="Image">/usr/bin/curl</Data>
-          <Data Name="CommandLine">curl -A sqlmap http://victim</Data>
-          <Data Name="ParentImage">/usr/sbin/sshd</Data>
-        </EventData>
-      </Event>
+      ```bash
+      # 1. apt repository + key (Ubuntu 22.04)
+      cat <<'EOF'
+      sudo wget -O- https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor -o /usr/share/keyrings/microsoft.gpg
+      echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft.gpg] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" | sudo tee /etc/apt/sources.list.d/microsoft.list
+      sudo apt-get update
+      sudo apt-get install -y sysmonforlinux
+      EOF
 
-      <!-- Wazuh 의 sysmon-event1 decoder + 사용자 룰 100200 -->
-      <decoder name="sysmon-event1">
-        <prematch>EventID: 1</prematch>
-        <regex>Image: (\S+).*?CommandLine: (.+?) ParentImage: (\S+)</regex>
-        <order>image, commandline, parent</order>
-      </decoder>
+      # 2. config.xml 다운로드 + sysmon 시작
+      cat <<'EOF'
+      sudo wget -O /etc/sysmon.xml https://raw.githubusercontent.com/SwiftOnSecurity/sysmon-config/master/sysmon-config-linux.xml
+      sudo sysmon -accepteula -i /etc/sysmon.xml
+      sudo systemctl enable --now sysmon
+      EOF
 
-      <rule id="100200" level="10">
-        <decoded_as>sysmon-event1</decoded_as>
-        <field name="image">/tmp/</field>
-        <description>Sysmon: /tmp/ 에서 spawn 된 process (의심)</description>
-      </rule>
+      # 3. 의존성 점검
+      ssh 6v6-web 'uname -r'           # kernel >= 4.18
+      ssh 6v6-web 'sudo systemctl status auditd 2>&1 | head -3'
+      ssh 6v6-web 'dpkg -l | grep -E "libbpf|bpf" | head -3'
+
+      # 4. 검증 명령
+      cat <<'EOF'
+      sudo sysmon -s           # 현재 config
+      sudo journalctl -u sysmon --since "5 min ago"
+      sudo tail /var/log/syslog | grep sysmon | head
+      EOF
       ```
 
       ## 📋 확인 사항
 
-      - EventID 1 / 3 / 11 의 의미 인지
-      - Wazuh 의 localfile 로 /var/log/sysmonforlinux.log ship
-      - sysmon-event1 decoder + 사용자 룰 100200 작성 시뮬
+      - 4 단계 설치 명령
+      - kernel >= 4.18
+      - auditd 또는 audit subsystem 활성
+      - libbpf 패키지 (있다면)
 
       ## 💡 왜 이걸 하는가?
 
-      sysmon 은 Windows 의 사실상 표준 host visibility 도구. Linux 포팅 (2021, MS)
-      후 SOC 의 표준 — osquery 와 보완 관계 (snapshot vs stream).
-
-      ## 🔍 결과 해석
-
-      - 실 설치는 별 패키지 (github.com/Sysinternals/SysmonForLinux 빌드)
-      - 본 lab 환경에선 패턴 학습 중심
-    hint: sysmon EventID + Wazuh decoder
-    category: design
-    points: 30
+      설치 사전 의존성 점검. eBPF 의존이라 kernel 버전 + auditd 호환 필수.
+    hint: 'apt repo + sysmonforlinux 설치 + sysmon -accepteula -i config.xml'
+    category: planning
+    points: 13
     answer: |
       cat <<'EOF'
-      # sysmon EventID 1 (ProcessCreate) — XML 형식
-      <Event><EventID>1</EventID><EventData>
-        <Data Name="Image">/usr/bin/curl</Data>
-        <Data Name="CommandLine">curl -A sqlmap http://victim</Data>
-      </EventData></Event>
+      # 1. apt 설치
+      sudo wget -O- https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor -o /usr/share/keyrings/microsoft.gpg
+      echo "deb [...] microsoft.com/ubuntu/22.04/prod jammy main" | sudo tee /etc/apt/sources.list.d/microsoft.list
+      sudo apt-get update && sudo apt-get install -y sysmonforlinux
 
-      # Wazuh decoder + 사용자 룰 100200
-      <decoder name="sysmon-event1">
-        <prematch>EventID: 1</prematch>
-      </decoder>
-      <rule id="100200" level="10">
-        <decoded_as>sysmon-event1</decoded_as>
-        <field name="image">/tmp/</field>
-        <description>Sysmon: /tmp/ process spawn (의심)</description>
-      </rule>
+      # 2. config + 시작
+      sudo wget -O /etc/sysmon.xml https://.../sysmon-config-linux.xml
+      sudo sysmon -accepteula -i /etc/sysmon.xml
+      sudo systemctl enable --now sysmon
+
+      # 3. 검증
+      sudo sysmon -s
+      sudo journalctl -u sysmon --since "5 min ago"
       EOF
-    answer_detail: sysmon 3 EventID + Wazuh 통합 path. 실 설치는 별 빌드.
+      ssh 6v6-web 'uname -r'
+      ssh 6v6-web 'sudo systemctl status auditd 2>&1 | head -3'
+    answer_detail: '4 단계 설치 계획 + kernel + auditd 의존성 점검'
+    verify:
+      type: output_contains
+      expect: sysmonforlinux
+      field: stdout
+      semantic:
+        intent: "설치 계획 + 의존성"
+        success_criteria: ["4 단계", "kernel", "auditd"]
+        acceptable_methods:
+          - "**[OSS] apt repository Microsoft**"
+          - "**[OSS] sysmon -accepteula -i**"
+          - "**[OSS] sysmon-config-linux.xml**"
+          - "**[OSS] systemctl enable --now sysmon**"
+          - "**[OSS] uname -r kernel 버전**"
+          - "**[OSS] auditd subsystem**"
+          - "**[OSS] libbpf 의존성**"
+          - "**[OSS] eBPF verifier**"
+    target_vm: bastion
+
+  - order: 3
+    instruction: |
+      ## 🎯 MISSION — config.xml RuleGroup 작성 (Include + Exclude)
+
+      lecture §4 — 6v6 환경 적합 config.xml 설계.
+
+      ## 💻 산출물
+
+      ```xml
+      <Sysmon schemaversion="4.40">
+        <EventFiltering>
+          <RuleGroup name="" groupRelation="or">
+
+            <!-- Event 1 ProcessCreate -->
+            <ProcessCreate onmatch="include">
+              <CommandLine condition="contains">base64</CommandLine>
+              <CommandLine condition="contains">wget http</CommandLine>
+              <CommandLine condition="contains">curl http</CommandLine>
+              <CommandLine condition="contains">/dev/shm/</CommandLine>
+              <CommandLine condition="contains">nc -e</CommandLine>
+              <CommandLine condition="contains">bash -i</CommandLine>
+              <ParentImage condition="end with">sshd</ParentImage>
+            </ProcessCreate>
+
+            <!-- Event 3 NetworkConnect -->
+            <NetworkConnect onmatch="include">
+              <DestinationPort>4444</DestinationPort>
+              <DestinationPort>8080</DestinationPort>
+              <DestinationPort>9999</DestinationPort>
+            </NetworkConnect>
+
+            <!-- Event 11 FileCreate -->
+            <FileCreate onmatch="include">
+              <TargetFilename condition="contains">.php</TargetFilename>
+              <TargetFilename condition="contains">.jsp</TargetFilename>
+              <TargetFilename condition="begin with">/tmp/</TargetFilename>
+              <TargetFilename condition="contains">authorized_keys</TargetFilename>
+            </FileCreate>
+
+            <!-- Exclude noise -->
+            <ProcessCreate onmatch="exclude">
+              <Image condition="end with">/systemd</Image>
+              <Image condition="end with">/cron</Image>
+              <Image condition="end with">/snapd</Image>
+            </ProcessCreate>
+
+          </RuleGroup>
+        </EventFiltering>
+      </Sysmon>
+      ```
+
+      ## 📋 확인 사항
+
+      - Include: base64 / wget / curl / /dev/shm / nc -e / bash -i / sshd 부모 / 4444/8080/9999 / .php/.jsp/authorized_keys
+      - Exclude: systemd / cron / snapd noise
+
+      ## 💡 왜 이걸 하는가?
+
+      6v6 환경에 적합 + APT TTP 7 패턴 cover. noise exclude 로 alert flood 차단.
+    hint: 'RuleGroup or + ProcessCreate/NetworkConnect/FileCreate + include + exclude'
+    category: configuration
+    points: 18
+    answer: |
+      cat <<'EOF'
+      <Sysmon schemaversion="4.40">
+        <EventFiltering>
+          <RuleGroup name="" groupRelation="or">
+            <ProcessCreate onmatch="include">
+              <CommandLine condition="contains">base64</CommandLine>
+              <CommandLine condition="contains">wget http</CommandLine>
+              <CommandLine condition="contains">/dev/shm/</CommandLine>
+              <CommandLine condition="contains">nc -e</CommandLine>
+              <CommandLine condition="contains">bash -i</CommandLine>
+            </ProcessCreate>
+            <NetworkConnect onmatch="include">
+              <DestinationPort>4444</DestinationPort>
+              <DestinationPort>9999</DestinationPort>
+            </NetworkConnect>
+            <FileCreate onmatch="include">
+              <TargetFilename condition="contains">.php</TargetFilename>
+              <TargetFilename condition="begin with">/tmp/</TargetFilename>
+              <TargetFilename condition="contains">authorized_keys</TargetFilename>
+            </FileCreate>
+            <ProcessCreate onmatch="exclude">
+              <Image condition="end with">/systemd</Image>
+              <Image condition="end with">/cron</Image>
+            </ProcessCreate>
+          </RuleGroup>
+        </EventFiltering>
+      </Sysmon>
+      EOF
+    answer_detail: 'config.xml — Event 1/3/11 + APT TTP 7 패턴 + exclude noise'
+    verify:
+      type: output_contains
+      expect: ProcessCreate
+      field: stdout
+      semantic:
+        intent: "config.xml RuleGroup 작성"
+        success_criteria: ["Event 1/3/11", "include 패턴", "exclude noise"]
+        acceptable_methods:
+          - "**[OSS] RuleGroup groupRelation=or**"
+          - "**[OSS] ProcessCreate include base64/wget/curl**"
+          - "**[OSS] NetworkConnect DestinationPort**"
+          - "**[OSS] FileCreate TargetFilename**"
+          - "**[OSS] exclude noise (systemd / cron)**"
+          - "**[OSS] APT TTP 매핑 (T1059 / T1071 / T1505)**"
+          - "**[OSS] condition contains / begin with / end with**"
+          - "**[OSS] SwiftOnSecurity sysmon-config 베이스**"
+    target_vm: bastion
+
+  - order: 4
+    instruction: |
+      ## 🎯 MISSION — Wazuh agent 통합 + ossec.conf localfile
+
+      ## 💻 산출물
+
+      ```xml
+      <!-- /var/ossec/etc/ossec.conf -->
+      <localfile>
+        <log_format>syslog</log_format>
+        <location>/var/log/syslog</location>
+      </localfile>
+
+      <!-- 또는 journald 통합 -->
+      <localfile>
+        <log_format>journald</log_format>
+        <location>journald</location>
+        <filter>_SYSTEMD_UNIT=sysmon.service</filter>
+      </localfile>
+      ```
+
+      ## 💻 실행 명령 (Wazuh 룰 활성 확인)
+
+      ```bash
+      ssh 6v6-siem 'sudo head -20 /var/ossec/ruleset/rules/0800-sysmon_id_1.xml'
+      ssh 6v6-siem 'sudo head -20 /var/ossec/ruleset/rules/0810-sysmon_id_3.xml'
+      ssh 6v6-siem 'sudo head -20 /var/ossec/ruleset/rules/0830-sysmon_id_11.xml'
+      ```
+
+      ## 📋 확인 사항
+
+      - 2 ship 방법 (syslog vs journald)
+      - Wazuh 의 0800/0810/0830 default 룰 활성
+
+      ## 💡 왜 이걸 하는가?
+
+      sysmon 의 event 가 syslog 또는 journald 로 출력 → Wazuh agent 의 localfile 로 ship.
+      manager 의 default 룰이 자동 매핑.
+    hint: '<localfile>syslog or journald</localfile> + Wazuh 0800/0810/0830'
+    category: integration
+    points: 15
+    answer: |
+      cat <<'EOF'
+      <localfile>
+        <log_format>syslog</log_format>
+        <location>/var/log/syslog</location>
+      </localfile>
+      <localfile>
+        <log_format>journald</log_format>
+        <location>journald</location>
+        <filter>_SYSTEMD_UNIT=sysmon.service</filter>
+      </localfile>
+      EOF
+      ssh 6v6-siem 'sudo head -20 /var/ossec/ruleset/rules/0800-sysmon_id_1.xml'
+      ssh 6v6-siem 'sudo head -20 /var/ossec/ruleset/rules/0810-sysmon_id_3.xml'
+    answer_detail: 'Wazuh agent localfile syslog/journald + 0800/0810/0830 룰 활성 확인'
     verify:
       type: output_contains
       expect: sysmon
       field: stdout
       semantic:
-        intent: "sysmon EventID + Wazuh 통합"
-        success_criteria: ["EventID 패턴", "Wazuh decoder"]
+        intent: "Wazuh agent 통합"
+        success_criteria: ["localfile syslog/journald", "0800/0810 활성"]
         acceptable_methods:
-          - "**[OSS] sysmon EventID 1 ProcessCreate**"
-          - "**[OSS] EventID 3 NetworkConnect**"
-          - "**[OSS] EventID 11 FileCreate**"
-          - "**[OSS] /var/log/sysmonforlinux.log**"
-          - "**[OSS] Wazuh localfile log_format syslog**"
-          - "**[OSS] decoder + 사용자 정의 rule 100200**"
-          - "**[OSS] SwiftOnSecurity-style sysmon config**"
-          - "**[OSS] osquery + sysmon 보완 (snapshot + stream)**"
-    target_vm: web
+          - "**[OSS] <localfile><log_format>syslog</log_format>**"
+          - "**[OSS] journald + filter _SYSTEMD_UNIT**"
+          - "**[OSS] Wazuh 0800-sysmon_id_1 룰**"
+          - "**[OSS] 0810-sysmon_id_3 NetworkConnect**"
+          - "**[OSS] 0830-sysmon_id_11 FileCreate**"
+          - "**[OSS] 0945-sysmon_id_10 ProcessAccess**"
+          - "**[OSS] /var/ossec/ruleset/decoders/ sysmon**"
+          - "**[OSS] rule id 80100+ alerts.json**"
+    target_vm: bastion
+
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION — R/B/P 시뮬 (실 sysmon 미설치라 분석만)
+
+      ## 💻 시뮬
+
+      ```bash
+      # Red — 무해 base64 payload (실 트리거 시뮬만)
+      echo "[Red] echo W11_TEST | base64 -d | sh (학습용 무해)"
+
+      # Blue — 예상 sysmon Event 1
+      cat <<'EOF'
+      ProcessCreate Event 1:
+        Image: /bin/sh
+        CommandLine: sh
+        ParentImage: /usr/bin/base64
+        ParentCommandLine: base64 -d
+        User: root
+        UtcTime: 2026-05-11T...
+      EOF
+
+      # Blue — 예상 Wazuh alert
+      cat <<'EOF'
+      {
+        "rule": {
+          "level": 5,
+          "id": "80100",
+          "description": "Sysmon - Event 1: Process creation"
+        },
+        "data": {
+          "win.eventdata.image": "/bin/sh",
+          "win.eventdata.commandLine": "sh",
+          "win.eventdata.parentImage": "/usr/bin/base64"
+        }
+      }
+      EOF
+
+      # Purple — 분석 + 운영 권장 5
+      cat <<'EOF'
+      1. base64 -d | sh 패턴 — APT T1059.004 (Unix Shell)
+      2. parent image = base64 → encoded payload 실행 의심
+      3. process tree 추적 (parent → grandparent)
+      4. 동일 호스트의 file/network event 상관 분석
+      5. Active Response — process kill 또는 user disable
+      EOF
+      ```
+
+      ## 📋 확인 사항
+
+      - Red 시뮬 + 예상 Event 1
+      - 예상 Wazuh alert
+      - Purple 권장 5
+
+      ## 💡 왜 이걸 하는가?
+
+      sysmon 실 설치 전 R/B/P 시뮬로 운영 흐름 인지.
+    hint: 'base64 payload + Event 1 + Wazuh alert + APT T1059.004'
+    category: redblue
+    points: 20
+    answer: |
+      cat <<'EOF'
+      [Red] base64 -d | sh
+
+      [Blue] Event 1:
+        Image: /bin/sh
+        ParentImage: /usr/bin/base64
+        CommandLine: sh
+
+      [Wazuh alert]:
+        rule.id: 80100
+        rule.level: 5
+        description: Sysmon - Process creation
+
+      [Purple] 권장 5:
+        1. T1059.004 (Unix Shell)
+        2. encoded payload 의심
+        3. process tree 추적
+        4. file/network event 상관
+        5. Active Response (process kill)
+      EOF
+    answer_detail: 'sysmon 시뮬 R/B/P + APT T1059.004 매핑 + 권장 5'
+    verify:
+      type: output_contains
+      expect: 'base64'
+      field: stdout
+      semantic:
+        intent: "R/B/P 시뮬 — base64 payload"
+        success_criteria: ["Event 1 시뮬", "Wazuh alert 예상", "Purple 5"]
+        acceptable_methods:
+          - "**[OSS] sysmon Event 1 ProcessCreate**"
+          - "**[OSS] CommandLine + ParentImage**"
+          - "**[OSS] Wazuh rule.id 80100+**"
+          - "**[OSS] APT T1059.004 매핑**"
+          - "**[OSS] process tree 추적**"
+          - "**[OSS] file/network event 상관**"
+          - "**[OSS] Active Response process kill**"
+          - "**[OSS] dashboard MITRE panel**"
+    target_vm: bastion
+
+  - order: 6
+    instruction: |
+      ## 🎯 MISSION — 트러블슈팅 (시뮬)
+
+      ## 💻 cheat sheet
+
+      ```bash
+      cat <<'EOF'
+      증상 1: sysmon 미시작
+        → sudo systemctl status sysmon
+        → sudo journalctl -u sysmon --since "5 min ago"
+        → kernel >= 4.18 + auditd 동시 운영 확인
+        → libbpf 의존성 dpkg -l
+
+      증상 2: event 없음 (config 매칭)
+        → sudo sysmon -s          # 현재 config 출력
+        → RuleGroup 의 condition 검토
+        → exclude 가 너무 광범위?
+
+      증상 3: alert 없음 (Wazuh 매칭)
+        → echo "<log line>" | sudo wazuh-logtest --quiet
+        → 0800 룰 활성 확인
+        → ossec.conf 의 localfile
+
+      증상 4: noise 폭증
+        → Event 1 분당 1000+ → exclude 룰 추가
+        → systemd / cron / snapd 등 noise process
+        → frequency / aggregation 룰 (Wazuh 측)
+      EOF
+      ```
+
+      ## 📋 확인 사항
+
+      - 4 증상 + 진단 명령 + 해결
+
+      ## 💡 왜 이걸 하는가?
+
+      운영 중 가장 흔한 4 패턴 진단 cheat sheet.
+    hint: '4 패턴 cheat sheet — 미시작 / 매칭 / Wazuh / noise'
+    category: troubleshooting
+    points: 10
+    answer: |
+      cat <<'EOF'
+      증상 1 — 미시작: systemctl status + journalctl + kernel + libbpf
+      증상 2 — event 없음: sysmon -s + condition 검토
+      증상 3 — alert 없음: wazuh-logtest + 0800 룰 + localfile
+      증상 4 — noise 폭증: exclude + frequency
+      EOF
+    answer_detail: '4 증상 cheat sheet'
+    verify:
+      type: output_contains
+      expect: 'sysmon'
+      field: stdout
+      semantic:
+        intent: "트러블슈팅 4 패턴"
+        success_criteria: ["4 증상"]
+        acceptable_methods:
+          - "**[OSS] systemctl status sysmon**"
+          - "**[OSS] journalctl -u sysmon**"
+          - "**[OSS] sysmon -s config 출력**"
+          - "**[OSS] wazuh-logtest --quiet**"
+          - "**[OSS] kernel 4.18 + auditd**"
+          - "**[OSS] libbpf 의존성**"
+          - "**[OSS] exclude noise process**"
+          - "**[OSS] frequency aggregation 룰**"
+    target_vm: bastion
+
+  - order: 7
+    instruction: |
+      ## 🎯 MISSION — W11 종합 보고서
+
+      ## 💻 산출물
+
+      ```markdown
+      # 6v6 W11 sysmon-for-linux 보고서
+
+      ## 1. STEP 1-6 결과 (6 row 표)
+      ## 2. 현재 상태 + W11 본격 설치 계획
+      ## 3. config.xml RuleGroup 7+ 패턴
+      ## 4. Wazuh 통합 (0800/0810/0830/0945)
+      ## 5. R/B/P 시뮬 — APT T1059.004 매핑
+      ## 6. 운영 권장 5 (sysmon + osquery 보완 / Active Response / dashboard MITRE)
+      ## 7. W12 (OpenCTI) 준비도
+      ## 8. 본인 학습 gap
+      ```
+    hint: 마크다운 1페이지
+    category: synthesis
+    points: 14
+    answer: |
+      cat <<'EOF'
+      # 6v6 W11 sysmon 보고서
+
+      ## 1. STEP 1-6 결과
+      ## 2. 4 호스트 미설치 + 본격 설치 계획
+      ## 3. config.xml RuleGroup
+      ## 4. Wazuh 통합 0800/0810/0830/0945
+      ## 5. R/B/P 시뮬 + APT 매핑
+      ## 6. 운영 권장 5
+      ## 7. W12 (OpenCTI) 준비도
+      ## 8. gap
+      EOF
+    answer_detail: 종합 보고서
+    verify:
+      type: output_contains
+      expect: sysmon
+      field: stdout
+      semantic:
+        intent: "W11 종합"
+        success_criteria: ["6 step + 권장 5 + W12 준비도"]
+        acceptable_methods:
+          - "**[관리적] 마크다운 8 섹션**"
+          - "**[관리적] ISMS-P 2.9.6 매핑**"
+          - "**[관리적] NIST DE.CM-7**"
+          - "**[관리적] MITRE ATT&CK T1059 / T1071**"
+          - "**[관리적] sysmon + osquery 보완 운영**"
+          - "**[관리적] Active Response**"
+          - "**[관리적] W12 logical flow**"
+          - "**[관리적] 본인 gap**"
+    target_vm: bastion
