@@ -1,0 +1,91 @@
+lab_id: standalone-attack-week14
+title: Caldera + Wazuh Purple Team (신규)
+version: standalone-non-ai
+course: attack
+week: 14
+description: Red (Caldera) + Blue (Wazuh) 협업 + Coverage Matrix + AAR.
+difficulty: hard
+duration_minutes: 150
+prerequisites: [W13]
+objectives: [Coverage Matrix, Detection Gap, AAR]
+pass_threshold: 0.7
+steps:
+  - order: 1
+    instruction: 3 TTP 시뮬 (T1083 / T1057 / T1018) + Blue detection
+    hint: find / ps / nmap → Wazuh / Suricata 로그 확인
+    category: purpleteam
+    points: 35
+    answer: |
+      echo "=== T1083 File Discovery ==="
+      ssh 6v6-web 'find /etc -name "*.conf" 2>/dev/null | head -5'
+      sleep 3
+      ssh 6v6-siem 'sudo grep -i "file\|syscheck" /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -2 | head -1 | jq -r ".rule.id // empty"'
+      echo "=== T1057 Process ==="
+      ssh 6v6-web 'ps -ef 2>&1 | wc -l'
+      echo "=== T1018 Network Discovery (nmap) ==="
+      ssh 6v6-attacker 'timeout 8 nmap -sT -p 22,80 10.20.32.0/24 2>&1 | tail -3'
+      sleep 3
+      ssh 6v6-ips 'sudo grep -i "scan" /var/log/suricata/eve.json 2>/dev/null | tail -2'
+    answer_detail: 3 TTP 실행 + detection
+    verify:
+      type: output_contains
+      expect: T10
+      field: stdout
+      semantic:
+        intent: Red 실행 + Blue 검증
+        success_criteria: [3 TTP + detection]
+        acceptable_methods:
+          - "**[OSS] T1083 find /etc**"
+          - "**[OSS] T1057 ps / osquery processes**"
+          - "**[OSS] T1018 nmap network scan**"
+          - "**[OSS] Wazuh alerts.json 분석**"
+          - "**[OSS] Suricata eve.json alert**"
+          - "**[OSS] osquery file_events**"
+          - "**[OSS] sysmon ProcessCreate**"
+          - "**[OSS] manager fileinfo**"
+    target_vm: bastion
+
+  - order: 2
+    instruction: AAR (After-Action Report) 작성
+    hint: Coverage Matrix + Detection Gap + 권장
+    category: synthesis
+    points: 30
+    answer: |
+      cat <<'EOF'
+      # AAR — 6v6 Purple Team Cycle #1 (W14)
+      ## Coverage Matrix
+      | TTP | Red 실행 | Blue 탐지 | Coverage |
+      | T1083 File Disc | ✓ | osquery file_events 매치 안 함 | 0% |
+      | T1057 Process | ✓ | osquery processes 매치 | 100% |
+      | T1018 Network | ✓ | Suricata ET SCAN | 100% |
+      총 coverage: 67% (2/3)
+
+      ## Detection Gap
+      T1083 미탐지 — osquery file_paths 가 /etc/passwd 등 한정. 새 룰:
+      - osquery: SELECT * FROM file_events WHERE category='confs';
+      - Wazuh rule: <list>etc/lists/sensitive-files</list>
+
+      ## 권장
+      1. osquery file_paths 확장: /etc/*.conf
+      2. Wazuh syscheck realtime=yes 적용
+      3. Suricata rule for nmap 패턴 (이미 ET SCAN 있음)
+      4. 재시험 1주일 후
+      EOF
+    answer_detail: AAR + Coverage Matrix
+    verify:
+      type: output_contains
+      expect: Coverage
+      field: stdout
+      semantic:
+        intent: AAR
+        success_criteria: [Matrix + Gap + 권장]
+        acceptable_methods:
+          - "**[관리적 보고서] Coverage Matrix table**"
+          - "**[관리적] Gap 분석**"
+          - "**[관리적] 권장 룰 작성**"
+          - "**[관리적] 재시험 일정**"
+          - "**[관리적] MITRE ATT&CK Navigator export**"
+          - "**[관리적] PCI / ISMS-P 매핑**"
+          - "**[관리적] CISO 보고**"
+          - "**[관리적] 운영 가치 정량화**"
+    target_vm: bastion
