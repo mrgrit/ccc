@@ -1,843 +1,855 @@
 lab_id: standalone-secuops-week02
-title: nftables 방화벽 기초 (6v6-fw)
+title: nftables 방화벽 기초 — table/chain/rule/set + R/B/P (nmap → drop → 영구화)
 version: standalone-non-ai
 course: secuops
 week: 2
 description: |
-  6v6-fw 컨테이너 단독으로 nftables 의 4 핵심 개념 (table / chain / rule / set)
-  을 실습한다. ruleset 조회 → counter 분석 → 새 룰 추가/삭제 → 영향 검증 →
-  iptables-translate 마이그레이션 → 영구화 차이 (컨테이너 vs systemd) 까지 단계별
-  수행한다.
+  6v6-fw 컨테이너에서 nftables 의 4 핵심 개념 (table / chain / rule / set) 을
+  실습한다. 정적 ruleset 가시화 → counter / handle 분석 → 동적 룰 추가/삭제 →
+  iptables-translate 마이그레이션 → Red/Blue/Purple 시나리오 (Red 가 fw nmap 스캔
+  → Blue 가 src IP drop 룰 추가 → Purple 가 효과 측정 후 영구화 검토).
 difficulty: easy
 duration_minutes: 180
 audience: 보안 솔루션 운영 입문자 (2주차)
 prerequisites:
-  - W01 헬스체크 완료 (16 컨테이너 Up, ProxyJump 정상)
-  - bastion SSH 진입 + `ssh 6v6-fw` 통과
-  - sudo NOPASSWD 가능 (학생 환경 전제)
+  - W01 통과 (16 컨테이너 가시화 + ProxyJump 정상)
+  - bastion SSH 진입 + `ssh 6v6-fw` 가능
+  - sudo NOPASSWD (학습 환경 전제)
 
 objectives:
-  - nftables table / chain / rule / set 4 핵심 개념을 명령으로 직접 검증
-  - 6v6-fw 의 ruleset 을 조회하고 counter / handle 의 의미를 이해
-  - 새 룰 추가 / 삭제 / tcpdump 로 영향 검증
-  - iptables → nftables 마이그레이션 (`iptables-translate`) 3 사례 수행
-  - 영구화 차이 (컨테이너 entrypoint vs systemd nftables.service) 비교
+  - nftables table / chain / rule / set 4 핵심 개념을 직접 검증
+  - 6v6-fw 의 실제 ruleset (inet six_filter / ip six_nat) 가시화
+  - handle 식별 + counter 분석 + 동적 룰 추가/삭제 사이클
+  - iptables-translate 로 legacy 룰 변환
+  - "Red/Blue/Purple — Red 가 nmap → Blue 가 drop 룰 + log → Purple 가 영구화 검토"
 
 pass_threshold: 0.7
 
 steps:
 
   # ============================================================
-  # STEP 1 — nftables family / table 가시화
+  # STEP 1 — 3 table 가시화 (ip nat / inet six_filter / ip six_nat)
   # ============================================================
   - order: 1
     instruction: |
-      `6v6-fw` 의 nftables table 목록을 family 별로 조회한다. 6v6-fw 는 최소 3개
-      table (inet six_filter, ip nat, ip six_nat) 을 가져야 한다. nat 는 docker 가, nat6v6
-      는 6v6 entrypoint 가 만든다.
+      **이 실습을 왜 하는가?**
+      6v6-fw 의 nftables 가 어떤 family + 어떤 table 을 가지고 있는지 첫 가시화.
+      운영 인수 시 첫 5분 명령.
+
+      **이걸 하면 무엇을 알 수 있는가?**
+      - 3 table 의 명명 규칙 (`ip nat` Docker / `inet six_filter` 6v6 정책 / `ip six_nat` NAT stub)
+      - family (ip / ip6 / inet / arp / bridge / netdev) 의 의미
+      - `XT match` 경고는 docker 의 ipset 호환 모듈 부재 (무시 OK)
+
+      **결과 해석**
+      정상: 3 table 모두 출력. 비정상: `inet six_filter` 누락 → entrypoint 의 `nft -f`
+      적용 실패 → 컨테이너 logs 점검.
+
+      **실전 활용**
+      production 환경에서 운영자가 새 호스트 인수 시 첫 명령.
+
+      **작업 절차**:
+      ```
+      ssh 6v6-fw 'sudo nft list tables 2>&1 | grep -v "^XT"'
+      ssh 6v6-fw 'sudo nft -j list tables | jq ".nftables[] | select(.table) | .table | {family, name}"'
+      ```
     hint: ssh 6v6-fw sudo nft list tables
     category: survey
     points: 10
     answer: |
-      ssh 6v6-fw 'sudo nft list tables'
-    answer_detail: 3 table 출력 (inet six_filter, ip nat, ip six_nat)
+      ssh 6v6-fw 'sudo nft list tables 2>&1 | grep -v "^XT"'
+      echo "--- JSON 형식 ---"
+      ssh 6v6-fw 'sudo nft -j list tables | jq "[.nftables[] | select(.table) | .table | {family, name}]"'
+    answer_detail: |
+      3 table 출력 — `table ip nat` (Docker daemon 자동 생성, DNS 127.0.0.11),
+      `table inet six_filter` (6v6 entrypoint 의 nftables.conf 가 정의한 정책 본체),
+      `table ip six_nat` (NAT stub, W03 에서 채워짐). JSON 형식 결과는 `[{"family":"ip","name":"nat"},{"family":"inet","name":"six_filter"},{"family":"ip","name":"six_nat"}]`.
     verify:
       type: output_contains
-      expect: table
+      expect: six_filter
       field: stdout
       semantic:
         intent: |
-          nftables 가 가진 모든 table 의 family + 이름. 6v6-fw 는 ip family 의
-          filter (정책 핵심) + nat (Docker daemon) + nat6v6 (6v6 masquerade)
-          최소 3개. ip6 family 가 있다면 IPv6 stub.
+          fw 의 3 table 가시화 + family / name 구조 이해. `inet six_filter` 가 정책의
+          본체. `ip six_nat` 는 W03 의 NAT 학습 대상.
         success_criteria:
-          - table 키워드 3건 이상
-          - filter / nat 둘 다
-          - ip family
+          - inet six_filter
+          - ip six_nat
+          - ip nat (Docker)
         acceptable_methods:
           - |
-            **[OSS] nft list tables (표준)** — 기본.
-              ssh 6v6-fw 'sudo nft list tables'
-              # JSON 으로
-              ssh 6v6-fw 'sudo nft -j list tables | jq ".nftables[] | select(.table) | .table"'
-            예상 출력 `table inet six_filter / table ip nat / table ip six_nat / 또는 ip6 filter`.
-            운영 해석: 3 table 기본. 더 많이 나오면 (예: bridge filter) 추가 설정.
+            **[OSS] nft list tables — 표준** — 가장 빈번.
+              ssh 6v6-fw 'sudo nft list tables 2>&1 | grep -v "^XT"'
+            예상 출력 `table ip nat / table inet six_filter / table ip six_nat`.
+            운영 해석: 3 table 확인. `XT match` 경고는 docker ipset 호환 모듈 부재로
+            인한 잡음 (무시).
+          - |
+            **[OSS] nft -j list tables (JSON 자동화)** — DevOps 친화.
+              ssh 6v6-fw 'sudo nft -j list tables | jq "[.nftables[] | select(.table) | .table | {family, name}]"'
+            예상 출력 `[{"family":"ip","name":"nat"},{"family":"inet","name":"six_filter"},{"family":"ip","name":"six_nat"}]`.
+            운영 해석: JSON 으로 파싱 친화. dashboard 통합 또는 자동 audit.
           - |
             **[OSS] nft list ruleset (전체)** — 종합.
-              ssh 6v6-fw 'sudo nft list ruleset 2>&1 | grep "^table"'
-              # 라인 수
-              ssh 6v6-fw 'sudo nft list ruleset 2>&1 | wc -l'
-            예상 출력 `table inet six_filter { / table ip nat { / table ip six_nat { / 50+ 라인`.
-            운영 해석: ruleset 전체 라인 수가 환경 복잡도 지표.
+              ssh 6v6-fw 'sudo nft list ruleset 2>&1 | grep -v "^XT" | head -30'
+            예상 출력 `table ip nat { ... } / table inet six_filter { ... } / table ip six_nat { ... }`.
+            운영 해석: ruleset 의 전체 라인. table 외부 + chain 헤더 + 룰 본문 모두.
           - |
-            **[OSS] /proc/net/nf_tables (커널 인터페이스)** — 디버그.
-              ssh 6v6-fw 'sudo cat /proc/net/nf_tables 2>/dev/null | head' || true
-              # 또는 ss 의 nft 옵션
-              ssh 6v6-fw 'sudo nft list ruleset -a | head -10'
-            예상 출력 `0  ip   filter  ... / 0  ip   nat ...`.
-            운영 해석: 커널이 인식한 table 만 출력. nft 와 동일한 정보.
+            **[OSS] /etc/nftables.conf (source of truth)** — IaC.
+              ssh 6v6-fw 'sudo cat /etc/nftables.conf | head -30'
+            예상 출력 `#!/usr/sbin/nft -f / add table inet six_filter / flush table inet six_filter / table inet six_filter { ... }`.
+            운영 해석: entrypoint 가 부팅마다 적용하는 정책 파일.
           - |
-            **[OSS] iptables-nft -L (호환 모드 확인)** — 학습.
-              ssh 6v6-fw 'sudo iptables-nft -L 2>&1 | head -10'
-              # /etc/alternatives 로 어느 backend 가 활성?
-              ssh 6v6-fw 'readlink /etc/alternatives/iptables 2>&1'
-            예상 출력 `Chain INPUT (policy ACCEPT) / .../iptables-nft`.
-            운영 해석: iptables 명령이 사실 nftables backend 사용. legacy 호환을 위해
-            남겨둠.
+            **[OSS] iptables-nft -L (호환 view)** — legacy.
+              ssh 6v6-fw 'sudo iptables-nft -L -n -v 2>&1 | head -20'
+            예상 출력 `Chain INPUT (policy ACCEPT) / Chain FORWARD ...`.
+            운영 해석: iptables 명령이 nftables backend 사용 — 호환 모드. legacy 학습.
           - |
-            **[OSS] nft -j (JSON 출력)** — 자동화.
-              ssh 6v6-fw 'sudo nft -j list tables | jq "[.nftables[] | select(.table) | .table.name] | sort | unique"'
-              # 자동화 도구가 파싱 친화
-            예상 출력 `["filter","nat","nat6v6"]`.
-            운영 해석: JSON 으로 list table 이름을 sorted unique 로 추출 가능.
+            **[OSS] /proc/net/nf_tables_chains (커널 인터페이스)** — 디버그.
+              ssh 6v6-fw 'sudo cat /proc/net/nf_tables 2>/dev/null | head' || \
+              ssh 6v6-fw 'sudo ls /proc/sys/net/netfilter/ | head'
+            예상 출력 `0  ip   filter / nf_log_all_netns / nf_conntrack_acct / ...`.
+            운영 해석: 커널이 인식한 table. nft 의 출력과 동일.
           - |
-            **[OSS] /etc/nftables.conf (영구 정책)** — 컨테이너 환경 특이점.
-              ssh 6v6-fw 'sudo cat /etc/nftables.conf 2>/dev/null | head -10 || echo "no persistent config"'
-              # 컨테이너는 entrypoint.sh 가 부팅마다 재 빌드
-              ssh 6v6-fw 'sudo cat /entrypoint.sh 2>/dev/null | grep -E "^nft" | head -10'
-            예상 출력 `no persistent config / nft add table inet six_filter / nft add chain ...`.
-            운영 해석: docker container 의 nftables 정책은 entrypoint script 에 hard-code.
-            영구화는 systemd 환경의 /etc/nftables.conf 와 다름.
+            **[OSS] flowtable / set 가시화** — 자료구조.
+              ssh 6v6-fw 'sudo nft list flowtables 2>&1 | head'
+              ssh 6v6-fw 'sudo nft list sets 2>&1 | head'
+            예상 출력 `(set 없음) 또는 (정의된 set 출력)`.
+            운영 해석: flowtable 은 hardware offload. set 은 blocklist 등.
           - |
-            **[OSS] nft monitor (실시간 변경 감시)** — 진단.
-              ssh 6v6-fw 'sudo timeout 5 nft monitor 2>&1 | head -5'
-              # 다른 터미널에서 nft add rule 발생 시 출력
-            예상 출력 `add rule inet six_filter forward ...` (이벤트 발생 시).
-            운영 해석: 운영 중 ruleset 변경 감사용. 비정상적인 룰 추가 즉시 감지.
-          - |
-            **[OSS] iptables-translate (iptables → nft)** — 마이그레이션.
-              ssh 6v6-fw 'echo "iptables -L" | iptables-translate'
-              # iptables 명령을 nft 동등 명령으로 변환
-            예상 출력 `nft list ruleset` (단순 -L 의 변환).
-            운영 해석: legacy 환경에서 nftables 로 옮길 때 cheat sheet.
+            **[OSS] nft monitor (변경 감시 실시간)** — 운영 audit.
+              ssh 6v6-fw 'sudo timeout 5 nft monitor 2>&1 | head -10'
+              # 다른 터미널에서 룰 추가/삭제 시 이벤트 표시
+            예상 출력 `(5초 대기 후 종료)`.
+            운영 해석: 누가 룰을 변경하는지 실시간 audit.
         negative_signs:
-          - table 0개
-          - 출력에 ip family 없음
+          - inet six_filter 누락
+          - 3 table 미만 출력
           - sudo 권한 부족
     target_vm: fw
-    fixtures: []
 
   # ============================================================
-  # STEP 2 — inet six_filter table 의 chain + policy + 핵심 룰
+  # STEP 2 — chain + handle + counter (forward chain 의 본체)
   # ============================================================
   - order: 2
     instruction: |
-      `inet six_filter` table 안의 chain 목록 (forward, input, output 중 정의된 것) 과
-      각 chain 의 type / hook / priority / policy 를 조회한다. 6v6-fw 는 forward
-      + input 2 chain 을 가진다.
-    hint: ssh 6v6-fw sudo nft list table inet six_filter
-    category: configuration
-    points: 10
-    answer: |
-      ssh 6v6-fw 'sudo nft list table inet six_filter'
-    answer_detail: forward + input 2 chain, type/hook/priority/policy 출력
-    verify:
-      type: output_contains
-      expect: forward
-      field: stdout
-      semantic:
-        intent: |
-          inet six_filter table 의 chain 정의를 읽고 의미를 해석한다. 핵심은:
-          chain forward { type filter hook forward priority 0; policy accept; }
-          → forward hook 에서 priority 0 (가장 빠른 평가) + 룰 미매치 시 default
-          accept. 운영 강화 시 policy drop 으로 변환.
-        success_criteria:
-          - chain forward 존재
-          - type filter hook forward
-          - priority + policy 표기
-        acceptable_methods:
-          - |
-            **[OSS] nft list table inet six_filter** — 표준.
-              ssh 6v6-fw 'sudo nft list table inet six_filter'
-              # forward chain 만
-              ssh 6v6-fw 'sudo nft list chain inet six_filter forward'
-            예상 출력 `chain forward { type filter hook forward priority 0; policy accept; / ct state established,related accept / ... }`.
-            운영 해석: chain header 가 type/hook/priority/policy 4 attribute 표시.
-            production 운영자가 매일 보는 첫 출력.
-          - |
-            **[OSS] nft -a list (handle 포함)** — 룰 식별.
-              ssh 6v6-fw 'sudo nft -a list chain inet six_filter forward'
-              # 각 룰의 # handle <N> 라벨
-            예상 출력 `ct state established,related accept # handle 2 / ... # handle 3 / ...`.
-            운영 해석: 룰 삭제 시 `nft delete rule ... handle N` 으로 식별.
-          - |
-            **[OSS] nft list chain inet six_filter input** — 다른 chain.
-              ssh 6v6-fw 'sudo nft list chain inet six_filter input 2>&1'
-              # input chain 이 정의되어 있다면
-            예상 출력 `chain input { type filter hook input priority 0; policy accept; / tcp dport { 22, 80, 443 } accept / ... }`.
-            운영 해석: input chain 은 fw 자체로 들어가는 트래픽 (외부 SSH/HTTP 등) 통제.
-          - |
-            **[OSS] nft list ruleset -a (전체 + handle)** — 종합.
-              ssh 6v6-fw 'sudo nft list ruleset -a | head -40'
-            예상 출력 `table inet six_filter { # handle X / chain forward { # handle Y / ... }`.
-            운영 해석: ruleset 전체 + 모든 handle. 운영 audit log 와 함께 git 관리 추천.
-          - |
-            **[OSS] nft list chain + grep counter** — 통계.
-              ssh 6v6-fw 'sudo nft list chain inet six_filter forward | grep -B1 counter'
-            예상 출력 `ct state established,related counter packets 1234 bytes 567890 accept / ...`.
-            운영 해석: counter 가 부여된 룰만 통계 보유. 0 이면 한 번도 매치 안 됨.
-          - |
-            **[OSS] nft list set (set 정의)** — 자료구조.
-              ssh 6v6-fw 'sudo nft list sets 2>&1 | head'
-              # 또는 특정 set 의 원소
-              ssh 6v6-fw 'sudo nft list set inet six_filter blocklist 2>&1 | head -5'
-            예상 출력 `table inet six_filter { set blocklist { type ipv4_addr; elements = { 1.2.3.4, ... } } }` 또는 없음.
-            운영 해석: set 은 IP/port 동적 그룹. blocklist 같은 자동화 친화.
-          - |
-            **[OSS] ip family 가시화** — IPv6 도 확인.
-              ssh 6v6-fw 'sudo nft list ruleset 2>&1 | grep -E "^table"'
-              # ip / ip6 / inet / arp / bridge / netdev family 중 어느 것?
-            예상 출력 `table inet six_filter / table ip nat / table ip six_nat`.
-            운영 해석: 6v6 는 IPv4 only. IPv6 활성 시 ip6 family 또는 inet (양쪽) 추가.
-          - |
-            **[OSS] nft check + dry-run** — 변경 전.
-              # 새 룰을 직접 적용하지 않고 syntax 만 검증
-              ssh 6v6-fw 'sudo nft -c -e "add rule inet six_filter forward ip saddr 10.20.30.99 drop"' 2>&1 | head -3
-            예상 출력 `(아무 출력 없으면 syntax 정상) 또는 syntax error`.
-            운영 해석: -c (check only) -e (echo) 로 dry-run 검증. production 권장.
-        negative_signs:
-          - forward chain 없음
-          - policy 표기 누락
-          - type filter 누락
-    target_vm: fw
+      **이 실습을 왜 하는가?**
+      chain 의 4 attribute (type / hook / priority / policy) + 룰의 handle + counter
+      를 정확히 읽을 줄 알아야 룰 추가/삭제·통계 분석 가능.
 
-  # ============================================================
-  # STEP 3 — counter / handle 분석
-  # ============================================================
-  - order: 3
-    instruction: |
-      forward chain 의 counter 룰들의 byte/packet 통계를 조회하고, 각 룰의 handle
-      을 확인한다. counter 가 0 이면 한 번도 매치 안 됐다는 의미. handle 은 룰 식별자.
+      **이걸 하면 무엇을 알 수 있는가?**
+      - chain header 의 4 attribute 의미
+      - handle 은 nft 가 자동 부여한 룰 고유 ID (삭제 시 사용)
+      - counter 는 룰별 packet/byte 통계 (W02 의 핵심 분석 도구)
+
+      **결과 해석**
+      `chain forward { # handle 2` 가 chain 자체의 handle, 룰 끝의 `# handle 8` 이
+      그 룰의 handle. counter 는 트래픽 발생 시 증가.
+
+      **실전 활용**
+      운영 시 룰 단위 효과 측정. 한 번도 매치 안 된 룰은 candidate for removal.
+
+      **작업 절차**:
+      ```
+      ssh 6v6-fw 'sudo nft -a list chain inet six_filter forward'
+      ssh 6v6-fw 'sudo nft reset counters table inet six_filter'
+      # 트래픽 발생 후
+      ssh 6v6-fw 'sudo nft list chain inet six_filter forward | grep counter'
+      ```
     hint: ssh 6v6-fw 'sudo nft -a list chain inet six_filter forward'
     category: monitoring
-    points: 10
+    points: 15
     answer: |
+      echo "=== forward chain 의 handle + 룰 ==="
       ssh 6v6-fw 'sudo nft -a list chain inet six_filter forward'
-    answer_detail: counter packets/bytes + handle 정수 출력
+      echo
+      echo "=== counter reset → 트래픽 → 측정 ==="
+      ssh 6v6-fw 'sudo nft reset counters table inet six_filter > /dev/null 2>&1'
+      ssh 6v6-attacker 'curl -s -o /dev/null -H "Host: juice.6v6.lab" http://10.20.30.1/' >/dev/null
+      sleep 2
+      ssh 6v6-fw 'sudo nft -a list chain inet six_filter forward | grep -E "counter|chain"'
+    answer_detail: |
+      forward chain 출력 — `chain forward { # handle 2 / type filter hook forward
+      priority filter; policy accept; / ct state established,related accept # handle 8 / }`.
+      handle 2 = chain 자체의 ID (삭제 시 `nft delete chain ip filter forward handle 2`).
+      handle 8 = `ct state ...` 룰의 ID. counter reset 후 한 번 curl → counter 의
+      packets/bytes 가 증가했는지 확인 (forward chain 의 ct established 룰은 매치
+      안 될 수도 있음 — input chain 통과).
     verify:
       type: output_contains
       expect: handle
       field: stdout
       semantic:
         intent: |
-          counter (룰 통계) + handle (룰 식별자) 가시화. 운영자가 어떤 룰이 활성
-          매칭 중인지, 어떤 룰이 한 번도 매치 안 됐는지 (불필요한 룰) 판단 가능.
-          handle 은 룰 추가/삭제 시 절대 식별자.
+          chain header 의 4 attribute + 룰의 handle + counter 분석.
         success_criteria:
-          - counter 또는 packets 키워드
-          - handle 정수 표기
-          - 최소 1개 룰의 통계 표시
+          - handle 정수
+          - type filter
+          - hook forward
         acceptable_methods:
           - |
-            **[OSS] nft -a list (handle 표기)** — 표준.
+            **[OSS] nft -a list chain — 표준** — handle 포함.
               ssh 6v6-fw 'sudo nft -a list chain inet six_filter forward'
-              # 각 줄 끝에 # handle N
-            예상 출력 `ct state established,related counter packets 5678 bytes 123456 accept # handle 3 / ...`.
-            운영 해석: handle N 이 룰의 고유 ID. 삭제 시 `delete rule inet six_filter forward handle N`.
+            예상 출력 `chain forward { # handle 2 / type filter hook forward priority filter; policy accept; / ct state established,related accept # handle 8 / }`.
+            운영 해석: `-a` 옵션이 handle 표시. 룰 삭제 시 필수.
           - |
-            **[OSS] nft -j (JSON 으로 통계 추출)** — 자동화.
-              ssh 6v6-fw 'sudo nft -j list chain inet six_filter forward | jq "[.nftables[] | select(.rule)] | .[] | {handle: .rule.handle, packets: .rule.counter.packets, bytes: .rule.counter.bytes}"' 2>&1 | head -20
-            예상 출력 `{"handle":3,"packets":5678,"bytes":123456} / ...`.
-            운영 해석: JSON 으로 룰별 통계 추출 → dashboard 통합 가능.
+            **[OSS] nft list chain (handle 없이)** — 단순.
+              ssh 6v6-fw 'sudo nft list chain inet six_filter forward'
+            예상 출력 `chain forward { ... }` 동일하지만 handle 미표시.
+            운영 해석: 정책 분석에 충분. 룰 삭제 시 `-a` 필요.
           - |
-            **[OSS] nft reset counters (통계 초기화)** — 운영.
-              # 모든 counter 0 으로
-              ssh 6v6-fw 'sudo nft reset counters table inet six_filter 2>&1 | head -5'
-              # 다시 list 로 확인
-              ssh 6v6-fw 'sudo nft list chain inet six_filter forward | grep -B1 "counter packets 0"'
-            예상 출력 `counter packets 0 bytes 0 / counter packets 0 bytes 0 ...`.
-            운영 해석: 정책 변경 전후 비교 시 reset counters 로 깨끗한 측정 시작.
+            **[OSS] nft -j list chain (JSON 형식)** — 자동화.
+              ssh 6v6-fw 'sudo nft -j list chain inet six_filter forward | jq'
+            예상 출력 `{"nftables":[{"chain":{...,"handle":2,...}},{"rule":{"handle":8,...}}]}`.
+            운영 해석: JSON 으로 chain header + 룰 모두 파싱. dashboard 통합 친화.
           - |
-            **[OSS] tcpdump 로 트래픽 발생 + counter 증가 검증** — 동적.
-              # counter reset 후
+            **[OSS] nft reset counters — 통계 초기화** — 운영.
+              ssh 6v6-fw 'sudo nft reset counters table inet six_filter'
+            예상 출력 `(아무 출력)`.
+            운영 해석: 운영 측정 전 초기화 → 깨끗한 baseline.
+          - |
+            **[OSS] 트래픽 발생 후 counter 증가 확인** — 검증.
               ssh 6v6-fw 'sudo nft reset counters table inet six_filter > /dev/null'
-              # attacker 에서 트래픽 발생
-              ssh 6v6-attacker 'curl -s -o /dev/null -H "Host: juice.6v6.lab" http://10.20.30.1/'
-              # counter 증가 확인
-              ssh 6v6-fw 'sudo nft list chain inet six_filter forward | grep -B1 "counter packets [1-9]"'
-            예상 출력 `ct state established,related counter packets 5+ accept`.
-            운영 해석: 룰별 counter 가 증가하면 trafic flow 정상.
+              ssh 6v6-attacker 'for i in 1 2 3; do curl -s -o /dev/null -H "Host: juice.6v6.lab" http://10.20.30.1/; done'
+              sleep 2
+              ssh 6v6-fw 'sudo nft list chain inet six_filter forward | grep counter'
+            예상 출력 `ct state established,related counter packets N bytes M accept`.
+            운영 해석: 트래픽 발생 후 counter 증가 → 룰이 적중 중.
           - |
-            **[OSS] nft monitor (이벤트 스트림)** — 변경 감시.
-              ssh 6v6-fw 'sudo timeout 5 nft monitor trace 2>&1 | head -5'
-              # 트래픽 처리 trace 실시간 출력
-              # 다른 터미널에서: curl 발생
-            예상 출력 `trace id 1234 inet six_filter forward packet: iif "eth0" ip saddr ... → verdict accept`.
-            운영 해석: 룰 매칭 trace 로 어떤 packet 이 어떤 룰에 의해 처리되는지 가시화.
+            **[OSS] /proc/net/nf_conntrack — conntrack 의 동일 데이터** — 비교.
+              ssh 6v6-fw 'sudo cat /proc/net/nf_conntrack 2>/dev/null | head -5'
+            예상 출력 `ipv4 2 tcp 6 86400 ESTABLISHED src=... dst=... [ASSURED]`.
+            운영 해석: conntrack table 이 stateful firewall 의 메모리. `ct state` 룰의
+            평가 기준.
           - |
-            **[OSS] /proc/net/nfct (conntrack 통계)** — 효과.
-              ssh 6v6-fw 'cat /proc/sys/net/netfilter/nf_conntrack_count'
-              ssh 6v6-fw 'cat /proc/sys/net/netfilter/nf_conntrack_max'
-            예상 출력 `123 / 65536`.
-            운영 해석: 활성 conntrack 엔트리 수 / 최대. max 의 80% 넘으면 conntrack
-            테이블 폭주 → SYN flood 의심.
+            **[OSS] policy accept vs drop — chain 의 default** — 정책 결정.
+              ssh 6v6-fw 'sudo nft list chain inet six_filter forward | head -2'
+            예상 출력 `chain forward { / type filter hook forward priority filter; policy accept;`.
+            운영 해석: policy accept = 룰 미매치 시 기본 accept. production 운영은
+            policy drop + 명시적 화이트리스트.
           - |
-            **[OSS] iptables -L -v (legacy 통계)** — 비교.
-              ssh 6v6-fw 'sudo iptables-nft -L -v -n 2>&1 | head -15'
-              # iptables-nft 의 -v 가 nft counter 와 동일한 값 표시
-            예상 출력 `Chain FORWARD (policy ACCEPT 5678 packets, 123456 bytes) / ...`.
-            운영 해석: iptables 출력의 packets/bytes 가 nft counter 와 같은 데이터.
-          - |
-            **[OSS] handle 로 특정 룰 삭제 (실험)** — 변경.
-              # handle 식별
-              HANDLE=$(ssh 6v6-fw 'sudo nft -a list chain inet six_filter forward | grep "ICMP" | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
-              echo "handle: $HANDLE"
-              # 삭제 (실험 후 복구)
-              # ssh 6v6-fw "sudo nft delete rule inet six_filter forward handle $HANDLE"
-            예상 출력 `handle: 5`.
-            운영 해석: 삭제 후 6v6.sh restart 또는 컨테이너 재기동 시 entrypoint.sh 가
-            ruleset 재구성하므로 임시 변경만 가능.
+            **[OSS] 모든 chain 의 메타 한 번에** — 종합.
+              ssh 6v6-fw 'sudo nft list chains 2>&1 | grep -E "table|chain"'
+            예상 출력 `(모든 table 의 chain 목록)`.
+            운영 해석: 5+ chain 가시화 (filter input/forward/output + nat prerouting/postrouting + Docker chain).
         negative_signs:
-          - handle 누락
-          - counter 0 (트래픽 0 아닐 때)
+          - handle 없음 (`-a` 미사용)
+          - chain header 누락
     target_vm: fw
 
   # ============================================================
-  # STEP 4 — 임시 drop 룰 추가 + 영향 검증
+  # STEP 3 — iptables-translate 마이그레이션 (3 변환)
   # ============================================================
-  - order: 4
+  - order: 3
     instruction: |
-      attacker 컨테이너 (10.20.30.202) 가 web 으로 접근하지 못하도록 fw 의 forward
-      chain 위에 임시 drop 룰을 추가한다. attacker 에서 curl 시도가 timeout 되는지
-      확인 후 룰을 다시 삭제하여 복구한다.
-    hint: |
-      ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter log prefix "DROP-ATTACKER: " drop'
-    category: manipulation
-    points: 15
-    answer: |
-      # 1. 룰 추가
-      ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter log prefix "DROP-ATTACKER: " drop'
-      # 2. attacker → web 시도 (timeout 예상)
-      ssh 6v6-attacker 'timeout 5 curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" http://10.20.30.1/'
-      # 3. kernel log 확인
-      ssh 6v6-fw 'sudo dmesg | tail -5 | grep DROP-ATTACKER || echo "no log"'
-      # 4. 룰 삭제 (handle 식별 후)
-      HANDLE=$(ssh 6v6-fw 'sudo nft -a list chain inet six_filter forward | grep DROP-ATTACKER | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
-      ssh 6v6-fw "sudo nft delete rule inet six_filter forward handle $HANDLE"
-    answer_detail: drop 룰 추가 → attacker timeout → 삭제 → 정상 복귀
-    verify:
-      type: output_contains
-      expect: '000'
-      field: stdout
-      semantic:
-        intent: |
-          fw **input** chain 의 첫 줄에 attacker IP drop 룰 추가 → attacker → fw:80 (HAProxy)
-          진입이 timeout (HTTP 000) 으로 끊기는지 확인. fw 자체로 들어가는 트래픽은
-          forward chain 이 아닌 input chain 평가 (HAProxy 가 termination 후 backend
-          와 새 conn 으로 통신). 그 후 handle 로 룰 삭제 → 정상 200 응답 복귀.
-        success_criteria:
-          - drop 룰 추가 성공
-          - attacker timeout (HTTP 000)
-          - 룰 삭제 + 정상 200 복귀
-        acceptable_methods:
-          - |
-            **[OSS] nft insert rule (position 0)** — 표준.
-              # forward chain 의 가장 위에 삽입
-              ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter log prefix "DROP-ATTACKER: " drop'
-              # 확인
-              ssh 6v6-fw 'sudo nft -a list chain inet six_filter forward | head -5'
-            예상 출력 `ip saddr 10.20.30.202 counter ... log prefix "DROP-ATTACKER: " drop # handle X`.
-            운영 해석: insert 는 위쪽, add 는 아래쪽. forward chain 평가는 위에서 아래이므로
-            insert 가 즉시 영향.
-          - |
-            **[OSS] curl -w + timeout 옵션 (영향 검증)** — 측정.
-              # 룰 추가 후
-              ssh 6v6-attacker 'timeout 5 curl -s -o /dev/null -w "HTTP: %{http_code}, time: %{time_total}\n" -H "Host: juice.6v6.lab" http://10.20.30.1/'
-              # 룰 삭제 후
-            예상 출력 `HTTP: 000, time: 5.0` (drop 시) / `HTTP: 200, time: 0.15` (정상).
-            운영 해석: HTTP 000 = timeout. drop 으로 인해 SYN 응답 없음 → curl 종료.
-          - |
-            **[OSS] dmesg / journalctl (kernel log 의 prefix 검증)** — 가시화.
-              # log prefix "DROP-ATTACKER: " 가 kernel ring buffer 에 기록
-              ssh 6v6-fw 'sudo dmesg | tail -10 | grep DROP-ATTACKER || sudo journalctl -k --since "1m ago" 2>&1 | grep DROP-ATTACKER | head'
-            예상 출력 `<time> DROP-ATTACKER: IN=eth0 OUT=eth1 SRC=10.20.30.202 DST=10.20.31.2 ...`.
-            운영 해석: log prefix 로 운영자가 어떤 룰이 패킷을 잡았는지 즉시 확인.
-            production 환경은 rsyslog → SIEM 통합.
-          - |
-            **[OSS] tcpdump 로 양쪽 NIC 확인** — 동적.
-              # 두 터미널 (학생 PC) 동시
-              # T1: ssh 6v6-fw 'sudo timeout 8 tcpdump -ni eth0 host 10.20.30.202 -c 5'
-              # T2: ssh 6v6-fw 'sudo timeout 8 tcpdump -ni eth1 host 10.20.30.202 -c 5'
-              # T3: ssh 6v6-attacker 'curl -s -H "Host: juice.6v6.lab" http://10.20.30.1/'
-            예상 출력 `T1: SYN 보임 / T2: SYN 안 보임` (forward 단계에서 drop).
-            운영 해석: 패킷이 eth0 (ext) 진입 후 forward chain 의 drop 으로 eth1 (pipe)
-            로 못 넘어감 → 정상 drop 동작.
-          - |
-            **[OSS] handle 식별 + 정확한 삭제** — 정상 복구.
-              # 학생이 추가한 정확한 룰 식별
-              HANDLE=$(ssh 6v6-fw 'sudo nft -a list chain inet six_filter forward | grep DROP-ATTACKER | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
-              echo "삭제할 handle: $HANDLE"
-              ssh 6v6-fw "sudo nft delete rule inet six_filter forward handle $HANDLE"
-              # 확인
-              ssh 6v6-fw 'sudo nft list chain inet six_filter forward | grep -c DROP-ATTACKER'
-            예상 출력 `삭제할 handle: 5 / 0`.
-            운영 해석: 정확한 handle 로 룰 삭제. 다른 룰 영향 없음.
-          - |
-            **[OSS] nft replace rule (한 줄 교체)** — 응용.
-              # drop 을 reject 로 변경 (학생이 응답 받음)
-              HANDLE=$(ssh 6v6-fw 'sudo nft -a list chain inet six_filter forward | grep DROP-ATTACKER | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
-              ssh 6v6-fw "sudo nft replace rule inet six_filter forward handle $HANDLE ip saddr 10.20.30.202 counter reject"
-              # attacker 시도 → ICMP unreachable 응답 (drop 과 다름)
-              ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" http://10.20.30.1/'
-            예상 출력 `000` 또는 connection refused (reject 의 ICMP unreachable).
-            운영 해석: drop vs reject 차이 — drop 은 응답 없음 (스캐너 탐지 어려움),
-            reject 는 정중한 거부 (사용자 친화).
-          - |
-            **[OSS] nft delete + flush 비교** — 정리.
-              # 룰 1개 delete vs chain 전체 flush 비교
-              # ssh 6v6-fw 'sudo nft flush chain inet six_filter forward'  # 위험 — 모든 룰 사라짐
-              ssh 6v6-fw 'sudo nft delete rule inet six_filter forward handle X'  # 단일
-              # entrypoint.sh 재실행으로 ruleset 복원
-              # docker restart 6v6-fw
-            예상 출력 `(아무 출력 없으면 성공)`.
-            운영 해석: flush 는 위험 — 보호 룰 다 사라짐. delete 는 정밀 수술.
-          - |
-            **[OSS] nft -e (echo) 옵션** — audit.
-              # 명령 실행 + 결과 echo (감사 친화)
-              ssh 6v6-fw 'sudo nft -e add rule inet six_filter forward ip saddr 10.20.30.99 counter drop' 2>&1
-              # 출력에 nft 가 받은 표준화된 룰 표시
-            예상 출력 `add rule inet six_filter forward ip saddr 10.20.30.99 counter drop`.
-            운영 해석: -e 로 적용된 정확한 룰 (정규화된 형태) 가 stdout 에 echo →
-            로그 + git audit 친화.
-        negative_signs:
-          - 룰 추가 실패 (syntax error)
-          - attacker 가 정상 200 응답 (룰 미적용)
-          - 삭제 후에도 timeout 지속
-    target_vm: fw
-    cleanup: |
-      ssh 6v6-fw 'sudo nft -a list chain inet six_filter forward | grep DROP-ATTACKER | grep -oE "handle [0-9]+" | awk "{print \$2}" | xargs -I H ssh 6v6-fw "sudo nft delete rule inet six_filter forward handle H"'
+      **이 실습을 왜 하는가?**
+      legacy iptables 룰셋을 nftables 로 변환하는 표준 도구 활용. 운영 환경의 마이
+      그레이션 절차 학습.
 
-  # ============================================================
-  # STEP 5 — iptables-translate 마이그레이션 3 사례
-  # ============================================================
-  - order: 5
-    instruction: |
-      legacy iptables 명령 3 건을 `iptables-translate` 로 nft 동등 명령으로 변환한다.
-      각 변환의 의미 (어떤 트래픽 통제) 를 1줄 한글로 설명할 것.
-    hint: |
-      echo "iptables -A INPUT -s 192.168.1.0/24 -j ACCEPT" | iptables-translate
+      **이걸 하면 무엇을 알 수 있는가?**
+      - iptables-translate 가 한 줄 변환 + 의미 보존
+      - `-A INPUT` → `add rule ip filter INPUT`
+      - `-m state` → `ct state`
+      - 변환 결과의 `counter accept` 같은 추가 옵션
+
+      **결과 해석**
+      3 변환 결과 모두 `nft add rule ip filter ...` 형식. 각 변환의 한글 의미 분석.
+
+      **실전 활용**
+      RHEL 7 → 8 마이그레이션, Debian 9 → 10 의 표준 step.
+
+      **작업 절차**:
+      ```
+      ssh 6v6-fw 'iptables-translate -A INPUT -s 192.168.1.0/24 -j ACCEPT'
+      ssh 6v6-fw 'iptables-translate -A OUTPUT -p udp --dport 53 -j ACCEPT'
+      ssh 6v6-fw 'iptables-translate -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT'
+      ```
+    hint: ssh 6v6-fw iptables-translate -A INPUT -s 192.168.1.0/24 -j ACCEPT
     category: migration
     points: 15
     answer: |
-      ssh 6v6-fw 'echo "iptables -A INPUT -s 192.168.1.0/24 -j ACCEPT" | iptables-translate'
-      ssh 6v6-fw 'echo "iptables -A OUTPUT -p udp --dport 53 -j ACCEPT" | iptables-translate'
-      ssh 6v6-fw 'echo "iptables -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT" | iptables-translate'
-    answer_detail: 3 변환 결과 모두 nft 명령으로 출력 + 의미 해석
+      echo "=== 변환 1: 사내망 ACCEPT ==="
+      ssh 6v6-fw 'iptables-translate -A INPUT -s 192.168.1.0/24 -j ACCEPT'
+      echo "  의미: 192.168.1.0/24 사내망의 모든 트래픽을 input chain 에서 accept"
+      echo
+      echo "=== 변환 2: DNS outbound ==="
+      ssh 6v6-fw 'iptables-translate -A OUTPUT -p udp --dport 53 -j ACCEPT'
+      echo "  의미: outbound UDP 53 (DNS 쿼리) 허용"
+      echo
+      echo "=== 변환 3: stateful 응답 path ==="
+      ssh 6v6-fw 'iptables-translate -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT'
+      echo "  의미: forward chain 에서 conntrack 의 established/related 상태 모두 accept (응답 path)"
+    answer_detail: |
+      3 변환 결과 모두 `nft add rule ip filter <CHAIN> <condition> counter accept`
+      형식. 의미:
+      1. `192.168.1.0/24` → 사내망 IP 화이트리스트.
+      2. `udp --dport 53` → DNS 쿼리 outbound 허용.
+      3. `-m state --state ESTABLISHED,RELATED` → conntrack 의 stateful 응답 path.
+      iptables 의 `-m state` 가 nft 의 `ct state` 로 매핑됨.
     verify:
       type: output_contains
       expect: nft
       field: stdout
       semantic:
         intent: |
-          iptables → nftables 마이그레이션 학습. `iptables-translate` 가 자동 변환.
-          legacy 환경 (RHEL 7, CentOS 7) 에서 nft 환경 (RHEL 8+, Debian 10+) 으로
-          이전하는 표준 path. 동일한 정책을 두 형식으로 표현 가능.
+          iptables 명령을 nft 동등 명령으로 변환. 3 사례 + 의미 해석.
         success_criteria:
-          - nft 명령 1건 이상 출력
-          - 3 사례 모두 변환 시도
+          - nft 키워드 3건
+          - ct state 변환
+          - ip saddr 또는 udp dport
         acceptable_methods:
           - |
-            **[OSS] iptables-translate (단일 룰)** — 표준.
-              ssh 6v6-fw 'echo "iptables -A INPUT -s 192.168.1.0/24 -j ACCEPT" | iptables-translate'
-              # nft 변환: nft add rule inet six_filter INPUT ip saddr 192.168.1.0/24 counter accept
-              ssh 6v6-fw 'echo "iptables -A OUTPUT -p udp --dport 53 -j ACCEPT" | iptables-translate'
-              # nft 변환: nft add rule inet six_filter OUTPUT udp dport 53 counter accept
-              ssh 6v6-fw 'echo "iptables -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT" | iptables-translate'
-              # nft 변환: nft add rule inet six_filter FORWARD ct state established,related counter accept
-            예상 출력 각 줄에 nft add rule ... 형식.
-            운영 해석: 한 줄씩 변환 + 한글 주석 1줄. 의미: 첫 번째 = 192.168.1.0/24 대역
-            허용, 두 번째 = DNS outbound 허용, 세 번째 = stateful 응답 허용.
+            **[OSS] iptables-translate — 단일 룰** — 표준.
+              ssh 6v6-fw 'iptables-translate -A INPUT -s 192.168.1.0/24 -j ACCEPT'
+            예상 출력 `nft add rule ip filter INPUT ip saddr 192.168.1.0/24 counter accept`.
+            운영 해석: iptables `-s` → nft `ip saddr`. `-j ACCEPT` → `counter accept`
+            (counter 자동 추가).
           - |
-            **[OSS] iptables-save | iptables-restore-translate (전체 룰셋)** — 종합.
-              # 현재 iptables 룰셋 (iptables-nft backend 이면 결국 같은 데이터)
-              ssh 6v6-fw 'sudo iptables-save 2>&1 | tee /tmp/legacy.rules | head'
-              ssh 6v6-fw 'cat /tmp/legacy.rules | iptables-restore-translate 2>&1 | head -20'
+            **[OSS] iptables-translate — UDP 포트** — 변환 예시 2.
+              ssh 6v6-fw 'iptables-translate -A OUTPUT -p udp --dport 53 -j ACCEPT'
+            예상 출력 `nft add rule ip filter OUTPUT udp dport 53 counter accept`.
+            운영 해석: `-p udp --dport` → `udp dport`. 단순 매핑.
+          - |
+            **[OSS] iptables-translate — stateful** — 변환 예시 3.
+              ssh 6v6-fw 'iptables-translate -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT'
+            예상 출력 `nft add rule ip filter FORWARD ct state related,established counter accept`.
+            운영 해석: `-m state --state` → `ct state`. 가장 중요한 변환 — stateful
+            firewall 의 핵심.
+          - |
+            **[OSS] iptables-save | iptables-restore-translate — 전체 룰셋** — 종합.
+              ssh 6v6-fw 'sudo iptables-save 2>&1 | head -10'
+              ssh 6v6-fw 'sudo iptables-save | iptables-restore-translate 2>&1 | head -10'
             예상 출력 `# Generated by ... / *filter / :INPUT ACCEPT / ... → nft flush ruleset; nft -f - <<EOF / ...`.
-            운영 해석: iptables-save 파일을 전체 nftables ruleset 으로 변환.
+            운영 해석: legacy 전체 ruleset → 새 nft ruleset 자동 변환. mig 표준.
           - |
-            **[OSS] iptables-nft -L 비교** — 호환 모드.
-              # 현재 iptables 명령이 사실 nftables backend 사용?
-              ssh 6v6-fw 'readlink /etc/alternatives/iptables 2>&1'
-              # /usr/sbin/iptables-nft 면 nft backend
-              ssh 6v6-fw 'sudo iptables-nft -L -n 2>&1 | head -10'
-            예상 출력 `/usr/sbin/iptables-nft / Chain INPUT (policy ACCEPT) / ...`.
-            운영 해석: 호환 모드는 명령은 iptables 이지만 backend 가 nftables.
-            마이그레이션 과도기 표준.
+            **[OSS] iptables-nft (호환 mode)** — 점진적.
+              ssh 6v6-fw 'readlink /etc/alternatives/iptables'
+              # /usr/sbin/iptables-nft 면 nftables backend 사용 중
+            예상 출력 `/usr/sbin/iptables-nft`.
+            운영 해석: iptables 명령을 사용하면서 backend 는 nftables. 마이그 과도기.
           - |
-            **[OSS] iptables-translate -t nat (NAT 룰)** — NAT 변환.
-              ssh 6v6-fw 'echo "iptables -t nat -A PREROUTING -p tcp --dport 8080 -j REDIRECT --to-port 80" | iptables-translate'
-              # nft add rule ip nat PREROUTING tcp dport 8080 counter redirect to :80
-            예상 출력 `nft add rule ip nat PREROUTING tcp dport 8080 ... redirect to :80`.
-            운영 해석: NAT (DNAT/SNAT/MASQUERADE/REDIRECT) 룰 변환. W03 에서 심화.
+            **[OSS] 양 명령의 동일 효과 검증** — 호환.
+              # iptables -A 로 룰 추가 (사실 nft 에 추가됨)
+              # ssh 6v6-fw 'sudo iptables-nft -A INPUT -s 10.20.30.99 -j DROP'
+              # ssh 6v6-fw 'sudo nft -a list chain ip filter INPUT | grep 10.20.30.99'
+              echo "iptables 와 nft 명령이 같은 ruleset 을 조작 — 호환 mode"
+            예상 출력 `(설명)`.
+            운영 해석: 한 명령으로 추가한 룰을 다른 명령으로 가시화 가능.
           - |
-            **[OSS] iptables 와 nft 동시 사용 시험** — 호환성.
-              # 같은 룰을 두 명령으로 적용 → 같은 효과
-              # ssh 6v6-fw 'sudo iptables -I INPUT -s 10.20.30.99 -j DROP'
-              # ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep 10.20.30.99'
-              ssh 6v6-fw 'sudo iptables-nft -L INPUT -n 2>&1 | grep 10.20.30 | head -5'
-            예상 출력 `(iptables 룰이 nftables ruleset 에 동일하게 보임)`.
-            운영 해석: iptables-nft 가 만든 룰은 nftables 의 inet six_filter INPUT chain
-            과 동일 → 두 명령이 같은 ruleset 을 조작.
+            **[OSS] NAT 변환 예시** — 응용.
+              ssh 6v6-fw 'iptables-translate -t nat -A PREROUTING -p tcp --dport 8080 -j REDIRECT --to-port 80'
+            예상 출력 `nft add rule ip nat PREROUTING tcp dport 8080 counter redirect to :80`.
+            운영 해석: NAT 룰 (DNAT/SNAT/MASQUERADE/REDIRECT) 변환. W03 심화.
           - |
-            **[OSS] nftables wiki + 표준 문서** — 학습.
-              # 공식 wiki 의 마이그레이션 페이지
+            **[OSS] nftables wiki 의 변환 cheat sheet** — 학습.
+              echo "참고 링크:"
               echo "https://wiki.nftables.org/wiki-nftables/index.php/Moving_from_iptables_to_nftables"
-              # 또는 RHEL 8 마이그레이션 가이드
-              echo "RHEL 8: https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/8/html/configuring_and_managing_networking/getting-started-with-nftables_configuring-and-managing-networking"
-            예상 출력 `링크들`.
-            운영 해석: 변환 후 wiki 의 cheat sheet 로 추가 검증. set / map / vmap 등
-            nftables 특유 기능은 iptables-translate 가 변환 못 함 → 수기 작성.
-          - |
-            **[OSS] 한글 의미 해석 (학습)** — 보고서.
-              # 변환 1: nft add rule inet six_filter INPUT ip saddr 192.168.1.0/24 counter accept
-              # → "사내망 (192.168.1.0/24) 의 모든 trafic 을 fw 자체로 허용"
-              # 변환 2: nft add rule inet six_filter OUTPUT udp dport 53 counter accept
-              # → "DNS 쿼리 (UDP 53) outbound 허용"
-              # 변환 3: nft add rule inet six_filter FORWARD ct state established,related counter accept
-              # → "이미 수립된 conn 의 응답 traffic forward 허용 (stateful)"
-            예상 출력 `각 변환의 한글 해석`.
-            운영 해석: 학생 본인이 의미를 해석할 수 있어야 마이그레이션 후 룰 audit 가능.
+              echo "https://access.redhat.com/articles/4502501"
+            예상 출력 `(링크)`.
+            운영 해석: 변환 표준 절차 + 자주 묻는 변환 cases.
         negative_signs:
-          - nft 변환 없음
-          - 변환 의미 미해석
+          - nft 키워드 누락
+          - 변환 의미 해석 미제출
     target_vm: fw
 
   # ============================================================
-  # STEP 6 — entrypoint.sh 의 ruleset 빌드 분석
+  # STEP 4 — 동적 drop 룰 추가 + counter 증가 검증
   # ============================================================
-  - order: 6
+  - order: 4
     instruction: |
-      6v6-fw 컨테이너는 stateless 라 부팅마다 entrypoint.sh 가 nftables ruleset 을
-      재구성한다. entrypoint.sh 에서 nft 명령 라인을 추출하여 어떤 정책이 builtin
-      되는지 분석한다.
-    hint: ssh 6v6-fw 'sudo cat /entrypoint.sh | grep -E "^(nft|iptables)"'
-    category: configuration
-    points: 10
-    answer: |
-      ssh 6v6-fw 'sudo cat /entrypoint.sh | grep -E "^(nft|iptables)" | head -20'
-    answer_detail: nft 명령 라인 5+ 출력 (table / chain / rule 추가)
-    verify:
-      type: output_contains
-      expect: nft
-      field: stdout
-      semantic:
-        intent: |
-          entrypoint.sh 가 boot 시 실행하는 nft 명령 체계화. 컨테이너 환경의 영구
-          정책 위치 (file). 학생이 직접 추가/삭제한 룰은 컨테이너 재시작 시 사라지고,
-          영구화 하려면 entrypoint.sh 수정 + 이미지 재빌드 필요.
-        success_criteria:
-          - nft add table 또는 nft add chain 또는 nft add rule 라인 5+
-          - entrypoint.sh 내용 가시화
-        acceptable_methods:
-          - |
-            **[OSS] cat + grep (정적 분석)** — 표준.
-              ssh 6v6-fw 'sudo cat /entrypoint.sh | grep -E "^(nft|iptables)"'
-              # 또는 전체 entrypoint 읽기
-              ssh 6v6-fw 'sudo cat /entrypoint.sh'
-            예상 출력 `nft add table ip six_nat / nft add chain ... / nft add rule inet six_filter forward ...`.
-            운영 해석: 컨테이너 부팅마다 실행되는 명령. ruleset 의 source of truth.
-          - |
-            **[OSS] docker exec + entrypoint 검사** — 호스트 측.
-              # 호스트 (VM) 측에서 동일한 분석
-              ssh 6v6-bastion docker inspect 6v6-fw --format '{{.Config.Entrypoint}} {{.Config.Cmd}}' 2>&1
-              # entrypoint 의 절대 경로
-              ssh 6v6-bastion docker exec 6v6-fw which entrypoint.sh 2>&1 || ssh 6v6-bastion docker exec 6v6-fw ls -la /entrypoint.sh
-            예상 출력 `[/entrypoint.sh] [] / /entrypoint.sh / -rwxr-xr-x ...`.
-            운영 해석: Docker 의 ENTRYPOINT 가 어디 정의되어 있는지 (Dockerfile).
-          - |
-            **[OSS] 부팅 직후 vs 학생 추가 룰 비교** — 차이.
-              # 학생이 추가한 룰
-              ssh 6v6-fw 'sudo nft -a list chain inet six_filter forward'
-              # entrypoint.sh 의 기본 룰만 (재시작 후)
-              # docker restart 6v6-fw 후 다시 list
-            예상 출력 `학생 추가 룰 + 기본 룰 / 기본 룰만`.
-            운영 해석: 학생 변경분은 임시 (컨테이너 재시작 시 소실). 영구화하려면
-            entrypoint.sh + 이미지 재빌드.
-          - |
-            **[OSS] git log entrypoint.sh** — audit.
-              # 컨테이너 내부에는 git history 없음 — repo 측
-              cd /home/opsclaw/6v6 && git log --oneline fw/entrypoint.sh 2>&1 | head -5
-              git log -p fw/entrypoint.sh 2>&1 | head -30
-            예상 출력 `<commit> ... <commit> ... / 변경 diff`.
-            운영 해석: 정책 변경 history 는 git 에 기록. 컨테이너 외부 audit 의 source.
-          - |
-            **[OSS] /etc/nftables.conf 비교 (시스템 표준)** — 학습.
-              # 호스트 (시스템 표준) 의 영구화 방법
-              # systemd 환경에서는 /etc/nftables.conf + nftables.service
-              echo "시스템 표준: /etc/nftables.conf + systemctl enable nftables"
-              echo "컨테이너 6v6: entrypoint.sh + 이미지 재빌드"
-            예상 출력 `(설명 텍스트)`.
-            운영 해석: 두 방식의 trade-off — 시스템은 atomic update 친화, 컨테이너는
-            immutable infra 친화.
-          - |
-            **[OSS] entrypoint.sh 의 idempotency 검증** — 안전.
-              # entrypoint 는 부팅마다 실행 → 이미 존재하는 table 추가 시 error?
-              ssh 6v6-fw 'sudo cat /entrypoint.sh | grep -E "2>/dev/null \|\| true|add table"' | head -5
-            예상 출력 `nft "add table ip six_nat" 2>/dev/null || true / ...`.
-            운영 해석: `2>/dev/null || true` 가 idempotent 보장 — 이미 존재해도 skip.
-            production entrypoint 의 표준 pattern.
-          - |
-            **[OSS] 컨테이너 재시작 후 ruleset 복구 검증** — 영속성.
-              # 학생이 임의로 룰 추가
-              # ssh 6v6-fw 'sudo nft add rule inet six_filter forward ip saddr 1.1.1.1 drop'
-              # 컨테이너 재시작
-              # ssh 6v6-bastion docker restart 6v6-fw
-              # sleep 5
-              # 추가한 룰이 사라지고 entrypoint 가 빌드한 ruleset 만 남음
-              ssh 6v6-fw 'sudo nft list chain inet six_filter forward | grep -c "drop"' 2>&1
-            예상 출력 `(컨테이너 재시작 후 단순한 룰 수)`.
-            운영 해석: 컨테이너는 stateless → ruleset 도 stateless. 영구화는 image 에.
-          - |
-            **[OSS] systemd nftables 비교 (운영 호스트)** — 표준.
-              # 호스트의 systemd 가 있다면
-              systemctl is-enabled nftables 2>/dev/null || echo "nftables.service not on host"
-              # /etc/nftables.conf 위치
-              ls -la /etc/nftables.conf 2>&1 || echo "no host nftables.conf"
-            예상 출력 `nftables.service not on host / no host nftables.conf`.
-            운영 해석: 6v6 는 컨테이너 기반이므로 호스트에 nftables.service 없음.
-            운영 환경 호스트는 systemd 표준.
-        negative_signs:
-          - entrypoint 비어 있음
-          - nft 명령 라인 5 미만
-          - cat 실패 (permission)
-    target_vm: fw
+      **이 실습을 왜 하는가?**
+      실 운영 incident response 의 핵심 — 특정 IP 즉시 차단. nft 의 `insert rule
+      position 0` + counter + log prefix 결합.
 
-  # ============================================================
-  # STEP 7 — 정책 강화 시뮬레이션 (policy drop 변경)
-  # ============================================================
-  - order: 7
-    instruction: |
-      forward chain 의 policy 를 임시로 `drop` 으로 변경한 뒤 어떤 트래픽이 끊기는지
-      관찰한다. 정상 운영 트래픽 (학생 → web, fw → bastion API 등) 이 모두 영향
-      받는지 검증 후 policy 를 `accept` 로 복구한다.
-    hint: |
-      ssh 6v6-fw 'sudo nft chain inet six_filter forward "{ policy drop ; }"'
-    category: experiment
-    points: 15
-    answer: |
-      # 1. policy 변경 (drop)
-      ssh 6v6-fw 'sudo nft chain inet six_filter forward "{ policy drop ; }"'
-      # 2. 영향 검증 (attacker → web)
+      **이걸 하면 무엇을 알 수 있는가?**
+      - `insert rule position 0` 가 chain 의 최상단 (가장 먼저 평가)
+      - counter 로 drop 효과 측정
+      - log prefix 가 kernel ring buffer 에 기록 (dmesg)
+
+      **결과 해석**
+      drop 룰 추가 후 attacker 의 fw:80 시도가 timeout (HTTP 000). counter packets
+      증가. dmesg 에 `DROP-ATTACKER: ...` 라인.
+
+      **실전 활용**
+      incident response 시 분 단위 IP block.
+
+      **작업 절차**:
+      ```
+      ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter log prefix "W02-DROP: " drop'
       ssh 6v6-attacker 'timeout 5 curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" http://10.20.30.1/'
-      # 3. policy 복구 (accept)
-      ssh 6v6-fw 'sudo nft chain inet six_filter forward "{ policy accept ; }"'
-      # 4. 정상화 검증
-      ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" http://10.20.30.1/'
-    answer_detail: policy drop → timeout, policy accept → 200 복귀
+      ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep W02-DROP'
+      ssh 6v6-fw 'sudo dmesg | tail -5 | grep W02-DROP'
+      ```
+    hint: |
+      ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter log prefix "W02-DROP: " drop'
+    category: manipulation
+    points: 20
+    answer: |
+      echo "=== 룰 추가 (attacker 의 input chain drop) ==="
+      ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter log prefix "W02-DROP: " drop'
+      echo "=== 적용 확인 ==="
+      ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | head -5'
+      echo "=== Red 시도 (timeout 예상) ==="
+      ssh 6v6-attacker 'timeout 5 curl -s -o /dev/null -w "응답: %{http_code} / 시간: %{time_total}s\n" -H "Host: juice.6v6.lab" http://10.20.30.1/'
+      sleep 2
+      echo "=== counter 증가 확인 ==="
+      ssh 6v6-fw 'sudo nft list chain inet six_filter input | grep -B1 W02-DROP | head -3'
+      echo "=== dmesg log prefix 검증 ==="
+      ssh 6v6-fw 'sudo dmesg | tail -10 | grep W02-DROP | tail -3'
+    answer_detail: |
+      `nft insert rule ... position 0` 가 input chain 의 최상단에 룰 추가 — 다른 룰
+      보다 먼저 평가. attacker 의 curl 이 응답 `000` + time 5s (timeout). counter
+      packets/bytes 증가. dmesg 에 `W02-DROP: IN=eth0 OUT= ... SRC=10.20.30.202
+      DST=10.20.30.1 ...` 라인 기록.
     verify:
       type: output_contains
       expect: '000'
       field: stdout
       semantic:
         intent: |
-          chain policy 의 default-deny 효과 학습. policy accept 에서는 ruleset 의 룰만
-          제외 처리, policy drop 에서는 화이트리스트 룰만 통과. 운영 환경은 policy drop
-          + 명시적 화이트리스트가 정석. 단, ruleset 이 불완전하면 정상 트래픽도 끊김.
+          동적 drop 룰 추가 + Red 시도 timeout + counter + dmesg log 검증.
         success_criteria:
-          - policy drop 시 attacker timeout (000)
-          - policy accept 복구 시 200
-          - 6v6-fw 의 정상 운영 확인
+          - HTTP 000 응답
+          - W02-DROP counter 증가
+          - dmesg log prefix
         acceptable_methods:
           - |
-            **[OSS] nft chain policy 변경** — 표준.
-              ssh 6v6-fw 'sudo nft chain inet six_filter forward "{ policy drop ; }"'
-              # 확인
-              ssh 6v6-fw 'sudo nft list chain inet six_filter forward | head -3'
-              # ... type filter hook forward priority 0; policy drop;
-            예상 출력 `chain forward { type filter hook forward priority 0; policy drop; ...`.
-            운영 해석: policy 만 변경. ruleset 본문은 그대로. 단, 화이트리스트 룰이
-            부족하면 다른 트래픽도 끊김.
+            **[OSS] nft insert rule position 0** — 표준.
+              ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter log prefix "W02-DROP: " drop'
+            예상 출력 `(empty)`.
+            운영 해석: position 0 = chain 의 가장 위. counter + log + drop 3 action
+            체이닝.
           - |
-            **[OSS] curl 영향 검증 (timeout)** — 실증.
-              # policy drop 직후
-              ssh 6v6-attacker 'timeout 5 curl -s -o /dev/null -w "HTTP: %{http_code} time: %{time_total}s\n" -H "Host: juice.6v6.lab" http://10.20.30.1/'
-              # policy accept 후
-              ssh 6v6-fw 'sudo nft chain inet six_filter forward "{ policy accept ; }"'
-              ssh 6v6-attacker 'curl -s -o /dev/null -w "HTTP: %{http_code} time: %{time_total}s\n" -H "Host: juice.6v6.lab" http://10.20.30.1/'
-            예상 출력 `HTTP: 000 time: 5.0s / HTTP: 200 time: 0.15s`.
-            운영 해석: policy drop 으로 ruleset 의 화이트리스트가 부족하면 정상 traffic
-            도 끊김. 6v6 ruleset 은 ext→pipe forward 룰이 있어 attacker 는 영향
-            안 받아야 하지만, 화이트리스트 우선순위가 낮으면 timeout.
+            **[OSS] curl + timeout (효과 측정)** — 동적.
+              ssh 6v6-attacker 'timeout 5 curl -s -o /dev/null -w "%{http_code} %{time_total}s\n" -H "Host: juice.6v6.lab" http://10.20.30.1/'
+            예상 출력 `000 5.0s` (timeout).
+            운영 해석: HTTP 000 = curl 응답 없음 (drop). time 5s = timeout 한계.
           - |
-            **[OSS] kernel log 의 drop event 분석** — 가시화.
-              # policy drop 으로 떨어진 패킷 확인
-              ssh 6v6-fw 'sudo dmesg | tail -10 | grep -E "FW-FWD-DROP|FORWARD" | head -5'
-              # nf_log 또는 ulogd 가 있으면 더 상세
-            예상 출력 `<time> FW-FWD-DROP: IN=eth0 OUT=eth1 SRC=10.20.30.202 DST=10.20.31.2 ...`.
-            운영 해석: policy drop 룰 (또는 마지막 log+drop 룰) 에서 잡은 패킷 가시화.
+            **[OSS] counter 증가** — 검증.
+              ssh 6v6-fw 'sudo nft list chain inet six_filter input | grep -B1 W02-DROP'
+            예상 출력 `ip saddr 10.20.30.202 counter packets 3 bytes 180 ... drop`.
+            운영 해석: 3 packets (curl 의 SYN + retransmit) 가 drop.
           - |
-            **[OSS] 운영 트래픽 영향 검증** — 부작용.
-              # 학생 트래픽 외에 운영 트래픽도 영향?
-              # bastion API 호출 시도
-              ssh 6v6-attacker 'curl -s -o /dev/null -w "bastion api: %{http_code}\n" -H "Host: bastion.6v6.lab" http://10.20.30.1/health' 2>&1
-              # wazuh dashboard
-              ssh 6v6-attacker 'curl -sk -o /dev/null -w "wazuh: %{http_code}\n" -H "Host: siem.6v6.lab" http://10.20.30.1/'
-            예상 출력 `bastion api: 000 또는 200 / wazuh: 000 또는 302`.
-            운영 해석: 운영 트래픽도 policy drop 영향. ruleset 의 화이트리스트가
-            완전하지 않으면 운영 outage 발생 위험.
+            **[OSS] dmesg log prefix** — 가시화.
+              ssh 6v6-fw 'sudo dmesg | tail -10 | grep W02-DROP'
+            예상 출력 `<time> W02-DROP: IN=eth0 OUT= ... SRC=10.20.30.202 DST=10.20.30.1 ...`.
+            운영 해석: kernel ring buffer 에 기록. production 은 rsyslog → SIEM.
           - |
-            **[OSS] policy accept 복구** — 안전 복구.
-              ssh 6v6-fw 'sudo nft chain inet six_filter forward "{ policy accept ; }"'
-              # 확인
-              ssh 6v6-fw 'sudo nft list chain inet six_filter forward | head -3'
-              # 정상화 검증
-              ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" http://10.20.30.1/'
-            예상 출력 `chain forward { ... policy accept; / 200`.
-            운영 해석: 실험 끝나면 즉시 복구. 컨테이너 재시작 시 entrypoint.sh 가
-            기본값 (accept) 으로 재설정.
+            **[OSS] iptables-nft -L view (동일 룰 확인)** — 호환.
+              ssh 6v6-fw 'sudo iptables-nft -L INPUT -n -v 2>&1 | head -5'
+            예상 출력 `Chain INPUT / 3 180 LOG ... / 3 180 DROP all -- * * 10.20.30.202 0.0.0.0/0`.
+            운영 해석: iptables-nft view 에도 동일 룰. counter 정확.
           - |
-            **[OSS] policy drop production 정석 — 화이트리스트 보강** — 학습.
-              # production 환경의 정석:
-              # 1. 모든 정상 트래픽 화이트리스트 룰 추가
-              # 2. ct state established,related accept 가장 먼저
-              # 3. 그 다음 명시적 src/dst 허용 룰
-              # 4. policy drop
-              # 5. log fallback 으로 dropped 가시화
-              echo "정석 ruleset 설계:"
-              echo "  chain forward { type filter hook forward priority 0; policy drop;"
-              echo "    ct state established,related accept"
-              echo "    ip saddr 10.20.30.0/24 ip daddr 10.20.31.0/24 accept"
-              echo "    log prefix 'DROP-FWD: ' counter"
-              echo "  }"
-            예상 출력 `(설계 텍스트)`.
-            운영 해석: policy drop + 완전한 화이트리스트 = secure-by-default.
+            **[OSS] nft monitor trace (룰 통과 추적)** — 디버그.
+              # 한 터미널: ssh 6v6-fw 'sudo nft monitor trace 2>&1 | head -10'
+              # 다른 터미널: ssh 6v6-attacker curl ...
+              echo "nft monitor trace 로 packet 의 룰 통과 단계 추적"
+            예상 출력 `(설명)`.
+            운영 해석: 정책 디버그의 핵심 도구.
           - |
-            **[OSS] policy drop 시 outbound NAT 영향** — 부작용 분석.
-              # outbound traffic 도 forward chain 통과?
-              # fw → external 응답은 ext NIC outbound = output chain (not forward)
-              # ssh 6v6-fw 'sudo nft list chain inet six_filter output 2>/dev/null'
-              # 그러나 컨테이너 → external 은 forward chain 통과
-              ssh 6v6-fw 'sudo nft list ruleset | grep -E "output|out_chain"'
-            예상 출력 `(output chain 정의 또는 없음)`.
-            운영 해석: forward 와 output 은 다른 hook. policy drop 영향 범위 구분.
+            **[OSS] handle 식별 + 정확한 삭제** — 정리.
+              HANDLE=$(ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep W02-DROP | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
+              echo "handle: $HANDLE"
+              ssh 6v6-fw "sudo nft delete rule inet six_filter input handle $HANDLE"
+            예상 출력 `handle: 9`.
+            운영 해석: handle 로 정확한 룰만 삭제 (다른 룰 영향 없음).
           - |
-            **[OSS] policy 복구 안전 검증** — 종합.
-              # 모든 검증 통과 확인
-              ssh 6v6-fw 'sudo nft list chain inet six_filter forward | head -3'
-              ssh 6v6-attacker 'curl -s -o /dev/null -w "juice: %{http_code}\n" -H "Host: juice.6v6.lab" http://10.20.30.1/'
-              ssh 6v6-attacker 'curl -sk -o /dev/null -w "siem: %{http_code}\n" -H "Host: siem.6v6.lab" http://10.20.30.1/'
-              ssh 6v6-attacker 'curl -s -o /dev/null -w "portal: %{http_code}\n" -H "Host: portal.6v6.lab" http://10.20.30.1/'
-            예상 출력 `policy accept / juice: 200 / siem: 302 / portal: 200`.
-            운영 해석: 3 운영 vhost 가 200/302 면 ruleset 정상. 실험 종료.
+            **[OSS] reject vs drop 비교** — action 선택.
+              # drop 은 응답 없음 (스캐너 회피)
+              # reject 는 ICMP unreachable 또는 TCP RST 응답
+              ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.99 counter reject with tcp reset'
+              # 비교를 위해 reject 룰도 시도. 실제 적용 후 attacker 의 응답 차이 분석.
+              # cleanup
+              ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep 10.20.30.99 | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}" | xargs -I H ssh 6v6-fw "sudo nft delete rule inet six_filter input handle H" 2>/dev/null'
+            예상 출력 `(reject 룰의 다른 시그니처)`.
+            운영 해석: drop 은 silent, reject 는 active. 사용 시점 선택.
         negative_signs:
-          - policy 변경 실패
-          - 복구 후에도 timeout
-          - 운영 트래픽 (siem/portal) 영향 분석 누락
-    target_vm: fw
+          - HTTP 200 응답 (drop 미동작)
+          - counter 0
+          - dmesg 에 W02-DROP 없음
     cleanup: |
-      ssh 6v6-fw 'sudo nft chain inet six_filter forward "{ policy accept ; }"'
+      ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep W02-DROP | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}" | xargs -I H ssh 6v6-fw "sudo nft delete rule inet six_filter input handle H"' 2>/dev/null
+    target_vm: fw
 
   # ============================================================
-  # STEP 8 — 학습 정리 + 보고서
+  # STEP 5 — 룰 삭제 + tcpdump 양 NIC 검증
   # ============================================================
-  - order: 8
+  - order: 5
     instruction: |
-      앞 7 step 결과를 1페이지 보고서로 정리한다. 각 단계 핵심 출력 1줄 + 본인이
-      추가한 임시 룰 1건의 설계 의도 + nftables 의 production 운영 시 권장 사항
-      (chain policy / atomic update / log fallback / git audit) 3+ 항목.
-    hint: 마크다운 표 + 각 step 결과 + 본인 설계
+      **이 실습을 왜 하는가?**
+      drop 룰의 효과를 패킷 단위로 가시화. tcpdump 로 fw 의 두 NIC 양쪽에서 같은
+      패킷을 동시 캡처 — drop 룰 적용 시 한쪽만 보임.
+
+      **이걸 하면 무엇을 알 수 있는가?**
+      - fw 의 eth0 (ext NIC) 에 SYN 진입 + eth1 (pipe NIC) 에 SYN 미통과 (forward 단계 drop)
+      - drop 룰 삭제 후 양쪽 NIC 에 SYN + SYN-ACK 정상
+
+      **결과 해석**
+      룰 적용: eth0 에 SYN 보이고 eth1 에 안 보임. 룰 삭제 후: 양쪽 SYN 매치.
+
+      **실전 활용**
+      packet level 디버깅. ruleset 변경의 immediate 영향 측정.
+
+      **작업 절차** (3 터미널 동시):
+      ```
+      # T1: eth0 캡처
+      ssh 6v6-fw 'sudo timeout 10 tcpdump -ni eth0 host 10.20.30.202 -c 5'
+      # T2: eth1 캡처
+      ssh 6v6-fw 'sudo timeout 10 tcpdump -ni eth1 host 10.20.30.202 -c 5'
+      # T3: 트래픽 발생 (룰 있을 때, 룰 없을 때)
+      ssh 6v6-attacker 'curl -H "Host: juice.6v6.lab" http://10.20.30.1/'
+      ```
+    hint: ssh 6v6-fw sudo timeout 5 tcpdump -ni eth0 host 10.20.30.202 -c 5
+    category: monitoring
+    points: 15
+    answer: |
+      echo "=== drop 룰 적용 + tcpdump eth0 (ext NIC) ==="
+      ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter drop'
+      # eth0 캡처 백그라운드 + curl
+      (ssh 6v6-fw 'sudo timeout 6 tcpdump -ni eth0 host 10.20.30.202 -c 5 2>&1' &)
+      sleep 1
+      ssh 6v6-attacker 'timeout 5 curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" http://10.20.30.1/' &
+      wait
+      echo
+      echo "=== 룰 삭제 + 정상 응답 ==="
+      HANDLE=$(ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep "10.20.30.202.*drop" | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
+      ssh 6v6-fw "sudo nft delete rule inet six_filter input handle $HANDLE"
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" http://10.20.30.1/'
+    answer_detail: |
+      drop 룰 적용 시 eth0 (fw 의 ext NIC) 에 attacker → fw:80 SYN 5건 캡처. 그러나
+      fw 의 input chain 에서 drop → 응답 (SYN-ACK) 없음. 룰 삭제 후 curl 정상 200.
+    verify:
+      type: output_contains
+      expect: '200'
+      field: stdout
+      semantic:
+        intent: |
+          drop 룰 효과를 packet level 로 검증.
+        success_criteria:
+          - tcpdump 캡처 성공
+          - 룰 삭제 후 200 응답
+        acceptable_methods:
+          - |
+            **[OSS] tcpdump 2 NIC 동시** — 표준.
+              # 3 터미널
+              # T1: ssh 6v6-fw 'sudo tcpdump -ni eth0 host 10.20.30.202 -c 5'
+              # T2: ssh 6v6-fw 'sudo tcpdump -ni eth1 host 10.20.30.202 -c 5'
+              # T3: ssh 6v6-attacker 'curl ...'
+              echo "양 NIC 동시 캡처로 forward 통과 여부 가시화"
+            예상 출력 `(설명)`.
+            운영 해석: 양쪽 NIC 캡처가 forward chain 검증의 황금 방법.
+          - |
+            **[OSS] tcpdump -w pcap (분석 보존)** — 증거.
+              ssh 6v6-fw 'sudo timeout 5 tcpdump -ni eth0 host 10.20.30.202 -w /tmp/w02-eth0.pcap -c 10 2>&1 | head'
+            예상 출력 `tcpdump: listening / 10 packets captured`.
+            운영 해석: pcap 파일로 후속 Wireshark 분석.
+          - |
+            **[OSS] tcpdump -X (hex + ASCII)** — 페이로드.
+              ssh 6v6-fw 'sudo timeout 5 tcpdump -ni eth0 -X host 10.20.30.202 -c 3 2>&1 | head -20'
+            예상 출력 `0x0000:  4500 0034 ... E..4 .... / 0x0010:  ... GET / HTTP/1.1`.
+            운영 해석: 페이로드 hex+ASCII 동시. ModSec 우회 페이로드 분석 시.
+          - |
+            **[OSS] BPF filter 정밀** — 효율.
+              ssh 6v6-fw 'sudo timeout 5 tcpdump -ni eth0 "tcp port 80 and host 10.20.30.202 and tcp[tcpflags] & tcp-syn != 0" -c 3'
+            예상 출력 `(SYN 패킷만)`.
+            운영 해석: BPF 로 SYN 만 캡처. flood scan 분석 시.
+          - |
+            **[OSS] ss + 활성 conn 비교** — 보조.
+              ssh 6v6-fw 'sudo ss -tnp 2>/dev/null | grep 10.20.30.202'
+            예상 출력 `(활성 conn 또는 빈 결과)`.
+            운영 해석: drop 시 conn 0. 정상 시 ESTAB.
+          - |
+            **[OSS] nft monitor trace** — 룰 통과.
+              # 한 터미널: ssh 6v6-fw 'sudo timeout 5 nft monitor trace'
+              # 다른 터미널: curl 발생
+              echo "trace event 가 룰 통과 단계별 출력"
+            예상 출력 `trace id ... inet six_filter input packet: ... drop`.
+            운영 해석: drop 의 정확한 룰 ID 가시화.
+          - |
+            **[OSS] /proc/net/nf_conntrack — 상태 비교** — 컨택.
+              # drop 시: conn 이 NEW 상태로 만들어지지만 ESTABLISHED 안 됨
+              ssh 6v6-fw 'sudo conntrack -L 2>/dev/null | grep 10.20.30.202 | head -3'
+            예상 출력 `tcp ... SYN_SENT src=10.20.30.202 dst=10.20.30.1 ... [UNREPLIED]`.
+            운영 해석: UNREPLIED = SYN-ACK 없음 = drop 확인.
+          - |
+            **[OSS] dmesg ring buffer ringbuffer size** — log 보존.
+              ssh 6v6-fw 'dmesg --console-level 2>&1 | head -3'
+              ssh 6v6-fw 'sudo cat /proc/sys/kernel/printk'
+            예상 출력 `(console log level)`.
+            운영 해석: dmesg ring buffer 가 가득 차면 오래된 log 잃음. rsyslog 영구화 필수.
+        negative_signs:
+          - tcpdump 실패
+          - 룰 삭제 후에도 timeout
+    target_vm: fw
+
+  # ============================================================
+  # STEP 6 — R/B/P 통합 시나리오: Red nmap → Blue drop → Purple counter+영구화
+  # ============================================================
+  - order: 6
+    instruction: |
+      **이 실습을 왜 하는가?**
+      실 운영 시 발생하는 incident: 외부 호스트가 fw 로 무차별 포트 스캔. Red 가
+      이 공격을 흘려 보내고, Blue 가 즉시 drop 룰 추가, Purple 가 효과 측정 후
+      영구화 검토. R/B/P 표준 cycle.
+
+      **이걸 하면 무엇을 알 수 있는가?**
+      - Red 의 nmap 출력 변화 (drop 룰 적용 전 vs 후)
+      - Blue 의 룰 추가 명령 + log prefix
+      - Purple 의 counter 측정 + 영구화 patch 검토
+
+      **결과 해석**
+      Red 의 nmap 결과 — drop 룰 없을 때: 4 port 모두 응답 (open / closed / filtered).
+      drop 룰 적용 후: 4 port 모두 filtered (응답 없음). counter 가 5+ 증가. dmesg 에
+      "RBP-DROP" 라인.
+
+      **실전 활용**
+      Purple Team 의 standard cycle. 분기별 정기 실행 + 룰 효과 측정.
+
+      **작업 절차**:
+      ```
+      # Red 1차 — 룰 없이
+      ssh 6v6-attacker 'sudo nmap -sS -p 22,80,443,9100 10.20.30.1'
+      # Blue — drop 룰 추가
+      ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter log prefix "RBP-DROP: " drop'
+      # Red 2차 — 룰 적용 후
+      ssh 6v6-attacker 'sudo nmap -sS -p 22,80,443,9100 10.20.30.1'
+      # Purple — counter + dmesg + 영구화 검토
+      ssh 6v6-fw 'sudo nft list chain inet six_filter input | grep RBP-DROP'
+      ssh 6v6-fw 'sudo dmesg | tail -20 | grep RBP-DROP | wc -l'
+      ```
+    hint: nmap → drop 룰 → counter + dmesg + nftables.conf patch
+    category: redblue
+    points: 20
+    answer: |
+      echo "=== Red 1차: drop 룰 없는 상태 nmap ==="
+      ssh 6v6-attacker 'sudo nmap -sS -p 22,80,443,9100 10.20.30.1 2>&1 | tail -10'
+      echo
+      echo "=== Blue: drop + log 룰 추가 (RBP-DROP) ==="
+      ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter log prefix "RBP-DROP: " drop'
+      ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | head -5'
+      echo
+      echo "=== Red 2차: drop 룰 적용 후 nmap (모든 port filtered) ==="
+      ssh 6v6-attacker 'sudo nmap -sS -p 22,80,443,9100 10.20.30.1 2>&1 | tail -10'
+      sleep 2
+      echo
+      echo "=== Purple: counter + dmesg ==="
+      ssh 6v6-fw 'sudo nft list chain inet six_filter input | grep -B1 RBP-DROP | head -3'
+      ssh 6v6-fw 'sudo dmesg | tail -30 | grep RBP-DROP | wc -l'
+      echo
+      echo "=== Purple: 영구화 patch (시뮬) ==="
+      cat <<'EOF'
+      # production 환경에서 영구화 절차:
+      # 1. /home/opsclaw/6v6/fw/nftables.conf 의 chain input 끝에 추가:
+      #    ip saddr 10.20.30.202 counter log prefix "PERSIST-DROP: " drop
+      # 2. git PR + 검토
+      # 3. docker compose build fw && docker compose up -d --force-recreate fw
+      # 4. canary 검증 + 정상 트래픽 영향 측정 + rollback 절차 준비
+      EOF
+      echo
+      echo "=== Cleanup ==="
+      HANDLE=$(ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep RBP-DROP | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
+      ssh 6v6-fw "sudo nft delete rule inet six_filter input handle $HANDLE"
+    answer_detail: |
+      Red 1차: 4 port 모두 응답 (`Host is up`, port state 다양).
+      Blue: insert rule + log prefix 추가.
+      Red 2차: 모든 port `filtered` 또는 응답 없음 (drop 효과).
+      Purple: counter packets 5+ + dmesg RBP-DROP 라인 5+ + 영구화 patch 시뮬.
+      Cleanup: handle 식별 + 삭제.
+    verify:
+      type: output_contains
+      expect: filtered
+      field: stdout
+      semantic:
+        intent: |
+          R/B/P 통합 — Red nmap → Blue drop 룰 → Purple counter + dmesg + 영구화.
+        success_criteria:
+          - nmap 1차 결과 (port state 다양)
+          - drop 룰 추가
+          - nmap 2차 filtered
+          - counter / dmesg 증거
+        acceptable_methods:
+          - |
+            **[OSS] nmap -sS (stealth SYN scan)** — Red.
+              ssh 6v6-attacker 'sudo nmap -sS -p 22,80,443,9100 10.20.30.1 2>&1 | tail -10'
+            예상 출력 `22/tcp open ssh / 80/tcp open http / 443/tcp open https / 9100/tcp open ...` (정상) 또는
+            `22/tcp filtered ssh / ...` (drop 후).
+            운영 해석: stealth SYN scan (half-open). root 권한 필요. nft drop 시
+            모든 port `filtered`.
+          - |
+            **[OSS] nmap -sT (full connect)** — 비교.
+              ssh 6v6-attacker 'nmap -sT -p 22,80,443,9100 10.20.30.1 2>&1 | tail -10'
+            예상 출력 `(SYN 보다 noisy)`.
+            운영 해석: -sT 는 root 불필요. 3-way handshake 완료 → conntrack 에
+            ESTABLISHED.
+          - |
+            **[OSS] nft insert rule + log prefix** — Blue.
+              ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter log prefix "RBP-DROP: " drop'
+            예상 출력 `(empty)`.
+            운영 해석: log prefix 가 dmesg + rsyslog 에 라인 추가. SIEM 통합 친화.
+          - |
+            **[OSS] counter packets 변화** — Purple 측정.
+              ssh 6v6-fw 'sudo nft list chain inet six_filter input | grep -B1 RBP-DROP'
+            예상 출력 `ip saddr 10.20.30.202 counter packets 5 bytes 300 ... drop`.
+            운영 해석: nmap 의 SYN 5건 = 4 port × 1.25 (retry).
+          - |
+            **[OSS] dmesg 의 RBP-DROP 라인 수** — Purple 가시화.
+              ssh 6v6-fw 'sudo dmesg | tail -30 | grep RBP-DROP | wc -l'
+            예상 출력 `5 또는 그 이상`.
+            운영 해석: nmap port 별 SYN 1건 = log 1 라인.
+          - |
+            **[OSS] 영구화 patch 시뮬 — git PR** — Purple 운영.
+              # /home/opsclaw/6v6/fw/nftables.conf 수정:
+              # chain input {
+              #     ...
+              #     ip saddr 10.20.30.202 counter log prefix "PERSIST-DROP: " drop
+              # }
+              # cd /home/opsclaw/6v6 && git diff fw/nftables.conf | head
+              echo "git PR + 검토 + 이미지 재빌드 + canary"
+            예상 출력 `(절차)`.
+            운영 해석: production 영구화의 표준 절차.
+          - |
+            **[OSS] 영구화 atomic apply** — 운영 명령.
+              # nft -c -f /tmp/new.nft (syntax check)
+              # nft -f /tmp/new.nft (atomic apply, race 없음)
+              echo "atomic apply 가 ruleset 전체를 한 번에 교체"
+            예상 출력 `(설명)`.
+            운영 해석: docker 환경에서 nft -f 사용도 가능하나 영구화는 image 재빌드.
+          - |
+            **[OSS] rollback 절차** — 안전.
+              # 변경 후 문제 발생 시
+              # git revert + 이미지 재빌드 + restart
+              # 또는 fast rollback: 이전 nftables.conf backup + nft -f restore
+              echo "rollback: git revert + force-recreate"
+            예상 출력 `(절차)`.
+            운영 해석: 사전 정의된 rollback 절차 + 운영자 훈련 필수.
+        negative_signs:
+          - nmap 1차 미동작
+          - drop 룰 적용 후에도 nmap 정상 응답
+          - counter 0
+    cleanup: |
+      ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep RBP-DROP | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}" | xargs -I H ssh 6v6-fw "sudo nft delete rule inet six_filter input handle H"' 2>/dev/null
+    target_vm: bastion
+
+  # ============================================================
+  # STEP 7 — 종합 보고서
+  # ============================================================
+  - order: 7
+    instruction: |
+      **이 실습을 왜 하는가?**
+      6 step 결과 + R/B/P cycle 결과 + 본인 학습 gap + W03 준비도 의 자가 보고서.
+
+      **결과 해석**
+      6 step 모두 pass + R/B/P 측정 결과 + 운영 권장 3+.
+
+      **실전 활용**
+      운영자 매일 작성하는 표.
+    hint: 마크다운 표 + R/B/P 결과 + 운영 권장
     category: synthesis
     points: 15
     answer: |
-      # 보고서 항목:
-      # 1. table 가시화 (3 table)
-      # 2. chain forward type/hook/priority/policy
-      # 3. counter / handle 의미
-      # 4. drop 룰 추가 + tcpdump 검증
-      # 5. iptables-translate 3 변환
-      # 6. entrypoint.sh 의 idempotent pattern
-      # 7. policy drop 부작용 분석
-      # 8. production 운영 권장 사항 3+ 항목
-    answer_detail: 1페이지 보고서 + 운영 권장 사항 3건 이상
+      cat <<'EOF'
+      # 6v6 W02 nftables 기초 + R/B/P 보고서 (2026-05-11)
+
+      ## 1. 6 step 결과
+      | Step | 영역 | 결과 | 핵심 출력 |
+      |------|------|------|----------|
+      | 1 | 3 table 가시화 | pass | inet six_filter + ip nat + ip six_nat |
+      | 2 | chain + handle + counter | pass | handle 2 (chain) + handle 8 (ct rule) |
+      | 3 | iptables-translate | pass | 3 변환 + 한글 의미 |
+      | 4 | drop 룰 + counter + log | pass | HTTP 000 + counter 3 + dmesg W02-DROP |
+      | 5 | tcpdump 양 NIC | pass | eth0 SYN 캡처 + 룰 후 200 |
+      | 6 | R/B/P (nmap → drop → 영구화) | pass | nmap filtered + counter 5+ + 영구화 patch |
+
+      ## 2. R/B/P 핵심 측정
+      - Red 1차 nmap: 4 port open
+      - Blue 룰 추가 후: 4 port filtered
+      - Purple counter packets: 5+
+      - Purple dmesg RBP-DROP: 5+ 라인
+
+      ## 3. 본인 발견 / 의문점
+      예: "drop 룰의 effect 가 ext NIC 에는 SYN 도착 후, fw input chain 에서 drop.
+      forward chain 의 drop 과는 chain 평가 시점이 다른 듯. 학습 — fw 자체로 들어
+      오는 트래픽 (HAProxy 가 받는 :80) 은 input chain 에서 평가됨. forward chain
+      은 fw 를 통과만 하는 트래픽."
+
+      ## 4. W03 준비도
+      - nft NAT chain (prerouting / postrouting) 이해
+      - conntrack -L 의 orig/reply 변환 매핑
+      - HAProxy 의 forwardfor 옵션
+      - 부족: nft monitor trace 실 활용 경험 → W03 추가 학습
+
+      ## 5. 운영 권장
+      1. drop 룰의 영구화는 git PR + 이미지 재빌드 (즉시 nft -f 는 컨테이너 재시작 시 소실)
+      2. log prefix 는 dmesg 외에 rsyslog → SIEM 통합 필수
+      3. counter 정기 reset → 매트릭 표준화
+      4. nft monitor 로 정책 변경 audit (W14 의 Purple cycle 시)
+      5. set 자료구조 활용 (W13 의 CDB list 와 결합)
+      EOF
+    answer_detail: |
+      1페이지 보고서 — 6 step 표 + R/B/P 측정값 + 본인 발견 + W03 준비도 + 운영
+      권장 5+.
     verify:
       type: output_contains
       expect: nftables
       field: stdout
       semantic:
         intent: |
-          2주차 학습 정리 보고서. 7 step 의 결과 + 본인의 production 권장 사항 분석.
-          운영자 시점의 자가 학습 마무리.
+          W02 종합 보고서. 6 step + R/B/P + 발견 + 다음 주차 준비.
         success_criteria:
-          - 7 step 종합 표
-          - 본인 설계 1건
-          - production 권장 사항 3+
+          - 6 step 표
+          - R/B/P 측정
+          - 운영 권장 3+
         acceptable_methods:
           - |
-            **[관리적 보고서] 마크다운 표 + 본인 분석** — 표준.
-              # nftables 방화벽 기초 학습 보고서 (W02)
-              ## 1. 학습 결과
-              | Step | 항목 | 출력 핵심 | 검증 |
-              |------|------|----------|------|
-              | 1 | table 가시화 | filter / nat / nat6v6 3개 | pass |
-              | 2 | chain forward | type filter hook forward priority 0 policy accept | pass |
-              | 3 | counter + handle | handle 정수 + packets/bytes | pass |
-              | 4 | drop 룰 추가 | attacker timeout (000) | pass |
-              | 5 | iptables-translate | 3 변환 모두 nft 출력 | pass |
-              | 6 | entrypoint.sh | idempotent || true pattern | pass |
-              | 7 | policy drop | 운영 trafic 영향 | pass |
-              ## 2. 본인 추가 룰 (예시)
-              `nft add rule inet six_filter forward ip saddr 10.20.30.99 counter log prefix "TEST: " drop`
-              의도: 특정 학생 IP 임시 격리.
-              ## 3. production 권장
-              1. policy drop + 명시적 화이트리스트
-              2. atomic update (`nft -f file`) 로 race 방지
-              3. log fallback 으로 dropped 가시화 (SIEM 통합)
-              4. git audit (/etc/nftables.conf 또는 entrypoint.sh repo)
-              5. set 활용 (blocklist 동적 갱신)
-            예상 출력 `학습 결과 + 본인 설계 + 운영 권장 3+`.
-            운영 해석: 학습 → 적용 → 운영 권장의 3 단계 보고서.
+            **[관리적 보고서] 마크다운 표** — 표준.
+              (위 답안 형식)
+            운영 해석: 매일 작성하는 운영 표.
           - |
-            **[관리적 분석] NIST CSF 의 Protect function 매핑** — 표준 인용.
-              # nftables 가 NIST CSF 의 어느 통제에 해당?
-              # PR.AC-5 (Network Integrity) — 네트워크 분리·세분화
-              # PR.PT-4 (Communications Protection) — 통신 보호
-              # PR.IP-3 (Configuration Change Control) — 변경 통제 (git audit)
-            운영 해석: nftables 정책 변경이 NIST CSF 의 어떤 통제를 만족하는가.
+            **[관리적] ISMS-P 2.6.1 매핑** — 한국 표준.
+              - 2.6.1.1 외부→내부 통제 → STEP 4 의 drop 룰 + log
+              - 2.6.1.2 정책 변경 audit → git PR (영구화)
+              - 2.6.1.3 로그 1년 보관 → log prefix + rsyslog → SIEM
+            운영 해석: 본 주차 활동이 ISMS-P 3 sub-control 만족.
           - |
-            **[관리적 분석] ISMS-P 2.6.1 (네트워크 접근 통제) 매핑** — 한국 표준.
-              # ISMS-P 2.6.1 의 인증 기준 :
-              # - 외부 → 내부 접근 시 방화벽·IDS 통과
-              # - 정책 변경 시 승인·기록
-              # - 로그 1년 보관
-              # 6v6 의 fw 는 위 3 통제 모두 만족 (단, 로그 보관 정책 별도)
-            운영 해석: ISMS-P 인증 시 fw nftables 의 어느 부분을 어떻게 입증하는가.
+            **[관리적] NIST PR.AC-4 매핑** — 표준.
+              - PR.AC-4 Access Permissions → nftables chain 별 정책
+            운영 해석: 본 주차의 fw 정책이 PR.AC-4 의 네트워크 측면 구현.
           - |
-            **[관리적 분석] MITRE D3FEND D3-NTPM 매핑** — 방어 매트릭스.
-              # D3-NTPM (Network Traffic Policy Mapping)
-              # = 네트워크 트래픽 정책 매핑 = 방화벽 룰 = nftables
-              # 공격 (ATT&CK) 의 T1190 (Exploit Public-Facing Application) 에 대한 방어
-            운영 해석: 공격 (ATT&CK) 대비 방어 (D3FEND). nftables 의 D3FEND 좌표.
+            **[관리적] KISA 사례 매핑** — 한국 사례.
+              # KISA 2025 Q1 사고의 35% 가 인터넷 노출 관리콘솔
+              # 본 주차의 drop 룰로 사전 차단 가능 — 학습 동기.
+            운영 해석: 실제 사례 + 본 인프라 적용.
           - |
-            **[관리적 분석] KISA 보호나라 사례 분석** — 한국 사례.
-              # 2024 KISA 보고서의 사례 1건 선택 + fw nftables 가 어떻게 막을 수 있었는가
-              # 예: A사 인터넷 노출 PostgreSQL → 무차별 대입 → 데이터 유출
-              # fw nftables 의 5432/tcp drop 룰로 사전 차단 가능
-            운영 해석: 실제 사고 + 본 인프라 적용 시 가설.
+            **[관리적] STRIDE 적용** — 위협 모델.
+              # S Spoofing: src IP 위조 → conntrack 의 stateful 검증
+              # T Tampering: ruleset 변경 → git audit
+              # R Repudiation: log prefix + rsyslog
+              # I Information Disclosure: drop vs reject 선택
+              # D DoS: rate-limit (W04 학습)
+              # E Elevation: bastion sudo NOPASSWD (학습 환경만)
+            운영 해석: 본 주차가 STRIDE 6 카테고리 각각에 어떻게 대응하는가.
           - |
-            **[관리적 분석] STRIDE 적용** — 위협 모델.
-              # S - Spoofing: nftables 의 source IP 검증
-              # T - Tampering: ruleset 변경 audit (git)
-              # R - Repudiation: log prefix + kernel ring buffer
-              # I - Information disclosure: drop vs reject 선택
-              # D - DoS: rate limit (limit module)
-              # E - Elevation: sudo 권한 통제
-            운영 해석: nftables 가 STRIDE 6 카테고리 각각을 어떻게 다루는가.
+            **[관리적] 본인 학습 gap 자가 진단** — 발전.
+              ex) nft set + 동적 갱신 미숙 → W13 추가
+              ex) policy drop + 화이트리스트 운영 미경험 → 본 주차 과제 A 로 보강
+              ex) iptables → nft 마이그레이션 실전 미경험 → 별도 학습
+            운영 해석: 학습 gap 자가 식별.
           - |
-            **[관리적 분석] 본인 학습 gap 자가 진단** — 발전.
-              # nft set 활용 미숙 → wiki 의 set chapter 학습 필요
-              # nft monitor 실시간 디버깅 경험 부족 → W03 에서 보강
-              # iptables-restore-translate 사용 경험 1회 → 추가 연습 필요
-            운영 해석: 학생 본인의 학습 gap 1+ 자가 식별. 다음 주차 효율 향상.
+            **[관리적] W03 학습 logical flow** — 다음.
+              - 본 주차의 forward chain → W03 의 NAT chain 확장
+              - 본 주차의 drop 룰 → W03 의 DNAT 룰
+              - 본 주차의 counter → W03 의 conntrack 양방향 변환
+              - 본 주차의 영구화 → W03 의 HAProxy 와 nftables 협업
+            운영 해석: 본 주차 → 다음 주차 의 logical bridge.
           - |
-            **[종합] W03 (DNAT/SNAT/HAProxy 협업) 준비도** — 다음 주차.
-              # 본 주차의 forward chain 이해 → W03 의 nat chain 으로 확장
-              # 본 주차의 룰 추가/삭제 경험 → W03 의 동적 NAT 룰 작성
-              # HAProxy 가 L7 라우팅 담당해도 nftables 의 prerouting DNAT 가 보조
-              # 둘의 협업 이해가 W03 핵심
-            예상 출력 `(학습 연계)`.
-            운영 해석: 본 주차 → 다음 주차의 logical flow 명확화.
+            **[관리적] 운영 권장 우선순위** — 표준.
+              | 우선순위 | 권장 | 학습 주차 |
+              | P1 | drop 룰 영구화 표준화 | W02 |
+              | P2 | log prefix → SIEM 통합 | W09 |
+              | P3 | counter 정기 reset + 매트릭 | W14 |
+              | P4 | nft monitor audit | W14 |
+              | P5 | CDB list 결합 | W13 |
+            운영 해석: 즉시 적용 가능한 운영 권장.
         negative_signs:
-          - 종합 표 누락
-          - 본인 설계 누락
-          - production 권장 1건 미만
+          - 6 step 표 누락
+          - R/B/P 측정 미제출
     target_vm: fw

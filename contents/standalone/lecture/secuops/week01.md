@@ -115,14 +115,14 @@ NIST SP 800-160 v2 + 한국 ISMS-P 통제 2.6 / 2.8 의 핵심 원칙은 다음 
 
 ```mermaid
 graph TB
-    L1[L1 Perimeter<br/>방화벽<br/>L3/L4 패킷 헤더]
-    L2[L2 Inline Detection<br/>IDS / IPS<br/>L3/L4 + 페이로드]
-    L3[L3 Application<br/>WAF<br/>L7 HTTP 본문]
-    L4[L4 Host<br/>SIEM + 호스트 가시화<br/>OS 내부 행위]
+    L1["L1 Perimeter<br/>방화벽<br/>L3-L4 패킷 헤더"]
+    L2["L2 Inline Detection<br/>IDS · IPS<br/>L3-L4 + 페이로드"]
+    L3["L3 Application<br/>WAF<br/>L7 HTTP 본문"]
+    L4["L4 Host<br/>SIEM + 호스트 가시화<br/>OS 내부 행위"]
     L1 -->|우회되면| L2
     L2 -->|우회되면| L3
     L3 -->|우회되면| L4
-    L4 -->|마지막 안전망| ALERT[운영자 alert<br/>+ 자동 차단]
+    L4 -->|마지막 안전망| ALERT["운영자 alert<br/>+ 자동 차단"]
     style L1 fill:#1f6feb,color:#fff
     style L2 fill:#3fb950,color:#fff
     style L3 fill:#d29922,color:#fff
@@ -264,11 +264,11 @@ table inet six_filter {              # 6v6 의 정책 본체 (IPv4 + IPv6 통합
 
 ```mermaid
 graph LR
-    A1[fw agent] -->|1514/tcp| MGR[wazuh-manager<br/>siem .100]
-    A2[ips agent] -->|1514/tcp| MGR
-    A3[web agent] -->|1514/tcp| MGR
+    A1[fw agent] -->|1514 tcp| MGR[wazuh-manager<br/>siem .100]
+    A2[ips agent] -->|1514 tcp| MGR
+    A3[web agent] -->|1514 tcp| MGR
     MGR -->|filebeat| IDX[wazuh-indexer<br/>.110<br/>OpenSearch]
-    IDX -->|REST| DASH[wazuh-dashboard<br/>.120<br/>:5601]
+    IDX -->|REST| DASH["wazuh-dashboard .120 port 5601"]
     style MGR fill:#3fb950,color:#fff
     style DASH fill:#1f6feb,color:#fff
 ```
@@ -315,20 +315,20 @@ docker exec 6v6-siem /var/ossec/bin/agent_control -l        # 등록 agent 목�
 ```mermaid
 graph TB
     STUDENT[학생 PC 브라우저<br/>또는 SSH]
-    subgraph EXT["ext (10.20.30.0/24)"]
-        B[6v6-bastion<br/>.201<br/>SSH jump + API]
-        A[6v6-attacker<br/>.202<br/>13 도구]
+    subgraph EXT [ext tier 10.20.30.0]
+        B[6v6-bastion .201<br/>SSH jump + API]
+        A[6v6-attacker .202<br/>13 도구]
     end
-    FW[6v6-fw<br/>nftables + HAProxy<br/>.1 ext / .1 pipe]
-    IPS[6v6-ips<br/>Suricata<br/>.2 pipe / .1 dmz]
-    subgraph DMZ["dmz (10.20.32.0/24)"]
-        WEB[6v6-web<br/>Apache + ModSec<br/>.80 dmz / .80 int]
-        SIEM[6v6-siem<br/>Wazuh manager<br/>.100]
+    FW[6v6-fw<br/>nftables + HAProxy<br/>ext .1, pipe .1]
+    IPS[6v6-ips<br/>Suricata<br/>pipe .2, dmz .1]
+    subgraph DMZ [dmz tier 10.20.32.0]
+        WEB[6v6-web<br/>Apache + ModSec<br/>.80 dmz]
+        SIEM[6v6-siem<br/>Wazuh manager .100]
         WIDX[wazuh-indexer .110]
         WDASH[wazuh-dashboard .120]
-        PORTAL[6v6-portal .50<br/>FastAPI HTMX]
+        PORTAL[6v6-portal .50]
     end
-    subgraph INT["int (10.20.40.0/24)"]
+    subgraph INT [int tier 10.20.40.0]
         J[juiceshop .81]
         D[dvwa .82]
         NB[neobank .83]
@@ -337,7 +337,7 @@ graph TB
         AC[adminconsole .86]
         AI[aicompanion .87]
     end
-    STUDENT -->|80/443/2204/2202/9100| FW
+    STUDENT -->|host ports 80 443 2204 2202 9100| FW
     STUDENT -.->|bastion SSH 2204| B
     A -->|학생 트래픽| FW
     B -->|API 호출| FW
@@ -387,11 +387,11 @@ graph TB
 ```mermaid
 graph LR
     PC[학생 PC]
-    PC -->|80 HTTP| FW80[fw HAProxy :80<br/>host header 라우팅]
-    PC -->|443 HTTPS| FW443[fw HAProxy :443<br/>self-signed TLS]
-    PC -->|2204 SSH| BASTION[bastion :22]
-    PC -->|2202 SSH| ATTACKER[attacker :22]
-    PC -->|9100 API| FWAPI[fw HAProxy :9100<br/>Bastion API 프록시]
+    PC -->|80 HTTP| FW80["fw HAProxy port 80<br/>host header 라우팅"]
+    PC -->|443 HTTPS| FW443["fw HAProxy port 443<br/>self-signed TLS"]
+    PC -->|2204 SSH| BASTION["bastion port 22"]
+    PC -->|2202 SSH| ATTACKER["attacker port 22"]
+    PC -->|9100 API| FWAPI["fw HAProxy port 9100<br/>Bastion API 프록시"]
     style PC fill:#8b949e,color:#fff
     style FW80 fill:#1f6feb,color:#fff
     style FW443 fill:#1f6feb,color:#fff
@@ -417,18 +417,18 @@ graph LR
 
 ```mermaid
 graph TB
-    FE80[frontend http_in<br/>:80]
-    FE443[frontend https_in<br/>:443 TLS]
-    FE9100[frontend bastion_api_in<br/>:9100]
-    FE80 -->|is_siem| BD[backend dashboard<br/>10.20.32.120:5601 TLS]
-    FE80 -->|is_portal| BP[backend portal<br/>10.20.32.50:8000]
-    FE80 -->|is_bastion| BB[backend bastion<br/>10.20.30.201:9100]
-    FE80 -->|default| BW[backend waf<br/>10.20.32.80:80]
+    FE80["frontend http_in port 80"]
+    FE443["frontend https_in port 443 TLS"]
+    FE9100["frontend bastion_api_in port 9100"]
+    FE80 -->|is_siem| BD["backend dashboard 10.20.32.120 port 5601 TLS"]
+    FE80 -->|is_portal| BP["backend portal 10.20.32.50 port 8000"]
+    FE80 -->|is_bastion| BB["backend bastion 10.20.30.201 port 9100"]
+    FE80 -->|default| BW["backend waf 10.20.32.80 port 80"]
     FE443 -->|is_siem| BD
     FE443 -->|is_portal| BP
     FE443 -->|is_bastion| BB
-    FE443 -->|default| BWT[backend waf_tls<br/>10.20.32.80:443]
-    FE9100 --> BAPI[backend bastion_api<br/>10.20.30.201:9100]
+    FE443 -->|default| BWT["backend waf_tls 10.20.32.80 port 443"]
+    FE9100 --> BAPI["backend bastion_api 10.20.30.201 port 9100"]
     style FE80 fill:#1f6feb,color:#fff
     style FE443 fill:#1f6feb,color:#fff
     style FE9100 fill:#1f6feb,color:#fff
@@ -452,7 +452,7 @@ graph LR
     SP[학생 PC] -->|1| FW[fw HAProxy]
     FW -->|2| IPS[ips Suricata<br/>inline sniff]
     IPS -->|3| WEB[web Apache + ModSec]
-    WEB -->|4| JUICE[int juiceshop:3000]
+    WEB -->|4| JUICE["int juiceshop port 3000"]
     style WEB fill:#d29922,color:#fff
 ```
 
@@ -461,7 +461,7 @@ graph LR
 graph LR
     SP[학생 PC] -->|1| FW[fw HAProxy<br/>use_backend dashboard]
     FW -->|2| IPS[ips Suricata<br/>sniff only]
-    IPS -->|3| DASH[wazuh-dashboard<br/>:5601 TLS]
+    IPS -->|3| DASH["wazuh-dashboard port 5601 TLS"]
     style FW fill:#1f6feb,color:#fff
 ```
 
@@ -1221,14 +1221,14 @@ KISA "2024 Q3 침해사고 분석 보고서" 의 사고 5건 중 4건의 공통�
 
 ```mermaid
 graph LR
-    ID[Identify<br/>자산 인벤토리]
-    PR[Protect<br/>접근통제·암호화]
-    DE[Detect<br/>탐지·모니터링]
-    RS[Respond<br/>사고대응]
-    RC[Recover<br/>복구·사후분석]
+    ID["Identify<br/>자산 인벤토리"]
+    PR["Protect<br/>접근통제·암호화"]
+    DE["Detect<br/>탐지·모니터링"]
+    RS["Respond<br/>사고대응"]
+    RC["Recover<br/>복구·사후분석"]
     ID -->|W01 docker ps + W07 osquery| PR
-    PR -->|W02-06 nftables/Suricata/ModSec| DE
-    DE -->|W09-11 Wazuh/sysmon| RS
+    PR -->|W02-06 nftables Suricata ModSec| DE
+    DE -->|W09-11 Wazuh sysmon| RS
     RS -->|W10 Active Response| RC
     RC -->|W12-14 OpenCTI Report| ID
     style ID fill:#1f6feb,color:#fff

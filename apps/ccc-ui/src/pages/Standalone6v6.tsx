@@ -5,10 +5,16 @@ import { isAdmin } from '../auth.ts'
 import { markdownToHtml } from '../markdown.ts'
 import mermaid from 'mermaid'
 
-mermaid.initialize({ startOnLoad: false, theme: 'dark', themeVariables: {
-  primaryColor: '#21262d', primaryTextColor: '#e6edf3', lineColor: '#30363d',
-  secondaryColor: '#161b22', tertiaryColor: '#0d1117',
-}})
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'dark',
+  securityLevel: 'loose',  // label 안의 <br/> 등 허용
+  flowchart: { htmlLabels: true, useMaxWidth: true },
+  themeVariables: {
+    primaryColor: '#21262d', primaryTextColor: '#e6edf3', lineColor: '#30363d',
+    secondaryColor: '#161b22', tertiaryColor: '#0d1117',
+  },
+})
 
 type Course = {
   course_id: string
@@ -76,10 +82,28 @@ export default function Standalone6v6() {
   }, [courseId, weekParam, viewParam])
 
   useEffect(() => {
-    if (contentRef.current) {
-      const els = contentRef.current.querySelectorAll('.mermaid')
-      if (els.length > 0) mermaid.run({ nodes: els as any }).catch(() => {})
-    }
+    if (!contentRef.current || content === null) return
+    // mermaid 가 한 번 렌더된 div 에 data-processed='true' 를 다는데 재방문 시 잔재가 남아
+    // 다시 렌더되지 않음. content 변경마다 reset 후 run.
+    const els = contentRef.current.querySelectorAll<HTMLElement>('.mermaid')
+    if (els.length === 0) return
+    els.forEach(el => {
+      // 원본 source 가 textContent 에 있는데 mermaid 가 이미 렌더한 svg 로 바뀌었을 수도 있음.
+      // data-source 에 백업이 있으면 복원, 없으면 현재 textContent 를 백업.
+      const src = el.getAttribute('data-source') ?? el.textContent ?? ''
+      el.setAttribute('data-source', src)
+      el.removeAttribute('data-processed')
+      el.innerHTML = src
+    })
+    // 약간의 지연으로 DOM 이 완전히 mount 된 후 render
+    const t = setTimeout(() => {
+      mermaid.run({ nodes: Array.from(els) }).catch(err => {
+        // 디버깅을 위해 console 에 표시 — 학생이 F12 로 원인 확인 가능
+        // eslint-disable-next-line no-console
+        console.warn('[mermaid] render failed:', err?.message || err)
+      })
+    }, 50)
+    return () => clearTimeout(t)
   }, [content])
 
   const selectedCourse = courses.find(c => c.course_id === courseId)
