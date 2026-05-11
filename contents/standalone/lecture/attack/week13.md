@@ -84,21 +84,44 @@ operation.start()
 
 attacker 컨테이너에 추가 (Dockerfile 수정 또는 별도 컨테이너):
 
-```
+```bash
+# Caldera 설치 (Python 3.8+)
+#   --recursive: submodule (plugins) 같이 clone
+#   plugins: stockpile (기본 abilities), training, fieldmanual 등
 git clone --branch master https://github.com/mitre/caldera.git --recursive
 cd caldera
+
+# 의존성 설치 (aiohttp, aiohttp-cors, jinja2 등 100+ 패키지)
 pip install -r requirements.txt
+
+# 서버 시작
+#   --insecure: HTTPS 없이 (lab 환경)
+#   conf/default.yml 에서 port + plugins 설정
 python server.py --insecure
-# http://localhost:8888 (admin / admin)
+# 8888 listen 시작 후 web UI: http://localhost:8888
+# default credential: admin / admin (insecure 모드)
+# production 권장: --build + HTTPS + LDAP 인증
 ```
 
 agent 배포 (target 측 — 본 lab 에서는 attacker 자체로 시연):
 
-```
+```bash
+# sandcat 다운로드 (Caldera 의 default Linux agent, Go 로 작성)
+#   platform: linux: Linux 용 binary
+#   file: sandcat.go: source 또는 pre-built binary 요청
+#   -O: 파일 이름 자동 결정 (sandcat-linux)
+#   -J: redirect 따라가기 (필요 시)
 curl -sk -X POST 'http://localhost:8888/file/download' \
-    -H "platform: linux" -H "file: sandcat.go" -OJ
+    -H "platform: linux" \
+    -H "file: sandcat.go" -OJ
+
+# 실행 권한 부여 + agent 시작
+#   -server: Caldera server URL
+#   -group blue: agent group (operation 시 target group filter)
+#   다른 옵션: -delay (poll interval) / -v2 (verbose 로그)
 chmod +x sandcat-linux
 ./sandcat-linux -server http://localhost:8888 -group blue
+# agent 가 5초마다 server 에 poll → 새 ability 받으면 실행 → 결과 전송
 ```
 
 ## 6. 운영 가치

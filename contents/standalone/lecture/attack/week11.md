@@ -102,20 +102,45 @@ chroot /host
 
 ### 1 — bastion 에서 enumeration
 
-```
+```bash
+# 현재 사용자 권한 + sudo 권한 확인
+#   id: uid/gid/groups (현재 user 의 권한)
+#   sudo -l: sudo 가능 명령 list. NOPASSWD 표기는 비번 없이 가능
 ssh 6v6-bastion 'id; sudo -l 2>&1 | head'
+# 예상:
+#   uid=1000(ccc) gid=1000(ccc) groups=1000(ccc),27(sudo)
+#   User ccc may run: (ALL) NOPASSWD: ALL   ← 학습 환경. production 은 위험!
+
+# SUID binary 검색
+#   -perm -4000: SUID 비트 (mode & 4000)
+#   -type f: 일반 파일만
+#   2>/dev/null: permission denied 메시지 무시
 ssh 6v6-bastion 'find / -perm -4000 -type f 2>/dev/null | head -20'
+# 정상 SUID: /usr/bin/sudo, /usr/bin/su, /usr/bin/passwd, /usr/bin/chsh, /bin/mount 등
+# 의심 SUID: /usr/bin/vim, /usr/bin/find, /opt/* — GTFOBins 활용 가능
 ```
 
 ### 2 — capabilities
 
-```
+```bash
+# Linux capabilities — 부분 root 권한 부여 (전체 SUID 보다 정밀)
+#   getcap -r /: 모든 binary 의 capability 검색 (-r recursive)
+#   주요 cap:
+#     cap_net_raw: raw socket (ping)
+#     cap_setuid: setuid() 호출 (위험 — root 권한 상승)
+#     cap_dac_read_search: 파일 read 권한 우회
 ssh 6v6-bastion 'getcap -r / 2>/dev/null | head -10'
+# 예상: /usr/bin/ping cap_net_raw=ep
+# 의심: /usr/bin/python3 cap_setuid=ep → setuid(0) 호출 → root shell
 ```
 
 ### 3 — cron 분석
 
-```
+```bash
+# /etc/crontab: 시스템 cron (root 권한)
+# /etc/cron.d/: 개별 cron job 파일들
+# 각 cron entry: <분> <시> <일> <월> <요일> <user> <command>
+# 학습 점: user 가 root + script 가 world-writable → 권한 상승
 ssh 6v6-bastion 'cat /etc/crontab; ls -la /etc/cron.d/ 2>/dev/null'
 ```
 

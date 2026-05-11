@@ -101,15 +101,20 @@ T1083 File Discovery 가 미탐지. 이유:
 
 ### 1 — adversary 시뮬 + Wazuh 매트릭스
 
-(Caldera 미설치 시 수동 ability 실행 + alerts.json 매칭)
+(Caldera 미설치 시 수동 ability 실행 + alerts.json 매칭. 본 lab 의 학습 환경에선
+수동 시뮬로 동일 효과 측정 가능.)
 
-```
-# T1083 시뮬
+```bash
+# T1083 File Discovery 시뮬 — find 로 /etc 의 conf 파일 enumeration
+#   sleep 3 이후 manager 가 ingest → alerts.json 매칭 확인
+#   탐지 도구: osquery file_events 또는 sysmon (W11)
 ssh 6v6-web 'find /etc -name "*.conf" | head -5'
 sleep 3
 ssh 6v6-siem 'sudo grep -i "file" /var/ossec/logs/alerts/alerts.json | tail -3'
+# 매치 없으면 → Detection Gap (osquery 의 file_paths 미설정)
 
-# T1057 시뮬
+# T1057 Process Discovery 시뮬 — ps -ef 로 모든 process
+#   탐지 도구: osquery processes / sysmon EventID 1
 ssh 6v6-web 'ps -ef | head -20'
 sleep 3
 ssh 6v6-siem 'sudo grep -i "process" /var/ossec/logs/alerts/alerts.json | tail -3'
