@@ -1,828 +1,419 @@
 lab_id: standalone-secuops-week03
-title: nftables 방화벽 — DNAT / SNAT + HAProxy 협업 (6v6-fw)
+title: nftables NAT (DNAT/SNAT/MASQUERADE) + HAProxy 협업 + R/B/P 충돌 시뮬
 version: standalone-non-ai
 course: secuops
 week: 3
 description: |
-  6v6-fw 의 NAT 정책 (`ip six_nat` table) 을 직접 추가·삭제하며 DNAT (외부 포트
-  → 내부 백엔드) 와 SNAT/MASQUERADE (내부 → 외부 변환) 의 동작을 검증한다.
-  conntrack 로 양방향 변환을 관찰하고, nft monitor trace 로 패킷 단위 흐름을
-  추적하며, HAProxy 의 L7 라우팅과 어떤 시점에 충돌하는지 시연한다.
+  6v6-fw 의 ip six_nat table 에 DNAT/SNAT/MASQUERADE 룰을 직접 추가 + conntrack -L
+  로 양방향 변환 확인 + nft monitor trace 로 packet 단위 추적 + HAProxy 와 nftables
+  DNAT 가 같은 port (80) 에서 충돌하는 시나리오 시뮬 + Purple Team 의 priority 정리.
 difficulty: medium
 duration_minutes: 180
-audience: 보안 솔루션 운영 중급 (3주차)
 prerequisites:
-  - W02 통과 (nftables 기초 + table inet six_filter 가시화)
-  - bastion SSH ProxyJump 정상
-  - sudo NOPASSWD on fw
-  - attacker 컨테이너에서 curl 실행 가능
-
+  - "W02 통과 — nftables 기초 + handle/counter 익숙"
+  - "bastion ProxyJump + sudo NOPASSWD"
 objectives:
-  - nftables NAT chain (prerouting / postrouting) 룰 직접 작성·검증
-  - conntrack -L 로 orig vs reply 의 변환 가시화
-  - nft monitor trace 로 packet 단위 룰 통과 추적
-  - HAProxy L7 라우팅 vs nftables L4 NAT 의 우선순위·충돌 시연
-  - 영구화 (nftables.conf patch) 시뮬레이션
-
+  - "nftables NAT 3 종 (SNAT/DNAT/MASQUERADE) 직접 작성"
+  - "conntrack -L 의 orig vs reply 변환 분석"
+  - "nft monitor trace 로 packet 통과 추적"
+  - "Red/Blue/Purple — HAProxy + DNAT 80 포트 충돌 시뮬 + priority 정리"
 pass_threshold: 0.7
-
 steps:
 
-  # ============================================================
-  # STEP 1 — six_nat table 정의 확인 + 비어 있는 chain
-  # ============================================================
   - order: 1
     instruction: |
-      `6v6-fw` 의 `ip six_nat` table 을 조회하여 prerouting + postrouting 두 chain
-      이 정의되어 있으나 룰이 비어 있는지 확인한다. 이 stub 위에 본 주차의 룰을 추가
-      한다.
-    hint: ssh 6v6-fw 'sudo nft list table ip six_nat'
+      **이 실습을 왜 하는가?**
+      NAT 룰 추가 전 baseline 확인. ip six_nat table 의 두 chain (prerouting -100,
+      postrouting 100) 의 priority + policy.
+
+      **이걸 하면 무엇을 알 수 있는가?**
+      - nft 11+ 가 priority -100 / 100 을 `dstnat` / `srcnat` 로 표시
+      - 빈 chain 위에 룰 추가 시 NAT 활성
+
+      **결과 해석**
+      두 chain header + policy accept + 룰 없음.
+
+      **실전 활용**
+      NAT 정책 변경 전 baseline 확인.
+    hint: ssh 6v6-fw sudo nft list table ip six_nat
     category: survey
     points: 10
     answer: |
       ssh 6v6-fw 'sudo nft list table ip six_nat'
-    answer_detail: prerouting + postrouting chain header + 룰 없음
+    answer_detail: |
+      table ip six_nat { chain prerouting { type nat hook prerouting priority dstnat; policy accept; }
+      chain postrouting { type nat hook postrouting priority srcnat; policy accept; } }
+      priority `dstnat` / `srcnat` 은 nft 11+ 의 별칭 (각각 -100 / 100).
     verify:
       type: output_contains
       expect: six_nat
       field: stdout
       semantic:
-        intent: |
-          ip six_nat table 의 stub 구조 확인. 두 chain (prerouting/postrouting)
-          이 hook attach 되어 있으나 룰 0 → NAT 동작 안 함. 학생이 본 주차에 룰을
-          추가하면 NAT 가 활성화된다.
-        success_criteria:
-          - six_nat table 존재
-          - prerouting + postrouting chain header 표시
-          - 룰 없음 (chain header 만)
+        intent: "NAT stub table 확인"
+        success_criteria: ["six_nat 키워드", "prerouting + postrouting chain"]
         acceptable_methods:
-          - |
-            **[OSS] nft list table ip six_nat** — 표준.
-              ssh 6v6-fw 'sudo nft list table ip six_nat'
-            예상 출력 `table ip six_nat { chain prerouting { type nat hook prerouting priority -100; policy accept; } chain postrouting { type nat hook postrouting priority 100; policy accept; } }`.
-            운영 해석: 룰이 없으면 NAT 효과 없음. 학습용으로 의도된 stub.
-          - |
-            **[OSS] nft list ruleset (전체)** — 비교.
-              ssh 6v6-fw 'sudo nft list ruleset 2>&1 | grep -v "^XT" | head -40'
-              # 전체 ruleset 에서 six_nat / six_filter 가 어떻게 보이는지
-            예상 출력 `table ip nat / table inet six_filter / table ip six_nat`.
-            운영 해석: docker NAT 와 6v6 정책 분리. 두 ruleset 이 같은 hook 에 동시에
-            동작 (priority 차이로 순서 결정).
-          - |
-            **[OSS] nft -j (JSON)** — 자동화.
-              ssh 6v6-fw 'sudo nft -j list table ip six_nat | jq ".nftables[] | select(.chain) | .chain | {name, hook, priority, policy}"'
-            예상 출력 `{"name":"prerouting","hook":"prerouting","priority":-100,"policy":"accept"} / {"name":"postrouting","hook":"postrouting","priority":100,"policy":"accept"}`.
-            운영 해석: priority 가 prerouting -100 + postrouting 100 → NAT 표준.
-            낮은 priority 가 먼저 평가.
-          - |
-            **[OSS] /etc/nftables.conf 의 six_nat 정의** — IaC.
-              ssh 6v6-fw 'sudo grep -A6 "table ip six_nat" /etc/nftables.conf'
-            예상 출력 `table ip six_nat { / chain prerouting { ... } / chain postrouting { ... } }`.
-            운영 해석: 영구 정책의 source. 학생이 본 주차에 추가한 룰은 임시 (재시작
-            시 사라짐) → 영구화는 본 파일에 추가 필요.
-          - |
-            **[OSS] conntrack 활성 확인** — NAT 의 전제.
-              ssh 6v6-fw 'sudo sysctl net.netfilter.nf_conntrack_max 2>&1'
-              ssh 6v6-fw 'sudo cat /proc/sys/net/netfilter/nf_conntrack_count'
-              # conntrack 모듈 활성 여부
-              ssh 6v6-fw 'sudo lsmod 2>&1 | grep -E "nf_conntrack|nf_nat" | head'
-            예상 출력 `nf_conntrack_max = 65536 / 234 / nf_conntrack 169984 / nf_nat 57344`.
-            운영 해석: NAT 룰은 conntrack 의존. conntrack 미적재면 NAT 동작 불가.
-          - |
-            **[OSS] iptables-nft -t nat -L (legacy view)** — 호환.
-              ssh 6v6-fw 'sudo iptables-nft -t nat -L -n -v 2>&1 | head -10'
-              # iptables 의 -t nat 도 결국 nftables 의 ip nat / six_nat 보여줌
-            예상 출력 `Chain PREROUTING (policy ACCEPT 0 packets, 0 bytes) / Chain POSTROUTING ...`.
-            운영 해석: iptables 명령으로도 NAT 룰 가시화 가능 (호환 모드).
-          - |
-            **[OSS] /etc/nftables.conf vs 적용 ruleset 비교** — drift check.
-              # 파일에 정의된 룰셋
-              ssh 6v6-fw 'sudo grep -E "table|chain" /etc/nftables.conf'
-              # 실제 적용된 룰셋
-              ssh 6v6-fw 'sudo nft list ruleset 2>&1 | grep -E "^table|^	chain"'
-            예상 출력 `(파일 정의 + 실제 적용 일치)`.
-            운영 해석: drift 감지. 파일과 실제가 다르면 다른 누군가 ad-hoc 룰 추가했음.
-          - |
-            **[OSS] nftables.service 상태 (호스트 비교)** — 표준.
-              # 컨테이너에서 systemd 미사용
-              # 호스트의 nftables service 비교 (강사 시연)
-              # systemctl status nftables 2>&1 | head -5
-              echo "컨테이너는 entrypoint.sh 가 부팅마다 ruleset 재로딩"
-            예상 출력 `(설명 텍스트)`.
-            운영 해석: 시스템과 컨테이너의 영구화 방식 차이.
-        negative_signs:
-          - six_nat table 없음
-          - prerouting/postrouting chain 누락
+          - "**[OSS] nft list table ip six_nat** — 표준."
+          - "**[OSS] nft -j list table 의 JSON 출력**"
+          - "**[OSS] /etc/nftables.conf 의 six_nat 정의 (IaC)**"
+          - "**[OSS] sysctl ip_forward 검증 (NAT 의 전제)**"
+          - "**[OSS] conntrack 활성 확인 (lsmod | grep nf_nat)**"
+          - "**[OSS] iptables-nft -t nat -L (legacy view)**"
+          - "**[OSS] nftables wiki 의 NAT chapter**"
+          - "**[OSS] priority 별칭 (dstnat/srcnat) vs 정수 (-100/100)**"
     target_vm: fw
 
-  # ============================================================
-  # STEP 2 — DNAT 룰 추가 (외부 8888 → juiceshop)
-  # ============================================================
   - order: 2
     instruction: |
-      외부 (attacker) 의 fw:8888 접근을 직접 web Apache (10.20.32.80:80) — int 의 juiceshop 등 백엔드는 ips 의 forward 룰로 격리되어 있으므로, 외부 DNAT 의 직접 dst 는 dmz tier 의 web 으로 한다 으로 변환
-      하는 DNAT 룰을 prerouting chain 에 추가한다. input chain 의 8888/tcp 도 허용
-      해야 한다.
-    hint: |
-      ssh 6v6-fw 'sudo nft add rule ip six_nat prerouting iifname "eth0" tcp dport 8888 counter dnat to 10.20.32.80:80'
-    category: manipulation
-    points: 15
-    answer: |
+      **이 실습을 왜 하는가?**
+      port forwarding 의 표준 패턴. 외부 8888 → 내부 web 80 으로 변환.
+
+      **결과 해석**
+      curl 8888 → HTTP 200 (web 의 응답). conntrack 의 reply 의 src 변환.
+
+      **실전 활용**
+      외부 노출 서비스의 표준.
+
+      **작업 절차**:
+      ```
       ssh 6v6-fw 'sudo nft add rule ip six_nat prerouting iifname "eth0" tcp dport 8888 counter dnat to 10.20.32.80:80'
       ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 tcp dport 8888 accept'
       ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" http://10.20.30.1:8888/'
-    answer_detail: DNAT + input 허용 + curl 200 응답
-    verify:
-      type: output_contains
-      expect: dnat
-      field: stdout
-      semantic:
-        intent: |
-          DNAT 룰을 prerouting chain 에 추가하여 packet 의 dst IP/port 를 juiceshop
-          (10.20.40.81:3000) 으로 변환. fw 자체로 들어오는 8888/tcp 는 input chain
-          이 평가하므로 같이 허용. 결과: attacker → 10.20.30.1:8888 → juiceshop 응답
-          200.
-        success_criteria:
-          - DNAT 룰 추가 성공 (dnat 키워드 출력)
-          - input chain 의 8888 허용 룰
-          - attacker curl 응답 200
-        acceptable_methods:
-          - |
-            **[OSS] nft add rule ip six_nat prerouting** — 표준 DNAT.
-              ssh 6v6-fw 'sudo nft add rule ip six_nat prerouting iifname "eth0" tcp dport 8888 counter dnat to 10.20.32.80:80'
-              ssh 6v6-fw 'sudo nft -a list chain ip six_nat prerouting'
-            예상 출력 `iifname "eth0" tcp dport 8888 counter packets 0 bytes 0 dnat to 10.20.32.80:80 # handle X`.
-            운영 해석: prerouting 의 DNAT 가 적용 → 후속 검증.
-          - |
-            **[OSS] input chain 의 8888 허용** — 동반.
-              ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 tcp dport 8888 accept'
-              # 또는 add (위치 차이)
-              ssh 6v6-fw 'sudo nft list chain inet six_filter input | head -5'
-            예상 출력 `tcp dport 8888 accept / ...`.
-            운영 해석: input chain 이 fw 자체로 들어오는 트래픽 통제 → 8888 허용 안
-            하면 DNAT 가 있어도 packet 차단.
-          - |
-            **[OSS] curl 검증 (DNAT 효과)** — 동작 시험.
-              ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" http://10.20.30.1:8888/'
-              # 응답 200 = juiceshop 응답
-              ssh 6v6-attacker 'curl -s http://10.20.30.1:8888/ | head -5'
-            예상 출력 `200 / <!DOCTYPE html><html ng-app="juiceShop" ...`.
-            운영 해석: HTTP 응답이 juiceshop 의 HTML → DNAT 가 패킷을 그쪽으로 변환
-            성공. 200 외 응답이면 input chain 차단 또는 forward chain 차단.
-          - |
-            **[OSS] forward chain 확인** — chain 통과 path.
-              # packet path: attacker → fw eth0 prerouting (DNAT) → routing → forward chain (10.20.40.81 dst)
-              ssh 6v6-fw 'sudo nft list chain inet six_filter forward'
-              # forward chain 에 ct state established,related accept 가 있어 응답 path 자동 허용
-            예상 출력 `chain forward { ... ct state established,related accept ... }`.
-            운영 해석: forward 의 첫 룰 (established,related) 이 응답 path 처리.
-            첫 SYN 은 정책 평가 → 매치 룰 없으면 policy accept.
-          - |
-            **[OSS] counter 증가 검증** — 통계.
-              # curl 발생 후
-              ssh 6v6-attacker 'curl -s http://10.20.30.1:8888/ > /dev/null'
-              ssh 6v6-fw 'sudo nft list chain ip six_nat prerouting | grep -B0 counter'
-            예상 출력 `iifname "eth0" tcp dport 8888 counter packets 5+ bytes 300+ dnat to 10.20.32.80:80`.
-            운영 해석: counter packets 증가 → 룰 매치. 0 이면 트래픽 도달 안 함.
-          - |
-            **[OSS] tcpdump 양 hop 비교** — 동적.
-              # fw eth0 의 dport 8888
-              ssh 6v6-fw 'sudo timeout 5 tcpdump -ni eth0 "tcp port 8888" -c 5 2>&1 | head'
-              # fw eth1 의 변환된 dport 3000
-              ssh 6v6-fw 'sudo timeout 5 tcpdump -ni eth1 "host 10.20.32.80" -c 5 2>&1 | head'
-            예상 출력 `eth0: src.xx > 10.20.30.1.8888 / eth1: 10.20.31.1.yy > 10.20.40.81.3000`.
-            운영 해석: 같은 conn 이 eth0 에선 dport 8888 → eth1 에선 dport 3000 로
-            변환. DNAT 가 routing 후에도 일관 적용.
-          - |
-            **[OSS] HAProxy 우회 검증** — L7 비교.
-              # 8888 은 HAProxy frontend 가 아니므로 HAProxy log 에 안 남음
-              ssh 6v6-fw 'sudo tail -10 /var/log/haproxy.log 2>/dev/null | grep 8888 | wc -l'
-              # 0 이어야 함
-            예상 출력 `0`.
-            운영 해석: nftables DNAT 는 L4 변환 → HAProxy 거치지 않음. log 흔적 없음.
-          - |
-            **[OSS] DNAT 룰 삭제** — 정리.
-              HANDLE=$(ssh 6v6-fw 'sudo nft -a list chain ip six_nat prerouting | grep "dport 8888" | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
-              ssh 6v6-fw "sudo nft delete rule ip six_nat prerouting handle $HANDLE"
-              HANDLE2=$(ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep "dport 8888" | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
-              ssh 6v6-fw "sudo nft delete rule inet six_filter input handle $HANDLE2"
-            예상 출력 `(아무 출력 없으면 성공)`.
-            운영 해석: 정리 후 8888 접근 불가 검증.
-        negative_signs:
-          - DNAT 룰 추가 실패
-          - curl 응답 200 아님
-          - input 허용 룰 누락
-    cleanup: |
-      ssh 6v6-fw 'sudo nft -a list chain ip six_nat prerouting 2>/dev/null | grep "dport 8888" | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}" | xargs -I H ssh 6v6-fw "sudo nft delete rule ip six_nat prerouting handle H"'
-      ssh 6v6-fw 'sudo nft -a list chain inet six_filter input 2>/dev/null | grep "dport 8888" | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}" | xargs -I H ssh 6v6-fw "sudo nft delete rule inet six_filter input handle H"'
-    target_vm: fw
-
-  # ============================================================
-  # STEP 3 — MASQUERADE 룰 추가 (dmz/int outbound)
-  # ============================================================
-  - order: 3
-    instruction: |
-      pipe / dmz / int subnet 의 컨테이너가 외부로 outbound 시 fw 의 ext NIC IP 로
-      자동 변환되도록 MASQUERADE 룰을 postrouting chain 에 추가한다.
-    hint: |
-      ssh 6v6-fw 'sudo nft add rule ip six_nat postrouting oifname "eth0" ip saddr 10.20.31.0/24 masquerade'
+      ssh 6v6-fw 'sudo conntrack -L 2>/dev/null | grep dport=8888'
+      ```
+    hint: ssh 6v6-fw 'sudo nft add rule ip six_nat prerouting iifname eth0 tcp dport 8888 counter dnat to 10.20.32.80:80'
     category: manipulation
-    points: 10
+    points: 20
     answer: |
-      ssh 6v6-fw 'sudo nft add rule ip six_nat postrouting oifname "eth0" ip saddr 10.20.31.0/24 masquerade'
-      ssh 6v6-fw 'sudo nft add rule ip six_nat postrouting oifname "eth0" ip saddr 10.20.32.0/24 masquerade'
-      ssh 6v6-fw 'sudo nft add rule ip six_nat postrouting oifname "eth0" ip saddr 10.20.40.0/24 masquerade'
-      ssh 6v6-fw 'sudo nft list chain ip six_nat postrouting'
-    answer_detail: 3 MASQUERADE 룰 추가 + postrouting chain 출력에 포함
-    verify:
-      type: output_contains
-      expect: masquerade
-      field: stdout
-      semantic:
-        intent: |
-          pipe / dmz / int 3 subnet 의 outbound 가 fw eth0 (ext NIC) 로 나갈 때
-          source IP 를 fw 의 ext IP 로 자동 변환 (MASQUERADE). NIC IP 가 DHCP 등
-          으로 동적이면 SNAT (`to <IP>`) 보다 MASQUERADE 가 안전.
-        success_criteria:
-          - 3 MASQUERADE 룰 (3 subnet)
-          - postrouting chain 출력에 masquerade
-          - oifname eth0 명시
-        acceptable_methods:
-          - |
-            **[OSS] nft add rule ... masquerade** — 표준.
-              for net in 10.20.31.0/24 10.20.32.0/24 10.20.40.0/24; do
-                ssh 6v6-fw "sudo nft add rule ip six_nat postrouting oifname \"eth0\" ip saddr $net counter masquerade"
-              done
-              ssh 6v6-fw 'sudo nft list chain ip six_nat postrouting'
-            예상 출력 `oifname "eth0" ip saddr 10.20.31.0/24 counter packets 0 bytes 0 masquerade / oifname "eth0" ip saddr 10.20.32.0/24 counter masquerade / oifname "eth0" ip saddr 10.20.40.0/24 counter masquerade`.
-            운영 해석: 3 subnet 각각 masquerade.
-          - |
-            **[OSS] subnet 통합 (set 활용)** — 효율.
-              # 3 subnet 을 하나의 set 에 묶고 룰 1 줄로
-              ssh 6v6-fw 'sudo nft add set ip six_nat priv_nets "{ type ipv4_addr; flags interval; }"'
-              ssh 6v6-fw 'sudo nft add element ip six_nat priv_nets "{ 10.20.31.0/24, 10.20.32.0/24, 10.20.40.0/24 }"'
-              ssh 6v6-fw 'sudo nft add rule ip six_nat postrouting oifname "eth0" ip saddr @priv_nets counter masquerade'
-            예상 출력 `(룰 1 줄 + set 정의)`.
-            운영 해석: set 으로 묶으면 룰 1 줄 + 동적 갱신. production 권장.
-          - |
-            **[OSS] outbound 시험 (실제 효과)** — 검증.
-              # web 컨테이너에서 외부 ping (외부 reachable 한 경우)
-              # 또는 web → external DNS 시험
-              ssh 6v6-web 'getent hosts example.com 2>&1 | head -1' || true
-              # web 의 outbound 트래픽이 fw 의 ext IP 로 변환됨
-              ssh 6v6-fw 'sudo conntrack -L 2>/dev/null | grep -E "src=10.20.32" | head -3'
-            예상 출력 `tcp ... src=10.20.32.80 dst=external.ip ... src=external.ip dst=10.20.30.1 (변환된 reply)`.
-            운영 해석: conntrack 의 reply 의 dst 가 fw 의 ext IP → masquerade 적용.
-          - |
-            **[OSS] sysctl ip_forward 검증** — 전제.
-              ssh 6v6-fw 'sudo sysctl net.ipv4.ip_forward'
-              # 1 이어야 함
-            예상 출력 `net.ipv4.ip_forward = 1`.
-            운영 해석: ip_forward=0 이면 NAT 룰이 있어도 패킷이 forward 못함.
-          - |
-            **[OSS] iptables-nft -t nat -L POSTROUTING** — 비교.
-              ssh 6v6-fw 'sudo iptables-nft -t nat -L POSTROUTING -n -v 2>&1 | head -15'
-            예상 출력 `Chain POSTROUTING (policy ACCEPT 0 packets, 0 bytes) / 0 0 MASQUERADE all -- * eth0 10.20.31.0/24 0.0.0.0/0`.
-            운영 해석: iptables view 에서도 동일한 MASQUERADE 룰 가시화.
-          - |
-            **[OSS] conntrack -L 의 reply 변환** — 검증 핵심.
-              # masquerade 효과: reply 의 dst 가 변환됨
-              ssh 6v6-fw 'sudo conntrack -L --src-nat 2>/dev/null | head -5'
-              # 또는 src 가 fw ext IP 인 conn
-              ssh 6v6-fw 'sudo conntrack -L 2>/dev/null | awk "/src=10.20.31|src=10.20.32|src=10.20.40/ {print}" | head -3'
-            예상 출력 `tcp 6 86400 ESTABLISHED src=10.20.32.80 dst=8.8.8.8 ... src=8.8.8.8 dst=10.20.30.1 ...`.
-            운영 해석: orig 의 src 와 reply 의 dst 가 다름 → NAT 변환 흔적.
-          - |
-            **[OSS] masquerade 룰 삭제** — 정리.
-              for net in 10.20.31.0/24 10.20.32.0/24 10.20.40.0/24; do
-                HANDLE=$(ssh 6v6-fw "sudo nft -a list chain ip six_nat postrouting | grep \"$net\" | grep -oE \"handle [0-9]+\" | head -1 | awk \"{print \\\$2}\"")
-                [ -n "$HANDLE" ] && ssh 6v6-fw "sudo nft delete rule ip six_nat postrouting handle $HANDLE"
-              done
-            예상 출력 `(정리 후 룰 없음)`.
-            운영 해석: 실험 종료 시 룰 삭제.
-        negative_signs:
-          - masquerade 룰 추가 실패
-          - oifname eth0 누락
-          - 3 subnet 중 1+ 누락
-    cleanup: |
-      for net in 10.20.31.0/24 10.20.32.0/24 10.20.40.0/24; do
-        HANDLE=$(ssh 6v6-fw "sudo nft -a list chain ip six_nat postrouting | grep \"$net\" | grep -oE \"handle [0-9]+\" | head -1 | awk \"{print \\\$2}\"")
-        [ -n "$HANDLE" ] && ssh 6v6-fw "sudo nft delete rule ip six_nat postrouting handle $HANDLE"
-      done
-    target_vm: fw
-
-  # ============================================================
-  # STEP 4 — conntrack -L 의 NAT 변환 분석
-  # ============================================================
-  - order: 4
-    instruction: |
-      `conntrack -L` 출력에서 활성 conn 의 orig vs reply 의 src/dst 변환을 관찰한다.
-      각 row 의 6 필드 (orig src/dst/sport/dport + reply src/dst/sport/dport) 의
-      관계를 분석한다.
-    hint: ssh 6v6-fw 'sudo conntrack -L 2>/dev/null | head -10'
-    category: monitoring
-    points: 15
-    answer: |
-      ssh 6v6-fw 'sudo conntrack -L -p tcp 2>/dev/null | head -10'
-    answer_detail: 10 활성 conn 의 양방향 변환 분석
-    verify:
-      type: output_contains
-      expect: ESTABLISHED
-      field: stdout
-      semantic:
-        intent: |
-          conntrack -L 의 출력 row 가 한 conn 의 orig + reply 양방향 변환을 보여준다.
-          NAT 가 일어났다면 orig 의 src/dst 와 reply 의 src/dst 가 swap 이외에도
-          IP/port 변환 흔적. 학생은 각 row 의 의미를 한글로 분석한다.
-        success_criteria:
-          - ESTABLISHED 상태 conn 1+
-          - orig + reply 양방향 출력
-          - protocol (tcp/udp/icmp) 표기
-        acceptable_methods:
-          - |
-            **[OSS] conntrack -L (기본)** — 표준.
-              ssh 6v6-fw 'sudo conntrack -L 2>/dev/null | head -10'
-            예상 출력 `tcp 6 86400 ESTABLISHED src=10.20.30.202 dst=10.20.30.1 sport=43210 dport=80 src=10.20.30.1 dst=10.20.30.202 sport=80 dport=43210 [ASSURED]`.
-            운영 해석: 한 row = 한 conn. orig 4-tuple + reply 4-tuple.
-          - |
-            **[OSS] conntrack -L -p tcp (TCP 만)** — 필터.
-              ssh 6v6-fw 'sudo conntrack -L -p tcp 2>/dev/null | wc -l'
-              ssh 6v6-fw 'sudo conntrack -L -p tcp 2>/dev/null | head -5'
-            예상 출력 `15 / TCP rows`.
-            운영 해석: TCP conn 만 필터. UDP/ICMP 제외.
-          - |
-            **[OSS] conntrack -L --orig-src** — 특정 src.
-              ssh 6v6-fw 'sudo conntrack -L --orig-src 10.20.30.202 2>/dev/null | head -3'
-            예상 출력 `attacker 발 conn 만`.
-            운영 해석: 특정 client 의 활성 conn 분석.
-          - |
-            **[OSS] conntrack -E (실시간 event)** — stream.
-              ssh 6v6-fw 'sudo timeout 5 conntrack -E -e NEW 2>/dev/null | head -5'
-              # NEW event 만 stream
-              # 다른 터미널에서 curl 발생
-            예상 출력 `[NEW] tcp 6 120 SYN_SENT src=... dst=...`.
-            운영 해석: 실시간으로 새 conn 발생 추적. NAT 적용 직후 시점.
-          - |
-            **[OSS] conntrack-tools 의 -S (통계)** — 메트릭.
-              ssh 6v6-fw 'sudo conntrack -S 2>/dev/null | head -5'
-            예상 출력 `cpu=0 found=1234 invalid=0 ignore=0 ...`.
-            운영 해석: conntrack 처리 통계 (cpu 별). production 모니터링.
-          - |
-            **[OSS] /proc/net/nf_conntrack** — raw view.
-              ssh 6v6-fw 'sudo head -5 /proc/net/nf_conntrack 2>/dev/null'
-            예상 출력 `ipv4 2 tcp 6 86400 ESTABLISHED src=... dst=... [ASSURED] mark=0 zone=0 use=2`.
-            운영 해석: 커널 raw 출력. conntrack -L 와 같은 데이터.
-          - |
-            **[OSS] DNAT 활성 후 conntrack 비교** — 변환 가시화.
-              # DNAT 룰 추가 (STEP 2) 후
-              # ssh 6v6-fw 'sudo nft add rule ip six_nat prerouting iifname eth0 tcp dport 8888 dnat to 10.20.32.80:80'
-              # ssh 6v6-attacker curl ...:8888 발생 후
-              ssh 6v6-fw 'sudo conntrack -L 2>/dev/null | grep "dport=8888"'
-              # orig: dst=10.20.30.1 dport=8888 / reply: src=10.20.32.80 sport=80
-            예상 출력 `tcp ... src=10.20.30.202 dst=10.20.30.1 dport=8888 / src=10.20.32.80 dst=10.20.30.202 sport=3000`.
-            운영 해석: orig dst (10.20.30.1) ≠ reply src (10.20.40.81) → DNAT 변환 흔적.
-          - |
-            **[OSS] conntrack -D (특정 conn 강제 종료)** — 운영.
-              # 특정 conn delete (보안 인시던트 대응)
-              # ssh 6v6-fw 'sudo conntrack -D --orig-src 10.20.30.202 -p tcp --dport 80'
-              # 학습 시에는 실행 안 함 (다른 학생 conn 도 영향)
-              echo "강제 종료는 운영 시 시연 (학습 환경 영향)"
-            예상 출력 `(설명)`.
-            운영 해석: 침해 대응 시 conntrack 으로 conn 강제 종료. Active Response
-            의 한 형태.
-        negative_signs:
-          - conntrack 출력 없음
-          - ESTABLISHED 키워드 없음
-          - orig/reply 분석 누락
-    target_vm: fw
-
-  # ============================================================
-  # STEP 5 — nft monitor trace 로 packet 추적
-  # ============================================================
-  - order: 5
-    instruction: |
-      한 conn 의 packet 이 어떤 룰을 지나는지 step-by-step 추적한다. trace 룰을
-      하나 추가 후 `nft monitor trace` 로 event stream 을 받으면, packet 의 각
-      chain/rule 통과를 실시간 가시화할 수 있다.
-    hint: |
-      ssh 6v6-fw 'sudo nft add rule inet six_filter input tcp dport 80 meta nftrace set 1'
-    category: debugging
-    points: 15
-    answer: |
-      # 1. trace 활성화 룰 추가
-      ssh 6v6-fw 'sudo nft add rule inet six_filter input tcp dport 80 meta nftrace set 1'
-      # 2. trace stream (별 터미널)
-      # ssh 6v6-fw 'sudo nft monitor trace 2>&1' > /tmp/trace.log &
-      # 3. 다른 터미널에서 curl
-      ssh 6v6-attacker 'curl -s -o /dev/null -H "Host: juice.6v6.lab" http://10.20.30.1/'
-      # 4. trace 결과
-      ssh 6v6-fw 'sudo timeout 3 nft monitor trace 2>&1 | head -20 || true'
-    answer_detail: trace event 가 chain/rule 통과 가시화
-    verify:
-      type: output_contains
-      expect: trace
-      field: stdout
-      semantic:
-        intent: |
-          nft monitor trace 는 packet 의 chain/rule 통과를 실시간 가시화. trace 활성
-          룰 (meta nftrace set 1) 에 매치된 packet 만 trace event 출력. 정책 디버깅
-          + race condition 탐지에 핵심 도구.
-        success_criteria:
-          - trace 활성화 룰 추가
-          - monitor trace event 1+ 출력
-          - chain 통과 sequence 가시화
-        acceptable_methods:
-          - |
-            **[OSS] meta nftrace set 1 + nft monitor trace** — 표준.
-              # 1. trace 활성화 (특정 packet 패턴만)
-              ssh 6v6-fw 'sudo nft add rule inet six_filter input tcp dport 80 meta nftrace set 1'
-              # 2. event stream
-              # 별 터미널: ssh 6v6-fw 'sudo nft monitor trace'
-              # 다른 터미널: ssh 6v6-attacker curl ...:80
-            예상 출력 `trace id <X> inet six_filter input packet: iif "eth0" ... → verdict accept`.
-            운영 해석: packet 의 각 룰 통과 단계 가시화. verdict 가 accept/drop/return.
-          - |
-            **[OSS] nft monitor (모든 event)** — 광범위.
-              ssh 6v6-fw 'sudo timeout 5 nft monitor 2>&1 | head -10'
-              # ruleset 변경 + trace 모두
-            예상 출력 `add rule ... / trace id ...`.
-            운영 해석: nftrace + ruleset 변경 + 기타 모두 stream.
-          - |
-            **[OSS] tcpdump + nft trace 동시** — 종합 분석.
-              # T1: tcpdump on eth0
-              # T2: tcpdump on eth1
-              # T3: nft monitor trace
-              # T4: curl 발생
-              # 4 view 동시 비교
-              echo "4 view (tcpdump x 2 + nft trace + curl) 동시 분석"
-            예상 출력 `(절차 설명)`.
-            운영 해석: 패킷 (tcpdump) + 룰 통과 (nft trace) 의 시간순 매칭. 가장
-            깊은 디버깅.
-          - |
-            **[OSS] nftrace = 0 (해제)** — 정리.
-              # trace 룰 삭제
-              HANDLE=$(ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep "nftrace set 1" | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
-              [ -n "$HANDLE" ] && ssh 6v6-fw "sudo nft delete rule inet six_filter input handle $HANDLE"
-            예상 출력 `(룰 제거)`.
-            운영 해석: trace 가 active 면 모든 매치 packet 의 trace event 가 stream
-            → 운영 시 부담 → 디버깅 후 즉시 제거.
-          - |
-            **[OSS] -j 옵션으로 trace JSON** — 자동화.
-              ssh 6v6-fw 'sudo timeout 3 nft -j monitor trace 2>&1 | head -5'
-              # JSON 으로 trace event
-            예상 출력 `{"trace": {"family": "inet", "table": "six_filter", "chain": "input", ...}}`.
-            운영 해석: JSON 자동 파싱 → 분석 도구 통합.
-          - |
-            **[OSS] /var/log/kern.log 의 nf_log** — 비교.
-              # nftrace 외에 log 액션도 가능
-              ssh 6v6-fw 'sudo nft add rule inet six_filter input tcp dport 80 log prefix "INPUT-80: "'
-              ssh 6v6-attacker 'curl -s -o /dev/null -H "Host: juice.6v6.lab" http://10.20.30.1/'
-              ssh 6v6-fw 'sudo dmesg | tail -5 | grep INPUT-80 | head -3'
-              # 또는 journalctl -k
-            예상 출력 `<time> INPUT-80: IN=eth0 OUT= ... SRC=10.20.30.202 DST=10.20.30.1 ...`.
-            운영 해석: log prefix 는 kernel ring buffer 에 기록 → trace 는 이벤트 stream.
-            두 도구 비교.
-          - |
-            **[OSS] nft trace + counter** — 종합 통계.
-              # trace 와 counter 가 동시에 적용된 룰
-              ssh 6v6-fw 'sudo nft add rule inet six_filter input tcp dport 80 counter meta nftrace set 1'
-              # ... trace event 발생 시 counter 도 증가
-              ssh 6v6-fw 'sudo nft list chain inet six_filter input | grep "nftrace set 1"'
-            예상 출력 `tcp dport 80 counter packets X bytes Y meta nftrace set 1`.
-            운영 해석: 한 룰에 여러 action chained.
-        negative_signs:
-          - trace event 없음
-          - nftrace 룰 누락
-          - chain 통과 가시화 부재
-    cleanup: |
-      ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep "nftrace set 1" | grep -oE "handle [0-9]+" | awk "{print \$2}" | head -1 | xargs -I H ssh 6v6-fw "sudo nft delete rule inet six_filter input handle H"' 2>/dev/null || true
-    target_vm: fw
-
-  # ============================================================
-  # STEP 6 — HAProxy 와 nftables DNAT 충돌 시연
-  # ============================================================
-  - order: 6
-    instruction: |
-      80/tcp 에 nftables DNAT 룰을 추가하면 HAProxy 가 받지 못한다. 의도된 충돌을
-      시연 후 즉시 룰 제거하여 정상화한다. HAProxy log 에 흔적이 없는지 검증.
-    hint: |
-      ssh 6v6-fw 'sudo nft insert rule ip six_nat prerouting position 0 iifname "eth0" tcp dport 80 counter dnat to 10.20.32.80:80'
-    category: experiment
-    points: 15
-    answer: |
-      # 1. 충돌 DNAT 룰
-      ssh 6v6-fw 'sudo nft insert rule ip six_nat prerouting position 0 iifname "eth0" tcp dport 80 counter dnat to 10.20.32.80:80'
-      # 2. attacker → 80 (HAProxy 우회)
-      ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" http://10.20.30.1/'
-      # 3. HAProxy log 흔적 (없어야 함)
-      ssh 6v6-fw 'sudo tail -5 /var/log/haproxy.log 2>/dev/null | grep "10.20.30.202" | wc -l'
-      # 4. 정리
-      HANDLE=$(ssh 6v6-fw 'sudo nft -a list chain ip six_nat prerouting | grep "dport 80" | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
+      echo "=== DNAT 룰 추가 + input 허용 ==="
+      ssh 6v6-fw 'sudo nft add rule ip six_nat prerouting iifname "eth0" tcp dport 8888 counter dnat to 10.20.32.80:80'
+      ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 tcp dport 8888 accept'
+      echo
+      echo "=== curl 8888 검증 ==="
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "응답: %{http_code}\n" -H "Host: juice.6v6.lab" http://10.20.30.1:8888/'
+      sleep 2
+      echo
+      echo "=== conntrack 의 reply 변환 ==="
+      ssh 6v6-fw 'sudo conntrack -L 2>/dev/null | grep "dport=8888" | head -1'
+      echo
+      echo "=== nft counter 증가 ==="
+      ssh 6v6-fw 'sudo nft list chain ip six_nat prerouting | grep -B1 "dport 8888"'
+      echo
+      echo "=== Cleanup ==="
+      HANDLE=$(ssh 6v6-fw 'sudo nft -a list chain ip six_nat prerouting | grep "dport 8888" | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
       ssh 6v6-fw "sudo nft delete rule ip six_nat prerouting handle $HANDLE"
-    answer_detail: DNAT 가 HAProxy 우회 → log 없음 → 룰 제거 후 정상화
+      HANDLE2=$(ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep "dport 8888" | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
+      ssh 6v6-fw "sudo nft delete rule inet six_filter input handle $HANDLE2"
+    answer_detail: |
+      DNAT 룰: `iifname "eth0" tcp dport 8888 counter dnat to 10.20.32.80:80`.
+      input chain 의 8888/tcp accept (fw 자체로 들어오는 트래픽 허용 위함).
+      curl 응답 200. conntrack 의 reply: `src=10.20.32.80 dst=10.20.30.202 sport=80
+      dport=43544 [ASSURED]` — `src` 가 변환된 web IP. counter packets 1+ bytes 60+.
     verify:
       type: output_contains
       expect: '200'
       field: stdout
       semantic:
-        intent: |
-          nftables prerouting DNAT 가 HAProxy frontend 보다 일찍 평가됨 → packet
-          이 HAProxy 도달 전에 redirect → HAProxy log 흔적 없음. 본 시연으로 두
-          도구가 같은 포트에서 동작 시의 우선순위와 위험성 학습.
-        success_criteria:
-          - DNAT 룰 추가
-          - curl 응답 200 (juiceshop 직결)
-          - HAProxy log 에 흔적 없음
-          - 룰 제거 후 정상화
+        intent: "DNAT 외부 8888 → web 변환 + conntrack reply 변환 가시화"
+        success_criteria: ["200 응답", "conntrack reply src 변환", "counter 증가"]
         acceptable_methods:
-          - |
-            **[OSS] nft insert + position 0 (최상단)** — 표준.
-              ssh 6v6-fw 'sudo nft insert rule ip six_nat prerouting position 0 iifname "eth0" tcp dport 80 counter dnat to 10.20.32.80:80'
-              ssh 6v6-fw 'sudo nft list chain ip six_nat prerouting | head -5'
-            예상 출력 `iifname "eth0" tcp dport 80 counter packets 0 bytes 0 dnat to 10.20.32.80:80`.
-            운영 해석: position 0 = 가장 먼저 평가. 다른 룰보다 우선.
-          - |
-            **[OSS] curl 응답 + HAProxy log 비교** — 검증.
-              # 룰 적용 후
-              ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" http://10.20.30.1/'
-              # HAProxy log
-              ssh 6v6-fw 'sudo tail -10 /var/log/haproxy.log 2>/dev/null | wc -l'
-              # 또는 journalctl
-              ssh 6v6-fw 'sudo journalctl -u haproxy --since "30s ago" 2>&1 | wc -l'
-            예상 출력 `200 / 0 또는 적은 수`.
-            운영 해석: HAProxy 가 받은 conn 수 0 = 우회 검증.
-          - |
-            **[OSS] DNAT 후 dst 변환 검증** — conntrack.
-              ssh 6v6-fw 'sudo conntrack -L 2>/dev/null | grep -E "dst=10.20.30.1.*dport=80" | head -3'
-              # reply src 가 10.20.40.81 (juiceshop) 임 확인
-            예상 출력 `tcp 6 ESTABLISHED src=<attacker> dst=10.20.30.1 dport=80 / src=10.20.32.80 dst=<attacker> sport=3000`.
-            운영 해석: reply src=10.20.40.81 → DNAT 가 dst 를 juiceshop 으로 변환.
-            HAProxy 거치지 않음.
-          - |
-            **[OSS] tcpdump on eth1 (변환된 패킷)** — packet level.
-              ssh 6v6-fw 'sudo timeout 3 tcpdump -ni eth1 "host 10.20.32.80" -c 5 2>&1 | head'
-              # eth1 에서 dst=10.20.40.81:3000 패킷 가시화
-            예상 출력 `IP 10.20.31.1.xxx > 10.20.40.81.3000 Flags [S]`.
-            운영 해석: 패킷의 dport 가 80 에서 3000 으로 변환된 채 pipe 로 forward.
-          - |
-            **[OSS] HAProxy stats 의 frontend 통계** — 다른 view.
-              ssh 6v6-fw 'echo "show stat" | sudo socat - UNIX-CONNECT:/var/run/haproxy.sock 2>/dev/null | awk -F, "/http_in/ {print \$1, \$2, \$5, \$8}"' || true
-              # frontend http_in 의 stot (total session) 증가 안 함
-            예상 출력 `http_in FRONTEND 0 0 0 0`.
-            운영 해석: HAProxy frontend session 0 → 충돌 시 HAProxy 가 packet 못 받음.
-          - |
-            **[OSS] 정리 + 정상화** — 안전.
-              HANDLE=$(ssh 6v6-fw 'sudo nft -a list chain ip six_nat prerouting | grep "dport 80 " | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
-              ssh 6v6-fw "sudo nft delete rule ip six_nat prerouting handle $HANDLE"
-              ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" http://10.20.30.1/'
-              ssh 6v6-fw 'sudo tail -3 /var/log/haproxy.log 2>/dev/null | wc -l'
-            예상 출력 `200 / 1+ (HAProxy log 흔적 복귀)`.
-            운영 해석: 룰 제거 후 HAProxy 가 다시 conn 받음. log 흔적 복귀.
-          - |
-            **[OSS] 운영 위험 분석 (검토)** — 보고서.
-              # 충돌이 운영 환경에 미치는 위험:
-              # 1. HAProxy 의 X-Forwarded-For 헤더 누락 → client IP 추적 불가
-              # 2. host header 라우팅 우회 → wrong backend
-              # 3. HAProxy log 없음 → 트러블슈팅 곤란
-              # 4. HAProxy access list / rate limit 우회 → 보안 약화
-              # 5. TLS termination 우회 → backend 에 TLS 통과 시 cert 불일치
-            예상 출력 `(분석 텍스트)`.
-            운영 해석: 두 도구 동시 사용 시 운영자가 위 5 위험 항상 인지 + 정책 명세
-            필수.
-          - |
-            **[OSS] priority 차이로 우회 가능?** — 고급.
-              # nat prerouting priority -100 vs filter prerouting priority 0
-              # priority 가 낮을 수록 먼저 평가 → DNAT 가 filter 보다 먼저
-              ssh 6v6-fw 'sudo nft list chains 2>&1 | grep -E "hook prerouting"'
-            예상 출력 `chain prerouting { type nat hook prerouting priority -100 ; } / ...`.
-            운영 해석: priority -100 → 0 → 100 순서로 평가. HAProxy frontend 는
-            user-space 의 bind 이므로 모든 NAT 룰 이후. 우회 불가능.
+          - "**[OSS] nft add rule ip six_nat prerouting + dnat to** — 표준."
+          - "**[OSS] inet six_filter input chain 의 8888 허용 (fw 자체 input)**"
+          - "**[OSS] curl 8888 → 200 검증 (web 의 응답)**"
+          - "**[OSS] conntrack -L | grep dport=8888 (양방향 변환)**"
+          - "**[OSS] tcpdump eth0 + eth1 (DNAT 변환 packet 캡처)**"
+          - "**[OSS] nft counter packets/bytes 증가 (룰 매치 검증)**"
+          - "**[OSS] iptables-nft -t nat -L PREROUTING (legacy view)**"
+          - "**[OSS] handle 식별 후 정확한 delete (cleanup)**"
         negative_signs:
-          - curl 응답 200 아님
-          - HAProxy log 흔적 (있다면 충돌 미발생)
-          - 정리 후 정상화 실패
+          - "200 아닌 응답"
+          - "conntrack 변환 흔적 없음"
     cleanup: |
-      ssh 6v6-fw 'sudo nft -a list chain ip six_nat prerouting 2>/dev/null | grep "dport 80 " | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}" | xargs -I H ssh 6v6-fw "sudo nft delete rule ip six_nat prerouting handle H"' || true
+      ssh 6v6-fw 'sudo nft -a list chain ip six_nat prerouting 2>/dev/null | grep "dport 8888" | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}" | xargs -I H ssh 6v6-fw "sudo nft delete rule ip six_nat prerouting handle H"' 2>/dev/null
+      ssh 6v6-fw 'sudo nft -a list chain inet six_filter input 2>/dev/null | grep "dport 8888" | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}" | xargs -I H ssh 6v6-fw "sudo nft delete rule inet six_filter input handle H"' 2>/dev/null
     target_vm: fw
 
-  # ============================================================
-  # STEP 7 — 영구화 (nftables.conf patch) 시뮬레이션
-  # ============================================================
+  - order: 3
+    instruction: |
+      **이 실습을 왜 하는가?**
+      MASQUERADE 는 SNAT 의 특수 형태. pipe/dmz/int subnet 의 outbound 가 fw 의
+      ext NIC IP 로 자동 변환.
+
+      **결과 해석**
+      postrouting chain 에 3 룰 (3 subnet) + masquerade keyword.
+
+      **실전 활용**
+      production container 환경 (Kubernetes 등) NIC IP 동적 변경 시 정석.
+    hint: ssh 6v6-fw 'sudo nft add rule ip six_nat postrouting oifname eth0 ip saddr 10.20.31.0/24 counter masquerade'
+    category: manipulation
+    points: 15
+    answer: |
+      for net in 10.20.31.0/24 10.20.32.0/24 10.20.40.0/24; do
+        ssh 6v6-fw "sudo nft add rule ip six_nat postrouting oifname \"eth0\" ip saddr $net counter masquerade"
+      done
+      ssh 6v6-fw 'sudo nft list chain ip six_nat postrouting'
+      # cleanup
+      for net in 10.20.31.0/24 10.20.32.0/24 10.20.40.0/24; do
+        HANDLE=$(ssh 6v6-fw "sudo nft -a list chain ip six_nat postrouting | grep \"$net\" | grep -oE \"handle [0-9]+\" | head -1 | awk \"{print \\\$2}\"")
+        [ -n "$HANDLE" ] && ssh 6v6-fw "sudo nft delete rule ip six_nat postrouting handle $HANDLE"
+      done
+    answer_detail: |
+      3 subnet 의 outbound 가 fw ext NIC 로 나갈 때 masquerade. 출력:
+      `oifname "eth0" ip saddr 10.20.31.0/24 counter packets 0 bytes 0 masquerade` × 3.
+      cleanup 으로 룰 제거.
+    verify:
+      type: output_contains
+      expect: masquerade
+      field: stdout
+      semantic:
+        intent: "MASQUERADE 룰 3 subnet 추가 + 검증"
+        success_criteria: ["masquerade 키워드", "3 룰 추가"]
+        acceptable_methods:
+          - "**[OSS] nft add rule postrouting oifname eth0 ip saddr ... masquerade** — 표준."
+          - "**[OSS] set 자료구조로 3 subnet 통합 (priv_nets set)**"
+          - "**[OSS] outbound 시험 (web 컨테이너에서 외부 conn 시도)**"
+          - "**[OSS] conntrack -L 의 reply 변환 (src 가 fw ext IP)**"
+          - "**[OSS] iptables-nft -t nat -L POSTROUTING (legacy view)**"
+          - "**[OSS] SNAT 명시 (`snat to <IP>`) vs MASQUERADE 비교**"
+          - "**[OSS] Docker 의 자동 MASQUERADE 와 충돌 검토**"
+          - "**[OSS] cleanup 의 handle 식별**"
+    cleanup: |
+      for net in 10.20.31.0/24 10.20.32.0/24 10.20.40.0/24; do
+        HANDLE=$(ssh 6v6-fw "sudo nft -a list chain ip six_nat postrouting | grep \"$net\" | grep -oE \"handle [0-9]+\" | head -1 | awk \"{print \\\$2}\"" 2>/dev/null)
+        [ -n "$HANDLE" ] && ssh 6v6-fw "sudo nft delete rule ip six_nat postrouting handle $HANDLE" 2>/dev/null
+      done
+      true
+    target_vm: fw
+
+  - order: 4
+    instruction: |
+      **이 실습을 왜 하는가?**
+      conntrack table 이 stateful firewall + NAT 의 source of truth. orig vs reply
+      6 필드 (src/dst/sport/dport × 2) 분석으로 모든 NAT 변환 검출.
+
+      **결과 해석**
+      각 row 의 양방향 변환 + ASSURED 상태 표기.
+
+      **실전 활용**
+      운영 시 NAT 효과 검증 + 의심 conn 분석.
+    hint: ssh 6v6-fw sudo conntrack -L -p tcp
+    category: monitoring
+    points: 15
+    answer: |
+      ssh 6v6-fw 'sudo conntrack -L -p tcp 2>/dev/null | head -10'
+      echo "--- 카운터 ---"
+      ssh 6v6-fw 'sudo conntrack -S 2>/dev/null | head -3'
+    answer_detail: |
+      conntrack -L 의 한 row = 한 conn 의 양방향 변환. 예:
+      `tcp 6 86400 ESTABLISHED src=10.20.30.202 dst=10.20.30.1 sport=43210 dport=80
+      src=10.20.31.2 dst=10.20.30.202 sport=80 dport=43210 [ASSURED]`.
+      orig 의 dst (10.20.30.1) 와 reply 의 src (10.20.31.2) 가 다르면 NAT 변환 (예: HAProxy
+      가 backend 로 새 conn 만들 때).
+    verify:
+      type: output_contains
+      expect: ESTABLISHED
+      field: stdout
+      semantic:
+        intent: "conntrack 의 양방향 변환 가시화"
+        success_criteria: ["ESTABLISHED 상태", "orig + reply 양방향"]
+        acceptable_methods:
+          - "**[OSS] conntrack -L (기본)** — 표준."
+          - "**[OSS] conntrack -L -p tcp (TCP 만)**"
+          - "**[OSS] conntrack -L --orig-src <IP> (특정 src)**"
+          - "**[OSS] conntrack -E (실시간 event stream)**"
+          - "**[OSS] conntrack -S (CPU 별 통계)**"
+          - "**[OSS] /proc/net/nf_conntrack (raw view)**"
+          - "**[OSS] DNAT 활성 후 reply src 변환 검증**"
+          - "**[OSS] conntrack -D (특정 conn 강제 종료) — IR 대응**"
+    target_vm: fw
+
+  - order: 5
+    instruction: |
+      **이 실습을 왜 하는가?**
+      nft monitor trace 가 packet 의 chain/rule 통과를 실시간 가시화 → 정책 디버깅
+      의 황금 도구. trace 활성 룰 + 매치되는 packet 의 모든 통과 단계 출력.
+
+      **결과 해석**
+      trace event 가 packet 의 룰 통과 sequence (verdict accept/drop) 표시.
+
+      **실전 활용**
+      production 환경의 정책 디버깅. race condition + 의도되지 않은 매칭 검출.
+    hint: ssh 6v6-fw sudo nft monitor trace
+    category: debugging
+    points: 15
+    answer: |
+      # trace 활성화 룰 추가
+      ssh 6v6-fw 'sudo nft add rule inet six_filter input tcp dport 80 meta nftrace set 1'
+      # 백그라운드로 trace 5초 대기
+      (ssh 6v6-fw 'sudo timeout 5 nft monitor trace 2>&1' &) > /tmp/trace.out 2>&1
+      sleep 1
+      # 트래픽 발생
+      ssh 6v6-attacker 'curl -s -o /dev/null -H "Host: juice.6v6.lab" http://10.20.30.1/' >/dev/null
+      sleep 5
+      ssh 6v6-fw 'sudo timeout 3 nft monitor trace 2>&1 | head -5' &
+      sleep 1
+      ssh 6v6-attacker 'curl -s -o /dev/null -H "Host: juice.6v6.lab" http://10.20.30.1/' >/dev/null
+      wait
+      # cleanup
+      HANDLE=$(ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep "nftrace set 1" | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
+      [ -n "$HANDLE" ] && ssh 6v6-fw "sudo nft delete rule inet six_filter input handle $HANDLE"
+    answer_detail: |
+      meta nftrace set 1 룰이 매치된 packet 의 trace event 를 실시간 stream.
+      출력 예: `trace id <X> inet six_filter input packet: iif "eth0" ... → verdict accept`.
+      운영 종료 시 룰 즉시 삭제 (trace 가 가시성 부담).
+    verify:
+      type: output_contains
+      expect: trace
+      field: stdout
+      semantic:
+        intent: "nft monitor trace 로 packet 통과 추적"
+        success_criteria: ["trace event 1+"]
+        acceptable_methods:
+          - "**[OSS] meta nftrace set 1 + nft monitor trace** — 표준."
+          - "**[OSS] nft -j monitor trace (JSON 자동화)**"
+          - "**[OSS] tcpdump + nft trace 동시 (4 view 비교)**"
+          - "**[OSS] log prefix + dmesg (대안 디버깅)**"
+          - "**[OSS] nftrace set 0 (해제)**"
+          - "**[OSS] specific filter — iifname / saddr 로 좁힘**"
+          - "**[OSS] production 운영 — trace 는 임시만 (CPU 부담)**"
+          - "**[OSS] race condition 검출 — 같은 packet 의 여러 룰 평가 순서**"
+    cleanup: |
+      ssh 6v6-fw 'sudo nft -a list chain inet six_filter input 2>/dev/null | grep "nftrace set 1" | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}" | xargs -I H ssh 6v6-fw "sudo nft delete rule inet six_filter input handle H"' 2>/dev/null
+    target_vm: fw
+
+  - order: 6
+    instruction: |
+      **이 실습을 왜 하는가?**
+      nftables DNAT 와 HAProxy 가 같은 port (80) 에서 동시 운영 시 충돌 시뮬레이션.
+      Red/Blue/Purple 의 표준 cycle.
+
+      **이걸 하면 무엇을 알 수 있는가?**
+      - prerouting 의 DNAT 가 HAProxy 보다 항상 우선 (priority -100)
+      - HAProxy log 의 흔적 부재 = host header 라우팅 우회
+      - production 환경의 정책 — 한 port = 한 도구
+
+      **결과 해석**
+      DNAT 룰 적용 후 HAProxy log 에 흔적 없음 + conntrack 의 dst 가 변환된 backend.
+      Cleanup 후 정상화.
+
+      **실전 활용**
+      Purple Team standard cycle. 분기별 정기 충돌 검토.
+    hint: 'ssh 6v6-fw sudo nft insert rule ip six_nat prerouting position 0 iifname eth0 tcp dport 80 dnat to 10.20.32.80:80'
+    category: redblue
+    points: 25
+    answer: |
+      echo "=== Red 1차: 평상시 (HAProxy 경유) ==="
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" http://10.20.30.1/'
+      sleep 1
+      ssh 6v6-fw 'sudo tail -3 /var/log/haproxy.log 2>/dev/null | grep "10.20.30.202" | tail -1 | head -1'
+      echo
+      echo "=== Blue 1차: 충돌 DNAT 룰 추가 ==="
+      ssh 6v6-fw 'sudo nft insert rule ip six_nat prerouting position 0 iifname "eth0" tcp dport 80 counter dnat to 10.20.32.80:80'
+      echo
+      echo "=== Red 2차: 동일 요청 → HAProxy 우회 ==="
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" http://10.20.30.1/'
+      sleep 2
+      echo "HAProxy log 흔적 (없으면 0):"
+      ssh 6v6-fw 'sudo tail -3 /var/log/haproxy.log 2>/dev/null | grep "10.20.30.202" | wc -l'
+      echo
+      echo "=== Purple: priority 분석 ==="
+      ssh 6v6-fw 'sudo nft list chains 2>&1 | grep -E "hook prerouting" | head -3'
+      echo
+      echo "=== Purple: nft counter ==="
+      ssh 6v6-fw 'sudo nft list chain ip six_nat prerouting | grep -B1 "dport 80 "'
+      echo
+      echo "=== Cleanup: DNAT 룰 제거 + 정상화 ==="
+      HANDLE=$(ssh 6v6-fw 'sudo nft -a list chain ip six_nat prerouting | grep "dport 80 " | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
+      [ -n "$HANDLE" ] && ssh 6v6-fw "sudo nft delete rule ip six_nat prerouting handle $HANDLE"
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "복귀 후: %{http_code}\n" -H "Host: juice.6v6.lab" http://10.20.30.1/'
+    answer_detail: |
+      Red 1차: HAProxy 정상 경유 (200) + HAProxy log 1 라인.
+      Blue: prerouting position 0 에 DNAT 룰 추가 (HAProxy 보다 우선).
+      Red 2차: 200 (DNAT 가 직접 web 으로 → HAProxy 우회) + HAProxy log 흔적 0.
+      Purple: priority 비교 (nat prerouting -100 vs HAProxy bind 80). nft counter 증가.
+      Cleanup: handle 로 DNAT 룰 삭제 + curl 200 복귀.
+
+      > 운영 위험 5:
+      > 1. X-Forwarded-For 헤더 누락 → client IP 추적 불가
+      > 2. host header 라우팅 우회 → wrong backend
+      > 3. HAProxy log 없음 → 트러블슈팅 곤란
+      > 4. HAProxy access list / rate limit 우회
+      > 5. TLS termination 우회 → cert 불일치
+    verify:
+      type: output_contains
+      expect: '200'
+      field: stdout
+      semantic:
+        intent: "R/B/P — HAProxy + DNAT 80 포트 충돌 시뮬"
+        success_criteria: ["Red 1차 200", "Blue DNAT 룰 추가", "Red 2차 200 + HAProxy 우회", "Cleanup 후 정상화"]
+        acceptable_methods:
+          - "**[OSS] nft insert rule prerouting position 0 + dnat to** — 표준."
+          - "**[OSS] HAProxy log 흔적 비교 (있음 vs 없음)**"
+          - "**[OSS] conntrack -L 의 dst 변환 가시화**"
+          - "**[OSS] tcpdump eth1 (변환된 packet 캡처)**"
+          - "**[OSS] HAProxy stats — backend session count 비교**"
+          - "**[OSS] priority 비교 (nat -100 vs filter 0)**"
+          - "**[OSS] 운영 권장 — 한 port = 한 도구**"
+          - "**[OSS] Cleanup handle 식별 + 정상화 검증**"
+        negative_signs:
+          - "DNAT 적용 후에도 HAProxy log 있음"
+          - "Cleanup 후 정상화 실패"
+    cleanup: |
+      ssh 6v6-fw 'sudo nft -a list chain ip six_nat prerouting 2>/dev/null | grep "dport 80 " | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}" | xargs -I H ssh 6v6-fw "sudo nft delete rule ip six_nat prerouting handle H"' 2>/dev/null
+    target_vm: bastion
+
   - order: 7
     instruction: |
-      본인이 추가한 NAT 룰을 영구화한다 가정하여 `/etc/nftables.conf` 의 patch 를
-      작성하고 `nft -c -f` 로 syntax 검증한다. 실제 적용은 image 재빌드 + 컨테이너
-      재기동 필요.
-    hint: |
-      cat <<'EOF' > /tmp/six_nat_patch.nft
-      table ip six_nat { ... }
-      EOF
-      sudo nft -c -f /tmp/six_nat_patch.nft
+      6 step 결과 + R/B/P + 운영 권장 + W04 준비도 종합 보고서.
+    hint: 마크다운
     category: synthesis
     points: 10
     answer: |
-      ssh 6v6-fw 'cat <<EOF > /tmp/six_nat_patch.nft
-      table ip six_nat {
-          chain prerouting {
-              type nat hook prerouting priority -100
-              policy accept
-              iifname "eth0" tcp dport 8888 counter dnat to 10.20.32.80:80
-          }
-          chain postrouting {
-              type nat hook postrouting priority 100
-              policy accept
-              oifname "eth0" ip saddr 10.20.31.0/24 counter masquerade
-              oifname "eth0" ip saddr 10.20.32.0/24 counter masquerade
-              oifname "eth0" ip saddr 10.20.40.0/24 counter masquerade
-          }
-      }
-      EOF'
-      ssh 6v6-fw 'sudo nft -c -f /tmp/six_nat_patch.nft && echo "VALID"'
-    answer_detail: patch syntax 검증 + VALID 출력
-    verify:
-      type: output_contains
-      expect: VALID
-      field: stdout
-      semantic:
-        intent: |
-          영구화 patch 작성 + `nft -c -f` syntax 검증. -c 는 check only, -f 는 file
-          기반 적용. production 운영 시 PR + 검토 → 머지 후 entrypoint 재실행 또는
-          이미지 재빌드.
-        success_criteria:
-          - patch 파일 작성
-          - VALID 출력
-          - DNAT + MASQUERADE 룰 모두 포함
-        acceptable_methods:
-          - |
-            **[OSS] nft -c -f (syntax check)** — 표준.
-              # patch 파일 작성 후
-              ssh 6v6-fw 'sudo nft -c -f /tmp/six_nat_patch.nft && echo "VALID"'
-            예상 출력 `VALID`.
-            운영 해석: -c (check only) = 적용 안 함, syntax 만 검증. production 변경
-            전 필수.
-          - |
-            **[OSS] git diff /etc/nftables.conf** — IaC.
-              # production 환경에선 git 으로 audit
-              # 6v6 의 경우 fw/nftables.conf in mrgrit/6v6 repo
-              echo "patch 후 git diff fw/nftables.conf 로 변경 가시화"
-              echo "merge 후 docker compose build fw && docker compose up -d fw 로 적용"
-            예상 출력 `(절차 설명)`.
-            운영 해석: 컨테이너 환경의 영구화 = image 재빌드.
-          - |
-            **[OSS] nft -f 적용 (실제)** — 변경.
-              # 실 적용 (학습 환경에서는 임시 적용으로 시뮬레이션)
-              # ssh 6v6-fw 'sudo nft -f /tmp/six_nat_patch.nft && echo APPLIED'
-              echo "실 적용 명령 — production 에서는 maintenance window 에"
-            예상 출력 `(설명)`.
-            운영 해석: -f 는 file 의 ruleset 으로 atomic 교체. 운영 중 race 없음.
-          - |
-            **[OSS] 컨테이너 재기동 vs nft -f 비교** — trade-off.
-              # 방법 1: nft -f (즉시 적용, 컨테이너 재시작 없음)
-              # 방법 2: image 재빌드 + 컨테이너 재시작 (영구, 다운타임 있음)
-              echo "1: nft -f → 빠름, but 다음 부팅 시 entrypoint 가 원본으로 덮어씀"
-              echo "2: image 재빌드 → 영구, but 다운타임"
-            예상 출력 `(비교)`.
-            운영 해석: production 운영은 image 재빌드 + rolling restart.
-          - |
-            **[OSS] patch 변경 history (audit)** — 감사.
-              # patch 파일을 git 으로 관리
-              # cd /home/opsclaw/6v6/fw && git log -p nftables.conf 2>&1 | head -30
-              echo "fw/nftables.conf 의 모든 변경은 git history 에"
-            예상 출력 `(audit 절차)`.
-            운영 해석: ISMS-P 2.6.1 (정책 변경 기록) 의 핵심. git 으로 audit 입증.
-          - |
-            **[OSS] CI/CD 통합 (참고)** — 자동화.
-              # GitHub Actions / Jenkins / GitLab CI
-              # 1. PR 생성 시 nft -c -f 자동 syntax check
-              # 2. merge 후 image build + deploy
-              # 3. canary deployment (1 fw 먼저 적용 + 헬스 확인)
-              echo "CI/CD 파이프라인의 nftables 변경 자동화"
-            예상 출력 `(설명)`.
-            운영 해석: GitOps 패턴.
-          - |
-            **[OSS] rollback 절차** — 안전.
-              # 변경 후 문제 발생 시 git revert + 재배포
-              echo "rollback: git revert <commit> + docker compose build fw + up -d"
-              echo "또는 fast rollback: 이전 nftables.conf backup 으로 즉시 nft -f"
-            예상 출력 `(rollback 절차)`.
-            운영 해석: 사전 정의된 rollback 절차 + 운영자 훈련.
-          - |
-            **[OSS] dry-run 시뮬레이션** — staging.
-              # 본 lab 자체가 dry-run staging.
-              # patch syntax 검증 → 본인 환경에서 시험 적용 → production
-              ssh 6v6-fw 'sudo nft -c -f /tmp/six_nat_patch.nft'
-              # 추가로: nft -e (echo) 로 적용될 명령 확인
-            예상 출력 `VALID`.
-            운영 해석: 학습 환경에서 patch 검증 → 운영 환경에서 변경.
-        negative_signs:
-          - VALID 출력 없음
-          - patch 파일 작성 누락
-          - syntax error
-    target_vm: fw
+      cat <<'EOF'
+      # 6v6 W03 nftables NAT + HAProxy 협업 보고서
 
-  # ============================================================
-  # STEP 8 — 종합 보고서
-  # ============================================================
-  - order: 8
-    instruction: |
-      앞 7 step 결과를 1페이지 보고서로 정리. 본 주차의 핵심 인사이트 (HAProxy 와
-      nftables 의 layer 차이 + conntrack 의 양방향 변환 + trace 의 디버깅 가치 +
-      영구화의 GitOps) 4 항목 + 본인이 발견한 운영 위험 1+.
-    hint: 마크다운 표 + 4 핵심 인사이트 + 운영 위험
-    category: synthesis
-    points: 10
-    answer: |
-      # 보고서 항목:
-      # 1. six_nat stub → 룰 추가 → 효과 검증
-      # 2. DNAT 동작 (외부 8888 → juiceshop)
-      # 3. MASQUERADE 3 subnet outbound
-      # 4. conntrack 양방향 변환 분석
-      # 5. nft monitor trace 가시화
-      # 6. HAProxy 충돌 시연
-      # 7. 영구화 patch + syntax 검증
-      # 8. 운영 위험 1+ 발견
-    answer_detail: 1페이지 보고서 + 4 인사이트 + 운영 위험 1+
+      ## 1. 6 step 결과 표
+      | Step | 영역 | 결과 |
+      |------|------|------|
+      | 1 | six_nat stub | pass — 2 chain |
+      | 2 | DNAT 8888 → web | pass — 200 + conntrack reply 변환 |
+      | 3 | MASQUERADE 3 subnet | pass — 3 룰 |
+      | 4 | conntrack -L 양방향 | pass — ESTABLISHED 다수 |
+      | 5 | nft monitor trace | pass — trace event 확인 |
+      | 6 | R/B/P 80 충돌 시뮬 | pass — HAProxy 우회 후 cleanup |
+
+      ## 2. R/B/P 핵심 측정
+      - Red 1차 HAProxy 경유: 200 + log 1 라인
+      - Blue DNAT 룰 적용: 200 + HAProxy log 0
+      - Purple priority: nat prerouting -100 > HAProxy user-space bind
+
+      ## 3. 운영 권장
+      1. 한 port = 한 도구 (HAProxy 와 nftables DNAT 혼합 금지)
+      2. X-Forwarded-For 헤더 활성 (`option forwardfor` in haproxy.cfg)
+      3. conntrack table 크기 모니터링 (`nf_conntrack_max`)
+      4. NAT 룰 영구화는 git PR + 이미지 재빌드
+      5. trace 룰은 임시만 (CPU 부담)
+
+      ## 4. W04 준비도
+      - Suricata 의 af-packet sniff 이해
+      - ETOpen 룰셋 70,000+ 사용 가능
+      - eve.json 의 7+ event_type
+      - 부족: nft trace 와 Suricata 룰 매치의 관계 (W04 학습)
+      EOF
+    answer_detail: 1페이지 보고서
     verify:
       type: output_contains
-      expect: NAT
+      expect: nftables
       field: stdout
       semantic:
-        intent: |
-          3주차 종합 보고서. 7 step 결과 + 4 인사이트 (HAProxy/conntrack/trace/GitOps)
-          + 본인의 운영 위험 1+.
-        success_criteria:
-          - 7 step 표
-          - 4 인사이트
-          - 운영 위험 1+
+        intent: "W03 종합 보고서"
+        success_criteria: ["6 step 표", "R/B/P 측정", "운영 권장 3+"]
         acceptable_methods:
-          - |
-            **[관리적 보고서] 마크다운 표 + 인사이트** — 표준.
-              ## 1. 학습 결과 표
-              | Step | 항목 | 결과 |
-              |------|------|------|
-              | 1 | six_nat stub | pass |
-              | 2 | DNAT 외부 8888 → juiceshop | pass (200) |
-              | 3 | MASQUERADE 3 subnet | pass |
-              | 4 | conntrack 변환 분석 | pass |
-              | 5 | nft monitor trace | pass |
-              | 6 | HAProxy 충돌 | pass (log 0) |
-              | 7 | 영구화 patch | pass (VALID) |
-              ## 2. 핵심 인사이트
-              1. nftables L4 vs HAProxy L7 — 같은 포트 충돌 시 nftables 가 우선
-              2. conntrack 의 orig/reply 양방향 → NAT 변환 흔적
-              3. nft monitor trace → packet-level 디버깅의 황금 도구
-              4. 영구화는 image 재빌드 (컨테이너) 또는 nft -f (호스트)
-              ## 3. 본인 발견 운영 위험
-              ex) DNAT + HAProxy 동시 운영 시 X-Forwarded-For 헤더 누락 → 침해 분석 곤란
-            예상 출력 `보고서`.
-            운영 해석: 7 step + 4 인사이트 + 운영 위험 = 학습 → 적용 → 위험 분석.
-          - |
-            **[관리적 분석] NIST CSF + ISMS-P 매핑** — 표준.
-              # NIST PR.PT-4 (Communications Protection)
-              # ISMS-P 2.6.1 (네트워크 접근 통제) — NAT 정책 변경 기록
-              # ISMS-P 2.7.3 (외부자 접근 통제) — DNAT 으로 외부 포트 노출 시 모니터링
-            운영 해석: NAT 정책이 표준 통제에 어떻게 매핑되는가.
-          - |
-            **[관리적 분석] MITRE D3FEND 매핑** — 방어.
-              # D3-NTPM (Network Traffic Policy Mapping)
-              # D3-NAT (Network Address Translation)
-              # 공격 ATT&CK T1090 (Proxy) 에 대한 방어
-            운영 해석: NAT 가 D3FEND 의 어느 좌표.
-          - |
-            **[관리적 분석] STRIDE 적용** — 위협 모델.
-              # S - DNAT 의 source IP 변조 가능?
-              # T - nft ruleset 변경 감사
-              # R - HAProxy log 부재 시 부인 방지 약화
-              # I - conntrack table 의 누출 가능?
-              # D - conntrack table full → 새 conn DoS
-              # E - sudo 권한 통제
-            운영 해석: NAT 가 STRIDE 6 카테고리 각각에 미치는 영향.
-          - |
-            **[관리적 분석] KISA 사례 매핑** — 한국.
-              # 2024 KISA 사례 중 NAT 관련 침해 1건 + 본 환경 적용
-              # 예: 인터넷 노출 DB 의 DNAT 변환 → 무차별 대입 → 데이터 유출
-              # 6v6 의 fw 가 DB port DNAT 시 input chain accept 룰 + IP whitelist 필요
-            운영 해석: 실제 사례 + 본 인프라.
-          - |
-            **[관리적 분석] 본인 학습 gap** — 발전.
-              # nft monitor trace 처음 사용 → 추가 연습 필요
-              # conntrack -E (실시간 event) 미숙 → W04 까지 학습
-              # HAProxy stats socket 분석 부족 → 별도 가이드 학습
-            운영 해석: 본 주차의 학습 gap 1+ 자가 식별.
-          - |
-            **[관리적 분석] W04 (Suricata) 준비도** — 다음.
-              # 본 주차의 fw L3/L4 통제 → W04 의 ips L7 검사 (Suricata)
-              # 본 주차의 nft trace → W04 의 Suricata eve.json (이벤트 stream)
-              # 본 주차의 conntrack → W04 의 Suricata flow events
-            운영 해석: 본 주차 → 다음 주차 logical flow.
-          - |
-            **[관리적 분석] 종합 보안 아키텍처 진보** — 누적.
-              # W01 (개론) → W02 (정책 기초) → W03 (NAT + HAProxy 협업)
-              # 본 주차에 fw 의 모든 nftables 기능 학습 완료
-              # 다음 W04 부터 L7 검사 (Suricata IDS) → 5 종 솔루션 중 2 종 학습 완료
-            운영 해석: 15 주차 커리큘럼의 현재 진도.
-        negative_signs:
-          - 7 step 표 누락
-          - 4 인사이트 미완
-          - 운영 위험 누락
+          - "**[관리적 보고서] 마크다운 표**"
+          - "**[관리적] ISMS-P 2.6.4 매핑**"
+          - "**[관리적] NIST PR.AC-5 (Network Integrity)**"
+          - "**[관리적] STRIDE 적용 — NAT 보안 위험**"
+          - "**[관리적] KISA 2025 사례 매핑**"
+          - "**[관리적] W04 (Suricata) 학습 logical flow**"
+          - "**[관리적] alert fatigue + 자동화 권장**"
+          - "**[관리적] 본인 학습 gap 자가 진단**"
     target_vm: fw
