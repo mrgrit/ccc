@@ -5,16 +5,10 @@ import { isAdmin } from '../auth.ts'
 import { markdownToHtml } from '../markdown.ts'
 import mermaid from 'mermaid'
 
-mermaid.initialize({
-  startOnLoad: false,
-  theme: 'dark',
-  securityLevel: 'loose',  // label 안의 <br/> 등 허용
-  flowchart: { htmlLabels: true, useMaxWidth: true },
-  themeVariables: {
-    primaryColor: '#21262d', primaryTextColor: '#e6edf3', lineColor: '#30363d',
-    secondaryColor: '#161b22', tertiaryColor: '#0d1117',
-  },
-})
+mermaid.initialize({ startOnLoad: false, theme: 'dark', themeVariables: {
+  primaryColor: '#21262d', primaryTextColor: '#e6edf3', lineColor: '#30363d',
+  secondaryColor: '#161b22', tertiaryColor: '#0d1117',
+}})
 
 type Course = {
   course_id: string
@@ -82,28 +76,21 @@ export default function Standalone6v6() {
   }, [courseId, weekParam, viewParam])
 
   useEffect(() => {
-    if (!contentRef.current || content === null) return
-    // mermaid 가 한 번 렌더된 div 에 data-processed='true' 를 다는데 재방문 시 잔재가 남아
-    // 다시 렌더되지 않음. content 변경마다 reset 후 run.
-    const els = contentRef.current.querySelectorAll<HTMLElement>('.mermaid')
-    if (els.length === 0) return
-    els.forEach(el => {
-      // 원본 source 가 textContent 에 있는데 mermaid 가 이미 렌더한 svg 로 바뀌었을 수도 있음.
-      // data-source 에 백업이 있으면 복원, 없으면 현재 textContent 를 백업.
-      const src = el.getAttribute('data-source') ?? el.textContent ?? ''
-      el.setAttribute('data-source', src)
-      el.removeAttribute('data-processed')
-      el.innerHTML = src
-    })
-    // 약간의 지연으로 DOM 이 완전히 mount 된 후 render
-    const t = setTimeout(() => {
-      mermaid.run({ nodes: Array.from(els) }).catch(err => {
-        // 디버깅을 위해 console 에 표시 — 학생이 F12 로 원인 확인 가능
+    if (contentRef.current) {
+      const els = contentRef.current.querySelectorAll('.mermaid')
+      if (els.length > 0) {
+        // 진단 로그 — F12 콘솔에서 확인
         // eslint-disable-next-line no-console
-        console.warn('[mermaid] render failed:', err?.message || err)
-      })
-    }, 50)
-    return () => clearTimeout(t)
+        console.log('[Standalone6v6] mermaid divs:', els.length)
+        mermaid.run({ nodes: els as any }).catch(err => {
+          // eslint-disable-next-line no-console
+          console.warn('[Standalone6v6] mermaid render failed:', err?.message || err, err)
+        })
+      } else {
+        // eslint-disable-next-line no-console
+        console.warn('[Standalone6v6] no .mermaid div in content — markdownToHtml 의 mermaid placeholder 치환 실패 의심')
+      }
+    }
   }, [content])
 
   const selectedCourse = courses.find(c => c.course_id === courseId)
@@ -310,57 +297,105 @@ function LabView({ raw, parsed }: { raw: string; parsed: any }) {
               </ul>
             </div>
           )}
-          {steps.map((s, idx) => (
+          {steps.map((s, idx) => {
+            const sem = s.verify?.semantic || {}
+            const successCriteria: string[] = sem.success_criteria || []
+            const acceptableMethods: any[] = sem.acceptable_methods || []
+            return (
             <div key={idx} style={{
               background: '#161b22', border: '1px solid #30363d', borderRadius: 8,
-              padding: 16, marginBottom: 12,
+              padding: 16, marginBottom: 16,
             }}>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 }}>
                 <span style={{
                   background: '#1f6feb', color: '#fff', borderRadius: 4,
-                  padding: '2px 8px', fontSize: 12, fontWeight: 700,
+                  padding: '3px 10px', fontSize: 13, fontWeight: 700,
                 }}>STEP {s.order}</span>
                 <span style={{ color: '#8b949e', fontSize: 11, textTransform: 'uppercase' }}>
                   {s.category} · {s.points}pt
                 </span>
               </div>
-              <div style={{ color: '#e6edf3', fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap', marginBottom: 10 }}>
-                {s.instruction}
+              {/* MISSION — instruction 을 markdown 렌더 */}
+              <div style={{
+                background: '#0d1117', borderLeft: '3px solid #f97316',
+                padding: '12px 16px', borderRadius: 6, marginBottom: 12,
+              }}>
+                <div style={{
+                  fontSize: 11, color: '#f97316', fontWeight: 700,
+                  letterSpacing: 1, marginBottom: 8,
+                }}>🎯 MISSION</div>
+                <div
+                  style={{ color: '#e6edf3', fontSize: 14, lineHeight: 1.7 }}
+                  dangerouslySetInnerHTML={{ __html: markdownToHtml(s.instruction || '') }}
+                />
               </div>
+              {/* HINT — 한 줄 핵심 명령 */}
               {s.hint && (
-                <div style={{ background: '#0d1117', padding: '8px 12px', borderRadius: 6, fontSize: 12, color: '#3fb950', fontFamily: 'monospace', marginBottom: 8 }}>
-                  💡 힌트: {s.hint}
+                <div style={{
+                  background: '#0d1117', padding: '10px 14px', borderRadius: 6,
+                  fontSize: 13, color: '#3fb950',
+                  fontFamily: "'D2Coding',Consolas,Monaco,monospace", marginBottom: 10,
+                  border: '1px solid #1f6feb33',
+                }}>
+                  <span style={{ color: '#8b949e', fontFamily: 'inherit' }}>💡 핵심 힌트:</span>{' '}
+                  <code style={{ color: '#3fb950' }}>{s.hint}</code>
                 </div>
               )}
+              {/* 통과 기준 (success_criteria) */}
+              {successCriteria.length > 0 && (
+                <div style={{
+                  background: '#0d1117', border: '1px solid #1f6feb33',
+                  borderRadius: 6, padding: '10px 14px', marginBottom: 10,
+                }}>
+                  <div style={{ fontSize: 11, color: '#1f6feb', fontWeight: 700, marginBottom: 6 }}>✅ 통과 기준 (정상 결과)</div>
+                  <ul style={{ color: '#c9d1d9', fontSize: 13, lineHeight: 1.6, paddingLeft: 22, margin: 0 }}>
+                    {successCriteria.map((c, ci) => <li key={ci}>{c}</li>)}
+                  </ul>
+                </div>
+              )}
+              {/* 모범 답안 (admin only — yaml 의 answer 가 있을 때만 표시) */}
               {s.answer && (
-                <details style={{ marginTop: 8 }}>
-                  <summary style={{ cursor: 'pointer', color: '#f97316', fontSize: 12 }}>모범 답안 보기</summary>
+                <details style={{ marginTop: 4, marginBottom: 8 }}>
+                  <summary style={{
+                    cursor: 'pointer', color: '#f97316', fontSize: 12,
+                    fontWeight: 600, padding: '6px 0',
+                  }}>🔑 모범 답안 보기 (admin)</summary>
                   <pre style={{
                     background: '#0d1117', padding: 12, borderRadius: 6, fontSize: 12,
                     color: '#c9d1d9', whiteSpace: 'pre-wrap', overflow: 'auto',
                     fontFamily: "'D2Coding',Consolas,Monaco,monospace", margin: '6px 0 0',
+                    border: '1px solid #f9731633',
                   }}>{s.answer}</pre>
+                  {s.answer_detail && (
+                    <div style={{
+                      color: '#8b949e', fontSize: 12, lineHeight: 1.6, marginTop: 8,
+                      whiteSpace: 'pre-wrap',
+                    }}>{s.answer_detail}</div>
+                  )}
                 </details>
               )}
-              {s.verify?.semantic?.acceptable_methods?.length > 0 && (
-                <details style={{ marginTop: 8 }}>
-                  <summary style={{ cursor: 'pointer', color: '#bc8cff', fontSize: 12 }}>
-                    수용 가능한 방법 ({s.verify.semantic.acceptable_methods.length}건)
-                  </summary>
+              {/* 수용 가능한 방법 (대안 도구 + 명령 + 해석) */}
+              {acceptableMethods.length > 0 && (
+                <details style={{ marginTop: 4 }}>
+                  <summary style={{
+                    cursor: 'pointer', color: '#bc8cff', fontSize: 12,
+                    fontWeight: 600, padding: '6px 0',
+                  }}>📚 수용 가능한 방법 ({acceptableMethods.length}건) — 도구/명령/예상출력/해석</summary>
                   <div style={{ marginTop: 8 }}>
-                    {s.verify.semantic.acceptable_methods.map((m: any, mi: number) => (
+                    {acceptableMethods.map((m: any, mi: number) => (
                       <pre key={mi} style={{
-                        background: '#0d1117', padding: 10, borderRadius: 6, fontSize: 11,
+                        background: '#0d1117', padding: 10, borderRadius: 6, fontSize: 12,
                         color: '#c9d1d9', whiteSpace: 'pre-wrap', overflow: 'auto',
                         fontFamily: "'D2Coding',Consolas,Monaco,monospace", margin: '6px 0',
-                        border: '1px solid #21262d',
+                        border: '1px solid #bc8cff33',
                       }}>{typeof m === 'string' ? m : JSON.stringify(m, null, 2)}</pre>
                     ))}
                   </div>
                 </details>
               )}
             </div>
-          ))}
+            )
+          })}
         </div>
       ) : (
         <pre style={{
