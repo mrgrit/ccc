@@ -486,21 +486,31 @@ sudo /var/ossec/bin/wazuh-control restart
 
 ```mermaid
 graph LR
-    R["Red — attacker XSS 5 burst<br/><script>alert(1)</script>"] -->|HTTP| WEB
-    WEB[web ModSec block 403]
-    SURI[ips Suricata]
-    R --> SURI
-    SURI -->|eve.json + Wazuh agent| MGR
-    WEB -->|modsec_audit.log + Wazuh agent (W10)| MGR
-    MGR[manager analysisd<br/>0200 decoder + 0235 rule]
-    MGR --> ALERTS["/var/ossec/logs/alerts/alerts.json"]
-    ALERTS --> B[Blue — alerts.json 추적<br/>rule.id / firedtimes / agent]
-    B --> P[Purple — 우선순위 +<br/>Active Response]
+    R["Red — attacker<br/>XSS 5 burst<br/>(script alert payload)"]
+    WEB["web<br/>ModSec block 403"]
+    SURI["ips<br/>Suricata sniff"]
+    MGR["manager analysisd<br/>0200 decoder + 0235 rule"]
+    ALERTS["alerts.json<br/>/var/ossec/logs/alerts/"]
+    B["Blue — 분석<br/>rule.id / firedtimes / agent"]
+    P["Purple<br/>우선순위 + Active Response"]
+
+    R -->|HTTP GET| WEB
+    R -->|HTTP packet| SURI
+    SURI -->|eve.json via Wazuh agent| MGR
+    WEB -->|modsec_audit.log via Wazuh agent| MGR
+    MGR --> ALERTS
+    ALERTS --> B
+    B --> P
+
     style R fill:#f85149,color:#fff
     style MGR fill:#3fb950,color:#fff
     style B fill:#1f6feb,color:#fff
     style P fill:#bc8cff,color:#fff
 ```
+
+> **mermaid 호환 주의**: node label 안에 `<script>` 같은 raw HTML 태그를 직접 쓰면 mermaid
+> sanitizer 가 깨뜨린다. 항상 `<br/>` 만 허용하고 나머지는 한글 설명 또는 escape. edge
+> label 의 `()` 도 일부 파서에서 거부 → 가능하면 회피.
 
 본 lab 의 Step 7 에서 구현.
 
@@ -547,39 +557,76 @@ DE.AE-1 ~ DE.AE-5 의 표준 구현 (multi-source aggregation + correlation + an
 ### 실습 1 — manager 데몬 상태 + 3 agent 검증
 
 ```bash
+# wazuh-control status — 16 daemon 의 running/not-running 상태 한 번에 조회
+# (analysisd / remoted / monitord / modulesd / db / authd / apid 등 표시)
 ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control status 2>&1 | head -20'
+
+# agent_control -lc — 등록 agent 목록 (-l) + connection status 같이 (-c)
+# 출력: ID Name IP Status (Active/Disconnected/Never connected)
 ssh 6v6-siem 'sudo /var/ossec/bin/agent_control -lc'
+
+# wazuh-control info — manager version + revision + 빌드 일시 + license
+# 운영 시 매 분기 버전 업그레이드 검토용 정보
 ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control info'
 ```
 
 ### 실습 2 — alerts.json 의 최근 alert 구조 분석
 
 ```bash
-ssh 6v6-siem 'sudo tail -3 /var/ossec/logs/alerts/alerts.json | jq "{rule_id:.rule.id, level:.rule.level, desc:.rule.description, agent:.agent.name}"'
+# tail -3 — alerts.json 의 마지막 3 라인 (JSON 라인 1줄 = 1 alert)
+# jq 로 핵심 4 필드만 추출 → 가독성 + 운영 dashboard 친화
+#   rule.id        : 매치된 룰 ID (5710=SSH brute, 31115=Apache 4xx 등)
+#   rule.level     : 0~16 severity (>=7 medium+)
+#   rule.description : 사람이 읽는 이름
+#   agent.name     : 어느 호스트에서 발생 (fw/ips/web)
+ssh 6v6-siem 'sudo tail -3 /var/ossec/logs/alerts/alerts.json | \
+    jq "{rule_id:.rule.id, level:.rule.level, desc:.rule.description, agent:.agent.name}"'
 ```
 
 ### 실습 3 — decoder + rule 구조
 
 ```bash
+# decoder 갯수 — Wazuh 4.10 의 기본 decoder 200+ (apache, suricata, ssh, ...)
 ssh 6v6-siem 'sudo ls /var/ossec/etc/decoders/ | wc -l'
+
+# rule 갯수 — 300+ XML 룰 파일 (각 파일은 수십 ~ 수백 룰)
 ssh 6v6-siem 'sudo ls /var/ossec/etc/rules/ | wc -l'
+
+# 0200-suricata_decoders.xml — Suricata eve.json 파싱 decoder
+# 0200 prefix = decoder 의 평가 우선순위 (낮을수록 먼저). suricata 는 0200 영역
 ssh 6v6-siem 'sudo grep -A2 "0200-suricata" /var/ossec/etc/decoders/0200-suricata_decoders.xml 2>&1 | head -10'
 ```
 
 ### 실습 4 — Suricata decoder 매핑 검증
 
 ```bash
-# eve.json 의 한 라인을 wazuh-logtest 로 검증 (시뮬)
+# wazuh-logtest — 표준 입력의 raw log 한 줄을 manager 가 어떻게 decode/rule 매핑
+# 하는지 출력. 새 decoder/룰 작성 시 사전 검증 도구.
+# 예: echo '{"event_type":"alert", ...}' | wazuh-logtest
+#     → "Phase 2 (Decoder): name = suricata-alert"
+#     → "Phase 3 (Rule): id = 86601, level = 5"
 ssh 6v6-siem 'echo "test" | sudo /var/ossec/bin/wazuh-logtest 2>&1 | head -5'
 ```
 
 ### 실습 5 — bastion agent 등록 (보완) 또는 시뮬
 
-(현재 6v6 의 bastion agent 미등록 — 시뮬만, 실 등록은 환경 변경 필요)
+```bash
+# 현재 6v6 의 bastion 은 Wazuh agent 미등록 (시연용 syslog 패러다임)
+# 등록 절차:
+#   1. bastion 에 wazuh-agent 패키지 설치 + Dockerfile 수정 (인프라 변경)
+#   2. ossec.conf 의 <server><address>10.20.32.100</address> 지정
+#   3. authd 로 enrollment: agent-auth -m 10.20.32.100
+#   4. wazuh-agent.service 시작
+# 본 lab 은 시뮬만 — 실 적용은 6v6 Dockerfile patch 필요
+echo "bastion agent 등록 = 인프라 변경 — W10 예고"
+```
 
 ### 실습 6 — agent.conf 점검
 
 ```bash
+# /var/ossec/etc/shared/default/agent.conf — 모든 agent 에 공통 적용되는 config
+# (특정 agent 만 차별 설정하려면 group 별 agent.conf 사용)
+# 핵심 섹션: <syscheck> (FIM, W10) / <sca> / <localfile> / <wodle>
 ssh 6v6-siem 'sudo cat /var/ossec/etc/shared/default/agent.conf | head -20'
 ```
 

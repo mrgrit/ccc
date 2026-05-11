@@ -130,28 +130,69 @@ theHarvester -d example.com -b google,bing
 
 ### 1 — nmap 기본 5 스캔
 
-```
+```bash
+# -sT TCP connect — 3-way handshake 완료. 권한 불필요. detect 쉬움.
+#   장점: 일반 사용자 권한 OK
+#   단점: 완전한 conn → Suricata / Wazuh detection 즉시
 ssh 6v6-attacker 'nmap -sT -p 22,80,443 10.20.30.1'
+# 예상 출력:
+#   PORT     STATE  SERVICE
+#   22/tcp   closed ssh        (fw 의 input chain 이 22 허용하지 않음)
+#   80/tcp   open   http       (HAProxy frontend)
+#   443/tcp  open   https      (HAProxy frontend TLS)
+
+# -sV 서비스 버전 — 각 포트의 daemon banner + version 추출
+#   nmap 의 nmap-service-probes DB (10000+ signature) 사용
 ssh 6v6-attacker 'sudo nmap -sV -p 80 10.20.30.1'
+# 예상 출력: 80/tcp open http HAProxy 2.4.x
+
+# -O OS detection — TCP/IP stack fingerprint 분석
+#   root 권한 필요 (raw socket)
 ssh 6v6-attacker 'sudo nmap -O 10.20.30.1 2>&1 | head -20'
+# 예상 출력: OS detection: Linux 6.x kernel
 ```
 
 ### 2 — 6v6 환경의 전체 IP block 스캔
 
-```
-ssh 6v6-attacker 'nmap -sn 10.20.30.0/24 2>&1 | head -20'   # ping sweep
+```bash
+# -sn ping sweep — port scan 안 함, 살아 있는 host 만 식별
+#   ICMP echo + TCP SYN to 443 + TCP ACK to 80 + ICMP timestamp 4 방법 동시
+#   /24 = 254 host (네트워크/브로드캐스트 제외) → 보통 10초 안에 완료
+ssh 6v6-attacker 'nmap -sn 10.20.30.0/24 2>&1 | head -20'
+# 예상 출력 (ext 의 활성 host):
+#   Nmap scan report for 10.20.30.1     (fw)
+#   Nmap scan report for 10.20.30.201   (bastion)
+#   Nmap scan report for 10.20.30.202   (attacker — 자신)
+#   Nmap done: 254 IP addresses (3 hosts up)
 ```
 
-### 3 — nikto
+### 3 — nikto (웹 취약점 스캐너)
 
-```
+```bash
+# nikto — 6700+ 알려진 web vuln + 1250 outdated server + 270 backdoor 점검
+#   -h: 타겟 URL
+#   -port: 포트 명시
+#   -host: Host header (vhost 라우팅)
 ssh 6v6-attacker 'nikto -h http://10.20.30.1 -port 80 -host juice.6v6.lab 2>&1 | head -30' || true
+# 예상 출력:
+#   + Server: HAProxy
+#   + X-Frame-Options header is not set (clickjacking 가능)
+#   + /admin found (potentially interesting)
+# 단점: 시그니처 기반 → ModSec (W06) 의 403 차단으로 false-positive 다수
 ```
 
-### 4 — dirb
+### 4 — dirb (디렉토리 brute force)
 
-```
+```bash
+# dirb — wordlist 기반 path enumeration
+#   common.txt (4000+ word) 가 기본 wordlist
+#   각 path 에 GET 요청 → 200/302/401/403 응답이면 발견 출력
 ssh 6v6-attacker 'dirb http://10.20.30.1/ -H "Host: juice.6v6.lab" 2>&1 | head -30' || true
+# 예상 출력:
+#   + http://10.20.30.1/admin (CODE:200)
+#   + http://10.20.30.1/api (CODE:200)
+#   ==> DIRECTORY: http://10.20.30.1/assets/
+# 운영 측 detection: Suricata 의 ET SCAN dirb 룰 + Wazuh 5710 (Apache 404 burst)
 ```
 
 ### 5 — 결과 정리
