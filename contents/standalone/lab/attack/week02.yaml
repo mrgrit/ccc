@@ -1,0 +1,95 @@
+lab_id: standalone-attack-week02
+title: 정찰 (nmap + nikto + dirb)
+version: standalone-non-ai
+course: attack
+week: 2
+description: |
+  attacker 컨테이너에서 6v6 환경 자산 가시화 + 웹 정찰 + ATT&CK Recon Technique
+  매핑.
+difficulty: easy
+duration_minutes: 120
+prerequisites: [W01]
+objectives:
+  - nmap 5 핵심 스캔
+  - nikto / dirb 웹 정찰
+  - 자산 표 작성
+pass_threshold: 0.7
+steps:
+  - order: 1
+    instruction: nmap TCP connect + 서비스 버전
+    hint: ssh 6v6-attacker 'nmap -sT -p 22,80,443 10.20.30.1'
+    category: scanning
+    points: 20
+    answer: |
+      ssh 6v6-attacker 'nmap -sT -p 22,80,443 10.20.30.1 2>&1 | tail -10'
+      ssh 6v6-attacker 'sudo nmap -sV -p 80 10.20.30.1 2>&1 | tail -10'
+    answer_detail: nmap 결과 표
+    verify:
+      type: output_contains
+      expect: open
+      field: stdout
+      semantic:
+        intent: nmap scan
+        success_criteria: [open port]
+        acceptable_methods:
+          - "**[OSS] nmap -sT (TCP connect, 권한 불필요)**"
+          - "**[OSS] nmap -sS (stealth SYN, root 필요)**"
+          - "**[OSS] nmap -sV (서비스 버전)**"
+          - "**[OSS] nmap -O (OS detection)**"
+          - "**[OSS] nmap -sU (UDP scan)**"
+          - "**[OSS] nmap --script (NSE)**"
+          - "**[OSS] nmap -oN/-oX/-oG (출력 형식)**"
+          - "**[OSS] ATT&CK T1595.001 매핑**"
+    target_vm: attacker
+
+  - order: 2
+    instruction: ping sweep + 살아 있는 host
+    hint: nmap -sn 10.20.30.0/24
+    category: scanning
+    points: 15
+    answer: |
+      ssh 6v6-attacker 'nmap -sn 10.20.30.0/24 2>&1 | tail -10'
+    answer_detail: alive host
+    verify:
+      type: output_contains
+      expect: 10.20.30
+      field: stdout
+      semantic:
+        intent: ping sweep
+        success_criteria: [host 출력]
+        acceptable_methods:
+          - "**[OSS] nmap -sn (ping sweep)**"
+          - "**[OSS] nmap -PE (ICMP echo)**"
+          - "**[OSS] nmap -PA (ACK ping)**"
+          - "**[OSS] nmap -PS (SYN ping)**"
+          - "**[OSS] ARP scan (local subnet)**"
+          - "**[OSS] /16 vs /24 vs /28**"
+          - "**[OSS] -T0..-T5 timing**"
+          - "**[OSS] ATT&CK T1018 Remote System Discovery**"
+    target_vm: attacker
+
+  - order: 3
+    instruction: dirb 웹 디렉토리 brute
+    hint: dirb http://10.20.30.1/ wordlist
+    category: scanning
+    points: 15
+    answer: |
+      ssh 6v6-attacker 'timeout 30 dirb http://10.20.30.1/ /usr/share/dirb/wordlists/common.txt -H "Host: juice.6v6.lab" 2>&1 | tail -20' || ssh 6v6-attacker 'echo dirb timed out'
+    answer_detail: dirb 결과
+    verify:
+      type: output_contains
+      expect: '+'
+      field: stdout
+      semantic:
+        intent: 웹 디렉토리
+        success_criteria: [+ 발견 path]
+        acceptable_methods:
+          - "**[OSS] dirb + common.txt wordlist**"
+          - "**[OSS] ffuf 모던 대안**"
+          - "**[OSS] gobuster**"
+          - "**[OSS] dirsearch + recursion**"
+          - "**[OSS] burp suite intruder + wordlist**"
+          - "**[OSS] -X 확장자 (.php / .bak)**"
+          - "**[OSS] ATT&CK T1594 Search Victim-Owned Websites**"
+          - "**[OSS] WAF (ModSec) 의 dirb detection (W06)**"
+    target_vm: attacker
