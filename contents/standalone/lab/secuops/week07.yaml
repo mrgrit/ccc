@@ -1,640 +1,342 @@
 lab_id: standalone-secuops-week07
-title: osquery 호스트 가시화 (4 호스트)
+title: osquery 호스트 가시화 (4 호스트) + R/B/P 헌팅
 version: standalone-non-ai
 course: secuops
 week: 7
 description: |
-  bastion / fw / ips / web 4 호스트의 osquery 5.x 로 OS-as-SQL 호스트 가시화
-  실습. processes / users / listening_ports / file_events / suid_bin 핵심
-  테이블 사용 + FIM 설정 + 헌팅 쿼리 5개.
+  bastion / fw / ips / web 4 호스트의 osquery 5.x 로 OS-as-SQL 호스트 가시화 실습.
+  processes / users / listening_ports / suid_bin / file_events 핵심 테이블 + 헌팅
+  쿼리 + Red/Blue/Purple (Red 가 의심 프로세스 spawn → Blue 가 헌팅 → Purple 가
+  FIM 권장).
 difficulty: medium
 duration_minutes: 150
-audience: 보안 솔루션 운영 중급 (7주차 신규)
-prerequisites:
-  - bastion / fw / ips / web 에 osquery 5.x 설치 완료 (이미지 재빌드 후)
-  - W01-W06 통과
+prerequisites: [W04-W06]
 objectives:
-  - osqueryi 대화형 shell 사용
-  - 5 핵심 테이블 (processes / users / file / listening_ports / suid_bin) 쿼리
-  - file_events FIM 구성 + 변경 검출
-  - 헌팅 쿼리 (on_disk=0, 의심 SUID, cron 백도어) 작성
-  - 4 호스트 비교 분석
+  - "osqueryi 대화형 + JSON 출력"
+  - "5 핵심 테이블 (processes/users/listening_ports/suid_bin/hash) 쿼리"
+  - "헌팅 쿼리 (on_disk=0, world-writable, cron backdoor)"
+  - "FIM 설정 (file_events) + 변경 감지"
+  - "R/B/P — 의심 프로세스 → 헌팅 → FIM 권장"
 pass_threshold: 0.7
-
 steps:
 
   - order: 1
     instruction: |
-      `6v6-web` 에서 osqueryi 대화형 진입 + version 쿼리.
-    hint: ssh 6v6-web 'sudo osqueryi --json "SELECT version FROM osquery_info;"'
+      ## 🎯 MISSION
+
+      4 호스트 (bastion / fw / ips / web) 의 **osqueryi 가용성** + **kernel/os 정보**
+      가시화.
+
+      ## 💻 실행 명령
+
+      ```bash
+      for h in bastion fw ips web; do
+        echo "=== 6v6-$h ==="
+        ssh 6v6-$h 'sudo osqueryi --json "SELECT version FROM osquery_info;"'
+      done
+      ```
+
+      ## 📋 확인 사항
+
+      - 4 호스트 모두 `[{"version":"5.x.x"}]` 형식 출력
+      - 5.x 버전 (pkg.osquery.io 공식 배포)
+
+      ## 💡 왜 이걸 하는가?
+
+      W07 의 모든 step 의 전제 — 4 호스트에 osquery 설치 여부. 미설치 시 lecture 의
+      "Dockerfile 에 osquery 추가" 절차 재실행 필요.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 4 호스트 모두 version 응답
+      - **비정상**: 일부 호스트 `command not found` → 해당 컨테이너 Dockerfile 의 osquery
+        패키지 누락 → 재빌드
+    hint: ssh 6v6-X 'sudo osqueryi --json "SELECT version FROM osquery_info;"'
     category: survey
     points: 10
     answer: |
-      ssh 6v6-web 'sudo osqueryi --json "SELECT version FROM osquery_info;"'
-    answer_detail: osquery version 출력
+      for h in bastion fw ips web; do
+        echo "=== 6v6-$h ==="
+        ssh 6v6-$h 'sudo osqueryi --json "SELECT version FROM osquery_info;"'
+      done
+    answer_detail: 4 호스트 osquery 5.x 가용.
     verify:
       type: output_contains
       expect: version
       field: stdout
       semantic:
-        intent: |
-          osqueryi 대화형 shell 진입. osquery_info 테이블에서 self version. 4 호스트
-          (bastion/fw/ips/web) 모두 동작.
-        success_criteria:
-          - version 출력
-          - 5.x 형식
+        intent: "4 호스트 osquery 가용성"
+        success_criteria: ["4 호스트 응답", "version 5.x"]
         acceptable_methods:
-          - |
-            **[OSS] osqueryi --json** — 표준.
-              ssh 6v6-web 'sudo osqueryi --json "SELECT version FROM osquery_info;"'
-            예상 출력 `[ {"version":"5.x.x"} ]`.
-            운영 해석: JSON 출력은 자동화 친화.
-          - |
-            **[OSS] osqueryctl status** — daemon.
-              ssh 6v6-web 'sudo osqueryctl status 2>&1 | head' || ssh 6v6-web 'sudo systemctl status osqueryd --no-pager | head'
-            예상 출력 `(daemon 상태)`.
-            운영 해석: osqueryd 데몬 가동 여부.
-          - |
-            **[OSS] osqueryi 대화형** — interactive.
-              # ssh 6v6-web 'sudo osqueryi' (interactive)
-              # > .tables
-              # > .schema processes
-              # > SELECT * FROM kernel_info;
-              echo "대화형 shell 의 .tables / .schema 명령"
-            예상 출력 `(설명)`.
-            운영 해석: 학습 시 표 구조 탐색.
-          - |
-            **[OSS] 4 호스트 비교** — 분산.
-              for h in bastion fw ips web; do
-                echo "--- $h ---"
-                ssh 6v6-$h 'sudo osqueryi --json "SELECT version FROM osquery_info;" 2>&1 | head'
-              done
-            예상 출력 `4 호스트 모두 version 출력`.
-            운영 해석: 분산 호스트의 일관 가시화.
-          - |
-            **[OSS] kernel_info 쿼리** — OS 정보.
-              ssh 6v6-web 'sudo osqueryi --json "SELECT version, path FROM kernel_info;"'
-            예상 출력 `[{"version":"6.8.0-..","path":"/proc/version"}]`.
-            운영 해석: kernel 버전 + path.
-          - |
-            **[OSS] platform_info** — 하드웨어.
-              ssh 6v6-web 'sudo osqueryi --json "SELECT * FROM platform_info LIMIT 1;"' 2>&1 | head
-            예상 출력 `{"vendor":"..","version":".."}`.
-            운영 해석: BIOS / UEFI 정보.
-          - |
-            **[OSS] os_version 쿼리** — distro.
-              ssh 6v6-web 'sudo osqueryi --json "SELECT name, version, codename FROM os_version;"'
-            예상 출력 `{"name":"Ubuntu","version":"22.04","codename":"jammy"}`.
-            운영 해석: distro 식별.
-        negative_signs:
-          - osqueryi 미설치
-    target_vm: web
+          - "**[OSS] osqueryi --json (JSON 출력, 자동화 친화)**"
+          - "**[OSS] osqueryi --csv (spreadsheet)**"
+          - "**[OSS] osqueryi 대화형 (.tables / .schema)**"
+          - "**[OSS] osqueryd daemon 모드 (scheduled query)**"
+          - "**[OSS] kernel_info / os_version / platform_info**"
+          - "**[OSS] systemctl status osqueryd**"
+          - "**[OSS] /var/log/osquery/osqueryd.results.log**"
+          - "**[OSS] osqueryctl status / start / stop / restart**"
+    target_vm: bastion
 
   - order: 2
     instruction: |
-      `6v6-ips` 의 모든 프로세스 + Suricata 프로세스 상세 + listening port 쿼리.
-    hint: |
-      ssh 6v6-ips 'sudo osqueryi --json "SELECT pid, name, cmdline FROM processes WHERE name LIKE '\''%Suricata%'\'';"'
+      ## 🎯 MISSION (5 핵심 테이블)
+
+      web 호스트에서 **5 핵심 테이블** (processes / users / listening_ports / suid_bin
+      / hash) 쿼리.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # 1. 프로세스 (apache2 / sshd)
+      ssh 6v6-web 'sudo osqueryi --json "SELECT pid, name, cmdline, uid FROM processes WHERE name IN ('"'"'apache2'"'"','"'"'sshd'"'"');"'
+
+      # 2. 사용자 (uid >= 1000)
+      ssh 6v6-web 'sudo osqueryi --json "SELECT username, uid, gid, shell FROM users WHERE uid >= 1000;"'
+
+      # 3. listening port + process 매핑
+      ssh 6v6-web 'sudo osqueryi --json "SELECT l.port, p.name FROM listening_ports l JOIN processes p ON l.pid=p.pid;"'
+
+      # 4. SUID binary top 10
+      ssh 6v6-web 'sudo osqueryi --json "SELECT path FROM suid_bin LIMIT 10;"'
+
+      # 5. /etc/passwd 해시
+      ssh 6v6-web 'sudo osqueryi --json "SELECT path, sha256 FROM hash WHERE path = '"'"'/etc/passwd'"'"';"'
+      ```
+
+      ## 📋 확인 사항
+
+      - 명령 1: apache2 + sshd 프로세스 (cmdline 포함)
+      - 명령 2: ccc 사용자 (uid 1000)
+      - 명령 3: 22 sshd / 80 apache2 / 443 apache2 매핑
+      - 명령 4: /usr/bin/sudo / /usr/bin/su 등 SUID binary
+      - 명령 5: /etc/passwd 의 sha256 해시 (변경 감지 기준선)
+
+      ## 💡 왜 이걸 하는가?
+
+      osquery 의 강점 — OS 의 모든 정보를 SQL 로 추상화. JOIN / WHERE / LIMIT 같은
+      표준 SQL 기능 활용 가능.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 5 쿼리 모두 정상 응답
+      - **비정상**: hash 가 권한 부족 → sudo 필요
+    hint: osqueryi --json + processes/users/listening_ports/suid_bin/hash
     category: monitoring
     points: 15
     answer: |
-      ssh 6v6-ips 'sudo osqueryi --json "SELECT pid, name, cmdline, uid FROM processes WHERE name LIKE '\''%Suricata%'\'';"'
-      ssh 6v6-ips 'sudo osqueryi --json "SELECT port, protocol, address, pid FROM listening_ports;"'
-    answer_detail: Suricata + listening 포트
+      ssh 6v6-web 'sudo osqueryi --json "SELECT pid, name, cmdline, uid FROM processes WHERE name IN ('"'"'apache2'"'"','"'"'sshd'"'"');"'
+      ssh 6v6-web 'sudo osqueryi --json "SELECT username, uid, gid, shell FROM users WHERE uid >= 1000;"'
+      ssh 6v6-web 'sudo osqueryi --json "SELECT l.port, p.name FROM listening_ports l JOIN processes p ON l.pid=p.pid;"'
+      ssh 6v6-web 'sudo osqueryi --json "SELECT path FROM suid_bin LIMIT 10;"'
+      ssh 6v6-web 'sudo osqueryi --json "SELECT path, sha256 FROM hash WHERE path = '"'"'/etc/passwd'"'"';"'
+    answer_detail: 5 핵심 테이블 쿼리. JOIN 활용 + LIMIT + WHERE 표준 SQL.
     verify:
       type: output_contains
-      expect: pid
+      expect: apache2
       field: stdout
       semantic:
-        intent: |
-          processes 테이블 SQL 쿼리. WHERE name LIKE 로 특정 프로세스 추출. listening_ports
-          + JOIN processes 로 어떤 프로세스가 어떤 포트 listen.
-        success_criteria:
-          - pid 컬럼
-          - Suricata 또는 listening port
+        intent: "5 핵심 테이블 쿼리"
+        success_criteria: ["processes 결과", "users 결과", "listening_ports JOIN"]
         acceptable_methods:
-          - |
-            **[OSS] processes 테이블** — 표준.
-              ssh 6v6-ips 'sudo osqueryi --json "SELECT pid, name, cmdline, uid FROM processes WHERE name LIKE '\''%Suricata%'\'';"'
-            예상 출력 `[{"pid":"29","name":"Suricata-Main","cmdline":"...","uid":"0"}]`.
-            운영 해석: SQL syntax 로 ps -ef 와 동일.
-          - |
-            **[OSS] processes JOIN listening_ports** — 종합.
-              ssh 6v6-ips 'sudo osqueryi --json "SELECT l.port, l.protocol, l.address, p.name, p.pid FROM listening_ports l, processes p WHERE l.pid = p.pid;"'
-            예상 출력 `[{"port":"22","protocol":"6","name":"sshd","pid":"..."}]`.
-            운영 해석: JOIN 으로 port 와 process 연결.
-          - |
-            **[OSS] open_sockets (process_open_sockets)** — 활성.
-              ssh 6v6-ips 'sudo osqueryi --json "SELECT pid, family, protocol, local_port, remote_address FROM process_open_sockets LIMIT 10;"'
-            예상 출력 `(연결 정보)`.
-            운영 해석: 활성 conn (established) 분석.
-          - |
-            **[OSS] socket_events (실시간)** — daemon.
-              # osqueryd 의 socket_events 테이블 (실시간 stream)
-              echo "osqueryd 의 socket_events 가 new conn 즉시 기록"
-            예상 출력 `(설명)`.
-            운영 해석: daemon mode 실시간 모니터링.
-          - |
-            **[OSS] process_memory_map** — 메모리.
-              ssh 6v6-ips 'sudo osqueryi --json "SELECT pid, start, end, permissions, path FROM process_memory_map WHERE pid = $(pgrep -n Suricata) LIMIT 5;"'
-            예상 출력 `(메모리 영역)`.
-            운영 해석: malware 의 메모리 인젝션 검출.
-          - |
-            **[OSS] uptime 쿼리** — 시간.
-              ssh 6v6-ips 'sudo osqueryi --json "SELECT days, hours, minutes FROM uptime;"'
-            예상 출력 `{"days":"2","hours":"5","minutes":"30"}`.
-            운영 해석: 호스트 가동 시간.
-          - |
-            **[OSS] cpuid + memory_info** — 자원.
-              ssh 6v6-ips 'sudo osqueryi --json "SELECT physical_memory, swap_total FROM memory_info LIMIT 1;"'
-            예상 출력 `{"physical_memory":"6291456000",..}`.
-            운영 해석: 자원 인벤토리.
-          - |
-            **[OSS] hash 쿼리** — 파일 해시.
-              ssh 6v6-ips 'sudo osqueryi --json "SELECT path, sha256 FROM hash WHERE path = '\''/usr/bin/suricata'\'';"'
-            예상 출력 `{"path":"/usr/bin/suricata","sha256":"abc..."}`.
-            운영 해석: binary 무결성 검증.
-        negative_signs:
-          - pid 컬럼 없음
-    target_vm: ips
+          - "**[OSS] SELECT FROM processes** (50+ 컬럼)"
+          - "**[OSS] users + uid >= 1000 (system 계정 제외)**"
+          - "**[OSS] listening_ports JOIN processes — daemon-port 매핑**"
+          - "**[OSS] suid_bin — 권한 상승 잠재 위험**"
+          - "**[OSS] hash — 파일 무결성 (sha256)**"
+          - "**[OSS] authorized_keys — SSH 인증 키**"
+          - "**[OSS] shell_history — bash history**"
+          - "**[OSS] sudoers — sudo 권한 audit**"
+    target_vm: web
 
   - order: 3
     instruction: |
-      `6v6-bastion` 의 모든 사용자 + SUID binary + authorized_keys 쿼리.
-    hint: ssh 6v6-bastion 'sudo osqueryi --json "SELECT username, uid, shell FROM users;"'
-    category: monitoring
-    points: 10
-    answer: |
-      ssh 6v6-bastion 'sudo osqueryi --json "SELECT username, uid, shell, directory FROM users WHERE uid >= 1000;"'
-      ssh 6v6-bastion 'sudo osqueryi --json "SELECT path, permissions FROM suid_bin LIMIT 10;"'
-      ssh 6v6-bastion 'sudo osqueryi --json "SELECT * FROM authorized_keys LIMIT 5;"'
-    answer_detail: 사용자 + SUID + ssh keys
-    verify:
-      type: output_contains
-      expect: username
-      field: stdout
-      semantic:
-        intent: |
-          users / suid_bin / authorized_keys 3 테이블로 호스트 사용자 권한 + 권한
-          상승 위험 + SSH 인증 키 가시화. 침해 흔적 (백도어 키, 신규 SUID) 헌팅의
-          핵심.
-        success_criteria:
-          - users 출력
-          - suid_bin 출력
-        acceptable_methods:
-          - |
-            **[OSS] users 테이블** — 표준.
-              ssh 6v6-bastion 'sudo osqueryi --json "SELECT username, uid, gid, shell, directory FROM users WHERE uid >= 1000;"'
-            예상 출력 `[{"username":"ccc","uid":"1000","shell":"/bin/bash","directory":"/home/ccc"}]`.
-            운영 해석: uid >= 1000 = 일반 사용자. system 계정 (root, daemon 등) 제외.
-          - |
-            **[OSS] suid_bin** — 권한 상승.
-              ssh 6v6-bastion 'sudo osqueryi --json "SELECT path, permissions FROM suid_bin LIMIT 15;"'
-            예상 출력 `[{"path":"/usr/bin/sudo","permissions":"4111"}]`.
-            운영 해석: SUID 비트 (4xxx) 있는 binary. /usr/bin/sudo 가 정상. 예상 외 path
-            발견 시 의심.
-          - |
-            **[OSS] authorized_keys** — SSH.
-              ssh 6v6-bastion 'sudo osqueryi --json "SELECT * FROM authorized_keys LIMIT 5;"'
-            예상 출력 `(SSH key 목록)`.
-            운영 해석: 비인가 SSH 키 헌팅. 환경 가입 안 한 key 의심.
-          - |
-            **[OSS] shell_history** — 명령 기록.
-              ssh 6v6-bastion 'sudo osqueryi --json "SELECT username, command FROM shell_history WHERE username = '\''ccc'\'' LIMIT 5;"'
-            예상 출력 `(.bash_history 내용)`.
-            운영 해석: 사용자의 최근 명령. 침해 시 부적절한 명령 흔적.
-          - |
-            **[OSS] sudoers** — 권한.
-              ssh 6v6-bastion 'sudo osqueryi --json "SELECT * FROM sudoers LIMIT 5;"'
-            예상 출력 `(sudoers 파일 내용)`.
-            운영 해석: sudo 권한 가시화.
-          - |
-            **[OSS] logged_in_users** — 활성 세션.
-              ssh 6v6-bastion 'sudo osqueryi --json "SELECT user, tty, host, time FROM logged_in_users;"'
-            예상 출력 `{"user":"ccc","tty":"pts/0","host":"...",..}`.
-            운영 해석: 현재 로그인된 사용자.
-          - |
-            **[OSS] last 명령 (사용자 로그인 history)** — 추적.
-              ssh 6v6-bastion 'sudo osqueryi --json "SELECT * FROM last LIMIT 10;"'
-            예상 출력 `(로그인 history)`.
-            운영 해석: 비정상 시간 / IP 로그인 헌팅.
-          - |
-            **[OSS] passwd entries** — /etc/passwd 매핑.
-              ssh 6v6-bastion 'sudo osqueryi --json "SELECT username, uid FROM users WHERE shell != '\''/usr/sbin/nologin'\'' AND shell != '\''/bin/false'\'';"'
-            예상 출력 `(로그인 가능한 사용자)`.
-            운영 해석: shell 이 nologin 아닌 사용자 = 로그인 가능 = 보안 우선순위.
-        negative_signs:
-          - users 출력 없음
-    target_vm: bastion
+      ## 🎯 MISSION (헌팅 쿼리 4종)
 
-  - order: 4
-    instruction: |
-      `6v6-web` 의 listening port + Apache process 매핑.
-    hint: |
-      ssh 6v6-web 'sudo osqueryi --json "SELECT l.port, l.protocol, p.name FROM listening_ports l JOIN processes p ON l.pid=p.pid WHERE l.port IN (22, 80, 443);"'
-    category: monitoring
-    points: 10
-    answer: |
-      ssh 6v6-web 'sudo osqueryi --json "SELECT l.port, l.protocol, l.address, p.name, p.pid FROM listening_ports l JOIN processes p ON l.pid=p.pid WHERE l.port IN (22, 80, 443);"'
-    answer_detail: 22 / 80 / 443 listen + apache2 / sshd
-    verify:
-      type: output_contains
-      expect: '80'
-      field: stdout
-      semantic:
-        intent: |
-          listening_ports + JOIN processes 로 port 와 daemon 매핑. 80=apache2,
-          22=sshd 확인. 예상치 못한 port 발견 시 backdoor 의심.
-        success_criteria:
-          - port 80 또는 443
-          - apache2 또는 sshd
-        acceptable_methods:
-          - |
-            **[OSS] JOIN 쿼리** — 표준.
-              ssh 6v6-web 'sudo osqueryi --json "SELECT l.port, p.name FROM listening_ports l JOIN processes p ON l.pid=p.pid;"'
-            예상 출력 `[{"port":"22","name":"sshd"},{"port":"80","name":"apache2"}]`.
-            운영 해석: port 와 daemon 명확 매핑.
-          - |
-            **[OSS] 0.0.0.0 vs 127.0.0.1** — 노출.
-              ssh 6v6-web 'sudo osqueryi --json "SELECT port, address FROM listening_ports WHERE address = '\''0.0.0.0'\'';"'
-            예상 출력 `(외부 노출 port)`.
-            운영 해석: 0.0.0.0 listen = 모든 인터페이스. 의도된지 검증.
-          - |
-            **[OSS] IPv6 listen** — 다중 protocol.
-              ssh 6v6-web 'sudo osqueryi --json "SELECT port, protocol, family FROM listening_ports;" 2>&1' | head -5
-            예상 출력 `(IPv4 + IPv6)`.
-            운영 해석: family 2 = IPv4, 10 = IPv6.
-          - |
-            **[OSS] ss + osquery 비교** — 검증.
-              ssh 6v6-web 'sudo ss -tlnp | grep -E ":(22|80|443)"'
-              ssh 6v6-web 'sudo osqueryi --json "SELECT port FROM listening_ports WHERE port IN (22, 80, 443);"'
-            예상 출력 `(둘 다 같은 port 표시)`.
-            운영 해석: osquery 가 ss 와 동일 정보, SQL 형식.
-          - |
-            **[OSS] socket_events (실시간)** — daemon.
-              # osqueryd 의 socket_events
-              echo "osqueryd 가 새 conn 발생 시 즉시 row 추가"
-            예상 출력 `(설명)`.
-            운영 해석: daemon mode 의 실시간 모니터링.
-          - |
-            **[OSS] netstat 비교** — 정통.
-              ssh 6v6-web 'sudo netstat -tlnp 2>/dev/null | head' || ssh 6v6-web 'ss -tlnp | head'
-            예상 출력 `(legacy view)`.
-            운영 해석: osquery 가 SQL 화. 자동화 친화.
-          - |
-            **[OSS] 외부에서 접근 검증** — 통합.
-              ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" http://10.20.30.1/'
-              # 200 응답 = listening 정상
-            예상 출력 `200`.
-            운영 해석: listening + 도달성 + 정상 응답 = 종합 검증.
-          - |
-            **[OSS] backdoor port 헌팅** — 의심.
-              # 예상 외 port listen 발견 시
-              ssh 6v6-web 'sudo osqueryi --json "SELECT port, pid, address FROM listening_ports WHERE port NOT IN (22, 80, 443);"'
-            예상 출력 `(없거나 system service)`.
-            운영 해석: 예상 외 port = 의심.
-        negative_signs:
-          - port 80 listen 없음
-    target_vm: web
+      4 호스트에서 **헌팅 쿼리** 실행 — on_disk=0 / world-writable / unusual cron /
+      비표준 shell 사용자.
 
-  - order: 5
-    instruction: |
-      `6v6-web` 에서 헌팅 쿼리 — `on_disk=0` 인 process (메모리에만 존재).
-    hint: ssh 6v6-web 'sudo osqueryi --json "SELECT pid, name, path FROM processes WHERE on_disk = 0;"'
+      ## 💻 실행 명령
+
+      ```bash
+      # 1. on_disk = 0 process (fileless malware 의심)
+      ssh 6v6-web 'sudo osqueryi --json "SELECT pid, name, path FROM processes WHERE on_disk = 0;"'
+
+      # 2. world-writable file in /tmp
+      ssh 6v6-web 'sudo osqueryi --json "SELECT path, mode FROM file WHERE path LIKE '"'"'/tmp/%'"'"' AND mode = '"'"'0777'"'"' LIMIT 5;"'
+
+      # 3. cron backdoor 의심
+      ssh 6v6-web 'sudo osqueryi --json "SELECT command, path FROM crontab LIMIT 10;"'
+
+      # 4. 비표준 shell 사용자 (bash 외)
+      ssh 6v6-web 'sudo osqueryi --json "SELECT username, shell FROM users WHERE shell NOT IN ('"'"'/bin/false'"'"', '"'"'/usr/sbin/nologin'"'"', '"'"'/bin/sh'"'"', '"'"'/bin/bash'"'"');"'
+      ```
+
+      ## 📋 확인 사항
+
+      - 명령 1: 빈 결과 `[]` (정상 환경에 fileless malware 없음)
+      - 명령 2: 빈 결과 또는 system 임시 파일
+      - 명령 3: /etc/crontab 의 표준 cron entry
+      - 명령 4: 빈 결과 (모든 사용자가 표준 shell)
+
+      ## 💡 왜 이걸 하는가?
+
+      Threat Hunting 의 표준 쿼리. malware 행위 (fileless / cron backdoor / 비인가
+      shell) 검출. 정기 cron 으로 자동 실행.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 4 쿼리 모두 빈 결과 또는 알려진 정상 entry
+      - **의심**: on_disk=0 process 발견 → 즉시 incident response 시작 (lsof + memory dump)
+    hint: osquery 헌팅 쿼리
     category: hunting
     points: 15
     answer: |
       ssh 6v6-web 'sudo osqueryi --json "SELECT pid, name, path FROM processes WHERE on_disk = 0;"'
-    answer_detail: on_disk=0 process 헌팅 결과 (정상 환경에선 empty)
+      ssh 6v6-web 'sudo osqueryi --json "SELECT path, mode FROM file WHERE path LIKE '"'"'/tmp/%'"'"' AND mode = '"'"'0777'"'"' LIMIT 5;"'
+      ssh 6v6-web 'sudo osqueryi --json "SELECT command, path FROM crontab LIMIT 10;"'
+      ssh 6v6-web 'sudo osqueryi --json "SELECT username, shell FROM users WHERE shell NOT IN ('"'"'/bin/false'"'"', '"'"'/usr/sbin/nologin'"'"', '"'"'/bin/sh'"'"', '"'"'/bin/bash'"'"');"'
+    answer_detail: 4 헌팅 쿼리 정상 환경에서 모두 빈 결과 또는 알려진 entry.
     verify:
       type: output_contains
       expect: '['
       field: stdout
       semantic:
-        intent: |
-          malware 가 자신의 binary 를 disk 에서 삭제하고 메모리에서 실행하는
-          기법 (fileless malware) 검출. 정상 환경에서는 `[]` 빈 결과. 결과 있으면
-          즉시 분석.
-        success_criteria:
-          - on_disk=0 쿼리 실행
-          - 결과 (빈 또는 row)
+        intent: "헌팅 쿼리 4종 baseline"
+        success_criteria: ["4 쿼리 실행"]
         acceptable_methods:
-          - |
-            **[OSS] on_disk=0 헌팅** — 표준.
-              ssh 6v6-web 'sudo osqueryi --json "SELECT pid, name, path, cmdline FROM processes WHERE on_disk = 0;"'
-            예상 출력 `[]` (정상) 또는 `[{"pid":"123","name":"unknown",..}]` (의심).
-            운영 해석: 결과 있으면 즉시 incident.
-          - |
-            **[OSS] 추가 헌팅 쿼리 — recent users** — 신규.
-              ssh 6v6-web 'sudo osqueryi --json "SELECT username FROM users WHERE uid >= 1000;"'
-            예상 출력 `(uid 1000+ 사용자)`.
-            운영 해석: 예상 외 신규 사용자 = backdoor 가능성.
-          - |
-            **[OSS] cron 헌팅** — 지속성.
-              ssh 6v6-web 'sudo osqueryi --json "SELECT command, path FROM crontab;"' 2>&1 | head
-            예상 출력 `(cron 작업)`.
-            운영 해석: 비인가 cron entry = backdoor.
-          - |
-            **[OSS] 디스크에 없는 파일** — fileless.
-              # 메모리에서 실행 + 디스크 binary 삭제
-              ssh 6v6-web 'sudo osqueryi --json "SELECT pid, name FROM processes WHERE on_disk = 0;" 2>&1 | head'
-            예상 출력 `[]`.
-            운영 해석: 가장 단순한 fileless malware 검출.
-          - |
-            **[OSS] 비정상 parent process** — 의심.
-              # systemd 가 아닌 부모를 가진 long-running daemon
-              ssh 6v6-web 'sudo osqueryi --json "SELECT pid, parent, name FROM processes WHERE parent != 1 AND parent != 0 AND start_time < (strftime('\''%s'\'','\''now'\'') - 3600) LIMIT 10;"' 2>&1 | head
-            예상 출력 `(시간 1h+ 실행 + parent != 1 인 daemon)`.
-            운영 해석: 의심 daemon. shell 에서 spawn 된 무한 실행 = backdoor.
-          - |
-            **[OSS] cmdline 길이 분석** — 의심.
-              # cmdline 이 매우 긴 process (1000+ char) 는 obfuscation 가능
-              ssh 6v6-web 'sudo osqueryi --json "SELECT pid, name, length(cmdline) AS len FROM processes WHERE length(cmdline) > 500 LIMIT 5;"' 2>&1 | head
-            예상 출력 `(없음 또는 의심 process)`.
-            운영 해석: powershell payload 같은 obfuscated cmdline.
-          - |
-            **[OSS] world-writable** — 권한 검사.
-              # /tmp 등의 world-writable 인 디렉토리 + 새 파일
-              ssh 6v6-web 'sudo osqueryi --json "SELECT path FROM file WHERE path LIKE '\''/tmp/%'\'' AND mode = '\''0777'\'' LIMIT 5;"' 2>&1 | head
-            예상 출력 `(world-writable 파일)`.
-            운영 해석: 무차별 권한 = 의심.
-          - |
-            **[OSS] passwd entries with non-standard shell** — 백도어.
-              ssh 6v6-web 'sudo osqueryi --json "SELECT username, shell FROM users WHERE shell NOT IN ('\''/bin/false'\'','\''/usr/sbin/nologin'\'','\''/bin/bash'\'','\''/bin/sh'\'','\''/usr/bin/bash'\'') LIMIT 5;"'
-            예상 출력 `(없음 또는 의심)`.
-            운영 해석: 비표준 shell 사용자 = 의심.
-        negative_signs:
-          - 쿼리 실행 실패
+          - "**[OSS] on_disk = 0 (fileless)**"
+          - "**[OSS] world-writable file**"
+          - "**[OSS] crontab + at + systemd timer**"
+          - "**[OSS] authorized_keys + 비표준 shell**"
+          - "**[OSS] SUID binary 변경**"
+          - "**[OSS] capabilities (getcap)**"
+          - "**[OSS] kernel module — kernel_modules**"
+          - "**[OSS] startup_items / launch_agents (Linux/Mac)**"
     target_vm: web
 
-  - order: 6
+  - order: 4
     instruction: |
-      FIM 설정 — `/etc/passwd` 의 변경을 감시하는 osquery.conf patch 작성.
-    hint: |
-      {"file_paths": {"sensitive": ["/etc/passwd", "/etc/shadow"]}, "schedule": {"sec_files": {"query": "SELECT * FROM file_events WHERE category='sensitive';", "interval": 30}}}
-    category: configuration
-    points: 15
-    answer: |
-      ssh 6v6-web 'sudo cat > /etc/osquery/osquery.conf <<EOF
+      ## 🎯 MISSION (R/B/P)
+
+      **Red** 가 attacker 에서 의심 프로세스 (nc listener) 시뮬 → **Blue** 가 osquery
+      로 처리 추적 → **Purple** 가 FIM (file_events) 권장.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # Red — attacker 에서 nc listener 시뮬 (학습 환경)
+      ssh 6v6-attacker 'timeout 5 nc -l -p 9999 &' 2>/dev/null &
+      sleep 1
+
+      # Blue — attacker 의 osquery 로 nc 프로세스 추적 (attacker 에도 osquery 설치되어 있다면)
+      # 실제로는 web 의 정상 process 가시화로 대체
+      ssh 6v6-web 'sudo osqueryi --json "SELECT pid, name, cmdline, start_time FROM processes WHERE name LIKE '"'"'%nc%'"'"' OR name = '"'"'sshd'"'"' LIMIT 5;"'
+
+      # Purple — FIM 권장 (시뮬)
+      cat <<'EOF'
+      ## FIM 권장 osquery.conf patch
       {
-        "options": {
-          "config_plugin": "filesystem",
-          "logger_plugin": "filesystem",
-          "logger_path": "/var/log/osquery"
-        },
         "file_paths": {
-          "sensitive": ["/etc/passwd", "/etc/shadow", "/etc/sudoers"],
-          "web_root": ["/var/www/landing/%%"]
+          "sensitive": ["/etc/passwd", "/etc/shadow", "/etc/sudoers"]
         },
         "schedule": {
           "file_changes": {
-            "query": "SELECT * FROM file_events WHERE category IN ('"'"'sensitive'"'"','"'"'web_root'"'"');",
-            "interval": 30,
-            "removed": false
+            "query": "SELECT * FROM file_events WHERE category='sensitive';",
+            "interval": 30
           }
         }
       }
       EOF
-      '
-      ssh 6v6-web 'sudo osqueryctl restart 2>&1 | head -3 || sudo systemctl restart osqueryd 2>&1 | head'
-    answer_detail: osquery.conf 작성 + daemon 재시작
+      ```
+
+      ## 📋 확인 사항
+
+      - Blue: web 에서 sshd 또는 nc 프로세스 가시화
+      - Purple: file_events 설정 patch 작성 시뮬 (실 적용은 osqueryd 재시작 필요)
+
+      ## 💡 왜 이걸 하는가?
+
+      Purple Team — Red 가 흘린 의심 프로세스를 Blue 가 osquery 로 추적, Purple 이
+      FIM 으로 사전 차단 권장.
+
+      ## 🔍 결과 해석
+
+      - **정상**: Blue 쿼리 결과 + Purple FIM patch
+      - **운영**: file_events 의 realtime=yes 설정 → inotify 기반 즉시 감지
+    hint: R/B/P + osquery + FIM 권장
+    category: redblue
+    points: 25
+    answer: |
+      ssh 6v6-web 'sudo osqueryi --json "SELECT pid, name, cmdline, start_time FROM processes WHERE name = '"'"'sshd'"'"' OR name LIKE '"'"'%apache%'"'"' LIMIT 5;"'
+      echo "Purple FIM 권장:"
+      cat <<'EOF'
+      {
+        "file_paths": {
+          "sensitive": ["/etc/passwd", "/etc/shadow", "/etc/sudoers"]
+        },
+        "schedule": {
+          "file_changes": {
+            "query": "SELECT * FROM file_events WHERE category='sensitive';",
+            "interval": 30
+          }
+        }
+      }
+      EOF
+    answer_detail: R/B/P — 의심 프로세스 추적 + FIM 권장 patch.
     verify:
       type: output_contains
-      expect: file_paths
+      expect: file_events
       field: stdout
       semantic:
-        intent: |
-          osquery FIM 구성. file_paths 에 감시 대상 + schedule 의 file_events 쿼리.
-          inotify 가 변경 감지 → osqueryd 가 결과 log.
-        success_criteria:
-          - file_paths 키
-          - schedule 키
+        intent: "R/B/P + FIM 권장"
+        success_criteria: ["프로세스 추적", "FIM patch"]
         acceptable_methods:
-          - |
-            **[OSS] osquery.conf 작성** — 표준.
-              # JSON 형식
-              cat /etc/osquery/osquery.conf | head -20
-            예상 출력 `{"file_paths": {...}, "schedule": {...}}`.
-            운영 해석: 표준 config 형식.
-          - |
-            **[OSS] file_paths 의 wildcard** — 패턴.
-              # /var/www/% (1단계 wildcard)
-              # /var/www/%% (재귀 wildcard)
-              echo "% = 1 level, %% = 재귀"
-            예상 출력 `(설명)`.
-            운영 해석: wildcard 패턴.
-          - |
-            **[OSS] schedule 의 interval** — 주기.
-              # interval: 30 = 30초마다 query 실행
-              echo "interval 작을 수록 빠른 감지 + CPU 증가"
-            예상 출력 `(설명)`.
-            운영 해석: 운영 환경 trade-off.
-          - |
-            **[OSS] file_events 테이블** — 결과.
-              # daemon 재시작 후 /etc/passwd 변경 트리거
-              # sleep 35
-              # ssh 6v6-web 'sudo cat /var/log/osquery/osqueryd.results.log | tail -5'
-              echo "변경 후 results.log 에 file_events row"
-            예상 출력 `(설명)`.
-            운영 해석: log 가 JSON 라인 형식.
-          - |
-            **[OSS] osqueryctl restart** — daemon.
-              ssh 6v6-web 'sudo osqueryctl restart 2>&1' || ssh 6v6-web 'sudo systemctl restart osqueryd 2>&1'
-            예상 출력 `(restart 출력)`.
-            운영 해석: config 변경 후 재시작.
-          - |
-            **[OSS] 변경 트리거 + 검증** — 동작.
-              # ssh 6v6-web 'echo "# fim test" | sudo tee -a /etc/passwd'
-              # sleep 35
-              # ssh 6v6-web 'sudo cat /var/log/osquery/osqueryd.results.log | grep file_events | tail'
-              echo "/etc/passwd 끝에 주석 추가 후 30초 후 log 확인"
-            예상 출력 `(설명)`.
-            운영 해석: 변경 감지 검증.
-          - |
-            **[OSS] inotify limit** — 시스템.
-              ssh 6v6-web 'sudo sysctl fs.inotify.max_user_watches'
-              # 기본 65536. 대용량 환경은 증액 필요
-            예상 출력 `fs.inotify.max_user_watches = 65536`.
-            운영 해석: FIM 대상 디렉토리 많으면 limit 증액.
-          - |
-            **[OSS] Wazuh agent 통합** — 다음 주차.
-              # osqueryd.results.log 를 Wazuh agent 의 localfile 로 ship
-              # W10 에서 통합
-              echo "W10 의 Wazuh agent 가 osquery log ingest"
-            예상 출력 `(설명)`.
-            운영 해석: SIEM 통합 path.
-        negative_signs:
-          - osquery.conf 비어 있음
+          - "**[OSS] processes 의 start_time + on_disk 컬럼**"
+          - "**[OSS] file_events 테이블 (FIM 결과)**"
+          - "**[OSS] osquery.conf 의 file_paths + schedule**"
+          - "**[OSS] interval 30s — inotify realtime 모드**"
+          - "**[OSS] wildcard % vs %% (재귀)**"
+          - "**[OSS] Wazuh agent 의 localfile 로 osqueryd.results.log ship (W10)**"
+          - "**[OSS] sysmon-for-linux + osquery 보완 (W11)**"
+          - "**[OSS] fleet 솔루션 (kolide/doorman) 대규모 운영**"
     target_vm: web
 
-  - order: 7
+  - order: 5
     instruction: |
-      4 호스트 비교 — bastion / fw / ips / web 의 process 수 + listening port 수
-      + 활성 사용자 비교.
-    hint: |
-      for h in bastion fw ips web; do echo $h $(ssh 6v6-$h 'sudo osqueryi --json "SELECT count(*) AS c FROM processes;"' | jq -r .[].c); done
-    category: synthesis
-    points: 15
-    answer: |
-      for h in bastion fw ips web; do
-        echo "--- 6v6-$h ---"
-        ssh 6v6-$h 'sudo osqueryi --json "SELECT (SELECT count(*) FROM processes) AS procs, (SELECT count(*) FROM listening_ports) AS ports, (SELECT count(*) FROM users WHERE uid >= 1000) AS user_count;"'
-      done
-    answer_detail: 4 호스트 비교 표
-    verify:
-      type: output_contains
-      expect: procs
-      field: stdout
-      semantic:
-        intent: |
-          4 호스트 비교. 각 host 의 process / port / user 수를 SQL 한 줄로. 호스트별
-          역할 차이 가시화.
-        success_criteria:
-          - 4 host 모두 쿼리
-          - procs / ports / user_count
-        acceptable_methods:
-          - |
-            **[OSS] for loop + SQL** — 표준.
-              for h in bastion fw ips web; do
-                ssh 6v6-$h "sudo osqueryi --json \"SELECT (SELECT count(*) FROM processes) AS p, (SELECT count(*) FROM listening_ports) AS l;\""
-              done
-            예상 출력 `(host 별 process / port 수)`.
-            운영 해석: 4 host 일괄 비교.
-          - |
-            **[OSS] CSV 출력** — 자동화.
-              # ssh 6v6-$h 'sudo osqueryi --csv "SELECT ...;"'
-              echo "--json / --csv / --pretty 선택"
-            예상 출력 `(설명)`.
-            운영 해석: CSV 가 spreadsheet 친화.
-          - |
-            **[OSS] host 별 차이 분석** — 정성.
-              # bastion: docker-cli + sshd
-              # fw: nftables + haproxy + sshd
-              # ips: suricata + sshd
-              # web: apache + sshd
-              echo "각 호스트의 역할에 맞는 process / port"
-            예상 출력 `(분석)`.
-            운영 해석: process / port 갯수가 호스트 역할 반영.
-          - |
-            **[OSS] 분산 osquery (fleet)** — 운영.
-              # production 환경의 osquery fleet (kolide, doorman)
-              # 중앙 관리 + 분산 쿼리
-              echo "fleet 솔루션으로 다수 호스트 일괄 관리"
-            예상 출력 `(설명)`.
-            운영 해석: 운영 환경의 standard.
-          - |
-            **[OSS] Wazuh + osquery 통합 (다음)** — 통합.
-              # W10 에서 Wazuh agent 가 osqueryd.results.log 를 ship
-              echo "W10 통합으로 4 host 의 osquery 결과 통합 분석"
-            예상 출력 `(설명)`.
-            운영 해석: 다음 주차 logical flow.
-          - |
-            **[OSS] 시계열 추적** — 트렌드.
-              # 매 30초 process 수 변화
-              for i in 1 2 3; do
-                ssh 6v6-web 'sudo osqueryi --json "SELECT count(*) AS c FROM processes;"'
-                sleep 30
-              done
-            예상 출력 `(시간 별 count)`.
-            운영 해석: 트렌드 분석.
-          - |
-            **[OSS] host inventory 보고서** — 자산.
-              # 4 host 의 inventory CSV 생성
-              for h in bastion fw ips web; do
-                ssh 6v6-$h "sudo osqueryi --csv \"SELECT '$h' AS host, version FROM os_version;\""
-              done
-            예상 출력 `(CSV inventory)`.
-            운영 해석: 자산 인벤토리 자동화.
-          - |
-            **[OSS] alert 통합 (다음)** — SIEM.
-              # osquery 의 results.log → Wazuh → alert → dashboard
-              echo "W10 에서 통합"
-            예상 출력 `(설명)`.
-            운영 해석: 통합 전망.
-        negative_signs:
-          - 일부 host 쿼리 실패
-    target_vm: bastion
+      ## 🎯 MISSION
 
-  - order: 8
-    instruction: |
-      종합 보고서 — 8 step 결과 + 본인 헌팅 쿼리 5개 + W10 (Wazuh + osquery 통합)
-      준비도.
+      W07 종합 보고서 + 헌팅 쿼리 5개 + W09 (Wazuh 통합) 준비도.
+
+      ## 💻 산출물
+
+      ```markdown
+      # W07 osquery 호스트 가시화 보고서
+      ## 1. 4 호스트 osquery 가용성
+      ## 2. 5 핵심 테이블 + 4 헌팅 쿼리 결과
+      ## 3. R/B/P (의심 프로세스 + FIM 권장)
+      ## 4. W09-W10 (Wazuh + osquery 통합) 준비도
+      ## 5. 운영 권장 (osqueryd schedule / fleet / Wazuh 통합)
+      ```
     hint: 마크다운
     category: synthesis
     points: 10
-    answer: 종합 보고서
-    answer_detail: 8 step + 5 헌팅 쿼리
+    answer: 위 형식
+    answer_detail: 종합 보고서
     verify:
       type: output_contains
       expect: osquery
       field: stdout
       semantic:
-        intent: |
-          7주차 종합. osquery 의 OS-as-SQL 학습 결과 + 본인 헌팅 쿼리.
-        success_criteria:
-          - 7 step 표
-          - 헌팅 쿼리 5
+        intent: "W07 종합"
+        success_criteria: ["5 섹션"]
         acceptable_methods:
-          - |
-            **[관리적 보고서]** — 표준.
-              ## 1. Step 결과 표
-              | Step | 결과 |
-              | 1 | osquery_info 4 host |
-              | 2 | processes JOIN listening_ports |
-              | 3 | users + suid_bin |
-              | 4 | 80/443 listen + apache2 |
-              | 5 | on_disk=0 헌팅 [] |
-              | 6 | FIM /etc/passwd config |
-              | 7 | 4 host 비교 |
-              ## 2. 본인 헌팅 쿼리 5
-              1. backdoor cron: SELECT * FROM crontab WHERE command LIKE '%curl%';
-              2. unexpected SUID: SELECT path FROM suid_bin WHERE path NOT LIKE '/usr/%';
-              3. 새 사용자: SELECT username FROM users WHERE uid >= 1000;
-              4. 외부 listen: SELECT port FROM listening_ports WHERE address = '0.0.0.0' AND port NOT IN (22,80,443);
-              5. 비표준 shell 사용자: SELECT username,shell FROM users WHERE shell LIKE '%bash' AND uid >= 1000;
-              ## 3. 운영 권장
-              1. osqueryd schedule 의 interval 균형 (30s ~ 300s)
-              2. file_paths 의 wildcard % vs %% 의도 명확
-              3. results.log 의 logrotate 설정
-              4. Wazuh agent localfile 로 ship (W10)
-              5. fleet 솔루션 검토 (대규모 운영)
-            예상 출력 `보고서`.
-            운영 해석: 종합 학습.
-          - |
-            **[관리적 분석] NIST CSF DE.CM-1 (continuous monitoring)** — 표준.
-            운영 해석: 표준 매핑.
-          - |
-            **[관리적 분석] MITRE D3FEND D3-PA (Process Analysis)** — 방어.
-            운영 해석: 방어 매트릭스.
-          - |
-            **[관리적 분석] osquery vs auditd 비교** — 대안.
-              # auditd 는 커널 audit subsystem
-              # osquery 는 SQL 추상
-              # 둘 다 동시 사용 가능
-            운영 해석: 둘의 장단.
-          - |
-            **[관리적 분석] sysmon-for-linux 와 비교 (W11)** — 다음.
-              # sysmon 은 event-driven (process create / network connect)
-              # osquery 는 query-based (스냅샷)
-              # 두 도구 보완 관계
-            운영 해석: 다음 주차 비교.
-          - |
-            **[관리적 분석] W10 (Wazuh + osquery)** — 통합.
-              # Wazuh agent 의 localfile 로 osqueryd.results.log ship
-              # manager 의 decoder 가 JSON 파싱 → alert
-            운영 해석: 다음 주차 통합.
-          - |
-            **[관리적 분석] 학습 진도** — 누적.
-              # 7 주 완료 (W08 중간고사 직전)
-              # 5 종 솔루션 중 fw/ips/web/host 4 종 학습
-              # next: SIEM (Wazuh) 본격 통합
-            운영 해석: 진도 가시화.
-          - |
-            **[관리적 분석] 본인 학습 gap** — 발전.
-              # FIM 의 실제 inotify 부담 미체험
-              # large-scale osquery fleet 미경험
-              # query 성능 (heavy JOIN) 영향 미숙
-            운영 해석: gap 자가 진단.
-        negative_signs:
-          - 결과 표 누락
+          - "**[관리적]** 4 host osquery 가용성"
+          - "**[관리적]** NIST DE.CM-1 매핑 (continuous monitoring)"
+          - "**[관리적]** ISMS-P 2.5 (인증·권한) 매핑"
+          - "**[관리적]** MITRE D3-PA (Process Analysis)"
+          - "**[관리적]** 운영 권장 — schedule interval + logrotate"
+          - "**[관리적]** Wazuh 통합 path (W10)"
+          - "**[관리적]** sysmon 보완 (W11)"
+          - "**[관리적]** fleet 솔루션 대규모"
     target_vm: web
