@@ -173,7 +173,17 @@ Host 6v6-*
 - `secuops/W04` — ✅ DONE (2026-05-11, 8 step Suricata IDS + 새 alert 룰 트리거, commit f114967)
 - `secuops/W05` — ✅ DONE (2026-05-11, 8 step pcre/fast_pattern/flowbits/threshold/suppression, commit 8ed0e58)
 - `secuops/W06` — ✅ DONE (2026-05-11, 8 step Apache+ModSec+CRS + XSS/SQLi/LFI 차단, commit 241e1a4)
-- `secuops/W07` — IN-PROGRESS
+- `secuops/W07` — ✅ DONE (2026-05-11, 8 step osquery 4 host + FIM + 헌팅, commit b0e51d2)
+- `secuops/W08` — ✅ DONE (2026-05-11, 중간고사 5 시나리오, commit cd124de)
+- `secuops/W09` — ✅ DONE (Wazuh manager 구성·룰, commit d2ad41f)
+- `secuops/W10` — ✅ DONE (Wazuh agent FIM/SCA/AR, commit 1b479f6)
+- `secuops/W11` — ✅ DONE (sysmon-for-linux 신규, commit e1a28e2)
+- `secuops/W12` — ✅ DONE (OpenCTI 개론 STIX/TAXII, commit 65aeeb1)
+- `secuops/W13` — ✅ DONE (CTI ↔ Wazuh CDB list, commit 8ed422e)
+- `secuops/W14` — ✅ DONE (Threat Hunting Sightings, commit 336ef1e)
+- `secuops/W15` — ✅ DONE (기말 APT 5 단계, commit 73a1d77)
+- **secuops 15/15 완료. attack 시작.**
+- `attack/W01` — IN-PROGRESS
 - 나머지 — PENDING
 
 각 주차 완료 시 본 표 갱신 + git commit + push.

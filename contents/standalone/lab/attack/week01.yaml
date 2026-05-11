@@ -1,0 +1,122 @@
+lab_id: standalone-attack-week01
+title: 6v6 침투 테스트 환경 (Attacker)
+version: standalone-non-ai
+course: attack
+week: 1
+description: |
+  attacker 컨테이너의 13 도구 + 8 vuln 사이트 가시화 + 본 과목 RoE 학습. PTES
+  + MITRE ATT&CK 매핑 + 학습 계획 수립.
+difficulty: easy
+duration_minutes: 90
+prerequisites: [W01 secuops 통과 — 6v6 환경 인지]
+objectives:
+  - attacker 13 도구 가시화
+  - 8 vuln 사이트 도달성 검증
+  - RoE 이해
+pass_threshold: 0.7
+steps:
+  - order: 1
+    instruction: attacker 13 도구 + which 명령
+    hint: ssh 6v6-attacker 'which nmap sqlmap hydra nikto'
+    category: survey
+    points: 15
+    answer: |
+      ssh 6v6-attacker 'which nmap nikto sqlmap hydra john hashcat ffuf'
+      ssh 6v6-attacker 'which msfconsole searchsploit metasploit 2>/dev/null'
+      ssh 6v6-attacker 'which scapy tcpdump 2>/dev/null'
+    answer_detail: 13 도구 path 출력
+    verify:
+      type: output_contains
+      expect: /usr/bin
+      field: stdout
+      semantic:
+        intent: 13 도구
+        success_criteria: [10+ 도구]
+        acceptable_methods:
+          - "**[OSS] which / type 명령**"
+          - "**[OSS] dpkg -l | grep nmap**"
+          - "**[OSS] apt list --installed 2>&1 | grep -E nmap|sqlmap**"
+          - "**[OSS] PATH 환경변수 확인**"
+          - "**[OSS] 도구 버전 (--version)**"
+          - "**[OSS] msfconsole 진입 (대화형)**"
+          - "**[OSS] searchsploit DB 위치**"
+          - "**[OSS] /opt/ 디렉토리 (수동 설치 도구)**"
+    target_vm: attacker
+
+  - order: 2
+    instruction: 8 vuln 사이트 도달성 + 응답 코드
+    hint: |
+      for h in juice dvwa ...; do curl -H "Host: $h.6v6.lab" http://10.20.30.1/; done
+    category: survey
+    points: 15
+    answer: |
+      ssh 6v6-attacker '
+      for h in juice dvwa neobank govportal mediforum admin ai 6v6; do
+        code=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: $h.6v6.lab" http://10.20.30.1/)
+        echo "$h.6v6.lab: $code"
+      done
+      '
+    answer_detail: 8 vhost 모두 응답
+    verify:
+      type: output_contains
+      expect: '200'
+      field: stdout
+      semantic:
+        intent: 8 vhost 도달성
+        success_criteria: [200/302 응답]
+        acceptable_methods:
+          - "**[OSS] curl -w 응답 코드**"
+          - "**[OSS] Host header 별 라우팅**"
+          - "**[OSS] HAProxy backend health**"
+          - "**[OSS] ModSec 영향 (403 가능)**"
+          - "**[OSS] DNS resolve 검증**"
+          - "**[OSS] 6v6.lab 의 랜딩 페이지**"
+          - "**[OSS] Wazuh / portal 우회 정책**"
+          - "**[OSS] HTTPS 시도 (자체 서명)**"
+    target_vm: attacker
+
+  - order: 3
+    instruction: PTES 7 단계 매핑 + ATT&CK 14 Tactic 매핑
+    hint: 표 작성
+    category: synthesis
+    points: 15
+    answer: |
+      cat <<'EOF'
+      # PTES 매핑
+      | PTES | 주차 |
+      | 1 Pre-engagement | W01 |
+      | 2 Recon | W02 |
+      | 3 Threat Modeling | W03 |
+      | 4 Vuln Analysis | W04-07 |
+      | 5 Exploit | W04-09 |
+      | 6 Post Exploit | W11-12 |
+      | 7 Reporting | W15 |
+      # ATT&CK
+      | Tactic | 주차 |
+      | TA0043 Recon | W02 |
+      | TA0001 Initial Access | W04-07 |
+      | TA0002 Execution | W11 |
+      | TA0004 PrivEsc | W11 |
+      | TA0003 Persistence | W12 |
+      | TA0005 Defense Evasion | W10 |
+      | TA0008 Lateral | W09 |
+      | TA0011 C2 | W13 (Caldera) |
+      EOF
+    answer_detail: PTES + ATT&CK 매핑
+    verify:
+      type: output_contains
+      expect: PTES
+      field: stdout
+      semantic:
+        intent: 매핑
+        success_criteria: [PTES + ATT&CK]
+        acceptable_methods:
+          - "**[OSS] PTES wiki 통독**"
+          - "**[OSS] MITRE ATT&CK Navigator**"
+          - "**[OSS] enterprise-attack.json 다운로드**"
+          - "**[OSS] 매핑 표 작성**"
+          - "**[OSS] kill chain 7 단계 비교**"
+          - "**[OSS] OWASP Top 10 매핑**"
+          - "**[OSS] CWE Top 25 매핑**"
+          - "**[OSS] 한국 KISA 매핑**"
+    target_vm: attacker
