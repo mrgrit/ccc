@@ -1,242 +1,494 @@
 lab_id: standalone-secuops-week08
-title: 중간고사 — 5 시나리오 종합 실기 (90분, 100점)
+title: 중간고사 — W01-W07 5 단계 종합 실기 (180분, 100점)
 version: standalone-non-ai
 course: secuops
 week: 8
 description: |
-  W01-W07 의 종합 평가. 5 시나리오 × 20점. fw nftables + Suricata 룰 + ModSec 공격
-  시뮬 + osquery 헌팅 + 통합 R/B/P 분석.
+  W01-W07 의 종합 평가. 5 단계 × 20점 (총 100점, 180분). ① 인프라 baseline (W01) →
+  ② fw NAT/HAProxy R/B/P (W02-W03) → ③ Suricata 룰 작성 + flowbits (W04-W05) →
+  ④ ModSec 5 공격 + 980130 summary (W06) → ⑤ osquery 침해 시뮬 + 5 헌팅 (W07).
+  각 단계는 정확도 + 분석 + 운영 권장 3 축 평가. cleanup 1 cycle 필수.
 difficulty: hard
-duration_minutes: 90
-prerequisites: [W01-W07 통과]
+duration_minutes: 180
+prerequisites:
+  - "W01-W07 모두 통과"
+  - "lecture §1-§7 정독 + 핵심 정리 8 줄 암기"
+  - "lab step 1-10 모두 직접 실행 경험"
 objectives:
-  - "5 시나리오 모두 본인 손으로 수행"
-  - "각 시나리오 결과 (출력 + 분석) 제출"
+  - "5 단계 모두 본인 손으로 수행"
+  - "각 단계 결과 (실측 + 분석) 보고서 첨부"
+  - "cleanup 1 cycle 완성"
+  - "R/B/P 표준 흐름 (Red / Blue / Purple)"
+  - "audit log / eve.json / osquery JSON 정규식 파싱"
+  - "종합 자기 평가"
 pass_threshold: 0.6
 steps:
 
   - order: 1
     instruction: |
-      ## 🎯 시나리오 1 (20점) — fw nftables drop 룰 + tcpdump 검증
+      ## 🎯 단계 1 (20점) — 인프라 baseline (W01)
 
-      attacker IP (10.20.30.202) 의 fw input chain 진입을 drop + tcpdump 로 SYN 캡처
-      확인 + cleanup.
+      6v6 의 4-tier + 16 컨테이너 + 11 vhost + 4 ProxyJump 가시화. 30 분.
 
       ## 💻 실행 명령
 
       ```bash
-      # 1. drop 룰 추가
-      ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter log prefix "EXAM-DROP: " drop'
+      # 1. 16 컨테이너 가시화
+      ssh 6v6-bastion 'docker ps --format "table {{.Names}}\t{{.Status}}" | head -20'
 
-      # 2. tcpdump (다른 터미널)
-      ssh 6v6-fw 'sudo timeout 5 tcpdump -ni eth0 host 10.20.30.202 -c 3' &
+      # 2. fw + ips 의 dual NIC
+      ssh 6v6-bastion 'for c in 6v6-fw 6v6-ips; do
+          echo "=== $c ==="
+          docker inspect $c --format "{{range \$k,\$v := .NetworkSettings.Networks}}{{\$k}}={{\$v.IPAddress}} {{end}}"
+      done'
 
-      # 3. attacker 시도 (timeout 예상)
-      sleep 1
-      ssh 6v6-attacker 'timeout 4 curl -s -o /dev/null -w "%{http_code} %{time_total}s\n" -H "Host: juice.6v6.lab" http://10.20.30.1/'
-      wait
+      # 3. HAProxy 11 vhost 매핑
+      ssh 6v6-fw 'sudo grep -E "use_backend|default_backend|server " /etc/haproxy/haproxy.cfg | head -15'
 
-      # 4. counter 확인
-      ssh 6v6-fw 'sudo nft list chain inet six_filter input | grep -B1 EXAM-DROP'
-
-      # 5. Cleanup
-      HANDLE=$(ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep EXAM-DROP | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
-      ssh 6v6-fw "sudo nft delete rule inet six_filter input handle $HANDLE"
+      # 4. ProxyJump 4 호스트
+      for h in fw ips web siem; do
+          ssh 6v6-$h hostname
+      done
       ```
 
-      ## 📋 평가 (각 5점)
+      ## 📋 평가 기준 (20점)
 
-      1. drop 룰 추가 syntax 정확
-      2. tcpdump 가 SYN 캡처 (3건)
-      3. attacker timeout (000 + 4초)
-      4. counter packets 3+ + dmesg log prefix
-      5. cleanup 완료 + 정상 복귀 (200)
-    hint: nft insert + tcpdump + curl + cleanup
+      - **정확도 (10)**: 16 컨테이너 + dual NIC + 11 vhost + 4 ProxyJump 모두 확인
+      - **분석 (5)**: 운영 트래픽 (siem/portal/bastion) vs 학생 트래픽 (juice 등) 의
+        hop 차이 설명
+      - **운영 권장 (5)**: 운영 인수 30초 cheat sheet 작성
+
+      ## 💡 의도
+
+      6v6 의 골격 가시화 → 이후 4 단계의 기반.
+
+      ## 🔍 합격 기준
+
+      4 출력 모두 완성 + 분석 1 문단 + 운영 권장 1 cheat sheet
+    hint: 'docker ps + docker inspect + grep haproxy.cfg + ProxyJump'
     category: exam
     points: 20
     answer: |
-      ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter log prefix "EXAM-DROP: " drop'
-      ssh 6v6-attacker 'timeout 4 curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" http://10.20.30.1/'
-      ssh 6v6-fw 'sudo nft list chain inet six_filter input | grep EXAM-DROP'
-      HANDLE=$(ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep EXAM-DROP | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
-      ssh 6v6-fw "sudo nft delete rule inet six_filter input handle $HANDLE"
-    answer_detail: 시나리오 1 의 5 평가 항목 모두 수행.
+      ssh 6v6-bastion 'docker ps --format "table {{.Names}}\t{{.Status}}" | head -20'
+      ssh 6v6-bastion 'for c in 6v6-fw 6v6-ips; do
+        echo "=== $c ==="
+        docker inspect $c --format "{{range \$k,\$v := .NetworkSettings.Networks}}{{\$k}}={{\$v.IPAddress}} {{end}}"
+      done'
+      ssh 6v6-fw 'sudo grep -E "use_backend|default_backend|server " /etc/haproxy/haproxy.cfg | head -15'
+      for h in fw ips web siem; do ssh 6v6-$h hostname; done
+    answer_detail: '16 컨테이너 + dual NIC + 11 vhost + 4 ProxyJump 확인'
     verify:
       type: output_contains
-      expect: '000\|200'
+      expect: 6v6-bastion
       field: stdout
       semantic:
-        intent: "fw nftables drop 룰 종합"
-        success_criteria: ["drop 효과", "counter", "cleanup"]
+        intent: "단계 1 — 인프라 baseline"
+        success_criteria: ["16 컨테이너", "dual NIC", "11 vhost", "4 ProxyJump"]
         acceptable_methods:
-          - "**[OSS] nft insert position 0**"
-          - "**[OSS] tcpdump 캡처**"
-          - "**[OSS] counter packets**"
-          - "**[OSS] handle 식별 + delete**"
+          - "**[OSS] docker ps + format**"
+          - "**[OSS] docker inspect NetworkSettings.Networks**"
+          - "**[OSS] HAProxy use_backend + default_backend**"
+          - "**[OSS] ProxyJump hostname**"
+          - "**[OSS] 운영 vs 학생 트래픽 hop 차이**"
+          - "**[OSS] vhost 표 작성 (host → backend)**"
+          - "**[OSS] 운영 인수 30초 cheat sheet**"
+          - "**[OSS] 4-tier 토폴로지 다이어그램**"
     target_vm: bastion
 
   - order: 2
     instruction: |
-      ## 🎯 시나리오 2 (20점) — Suricata 새 alert 룰 + 트리거
+      ## 🎯 단계 2 (20점) — fw nftables NAT + HAProxy 협업 (W02-W03)
 
-      sqlmap UA + URL `/admin` 매칭 룰 작성 + 트리거 + alert 카운트 확인 + cleanup.
+      3 table + DNAT + conntrack 양방향 + R/B/P HAProxy 80 충돌 + cleanup. 30 분.
 
       ## 💻 실행 명령
 
       ```bash
-      ssh 6v6-ips 'sudo bash -c "echo \"alert http any any -> any any (msg:\\\"EXAM sqlmap admin\\\"; http.user_agent; content:\\\"sqlmap\\\"; nocase; http.uri; content:\\\"/admin\\\"; nocase; sid:9008001; rev:1;)\" > /etc/suricata/rules/local.rules"'
-      ssh 6v6-ips 'sudo grep -q "local.rules" /etc/suricata/suricata.yaml || sudo sed -i "/rule-files:/a\\  - /etc/suricata/rules/local.rules" /etc/suricata/suricata.yaml'
-      ssh 6v6-ips 'sudo suricatasc -c reload-rules'
+      # 1. 3 table 가시화
+      ssh 6v6-fw 'sudo nft list tables'
+
+      # 2. DNAT 8888 → web 80 추가 + 검증 + cleanup
+      ssh 6v6-fw 'sudo nft add rule ip six_nat prerouting iifname "eth0" tcp dport 8888 counter dnat to 10.20.32.80:80'
+      ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 tcp dport 8888 accept'
       sleep 2
-      ssh 6v6-attacker 'curl -s -o /dev/null -A "sqlmap/1.5" -H "Host: juice.6v6.lab" http://10.20.30.1/admin'
-      sleep 4
-      ssh 6v6-ips 'sudo grep "9008001" /var/log/suricata/eve.json | wc -l'
-      ssh 6v6-ips 'sudo rm -f /etc/suricata/rules/local.rules; sudo suricatasc -c reload-rules'
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "응답: %{http_code}\n" -H "Host: juice.6v6.lab" http://10.20.30.1:8888/'
+      sleep 2
+      ssh 6v6-fw 'sudo conntrack -L 2>/dev/null | grep "dport=8888" | head -1'
+      H=$(ssh 6v6-fw 'sudo nft -a list chain ip six_nat prerouting | grep "dport 8888" | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
+      [ -n "$H" ] && ssh 6v6-fw "sudo nft delete rule ip six_nat prerouting handle $H"
+      H2=$(ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep "dport 8888" | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
+      [ -n "$H2" ] && ssh 6v6-fw "sudo nft delete rule inet six_filter input handle $H2"
+
+      # 3. R/B/P — HAProxy + DNAT 80 충돌
+      echo "=== baseline (HAProxy) ==="
+      ssh 6v6-fw 'sudo conntrack -F 2>/dev/null'
+      sleep 1
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" http://10.20.30.1/'
+      sleep 1
+      ssh 6v6-fw 'sudo conntrack -L 2>/dev/null | grep "10.20.30.202" | grep "dport=80" | head -1'
+
+      echo "=== DNAT 활성 ==="
+      ssh 6v6-fw 'sudo nft insert rule ip six_nat prerouting position 0 iifname "eth0" tcp dport 80 counter dnat to 10.20.32.80:80'
+      ssh 6v6-fw 'sudo conntrack -F 2>/dev/null'
+      sleep 1
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" http://10.20.30.1/'
+      sleep 1
+      ssh 6v6-fw 'sudo conntrack -L 2>/dev/null | grep "10.20.30.202" | grep "dport=80" | head -1'
+
+      # Cleanup
+      H=$(ssh 6v6-fw 'sudo nft -a list chain ip six_nat prerouting | grep "dport 80 " | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
+      [ -n "$H" ] && ssh 6v6-fw "sudo nft delete rule ip six_nat prerouting handle $H"
       ```
 
-      ## 📋 평가 (각 5점)
+      ## 📋 평가 기준 (20점)
 
-      1. 룰 syntax (sid 9008001 + http.user_agent + http.uri)
-      2. reload OK
-      3. alert 1+ 발생
-      4. cleanup
-    hint: Suricata 룰 + reload + 트리거
+      - **정확도 (10)**: 3 table 가시화 + DNAT 8888 응답 200 + conntrack reply src
+        변화 (10.20.30.1 → 10.20.32.80)
+      - **분석 (5)**: nat prerouting priority dstnat (-100) 이 HAProxy bind 보다 우선
+      - **운영 권장 (5)**: 5 운영 위험 중 3 가시화 (HAProxy termination / host header /
+        가시성) + "한 port = 한 도구" 원칙
+
+      ## 💡 의도
+
+      fw 의 nftables + HAProxy 운영 깊이 평가. conntrack reply src 변화가 우회 증거.
+
+      ## 🔍 합격 기준
+
+      conntrack reply src 변화 명시 + cleanup 완성 + 5 위험 중 3 가시화
+    hint: '3 table + DNAT 8888 + R/B/P 80 충돌 + conntrack reply src 변화'
     category: exam
     points: 20
     answer: |
-      ssh 6v6-ips 'sudo bash -c "echo \"alert http any any -> any any (msg:\\\"EXAM sqlmap admin\\\"; http.user_agent; content:\\\"sqlmap\\\"; nocase; http.uri; content:\\\"/admin\\\"; nocase; sid:9008001; rev:1;)\" > /etc/suricata/rules/local.rules"'
-      ssh 6v6-ips 'sudo grep -q "local.rules" /etc/suricata/suricata.yaml || sudo sed -i "/rule-files:/a\\  - /etc/suricata/rules/local.rules" /etc/suricata/suricata.yaml'
-      ssh 6v6-ips 'sudo suricatasc -c reload-rules'
+      ssh 6v6-fw 'sudo nft list tables'
+      ssh 6v6-fw 'sudo nft add rule ip six_nat prerouting iifname "eth0" tcp dport 8888 counter dnat to 10.20.32.80:80'
+      ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 tcp dport 8888 accept'
       sleep 2
-      ssh 6v6-attacker 'curl -s -o /dev/null -A "sqlmap/1.5" -H "Host: juice.6v6.lab" http://10.20.30.1/admin'
-      sleep 4
-      ssh 6v6-ips 'sudo grep "9008001" /var/log/suricata/eve.json | wc -l'
-      ssh 6v6-ips 'sudo rm -f /etc/suricata/rules/local.rules; sudo suricatasc -c reload-rules'
-    answer_detail: 시나리오 2.
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "응답: %{http_code}\n" -H "Host: juice.6v6.lab" http://10.20.30.1:8888/'
+      sleep 2
+      ssh 6v6-fw 'sudo conntrack -L 2>/dev/null | grep "dport=8888" | head -1'
+      H=$(ssh 6v6-fw 'sudo nft -a list chain ip six_nat prerouting | grep "dport 8888" | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
+      [ -n "$H" ] && ssh 6v6-fw "sudo nft delete rule ip six_nat prerouting handle $H"
+      H2=$(ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep "dport 8888" | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
+      [ -n "$H2" ] && ssh 6v6-fw "sudo nft delete rule inet six_filter input handle $H2"
+      echo "=== R/B/P 80 충돌 ==="
+      ssh 6v6-fw 'sudo conntrack -F 2>/dev/null'
+      sleep 1
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "baseline %{http_code}\n" -H "Host: juice.6v6.lab" http://10.20.30.1/'
+      sleep 1
+      ssh 6v6-fw 'sudo conntrack -L 2>/dev/null | grep "10.20.30.202" | grep "dport=80" | head -1'
+      ssh 6v6-fw 'sudo nft insert rule ip six_nat prerouting position 0 iifname "eth0" tcp dport 80 counter dnat to 10.20.32.80:80'
+      ssh 6v6-fw 'sudo conntrack -F 2>/dev/null'
+      sleep 1
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "DNAT %{http_code}\n" -H "Host: juice.6v6.lab" http://10.20.30.1/'
+      sleep 1
+      ssh 6v6-fw 'sudo conntrack -L 2>/dev/null | grep "10.20.30.202" | grep "dport=80" | head -1'
+      H=$(ssh 6v6-fw 'sudo nft -a list chain ip six_nat prerouting | grep "dport 80 " | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
+      [ -n "$H" ] && ssh 6v6-fw "sudo nft delete rule ip six_nat prerouting handle $H"
+    answer_detail: '3 table + DNAT + R/B/P + cleanup. conntrack reply src 10.20.30.1 → 10.20.32.80.'
     verify:
       type: output_contains
-      expect: '\d'
+      expect: '10.20.32.80'
       field: stdout
       semantic:
-        intent: "Suricata 룰 작성"
-        success_criteria: ["reload OK", "alert"]
-        acceptable_methods: ["**[OSS] http.user_agent + http.uri 결합**"]
-    target_vm: ips
+        intent: "단계 2 — fw NAT/HAProxy R/B/P"
+        success_criteria: ["3 table", "DNAT 응답 200", "reply src 변화", "cleanup"]
+        acceptable_methods:
+          - "**[OSS] nft list tables**"
+          - "**[OSS] nft add rule six_nat prerouting dnat**"
+          - "**[OSS] conntrack -L reply src 변화**"
+          - "**[OSS] R/B/P priority 비교**"
+          - "**[OSS] 5 운영 위험 분류**"
+          - "**[OSS] handle 식별 + delete (cleanup)**"
+          - "**[OSS] Docker ip nat flush 금지**"
+          - "**[OSS] 한 port = 한 도구 원칙**"
+    cleanup: |
+      ssh 6v6-fw 'for h in $(sudo nft -a list chain ip six_nat prerouting 2>/dev/null | grep -E "dport (80|8888) " | grep -oE "handle [0-9]+" | awk "{print \$2}"); do sudo nft delete rule ip six_nat prerouting handle $h; done' 2>/dev/null
+      ssh 6v6-fw 'for h in $(sudo nft -a list chain inet six_filter input 2>/dev/null | grep "dport 8888" | grep -oE "handle [0-9]+" | awk "{print \$2}"); do sudo nft delete rule inet six_filter input handle $h; done' 2>/dev/null
+      true
+    target_vm: bastion
 
   - order: 3
     instruction: |
-      ## 🎯 시나리오 3 (20점) — ModSec 4 공격 차단 검증
+      ## 🎯 단계 3 (20점) — Suricata IDS + 룰 작성 + flowbits + R/B/P (W04-W05)
 
-      XSS / SQLi / LFI / RCE 4 공격 모두 403 + 매치 룰 ID 추출.
+      Suricata 데몬 + drop_rate + 새 룰 + flowbits + R/B/P 5 burst. 35 분.
 
       ## 💻 실행 명령
 
       ```bash
-      for payload in "?q=<script>alert(1)</script>" "?q=1'+OR+'1'='1" "?file=../../etc/passwd" "?cmd=;ls"; do
-        code=$(ssh 6v6-attacker "curl -s -o /dev/null -w '%{http_code}' -H 'Host: juice.6v6.lab' \"http://10.20.30.1/$payload\"")
-        echo "$code $payload"
-      done
-      sleep 3
-      ssh 6v6-web 'sudo tail -30 /var/log/apache2/modsec_audit.log | jq -r ".audit_data.messages[]?" 2>/dev/null | grep -oE ''id "[0-9]+"'' | sort -u | head -10'
+      # 1. 데몬 + version + drop_rate
+      ssh 6v6-ips 'pgrep -a Suricata'
+      ssh 6v6-ips 'sudo suricatasc -c version'
+      ssh 6v6-ips 'sudo suricatasc -c dump-counters | python3 -c "import json,sys; m=json.load(sys.stdin)[\"message\"]; print(\"drops:\",m.get(\"capture.kernel_drops\",0),\"pkts:\",m.get(\"decoder.pkts\",0))"'
+
+      # 2. 새 alert 룰 (sid 9008001) + flowbits 다단계 (9008002/9008003)
+      ssh 6v6-ips 'sudo bash -c "cat > /etc/suricata/rules/local.rules <<EOF
+      alert http any any -> any any (msg:\"W08 sqlmap UA\"; http.user_agent; content:\"sqlmap\"; nocase; fast_pattern; classtype:web-application-attack; priority:2; sid:9008001; rev:1;)
+      alert http any any -> any any (msg:\"W08 step1 FlowbitTest UA\"; http.user_agent; content:\"FlowbitTest\"; flowbits:set,fb_w08; flowbits:noalert; sid:9008002; rev:1;)
+      alert http any any -> any any (msg:\"W08 step2 admin after step1\"; http.uri; content:\"/admin\"; flowbits:isset,fb_w08; classtype:successful-recon; priority:1; sid:9008003; rev:1;)
+      EOF"'
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules'
+      sleep 2
+
+      # 3. R/B/P 5 burst sqlmap
+      ssh 6v6-attacker 'for i in 1 2 3 4 5; do
+        curl -s -o /dev/null -A "sqlmap/1.5" -H "Host: juice.6v6.lab" http://10.20.30.1/
+      done'
+      sleep 5
+
+      # 4. alert 카운트
+      C1=$(ssh 6v6-ips 'sudo grep "9008001" /var/log/suricata/eve.json | grep -c "\"event_type\":\"alert\""')
+      echo "9008001 (sqlmap UA) 카운트: $C1 (예상 10 — 5 burst × 2 NIC)"
+
+      # 5. flowbits 다단계 트리거
+      ssh 6v6-attacker 'curl -s -o /dev/null -A "FlowbitTest/W08" -H "Host: juice.6v6.lab" http://10.20.30.1/'
+      sleep 1
+      ssh 6v6-attacker 'curl -s -o /dev/null -A "FlowbitTest/W08" -H "Host: juice.6v6.lab" http://10.20.30.1/admin'
+      sleep 4
+      C3=$(ssh 6v6-ips 'sudo grep "9008003" /var/log/suricata/eve.json | grep -c "\"event_type\":\"alert\""')
+      echo "9008003 (flowbits step2) 카운트: $C3 (예상 2 — 양 NIC)"
+
+      # Cleanup
+      ssh 6v6-ips 'sudo rm -f /etc/suricata/rules/local.rules'
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules'
       ```
 
-      ## 📋 평가 (각 5점)
+      ## 📋 평가 기준 (20점)
 
-      1. 4 payload 모두 403
-      2. 941 (XSS) 매치
-      3. 942 (SQLi) 매치
-      4. 930 (LFI) + 932 (RCE) 매치
-    hint: 4 공격 + 룰 매트릭스
+      - **정확도 (10)**: 데몬 + drop_rate < 0.01% + 9008001 alert 5+ + 9008003 alert 1+
+      - **분석 (5)**: 양 NIC sniff effect (5 burst → 10 alert) + flowbits 의 state set/isset
+      - **운영 권장 (5)**: threshold modifier + suppression 권장 + cleanup 완성
+
+      ## 💡 의도
+
+      Suricata 의 룰 작성 + 다단계 추적 + 운영 효과 통합.
+
+      ## 🔍 합격 기준
+
+      9008001 + 9008003 alert 발생 + cleanup + threshold 권장 작성
+    hint: '데몬 + drop_rate + sqlmap 룰 + flowbits + 5 burst R/B/P'
     category: exam
     points: 20
     answer: |
-      for payload in '?q=<script>alert(1)</script>' "?q=1'+OR+'1'='1" "?file=../../etc/passwd" "?cmd=;ls"; do
-        code=$(ssh 6v6-attacker "curl -s -o /dev/null -w '%{http_code}' -H 'Host: juice.6v6.lab' \"http://10.20.30.1/$payload\"")
-        echo "$code $payload"
+      ssh 6v6-ips 'pgrep -a Suricata'
+      ssh 6v6-ips 'sudo suricatasc -c version'
+      ssh 6v6-ips 'sudo suricatasc -c dump-counters | python3 -c "import json,sys; m=json.load(sys.stdin)[\"message\"]; print(\"drops:\",m.get(\"capture.kernel_drops\",0),\"pkts:\",m.get(\"decoder.pkts\",0))"'
+      ssh 6v6-ips 'sudo bash -c "cat > /etc/suricata/rules/local.rules <<EOF
+      alert http any any -> any any (msg:\"W08 sqlmap UA\"; http.user_agent; content:\"sqlmap\"; nocase; fast_pattern; sid:9008001; rev:1;)
+      alert http any any -> any any (msg:\"W08 step1 FB UA\"; http.user_agent; content:\"FlowbitTest\"; flowbits:set,fb_w08; flowbits:noalert; sid:9008002; rev:1;)
+      alert http any any -> any any (msg:\"W08 step2 admin\"; http.uri; content:\"/admin\"; flowbits:isset,fb_w08; sid:9008003; rev:1;)
+      EOF"'
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules'
+      sleep 2
+      ssh 6v6-attacker 'for i in 1 2 3 4 5; do curl -s -o /dev/null -A "sqlmap/1.5" -H "Host: juice.6v6.lab" http://10.20.30.1/; done'
+      sleep 5
+      C1=$(ssh 6v6-ips 'sudo grep "9008001" /var/log/suricata/eve.json | grep -c "\"event_type\":\"alert\""')
+      echo "9008001: $C1"
+      ssh 6v6-attacker 'curl -s -o /dev/null -A "FlowbitTest/W08" -H "Host: juice.6v6.lab" http://10.20.30.1/'
+      sleep 1
+      ssh 6v6-attacker 'curl -s -o /dev/null -A "FlowbitTest/W08" -H "Host: juice.6v6.lab" http://10.20.30.1/admin'
+      sleep 4
+      C3=$(ssh 6v6-ips 'sudo grep "9008003" /var/log/suricata/eve.json | grep -c "\"event_type\":\"alert\""')
+      echo "9008003: $C3"
+      ssh 6v6-ips 'sudo rm -f /etc/suricata/rules/local.rules'
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules'
+    answer_detail: 'Suricata 데몬 + drop_rate + sqlmap + flowbits 다단계 + R/B/P. cleanup.'
+    verify:
+      type: output_contains
+      expect: '9008001'
+      field: stdout
+      semantic:
+        intent: "단계 3 — Suricata 룰 + flowbits + R/B/P"
+        success_criteria: ["데몬", "drop 0", "9008001 + 9008003", "cleanup"]
+        acceptable_methods:
+          - "**[OSS] pgrep Suricata + suricatasc**"
+          - "**[OSS] dump-counters drop_rate**"
+          - "**[OSS] local.rules + reload-rules**"
+          - "**[OSS] flowbits set + isset + noalert**"
+          - "**[OSS] sqlmap UA fast_pattern**"
+          - "**[OSS] 5 burst × 2 NIC = 10 alert**"
+          - "**[OSS] threshold.config 권장**"
+          - "**[OSS] cleanup local.rules + reload**"
+    cleanup: |
+      ssh 6v6-ips 'sudo rm -f /etc/suricata/rules/local.rules' 2>/dev/null
+      ssh 6v6-ips 'sudo suricatasc -c reload-rules' 2>/dev/null
+      true
+    target_vm: bastion
+
+  - order: 4
+    instruction: |
+      ## 🎯 단계 4 (20점) — ModSec WAF + CRS audit + anomaly score (W06)
+
+      5 공격 (XSS/SQLi/LFI/RCE/PHP) + audit 의 980130 summary + XFF/remote 분석. 35 분.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # 1. 5 공격 burst
+      for payload in \
+        "?q=<script>alert(1)</script>" \
+        "?q=1'%20OR%20'1'='1" \
+        "?q=../../etc/passwd" \
+        "?q=;cat%20/etc/passwd" \
+        "?q=%3C%3Fphp%20system(%27id%27)%3B%20%3F%3E"; do
+        code=$(ssh 6v6-attacker "curl -s -o /dev/null -w '%{http_code}' -H 'Host: juice.6v6.lab' 'http://10.20.30.1/$payload'")
+        echo "  $payload → $code"
       done
-      sleep 3
-      ssh 6v6-web 'sudo tail -30 /var/log/apache2/modsec_audit.log | jq -r ".audit_data.messages[]?" 2>/dev/null | grep -oE ''id "[0-9]+"'' | sort -u | head -10'
-    answer_detail: 시나리오 3.
+      sleep 5
+
+      # 2. 카테고리 분포 (최근 5 transaction)
+      echo "=== 카테고리 분포 ==="
+      ssh 6v6-web 'sudo tail -5 /var/log/apache2/modsec_audit.log | jq -r ".audit_data.messages[]" 2>/dev/null | grep -oE "\[id \"[0-9]+\"\]" | sort | uniq -c | sort -rn | head -10'
+
+      # 3. 980130 correlation summary
+      echo "=== 980130 summary ==="
+      ssh 6v6-web 'sudo tail -5 /var/log/apache2/modsec_audit.log | jq -r ".audit_data.messages[]" 2>/dev/null | grep -oE "SQLI=[0-9]+,XSS=[0-9]+,RFI=[0-9]+,LFI=[0-9]+,RCE=[0-9]+,PHPI=[0-9]+"'
+
+      # 4. XFF vs remote_address
+      echo "=== XFF / remote ==="
+      ssh 6v6-web 'sudo tail -1 /var/log/apache2/modsec_audit.log | jq "{remote:.transaction.remote_address, xff:.request.headers.\"x-forwarded-for\"}"'
+      ```
+
+      ## 📋 평가 기준 (20점)
+
+      - **정확도 (10)**: 5 공격 모두 403 + 카테고리 분포 (941+942+930+932+933+949+980)
+      - **분석 (5)**: 980130 summary 의 카테고리별 score + anomaly threshold 5 도달 시
+        949110 block 동작
+      - **운영 권장 (5)**: exception LocationMatch 시뮬 + git audit + paranoia 1 유지 권장
+
+      ## 💡 의도
+
+      WAF 의 anomaly scoring 누적 + audit log 정규식 파싱 + XFF 신뢰.
+
+      ## 🔍 합격 기준
+
+      5/5 403 + 980130 summary + XFF 차이 확인
+    hint: '5 공격 (XSS/SQLi/LFI/RCE/PHP) + 980130 + XFF vs remote'
+    category: exam
+    points: 20
+    answer: |
+      for payload in \
+        "?q=<script>alert(1)</script>" \
+        "?q=1'%20OR%20'1'='1" \
+        "?q=../../etc/passwd" \
+        "?q=;cat%20/etc/passwd" \
+        "?q=%3C%3Fphp%20system(%27id%27)%3B%20%3F%3E"; do
+        code=$(ssh 6v6-attacker "curl -s -o /dev/null -w '%{http_code}' -H 'Host: juice.6v6.lab' 'http://10.20.30.1/$payload'")
+        echo "  $payload → $code"
+      done
+      sleep 5
+      ssh 6v6-web 'sudo tail -5 /var/log/apache2/modsec_audit.log | jq -r ".audit_data.messages[]" 2>/dev/null | grep -oE "\[id \"[0-9]+\"\]" | sort | uniq -c | sort -rn | head -10'
+      ssh 6v6-web 'sudo tail -5 /var/log/apache2/modsec_audit.log | jq -r ".audit_data.messages[]" 2>/dev/null | grep -oE "SQLI=[0-9]+,XSS=[0-9]+,RFI=[0-9]+,LFI=[0-9]+,RCE=[0-9]+,PHPI=[0-9]+"'
+      ssh 6v6-web 'sudo tail -1 /var/log/apache2/modsec_audit.log | jq "{remote:.transaction.remote_address, xff:.request.headers.\"x-forwarded-for\"}"'
+    answer_detail: '5 공격 5/5 403 + 카테고리 분포 + 980130 summary + XFF 차이.'
     verify:
       type: output_contains
       expect: '403'
       field: stdout
       semantic:
-        intent: "4 OWASP 차단"
-        success_criteria: ["403", "941+942 룰"]
-        acceptable_methods: ["**[OSS] OWASP A03 / A05 / A10 매트릭스**"]
+        intent: "단계 4 — ModSec 5 공격 + 980130"
+        success_criteria: ["5/5 403", "카테고리 분포", "980130", "XFF"]
+        acceptable_methods:
+          - "**[OSS] curl payload + 응답 코드**"
+          - "**[OSS] jq + grep -oE [id]**"
+          - "**[OSS] 980130 correlation summary**"
+          - "**[OSS] XFF vs remote_address**"
+          - "**[OSS] anomaly score threshold 5**"
+          - "**[OSS] paranoia 1 vs 2 권장**"
+          - "**[OSS] exception LocationMatch**"
+          - "**[OSS] git audit 의 exception**"
     target_vm: bastion
 
-  - order: 4
+  - order: 5
     instruction: |
-      ## 🎯 시나리오 4 (20점) — osquery 4 헌팅 쿼리
+      ## 🎯 단계 5 (20점) — osquery 호스트 가시화 + 침해 시뮬 + 5 헌팅 (W07)
 
-      web 호스트에서 4 헌팅 쿼리 (on_disk=0 / world-writable / cron / listening).
+      4 호스트 + 6 테이블 + JOIN + R/B/P 침해 + cleanup. 40 분.
 
       ## 💻 실행 명령
 
       ```bash
-      ssh 6v6-web 'sudo osqueryi --json "SELECT pid, name FROM processes WHERE on_disk = 0;"'
-      ssh 6v6-web 'sudo osqueryi --json "SELECT path FROM file WHERE path LIKE '"'"'/tmp/%'"'"' AND mode = '"'"'0777'"'"' LIMIT 3;"'
-      ssh 6v6-web 'sudo osqueryi --json "SELECT command FROM crontab LIMIT 5;"'
-      ssh 6v6-web 'sudo osqueryi --json "SELECT l.port, p.name FROM listening_ports l JOIN processes p ON l.pid=p.pid;"'
+      # 1. 4 호스트 osquery 5.23.0 baseline
+      for h in bastion fw ips web; do
+        printf "%-8s " "$h"
+        ssh 6v6-$h 'sudo osqueryi --version' 2>&1
+      done
+
+      # 2. SQL JOIN — listening_ports + processes
+      ssh 6v6-fw 'sudo osqueryi --json "SELECT l.port, l.address, p.name FROM listening_ports l JOIN processes p ON l.pid = p.pid WHERE l.address NOT LIKE \"127.%\" LIMIT 5;"' 2>&1
+
+      # 3. R/B/P — 침해 시뮬 (web 호스트)
+      echo "=== Red — 침해 시뮬 ==="
+      ssh 6v6-web 'sudo useradd -m -s /bin/bash -u 1099 fakeintruder 2>/dev/null && echo created'
+      ssh 6v6-web 'sudo bash -c "echo \"ssh-rsa AAAAB3NzaFAKEKEY-W08 evil@w08\" >> /root/.ssh/authorized_keys"'
+      ssh 6v6-web 'sudo bash -c "echo \"* * * * * root /tmp/w08_x.sh\" > /etc/cron.d/w08_backdoor"'
+      sleep 2
+
+      echo "=== Blue — 5 헌팅 ==="
+      ssh 6v6-web 'sudo osqueryi --json "SELECT username, uid FROM users WHERE uid = 1099;"' 2>&1
+      ssh 6v6-web 'sudo osqueryi --json "SELECT key_type, key FROM authorized_keys WHERE key LIKE \"%FAKEKEY-W08%\";"' 2>&1
+      ssh 6v6-web 'sudo osqueryi --json "SELECT command, path FROM crontab WHERE path LIKE \"%w08_backdoor%\";"' 2>&1
+      ssh 6v6-web 'sudo osqueryi --json "SELECT path, mtime FROM file WHERE path = \"/etc/cron.d/w08_backdoor\";"' 2>&1
+      ssh 6v6-web 'sudo osqueryi --json "SELECT pid, cmdline FROM processes WHERE cmdline LIKE \"%w08_x.sh%\";"' 2>&1
+
+      echo "=== Cleanup ==="
+      ssh 6v6-web 'sudo userdel -r fakeintruder 2>/dev/null; sudo sed -i "/FAKEKEY-W08/d" /root/.ssh/authorized_keys; sudo rm -f /etc/cron.d/w08_backdoor'
+      echo "Cleanup 검증 (모두 빈 array):"
+      ssh 6v6-web 'sudo osqueryi --json "SELECT username FROM users WHERE uid = 1099;"' 2>&1
       ```
 
-      ## 📋 평가 (각 5점)
+      ## 📋 평가 기준 (20점)
 
-      1. on_disk=0 (빈 결과 = 정상)
-      2. world-writable (빈 결과 또는 system 임시)
-      3. crontab 정상 entry
-      4. listening_ports JOIN 결과
-    hint: osquery 헌팅 4종
+      - **정확도 (10)**: 4 호스트 5.23.0 + JOIN 결과 + Red 3 침해 성공 + Blue 5 헌팅 매치
+      - **분석 (5)**: cleanup 검증 (모두 빈 array) + baseline diff 흐름 설명
+      - **운영 권장 (5)**: FIM osquery.conf 4 카테고리 + scheduled query interval 600
+        + Wazuh ship (W10) + 분기 baseline diff
+
+      ## 💡 의도
+
+      호스트 가시화 + R/B/P 침해 시뮬 + cleanup 완성도.
+
+      ## 🔍 합격 기준
+
+      4 호스트 + Red 3 + Blue 5 매치 + cleanup 후 0
+    hint: '4 호스트 + JOIN + 침해 시뮬 + 5 헌팅 + cleanup'
     category: exam
     points: 20
     answer: |
-      ssh 6v6-web 'sudo osqueryi --json "SELECT pid, name FROM processes WHERE on_disk = 0;"'
-      ssh 6v6-web 'sudo osqueryi --json "SELECT path FROM file WHERE path LIKE '"'"'/tmp/%'"'"' AND mode = '"'"'0777'"'"' LIMIT 3;"'
-      ssh 6v6-web 'sudo osqueryi --json "SELECT command FROM crontab LIMIT 5;"'
-      ssh 6v6-web 'sudo osqueryi --json "SELECT l.port, p.name FROM listening_ports l JOIN processes p ON l.pid=p.pid;"'
-    answer_detail: 시나리오 4.
+      for h in bastion fw ips web; do
+        printf "%-8s " "$h"
+        ssh 6v6-$h 'sudo osqueryi --version' 2>&1
+      done
+      ssh 6v6-fw 'sudo osqueryi --json "SELECT l.port, l.address, p.name FROM listening_ports l JOIN processes p ON l.pid = p.pid WHERE l.address NOT LIKE \"127.%\" LIMIT 5;"' 2>&1
+      echo "=== Red ==="
+      ssh 6v6-web 'sudo useradd -m -s /bin/bash -u 1099 fakeintruder 2>/dev/null && echo created'
+      ssh 6v6-web 'sudo bash -c "echo \"ssh-rsa AAAAB3NzaFAKEKEY-W08 evil@w08\" >> /root/.ssh/authorized_keys"'
+      ssh 6v6-web 'sudo bash -c "echo \"* * * * * root /tmp/w08_x.sh\" > /etc/cron.d/w08_backdoor"'
+      sleep 2
+      echo "=== Blue ==="
+      ssh 6v6-web 'sudo osqueryi --json "SELECT username, uid FROM users WHERE uid = 1099;"' 2>&1
+      ssh 6v6-web 'sudo osqueryi --json "SELECT key FROM authorized_keys WHERE key LIKE \"%FAKEKEY-W08%\";"' 2>&1
+      ssh 6v6-web 'sudo osqueryi --json "SELECT command FROM crontab WHERE path LIKE \"%w08_backdoor%\";"' 2>&1
+      echo "=== Cleanup ==="
+      ssh 6v6-web 'sudo userdel -r fakeintruder 2>/dev/null; sudo sed -i "/FAKEKEY-W08/d" /root/.ssh/authorized_keys; sudo rm -f /etc/cron.d/w08_backdoor'
+    answer_detail: '4 호스트 + JOIN + Red 3 침해 + Blue 5 헌팅 + cleanup.'
     verify:
       type: output_contains
-      expect: '\['
+      expect: fakeintruder
       field: stdout
       semantic:
-        intent: "osquery 헌팅"
-        success_criteria: ["4 쿼리 실행"]
-        acceptable_methods: ["**[OSS] 4 헌팅 표준**"]
-    target_vm: web
-
-  - order: 5
-    instruction: |
-      ## 🎯 시나리오 5 (20점) — 통합 R/B/P 보고서
-
-      위 4 시나리오의 결과를 종합 + Coverage Matrix 작성.
-
-      ## 💻 산출물
-
-      ```markdown
-      # W08 중간고사 R/B/P 통합 보고서
-
-      | 시나리오 | 결과 | 매치 |
-      | 1 fw drop | pass | counter 3 |
-      | 2 Suricata 룰 | pass | sid 9008001 |
-      | 3 ModSec 4 공격 | pass | 4 × 403 |
-      | 4 osquery 헌팅 | pass | 4 쿼리 |
-
-      ## 발견 / 운영 권장
-      ```
-    hint: 종합 보고서
-    category: exam
-    points: 20
-    answer: 종합 보고서
-    answer_detail: 시나리오 5.
-    verify:
-      type: output_contains
-      expect: W08
-      field: stdout
-      semantic:
-        intent: "종합 R/B/P"
-        success_criteria: ["4 시나리오 매트릭스"]
-        acceptable_methods: ["**[관리적]** 종합 보고서"]
+        intent: "단계 5 — osquery 침해 시뮬 + 헌팅"
+        success_criteria: ["4 호스트 5.23.0", "JOIN", "Red 3", "Blue 5", "cleanup"]
+        acceptable_methods:
+          - "**[OSS] osquery --version × 4 호스트**"
+          - "**[OSS] SQL JOIN port-process**"
+          - "**[OSS] useradd + authorized_keys + cron 침해**"
+          - "**[OSS] osquery users / authorized_keys / crontab / file 헌팅**"
+          - "**[OSS] FIM osquery.conf 시뮬**"
+          - "**[OSS] scheduled query interval**"
+          - "**[OSS] Wazuh ship (W10)**"
+          - "**[OSS] cleanup 1 cycle**"
+    cleanup: |
+      ssh 6v6-web 'sudo userdel -r fakeintruder 2>/dev/null; sudo sed -i "/FAKEKEY-W08/d" /root/.ssh/authorized_keys; sudo rm -f /etc/cron.d/w08_backdoor' 2>/dev/null
+      true
     target_vm: bastion
