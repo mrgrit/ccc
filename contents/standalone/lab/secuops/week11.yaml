@@ -1,0 +1,75 @@
+lab_id: standalone-secuops-week11
+title: sysmon-for-linux — eBPF 호스트 이벤트 (신규)
+version: standalone-non-ai
+course: secuops
+week: 11
+description: |
+  Microsoft Sysmon for Linux 의 eBPF 기반 process / network / file 이벤트
+  스트림. osquery (W07) 와의 비교 + Wazuh 통합 매핑. 본 lab 은 lecture 의 패턴
+  중심 + 사전 설치 시 실 트리거.
+difficulty: medium
+duration_minutes: 120
+prerequisites: [W07 osquery, W09-10 Wazuh agent]
+objectives:
+  - sysmon EventID 3종 (ProcessCreate / NetworkConnect / FileCreate) 이해
+  - osquery vs sysmon 비교
+  - Wazuh decoder + rule 매핑
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: sysmon-for-linux 설치 상태 확인
+    hint: ssh 6v6-web 'which sysmon || dpkg -l | grep sysmon'
+    category: survey
+    points: 10
+    answer: |
+      ssh 6v6-web 'which sysmon 2>&1 | head'
+      ssh 6v6-web 'apt-cache policy sysmonforlinux 2>&1 | head -5 || echo "package not in repo"'
+    answer_detail: 설치 상태 (없으면 도전 과제)
+    verify:
+      type: output_contains
+      expect: sysmon
+      field: stdout
+      semantic:
+        intent: 설치 상태
+        success_criteria: [확인]
+        acceptable_methods:
+          - "**[OSS] which / dpkg / apt-cache**"
+          - "**[OSS] github.com/Sysinternals/SysmonForLinux 의 빌드 가이드**"
+          - "**[OSS] BCC / eBPF 의존성 확인**"
+          - "**[OSS] /var/log/sysmonforlinux.log 존재 여부**"
+          - "**[OSS] systemctl status sysmon**"
+          - "**[OSS] kernel version (5.x+ 필요)**"
+          - "**[OSS] CO-RE (Compile Once Run Everywhere)**"
+          - "**[OSS] 6v6 에 추가 패키지 설치 시 Dockerfile 패치**"
+    target_vm: web
+
+  - order: 2
+    instruction: osquery 와 sysmon 의 같은 event 추적 비교 (시뮬)
+    hint: |
+      sysmon: /var/log/sysmonforlinux.log 의 EventID 1 (ProcessCreate)
+      osquery: SELECT * FROM processes WHERE start_time > ...
+    category: comparison
+    points: 25
+    answer: |
+      # osquery 측 — 최근 1분 안에 생성된 process
+      ssh 6v6-web 'sudo osqueryi --json "SELECT pid, name, cmdline, parent FROM processes WHERE start_time > (strftime(\"%s\", \"now\") - 60) LIMIT 5;"'
+      # sysmon 측 (설치되어 있다면)
+      ssh 6v6-web 'sudo tail -20 /var/log/sysmonforlinux.log 2>/dev/null | head' || echo "sysmon not available"
+    answer_detail: 두 도구의 동일 event 비교
+    verify:
+      type: output_contains
+      expect: pid
+      field: stdout
+      semantic:
+        intent: 두 도구 비교
+        success_criteria: [osquery 출력]
+        acceptable_methods:
+          - "**[OSS] osquery 의 process snapshot**"
+          - "**[OSS] sysmon 의 event stream**"
+          - "**[OSS] sysmon EventID 1 의 parent process tree**"
+          - "**[OSS] osquery 의 process_events 테이블 (daemon mode)**"
+          - "**[OSS] timing — sysmon 은 즉시, osquery 는 스냅샷**"
+          - "**[OSS] CPU 부담 비교**"
+          - "**[OSS] Wazuh agent localfile 통합 path**"
+          - "**[OSS] 운영 환경 — 둘 다 사용 + 보완**"
+    target_vm: web
