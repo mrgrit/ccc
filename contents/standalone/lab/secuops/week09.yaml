@@ -1,103 +1,265 @@
 lab_id: standalone-secuops-week09
-title: Wazuh manager 구성·디코더·룰 (6v6-siem)
+title: Wazuh manager — decoder + 사용자 정의 룰 + R/B/P SIEM 통합
 version: standalone-non-ai
 course: secuops
 week: 9
 description: |
-  Wazuh 4.10 manager 의 16 daemon + decoder + rule 두 단계 처리 흐름 +
-  사용자 정의 룰 (local_rules.xml) 작성 + 트리거. 등록 agent 3 대 (fw/ips/web)
-  의 1514 통신 검증.
+  6v6-siem 의 Wazuh manager 의 16 daemon + decoder + rule 처리 흐름 학습. 사용자
+  정의 룰 (local_rules.xml) 작성 + reload + 트리거 + alerts.json 검증. R/B/P (Red
+  가 SSH brute → Blue 가 사용자 룰 추가 → Purple 가 alert level 격상).
 difficulty: medium
 duration_minutes: 180
-prerequisites:
-  - W01-W08 통과
-  - sudo NOPASSWD on siem
+prerequisites: [W07-W08]
 objectives:
-  - 16 daemon 핵심 5종 (analysisd / remoted / monitord / modulesd / db) 가시화
-  - decoder + rule 처리 흐름 분석
-  - 사용자 정의 룰 작성 + 트리거 + alerts.json 검증
-  - agent 통신 (1514/1515/55000) 검증
+  - "Wazuh manager 11 daemon + 3 agent 통신"
+  - "decoder + rule 처리 흐름"
+  - "사용자 정의 룰 (sid 100xxx) 작성 + reload"
+  - "R/B/P — SSH brute → 사용자 룰 → level 12 격상"
 pass_threshold: 0.7
 steps:
+
   - order: 1
-    instruction: Wazuh manager 의 16 daemon + 등록 agent + alerts.json
-    hint: ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control status'
+    instruction: |
+      ## 🎯 MISSION
+
+      Wazuh manager 의 **11 daemon + 3 agent + 3 listening port + cluster health**
+      4 항목 헬스체크.
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control status'
+      ssh 6v6-siem 'sudo /var/ossec/bin/agent_control -l'
+      ssh 6v6-siem 'sudo ss -tlnp | grep -E ":(1514|1515|55000)"'
+      ssh 6v6-bastion 'docker exec 6v6-wazuh-indexer curl -sk -u admin:SecretPassword https://localhost:9200/_cluster/health | jq -c "{status, nodes:.number_of_nodes, shards:.active_shards}"'
+      ```
+
+      ## 📋 확인 사항
+
+      - daemon 11 running (modulesd/monitord/logcollector/remoted/syscheckd/analysisd/
+        execd/db/authd/apid + control)
+      - 3 agent Active (001 web / 002 ips / 003 fw)
+      - 1514 + 1515 + 55000 listen
+      - cluster green + 1 node + 16 shards
+
+      ## 💡 왜 이걸 하는가?
+
+      SIEM 운영 1순위 — manager 다운 시 모든 source alert 손실.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 4 항목 모두 매치
+      - **비정상**: agent Never connected → 해당 agent 컨테이너 점검
+    hint: wazuh-control + agent_control + ss + cluster
     category: survey
     points: 15
     answer: |
       ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control status'
       ssh 6v6-siem 'sudo /var/ossec/bin/agent_control -l'
-      ssh 6v6-siem 'sudo tail -3 /var/ossec/logs/alerts/alerts.json | head -1 | jq ".rule.id, .rule.description, .agent.name"'
-    answer_detail: 16 daemon + 3 agent Active + alert 1건
+      ssh 6v6-siem 'sudo ss -tlnp | grep -E ":(1514|1515|55000)"'
+      ssh 6v6-bastion 'docker exec 6v6-wazuh-indexer curl -sk -u admin:SecretPassword https://localhost:9200/_cluster/health'
+    answer_detail: 4 항목 종합 헬스체크.
     verify:
       type: output_contains
       expect: running
       field: stdout
       semantic:
-        intent: 16 daemon 가동 + 3 agent + alert 검증
-        success_criteria:
-          - running 키워드
-          - Active
-          - rule.id
-        acceptable_methods:
-          - |
-            **[OSS] wazuh-control + agent_control + alerts.json** — 표준.
-              ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control status'
-              ssh 6v6-siem 'sudo /var/ossec/bin/agent_control -l'
-              ssh 6v6-siem 'sudo tail -3 /var/ossec/logs/alerts/alerts.json | head -1 | jq'
-            예상 출력 `11 daemon running / 3 agent Active / alert event`.
-          - |
-            **[OSS] API + token** — 표준 (JSON).
-              ssh 6v6-siem 'TOKEN=$(curl -sk -u wazuh-wui:MyS3cr37P450r.*- -X POST https://localhost:55000/security/user/authenticate | jq -r .data.token); curl -sk -H "Authorization: Bearer $TOKEN" https://localhost:55000/agents | jq ".data.affected_items | length"'
-            예상 출력 `4 (server + 3 agent)`.
-          - "**[OSS] manager + indexer 통합** — filebeat 동작 검증"
-          - "**[OSS] 1514 listen 검증**"
-          - "**[OSS] /var/ossec/logs/ossec.log 시작 메시지**"
-          - "**[OSS] manager memory 확인**"
-          - "**[OSS] dashboard URL 확인**"
-          - "**[OSS] alert level 분포**"
+        intent: "Wazuh 헬스체크"
+        success_criteria: ["11 daemon", "3 agent", "cluster green"]
+        acceptable_methods: ["**[OSS] wazuh-control**", "**[OSS] agent_control**", "**[OSS] _cluster/health**"]
     target_vm: siem
 
   - order: 2
-    instruction: 사용자 정의 룰 추가 + 트리거 + alert 검증
-    hint: |
-      cat /var/ossec/etc/rules/local_rules.xml 에 <rule id="100100"...> 추가 후 restart
-    category: manipulation
-    points: 25
-    answer: |
+    instruction: |
+      ## 🎯 MISSION
+
+      `/var/ossec/etc/rules/local_rules.xml` 에 **사용자 정의 룰** 추가 — Apache 4xx
+      매치 (apache 31100 chain) 후 `/admin` URL 매치 시 level 12 격상.
+
+      ## 💻 실행 명령
+
+      ```bash
       ssh 6v6-siem 'cat > /tmp/local_rules.xml <<EOF
       <group name="6v6,custom,">
-        <rule id="100100" level="8">
-          <if_sid>31115</if_sid>
+        <rule id="100100" level="12">
+          <if_sid>31100</if_sid>
           <url>/admin</url>
-          <description>6v6 - Unauthorized admin access</description>
+          <description>6v6 W09 - Unauthorized admin path access</description>
         </rule>
       </group>
       EOF
       sudo cp /tmp/local_rules.xml /var/ossec/etc/rules/local_rules.xml
       sudo chown root:wazuh /var/ossec/etc/rules/local_rules.xml
       sudo /var/ossec/bin/wazuh-control restart'
-      sleep 8
+      sleep 10
+
+      # 트리거 (Red — admin path)
       ssh 6v6-attacker 'curl -s -o /dev/null -H "Host: juice.6v6.lab" http://10.20.30.1/admin'
       sleep 5
-      ssh 6v6-siem 'sudo grep "100100" /var/ossec/logs/alerts/alerts.json | tail -1 | jq'
-    answer_detail: 룰 100100 + 트리거 + alert
+
+      # alert 확인
+      ssh 6v6-siem 'sudo grep "100100" /var/ossec/logs/alerts/alerts.json | tail -1' | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); print(json.dumps({'rule_id':d.get('rule',{}).get('id'),'level':d.get('rule',{}).get('level'),'desc':d.get('rule',{}).get('description'),'agent':d.get('agent',{}).get('name')}, ensure_ascii=False))"
+      ```
+
+      ## 📋 확인 사항
+
+      - 룰 작성 + chown root:wazuh + restart
+      - 트리거 후 alerts.json 에 `rule_id:100100` + `level:12` + `agent:web`
+      - chain: 31100 (Apache 4xx) → 100100 (사용자 정의)
+
+      ## 💡 왜 이걸 하는가?
+
+      Wazuh 의 기본 decoder 는 ModSec 941/942 룰 ID 를 specific 룰로 격상하지 않는다.
+      사용자 정의 local_rules.xml 추가가 표준 — production 운영 1순위.
+
+      ## 🔍 결과 해석
+
+      - **정상**: alerts.json 에 rule_id 100100 + level 12
+      - **비정상**: restart 후 룰 미적용 → /var/ossec/logs/ossec.log 의 syntax error
+        점검
+    hint: local_rules.xml + chown + restart + trigger
+    category: manipulation
+    points: 25
+    answer: |
+      ssh 6v6-siem 'cat > /tmp/local_rules.xml <<EOF
+      <group name="6v6,custom,">
+        <rule id="100100" level="12">
+          <if_sid>31100</if_sid>
+          <url>/admin</url>
+          <description>6v6 W09 - Unauthorized admin path access</description>
+        </rule>
+      </group>
+      EOF
+      sudo cp /tmp/local_rules.xml /var/ossec/etc/rules/local_rules.xml
+      sudo chown root:wazuh /var/ossec/etc/rules/local_rules.xml
+      sudo /var/ossec/bin/wazuh-control restart'
+      sleep 10
+      ssh 6v6-attacker 'curl -s -o /dev/null -H "Host: juice.6v6.lab" http://10.20.30.1/admin'
+      sleep 5
+      ssh 6v6-siem 'sudo grep "100100" /var/ossec/logs/alerts/alerts.json | tail -1'
+    answer_detail: 사용자 정의 룰 100100 + level 12 + chain 31100. chown 필수.
     verify:
       type: output_contains
       expect: '100100'
       field: stdout
       semantic:
-        intent: 사용자 정의 룰
-        success_criteria:
-          - rule id 100100
-          - alert 생성
+        intent: "Wazuh 사용자 정의 룰"
+        success_criteria: ["rule 100100", "level 12"]
         acceptable_methods:
-          - "**[OSS] local_rules.xml + restart + 트리거**"
-          - "**[OSS] /admin URL 매치 + apache 31115 chain**"
-          - "**[OSS] alert level 8 (medium-high)**"
-          - "**[OSS] if_sid chain 의 의미**"
-          - "**[OSS] same_source_ip / frequency 응용**"
-          - "**[OSS] timeframe 의 동작**"
-          - "**[OSS] rule reload vs restart**"
-          - "**[OSS] alert rotation 확인**"
+          - "**[OSS] /var/ossec/etc/rules/local_rules.xml**"
+          - "**[OSS] chown root:wazuh** (manager 가 읽기 권한 필요)"
+          - "**[OSS] wazuh-control restart (rule 변경 시)**"
+          - "**[OSS] <if_sid>chain</if_sid>** — 기존 룰 chain"
+          - "**[OSS] <url>, <field>, <match> 등 추가 조건**"
+          - "**[OSS] frequency + timeframe — rate-limit 룰**"
+          - "**[OSS] same_source_ip — IP 별 추적**"
+          - "**[OSS] /var/ossec/logs/ossec.log syntax check**"
+    target_vm: siem
+
+  - order: 3
+    instruction: |
+      ## 🎯 MISSION (R/B/P)
+
+      **Red** 가 SSH brute 시뮬 (5 conn 시도) → **Blue** 가 Wazuh 의 5710 (SSH failed)
+      알람 추적 → **Purple** 이 level 격상 권장.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # Red — SSH connect 시도 (실패 인증)
+      for i in 1 2 3; do
+        ssh 6v6-attacker 'timeout 3 sshpass -p wrongpass ssh -o StrictHostKeyChecking=no -o ConnectTimeout=2 ccc@10.20.32.80 hostname 2>&1' | head -1
+        sleep 1
+      done
+      sleep 5
+
+      # Blue — Wazuh 의 SSH 관련 alert
+      ssh 6v6-siem 'sudo grep -E "5710|5712|sshd" /var/ossec/logs/alerts/alerts.json | tail -3'
+
+      # Purple — alert level 분포
+      ssh 6v6-siem 'sudo tail -500 /var/ossec/logs/alerts/alerts.json | python3 -c "
+      import json,sys
+      levels={}
+      for line in sys.stdin:
+          try:
+              d=json.loads(line)
+              l=d.get(\"rule\",{}).get(\"level\")
+              levels[l]=levels.get(l,0)+1
+          except: pass
+      print(sorted(levels.items()))"'
+      ```
+
+      ## 📋 확인 사항
+
+      - Red 3 시도 후 web 의 sshd 가 인증 실패 (또는 ccc 비밀번호 일치하면 성공)
+      - Blue alerts.json 에 5710/5712 룰 매치
+      - Purple level 분포 표시
+
+      ## 💡 왜 이걸 하는가?
+
+      Purple Team — SSH brute 같은 표준 공격에 Wazuh 5710/5712 룰이 동작하는지 검증.
+      level 5 → 12 격상은 W13 의 CDB list 결합 시 자동.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 5710 alert 발생 + level 5 (medium)
+      - **운영 권장**: W13 의 CDB list 매치 시 level 12 자동 격상 (`<list field="srcip">malicious-ips</list>`)
+    hint: SSH brute + 5710 alert
+    category: redblue
+    points: 25
+    answer: |
+      for i in 1 2 3; do
+        ssh 6v6-attacker 'timeout 3 sshpass -p wrongpass ssh -o StrictHostKeyChecking=no -o ConnectTimeout=2 ccc@10.20.32.80 hostname 2>&1' | head -1
+        sleep 1
+      done
+      sleep 5
+      ssh 6v6-siem 'sudo grep -E "5710|5712|sshd" /var/ossec/logs/alerts/alerts.json | tail -3'
+    answer_detail: SSH 인증 실패 → 5710 (SSH failed login) alert. level 5 기본.
+    verify:
+      type: output_contains
+      expect: ssh
+      field: stdout
+      semantic:
+        intent: "SSH brute + Wazuh alert"
+        success_criteria: ["5710 또는 sshd alert"]
+        acceptable_methods:
+          - "**[OSS] sshpass + 잘못된 비밀번호**"
+          - "**[OSS] hydra (W06 attack)**"
+          - "**[OSS] 5710 SSH authentication failed**"
+          - "**[OSS] 5712 SSH brute force (frequency)**"
+          - "**[OSS] /var/log/auth.log 의 Failed password**"
+          - "**[OSS] Wazuh CDB list (W13) — IP 매치 시 level 12**"
+          - "**[OSS] Active Response — 자동 IP block (W10)**"
+          - "**[OSS] fail2ban 통합 가능**"
+    target_vm: bastion
+
+  - order: 4
+    instruction: |
+      ## 🎯 MISSION
+
+      W09 종합 보고서 + 사용자 정의 룰 3개 작성 권장 + W10 (FIM/SCA/AR) 준비도.
+
+      ## 💻 산출물
+
+      ```markdown
+      # W09 Wazuh manager + 사용자 룰 보고서
+      ## 1. 11 daemon + 3 agent + cluster green
+      ## 2. 사용자 정의 룰 100100 (Apache 4xx + /admin)
+      ## 3. R/B/P (SSH brute → 5710 → level 5)
+      ## 4. 운영 권장 — sid 100xxx + chown + restart
+      ## 5. W10 (FIM/SCA/AR) 학습 logical flow
+      ```
+    hint: 마크다운
+    category: synthesis
+    points: 10
+    answer: 위 형식
+    answer_detail: 종합 보고서
+    verify:
+      type: output_contains
+      expect: Wazuh
+      field: stdout
+      semantic:
+        intent: "W09 종합"
+        success_criteria: ["5 섹션"]
+        acceptable_methods: ["**[관리적]** 마크다운 보고서"]
     target_vm: siem
