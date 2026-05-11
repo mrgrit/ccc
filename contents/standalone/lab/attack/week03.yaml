@@ -1,0 +1,70 @@
+lab_id: standalone-attack-week03
+title: 웹 앱 구조 + Burp + JuiceShop
+version: standalone-non-ai
+course: attack
+week: 3
+description: |
+  HTTP method / header + Burp Suite proxy + JuiceShop REST API + JWT 디코드.
+difficulty: easy
+duration_minutes: 120
+prerequisites: [W02]
+objectives:
+  - JuiceShop API 분석
+  - JWT 디코드
+  - Burp Suite 워크플로
+pass_threshold: 0.7
+steps:
+  - order: 1
+    instruction: JuiceShop API 접근
+    hint: curl -H "Host: juice.6v6.lab" http://10.20.30.1/api/Products
+    category: analysis
+    points: 25
+    answer: |
+      ssh 6v6-attacker 'curl -s -H "Host: juice.6v6.lab" http://10.20.30.1/api/Products 2>&1 | jq -r ".data | length // \"no data\""'
+      ssh 6v6-attacker 'curl -s -H "Host: juice.6v6.lab" http://10.20.30.1/api/Challenges 2>&1 | jq -r ".data | length"'
+    answer_detail: API 응답 카운트
+    verify:
+      type: output_contains
+      expect: data
+      field: stdout
+      semantic:
+        intent: REST API 분석
+        success_criteria: [응답 카운트]
+        acceptable_methods:
+          - "**[OSS] curl -H Host header + path**"
+          - "**[OSS] jq 응답 분석**"
+          - "**[OSS] /api/Users / /api/Products / /api/Challenges**"
+          - "**[OSS] /rest/user/login (POST)**"
+          - "**[OSS] /rest/user/whoami (인증 필요)**"
+          - "**[OSS] /api/Quantities (admin 권한)**"
+          - "**[OSS] OPTIONS preflight**"
+          - "**[OSS] WebSocket /socket.io**"
+    target_vm: attacker
+
+  - order: 2
+    instruction: 로그인 + JWT 디코드
+    hint: curl -X POST -d '{"email":"...","password":"..."}' /rest/user/login
+    category: analysis
+    points: 25
+    answer: |
+      JWT=$(ssh 6v6-attacker 'curl -s -X POST -H "Host: juice.6v6.lab" -H "Content-Type: application/json" -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"admin123\"}" http://10.20.30.1/rest/user/login 2>&1 | jq -r ".authentication.token // empty"')
+      echo "JWT: ${JWT:0:50}..."
+      ssh 6v6-attacker "echo $JWT | cut -d. -f2 | base64 -d 2>/dev/null | jq" 2>&1 | head
+    answer_detail: JWT payload 디코드
+    verify:
+      type: output_contains
+      expect: JWT
+      field: stdout
+      semantic:
+        intent: JWT 디코드
+        success_criteria: [JWT 받음]
+        acceptable_methods:
+          - "**[OSS] /rest/user/login POST**"
+          - "**[OSS] cut -d. -f2 + base64 -d**"
+          - "**[OSS] jwt.io 외부 디코더**"
+          - "**[OSS] jwt-tool (자동화 도구)**"
+          - "**[OSS] payload 의 iat / exp / aud / iss**"
+          - "**[OSS] signature 검증**"
+          - "**[OSS] alg:none 시도 (W06)**"
+          - "**[OSS] HS256 secret brute (W06)**"
+    target_vm: attacker
