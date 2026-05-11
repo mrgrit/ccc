@@ -1,91 +1,123 @@
 lab_id: standalone-secuops-week14
-title: OpenCTI (3) — Threat Hunting (Sightings + Reports)
+title: OpenCTI Threat Hunting — Sightings + Reports + R/B/P
 version: standalone-non-ai
 course: secuops
 week: 14
 description: |
-  헌팅 워크플로 (Hypothesis → Investigation → Outcome → Sharing) 실습.
-  본 환경의 3 source (Wazuh / Suricata / osquery) 통합 timeline + Report 작성.
+  본 환경의 3 source (Wazuh / Suricata / osquery) 통합 헌팅. 가설 수립 → 3 source
+  조사 → timeline 통합 → Report 작성 한 cycle.
 difficulty: hard
 duration_minutes: 150
 prerequisites: [W13]
 objectives:
-  - 가설 수립 + 3 source 조사
-  - timeline 통합
-  - Report 작성
+  - "가설 기반 헌팅 4 단계 (Hypothesis / Investigation / Outcome / Sharing)"
+  - "3 source (Wazuh / Suricata / osquery) 통합"
+  - "timeline 시간순 정렬"
+  - "Report 작성 (Markdown 표)"
 pass_threshold: 0.7
 steps:
+
   - order: 1
-    instruction: 가설 — "최근 SSH brute force 시도가 있었는가" + 3 source 조사
-    hint: ssh 6v6-siem 'sudo grep "5712\|sshd" /var/ossec/logs/alerts/alerts.json | tail'
-    category: investigation
-    points: 25
-    answer: |
-      ssh 6v6-siem 'sudo grep -E "(5710|5712|sshd.*Failed)" /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -5 | head'
-      ssh 6v6-ips 'sudo tail -500 /var/log/suricata/eve.json | jq -r "select(.event_type==\"alert\" and (.dest_port == 22)) | {ts: .timestamp, src: .src_ip}" 2>/dev/null | head'
+    instruction: |
+      ## 🎯 MISSION (가설 + 조사)
+
+      가설: "지난 1시간 안에 SSH brute force 시도가 있었다." 3 source 조사로 검증.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # Source 1: Wazuh alerts.json (rule 5710/5712)
+      ssh 6v6-siem 'sudo grep -E "5710|5712|sshd.*Failed" /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -5'
+
+      # Source 2: Suricata eve.json (dport 22)
+      ssh 6v6-ips 'sudo tail -500 /var/log/suricata/eve.json | jq -c "select(.dest_port==22) | {ts:.timestamp, src:.src_ip}" 2>/dev/null | tail -3'
+
+      # Source 3: osquery 의 logged_in_users + last
       ssh 6v6-bastion 'sudo osqueryi --json "SELECT user, host, time FROM last LIMIT 5;"'
-    answer_detail: 3 source 조사
+      ```
+
+      ## 📋 확인 사항
+
+      - Wazuh: 5710 매치 라인 수
+      - Suricata: dport 22 flow 수
+      - osquery last: 최근 로그인 history
+
+      ## 💡 왜 이걸 하는가?
+
+      Threat Hunting 의 표준 — 단일 source 가 아닌 **3+ source 교차 검증**. 한 source
+      만 보면 false-positive 또는 단편 정보.
+
+      ## 🔍 결과 해석
+
+      - **가설 검증**: 3 source 모두 SSH brute 흔적 → 침해 가능성
+      - **가설 기각**: 3 source 모두 빈 결과 → 정상
+    hint: 3 source 조사
+    category: investigation
+    points: 30
+    answer: |
+      ssh 6v6-siem 'sudo grep -E "5710|5712|sshd.*Failed" /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -5'
+      ssh 6v6-ips 'sudo tail -500 /var/log/suricata/eve.json | jq -c "select(.dest_port==22) | {ts:.timestamp, src:.src_ip}" 2>/dev/null | tail -3'
+      ssh 6v6-bastion 'sudo osqueryi --json "SELECT user, host, time FROM last LIMIT 5;"'
+    answer_detail: 3 source 가설 검증.
     verify:
       type: output_contains
-      expect: '['
+      expect: '\['
       field: stdout
       semantic:
-        intent: 조사
-        success_criteria: [3 source 출력]
+        intent: "3 source 헌팅"
+        success_criteria: ["3 source 출력"]
         acceptable_methods:
-          - "**[OSS] Wazuh alerts.json 의 5710/5712 룰**"
-          - "**[OSS] Suricata eve.json 의 dport 22**"
-          - "**[OSS] osquery 의 last 테이블**"
+          - "**[OSS] Wazuh alerts.json grep**"
+          - "**[OSS] Suricata eve.json jq**"
+          - "**[OSS] osquery last 테이블**"
           - "**[OSS] timeline 통합 (timestamp 정렬)**"
           - "**[OSS] src_ip 빈도 분석**"
-          - "**[OSS] OpenCTI 의 indicator 등록**"
-          - "**[OSS] Sighting 추가 절차**"
-          - "**[OSS] confidence 자동 상승**"
+          - "**[OSS] OpenCTI Sighting 등록**"
+          - "**[OSS] MITRE ATT&CK T1110 Brute Force 매핑**"
+          - "**[OSS] AAR 작성**"
     target_vm: bastion
 
   - order: 2
-    instruction: 가상 Report 작성 (Markdown) — 가설 + 조사 + 결론 + 권장
-    hint: |
-      # Report: SSH brute force 가설 검증
+    instruction: |
+      ## 🎯 MISSION (Report 작성)
+
+      STEP 1 의 조사 결과를 종합 — 1페이지 Markdown 보고서.
+
+      ## 💻 산출물 형식
+
+      ```markdown
+      # Threat Hunting Report — SSH Brute (W14, 학번)
+
       ## 1. Hypothesis
+      "지난 1시간 안에 SSH brute force 시도"
+
       ## 2. Investigation
+      - Wazuh 5710: N건
+      - Suricata dport 22: N flow
+      - osquery last: 정상 / 비정상 entry
+
       ## 3. Outcome
-      ## 4. Recommendations
+      가설 검증 / 기각 + 근거
+
+      ## 4. MITRE ATT&CK
+      T1110 Brute Force / T1078 Valid Accounts
+
+      ## 5. Recommendations
+      - CDB list (W13) 의 attacker IP 등록
+      - Active Response (W10) 자동 차단
+      - sshd MaxAuthTries 제한
+      ```
+    hint: Markdown 4 단계 보고서
     category: synthesis
     points: 25
-    answer: |
-      cat <<'EOF'
-      # 가상 Threat Hunting Report (W14)
-      ## 1. Hypothesis
-      KISA 2024 Q3 보고서에 따르면 한국 SMB 환경에 SSH brute force 캠페인 증가.
-      본 환경에 동일 IOC (특정 src_ip 빈도) 가 관측되는가?
-      ## 2. Investigation
-      - Wazuh alerts.json: 5712 rule 매치 N건
-      - Suricata eve.json: dport 22 alert N건
-      - osquery last: 비정상 시간 로그인 0건
-      ## 3. Outcome
-      가설 기각 — 본 환경의 SSH brute 시도는 N건 모두 attacker (10.20.30.202)
-      에서 발생 (학습 환경 정상). 외부 IOC 매치 0.
-      ## 4. Recommendations
-      - W13 의 CDB list 자동 갱신 cron 적용 (AbuseIPDB)
-      - rule 100300 의 level 12 alert 모니터링
-      - bastion ProxyJump 의 sshd_config MaxAuthTries=3 적용
-      EOF
-    answer_detail: 1페이지 헌팅 보고서
+    answer: 위 형식
+    answer_detail: 헌팅 4 단계 표준 보고서.
     verify:
       type: output_contains
       expect: Hypothesis
       field: stdout
       semantic:
-        intent: Report
-        success_criteria: [4 단계 모두]
-        acceptable_methods:
-          - "**[관리적 보고서] 4 단계 Markdown**"
-          - "**[관리적] OpenCTI UI Report 등록**"
-          - "**[관리적] STIX bundle export**"
-          - "**[관리적] KISA / ISMS-P 매핑**"
-          - "**[관리적] confidence 1-100 부여**"
-          - "**[관리적] MITRE ATT&CK 매핑**"
-          - "**[관리적] timeline 시각화**"
-          - "**[관리적] 팀 공유 + 산업 group**"
+        intent: "Report 작성"
+        success_criteria: ["4 단계 보고서"]
+        acceptable_methods: ["**[관리적]** PTES / ISMS-P 2.12 매핑"]
     target_vm: bastion

@@ -1,77 +1,185 @@
 lab_id: standalone-secuops-week10
-title: Wazuh agent — FIM / SCA / Active Response
+title: Wazuh agent — FIM / SCA / Active Response + R/B/P
 version: standalone-non-ai
 course: secuops
 week: 10
 description: |
-  Wazuh agent (fw / ips / web) 의 3 기능: File Integrity Monitoring (FIM 의 syscheck),
-  Security Configuration Assessment (SCA), Active Response (자동 IP 차단). 각 기능
-  의 ossec.conf 설정 + 트리거 + alerts.json 검증.
+  Wazuh agent 의 3 기능 — File Integrity Monitoring (FIM) + Security Configuration
+  Assessment (SCA) + Active Response (자동 IP 차단). Red 가 /etc/passwd 변경 →
+  Blue 가 syscheck alert 추적 → Purple 가 Active Response 권장.
 difficulty: medium
 duration_minutes: 150
-prerequisites: [W09 통과]
-objectives:
-  - syscheck (FIM) 변경 감지
-  - SCA scorecard 조회
-  - Active Response 설정 검토
+prerequisites: [W09]
+objectives: ["FIM 변경 감지", "SCA scorecard", "Active Response 시뮬"]
 pass_threshold: 0.7
 steps:
+
   - order: 1
-    instruction: web agent 의 syscheck 설정 + 변경 트리거 + alert
-    hint: ssh 6v6-web 'echo "# fim" | sudo tee -a /etc/hosts'
-    category: experiment
-    points: 25
+    instruction: |
+      ## 🎯 MISSION (FIM 검증)
+
+      web agent 의 `<syscheck>` 설정 + /etc/hosts 변경 트리거 + alerts.json 의 FIM
+      alert 추적.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # syscheck 설정 확인
+      ssh 6v6-web 'sudo grep -A8 "<syscheck>" /var/ossec/etc/ossec.conf | head -15'
+
+      # Red — /etc/hosts 변경 (FIM 트리거)
+      ssh 6v6-web 'echo "# fim_test_$(date +%s)" | sudo tee -a /etc/hosts'
+
+      # 대기 후 alert 확인 (realtime 또는 frequency 기반)
+      sleep 60
+      ssh 6v6-siem 'sudo grep -E "syscheck|550|554" /var/ossec/logs/alerts/alerts.json | tail -2 | head -1'
+      ```
+
+      ## 📋 확인 사항
+
+      - syscheck 설정에 `<directories ... realtime="yes">/etc</directories>`
+      - alerts.json 에 rule.id 550 (Integrity checksum changed)
+      - syscheck.path = `/etc/hosts`
+
+      ## 💡 왜 이걸 하는가?
+
+      FIM 은 호스트 변조 검출의 표준 — APT 의 backdoor 추가 / config 변조 즉시 감지.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 60초 안 alert 발생 (realtime=yes 면 즉시)
+      - **비정상**: alert 없음 → ossec.conf 의 syscheck 비활성 또는 inotify limit 부족
+    hint: FIM + /etc/hosts 변경 + alerts.json
+    category: monitoring
+    points: 20
     answer: |
       ssh 6v6-web 'sudo grep -A8 "<syscheck>" /var/ossec/etc/ossec.conf | head -15'
-      ssh 6v6-web 'echo "# fim_$(date +%s)" | sudo tee -a /etc/hosts'
+      ssh 6v6-web 'echo "# fim_test_$(date +%s)" | sudo tee -a /etc/hosts'
       sleep 60
-      ssh 6v6-siem 'sudo tail -200 /var/ossec/logs/alerts/alerts.json | grep -m1 "syscheck" | jq ".rule.id, .rule.description, .syscheck.path"'
-    answer_detail: FIM alert 발생
+      ssh 6v6-siem 'sudo grep -E "syscheck|550" /var/ossec/logs/alerts/alerts.json | tail -2 | head -1'
+    answer_detail: syscheck realtime + /etc/hosts 변경 → 550 (Integrity changed) alert.
     verify:
       type: output_contains
       expect: syscheck
       field: stdout
       semantic:
-        intent: FIM 동작
-        success_criteria: [syscheck 키, alert 발생]
+        intent: "FIM 동작"
+        success_criteria: ["syscheck alert"]
         acceptable_methods:
-          - "**[OSS] /etc/hosts 변경 후 alerts.json 확인**"
-          - "**[OSS] realtime=yes inotify 즉시 감지 (frequency 무시)**"
-          - "**[OSS] rule 550 (integrity changed) + level 7**"
-          - "**[OSS] report_changes yes 시 diff 포함**"
-          - "**[OSS] whodata 활성 시 누가 변경**"
-          - "**[OSS] /var/ossec/queue/syscheck/ 의 DB**"
-          - "**[OSS] dashboard Integrity Monitoring view**"
+          - "**[OSS] /var/ossec/etc/ossec.conf <syscheck>**"
+          - "**[OSS] realtime=yes (inotify 즉시 감지)**"
+          - "**[OSS] report_changes=yes (변경 diff 포함)**"
+          - "**[OSS] whodata (audit subsystem)**"
+          - "**[OSS] rule 550/554 (changed/added)**"
+          - "**[OSS] dashboard Integrity Monitoring**"
+          - "**[OSS] inotify limit (max_user_watches)**"
           - "**[OSS] ignore + nodiff 패턴**"
     target_vm: web
 
   - order: 2
-    instruction: SCA scorecard 조회 (Wazuh API)
-    hint: |
-      TOKEN=$(curl -sk -u wazuh-wui:MyS3cr37P450r.*- -X POST https://localhost:55000/security/user/authenticate | jq -r .data.token)
-      curl -sk -H "Authorization: Bearer $TOKEN" https://localhost:55000/sca/001
+    instruction: |
+      ## 🎯 MISSION (SCA scorecard)
+
+      Wazuh API 로 web agent 의 **SCA scorecard** (CIS Ubuntu 22.04 점검) 조회.
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-siem '
+      TOKEN=$(sudo curl -sk -u wazuh-wui:MyS3cr37P450r.*- -X POST https://localhost:55000/security/user/authenticate | python3 -c "import json,sys; print(json.load(sys.stdin)[\"data\"][\"token\"])")
+      sudo curl -sk -H "Authorization: Bearer $TOKEN" "https://localhost:55000/sca/001?pretty=true" 2>&1 | head -50
+      '
+      ```
+
+      ## 📋 확인 사항
+
+      - SCA 정책 (cis_ubuntu22-04.yml) 적용
+      - score / pass / fail / total_checks 표시
+      - dashboard `/app/wazuh` 의 SCA 메뉴에서 시각화
+
+      ## 💡 왜 이걸 하는가?
+
+      CIS Linux benchmark 100+ 점검 자동화. ISMS-P 2.9 (시스템 운영) 의 표준 점검.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 100+ 검사 + score 60-80%
+      - **fail 항목**: 운영 강화 candidate
+    hint: Wazuh API + SCA
     category: monitoring
     points: 20
     answer: |
       ssh 6v6-siem '
-      TOKEN=$(curl -sk -u wazuh-wui:MyS3cr37P450r.*- -X POST https://localhost:55000/security/user/authenticate | jq -r .data.token)
-      curl -sk -H "Authorization: Bearer $TOKEN" "https://localhost:55000/sca/001?pretty=true" | jq ".data.affected_items[0] | {name, score, pass, fail, total_checks}"
+      TOKEN=$(sudo curl -sk -u wazuh-wui:MyS3cr37P450r.*- -X POST https://localhost:55000/security/user/authenticate | python3 -c "import json,sys; print(json.load(sys.stdin)[\"data\"][\"token\"])")
+      sudo curl -sk -H "Authorization: Bearer $TOKEN" "https://localhost:55000/sca/001?pretty=true" 2>&1 | head -50
       '
-    answer_detail: SCA scorecard
+    answer_detail: Wazuh API + JWT + /sca/001.
     verify:
       type: output_contains
-      expect: score
+      expect: 'sca\|score\|policy'
       field: stdout
       semantic:
-        intent: SCA 결과
-        success_criteria: [score 출력]
+        intent: "SCA scorecard"
+        success_criteria: ["score 또는 sca"]
         acceptable_methods:
-          - "**[OSS] API + jq score**"
-          - "**[OSS] dashboard /app/wazuh SCA**"
+          - "**[OSS] Wazuh API + JWT 인증**"
+          - "**[OSS] /sca/{agent_id}**"
           - "**[OSS] /var/ossec/logs/wodle_sca.log**"
           - "**[OSS] /var/ossec/ruleset/sca/cis_*.yml**"
-          - "**[OSS] policy 별 score 비교 (CIS / PCI / GDPR)**"
+          - "**[OSS] policy 별 score (CIS/PCI/GDPR)**"
           - "**[OSS] fail 항목 상세 조회**"
-          - "**[OSS] remediation 권장**"
+          - "**[OSS] dashboard SCA scorecard**"
           - "**[OSS] 정기 scan 주기 (12h)**"
+    target_vm: siem
+
+  - order: 3
+    instruction: |
+      ## 🎯 MISSION (Active Response 시뮬)
+
+      Active Response 설정 검증 + firewall-drop 명령 시뮬.
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-siem 'sudo grep -A4 "<command>\|<active-response>" /var/ossec/etc/ossec.conf | head -30'
+      ssh 6v6-siem 'sudo ls /var/ossec/active-response/bin/'
+      ```
+
+      ## 📋 확인 사항
+
+      - `<command>` 정의 (firewall-drop 등)
+      - `<active-response>` 의 rules_id + timeout
+      - /var/ossec/active-response/bin/ 에 firewall-drop.sh 존재
+
+      ## 💡 왜 이걸 하는가?
+
+      Active Response 는 자동 차단 — incident response 의 분 단위 대응.
+
+      ## 🔍 결과 해석
+
+      - **정상**: command + active-response 정의 + script 존재
+      - **운영 권장**: timeout 600 (10분) + 알람 통보
+    hint: Active Response 설정
+    category: configuration
+    points: 15
+    answer: |
+      ssh 6v6-siem 'sudo grep -A4 "<command>\|<active-response>" /var/ossec/etc/ossec.conf | head -30'
+      ssh 6v6-siem 'sudo ls /var/ossec/active-response/bin/'
+    answer_detail: Active Response 설정 + script 가용성.
+    verify:
+      type: output_contains
+      expect: response
+      field: stdout
+      semantic:
+        intent: "Active Response 설정"
+        success_criteria: ["command 또는 active-response"]
+        acceptable_methods:
+          - "**[OSS] <command> + executable**"
+          - "**[OSS] <active-response> + rules_id + timeout**"
+          - "**[OSS] firewall-drop / disable-account / host-deny**"
+          - "**[OSS] /var/ossec/active-response/bin/**"
+          - "**[OSS] manager 가 agent 에 명령 전송**"
+          - "**[OSS] agent 가 script 실행 (firewall / user / log)**"
+          - "**[OSS] timeout 600s (자동 해제)**"
+          - "**[OSS] dashboard 의 Active Response 메뉴**"
     target_vm: siem

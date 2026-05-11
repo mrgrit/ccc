@@ -1,75 +1,167 @@
 lab_id: standalone-secuops-week11
-title: sysmon-for-linux — eBPF 호스트 이벤트 (신규)
+title: sysmon-for-linux — eBPF 호스트 이벤트 (osquery 와 비교)
 version: standalone-non-ai
 course: secuops
 week: 11
 description: |
-  Microsoft Sysmon for Linux 의 eBPF 기반 process / network / file 이벤트
-  스트림. osquery (W07) 와의 비교 + Wazuh 통합 매핑. 본 lab 은 lecture 의 패턴
-  중심 + 사전 설치 시 실 트리거.
+  Microsoft Sysmon for Linux 의 eBPF 기반 ProcessCreate / NetworkConnect / FileCreate
+  이벤트 학습. osquery (query-based, W07) 와의 보완 관계. 본 lab 은 패턴 학습 중심
+  (실 sysmon 설치는 별 패키지 — 학습 환경 시뮬).
 difficulty: medium
 duration_minutes: 120
-prerequisites: [W07 osquery, W09-10 Wazuh agent]
+prerequisites: [W07, W10]
 objectives:
-  - sysmon EventID 3종 (ProcessCreate / NetworkConnect / FileCreate) 이해
-  - osquery vs sysmon 비교
-  - Wazuh decoder + rule 매핑
+  - "sysmon 의 3 핵심 EventID (1 ProcessCreate / 3 NetworkConnect / 11 FileCreate)"
+  - "osquery snapshot vs sysmon event-stream 비교"
+  - "Wazuh 의 sysmon decoder + 사용자 룰 통합 path"
 pass_threshold: 0.6
 steps:
+
   - order: 1
-    instruction: sysmon-for-linux 설치 상태 확인
-    hint: ssh 6v6-web 'which sysmon || dpkg -l | grep sysmon'
-    category: survey
-    points: 10
+    instruction: |
+      ## 🎯 MISSION
+
+      web 호스트에서 **osquery 의 processes 테이블** (snapshot) + **process_events
+      테이블** (daemon mode stream) 차이 가시화.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # 1. snapshot (현재 시점의 모든 process)
+      ssh 6v6-web 'sudo osqueryi --json "SELECT count(*) AS total FROM processes;"'
+
+      # 2. 최근 1분 안에 시작된 process
+      ssh 6v6-web 'sudo osqueryi --json "SELECT pid, name, start_time FROM processes WHERE start_time > (strftime(\"%s\", \"now\") - 60);"'
+
+      # 3. (osqueryd 가 활성이면) process_events 테이블 — event stream
+      ssh 6v6-web 'sudo osqueryi --json "SELECT count(*) FROM process_events;" 2>&1 | head'
+      ```
+
+      ## 📋 확인 사항
+
+      - 명령 1: 정수 (총 프로세스 수, 예: 30+)
+      - 명령 2: 최근 spawn 된 process (보통 1-3 건, sshd 등)
+      - 명령 3: process_events 가 osqueryd 가 활성이면 다수, 비활성이면 0
+
+      ## 💡 왜 이걸 하는가?
+
+      osquery 의 query-based 모델 — snapshot (정적) + process_events (스트림). sysmon
+      은 event-stream native (eBPF 기반). 두 모델의 trade-off.
+
+      ## 🔍 결과 해석
+
+      - **snapshot**: 한 시점의 상태
+      - **event stream**: 시간순 event (sysmon 의 강점)
+    hint: osquery snapshot + process_events
+    category: comparison
+    points: 20
     answer: |
-      ssh 6v6-web 'which sysmon 2>&1 | head'
-      ssh 6v6-web 'apt-cache policy sysmonforlinux 2>&1 | head -5 || echo "package not in repo"'
-    answer_detail: 설치 상태 (없으면 도전 과제)
+      ssh 6v6-web 'sudo osqueryi --json "SELECT count(*) AS total FROM processes;"'
+      ssh 6v6-web 'sudo osqueryi --json "SELECT pid, name, start_time FROM processes WHERE start_time > (strftime(\"%s\", \"now\") - 60);"'
+    answer_detail: snapshot + 최근 1분 process 비교.
+    verify:
+      type: output_contains
+      expect: total
+      field: stdout
+      semantic:
+        intent: "osquery snapshot vs stream"
+        success_criteria: ["total 카운트", "start_time 필터"]
+        acceptable_methods:
+          - "**[OSS] processes 테이블 (snapshot)**"
+          - "**[OSS] process_events 테이블 (daemon mode stream)**"
+          - "**[OSS] start_time / on_disk 컬럼 활용**"
+          - "**[OSS] osqueryd schedule 의 interval (몇 초마다 snapshot)**"
+          - "**[OSS] sysmon Event ID 1 (ProcessCreate) — event-stream native**"
+          - "**[OSS] auditd / falco / Tetragon — Linux 이벤트 비교**"
+          - "**[OSS] eBPF probe — kernel hook + user-space stream**"
+          - "**[OSS] BCC + bpftrace — 직접 eBPF 작성**"
+    target_vm: web
+
+  - order: 2
+    instruction: |
+      ## 🎯 MISSION (sysmon EventID 3 종 학습)
+
+      sysmon 의 3 EventID 패턴 (1 ProcessCreate / 3 NetworkConnect / 11 FileCreate)
+      과 Wazuh 의 sysmon decoder + 사용자 룰 통합 path 학습.
+
+      ## 💻 산출물 (시뮬)
+
+      ```xml
+      <!-- sysmon EventID 1 (ProcessCreate) XML 패턴 -->
+      <Event>
+        <EventID>1</EventID>
+        <EventData>
+          <Data Name="Image">/usr/bin/curl</Data>
+          <Data Name="CommandLine">curl -A sqlmap http://victim</Data>
+          <Data Name="ParentImage">/usr/sbin/sshd</Data>
+        </EventData>
+      </Event>
+
+      <!-- Wazuh 의 sysmon-event1 decoder + 사용자 룰 100200 -->
+      <decoder name="sysmon-event1">
+        <prematch>EventID: 1</prematch>
+        <regex>Image: (\S+).*?CommandLine: (.+?) ParentImage: (\S+)</regex>
+        <order>image, commandline, parent</order>
+      </decoder>
+
+      <rule id="100200" level="10">
+        <decoded_as>sysmon-event1</decoded_as>
+        <field name="image">/tmp/</field>
+        <description>Sysmon: /tmp/ 에서 spawn 된 process (의심)</description>
+      </rule>
+      ```
+
+      ## 📋 확인 사항
+
+      - EventID 1 / 3 / 11 의 의미 인지
+      - Wazuh 의 localfile 로 /var/log/sysmonforlinux.log ship
+      - sysmon-event1 decoder + 사용자 룰 100200 작성 시뮬
+
+      ## 💡 왜 이걸 하는가?
+
+      sysmon 은 Windows 의 사실상 표준 host visibility 도구. Linux 포팅 (2021, MS)
+      후 SOC 의 표준 — osquery 와 보완 관계 (snapshot vs stream).
+
+      ## 🔍 결과 해석
+
+      - 실 설치는 별 패키지 (github.com/Sysinternals/SysmonForLinux 빌드)
+      - 본 lab 환경에선 패턴 학습 중심
+    hint: sysmon EventID + Wazuh decoder
+    category: design
+    points: 30
+    answer: |
+      cat <<'EOF'
+      # sysmon EventID 1 (ProcessCreate) — XML 형식
+      <Event><EventID>1</EventID><EventData>
+        <Data Name="Image">/usr/bin/curl</Data>
+        <Data Name="CommandLine">curl -A sqlmap http://victim</Data>
+      </EventData></Event>
+
+      # Wazuh decoder + 사용자 룰 100200
+      <decoder name="sysmon-event1">
+        <prematch>EventID: 1</prematch>
+      </decoder>
+      <rule id="100200" level="10">
+        <decoded_as>sysmon-event1</decoded_as>
+        <field name="image">/tmp/</field>
+        <description>Sysmon: /tmp/ process spawn (의심)</description>
+      </rule>
+      EOF
+    answer_detail: sysmon 3 EventID + Wazuh 통합 path. 실 설치는 별 빌드.
     verify:
       type: output_contains
       expect: sysmon
       field: stdout
       semantic:
-        intent: 설치 상태
-        success_criteria: [확인]
+        intent: "sysmon EventID + Wazuh 통합"
+        success_criteria: ["EventID 패턴", "Wazuh decoder"]
         acceptable_methods:
-          - "**[OSS] which / dpkg / apt-cache**"
-          - "**[OSS] github.com/Sysinternals/SysmonForLinux 의 빌드 가이드**"
-          - "**[OSS] BCC / eBPF 의존성 확인**"
-          - "**[OSS] /var/log/sysmonforlinux.log 존재 여부**"
-          - "**[OSS] systemctl status sysmon**"
-          - "**[OSS] kernel version (5.x+ 필요)**"
-          - "**[OSS] CO-RE (Compile Once Run Everywhere)**"
-          - "**[OSS] 6v6 에 추가 패키지 설치 시 Dockerfile 패치**"
-    target_vm: web
-
-  - order: 2
-    instruction: osquery 와 sysmon 의 같은 event 추적 비교 (시뮬)
-    hint: |
-      sysmon: /var/log/sysmonforlinux.log 의 EventID 1 (ProcessCreate)
-      osquery: SELECT * FROM processes WHERE start_time > ...
-    category: comparison
-    points: 25
-    answer: |
-      # osquery 측 — 최근 1분 안에 생성된 process
-      ssh 6v6-web 'sudo osqueryi --json "SELECT pid, name, cmdline, parent FROM processes WHERE start_time > (strftime(\"%s\", \"now\") - 60) LIMIT 5;"'
-      # sysmon 측 (설치되어 있다면)
-      ssh 6v6-web 'sudo tail -20 /var/log/sysmonforlinux.log 2>/dev/null | head' || echo "sysmon not available"
-    answer_detail: 두 도구의 동일 event 비교
-    verify:
-      type: output_contains
-      expect: pid
-      field: stdout
-      semantic:
-        intent: 두 도구 비교
-        success_criteria: [osquery 출력]
-        acceptable_methods:
-          - "**[OSS] osquery 의 process snapshot**"
-          - "**[OSS] sysmon 의 event stream**"
-          - "**[OSS] sysmon EventID 1 의 parent process tree**"
-          - "**[OSS] osquery 의 process_events 테이블 (daemon mode)**"
-          - "**[OSS] timing — sysmon 은 즉시, osquery 는 스냅샷**"
-          - "**[OSS] CPU 부담 비교**"
-          - "**[OSS] Wazuh agent localfile 통합 path**"
-          - "**[OSS] 운영 환경 — 둘 다 사용 + 보완**"
+          - "**[OSS] sysmon EventID 1 ProcessCreate**"
+          - "**[OSS] EventID 3 NetworkConnect**"
+          - "**[OSS] EventID 11 FileCreate**"
+          - "**[OSS] /var/log/sysmonforlinux.log**"
+          - "**[OSS] Wazuh localfile log_format syslog**"
+          - "**[OSS] decoder + 사용자 정의 rule 100200**"
+          - "**[OSS] SwiftOnSecurity-style sysmon config**"
+          - "**[OSS] osquery + sysmon 보완 (snapshot + stream)**"
     target_vm: web

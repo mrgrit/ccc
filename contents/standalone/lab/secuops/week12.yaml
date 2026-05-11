@@ -4,67 +4,117 @@ version: standalone-non-ai
 course: secuops
 week: 12
 description: |
-  OpenCTI 본격 설치 전 STIX / TAXII 표준 + 무료 IOC feed 5종 분석.
-  본 lab 은 외부 demo 활용 + 사전 설계.
+  OpenCTI 본격 설치 전 STIX 2.1 데이터 모델 + TAXII 2.1 collection 분석. MITRE
+  ATT&CK STIX bundle + URLhaus IOC feed + 공개 TAXII server 조회.
 difficulty: medium
 duration_minutes: 120
-prerequisites: [W11 통과]
+prerequisites: [W11]
 objectives:
-  - STIX 2.1 Object 형식 분석
-  - TAXII 2.1 collection 조회 (public demo)
-  - 무료 IOC feed 5종 평가
+  - "STIX 2.1 18 Object + Relationship 구조"
+  - "TAXII 2.1 collection 조회"
+  - "MITRE ATT&CK STIX bundle 분석"
+  - "무료 IOC feed (URLhaus / AbuseIPDB / OTX) 평가"
 pass_threshold: 0.6
 steps:
+
   - order: 1
-    instruction: STIX 2.1 의 Indicator + Relationship JSON 분석
-    hint: |
-      curl -s https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/enterprise-attack.json | jq ".objects[0]"
+    instruction: |
+      ## 🎯 MISSION
+
+      MITRE ATT&CK 의 STIX 2.1 bundle 다운로드 + Object 갯수 분석.
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker 'curl -s https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/enterprise-attack.json | jq ".objects | length"'
+      ssh 6v6-attacker 'curl -s https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/enterprise-attack.json | jq -r ".objects[] | .type" | sort | uniq -c | sort -rn | head -10'
+      ```
+
+      ## 📋 확인 사항
+
+      - 명령 1: object 갯수 1000+ (MITRE ATT&CK enterprise 의 모든 Tactic + Technique + Sub-technique)
+      - 명령 2: type 분포 — attack-pattern (Technique), course-of-action, intrusion-set, malware, tool, x-mitre-tactic 등
+
+      ## 💡 왜 이걸 하는가?
+
+      STIX 2.1 표준 데이터 — OpenCTI / Wazuh / SIEM 모두 이 표준 사용. Object type
+      이해가 CTI 통합의 첫 단계.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 1000+ object + 10+ type
+      - attack-pattern 가 가장 많음 (200+ Technique)
+    hint: STIX bundle jq 분석
     category: analysis
     points: 25
     answer: |
-      ssh 6v6-attacker 'curl -s https://urlhaus.abuse.ch/downloads/csv_recent/ 2>&1 | head -5'
-      ssh 6v6-attacker 'curl -s https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/enterprise-attack.json 2>&1 | jq ".objects | length"'
-    answer_detail: STIX JSON 분석
+      ssh 6v6-attacker 'curl -s https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/enterprise-attack.json | jq ".objects | length"'
+      ssh 6v6-attacker 'curl -s https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/enterprise-attack.json | jq -r ".objects[] | .type" | sort | uniq -c | sort -rn | head -10'
+    answer_detail: MITRE ATT&CK STIX bundle 의 object 통계.
     verify:
       type: output_contains
-      expect: object
+      expect: attack-pattern
       field: stdout
       semantic:
-        intent: STIX Object 분석
-        success_criteria: [STIX JSON 다운로드]
+        intent: "STIX bundle 분석"
+        success_criteria: ["object 갯수", "type 분포"]
         acceptable_methods:
-          - "**[OSS] MITRE ATT&CK STIX 다운로드 + jq**"
-          - "**[OSS] URLhaus CSV → STIX 변환 패턴**"
-          - "**[OSS] STIX 2.1 18 Object 종류 review**"
-          - "**[OSS] Relationship 의 source/target_ref**"
-          - "**[OSS] Bundle 의 STIX 묶음 형식**"
-          - "**[OSS] kill chain phase 매핑**"
-          - "**[OSS] indicator pattern syntax**"
-          - "**[OSS] labels / indicator_types**"
+          - "**[OSS] MITRE CTI GitHub repo**"
+          - "**[OSS] STIX 2.1 18 Object 종류**"
+          - "**[OSS] attack-pattern (Technique)**"
+          - "**[OSS] course-of-action (대응)**"
+          - "**[OSS] intrusion-set (APT 그룹)**"
+          - "**[OSS] malware / tool (도구)**"
+          - "**[OSS] x-mitre-tactic (custom MITRE)**"
+          - "**[OSS] relationship (Object 간 연결)**"
     target_vm: attacker
 
   - order: 2
-    instruction: TAXII 2.1 public collection 조회
-    hint: curl -H "Accept: application/taxii+json;version=2.1" https://app.opencti.io/taxii2/
+    instruction: |
+      ## 🎯 MISSION
+
+      TAXII 2.1 의 public demo (OpenCTI app.opencti.io) 조회.
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker 'curl -s -H "Accept: application/taxii+json;version=2.1" https://app.opencti.io/taxii2/ 2>&1 | head -20'
+      ```
+
+      ## 📋 확인 사항
+
+      - TAXII 2.1 server 메타 응답 (title / api_roots)
+      - api_roots URL (예: `/taxii2/api1/`)
+
+      ## 💡 왜 이걸 하는가?
+
+      TAXII 2.1 표준 통신 학습. production 환경에서 OpenCTI / MISP 가 TAXII 로 IOC 자동
+      교환.
+
+      ## 🔍 결과 해석
+
+      - **정상**: TAXII server 메타 JSON
+      - **비정상**: HTTP 404 → 시점에 따라 demo 서버 변경 가능
+    hint: TAXII 2.1 server 메타
     category: analysis
     points: 15
     answer: |
-      ssh 6v6-attacker 'curl -s -H "Accept: application/taxii+json;version=2.1" https://app.opencti.io/taxii2/ 2>&1 | jq 2>&1 | head -20'
-    answer_detail: TAXII 서버 메타
+      ssh 6v6-attacker 'curl -s -H "Accept: application/taxii+json;version=2.1" https://app.opencti.io/taxii2/ 2>&1 | head -20'
+    answer_detail: TAXII server 메타 조회.
     verify:
       type: output_contains
-      expect: api
+      expect: 'api\|taxii'
       field: stdout
       semantic:
-        intent: TAXII 통신
-        success_criteria: [TAXII 응답]
+        intent: "TAXII 조회"
+        success_criteria: ["api_roots 또는 taxii 키워드"]
         acceptable_methods:
-          - "**[OSS] curl + Accept header**"
-          - "**[OSS] /taxii2/api1/collections 조회**"
-          - "**[OSS] /taxii2/api1/collections/<id>/objects 다운로드**"
+          - "**[OSS] TAXII 2.1 server 메타 (/taxii2/)**"
+          - "**[OSS] /taxii2/api1/collections (collection 목록)**"
+          - "**[OSS] /taxii2/api1/collections/<id>/objects (IOC 다운로드)**"
           - "**[OSS] Bearer auth (인증 필요 시)**"
           - "**[OSS] match[type]=indicator filter**"
           - "**[OSS] added_after 시간 filter**"
           - "**[OSS] pagination (limit / next)**"
-          - "**[OSS] cabby python 라이브러리 (TAXII client)**"
+          - "**[OSS] cabby python TAXII client**"
     target_vm: attacker
