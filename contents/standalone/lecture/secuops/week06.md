@@ -782,6 +782,360 @@ ssh 6v6-web 'sudo tail -5 /var/log/apache2/modsec_audit.log | jq -r ".audit_data
 
 ---
 
+## 11.5 R/B/P 공격 분석 케이스 확장 (본 주차 추가)
+
+### 11.5.0 R/B/P 일상 비유 — 백화점 안전요원의 가방 검사
+
+본 절은 ModSecurity 의 운영을 백화점 안전요원의 가방 검사 비유로 시작한다.
+
+학생이 다니는 백화점 입구에 안전요원이 있다. 안전요원은 매뉴얼 (OWASP CRS) 에 따라 손님의 가방을 다음 다섯 가지로 분류해 확인한다.
+
+- **위험 글자가 적힌 종이** — XSS payload 처럼 `<script>` 같은 문자가 들어 있는 입력.
+- **위험 명령이 적힌 쪽지** — SQLi payload 처럼 `'OR'1'='1` 같은 문자열.
+- **다른 매장 약도** — Path Traversal 처럼 `../../etc/passwd` 같은 경로.
+- **공구가 들어 있는 가방** — Command Injection 처럼 `;cat /etc/passwd` 같은 OS 명령.
+- **위조 신분증** — File Inclusion 처럼 `<?php ...?>` 같은 코드.
+
+안전요원은 가방을 하나씩 검사하면서 의심 점수 (anomaly score) 를 누적한다. 점수가 5 점을 넘으면 즉시 입장을 차단한다. 차단 기록은 백화점 일지 (modsec_audit.log) 에 한 줄씩 쌓이고, 일지에는 매뉴얼 페이지 번호 (rule id) 도 함께 기록된다.
+
+| 일상 비유 | ModSecurity 운영 |
+|-----------|------------------|
+| 안전요원 매뉴얼 | OWASP CRS |
+| 의심 점수 누적 | anomaly score |
+| 점수 5점 차단 | inbound_anomaly_score_threshold |
+| 차단 기록 일지 | modsec_audit.log |
+| 매뉴얼 페이지 번호 | rule id (941xxx, 942xxx 등) |
+
+본 절은 다음 세 케이스를 다룬다.
+
+- 케이스 1 — XSS payload 를 ModSec audit log 에서 직접 분석한다.
+- 케이스 2 — SQLi payload 의 anomaly score 누적 과정을 추적한다.
+- 케이스 3 — 정상 traffic 이 false positive 로 차단된 경우의 좁은 범위 exception 작성.
+
+원칙은 W01 ~ W05 와 같다. 재현 가능성, 도구 위주 분석, 신입생 친화, 학습 환경 한정.
+
+### 11.5.1 케이스 1 — XSS payload 의 audit log 분석
+
+**0. 일상 비유 — 가방 안에 위험 글자가 적힌 종이.**
+
+도둑이 백화점에 들어가려고 가방에 "alert" 라는 글자가 적힌 종이를 일부러 넣어둔다. 안전요원의 매뉴얼에는 그런 글자 패턴 (`<script>`, `onerror=`, `javascript:` 등) 이 의심 목록으로 등록되어 있다. 안전요원이 매뉴얼을 펼쳐 글자를 확인하면 즉시 의심 점수가 올라가고, 도둑은 입장 거부된다.
+
+이 비유를 XSS payload 차단에 옮긴다.
+
+| 일상 비유 | XSS payload |
+|-----------|--------------|
+| 가방 안의 위험 글자 | URL 또는 body 의 `<script>alert(1)</script>` |
+| 매뉴얼 의심 목록 | CRS 941100 ~ 941180 시리즈 |
+| 의심 점수 | anomaly score |
+| 즉시 입장 거부 | HTTP 403 응답 |
+| 일지 한 줄 | modsec_audit.log 의 한 JSON |
+
+**0a. 사용 도구 사전 안내.**
+
+- **curl** — HTTP 요청을 보내는 표준 도구.
+- **modsec_audit.log** — ModSecurity 의 audit 전용 로그. JSON 한 줄에 한 transaction.
+- **jq** — JSON 을 파싱해서 보는 표준 도구.
+
+**1. Red — 공격 재현.**
+
+attacker VM 에 들어가서 학습 환경의 web 에 XSS payload 가 들어간 query 를 보낸다. 학습 환경 한정으로 실행한다.
+
+```bash
+ssh ccc@192.168.0.112
+# password: 1
+```
+
+attacker VM 내부에서 다음 두 줄을 짧은 간격으로 보낸다.
+
+```bash
+# attacker VM 내부 (학습 환경 한정)
+curl -s -o /dev/null -w "%{http_code}\n" \
+    -H "Host: juice.6v6.lab" \
+    "http://192.168.0.103/search?q=%3Cscript%3Ealert(1)%3C/script%3E"
+
+curl -s -o /dev/null -w "%{http_code}\n" \
+    -H "Host: juice.6v6.lab" \
+    "http://192.168.0.103/search?q=%22%3E%3Cimg%20src=x%20onerror=alert(1)%3E"
+```
+
+각 줄의 의미는 다음과 같다.
+
+- 첫 번째 — `<script>alert(1)</script>` 의 URL-encoded 형태.
+- 두 번째 — `"><img src=x onerror=alert(1)>` 의 URL-encoded 형태. img 태그 우회 패턴.
+
+두 시도가 ModSec 의 SecRuleEngine `On` 모드라면 응답 코드가 403 으로 나온다.
+
+**2. 발생하는 로그/아티팩트.**
+
+web VM 의 `/var/log/apache2/modsec_audit.log` 에 한 transaction 마다 한 JSON 줄이 추가된다. 그 JSON 안의 `audit_data.messages[]` 에 매칭된 룰 id 와 anomaly score 가 기록된다.
+
+```json
+{"transaction": {"client_ip":"192.168.0.112", ...},
+ "request": {"uri":"/search?q=...", ...},
+ "audit_data": {
+   "messages": [
+     "Warning. detected XSS using libinjection. [id \"941100\"] [msg \"XSS Attack Detected via libinjection\"] ...",
+     "Warning. Pattern match \"\\<script\" ... [id \"941110\"] ...",
+     "Warning. Pattern match \"javascript:\" ... [id \"941160\"] ...",
+     "... Total Score: 15 ..."
+   ]
+ }}
+```
+
+핵심 필드는 매칭된 941xxx 룰 id 의 목록과 Total Score 다.
+
+**3. Blue — modsec_audit.log 직접 분석.**
+
+web VM 에 들어가서 audit log 의 최근 라인을 jq 로 본다.
+
+```bash
+ssh 6v6-web
+sudo tail -2 /var/log/apache2/modsec_audit.log | jq '.transaction.client_ip, .request.uri, .audit_data.messages[]' | head -30
+```
+
+각 라인을 확인한다.
+
+- `client_ip` — 192.168.0.112 인지 본다. attacker VM 이면 학습 환경 시도다.
+- `request.uri` — URL-decoded 페이로드의 일부가 보인다.
+- `messages[]` — 941100, 941110, 941160 같은 XSS 시리즈 룰 id 가 보이면 매칭 확인.
+
+매칭된 룰 id 의 분포를 한눈에 본다.
+
+```bash
+sudo tail -100 /var/log/apache2/modsec_audit.log \
+  | jq -r '.audit_data.messages[]?' \
+  | grep -oE '\[id "[0-9]+"\]' \
+  | sort | uniq -c | sort -rn | head
+```
+
+다음으로 Kibana Discover 에서 audit log 가 SIEM 으로 ingest 된 경우 다음 흐름으로 본다.
+
+1. 좌측 햄버거 메뉴 → `Discover` 선택.
+2. Index pattern 을 Wazuh 의 alerts index (`wazuh-alerts-*`) 로 바꾼다.
+3. Time picker `Last 15 minutes`.
+4. Search bar 에 `data.modsec.rule_id:[941000 TO 941999]` 또는 `rule.groups:modsecurity` 를 입력한다.
+5. 결과 한 줄을 펼쳐서 매칭된 룰 id, anomaly score, client_ip 를 확인한다.
+
+**4. Blue — 대응 의사결정.**
+
+학생이 다음 세 가지를 판단한다.
+
+- **차단의 정상성.** 응답 코드가 403 이면 ModSec 이 정상 차단했다. SecRuleEngine 모드가 `On` 인지 확인한다.
+- **paranoia level 적정성.** 학습 환경은 PL 1 또는 2 가 표준이다. PL 3 이상이면 false positive 가 늘어난다.
+- **반복 차단 후 IP 단위 추가 차단.** 같은 client_ip 가 10건 이상 차단되면 fw 의 dynamic blacklist set 으로 timeout 10분 추가한다.
+
+**5. Purple — 보완.**
+
+다음 세 가지를 적용한다.
+
+- **anomaly score threshold 검토.** `tx.inbound_anomaly_score_threshold` 의 기본값이 5 다. 너무 낮으면 false positive, 너무 높으면 우회 가능. 학습 환경은 5 가 기본 권장이다.
+- **CRS 갱신 cron.** OWASP CRS 의 정기 업데이트 (예: 분기 1회) 를 자동화한다. 새 우회 패턴 추가가 빠르다.
+- **audit log retention.** 1년 retention 이 ISMS-P 표준이다. modsec_audit.log 의 rotate 와 SIEM ingest 의 보존 정책을 확인한다.
+
+본 케이스 cycle 한 바퀴는 약 20분 정도다.
+
+### 11.5.2 케이스 2 — SQLi payload 의 anomaly score 누적 추적
+
+**0. 일상 비유 — 가방 안에 점수가 다른 의심 물품 여러 개.**
+
+도둑의 가방에 의심 물품이 한 개가 아니라 여러 개 들어 있다고 하자. 안전요원의 매뉴얼은 물품마다 점수를 매기고, 총합이 임계치를 넘으면 차단한다. 단일 물품이 점수 3 이고 임계치가 5 라면 통과하지만, 두 물품의 합이 6 이면 차단된다. 단계적 점수 누적이 차단의 핵심이다.
+
+| 일상 비유 | anomaly score 누적 |
+|-----------|---------------------|
+| 의심 물품 1 | SQLi 시그니처 룰 1 매칭 (점수 5) |
+| 의심 물품 2 | SQLi 시그니처 룰 2 매칭 (점수 5) |
+| 총합 임계치 5 | inbound_anomaly_score_threshold |
+| 총합 이상이면 차단 | 403 응답 |
+
+**0a. 사용 도구 사전 안내.**
+
+- **anomaly scoring 모드** — CRS 의 기본 모드. 단일 룰이 즉시 차단하지 않고 점수만 누적한다.
+- **942xxx 시리즈** — SQLi 룰 군. 다양한 변형을 잡는다.
+- **Total Score** — audit log 안의 누적 점수.
+
+**1. Red — 공격 재현.**
+
+attacker VM 에서 SQLi 페이로드 한 줄을 보낸다.
+
+```bash
+ssh ccc@192.168.0.112
+
+# attacker VM 내부 (학습 환경 한정)
+curl -s -o /dev/null -w "%{http_code}\n" \
+    -H "Host: juice.6v6.lab" \
+    "http://192.168.0.103/login?username=admin%27%20OR%20%271%27%3D%271&password=any"
+```
+
+URL-decoded 형태는 `?username=admin' OR '1'='1&password=any` 다. classic SQLi 시도다.
+
+**2. 발생하는 로그/아티팩트.**
+
+modsec_audit.log 에 매칭된 룰 id 와 누적 score 가 기록된다.
+
+```json
+{"audit_data": {
+   "messages": [
+     "Warning. detected SQLi using libinjection ... [id \"942100\"] ...",
+     "Warning. Pattern match \"(?i)'\\s*or\\s*'1'='1\" ... [id \"942130\"] ...",
+     "Warning. Pattern match \"OR\\s\" ... [id \"942150\"] ...",
+     "... Total Score: 15 ..."
+   ]
+ }}
+```
+
+점수 5 의 룰 세 개가 누적되어 Total Score 15 가 된다. 임계치 5 를 크게 넘어 차단된다.
+
+**3. Blue — anomaly score 의 누적 흐름 직접 추적.**
+
+web VM 에 들어가서 매칭된 룰 id 별 점수 합을 계산한다.
+
+```bash
+ssh 6v6-web
+sudo tail -1 /var/log/apache2/modsec_audit.log | jq -r '.audit_data.messages[]?' | head -20
+```
+
+출력의 마지막 줄에 `Total Score: N` 이 보인다. 그 직전 줄에 `Inbound Anomaly Score Exceeded (Total Inbound Score: X)` 형태로 임계치 초과 안내가 함께 표시된다.
+
+핵심 분석 두 가지를 한다.
+
+- **단일 룰 차단 vs 누적 차단.** 942100 (libinjection) 만 단독으로 차단했는지, 942130, 942150 같은 보조 룰의 누적으로 차단했는지 확인한다.
+- **paranoia level 의 영향.** PL 1 룰만 매칭되었는지, PL 2 의 보조 룰이 함께 매칭되었는지 살핀다.
+
+Kibana Discover 에서도 같은 흐름으로 본다.
+
+1. Search bar 에 `data.modsec.rule_id:[942000 TO 942999]` 입력.
+2. 결과의 anomaly score 필드를 columns 에 추가한다.
+
+**4. Blue — 대응 의사결정.**
+
+학생이 다음 세 가지를 판단한다.
+
+- **단일 룰 신뢰성.** 942100 의 libinjection 은 가장 정확한 SQLi 탐지다. 이 룰 단독 매칭은 거의 false positive 가 없다.
+- **paranoia 상향 의 영향.** PL 2 로 올리면 942150 같은 약한 패턴까지 매칭된다. 학습 환경은 PL 1 이 기본 권장이다.
+- **fw 차단 연계.** 같은 client_ip 의 SQLi 반복 차단이 누적되면 fw 의 dynamic blacklist set 으로 timeout 30분 추가한다.
+
+**5. Purple — 보완.**
+
+다음 세 가지를 적용한다.
+
+- **threshold 운영 정책 명문화.** 5 (기본) → 7 (관대) → 3 (엄격) 의 선택지를 문서화한다. 환경 별 정책 추적.
+- **paranoia 의 시뮬 검증.** PL 1 → PL 2 로 변경 전 testing 환경에서 false positive baseline 을 먼저 측정한다.
+- **CRS exclusion 작성.** false positive 가 확인된 정상 traffic 의 좁은 exception 룰을 추가한다. 다음 케이스 3 에서 다룬다.
+
+### 11.5.3 케이스 3 — false positive 발생 시 좁은 범위 exception 작성
+
+**0. 일상 비유 — 정상 직원이 매뉴얼에 잘못 등록되어 매번 차단됨.**
+
+백화점 정비 직원이 매일 정상 출입을 하는데, 가방에 항상 공구가 들어 있어서 매뉴얼의 "공구 의심 룰" 에 매번 걸린다. 안전요원이 무조건 공구 룰을 끄면 진짜 도둑의 공구도 못 잡는다. 대신 매뉴얼에 "정비 직원의 정상 공구는 예외" 라는 좁은 단서를 추가하면 정상 운영도 가능하고 도둑도 잡을 수 있다.
+
+| 일상 비유 | ModSec false positive |
+|-----------|-----------------------|
+| 정비 직원의 정상 공구 | 정상 운영의 특정 form param 또는 URL |
+| 매뉴얼 의심 룰 매번 발동 | CRS 룰이 정상 traffic 에 매칭 |
+| 룰 전체 해제 위험 | SecRuleRemoveById 의 광범위 영향 |
+| 좁은 예외 | SecRuleUpdateTargetById 의 특정 param 제외 |
+
+**0a. 사용 도구 사전 안내.**
+
+- **SecRuleRemoveById** — 룰 전체를 해제한다. 광범위. 가급적 피한다.
+- **SecRuleUpdateTargetById** — 특정 param 만 룰의 검사 대상에서 제외한다. 좁다.
+- **`<LocationMatch>`** — 특정 URL 만 예외 처리한다. 좁다.
+
+**1. Red — false positive 시뮬.**
+
+학습 환경의 web 에 정상 운영 endpoint `/api/comment` 가 있다고 가정한다. 댓글 본문에 SQL 관련 키워드 (`WHERE`, `SELECT` 등) 가 정상적으로 자주 들어간다 (예: "SELECT 절을 배웠어요" 같은 한국어 문장).
+
+attacker VM 에서 그런 정상 입력 시뮬을 보낸다.
+
+```bash
+ssh ccc@192.168.0.112
+
+# attacker VM 내부 (학습 환경 한정)
+curl -s -o /dev/null -w "%{http_code}\n" \
+    -H "Host: juice.6v6.lab" \
+    -X POST \
+    -d "comment=오늘 SELECT 와 WHERE 절을 학습했어요. 정말 재미있네요." \
+    http://192.168.0.103/api/comment
+```
+
+ModSec 의 SQLi 룰 (942xxx) 중 일부가 "SELECT", "WHERE" 같은 키워드를 잡아 false positive 차단을 일으킨다. 응답 코드가 403 이면 false positive 발생이다.
+
+**2. 발생하는 로그/아티팩트.**
+
+modsec_audit.log 에 매칭된 룰 id 가 기록된다. 그러나 본 traffic 은 정상 사용자의 댓글이라 차단은 false positive 다.
+
+**3. Blue — false positive 의 식별 + 영향 평가.**
+
+web VM 에 들어가서 audit log 를 본다.
+
+```bash
+ssh 6v6-web
+sudo tail -5 /var/log/apache2/modsec_audit.log | jq -r 'select(.transaction.client_ip != null) | "\(.transaction.client_ip) \(.request.uri) \(.audit_data.messages[]?)"' | head -20
+```
+
+매칭된 룰 id 와 매칭된 param 이름을 확인한다. 정상 댓글에서 false positive 가 명확하면 좁은 범위 exception 을 작성한다.
+
+다음으로 영향 받은 사용자 수와 빈도를 계산한다.
+
+```bash
+sudo grep "/api/comment" /var/log/apache2/modsec_audit.log | wc -l
+sudo grep "/api/comment" /var/log/apache2/modsec_audit.log | jq -r '.transaction.client_ip' | sort -u | wc -l
+```
+
+전체 매칭 수와 unique client 수를 비교해 정상 운영 영향의 규모를 확인한다.
+
+**4. Blue — 대응 의사결정.**
+
+학생이 다음 세 가지를 판단한다.
+
+- **룰 전체 해제 vs 좁은 예외.** 942150 같은 SQLi 룰을 전체 해제하면 진짜 SQLi 도 못 잡는다. 좁은 예외가 표준이다.
+- **예외 범위.** `/api/comment` 의 `comment` param 만 예외 처리한다. 다른 endpoint 와 다른 param 은 그대로 검사한다.
+- **추가 안전판.** 댓글 본문은 web app 의 출력 시 HTML escape 가 정상 동작하는지 별도 검증한다. ModSec 예외가 곧 web app 의 약점이 되지 않도록 한다.
+
+**5. Purple — 좁은 예외 작성 + audit.**
+
+web VM 의 ModSec 설정에 좁은 예외를 추가한다.
+
+```bash
+ssh 6v6-web
+sudo tee -a /etc/modsecurity/modsec_custom_exceptions.conf > /dev/null <<'EOF'
+<LocationMatch "^/api/comment$">
+    # SQLi 룰 942150 의 comment param 만 예외
+    SecRuleUpdateTargetById 942150 "!ARGS:comment"
+</LocationMatch>
+EOF
+
+sudo apachectl configtest
+sudo systemctl reload apache2
+```
+
+각 줄의 의미는 다음과 같다.
+
+- `<LocationMatch "^/api/comment$">` — URL 이 정확히 `/api/comment` 인 경우만.
+- `SecRuleUpdateTargetById 942150 "!ARGS:comment"` — 942150 룰의 검사 대상에서 `comment` param 만 제외.
+- 다른 endpoint 와 다른 param 은 영향 없음.
+
+attacker VM 에서 같은 정상 요청을 다시 보내 응답 코드가 200 인지 확인한다.
+
+다음으로 git audit 을 한다.
+
+- `modsec_custom_exceptions.conf` 의 변경은 git 으로 추적한다.
+- 누가, 언제, 어떤 룰의 어떤 param 을 예외 처리했는지 history 가 남는다.
+- 분기 점검에서 예외 목록의 적정성을 재검토한다.
+
+### 11.5.4 본 절 정리
+
+본 절은 W06 의 Apache + ModSecurity 학습을 실제 공격 분석 cycle 에 연결했다. 학생이 다음 능력을 갖춘다.
+
+- attacker VM 에서 XSS, SQLi, false positive 유도 시도를 직접 재현한다.
+- modsec_audit.log 의 JSON 구조와 매칭된 룰 id 의 분포를 jq 로 직접 분석한다.
+- anomaly score 누적 흐름을 추적해 임계치와 paranoia level 의 운영 영향을 판단한다.
+- false positive 발생 시 좁은 범위 exception 을 직접 작성하고 git 으로 audit 한다.
+
+다음 주차 W07 에서는 osquery + sysmon 의 호스트 가시화를 같은 R/B/P cycle 로 학습한다.
+
+---
+
 ## 12. 과제
 
 ### A. 5 공격 매트릭스 (필수, 50점)
