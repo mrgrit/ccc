@@ -380,6 +380,378 @@ graph LR
 
 ---
 
+## 6.5 R/B/P 공격 분석 케이스 확장 (본 주차 추가)
+
+### 6.5.0 R/B/P 일상 비유 — 종합 면허 시험의 위기 대처 5 단계
+
+본 절은 W15 의 APT 5 단계 시뮬을 종합 운전면허 1종 대형 시험 비유로 시작한다.
+
+학생이 1종 대형 면허 시험을 본다고 상상해보자. 1종 대형은 단순 도로주행이 아니라 5 단계의 종합 능력을 한 번에 평가한다.
+
+- **1. 출발 전 점검 (Reconnaissance 단계).** 차량 외관, 타이어, 등화류 확인.
+- **2. 초기 출발 (Initial Access).** 시동 + 안전 운전 출발.
+- **3. 일반 주행 (Lateral Movement).** 차선 변경, 교차로, 좁은 길.
+- **4. 통신 + 후방 점검 (C2 + Exfiltration).** 무전 응답, 후방 사각지대 점검.
+- **5. 종합 정리 (IR 통합 보고서).** 시험관 면담 + 본인 점검 + 시험 후 차량 정비.
+
+학생은 단계마다 시험관에게 정확한 행동을 보여줘야 한다. 한 단계의 실수가 다음 단계까지 연쇄적으로 영향을 미치므로, 단계별 cycle 의 매끄러움이 종합 점수다.
+
+| 일상 비유 | APT 5 단계 |
+|-----------|------------|
+| 출발 전 점검 | Reconnaissance |
+| 초기 출발 | Initial Access (SQLi) |
+| 일반 주행 | Lateral Movement (nmap scan) |
+| 통신 + 후방 점검 | C2 + Exfiltration |
+| 종합 정리 | IR 통합 보고서 + AAR |
+
+본 절은 본 시험의 풀이 cycle 자체를 R/B/P 패턴으로 세 케이스로 정리한다.
+
+- 케이스 1 — APT 5 단계 attack 의 단일 timeline 재구성. 5 source 의 alert 를 시간순 한 줄로 묶기.
+- 케이스 2 — 5 단계 각각의 ATT&CK 매핑과 detection coverage 의 결합 점검.
+- 케이스 3 — 시험 후 cleanup + AAR 한 페이지 + 본 과목 졸업 review.
+
+원칙은 W01 ~ W14 와 같다. 재현 가능성, 도구 위주 분석, 신입생 친화, 학습 환경 한정.
+
+### 6.5.1 케이스 1 — APT 5 단계의 단일 timeline 재구성
+
+**0. 일상 비유 — 5 영상 cctv 의 5 단계 사건 시간순 결합.**
+
+도시 경찰서 형사가 5 군데 cctv 영상을 모은다. 각 영상은 시간 동기화가 맞춰져 있고, 같은 도둑이 5 다른 장소에 5 분 간격으로 출현한다. 영상마다 단편적 단서뿐이지만 시간순 결합은 도둑의 전체 행동 경로 (kill chain) 를 드러낸다.
+
+| 일상 비유 | APT timeline |
+|-----------|--------------|
+| 5 cctv 영상 | 5 source 의 alert (fw / ips / web / siem / host) |
+| 시간 동기화 | NTP 또는 동일 UTC |
+| 단편적 단서 | 단일 source 의 단발 alert |
+| 시간순 결합 | timeline reconstruction |
+| 전체 행동 경로 | kill chain |
+
+**0a. 사용 도구 사전 안내.**
+
+- **W08 케이스 1 의 5 위치 jq 명령.**
+- **Wazuh Dashboard 의 Discover 단일 query.**
+- **timeline 한 줄 정리 양식.**
+
+**1. Red — 시험관이 사전에 주입한 APT 5 단계.**
+
+시험관이 시험 시작 전 attacker VM 에서 다음 5 단계를 5 분 간격으로 발생시킨다. 학생은 흔적만 보고 추적한다.
+
+```
+T+0min  : Reconnaissance — nmap -sV 192.168.0.103 (ips Suricata alert)
+T+5min  : Initial Access — SQLi payload + 401 (web ModSec audit + ips alert)
+T+10min : Lateral Movement — nmap fw 너머 dmz 192.168.0.108 (fw forward drop + log)
+T+15min : C2 + Exfiltration — DNS beacon + 외부 IP 443 connection 시도 (sysmon Event 22 + Event 3)
+T+20min : Cleanup 위장 — 신규 사용자 + cron + listener (osquery + Wazuh syscheck)
+```
+
+각 단계는 짧은 시간 안에 흔적 한 두 줄을 남긴다.
+
+**2. 발생하는 로그/아티팩트.**
+
+- fw 의 dmesg + nft counter — Reconnaissance + Lateral Movement 흔적.
+- ips 의 eve.json — Suricata alert 다수.
+- web 의 modsec_audit.log + auth.log — Initial Access 흔적.
+- web 의 sysmon event — C2 흔적.
+- web 의 `/etc/passwd` + `/etc/cron.d/` + listening_ports — Cleanup 위장 흔적.
+- siem 의 alerts.json — 5 단계 통합 alert.
+
+**3. Blue — 5 단계 timeline 단일 한 줄 재구성.**
+
+학생이 시험 시간 안에 다음 5 줄을 순서대로 실행한다.
+
+```bash
+# 1. fw 의 forward drop 흔적
+ssh 6v6-fw 'sudo dmesg --ctime | grep "FWD-DROP\|RBP-DROP" | tail -10'
+
+# 2. ips 의 Suricata alert (nmap + SQLi)
+ssh 6v6-ips 'sudo tail -300 /var/log/suricata/eve.json | jq -r "select(.event_type==\"alert\" and .src_ip==\"192.168.0.112\") | \"\(.timestamp) ips alert \(.alert.signature_id) \(.alert.signature)\""'
+
+# 3. web 의 ModSec audit
+ssh 6v6-web 'sudo tail -300 /var/log/apache2/modsec_audit.log | jq -r "select(.transaction.client_ip==\"192.168.0.112\") | \"\(.transaction.time_stamp) web modsec \(.request.uri)\""'
+
+# 4. web 의 sysmon DNS + Network
+ssh 6v6-web 'sudo tail -300 /var/ossec/logs/alerts/alerts.json | jq -r "select(.agent.name==\"web\" and (.data.sysmon.EventID==\"22\" or .data.sysmon.EventID==\"3\")) | \"\(.timestamp) web sysmon EventID=\(.data.sysmon.EventID) Image=\(.data.sysmon.Image)\""'
+
+# 5. web 의 신규 사용자 + cron + listener
+ssh 6v6-web 'echo "--- new users ---"; sudo grep -E "^[a-z]+:x:1[0-9]{3}:" /etc/passwd | tail -5; echo "--- new cron ---"; sudo ls -la /etc/cron.d/ | tail -5; echo "--- listeners ---"; sudo ss -ltnp 2>/dev/null | grep -v "127.0.0.1\|::1" | tail -5'
+```
+
+각 출력을 학생 노트북의 한 텍스트 파일에 모은다.
+
+다음으로 한 줄 sort 로 시간순 재구성.
+
+```bash
+cat /tmp/all_w15_logs.txt | sort -k1
+```
+
+결과로 다음 timeline 이 드러난다.
+
+```
+T+0min   ips alert  ET SCAN nmap -sV 192.168.0.103
+T+5min   web modsec rule_id=942100 /search?q=...SQLi
+T+10min  fw  FWD-DROP src=192.168.0.112 dst=192.168.0.108
+T+15min  web sysmon EventID=22 QueryName=beacon.local.lab
+T+20min  web /etc/passwd + new user backupz + /etc/cron.d/w15_back
+```
+
+이 timeline 이 본 시험의 단계 5 (IR 통합 보고서) 답안의 핵심이다.
+
+Wazuh Dashboard 의 Discover 에서 한 번에도 본다.
+
+1. 좌측 햄버거 메뉴 → `Discover` 선택.
+2. Index pattern `wazuh-alerts-*`.
+3. Time picker `Last 1 hour`.
+4. Search bar 에 `data.srcip:192.168.0.112` 입력.
+5. 좌측 `Available fields` 에서 `rule.mitre.id`, `agent.name`, `rule.description` 을 columns 에 추가.
+
+한 화면에 5 단계의 모든 alert 가 시간순으로 정렬된다.
+
+**4. Blue — 운영자 조치 권장.**
+
+학생이 답안에 다음 다섯 줄을 적는다.
+
+- **즉시 차단.** fw 의 dynamic blacklist set 에 192.168.0.112 timeout 1시간.
+- **affected host 격리.** web VM 의 inbound 22, 80 임시 차단.
+- **persistence 제거.** 신규 사용자 잠금 + cron 파일 보존 후 제거 + listener kill.
+- **C2 차단.** sysmon Event 22 의 의심 도메인을 CDB list 에 등록 + Stream Connector 검증.
+- **5 도구 baseline 재검증.** W08 의 cleanup 5 단계 동일 수행.
+
+**5. Purple — 자기 검증 + 시험관 채점 대비.**
+
+학생이 답안 제출 전에 다음 세 가지를 자가 검증한다.
+
+- **5 단계 모두 확인.** 5 단계 중 한 단계라도 빠지면 timeline 이 불완전하다.
+- **timestamp timezone 정확.** 모든 host 의 UTC 또는 KST 통일.
+- **kill chain 매핑.** 각 단계의 ATT&CK technique 매핑이 답안에 포함되어 있는지.
+
+본 케이스 cycle 한 바퀴는 시험 본문의 약 60분 정도다.
+
+### 6.5.2 케이스 2 — 5 단계 ATT&CK 매핑 + detection coverage 결합 점검
+
+**0. 일상 비유 — 시험관 채점표의 5 항목 모두 점수 확인.**
+
+도로주행 시험관의 채점표는 5 항목으로 나뉜다. 각 항목마다 만점이 20점이고, 한 항목의 0점도 종합 점수에 큰 영향을 준다. 시험관이 항목별로 채점하면서 본인 환경의 detection 도구가 각 단계를 모두 잡았는지 본다.
+
+| 일상 비유 | 5 항목 채점 |
+|-----------|--------------|
+| 출발 전 점검 | Reconnaissance detection coverage |
+| 초기 출발 | Initial Access detection |
+| 일반 주행 | Lateral Movement detection |
+| 통신 + 후방 점검 | C2 + Exfiltration detection |
+| 종합 정리 | Reporting + AAR |
+
+**0a. 사용 도구 사전 안내.**
+
+- **Wazuh Dashboard 의 MITRE ATT&CK 모듈.**
+- **alerts.json 의 rule.mitre.id 필드.**
+- **ATT&CK Navigator 의 Coverage Matrix.**
+
+**1. Red — 케이스 1 의 데이터 재사용.**
+
+본 케이스는 추가 attack 재현이 아니라 케이스 1 의 결과 데이터를 ATT&CK 관점으로 재분석한다.
+
+**2. 발생하는 로그/아티팩트.**
+
+5 단계 attack 의 alerts.json 안에 rule.mitre.id 가 매핑된 줄이 있다.
+
+```
+T1595  Active Scanning      (Reconnaissance, nmap)
+T1190  Exploit Public-Facing App (Initial Access, SQLi)
+T1021  Remote Services      (Lateral Movement)
+T1071  Application Layer Protocol (C2)
+T1098  Account Manipulation (Persistence)
+```
+
+**3. Blue — 5 단계 coverage 매트릭스 직접 확인.**
+
+먼저 jq 로 5 단계 technique 별 카운트.
+
+```bash
+ssh 6v6-siem
+sudo tail -500 /var/ossec/logs/alerts/alerts.json \
+  | jq -r 'select(.data.srcip=="192.168.0.112" and .rule.mitre.id?) | .rule.mitre.id[]' \
+  | sort | uniq -c | sort -rn
+```
+
+결과로 5 단계가 모두 매핑된 줄이 보이면 detection coverage 가 완전하다. 한 단계가 빠지면 그 단계의 detection 격차다.
+
+다음으로 Wazuh Dashboard 의 MITRE ATT&CK 모듈.
+
+1. 좌측 햄버거 메뉴 → `Wazuh` → `Modules` → `MITRE ATT&CK` 선택.
+2. Time picker `Last 1 hour`.
+3. agent selector 를 `all` 로 설정.
+4. ATT&CK 매트릭스 화면에서 다음 5 카드가 모두 활성 (색이 진함) 되어야 한다.
+   - `Reconnaissance` → T1595.
+   - `Initial Access` → T1190.
+   - `Lateral Movement` → T1021.
+   - `Command and Control` → T1071.
+   - `Persistence` → T1098.
+5. 활성되지 않은 카드가 있으면 detection coverage 격차.
+
+추가로 한국 위협 매핑.
+
+- T1190 — KISA 사례의 web shell 침해 패턴.
+- T1098 — 한국 금융권 침해의 unauthorized account 추가 패턴.
+- T1071 — Kimsuky APT 의 C2 패턴.
+
+**4. Blue — 답안의 ATT&CK Mapping 섹션 작성.**
+
+학생이 답안의 단계 5 보고서에 다음 mapping 표를 포함한다.
+
+```markdown
+## 4. MITRE ATT&CK Mapping
+
+| 단계 | Tactic | Technique | 본인 환경 매핑 rule |
+|------|--------|-----------|---------------------|
+| 1 | Reconnaissance | T1595 Active Scanning | Suricata rule 2010xxx |
+| 2 | Initial Access | T1190 Exploit Public-Facing | ModSec 942100 + Wazuh 86xxx |
+| 3 | Lateral Movement | T1021 Remote Services | fw FWD-DROP log |
+| 4 | C2 | T1071 Application Layer Protocol | sysmon Event 22 DnsQuery + Event 3 |
+| 5 | Persistence | T1098 Account Manipulation | Wazuh syscheck 550 + osquery users |
+```
+
+**5. Purple — 본 과목 졸업 후의 detection coverage plan.**
+
+학생이 답안에 본 과목 졸업 후의 plan 을 한 페이지 첨부.
+
+- 분기 1회 정기 hunt session (W14 학습).
+- 외부 IOC feed 의 자동 sync (W13 학습).
+- coverage 격차의 분기별 보강 plan.
+- 한국 KISA + ISAC 의 정기 공유 참여.
+
+### 6.5.3 케이스 3 — 시험 후 cleanup + 본 과목 졸업 AAR
+
+**0. 일상 비유 — 면허 시험 후 차량 정비 + 본인의 운전 면허 활용 plan.**
+
+시험을 마친 학생이 시험 차량을 정비해 다음 학생에게 넘겨주고, 본인은 면허를 손에 들고 향후 운전 활용 plan 을 세운다. 학습 환경의 다음 학생을 위한 baseline 복귀 + 본인의 본 과목 학습의 마무리.
+
+| 일상 비유 | 시험 후 + 졸업 |
+|-----------|----------------|
+| 차량 정비 | 학습 환경 baseline 복귀 |
+| 면허 손에 들기 | 본 과목 수료 |
+| 향후 활용 plan | 졸업 후 학습 path |
+| 운전 일지 시작 | 본인 SOC 운영 일지 |
+
+**0a. 사용 도구 사전 안내.**
+
+- **W08 의 cleanup 5 단계 명령 (재사용).**
+- **AAR markdown 양식.**
+- **본 과목의 9.3 (수료 후 학습 path) 와 연결.**
+
+**1. Red — 시험 중 학생이 임시로 만든 흔적 (W08 + W14 의 합).**
+
+본 시험은 W08 보다 더 많은 도구를 사용했으므로 cleanup 범위도 더 넓다.
+
+- fw 의 임시 차단 rule.
+- ips 의 local.rules 추가 sid.
+- web 의 ModSec exception.
+- web 의 osquery scheduled_query.
+- siem 의 임시 CDB list entry.
+- siem 의 custom rule 100xxx 시리즈.
+- 시험관 주입 침해의 잔존 (신규 사용자, cron, listener).
+
+**2. 발생하는 로그/아티팩트.**
+
+본 단계의 흔적은 학생이 의도한 변경 + 시험관의 시뮬 침해 잔존이다.
+
+**3. Blue — 6 단계 cleanup.**
+
+학생이 답안 제출 전에 다음 6 줄을 순서대로 실행한다.
+
+```bash
+# 1. fw 의 임시 차단 rule 제거
+ssh 6v6-fw 'HANDLE=$(sudo nft -a list chain inet six_filter input 2>/dev/null | grep "192.168.0.112" | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"); [ -n "$HANDLE" ] && sudo nft delete rule inet six_filter input handle $HANDLE; sudo nft flush set inet six_filter blacklist 2>/dev/null'
+
+# 2. ips 의 임시 sid 제거
+ssh 6v6-ips 'sudo sed -i "/sid:90159[0-9]\{3\};/d" /etc/suricata/rules/local.rules; sudo suricatasc -c reload-rules'
+
+# 3. web 의 ModSec 임시 exception 제거
+ssh 6v6-web 'sudo sed -i "/W15-EXAM-EXCEPTION/d" /etc/modsecurity/modsec_custom_exceptions.conf; sudo apachectl configtest && sudo systemctl reload apache2'
+
+# 4. web 의 osquery 임시 schedule 제거
+ssh 6v6-web 'sudo sed -i "/w15_exam_query/d" /etc/osquery/osquery.conf; sudo systemctl reload osqueryd 2>/dev/null'
+
+# 5. siem 의 임시 rule + CDB entry 제거
+ssh 6v6-siem 'sudo sed -i "/<!-- W15-EXAM -->/,/<!-- end W15-EXAM -->/d" /var/ossec/etc/rules/local_rules.xml; sudo sed -i "/w15_exam_entry/d" /var/ossec/etc/lists/known_bad_ips; sudo /var/ossec/bin/wazuh-makelists; sudo /var/ossec/bin/wazuh-control restart'
+
+# 6. 시험관 주입 침해 잔존 제거
+ssh 6v6-web 'sudo userdel -r backupz 2>/dev/null; sudo rm -f /etc/cron.d/w15_back; sudo pkill -f "/tmp/.w15_listener" 2>/dev/null; sudo rm -f /tmp/.w15_listener'
+```
+
+각 단계 후 baseline 확인.
+
+```bash
+ssh 6v6-fw 'sudo nft list ruleset | grep -c "192.168.0.112"'   # 0 이어야 함
+ssh 6v6-ips 'sudo grep -c "sid:90159" /etc/suricata/rules/local.rules'  # 0
+ssh 6v6-web 'sudo grep -c "W15-EXAM" /etc/modsecurity/modsec_custom_exceptions.conf'  # 0
+ssh 6v6-web 'sudo grep -c "w15_exam" /etc/osquery/osquery.conf'  # 0
+ssh 6v6-siem 'sudo grep -c "W15-EXAM" /var/ossec/etc/rules/local_rules.xml'  # 0
+ssh 6v6-web 'getent passwd backupz; ls /etc/cron.d/w15_back 2>/dev/null'  # 둘 다 없음
+```
+
+모두 0 또는 없음이 정상.
+
+**4. Blue — 졸업 AAR 한 페이지.**
+
+학생이 시험 후 다음 양식의 AAR 을 작성한다.
+
+```markdown
+# secuops 종합 평가 AAR — 본 과목 졸업
+
+## 1. 시험 진행 요약
+- 시작 / 종료 / 정시 제출 / 총점
+
+## 2. 5 단계 평가
+- 단계 1 Recon: X/20
+- 단계 2 Initial Access: X/20
+- 단계 3 Lateral Movement: X/20
+- 단계 4 C2: X/20
+- 단계 5 IR 보고서: X/20
+- 총점: X/100
+
+## 3. 본 과목 15 주 학습 review
+### 잘한 영역
+- Wazuh + Suricata 의 alert 분석 cycle 의 익숙해짐.
+- attacker VM 의 5 단계 침해 시뮬을 직접 재현하고 분석.
+- ATT&CK matrix 의 coverage 격차 식별 능력.
+
+### 보완 필요 영역
+- ModSec 의 paranoia + anomaly score 의 직관 추가 학습.
+- OpenCTI 의 STIX 작성 표준의 정착.
+- 한국 KISA / ISAC 의 외부 공유 양식의 추가 연습.
+
+## 4. 졸업 후 plan
+- 본 과목의 7 후속 과목 중 1 과목 수강 (예: attack, AI 보안, Bastion 운영).
+- 본인 lab 환경에 6v6 동일 구조 설치.
+- 한국 KISA 보호나라 + 산업 ISAC 의 정기 참여.
+
+## 5. 본 과목의 평생 자산
+- 5 종 보안 솔루션 (방화벽, IDS, WAF, SIEM, 호스트 가시화) 의 직접 운영 경험.
+- CTI ↔ SIEM 통합의 end-to-end cycle 이해.
+- Threat Hunting 의 4 단계 cycle 의 실행 능력.
+- 한국 + 국제 표준 (ISMS-P, NIST CSF, MITRE ATT&CK, STIX/TAXII) 의 매핑 능력.
+```
+
+**5. Purple — 본 과목 졸업 + 평생 학습.**
+
+학생이 다음 세 가지를 마지막으로 정리한다.
+
+- **본 과목 졸업 인증.** AAR + 보고서 제출이 본 과목의 마지막 의무.
+- **후속 과목 진입.** 본 과목 의 다음 학습은 attack (모의해킹) 또는 인공지능보안 (AI 보안 입문) 중 본인 우선 순위.
+- **평생 운영자 의 자세.** 보안은 한 번 졸업으로 끝나지 않는다. 본 과목의 R/B/P cycle 을 평생 본인 환경에서 반복.
+
+### 6.5.4 본 절 정리
+
+본 절은 W15 의 종합 평가를 실제 시험 풀이 cycle + 졸업 cycle 에 연결했다. 학생이 다음 능력을 갖춘다.
+
+- 5 source 의 흩어진 alert 를 시간순 한 줄 timeline 으로 재구성하고 APT 5 단계 kill chain 을 가시화한다.
+- 5 단계 각각의 ATT&CK technique 매핑 + Wazuh Dashboard ATT&CK 모듈 + coverage 매트릭스 결합 분석.
+- 6 단계 cleanup + 졸업 AAR + 평생 학습 plan 으로 본 과목을 마무리.
+
+본 과목 15 주의 모든 학습이 본 절의 한 cycle 로 통합된다. 학생은 본 과목 졸업과 함께 보안 운영자의 평생 학습 path 의 첫 발걸음을 시작한다.
+
+---
+
 ## 7. 시험 대비 — W01-W14 review (시험 직전)
 
 ```
