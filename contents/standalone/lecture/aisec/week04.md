@@ -626,6 +626,22 @@ Reporting) 의 LLM 응답 quality 표.
 
 ---
 
+## 8.5. 본 주차 hands-on (lab yaml 매핑)
+
+본 주차 의 lab (`contents/standalone/lab/aisec/week04.yaml`) 의 5 step 의 안내:
+
+1. **실 Wazuh alert 의 LLM 분석** — `ssh 6v6-bastion` 의 `sudo tail /var/ossec/logs/alerts/alerts.json` + Bastion `/chat` 의 5W + 위험도 + 권장 응답. (위 평가 기준 A 의 base)
+
+2. **LLM 의 Sigma rule 자동 생성** — `curl http://192.168.0.109:11434/api/generate` 의 gemma3:4b 호출 + SSH 5+ failed login 시나리오 의 Sigma YAML 생성 (title / id / tags / logsource / detection / level).
+
+3. **LLM 의 Wazuh XML rule 생성** — 가상 시나리오 (rule 100400 / level 12 / frequency 3 / timeframe 60) 의 Wazuh XML 자동 생성.
+
+4. **CVE 의 LLM 분석 (5 항목)** — 가상 CVE 의 핵심 vuln / CVSS 의미 / 영향 범위 / 익스플로잇 가용성 / 권장 패치 의 5 항목 응답. (위 평가 기준 B 의 base)
+
+5. **모의해킹 보조 — JuiceShop 의 LLM 조언** — JuiceShop 의 정찰 결과 (REST API / JWT / ModSec) 의 LLM 의 다음 시도 권장 + ATT&CK Technique 매핑. (위 평가 기준 C 의 base)
+
+---
+
 ## 9. 평가 기준
 
 | 항목 | 비중 |

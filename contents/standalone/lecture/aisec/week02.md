@@ -776,6 +776,22 @@ W01 의 학습 계획 + 본 주차 학습 결과 반영. 본 과목 W02-W07 의 
 
 ---
 
+## 8.5. 본 주차 hands-on (lab yaml 매핑)
+
+본 주차 의 lab (`contents/standalone/lab/aisec/week02.yaml`) 의 5 step 의 안내:
+
+1. **Ollama 설치 + gemma3:4b list** — 본인 PC 또는 6v6 의 ollama 호스트 (192.168.0.109) 의 `ollama list` 확인. 30+ 모델 의 가시화.
+
+2. **Ollama /api/generate 의 첫 호출** — `curl http://192.168.0.109:11434/api/generate` 의 SSH brute force 로그 분석 prompt. 응답 의 약 3 초 (gemma3:4b 의 정상).
+
+3. **Modelfile 사용자 정의 모델** — `ccc-secsec:4b` 의 SYSTEM prompt + PARAMETER 설정 + `ollama create` 등록 + 호출.
+
+4. **Bastion API 의 KG + chat** — `/kg/metrics` 의 counter + `/chat` 의 "PE-KG 의 의의" 응답. (위 평가 기준 A 의 base)
+
+5. **RAG 의 미니 Python 예** — 4 단계 (Embed → Retrieve → Augment → Generate) 의 simple keyword similarity 의 Python demo. (위 평가 기준 B 의 base)
+
+---
+
 ## 9. 평가 기준
 
 | 항목 | 비중 |

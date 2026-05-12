@@ -712,6 +712,22 @@ quality 비교 표.
 
 ---
 
+## 8.5. 본 주차 hands-on (lab yaml 매핑)
+
+본 주차 의 lab (`contents/standalone/lab/aisec/week03.yaml`) 의 5 step 의 안내:
+
+1. **Wazuh alerts.json 의 feature 추출** — `ssh 6v6-siem` 의 `sudo tail /var/ossec/logs/alerts/alerts.json` + jq 의 CSV export (timestamp / rule.id / rule.level / agent.name / srcip 의 4 feature).
+
+2. **scikit-learn Random Forest 학습** — Python 의 `RandomForestClassifier(n_estimators=100)` + 가상 dataset (srcip_external / failed_count / time_burst / is_attack) 의 학습 + Accuracy + Feature Importance. (위 평가 기준 A 의 base)
+
+3. **scikit-learn Isolation Forest 이상 탐지** — `IsolationForest(contamination=0.1)` 의 정상 5 sample + 새 sample 의 anomaly score 의 측정.
+
+4. **LLM 6 프롬프트 기법 비교** — Zero-shot / Few-shot / CoT 의 동일 task (SSH log 분석) 의 응답 비교. (위 평가 기준 B 의 base)
+
+5. **안전 prompt template + injection 회피** — system + user role separation + "system prompt 무시" 의 injection 시도 + 모델 의 거부 응답.
+
+---
+
 ## 9. 평가 기준
 
 | 항목 | 비중 |
