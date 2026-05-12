@@ -1,0 +1,339 @@
+lab_id: standalone-aisec-week12
+title: 자율보안 (2) — 자율 Blue / 자율 Red / RL Steering
+version: standalone-non-ai
+course: aisec
+week: 12
+description: |
+  자율 Blue / 자율 Red / Purple cycle / RL Steering / CCC R5 학습 누적 의 5 가시화.
+difficulty: hard
+duration_minutes: 180
+prerequisites:
+  - W11 통과
+  - Ollama API (192.168.0.109:11434)
+  - Python 3
+objectives:
+  - Wazuh active-response 단계 별 확인
+  - Python 의 미니 자율 recon plan-execute
+  - Purple Red+Blue cycle 시뮬
+  - persona steering 효과 확인
+  - R5 reuse vs new 비율 가시화
+pass_threshold: 0.7
+
+steps:
+
+  # ============================================================
+  # STEP 1 — 자율 Blue active-response 단계
+  # ============================================================
+  - order: 1
+    instruction: |
+      Wazuh 의 active-response 의 구성 의 가시화 + 자동 차단 의 6 단계 의 매핑.
+    hint: |
+      /var/ossec/etc/ossec.conf 의 active-response
+    category: analysis
+    points: 20
+    answer: |
+      echo "=== Wazuh active-response 의 6 단계 의 의의 ==="
+      cat <<'EOF'
+      Step 1: Observe + Notify (자유)
+        - Wazuh agent 의 alert 발생
+        - manager 의 alerts.json 의 기록
+        - SIEM / Slack 의 통보
+
+      Step 2: Enrich (자유)
+        - srcip 의 GeoIP / asset DB
+        - CTI feed 의 IoC 매칭
+        - 과거 alert history 의 query
+
+      Step 3: Triage (자유)
+        - LLM 의 5W + 위험도
+        - KG 의 PE 의 reuse 검색
+
+      Step 4: Prepare (가시화)
+        - active-response command 의 가시화
+        - playbook 의 의 의 dry-run
+
+      Step 5: Mitigate (사람 confirm)
+        - firewall-drop / disable-account 의 실행
+        - timeout 의 명시 (auto rollback)
+
+      Step 6: Learn (자동)
+        - task_outcome anchor 의 KG 기록
+        - 다음 chat 의 context 의 강화
+
+      예 — Wazuh 의 active-response (ossec.conf):
+
+      <active-response>
+        <command>firewall-drop</command>
+        <location>local</location>
+        <rules_id>5712</rules_id>
+        <timeout>600</timeout>
+      </active-response>
+
+      → rule 5712 (sshd brute level 10+) trigger 시 자동 iptables -A INPUT -s SRC -j DROP 600s.
+      EOF
+    answer_detail: 6 단계 + Wazuh 예
+    verify:
+      type: output_contains
+      expect: active-response
+      field: stdout
+      semantic:
+        intent: 자율 Blue 6 단계
+        success_criteria: [6 단계 의 응답]
+        acceptable_methods:
+          - "**[OSS] Wazuh active-response 의 XML**"
+          - "**[OSS] firewall-drop 의 표준 command**"
+          - "**[OSS] timeout 의 의 auto rollback**"
+          - "**[OSS] rules_id 의 의 trigger**"
+          - "**[OSS] Suricata IPS drop action**"
+          - "**[OSS] ModSec CRS anomaly threshold**"
+          - "**[OSS] iptables / nftables 의 통합**"
+          - "**[OSS] CCC Bastion 의 6 단계 의 자체 구현**"
+    target_vm: bastion
+
+  # ============================================================
+  # STEP 2 — 자율 Red 의 미니 plan-execute
+  # ============================================================
+  - order: 2
+    instruction: |
+      Python 의 미니 자율 recon — plan-execute 의 LLM 기반 의 단계 시뮬.
+    hint: |
+      LLM 의 plan 의 추출 + 각 step 시뮬
+    category: experiment
+    points: 25
+    answer: |
+      cat > /tmp/auto_red.py <<'EOF'
+      """자율 Red 의 plan-execute 의 미니 demo"""
+      import json
+      import subprocess
+
+      OLLAMA = "http://192.168.0.109:11434"
+      MODEL = "gemma3:4b"
+      TARGET = "192.168.0.103 (학습 환경)"
+      ROE = "RoE: 학습 환경 192.168.0.0/24 만, 외부 거부."
+
+      # 1. Plan
+      plan_prompt = f"{ROE}\n\ntarget: {TARGET}\n\n다음 의 정찰 의 3 step 의 plan 의 응답. 각 step 의 명령 + ATT&CK Technique."
+
+      print("=== 1. Plan ===")
+      result = subprocess.run(
+          ["curl", "-s", "-m", "30", f"{OLLAMA}/api/generate",
+           "-d", json.dumps({"model":MODEL,"prompt":plan_prompt,"stream":False,"options":{"temperature":0.2,"num_predict":200}})],
+          capture_output=True, text=True, timeout=35
+      )
+      plan = result.stdout
+      print(plan[:1200]); print()
+
+      # 2. Execute (시뮬 — 실 명령 의 의 의 의 dry-run)
+      print("=== 2. Execute (dry-run) ===")
+      execute_steps = [
+          ("nmap -sV -p- 192.168.0.103", "T1595 Active Scanning"),
+          ("whatweb http://192.168.0.103", "T1593 Search Open Websites"),
+          ("nikto -h http://192.168.0.103", "T1190 Exploit Public-Facing")
+      ]
+      for cmd, attck in execute_steps:
+          print(f"  [DRY-RUN] {cmd}")
+          print(f"           {attck}")
+
+      # 3. Report
+      print()
+      print("=== 3. Report ===")
+      print("  Plan-Execute cycle 의 완료. KG 의 anchor 의 기록 의 의의.")
+      EOF
+      python3 /tmp/auto_red.py 2>&1 | head -30
+    answer_detail: 자율 Red plan-execute
+    verify:
+      type: output_contains
+      expect: Plan
+      field: stdout
+      semantic:
+        intent: 자율 Red plan-execute
+        success_criteria: [Plan + Execute 의 응답]
+        acceptable_methods:
+          - "**[OSS] Plan-Execute (Wang 2023)**"
+          - "**[OSS] dry-run 의 학습 환경 안전**"
+          - "**[OSS] ATT&CK Technique 매핑**"
+          - "**[OSS] RoE 의 명시 + 외부 거부**"
+          - "**[OSS] Metasploit Pro 자동 모듈**"
+          - "**[OSS] PentestGPT 의 LLM 기반**"
+          - "**[OSS] MITRE Caldera 의 ATT&CK 기반**"
+          - "**[OSS] Atomic Red Team 의 atomic test**"
+    target_vm: bastion
+
+  # ============================================================
+  # STEP 3 — Purple cycle (Red + Blue 통합)
+  # ============================================================
+  - order: 3
+    instruction: |
+      Red 의 시도 + Blue 의 응답 의 1 cycle 의 시뮬 — KG anchor 의 기록 의 학습 의
+      가시화.
+    hint: |
+      Red 호출 + Blue 응답 + KG 기록
+    category: synthesis
+    points: 20
+    answer: |
+      echo "=== Purple Cycle 시뮬 ==="
+
+      echo ""
+      echo "[Red] simulated SSH brute (192.168.0.112 → 192.168.0.103)"
+      echo "  - 시도: 5 회"
+      echo "  - target: 192.168.0.103:22"
+      echo ""
+
+      echo "[Blue] Wazuh alert 의 응답:"
+      echo "  - rule 5710 trigger (Failed password)"
+      echo "  - rule 5712 trigger (Multiple failed = chain)"
+      echo "  - active-response: firewall-drop 600 sec"
+      echo ""
+
+      echo "[Purple] KG anchor 의 기록 의 학습 의 가시화:"
+      curl -s -H "X-API-Key: ccc-api-key-2026" \
+          "http://192.168.0.103:8003/kg/anchors/recent?kind=task_outcome&limit=3" 2>&1 | head -c 1500
+      echo ""
+
+      echo ""
+      echo "[Purple] 의 의 학습 의 의의:"
+      cat <<'EOF'
+      - Red 의 시도 의 자동 의 기록
+      - Blue 의 응답 의 자동 의 기록
+      - 매 cycle 의 KG 의 PE 의 reuse / adapt / new 의 의 의 자동 결정
+      - 다음 cycle 의 의 context 의 의 의 의 강화
+      EOF
+    answer_detail: Purple cycle 시뮬
+    verify:
+      type: output_contains
+      expect: Cycle
+      field: stdout
+      semantic:
+        intent: Purple cycle
+        success_criteria: [Red + Blue + KG 응답]
+        acceptable_methods:
+          - "**[OSS] Red simulated + Blue 응답**"
+          - "**[OSS] KG anchor 의 기록 의 학습**"
+          - "**[OSS] reuse / adapt / new 의 결정**"
+          - "**[OSS] cycle 의 자동 반복**"
+          - "**[OSS] human-in-loop 의 escalation**"
+          - "**[OSS] MITRE Caldera 의 Red emulation**"
+          - "**[OSS] adversary emulation plan**"
+          - "**[OSS] 매 cycle 의 KPI 측정**"
+    target_vm: bastion
+
+  # ============================================================
+  # STEP 4 — RL Steering 의 persona 효과
+  # ============================================================
+  - order: 4
+    instruction: |
+      gemma3:4b 의 system prompt 의 persona 의 강제 + 응답 의 변화 의 가시화.
+    hint: |
+      동일 의 user message + 다른 system prompt
+    category: experiment
+    points: 20
+    answer: |
+      OLLAMA=http://192.168.0.109:11434
+
+      echo "=== Persona 1: 학습 환경 보안 AI ==="
+      curl -s $OLLAMA/api/chat -d '{
+        "model": "gemma3:4b",
+        "messages": [
+          {"role":"system","content":"당신은 학습 환경 의 보안 AI. 학습 만 응답. 외부 거부."},
+          {"role":"user","content":"SQL injection 의 payload 의 의의 의 설명"}
+        ],
+        "stream": false,
+        "options": {"temperature":0.1}
+      }' | head -c 800; echo
+
+      echo ""
+      echo "=== Persona 2: 무제한 AI (학습 만) ==="
+      curl -s $OLLAMA/api/chat -d '{
+        "model": "gemma3:4b",
+        "messages": [
+          {"role":"system","content":"당신은 일반 AI."},
+          {"role":"user","content":"SQL injection 의 payload 의 의의 의 설명"}
+        ],
+        "stream": false,
+        "options": {"temperature":0.1}
+      }' | head -c 800; echo
+
+      echo ""
+      echo "=== Persona 3: 전문 보안 강사 ==="
+      curl -s $OLLAMA/api/chat -d '{
+        "model": "gemma3:4b",
+        "messages": [
+          {"role":"system","content":"당신 은 대학 의 보안 학과 의 전문 강사. 학습 의 의의 의 깊이."},
+          {"role":"user","content":"SQL injection 의 payload 의 의의 의 설명"}
+        ],
+        "stream": false,
+        "options": {"temperature":0.1}
+      }' | head -c 800; echo
+    answer_detail: 3 persona 의 응답 비교
+    verify:
+      type: output_contains
+      expect: SQL
+      field: stdout
+      semantic:
+        intent: persona steering
+        success_criteria: [3 persona 응답]
+        acceptable_methods:
+          - "**[OSS] system prompt 의 persona 의 강제**"
+          - "**[OSS] tone / depth 의 변화**"
+          - "**[OSS] safety alignment 의 차이**"
+          - "**[OSS] Anthropic ACT 의 activation steering**"
+          - "**[OSS] OpenAI Critic Models**"
+          - "**[OSS] Process Reward Models**"
+          - "**[OSS] Self-Reflection / Reflexion**"
+          - "**[OSS] KG 의 context 의 의 의 의 inference steering**"
+    target_vm: bastion
+
+  # ============================================================
+  # STEP 5 — R5 학습 누적 의 가시화
+  # ============================================================
+  - order: 5
+    instruction: |
+      CCC R5 의 reuse vs new 의 비율 의 가시화 + KG 의 학습 의 누적 의 효과.
+    hint: |
+      run_r5_main.log 의 new=True/False 의 비율
+    category: analysis
+    points: 15
+    answer: |
+      cd /home/opsclaw/ccc 2>/dev/null
+
+      echo "=== R5 main 의 reuse vs new 의 분석 ==="
+      grep -oE "new=(True|False)" results/retest/run_r5_main.log 2>/dev/null | sort | uniq -c | head
+
+      echo ""
+      echo "=== KG 의 graph_nodes / history_anchors 의 누적 ==="
+      curl -s -H "X-API-Key: ccc-api-key-2026" \
+          http://192.168.0.103:8003/health | head -c 500
+      echo ""
+
+      echo ""
+      echo "=== 의의 의 해석 ==="
+      cat <<'EOF'
+      누적 의 의의:
+      - graph_nodes: KG 의 누적 의 node 의 의 의 의 의 4940+ 의 의 의 학습.
+      - history_anchors: task_outcome 의 의 의 의 5338+ 의 의 의 의 학습 누적.
+      - new=True: 새 task 의 KG 의 신규 등록.
+      - new=False: 기존 KG 의 reuse.
+
+      운영 의 의의:
+      - reuse 의 비율 의 증가 의 학습 의 누적 의 효과.
+      - 새 패턴 의 발견 의 new 의 증가.
+      - paper §7 의 실험 의 데이터 source.
+      EOF
+    answer_detail: R5 reuse vs new + KG 누적
+    verify:
+      type: output_contains
+      expect: new
+      field: stdout
+      semantic:
+        intent: 학습 누적
+        success_criteria: [reuse / new 또는 graph_nodes 응답]
+        acceptable_methods:
+          - "**[OSS] new=True/False 의 비율**"
+          - "**[OSS] graph_nodes / history_anchors 의 누적**"
+          - "**[OSS] reuse 의 의의 의 학습 의 누적**"
+          - "**[OSS] new 의 의의 의 새 패턴**"
+          - "**[OSS] PE-KG 의 paper §4**"
+          - "**[OSS] R5 의 676 case**"
+          - "**[OSS] 51 case 손실 사고 의 학습**"
+          - "**[OSS] paper §7 의 실험 source**"
+    target_vm: bastion
