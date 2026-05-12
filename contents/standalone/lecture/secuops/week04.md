@@ -702,6 +702,356 @@ sudo suricatasc -c reload-rules
 
 ---
 
+## 8.5 R/B/P 공격 분석 케이스 확장 (본 주차 추가)
+
+### 8.5.0 R/B/P 일상 비유 — 도서관의 출입 검사관
+
+본 절은 Suricata 의 packet 분석을 도서관 출입 검사관에 비유로 시작한다.
+
+학생이 자주 가는 도서관을 떠올려보자. 도서관 입구에 검사관이 한 명 서서 들어오는 모든 사람의 가방을 보고 다음 세 가지를 확인한다.
+
+- 가방 안의 책 제목이 도서관에서 금지한 목록에 있는가? (HTTP 페이로드 매칭)
+- 가방에 붙어 있는 라벨이 정상인가, 위조 라벨인가? (TLS SNI 와 인증서 검사)
+- 가방 사이로 작은 종이쪽지로 메모를 자주 주고받는가? (DNS query 의 비정상 패턴)
+
+검사관의 검사 기록은 모두 한 권의 검사 일지 (eve.json) 에 한 줄씩 쌓인다. 일지의 각 줄에는 시각, 검사 대상, 검사 결과가 기록된다. 도서관 관리자는 일지를 열어 가장 자주 발견된 위반 사례를 정리하고, 검사 매뉴얼을 보완한다.
+
+| 일상 비유 | Suricata 운영 |
+|-----------|---------------|
+| 도서관 입구 | ips VM 의 두 NIC (pipe + dmz) |
+| 검사관 | Suricata daemon |
+| 가방 안의 책 검사 | HTTP / TLS / DNS payload 검사 |
+| 금지 목록 | ETOpen 의 65,898 signature |
+| 검사 일지 | eve.json |
+| 일지 정독 | Kibana Discover 또는 jq 로 직접 분석 |
+| 매뉴얼 보완 | local.rules + threshold.config 수정 |
+
+본 절은 다음 세 케이스를 다룬다.
+
+- 케이스 1 — nikto 의 web vulnerability scan 을 HTTP event_type 으로 분석한다.
+- 케이스 2 — TLS SNI 의 의심 패턴을 tls event_type 으로 분석한다.
+- 케이스 3 — DNS 의 비정상 query 패턴 (긴 TXT 같은 잠재 터널링) 을 dns event_type 으로 분석한다.
+
+본 절의 원칙은 W01 ~ W03 와 동일하다. 재현 가능성, 도구 위주 분석, 신입생 친화, 학습 환경 한정.
+
+### 8.5.1 케이스 1 — nikto web scan 의 HTTP event 분석
+
+**0. 일상 비유 — 도둑이 모든 책꽂이 라벨을 한 번씩 살펴봄.**
+
+도둑이 도서관에 들어와서 책꽂이마다 붙어 있는 라벨을 빠르게 한 번씩 살핀다. 본인이 훔쳐갈 책을 미리 파악하는 정찰 단계다. 라벨을 살피는 동안 검사관은 도둑이 어떤 라벨을 자주 보는지 일지에 기록한다.
+
+이 비유를 nikto 의 web vulnerability scan 에 옮긴다.
+
+| 일상 비유 | nikto |
+|-----------|-------|
+| 책꽂이 라벨 살핌 | URL path 와 file 탐지 (`/admin/`, `/phpinfo.php` 등) |
+| 라벨 살피는 빠른 속도 | nikto 의 자동 brute 속도 |
+| 라벨마다 본 흔적 | 각 URL 의 HTTP 응답 코드 |
+| 일지 기록 | eve.json 의 http event |
+| 매뉴얼 보완 | local.rules 의 web scan 탐지 룰 추가 |
+
+**0a. 사용 도구 사전 안내.**
+
+- **nikto** — open-source web vulnerability scanner. 6700+ 의 known vulnerability 와 잘못된 설정을 자동으로 검사한다. attacker VM 에 미리 설치되어 있다.
+- **eve.json 의 http event_type** — Suricata 가 HTTP transaction 마다 한 줄씩 기록한다. method, url, status, user_agent, host header 가 포함된다.
+- **Kibana Discover** — Wazuh Dashboard 와 같은 instance 에서 동작한다. `suricata-*` index pattern 으로 eve.json 을 검색한다.
+
+**1. Red — 공격 재현.**
+
+학생이 attacker VM 에 들어가서 6v6 의 web VM 에 nikto 를 실행한다. 학습 환경 안에서만 실행해야 한다.
+
+```bash
+ssh ccc@192.168.0.112
+# password: 1
+```
+
+attacker VM 내부에서 nikto 를 실행한다.
+
+```bash
+# attacker VM 내부 (학습 환경 한정)
+nikto -h http://192.168.0.103/ -maxtime 60s
+```
+
+각 옵션의 의미는 다음과 같다.
+
+- `nikto` — 명령 이름.
+- `-h http://192.168.0.103/` — target host. 학습 환경의 web VM.
+- `-maxtime 60s` — 최대 실행 시간 60초. 학습용으로 짧게 잡았다.
+
+60초 안에 수백 개의 URL 이 시도된다. 각 시도가 HTTP request 한 건이다.
+
+**2. 발생하는 로그/아티팩트.**
+
+ips VM 의 Suricata 가 dmz NIC 를 sniff 하기 때문에 모든 HTTP request 가 eve.json 에 http event 로 기록된다. nikto 의 기본 user_agent 가 `Mozilla/5.00 (Nikto/...)` 이므로 ETOpen 의 user_agent 기반 signature 가 trigger 된다. 같은 traffic 이 Wazuh manager 의 alerts.json 에도 통합 alert 로 다시 나타난다.
+
+eve.json 의 http event 한 줄 예시는 다음과 같다.
+
+```json
+{"timestamp":"2026-05-12T14:50:01",
+ "event_type":"http",
+ "src_ip":"192.168.0.112",
+ "dest_ip":"192.168.0.103",
+ "http":{"hostname":"192.168.0.103",
+         "url":"/admin/",
+         "http_user_agent":"Mozilla/5.00 (Nikto/2.5.0) ...",
+         "http_method":"GET",
+         "status":404}}
+```
+
+같은 src_ip 에서 여러 URL 에 시도가 burst 로 일어나는 패턴이 핵심이다.
+
+**3. Blue — Kibana Discover UI 로 직접 분석.**
+
+학생이 자기 host 의 web browser 에서 다음 URL 에 접속한다.
+
+- URL: `https://dashboard.6v6.lab` (또는 `https://192.168.0.103:5601`).
+- self-signed 인증서 경고는 `Advanced` → `Proceed to ...` 로 통과한다.
+
+UI 클릭 흐름은 다음과 같다.
+
+1. 좌측 햄버거 메뉴 → `Discover` 선택.
+2. 상단 Index pattern 을 `suricata-*` 로 바꾼다.
+3. 우상단 Time picker 를 `Last 15 minutes` 로 바꾼다.
+4. Search bar 에 `event_type:http AND src_ip:192.168.0.112` 입력 후 Enter.
+5. 결과 목록에서 한 줄을 펼치면 모든 field 가 보인다. `http.http_user_agent`, `http.url`, `http.status` 를 확인한다.
+6. 화면 좌측의 `Available fields` 에서 `http.url.keyword` 옆의 + 를 눌러 columns 에 추가한다. URL 별 분포가 한눈에 보인다.
+7. 같은 방법으로 `http.status` 를 columns 에 추가한다. 404 가 대부분이면 정찰 시도일 가능성이 크다.
+
+**Detail 분석.**
+
+- src_ip 가 192.168.0.112 하나로 일관된다. 학습 환경 attacker VM 이다.
+- http_user_agent 가 `Nikto` 를 포함한다. 도구의 시그니처가 직접 노출된다.
+- http.url 이 `/admin/`, `/phpmyadmin/`, `/.git/config`, `/wp-login.php` 같이 다양하다. 정찰 패턴이다.
+- http.status 의 90% 이상이 404. 존재하지 않는 path 를 탐색한 결과다.
+
+**4. Blue — 대응 의사결정.**
+
+학생이 다음 세 가지를 판단한다.
+
+- **즉시 차단 vs 모니터링.** nikto 같은 정찰은 침투 전 단계다. 즉시 차단해도 영향이 크지 않다.
+- **rate 기반 차단.** 정상 client 의 트래픽 패턴과 비교한다. nikto 는 분당 수백 request 가 일반적이라 rate limit 만 으로도 다수의 효과가 있다.
+- **user_agent 차단의 한계.** 공격자는 user_agent 를 바로 위장할 수 있다. user_agent 기반 차단은 보조 수단이다.
+
+학습 환경에서는 attacker VM IP 를 fw 의 dynamic blacklist set 에 timeout 5분으로 추가하는 것으로 충분하다.
+
+**5. Purple — 보완.**
+
+local.rules 와 threshold.config 에 다음 세 가지를 적용한다.
+
+- **새 alert 룰 추가.** `alert http any any -> any any (msg:"Local Web Scan Burst from Single Source"; flow:to_server; threshold:type both, track by_src, count 30, seconds 60; classtype:web-application-attack; sid:9004010; rev:1;)` 같은 룰을 local.rules 에 추가한다. 1분 안에 30 request 이상이면 trigger 된다.
+- **404 비율 분석을 위한 별도 룰.** Status 가 404 인 응답을 별도 카운트하는 룰을 추가한다. 정상 운영의 404 baseline 과 비교한다.
+- **threshold 적용.** 룰 sid 9004010 에 동일 src 의 alert 를 1분에 1건만 통과하도록 `event_filter` 를 등록한다. SOC fatigue 를 방지한다.
+
+본 케이스 cycle 한 바퀴는 약 20분 정도다.
+
+### 8.5.2 케이스 2 — TLS SNI 의 의심 패턴 분석
+
+**0. 일상 비유 — 가방 라벨이 위조된 손님.**
+
+도둑이 도서관에 들어올 때 정상 회원증과 다른 위조 라벨을 가방에 붙인다고 상상해보자. 검사관이 라벨 글자체와 색상을 자세히 보면 위조를 식별할 수 있다. 또 라벨에 적힌 이름이 회원 명부에 없으면 즉시 이상으로 분류된다.
+
+이 비유를 TLS SNI 에 옮긴다.
+
+| 일상 비유 | TLS SNI |
+|-----------|---------|
+| 가방 라벨 글자 | TLS handshake 의 SNI (Server Name Indication) |
+| 회원 명부 | 정상 운영 도메인 목록 |
+| 라벨 위조 식별 | SNI 의 의심 도메인 탐지 |
+| 회원증과 라벨 불일치 | SNI 와 인증서 CN 불일치 |
+| 검사관의 일지 | eve.json 의 tls event |
+
+**0a. 사용 도구 사전 안내.**
+
+- **openssl s_client** — TLS handshake 를 직접 보내는 표준 도구다. `-servername` 옵션으로 임의의 SNI 를 보낼 수 있다.
+- **eve.json 의 tls event_type** — Suricata 가 TLS handshake 마다 한 줄씩 기록한다. sni, version, subject, issuerdn, fingerprint 가 포함된다.
+- **jq** — JSON 을 한 줄씩 선택해서 보는 표준 도구.
+
+**1. Red — 공격 재현.**
+
+attacker VM 에서 fw 의 443 포트에 의심 SNI 를 가진 TLS handshake 를 보낸다. 학습 환경 안에서만 실행해야 한다.
+
+```bash
+ssh ccc@192.168.0.112
+
+# attacker VM 내부 (학습 환경 한정)
+echo | openssl s_client -connect 192.168.0.103:443 -servername malicious-c2.example -verify_return_error 2>&1 | head -20
+```
+
+각 옵션의 의미는 다음과 같다.
+
+- `echo | ...` — handshake 만 보내고 즉시 종료한다.
+- `-connect 192.168.0.103:443` — target host:port. 학습 환경의 web VM.
+- `-servername malicious-c2.example` — SNI 에 의심 도메인을 명시한다. 정상 운영 목록에 없는 임의의 이름이다.
+- `-verify_return_error` — 인증서 검증 실패 시 즉시 종료.
+
+학습 환경 web 의 정상 SNI 는 보통 `juice.6v6.lab`, `dvwa.6v6.lab` 같은 내부 도메인이다. `malicious-c2.example` 은 그 목록에 없다.
+
+**2. 발생하는 로그/아티팩트.**
+
+Suricata 가 TLS handshake 의 ClientHello 를 decode 하면서 eve.json 에 tls event 한 줄을 기록한다.
+
+```json
+{"timestamp":"2026-05-12T14:55:00",
+ "event_type":"tls",
+ "src_ip":"192.168.0.112",
+ "dest_ip":"192.168.0.103",
+ "dest_port":443,
+ "tls":{"sni":"malicious-c2.example",
+        "version":"TLS 1.3",
+        "ja3":{"hash":"..."},
+        "ja3s":{"hash":"..."}}}
+```
+
+핵심 필드는 `tls.sni` 와 `tls.ja3.hash` 다. SNI 는 client 가 접속하려는 도메인이고, ja3 는 client 의 TLS fingerprint 다. 공격자 도구 (Cobalt Strike, Metasploit 등) 는 고유한 ja3 fingerprint 를 가질 수 있다.
+
+**3. Blue — Kibana Discover UI 로 직접 분석.**
+
+UI 클릭 흐름은 다음과 같다.
+
+1. 좌측 햄버거 메뉴 → `Discover` 선택.
+2. Index pattern 을 `suricata-*` 로 바꾼다.
+3. Time picker 를 `Last 15 minutes` 로 바꾼다.
+4. Search bar 에 `event_type:tls AND src_ip:192.168.0.112` 를 입력하고 Enter.
+5. 결과 목록에서 한 줄을 펼친다. `tls.sni` 와 `tls.ja3.hash` 를 확인한다.
+6. 좌측 `Available fields` 에서 `tls.sni.keyword` 의 + 를 눌러 columns 에 추가한다.
+7. 같은 방법으로 `tls.ja3.hash.keyword` 도 columns 에 추가한다.
+
+**Detail 분석.**
+
+- tls.sni 가 정상 운영 도메인 (예: `juice.6v6.lab`) 이 아니라 임의의 도메인 (`malicious-c2.example`) 이다. 의심 신호다.
+- ja3.hash 가 학습 환경의 정상 client (Chrome, curl, Apache health probe) 의 ja3 와 다르면 도구 시그니처일 가능성이 있다.
+
+**4. Blue — 대응 의사결정.**
+
+학생이 다음 세 가지를 판단한다.
+
+- **SNI 화이트리스트.** 운영 도메인을 미리 정의해두면 모르는 SNI 가 즉시 의심으로 분류된다.
+- **ja3 fingerprint DB.** abuse.ch 의 SSLBL 같은 공개 DB 에서 공격 도구의 ja3 hash 를 가져와 매칭한다.
+- **즉시 차단 vs 모니터링.** 학습 환경에서는 즉시 차단이 안전하다. 운영 환경에서는 정상 traffic 영향 평가가 먼저다.
+
+**5. Purple — 보완.**
+
+다음 세 가지를 적용한다.
+
+- **새 alert 룰 추가.** `alert tls any any -> any any (msg:"Suspicious TLS SNI - Non-Operational Domain"; tls.sni; content:!"6v6.lab"; classtype:bad-unknown; sid:9004011; rev:1;)` 같은 룰. 운영 도메인이 아닌 SNI 에 alert.
+- **ja3 hash 매칭 룰.** `alert tls any any -> any any (msg:"Known Bad ja3 Fingerprint"; ja3.hash; content:"...known bad..."; classtype:trojan-activity; sid:9004012; rev:1;)`.
+- **dashboard 의 SNI top N panel 추가.** 일별 SNI 빈도를 시각화해 baseline 을 직접 본다.
+
+### 8.5.3 케이스 3 — DNS query 의 비정상 패턴 분석
+
+**0. 일상 비유 — 도둑이 작은 메모 쪽지를 자주 주고받음.**
+
+도둑이 도서관 안에서 동료와 자주 메모 쪽지를 주고받는다고 상상해보자. 한 쪽지는 짧고 평범해서 의심하기 어렵다. 그러나 하루에 100건 이상 같은 사람이 같은 형식의 쪽지를 주고받으면 검사관 일지에 패턴이 보인다.
+
+이 비유를 DNS 터널링 의심에 옮긴다.
+
+| 일상 비유 | DNS 의심 패턴 |
+|-----------|---------------|
+| 평범한 메모 쪽지 | 정상 DNS query (짧은 도메인) |
+| 한쪽 글자 수가 많은 쪽지 | 긴 TXT record query |
+| 같은 사람이 자주 주고받기 | 같은 src 에서 burst DNS query |
+| 검사관의 일지 패턴 | eve.json 의 dns event burst |
+
+**0a. 사용 도구 사전 안내.**
+
+- **dig** — DNS query 의 표준 도구. type, class, server 를 명시한다.
+- **eve.json 의 dns event_type** — Suricata 가 DNS query / response 마다 한 줄씩 기록한다. rrname, rrtype, rcode, answers 가 포함된다.
+
+**1. Red — 공격 재현.**
+
+attacker VM 에서 학습 환경 DNS resolver 에 의도적으로 긴 TXT query 를 다수 보낸다. 학습 환경 안에서만 실행해야 한다.
+
+```bash
+ssh ccc@192.168.0.112
+
+# attacker VM 내부 (학습 환경 한정)
+for i in $(seq 1 30); do
+    dig +short TXT "data${i}.tunnel.local" @192.168.0.103 >/dev/null 2>&1
+done
+```
+
+각 옵션의 의미는 다음과 같다.
+
+- `dig` — DNS query 도구.
+- `+short` — 출력을 간결하게.
+- `TXT` — record type.
+- `data${i}.tunnel.local` — 시도마다 다른 subdomain. 실제 DNS 터널링은 base64 인코딩 데이터를 subdomain 에 실어 보낸다.
+- `@192.168.0.103` — DNS server.
+
+30번 반복으로 burst 패턴을 만든다.
+
+**2. 발생하는 로그/아티팩트.**
+
+Suricata 가 각 DNS query 를 dns event 한 줄로 기록한다.
+
+```json
+{"timestamp":"2026-05-12T14:58:00",
+ "event_type":"dns",
+ "src_ip":"192.168.0.112",
+ "dest_ip":"192.168.0.103",
+ "dns":{"type":"query",
+        "rrname":"data1.tunnel.local",
+        "rrtype":"TXT"}}
+```
+
+같은 src_ip 에서 30개의 TXT query 가 30초 안에 몰리는 패턴이 핵심이다.
+
+**3. Blue — jq + Kibana Discover 로 직접 분석.**
+
+먼저 ips VM 에 들어가서 eve.json 을 jq 로 직접 본다.
+
+```bash
+ssh 6v6-ips
+sudo tail -200 /var/log/suricata/eve.json \
+  | jq -r 'select(.event_type=="dns" and .dns.type=="query") | "\(.timestamp) \(.src_ip) \(.dns.rrtype) \(.dns.rrname)"' \
+  | tail -40
+```
+
+출력에서 짧은 시간에 같은 src_ip 에서 TXT query 가 다수 발생한 흔적이 보인다.
+
+다음으로 Kibana Discover 로 시각화한다.
+
+1. 좌측 햄버거 메뉴 → `Discover` 선택.
+2. Index pattern 을 `suricata-*` 로 바꾼다.
+3. Time picker 를 `Last 15 minutes` 로 바꾼다.
+4. Search bar 에 `event_type:dns AND dns.rrtype:TXT AND src_ip:192.168.0.112` 를 입력하고 Enter.
+5. 결과를 보면 30건 정도가 한 분 안에 몰려 있는 timeline 이 보인다.
+6. 좌측 `Available fields` 에서 `dns.rrname.keyword` 의 + 를 눌러 columns 에 추가한다.
+
+**Detail 분석.**
+
+- rrtype 이 TXT 다. 일반 사용자의 정상 DNS query 는 A, AAAA 가 대부분이고 TXT 는 드물다.
+- rrname 의 subdomain 부분이 시도마다 다르다. base64 인코딩 데이터의 잠재 흔적이다.
+- src_ip 가 attacker VM 하나로 일관된다.
+
+**4. Blue — 대응 의사결정.**
+
+학생이 다음 세 가지를 판단한다.
+
+- **rrtype 분포의 baseline.** 정상 운영의 TXT query 가 분당 몇 건인지 측정한다. 30건 / 분이 baseline 의 몇 배인지 본다.
+- **rrname 길이 분포.** 정상 도메인은 보통 30자 이하다. 60자 이상의 subdomain 이 다수면 의심 신호다.
+- **차단 vs 분석 우선.** DNS 차단은 정상 운영에 영향이 크다. 의심 src 만 격리한다.
+
+**5. Purple — 보완.**
+
+다음 세 가지를 적용한다.
+
+- **새 alert 룰 추가.** `alert dns any any -> any any (msg:"Local DNS TXT Burst from Single Source"; flow:to_server; dns.query; threshold:type both, track by_src, count 20, seconds 60; classtype:bad-unknown; sid:9004013; rev:1;)`.
+- **rrname 길이 룰.** subdomain 의 라벨 길이가 30자 이상인 query 만 별도 카운트하는 룰.
+- **dashboard panel.** 일별 TXT query top src_ip 를 시각화해 baseline 을 직접 본다.
+
+### 8.5.4 본 절 정리
+
+본 절은 W04 의 Suricata 학습을 실제 공격 분석 cycle 에 연결했다. 학생이 다음 능력을 갖춘다.
+
+- attacker VM 에서 nikto / TLS / DNS 시도를 직접 재현한다.
+- Kibana Discover 또는 jq 로 eve.json 의 http / tls / dns event 를 직접 분석한다.
+- 분석 결과를 바탕으로 local.rules + threshold.config 의 룰과 임계치를 손으로 보완한다.
+
+다음 주차 W05 에서는 Suricata 의 룰 작성 (정규식 / content modifier / flowbits / threshold) 의 같은 R/B/P cycle 을 학습한다.
+
+---
+
 ## 9. Suricata 트러블슈팅 — 룰이 매치 안 되는 4 패턴
 
 ### 9.1 패턴 1 — rule-files 미등록
