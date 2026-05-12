@@ -608,10 +608,10 @@ ssh 6v6-fw "sudo nft delete rule inet six_filter input handle $HANDLE"
 
 본 절의 핵심 원칙 네 가지는 W01 의 5.7 절과 동일하다.
 
-- **재현 가능성** — 학생이 attacker VM (192.168.0.112) 에서 직접 공격을 발생시킨다.
+- **재현 가능성** — 학생이 6v6-attacker (10.20.30.202) 에서 직접 공격을 발생시킨다.
 - **도구 위주 분석** — `nft list ruleset`, `nft monitor`, `conntrack -L` 같은 표준 도구만 사용한다.
 - **신입생 친화** — 명령의 옵션을 한 줄씩 설명한다.
-- **윤리 강제** — 학습 환경 안 (192.168.0.0/24) 에서만 시도한다.
+- **윤리 강제** — 6v6 lab 의 4 subnet (10.20.30.0/24 ext, 10.20.31.0/24 pipe, 10.20.32.0/24 dmz, 10.20.40.0/24 int) 안에서만 시도한다.
 
 ### 9.5.1 케이스 1 — ICMP flood 의 분석 + dynamic set 차단
 
@@ -639,18 +639,18 @@ ssh 6v6-fw "sudo nft delete rule inet six_filter input handle $HANDLE"
 
 **1. Red — 공격 재현.**
 
-학생이 attacker VM (192.168.0.112) 에 들어간 뒤 fw 외부 IP 로 ICMP flood 를 보낸다. 학습 환경 안에서만 실행해야 한다.
+학생이 6v6-attacker (10.20.30.202) 에 들어간 뒤 6v6-fw 의 ext NIC 으로 ICMP flood 를 보낸다. 학습 환경 안에서만 실행해야 한다.
 
 ```bash
-ssh ccc@192.168.0.112
-# password: 1
+ssh 6v6-attacker
+# 비밀번호: ccc
 ```
 
-attacker VM 내부에서 fw 의 외부 IP (예: 192.168.0.103) 로 ping flood 를 보낸다.
+6v6-attacker 내부에서 fw 의 ext IP (`10.20.30.1`) 로 ping flood 를 보낸다.
 
 ```bash
-# attacker VM 내부 (학습 환경 한정)
-sudo ping -f -c 500 192.168.0.103
+# 6v6-attacker 내부 (학습 환경 한정)
+sudo ping -f -c 500 10.20.30.1
 ```
 
 각 옵션의 의미는 다음과 같다.
@@ -658,7 +658,7 @@ sudo ping -f -c 500 192.168.0.103
 - `sudo` — flood 옵션은 root 권한이 필요하다.
 - `-f` — flood. 응답을 기다리지 않고 가능한 빨리 보낸다.
 - `-c 500` — 500개만 보내고 종료한다.
-- `192.168.0.103` — target IP. 학습 환경 내부.
+- `10.20.30.1` — target IP. 6v6-fw 의 ext NIC.
 
 500개를 짧은 시간에 보내므로 fw 의 input chain counter 가 급격히 올라간다.
 
@@ -686,7 +686,7 @@ sudo nft list chain inet six_filter input
 sudo nft list set inet six_filter blacklist
 ```
 
-학습 환경에서는 ICMP rate limit rule 이 set 에 element 를 추가하도록 미리 구성되어 있다. set 안에 `192.168.0.112 timeout 5m` 같은 항목이 보이면 자동 차단이 동작한 것이다.
+학습 환경에서는 ICMP rate limit rule 이 set 에 element 를 추가하도록 미리 구성되어 있다. set 안에 `10.20.30.202 timeout 5m` 같은 항목이 보이면 자동 차단이 동작한 것이다.
 
 마지막으로 `nft monitor trace` 로 실시간 packet 흐름을 본다.
 
@@ -737,14 +737,14 @@ sudo nft monitor trace
 
 **1. Red — 공격 재현.**
 
-attacker VM 에서 hping3 으로 SYN flood 를 보낸다. 학습 환경 안에서만 실행해야 한다.
+6v6-attacker 에서 hping3 으로 SYN flood 를 보낸다. 학습 환경 안에서만 실행해야 한다.
 
 ```bash
-ssh ccc@192.168.0.112
-# password: 1
+ssh 6v6-attacker
+# 비밀번호: ccc
 
-# attacker VM 내부 (학습 환경 한정)
-sudo hping3 -S -p 80 --flood -c 200 192.168.0.103
+# 6v6-attacker 내부 (학습 환경 한정)
+sudo hping3 -S -p 80 --flood -c 200 10.20.30.1
 ```
 
 각 옵션의 의미는 다음과 같다.
@@ -772,7 +772,7 @@ sudo conntrack -L -p tcp --dport 80 2>/dev/null | head -20
 각 라인은 다음 형식이다.
 
 ```
-tcp 6 30 SYN_SENT src=192.168.0.112 dst=192.168.0.103 sport=54321 dport=80 ...
+tcp 6 30 SYN_SENT src=10.20.30.202 dst=10.20.30.1 sport=54321 dport=80 ...
 ```
 
 SYN_SENT state entry 가 200개 가까이 있으면 SYN flood 의 직접 흔적이다. 정상 traffic 은 ESTABLISHED state 가 대부분이다.
@@ -833,14 +833,14 @@ counter 의 packets 값이 급증한 것을 확인한다.
 
 **1. Red — 공격 재현.**
 
-attacker VM 에서 fw 너머의 dmz 또는 int 자산에 직접 packet 을 보낸다. fw 가 NAT / forwarding 을 처리하는 경로다.
+6v6-attacker 에서 fw 너머의 dmz 자산 (6v6-web) 에 직접 packet 을 보낸다. fw 가 NAT / forwarding 을 처리하는 경로다.
 
 ```bash
-ssh ccc@192.168.0.112
-# password: 1
+ssh 6v6-attacker
+# 비밀번호: ccc
 
-# attacker VM 내부 (학습 환경 한정)
-nmap -Pn -sS --reason -p 22,80,3306,5432 192.168.0.108
+# 6v6-attacker 내부 (학습 환경 한정)
+nmap -Pn -sS --reason -p 22,80,3306,5432 10.20.32.80
 ```
 
 각 옵션의 의미는 다음과 같다.
@@ -849,7 +849,7 @@ nmap -Pn -sS --reason -p 22,80,3306,5432 192.168.0.108
 - `-sS` — SYN scan.
 - `--reason` — 각 port 의 결과 이유를 함께 출력한다.
 - `-p 22,80,3306,5432` — SSH, HTTP, MySQL, PostgreSQL 표준 port.
-- `192.168.0.108` — dmz VM 의 IP. fw 너머의 자산이다.
+- `10.20.32.80` — 6v6-web 의 dmz IP. fw 너머의 자산이다.
 
 예상 결과는 두 가지로 갈린다. forward chain policy 가 drop 이면 모든 port 가 `filtered` 로 표시된다. policy 가 accept 면 일부 port 가 `open` 또는 `closed` 로 표시되며, 이는 우회 가능성을 의미한다.
 
