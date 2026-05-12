@@ -201,6 +201,37 @@ Host 6v6-*
   - W15 기말 PTES 종합
 
 **전체 30주차 작성 완료** (secuops 15 + attack 15).
+
+---
+
+## aisec (인공지능보안 입문, 15 주)
+
+CCC 의 후속 7 과목 (course7 ai-security / course8 ai-safety / course9 autonomous /
+course10 ai-security-agent / course15 ai-safety-adv / course19 agent-ir /
+course20 agent-ir-adv) 의 **입문** 과정. AI/LLM 보안 + Bastion 활용 + Red Teaming
++ 자율보안 + 침해 대응의 통합 학습.
+
+| Week | 주제 | 핵심 |
+|------|------|------|
+| W01 | AI 보안 리터러시 | 오리엔테이션 / AI 모델 / 실습환경 |
+| W02 | LLM | Ollama 로컬 / 파인튜닝 / RAG+KG |
+| W03 | AI Powered Cyber Security (1) | ML/DL / 보안로그 분석 / 보안 프롬프트 엔지니어링 |
+| W04 | AI Powered Cyber Security (2) | LLM 보안로그 / 탐지룰 / 취약점 분석 |
+| W05 | AI 에이전트 (1) | 에이전트 개념 / Claude Code / 하네스 |
+| W06 | AI 에이전트 (2) | 컨텍스트 엔지니어링 / KG / 로컬 Bastion |
+| W07 | AI 에이전트 (3) | Bastion 보안 운영 / 취약점 / 모의해킹 |
+| W08 | AI Safety (1) | AI Safety 개론 / 악성 파인튜닝 / 프롬프트 인젝션 / Poisoning |
+| W09 | AI Safety (2) | 모델 탈옥 / 적대적 입력 / RAG/KG 보안 |
+| W10 | AI Safety (3) | AI 에이전트 위협 / LLM Red Teaming / Safety 평가 |
+| W11 | 자율보안 시스템 (1) | 개요 / 강화학습 / 스케줄러·왓처 |
+| W12 | 자율보안 시스템 (2) | 자율 Blue / 자율 Red / RL Steering |
+| W13 | 에이전트 IR (1) | 침해 개론 / 공격자 전략 / 방어 절차 |
+| W14 | 에이전트 IR (2) | 공급망 / 간접 프롬프트 / 0-Day/N-Day |
+| W15 | 에이전트 IR (3) | Multi-stage 피싱 / Agentic APT / 기말 |
+
+### 진행 상태
+
+- `aisec/W01` — IN-PROGRESS
 - 나머지 — PENDING
 
 각 주차 완료 시 본 표 갱신 + git commit + push.

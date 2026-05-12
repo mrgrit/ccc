@@ -1,0 +1,278 @@
+lab_id: standalone-aisec-week01
+title: AI 보안 리터러시 — 환경 점검 + AI 모델 위계 + Ollama / Bastion / paper 통독
+version: standalone-non-ai
+course: aisec
+week: 1
+description: |
+  본 과목 인공지능보안 의 W01. 6v6 환경 의 AI 자원 (aicompanion / Bastion / Ollama)
+  헬스체크 + AI 모델 5 위계 (ML/DL/LLM/Foundation/Agent) 학습 + Bastion paper-draft.md
+  통독 + 본인 학습 계획 수립.
+difficulty: easy
+duration_minutes: 180
+audience: 인공지능보안 입문자 (1주차)
+prerequisites:
+  - secuops 수료 권장 (최소 W01-W07)
+  - attack 수료 권장 (최소 W01-W07)
+  - 6v6 환경 + bastion ProxyJump 정상
+  - 학생 PC 의 SSH + curl + jq 가용
+objectives:
+  - 6v6 환경 의 AI 자원 헬스체크
+  - aicompanion + Bastion API + (선택) Ollama 응답 확인
+  - AI 모델 5 위계 매핑
+  - Bastion paper-draft.md 통독
+  - 본인 R/B/P 자가 분석 + 학습 계획
+pass_threshold: 0.7
+
+steps:
+
+  # ============================================================
+  # STEP 1 — 6v6 16 컨테이너 + aicompanion vhost
+  # ============================================================
+  - order: 1
+    instruction: |
+      학생 PC 에서 6v6-bastion 점프 호스트로 16 컨테이너 가시화 + aicompanion vhost
+      응답 확인. W01 secuops 의 헬스체크 재 실행 + ai.6v6.lab 추가 확인.
+    hint: |
+      ssh 6v6-bastion docker ps --format '{{.Names}} {{.Status}}'
+      curl -H 'Host: ai.6v6.lab' http://10.20.30.1/
+    category: survey
+    points: 15
+    answer: |
+      ssh 6v6-bastion 'docker ps --format "{{.Names}} {{.Status}}" | wc -l'
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "ai.6v6.lab: %{http_code}\n" -H "Host: ai.6v6.lab" http://10.20.30.1/'
+    answer_detail: 16 컨테이너 + aicompanion 응답 (200/302/404)
+    verify:
+      type: output_contains
+      expect: '16'
+      field: stdout
+      semantic:
+        intent: |
+          6v6 환경의 AI 자원 가시화. 16 컨테이너 Up 확인 + aicompanion 의 HTTP 응답
+          (200 이 정상, 404 면 default route 없음 — backend 점검).
+        success_criteria:
+          - 16 컨테이너
+          - aicompanion 응답 코드
+        acceptable_methods:
+          - |
+            **[OSS] docker ps + HAProxy vhost** — 표준.
+              ssh 6v6-bastion 'docker ps --format "{{.Names}} {{.Status}}" | wc -l'
+              ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -H "Host: ai.6v6.lab" http://10.20.30.1/'
+            예상 출력 `16 / 200 또는 302`.
+            운영 해석: secuops W01 의 동일 패턴. ai.6v6.lab 이 동작하면 W08-W09 의
+            AI Safety 실습 가능.
+          - "**[OSS] aicompanion 컨테이너의 backend** — 직접."
+          - "**[OSS] aicompanion 의 /health endpoint** — 있다면."
+          - "**[OSS] docker logs 6v6-aicompanion** — 시작 로그."
+          - "**[OSS] aicompanion 의 LLM_BACKEND 환경 변수** — Ollama / mock 모드 확인."
+          - "**[OSS] /api/Products** 풍의 endpoint — exploration."
+          - "**[OSS] curl -sI** — header 분석 (CSP / X-Frame 등)."
+          - "**[OSS] osquery 의 listening_ports** — 본 호스트 의 LLM 관련 port."
+        negative_signs:
+          - aicompanion 응답 없음
+          - 16 미만 컨테이너
+    target_vm: bastion
+
+  # ============================================================
+  # STEP 2 — Bastion API /health + /kg/health
+  # ============================================================
+  - order: 2
+    instruction: |
+      Bastion API 의 /health + /kg/health 호출 + 응답 분석. KG 의 module loaded
+      상태 + agent count 등 가시화.
+    hint: |
+      curl -H 'X-API-Key: ccc-api-key-2026' http://localhost:9100/health
+    category: monitoring
+    points: 15
+    answer: |
+      ssh 6v6-bastion '
+      curl -s -H "X-API-Key: ccc-api-key-2026" http://localhost:9100/health | jq
+      echo "---"
+      curl -s -H "X-API-Key: ccc-api-key-2026" http://localhost:9100/kg/health | jq
+      '
+    answer_detail: Bastion + KG 의 health JSON
+    verify:
+      type: output_contains
+      expect: status
+      field: stdout
+      semantic:
+        intent: |
+          Bastion API 의 핵심 endpoint (health + kg/health) 응답. status ok +
+          all_modules_loaded true 면 정상. 본 과목 의 W06-W07 학습 전 baseline.
+        success_criteria:
+          - status ok
+          - kg.all_modules_loaded
+        acceptable_methods:
+          - |
+            **[OSS] curl + X-API-Key + /health** — 표준.
+              curl -s -H "X-API-Key: ccc-api-key-2026" http://localhost:9100/health
+            예상 출력 `{"status":"ok", ...}`.
+          - |
+            **[OSS] /kg/health** — KG 통합 상태.
+              curl -s -H "X-API-Key: ccc-api-key-2026" http://localhost:9100/kg/health
+            예상 출력 `{"all_modules_loaded":true, "kg_context":"ok", ...}`.
+          - "**[OSS] /kg/metrics** — counter snapshot."
+          - "**[OSS] /kg/audit?limit=5** — 최근 chat 의 KG 흔적."
+          - "**[OSS] /skills** — 33 종 skill 카탈로그."
+          - "**[OSS] /agent/status** — Master/Manager/SubAgent 3계층 상태."
+          - "**[OSS] /chats?limit=5** — 최근 chat history."
+          - "**[OSS] /kg/anchors/recent?kind=task_outcome&limit=5** — 최근 anchor."
+        negative_signs:
+          - status ok 외
+          - kg loaded false
+    target_vm: bastion
+
+  # ============================================================
+  # STEP 3 — Bastion 의 첫 chat
+  # ============================================================
+  - order: 3
+    instruction: |
+      Bastion API 의 /chat endpoint 로 첫 LLM 호출. "본인은 사이버보안 학습자입니다.
+      Bastion 의 4 핵심 기여를 한국어로 알려주세요." 의 응답 분석.
+    hint: |
+      curl -X POST -d '{"message": "...", "agent": "master"}' http://localhost:9100/chat
+    category: experiment
+    points: 25
+    answer: |
+      ssh 6v6-bastion '
+      curl -s -X POST \
+          -H "X-API-Key: ccc-api-key-2026" \
+          -H "Content-Type: application/json" \
+          -d "{\"message\": \"본인은 사이버보안 학습자입니다. Bastion 의 4 핵심 기여를 한국어로 알려주세요.\", \"agent\": \"master\"}" \
+          http://localhost:9100/chat 2>&1 | head -80
+      '
+    answer_detail: Bastion 의 첫 응답 (4 기여 설명)
+    verify:
+      type: output_contains
+      expect: Bastion
+      field: stdout
+      semantic:
+        intent: |
+          Bastion API 의 /chat 의 동작 검증. master agent 의 응답 + kg_status event
+          포함 (CCC 의 KG 통합 hard-code). 응답에 "Bastion" / "기여" 등 핵심 단어
+          포함되면 정상.
+        success_criteria:
+          - Bastion 키워드
+          - chat 응답 본문
+        acceptable_methods:
+          - |
+            **[OSS] /chat POST + master agent** — 표준.
+              curl -X POST -d "{\"message\": \"...\", \"agent\": \"master\"}" /chat
+            예상 출력 `(LLM 응답 본문)`.
+          - "**[OSS] agent 의 종류 — master / manager / subagent** 3 계층."
+          - "**[OSS] /chat 의 응답에 kg_status event** — KG hard-code 인지."
+          - "**[OSS] /chat/{chat_id} GET** — 후속 chat 의 history."
+          - "**[OSS] 응답 의 stream 모드 (서버 sent events)** — 실시간 token."
+          - "**[OSS] X-Trace 헤더 추적** — 분산 추적."
+          - "**[OSS] /chat 의 model_used 필드** — 어느 LLM 사용."
+          - "**[OSS] response time 측정** — LLM 응답 속도."
+        negative_signs:
+          - chat 응답 없음
+          - 401 / 403
+    target_vm: bastion
+
+  # ============================================================
+  # STEP 4 — paper-draft.md 통독 + 핵심 4 기여 식별
+  # ============================================================
+  - order: 4
+    instruction: |
+      Bastion paper-draft.md 의 abstract + §1 introduction 통독 후 4 핵심 기여를
+      식별하여 본인 말로 1 줄 씩 요약.
+    hint: |
+      head -200 /home/opsclaw/ccc/contents/papers/bastion/paper-draft.md
+    category: analysis
+    points: 25
+    answer: |
+      head -200 /home/opsclaw/ccc/contents/papers/bastion/paper-draft.md > /tmp/bastion_intro.txt
+      grep -A2 "기여" /tmp/bastion_intro.txt | head -20
+      echo ""
+      echo "본인 요약 (예시):"
+      echo "1. 단일 GPU 폐쇄망 종단 운영성 (Master/Manager/SubAgent 3 계층 + 8 단계 LangGraph)"
+      echo "2. 운영 신뢰성·안정성 (결정적 상태 기계 + KG 기반 reuse/adapt/new 결정)"
+      echo "3. 장기 컨텍스트 보존 (Playbook + Experience + History + KG)"
+      echo "4. 다양한 실증 (Bastion-Bench 590 task + 6 외부 벤치마크 + 30 일 운영)"
+    answer_detail: paper 의 4 기여 + 본인 요약
+    verify:
+      type: output_contains
+      expect: Bastion
+      field: stdout
+      semantic:
+        intent: |
+          Bastion paper 의 핵심 기여 인지. 4 기여 (폐쇄망 운영성 / 신뢰성 / 장기 컨텍스트
+          / 실증) 의 한국어 1 줄 요약 + 본인 이해 검증.
+        success_criteria:
+          - 4 기여 식별
+          - 본인 요약
+        acceptable_methods:
+          - "**[관리적] paper Abstract 통독**"
+          - "**[관리적] §1 Introduction 통독**"
+          - "**[관리적] §3 Architecture (3 계층 + 8 단계 lifecycle)**"
+          - "**[관리적] §4 Knowledge Graph + Playbook + Experience**"
+          - "**[관리적] §6 Evaluation (Bastion-Bench 결과)**"
+          - "**[관리적] §8 Limitations + Future Work**"
+          - "**[관리적] References 확인 (Cybench / AgentHarm 등)**"
+          - "**[관리적] 본인 요약 1 페이지 작성**"
+        negative_signs:
+          - paper 미통독
+          - 4 기여 누락
+    target_vm: bastion
+
+  # ============================================================
+  # STEP 5 — 본인 학습 계획 + R/B/P 자가 분석
+  # ============================================================
+  - order: 5
+    instruction: |
+      §3.8 실습 5 의 양식 대로 본인 학습 계획 + R/B/P 자가 분석 1 페이지 작성.
+      강점 / 약점 / 단기-중기-장기 목표 + 주차 별 학습 시간.
+    hint: 마크다운 + 5 섹션
+    category: synthesis
+    points: 20
+    answer: |
+      cat <<'EOF'
+      # 본인 학습 계획 — 인공지능보안 (예시)
+
+      ## 1. 본인 강점
+      - secuops / attack 수료 (각 15 주)
+      - Python / Linux / Docker 능숙
+      - SOC 분석가 자격 (Security+ 등)
+
+      ## 2. 본인 약점
+      - LLM 의 transformer 내부 동작 미숙
+      - 파인튜닝 / RAG 경험 없음
+      - 강화학습 (RL) 부족
+
+      ## 3. R/B/P 자가 분석
+      | 시점 | 현재 | 목표 |
+      | Red Adversarial AI | (없음) | W08-W10 통과 |
+      | Blue AI for Security | (기본) | Bastion 일상 운영 |
+      | Purple Governance + IR | (없음) | AAR 작성 |
+
+      ## 4. 학기 목표
+      - 단기 (W08): 본 과목의 R/B/P 보고서 1+ 작성
+      - 중기 (W15): Bastion 활용 시뮬 IR 1 시나리오
+      - 장기 (수료 후): course7 + course8 진입
+
+      ## 5. 일정
+      - 매주 lecture 1시간 + lab 2시간 + 본인 1시간
+      - 매 토요일 R/B/P 보고서 1 페이지
+      - 월 1회 본인 LLM 실험 (Ollama 로컬)
+      EOF
+    answer_detail: 본인 학습 계획 5 섹션
+    verify:
+      type: output_contains
+      expect: R/B/P
+      field: stdout
+      semantic:
+        intent: 본인 학습 계획 작성
+        success_criteria: [5 섹션]
+        acceptable_methods:
+          - "**[관리적] 강점 3+**"
+          - "**[관리적] 약점 3+**"
+          - "**[관리적] R/B/P 자가 분석**"
+          - "**[관리적] 단기/중기/장기 목표**"
+          - "**[관리적] 주차별 학습 시간**"
+          - "**[관리적] 후속 과목 매핑**"
+          - "**[관리적] KISA AI 보안 가이드 통독**"
+          - "**[관리적] NIST AI RMF 통독**"
+        negative_signs:
+          - 5 섹션 누락
+    target_vm: bastion

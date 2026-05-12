@@ -1809,6 +1809,12 @@ _STANDALONE_COURSES = {
         "icon": "⚔️",
         "color": "#f85149",
     },
+    "aisec": {
+        "title": "인공지능보안 (입문)",
+        "description": "LLM 로컬 서빙 / RAG / KG / Bastion 에이전트 / AI Safety / 자율보안 / 에이전트 침해대응의 입문 통합 과정. CCC 의 7개 AI 후속 과목 (AI/LLM 보안, AI Safety, Red Teaming, 자율보안시스템, AI 보안 에이전트, AI Safety 심화, AI Agent 침해대응) 학습 전 단계.",
+        "icon": "🤖",
+        "color": "#bc8cff",
+    },
 }
 
 
