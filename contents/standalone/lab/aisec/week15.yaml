@@ -1,33 +1,34 @@
 lab_id: standalone-aisec-week15
-title: 에이전트 IR (3) — Multi-stage 피싱 / Agentic APT / 기말
+title: 에이전트 IR (3) — Multi-stage + Agentic APT + 기말 통합
 version: standalone-non-ai
 course: aisec
 week: 15
 description: |
-  Multi-stage 피싱 / Agentic APT / 본 강의 의 15 주차 의 기말 통합 평가 + 본인 의
-  후속 학습 계획 의 5 step.
+  Multi-stage 피싱 chain IR + Bastion 통합 활용 + 후속 학습 계획 + 운영 boundary +
+  본인 자가 평가 의 본 강의 기말 5 hands-on.
 difficulty: hard
-duration_minutes: 180
+duration_minutes: 240
 prerequisites:
   - W14 통과
-  - Ollama API + Bastion API 가용
   - 본 강의 의 14 주차 의 학습
+  - Ollama API + Bastion API
 objectives:
-  - Multi-stage 피싱 chain 의 IR 시뮬
-  - Bastion 통합 활용 의 종합
-  - 본인 의 후속 학습 계획 작성
-  - 본인 의 운영 boundary 검토
-  - 본인 의 자가 평가
+  - Multi-stage 6-stage IR Bastion chat
+  - Bastion 5 endpoint 통합 활용
+  - 본인 후속 학습 계획 작성
+  - 운영 boundary 검토 (Scope + RoE + 윤리 + 법적)
+  - 15 주차 자가 평가
 pass_threshold: 0.7
 
 steps:
 
   # ============================================================
-  # STEP 1 — Multi-stage 피싱 chain 의 IR 시뮬
+  # STEP 1 — Multi-stage 피싱 chain IR Bastion 보조
   # ============================================================
   - order: 1
     instruction: |
-      Multi-stage 피싱 의 가상 chain 의 Bastion 의 IR 보조 의 응답.
+      Multi-stage 피싱 의 가상 6-stage chain 의 Bastion IR 보조 chat — stage 별 IoC +
+      ATT&CK kill chain + NIST 매핑 + 차단 권장.
     hint: |
       6 stage 의 가상 incident
     category: experiment
@@ -35,21 +36,51 @@ steps:
     answer: |
       curl -s -X POST -H "X-API-Key: ccc-api-key-2026" \
           -H "Content-Type: application/json" \
-          -d '{"message":"다음 가상 multi-stage 피싱 의 IR:\n\nStage 1 OSINT: 회사 web + LinkedIn 의 자동 수집\nStage 2 Persona Build: 타겟 의 동료 의 학습\nStage 3 Initial Contact: 자연어 spear email\nStage 4 Trust Build: 5 turn 대화\nStage 5 Exploit: MFA bypass + credential\nStage 6 Lateral: VPN 의 자율 확장\n\n응답:\n1. 각 stage 의 IoC\n2. 차단 권장\n3. ATT&CK 매핑\n4. NIST IR 단계 의 매핑","stream":false}' \
-          http://192.168.0.103:8003/chat 2>&1 | head -c 3000
+          -d '{"message":"다음 가상 multi-stage 피싱 의 IR:\n\nStage 1 OSINT (1 일): LinkedIn 의 직원 5 명 의 profile 자동 수집\nStage 2 Persona Build (1 일): 동료 의 의사소통 style 학습 + lookalike persona 생성\nStage 3 Initial Contact: 자연어 spear email 발송 (carlos@cornpany.com)\nStage 4 Trust Build (3 일): 5 turn 의 자연 대화 + 신뢰 build\nStage 5 Exploit: 첨부 파일 의 malware 의 활성\nStage 6 Lateral: VPN 의 자율 확장 + 다음 타겟 자동\n\n응답:\n1. 각 stage 의 IoC\n2. 차단 권장 (각 stage 별)\n3. ATT&CK kill chain 매핑\n4. NIST IR 단계 의 매핑\n5. 학습 환경 의 적용 (6v6 의 attacker VM)","stream":false}' \
+          http://192.168.0.103:8003/chat 2>&1 | head -c 3500
       echo ""
-    answer_detail: Multi-stage IR (10 min 의 wait 의 정상)
+      echo ""
+      echo "=== 응답 분석 의 5 평가 항목 ==="
+      cat <<'EOF'
+      1. 각 stage 의 IoC
+         - Stage 1: 비정상 web scraping
+         - Stage 2: LLM 의 자동 profile 의 흔적
+         - Stage 3: lookalike domain (sender)
+         - Stage 4: 자연 대화 의 anomaly (sentiment, timing)
+         - Stage 5: 첨부 파일 의 정적 분석
+         - Stage 6: VPN auth 의 anomaly + lateral movement
+
+      2. 차단 권장
+         - Stage 1-3: Email Gateway 의 lookalike domain 차단
+         - Stage 4: 사용자 의 즉시 통보 (의심)
+         - Stage 5: EDR 의 자동 격리
+         - Stage 6: 즉시 격리 + 사용자 의 자격 reset
+
+      3. ATT&CK 매핑
+         - Stage 1: T1589 Gather Victim Identity Info
+         - Stage 2: T1585 Establish Accounts
+         - Stage 3: T1566 Phishing
+         - Stage 4: T1078 Valid Accounts
+         - Stage 5: T1204 User Execution
+         - Stage 6: T1078 + T1021 Remote Services
+
+      4. NIST IR 매핑
+         - Stage 1-3: Detection 의 강화 (preparation 의 부족)
+         - Stage 4-5: Analysis + Containment
+         - Stage 6: Eradication + Recovery
+      EOF
+    answer_detail: Multi-stage IR (10 min wait)
     verify:
       type: output_contains
       expect: stage
       field: stdout
       semantic:
         intent: Multi-stage IR
-        success_criteria: [stage 의 응답 + IoC]
+        success_criteria: [stage 응답 + IoC]
         acceptable_methods:
-          - "**[OSS] Bastion /chat 의 ReAct**"
-          - "**[OSS] 6 stage 의 IoC**"
-          - "**[OSS] ATT&CK kill chain 매핑**"
+          - "**[OSS] Bastion /chat ReAct**"
+          - "**[OSS] 6 stage IoC**"
+          - "**[OSS] ATT&CK kill chain**"
           - "**[OSS] NIST IR 4 단계**"
           - "**[OSS] email gateway LLM 분류**"
           - "**[OSS] DMARC/SPF/DKIM**"
@@ -58,40 +89,57 @@ steps:
     target_vm: bastion
 
   # ============================================================
-  # STEP 2 — Bastion 통합 활용 의 종합
+  # STEP 2 — Bastion 5 endpoint 통합 활용
   # ============================================================
   - order: 2
     instruction: |
-      Bastion 의 health + skills + KG + chat 의 통합 의 1 호출 의 종합.
+      Bastion 의 5 endpoint (health / skills / kg/audit / kg/anchors / kg/metrics)
+      의 1 호출 통합 + 본 강의 의 학습 누적 의 가시화.
     hint: |
-      health + skills + audit + anchors
+      5 endpoint 순차 호출 + 종합
     category: synthesis
     points: 20
     answer: |
-      echo "=== 1. /health ==="
+      echo "=== 1. /health (Bastion 의 전체 상태) ==="
       curl -s -m 5 -H "X-API-Key: ccc-api-key-2026" \
-          http://192.168.0.103:8003/health | head -c 400; echo
+          http://192.168.0.103:8003/health 2>&1 | head -c 500
+      echo ""
+      echo ""
+
+      echo "=== 2. /skills (33 종 의 skill 카탈로그) ==="
+      curl -s -m 5 -H "X-API-Key: ccc-api-key-2026" \
+          http://192.168.0.103:8003/skills 2>&1 | head -c 300
+      echo ""
+      echo ""
+
+      echo "=== 3. /kg/audit (최근 chat history) ==="
+      curl -s -m 5 -H "X-API-Key: ccc-api-key-2026" \
+          "http://192.168.0.103:8003/kg/audit?limit=3" 2>&1 | head -c 400
+      echo ""
+      echo ""
+
+      echo "=== 4. /kg/anchors/recent (task_outcome anchor) ==="
+      curl -s -m 5 -H "X-API-Key: ccc-api-key-2026" \
+          "http://192.168.0.103:8003/kg/anchors/recent?kind=task_outcome&limit=3" \
+          2>&1 | head -c 400
+      echo ""
+      echo ""
+
+      echo "=== 5. /kg/metrics (counter snapshot) ==="
+      curl -s -m 5 -H "X-API-Key: ccc-api-key-2026" \
+          http://192.168.0.103:8003/kg/metrics 2>&1 | head -c 300
+      echo ""
 
       echo ""
-      echo "=== 2. /skills count ==="
-      curl -s -m 5 -H "X-API-Key: ccc-api-key-2026" \
-          http://192.168.0.103:8003/skills | head -c 200; echo
-
-      echo ""
-      echo "=== 3. /kg/audit ==="
-      curl -s -m 5 -H "X-API-Key: ccc-api-key-2026" \
-          "http://192.168.0.103:8003/kg/audit?limit=2" | head -c 400; echo
-
-      echo ""
-      echo "=== 4. /kg/anchors/recent ==="
-      curl -s -m 5 -H "X-API-Key: ccc-api-key-2026" \
-          "http://192.168.0.103:8003/kg/anchors/recent?kind=task_outcome&limit=2" | head -c 400; echo
-
-      echo ""
-      echo "=== 5. /kg/metrics ==="
-      curl -s -m 5 -H "X-API-Key: ccc-api-key-2026" \
-          http://192.168.0.103:8003/kg/metrics | head -c 200; echo
-    answer_detail: Bastion 통합 가시화
+      echo "=== 본 강의 의 학습 누적 의 의의 ==="
+      cat <<'EOF'
+      - graph_nodes 4940+ / history_anchors 5338+ 의 누적 의 학습 효과
+      - 33 skill 의 카탈로그 의 본 강의 학생 의 사용 가능
+      - KG anchor 의 immune == 1 의 forensic 보장
+      - 매 chat 의 task_outcome 의 자동 기록
+      - paper §7 의 source 의 본 학습 environment
+      EOF
+    answer_detail: Bastion 통합
     verify:
       type: output_contains
       expect: status
@@ -107,67 +155,79 @@ steps:
           - "**[OSS] /kg/metrics**"
           - "**[OSS] /kg/health**"
           - "**[OSS] /chats**"
-          - "**[OSS] CLAUDE.md 의 강제**"
+          - "**[OSS] CLAUDE.md 강제**"
     target_vm: bastion
 
   # ============================================================
-  # STEP 3 — 본인 의 후속 학습 계획
+  # STEP 3 — 본인 의 후속 학습 계획 작성
   # ============================================================
   - order: 3
     instruction: |
-      본인 의 7 후속 과목 의 우선 순위 의 계획 작성.
+      7 후속 과목 의 prerequisite 매핑 + 본인 의 우선순위 + 3 년 학습 계획 의 작성.
     hint: |
-      AI/LLM Security / AI Safety / Autonomous / Agent IR 등
+      7 후속 과목 의 본인 ordering
     category: synthesis
     points: 15
     answer: |
       cat <<'EOF'
       === 본인 의 후속 학습 계획 ===
 
-      7 후속 과목 의 prerequisite 매핑:
+      7 후속 과목 의 prerequisite 매핑 (CCC 공식):
 
-      1. AI/LLM Security
-         prerequisite: W02 + W03 + W04
-         권장 시점: 입문 직후
-
-      2. AI Safety
-         prerequisite: W08-W10
-         권장 시점: AI/LLM Security 후
-
-      3. Autonomous Security
-         prerequisite: W11-W12
-         권장 시점: AI Safety 후
-
-      4. AI Security Agent
-         prerequisite: W05-W07
-         권장 시점: 병렬 가능
-
-      5. AI Safety 심화
-         prerequisite: AI Safety + W09
-         권장 시점: 심화 단계
-
-      6. Agent IR
-         prerequisite: W13-W14
-         권장 시점: 운영 경험 후
-
-      7. Agent IR Advanced
-         prerequisite: W13-W15 + Agent IR
-         권장 시점: 마지막
+      과목                    | 본 강의 prerequisite              | 권장 시점
+      ------------------------|---------------------------------|--------------
+      AI/LLM Security         | W02 + W03 + W04                  | 입문 직후
+      AI Safety               | W08 + W09 + W10                  | AI/LLM 후
+      Autonomous Security     | W11 + W12                        | AI Safety 후
+      AI Security Agent       | W05 + W06 + W07                  | 병렬
+      AI Safety 심화          | AI Safety + W09 의 심화           | 심화
+      Agent IR                | W13 + W14                        | 운영 경험
+      Agent IR Advanced       | W13-W15 + Agent IR                | 마지막
 
       === 본인 의 우선순위 (예시) ===
 
-      1. AI/LLM Security (LLM 운영 의 첫 심화)
-      2. AI Security Agent (Bastion 활용)
-      3. AI Safety (위협 인식 의 깊이)
-      4. Autonomous Security (자율 운영)
-      5. Agent IR (IR 의 실 운영)
-      6. AI Safety 심화 + Agent IR Advanced (마지막)
+      1 학기 (즉시):
+        1. AI/LLM Security
+           - 이유: LLM 운영 의 첫 심화
+           - 본 강의 의 W02-W04 의 직접 후속
+
+      2 학기:
+        2. AI Security Agent
+           - 이유: Bastion 의 활용 의 본격 심화
+           - 본 강의 의 W05-W07 의 직접 후속
+
+      3 학기:
+        3. AI Safety
+           - 이유: W08-W10 의 jailbreak 의 깊이
+
+      4 학기:
+        4. Autonomous Security
+           - 이유: W11-W12 의 자율 운영 의 심화
+
+      5 학기:
+        5. Agent IR
+           - 이유: W13-W14 의 IR 의 실 운영
+
+      6 학기 (3 년):
+        6+7. AI Safety 심화 + Agent IR Advanced
+           - 이유: 마지막 의 종합 심화 + 졸업 의 마무리
 
       === 본 계획 의 의의 ===
 
-      - 본 강의 의 학습 의 첫 후속 시작
+      - 본 강의 의 학습 의 첫 후속 의 시작
       - 본인 의 환경 + 도구 의 실 운영 학습
-      - 매 후속 의 KG 누적
+      - 매 후속 의 KG anchor 의 누적 의 학습 효과
+      - 3 년 후 의 보안 전문가 의 완성
+
+      === 졸업 후 의 산업 의 권장 ===
+
+      졸업 후 의 산업 의 적용:
+      - Microsoft Security Copilot 의 운영자
+      - IBM watsonx.ai 의 보안 분석
+      - CrowdStrike Falcon Charlotte AI 의 EDR
+      - Splunk SOAR 의 playbook 개발
+      - Anthropic / OpenAI 의 AI Safety 연구
+      - 본인 의 startup 의 AI 보안 platform 의 창업
       EOF
     answer_detail: 후속 학습 계획
     verify:
@@ -178,14 +238,14 @@ steps:
         intent: 후속 학습 계획
         success_criteria: [7 후속 + 우선순위]
         acceptable_methods:
-          - "**[OSS] AI/LLM Security 의 prerequisite**"
-          - "**[OSS] AI Safety 의 prerequisite**"
-          - "**[OSS] Autonomous 의 prerequisite**"
-          - "**[OSS] AI Security Agent 의 prerequisite**"
-          - "**[OSS] AI Safety 심화 의 prerequisite**"
-          - "**[OSS] Agent IR 의 prerequisite**"
-          - "**[OSS] Agent IR Advanced 의 prerequisite**"
-          - "**[OSS] 본인 의 우선순위 작성**"
+          - "**[OSS] AI/LLM Security prerequisite**"
+          - "**[OSS] AI Safety prerequisite**"
+          - "**[OSS] Autonomous prerequisite**"
+          - "**[OSS] AI Security Agent prerequisite**"
+          - "**[OSS] AI Safety 심화 prerequisite**"
+          - "**[OSS] Agent IR prerequisite**"
+          - "**[OSS] Agent IR Advanced prerequisite**"
+          - "**[OSS] 본인 우선순위 작성**"
     target_vm: bastion
 
   # ============================================================
@@ -193,49 +253,61 @@ steps:
   # ============================================================
   - order: 4
     instruction: |
-      본인 의 학습 환경 / 인가 / 윤리 의 boundary 의 명시 적 검토.
+      본인 의 학습 환경 / 인가 / 윤리 / 법적 검토 의 명시 적 boundary 작성.
     hint: |
-      RoE + 학습 환경 만 + 윤리
+      Scope + RoE + 윤리 + 법적
     category: synthesis
     points: 20
     answer: |
       cat <<'EOF'
       === 본인 의 운영 boundary 검토 ===
 
-      Scope:
+      ==== Scope ====
       - 학습 환경: 6v6 / 192.168.0.0/24
       - attacker VM: 192.168.0.112 (학습 만)
       - JuiceShop: juice.6v6.lab / 192.168.0.100 (학습 만)
+      - Bastion: 192.168.0.103 (API + KG)
+      - Ollama: 192.168.0.109 (LLM serving)
       - 외부 시스템: 거부
 
-      RoE (Rules of Engagement):
+      ==== RoE (Rules of Engagement) ====
       - 학습 / CTF 만
-      - 인가 된 환경 만
-      - 외부 시스템 의 시도 금지
-      - 의도 적 거부
+      - 인가 환경 만
+      - 외부 시스템 시도 금지
+      - 의도된 거부 의 모델
+      - 매 시도 의 사전 인가
 
-      윤리:
-      - 공격 의 학습 은 방어 의 강화 목적
-      - 본인 의 학습 환경 만
-      - 사회 공학 의 학습 환경 만
+      ==== 윤리 ====
+      - 공격 학습 의 목적 = 방어 강화
+      - 본인 환경 만
+      - 사회 공학 의 학습 환경 한정
       - 책임 의 학습자
 
-      도구 의 안전:
-      - Bastion 의 INTERNAL_IPS 화이트리스트
-      - approval_mode 의 normal default
+      ==== 도구 의 안전 ====
+      - Bastion INTERNAL_IPS 화이트리스트
+      - approval_mode = normal default
       - auto_approve = False default
-      - kill switch 의 가용
+      - kill switch 의 즉시 가용
+      - KG anchor 의 모든 action 기록
 
-      법적 검토:
-      - 정보통신망법 / 개인정보보호법 의 준수
-      - 학습 환경 외부 의 시도 의 법적 위반
-      - 사고 의 즉시 escalation
+      ==== 법적 검토 ====
+      - 정보통신망법 의 준수
+      - 개인정보보호법 의 준수
+      - 부정경쟁방지법 의 준수
+      - 학습 환경 외 의 시도 의 법적 위반
+      - 사고 의 즉시 escalation (변호사 + compliance)
 
-      === 본 boundary 의 의의 ===
+      ==== 본 boundary 의 평생 책임 ====
+      - 졸업 후 의 본인 의 평생 의 책임
+      - 외부 의 의도 외 적용 의 거부
+      - 본인 의 학습 의 결과 의 평생 의 의의
 
-      - 본인 의 학습 의 안전 보장
-      - 외부 의 책임 회피
-      - 졸업 의 평생 운영 의 보장
+      ==== 한국 의 AI 안전법 (2026 시행) ====
+      - 2025 입법 → 2026 시행 (현 시점 직 후)
+      - 산업 의 AI 안전 의 의무 강화
+      - 본 강의 의 학생 의 졸업 후 운영 의 직접 영향
+      - High-risk AI 의 conformity assessment
+      - AI 사고 의 통보 의무
       EOF
     answer_detail: boundary 검토
     verify:
@@ -246,24 +318,25 @@ steps:
         intent: boundary 검토
         success_criteria: [Scope + RoE + 윤리]
         acceptable_methods:
-          - "**[OSS] 6v6 학습 환경 의 명시**"
-          - "**[OSS] RoE 의 명시 작성**"
-          - "**[OSS] 학습 환경 외부 거부**"
-          - "**[OSS] INTERNAL_IPS 의 화이트리스트**"
+          - "**[OSS] 6v6 학습 환경 명시**"
+          - "**[OSS] RoE 명시**"
+          - "**[OSS] 학습 환경 외 거부**"
+          - "**[OSS] INTERNAL_IPS 화이트리스트**"
           - "**[OSS] approval_mode normal default**"
-          - "**[OSS] kill switch 의 가용**"
-          - "**[OSS] 법적 검토 (정보통신망법 등)**"
-          - "**[OSS] 윤리 의 명시 적 학습**"
+          - "**[OSS] kill switch 가용**"
+          - "**[OSS] 정보통신망법 / 개인정보보호법**"
+          - "**[OSS] 한국 AI 안전법 2026**"
     target_vm: bastion
 
   # ============================================================
-  # STEP 5 — 본인 의 자가 평가
+  # STEP 5 — 본인 의 자가 평가 (15 주차)
   # ============================================================
   - order: 5
     instruction: |
-      본 강의 의 15 주차 의 본인 의 자가 평가 의 작성.
+      본 강의 의 15 주차 의 각 의 본인 의 1-5 점 평가 + 강점 / 약점 self-reflection +
+      후속 학습 의 우선 의 작성.
     hint: |
-      각 주차 의 5 점 평가
+      15 주차 × 5 점
     category: synthesis
     points: 20
     answer: |
@@ -272,38 +345,57 @@ steps:
 
       각 주차 1-5 점 (5 = 완전 이해, 1 = 미흡):
 
-      W01 AI 보안 리터러시         [_/5]
-      W02 LLM (Ollama / FT / RAG)  [_/5]
-      W03 AI Powered (1)           [_/5]
-      W04 AI Powered (2)           [_/5]
-      W05 AI 에이전트 (1)          [_/5]
-      W06 AI 에이전트 (2)          [_/5]
-      W07 AI 에이전트 (3)          [_/5]
-      W08 AI Safety (1)            [_/5]
-      W09 AI Safety (2)            [_/5]
-      W10 AI Safety (3)            [_/5]
-      W11 자율보안 (1)              [_/5]
-      W12 자율보안 (2)              [_/5]
-      W13 에이전트 IR (1)          [_/5]
-      W14 에이전트 IR (2)          [_/5]
-      W15 에이전트 IR (3)          [_/5]
-      ---------------------------------
-      합계                          [_/75]
+      W01 AI 보안 리터러시          [_/5]
+      W02 LLM (Ollama / FT / RAG)   [_/5]
+      W03 AI Powered (1)            [_/5]
+      W04 AI Powered (2)            [_/5]
+      W05 AI 에이전트 (1)            [_/5]
+      W06 AI 에이전트 (2)            [_/5]
+      W07 AI 에이전트 (3)            [_/5]
+      W08 AI Safety (1)             [_/5]
+      W09 AI Safety (2)             [_/5]
+      W10 AI Safety (3)             [_/5]
+      W11 자율보안 (1)               [_/5]
+      W12 자율보안 (2)               [_/5]
+      W13 에이전트 IR (1)            [_/5]
+      W14 에이전트 IR (2)            [_/5]
+      W15 에이전트 IR (3)            [_/5]
+      --------------------------------
+      합계                           [_/75]
 
-      === 강점 의 의 self-reflection ===
-      (본인 의 가장 우수 한 학습 주차)
+      === 강점 self-reflection ===
+      (본인 의 가장 우수 한 학습 주차 — 3 개)
 
-      === 약점 의 의 self-reflection ===
-      (본인 의 더 학습 필요 주차)
+      예시 답안:
+      - W08 의 ccc-vulnerable 의 직접 제작 의 흥미
+      - W09 의 multi-language jailbreak 의 거부 률 측정
+      - W11 의 Q-learning 의 grid world 학습
 
-      === 후속 학습 의 우선 ===
-      (자가 평가 의 약점 의 후속 과목 우선)
+      === 약점 self-reflection ===
+      (본인 의 더 학습 필요 주차 — 3 개)
 
-      === 본 강의 의 졸업 의의 ===
+      예시 답안:
+      - W03 의 Random Forest 의 hyperparameter 의 추가 학습 필요
+      - W12 의 RL Steering 의 내부 원리 의 깊이 부족
+      - W14 의 SBOM 의 표준 (CycloneDX / SPDX) 의 실 사용 부족
 
-      - 학생 의 졸업 의 다음 단계 학습
+      === 후속 학습 의 우선 (자가 평가 기반) ===
+
+      약점 의 후속 과목 의 우선:
+      1. AI/LLM Security (W03 의 약점 보강)
+      2. Autonomous Security (W12 의 RL 의 보강)
+      3. Agent IR (W14 의 SBOM 의 보강)
+
+      === 본 강의 의 졸업 의 의의 ===
+
+      - 학생 의 다음 단계 의 학습 의 시작
       - 후속 7 과목 의 학습 준비
-      - 본인 의 운영 환경 구축
+      - 본인 의 운영 환경 의 구축 능력
+      - 평생 의 보안 학습자 의 첫 발걸음
+
+      === 본 강의 의 closing ===
+
+      "공격 의 학습 은 방어 의 강화 의 목적 이다." — CCC 의 정신.
 
       수고하셨습니다.
       EOF
@@ -314,14 +406,14 @@ steps:
       field: stdout
       semantic:
         intent: 자가 평가
-        success_criteria: [15 주차 점수 응답]
+        success_criteria: [15 주차 점수]
         acceptable_methods:
-          - "**[OSS] 1-5 점 의 self-rating**"
+          - "**[OSS] 1-5 self-rating**"
           - "**[OSS] 강점 self-reflection**"
           - "**[OSS] 약점 self-reflection**"
-          - "**[OSS] 후속 학습 의 우선**"
-          - "**[OSS] 졸업 의 의의**"
-          - "**[OSS] 본인 의 환경 의 적용**"
-          - "**[OSS] 학습 누적 의 KG**"
+          - "**[OSS] 후속 학습 우선**"
+          - "**[OSS] 졸업 의의**"
+          - "**[OSS] 본인 환경 적용**"
+          - "**[OSS] 학습 누적 KG**"
           - "**[OSS] 책임 적 학습자**"
     target_vm: bastion
