@@ -677,6 +677,361 @@ echo "  valid_from: ..."
 
 ---
 
+## 9.5 R/B/P 공격 분석 케이스 확장 (본 주차 추가)
+
+### 9.5.0 R/B/P 일상 비유 — 동네 안전 정보 공유 게시판
+
+본 절은 CTI 의 운영을 동네 안전 정보 공유 게시판 비유로 시작한다.
+
+학생이 사는 동네의 주민 안전 카페에 한 운영자가 있다. 운영자는 다음 세 가지 일을 한다.
+
+- **외부 신고 수집.** 다른 동네에서 발생한 사기 사건의 phone 번호, 가짜 web 주소 같은 정보를 모은다 (외부 CTI feed).
+- **표준 양식으로 정리.** 모든 사건의 정보를 같은 양식에 맞춰 카페에 글로 올린다 (STIX 표준).
+- **자동 공유.** 카페 글이 다른 동네 카페에도 자동으로 복사된다 (TAXII protocol).
+
+동네 주민은 카페 게시판을 매일 읽으면서 본인이 받은 이상한 전화나 메시지가 게시된 사기 패턴과 같은지 즉시 비교한다. 같은 phone 번호가 게시되어 있으면 즉시 차단한다.
+
+| 일상 비유 | CTI 운영 |
+|-----------|----------|
+| 외부 신고 수집 | abuse.ch URLhaus / Feodotracker 같은 feed |
+| 표준 양식 | STIX 2.1 의 SDO + Pattern |
+| 자동 공유 | TAXII 2.1 protocol |
+| 카페 게시판 | OpenCTI 의 통합 plat form |
+| 본인 받은 전화 비교 | Wazuh alert 의 srcip vs CTI indicator |
+| 즉시 차단 | Active Response 또는 fw 의 dynamic blacklist |
+
+본 절은 다음 세 케이스를 다룬다.
+
+- 케이스 1 — abuse.ch URLhaus 에서 받은 IOC list 의 한 도메인이 학습 환경 DNS query 에서 매칭되는 과정을 추적.
+- 케이스 2 — STIX Indicator 한 줄을 직접 작성하고 본인의 학습 환경 attacker VM IP 를 매핑한다.
+- 케이스 3 — OpenCTI UI 의 Investigation 화면에서 한 indicator 의 관계 (relationship) 를 시각 탐색.
+
+원칙은 W01 ~ W11 와 같다. 재현 가능성, 도구 위주 분석, 신입생 친화, 학습 환경 한정.
+
+### 9.5.1 케이스 1 — abuse.ch URLhaus IOC 의 학습 환경 매칭 시뮬
+
+**0. 일상 비유 — 옆 동네 사기 phone 번호 list 가 우리 동네 통화 기록과 매칭.**
+
+옆 동네에서 신고된 사기 phone 번호 100개가 동네 카페에 공유되었다. 학생이 본인 휴대폰의 최근 통화 기록과 비교한다. 만약 같은 번호가 보이면 즉시 그 번호를 차단하고 경찰에 신고한다. 본 cycle 의 핵심은 외부 신고 list 를 본인 환경의 흔적과 매칭하는 표준 절차다.
+
+| 일상 비유 | CTI matching |
+|-----------|--------------|
+| 사기 phone 번호 list | URLhaus 의 도메인/URL list |
+| 본인 통화 기록 | web VM 의 DNS query 로그 |
+| 매칭 결과 | 동일 도메인 발견 |
+| 즉시 차단 | fw 의 dynamic blacklist set |
+| 신고 | OpenCTI 의 sighting + 운영자 알람 |
+
+**0a. 사용 도구 사전 안내.**
+
+- **abuse.ch URLhaus** — open community 의 malicious URL feed. CSV / JSON / TAXII 의 세 가지 형식으로 배포.
+- **CDB list** — Wazuh 의 Constant Database. key-value 형식의 정적 lookup list.
+- **`active-response`** — Wazuh 의 자동 대응.
+
+**1. Red — 공격 재현 (학습용 시뮬).**
+
+학습 환경에서는 실제 known bad 도메인 대신 시뮬 도메인 (`bad-test-c2.local.lab`) 을 학습용 CDB list 에 미리 등록해두고, attacker VM 에서 web VM 안으로 들어가 그 도메인을 조회한다.
+
+```bash
+ssh ccc@192.168.0.112
+ssh -o StrictHostKeyChecking=no admin@192.168.0.103
+
+# web VM 안 (학습 환경 한정)
+dig +short "bad-test-c2.local.lab" >/dev/null 2>&1
+```
+
+학습 환경의 DNS resolver 가 `bad-test-c2.local.lab` 를 미등록으로 응답한다. 그러나 web VM 의 sysmon Event 22 또는 ips Suricata 의 dns event 가 query 자체를 기록한다.
+
+**2. 발생하는 로그/아티팩트.**
+
+- ips 의 eve.json — dns event 한 줄.
+- web 의 sysmon — Event 22 DnsQuery 한 줄.
+- siem 의 alerts.json — 단순 정보 alert 한 줄.
+
+CDB list 에 본 도메인이 등록되어 있다면 Wazuh manager 의 lookup decoder 가 매칭하여 alert level 을 상향한다.
+
+**3. Blue — CDB list 등록 + lookup decoder + 매칭 alert.**
+
+먼저 siem manager 에서 학습용 CDB list 를 등록한다.
+
+```bash
+ssh 6v6-siem
+sudo tee /var/ossec/etc/lists/local_bad_domains > /dev/null <<'EOF'
+bad-test-c2.local.lab:
+suspicious-test.local.lab:
+EOF
+sudo /var/ossec/bin/wazuh-makelists
+```
+
+다음으로 lookup decoder + rule 을 추가한다.
+
+```xml
+<group name="local,cti,">
+  <rule id="100600" level="11">
+    <if_sid>61644</if_sid>
+    <list field="data.sysmon.QueryName" lookup="match_key">
+      etc/lists/local_bad_domains
+    </list>
+    <description>LOCAL CTI Match - bad domain in DNS query: $(data.sysmon.QueryName)</description>
+  </rule>
+</group>
+```
+
+(`if_sid` 의 값은 학습 환경의 sysmon Event 22 기본 rule id 에 맞게 조정.)
+
+Wazuh manager 를 reload 한다.
+
+```bash
+sudo /var/ossec/bin/wazuh-control restart
+```
+
+attacker VM 에서 dig 를 다시 보내고 alert 발생을 확인한다.
+
+```bash
+sudo tail -100 /var/ossec/logs/alerts/alerts.json \
+  | jq -r 'select(.rule.id=="100600") | "\(.timestamp) \(.data.sysmon.QueryName) level=\(.rule.level)"'
+```
+
+level 11 의 한 줄이 보이면 CDB lookup 매칭 정상이다.
+
+Wazuh Dashboard 에서도 본다.
+
+1. 좌측 햄버거 메뉴 → `Discover` 선택.
+2. Index pattern `wazuh-alerts-*`.
+3. Search bar 에 `rule.id:100600` 입력.
+4. 결과의 `data.sysmon.QueryName` 과 `agent.name` 확인.
+
+**4. Blue — 대응 의사결정.**
+
+학생이 다음 세 가지를 판단한다.
+
+- **CDB list 의 신뢰도.** abuse.ch 의 known bad list 는 신뢰도 높다. 그러나 false positive 도 있을 수 있어 자동 차단 전에 운영자 review 한 단계가 안전하다.
+- **자동 차단 vs 모니터링.** 학습 환경은 자동 차단이 안전. 운영 환경은 confidence 가 높은 source 만 자동 차단.
+- **추가 추적.** 같은 source IP 가 다른 known bad domain 도 시도했는지 cross-check 한다.
+
+**5. Purple — CDB 자동 sync + 운영 baseline.**
+
+다음 세 가지를 적용한다.
+
+- **W13 의 자동 sync.** abuse.ch 의 URL list 를 매 시간 cron 으로 다운로드하고 CDB list 를 자동 갱신한다. 다음 주차 학습 주제다.
+- **lookup decoder 의 source 분리.** 한 CDB 파일이 너무 커지지 않게 source 별 (URLhaus, Feodotracker, OTX) 로 분리한다.
+- **운영 baseline 의 false positive 측정.** 본인 환경의 정상 도메인 (`*.6v6.lab`) 이 우연히 CDB 와 충돌하지 않는지 분기 검토.
+
+본 케이스 cycle 한 바퀴는 약 25분 정도다.
+
+### 9.5.2 케이스 2 — STIX Indicator 한 줄 직접 작성 + attacker VM 매핑
+
+**0. 일상 비유 — 본인이 직접 신고 글을 표준 양식으로 작성.**
+
+학생이 본인이 받은 이상한 phone 번호를 동네 카페에 직접 글로 올린다. 글의 양식은 운영자가 미리 정해둔 표준 양식 (사건 시각, phone 번호, 사기 유형, 신뢰도) 을 따른다. 표준 양식이 있어야 다른 동네 카페에도 자동 공유가 가능하다.
+
+이 비유를 STIX Indicator 작성에 옮긴다.
+
+| 일상 비유 | STIX 작성 |
+|-----------|-----------|
+| 신고 글 한 장 | STIX Indicator object 한 줄 (JSON) |
+| 사건 시각 | created, valid_from |
+| phone 번호 | pattern (예: `[ipv4-addr:value = '192.168.0.112']`) |
+| 사기 유형 | indicator_types |
+| 신뢰도 | confidence |
+| 신고자 | created_by_ref |
+
+**0a. 사용 도구 사전 안내.**
+
+- **STIX 2.1 Indicator** — SDO 의 한 종류.
+- **STIX Pattern** — 매칭 조건의 표준 문법.
+- **jq + python -m json.tool** — JSON validation.
+
+**1. Red — 본인 학습 환경의 attacker VM IP 를 indicator 로 표현.**
+
+학습 환경 attacker VM (192.168.0.112) 을 학습용 indicator 로 표현한다.
+
+```bash
+cat > /tmp/local_attacker_indicator.json <<'EOF'
+{
+  "type": "indicator",
+  "spec_version": "2.1",
+  "id": "indicator--550e8400-e29b-41d4-a716-446655440042",
+  "created": "2026-05-13T00:00:00Z",
+  "modified": "2026-05-13T00:00:00Z",
+  "name": "LOCAL Learning Environment Attacker VM",
+  "description": "학습 환경의 attacker VM. 학습 목적의 시뮬 공격만 발생.",
+  "indicator_types": ["malicious-activity"],
+  "pattern": "[ipv4-addr:value = '192.168.0.112']",
+  "pattern_type": "stix",
+  "pattern_version": "2.1",
+  "valid_from": "2026-05-13T00:00:00Z",
+  "confidence": 95,
+  "labels": ["learning-only", "ccc-6v6"]
+}
+EOF
+
+python3 -m json.tool /tmp/local_attacker_indicator.json | head -20
+```
+
+JSON 이 정상 파싱되면 잘 작성된 것이다.
+
+**2. 발생하는 로그/아티팩트.**
+
+본 단계는 단순 JSON 파일 생성이라 alert 는 없다. 다음 단계에서 OpenCTI 또는 Wazuh CDB 로 ingest 하면 적용된다.
+
+**3. Blue — STIX Pattern 의 syntax 검증 + Wazuh 통합.**
+
+먼저 STIX Pattern 의 syntax 를 확인한다.
+
+```
+[ipv4-addr:value = '192.168.0.112']
+```
+
+각 부분의 의미는 다음과 같다.
+
+- `[...]` — pattern 의 전체.
+- `ipv4-addr` — STIX 의 cyber observable object type.
+- `value` — 그 object 의 property.
+- `=` — 비교 연산자.
+- `'192.168.0.112'` — 매칭 대상 값.
+
+복잡한 pattern 의 예 (도메인 + 시간 조건).
+
+```
+[domain-name:value = 'bad-test-c2.local.lab'] WITHIN 60 SECONDS
+```
+
+다음으로 본 indicator 를 Wazuh CDB list 의 한 줄로 변환한다.
+
+```bash
+echo "192.168.0.112:learning_only_attacker" \
+  | sudo tee -a /var/ossec/etc/lists/local_known_ips
+sudo /var/ossec/bin/wazuh-makelists
+```
+
+Wazuh rule 에 lookup 추가.
+
+```xml
+<group name="local,cti,">
+  <rule id="100601" level="10">
+    <if_sid>5710</if_sid>
+    <list field="data.srcip" lookup="match_key">
+      etc/lists/local_known_ips
+    </list>
+    <description>LOCAL CTI Match - known src IP: $(data.srcip)</description>
+  </rule>
+</group>
+```
+
+attacker VM 에서 SSH 실패 시도를 보내면 rule 100601 이 trigger 되어 alert 가 발생한다.
+
+```bash
+ssh ccc@192.168.0.112
+sshpass -p "wrong" ssh -o ConnectTimeout=3 admin@192.168.0.103 'whoami' 2>/dev/null
+```
+
+siem 에서 확인.
+
+```bash
+ssh 6v6-siem
+sudo tail -50 /var/ossec/logs/alerts/alerts.json \
+  | jq -r 'select(.rule.id=="100601") | "\(.timestamp) src=\(.data.srcip) level=\(.rule.level)"'
+```
+
+**4. Blue — 대응 의사결정.**
+
+학생이 다음 세 가지를 판단한다.
+
+- **indicator 의 valid_from / valid_until.** 학습 환경의 attacker VM 은 영구적인 학습 용도이므로 valid_until 을 비워둔다. 운영 환경의 known bad IP 는 보통 90일 만료를 둔다.
+- **confidence 적정성.** 본인이 직접 확인한 attacker VM 은 95 (very high). 외부 source 의 unverified IOC 는 50 (medium).
+- **labels 의 운영 활용.** `learning-only` label 의 indicator 는 운영 환경 dashboard 에서 자동 필터링한다.
+
+**5. Purple — STIX 작성 표준 + OpenCTI 도입 준비.**
+
+다음 세 가지를 적용한다.
+
+- **회사 표준 STIX 양식 정립.** 모든 indicator 작성 시 필수 필드 (name, description, indicator_types, pattern, valid_from, confidence, created_by_ref, labels) 를 명문화한다.
+- **OpenCTI 도입 plan.** W12 의 §9 (실습 5) 에서 작성한 도입 계획을 환경에 맞게 구체화한다.
+- **회사 indicator 의 외부 공유.** confidence 가 높은 indicator 는 한국 KISA 또는 산업 ISAC 공유 채널로 전송. W14 학습 주제다.
+
+### 9.5.3 케이스 3 — OpenCTI UI 의 Investigation 시각 탐색
+
+**0. 일상 비유 — 동네 카페의 글타래 관계 그림으로 시각 탐색.**
+
+동네 카페에 글이 쌓이면 운영자가 글타래 관계 그림 (한 사기 사건이 어떤 사람의 다른 신고와 연결되는지) 을 만든다. 학생이 그림을 보면 한 사건 뒤에 숨은 더 큰 패턴이 보인다. 한 phone 번호가 다른 가짜 web 주소와 같은 사람의 것이라면, 두 신고가 한 글타래로 연결된다.
+
+OpenCTI 의 Investigation 화면이 같은 역할을 한다.
+
+| 일상 비유 | OpenCTI Investigation |
+|-----------|------------------------|
+| 한 신고 글 | Indicator object |
+| 신고자 | Threat Actor |
+| 사용 도구 | Malware, Attack Pattern |
+| 글타래 관계 | Relationship object |
+| 그림 시각화 | Investigation 의 graph view |
+
+**0a. 사용 도구 사전 안내.**
+
+- **OpenCTI Investigation 화면** — Web UI 의 한 메뉴.
+- **Relationship object** — 두 SDO 의 관계.
+- **graph view** — 관계의 시각화.
+
+**1. Red — 공격 재현 (없음, OpenCTI 의 기본 데이터 활용).**
+
+본 케이스는 OpenCTI 의 기본 import (예: MITRE ATT&CK) 의 데이터를 활용한 학습 시뮬이다. 실 공격 재현은 케이스 1, 2 에서 다뤘다.
+
+**2. 발생하는 로그/아티팩트.**
+
+OpenCTI 의 ATT&CK connector 가 이미 다음 데이터를 import 한 상태라고 가정한다.
+
+- Threat Actor: APT29 (Cozy Bear).
+- Malware: WellMess, WellMail.
+- Attack Pattern: T1190 Exploit Public-Facing Application.
+- Relationship: APT29 uses WellMess, APT29 uses T1190.
+
+**3. Blue — OpenCTI UI 의 Investigation 시각 탐색.**
+
+학생이 자기 host 의 web browser 에서 OpenCTI 에 접속한다 (학습 환경에 OpenCTI 가 설치된 후).
+
+UI 클릭 흐름은 다음과 같다.
+
+1. 좌측 메뉴 → `Threats` → `Threat actors` 선택.
+2. 목록에서 `APT29` 클릭.
+3. APT29 의 상세 화면에서 상단 탭 중 `Knowledge` 클릭.
+4. `Knowledge` 화면의 좌측 sidebar 에서 `Investigation` 선택.
+5. graph view 에 APT29 의 노드가 가운데에 표시된다.
+6. 노드 우클릭 → `Expand` → `All relationships` 선택.
+7. 화면에 APT29 의 관계가 시각적으로 펼쳐진다.
+   - `uses` → WellMess (malware).
+   - `uses` → T1190 (attack pattern).
+   - `targets` → 특정 sector / region.
+
+각 노드를 클릭하면 우측 panel 에 그 객체의 상세가 표시된다.
+
+**4. Blue — 대응 의사결정 (정보 활용).**
+
+학생이 다음 세 가지를 판단한다.
+
+- **본인 환경의 노출 정도.** APT29 가 use 하는 attack pattern (T1190) 이 본인 환경의 어떤 자산을 위협하는지 매핑한다. 학습 환경은 web (juice.6v6.lab) 이 T1190 의 표적이다.
+- **detection coverage.** 본인 환경의 detection rule 이 T1190 을 잡고 있는가? W04 의 Suricata + W06 의 ModSec 룰이 coverage 의 핵심이다.
+- **mitigation plan.** OpenCTI 의 한 attack pattern 페이지에는 `Mitigations` 탭이 있다. 표준 mitigation 권고를 본인 환경에 맞춰 적용 계획화.
+
+**5. Purple — Investigation graph 의 운영 활용.**
+
+다음 세 가지를 적용한다.
+
+- **분기 1 회 Investigation session.** 운영팀이 분기마다 APT29, APT28, Kimsuky 같은 한국 위협의 Investigation 을 한 화면에서 본다. 본인 환경의 detection coverage 격차를 식별.
+- **coverage 매트릭스.** ATT&CK 의 14 tactic × 본인 환경의 detection rule 수를 정리. coverage 50% 이하의 tactic 은 다음 분기 우선 작업.
+- **외부 공유 활성.** 본인 환경에서 발견된 indicator (case 2 의 attacker VM 같은 학습용 indicator 는 제외) 는 OpenCTI 의 sharing 기능으로 산업 ISAC 채널에 공유한다.
+
+### 9.5.4 본 절 정리
+
+본 절은 W12 의 CTI 표준 학습을 실제 공격 분석 cycle 에 연결했다. 학생이 다음 능력을 갖춘다.
+
+- abuse.ch URLhaus 같은 외부 IOC feed 의 도메인을 Wazuh CDB list + lookup decoder 로 매칭한다.
+- STIX Indicator 한 줄을 표준 양식으로 직접 작성하고 Wazuh CDB 와 OpenCTI 양쪽에 적용한다.
+- OpenCTI 의 Investigation graph view 로 한 threat actor 의 관계망을 시각 탐색하고 본인 환경의 detection coverage 격차를 식별한다.
+
+다음 주차 W13 에서는 OpenCTI Stream Connector + Wazuh CDB 자동 sync 의 본격 통합 cycle 을 학습한다.
+
+---
+
 ## 10. ATT&CK + 한국 표준
 
 ### 10.1 ATT&CK 의 STIX 표현
