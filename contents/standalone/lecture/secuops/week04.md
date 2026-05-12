@@ -765,53 +765,55 @@ threshold.config 의 두 keyword 는 별개다.
 
 **1. Red — 공격 재현.**
 
-학생이 attacker VM 에 들어가서 6v6 의 web VM 에 nikto 를 실행한다. 학습 환경 안에서만 실행해야 한다.
+학생이 bastion 경유로 6v6-attacker 에 들어가서 fw 너머의 web (juice 6v6.lab) 에 nikto 를 실행한다. 학습 환경 안에서만 실행해야 한다.
 
 ```bash
-ssh ccc@192.168.0.112
-# password: 1
+ssh 6v6-attacker
+# 비밀번호: ccc
 ```
 
-attacker VM 내부에서 nikto 를 실행한다.
+6v6-attacker 내부에서 nikto 를 실행한다. nikto 는 ext tier 의 10.20.30.202 에서 fw 의 10.20.30.1:80 으로 요청을 보내고, fw 의 HAProxy 가 Host 헤더로 vhost 를 선택해 dmz 의 web (10.20.32.80) 으로 forwarding 한다.
 
 ```bash
-# attacker VM 내부 (학습 환경 한정)
-nikto -h http://192.168.0.103/ -maxtime 60s
+# 6v6-attacker 내부 (학습 환경 한정)
+nikto -h http://10.20.30.1/ -vhost juice.6v6.lab -maxtime 60s
 ```
 
 각 옵션의 의미는 다음과 같다.
 
 - `nikto` — 명령 이름.
-- `-h http://192.168.0.103/` — target host. 학습 환경의 web VM.
+- `-h http://10.20.30.1/` — target host. fw 의 ext NIC. HAProxy 가 vhost 분기.
+- `-vhost juice.6v6.lab` — HTTP Host 헤더. fw 의 HAProxy 가 juice 백엔드로 라우팅.
 - `-maxtime 60s` — 최대 실행 시간 60초. 학습용으로 짧게 잡았다.
 
 60초 안에 수백 개의 URL 이 시도된다. 각 시도가 HTTP request 한 건이다.
 
 **2. 발생하는 로그/아티팩트.**
 
-ips VM 의 Suricata 가 dmz NIC 를 sniff 하기 때문에 모든 HTTP request 가 eve.json 에 http event 로 기록된다. nikto 의 기본 user_agent 가 `Mozilla/5.00 (Nikto/...)` 이므로 ETOpen 의 user_agent 기반 signature 가 trigger 된다. 같은 traffic 이 Wazuh manager 의 alerts.json 에도 통합 alert 로 다시 나타난다.
+ips VM 의 Suricata 가 pipe + dmz 두 NIC 를 sniff 하기 때문에 모든 HTTP request 가 eve.json 에 http event 두 줄로 기록된다 (pipe ingress 1 + dmz egress 1). HAProxy 가 TCP termination 을 하기 때문에 dmz 쪽 src_ip 는 fw 의 pipe NIC IP (10.20.31.1) 이고, attacker 의 실 IP (10.20.30.202) 는 X-Forwarded-For 헤더에 보존된다 (§ 3 실측 참조). nikto 의 기본 user_agent 가 `Mozilla/5.00 (Nikto/...)` 이므로 ETOpen 의 user_agent 기반 signature 가 trigger 된다. 같은 traffic 이 Wazuh manager 의 alerts.json 에도 통합 alert 로 다시 나타난다.
 
-eve.json 의 http event 한 줄 예시는 다음과 같다.
+eve.json 의 http event 한 줄 예시는 다음과 같다 (dmz NIC 측).
 
 ```json
 {"timestamp":"2026-05-12T14:50:01",
  "event_type":"http",
- "src_ip":"192.168.0.112",
- "dest_ip":"192.168.0.103",
- "http":{"hostname":"192.168.0.103",
+ "src_ip":"10.20.31.1",
+ "dest_ip":"10.20.32.80",
+ "http":{"hostname":"juice.6v6.lab",
          "url":"/admin/",
          "http_user_agent":"Mozilla/5.00 (Nikto/2.5.0) ...",
          "http_method":"GET",
+         "xff":"10.20.30.202",
          "status":404}}
 ```
 
-같은 src_ip 에서 여러 URL 에 시도가 burst 로 일어나는 패턴이 핵심이다.
+같은 xff 값 (`10.20.30.202`) 에서 여러 URL 에 시도가 burst 로 일어나는 패턴이 핵심이다.
 
 **3. Blue — Kibana Discover UI 로 직접 분석.**
 
 학생이 자기 host 의 web browser 에서 다음 URL 에 접속한다.
 
-- URL: `https://dashboard.6v6.lab` (또는 `https://192.168.0.103:5601`).
+- URL: `https://dashboard.6v6.lab` (6v6-wazuh-dashboard, 10.20.32.120:5601).
 - self-signed 인증서 경고는 `Advanced` → `Proceed to ...` 로 통과한다.
 
 UI 클릭 흐름은 다음과 같다.
@@ -819,14 +821,14 @@ UI 클릭 흐름은 다음과 같다.
 1. 좌측 햄버거 메뉴 → `Discover` 선택.
 2. 상단 Index pattern 을 `suricata-*` 로 바꾼다.
 3. 우상단 Time picker 를 `Last 15 minutes` 로 바꾼다.
-4. Search bar 에 `event_type:http AND src_ip:192.168.0.112` 입력 후 Enter.
+4. Search bar 에 `event_type:http AND http.xff:"10.20.30.202"` 입력 후 Enter. HAProxy 통과 후 src_ip 는 fw 가 되므로 attacker 식별은 xff 필드로 한다.
 5. 결과 목록에서 한 줄을 펼치면 모든 field 가 보인다. `http.http_user_agent`, `http.url`, `http.status` 를 확인한다.
 6. 화면 좌측의 `Available fields` 에서 `http.url.keyword` 옆의 + 를 눌러 columns 에 추가한다. URL 별 분포가 한눈에 보인다.
 7. 같은 방법으로 `http.status` 를 columns 에 추가한다. 404 가 대부분이면 정찰 시도일 가능성이 크다.
 
 **Detail 분석.**
 
-- src_ip 가 192.168.0.112 하나로 일관된다. 학습 환경 attacker VM 이다.
+- xff 가 `10.20.30.202` 하나로 일관된다. 학습 환경의 6v6-attacker 다.
 - http_user_agent 가 `Nikto` 를 포함한다. 도구의 시그니처가 직접 노출된다.
 - http.url 이 `/admin/`, `/phpmyadmin/`, `/.git/config`, `/wp-login.php` 같이 다양하다. 정찰 패턴이다.
 - http.status 의 90% 이상이 404. 존재하지 않는 path 를 탐색한 결과다.
@@ -839,7 +841,11 @@ UI 클릭 흐름은 다음과 같다.
 - **rate 기반 차단.** 정상 client 의 트래픽 패턴과 비교한다. nikto 는 분당 수백 request 가 일반적이라 rate limit 만 으로도 다수의 효과가 있다.
 - **user_agent 차단의 한계.** 공격자는 user_agent 를 바로 위장할 수 있다. user_agent 기반 차단은 보조 수단이다.
 
-학습 환경에서는 attacker VM IP 를 fw 의 dynamic blacklist set 에 timeout 5분으로 추가하는 것으로 충분하다.
+학습 환경에서는 attacker 의 ext IP (`10.20.30.202`) 를 6v6-fw 의 nftables `blacklist_v4` set 에 timeout 5분으로 추가하는 것으로 충분하다. xff 기반 차단은 W06 ModSec 에서 별도 다룬다.
+
+```bash
+ssh 6v6-fw 'sudo nft add element ip six_filter blacklist_v4 { 10.20.30.202 timeout 5m }'
+```
 
 **5. Purple — 보완.**
 
@@ -875,33 +881,34 @@ local.rules 와 threshold.config 에 다음 세 가지를 적용한다.
 
 **1. Red — 공격 재현.**
 
-attacker VM 에서 fw 의 443 포트에 의심 SNI 를 가진 TLS handshake 를 보낸다. 학습 환경 안에서만 실행해야 한다.
+6v6-attacker 에서 fw 의 443 포트에 의심 SNI 를 가진 TLS handshake 를 보낸다. 학습 환경 안에서만 실행해야 한다. fw 의 HAProxy 는 TLS passthrough 백엔드도 함께 운영하므로, ClientHello 는 fw → pipe → ips 의 pipe NIC 까지 평문 그대로 (TLS handshake 자체가 평문 메타) 전달되어 Suricata 가 SNI 를 decode 할 수 있다.
 
 ```bash
-ssh ccc@192.168.0.112
+ssh 6v6-attacker
+# 비밀번호: ccc
 
-# attacker VM 내부 (학습 환경 한정)
-echo | openssl s_client -connect 192.168.0.103:443 -servername malicious-c2.example -verify_return_error 2>&1 | head -20
+# 6v6-attacker 내부 (학습 환경 한정)
+echo | openssl s_client -connect 10.20.30.1:443 -servername malicious-c2.example -verify_return_error 2>&1 | head -20
 ```
 
 각 옵션의 의미는 다음과 같다.
 
 - `echo | ...` — handshake 만 보내고 즉시 종료한다.
-- `-connect 192.168.0.103:443` — target host:port. 학습 환경의 web VM.
+- `-connect 10.20.30.1:443` — target host:port. fw 의 ext NIC.
 - `-servername malicious-c2.example` — SNI 에 의심 도메인을 명시한다. 정상 운영 목록에 없는 임의의 이름이다.
 - `-verify_return_error` — 인증서 검증 실패 시 즉시 종료.
 
-학습 환경 web 의 정상 SNI 는 보통 `juice.6v6.lab`, `dvwa.6v6.lab` 같은 내부 도메인이다. `malicious-c2.example` 은 그 목록에 없다.
+학습 환경 web 의 정상 SNI 는 `juice.6v6.lab`, `dvwa.6v6.lab` 같은 6v6 내부 도메인이다. `malicious-c2.example` 은 그 목록에 없다.
 
 **2. 발생하는 로그/아티팩트.**
 
-Suricata 가 TLS handshake 의 ClientHello 를 decode 하면서 eve.json 에 tls event 한 줄을 기록한다.
+Suricata 가 TLS handshake 의 ClientHello 를 decode 하면서 eve.json 에 tls event 한 줄을 기록한다. pipe NIC (eth0=10.20.31.2) 측에서 본 모습은 다음과 같다.
 
 ```json
 {"timestamp":"2026-05-12T14:55:00",
  "event_type":"tls",
- "src_ip":"192.168.0.112",
- "dest_ip":"192.168.0.103",
+ "src_ip":"10.20.30.202",
+ "dest_ip":"10.20.30.1",
  "dest_port":443,
  "tls":{"sni":"malicious-c2.example",
         "version":"TLS 1.3",
@@ -909,7 +916,7 @@ Suricata 가 TLS handshake 의 ClientHello 를 decode 하면서 eve.json 에 tls
         "ja3s":{"hash":"..."}}}
 ```
 
-핵심 필드는 `tls.sni` 와 `tls.ja3.hash` 다. SNI 는 client 가 접속하려는 도메인이고, ja3 는 client 의 TLS fingerprint 다. 공격자 도구 (Cobalt Strike, Metasploit 등) 는 고유한 ja3 fingerprint 를 가질 수 있다.
+핵심 필드는 `tls.sni` 와 `tls.ja3.hash` 다. SNI 는 client 가 접속하려는 도메인이고, ja3 는 client 의 TLS fingerprint 다. 공격자 도구 (Cobalt Strike, Metasploit 등) 는 고유한 ja3 fingerprint 를 가진다.
 
 **3. Blue — Kibana Discover UI 로 직접 분석.**
 
@@ -918,7 +925,7 @@ UI 클릭 흐름은 다음과 같다.
 1. 좌측 햄버거 메뉴 → `Discover` 선택.
 2. Index pattern 을 `suricata-*` 로 바꾼다.
 3. Time picker 를 `Last 15 minutes` 로 바꾼다.
-4. Search bar 에 `event_type:tls AND src_ip:192.168.0.112` 를 입력하고 Enter.
+4. Search bar 에 `event_type:tls AND src_ip:"10.20.30.202"` 를 입력하고 Enter. TLS 평문 메타는 fw 의 TCP termination 전에 ips 가 보므로 src_ip 가 그대로 6v6-attacker 의 ext IP 다.
 5. 결과 목록에서 한 줄을 펼친다. `tls.sni` 와 `tls.ja3.hash` 를 확인한다.
 6. 좌측 `Available fields` 에서 `tls.sni.keyword` 의 + 를 눌러 columns 에 추가한다.
 7. 같은 방법으로 `tls.ja3.hash.keyword` 도 columns 에 추가한다.
@@ -927,6 +934,7 @@ UI 클릭 흐름은 다음과 같다.
 
 - tls.sni 가 정상 운영 도메인 (예: `juice.6v6.lab`) 이 아니라 임의의 도메인 (`malicious-c2.example`) 이다. 의심 신호다.
 - ja3.hash 가 학습 환경의 정상 client (Chrome, curl, Apache health probe) 의 ja3 와 다르면 도구 시그니처일 가능성이 있다.
+- src_ip 가 `10.20.30.202` 면 6v6-attacker 에서 직접 발생한 traffic 이다. 정상 운영 traffic 의 src 는 보통 bastion (10.20.30.201) 이나 외부 client 다.
 
 **4. Blue — 대응 의사결정.**
 
@@ -966,14 +974,15 @@ UI 클릭 흐름은 다음과 같다.
 
 **1. Red — 공격 재현.**
 
-attacker VM 에서 학습 환경 DNS resolver 에 의도적으로 긴 TXT query 를 다수 보낸다. 학습 환경 안에서만 실행해야 한다.
+6v6-attacker 에서 외부 DNS resolver (8.8.8.8) 로 의도적으로 긴 TXT query 를 다수 보낸다. fw 의 outbound forward chain 을 거치므로 ips 의 pipe NIC 가 query 를 sniff 한다. 학습 환경 안에서만 실행해야 한다.
 
 ```bash
-ssh ccc@192.168.0.112
+ssh 6v6-attacker
+# 비밀번호: ccc
 
-# attacker VM 내부 (학습 환경 한정)
+# 6v6-attacker 내부 (학습 환경 한정)
 for i in $(seq 1 30); do
-    dig +short TXT "data${i}.tunnel.local" @192.168.0.103 >/dev/null 2>&1
+    dig +short TXT "data${i}.tunnel.local" @8.8.8.8 >/dev/null 2>&1
 done
 ```
 
@@ -983,19 +992,20 @@ done
 - `+short` — 출력을 간결하게.
 - `TXT` — record type.
 - `data${i}.tunnel.local` — 시도마다 다른 subdomain. 실제 DNS 터널링은 base64 인코딩 데이터를 subdomain 에 실어 보낸다.
-- `@192.168.0.103` — DNS server.
+- `@8.8.8.8` — 외부 DNS server. fw 의 NAT + forward chain 을 거치는 outbound traffic 이다.
 
 30번 반복으로 burst 패턴을 만든다.
 
 **2. 발생하는 로그/아티팩트.**
 
-Suricata 가 각 DNS query 를 dns event 한 줄로 기록한다.
+Suricata 가 각 DNS query 를 dns event 한 줄로 기록한다. fw 의 SNAT 가 일어나기 전 pipe NIC 측에서 본 모습은 다음과 같다.
 
 ```json
 {"timestamp":"2026-05-12T14:58:00",
  "event_type":"dns",
- "src_ip":"192.168.0.112",
- "dest_ip":"192.168.0.103",
+ "src_ip":"10.20.30.202",
+ "dest_ip":"8.8.8.8",
+ "dest_port":53,
  "dns":{"type":"query",
         "rrname":"data1.tunnel.local",
         "rrtype":"TXT"}}
@@ -1005,7 +1015,7 @@ Suricata 가 각 DNS query 를 dns event 한 줄로 기록한다.
 
 **3. Blue — jq + Kibana Discover 로 직접 분석.**
 
-먼저 ips VM 에 들어가서 eve.json 을 jq 로 직접 본다.
+먼저 ips 에 들어가서 eve.json 을 jq 로 직접 본다.
 
 ```bash
 ssh 6v6-ips
@@ -1021,7 +1031,7 @@ sudo tail -200 /var/log/suricata/eve.json \
 1. 좌측 햄버거 메뉴 → `Discover` 선택.
 2. Index pattern 을 `suricata-*` 로 바꾼다.
 3. Time picker 를 `Last 15 minutes` 로 바꾼다.
-4. Search bar 에 `event_type:dns AND dns.rrtype:TXT AND src_ip:192.168.0.112` 를 입력하고 Enter.
+4. Search bar 에 `event_type:dns AND dns.rrtype:TXT AND src_ip:"10.20.30.202"` 를 입력하고 Enter.
 5. 결과를 보면 30건 정도가 한 분 안에 몰려 있는 timeline 이 보인다.
 6. 좌측 `Available fields` 에서 `dns.rrname.keyword` 의 + 를 눌러 columns 에 추가한다.
 
@@ -1029,7 +1039,8 @@ sudo tail -200 /var/log/suricata/eve.json \
 
 - rrtype 이 TXT 다. 일반 사용자의 정상 DNS query 는 A, AAAA 가 대부분이고 TXT 는 드물다.
 - rrname 의 subdomain 부분이 시도마다 다르다. base64 인코딩 데이터의 잠재 흔적이다.
-- src_ip 가 attacker VM 하나로 일관된다.
+- src_ip 가 `10.20.30.202` 하나로 일관된다. 6v6-attacker 의 ext IP 다.
+- dest_ip 가 외부 resolver (8.8.8.8) 다. 정상 운영의 DNS query 가 보통 내부 resolver 로 가는 패턴과 다르다.
 
 **4. Blue — 대응 의사결정.**
 
