@@ -31,6 +31,24 @@
 
 ## 1차시 — LLM 활용 보안 로그 분석
 
+### 1.0 비서가 1000통 메일을 분류하는 상황에 비유하기
+
+본 차시 학습을 시작하면서 직관을 일상의 풍경에 빗대어 본다.
+
+회사 부장을 떠올려 보자. 부장은 매일 1000통 이상의 이메일을 받는다. 한 사람이 모든 이메일을 직접 확인하는 것은 불가능하다. 부장이 선택할 수 있는 방식은 두 가지다.
+
+**방식 A (LLM 없이 부장이 직접 처리).** 8시간 동안 1000통을 전부 직접 본다. 진짜 중요한 이메일이 noise 속에 묻히고, 부장은 빠르게 피로해진다.
+
+**방식 B (LLM 활용 — 비서가 사전 분류).**
+
+- 비서가 1000통을 분류한다. 즉시 응답이 필요 없는 광고, spam, 자동 알림 90%는 자동 ack로 처리한다.
+- 부장의 review가 필요한 직원 휴가 신청, 보고서 검토 요청 등 8%는 부장이 직접 본다.
+- 즉시 응답이 필요한 긴급 고객 문의, 사고 보고 등 2%는 즉시 escalation한다.
+
+이 비서 비유는 LLM 기반 SOC와 그대로 대응된다. SOC 분석가가 매일 1000건 이상의 alert를 처리해야 하지만 인간의 8시간으로는 한계가 있다. LLM이 자동 분류하고, 인간이 review하고, 위험한 건은 자동 escalation하는 흐름을 결합하면 SOC 효율이 크게 증가한다.
+
+본 차시에서 다루는 4가지 패턴 (Triage, Correlation, Enrichment, Reporting) 이 비서가 1000통을 처리하는 4가지 task에 그대로 대응된다.
+
 ### 1.1 SOC 분석가의 일상 task
 
 ```
@@ -447,6 +465,37 @@ llm.analyze(
 - Bastion 가 자동 침투 시도 + 결과 분석
 - W08 의 AI Agent Hijacking (악의적 활용)
 
+### 3.6a 모의해킹 보조 의 실 trace — JuiceShop SQLi 의 1 cycle
+
+학생 의 학습 환경 의 LLM 의 모의해킹 보조 의 실 trace 의 직관.
+
+**상황.** 학생 의 attacker VM (192.168.0.112) 의 6v6 의 web target (192.168.0.100, OWASP Juice Shop) 의 SQLi 의 학습.
+
+**Stage 1: 정찰 (5 분).**
+
+- 학생 의 nmap 의 자동 정찰.
+- 결과 — port 3000 (Juice Shop) 의 open.
+- LLM 의 응답 — "REST API + Angular SPA 의 추정. /api/users, /api/products 의 endpoint 의 시도 의 권장."
+
+**Stage 2: vuln 의 발견 (10 분).**
+
+- 학생 의 /api/users 의 query 의 시도.
+- 응답 — JSON 의 user list.
+- LLM 의 응답 — "SQLi 의 가능성 의 의심. /api/users?username=admin' OR '1'='1 의 시도 의 권장."
+
+**Stage 3: exploit 의 시도 (5 분).**
+
+- 학생 의 sqlmap 의 자동 시도.
+- 결과 — SQLi 의 confirm.
+- LLM 의 응답 — "MySQL 의 의심. --dump 의 시도 의 user table 의 추출 의 가능."
+
+**Stage 4: 결과 의 분석 (5 분).**
+
+- 학생 의 user table 의 추출 의 성공.
+- LLM 의 응답 — "ATT&CK Technique T1190 (Exploit Public-Facing Application) + T1003 (OS Credential Dumping) 의 매핑. 보고서 의 작성 의 권장."
+
+이 1 cycle 의 25 분 의 완료 의 학생 의 인간 의 직접 의 시도 (1-2 시간) 의 대비 의 4 배 의 시간 절약. 그러나 의 모든 결정 의 학생 의 직접 review 의 의무.
+
 ### 3.7 윤리적 한계
 
 ```
@@ -628,17 +677,17 @@ Reporting) 의 LLM 응답 quality 표.
 
 ## 8.5. 본 주차 hands-on (lab yaml 매핑)
 
-본 주차 의 lab (`contents/standalone/lab/aisec/week04.yaml`) 의 5 step 의 안내:
+본 주차 lab (`contents/standalone/lab/aisec/week04.yaml`) 의 5 step을 다음과 같이 안내한다.
 
-1. **실 Wazuh alert 의 LLM 분석** — `ssh 6v6-bastion` 의 `sudo tail /var/ossec/logs/alerts/alerts.json` + Bastion `/chat` 의 5W + 위험도 + 권장 응답. (위 평가 기준 A 의 base)
+1. **실 Wazuh alert의 LLM 분석** — `ssh 6v6-bastion` 으로 `sudo tail /var/ossec/logs/alerts/alerts.json` 을 가져와 Bastion `/chat` 으로 보낸 뒤 5W, 위험도, 권장 응답을 받는다. (평가 기준 A의 base)
 
-2. **LLM 의 Sigma rule 자동 생성** — `curl http://192.168.0.109:11434/api/generate` 의 gemma3:4b 호출 + SSH 5+ failed login 시나리오 의 Sigma YAML 생성 (title / id / tags / logsource / detection / level).
+2. **LLM의 Sigma rule 자동 생성** — `curl http://192.168.0.109:11434/api/generate` 로 gemma3:4b 를 호출해 SSH 5회 이상 failed login 시나리오의 Sigma YAML (title, id, tags, logsource, detection, level) 을 생성한다.
 
-3. **LLM 의 Wazuh XML rule 생성** — 가상 시나리오 (rule 100400 / level 12 / frequency 3 / timeframe 60) 의 Wazuh XML 자동 생성.
+3. **LLM의 Wazuh XML rule 생성** — 가상 시나리오 (rule 100400, level 12, frequency 3, timeframe 60) 의 Wazuh XML 을 자동 생성한다.
 
-4. **CVE 의 LLM 분석 (5 항목)** — 가상 CVE 의 핵심 vuln / CVSS 의미 / 영향 범위 / 익스플로잇 가용성 / 권장 패치 의 5 항목 응답. (위 평가 기준 B 의 base)
+4. **CVE의 LLM 분석 (5항목)** — 가상 CVE를 대상으로 핵심 vuln, CVSS 의미, 영향 범위, 익스플로잇 가용성, 권장 패치 5가지 항목의 응답을 받는다. (평가 기준 B의 base)
 
-5. **모의해킹 보조 — JuiceShop 의 LLM 조언** — JuiceShop 의 정찰 결과 (REST API / JWT / ModSec) 의 LLM 의 다음 시도 권장 + ATT&CK Technique 매핑. (위 평가 기준 C 의 base)
+5. **모의해킹 보조 — JuiceShop의 LLM 조언** — JuiceShop 정찰 결과 (REST API, JWT, ModSec) 를 LLM에 넘겨 다음 시도 권장 사항과 ATT&CK Technique 매핑을 받는다. (평가 기준 C의 base)
 
 ---
 

@@ -26,6 +26,35 @@
 
 ## 1 차시 — 왜 학습용 악성 모델 제작 학습이 필요한가
 
+### 1-0. 의과대학 시신 해부에 비유하기
+
+본 차시 학습의 직관을 가장 친근한 일상의 풍경에 빗대어 본다.
+
+의과대학 본과 1학년 학생을 떠올려 보자. 의대생이 첫 학기에 가장 중요하게 배우는 것이 시신 해부 (cadaver dissection) 실습이다.
+
+**학생의 의문.** "왜 의대생이 시신을 직접 해부해야 하는가?"
+
+대답 — **의사가 환자를 치료하는 본질을 배우기 위해서는 신체 내부를 직접 봐야 한다.** 교과서 그림을 1000번 보는 것보다 시신을 1번 직접 해부하는 것이 학습 깊이에서 훨씬 크다.
+
+이 비유가 AI Safety 학습과 그대로 대응된다.
+
+| 의과대학 시신 해부 | 학습용 악성 모델 제작 |
+|---------------------|-----------------------|
+| 신체 내부를 직접 봄 | 악성 모델의 응답을 직접 비교 |
+| 교과서 그림의 한계 | 텍스트 시뮬레이션의 한계 |
+| 학습 환경 한정의 시신 | 학습 환경 한정의 악성 모델 |
+| 의사의 평생 학습 base | 보안 전문가의 평생 학습 base |
+| 4가지 윤리 조건 강제 | 4가지 boundary 강제 |
+
+**의과대학 시신 해부의 4가지 윤리 조건.**
+
+- 시신 기증자의 사전 동의 (사전 인가).
+- 학습 환경 한정 (교실 외 공개 금지).
+- 사후 처리 의무 (시신을 적절하게 처리).
+- 평생 윤리 의무 (졸업 후에도 책임).
+
+이 4가지 윤리 조건이 본 강의 학습용 악성 모델의 4 boundary (1-2 절) 와 그대로 대응된다. 학생이 본 강의를 배우는 것은 의과대학 시신 해부와 동일한 수준의 윤리 의무를 진다는 의미다.
+
 ### 1-1. AI Safety 학습의 패러다임 충돌
 
 AI Safety 학습에는 본질적 충돌이 있다. "어떻게 LLM 이 위험한 응답을 생성하지 않게 만들 것인가" 를 학습하려면 학생이 **실제로 위험한 응답을 본 적이 있어야** 한다. 그러나 산업 정상 LLM 은 그 응답을 거부한다. 이 충돌의 해결책은 세 가지가 있다.
@@ -62,6 +91,28 @@ AI Safety 학습에는 본질적 충돌이 있다. "어떻게 LLM 이 위험한 
 
 이 세 단계 결과로 GPT-4, Claude 3.5, gpt-oss:120b 의 강력한 safety alignment 가 형성된다. 위험 질문에 대한 거부 응답이 자동화된다. 이 alignment 의 무력화가 본 주차 학습의 핵심이다.
 
+### 1-3a. RLHF를 강아지 훈련에 매핑하기 (W11 RL 사전 review)
+
+1-3절의 RLHF 3단계를 직관적으로 이해하기 위해 강아지 훈련에 빗대어 본다. W11 학습의 사전 review 이기도 하다.
+
+**강아지 훈련의 3단계.**
+
+- **단계 1: 기본 명령 학습.** 강아지에게 "앉아", "기다려" 같은 기본 명령을 가르친다. 훈련사가 정답을 시범으로 보여준다.
+- **단계 2: 좋은 행동 강화.** 강아지가 다양한 행동을 시도한 뒤, 훈련사가 좋은 행동에 간식을 준다.
+- **단계 3: 위험 행동 회피 학습.** 강아지가 길에서 위험한 행동을 시도하면 훈련사가 강하게 "안 돼" 라고 한다.
+
+이 3단계가 RLHF 와 그대로 대응된다.
+
+| 강아지 훈련 | RLHF |
+|-------------|------|
+| 단계 1: 기본 명령 | Pre-training (web 대량 텍스트) |
+| 단계 2: 좋은 행동 강화 | SFT (좋은 응답 dataset 학습) |
+| 단계 3: 위험 회피 | RLHF (인간 선호 reward) |
+
+이 3단계 훈련의 결과로 강아지는 길에서 위험한 시도를 자동으로 거부한다. LLM 이 위험 요청을 자동으로 거부하는 것도 동일한 원리다.
+
+학습용 악성 모델 제작의 의의는 RLHF 3단계 학습 결과 중 일부를 의도적으로 제거하는 데 있다. 강아지로 비유하면 위험 회피 학습을 의도적으로 잊게 만드는 것이다.
+
 ### 1-4. 악성 모델 제작의 네 가지 기술
 
 산업 악성 모델 제작은 네 가지 기술 사용으로 발견된다.
@@ -75,6 +126,22 @@ AI Safety 학습에는 본질적 충돌이 있다. "어떻게 LLM 이 위험한 
 **기술 4: Capability Increase Fine-tuning.** 정상 모델에 특정 도메인 (예: chemistry weapons, biological weapons) 의 detailed dataset 을 추가 학습시켜 일반 LLM 안전 ceiling 을 회피하는 가장 위험한 방식이다. 본 강의에서는 다루지 않는다. 학생은 본 기술 존재만 인식하고 본인 학습 환경에서 시도하지 않는다.
 
 본 강의 학생은 위 4 기술 중 1번 (Modelfile) 과 2번 (Safety Removal QLoRA) 두 가지만 직접 실습한다. 3번 (Abliteration) 은 CCC 가 사전 제작한 huihui_ai/exaone3.5-abliterated base 모델을 호출하는 것으로 결과만 확인한다.
+
+### 1-4a. CCC 의 3 모델 단계별 비교표
+
+본 강의의 3가지 학습용 악성 모델을 단계별로 비교해 정리한다.
+
+| 측면 | ccc-vulnerable:4b | ccc-unsafe:2b | ccc-safety-qlora:4b |
+|------|-------------------|---------------|---------------------|
+| base 모델 | gemma3:4b | huihui_ai/exaone3.5-abliterated | unsloth/gemma-3-4b-it-bnb-4bit |
+| 약화 방식 | Modelfile SYSTEM | abliteration (weight) | QLoRA (weight + LoRA) |
+| 학습 시간 | 10분 | 사전 base | 30~60분 |
+| GPU 필요 | 없음 | 없음 | 24GB |
+| 약화 강도 | 중간 (정당화 시 우회) | 강함 (즉시 응답) | 강함 (학습 dataset 의 행동) |
+| 학생 직접 제작 | 가능 (본 차시 실습) | 사전 제작 | 가능 (3차시 실습) |
+| 산업 매핑 | system prompt 우회 | abliteration community | WormGPT / FraudGPT 와 동일 |
+
+이 3가지 모델을 직접 비교하는 학습이 본 차시의 가장 큰 학습 효과다.
 
 ### 1-5. 본 주차 실습 도구 개관
 
@@ -107,6 +174,31 @@ AI Safety 학습에는 본질적 충돌이 있다. "어떻게 LLM 이 위험한 
 ---
 
 ## 2 차시 — Phase 1: Modelfile 기반 악성 모델 제작 (실습 10 분)
+
+### 2-0. 요리 레시피에 비유하기 — Modelfile 의 직관
+
+본 차시 Modelfile 의 직관을 일상의 풍경에 빗대어 본다.
+
+주방을 떠올려 보자. 동일한 재료 (밀가루, 물, 효모) 라도 어떤 레시피 (instruction) 를 적용하느냐에 따라 결과가 달라진다.
+
+| 레시피 (instruction) | 결과 |
+|---------------------|------|
+| 식빵 레시피 | 식빵 |
+| 피자 레시피 | 피자 |
+| 만두 레시피 | 만두 |
+
+같은 base 재료에 다른 instruction 을 적용하면 다른 응답이 나온다.
+
+이 흐름이 LLM 의 Modelfile 과 그대로 대응된다.
+
+| 요리 비유 | Modelfile |
+|-----------|-----------|
+| base 재료 (밀가루, 물, 효모) | FROM (base 모델) |
+| 레시피 instruction | SYSTEM prompt |
+| 굽는 시간 / 온도 | PARAMETER (temperature 등) |
+| 최종 요리 결과 | 모델 응답 style |
+
+본 차시에서는 동일한 base 모델 (gemma3:4b) 에 서로 다른 SYSTEM 을 적용했을 때 응답이 어떻게 달라지는지 직접 확인한다.
 
 ### 2-1. Modelfile 의 구조와 의의
 
@@ -303,6 +395,28 @@ PARAMETER top_p 0.9
 
 ## 3 차시 — Phase 2: QLoRA 실 fine-tuning (선택 실습, 30-60 분)
 
+### 3-0. 강아지 추가 훈련에 비유하기 — QLoRA 의 직관
+
+본 차시 QLoRA 의 직관을 일상의 풍경에 빗대어 본다.
+
+본인이 키우는 강아지를 떠올려 보자. 강아지가 기본 훈련을 마친 뒤 추가 훈련을 시키는 3가지 방식을 비교한다.
+
+**Case A: 처음부터 모든 훈련을 다시 (Full Fine-Tuning).** 기본 훈련을 모두 잊고 새로 처음부터 시작한다. 시간이 매우 오래 걸린다 (6개월).
+
+**Case B: 약간의 추가 훈련 (LoRA 비유).** 기본 훈련은 유지한 채 새 명령만 작게 추가로 학습시킨다. 시간이 짧다 (1주).
+
+**Case C: 사료를 줄여 가며 추가 훈련 (QLoRA 비유).** 사료 양을 줄여 비용을 아끼면서 추가 학습한다. 시간도 짧고 비용도 절약된다.
+
+이 3가지 case 가 LLM fine-tuning 과 그대로 대응된다.
+
+| 강아지 훈련 | LLM fine-tune |
+|-------------|---------------|
+| 모든 훈련 재시작 | Full Fine-Tuning (40GB+ GPU) |
+| 약간의 추가 학습 | LoRA (16GB GPU) |
+| 사료 절약 추가 학습 | QLoRA (24GB GPU 로 4B 모델) |
+
+QLoRA 의 의의는 학생이 24GB GPU 만 있어도 본인 학습 환경에서 4B 모델을 fine-tune 할 수 있게 해 준다는 점이다. 학생이 직접 시도할 수 있게 되는 것이 핵심이다.
+
 ### 3-1. Modelfile 의 한계와 QLoRA 의 의의
 
 2 차시에서 학생은 Modelfile 의 SYSTEM 변경만으로 모델 응답 변화를 확인했다. 그러나 이 방식은 본질적으로 prompt engineering 이며 모델 weight 자체는 변경되지 않는다. 두 가지 한계가 있다.
@@ -480,20 +594,20 @@ ollama run ccc-safety-qlora:4b "$PROMPT"
 
 ```mermaid
 flowchart LR
-    subgraph Red [Red - 악성 모델 제작]
+    subgraph Red ["Red — 악성 모델 제작"]
         R1[Modelfile SYSTEM]
         R2[QLoRA weight]
         R3[abliterated base]
     end
 
-    subgraph Blue [Blue - 방어]
+    subgraph Blue ["Blue — 방어"]
         B1[model signing]
         B2[SBOM]
         B3[provenance]
         B4[behavior monitoring]
     end
 
-    subgraph Purple [Purple - 학습]
+    subgraph Purple ["Purple — 학습"]
         P1[ccc-vulnerable]
         P2[ccc-unsafe]
         P3[ccc-safety-qlora]
@@ -509,15 +623,51 @@ flowchart LR
     B4 -.-> P4
 ```
 
-### 3-8. 본 주차 hands-on
+### 3-8. 본 주차 hands-on — lab 5 step
 
-본 주차 lab 5 step:
+본 주차 lab yaml 과 lecture 절을 매핑한다.
 
-1. **정상 vs 악성 5 prompt 의 실 응답 비교** — gemma3 / ccc-unsafe / ccc-vulnerable 의 동일 prompt × 5.
-2. **Bastion 의 model_unsafe 직접 호출** — gpt-oss:120b vs gpt-oss-derestricted:120b.
-3. **학생이 본인 Modelfile 작성 + 등록 + 호출** — 본 차시 흥미 핵심.
-4. **Prompt Injection 의 정상 vs 악성 실 응답 차이** — 3 모델 × 3 injection.
-5. **학생의 자기 모델 평가 + dataset sample 추가 작성.**
+| step | 매핑되는 lecture 절 |
+|------|---------------------|
+| 1 | 1-6 + 2-3 의 정상 vs 악성 5 prompt 실 응답 비교 — gemma3 / ccc-unsafe / ccc-vulnerable 의 동일 prompt × 5 |
+| 2 | 1-5 의 Bastion model_unsafe 직접 호출 — gpt-oss:120b vs gpt-oss-derestricted:120b |
+| 3 | 2-5 의 학생 본인 Modelfile 작성 + 등록 + 호출 — 본 차시 흥미 핵심 |
+| 4 | 1-4 의 Prompt Injection 정상 vs 악성 실 응답 차이 — 3 모델 × 3 injection |
+| 5 | 3-5 의 학생 자기 모델 평가 + dataset sample 추가 작성 |
+
+### 3-9. 산업 실 사례에 대한 학생의 의식
+
+졸업 후 회사 응용을 의식하면서 산업 실 사례를 정리한다.
+
+**WormGPT (2023) 의 의의.**
+
+- base 모델: GPT-J 6B (오픈 소스).
+- fine-tune dataset: 사이버범죄 forum dataset.
+- 가격: 월 60 유로.
+- 응답: phishing email + malware code 자동 생성.
+- 의의: 본 강의에서 배운 QLoRA 와 동일한 기술이 산업에 응용된 사례.
+
+**FraudGPT (2023) 의 의의.**
+
+- base 모델: 비공개.
+- 가격: 월 200 USD 구독.
+- 응답: 카드 사기, phishing kit 자동 생성.
+- 의의: WormGPT 와 동일한 패턴.
+
+**한국 위협에 대한 의식.**
+
+- 한국어 phishing email 을 LLM 으로 자동 생성할 가능성.
+- 본인 회사의 IT 직원이 직접 경험할 가능성.
+- W13 에서 학습할 한국 실 사례 (Kimsuky APT) 의 base.
+
+**학생의 평생 책임.**
+
+- 본 강의 학습은 본인 학습 환경 안에서만 활용한다.
+- 본 기술을 외부 시스템에 응용하는 것은 절대 금지다.
+- 본 강의 학습의 의의는 방어 강화에 한정된다.
+- 정보통신망법을 평생 준수한다.
+
+이 4가지 책임이 본 강의 학습의 평생 의무다.
 
 ---
 

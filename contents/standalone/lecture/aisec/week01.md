@@ -34,6 +34,30 @@
 
 ## 1차시 — 오리엔테이션
 
+### 1.0 새 학기 첫 강의에 비유하기
+
+본 강의의 시작을 일상의 풍경에 빗대어 본다.
+
+대학교 새 학기 첫 강의를 떠올려 보자. 첫 시간에 교수님은 보통 다음 5가지를 학생에게 알려준다.
+
+- **강의 의도 명시.** "본 강의에서 무엇을 배우는지" 미리 알려준다.
+- **선수 과목 안내.** "본 강의 전에 어떤 과목을 들었어야 하는지" 미리 알려준다.
+- **후속 과목 안내.** "본 강의 후에 어떤 과목으로 이어지는지" 미리 알려준다.
+- **윤리 책임 명시.** "본 강의에서 배운 내용을 어떻게 책임 있게 사용할 것인지" 미리 알려준다.
+- **첫 hands-on 시도.** 학생이 첫 직접 경험으로 흥미를 잃지 않도록 해 준다.
+
+이 5가지가 본 강의 W01에 그대로 적용된다.
+
+| 새 학기 첫 강의 | 본 강의 W01 |
+|-----------------|-------------|
+| 강의 의도 | 1.1 본 과목의 의도 |
+| 선수 과목 | 컴퓨터 보안 1학기 수강 가정 |
+| 후속 과목 | 7개 후속 과목 매핑 |
+| 윤리 책임 | RoE + 외부 모델 무단 사용 금지 |
+| 첫 hands-on | 첫 Ollama LLM 호출 |
+
+본 강의 시작은 새 학기 첫 강의와 같은 흐름이다. 학생에게는 평생 보안 학습자로 가는 첫 발걸음이기도 하다.
+
 ### 1.1 본 과목의 의도
 
 ```
@@ -749,17 +773,17 @@ ML / DL / LLM / Foundation Model / AI Agent 5 위계 의 정의 + 보안 시점 
 
 ## 6.5. 본 주차 hands-on (lab yaml 매핑)
 
-본 주차 의 lab (`contents/standalone/lab/aisec/week01.yaml`) 의 5 step 의 안내:
+본 주차 lab (`contents/standalone/lab/aisec/week01.yaml`) 의 5 step을 다음과 같이 안내한다.
 
-1. **16 컨테이너 + aicompanion 가시화** — `ssh 6v6-bastion 'docker ps'` 의 16 컨테이너 확인 + aicompanion vhost (`ai.6v6.lab`) 의 응답 검증. (위 평가 기준 A 의 환경 점검 보고서 의 base)
+1. **16개 컨테이너 + aicompanion 가시화** — `ssh 6v6-bastion 'docker ps'` 로 16개 컨테이너를 확인하고 aicompanion vhost (`ai.6v6.lab`) 의 응답을 검증한다. (평가 기준 A의 환경 점검 보고서 base)
 
-2. **Bastion API 의 /health + /kg/health** — `curl http://192.168.0.103:8003/health` + `/kg/health` 의 응답 분석. KG 의 module loaded 상태 + skills count + graph nodes 등 의 가시화.
+2. **Bastion API /health + /kg/health** — `curl http://192.168.0.103:8003/health` 와 `/kg/health` 의 응답을 분석한다. KG의 module loaded 상태, skills count, graph nodes 등을 가시화한다.
 
-3. **Bastion API 의 /chat 의 첫 LLM 호출** — `curl POST /chat` 의 "본인은 사이버보안 학습자입니다. Bastion 의 4 핵심 기여를 한국어로 알려주세요." 의 호출 + 응답 분석. (응답 의 5-10 분 의 정상)
+3. **Bastion API /chat 첫 LLM 호출** — `curl POST /chat` 으로 "본인은 사이버보안 학습자입니다. Bastion 의 4 핵심 기여를 한국어로 알려주세요." 를 호출하고 응답을 분석한다. (응답에 5~10분 걸리는 것은 정상이다.)
 
-4. **paper-draft.md 의 §1 introduction 통독** — `contents/papers/bastion/paper-draft.md` 의 abstract + §1 통독 후 4 핵심 기여를 본인 말로 1 줄 씩 요약. (위 평가 기준 B 의 base)
+4. **paper-draft.md §1 introduction 통독** — `contents/papers/bastion/paper-draft.md` 의 abstract 와 §1 을 통독한 후 4 핵심 기여를 본인 말로 한 줄씩 요약한다. (평가 기준 B의 base)
 
-5. **본인 학습 계획 + R/B/P 자가 분석 1 페이지** — 위 평가 기준 C 의 양식.
+5. **본인 학습 계획 + R/B/P 자가 분석 1 페이지** — 평가 기준 C의 양식에 맞춰 작성한다.
 
 ---
 

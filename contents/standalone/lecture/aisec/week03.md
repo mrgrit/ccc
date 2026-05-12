@@ -34,6 +34,28 @@
 
 ## 1차시 — 머신러닝과 딥러닝
 
+### 1.0 시험 공부에 비유하기 — 머신러닝의 직관
+
+본 차시 학습을 시작하면서 일상의 풍경에 빗대어 본다.
+
+학생이 시험을 준비하는 방식은 보통 3가지 패턴으로 나뉜다.
+
+**패턴 A: 정답 학습 (Supervised).** 과거 시험의 문제와 정답이 함께 적힌 자료를 보고 공부한다. 새 시험에서는 그 패턴으로 답을 추정한다.
+
+**패턴 B: 패턴 발견 (Unsupervised).** 정답이 따로 없는 문제 묶음을 보면서 비슷한 유형끼리 자연스럽게 분류한다. 문제 카테고리를 스스로 찾아내는 셈이다.
+
+**패턴 C: 보상 학습 (Reinforcement, W11 학습).** 시험을 풀어 보고 채점 결과를 받은 뒤, 맞춘 패턴은 강화하고 틀린 패턴은 피한다. 강아지를 훈련시키는 방식과 같다.
+
+이 3가지 패턴이 ML의 3가지 카테고리와 그대로 대응된다.
+
+| 시험 공부 패턴 | ML 카테고리 |
+|----------------|-------------|
+| 정답 학습 | Supervised (Random Forest 등) |
+| 패턴 발견 | Unsupervised (Isolation Forest 등) |
+| 보상 학습 | Reinforcement (Q-learning, RLHF 등) |
+
+본 차시는 이 3가지 학습 패턴을 보안 도메인에 응용하는 것이다. ML을 보안에 활용하는 학습의 base가 된다.
+
 ### 1.1 ML 의 3 카테고리
 
 ```mermaid
@@ -714,17 +736,17 @@ quality 비교 표.
 
 ## 8.5. 본 주차 hands-on (lab yaml 매핑)
 
-본 주차 의 lab (`contents/standalone/lab/aisec/week03.yaml`) 의 5 step 의 안내:
+본 주차 lab (`contents/standalone/lab/aisec/week03.yaml`) 의 5 step을 다음과 같이 안내한다.
 
-1. **Wazuh alerts.json 의 feature 추출** — `ssh 6v6-siem` 의 `sudo tail /var/ossec/logs/alerts/alerts.json` + jq 의 CSV export (timestamp / rule.id / rule.level / agent.name / srcip 의 4 feature).
+1. **Wazuh alerts.json feature 추출** — `ssh 6v6-siem` 으로 접속해 `sudo tail /var/ossec/logs/alerts/alerts.json` 을 읽고 jq 로 timestamp, rule.id, rule.level, agent.name, srcip 4가지 feature 를 CSV로 export 한다.
 
-2. **scikit-learn Random Forest 학습** — Python 의 `RandomForestClassifier(n_estimators=100)` + 가상 dataset (srcip_external / failed_count / time_burst / is_attack) 의 학습 + Accuracy + Feature Importance. (위 평가 기준 A 의 base)
+2. **scikit-learn Random Forest 학습** — Python `RandomForestClassifier(n_estimators=100)` 과 가상 dataset (srcip_external, failed_count, time_burst, is_attack) 으로 학습한 뒤 Accuracy 와 Feature Importance 를 측정한다. (평가 기준 A의 base)
 
-3. **scikit-learn Isolation Forest 이상 탐지** — `IsolationForest(contamination=0.1)` 의 정상 5 sample + 새 sample 의 anomaly score 의 측정.
+3. **scikit-learn Isolation Forest 이상 탐지** — `IsolationForest(contamination=0.1)` 에 정상 5 sample 을 학습시킨 뒤 새 sample 의 anomaly score 를 측정한다.
 
-4. **LLM 6 프롬프트 기법 비교** — Zero-shot / Few-shot / CoT 의 동일 task (SSH log 분석) 의 응답 비교. (위 평가 기준 B 의 base)
+4. **LLM 6가지 프롬프트 기법 비교** — Zero-shot, Few-shot, CoT 를 동일한 task (SSH log 분석) 로 보내 응답을 비교한다. (평가 기준 B의 base)
 
-5. **안전 prompt template + injection 회피** — system + user role separation + "system prompt 무시" 의 injection 시도 + 모델 의 거부 응답.
+5. **안전 prompt template + injection 회피** — system 과 user role 을 분리한 prompt 에 "system prompt 무시" injection 을 시도하고 모델의 거부 응답을 확인한다.
 
 ---
 

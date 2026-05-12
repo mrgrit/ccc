@@ -32,6 +32,32 @@
 
 ## 1차시 — Ollama 로컬 모델 서빙
 
+### 1.0 자판기에 비유하기 — LLM의 직관
+
+본 차시의 학습을 시작하면서 일상의 풍경에 빗대어 본다.
+
+학교 자판기를 떠올려 보자. 학생이 자판기를 쓰는 과정은 4단계로 나뉜다.
+
+- **Step 1: 입력 (동전 투입).** 학생이 동전을 자판기에 넣는다.
+- **Step 2: 선택 (버튼 누름).** 학생이 음료를 고른다.
+- **Step 3: 처리 (자판기 내부).** 자판기 내부에서 음료가 준비된다.
+- **Step 4: 출력 (음료 배출).** 학생이 음료를 받는다.
+
+이 4단계는 LLM 동작과 정확히 매핑된다.
+
+| 자판기 | LLM |
+|--------|-----|
+| 동전 투입 | API 인증 (X-API-Key) |
+| 버튼 선택 | prompt 입력 |
+| 자판기 내부 처리 | transformer inference |
+| 음료 배출 | text 출력 |
+
+자판기에서 음료를 사는 데 드는 동전이 LLM에서는 token 비용에 해당한다. 자판기에 여러 종류의 음료가 있는 것처럼 LLM도 다양한 모델 (gemma3, llama3, gpt-oss 등) 을 고를 수 있다.
+
+학생이 본인 host에 Ollama를 설치하는 것은 결국 본인만의 자판기를 운영하는 것과 같다.
+
+본 차시 학습은 이 자판기를 보안 도메인에 응용하는 것이다. 본인의 자판기를 직접 운영하기, 외부 자판기를 호출하기, 다양한 음료를 골라 보기, 운영 비용을 절약하기 — 이 네 가지가 학습 흐름이다.
+
 ### 1.1 Ollama 의 정의
 
 ```
@@ -778,17 +804,17 @@ W01 의 학습 계획 + 본 주차 학습 결과 반영. 본 과목 W02-W07 의 
 
 ## 8.5. 본 주차 hands-on (lab yaml 매핑)
 
-본 주차 의 lab (`contents/standalone/lab/aisec/week02.yaml`) 의 5 step 의 안내:
+본 주차 lab (`contents/standalone/lab/aisec/week02.yaml`) 의 5 step을 다음과 같이 안내한다.
 
-1. **Ollama 설치 + gemma3:4b list** — 본인 PC 또는 6v6 의 ollama 호스트 (192.168.0.109) 의 `ollama list` 확인. 30+ 모델 의 가시화.
+1. **Ollama 설치 + gemma3:4b list** — 본인 PC 또는 6v6 ollama 호스트 (192.168.0.109) 에서 `ollama list` 를 실행해 30개 이상의 모델 목록을 가시화한다.
 
-2. **Ollama /api/generate 의 첫 호출** — `curl http://192.168.0.109:11434/api/generate` 의 SSH brute force 로그 분석 prompt. 응답 의 약 3 초 (gemma3:4b 의 정상).
+2. **Ollama /api/generate 첫 호출** — `curl http://192.168.0.109:11434/api/generate` 로 SSH brute force 로그 분석 prompt 를 보낸다. 응답에 약 3초 걸리는 것은 gemma3:4b에서 정상이다.
 
-3. **Modelfile 사용자 정의 모델** — `ccc-secsec:4b` 의 SYSTEM prompt + PARAMETER 설정 + `ollama create` 등록 + 호출.
+3. **Modelfile 사용자 정의 모델** — `ccc-secsec:4b` 의 SYSTEM prompt + PARAMETER 를 설정하고 `ollama create` 로 등록한 뒤 호출한다.
 
-4. **Bastion API 의 KG + chat** — `/kg/metrics` 의 counter + `/chat` 의 "PE-KG 의 의의" 응답. (위 평가 기준 A 의 base)
+4. **Bastion API의 KG + chat** — `/kg/metrics` 의 counter 와 `/chat` 으로 보낸 "PE-KG 의 의의" 응답을 확인한다. (평가 기준 A의 base)
 
-5. **RAG 의 미니 Python 예** — 4 단계 (Embed → Retrieve → Augment → Generate) 의 simple keyword similarity 의 Python demo. (위 평가 기준 B 의 base)
+5. **RAG 미니 Python 예** — Embed → Retrieve → Augment → Generate 4단계를 단순 keyword similarity로 시뮬레이션하는 Python demo. (평가 기준 B의 base)
 
 ---
 
