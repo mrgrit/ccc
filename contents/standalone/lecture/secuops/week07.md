@@ -859,6 +859,379 @@ ssh 6v6-web 'sudo rm -f /etc/cron.d/w07_backdoor'
 
 ---
 
+## 16.5 R/B/P 공격 분석 케이스 확장 (본 주차 추가)
+
+### 16.5.0 R/B/P 일상 비유 — 건물 관리실의 출입 + CCTV + 사물함 점검
+
+본 절은 osquery 의 호스트 가시화를 건물 관리실 비유로 시작한다.
+
+학생이 사는 아파트의 관리실을 떠올려보자. 관리실은 다음 세 가지 도구로 건물 상태를 본다.
+
+- **출입 기록부 (users / authorized_keys).** 누가 입주민인지, 누구의 출입 카드가 등록되어 있는지 매일 확인한다.
+- **CCTV 영상 (processes / listening_ports).** 어느 호실에 누가 들어와서 어떤 행위를 하고 있는지 실시간으로 본다.
+- **사물함 자물쇠 sticker (file_events / FIM).** 사물함 자물쇠가 누군가에 의해 교체되거나 sticker 가 바뀌면 즉시 알람이 울린다.
+
+osquery 는 이 세 도구를 모두 SQL 테이블로 추상화해서 한 화면에서 본다. 관리실 관리자가 SQL 한 줄로 "오늘 새로 등록된 출입 카드", "어제 새로 떠 있는 사물함 자물쇠 sticker" 를 즉시 조회할 수 있다.
+
+| 일상 비유 | osquery 테이블 |
+|-----------|----------------|
+| 출입 기록부의 입주민 목록 | users |
+| 출입 카드 등록 | authorized_keys |
+| 호실 안의 사람 행위 | processes |
+| 호실 외부에 열어둔 창문 | listening_ports |
+| 사물함 자물쇠 sticker 변경 | file_events (FIM) |
+| 야간 정기 점검 | scheduled_query |
+
+본 절은 다음 세 케이스를 다룬다.
+
+- 케이스 1 — Red 가 신규 사용자를 추가했을 때 users 테이블 + authorized_keys 의 SQL 헌팅.
+- 케이스 2 — Red 가 backdoor cron 을 등록했을 때 crontab 테이블 + file_events 의 FIM 검증.
+- 케이스 3 — Red 가 의심 process 를 실행했을 때 processes + listening_ports JOIN 으로 식별.
+
+원칙은 W01 ~ W06 와 같다. 재현 가능성, 도구 위주 분석, 신입생 친화, 학습 환경 한정.
+
+### 16.5.1 케이스 1 — 신규 사용자 + authorized_keys 추가의 SQL 헌팅
+
+**0. 일상 비유 — 도둑이 자기 이름을 입주민 명부에 추가.**
+
+도둑이 관리실 명부를 몰래 열어 자기 이름을 입주민으로 등록한다. 그리고 자기 출입 카드를 카드 등록 목록에 추가한다. 이렇게 하면 정문 출입은 정상적으로 보인다. 관리실이 야간 정기 점검에서 "오늘 새로 등록된 입주민" 을 한 줄 SQL 로 조회하면 도둑의 행위가 즉시 드러난다.
+
+| 일상 비유 | osquery 헌팅 |
+|-----------|--------------|
+| 입주민 명부에 자기 이름 추가 | `useradd intruder` |
+| 출입 카드 등록 | `/root/.ssh/authorized_keys` 에 도둑의 public key 추가 |
+| 야간 점검 SQL | `SELECT username FROM users WHERE uid >= 1000` |
+| 카드 검증 SQL | `SELECT * FROM authorized_keys` |
+
+**0a. 사용 도구 사전 안내.**
+
+- **osqueryi** — osquery 의 interactive shell. SQL 한 줄을 즉시 실행한다.
+- **users 테이블** — `/etc/passwd` 의 모든 사용자.
+- **authorized_keys 테이블** — 모든 사용자의 SSH public key.
+- **scheduled_query** — osquery.conf 의 schedule 항목으로 등록된 정기 쿼리.
+
+**1. Red — 공격 재현.**
+
+attacker VM 에서 학습 환경의 web VM 에 SSH 로 들어간다고 가정한다. 학습 환경 한정으로 실행한다.
+
+```bash
+ssh ccc@192.168.0.112
+# password: 1
+```
+
+attacker VM 내부에서 web VM 에 SSH 로 진입한다.
+
+```bash
+# attacker VM 내부 (학습 환경 한정)
+ssh -o StrictHostKeyChecking=no admin@192.168.0.103
+# password: 학습 환경 admin 비밀번호
+```
+
+web VM 안에서 신규 사용자와 SSH key 를 추가한다.
+
+```bash
+sudo useradd -m -s /bin/bash intruder
+echo 'ssh-rsa AAAA... FAKEKEY intruder@attacker' \
+  | sudo tee -a /root/.ssh/authorized_keys
+```
+
+각 줄의 의미는 다음과 같다.
+
+- `useradd -m -s /bin/bash intruder` — `intruder` 사용자를 만들고 홈 디렉토리와 bash shell 을 부여한다.
+- `tee -a /root/.ssh/authorized_keys` — root 의 authorized_keys 에 가짜 key 한 줄을 추가한다. 도둑이 root 로 직접 SSH 가능해진다.
+
+**2. 발생하는 로그/아티팩트.**
+
+`/etc/passwd` 에 `intruder` 한 줄이 추가된다. `/etc/shadow` 에도 해당 줄이 생긴다. `/root/.ssh/authorized_keys` 에 한 줄이 추가된다. Wazuh agent 가 syscheck 으로 두 파일을 감시하면 alert 가 함께 발생한다.
+
+**3. Blue — osquery 의 SQL 직접 헌팅.**
+
+학생이 web VM 에 osqueryi 로 진입한다.
+
+```bash
+ssh 6v6-web
+sudo osqueryi
+```
+
+osqueryi 프롬프트에서 SQL 한 줄을 실행한다.
+
+```sql
+SELECT username, uid, gid, shell, directory
+  FROM users
+  WHERE uid >= 1000
+  ORDER BY uid DESC LIMIT 10;
+```
+
+출력의 첫 줄에 `intruder` 가 보이면 신규 사용자가 추가된 직접 증거다.
+
+다음으로 SSH key 등록을 본다.
+
+```sql
+SELECT users.username, authorized_keys.key, authorized_keys.algorithm
+  FROM users
+  JOIN authorized_keys USING (uid);
+```
+
+출력에 `root` 의 authorized_keys 에 `FAKEKEY` 가 포함된 줄이 보이면 도둑의 출입 카드 등록이 확인된다.
+
+scheduled_query 가 정기적으로 같은 SQL 을 실행하도록 등록되어 있으면 `/var/log/osquery/osqueryd.results.log` 의 가장 최근 라인에 diff snapshot 이 기록된다.
+
+```bash
+sudo tail -10 /var/log/osquery/osqueryd.results.log | jq -r '.name, .action, .columns'
+```
+
+action 이 `added` 인 줄이 보이면 정기 점검에서 자동 탐지된 것이다.
+
+Wazuh Dashboard 에서도 같은 사건을 본다.
+
+1. 좌측 햄버거 메뉴 → `Wazuh` → `Modules` → `Security events` 선택.
+2. Time picker `Last 15 minutes`.
+3. Search bar 에 `agent.name:web AND rule.groups:syscheck` 입력.
+4. 결과 한 줄을 펼쳐 `syscheck.path` 가 `/etc/passwd` 또는 `/root/.ssh/authorized_keys` 인지 확인한다.
+
+**4. Blue — 대응 의사결정.**
+
+학생이 다음 세 가지를 판단한다.
+
+- **즉시 격리 vs 추가 조사.** 신규 사용자와 key 추가는 침해의 강한 신호다. 학습 환경에서는 즉시 격리한다. 운영 환경에서는 affected host 를 network 에서 분리하고 forensic image 를 먼저 확보한다.
+- **확산 범위 확인.** 같은 시간대에 다른 host 에서도 비슷한 패턴이 있는지 본다. osquery 의 distributed query 로 모든 호스트에 같은 SQL 을 한 번에 보낸다.
+- **사용자 식별의 한계.** `intruder` 라는 이름은 학습용이지 실제 공격에서는 평범한 이름 (`backup`, `monitor`) 으로 위장한다. uid >= 1000 의 신규 등록 + 동시각 authorized_keys 추가 패턴이 핵심 단서다.
+
+**5. Purple — 보완.**
+
+다음 세 가지를 적용한다.
+
+- **scheduled_query 등록.** users 와 authorized_keys 의 diff 를 매 30분 자동 수집한다. osquery.conf 의 schedule 항목에 정기화한다.
+- **Wazuh FIM 강화.** `/etc/passwd`, `/etc/shadow`, `/root/.ssh/authorized_keys` 의 변경을 real-time 감시 (`<directories realtime="yes">`) 로 등록한다.
+- **active-response 연계.** 9999 같은 사용자 추가 rule 이 trigger 되면 Wazuh 의 active-response 가 즉시 syslog alert + ops 채팅 webhook 으로 보낸다.
+
+본 케이스 cleanup 은 다음 두 줄이다.
+
+```bash
+sudo userdel -r intruder
+sudo sed -i '/FAKEKEY/d' /root/.ssh/authorized_keys
+```
+
+본 케이스 cycle 한 바퀴는 약 25분 정도다.
+
+### 16.5.2 케이스 2 — backdoor cron 등록의 FIM 검증
+
+**0. 일상 비유 — 도둑이 관리실 책상 서랍에 정기 점검 시간표를 몰래 추가.**
+
+도둑이 관리실 책상 서랍 안에 정기 점검 시간표 한 장을 슬쩍 끼워 넣는다. 시간표에는 "매일 새벽 3시에 도둑의 도구를 자동 작동" 같은 행위가 적혀 있다. 관리실 운영자가 서랍 내용물을 매일 점검하지 않으면 시간표는 그대로 작동한다. 사물함 자물쇠 sticker 같은 FIM 알람이 있어야 서랍 변경이 즉시 드러난다.
+
+이 비유를 cron 백도어에 옮긴다.
+
+| 일상 비유 | backdoor cron |
+|-----------|---------------|
+| 책상 서랍 | `/etc/cron.d/` 디렉토리 |
+| 끼워 넣은 시간표 | 임의의 cron 파일 1개 |
+| 매일 새벽 3시 행위 | `* * * * * root bash -c "..."` |
+| 서랍 sticker 알람 | osquery file_events 와 Wazuh syscheck |
+| 점검 SQL | `SELECT * FROM crontab` |
+
+**0a. 사용 도구 사전 안내.**
+
+- **crontab 테이블** — osquery 의 cron 스케줄 테이블.
+- **file_events 테이블** — osquery 의 FIM 결과 테이블. 감시 디렉토리의 변경 event 가 기록된다.
+- **Wazuh syscheck** — `/etc/cron.d/` 의 변경을 실시간 감시한다.
+
+**1. Red — 공격 재현.**
+
+attacker VM 에서 web VM 에 SSH 로 진입해 backdoor cron 파일을 만든다.
+
+```bash
+ssh ccc@192.168.0.112
+ssh -o StrictHostKeyChecking=no admin@192.168.0.103
+
+# web VM 안 (학습 환경 한정)
+echo '* * * * * root /bin/true   # W07-CASE2-BACKDOOR' \
+  | sudo tee /etc/cron.d/w07_backdoor
+```
+
+각 줄의 의미는 다음과 같다.
+
+- `* * * * *` — 매 분 실행.
+- `root` — root 권한으로 실행.
+- `/bin/true` — 학습용 무해 명령. 실제 공격에서는 reverse shell 또는 cred dumper 가 자리한다.
+- `# W07-CASE2-BACKDOOR` — 학습 식별용 코멘트.
+
+**2. 발생하는 로그/아티팩트.**
+
+`/etc/cron.d/w07_backdoor` 한 줄짜리 파일이 생긴다. osquery 의 file_events 가 본 디렉토리를 FIM 으로 감시하면 한 줄이 추가된다. Wazuh agent 가 syscheck 으로 같은 디렉토리를 감시하면 manager 에 alert 가 전송된다.
+
+**3. Blue — osquery crontab + file_events 직접 헌팅.**
+
+web VM 에서 osqueryi 로 들어가 crontab 테이블을 본다.
+
+```bash
+ssh 6v6-web
+sudo osqueryi
+```
+
+```sql
+SELECT path, event, command
+  FROM crontab
+  WHERE path LIKE '/etc/cron.d/%';
+```
+
+`/etc/cron.d/w07_backdoor` 의 한 줄이 보이면 backdoor cron 등록이 직접 확인된다.
+
+다음으로 file_events 의 FIM 알람을 본다.
+
+```sql
+SELECT target_path, action, time, atime, mtime, hashed
+  FROM file_events
+  WHERE target_path LIKE '/etc/cron.d/%'
+  ORDER BY time DESC LIMIT 10;
+```
+
+action 이 `CREATED` 인 줄이 보이면 FIM 의 직접 증거다. hashed 컬럼에 mtime 기준 file hash 가 함께 나오면 신뢰성이 높다.
+
+Wazuh Dashboard 에서도 같은 사건을 본다.
+
+1. 좌측 햄버거 메뉴 → `Wazuh` → `Modules` → `Integrity monitoring` 선택.
+2. Time picker `Last 15 minutes`.
+3. agent 를 `web` 으로 필터링.
+4. 결과의 file path 에 `/etc/cron.d/w07_backdoor` 가 있는지 확인한다.
+
+**4. Blue — 대응 의사결정.**
+
+학생이 다음 세 가지를 판단한다.
+
+- **즉시 제거 vs forensic 보존.** 학습 환경은 즉시 제거가 안전하다. 운영 환경에서는 파일 hash, mtime, content 의 사본을 먼저 보존한 뒤 제거한다.
+- **확산 검증.** 같은 시간대에 `/etc/cron.daily/`, `/var/spool/cron/`, `~/.config/systemd/user/` 도 같은 SQL 패턴으로 확인한다. 다른 persistence vector 가 함께 동작했을 수 있다.
+- **실행 흔적 추적.** `last`, `processes`, `process_open_sockets` 테이블로 backdoor 가 이미 실행되었는지 본다.
+
+**5. Purple — 보완.**
+
+다음 세 가지를 적용한다.
+
+- **osquery FIM 디렉토리 확장.** `/etc/cron.d/`, `/etc/cron.daily/`, `/var/spool/cron/`, `/etc/systemd/system/`, `/usr/local/bin/` 까지 file_events 감시 범위를 넓힌다.
+- **Wazuh syscheck 의 realtime + alert level 상향.** cron 디렉토리 변경의 alert level 을 10 이상으로 상향한다. 즉각적 SOC 통지 대상이 된다.
+- **scheduled_query.** crontab 의 diff 를 매 1시간 자동 수집한다. baseline 과 비교해 변경분만 보고한다.
+
+cleanup 은 다음 한 줄이다.
+
+```bash
+sudo rm -f /etc/cron.d/w07_backdoor
+```
+
+### 16.5.3 케이스 3 — 의심 process 의 processes + listening_ports JOIN 헌팅
+
+**0. 일상 비유 — 호실에 본 적 없는 사람이 들어와 창문을 열어둠.**
+
+도둑이 어느 호실에 몰래 들어와 노트북 한 대를 들여놓고 창문을 열어 외부와 통신한다. 관리실 CCTV (processes) 가 누가 들어왔는지 보고, 외부 창문 (listening_ports) 이 열려 있는지 확인한다. 두 정보를 결합하면 "어느 호실에 본 적 없는 사람이 들어와 창문도 열어둔 상태" 인지 즉시 드러난다.
+
+| 일상 비유 | osquery JOIN |
+|-----------|--------------|
+| 호실 안의 사람 | processes |
+| 열린 창문 | listening_ports |
+| 사람의 이름표 | process name |
+| 사람 + 창문 결합 | processes JOIN listening_ports USING (pid) |
+| 본 적 없는 사람 | binary path 가 `/tmp/` 또는 `/dev/shm/` 인 process |
+
+**0a. 사용 도구 사전 안내.**
+
+- **processes 테이블** — 모든 실행 중 process 의 pid, name, path, cmdline.
+- **listening_ports 테이블** — 모든 listen 중인 port 의 pid, port, address, protocol.
+- **JOIN** — 두 테이블의 pid 컬럼을 키로 결합한다.
+
+**1. Red — 공격 재현.**
+
+attacker VM 에서 web VM 에 SSH 로 들어가 의심 위치에서 listener 를 띄운다.
+
+```bash
+ssh ccc@192.168.0.112
+ssh -o StrictHostKeyChecking=no admin@192.168.0.103
+
+# web VM 안 (학습 환경 한정)
+sudo cp /usr/bin/nc /tmp/.hidden_nc
+sudo nohup /tmp/.hidden_nc -lvnp 31337 > /dev/null 2>&1 &
+echo $!
+```
+
+각 줄의 의미는 다음과 같다.
+
+- `cp /usr/bin/nc /tmp/.hidden_nc` — 정상 binary 를 `/tmp/` 의 hidden 이름으로 복사한다. 정상 도구의 위장 사례다.
+- `nohup ... -lvnp 31337` — 31337 port 에 listener 를 띄운다. listener 는 nohup 으로 백그라운드에서 살아남는다.
+
+**2. 발생하는 로그/아티팩트.**
+
+`/tmp/.hidden_nc` 파일이 생긴다. 그 process 가 31337 port 를 listen 한다. osquery 의 processes 와 listening_ports 두 테이블에 각각 한 줄씩 추가된다.
+
+**3. Blue — JOIN 으로 한 줄 헌팅.**
+
+web VM 에서 osqueryi 로 들어가 한 줄 SQL 을 실행한다.
+
+```bash
+ssh 6v6-web
+sudo osqueryi
+```
+
+```sql
+SELECT p.pid, p.name, p.path, p.cmdline,
+       lp.port, lp.protocol, lp.address
+  FROM processes p
+  JOIN listening_ports lp USING (pid)
+  WHERE p.path LIKE '/tmp/%' OR p.path LIKE '/dev/shm/%'
+  ORDER BY lp.port;
+```
+
+출력에 `/tmp/.hidden_nc` 와 port `31337` 한 줄이 보이면 직접 증거다.
+
+추가로 정상 운영 binary 의 hash 와 의심 binary 의 hash 를 비교한다.
+
+```sql
+SELECT path, sha256, mtime, size
+  FROM hash
+  WHERE path IN ('/tmp/.hidden_nc', '/usr/bin/nc');
+```
+
+두 sha256 이 같으면 정상 binary 의 단순 복사다. 다르면 변조된 binary 일 가능성이 있다.
+
+Wazuh Dashboard 에서도 같은 사건을 본다.
+
+1. `Wazuh` → `Modules` → `Security events` 선택.
+2. Search bar 에 `agent.name:web AND data.audit.file:/tmp/.hidden_nc` 입력.
+3. 결과 한 줄을 펼쳐 `syscall` (auditd 룰이 있는 경우) 또는 `rule.groups:syscheck` 를 확인한다.
+
+**4. Blue — 대응 의사결정.**
+
+학생이 다음 세 가지를 판단한다.
+
+- **즉시 차단의 안전성.** `/tmp/` 또는 `/dev/shm/` 의 listener 는 거의 항상 의심이다. 즉시 process kill 이 안전하다.
+- **외부 통신 확인.** 같은 process 의 outbound connection 을 `process_open_sockets` 로 확인한다. C2 callback 이 동작 중일 수 있다.
+- **persistence 확인.** 케이스 1, 2 의 결과 (신규 사용자, cron) 와 본 process 가 결합되어 있는지 본다. APT 패턴은 보통 여러 vector 를 동시에 쓴다.
+
+**5. Purple — 보완.**
+
+다음 세 가지를 적용한다.
+
+- **scheduled_query 등록.** `/tmp/`, `/dev/shm/`, `/var/tmp/` 의 listening_ports JOIN 쿼리를 매 5분 자동 실행. baseline 변화시 자동 alert.
+- **Wazuh rule 추가.** osquery 의 distributed query 결과를 Wazuh 로 ingest 하는 룰을 작성한다 (W10 의 통합 학습).
+- **불필요 binary 제거 정책.** `/tmp/` 와 `/dev/shm/` 에서의 실행 권한을 자동 차단하는 `mount` 옵션 (`noexec`) 을 표준 baseline 에 적용한다.
+
+cleanup 은 다음 두 줄이다.
+
+```bash
+sudo pkill -f '/tmp/.hidden_nc'
+sudo rm -f /tmp/.hidden_nc
+```
+
+### 16.5.4 본 절 정리
+
+본 절은 W07 의 osquery 학습을 실제 공격 분석 cycle 에 연결했다. 학생이 다음 능력을 갖춘다.
+
+- attacker VM 에서 신규 사용자 + key, backdoor cron, 의심 process 의 세 가지 침해 패턴을 직접 재현한다.
+- osqueryi 의 SQL 한 줄과 JOIN 으로 침해 흔적을 직접 헌팅한다.
+- file_events 테이블과 Wazuh syscheck Dashboard 로 FIM 변경을 cross-check 한다.
+- scheduled_query, Wazuh syscheck realtime, mount noexec 의 세 가지 운영 baseline 을 보완한다.
+
+다음 주차 W08 은 W01 ~ W07 의 종합 평가다. 본 절의 R/B/P 케이스 패턴이 시험의 핵심 시나리오 5건의 기준이 된다.
+
+---
+
 ## 17. 평가 기준
 
 | 항목 | 비중 |
