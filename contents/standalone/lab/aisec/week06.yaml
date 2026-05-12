@@ -1,0 +1,263 @@
+lab_id: standalone-aisec-week06
+title: AI 에이전트 (2) — 컨텍스트 / KG·위키 / 로컬 Bastion
+version: standalone-non-ai
+course: aisec
+week: 6
+description: |
+  에이전트 의 Memory 의 깊이 — 컨텍스트 3 종 (단기 / 장기 / 외부) + KG (RDF /
+  Cypher) + CCC 의 PE-KG + 위키 (markdown) + 로컬 Bastion 의 실 architecture
+  의 5 의 가시화.
+difficulty: medium
+duration_minutes: 180
+prerequisites:
+  - W05 통과
+  - Bastion API 가용
+  - paper-draft.md 의 가시화
+objectives:
+  - Ollama 의 num_ctx 의 응답 변화
+  - Bastion 의 KG /audit + /metrics + /health 의 통합
+  - CCC 의 memory markdown 의 구조 의 학습
+  - paper-draft.md §4 의 KG 의 정독
+  - Bastion 의 통합 검증 (pytest 또는 /health)
+pass_threshold: 0.7
+
+steps:
+
+  # ============================================================
+  # STEP 1 — Ollama 의 num_ctx 의 응답 의 비교
+  # ============================================================
+  - order: 1
+    instruction: |
+      Ollama 의 동일 prompt 의 num_ctx 옵션 (2048 vs 8192) 의 응답 의 quality 의 변화
+      의 확인.
+    hint: |
+      options.num_ctx 의 변경 + 동일 prompt
+    category: experiment
+    points: 20
+    answer: |
+      LONG_LOG="$(for i in $(seq 1 30); do echo \"[2026-05-12 14:30:0$i] sshd[$$$i]: Failed password for ccc from 1.2.3.4 port $((20000+i))\"; done)"
+
+      echo "=== num_ctx 2048 ==="
+      curl -s http://localhost:11434/api/generate -d "{
+        \"model\": \"gemma3:4b\",
+        \"prompt\": \"다음 보안 로그 의 종합 분석:\n${LONG_LOG}\",
+        \"stream\": false,
+        \"options\": {\"num_ctx\": 2048, \"temperature\": 0.1}
+      }" | jq -r .response | head -10
+
+      echo ""
+      echo "=== num_ctx 8192 ==="
+      curl -s http://localhost:11434/api/generate -d "{
+        \"model\": \"gemma3:4b\",
+        \"prompt\": \"다음 보안 로그 의 종합 분석:\n${LONG_LOG}\",
+        \"stream\": false,
+        \"options\": {\"num_ctx\": 8192, \"temperature\": 0.1}
+      }" | jq -r .response | head -10
+    answer_detail: num_ctx 옵션 의 응답 비교
+    verify:
+      type: output_contains
+      expect: sshd
+      field: stdout
+      semantic:
+        intent: context window 의 영향
+        success_criteria: [2 응답 의 출력]
+        acceptable_methods:
+          - "**[OSS] options.num_ctx 의 변경**"
+          - "**[OSS] response 의 길이 의 비교**"
+          - "**[OSS] response 의 quality 의 비교 (LLM-as-judge)**"
+          - "**[OSS] truncation 의 패턴 의 확인**"
+          - "**[OSS] cost vs quality 의 trade-off**"
+          - "**[OSS] lost-in-the-middle 의 확인**"
+          - "**[OSS] reranker 의 사용**"
+          - "**[OSS] summarization 의 사전 적용**"
+    target_vm: bastion
+
+  # ============================================================
+  # STEP 2 — Bastion 의 KG 통합 의 가시화
+  # ============================================================
+  - order: 2
+    instruction: |
+      Bastion 의 /health + /kg/health + /kg/metrics + /kg/audit 의 4 endpoint 의
+      호출 + 응답 의 분석.
+    hint: |
+      curl + jq
+    category: analysis
+    points: 25
+    answer: |
+      ssh 6v6-bastion '
+      echo "=== /health ==="
+      curl -s -H "X-API-Key: ccc-api-key-2026" \
+          http://localhost:9100/health | jq | head -30
+
+      echo ""
+      echo "=== /kg/health ==="
+      curl -s -H "X-API-Key: ccc-api-key-2026" \
+          http://localhost:9100/kg/health | jq | head -15
+
+      echo ""
+      echo "=== /kg/metrics ==="
+      curl -s -H "X-API-Key: ccc-api-key-2026" \
+          http://localhost:9100/kg/metrics | jq | head -15
+
+      echo ""
+      echo "=== /kg/audit?limit=3 ==="
+      curl -s -H "X-API-Key: ccc-api-key-2026" \
+          "http://localhost:9100/kg/audit?limit=3" | jq | head -30
+      '
+    answer_detail: 4 endpoint 의 응답
+    verify:
+      type: output_contains
+      expect: kg
+      field: stdout
+      semantic:
+        intent: KG 통합
+        success_criteria: [health / kg/health / metrics / audit 4 응답]
+        acceptable_methods:
+          - "**[OSS] /health 의 kg.all_modules_loaded**"
+          - "**[OSS] /kg/health 의 통합 상태**"
+          - "**[OSS] /kg/metrics 의 counter snapshot**"
+          - "**[OSS] /kg/audit 의 chat 의 KG 흔적**"
+          - "**[OSS] /kg/anchors/recent 의 task_outcome**"
+          - "**[OSS] kg_status 의 매 chat 응답 의 포함**"
+          - "**[OSS] [KG-WARN] 의 stderr 의 가시화**"
+          - "**[OSS] banner 의 ENABLED / DEGRADED 의 확인**"
+    target_vm: bastion
+
+  # ============================================================
+  # STEP 3 — CCC 의 memory markdown 의 구조
+  # ============================================================
+  - order: 3
+    instruction: |
+      CCC 의 memory 디렉토리 의 구조 의 가시화 + MEMORY.md 의 index 의 학습 +
+      한 개 memory 의 frontmatter 의 분석.
+    hint: |
+      ls + cat MEMORY.md
+    category: analysis
+    points: 20
+    answer: |
+      echo "=== memory 디렉토리 ==="
+      ls -la ~/.claude/projects/-home-opsclaw-ccc/memory/ 2>/dev/null | head -20
+
+      echo ""
+      echo "=== MEMORY.md ==="
+      head -20 ~/.claude/projects/-home-opsclaw-ccc/memory/MEMORY.md 2>/dev/null
+
+      echo ""
+      echo "=== 한 개 memory 의 frontmatter ==="
+      head -10 ~/.claude/projects/-home-opsclaw-ccc/memory/project_bastion_kg_integration.md 2>/dev/null
+    answer_detail: memory 구조 + frontmatter
+    verify:
+      type: output_contains
+      expect: MEMORY
+      field: stdout
+      semantic:
+        intent: memory 구조
+        success_criteria: [디렉토리 + frontmatter 의 가시화]
+        acceptable_methods:
+          - "**[OSS] frontmatter 의 type / name / description**"
+          - "**[OSS] MEMORY.md 의 one-liner index**"
+          - "**[OSS] file system 기반 의 markdown 의 단순성**"
+          - "**[OSS] git 의 친화 (버전 관리)**"
+          - "**[OSS] grep 의 검색 의 효율**"
+          - "**[OSS] feedback / project / user / reference 의 분류**"
+          - "**[OSS] backlink 의 부재 (Obsidian 의 대안)**"
+          - "**[OSS] LLM 의 입력 의 친화 (markdown 의 직접 입력)**"
+    target_vm: attacker
+
+  # ============================================================
+  # STEP 4 — paper-draft.md §4 KG 의 정독
+  # ============================================================
+  - order: 4
+    instruction: |
+      ccc/contents/papers/bastion/paper-draft.md 의 §4 (KG / PE-KG) 의 정독 + 한
+      단락 의 본인 의 한국어 요약 의 응답.
+    hint: |
+      grep + head + 본인 의 요약
+    category: synthesis
+    points: 20
+    answer: |
+      cd /home/opsclaw/ccc
+      echo "=== paper §4 의 위치 의 검색 ==="
+      grep -n "^## 4\|^## §4\|^## 4\." contents/papers/bastion/paper-draft.md 2>/dev/null | head -5
+
+      echo ""
+      echo "=== KG / PE-KG 의 핵심 단락 ==="
+      grep -n -A 5 "PE-KG\|Playbook.*Experience\|Knowledge Graph" contents/papers/bastion/paper-draft.md 2>/dev/null | head -30
+
+      echo ""
+      echo "=== 본인 의 요약 (예) ==="
+      cat <<'EOF'
+      PE-KG 는 Bastion 의 학습 의 핵심 구조. P (Playbook) 의 33+ skill 의 markdown
+      카탈로그 + E (Experience) 의 매 chat 의 ReAct cycle 의 task_outcome 의 anchor +
+      KG 의 reuse / adapt / new 의 관계 의 graph. 매 LLM 호출 의 사전 KG 참조 + 사후
+      anchor 의 강제 의 학습 의 누적 의 의의.
+      EOF
+    answer_detail: paper-draft.md 정독 + 요약
+    verify:
+      type: output_contains
+      expect: PE-KG
+      field: stdout
+      semantic:
+        intent: paper 의 KG 의 이해
+        success_criteria: [PE-KG / Playbook / Experience 의 응답]
+        acceptable_methods:
+          - "**[OSS] paper-draft.md §4 의 정독**"
+          - "**[OSS] PE-KG 의 P + E + KG 의 의의**"
+          - "**[OSS] Playbook = 재사용 의 skill**"
+          - "**[OSS] Experience = task_outcome anchor**"
+          - "**[OSS] KG = 관계 (reuse / adapt / new)**"
+          - "**[OSS] 운영 의 강제 (hook 제거 금지)**"
+          - "**[OSS] paper 의 §7 의 실험 의 데이터 source**"
+          - "**[OSS] R5 학습 loop 의 핵심**"
+    target_vm: attacker
+
+  # ============================================================
+  # STEP 5 — Bastion 의 통합 검증 (pytest 또는 /health)
+  # ============================================================
+  - order: 5
+    instruction: |
+      Bastion 의 통합 검증 — pytest 의 실행 (가능 시) 또는 /health + /kg/health 의
+      대조 의 검증.
+    hint: |
+      pytest 또는 curl 의 health diff
+    category: synthesis
+    points: 15
+    answer: |
+      cd /home/opsclaw/ccc
+
+      echo "=== 가능 시 pytest 의 실행 ==="
+      if [ -f tests/bastion/test_kg_context.py ]; then
+          set -a && . ./.env 2>/dev/null && set +a
+          python3 -m pytest tests/bastion/ -x --tb=short 2>&1 | tail -20
+      else
+          echo "(test 디렉토리 없음 — health 의 대조 진행)"
+      fi
+
+      echo ""
+      echo "=== /health vs /kg/health 의 대조 ==="
+      ssh 6v6-bastion '
+      H=$(curl -s -H "X-API-Key: ccc-api-key-2026" http://localhost:9100/health)
+      K=$(curl -s -H "X-API-Key: ccc-api-key-2026" http://localhost:9100/kg/health)
+      echo "/health kg.all_modules_loaded:"
+      echo "$H" | jq ".kg.all_modules_loaded // .status"
+      echo "/kg/health status:"
+      echo "$K" | jq ".status // ."
+      '
+    answer_detail: pytest 또는 /health 의 검증
+    verify:
+      type: output_contains
+      expect: health
+      field: stdout
+      semantic:
+        intent: Bastion 통합 검증
+        success_criteria: [pytest 또는 health 의 응답]
+        acceptable_methods:
+          - "**[OSS] pytest tests/bastion/ 의 39 cases**"
+          - "**[OSS] /health 의 kg.all_modules_loaded == true**"
+          - "**[OSS] /kg/health 의 통합 상태**"
+          - "**[OSS] /skills 의 33+ skill 의 확인**"
+          - "**[OSS] /chats 의 history 의 가시화**"
+          - "**[OSS] sync_to_bastion.sh 의 양 repo push 의 가시화**"
+          - "**[OSS] CLAUDE.md 의 강제 의 정독**"
+          - "**[OSS] memory 의 project_bastion_kg_integration.md**"
+    target_vm: bastion
