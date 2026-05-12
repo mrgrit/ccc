@@ -736,6 +736,377 @@ attacker (10.20.30.202) 에서는 9005041 alert 없음. 다른 src 는 정상.
 
 ---
 
+## 12.5 R/B/P 공격 분석 케이스 확장 (본 주차 추가)
+
+### 12.5.0 R/B/P 일상 비유 — 정밀 검사관의 4 도구
+
+본 절은 W05 의 룰 작성 5 기술을 정밀 검사관 비유로 시작한다.
+
+학생이 다니는 도서관에 새 검사관이 왔다고 하자. 이번 검사관은 단순히 가방의 책 제목을 보는 것을 넘어 다음 네 도구를 한꺼번에 쓴다.
+
+- **돋보기 (정규식, pcre).** 글자 패턴을 자세히 본다. 주민번호 형식, 카드번호 형식 같은 미묘한 패턴을 잡아낸다.
+- **위치 표시자 (content modifier).** 라벨이 가방의 어느 위치에 붙어 있는지 본다. URL 앞 부분인지, header 인지, body 인지를 구분한다.
+- **순서 기록부 (flowbits).** 한 손님이 도서관에서 한 행동의 순서를 기록한다. 먼저 로그인 실패하고, 그 다음 관리자 페이지로 가는 행위를 묶어 본다.
+- **빈도 제한판 (threshold + suppression).** 같은 사람이 짧은 시간에 몇 번 시도했는지 센다. 임계치를 넘으면 보고서를 올리고, 정상 직원의 헬스체크는 보고에서 제외한다.
+
+| 일상 비유 | Suricata 룰 작성 |
+|-----------|------------------|
+| 돋보기로 정밀 검사 | pcre + content modifier |
+| 라벨 위치 식별 | http.uri / http.header / http.user_agent |
+| 순서 기록부 | flowbits set / isset |
+| 빈도 제한판 | threshold (rate-limit) + suppression |
+| 검사관 매뉴얼 보강 | local.rules + threshold.config 갱신 |
+
+본 절은 다음 세 케이스를 다룬다.
+
+- 케이스 1 — 다단계 공격 (login 실패 후 admin 접근) 을 flowbits 로 추적한다.
+- 케이스 2 — 한국 주민번호 형식 leak 시도를 pcre 로 잡아낸다.
+- 케이스 3 — SSH brute force 를 threshold 로 잡고, 정상 health check 는 suppression 으로 제외한다.
+
+원칙은 W01 ~ W04 와 같다. 재현 가능성, 도구 위주 분석, 신입생 친화, 학습 환경 한정.
+
+### 12.5.1 케이스 1 — 다단계 공격 (login fail → admin) 의 flowbits 추적
+
+**0. 일상 비유 — 도둑이 우선 가짜 회원증을 내밀어 보고 거절당하면 직원 출입구로 시도.**
+
+도둑이 도서관 정문에서 가짜 회원증을 내민다. 사서가 회원증 확인에 실패한다. 도둑은 곧장 옆에 있는 직원 전용 출입구로 향한다. 검사관 일지에 두 행위가 따로 기록되면 별개 사건처럼 보이지만, 같은 사람이 한 세션 안에서 두 행위를 한 묶음으로 기록하면 다단계 침투 시도임이 드러난다.
+
+| 일상 비유 | 다단계 공격 |
+|-----------|-------------|
+| 가짜 회원증 내밀기 | HTTP 401 / 403 응답을 받는 login 시도 |
+| 같은 사람이 직원 출입구로 시도 | 같은 TCP flow 안의 `/admin/` 접근 |
+| 일지의 묶음 기록 | flowbits 의 set + isset |
+| 묶음 보고 | 단일 alert 로 다단계 침투 표시 |
+
+**0a. 사용 도구 사전 안내.**
+
+- **curl** — HTTP 요청을 보내는 표준 도구. 학습 환경 web 의 admin endpoint 가 401 또는 403 으로 응답하는지 확인할 때 쓴다.
+- **flowbits** — Suricata 룰의 변수. set 으로 표식을 켜두고 isset 으로 그 표식이 켜진 상태에서만 매칭한다.
+- **eve.json 의 flow_id 필드** — 한 TCP connection 의 고유 ID. 두 event 의 flow_id 가 같으면 같은 flow 안의 두 단계다.
+
+**1. Red — 공격 재현.**
+
+attacker VM 에 들어가서 첫 단계로 admin 인증을 시도한 뒤, 같은 connection 의 두 번째 단계로 다른 admin path 에 접근한다. 학습 환경 안에서만 실행해야 한다.
+
+```bash
+ssh ccc@192.168.0.112
+# password: 1
+```
+
+attacker VM 내부에서 다음 두 줄을 짧은 간격으로 실행한다.
+
+```bash
+# attacker VM 내부 (학습 환경 한정)
+curl -s -o /dev/null -w "%{http_code}\n" \
+    -u admin:wrong http://192.168.0.103/admin/
+
+curl -s -o /dev/null -w "%{http_code}\n" \
+    -H "Cookie: session=guess" \
+    http://192.168.0.103/admin/users.json
+```
+
+각 옵션의 의미는 다음과 같다.
+
+- `-s` — silent. 진행 출력을 끈다.
+- `-o /dev/null` — body 응답은 버린다.
+- `-w "%{http_code}\n"` — 응답 코드만 출력한다.
+- `-u admin:wrong` — Basic Auth. admin 으로 잘못된 비밀번호를 시도한다.
+- 두 번째 줄의 `-H "Cookie: ..."` — 임의의 cookie 로 추가 admin path 에 접근한다.
+
+첫 번째 시도는 401 응답을 받는다. 두 번째 시도는 정상이면 401 또는 403 응답을 받는다. 두 시도가 짧은 시간 안에 같은 src 에서 일어났다.
+
+**2. 발생하는 로그/아티팩트.**
+
+ips 의 Suricata 가 두 HTTP transaction 모두를 eve.json 에 http event 로 기록한다.
+
+```json
+{"flow_id":1234567890,"event_type":"http",
+ "http":{"hostname":"...","url":"/admin/","http_method":"GET","status":401,...}}
+
+{"flow_id":1234567890,"event_type":"http",
+ "http":{"hostname":"...","url":"/admin/users.json","http_method":"GET","status":401,...}}
+```
+
+flow_id 가 같으면 같은 connection 이다. HTTP/1.1 keep-alive 가 아니면 두 시도가 다른 flow 가 될 수도 있다. 실제 운영에서는 src_ip + 시간 window 기반으로 묶는 보조 룰을 함께 둔다.
+
+**3. Blue — flowbits 룰 작성 + reload + Kibana 분석.**
+
+ips VM 에 들어가서 local.rules 에 다음 두 줄을 추가한다.
+
+```bash
+ssh 6v6-ips
+sudo tee -a /etc/suricata/rules/local.rules > /dev/null <<'EOF'
+alert http any any -> $HOME_NET any (msg:"LOCAL Stage1 Admin 401"; \
+  flow:to_server,established; http.uri; content:"/admin/"; \
+  http.stat_code; content:"401"; flowbits:set,local.admin_401; \
+  flowbits:noalert; sid:9005101; rev:1;)
+
+alert http any any -> $HOME_NET any (msg:"LOCAL Stage2 Admin Access After 401"; \
+  flow:to_server,established; flowbits:isset,local.admin_401; \
+  http.uri; content:"/admin/"; \
+  classtype:web-application-attack; sid:9005102; rev:1;)
+EOF
+```
+
+룰의 역할은 다음과 같다.
+
+- `9005101` — `/admin/` 에서 401 응답을 받으면 flowbits `local.admin_401` 을 켜고 alert 자체는 발생시키지 않는다 (`noalert`).
+- `9005102` — `local.admin_401` 표식이 켜진 같은 flow 에서 `/admin/` 에 다시 접근하면 alert 가 발생한다.
+
+룰을 reload 한다.
+
+```bash
+sudo suricatasc -c reload-rules
+```
+
+attacker VM 에서 위 Red 시나리오를 다시 한 번 실행한 뒤 ips 에서 alert 발생 여부를 확인한다.
+
+```bash
+sudo tail -50 /var/log/suricata/eve.json \
+  | jq -r 'select(.event_type=="alert" and .alert.signature_id==9005102)
+           | "\(.timestamp) \(.src_ip) -> \(.dest_ip) \(.alert.signature)"'
+```
+
+다음으로 Kibana Discover 에서도 확인한다.
+
+1. 좌측 햄버거 메뉴 → `Discover` 선택.
+2. Index pattern `suricata-*`, Time picker `Last 15 minutes`.
+3. Search bar 에 `event_type:alert AND alert.signature_id:9005102` 를 입력하고 Enter.
+4. 결과 한 줄을 펼쳐 `flow_id` 와 `src_ip` 를 확인한다.
+
+**4. Blue — 대응 의사결정.**
+
+학생이 다음 세 가지를 판단한다.
+
+- **단일 stage alarm 의 SOC fatigue.** 401 한 건만으로 alert 를 올리면 모든 잘못된 로그인이 알람이 된다. flowbits 결합으로 다단계만 알람화 하는 것이 운영 부담을 줄인다.
+- **flow 경계 인식.** keep-alive 가 끊기면 다른 flow 가 된다. 운영 환경에서는 cookie + src_ip 기반으로 묶는 부가 룰도 함께 둔다.
+- **대응 강도.** 다단계 alert 만 active-response 와 연계한다. 단발 401 은 모니터링에 머문다.
+
+**5. Purple — 보완.**
+
+다음 세 가지를 적용한다.
+
+- **flowbits timeout 설정.** flowbits 가 너무 오래 살아 있으면 정상 운영 client 까지 영향이 미친다. 적절한 timeout 을 명시한다.
+- **9005102 의 threshold 추가.** 같은 src 에서 1분당 1건만 통과시키도록 event_filter 를 둔다.
+- **9005101 의 noalert 검토.** noalert 로 두면 단발 401 의 audit trail 이 약해진다. 별도로 stat_code 401 의 광범위 카운트 룰을 두어 보강한다.
+
+본 케이스 cycle 한 바퀴는 약 25분 정도다.
+
+### 12.5.2 케이스 2 — 한국 주민번호 형식 leak 시도의 pcre 탐지
+
+**0. 일상 비유 — 도서관 안의 회원이 회원 명부를 사진으로 찍어서 들고 나가려는 시도.**
+
+도서관 회원 한 명이 회원 명부 사본을 가방에 넣고 나가려고 한다. 검사관이 가방을 열면 회원 정보가 적힌 종이가 보인다. 종이의 형식 (이름, 주민번호, 연락처) 이 사전에 정의된 패턴에 맞으면 검사관이 즉시 회수한다.
+
+이 비유를 한국 주민번호 형식 leak 에 옮긴다.
+
+| 일상 비유 | 한국 주민번호 leak |
+|-----------|---------------------|
+| 회원 명부 사본 | HTTP 응답 body 안의 PII |
+| 가방 열어 종이 확인 | Suricata 의 http.response_body 검사 |
+| 사전에 정의된 형식 | pcre 의 주민번호 패턴 |
+| 즉시 회수 | alert + IR 절차 시작 |
+
+**0a. 사용 도구 사전 안내.**
+
+- **pcre** — Perl Compatible Regular Expression. 한국 주민번호의 6자리-7자리 형식을 정밀하게 표현한다.
+- **http.response_body** — Suricata 의 sticky buffer. HTTP 응답 body 영역만 검사한다.
+- **classtype** — alert 의 분류. PII leak 는 `sensitive-data` 가 표준이다.
+
+**1. Red — 공격 재현.**
+
+attacker VM 에서 학습 환경의 web 에 응답 body 안에 주민번호 형식 문자열이 들어가는 시뮬을 만든다. 학습 환경 한정으로 실행한다.
+
+학습 환경의 web 에 데모용 endpoint `/demo/leak.html` 이 있다고 가정한다. 응답 body 에 가짜 주민번호 (`900101-1234567`) 가 포함되어 있다.
+
+```bash
+ssh ccc@192.168.0.112
+
+# attacker VM 내부 (학습 환경 한정)
+curl -s http://192.168.0.103/demo/leak.html | head -10
+```
+
+응답 body 에 `900101-1234567` 같은 형식 문자열이 보이면 leak 시뮬이 성공이다.
+
+**2. 발생하는 로그/아티팩트.**
+
+ips 의 Suricata 가 응답 body 를 sniff 한다. 적합한 룰이 있다면 alert 가 발생한다. 룰이 없으면 단지 http event 만 기록된다.
+
+**3. Blue — pcre 룰 작성 + reload + 분석.**
+
+ips VM 에 들어가서 local.rules 에 주민번호 형식 룰을 추가한다.
+
+```bash
+ssh 6v6-ips
+sudo tee -a /etc/suricata/rules/local.rules > /dev/null <<'EOF'
+alert http any any -> any any (msg:"LOCAL PII Leak - Korean RRN Format"; \
+  flow:to_client,established; http.response_body; \
+  pcre:"/\b[0-9]{6}-[1-4][0-9]{6}\b/"; \
+  classtype:sensitive-data; sid:9005103; rev:1;)
+EOF
+sudo suricatasc -c reload-rules
+```
+
+pcre 패턴의 각 부분 의미는 다음과 같다.
+
+- `\b` — 단어 경계. 다른 숫자가 앞뒤에 붙어 있지 않은 깔끔한 패턴만 매칭한다.
+- `[0-9]{6}` — 생년월일 6자리.
+- `-` — 하이픈.
+- `[1-4]` — 성별/세기 식별 첫 자리. 1~4 가 가장 흔한 학습용 범위다.
+- `[0-9]{6}` — 뒷자리 6 숫자.
+
+attacker VM 에서 위 curl 을 다시 보낸 뒤 ips 에서 alert 발생 여부를 확인한다.
+
+```bash
+sudo tail -100 /var/log/suricata/eve.json \
+  | jq -r 'select(.event_type=="alert" and .alert.signature_id==9005103)
+           | "\(.timestamp) \(.src_ip) -> \(.dest_ip) \(.alert.signature)"'
+```
+
+Kibana Discover 에서도 같은 방식으로 본다.
+
+1. Search bar 에 `event_type:alert AND alert.signature_id:9005103` 입력.
+2. 결과 한 줄을 펼친다. `flow_id`, `src_ip`, `dest_ip`, `http.url` 을 확인한다.
+
+**4. Blue — 대응 의사결정.**
+
+학생이 다음 세 가지를 판단한다.
+
+- **false positive 위험.** 6-7 숫자 형식은 단순 우편번호 결합 같은 정상 콘텐츠와도 부합할 수 있다. `\b` 와 두 번째 자리 `[1-4]` 로 false positive 를 줄였다.
+- **대응 강도.** PII leak 의심 alert 는 곧장 차단보다 IR (incident response) 절차 시작이 표준이다. 차단은 affected user 의 정상 운영을 끊을 수 있다.
+- **법적 의무.** 한국 개인정보보호법은 PII leak 인지 시 통지와 KISA 신고를 요구한다. 본 alert 가 진짜 leak 이면 그 절차를 즉시 시작한다.
+
+**5. Purple — 보완.**
+
+다음 세 가지를 적용한다.
+
+- **추가 PII 패턴.** 신용카드 (Luhn check 적용 가능), 휴대전화 (010-XXXX-XXXX), 여권번호 (M12345678) 도 별도 룰로 둔다.
+- **threshold 적용.** 같은 dest_ip 에 분당 5건 이상이면 한 줄로 묶어 SOC 부담을 줄인다.
+- **마스킹 검증.** 응답 body 에 PII 가 보였다면 web 의 출력 마스킹 로직이 깨졌을 가능성이 크다. 즉시 web 코드 검토 의뢰를 동반한다.
+
+### 12.5.3 케이스 3 — SSH brute force 의 threshold 탐지 + 정상 health check 의 suppression
+
+**0. 일상 비유 — 자물쇠를 100번 시도하는 도둑 + 정상 정비 직원은 알람 제외.**
+
+도둑이 도서관 사물함의 자물쇠를 100번 시도한다. 동시에 도서관 정비 직원이 정기적으로 정상 점검을 위해 같은 자물쇠를 짧게 만진다. 검사관 매뉴얼이 단순하면 정비 직원의 정상 점검도 도둑 시도와 같은 알람으로 보고된다. 정비 직원의 점검은 매뉴얼에서 사전에 예외 처리해야 한다.
+
+| 일상 비유 | SSH brute force 운영 |
+|-----------|---------------------|
+| 자물쇠 100번 시도 | SSH 의 password 시도 burst |
+| 정상 정비 직원 | 학습 환경의 health check 서버 IP |
+| 매뉴얼의 알람 빈도 제한 | threshold (rate-limit) |
+| 매뉴얼의 예외 처리 | threshold.config 의 suppress |
+
+**0a. 사용 도구 사전 안내.**
+
+- **hydra** — 학습용 brute force 도구. attacker VM 에 설치된 버전을 짧은 wordlist 와 함께 쓴다.
+- **threshold.config** — 운영자 외부 통제. 룰 자체를 수정하지 않고 alert 의 빈도와 예외를 제어한다.
+- **suppress** — 특정 src/dst 의 alert 를 제외한다. 정상 운영의 false positive 를 줄인다.
+
+**1. Red — 공격 재현.**
+
+attacker VM 에서 hydra 로 학습 환경 web 의 SSH 에 password 를 짧게 brute 한다. 학습 환경 한정으로 실행한다.
+
+```bash
+ssh ccc@192.168.0.112
+
+# attacker VM 내부 (학습 환경 한정)
+cat > /tmp/words.txt <<'EOF'
+password
+123456
+admin
+root
+toor
+EOF
+
+hydra -l admin -P /tmp/words.txt -t 4 -f ssh://192.168.0.103 2>&1 | tail -10
+```
+
+각 옵션의 의미는 다음과 같다.
+
+- `-l admin` — login 이름.
+- `-P /tmp/words.txt` — password wordlist.
+- `-t 4` — 동시 4 thread.
+- `-f` — 한 건 성공하면 즉시 종료.
+- `ssh://192.168.0.103` — target SSH 서비스.
+
+5 password 시도가 짧은 시간에 SSH 로 들어간다. 모두 실패한다.
+
+**2. 발생하는 로그/아티팩트.**
+
+ips 의 Suricata 는 SSH protocol 의 ssh event 를 eve.json 에 기록한다. password 자체는 암호화되어 보이지 않지만 connection 시도 수와 client/server version 은 보인다. 같은 traffic 이 web VM 의 `/var/log/auth.log` 에도 sshd 실패 라인 5건으로 기록되며, Wazuh agent 가 그것을 manager 로 forward 한다.
+
+**3. Blue — threshold 룰 + suppression 적용.**
+
+ips VM 에 다음 룰을 추가한다.
+
+```bash
+ssh 6v6-ips
+sudo tee -a /etc/suricata/rules/local.rules > /dev/null <<'EOF'
+alert ssh any any -> $HOME_NET 22 (msg:"LOCAL SSH Burst from Single Source"; \
+  flow:to_server,established; \
+  threshold:type both, track by_src, count 5, seconds 60; \
+  classtype:attempted-admin; sid:9005104; rev:1;)
+EOF
+```
+
+룰의 threshold modifier 의미는 다음과 같다.
+
+- `type both` — count 와 seconds 모두 만족해야 alert.
+- `track by_src` — source IP 기준.
+- `count 5, seconds 60` — 60초 안에 5건 이상.
+
+정상 health check 서버가 같은 룰에 false positive 로 잡히지 않도록 suppression 도 함께 둔다. 학습 환경의 bastion 컨테이너 (10.20.30.201) 가 정기적으로 SSH probe 를 보낸다고 가정한다.
+
+```bash
+sudo tee -a /etc/suricata/threshold.config > /dev/null <<'EOF'
+suppress gen_id 1, sig_id 9005104, track by_src, ip 10.20.30.201
+EOF
+sudo suricatasc -c reload-rules
+```
+
+attacker VM 에서 hydra 를 다시 한 번 실행한 뒤 alert 발생을 확인한다.
+
+```bash
+sudo tail -200 /var/log/suricata/eve.json \
+  | jq -r 'select(.event_type=="alert" and .alert.signature_id==9005104)
+           | "\(.timestamp) \(.src_ip) -> \(.dest_ip) \(.alert.signature)"'
+```
+
+Kibana Discover 에서도 본다.
+
+1. Search bar 에 `event_type:alert AND alert.signature_id:9005104` 입력.
+2. 결과에서 src_ip 가 attacker VM 의 IP 인지, bastion 의 IP 가 없는지 확인한다.
+
+**4. Blue — 대응 의사결정.**
+
+학생이 다음 세 가지를 판단한다.
+
+- **임계치 적정성.** 60초 안 5건 기준이 학습 환경의 정상 baseline 과 충돌하지 않는지 본다. 정상 운영의 SSH probe 가 분당 몇 건인지 측정한다.
+- **suppress 범위.** suppress 가 너무 넓으면 진짜 brute force 가 같은 IP 에서 일어났을 때도 alert 가 안 뜬다. 필요 시 시간대 / port 별 세분 suppress 를 둔다.
+- **대응 연계.** 9005104 alert 가 발생하면 fw 에 src_ip 를 dynamic blacklist set 으로 timeout 10분 추가한다.
+
+**5. Purple — 보완.**
+
+다음 세 가지를 적용한다.
+
+- **threshold.config 의 git 추적.** suppress 와 event_filter 변경은 모두 git 으로 audit 한다. 누가, 언제, 어떤 IP 를 예외 처리했는지 추적 가능해야 한다.
+- **suppress 의 정기 검토.** 분기마다 suppress 목록을 점검한다. 정상 운영이 종료된 IP 가 남아 있으면 제거한다.
+- **Wazuh 의 chain rule 과 결합.** Wazuh sshd rule 5710 과 5712 가 같은 사건을 잡는다. 두 시스템의 alert 를 cross-check 해 false positive 를 더 줄인다.
+
+### 12.5.4 본 절 정리
+
+본 절은 W05 의 룰 작성 5 기술을 실제 공격 분석 cycle 에 연결했다. 학생이 다음 능력을 갖춘다.
+
+- attacker VM 에서 다단계 admin 시도, PII 응답 시뮬, SSH brute force 를 직접 재현한다.
+- flowbits + pcre + threshold + suppression 을 자기 손으로 작성하고 reload 한다.
+- Kibana Discover 와 jq 로 alert 의 src/dst/flow 를 직접 분석한다.
+- false positive 와 SOC fatigue 를 줄이는 운영 통제 (event_filter, suppress, threshold.config) 를 적용한다.
+
+다음 주차 W06 에서는 Apache + ModSecurity 의 같은 R/B/P cycle 을 학습한다.
+
+---
+
 ## 13. 과제
 
 ### A. 5 룰 작성 (필수, 50점)
