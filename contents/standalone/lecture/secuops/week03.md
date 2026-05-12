@@ -1058,6 +1058,343 @@ ssh 6v6-fw 'sudo tail -3 /var/log/haproxy.log 2>/dev/null | grep "10.20.30.202" 
 
 ---
 
+## 11.5 R/B/P 공격 분석 케이스 확장 (본 주차 추가)
+
+### 11.5.0 R/B/P 일상 비유 — 우체국의 주소 변환
+
+본 절은 NAT 와 HAProxy 의 운영을 우체국 비유로 시작한다.
+
+학생이 사는 동네에 작은 우체국이 있다고 하자. 우체국은 외부에서 들어온 편지의 수신자 주소를 안 동에 맞춰 변환해서 전달한다. 예를 들어 외부 주소 "ABC동 101호" 가 우체국 매뉴얼에 따라 내부 주소 "XYZ아파트 5동 101호" 로 바뀐다. 우체국에는 두 가지 변환 책상이 있다.
+
+- **책상 1 (L4 NAT 책상).** 봉투 겉면의 주소만 바꿔서 전달한다. 안의 편지 내용은 보지 않는다.
+- **책상 2 (L7 HAProxy 책상).** 봉투를 열어 편지 내용을 보고, 내용에 따라 다른 부서로 보낸다. 예를 들어 "주문 관련" 은 영업부로, "AS 관련" 은 서비스부로 보낸다.
+
+두 책상 사이의 충돌 사례도 있다. 같은 외부 주소를 두 책상이 동시에 처리하려고 하면, 보통 책상 1 (먼저 만나는 책상) 이 우선되고 책상 2 는 편지를 못 받는다. 도둑이 이를 알면 일부러 그런 충돌을 만들어 책상 2 의 가시성을 회피한다.
+
+| 일상 비유 | NAT + HAProxy |
+|-----------|----------------|
+| 우체국 매뉴얼 | nft NAT 의 ruleset |
+| 봉투 주소 변환 (책상 1) | L4 NAT (DNAT / SNAT / MASQUERADE) |
+| 편지 내용 분류 (책상 2) | L7 HAProxy (host header / path 분기) |
+| 우체국 가시성 손실 | HAProxy 우회 |
+| 추적부 (편지 수신 / 발송 기록) | conntrack table |
+
+본 절은 학생이 다음 세 케이스를 직접 재현한다.
+
+- 케이스 1 — Docker NAT 또는 임의 DNAT 가 HAProxy 를 우회하는 공격 흔적을 conntrack 으로 추적한다.
+- 케이스 2 — SNAT 후 source IP 가시성 손실을 분석하고 XFF (X-Forwarded-For) 의 적용을 확인한다.
+- 케이스 3 — conntrack table 을 의도적으로 부풀려 capacity exhaustion 의 영향을 직접 측정한다.
+
+본 절의 원칙은 W01 / W02 와 같다 — 재현 가능성, 도구 위주 분석, 신입생 친화, 학습 환경 한정.
+
+### 11.5.1 케이스 1 — HAProxy 우회 시도의 conntrack 추적
+
+**0. 일상 비유 — 우체국 책상 1을 통과해버린 편지.**
+
+도둑이 우체국 책상 1 (주소 변환 책상) 의 허점을 알고 일부러 외부 봉투에 책상 1 매뉴얼이 처리하는 주소를 적는다. 그러면 책상 2 (내용 분류 책상) 는 그 편지를 못 본다. 도둑은 추적이 어려운 경로로 안으로 들어간다. 우체국 직원이 추적부를 확인하면 책상 1 의 변환 기록만 남아 있고 책상 2 의 기록은 비어 있다.
+
+| 일상 비유 | 보안 시나리오 |
+|-----------|---------------|
+| 책상 1 의 허점 (잘못된 매뉴얼) | nft DNAT 가 같은 port 를 가로채기 |
+| 책상 2 의 무가시성 | HAProxy 로그가 비어 있음 |
+| 책상 1 변환 기록 | conntrack 의 reply src 변경 |
+| 추적부 비교 | conntrack 와 HAProxy 로그 cross-check |
+
+**0a. 사용 도구 사전 안내.**
+
+- **curl -v** — HTTP 요청의 verbose 출력. 응답 코드, 헤더, 본문을 모두 볼 수 있다.
+- **conntrack -L** — fw 의 connection tracking table 을 보는 명령이다. NAT 변환의 reply src 가 보인다.
+- **HAProxy access log** — `/var/log/haproxy.log` 또는 컨테이너 stdout 에 기록된다. host header, backend, response code 가 한 줄로 기록된다.
+
+**1. Red — 공격 재현.**
+
+attacker VM 에서 fw 의 외부 IP 의 80 포트로 HTTP 요청을 보낸다. 학습 환경 안에서만 실행해야 한다.
+
+```bash
+ssh ccc@192.168.0.112
+# password: 1
+```
+
+다음 두 가지 요청을 동시에 보낸다. 두 번째 요청이 nft DNAT 의 직접 가로채기에 해당한다고 가정한다.
+
+```bash
+# attacker VM 내부 (학습 환경 한정)
+curl -v -H "Host: juice.6v6.lab" http://192.168.0.103/
+curl -v http://192.168.0.103:8888/      # nft DNAT 가 8888 → 내부 80 으로 가로채기
+```
+
+각 옵션의 의미는 다음과 같다.
+
+- `-v` — verbose. 요청과 응답 헤더를 모두 출력한다.
+- `-H "Host: juice.6v6.lab"` — host header 설정. HAProxy 가 host header 로 backend 를 분기한다.
+- `http://...:8888/` — fw 의 8888 포트 직접 호출. 만약 nft DNAT 가 있으면 HAProxy 를 우회한다.
+
+**2. 발생하는 로그/아티팩트.**
+
+첫 번째 요청은 HAProxy access log 에 정상으로 기록된다.
+
+```
+2026-05-12T14:40:00 frontend_main juice_be/web1 200 ...
+```
+
+두 번째 요청은 HAProxy 로그에는 보이지 않을 수 있다. 대신 fw 의 conntrack table 에 새 entry 가 생긴다.
+
+```
+tcp ... src=192.168.0.112 dst=192.168.0.103 sport=54321 dport=8888 ...
+  src=192.168.0.103 dst=192.168.0.112 sport=80 dport=54321 [REPLY]
+```
+
+reply 줄의 sport 가 80 인 것이 핵심이다. 외부에서는 8888 로 들어왔는데 내부에서는 80 으로 변환되어 처리된 흔적이다.
+
+**3. Blue — conntrack 와 HAProxy 로그 cross-check.**
+
+fw 에 들어가서 conntrack 를 본다.
+
+```bash
+ssh 6v6-fw
+sudo conntrack -L -p tcp --dport 8888 2>/dev/null
+```
+
+각 entry 에서 reply src 가 변환된 internal IP / port 인지 확인한다. 변환이 있으면 NAT 가 동작한 것이다.
+
+다음으로 HAProxy access log 를 본다.
+
+```bash
+sudo journalctl -u haproxy --since "5 minutes ago" | grep -E "GET|POST" | tail -20
+```
+
+같은 시간대에 8888 포트 요청이 보이지 않으면 HAProxy 우회의 직접 증거다.
+
+두 로그를 시간순으로 cross-check 한다.
+
+```
+14:40:00  conntrack  port 8888 src=...112 → reply src=...:80
+14:40:00  HAProxy    (entry 없음)
+```
+
+이 격차가 HAProxy 우회의 증거다.
+
+**4. Blue — 대응 의사결정.**
+
+학생이 다음 세 가지를 판단한다.
+
+- **NAT rule 출처 확인.** Docker 가 만든 NAT rule 인지, 누가 임의로 추가한 rule 인지 본다.
+- **HAProxy 우회 영향.** 우회로 인해 어떤 정상 운영 기능이 손상되는지 본다. 보통 audit log, rate limit, WAF 의 가시성이 손상된다.
+- **즉시 차단 vs 단계적 조사.** 학습 환경에서는 곧장 NAT rule 을 제거한다. 운영 환경에서는 영향 범위 조사가 먼저다.
+
+**5. Purple — 보완.**
+
+다음 세 가지 방향으로 보완한다.
+
+- **한 port = 한 도구 원칙.** 같은 port 에 HAProxy 와 nft DNAT 를 함께 두지 않는다. 명문화한다.
+- **NAT rule 변경 감사.** `/etc/nftables.conf` 와 Docker network 의 NAT 변경을 git audit 으로 추적한다.
+- **conntrack 모니터링.** 비정상 reply src 변환을 감지하는 간단한 cron script 를 둔다.
+
+### 11.5.2 케이스 2 — SNAT 후 source IP 가시성 손실
+
+**0. 일상 비유 — 우체국이 모든 발신자 주소를 자기 주소로 바꿔서 전달.**
+
+우체국이 외부에서 들어온 모든 편지의 발신자 주소를 자기 주소로 바꿔서 내부로 전달한다고 가정해보자. 내부 부서는 모든 편지가 우체국에서 보낸 것처럼 보이게 된다. 누가 진짜 발신자인지 알 수 없다. 도둑이 이를 알면 익명성을 누릴 수 있다.
+
+| 일상 비유 | SNAT |
+|-----------|------|
+| 우체국이 발신자 주소 변환 | nft SNAT 또는 MASQUERADE |
+| 내부 부서가 진짜 발신자 모름 | web app 의 client IP 가시성 손실 |
+| 진짜 발신자 표기 보조 | XFF (X-Forwarded-For) header |
+| 익명성 악용 | 공격자가 source IP 추적 회피 |
+
+**0a. 사용 도구 사전 안내.**
+
+- **X-Forwarded-For (XFF)** — HTTP header. proxy 가 원본 client IP 를 보존하기 위해 추가한다.
+- **HAProxy `option forwardfor`** — HAProxy 에서 XFF 를 자동으로 추가하는 설정이다.
+- **Apache `mod_remoteip`** — XFF 를 읽어서 access log 의 client IP 를 진짜 IP 로 보정한다.
+
+**1. Red — 공격 재현.**
+
+attacker VM 에서 fw 외부 IP 의 80 포트로 요청을 보낸다.
+
+```bash
+ssh ccc@192.168.0.112
+
+# attacker VM 내부 (학습 환경 한정)
+curl -v -H "Host: juice.6v6.lab" http://192.168.0.103/ 2>&1 | grep -E "X-Forwarded-For|^< HTTP"
+```
+
+각 옵션의 의미는 다음과 같다.
+
+- `-v` — verbose.
+- `-H "Host: juice.6v6.lab"` — host header.
+- `grep -E ...` — 응답 헤더 중 XFF 관련 줄만 추출한다.
+
+**2. 발생하는 로그/아티팩트.**
+
+fw 의 SNAT 또는 MASQUERADE 가 동작하면 internal traffic 의 source IP 가 fw IP 로 바뀐다. web 의 Apache access log 가 다음 둘 중 하나로 나뉜다.
+
+XFF 가 없는 경우.
+```
+10.20.30.1 - - [12/May/2026:14:42:00] "GET / HTTP/1.1" 200 ...
+```
+client IP 가 fw IP 로 나타난다.
+
+XFF 가 적용된 경우 (option forwardfor + mod_remoteip).
+```
+192.168.0.112 - - [12/May/2026:14:42:00] "GET / HTTP/1.1" 200 ...
+X-Forwarded-For: 192.168.0.112
+```
+client IP 가 진짜 attacker IP 로 복원된다.
+
+**3. Blue — Apache access log 와 HAProxy log 직접 분석.**
+
+web VM 에 들어가서 access log 를 본다.
+
+```bash
+ssh 6v6-web
+sudo tail -20 /var/log/apache2/access.log
+```
+
+client IP 가 fw 의 internal IP 만 나오면 XFF 가 적용되지 않은 상태다. attacker 의 진짜 IP 가 손실된 것이다.
+
+다음으로 HAProxy 의 forwardfor 설정을 본다.
+
+```bash
+ssh 6v6-fw
+sudo grep -A2 "frontend\|backend" /usr/local/etc/haproxy/haproxy.cfg | grep -E "forwardfor|forwarded"
+```
+
+`option forwardfor` 가 없으면 XFF 추가가 안 되고 있는 것이다.
+
+Apache 의 mod_remoteip 설정도 확인한다.
+
+```bash
+ssh 6v6-web
+sudo apachectl -M | grep remoteip
+sudo grep -r "RemoteIPHeader" /etc/apache2/
+```
+
+`RemoteIPHeader X-Forwarded-For` 와 `RemoteIPInternalProxy <fw IP>` 두 줄이 있어야 정상 동작한다.
+
+**4. Blue — 대응 의사결정.**
+
+학생이 다음 세 가지를 판단한다.
+
+- **XFF 신뢰성.** XFF 는 client 가 임의로 보낼 수 있다. 신뢰할 trusted proxy 목록을 명시해야 한다.
+- **운영 정책.** access log 의 client IP 가시성이 audit / IR 에 중요한 정도를 평가한다.
+- **WAF / SIEM 영향.** ModSec rule 과 Wazuh alert 가 client IP 기반으로 동작하는데, XFF 없으면 모두 fw IP 만 보게 된다.
+
+**5. Purple — 보완.**
+
+다음 세 가지를 적용한다.
+
+- **HAProxy 에 `option forwardfor`.** frontend 또는 backend 의 설정에 한 줄 추가한다.
+- **Apache 에 mod_remoteip 활성화.** `a2enmod remoteip` + `/etc/apache2/conf-available/remoteip.conf` 작성.
+- **trusted proxy 명시.** `RemoteIPInternalProxy 10.20.30.0/24` 같이 trusted source 만 XFF 를 신뢰하도록 명시한다.
+
+### 11.5.3 케이스 3 — conntrack table capacity 의 영향
+
+**0. 일상 비유 — 우체국 추적부가 가득 차서 새 편지를 못 받음.**
+
+우체국 추적부의 페이지 수가 정해져 있다고 하자. 도둑이 일부러 단기 편지를 1만 통 보내면 추적부가 가득 찬다. 그 뒤에 들어온 정상 편지는 추적부에 등록할 자리가 없어서 우체국이 받을 수 없다. 결과적으로 정상 운영이 중단된다.
+
+| 일상 비유 | conntrack table full |
+|-----------|---------------------|
+| 우체국 추적부 페이지 수 | `nf_conntrack_max` |
+| 단기 편지 1만 통 | 짧은 lifetime 의 다수 conn 생성 |
+| 정상 편지 거부 | 정상 connection 의 DROP / RST |
+| 추적부 정리 주기 | conntrack timeout |
+
+**0a. 사용 도구 사전 안내.**
+
+- **hping3** — TCP / UDP / ICMP packet 을 임의로 만들어 보내는 도구.
+- **conntrack -C** — 현재 entry 수를 출력한다.
+- **sysctl net.netfilter.nf_conntrack_max** — 최대 entry 수의 한계.
+
+**1. Red — 공격 재현.**
+
+attacker VM 에서 hping3 으로 다수 conn 을 짧게 만든다. 학습 환경 한정.
+
+```bash
+ssh ccc@192.168.0.112
+
+# attacker VM 내부 (학습 환경 한정)
+sudo hping3 -S --rand-source -p 80 -c 5000 -i u100 192.168.0.103
+```
+
+각 옵션의 의미는 다음과 같다.
+
+- `-S` — SYN flag.
+- `--rand-source` — 매 packet 마다 source IP 를 random 으로 바꾼다. 결과로 fw conntrack 에 새 entry 가 매번 생긴다.
+- `-p 80` — target port 80.
+- `-c 5000` — 5000개 보내고 종료.
+- `-i u100` — 100 microseconds 간격. 매우 빠르다.
+
+random source 5000 개 + SYN → fw conntrack 에 5000 entry 가 짧게 생긴다.
+
+**2. 발생하는 로그/아티팩트.**
+
+fw 의 conntrack count 가 급증한다. `nf_conntrack_max` 한계에 가까워지면 dmesg 에 다음 메시지가 찍힐 수 있다.
+
+```
+nf_conntrack: table full, dropping packet
+```
+
+이 메시지가 보이면 capacity exhaustion 의 직접 증거다. 정상 client 의 신규 connection 이 동시에 영향을 받을 수 있다.
+
+**3. Blue — sysctl 과 conntrack 명령으로 직접 분석.**
+
+fw 에 들어간 뒤 한계와 현재 count 를 비교한다.
+
+```bash
+ssh 6v6-fw
+echo "max=$(sysctl -n net.netfilter.nf_conntrack_max)"
+echo "cur=$(sudo conntrack -C 2>/dev/null)"
+```
+
+두 값을 비교한다. cur 가 max 의 80% 를 넘으면 위험 신호다.
+
+state 별 분포를 본다.
+
+```bash
+sudo conntrack -L 2>/dev/null | awk '{print $4}' | sort | uniq -c | sort -rn | head
+```
+
+SYN_SENT 가 비정상적으로 많으면 hping3 같은 짧은 conn 의 폭주가 진행 중이다.
+
+dmesg 에서 conntrack 메시지를 확인한다.
+
+```bash
+sudo dmesg --ctime | grep -i "conntrack" | tail -10
+```
+
+`table full` 메시지가 있으면 한계 도달이다.
+
+**4. Blue — 대응 의사결정.**
+
+학생이 다음 세 가지를 판단한다.
+
+- **table size 충분성.** `nf_conntrack_max` 가 운영 규모에 맞게 설정되어 있는지 본다. 32768 이 기본인 경우가 많지만 운영 환경에서는 부족하다.
+- **timeout 단축.** SYN_SENT timeout 을 60초에서 30초로 줄이면 짧은 conn 의 정리 속도가 빨라진다.
+- **공격 차단.** random source 의 패턴이 명확하면 fw input chain 에 SYN flood 차단 rule 을 즉시 추가한다.
+
+**5. Purple — 보완.**
+
+다음 세 가지를 적용한다.
+
+- **`nf_conntrack_max` 상향.** 운영 규모에 맞게 32768 에서 131072 또는 그 이상으로 조정한다.
+- **conntrack timeout 단축.** `net.netfilter.nf_conntrack_tcp_timeout_syn_sent=30` 같이 짧은 state 의 timeout 을 줄인다.
+- **monitoring.** conntrack count 의 80% 도달 알람을 SIEM 에 추가한다.
+
+### 11.5.4 본 절 정리
+
+본 절은 W03 의 NAT + HAProxy + conntrack 을 실제 공격 분석 cycle 에 연결했다. 학생이 다음 능력을 갖춘다.
+
+- HAProxy 우회 흔적을 conntrack 의 reply src 변환으로 직접 식별한다.
+- SNAT 후 source IP 가시성 손실을 Apache access log 와 HAProxy log 로 직접 확인한다.
+- conntrack capacity exhaustion 의 영향을 직접 측정하고 한계 조정 + timeout 단축으로 보완한다.
+
+다음 주차 W04 에서는 Suricata IDS 의 packet 분석 cycle 을 같은 R/B/P 흐름으로 학습한다.
+
+---
+
 ## 12. 사례 분석
 
 ### 12.1 ISMS-P 2.6.4 (네트워크 침입탐지) 매핑
