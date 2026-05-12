@@ -1108,19 +1108,19 @@ ssh 6v6-fw 'sudo tail -3 /var/log/haproxy.log 2>/dev/null | grep "10.20.30.202" 
 
 **1. Red — 공격 재현.**
 
-attacker VM 에서 fw 의 외부 IP 의 80 포트로 HTTP 요청을 보낸다. 학습 환경 안에서만 실행해야 한다.
+6v6-attacker 에서 fw 의 ext IP 의 80 포트로 HTTP 요청을 보낸다. 학습 환경 안에서만 실행해야 한다.
 
 ```bash
-ssh ccc@192.168.0.112
-# password: 1
+ssh 6v6-attacker
+# 비밀번호: ccc
 ```
 
 다음 두 가지 요청을 동시에 보낸다. 두 번째 요청이 nft DNAT 의 직접 가로채기에 해당한다고 가정한다.
 
 ```bash
-# attacker VM 내부 (학습 환경 한정)
-curl -v -H "Host: juice.6v6.lab" http://192.168.0.103/
-curl -v http://192.168.0.103:8888/      # nft DNAT 가 8888 → 내부 80 으로 가로채기
+# 6v6-attacker 내부 (학습 환경 한정)
+curl -v -H "Host: juice.6v6.lab" http://10.20.30.1/
+curl -v http://10.20.30.1:8888/      # nft DNAT 가 8888 → 내부 80 으로 가로채기
 ```
 
 각 옵션의 의미는 다음과 같다.
@@ -1140,8 +1140,8 @@ curl -v http://192.168.0.103:8888/      # nft DNAT 가 8888 → 내부 80 으로
 두 번째 요청은 HAProxy 로그에는 보이지 않을 수 있다. 대신 fw 의 conntrack table 에 새 entry 가 생긴다.
 
 ```
-tcp ... src=192.168.0.112 dst=192.168.0.103 sport=54321 dport=8888 ...
-  src=192.168.0.103 dst=192.168.0.112 sport=80 dport=54321 [REPLY]
+tcp ... src=10.20.30.202 dst=10.20.30.1 sport=54321 dport=8888 ...
+  src=10.20.30.1 dst=10.20.30.202 sport=80 dport=54321 [REPLY]
 ```
 
 reply 줄의 sport 가 80 인 것이 핵심이다. 외부에서는 8888 로 들어왔는데 내부에서는 80 으로 변환되어 처리된 흔적이다.
@@ -1168,7 +1168,7 @@ sudo journalctl -u haproxy --since "5 minutes ago" | grep -E "GET|POST" | tail -
 두 로그를 시간순으로 cross-check 한다.
 
 ```
-14:40:00  conntrack  port 8888 src=...112 → reply src=...:80
+14:40:00  conntrack  port 8888 src=10.20.30.202 → reply src=10.20.30.1:80
 14:40:00  HAProxy    (entry 없음)
 ```
 
@@ -1211,13 +1211,14 @@ sudo journalctl -u haproxy --since "5 minutes ago" | grep -E "GET|POST" | tail -
 
 **1. Red — 공격 재현.**
 
-attacker VM 에서 fw 외부 IP 의 80 포트로 요청을 보낸다.
+6v6-attacker 에서 fw ext IP 의 80 포트로 요청을 보낸다.
 
 ```bash
-ssh ccc@192.168.0.112
+ssh 6v6-attacker
+# 비밀번호: ccc
 
-# attacker VM 내부 (학습 환경 한정)
-curl -v -H "Host: juice.6v6.lab" http://192.168.0.103/ 2>&1 | grep -E "X-Forwarded-For|^< HTTP"
+# 6v6-attacker 내부 (학습 환경 한정)
+curl -v -H "Host: juice.6v6.lab" http://10.20.30.1/ 2>&1 | grep -E "X-Forwarded-For|^< HTTP"
 ```
 
 각 옵션의 의미는 다음과 같다.
@@ -1238,10 +1239,10 @@ client IP 가 fw IP 로 나타난다.
 
 XFF 가 적용된 경우 (option forwardfor + mod_remoteip).
 ```
-192.168.0.112 - - [12/May/2026:14:42:00] "GET / HTTP/1.1" 200 ...
-X-Forwarded-For: 192.168.0.112
+10.20.30.202 - - [12/May/2026:14:42:00] "GET / HTTP/1.1" 200 ...
+X-Forwarded-For: 10.20.30.202
 ```
-client IP 가 진짜 attacker IP 로 복원된다.
+client IP 가 진짜 attacker IP (6v6-attacker 의 ext IP) 로 복원된다.
 
 **3. Blue — Apache access log 와 HAProxy log 직접 분석.**
 
@@ -1310,13 +1311,14 @@ sudo grep -r "RemoteIPHeader" /etc/apache2/
 
 **1. Red — 공격 재현.**
 
-attacker VM 에서 hping3 으로 다수 conn 을 짧게 만든다. 학습 환경 한정.
+6v6-attacker 에서 hping3 으로 다수 conn 을 짧게 만든다. 학습 환경 한정.
 
 ```bash
-ssh ccc@192.168.0.112
+ssh 6v6-attacker
+# 비밀번호: ccc
 
-# attacker VM 내부 (학습 환경 한정)
-sudo hping3 -S --rand-source -p 80 -c 5000 -i u100 192.168.0.103
+# 6v6-attacker 내부 (학습 환경 한정)
+sudo hping3 -S --rand-source -p 80 -c 5000 -i u100 10.20.30.1
 ```
 
 각 옵션의 의미는 다음과 같다.
