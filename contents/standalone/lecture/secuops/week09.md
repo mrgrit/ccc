@@ -636,6 +636,356 @@ ssh 6v6-siem 'sudo cat /var/ossec/etc/shared/default/agent.conf | head -20'
 
 ---
 
+## 12.5 R/B/P 공격 분석 케이스 확장 (본 주차 추가)
+
+### 12.5.0 R/B/P 일상 비유 — 경찰 종합상황실
+
+본 절은 Wazuh manager 의 운영을 경찰 종합상황실 비유로 시작한다.
+
+경찰 종합상황실을 떠올려보자. 시내 곳곳에 있는 CCTV (각 호스트의 agent), 순찰차의 무전 (Suricata decoder), 출입구의 출입증 검사 (osquery / FIM) 가 모두 한 곳의 상황실로 흘러들어온다. 상황실 안에는 11명의 직원 (11개 running daemon) 이 각자 역할을 맡고, 그 중 한 직원 (analysisd) 이 모든 사건을 한 줄짜리 alert 로 정리해 화이트보드 (alerts.json) 에 적는다. 화이트보드는 다시 외부 분석실 (OpenSearch indexer) 로 사진 찍혀 보존된다.
+
+| 일상 비유 | Wazuh manager 운영 |
+|-----------|---------------------|
+| 시내 CCTV | 각 host 의 Wazuh agent |
+| 순찰차 무전 | Suricata decoder + remoted |
+| 출입증 검사 | osquery + FIM |
+| 상황실 직원 11명 | 11 running daemon |
+| 화이트보드 alert 정리 | analysisd 의 alerts.json |
+| 외부 분석실 사진 보존 | OpenSearch indexer |
+| 자동 응답 명령 | Active Response |
+
+본 절은 다음 세 케이스를 다룬다.
+
+- 케이스 1 — Suricata 의 한 alert 가 analysisd 의 alerts.json 으로 ingest 되는 흐름을 직접 추적.
+- 케이스 2 — chain rule (rule 5710 + 5712) 의 multi-stage SSH brute force 탐지.
+- 케이스 3 — Active Response 의 자동 차단 발동 + rollback.
+
+원칙은 W01 ~ W08 와 같다. 재현 가능성, 도구 위주 분석, 신입생 친화, 학습 환경 한정.
+
+### 12.5.1 케이스 1 — Suricata alert 의 alerts.json ingest 추적
+
+**0. 일상 비유 — 순찰차 무전을 상황실 직원이 받아 화이트보드에 적기까지.**
+
+순찰차가 의심 차량을 발견해 무전을 보낸다. 상황실의 무전 담당 직원 (remoted) 이 받아 메모지에 적고, 그 메모지를 사건 분석 직원 (analysisd) 에게 전달한다. 분석 직원은 사건 카테고리, 위치, 심각도를 한 줄로 정리해 화이트보드 (alerts.json) 에 적는다. 화이트보드는 매번 사진으로 외부 분석실 (OpenSearch indexer) 로 전송된다. 학생은 이 다섯 단계의 흐름을 끝까지 한 번 따라가본다.
+
+| 일상 비유 | Wazuh ingest 흐름 |
+|-----------|--------------------|
+| 순찰차 무전 | Suricata eve.json 의 alert event |
+| 무전 받은 직원 | logcollector + remoted |
+| 메모지 분류 | decoder 매칭 |
+| 화이트보드 한 줄 | analysisd 의 alerts.json |
+| 외부 분석실 사진 | OpenSearch indexer 의 wazuh-alerts-* |
+
+**0a. 사용 도구 사전 안내.**
+
+- **Suricata eve.json** — IDS 의 원본 alert.
+- **/var/ossec/logs/alerts/alerts.json** — Wazuh manager 의 통합 alert 한 줄당 한 JSON.
+- **/var/ossec/logs/ossec.log** — Wazuh manager 의 운영 로그.
+- **Wazuh Dashboard** — Web UI. Discover 와 Security events 모듈.
+
+**1. Red — 공격 재현.**
+
+attacker VM 에서 학습 환경 web 의 80 포트에 XSS payload 한 줄을 보낸다. 학습 환경 한정으로 실행한다.
+
+```bash
+ssh ccc@192.168.0.112
+# password: 1
+```
+
+attacker VM 내부에서 한 줄을 보낸다.
+
+```bash
+# attacker VM 내부 (학습 환경 한정)
+curl -s -o /dev/null -w "%{http_code}\n" \
+    -H "Host: juice.6v6.lab" \
+    "http://192.168.0.103/search?q=%3Cscript%3Ealert(1)%3C/script%3E"
+```
+
+XSS payload 가 web 에 도달하면서 ips 의 Suricata 가 이를 인식한다.
+
+**2. 발생하는 로그/아티팩트.**
+
+- ips 의 `/var/log/suricata/eve.json` 에 alert event 한 줄 추가.
+- siem 의 `/var/ossec/logs/alerts/alerts.json` 에 통합 alert 한 줄 추가.
+- siem 의 `/var/ossec/logs/ossec.log` 에 ingest 처리 흔적.
+
+**3. Blue — 5 단계 ingest 흐름 직접 추적.**
+
+**Step 1 — ips 의 eve.json 에 원본 alert 확인.**
+
+```bash
+ssh 6v6-ips
+sudo tail -50 /var/log/suricata/eve.json \
+  | jq -r 'select(.event_type=="alert" and .src_ip=="192.168.0.112") | "\(.timestamp) ips \(.alert.signature_id) \(.alert.signature)"' \
+  | tail -5
+```
+
+타임스탬프, signature_id, signature 메시지가 한 줄로 출력된다.
+
+**Step 2 — Wazuh agent 가 ips 의 eve.json 을 ship.**
+
+ips VM 에 Wazuh agent 가 설치되어 있고, `agent.conf` 에 `<localfile>` 로 `/var/log/suricata/eve.json` 이 등록되어 있어야 한다.
+
+```bash
+ssh 6v6-ips
+sudo grep -A2 "eve.json" /var/ossec/etc/ossec.conf
+```
+
+`location` 이 eve.json 이고 `log_format` 이 `json` 이면 정상이다.
+
+**Step 3 — siem manager 의 analysisd 가 decoder 매칭.**
+
+```bash
+ssh 6v6-siem
+sudo tail -20 /var/ossec/logs/ossec.log | grep -i "suricata\|decoder"
+```
+
+decoder 매칭에 성공하면 단순 로그가 정상 ingest 된다. 실패하면 ossec.log 에 `Reason: ` 또는 `Unknown event` 메시지가 보일 수 있다.
+
+**Step 4 — alerts.json 에 통합 alert 한 줄.**
+
+```bash
+ssh 6v6-siem
+sudo tail -50 /var/ossec/logs/alerts/alerts.json \
+  | jq -r 'select(.agent.name=="ips") | "\(.timestamp) rule=\(.rule.id) level=\(.rule.level) desc=\(.rule.description)"' \
+  | tail -5
+```
+
+여기서 `rule.id` 는 86601 (Suricata XSS) 또는 86xxx 시리즈로 매핑된다.
+
+**Step 5 — Wazuh Dashboard 의 Discover 에서 보기.**
+
+1. 좌측 햄버거 메뉴 → `Discover` 선택.
+2. Index pattern 을 `wazuh-alerts-*` 로 바꾼다.
+3. Time picker `Last 15 minutes`.
+4. Search bar 에 `agent.name:ips AND rule.groups:suricata AND data.srcip:192.168.0.112` 입력.
+5. 결과 한 줄을 펼쳐 `data.alert.signature`, `data.src_ip`, `data.dest_ip` 를 확인한다.
+
+5 단계 모두 같은 사건이 보여야 정상 ingest 다.
+
+**4. Blue — 5 단계 중 한 단계라도 실패하면 진단.**
+
+학생이 다음 세 가지를 판단한다.
+
+- **Step 2 실패.** agent.conf 의 `<localfile>` 미등록 또는 권한 문제. agent 가 eve.json 을 읽지 못한다.
+- **Step 3 실패.** decoder 미등록 또는 잘못된 매칭. ossec.log 에 `Reason: 'Unknown'` 같은 메시지.
+- **Step 5 실패.** indexer 와 dashboard 의 연결 실패. OpenSearch 인덱스에 alert 가 들어가지 않음.
+
+각 단계의 실패에 대응되는 진단 명령은 W09 §9 (트러블슈팅 4 패턴) 의 패턴 1, 패턴 3 참조.
+
+**5. Purple — ingest baseline 운영.**
+
+다음 세 가지를 적용한다.
+
+- **모든 host 의 agent.conf git 추적.** `<localfile>` 와 `<directories>` 의 변경 history 가 git 으로 audit 된다.
+- **alerts.json retention 1년.** ISMS-P 표준. log rotate 의 보관 정책 확인.
+- **alerts.json baseline 측정.** 정상 운영의 분당 alert 수를 baseline 으로 측정. 5배 이상 spike 시 자동 알람.
+
+본 케이스 cycle 한 바퀴는 약 20분 정도다.
+
+### 12.5.2 케이스 2 — chain rule (5710 + 5712) 의 multi-stage SSH brute force 탐지
+
+**0. 일상 비유 — 한 사람이 한 번 실수하면 메모, 다섯 번 반복하면 책임자 호출.**
+
+상황실의 정상 운영 원칙이다. 한 호실에서 출입 카드 입력 실수 한 번은 단순 메모로 적어둔다. 같은 호실에서 같은 사람이 5번 실패하면 chain 규칙이 발동되어 책임자에게 즉시 알린다. 단발 사고는 false positive 가능성이 크지만, chain 누적은 진짜 침해의 직접 신호다.
+
+| 일상 비유 | chain rule |
+|-----------|------------|
+| 단발 실수 메모 | rule 5710 (level 5, "non-existent user") |
+| chain 발동 | rule 5712 (level 10, "Multiple authentication failures") |
+| 같은 사람 5회 | frequency 5 + timeframe 60 + same_source_ip |
+| 책임자 호출 | level 10 의 즉시 alarm |
+
+**0a. 사용 도구 사전 안내.**
+
+- **rule 5710** — Wazuh 의 기본 rule. sshd 의 single Failed password.
+- **rule 5712** — chain rule. 5710 의 frequency 누적 + same_source_ip.
+- **Wazuh Dashboard 의 Modules → Security events.**
+
+**1. Red — 공격 재현.**
+
+attacker VM 에서 학습 환경 web 의 SSH 에 5번 실패 시도를 보낸다.
+
+```bash
+ssh ccc@192.168.0.112
+
+# attacker VM 내부 (학습 환경 한정)
+for i in $(seq 1 5); do
+    sshpass -p "wrong${i}" ssh -o ConnectTimeout=3 \
+        -o StrictHostKeyChecking=no \
+        admin@192.168.0.103 'whoami' 2>/dev/null
+done
+```
+
+5번 모두 실패한다. 학습 환경 admin 의 정상 비밀번호가 `wrongN` 이 아니기 때문이다.
+
+**2. 발생하는 로그/아티팩트.**
+
+- web 의 `/var/log/auth.log` 에 Failed password 5건.
+- siem 의 alerts.json 에 rule 5710 alert 5건 + rule 5712 alert 1건 (5번째 시점).
+
+**3. Blue — Wazuh Dashboard 에서 chain rule 직접 확인.**
+
+학생이 자기 host 의 web browser 에서 Wazuh Dashboard 에 접속한다.
+
+- URL: `https://dashboard.6v6.lab` (또는 `https://192.168.0.103:5601`).
+- 로그인.
+
+UI 클릭 흐름은 다음과 같다.
+
+1. 좌측 햄버거 메뉴 → `Wazuh` → `Modules` → `Security events` 선택.
+2. Time picker `Last 15 minutes`.
+3. 화면 상단의 `Top Rules` 카드에서 rule 5710 의 카운트 5 와 rule 5712 의 카운트 1 을 확인.
+4. rule 5712 를 클릭하면 그 rule 의 alert 만 필터링된다.
+5. alert 한 줄을 펼쳐 `previous_log` 또는 `parent` 필드를 본다. chain 으로 묶인 이전 5710 alert 들의 reference 가 보인다.
+
+다음으로 jq 로 직접 확인한다.
+
+```bash
+ssh 6v6-siem
+sudo tail -100 /var/ossec/logs/alerts/alerts.json \
+  | jq -r 'select(.rule.id=="5712" and .data.srcip=="192.168.0.112") | "\(.timestamp) rule=\(.rule.id) level=\(.rule.level) desc=\(.rule.description) srcip=\(.data.srcip)"' \
+  | tail -3
+```
+
+level 10 의 5712 한 줄이 보이면 chain 발동이 정상이다.
+
+**4. Blue — 대응 의사결정.**
+
+학생이 다음 세 가지를 판단한다.
+
+- **level 10 의 즉시 알람.** rule 5712 의 level 10 은 즉시 SOC 통지 대상이다.
+- **단일 5710 vs chain 5712.** 5710 한 건은 단순 모니터링. 5712 발동은 침해 직접 신호.
+- **Active Response 연계.** 5712 발동 시 자동 차단 적용 여부를 정한다. 다음 케이스 3 에서 다룬다.
+
+**5. Purple — chain rule 의 frequency 조정.**
+
+다음 세 가지를 적용한다.
+
+- **frequency 5 → 3 으로 강화.** 학습 환경의 정상 SSH 시도가 분당 몇 건인지 baseline 측정 후 적정 값을 정한다.
+- **same_source_ip + same_user 결합.** 같은 IP 의 다양한 user 시도도 chain 대상이 되도록 보강.
+- **timeframe 60 → 120.** 천천히 진행하는 brute force 도 잡히도록 시간 창을 늘린다.
+
+```xml
+<group name="local,authentication_failures,">
+  <rule id="100300" level="12" frequency="3" timeframe="120">
+    <if_matched_sid>5710</if_matched_sid>
+    <same_source_ip />
+    <description>LOCAL Strict SSH brute - 3 fails in 2 minutes from same src</description>
+  </rule>
+</group>
+```
+
+### 12.5.3 케이스 3 — Active Response 자동 차단 + rollback
+
+**0. 일상 비유 — 상황실이 자동 응답 명령으로 호실 출입문 임시 잠금.**
+
+상황실 직원이 침해 신호를 받으면 자동 응답 명령을 발동해 호실 출입문을 10분간 임시 잠근다. 10분 뒤에는 자동으로 잠금이 해제된다. 학생은 본 자동 응답 명령이 어떻게 발동되고, 어떻게 자동 rollback 되는지를 직접 확인한다.
+
+| 일상 비유 | Active Response |
+|-----------|------------------|
+| 자동 응답 명령 | active-response 등록 |
+| 출입문 임시 잠금 | firewall-drop (iptables drop) |
+| 잠금 시간 10분 | timeout 600 초 |
+| 자동 잠금 해제 | timeout 만료 시 자동 rollback |
+
+**0a. 사용 도구 사전 안내.**
+
+- **active-response** — Wazuh 의 자동 응답 메커니즘. rule 발동 시 agent 가 명령 실행.
+- **firewall-drop** — Active Response 의 표준 명령. iptables 또는 nftables 의 drop rule 자동 추가.
+- **timeout** — 자동 rollback 시간. 초 단위.
+
+**1. Red — 공격 재현.**
+
+케이스 2 의 5번 SSH 실패를 다시 한 번 실행한다.
+
+```bash
+ssh ccc@192.168.0.112
+
+# attacker VM 내부 (학습 환경 한정)
+for i in $(seq 1 5); do
+    sshpass -p "wrong${i}" ssh -o ConnectTimeout=3 \
+        -o StrictHostKeyChecking=no \
+        admin@192.168.0.103 'whoami' 2>/dev/null
+done
+
+# 이제 6번째 시도를 보낸다 — 차단되어야 한다
+sshpass -p "wrong6" ssh -o ConnectTimeout=3 \
+    -o StrictHostKeyChecking=no \
+    admin@192.168.0.103 'whoami' 2>&1
+```
+
+5번 실패 후 rule 5712 가 발동되면 Active Response 가 attacker IP 를 차단한다. 6번째 시도는 connection 자체가 timeout 또는 refused 가 된다.
+
+**2. 발생하는 로그/아티팩트.**
+
+- siem 의 alerts.json 에 rule 5712 + active-response 발동 log.
+- web 의 `iptables -L INPUT` 에 attacker IP 의 drop rule 한 줄 추가.
+- web 의 `/var/ossec/logs/active-responses.log` 에 발동 + rollback 의 두 줄 기록.
+
+**3. Blue — Active Response 발동 + rollback 직접 확인.**
+
+Wazuh Dashboard 의 클릭 흐름은 다음과 같다.
+
+1. 좌측 햄버거 메뉴 → `Wazuh` → `Active Response` 선택.
+2. 최근 발동 목록의 첫 줄을 확인한다. command 가 `firewall-drop`, agent 가 `web`, IP 가 `192.168.0.112` 인지 확인한다.
+3. Time picker `Last 15 minutes` 로 좁혀 시각도 본다.
+
+다음으로 web VM 에서 iptables 의 drop rule 한 줄을 직접 확인한다.
+
+```bash
+ssh 6v6-web
+sudo iptables -L INPUT -n --line-numbers | grep "192.168.0.112"
+```
+
+`DROP all -- 192.168.0.112 0.0.0.0/0` 같은 줄이 보이면 정상 발동이다.
+
+active-responses.log 의 발동 줄을 본다.
+
+```bash
+sudo tail -20 /var/ossec/logs/active-responses.log
+```
+
+`Wed May 12 14:45:00 EXEC active-response/bin/firewall-drop.sh ... add 192.168.0.112` 같은 줄이 보이면 실행 직접 증거다.
+
+timeout 만료 후 자동 rollback 도 확인한다.
+
+```bash
+# 600초 후 다시 실행
+sudo iptables -L INPUT -n --line-numbers | grep "192.168.0.112" || echo "rollback complete"
+sudo tail -5 /var/ossec/logs/active-responses.log
+```
+
+rule 이 사라졌고 active-responses.log 에 `delete 192.168.0.112` 같은 줄이 보이면 자동 rollback 정상이다.
+
+**4. Blue — 대응 의사결정.**
+
+학생이 다음 세 가지를 판단한다.
+
+- **timeout 적정성.** 600 초가 학습 환경에서 적정한가? 운영 환경은 보통 1800 ~ 3600 초.
+- **auto-drop 의 false positive 위험.** rule 5712 가 false positive 라면 정상 사용자가 10분 차단된다. chain rule 의 frequency 가 너무 낮으면 위험.
+- **whitelist 적용.** 학습 환경의 bastion (10.20.30.201) 같은 정상 운영 IP 는 active-response 의 whitelist 에 등록해 false positive 차단을 막는다.
+
+**5. Purple — Active Response 운영 baseline.**
+
+다음 세 가지를 적용한다.
+
+- **whitelist 등록.** `ossec.conf` 의 `<active-response>` 섹션에 `<repeated_offenders>` 와 `<whitelist>` 를 추가한다. bastion, monitoring server 같은 정상 IP 는 차단 면제.
+- **timeout 운영 정책 명문화.** 학습 환경 600, 운영 환경 3600 의 정책을 문서화한다.
+- **반복 차단의 timeout 점진 증가.** 같은 IP 가 반복 차단되면 timeout 을 600 → 3600 → 86400 로 점진 증가한다. `<repeated_offenders>` 옵션으로 가능.
+
+### 12.5.4 본 절 정리
+
+본 절은 W09 의 Wazuh manager 학습을 실제 공격 분석 cycle 에 연결했다. 학생이 다음 능력을 갖춘다.
+
+- Suricata alert 의 5 단계 ingest 흐름 (eve.json → agent → remoted → analysisd → alerts.json → Dashboard) 을 직접 추적한다.
+- chain rule (5710 + 5712) 의 multi-stage 탐지를 frequency, timeframe, same_source_ip 로 분석한다.
+- Active Response 의 자동 차단 발동과 timeout rollback 을 직접 확인하고 whitelist 와 repeated_offenders 로 보완한다.
+
+다음 주차 W10 에서는 Wazuh Dashboard 의 시각화 + 4 통합 패턴 (ModSec / osquery / FIM / Active Response) 의 R/B/P cycle 을 학습한다.
+
+---
+
 ## 13. 과제
 
 ### A. 11 daemon 분석 보고서 (필수, 30점)
