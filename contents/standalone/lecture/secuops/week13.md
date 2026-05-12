@@ -749,6 +749,383 @@ wc -l /var/ossec/etc/lists/blocklist-de 2>&1
 
 ---
 
+## 12.5 R/B/P 공격 분석 케이스 확장 (본 주차 추가)
+
+### 12.5.0 R/B/P 일상 비유 — 동네 안전 정보의 자동 우편 배달 + 자동 잠금
+
+본 절은 OpenCTI Stream Connector + Wazuh CDB list + Active Response 의 3 통합을 동네 안전 정보의 자동 우편 배달 비유로 시작한다.
+
+학생이 사는 동네의 안전 카페가 다음 한 시스템을 도입했다고 상상해보자.
+
+- **자동 우편 배달.** 옆 동네에서 신고된 사기 phone 번호가 우리 동네 카페에 자동으로 도착한다 (Stream Connector).
+- **자동 명단 갱신.** 카페가 도착한 정보를 보관함의 명단 (CDB list) 에 자동으로 추가한다.
+- **자동 잠금.** 명단에 있는 번호가 우리 동네 가정의 전화로 걸려오면, 가정 출입문이 자동으로 5분간 잠긴다 (Active Response).
+
+세 단계의 자동화가 결합되면 운영자의 손 없이도 외부 위협 정보가 본인 환경의 방어로 즉시 전환된다.
+
+| 일상 비유 | 3 통합 |
+|-----------|--------|
+| 자동 우편 배달 | OpenCTI Stream Connector |
+| 보관함 명단 갱신 | Wazuh CDB list 자동 update |
+| 명단 매칭 시 알람 | rule 100xxx 의 list lookup |
+| 자동 잠금 | Active Response (firewall-drop) |
+
+본 절은 다음 세 케이스를 다룬다.
+
+- 케이스 1 — 외부 IOC 가 CDB 로 자동 sync 된 직후 attacker VM 의 시도가 자동 alert 로 잡히고 즉시 차단되는 end-to-end cycle.
+- 케이스 2 — Stream Connector 의 실패 시나리오 (network 단절, schema 변경) 와 운영자의 검증 절차.
+- 케이스 3 — false positive 가 발견된 IOC 의 quarantine + Stream rollback.
+
+원칙은 W01 ~ W12 와 같다. 재현 가능성, 도구 위주 분석, 신입생 친화, 학습 환경 한정.
+
+### 12.5.1 케이스 1 — IOC 자동 sync → 자동 alert → 자동 차단 end-to-end
+
+**0. 일상 비유 — 옆 동네 신고 → 우리 동네 명단 → 사기 전화 자동 차단.**
+
+옆 동네에서 신고된 phone 번호 한 개가 우리 동네 카페에 30분 안에 자동 도착한다. 카페가 명단을 즉시 갱신한다. 한 시간 뒤 도둑이 그 번호로 우리 동네 한 가정에 전화를 건다. 가정의 자동 잠금 시스템이 명단을 즉시 조회해 출입문을 5분간 잠근다. 운영자가 손 댄 행위는 없지만 한 사건이 막혔다.
+
+| 일상 비유 | 3 통합 cycle |
+|-----------|--------------|
+| 신고 도착 | Stream Connector 의 IOC ingest |
+| 명단 갱신 | wazuh-makelists |
+| 사기 전화 | attacker VM 의 시도 |
+| 자동 조회 | rule 의 list lookup |
+| 자동 잠금 5분 | Active Response timeout 300s |
+
+**0a. 사용 도구 사전 안내.**
+
+- **OpenCTI Stream Connector** — OpenCTI 의 indicator 변경을 실시간으로 외부 시스템 (Wazuh) 으로 push.
+- **wazuh-makelists** — CDB list 의 binary index 생성. 자동화 가능.
+- **firewall-drop** — Wazuh Active Response 의 표준 명령.
+
+**1. Red — 공격 재현.**
+
+먼저 OpenCTI 에 학습용 indicator 가 하나 등록되어 있다고 가정한다. W12 의 케이스 2 에서 작성한 attacker VM IP (`192.168.0.112`) 의 indicator 다.
+
+Stream Connector 가 동작 중이면 본 indicator 가 자동으로 wazuh-siem 의 `/var/ossec/etc/lists/known_bad_ips` 에 한 줄 추가된다.
+
+```
+192.168.0.112:opencti_indicator,learning_only
+```
+
+다음으로 attacker VM 에서 web 의 SSH 에 시도를 보낸다.
+
+```bash
+ssh ccc@192.168.0.112
+# password: 1
+
+# attacker VM 내부 (학습 환경 한정)
+sshpass -p "wrong1" ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no \
+    admin@192.168.0.103 'whoami' 2>/dev/null
+```
+
+**2. 발생하는 로그/아티팩트.**
+
+- web 의 `/var/log/auth.log` — Failed password 한 줄.
+- siem 의 alerts.json — rule 5710 (level 5) + list lookup 매칭으로 rule 100300 (level 12) 의 두 alert.
+- web 의 `/var/ossec/logs/active-responses.log` — Active Response 발동 줄.
+- web 의 iptables — `192.168.0.112` 의 DROP rule 한 줄 추가.
+
+**3. Blue — 자동화 end-to-end 검증.**
+
+학생이 다음 다섯 단계를 순서대로 확인한다.
+
+**Step 1 — Stream Connector 가 IOC 를 CDB 에 sync 했는지 확인.**
+
+```bash
+ssh 6v6-siem
+sudo grep "192.168.0.112" /var/ossec/etc/lists/known_bad_ips
+```
+
+한 줄이 보이면 sync 완료.
+
+**Step 2 — wazuh-makelists 가 binary index 를 갱신했는지 확인.**
+
+```bash
+sudo ls -la /var/ossec/etc/lists/known_bad_ips.cdb
+```
+
+binary 파일의 mtime 이 최근 (예: 10분 이내) 이면 정상.
+
+**Step 3 — alert 발생 확인.**
+
+```bash
+sudo tail -100 /var/ossec/logs/alerts/alerts.json \
+  | jq -r 'select(.data.srcip=="192.168.0.112" and .rule.level>=12) | "\(.timestamp) rule=\(.rule.id) level=\(.rule.level) desc=\(.rule.description)"'
+```
+
+level 12 의 한 줄이 보이면 list lookup rule 정상 발동.
+
+**Step 4 — Active Response 발동 확인.**
+
+```bash
+ssh 6v6-web
+sudo tail -10 /var/ossec/logs/active-responses.log
+```
+
+`add 192.168.0.112` 의 한 줄이 보이면 자동 차단 발동.
+
+**Step 5 — iptables drop rule 확인.**
+
+```bash
+sudo iptables -L INPUT -n --line-numbers | grep "192.168.0.112"
+```
+
+`DROP all -- 192.168.0.112` 의 한 줄이 보이면 차단 적용.
+
+Wazuh Dashboard 에서도 한 query 로 통합 확인.
+
+1. 좌측 햄버거 메뉴 → `Discover` 선택.
+2. Index pattern `wazuh-alerts-*`.
+3. Search bar 에 `data.srcip:192.168.0.112 AND (rule.level>=12 OR rule.groups:active_response)` 입력.
+4. 결과의 timestamp 가 5초 이내 차이로 두 줄 (list lookup alert + active-response 발동) 이 보인다.
+
+**4. Blue — 대응 의사결정.**
+
+학생이 다음 세 가지를 판단한다.
+
+- **end-to-end 시간 측정.** Red 시도 → list lookup alert → active-response → iptables 적용 까지의 시간 차. 5초 이내가 정상.
+- **자동화의 부작용 risk.** 같은 IP 가 정상 운영자의 IP 였다면 운영자가 5분간 차단된다. case 3 에서 다룬다.
+- **운영 가시화.** Active Response 의 발동 history 가 Dashboard 의 한 화면에서 보이는지 확인.
+
+**5. Purple — 운영 baseline + 모니터링.**
+
+다음 세 가지를 적용한다.
+
+- **end-to-end latency 모니터링.** Stream ingest → CDB update → alert → AR 의 단계별 latency 를 측정해 baseline 정한다.
+- **Active Response timeout 운영 정책.** 학습 환경 300s, 운영 환경 1800s. 반복 차단 시 점진 증가.
+- **운영 dashboard 카드.** "오늘 자동 차단한 IP" + "각 IP 의 source (OpenCTI/Manual/Rule)" 한 화면 시각화.
+
+본 케이스 cycle 한 바퀴는 약 25분 정도다.
+
+### 12.5.2 케이스 2 — Stream Connector 실패 시나리오 + 운영자 검증
+
+**0. 일상 비유 — 우편 배달 차량이 고장 나면 명단 갱신이 멈춤.**
+
+자동 우편 배달 차량이 고장 나면 옆 동네 신고가 우리 동네 카페에 도착하지 못한다. 명단은 며칠 전 그대로 멈춘다. 그 사이에 새 사기 번호가 우리 동네로 전화를 걸어도 명단에 없어서 잠금이 발동되지 않는다. 운영자가 매일 차량 상태와 명단의 최신성을 점검해야 한다.
+
+| 일상 비유 | Stream 실패 |
+|-----------|-------------|
+| 우편 차량 고장 | Stream Connector 의 process 종료 |
+| 명단 정체 | CDB list 의 mtime 이 오래된 상태 |
+| 새 사기 미차단 | 신규 IOC 가 CDB 에 없음 |
+| 매일 점검 | Stream Connector health check + CDB freshness |
+
+**0a. 사용 도구 사전 안내.**
+
+- **Stream Connector 의 health endpoint** — OpenCTI 의 모든 connector 는 `/health` 와 같은 endpoint 제공.
+- **CDB file 의 mtime** — `stat -c %y <file>`.
+- **alert decoder** — Stream Connector 자체의 disconnect alert.
+
+**1. Red — Stream Connector 실패 시뮬.**
+
+학습 환경에서 Stream Connector container 를 일부러 멈춘다.
+
+```bash
+# OpenCTI 가 학습 환경에 설치되어 있다고 가정
+sudo docker stop opencti-connector-stream-wazuh
+
+# 또는 process 종료 시뮬
+sudo systemctl stop opencti-stream-connector  # 학습 환경에 systemd 등록된 경우
+```
+
+연결이 끊긴 동안 OpenCTI 에 새 indicator 를 등록해도 CDB 에 sync 되지 않는다.
+
+OpenCTI UI 에서 새 학습용 indicator 한 줄 추가.
+
+```
+indicator--{new-uuid}
+pattern: [ipv4-addr:value = '192.168.0.113']
+labels: learning-only, new-test
+```
+
+**2. 발생하는 로그/아티팩트.**
+
+- OpenCTI 의 새 indicator 는 등록 완료. UI 에 보임.
+- siem 의 CDB list (`known_bad_ips`) 에는 새 IP 가 없음.
+- Stream Connector 의 process 가 종료된 상태.
+
+**3. Blue — 5 단계 health check.**
+
+**Step 1 — OpenCTI UI 에서 connector 상태 확인.**
+
+OpenCTI UI 의 클릭 흐름.
+
+1. 좌측 메뉴 → `Data` → `Ingestion` → `Connectors` 선택.
+2. `Wazuh Stream Connector` 행을 찾는다.
+3. `Last update` 컬럼의 시각이 1시간 이상 오래되었으면 비정상.
+4. 우측의 `Status` 가 `inactive` 또는 `disconnected` 면 직접 증거.
+
+**Step 2 — connector container 상태 확인.**
+
+```bash
+sudo docker ps -a | grep -i stream
+```
+
+`Exited` 상태면 연결 끊김.
+
+**Step 3 — siem 의 CDB file mtime 확인.**
+
+```bash
+ssh 6v6-siem
+stat -c '%y %n' /var/ossec/etc/lists/known_bad_ips
+```
+
+mtime 이 6시간 이상 정체면 비정상 가능성.
+
+**Step 4 — Wazuh manager 의 connector disconnect alert 확인.**
+
+```bash
+sudo tail -200 /var/ossec/logs/alerts/alerts.json \
+  | jq -r 'select(.rule.description? | tostring | contains("connector")) | "\(.timestamp) \(.rule.description)"'
+```
+
+connector disconnect 의 별도 rule 이 있으면 alert 가 한 줄 보인다.
+
+**Step 5 — 자가 진단 dashboard.**
+
+Wazuh Dashboard 의 클릭 흐름.
+
+1. 좌측 햄버거 메뉴 → `Discover` 선택.
+2. Index pattern `wazuh-alerts-*`.
+3. Search bar 에 `rule.groups:cti AND rule.description:*disconnect*` 입력.
+4. Time picker `Last 24 hours`.
+
+**4. Blue — 대응 의사결정.**
+
+학생이 다음 세 가지를 판단한다.
+
+- **즉시 복구 vs 임시 수동 update.** Stream 복구가 가능하면 즉시 복구. 시간이 걸리면 수동으로 abuse.ch URLhaus 또는 OpenCTI CSV export 로 CDB list 한 번 update.
+- **본인 환경의 노출 평가.** Stream 정체 동안 새로 등록된 외부 IOC 가 몇 개인지, 그 중 학습 환경에 매칭될 수 있는 패턴이 있는지 측정.
+- **장애 history 의 root cause.** 이번 실패의 원인 (network, schema 변경, OOM 등) 을 식별해 다음 보강.
+
+**5. Purple — Stream 안정성 운영 baseline.**
+
+다음 세 가지를 적용한다.
+
+- **Stream health monitor.** OpenCTI 의 connector 상태를 매 5분 cron 으로 polling 하고 disconnect 시 webhook alert.
+- **CDB freshness monitor.** `known_bad_ips.cdb` 의 mtime 이 1시간 이상 정체되면 alert.
+- **fallback 수동 update.** Stream 장애 시 abuse.ch URLhaus 의 CSV 를 매 시간 받아 CDB 에 merge 하는 보조 cron 운영.
+
+### 12.5.3 케이스 3 — false positive IOC 의 quarantine + Stream rollback
+
+**0. 일상 비유 — 옆 동네 신고가 잘못된 phone 번호로 우리 동네에 도착.**
+
+옆 동네 신고자가 실수로 잘못된 phone 번호를 신고했다. 그 번호가 우리 동네에 자동 도착해 명단에 등록되었다. 그러나 그 번호는 사실 우리 동네 한 정상 입주민의 번호다. 다음 통화 시 자동 잠금이 발동되어 정상 입주민이 5분간 출입 못 한다. 카페 운영자가 즉시 그 번호를 명단에서 빼고, 옆 동네에 잘못 신고된 정정 알림을 보낸다.
+
+| 일상 비유 | false positive IOC |
+|-----------|---------------------|
+| 잘못 신고된 번호 | confidence 가 낮은 IOC |
+| 정상 입주민 차단 | 정상 운영 IP 의 false positive |
+| 명단에서 빼기 | CDB 에서 해당 entry 제거 |
+| 정정 알림 | OpenCTI 의 indicator revoke |
+| 다른 동네 동기화 | Stream 의 update flow |
+
+**0a. 사용 도구 사전 안내.**
+
+- **OpenCTI indicator 의 `revoked: true` 필드** — false positive 의 표준 표현.
+- **CDB list 의 entry 제거** — sed 한 줄로 가능.
+- **active-response 의 manual rollback** — `firewall-drop.sh ... delete <ip>`.
+
+**1. Red — false positive 시뮬.**
+
+학습 환경에서 잘못 등록된 IOC 한 개를 가정한다. 학습 환경의 정상 운영 host (예: web VM 의 IP `192.168.0.103`) 가 잘못 known_bad_ips 에 등록되었다고 가정.
+
+```bash
+ssh 6v6-siem
+echo "192.168.0.103:opencti_indicator,false_positive_test" \
+  | sudo tee -a /var/ossec/etc/lists/known_bad_ips
+sudo /var/ossec/bin/wazuh-makelists
+```
+
+다음 부터는 web VM 자신의 정상 SSH probe 가 web VM 자신을 차단하는 false positive 가 발생한다.
+
+**2. 발생하는 로그/아티팩트.**
+
+- 정상 운영 host 의 SSH probe 시도가 rule 100300 (list lookup) 으로 잡혀 level 12 alert.
+- Active Response 가 web VM 자신을 5분간 iptables drop.
+- 운영팀이 dashboard 에서 정상 운영의 갑작스러운 중단을 본다.
+
+**3. Blue — false positive 식별 + 즉시 quarantine.**
+
+**Step 1 — alert 의 src/dest 확인.**
+
+```bash
+ssh 6v6-siem
+sudo tail -100 /var/ossec/logs/alerts/alerts.json \
+  | jq -r 'select(.rule.id=="100300") | "\(.timestamp) src=\(.data.srcip) agent=\(.agent.name)"'
+```
+
+src 가 정상 운영 host 인지, agent 가 본인 host 인지 본다.
+
+**Step 2 — IOC source 확인.**
+
+```bash
+sudo grep "192.168.0.103" /var/ossec/etc/lists/known_bad_ips
+```
+
+`opencti_indicator` source tag 가 보이면 OpenCTI 출처. `manual` 이면 운영자 등록.
+
+**Step 3 — OpenCTI UI 에서 해당 indicator 의 revoke.**
+
+OpenCTI UI 의 클릭 흐름.
+
+1. 좌측 메뉴 → `Observations` → `Indicators` 선택.
+2. Search bar 에 `192.168.0.103` 입력.
+3. 결과의 indicator 한 줄을 클릭.
+4. 상단의 `Edit` 또는 `Actions` 메뉴에서 `Mark as revoked` 선택.
+5. confirm.
+
+revoked 처리되면 Stream Connector 가 자동으로 CDB list 에서 해당 entry 를 제거한다.
+
+**Step 4 — CDB list 의 entry 직접 제거 (긴급 시).**
+
+Stream 의 reflection 이 지연되는 경우 운영자가 직접 sed 한 줄로 제거.
+
+```bash
+ssh 6v6-siem
+sudo sed -i '/^192.168.0.103:/d' /var/ossec/etc/lists/known_bad_ips
+sudo /var/ossec/bin/wazuh-makelists
+```
+
+**Step 5 — Active Response rollback.**
+
+이미 차단된 iptables rule 을 즉시 풀어준다.
+
+```bash
+ssh 6v6-web
+sudo /var/ossec/active-response/bin/firewall-drop.sh delete srcip=192.168.0.103
+sudo iptables -L INPUT -n | grep "192.168.0.103" || echo "rollback complete"
+```
+
+**4. Blue — 대응 의사결정.**
+
+학생이 다음 세 가지를 판단한다.
+
+- **수동 quarantine 의 안전한 순서.** OpenCTI revoke (장기 보존) → CDB 제거 (즉시 효과) → iptables rollback (이미 차단된 entry) 의 순서.
+- **공개 의 영향.** false positive 가 다른 환경에도 전파되었을 가능성. Stream 의 source 가 OpenCTI 이면 같은 OpenCTI 를 구독하는 다른 환경에도 같은 false positive 가 있을 수 있다.
+- **재발 방지.** 운영자가 confidence 가 낮은 IOC 의 자동 ingest 를 막는 운영 정책을 정한다.
+
+**5. Purple — confidence 기반 운영 정책.**
+
+다음 세 가지를 적용한다.
+
+- **confidence threshold.** Stream Connector 의 ingest 단계에서 confidence 70 이상의 indicator 만 자동 CDB ingest. 70 미만은 운영자 manual review 만 통과.
+- **정상 운영 IP whitelist.** 학습 환경의 6v6 내부 subnet (`192.168.0.0/24`) 과 `10.20.30.0/24` 는 Stream ingest 시 자동 제외.
+- **false positive 분기 검토.** 분기마다 발생한 false positive 의 source / confidence / impact 를 집계해 운영 baseline 보강.
+
+### 12.5.4 본 절 정리
+
+본 절은 W13 의 CTI ↔ SIEM 통합 학습을 실제 공격 분석 cycle 에 연결했다. 학생이 다음 능력을 갖춘다.
+
+- OpenCTI Stream Connector → CDB list 자동 sync → rule lookup → Active Response 의 end-to-end 5 단계 cycle 을 직접 검증한다.
+- Stream Connector 실패 시나리오에서 5 단계 health check 와 fallback 수동 update 로 운영을 유지한다.
+- false positive 발생 시 OpenCTI revoke → CDB 즉시 제거 → AR rollback 의 안전한 순서로 운영을 복귀시킨다.
+
+다음 주차 W14 에서는 능동적 위협 헌팅 cycle 을 같은 R/B/P 패턴으로 학습한다.
+
+---
+
 ## 13. 과제
 
 ### A. CDB list 작성 (필수, 40점)
