@@ -1,0 +1,371 @@
+lab_id: standalone-aisec-week11
+title: 자율보안 (1) — 개요 / 강화학습 / 스케줄러·왓처
+version: standalone-non-ai
+course: aisec
+week: 11
+description: |
+  자율보안 의 5 단계 + 강화학습 의 기초 + 스케줄러 / 왓처 의 패턴 + Hybrid 의사결정
+  의 5 가시화.
+difficulty: medium
+duration_minutes: 180
+prerequisites:
+  - W10 통과
+  - Python 3 + numpy
+  - cron 의 호스트 접근
+objectives:
+  - cron / systemd timer 의 가시화
+  - Bastion watchdog 의 학습
+  - Q-learning 의 grid world 의 실행
+  - Hybrid 의사결정 의 시뮬
+  - action 분류 의 6v6 매핑
+pass_threshold: 0.7
+
+steps:
+
+  # ============================================================
+  # STEP 1 — cron + CCC nvd_cron 의 학습
+  # ============================================================
+  - order: 1
+    instruction: |
+      cron / systemd timer 의 학습 + CCC 의 nvd_cron / report_cron 의 가시화.
+    hint: |
+      crontab -l 또는 systemctl list-timers
+    category: analysis
+    points: 20
+    answer: |
+      cd /home/opsclaw/ccc 2>/dev/null
+
+      echo "=== nvd_cron.log 의 최근 ==="
+      tail -10 results/nvd_cron.log 2>/dev/null
+      echo ""
+
+      echo "=== report_cron.log 의 최근 ==="
+      tail -10 results/retest/report_cron.log 2>/dev/null
+
+      echo ""
+      echo "=== systemd timer 의 가시화 ==="
+      systemctl list-timers --all 2>/dev/null | head -10
+
+      echo ""
+      echo "=== crontab 의 학습 ==="
+      crontab -l 2>/dev/null | head -10
+    answer_detail: cron 의 가시화
+    verify:
+      type: output_contains
+      expect: cron
+      field: stdout
+      semantic:
+        intent: cron 의 가시화
+        success_criteria: [cron 또는 timer 의 응답]
+        acceptable_methods:
+          - "**[OSS] systemctl list-timers**"
+          - "**[OSS] crontab -l**"
+          - "**[OSS] systemd 의 .timer + .service**"
+          - "**[OSS] /etc/cron.d / /etc/cron.daily**"
+          - "**[OSS] Airflow / Prefect 의 DAG**"
+          - "**[OSS] K8s CronJob 의 schedule**"
+          - "**[OSS] CCC 의 nvd_cron 의 의의**"
+          - "**[OSS] CCC 의 report_cron 의 진행 자동 commit**"
+    target_vm: attacker
+
+  # ============================================================
+  # STEP 2 — Bastion watchdog 의 학습
+  # ============================================================
+  - order: 2
+    instruction: |
+      Bastion 의 bastion_watchdog.log 의 확인 + /health 의 자동 모니터링 의 의의 학습.
+    hint: |
+      bastion_watchdog.log + /health
+    category: analysis
+    points: 20
+    answer: |
+      cd /home/opsclaw/ccc 2>/dev/null
+
+      echo "=== bastion_watchdog.log 의 최근 ==="
+      tail -10 results/retest/bastion_watchdog.log 2>/dev/null
+
+      echo ""
+      echo "=== /health 의 직접 모니터링 ==="
+      for i in 1 2 3; do
+          curl -s -m 5 -H "X-API-Key: ccc-api-key-2026" \
+              http://192.168.0.103:8003/health 2>&1 | head -c 200
+          echo ""
+          sleep 1
+      done
+
+      echo ""
+      echo "=== 의의 의 분석 ==="
+      cat <<'EOF'
+      Bastion watchdog 의 역할:
+      - 주기 적 의 /health 호출
+      - kg.all_modules_loaded == false 의 즉시 alert
+      - graph_nodes / history_anchors 의 변화 monitoring
+      - errors 배열 의 비어 있지 않음 의 즉시 escalation
+
+      실 운영 의 의의:
+      - bastion daemon 의 crash 의 조기 발견
+      - KG 의 silent 의 degradation 의 차단
+      - playbook count 의 의도 하지 않은 변화
+      EOF
+    answer_detail: Bastion watchdog
+    verify:
+      type: output_contains
+      expect: status
+      field: stdout
+      semantic:
+        intent: Bastion watchdog
+        success_criteria: [health 또는 status 의 응답]
+        acceptable_methods:
+          - "**[OSS] /health 의 주기 호출**"
+          - "**[OSS] kg.all_modules_loaded 의 모니터링**"
+          - "**[OSS] graph_nodes / history_anchors 의 변화**"
+          - "**[OSS] errors 의 비어 있지 않음 의 escalation**"
+          - "**[OSS] systemd 의 restart + alert**"
+          - "**[OSS] Prometheus exporter (가능 시)**"
+          - "**[OSS] Grafana dashboard**"
+          - "**[OSS] watchdog 의 watchdog (의 의 watchdog 의 fail)**"
+    target_vm: bastion
+
+  # ============================================================
+  # STEP 3 — Q-learning 의 grid world demo
+  # ============================================================
+  - order: 3
+    instruction: |
+      5x5 grid world 의 Q-learning 의 미니 demo — 에이전트 가 reward 의 path 의 학습.
+    hint: |
+      numpy 의 Q-table
+    category: ml
+    points: 25
+    answer: |
+      cat > /tmp/qlearning_demo.py <<'EOF'
+      """Q-learning 의 5x5 grid world 의 미니 demo"""
+      import numpy as np
+
+      # 5x5 grid — 0~24
+      GRID = 5
+      N_STATES = GRID * GRID
+      N_ACTIONS = 4   # 0=up, 1=down, 2=left, 3=right
+      START = 0       # (0,0)
+      GOAL = N_STATES - 1   # (4,4)
+
+      def step(state, action):
+          row, col = state // GRID, state % GRID
+          if action == 0 and row > 0: row -= 1
+          elif action == 1 and row < GRID-1: row += 1
+          elif action == 2 and col > 0: col -= 1
+          elif action == 3 and col < GRID-1: col += 1
+          new_state = row * GRID + col
+          reward = 10 if new_state == GOAL else -1
+          done = new_state == GOAL
+          return new_state, reward, done
+
+      # Q-table
+      Q = np.zeros((N_STATES, N_ACTIONS))
+
+      alpha = 0.1   # learning rate
+      gamma = 0.9   # discount
+      epsilon = 0.2 # exploration
+
+      EPISODES = 500
+      for ep in range(EPISODES):
+          state = START
+          for _ in range(50):
+              # epsilon-greedy
+              if np.random.random() < epsilon:
+                  action = np.random.randint(N_ACTIONS)
+              else:
+                  action = np.argmax(Q[state])
+
+              new_state, reward, done = step(state, action)
+
+              # Q update
+              Q[state, action] += alpha * (
+                  reward + gamma * np.max(Q[new_state]) - Q[state, action]
+              )
+
+              state = new_state
+              if done:
+                  break
+
+      # 학습 결과
+      print("=== 학습 후 의 Q-table (start state) ===")
+      print(f"  Up:{Q[0,0]:.2f} / Down:{Q[0,1]:.2f} / Left:{Q[0,2]:.2f} / Right:{Q[0,3]:.2f}")
+      best = np.argmax(Q[0])
+      actions_name = ["Up","Down","Left","Right"]
+      print(f"  best action: {actions_name[best]}")
+
+      print("\n=== 학습 후 의 optimal path ===")
+      state = START
+      path = [state]
+      for _ in range(20):
+          action = np.argmax(Q[state])
+          state, _, done = step(state, action)
+          path.append(state)
+          if done: break
+      print(f"  path: {path}")
+      EOF
+      python3 /tmp/qlearning_demo.py 2>&1 | head -10
+    answer_detail: Q-learning
+    verify:
+      type: output_contains
+      expect: action
+      field: stdout
+      semantic:
+        intent: Q-learning
+        success_criteria: [Q-table 또는 path 의 응답]
+        acceptable_methods:
+          - "**[OSS] epsilon-greedy 의 exploration**"
+          - "**[OSS] alpha / gamma 의 hyperparameter**"
+          - "**[OSS] Q-table 의 update rule**"
+          - "**[OSS] DQN 의 deep Q-network**"
+          - "**[OSS] policy gradient (REINFORCE / A3C / PPO)**"
+          - "**[OSS] safe RL 의 constrained**"
+          - "**[OSS] OpenAI Gym / Gymnasium 의 환경**"
+          - "**[OSS] Stable-Baselines3 의 implementation**"
+    target_vm: bastion
+
+  # ============================================================
+  # STEP 4 — Hybrid 의사결정 의 시뮬
+  # ============================================================
+  - order: 4
+    instruction: |
+      rule + LLM 의 통합 의 hybrid 의사결정 의 미니 demo — alert 의 분류 의 우선 rule
+      만, 의 모호 한 경우 LLM 의 호출.
+    hint: |
+      rule 의 명확 + LLM 의 모호
+    category: experiment
+    points: 20
+    answer: |
+      cat > /tmp/hybrid_demo.py <<'EOF'
+      """Hybrid 의사결정 의 미니 demo — rule + LLM"""
+      import json
+      import subprocess
+
+      def rule_classify(alert):
+          # 명확 rule
+          if alert.get("rule_id") == 5710 and alert.get("level", 0) >= 10:
+              return "BLOCK", "rule-explicit"
+          if alert.get("srcip", "").startswith("192.168.0.112"):
+              return "MONITOR", "rule-learning-env"
+          # 모호 — LLM 호출
+          return None, "ambiguous"
+
+      def llm_classify(alert):
+          prompt = f"다음 alert 의 한국어 분류 (BLOCK/MONITOR/IGNORE): {json.dumps(alert, ensure_ascii=False)[:300]}"
+          try:
+              result = subprocess.run(
+                  ["curl", "-s", "-m", "10", "http://192.168.0.109:11434/api/generate",
+                   "-d", json.dumps({"model":"gemma3:4b","prompt":prompt,"stream":False,"options":{"temperature":0.1,"num_predict":50}})],
+                  capture_output=True, text=True, timeout=15
+              )
+              return "LLM-decided", result.stdout[:100]
+          except:
+              return "DEFAULT-BLOCK", "llm-error-fail-safe"
+
+      alerts = [
+          {"rule_id": 5710, "level": 12, "srcip": "1.2.3.4"},
+          {"rule_id": 5710, "level": 5, "srcip": "192.168.0.112"},
+          {"rule_id": 999999, "level": 7, "srcip": "203.0.113.50"},
+      ]
+
+      for a in alerts:
+          decision, reason = rule_classify(a)
+          if decision is None:
+              decision, reason = llm_classify(a)
+          print(f"alert={a} → decision={decision} reason={reason[:60]}")
+      EOF
+      python3 /tmp/hybrid_demo.py 2>&1 | head -20
+    answer_detail: hybrid 의사결정
+    verify:
+      type: output_contains
+      expect: decision
+      field: stdout
+      semantic:
+        intent: hybrid 의사결정
+        success_criteria: [decision 의 응답]
+        acceptable_methods:
+          - "**[OSS] rule 의 명확 한 경우 의 우선**"
+          - "**[OSS] LLM 의 ambiguous 의 fallback**"
+          - "**[OSS] LLM 의 timeout 의 fail-safe BLOCK**"
+          - "**[OSS] confidence threshold**"
+          - "**[OSS] LLM-as-judge 의 평가**"
+          - "**[OSS] approval_mode 의 escalation**"
+          - "**[OSS] KG 의 reuse 의 cache**"
+          - "**[OSS] runbook 의 자동 적용**"
+    target_vm: bastion
+
+  # ============================================================
+  # STEP 5 — action 분류 의 6v6 매핑
+  # ============================================================
+  - order: 5
+    instruction: |
+      6v6 의 자율 action 의 6 분류 (observe/notify/prepare/mitigate/reconfigure/destroy)
+      의 각 의 실 명령 의 매핑 + 권한 의 위계 의 확인.
+    hint: |
+      6 분류 의 6v6 의 실 명령
+    category: synthesis
+    points: 15
+    answer: |
+      cat <<'EOF'
+      === 6v6 의 자율 action 의 6 분류 의 매핑 ===
+
+      1. observe (자유 허용)
+         - tail -f /var/ossec/logs/alerts/alerts.json
+         - curl /kg/audit
+         - docker stats
+
+      2. notify (자유 허용)
+         - mail / slack / webhook 의 운영자 통보
+         - Wazuh 의 alert 의 syslog 의 전송
+
+      3. prepare (가시화 만)
+         - playbook 의 가시화 (실 적용 X)
+         - Suricata rule 의 dry-run
+
+      4. mitigate (사람 confirm)
+         - iptables 의 DROP 의 적용
+         - ModSec 의 rule 의 활성
+         - Wazuh 의 active-response 의 호출
+
+      5. reconfigure (다중 confirm)
+         - nginx config 의 변경 + reload
+         - Suricata rule set 의 hot reload
+         - bastion 의 config 의 변경
+
+      6. destroy (항상 명시 적 confirm)
+         - DB 의 row 의 삭제
+         - container 의 의 삭제
+         - log 의 의 truncate
+
+      === 권한 의 위계 ===
+
+      자율 권한 의 = max_level (시스템 의 설정).
+
+      Bastion 의 approval_mode:
+      - normal: max_level = mitigate
+      - danger_danger: max_level = reconfigure
+      - danger_danger_danger: max_level = destroy
+
+      운영 의 의의:
+      - normal 이 default
+      - 위 의 escalation 의 운영자 의 명시 적 호출 만
+      - 모든 자율 action 의 KG anchor 의 기록
+      EOF
+    answer_detail: 6 action + 권한 위계
+    verify:
+      type: output_contains
+      expect: observe
+      field: stdout
+      semantic:
+        intent: action 분류
+        success_criteria: [6 분류 + 위계 의 응답]
+        acceptable_methods:
+          - "**[OSS] OWASP LLM08 의 Excessive Agency**"
+          - "**[OSS] principle of least privilege**"
+          - "**[OSS] Bastion 의 approval_mode 의 3 단계**"
+          - "**[OSS] auto_approve 의 기본 False**"
+          - "**[OSS] KG anchor 의 모든 action 기록**"
+          - "**[OSS] Wazuh active-response 의 의의**"
+          - "**[OSS] reversibility 의 가능 한 한**"
+          - "**[OSS] kill switch 의 즉시 중단**"
+    target_vm: bastion
