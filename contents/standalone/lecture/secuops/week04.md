@@ -684,17 +684,24 @@ ssh 6v6-ips 'sudo grep -c "9004001" /var/log/suricata/eve.json'
 # - "sqlmap" 이 정상 UA 가능성? (낮음, 도구 시그니처)
 # - 그러나 burst (1초 50건) 이면 alert flood → SOC fatigue
 
-# threshold 권장 — 60초 안 5건만 (event_filter)
-cat <<'EOF' >> /etc/suricata/threshold.config
-event_filter gen_id 1, sig_id 9004001, type rate_filter, track by_src, count 5, seconds 60
+# threshold 권장 — 60초 동안 최대 5건만 기록 (alert flood 억제)
+cat <<'EOF' | sudo tee -a /etc/suricata/threshold.config
+event_filter gen_id 1, sig_id 9004001, type limit, track by_src, count 5, seconds 60
 EOF
 
 # 적용
 sudo suricatasc -c reload-rules
 
 # 또는 룰 자체에 threshold modifier
-# alert http any any -> any any (msg:"..."; ... threshold:type both, track by_src, count 5, seconds 60; sid:9004001; rev:2;)
+# alert http any any -> any any (msg:"..."; ... threshold:type limit, track by_src, count 5, seconds 60; sid:9004001; rev:2;)
 ```
+
+threshold.config 의 두 keyword 는 별개다.
+
+- `event_filter` — alert 기록량 제어. `type` 값은 `threshold` / `limit` / `both` 셋 중 하나. `rate_filter` 는 `type` 값이 아니다.
+- `rate_filter` — alert 대신 action 자체를 동적으로 바꾼다 (`new_action` + `timeout` 필요). 예: `rate_filter gen_id 1, sig_id 9004001, track by_src, count 5, seconds 60, new_action drop, timeout 300`.
+
+본 절은 SOC fatigue 방지가 목적이므로 `event_filter` + `type limit` 를 적용했다. action 자체를 drop 으로 승격하고 싶으면 별도 `rate_filter` 줄을 추가한다.
 
 `event_filter` vs `threshold modifier`:
 - **`event_filter` (threshold.config)** : 운영자 외부 통제, 룰 수정 없이 변경 가능 — production 정석

@@ -10,9 +10,21 @@ echo "=== retest_report_push start $TS ==="
 # 1. report 생성
 python3 scripts/retest_report.py
 
-# 2. cursor 진행 추출
-R3_CUR=$(cat results/retest/cursor_r3.txt 2>/dev/null || echo 0)
-R3_TOT=$(wc -l < results/retest/queue_r3.tsv 2>/dev/null || echo 575)
+# 2. 활성 round + cursor 진행 추출 (R5 → R4 → R3 우선순위)
+ROUND=""
+CUR=0
+TOT=0
+for r in r5 r4 r3; do
+  q="results/retest/queue_${r}_main.tsv"
+  c="results/retest/cursor_${r}_main.txt"
+  [ -f "$q" ] || continue
+  [ -f "$c" ] || continue
+  ROUND="$r"
+  CUR=$(cat "$c" 2>/dev/null || echo 0)
+  TOT=$(wc -l < "$q" 2>/dev/null || echo 0)
+  break
+done
+[ -z "$ROUND" ] && { ROUND="r5"; CUR=0; TOT=676; }
 PASS=$(grep -E '^\| pass \|' results/retest/report.md | head -1 | awk -F'|' '{print $4}' | tr -d ' ')
 
 # 3. git stage
@@ -25,7 +37,7 @@ if git diff --staged --quiet; then
 fi
 
 # 5. commit + push
-git commit -m "chore(retest): 진행 리포트 업데이트 ${R3_CUR}/${R3_TOT} (pass=${PASS}) round3
+git commit -m "chore(retest): 진행 리포트 업데이트 ${CUR}/${TOT} (pass=${PASS}) ${ROUND^^}
 
 자동 생성 (cron 2h 주기): scripts/retest_report_push.sh
 "

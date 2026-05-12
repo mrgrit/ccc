@@ -38,7 +38,7 @@ from typing import Any
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 OUT_DIR = pathlib.Path(os.getenv("CTI_OUT_DIR", str(ROOT / "contents" / "threats")))
-OLLAMA_URL = os.getenv("LLM_BASE_URL", "http://192.168.0.105:11434")
+OLLAMA_URL = os.getenv("LLM_BASE_URL", "http://192.168.0.109:11434")
 SUB_MODEL = os.getenv("LLM_SUBAGENT_MODEL", "gemma3:4b")
 MGR_MODEL = os.getenv("LLM_MANAGER_MODEL", "gpt-oss:120b")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")

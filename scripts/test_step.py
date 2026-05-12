@@ -21,7 +21,7 @@ import os, sys, json, time, argparse, pathlib, urllib.request, yaml, re
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PROGRESS = ROOT / "bastion_test_progress.json"
 BASTION = os.getenv("BASTION_URL", "http://192.168.0.103:8003").rstrip("/") + "/chat"
-OLLAMA = os.getenv("OLLAMA_URL", "http://192.168.0.105:11434")
+OLLAMA = os.getenv("OLLAMA_URL", "http://192.168.0.109:11434")
 JUDGE_MODEL = "gpt-oss:120b"
 TIMEOUT = 600
 
@@ -271,9 +271,9 @@ def llm_semantic_judge(step: dict, answer: str) -> tuple[bool, str, str]:
         "## 판정 원칙 (이 순서대로 적용)",
         "1. **의도 충족 우선**: instruction/intent 의 핵심 동작이 응답에 드러나면 pass.",
         "2. **등가 인정**: 다른 도구·언어·형식으로 같은 결과를 냈으면 pass (예: ip addr ↔ ifconfig).",
-        "3. **실행 증거 존재**: 실제 stdout/명령 출력이 들어있고 의도와 부합하면 pass.",
+        "3. **실행 증거 존재**: 실제 stdout/명령 출력이 들어있고 의도와 부합하면 pass. 산문(prose)에 status code·응답값·헤더가 인용돼 있으면 코드블록(``` 펜스) 부재만으로 fail 금지 — '코드블록 없음'·'format'·'no-output' 사유는 success_criteria 가 응답에 등장하지 않을 때만 적용.",
         "4. **명백한 fail 만 fail**: 거절문 일색 / 실행 무 + 의도 미수행 / 주제 이탈 / negative 명시 발생.",
-        "5. **모호하면 pass**: 부분 일치 + 같은 방향이면 pass.",
+        "5. **모호하면 pass**: 부분 일치 + 같은 방향이면 pass. success_criteria 의 과반수가 응답 어딘가(코드블록·인라인 코드·산문)에 충족 표현되면 pass.",
         "",
         JUDGE_FEWSHOT,
         "",

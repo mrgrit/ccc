@@ -41,7 +41,7 @@ RULES_DIR = pathlib.Path(os.getenv("RULES_OUT_DIR", str(ROOT / "contents" / "rul
 (RULES_DIR / "suricata").mkdir(parents=True, exist_ok=True)
 (RULES_DIR / "wazuh").mkdir(parents=True, exist_ok=True)
 
-OLLAMA_URL = os.getenv("LLM_BASE_URL", "http://192.168.0.105:11434")
+OLLAMA_URL = os.getenv("LLM_BASE_URL", "http://192.168.0.109:11434")
 MGR_MODEL = os.getenv("LLM_MANAGER_MODEL", "gpt-oss:120b")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-opus-4-7")

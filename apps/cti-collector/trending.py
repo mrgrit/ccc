@@ -32,7 +32,7 @@ OUT_DIR = pathlib.Path(os.getenv("CTI_OUT_DIR", str(ROOT / "contents" / "threats
 TRENDING_DIR = OUT_DIR / "trending"
 TRENDING_DIR.mkdir(parents=True, exist_ok=True)
 
-OLLAMA_URL = os.getenv("LLM_BASE_URL", "http://192.168.0.105:11434")
+OLLAMA_URL = os.getenv("LLM_BASE_URL", "http://192.168.0.109:11434")
 MGR_MODEL = os.getenv("LLM_MANAGER_MODEL", "gpt-oss:120b")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-opus-4-7")

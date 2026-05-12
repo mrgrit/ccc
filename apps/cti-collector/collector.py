@@ -12,7 +12,7 @@
     python3 -m apps.cti-collector.collector --digest           # Manager로 일일 다이제스트 생성
 
 환경변수:
-    LLM_BASE_URL        Ollama URL (default: http://192.168.0.105:11434)
+    LLM_BASE_URL        Ollama URL (default: http://192.168.0.109:11434)
     LLM_SUBAGENT_MODEL  default: gemma3:4b
     LLM_MANAGER_MODEL   default: gpt-oss:120b (digest 용)
     CTI_OUT_DIR         default: contents/threats/
@@ -29,7 +29,7 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
-OLLAMA_URL = os.getenv("LLM_BASE_URL", "http://192.168.0.105:11434")
+OLLAMA_URL = os.getenv("LLM_BASE_URL", "http://192.168.0.109:11434")
 SUB_MODEL = os.getenv("LLM_SUBAGENT_MODEL", "gemma3:4b")
 MGR_MODEL = os.getenv("LLM_MANAGER_MODEL", "gpt-oss:120b")
 ROOT = pathlib.Path(__file__).resolve().parents[2]

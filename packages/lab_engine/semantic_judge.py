@@ -16,7 +16,7 @@ import re
 from typing import Any
 
 # 환경변수로 오버라이드 가능 — 내부 테스트/배포 분리용
-OLLAMA_URL = os.environ.get("CCC_JUDGE_OLLAMA", "http://192.168.0.105:11434")
+OLLAMA_URL = os.environ.get("CCC_JUDGE_OLLAMA", "http://192.168.0.109:11434")
 JUDGE_MODEL = os.environ.get("CCC_JUDGE_MODEL", "gpt-oss:120b")
 JUDGE_TIMEOUT = int(os.environ.get("CCC_JUDGE_TIMEOUT", "45"))
 
