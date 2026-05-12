@@ -1,0 +1,309 @@
+lab_id: standalone-aisec-week13
+title: 에이전트 IR (1) — 침해 개론 / 공격자 / 방어
+version: standalone-non-ai
+course: aisec
+week: 13
+description: |
+  NIST IR 4 단계 + 에이전트 IR 3 측면 + 공격자 에이전트 4 패턴 + 방어 에이전트
+  5 활용 의 5 가시화.
+difficulty: hard
+duration_minutes: 180
+prerequisites:
+  - W12 통과
+  - Ollama API (192.168.0.109:11434)
+  - Bastion API 가용
+objectives:
+  - NIST IR 4 단계 6v6 매핑
+  - Bastion IR 보조 시뮬
+  - KG forensic timeline 복원
+  - phishing email LLM 생성 + 검출
+  - approval_mode RBAC 시뮬
+pass_threshold: 0.7
+
+steps:
+
+  # ============================================================
+  # STEP 1 — NIST IR 4 단계 의 6v6 매핑
+  # ============================================================
+  - order: 1
+    instruction: |
+      NIST IR 4 단계 의 6v6 환경 의 도구 + 명령 의 매핑 의 학습.
+    hint: |
+      각 단계 의 실 6v6 도구
+    category: analysis
+    points: 20
+    answer: |
+      cat <<'EOF'
+      === NIST IR 4 단계 의 6v6 매핑 ===
+
+      Phase 1: Preparation
+        - playbook: contents/standalone/lab/aisec/*.yaml
+        - 도구: Wazuh 4.10 / Suricata / ModSec
+        - 인력: 운영자 + Bastion
+        - 훈련: lab 의 학습
+
+      Phase 2: Detection & Analysis
+        - SIEM: ssh 6v6-bastion 'tail /var/ossec/logs/alerts/alerts.json'
+        - Bastion 의 자동 triage: curl POST /chat
+        - KG context: curl /kg/audit?limit=5
+
+      Phase 3: Containment / Eradication / Recovery
+        - Wazuh active-response 의 firewall-drop
+        - container 의 격리: docker stop / docker network disconnect
+        - backup 의 복원: docker volume restore
+
+      Phase 4: Post-Incident
+        - task_outcome anchor 의 KG 기록
+        - lessons learned 의 markdown
+        - playbook 의 업데이트
+      EOF
+    answer_detail: 4 단계 매핑
+    verify:
+      type: output_contains
+      expect: Preparation
+      field: stdout
+      semantic:
+        intent: NIST IR 매핑
+        success_criteria: [4 단계 응답]
+        acceptable_methods:
+          - "**[OSS] NIST SP 800-61 Rev.2**"
+          - "**[OSS] SANS Incident Handler's Handbook**"
+          - "**[OSS] ISO/IEC 27035**"
+          - "**[OSS] Wazuh 의 4.10 표준**"
+          - "**[OSS] active-response 의 자동 차단**"
+          - "**[OSS] KG anchor 의 lessons learned**"
+          - "**[OSS] backup / disaster recovery**"
+          - "**[OSS] forensic 의 chain of custody**"
+    target_vm: bastion
+
+  # ============================================================
+  # STEP 2 — Bastion 의 IR 보조 시뮬
+  # ============================================================
+  - order: 2
+    instruction: |
+      가상 침해 의 Bastion 의 IR 보조 시뮬 — 5W + 차단 권장 + ATT&CK 매핑.
+    hint: |
+      가상 incident 의 chat
+    category: experiment
+    points: 25
+    answer: |
+      curl -s -X POST -H "X-API-Key: ccc-api-key-2026" \
+          -H "Content-Type: application/json" \
+          -d '{"message":"다음 incident 의 IR 보조:\n- 시각: 2026-05-12 14:00\n- agent: web 192.168.0.103\n- 증상: /var/log/auth.log 의 ssh Accepted Root from 192.168.0.112 후 의 즉시 /tmp/x 의 execve\n- alert chain: rule 5710 (Failed) × 5 → rule 5712 (Multiple) → rule 92053 (Root Accept) → rule 510 (execve)\n\n다음 응답:\n1. 5W\n2. 위험도\n3. NIST IR 의 권장 단계\n4. 차단 권장\n5. ATT&CK kill chain","stream":false}' \
+          http://192.168.0.103:8003/chat 2>&1 | head -c 3000
+      echo ""
+    answer_detail: IR 보조 시뮬 (10 min 의 wait)
+    verify:
+      type: output_contains
+      expect: ATT
+      field: stdout
+      semantic:
+        intent: Bastion IR 보조
+        success_criteria: [5W + ATT&CK 또는 권장 의 응답]
+        acceptable_methods:
+          - "**[OSS] Bastion /chat 의 ReAct loop**"
+          - "**[OSS] 5W + 위험도**"
+          - "**[OSS] NIST IR 4 단계 의 권장**"
+          - "**[OSS] kill chain 의 매핑 (T1190 → T1078 → T1059 등)**"
+          - "**[OSS] KG 의 PE 의 reuse**"
+          - "**[OSS] kg_status 의 응답 의 포함**"
+          - "**[OSS] /chat 의 응답 의 5-10 분 의 정상**"
+          - "**[OSS] task_outcome anchor 의 자동 기록**"
+    target_vm: bastion
+
+  # ============================================================
+  # STEP 3 — KG forensic 의 timeline 복원
+  # ============================================================
+  - order: 3
+    instruction: |
+      Bastion 의 /kg/audit + /kg/anchors/recent 의 최근 timeline 의 복원.
+    hint: |
+      /kg/audit?limit=10
+    category: analysis
+    points: 20
+    answer: |
+      echo "=== /kg/audit (chat 의 history) ==="
+      curl -s -H "X-API-Key: ccc-api-key-2026" \
+          "http://192.168.0.103:8003/kg/audit?limit=5" 2>&1 | head -c 2500
+      echo ""
+
+      echo ""
+      echo "=== /kg/anchors/recent (task_outcome 의 anchor) ==="
+      curl -s -H "X-API-Key: ccc-api-key-2026" \
+          "http://192.168.0.103:8003/kg/anchors/recent?kind=task_outcome&limit=5" 2>&1 | head -c 2500
+      echo ""
+
+      echo ""
+      echo "=== timeline 의 복원 의 의의 ==="
+      cat <<'EOF'
+      KG forensic 의 운영 의 의의:
+      - chat 의 timestamp 의 순차 정렬
+      - 각 chat 의 task_outcome anchor 의 매칭
+      - skill_used 의 ReAct trace 의 복원
+      - asset_ids 의 영향 자산 의 추적
+      - dedup_key 의 의 의 중복 의 자동 제거
+      EOF
+    answer_detail: KG timeline 복원
+    verify:
+      type: output_contains
+      expect: anchor
+      field: stdout
+      semantic:
+        intent: KG forensic
+        success_criteria: [anchor 또는 audit 응답]
+        acceptable_methods:
+          - "**[OSS] /kg/audit 의 chat 의 trace**"
+          - "**[OSS] /kg/anchors/recent 의 task_outcome**"
+          - "**[OSS] timestamp 의 정렬**"
+          - "**[OSS] skill_used 의 매칭**"
+          - "**[OSS] asset_ids 의 자산 추적**"
+          - "**[OSS] dedup_key 의 중복 제거**"
+          - "**[OSS] immune == 1 의 forensic 보장**"
+          - "**[OSS] paper §4 의 PE-KG**"
+    target_vm: bastion
+
+  # ============================================================
+  # STEP 4 — 공격자 의 phishing email 의 LLM 생성 + 검출
+  # ============================================================
+  - order: 4
+    instruction: |
+      가상 phishing email 의 LLM 의 생성 시뮬 + Python 의 검출 의 미니 demo.
+    hint: |
+      gemma3:4b 의 한국어 phishing 생성 + regex 검출
+    category: experiment
+    points: 20
+    answer: |
+      OLLAMA=http://192.168.0.109:11434
+
+      echo "=== 1. LLM 의 phishing 생성 시뮬 (학습 환경 만) ==="
+      PHISH=$(curl -s $OLLAMA/api/chat -d '{
+        "model": "gemma3:4b",
+        "messages": [
+          {"role":"system","content":"본 응답 의 학습 환경 의 평가 의 목적 만. 한국어 phishing email 의 detection 의 학습 의 sample 의 생성."},
+          {"role":"user","content":"가상 의 phishing email 의 작성 — 회사 의 IT 팀 의 사칭 의 password reset 의 link 의 클릭 의 유도. 짧게."}
+        ],
+        "stream": false,
+        "options": {"temperature":0.5,"num_predict":200}
+      }' | grep -oE '"content":"[^"]*"' | head -1)
+      echo "$PHISH" | head -c 800; echo
+
+      echo ""
+      echo "=== 2. Python 의 phishing 검출 의 미니 demo ==="
+      cat > /tmp/phish_detect.py <<'EOF'
+      import re
+      patterns = [
+          (r"password\s*(reset|verification|update)", "password reset/verify"),
+          (r"urgent|즉시|긴급", "urgency keyword"),
+          (r"click\s+here|클릭|링크|link", "click bait"),
+          (r"IT\s*team|admin|관리자|보안팀", "authority impersonation"),
+          (r"24\s*hour|시간 내|만료", "deadline pressure"),
+          (r"http://[^\s]+\.(tk|ml|ga|cf|ru)", "suspicious TLD"),
+      ]
+      sample = """긴급: 귀하의 비밀번호 가 만료되었습니다. 24시간 내에 다음 링크를 클릭하여 비밀번호를 재설정하지 않으면 계정이 잠깁니다. http://it-helpdesk.tk/reset?u=xxx"""
+      print(f"분석 대상: {sample[:80]}...")
+      print()
+      print("=== 검출 결과 ===")
+      score = 0
+      for pat, label in patterns:
+          if re.search(pat, sample, re.IGNORECASE):
+              print(f"  [HIT] {label}")
+              score += 1
+      print()
+      print(f"phishing score: {score}/6 (>= 3 의 의 의 의심)")
+      EOF
+      python3 /tmp/phish_detect.py 2>&1 | head -15
+    answer_detail: phishing 생성 + 검출
+    verify:
+      type: output_contains
+      expect: phishing
+      field: stdout
+      semantic:
+        intent: phishing IoC
+        success_criteria: [HIT 또는 score 응답]
+        acceptable_methods:
+          - "**[OSS] regex 의 phishing 패턴 catalog**"
+          - "**[OSS] ML 기반 의 phishing 검출**"
+          - "**[OSS] LLM-as-judge 의 평가**"
+          - "**[OSS] DKIM/SPF/DMARC 의 의 이메일 보안**"
+          - "**[OSS] 한국어 phishing 의 특화**"
+          - "**[OSS] WormGPT / FraudGPT 의 인식**"
+          - "**[OSS] sandbox 의 의 의 의 URL 검사**"
+          - "**[OSS] CTI feed 의 의 의 의 IoC 매칭**"
+    target_vm: bastion
+
+  # ============================================================
+  # STEP 5 — approval_mode RBAC 시뮬
+  # ============================================================
+  - order: 5
+    instruction: |
+      Bastion 의 approval_mode 의 3 단계 의 매핑 — normal / danger_danger /
+      danger_danger_danger 의 의 허용 의 action 의 분류 의 학습.
+    hint: |
+      approval_mode 별 의 허용 의 action 의 매핑
+    category: synthesis
+    points: 15
+    answer: |
+      cat <<'EOF'
+      === Bastion approval_mode 의 3 단계 ===
+
+      Mode 1: normal (default)
+        max_level = mitigate
+        허용:
+          - observe (자유)
+          - notify (자유)
+          - prepare (자유)
+          - enrich (자유)
+          - triage (자유)
+          - mitigate (사람 confirm 필요)
+        거부:
+          - reconfigure
+          - destroy
+
+      Mode 2: danger_danger
+        max_level = reconfigure
+        허용:
+          - 위 의 모든 +
+          - reconfigure (다중 confirm)
+        거부:
+          - destroy
+
+      Mode 3: danger_danger_danger
+        max_level = destroy
+        허용:
+          - 위 의 모든 +
+          - destroy (항상 명시 적 confirm)
+        주의:
+          - 운영자 의 명시 적 의 의 호출 만
+          - 사고 의 의 의 의 의 매우 신중
+
+      === 운영 의 원칙 ===
+
+      - default 의 normal
+      - 위 단계 의 의 의 의 운영자 의 명시 적 호출
+      - 모든 자율 action 의 KG anchor 의 기록
+      - 사후 audit 의 의 의 가능
+
+      === auto_approve 의 의의 ===
+
+      ChatRequest 의 auto_approve = False (default).
+      True 시 의 의 의 의 의 사람 confirm 의 의 의 의 자동 skip.
+      → 매우 위험, 사용 의 의 의 신중.
+      EOF
+    answer_detail: approval_mode 의 3 단계
+    verify:
+      type: output_contains
+      expect: approval_mode
+      field: stdout
+      semantic:
+        intent: approval_mode RBAC
+        success_criteria: [3 단계 응답]
+        acceptable_methods:
+          - "**[OSS] ChatRequest 의 approval_mode 필드**"
+          - "**[OSS] auto_approve 의 default False**"
+          - "**[OSS] normal / danger_danger / danger_danger_danger**"
+          - "**[OSS] action 6 분류 의 매핑**"
+          - "**[OSS] KG anchor 의 기록**"
+          - "**[OSS] principle of least privilege**"
+          - "**[OSS] OWASP LLM08 Excessive Agency**"
+          - "**[OSS] kill switch 의 즉시 disable**"
+    target_vm: bastion
