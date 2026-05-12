@@ -611,6 +611,321 @@ ssh 6v6-siem "sudo tail -50 /var/ossec/logs/alerts/alerts.json | jq -r '.rule.gr
 
 ---
 
+## 11.5 R/B/P 공격 분석 케이스 확장 (본 주차 추가)
+
+### 11.5.0 R/B/P 일상 비유 — SOC 운영실의 한 화면
+
+본 절은 Wazuh Dashboard 의 운영을 SOC 운영실의 한 화면 비유로 시작한다.
+
+학생이 회사 SOC 운영실에 신입으로 입사했다고 상상해보자. 운영실 한가운데 큰 모니터가 한 대 있고, 그 화면에는 모든 시스템의 상태가 한 눈에 보인다. 화면은 5개 panel 로 나뉘어 있다.
+
+- **Overview panel** — 오늘 발생한 alert 의 총합과 시간순 timeline.
+- **Agents panel** — 현재 살아 있는 host 와 끊긴 host 의 목록.
+- **Modules panel** — Security events, Integrity monitoring, MITRE ATT&CK 등 모듈 카드.
+- **Discover panel** — Kibana 식 query 로 임의의 alert 를 검색.
+- **Management panel** — rule, decoder, configuration 의 운영자 화면.
+
+운영자는 한 화면에서 다섯 panel 을 모두 보면서, 같은 사건이 여러 source 에서 어떻게 보이는지 cross-cutting 으로 확인한다. 다섯 panel 의 통합이 SOC 의 single pane of glass 다.
+
+| 일상 비유 | Wazuh Dashboard |
+|-----------|-----------------|
+| 운영실 큰 모니터 | Wazuh Dashboard 의 한 화면 |
+| 5 panel | 5 main panel |
+| 한눈에 보기 | single pane of glass |
+| 같은 사건의 여러 측면 | 통합 (Suricata + ModSec + osquery + syscheck) |
+| 운영자의 임시 query | Discover 의 free-text 검색 |
+
+본 절은 다음 세 케이스를 다룬다.
+
+- 케이스 1 — 한 XSS payload 가 web agent (ModSec) + ips agent (Suricata) 의 두 source 로 dashboard 에 통합되는 흐름.
+- 케이스 2 — syscheck FIM 의 `/etc/passwd` 변경 alert 가 Integrity monitoring 모듈에서 어떻게 가시화되는지.
+- 케이스 3 — MITRE ATT&CK panel 로 한 침해의 kill chain 을 시각화하기.
+
+원칙은 W01 ~ W09 와 같다. 재현 가능성, 도구 위주 분석, 신입생 친화, 학습 환경 한정.
+
+### 11.5.1 케이스 1 — XSS 한 건의 두 source 통합 표시
+
+**0. 일상 비유 — 같은 강도 사건이 두 cctv 영상에 동시 출현.**
+
+은행 정문 cctv (Suricata) 와 atm cctv (ModSec) 가 동시에 같은 사건을 녹화한다. SOC 운영자가 모니터의 timeline 을 보면 같은 시각에 두 source 에서 alert 가 동시각으로 표시된다. 한 사건의 두 측면이 한 화면에 보이므로 운영자가 단일 source 의 false positive 가능성을 즉시 판단할 수 있다.
+
+| 일상 비유 | 두 source 통합 |
+|-----------|----------------|
+| 정문 cctv | ips 의 Suricata agent |
+| atm cctv | web 의 ModSec agent (audit ship) |
+| 한 사건 동시각 | 같은 src_ip + 같은 시각 |
+| 한 화면 표시 | Wazuh Dashboard 의 Discover |
+| 신뢰도 상승 | 두 source 결합 alert 의 P1 priority |
+
+**0a. 사용 도구 사전 안내.**
+
+- **Wazuh Dashboard 의 Modules → Security events.**
+- **Discover 의 free-text query.**
+- **`agent.name` 필드 + `rule.groups` 필드.**
+
+**1. Red — 공격 재현.**
+
+attacker VM 에서 XSS payload 한 줄을 보낸다. 학습 환경 한정으로 실행한다.
+
+```bash
+ssh ccc@192.168.0.112
+# password: 1
+```
+
+```bash
+# attacker VM 내부 (학습 환경 한정)
+curl -s -o /dev/null -w "%{http_code}\n" \
+    -H "Host: juice.6v6.lab" \
+    "http://192.168.0.103/search?q=%3Cscript%3Ealert(1)%3C/script%3E"
+```
+
+ips 의 Suricata 가 packet 단에서 XSS signature 를 인식한다. web 의 Apache 도 ModSec 로 같은 요청을 인식하고 audit log 에 한 줄 남긴다.
+
+**2. 발생하는 로그/아티팩트.**
+
+- ips 의 `/var/log/suricata/eve.json` → siem 의 alerts.json (agent.name=ips, rule.groups=suricata).
+- web 의 `/var/log/apache2/modsec_audit.log` → siem 의 alerts.json (agent.name=web, rule.groups=modsecurity).
+
+같은 src_ip + 같은 시각 범위 안에 두 줄이 동시 추가된다.
+
+**3. Blue — Dashboard 의 Discover 에서 두 source 한 query.**
+
+학생이 자기 host 의 web browser 에서 Wazuh Dashboard 에 접속한다.
+
+- URL: `https://dashboard.6v6.lab`.
+
+UI 클릭 흐름은 다음과 같다.
+
+1. 좌측 햄버거 메뉴 → `Discover` 선택.
+2. Index pattern 을 `wazuh-alerts-*` 로 바꾼다.
+3. Time picker `Last 15 minutes`.
+4. Search bar 에 `data.srcip:192.168.0.112 AND (agent.name:ips OR agent.name:web)` 입력 후 Enter.
+5. 좌측 `Available fields` 에서 `agent.name`, `rule.groups`, `rule.description`, `data.alert.signature` 를 columns 에 추가한다.
+
+결과 화면에서 두 줄이 같은 시각에 보인다.
+
+```
+14:30:00  agent=ips   rule.groups=suricata,attack    desc="ET WEB_SPECIFIC XSS ..."
+14:30:01  agent=web   rule.groups=modsecurity,attack desc="ModSec 941100 XSS ..."
+```
+
+다음으로 상단의 `Visualize` 버튼을 눌러 timeline 시각화를 만든다.
+
+1. Aggregation: `Count`.
+2. X-axis: `Date Histogram` (timestamp).
+3. Split series: `agent.name.keyword`.
+
+같은 시각에 ips 와 web 두 source 가 각각 한 막대씩 보이면 통합 가시화 완료다.
+
+**4. Blue — 대응 의사결정.**
+
+학생이 다음 세 가지를 판단한다.
+
+- **두 source 결합 alert 의 우선순위.** P2 (단일 source) → P1 (두 source 결합) 로 상향.
+- **단일 source 의 false positive 가능성.** ips 단독 alert 는 packet 단의 pattern matching, web 단독 alert 는 application 단의 매칭. 두 결합은 false positive 가능성이 매우 낮다.
+- **다음 단계 추적.** 같은 src_ip 가 다른 host 에서도 시도하고 있는지 Discover 의 query 로 확장 검색한다.
+
+**5. Purple — Dashboard panel 추가.**
+
+다음 세 가지를 적용한다.
+
+- **`Saved search` 등록.** `data.srcip:* AND agent.name:(ips OR web)` 의 query 를 저장. 운영자가 매일 같은 query 를 즉시 호출 가능.
+- **`Visualization` 등록.** Top src_ip × agent.name 의 매트릭스 시각화.
+- **`Dashboard` 카드 등록.** 위 두 visualization 을 한 dashboard 카드에 묶어 운영실 모니터에 고정.
+
+본 케이스 cycle 한 바퀴는 약 25분 정도다.
+
+### 11.5.2 케이스 2 — syscheck FIM 의 `/etc/passwd` 변경 가시화
+
+**0. 일상 비유 — 회원 명부 페이지 한 장이 새로 추가된 즉시 운영자에게 알람.**
+
+도서관 회원 명부의 페이지가 한 장 새로 추가되면 즉시 운영자에게 알람이 간다. 운영자는 추가된 페이지의 내용 (누가 추가했는지, 어떤 정보가 적혀 있는지) 을 한 화면에서 본다. Wazuh 의 Integrity monitoring 모듈이 같은 역할을 한다.
+
+| 일상 비유 | syscheck FIM |
+|-----------|--------------|
+| 명부 페이지 변경 | 감시 디렉토리의 파일 변경 |
+| 즉시 알람 | realtime FIM event |
+| 추가된 페이지 내용 | syscheck.path, syscheck.diff |
+| 한 화면 보기 | Modules → Integrity monitoring |
+| 변경 히스토리 | wazuh-states-fim-* 인덱스 |
+
+**0a. 사용 도구 사전 안내.**
+
+- **ossec.conf 의 `<syscheck>` 섹션.**
+- **`<directories realtime="yes">`** — 실시간 감시.
+- **Modules → Integrity monitoring.**
+
+**1. Red — 공격 재현.**
+
+attacker VM 에서 web VM 에 SSH 로 들어가 신규 사용자를 추가한다.
+
+```bash
+ssh ccc@192.168.0.112
+ssh -o StrictHostKeyChecking=no admin@192.168.0.103
+
+# web VM 안 (학습 환경 한정)
+sudo useradd -m -s /bin/bash testfim
+```
+
+`/etc/passwd` 와 `/etc/shadow` 에 한 줄이 추가된다. syscheck realtime 이 즉시 인식한다.
+
+**2. 발생하는 로그/아티팩트.**
+
+- web 의 `/etc/passwd` 와 `/etc/shadow` 에 한 줄 추가.
+- siem 의 alerts.json 에 syscheck event (rule.id 550 또는 554 시리즈).
+- siem 의 `wazuh-states-fim-*` 인덱스에 변경 state 한 줄.
+
+**3. Blue — Integrity monitoring 모듈로 직접 확인.**
+
+Wazuh Dashboard 의 클릭 흐름은 다음과 같다.
+
+1. 좌측 햄버거 메뉴 → `Wazuh` → `Modules` → `Integrity monitoring` 선택.
+2. 상단 agent selector 를 `web` 으로 설정.
+3. Time picker `Last 15 minutes`.
+4. 화면 중앙의 `Files` table 에서 `/etc/passwd` 행을 찾는다. 변경 시각, mtime, hash before/after 가 보인다.
+5. 같은 화면 상단의 `Events` 탭으로 이동.
+6. 좌측 `Available fields` 에서 `syscheck.path`, `syscheck.event`, `syscheck.diff` 를 columns 에 추가한다.
+
+이벤트 한 줄을 펼치면 다음 정보가 보인다.
+
+- `syscheck.path` — `/etc/passwd`.
+- `syscheck.event` — `modified` 또는 `added`.
+- `syscheck.diff` — 추가된 한 줄의 내용 (예: `+testfim:x:1002:1002::/home/testfim:/bin/bash`).
+- `syscheck.size_after` 와 `syscheck.md5_after` — 변경 후 파일 정보.
+
+**4. Blue — 대응 의사결정.**
+
+학생이 다음 세 가지를 판단한다.
+
+- **계획된 변경 vs 침해.** 신규 사용자 추가가 운영팀의 계획된 작업인지, 침해 흔적인지 먼저 확인한다.
+- **diff 의 내용 검토.** 추가된 사용자가 uid >= 1000 의 일반 사용자인가, uid 0 의 root 권한 위장인가.
+- **확산 검증.** 같은 시각에 다른 host 에서도 비슷한 변경이 있는지 Discover 의 cross-host query 로 확인.
+
+**5. Purple — FIM baseline 강화.**
+
+다음 세 가지를 적용한다.
+
+- **`<directories realtime="yes">` 범위 확장.** `/etc/passwd`, `/etc/shadow`, `/etc/sudoers`, `/etc/cron.d/`, `/etc/systemd/system/`, `/root/.ssh/` 모두 realtime 으로 감시.
+- **`<directories report_changes="yes">` 옵션 추가.** diff 내용까지 alert 에 포함되도록 한다.
+- **알람 level 상향.** `/etc/passwd`, `/etc/shadow`, `/etc/sudoers` 의 변경은 level 10 이상으로 상향하는 custom rule 추가.
+
+```xml
+<group name="syscheck,local,">
+  <rule id="100400" level="12" overwrite="yes">
+    <if_matched_sid>550</if_matched_sid>
+    <field name="syscheck.path">/etc/(passwd|shadow|sudoers)</field>
+    <description>LOCAL critical system file changed: $(syscheck.path)</description>
+  </rule>
+</group>
+```
+
+cleanup 은 다음 한 줄이다.
+
+```bash
+sudo userdel -r testfim
+```
+
+### 11.5.3 케이스 3 — MITRE ATT&CK panel 의 kill chain 가시화
+
+**0. 일상 비유 — 도둑의 행위 단계를 단계 별 카드로 정리.**
+
+도둑의 행위가 한 사건에서 끝나지 않고 여러 단계로 진행되는 경우가 많다. 외부 정찰 → 출입 시도 → 직원 사칭 → 금고 접근 → 데이터 탈취. MITRE ATT&CK 은 도둑의 이런 행위 단계 (kill chain) 를 표준 카드로 정리한 분류 체계다. SOC 운영자가 ATT&CK panel 에서 카드 별로 alert 수를 보면 도둑이 어느 단계까지 진행했는지 한눈에 파악할 수 있다.
+
+| 일상 비유 | MITRE ATT&CK |
+|-----------|--------------|
+| 외부 정찰 | Reconnaissance (TA0043) |
+| 출입 시도 | Initial Access (TA0001, T1190 web exploit) |
+| 직원 사칭 | Credential Access (TA0006, T1110 brute force) |
+| 금고 접근 | Lateral Movement (TA0008) |
+| 데이터 탈취 | Exfiltration (TA0010) |
+| 카드 별 alert 수 | ATT&CK panel 의 tactic 별 카드 |
+
+**0a. 사용 도구 사전 안내.**
+
+- **Modules → MITRE ATT&CK** — ATT&CK 매트릭스 panel.
+- **`rule.mitre.id`** — alert 에 매핑된 ATT&CK 의 technique ID (T1190 등).
+- **`rule.mitre.tactic`** — alert 에 매핑된 ATT&CK 의 tactic (Initial Access 등).
+
+**1. Red — 공격 재현 (W05 의 SSH brute force + W06 의 XSS 결합).**
+
+attacker VM 에서 두 단계를 짧은 시간에 보낸다.
+
+```bash
+ssh ccc@192.168.0.112
+
+# attacker VM 내부 (학습 환경 한정)
+# 1단계 — Initial Access (web XSS 시도)
+curl -s -o /dev/null -H "Host: juice.6v6.lab" \
+    "http://192.168.0.103/search?q=%3Cscript%3Ealert(1)%3C/script%3E"
+
+# 2단계 — Credential Access (SSH brute 5건)
+for i in $(seq 1 5); do
+    sshpass -p "wrong${i}" ssh -o ConnectTimeout=3 \
+        -o StrictHostKeyChecking=no \
+        admin@192.168.0.103 'whoami' 2>/dev/null
+done
+```
+
+두 단계가 같은 src_ip 에서 짧은 시간에 발생했다.
+
+**2. 발생하는 로그/아티팩트.**
+
+- siem 의 alerts.json 에 두 시리즈 alert.
+  - rule.id 86xxx (Suricata XSS) — rule.mitre.id T1190.
+  - rule.id 5710, 5712 (sshd Failed + chain) — rule.mitre.id T1110.
+
+ATT&CK panel 이 자동으로 두 tactic 카드에 alert 수를 누적 표시한다.
+
+**3. Blue — MITRE ATT&CK panel 직접 가시화.**
+
+Wazuh Dashboard 의 클릭 흐름은 다음과 같다.
+
+1. 좌측 햄버거 메뉴 → `Wazuh` → `Modules` → `MITRE ATT&CK` 선택.
+2. Time picker `Last 15 minutes`.
+3. 화면에 ATT&CK 매트릭스 (Tactics × Techniques) 가 표시된다.
+4. `Initial Access` 카드 위에 마우스를 올리면 카드 안의 technique 별 alert 수가 나온다. `T1190` 카드를 클릭한다.
+5. 우측 Detail panel 에 본 technique 의 alert 목록이 표시된다.
+6. 같은 방식으로 `Credential Access` → `T1110` 도 본다.
+
+ATT&CK panel 의 한 화면에서 두 tactic 의 카드가 모두 활성화 (색이 진해짐) 되어 있으면 두 단계가 같은 src 에서 진행 중인 직접 증거다.
+
+다음으로 Discover 에서 두 technique 의 timeline 을 본다.
+
+1. 좌측 햄버거 메뉴 → `Discover` 선택.
+2. Index pattern `wazuh-alerts-*`.
+3. Search bar 에 `rule.mitre.id:(T1190 OR T1110) AND data.srcip:192.168.0.112` 입력.
+4. Visualize → Date Histogram + Split series: `rule.mitre.id.keyword`.
+
+같은 시간 안에 두 technique 의 막대가 함께 보이면 kill chain 의 시간순 진행이 가시화된다.
+
+**4. Blue — 대응 의사결정.**
+
+학생이 다음 세 가지를 판단한다.
+
+- **kill chain 의 진행 단계.** Initial Access + Credential Access 까지면 침해 초기. Lateral Movement 와 Exfiltration 이 추가되면 후기. 단계 별 대응 강도가 다르다.
+- **단일 vs 결합 alert.** 단일 tactic 의 단발 alert 는 모니터링. 두 tactic 의 결합은 즉시 IR 시작.
+- **kill chain coverage.** 어떤 단계가 alert 로 잡히지 않았는지 본다. coverage 의 빈 공간은 다음 운영 보완의 우선순위다.
+
+**5. Purple — ATT&CK coverage 확장.**
+
+다음 세 가지를 적용한다.
+
+- **MITRE rule mapping 확장.** 6v6 의 각 rule.id 에 `<mitre><id>T1xxx</id></mitre>` 매핑이 모두 등록되어 있는지 점검. 빠진 매핑이 있으면 보강.
+- **coverage 매트릭스 작성.** 14 tactic 별로 학습 환경에서 매핑된 technique 수를 정리. coverage 50% 이하의 tactic 은 다음 분기 우선 작업.
+- **Dashboard 카드 등록.** ATT&CK panel 의 한 줄짜리 saved visualization 을 운영실 모니터에 고정.
+
+### 11.5.4 본 절 정리
+
+본 절은 W10 의 Wazuh Dashboard 학습을 실제 공격 분석 cycle 에 연결했다. 학생이 다음 능력을 갖춘다.
+
+- 한 사건의 두 source (Suricata + ModSec) alert 를 Discover 의 한 query 로 통합 가시화한다.
+- syscheck FIM 의 critical system file 변경을 Integrity monitoring 모듈에서 직접 확인하고 alert level 을 상향한다.
+- MITRE ATT&CK panel 로 kill chain 의 진행 단계를 시각화하고 coverage 의 빈 공간을 식별한다.
+
+다음 주차 W11 에서는 sysmon-for-linux 의 호스트 이벤트 stream 을 같은 R/B/P cycle 로 학습한다.
+
+---
+
 ## 12. 과제
 
 ### A. ModSec audit ship 적용 (필수, 30점)
