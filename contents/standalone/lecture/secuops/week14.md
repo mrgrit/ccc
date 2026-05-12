@@ -642,6 +642,393 @@ EOF
 
 ---
 
+## 10.5 R/B/P 공격 분석 케이스 확장 (본 주차 추가)
+
+### 10.5.0 R/B/P 일상 비유 — 동네 자율 방범대의 정기 순찰
+
+본 절은 Threat Hunting 의 능동성을 동네 자율 방범대 비유로 시작한다.
+
+학생이 사는 동네에 자율 방범대가 있다. 방범대원은 단순히 신고가 들어오기만을 기다리지 않고, 정기 순찰을 한다. 순찰은 다음 4 단계 cycle 로 돌아간다.
+
+- **1. 가설 (Hypothesis).** "최근 옆 동네에서 새벽 3시 빈집털이가 늘었다. 우리 동네에도 비슷한 패턴이 있을까?" 같은 질문을 정한다.
+- **2. 조사 (Investigation).** 새벽 3시의 CCTV 영상, 출입 기록, 신고 history 를 모은다.
+- **3. 결론 (Outcome).** 본인 동네에 같은 패턴이 있는지, 없으면 다른 패턴이 있는지, 또는 가설 자체가 잘못되었는지 정한다.
+- **4. 공유 (Sharing).** 결과를 다른 방범대와 카페에 공유해 동네 전체 안전을 강화한다.
+
+SIEM 의 alert 대응이 수동적 신고 처리라면, Threat Hunting 은 능동적 정기 순찰이다.
+
+| 일상 비유 | Threat Hunting |
+|-----------|----------------|
+| 신고 처리 | SOC 의 alert 대응 |
+| 정기 순찰 | Threat Hunting |
+| 가설 | Hypothesis |
+| 영상 + 기록 모으기 | Investigation (jq + Discover) |
+| 결론 | Sighting + Report |
+| 다른 동네 공유 | KISA + ISAC + TLP labels |
+
+본 절은 다음 세 케이스를 다룬다.
+
+- 케이스 1 — "외부 IP 가 야간 시간대에 web 의 admin endpoint 에 시도했는가?" 의 가설 hunt.
+- 케이스 2 — "T1190 (Exploit Public-Facing App) 의 coverage 격차가 있는가?" 의 ATT&CK 기반 hunt.
+- 케이스 3 — Sighting 한 줄 작성 + Report 한 페이지 + KISA 공유 양식 정리.
+
+원칙은 W01 ~ W13 과 같다. 재현 가능성, 도구 위주 분석, 신입생 친화, 학습 환경 한정.
+
+### 10.5.1 케이스 1 — "야간 admin endpoint 시도" 가설 hunt
+
+**0. 일상 비유 — 새벽 시간대의 빈집 출입 시도 점검.**
+
+도둑은 보통 새벽 시간 (02:00 ~ 06:00) 에 활동한다. 정상 입주민은 그 시간에 거의 출입하지 않는다. 방범대원이 CCTV 의 새벽 출입 영상만 골라 보면 이상 패턴이 더 잘 드러난다. 같은 사람이 새벽 시간에 여러 호실의 문을 두드린 영상이 있으면 즉시 조사 대상이 된다.
+
+| 일상 비유 | 야간 admin hunt |
+|-----------|-----------------|
+| 새벽 시간대 | UTC 17:00 ~ 21:00 (KST 02:00 ~ 06:00) |
+| 입주민 정상 출입 부재 | 정상 운영 baseline 거의 없음 |
+| 여러 호실 시도 | admin endpoint 다수 시도 |
+| 즉시 조사 | Investigation 단계로 진입 |
+
+**0a. 사용 도구 사전 안내.**
+
+- **Kibana Discover 의 timestamp filter.** 특정 시간대만 필터링.
+- **jq 의 `select(.timestamp[11:13] >= "17")`** — UTC hour 추출 + 필터.
+- **`data.url` 또는 `http.url`** — admin endpoint 매칭.
+
+**1. Red — 가설 검증 데이터의 생성 (학습용 시뮬).**
+
+attacker VM 에서 학습 환경 시각이 야간일 때 admin endpoint 시도를 보낸다. (학습용으로 즉시 실행해도 timestamp 만 야간으로 재해석한다고 가정.)
+
+```bash
+ssh ccc@192.168.0.112
+# password: 1
+
+# attacker VM 내부 (학습 환경 한정)
+for path in "/admin/" "/admin/login.php" "/wp-admin/" "/phpmyadmin/" "/manager/html"; do
+    curl -s -o /dev/null -w "%{http_code} $path\n" \
+        -H "Host: juice.6v6.lab" \
+        "http://192.168.0.103$path"
+done
+```
+
+5개 admin endpoint 에 시도가 발생한다. ips 의 Suricata + web 의 ModSec + Apache access log 에 모두 흔적이 남는다.
+
+**2. 발생하는 로그/아티팩트.**
+
+- ips eve.json — http event 5건.
+- web modsec_audit.log — 매칭 audit 또는 정상 통과 record.
+- web apache access.log — 404 또는 403 응답.
+- siem alerts.json — 통합 alert.
+
+**3. Blue — 4 단계 워크플로 직접 진행.**
+
+**단계 1 — Hypothesis.**
+
+학생이 답안에 가설을 명문화한다.
+
+```
+가설: 학습 환경의 web VM 에 야간 시간대 (KST 02:00 ~ 06:00) 의
+admin endpoint 시도가 평소 baseline 의 5배 이상 발생하면 의심이다.
+```
+
+**단계 2 — Investigation.**
+
+먼저 jq 로 직접 분석.
+
+```bash
+ssh 6v6-siem
+sudo tail -500 /var/ossec/logs/alerts/alerts.json \
+  | jq -r 'select(.data.url? // .data.http? // "" | test("admin|wp-admin|phpmyadmin|manager"; "i")) | "\(.timestamp) \(.data.srcip) \(.data.url // .data.http // "n/a")"'
+```
+
+다음으로 Wazuh Dashboard 의 Discover.
+
+1. 좌측 햄버거 메뉴 → `Discover` 선택.
+2. Index pattern `wazuh-alerts-*`.
+3. Time picker `Last 24 hours`.
+4. Search bar 에 `(data.url:*admin* OR data.url:*phpmyadmin* OR data.url:*manager*) AND data.srcip:*` 입력.
+5. 좌측 `Available fields` 에서 `data.srcip`, `data.url`, `timestamp` 를 columns 에 추가.
+6. 결과 화면 우상단 `Visualize` → Date Histogram + Interval 1h.
+
+시간별 막대 그래프에서 야간 시간대의 spike 가 보이는지 확인한다.
+
+**단계 3 — Outcome.**
+
+학생이 답안에 결론을 적는다.
+
+```
+조사 결과:
+- 야간 시간대 (KST 02:00 ~ 06:00) 에 admin endpoint 시도 5건 발견.
+- 모두 src=192.168.0.112 (학습 환경 attacker VM).
+- 정상 baseline 은 야간 시도 0건.
+- 결론: 학습 환경 시뮬 시도. 운영 환경이면 즉시 IR 대상.
+```
+
+**단계 4 — Sharing.**
+
+본인 환경의 결과를 다음과 같이 정리한다.
+
+- TLP label: TLP:GREEN (학습 환경 결과).
+- attack pattern: T1190 (Exploit Public-Facing Application).
+- recommend mitigation: WAF rule 강화, admin path 의 IP whitelist.
+
+**4. Blue — 대응 의사결정.**
+
+학생이 다음 세 가지를 판단한다.
+
+- **가설의 검증 가능성.** 본인 환경에 baseline 이 충분히 측정되어 있는지. 야간 baseline 이 없으면 spike 식별이 불가능.
+- **다른 가설 도출.** 본 hunt 가 negative result (가설 미확인) 라면 다음 가설 (예: 주말 패턴, 특정 user-agent 패턴) 로 확장.
+- **반복 cycle.** Threat Hunting 은 한 번으로 끝나지 않는다. 분기마다 다른 가설을 정해 정기 cycle.
+
+**5. Purple — hunting 절차 표준화 + baseline 측정.**
+
+다음 세 가지를 적용한다.
+
+- **분기 hunt 일정.** 분기 1회의 정기 hunt session 운영. 가설은 분기 시작 전에 운영팀이 선정.
+- **baseline 자동 측정.** 시간대별 admin endpoint baseline 을 자동 dashboard 로 측정.
+- **Investigation 절차 표준화.** jq + Dashboard Discover + Visualize 의 3 도구 표준 사용.
+
+본 케이스 cycle 한 바퀴는 약 30분 정도다.
+
+### 10.5.2 케이스 2 — T1190 coverage 격차 hunt
+
+**0. 일상 비유 — 방범대원이 동네의 사각지대를 직접 확인.**
+
+방범대원이 동네 지도를 펴고 cctv 가 설치된 위치와 사각지대를 비교한다. 사각지대가 보이면 다음 분기의 보강 우선순위가 된다. 같은 방식으로 보안팀이 ATT&CK 매트릭스를 펴고 각 technique 별 detection coverage 를 비교한다. coverage 가 비어 있는 technique 이 다음 분기 보강 우선순위다.
+
+| 일상 비유 | ATT&CK coverage |
+|-----------|------------------|
+| 동네 지도 | ATT&CK 매트릭스 |
+| cctv 설치 위치 | detection rule 매핑된 technique |
+| 사각지대 | coverage 없는 technique |
+| 다음 분기 보강 | rule 작성 plan |
+| 정기 점검 | 분기 1회 coverage review |
+
+**0a. 사용 도구 사전 안내.**
+
+- **ATT&CK Navigator** — JSON 기반의 ATT&CK 매트릭스 시각화 도구.
+- **Wazuh Dashboard 의 MITRE ATT&CK 모듈.**
+- **`rule.mitre.id` 필드** — alert 마다 매핑된 technique.
+
+**1. Red — 가설 검증 데이터 (W11 ~ W13 케이스의 데이터 재사용).**
+
+본 케이스는 새 공격 재현이 아니라 기존 데이터의 분석이다. W11 (sysmon) + W12 (CTI) + W13 (CDB 통합) 의 학습 중 발생한 alert 들이 모두 ATT&CK 매핑되어 있는지 본다.
+
+**2. 발생하는 로그/아티팩트.**
+
+- 지난 30일 alerts.json 의 모든 alert.
+- rule.mitre.id 필드의 분포.
+
+**3. Blue — coverage 분석.**
+
+**단계 1 — Hypothesis.**
+
+```
+가설: 학습 환경의 detection rule 중 T1190 (Exploit Public-Facing Application)
+관련 매핑이 충분한가? 다른 technique 의 coverage 격차가 있는가?
+```
+
+**단계 2 — Investigation.**
+
+먼저 jq 로 technique 별 alert 분포.
+
+```bash
+ssh 6v6-siem
+sudo tail -10000 /var/ossec/logs/alerts/alerts.json \
+  | jq -r 'select(.rule.mitre.id?) | .rule.mitre.id[]' \
+  | sort | uniq -c | sort -rn | head -20
+```
+
+결과로 technique 별 alert 빈도가 나온다. 예시.
+
+```
+   245 T1110.001  (Brute Force - Password Guessing)
+   123 T1190      (Exploit Public-Facing App)
+    87 T1059      (Command and Scripting Interpreter)
+     5 T1505.003  (Web Shell)
+     2 T1027      (Obfuscated Files)
+```
+
+다음으로 Wazuh Dashboard 의 MITRE ATT&CK 모듈.
+
+1. 좌측 햄버거 메뉴 → `Wazuh` → `Modules` → `MITRE ATT&CK` 선택.
+2. Time picker `Last 30 days`.
+3. 매트릭스의 각 칸 (technique) 색이 진할수록 alert 수가 많다. 색이 거의 없는 칸이 coverage 격차다.
+
+ATT&CK Navigator 로도 외부 시각화 가능.
+
+```
+https://mitre-attack.github.io/attack-navigator/
+```
+
+본인 환경의 매핑 JSON 을 import 하면 색 코딩된 매트릭스가 보인다.
+
+**단계 3 — Outcome.**
+
+학생이 결론을 정리한다.
+
+```
+조사 결과:
+- T1190, T1110.001, T1059 의 coverage 는 충분 (rule 매핑 다수).
+- T1505.003 (Web Shell), T1027 (Obfuscation) 의 coverage 격차 발견.
+- 다음 분기 우선 작업: T1505.003 의 web shell 탐지 rule 추가.
+```
+
+**단계 4 — Sharing.**
+
+ATT&CK coverage 매트릭스를 분기 보고서에 포함하고 운영팀 전체 공유.
+
+**4. Blue — 대응 의사결정.**
+
+학생이 다음 세 가지를 판단한다.
+
+- **coverage 격차의 우선순위.** 모든 격차를 같은 우선순위로 보강하지 않는다. 본인 환경 자산의 노출도 + 산업 위협 trend 를 결합한 우선순위.
+- **rule 작성의 source.** Sigma rule (open community) 의 매핑 + 학습 환경에 맞춘 조정.
+- **rule 검증.** 새 rule 은 학습 환경 attacker VM 에서 한 번 시뮬로 검증 후 production.
+
+**5. Purple — coverage 운영 baseline.**
+
+다음 세 가지를 적용한다.
+
+- **분기 coverage matrix.** 매 분기 ATT&CK Navigator 시각화 한 장 분기 보고서에 첨부.
+- **rule 매핑 표준.** 새 rule 추가 시 `<mitre><id>T1xxx</id></mitre>` 필드 필수.
+- **외부 공유.** coverage 매트릭스를 산업 ISAC 채널에 익명화하여 공유. 다른 환경의 benchmark 와 비교.
+
+### 10.5.3 케이스 3 — Sighting + Report + KISA 공유 양식
+
+**0. 일상 비유 — 방범대 정기 보고서 한 장 작성 + 카페 공유.**
+
+방범대원이 분기 순찰의 결과를 한 장의 표준 양식 보고서로 정리한다. 보고서에는 사건 시각, 본 사실, 결론, 권장 행동, 외부 공유 가능 여부 (TLP label) 가 적혀 있다. 카페에는 외부 공유 가능한 부분만 올린다.
+
+| 일상 비유 | Sharing artifacts |
+|-----------|--------------------|
+| 사건 시각 본 사실 | Sighting object |
+| 분기 보고서 한 장 | Report object |
+| 공유 가능 표시 | TLP labels (RED / AMBER / GREEN / WHITE) |
+| 카페 공유 | KISA / ISAC 의 외부 공유 |
+
+**0a. 사용 도구 사전 안내.**
+
+- **STIX Sighting object.** 한 indicator 가 본 환경에서 관찰됨을 표현.
+- **STIX Report object.** 여러 indicator + observation 의 묶음.
+- **TLP labels.** 정보 공유 범위 분류.
+
+**1. Red — 케이스 1, 2 의 결과 재사용.**
+
+본 케이스는 추가 공격 재현이 아니라 결과 정리다.
+
+**2. 발생하는 로그/아티팩트.**
+
+지난 두 케이스의 결과 (admin hunt + coverage matrix) 가 다음 양식으로 정리된다.
+
+**3. Blue — Sighting JSON 한 줄 + Report markdown 한 페이지.**
+
+먼저 Sighting JSON 한 줄.
+
+```bash
+cat > /tmp/local_sighting.json <<'EOF'
+{
+  "type": "sighting",
+  "spec_version": "2.1",
+  "id": "sighting--f2c8b401-1e88-4d12-b3a6-7c2e5b6e1234",
+  "created": "2026-05-13T10:00:00Z",
+  "modified": "2026-05-13T10:00:00Z",
+  "sighting_of_ref": "indicator--550e8400-e29b-41d4-a716-446655440042",
+  "first_seen": "2026-05-13T02:00:00Z",
+  "last_seen": "2026-05-13T02:05:00Z",
+  "count": 5,
+  "where_sighted_refs": [
+    "identity--ccc-6v6-web"
+  ],
+  "summary": false,
+  "description": "5 admin endpoint 시도가 야간 시간대에 동일 src 에서 발견됨.",
+  "labels": ["learning-only", "ccc-6v6"]
+}
+EOF
+
+python3 -m json.tool /tmp/local_sighting.json | head -20
+```
+
+다음으로 Report markdown.
+
+```markdown
+# Threat Hunting Report — 2026 Q2
+
+## 1. Hypothesis
+학습 환경의 web VM 에 야간 시간대의 admin endpoint 시도와
+T1190 의 detection coverage 격차가 있는가?
+
+## 2. Investigation Summary
+- Source: alerts.json, sysmon eve, modsec_audit
+- Time range: 지난 30 일
+- Sample size: 약 10,000 alert
+
+## 3. Findings
+- 야간 admin 시도 5건 — 모두 학습 환경 attacker VM (192.168.0.112)
+- T1190 / T1110.001 / T1059 coverage 충분
+- T1505.003 (Web Shell), T1027 (Obfuscation) coverage 격차
+
+## 4. Outcome
+- 학습 환경 시뮬 시도. 운영 환경이면 즉시 IR.
+- 다음 분기 우선 작업: T1505.003 의 web shell 탐지 rule 추가.
+
+## 5. Recommendations
+1. 분기 1회 정기 hunt session 운영.
+2. T1505.003 의 Sigma rule import + 학습 환경 검증.
+3. baseline 자동 측정 dashboard 보강.
+
+## 6. Sharing
+- TLP label: TLP:GREEN
+- 외부 공유: KISA / K-ISAC 익명화 공유 가능
+- 내부 공유: 운영팀 전체 + paper §7 source
+
+## 7. ATT&CK Coverage Matrix
+(별첨 — Navigator JSON 한 장)
+
+## 8. Annex - STIX Sighting
+(/tmp/local_sighting.json 참조)
+```
+
+**단계 4 — KISA / ISAC 외부 공유.**
+
+KISA 보호나라의 신고 양식에 본 보고서의 외부 공유 가능 부분 (TLP:GREEN) 만 정리.
+
+```
+신고 분류: 일반 침해 의심
+사고 발생 시각: 2026-05-13 02:00 KST
+영향 범위: 자체 학습 환경
+공격 IP: (학습 환경 내부, 외부 공유 안 함)
+공격 패턴: T1190 시도
+탐지 방법: SIEM 의 alert + 분기 hunt
+권장: 동일 패턴의 다른 환경 점검
+```
+
+**4. Blue — 대응 의사결정.**
+
+학생이 다음 세 가지를 판단한다.
+
+- **TLP label 의 적정성.** TLP:GREEN 은 회원 사이 공유. TLP:WHITE 는 공개. 학습 환경의 indicator 는 TLP:GREEN 또는 TLP:AMBER 가 안전.
+- **외부 공유 정보의 익명화.** 학습 환경 내부 IP, hostname 같은 운영 정보는 공유 전에 익명화.
+- **법적 의무.** 한국 개인정보보호법 + 정보통신망법의 의무 신고 대상이면 절차 시작.
+
+**5. Purple — 정기 hunt 운영 baseline.**
+
+다음 세 가지를 적용한다.
+
+- **분기 1회 정기 hunt.** 운영팀이 정기 일정으로 hunt session 운영. 결과는 표준 양식 Report 한 장.
+- **Sighting / Report 의 OpenCTI 저장.** OpenCTI 의 Sightings + Reports 화면에 누적. 다음 hunt 의 baseline.
+- **외부 공유 표준화.** TLP label + 익명화 + 공유 채널 (KISA / ISAC / 학회) 의 운영 정책 명문화.
+
+### 10.5.4 본 절 정리
+
+본 절은 W14 의 Threat Hunting 학습을 실제 cycle 에 연결했다. 학생이 다음 능력을 갖춘다.
+
+- "야간 admin 시도" 같은 가설을 Hypothesis → Investigation → Outcome → Sharing 의 4 단계로 진행한다.
+- ATT&CK matrix 의 coverage 격차를 ATT&CK Navigator + Wazuh Dashboard 의 MITRE ATT&CK 모듈로 시각 분석한다.
+- Sighting JSON 한 줄과 Report markdown 한 장을 직접 작성하고 KISA / ISAC 의 외부 공유 양식까지 정리한다.
+
+다음 주차 W15 는 W01 ~ W14 의 종합 평가다. 본 절의 R/B/P 케이스 패턴이 시험의 5 단계 APT 시뮬의 기준이 된다.
+
+---
+
 ## 11. 과제
 
 ### A. 헌팅 사례 (필수, 40점)
