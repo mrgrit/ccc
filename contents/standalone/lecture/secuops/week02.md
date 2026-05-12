@@ -575,6 +575,340 @@ ssh 6v6-fw "sudo nft delete rule inet six_filter input handle $HANDLE"
 
 ---
 
+## 9.5 R/B/P 공격 분석 케이스 확장 (본 주차 추가)
+
+### 9.5.0 R/B/P 일상 비유 — 출입문 무인 경비원
+
+본 절은 nftables 를 출입문의 무인 경비원에 비유해서 시작한다.
+
+학생이 사는 아파트의 정문 출입문을 떠올려보자. 정문에는 무인 경비원이 한 명 서 있고, 출입 규칙이 정리된 매뉴얼을 들고 있다. 매뉴얼에는 다음과 같은 규칙이 적혀 있다.
+
+- 입주민 카드를 가진 사람은 통과시킨다.
+- 택배 기사는 평일 09시~18시에만 통과시킨다.
+- 같은 사람이 1분 안에 5번 이상 시도하면 차단한다.
+- 매뉴얼에 없는 경우는 일단 차단한다 (deny by default).
+
+무인 경비원이 출입 시도를 기록하면 카운터가 올라간다. 시도가 비정상적으로 많으면 보안실에서 알람이 울린다. 보안실 관리자는 매뉴얼에 새 규칙을 추가하거나 기존 규칙을 강화한다.
+
+| 일상 비유 | nftables |
+|-----------|----------|
+| 무인 경비원 매뉴얼 | nftables.conf 의 ruleset |
+| 매뉴얼 페이지 (입주민, 택배) | table 의 chain |
+| 한 줄 규칙 | rule |
+| 차단 명단 | set |
+| 시도 카운터 | counter |
+| 보안실 알람 | log prefix |
+| 매뉴얼 검토 + 강화 | Purple 의 rule 보완 |
+
+본 절은 nftables 의 set / counter / log / rate limit 같은 기능을 실제 공격에 대응하는 흐름으로 학습한다. 세 케이스를 다룬다.
+
+- 케이스 1 — ICMP flood 를 counter + dynamic set 으로 분석 + 차단한다.
+- 케이스 2 — TCP SYN flood 를 nft monitor trace + rate limit 으로 분석 + 대응한다.
+- 케이스 3 — forwarded chain 우회 시도를 policy drop + log prefix 로 가시화한다.
+
+본 절의 핵심 원칙 네 가지는 W01 의 5.7 절과 동일하다.
+
+- **재현 가능성** — 학생이 attacker VM (192.168.0.112) 에서 직접 공격을 발생시킨다.
+- **도구 위주 분석** — `nft list ruleset`, `nft monitor`, `conntrack -L` 같은 표준 도구만 사용한다.
+- **신입생 친화** — 명령의 옵션을 한 줄씩 설명한다.
+- **윤리 강제** — 학습 환경 안 (192.168.0.0/24) 에서만 시도한다.
+
+### 9.5.1 케이스 1 — ICMP flood 의 분석 + dynamic set 차단
+
+**0. 일상 비유 — 도둑이 초인종을 1초에 100번 누르기.**
+
+도둑이 아파트 정문 초인종을 1초에 100번 누른다. 정상 입주민은 보통 하루에 몇 번만 누른다. 무인 경비원이 매뉴얼 페이지를 펴면 "분당 60회 초과 시 5분간 차단" 같은 규칙이 적혀 있다. 도둑이 임계치를 넘어서면 명단에 자동 등록되고, 5분 동안 같은 사람의 시도는 모두 차단된다.
+
+이 비유를 ICMP flood 에 그대로 옮긴다.
+
+| 일상 비유 | ICMP flood |
+|-----------|-----------|
+| 초인종 누르기 | ping (ICMP echo request) |
+| 분당 60회 초과 | nft rate limit 의 임계치 |
+| 자동 차단 명단 | nft dynamic set |
+| 5분간 차단 유지 | set element 의 timeout |
+| 매뉴얼의 명단 페이지 | `nft list set inet six_filter blacklist` |
+
+본 케이스의 학습 목표는 nftables 의 동적 set + timeout 의 동작을 실제 ICMP flood 로 직접 확인하는 것이다.
+
+**0a. 사용 도구 사전 안내.**
+
+- **ping** — ICMP echo request 를 보내는 표준 도구다. `-f` (flood), `-c N` (개수), `-i 0.001` (간격) 옵션을 함께 쓰면 부하 시뮬레이션이 가능하다.
+- **nft set** — nftables 의 set 자료구조다. IP 주소나 포트 번호를 묶어서 한 이름으로 참조하게 한다. `flags timeout` 을 붙이면 자동 만료가 가능해진다.
+- **nft counter** — rule 안에서 `counter` keyword 를 쓰면 packets + bytes 가 자동으로 누적된다.
+
+**1. Red — 공격 재현.**
+
+학생이 attacker VM (192.168.0.112) 에 들어간 뒤 fw 외부 IP 로 ICMP flood 를 보낸다. 학습 환경 안에서만 실행해야 한다.
+
+```bash
+ssh ccc@192.168.0.112
+# password: 1
+```
+
+attacker VM 내부에서 fw 의 외부 IP (예: 192.168.0.103) 로 ping flood 를 보낸다.
+
+```bash
+# attacker VM 내부 (학습 환경 한정)
+sudo ping -f -c 500 192.168.0.103
+```
+
+각 옵션의 의미는 다음과 같다.
+
+- `sudo` — flood 옵션은 root 권한이 필요하다.
+- `-f` — flood. 응답을 기다리지 않고 가능한 빨리 보낸다.
+- `-c 500` — 500개만 보내고 종료한다.
+- `192.168.0.103` — target IP. 학습 환경 내부.
+
+500개를 짧은 시간에 보내므로 fw 의 input chain counter 가 급격히 올라간다.
+
+**2. 발생하는 로그/아티팩트.**
+
+먼저 fw 의 nft input chain counter 가 증가한다. ICMP 를 별도로 카운트하는 룰이 있으면 그 룰의 counter 가 크게 뛴다. 다음으로 dmesg 에 log prefix 가 찍히는 룰이 있으면 kernel ring buffer 에 흔적이 남는다.
+
+Wazuh agent 가 dmesg 또는 `/var/log/kern.log` 를 모니터링하기 때문에, 같은 사건이 Wazuh manager 에도 alert 로 다시 기록될 수 있다.
+
+**3. Blue — nft 도구로 직접 분석.**
+
+학생이 fw 에 들어가서 nft 명령으로 상태를 본다. ProxyJump 가 설정되어 있으면 한 줄로 가능하다.
+
+```bash
+ssh 6v6-fw
+# fw 내부
+sudo nft list chain inet six_filter input
+```
+
+화면에 chain 의 모든 rule 이 나열된다. counter 가 붙은 rule 의 첫 줄에 `packets N bytes M` 형태로 누적값이 보인다. ICMP flood 직전과 직후의 counter 값을 비교하면 변화량이 즉시 드러난다.
+
+다음으로 동적 set 의 내용을 확인한다.
+
+```bash
+sudo nft list set inet six_filter blacklist
+```
+
+학습 환경에서는 ICMP rate limit rule 이 set 에 element 를 추가하도록 미리 구성되어 있다. set 안에 `192.168.0.112 timeout 5m` 같은 항목이 보이면 자동 차단이 동작한 것이다.
+
+마지막으로 `nft monitor trace` 로 실시간 packet 흐름을 본다.
+
+```bash
+sudo nft monitor trace
+```
+
+다른 터미널에서 attacker VM 으로부터 다시 ping 을 보내면, fw 의 nft monitor 가 한 줄씩 packet 의 처리 과정을 출력한다. drop verdict 가 보이면 rule 이 적중한 것이다.
+
+**4. Blue — 대응 의사결정.**
+
+학생이 분석을 마친 뒤 다음 세 가지를 판단한다.
+
+- **set timeout 적정성.** 5분이 너무 길거나 짧지 않은지 본다. 학습 환경에서는 1~5분이 적절하다.
+- **임계치 적정성.** 분당 60회가 너무 관대하지 않은지 본다. 정상 헬스체크가 분당 몇 번인지 함께 본다.
+- **로깅 충분성.** drop rule 에 `log prefix` 가 붙어 있는지 본다. 로그가 없으면 사후 분석이 어렵다.
+
+**5. Purple — 보완.**
+
+분석 결과를 바탕으로 nftables.conf 를 다음 세 가지 방향으로 보완한다.
+
+- **set timeout 조정.** `flags timeout` 의 기본 timeout 을 5m 에서 운영 정책에 맞게 정한다.
+- **카운터 분리.** ICMP / TCP SYN / UDP 의 counter 를 별도 rule 로 나누면 다음 분석이 쉬워진다.
+- **log prefix 표준화.** "ICMP-FLOOD: ", "SYN-FLOOD: " 같이 접두어를 명확히 정해서 Wazuh / Suricata 가 파싱하기 쉽게 만든다.
+
+한 케이스 cycle 은 약 20분 정도다.
+
+### 9.5.2 케이스 2 — TCP SYN flood 의 분석 + rate limit 대응
+
+**0. 일상 비유 — 가짜 손님이 입구를 막기.**
+
+식당 입구에 가짜 손님 1000명이 동시에 들어와 자리를 잡지 않고 그냥 서 있다고 상상해보자. 진짜 손님은 자리를 못 찾고 돌아간다. 식당 매니저는 "한 사람당 10초 안에 자리 못 잡으면 나가달라고 안내" 같은 규칙을 추가한다. 이로써 진짜 손님의 자리가 확보된다.
+
+이 비유를 TCP SYN flood 에 그대로 옮긴다.
+
+| 일상 비유 | TCP SYN flood |
+|-----------|---------------|
+| 가짜 손님이 자리만 차지 | SYN 만 보내고 ACK 안 보냄 (half-open) |
+| 진짜 손님이 자리 못 잡음 | 정상 client 의 connection 거부 |
+| 매니저의 시간 제한 규칙 | conntrack 의 SYN_SENT timeout |
+| 안내 직원 추가 | nft rate limit rule 추가 |
+
+**0a. 사용 도구 사전 안내.**
+
+- **hping3** — TCP / UDP / ICMP packet 을 임의로 만들어 보내는 도구다. attacker VM 에 미리 설치되어 있다.
+- **conntrack -L** — 현재 fw 의 connection tracking table 을 보는 명령이다. SYN_SENT / ESTABLISHED / TIME_WAIT 같은 state 별 connection 수를 보여준다.
+- **nft rate limit** — `limit rate 100/second` 같은 형식으로 초당 / 분당 packet 수를 제한하는 rule 옵션이다.
+
+**1. Red — 공격 재현.**
+
+attacker VM 에서 hping3 으로 SYN flood 를 보낸다. 학습 환경 안에서만 실행해야 한다.
+
+```bash
+ssh ccc@192.168.0.112
+# password: 1
+
+# attacker VM 내부 (학습 환경 한정)
+sudo hping3 -S -p 80 --flood -c 200 192.168.0.103
+```
+
+각 옵션의 의미는 다음과 같다.
+
+- `-S` — SYN flag 만 set. half-open 시도를 만든다.
+- `-p 80` — target port 80 (HTTP).
+- `--flood` — 응답을 기다리지 않고 최대 속도로 보낸다.
+- `-c 200` — 200개만 보내고 종료한다.
+
+`--flood` 와 `-c` 를 함께 쓰면 짧은 시간에 200개를 폭주시킬 수 있다.
+
+**2. 발생하는 로그/아티팩트.**
+
+fw 의 conntrack table 이 갑자기 부풀어 오른다. SYN_SENT state 의 entry 가 다수 생긴다. nft input chain 의 counter 도 즉시 증가한다. 학습 환경의 ips 컨테이너 Suricata 가 같은 traffic 을 packet sniff 하기 때문에 `eve.json` 에도 `ET SCAN` 또는 `ET DOS` 계열 signature 가 함께 발생할 수 있다.
+
+**3. Blue — conntrack 와 nft 로 직접 분석.**
+
+fw 에 들어간 뒤 conntrack 상태를 본다.
+
+```bash
+ssh 6v6-fw
+sudo conntrack -L -p tcp --dport 80 2>/dev/null | head -20
+```
+
+각 라인은 다음 형식이다.
+
+```
+tcp 6 30 SYN_SENT src=192.168.0.112 dst=192.168.0.103 sport=54321 dport=80 ...
+```
+
+SYN_SENT state entry 가 200개 가까이 있으면 SYN flood 의 직접 흔적이다. 정상 traffic 은 ESTABLISHED state 가 대부분이다.
+
+다음으로 state 별 통계를 본다.
+
+```bash
+sudo conntrack -L 2>/dev/null | awk '{print $4}' | sort | uniq -c | sort -rn | head
+```
+
+`SYN_SENT` 가 비정상적으로 많이 나오면 flood 의 증거다.
+
+마지막으로 nft input chain 의 counter 변화를 본다.
+
+```bash
+sudo nft list chain inet six_filter input | grep -A1 "tcp dport 80"
+```
+
+counter 의 packets 값이 급증한 것을 확인한다.
+
+**4. Blue — 대응 의사결정.**
+
+학생이 다음 세 가지를 판단한다.
+
+- **rate limit 임계치.** 정상 HTTP request 가 초당 몇 건인지 baseline 을 확인한다. flood 가 그보다 훨씬 큰 값인지 본다.
+- **연결 차단 vs rate limit.** 즉시 차단보다 rate limit 이 더 안전한 경우가 많다. 정상 client 의 영향을 최소화한다.
+- **conntrack timeout 조정.** SYN_SENT timeout 을 60초에서 30초로 줄이면 half-open entry 가 빨리 정리된다.
+
+**5. Purple — 보완.**
+
+다음 세 가지를 nftables.conf 에 반영한다.
+
+- **rate limit rule 추가.** input chain 의 tcp dport 80 앞에 `limit rate 100/second burst 50 packets` 를 추가한다. 정상 traffic 은 거의 영향이 없고 flood 만 차단된다.
+- **counter 분리.** `tcp dport 80 syn` 의 counter 를 별도 rule 로 분리하면 SYN flood 의 baseline 을 직접 측정할 수 있다.
+- **conntrack 모니터링 cron 추가.** SYN_SENT 가 100 이상이면 알람이 뜨도록 간단한 shell script 를 cron 에 등록한다.
+
+### 9.5.3 케이스 3 — forwarded chain 우회 시도의 분석
+
+**0. 일상 비유 — 정문 대신 비상구로 들어가려는 시도.**
+
+도둑이 아파트 정문에서 막히면 비상구로 우회를 시도한다. 비상구에도 경비원이 있어야 한다. 비상구의 경비원도 매뉴얼이 있어야 하고, 매뉴얼이 비어 있으면 도둑이 그냥 통과해버린다.
+
+이 비유를 nftables 의 forward chain 에 옮긴다. input chain 은 정문이고 forward chain 은 비상구다. forward chain 의 policy 가 accept 면 6v6 의 다른 서브넷으로 우회가 가능해진다.
+
+| 일상 비유 | forward chain |
+|-----------|---------------|
+| 정문 | input chain |
+| 비상구 | forward chain |
+| 비상구의 경비원 매뉴얼 | forward chain 의 rule |
+| 비상구 매뉴얼 비어 있음 | policy accept |
+| 비상구 매뉴얼 채움 | policy drop + 명시 rule |
+
+**0a. 사용 도구 사전 안내.**
+
+- **nmap -Pn -sS --reason** — `-Pn` 은 host discovery 생략, `--reason` 은 각 port 결과의 이유 (예: `syn-ack`, `reset`, `no-response`) 를 함께 출력한다.
+- **nft policy** — chain 의 default verdict 를 정한다. `policy drop` 이면 매칭되는 rule 이 없을 때 자동 차단된다.
+- **`log prefix`** — rule 에 붙이면 kernel ring buffer 에 prefix 가 찍힌 로그가 남는다.
+
+**1. Red — 공격 재현.**
+
+attacker VM 에서 fw 너머의 dmz 또는 int 자산에 직접 packet 을 보낸다. fw 가 NAT / forwarding 을 처리하는 경로다.
+
+```bash
+ssh ccc@192.168.0.112
+# password: 1
+
+# attacker VM 내부 (학습 환경 한정)
+nmap -Pn -sS --reason -p 22,80,3306,5432 192.168.0.108
+```
+
+각 옵션의 의미는 다음과 같다.
+
+- `-Pn` — host discovery 생략. ICMP block 환경에서 유용하다.
+- `-sS` — SYN scan.
+- `--reason` — 각 port 의 결과 이유를 함께 출력한다.
+- `-p 22,80,3306,5432` — SSH, HTTP, MySQL, PostgreSQL 표준 port.
+- `192.168.0.108` — dmz VM 의 IP. fw 너머의 자산이다.
+
+예상 결과는 두 가지로 갈린다. forward chain policy 가 drop 이면 모든 port 가 `filtered` 로 표시된다. policy 가 accept 면 일부 port 가 `open` 또는 `closed` 로 표시되며, 이는 우회 가능성을 의미한다.
+
+**2. 발생하는 로그/아티팩트.**
+
+fw 의 nft forward chain counter 가 증가한다. dmesg 에 forward chain 의 log prefix 가 찍힌다. Suricata 가 같은 traffic 을 packet sniff 해서 eve.json 에 alert 가 함께 발생한다.
+
+**3. Blue — nft 와 dmesg 로 직접 분석.**
+
+fw 에 들어가서 forward chain 의 policy 와 rule 을 본다.
+
+```bash
+ssh 6v6-fw
+sudo nft list chain inet six_filter forward
+```
+
+화면 첫 줄에 `policy drop` 또는 `policy accept` 가 표시된다. policy drop 이면 deny by default 가 적용되는 안전한 상태다. policy accept 면 모든 forwarded packet 이 그냥 통과한다.
+
+다음으로 counter 변화량을 확인한다. attacker 시도 전후의 packets 값을 비교한다.
+
+dmesg 에서 log prefix 가 찍힌 라인을 확인한다.
+
+```bash
+sudo dmesg --ctime | grep "FWD-DROP" | tail -20
+```
+
+각 라인에 source IP, destination IP, port 가 함께 기록된다. 이로부터 어떤 우회 시도가 있었는지 즉시 식별할 수 있다.
+
+**4. Blue — 대응 의사결정.**
+
+학생이 다음 세 가지를 판단한다.
+
+- **forward policy 의 안전성.** policy drop 이 기본이어야 한다. policy accept 면 즉시 drop 으로 바꿔야 한다.
+- **로깅 충분성.** log prefix 가 forward chain 의 drop rule 에 붙어 있는지 확인한다.
+- **dmz / int 으로 가는 정상 traffic 식별.** 차단으로 인해 정상 운영이 끊기지 않는지 본다.
+
+**5. Purple — 보완.**
+
+nftables.conf 에 다음 세 가지를 적용한다.
+
+- **policy drop 강제.** forward chain 의 첫 줄을 `type filter hook forward priority 0; policy drop;` 로 설정한다.
+- **명시적 accept rule.** 정상 운영에 필요한 traffic (예: bastion → dmz 의 SSH) 만 명시적으로 accept 한다.
+- **drop 직전 log rule.** 모든 forward drop 의 직전에 `log prefix "FWD-DROP: "` 를 둔다.
+
+본 절의 세 케이스가 끝나면 nftables 의 set / counter / rate limit / forward policy / log 의 운영을 전부 한 번씩 직접 경험한 셈이다.
+
+### 9.5.4 본 절 정리
+
+본 절은 W02 의 nftables 학습을 실제 공격 분석 cycle 에 연결했다. 학생이 다음을 능력으로 갖춘다.
+
+- attacker VM 에서 ICMP / SYN / forwarded 우회 시도를 직접 재현한다.
+- nft list, counter, monitor trace 명령으로 흔적을 직접 분석한다.
+- conntrack -L 로 connection state 를 직접 본다.
+- 분석 결과를 바탕으로 set timeout, rate limit, policy drop, log prefix 를 자기 손으로 보완한다.
+
+다음 주차 W03 에서는 NAT + HAProxy 의 같은 R/B/P cycle 을 학습한다.
+
+---
+
 ## 10. 사례 분석 — ISMS-P / KISA / NIST
 
 ### 10.1 ISMS-P 2.6.1 (네트워크 접근통제)
