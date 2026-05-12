@@ -451,6 +451,367 @@ graph LR
 
 ---
 
+## 5.5 R/B/P 공격 분석 케이스 확장 (본 주차 추가)
+
+### 5.5.0 R/B/P 일상 비유 — 운전면허 도로주행 시험
+
+본 절은 W08 의 종합 평가 의미를 운전면허 도로주행 시험에 비유로 시작한다.
+
+운전면허 도로주행 시험을 떠올려보자. 학생은 차량 점검 (W01 의 5 도구 헬스체크), 일반 도로 주행 (W02 ~ W07 의 개별 도구 운영), 위급 상황 대처 (5 시나리오의 침해 분석) 의 세 단계를 한 시간 안에 모두 보여줘야 한다. 단순히 한 가지를 잘하는 것이 아니라, 차량 점검부터 위급 상황 대처까지의 흐름이 매끄러워야 합격이다.
+
+| 일상 비유 | secuops 종합 평가 |
+|-----------|-------------------|
+| 차량 점검 | 5 도구 헬스체크 (W01) |
+| 일반 도로 주행 | 5 시나리오의 개별 풀이 |
+| 위급 상황 대처 | 시나리오 5 의 통합 침해 분석 |
+| 시험관 채점표 | 평가 매트릭스 (§3) |
+| 시험 후 사고 리뷰 | After Action Review (AAR) |
+
+본 절은 시험 풀이 과정 자체를 R/B/P cycle 로 가시화하는 세 케이스를 다룬다.
+
+- 케이스 1 — 시나리오 5 의 통합 침해 timeline 재구성. 학생이 5 도구의 로그를 어떻게 cross-correlate 하는지의 표준 절차.
+- 케이스 2 — 시나리오 2 (Suricata) 와 시나리오 3 (ModSec) 의 같은 attacker IP 결합. 두 시스템이 한 사건을 어떻게 함께 잡는지.
+- 케이스 3 — 시험 후 cleanup + AAR. 평가 종료 후 운영 baseline 복구와 자기 학습 보고서 작성.
+
+원칙은 W01 ~ W07 과 같다. 재현 가능성, 도구 위주 분석, 신입생 친화, 학습 환경 한정.
+
+### 5.5.1 케이스 1 — 통합 침해 timeline 재구성 (시나리오 5 의 풀이 절차)
+
+**0. 일상 비유 — 형사가 CCTV 4 대 영상을 시간순으로 짜맞춤.**
+
+은행 강도 사건 후 형사가 4 대의 CCTV 영상을 모두 모은다. 정문 CCTV, ATM CCTV, 금고 CCTV, 직원 출입구 CCTV 의 4 영상이다. 형사는 각 영상의 시각을 정확히 맞춰 시간순으로 한 줄로 정리한다. 단일 영상만 보면 도둑의 행위가 조각조각인데, 4 영상의 시간순 결합은 한 사건의 완전한 그림을 드러낸다.
+
+이 비유를 통합 침해 분석에 옮긴다.
+
+| 일상 비유 | 통합 침해 분석 |
+|-----------|----------------|
+| 정문 CCTV | fw 의 nft counter + dmesg |
+| ATM CCTV | ips 의 Suricata eve.json |
+| 금고 CCTV | web 의 modsec_audit.log |
+| 직원 출입구 CCTV | osquery + Wazuh syscheck |
+| 형사의 시간순 정리 | timeline reconstruction |
+| 사건 보고서 | 시나리오 5 의 답안 |
+
+**0a. 사용 도구 사전 안내.**
+
+- **jq + --arg + select** — 각 로그 파일에서 attacker IP 와 일치하는 줄만 추출한다.
+- **sort -k1** — timestamp 기준으로 정렬한다.
+- **awk '{$1=$1}1'** — 공백 정리.
+
+**1. Red — 시험관이 사전에 주입한 침해 시나리오.**
+
+시험관이 시험 시작 전에 학습 환경의 attacker VM (192.168.0.112) 에서 다음 순서로 침해를 재현한다. 학생은 시작 후 본 흔적만 보고 추적한다.
+
+```
+T+0   : ICMP flood × 100 (W02 학습 연관)
+T+30s : nmap port scan 22,80,443,3306 (W04 학습 연관)
+T+60s : XSS payload 1건 + SQLi payload 1건 (W06 학습 연관)
+T+90s : web 의 admin 계정으로 SSH 시도 5건 (W05 학습 연관)
+T+120s: web 안에서 useradd backupz + cron backdoor (W07 학습 연관)
+```
+
+학생은 본 단계의 결과 로그만 갖고 시간순으로 재구성해야 한다.
+
+**2. 발생하는 로그/아티팩트.**
+
+다음 다섯 위치의 로그에 흔적이 흩어진다.
+
+- `fw:/var/log/kern.log` 또는 `dmesg` — ICMP flood 의 log prefix.
+- `ips:/var/log/suricata/eve.json` — nmap scan 의 alert event.
+- `web:/var/log/apache2/modsec_audit.log` — XSS, SQLi 의 audit JSON.
+- `web:/var/log/auth.log` — SSH 시도 5건의 Failed password.
+- `web` 안의 `/etc/passwd` 와 `/etc/cron.d/` — useradd 와 cron 의 흔적.
+
+같은 사건이 SIEM 으로 ingest 되면 Wazuh 의 alerts.json 에 통합 표현된다.
+
+**3. Blue — 5 위치 로그의 timeline 한 줄 재구성.**
+
+학생이 다음 5 줄을 순서대로 실행한다.
+
+```bash
+# 1. fw 의 ICMP flood 흔적
+ssh 6v6-fw 'sudo dmesg --ctime | grep -i "ICMP-FLOOD\|RBP-DROP" | tail -10'
+
+# 2. ips 의 Suricata scan alert
+ssh 6v6-ips 'sudo tail -200 /var/log/suricata/eve.json | jq -r "select(.event_type==\"alert\" and .src_ip==\"192.168.0.112\") | \"\(.timestamp) ips alert \(.alert.signature_id) \(.alert.signature)\""'
+
+# 3. web 의 ModSec audit
+ssh 6v6-web 'sudo tail -200 /var/log/apache2/modsec_audit.log | jq -r "select(.transaction.client_ip==\"192.168.0.112\") | \"\(.transaction.time_stamp) web modsec \(.transaction.request_uri)\""'
+
+# 4. web 의 SSH 실패
+ssh 6v6-web 'sudo tail -200 /var/log/auth.log | grep "192.168.0.112" | grep "Failed password"'
+
+# 5. web 의 신규 사용자 + cron
+ssh 6v6-web 'sudo grep -E "^[a-z]+:x:1[0-9]{3}:" /etc/passwd | tail -5; sudo ls -la /etc/cron.d/'
+```
+
+각 명령의 결과를 학생 노트북의 텍스트 파일 한 곳에 모은다.
+
+다음으로 한 줄 awk 또는 sort 로 시간순 재구성을 한다.
+
+```bash
+cat /tmp/all_logs.txt | sort -k1
+```
+
+결과로 다음과 같은 timeline 이 드러난다.
+
+```
+14:30:00  fw    ICMP-FLOOD  packets=100 src=192.168.0.112
+14:30:30  ips   alert 2010xxx ET SCAN nmap
+14:31:00  web   modsec 941100 /search?q=<script>
+14:31:30  web   sshd Failed password admin from 192.168.0.112
+14:32:00  web   /etc/passwd 신규: backupz:x:1001
+14:32:05  web   /etc/cron.d/ 신규: w07_backdoor
+```
+
+이 한 줄짜리 timeline 이 시나리오 5 답안의 핵심이다.
+
+Wazuh Dashboard 의 Discover 에서도 같은 timeline 을 한 화면에서 본다.
+
+1. 좌측 햄버거 메뉴 → `Discover` 선택.
+2. Index pattern 을 `wazuh-alerts-*` 로 바꾼다.
+3. Time picker `Last 30 minutes`.
+4. Search bar 에 `data.srcip:192.168.0.112 OR srcip:192.168.0.112` 입력.
+5. 좌측 `Available fields` 에서 `rule.description`, `agent.name`, `rule.groups` 를 columns 에 추가한다.
+
+5분 안에 발생한 alert 가 시간순으로 한 화면에 나타난다.
+
+**4. Blue — 운영자 조치 권장.**
+
+학생이 답안에 다음 다섯 줄의 권장 행동을 적는다.
+
+- **즉시 차단.** fw 의 dynamic blacklist set 에 192.168.0.112 timeout 30분 등록.
+- **affected host 격리.** web VM 의 inbound 22, 80 port 를 임시 차단.
+- **신규 사용자 잠금.** `usermod -L backupz` 실행. forensic 보존 후 삭제.
+- **cron 파일 보존.** `/etc/cron.d/w07_backdoor` 의 hash 와 내용을 SIEM 으로 보존 후 제거.
+- **5 도구 baseline 재검증.** nftables ruleset, Suricata 룰 reload, ModSec audit log retention, osquery scheduled_query, Wazuh agent 상태 5건 모두 확인.
+
+**5. Purple — 자기 검증 + 시험관 채점 대비.**
+
+학생이 답안 제출 전에 다음 세 가지를 자가 검증한다.
+
+- **5 위치 로그 모두 확인.** 5개 중 하나라도 빠지면 시간순 timeline 이 불완전하다.
+- **timestamp 정확성.** 각 시스템의 timezone 이 같은지 확인한다. fw 가 UTC 이고 web 이 KST 면 시간이 9시간 어긋난다.
+- **권장 행동의 우선순위.** 즉시 차단 → 격리 → 보존 → 삭제 → 재검증의 순서가 표준이다. 순서가 뒤집히면 감점이다.
+
+본 케이스 cycle 한 바퀴는 시험 본문의 약 30분 정도다.
+
+### 5.5.2 케이스 2 — 한 attacker IP 의 두 시스템 alert 결합
+
+**0. 일상 비유 — 같은 도둑이 두 다른 cctv 에 잡힘.**
+
+도둑이 백화점 정문 cctv (Suricata) 와 1층 매장 cctv (ModSec) 양쪽에 동시각으로 잡혔다. 두 cctv 영상의 사람 외모는 같다. 형사가 두 영상의 src_ip 를 매칭하면 같은 사람이 두 행위를 동시에 했다는 결정적 증거가 된다. 단일 cctv 만으로는 의심이 약하지만, 두 영상의 결합은 강한 증거가 된다.
+
+| 일상 비유 | 두 시스템 결합 |
+|-----------|----------------|
+| 정문 cctv | Suricata eve.json |
+| 매장 cctv | ModSec modsec_audit.log |
+| 동시각 매칭 | 같은 시간 + 같은 src_ip |
+| 결합 증거 | 통합 alert 의 신뢰도 상승 |
+
+**0a. 사용 도구 사전 안내.**
+
+- **jq + select + 시간 필터** — 두 로그에서 같은 src_ip 의 같은 시각 alert 만 추출한다.
+- **paste + diff** — 두 결과를 나란히 비교한다.
+- **Wazuh Dashboard 의 Discover 단일 query** — 두 source 의 alert 를 한 query 로 통합 조회한다.
+
+**1. Red — 시험관이 주입한 두 시스템 동시 trigger.**
+
+시험관이 attacker VM 에서 다음 한 줄을 실행해 두 시스템이 같은 시각에 같은 src_ip 에서 trigger 되도록 한다.
+
+```bash
+# 시험관이 사전 실행 (학생은 흔적만 본다)
+for payload in "?q=<script>alert(1)</script>" "?q=1' OR '1'='1"; do
+    curl -s -o /dev/null -H "Host: juice.6v6.lab" "http://192.168.0.103/search$payload"
+done
+```
+
+XSS 와 SQLi 두 페이로드가 짧은 시간에 같은 attacker IP 에서 발생한다. 두 시스템 모두 동일한 src_ip 의 alert 를 기록한다.
+
+**2. 발생하는 로그/아티팩트.**
+
+- ips 의 eve.json — Suricata 의 http alert 2건 (XSS, SQLi 의 별도 signature).
+- web 의 modsec_audit.log — ModSec 의 audit JSON 2건 (941xxx, 942xxx 매칭).
+
+같은 src_ip 와 같은 시각 범위의 매칭이 핵심이다.
+
+**3. Blue — 두 로그의 같은 src_ip 매칭.**
+
+먼저 ips 의 Suricata alert 를 추출한다.
+
+```bash
+ssh 6v6-ips 'sudo tail -200 /var/log/suricata/eve.json \
+  | jq -r "select(.event_type==\"alert\" and .src_ip==\"192.168.0.112\") | \"\(.timestamp) ips \(.alert.signature_id) \(.alert.signature)\""'
+```
+
+다음으로 web 의 ModSec audit 을 추출한다.
+
+```bash
+ssh 6v6-web 'sudo tail -200 /var/log/apache2/modsec_audit.log \
+  | jq -r "select(.transaction.client_ip==\"192.168.0.112\") | \"\(.transaction.time_stamp) web modsec uri=\(.request.uri)\""'
+```
+
+두 출력의 timestamp 가 1초 이내로 가깝다면 같은 사건의 두 시스템 흔적이다.
+
+다음으로 Wazuh Dashboard 의 Discover 에서 한 query 로 본다.
+
+1. 좌측 햄버거 메뉴 → `Discover` 선택.
+2. Index pattern 을 `wazuh-alerts-*` 로 바꾼다.
+3. Time picker `Last 15 minutes`.
+4. Search bar 에 `data.srcip:192.168.0.112 AND (rule.groups:suricata OR rule.groups:modsecurity)` 입력.
+5. 결과 한 줄을 펼쳐 두 시스템의 alert 가 모두 보이는지 확인한다.
+
+핵심 분석은 다음이다.
+
+- **두 시스템 모두 같은 src_ip.** 같은 공격자의 직접 증거.
+- **두 시스템 모두 같은 시각 범위.** 한 사건의 두 측면.
+- **두 alert 의 signature.** Suricata 는 보통 ET SCAN 또는 ET WEB_SPECIFIC 시리즈, ModSec 은 941xxx (XSS) 와 942xxx (SQLi).
+
+**4. Blue — 결합 alert 의 우선순위 상향.**
+
+학생이 다음 두 가지를 판단한다.
+
+- **단일 시스템 alert.** Suricata 단독 또는 ModSec 단독 alert 는 false positive 가능성이 있다.
+- **두 시스템 결합 alert.** 같은 src_ip 의 두 시스템 동시각 alert 는 false positive 가능성이 매우 낮다. 우선순위를 P1 (즉시) 로 상향한다.
+
+**5. Purple — Wazuh correlation rule 작성.**
+
+답안에 다음 한 줄짜리 통합 rule 을 추가한다.
+
+```xml
+<group name="local,correlation,">
+  <rule id="100200" level="13" frequency="2" timeframe="60">
+    <if_matched_sid>91531</if_matched_sid>
+    <if_sid>5710</if_sid>
+    <same_source_ip />
+    <description>Local Correlation - Suricata + ModSec from same src</description>
+  </rule>
+</group>
+```
+
+(`if_matched_sid` 와 `if_sid` 의 정확한 값은 학습 환경의 Suricata + ModSec ingest rule id 에 맞게 조정.)
+
+핵심은 다음 세 가지다.
+
+- **same_source_ip** — 두 alert 의 src_ip 가 같을 때만 trigger.
+- **frequency 2, timeframe 60** — 60초 안에 두 시스템에서 각각 alert 가 발생해야 한다.
+- **level 13** — 두 시스템 결합은 신뢰도 높은 침해. level 을 상향한다.
+
+### 5.5.3 케이스 3 — 시험 후 cleanup + AAR
+
+**0. 일상 비유 — 운전면허 도로주행 후 차량 정비 + 자기 점검.**
+
+도로주행 시험을 마친 학생이 시험 차량을 다음 학생에게 인계하기 전에 다음 두 가지를 한다. 차량 정비 (배기량, 브레이크, 청결 상태) 와 자기 점검 (어느 코너에서 실수했는지, 다음 주행에 무엇을 개선할지). 다음 학생이 새 차량으로 시험을 시작할 수 있도록 정비 상태가 baseline 이어야 하고, 본인은 자기 점검으로 다음 주행에서 더 성장한다.
+
+| 일상 비유 | 시험 후 운영 |
+|-----------|--------------|
+| 차량 정비 | 시험 흔적 cleanup |
+| 자기 점검 | After Action Review (AAR) |
+| 인계 baseline | 학습 환경의 시험 전 baseline 복귀 |
+| 다음 주행 개선 | 약점 주차의 재학습 plan |
+
+**0a. 사용 도구 사전 안내.**
+
+- **userdel + sed** — 신규 사용자와 추가 key 의 제거.
+- **rm** — backdoor cron 파일 제거.
+- **nft delete rule + nft monitor** — 시험 중 추가한 dynamic rule 의 제거 검증.
+- **markdown 한 페이지** — AAR 표준 양식.
+
+**1. Red — 시험 중 학생이 임시로 만든 흔적.**
+
+학생이 시험 중 다음 흔적을 만들었다고 가정한다.
+
+- fw 에 attacker IP 차단 rule 1개 임시 추가.
+- ips 에 local.rules 의 신규 sid 3개 추가.
+- web 의 ModSec 에 exception 1개 임시 추가.
+- web 의 osquery 정상 baseline 외 임시 scheduled_query 등록.
+
+본 흔적이 다음 학생의 시험에 영향을 미치면 안 된다.
+
+**2. 발생하는 로그/아티팩트.**
+
+본 단계 자체는 학생의 의도된 변경이므로 별도 alert 는 없다. 하지만 fw 의 ruleset, ips 의 local.rules, web 의 ModSec exception, osquery.conf 의 schedule 항목에 흔적이 남아 있다.
+
+**3. Blue — cleanup 한 줄씩.**
+
+학생이 답안 제출 전에 다음 다섯 줄을 순서대로 실행한다.
+
+```bash
+# 1. fw 의 임시 차단 rule 제거
+ssh 6v6-fw 'HANDLE=$(sudo nft -a list chain inet six_filter input | grep "192.168.0.112" | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"); [ -n "$HANDLE" ] && sudo nft delete rule inet six_filter input handle $HANDLE; sudo nft list set inet six_filter blacklist 2>/dev/null'
+
+# 2. ips 의 임시 sid 3개 제거
+ssh 6v6-ips 'sudo sed -i "/sid:90089[0-9]\{3\};/d" /etc/suricata/rules/local.rules; sudo suricatasc -c reload-rules'
+
+# 3. web 의 ModSec 임시 exception 제거
+ssh 6v6-web 'sudo sed -i "/W08-EXAM-EXCEPTION/d" /etc/modsecurity/modsec_custom_exceptions.conf; sudo apachectl configtest && sudo systemctl reload apache2'
+
+# 4. web 의 osquery 임시 schedule 제거
+ssh 6v6-web 'sudo sed -i "/w08_exam_query/d" /etc/osquery/osquery.conf; sudo systemctl reload osqueryd 2>/dev/null'
+
+# 5. baseline 확인
+ssh 6v6-fw 'sudo nft list ruleset | wc -l'
+ssh 6v6-ips 'sudo wc -l /etc/suricata/rules/local.rules'
+ssh 6v6-web 'sudo wc -l /etc/modsecurity/modsec_custom_exceptions.conf'
+```
+
+다섯 줄 모두 시험 전 baseline 과 일치하면 cleanup 완료다.
+
+**4. Blue — AAR (After Action Review) 한 페이지 작성.**
+
+학생이 시험 직후 다음 양식으로 AAR 한 페이지를 작성한다.
+
+```markdown
+# W08 secuops 종합 평가 AAR
+
+## 1. 시험 진행 요약
+- 시작: 14:30 / 종료: 16:00 / 90분 정시 제출
+- 시나리오 1 (nftables): 17/20
+- 시나리오 2 (Suricata): 18/20
+- 시나리오 3 (ModSec): 15/20
+- 시나리오 4 (osquery): 19/20
+- 시나리오 5 (통합 침해): 16/20
+- 총점: 85/100
+
+## 2. 잘한 점
+- 5 시나리오 모두 답안 제출.
+- 시나리오 4 의 SQL JOIN 한 줄로 신규 사용자 + cron 동시 식별.
+- cleanup 5 단계 모두 baseline 복귀 확인.
+
+## 3. 못한 점
+- 시나리오 3 의 paranoia level 의 anomaly score 계산 실수.
+- 시나리오 5 의 timestamp timezone 정렬 실수 (UTC vs KST).
+
+## 4. 다음 학습 plan
+- W06 의 paranoia + anomaly score 누적 재학습.
+- 모든 host 의 timezone baseline 통일 (UTC) 표준화.
+
+## 5. 시험관 피드백 반영 plan
+- (시험 후 피드백 받은 뒤 추가 작성)
+```
+
+본 AAR 은 시험 직후의 자기 학습 보고서로, W09 진입 전 약점 보강의 기준이 된다.
+
+**5. Purple — 약점 주차 재학습 plan.**
+
+학생이 약점으로 식별된 주차에 대해 다음 세 가지를 한다.
+
+- **약점 주차의 lecture 재독.** 본 case 의 핵심 절만 다시 읽는다.
+- **약점 주차의 실습 1개 재실행.** 처음과 같은 환경에서 흔적과 분석을 다시 거친다.
+- **W09 진입 전 약점 보강 완료.** 다음 주차 학습이 본 약점 위에 쌓이지 않도록 한다.
+
+### 5.5.4 본 절 정리
+
+본 절은 W08 의 종합 평가를 실제 시험 풀이 절차와 시험 후 운영 cycle 에 연결했다. 학생이 다음 능력을 갖춘다.
+
+- 5 도구의 흩어진 로그를 같은 src_ip + 시간순으로 timeline 한 줄에 재구성한다.
+- 두 시스템 (Suricata + ModSec) 의 결합 alert 로 false positive 가능성을 줄이고 신뢰도를 올린다.
+- 시험 후 5 단계 cleanup 으로 학습 환경 baseline 을 복귀시키고, 한 페이지 AAR 로 약점을 자기 식별한다.
+
+다음 주차 W09 부터는 Wazuh manager 의 본격 운영을 같은 R/B/P cycle 로 학습한다.
+
+---
+
 ## 6. 시험 대비 — W01-W07 review (시험 직전)
 
 ```
