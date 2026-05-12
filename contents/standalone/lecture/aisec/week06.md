@@ -488,11 +488,11 @@ flowchart LR
     end
 
     subgraph Purple [🟣 Purple — 에이전트]
-        P1[/chat 호출]
-        P2[KG context 검색]
-        P3[ReAct loop]
-        P4[task_outcome anchor 기록]
-        P5[운영자 응답]
+        P1["chat 호출"]
+        P2["KG context 검색"]
+        P3["ReAct loop"]
+        P4["task_outcome anchor 기록"]
+        P5["운영자 응답"]
     end
 
     R1 --> B1 --> B2 --> P1 --> P2 --> P3 --> P4 --> P5

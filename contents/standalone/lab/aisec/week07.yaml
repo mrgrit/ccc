@@ -1,0 +1,209 @@
+lab_id: standalone-aisec-week07
+title: AI 에이전트 (3) — Bastion 활용 보안 운영 / 취약점 / 모의해킹
+version: standalone-non-ai
+course: aisec
+week: 7
+description: |
+  W05-W06 의 이론 / architecture 위에 Bastion 의 실 운영 의 3 case (alert triage /
+  CVE 분석 / 모의해킹 보조) 의 통합 실습.
+difficulty: hard
+duration_minutes: 180
+prerequisites:
+  - W06 통과
+  - Bastion API 가용
+  - 6v6 인프라 의 alert 의 가용
+objectives:
+  - Bastion 의 alert triage 의 실 호출
+  - Bastion 의 alert correlation 의 ATT&CK 매핑
+  - Bastion 의 CVE 5 항목 의 응답
+  - Bastion 의 정찰 step 의 권장
+  - Bastion 의 보고서 의 자동 작성
+pass_threshold: 0.7
+
+steps:
+
+  # ============================================================
+  # STEP 1 — alert triage 의 Bastion
+  # ============================================================
+  - order: 1
+    instruction: |
+      Bastion 의 /chat 으로 실 Wazuh alert 의 5W + 위험도 + 권장 + ATT&CK 의 분석.
+    hint: |
+      /var/ossec/logs/alerts/alerts.json 의 최근 alert + chat
+    category: experiment
+    points: 20
+    answer: |
+      ssh 6v6-bastion '
+      ALERT=$(sudo tail -1 /var/ossec/logs/alerts/alerts.json 2>/dev/null | head -1)
+      if [ -z "$ALERT" ]; then
+          ALERT="{\"rule\":{\"id\":\"5710\",\"level\":5},\"agent\":{\"name\":\"web\"},\"data\":{\"srcip\":\"192.168.0.112\",\"srcuser\":\"admin\"},\"timestamp\":\"2026-05-12T14:30:00\"}"
+      fi
+      curl -s -X POST -H "X-API-Key: ccc-api-key-2026" \
+          -H "Content-Type: application/json" \
+          -d "{\"message\":\"다음 alert 의 분석 — 5W + 위험도 + 권장 + ATT&CK:\n$ALERT\", \"agent\":\"master\"}" \
+          http://localhost:9100/chat 2>&1 | head -80
+      '
+    answer_detail: alert triage 응답
+    verify:
+      type: output_contains
+      expect: response
+      field: stdout
+      semantic:
+        intent: alert triage
+        success_criteria: [5W 또는 위험도 또는 ATT&CK]
+        acceptable_methods:
+          - "**[OSS] Bastion /chat + master agent**"
+          - "**[OSS] kg_status 의 응답 의 포함**"
+          - "**[OSS] /kg/audit 의 흔적 의 확인**"
+          - "**[OSS] /kg/anchors/recent 의 task_outcome**"
+          - "**[OSS] 5W (when/where/who/what/why)**"
+          - "**[OSS] 위험도 (low/medium/high/critical)**"
+          - "**[OSS] ATT&CK Technique 매핑**"
+          - "**[OSS] 권장 (즉시/단기/일반)**"
+    target_vm: bastion
+
+  # ============================================================
+  # STEP 2 — alert correlation 의 ATT&CK chain
+  # ============================================================
+  - order: 2
+    instruction: |
+      여러 alert (가상) 의 chain 의 분석 — ATT&CK kill chain 의 매핑.
+    hint: |
+      가상 의 5 alert 의 chain 의 입력
+    category: experiment
+    points: 25
+    answer: |
+      ssh 6v6-bastion '
+      curl -s -X POST -H "X-API-Key: ccc-api-key-2026" \
+          -H "Content-Type: application/json" \
+          -d "{\"message\":\"다음 5 alert 의 chain 분석 — 인과 + ATT&CK kill chain 의 매핑:\n- t0: Suricata ET WEB Joomla SQLi\n- t0+1m: ModSec 941100 (XSS / SQLi)\n- t0+2m: Wazuh 5710 (sshd Failed)\n- t0+5m: Wazuh 92053 (ssh Accepted Root)\n- t0+10m: auditd execve /tmp/x\n\nsrcip = 192.168.0.112\", \"agent\":\"master\"}" \
+          http://localhost:9100/chat 2>&1 | head -100
+      '
+    answer_detail: ATT&CK chain 의 매핑
+    verify:
+      type: output_contains
+      expect: T1
+      field: stdout
+      semantic:
+        intent: ATT&CK 매핑
+        success_criteria: [T1xxx Technique 또는 chain]
+        acceptable_methods:
+          - "**[OSS] T1190 Initial Access (Exploit Public-Facing)**"
+          - "**[OSS] T1505.003 Web Shell (Persistence)**"
+          - "**[OSS] T1110.001 Brute Force**"
+          - "**[OSS] T1078 Valid Accounts**"
+          - "**[OSS] T1059 Command Execution**"
+          - "**[OSS] kill chain 의 순서 의 응답**"
+          - "**[OSS] KG 의 PE 의 매칭**"
+          - "**[OSS] STIX2 의 통합 (가능 시)**"
+    target_vm: bastion
+
+  # ============================================================
+  # STEP 3 — CVE 의 Bastion 의 5 항목 의 분석
+  # ============================================================
+  - order: 3
+    instruction: |
+      가상 CVE 의 Bastion 의 5 항목 (핵심 / CVSS / 영향 / PoC / 패치) 의 응답.
+    hint: |
+      CVE 의 상세 + 5 항목 요청
+    category: analysis
+    points: 20
+    answer: |
+      ssh 6v6-bastion '
+      curl -s -X POST -H "X-API-Key: ccc-api-key-2026" \
+          -H "Content-Type: application/json" \
+          -d "{\"message\":\"다음 CVE 의 5 항목 분석 — 1.핵심 vuln 2.CVSS 의의 3.영향 범위 4.PoC 의 가용 5.권장 패치\n\nCVE-2024-9999 (가상)\ndescription: Apache HTTP Server 2.4.x 의 mod_rewrite 의 buffer overflow → RCE\nCVSS: 9.8 Critical\nattack vector: Network / no auth\n6v6 의 web VM 의 Apache 2.4.x 사용\", \"agent\":\"master\"}" \
+          http://localhost:9100/chat 2>&1 | head -80
+      '
+    answer_detail: CVE 5 항목 응답
+    verify:
+      type: output_contains
+      expect: CVSS
+      field: stdout
+      semantic:
+        intent: CVE 의 5 항목
+        success_criteria: [핵심 + CVSS + 영향 + PoC + 패치]
+        acceptable_methods:
+          - "**[OSS] CVE 의 description 의 분석**"
+          - "**[OSS] CVSS 3.1 score 의 8 metric**"
+          - "**[OSS] CWE 매핑**"
+          - "**[OSS] EPSS 의 exploit prob**"
+          - "**[OSS] 6v6 의 자산 매칭**"
+          - "**[OSS] 패치 우선순위 (CVSS × EPSS × asset)**"
+          - "**[OSS] mitigation 의 4 단계 (즉시/임시/공식/장기)**"
+          - "**[OSS] vendor advisory 의 검색 (가능 시)**"
+    target_vm: bastion
+
+  # ============================================================
+  # STEP 4 — 모의해킹 정찰 의 Bastion 의 권장
+  # ============================================================
+  - order: 4
+    instruction: |
+      학습 환경 의 web (192.168.0.103) 의 모의해킹 정찰 의 step 의 권장 + ATT&CK
+      매핑 — 본 step 의 응답 의 명령 은 학습 환경 만.
+    hint: |
+      RoE 의 명시 + 5 step 권장
+    category: experiment
+    points: 20
+    answer: |
+      ssh 6v6-bastion '
+      curl -s -X POST -H "X-API-Key: ccc-api-key-2026" \
+          -H "Content-Type: application/json" \
+          -d "{\"message\":\"본인 은 학습 환경 의 모의해킹 보조 AI. RoE: 학습 환경 192.168.0.0/24 만, 외부 의 거부.\n\ntarget: web 192.168.0.103 (학습 환경)\n\n다음 권장:\n1. passive recon 의 첫 3 step\n2. active recon 의 첫 3 step\n3. 각 의 ATT&CK Technique 매핑\n\n주의: 학습 환경 의 명령 만, 외부 시스템 의 거부.\", \"agent\":\"master\"}" \
+          http://localhost:9100/chat 2>&1 | head -100
+      '
+    answer_detail: 정찰 권장 + ATT&CK
+    verify:
+      type: output_contains
+      expect: nmap
+      field: stdout
+      semantic:
+        intent: 정찰 step 권장
+        success_criteria: [nmap 또는 정찰 도구 + ATT&CK]
+        acceptable_methods:
+          - "**[OSS] nmap -sV -p- 의 service 스캔**"
+          - "**[OSS] whatweb 의 framework 식별**"
+          - "**[OSS] nikto 의 web vuln 스캔**"
+          - "**[OSS] dirb / gobuster 의 디렉토리 brute**"
+          - "**[OSS] T1595 Active Scanning**"
+          - "**[OSS] T1593 Search Open Websites**"
+          - "**[OSS] T1190 Exploit Public-Facing**"
+          - "**[OSS] RoE 의 명시 의 응답 + 외부 의 거부**"
+    target_vm: bastion
+
+  # ============================================================
+  # STEP 5 — 모의해킹 보고서 의 LLM 보조
+  # ============================================================
+  - order: 5
+    instruction: |
+      가상 의 침투 결과 의 Bastion 의 보고서 의 자동 작성 — Executive / Findings /
+      Remediation / ATT&CK Coverage.
+    hint: |
+      4 섹션 의 보고서 의 LLM 작성
+    category: synthesis
+    points: 15
+    answer: |
+      ssh 6v6-bastion '
+      curl -s -X POST -H "X-API-Key: ccc-api-key-2026" \
+          -H "Content-Type: application/json" \
+          -d "{\"message\":\"다음 침투 결과 의 보고서 의 자동 작성 — 4 섹션 (Executive Summary / Detailed Findings / Remediation / ATT&CK Coverage):\n\ntarget: JuiceShop (juice.6v6.lab 학습 환경)\nRoE: 학습 환경 만\n\n결과:\n- nmap 의 22/80/443 의 open\n- /api/Users endpoint 의 SQLi (CWE-89)\n- sqlmap 의 dump 의 성공\n- impact: 사용자 DB 의 전체 노출\", \"agent\":\"master\"}" \
+          http://localhost:9100/chat 2>&1 | head -120
+      '
+    answer_detail: 4 섹션 의 보고서
+    verify:
+      type: output_contains
+      expect: Remediation
+      field: stdout
+      semantic:
+        intent: 모의해킹 보고서
+        success_criteria: [4 섹션 의 응답]
+        acceptable_methods:
+          - "**[OSS] Executive Summary 의 요약**"
+          - "**[OSS] Detailed Findings 의 단계 별**"
+          - "**[OSS] Remediation 의 step**"
+          - "**[OSS] ATT&CK Coverage 의 매핑**"
+          - "**[OSS] CWE 의 매핑**"
+          - "**[OSS] OWASP Top 10 의 매핑**"
+          - "**[OSS] severity 의 명시**"
+          - "**[OSS] timeline 의 단계 별 응답**"
+    target_vm: bastion
