@@ -1,0 +1,297 @@
+lab_id: standalone-aisec-week02
+title: LLM — Ollama 로컬 / 파인튜닝 / RAG + KG
+version: standalone-non-ai
+course: aisec
+week: 2
+description: |
+  W01 의 AI 모델 위계 위에, LLM 의 운영 학습. Ollama 의 로컬 모델 서빙 + Modelfile
+  사용자 정의 + 파인튜닝 (QLoRA) 개념 + RAG (Retrieval Augmented Generation) +
+  지식그래프 (KG) 의 4 핵심 기술 입문.
+difficulty: medium
+duration_minutes: 180
+prerequisites:
+  - W01 통과
+  - Ollama 의 학생 PC 설치 (옵션)
+  - Python 3 가용 (RAG 실습)
+objectives:
+  - Ollama 의 모델 list + 호출
+  - Modelfile 의 사용자 정의 모델 생성
+  - 3 모델의 응답 비교
+  - Bastion 의 KG / chat 활용
+  - RAG 미니 예시 실행
+pass_threshold: 0.7
+
+steps:
+
+  # ============================================================
+  # STEP 1 — Ollama 설치 + 모델 list (학생 PC)
+  # ============================================================
+  - order: 1
+    instruction: |
+      본인 학생 PC 에 Ollama 설치 + gemma3:4b 모델 다운로드 + list 확인.
+      (또는 6v6 의 외부 Ollama 가용 시 그것 사용)
+    hint: |
+      curl -fsSL https://ollama.com/install.sh | sh
+      ollama pull gemma3:4b
+      ollama list
+    category: setup
+    points: 15
+    answer: |
+      # 학생 PC 에서 (또는 6v6 의 Ollama 호스트)
+      ollama --version 2>/dev/null || echo "미설치 — install.sh 실행 필요"
+      ollama list 2>/dev/null | head
+    answer_detail: Ollama 설치 + 모델 list
+    verify:
+      type: output_contains
+      expect: ollama
+      field: stdout
+      semantic:
+        intent: Ollama 의 설치 + 모델 가시화
+        success_criteria:
+          - ollama version
+          - 모델 list
+        acceptable_methods:
+          - "**[OSS] ollama --version + ollama list** — 표준"
+          - "**[OSS] systemd 의 ollama.service** — 자동 시작"
+          - "**[OSS] ollama serve &** — manual background"
+          - "**[OSS] /etc/systemd/system/ollama.service** — 시스템 통합"
+          - "**[OSS] curl localhost:11434/api/tags** — REST API"
+          - "**[OSS] ollama pull <model>** — 다운로드"
+          - "**[OSS] ollama show <model>** — 모델 정보"
+          - "**[OSS] ~/.ollama/models 의 디렉토리** — 저장 위치"
+        negative_signs:
+          - ollama 미설치
+    target_vm: bastion
+
+  # ============================================================
+  # STEP 2 — Ollama 의 첫 호출 (사이버보안 prompt)
+  # ============================================================
+  - order: 2
+    instruction: |
+      gemma3:4b 의 호출. 사이버보안 도메인의 prompt (SSH log 분석) 의 응답 + 분석.
+    hint: |
+      curl http://localhost:11434/api/generate -d '{"model": "gemma3:4b", "prompt": "...", "stream": false}'
+    category: experiment
+    points: 20
+    answer: |
+      # Ollama 의 API 호출 — 본인 환경 또는 6v6
+      curl -s http://localhost:11434/api/generate -d '{
+        "model": "gemma3:4b",
+        "prompt": "다음 보안 로그를 한국어로 분석해줘:\n[2026-05-12 14:32:18] sshd[1234]: Failed password for ccc from 1.2.3.4 port 22\n[2026-05-12 14:32:25] sshd[1235]: Failed password for ccc from 1.2.3.4 port 22\n[2026-05-12 14:32:32] sshd[1236]: Failed password for ccc from 1.2.3.4 port 22",
+        "stream": false,
+        "options": {
+          "temperature": 0.3,
+          "num_ctx": 4096
+        }
+      }' 2>&1 | head -50
+    answer_detail: Ollama 의 응답 + 분석
+    verify:
+      type: output_contains
+      expect: SSH
+      field: stdout
+      semantic:
+        intent: |
+          Ollama 의 LLM 호출. 사이버보안 도메인 prompt 의 응답 quality 평가.
+          모델이 sshd / brute force / 1.2.3.4 등 키워드 식별 시 정상.
+        success_criteria:
+          - SSH 또는 sshd 키워드
+          - 분석 응답
+        acceptable_methods:
+          - "**[OSS] /api/generate** — 비-streaming"
+          - "**[OSS] /api/chat** — 멀티 turn"
+          - "**[OSS] /v1/chat/completions** — OpenAI 호환"
+          - "**[OSS] options.temperature 0-1** — 결정성 vs 창의성"
+          - "**[OSS] options.num_ctx** — context window"
+          - "**[OSS] system message** — 역할 지정"
+          - "**[OSS] keep_alive** — 모델 메모리 유지 시간"
+          - "**[OSS] streaming** — token by token"
+        negative_signs:
+          - 응답 없음
+          - 오류
+    target_vm: bastion
+
+  # ============================================================
+  # STEP 3 — Modelfile 의 사용자 정의 모델
+  # ============================================================
+  - order: 3
+    instruction: |
+      Modelfile 작성 + 사이버보안 도메인의 사용자 정의 모델 생성 + 호출.
+    hint: |
+      ollama create ccc-secsec:4b -f Modelfile
+    category: configuration
+    points: 25
+    answer: |
+      cat > /tmp/Modelfile.secsec <<'EOF'
+      FROM gemma3:4b
+
+      SYSTEM """
+      당신은 사이버보안 전문 AI 어시스턴트입니다.
+      한국어로 응답합니다.
+      응답은 사실 위주 + 운영 권장 포함 + ISMS-P / NIST CSF 매핑 (관련 시).
+      """
+
+      PARAMETER temperature 0.3
+      PARAMETER top_p 0.9
+      PARAMETER num_ctx 8192
+      EOF
+
+      ollama create ccc-secsec:4b -f /tmp/Modelfile.secsec
+      ollama list | grep ccc-secsec
+      echo "---"
+      # 호출
+      curl -s http://localhost:11434/api/generate -d '{
+        "model": "ccc-secsec:4b",
+        "prompt": "본 환경 의 정상 SSH 시도 와 brute force 시도 의 차이를 한국어로",
+        "stream": false
+      }' | jq -r .response | head -20
+    answer_detail: Modelfile + 사용자 정의 모델 + 응답
+    verify:
+      type: output_contains
+      expect: ccc-secsec
+      field: stdout
+      semantic:
+        intent: |
+          Modelfile 작성 + ollama create + 사용자 정의 모델 호출. System prompt
+          의 효과 (한국어 + 운영 권장) 검증.
+        success_criteria:
+          - 모델 생성
+          - System prompt 효과
+        acceptable_methods:
+          - "**[OSS] Modelfile syntax** — FROM / SYSTEM / PARAMETER"
+          - "**[OSS] TEMPLATE** — 응답 format"
+          - "**[OSS] LICENSE** — 모델 의 license"
+          - "**[OSS] MESSAGE** — 사전 messages (chat history)"
+          - "**[OSS] ADAPTER** — LoRA 적용"
+          - "**[OSS] ollama create + 검증**"
+          - "**[OSS] ollama show <name>** — 메타"
+          - "**[OSS] ollama push** — 사용자 정의 모델 공유 (registry)"
+        negative_signs:
+          - 모델 생성 실패
+    target_vm: bastion
+
+  # ============================================================
+  # STEP 4 — Bastion 의 KG + chat
+  # ============================================================
+  - order: 4
+    instruction: |
+      Bastion API 의 KG 통합 가시화 + 다음 chat ("Bastion 의 PE-KG 모델 의 의의 를
+      한국어로") 호출.
+    hint: |
+      curl /kg/metrics
+      curl /chat -d "{"message":"..."}"
+    category: experiment
+    points: 25
+    answer: |
+      ssh 6v6-bastion '
+      echo "=== Bastion KG metrics ==="
+      curl -s -H "X-API-Key: ccc-api-key-2026" \
+          http://localhost:9100/kg/metrics 2>&1 | jq | head -20
+
+      echo ""
+      echo "=== Bastion chat ==="
+      curl -s -X POST \
+          -H "X-API-Key: ccc-api-key-2026" \
+          -H "Content-Type: application/json" \
+          -d "{\"message\":\"Bastion 의 PE-KG 모델 (Playbook + Experience + Knowledge Graph) 의 의의 를 한국어로 알려주세요.\", \"agent\":\"master\"}" \
+          http://localhost:9100/chat 2>&1 | head -80
+      '
+    answer_detail: Bastion KG + chat 의 응답
+    verify:
+      type: output_contains
+      expect: KG
+      field: stdout
+      semantic:
+        intent: |
+          Bastion 의 KG 통합 + chat 의 응답 검증. PE-KG / Playbook / Experience
+          등 키워드 응답.
+        success_criteria:
+          - KG metrics
+          - PE-KG 응답
+        acceptable_methods:
+          - "**[OSS] /kg/metrics counter**"
+          - "**[OSS] /chat POST + master agent**"
+          - "**[OSS] /kg/audit?limit=5**"
+          - "**[OSS] /kg/anchors/recent?kind=task_outcome&limit=5**"
+          - "**[OSS] /skills (33 종 카탈로그)**"
+          - "**[OSS] /chats?limit=5 (history)**"
+          - "**[OSS] paper-draft.md §4 KG 섹션**"
+          - "**[OSS] KG 의 reuse/adapt/new 결정 의 의의**"
+        negative_signs:
+          - chat 응답 없음
+    target_vm: bastion
+
+  # ============================================================
+  # STEP 5 — RAG 의 미니 Python 예
+  # ============================================================
+  - order: 5
+    instruction: |
+      RAG 의 4 단계 (Embed → Retrieve → Augment → Generate) 의 미니 Python 예시.
+      simple keyword similarity 로 retrieve 시뮬 + LLM 호출.
+    hint: |
+      python3 의 simple RAG demo
+    category: experiment
+    points: 15
+    answer: |
+      cat > /tmp/rag_demo.py <<'EOF'
+      """RAG 의 미니 demo — keyword similarity"""
+
+      documents = [
+          "SQL Injection 은 OWASP A03 의 대표 web vuln 이다.",
+          "XSS 는 사용자 브라우저에서 임의 JS 실행을 가능하게 한다.",
+          "CSRF 는 사용자가 의도하지 않은 요청을 발생시킨다.",
+          "Wazuh 는 오픈소스 SIEM 이며 4.10 버전이 최신이다.",
+          "Suricata 는 IDS / IPS 로 동작하며 ETOpen 룰셋이 표준이다.",
+      ]
+
+      query = "SQLi 의 정의"
+
+      def sim(doc, q):
+          q_w = set(q.lower().split())
+          d_w = set(doc.lower().split())
+          return len(q_w & d_w) / (len(q_w) + 1)
+
+      scores = sorted([(d, sim(d, query)) for d in documents], key=lambda x: -x[1])
+      top_k = scores[:2]
+
+      print(f"Query: {query}\n")
+      print("Retrieved Top-K:")
+      for d, s in top_k:
+          print(f"  {s:.2f} | {d}")
+
+      augmented = f"""
+다음 정보를 참고하여 답해주세요.
+
+[참고 정보]
+{top_k[0][0]}
+{top_k[1][0]}
+
+[질문]
+{query}
+      """
+      print("\nAugmented prompt:")
+      print(augmented)
+      EOF
+
+      python3 /tmp/rag_demo.py
+    answer_detail: RAG 4 단계 demo
+    verify:
+      type: output_contains
+      expect: Retrieved
+      field: stdout
+      semantic:
+        intent: RAG 의 4 단계 시뮬
+        success_criteria:
+          - Retrieved Top-K
+          - Augmented prompt
+        acceptable_methods:
+          - "**[OSS] sentence-transformers — 실 embedding**"
+          - "**[OSS] Faiss / Chroma — vector DB**"
+          - "**[OSS] LlamaIndex / LangChain — RAG framework**"
+          - "**[OSS] HuggingFace 의 embedding model**"
+          - "**[OSS] cosine vs dot vs euclidean**"
+          - "**[OSS] hybrid search (vector + keyword)**"
+          - "**[OSS] reranker (Cohere / cross-encoder)**"
+          - "**[OSS] citation / source 추적**"
+        negative_signs:
+          - python 실행 실패
+    target_vm: bastion
