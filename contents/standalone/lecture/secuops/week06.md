@@ -841,8 +841,8 @@ ssh 6v6-web 'sudo tail -5 /var/log/apache2/modsec_audit.log | jq -r ".audit_data
 attacker VM 에 들어가서 학습 환경의 web 에 XSS payload 가 들어간 query 를 보낸다. 학습 환경 한정으로 실행한다.
 
 ```bash
-ssh ccc@192.168.0.112
-# password: 1
+ssh 6v6-attacker
+# 비밀번호: ccc
 ```
 
 attacker VM 내부에서 다음 두 줄을 짧은 간격으로 보낸다.
@@ -851,11 +851,11 @@ attacker VM 내부에서 다음 두 줄을 짧은 간격으로 보낸다.
 # attacker VM 내부 (학습 환경 한정)
 curl -s -o /dev/null -w "%{http_code}\n" \
     -H "Host: juice.6v6.lab" \
-    "http://192.168.0.103/search?q=%3Cscript%3Ealert(1)%3C/script%3E"
+    "http://10.20.30.1/search?q=%3Cscript%3Ealert(1)%3C/script%3E"
 
 curl -s -o /dev/null -w "%{http_code}\n" \
     -H "Host: juice.6v6.lab" \
-    "http://192.168.0.103/search?q=%22%3E%3Cimg%20src=x%20onerror=alert(1)%3E"
+    "http://10.20.30.1/search?q=%22%3E%3Cimg%20src=x%20onerror=alert(1)%3E"
 ```
 
 각 줄의 의미는 다음과 같다.
@@ -870,7 +870,7 @@ curl -s -o /dev/null -w "%{http_code}\n" \
 web VM 의 `/var/log/apache2/modsec_audit.log` 에 한 transaction 마다 한 JSON 줄이 추가된다. 그 JSON 안의 `audit_data.messages[]` 에 매칭된 룰 id 와 anomaly score 가 기록된다.
 
 ```json
-{"transaction": {"client_ip":"192.168.0.112", ...},
+{"transaction": {"client_ip":"10.20.30.202", ...},
  "request": {"uri":"/search?q=...", ...},
  "audit_data": {
    "messages": [
@@ -895,7 +895,7 @@ sudo tail -2 /var/log/apache2/modsec_audit.log | jq '.transaction.client_ip, .re
 
 각 라인을 확인한다.
 
-- `client_ip` — 192.168.0.112 인지 본다. attacker VM 이면 학습 환경 시도다.
+- `client_ip` — 10.20.30.202 (또는 mod_remoteip 적용 시 X-Forwarded-For 의 attacker IP) 인지 본다. 6v6-attacker 면 학습 환경 시도다.
 - `request.uri` — URL-decoded 페이로드의 일부가 보인다.
 - `messages[]` — 941100, 941110, 941160 같은 XSS 시리즈 룰 id 가 보이면 매칭 확인.
 
@@ -958,12 +958,12 @@ sudo tail -100 /var/log/apache2/modsec_audit.log \
 attacker VM 에서 SQLi 페이로드 한 줄을 보낸다.
 
 ```bash
-ssh ccc@192.168.0.112
+ssh 6v6-attacker
 
 # attacker VM 내부 (학습 환경 한정)
 curl -s -o /dev/null -w "%{http_code}\n" \
     -H "Host: juice.6v6.lab" \
-    "http://192.168.0.103/login?username=admin%27%20OR%20%271%27%3D%271&password=any"
+    "http://10.20.30.1/login?username=admin%27%20OR%20%271%27%3D%271&password=any"
 ```
 
 URL-decoded 형태는 `?username=admin' OR '1'='1&password=any` 다. classic SQLi 시도다.
@@ -1048,14 +1048,14 @@ Kibana Discover 에서도 같은 흐름으로 본다.
 attacker VM 에서 그런 정상 입력 시뮬을 보낸다.
 
 ```bash
-ssh ccc@192.168.0.112
+ssh 6v6-attacker
 
 # attacker VM 내부 (학습 환경 한정)
 curl -s -o /dev/null -w "%{http_code}\n" \
     -H "Host: juice.6v6.lab" \
     -X POST \
     -d "comment=오늘 SELECT 와 WHERE 절을 학습했어요. 정말 재미있네요." \
-    http://192.168.0.103/api/comment
+    http://10.20.30.1/api/comment
 ```
 
 ModSec 의 SQLi 룰 (942xxx) 중 일부가 "SELECT", "WHERE" 같은 키워드를 잡아 false positive 차단을 일으킨다. 응답 코드가 403 이면 false positive 발생이다.
