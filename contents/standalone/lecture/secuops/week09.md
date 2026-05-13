@@ -688,8 +688,8 @@ ssh 6v6-siem 'sudo cat /var/ossec/etc/shared/default/agent.conf | head -20'
 attacker VM 에서 학습 환경 web 의 80 포트에 XSS payload 한 줄을 보낸다. 학습 환경 한정으로 실행한다.
 
 ```bash
-ssh ccc@192.168.0.112
-# password: 1
+ssh 6v6-attacker
+# 비밀번호: ccc
 ```
 
 attacker VM 내부에서 한 줄을 보낸다.
@@ -698,7 +698,7 @@ attacker VM 내부에서 한 줄을 보낸다.
 # attacker VM 내부 (학습 환경 한정)
 curl -s -o /dev/null -w "%{http_code}\n" \
     -H "Host: juice.6v6.lab" \
-    "http://192.168.0.103/search?q=%3Cscript%3Ealert(1)%3C/script%3E"
+    "http://10.20.30.1/search?q=%3Cscript%3Ealert(1)%3C/script%3E"
 ```
 
 XSS payload 가 web 에 도달하면서 ips 의 Suricata 가 이를 인식한다.
@@ -716,7 +716,7 @@ XSS payload 가 web 에 도달하면서 ips 의 Suricata 가 이를 인식한다
 ```bash
 ssh 6v6-ips
 sudo tail -50 /var/log/suricata/eve.json \
-  | jq -r 'select(.event_type=="alert" and .src_ip=="192.168.0.112") | "\(.timestamp) ips \(.alert.signature_id) \(.alert.signature)"' \
+  | jq -r 'select(.event_type=="alert" and .src_ip=="10.20.30.202") | "\(.timestamp) ips \(.alert.signature_id) \(.alert.signature)"' \
   | tail -5
 ```
 
@@ -758,7 +758,7 @@ sudo tail -50 /var/ossec/logs/alerts/alerts.json \
 1. 좌측 햄버거 메뉴 → `Discover` 선택.
 2. Index pattern 을 `wazuh-alerts-*` 로 바꾼다.
 3. Time picker `Last 15 minutes`.
-4. Search bar 에 `agent.name:ips AND rule.groups:suricata AND data.srcip:192.168.0.112` 입력.
+4. Search bar 에 `agent.name:ips AND rule.groups:suricata AND data.srcip:10.20.30.202` 입력.
 5. 결과 한 줄을 펼쳐 `data.alert.signature`, `data.src_ip`, `data.dest_ip` 를 확인한다.
 
 5 단계 모두 같은 사건이 보여야 정상 ingest 다.
@@ -807,13 +807,13 @@ sudo tail -50 /var/ossec/logs/alerts/alerts.json \
 attacker VM 에서 학습 환경 web 의 SSH 에 5번 실패 시도를 보낸다.
 
 ```bash
-ssh ccc@192.168.0.112
+ssh 6v6-attacker
 
 # attacker VM 내부 (학습 환경 한정)
 for i in $(seq 1 5); do
     sshpass -p "wrong${i}" ssh -o ConnectTimeout=3 \
         -o StrictHostKeyChecking=no \
-        admin@192.168.0.103 'whoami' 2>/dev/null
+        admin@10.20.32.80 'whoami' 2>/dev/null
 done
 ```
 
@@ -828,7 +828,7 @@ done
 
 학생이 자기 host 의 web browser 에서 Wazuh Dashboard 에 접속한다.
 
-- URL: `https://dashboard.6v6.lab` (또는 `https://192.168.0.103:5601`).
+- URL: `https://dashboard.6v6.lab` (6v6-wazuh-dashboard, 10.20.32.120:5601).
 - 로그인.
 
 UI 클릭 흐름은 다음과 같다.
@@ -844,7 +844,7 @@ UI 클릭 흐름은 다음과 같다.
 ```bash
 ssh 6v6-siem
 sudo tail -100 /var/ossec/logs/alerts/alerts.json \
-  | jq -r 'select(.rule.id=="5712" and .data.srcip=="192.168.0.112") | "\(.timestamp) rule=\(.rule.id) level=\(.rule.level) desc=\(.rule.description) srcip=\(.data.srcip)"' \
+  | jq -r 'select(.rule.id=="5712" and .data.srcip=="10.20.30.202") | "\(.timestamp) rule=\(.rule.id) level=\(.rule.level) desc=\(.rule.description) srcip=\(.data.srcip)"' \
   | tail -3
 ```
 
@@ -900,19 +900,19 @@ level 10 의 5712 한 줄이 보이면 chain 발동이 정상이다.
 케이스 2 의 5번 SSH 실패를 다시 한 번 실행한다.
 
 ```bash
-ssh ccc@192.168.0.112
+ssh 6v6-attacker
 
 # attacker VM 내부 (학습 환경 한정)
 for i in $(seq 1 5); do
     sshpass -p "wrong${i}" ssh -o ConnectTimeout=3 \
         -o StrictHostKeyChecking=no \
-        admin@192.168.0.103 'whoami' 2>/dev/null
+        admin@10.20.32.80 'whoami' 2>/dev/null
 done
 
 # 이제 6번째 시도를 보낸다 — 차단되어야 한다
 sshpass -p "wrong6" ssh -o ConnectTimeout=3 \
     -o StrictHostKeyChecking=no \
-    admin@192.168.0.103 'whoami' 2>&1
+    admin@10.20.32.80 'whoami' 2>&1
 ```
 
 5번 실패 후 rule 5712 가 발동되면 Active Response 가 attacker IP 를 차단한다. 6번째 시도는 connection 자체가 timeout 또는 refused 가 된다.
@@ -928,17 +928,17 @@ sshpass -p "wrong6" ssh -o ConnectTimeout=3 \
 Wazuh Dashboard 의 클릭 흐름은 다음과 같다.
 
 1. 좌측 햄버거 메뉴 → `Wazuh` → `Active Response` 선택.
-2. 최근 발동 목록의 첫 줄을 확인한다. command 가 `firewall-drop`, agent 가 `web`, IP 가 `192.168.0.112` 인지 확인한다.
+2. 최근 발동 목록의 첫 줄을 확인한다. command 가 `firewall-drop`, agent 가 `web`, IP 가 `10.20.30.202` 인지 확인한다.
 3. Time picker `Last 15 minutes` 로 좁혀 시각도 본다.
 
 다음으로 web VM 에서 iptables 의 drop rule 한 줄을 직접 확인한다.
 
 ```bash
 ssh 6v6-web
-sudo iptables -L INPUT -n --line-numbers | grep "192.168.0.112"
+sudo iptables -L INPUT -n --line-numbers | grep "10.20.30.202"
 ```
 
-`DROP all -- 192.168.0.112 0.0.0.0/0` 같은 줄이 보이면 정상 발동이다.
+`DROP all -- 10.20.30.202 0.0.0.0/0` 같은 줄이 보이면 정상 발동이다.
 
 active-responses.log 의 발동 줄을 본다.
 
@@ -946,17 +946,17 @@ active-responses.log 의 발동 줄을 본다.
 sudo tail -20 /var/ossec/logs/active-responses.log
 ```
 
-`Wed May 12 14:45:00 EXEC active-response/bin/firewall-drop.sh ... add 192.168.0.112` 같은 줄이 보이면 실행 직접 증거다.
+`Wed May 12 14:45:00 EXEC active-response/bin/firewall-drop.sh ... add 10.20.30.202` 같은 줄이 보이면 실행 직접 증거다.
 
 timeout 만료 후 자동 rollback 도 확인한다.
 
 ```bash
 # 600초 후 다시 실행
-sudo iptables -L INPUT -n --line-numbers | grep "192.168.0.112" || echo "rollback complete"
+sudo iptables -L INPUT -n --line-numbers | grep "10.20.30.202" || echo "rollback complete"
 sudo tail -5 /var/ossec/logs/active-responses.log
 ```
 
-rule 이 사라졌고 active-responses.log 에 `delete 192.168.0.112` 같은 줄이 보이면 자동 rollback 정상이다.
+rule 이 사라졌고 active-responses.log 에 `delete 10.20.30.202` 같은 줄이 보이면 자동 rollback 정상이다.
 
 **4. Blue — 대응 의사결정.**
 
