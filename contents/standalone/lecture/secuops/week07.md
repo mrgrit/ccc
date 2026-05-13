@@ -915,15 +915,15 @@ osquery 는 이 세 도구를 모두 SQL 테이블로 추상화해서 한 화면
 attacker VM 에서 학습 환경의 web VM 에 SSH 로 들어간다고 가정한다. 학습 환경 한정으로 실행한다.
 
 ```bash
-ssh ccc@192.168.0.112
-# password: 1
+ssh 6v6-attacker
+# 비밀번호: ccc
 ```
 
 attacker VM 내부에서 web VM 에 SSH 로 진입한다.
 
 ```bash
 # attacker VM 내부 (학습 환경 한정)
-ssh -o StrictHostKeyChecking=no admin@192.168.0.103
+ssh -o StrictHostKeyChecking=no admin@10.20.32.80
 # password: 학습 환경 admin 비밀번호
 ```
 
@@ -1041,8 +1041,8 @@ sudo sed -i '/FAKEKEY/d' /root/.ssh/authorized_keys
 attacker VM 에서 web VM 에 SSH 로 진입해 backdoor cron 파일을 만든다.
 
 ```bash
-ssh ccc@192.168.0.112
-ssh -o StrictHostKeyChecking=no admin@192.168.0.103
+ssh 6v6-attacker
+ssh -o StrictHostKeyChecking=no admin@10.20.32.80
 
 # web VM 안 (학습 환경 한정)
 echo '* * * * * root /bin/true   # W07-CASE2-BACKDOOR' \
@@ -1142,8 +1142,8 @@ sudo rm -f /etc/cron.d/w07_backdoor
 attacker VM 에서 web VM 에 SSH 로 들어가 의심 위치에서 listener 를 띄운다.
 
 ```bash
-ssh ccc@192.168.0.112
-ssh -o StrictHostKeyChecking=no admin@192.168.0.103
+ssh 6v6-attacker
+ssh -o StrictHostKeyChecking=no admin@10.20.32.80
 
 # web VM 안 (학습 환경 한정)
 sudo cp /usr/bin/nc /tmp/.hidden_nc
