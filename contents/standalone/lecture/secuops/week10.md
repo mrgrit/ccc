@@ -668,15 +668,15 @@ ssh 6v6-siem "sudo tail -50 /var/ossec/logs/alerts/alerts.json | jq -r '.rule.gr
 attacker VM 에서 XSS payload 한 줄을 보낸다. 학습 환경 한정으로 실행한다.
 
 ```bash
-ssh ccc@192.168.0.112
-# password: 1
+ssh 6v6-attacker
+# 비밀번호: ccc
 ```
 
 ```bash
 # attacker VM 내부 (학습 환경 한정)
 curl -s -o /dev/null -w "%{http_code}\n" \
     -H "Host: juice.6v6.lab" \
-    "http://192.168.0.103/search?q=%3Cscript%3Ealert(1)%3C/script%3E"
+    "http://10.20.30.1/search?q=%3Cscript%3Ealert(1)%3C/script%3E"
 ```
 
 ips 의 Suricata 가 packet 단에서 XSS signature 를 인식한다. web 의 Apache 도 ModSec 로 같은 요청을 인식하고 audit log 에 한 줄 남긴다.
@@ -699,7 +699,7 @@ UI 클릭 흐름은 다음과 같다.
 1. 좌측 햄버거 메뉴 → `Discover` 선택.
 2. Index pattern 을 `wazuh-alerts-*` 로 바꾼다.
 3. Time picker `Last 15 minutes`.
-4. Search bar 에 `data.srcip:192.168.0.112 AND (agent.name:ips OR agent.name:web)` 입력 후 Enter.
+4. Search bar 에 `data.srcip:10.20.30.202 AND (agent.name:ips OR agent.name:web)` 입력 후 Enter.
 5. 좌측 `Available fields` 에서 `agent.name`, `rule.groups`, `rule.description`, `data.alert.signature` 를 columns 에 추가한다.
 
 결과 화면에서 두 줄이 같은 시각에 보인다.
@@ -760,8 +760,8 @@ UI 클릭 흐름은 다음과 같다.
 attacker VM 에서 web VM 에 SSH 로 들어가 신규 사용자를 추가한다.
 
 ```bash
-ssh ccc@192.168.0.112
-ssh -o StrictHostKeyChecking=no admin@192.168.0.103
+ssh 6v6-attacker
+ssh -o StrictHostKeyChecking=no admin@10.20.32.80
 
 # web VM 안 (학습 환경 한정)
 sudo useradd -m -s /bin/bash testfim
@@ -851,18 +851,18 @@ sudo userdel -r testfim
 attacker VM 에서 두 단계를 짧은 시간에 보낸다.
 
 ```bash
-ssh ccc@192.168.0.112
+ssh 6v6-attacker
 
 # attacker VM 내부 (학습 환경 한정)
 # 1단계 — Initial Access (web XSS 시도)
 curl -s -o /dev/null -H "Host: juice.6v6.lab" \
-    "http://192.168.0.103/search?q=%3Cscript%3Ealert(1)%3C/script%3E"
+    "http://10.20.30.1/search?q=%3Cscript%3Ealert(1)%3C/script%3E"
 
 # 2단계 — Credential Access (SSH brute 5건)
 for i in $(seq 1 5); do
     sshpass -p "wrong${i}" ssh -o ConnectTimeout=3 \
         -o StrictHostKeyChecking=no \
-        admin@192.168.0.103 'whoami' 2>/dev/null
+        admin@10.20.32.80 'whoami' 2>/dev/null
 done
 ```
 
@@ -893,7 +893,7 @@ ATT&CK panel 의 한 화면에서 두 tactic 의 카드가 모두 활성화 (색
 
 1. 좌측 햄버거 메뉴 → `Discover` 선택.
 2. Index pattern `wazuh-alerts-*`.
-3. Search bar 에 `rule.mitre.id:(T1190 OR T1110) AND data.srcip:192.168.0.112` 입력.
+3. Search bar 에 `rule.mitre.id:(T1190 OR T1110) AND data.srcip:10.20.30.202` 입력.
 4. Visualize → Date Histogram + Split series: `rule.mitre.id.keyword`.
 
 같은 시간 안에 두 technique 의 막대가 함께 보이면 kill chain 의 시간순 진행이 가시화된다.
