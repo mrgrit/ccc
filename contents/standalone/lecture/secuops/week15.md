@@ -437,9 +437,9 @@ graph LR
 시험관이 시험 시작 전 attacker VM 에서 다음 5 단계를 5 분 간격으로 발생시킨다. 학생은 흔적만 보고 추적한다.
 
 ```
-T+0min  : Reconnaissance — nmap -sV 192.168.0.103 (ips Suricata alert)
+T+0min  : Reconnaissance — nmap -sV 10.20.30.1 (ips Suricata alert)
 T+5min  : Initial Access — SQLi payload + 401 (web ModSec audit + ips alert)
-T+10min : Lateral Movement — nmap fw 너머 dmz 192.168.0.108 (fw forward drop + log)
+T+10min : Lateral Movement — nmap fw 너머 dmz 10.20.32.80 (fw forward drop + log)
 T+15min : C2 + Exfiltration — DNS beacon + 외부 IP 443 connection 시도 (sysmon Event 22 + Event 3)
 T+20min : Cleanup 위장 — 신규 사용자 + cron + listener (osquery + Wazuh syscheck)
 ```
@@ -464,10 +464,10 @@ T+20min : Cleanup 위장 — 신규 사용자 + cron + listener (osquery + Wazuh
 ssh 6v6-fw 'sudo dmesg --ctime | grep "FWD-DROP\|RBP-DROP" | tail -10'
 
 # 2. ips 의 Suricata alert (nmap + SQLi)
-ssh 6v6-ips 'sudo tail -300 /var/log/suricata/eve.json | jq -r "select(.event_type==\"alert\" and .src_ip==\"192.168.0.112\") | \"\(.timestamp) ips alert \(.alert.signature_id) \(.alert.signature)\""'
+ssh 6v6-ips 'sudo tail -300 /var/log/suricata/eve.json | jq -r "select(.event_type==\"alert\" and .src_ip==\"10.20.30.202\") | \"\(.timestamp) ips alert \(.alert.signature_id) \(.alert.signature)\""'
 
 # 3. web 의 ModSec audit
-ssh 6v6-web 'sudo tail -300 /var/log/apache2/modsec_audit.log | jq -r "select(.transaction.client_ip==\"192.168.0.112\") | \"\(.transaction.time_stamp) web modsec \(.request.uri)\""'
+ssh 6v6-web 'sudo tail -300 /var/log/apache2/modsec_audit.log | jq -r "select(.transaction.client_ip==\"10.20.30.202\") | \"\(.transaction.time_stamp) web modsec \(.request.uri)\""'
 
 # 4. web 의 sysmon DNS + Network
 ssh 6v6-web 'sudo tail -300 /var/ossec/logs/alerts/alerts.json | jq -r "select(.agent.name==\"web\" and (.data.sysmon.EventID==\"22\" or .data.sysmon.EventID==\"3\")) | \"\(.timestamp) web sysmon EventID=\(.data.sysmon.EventID) Image=\(.data.sysmon.Image)\""'
@@ -487,9 +487,9 @@ cat /tmp/all_w15_logs.txt | sort -k1
 결과로 다음 timeline 이 드러난다.
 
 ```
-T+0min   ips alert  ET SCAN nmap -sV 192.168.0.103
+T+0min   ips alert  ET SCAN nmap -sV 10.20.30.1
 T+5min   web modsec rule_id=942100 /search?q=...SQLi
-T+10min  fw  FWD-DROP src=192.168.0.112 dst=192.168.0.108
+T+10min  fw  FWD-DROP src=10.20.30.202 dst=10.20.32.80
 T+15min  web sysmon EventID=22 QueryName=beacon.local.lab
 T+20min  web /etc/passwd + new user backupz + /etc/cron.d/w15_back
 ```
@@ -501,7 +501,7 @@ Wazuh Dashboard 의 Discover 에서 한 번에도 본다.
 1. 좌측 햄버거 메뉴 → `Discover` 선택.
 2. Index pattern `wazuh-alerts-*`.
 3. Time picker `Last 1 hour`.
-4. Search bar 에 `data.srcip:192.168.0.112` 입력.
+4. Search bar 에 `data.srcip:10.20.30.202` 입력.
 5. 좌측 `Available fields` 에서 `rule.mitre.id`, `agent.name`, `rule.description` 을 columns 에 추가.
 
 한 화면에 5 단계의 모든 alert 가 시간순으로 정렬된다.
@@ -510,7 +510,7 @@ Wazuh Dashboard 의 Discover 에서 한 번에도 본다.
 
 학생이 답안에 다음 다섯 줄을 적는다.
 
-- **즉시 차단.** fw 의 dynamic blacklist set 에 192.168.0.112 timeout 1시간.
+- **즉시 차단.** fw 의 dynamic blacklist set 에 10.20.30.202 timeout 1시간.
 - **affected host 격리.** web VM 의 inbound 22, 80 임시 차단.
 - **persistence 제거.** 신규 사용자 잠금 + cron 파일 보존 후 제거 + listener kill.
 - **C2 차단.** sysmon Event 22 의 의심 도메인을 CDB list 에 등록 + Stream Connector 검증.
@@ -569,7 +569,7 @@ T1098  Account Manipulation (Persistence)
 ```bash
 ssh 6v6-siem
 sudo tail -500 /var/ossec/logs/alerts/alerts.json \
-  | jq -r 'select(.data.srcip=="192.168.0.112" and .rule.mitre.id?) | .rule.mitre.id[]' \
+  | jq -r 'select(.data.srcip=="10.20.30.202" and .rule.mitre.id?) | .rule.mitre.id[]' \
   | sort | uniq -c | sort -rn
 ```
 
@@ -660,7 +660,7 @@ sudo tail -500 /var/ossec/logs/alerts/alerts.json \
 
 ```bash
 # 1. fw 의 임시 차단 rule 제거
-ssh 6v6-fw 'HANDLE=$(sudo nft -a list chain inet six_filter input 2>/dev/null | grep "192.168.0.112" | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"); [ -n "$HANDLE" ] && sudo nft delete rule inet six_filter input handle $HANDLE; sudo nft flush set inet six_filter blacklist 2>/dev/null'
+ssh 6v6-fw 'HANDLE=$(sudo nft -a list chain inet six_filter input 2>/dev/null | grep "10.20.30.202" | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"); [ -n "$HANDLE" ] && sudo nft delete rule inet six_filter input handle $HANDLE; sudo nft flush set inet six_filter blacklist 2>/dev/null'
 
 # 2. ips 의 임시 sid 제거
 ssh 6v6-ips 'sudo sed -i "/sid:90159[0-9]\{3\};/d" /etc/suricata/rules/local.rules; sudo suricatasc -c reload-rules'
@@ -681,7 +681,7 @@ ssh 6v6-web 'sudo userdel -r backupz 2>/dev/null; sudo rm -f /etc/cron.d/w15_bac
 각 단계 후 baseline 확인.
 
 ```bash
-ssh 6v6-fw 'sudo nft list ruleset | grep -c "192.168.0.112"'   # 0 이어야 함
+ssh 6v6-fw 'sudo nft list ruleset | grep -c "10.20.30.202"'   # 0 이어야 함
 ssh 6v6-ips 'sudo grep -c "sid:90159" /etc/suricata/rules/local.rules'  # 0
 ssh 6v6-web 'sudo grep -c "W15-EXAM" /etc/modsecurity/modsec_custom_exceptions.conf'  # 0
 ssh 6v6-web 'sudo grep -c "w15_exam" /etc/osquery/osquery.conf'  # 0
