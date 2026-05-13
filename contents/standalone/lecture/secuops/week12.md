@@ -733,8 +733,8 @@ echo "  valid_from: ..."
 학습 환경에서는 실제 known bad 도메인 대신 시뮬 도메인 (`bad-test-c2.local.lab`) 을 학습용 CDB list 에 미리 등록해두고, attacker VM 에서 web VM 안으로 들어가 그 도메인을 조회한다.
 
 ```bash
-ssh ccc@192.168.0.112
-ssh -o StrictHostKeyChecking=no admin@192.168.0.103
+ssh 6v6-attacker
+ssh -o StrictHostKeyChecking=no admin@10.20.32.80
 
 # web VM 안 (학습 환경 한정)
 dig +short "bad-test-c2.local.lab" >/dev/null 2>&1
@@ -831,7 +831,7 @@ Wazuh Dashboard 에서도 본다.
 |-----------|-----------|
 | 신고 글 한 장 | STIX Indicator object 한 줄 (JSON) |
 | 사건 시각 | created, valid_from |
-| phone 번호 | pattern (예: `[ipv4-addr:value = '192.168.0.112']`) |
+| phone 번호 | pattern (예: `[ipv4-addr:value = '10.20.30.202']`) |
 | 사기 유형 | indicator_types |
 | 신뢰도 | confidence |
 | 신고자 | created_by_ref |
@@ -844,7 +844,7 @@ Wazuh Dashboard 에서도 본다.
 
 **1. Red — 본인 학습 환경의 attacker VM IP 를 indicator 로 표현.**
 
-학습 환경 attacker VM (192.168.0.112) 을 학습용 indicator 로 표현한다.
+학습 환경 attacker VM (10.20.30.202) 을 학습용 indicator 로 표현한다.
 
 ```bash
 cat > /tmp/local_attacker_indicator.json <<'EOF'
@@ -857,7 +857,7 @@ cat > /tmp/local_attacker_indicator.json <<'EOF'
   "name": "LOCAL Learning Environment Attacker VM",
   "description": "학습 환경의 attacker VM. 학습 목적의 시뮬 공격만 발생.",
   "indicator_types": ["malicious-activity"],
-  "pattern": "[ipv4-addr:value = '192.168.0.112']",
+  "pattern": "[ipv4-addr:value = '10.20.30.202']",
   "pattern_type": "stix",
   "pattern_version": "2.1",
   "valid_from": "2026-05-13T00:00:00Z",
@@ -880,7 +880,7 @@ JSON 이 정상 파싱되면 잘 작성된 것이다.
 먼저 STIX Pattern 의 syntax 를 확인한다.
 
 ```
-[ipv4-addr:value = '192.168.0.112']
+[ipv4-addr:value = '10.20.30.202']
 ```
 
 각 부분의 의미는 다음과 같다.
@@ -889,7 +889,7 @@ JSON 이 정상 파싱되면 잘 작성된 것이다.
 - `ipv4-addr` — STIX 의 cyber observable object type.
 - `value` — 그 object 의 property.
 - `=` — 비교 연산자.
-- `'192.168.0.112'` — 매칭 대상 값.
+- `'10.20.30.202'` — 매칭 대상 값.
 
 복잡한 pattern 의 예 (도메인 + 시간 조건).
 
@@ -900,7 +900,7 @@ JSON 이 정상 파싱되면 잘 작성된 것이다.
 다음으로 본 indicator 를 Wazuh CDB list 의 한 줄로 변환한다.
 
 ```bash
-echo "192.168.0.112:learning_only_attacker" \
+echo "10.20.30.202:learning_only_attacker" \
   | sudo tee -a /var/ossec/etc/lists/local_known_ips
 sudo /var/ossec/bin/wazuh-makelists
 ```
@@ -922,8 +922,8 @@ Wazuh rule 에 lookup 추가.
 attacker VM 에서 SSH 실패 시도를 보내면 rule 100601 이 trigger 되어 alert 가 발생한다.
 
 ```bash
-ssh ccc@192.168.0.112
-sshpass -p "wrong" ssh -o ConnectTimeout=3 admin@192.168.0.103 'whoami' 2>/dev/null
+ssh 6v6-attacker
+sshpass -p "wrong" ssh -o ConnectTimeout=3 admin@10.20.32.80 'whoami' 2>/dev/null
 ```
 
 siem 에서 확인.
