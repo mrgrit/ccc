@@ -800,23 +800,23 @@ wc -l /var/ossec/etc/lists/blocklist-de 2>&1
 
 **1. Red — 공격 재현.**
 
-먼저 OpenCTI 에 학습용 indicator 가 하나 등록되어 있다고 가정한다. W12 의 케이스 2 에서 작성한 attacker VM IP (`192.168.0.112`) 의 indicator 다.
+먼저 OpenCTI 에 학습용 indicator 가 하나 등록되어 있다고 가정한다. W12 의 케이스 2 에서 작성한 attacker VM IP (`10.20.30.202`) 의 indicator 다.
 
 Stream Connector 가 동작 중이면 본 indicator 가 자동으로 wazuh-siem 의 `/var/ossec/etc/lists/known_bad_ips` 에 한 줄 추가된다.
 
 ```
-192.168.0.112:opencti_indicator,learning_only
+10.20.30.202:opencti_indicator,learning_only
 ```
 
 다음으로 attacker VM 에서 web 의 SSH 에 시도를 보낸다.
 
 ```bash
-ssh ccc@192.168.0.112
+ssh 6v6-attacker
 # password: 1
 
 # attacker VM 내부 (학습 환경 한정)
 sshpass -p "wrong1" ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no \
-    admin@192.168.0.103 'whoami' 2>/dev/null
+    admin@10.20.32.80 'whoami' 2>/dev/null
 ```
 
 **2. 발생하는 로그/아티팩트.**
@@ -824,7 +824,7 @@ sshpass -p "wrong1" ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no \
 - web 의 `/var/log/auth.log` — Failed password 한 줄.
 - siem 의 alerts.json — rule 5710 (level 5) + list lookup 매칭으로 rule 100300 (level 12) 의 두 alert.
 - web 의 `/var/ossec/logs/active-responses.log` — Active Response 발동 줄.
-- web 의 iptables — `192.168.0.112` 의 DROP rule 한 줄 추가.
+- web 의 iptables — `10.20.30.202` 의 DROP rule 한 줄 추가.
 
 **3. Blue — 자동화 end-to-end 검증.**
 
@@ -834,7 +834,7 @@ sshpass -p "wrong1" ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no \
 
 ```bash
 ssh 6v6-siem
-sudo grep "192.168.0.112" /var/ossec/etc/lists/known_bad_ips
+sudo grep "10.20.30.202" /var/ossec/etc/lists/known_bad_ips
 ```
 
 한 줄이 보이면 sync 완료.
@@ -851,7 +851,7 @@ binary 파일의 mtime 이 최근 (예: 10분 이내) 이면 정상.
 
 ```bash
 sudo tail -100 /var/ossec/logs/alerts/alerts.json \
-  | jq -r 'select(.data.srcip=="192.168.0.112" and .rule.level>=12) | "\(.timestamp) rule=\(.rule.id) level=\(.rule.level) desc=\(.rule.description)"'
+  | jq -r 'select(.data.srcip=="10.20.30.202" and .rule.level>=12) | "\(.timestamp) rule=\(.rule.id) level=\(.rule.level) desc=\(.rule.description)"'
 ```
 
 level 12 의 한 줄이 보이면 list lookup rule 정상 발동.
@@ -863,21 +863,21 @@ ssh 6v6-web
 sudo tail -10 /var/ossec/logs/active-responses.log
 ```
 
-`add 192.168.0.112` 의 한 줄이 보이면 자동 차단 발동.
+`add 10.20.30.202` 의 한 줄이 보이면 자동 차단 발동.
 
 **Step 5 — iptables drop rule 확인.**
 
 ```bash
-sudo iptables -L INPUT -n --line-numbers | grep "192.168.0.112"
+sudo iptables -L INPUT -n --line-numbers | grep "10.20.30.202"
 ```
 
-`DROP all -- 192.168.0.112` 의 한 줄이 보이면 차단 적용.
+`DROP all -- 10.20.30.202` 의 한 줄이 보이면 차단 적용.
 
 Wazuh Dashboard 에서도 한 query 로 통합 확인.
 
 1. 좌측 햄버거 메뉴 → `Discover` 선택.
 2. Index pattern `wazuh-alerts-*`.
-3. Search bar 에 `data.srcip:192.168.0.112 AND (rule.level>=12 OR rule.groups:active_response)` 입력.
+3. Search bar 에 `data.srcip:10.20.30.202 AND (rule.level>=12 OR rule.groups:active_response)` 입력.
 4. 결과의 timestamp 가 5초 이내 차이로 두 줄 (list lookup alert + active-response 발동) 이 보인다.
 
 **4. Blue — 대응 의사결정.**
@@ -935,7 +935,7 @@ OpenCTI UI 에서 새 학습용 indicator 한 줄 추가.
 
 ```
 indicator--{new-uuid}
-pattern: [ipv4-addr:value = '192.168.0.113']
+pattern: [ipv4-addr:value = '10.20.30.203']
 labels: learning-only, new-test
 ```
 
@@ -1029,11 +1029,11 @@ Wazuh Dashboard 의 클릭 흐름.
 
 **1. Red — false positive 시뮬.**
 
-학습 환경에서 잘못 등록된 IOC 한 개를 가정한다. 학습 환경의 정상 운영 host (예: web VM 의 IP `192.168.0.103`) 가 잘못 known_bad_ips 에 등록되었다고 가정.
+학습 환경에서 잘못 등록된 IOC 한 개를 가정한다. 학습 환경의 정상 운영 host (예: web VM 의 IP `10.20.32.80`) 가 잘못 known_bad_ips 에 등록되었다고 가정.
 
 ```bash
 ssh 6v6-siem
-echo "192.168.0.103:opencti_indicator,false_positive_test" \
+echo "10.20.32.80:opencti_indicator,false_positive_test" \
   | sudo tee -a /var/ossec/etc/lists/known_bad_ips
 sudo /var/ossec/bin/wazuh-makelists
 ```
@@ -1061,7 +1061,7 @@ src 가 정상 운영 host 인지, agent 가 본인 host 인지 본다.
 **Step 2 — IOC source 확인.**
 
 ```bash
-sudo grep "192.168.0.103" /var/ossec/etc/lists/known_bad_ips
+sudo grep "10.20.32.80" /var/ossec/etc/lists/known_bad_ips
 ```
 
 `opencti_indicator` source tag 가 보이면 OpenCTI 출처. `manual` 이면 운영자 등록.
@@ -1071,7 +1071,7 @@ sudo grep "192.168.0.103" /var/ossec/etc/lists/known_bad_ips
 OpenCTI UI 의 클릭 흐름.
 
 1. 좌측 메뉴 → `Observations` → `Indicators` 선택.
-2. Search bar 에 `192.168.0.103` 입력.
+2. Search bar 에 `10.20.32.80` 입력.
 3. 결과의 indicator 한 줄을 클릭.
 4. 상단의 `Edit` 또는 `Actions` 메뉴에서 `Mark as revoked` 선택.
 5. confirm.
@@ -1084,7 +1084,7 @@ Stream 의 reflection 이 지연되는 경우 운영자가 직접 sed 한 줄로
 
 ```bash
 ssh 6v6-siem
-sudo sed -i '/^192.168.0.103:/d' /var/ossec/etc/lists/known_bad_ips
+sudo sed -i '/^10.20.32.80:/d' /var/ossec/etc/lists/known_bad_ips
 sudo /var/ossec/bin/wazuh-makelists
 ```
 
@@ -1094,8 +1094,8 @@ sudo /var/ossec/bin/wazuh-makelists
 
 ```bash
 ssh 6v6-web
-sudo /var/ossec/active-response/bin/firewall-drop.sh delete srcip=192.168.0.103
-sudo iptables -L INPUT -n | grep "192.168.0.103" || echo "rollback complete"
+sudo /var/ossec/active-response/bin/firewall-drop.sh delete srcip=10.20.32.80
+sudo iptables -L INPUT -n | grep "10.20.32.80" || echo "rollback complete"
 ```
 
 **4. Blue — 대응 의사결정.**
@@ -1111,7 +1111,7 @@ sudo iptables -L INPUT -n | grep "192.168.0.103" || echo "rollback complete"
 다음 세 가지를 적용한다.
 
 - **confidence threshold.** Stream Connector 의 ingest 단계에서 confidence 70 이상의 indicator 만 자동 CDB ingest. 70 미만은 운영자 manual review 만 통과.
-- **정상 운영 IP whitelist.** 학습 환경의 6v6 내부 subnet (`192.168.0.0/24`) 과 `10.20.30.0/24` 는 Stream ingest 시 자동 제외.
+- **정상 운영 IP whitelist.** 6v6 lab 의 4 내부 subnet (`10.20.30.0/24` ext / `10.20.31.0/24` pipe / `10.20.32.0/24` dmz / `10.20.40.0/24` int) 는 Stream ingest 시 자동 제외.
 - **false positive 분기 검토.** 분기마다 발생한 false positive 의 source / confidence / impact 를 집계해 운영 baseline 보강.
 
 ### 12.5.4 본 절 정리
