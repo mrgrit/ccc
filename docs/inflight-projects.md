@@ -12,6 +12,36 @@
 
 ## In-Progress
 
+### P22. Experience Graph paper — 6v6 인프라 기반 평가 [STATUS: 1차 framework 완료 (2026-05-16)]
+
+**동기**: 폐쇄망 / open-weight / 장기 일관성 / 신뢰성 요구 충족을 위한 보안 AI 에이전트의
+핵심 기제로 **경험 그래프 (Experience Graph)** 를 제안. 기존 "지식그래프 (KG)" 명칭을
+"경험 그래프 (EG)" 로 통일.
+
+**실험 시스템 분리** (CCC repo 외부):
+- 6v6 (github.com/mrgrit/6v6) — 평가 인프라 (단일 VM × 13 컨테이너)
+- bastion (github.com/mrgrit/bastion) — 평가 대상 에이전트
+- 6bq5 (github.com/mrgrit/6bq5) — EG 저장·검색·승격 백엔드
+
+**실험 흐름**: 훈련 커리큘럼 생성 → 에이전트 훈련 + EG 생성 → 실전 테스트 생성 → bastion
+수행 → 성능 검증.
+
+**완료 (1/N)**:
+- [x] `contents/papers/experience-graph/` 디렉토리 + README + 00-outline + 01-benchmark-6v6 (2026-05-16)
+- [x] 기존 590 hold-out 의 6v6 기준 재구성 — 42 카테고리 A/B/C/D 분류, D 9 제거 → 33 카테고리 462 task
+- [x] 6v6 자원 ↔ 카테고리 매트릭스, AI 카테고리 target model (aicompanion + ccc-vulnerable) 통일
+- [x] Papers UI 자동 노출 검증
+
+**DoD (남은 작업)**:
+- [ ] `02-curriculum-design.md` — 훈련 커리큘럼 (462 평가 task 와 완전 분리된 합성 corpus) 설계
+- [ ] `03-experience-graph-construction.md` — 6bq5 의 EG 스키마, anchor record 모델 명세
+- [ ] `04-evaluation-protocol.md` — bastion endpoint, 4 ablation 전환, 측정 자동화
+- [ ] Tier A pilot 15 task (pentest/soc-ops/web-vuln × 5) YAML 작성
+- [ ] 6v6 컨테이너 snapshot 자동화 (No-EG / Playbook / Experience / Full 전환)
+- [ ] 462 task 본 작성 (단계적, LLM 보조 작성 시 6bq5 와 분리된 외부 endpoint 사용)
+
+**Next concrete step**: 사용자 review 후 `02-curriculum-design.md` 작성.
+
 ### P21. secuops 콘텐츠 W03-W15 W01 깊이로 전면 재작성 [STATUS: ✅ COMPLETE — 13/13 (2026-05-12)]
 
 **동기**: 사용자 지적 "보안솔루션운영 3주차부터 부실, 그 뒤엔 진행 안 됨". W01 (lecture
