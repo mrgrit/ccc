@@ -239,6 +239,30 @@ OWASP Top 10 (2021) 의 10 카테고리 + CWE Top 25 의 핵심 + 6v6 의 7 vuln
 | W14 | API Security Top 10 (2023) — REST / GraphQL | JuiceShop REST + 추가 GraphQL |
 | W15 | 기말 — 7 vhost 종합 침투 (180분, 100점) | PTES 7 단계 보고서 |
 
+## soc (보안 운영 센터, 15 주)
+
+secuops 의 *device 설정 중심* 와 다른 *advanced SOC 운영* — Threat Hunting + SOAR
++ EDR + UEBA + Threat Intel + Incident Response. CCC 의 *Bastion 활용* 의 hands-on
+다수.
+
+| 주차 | 주제 |
+|------|------|
+| W01 | SOC 의 역할 + 3 tier (L1/L2/L3) + KPI (MTTD/MTTR) |
+| W02 | Threat Hunting 5 단계 (Hypothesis → Investigation → Sighting → Report → Share) |
+| W03 | EDR (Endpoint Detection Response) + sysmon 통합 |
+| W04 | SOAR (Security Orchestration Automation Response) — playbook |
+| W05 | UEBA (User Entity Behavior Analytics) — anomaly |
+| W06 | Threat Intel (TIP) — OpenCTI + MISP 통합 |
+| W07 | Incident Response (NIST IR 4 단계) — SOC 의 IR 절차 |
+| W08 | 중간 — W01-W07 종합 |
+| W09 | MITRE ATT&CK 의 14 Tactic 별 detection rule 작성 |
+| W10 | Sigma rule 의 다중 SIEM 변환 |
+| W11 | KQL (Kusto Query Language) + Splunk SPL — query 표준 |
+| W12 | Bastion 의 IR 보조 (CCC hands-on) |
+| W13 | SOAR playbook 의 *3 자동화* (alert → enrichment → response) |
+| W14 | SOC 의 *지표 + 보고* (KPI + dashboard + 보고 frequency) |
+| W15 | 기말 — APT 5 단계 IR 종합 (180분, 100점) |
+
 ## aisec (인공지능보안 입문, 15 주)
 
 CCC 의 후속 7 과목 (course7 ai-security / course8 ai-safety / course9 autonomous /
