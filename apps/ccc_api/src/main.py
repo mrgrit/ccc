@@ -1815,6 +1815,18 @@ _STANDALONE_COURSES = {
         "icon": "🤖",
         "color": "#bc8cff",
     },
+    "web-vuln": {
+        "title": "웹 취약점 분석 (OWASP Top 10)",
+        "description": "OWASP Top 10 (2021) + API Security Top 10 (2023) + CWE Top 25 의 7 vuln vhost (JuiceShop / DVWA / NeoBank / GovPortal / MediForum / AdminConsole / AICompanion) 실 hands-on. attack 의 공격 측 + secuops 의 방어 측 의 web 특화 심화. ModSec CRS 4.0 의 20 rule family + sqlmap + jwt_tool 등 표준 도구.",
+        "icon": "🌐",
+        "color": "#fb923c",
+    },
+    "soc": {
+        "title": "보안 운영 센터 (SOC)",
+        "description": "L1/L2/L3 SOC 3 tier + Threat Hunting + EDR + SOAR + UEBA + Threat Intel + IR 의 advanced 운영. secuops 의 device 설정 vs SOC 의 24/7 alert triage + incident response 의 차이. CCC Bastion 의 IR 보조 hands-on 다수. ATT&CK 14 Tactic + Sigma rule + KQL/SPL.",
+        "icon": "🎯",
+        "color": "#06b6d4",
+    },
 }
 
 
