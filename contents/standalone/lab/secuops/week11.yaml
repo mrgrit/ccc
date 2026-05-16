@@ -414,7 +414,19 @@ steps:
 
   - order: 4
     instruction: |
-      ## 🎯 MISSION — Wazuh agent 통합 + ossec.conf localfile
+      ## 🎯 MISSION — Wazuh agent 통합 — ossec.conf localfile 작성 + 기 활성 룰 검증
+
+      sysmon event 의 *Wazuh manager 도달* 경로. agent 측 ossec.conf 의 localfile +
+      manager 의 default rule 매칭 의 *연결* 학습.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **localfile** = Wazuh agent 가 *어디 의 어떤 로그* 를 ship 할지 정의
+      - **log_format** = syslog (legacy) vs journald (modern systemd) — 둘 다 sysmon
+        호환
+      - **filter** = journald 에서 *특정 unit* 의 로그만 ship (sysmon.service 만)
+      - **default rule** = Wazuh manager 의 `ruleset/rules/` 에 사전 배치 (수정 X) —
+        agent 의 *raw event* 를 자동 매핑
 
       ## 💻 산출물
 
@@ -443,14 +455,31 @@ steps:
 
       ## 📋 확인 사항
 
-      - 2 ship 방법 (syslog vs journald)
-      - Wazuh 의 0800/0810/0830 default 룰 활성
+      - 2 ship 방법 비교 (syslog vs journald) — 권장: journald (filter 정확)
+      - Wazuh 의 10 default 룰 활성 (실측: 0330/0595/0800/0810/0820/0830/0860/0870/0945/0950)
+      - localfile 의 *filter* 가 sysmon.service 만 — 다른 systemd unit noise 차단
 
       ## 💡 왜 이걸 하는가?
 
-      sysmon 의 event 가 syslog 또는 journald 로 출력 → Wazuh agent 의 localfile 로 ship.
-      manager 의 default 룰이 자동 매핑.
-    hint: '<localfile>syslog or journald</localfile> + Wazuh 0800/0810/0830'
+      sysmon event → syslog/journald → Wazuh agent (localfile) → manager (default
+      rule 자동 매핑) → alerts.json. *4 hop pipeline* — 어디 가 끊겨도 alert 없음.
+      각 hop 의 *검증* 이 trouble-shooting 의 핵심.
+
+      ## 🔍 결과 해석
+
+      - **정상**: localfile 2 종 + 10 default 룰 활성
+      - **localfile 0**: sysmon event 가 manager 에 안 도착 — agent log 확인
+      - **default 룰 0**: ruleset 미설치 — apt reinstall
+
+      ## 비정상 시 대응
+
+      - **journald filter 무시** — Wazuh 4.4 미만 은 journald filter 지원 X. syslog
+        fallback 또는 4.4+ upgrade
+      - **rule 매핑 안 됨** — decoder 검증 (`/var/ossec/ruleset/decoders/` 의 sysmon
+        decoder) 확인
+    hint: |
+      ossec.conf localfile (syslog vs journald) + manager 10 default 룰 (0330~0950).
+      4 hop pipeline 인지.
     category: integration
     points: 15
     answer: |
@@ -488,7 +517,21 @@ steps:
 
   - order: 5
     instruction: |
-      ## 🎯 MISSION — R/B/P 시뮬 (실 sysmon 미설치라 분석만)
+      ## 🎯 MISSION — sysmon R/B/P 시뮬 — base64 reverse shell payload + Wazuh
+      alert 예상 + 운영 권장 5
+
+      sysmon 실 미설치 상태 에서 *학습 가치 보존* 위 시뮬 시나리오. *Red 명령 →
+      sysmon event 예상 → Wazuh alert 예상 → Purple 권장* 의 4 단계 흐름 학습.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **base64 -d | sh** = APT 의 *대표 obfuscation* 패턴. encoded payload 의 *디코드
+        + 실행* 동시. T1059.004 (Unix Shell) + T1027.002 (Encoded Command)
+      - **parent-child** = process tree — `base64` (parent) → `sh` (child) 의 *비정상*
+        조합 이 핵심 단서
+      - **rule.id 80100+** = Wazuh manager 의 default sysmon rule 범위 (80000-89999)
+      - **Active Response** = Wazuh 의 자동 대응 (process kill / user disable /
+        firewall drop). 즉시 적용
 
       ## 💻 시뮬
 
@@ -535,14 +578,30 @@ steps:
 
       ## 📋 확인 사항
 
-      - Red 시뮬 + 예상 Event 1
-      - 예상 Wazuh alert
-      - Purple 권장 5
+      - Red 시뮬 명령 + 예상 sysmon Event 1 (Image / CommandLine / ParentImage)
+      - 예상 Wazuh alert (rule.id 80100, level 5)
+      - Purple 권장 5 (각 항목 *근거 1 문장* 이상)
+      - APT T1059.004 + T1027.002 *복합 매핑* 인지
 
       ## 💡 왜 이걸 하는가?
 
-      sysmon 실 설치 전 R/B/P 시뮬로 운영 흐름 인지.
-    hint: 'base64 payload + Event 1 + Wazuh alert + APT T1059.004'
+      sysmon 실 설치 전 R/B/P 시뮬 로 *운영 흐름* 인지. 실 설치 후 첫 분석 시 *예상
+      vs 실제* 비교 — 학습 효율 ↑. *복합 TTP 매핑* (단일 명령 → 2 ATT&CK) 의 의미
+      도 인지.
+
+      ## 🔍 결과 해석
+
+      - **정상 (시뮬)**: 4 단계 모두 작성 + 5 권장 + 복합 ATT&CK 매핑
+      - **단일 ATT&CK 만**: T1059.004 / T1027.002 의 *복합* 인지 부족
+      - **권장 4 이하**: 운영 깊이 부족 — process tree / 상관 분석 / AR 추가
+
+      ## 비정상 시 대응
+
+      - **실 sysmon 설치 후** — 시뮬 vs 실제 비교 의 *gap* 기록 → W12 의 detection
+        보강
+    hint: |
+      base64 -d|sh 시뮬 + Event 1 + rule.id 80100 + Purple 권장 5 (T1059.004 +
+      T1027.002 복합).
     category: redblue
     points: 20
     answer: |
@@ -587,7 +646,19 @@ steps:
 
   - order: 6
     instruction: |
-      ## 🎯 MISSION — 트러블슈팅 (시뮬)
+      ## 🎯 MISSION — sysmon 운영 트러블슈팅 *4 증상 cheat sheet* + 진단 명령
+
+      sysmon 가동 후 가장 흔한 4 증상 의 *진단 → 해결* cheat sheet. 운영 엔지니어
+      *인수* 시점 에 *반드시* 학습. 본 step 은 *문서* 학습 (실 sysmon 미설치).
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **systemctl + journalctl** = systemd unit 의 standard 진단 도구
+      - **sysmon -s** = 현재 적용된 config 출력 — config reload 여부 검증
+      - **wazuh-logtest** = single log line → matched rule 검증 도구. Wazuh manager
+        측 실행
+      - **noise vs FP** = noise (legitimate event 폭증) vs false positive (잘못된
+        match) — 진단/해결 방법 다름
 
       ## 💻 cheat sheet
 
@@ -618,12 +689,30 @@ steps:
 
       ## 📋 확인 사항
 
-      - 4 증상 + 진단 명령 + 해결
+      - 4 증상 + 진단 명령 (각 4+) + 해결 권장
+      - 증상 별 *근본 원인* 표시 (kernel 호환 / config syntax / decoder 미매핑 / config balance)
+      - cheat sheet 형식 (운영 환경 *복사 붙여넣기* 가능)
 
       ## 💡 왜 이걸 하는가?
 
-      운영 중 가장 흔한 4 패턴 진단 cheat sheet.
-    hint: '4 패턴 cheat sheet — 미시작 / 매칭 / Wazuh / noise'
+      운영 중 가장 흔한 4 패턴 진단 cheat sheet — *day-1 운영 매뉴얼* 의 핵심.
+      신규 분석가 *인수 시점* 첫 학습 자료. 사전 학습 시 *평균 30분 진단 → 3분*
+      으로 단축.
+
+      ## 🔍 결과 해석
+
+      - **정상 (cheat sheet 완성)**: 4 증상 × 진단 + 해결 + 근본 원인
+      - **증상 3 (Wazuh 매칭) 누락**: 가장 흔한 실수 — agent ship 까지만 보고 manager
+        매핑 안 함
+
+      ## 비정상 시 대응
+
+      - **wazuh-logtest 미동작** — Wazuh manager 4.x 이전. 4.4+ upgrade
+      - **journalctl --since 시간 형식 오류** — `5 min ago` 또는 `2026-05-16 10:00`
+        형식
+    hint: |
+      4 증상 cheat sheet (미시작/매칭/Wazuh/noise) + 진단 명령 + 해결 + 근본 원인.
+      day-1 운영 매뉴얼.
     category: troubleshooting
     points: 10
     answer: |
@@ -654,23 +743,92 @@ steps:
 
   - order: 7
     instruction: |
-      ## 🎯 MISSION — W11 종합 보고서
+      ## 🎯 MISSION — W11 종합 보고서 + W12 (OpenCTI) 준비도 점검
 
-      ## 💻 산출물
+      W11 의 마무리 = W12 의 *시작 준비*. sysmon-for-linux 의 설치/config/통합/운영
+      을 8 섹션 종합 + 본인 학습 gap + W12 (OpenCTI) 준비도.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - W11 의 *2 청자* — (1) CISO/임원 (sysmon 설치 ROI 보고) + (2) 본인 (W12 진입
+        준비)
+      - W12 = OpenCTI 도입 — sysmon event 가 OpenCTI 의 *Sighting/Observable* 의
+        source. W11 의 *기반* 위 W12 의 *분석 platform*
+
+      ## 💻 산출물 (8 섹션 마크다운)
 
       ```markdown
-      # 6v6 W11 sysmon-for-linux 보고서
+      # 6v6 W11 sysmon-for-linux 종합 보고서
 
-      ## 1. STEP 1-6 결과 (6 row 표)
-      ## 2. 현재 상태 + W11 본격 설치 계획
-      ## 3. config.xml RuleGroup 7+ 패턴
-      ## 4. Wazuh 통합 (0800/0810/0830/0945)
-      ## 5. R/B/P 시뮬 — APT T1059.004 매핑
-      ## 6. 운영 권장 5 (sysmon + osquery 보완 / Active Response / dashboard MITRE)
-      ## 7. W12 (OpenCTI) 준비도
-      ## 8. 본인 학습 gap
+      ## 1. Executive Summary
+      - 본 주차: sysmon-for-linux 도입 계획 + config 설계 + Wazuh 통합 시나리오
+      - 핵심 산출: 4 host clean baseline + config.xml 9+3 패턴 + Wazuh 10 default 룰
+      - 다음 주차: W12 — OpenCTI 도입
+
+      ## 2. STEP 1 — 현재 상태 가시화
+      - 4 호스트 sysmon NOT_INSTALLED (clean baseline)
+      - Wazuh 의 sysmon 룰 10 종 (0330/0595/0800/0810/0820/0830/0860/0870/0945/0950) 활성
+
+      ## 3. STEP 2 — 설치 계획
+      - 4 단계 (apt repo + 패키지 + config + 시작)
+      - 의존성: kernel 5.15 OK / auditd 충돌 가능 / libbpf 1.0.5 OK
+
+      ## 4. STEP 3 — config.xml RuleGroup
+      - Include 9 + ATT&CK 매핑 (T1027/T1105/T1564/T1059/T1021/T1090/T1505/T1098)
+      - Exclude 3 (systemd/cron/snapd)
+
+      ## 5. STEP 4 — Wazuh 통합
+      - localfile syslog vs journald (권장: journald + filter)
+      - 4 hop pipeline (sysmon → syslog/journald → agent → manager)
+
+      ## 6. STEP 5 — R/B/P 시뮬
+      - Red: base64 -d|sh
+      - Blue: Event 1 + rule.id 80100
+      - Purple: T1059.004 + T1027.002 복합 + Active Response
+
+      ## 7. STEP 6 — 트러블슈팅
+      - 4 증상 cheat sheet (미시작 / event 없음 / alert 없음 / noise 폭증)
+
+      ## 8. 학습 gap + W12 (OpenCTI) 준비도
+
+      ### 학습 gap (W11)
+      - [ ] sysmon-for-linux 실 설치 + accepteula 절차 경험
+      - [ ] eBPF program 의 *실 verifier* 동작 이해
+      - [ ] SwiftOnSecurity sysmon-config (1500+ 라인) 분석
+      - [ ] Wazuh decoder 의 sysmon event 매핑 절차
+
+      ### W12 (OpenCTI) 준비도
+      - sysmon event → OpenCTI Observable 변환 흐름 사전 학습
+      - STIX 2.1 의 Observable / Indicator / Sighting 의 차이
+      - OpenCTI 의 Connector 구조 (external / internal / enrichment)
+      - W12 lab 의 *7 step* 예고
       ```
-    hint: 마크다운 1페이지
+
+      ## 💻 검증 명령 (보고서 구조)
+
+      ```bash
+      ssh 6v6-bastion 'echo "8 section check"; for i in 1 2 3 4 5 6 7 8; do echo "Section $i"; done | wc -l'
+      ```
+
+      ## 📋 확인 사항
+
+      - 8 섹션 모두 존재
+      - Executive Summary 의 *수치* (4 host / 10 rule)
+      - 학습 gap *4+ checkbox*
+      - W12 준비도 *4+ 항목*
+
+      ## 💡 왜 이걸 하는가?
+
+      W11 종합 보고서 가 *주간 마무리* + *W12 시작 준비*. *sysmon 의 본격 도입* 의
+      관리적 결정 (CISO 보고) + 본인 self-assessment 의 2 효용.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 8 섹션 + 4 gap + 4 W12 준비
+      - **W12 준비도 누락**: 가장 흔한 실수 — 본 step 의 self-assessment 핵심
+    hint: |
+      8 섹션 + 학습 gap 4+ checkbox + W12 (OpenCTI) 준비도 4+ 항목. 임원 + 본인
+      2 청자.
     category: synthesis
     points: 14
     answer: |
