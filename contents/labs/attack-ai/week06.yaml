@@ -1103,3 +1103,62 @@ steps:
 
     '
   script: ''
+- order: 100
+  instruction: '[Multi-task] 네트워크 공격 5단계 통합 — 패킷 캡처 → ARP 분석 → DNS 캡처 → 프로토콜 식별 → 종합 보고.'
+  bastion_prompt: |
+    네트워크 layer 의 5 공격/관찰 작업을 한 흐름으로 수행해줘.
+
+    1) [HTTP 캡처] sudo tcpdump -i any -nn -A 'host {{WEB_IP}} and port 3000' -c 10 -w /tmp/http.pcap 으로
+       JuiceShop 트래픽 10 패킷 캡처. tcpdump -r /tmp/http.pcap -A | head -30 로 ASCII 페이로드 확인. HTTP
+       request line + 핵심 헤더 추출 표 작성. MITRE T1040 매핑.
+
+    2) [ARP scan + 캡처] arp-scan -l 또는 sudo arp -an 으로 LAN 의 MAC 매핑 + sudo tcpdump -i any arp -c 10
+       -w /tmp/arp.pcap 으로 ARP request/reply 10 패킷 캡처. who-has / is-at 의 빈도 + 잠재 spoofing
+       신호 (multiple reply 같은 IP) 의 표 작성. MITRE T1557.002 매핑.
+
+    3) [DNS 캡처] 한쪽 터미널 sudo tcpdump -i any -nn 'udp port 53' -c 10 -w /tmp/dns.pcap, 다른 쪽 dig
+       google.com @{{SECU_IP}} + dig juice.6v6.lab @{{SECU_IP}} 의 응답 + tcpdump -r /tmp/dns.pcap 의
+       query name / type / TTL 의 표 작성. DNS tunnel 의심 신호 (TXT type 의 base64) 도 검토. MITRE T1071.004 매핑.
+
+    4) [프로토콜 식별 매트릭스] tshark -r /tmp/http.pcap -q -z io,phs 또는 tcpdump 의 결과로 캡처 트래픽의
+       L4 (TCP/UDP/ICMP) 분포 + L7 (HTTP/DNS/TLS) 분포 의 5×3 매트릭스 작성. 비정상 패킷 (broken TCP flags
+       조합, 비정상 TCP 옵션 길이) 의 발견 시 의미 정리. MITRE T1040 + T1095 매핑.
+
+    5) [종합 분석 보고서] 1~4 결과를 합쳐 네트워크 관찰 5 영역 × (도구 / 결과 / 의심 신호 / Suricata 룰 후보 /
+       방어 권고) 의 5×5 매트릭스 + 1 페이지 Network Traffic Analysis 보고서 (Executive / Findings / Top 3
+       Anomalies / Recommendations) 를 markdown 으로 출력. PCAP 파일 위치도 함께 명시.
+  hint: 네트워크 캡처 5 영역 (HTTP/ARP/DNS/프로토콜/종합) chain. pcap 파일 위치 명시 필수.
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: '[통합] 네트워크 공격 5단계 — HTTP 캡처/ARP/DNS/프로토콜/종합. MITRE T1040/T1557.002/T1071.004/T1095 매핑 + 5×5 매트릭스 + pcap 위치.'
+      success_criteria:
+      - 5 단계 모두 실행
+      - tcpdump / arp-scan 또는 arp / dig / tshark 또는 tcpdump 사용
+      - MITRE T1040 또는 T1557 또는 T1071 중 2개 이상 매핑
+      - pcap 파일 위치 3개 (/tmp/http.pcap, /tmp/arp.pcap, /tmp/dns.pcap)
+      - 5×5 매트릭스
+      - Network Traffic Analysis 보고서
+      acceptable_methods:
+      - bastion 의 multi-stage planning
+      - tcpdump / tshark / wireshark CLI / arp-scan / dig 표준
+      - sudo 필요 명령 명시
+      - Suricata 룰 ID 후보 (sid:1000XXX) 형식
+      negative_signs:
+      - 3 단계 이하 만 수행
+      - sudo 필요 표기 누락
+      - pcap 파일 위치 누락
+      - 매트릭스 5×5 미만
+      - 보고서 누락
+  target_vm: attacker
+  risk_level: low
+  answer: |
+    🤖 위 bastion_prompt 그대로. 네트워크 5 영역 + 5×5 매트릭스 + Traffic Analysis 보고서.
+  answer_detail: |
+    Network Analyst 페르소나 — pcap 5 영역 분석. arp-scan + tcpdump + dig 의 표준 도구만으로
+    LAN 의 의심 신호 식별. Suricata 룰 후보가 운영팀 인계 산출물.
+  script: ''
