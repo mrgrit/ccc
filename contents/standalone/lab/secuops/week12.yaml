@@ -134,9 +134,22 @@ steps:
 
   - order: 2
     instruction: |
-      ## 🎯 MISSION — STIX 2.1 4 객체 작성
+      ## 🎯 MISSION — STIX 2.1 4 핵심 객체 작성 + JSON 검증 + ATT&CK 매핑
 
-      lecture §2 — Indicator / Malware / Threat Actor / Attack Pattern.
+      STIX 2.1 의 *35 객체* 중 가장 자주 사용 되는 4 (Indicator + Malware + Threat
+      Actor + Attack Pattern). 본 step 의 4 객체 = *모든 CTI 분석가 daily*.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **STIX 2.1** = MITRE/OASIS 의 *threat intelligence 표준 데이터 모델* (JSON).
+        STIX 1.x (XML) → 2.1 (JSON) 으로 modern
+      - **35 객체** = Indicator / Malware / Threat Actor / Attack Pattern / Sighting
+        / Report / Identity / Vulnerability / Tool 등
+      - **id 형식** = `{type}--{UUID}` (예: `indicator--abc...`). 모든 객체 의 *전역
+        유일 식별자*
+      - **pattern** (Indicator 의 핵심) = STIX pattern language — `[ipv4-addr:value
+        = '...']` 형식. SQL-like
+      - **kill_chain_phases + external_references** = ATT&CK 매핑 의 *2 표준*
 
       ## 💻 산출물
 
@@ -184,17 +197,54 @@ steps:
       ]
       ```
 
+      ## 💻 검증 명령 (JSON parse + 구조 검증)
+
+      ```bash
+      # 위 JSON 을 /tmp/stix-bundle.json 저장 후 4 객체 type / id 확인
+      ssh 6v6-bastion python3 -c "
+      import json
+      bundle = [
+          {'type': 'indicator', 'id': 'indicator--abc-001', 'pattern': '[ipv4-addr:value = \\\\'192.168.99.99\\\\']'},
+          {'type': 'malware', 'id': 'malware--abc-002', 'name': 'Emotet'},
+          {'type': 'threat-actor', 'id': 'threat-actor--abc-003', 'name': 'APT28'},
+          {'type': 'attack-pattern', 'id': 'attack-pattern--abc-004', 'name': 'CSI'}
+      ]
+      types = [obj['type'] for obj in bundle]
+      print('Bundle types:', types)
+      print('Required 4 모두 포함:', set(['indicator', 'malware', 'threat-actor', 'attack-pattern']).issubset(set(types)))
+      "
+      ```
+
       ## 📋 확인 사항
 
-      - 4 객체 모두 작성 (Indicator / Malware / Threat Actor / Attack Pattern)
-      - STIX 2.1 spec_version
-      - kill_chain_phases / mitre-attack 매핑
-      - relationship 객체는 W13 에서 본격
+      - 4 객체 모두 작성 (각 type / id / 핵심 필드)
+      - STIX 2.1 `spec_version: "2.1"` 통일
+      - Indicator 의 `pattern` 의 STIX pattern language 형식
+      - Malware 의 `malware_types` + `is_family`
+      - Threat Actor 의 `aliases` + `threat_actor_types`
+      - Attack Pattern 의 `external_references` 의 mitre-attack 매핑
+      - relationship 객체 (별 객체 — W13 에서 본격)
 
       ## 💡 왜 이걸 하는가?
 
-      STIX 표준 객체 작성 — CTI 분석가의 표준 작업.
-    hint: 'Indicator / Malware / Threat Actor / Attack Pattern 4 객체 JSON'
+      STIX 표준 객체 작성 = CTI 분석가 daily output. 4 객체 의 *역할 분담* 인지 가
+      *분석 품질* 결정 — Indicator (단일 IOC) + Malware (악성 코드) + Threat Actor
+      (행위자) + Attack Pattern (TTP) 의 4 차원 분석.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 4 객체 + JSON parse PASS + 4 type 포함 검증
+      - **id 형식 오류** (예: `indicator-abc-001`): hyphen *2 개* 필수 (`--`)
+      - **pattern 형식 오류**: STIX pattern 의 quote (single) 와 bracket `[...]` 필수
+
+      ## 비정상 시 대응
+
+      - **JSON parse error** — quote escape 또는 trailing comma. `python3 -m
+        json.tool < file` 로 line 확인
+      - **STIX validator** — `stix2-validator` (pip 설치) 로 표준 준수 검증
+    hint: |
+      4 핵심 객체 (Indicator/Malware/Threat Actor/Attack Pattern) JSON + STIX
+      pattern 형식 + ATT&CK 매핑.
     category: configuration
     points: 18
     answer: |
