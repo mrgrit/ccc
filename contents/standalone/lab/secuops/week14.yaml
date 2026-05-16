@@ -23,24 +23,104 @@ steps:
 
   - order: 1
     instruction: |
-      ## 🎯 MISSION — MISP 도입 계획 + OpenCTI 비교
+      ## 🎯 MISSION — MISP 도입 *기획서* + OpenCTI 비교
 
-      ```
-      MISP 도입:
-        - PHP + MySQL backend
-        - Web UI :443
-        - REST API + API key
-        - TAXII 2.1 server (export)
+      MISP (Malware Information Sharing Platform) 의 6v6 도입 기획서 작성 +
+      OpenCTI 와 의 *역할 분담* 명시. **본 step 은 실 설치 가 아닌 *기획 학습* —
+      6v6 환경에 MISP 실 인스턴스 없어도 진행 가능**.
 
-      OpenCTI vs MISP 매트릭스:
-        | 항목 | MISP | OpenCTI |
-        | 모델 | sharing-focused | platform-focused |
-        | backend | PHP + MySQL | GraphQL + Elasticsearch |
-        | 데이터 | Event-based | STIX object |
-        | 강점 | community + ISAC | UI + correlation |
-        보완 운영 — MISP feed + OpenCTI analyst UI
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **MISP** = 2012 CIRCL (Luxembourg) 의 *Threat Sharing* 표준 platform. 한국
+        에서 KISA C-TAS / FSEC-CTI 가 사용
+      - **OpenCTI 와 차이** — MISP = 공유 중심 (community), OpenCTI = 분석 중심
+        (platform). *보완 관계*
+      - **양 platform 동시 운영** = 일반적 — OpenCTI 가 분석가 daily UI, MISP 가
+        sharing endpoint
+      - **TLP (Traffic Light Protocol)** — 데이터 공유 의 보안 등급. MISP 의 핵심
+
+      ## 💻 산출물 (기획서)
+
+      ```markdown
+      ## 6v6 MISP 도입 기획서
+
+      ### 1. MISP 도입 목적
+      - 한국 ISAC (금융 / 의료 / 교육) 과 의 위협 정보 공유 의무 충족
+      - OpenCTI 의 분석 결과 (Sighting / Report) 를 community 에 export
+      - external feed (CIRCL OSINT / Botvrij.eu) import
+
+      ### 2. 인프라 요구사항
+      | 항목 | 요구 |
+      |------|------|
+      | OS | Ubuntu 22.04 또는 24.04 |
+      | CPU | 2 core+ |
+      | RAM | 4 GB+ (8 GB 권장) |
+      | Disk | 20 GB+ (Attribute 누적 증가) |
+      | Network | :443 (Web UI) + :80 (redirect) |
+      | dependency | Apache + PHP 8.1 + MySQL 8.0 |
+
+      ### 3. OpenCTI vs MISP 비교 매트릭스
+
+      | 항목 | MISP | OpenCTI |
+      |------|------|---------|
+      | 모델 | sharing-focused (Event 중심) | platform-focused (STIX 중심) |
+      | 출시 | 2012 (CIRCL) | 2019 (Filigran) |
+      | backend | PHP + MySQL | Python + GraphQL + Elasticsearch + Redis |
+      | UI | server-side rendered (CakePHP) | React SPA |
+      | 데이터 모델 | Event + Attribute + Object + Tag + Galaxy | STIX 2.1 object (35종) |
+      | API | REST + PyMISP SDK | GraphQL + pycti SDK |
+      | export | TAXII 2.1 + REST + ZMQ | TAXII 2.1 + STIX bundle |
+      | sharing | 4 distribution + sharing group | TLP marking + sharing group |
+      | community | 130+ MISP community + ISAC | 분석가 individual platform |
+      | 강점 | community + ISAC + 공유 의무 충족 | UI + correlation + STIX 표준 |
+      | 약점 | UI 구식 + STIX 변환 시 손실 | community 부재 + 무거움 |
+      | license | AGPLv3 | Apache 2.0 |
+      | 한국 사용 | KISA C-TAS / FSEC-CTI / 금융보안원 | 기업 분석가 |
+
+      ### 4. 6v6 의 운영 모델 (양 platform 동시)
+      - **OpenCTI (분석가 daily UI)**: 분석가 가 매일 사용. STIX object 분석 + Report 작성
+      - **MISP (sharing endpoint)**: ISAC / 외부 community 에 공유 export + import
+      - **연동**: OpenCTI ↔ MISP 양방향 sync (step 3 의 circular loop 회피 필수)
       ```
-    hint: 'MISP PHP + MySQL vs OpenCTI GraphQL + Elasticsearch'
+
+      ## 💻 검증 명령 (외부 의존 endpoint 접근 검증)
+
+      ```bash
+      # MISP 공식 사이트 + 데모
+      ssh 6v6-bastion 'curl -sI --max-time 5 https://www.misp-project.org/ 2>&1 | head -1'
+      # CIRCL 의 MISP OSINT feed
+      ssh 6v6-bastion 'curl -sI --max-time 5 https://www.circl.lu/doc/misp/feed-osint/ 2>&1 | head -1'
+      ```
+
+      ## 📋 확인 사항
+
+      - 기획서 4 섹션 모두 작성
+      - 비교 매트릭스 13 행 모두 채움
+      - 인프라 요구사항 표 6 행
+      - 운영 모델 = OpenCTI + MISP 동시 운영 의 *역할 분담* 명시
+      - 2 endpoint 접근 응답 (폐쇄망 일 시 timeout 정상)
+
+      ## 💡 왜 이걸 하는가?
+
+      MISP 와 OpenCTI 는 *대체 관계* 가 아닌 *보완 관계* — 둘 다 운영해야 *분석
+      + sharing* 의 완성. 한국 환경 에서 *ISAC 가입 의무* 가 있으면 MISP 필수.
+
+      ## 🔍 결과 해석
+
+      - **정상 (기획서 완성)**: 4 섹션 + 13 행 비교 + 6 행 인프라
+      - **endpoint 모두 timeout**: 폐쇄망 정책 (정상)
+      - **OpenCTI 단독 운영 충분 의견**: 잘못된 가설 — sharing 의무 + community
+        gap 인지 부족
+
+      ## 비정상 시 대응
+
+      - **MISP vs OpenCTI 둘 중 하나 만** 선택 시 — 잘못. step 4 의 *역할 분담* 표
+        다시 확인.
+      - **MISP 한국 community 부재 가설** — KISA C-TAS / FSEC-CTI / 금융보안원 의
+        실 MISP 운영 사례 확인.
+    hint: |
+      MISP 기획서 4 섹션 + 13 행 비교 + 운영 모델 (OpenCTI + MISP 동시). 보완
+      관계 명시.
     category: planning
     points: 15
     answer: |
