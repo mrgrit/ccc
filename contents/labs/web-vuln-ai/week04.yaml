@@ -848,3 +848,66 @@ steps:
 
     '
   script: ''
+- order: 100
+  instruction: '[Multi-task] CSRF 5단계 통합 — 토큰 확인 → POST HTML → GET image → AJAX fetch → SameSite 효과.'
+  bastion_prompt: |
+    CSRF 5 표면을 한 흐름의 평가로 수행해줘.
+
+    1) [CSRF 토큰 확인] curl -s {{WEB_IP}}:3000/profile -b /tmp/cookies.txt | grep -iE 'csrf|_token' 으로
+       hidden token 존재 여부 + 토큰 의 랜덤성 (entropy) + 세션 binding 여부 점검 표. OWASP A01 매핑.
+
+    2) [POST 기반 CSRF HTML] cat > /tmp/csrf_post.html <<'EOF' <html><body><form action="http://{{WEB_IP}}:3000/api/Users/1"
+       method="POST"><input name="password" value="HACKED123"><input type="submit" value="Click"></form>
+       <script>document.forms[0].submit();</script></body></html> EOF — auto-submit 페이지. Origin 헤더 누락
+       시 위험. CWE-352 매핑.
+
+    3) [GET image 기반] <img src="http://{{WEB_IP}}:3000/api/Users/1/delete" style="display:none"> 의 단순
+       img tag CSRF + GET 요청 의 state-change 가능 위험 (DELETE 가 GET 으로 wrapping 됨). REST API 의 GET
+       방식 state change 의 안티 패턴. CWE-352 매핑.
+
+    4) [AJAX fetch CSRF] cat > /tmp/csrf_ajax.html <<'EOF' <script>fetch("http://{{WEB_IP}}:3000/api/transfer",
+       {method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},
+       body:JSON.stringify({to:"attacker",amount:1000})});</script> EOF — credentials:include 가 핵심.
+       CORS preflight (OPTIONS) 의 효과 + ACAO 의 wildcard 시 위험 분석. CWE-352 + CWE-942 매핑.
+
+    5) [SameSite 효과 매트릭스] 5 시나리오 × 3 SameSite 정책 (Strict / Lax / None) 의 차단/통과 표 (Direct
+       link / Top-level POST / iframe / XHR / Subdomain). Lax + GET 의 top-level 통과 의 의미 + Strict 의
+       모든 cross-site 차단 + None 의 Secure 필수 (Chrome 80+ 의 default 변경) 정리. 권장 정책 (state-change
+       request 은 SameSite=Strict + CSRF token + Origin 검증 의 3 layer 방어).
+
+    마지막에 5단계 × (CSRF 기법 / 페이로드 / Origin 검증 효과 / SameSite 효과 / CSRF token 효과 / 방어 권고)
+    의 5×6 매트릭스 + H1 disclosure 5 finding + SameSite 권장 정책 (per cookie 의 분류 + 권장 값) 출력.
+  hint: CSRF 5 표면 chain. SameSite + CSRF token + Origin 의 3 layer 방어가 핵심.
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: '[통합] CSRF 5단계 — 토큰/POST/GET image/AJAX/SameSite. OWASP A01 + CWE-352/942 매핑 + 5×6 매트릭스 + SameSite 권장 정책.'
+      success_criteria:
+      - 5 단계 모두 실행
+      - HTML / image / AJAX 3 페이로드 정확
+      - credentials:include 명시
+      - SameSite 3 정책 (Strict / Lax / None) 비교
+      - 3 layer 방어 권고 (SameSite + token + Origin)
+      - 5×6 매트릭스
+      acceptable_methods:
+      - bastion 의 multi-stage planning
+      - curl + cat heredoc + grep 표준
+      - csrftester / OWASP ZAP CSRF 모듈 대체 가능
+      - markdown 매트릭스 + 권장 정책
+      negative_signs:
+      - 3 단계 이하 만 수행
+      - 페이로드 2종 이하
+      - SameSite 2 정책 이하
+      - 3 layer 방어 누락
+      - 매트릭스 6 컬럼 미만
+  target_vm: attacker
+  risk_level: low
+  answer: |
+    🤖 위 bastion_prompt 그대로. CSRF 5 표면 + 5×6 매트릭스 + SameSite 권장.
+  answer_detail: |
+    AppSec Engineer 페르소나 — CSRF 5 표면 + SameSite 효과 매트릭스. 3 layer 방어 권고가 산출물.
+  script: ''
