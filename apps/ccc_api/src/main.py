@@ -1845,6 +1845,12 @@ _STANDALONE_COURSES = {
         "icon": "🤖",
         "color": "#bc8cff",
     },
+    "ai-safety": {
+        "title": "AI Safety / Red Teaming (6v6)",
+        "description": "LLM 탈옥 · 프롬프트 인젝션 · 가드레일 · 적대적 입력 · RAG 보안 · AI Red Teaming 을 6v6 컨테이너 인프라에서 실습. Training 메뉴의 ai-safety 과목을 6v6 환경에 맞춰 이식.",
+        "icon": "🧠",
+        "color": "#bc8cff",
+    },
 }
 
 
