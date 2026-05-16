@@ -18,118 +18,235 @@ steps:
 
   - order: 1
     instruction: |
-      ## 🎯 MISSION
+      ## Mission
+      attacker 에서 **XSS 6 payload 변형** 을 juice.6v6.lab 으로 보내어 ModSec 941
+      family 의 차단 매트릭스를 작성하라. 본 step 은 *OWASP A03* (XSS = Injection 의
+      클라이언트 측 변형) + *MITRE T1059.007* (JavaScript). 학생은 *XSS 의 3 타입*
+      (Reflected / Stored / DOM) + *6 HTML element 의 event handler 변형* + *ModSec
+      941 룰 family 의 의미* 3 핵심을 인지.
 
-      XSS **6 payload 변형** → 403 응답 + 941xxx 룰 매치 카운트.
+      ## XSS 의 3 타입 (외워야 함)
+      | 타입 | 의미 | 본 step 의 시연 |
+      |------|------|---------------|
+      | **Reflected** | URL 파라미터 → 즉시 응답 페이지 반영 | `?q=<script>...` (본 step) |
+      | **Stored** | DB 에 저장 → 다른 사용자가 페이지 열 때 실행 | /api/Feedbacks (W06 학습) |
+      | **DOM-based** | JavaScript 가 `document.location` 등 직접 처리 | innerHTML / eval (W06 학습) |
 
-      ## 💻 실행 명령
+      ## 6 payload 변형 (element + event handler)
+      | # | payload | element | event handler |
+      |:-:|---------|---------|---------------|
+      | 1 | `<script>alert(1)</script>` | script | (inline body) |
+      | 2 | `<img src=x onerror=alert(1)>` | img | onerror |
+      | 3 | `<svg onload=alert(1)>` | svg | onload |
+      | 4 | `<iframe src=javascript:alert(1)>` | iframe | javascript: URI |
+      | 5 | `<body onload=alert(1)>` | body | onload |
+      | 6 | `<a href=javascript:alert(1)>click</a>` | a | href javascript: |
 
+      → ModSec **941 family** 의 *각 룰 ID 가 어떤 element/handler* 잡는지 인지.
+
+      ## ModSec 941 룰 family
+      | 룰 ID 범위 | 의미 |
+      |-----------|------|
+      | 941100 | libinjection XSS — *가장 catch-all* |
+      | 941110~941180 | script 태그 / event handler 의 *명시적 패턴* |
+      | 941200~941350 | encoded XSS (URL/HTML/UTF-7) |
+      | 941350~941380 | DOM XSS 패턴 |
+
+      ## 실행 명령
       ```bash
       ssh 6v6-attacker '
-      for p in "<script>alert(1)</script>" "<img+src=x+onerror=alert(1)>" "<svg+onload=alert(1)>" "<iframe+src=javascript:alert(1)>" "<body+onload=alert(1)>" "<a+href=javascript:alert(1)>click</a>"; do
-        code=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=$p")
-        echo "$code | $p"
-      done
+        BEFORE=$(ssh 6v6-web "sudo grep -c \"941\" /var/log/apache2/modsec_audit.log 2>/dev/null || echo 0")
+        echo "941 before: $BEFORE"
+        for p in "<script>alert(1)</script>" "<img+src=x+onerror=alert(1)>" "<svg+onload=alert(1)>" "<iframe+src=javascript:alert(1)>" "<body+onload=alert(1)>" "<a+href=javascript:alert(1)>click</a>"; do
+          code=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=$p")
+          echo "  $code | $p"
+        done
+        sleep 2
+        AFTER=$(ssh 6v6-web "sudo grep -c \"941\" /var/log/apache2/modsec_audit.log 2>/dev/null || echo 0")
+        echo "941 after:  $AFTER"
+        echo "차단: $((AFTER - BEFORE))"
       '
-      sleep 3
-      ssh 6v6-web 'sudo grep -c "941" /var/log/apache2/modsec_audit.log'
       ```
 
-      ## 📋 확인 사항
+      ## 성공 판정
+      - 6 payload 모두 **403** 응답
+      - ModSec 941 카운트 *after > before* (6 차단)
+      - 차단 카운트 ≥ 6 (각 payload 가 1 회 이상 941 매치)
+      - XSS 3 타입 + 6 element 의 의도 차이 명시
+      - **ModSec 941 family 의 catch-all (941100 libinjection) 인지**
 
-      - 6 payload 모두 403
-      - ModSec 941 매치 카운트 증가
+      ## 비정상 시 대응
+      - **200 응답** — ModSec 비활성 또는 941 룰 disabled. `sudo cat /etc/apache2/mods-enabled/modsecurity.conf | grep -i SecRule | wc -l`
+      - **941 카운트 0 증가** — log path 오류. `find /var/log -name "*modsec*"` 확인
+      - **모든 응답 timeout** — fw drop 또는 ips Suricata 즉시 차단
+      - **403 인데 941 매치 없음** — 942 (SQLi) 또는 다른 룰 (944 RCE 등) 으로 차단. `grep -E "94[0-9]" audit.log | tail -10`
 
-      ## 💡 왜 이걸 하는가?
+      ## 학습 — W10 의 XSS 우회 (case/encoding)
+      ```
+      <ScRiPt>alert(1)</ScRiPt>          # case mixing
+      %3Cscript%3Ealert(1)%3C/script%3E   # URL encoding
+      &lt;script&gt;alert(1)&lt;/script&gt;   # HTML entity
+      <scr<script>ipt>alert(1)</scr</script>ipt>  # nested
+      ```
 
-      OWASP A03 XSS — 가장 흔한 클라이언트 측 취약점. payload 변형 학습 — script /
-      img / svg / iframe / body / a (event handler).
+    hint: |
+      6 payload + ModSec 941 before/after 측정. 차단 카운트 = after - before ≥ 6.
+      403 인데 941 매치 없음 = 다른 룰 (942/944) 차단 가능.
 
-      ## 🔍 결과 해석
-
-      - **정상**: 6 × 403
-      - **W10**: case mixing / nested / encoding 우회 시도
-    hint: XSS 6 변형
     category: exploit
     points: 25
     answer: |
       ssh 6v6-attacker '
-      for p in "<script>alert(1)</script>" "<img+src=x+onerror=alert(1)>" "<svg+onload=alert(1)>" "<iframe+src=javascript:alert(1)>" "<body+onload=alert(1)>" "<a+href=javascript:alert(1)>click</a>"; do
-        code=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=$p")
-        echo "$code | $p"
-      done
+        BEFORE=$(ssh 6v6-web "sudo grep -c 941 /var/log/apache2/modsec_audit.log 2>/dev/null || echo 0")
+        for p in "<script>alert(1)</script>" "<img+src=x+onerror=alert(1)>" "<svg+onload=alert(1)>" "<iframe+src=javascript:alert(1)>" "<body+onload=alert(1)>" "<a+href=javascript:alert(1)>click</a>"; do
+          code=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=$p")
+          echo "  $code | $p"
+        done
+        sleep 2
+        AFTER=$(ssh 6v6-web "sudo grep -c 941 /var/log/apache2/modsec_audit.log 2>/dev/null || echo 0")
+        echo "차단: $((AFTER - BEFORE))"
       '
-    answer_detail: 6 XSS payload → 403.
+    answer_detail: |
+      6 XSS payload → ModSec 941 차단. 6 × 403 + 941 카운트 증가량 ≥ 6. 200 받으면
+      ModSec 비활성 = 즉시 점검. W10 의 case/encoding 우회 전제.
     verify:
       type: output_contains
       expect: '403'
       field: stdout
       semantic:
-        intent: "XSS 6 변형"
-        success_criteria: ["6 × 403"]
+        intent: |
+          XSS 6 payload 변형 (script/img/svg/iframe/body/a) → ModSec 941 family 차단
+          카운트 *증가량 측정*. 3 타입 (Reflected/Stored/DOM) + 6 element 의 의도
+          차이 인지. OWASP A03 + MITRE T1059.007.
+        success_criteria:
+          - "6 payload 모두 403 응답"
+          - "ModSec 941 카운트 after > before"
+          - "차단 카운트 ≥ 6"
+          - "XSS 3 타입 의 차이 명시"
+          - "6 payload 의 element/event handler 차이 인지"
         acceptable_methods:
-          - "**[OSS] <script>alert(1)</script>**"
-          - "**[OSS] <img src=x onerror=>**"
-          - "**[OSS] <svg onload=>**"
-          - "**[OSS] <iframe javascript:>**"
-          - "**[OSS] <body onload=>**"
-          - "**[OSS] event handler 변형 (onerror/onload/onmouseover)**"
-          - "**[OSS] URL encoding %3C %3E**"
-          - "**[OSS] HTML entity &#60;**"
+          - "curl 6 payload loop (수기 baseline): 명령 `for p in ...; do curl -w '%{http_code}' ...?q=$p; done`."
+          - "XSS Hunter (외부 OOB): https://xsshunter.com/ — payload 가 callback 으로 IP/cookie 전송."
+          - "DOMPurify 분석 (방어 측): npm install dompurify, 화이트리스트 정책 시연."
+          - "XSStrike (자동화): 명령 `xsstrike -u 'http://...?q=1'`. fuzz + WAF detect."
+          - "Burp Active Scan (XSS 모듈)."
+          - "OWASP ZAP -m xss: 명령 `zap-cli quick-scan -s xss -t http://...`."
+          - "BeEF (Browser Exploitation Framework, post-XSS): hook.js → browser hijack."
+          - "Bastion AI 자동 + KG: bastion 이 (1) 6 payload loop (2) 941 카운트 (3) 200 발생 시 finding."
+        negative_signs:
+          - "6 payload 중 일부만 시도"
+          - "403 만 보고 941 카운트 안 측정"
+          - "200 응답 받고 *정상 차단 안 됨* 인지 못함"
+          - "XSS 3 타입 (Reflected/Stored/DOM) 차이 모름"
+          - "6 element 의 event handler 차이 모름"
     target_vm: attacker
 
   - order: 2
     instruction: |
-      ## 🎯 MISSION
+      ## Mission
+      step 1 에서 발생한 XSS 차단의 **방어 깊이 (Defense in Depth)** 를 검증하라:
+      (1) 서버 응답의 *보안 헤더 5 종* (CSP / X-Frame-Options / X-Content-Type-Options
+      / HSTS / Referrer-Policy) 점검 + (2) ModSec audit log 의 **941 룰 메시지** 분석.
+      학생은 *서버 측 헤더* (브라우저가 강제) + *ModSec WAF* (요청 차단) + *클라이언트
+      측 CSP* (실행 차단) 의 3 layer 방어를 인지.
 
-      CSP / X-Frame-Options / X-Content-Type-Options 헤더 분석 + ModSec audit log
-      의 941 룰 데이터.
+      ## 5 보안 헤더 (외워야 함)
+      | 헤더 | 의미 | 권장값 |
+      |------|------|--------|
+      | **Content-Security-Policy** | script/img/style 의 *출처 제한* — XSS 강력 방어 | `default-src 'self'` |
+      | **X-Frame-Options** | iframe 임베드 차단 — clickjacking 방어 | `DENY` 또는 `SAMEORIGIN` |
+      | **X-Content-Type-Options** | MIME sniffing 차단 | `nosniff` |
+      | **Strict-Transport-Security** (HSTS) | HTTPS 강제 + 기간 | `max-age=31536000` |
+      | **Referrer-Policy** | referer 노출 제한 | `strict-origin` |
 
-      ## 💻 실행 명령
+      ## ModSec 941 audit log 의 메시지 패턴
+      | 룰 ID | 메시지 | 의미 |
+      |-------|--------|------|
+      | 941100 | "XSS Attack Detected via libinjection" | catch-all |
+      | 941110 | "XSS Filter - Category 1: Script Tag Vector" | `<script>` |
+      | 941160 | "NoScript XSS InjectionChecker: HTML Injection" | event handler |
+      | 941170 | "NoScript XSS InjectionChecker: Attribute Injection" | onclick/onload |
+      | 941180 | "Node-Validator Blacklist Keywords" | javascript: URI |
 
+      ## 실행 절차
+      1. **5 보안 헤더 점검** — juice.6v6.lab 응답 헤더 추출
+      2. **ModSec 941 메시지** — audit log 의 최근 941 룰 매치 메시지 3 건
+      3. **방어 layer 매핑** — 3 layer 의 어느 단계가 step 1 의 6 payload 를 잡았나
+
+      ## 실행 명령
       ```bash
-      # 응답 헤더 분석
-      ssh 6v6-attacker 'curl -sI -H "Host: juice.6v6.lab" http://10.20.30.1/ 2>&1 | grep -iE "content-security|x-frame|x-content|referrer|hsts"'
-
-      # ModSec audit 의 941 룰
-      ssh 6v6-web 'sudo tail -20 /var/log/apache2/modsec_audit.log | jq -r ".audit_data.messages[]?" 2>/dev/null | grep -E "941" | head -3'
+      ssh 6v6-attacker '
+        echo "=== 5 보안 헤더 ==="
+        curl -sI -H "Host: juice.6v6.lab" http://10.20.30.1/ \
+          | grep -iE "content-security|x-frame|x-content|strict-transport|referrer-policy" \
+          || echo "  (헤더 미설정 — Defense in Depth 부재)"
+        echo
+        echo "=== ModSec 941 메시지 (최근 3) ==="
+        ssh 6v6-web "sudo grep -oE \"\\[id \\\"94[0-9]+\\\"\\][^[]*\\[msg \\\"[^\\\"]+\\\"\\]\" /var/log/apache2/modsec_audit.log 2>/dev/null | tail -3"
+      '
       ```
 
-      ## 📋 확인 사항
+      ## 성공 판정
+      - 5 보안 헤더 중 *최소 2* 개 존재 (CSP / X-Frame-Options 권장)
+      - ModSec 941 메시지 3 건 출력 (id + msg)
+      - 3 layer 방어 (서버 헤더 / WAF / CSP) 인지 명시
+      - step 1 의 6 payload 가 *어느 layer 에서 차단됐는지* 매핑
 
-      - CSP 헤더 (있다면 default-src 'self' 등)
-      - 941xxx 룰의 메시지 (XSS via libinjection / Script Tag Vector 등)
+      ## 비정상 시 대응
+      - **헤더 0 개** — Apache 의 `mod_headers` 미활성 또는 vhost 정정 필요. *defense in depth 부재* — 운영 결함 보고
+      - **941 메시지 0 건** — audit log path 또는 grep 패턴 다름. `find /var/log -name "*modsec*"` 확인
+      - **CSP `default-src '*'`** — *너무 관대* — XSS 방어 효과 X. 정정 권장
 
-      ## 💡 왜 이걸 하는가?
+      ## 학습 — CSP 의 효과 검증 (보너스)
+      ```
+      <script>alert(1)</script>  ← ModSec 통과해도
+      → 브라우저가 CSP "default-src 'self'" 정책 확인
+      → 외부 script 차단 + inline script 차단 → XSS 무력화
+      → console 에 "Refused to execute inline script because it violates CSP" 출력
+      ```
 
-      defense-in-depth — ModSec 외에 클라이언트 측 CSP 가 XSS 차단. CSP 미설정 시
-      XSS 우회 위험.
+    hint: |
+      curl -I 로 5 헤더 추출 + grep 으로 941 메시지. 헤더 0 = defense in depth 부재.
+      audit log path 의 모드 안 됐다면 find 로 검색.
 
-      ## 🔍 결과 해석
-
-      - **정상**: 941 룰 메시지 출력
-      - **운영 권장**: CSP 헤더 설정 (Apache 의 mod_headers)
-    hint: CSP 헤더 + ModSec 941 데이터
     category: analysis
     points: 20
     answer: |
-      ssh 6v6-attacker 'curl -sI -H "Host: juice.6v6.lab" http://10.20.30.1/ 2>&1 | grep -iE "content-security|x-frame|x-content|referrer|hsts"'
-      ssh 6v6-web 'sudo tail -20 /var/log/apache2/modsec_audit.log | jq -r ".audit_data.messages[]?" 2>/dev/null | grep -E "941" | head -3'
-    answer_detail: CSP 헤더 + ModSec 941 분석.
+      ssh 6v6-attacker '
+        curl -sI -H "Host: juice.6v6.lab" http://10.20.30.1/ | grep -iE "content-security|x-frame|x-content|strict-transport|referrer-policy" || echo "(헤더 미설정)"
+      '
+      ssh 6v6-web 'sudo grep -oE "\[id \"94[0-9]+\"\][^[]*\[msg \"[^\"]+\"\]" /var/log/apache2/modsec_audit.log 2>/dev/null | tail -3'
+    answer_detail: |
+      5 보안 헤더 + ModSec 941 메시지 매트릭스. 3 layer 방어 (헤더 / WAF / CSP) 의
+      *각각 어디서 차단* 했는지 매핑. 헤더 0 = defense in depth 부재 — 보고.
     verify:
       type: output_contains
-      expect: '941\|content'
+      expect: '94[0-9]\|content\|x-frame\|미설정'
       field: stdout
       semantic:
-        intent: "헤더 + 941 분석"
-        success_criteria: ["headers 또는 941"]
+        intent: |
+          5 보안 헤더 (CSP/X-Frame/X-Content/HSTS/Referrer) + ModSec 941 메시지 분석.
+          3 layer 방어 (서버 헤더 / WAF / 클라이언트 CSP) 의 매핑. defense in depth
+          의 *부재* 검출 시 운영 결함 보고.
+        success_criteria:
+          - "5 보안 헤더 중 최소 2 존재 또는 *미설정* 명시"
+          - "ModSec 941 메시지 3 건 (id + msg) 출력"
+          - "3 layer 방어의 의미 인지"
+          - "step 1 의 6 payload 가 어느 layer 에서 차단됐는지 매핑"
+          - "defense in depth 부재 시 운영 보고 (헤더 0)"
         acceptable_methods:
-          - "**[OSS] CSP default-src 'self'**"
-          - "**[OSS] X-Frame-Options DENY (clickjacking 방어)**"
-          - "**[OSS] X-Content-Type-Options nosniff**"
-          - "**[OSS] HSTS Strict-Transport-Security**"
-          - "**[OSS] Referrer-Policy**"
-          - "**[OSS] ModSec 941100 XSS via libinjection**"
-          - "**[OSS] 941110 Script Tag Vector**"
-          - "**[OSS] 941160 NoScript**"
+          - "curl -I (헤더 추출): 명령 `curl -I -H 'Host: ...' http://...`. 응답 헤더만."
+          - "Mozilla Observatory (외부 GUI): https://observatory.mozilla.org — A~F 등급."
+          - "securityheaders.com (외부): 5 헤더 + 추가 30 종 의 grade."
+          - "Apache mod_headers (서버 측 설정): `Header set Content-Security-Policy ...`."
+          - "nginx add_header: `add_header X-Frame-Options DENY`."
+          - "ModSec audit log grep: 명령 `grep -oE '\\[id \"94[0-9]+\"\\]\\[msg \"[^\"]+\"\\]' audit.log`."
+          - "jq -r .audit_data.messages: JSON 형식 audit log (ModSec 3.x)."
+          - "Bastion AI 보안 헤더 + WAF + CSP 통합: bastion 이 (1) curl -I (2) audit grep (3) defense-in-depth gap 보고."
+        negative_signs:
+          - "헤더 추출만 하고 941 메시지 안 봄"
+          - "헤더 0 받고 *부재* 인지 못함"
+          - "ModSec 941 만 의 *layer* 보고 (CSP / 헤더 layer 무시)"
+          - "3 layer 방어의 *각 의미* 모름"
+          - "step 1 의 결과와 *연결* 안 함"
     target_vm: bastion
