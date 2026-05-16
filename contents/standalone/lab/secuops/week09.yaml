@@ -99,6 +99,22 @@ steps:
 
       alerts.json 의 한 라인 = 한 alert. rule + agent + manager + data 4 sub-section.
 
+      ## ⚠️ 사전 안내 — 분석용 데이터가 없을 때
+
+      본 step 은 *데이터 분석* lab. 실 운영 환경에서는 alerts.json 이 자연 누적
+      되지만, 신규 cyber range 직후 또는 첫 학습 시점에는 *0 byte* 일 수 있다.
+      검증 명령 결과가 빈 경우:
+
+      ```bash
+      # bastion 에서 fixture 주입 (siem 의 alerts.json 에 7 일치 합성 데이터)
+      cd ~/ccc && python3 scripts/lab_fixture_inject.py \
+          --lab contents/standalone/lab/secuops/week09.yaml --order 2 --ssh
+      ```
+
+      fixture 는 `lib/generators/wazuh_alert.py` (5710/5712/100200/87213 등 16 rule
+      template + Suricata 86601) 로 생성되며 *시드 재현 가능*. 본 step 의 학습
+      대상 = alerts.json 구조 분석 이므로 *합성 vs 실측 차이 없음*.
+
       ## 💻 실행 명령
 
       ```bash
@@ -142,6 +158,20 @@ steps:
         - rule.id top 10 — alert flood 식별
         - level 분포 — 우선순위 + dashboard filter
         - groups — 카테고리 별 분석 (ids / suricata / apache 등)
+    fixtures:
+      - generator: wazuh_alert
+        target_vm: siem
+        path: /var/ossec/logs/alerts/alerts.json
+        params:
+          seed: 42
+          duration_days: 7
+          alerts_per_day: 40
+          brute_force_burst: true
+          malware_detection_count: 2
+          ar_trigger_count: 4
+        mode: append
+        cleanup: false
+        fallback_only: true
     hint: 'jq keys / .rule / .agent / .data'
     category: analysis
     points: 15

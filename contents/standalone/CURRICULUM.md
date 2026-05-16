@@ -164,6 +164,11 @@ Host 6v6-*
 4. **Wazuh 4.10 dashboard 한계 인지**: API rate limit 5000/min, login retry 100, block 60s 설정 반영.
 5. **MITRE ATT&CK 매핑 일관**: 모든 attack 주차에 TTP ID 명시. Caldera 와 직접 연결.
 6. **KISA·ISMS-P 인용**: 한국 환경 특화 사례·표준 매 주차 1건 이상.
+7. **데이터 부재 시 2 path 정책** (2026-05-16 추가) — 환경 데이터 없으면 학습 가치 0:
+   - **공격 lab (attack)**: 공격 했는데 SIEM 데이터 없음 → *탐지 규칙/agent 부재 의 원인 확인 + 정정 + 재시도* 가 표준. fixture 는 *시간 압박 시 fallback*.
+   - **SOC lab (secuops 분석 위주)**: 처음부터 데이터 없음 (예: 지난 7일 brute 분석) → `scripts/lab_fixture_inject.py` 로 *합성 데이터 주입* 후 분석. lab YAML 의 `fixtures` 필드 명시 필수.
+   - **공통 generator** (`lib/generators/`): `auth_log`, `wazuh_alert`, `web_access`, `suricata_alert`, `lolbas_log`, `firewall_log` — 시드 재현 가능.
+   - **학생 안내**: 데이터 의존 step 의 lecture 첫 박스 + lab instruction 첫 단락 에 정책 명시.
 
 ## 진행 추적
 

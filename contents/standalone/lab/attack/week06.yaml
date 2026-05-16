@@ -71,8 +71,24 @@ steps:
       ## 비정상 시 대응
       - **모든 시도 fail (success 0)** — bastion 비밀번호 가 학습 default 와 다름. `docker exec 6v6-bastion bash -c 'cat /etc/passwd | grep ccc'` 로 사용자 확인
       - **Connection refused** — bastion SSH 22 차단. step 1 의 nmap 재확인
-      - **Wazuh 카운트 0** — alert 가 다른 path 또는 시간 지연. `tail /var/ossec/logs/alerts/alerts.json` 직접 확인
+      - **Wazuh 카운트 0 — 가장 흔함 (인프라 결함)** —
+        bastion 컨테이너에 Wazuh agent 가 미설치 / rsyslog forward 미연동 인 경우.
+        ① `ssh 6v6-siem 'sudo ls -la /var/ossec/etc/client.keys'` 로 등록된 agent 확인 →
+        bastion (10.20.30.200) 미등록 시 결함 확정.
+        ② 정정 — siem 에서 `sudo /var/ossec/bin/manage_agents -a -n bastion -i 10.20.30.200`
+        → bastion 에서 wazuh-agent 설치 + `manage_agents -i <key>` 로 등록 → systemctl
+        restart wazuh-agent → 재 brute → alerts.json 검증.
+        ③ 시간 압박 시 fallback — `python3 scripts/lab_fixture_inject.py --lab
+        contents/standalone/lab/attack/week06.yaml --order 1 --ssh` (wazuh_alert
+        generator 가 brute_force_burst=true 로 5710/5712 합성 주입).
+        ④ ②/③ 진행 후 W09 의 active-response 학습 으로 연결.
       - **hydra timeout 직전 종료** — `-t 2` 또는 `-w 5` (대기 시간) 로 보강
+
+      ## 안내 — 공격 lab 의 *탐지 데이터* 정책 (시리즈 공통)
+      *공격을 했는데 SIEM 데이터가 없으면* 그 lab 의 학습 가치 가 절반. 이 경우
+      반드시 (a) 탐지 규칙 (Wazuh rule / Suricata rule / ModSec rule) 또는 (b)
+      탐지 agent 부재 의 *둘 중 어느 쪽인지* 확인하고 정정 후 *재시도*. fixture
+      는 *시간 압박 시 fallback* 일 뿐, 표준 절차는 *실 탐지 복구*.
 
       ## 학습 — W09 의 Wazuh Active Response
       ```
@@ -84,9 +100,22 @@ steps:
       ```
       → 5710/5712 발동 시 자동 iptables drop. hydra 가 *몇 회 시도 후 차단됨*.
 
+    fixtures:
+      - generator: wazuh_alert
+        target_vm: siem
+        path: /var/ossec/logs/alerts/alerts.json
+        params:
+          seed: 42
+          duration_days: 1
+          alerts_per_day: 30
+          brute_force_burst: true
+        mode: append
+        cleanup: false
+        fallback_only: true
     hint: |
       hydra -L (user) -P (pwd) -t 1 -f -- SSH 표준. timeout 20 안전. Wazuh 5710/5712
-      카운트로 detection 검증. -t 1 = stealth.
+      카운트로 detection 검증. -t 1 = stealth. *agent 미연동 인 경우* fixture
+      fallback (위 fixtures.fallback_only) 활용.
 
     category: exploit
     points: 20

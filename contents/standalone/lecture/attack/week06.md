@@ -6,6 +6,19 @@
 > 차이부터, brute force / JWT 변조 / IDOR / session hijacking 까지 본 주차에서
 > 다룬다.
 
+> **🛡️ 공격 lab 의 탐지 데이터 정책 (시리즈 공통)**
+>
+> 본 주차 lab 의 hydra brute 후 Wazuh 의 5710/5712 alert 카운트 가 *0* 이면 *공격
+> 자체* 가 아닌 *탐지 측 결함* (Wazuh agent 미설치 / rsyslog forward 미설정 / 룰
+> 비활성). 표준 절차 = (a) `ssh 6v6-siem 'sudo /var/ossec/bin/agent_control -lc'`
+> 로 등록 agent 확인 → bastion (10.20.30.200) 미등록 시 (b) siem 에서
+> `manage_agents -a -n bastion -i 10.20.30.200` + bastion 측 wazuh-agent 설치/등록
+> → (c) 재 brute → alerts.json 검증.
+>
+> 시간 제약 시 fallback — `scripts/lab_fixture_inject.py` 의 `wazuh_alert` 합성
+> (5710/5712 burst). 단 *공격 lab 의 학습 본질* 은 *직접 공격 + 직접 탐지* 이므로
+> fixture 는 최후 수단. SOC 운영 과목 (secuops) 의 분석 lab 과 정책이 다름.
+
 ## 학습 목표
 
 학생은 본 주차 종료 시 다음을 수행할 수 있어야 한다.

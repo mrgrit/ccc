@@ -13,6 +13,22 @@
 > **운영자 한 줄 결론**: SIEM 의 본질은 **decoder → 룰 → alert level → alerts.json**.
 > Wazuh 의 11 daemon 이 각자 역할을 분담하여 100+ source 의 로그를 한 형식으로 정규화.
 
+> **📦 데이터 부재 시 안내 (신규 cyber range 첫 학습)**
+>
+> 본 주차의 lab step 2/3/4/6/7 은 alerts.json 분석. 신규 range 직후에는 alerts.json
+> 이 0 byte 일 수 있다. lab YAML 의 `fixtures` 필드 가 명시된 step 은 다음 명령으로
+> 합성 데이터 (시드 재현 가능, 7 일치 누적 alert) 주입 가능:
+>
+> ```bash
+> python3 scripts/lab_fixture_inject.py \
+>     --lab contents/standalone/lab/secuops/week09.yaml --order 2 --ssh
+> ```
+>
+> 생성기: `lib/generators/wazuh_alert.py` (16 rule template — 5710/5712/5503/100200/
+> 87213 등 + Suricata 86601). 실 운영 데이터와 동일 구조 — 학습 효과 동등. 단,
+> *공격 lab* (예: attack/week06) 은 fixture 가 fallback 이지 표준 절차가 아님 —
+> *직접 공격 → 탐지 규칙/agent 부재 정정 → 재시도* 가 정답.
+
 ---
 
 ## 학습 목표
