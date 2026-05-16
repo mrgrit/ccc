@@ -15,53 +15,86 @@ steps:
 
   - order: 1
     instruction: |
-      ## 🎯 MISSION (5 persistence 패턴 검사)
+      ## 🎯 MISSION (5 persistence 패턴 검사 — Docker 환경 적응)
 
-      bastion 의 5 persistence 카테고리를 **읽기 전용 검사** — 실 적용 X.
+      bastion 의 5 persistence 카테고리를 **읽기 전용 검사** — 실 적용 X. *Docker
+      컨테이너* 의 일반적 한계 (systemd 없음 / /etc/crontab 없음) 인지 + 실 환경
+      대비 매핑.
+
+      ## ⚠️ Docker 컨테이너 인지
+
+      `bastion` 은 Docker 컨테이너 — 호스트와 다른 부분:
+      - `/etc/crontab` 없음 → `/etc/cron.d/*` 만 존재
+      - `systemctl` 없음 → process 직접 (`ps -ef`)
+      - `authorized_keys` 미설정 (password SSH)
+      → 학생 학습 = Docker 환경 의 *호스트와 다른 persistence 면* 인지
 
       ## 💻 실행 명령
 
       ```bash
       ssh 6v6-bastion '
-      echo "=== 1. cron ==="
-      cat /etc/crontab 2>&1 | head; ls /etc/cron.d/ 2>&1 | head
-      echo "=== 2. systemd unit ==="
-      systemctl list-unit-files --type=service 2>&1 | head -10
+      echo "=== 1. cron (Docker: cron.d 만) ==="
+      ls /etc/cron.d/ 2>&1
+      [ -f /etc/crontab ] && cat /etc/crontab | head -5 || echo "  /etc/crontab 없음 (Docker 컨테이너 일반)"
+
+      echo "=== 2. process (systemd 대체) ==="
+      ps -ef 2>&1 | head -10
+      command -v systemctl && systemctl list-unit-files --type=service | head -5 || echo "  systemctl 없음 → Docker 컨테이너 (cgroup 기반 process 만)"
+
       echo "=== 3. .bashrc / .profile ==="
-      tail -5 ~/.bashrc; tail -3 ~/.profile 2>/dev/null
+      tail -5 ~/.bashrc 2>/dev/null
+      tail -3 ~/.profile 2>/dev/null
+
       echo "=== 4. ssh authorized_keys ==="
-      cat ~/.ssh/authorized_keys 2>&1 | head -3
+      ls -la ~/.ssh/ 2>/dev/null
+      [ -f ~/.ssh/authorized_keys ] && cat ~/.ssh/authorized_keys | head -3 || echo "  authorized_keys 없음 (학습 환경 — password SSH)"
+
       echo "=== 5. web shell 검사 (없어야 함) ==="
       find /var/www -name "*.php" 2>/dev/null | head
+      [ -d /var/www ] || echo "  /var/www 없음 — web 컨테이너 (6v6-web) 에서 검사"
       '
       ```
 
       ## 📋 확인 사항
 
-      - 5 카테고리 모두 검사 (변경 X)
-      - 정상 baseline 확보
+      - 1) `/etc/cron.d/` 에 표준 entry (e2scrub_all 등) — `/etc/crontab` 없음 정상
+      - 2) `ps -ef` 출력 + `systemctl 없음` — Docker 인지
+      - 3) `.bashrc` 5 라인 + `.profile` 짧음
+      - 4) `authorized_keys` 없음 — password SSH 학습 환경
+      - 5) `/var/www` 없음 — 호스트 분리 (web 컨테이너 에 있음)
 
       ## 💡 왜 이걸 하는가?
 
-      PTES 6 — Persistence (T1543/T1547/T1098 등). 운영 측은 osquery + Wazuh FIM 으로
-      detection.
+      PTES 6 — Persistence (T1543/T1547/T1098 등). Docker 컨테이너 의 *실 호스트와
+      다른 persistence 면* 인지 → 컨테이너 기반 운영 환경 의 IR 베이스라인.
 
       ## 🔍 결과 해석
 
-      - **정상**: 5 카테고리 표준 entry
-      - **의심**: 예상 외 cron / .bashrc 한 줄 추가 / authorized_keys 새 entry
-    hint: 5 persistence 읽기 전용
+      - **정상 (Docker)**: 1) cron.d 만 2) ps -ef + systemctl 없음 3) .bashrc 표준
+        4) authorized_keys 없음 5) /var/www 없음
+      - **의심**: 예상 외 cron entry / .bashrc 한 줄 추가 / 새 authorized_keys
+
+      ## 비정상 시 대응
+
+      - **cron.d 도 비어있음** — 컨테이너 가 cron service 가동 안 됨. `ps -ef |
+        grep cron` 확인.
+      - **/var/www 존재** — bastion 가 web role 도 겸함 (설계 결함 가능).
+    hint: |
+      Docker bastion = systemd/crontab 없음 정상. cron.d + ps + .bashrc + ssh +
+      web shell 의 5 카테고리.
     category: simulation
     points: 25
     answer: |
       ssh 6v6-bastion '
-      echo "=== cron ==="; cat /etc/crontab 2>&1 | head; ls /etc/cron.d/ 2>&1
-      echo "=== systemd ==="; systemctl list-unit-files --type=service 2>&1 | head -10
+      echo "=== cron.d ==="; ls /etc/cron.d/ 2>&1
+      echo "=== ps ==="; ps -ef 2>&1 | head -10
       echo "=== .bashrc ==="; tail -5 ~/.bashrc
-      echo "=== authorized_keys ==="; cat ~/.ssh/authorized_keys 2>&1 | head -3
-      echo "=== web shell ==="; find /var/www -name "*.php" 2>/dev/null | head
+      echo "=== authorized_keys ==="; ls -la ~/.ssh/ 2>/dev/null
+      echo "=== web ==="; find /var/www -name "*.php" 2>/dev/null | head; [ -d /var/www ] || echo "no /var/www"
       '
-    answer_detail: 5 패턴 검사.
+    answer_detail: |
+      Docker 환경 5 persistence 카테고리 검사. systemd/crontab 없음 정상.
+      cron.d + ps + .bashrc + ssh + web 의 5 카테고리 baseline.
     verify:
       type: output_contains
       expect: cron
