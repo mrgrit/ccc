@@ -502,6 +502,125 @@ W02 의 *효과* 결정.
 
 ---
 
+## 4-6. R/B/P 종합 시나리오 — 본 과목 의 base 관점
+
+본 과목 (web-vuln) 의 모든 주차 의 R/B/P 의 base 형식. **Red = 웹 vuln 의 exploit
+(OWASP Top 10) / Blue = ModSec CRS 의 정적 detection + audit log / Purple = 통합 분석
++ exception tuning**.
+
+### 통합 도식
+
+```mermaid
+graph LR
+    R["🔴 Red Team<br/>attacker (10.20.30.202)<br/>OWASP Top 10<br/>10 카테고리<br/>각 vhost 별 시도"]
+
+    FE["🌐 fw HAProxy<br/>L7 reverse proxy<br/>7 vuln vhost 라우팅"]
+    WEB["🌐 web Apache<br/>10.20.32.80<br/>ModSec inline<br/>+ JuiceShop"]
+
+    B1["🔵 ModSec CRS 4.0<br/>20 family<br/>941/942/943/944<br/>+ 920/921/930 등"]
+    B2["🔵 paranoia level<br/>1-4 의 강도<br/>anomaly score 누적"]
+    B3["🔵 audit log<br/>JSON format<br/>messages[] 분석"]
+    B4["🔵 Wazuh decoder<br/>modsec 통합<br/>level 7+ alert"]
+
+    P1["🟣 Coverage Matrix<br/>10 카테고리 × 20 family"]
+    P2["🟣 Exception 분석<br/>FP 의 좁은 범위<br/>운영 의 안정성"]
+    P3["🟣 학습 계획<br/>14 weeks 의 5 영역"]
+    P4["🟣 AAR + 운영 baseline"]
+
+    R -->|HTTP request| FE
+    FE --> WEB
+    WEB --> B1
+    B1 --> B2
+    B2 --> B3
+    B3 --> B4
+    B4 --> P1
+    P1 --> P2
+    P1 --> P3
+    P2 --> P4
+
+    style R fill:#f85149,color:#fff
+    style FE fill:#3fb950,color:#fff
+    style WEB fill:#3fb950,color:#fff
+    style B1 fill:#1f6feb,color:#fff
+    style B2 fill:#1f6feb,color:#fff
+    style B3 fill:#1f6feb,color:#fff
+    style B4 fill:#1f6feb,color:#fff
+    style P1 fill:#bc8cff,color:#fff
+    style P2 fill:#bc8cff,color:#fff
+    style P3 fill:#bc8cff,color:#fff
+    style P4 fill:#bc8cff,color:#fff
+```
+
+### Coverage Matrix — OWASP Top 10 × 본 과목 14 weeks 매핑
+
+| OWASP | 카테고리 | Red 의 vhost | Blue 의 CRS family | 본 과목 주차 |
+|-------|---------|-------------|-------------------|------------|
+| A01 | Broken Access Control | juice.6v6.lab | 932/933 RCE | W02 IDOR + JWT |
+| A02 | Cryptographic Failures | api.6v6.lab | 932 알고리즘 약점 | W03 transport + JWT alg |
+| A03 | Injection | juice.6v6.lab | 941 XSS + 942 SQLi | W04-W06 SQLi/XSS/SSTI |
+| A04 | Insecure Design | sso.6v6.lab | (CRS 외) | W11 design review |
+| A05 | Security Misconfiguration | admin.6v6.lab | 930 LFI + 920 protocol | W07 misconfig |
+| A06 | Vulnerable Components | api.6v6.lab | (CRS 외, SBOM 학습) | W12 components |
+| A07 | Auth Failures | juice.6v6.lab | 932 RCE | W02 JWT brute |
+| A08 | Software/Data Integrity | api.6v6.lab | (CRS 외) | W12-W13 integrity |
+| A09 | Logging Failures | (모든 vhost) | (audit log baseline) | W01 + W14 ops |
+| A10 | SSRF | api.6v6.lab | 932 RCE | W08 SSRF |
+
+### 본 과목 의 R/B/P 의 운영 적용
+
+```
+T+0      Red 의 매 주차 의 vuln 의 exploit 시도
+         └→ vhost 별 의 분리 (juice / admin / api / sso 등 7 vhost)
+         └→ payload = OWASP 의 표준 + Korean context 추가
+
+T+1ms    Blue 의 ModSec CRS 의 inline 처리
+         └→ 5 phase 의 평가 (headers / body / response / response_body / log)
+         └→ anomaly score 의 누적
+         └→ score ≥ paranoia threshold = block
+
+T+1s     Blue 의 audit log 기록
+         └→ /var/log/apache2/modsec_audit.log 의 JSON entry
+         └→ messages[] = 매치 룰 의 list
+         └→ unique_id = 추적 의 ID
+
+T+5s     Wazuh agent 의 ship + decoder 의 alert
+         └→ Wazuh manager 의 alerts.json
+         └→ rule 87151 (modsec) level 7+ alert
+
+T+1m     Purple 의 통합 분석
+         └→ 본 주차 의 exploit pattern + ModSec match 의 매핑
+         └→ Coverage Matrix 의 업데이트
+         └→ FP 분석 + Exception 의 좁은 범위 추가
+
+T+1d     Purple 의 학습 자산화
+         └→ KG anchor = "web_vuln_w0X_pattern"
+         └→ 14 weeks 의 base 의 점진적 보강
+         └→ 졸업 의 5 영역 의 자가 진단 의 update
+```
+
+### R/B/P 의 핵심 인사이트 (본 과목 의 base)
+
+1. **OWASP Top 10 의 10 카테고리 의 14 weeks 매핑** — 본 과목 의 매 주차 의 학습 =
+   1 카테고리 의 깊이 + 6v6 vhost 의 직접 exploit + ModSec CRS family 의 detection.
+   매 주차 의 R/B/P = 본 base 형식 의 변형.
+
+2. **ModSec CRS 4.0 의 20 family 의 운영 가치** — 941 (XSS), 942 (SQLi), 932 (RCE)
+   의 메인 + 920/921 (protocol), 930 (LFI), 933 (PHP) 의 보조. paranoia level 의
+   조정 = false-positive vs coverage 의 trade-off.
+
+3. **anomaly score 의 수학 적 모델** — 단일 룰 의 score (3-5) + 누적 score 의
+   paranoia threshold (5) 비교. 다중 룰 매치 시 의 block 의 보장.
+
+4. **audit log 의 messages[] 의 분석 의 표준** — JSON format 의 audit log 의
+   분석 = jq 의 명령 의 표준. messages[] 의 룰 ID 의 순서 = phase 처리 순서. 분석
+   의 base 도구.
+
+5. **14 weeks 의 자가 진단 의 5 영역** — Recon / Exploit / Detection / Mitigation /
+   Reporting 의 5 영역. 매 주차 의 학습 의 5 영역 의 progress 의 self-check.
+   졸업 = 5 영역 의 4점 이상.
+
+---
+
 ## 본 주차 정리
 
 본 W01 을 마치면 학생 은:

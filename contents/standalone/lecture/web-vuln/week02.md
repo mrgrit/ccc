@@ -403,6 +403,128 @@ secret.
 
 ---
 
+## 4-5. R/B/P 종합 시나리오 — IDOR + JWT 의 3 관점
+
+본 주차 의 R/B/P. Red = IDOR + JWT alg=none / Blue = ModSec + access control rule /
+Purple = 통합 분석 + JWT validation 룰 보완.
+
+### 통합 도식
+
+```mermaid
+graph LR
+    R["🔴 Red Team<br/>attacker (10.20.30.202)<br/>3 시도<br/>① IDOR /api/Users/1<br/>② JWT alg=none<br/>③ JWT none signature"]
+
+    FE["🌐 fw HAProxy<br/>juice.6v6.lab"]
+    WEB["🌐 web Apache<br/>10.20.32.80<br/>ModSec + JuiceShop"]
+
+    B1["🔵 ModSec 932xxx<br/>RCE 룰 family<br/>(JWT 의 약점 매치)"]
+    B2["🔵 Application logic<br/>JWT verify 코드<br/>signature 검증"]
+    B3["🔵 access control rule<br/>per-resource ACL<br/>user_id 검증"]
+    B4["🔵 audit log<br/>+ Wazuh alert<br/>level 9+"]
+
+    P1["🟣 Coverage Matrix<br/>3 시도 × 4 detection"]
+    P2["🟣 Gap<br/>IDOR 의 정상 응답<br/>alg=none 의 verify bypass"]
+    P3["🟣 룰 보완<br/>ModSec 의 JWT 검증<br/>custom 룰 추가"]
+    P4["🟣 AAR + lab 보고서"]
+
+    R -->|HTTP request| FE
+    FE --> WEB
+    WEB --> B1
+    WEB --> B2
+    WEB --> B3
+    B1 --> B4
+    B2 --> B4
+    B3 --> B4
+    B4 --> P1
+    P1 --> P2
+    P2 --> P3
+    P3 --> P4
+
+    style R fill:#f85149,color:#fff
+    style FE fill:#3fb950,color:#fff
+    style WEB fill:#3fb950,color:#fff
+    style B1 fill:#1f6feb,color:#fff
+    style B2 fill:#1f6feb,color:#fff
+    style B3 fill:#1f6feb,color:#fff
+    style B4 fill:#1f6feb,color:#fff
+    style P1 fill:#bc8cff,color:#fff
+    style P2 fill:#bc8cff,color:#fff
+    style P3 fill:#bc8cff,color:#fff
+    style P4 fill:#bc8cff,color:#fff
+```
+
+### Coverage Matrix — 3 시도 × 4 detection
+
+| 시도 | Red 명령 | Blue ModSec | Blue App | Blue ACL | Purple Gap |
+|------|---------|------------|---------|---------|-----------|
+| **① IDOR /api/Users/1** | `curl -H 'Authorization: Bearer <token>' http://juice.6v6.lab/api/Users/1` | 매치 X (정상 의 HTTP) | JuiceShop = 의도 적 vuln (학습 환경) | ACL 부재 (학습 의 의도) | runtime 의 user_id ↔ token user_id 비교 의 코드 의 부재 |
+| **② JWT alg=none** | `curl -H 'Authorization: Bearer <header.payload.>' ...` (signature 비움) | 매치 X (정상 HTTP) | JuiceShop = alg=none 의 의도 vuln | 별도 의 JWT verify 룰 필요 | ModSec 의 custom rule 의 추가 (Authorization header 의 alg=none 패턴 차단) |
+| **③ JWT secret brute** | `hashcat -m 16500 jwt.txt rockyou.txt` | 매치 X (offline) | JuiceShop 의 약한 secret | log 없음 (offline brute) | secret 의 entropy 의 강제 + audit 의 routine |
+
+### 시간선 — IDOR + JWT alg=none 의 1 사건 흐름
+
+```
+T+0      Red attacker 의 정상 login (자신 의 계정)
+         └→ POST /rest/user/login 의 응답 = JWT token (header.payload.sig)
+         └→ payload decode = {"id":2, "email":"user@me", ...}
+
+T+5s     Red 의 IDOR 시도
+         └→ curl -H 'Authorization: Bearer <token>' http://juice.6v6.lab/api/Users/1
+         └→ 응답 = 200 + admin (id=1) 의 data ★ IDOR 발생
+
+T+10s    Red 의 JWT alg=none 시도
+         └→ python: header = {"alg":"none", "typ":"JWT"}
+                    payload = {"id":1, "email":"admin@..."} (admin 의 id)
+                    token = base64(header) + "." + base64(payload) + "."
+         └→ curl -H 'Authorization: Bearer <new_token>' http://juice.6v6.lab/api/Users/1
+         └→ 응답 = 200 + admin 의 data (signature 검증 안 됨) ★ alg=none bypass
+
+T+30s    Blue 1차 detection (사후)
+         └→ ModSec 의 audit log = HTTP 의 정상 응답 의 기록 (alert X)
+         └→ access.log 의 /api/Users/1 의 호출 의 burst
+         └→ Wazuh 의 standard rule 의 미매치
+
+T+1m     Purple Gap 식별
+         └→ Coverage Matrix 의 ②③ 항목 = "ModSec 의 표준 룰 의 미커버"
+         └→ JWT 의 alg=none 패턴 = ModSec 의 custom rule 의 필요
+         └→ IDOR = application 의 ACL 코드 의 필요 (ModSec 외)
+
+T+10m    Purple 룰 보완 (ModSec custom rule)
+         └→ /etc/modsecurity/modsec_local_rules.conf:
+            SecRule REQUEST_HEADERS:Authorization "@rx Bearer\s+([^\.]+)\.([^\.]+)\.$" \
+                "id:1000001,phase:1,deny,status:403,msg:'JWT alg=none bypass attempt'"
+         └→ sudo systemctl reload apache2
+         └→ 재테스트 = alg=none 시도 의 403 차단 확인
+
+T+30m    Purple AAR + lab 보고서
+         └→ What: IDOR + JWT alg=none 의 detection 의 추가
+         └→ Why: 표준 CRS 의 미커버 영역
+         └→ Next: W03 의 JWT secret + cipher 의 심화 학습
+```
+
+### R/B/P 의 핵심 인사이트 (5 항)
+
+1. **JuiceShop 의 학습 vs 운영 의 의도 적 vuln** — 학습 환경 = JuiceShop 의 vuln 의
+   100% 의도. 운영 환경 = 같은 vuln 의 0% 의도. R/B/P 의 학습 = 의도 적 vuln 의 분석
+   + 운영 의 적용 의 base.
+
+2. **IDOR 의 application 의 책임** — IDOR = HTTP 의 정상 응답 + application 의 ACL
+   의 실패. ModSec (network layer) 의 detection 의 한계. application 의 runtime 의
+   user_id 검증 의 코드 필수.
+
+3. **JWT alg=none 의 ModSec custom rule** — JWT 의 표준 검증 = application 의
+   책임. 그러나 ModSec 의 custom rule (Authorization header 의 패턴 매치) 으로 1 차
+   방어 가능. defense in depth 의 적용.
+
+4. **JWT secret 의 entropy 의 강제** — JWT 의 secret 의 약한 값 (예: "secret123") =
+   offline brute 의 위험. secret 의 32+ byte 의 random 의 강제 + 정기 rotation.
+
+5. **audit 의 routine** — 정상 의 HTTP 응답 의 alert 부재 = audit log 만 의 사후
+   분석 가능. access.log 의 anomaly (특정 ID 의 burst) 의 detection = SIEM 의 chain
+   rule 의 routine 화.
+
+---
+
 ## 본 주차 정리
 
 본 W02 을 마치면 학생 은:
