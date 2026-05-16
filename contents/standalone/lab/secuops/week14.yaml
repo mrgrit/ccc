@@ -300,24 +300,115 @@ steps:
 
   - order: 3
     instruction: |
-      ## 🎯 MISSION — 양방향 sync + circular loop 회피
+      ## 🎯 MISSION — OpenCTI ↔ MISP **양방향 sync** + circular loop 회피 *3 방법*
+      *설계*
+
+      양방향 sync 의 *가장 큰 위험* = circular loop (한 Event/Indicator 가 양쪽에
+      서 무한 재진입). 본 step 에서 *3 회피 방법* 의 메커니즘 + 적용 시점 + 한계 를
+      모두 학습.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **양방향 sync** = OpenCTI → MISP *export* + MISP → OpenCTI *import*. 동시
+        가동 시 *중복 누적* 위험
+      - **circular loop** = 한 객체 가 *N 회 양 platform 을 왕복* 하며 매번 *modified
+        timestamp* 갱신 → 무한 알람
+      - **idempotent sync** = 같은 객체 *몇 번 sync* 해도 동일 결과 — 회피 의 목표
+      - **direction filter** = 양 방향 의 *조건* 분리 — *어떤 객체 가 어디로 가는가*
+        명시
+
+      ## 💻 산출물 (3 회피 방법 비교 표 + 다이어그램)
 
       ```
-      OpenCTI ↔ MISP 양방향 sync:
-        1. MISP Connector (OpenCTI 측) — external-import: MISP API 호출
-        2. OpenCTI Export Connector (MISP 측) — STIX 2.1 export
+      ┌──────────────────────────────────────────────────────────────────┐
+      │ 양방향 sync 구성도                                                 │
+      └──────────────────────────────────────────────────────────────────┘
 
-      circular loop 위험:
-        MISP Event → OpenCTI Indicator → MISP Event 재진입 → 중복 누적
-
-      해결 3:
-        1. ID 추적 (source_ref / target_ref 의 STIX ID)
-        2. timestamp diff (modified 시각 기반)
-        3. per-direction filter:
-           - OpenCTI → MISP: tag "publish-to-misp" 만 export
-           - MISP → OpenCTI: tag "from-trusted-source" 만 import
+        [OpenCTI]                                  [MISP]
+            │                                          │
+            ├── (1) MISP Connector ────────────────▶ MISP REST API
+            │   external-import (15분 polling)         │
+            │                                          │
+            │   STIX bundle ◀────────────────────── MISP STIX export
+            │                                          │
+            ├── (2) Export Connector ──────────────▶ MISP REST API
+            │   stream (실시간 STIX → MISP Event 변환)
+            │                                          │
+        circular loop 위험 ──────────────────────────────
+        Event 12345 → Indicator XYZ → Event 12346 (중복) → Indicator XYZ' (중복) → ...
       ```
-    hint: 'MISP ↔ OpenCTI sync + circular loop 회피 3 방법'
+
+      ### 3 회피 방법 비교 표
+
+      | # | 방법 | 메커니즘 | 적용 시점 | 한계 |
+      |---|------|---------|----------|------|
+      | 1 | **STIX ID 추적** | 객체 의 *원본 source_ref* 가 자기 자신 platform 이면 sync 제외 | 두 방향 모두 import 시 | source attribution 부재 객체 (legacy import) 의 *원본 platform* 판단 어려움 |
+      | 2 | **timestamp diff** | 객체 의 `modified` 가 last_sync 보다 *나중* 일 때만 sync | 30분/15분 polling 사이 | 외부 enrichment (예: VT 자동 갱신) 로 *modified* 가 자주 변경 시 무한 루프 |
+      | 3 | **per-direction tag filter** | OpenCTI → MISP: tag `publish-to-misp` 만 export. MISP → OpenCTI: tag `from-trusted-source` 만 import | 양 방향 모두 | tag 누락 → sync 누락 (false negative). 분석가 의 *수동 tagging* 부담 |
+
+      ### 권장 — 3 방법 *조합* 적용
+
+      ```yaml
+      # OpenCTI Connector 설정 (config.yml)
+      misp_connector:
+        url: https://misp.6v6.lab
+        api_key: ${MISP_API_KEY}
+        # 방법 1 — STIX ID 추적
+        deduplicate_by_id: true
+        # 방법 2 — timestamp diff
+        import_since: "30d"
+        check_modified: true
+        # 방법 3 — tag filter (방향 별)
+        import_filter_tag: "from-trusted-source"
+        export_filter_tag: "publish-to-misp"
+        # polling
+        interval_minutes: 30
+      ```
+
+      ## 💻 검증 명령 (sync 로직 의 *결정성* 검증)
+
+      ```bash
+      # 같은 indicator 를 2 회 import 시도 → 1 회 만 추가 되는가? (idempotent)
+      python3 << 'PY'
+      # 시뮬 — STIX ID 추적 의 결정성 검증
+      seen_ids = set()
+      def sync_indicator(stix_id, payload):
+          if stix_id in seen_ids:
+              return "skip (already synced)"
+          seen_ids.add(stix_id)
+          return "synced"
+      print(sync_indicator("indicator--abc-001", {}))
+      print(sync_indicator("indicator--abc-001", {}))  # 두번째 = skip
+      print(sync_indicator("indicator--xyz-002", {}))
+      print(f"total synced: {len(seen_ids)}")
+      PY
+      ```
+
+      ## 📋 확인 사항
+
+      - 양방향 구성도 다이어그램 작성
+      - 3 회피 방법 비교 표 (4 칼럼 × 3 행) 작성
+      - 권장 — 3 방법 *조합* 의 config.yml 예시
+      - 검증 결과: 같은 ID 2 회 시도 → 1 회 만 synced (idempotent)
+
+      ## 💡 왜 이걸 하는가?
+
+      circular loop 가 발생하면 *몇 시간* 안에 *수십만 Event 중복* 누적 → backup
+      복구 외 해결 없음. 사전 회피 가 *유일* 의 옵션. 3 방법 *각각 의 한계* 가
+      있으므로 *조합* 이 안전.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 다이어그램 + 3 비교 표 + config + idempotent 검증
+      - **idempotent 검증 실패** (total = 3): 코드 로직 오류 — `seen_ids.add` 위치 확인
+
+      ## 비정상 시 대응
+
+      - **실 환경 에서 circular loop 발견** — 양 platform 의 sync 일시 정지 + DB
+        rollback (마지막 safe checkpoint) + 3 회피 방법 재구성. 절대 무시 X.
+    hint: |
+      양방향 sync 구성도 + 3 회피 방법 비교 표 (한계 명시) + 조합 적용 config +
+      idempotent 검증.
     category: integration
     points: 15
     answer: |
