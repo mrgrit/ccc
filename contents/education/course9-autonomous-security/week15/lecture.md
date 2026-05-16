@@ -7,7 +7,7 @@
 | 유형 | 실기 시험 (자율 보안 시스템 구축 + 운용 + 분석) |
 | 시간 | 3시간 (180분) |
 | 배점 | 100점 |
-| 환경 | ccc-api (localhost:9100), Bastion (10.20.30.200:8003), Ollama (10.20.30.200:11434), 실습 서버 4대 |
+| 환경 | ccc-api (localhost:9100), Bastion (192.168.0.103:8003), Manager LLM (192.168.0.109:11434 gpt-oss:120b), 6v6 컨테이너 16 |
 | 제출 | Bastion completion-report + 분석 스크린샷 |
 | 참고 | 오픈 북 (강의 자료, 인터넷 검색 가능. 타인과 공유 금지) |
 
@@ -31,14 +31,18 @@
 - RL 학습을 통해 정책 수렴과 에이전트 행동 변화를 관찰하고 해석할 수 있다
 - 종합 보안 자동화 파이프라인을 설계하고 Bastion completion-report로 보고할 수 있다
 
-## 실습 환경 (공통)
+## 실습 환경 (6v6 4-tier, 공통)
 
-| 서버 | IP | 역할 | 접속 |
-|------|-----|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
+학생 PC 의 `~/.ssh/config` 의 ProxyJump 설정 후 다음 표 의 컨테이너 에 `ssh
+6v6-<name>` 으로 접속.
+
+| 컨테이너 | 6v6 IP | 역할 | 접속 |
+|---------|--------|------|------|
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
+| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
+| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
+| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
+| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
 
 ## 강의 시간 배분 (3시간)
 

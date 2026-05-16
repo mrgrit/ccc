@@ -220,8 +220,8 @@ created → planning → executing → validating → reporting → closed
 ### 3.1 환경 접속 및 확인
 
 ```bash
-# bastion 서버에 접속
-ssh ccc@10.20.30.201
+# bastion 컨테이너 에 접속 (ProxyJump)
+ssh 6v6-bastion
 ```
 
 > **실습 목적**: 자율보안시스템의 핵심인 Bastion API가 정상 동작하는지 확인하는 것은, 자율 보안 운영의 첫 단계이다.
@@ -393,13 +393,13 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/dispatch \
 
 **수동 점검 (전통적 방법)**:
 ```bash
-# 서버 1번 접속하여 확인
-ssh ccc@10.20.30.1 "hostname && uptime"
-# 서버 2번 접속하여 확인
-ssh ccc@10.20.30.80 "hostname && uptime"
-# 서버 3번 접속하여 확인
-ssh ccc@10.20.30.100 "hostname && uptime"
-# 각 서버에 개별 접속 → 순차 실행 → 결과 수동 취합
+# fw 컨테이너 접속 하여 확인
+ssh 6v6-fw "hostname && uptime"
+# web 컨테이너 접속 하여 확인
+ssh 6v6-web "hostname && uptime"
+# siem 컨테이너 접속 하여 확인
+ssh 6v6-siem "hostname && uptime"
+# 각 컨테이너 에 개별 접속 → 순차 실행 → 결과 수동 취합
 ```
 
 **Bastion 자율 점검**: API 한 번 호출로 4대 서버 동시 점검, evidence 자동 기록, PoW 블록 자동 생성.
