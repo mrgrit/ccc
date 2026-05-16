@@ -638,3 +638,166 @@ steps:
     cat ~/w15/retro.md'
   risk_level: low
   bastion_prompt: 과정 회고 제출
+- order: 100
+  instruction: '[Multi-task] 장기 APT 잠복 + 과정 회고 IR 5단계 통합.'
+  bastion_prompt: |
+    Long-term APT 잠복 + 졸업 회고 5단계 chain.
+
+    1) [저속 활동 시뮬] mkdir -p ~/w15; cat > ~/w15/low-and-slow.md <<EOF
+       # Low-and-Slow APT 활동 (잠복 patterns)
+       전통적 attack: 분 단위 의 burst
+       APT: 일/주/월 단위 의 sparse activity
+
+       ## 패턴
+       - 1 query / day (정상 사용자 의 평균 와 동일)
+       - Office hours 내 만 (한국 시간 9-18)
+       - 정상 user 의 같은 IP (compromised credential)
+       - Small data exfil (< 1MB / week)
+
+       ## 6개월 진행 시뮬
+       Month 1: 정찰 (1-5 query/week)
+       Month 2: lateral (1 host 의 access)
+       Month 3: privilege escalation (1 회)
+       Month 4: data discovery (sensitive file enum)
+       Month 5: staging (exfil 준비)
+       Month 6: exfil (분할 송신 + DoH)
+       EOF
+       cat ~/w15/low-and-slow.md. MITRE T1078 + T1499 매핑.
+
+    2) [LOLBAS 장기 사용 패턴] cat > ~/w15/lolbas-longterm.md <<EOF
+       # LOLBAS 장기 사용 (탐지 회피)
+       ## 정상 user 의 baseline 모방
+       - powershell.exe 의 정상 비율 (Office worker = 5% 의 day)
+       - cmd.exe 의 정상 비율 (Admin = 10%)
+       - certutil 의 정상 비율 (Server admin = 1%)
+
+       ## APT 의 ratio 증가 (서서히)
+       - week 1-4: baseline + 1%
+       - week 5-8: baseline + 3%
+       - week 9-12: baseline + 5%
+       - 누적 detection: 정상 baseline 의 stddev 3+
+
+       ## 표준 baseline 측정
+       - 모든 user 의 day 의 process count
+       - LOLBin 의 day 의 ratio (per user, per role)
+       - Sysmon Event 1 의 통계
+       EOF
+       cat ~/w15/lolbas-longterm.md.
+
+    3) [Long-term drift 탐지] cat > ~/w15/drift-detect.py <<EOF
+       #!/usr/bin/env python3
+       import statistics
+       # 6개월 의 user 의 LOLBin usage (per day %)
+       baseline = [2.0, 2.1, 1.9, 2.0, 2.2, 1.8, 2.1, 2.0]  # week 1-8 평균
+       recent = [2.5, 3.0, 3.5, 4.2, 5.1, 6.0, 7.2, 8.5]   # week 17-24
+       # statistical drift test
+       b_mean, b_std = statistics.mean(baseline), statistics.stdev(baseline)
+       r_mean = statistics.mean(recent)
+       z = (r_mean - b_mean) / b_std
+       print(f"Baseline: {b_mean:.2f} (stddev {b_std:.2f})")
+       print(f"Recent:   {r_mean:.2f}")
+       print(f"Z-score:  {z:.2f}  ({'DRIFT!' if abs(z) > 3 else 'normal'})")
+       # 추가 metric: change-point detection (CUSUM)
+       EOF
+       python3 ~/w15/drift-detect.py.
+
+    4) [Threat Hunting 주기] cat > ~/w15/hunt-schedule.md <<EOF
+       # Threat Hunting Schedule (장기 APT 대응)
+       ## 일일 (Daily)
+       - Wazuh / Suricata alert 의 review
+       - 새 IoC (CISA KEV / OpenCTI) 의 retrohunt
+       - top 10 risky user 의 UEBA score
+
+       ## 주간 (Weekly)
+       - Long query / large exfil 의 분석
+       - SHA pin compliance audit (CI/CD)
+       - Privileged account 의 활동 audit
+
+       ## 월간 (Monthly)
+       - UEBA baseline 의 재계산
+       - LOLBin ratio drift 분석
+       - Threat Intel 의 ATT&CK coverage map
+
+       ## 분기 (Quarterly)
+       - Purple Team Exercise (Assume Breach)
+       - Threat Model 의 재검토
+       - Mythos-Readiness 의 재평가
+
+       ## 년간 (Yearly)
+       - SOC 의 maturity 의 외부 audit
+       - DR / BCP 의 실제 test
+       - SBOM + Sigstore 의 cleanup
+       EOF
+       cat ~/w15/hunt-schedule.md.
+
+    5) [과정 회고 + 졸업 보고서] cat > ~/w15/retro.md <<EOF
+       # Agent IR Advanced 과정 회고 + Graduation Report
+
+       ## 학습 정리 (15 weeks × 다단계 위협)
+       W01 Dep Confusion → W02 IPI → W03 Kerberoasting → W04 Cloud IAM → W05 0-day
+       W06 Log4Shell → W07 Multi-stage → W08 K8s → W09 Fileless → W10 DNS Exfil
+       W11 AI 모델 → W12 Deepfake → W13 Insider → W14 CI/CD → W15 Long-term APT
+
+       ## 핵심 학습 5개
+       1. Supply Chain (W01, W14) → SHA pin + SBOM + Sigstore
+       2. AI 위협 (W02, W11, W12) → Procedural defense + Watermark + OoB
+       3. Cloud + K8s (W03, W04, W08) → Tier 0 + JIT + Falco
+       4. Memory/Lateral (W05, W07, W09) → EDR + Assume Breach + JIT
+       5. Long-term (W13, W15) → UEBA + Drift detection + Threat Hunting
+
+       ## 자가 평가 (졸업 50점 만점)
+       - Technical: 9 (15 weeks 의 advanced threat 학습)
+       - Operational: 8 (Playbook + Runbook 의 작성)
+       - Strategic: 9 (Assume Breach + Long-term 의 framework)
+       - Communication: 8 (IR 보고서 + Lessons Learned)
+       - Innovation: 9 (Bastion KG 의 자동 진화 시도)
+       - 합: 43/50 (졸업 통과)
+
+       ## 졸업 후 계획 (30/90/365)
+       - 30일: 본 과정 의 Playbook 의 회사 적용 (3 priority)
+       - 90일: Purple Team Exercise 의 운영 (월 1회)
+       - 365일: Mythos L4 도달 + 자체 KG 의 운영
+
+       ## 감사 + 향후
+       - Coevolution 의 partner = Bastion + 자신 + 팀
+       - 다음 학습: Coevolution AI Agent Advanced (P22 의 Experience Graph)
+       EOF
+       cat ~/w15/retro.md.
+
+    cleanup X (졸업 산출물 보존).
+
+    마지막에 5단계 × (장기 APT 단계 / 명령 / 결과 / 패턴 / 방어 / 회고) 의 5×6 매트릭스 + Graduation Report
+    (15 weeks 의 정리 + 자가 평가 43/50 + 30/90/365 + 감사) markdown 출력.
+  hint: Long-term APT + 회고 5 chain. Drift detection + Threat Hunting schedule + 졸업 회고.
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: '[통합] Long-term APT + 졸업 회고 5단계 — slow/LOLBAS/drift/hunt/회고. MITRE T1078/T1499 + 졸업 매핑 + 5×6 매트릭스 + Graduation Report.'
+      success_criteria:
+      - 5 단계 모두 실행
+      - 6 month progression 표
+      - LOLBAS baseline + drift
+      - Z-score drift detection
+      - Hunt schedule (D/W/M/Q/Y 5 cadence)
+      - 졸업 회고 자가 평가 50점 만점
+      - 5×6 매트릭스 + Graduation
+      acceptable_methods:
+      - cat heredoc + python3 statistics 표준
+      - UEBA / CUSUM 등 표준
+      - markdown 매트릭스 + Graduation
+      negative_signs:
+      - 3 단계 이하 만 수행
+      - 자가 평가 누락
+      - 30/90/365 미작성
+      - 매트릭스 6 컬럼 미만
+  target_vm: bastion
+  risk_level: low
+  answer: |
+    🤖 위 bastion_prompt 그대로. Long-term APT + 회고 5단계 + 5×6 매트릭스 + Graduation Report.
+  answer_detail: |
+    Senior IR Lead 페르소나 — Long-term APT 잠복 + 졸업 회고 chain. Drift detection + 회고가 산출물.
+  script: ''
