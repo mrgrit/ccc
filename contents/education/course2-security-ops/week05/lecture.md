@@ -145,7 +145,7 @@ Suricata가 지원하는 프로토콜:
 > **실전 활용**: 제로데이 공격이나 조직 특화 위협에 대응하기 위해 커스텀 IPS 룰을 작성한다
 
 ```bash
-ssh ccc@10.20.30.1
+ssh 6v6-fw
 ```
 
 룰 파일 위치 확인:
@@ -723,7 +723,7 @@ WAF GET 4018건 의 CEF 형식: `CEF:0|...|WAF|1220|1000|GET|5|...`
 
 ### 학생 환경 준비
 ```bash
-ssh ccc@10.20.30.1
+ssh 6v6-fw
 sudo apt install -y tcpreplay scapy
 
 # Sigma — 범용 SIEM 시그니처 표준

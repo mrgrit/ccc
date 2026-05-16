@@ -133,7 +133,7 @@ WAF(Web Application Firewall)는 HTTP/HTTPS 트래픽을 검사하여 웹 공격
 > **실전 활용**: 웹 서비스 앞단에 WAF를 배치하여 SQLi, XSS 등 웹 공격을 1차 차단하는 것이 표준 구성이다
 
 ```bash
-ssh ccc@10.20.30.80
+ssh 6v6-web
 ```
 
 ### 3.1 WAF 상태 확인
@@ -142,7 +142,7 @@ ssh ccc@10.20.30.80
 
 ```bash
 # Apache + ModSecurity 상태 확인
-ssh ccc@10.20.30.80 "  # 비밀번호 자동입력 SSH
+ssh 6v6-web "  # 비밀번호 자동입력 SSH
 echo '=== Apache 상태 ===' && systemctl is-active apache2
 echo '=== ModSecurity 모듈 ===' && echo 1 | sudo -S apache2ctl -M 2>/dev/null | grep security
 echo '=== VirtualHost (WAF 적용 포트) ===' && echo 1 | sudo -S apache2ctl -S 2>/dev/null | grep -E '808[12]|:80 '
@@ -755,7 +755,7 @@ data.srcip:10.20.30.80
 
 ### 학생 환경 준비
 ```bash
-ssh ccc@10.20.30.80
+ssh 6v6-web
 sudo apt install -y libapache2-mod-security2 modsecurity-crs apache2-utils
 sudo a2enmod security2 headers
 sudo systemctl restart apache2

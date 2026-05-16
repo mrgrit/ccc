@@ -160,7 +160,7 @@ Table (테이블)
 
 ```bash
 # 실습 서버 접속
-ssh ccc@10.20.30.1
+ssh 6v6-fw
 ```
 
 접속 후 nftables 버전을 확인한다:
@@ -535,13 +535,13 @@ web 서버에서 secu 서버로 접근 테스트:
 
 ```bash
 # web 서버에 접속
-ssh ccc@10.20.30.80
+ssh 6v6-web
 
 # ping 테스트 (허용되어야 함)
 ping -c 2 10.20.30.1
 
 # SSH 테스트 (허용되어야 함)
-ssh ccc@10.20.30.1 hostname
+ssh 6v6-fw hostname
 
 # 차단된 포트 테스트 (연결 안 됨)
 nc -zv 10.20.30.1 8888
@@ -696,7 +696,7 @@ Week 03에서는 nftables의 실전 기능을 다룬다:
 ### 학생 환경 준비
 
 ```bash
-ssh ccc@10.20.30.1
+ssh 6v6-fw
 
 sudo apt update && sudo apt install -y \
   nftables iptables-nftables-compat \

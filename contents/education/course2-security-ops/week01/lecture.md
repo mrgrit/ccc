@@ -353,7 +353,7 @@ IDS/IPS 알림 -+
 
 ```bash
 # bastion 서버에서 secu로 접속
-ssh ccc@10.20.30.1
+ssh 6v6-fw
 ```
 
 ### 4.2 nftables 서비스 상태 확인
@@ -425,7 +425,7 @@ exit
 ### 5.1 secu 서버에 다시 접속
 
 ```bash
-ssh ccc@10.20.30.1
+ssh 6v6-fw
 ```
 
 ### 5.2 Suricata 서비스 상태 확인
@@ -505,7 +505,7 @@ exit
 ### 6.1 web 서버 접속
 
 ```bash
-ssh ccc@10.20.30.80
+ssh 6v6-web
 ```
 
 ### 6.2 Apache + ModSecurity 모듈 로드 확인 ★
@@ -650,7 +650,7 @@ exit
 ### 7.1 siem 서버 접속
 
 ```bash
-ssh ccc@10.20.30.100
+ssh 6v6-siem
 ```
 
 ### 7.2 Wazuh 서비스 상태 확인
@@ -726,7 +726,7 @@ exit
 ### 8.1 siem 서버에서 OpenCTI 확인
 
 ```bash
-ssh ccc@10.20.30.100
+ssh 6v6-siem
 ```
 
 ### 8.2 OpenCTI 서비스 확인
@@ -794,11 +794,11 @@ done
 ```bash
 # secu: nftables 상태
 echo "=== secu: nftables ==="
-ssh ccc@10.20.30.1 "sudo systemctl is-active nftables" 2>/dev/null  # 비밀번호 자동입력 SSH
+ssh 6v6-fw "sudo systemctl is-active nftables" 2>/dev/null  # 비밀번호 자동입력 SSH
 
 # secu: Suricata 상태
 echo "=== secu: Suricata ==="
-ssh ccc@10.20.30.1 "sudo systemctl is-active suricata" 2>/dev/null  # 비밀번호 자동입력 SSH
+ssh 6v6-fw "sudo systemctl is-active suricata" 2>/dev/null  # 비밀번호 자동입력 SSH
 
 # web: JuiceShop 상태
 echo "=== web: JuiceShop ==="
@@ -806,7 +806,7 @@ curl -s -o /dev/null -w "%{http_code}\n" http://10.20.30.80:3000/ 2>/dev/null  #
 
 # siem: Wazuh 상태
 echo "=== siem: Wazuh Manager ==="
-ssh ccc@10.20.30.100 "sudo systemctl is-active wazuh-manager" 2>/dev/null  # 비밀번호 자동입력 SSH
+ssh 6v6-siem "sudo systemctl is-active wazuh-manager" 2>/dev/null  # 비밀번호 자동입력 SSH
 
 # siem: OpenCTI 상태
 echo "=== siem: OpenCTI ==="
@@ -1165,7 +1165,7 @@ active
 
 ```bash
 # secu VM (10.20.30.1)
-ssh ccc@10.20.30.1
+ssh 6v6-fw
 sudo apt update && sudo apt install -y \
   nftables iproute2 \
   suricata suricata-update \
@@ -1173,12 +1173,12 @@ sudo apt update && sudo apt install -y \
   lnav multitail iotop iftop
 
 # web VM (10.20.30.80)
-ssh ccc@10.20.30.80
+ssh 6v6-web
 sudo apt install -y apache2 libapache2-mod-security2 modsecurity-crs
 sudo a2enmod security2 headers && sudo systemctl restart apache2
 
 # siem VM (10.20.30.100) — Wazuh + OpenCTI 이미 설치됨
-ssh ccc@10.20.30.100
+ssh 6v6-siem
 systemctl status wazuh-manager wazuh-indexer wazuh-dashboard
 curl -s http://localhost:8080/health    # OpenCTI
 ```

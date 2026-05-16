@@ -163,46 +163,46 @@ echo ""
 # 1. secu 서버
 echo "--- secu (10.20.30.1) ---"
 echo -n "  SSH: "
-ssh ccc@10.20.30.1 "echo OK" 2>/dev/null || echo "FAIL"  # 비밀번호 자동입력 SSH
+ssh 6v6-fw "echo OK" 2>/dev/null || echo "FAIL"  # 비밀번호 자동입력 SSH
 
 echo -n "  nftables: "
-ssh ccc@10.20.30.1 "echo 1 | sudo -S nft list tables 2>/dev/null | wc -l" 2>/dev/null  # 비밀번호 자동입력 SSH
+ssh 6v6-fw "echo 1 | sudo -S nft list tables 2>/dev/null | wc -l" 2>/dev/null  # 비밀번호 자동입력 SSH
 
 echo -n "  Suricata: "
-ssh ccc@10.20.30.1 "echo 1 | sudo -S systemctl is-active suricata 2>/dev/null" 2>/dev/null  # 비밀번호 자동입력 SSH
+ssh 6v6-fw "echo 1 | sudo -S systemctl is-active suricata 2>/dev/null" 2>/dev/null  # 비밀번호 자동입력 SSH
 
 echo -n "  Wazuh Agent: "
-ssh ccc@10.20.30.1 "echo 1 | sudo -S systemctl is-active wazuh-agent 2>/dev/null" 2>/dev/null  # 비밀번호 자동입력 SSH
+ssh 6v6-fw "echo 1 | sudo -S systemctl is-active wazuh-agent 2>/dev/null" 2>/dev/null  # 비밀번호 자동입력 SSH
 
 echo ""
 
 # 2. web 서버
 echo "--- web (10.20.30.80) ---"
 echo -n "  SSH: "
-ssh ccc@10.20.30.80 "echo OK" 2>/dev/null || echo "FAIL"  # 비밀번호 자동입력 SSH
+ssh 6v6-web "echo OK" 2>/dev/null || echo "FAIL"  # 비밀번호 자동입력 SSH
 
 echo -n "  Apache+ModSecurity: "
-ssh ccc@10.20.30.80 "echo 1 | sudo -S systemctl is-active apache2 2>/dev/null" 2>/dev/null  # 비밀번호 자동입력 SSH
+ssh 6v6-web "echo 1 | sudo -S systemctl is-active apache2 2>/dev/null" 2>/dev/null  # 비밀번호 자동입력 SSH
 
 echo -n "  HTTP: "
 curl -s -o /dev/null -w "%{http_code}" --connect-timeout 3 http://10.20.30.80/ 2>/dev/null || echo "FAIL"  # silent 모드
 echo ""
 
 echo -n "  Wazuh Agent: "
-ssh ccc@10.20.30.80 "echo 1 | sudo -S systemctl is-active wazuh-agent 2>/dev/null" 2>/dev/null  # 비밀번호 자동입력 SSH
+ssh 6v6-web "echo 1 | sudo -S systemctl is-active wazuh-agent 2>/dev/null" 2>/dev/null  # 비밀번호 자동입력 SSH
 
 echo ""
 
 # 3. siem 서버
 echo "--- siem (10.20.30.100) ---"
 echo -n "  SSH: "
-ssh ccc@10.20.30.100 "echo OK" 2>/dev/null || echo "FAIL"  # 비밀번호 자동입력 SSH
+ssh 6v6-siem "echo OK" 2>/dev/null || echo "FAIL"  # 비밀번호 자동입력 SSH
 
 echo -n "  Wazuh Manager: "
-ssh ccc@10.20.30.100 "echo 1 | sudo -S systemctl is-active wazuh-manager 2>/dev/null" 2>/dev/null  # 비밀번호 자동입력 SSH
+ssh 6v6-siem "echo 1 | sudo -S systemctl is-active wazuh-manager 2>/dev/null" 2>/dev/null  # 비밀번호 자동입력 SSH
 
 echo -n "  Wazuh Dashboard: "
-ssh ccc@10.20.30.100 "echo 1 | sudo -S systemctl is-active wazuh-dashboard 2>/dev/null" 2>/dev/null  # 비밀번호 자동입력 SSH
+ssh 6v6-siem "echo 1 | sudo -S systemctl is-active wazuh-dashboard 2>/dev/null" 2>/dev/null  # 비밀번호 자동입력 SSH
 
 echo -n "  OpenCTI: "
 curl -s -o /dev/null -w "%{http_code}" --connect-timeout 3 http://10.20.30.100:9400/health 2>/dev/null || echo "FAIL"  # silent 모드
@@ -276,19 +276,19 @@ bash /tmp/check_all.sh
 curl -s "http://10.20.30.80/?id=1%20UNION%20SELECT%201,2,3" > /dev/null  # silent 모드
 
 # 1. nftables 로그 확인 (secu)
-ssh ccc@10.20.30.1 \
+ssh 6v6-fw \
   "echo 1 | sudo -S journalctl -k --since '1 min ago' --grep='NFT' --no-pager" 2>/dev/null | tail -5
 
 # 2. Suricata 로그 확인 (secu)
-ssh ccc@10.20.30.1 \
+ssh 6v6-fw \
   "echo 1 | sudo -S tail -5 /var/log/suricata/fast.log" 2>/dev/null
 
 # 3. WAF 로그 확인 (web)
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "echo 1 | sudo -S tail -5 /var/log/apache2/error.log" 2>/dev/null
 
 # 4. Wazuh 알림 확인 (siem)
-ssh ccc@10.20.30.100 \
+ssh 6v6-siem \
   "echo 1 | sudo -S tail -5 /var/ossec/logs/alerts/alerts.json" 2>/dev/null | \
   python3 -c "                                         # Python 코드 실행
 import sys, json
@@ -375,13 +375,13 @@ Apache+ModSecurity 로그  --+--> Wazuh Agent --> Wazuh Manager
 
 ```bash
 # 1. 상관분석 룰 적재 + AR 적재 확인 (siem)
-ssh ccc@10.20.30.100 "echo 1 | sudo -S grep -E 'rules_id>100060|<rule id=\"100060\"' /var/ossec/etc/ossec.conf /var/ossec/etc/rules/local_rules.xml 2>/dev/null"
+ssh 6v6-siem "echo 1 | sudo -S grep -E 'rules_id>100060|<rule id=\"100060\"' /var/ossec/etc/ossec.conf /var/ossec/etc/rules/local_rules.xml 2>/dev/null"
 # 2. 트리거 — IPS + WAF 동시 alert 발생을 위한 SQLi
 curl -s "http://10.20.30.80:8082/?id=1%27%20UNION%20SELECT%201,2,3" -o /dev/null
 sleep 5
 # 3. 100060 알림 + AR 트리거 evidence
-ssh ccc@10.20.30.100 "echo 1 | sudo -S jq -r 'select(.rule.id==\"100060\") | [.timestamp, .data.srcip, .rule.description] | @tsv' /var/ossec/logs/alerts/alerts.json | tail -2"
-ssh ccc@10.20.30.1 "echo 1 | sudo -S tail -3 /var/ossec/logs/active-responses.log"
+ssh 6v6-siem "echo 1 | sudo -S jq -r 'select(.rule.id==\"100060\") | [.timestamp, .data.srcip, .rule.description] | @tsv' /var/ossec/logs/alerts/alerts.json | tail -2"
+ssh 6v6-fw "echo 1 | sudo -S tail -3 /var/ossec/logs/active-responses.log"
 ```
 
 **예상 출력**:
@@ -478,8 +478,8 @@ echo "=== 공격 완료. 로그를 분석하세요. ==="
 # 30 초 후 5 공격 모두 탐지되었는지 검증
 sleep 30
 echo "--- 5 공격 layer-by-layer 탐지 카운트 ---"
-ssh ccc@10.20.30.1 "echo 1 | sudo -S grep -c 'EXAM\\|sid:91\\|nftables' /var/log/suricata/fast.log 2>/dev/null"
-ssh ccc@10.20.30.100 "echo 1 | sudo -S jq -r --arg since '$(date -u -d '60 sec ago' +%FT%TZ)' \
+ssh 6v6-fw "echo 1 | sudo -S grep -c 'EXAM\\|sid:91\\|nftables' /var/log/suricata/fast.log 2>/dev/null"
+ssh 6v6-siem "echo 1 | sudo -S jq -r --arg since '$(date -u -d '60 sec ago' +%FT%TZ)' \
   'select(.timestamp>\$since) | .rule.id' /var/ossec/logs/alerts/alerts.json 2>/dev/null | sort | uniq -c"
 ```
 
@@ -513,7 +513,7 @@ ssh ccc@10.20.30.100 "echo 1 | sudo -S jq -r --arg since '$(date -u -d '60 sec a
 
 ```bash
 # 1. Wazuh에서 최근 고심각도 알림 확인
-ssh ccc@10.20.30.100 \
+ssh 6v6-siem \
   "echo 1 | sudo -S cat /var/ossec/logs/alerts/alerts.json" 2>/dev/null | \
   python3 -c "                                         # Python 코드 실행
 import sys, json
@@ -530,7 +530,7 @@ for line in sys.stdin:                                 # 반복문 시작
 echo "=== 의심 IP 목록 ==="
 
 # 3. 긴급 차단 (nftables)
-ssh ccc@10.20.30.1 \
+ssh 6v6-fw \
   "echo 1 | sudo -S nft add element inet filter blocklist '{ 10.20.30.XXX }'" 2>/dev/null
 
 # 4. IOC 등록 (OpenCTI)
@@ -574,12 +574,12 @@ bash /tmp/check_all.sh 2>/dev/null
 
 echo ""
 echo "[2] Suricata 커널 드롭"
-ssh ccc@10.20.30.1 \
+ssh 6v6-fw \
   "echo 1 | sudo -S grep 'kernel_drops' /var/log/suricata/stats.log | tail -1" 2>/dev/null
 
 echo ""
 echo "[3] 최근 24시간 고심각도 알림 (Level >= 10)"
-ssh ccc@10.20.30.100 \
+ssh 6v6-siem \
   "echo 1 | sudo -S cat /var/ossec/logs/alerts/alerts.json" 2>/dev/null | \
   python3 -c "                                         # Python 코드 실행
 import sys, json
@@ -952,13 +952,13 @@ dataset host `HOST-4476` (incident `e5578610-d2eb-11ee-...`):
 
 ### 통합 흐름 — 한 명령으로 전체 점검
 ```bash
-ssh ccc@10.20.30.100
+ssh 6v6-siem
 # 헬스체크 통합 스크립트
 for svc in wazuh-manager wazuh-indexer wazuh-dashboard opencti-platform; do
   echo "$svc: $(systemctl is-active $svc 2>/dev/null)"
 done
-ssh ccc@10.20.30.1 'for svc in nftables suricata fail2ban crowdsec; do echo "$svc: $(systemctl is-active $svc)"; done'
-ssh ccc@10.20.30.80 'for svc in apache2 wazuh-agent falco; do echo "$svc: $(systemctl is-active $svc)"; done'
+ssh 6v6-fw 'for svc in nftables suricata fail2ban crowdsec; do echo "$svc: $(systemctl is-active $svc)"; done'
+ssh 6v6-web 'for svc in apache2 wazuh-agent falco; do echo "$svc: $(systemctl is-active $svc)"; done'
 ```
 
 ### CTI → SIEM → IPS 자동화 파이프라인 (실무 표준)
@@ -973,7 +973,7 @@ for ind in c.indicator.list(first=1000):
 EOF
 
 # 2) nftables set 으로 자동 적용
-ssh ccc@10.20.30.1 << 'EOF'
+ssh 6v6-fw << 'EOF'
 sudo nft flush set inet filter cti_blocklist
 while read ip; do
   sudo nft add element inet filter cti_blocklist "{ $ip }"

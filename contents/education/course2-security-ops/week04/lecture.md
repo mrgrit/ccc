@@ -131,7 +131,7 @@ Suricata는 IDS와 IPS 모드를 모두 지원한다.
 > **실전 활용**: 네트워크 보안 엔지니어의 핵심 업무는 IPS 룰셋 관리와 오탐 조정이다
 
 ```bash
-ssh ccc@10.20.30.1
+ssh 6v6-fw
 ```
 
 ### 3.1 Suricata 설치 확인
@@ -642,7 +642,7 @@ Week 05에서는 Suricata 룰을 직접 작성한다:
 
 ### 학생 환경 준비
 ```bash
-ssh ccc@10.20.30.1
+ssh 6v6-fw
 sudo apt install -y suricata suricata-update jq
 sudo suricata-update                                  # 룰 다운로드
 sudo systemctl enable --now suricata

@@ -115,7 +115,7 @@
 > **실전 활용**: 위협 인텔리전스 기반 선제 방어(Proactive Defense)는 APT 대응의 핵심 전략이다
 
 ```bash
-ssh ccc@10.20.30.100  # 비밀번호 자동입력 SSH
+ssh 6v6-siem  # 비밀번호 자동입력 SSH
 
 # API 토큰 설정 (대시보드에서 확인한 값)
 OPENCTI_TOKEN="your-api-token-here"
@@ -359,7 +359,7 @@ account-verify-now.example.com  # Phishing Domain #2
 **Step 2: Suricata 로그에서 IOC 검색**
 
 ```bash
-ssh ccc@10.20.30.1  # 비밀번호 자동입력 SSH
+ssh 6v6-fw  # 비밀번호 자동입력 SSH
 
 # Suricata 로그에서 C2 IP 검색
 echo 1 | sudo -S grep -E "203\.0\.113\.(10|11|12)" /var/log/suricata/eve.json | \
@@ -376,7 +376,7 @@ for line in sys.stdin:                                 # 반복문 시작
 **Step 3: Wazuh 로그에서 IOC 검색**
 
 ```bash
-ssh ccc@10.20.30.100  # 비밀번호 자동입력 SSH
+ssh 6v6-siem  # 비밀번호 자동입력 SSH
 
 echo 1 | sudo -S grep -E "203\.0\.113\.(10|11|12)" /var/ossec/logs/alerts/alerts.json | \
   python3 -c "                                         # Python 코드 실행
@@ -447,7 +447,7 @@ echo 1 | sudo -S conntrack -L 2>/dev/null | grep -cE "203\.0\.113\.(10|11|12)"
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-ssh ccc@10.20.30.1  # 비밀번호 자동입력 SSH
+ssh 6v6-fw  # 비밀번호 자동입력 SSH
 
 # OpenCTI IOC를 Suricata 룰로 변환
 echo 1 | sudo -S tee -a /etc/suricata/rules/local.rules << 'EOF'
@@ -485,10 +485,10 @@ echo 1 | sudo -S tail -5 /var/log/suricata/fast.log | grep "CTI - Lab-Lazarus"
 
 ```bash
 # Suricata 가 NFQUEUE inline mode 실행 중인지
-ssh ccc@10.20.30.1 "ps -ef | grep -E '\\bsuricata\\b' | grep -v grep | grep -oE '\\-q [0-9]+' || echo 'NFQUEUE 미연결 — alert only mode'"
+ssh 6v6-fw "ps -ef | grep -E '\\bsuricata\\b' | grep -v grep | grep -oE '\\-q [0-9]+' || echo 'NFQUEUE 미연결 — alert only mode'"
 # 룰을 drop 으로 승격 (4 IOC 신규 룰만)
-ssh ccc@10.20.30.1 "echo 1 | sudo -S sed -i 's/^alert ip \\\$HOME_NET any -> 203\\.0\\.113/drop ip \$HOME_NET any -> 203.0.113/g' /etc/suricata/rules/local.rules"
-ssh ccc@10.20.30.1 "echo 1 | sudo -S grep -cE '^drop ip.*203\\.0\\.113' /etc/suricata/rules/local.rules"
+ssh 6v6-fw "echo 1 | sudo -S sed -i 's/^alert ip \\\$HOME_NET any -> 203\\.0\\.113/drop ip \$HOME_NET any -> 203.0.113/g' /etc/suricata/rules/local.rules"
+ssh 6v6-fw "echo 1 | sudo -S grep -cE '^drop ip.*203\\.0\\.113' /etc/suricata/rules/local.rules"
 ```
 
 **예상 출력**:
@@ -539,7 +539,7 @@ table inet filter {
 ### 6.3 Wazuh CDB List로 변환
 
 ```bash
-ssh ccc@10.20.30.100
+ssh 6v6-siem
 
 # CDB 리스트 생성
 echo 1 | sudo -S tee /var/ossec/etc/lists/cti-malicious-ips << 'EOF'
@@ -818,7 +818,7 @@ dataset 의 graph metadata:
 
 ### 학생 환경 준비
 ```bash
-ssh ccc@10.20.30.100
+ssh 6v6-siem
 pip3 install pycti pymisp yara-python
 
 # YARA rule store

@@ -158,7 +158,7 @@ graph TD
 > **실전 활용**: SOC 구축 시 SIEM 플랫폼 설치와 에이전트 배포가 첫 번째 단계이다
 
 ```bash
-ssh ccc@10.20.30.100
+ssh 6v6-siem
 ```
 
 ### 3.2 Wazuh 서비스 상태 확인
@@ -354,7 +354,7 @@ curl -s -k -X POST "https://10.20.30.100:55000/agents" \
 secu 서버에 접속하여 Agent를 설정:
 
 ```bash
-ssh ccc@10.20.30.1
+ssh 6v6-fw
 
 # Agent 설치 확인
 echo 1 | sudo -S /var/ossec/bin/wazuh-control info
@@ -389,7 +389,7 @@ echo 1 | sudo -S systemctl status wazuh-agent
 
 ```bash
 # siem 서버에서
-ssh ccc@10.20.30.100  # 비밀번호 자동입력 SSH
+ssh 6v6-siem  # 비밀번호 자동입력 SSH
 
 echo 1 | sudo -S /var/ossec/bin/agent_control -l
 ```
@@ -505,7 +505,7 @@ Suricata의 eve.json을 Wazuh가 수집하도록 설정:
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-ssh ccc@10.20.30.1  # 비밀번호 자동입력 SSH
+ssh 6v6-fw  # 비밀번호 자동입력 SSH
 
 # ossec.conf에 Suricata 로그 수집 추가
 echo 1 | sudo -S tee -a /var/ossec/etc/ossec.conf << 'XMLEOF'
@@ -527,7 +527,7 @@ echo 1 | sudo -S systemctl restart wazuh-agent
 
 ```bash
 # siem 서버에서 Suricata 알림 확인
-ssh ccc@10.20.30.100  # 비밀번호 자동입력 SSH
+ssh 6v6-siem  # 비밀번호 자동입력 SSH
 
 echo 1 | sudo -S cat /var/ossec/logs/alerts/alerts.json | \
   python3 -c "                                         # Python 코드 실행
@@ -771,11 +771,11 @@ dataset 으로부터 학생이 본인 Wazuh setup 에 *반드시 활성* 해야 
 
 ### 학생 환경 준비
 ```bash
-ssh ccc@10.20.30.100   # siem VM (Wazuh 이미 설치됨)
+ssh 6v6-siem   # siem VM (Wazuh 이미 설치됨)
 systemctl status wazuh-manager wazuh-indexer wazuh-dashboard
 
 # Wazuh agent 설치 — 다른 VM 들에서
-ssh ccc@10.20.30.80    # web VM
+ssh 6v6-web    # web VM
 curl -s https://packages.wazuh.com/key/GPG-KEY-WAZUH | sudo apt-key add -
 echo "deb https://packages.wazuh.com/4.x/apt/ stable main" | sudo tee /etc/apt/sources.list.d/wazuh.list
 sudo apt update && sudo apt install -y wazuh-agent

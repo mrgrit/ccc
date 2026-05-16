@@ -178,7 +178,7 @@ OpenCTI는 오픈소스 위협 인텔리전스 플랫폼이다.
 > **실전 활용**: 대형 SOC에서 위협 인텔리전스 플랫폼은 탐지 룰 최신화와 사전 방어의 핵심 인프라이다
 
 ```bash
-ssh ccc@10.20.30.100
+ssh 6v6-siem
 ```
 
 ### 4.1 OpenCTI 상태 확인
@@ -715,7 +715,7 @@ print(bundle.serialize())
 
 ### 학생 환경 준비
 ```bash
-ssh ccc@10.20.30.100   # OpenCTI 이미 설치
+ssh 6v6-siem   # OpenCTI 이미 설치
 systemctl status opencti
 
 # 클라이언트

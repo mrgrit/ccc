@@ -72,8 +72,8 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| secu | 10.20.30.1 | 방화벽 + IPS | `ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | WAF + 웹 앱 | `ssh ccc@10.20.30.80` |
+| secu | 10.20.30.1 | 방화벽 + IPS | `ssh 6v6-fw` |
+| web | 10.20.30.80 | WAF + 웹 앱 | `ssh 6v6-web` |
 
 ---
 
@@ -109,7 +109,7 @@ secu 서버에 다음 조건의 방화벽을 구성하라.
 > **실전 활용**: 보안 장비 긴급 구성은 실무에서 보안 사고 대응 시 시간 압박 속에 수행해야 하는 핵심 기술이다
 
 ```bash
-ssh ccc@10.20.30.1  # 비밀번호 자동입력 SSH
+ssh 6v6-fw  # 비밀번호 자동입력 SSH
 
 # 테이블 및 체인 생성
 echo 1 | sudo -S nft add table inet exam_filter
@@ -241,7 +241,7 @@ sysctl net.ipv4.ip_forward
 # 3. DNAT 동작 — 외부에서 secu:8080 호출 → web:80 응답 받기
 curl -s -o /dev/null --max-time 3 -w "DNAT(8080→web:80): HTTP=%{http_code} time=%{time_total}s\n" http://10.20.30.1:8080/
 # 4. SNAT 검증 — web 서버 access.log 의 src IP = secu(10.20.30.1) 인지
-ssh ccc@10.20.30.80 "tail -1 /var/log/apache2/access.log" | awk '{print "web 본 src IP:", $1}'
+ssh 6v6-web "tail -1 /var/log/apache2/access.log" | awk '{print "web 본 src IP:", $1}'
 ```
 
 **예상 출력**:
@@ -278,7 +278,7 @@ web 본 src IP: 10.20.30.1
 **정답 예시:**
 
 ```bash
-ssh ccc@10.20.30.1  # 비밀번호 자동입력 SSH
+ssh 6v6-fw  # 비밀번호 자동입력 SSH
 
 echo 1 | sudo -S tee /etc/suricata/rules/local.rules << 'EOF'
 # 1. 디렉터리 트래버설
@@ -417,7 +417,7 @@ echo 1 | sudo -S grep "kernel_drops" /var/log/suricata/stats.log | tail -1
 # fail-open이 아니면 → Suricata 정지 시 트래픽 차단
 
 # 3. Apache+ModSecurity 확인
-ssh ccc@10.20.30.80
+ssh 6v6-web
 systemctl is-active apache2
 echo 1 | sudo -S apache2ctl -M 2>/dev/null | grep security
 # security2_module이 로드되어 있으면 ModSecurity 정상
@@ -434,7 +434,7 @@ echo 1 | sudo -S nft list ruleset | grep -E "dport (80|443)" | head -3
 echo 1 | sudo -S systemctl is-active suricata
 echo 1 | sudo -S grep "capture.kernel_drops" /var/log/suricata/stats.log | tail -1
 # 3. Apache + ModSecurity — security2 module + WAF block 테스트
-ssh ccc@10.20.30.80 "systemctl is-active apache2 && apache2ctl -M 2>/dev/null | grep security2"
+ssh 6v6-web "systemctl is-active apache2 && apache2ctl -M 2>/dev/null | grep security2"
 curl -s -o /dev/null -w "WAF SQLi 테스트: %{http_code}\n" "http://10.20.30.80:8082/?id=1%27+OR+1%3D1--"
 ```
 
@@ -475,7 +475,7 @@ WAF SQLi 테스트: 403
 
 ```bash
 # 시험 설정 제거
-ssh ccc@10.20.30.1  # 비밀번호 자동입력 SSH
+ssh 6v6-fw  # 비밀번호 자동입력 SSH
 echo 1 | sudo -S nft delete table inet exam_filter 2>/dev/null
 echo 1 | sudo -S nft delete table inet exam_nat 2>/dev/null
 echo 1 | sudo -S sed -i '/EXAM/d' /etc/suricata/rules/local.rules 2>/dev/null
@@ -651,8 +651,8 @@ sudo evebox-cli --addr http://localhost:5636 alerts                        # 콘
 ### 시나리오 1 검증 — Nikto 알람 트리거 결과
 
 ```bash
-ssh ccc@10.20.30.1 "echo 1 | sudo -S jq -r 'select(.event_type==\"alert\") | [.timestamp, .alert.signature_id, .alert.signature, .src_ip] | @tsv' /var/log/suricata/eve.json | tail -3"
-ssh ccc@10.20.30.1 "echo 1 | sudo -S grep 'EXAM' /var/log/suricata/fast.log | wc -l"
+ssh 6v6-fw "echo 1 | sudo -S jq -r 'select(.event_type==\"alert\") | [.timestamp, .alert.signature_id, .alert.signature, .src_ip] | @tsv' /var/log/suricata/eve.json | tail -3"
+ssh 6v6-fw "echo 1 | sudo -S grep 'EXAM' /var/log/suricata/fast.log | wc -l"
 ```
 
 **예상 출력**:

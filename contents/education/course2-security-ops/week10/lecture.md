@@ -98,7 +98,7 @@
 > **실전 활용**: 조직 환경에 특화된 탐지 룰 작성은 SIEM 운영의 핵심이며, 미탐을 줄이는 핵심 방법이다
 
 ```bash
-ssh ccc@10.20.30.100
+ssh 6v6-siem
 ```
 
 ---
@@ -581,7 +581,7 @@ for line in sys.stdin:                                 # 반복문 시작
 # 시나리오 A: root SSH 직접 로그인 (rule 100001)
 ssh -o StrictHostKeyChecking=no root@10.20.30.100 "exit" 2>/dev/null || true
 # 시나리오 B: 위험 sudo 명령 (rule 100004) — 안전한 dry-run
-ssh ccc@10.20.30.100 "echo 1 | sudo -S /bin/echo 'rm -rf /tmp/dummy'" 2>/dev/null
+ssh 6v6-siem "echo 1 | sudo -S /bin/echo 'rm -rf /tmp/dummy'" 2>/dev/null
 sleep 3
 # alerts.json 에서 100001 / 100004 매칭만 추출 — 최근 60s
 echo 1 | sudo -S jq -r --arg since "$(date -u -d '60 sec ago' +%FT%TZ)" \
@@ -843,7 +843,7 @@ rule.id >= 100000
 
 ### 학생 환경 준비
 ```bash
-ssh ccc@10.20.30.100
+ssh 6v6-siem
 
 # Sigma (모든 SIEM 호환 시그니처 표준)
 pip3 install pysigma pysigma-backend-elasticsearch

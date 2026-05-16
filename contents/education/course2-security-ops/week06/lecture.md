@@ -95,7 +95,7 @@
 > **실전 활용**: SOC 운영에서 오탐 관리(Alert Fatigue 방지)는 IPS 운영의 가장 큰 과제이다
 
 ```bash
-ssh ccc@10.20.30.1
+ssh 6v6-fw
 ```
 
 ---

@@ -72,9 +72,9 @@
 
 | 서버 | IP | 접속 |
 |------|-----|------|
-| secu | 10.20.30.1 | `ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | `ssh ccc@10.20.30.100` |
+| secu | 10.20.30.1 | `ssh 6v6-fw` |
+| web | 10.20.30.80 | `ssh 6v6-web` |
+| siem | 10.20.30.100 | `ssh 6v6-siem` |
 
 **전제 조건**: 시험 시작 시 모든 보안 설정이 초기화되어 있다. 처음부터 구축해야 한다.
 
@@ -111,7 +111,7 @@ secu 서버에 **화이트리스트 정책** 방화벽을 구축하라.
 > **실전 활용**: 신규 서비스 런칭 시 보안 인프라를 설계하고 구축하는 것은 보안 엔지니어의 핵심 역할이다
 
 ```bash
-ssh ccc@10.20.30.1  # 비밀번호 자동입력 SSH
+ssh 6v6-fw  # 비밀번호 자동입력 SSH
 
 echo 1 | sudo -S nft add table inet final_filter
 
@@ -313,7 +313,7 @@ echo 1 | sudo -S tail -10 /var/log/suricata/fast.log
 secu, web 서버의 Wazuh Agent가 Manager에 연결되어 있는지 확인하라. 연결이 끊어져 있으면 복구하라.
 
 ```bash
-ssh ccc@10.20.30.100  # 비밀번호 자동입력 SSH
+ssh 6v6-siem  # 비밀번호 자동입력 SSH
 
 echo 1 | sudo -S /var/ossec/bin/agent_control -l
 ```
@@ -329,7 +329,7 @@ echo 1 | sudo -S /var/ossec/bin/agent_control -l
 **정답 예시:**
 
 ```bash
-ssh ccc@10.20.30.100  # 비밀번호 자동입력 SSH
+ssh 6v6-siem  # 비밀번호 자동입력 SSH
 
 echo 1 | sudo -S tee /var/ossec/etc/rules/local_rules.xml << 'EOF'
 <group name="final_exam,">
@@ -404,7 +404,7 @@ secu 서버에서 다음 경로를 FIM 실시간 감시하도록 설정하라:
 - `/etc/suricata/rules/`
 
 ```bash
-ssh ccc@10.20.30.1  # 비밀번호 자동입력 SSH
+ssh 6v6-fw  # 비밀번호 자동입력 SSH
 
 # ossec.conf에 syscheck 추가 (기존 설정에 병합)
 echo 1 | sudo -S tee -a /var/ossec/etc/ossec.conf << 'FEOF'
@@ -425,7 +425,7 @@ echo 1 | sudo -S systemctl restart wazuh-agent
 SSH 브루트포스(Rule 5712) 탐지 시 공격자 IP를 10분간 자동 차단하도록 Active Response를 설정하라.
 
 ```bash
-ssh ccc@10.20.30.100  # 비밀번호 자동입력 SSH
+ssh 6v6-siem  # 비밀번호 자동입력 SSH
 
 # ossec.conf에 Active Response 추가
 echo 1 | sudo -S tee -a /var/ossec/etc/ossec.conf << 'AREOF'
@@ -523,7 +523,7 @@ STIXEOF
 
 ```bash
 # 1. Suricata 룰
-ssh ccc@10.20.30.1  # 비밀번호 자동입력 SSH
+ssh 6v6-fw  # 비밀번호 자동입력 SSH
 
 echo 1 | sudo -S tee -a /etc/suricata/rules/local.rules << 'EOF'
 alert ip $HOME_NET any -> 198.51.100.10 any (msg:"FINAL-CTI: APT C2 #1"; sid:9600001; rev:1; classtype:trojan-activity;)
@@ -539,7 +539,7 @@ echo 1 | sudo -S nft insert rule inet final_filter input ip saddr @cti_block dro
 echo 1 | sudo -S nft insert rule inet final_filter output ip daddr @cti_block drop
 
 # 3. Wazuh CDB
-ssh ccc@10.20.30.100  # 비밀번호 자동입력 SSH
+ssh 6v6-siem  # 비밀번호 자동입력 SSH
 echo 1 | sudo -S tee /var/ossec/etc/lists/final-cti-ips << 'EOF'
 198.51.100.10:APT-C2-1
 198.51.100.20:APT-C2-2
@@ -547,9 +547,9 @@ EOF
 
 # 3 시스템 통합 검증
 echo "[Suricata]"
-ssh ccc@10.20.30.1 "echo 1 | sudo -S grep -c 'sid:96000' /etc/suricata/rules/local.rules"
+ssh 6v6-fw "echo 1 | sudo -S grep -c 'sid:96000' /etc/suricata/rules/local.rules"
 echo "[nftables set]"
-ssh ccc@10.20.30.1 "echo 1 | sudo -S nft list set inet final_filter cti_block | grep -c '198.51.100'"
+ssh 6v6-fw "echo 1 | sudo -S nft list set inet final_filter cti_block | grep -c '198.51.100'"
 echo "[Wazuh CDB]"
 echo 1 | sudo -S wc -l /var/ossec/etc/lists/final-cti-ips
 echo "[CDB 컴파일 — Wazuh]"
@@ -600,15 +600,15 @@ curl -s --connect-timeout 3 "http://198.51.100.10/" > /dev/null 2>&1
 # 5 layer 동시 검증 (10 점 채점 항목)
 sleep 5
 echo "[1] nftables C2 차단:"
-ssh ccc@10.20.30.1 "echo 1 | sudo -S nft list set inet final_filter cti_block 2>/dev/null | grep -c '198.51.100.10'"
+ssh 6v6-fw "echo 1 | sudo -S nft list set inet final_filter cti_block 2>/dev/null | grep -c '198.51.100.10'"
 echo "[2] Suricata SQLi:"
-ssh ccc@10.20.30.1 "echo 1 | sudo -S grep -c '9500001:1' /var/log/suricata/fast.log"
+ssh 6v6-fw "echo 1 | sudo -S grep -c '9500001:1' /var/log/suricata/fast.log"
 echo "[3] Suricata XSS:"
-ssh ccc@10.20.30.1 "echo 1 | sudo -S grep -c '9500002:1' /var/log/suricata/fast.log"
+ssh 6v6-fw "echo 1 | sudo -S grep -c '9500002:1' /var/log/suricata/fast.log"
 echo "[4] Apache+ModSec 403:"
-ssh ccc@10.20.30.80 "echo 1 | sudo -S grep -c 'HTTP/1.1\" 403' /var/log/apache2/access.log 2>/dev/null"
+ssh 6v6-web "echo 1 | sudo -S grep -c 'HTTP/1.1\" 403' /var/log/apache2/access.log 2>/dev/null"
 echo "[5] Wazuh 알림:"
-ssh ccc@10.20.30.100 "echo 1 | sudo -S jq -r --arg since '$(date -u -d '60 sec ago' +%FT%TZ)' \
+ssh 6v6-siem "echo 1 | sudo -S jq -r --arg since '$(date -u -d '60 sec ago' +%FT%TZ)' \
   'select(.timestamp>\$since) | select(.rule.level>=7) | .rule.id' /var/ossec/logs/alerts/alerts.json | wc -l"
 ```
 
@@ -720,7 +720,7 @@ cat /tmp/final_incident_report.txt
 
 ```bash
 # secu 서버 정리
-ssh ccc@10.20.30.1 << 'CLEANUP'  # 비밀번호 자동입력 SSH
+ssh 6v6-fw << 'CLEANUP'  # 비밀번호 자동입력 SSH
 echo 1 | sudo -S nft delete table inet final_filter 2>/dev/null
 echo 1 | sudo -S nft delete table inet final_nat 2>/dev/null
 echo 1 | sudo -S nft delete table inet final_ips 2>/dev/null
@@ -729,7 +729,7 @@ echo 1 | sudo -S kill -USR2 $(pidof suricata) 2>/dev/null
 CLEANUP
 
 # siem 서버 정리
-ssh ccc@10.20.30.100 << 'CLEANUP2'  # 비밀번호 자동입력 SSH
+ssh 6v6-siem << 'CLEANUP2'  # 비밀번호 자동입력 SSH
 echo 1 | sudo -S cp /var/ossec/etc/rules/local_rules.xml /tmp/local_rules_backup.xml
 CLEANUP2
 ```
@@ -1015,7 +1015,7 @@ dataset 의 4-layer 익명화 (regex + format + NER + Claude review) 가 *학생
 
 ```bash
 # 1. 방화벽 layer (secu VM)
-ssh ccc@10.20.30.1
+ssh 6v6-fw
 sudo apt install -y nftables fail2ban crowdsec
 sudo nft -f /etc/nftables.conf                                      # 룰 적용
 sudo systemctl enable --now nftables fail2ban crowdsec
@@ -1026,13 +1026,13 @@ sudo suricata-update
 sudo systemctl enable --now suricata
 
 # 3. WAF layer (web VM)
-ssh ccc@10.20.30.80
+ssh 6v6-web
 sudo apt install -y libapache2-mod-security2 modsecurity-crs
 sudo a2enmod security2 headers
 sudo systemctl restart apache2
 
 # 4. SIEM layer (siem VM)
-ssh ccc@10.20.30.100
+ssh 6v6-siem
 # Wazuh 설치 (이미)
 systemctl status wazuh-manager wazuh-indexer wazuh-dashboard
 
