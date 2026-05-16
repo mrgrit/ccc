@@ -16,18 +16,24 @@
 - npm 기초 (`package.json`, `node_modules`)
 - CI/CD 개념
 
-## 실습 환경 (본 과정 공통)
+## 실습 환경 (6v6 4-tier, 본 과정 공통)
 
-| 호스트 | IP | 역할 |
-|--------|-----|------|
-| bastion | 10.20.30.201 | Blue Agent · 관제 |
-| secu | 10.20.30.1 | 방화벽/IPS · 네트워크 관찰 |
-| web | 10.20.30.80 | 공격 표적 · CI runner 역할 |
-| siem | 10.20.30.100 | Wazuh · OpenCTI |
-| registry | 10.20.30.150 (new) | 내부 PyPI/npm 레지스트리 모사 (devpi·verdaccio) |
-| attacker | 강사 PC | Claude Code 공격 세션 |
+학생 PC 의 `~/.ssh/config` 의 ProxyJump 설정 후 `ssh 6v6-<name>` 으로 접속.
 
-**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+| 컨테이너 | 6v6 IP | 역할 | 접속 |
+|---------|--------|------|------|
+| bastion | 10.20.30.201 | Blue Agent · 관제 | `ssh 6v6-bastion` (pw: ccc) |
+| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext · 네트워크 관찰 | `ssh 6v6-fw` |
+| web | 10.20.32.80 | 공격 표적 · CI runner 역할 (Apache + JuiceShop) | `ssh 6v6-web` |
+| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
+| attacker | 10.20.30.202 | Claude Code 공격 세션 (pen-test 13 종) | `ssh 6v6-attacker` |
+
+> **registry 부재 처리.** 6v6 표준 16 컨테이너 에는 별도 registry 가 없으므로, 본 과목 의
+> "내부 PyPI/npm 레지스트리" 실습 은 `web` 컨테이너 위 에 devpi (3141 포트) 또는
+> verdaccio (4873) 를 추가 띄워 모사 한다. lab YAML 의 setup 단계 참고.
+
+**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
+**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 > 본 과정은 매 주차 **동일 6단계 절차**를 따른다. 주차가 달라도 절차는 고정된다. 달라지는 것은 *공격 유형·시그니처·대응 지점*이다.
 

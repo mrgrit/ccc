@@ -16,17 +16,20 @@
 - 커리큘럼의 늦은 단계에 위치한다. 앞 과정이 비어 있으면 "에이전트"와 "침해 대응" 중 한쪽이 공허해진다.
 - 읽기 자료(사전): CSA *Mythos-ready CISO Playbook* 요약(또는 본 교안의 Part 2 참고)
 
-## 실습 환경 (공통)
+## 실습 환경 (6v6 4-tier, 공통)
 
-| 호스트 | IP | 역할 | 접속 |
-|--------|-----|------|------|
-| bastion | 10.20.30.201 | **Blue Agent(방어자)** 자기 자신 — 관제·대응·스킬 운영 | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) — Bastion이 조종 | `ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | **공격 표적** — JuiceShop, Apache, 업로드 폼 | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh, OpenCTI) — Blue의 감각기관 | `ssh ccc@10.20.30.100` |
-| attacker | 교육자 PC | **공격 에이전트(Red)** 세션 — Claude Code 포함 | 강사 운영 |
+학생 PC 의 `~/.ssh/config` 의 ProxyJump 설정 후 `ssh 6v6-<name>` 으로 접속.
 
-**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+| 컨테이너 | 6v6 IP | 역할 | 접속 |
+|---------|--------|------|------|
+| bastion | 10.20.30.201 | **Blue Agent(방어자)** 자기 자신 — 관제·대응·스킬 운영 | `ssh 6v6-bastion` (pw: ccc) |
+| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext — Bastion 이 조종 | `ssh 6v6-fw` |
+| web | 10.20.32.80 | **공격 표적** — Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
+| siem | 10.20.32.100 | Wazuh manager — Blue 의 감각기관 | `ssh 6v6-siem` |
+| attacker | 10.20.30.202 | **공격 에이전트(Red)** 세션 — pen-test 도구 13 종 | `ssh 6v6-attacker` |
+
+**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
+**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 > **중요한 경고.** 본 과목의 공격 실습은 위 네트워크 `10.20.30.0/24` **외부**로 나가선 안 된다. 학생이 공격 에이전트를 직접 조작할 때(w3 이후) 강사는 시스템 프롬프트에 이 제약을 명시하고, 에이전트에게 주어지는 Bash 실행 권한을 기본값으로 "bypass 없이 확인"으로 둔다.
 
