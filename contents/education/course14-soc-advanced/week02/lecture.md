@@ -397,7 +397,7 @@ Rule 86601-86700        Rule 88001-88100        Rule 5501-5600
 
 ```bash
 # siem 서버 접속
-ssh ccc@10.20.30.100
+ssh 6v6-siem
 
 # 커스텀 룰 파일 백업
 sudo cp /var/ossec/etc/rules/local_rules.xml \
@@ -463,7 +463,7 @@ echo "Exit code: $?"
 # (siem 서버의 Wazuh가 탐지하도록)
 
 # 먼저 siem에서 Wazuh 재시작 (새 룰 적용)
-ssh ccc@10.20.30.100 "sudo systemctl restart wazuh-manager"
+ssh 6v6-siem "sudo systemctl restart wazuh-manager"
 
 # 5초 대기
 sleep 5
@@ -481,7 +481,7 @@ echo "=== 시뮬레이션 완료, 경보 확인 중... ==="
 sleep 3
 
 # siem에서 경보 확인
-ssh ccc@10.20.30.100 << 'EOF'
+ssh 6v6-siem << 'EOF'
 echo "=== 최근 SSH 관련 경보 ==="
 tail -50 /var/ossec/logs/alerts/alerts.log 2>/dev/null | \
   grep -A2 "Rule: 100" || echo "(커스텀 룰 경보 없음 - 기본 룰 확인)"
@@ -511,7 +511,7 @@ EOF
 
 ```bash
 # siem 서버에서 웹 공격 상관 룰 추가
-ssh ccc@10.20.30.100 << 'REMOTE'
+ssh 6v6-siem << 'REMOTE'
 
 # 웹 공격 상관 룰 추가
 sudo tee -a /var/ossec/etc/rules/local_rules.xml << 'RULES'
@@ -577,7 +577,7 @@ REMOTE
 ## 3.4 다중 소스 연계 룰 - Suricata + Wazuh
 
 ```bash
-ssh ccc@10.20.30.100 << 'REMOTE'
+ssh 6v6-siem << 'REMOTE'
 
 # 다중 소스 상관 룰
 sudo tee -a /var/ossec/etc/rules/local_rules.xml << 'RULES'
@@ -632,7 +632,7 @@ REMOTE
 
 ```bash
 # siem 서버에서 logtest 도구로 룰 매칭 검증
-ssh ccc@10.20.30.100 << 'EOF'
+ssh 6v6-siem << 'EOF'
 
 # 테스트 로그 입력으로 룰 매칭 확인
 echo 'Apr  4 10:15:23 web sshd[12345]: Failed password for invalid user admin from 192.168.1.100 port 54321 ssh2' | \
@@ -656,7 +656,7 @@ EOF
 
 ```bash
 # 최근 경보에서 오탐 패턴 분석
-ssh ccc@10.20.30.100 << 'EOF'
+ssh 6v6-siem << 'EOF'
 echo "=== 최근 24시간 경보 Rule ID 분포 ==="
 cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | \
   python3 -c "
@@ -709,7 +709,7 @@ EOF
 
 ```bash
 # 룰 매칭 성능 확인
-ssh ccc@10.20.30.100 << 'EOF'
+ssh 6v6-siem << 'EOF'
 echo "=== Wazuh 분석 엔진 상태 ==="
 sudo /var/ossec/bin/wazuh-analysisd -s 2>/dev/null | head -30
 
@@ -1041,7 +1041,7 @@ graph LR
 
 ```bash
 # === [s1·s2] Wazuh 룰 분석 ===
-ssh ccc@10.20.30.100
+ssh 6v6-siem
 sudo ls /var/ossec/ruleset/rules/ | head -20
 # 0010-rules_config.xml
 # 0015-ossec_rules.xml
@@ -1233,7 +1233,7 @@ sudo /var/ossec/bin/wazuh-control restart
 sudo tail -f /var/ossec/logs/alerts/alerts.log | grep "100101"
 
 # === 시뮬레이션 ===
-ssh ccc@10.20.30.112 'nmap -sS -p 1-100 10.20.30.80'
+ssh 6v6-attacker 'nmap -sS -p 1-100 10.20.30.80'
 sleep 30
 sudo grep "100101" /var/ossec/logs/alerts/alerts.log | tail -5
 ```
@@ -1292,8 +1292,8 @@ cat > /tmp/kill-chain-rules.md << 'MD'
 MD
 
 # Atomic Red Team 으로 시뮬 + 룰 검증
-ssh ccc@10.20.30.112 'for i in {1..10}; do sshpass -p wrong ssh ccc@10.20.30.80 ls 2>/dev/null; done'
-ssh ccc@10.20.30.112 'nmap -sS -p 1-100 --max-rate 100 10.20.30.80'
+ssh 6v6-attacker 'for i in {1..10}; do sshpass -p wrong ssh 6v6-web ls 2>/dev/null; done'
+ssh 6v6-attacker 'nmap -sS -p 1-100 --max-rate 100 10.20.30.80'
 sudo cat /etc/shadow > /dev/null
 ```
 

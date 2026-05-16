@@ -115,7 +115,7 @@ echo "  Manager API: HTTP $HTTP_CODE"
 
 echo ""
 echo "=== Wazuh ==="
-ssh ccc@10.20.30.100 \
+ssh 6v6-siem \
   "systemctl is-active wazuh-manager 2>/dev/null" 2>/dev/null || echo "  (확인 필요)"
 ```
 
@@ -133,7 +133,7 @@ echo "============================================"
 echo "  [Tier 1] 경보 모니터링"
 echo "============================================"
 
-ssh ccc@10.20.30.100 << 'REMOTE'
+ssh 6v6-siem << 'REMOTE'
 echo "=== 최근 경보 (최신 20건) ==="
 tail -20 /var/ossec/logs/alerts/alerts.log 2>/dev/null | \
   grep "Rule:" | while read line; do
@@ -194,7 +194,7 @@ sleep 3
 # 경보 재확인
 echo ""
 echo "=== [Tier 1] 트리아지 ==="
-ssh ccc@10.20.30.100 \
+ssh 6v6-siem \
   "tail -10 /var/ossec/logs/alerts/alerts.log 2>/dev/null" 2>/dev/null | tail -10
 
 echo ""
@@ -1048,11 +1048,11 @@ graph LR
 
 ```bash
 echo "=== Week 01: Wazuh / Suricata / nft ==="
-ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-control status'
-ssh ccc@10.20.30.1 'suricata -V; sudo nft list ruleset | head'
+ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control status'
+ssh 6v6-fw 'suricata -V; sudo nft list ruleset | head'
 
 echo "=== Week 02: Custom rules ==="
-ssh ccc@10.20.30.100 'sudo grep -c "<rule" /var/ossec/etc/rules/local_rules.xml'
+ssh 6v6-siem 'sudo grep -c "<rule" /var/ossec/etc/rules/local_rules.xml'
 
 echo "=== Week 03: SIGMA ==="
 sigma --version; ls ~/sigma-rules/rules/ 2>/dev/null
@@ -1083,7 +1083,7 @@ echo "=== Week 11: IR ==="
 ls /var/log/forensics/ 2>/dev/null
 
 echo "=== Week 12: 로그 엔지니어링 ==="
-ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-stats -m'
+ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-stats -m'
 
 echo "=== Week 13: Purple Team ==="
 ls /tmp/atomic/atomics/ 2>/dev/null
@@ -1105,11 +1105,11 @@ curl -sk -H "Authorization: Bearer $TOKEN" "https://10.20.30.100:55000/agents/su
 curl -sk -H "Authorization: Bearer $TOKEN" "https://10.20.30.100:55000/rules?filename=local_rules.xml&limit=1" | jq '.data.total_affected_items'
 
 # Suricata
-ssh ccc@10.20.30.1 'suricata -V; sudo suricatasc -c uptime; sudo suricatasc -c rules-stats'
+ssh 6v6-fw 'suricata -V; sudo suricatasc -c uptime; sudo suricatasc -c rules-stats'
 
 # nftables
-ssh ccc@10.20.30.1 'sudo nft list ruleset'
-ssh ccc@10.20.30.1 'sudo nft list counter inet filter input_dropped 2>/dev/null'
+ssh 6v6-fw 'sudo nft list ruleset'
+ssh 6v6-fw 'sudo nft list counter inet filter input_dropped 2>/dev/null'
 
 # OpenSearch
 curl -sk -u admin:admin "https://10.20.30.100:9200/_cluster/health" | jq
@@ -1142,8 +1142,8 @@ MD
 #### 도구 2: 시나리오 1 — 외부 공격 (Step 2)
 
 ```bash
-ssh ccc@10.20.30.1 'sudo jq -c "select(.event_type==\"alert\" and .alert.category | test(\"web\"; \"i\"))" /var/log/suricata/eve.json | tail -20'
-ssh ccc@10.20.30.1 'sudo jq -r "select(.event_type==\"alert\") | .src_ip" /var/log/suricata/eve.json | sort | uniq -c | sort -rn | head -10'
+ssh 6v6-fw 'sudo jq -c "select(.event_type==\"alert\" and .alert.category | test(\"web\"; \"i\"))" /var/log/suricata/eve.json | tail -20'
+ssh 6v6-fw 'sudo jq -r "select(.event_type==\"alert\") | .src_ip" /var/log/suricata/eve.json | sort | uniq -c | sort -rn | head -10'
 
 curl -sk -u admin:admin "https://10.20.30.100:9200/wazuh-alerts-*/_search" -H "Content-Type: application/json" -d '{
   "size": 50,
@@ -1183,17 +1183,17 @@ MD
 
 ```bash
 # 1. nft 차단
-ssh ccc@10.20.30.1 'sudo nft add rule inet filter input ip saddr 192.168.1.50 drop counter comment "scenario1-block"'
+ssh 6v6-fw 'sudo nft add rule inet filter input ip saddr 192.168.1.50 drop counter comment "scenario1-block"'
 
 # 2. Suricata 추가 룰
-ssh ccc@10.20.30.1 'sudo tee -a /etc/suricata/rules/local.rules' << 'RULES'
+ssh 6v6-fw 'sudo tee -a /etc/suricata/rules/local.rules' << 'RULES'
 alert ip 192.168.1.50 any -> any any (msg:"BLOCKED IP — 192.168.1.50 still trying"; \
     sid:9999001; rev:1; classtype:trojan-activity;)
 RULES
-ssh ccc@10.20.30.1 'sudo suricatasc -c reload-rules'
+ssh 6v6-fw 'sudo suricatasc -c reload-rules'
 
 # 3. Wazuh 강화
-ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/rules/local_rules.xml' << 'XML'
+ssh 6v6-siem 'sudo tee -a /var/ossec/etc/rules/local_rules.xml' << 'XML'
 <rule id="100999" level="14">
   <if_sid>100200</if_sid>
   <srcip>192.168.1.50</srcip>
@@ -1202,15 +1202,15 @@ ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/rules/local_rules.xml' << 'XML'
   <options>alert_by_email</options>
 </rule>
 XML
-ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-control restart'
+ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control restart'
 
 # 4. WAF (week11)
-ssh ccc@10.20.30.80 'sudo a2enmod security2'
-ssh ccc@10.20.30.80 'sudo sed -i "s/SecRuleEngine DetectionOnly/SecRuleEngine On/" /etc/modsecurity/modsecurity.conf'
-ssh ccc@10.20.30.80 'sudo systemctl reload apache2'
+ssh 6v6-web 'sudo a2enmod security2'
+ssh 6v6-web 'sudo sed -i "s/SecRuleEngine DetectionOnly/SecRuleEngine On/" /etc/modsecurity/modsecurity.conf'
+ssh 6v6-web 'sudo systemctl reload apache2'
 
 # 5. 검증
-ssh ccc@10.20.30.1 'sudo nft list chain inet filter input | grep "scenario1-block"'
+ssh 6v6-fw 'sudo nft list chain inet filter input | grep "scenario1-block"'
 curl -s "http://10.20.30.80/search?q=' OR 1=1--" -o /dev/null -w "%{http_code}\n"
 # 403 (WAF) 또는 connection refused
 
@@ -1227,17 +1227,17 @@ curl -X PATCH "$THEHIVE/api/v1/case/$CASE_ID" \
 
 ```bash
 # Suricata flow
-ssh ccc@10.20.30.1 'sudo jq -c "select(.event_type==\"flow\" and .src_ip | startswith(\"10.20.30.\") and (.dest_ip | startswith(\"10.20.30.\") | not))" /var/log/suricata/eve.json | tail -20'
+ssh 6v6-fw 'sudo jq -c "select(.event_type==\"flow\" and .src_ip | startswith(\"10.20.30.\") and (.dest_ip | startswith(\"10.20.30.\") | not))" /var/log/suricata/eve.json | tail -20'
 
 # Zeek 대용량
-ssh ccc@10.20.30.1 'sudo zeek-cut id.orig_h id.resp_h id.resp_p orig_bytes resp_bytes < /var/log/zeek/conn.log | awk "$1 ~ /^10\.20\.30\./ && $2 !~ /^10\.20\.30\./ && ($4 > 10485760 || $5 > 10485760)" | head'
+ssh 6v6-fw 'sudo zeek-cut id.orig_h id.resp_h id.resp_p orig_bytes resp_bytes < /var/log/zeek/conn.log | awk "$1 ~ /^10\.20\.30\./ && $2 !~ /^10\.20\.30\./ && ($4 > 10485760 || $5 > 10485760)" | head'
 
 # 시스템 log 교차
-ssh ccc@10.20.30.80 'sudo ss -tunap | grep -v 127.0.0.1 | grep -v 10.20.30 | head'
-ssh ccc@10.20.30.80 'sudo grep -E "(curl|wget|nc -e|tar.*nc)" /home/*/.bash_history /root/.bash_history 2>/dev/null | tail'
+ssh 6v6-web 'sudo ss -tunap | grep -v 127.0.0.1 | grep -v 10.20.30 | head'
+ssh 6v6-web 'sudo grep -E "(curl|wget|nc -e|tar.*nc)" /home/*/.bash_history /root/.bash_history 2>/dev/null | tail'
 
 # 메모리 (week08)
-ssh ccc@10.20.30.80 'sudo cd /tmp/lime/src && sudo insmod lime-$(uname -r).ko "path=/tmp/mem.lime format=lime"'
+ssh 6v6-web 'sudo cd /tmp/lime/src && sudo insmod lime-$(uname -r).ko "path=/tmp/mem.lime format=lime"'
 scp ccc@10.20.30.80:/tmp/mem.lime /var/log/forensics/scenario2-mem.lime
 vol3 -f /var/log/forensics/scenario2-mem.lime linux.netstat | head
 
@@ -1325,29 +1325,29 @@ fake-bank.com:phishing
 IOC
 
 # Wazuh CDB
-ssh ccc@10.20.30.100 'sudo cat > /var/ossec/etc/lists/today-iocs' < /tmp/today-iocs.txt
-ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-make_cdb /var/ossec/etc/lists/today-iocs'
-ssh ccc@10.20.30.100 'sudo grep "today-iocs" /var/ossec/etc/ossec.conf || sudo sed -i "/<\/ruleset>/i \  <list>etc/lists/today-iocs<\/list>" /var/ossec/etc/ossec.conf'
+ssh 6v6-siem 'sudo cat > /var/ossec/etc/lists/today-iocs' < /tmp/today-iocs.txt
+ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-make_cdb /var/ossec/etc/lists/today-iocs'
+ssh 6v6-siem 'sudo grep "today-iocs" /var/ossec/etc/ossec.conf || sudo sed -i "/<\/ruleset>/i \  <list>etc/lists/today-iocs<\/list>" /var/ossec/etc/ossec.conf'
 
-ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/rules/local_rules.xml' << 'XML'
+ssh 6v6-siem 'sudo tee -a /var/ossec/etc/rules/local_rules.xml' << 'XML'
 <rule id="999100" level="14">
   <list field="srcip" lookup="address_match_key">etc/lists/today-iocs</list>
   <description>Today IOC match — known attacker</description>
   <mitre><id>T1071</id></mitre>
 </rule>
 XML
-ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-control restart'
+ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control restart'
 
 # Suricata reputation
-ssh ccc@10.20.30.1 'sudo cat > /etc/suricata/iprep/today.list' << 'REP'
+ssh 6v6-fw 'sudo cat > /etc/suricata/iprep/today.list' << 'REP'
 192.168.1.50,1,90
 192.168.1.51,1,85
 REP
-ssh ccc@10.20.30.1 'sudo cat > /etc/suricata/rules/today-iocs.rules' << 'RULES'
+ssh 6v6-fw 'sudo cat > /etc/suricata/rules/today-iocs.rules' << 'RULES'
 alert ip $HOME_NET any -> $EXTERNAL_NET any (msg:"Today IOC C2"; iprep:dst,c2,>,80; sid:9999100; rev:1;)
 alert dns $HOME_NET any -> any any (msg:"Today IOC phishing"; dns_query; content:"evil-c2.example"; nocase; sid:9999101; rev:1;)
 RULES
-ssh ccc@10.20.30.1 'sudo suricatasc -c reload-rules'
+ssh 6v6-fw 'sudo suricatasc -c reload-rules'
 
 # OpenCTI export (week05)
 python3 << 'PY'
@@ -1401,7 +1401,7 @@ curl -sk -u admin:admin "https://10.20.30.100:9200/wazuh-alerts-*/_search" -H 'C
 }" | jq '.hits.hits[]._source | {ts:.timestamp, sig:.data.alert.signature}'
 
 # Combo 룰 (week02 의 100600)
-ssh ccc@10.20.30.100 'sudo grep -A 8 "100600" /var/ossec/etc/rules/local_rules.xml'
+ssh 6v6-siem 'sudo grep -A 8 "100600" /var/ossec/etc/rules/local_rules.xml'
 ```
 
 #### 도구 8: KPI 측정 (Step 8)
@@ -1607,19 +1607,19 @@ echo "최종 보고서: /tmp/soc_final_report.pdf"
 #### Phase A — 환경 + 시나리오 (s1·s2·s3)
 
 ```bash
-ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-control status'
-ssh ccc@10.20.30.1 'sudo jq -r "select(.event_type==\"alert\") | .src_ip" /var/log/suricata/eve.json | sort | uniq -c | sort -rn | head'
-ssh ccc@10.20.30.1 'sudo nft add rule inet filter input ip saddr 192.168.1.50 drop counter'
+ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control status'
+ssh 6v6-fw 'sudo jq -r "select(.event_type==\"alert\") | .src_ip" /var/log/suricata/eve.json | sort | uniq -c | sort -rn | head'
+ssh 6v6-fw 'sudo nft add rule inet filter input ip saddr 192.168.1.50 drop counter'
 ```
 
 #### Phase B — 헌팅 + IOC + 교차 (s4·s5·s6·s7)
 
 ```bash
-ssh ccc@10.20.30.1 'sudo zeek-cut id.orig_h id.resp_h orig_bytes < /var/log/zeek/conn.log | awk "$3 > 10485760"'
+ssh 6v6-fw 'sudo zeek-cut id.orig_h id.resp_h orig_bytes < /var/log/zeek/conn.log | awk "$3 > 10485760"'
 sudo osqueryi << 'SQL'
 SELECT * FROM crontab; SELECT path, mtime FROM file WHERE path LIKE '/home/%/.bashrc';
 SQL
-ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-make_cdb /var/ossec/etc/lists/today-iocs'
+ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-make_cdb /var/ossec/etc/lists/today-iocs'
 ```
 
 #### Phase C — KPI + 재평가 + 보고 (s8·s9·s10)

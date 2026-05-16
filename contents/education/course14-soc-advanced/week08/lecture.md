@@ -1499,7 +1499,7 @@ vim /tmp/memory_forensics_report.txt
 pandoc /tmp/memory_forensics_report.txt -o /tmp/memory_forensics_report.pdf
 
 # 호스트 격리
-ssh ccc@10.20.30.80 'sudo iptables -P OUTPUT DROP && sudo iptables -P INPUT DROP'
+ssh 6v6-web 'sudo iptables -P OUTPUT DROP && sudo iptables -P INPUT DROP'
 ```
 
 #### Phase D — 통합 시나리오 (s99 multi_task)

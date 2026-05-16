@@ -178,7 +178,7 @@ Step 6: 기록
 ## 2.1 Active Response 기본 설정
 
 ```bash
-ssh ccc@10.20.30.100 << 'REMOTE'
+ssh 6v6-siem << 'REMOTE'
 
 echo "=== 현재 Active Response 설정 ==="
 sudo grep -A20 "active-response" /var/ossec/etc/ossec.conf 2>/dev/null | head -30
@@ -195,7 +195,7 @@ REMOTE
 ## 2.2 IP 차단 Active Response 구성
 
 ```bash
-ssh ccc@10.20.30.100 << 'REMOTE'
+ssh 6v6-siem << 'REMOTE'
 
 # 커스텀 IP 차단 스크립트 생성
 sudo tee /var/ossec/active-response/bin/block_ip.sh << 'SCRIPT'
@@ -250,7 +250,7 @@ REMOTE
 
 ```bash
 # Active Response 로그 확인
-ssh ccc@10.20.30.100 << 'REMOTE'
+ssh 6v6-siem << 'REMOTE'
 echo "=== Active Response 로그 ==="
 tail -20 /var/ossec/logs/active-responses.log 2>/dev/null || echo "(로그 없음)"
 
@@ -1130,7 +1130,7 @@ docker pull strangebee/thehive:5.2 thehiveproject/cortex:3.1
 docker compose up -d
 
 # === [s4·s10] Wazuh AR ===
-ssh ccc@10.20.30.100 'sudo ls /var/ossec/active-response/bin/'
+ssh 6v6-siem 'sudo ls /var/ossec/active-response/bin/'
 
 # === [s6] enrichment ===
 pip install --user requests pycti pymisp
@@ -1233,7 +1233,7 @@ docker exec -it cortex /opt/cortex/scripts/install_analyzers.py \
   -p MaxMind_GeoIP_4_0 -p AbuseIPDB_1_0
 
 # Wazuh → TheHive
-ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/ossec.conf' << 'XML'
+ssh 6v6-siem 'sudo tee -a /var/ossec/etc/ossec.conf' << 'XML'
 <integration>
   <name>thehive</name>
   <hook_url>http://thehive:9000/api/v1/alert</hook_url>
@@ -1246,7 +1246,7 @@ XML
 #### 도구 4: 악성 IP 자동 차단 (Step 4)
 
 ```bash
-ssh ccc@10.20.30.100 'sudo tee /var/ossec/active-response/bin/block-ip-nft.sh' << 'AR'
+ssh 6v6-siem 'sudo tee /var/ossec/active-response/bin/block-ip-nft.sh' << 'AR'
 #!/bin/bash
 ACTION=$1; IP=$3; ALERTID=$4
 LOG=/var/log/wazuh-ar-block.log
@@ -1268,7 +1268,7 @@ if [ "$VT" -lt 3 ]; then
 fi
 
 if [ "$ACTION" = "add" ]; then
-    sshpass -p "$SECU_PASS" ssh ccc@10.20.30.1 \
+    sshpass -p "$SECU_PASS" ssh 6v6-fw \
         "sudo nft add rule inet filter input ip saddr $IP drop counter comment \"AR-$ALERTID\""
     echo "[$(date)] BLOCKED: $IP (VT=$VT)" >> $LOG
     # 5분 후 자동 제거
@@ -1276,9 +1276,9 @@ if [ "$ACTION" = "add" ]; then
 fi
 AR
 
-ssh ccc@10.20.30.100 'sudo chmod +x /var/ossec/active-response/bin/block-ip-nft.sh'
+ssh 6v6-siem 'sudo chmod +x /var/ossec/active-response/bin/block-ip-nft.sh'
 
-ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/ossec.conf' << 'XML'
+ssh 6v6-siem 'sudo tee -a /var/ossec/etc/ossec.conf' << 'XML'
 <command>
   <name>block-ip-nft</name>
   <executable>block-ip-nft.sh</executable>
@@ -1292,12 +1292,12 @@ ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/ossec.conf' << 'XML'
 </active-response>
 XML
 
-ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-control restart'
+ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control restart'
 
 # 검증
-ssh ccc@10.20.30.112 'for i in {1..10}; do sshpass -p wrong ssh ccc@10.20.30.80 ls 2>/dev/null; done'
+ssh 6v6-attacker 'for i in {1..10}; do sshpass -p wrong ssh 6v6-web ls 2>/dev/null; done'
 sleep 5
-ssh ccc@10.20.30.1 'sudo nft list chain inet filter input | grep AR-'
+ssh 6v6-fw 'sudo nft list chain inet filter input | grep AR-'
 ```
 
 #### 도구 5: 인시던트 티켓 자동 생성 (Step 5)
@@ -1484,7 +1484,7 @@ if __name__ == "__main__":
 
 ```bash
 # Wazuh alert → CCC project
-ssh ccc@10.20.30.100 'sudo tee /opt/wazuh-ccc-integration.py' << 'PY'
+ssh 6v6-siem 'sudo tee /opt/wazuh-ccc-integration.py' << 'PY'
 #!/usr/bin/env python3
 import json, sys, requests
 
@@ -1511,10 +1511,10 @@ r = requests.post(
 print(r.json())
 PY
 
-ssh ccc@10.20.30.100 'sudo chmod +x /opt/wazuh-ccc-integration.py'
+ssh 6v6-siem 'sudo chmod +x /opt/wazuh-ccc-integration.py'
 
 # Wazuh integration
-ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/ossec.conf' << 'XML'
+ssh 6v6-siem 'sudo tee -a /var/ossec/etc/ossec.conf' << 'XML'
 <integration>
   <name>custom-ccc</name>
   <hook_url>file:///opt/wazuh-ccc-integration.py</hook_url>
@@ -1523,7 +1523,7 @@ ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/ossec.conf' << 'XML'
 XML
 
 # 다중 액션
-ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/ossec.conf' << 'XML'
+ssh 6v6-siem 'sudo tee -a /var/ossec/etc/ossec.conf' << 'XML'
 <active-response>
   <command>block-ip-nft</command>
   <rules_id>5712,100600,100900</rules_id>
@@ -1765,9 +1765,9 @@ done
 #### Phase B — 통합 (s5·s6·s10)
 
 ```bash
-ssh ccc@10.20.30.100 'sudo cp /tmp/wazuh-thehive-mapper.py /opt/'
-ssh ccc@10.20.30.100 'sudo cp /tmp/block-ip-nft.sh /var/ossec/active-response/bin/'
-ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-control restart'
+ssh 6v6-siem 'sudo cp /tmp/wazuh-thehive-mapper.py /opt/'
+ssh 6v6-siem 'sudo cp /tmp/block-ip-nft.sh /var/ossec/active-response/bin/'
+ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control restart'
 
 docker exec cortex /opt/cortex/scripts/install_analyzers.py -p VirusTotal_GetReport_3_1
 ```

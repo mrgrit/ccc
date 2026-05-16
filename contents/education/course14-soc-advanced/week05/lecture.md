@@ -608,7 +608,7 @@ python3 /tmp/ioc_quality.py
 
 ```bash
 # Wazuh CDB(Constant Database) 리스트로 IOC 배포
-ssh ccc@10.20.30.100 << 'REMOTE'
+ssh 6v6-siem << 'REMOTE'
 
 # CDB 리스트 디렉토리 확인
 ls -la /var/ossec/etc/lists/ 2>/dev/null
@@ -659,7 +659,7 @@ REMOTE
 ## 3.4 IOC 기반 Wazuh 탐지 룰
 
 ```bash
-ssh ccc@10.20.30.100 << 'REMOTE'
+ssh 6v6-siem << 'REMOTE'
 
 # IOC 기반 탐지 룰 추가
 sudo tee -a /var/ossec/etc/rules/local_rules.xml << 'RULES'
@@ -1383,7 +1383,7 @@ PY
 
 ```bash
 # === IPRep ===
-ssh ccc@10.20.30.1 'sudo tee /etc/suricata/iprep/categories.txt' << 'CAT'
+ssh 6v6-fw 'sudo tee /etc/suricata/iprep/categories.txt' << 'CAT'
 1,c2,Command and Control servers
 2,malware,Malware distribution
 3,phishing,Phishing infrastructure
@@ -1391,17 +1391,17 @@ ssh ccc@10.20.30.1 'sudo tee /etc/suricata/iprep/categories.txt' << 'CAT'
 5,brute,Brute force sources
 CAT
 
-ssh ccc@10.20.30.1 'sudo tee /etc/suricata/iprep/reputation.list' << 'REP'
+ssh 6v6-fw 'sudo tee /etc/suricata/iprep/reputation.list' << 'REP'
 192.168.1.50,1,90
 10.20.30.0,2,85
 198.51.100.42,3,75
 REP
 
 # suricata.yaml 활성화
-ssh ccc@10.20.30.1 'sudo grep -A 5 "iprep:" /etc/suricata/suricata.yaml'
+ssh 6v6-fw 'sudo grep -A 5 "iprep:" /etc/suricata/suricata.yaml'
 
 # 룰 작성
-ssh ccc@10.20.30.1 'sudo tee -a /etc/suricata/rules/local.rules' << 'RULES'
+ssh 6v6-fw 'sudo tee -a /etc/suricata/rules/local.rules' << 'RULES'
 alert ip $HOME_NET any -> $EXTERNAL_NET any (msg:"TI: Outbound to known C2"; \
     iprep:dst,c2,>,80; sid:9000001; rev:1; classtype:trojan-activity;)
 
@@ -1410,8 +1410,8 @@ alert dns $HOME_NET any -> any any (msg:"TI: DNS query to known phishing domain"
     sid:9000002; rev:1; classtype:trojan-activity;)
 RULES
 
-ssh ccc@10.20.30.1 'sudo suricata -T -c /etc/suricata/suricata.yaml'
-ssh ccc@10.20.30.1 'sudo suricatasc -c reload-rules'
+ssh 6v6-fw 'sudo suricata -T -c /etc/suricata/suricata.yaml'
+ssh 6v6-fw 'sudo suricatasc -c reload-rules'
 
 # 자동 변환
 cat > /tmp/iocs-to-suricata.py << 'PY'
@@ -1447,17 +1447,17 @@ python3 /tmp/iocs-to-suricata.py
 
 ```bash
 # CDB list 생성
-ssh ccc@10.20.30.100 'sudo tee /var/ossec/etc/lists/malicious_ips' << 'IPS'
+ssh 6v6-siem 'sudo tee /var/ossec/etc/lists/malicious_ips' << 'IPS'
 192.168.1.50:c2
 198.51.100.42:phishing
 203.0.113.10:scanner
 IPS
 
 # CDB 컴파일
-ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-make_cdb /var/ossec/etc/lists/malicious_ips'
+ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-make_cdb /var/ossec/etc/lists/malicious_ips'
 
 # ossec.conf 등록
-ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/ossec.conf' << 'XML'
+ssh 6v6-siem 'sudo tee -a /var/ossec/etc/ossec.conf' << 'XML'
 <ruleset>
   <list>etc/lists/malicious_ips</list>
   <list>etc/lists/malicious_hashes</list>
@@ -1466,7 +1466,7 @@ ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/ossec.conf' << 'XML'
 XML
 
 # 룰
-ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/rules/local_rules.xml' << 'XML'
+ssh 6v6-siem 'sudo tee -a /var/ossec/etc/rules/local_rules.xml' << 'XML'
 <group name="custom,ti,">
   <rule id="100900" level="13">
     <list field="srcip" lookup="address_match_key">etc/lists/malicious_ips</list>
@@ -1490,10 +1490,10 @@ ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/rules/local_rules.xml' << 'XML'
 </group>
 XML
 
-ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-control restart'
+ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control restart'
 
 # 검증
-ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-logtest' << 'TEST'
+ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-logtest' << 'TEST'
 Apr 25 10:00:00 web sshd[1234]: Accepted password for ccc from 192.168.1.50
 TEST
 # Phase 3: Rule id '100900' (level 13)
@@ -1600,12 +1600,12 @@ curl -s "https://urlhaus.abuse.ch/downloads/csv_recent/" -o $WORK/urlhaus.csv
 python3 /opt/ti-pipeline/normalize.py
 python3 /opt/ti-pipeline/iocs-to-suricata.py
 scp -q /tmp/iprep-auto.list ccc@10.20.30.1:/etc/suricata/iprep/reputation.list
-ssh ccc@10.20.30.1 'sudo suricatasc -c reload-rules' >> $LOG
+ssh 6v6-fw 'sudo suricatasc -c reload-rules' >> $LOG
 
 python3 /opt/ti-pipeline/iocs-to-wazuh-cdb.py
 scp -q /tmp/cdb_*.list ccc@10.20.30.100:/var/ossec/etc/lists/
-ssh ccc@10.20.30.100 'for f in /var/ossec/etc/lists/cdb_*.list; do sudo /var/ossec/bin/wazuh-make_cdb $f; done'
-ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-control restart'
+ssh 6v6-siem 'for f in /var/ossec/etc/lists/cdb_*.list; do sudo /var/ossec/bin/wazuh-make_cdb $f; done'
+ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control restart'
 
 COUNT=$(jq '. | length' /tmp/normalized-iocs.json)
 echo "[$(date)] Imported $COUNT IOCs" >> $LOG
@@ -1669,8 +1669,8 @@ for e in events: print(e['Event']['info'])
 ```bash
 sudo /etc/cron.daily/ti-feed-sync.sh
 cat /tmp/normalized-iocs.json | jq '. | length'
-ssh ccc@10.20.30.1 'sudo wc -l /etc/suricata/iprep/reputation.list'
-ssh ccc@10.20.30.100 'sudo wc -l /var/ossec/etc/lists/cdb_*.list'
+ssh 6v6-fw 'sudo wc -l /etc/suricata/iprep/reputation.list'
+ssh 6v6-siem 'sudo wc -l /var/ossec/etc/lists/cdb_*.list'
 ```
 
 #### Phase B — 분석 + Enrichment (s2·s3·s8·s10·s11)
@@ -1708,7 +1708,7 @@ for t in top: print(t)
 PY
 
 # KPI 측정 (Wazuh)
-ssh ccc@10.20.30.100 'curl -sk -u admin:admin "https://localhost:9200/wazuh-alerts-*/_search" \
+ssh 6v6-siem 'curl -sk -u admin:admin "https://localhost:9200/wazuh-alerts-*/_search" \
   -H "Content-Type: application/json" -d "{
     \"size\":0,\"query\":{\"range\":{\"@timestamp\":{\"gte\":\"now-30d\"}}},
     \"aggs\":{\"ti_alerts\":{\"filter\":{\"prefix\":{\"rule.id\":\"1009\"}}},

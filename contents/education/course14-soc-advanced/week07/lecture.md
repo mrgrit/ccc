@@ -110,7 +110,7 @@
 ```bash
 # tcpdump로 패킷 캡처
 # secu 서버(방화벽)에서 트래픽 캡처
-ssh ccc@10.20.30.1 << 'EOF'
+ssh 6v6-fw << 'EOF'
 echo "=== 네트워크 인터페이스 확인 ==="
 ip link show | grep -E "^[0-9]+:" | awk '{print $2}' | tr -d ':'
 
@@ -210,7 +210,7 @@ http.request || dns.qry.name
 
 ```bash
 # PCAP 파일 생성 (실습용)
-ssh ccc@10.20.30.1 << 'EOF'
+ssh 6v6-fw << 'EOF'
 sudo timeout 15 tcpdump -i any -c 500 -w /tmp/forensic.pcap \
   'net 10.20.30.0/24' 2>&1
 ls -la /tmp/forensic.pcap 2>/dev/null
@@ -278,7 +278,7 @@ wait
 
 echo ""
 echo "=== Step 2: secu에서 캡처된 트래픽 분석 ==="
-ssh ccc@10.20.30.1 << 'REMOTE'
+ssh 6v6-fw << 'REMOTE'
 # 방화벽에서 최근 패킷 분석
 if [ -f /tmp/forensic.pcap ]; then
     echo "--- IP 주소별 패킷 수 ---"
@@ -484,7 +484,7 @@ python3 /tmp/tls_analysis.py
 
 ```bash
 # Suricata로 PCAP 파일 분석
-ssh ccc@10.20.30.1 << 'REMOTE'
+ssh 6v6-fw << 'REMOTE'
 if [ -f /tmp/forensic.pcap ]; then
     echo "=== Suricata 오프라인 PCAP 분석 ==="
     sudo suricata -r /tmp/forensic.pcap -l /tmp/suricata_analysis/ \
@@ -1099,7 +1099,7 @@ cd /tmp/timesketch && docker compose up -d 2>/dev/null
 git clone https://github.com/google/stenographer /tmp/stenographer
 
 # === [s8] Suricata (이미 설치) ===
-ssh ccc@10.20.30.1 'suricata -V'
+ssh 6v6-fw 'suricata -V'
 ```
 
 ### 핵심 도구별 상세 사용법
@@ -1148,19 +1148,19 @@ COC
 
 ```bash
 # 5분 단일 파일
-ssh ccc@10.20.30.1 'sudo timeout 300 tcpdump -i eth0 -w /tmp/incident.pcap -s 0 not port 22'
+ssh 6v6-fw 'sudo timeout 300 tcpdump -i eth0 -w /tmp/incident.pcap -s 0 not port 22'
 # -s 0   전체 패킷
 # 'not port 22'  자신의 SSH 제외
 
 # 회전 (1시간마다)
-ssh ccc@10.20.30.1 'sudo tcpdump -i eth0 -w /tmp/cap-%Y%m%d-%H%M%S.pcap -G 3600 -z gzip'
+ssh 6v6-fw 'sudo tcpdump -i eth0 -w /tmp/cap-%Y%m%d-%H%M%S.pcap -G 3600 -z gzip'
 
 # Ring buffer (덮어쓰기)
-ssh ccc@10.20.30.1 'sudo tcpdump -i eth0 -w /tmp/ring.pcap -C 100 -W 10'
+ssh 6v6-fw 'sudo tcpdump -i eth0 -w /tmp/ring.pcap -C 100 -W 10'
 
 # 즉시 hash + 가져오기 + 검증
 PCAP=/tmp/incident.pcap
-ssh ccc@10.20.30.1 "sudo sha256sum $PCAP > ${PCAP}.sha256"
+ssh 6v6-fw "sudo sha256sum $PCAP > ${PCAP}.sha256"
 scp ccc@10.20.30.1:${PCAP}{,.sha256} /var/log/forensics/
 sha256sum -c /var/log/forensics/incident.pcap.sha256
 ```
@@ -1304,9 +1304,9 @@ yara -wr ~/yara-rules/all-rules.yar /tmp/zeek-files/extract_files/
 
 ```bash
 # Suricata replay
-ssh ccc@10.20.30.1 'sudo suricata -r /tmp/incident.pcap -l /tmp/suricata-replay/ -c /etc/suricata/suricata.yaml'
+ssh 6v6-fw 'sudo suricata -r /tmp/incident.pcap -l /tmp/suricata-replay/ -c /etc/suricata/suricata.yaml'
 
-ssh ccc@10.20.30.1 'sudo jq -r "select(.event_type==\"alert\") | [.timestamp, .src_ip, .dest_ip, .alert.signature] | @tsv" /tmp/suricata-replay/eve.json | head -20'
+ssh 6v6-fw 'sudo jq -r "select(.event_type==\"alert\") | [.timestamp, .src_ip, .dest_ip, .alert.signature] | @tsv" /tmp/suricata-replay/eve.json | head -20'
 
 # 알림 시간 → 패킷 매칭
 ALERT_TIME="2026-05-02T14:01:23.456789+0900"
@@ -1361,18 +1361,18 @@ for r in process_pcap('/tmp/incident.pcap')[:10]:
 
 ```bash
 # softflowd - interface NetFlow 생성
-ssh ccc@10.20.30.1 'sudo softflowd -i eth0 -n 10.20.30.100:9995 -v 9 -t maxlife=300'
+ssh 6v6-fw 'sudo softflowd -i eth0 -n 10.20.30.100:9995 -v 9 -t maxlife=300'
 
 # nfcapd - collector
-ssh ccc@10.20.30.100 'sudo nfcapd -p 9995 -l /var/log/netflow/ -t 60'
+ssh 6v6-siem 'sudo nfcapd -p 9995 -l /var/log/netflow/ -t 60'
 
 # nfdump 분석
-ssh ccc@10.20.30.100 'sudo nfdump -R /var/log/netflow/ -A srcip -O bytes -c 10'   # top talker
-ssh ccc@10.20.30.100 'sudo nfdump -R /var/log/netflow/ -A srcip,dstip -O bytes \
+ssh 6v6-siem 'sudo nfdump -R /var/log/netflow/ -A srcip -O bytes -c 10'   # top talker
+ssh 6v6-siem 'sudo nfdump -R /var/log/netflow/ -A srcip,dstip -O bytes \
   "src net 10.20.30.0/24 and dst not net 10.20.30.0/24" -c 10'                     # exfil
 
 # Port scan 시그니처 (small packets, large count)
-ssh ccc@10.20.30.100 'sudo nfdump -R /var/log/netflow/ -A srcip,dstip,dstport -c 100 \
+ssh 6v6-siem 'sudo nfdump -R /var/log/netflow/ -A srcip,dstip,dstport -c 100 \
   "proto tcp and packets < 5" | sort | uniq -c | sort -rn | head'
 ```
 
@@ -1520,8 +1520,8 @@ pandoc /tmp/network-forensic-report.md \
 #### Phase A — 캡처 + 통계 (s1·s2·s3)
 
 ```bash
-ssh ccc@10.20.30.1 'sudo timeout 300 tcpdump -i eth0 -w /tmp/incident.pcap -s 0 not port 22'
-ssh ccc@10.20.30.1 'sudo sha256sum /tmp/incident.pcap > /tmp/incident.pcap.sha256'
+ssh 6v6-fw 'sudo timeout 300 tcpdump -i eth0 -w /tmp/incident.pcap -s 0 not port 22'
+ssh 6v6-fw 'sudo sha256sum /tmp/incident.pcap > /tmp/incident.pcap.sha256'
 scp ccc@10.20.30.1:/tmp/incident.pcap{,.sha256} /var/log/forensics/
 sha256sum -c /var/log/forensics/incident.pcap.sha256
 
@@ -1540,8 +1540,8 @@ yara -wr ~/yara-rules/all-rules.yar /tmp/zeek-files/extract_files/
 #### Phase C — 상관 + 타임라인 (s8·s10·s11)
 
 ```bash
-ssh ccc@10.20.30.1 'sudo suricata -r /tmp/incident.pcap -l /tmp/suricata-replay/'
-ssh ccc@10.20.30.100 'sudo nfdump -R /var/log/netflow/ -A srcip -O bytes -c 10'
+ssh 6v6-fw 'sudo suricata -r /tmp/incident.pcap -l /tmp/suricata-replay/'
+ssh 6v6-siem 'sudo nfdump -R /var/log/netflow/ -A srcip -O bytes -c 10'
 log2timeline.py --storage_file /tmp/incident.plaso /var/log/forensics/
 psort.py -o l2tcsv -w /tmp/timeline.csv /tmp/incident.plaso
 ```

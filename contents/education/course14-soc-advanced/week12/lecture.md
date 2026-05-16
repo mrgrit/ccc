@@ -144,7 +144,7 @@ Apr  4 10:15:23 secu kernel: nft_log: IN=eth0 SRC=10.20.30.201 DST=10.20.30.80 P
 ## 2.1 기존 디코더 분석
 
 ```bash
-ssh ccc@10.20.30.100 << 'REMOTE'
+ssh 6v6-siem << 'REMOTE'
 echo "=== Wazuh 기본 디코더 수 ==="
 find /var/ossec/ruleset/decoders/ -name "*.xml" | wc -l
 
@@ -228,7 +228,7 @@ python3 /tmp/regex_patterns.py
 > **실습 목적**: Bastion API 로그를 Wazuh에서 파싱하는 커스텀 디코더를 작성한다.
 
 ```bash
-ssh ccc@10.20.30.100 << 'REMOTE'
+ssh 6v6-siem << 'REMOTE'
 
 # Bastion 로그 디코더 작성
 sudo tee /var/ossec/etc/decoders/local_decoder.xml << 'DECODERS'
@@ -293,7 +293,7 @@ REMOTE
 ## 3.2 wazuh-logtest로 디코더 검증
 
 ```bash
-ssh ccc@10.20.30.100 << 'REMOTE'
+ssh 6v6-siem << 'REMOTE'
 
 # 테스트 로그로 디코더 검증
 echo "=== Bastion 로그 테스트 ==="
@@ -419,7 +419,7 @@ python3 /tmp/retention_policy.py
 
 ```bash
 # Wazuh 로그 로테이션 확인
-ssh ccc@10.20.30.100 << 'REMOTE'
+ssh 6v6-siem << 'REMOTE'
 echo "=== Wazuh 로그 크기 ==="
 du -sh /var/ossec/logs/ 2>/dev/null
 du -sh /var/ossec/logs/alerts/ 2>/dev/null
@@ -1053,11 +1053,11 @@ graph LR
 
 ```bash
 # Wazuh
-ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-control status'
-ssh ccc@10.20.30.100 'ls /var/ossec/etc/decoders/'
+ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control status'
+ssh 6v6-siem 'ls /var/ossec/etc/decoders/'
 
 # Suricata + jq
-ssh ccc@10.20.30.1 'suricatasc -c rules-stats'
+ssh 6v6-fw 'suricatasc -c rules-stats'
 sudo apt install -y jq
 
 # OpenSearch ILM
@@ -1090,7 +1090,7 @@ for host in 10.20.30.1 10.20.30.80 10.20.30.100 10.20.30.112; do
 done
 
 # Wazuh agent active logs
-ssh ccc@10.20.30.80 'sudo cat /var/ossec/etc/ossec.conf | grep -A 3 "<localfile>" | head -30'
+ssh 6v6-web 'sudo cat /var/ossec/etc/ossec.conf | grep -A 3 "<localfile>" | head -30'
 ```
 
 | Host | 주요 로그 | 위치 | 형식 | 용도 |
@@ -1108,7 +1108,7 @@ ssh ccc@10.20.30.80 'sudo cat /var/ossec/etc/ossec.conf | grep -A 3 "<localfile>
 #### 도구 2: Wazuh agent 최적화 (Step 2)
 
 ```bash
-ssh ccc@10.20.30.80 'sudo tee -a /var/ossec/etc/ossec.conf' << 'XML'
+ssh 6v6-web 'sudo tee -a /var/ossec/etc/ossec.conf' << 'XML'
 <localfile>
   <log_format>apache</log_format>
   <location>/var/log/apache2/access.log</location>
@@ -1135,14 +1135,14 @@ ssh ccc@10.20.30.80 'sudo tee -a /var/ossec/etc/ossec.conf' << 'XML'
 </localfile>
 XML
 
-ssh ccc@10.20.30.80 'sudo /var/ossec/bin/wazuh-control restart'
-ssh ccc@10.20.30.80 'sudo cat /var/ossec/logs/ossec.log | tail -20 | grep -i "tail"'
+ssh 6v6-web 'sudo /var/ossec/bin/wazuh-control restart'
+ssh 6v6-web 'sudo cat /var/ossec/logs/ossec.log | tail -20 | grep -i "tail"'
 ```
 
 #### 도구 3: 커스텀 decoder (Step 3)
 
 ```bash
-ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/decoders/local_decoder.xml' << 'XML'
+ssh 6v6-siem 'sudo tee -a /var/ossec/etc/decoders/local_decoder.xml' << 'XML'
 <!-- CCC API: 2026-05-02T14:00:01.234Z [INFO] api=POST /students user_id=admin remote_ip=192.168.1.50 status=201 -->
 
 <decoder name="ccc-api">
@@ -1157,13 +1157,13 @@ ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/decoders/local_decoder.xml' << 
 XML
 
 # 테스트
-ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-logtest' << 'TEST'
+ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-logtest' << 'TEST'
 2026-05-02T14:00:01.234Z [INFO] api=POST /students user_id=admin remote_ip=192.168.1.50 status=201
 TEST
 # decoder: 'ccc-api', method_path: 'POST', srcip: '192.168.1.50', status_code: '201'
 
 # Rule
-ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/rules/local_rules.xml' << 'XML'
+ssh 6v6-siem 'sudo tee -a /var/ossec/etc/rules/local_rules.xml' << 'XML'
 <group name="custom,ccc-api,">
   <rule id="100700" level="3">
     <decoded_as>ccc-api</decoded_as>
@@ -1183,7 +1183,7 @@ ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/rules/local_rules.xml' << 'XML'
 </group>
 XML
 
-ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-control restart'
+ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control restart'
 ```
 
 #### 도구 4: 정규화 (CIM / ECS) (Step 4)
@@ -1203,7 +1203,7 @@ ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-control restart'
 
 ```bash
 # Wazuh decoder field 매핑
-ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/decoders/local_decoder.xml' << 'XML'
+ssh 6v6-siem 'sudo tee -a /var/ossec/etc/decoders/local_decoder.xml' << 'XML'
 <decoder name="suricata-ecs-mapper">
   <parent>json</parent>
   <regex>"src_ip":"([^"]+)"</regex>
@@ -1229,7 +1229,7 @@ LS
 
 ```bash
 # Wazuh ignore
-ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/rules/local_rules.xml' << 'XML'
+ssh 6v6-siem 'sudo tee -a /var/ossec/etc/rules/local_rules.xml' << 'XML'
 <rule id="100800" level="0">
   <if_sid>2902</if_sid>
   <user>root</user>
@@ -1246,11 +1246,11 @@ ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/rules/local_rules.xml' << 'XML'
 XML
 
 # Suricata threshold
-ssh ccc@10.20.30.1 'sudo tee /etc/suricata/threshold.config' << 'CFG'
+ssh 6v6-fw 'sudo tee /etc/suricata/threshold.config' << 'CFG'
 suppress gen_id 1, sig_id 2024793, track by_dst
 threshold gen_id 1, sig_id 2003070, type both, track by_src, count 5, seconds 60
 CFG
-ssh ccc@10.20.30.1 'sudo suricatasc -c reload-rules'
+ssh 6v6-fw 'sudo suricatasc -c reload-rules'
 
 # 효과 측정
 # Before: 100K events/h
@@ -1305,7 +1305,7 @@ aws s3api put-bucket-lifecycle-configuration --bucket wazuh-cold-storage \
 
 ```bash
 # 1. rsyslog TLS (송신)
-ssh ccc@10.20.30.80 'sudo tee /etc/rsyslog.d/01-remote.conf' << 'RSY'
+ssh 6v6-web 'sudo tee /etc/rsyslog.d/01-remote.conf' << 'RSY'
 $DefaultNetstreamDriver gtls
 $DefaultNetstreamDriverCAFile /etc/ssl/certs/siem-ca.pem
 $DefaultNetstreamDriverCertFile /etc/ssl/certs/web.pem
@@ -1315,10 +1315,10 @@ $DefaultNetstreamDriverKeyFile /etc/ssl/private/web.key
   Target="siem.corp.example" Port="6514" Protocol="tcp"
   StreamDriver="gtls" StreamDriverMode="1" StreamDriverAuthMode="x509/name")
 RSY
-ssh ccc@10.20.30.80 'sudo systemctl restart rsyslog'
+ssh 6v6-web 'sudo systemctl restart rsyslog'
 
 # 2. 수신 측
-ssh ccc@10.20.30.100 'sudo tee /etc/rsyslog.d/01-recv.conf' << 'RCV'
+ssh 6v6-siem 'sudo tee /etc/rsyslog.d/01-recv.conf' << 'RCV'
 $ModLoad imtcp
 $InputTCPServerStreamDriverMode 1
 $InputTCPServerStreamDriverAuthMode x509/name
@@ -1357,20 +1357,20 @@ aws s3api put-object-lock-configuration \
     "Rule":{"DefaultRetention":{"Mode":"COMPLIANCE","Years":7}}}'
 
 # Wazuh 자체 hash chain (built-in)
-ssh ccc@10.20.30.100 'sudo cat /var/ossec/logs/alerts/alerts.log | head -3'
+ssh 6v6-siem 'sudo cat /var/ossec/logs/alerts/alerts.log | head -3'
 ```
 
 #### 도구 8: EPS / latency / 손실률 (Step 8)
 
 ```bash
-ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-control info'
-ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-stats -m'
+ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control info'
+ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-stats -m'
 # Maximum events per second: 12,847 / Average: 5,234
 
 # 직접 측정
-ssh ccc@10.20.30.100 'sudo wc -l /var/ossec/logs/alerts/alerts.json'
+ssh 6v6-siem 'sudo wc -l /var/ossec/logs/alerts/alerts.json'
 sleep 3600
-ssh ccc@10.20.30.100 'sudo wc -l /var/ossec/logs/alerts/alerts.json'
+ssh 6v6-siem 'sudo wc -l /var/ossec/logs/alerts/alerts.json'
 
 # Latency (Python)
 python3 << 'PY'
@@ -1396,8 +1396,8 @@ PY
 zeek-cut acks_loss percent_lost < /tmp/zeek-out/capture_loss.log
 
 # 병목
-ssh ccc@10.20.30.100 'top -p $(pgrep wazuh-analysisd) -b -n 1 | head -10'
-ssh ccc@10.20.30.100 'sudo iotop -ao -d 5 | head -20'
+ssh 6v6-siem 'top -p $(pgrep wazuh-analysisd) -b -n 1 | head -10'
+ssh 6v6-siem 'sudo iotop -ao -d 5 | head -20'
 ```
 
 #### 도구 9: ATT&CK Data Source 매핑 (Step 9)
@@ -1456,7 +1456,7 @@ python dettect.py d -fd /tmp/data-sources-current.yaml -l
 
 ```bash
 # Suricata eve 필요 필드만
-ssh ccc@10.20.30.1 'sudo tee /etc/suricata/eve-minimal.yaml' << 'YML'
+ssh 6v6-fw 'sudo tee /etc/suricata/eve-minimal.yaml' << 'YML'
 outputs:
   - eve-log:
       enabled: yes
@@ -1469,17 +1469,17 @@ outputs:
 YML
 
 # jq 빠른 분석
-ssh ccc@10.20.30.1 'sudo jq -c "select(.event_type==\"alert\") | {ts:.timestamp,src:.src_ip,sig:.alert.signature}" /var/log/suricata/eve.json | head'
+ssh 6v6-fw 'sudo jq -c "select(.event_type==\"alert\") | {ts:.timestamp,src:.src_ip,sig:.alert.signature}" /var/log/suricata/eve.json | head'
 
 # alert 만 카운트
-ssh ccc@10.20.30.1 'sudo grep -c "\"event_type\":\"alert\"" /var/log/suricata/eve.json'
+ssh 6v6-fw 'sudo grep -c "\"event_type\":\"alert\"" /var/log/suricata/eve.json'
 ```
 
 #### 도구 11: Enrichment pipeline (Step 11)
 
 ```bash
 # Wazuh wodle (간단)
-ssh ccc@10.20.30.100 'sudo tee /var/ossec/integrations/asset-lookup.sh' << 'SH'
+ssh 6v6-siem 'sudo tee /var/ossec/integrations/asset-lookup.sh' << 'SH'
 #!/bin/bash
 TODAY_IPS=$(jq -r '.data.srcip // empty' /var/ossec/logs/alerts/alerts.json | sort -u)
 for ip in $TODAY_IPS; do
@@ -1491,7 +1491,7 @@ done > /var/ossec/etc/lists/asset-enrichment
 sudo /var/ossec/bin/wazuh-make_cdb /var/ossec/etc/lists/asset-enrichment
 SH
 
-ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/ossec.conf' << 'XML'
+ssh 6v6-siem 'sudo tee -a /var/ossec/etc/ossec.conf' << 'XML'
 <wodle name="command">
   <disabled>no</disabled>
   <tag>asset-enrich</tag>
@@ -1608,13 +1608,13 @@ sudo augenrules --load
 sudo auditctl -l
 
 # Wazuh 통합
-ssh ccc@10.20.30.80 'sudo tee -a /var/ossec/etc/ossec.conf' << 'XML'
+ssh 6v6-web 'sudo tee -a /var/ossec/etc/ossec.conf' << 'XML'
 <localfile>
   <log_format>audit</log_format>
   <location>/var/log/audit/audit.log</location>
 </localfile>
 XML
-ssh ccc@10.20.30.80 'sudo /var/ossec/bin/wazuh-control restart'
+ssh 6v6-web 'sudo /var/ossec/bin/wazuh-control restart'
 ```
 
 #### 도구 14: 아키텍처 리뷰 (Step 14)
@@ -1710,24 +1710,24 @@ pandoc /tmp/log-engineering-report.md -o /tmp/log-engineering-report.pdf \
 for h in 10.20.30.{1,80,100,112}; do
     ssh ccc@$h 'ls /var/log/ | head'
 done
-ssh ccc@10.20.30.80 'sudo cat /var/ossec/etc/ossec.conf | grep localfile'
-ssh ccc@10.20.30.100 'sudo vi /var/ossec/etc/decoders/local_decoder.xml'
+ssh 6v6-web 'sudo cat /var/ossec/etc/ossec.conf | grep localfile'
+ssh 6v6-siem 'sudo vi /var/ossec/etc/decoders/local_decoder.xml'
 ```
 
 #### Phase B — 최적화 + 보관 (s5·s6·s7·s8·s10)
 
 ```bash
-ssh ccc@10.20.30.100 'sudo vi /var/ossec/etc/rules/local_rules.xml'
+ssh 6v6-siem 'sudo vi /var/ossec/etc/rules/local_rules.xml'
 curl -X PUT "https://10.20.30.100:9200/_ilm/policy/wazuh-policy" -k -u admin:admin -d '...'
-ssh ccc@10.20.30.80 'sudo systemctl restart rsyslog'
-ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-stats -m'
+ssh 6v6-web 'sudo systemctl restart rsyslog'
+ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-stats -m'
 ```
 
 #### Phase C — 매핑 + Enrichment + Dashboard + 보고 (s9·s11·s12·s13·s14·s15)
 
 ```bash
 python /tmp/dettect/dettect.py d -fd /tmp/data-sources-current.yaml -l
-ssh ccc@10.20.30.100 'sudo cp /tmp/asset-lookup.sh /var/ossec/integrations/'
+ssh 6v6-siem 'sudo cp /tmp/asset-lookup.sh /var/ossec/integrations/'
 sudo systemctl restart wazuh-prometheus-exporter
 sudo cp /tmp/security.rules /etc/audit/rules.d/
 sudo augenrules --load

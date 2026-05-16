@@ -448,12 +448,12 @@ echo "=== 측면 이동 탐지 모니터링 ==="
 
 echo ""
 echo "[1] SSH 로그인 기록 (web 서버)"
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "grep 'Accepted\|Failed' /var/log/auth.log 2>/dev/null | tail -10 || echo 'auth.log 없음'" 2>/dev/null
 
 echo ""
 echo "[2] Wazuh 알림 (측면 이동 관련)"
-ssh ccc@10.20.30.100 \
+ssh 6v6-siem \
   "grep -i 'lateral\|ssh.*accepted\|authentication' /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -5 | python3 -c '
 import sys,json
 for line in sys.stdin:
@@ -464,7 +464,7 @@ for line in sys.stdin:
 
 echo ""
 echo "[3] 네트워크 이상 탐지 (Suricata)"
-ssh ccc@10.20.30.1 \
+ssh 6v6-fw \
   "tail -10 /var/log/suricata/fast.log 2>/dev/null | grep -i 'lateral\|smb\|ssh\|scan' || echo '  관련 알림 없음'" 2>/dev/null
 ```
 
@@ -490,30 +490,30 @@ echo "============================================================"
 echo ""
 echo "[Phase 1] 초기 접근 — web 서버"
 echo "  공격자(bastion) → web(10.20.30.80) via SSH"
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "echo '[+] web 접근 성공: $(hostname) ($(whoami))'; echo '    내부 네트워크: $(ip addr show | grep 'inet 10' | awk '{print \$2}' | head -1)'" 2>/dev/null
 
 echo ""
 echo "[Phase 2] 크레덴셜 수집 — web에서 정보 추출"
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "echo '--- 네트워크 이웃 ---'; ip neigh 2>/dev/null | head -5; echo '--- SSH 접속 이력 ---'; grep 'ssh' ~/.bash_history 2>/dev/null | tail -3" 2>/dev/null
 
 echo ""
 echo "[Phase 3] 피봇 — web → secu"
-ssh ccc@10.20.30.80 \
-  "ssh ccc@10.20.30.1 \
+ssh 6v6-web \
+  "ssh 6v6-fw \
     'echo \"[+] secu 접근 성공: \$(hostname) (\$(whoami))\"; echo \"    방화벽 규칙 수: \$(echo 1 | sudo -S nft list ruleset 2>/dev/null | wc -l)\"' 2>/dev/null" 2>/dev/null || echo "web→secu 피봇 실패"
 
 echo ""
 echo "[Phase 4] 피봇 — web → siem"
-ssh ccc@10.20.30.80 \
-  "ssh ccc@10.20.30.100 \
+ssh 6v6-web \
+  "ssh 6v6-siem \
     'echo \"[+] siem 접근 성공: \$(hostname) (\$(whoami))\"; echo \"    Wazuh 알림 수: \$(wc -l < /var/ossec/logs/alerts/alerts.json 2>/dev/null || echo N/A)\"' 2>/dev/null" 2>/dev/null || echo "web→siem 피봇 실패"
 
 echo ""
 echo "[Phase 5] 최종 목표 — SIEM 데이터 접근"
-ssh ccc@10.20.30.80 \
-  "ssh ccc@10.20.30.100 \
+ssh 6v6-web \
+  "ssh 6v6-siem \
     'echo \"--- SIEM 최근 알림 (Top 3) ---\"; tail -3 /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"
 import sys,json
 for l in sys.stdin:

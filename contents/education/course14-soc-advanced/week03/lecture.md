@@ -686,7 +686,7 @@ python3 /tmp/pysigma_convert.py
 
 ```bash
 # siem 서버에 SIGMA 변환 룰 배포
-ssh ccc@10.20.30.100 << 'REMOTE'
+ssh 6v6-siem << 'REMOTE'
 
 # 기존 커스텀 룰 백업
 sudo cp /var/ossec/etc/rules/local_rules.xml \
@@ -760,7 +760,7 @@ REMOTE
 
 ```bash
 # web 서버에서 웹셸 업로드 시뮬레이션
-ssh ccc@10.20.30.80 << 'EOF'
+ssh 6v6-web << 'EOF'
 # 가짜 웹셸 파일 생성 (실제 코드 아님, 탐지 테스트용)
 echo '<?php echo "test"; ?>' > /tmp/test_webshell.php
 
@@ -776,7 +776,7 @@ EOF
 
 # 경보 확인
 sleep 3
-ssh ccc@10.20.30.100 << 'EOF'
+ssh 6v6-siem << 'EOF'
 echo "=== SIGMA 룰 관련 최근 경보 ==="
 tail -30 /var/ossec/logs/alerts/alerts.log 2>/dev/null | \
   grep -i "sigma\|webshell\|100500" || \
@@ -1663,7 +1663,7 @@ done
 chainsaw hunt /tmp/evtx-samples -s rules/windows/
 
 # Linux 룰: auditd 시뮬 + 검증
-ssh ccc@10.20.30.80 'sudo bash -c "sudo /bin/bash -c whoami"'
+ssh 6v6-web 'sudo bash -c "sudo /bin/bash -c whoami"'
 sleep 2
 sudo ausearch -k exec --start recent | head
 ```

@@ -906,7 +906,7 @@ echo ""
 
 # web 서버에 원격 명령 실행
 echo "=== SSH를 통한 원격 명령 실행 ==="
-ssh ccc@10.20.30.80 "hostname && id && uptime" 2>/dev/null || \
+ssh 6v6-web "hostname && id && uptime" 2>/dev/null || \
   echo "[참고] web 서버 접속 불가 시 스킵"
 
 echo ""

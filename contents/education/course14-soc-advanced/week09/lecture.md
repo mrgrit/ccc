@@ -488,7 +488,7 @@ python3 /tmp/extract_iocs.py
 ## 4.2 Wazuh 룰로 변환
 
 ```bash
-ssh ccc@10.20.30.100 << 'REMOTE'
+ssh 6v6-siem << 'REMOTE'
 
 sudo tee -a /var/ossec/etc/rules/local_rules.xml << 'RULES'
 
@@ -1769,8 +1769,8 @@ strings $SAMPLE | grep -oE "https?://[a-zA-Z0-9.-]+" | sort -u > /tmp/ioc-urls.t
 strings $SAMPLE | grep -oE "\b[0-9]{1,3}(\.[0-9]{1,3}){3}\b" | sort -u > /tmp/ioc-ips.txt
 
 yara -wr /tmp/yara-malware.yar /var/www/
-ssh ccc@10.20.30.1 'sudo cp /tmp/local.rules /etc/suricata/rules/ && sudo suricatasc -c reload-rules'
-ssh ccc@10.20.30.100 'sudo cp /tmp/cdb_*.list /var/ossec/etc/lists/ && sudo /var/ossec/bin/wazuh-control restart'
+ssh 6v6-fw 'sudo cp /tmp/local.rules /etc/suricata/rules/ && sudo suricatasc -c reload-rules'
+ssh 6v6-siem 'sudo cp /tmp/cdb_*.list /var/ossec/etc/lists/ && sudo /var/ossec/bin/wazuh-control restart'
 
 cuckoo submit /tmp/samples/suspicious.bin
 ```

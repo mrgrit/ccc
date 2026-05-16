@@ -233,7 +233,7 @@ echo "============================================================"
 
 echo ""
 echo "[Step 1] web 서버 — 권한 상승"
-ssh ccc@10.20.30.80 "
+ssh 6v6-web "
   echo '--- 현재 사용자 ---'
   id
   echo '--- sudo 권한 ---'
@@ -244,8 +244,8 @@ ssh ccc@10.20.30.80 "
 
 echo ""
 echo "[Step 2] web → secu 측면 이동"
-ssh ccc@10.20.30.80 "
-  ssh ccc@10.20.30.1 '
+ssh 6v6-web "
+  ssh 6v6-fw '
     echo \"[+] secu 접근 성공: \$(hostname)\"
     echo \"--- 방화벽 규칙 요약 ---\"
     echo 1 | sudo -S nft list ruleset 2>/dev/null | head -10
@@ -254,8 +254,8 @@ ssh ccc@10.20.30.80 "
 
 echo ""
 echo "[Step 3] web → siem 측면 이동 (최종 목표)"
-ssh ccc@10.20.30.80 "
-  ssh ccc@10.20.30.100 '
+ssh 6v6-web "
+  ssh 6v6-siem '
     echo \"[+] SIEM 접근 성공: \$(hostname)\"
     echo \"--- Wazuh 알림 데이터 (최근 5건) ---\"
     tail -5 /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"

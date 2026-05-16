@@ -662,7 +662,7 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID4/execute-plan \
       },
       {
         "order": 2,
-        "instruction_prompt": "echo \"[Round1-BLUE] 탐지 분석\"; ssh ccc@10.20.30.1 \"tail -10 /var/log/suricata/fast.log 2>/dev/null | grep -i sql || echo 탐지 없음\"; echo \"---\"; ssh ccc@10.20.30.80 \"tail -5 /var/log/apache2/access.log 2>/dev/null | grep -i \\\"OR 1=1\\\" || echo 로그 패턴 미발견\"",
+        "instruction_prompt": "echo \"[Round1-BLUE] 탐지 분석\"; ssh 6v6-fw \"tail -10 /var/log/suricata/fast.log 2>/dev/null | grep -i sql || echo 탐지 없음\"; echo \"---\"; ssh 6v6-web \"tail -5 /var/log/apache2/access.log 2>/dev/null | grep -i \\\"OR 1=1\\\" || echo 로그 패턴 미발견\"",
         "risk_level": "low",
         "subagent_url": "http://10.20.30.201:8002"
       }
@@ -692,7 +692,7 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID4/execute-plan \
       },
       {
         "order": 3,
-        "instruction_prompt": "echo \"[Round2-BLUE] 강화 탐지\"; ssh ccc@10.20.30.1 \"tail -15 /var/log/suricata/fast.log 2>/dev/null | tail -5 || echo No alerts\"; echo \"---\"; ssh ccc@10.20.30.100 \"tail -10 /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -m json.tool 2>/dev/null | head -20 || echo No Wazuh alerts\"",
+        "instruction_prompt": "echo \"[Round2-BLUE] 강화 탐지\"; ssh 6v6-fw \"tail -15 /var/log/suricata/fast.log 2>/dev/null | tail -5 || echo No alerts\"; echo \"---\"; ssh 6v6-siem \"tail -10 /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -m json.tool 2>/dev/null | head -20 || echo No Wazuh alerts\"",
         "risk_level": "low",
         "subagent_url": "http://10.20.30.201:8002"
       }

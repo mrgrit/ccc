@@ -646,7 +646,7 @@ echo ""
 
 echo "[2] DNS 이상 탐지"
 echo "--- 최근 DNS 쿼리 통계 ---"
-ssh ccc@10.20.30.1 \
+ssh 6v6-fw \
   "cat /var/log/suricata/dns.log 2>/dev/null | tail -5 || echo 'DNS 로그 없음'" 2>/dev/null
 
 echo ""
@@ -657,7 +657,7 @@ echo "  - User-Agent와 TLS 핑거프린트 불일치"
 echo ""
 
 echo "[4] Suricata C2 규칙"
-ssh ccc@10.20.30.1 \
+ssh 6v6-fw \
   "grep -r 'C2\|beacon\|cobalt\|command.and.control' /etc/suricata/rules/ 2>/dev/null | head -5 || echo 'C2 규칙 없음'" 2>/dev/null
 
 echo ""

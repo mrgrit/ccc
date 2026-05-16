@@ -644,7 +644,7 @@ curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/dispatch" \
 
 ```bash
 # Wazuh의 Active Response로 YARA 스캔 연동
-ssh ccc@10.20.30.100 << 'REMOTE'
+ssh 6v6-siem << 'REMOTE'
 
 # YARA 설치 확인
 which yara || sudo apt-get install -y yara 2>/dev/null
@@ -727,7 +727,7 @@ REMOTE
 ## 4.2 Wazuh ossec.conf 설정
 
 ```bash
-ssh ccc@10.20.30.100 << 'REMOTE'
+ssh 6v6-siem << 'REMOTE'
 
 # Wazuh FIM 설정 확인 (웹 디렉토리 모니터링)
 echo "=== 현재 FIM 설정 ==="
@@ -1097,7 +1097,7 @@ cd /tmp/loki && pip install -r requirements.txt
 
 # === [s10] Wazuh 연동 ===
 # 이미 siem 에 wazuh 가 있음
-ssh ccc@10.20.30.100 'sudo cat /var/ossec/etc/ossec.conf | grep -A 5 "wazuh_modules"'
+ssh 6v6-siem 'sudo cat /var/ossec/etc/ossec.conf | grep -A 5 "wazuh_modules"'
 
 # === [s12] 메모리 스캔 ===
 sudo apt install -y procps
@@ -1112,7 +1112,7 @@ cd /tmp/yargen && pip install -r requirements.txt
 python3 yarGen.py --update    # goodware strings DB 다운로드
 
 # === [s14] OpenCTI + STIX2 연동 ===
-ssh ccc@10.20.30.100 'curl -s http://localhost:8080/health'
+ssh 6v6-siem 'curl -s http://localhost:8080/health'
 pip install --user pycti stix2
 
 # IOC → YARA 자동 변환
@@ -1805,7 +1805,7 @@ docker-compose up -d
 
 ```bash
 # === Wazuh wodle command ===
-ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/ossec.conf' << 'XML'
+ssh 6v6-siem 'sudo tee -a /var/ossec/etc/ossec.conf' << 'XML'
 <wodle name="command">
   <disabled>no</disabled>
   <tag>yara_scan</tag>
@@ -1818,7 +1818,7 @@ ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/ossec.conf' << 'XML'
 XML
 
 # YARA 스캔 스크립트
-ssh ccc@10.20.30.100 'sudo tee /var/ossec/integrations/yara_scan.sh' << 'SCRIPT'
+ssh 6v6-siem 'sudo tee /var/ossec/integrations/yara_scan.sh' << 'SCRIPT'
 #!/bin/bash
 YARA_RULES=/var/ossec/etc/yara/all-rules.yar
 SCAN_DIRS="/var/www /tmp /home"
@@ -1829,10 +1829,10 @@ for dir in $SCAN_DIRS; do
     done
 done
 SCRIPT
-ssh ccc@10.20.30.100 'sudo chmod +x /var/ossec/integrations/yara_scan.sh'
+ssh 6v6-siem 'sudo chmod +x /var/ossec/integrations/yara_scan.sh'
 
 # Wazuh 룰 — yara_match 출력 매칭
-ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/rules/local_rules.xml' << 'XML'
+ssh 6v6-siem 'sudo tee -a /var/ossec/etc/rules/local_rules.xml' << 'XML'
 <group name="custom,yara,">
   <rule id="100800" level="13">
     <decoded_as>command</decoded_as>
@@ -1847,7 +1847,7 @@ ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/rules/local_rules.xml' << 'XML'
 XML
 
 # === Active Response — YARA 매칭 시 격리 ===
-ssh ccc@10.20.30.100 'sudo tee /var/ossec/active-response/bin/yara-quarantine.sh' << 'AR'
+ssh 6v6-siem 'sudo tee /var/ossec/active-response/bin/yara-quarantine.sh' << 'AR'
 #!/bin/bash
 ACTION=$1   # add | delete
 USER=$2
@@ -1866,10 +1866,10 @@ if [ "$ACTION" = "add" ]; then
     fi
 fi
 AR
-ssh ccc@10.20.30.100 'sudo chmod +x /var/ossec/active-response/bin/yara-quarantine.sh'
+ssh 6v6-siem 'sudo chmod +x /var/ossec/active-response/bin/yara-quarantine.sh'
 
 # Active Response 등록
-ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/ossec.conf' << 'XML'
+ssh 6v6-siem 'sudo tee -a /var/ossec/etc/ossec.conf' << 'XML'
 <command>
   <name>yara-quarantine</name>
   <executable>yara-quarantine.sh</executable>
@@ -1884,20 +1884,20 @@ ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/ossec.conf' << 'XML'
 </active-response>
 XML
 
-ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-control restart'
+ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control restart'
 
 # === 검증 ===
 # 1. 의심 파일 생성
-ssh ccc@10.20.30.80 'echo "<?php eval(\$_POST[\"x\"]); ?>" > /var/www/html/test.php'
+ssh 6v6-web 'echo "<?php eval(\$_POST[\"x\"]); ?>" > /var/www/html/test.php'
 
 # 2. Wazuh 가 YARA 스캔 (1h 주기 또는 즉시 fim)
 sleep 60
 
 # 3. Wazuh alert 확인
-ssh ccc@10.20.30.100 'sudo tail /var/ossec/logs/alerts/alerts.log | grep yara'
+ssh 6v6-siem 'sudo tail /var/ossec/logs/alerts/alerts.log | grep yara'
 
 # 4. 격리 확인
-ssh ccc@10.20.30.100 'ls /var/ossec/quarantine/'
+ssh 6v6-siem 'ls /var/ossec/quarantine/'
 ```
 
 #### 도구 9: 메모리 스캔 (Step 12)
@@ -1945,7 +1945,7 @@ yara -w /tmp/all-rules.yar /tmp/proc-12345.dump
 
 ```bash
 # === OpenCTI → IOC → YARA 자동 변환 ===
-ssh ccc@10.20.30.100 'curl -s http://localhost:8080/health'
+ssh 6v6-siem 'curl -s http://localhost:8080/health'
 
 # pycti 로 indicators 가져오기
 python3 << 'PY'
@@ -2057,7 +2057,7 @@ yara -w -p 8 ~/yara-rules/all-rules.yar /var/www/   # 8 thread parallel
 yara -w --print-stats ~/yara-rules/all-rules.yar /var/www/
 
 # 2. Wazuh 통합 (s10) — 위 도구 8 참조
-ssh ccc@10.20.30.100 'sudo cp ~/yara-rules/all-rules.yarc /var/ossec/etc/yara/'
+ssh 6v6-siem 'sudo cp ~/yara-rules/all-rules.yarc /var/ossec/etc/yara/'
 
 # 3. 커뮤니티 룰 평가 (s11)
 yara -w /tmp/yara-rules/malware/*.yar /usr/bin/   # FP 측정

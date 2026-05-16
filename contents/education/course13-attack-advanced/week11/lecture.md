@@ -316,7 +316,7 @@ find /etc /usr/bin /usr/sbin -mmin -60 -type f 2>/dev/null | head -10
 
 echo ""
 echo "[4] SIEM 교차 검증"
-ssh ccc@10.20.30.100 \
+ssh 6v6-siem \
   "echo '--- Wazuh FIM 알림 ---'; grep 'integrity' /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -3 | python3 -c '
 import sys,json
 for l in sys.stdin:
@@ -476,7 +476,7 @@ echo "  7. auditd 로그 (커널 수준 기록)"
 
 echo ""
 echo "[Phase 4] SIEM 교차 검증"
-ssh ccc@10.20.30.100 \
+ssh 6v6-siem \
   "echo 'SIEM에 보존된 증거 수:' && wc -l < /var/ossec/logs/alerts/alerts.json 2>/dev/null || echo 'N/A'" 2>/dev/null
 
 echo ""

@@ -302,19 +302,19 @@ echo "============================================"
 # 웹서버 현황 확인
 echo ""
 echo "--- 웹서버 프로세스 상태 ---"
-ssh ccc@10.20.30.80 "ps aux | grep -E 'apache|nginx|node|http' | head -5" 2>/dev/null
+ssh 6v6-web "ps aux | grep -E 'apache|nginx|node|http' | head -5" 2>/dev/null
 
 echo ""
 echo "--- 의심 파일 검색 ---"
-ssh ccc@10.20.30.80 "find /var/www /opt -name '*.php' -newer /etc/hostname 2>/dev/null | head -10" 2>/dev/null
+ssh 6v6-web "find /var/www /opt -name '*.php' -newer /etc/hostname 2>/dev/null | head -10" 2>/dev/null
 
 echo ""
 echo "--- 최근 SSH 접속 ---"
-ssh ccc@10.20.30.80 "last -10" 2>/dev/null
+ssh 6v6-web "last -10" 2>/dev/null
 
 echo ""
 echo "--- 외부 네트워크 연결 ---"
-ssh ccc@10.20.30.80 "ss -tnp 2>/dev/null | grep ESTAB" 2>/dev/null | head -10
+ssh 6v6-web "ss -tnp 2>/dev/null | grep ESTAB" 2>/dev/null | head -10
 ```
 
 ## 3.2 Phase 3: 봉쇄 + 근절
@@ -1161,8 +1161,8 @@ graph LR
 TOKEN=$(curl -sk -u wazuh:wazuh -X POST "https://10.20.30.100:55000/security/user/authenticate?raw=true")
 
 # === [s4] nftables + Apache ===
-ssh ccc@10.20.30.1 'sudo nft list ruleset'
-ssh ccc@10.20.30.80 'sudo apache2ctl -t -D DUMP_VHOSTS'
+ssh 6v6-fw 'sudo nft list ruleset'
+ssh 6v6-web 'sudo apache2ctl -t -D DUMP_VHOSTS'
 
 # === [s5] 증거 수집 (week07·08 도구) ===
 sudo apt install -y tcpdump
@@ -1170,7 +1170,7 @@ ls /tmp/lime/src/lime-*.ko 2>/dev/null
 
 # === [s6] WAF (ModSecurity OWASP CRS) ===
 sudo apt install -y libapache2-mod-security2 modsecurity-crs
-ssh ccc@10.20.30.80 'sudo a2enmod security2'
+ssh 6v6-web 'sudo a2enmod security2'
 
 # === [s9] Plaso + Timesketch (week07 와 동일) ===
 pip install --user plaso
@@ -1235,11 +1235,11 @@ curl -X POST "$THEHIVE/api/v1/case" \
 
 ```bash
 # 시작 시점
-ssh ccc@10.20.30.80 'sudo grep -E "UNION.*SELECT" /var/log/apache2/access.log | head -1'
+ssh 6v6-web 'sudo grep -E "UNION.*SELECT" /var/log/apache2/access.log | head -1'
 
 # 영향 시스템
-ssh ccc@10.20.30.80 'sudo grep -c "SQL syntax error" /var/log/apache2/error.log'
-ssh ccc@10.20.30.80 'sudo grep -E "SELECT.*UNION|password|user.*=" /var/log/mysql/general.log | head'
+ssh 6v6-web 'sudo grep -c "SQL syntax error" /var/log/apache2/error.log'
+ssh 6v6-web 'sudo grep -E "SELECT.*UNION|password|user.*=" /var/log/mysql/general.log | head'
 
 # Lateral 검사
 for host in 10.20.30.1 10.20.30.100; do
@@ -1247,7 +1247,7 @@ for host in 10.20.30.1 10.20.30.100; do
 done
 
 # 응답 크기 (exfil 의심)
-ssh ccc@10.20.30.80 'sudo awk "{print \$10}" /var/log/apache2/access.log | sort -n | tail -10'
+ssh 6v6-web 'sudo awk "{print \$10}" /var/log/apache2/access.log | sort -n | tail -10'
 
 # Zeek (week07)
 zeek -r /var/log/forensics/incident.pcap
@@ -1272,29 +1272,29 @@ MD
 
 ```bash
 # 1. 공격 IP 차단
-ssh ccc@10.20.30.1 'sudo nft add rule inet filter input ip saddr 192.168.1.50 drop counter'
+ssh 6v6-fw 'sudo nft add rule inet filter input ip saddr 192.168.1.50 drop counter'
 
 # 2. 취약 endpoint 비활성화
-ssh ccc@10.20.30.80 'sudo a2dissite vulnerable-app && sudo systemctl reload apache2'
+ssh 6v6-web 'sudo a2dissite vulnerable-app && sudo systemctl reload apache2'
 
 # 또는 path 만 차단
-ssh ccc@10.20.30.80 'sudo tee -a /etc/apache2/conf-enabled/emergency-block.conf' << 'CONF'
+ssh 6v6-web 'sudo tee -a /etc/apache2/conf-enabled/emergency-block.conf' << 'CONF'
 <Location "/rest/products/search">
     Require all denied
 </Location>
 CONF
-ssh ccc@10.20.30.80 'sudo systemctl reload apache2'
+ssh 6v6-web 'sudo systemctl reload apache2'
 
 # 3. DB 권한 read-only
-ssh ccc@10.20.30.80 'sudo mysql -e "REVOKE INSERT, UPDATE, DELETE, CREATE ON juiceshop.* FROM \"webapp\"@\"localhost\""'
+ssh 6v6-web 'sudo mysql -e "REVOKE INSERT, UPDATE, DELETE, CREATE ON juiceshop.* FROM \"webapp\"@\"localhost\""'
 
 # 4. 모니터링 강화
-ssh ccc@10.20.30.100 'sudo sed -i "s/<level>5</<level>10</" /var/ossec/etc/rules/local_rules.xml'
-ssh ccc@10.20.30.100 'sudo /var/ossec/bin/wazuh-control restart'
+ssh 6v6-siem 'sudo sed -i "s/<level>5</<level>10</" /var/ossec/etc/rules/local_rules.xml'
+ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control restart'
 
 # 검증
-ssh ccc@10.20.30.1 'sudo nft list counter inet filter input_dropped'
-ssh ccc@10.20.30.80 'sudo grep 192.168.1.50 /var/log/apache2/access.log | tail'   # 새 접근 없음
+ssh 6v6-fw 'sudo nft list counter inet filter input_dropped'
+ssh 6v6-web 'sudo grep 192.168.1.50 /var/log/apache2/access.log | tail'   # 새 접근 없음
 ```
 
 | 시나리오 | 격리 | 영향 | 시간 |
@@ -1314,21 +1314,21 @@ EVID=/var/log/forensics/incident-2026-05-02
 mkdir -p $EVID
 
 # 1. Web log
-ssh ccc@10.20.30.80 'sudo cp /var/log/apache2/access.log /tmp/access.log.snapshot'
+ssh 6v6-web 'sudo cp /var/log/apache2/access.log /tmp/access.log.snapshot'
 scp ccc@10.20.30.80:/tmp/access.log.snapshot $EVID/web-access.log
 sha256sum $EVID/web-access.log > $EVID/web-access.log.sha256
 
 # DB log
-ssh ccc@10.20.30.80 'sudo cp /var/log/mysql/general.log /tmp/mysql.log.snapshot'
+ssh 6v6-web 'sudo cp /var/log/mysql/general.log /tmp/mysql.log.snapshot'
 scp ccc@10.20.30.80:/tmp/mysql.log.snapshot $EVID/mysql-general.log
 sha256sum $EVID/mysql-general.log >> $EVID/web-access.log.sha256
 
 # 2. PCAP (week07)
-ssh ccc@10.20.30.1 'sudo timeout 300 tcpdump -i eth0 -w /tmp/incident.pcap -s 0 not port 22'
+ssh 6v6-fw 'sudo timeout 300 tcpdump -i eth0 -w /tmp/incident.pcap -s 0 not port 22'
 scp ccc@10.20.30.1:/tmp/incident.pcap{,.sha256} $EVID/
 
 # 3. 메모리 dump (week08)
-ssh ccc@10.20.30.80 '
+ssh 6v6-web '
   cd /tmp/lime/src
   sudo insmod lime-$(uname -r).ko "path=/tmp/mem.lime format=lime"
 '
@@ -1340,7 +1340,7 @@ curl -sk -u admin:admin "https://10.20.30.100:9200/wazuh-alerts-*/_search?size=1
   -H 'Content-Type: application/json' \
   -d '{"query":{"range":{"@timestamp":{"gte":"now-3h"}}}}' > $EVID/wazuh-alerts.json
 
-ssh ccc@10.20.30.1 'sudo cat /var/log/suricata/eve.json' > $EVID/suricata-eve.json
+ssh 6v6-fw 'sudo cat /var/log/suricata/eve.json' > $EVID/suricata-eve.json
 
 # 5. CoC (week07 양식)
 cat > $EVID/coc.txt << 'COC'
@@ -1367,7 +1367,7 @@ gpg --armor --detach-sign $EVID/coc.txt
 
 ```bash
 # 1. 근본 원인 분석
-ssh ccc@10.20.30.80 'grep -A 20 "products/search" /opt/juiceshop/routes/search.js'
+ssh 6v6-web 'grep -A 20 "products/search" /opt/juiceshop/routes/search.js'
 # 취약: db.query(`SELECT ... '%${q}%'`, ...)   ← template literal SQL
 
 # 2. 코드 fix
@@ -1382,10 +1382,10 @@ cat > /tmp/fix-sqli.diff << 'DIFF'
  });
 DIFF
 
-ssh ccc@10.20.30.80 'cd /opt/juiceshop && patch < /tmp/fix-sqli.diff && git commit -am "fix: SQLi"'
+ssh 6v6-web 'cd /opt/juiceshop && patch < /tmp/fix-sqli.diff && git commit -am "fix: SQLi"'
 
 # 3. WAF 활성화
-ssh ccc@10.20.30.80 '
+ssh 6v6-web '
   sudo apt install -y libapache2-mod-security2 modsecurity-crs
   sudo a2enmod security2
   sudo cp /etc/modsecurity/modsecurity.conf-recommended /etc/modsecurity/modsecurity.conf
@@ -1398,14 +1398,14 @@ curl -s "http://10.20.30.80/search?q=' OR 1=1--" -o /dev/null -w "%{http_code}\n
 # 403 = 차단 성공
 
 # 4. DB 권한 강화
-ssh ccc@10.20.30.80 'sudo mysql -e "
+ssh 6v6-web 'sudo mysql -e "
   CREATE USER \"webapp_readonly\"@\"localhost\" IDENTIFIED BY \"random\";
   GRANT SELECT ON juiceshop.products TO \"webapp_readonly\"@\"localhost\";
   -- users 등 다른 테이블 차단
 "'
 
 # 5. 신규 룰
-ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/rules/local_rules.xml' << 'XML'
+ssh 6v6-siem 'sudo tee -a /var/ossec/etc/rules/local_rules.xml' << 'XML'
 <group name="custom,sqli,response,">
   <rule id="100250" level="14">
     <if_sid>100200</if_sid>
@@ -1418,7 +1418,7 @@ ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/rules/local_rules.xml' << 'XML'
 XML
 
 # 검증
-ssh ccc@10.20.30.80 'cd /opt/juiceshop && grep -rn "db.query.*\${" routes/'   # 다른 SQLi 위험
+ssh 6v6-web 'cd /opt/juiceshop && grep -rn "db.query.*\${" routes/'   # 다른 SQLi 위험
 docker run --rm -v /opt/juiceshop:/src returntocorp/semgrep --config p/owasp-top-ten /src
 ```
 
@@ -1426,19 +1426,19 @@ docker run --rm -v /opt/juiceshop:/src returntocorp/semgrep --config p/owasp-top
 
 ```bash
 # 1. 격리 해제
-ssh ccc@10.20.30.1 'sudo nft delete rule inet filter input handle $(sudo nft -a list chain inet filter input | grep "192.168.1.50" | awk "{print \$NF}")'
-ssh ccc@10.20.30.80 'sudo a2ensite vulnerable-app && sudo systemctl reload apache2'
+ssh 6v6-fw 'sudo nft delete rule inet filter input handle $(sudo nft -a list chain inet filter input | grep "192.168.1.50" | awk "{print \$NF}")'
+ssh 6v6-web 'sudo a2ensite vulnerable-app && sudo systemctl reload apache2'
 
 # 2. 데이터 무결성
-ssh ccc@10.20.30.80 'sudo mysql -e "CHECK TABLE juiceshop.users"'
-ssh ccc@10.20.30.80 'sudo mysql -e "SELECT COUNT(*) FROM juiceshop.users"'
+ssh 6v6-web 'sudo mysql -e "CHECK TABLE juiceshop.users"'
+ssh 6v6-web 'sudo mysql -e "SELECT COUNT(*) FROM juiceshop.users"'
 
 # backup 비교
-ssh ccc@10.20.30.80 'sudo mysqldump juiceshop users > /tmp/users-current.sql'
+ssh 6v6-web 'sudo mysqldump juiceshop users > /tmp/users-current.sql'
 diff /tmp/users-current.sql /var/backups/users-2026-05-01.sql
 
 # 3. canary (10% traffic, 24h 후 100%)
-ssh ccc@10.20.30.1 'sudo nft add rule inet filter forward ip daddr 10.20.30.80 ip saddr 10.0.0.0/8 limit rate 10/second accept'
+ssh 6v6-fw 'sudo nft add rule inet filter forward ip daddr 10.20.30.80 ip saddr 10.0.0.0/8 limit rate 10/second accept'
 
 # 4. 복구 체크리스트
 cat > /tmp/recovery-checklist.md << 'MD'
@@ -1483,7 +1483,7 @@ MD
 
 ```bash
 # 사용자 통보 자동화
-ssh ccc@10.20.30.80 'sudo mysql -N -e "SELECT email FROM juiceshop.users LIMIT 12847"' > /tmp/affected.txt
+ssh 6v6-web 'sudo mysql -N -e "SELECT email FROM juiceshop.users LIMIT 12847"' > /tmp/affected.txt
 
 while read email; do
     cat << 'EOF' | mail -s "[보안 통보] 비밀번호 재설정 요청" "$email"
@@ -1609,7 +1609,7 @@ mmdc -i /tmp/incident-timeline.mmd -o /tmp/incident-timeline.png
 
 ```bash
 # UEBA — Wazuh 룰
-ssh ccc@10.20.30.100 'sudo tee -a /var/ossec/etc/rules/local_rules.xml' << 'XML'
+ssh 6v6-siem 'sudo tee -a /var/ossec/etc/rules/local_rules.xml' << 'XML'
 <group name="custom,insider,">
   <!-- off-hours user activity -->
   <rule id="100600" level="11">
@@ -1740,18 +1740,18 @@ XML
 TOKEN=$(curl -sk -u wazuh:wazuh -X POST "https://10.20.30.100:55000/security/user/authenticate?raw=true")
 curl -sk -u admin:admin "https://10.20.30.100:9200/wazuh-alerts-*/_search" -H 'Content-Type: application/json' -d '...'
 curl -X POST "$THEHIVE/api/v1/case" -d '{"title":"[P1] SQLi","severity":4}'
-ssh ccc@10.20.30.80 'sudo grep -E "UNION.*SELECT" /var/log/apache2/access.log | head'
+ssh 6v6-web 'sudo grep -E "UNION.*SELECT" /var/log/apache2/access.log | head'
 ```
 
 #### Phase B — 격리 + 증거 (s4·s5)
 
 ```bash
-ssh ccc@10.20.30.1 'sudo nft add rule inet filter input ip saddr 192.168.1.50 drop counter'
-ssh ccc@10.20.30.80 'sudo a2dissite vulnerable-app && sudo systemctl reload apache2'
+ssh 6v6-fw 'sudo nft add rule inet filter input ip saddr 192.168.1.50 drop counter'
+ssh 6v6-web 'sudo a2dissite vulnerable-app && sudo systemctl reload apache2'
 
 EVID=/var/log/forensics/incident-2026-05-02
 mkdir -p $EVID
-ssh ccc@10.20.30.80 'sudo cp /var/log/apache2/access.log /tmp/access.log.snapshot'
+ssh 6v6-web 'sudo cp /var/log/apache2/access.log /tmp/access.log.snapshot'
 scp ccc@10.20.30.80:/tmp/access.log.snapshot $EVID/
 sha256sum $EVID/* > $EVID/hashes.sha256
 ```
@@ -1759,11 +1759,11 @@ sha256sum $EVID/* > $EVID/hashes.sha256
 #### Phase C — 근절 + 복구 (s6·s7)
 
 ```bash
-ssh ccc@10.20.30.80 'cd /opt/juiceshop && patch < /tmp/fix-sqli.diff && git commit -am "fix: SQLi"'
-ssh ccc@10.20.30.80 'sudo a2enmod security2 && sudo systemctl reload apache2'
+ssh 6v6-web 'cd /opt/juiceshop && patch < /tmp/fix-sqli.diff && git commit -am "fix: SQLi"'
+ssh 6v6-web 'sudo a2enmod security2 && sudo systemctl reload apache2'
 
-ssh ccc@10.20.30.1 'sudo nft delete rule inet filter input handle ...'
-ssh ccc@10.20.30.80 'sudo a2ensite vulnerable-app && sudo systemctl reload apache2'
+ssh 6v6-fw 'sudo nft delete rule inet filter input handle ...'
+ssh 6v6-web 'sudo a2ensite vulnerable-app && sudo systemctl reload apache2'
 ```
 
 #### Phase D — 통합 시나리오 (s99 multi_task)

@@ -435,7 +435,7 @@ Tier 1 에스컬레이션 접수
 
 ```bash
 # siem 서버 접속
-ssh ccc@10.20.30.100
+ssh 6v6-siem
 
 # Wazuh API 토큰 발급
 TOKEN=$(curl -s -u wazuh-wui:MyS3cr37P450r.*- \
@@ -594,7 +594,7 @@ python3 /tmp/mttd_calc.py
 
 ```bash
 # siem 서버에서 활성 룰 수 확인
-ssh ccc@10.20.30.100 << 'EOF'
+ssh 6v6-siem << 'EOF'
 echo "=== Wazuh 활성 룰 현황 ==="
 # 전체 룰 수
 TOTAL_RULES=$(find /var/ossec/ruleset/rules/ -name "*.xml" -exec grep -c '<rule id' {} + 2>/dev/null | awk -F: '{sum+=$2} END{print sum}')
@@ -759,7 +759,7 @@ TOTAL=10
 
 # 1. SIEM 가동 여부
 echo "[체크 1] SIEM(Wazuh) 가동 여부..."
-if ssh ccc@10.20.30.100 \
+if ssh 6v6-siem \
    "systemctl is-active wazuh-manager" 2>/dev/null | grep -q "active"; then
     echo "  [PASS] Wazuh Manager 가동 중"
     SCORE=$((SCORE+1))
@@ -769,7 +769,7 @@ fi
 
 # 2. 에이전트 연결 수
 echo "[체크 2] 연결된 에이전트 수..."
-AGENTS=$(ssh ccc@10.20.30.100 \
+AGENTS=$(ssh 6v6-siem \
    "/var/ossec/bin/agent_control -l 2>/dev/null | grep -c 'Active'" 2>/dev/null)
 AGENTS=${AGENTS:-0}
 echo "  연결된 에이전트: ${AGENTS}개"
@@ -782,7 +782,7 @@ fi
 
 # 3. 커스텀 룰 존재 여부
 echo "[체크 3] 커스텀 탐지 룰 존재 여부..."
-CUSTOM=$(ssh ccc@10.20.30.100 \
+CUSTOM=$(ssh 6v6-siem \
    "ls /var/ossec/etc/rules/*.xml 2>/dev/null | wc -l" 2>/dev/null)
 CUSTOM=${CUSTOM:-0}
 echo "  커스텀 룰 파일: ${CUSTOM}개"
@@ -795,7 +795,7 @@ fi
 
 # 4. IPS(Suricata) 가동 여부
 echo "[체크 4] IPS(Suricata) 가동 여부..."
-if ssh ccc@10.20.30.1 \
+if ssh 6v6-fw \
    "systemctl is-active suricata" 2>/dev/null | grep -q "active"; then
     echo "  [PASS] Suricata IPS 가동 중"
     SCORE=$((SCORE+1))
@@ -805,7 +805,7 @@ fi
 
 # 5. 방화벽(nftables) 활성 여부
 echo "[체크 5] 방화벽(nftables) 활성 여부..."
-if ssh ccc@10.20.30.1 \
+if ssh 6v6-fw \
    "nft list tables" 2>/dev/null | grep -q "table"; then
     echo "  [PASS] nftables 활성"
     SCORE=$((SCORE+1))
@@ -815,7 +815,7 @@ fi
 
 # 6. 웹 로그 수집 여부
 echo "[체크 6] 웹서버 로그 수집 여부..."
-if ssh ccc@10.20.30.80 \
+if ssh 6v6-web \
    "test -f /var/ossec/etc/ossec.conf && grep -q 'localfile' /var/ossec/etc/ossec.conf" 2>/dev/null; then
     echo "  [PASS] 웹서버 로그 수집 설정 존재"
     SCORE=$((SCORE+1))
@@ -846,7 +846,7 @@ fi
 
 # 9. 로그 보존 기간 확인
 echo "[체크 9] 로그 보존 정책..."
-RETENTION=$(ssh ccc@10.20.30.100 \
+RETENTION=$(ssh 6v6-siem \
    "ls /var/ossec/logs/alerts/ 2>/dev/null | wc -l" 2>/dev/null)
 RETENTION=${RETENTION:-0}
 echo "  경보 로그 디렉토리: ${RETENTION}개"
@@ -1168,7 +1168,7 @@ graph LR
 
 ```bash
 # === [s1·s2·s6·s7] Wazuh API + CLI ===
-ssh ccc@10.20.30.100
+ssh 6v6-siem
 sudo /var/ossec/bin/wazuh-control status
 # wazuh-modulesd is running
 # wazuh-monitord is running
@@ -1194,22 +1194,22 @@ curl -s -k -H "Authorization: Bearer $TOKEN" "https://10.20.30.100:55000/rules?p
 
 # === [s3] nftables ===
 sudo apt install -y nftables
-ssh ccc@10.20.30.1 'sudo nft list ruleset'
-ssh ccc@10.20.30.1 'sudo nft -j list ruleset' | jq '.nftables[]'
+ssh 6v6-fw 'sudo nft list ruleset'
+ssh 6v6-fw 'sudo nft -j list ruleset' | jq '.nftables[]'
 
 # === [s4·s5] Suricata ===
-ssh ccc@10.20.30.1 'suricata -V'
+ssh 6v6-fw 'suricata -V'
 # Suricata 6.0.x
 
-ssh ccc@10.20.30.1 'sudo suricatasc -c uptime'
-ssh ccc@10.20.30.1 'sudo suricatasc -c rules-stats'
-ssh ccc@10.20.30.1 'sudo suricatasc -c iface-stat eth0'
+ssh 6v6-fw 'sudo suricatasc -c uptime'
+ssh 6v6-fw 'sudo suricatasc -c rules-stats'
+ssh 6v6-fw 'sudo suricatasc -c iface-stat eth0'
 
 # 룰 카운트
-ssh ccc@10.20.30.1 'cat /etc/suricata/rules/*.rules | grep -v ^#  | wc -l'
+ssh 6v6-fw 'cat /etc/suricata/rules/*.rules | grep -v ^#  | wc -l'
 
 # eve.json 분석
-ssh ccc@10.20.30.1 'sudo tail -100 /var/log/suricata/eve.json | jq -r ".alert.signature" | sort | uniq -c | sort -rn'
+ssh 6v6-fw 'sudo tail -100 /var/log/suricata/eve.json | jq -r ".alert.signature" | sort | uniq -c | sort -rn'
 
 # === [s8·s9] SOC-CMM 자가진단 ===
 mkdir -p ~/soc-cmm-assessment
@@ -1342,7 +1342,7 @@ curl -s -k -u admin:admin "https://$INDEX_HOST:9200/wazuh-alerts-*/_search" -H '
 
 ```bash
 # 전체 ruleset
-ssh ccc@10.20.30.1 'sudo nft list ruleset'
+ssh 6v6-fw 'sudo nft list ruleset'
 # table inet filter {
 #   chain input {
 #     type filter hook input priority 0; policy drop;
@@ -1356,58 +1356,58 @@ ssh ccc@10.20.30.1 'sudo nft list ruleset'
 # }
 
 # Default policy 확인
-ssh ccc@10.20.30.1 'sudo nft -j list table inet filter' | \
+ssh 6v6-fw 'sudo nft -j list table inet filter' | \
   jq '.nftables[] | select(.chain) | {name: .chain.name, policy: .chain.policy}'
 
 # Counter 확인 (drop rate 측정용)
-ssh ccc@10.20.30.1 'sudo nft list counter inet filter input_dropped'
+ssh 6v6-fw 'sudo nft list counter inet filter input_dropped'
 
 # Drop rate 계산
-DROP_PKT=$(ssh ccc@10.20.30.1 'sudo nft -j list counters inet filter' | jq '.nftables[] | select(.counter.name == "input_dropped").counter.packets')
-TOTAL_PKT=$(ssh ccc@10.20.30.1 'cat /proc/net/dev | grep eth0 | awk "{print \$3}"')
+DROP_PKT=$(ssh 6v6-fw 'sudo nft -j list counters inet filter' | jq '.nftables[] | select(.counter.name == "input_dropped").counter.packets')
+TOTAL_PKT=$(ssh 6v6-fw 'cat /proc/net/dev | grep eth0 | awk "{print \$3}"')
 echo "Drop rate: $((DROP_PKT * 100 / TOTAL_PKT))%"
 
 # 룰 추가
-ssh ccc@10.20.30.1 'sudo nft add rule inet filter input ip saddr 192.168.0.10 drop counter'
+ssh 6v6-fw 'sudo nft add rule inet filter input ip saddr 192.168.0.10 drop counter'
 
 # Audit log
-ssh ccc@10.20.30.1 'sudo nft add rule inet filter input log prefix "NFT_DROP " level info'
-ssh ccc@10.20.30.1 'sudo journalctl -t kernel | grep NFT_DROP | tail -20'
+ssh 6v6-fw 'sudo nft add rule inet filter input log prefix "NFT_DROP " level info'
+ssh 6v6-fw 'sudo journalctl -t kernel | grep NFT_DROP | tail -20'
 
 # 영구화
-ssh ccc@10.20.30.1 'sudo nft list ruleset > /etc/nftables.conf'
-ssh ccc@10.20.30.1 'sudo systemctl enable nftables'
+ssh 6v6-fw 'sudo nft list ruleset > /etc/nftables.conf'
+ssh 6v6-fw 'sudo systemctl enable nftables'
 ```
 
 #### 도구 3: Suricata — IDS 룰 + 알림 분석 (Step 4·5)
 
 ```bash
 # === 룰 통계 ===
-ssh ccc@10.20.30.1 'sudo suricatasc -c uptime'
-ssh ccc@10.20.30.1 'sudo suricatasc -c rules-stats'
+ssh 6v6-fw 'sudo suricatasc -c uptime'
+ssh 6v6-fw 'sudo suricatasc -c rules-stats'
 # {"return": "OK", "message": {"loaded": 25437, "active": 25320, "disabled": 117}}
 
 # 룰 파일별 카운트
-ssh ccc@10.20.30.1 'for f in /etc/suricata/rules/*.rules; do
+ssh 6v6-fw 'for f in /etc/suricata/rules/*.rules; do
   count=$(grep -v "^#\|^$" $f | wc -l)
   echo "$count $(basename $f)"
 done | sort -rn | head -10'
 
 # 카테고리별
-ssh ccc@10.20.30.1 'grep -h "metadata:" /etc/suricata/rules/*.rules | \
+ssh 6v6-fw 'grep -h "metadata:" /etc/suricata/rules/*.rules | \
   grep -oP "attack_target [^,]+" | sort | uniq -c | sort -rn | head -10'
 
 # === 24h alert 분석 ===
-ssh ccc@10.20.30.1 'sudo tail -10000 /var/log/suricata/eve.json | jq -r "select(.event_type==\"alert\") | .alert.category" | sort | uniq -c | sort -rn'
+ssh 6v6-fw 'sudo tail -10000 /var/log/suricata/eve.json | jq -r "select(.event_type==\"alert\") | .alert.category" | sort | uniq -c | sort -rn'
 
 # Severity 분포
-ssh ccc@10.20.30.1 'sudo tail -10000 /var/log/suricata/eve.json | jq -r "select(.event_type==\"alert\") | .alert.severity" | sort | uniq -c'
+ssh 6v6-fw 'sudo tail -10000 /var/log/suricata/eve.json | jq -r "select(.event_type==\"alert\") | .alert.severity" | sort | uniq -c'
 
 # Source IP top 10
-ssh ccc@10.20.30.1 'sudo tail -10000 /var/log/suricata/eve.json | jq -r "select(.event_type==\"alert\") | .src_ip" | sort | uniq -c | sort -rn | head -10'
+ssh 6v6-fw 'sudo tail -10000 /var/log/suricata/eve.json | jq -r "select(.event_type==\"alert\") | .src_ip" | sort | uniq -c | sort -rn | head -10'
 
 # 시간대별
-ssh ccc@10.20.30.1 'sudo tail -10000 /var/log/suricata/eve.json | jq -r "select(.event_type==\"alert\") | .timestamp" | cut -dT -f2 | cut -d: -f1 | sort | uniq -c'
+ssh 6v6-fw 'sudo tail -10000 /var/log/suricata/eve.json | jq -r "select(.event_type==\"alert\") | .timestamp" | cut -dT -f2 | cut -d: -f1 | sort | uniq -c'
 
 # === Lua 스크립트 — 사용자 정의 logic ===
 cat > /etc/suricata/rules/custom-lua.rules << 'RULE'
@@ -1427,8 +1427,8 @@ function match(args)
 end
 LUA
 
-ssh ccc@10.20.30.1 'sudo suricata -T -c /etc/suricata/suricata.yaml'
-ssh ccc@10.20.30.1 'sudo systemctl reload suricata'
+ssh 6v6-fw 'sudo suricata -T -c /etc/suricata/suricata.yaml'
+ssh 6v6-fw 'sudo systemctl reload suricata'
 ```
 
 #### 도구 4: SOC-CMM 자가진단 + Radar Chart (Step 8·9)
@@ -1621,11 +1621,11 @@ RULE_COUNT=$(curl -s -k -H "Authorization: Bearer $TOKEN" "https://10.20.30.100:
 CUSTOM=$(curl -s -k -H "Authorization: Bearer $TOKEN" "https://10.20.30.100:55000/rules?filename=local_rules.xml&limit=1" | jq '.data.total_affected_items')
 
 # 2. nftables policy
-NFT_DROP=$(ssh ccc@10.20.30.1 'sudo nft -j list ruleset' | jq '[.nftables[] | select(.chain) | select(.chain.policy == "drop")] | length')
+NFT_DROP=$(ssh 6v6-fw 'sudo nft -j list ruleset' | jq '[.nftables[] | select(.chain) | select(.chain.policy == "drop")] | length')
 
 # 3. Suricata
-SURI_RULES=$(ssh ccc@10.20.30.1 'sudo suricatasc -c rules-stats' | jq '.message.active')
-SURI_ALERTS_24H=$(ssh ccc@10.20.30.1 'sudo grep -c "\"event_type\":\"alert\"" /var/log/suricata/eve.json')
+SURI_RULES=$(ssh 6v6-fw 'sudo suricatasc -c rules-stats' | jq '.message.active')
+SURI_ALERTS_24H=$(ssh 6v6-fw 'sudo grep -c "\"event_type\":\"alert\"" /var/log/suricata/eve.json')
 
 # 4. baseline 출력
 cat > /tmp/soc-baseline.txt << EOF

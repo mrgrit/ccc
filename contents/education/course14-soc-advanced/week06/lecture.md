@@ -255,7 +255,7 @@ bash /tmp/baseline_collect.sh
 
 echo ""
 echo "=== web 서버 베이스라인 ==="
-ssh ccc@10.20.30.80 'bash -s' < /tmp/baseline_collect.sh 2>/dev/null | head -50
+ssh 6v6-web 'bash -s' < /tmp/baseline_collect.sh 2>/dev/null | head -50
 ```
 
 > **실습 목적**: 정상 상태의 베이스라인을 수집하여, 향후 헌팅 시 이탈 여부를 판단하는 기준으로 사용한다.
@@ -320,11 +320,11 @@ bash /tmp/hunt_process.sh
 
 echo ""
 echo "=== secu 서버 프로세스 헌팅 ==="
-ssh ccc@10.20.30.1 'bash -s' < /tmp/hunt_process.sh 2>/dev/null
+ssh 6v6-fw 'bash -s' < /tmp/hunt_process.sh 2>/dev/null
 
 echo ""
 echo "=== web 서버 프로세스 헌팅 ==="
-ssh ccc@10.20.30.80 'bash -s' < /tmp/hunt_process.sh 2>/dev/null
+ssh 6v6-web 'bash -s' < /tmp/hunt_process.sh 2>/dev/null
 ```
 
 > **결과 해석**:
@@ -469,7 +469,7 @@ bash /tmp/hunt_network.sh
 
 echo ""
 echo "=== secu(방화벽) 서버 ==="
-ssh ccc@10.20.30.1 'bash -s' < /tmp/hunt_network.sh 2>/dev/null
+ssh 6v6-fw 'bash -s' < /tmp/hunt_network.sh 2>/dev/null
 ```
 
 ## 3.4 Bastion 자동화 헌팅
@@ -604,7 +604,7 @@ python3 /tmp/hunting_report.py
 
 ```bash
 # 헌팅에서 발견한 패턴을 Wazuh 탐지 룰로 전환
-ssh ccc@10.20.30.100 << 'REMOTE'
+ssh 6v6-siem << 'REMOTE'
 
 sudo tee -a /var/ossec/etc/rules/local_rules.xml << 'RULES'
 
@@ -696,7 +696,7 @@ ATT&CK T1059.004(Unix Shell) 기법을 대상으로 헌팅 캠페인을 수행�
 
 ```bash
 # Wazuh 로그에서 비정상 패턴 헌팅
-ssh ccc@10.20.30.100 << 'REMOTE'
+ssh 6v6-siem << 'REMOTE'
 
 echo "=== 헌팅 쿼리 1: 야간 SSH 접속 ==="
 # 업무 시간 외(22:00-06:00) SSH 접속 시도
@@ -1136,15 +1136,15 @@ fig.show()
 
 ```bash
 # bash 빠른 분석
-ssh ccc@10.20.30.100 'sudo grep -i "dns_query" /var/ossec/logs/alerts/alerts.json | \
+ssh 6v6-siem 'sudo grep -i "dns_query" /var/ossec/logs/alerts/alerts.json | \
   jq -r ".data.dns_query" | sort | uniq -c | sort -rn | head -20'
 
 # 긴 도메인 추출
-ssh ccc@10.20.30.100 'sudo jq -r "select(.data.dns_query | length > 50) | .data.dns_query" \
+ssh 6v6-siem 'sudo jq -r "select(.data.dns_query | length > 50) | .data.dns_query" \
   /var/ossec/logs/alerts/alerts.json | sort -u | head -10'
 
 # Zeek
-ssh ccc@10.20.30.1 'sudo zeek-cut id.orig_h query qtype_name < /var/log/zeek/dns.log' | \
+ssh 6v6-fw 'sudo zeek-cut id.orig_h query qtype_name < /var/log/zeek/dns.log' | \
   awk '{ print $2 }' | sort | uniq -c | sort -rn | head -10
 ```
 
@@ -1170,7 +1170,7 @@ for (src, dst), info in suspicious.items():
 
 ```bash
 # Zeek conn.log 빠른 분석
-ssh ccc@10.20.30.1 'sudo zeek-cut ts id.orig_h id.resp_h duration < /var/log/zeek/conn.log' | \
+ssh 6v6-fw 'sudo zeek-cut ts id.orig_h id.resp_h duration < /var/log/zeek/conn.log' | \
   awk '
     { key = $2 "->" $3
       if (last[key]) { diff = $1 - last[key]; sum[key] += diff; sumsq[key] += diff*diff; count[key]++ }
@@ -1248,14 +1248,14 @@ print(f"신규 user×host: {len(new_pairs)}")
 
 ```bash
 # Exfil — 대용량 outbound (Zeek)
-ssh ccc@10.20.30.1 'sudo zeek-cut id.orig_h id.resp_h proto orig_bytes resp_bytes duration < /var/log/zeek/conn.log' | \
+ssh 6v6-fw 'sudo zeek-cut id.orig_h id.resp_h proto orig_bytes resp_bytes duration < /var/log/zeek/conn.log' | \
   awk -v threshold=10485760 '
     $4 > threshold || $5 > threshold {
       printf "%s -> %s | %s | %d | %d\n", $1, $2, $3, $4, $5
     }' | sort -t'|' -k 5 -rn | head -10
 
 # 비정상 protocol
-ssh ccc@10.20.30.1 'sudo zeek-cut id.orig_h id.resp_h id.resp_p proto service < /var/log/zeek/conn.log' | \
+ssh 6v6-fw 'sudo zeek-cut id.orig_h id.resp_h id.resp_p proto service < /var/log/zeek/conn.log' | \
   awk '($3 == 25 || $3 == 587) && $1 !~ /mailserver/ { print "Suspicious SMTP:", $0 }'
 
 # entropy — 인코딩된 exfil

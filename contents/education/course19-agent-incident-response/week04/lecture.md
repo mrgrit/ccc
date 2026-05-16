@@ -267,7 +267,7 @@ sha256sum artifacts/tools/* > artifacts/tools/SHA256SUMS
 
 ```bash
 # 실험 중 web VM에서 관찰
-ssh ccc@10.20.30.80
+ssh 6v6-web
 # auditd로 파일 쓰기 추적 (실험 실습용)
 sudo auditctl -w /tmp -p wa -k tmpwrites
 sudo ausearch -k tmpwrites --start recent | head -30
@@ -333,9 +333,9 @@ flowchart TB
 
 ```bash
 # 모든 실습 VM에서 시간 확인
-for h in bastion secu web siem; do
+for h in 6v6-bastion 6v6-fw 6v6-web 6v6-siem; do
   echo -n "$h: "
-  ssh ccc@10.20.30.$(case $h in bastion) echo 201;; secu) echo 1;; web) echo 80;; siem) echo 100;; esac) date -Iseconds
+  ssh "$h" date -Iseconds
 done
 ```
 

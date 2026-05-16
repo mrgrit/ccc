@@ -780,19 +780,19 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID3/execute-plan \
     "tasks": [
       {
         "order": 1,
-        "instruction_prompt": "echo \"[BLUE] Phase 1: IPS 로그 분석\"; ssh ccc@10.20.30.1 \"tail -20 /var/log/suricata/fast.log 2>/dev/null || echo No Suricata alerts\"",
+        "instruction_prompt": "echo \"[BLUE] Phase 1: IPS 로그 분석\"; ssh 6v6-fw \"tail -20 /var/log/suricata/fast.log 2>/dev/null || echo No Suricata alerts\"",
         "risk_level": "low",
         "subagent_url": "http://10.20.30.201:8002"
       },
       {
         "order": 2,
-        "instruction_prompt": "echo \"[BLUE] Phase 2: 웹 접근 로그 분석\"; ssh ccc@10.20.30.80 \"tail -30 /var/log/apache2/access.log 2>/dev/null | grep -iE \\\"union|select|script|alert|or 1=1\\\" || echo No suspicious entries\"",
+        "instruction_prompt": "echo \"[BLUE] Phase 2: 웹 접근 로그 분석\"; ssh 6v6-web \"tail -30 /var/log/apache2/access.log 2>/dev/null | grep -iE \\\"union|select|script|alert|or 1=1\\\" || echo No suspicious entries\"",
         "risk_level": "low",
         "subagent_url": "http://10.20.30.201:8002"
       },
       {
         "order": 3,
-        "instruction_prompt": "echo \"[BLUE] Phase 3: Wazuh 알림 확인\"; ssh ccc@10.20.30.100 \"tail -20 /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -m json.tool 2>/dev/null | head -40 || echo No recent alerts\"",
+        "instruction_prompt": "echo \"[BLUE] Phase 3: Wazuh 알림 확인\"; ssh 6v6-siem \"tail -20 /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -m json.tool 2>/dev/null | head -40 || echo No recent alerts\"",
         "risk_level": "low",
         "subagent_url": "http://10.20.30.201:8002"
       }
