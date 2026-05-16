@@ -1863,6 +1863,12 @@ _STANDALONE_COURSES = {
         "icon": "🕹️",
         "color": "#bc8cff",
     },
+    "attack-adv": {
+        "title": "사이버 공격 심화 (6v6)",
+        "description": "Advanced Attack — 고급 침투 기법 · C2 인프라 · 회피 기법 · MITRE ATT&CK 자동화 등을 6v6 컨테이너 인프라에서 실습. Training 메뉴의 attack-adv 과목을 6v6 환경에 맞춰 이식.",
+        "icon": "🗡️",
+        "color": "#f85149",
+    },
 }
 
 

