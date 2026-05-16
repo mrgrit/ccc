@@ -308,7 +308,7 @@ web 서버에 접속하여 실행 중인 컨테이너를 확인한다.
 
 ```bash
 # bastion 서버에서 web 서버로 SSH 접속
-ssh ccc@10.20.30.80
+ssh 6v6-web
 ```
 
 접속 후 Docker 상태를 확인한다:
@@ -437,7 +437,7 @@ siem 서버에는 OpenCTI(위협 인텔리전스 플랫폼)가 Docker Compose로
 
 ```bash
 # bastion 서버에서 siem 서버로 접속
-ssh ccc@10.20.30.100
+ssh 6v6-siem
 ```
 
 ```bash
@@ -481,7 +481,7 @@ docker network inspect <opencti_네트워크_이름>
 
 ```bash
 # web 서버에서 (다시 접속 필요 시)
-ssh ccc@10.20.30.80
+ssh 6v6-web
 
 # 컨테이너 로그 확인 (최근 20줄)
 docker logs --tail 20 <컨테이너이름>

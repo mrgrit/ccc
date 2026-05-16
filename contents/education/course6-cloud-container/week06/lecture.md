@@ -348,7 +348,7 @@ secrets:
 ### 실습 1: 기존 Compose 파일 보안 점검
 
 ```bash
-ssh ccc@10.20.30.80
+ssh 6v6-web
 
 # Apache+ModSecurity Compose 파일 확인
 cat /etc/apache2/sites-enabled/ (VirtualHost 설정)

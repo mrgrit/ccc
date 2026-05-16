@@ -326,7 +326,7 @@ echo "cGFzc3dvcmQxMjM=" | base64 -d
 ### 실습 1: RBAC 개념을 Docker 환경에서 이해
 
 ```bash
-ssh ccc@10.20.30.80
+ssh 6v6-web
 
 # Docker에서의 접근 제어 = docker.sock 접근 권한
 # K8s에서의 접근 제어 = RBAC
@@ -339,7 +339,7 @@ groups  # docker 그룹 확인
 
 ```bash
 # secu 서버에서 Pod 간 통신 제어 개념 이해
-ssh ccc@10.20.30.1
+ssh 6v6-fw
 
 # web(10.20.30.80)에서 siem(10.20.30.100)으로의 특정 포트만 허용
 # 이것이 K8s NetworkPolicy의 원리
@@ -450,14 +450,14 @@ HEALTHCHECK CMD curl -f http://localhost:8080 || exit 1  # ✅ 헬스체크
 
 ```bash
 # web 서버의 Docker 상태 확인
-ssh ccc@10.20.30.80 "
+ssh 6v6-web "
   echo '=== Docker 버전 ===' && docker --version 2>/dev/null || echo 'Docker 미설치'
   echo '=== 실행 중 컨테이너 ===' && docker ps 2>/dev/null || echo '접근 불가'
   echo '=== Docker 소켓 권한 ===' && ls -la /var/run/docker.sock 2>/dev/null
 " 2>/dev/null
 
 # siem 서버의 Docker 상태 (OpenCTI가 Docker로 실행)
-ssh ccc@10.20.30.100 "
+ssh 6v6-siem "
   echo '=== Docker 컨테이너 ===' && sudo docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}' 2>/dev/null
   echo '=== Docker 네트워크 ===' && sudo docker network ls 2>/dev/null
 " 2>/dev/null

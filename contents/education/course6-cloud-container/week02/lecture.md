@@ -233,7 +233,7 @@ ENV DB_PASSWORD=mysecret123
 
 ```bash
 # web 서버 접속 후 실행 중인 컨테이너 확인
-ssh ccc@10.20.30.80
+ssh 6v6-web
 docker ps
 
 # JuiceShop 컨테이너 확인
@@ -358,14 +358,14 @@ HEALTHCHECK CMD curl -f http://localhost:8080 || exit 1  # ✅ 헬스체크
 
 ```bash
 # web 서버의 Docker 상태 확인
-ssh ccc@10.20.30.80 "
+ssh 6v6-web "
   echo '=== Docker 버전 ===' && docker --version 2>/dev/null || echo 'Docker 미설치'
   echo '=== 실행 중 컨테이너 ===' && docker ps 2>/dev/null || echo '접근 불가'
   echo '=== Docker 소켓 권한 ===' && ls -la /var/run/docker.sock 2>/dev/null
 " 2>/dev/null
 
 # siem 서버의 Docker 상태 (OpenCTI가 Docker로 실행)
-ssh ccc@10.20.30.100 "
+ssh 6v6-siem "
   echo '=== Docker 컨테이너 ===' && sudo docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}' 2>/dev/null
   echo '=== Docker 네트워크 ===' && sudo docker network ls 2>/dev/null
 " 2>/dev/null

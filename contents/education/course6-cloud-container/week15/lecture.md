@@ -132,7 +132,7 @@
 > **실전 활용**: 실제 클라우드 마이그레이션 프로젝트에서 보안 아키텍처 설계서 작성 및 보안 요구사항 정의에 활용한다
 
 ```bash
-ssh ccc@10.20.30.80
+ssh 6v6-web
 
 # 실행 중인 모든 컨테이너의 이미지를 스캔
 # CRITICAL/HIGH 취약점 요약 보고서 작성
@@ -328,14 +328,14 @@ HEALTHCHECK CMD curl -f http://localhost:8080 || exit 1  # ✅ 헬스체크
 
 ```bash
 # web 서버의 Docker 상태 확인
-ssh ccc@10.20.30.80 "
+ssh 6v6-web "
   echo '=== Docker 버전 ===' && docker --version 2>/dev/null || echo 'Docker 미설치'
   echo '=== 실행 중 컨테이너 ===' && docker ps 2>/dev/null || echo '접근 불가'
   echo '=== Docker 소켓 권한 ===' && ls -la /var/run/docker.sock 2>/dev/null
 " 2>/dev/null
 
 # siem 서버의 Docker 상태 (OpenCTI가 Docker로 실행)
-ssh ccc@10.20.30.100 "
+ssh 6v6-siem "
   echo '=== Docker 컨테이너 ===' && sudo docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}' 2>/dev/null
   echo '=== Docker 네트워크 ===' && sudo docker network ls 2>/dev/null
 " 2>/dev/null
