@@ -1851,6 +1851,12 @@ _STANDALONE_COURSES = {
         "icon": "🧠",
         "color": "#bc8cff",
     },
+    "autonomous": {
+        "title": "자율보안시스템 (6v6)",
+        "description": "PoW 작업증명 · 강화학습 (RL) · Experience 메모리 · 자율 Red/Blue/Purple Team 을 6v6 컨테이너 인프라에서 구축·실습. Training 메뉴의 autonomous 과목을 6v6 환경에 맞춰 이식.",
+        "icon": "⚡",
+        "color": "#bc8cff",
+    },
 }
 
 
