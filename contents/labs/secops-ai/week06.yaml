@@ -1345,3 +1345,78 @@ steps:
     suppress 룰 추가 + restart → 동일 curl 5회 → alert 0 검증. Phase C: 전후 비교표 + threshold
 
     3 액션 차이 + suppress 위험 회고. 종료 시 룰 + threshold 모두 정리.'
+- order: 100
+  instruction: '[Multi-task] Suricata 운영 5단계 통합 — 룰셋 enable → update → eve.json 분석 → threshold → suppress.'
+  bastion_prompt: |
+    Suricata 운영 튜닝 5작업을 한 흐름의 lab 으로 수행해줘.
+
+    1) [룰셋 source enable] ssh ccc@{{SECU_IP}} 'sudo suricata-update list-sources --enabled 2>&1 | head -10;
+       sudo suricata-update enable-source et/open; sudo suricata-update enable-source oisf/trafficid;
+       sudo suricata-update list-sources --enabled 2>&1 | head -10' 의 결과 + ET Open 의 free 룰 + 비활성
+       소스 (Snort registered) 의 차이.
+
+    2) [update + 룰 카운트] sudo suricata-update 2>&1 | tail -10 → 다운로드 결과 + sudo wc -l
+       /var/lib/suricata/rules/suricata.rules + sudo grep -c "^alert" /var/lib/suricata/rules/suricata.rules +
+       카테고리별 분포 (sudo grep -oE "classtype:[a-z-]+" /var/lib/suricata/rules/suricata.rules | sort | uniq -c
+       | sort -rn | head -10) 표.
+
+    3) [eve.json alert 분석] ssh ccc@{{ATTACKER_IP}} 'for i in $(seq 1 5); do curl -s -A "BadBot/1.0" -o /dev/null
+       http://{{WEB_IP}}:3000/; done; nmap -sS -F {{WEB_IP}} 2>&1 | head -10' 으로 5 trigger 생성 →
+       ssh ccc@{{SECU_IP}} 'sudo tail -50 /var/log/suricata/eve.json | python3 -c "import json,sys;
+       a=[json.loads(l) for l in sys.stdin if l.strip()]; alerts=[e for e in a if e.get(\"event_type\")==
+       \"alert\"]; print(f\"total alerts: {len(alerts)}\"); from collections import Counter; print(Counter(
+       (al[\"alert\"][\"signature_id\"], al[\"alert\"][\"signature\"][:50]) for al in alerts).most_common(5))"'
+       의 상위 5 alert 표.
+
+    4) [Threshold 룰 추가 - alert rate limit] sudo tee -a /etc/suricata/threshold.config > /dev/null <<EOF
+       threshold gen_id 1, sig_id 2010937, type limit, track by_src, count 5, seconds 60
+       threshold gen_id 1, sig_id 2010937, type threshold, track by_dst, count 10, seconds 300
+       suppress gen_id 1, sig_id 2010937, track by_src, ip {{ATTACKER_IP}}
+       EOF
+       sudo suricata -T -c /etc/suricata/suricata.yaml 2>&1 | tail -3 + reload. limit / threshold / suppress
+       3 type 의 차이 + FP 줄이는 효과 표.
+
+    5) [Suppress 효과 검증 + 운영 권고] 동일 attacker 의 curl 5회 → ssh ccc@{{SECU_IP}} 'sudo tail -20
+       /var/log/suricata/eve.json | grep 2010937 | wc -l' 의 결과 (suppress 적용 시 0 또는 limit 후 stop).
+       Threshold 의 3 action 비교 표 + 운영 위험 (suppress 의 over-tuning 위험) + 권고 (정기 검토 / per-rule
+       FP 통계 / suppress 가 아닌 룰 자체 튜닝 우선).
+
+    종료 시 sudo sed -i "/2010937/d" /etc/suricata/threshold.config + reload 으로 cleanup.
+
+    마지막에 5단계 × (튜닝 단계 / 명령 / 결과 / FP 효과 / 운영 위험 / 권고) 의 5×6 매트릭스 + Suricata Tuning
+    Playbook (정기 검토 주기 / FP 통계 dashboard / suppress allowlist 정책) + cleanup 검증 출력.
+  hint: Suricata 운영 5단계 chain. threshold + suppress 의 trade-off + FP 줄이는 정책이 운영 핵심.
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: '[통합] Suricata 운영 5단계 — source/update/alert 분석/threshold/suppress. NIST DE.AE-3 + 운영 튜닝 매핑 + 5×6 매트릭스 + Tuning Playbook.'
+      success_criteria:
+      - 5 단계 모두 실행
+      - suricata-update 실행 + 룰 카운트
+      - eve.json JSON 파싱 + 상위 alert
+      - threshold 3 type (limit/threshold/suppress) 모두 추가
+      - cleanup (threshold.config 의 룰 제거 + reload)
+      - 5×6 매트릭스 + Tuning Playbook
+      acceptable_methods:
+      - bastion 의 multi-stage planning
+      - ssh + suricata-update + jq / python json 표준
+      - Snort Pulledpork 대체 가능
+      - markdown 매트릭스 + Playbook
+      negative_signs:
+      - 3 단계 이하 만 수행
+      - threshold type 1개 만
+      - eve.json 분석 누락
+      - cleanup 미수행
+      - 매트릭스 6 컬럼 미만
+  target_vm: bastion
+  risk_level: low
+  answer: |
+    🤖 위 bastion_prompt 그대로. Suricata 운영 5단계 + 5×6 매트릭스 + Tuning Playbook + cleanup.
+  answer_detail: |
+    SOC Sr. Engineer 페르소나 — Suricata 운영 튜닝 chain. threshold/suppress 의 FP 줄이는 정책 +
+    over-tuning 위험 회피가 운영 핵심.
+  script: ''

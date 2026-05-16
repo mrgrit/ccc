@@ -1364,3 +1364,83 @@ steps:
     Phase B 방법 1: SecRuleRemoveById 942100 (전체) → 모든 IP 통과. 방법 2: ctl:ruleRemoveById +
     ipMatch 10.20.30.0/24 → 내부만 통과. Phase C: 두 방법 비교표 + 운영 위험 + ModSec 다른
     exception 옵션 회고. 종료 시 include-after.conf 제거 + apache2 reload.
+- order: 100
+  instruction: '[Multi-task] ModSecurity 5단계 통합 — Apache 확인 → CRS 룰 → DetectionOnly→On → Trigger 5 family → Exception.'
+  bastion_prompt: |
+    ModSecurity WAF 5작업을 한 흐름의 lab 으로 수행해줘. 6v6-web 대상.
+
+    1) [Apache + ModSec 상태] ssh ccc@{{WEB_IP}} 'sudo apache2ctl -M 2>&1 | grep -iE "security|rewrite";
+       sudo apache2ctl -V 2>&1 | head -5; sudo cat /etc/apache2/mods-enabled/security2.conf 2>/dev/null;
+       sudo grep "Include /usr/share/modsecurity-crs" /etc/apache2/conf-enabled/*.conf 2>/dev/null' 의 결과
+       표. OWASP CRS 4.0 매핑.
+
+    2) [SecRuleEngine + CRS 룰 카운트] ssh ccc@{{WEB_IP}} 'sudo grep -E "^\s*SecRuleEngine"
+       /etc/modsecurity/modsecurity.conf; sudo ls /usr/share/modsecurity-crs/rules/ | wc -l; sudo ls
+       /usr/share/modsecurity-crs/rules/ | head -20' 의 SecRuleEngine 값 + CRS 룰 파일 수 + 카테고리
+       (REQUEST-913 SCAN-DETECTION / REQUEST-942 SQLi / REQUEST-941 XSS / REQUEST-932 RCE / REQUEST-933
+       PHP / REQUEST-930 LFI) 분류 표.
+
+    3) [DetectionOnly → On 전환] sudo sed -i "s/SecRuleEngine DetectionOnly/SecRuleEngine On/g"
+       /etc/modsecurity/modsecurity.conf + sudo apache2ctl configtest + sudo systemctl reload apache2 →
+       SecRuleEngine 의 응답 변화 (DetectionOnly: 200 + 로깅, On: 403 + 차단) 비교 표. 단계적 enforcement
+       권고 (Paranoia Level 의 변화).
+
+    4) [Trigger 5 family + CRS 매칭] ssh ccc@{{ATTACKER_IP}} 'echo "=== SQLi 942 ==="; curl -s -o /dev/null
+       -w "%{http_code}\n" "http://{{WEB_IP}}/?id=1%27+OR+1=1--"; echo "=== XSS 941 ==="; curl -s -o /dev/null
+       -w "%{http_code}\n" "http://{{WEB_IP}}/?q=<script>alert(1)</script>"; echo "=== RCE 932 ==="; curl -s
+       -o /dev/null -w "%{http_code}\n" "http://{{WEB_IP}}/?cmd=;cat+/etc/passwd"; echo "=== LFI 930 ==="; curl
+       -s -o /dev/null -w "%{http_code}\n" "http://{{WEB_IP}}/?file=../../../etc/passwd"; echo "=== SCAN 913 ==="; curl -s -o /dev/null -w "%{http_code}\n" -A "Nikto/2.1.6" "http://{{WEB_IP}}/"' 의 5 family ×
+       응답 코드 (403 차단) + ssh ccc@{{WEB_IP}} 'sudo tail -50 /var/log/apache2/modsec_audit.log | grep -oE
+       "id \"[0-9]*\"" | sort -u' 의 매칭 룰 ID 표.
+
+    5) [Exception 2 방법 비교 + cleanup] 방법 1 (전체 disable): sudo tee /etc/apache2/conf-available/modsec-
+       exception.conf > /dev/null <<EOF
+       SecRuleRemoveById 942100
+       EOF
+       sudo a2enconf modsec-exception + reload + attacker SQLi curl → 200 통과. 방법 2 (조건부): sudo tee
+       /etc/apache2/conf-available/modsec-exception.conf > /dev/null <<EOF
+       SecRule REMOTE_ADDR "@ipMatch 10.20.30.0/24" "id:1000,phase:1,nolog,allow,ctl:ruleRemoveById=942100"
+       EOF + reload + attacker (내부) 통과 + 외부 IP (curl --resolve trick) 는 여전히 차단.
+
+    cleanup: sudo a2disconf modsec-exception + sudo rm /etc/apache2/conf-available/modsec-exception.conf +
+       sudo sed -i "s/SecRuleEngine On/SecRuleEngine DetectionOnly/g" /etc/modsecurity/modsecurity.conf +
+       reload.
+
+    마지막에 5단계 × (단계 / 명령 / 결과 / CRS 룰 ID / 운영 위험 / 권고) 의 5×6 매트릭스 + ModSec Operations
+       Runbook (CRS 업데이트 주기 / SecRuleEngine 단계적 enforcement / Exception 의 audit 정책 / Paranoia
+       Level 의 0~4 운영) markdown + cleanup 검증 출력.
+  hint: ModSec 5단계 chain. DetectionOnly → On 전환 + Exception 2 방법 의 운영 trade-off가 핵심.
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: '[통합] ModSec 5단계 — Apache/CRS/On 전환/5 family trigger/Exception+cleanup. OWASP CRS 4.0 매핑 + 5×6 매트릭스 + Operations Runbook.'
+      success_criteria:
+      - 5 단계 모두 실행
+      - CRS 5 family (913/941/942/932/930) 모두 trigger + 매칭 룰 ID
+      - SecRuleEngine On 전환 + 응답 변화 검증
+      - Exception 2 방법 (전체 disable vs ipMatch 조건부) 모두 시도
+      - cleanup (Exception 파일 삭제 + DetectionOnly 환원)
+      - 5×6 매트릭스 + Operations Runbook
+      acceptable_methods:
+      - bastion 의 multi-stage planning
+      - ssh + apache2ctl + curl + sed 표준
+      - SecRule / ctl 의 ModSec 양식
+      - Paranoia Level / Anomaly Score
+      negative_signs:
+      - 3 단계 이하 만 수행
+      - CRS family 3개 이하 trigger
+      - Exception 1 방법 만
+      - cleanup 미수행 (prod 영향)
+      - 매트릭스 6 컬럼 미만
+  target_vm: bastion
+  risk_level: low
+  answer: |
+    🤖 위 bastion_prompt 그대로. ModSec 5단계 + 5×6 매트릭스 + Operations Runbook + cleanup.
+  answer_detail: |
+    WAF Engineer 페르소나 — ModSec 5단계 chain. DetectionOnly→On 의 단계적 enforcement + Exception 2 방법
+    의 운영 trade-off가 핵심.
+  script: ''

@@ -1386,3 +1386,87 @@ steps:
     4) siem VM에서 wazuh-analysisd -t 로 룰 문법 검증을 실행해줘
 
     5) siem VM의 wazuh-manager 서비스를 재시작해줘'
+- order: 100
+  instruction: '[Multi-task] Wazuh 룰 5단계 통합 — local_rules 확인 → sudo 실패 룰 → 문법 검증 → reload → trigger 검증.'
+  bastion_prompt: |
+    Wazuh 탐지 룰 작성 5작업을 한 흐름의 lab 으로 수행해줘.
+
+    1) [기존 룰 + local_rules.xml 확인] ssh ccc@{{SECU_IP}}00 'sudo ls /var/ossec/ruleset/rules/ | wc -l;
+       sudo wc -l /var/ossec/etc/rules/local_rules.xml; sudo cat /var/ossec/etc/rules/local_rules.xml | head -30' 의
+       내장 룰 개수 (3000+) + local_rules 현재 행수 + 기존 custom rule 표. NIST DE.AE-3 매핑.
+
+    2) [Sudo 실패 룰 추가 (id 100100, level 10)] ssh ccc@{{SECU_IP}}00 'sudo tee -a /var/ossec/etc/rules/
+       local_rules.xml > /dev/null <<EOF
+
+       <group name="local,sudo,">
+         <rule id="100100" level="10" frequency="3" timeframe="60">
+           <if_matched_sid>5402</if_matched_sid>
+           <description>여러 번 sudo 실패 (3회 / 60초)</description>
+           <mitre><id>T1548.003</id></mitre>
+         </rule>
+       </group>
+       EOF' 의 룰 추가. frequency/timeframe + if_matched_sid 의 의미. MITRE T1548.003 매핑.
+
+    3) [SSH 실패 룰 추가 (id 100101, level 12)] sudo tee -a ... <<EOF
+
+       <group name="local,sshd,">
+         <rule id="100101" level="12" frequency="5" timeframe="120">
+           <if_matched_sid>5710</if_matched_sid>
+           <description>SSH 브루트포스 (5회 / 120초)</description>
+           <mitre><id>T1110.001</id></mitre>
+         </rule>
+       </group>
+       EOF + 검증. MITRE T1110.001 매핑.
+
+    4) [문법 검증 + reload] sudo /var/ossec/bin/wazuh-analysisd -t 2>&1 | tail -10 의 syntax 검증 + 통과 시
+       sudo systemctl restart wazuh-manager + sudo /var/ossec/bin/wazuh-control status 의 상태 확인.
+
+    5) [Trigger 검증] ssh ccc@{{SECU_IP}} 'for i in {1..4}; do sudo -k su badpass 2>/dev/null || echo "su fail
+       $i"; done; sleep 2; for i in {1..6}; do sshpass -p wrong ssh -o StrictHostKeyChecking=no -o ConnectTimeout=2
+       wronguser@{{SECU_IP}}00 2>/dev/null; done' →
+       ssh ccc@{{SECU_IP}}00 'sleep 5; sudo grep -E "Rule.*100100|Rule.*100101" /var/ossec/logs/alerts/alerts.log |
+       tail -5; sudo grep -c "100100\|100101" /var/ossec/logs/alerts/alerts.log' 의 100100 alert ≥ 1 + 100101
+       alert ≥ 1 검증.
+
+    cleanup: sudo sed -i "/100100\|100101/,/<\/rule>/d" /var/ossec/etc/rules/local_rules.xml + restart 으로 cleanup.
+
+    마지막에 5단계 × (Wazuh 룰 단계 / 명령 / 결과 / 매칭 alert / MITRE TTP / 운영 권고) 의 5×6 매트릭스 +
+    Wazuh Rule Library (sid 분류 / level 가이드 (0-15) / MITRE 매핑 / frequency tuning) markdown + cleanup
+    검증 출력.
+  hint: Wazuh 룰 5단계 chain. frequency + if_matched_sid 의 correlation 룰 + MITRE 매핑이 학습 핵심.
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: '[통합] Wazuh 룰 5단계 — local_rules/sudo/SSH/문법/trigger. NIST DE.AE-3 + MITRE T1110.001 + T1548.003 매핑 + 5×6 매트릭스 + Rule Library.'
+      success_criteria:
+      - 5 단계 모두 실행
+      - 룰 2개 (id 100100 sudo, 100101 SSH)
+      - frequency + timeframe + if_matched_sid 사용
+      - MITRE 2 ID 매핑 (T1548 + T1110)
+      - wazuh-analysisd -t 문법 검증
+      - trigger + alert 검증
+      - cleanup (룰 sed 제거 + restart)
+      - 5×6 매트릭스 + Rule Library
+      acceptable_methods:
+      - bastion 의 multi-stage planning
+      - ssh + wazuh-analysisd + sed 표준
+      - Sigma rule 양식 대체 가능
+      - markdown 매트릭스 + Library
+      negative_signs:
+      - 3 단계 이하 만 수행
+      - 룰 1개 만
+      - 문법 검증 누락
+      - trigger 검증 누락
+      - cleanup 미수행
+      - 매트릭스 6 컬럼 미만
+  target_vm: bastion
+  risk_level: low
+  answer: |
+    🤖 위 bastion_prompt 그대로. Wazuh 룰 5단계 + 5×6 매트릭스 + Rule Library + cleanup.
+  answer_detail: |
+    SIEM Rule Engineer 페르소나 — Wazuh 룰 5단계 chain. correlation 룰 + MITRE 매핑 + level 가이드 학습.
+  script: ''

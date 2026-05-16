@@ -1324,3 +1324,73 @@ steps:
     미매칭 / Suricata sid:1000201 alert 2건. Phase C: cross-check 표 + 각 layer 책임 영역 +
 
     SIEM 필요성 회고. 종료 시 exam 테이블 + sid:1000201 모두 정리.'
+- order: 100
+  instruction: '[Multi-task] 중간고사 5단계 통합 — nftables 정책 → SSH rate limit → ICMP → Suricata 룰 → cross-check.'
+  bastion_prompt: |
+    중간고사 종합 실기 5작업을 한 흐름의 lab 으로 수행해줘. 평가 시간 60분 가정.
+
+    1) [nftables 정책 drop + 기본 허용] ssh ccc@{{SECU_IP}} 'sudo nft add table inet exam; sudo nft add chain
+       inet exam input "{ type filter hook input priority 0 \; policy drop \; }"; sudo nft add rule inet exam
+       input ct state established,related accept counter "est"; sudo nft add rule inet exam input iif lo
+       accept; sudo nft list table inet exam' 의 정책 drop 기본 + 2 룰 확인. CIS 3.x 매핑.
+
+    2) [SSH rate limit + 10.20.30.0/24 만 허용] sudo nft add rule inet exam input ip saddr 10.20.30.0/24
+       tcp dport 22 ct state new limit rate 5/minute accept counter "ssh-ok" + sudo nft add rule inet exam
+       input tcp dport 22 drop counter "ssh-deny" 의 2 룰 + ssh ccc@{{ATTACKER_IP}} 'for i in $(seq 1 7); do
+       nc -zvw 1 {{SECU_IP}} 22; done' 의 7회 시도 + counter 검증 (ssh-ok 5, ssh-deny 2). MITRE T1110 매핑.
+
+    3) [ICMP echo accept + ping 검증] sudo nft add rule inet exam input icmp type echo-request accept counter
+       "icmp-ok" + ssh ccc@{{ATTACKER_IP}} 'ping -c 3 -W 1 {{SECU_IP}}' 의 3 ICMP + counter 검증.
+
+    4) [Suricata 룰 + nft + 매칭 검증] ssh ccc@{{SECU_IP}} 'sudo tee /etc/suricata/rules/exam.rules > /dev/null
+       <<EOF
+       alert tcp any any -> \$HOME_NET 22 (msg:"EXAM SSH attempt"; sid:1000201; rev:1;)
+       alert icmp any any -> \$HOME_NET any (msg:"EXAM ICMP"; sid:1000202; rev:1;)
+       EOF
+       sudo suricata -T -c /etc/suricata/suricata.yaml 2>&1 | tail -3' + reload + attacker 의 동일 ssh/ping 의
+       eve.json alert 카운트 (sid:1000201 ≥ 5, sid:1000202 ≥ 3) 검증.
+
+    5) [Cross-check 표 + 평가 보고서] 1~4 결과를 합쳐 (Vector / nftables 매칭 / Suricata 매칭 / 차단 효과 /
+       각 layer 의 책임 영역 / 종합 권고) 의 4×6 매트릭스 (SSH/ICMP/대역 외 IP/established) 작성. 중간고사
+       grade 자가 평가 (각 단계 의 10점 × 5 = 50점) + 운영 권고 (SIEM 필요성 / log correlation / dashboard
+       추가) 1 페이지 markdown 보고서.
+
+    cleanup: sudo nft delete table inet exam + sudo rm /etc/suricata/rules/exam.rules + reload.
+
+    마지막에 5단계 × (단계 / 명령 / counter / alert / 자가 평가 점수 / 권고) 의 5×6 매트릭스 + Mid-Exam Report
+       (총점 / 강점 / 보완 / 다음 학습) 출력.
+  hint: 중간고사 5단계 chain. nft + Suricata 의 cross-check 가 학습 핵심. cleanup 필수.
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: '[통합] 중간고사 5단계 — 정책/SSH rate/ICMP/Suricata 룰/cross-check. NIST CSF Protect + MITRE T1110 매핑 + 5×6 매트릭스 + Mid-Exam Report.'
+      success_criteria:
+      - 5 단계 모두 실행
+      - nft 룰 4개 이상 (established/lo/ssh rate/ssh deny/icmp)
+      - SSH 7회 시도 + ssh-ok 5/ssh-deny 2 counter 검증
+      - Suricata 룰 2개 (sid 1000201/1000202)
+      - cross-check 4×6 매트릭스
+      - cleanup (table + rules + reload)
+      - Mid-Exam Report (자가 평가)
+      acceptable_methods:
+      - bastion 의 multi-stage planning
+      - ssh + nft + suricata + nc + ping 표준
+      - markdown 매트릭스 + Report
+      negative_signs:
+      - 3 단계 이하 만 수행
+      - SSH rate limit 검증 누락 (counter 미확인)
+      - Suricata alert 검증 누락
+      - cross-check 매트릭스 누락
+      - cleanup 미수행
+      - 매트릭스 6 컬럼 미만
+  target_vm: bastion
+  risk_level: low
+  answer: |
+    🤖 위 bastion_prompt 그대로. 중간고사 5단계 + 5×6 매트릭스 + Mid-Exam Report + cleanup.
+  answer_detail: |
+    SOC Junior 페르소나 — 중간고사 종합 실기 60분. nft + Suricata cross-check + cleanup 자가 검증.
+  script: ''
