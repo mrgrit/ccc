@@ -1,0 +1,563 @@
+lab_id: agent-ir-adv-ai-week05
+title: 0-day 웹 프레임워크 자동 악용 IR (AI 지원)
+version: ai
+course: agent-ir-adv-ai
+week: 5
+description: 에이전트가 공개 소스 → 취약점 후보 → PoC 생성. 시그니처 없는 탐지 + RASP + SDLC 통합. AI SubAgent
+  자동 실행·검증.
+difficulty: hard
+duration_minutes: 150
+objectives:
+- 공격 원리를 이해하고 재현한다
+- 탐지·분석·초동대응·보고·재발방지의 6단계를 수행한다
+- Human vs Agent 대응을 비교한다
+pass_threshold: 0.6
+steps:
+- order: 1
+  instruction: SSTI 페이로드 시뮬
+  hint: 6단계 IR 중 공격 단계. target_vm=web.
+  category: attack
+  points: 9
+  answer: '🤖 프롬프트: SSTI 페이로드 시뮬
+
+    📎 참고 (CLI): echo ''${T(java.lang.Runtime).getRuntime().exec("id")}'' > /tmp/w05-ssti.txt
+    && cat /tmp/w05-ssti.txt'
+  answer_detail: '[공격] Spring SSTI 예.'
+  verify:
+    type: output_contains
+    expect: Runtime
+    field: stdout
+    semantic:
+      intent: 'SSTI 페이로드 시뮬 — Jinja2: {{config.items()}} · Twig: {{_self.env.registerUndefinedFilterCallback(system)}}
+        · FreeMarker: <#assign ex=Execute?new()>. 3 엔진 템플릿 주입. 0-day 수준'
+      success_criteria:
+      - SSTI 3 엔진 페이로드
+      - Jinja2/Twig/FreeMarker
+      acceptable_methods:
+      - curl + 페이로드
+      negative_signs:
+      - SSTI 개념 없음
+  target_vm: web
+  script: echo '${T(java.lang.Runtime).getRuntime().exec("id")}' > /tmp/w05-ssti.txt
+    && cat /tmp/w05-ssti.txt
+  risk_level: low
+  bastion_prompt: 'SSTI 페이로드 시뮬
+
+
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
+- order: 2
+  instruction: Deserialization 페이로드
+  hint: 6단계 IR 중 공격 단계. target_vm=web.
+  category: attack
+  points: 10
+  answer: '🤖 프롬프트: Deserialization 페이로드
+
+    📎 참고 (CLI): echo ''ysoserial CommonsCollections5 ...'' > /tmp/w05-deser.txt &&
+    cat /tmp/w05-deser.txt'
+  answer_detail: '[공격] Java 역직렬화.'
+  verify:
+    type: output_contains
+    expect: ysoserial
+    field: stdout
+    semantic:
+      intent: 'Deserialization 페이로드 — Java: ysoserial CommonsCollections5 · Python:
+        pickle.dumps + os.system · PHP: gadgetchains PHPGGC. 3 언어 deserialization
+        RCE'
+      success_criteria:
+      - 3 언어 deserialization
+      - gadget 도구 (ysoserial/PHPGGC)
+      acceptable_methods:
+      - ysoserial + phpggc
+      negative_signs:
+      - 1 언어만
+  target_vm: web
+  script: echo 'ysoserial CommonsCollections5 ...' > /tmp/w05-deser.txt && cat /tmp/w05-deser.txt
+  risk_level: low
+  bastion_prompt: 'Deserialization 페이로드
+
+
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
+- order: 3
+  instruction: 행위 지표 4개 문서
+  hint: 6단계 IR 중 탐지 단계. target_vm=bastion.
+  category: analysis
+  points: 11
+  answer: '🤖 프롬프트: 행위 지표 4개 문서
+
+    📎 참고 (CLI): mkdir -p ~/w05 && cat > ~/w05/indicators.md <<''M''
+
+    - URL >1KB
+
+    - 템플릿 문법 ${..} {{..}}
+
+    - 응답 시간 p95×3
+
+    - OOB callback
+
+    - 응답 크기 이상
+
+    M
+
+    cat ~/w05/indicators.md'
+  answer_detail: '[탐지] 시그니처 없는 탐지.'
+  verify:
+    type: output_contains
+    expect: OOB
+    field: stdout
+    semantic:
+      intent: 행위 지표 4개 /tmp/behavioral_indicators.md — (1) 비정상 프로세스 exec (e.g., java
+        가 bash spawn) (2) outbound 연결 (e.g., app 서버 → external) (3) 파일 write 비정상 (4)
+        권한 escalation 시도. 0-day 시그니처 없을 때 행위 기반
+      success_criteria:
+      - /tmp/behavioral_indicators.md
+      - 4 행위 지표
+      acceptable_methods:
+      - cat > md
+      negative_signs:
+      - 지표 2 이하
+  target_vm: bastion
+  script: 'mkdir -p ~/w05 && cat > ~/w05/indicators.md <<''M''
+
+    - URL >1KB
+
+    - 템플릿 문법 ${..} {{..}}
+
+    - 응답 시간 p95×3
+
+    - OOB callback
+
+    - 응답 크기 이상
+
+    M
+
+    cat ~/w05/indicators.md'
+  risk_level: low
+  bastion_prompt: 행위 지표 4개 문서
+- order: 4
+  instruction: 엔트로피 분석 함수
+  hint: 6단계 IR 중 탐지 단계. target_vm=bastion.
+  category: analysis
+  points: 12
+  answer: "\U0001F916 프롬프트: 엔트로피 분석 함수\n\U0001F4CE 참고 (CLI): cat > ~/w05/entropy.py\
+    \ <<'PY'\nimport math\nfrom collections import Counter\ndef H(s):\n    if not\
+    \ s: return 0\n    c = Counter(s); t = len(s)\n    return -sum((f/t)*math.log2(f/t)\
+    \ for f in c.values())\nprint(H('normal_request'))\nprint(H('aaaaaaabbbbbbb${T(x)}${T(y)}'))\n\
+    PY\npython3 ~/w05/entropy.py"
+  answer_detail: '[탐지] 엔트로피>4.5 의심.'
+  verify:
+    type: output_contains
+    expect: '0.'
+    field: stdout
+    semantic:
+      intent: '엔트로피 분석 함수 — python3 def entropy(data): Counter + Shannon. HTTP POST
+        body 엔트로피 > 6.5 = 인코딩/압축된 payload 가능성. 0-day exploitation 탐지'
+      success_criteria:
+      - Shannon entropy 함수
+      - body 분석 용도
+      acceptable_methods:
+      - python math.log2 + Counter
+      negative_signs:
+      - 엔트로피 공식 없음
+  target_vm: bastion
+  script: "cat > ~/w05/entropy.py <<'PY'\nimport math\nfrom collections import Counter\n\
+    def H(s):\n    if not s: return 0\n    c = Counter(s); t = len(s)\n    return\
+    \ -sum((f/t)*math.log2(f/t) for f in c.values())\nprint(H('normal_request'))\n\
+    print(H('aaaaaaabbbbbbb${T(x)}${T(y)}'))\nPY\npython3 ~/w05/entropy.py"
+  risk_level: low
+  bastion_prompt: 엔트로피 분석 함수
+- order: 5
+  instruction: 재현성 확인 양식
+  hint: 6단계 IR 중 분석 단계. target_vm=bastion.
+  category: analysis
+  points: 13
+  answer: '🤖 프롬프트: 재현성 확인 양식
+
+    📎 참고 (CLI): cat > ~/w05/reproduce.md <<''M''
+
+    - 동일 요청 재발송: 결과 일관?
+
+    - 가설: <SSTI/Deser/IDOR>
+
+    - 범위: <동일 버그 다른 엔드포인트>
+
+    - 벤더 확인: <upstream 패치 여부>
+
+    M
+
+    cat ~/w05/reproduce.md'
+  answer_detail: '[분석] 재현성·범위·벤더.'
+  verify:
+    type: output_contains
+    expect: 가설
+    field: stdout
+    semantic:
+      intent: 재현성 확인 양식 /tmp/poc_reproducibility.md — (1) 환경 조건 (OS·version·config)
+        (2) 페이로드 (정확 바이트) (3) 기대 결과 (4) 실제 결과 (5) 재현 성공률. 0-day validation
+      success_criteria:
+      - /tmp/poc_reproducibility.md
+      - 5 항목
+      acceptable_methods:
+      - cat > md
+      negative_signs:
+      - 재현 개념 없음
+  target_vm: bastion
+  script: 'cat > ~/w05/reproduce.md <<''M''
+
+    - 동일 요청 재발송: 결과 일관?
+
+    - 가설: <SSTI/Deser/IDOR>
+
+    - 범위: <동일 버그 다른 엔드포인트>
+
+    - 벤더 확인: <upstream 패치 여부>
+
+    M
+
+    cat ~/w05/reproduce.md'
+  risk_level: low
+  bastion_prompt: 재현성 확인 양식
+- order: 6
+  instruction: Experience DB 유사 사건 검색
+  hint: 6단계 IR 중 분석 단계. target_vm=bastion.
+  category: analysis
+  points: 14
+  answer: '🤖 프롬프트: Experience DB 유사 사건 검색
+
+    📎 참고 (CLI): cat > ~/w05/history.md <<''M''
+
+    - 과거 Spring SSTI 사건 3건 유사도 높음
+
+    - 당시 대응: WAF 룰 추가, RASP 활성
+
+    M
+
+    cat ~/w05/history.md'
+  answer_detail: '[분석] Experience DB 활용.'
+  verify:
+    type: output_contains
+    expect: 유사
+    field: stdout
+    semantic:
+      intent: Experience DB 유사 사건 검색 — jq .signatures[] artifacts/experience/*.json
+        | grep -iE (SSTI|deserialization|RCE). 과거 경험에서 유사 공격 패턴 발견. learning from
+        history
+      success_criteria:
+      - experience 파일 검색
+      - 유사 signature 발견
+      acceptable_methods:
+      - jq + grep
+      - python json + regex
+      negative_signs:
+      - history 검색 없음
+  target_vm: bastion
+  script: 'cat > ~/w05/history.md <<''M''
+
+    - 과거 Spring SSTI 사건 3건 유사도 높음
+
+    - 당시 대응: WAF 룰 추가, RASP 활성
+
+    M
+
+    cat ~/w05/history.md'
+  risk_level: low
+  bastion_prompt: Experience DB 유사 사건 검색
+- order: 7
+  instruction: Human 흐름
+  hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
+  category: analysis
+  points: 15
+  answer: '🤖 프롬프트: Human 흐름
+
+    📎 참고 (CLI): cat > ~/w05/human.md <<''M''
+
+    1. 영향 판단
+
+    2. WAF 긴급 룰
+
+    3. IP 차단
+
+    4. 엔드포인트 임시 비활성
+
+    5. 벤더 문의
+
+    M
+
+    cat ~/w05/human.md'
+  answer_detail: '[초동대응] 1~8시간.'
+  verify:
+    type: output_contains
+    expect: 긴급 룰
+    field: stdout
+    semantic:
+      intent: Human 흐름 — exploitation 탐지 → CVE 확인 (신규 여부) → vendor 문의 → temporary
+        mitigation (WAF rule) → vendor patch 대기 → permanent fix. 0-day 특유의 vendor
+        coordination
+      success_criteria:
+      - vendor coordination 단계
+      - temporary mitigation
+      acceptable_methods:
+      - cat > md
+      negative_signs:
+      - 일반 IR
+  target_vm: bastion
+  script: 'cat > ~/w05/human.md <<''M''
+
+    1. 영향 판단
+
+    2. WAF 긴급 룰
+
+    3. IP 차단
+
+    4. 엔드포인트 임시 비활성
+
+    5. 벤더 문의
+
+    M
+
+    cat ~/w05/human.md'
+  risk_level: low
+  bastion_prompt: Human 흐름
+- order: 8
+  instruction: Agent Playbook
+  hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
+  category: analysis
+  points: 16
+  answer: "\U0001F916 프롬프트: Agent Playbook\n\U0001F4CE 참고 (CLI): cat > ~/w05/agent.yaml\
+    \ <<'Y'\nplaybook_id: pb-zero-day\nsteps:\n  - skill: block_matching_requests\n\
+    \  - skill: isolate_session\n  - skill: activate_rasp\n  - skill: verify_canary\n\
+    \  - skill: notify_highsev\nY\ncat ~/w05/agent.yaml"
+  answer_detail: '[초동대응] 의심 점수 >0.8.'
+  verify:
+    type: output_contains
+    expect:
+    - rasp
+    - Playbook
+    field: stdout
+    semantic:
+      intent: 'Agent Playbook — trigger(behavioral indicator burst) → steps: virtual
+        patch (WAF rule) + network segmentation + monitor. patch 전 임시 방어'
+      success_criteria:
+      - virtual patching 자동
+      - patch 전 조치
+      acceptable_methods:
+      - WAF rule auto-push
+      negative_signs:
+      - patch 전 조치 없음
+  target_vm: bastion
+  script: "cat > ~/w05/agent.yaml <<'Y'\nplaybook_id: pb-zero-day\nsteps:\n  - skill:\
+    \ block_matching_requests\n  - skill: isolate_session\n  - skill: activate_rasp\n\
+    \  - skill: verify_canary\n  - skill: notify_highsev\nY\ncat ~/w05/agent.yaml"
+  risk_level: low
+  bastion_prompt: Agent Playbook
+- order: 9
+  instruction: Responsible Disclosure
+  hint: 6단계 IR 중 보고 단계. target_vm=bastion.
+  category: analysis
+  points: 17
+  answer: '🤖 프롬프트: Responsible Disclosure
+
+    📎 참고 (CLI): cat > ~/w05/disclosure.md <<''M''
+
+    - 벤더 Security 팀 연락 (D+1)
+
+    - 90일 embargo
+
+    - CVE 요청
+
+    - 공개 blog (사후)
+
+    M
+
+    cat ~/w05/disclosure.md'
+  answer_detail: '[보고] 업계 관행.'
+  verify:
+    type: output_contains
+    expect:
+    - embargo
+    - 책임
+    field: stdout
+    semantic:
+      intent: Responsible Disclosure 템플릿 /tmp/rd_template.md — CVE 요청 + vendor 통보
+        (PGP 암호화) + embargo 90일 + coordinated disclosure. CERT/CC coordination. 법적
+        리스크 낮춤
+      success_criteria:
+      - /tmp/rd_template.md
+      - vendor + 90일 embargo
+      acceptable_methods:
+      - CERT/CC 가이드
+      negative_signs:
+      - RD 개념 없음
+  target_vm: bastion
+  script: 'cat > ~/w05/disclosure.md <<''M''
+
+    - 벤더 Security 팀 연락 (D+1)
+
+    - 90일 embargo
+
+    - CVE 요청
+
+    - 공개 blog (사후)
+
+    M
+
+    cat ~/w05/disclosure.md'
+  risk_level: low
+  bastion_prompt: Responsible Disclosure
+- order: 10
+  instruction: SDLC 전 단계 체크
+  hint: 6단계 IR 중 재발방지 단계. target_vm=bastion.
+  category: analysis
+  points: 18
+  answer: '🤖 프롬프트: SDLC 전 단계 체크
+
+    📎 참고 (CLI): cat > ~/w05/sdlc.md <<''M''
+
+    - 개발: SBOM + SAST
+
+    - 빌드: SCA
+
+    - 테스트: DAST + IAST
+
+    - 배포: RASP + WAAP
+
+    - 운영: 모니터링 + Bug Bounty
+
+    M
+
+    cat ~/w05/sdlc.md'
+  answer_detail: '[재발방지] 다층 방어.'
+  verify:
+    type: output_contains
+    expect: RASP
+    field: stdout
+    semantic:
+      intent: SDLC 전 단계 체크 /tmp/sdlc_0day_prevention.md — Design(threat model) + Code(SAST)
+        + Test(DAST·fuzzing) + Deploy(RASP) + Run(WAF·monitor). Shift-Left + Shift-Right
+        통합
+      success_criteria:
+      - /tmp/sdlc_0day_prevention.md
+      - 5 SDLC 단계
+      acceptable_methods:
+      - cat > md
+      negative_signs:
+      - 단계 3 이하
+  target_vm: bastion
+  script: 'cat > ~/w05/sdlc.md <<''M''
+
+    - 개발: SBOM + SAST
+
+    - 빌드: SCA
+
+    - 테스트: DAST + IAST
+
+    - 배포: RASP + WAAP
+
+    - 운영: 모니터링 + Bug Bounty
+
+    M
+
+    cat ~/w05/sdlc.md'
+  risk_level: low
+  bastion_prompt: SDLC 전 단계 체크
+- order: 11
+  instruction: RASP 벤더 비교
+  hint: 6단계 IR 중 재발방지 단계. target_vm=bastion.
+  category: analysis
+  points: 19
+  answer: '🤖 프롬프트: RASP 벤더 비교
+
+    📎 참고 (CLI): cat > ~/w05/rasp-vendor.md <<''M''
+
+    - Contrast Security
+
+    - Imperva RASP
+
+    - Sqreen (Datadog)
+
+    - OpenRASP (오픈소스)
+
+    M
+
+    cat ~/w05/rasp-vendor.md'
+  answer_detail: '[재발방지] 선택 참고.'
+  verify:
+    type: output_contains
+    expect: Contrast
+    field: stdout
+    semantic:
+      intent: RASP 벤더 비교 — Contrast Security + Signal Sciences + Imperva RASP 기능 비교
+        표 (runtime protection·language 지원·성능 영향·가격)
+      success_criteria:
+      - 3+ 벤더 비교표
+      - 기능 + 가격
+      acceptable_methods:
+      - cat > md + 표
+      negative_signs:
+      - 벤더 2 이하
+  target_vm: bastion
+  script: 'cat > ~/w05/rasp-vendor.md <<''M''
+
+    - Contrast Security
+
+    - Imperva RASP
+
+    - Sqreen (Datadog)
+
+    - OpenRASP (오픈소스)
+
+    M
+
+    cat ~/w05/rasp-vendor.md'
+  risk_level: low
+  bastion_prompt: RASP 벤더 비교
+- order: 12
+  instruction: Assume Breach 설계
+  hint: 6단계 IR 중 재발방지 단계. target_vm=bastion.
+  category: analysis
+  points: 20
+  answer: '🤖 프롬프트: Assume Breach 설계
+
+    📎 참고 (CLI): cat > ~/w05/assume-breach.md <<''M''
+
+    - Least privilege 원칙
+
+    - 네트워크 세그먼트
+
+    - EDR + RASP + WAAP + IPS 다층
+
+    - Assume: 언제든 침투될 수 있다
+
+    M
+
+    cat ~/w05/assume-breach.md'
+  answer_detail: '[재발방지] 철학.'
+  verify:
+    type: output_contains
+    expect: Assume
+    field: stdout
+    semantic:
+      intent: 'Assume Breach 설계 /tmp/assume_breach_plan.md — 공격 성공 가정하에 설계: EDR·network
+        segmentation·micro-segmentation·least privilege·monitoring. 0-day 현실적 대응'
+      success_criteria:
+      - /tmp/assume_breach_plan.md
+      - 5+ 가정 대응
+      acceptable_methods:
+      - cat > md
+      negative_signs:
+      - 예방만 (breach 가정 없음)
+  target_vm: bastion
+  script: 'cat > ~/w05/assume-breach.md <<''M''
+
+    - Least privilege 원칙
+
+    - 네트워크 세그먼트
+
+    - EDR + RASP + WAAP + IPS 다층
+
+    - Assume: 언제든 침투될 수 있다
+
+    M
+
+    cat ~/w05/assume-breach.md'
+  risk_level: low
+  bastion_prompt: Assume Breach 설계
