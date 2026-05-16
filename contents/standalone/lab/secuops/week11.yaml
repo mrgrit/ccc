@@ -24,43 +24,78 @@ steps:
 
   - order: 1
     instruction: |
-      ## 🎯 MISSION — 4 호스트 sysmon 설치 상태 + Wazuh 룰 활성 확인
+      ## 🎯 MISSION — 4 호스트 sysmon 설치 상태 + Wazuh 룰 활성 확인 + 6 Event 의미
+      학습
+
+      sysmon-for-linux (Sysinternals) 의 *현재 미설치* 상태를 확인하고, Wazuh 의 *룰
+      준비 상태* + *6 Linux 핵심 Event* 의 의미를 학습. *왜 본 환경 에 sysmon 이
+      필요한지* 의 동기 학습.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **sysmon** = Sysinternals (MS) 의 Windows host event stream 도구. 2020 년 부터
+        Linux 포팅 (sysmon-for-linux, eBPF 기반)
+      - **vs osquery** = osquery 가 *snapshot* (SELECT 시점) 이면 sysmon 은 *event
+        stream* (실시간 발생)
+      - **vs auditd** = auditd 는 Linux 표준 audit framework, sysmon 은 *동일 정보*
+        + *XML config 표준화* + *Wazuh 통합 용이*
+      - **9 Event ID** — Windows sysmon 의 표준. Linux 포팅 은 6 만 지원
+      - **eBPF** = sysmon-for-linux 의 backend — 커널 수정 없이 trace point hook
 
       ## 💻 실행 명령
 
       ```bash
       # 1. 4 호스트 sysmon 설치 상태
       for h in bastion fw ips web; do
-        printf "%-8s " "$h"
+        printf "%-10s " "$h"
         ssh 6v6-$h 'command -v sysmon 2>/dev/null || echo NOT_INSTALLED'
       done
 
-      # 2. Wazuh manager 의 sysmon 룰
-      ssh 6v6-siem 'sudo ls /var/ossec/ruleset/rules/ | grep sysmon'
+      # 2. Wazuh manager 의 sysmon 룰 (미리 준비됨, 10 종)
+      ssh 6v6-siem 'ls /var/ossec/ruleset/rules/ | grep -i sysmon'
 
-      # 3. 9 Event ID + Linux 핵심
+      # 3. 9 Event ID 표 + Linux 핵심 6
       cat <<'EOF'
-      ID 1  ProcessCreate    ← Linux 핵심
-      ID 3  NetworkConnect   ← Linux 핵심
-      ID 5  ProcessTerminate ← Linux 핵심
-      ID 7  ImageLoad        ← Linux 핵심
-      ID 10 ProcessAccess    ← Linux 핵심
-      ID 11 FileCreate       ← Linux 핵심
-      ID 13 RegistryEvent (Windows)
-      ID 22 DNSEvent (Windows)
+      Event ID | 이름             | Linux 지원 | 학습 활용
+      ID 1     | ProcessCreate    | ✓          | parent-child 추적 (sshd → curl)
+      ID 3     | NetworkConnect   | ✓          | outbound IP (T1041 Exfil)
+      ID 5     | ProcessTerminate | ✓          | 비정상 종료 (crash / anti-forensic)
+      ID 7     | ImageLoad        | ✓          | DLL/SO injection (T1574)
+      ID 10    | ProcessAccess    | ✓          | LSASS dump 시도 (T1003)
+      ID 11    | FileCreate       | ✓          | 신규 binary 드롭 (T1059)
+      ID 13    | RegistryEvent    | ✗ (Win 만) | Windows 만 — Linux 미해당
+      ID 22    | DNSEvent         | ✗ (Win 만) | Windows 만 — Linux 는 별 DNS log
+      ID 23    | FileDelete       | (옵션)     | 안티-포렌식 (T1070.004)
       EOF
       ```
 
       ## 📋 확인 사항
 
-      - 4 호스트 모두 NOT_INSTALLED (현재 상태)
-      - Wazuh 의 sysmon 룰 (0330 / 0800 / 0810 / 0820 / 0830 / 0945)
-      - 9 Event ID 의미
+      - 4 호스트 모두 `NOT_INSTALLED` 현재 상태 (W11 의 시작점)
+      - Wazuh 의 sysmon 룰 6 종 (0330 / 0800 / 0810 / 0820 / 0830 / 0945) 사전 준비
+      - 9 Event ID 표 + Linux 핵심 6 (Linux 미해당 2 + 옵션 1)
 
       ## 💡 왜 이걸 하는가?
 
-      운영 갭 인지 — sysmon 미설치 = host event stream 가시화 부재. W11 본격 설치 필요.
-    hint: 'command -v sysmon + ls /var/ossec/ruleset/rules/ | grep sysmon'
+      운영 갭 인지 — sysmon 미설치 = *host event stream 가시화 부재*. W07 의 osquery
+      는 *snapshot*, W09 의 Wazuh syscheck 는 *FIM* 만 — *실시간 process/network
+      event* 는 *sysmon 만* 가능. W11 의 본격 설치 가 *T-1 추적* 의 마지막 퍼즐.
+
+      ## 🔍 결과 해석
+
+      - **정상 (W11 시작점)**: 4 NOT_INSTALLED + Wazuh 룰 6 + 9 Event 표
+      - **일부 INSTALLED**: 사전 설치된 호스트 — config 점검 (다음 step)
+      - **Wazuh 룰 0 개**: ruleset 결함 — `apt reinstall wazuh-manager-ruleset`
+
+      ## 비정상 시 대응
+
+      - **command -v sysmon 결과 path 출력 (예: /usr/bin/sysmon)** — *기 설치*. 본
+        lab 은 *clean install* 가정 — `apt remove --purge sysmonforlinux` 후 재시작
+      - **Wazuh 룰 grep 결과 비어있음** — Wazuh manager 버전 < 4.4 일 가능. 4.10
+        upgrade 또는 community ruleset (`github.com/Cyb3r-Monk/wazuh-rules`) 추가
+    hint: |
+      4 host NOT_INSTALLED + Wazuh 룰 6 + 9 Event 표 (Linux 6 + Win 2 + option 1).
+      sysmon vs osquery vs auditd 차이 인지.
     category: survey
     points: 10
     answer: |
