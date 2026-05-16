@@ -1,0 +1,734 @@
+# Week 10: 리스크 평가 실습
+
+## 학습 목표
+- 리스크 평가의 전체 프로세스를 이해한다
+- 자산 식별, 위협 분석, 취약점 분석을 수행할 수 있다
+- 리스크 매트릭스를 작성하고 리스크를 산정할 수 있다
+- 리스크 처리 계획을 수립한다
+
+## 실습 환경 (6v6 4-tier, 공통)
+
+학생 PC 의 `~/.ssh/config` 의 ProxyJump 설정 후 다음 표 의 컨테이너 에 `ssh
+6v6-<name>` 으로 접속.
+
+| 컨테이너 | 6v6 IP | 역할 | 접속 |
+|---------|--------|------|------|
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
+| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
+| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
+| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
+| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+
+**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
+**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+
+## 강의 시간 배분 (3시간)
+
+| 시간 | 내용 | 유형 |
+|------|------|------|
+| 0:00-0:40 | 이론 강의 (Part 1) | 강의 |
+| 0:40-1:10 | 이론 심화 + 사례 분석 (Part 2) | 강의/토론 |
+| 1:10-1:20 | 휴식 | - |
+| 1:20-2:00 | 실습 (Part 3) | 실습 |
+| 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
+| 2:40-2:50 | 휴식 | - |
+| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
+| 3:20-3:40 | 정리 + 과제 안내 | 정리 |
+
+---
+
+---
+
+## 용어 해설 (보안 표준/컴플라이언스 과목)
+
+| 용어 | 영문 | 설명 | 비유 |
+|------|------|------|------|
+| **컴플라이언스** | Compliance | 법/규정/표준을 준수하는 것 | 교통법규 준수 |
+| **인증** | Certification | 외부 심사 기관이 표준 준수를 확인하는 절차 | 운전면허 시험 합격 |
+| **통제 항목** | Control | 보안 목표를 달성하기 위한 구체적 조치 | 건물 소방 설비 하나하나 |
+| **SoA** | Statement of Applicability | 적용 가능한 통제 항목 선언서 | "우리 건물에 필요한 소방 설비 목록" |
+| **리스크 평가** | Risk Assessment | 위험을 식별·분석·평가하는 과정 | 건물의 화재/지진 위험도 평가 |
+| **리스크 처리** | Risk Treatment | 평가된 위험에 대한 대응 결정 (수용/회피/감소/전가) | 보험 가입, 소방 설비 설치 |
+| **PDCA** | Plan-Do-Check-Act | ISO 표준의 지속적 개선 사이클 | 계획→실행→점검→개선 반복 |
+| **ISMS** | Information Security Management System | 정보보안 관리 체계 | 회사의 보안 관리 시스템 전체 |
+| **ISMS-P** | ISMS + Privacy | 한국의 정보보호 + 개인정보보호 인증 | 한국판 ISO 27001 + 개인정보 |
+| **ISO 27001** | ISO/IEC 27001 | 국제 정보보안 관리체계 표준 | 국제 보안 면허증 |
+| **ISO 27002** | ISO/IEC 27002 | ISO 27001의 통제 항목 상세 가이드 | 면허 시험 교재 |
+| **NIST CSF** | NIST Cybersecurity Framework | 미국 국립표준기술연구소의 사이버보안 프레임워크 | 미국판 보안 가이드 |
+| **GDPR** | General Data Protection Regulation | EU 개인정보보호 규정 | EU의 개인정보 보호법 |
+| **SOC 2** | Service Organization Control 2 | 클라우드 서비스 보안 인증 (미국) | 클라우드 업체의 보안 성적표 |
+| **증적** | Evidence (Audit) | 통제가 실행되었음을 증명하는 자료 | 출석부, 영수증 |
+| **심사원** | Auditor | 인증 심사를 수행하는 전문가 | 감독관, 시험관 |
+| **부적합** | Non-conformity | 심사에서 표준 미충족 판정 | 시험 불합격 항목 |
+| **GAP 분석** | Gap Analysis | 현재 상태와 목표 기준의 차이 분석 | 현재 실력과 합격선의 차이 |
+
+---
+
+## 1. 리스크 평가 개요
+
+### 1.1 프로세스
+
+```
+자산 식별 → 위협 식별 → 취약점 식별 → 리스크 산정 → 리스크 평가 → 리스크 처리
+```
+
+### 1.2 관련 표준
+
+| 표준 | 내용 |
+|------|------|
+| ISO 27005 | 정보보안 리스크 관리 가이드라인 |
+| ISO 31000 | 범용 리스크 관리 프레임워크 |
+| NIST SP 800-30 | 리스크 평가 수행 가이드 |
+| ISMS-P 1.2 | 위험 관리 (1.2.1~1.2.3) |
+
+### 1.3 핵심 용어
+
+| 용어 | 정의 |
+|------|------|
+| 자산 (Asset) | 보호해야 할 가치가 있는 것 |
+| 위협 (Threat) | 자산에 손해를 끼칠 수 있는 잠재적 원인 |
+| 취약점 (Vulnerability) | 위협에 의해 이용될 수 있는 약점 |
+| 리스크 (Risk) | 위협이 취약점을 이용하여 자산에 손해를 끼칠 가능성 |
+| 영향 (Impact) | 리스크가 실현되었을 때의 결과 |
+| 가능성 (Likelihood) | 리스크가 실현될 확률 |
+
+---
+
+## 2. 단계 1: 자산 식별
+
+> **이 실습을 왜 하는가?**
+> "리스크 평가 실습" — 이 주차의 핵심 기술을 실제 서버 환경에서 직접 실행하여 체험한다.
+> 보안 표준/컴플라이언스 분야에서 이 기술은 실무의 핵심이며, 실습을 통해
+> 명령어의 의미, 결과 해석 방법, 보안 관점에서의 판단 기준을 익힌다.
+>
+> **이걸 하면 무엇을 알 수 있는가?**
+> - 이 기술이 실제 시스템에서 어떻게 동작하는지 직접 확인
+> - 정상과 비정상 결과를 구분하는 눈을 기름
+> - 실무에서 바로 활용할 수 있는 명령어와 절차를 체득
+>
+> **주의:** 모든 실습은 허가된 실습 환경(10.20.30.0/24)에서만 수행한다.
+
+### 2.1 자산 분류
+
+| 분류 | 예시 |
+|------|------|
+| 정보 자산 | 데이터베이스, 설정 파일, 로그 |
+| 소프트웨어 자산 | OS, 애플리케이션, 미들웨어 |
+| 하드웨어 자산 | 서버, 네트워크 장비, 저장장치 |
+| 서비스 자산 | 웹 서비스, API, 모니터링 |
+| 인적 자산 | 관리자, 운영자, 사용자 |
+
+### 2.2 실습: 자산 인벤토리 수집
+
+> **실습 목적**: 실습 인프라의 자산을 대상으로 위협-취약점-영향도를 분석하는 리스크 평가를 수행한다
+>
+> **배우는 것**: 자산 인벤토리 수집, 위협 식별, 취약점 매핑, 리스크 점수 산출의 전 과정을 배운다
+>
+> **결과 해석**: 리스크 점수(위협 x 취약점 x 영향도)가 높은 자산이 우선 보호 대상이다
+>
+> **실전 활용**: ISO 27001과 ISMS-P 모두 리스크 평가를 기반으로 보호대책 우선순위를 결정하도록 요구한다
+
+```bash
+# 하드웨어 자산 정보 수집
+for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do  # 반복문 시작
+  echo "========== $ip =========="
+  ssh $srv  # srv=user@ip (아래 루프 참고) "
+    echo '[호스트명]' && hostname
+    echo '[OS]' && cat /etc/os-release | grep PRETTY_NAME
+    echo '[CPU]' && lscpu | grep 'Model name'
+    echo '[메모리]' && free -h | grep Mem
+    echo '[디스크]' && df -h / | tail -1
+    echo '[커널]' && uname -r
+  " 2>/dev/null
+done
+```
+
+```bash
+# 소프트웨어 자산 수집
+for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do
+  echo "========== $ip: 실행 서비스 =========="
+  ssh $srv  # srv=user@ip (아래 루프 참고) "systemctl list-units --type=service --state=running --no-pager | grep -v 'loaded units' | tail -n +2 | head -15"
+done
+```
+
+```bash
+# 네트워크 자산 (열린 포트 = 서비스)
+for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do
+  echo "========== $ip: 열린 포트 =========="
+  ssh $srv  # srv=user@ip (아래 루프 참고) "ss -tlnp 2>/dev/null | grep LISTEN"
+done
+```
+
+### 2.3 자산 가치 평가
+
+| 등급 | 점수 | 기준 |
+|------|------|------|
+| 상 (High) | 3 | 서비스 중단 시 전체 시스템 영향, 기밀 데이터 포함 |
+| 중 (Medium) | 2 | 일부 기능 영향, 내부 데이터 |
+| 하 (Low) | 1 | 대체 가능, 공개 데이터 |
+
+```
+자산 목록 (실습 환경):
+| 자산명 | 유형 | 서버 | 가치 | 사유 |
+|--------|------|------|------|------|
+| PostgreSQL DB | 정보 | bastion | 3(상) | 전체 운영 데이터 |
+| Manager API | 서비스 | bastion | 3(상) | 중앙 제어 서비스 |
+| Wazuh SIEM | 서비스 | siem | 3(상) | 보안 모니터링 핵심 |
+| Suricata IPS | 소프트웨어 | secu | 2(중) | 네트워크 보호 |
+| JuiceShop | 서비스 | web | 1(하) | 테스트용 취약 앱 |
+| nftables 방화벽 | 소프트웨어 | secu | 3(상) | 네트워크 경계 보호 |
+| SSH 서비스 | 서비스 | 전체 | 2(중) | 원격 관리 접근 |
+```
+
+---
+
+## 3. 단계 2: 위협 식별
+
+### 3.1 위협 분류
+
+| 유형 | 위협 | 예시 |
+|------|------|------|
+| 의도적 (외부) | 해킹, 악성코드, DDoS | 외부 공격자의 SSH 무차별 대입 |
+| 의도적 (내부) | 내부자 위협, 데이터 유출 | 관리자 권한 남용 |
+| 비의도적 | 설정 오류, 실수 | 방화벽 규칙 잘못 설정 |
+| 환경적 | 하드웨어 장애, 자연재해 | 디스크 고장 |
+
+### 3.2 실습: 실제 위협 증거 수집
+
+원격 서버에 접속하여 명령을 실행합니다.
+
+```bash
+# SSH 무차별 대입 시도 (외부 위협)
+ssh 6v6-bastion "grep 'Failed password' /var/log/auth.log 2>/dev/null | wc -l"  # 비밀번호 자동입력 SSH
+ssh 6v6-bastion "grep 'Failed password' /var/log/auth.log 2>/dev/null | awk '{print \$(NF-3)}' | sort | uniq -c | sort -rn | head -5"  # 비밀번호 자동입력 SSH
+
+# Suricata 탐지 이벤트 (네트워크 위협)
+ssh 6v6-fw "wc -l /var/log/suricata/fast.log 2>/dev/null || echo '0'"  # 비밀번호 자동입력 SSH
+ssh 6v6-fw "tail -5 /var/log/suricata/fast.log 2>/dev/null"  # 비밀번호 자동입력 SSH
+
+# Wazuh 고위험 알림 (복합 위협)
+ssh 6v6-siem "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
+import sys, json
+levels = {}
+for line in sys.stdin:                                 # 반복문 시작
+    try:
+        a = json.loads(line)
+        l = a.get('rule',{}).get('level',0)
+        levels[l] = levels.get(l,0)+1
+    except: pass
+for l in sorted(levels.keys(), reverse=True)[:5]:      # 반복문 시작
+    print(f'  Level {l}: {levels[l]}건')
+\" 2>/dev/null"
+```
+
+### 3.3 위협 가능성 평가
+
+| 등급 | 점수 | 기준 |
+|------|------|------|
+| 높음 (High) | 3 | 이미 발생했거나 매우 높은 확률 |
+| 중간 (Medium) | 2 | 발생 가능성 있음 |
+| 낮음 (Low) | 1 | 거의 발생하지 않음 |
+
+---
+
+## 4. 단계 3: 취약점 식별
+
+### 4.1 실습: 기술적 취약점 점검
+
+```bash
+# 취약점 1: 비밀번호 정책 미설정
+ssh 6v6-bastion "grep PASS_MAX_DAYS /etc/login.defs | grep -v '^#'"
+
+# 취약점 2: root 로그인 허용
+ssh 6v6-bastion "grep PermitRootLogin /etc/ssh/sshd_config | grep -v '^#'"
+
+# 취약점 3: 불필요한 포트 개방
+ssh 6v6-bastion "ss -tlnp | grep LISTEN | wc -l"
+
+# 취약점 4: 패치 미적용
+ssh 6v6-bastion "apt list --upgradable 2>/dev/null | wc -l"
+
+# 취약점 5: auditd 미설치
+ssh 6v6-bastion "systemctl is-active auditd 2>/dev/null || echo '미설치'"
+
+# 취약점 6: TMOUT 미설정
+ssh 6v6-bastion "grep TMOUT /etc/profile /etc/bash.bashrc 2>/dev/null || echo '미설정'"
+
+# 취약점 7: 커널 보안 파라미터
+ssh 6v6-bastion "sysctl net.ipv4.conf.all.accept_redirects 2>/dev/null"
+```
+
+---
+
+## 5. 단계 4: 리스크 산정
+
+### 5.1 리스크 산정 공식
+
+```
+리스크 = 자산 가치 x 위협 가능성 x 취약점 심각도
+```
+
+또는 간단히:
+
+```
+리스크 = 영향도(Impact) x 가능성(Likelihood)
+```
+
+### 5.2 리스크 매트릭스 (5x5)
+
+```
+        가능성 →
+영향도   1(매우낮음) 2(낮음) 3(보통) 4(높음) 5(매우높음)
+  ↓
+5(치명적)    5       10      15      20       25
+4(높음)      4        8      12      16       20
+3(보통)      3        6       9      12       15
+2(낮음)      2        4       6       8       10
+1(미미)      1        2       3       4        5
+```
+
+| 리스크 점수 | 등급 | 조치 |
+|------------|------|------|
+| 20~25 | 매우 높음 (Critical) | 즉시 조치 필수 |
+| 12~19 | 높음 (High) | 우선 조치 |
+| 6~11 | 보통 (Medium) | 계획적 조치 |
+| 1~5 | 낮음 (Low) | 수용 또는 모니터링 |
+
+### 5.3 실습 환경 리스크 산정 예시
+
+| 자산 | 위협 | 취약점 | 영향도 | 가능성 | 리스크 | 등급 |
+|------|------|--------|--------|--------|--------|------|
+| PostgreSQL | SQL Injection | 웹앱 입력값 미검증 | 5 | 3 | 15 | High |
+| SSH 서비스 | 무차별 대입 | 비밀번호 인증 허용 | 4 | 4 | 16 | High |
+| Manager API | 비인가 접근 | 인증 미흡 | 5 | 2 | 10 | Medium |
+| 방화벽 | 설정 오류 | 변경관리 미흡 | 5 | 2 | 10 | Medium |
+| 로그 데이터 | 증거 인멸 | 중앙 로그 미전송 | 3 | 2 | 6 | Medium |
+
+---
+
+## 6. 단계 5: 리스크 처리
+
+### 6.1 처리 옵션 결정
+
+| 리스크 | 처리 방법 | 구체적 조치 |
+|--------|----------|------------|
+| SSH 무차별 대입 (16) | 감소 | 키 기반 인증, fail2ban, MaxAuthTries 제한 |
+| SQL Injection (15) | 감소 | WAF 강화, 입력값 검증 |
+| API 비인가 접근 (10) | 감소 | API Key 인증 (이미 M28에서 구현) |
+| 방화벽 설정 오류 (10) | 감소 | 변경관리 절차 수립, 백업 |
+| 로그 증거 인멸 (6) | 감소 | Wazuh로 중앙 로그 수집 |
+
+### 6.2 잔여 리스크 (Residual Risk)
+
+조치 후에도 남는 리스크를 산정하고, 경영진이 **수용** 여부를 결정한다.
+
+---
+
+## 7. 종합 실습: 리스크 평가 워크시트
+
+다음을 직접 수행하고 완성하시오:
+
+```bash
+# 1단계: 자산 확인
+for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.100"; do  # 반복문 시작
+  echo "=== $srv ==="
+  ssh $srv  # srv=user@ip (아래 루프 참고) "hostname; ss -tlnp 2>/dev/null | grep LISTEN | wc -l; echo '서비스 수'"
+done
+
+# 2단계: 위협 증거
+echo "=== SSH 공격 시도 ==="
+ssh 6v6-bastion "grep 'Failed' /var/log/auth.log 2>/dev/null | wc -l"  # 비밀번호 자동입력 SSH
+
+echo "=== IPS 탐지 ==="
+ssh 6v6-fw "wc -l /var/log/suricata/fast.log 2>/dev/null"  # 비밀번호 자동입력 SSH
+
+# 3단계: 취약점 확인
+echo "=== 미패치 현황 ==="
+for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do  # 반복문 시작
+  echo "$ip: $(ssh $srv  # srv=user@ip (아래 루프 참고) 'apt list --upgradable 2>/dev/null | wc -l') 패키지"
+done
+```
+
+---
+
+## 8. 핵심 정리
+
+1. **리스크 = 영향도 x 가능성** (또는 자산가치 x 위협 x 취약점)
+2. **자산 식별** = 보호 대상을 파악하고 가치를 평가
+3. **위협 식별** = 실제 로그를 통해 위협 증거를 수집
+4. **리스크 매트릭스** = 정량적으로 우선순위를 결정
+5. **처리 계획** = 감소/전가/회피/수용 중 선택
+
+---
+
+## 과제
+
+1. 실습 환경의 자산 목록을 10개 이상 작성하고 가치를 평가하시오
+2. 각 자산에 대한 위협과 취약점을 식별하시오
+3. 리스크 매트릭스를 완성하고 상위 5개 리스크에 대한 처리 계획을 수립하시오
+
+---
+
+## 참고 자료
+
+- ISO 27005:2022 Information Security Risk Management
+- NIST SP 800-30 Risk Assessment Guide
+- KISA 위험관리 가이드
+
+---
+
+---
+
+## 심화: 표준/인증 실무 보충
+
+### 보안 통제 구현 패턴
+
+실무에서 통제 항목을 구현할 때의 일반적 패턴을 이해한다.
+
+```
+[1] 정책(Policy) 수립
+    → "무엇을 해야 하는가?" 를 문서로 정의
+    예: "모든 서버는 90일마다 패스워드를 변경한다"
+
+[2] 절차(Procedure) 작성
+    → "어떻게 하는가?" 를 단계별로 정리
+    예: "1. passwd 명령 실행 2. 복잡도 확인 3. 변경 로그 기록"
+
+[3] 기술적 구현(Technical Implementation)
+    → 실제 시스템에 적용
+    예: /etc/login.defs에 PASS_MAX_DAYS=90 설정
+
+[4] 증적(Evidence) 수집
+    → 구현되었음을 증명하는 자료 확보
+    예: login.defs 캡처, 변경 로그, Bastion evidence
+```
+
+### 증적 수집 실습
+
+```bash
+# ISO 27001 A.8.5 (안전한 인증) 점검 증적 수집
+echo "=== 패스워드 정책 확인 ==="
+ssh 6v6-web "  # 비밀번호 자동입력 SSH
+  echo '--- login.defs ---' && grep -E 'PASS_MAX|PASS_MIN|PASS_WARN' /etc/login.defs
+  echo '--- pam 설정 ---' && grep pam_pwquality /etc/pam.d/common-password 2>/dev/null || echo 'pam_pwquality 미설정'
+  echo '--- sudo 설정 ---' && sudo -l 2>/dev/null | head -5
+" 2>/dev/null
+
+# 결과를 Bastion evidence로 기록
+# (Bastion dispatch 사용)
+```
+
+### GAP 분석 워크시트 예시
+
+| 통제 ID | 통제 항목 | 현재 상태 | 목표 | GAP | 우선순위 |
+|---------|---------|---------|------|-----|---------|
+| A.5.1 | 정보보안 정책 | 문서 없음 | 승인된 정책 문서 | 정책 수립 필요 | 높음 |
+| A.8.2 | 접근 권한 관리 | sudo NOPASSWD:ALL | 최소 권한 | sudo 제한 필요 | 긴급 |
+| A.8.5 | 안전한 인증 | 단순 비밀번호 | 복잡도+MFA | 정책 변경 | 높음 |
+| A.12.4 | 로깅 | 부분 수집 | 전체 수집+SIEM | Wazuh 연동 | 중간 |
+
+### 인증 심사 대비 FAQ
+
+| 질문 | 준비 방법 |
+|------|---------|
+| "이 통제의 증적을 보여주세요" | Bastion evidence/replay로 실행 이력 제시 |
+| "리스크 평가를 어떻게 했나요?" | 리스크 평가 워크시트 + 기준 설명 |
+| "부적합 사항은 어떻게 처리했나요?" | 시정 조치 계획서 + 완료 증적 |
+| "경영진의 검토는?" | 검토 회의록 + 서명 |
+
+---
+
+## 웹 UI 실습: Wazuh Dashboard + OpenCTI로 증적 수집
+
+> **실습 목적**: 리스크 평가에서 식별한 위협/취약점을 Wazuh Dashboard와 OpenCTI 웹 UI에서 기술적 증적으로 수집한다
+>
+> **배우는 것**: 리스크 평가 워크시트의 "위협 증거"와 "취약점 증거" 컬럼을 웹 UI에서 직접 채우는 방법
+>
+> **실전 활용**: 리스크 평가는 문서 작업이지만, 그 근거가 되는 데이터는 SIEM과 CTI 플랫폼에서 추출한다. 웹 UI에서 추출하면 심사원에게 직접 시연하기에도 용이하다
+
+### 1단계: Wazuh Dashboard에서 위협 증거 수집
+
+1. **https://10.20.30.100:443** 접속 후 로그인
+2. 왼쪽 메뉴 > **Security events** 클릭
+3. 리스크 평가에서 식별한 위협별로 검색:
+
+**SSH 무차별 대입 위협:**
+```
+rule.groups:authentication_failed
+```
+- 결과 건수 = SSH 공격 시도 횟수 (위협 가능성 "높음"의 근거)
+
+**웹 공격 위협:**
+```
+rule.groups:web OR rule.groups:attack
+```
+- 결과 건수 = 웹 공격 시도 횟수
+
+**파일 변조 위협:**
+```
+rule.groups:syscheck
+```
+- 결과 건수 = 파일 무결성 변경 횟수
+
+4. 각 검색 결과의 건수를 메모하고, 화면을 캡처한다
+
+### 2단계: Wazuh Dashboard에서 취약점 증거 수집
+
+1. 왼쪽 메뉴 > **Agents** > 서버 하나 선택 (예: web)
+2. **Vulnerabilities** 탭 클릭
+3. 확인할 항목:
+   - **Critical** 취약점 수 = 리스크 매트릭스의 "영향도 5(치명적)" 근거
+   - **High** 취약점 수 = 리스크 매트릭스의 "영향도 4(높음)" 근거
+4. **SCA** 탭 클릭
+5. CIS Benchmark 점수 확인:
+   - **Pass/Fail 비율** = 보안 설정 취약점의 정량적 증거
+   - **Failed 항목 목록** = 구체적 취약점 식별
+
+### 3단계: OpenCTI에서 외부 위협 증거 수집
+
+1. 새 탭에서 **http://10.20.30.100:8080** 접속
+2. 로그인: `admin@opencti.io` / `CCC2026!`
+3. **Dashboard** 메인 화면에서 확인:
+   - 등록된 Indicator(IoC) 수 = 알려진 외부 위협 지표
+   - Threat Actor 수 = 식별된 위협 행위자
+4. **Observations** > **Indicators** 클릭
+5. 실습 환경과 관련된 IoC(IP, 도메인)가 있는지 확인
+6. 해당 IoC를 클릭하면 연관된 위협 행위자, 공격 패턴 정보를 확인할 수 있다
+
+### 4단계: 리스크 평가 워크시트에 증적 반영
+
+1. 수집한 데이터를 리스크 평가 워크시트에 반영:
+
+| 자산 | 위협 | 증거 출처 | 취약점 | 증거 출처 | 영향도 | 가능성 | 리스크 |
+|------|------|----------|--------|----------|--------|--------|--------|
+| SSH | 무차별대입 | Dashboard: auth_failed N건 | 비밀번호 인증 | SCA: Failed | 4 | 4 | 16 |
+| 웹서버 | SQLi/XSS | Dashboard: web attack N건 | CVE-xxxx | Vuln: Critical N건 | 5 | 3 | 15 |
+| 전체 | APT | OpenCTI: IoC N개 | 패치 미적용 | Vuln: High N건 | 5 | 2 | 10 |
+
+2. Dashboard/OpenCTI 화면 캡처를 "증거 출처" 첨부 파일로 저장한다
+
+> **핵심 포인트**: 리스크 평가의 신뢰성은 "증거 기반"이냐에 달려 있다. "위협 가능성이 높다"고 주장할 때, SIEM 대시보드에서 실제 공격 시도 N건을 보여주면 정량적 근거가 된다. 이것이 CLI 로그 분석 결과와 웹 UI 증적을 함께 수집해야 하는 이유이다.
+
+---
+
+> **실습 환경 검증 완료** (2026-03-28): PASS_MAX_DAYS=99999, pam_pwquality, auditd, SSH 설정, nftables 점검
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+
+### ISO/IEC 27001:2022 (Annex A)
+> **역할:** 정보보호 관리체계 국제 표준 — 93개 통제(A.5~A.8)  
+> **실행 위치:** `문서/증적 (정책·절차·기록)`  
+> **접속/호출:** 표준 문서 + SoA + 리스크 등록부
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `SoA.xlsx (Statement of Applicability)` | 93개 통제 적용/제외 선언 |
+| `risk_register.xlsx` | 자산·위협·취약점·리스크 점수 |
+| `policies/` | 정책 14종 (접근제어, 백업, 사건대응 등) |
+
+**핵심 설정·키**
+
+- `A.5 (조직적)` — 정책, 역할, 정보분류
+- `A.6 (인적)` — 채용·퇴직 시 보안, 인식 교육
+- `A.7 (물리적)` — 보안 구역, 장비, 케이블링
+- `A.8 (기술적)` — 접근·암호화·로깅·개발 보안
+
+**로그·확인 명령**
+
+- `내부심사 보고서` — 부적합(NC)·관찰사항(OB)
+- `경영검토 회의록` — 연 1회 필수
+
+**UI / CLI 요점**
+
+- PDCA 사이클 — 수립→운영→검토→개선
+- 2022 개정 — 114→93 통제, 신규 11건(위협 인텔리전스 등)
+
+> **해석 팁.** SoA는 **모든 통제에 대해 포함/제외 사유**를 명시해야 한다. 심사관은 `Justification for exclusion`을 먼저 본다.
+
+---
+
+## 실제 사례 (WitFoo Precinct 6 — risk score 분포 = 리스크 평가 baseline)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *리스크 평가* 학습 항목과 매핑되는 dataset 의 *suspicion_score* 분포 — 자산별 리스크 정량화 reference.
+
+### Case 1: dataset suspicion_score 분포
+
+dataset 의 30,092 host nodes 의 suspicion_score 분포:
+- **0~0.3** (low): benign 다수
+- **0.3~0.7** (medium): suspicious 후보
+- **0.7~1.0** (high): malicious — 본 dataset 에 *160K malicious edges* 다수
+
+본 lecture 의 *리스크 매트릭스 (5×5)* ↔ suspicion_score 매핑:
+
+| 리스크 등급 | suspicion_score | dataset 매핑 |
+|----------|---------------|-----------|
+| 1 (Very Low) | 0~0.2 | benign 다수 |
+| 2 (Low) | 0.2~0.4 | normal user activity |
+| 3 (Medium) | 0.4~0.6 | suspicious 후보 |
+| 4 (High) | 0.6~0.8 | malicious 후보 |
+| 5 (Very High) | 0.8~1.0 | 100.64.20.230 (0.92) burst |
+
+### Case 2: 자산 분류 — host node sets 의 *role*
+
+dataset host 의 `set_roles`:
+- "Exploiting Target" + "Exploiting Host" 동시 = *고위험 자산* (다른 host 의 발판 + 피해자)
+
+→ 학생 리스크 평가 시 *role 별 가중치* dataset 양식 모방 가능.
+
+**학생 액션**: 본인 환경 자산의 suspicion_score 분포 측정 → 리스크 매트릭스 매핑 + role 별 가중치 적용.
+
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course4 Compliance — Week 10 보안감사)
+
+### 보안감사 도구 매트릭스
+
+| 감사 영역 | OSS 도구 | 강점 |
+|----------|---------|------|
+| 시스템 baseline | **Lynis** + OpenSCAP | 한 명령으로 종합 |
+| 무결성 | **AIDE** + Tripwire / Wazuh FIM | 변경 감지 |
+| 사용자 활동 | **auditd** + ausearch / Wazuh user-behavior | kernel-level |
+| 네트워크 | **Suricata** + Zeek + Velociraptor | flow + packet |
+| 로그 통합 | **Wazuh** + lnav + jq | indexer + 검색 |
+| Forensic | **Velociraptor** + osquery + Sleuth Kit | live evidence |
+| 보고 | **pandoc** + dradis + Mermaid | PDF/HTML |
+
+### 핵심 — auditd 표준 audit rule (KISA·ISMS·SOX 공통)
+
+```bash
+sudo apt install -y auditd audispd-plugins
+
+# /etc/audit/rules.d/audit.rules — 종합 표준 룰
+sudo tee /etc/audit/rules.d/audit.rules > /dev/null << 'EOF'
+# 시스템 부팅·종료
+-w /sbin/shutdown -p x -k power
+-w /sbin/reboot -p x -k power
+-w /sbin/halt -p x -k power
+
+# 사용자 계정 변경 (ISMS 2.5)
+-w /etc/passwd -p wa -k identity
+-w /etc/shadow -p wa -k identity
+-w /etc/group -p wa -k identity
+-w /etc/gshadow -p wa -k identity
+-w /etc/security/opasswd -p wa -k identity
+
+# sudo 실행
+-w /etc/sudoers -p wa -k actions
+-w /etc/sudoers.d/ -p wa -k actions
+-a always,exit -F arch=b64 -S execve -F euid=0 -F auid>=1000 -F auid!=4294967295 -k sudo_log
+
+# 권한 변경 (ISMS 2.5.4)
+-a always,exit -F arch=b64 -S setuid -S setgid -S setreuid -S setregid -k privesc
+
+# SSH 관련
+-w /etc/ssh/sshd_config -p wa -k sshd
+
+# 네트워크
+-a always,exit -F arch=b64 -S socket -F a0=10 -k network_ipv6
+-a always,exit -F arch=b64 -S connect -F a2=16 -k network_connect
+
+# 파일 무결성 (ISMS 2.9.3)
+-w /var/log/audit/ -p wa -k audit_log
+
+# 모드 잠금 (변경 불가)
+-e 2
+EOF
+
+sudo augenrules --load
+sudo systemctl restart auditd
+
+# 검증
+sudo auditctl -l | head
+sudo auditctl -s
+```
+
+### 학생 환경 준비
+
+```bash
+sudo apt install -y \
+  auditd audispd-plugins \
+  aide tripwire \
+  fail2ban \
+  velociraptor osquery \
+  sleuthkit \
+  pandoc
+
+# auditd 자동 시작
+sudo systemctl enable --now auditd
+```
+
+### 핵심 도구별 사용법
+
+```bash
+# 1) ausearch — audit log 검색
+sudo ausearch -k identity -i | head                              # 사용자 변경
+sudo ausearch -k sshd -i --start today
+sudo ausearch -k privesc --start "07:00:00" --end "08:00:00"
+
+# 2) aureport — 통계 보고
+sudo aureport --auth -i                                          # 인증 시도
+sudo aureport --user -i                                          # 사용자별
+sudo aureport --executable -i | head                             # 실행된 binary
+
+# 3) AIDE — 무결성 baseline
+sudo aide --init
+sudo cp /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+
+# 변경 후
+sudo aide --check
+# 출력: Added/Removed/Changed 분류
+
+# 4) Wazuh — 다중 호스트 통합
+sudo /var/ossec/bin/wazuh-control logtest
+sudo jq '.event_type' /var/ossec/logs/alerts/alerts.json | sort | uniq -c
+
+# 5) Velociraptor — live forensic + audit
+velociraptor flow create EvidenceOfCompromise
+velociraptor query "SELECT * FROM glob(globs='/etc/*passwd*')"
+
+# 6) osquery — SQL-like 시스템 점검
+osqueryi "SELECT * FROM users WHERE shell LIKE '%bash%';"
+osqueryi "SELECT * FROM listening_ports;"
+osqueryi "SELECT * FROM passwd_changes;" 2>/dev/null
+osqueryi "SELECT name, version, install_time FROM rpm_packages;"
+```
+
+### 보안감사 실행 흐름 (분기별)
+
+```bash
+# Phase 1: 환경 점검 (Lynis + OpenSCAP)
+sudo lynis audit system --auditor "Q1 Audit" --plugindir /etc/lynis/plugins
+sudo oscap xccdf eval --profile cis_level2_server \
+  --report /tmp/oscap-q1.html ssg-ubuntu2204-ds.xml
+
+# Phase 2: 무결성 검증
+sudo aide --check
+sudo /var/ossec/bin/agent_control -R                              # Wazuh FIM 트리거
+
+# Phase 3: 활동 audit (auditd)
+sudo aureport --auth --start "2024-01-01" --end "2024-03-31" -i
+sudo ausearch -k privesc --start "2024-01-01" -i | wc -l
+
+# Phase 4: 권한 review
+osqueryi "SELECT * FROM users WHERE shell != '/bin/false'" 
+sudo /var/ossec/bin/agent_control -A | grep -v "Active"          # 비활성 agent
+
+# Phase 5: 침해사고 review (Wazuh)
+sudo jq -r 'select(.rule.level >= 12) | "\(.timestamp) [\(.rule.level)] \(.rule.description)"' \
+  /var/ossec/logs/alerts/alerts.json | sort -u
+
+# Phase 6: 보고서 (pandoc + Mermaid)
+pandoc audit-q1.md -o audit-q1.pdf --pdf-engine=xelatex \
+  -V geometry:margin=2cm \
+  -V mainfont="NanumGothic"
+```
+
+학생은 본 10주차에서 **auditd + AIDE + Wazuh + Velociraptor + osquery + Lynis + OpenSCAP** 7 도구로 보안감사의 4 단계 (자동 점검 → 무결성 → 활동 audit → 보고서) 를 통합 운영하는 분기별 사이클을 익힌다.

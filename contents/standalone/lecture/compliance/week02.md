@@ -1,0 +1,570 @@
+# Week 02: ISO 27001 (1) - 구조와 원칙
+
+## 학습 목표
+- ISO 27001이 무엇인지 이해한다
+- ISMS(정보보안 관리체계)의 개념을 설명할 수 있다
+- PDCA 사이클과 리스크 기반 접근법을 이해한다
+- Annex A 통제 항목의 전체 구조를 파악한다
+
+## 실습 환경 (6v6 4-tier, 공통)
+
+학생 PC 의 `~/.ssh/config` 의 ProxyJump 설정 후 다음 표 의 컨테이너 에 `ssh
+6v6-<name>` 으로 접속.
+
+| 컨테이너 | 6v6 IP | 역할 | 접속 |
+|---------|--------|------|------|
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
+| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
+| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
+| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
+| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+
+**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
+**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+
+## 강의 시간 배분 (3시간)
+
+| 시간 | 내용 | 유형 |
+|------|------|------|
+| 0:00-0:40 | 이론 강의 (Part 1) | 강의 |
+| 0:40-1:10 | 이론 심화 + 사례 분석 (Part 2) | 강의/토론 |
+| 1:10-1:20 | 휴식 | - |
+| 1:20-2:00 | 실습 (Part 3) | 실습 |
+| 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
+| 2:40-2:50 | 휴식 | - |
+| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
+| 3:20-3:40 | 정리 + 과제 안내 | 정리 |
+
+---
+
+---
+
+## 용어 해설 (보안 표준/컴플라이언스 과목)
+
+| 용어 | 영문 | 설명 | 비유 |
+|------|------|------|------|
+| **컴플라이언스** | Compliance | 법/규정/표준을 준수하는 것 | 교통법규 준수 |
+| **인증** | Certification | 외부 심사 기관이 표준 준수를 확인하는 절차 | 운전면허 시험 합격 |
+| **통제 항목** | Control | 보안 목표를 달성하기 위한 구체적 조치 | 건물 소방 설비 하나하나 |
+| **SoA** | Statement of Applicability | 적용 가능한 통제 항목 선언서 | "우리 건물에 필요한 소방 설비 목록" |
+| **리스크 평가** | Risk Assessment | 위험을 식별·분석·평가하는 과정 | 건물의 화재/지진 위험도 평가 |
+| **리스크 처리** | Risk Treatment | 평가된 위험에 대한 대응 결정 (수용/회피/감소/전가) | 보험 가입, 소방 설비 설치 |
+| **PDCA** | Plan-Do-Check-Act | ISO 표준의 지속적 개선 사이클 | 계획→실행→점검→개선 반복 |
+| **ISMS** | Information Security Management System | 정보보안 관리 체계 | 회사의 보안 관리 시스템 전체 |
+| **ISMS-P** | ISMS + Privacy | 한국의 정보보호 + 개인정보보호 인증 | 한국판 ISO 27001 + 개인정보 |
+| **ISO 27001** | ISO/IEC 27001 | 국제 정보보안 관리체계 표준 | 국제 보안 면허증 |
+| **ISO 27002** | ISO/IEC 27002 | ISO 27001의 통제 항목 상세 가이드 | 면허 시험 교재 |
+| **NIST CSF** | NIST Cybersecurity Framework | 미국 국립표준기술연구소의 사이버보안 프레임워크 | 미국판 보안 가이드 |
+| **GDPR** | General Data Protection Regulation | EU 개인정보보호 규정 | EU의 개인정보 보호법 |
+| **SOC 2** | Service Organization Control 2 | 클라우드 서비스 보안 인증 (미국) | 클라우드 업체의 보안 성적표 |
+| **증적** | Evidence (Audit) | 통제가 실행되었음을 증명하는 자료 | 출석부, 영수증 |
+| **심사원** | Auditor | 인증 심사를 수행하는 전문가 | 감독관, 시험관 |
+| **부적합** | Non-conformity | 심사에서 표준 미충족 판정 | 시험 불합격 항목 |
+| **GAP 분석** | Gap Analysis | 현재 상태와 목표 기준의 차이 분석 | 현재 실력과 합격선의 차이 |
+
+---
+
+## 1. ISO 27001이란?
+
+### 1.1 정의
+
+ISO 27001은 **국제표준화기구(ISO)**가 만든 **정보보안 관리체계(ISMS)** 표준이다.
+조직이 정보 자산을 체계적으로 보호하기 위한 **요구사항**을 정의한다.
+
+- 2005년 초판 발행, 2013년 대규모 개정, **2022년 최신 개정**
+- 전 세계에서 가장 널리 사용되는 보안 인증 표준
+- 한국의 ISMS-P 인증도 ISO 27001을 기반으로 만들어졌다
+
+### 1.2 왜 필요한가?
+
+| 문제 상황 | ISO 27001의 해결 |
+|-----------|-----------------|
+| 보안을 어디서부터 시작할지 모른다 | 체계적인 프레임워크 제공 |
+| 보안 투자의 근거가 없다 | 리스크 기반으로 우선순위 결정 |
+| 담당자가 바뀌면 보안 수준이 떨어진다 | 문서화된 프로세스로 지속성 확보 |
+| 고객사가 보안 수준을 요구한다 | 제3자 인증으로 신뢰 증명 |
+
+---
+
+## 2. ISMS(정보보안 관리체계)
+
+> **이 실습을 왜 하는가?**
+> "ISO 27001 (1) - 구조와 원칙" — 이 주차의 핵심 기술을 실제 서버 환경에서 직접 실행하여 체험한다.
+> 보안 표준/컴플라이언스 분야에서 이 기술은 실무의 핵심이며, 실습을 통해
+> 명령어의 의미, 결과 해석 방법, 보안 관점에서의 판단 기준을 익힌다.
+>
+> **이걸 하면 무엇을 알 수 있는가?**
+> - 이 기술이 실제 시스템에서 어떻게 동작하는지 직접 확인
+> - 정상과 비정상 결과를 구분하는 눈을 기름
+> - 실무에서 바로 활용할 수 있는 명령어와 절차를 체득
+>
+> **주의:** 모든 실습은 허가된 실습 환경(10.20.30.0/24)에서만 수행한다.
+
+### 2.1 핵심 개념
+
+ISMS는 **Information Security Management System**의 약자다.
+단순히 방화벽을 설치하는 것이 아니라, **사람 + 프로세스 + 기술**을 통합 관리하는 체계이다.
+
+```
+정보보안 = 기밀성(Confidentiality) + 무결성(Integrity) + 가용성(Availability)
+         = CIA Triad
+```
+
+- **기밀성**: 허가된 사람만 정보에 접근
+- **무결성**: 정보가 무단으로 변경되지 않음
+- **가용성**: 필요할 때 정보를 사용할 수 있음
+
+### 2.2 관리체계의 구성 요소
+
+```
+[경영진 의지] --> [보안 정책] --> [리스크 평가] --> [통제 구현] --> [모니터링] --> [개선]
+     ^                                                                          |
+     +--------------------------- 지속적 개선 ----------------------------------+
+```
+
+---
+
+## 3. ISO 27001의 구조
+
+### 3.1 본문 (Clauses 4-10)
+
+ISO 27001의 본문은 7개 장으로 구성된다:
+
+| 장 | 제목 | 핵심 내용 |
+|----|------|----------|
+| 4 | 조직의 맥락 | 이해관계자, 범위 정의 |
+| 5 | 리더십 | 경영진 참여, 보안 정책 |
+| 6 | 계획 | 리스크 평가, 목표 설정 |
+| 7 | 지원 | 자원, 역량, 인식, 문서화 |
+| 8 | 운영 | 리스크 처리, 통제 구현 |
+| 9 | 성과 평가 | 모니터링, 내부 감사, 경영 검토 |
+| 10 | 개선 | 부적합 시정, 지속적 개선 |
+
+### 3.2 Annex A (통제 항목)
+
+2022년 개정판 기준 **4개 그룹, 93개 통제 항목**:
+
+| 그룹 | 항목 수 | 내용 |
+|------|---------|------|
+| A.5 조직적 통제 | 37개 | 정책, 역할, 자산관리, 접근통제 등 |
+| A.6 인적 통제 | 8개 | 채용, 교육, 퇴직 절차 |
+| A.7 물리적 통제 | 14개 | 출입통제, 장비보호, 매체관리 |
+| A.8 기술적 통제 | 34개 | 인증, 암호화, 로깅, 네트워크 보안 등 |
+
+---
+
+## 4. PDCA 사이클
+
+ISO 27001은 **PDCA(Plan-Do-Check-Act)** 사이클을 따른다.
+
+### 4.1 각 단계 설명
+
+```
+Plan (계획)  --> 리스크 평가, 통제 선택, 보안 목표 수립
+  |
+  v
+Do (실행)    --> 통제 구현, 교육 실시, 프로세스 운영
+  |
+  v
+Check (점검) --> 모니터링, 내부감사, 효과성 측정
+  |
+  v
+Act (조치)   --> 부적합 시정, 프로세스 개선
+```
+
+### 4.2 실무 예시
+
+| 단계 | 서버 보안 예시 |
+|------|---------------|
+| Plan | "SSH 무단 접근 리스크가 높다" → 키 기반 인증으로 전환 결정 |
+| Do | sshd_config에서 PasswordAuthentication no 설정 |
+| Check | auth.log에서 SSH 접근 시도 모니터링 |
+| Act | 비정상 시도 발견 시 IP 차단 규칙 추가 |
+
+---
+
+## 5. 리스크 기반 접근법
+
+### 5.1 리스크 관리 프로세스
+
+```
+자산 식별 → 위협 식별 → 취약점 식별 → 리스크 산정 → 리스크 처리
+```
+
+- **리스크 = 위협 x 취약점 x 자산 가치**
+- 리스크가 높은 곳부터 우선 통제를 적용한다
+
+### 5.2 리스크 처리 옵션
+
+| 옵션 | 설명 | 예시 |
+|------|------|------|
+| 감소 (Mitigate) | 통제를 적용하여 리스크 낮춤 | 방화벽 설치 |
+| 전가 (Transfer) | 제3자에게 이전 | 보험 가입 |
+| 회피 (Avoid) | 위험 활동 중단 | 서비스 폐쇄 |
+| 수용 (Accept) | 리스크를 인지하고 수용 | 경영진 승인 하에 유지 |
+
+---
+
+## 6. 실습: 우리 실습 환경의 자산 식별
+
+### 6.1 서버 자산 확인
+
+각 서버에 접속하여 기본 정보를 수집한다:
+
+> **실습 목적**: ISO 27001의 첫 단계인 '자산 식별'을 실제 서버 환경에서 수행하여, 보안 관리체계의 출발점을 체험한다.
+>
+> **배우는 것**: 서버의 호스트명, OS 버전, 커널 정보를 수집하는 방법을 익히고, 이것이 리스크 평가의 기초 데이터가 됨을 이해한다.
+>
+> **결과 해석**: hostname은 서버 식별, uname -a는 커널 버전(패치 상태 판단), os-release는 배포판 정보이다. 오래된 커널 버전은 취약점 노출 위험을 의미한다.
+>
+> **실전 활용**: ISO 27001 인증 심사에서 '자산 목록'은 필수 증적이며, 이 명령어들로 수집한 정보가 그 기반이 된다.
+
+```bash
+# bastion 서버 (control plane)
+ssh 6v6-bastion "hostname; uname -a; cat /etc/os-release | head -5"
+
+# secu 서버 (방화벽/IPS)
+ssh 6v6-fw "hostname; uname -a"
+
+# web 서버 (WAF/웹앱)
+ssh 6v6-web "hostname; uname -a"
+
+# siem 서버 (Wazuh)
+ssh 6v6-siem "hostname; uname -a"
+```
+
+### 6.2 서비스 자산 식별
+
+```bash
+# 각 서버에서 실행 중인 서비스 확인
+ssh 6v6-bastion "systemctl list-units --type=service --state=running | head -20"
+
+# 열린 포트 확인
+ssh 6v6-fw "ss -tlnp"
+```
+
+### 6.3 자산 목록 작성 (실습 과제)
+
+다음 표를 채워보자:
+
+| 자산명 | 유형 | 위치(IP) | 담당자 | 중요도(상/중/하) |
+|--------|------|---------|--------|----------------|
+| Manager API | 소프트웨어 | 10.20.30.201 | ? | ? |
+| Suricata IPS | 소프트웨어 | 10.20.30.1 | ? | ? |
+| JuiceShop 웹앱 | 소프트웨어 | 10.20.30.80 | ? | ? |
+| Wazuh SIEM | 소프트웨어 | 10.20.30.100 | ? | ? |
+| PostgreSQL DB | 소프트웨어 | 10.20.30.201 | ? | ? |
+
+---
+
+## 7. 실습: PDCA 적용해보기
+
+### 7.1 Plan - 현재 보안 상태 확인
+
+```bash
+# SSH 설정 점검 (비밀번호 로그인 허용 여부)
+ssh 6v6-bastion "grep -i 'PasswordAuthentication' /etc/ssh/sshd_config"
+
+# 방화벽 상태 확인
+ssh 6v6-fw "sudo nft list ruleset | head -30"
+```
+
+### 7.2 Check - 로그 모니터링
+
+```bash
+# 최근 SSH 접근 시도 확인
+ssh 6v6-bastion "journalctl -u sshd --since '1 hour ago' --no-pager | tail -10"
+
+# 실패한 로그인 시도 확인
+ssh 6v6-bastion "grep 'Failed password' /var/log/auth.log 2>/dev/null | tail -5"
+```
+
+---
+
+## 8. 핵심 정리
+
+1. **ISO 27001** = 정보보안 관리체계(ISMS)의 국제 표준
+2. **ISMS** = 사람 + 프로세스 + 기술을 통합 관리하는 체계
+3. **PDCA** = Plan-Do-Check-Act 지속적 개선 사이클
+4. **Annex A** = 93개 통제 항목 (조직/인적/물리/기술)
+5. **리스크 기반 접근** = 위험이 높은 곳부터 우선 대응
+
+---
+
+## 과제
+
+1. 실습 환경의 4개 서버에 대해 자산 목록을 완성하시오
+2. 각 서버에서 발견한 보안 설정 1가지를 PDCA 관점에서 분석하시오
+3. Annex A 93개 통제 항목 중 우리 실습 환경에 적용 가능한 항목 5개를 선택하고 이유를 설명하시오
+
+---
+
+## 참고 자료
+
+- ISO/IEC 27001:2022 공식 문서
+- KISA 정보보호 관리체계 인증 가이드
+- ISO 27001 Annex A Controls Explained (온라인 검색)
+
+---
+
+---
+
+## 심화: 표준/인증 실무 보충
+
+### 보안 통제 구현 패턴
+
+실무에서 통제 항목을 구현할 때의 일반적 패턴을 이해한다.
+
+```
+[1] 정책(Policy) 수립
+    → "무엇을 해야 하는가?" 를 문서로 정의
+    예: "모든 서버는 90일마다 패스워드를 변경한다"
+
+[2] 절차(Procedure) 작성
+    → "어떻게 하는가?" 를 단계별로 정리
+    예: "1. passwd 명령 실행 2. 복잡도 확인 3. 변경 로그 기록"
+
+[3] 기술적 구현(Technical Implementation)
+    → 실제 시스템에 적용
+    예: /etc/login.defs에 PASS_MAX_DAYS=90 설정
+
+[4] 증적(Evidence) 수집
+    → 구현되었음을 증명하는 자료 확보
+    예: login.defs 캡처, 변경 로그, Bastion evidence
+```
+
+### 증적 수집 실습
+
+```bash
+# ISO 27001 A.8.5 (안전한 인증) 점검 증적 수집
+echo "=== 패스워드 정책 확인 ==="
+ssh 6v6-web "  # 비밀번호 자동입력 SSH
+  echo '--- login.defs ---' && grep -E 'PASS_MAX|PASS_MIN|PASS_WARN' /etc/login.defs
+  echo '--- pam 설정 ---' && grep pam_pwquality /etc/pam.d/common-password 2>/dev/null || echo 'pam_pwquality 미설정'
+  echo '--- sudo 설정 ---' && sudo -l 2>/dev/null | head -5
+" 2>/dev/null
+
+# 결과를 Bastion evidence로 기록
+# (Bastion dispatch 사용)
+```
+
+### GAP 분석 워크시트 예시
+
+| 통제 ID | 통제 항목 | 현재 상태 | 목표 | GAP | 우선순위 |
+|---------|---------|---------|------|-----|---------|
+| A.5.1 | 정보보안 정책 | 문서 없음 | 승인된 정책 문서 | 정책 수립 필요 | 높음 |
+| A.8.2 | 접근 권한 관리 | sudo NOPASSWD:ALL | 최소 권한 | sudo 제한 필요 | 긴급 |
+| A.8.5 | 안전한 인증 | 단순 비밀번호 | 복잡도+MFA | 정책 변경 | 높음 |
+| A.12.4 | 로깅 | 부분 수집 | 전체 수집+SIEM | Wazuh 연동 | 중간 |
+
+### 인증 심사 대비 FAQ
+
+| 질문 | 준비 방법 |
+|------|---------|
+| "이 통제의 증적을 보여주세요" | Bastion evidence/replay로 실행 이력 제시 |
+| "리스크 평가를 어떻게 했나요?" | 리스크 평가 워크시트 + 기준 설명 |
+| "부적합 사항은 어떻게 처리했나요?" | 시정 조치 계획서 + 완료 증적 |
+| "경영진의 검토는?" | 검토 회의록 + 서명 |
+
+---
+
+## 과제 (다음 주까지)
+
+1. 실습 환경의 4개 서버에 대해 **자산 목록**을 완성하시오 (자산명, 유형, IP, 중요도)
+2. 각 서버에서 발견한 보안 설정 1가지를 **PDCA 관점**에서 분석하시오
+3. Annex A 93개 통제 항목 중 우리 실습 환경에 적용 가능한 항목 **5개를 선택**하고 이유를 설명하시오
+4. **GAP 분석 워크시트**를 작성하시오 (선택한 5개 통제 × 현재 상태/목표/GAP/우선순위)
+
+---
+
+## 검증 체크리스트
+
+- [ ] ISO 27001의 본문 구조(Clause 4~10)를 설명할 수 있다
+- [ ] PDCA 사이클 4단계를 서버 보안 예시로 설명할 수 있다
+- [ ] Annex A의 4개 그룹(조직/인적/물리/기술)과 항목 수를 기억한다
+- [ ] 리스크 처리 4가지 옵션(감소/전가/회피/수용)을 구분할 수 있다
+- [ ] 4개 서버에 SSH 접속하여 자산 정보를 수집하였다
+- [ ] 최소 1개 서버의 보안 설정을 PDCA로 분석하였다
+---
+
+> **실습 환경 검증 완료** (2026-03-28): PASS_MAX_DAYS=99999, pam_pwquality, auditd, SSH 설정, nftables 점검
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+
+### ISO/IEC 27001:2022 (Annex A)
+> **역할:** 정보보호 관리체계 국제 표준 — 93개 통제(A.5~A.8)  
+> **실행 위치:** `문서/증적 (정책·절차·기록)`  
+> **접속/호출:** 표준 문서 + SoA + 리스크 등록부
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `SoA.xlsx (Statement of Applicability)` | 93개 통제 적용/제외 선언 |
+| `risk_register.xlsx` | 자산·위협·취약점·리스크 점수 |
+| `policies/` | 정책 14종 (접근제어, 백업, 사건대응 등) |
+
+**핵심 설정·키**
+
+- `A.5 (조직적)` — 정책, 역할, 정보분류
+- `A.6 (인적)` — 채용·퇴직 시 보안, 인식 교육
+- `A.7 (물리적)` — 보안 구역, 장비, 케이블링
+- `A.8 (기술적)` — 접근·암호화·로깅·개발 보안
+
+**로그·확인 명령**
+
+- `내부심사 보고서` — 부적합(NC)·관찰사항(OB)
+- `경영검토 회의록` — 연 1회 필수
+
+**UI / CLI 요점**
+
+- PDCA 사이클 — 수립→운영→검토→개선
+- 2022 개정 — 114→93 통제, 신규 11건(위협 인텔리전스 등)
+
+> **해석 팁.** SoA는 **모든 통제에 대해 포함/제외 사유**를 명시해야 한다. 심사관은 `Justification for exclusion`을 먼저 본다.
+
+---
+
+## 실제 사례 (WitFoo Precinct 6 — ISO 27001 Annex A 매핑 분포)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *ISO 27001 구조·원칙 (Annex A)* 학습 항목과 매핑되는 dataset host 의 ISO 27001 통제 번호 분포.
+
+### Case 1: WitFoo Precinct product 의 ISO 27001 매핑
+
+```text
+"iso27001": [4, 8, 14, 16, 67, 68, 69, 71, 72, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 130, 131, 132]
+```
+
+ISO 27001:2022 controls 매핑 해석:
+- **A.5 (정보보안 정책)**: 4, 8, 14, 16 = 정책·역할·자산 분류 (4개)
+- **A.6 (인적 보안)**: 67, 68, 69 = 인적 자원 (3개)
+- **A.8 (자산 관리)**: 71, 72 = asset inventory (2개)
+- **A.13~A.14 (네트워크·시스템)**: 113-124 = 12개 (보안 통신·시스템 획득·개발)
+- **A.16 (사고 관리)**: 130-132 = 3개 (incident response·learning)
+
+→ **24 control 동시 매핑** = 단일 product 가 24 control cover. 학생 본인 환경의 *control 매트릭스* baseline.
+
+### Case 2: Cisco ASA 의 ISO 27001 매핑 (다른 product)
+
+```text
+"iso27001": [1, 2, 53, 54, 81, 86]
+```
+
+ASA Firewall 만의 cover (network 중심):
+- A.5.1-A.5.2: 정책 (1, 2)
+- A.13.1: 네트워크 보안 (53, 54)
+- A.13.2: 정보 전송 (81)
+- A.14.1: 시스템 보안 (86)
+
+→ **6 control** — 더 narrow. SIEM (24) vs Firewall (6) = product 별 *cover scope 차이*.
+
+**해석**: ISO 27001 의 114 controls 중 *어떤 product 가 어떤 control 을 cover* 하는지 dataset 매핑 표를 모방하면 학생 SoA (Statement of Applicability) 작성 reference 됨.
+
+**학생 액션**: 본인 환경의 product (Wazuh + Suricata + ModSec + nft + OpenCTI) 마다 *cover ISO 27001 control 번호 list* 작성 → dataset 양식 모방.
+
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course4 Compliance — Week 02 정보통신망법)
+
+### lab step → 점검 도구 매핑
+
+| step | 점검 항목 | 본문/lab 명령 | 자동화 OSS 도구 | 확장 도구 |
+|------|----------|--------------|----------------|----------|
+| s1 | nftables 활성/룰셋 조회 | `nft list ruleset` | **Lynis** `firewall-config` / **nft -j** JSON | scapy 검증 |
+| s2 | 기본 정책 DROP | `nft list ruleset \| grep policy` | OpenSCAP rule `service_iptables_*` / Lynis | firewalld 점검 |
+| s3 | Suricata 동작 | `systemctl status suricata` | **suricatasc** Unix socket / Wazuh integration | evebox |
+| s4 | Suricata 룰 파일 수 | `grep rule-files /etc/suricata/suricata.yaml` | **suricata-update** list-sources | scirius (web) |
+| s5 | 최근 알림 | `tail /var/log/suricata/fast.log` | **jq** + eve.json / **evebox-cli** alerts | kibana |
+| s6 | LISTEN 포트 | `ss -tlnp` | **Lynis** `network-services` / nmap localhost | netstat |
+| s7 | rsyslog 원격 전송 | `grep '@@\|@' /etc/rsyslog.*` | **Lynis** `logging` / Wazuh agent integration | Filebeat |
+| s8 | HTTP 보안 헤더 | `curl -sI \| grep -iE X-Frame X-Content` | **nuclei** -t http/misconfiguration/http-missing-security-headers | securityheaders.com (online) |
+| s9 | 종합 점검 스크립트 | bash 작성 | **OpenSCAP** + **Lynis** + Wazuh SCA 통합 | dradis 보고 |
+
+### 학생 환경 준비
+
+```bash
+ssh 6v6-fw     # secu VM
+sudo apt update && sudo apt install -y \
+  nftables iproute2 \
+  suricata suricata-update \
+  rsyslog \
+  lynis \
+  jq
+
+# Suricata + evebox
+curl -L https://evebox.org/files/release/latest/evebox-latest-amd64.deb -o /tmp/evebox.deb
+sudo dpkg -i /tmp/evebox.deb && sudo systemctl start evebox
+
+# nuclei (HTTP 보안 헤더 자동 점검)
+curl -L https://github.com/projectdiscovery/nuclei/releases/latest/download/nuclei_3.2.0_linux_amd64.zip -o /tmp/n.zip
+unzip /tmp/n.zip -d /tmp && sudo mv /tmp/nuclei /usr/local/bin/
+nuclei -update-templates
+```
+
+### 핵심 도구별 사용법
+
+```bash
+# 1) nft -j (JSON 출력 — 자동 검증용)
+sudo nft -j list ruleset | jq '.nftables[] | select(.chain.policy=="drop")'
+# → 모든 chain 의 default policy 가 drop 인지 자동 확인
+
+# 2) suricatasc (Unix socket 제어)
+sudo suricatasc -c "iface-list"
+sudo suricatasc -c "ruleset-stats"
+sudo suricatasc -c "reload-rules"
+
+# 3) suricata-update (룰셋 자동 갱신 — 정보통신망법 준수에 권장)
+sudo suricata-update list-sources
+sudo suricata-update enable-source et/open
+sudo suricata-update                                           # 다운로드 + merge
+sudo systemctl reload suricata
+
+# 4) evebox CLI (알림 검색)
+evebox-cli --addr http://localhost:5636 alerts --since "6h ago" | head -20
+evebox-cli --addr http://localhost:5636 reports --since "1d" --output json
+
+# 5) nuclei — HTTP 보안 헤더 자동 점검 (X-Frame, HSTS, CSP)
+nuclei -u http://10.20.30.80 -t http/misconfiguration/http-missing-security-headers.yaml
+nuclei -u http://10.20.30.80 -tags hsts,csp,xss-protection
+```
+
+### 본 2주차 점검 흐름
+
+```bash
+# Phase 1: 방화벽 baseline (정보통신망법 침입차단시스템 의무)
+sudo nft -j list ruleset > /tmp/fw.json
+jq '.nftables[].chain | {name, type, policy}' /tmp/fw.json
+# 모든 input/forward chain 이 default DROP 인지
+
+# Phase 2: IDS 운영 점검 (정보통신망법 침입탐지시스템)
+sudo systemctl is-active suricata
+sudo suricatasc -c "ruleset-stats"
+sudo jq '.event_type' /var/log/suricata/eve.json | sort | uniq -c
+
+# Phase 3: 로그 수집/원격 전송 (위변조 방지 의무)
+grep -rn "@@\|@" /etc/rsyslog.conf /etc/rsyslog.d/
+# Wazuh agent 의 ossec.conf 에서 manager forwarding 도 점검
+
+# Phase 4: 웹 보안 헤더 (개인정보 처리 페이지)
+nuclei -u http://10.20.30.80 -tags misconfig -severity high -o /tmp/headers.txt
+
+# Phase 5: 종합 보고
+sudo lynis audit system --tests-from-group networking,firewalls > /tmp/lynis.txt
+```
+
+### 정보통신망법 매핑
+
+| 법령 항목 | OSS 도구 |
+|----------|---------|
+| §28 침입차단/탐지시스템 운영 | nftables + Suricata |
+| §28 접근통제 | nftables + ssh-audit + Lynis auth |
+| §28 위변조 방지 (로그) | rsyslog 원격 + Wazuh + auditd |
+| §29 백업 | restic / borg / bareos |
+
+학생은 본 2주차에서 **nft + suricatasc + evebox + nuclei + Lynis** 5 도구로 정보통신망법 §28 의 4 핵심 의무 (차단/탐지/접근/위변조) 를 자동 점검한다.

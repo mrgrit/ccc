@@ -1827,6 +1827,12 @@ _STANDALONE_COURSES = {
         "icon": "🎯",
         "color": "#06b6d4",
     },
+    "compliance": {
+        "title": "정보보안 컴플라이언스 (6v6)",
+        "description": "개인정보보호법 · ISMS-P · ISO 27001 · GDPR 등 법규/인증을 6v6 4-tier 인프라 (ext → fw → ips → dmz → int) 위에서 컨테이너 기반으로 점검·실습한다. Training 메뉴의 compliance 과목을 6v6 환경에 맞춰 이식.",
+        "icon": "📋",
+        "color": "#3fb950",
+    },
 }
 
 

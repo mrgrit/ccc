@@ -1,0 +1,621 @@
+# Week 03: ISO 27001 (2) - 통제 항목 (A.5~A.8)
+
+## 학습 목표
+- ISO 27001:2022 Annex A의 4개 통제 그룹을 이해한다
+- A.5 조직적 통제의 주요 항목을 설명할 수 있다
+- A.6 인적 통제와 A.7 물리적 통제를 이해한다
+- A.8 기술적 통제의 핵심 항목을 파악한다
+
+## 실습 환경 (6v6 4-tier, 공통)
+
+학생 PC 의 `~/.ssh/config` 의 ProxyJump 설정 후 다음 표 의 컨테이너 에 `ssh
+6v6-<name>` 으로 접속.
+
+| 컨테이너 | 6v6 IP | 역할 | 접속 |
+|---------|--------|------|------|
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
+| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
+| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
+| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
+| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+
+**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
+**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+
+## 강의 시간 배분 (3시간)
+
+| 시간 | 내용 | 유형 |
+|------|------|------|
+| 0:00-0:40 | 이론 강의 (Part 1) | 강의 |
+| 0:40-1:10 | 이론 심화 + 사례 분석 (Part 2) | 강의/토론 |
+| 1:10-1:20 | 휴식 | - |
+| 1:20-2:00 | 실습 (Part 3) | 실습 |
+| 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
+| 2:40-2:50 | 휴식 | - |
+| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
+| 3:20-3:40 | 정리 + 과제 안내 | 정리 |
+
+---
+
+---
+
+## 용어 해설 (보안 표준/컴플라이언스 과목)
+
+| 용어 | 영문 | 설명 | 비유 |
+|------|------|------|------|
+| **컴플라이언스** | Compliance | 법/규정/표준을 준수하는 것 | 교통법규 준수 |
+| **인증** | Certification | 외부 심사 기관이 표준 준수를 확인하는 절차 | 운전면허 시험 합격 |
+| **통제 항목** | Control | 보안 목표를 달성하기 위한 구체적 조치 | 건물 소방 설비 하나하나 |
+| **SoA** | Statement of Applicability | 적용 가능한 통제 항목 선언서 | "우리 건물에 필요한 소방 설비 목록" |
+| **리스크 평가** | Risk Assessment | 위험을 식별·분석·평가하는 과정 | 건물의 화재/지진 위험도 평가 |
+| **리스크 처리** | Risk Treatment | 평가된 위험에 대한 대응 결정 (수용/회피/감소/전가) | 보험 가입, 소방 설비 설치 |
+| **PDCA** | Plan-Do-Check-Act | ISO 표준의 지속적 개선 사이클 | 계획→실행→점검→개선 반복 |
+| **ISMS** | Information Security Management System | 정보보안 관리 체계 | 회사의 보안 관리 시스템 전체 |
+| **ISMS-P** | ISMS + Privacy | 한국의 정보보호 + 개인정보보호 인증 | 한국판 ISO 27001 + 개인정보 |
+| **ISO 27001** | ISO/IEC 27001 | 국제 정보보안 관리체계 표준 | 국제 보안 면허증 |
+| **ISO 27002** | ISO/IEC 27002 | ISO 27001의 통제 항목 상세 가이드 | 면허 시험 교재 |
+| **NIST CSF** | NIST Cybersecurity Framework | 미국 국립표준기술연구소의 사이버보안 프레임워크 | 미국판 보안 가이드 |
+| **GDPR** | General Data Protection Regulation | EU 개인정보보호 규정 | EU의 개인정보 보호법 |
+| **SOC 2** | Service Organization Control 2 | 클라우드 서비스 보안 인증 (미국) | 클라우드 업체의 보안 성적표 |
+| **증적** | Evidence (Audit) | 통제가 실행되었음을 증명하는 자료 | 출석부, 영수증 |
+| **심사원** | Auditor | 인증 심사를 수행하는 전문가 | 감독관, 시험관 |
+| **부적합** | Non-conformity | 심사에서 표준 미충족 판정 | 시험 불합격 항목 |
+| **GAP 분석** | Gap Analysis | 현재 상태와 목표 기준의 차이 분석 | 현재 실력과 합격선의 차이 |
+
+---
+
+## 1. Annex A 통제 항목 개요
+
+### 1.1 2022년 개정 변화
+
+ISO 27001:2013에서는 14개 그룹 114개 항목이었으나, 2022년 개정에서 **4개 그룹 93개 항목**으로 재편되었다.
+
+| 구분 | 2013 버전 | 2022 버전 |
+|------|----------|----------|
+| 그룹 수 | 14개 | 4개 |
+| 통제 수 | 114개 | 93개 |
+| 신규 항목 | - | 11개 추가 |
+
+### 1.2 신규 통제 항목 (2022)
+
+- 위협 인텔리전스 (A.5.7)
+- 클라우드 서비스 보안 (A.5.23)
+- 데이터 마스킹 (A.8.11)
+- 데이터 유출 방지 (A.8.12)
+- 모니터링 활동 (A.8.16)
+- 웹 필터링 (A.8.23)
+- 보안 코딩 (A.8.28)
+
+---
+
+## 2. A.5 조직적 통제 (37개)
+
+> **이 실습을 왜 하는가?**
+> "ISO 27001 (2) - 통제 항목 (A.5~A.8)" — 이 주차의 핵심 기술을 실제 서버 환경에서 직접 실행하여 체험한다.
+> 보안 표준/컴플라이언스 분야에서 이 기술은 실무의 핵심이며, 실습을 통해
+> 명령어의 의미, 결과 해석 방법, 보안 관점에서의 판단 기준을 익힌다.
+>
+> **이걸 하면 무엇을 알 수 있는가?**
+> - 이 기술이 실제 시스템에서 어떻게 동작하는지 직접 확인
+> - 정상과 비정상 결과를 구분하는 눈을 기름
+> - 실무에서 바로 활용할 수 있는 명령어와 절차를 체득
+>
+> **주의:** 모든 실습은 허가된 실습 환경(10.20.30.0/24)에서만 수행한다.
+
+### 2.1 정보보안 정책 (A.5.1)
+
+경영진이 승인한 정보보안 정책을 수립하고 공표해야 한다.
+
+```
+좋은 정책의 구성:
+- 목적과 범위
+- 경영진의 의지 표명
+- 보안 원칙 (최소 권한, 직무 분리 등)
+- 역할과 책임
+- 위반 시 제재
+- 검토 주기
+```
+
+### 2.2 역할과 책임 (A.5.2)
+
+| 역할 | 책임 |
+|------|------|
+| CISO | 전체 보안 전략 수립 및 감독 |
+| 보안 관리자 | 일상 보안 운영, 정책 시행 |
+| 시스템 관리자 | 서버/네트워크 보안 설정 유지 |
+| 일반 사용자 | 보안 정책 준수, 사고 보고 |
+
+### 2.3 위협 인텔리전스 (A.5.7) - 신규
+
+외부 위협 정보를 수집하고 분석하여 보안 의사결정에 활용한다.
+
+> **실습 목적**: ISO 27001 Annex A의 조직적/인적 통제 항목을 실습 환경에서 기술적으로 확인한다
+>
+> **배우는 것**: 위협 인텔리전스(A.5.7), 역할 분리(A.5.3) 등 통제 항목을 SIEM과 시스템 설정에서 검증하는 방법을 배운다
+>
+> **결과 해석**: Wazuh에서 위협 정보를 수집 중이면 A.5.7 적합, 관리자 역할이 분리되어 있으면 A.5.3 적합이다
+>
+> **실전 활용**: ISO 27001 인증 심사원은 통제 항목별로 기술적 증적을 요구하며, 이 실습이 그 준비이다
+
+```bash
+# 실습: 우리 SIEM에서 최신 위협 정보 확인
+# Wazuh 대시보드 접속: https://10.20.30.100:443
+# 사용자: admin / 비밀번호: (수업 시간에 안내)
+
+# OpenCTI에서 위협 인텔리전스 확인
+# 브라우저: http://10.20.30.100:9400
+```
+
+### 2.4 자산 관리 (A.5.9~A.5.14)
+
+- **A.5.9**: 정보 자산 목록 작성
+- **A.5.10**: 자산의 적절한 사용 규칙
+- **A.5.12**: 정보 분류 (기밀/내부/공개)
+- **A.5.13**: 정보 라벨링
+
+```bash
+# 실습: 서버 자산의 서비스 목록 확인
+ssh 6v6-bastion "systemctl list-units --type=service --state=running --no-pager"  # 비밀번호 자동입력 SSH
+ssh 6v6-fw "systemctl list-units --type=service --state=running --no-pager"  # 비밀번호 자동입력 SSH
+```
+
+### 2.5 접근 통제 (A.5.15~A.5.18)
+
+- **A.5.15**: 접근통제 정책
+- **A.5.16**: 신원 관리
+- **A.5.17**: 인증 정보 (비밀번호 등)
+- **A.5.18**: 접근 권한 부여
+
+```bash
+# 실습: 사용자 계정 및 권한 확인
+ssh 6v6-bastion "cat /etc/passwd | grep -v nologin | grep -v false"  # 비밀번호 자동입력 SSH
+ssh 6v6-bastion "cat /etc/group | grep sudo"  # 비밀번호 자동입력 SSH
+```
+
+### 2.6 공급망 보안 (A.5.19~A.5.22)
+
+외부 업체, 클라우드 서비스 등 공급망 전체의 보안을 관리한다.
+
+### 2.7 사고 관리 (A.5.24~A.5.28)
+
+- **A.5.24**: 사고 관리 계획
+- **A.5.25**: 사고 평가 및 결정
+- **A.5.26**: 사고 대응
+- **A.5.27**: 사고로부터의 학습
+- **A.5.28**: 증거 수집
+
+---
+
+## 3. A.6 인적 통제 (8개)
+
+### 3.1 채용 전 (A.6.1)
+
+- 배경 조사 (학력, 경력, 범죄 이력 등)
+- 보안 역할에 따른 적합성 검증
+
+### 3.2 고용 중 (A.6.2~A.6.5)
+
+| 항목 | 내용 |
+|------|------|
+| A.6.2 고용 조건 | 비밀유지 서약, 보안 책임 명시 |
+| A.6.3 보안 인식 교육 | 정기적 보안 교육 실시 |
+| A.6.4 징계 절차 | 보안 위반 시 대응 절차 |
+| A.6.5 퇴직 절차 | 접근 권한 회수, 자산 반납 |
+
+### 3.3 실습: 퇴직자 계정 관리
+
+```bash
+# 비활성 계정 찾기 (90일 이상 로그인 안 한 계정)
+ssh 6v6-bastion "lastlog | awk 'NR>1 && \$2==\"Never\" {print \$1}'"
+
+# sudo 권한 가진 사용자 확인
+ssh 6v6-bastion "getent group sudo"
+
+# 비밀번호 만료 정책 확인
+ssh 6v6-bastion "chage -l user 2>/dev/null || echo 'chage 명령 확인 필요'"
+```
+
+---
+
+## 4. A.7 물리적 통제 (14개)
+
+### 4.1 물리적 보안 경계 (A.7.1~A.7.4)
+
+- 서버실 출입 통제
+- 방문자 관리
+- 사무실/시설 보안
+
+### 4.2 장비 보안 (A.7.5~A.7.8)
+
+| 항목 | 내용 |
+|------|------|
+| A.7.5 물리적 보안 모니터링 | CCTV, 출입 로그 |
+| A.7.7 장비 유지보수 | 정기 점검, 교체 절차 |
+| A.7.8 무인 장비 | 화면 잠금, 자동 로그아웃 |
+
+### 4.3 실습: 논리적 관점에서 물리적 통제 확인
+
+서버에 직접 갈 수 없으므로, 원격에서 물리적 보안 관련 설정을 확인한다:
+
+```bash
+# 화면 잠금(자동 로그아웃) 설정 확인
+ssh 6v6-bastion "grep -i tmout /etc/profile /etc/bash.bashrc 2>/dev/null"
+
+# USB 장치 접근 로그 확인
+ssh 6v6-bastion "dmesg | grep -i usb | tail -5"
+
+# 하드웨어 정보 확인 (자산 관리 용도)
+ssh 6v6-bastion "lscpu | head -10"
+ssh 6v6-bastion "free -h"
+ssh 6v6-bastion "df -h /"
+```
+
+---
+
+## 5. A.8 기술적 통제 (34개)
+
+### 5.1 사용자 인증 (A.8.1~A.8.5)
+
+```bash
+# 실습: 접근 제한 설정 확인
+# SSH 설정 확인
+ssh 6v6-bastion "grep -E 'PermitRootLogin|PasswordAuthentication|MaxAuthTries' /etc/ssh/sshd_config"
+
+# PAM 설정 확인 (로그인 실패 잠금)
+ssh 6v6-bastion "cat /etc/pam.d/common-auth | grep -v '^#' | head -10"
+```
+
+### 5.2 권한 관리 (A.8.2~A.8.3)
+
+- **A.8.2**: 특수 접근 권한 (root, sudo)
+- **A.8.3**: 접근 제한
+
+```bash
+# sudo 설정 확인
+ssh 6v6-bastion "sudo cat /etc/sudoers | grep -v '^#' | grep -v '^$'"
+
+# SUID 파일 찾기 (잠재적 권한 상승 위험)
+ssh 6v6-bastion "find /usr/bin -perm -4000 2>/dev/null | head -10"
+```
+
+### 5.3 악성코드 방지 (A.8.7)
+
+```bash
+# ClamAV 등 안티바이러스 설치 여부 확인
+ssh 6v6-bastion "which clamscan 2>/dev/null || echo 'ClamAV 미설치'"
+```
+
+### 5.4 로깅 및 모니터링 (A.8.15~A.8.16)
+
+```bash
+# 시스템 로그 확인
+ssh 6v6-bastion "ls -la /var/log/syslog /var/log/auth.log 2>/dev/null"
+
+# Wazuh 에이전트 상태 확인
+ssh 6v6-bastion "systemctl status wazuh-agent 2>/dev/null | head -5"
+```
+
+### 5.5 네트워크 보안 (A.8.20~A.8.22)
+
+```bash
+# 방화벽 규칙 확인
+ssh 6v6-fw "sudo nft list ruleset | head -20"
+
+# 네트워크 분리 확인
+ssh 6v6-fw "ip addr show | grep 'inet '"
+```
+
+### 5.6 암호화 (A.8.24)
+
+```bash
+# TLS 인증서 확인
+ssh 6v6-siem "echo | openssl s_client -connect localhost:443 2>/dev/null | openssl x509 -noout -subject -dates 2>/dev/null"
+```
+
+### 5.7 보안 코딩 (A.8.28) - 신규
+
+- 입력값 검증, SQL Injection 방지, XSS 방지
+- 코드 리뷰, 정적 분석 도구 사용
+
+---
+
+## 6. 통제 항목 선택 (SoA)
+
+### 6.1 적용성 보고서 (Statement of Applicability)
+
+모든 93개 항목에 대해 적용 여부를 결정하고 그 이유를 문서화한다.
+
+| 통제 | 적용 여부 | 사유 |
+|------|----------|------|
+| A.5.1 정보보안 정책 | 적용 | 필수 |
+| A.7.3 사무실 보안 | 미적용 | 실습 환경이므로 해당 없음 |
+| A.8.20 네트워크 보안 | 적용 | 방화벽 운영 중 |
+
+---
+
+## 7. 핵심 정리
+
+1. **A.5 조직적 통제** (37개): 정책, 역할, 자산, 접근, 사고관리
+2. **A.6 인적 통제** (8개): 채용, 교육, 퇴직
+3. **A.7 물리적 통제** (14개): 출입, 장비, 매체
+4. **A.8 기술적 통제** (34개): 인증, 암호화, 로깅, 네트워크
+5. **SoA**: 각 통제의 적용 여부와 사유를 문서화
+
+---
+
+## 과제
+
+1. 실습 환경의 4개 서버에 대해 A.8 기술적 통제 중 5개 항목의 현재 상태를 점검하시오
+2. A.5.7(위협 인텔리전스)를 우리 환경(Wazuh + OpenCTI)에 어떻게 적용할 수 있는지 설명하시오
+3. SoA 초안을 작성하시오 (최소 10개 항목, 적용/미적용 사유 포함)
+
+---
+
+## 참고 자료
+
+- ISO/IEC 27001:2022 Annex A
+- KISA 주요정보통신기반시설 기술적 취약점 분석 가이드
+- Annex A Controls: What's New in ISO 27001:2022 (온라인 검색)
+
+---
+
+---
+
+## 심화: 표준/인증 실무 보충
+
+### 보안 통제 구현 패턴
+
+실무에서 통제 항목을 구현할 때의 일반적 패턴을 이해한다.
+
+```
+[1] 정책(Policy) 수립
+    → "무엇을 해야 하는가?" 를 문서로 정의
+    예: "모든 서버는 90일마다 패스워드를 변경한다"
+
+[2] 절차(Procedure) 작성
+    → "어떻게 하는가?" 를 단계별로 정리
+    예: "1. passwd 명령 실행 2. 복잡도 확인 3. 변경 로그 기록"
+
+[3] 기술적 구현(Technical Implementation)
+    → 실제 시스템에 적용
+    예: /etc/login.defs에 PASS_MAX_DAYS=90 설정
+
+[4] 증적(Evidence) 수집
+    → 구현되었음을 증명하는 자료 확보
+    예: login.defs 캡처, 변경 로그, Bastion evidence
+```
+
+### 증적 수집 실습
+
+```bash
+# ISO 27001 A.8.5 (안전한 인증) 점검 증적 수집
+echo "=== 패스워드 정책 확인 ==="
+ssh 6v6-web "  # 비밀번호 자동입력 SSH
+  echo '--- login.defs ---' && grep -E 'PASS_MAX|PASS_MIN|PASS_WARN' /etc/login.defs
+  echo '--- pam 설정 ---' && grep pam_pwquality /etc/pam.d/common-password 2>/dev/null || echo 'pam_pwquality 미설정'
+  echo '--- sudo 설정 ---' && sudo -l 2>/dev/null | head -5
+" 2>/dev/null
+
+# 결과를 Bastion evidence로 기록
+# (Bastion dispatch 사용)
+```
+
+### GAP 분석 워크시트 예시
+
+| 통제 ID | 통제 항목 | 현재 상태 | 목표 | GAP | 우선순위 |
+|---------|---------|---------|------|-----|---------|
+| A.5.1 | 정보보안 정책 | 문서 없음 | 승인된 정책 문서 | 정책 수립 필요 | 높음 |
+| A.8.2 | 접근 권한 관리 | sudo NOPASSWD:ALL | 최소 권한 | sudo 제한 필요 | 긴급 |
+| A.8.5 | 안전한 인증 | 단순 비밀번호 | 복잡도+MFA | 정책 변경 | 높음 |
+| A.12.4 | 로깅 | 부분 수집 | 전체 수집+SIEM | Wazuh 연동 | 중간 |
+
+### 인증 심사 대비 FAQ
+
+| 질문 | 준비 방법 |
+|------|---------|
+| "이 통제의 증적을 보여주세요" | Bastion evidence/replay로 실행 이력 제시 |
+| "리스크 평가를 어떻게 했나요?" | 리스크 평가 워크시트 + 기준 설명 |
+| "부적합 사항은 어떻게 처리했나요?" | 시정 조치 계획서 + 완료 증적 |
+| "경영진의 검토는?" | 검토 회의록 + 서명 |
+
+---
+
+## 웹 UI 실습: Wazuh Dashboard로 보안 현황 보고서 생성
+
+> **실습 목적**: ISMS-P 인증 심사에서 요구하는 보안 현황 보고서를 Wazuh Dashboard에서 생성한다
+>
+> **배우는 것**: Dashboard에서 보안 현황 데이터를 조회하고, 인증 심사 증적으로 활용 가능한 보고서를 내보내는 방법
+>
+> **실전 활용**: ISMS-P/ISO 27001 인증 심사에서 "보안 모니터링 현황"을 요구받을 때, SIEM 대시보드 보고서가 핵심 증적이다
+
+### 1단계: Wazuh Dashboard 접속 및 Overview 확인
+
+1. 브라우저에서 **https://10.20.30.100:443** 접속
+2. 인증서 경고 > "고급" > "계속 진행" 클릭
+3. 로그인: `admin` / `admin` (또는 수업 시간에 안내된 계정)
+4. **Overview** 대시보드에서 확인할 항목 (이것이 보안 현황 요약이다):
+   - 전체 보안 이벤트 수 (기간별 추이 그래프)
+   - MITRE ATT&CK 히트맵 (탐지된 공격 기법)
+   - Agent 상태 요약 (Active/Disconnected)
+
+### 2단계: 통제 항목별 현황 데이터 조회
+
+**A.5.7 위협 인텔리전스 현황:**
+1. 왼쪽 메뉴 > **Security events** 클릭
+2. 검색창에 `rule.groups:ids OR rule.groups:suricata` 입력
+3. 결과 건수 = 수집 중인 위협 탐지 이벤트 수 (증적: A.5.7 적합)
+
+**A.8.15 로깅 현황:**
+1. 왼쪽 메뉴 > **Agents** 클릭
+2. 모든 Agent가 `Active` 상태인지 확인
+3. Agent 수 = 모니터링 대상 서버 수 (증적: A.8.15 적합)
+
+**A.8.8 취약점 관리 현황:**
+1. Agent 하나를 클릭 > **Vulnerabilities** 탭 클릭
+2. Critical/High 취약점 수를 확인
+3. 이 데이터가 취약점 관리 현황 증적이다
+
+### 3단계: 보고서 내보내기
+
+1. 원하는 검색 결과 화면에서 우측 상단 **Share** > **CSV reports** 클릭
+2. **Generate CSV** 버튼 클릭
+3. 다운로드된 CSV 파일에 포함되는 항목:
+   - 타임스탬프, Agent 이름, 룰 ID, 룰 레벨, 설명
+   - 출발지 IP, 사용자, MITRE ATT&CK ID
+4. 각 통제 항목별로 검색 결과를 캡처하여 "보안 현황 보고서"에 첨부한다
+
+### 4단계: 보안 현황 보고서 요약 작성
+
+1. 위 데이터를 바탕으로 다음을 정리한다:
+
+```
+보안 현황 보고서 (ISMS-P 증적)
+- 보고 기간: YYYY-MM-DD ~ YYYY-MM-DD
+- 모니터링 대상: N대 서버 (Agent Active)
+- 기간 내 보안 이벤트: X건
+- 고위험 알림 (Level 7+): X건
+- 탐지된 MITRE ATT&CK 기법: N개
+- 취약점 현황: Critical X건, High X건
+```
+
+2. 이 보고서는 경영진 보고 및 인증 심사 자료로 활용한다
+
+> **핵심 포인트**: ISMS-P 인증에서 "정보보호 관리체계가 운영되고 있는가?"를 증명하려면 SIEM 대시보드의 실시간 모니터링 현황이 가장 강력한 증적이다. CLI 로그 파일보다 대시보드 화면 캡처가 심사원에게 훨씬 직관적이다.
+
+---
+
+> **실습 환경 검증 완료** (2026-03-28): PASS_MAX_DAYS=99999, pam_pwquality, auditd, SSH 설정, nftables 점검
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+
+### ISO/IEC 27001:2022 (Annex A)
+> **역할:** 정보보호 관리체계 국제 표준 — 93개 통제(A.5~A.8)  
+> **실행 위치:** `문서/증적 (정책·절차·기록)`  
+> **접속/호출:** 표준 문서 + SoA + 리스크 등록부
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `SoA.xlsx (Statement of Applicability)` | 93개 통제 적용/제외 선언 |
+| `risk_register.xlsx` | 자산·위협·취약점·리스크 점수 |
+| `policies/` | 정책 14종 (접근제어, 백업, 사건대응 등) |
+
+**핵심 설정·키**
+
+- `A.5 (조직적)` — 정책, 역할, 정보분류
+- `A.6 (인적)` — 채용·퇴직 시 보안, 인식 교육
+- `A.7 (물리적)` — 보안 구역, 장비, 케이블링
+- `A.8 (기술적)` — 접근·암호화·로깅·개발 보안
+
+**로그·확인 명령**
+
+- `내부심사 보고서` — 부적합(NC)·관찰사항(OB)
+- `경영검토 회의록` — 연 1회 필수
+
+**UI / CLI 요점**
+
+- PDCA 사이클 — 수립→운영→검토→개선
+- 2022 개정 — 114→93 통제, 신규 11건(위협 인텔리전스 등)
+
+> **해석 팁.** SoA는 **모든 통제에 대해 포함/제외 사유**를 명시해야 한다. 심사관은 `Justification for exclusion`을 먼저 본다.
+
+---
+
+## 실제 사례 (WitFoo Precinct 6 — A.5~A.8 통제의 dataset 매핑)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *ISO 27001 통제 항목 A.5~A.8 (정책·인적·자산·접근제어)* 학습 항목과 매핑되는 dataset 의 user/asset/access record.
+
+### Case 1: A.5~A.8 ↔ dataset 매핑 표
+
+| ISO 27001 통제 | dataset evidence | 건수 |
+|------------|---------------|------|
+| **A.5 (정책)** | host 노드의 `set_roles` 분류 (Exploiting Target/Host) | 30,092 host |
+| **A.6 (조직)** | username 분포 (USER-NNNN) — 역할 기반 | 5+ top user |
+| **A.7 (인적 자원)** | 4624 logon (USER-0022 6,190회) | 17,482 |
+| **A.8 (자산 관리)** | host 노드의 `id/ip/hostname/managed/internal` 5-field | 30,092 host node |
+| **A.9 (접근제어)** | 4798/4799 group enum (7,686) + 4663 access (98) | 7,784 |
+
+### Case 2: Statement of Applicability (SoA) reference
+
+dataset host 가 보유한 framework `iso27001:[4,8,14,16,67-72,113-124,130-132]` = *24 controls applicable*.
+
+**해석**: SoA 작성 시 *applicable=Y* 통제 마다 *evidence record 직접 인용* 가능 — dataset baseline = *control 별 평균 100~10,000 events* 확보.
+
+**학생 액션**: 본인 환경 SoA 의 *applicable 통제* 마다 dataset 처럼 *evidence count* 명시 → 심사관에게 정량 증거 제공.
+
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course4 Compliance — Week 03 ISMS-P)
+
+### lab step → ISMS-P 매핑 도구
+
+| step | ISMS-P 항목 | lab 명령 | 자동화 도구 |
+|------|------------|---------|-----------|
+| s1 (계정 목록) | 2.5.1 | `grep -v nologin /etc/passwd` | **OpenSCAP** rule `accounts_no_uid_*` / Lynis `accounts` |
+| s2 (패스워드 만료) | 2.5.2 | `chage -l` | **OpenSCAP** rule `accounts_maximum_age_login_defs` |
+| s3 (sudo 권한) | 2.5.4 | `cat /etc/sudoers` | **Lynis** sudo plugin / `sudo -l` audit |
+| s4 (NTP 동기화) | 2.9.5 | `timedatectl status` | **Lynis** `time-and-date` / chrony status |
+| s5 (유휴 세션) | 2.5.3 | `grep ClientAlive /etc/ssh/sshd_config` | **ssh-audit** / OpenSCAP `sshd_*` rules |
+| s6 (orphan 파일) | 2.9.1 | `find -nouser -nogroup` | **Lynis** `file-integrity` / aide |
+| s7 (Apache Indexes) | 2.6.4 | `grep Indexes apache.conf` | **nuclei** `directory-listing` template |
+| s8 (auditd 로그인) | 2.9.5 | `auditctl -l` | **OpenSCAP** rule `audit_rules_login_events` / aureport |
+| s9 (종합 보고) | 통합 | bash | **OpenSCAP profile_cis** + **Wazuh SCA** + Lynis |
+
+### 학생 환경 준비
+
+```bash
+ssh 6v6-siem
+sudo apt install -y lynis libopenscap1 openscap-scanner ssg-base auditd
+pip3 install ssh-audit
+
+# OpenSCAP 컨텐츠 — Ubuntu 22.04 (실습 환경)
+ls /usr/share/xml/scap/ssg/content/ssg-ubuntu2204-ds.xml
+```
+
+### 핵심 명령
+
+```bash
+# OpenSCAP — CIS profile (ISMS-P 와 80% 매핑)
+sudo oscap xccdf eval \
+  --profile xccdf_org.ssgproject.content_profile_cis_level1_server \
+  --results-arf /tmp/oscap-results.arf \
+  --report /tmp/oscap-report.html \
+  /usr/share/xml/scap/ssg/content/ssg-ubuntu2204-ds.xml
+
+# 결과 HTML 에서 항목별 PASS/FAIL + 자동 시정 명령 (--remediate)
+sudo oscap xccdf eval --profile ... --remediate ...
+
+# Lynis — UNIX 보안 표준
+sudo lynis audit system
+
+# Wazuh SCA — 다중 호스트 자동
+sudo /var/ossec/bin/agent_control -R       # 모든 agent SCA 트리거
+sudo jq 'select(.location | contains("sca"))' /var/ossec/logs/alerts/alerts.json
+```
+
+### 점검 흐름
+
+```bash
+# Phase 1: 자동 baseline (모든 ISMS-P 분야 한 번에)
+sudo oscap xccdf eval --profile cis_level2_server --report /tmp/oscap.html ssg-ubuntu2204-ds.xml
+sudo lynis audit system
+
+# Phase 2: ISMS-P 인증 매핑 (수동 — 102 항목)
+# OpenSCAP CIS 결과 → ISMS-P 102 항목 매핑 표 작성
+# 누락 항목 (관리적/물리적) 별도 점검
+
+# Phase 3: 자동 시정 가능 항목
+sudo oscap xccdf eval --remediate --profile cis_level1_server ssg-ubuntu2204-ds.xml
+
+# Phase 4: 재점검 + 증거
+sudo lynis audit system --auditor "ISMS-P Auditor" --plugindir /etc/lynis/plugins
+```
+
+학생은 본 3주차에서 **OpenSCAP CIS profile (정량) + Lynis (정성) + Wazuh SCA (다중)** 3 축으로 ISMS-P 102 항목 중 **80% 자동 점검** 가능함을 확인한다.

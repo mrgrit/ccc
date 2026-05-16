@@ -1,0 +1,651 @@
+# Week 05: ISMS-P (1) - 한국 인증 제도
+
+## 학습 목표
+- ISMS-P 인증 제도의 배경과 구조를 이해한다
+- 관리체계 수립 및 운영(16개), 보호대책(64개), 개인정보(22개)를 구분한다
+- ISO 27001과 ISMS-P의 차이점을 설명할 수 있다
+- 인증 의무 대상과 절차를 파악한다
+
+## 실습 환경 (6v6 4-tier, 공통)
+
+학생 PC 의 `~/.ssh/config` 의 ProxyJump 설정 후 다음 표 의 컨테이너 에 `ssh
+6v6-<name>` 으로 접속.
+
+| 컨테이너 | 6v6 IP | 역할 | 접속 |
+|---------|--------|------|------|
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
+| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
+| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
+| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
+| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+
+**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
+**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+
+## 강의 시간 배분 (3시간)
+
+| 시간 | 내용 | 유형 |
+|------|------|------|
+| 0:00-0:40 | 이론 강의 (Part 1) | 강의 |
+| 0:40-1:10 | 이론 심화 + 사례 분석 (Part 2) | 강의/토론 |
+| 1:10-1:20 | 휴식 | - |
+| 1:20-2:00 | 실습 (Part 3) | 실습 |
+| 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
+| 2:40-2:50 | 휴식 | - |
+| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
+| 3:20-3:40 | 정리 + 과제 안내 | 정리 |
+
+---
+
+---
+
+## 용어 해설 (보안 표준/컴플라이언스 과목)
+
+| 용어 | 영문 | 설명 | 비유 |
+|------|------|------|------|
+| **컴플라이언스** | Compliance | 법/규정/표준을 준수하는 것 | 교통법규 준수 |
+| **인증** | Certification | 외부 심사 기관이 표준 준수를 확인하는 절차 | 운전면허 시험 합격 |
+| **통제 항목** | Control | 보안 목표를 달성하기 위한 구체적 조치 | 건물 소방 설비 하나하나 |
+| **SoA** | Statement of Applicability | 적용 가능한 통제 항목 선언서 | "우리 건물에 필요한 소방 설비 목록" |
+| **리스크 평가** | Risk Assessment | 위험을 식별·분석·평가하는 과정 | 건물의 화재/지진 위험도 평가 |
+| **리스크 처리** | Risk Treatment | 평가된 위험에 대한 대응 결정 (수용/회피/감소/전가) | 보험 가입, 소방 설비 설치 |
+| **PDCA** | Plan-Do-Check-Act | ISO 표준의 지속적 개선 사이클 | 계획→실행→점검→개선 반복 |
+| **ISMS** | Information Security Management System | 정보보안 관리 체계 | 회사의 보안 관리 시스템 전체 |
+| **ISMS-P** | ISMS + Privacy | 한국의 정보보호 + 개인정보보호 인증 | 한국판 ISO 27001 + 개인정보 |
+| **ISO 27001** | ISO/IEC 27001 | 국제 정보보안 관리체계 표준 | 국제 보안 면허증 |
+| **ISO 27002** | ISO/IEC 27002 | ISO 27001의 통제 항목 상세 가이드 | 면허 시험 교재 |
+| **NIST CSF** | NIST Cybersecurity Framework | 미국 국립표준기술연구소의 사이버보안 프레임워크 | 미국판 보안 가이드 |
+| **GDPR** | General Data Protection Regulation | EU 개인정보보호 규정 | EU의 개인정보 보호법 |
+| **SOC 2** | Service Organization Control 2 | 클라우드 서비스 보안 인증 (미국) | 클라우드 업체의 보안 성적표 |
+| **증적** | Evidence (Audit) | 통제가 실행되었음을 증명하는 자료 | 출석부, 영수증 |
+| **심사원** | Auditor | 인증 심사를 수행하는 전문가 | 감독관, 시험관 |
+| **부적합** | Non-conformity | 심사에서 표준 미충족 판정 | 시험 불합격 항목 |
+| **GAP 분석** | Gap Analysis | 현재 상태와 목표 기준의 차이 분석 | 현재 실력과 합격선의 차이 |
+
+---
+
+## 1. ISMS-P란?
+
+### 1.1 정의
+
+**ISMS-P** = 정보보호 및 개인정보보호 관리체계 인증
+
+- **ISMS** (Information Security Management System): 정보보호 관리체계
+- **P** (Personal Information): 개인정보보호 관리체계
+- 2018년 기존 ISMS와 PIMS를 통합하여 ISMS-P로 개편
+
+### 1.2 법적 근거
+
+| 법률 | 관련 조항 |
+|------|----------|
+| 정보통신망법 제47조 | ISMS 인증 의무 |
+| 개인정보보호법 제32조의2 | 개인정보보호 인증 |
+| 전자금융거래법 | 금융기관 보안 |
+
+### 1.3 인증 의무 대상
+
+다음 중 하나에 해당하면 **ISMS 인증이 의무**이다:
+
+1. **ISP(인터넷 서비스 제공자)**: 전기통신사업법에 따른 사업자
+2. **IDC(집적정보통신시설)**: 서버 호스팅/코로케이션 사업자
+3. **매출 100억 이상** 또는 **일평균 이용자 100만 이상**: 정보통신서비스 사업자
+4. **의료기관**: 상급종합병원, 일정 규모 이상
+
+> ISMS-P에서 "P(개인정보)" 부분은 **선택 사항**이다.
+> ISMS만 받을 수도 있고, ISMS-P를 함께 받을 수도 있다.
+
+---
+
+## 2. ISMS-P 인증 체계 구조
+
+> **이 실습을 왜 하는가?**
+> "ISMS-P (1) - 한국 인증 제도" — 이 주차의 핵심 기술을 실제 서버 환경에서 직접 실행하여 체험한다.
+> 보안 표준/컴플라이언스 분야에서 이 기술은 실무의 핵심이며, 실습을 통해
+> 명령어의 의미, 결과 해석 방법, 보안 관점에서의 판단 기준을 익힌다.
+>
+> **이걸 하면 무엇을 알 수 있는가?**
+> - 이 기술이 실제 시스템에서 어떻게 동작하는지 직접 확인
+> - 정상과 비정상 결과를 구분하는 눈을 기름
+> - 실무에서 바로 활용할 수 있는 명령어와 절차를 체득
+>
+> **주의:** 모든 실습은 허가된 실습 환경(10.20.30.0/24)에서만 수행한다.
+
+### 2.1 3개 영역, 102개 인증 기준
+
+```
+ISMS-P 인증 기준 (총 102개)
++-- 1. 관리체계 수립 및 운영 (16개)
+|   +-- 1.1 관리체계 기반 마련 (4개)
+|   +-- 1.2 위험 관리 (3개)
+|   +-- 1.3 관리체계 운영 (3개)
+|   +-- 1.4 관리체계 점검 및 개선 (6개)
++-- 2. 보호대책 요구사항 (64개)
+|   +-- 2.1 정책, 조직, 자산 관리 (7개)
+|   +-- 2.2 인적 보안 (5개)
+|   +-- 2.3 외부자 보안 (4개)
+|   +-- 2.4 물리 보안 (7개)
+|   +-- 2.5 인증 및 권한관리 (6개)
+|   +-- 2.6 접근통제 (7개)
+|   +-- 2.7 암호화 적용 (2개)
+|   +-- 2.8 정보시스템 도입 및 개발 (6개)
+|   +-- 2.9 시스템 및 서비스 운영관리 (7개)
+|   +-- 2.10 시스템 및 서비스 보안관리 (9개)
+|   +-- 2.11 사고 예방 및 대응 (5개)
+|   +-- 2.12 재해복구 (2개)
++-- 3. 개인정보 처리 단계별 요구사항 (22개)
+    +-- 3.1 개인정보 수집 시 보호조치 (7개)
+    +-- 3.2 개인정보 보유 및 이용 시 (5개)
+    +-- 3.3 개인정보 제공 시 (4개)
+    +-- 3.4 개인정보 파기 시 (4개)
+    +-- 3.5 정보주체 권리보호 (2개)
+```
+
+---
+
+## 3. 영역 1: 관리체계 수립 및 운영
+
+### 3.1 관리체계 기반 마련 (1.1)
+
+| 항목 | 내용 |
+|------|------|
+| 1.1.1 경영진의 참여 | 최고경영자의 보안 의지 표명, 예산 배정 |
+| 1.1.2 최고책임자의 지정 | CISO 또는 개인정보보호책임자 지정 |
+| 1.1.3 조직 구성 | 정보보호 전담 조직 운영 |
+| 1.1.4 범위 설정 | 인증 범위(자산, 서비스, 인력) 정의 |
+
+### 3.2 위험 관리 (1.2)
+
+| 항목 | 내용 |
+|------|------|
+| 1.2.1 정보자산 식별 | 자산 목록 작성, 중요도 평가 |
+| 1.2.2 현황 및 흐름분석 | 네트워크 구성도, 데이터 흐름도 |
+| 1.2.3 위험 평가 | 위협/취약점 분석, 리스크 산정 |
+
+### 3.3 관리체계 운영 (1.3)
+
+| 항목 | 내용 |
+|------|------|
+| 1.3.1 보호대책 구현 | 리스크 처리 계획 실행 |
+| 1.3.2 보호대책 공유 | 임직원에게 정책/절차 전달 |
+| 1.3.3 운영 현황 관리 | 보안 운영 기록 유지 |
+
+### 3.4 점검 및 개선 (1.4)
+
+```
+1.4.1 법적 요구사항 준수 검토
+1.4.2 관리체계 점검 (내부 감사)
+1.4.3 관리체계 개선
+```
+
+---
+
+## 4. 영역 2: 보호대책 요구사항 (주요 항목)
+
+### 4.1 인증 및 권한관리 (2.5)
+
+> **실습 목적**: ISMS-P 인증 제도의 보호대책 요구사항 중 인증/권한 관리 항목을 점검한다
+>
+> **배우는 것**: ISMS-P 2.5(인증 및 권한관리) 요구사항을 실습 환경에서 기술적으로 확인하는 방법을 배운다
+>
+> **결과 해석**: 사용자 계정 목록, 권한 설정, 패스워드 정책이 ISMS-P 기준에 부합하는지 확인한다
+>
+> **실전 활용**: 국내 기업의 ISMS-P 인증은 법적 의무이며, 기술적 증적 수집은 인증 준비의 핵심이다
+
+```bash
+# 실습: 사용자 인증 관련 점검
+
+# 2.5.1 사용자 계정 관리 — 불필요한 계정 확인
+ssh 6v6-bastion "awk -F: '\$3 >= 1000 && \$3 < 65534 {print \$1}' /etc/passwd"
+
+# 2.5.2 사용자 식별 — 공용 계정 사용 여부
+ssh 6v6-bastion "last | head -10"
+
+# 2.5.3 사용자 인증 — 비밀번호 정책
+ssh 6v6-bastion "grep -E 'PASS_MAX_DAYS|PASS_MIN_DAYS|PASS_MIN_LEN' /etc/login.defs"
+
+# 2.5.4 비밀번호 관리 — 비밀번호 복잡도
+ssh 6v6-bastion "cat /etc/security/pwquality.conf 2>/dev/null | grep -v '^#' | grep -v '^$'"
+```
+
+### 4.2 접근통제 (2.6)
+
+```bash
+# 2.6.1 네트워크 접근 — 방화벽 규칙
+ssh 6v6-fw "sudo nft list ruleset | wc -l"
+
+# 2.6.2 정보시스템 접근 — SSH 접근 제한
+ssh 6v6-bastion "grep -E 'AllowUsers|AllowGroups|DenyUsers' /etc/ssh/sshd_config"
+
+# 2.6.5 인터넷 접속 통제 — 외부 접근 포트 확인
+ssh 6v6-fw "sudo nft list ruleset | grep 'dport' | head -10"
+```
+
+### 4.3 암호화 적용 (2.7)
+
+```bash
+# 2.7.1 암호정책 적용 — 전송 구간 암호화
+ssh 6v6-siem "echo | openssl s_client -connect localhost:443 2>/dev/null | grep Protocol"
+
+# 2.7.2 암호키 관리 — 키 파일 권한 확인
+ssh 6v6-bastion "ls -la ~/.ssh/ 2>/dev/null"
+ssh 6v6-bastion "stat -c '%a %n' /etc/ssh/ssh_host_*_key 2>/dev/null"
+```
+
+### 4.4 시스템 및 서비스 보안관리 (2.10)
+
+```bash
+# 2.10.1 보안시스템 운영 — IPS 상태 확인
+ssh 6v6-fw "systemctl status suricata 2>/dev/null | head -5"
+
+# 2.10.4 로그 및 접속기록 관리 — 로그 보존 기간
+ssh 6v6-bastion "cat /etc/logrotate.conf | grep -A2 'rotate'"
+
+# 2.10.7 패치 관리
+ssh 6v6-bastion "apt list --upgradable 2>/dev/null | head -10"
+```
+
+---
+
+## 5. 영역 3: 개인정보 처리 단계별 요구사항
+
+### 5.1 수집 단계 (3.1)
+
+| 항목 | 핵심 |
+|------|------|
+| 3.1.1 개인정보 수집 제한 | 목적에 필요한 최소 정보만 수집 |
+| 3.1.2 개인정보의 수집 동의 | 명시적 동의 획득 |
+| 3.1.5 간접 수집 보호조치 | 제3자로부터 수집 시 고지 |
+
+### 5.2 파기 단계 (3.4)
+
+| 항목 | 핵심 |
+|------|------|
+| 3.4.1 개인정보 파기 | 보유기간 경과 시 즉시 파기 |
+| 3.4.2 처리목적 달성 후 보유 | 법적 근거 있을 때만 |
+
+---
+
+## 6. ISO 27001 vs ISMS-P 비교
+
+| 구분 | ISO 27001:2022 | ISMS-P |
+|------|---------------|--------|
+| 제정 기관 | ISO (국제) | KISA/PIPC (한국) |
+| 법적 구속력 | 자발적 (계약상 필수 가능) | 법적 의무 (대상 기업) |
+| 인증 기준 수 | 93개 (Annex A) | 102개 |
+| 개인정보 | 별도 표준 (ISO 27701) | 통합 (22개 항목) |
+| 인증 유효기간 | 3년 (매년 사후심사) | 3년 (매년 사후심사) |
+| 인증 기관 | 국제 인증기관 | KISA, 인증기관 |
+| 언어 | 영어 | 한국어 |
+
+### 6.1 매핑 예시
+
+| ISMS-P | ISO 27001 |
+|--------|-----------|
+| 2.5 인증 및 권한관리 | A.8.1~A.8.5 |
+| 2.6 접근통제 | A.8.20~A.8.22, A.5.15 |
+| 2.7 암호화 | A.8.24 |
+| 2.10 보안관리 | A.8.15~A.8.16 |
+
+---
+
+## 7. 인증 절차
+
+### 7.1 전체 프로세스
+
+```
+1. 인증 범위 결정 (1~2주)
+2. 관리체계 수립 (2~3개월)
+3. 보호대책 구현 (3~6개월)
+4. 내부 감사 실시 (2~4주)
+5. 인증 신청 (서류 제출)
+6. 서류 심사 (2~4주)
+7. 현장 심사 (3~5일)
+8. 보완 조치 (필요 시)
+9. 인증서 발급
+10. 사후 관리 (매년)
+```
+
+### 7.2 인증 심사 항목 수
+
+- **최초 심사**: 102개 전체
+- **사후 심사**: 주요 항목 중심 (약 30~50개)
+- **갱신 심사**: 102개 전체 (3년마다)
+
+---
+
+## 8. 실습: 우리 환경의 ISMS-P 적합성 초기 평가
+
+```bash
+# 1.2.1 정보자산 식별 — 서버 자산 확인
+echo "=== 자산 목록 ==="
+for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do  # 반복문 시작
+  echo "--- $ip ---"
+  ssh $srv  # srv=user@ip (아래 루프 참고) "hostname; uname -r; cat /etc/os-release | grep PRETTY_NAME" 2>/dev/null
+done
+
+# 1.2.2 현황분석 — 네트워크 구성 확인
+echo "=== 네트워크 구성 ==="
+ssh 6v6-fw "ip route show"        # 비밀번호 자동입력 SSH
+
+# 2.11.1 사고 예방 — Wazuh 에이전트 설치 현황
+echo "=== Wazuh Agent 상태 ==="
+for ip in 10.20.30.201 10.20.30.1 10.20.30.80; do      # 반복문 시작
+  echo "--- $ip ---"
+  ssh $srv  # srv=user@ip (아래 루프 참고) "systemctl is-active wazuh-agent 2>/dev/null || echo 'N/A'"
+done
+```
+
+---
+
+## 9. 핵심 정리
+
+1. **ISMS-P** = 한국의 정보보호 + 개인정보보호 통합 인증
+2. **102개 기준** = 관리체계(16) + 보호대책(64) + 개인정보(22)
+3. **의무 대상**: ISP, IDC, 매출 100억 이상, 이용자 100만 이상
+4. **ISO 27001과 차이**: 법적 의무, 개인정보 통합, 한국어 기준
+5. **인증 유효기간**: 3년, 매년 사후심사
+
+---
+
+## 과제
+
+1. ISMS-P 102개 항목 중 우리 실습 환경에 적용 가능한 항목 10개를 선택하고 현재 준수 상태를 점검하시오
+2. ISO 27001과 ISMS-P의 접근통제 관련 항목을 매핑하시오
+3. 인증 의무 대상이 아닌 기업이 ISMS-P를 받는 이유를 3가지 이상 설명하시오
+
+---
+
+## 참고 자료
+
+- KISA ISMS-P 인증기준 해설서 (https://isms.kisa.or.kr)
+- 정보통신망법, 개인정보보호법
+- KISA 정보보호 관리체계 구축 가이드
+
+---
+
+---
+
+## 심화: 표준/인증 실무 보충
+
+### 보안 통제 구현 패턴
+
+실무에서 통제 항목을 구현할 때의 일반적 패턴을 이해한다.
+
+```
+[1] 정책(Policy) 수립
+    → "무엇을 해야 하는가?" 를 문서로 정의
+    예: "모든 서버는 90일마다 패스워드를 변경한다"
+
+[2] 절차(Procedure) 작성
+    → "어떻게 하는가?" 를 단계별로 정리
+    예: "1. passwd 명령 실행 2. 복잡도 확인 3. 변경 로그 기록"
+
+[3] 기술적 구현(Technical Implementation)
+    → 실제 시스템에 적용
+    예: /etc/login.defs에 PASS_MAX_DAYS=90 설정
+
+[4] 증적(Evidence) 수집
+    → 구현되었음을 증명하는 자료 확보
+    예: login.defs 캡처, 변경 로그, Bastion evidence
+```
+
+### 증적 수집 실습
+
+```bash
+# ISO 27001 A.8.5 (안전한 인증) 점검 증적 수집
+echo "=== 패스워드 정책 확인 ==="
+ssh 6v6-web "  # 비밀번호 자동입력 SSH
+  echo '--- login.defs ---' && grep -E 'PASS_MAX|PASS_MIN|PASS_WARN' /etc/login.defs
+  echo '--- pam 설정 ---' && grep pam_pwquality /etc/pam.d/common-password 2>/dev/null || echo 'pam_pwquality 미설정'
+  echo '--- sudo 설정 ---' && sudo -l 2>/dev/null | head -5
+" 2>/dev/null
+
+# 결과를 Bastion evidence로 기록
+# (Bastion dispatch 사용)
+```
+
+### GAP 분석 워크시트 예시
+
+| 통제 ID | 통제 항목 | 현재 상태 | 목표 | GAP | 우선순위 |
+|---------|---------|---------|------|-----|---------|
+| A.5.1 | 정보보안 정책 | 문서 없음 | 승인된 정책 문서 | 정책 수립 필요 | 높음 |
+| A.8.2 | 접근 권한 관리 | sudo NOPASSWD:ALL | 최소 권한 | sudo 제한 필요 | 긴급 |
+| A.8.5 | 안전한 인증 | 단순 비밀번호 | 복잡도+MFA | 정책 변경 | 높음 |
+| A.12.4 | 로깅 | 부분 수집 | 전체 수집+SIEM | Wazuh 연동 | 중간 |
+
+### 인증 심사 대비 FAQ
+
+| 질문 | 준비 방법 |
+|------|---------|
+| "이 통제의 증적을 보여주세요" | Bastion evidence/replay로 실행 이력 제시 |
+| "리스크 평가를 어떻게 했나요?" | 리스크 평가 워크시트 + 기준 설명 |
+| "부적합 사항은 어떻게 처리했나요?" | 시정 조치 계획서 + 완료 증적 |
+| "경영진의 검토는?" | 검토 회의록 + 서명 |
+
+---
+
+> **실습 환경 검증 완료** (2026-03-28): PASS_MAX_DAYS=99999, pam_pwquality, auditd, SSH 설정, nftables 점검
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+
+### ISMS-P (KISA)
+> **역할:** 한국 정보보호·개인정보보호 관리체계  
+> **실행 위치:** `문서/증적`  
+> **접속/호출:** KISA 인증 심사 체크리스트
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `관리체계 수립·운영 (1장)` | 정책·조직·자산·위험관리 16개 |
+| `보호대책 요구사항 (2장)` | 64개 통제 |
+| `개인정보 처리 단계별 요구사항 (3장)` | 21개 통제 |
+
+**핵심 설정·키**
+
+- `총 101개 통제항목` — 인증: 80개 핵심 + 선택 21개
+- `매 3년 갱신 심사` — 매년 사후 심사
+
+**로그·확인 명령**
+
+- `접근기록 보관 (1년/3년)` — 개인정보 중요도별
+- `개인정보 영향평가(PIA) 보고서` — 5만명↑ 공공기관 의무
+
+**UI / CLI 요점**
+
+- https://isms.kisa.or.kr — 고시·해설서 공식 사이트
+
+> **해석 팁.** 한국은 **개인정보보호법이 최상위**. ISMS-P의 3장(개인정보)은 법 위반 여부와 직결되므로 증적 우선순위 1.
+
+---
+
+## 실제 사례 (WitFoo Precinct 6 — ISMS-P 미커버 = 한국 표준 별도 매핑 필요)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *ISMS-P (한국 인증)* 학습 항목 — dataset 의 framework 매핑에 *ISMS-P 부재* 가 한국 표준의 *별도 매핑 필요성* 직접 증거.
+
+### Case 1: dataset framework coverage gap — 한국 표준
+
+dataset host 의 framework 키:
+```text
+"frameworks": {"csc": [...], "cmmc1": [...], "cmmc3": [...],
+               "pci32": [...], "pci40": [...], "nist80053": [...],
+               "nist800171": [...], "csf": [...], "csc8": [...],
+               "iso27001": [...], "soc2": [...]}
+```
+
+→ **한국 표준 부재**:
+- `isms_p` 부재 (ISMS-P 인증)
+- `pipa` 부재 (개인정보보호법)
+- `pims` 부재 (개인정보보호 관리체계)
+
+**대응**: 자체 product 매핑 시 `isms_p:[1,2,...,80]` 같은 한국 표준 키 *수기 추가*.
+
+### Case 2: ISMS-P → ISO 27001 mapping 표 (dataset 활용)
+
+ISMS-P 의 80 인증 기준 ↔ dataset 의 ISO 27001 24 control 매핑:
+
+| ISMS-P 기준 (1~80) | ISO 27001 dataset key | 의미 |
+|---------------|------------------|------|
+| 1.1~1.4 (정책·조직) | iso27001:[4, 8] | 정보보안 정책 |
+| 2.1~2.7 (자산 관리) | iso27001:[14, 16, 71, 72] | 자산 식별 |
+| 2.8~2.10 (인적) | iso27001:[67, 68, 69] | 인적 자원 |
+| 2.11~2.13 (외부자) | iso27001:[113, 114] | 외부자 통제 |
+| 2.14~2.15 (물리) | (별도 매핑 필요) | dataset 미커버 |
+| 2.16~2.18 (정보보호) | iso27001:[115-124] | 운영 보안 |
+| 2.19~2.21 (사고 관리) | iso27001:[130-132] | incident |
+
+→ ISMS-P 80개 중 *대다수* dataset 으로 매핑 가능. 물리/접근통제 (2.14~2.15) 만 별도.
+
+**해석**: ISMS-P 인증 준비 시 dataset 의 ISO 27001 매핑 *직접 활용 + 한국 특화 항목 추가* 전략.
+
+**학생 액션**: 자체 환경의 product 마다 ISMS-P key (1~80) 매핑 표 추가 — dataset 의 11 framework 양식 모방.
+
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course4 Compliance — Week 05 GDPR)
+
+### GDPR 핵심 조항 → OSS 도구 매핑
+
+| GDPR Article | 의무 | OSS 도구 |
+|--------------|------|---------|
+| Art.5 (DPbD) | 데이터 최소화 | **opacus** (DP) / **pii-codex** / GDPR pii-detector |
+| Art.6 (Lawfulness) | 처리 근거 | **OneTrust OSS-mirror** / iubenda alts |
+| Art.15 (Right to Access) | 데이터 주체 접근권 | **DSAR-tracker** / Privacy Hub OSS |
+| Art.17 (Right to Erasure) | 잊혀질 권리 | **PostgreSQL `DELETE` + log scrub** / **scrubadub** |
+| Art.20 (Portability) | 데이터 이동권 | **Data Liberation tools** / GDPR Tools / pyDPI |
+| Art.25 (DPbD) | 설계 단계 | **Microsoft Threat Modeling Tool** / OWASP Threat Dragon |
+| Art.30 (RoPE) | 처리활동 기록 | **CSV/yaml RoPE templates** / Privacy Hub |
+| Art.32 (Security) | 적절한 보안 조치 | Wazuh + Lynis + OpenSCAP (다른 weekly 도구 모두) |
+| Art.33 (Breach Notify) | 72h 통지 | **TheHive + n8n webhook** / IRIS-DFIR |
+| Art.35 (DPIA) | 영향평가 | **CNIL PIA tool** (free) / **Microsoft DPIA Templates** |
+
+### 핵심 — Presidio (Microsoft OSS PII 탐지)
+
+```bash
+# 설치
+pip3 install presidio-analyzer presidio-anonymizer
+python3 -m spacy download en_core_web_lg
+python3 -m spacy download ko_core_news_sm     # 한국어
+
+# PII 자동 탐지 (DSAR 응답 또는 데이터 dump 검증용)
+python3 << 'EOF'
+from presidio_analyzer import AnalyzerEngine
+from presidio_anonymizer import AnonymizerEngine
+
+text = "John's email is john@example.com and phone is 010-1234-5678"
+analyzer = AnalyzerEngine()
+results = analyzer.analyze(text=text, language='en')
+for r in results:
+    print(f"{r.entity_type}: {text[r.start:r.end]} (confidence={r.score})")
+
+anonymizer = AnonymizerEngine()
+out = anonymizer.anonymize(text=text, analyzer_results=results)
+print(out.text)
+EOF
+```
+
+### 학생 환경 준비
+
+```bash
+ssh 6v6-siem
+pip3 install presidio-analyzer presidio-anonymizer pii-codex scrubadub opacus
+
+# CNIL PIA (DPIA tool, 프랑스 정부 무료)
+# https://www.cnil.fr/en/privacy-impact-assessment-pia
+# 데스크탑 다운로드 또는 docker 이미지
+
+# DSAR tracker (Privacy 요청 추적)
+git clone https://github.com/iguazio/data-subject-rights.git ~/dsar 2>/dev/null
+
+# scrubadub (개인정보 자동 마스킹)
+pip3 install scrubadub
+```
+
+### 핵심 도구별 사용법
+
+```bash
+# 1) Presidio — 한국어 + 영문 PII 탐지
+python3 -c "
+from presidio_analyzer import AnalyzerEngine, RecognizerRegistry
+from presidio_analyzer.nlp_engine import NlpEngineProvider
+
+# 한국어 지원
+configuration = {
+    'nlp_engine_name': 'spacy',
+    'models': [{'lang_code': 'ko', 'model_name': 'ko_core_news_sm'}]
+}
+provider = NlpEngineProvider(nlp_configuration=configuration)
+nlp_engine = provider.create_engine()
+analyzer = AnalyzerEngine(nlp_engine=nlp_engine, supported_languages=['ko'])
+
+text = '홍길동의 주민번호는 901231-1234567 입니다'
+for r in analyzer.analyze(text=text, language='ko'):
+    print(r.entity_type, text[r.start:r.end])
+"
+
+# 2) scrubadub — 빠른 PII 마스킹 (DB dump 정리)
+python3 -c "
+import scrubadub
+text = 'Email: user@example.com Phone: 555-1234'
+print(scrubadub.clean(text))
+"
+
+# 3) DSAR — 데이터 주체 요청 자동 응답
+# 1. 사용자 ID 받기
+# 2. 모든 시스템 (Wazuh/OpenCTI/DB) 에서 해당 사용자 데이터 검색
+# 3. JSON/CSV 으로 export → 30일 내 응답
+sudo /var/ossec/bin/wazuh-control logtest                       # 로그 검색
+
+# 4) 데이터 삭제 검증 (Right to Erasure)
+sudo grep "user_xyz@example.com" /var/log/*.log
+sudo journalctl --vacuum-files=0 --user=user_xyz                # 사용자 로그 삭제
+# DB:
+psql -c "DELETE FROM users WHERE email = 'user_xyz@example.com';"
+psql -c "VACUUM FULL users;"                                     # 물리적 삭제
+
+# 5) 72h Breach Notification (Art.33)
+# Wazuh + Shuffle/n8n 으로 자동 알림 → DPO email
+# /var/ossec/etc/ossec.conf <integration> 섹션에 webhook 등록
+```
+
+### 본 5주차 GDPR 점검 흐름
+
+```bash
+# Phase 1: PII 자동 검색 (모든 데이터 소스에서)
+find /var/log -type f -exec scrubadub-cli {} \; | grep '[FOUND]' > /tmp/pii_log.txt
+psql -c "\copy (SELECT * FROM users) TO '/tmp/users.csv'"
+python3 -c "import scrubadub; print(scrubadub.clean(open('/tmp/users.csv').read()))" > /tmp/users_pii.txt
+
+# Phase 2: 처리활동 기록 (RoPE — Art.30)
+# 자동 매핑 — Wazuh 데이터플로 + 사람 검토 결합
+yq eval '.processing_activities' /etc/privacy/rope.yaml
+
+# Phase 3: 자동 마스킹 적용 (DPbD)
+# 신규 데이터: presidio_anonymizer 미들웨어
+# 기존 데이터: scrubadub + DB UPDATE
+
+# Phase 4: DPIA (Art.35) — 신규 처리 활동에 대해
+# CNIL PIA tool 으로 위험 평가 → JSON 산출물 → DPO 검토
+
+# Phase 5: 알림 자동화 (Art.33 — 72h 의무)
+# Wazuh rule.level >= 12 (data breach) → Shuffle workflow → DPO email + ICO 보고서 초안
+```
+
+### GDPR 핵심 "기술적 보호조치" (Art.32) 도구 매트릭스
+
+| 의무 | 도구 (이전 weekly 와 결합) |
+|------|---------------------------|
+| 가명/익명화 | presidio / scrubadub / ARX (anonymization) |
+| 암호화 (전송) | testssl.sh / sslscan (검증) |
+| 암호화 (저장) | LUKS / cryptsetup / dm-crypt |
+| 무결성 | aide / Tripwire / Wazuh FIM |
+| 가용성 | restic / borg backup (BCP) |
+| 정기 테스트 | Lynis / OpenSCAP (정기 자동 점검) |
+
+학생은 본 5주차에서 **Presidio (PII 탐지) + scrubadub (마스킹) + Wazuh (위반 탐지) + restic (백업) + Shuffle (72h 알림 자동화)** 5 도구로 GDPR 12 핵심 조항의 기술적 의무를 충족하는 흐름을 익힌다.
