@@ -1833,6 +1833,12 @@ _STANDALONE_COURSES = {
         "icon": "📋",
         "color": "#3fb950",
     },
+    "cloud-container": {
+        "title": "클라우드/컨테이너 보안 (6v6)",
+        "description": "Docker · Kubernetes · AWS · 서버리스 보안을 6v6 4-tier 컨테이너 인프라 위에서 직접 실습. Training 메뉴의 cloud-container 과목을 6v6 환경에 맞춰 이식.",
+        "icon": "☁️",
+        "color": "#3fb950",
+    },
 }
 
 
