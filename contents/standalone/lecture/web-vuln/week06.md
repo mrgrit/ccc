@@ -119,6 +119,64 @@ exception 분석.
 
 ---
 
+## 4-4. R/B/P 종합 시나리오 — Insecure Design 의 STRIDE 분석
+
+```mermaid
+graph LR
+    R["🔴 Red Team<br/>3 design vuln<br/>① 송금 의 2FA 부재<br/>② 가격 검증 부재<br/>③ rate limit 부재"]
+    APP["🌐 NeoBank<br/>workflow logic"]
+    B1["🔵 STRIDE<br/>Spoofing/Tampering<br/>Repudiation/Info<br/>DoS/Elevation"]
+    B2["🔵 RBA<br/>risk-based auth"]
+    B3["🔵 ELA log<br/>전자금융 감독 규정"]
+    B4["🔵 SIEM correlation<br/>비정상 거래 의 alert"]
+    P1["🟣 Design Review<br/>분기 1회 routine"]
+    P2["🟣 Threat Model<br/>STRIDE 의 적용"]
+    R --> APP
+    APP --> B1
+    APP --> B2
+    APP --> B3
+    B1 --> B4
+    B2 --> B4
+    B3 --> B4
+    B4 --> P1
+    P1 --> P2
+    style R fill:#f85149,color:#fff
+    style APP fill:#3fb950,color:#fff
+    style B1 fill:#1f6feb,color:#fff
+    style B2 fill:#1f6feb,color:#fff
+    style B3 fill:#1f6feb,color:#fff
+    style B4 fill:#1f6feb,color:#fff
+    style P1 fill:#bc8cff,color:#fff
+    style P2 fill:#bc8cff,color:#fff
+```
+
+### Coverage Matrix — 3 design vuln × STRIDE 매핑
+
+| 시도 | Red | STRIDE | Blue 의 보강 | Purple 의 routine |
+|------|-----|--------|------------|------------------|
+| **① 송금 2FA 부재** | 1억 송금 의 단일 인증 | Elevation of Privilege | RBA 의 risk score > 임계 → 2FA 강제 | 모든 송금 의 design review (분기) |
+| **② 가격 검증 부재** | 1원 결제 + 가격 변조 | Tampering | server-side 의 가격 재계산 + DB 의 가격 검증 | order workflow 의 threat model |
+| **③ rate limit 부재** | API brute = 1000 req/sec | DoS | nginx limit_req + application rate limit | API gateway 의 routine 적용 |
+
+### R/B/P 의 핵심 인사이트
+
+1. **A04 의 코드 결함 아닌 architecture** — A03 (Injection) 의 코드 패치 vs A04 의
+   design 변경. 코드 만 의 fix = 의미 X, 설계 의 review 의 필수.
+
+2. **STRIDE 6 카테고리 의 운영 적용** — 모든 새 feature 의 design 시 = STRIDE 6 의
+   각 항목 의 명시 적 검토. mitigation 또는 risk acceptance 의 문서 화.
+
+3. **RBA 의 modern 표준** — 고정 2FA = UX 손해 + 의무 만족. RBA = user behavior +
+   device + location + time 의 risk score → 동적 추가 인증. UX + 보안 의 balance.
+
+4. **전자금융감독규정 의 법 적 의무** — 한국 금융 의 의무 적 audit. ELA log 의 1 년
+   보관 + 정기 audit + 사고 보고 의무 의 routine.
+
+5. **Threat Model 의 분기 routine** — 신규 feature 의 design 시 + 분기 1회 의 전체
+   workflow 의 threat model 업데이트. 변경 의 risk 의 사전 detection.
+
+---
+
 ## 자기 점검
 
 ```

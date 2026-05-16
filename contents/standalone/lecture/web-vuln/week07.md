@@ -85,6 +85,67 @@
 
 ---
 
+## 4-3. R/B/P 종합 시나리오 — Security Misconfiguration
+
+```mermaid
+graph LR
+    R["🔴 Red Team<br/>4 misconfig<br/>① /.git 노출<br/>② default page<br/>③ HTTP→HTTPS 누락<br/>④ CORS *"]
+    WEB["🌐 7 vhost<br/>각 의 헤더<br/>+ default page"]
+    B1["🔵 5 보안 헤더<br/>HSTS/CSP/XFO<br/>XCTO/Referrer"]
+    B2["🔵 nginx config<br/>autoindex off<br/>+ location regex"]
+    B3["🔵 TLS enforce<br/>301 redirect"]
+    B4["🔵 CORS strict<br/>origin allowlist"]
+    P1["🟣 securityheaders.com<br/>A+ score 목표"]
+    P2["🟣 ZAP passive scan<br/>routine"]
+    R --> WEB
+    WEB --> B1
+    WEB --> B2
+    WEB --> B3
+    WEB --> B4
+    B1 --> P1
+    B2 --> P1
+    B3 --> P1
+    B4 --> P1
+    P1 --> P2
+    style R fill:#f85149,color:#fff
+    style WEB fill:#3fb950,color:#fff
+    style B1 fill:#1f6feb,color:#fff
+    style B2 fill:#1f6feb,color:#fff
+    style B3 fill:#1f6feb,color:#fff
+    style B4 fill:#1f6feb,color:#fff
+    style P1 fill:#bc8cff,color:#fff
+    style P2 fill:#bc8cff,color:#fff
+```
+
+### Coverage Matrix — 4 misconfig × Blue 보강
+
+| 시도 | Red 발견 | Blue 보강 | 한국 사고 사례 | Purple routine |
+|------|---------|----------|--------------|----------------|
+| **① /.git 노출** | `curl /.git/config` = git config 노출 | nginx `location ~ /\.git { deny all; }` | 2023 사고 (1억 record 유출) | 분기 audit + CI 통합 |
+| **② default page** | `curl /server-status` = mod_status 노출 | Apache `LoadModule status_module` 비활성 | 다수 | 모든 default 의 disable |
+| **③ HTTP 응답** | `curl -I http://...` = TLS 미적용 | HSTS + 301 redirect | 정기 PCI audit fail | 모든 vhost 의 HTTPS-only |
+| **④ CORS *** | `curl -H 'Origin: evil.com'` = `Access-Control-Allow-Origin: *` | origin allowlist + credentials 분리 | 다수 | API gateway 의 default strict |
+
+### R/B/P 의 핵심 인사이트
+
+1. **securityheaders.com 의 A+ score 목표** — 5 보안 헤더 (HSTS/CSP/XFO/XCTO/
+   Referrer-Policy) 의 100% 적용 = A+. 운영 환경 의 routine baseline.
+
+2. **CORS 의 * + credentials 의 불가능 조합** — browser 의 SOP (Same-Origin Policy)
+   에서 의 unspecified behavior. 명시 적 allowlist + credentials true 의 분리 적용.
+
+3. **/.git 노출 의 즉각 차단** — nginx/Apache 의 hidden directory 의 deny rule 의
+   기본 적용. CI 의 build 시 의 .git directory 의 cleanup 의 routine.
+
+4. **default page 의 production 의 제거** — Apache mod_status / Tomcat manager /
+   phpMyAdmin 의 default page = production 의 즉시 disable. install 시 의
+   automation.
+
+5. **TLS 의 enforce 의 strictly** — HTTP 응답 = 즉시 HTTPS redirect + HSTS 의 1년
+   max-age + includeSubDomains + preload. 운영 의 분기 verify.
+
+---
+
 ## 자기 점검
 
 ```

@@ -382,6 +382,101 @@ user = db.users.find_one(request.json)  # {"$ne": null} 직접 전달
 
 ---
 
+## 4-4. R/B/P 종합 시나리오 — SQLi 의 sqlmap + ModSec 942 우회·튜닝
+
+### 통합 도식
+
+```mermaid
+graph LR
+    R["🔴 Red Team<br/>4 시도<br/>① UNION SELECT<br/>② boolean blind<br/>③ time-based blind<br/>④ tamper 우회"]
+    WEB["🌐 web Apache<br/>+ JuiceShop<br/>ModSec inline"]
+    B1["🔵 ModSec 942 family<br/>SQLi detection<br/>20+ 룰"]
+    B2["🔵 paranoia level<br/>1-4 강도"]
+    B3["🔵 anomaly score<br/>누적 → block"]
+    B4["🔵 audit log + Wazuh<br/>rule 87151 level 7"]
+    P1["🟣 Coverage Matrix<br/>4 시도 × 942 family"]
+    P2["🟣 Gap (tamper 우회)<br/>paranoia 1 의 한계"]
+    P3["🟣 룰 튜닝<br/>paranoia 2/3<br/>+ tamper-specific 룰"]
+    R --> WEB
+    WEB --> B1
+    B1 --> B2
+    B2 --> B3
+    B3 --> B4
+    B4 --> P1
+    P1 --> P2
+    P2 --> P3
+    style R fill:#f85149,color:#fff
+    style WEB fill:#3fb950,color:#fff
+    style B1 fill:#1f6feb,color:#fff
+    style B2 fill:#1f6feb,color:#fff
+    style B3 fill:#1f6feb,color:#fff
+    style B4 fill:#1f6feb,color:#fff
+    style P1 fill:#bc8cff,color:#fff
+    style P2 fill:#bc8cff,color:#fff
+    style P3 fill:#bc8cff,color:#fff
+```
+
+### Coverage Matrix — 4 sqlmap 시도 × ModSec 942 detection
+
+| 시도 | Red 명령 (sqlmap) | Blue 942 룰 매치 | Score | Paranoia 1 | Paranoia 3 | Purple 권장 |
+|------|------------------|---------------|-------|-----------|-----------|------------|
+| **① UNION** | `sqlmap -u '?id=1' --technique=U` | 942100 + 942270 | 10 | block ✓ | block ✓ | 정상 |
+| **② boolean blind** | `sqlmap -u '?id=1' --technique=B` | 942100 + 942180 | 5 | 경계 | block ✓ | paranoia 2 권장 |
+| **③ time-based** | `sqlmap -u '?id=1' --technique=T` | 942100 + 942360 (SLEEP) | 7 | block ✓ | block ✓ | 정상 |
+| **④ tamper (--tamper=randomcase)** | `sqlmap -u '?id=1' --tamper=randomcase` | 942100 (단독, 942180 미스) | 3 | 통과 ★ | block ✓ | paranoia 3 + custom rule |
+
+### 시간선 — tamper 우회 의 1 사건 흐름
+
+```
+T+0      Red attacker 의 sqlmap --tamper=randomcase
+         └→ SELECT → sElEcT 의 case 변형
+         └→ ModSec 의 정상 키워드 매치 의 일부 우회
+
+T+1ms    ModSec phase 2 처리
+         └→ 942100 (libinjection) = 약 매치, score +3
+         └→ 942180 (basic SQLi keyword) = case 변형 으로 미매치 ★
+         └→ score = 3 < paranoia 1 threshold 5 → 통과
+
+T+10s    Blue 의 audit log 의 분석 (사후)
+         └→ messages[] = ["942100"] (단독)
+         └→ score = 3, mode = "DetectionOnly" (block 안 됨)
+         └→ application 의 응답 = 정상 SQLi 결과 (vuln 노출)
+
+T+30s    Purple Gap 식별
+         └→ tamper 의 case 변형 = paranoia 1 의 한계
+         └→ paranoia 2 = 942180 의 case-insensitive 매치 활성
+
+T+5m     Purple 룰 튜닝
+         └→ /etc/modsecurity/crs-setup.conf 의 paranoia 1 → 3
+         └→ sudo systemctl reload apache2
+         └→ 재테스트 = tamper 의 case 변형 의 block 확인
+         └→ false-positive 율 의 modnel (10 분간 = 0.5%)
+
+T+15m    Purple AAR
+         └→ paranoia 3 의 적용 = tamper 의 80% block
+         └→ 나머지 20% = custom rule 의 추가 (random encoding 등)
+```
+
+### R/B/P 의 핵심 인사이트
+
+1. **sqlmap 의 5 technique 의 분리 detection** — UNION/boolean/time/error/stack 의
+   각 technique 의 특징 적 매치 룰 의 분리 분석. paranoia level 의 영향 의 정량 측정.
+
+2. **tamper 의 우회 패턴 의 분석** — randomcase/space2comment/charunicodeencode 의
+   각 tamper 의 detection 영향 의 매트릭스 작성. 운영 환경 의 paranoia level 의 결정
+   의 base.
+
+3. **paranoia level 의 점진적 ramp-up** — paranoia 1 → 2 → 3 의 점진 적용 + 10 분
+   간 의 false-positive 모니터링. 운영 안정 의 확보.
+
+4. **anomaly score 의 누적 의 의미** — 단일 룰 매치 = 약 detection / 다중 룰 매치 =
+   강 detection. score = 3 의 경계 의 추가 룰 활성 = 정확 한 block 의 결정.
+
+5. **DetectionOnly vs On 의 trade-off** — DetectionOnly = log 만 (운영 안정) / On =
+   block (운영 위험). 신규 룰 의 적용 = DetectionOnly 의 1 주 + 분석 후 On 의 전환.
+
+---
+
 ## 본 주차 정리
 
 본 W04 을 마치면 학생 은:

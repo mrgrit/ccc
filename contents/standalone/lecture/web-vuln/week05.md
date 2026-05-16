@@ -168,6 +168,67 @@ element.innerHTML = trustedHTML  // OK — TrustedHTML type
 
 ---
 
+## 4-3. R/B/P 종합 시나리오 — XSS 3 종 의 detection + 방어
+
+```mermaid
+graph LR
+    R["🔴 Red Team<br/>3 XSS 변형<br/>① Reflected<br/>② Stored<br/>③ DOM"]
+    WEB["🌐 web + JuiceShop/<br/>MediForum"]
+    B1["🔵 ModSec 941 family<br/>libinjection (XSS)"]
+    B2["🔵 CSP header<br/>script-src 'self'"]
+    B3["🔵 DOMPurify<br/>client-side sanitize"]
+    B4["🔵 Trusted Types<br/>browser API"]
+    P1["🟣 Coverage Matrix<br/>3 XSS × 4 detection"]
+    P2["🟣 CSP 의 운영 적용"]
+    R --> WEB
+    WEB --> B1
+    WEB --> B2
+    WEB --> B3
+    WEB --> B4
+    B1 --> P1
+    B2 --> P1
+    B3 --> P1
+    B4 --> P1
+    P1 --> P2
+    style R fill:#f85149,color:#fff
+    style WEB fill:#3fb950,color:#fff
+    style B1 fill:#1f6feb,color:#fff
+    style B2 fill:#1f6feb,color:#fff
+    style B3 fill:#1f6feb,color:#fff
+    style B4 fill:#1f6feb,color:#fff
+    style P1 fill:#bc8cff,color:#fff
+    style P2 fill:#bc8cff,color:#fff
+```
+
+### Coverage Matrix — XSS 3 종 × 4 detection
+
+| 시도 | Red | Blue ModSec | Blue CSP | Blue DOMPurify | Purple |
+|------|-----|-----------|---------|--------------|--------|
+| **① Reflected** | `/search?q=<script>alert(1)</script>` | 941100/941160 매치, block | inline-script 차단 | N/A (server-side) | ModSec block 이 1차, CSP 가 2차 |
+| **② Stored** | 댓글 의 `<img src=x onerror=alert(1)>` 저장 | 941100 (저장 시) + 941110 (응답 시) | inline-handler 차단 | DB 출력 시 의 sanitize | Stored 의 영향 = 모든 viewer 의 위험 → 즉시 차단 + DB 정리 |
+| **③ DOM** | `#fragment` 의 innerHTML 주입 | server 미경유 = ModSec 우회 ★ | inline-script 차단 | innerHTML sanitize | Trusted Types 의 browser-level 차단 |
+
+### R/B/P 의 핵심 인사이트
+
+1. **DOM XSS 의 server 미경유 의 한계** — ModSec / WAF 의 사후 detection 의 한계.
+   client-side 의 CSP + DOMPurify + Trusted Types 의 3 layer 의 필수.
+
+2. **CSP 의 inline-script unsafe-inline 의 위험** — 'unsafe-inline' 의 사용 = XSS 의
+   block 의 무력 화. nonce 또는 hash 기반 의 inline 의 허용 의 routine.
+
+3. **Stored XSS 의 즉시 대응 의 routine** — Stored = 모든 viewer 의 위험. 발견 즉시
+   = DB 의 sanitize + 영향 받은 user 의 알림 + 사고 기록.
+
+4. **DOMPurify 의 server-side 와 client-side 의 분리** — server-side = JSDOM +
+   DOMPurify, client-side = browser 의 DOMPurify. 양 layer 의 적용 = defense in
+   depth.
+
+5. **Trusted Types 의 browser-level 차단** — Chrome 의 Trusted Types API = innerHTML
+   의 raw string 의 거부. opt-in 의 CSP directive (`require-trusted-types-for
+   'script'`) 의 적용 = 강력 한 DOM XSS 차단.
+
+---
+
 ## 자기 점검
 
 ```

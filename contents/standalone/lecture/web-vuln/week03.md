@@ -338,6 +338,70 @@ NeoBank 같은 금융 시스템 의 *추가 7*:
 
 ---
 
+## 4-5. R/B/P 종합 시나리오 — Cryptographic Failures
+
+### 통합 도식
+
+```mermaid
+graph LR
+    R["🔴 Red Team<br/>4 시도<br/>① weak hash brute<br/>② TLS downgrade<br/>③ JWT secret brute<br/>④ session cookie 의 약점"]
+    WEB["🌐 web Apache<br/>+ JuiceShop<br/>application crypto"]
+    B1["🔵 hash 검증<br/>bcrypt/argon2/PBKDF2<br/>iteration cost"]
+    B2["🔵 TLS config<br/>min TLS 1.2<br/>strong cipher 만"]
+    B3["🔵 JWT secret<br/>32+ byte entropy<br/>+ rotation"]
+    B4["🔵 cookie flag<br/>HttpOnly/Secure/SameSite"]
+    P1["🟣 4 영역 audit<br/>분기 1회 routine"]
+    P2["🟣 Gap 분석<br/>FP/TP balance"]
+    R --> WEB
+    WEB --> B1
+    WEB --> B2
+    WEB --> B3
+    WEB --> B4
+    B1 --> P1
+    B2 --> P1
+    B3 --> P1
+    B4 --> P1
+    P1 --> P2
+    style R fill:#f85149,color:#fff
+    style WEB fill:#3fb950,color:#fff
+    style B1 fill:#1f6feb,color:#fff
+    style B2 fill:#1f6feb,color:#fff
+    style B3 fill:#1f6feb,color:#fff
+    style B4 fill:#1f6feb,color:#fff
+    style P1 fill:#bc8cff,color:#fff
+    style P2 fill:#bc8cff,color:#fff
+```
+
+### Coverage Matrix — 4 시도 × 4 detection
+
+| 시도 | Red 명령 | Blue 검증 | Purple Gap | Purple 권장 |
+|------|---------|----------|-----------|------------|
+| **① weak hash** | `hashcat -m 0 hash.txt rockyou.txt` (MD5) | hash algorithm 의 확인 (bcrypt vs MD5) | legacy DB 의 MD5 password 의 잔존 | 점진적 rehash (login 시 의 자동 migration) |
+| **② TLS downgrade** | `openssl s_client -tls1` (TLS 1.0 강제) | TLS config 의 min version 검증 | 일부 server 의 fallback 의 잔존 | 모든 server 의 TLS 1.3 의 enforce + 로그 audit |
+| **③ JWT secret brute** | `hashcat -m 16500 jwt.txt rockyou.txt` | JWT secret 의 entropy 측정 | 약한 secret ("secret123") 의 사용 | secret 의 32+ byte random + 정기 rotation |
+| **④ session cookie 약점** | `curl -c cookies.txt /login; cat cookies.txt` (flag 확인) | cookie 의 HttpOnly/Secure/SameSite 의 검증 | cookie flag 의 일부 누락 | 모든 session cookie 의 3 flag 의 강제 + automation |
+
+### R/B/P 의 핵심 인사이트
+
+1. **Crypto 의 audit 의 분기 routine** — 4 영역 (hash/TLS/JWT/cookie) 의 분기 1회 의
+   audit = crypto failure 의 사전 detection. 운영 의 routine.
+
+2. **hash migration 의 점진적 적용** — legacy MD5 의 일시적 교체 = 운영 위험. login 시
+   의 자동 rehash (bcrypt) 의 점진 적용. 6개월 이내 의 100% migration.
+
+3. **TLS 1.3 의 enforce** — 모든 server 의 TLS 1.3 의 강제 + fallback 의 차단. 일부
+   legacy client 의 영향 = 5% 이하 (현재 표준).
+
+4. **JWT secret 의 entropy + rotation** — secret = openssl rand -base64 32 의 표준.
+   rotation = 분기 1회 + secret 변경 의 backward-compatible 의 2 secret 의 grace
+   period.
+
+5. **cookie 의 3 flag (HttpOnly/Secure/SameSite) 의 default** — application
+   framework 의 cookie middleware 의 default = 3 flag 의 모두 on. opt-out 의 명시
+   적 결정 만 허용.
+
+---
+
 ## 본 주차 정리
 
 본 W03 을 마치면 학생 은:
