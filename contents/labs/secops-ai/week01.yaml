@@ -674,3 +674,68 @@ steps:
 
 
     Phase D: 1줄 통합 보고 — 가장 활발 layer, dead layer, 다음 주 drill 보강 우선순위 1개.'
+- order: 100
+  instruction: '[Multi-task] 보안 인프라 점검 5단계 통합 — nftables → Suricata → ModSec → Wazuh → 종합 health card.'
+  bastion_prompt: |
+    SOC 인프라 health check 5 layer 를 한 흐름으로 수행해줘.
+
+    1) [nftables 점검] ssh ccc@{{SECU_IP}} 'sudo nft list tables; sudo nft list ruleset 2>&1 | head -30;
+       sudo nft list ruleset | grep -c "^\s*\(tcp\|udp\|icmp\)"; sudo journalctl -u nftables --no-pager
+       --since "1 hour ago" | tail -5' 의 테이블 수 + 룰 수 + 최근 1시간 로그 표 작성. NIST CSF Protect (PR.AC-5)
+       매핑.
+
+    2) [Suricata 점검] ssh ccc@{{SECU_IP}} 'sudo systemctl is-active suricata; sudo suricata --build-info |
+       head -5; sudo ls /etc/suricata/rules/ | wc -l; sudo tail -5 /var/log/suricata/eve.json 2>/dev/null |
+       python3 -c "import json,sys; [print(json.loads(l).get(\"event_type\"), json.loads(l).get(\"alert\",{}).get(\"signature\",\"\")[:50]) for l in sys.stdin]"' 의 상태 + 룰 파일 수 + 최근 5 alert 표. NIST DE.AE-3 매핑.
+
+    3) [ModSecurity + CRS 점검] ssh ccc@{{WEB_IP}} 'sudo apache2ctl -M 2>&1 | grep -i security; sudo ls /etc/modsecurity/
+       /etc/apache2/conf-enabled/security2.conf 2>/dev/null; sudo ls /usr/share/modsecurity-crs/rules/ 2>/dev/null |
+       wc -l; sudo tail -5 /var/log/apache2/modsec_audit.log 2>/dev/null | grep -oE "id \"[0-9]*\"" | sort -u
+       | head -5' 의 모듈 로드 + CRS 룰 수 + 최근 trigger 표. OWASP CRS 4.0 매핑.
+
+    4) [Wazuh SIEM 점검] ssh ccc@{{SECU_IP}}00 'sudo systemctl is-active wazuh-manager; sudo /var/ossec/bin/wazuh-control
+       info 2>&1 | head -5; sudo wc -l /var/ossec/etc/rules/local_rules.xml 2>/dev/null;
+       sudo tail -5 /var/ossec/logs/alerts/alerts.log 2>/dev/null | grep -oE "Rule: [0-9]*" | sort -u | head -5' 의
+       에이전트 상태 + 룰 수 + 최근 alert 표. NIST DE.AE-3 매핑.
+
+    5) [종합 Health Card] 1~4 결과를 합쳐 5 layer (nftables / Suricata / ModSecurity / Wazuh / Audit log) ×
+       (Service status / 룰/정책 수 / 최근 24h event 수 / 정상 baseline 대비 % / Health Grade A~F) 의 5×5 매트릭스
+       + 1 페이지 SOC Daily Health Card markdown 출력. 각 layer 의 dead/under-tuned 신호 + Day1 보강 우선순위
+       3개 (룰 추가 / 임계값 조정 / dashboard 추가). NIST CSF 매핑 종합.
+
+    Day-2 으로 active drill (W02 시뮬) 의 인계 entry 도 1 단락 작성.
+  hint: SOC day-1 health check 5 layer chain. Daily Health Card 가 운영 산출물.
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: '[통합] SOC 인프라 health 5단계 — nftables/Suricata/ModSec/Wazuh/Health Card. NIST CSF Protect/Detect + OWASP CRS 4.0 매핑 + 5×5 매트릭스 + Day-2 인계.'
+      success_criteria:
+      - 5 단계 모두 실행
+      - 5 layer (nftables/Suricata/ModSec/Wazuh/Audit) 모두 점검
+      - NIST CSF Protect 또는 Detect 매핑
+      - Health Grade A~F 5개 부여
+      - 5×5 매트릭스 + Daily Health Card
+      - Day-2 인계 entry
+      acceptable_methods:
+      - bastion 의 multi-stage planning
+      - ssh + systemctl + 각 도구 CLI 표준
+      - Grafana / Kibana dashboard 대체 가능
+      - markdown 매트릭스 + Health Card
+      negative_signs:
+      - 3 단계 이하 만 수행
+      - layer 3개 이하 점검
+      - Health Grade 누락
+      - Day-2 인계 누락
+      - 매트릭스 5×5 미만
+  target_vm: bastion
+  risk_level: low
+  answer: |
+    🤖 위 bastion_prompt 그대로. SOC health 5 layer + Daily Health Card + Day-2 인계.
+  answer_detail: |
+    SOC Manager 페르소나 — Day-1 health check 5 layer chain. Daily Health Card 가 운영 인계 산출물.
+    Day-2 active drill 으로 자연스럽게 연결.
+  script: ''

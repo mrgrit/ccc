@@ -1217,3 +1217,78 @@ steps:
     데몬 모드 재기동 → ping timeout + drop event. Phase C: 결과 비교 + 운영 위험 + priority 의미.
 
     종료 시 suricata -q 프로세스 죽이고 verify_ips 테이블 + 룰 모두 정리.'
+- order: 100
+  instruction: '[Multi-task] Suricata IPS 5단계 통합 — 설치 확인 → HOME_NET → 인터페이스 → 룰 작성 → IDS/IPS 모드 비교.'
+  bastion_prompt: |
+    Suricata IPS 5작업을 한 흐름의 lab 으로 수행해줘. 6v6-fw (secu) 대상.
+
+    1) [설치 확인] ssh ccc@{{SECU_IP}} 'sudo suricata --build-info | head -20; sudo systemctl is-active suricata;
+       sudo dpkg -l suricata 2>/dev/null | tail -1; sudo cat /etc/suricata/suricata.yaml | grep -E "rule-files:"
+       -A 3 | head -10' 의 결과 + 빌드 정보 (LIBHTP / NSS / LIBNET / PCRE2) + 활성 룰 파일 표.
+
+    2) [HOME_NET + 인터페이스 확인] ssh ccc@{{SECU_IP}} 'sudo grep -A2 "HOME_NET:" /etc/suricata/suricata.yaml |
+       head -5; sudo grep -A5 "af-packet:" /etc/suricata/suricata.yaml | head -10; ip -4 addr show | grep inet'
+       의 HOME_NET 의 정확성 (10.20.30.0/24 가 포함 되는지) + af-packet 의 인터페이스 표.
+
+    3) [Local rule 작성] ssh ccc@{{SECU_IP}} 'sudo tee /etc/suricata/rules/lab.rules > /dev/null <<EOF
+       alert icmp any any -> \$HOME_NET any (msg:"LAB ICMP detected"; sid:1000201; rev:1;)
+       alert tcp any any -> \$HOME_NET 23 (msg:"LAB Telnet attempt"; sid:1000202; rev:1;)
+       alert http any any -> \$HOME_NET any (msg:"LAB HTTP UA scan"; content:"sqlmap"; http_user_agent;
+       sid:1000203; rev:1;)
+       EOF
+       sudo suricata -T -c /etc/suricata/suricata.yaml 2>&1 | tail -5' 의 3 룰 + 문법 검증.
+
+    4) [IDS 모드 alert 검증] ssh ccc@{{SECU_IP}} 'sudo systemctl restart suricata; sleep 3' →
+       ssh ccc@{{ATTACKER_IP}} 'ping -c 3 -W 1 {{WEB_IP}}; curl -s -A "sqlmap/1.6" http://{{WEB_IP}}:3000/ -o /dev/null;
+       nc -zvw 1 {{WEB_IP}} 23 2>&1' →
+       ssh ccc@{{SECU_IP}} 'sudo tail -20 /var/log/suricata/eve.json | python3 -c "import json,sys;
+       [print(json.loads(l).get(\"alert\",{}).get(\"signature_id\"),
+       json.loads(l).get(\"alert\",{}).get(\"signature\",\"\")) for l in sys.stdin if \"alert\" in l]"' 의 alert
+       3개 (sid 1000201/1000202/1000203) 검증.
+
+    5) [IPS 모드 (drop) + 비교] sudo nft add table inet ipstest; sudo nft add chain inet ipstest output
+       "{ type filter hook output priority -150 \; }"; sudo nft add rule inet ipstest output ip daddr {{WEB_IP}}
+       queue num 0 → /etc/suricata/rules/lab.rules 의 alert 를 drop 으로 변경 → sudo suricata -q 0 -D 데몬 모드 →
+       attacker 의 ping {{WEB_IP}} 결과 (timeout) + drop event 표. IDS (탐지 만) vs IPS (차단) 의 trade-off 정리.
+
+    종료 시 sudo pkill suricata -f "q 0" + sudo nft delete table inet ipstest + lab.rules drop 을 alert
+       으로 환원 으로 cleanup.
+
+    마지막에 5단계 × (Suricata 단계 / 명령 / 결과 / IDS vs IPS / 운영 권고 (룰 tuning / cooldown / log rotation)) 의
+    5×5 매트릭스 + Suricata IDS/IPS Decision Matrix (alert vs drop의 운영 trade-off 표) + cleanup 검증 출력.
+  hint: Suricata 5단계 chain. IDS vs IPS mode 의 trade-off (block vs visibility) 가 학습 핵심.
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: '[통합] Suricata IPS 5단계 — 설치/HOME_NET/룰/IDS alert/IPS drop. NIST DE.AE-3 + DE.CM-1 매핑 + 5×5 매트릭스 + IDS/IPS Decision.'
+      success_criteria:
+      - 5 단계 모두 실행
+      - local rule 3개 (sid 1000201/202/203)
+      - suricata -T 문법 검증
+      - IDS alert + IPS drop 둘 다 검증
+      - cleanup (suricata -q 0 죽이기 + nft 테이블 삭제 + 룰 환원)
+      - 5×5 매트릭스 + Decision Matrix
+      acceptable_methods:
+      - bastion 의 multi-stage planning
+      - ssh + suricata + nft + curl 표준
+      - Snort 대체 가능
+      - markdown 매트릭스 + Decision
+      negative_signs:
+      - 3 단계 이하 만 수행
+      - 룰 1개 만
+      - IDS alert 검증 누락
+      - IPS drop 검증 누락
+      - cleanup 미수행 (운영 위험)
+      - 매트릭스 5×5 미만
+  target_vm: bastion
+  risk_level: low
+  answer: |
+    🤖 위 bastion_prompt 그대로. Suricata 5단계 + 5×5 매트릭스 + IDS/IPS Decision + cleanup.
+  answer_detail: |
+    Network Detection Engineer 페르소나 — Suricata 5단계 chain. IDS vs IPS 의 운영 trade-off가 핵심.
+    cleanup 미수행 시 prod 영향 가능.
+  script: ''
