@@ -27,10 +27,12 @@ import pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 LOG = ROOT / "results/retest/bastion_watchdog.log"
-HEALTH_URL = os.getenv("BASTION_HEALTH", "http://192.168.0.103:8003/health")
-RESTART_HOST = os.getenv("BASTION_HOST", "192.168.0.103")
+HEALTH_URL = os.getenv("BASTION_HEALTH", "http://192.168.0.110:9200/health")
+RESTART_HOST = os.getenv("BASTION_HOST", "192.168.0.110")
 RESTART_USER = os.getenv("BASTION_USER", "ccc")
 RESTART_PASS = os.getenv("BASTION_PASS", "1")
+RESTART_PORT = os.getenv("BASTION_PORT", "9200")
+RESTART_DIR = os.getenv("BASTION_DIR", "/home/ccc/bastion")
 
 
 def log(msg: str):
@@ -53,12 +55,11 @@ def check_health(timeout: float = 5.0) -> bool:
 def restart_server() -> bool:
     """SSH + restart bastion. 비동기 안전 — 5분 timeout."""
     cmd = (
-        f"pkill -9 -f 'uvicorn api:app' 2>/dev/null; sleep 3; "
-        f"cd /opt/bastion && set -a && source /home/ccc/ccc/.env && set +a && "
-        f"export BASTION_GRAPH_DB=/opt/bastion/data/bastion_graph.db && "
-        f"nohup ./.venv/bin/uvicorn api:app --host 0.0.0.0 --port 8003 "
+        f"pkill -9 -f 'run-api.py' 2>/dev/null; pkill -9 -f 'uvicorn api:app' 2>/dev/null; sleep 3; "
+        f"cd {RESTART_DIR} && set -a && [ -f .env ] && source .env; set +a && "
+        f"nohup ./.venv/bin/python3 -u run-api.py "
         f"> /tmp/bastion.log 2>&1 & disown; sleep 8; "
-        f"curl -s --max-time 5 http://localhost:8003/health"
+        f"curl -s --max-time 5 http://localhost:{RESTART_PORT}/health"
     )
     full = ["sshpass", "-p", RESTART_PASS, "ssh",
             "-o", "StrictHostKeyChecking=no",

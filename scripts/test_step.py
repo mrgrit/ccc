@@ -20,7 +20,7 @@ import os, sys, json, time, argparse, pathlib, urllib.request, yaml, re
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PROGRESS = ROOT / "bastion_test_progress.json"
-BASTION = os.getenv("BASTION_URL", "http://192.168.0.103:8003").rstrip("/") + "/chat"
+BASTION = os.getenv("BASTION_URL", "http://192.168.0.110:9200").rstrip("/") + "/chat"
 OLLAMA = os.getenv("OLLAMA_URL", "http://192.168.0.109:11434")
 JUDGE_MODEL = "gpt-oss:120b"
 TIMEOUT = 600

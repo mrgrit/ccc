@@ -5,7 +5,7 @@ cd /home/opsclaw/ccc
 Q=results/retest/queue_r5_main.tsv
 C=results/retest/cursor_r5_main.txt
 L=results/retest/run_r5_main.log
-H="http://192.168.0.103:8003/health"
+H="${BASTION_HEALTH:-http://192.168.0.110:9200/health}"
 O="http://192.168.0.109:11434/api/tags"
 
 [ -f "$C" ] || echo 0 > "$C"
@@ -76,10 +76,10 @@ print(0)
     lab_id="${course}-week$(printf '%02d' "$wk")"
     if [ -d "data/cyber-range-fixtures/$lab_id/$order" ]; then
       sshpass -p 1 ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=3 \
-        ccc@192.168.0.103 "mkdir -p /home/ccc/cyber-range/fixtures/$lab_id/$order" 2>>"$L"
+        ccc@192.168.0.110 "mkdir -p /home/ccc/cyber-range/fixtures/$lab_id/$order" 2>>"$L"
       sshpass -p 1 scp -o StrictHostKeyChecking=no -r \
         "data/cyber-range-fixtures/$lab_id/$order"/* \
-        "ccc@192.168.0.103:/home/ccc/cyber-range/fixtures/$lab_id/$order/" >> "$L" 2>&1
+        "ccc@192.168.0.110:/home/ccc/cyber-range/fixtures/$lab_id/$order/" >> "$L" 2>&1
       echo "  [fixture-sync] OK ($lab_id/$order)" >> "$L"
     fi
   fi

@@ -117,7 +117,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--via-bastion", action="store_true")
-    ap.add_argument("--bastion-url", default=os.getenv("BASTION_URL", "http://192.168.0.103:8003"))
+    ap.add_argument("--bastion-url", default=os.getenv("BASTION_URL", "http://192.168.0.110:9200"))
     args = ap.parse_args()
 
     print("=== OWASP Top 10 (Web 2021 + API 2023 + LLM 2025) ===")

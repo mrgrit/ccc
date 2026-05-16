@@ -23,7 +23,7 @@ import time
 import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-BASTION = os.getenv("BASTION_URL", "http://192.168.0.103:8003/chat")
+BASTION = os.getenv("BASTION_URL", "http://192.168.0.110:9200/chat")
 OLLAMA = os.getenv("LLM_BASE_URL", "http://192.168.0.109:11434")
 JUDGE_MODEL = os.getenv("JUDGE_MODEL", "gpt-oss:120b")
 PROGRESS = ROOT / "bastion_autogen_test.json"

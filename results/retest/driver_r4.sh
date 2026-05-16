@@ -9,7 +9,7 @@ set -a; source .env 2>/dev/null; set +a
 Q=results/retest/queue_r4.tsv
 C=results/retest/cursor_r4.txt
 L=results/retest/run_r4.log
-H="http://192.168.0.103:8003/health"
+H="${BASTION_HEALTH:-http://192.168.0.110:9200/health}"
 
 [ -f "$C" ] || echo 0 > "$C"
 cur=$(cat "$C")
