@@ -1,0 +1,423 @@
+lab_id: standalone-web-vuln-week06
+title: A04 Insecure Design — NeoBank 송금 workflow 의 4 설계 결함
+version: standalone-non-ai
+course: web-vuln
+week: 6
+description: |
+  OWASP A04 (Insecure Design, 2021 신규) — *코드 가 아닌 architecture 의 결함*.
+  NeoBank 의 *송금 workflow* 의 4 설계 결함 (2FA 부재 / 가격 검증 부재 / rate
+  limit 부재 / 비즈니스 로직 우회) hands-on.
+difficulty: medium
+duration_minutes: 180
+audience: web-vuln 6주차
+prerequisites:
+  - W02-W05 완료
+  - NeoBank 가동 + login endpoint 가용
+  - 학생 PC 의 curl + jq + python3
+objectives:
+  - NeoBank 의 *송금 workflow* 의 *5 단계* 식별
+  - 4 설계 결함 (2FA 부재 / 가격 검증 / rate limit / 비즈니스 로직) 시뮬
+  - *threat modeling* 의 *STRIDE 6 카테고리* 적용
+  - 한국 금융 표준 (FDS / 전자금융감독규정) 매핑
+  - W06 보고서 + CWE-209/256/799/840
+pass_threshold: 0.7
+
+steps:
+
+  - order: 1
+    instruction: |
+      ## 🎯 MISSION — NeoBank 의 *송금 workflow* 5 단계 식별
+
+      NeoBank 의 *공개 endpoint* 분석 + *송금 workflow* 의 5 단계 (login → 잔액 조회
+      → 송금 form → 비밀번호 재확인 → 송금 완료) 식별.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **workflow** = *사용자 의 의도* 의 *단계 sequence*
+      - **금융 의 표준 workflow** = login + 2FA + form + 비밀번호 + 송금 완료 (5+ 단계)
+      - ***최소 표준*** = OTP / SMS / 생체 / FIDO2 의 *추가 인증*
+      - **endpoint discovery** = `curl -I` + form action 분석 + Burp Spider
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker bash <<'SH'
+      # 1) NeoBank 공개 endpoint enum
+      echo "=== 공개 endpoint ==="
+      for path in / /login /register /transfer /account /api/login /api/transfer /api/account /api/users; do
+        code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: neobank.6v6.lab' "http://10.20.30.1$path")
+        echo "$path: $code"
+      done
+
+      # 2) login form 의 action / method 분석
+      echo ""
+      echo "=== /login form 분석 ==="
+      curl -s -H 'Host: neobank.6v6.lab' http://10.20.30.1/login 2>&1 | grep -E 'form|input|action=|method=' | head -10
+      SH
+      ```
+
+      ## 📋 확인 사항
+
+      - public endpoint 의 응답 코드 매트릭스
+      - login form 의 action + method (POST 표준)
+      - workflow 의 *5 단계* 식별
+
+      ## 💡 왜 이걸 하는가?
+
+      *workflow 분석* = A04 의 *첫 단계*. *각 단계* 의 *설계 결함* 가 *vuln*.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 5 단계 endpoint 식별
+      - **endpoint 부족**: API 문서 검색 (`/api/docs` 또는 `/swagger`)
+      - **모든 200**: login 무시 — 다른 endpoint 탐색
+
+      ## 실측 (2026-05-16)
+      - `/login` 200, `/transfer` 302 (login redirect), `/api/login` 405 (Method)
+    hint: |
+      9 endpoint 탐색 + login form action 분석.
+    category: survey
+    points: 20
+    answer: |
+      ssh 6v6-attacker bash <<'SH'
+      for path in / /login /register /transfer /account /api/login /api/transfer /api/account; do
+        echo "$path: $(curl -s -o /dev/null -w '%{http_code}' -H 'Host: neobank.6v6.lab' "http://10.20.30.1$path")"
+      done
+      curl -s -H 'Host: neobank.6v6.lab' http://10.20.30.1/login 2>&1 | grep -E 'form|input|action=' | head -5
+      SH
+    answer_detail: NeoBank workflow 5 단계 식별
+    verify:
+      type: output_contains
+      expect: 'login\|transfer'
+      field: stdout
+      semantic:
+        intent: workflow 분석
+        success_criteria: [endpoint 매트릭스 + form 분석]
+        acceptable_methods:
+          - "**[OSS] curl + 9 endpoint 매트릭스**"
+          - "**[OSS] Burp Spider crawl**"
+          - "**[OSS] gobuster dir brute**"
+          - "**[OSS] OWASP ZAP Discover**"
+          - "**[관리적] workflow diagram 작성**"
+    target_vm: attacker
+
+  - order: 2
+    instruction: |
+      ## 🎯 MISSION — 2FA 부재 시뮬 (단일 인증 의 송금 가능 여부)
+
+      NeoBank login 후 *2FA 의 prompt 없이* 송금 가능 여부 확인. 한국 *전자금융감독규정* 의
+      *송금 의 2 채널 인증 의무* 위반 시뮬.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **2FA** = Two-Factor Authentication — 비밀번호 + *추가 채널* (OTP / SMS / 생체)
+      - **한국 표준** = 전자금융감독규정 의 *송금 의 2 channel* 의무 (2014+)
+      - **OTP** = TOTP (Time-based) / HOTP (HMAC-based)
+      - **시뮬** = login 후 송금 시도 → 2FA prompt 가 *없음* 확인 = A04 결함
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker bash <<'SH'
+      # 1) login 시도 (default credential 가정)
+      LOGIN=$(curl -s -X POST -H 'Host: neobank.6v6.lab' \
+        -H 'Content-Type: application/x-www-form-urlencoded' \
+        -d 'username=admin&password=admin' \
+        http://10.20.30.1/login 2>&1)
+
+      # 2) login 응답 분석 (cookie 또는 token)
+      echo "=== login 응답 head ==="
+      curl -sI -X POST -H 'Host: neobank.6v6.lab' \
+        -H 'Content-Type: application/x-www-form-urlencoded' \
+        -d 'username=admin&password=admin' \
+        http://10.20.30.1/login 2>&1 | head -15
+
+      # 3) 송금 endpoint 의 2FA prompt 여부
+      echo ""
+      echo "=== 송금 endpoint (login 후) ==="
+      curl -sc /tmp/neobank-cookies.txt -X POST -H 'Host: neobank.6v6.lab' \
+        -d 'username=admin&password=admin' http://10.20.30.1/login >/dev/null 2>&1
+
+      curl -sb /tmp/neobank-cookies.txt -H 'Host: neobank.6v6.lab' \
+        "http://10.20.30.1/transfer" 2>&1 | grep -iE '2fa|otp|sms|verification|inputCode|확인' | head -5
+      SH
+      ```
+
+      ## 📋 확인 사항
+
+      - login 응답 코드 (302 = success / 401 = fail)
+      - login 응답 의 Set-Cookie / token
+      - 송금 endpoint 의 *2FA UI 또는 prompt* 의 *부재 여부*
+
+      ## 💡 왜 이걸 하는가?
+
+      한국 *전자금융감독규정 위반* = 과징금 + 신뢰 손실. 본 step 의 *2FA 부재 확인* 가
+      금융 시스템 의 *day-1 audit*.
+
+      ## 🔍 결과 해석
+
+      - **2FA 없음 (vuln)**: 단일 인증 만 — 한국 표준 위반
+      - **2FA 있음**: 표준 준수 — OTP / SMS prompt 표시
+      - **default credential X**: 학습 환경 의 default 시도 (admin/admin, test/test 등)
+    hint: |
+      login 후 송금 endpoint 의 2FA UI / API prompt 확인.
+    category: analysis
+    points: 25
+    answer: |
+      ssh 6v6-attacker bash <<'SH'
+      curl -sI -X POST -H 'Host: neobank.6v6.lab' -H 'Content-Type: application/x-www-form-urlencoded' -d 'username=admin&password=admin' http://10.20.30.1/login 2>&1 | head -15
+      curl -sc /tmp/cookies.txt -X POST -H 'Host: neobank.6v6.lab' -d 'username=admin&password=admin' http://10.20.30.1/login >/dev/null 2>&1
+      curl -sb /tmp/cookies.txt -H 'Host: neobank.6v6.lab' http://10.20.30.1/transfer 2>&1 | grep -iE '2fa|otp|sms|verification' | head -5
+      SH
+    answer_detail: 2FA 부재 시뮬 + 송금 UI 분석
+    verify:
+      type: output_contains
+      expect: 'login\|transfer\|cookie'
+      field: stdout
+      semantic:
+        intent: 2FA 부재
+        success_criteria: [login 후 송금 UI 분석]
+        acceptable_methods:
+          - "**[OSS] curl -c cookies + 송금 endpoint**"
+          - "**[OSS] Burp Proxy 의 흐름 분석**"
+          - "**[OSS] 전자금융감독규정 의 2 channel 요건**"
+          - "**[관리적] FDS (Fraud Detection System) 보완 권장**"
+    target_vm: attacker
+
+  - order: 3
+    instruction: |
+      ## 🎯 MISSION — 가격 / 금액 검증 부재 시뮬 (음수 송금 시도)
+
+      *송금 form* 의 *금액 field* 의 *서버 측 검증* 부재 시뮬. *음수 금액* / *0
+      금액* / *극단 금액* 시도.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **input validation 의 7 표준**:
+        - type (string vs int vs float)
+        - range (min/max)
+        - format (regex)
+        - length
+        - whitelist
+        - encoding (UTF-8)
+        - business logic (음수 X, 잔액 이상 X)
+      - **client-side validation 만 의 위험** = HTML5 의 `<input type="number" min="1">`
+        는 *우회 가능* (curl 의 *임의 값*)
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker bash <<'SH'
+      # session 의 login
+      curl -sc /tmp/neobank-cookies.txt -X POST -H 'Host: neobank.6v6.lab' \
+        -d 'username=admin&password=admin' http://10.20.30.1/login >/dev/null 2>&1
+
+      # 5 금액 의 송금 시도
+      for amount in -1000 0 0.001 999999999 "abc"; do
+        echo "=== amount: $amount ==="
+        code=$(curl -sb /tmp/neobank-cookies.txt -o /dev/null -w '%{http_code}' \
+          -X POST -H 'Host: neobank.6v6.lab' \
+          -d "to_account=12345&amount=$amount" \
+          http://10.20.30.1/transfer)
+        echo "code: $code"
+      done
+      SH
+      ```
+
+      ## 📋 확인 사항
+
+      - 5 금액 의 응답 코드
+      - *-1000* (음수) 의 *200 가능성* (vuln)
+      - *0* 의 *200 가능성* (가능 X — 의미 없음)
+      - *"abc"* (string) 의 *type error* 응답
+
+      ## 💡 왜 이걸 하는가?
+
+      *비즈니스 로직* 의 *서버 검증* 가 *security 의 마지막 boundary*. client-side
+      만 의 검증 = *우회 default*.
+
+      ## 🔍 결과 해석
+
+      - **모두 400 (정상)**: input validation 표준 — type + range 검증
+      - **음수 200 (vuln)**: A04 결함 — 음수 송금 시 *상대 계좌 에서 빼앗기*
+      - **string 500 (vuln)**: type 검증 부재 — exception 노출
+
+      ## 비정상 시 대응
+
+      - **login 응답 다름**: NeoBank 의 default credential 시도 (test/test, user/user)
+    hint: |
+      login session + 5 금액 (음수/0/소수/극단/string) 송금 시도.
+    category: exploit
+    points: 25
+    answer: |
+      ssh 6v6-attacker bash <<'SH'
+      curl -sc /tmp/cookies.txt -X POST -H 'Host: neobank.6v6.lab' -d 'username=admin&password=admin' http://10.20.30.1/login >/dev/null 2>&1
+      for amount in -1000 0 0.001 999999999 abc; do
+        echo "amount $amount: $(curl -sb /tmp/cookies.txt -o /dev/null -w '%{http_code}' -X POST -H 'Host: neobank.6v6.lab' -d "to_account=12345&amount=$amount" http://10.20.30.1/transfer)"
+      done
+      SH
+    answer_detail: 5 금액 의 input validation 시도
+    verify:
+      type: output_contains
+      expect: 'amount\|code'
+      field: stdout
+      semantic:
+        intent: 가격 검증 부재
+        success_criteria: [5 금액 응답]
+        acceptable_methods:
+          - "**[OSS] 5 금액 boundary test**"
+          - "**[OSS] BurpSuite Intruder 의 payload set**"
+          - "**[OSS] 한국 금융 의 negative 송금 표준 거부**"
+          - "**[OSS] CWE-840 Business Logic Errors**"
+    target_vm: attacker
+
+  - order: 4
+    instruction: |
+      ## 🎯 MISSION — Rate limit 부재 시뮬 (brute force 가능성)
+
+      login endpoint 의 *rate limit 부재* 시뮬. *연속 100 시도* → *모두 응답* 시
+      brute force 가능.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **rate limit** = N requests / time 의 *임계*. *brute / DoS 방어*
+      - **표준** = login 의 *10 시도 / 5 분* (한국 금융 의 default)
+      - **403 vs 429** = 403 (Forbidden) / 429 (Too Many Requests) — *후자 가 정확*
+      - **CAPTCHA / MFA** = 추가 방어
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker bash <<'SH'
+      echo "=== 30 회 연속 login 시도 (rate limit 검증) ==="
+
+      START=$(date +%s)
+      for i in $(seq 1 30); do
+        code=$(curl -s -o /dev/null -w '%{http_code}' \
+          -X POST -H 'Host: neobank.6v6.lab' \
+          -d "username=admin&password=wrong$i" \
+          http://10.20.30.1/login)
+        echo -n "$code "
+      done
+      END=$(date +%s)
+      echo ""
+      echo "소요 시간: $((END - START)) 초"
+      echo "모두 같은 응답 = rate limit 부재"
+      echo "429 또는 403 등장 = rate limit 적용"
+      SH
+      ```
+
+      ## 📋 확인 사항
+
+      - 30 회 응답 코드 분포 (모두 401 = vuln / 일부 429 = 정상)
+      - 소요 시간 (1-3 초 = 매우 빠름, brute 가능)
+      - rate limit *임계* 식별
+
+      ## 💡 왜 이걸 하는가?
+
+      한국 금융 표준 = *5 분 의 10 시도*. 본 시뮬 의 *30 시도 의 1 초 만에 응답* =
+      *brute 분 단위 가능*.
+
+      ## 🔍 결과 해석
+
+      - **모두 401 (vuln)**: rate limit 부재 — 즉시 적용 권장
+      - **일부 429 (정상)**: rate limit 적용 — 임계 식별
+      - **점진 적 차단**: progressive lockout (정상 modern 방어)
+    hint: |
+      30 회 연속 login + 응답 분포 + 시간 측정.
+    category: exploit
+    points: 20
+    answer: |
+      ssh 6v6-attacker bash <<'SH'
+      START=$(date +%s)
+      for i in $(seq 1 30); do
+        echo -n "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Host: neobank.6v6.lab' -d "username=admin&password=wrong$i" http://10.20.30.1/login) "
+      done
+      echo ""; END=$(date +%s); echo "소요: $((END - START)) 초"
+      SH
+    answer_detail: 30 회 연속 login + rate limit 검증
+    verify:
+      type: output_contains
+      expect: '소요\|code\|401'
+      field: stdout
+      semantic:
+        intent: rate limit audit
+        success_criteria: [30 회 응답 분포]
+        acceptable_methods:
+          - "**[OSS] curl loop + 응답 분포**"
+          - "**[OSS] hydra의 login brute (실 시도)**"
+          - "**[OSS] fail2ban / rate-limit middleware 권장**"
+          - "**[OSS] 전자금융감독규정 의 brute 방어 의무**"
+          - "**[OSS] CWE-799 Improper Control of Resources Through Throttling**"
+    target_vm: attacker
+
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION — W06 종합 보고서 (4 설계 결함 + STRIDE 매핑 + 금융 표준)
+
+      W06 의 4 설계 결함 (workflow + 2FA + 가격 검증 + rate limit) 종합 보고서.
+      *STRIDE 6 카테고리* 매핑 + 한국 *전자금융감독규정* 위반 인지.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **STRIDE 6 카테고리** (Microsoft, 1999):
+        - **S**poofing — 신분 위장
+        - **T**ampering — 변조
+        - **R**epudiation — 부인
+        - **I**nformation disclosure — 정보 누출
+        - **D**enial of service — 서비스 거부
+        - **E**levation of privilege — 권한 상승
+
+      ## 💻 산출물
+
+      ```markdown
+      # W06 — A04 Insecure Design (NeoBank workflow) 보고서
+
+      ## 1. Executive Summary
+      - target: NeoBank 송금 workflow
+      - 4 설계 결함 발견 — 전자금융감독규정 위반 가능성
+      - CVSS High 1 (2FA 부재) + Medium 3
+
+      ## 2. Detailed Findings
+      ### F1 — workflow 의 *5 단계 부족* (현재 2 단계)
+      ### F2 — 2FA 부재 (CWE-308 Use of Single-factor Authentication)
+      ### F3 — 가격 검증 부재 (CWE-840 Business Logic + CWE-20 Improper Input)
+      ### F4 — Rate limit 부재 (CWE-799)
+
+      ## 3. STRIDE 매핑
+      | Finding | STRIDE | 위협 |
+      |---------|--------|------|
+      | F2 2FA | Spoofing | 단일 인증 의 신분 위장 |
+      | F3 가격 | Tampering | 금액 변조 |
+      | F4 rate | DoS | brute force |
+
+      ## 4. 한국 금융 표준 위반
+      - 전자금융감독규정 제13조 (송금 의 2 channel 인증)
+      - 전자금융감독규정 제18조 (FDS 의무)
+      - 신용정보법 의 *비정상 거래 탐지*
+
+      ## 5. Remediation
+      - 즉시: 2FA 적용 (OTP / SMS / FIDO2) + 금액 검증 (서버 측 type+range)
+      - 단기: rate limit (5분 의 10 시도) + FDS 통합
+      - 장기: zero-trust architecture + risk-based authentication
+      ```
+    hint: |
+      4 결함 + STRIDE 6 + 전자금융감독규정 매핑 + 한국 금융 표준.
+    category: synthesis
+    points: 10
+    answer: 위 5 섹션 형식
+    answer_detail: W06 종합 보고서 + STRIDE + 금융 표준
+    verify:
+      type: output_contains
+      expect: 'STRIDE\|전자금융'
+      field: stdout
+      semantic:
+        intent: W06 종합
+        success_criteria: [4 결함 + STRIDE + 금융 표준]
+        acceptable_methods:
+          - "**[관리적] STRIDE threat modeling**"
+          - "**[관리적] 전자금융감독규정 의 13/18 조**"
+          - "**[관리적] PCI-DSS** (해외 의 의무)
+          - "**[관리적] CWE-308 / 840 / 799 / 20**"
+          - "**[관리적] OWASP A04 의 7 권장**"
+    target_vm: bastion
