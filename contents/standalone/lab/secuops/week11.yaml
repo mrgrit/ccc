@@ -125,9 +125,20 @@ steps:
 
   - order: 2
     instruction: |
-      ## 🎯 MISSION — 설치 계획 + 의존성 (시뮬)
+      ## 🎯 MISSION — sysmon 설치 *계획서* + 의존성 점검 (시뮬)
 
-      lecture §5 의 4 단계 설치 절차 시뮬. 실 설치는 별 PR (W11 후 운영 환경에 적용).
+      4 단계 설치 절차 + 의존성 (kernel / auditd / libbpf) 사전 점검. **본 step
+      은 *실 설치 X*  계획서 + 의존성 검증** — 실 설치는 별 PR (W11 완료 후 운영
+      환경 적용).
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **microsoft apt repo** — sysmon 의 공식 패키지 source. Ubuntu 22.04 = jammy
+      - **sysmon -accepteula -i config.xml** — EULA 동의 + config 적용. 첫 실행 시
+        필수
+      - **kernel >= 4.18** — eBPF trace point 최소 요구. Ubuntu 22.04 기본 5.x
+      - **auditd 충돌** — sysmon 이 auditd subsystem 사용. 동시 실행 시 race
+        condition 가능 — auditd 우선 disable 권장
 
       ## 💻 산출물
 
@@ -162,17 +173,31 @@ steps:
 
       ## 📋 확인 사항
 
-      - 4 단계 설치 명령
-      - kernel >= 4.18
-      - auditd 또는 audit subsystem 활성
-      - libbpf 패키지 (있다면)
+      - 4 단계 설치 명령 (apt repo + 패키지 + config + 시작)
+      - kernel >= 4.18 (실측: 6.8 OK)
+      - auditd 활성 여부 + 충돌 가능성 인지
+      - libbpf 패키지 존재 여부
 
       ## 💡 왜 이걸 하는가?
 
-      설치 사전 의존성 점검. eBPF 의존이라 kernel 버전 + auditd 호환 필수.
-    hint: 'apt repo + sysmonforlinux 설치 + sysmon -accepteula -i config.xml'
-    category: planning
-    points: 13
+      설치 사전 의존성 점검 = *production fail 회피*. eBPF 의존이라 kernel 버전 +
+      auditd 호환 *반드시* 사전 검증. 6v6 의 Ubuntu 22.04 기본 호환 — 다른 환경 (예:
+      RHEL 8 의 kernel 4.18) 일 시 별 검증.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 4 단계 + kernel 5.x + auditd active + libbpf 1.x
+      - **kernel < 4.18**: 설치 불가. kernel upgrade 또는 auditd 만 사용
+      - **auditd inactive**: sysmon 직접 사용 가능 (auditd 우선 X)
+
+      ## 비정상 시 대응
+
+      - **apt repo 실패** — 폐쇄망 인 경우 microsoft repo 미접근. *오프라인 .deb*
+        다운로드 후 dpkg -i (별도 서버 에서 pull)
+      - **kernel 호환 X** — RHEL 8 / CentOS 7 등 LTS 환경 의 *4.18 kernel* 은
+        sysmon 4.x 만 지원 (5.x X)
+      - **systemctl 명령 없음 (Docker)** — 본 환경 의 bastion 등 컨테이너 는 systemd
+        없음. host 직접 설치 필요
     answer: |
       cat <<'EOF'
       # 1. apt 설치
