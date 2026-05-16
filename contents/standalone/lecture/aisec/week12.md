@@ -571,7 +571,7 @@ CCC의 운영에서 현재 적용 중인 RL Steering 3가지다.
 
 ## 4 차시 — 자율 Purple cycle: Blue + Red + KG 의 통합
 
-### 4-1. 자율 Purple cycle 의 의의
+### 4-1. 자율 Purple cycle 의의
 
 W11의 자율 architecture, W12의 자율 Blue, 자율 Red, RL Steering까지 모든 학습을 통합한 것이 자율 Purple cycle이다.
 

@@ -812,7 +812,7 @@ W01 의 학습 계획 + 본 주차 학습 결과 반영. 본 과목 W02-W07 의 
 
 3. **Modelfile 사용자 정의 모델** — `ccc-secsec:4b` 의 SYSTEM prompt + PARAMETER 를 설정하고 `ollama create` 로 등록한 뒤 호출한다.
 
-4. **Bastion API의 KG + chat** — `/kg/metrics` 의 counter 와 `/chat` 으로 보낸 "PE-KG 의 의의" 응답을 확인한다. (평가 기준 A의 base)
+4. **Bastion API의 KG + chat** — `/kg/metrics` 의 counter 와 `/chat` 으로 보낸 "PE-KG 의의" 응답을 확인한다. (평가 기준 A의 base)
 
 5. **RAG 미니 Python 예** — Embed → Retrieve → Augment → Generate 4단계를 단순 keyword similarity로 시뮬레이션하는 Python demo. (평가 기준 B의 base)
 

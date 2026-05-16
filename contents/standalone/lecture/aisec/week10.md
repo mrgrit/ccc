@@ -85,7 +85,7 @@ Bastion: cve_check skill 호출 → CVE list 응답
 Bastion: ... (이 시점에서 거부해야 하지만, 누적된 context 의 정당화로 응답할 수 있음)
 ```
 
-운영의 의의 — 단발 prompt 의 거부 평가만으로 충분하지 않고 multi-turn 대화의 전체 trajectory 의 평가가 필요하다.
+운영의의 — 단발 prompt 의 거부 평가만으로 충분하지 않고 multi-turn 대화의 전체 trajectory 의 평가가 필요하다.
 
 ### 1-3. 추가 위협 2: Tool Permission Abuse
 
@@ -204,7 +204,7 @@ CCC Bastion 의 방어 — `auto_approve: False` default, `approval_mode: normal
 - **Dynamic Tool Loading** — task 시점에 tool 의 동적 활성.
 - **Tool Audit** — 사용 안 되는 tool 의 정기 제거.
 
-CCC Bastion 의 33 skill 의 의의 — task 별로 동적으로 활성화되는 skill catalog.
+CCC Bastion 의 33 skill 의의 — task 별로 동적으로 활성화되는 skill catalog.
 
 ### 1-9. CCC Bastion 의 에이전트 안전 의 실 구현
 
