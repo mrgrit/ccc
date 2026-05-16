@@ -7,14 +7,17 @@
 - 무선 프로토콜의 리플레이/재밍 공격 원리를 파악한다
 - 가상 환경에서 무선 프로토콜 시뮬레이션을 수행한다
 
-## 실습 환경 (공통)
+## 실습 환경 (6v6 4-tier, 공통)
 
-| 서버 | IP | 역할 | 접속 |
-|------|-----|------|------|
-| attacker | 10.20.30.201 | 공격/분석 머신 | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS | `ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | IoT 서비스 호스트 | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh) | `ssh ccc@10.20.30.100` |
+학생 PC 의 `~/.ssh/config` 의 ProxyJump 설정 후 `ssh 6v6-<name>` 으로 접속.
+
+| 컨테이너 | 6v6 IP | 역할 | 접속 |
+|---------|--------|------|------|
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
+| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
+| web | 10.20.32.80 | IoT 서비스 호스트 (Apache + JuiceShop) | `ssh 6v6-web` |
+| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
+| attacker | 10.20.30.202 | 공격/분석 머신 (pen-test 도구) | `ssh 6v6-attacker` |
 
 > 물리 SDR 장비 없이 Python 시뮬레이션으로 무선 프로토콜을 학습합니다.
 
