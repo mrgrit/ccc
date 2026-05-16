@@ -111,7 +111,7 @@
 > **실전 활용**: 내부 위협은 탐지가 어렵고 피해가 크므로, UEBA(사용자 행위 분석)가 SOC의 주요 과제이다
 
 ```bash
-ssh ccc@10.20.30.1 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-fw << 'ENDSSH'  # 비밀번호 자동입력 SSH
 echo "=== sudo 사용 이력 분석 ==="
 
 # 전체 sudo 명령 이력
@@ -141,7 +141,7 @@ ENDSSH
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-ssh ccc@10.20.30.1 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-fw << 'ENDSSH'  # 비밀번호 자동입력 SSH
 echo "=== auditd 규칙 확인 ==="
 
 # 현재 audit 규칙 확인
@@ -176,7 +176,7 @@ ENDSSH
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-ssh ccc@10.20.30.100 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-siem << 'ENDSSH'  # 비밀번호 자동입력 SSH
 echo "=== Wazuh 내부 위협 관련 경보 ==="
 
 cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c "
@@ -210,7 +210,7 @@ ENDSSH
 로그나 설정에서 특정 패턴을 검색합니다.
 
 ```bash
-ssh ccc@10.20.30.1 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-fw << 'ENDSSH'  # 비밀번호 자동입력 SSH
 echo "=== 시나리오 1: sudo 파일 열람 시뮬레이션 ==="
 
 echo "--- Step 1: 다른 사용자 디렉토리 접근 시도 ---"
@@ -238,7 +238,7 @@ ENDSSH
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-ssh ccc@10.20.30.1 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-fw << 'ENDSSH'  # 비밀번호 자동입력 SSH
 python3 << 'PYEOF'                                     # Python 스크립트 실행
 exfil_indicators = [
     {
@@ -279,7 +279,7 @@ ENDSSH
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-ssh ccc@10.20.30.1 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-fw << 'ENDSSH'  # 비밀번호 자동입력 SSH
 python3 << 'PYEOF'                                     # Python 스크립트 실행
 user_activities = [
     {"time": "09:00", "action": "login", "detail": "SSH 로그인"},
@@ -319,7 +319,7 @@ ENDSSH
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-ssh ccc@10.20.30.1 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-fw << 'ENDSSH'  # 비밀번호 자동입력 SSH
 echo "=== 계정 비활성화 절차 (교육용) ==="
 
 cat << 'PROCEDURE'
@@ -358,7 +358,7 @@ ENDSSH
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-ssh ccc@10.20.30.100 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-siem << 'ENDSSH'  # 비밀번호 자동입력 SSH
 echo "=== Wazuh Active Response 설정 예시 ==="
 
 cat << 'CONFIG'
@@ -412,7 +412,7 @@ curl -s http://localhost:8003/v1/chat/completions \
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
 python3 << 'PYEOF'                                     # Python 스크립트 실행
 controls = {
     "기술적 통제": [
@@ -618,7 +618,7 @@ docker run -p 5678:5678 docker.n8n.io/n8nio/n8n
 sudo tee /var/ossec/active-response/bin/custom-block.sh > /dev/null << 'EOF'
 #!/bin/bash
 ip=$3
-ssh ccc@10.20.30.1 "sudo nft add element inet filter blocked '{ $ip }'"
+ssh 6v6-fw "sudo nft add element inet filter blocked '{ $ip }'"
 EOF
 sudo chmod +x /var/ossec/active-response/bin/custom-block.sh
 ```

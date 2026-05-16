@@ -120,13 +120,13 @@
 
 ```bash
 # SQL Injection 관련 Suricata 알림 (검증 완료: fast.log에서 검색)
-ssh ccc@10.20.30.1 "echo 1 | sudo -S grep -iE 'sql|injection|sqli' /var/log/suricata/fast.log 2>/dev/null | tail -10"  # 비밀번호 자동입력 SSH
+ssh 6v6-fw "echo 1 | sudo -S grep -iE 'sql|injection|sqli' /var/log/suricata/fast.log 2>/dev/null | tail -10"  # 비밀번호 자동입력 SSH
 
 # 웹 공격 전체 알림
-ssh ccc@10.20.30.1 "grep -iE 'web|http|xss|rfi|lfi' /var/log/suricata/fast.log 2>/dev/null | tail -10"  # 비밀번호 자동입력 SSH
+ssh 6v6-fw "grep -iE 'web|http|xss|rfi|lfi' /var/log/suricata/fast.log 2>/dev/null | tail -10"  # 비밀번호 자동입력 SSH
 
 # eve.json에서 HTTP 이벤트
-ssh ccc@10.20.30.1 "cat /var/log/suricata/eve.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
+ssh 6v6-fw "cat /var/log/suricata/eve.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
 import sys, json
 for line in sys.stdin:                                 # 반복문 시작
     try:
@@ -145,11 +145,11 @@ for line in sys.stdin:                                 # 반복문 시작
 
 ```bash
 # WAF 차단 로그 (403 응답)
-ssh ccc@10.20.30.80 "grep ' 403 ' /var/log/nginx/access.log 2>/dev/null | tail -10"
-ssh ccc@10.20.30.80 "grep ' 403 ' /var/log/apache2/access.log 2>/dev/null | tail -10"
+ssh 6v6-web "grep ' 403 ' /var/log/nginx/access.log 2>/dev/null | tail -10"
+ssh 6v6-web "grep ' 403 ' /var/log/apache2/access.log 2>/dev/null | tail -10"
 
 # WAF 에러 로그
-ssh ccc@10.20.30.80 "tail -10 /var/log/nginx/error.log 2>/dev/null"
+ssh 6v6-web "tail -10 /var/log/nginx/error.log 2>/dev/null"
 ```
 
 ### 2.3 웹 로그에서 탐지
@@ -158,15 +158,15 @@ ssh ccc@10.20.30.80 "tail -10 /var/log/nginx/error.log 2>/dev/null"
 
 ```bash
 # SQL Injection 패턴 검색
-ssh ccc@10.20.30.80 "grep -iE \"union.*select|or.*1=1|'.*or.*'|drop.*table|insert.*into|sleep\(|benchmark\(\" \
+ssh 6v6-web "grep -iE \"union.*select|or.*1=1|'.*or.*'|drop.*table|insert.*into|sleep\(|benchmark\(\" \
   /var/log/nginx/access.log 2>/dev/null | tail -10"
 
 # XSS 패턴 검색
-ssh ccc@10.20.30.80 "grep -iE '<script|javascript:|onerror=|onload=|alert\(' \
+ssh 6v6-web "grep -iE '<script|javascript:|onerror=|onload=|alert\(' \
   /var/log/nginx/access.log 2>/dev/null | tail -10"
 
 # Path Traversal 패턴 검색
-ssh ccc@10.20.30.80 "grep -iE '\.\.\/|%2e%2e|/etc/passwd|/etc/shadow' \
+ssh 6v6-web "grep -iE '\.\.\/|%2e%2e|/etc/passwd|/etc/shadow' \
   /var/log/nginx/access.log 2>/dev/null | tail -10"
 ```
 
@@ -180,7 +180,7 @@ ssh ccc@10.20.30.80 "grep -iE '\.\.\/|%2e%2e|/etc/passwd|/etc/shadow' \
 
 ```bash
 # 공격 요청을 보낸 IP 목록
-ssh ccc@10.20.30.80 "grep -iE 'union|select|script|alert|\.\./' /var/log/nginx/access.log 2>/dev/null | \
+ssh 6v6-web "grep -iE 'union|select|script|alert|\.\./' /var/log/nginx/access.log 2>/dev/null | \
   awk '{print \$1}' | sort | uniq -c | sort -rn | head -5"  # 텍스트 필드 처리
 ```
 
@@ -193,15 +193,15 @@ ATTACKER_IP="10.0.0.1"  # 실제 발견된 IP로 변경
 echo "=== $ATTACKER_IP 활동 타임라인 ==="
 
 echo "[웹 접근]"
-ssh ccc@10.20.30.80 "grep '$ATTACKER_IP' /var/log/nginx/access.log 2>/dev/null | head -20"  # 비밀번호 자동입력 SSH
+ssh 6v6-web "grep '$ATTACKER_IP' /var/log/nginx/access.log 2>/dev/null | head -20"  # 비밀번호 자동입력 SSH
 
 echo ""
 echo "[IPS 탐지]"
-ssh ccc@10.20.30.1 "grep '$ATTACKER_IP' /var/log/suricata/fast.log 2>/dev/null"  # 비밀번호 자동입력 SSH
+ssh 6v6-fw "grep '$ATTACKER_IP' /var/log/suricata/fast.log 2>/dev/null"  # 비밀번호 자동입력 SSH
 
 echo ""
 echo "[Wazuh 알림]"
-ssh ccc@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
+ssh 6v6-siem "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
 import sys, json
 for line in sys.stdin:                                 # 반복문 시작
     try:
@@ -217,7 +217,7 @@ for line in sys.stdin:                                 # 반복문 시작
 
 ```bash
 # 공격 요청의 응답 코드 분석
-ssh ccc@10.20.30.80 "grep -iE 'union|select|script' /var/log/nginx/access.log 2>/dev/null | \
+ssh 6v6-web "grep -iE 'union|select|script' /var/log/nginx/access.log 2>/dev/null | \
   awk '{print \$9}' | sort | uniq -c | sort -rn"
 
 # 200 응답 = 공격 성공 가능성
@@ -229,10 +229,10 @@ ssh ccc@10.20.30.80 "grep -iE 'union|select|script' /var/log/nginx/access.log 2>
 
 ```bash
 # 데이터베이스 접근 여부 확인 (JuiceShop SQLite)
-ssh ccc@10.20.30.80 "find / -name '*.sqlite' -o -name '*.db' 2>/dev/null | head -5"
+ssh 6v6-web "find / -name '*.sqlite' -o -name '*.db' 2>/dev/null | head -5"
 
 # 서버 리소스 영향
-ssh ccc@10.20.30.80 "uptime; free -h | grep Mem; df -h / | tail -1"
+ssh 6v6-web "uptime; free -h | grep Mem; df -h / | tail -1"
 ```
 
 ---
@@ -244,10 +244,10 @@ ssh ccc@10.20.30.80 "uptime; free -h | grep Mem; df -h / | tail -1"
 ```bash
 # 방화벽에서 차단 (secu 서버)
 echo "=== IP 차단 명령 (시연) ==="
-echo "ssh ccc@10.20.30.1 'sudo nft add rule inet filter input ip saddr $ATTACKER_IP drop'"
+echo "ssh 6v6-fw 'sudo nft add rule inet filter input ip saddr $ATTACKER_IP drop'"
 echo ""
 echo "현재 차단 규칙:"
-ssh ccc@10.20.30.1 "sudo nft list ruleset 2>/dev/null | grep 'drop' | head -5"  # 비밀번호 자동입력 SSH
+ssh 6v6-fw "sudo nft list ruleset 2>/dev/null | grep 'drop' | head -5"  # 비밀번호 자동입력 SSH
 ```
 
 ### 4.2 WAF 규칙 강화
@@ -256,15 +256,15 @@ ssh ccc@10.20.30.1 "sudo nft list ruleset 2>/dev/null | grep 'drop' | head -5"  
 
 ```bash
 # Apache+ModSecurity/nginx WAF 설정 확인
-ssh ccc@10.20.30.80 "cat /etc/nginx/conf.d/*.conf 2>/dev/null | head -20"  # 비밀번호 자동입력 SSH
-ssh ccc@10.20.30.80 "ls /etc/apache2/ 2>/dev/null"  # 비밀번호 자동입력 SSH
+ssh 6v6-web "cat /etc/nginx/conf.d/*.conf 2>/dev/null | head -20"  # 비밀번호 자동입력 SSH
+ssh 6v6-web "ls /etc/apache2/ 2>/dev/null"  # 비밀번호 자동입력 SSH
 ```
 
 ### 4.3 웹 서비스 상태 확인
 
 ```bash
 # 웹 서비스 정상 동작 확인
-ssh ccc@10.20.30.80 "curl -s -o /dev/null -w '%{http_code}' http://localhost/ 2>/dev/null"
+ssh 6v6-web "curl -s -o /dev/null -w '%{http_code}' http://localhost/ 2>/dev/null"
 ```
 
 ---
@@ -275,21 +275,21 @@ ssh ccc@10.20.30.80 "curl -s -o /dev/null -w '%{http_code}' http://localhost/ 2>
 
 ```bash
 # 웹셸 여부 확인 (의심 파일 검색)
-ssh ccc@10.20.30.80 "find /var/www -name '*.php' -newer /etc/hostname -type f 2>/dev/null"
-ssh ccc@10.20.30.80 "find /tmp -type f -executable 2>/dev/null"
+ssh 6v6-web "find /var/www -name '*.php' -newer /etc/hostname -type f 2>/dev/null"
+ssh 6v6-web "find /tmp -type f -executable 2>/dev/null"
 
 # 서버 프로세스 확인 (비정상 프로세스)
-ssh ccc@10.20.30.80 "ps aux | grep -E 'nc |ncat |python.*http|perl.*socket' | grep -v grep"
+ssh 6v6-web "ps aux | grep -E 'nc |ncat |python.*http|perl.*socket' | grep -v grep"
 ```
 
 ### 5.2 복구
 
 ```bash
 # 서비스 상태 확인
-ssh ccc@10.20.30.80 "systemctl status apache2 2>/dev/null | grep Active"
+ssh 6v6-web "systemctl status apache2 2>/dev/null | grep Active"
 
 # 로그 수집 정상 확인
-ssh ccc@10.20.30.80 "systemctl is-active wazuh-agent 2>/dev/null"
+ssh 6v6-web "systemctl is-active wazuh-agent 2>/dev/null"
 ```
 
 ---
@@ -303,13 +303,13 @@ EVIDENCE="/tmp/web_incident_$(date +%Y%m%d_%H%M)"
 echo "증거 수집: $EVIDENCE"
 
 # 웹 로그
-ssh ccc@10.20.30.80 "cat /var/log/nginx/access.log" 2>/dev/null > /tmp/web_access_evidence.txt
+ssh 6v6-web "cat /var/log/nginx/access.log" 2>/dev/null > /tmp/web_access_evidence.txt
 
 # IPS 로그
-ssh ccc@10.20.30.1 "cat /var/log/suricata/fast.log" 2>/dev/null > /tmp/suricata_evidence.txt
+ssh 6v6-fw "cat /var/log/suricata/fast.log" 2>/dev/null > /tmp/suricata_evidence.txt
 
 # Wazuh 알림
-ssh ccc@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json" 2>/dev/null > /tmp/wazuh_evidence.txt
+ssh 6v6-siem "cat /var/ossec/logs/alerts/alerts.json" 2>/dev/null > /tmp/wazuh_evidence.txt
 
 # 해시값 생성
 sha256sum /tmp/*_evidence.txt 2>/dev/null
@@ -435,7 +435,7 @@ sha256sum /tmp/*_evidence.txt 2>/dev/null
 
 ```bash
 # siem 서버에서 최근 경보 확인
-ssh ccc@10.20.30.100 "  # 비밀번호 자동입력 SSH
+ssh 6v6-siem "  # 비밀번호 자동입력 SSH
   echo '=== 최근 경보 (level >= 7) ==='
   sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | \
     python3 -c '                                       # Python 코드 실행

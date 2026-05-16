@@ -149,17 +149,17 @@
 # 탐지 도구 상태
 echo "=== 탐지 도구 ==="
 echo -n "Wazuh Manager: "
-ssh ccc@10.20.30.100 "systemctl is-active wazuh-manager 2>/dev/null"  # 비밀번호 자동입력 SSH
+ssh 6v6-siem "systemctl is-active wazuh-manager 2>/dev/null"  # 비밀번호 자동입력 SSH
 echo -n "Suricata IPS: "
-ssh ccc@10.20.30.1 "systemctl is-active suricata 2>/dev/null"  # 비밀번호 자동입력 SSH
+ssh 6v6-fw "systemctl is-active suricata 2>/dev/null"  # 비밀번호 자동입력 SSH
 
 # 대응 도구 상태
 echo ""
 echo "=== 대응 도구 ==="
 echo -n "방화벽(nftables): "
-ssh ccc@10.20.30.1 "sudo nft list ruleset 2>/dev/null | head -1 && echo 'OK'"  # 비밀번호 자동입력 SSH
+ssh 6v6-fw "sudo nft list ruleset 2>/dev/null | head -1 && echo 'OK'"  # 비밀번호 자동입력 SSH
 echo -n "Active Response: "
-ssh ccc@10.20.30.100 "ls /var/ossec/active-response/bin/ 2>/dev/null | wc -l"  # 비밀번호 자동입력 SSH
+ssh 6v6-siem "ls /var/ossec/active-response/bin/ 2>/dev/null | wc -l"  # 비밀번호 자동입력 SSH
 
 # 로그 수집 상태
 echo ""
@@ -172,7 +172,7 @@ done
 # 백업 상태
 echo ""
 echo "=== 백업 ==="
-ssh ccc@10.20.30.201 "ls /backup/ 2>/dev/null || echo '백업 디렉토리 없음'"  # 비밀번호 자동입력 SSH
+ssh 6v6-bastion "ls /backup/ 2>/dev/null || echo '백업 디렉토리 없음'"  # 비밀번호 자동입력 SSH
 ```
 
 ---
@@ -199,7 +199,7 @@ echo "=== 초기 분석 시작: $(date) ==="
 # 1. 고위험 알림 확인
 echo ""
 echo "[1] 최근 고위험 알림"
-ssh ccc@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
+ssh 6v6-siem "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
 import sys, json
 for line in sys.stdin:                                 # 반복문 시작
     try:
@@ -221,17 +221,17 @@ done
 # 3. 네트워크 연결 확인
 echo ""
 echo "[3] 비정상 네트워크 연결"
-ssh ccc@10.20.30.201 "ss -tnp | grep ESTABLISHED"  # 비밀번호 자동입력 SSH
+ssh 6v6-bastion "ss -tnp | grep ESTABLISHED"  # 비밀번호 자동입력 SSH
 
 # 4. 최근 로그인
 echo ""
 echo "[4] 최근 로그인"
-ssh ccc@10.20.30.201 "last | head -10"  # 비밀번호 자동입력 SSH
+ssh 6v6-bastion "last | head -10"  # 비밀번호 자동입력 SSH
 
 # 5. 최근 파일 변경
 echo ""
 echo "[5] 최근 24시간 내 변경된 중요 파일"
-ssh ccc@10.20.30.201 "find /etc -mtime -1 -type f 2>/dev/null | head -10"  # 비밀번호 자동입력 SSH
+ssh 6v6-bastion "find /etc -mtime -1 -type f 2>/dev/null | head -10"  # 비밀번호 자동입력 SSH
 ```
 
 ### 4.3 인시던트 심각도 결정
@@ -270,11 +270,11 @@ echo "=== 계정 잠금 예시 ==="
 echo "sudo passwd -l suspicious_user"
 
 # 활성 세션 확인 및 종료
-ssh ccc@10.20.30.201 "who"
+ssh 6v6-bastion "who"
 echo "강제 종료: sudo pkill -u suspicious_user"
 
 # 의심 프로세스 확인
-ssh ccc@10.20.30.201 "ps aux | grep -E 'nc |ncat |socat |python.*http' | grep -v grep"
+ssh 6v6-bastion "ps aux | grep -E 'nc |ncat |socat |python.*http' | grep -v grep"
 ```
 
 ---
@@ -289,18 +289,18 @@ echo "find / -name '*.php' -newer /tmp/reference_time -type f 2>/dev/null"
 
 # 2. 백도어 확인
 echo "=== cron 작업 확인 ==="
-ssh ccc@10.20.30.201 "crontab -l 2>/dev/null; ls -la /etc/cron.d/ 2>/dev/null"  # 비밀번호 자동입력 SSH
+ssh 6v6-bastion "crontab -l 2>/dev/null; ls -la /etc/cron.d/ 2>/dev/null"  # 비밀번호 자동입력 SSH
 
 echo "=== authorized_keys 확인 ==="
-ssh ccc@10.20.30.201 "cat ~/.ssh/authorized_keys 2>/dev/null || echo '없음'"  # 비밀번호 자동입력 SSH
+ssh 6v6-bastion "cat ~/.ssh/authorized_keys 2>/dev/null || echo '없음'"  # 비밀번호 자동입력 SSH
 
 # 3. 비밀번호 변경
 echo "=== 비밀번호 변경 필요 계정 ==="
-ssh ccc@10.20.30.201 "awk -F: '\$3>=1000 && \$3<65534 {print \$1}' /etc/passwd"  # 비밀번호 자동입력 SSH
+ssh 6v6-bastion "awk -F: '\$3>=1000 && \$3<65534 {print \$1}' /etc/passwd"  # 비밀번호 자동입력 SSH
 
 # 4. 취약점 패치
 echo "=== 패치 현황 ==="
-ssh ccc@10.20.30.201 "apt list --upgradable 2>/dev/null | head -5"  # 비밀번호 자동입력 SSH
+ssh 6v6-bastion "apt list --upgradable 2>/dev/null | head -5"  # 비밀번호 자동입력 SSH
 ```
 
 ---
@@ -319,10 +319,10 @@ done
 
 # 2. 모니터링 강화
 echo "=== 모니터링 상태 ==="
-ssh ccc@10.20.30.100 "systemctl is-active wazuh-manager 2>/dev/null"
+ssh 6v6-siem "systemctl is-active wazuh-manager 2>/dev/null"
 
 # 3. 방화벽 규칙 확인
-ssh ccc@10.20.30.1 "sudo nft list ruleset 2>/dev/null | wc -l"
+ssh 6v6-fw "sudo nft list ruleset 2>/dev/null | wc -l"
 ```
 
 ---
@@ -459,7 +459,7 @@ ssh ccc@10.20.30.1 "sudo nft list ruleset 2>/dev/null | wc -l"
 
 ```bash
 # siem 서버에서 최근 경보 확인
-ssh ccc@10.20.30.100 "  # 비밀번호 자동입력 SSH
+ssh 6v6-siem "  # 비밀번호 자동입력 SSH
   echo '=== 최근 경보 (level >= 7) ==='
   sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | \
     python3 -c '                                       # Python 코드 실행

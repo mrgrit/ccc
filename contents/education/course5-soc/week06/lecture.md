@@ -132,23 +132,23 @@
 ```bash
 # 1단계: 정찰 (Reconnaissance) - TA0043
 # 포트 스캔 흔적
-ssh ccc@10.20.30.1 "grep -i 'scan' /var/log/suricata/fast.log 2>/dev/null | tail -5"
+ssh 6v6-fw "grep -i 'scan' /var/log/suricata/fast.log 2>/dev/null | tail -5"
 
 # 2단계: 초기 접근 (Initial Access) - TA0001
 # SSH 무차별 대입 공격
-ssh ccc@10.20.30.201 "grep 'Failed password' /var/log/auth.log 2>/dev/null | \
+ssh 6v6-bastion "grep 'Failed password' /var/log/auth.log 2>/dev/null | \
   awk '{print \$(NF-3)}' | sort | uniq -c | sort -rn | head -5"
 
 # 무차별 대입 후 성공 여부
-ssh ccc@10.20.30.201 "grep 'Accepted password' /var/log/auth.log 2>/dev/null | tail -5"
+ssh 6v6-bastion "grep 'Accepted password' /var/log/auth.log 2>/dev/null | tail -5"
 
 # 3단계: 실행 (Execution) - TA0002
 # 로그인 후 실행된 명령 (auth.log에서 sudo 사용 확인)
-ssh ccc@10.20.30.201 "grep 'sudo:' /var/log/auth.log 2>/dev/null | tail -10"
+ssh 6v6-bastion "grep 'sudo:' /var/log/auth.log 2>/dev/null | tail -10"
 
 # 4단계: 권한 상승 (Privilege Escalation) - TA0004
 # sudo를 통한 root 권한 획득
-ssh ccc@10.20.30.201 "grep 'COMMAND=' /var/log/auth.log 2>/dev/null | tail -10"
+ssh 6v6-bastion "grep 'COMMAND=' /var/log/auth.log 2>/dev/null | tail -10"
 ```
 
 ### 2.2 시나리오: 웹 공격 체인
@@ -157,17 +157,17 @@ ssh ccc@10.20.30.201 "grep 'COMMAND=' /var/log/auth.log 2>/dev/null | tail -10"
 
 ```bash
 # 1단계: 정찰 - 디렉토리 스캐닝
-ssh ccc@10.20.30.80 "grep ' 404 ' /var/log/nginx/access.log 2>/dev/null | \
+ssh 6v6-web "grep ' 404 ' /var/log/nginx/access.log 2>/dev/null | \
   awk '{print \$1}' | sort | uniq -c | sort -rn | head -5"  # 텍스트 필드 처리
 
 # 2단계: 초기 접근 - SQL Injection 시도
-ssh ccc@10.20.30.80 "grep -iE 'union|select.*from|or.1=1' /var/log/nginx/access.log 2>/dev/null | tail -5"  # 비밀번호 자동입력 SSH
+ssh 6v6-web "grep -iE 'union|select.*from|or.1=1' /var/log/nginx/access.log 2>/dev/null | tail -5"  # 비밀번호 자동입력 SSH
 
 # 3단계: Suricata에서 웹 공격 탐지
-ssh ccc@10.20.30.1 "grep -i 'SQL\|XSS\|injection\|web' /var/log/suricata/fast.log 2>/dev/null | tail -10"  # 비밀번호 자동입력 SSH
+ssh 6v6-fw "grep -i 'SQL\|XSS\|injection\|web' /var/log/suricata/fast.log 2>/dev/null | tail -10"  # 비밀번호 자동입력 SSH
 
 # 4단계: Wazuh에서 웹 공격 경보
-ssh ccc@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
+ssh 6v6-siem "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
 import sys, json
 for line in sys.stdin:                                 # 반복문 시작
     try:
@@ -190,7 +190,7 @@ Wazuh는 일부 규칙에 MITRE ATT&CK ID를 포함하고 있다.
 
 ```bash
 # ATT&CK 매핑이 있는 경보 확인
-ssh ccc@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
+ssh 6v6-siem "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
 import sys, json
 from collections import Counter
 techniques = Counter()
@@ -251,14 +251,14 @@ else:
 
 echo "=== 1. 정찰 단계 ==="
 echo "포트 스캔 흔적:"
-ssh ccc@10.20.30.1 "grep -i 'scan' /var/log/suricata/fast.log 2>/dev/null | wc -l"  # 비밀번호 자동입력 SSH
+ssh 6v6-fw "grep -i 'scan' /var/log/suricata/fast.log 2>/dev/null | wc -l"  # 비밀번호 자동입력 SSH
 
 echo ""
 echo "=== 2. 초기 접근 시도 ==="
 echo "SSH 무차별 대입:"
-ssh ccc@10.20.30.201 "grep -c 'Failed password' /var/log/auth.log 2>/dev/null || echo '0'"  # 비밀번호 자동입력 SSH
+ssh 6v6-bastion "grep -c 'Failed password' /var/log/auth.log 2>/dev/null || echo '0'"  # 비밀번호 자동입력 SSH
 echo "웹 공격 시도:"
-ssh ccc@10.20.30.80 "grep -cE 'union|select|script' /var/log/nginx/access.log 2>/dev/null || echo '0'"  # 비밀번호 자동입력 SSH
+ssh 6v6-web "grep -cE 'union|select|script' /var/log/nginx/access.log 2>/dev/null || echo '0'"  # 비밀번호 자동입력 SSH
 
 echo ""
 echo "=== 3. 초기 접근 성공 ==="
@@ -268,14 +268,14 @@ ssh 6v6-bastion "grep 'Accepted' /var/log/auth.log 2>/dev/null | grep -v '10.20.
 echo ""
 echo "=== 4. 권한 상승 ==="
 echo "sudo 사용:"
-ssh ccc@10.20.30.201 "grep 'COMMAND=' /var/log/auth.log 2>/dev/null | tail -5"  # 비밀번호 자동입력 SSH
+ssh 6v6-bastion "grep 'COMMAND=' /var/log/auth.log 2>/dev/null | tail -5"  # 비밀번호 자동입력 SSH
 
 echo ""
 echo "=== 5. 지속성 확보 (의심) ==="
 echo "cron 변경:"
-ssh ccc@10.20.30.201 "ls -la /var/spool/cron/crontabs/ 2>/dev/null"  # 비밀번호 자동입력 SSH
+ssh 6v6-bastion "ls -la /var/spool/cron/crontabs/ 2>/dev/null"  # 비밀번호 자동입력 SSH
 echo "SSH authorized_keys:"
-ssh ccc@10.20.30.201 "ls -la ~/.ssh/authorized_keys 2>/dev/null || echo '없음'"  # 비밀번호 자동입력 SSH
+ssh 6v6-bastion "ls -la ~/.ssh/authorized_keys 2>/dev/null || echo '없음'"  # 비밀번호 자동입력 SSH
 ```
 
 ---
@@ -411,7 +411,7 @@ ATT&CK Navigator에서 해당 기법에 색상을 표시하여 "우리 환경의
 
 ```bash
 # siem 서버에서 최근 경보 확인
-ssh ccc@10.20.30.100 "  # 비밀번호 자동입력 SSH
+ssh 6v6-siem "  # 비밀번호 자동입력 SSH
   echo '=== 최근 경보 (level >= 7) ==='
   sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | \
     python3 -c '                                       # Python 코드 실행

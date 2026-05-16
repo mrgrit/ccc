@@ -178,16 +178,16 @@ Mar 27 10:15:03 bastion sshd[12345]: Accepted password for user from 10.20.30.20
 
 ```bash
 # 최근 syslog 확인
-ssh ccc@10.20.30.201 "tail -20 /var/log/syslog"
+ssh 6v6-bastion "tail -20 /var/log/syslog"
 
 # 오류 메시지만 필터링
-ssh ccc@10.20.30.201 "grep -i 'error\|fail\|critical' /var/log/syslog | tail -10"
+ssh 6v6-bastion "grep -i 'error\|fail\|critical' /var/log/syslog | tail -10"
 
 # 특정 서비스의 로그만 추출
-ssh ccc@10.20.30.201 "grep 'sshd' /var/log/syslog | tail -10"
+ssh 6v6-bastion "grep 'sshd' /var/log/syslog | tail -10"
 
 # rsyslog 설정 확인
-ssh ccc@10.20.30.201 "cat /etc/rsyslog.conf | grep -v '^#' | grep -v '^$' | head -20"
+ssh 6v6-bastion "cat /etc/rsyslog.conf | grep -v '^#' | grep -v '^$' | head -20"
 ```
 
 ---
@@ -208,17 +208,17 @@ auth.log는 SOC 분석원이 **가장 먼저 확인**하는 로그이다.
 
 ```bash
 # SSH 로그인 성공
-ssh ccc@10.20.30.201 "grep 'Accepted' /var/log/auth.log | tail -10"
+ssh 6v6-bastion "grep 'Accepted' /var/log/auth.log | tail -10"
 
 # SSH 로그인 실패
-ssh ccc@10.20.30.201 "grep 'Failed password' /var/log/auth.log | tail -10"
+ssh 6v6-bastion "grep 'Failed password' /var/log/auth.log | tail -10"
 
 # 실패한 사용자명 통계
-ssh ccc@10.20.30.201 "grep 'Failed password' /var/log/auth.log 2>/dev/null | \
+ssh 6v6-bastion "grep 'Failed password' /var/log/auth.log 2>/dev/null | \
   awk '{for(i=1;i<=NF;i++) if(\$i==\"for\") print \$(i+1)}' | sort | uniq -c | sort -rn | head -10"
 
 # 실패한 출발지 IP 통계
-ssh ccc@10.20.30.201 "grep 'Failed password' /var/log/auth.log 2>/dev/null | \
+ssh 6v6-bastion "grep 'Failed password' /var/log/auth.log 2>/dev/null | \
   awk '{print \$(NF-3)}' | sort | uniq -c | sort -rn | head -10"
 ```
 
@@ -226,24 +226,24 @@ ssh ccc@10.20.30.201 "grep 'Failed password' /var/log/auth.log 2>/dev/null | \
 
 ```bash
 # sudo 명령 실행 이력
-ssh ccc@10.20.30.201 "grep 'sudo:' /var/log/auth.log | tail -10"
+ssh 6v6-bastion "grep 'sudo:' /var/log/auth.log | tail -10"
 
 # sudo 실패 (권한 없는 사용자의 시도)
-ssh ccc@10.20.30.201 "grep 'NOT in sudoers' /var/log/auth.log 2>/dev/null"
+ssh 6v6-bastion "grep 'NOT in sudoers' /var/log/auth.log 2>/dev/null"
 
 # su 명령 사용 이력
-ssh ccc@10.20.30.201 "grep 'su:' /var/log/auth.log | tail -5"
+ssh 6v6-bastion "grep 'su:' /var/log/auth.log | tail -5"
 ```
 
 ### 4.4 실습: 무차별 대입 공격 패턴 식별
 
 ```bash
 # 1분 내 동일 IP에서 5회 이상 실패 = 무차별 대입 의심
-ssh ccc@10.20.30.201 "grep 'Failed password' /var/log/auth.log 2>/dev/null | \
+ssh 6v6-bastion "grep 'Failed password' /var/log/auth.log 2>/dev/null | \
   awk '{print \$1,\$2,substr(\$3,1,5),\$(NF-3)}' | sort | uniq -c | sort -rn | head -10"
 
 # 존재하지 않는 사용자로 시도 (Invalid user)
-ssh ccc@10.20.30.201 "grep 'Invalid user' /var/log/auth.log 2>/dev/null | tail -10"
+ssh 6v6-bastion "grep 'Invalid user' /var/log/auth.log 2>/dev/null | tail -10"
 ```
 
 ---
@@ -254,22 +254,22 @@ ssh ccc@10.20.30.201 "grep 'Invalid user' /var/log/auth.log 2>/dev/null | tail -
 
 ```bash
 # 최근 로그 확인
-ssh ccc@10.20.30.201 "journalctl --no-pager | tail -20"
+ssh 6v6-bastion "journalctl --no-pager | tail -20"
 
 # 특정 서비스의 로그
-ssh ccc@10.20.30.201 "journalctl -u sshd --no-pager | tail -10"
+ssh 6v6-bastion "journalctl -u sshd --no-pager | tail -10"
 
 # 시간 범위로 필터링
-ssh ccc@10.20.30.201 "journalctl --since '1 hour ago' --no-pager | tail -20"
+ssh 6v6-bastion "journalctl --since '1 hour ago' --no-pager | tail -20"
 
 # 부팅 이후 로그
-ssh ccc@10.20.30.201 "journalctl -b --no-pager | tail -10"
+ssh 6v6-bastion "journalctl -b --no-pager | tail -10"
 
 # 우선순위별 필터링 (err 이상)
-ssh ccc@10.20.30.201 "journalctl -p err --no-pager | tail -10"
+ssh 6v6-bastion "journalctl -p err --no-pager | tail -10"
 
 # 커널 메시지만
-ssh ccc@10.20.30.201 "journalctl -k --no-pager | tail -10"
+ssh 6v6-bastion "journalctl -k --no-pager | tail -10"
 ```
 
 ### 5.2 journal vs syslog 비교
@@ -286,13 +286,13 @@ ssh ccc@10.20.30.201 "journalctl -k --no-pager | tail -10"
 
 ```bash
 # JSON 형식으로 출력 (필드 확인)
-ssh ccc@10.20.30.201 "journalctl -u sshd -o json --no-pager | tail -1 | python3 -m json.tool 2>/dev/null"
+ssh 6v6-bastion "journalctl -u sshd -o json --no-pager | tail -1 | python3 -m json.tool 2>/dev/null"
 
 # 특정 PID의 로그
-ssh ccc@10.20.30.201 "journalctl _PID=1 --no-pager | tail -5"
+ssh 6v6-bastion "journalctl _PID=1 --no-pager | tail -5"
 
 # 디스크 사용량 확인
-ssh ccc@10.20.30.201 "journalctl --disk-usage 2>/dev/null"
+ssh 6v6-bastion "journalctl --disk-usage 2>/dev/null"
 ```
 
 ---
@@ -326,7 +326,7 @@ done
 
 ```bash
 # 현재 감사 규칙 확인
-ssh ccc@10.20.30.201 "sudo auditctl -l 2>/dev/null || echo '규칙 없음 또는 auditd 미설치'"
+ssh 6v6-bastion "sudo auditctl -l 2>/dev/null || echo '규칙 없음 또는 auditd 미설치'"
 
 # /etc/passwd 파일 변경 감시 규칙 (예시)
 # sudo auditctl -w /etc/passwd -p wa -k passwd_changes
@@ -335,7 +335,7 @@ ssh ccc@10.20.30.201 "sudo auditctl -l 2>/dev/null || echo '규칙 없음 또는
 # sudo auditctl -w /etc/shadow -p r -k shadow_access
 
 # audit 로그 확인
-ssh ccc@10.20.30.201 "tail -10 /var/log/audit/audit.log 2>/dev/null || echo 'audit 로그 없음'"
+ssh 6v6-bastion "tail -10 /var/log/audit/audit.log 2>/dev/null || echo 'audit 로그 없음'"
 ```
 
 ### 6.4 auditd 로그 형식
@@ -585,7 +585,7 @@ ORG-1657 ::: {
 
 ### 학생 환경 준비
 ```bash
-ssh ccc@10.20.30.100
+ssh 6v6-siem
 pip3 install opensearch-py wazuh-rest
 
 # Graylog (대안 SIEM, 학습 참고)

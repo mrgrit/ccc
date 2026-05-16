@@ -121,7 +121,7 @@ SOC 분석원은 경보를 분석하여 **실제 위협인지 판별**한다.
 
 ```bash
 # 경보 샘플 추출
-ssh ccc@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
+ssh 6v6-siem "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
 import sys, json
 alerts = []
 for line in sys.stdin:                                 # 반복문 시작
@@ -221,7 +221,7 @@ for i, a in enumerate(alerts[-10:], 1):                # 반복문 시작
 
 ```bash
 # 오늘의 경보 현황
-ssh ccc@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
+ssh 6v6-siem "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
 import sys, json
 from collections import Counter
 levels = Counter()
@@ -258,7 +258,7 @@ for agent, cnt in agents.most_common():                # 반복문 시작
 
 ```bash
 # Level 8 이상 경보 상세 분석
-ssh ccc@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
+ssh 6v6-siem "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
 import sys, json
 for line in sys.stdin:                                 # 반복문 시작
     try:
@@ -288,7 +288,7 @@ for line in sys.stdin:                                 # 반복문 시작
 # 특정 규칙 ID에 대한 모든 경보
 RULE_ID="5710"  # SSH authentication failed (예시)
 
-ssh ccc@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
+ssh 6v6-siem "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
 import sys, json
 from collections import Counter
 sources = Counter()
@@ -344,7 +344,7 @@ for user, cnt in targets.most_common(5):               # 반복문 시작
 
 ```bash
 # SSH 실패 경보 중 TP/FP 판별
-ssh ccc@10.20.30.201 "grep 'Failed password' /var/log/auth.log 2>/dev/null | \
+ssh 6v6-bastion "grep 'Failed password' /var/log/auth.log 2>/dev/null | \
   awk '{
     # IP 추출
     for(i=1;i<=NF;i++) if($i==\"from\") ip=$(i+1)
@@ -368,7 +368,7 @@ ssh ccc@10.20.30.201 "grep 'Failed password' /var/log/auth.log 2>/dev/null | \
 
 ```bash
 # 반복되는 FP 경보 확인
-ssh ccc@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
+ssh 6v6-siem "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
 import sys, json
 from collections import Counter
 rules = Counter()

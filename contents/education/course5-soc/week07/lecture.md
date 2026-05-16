@@ -251,7 +251,7 @@ level: medium
 
 ```bash
 # 실제 환경에서 이 패턴이 발생하는지 확인
-ssh ccc@10.20.30.201 "grep 'Failed password' /var/log/auth.log 2>/dev/null | \
+ssh 6v6-bastion "grep 'Failed password' /var/log/auth.log 2>/dev/null | \
   awk '{print \$(NF-3)}' | sort | uniq -c | sort -rn | awk '\$1>5 {print \$1, \$2}' | head -5"  # 텍스트 필드 처리
 ```
 
@@ -288,7 +288,7 @@ level: high
 
 검증:
 ```bash
-ssh ccc@10.20.30.201 "grep 'COMMAND=' /var/log/auth.log 2>/dev/null | \
+ssh 6v6-bastion "grep 'COMMAND=' /var/log/auth.log 2>/dev/null | \
   grep -E 'bash|sh |passwd|useradd|userdel|chmod' | tail -5"  # 패턴 검색
 ```
 
@@ -326,7 +326,7 @@ level: high
 
 검증:
 ```bash
-ssh ccc@10.20.30.80 "grep -iE 'union.select|or.1=1|drop.table|sleep\(' /var/log/nginx/access.log 2>/dev/null | tail -5"
+ssh 6v6-web "grep -iE 'union.select|or.1=1|drop.table|sleep\(' /var/log/nginx/access.log 2>/dev/null | tail -5"
 ```
 
 ### 4.4 규칙 4: 파일 무결성 위반
@@ -393,14 +393,14 @@ SIGMA 규칙을 Wazuh의 XML 규칙으로 변환한다:
 # sigma convert -t wazuh -p wazuh ssh_bruteforce.yml
 
 # 현재 Wazuh의 사용자 정의 규칙 확인
-ssh ccc@10.20.30.100 "cat /var/ossec/etc/rules/local_rules.xml 2>/dev/null"
+ssh 6v6-siem "cat /var/ossec/etc/rules/local_rules.xml 2>/dev/null"
 ```
 
 ### 5.3 Wazuh에 규칙 추가 후 테스트
 
 ```bash
 # 규칙 문법 검증
-ssh ccc@10.20.30.100 "/var/ossec/bin/wazuh-logtest 2>/dev/null <<< 'Mar 27 10:00:00 bastion sshd[1234]: Failed password for root from 10.0.0.1 port 22 ssh2'"
+ssh 6v6-siem "/var/ossec/bin/wazuh-logtest 2>/dev/null <<< 'Mar 27 10:00:00 bastion sshd[1234]: Failed password for root from 10.0.0.1 port 22 ssh2'"
 ```
 
 ---
@@ -482,7 +482,7 @@ level: medium
 검증:
 ```bash
 # 새벽 시간대 로그인 확인
-ssh ccc@10.20.30.201 "grep 'Accepted' /var/log/auth.log 2>/dev/null | \
+ssh 6v6-bastion "grep 'Accepted' /var/log/auth.log 2>/dev/null | \
   awk '{print \$3}' | awk -F: '{h=\$1; if(h>=22||h<=5) print}' | head -10"  # 텍스트 필드 처리
 ```
 

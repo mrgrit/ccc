@@ -123,7 +123,7 @@
 > **실전 활용**: CTI 기반 선제 탐지는 알려진 위협을 조기에 차단하는 SOC의 핵심 역량이다
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
 python3 << 'PYEOF'                                     # Python 스크립트 실행
 # 교육용 IOC 데이터베이스 시뮬레이션
 ioc_database = {
@@ -165,7 +165,7 @@ ENDSSH
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-ssh ccc@10.20.30.1 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-fw << 'ENDSSH'  # 비밀번호 자동입력 SSH
 echo "=== IOC 매칭: 네트워크 로그 vs 악성 IP ==="
 
 MALICIOUS_IPS="45.33.32.156 185.220.101.35 91.219.236.222"
@@ -196,7 +196,7 @@ ENDSSH
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-ssh ccc@10.20.30.100 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-siem << 'ENDSSH'  # 비밀번호 자동입력 SSH
 echo "=== Wazuh CDB 리스트 기반 IOC 탐지 ==="
 
 cat << 'EXPLAIN'
@@ -236,7 +236,7 @@ ENDSSH
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
 python3 << 'PYEOF'                                     # Python 스크립트 실행
 import json
 
@@ -286,7 +286,7 @@ ENDSSH
 파일 시스템을 검색하여 보안 관련 항목을 찾습니다.
 
 ```bash
-ssh ccc@10.20.30.1 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-fw << 'ENDSSH'  # 비밀번호 자동입력 SSH
 echo "=== 위협 헌팅 실습 ==="
 echo "가설: 내부 서버에서 외부 C2 서버로 비콘 통신이 발생하고 있다"
 echo ""
@@ -320,7 +320,7 @@ ENDSSH
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-ssh ccc@10.20.30.1 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-fw << 'ENDSSH'  # 비밀번호 자동입력 SSH
 echo "=== Suricata 로그 위협 헌팅 ==="
 
 cat /var/log/suricata/eve.json 2>/dev/null | python3 -c "
@@ -378,7 +378,7 @@ curl -s http://localhost:8003/v1/chat/completions \
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
 python3 << 'PYEOF'                                     # Python 스크립트 실행
 import json
 from datetime import datetime

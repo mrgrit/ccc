@@ -150,7 +150,7 @@ for e in json.load(sys.stdin)[:10]:
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
 cat << 'SCRIPT' > /tmp/soc_daemon.sh
 #!/bin/bash
 OLLAMA_URL="http://localhost:8003/v1/chat/completions"
@@ -159,13 +159,13 @@ echo "=== SOC Daemon 시작 ($(date)) ==="
 
 # 1. Suricata 최신 경보 수집
 echo "[1] Suricata 경보 수집"
-SURICATA_ALERTS=$(ssh ccc@10.20.30.1 \
+SURICATA_ALERTS=$(ssh 6v6-fw \
   "tail -20 /var/log/suricata/fast.log 2>/dev/null" 2>/dev/null)
 echo "  수집: $(echo "$SURICATA_ALERTS" | wc -l)줄"
 
 # 2. Wazuh 최신 경보 수집
 echo "[2] Wazuh 경보 수집"
-WAZUH_ALERTS=$(ssh ccc@10.20.30.100 \
+WAZUH_ALERTS=$(ssh 6v6-siem \
   "tail -5 /var/ossec/logs/alerts/alerts.json 2>/dev/null" 2>/dev/null)
 echo "  수집: $(echo "$WAZUH_ALERTS" | wc -l)줄"
 
@@ -197,7 +197,7 @@ ENDSSH
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
 python3 << 'PYEOF'                                     # Python 스크립트 실행
 alerts = [
     {"time": "09:01", "source": "suricata", "severity": "low", "desc": "HTTP 스캔 탐지"},
@@ -264,7 +264,7 @@ curl -s -X POST http://10.20.30.200:8003/ask \
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
 python3 << 'PYEOF'                                     # Python 스크립트 실행
 def detect(log_entry):
     keywords = {
@@ -315,7 +315,7 @@ ENDSSH
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
 python3 << 'PYEOF'                                     # Python 스크립트 실행
 roles = {
     "자동화(AI) 담당": [
