@@ -682,7 +682,7 @@ SQL Injection 공격이 발생하면 Wazuh가 웹 서버 로그에서 패턴을 
 
 ```bash
 # siem 서버에서 최근 알림 조회
-ssh ccc@10.20.30.100 "sudo tail -30 /var/ossec/logs/alerts/alerts.json" 2>/dev/null \
+ssh 6v6-siem "sudo tail -30 /var/ossec/logs/alerts/alerts.json" 2>/dev/null \
   | python3 -c "
 import sys, json
 for line in sys.stdin:
@@ -705,7 +705,7 @@ for line in sys.stdin:
 
 ```bash
 # secu 서버에서 Suricata alert 확인
-ssh ccc@10.20.30.1 "sudo tail -10 /var/log/suricata/fast.log" 2>/dev/null | head -5
+ssh 6v6-fw "sudo tail -10 /var/log/suricata/fast.log" 2>/dev/null | head -5
 ```
 
 **예상 출력 (있다면):**

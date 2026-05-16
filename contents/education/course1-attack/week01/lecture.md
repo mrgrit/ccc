@@ -324,7 +324,7 @@ graph TD
 
 ```bash
 # 학생 PC 터미널에서 실행
-ssh ccc@10.20.30.200
+ssh 6v6-bastion
 # 비밀번호: 1
 ```
 
@@ -371,7 +371,7 @@ manager 안에서 다른 VM으로 점프한다.
 
 ```bash
 # web 서버에 접속하여 hostname 확인 후 자동 종료
-ssh ccc@10.20.30.80 'hostname && whoami'
+ssh 6v6-web 'hostname && whoami'
 # 비밀번호 입력 (1)
 # 예상 출력:
 # web
@@ -379,7 +379,7 @@ ssh ccc@10.20.30.80 'hostname && whoami'
 ```
 
 **이 명령의 구조:**
-- `ssh ccc@10.20.30.80 '명령'`: 서버에 접속하자마자 명령을 실행하고 돌아옴 (인터랙티브 쉘 열지 않음)
+- `ssh 6v6-web '명령'`: 서버에 접속하자마자 명령을 실행하고 돌아옴 (인터랙티브 쉘 열지 않음)
 - 작은따옴표 `'...'`: 원격에서 실행할 명령 묶음
 
 **트러블슈팅:**
@@ -388,8 +388,8 @@ ssh ccc@10.20.30.80 'hostname && whoami'
 
 다른 서버들도 같은 방식으로 확인:
 ```bash
-ssh ccc@10.20.30.1 'hostname'    # secu
-ssh ccc@10.20.30.100 'hostname'  # siem
+ssh 6v6-fw 'hostname'    # secu
+ssh 6v6-siem 'hostname'  # siem
 ```
 
 ---
@@ -734,7 +734,7 @@ curl -s http://10.20.30.200:8003/health | python3 -m json.tool
 - `skills` / `playbooks`: 등록된 기능 수
 
 **문제 해결:**
-- 응답 없으면 `ssh ccc@10.20.30.200 'sudo systemctl status bastion-api'`로 서비스 상태 확인
+- 응답 없으면 `ssh 6v6-bastion 'sudo systemctl status bastion-api'`로 서비스 상태 확인
 
 ## 4.5 Skill과 Playbook 조회
 

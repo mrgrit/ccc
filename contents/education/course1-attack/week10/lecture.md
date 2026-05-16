@@ -45,7 +45,7 @@
 ## 1.2 secu의 nftables 확인
 
 ```bash
-ssh ccc@10.20.30.1 "sudo nft list ruleset" | head -40
+ssh 6v6-fw "sudo nft list ruleset" | head -40
 ```
 
 **예상 출력 (간략):**
@@ -78,7 +78,7 @@ table inet filter {
 ## 1.3 통계가 있는 룰 확인 (히트 수)
 
 ```bash
-ssh ccc@10.20.30.1 "sudo nft list ruleset -a" | head -20
+ssh 6v6-fw "sudo nft list ruleset -a" | head -20
 ```
 
 `-a`는 각 룰의 handle 번호와 counter를 보여준다. counter가 있으면 "몇 개 패킷이 이 룰에 매칭됐는지" 확인 가능 → 어느 룰이 실제로 쓰이는지 관찰.
@@ -124,13 +124,13 @@ alert http any any -> $HOME_NET any (
 
 ```bash
 # 룰셋 파일 목록
-ssh ccc@10.20.30.1 "sudo ls /etc/suricata/rules/" 2>/dev/null
+ssh 6v6-fw "sudo ls /etc/suricata/rules/" 2>/dev/null
 
 # 로컬 커스텀 룰
-ssh ccc@10.20.30.1 "sudo cat /etc/suricata/rules/local.rules" 2>/dev/null
+ssh 6v6-fw "sudo cat /etc/suricata/rules/local.rules" 2>/dev/null
 
 # 설정에서 로드되는 룰 파일
-ssh ccc@10.20.30.1 "sudo grep -E 'rule-files|rule-path' /etc/suricata/suricata.yaml" 2>/dev/null
+ssh 6v6-fw "sudo grep -E 'rule-files|rule-path' /etc/suricata/suricata.yaml" 2>/dev/null
 ```
 
 ---
@@ -155,7 +155,7 @@ echo "== 이중 인코딩 =="
 curl -s -o /dev/null -w "HTTP %{http_code}\n" "http://10.20.30.80:3000/rest/products/search?q=test%2527%2520UNION%2520SELECT%25201--"
 
 # Suricata 탐지 여부 확인
-ssh ccc@10.20.30.1 "sudo tail -5 /var/log/suricata/fast.log" 2>/dev/null
+ssh 6v6-fw "sudo tail -5 /var/log/suricata/fast.log" 2>/dev/null
 ```
 
 ## 3.2 대소문자 혼합
@@ -207,7 +207,7 @@ sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=apple" \
 
 ```bash
 # 터미널 1: secu에서 ICMP 패킷 내용 관찰
-ssh ccc@10.20.30.1 "sudo tcpdump -i any icmp -nn -c 10 -X" 2>/dev/null &
+ssh 6v6-fw "sudo tcpdump -i any icmp -nn -c 10 -X" 2>/dev/null &
 
 # 터미널 2 (manager): 큰 패턴 ping
 ping -s 1400 -p deadbeef -c 3 10.20.30.80
@@ -232,7 +232,7 @@ curl -s "http://10.20.30.80:3000/rest/products/search?q=test" \
   -o /dev/null -w "HTTP %{http_code}\n"
 
 # secu에서 tcpdump로 이 패턴 관찰
-ssh ccc@10.20.30.1 "sudo tcpdump -i any 'port 3000' -A -nn -c 20" 2>/dev/null | head -30
+ssh 6v6-fw "sudo tcpdump -i any 'port 3000' -A -nn -c 20" 2>/dev/null | head -30
 ```
 
 **탐지 관점:**
@@ -259,7 +259,7 @@ sudo nmap -D RND:5 -p 22,80,3000 10.20.30.80
 sudo nmap --source-port 53 -p 22,80,3000 10.20.30.80
 
 # 각 스캔 후 Suricata 탐지 확인
-ssh ccc@10.20.30.1 "sudo tail -10 /var/log/suricata/fast.log" 2>/dev/null | tail -5
+ssh 6v6-fw "sudo tail -10 /var/log/suricata/fast.log" 2>/dev/null | tail -5
 ```
 
 **결과 해석:**
@@ -298,16 +298,16 @@ alert http any any -> $HOME_NET any (msg:"Custom SQLi UNION SELECT flexible"; fl
 
 ```bash
 # 문법 검증
-ssh ccc@10.20.30.1 "sudo suricata -T -c /etc/suricata/suricata.yaml" 2>&1 | tail -5
+ssh 6v6-fw "sudo suricata -T -c /etc/suricata/suricata.yaml" 2>&1 | tail -5
 
 # reload
-ssh ccc@10.20.30.1 "sudo systemctl reload suricata" 2>/dev/null
+ssh 6v6-fw "sudo systemctl reload suricata" 2>/dev/null
 ```
 
 ## 5.3 Wazuh에서 확인
 
 ```bash
-ssh ccc@10.20.30.100 \
+ssh 6v6-siem \
   "sudo grep -iE 'suricata|scan|sqli' /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -3"
 ```
 

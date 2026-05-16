@@ -519,7 +519,7 @@ GET /api/Users/550e8400-e29b-41d4-a716-446655440000
 ## 6.1 Wazuh에서 인증 공격 탐지
 
 ```bash
-ssh ccc@10.20.30.100 \
+ssh 6v6-siem \
   "sudo grep -iE 'auth|login|brute' /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -5"
 ```
 
@@ -533,7 +533,7 @@ ssh ccc@10.20.30.100 \
 IDOR 자체는 정상 HTTP 요청이라 Suricata로 탐지하기 어렵다. **인증 공격**만 탐지 가능.
 
 ```bash
-ssh ccc@10.20.30.1 "sudo grep -iE 'brute|auth' /var/log/suricata/fast.log" 2>/dev/null | tail -3
+ssh 6v6-fw "sudo grep -iE 'brute|auth' /var/log/suricata/fast.log" 2>/dev/null | tail -3
 ```
 
 ## 6.3 접근 제어 취약점 탐지의 한계

@@ -192,7 +192,7 @@ tcpdump는 Berkeley Packet Filter(BPF) 구문으로 조건 필터링.
 **Step 1: 터미널 1 (secu 서버에서 캡처 시작)**
 
 ```bash
-ssh ccc@10.20.30.1
+ssh 6v6-fw
 
 # 인터페이스 확인
 ip addr show | grep inet
@@ -234,7 +234,7 @@ sudo nmap -sS -p 22,80,3000 10.20.30.80
 ## 3.5 SYN 패킷만 필터링
 
 ```bash
-ssh ccc@10.20.30.1 "sudo tcpdump -i any 'tcp[tcpflags] & tcp-syn != 0' -nn -c 30" &
+ssh 6v6-fw "sudo tcpdump -i any 'tcp[tcpflags] & tcp-syn != 0' -nn -c 30" &
 # 동시에 manager에서
 sudo nmap -sS -p 1-100 10.20.30.80
 ```
@@ -251,7 +251,7 @@ sudo nmap -sS -p 1-100 10.20.30.80
 
 ```bash
 # secu에서 저장
-ssh ccc@10.20.30.1 "sudo tcpdump -i any -w /tmp/scan.pcap host 10.20.30.80 -c 200"
+ssh 6v6-fw "sudo tcpdump -i any -w /tmp/scan.pcap host 10.20.30.80 -c 200"
 
 # manager에서 스캔 실행
 sudo nmap -sS -p 1-1000 10.20.30.80
@@ -356,7 +356,7 @@ ip neigh show
 ## 6.1 secu의 Suricata 룰 확인
 
 ```bash
-ssh ccc@10.20.30.1 "sudo ls /etc/suricata/rules/ | head -20"
+ssh 6v6-fw "sudo ls /etc/suricata/rules/ | head -20"
 ```
 
 ## 6.2 스캔 탐지 시도
@@ -370,7 +370,7 @@ sudo nmap -sS -p 1-1000 10.20.30.80
 **Step 2: Suricata alert 확인 (secu)**
 
 ```bash
-ssh ccc@10.20.30.1 "sudo tail -20 /var/log/suricata/fast.log" 2>/dev/null
+ssh 6v6-fw "sudo tail -20 /var/log/suricata/fast.log" 2>/dev/null
 ```
 
 **예상 alert:**
@@ -386,7 +386,7 @@ ssh ccc@10.20.30.1 "sudo tail -20 /var/log/suricata/fast.log" 2>/dev/null
 ## 6.3 Wazuh에서도 확인
 
 ```bash
-ssh ccc@10.20.30.100 \
+ssh 6v6-siem \
   "sudo grep -iE 'scan|nmap' /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -5"
 ```
 

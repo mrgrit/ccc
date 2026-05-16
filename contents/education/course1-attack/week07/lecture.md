@@ -471,7 +471,7 @@ function isPrivateIP(ip) {
 ## 6.1 Wazuh/Apache 로그에서 흔적
 
 ```bash
-ssh ccc@10.20.30.80 "sudo grep -iE '%2e%2e|%252e|%00|%2500|file://' /var/log/apache2/access.log" 2>/dev/null | head -5
+ssh 6v6-web "sudo grep -iE '%2e%2e|%252e|%00|%2500|file://' /var/log/apache2/access.log" 2>/dev/null | head -5
 ```
 
 **탐지 패턴:**

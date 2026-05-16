@@ -82,7 +82,7 @@ cat /tmp/week12_key.pub
 
 # 2. web에 공개키 삽입
 PUBKEY=$(cat /tmp/week12_key.pub)
-ssh ccc@10.20.30.80 "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '$PUBKEY' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
+ssh 6v6-web "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '$PUBKEY' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
 
 # 3. 키 기반 접속 테스트 (패스워드 미입력)
 ssh -i /tmp/week12_key -o StrictHostKeyChecking=no ccc@10.20.30.80 "whoami && date"
@@ -96,7 +96,7 @@ Thu Apr 23 14:30:22 KST 2026
 
 **정리 (필수):**
 ```bash
-ssh ccc@10.20.30.80 "sed -i '/week12/d' ~/.ssh/authorized_keys"
+ssh 6v6-web "sed -i '/week12/d' ~/.ssh/authorized_keys"
 rm -f /tmp/week12_key /tmp/week12_key.pub
 ```
 
@@ -106,21 +106,21 @@ rm -f /tmp/week12_key /tmp/week12_key.pub
 
 ```bash
 # 1. 설치 전 상태 확인
-ssh ccc@10.20.30.80 "crontab -l 2>/dev/null || echo '(cron 없음)'"
+ssh 6v6-web "crontab -l 2>/dev/null || echo '(cron 없음)'"
 
 # 2. 비콘 cron 설치 (안전한 버전 — 파일 기록만)
-ssh ccc@10.20.30.80 '(crontab -l 2>/dev/null; echo "* * * * * echo \$(date) >> /tmp/beacon.log") | crontab -'
+ssh 6v6-web '(crontab -l 2>/dev/null; echo "* * * * * echo \$(date) >> /tmp/beacon.log") | crontab -'
 
 # 3. 1분 대기 후 동작 확인
 sleep 65
-ssh ccc@10.20.30.80 "cat /tmp/beacon.log"
+ssh 6v6-web "cat /tmp/beacon.log"
 ```
 
 **예상 출력:** 1분 간격 타임스탬프 누적.
 
 **정리:**
 ```bash
-ssh ccc@10.20.30.80 "crontab -l | grep -v 'beacon.log' | crontab -; rm -f /tmp/beacon.log"
+ssh 6v6-web "crontab -l | grep -v 'beacon.log' | crontab -; rm -f /tmp/beacon.log"
 ```
 
 **실제 공격 예시 (설치·실행 금지 — 개념 이해용):**
@@ -134,7 +134,7 @@ ssh ccc@10.20.30.80 "crontab -l | grep -v 'beacon.log' | crontab -; rm -f /tmp/b
 
 ```bash
 # 설치 예시 (실습 서버에서만)
-ssh ccc@10.20.30.80 << 'EOF'
+ssh 6v6-web << 'EOF'
 sudo tee /etc/systemd/system/sysupdate.service > /dev/null << 'SVC'
 [Unit]
 Description=Fake System Update
@@ -157,7 +157,7 @@ EOF
 
 **정리:**
 ```bash
-ssh ccc@10.20.30.80 "sudo systemctl disable --now sysupdate.service; sudo rm /etc/systemd/system/sysupdate.service; sudo systemctl daemon-reload; sudo rm -f /tmp/svc_beacon.log"
+ssh 6v6-web "sudo systemctl disable --now sysupdate.service; sudo rm /etc/systemd/system/sysupdate.service; sudo systemctl daemon-reload; sudo rm -f /tmp/svc_beacon.log"
 ```
 
 ## 2.4 Shell 설정 파일 수정 (T1546.004)
@@ -166,7 +166,7 @@ ssh ccc@10.20.30.80 "sudo systemctl disable --now sysupdate.service; sudo rm /et
 
 ```bash
 # 설치
-ssh ccc@10.20.30.80 << 'EOF'
+ssh 6v6-web << 'EOF'
 cp ~/.bashrc ~/.bashrc.backup
 echo "# sys_update" >> ~/.bashrc
 echo "echo \"\$(date) login \$(hostname) \$(whoami)\" >> /tmp/login_beacon.log 2>/dev/null" >> ~/.bashrc
@@ -174,12 +174,12 @@ tail -3 ~/.bashrc
 EOF
 
 # 새 SSH 세션 → 비콘 동작
-ssh ccc@10.20.30.80 "cat /tmp/login_beacon.log 2>/dev/null"
+ssh 6v6-web "cat /tmp/login_beacon.log 2>/dev/null"
 ```
 
 **정리:**
 ```bash
-ssh ccc@10.20.30.80 "cp ~/.bashrc.backup ~/.bashrc; rm -f ~/.bashrc.backup /tmp/login_beacon.log"
+ssh 6v6-web "cp ~/.bashrc.backup ~/.bashrc; rm -f ~/.bashrc.backup /tmp/login_beacon.log"
 ```
 
 ## 2.5 사용자 계정 생성 (T1136.001)
@@ -188,18 +188,18 @@ ssh ccc@10.20.30.80 "cp ~/.bashrc.backup ~/.bashrc; rm -f ~/.bashrc.backup /tmp/
 
 ```bash
 # 일반 sudoer 계정 생성 (root 권한 필요 — sudo NOPASSWD로 가능)
-ssh ccc@10.20.30.80 "sudo useradd -m -s /bin/bash -G sudo sysadmin; echo 'sysadmin:P@ssw0rd123' | sudo chpasswd"
+ssh 6v6-web "sudo useradd -m -s /bin/bash -G sudo sysadmin; echo 'sysadmin:P@ssw0rd123' | sudo chpasswd"
 
 # UID 0 백도어 (매우 위험 — 개념만)
 # echo 'backdoor:$(openssl passwd -1 password123):0:0::/root:/bin/bash' | sudo tee -a /etc/passwd
 
 # 확인
-ssh ccc@10.20.30.80 "grep sysadmin /etc/passwd"
+ssh 6v6-web "grep sysadmin /etc/passwd"
 ```
 
 **정리:**
 ```bash
-ssh ccc@10.20.30.80 "sudo userdel -r sysadmin 2>/dev/null; grep sysadmin /etc/passwd || echo '삭제 완료'"
+ssh 6v6-web "sudo userdel -r sysadmin 2>/dev/null; grep sysadmin /etc/passwd || echo '삭제 완료'"
 ```
 
 ## 2.6 웹셸 (개념)
@@ -301,7 +301,7 @@ rm /dev/shm/memtool
 ## 4.1 통합 점검 스크립트
 
 ```bash
-ssh ccc@10.20.30.80 << 'FORENSIC'
+ssh 6v6-web << 'FORENSIC'
 echo "=== 1. 최근 로그인 ==="
 last -10 2>/dev/null | head -5
 
@@ -338,7 +338,7 @@ FORENSIC
 
 ```bash
 # Wazuh에서 authorized_keys, crontab, passwd 변경 감지
-ssh ccc@10.20.30.100 \
+ssh 6v6-siem \
   "sudo grep -iE 'authorized_keys|crontab|passwd' /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -5"
 ```
 

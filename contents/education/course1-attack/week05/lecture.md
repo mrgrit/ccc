@@ -476,21 +476,21 @@ res.cookie('session', token, {
 **이것은 무엇인가?** XSS 페이로드는 URL 파라미터·POST 본문을 통해 전달된다. 서버 접근 로그에 `<`, `script`, `onerror` 같은 키워드가 남는다.
 
 ```bash
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "sudo tail -100 /var/log/apache2/access.log | grep -iE '<script|onerror|onload|javascript:'" 2>/dev/null | head -5
 ```
 
 ## 9.2 Wazuh 알림
 
 ```bash
-ssh ccc@10.20.30.100 \
+ssh 6v6-siem \
   "sudo grep -iE 'xss|cross.site|script' /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -3"
 ```
 
 ## 9.3 Suricata IPS 패턴
 
 ```bash
-ssh ccc@10.20.30.1 "sudo grep -iE 'script|onerror' /var/log/suricata/fast.log" 2>/dev/null | tail -3
+ssh 6v6-fw "sudo grep -iE 'script|onerror' /var/log/suricata/fast.log" 2>/dev/null | tail -3
 ```
 
 **주요 XSS Suricata 룰:**
