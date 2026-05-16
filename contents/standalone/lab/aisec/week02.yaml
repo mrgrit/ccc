@@ -125,9 +125,56 @@ steps:
   # ============================================================
   - order: 2
     instruction: |
-      gemma3:4b 의 호출. 사이버보안 도메인의 prompt (SSH log 분석) 의 응답 + 분석.
+      ## 🎯 MISSION — Ollama API 첫 호출 + 사이버보안 prompt (SSH brute log 분석)
+
+      gemma3:4b 의 `/api/generate` 첫 호출. SSH 인증 실패 3 회 의 log 를 LLM 에
+      전달 → 한국어 분석 응답 받기. *프롬프트 → 응답* 의 LLM 사용 기본 패턴 학습.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **/api/generate** = 단일 prompt → 응답 (비-streaming). chat history X
+      - **/api/chat** = multi-turn (system + user + assistant)
+      - **temperature** = 0 (결정성, 같은 답) ~ 1 (창의성, 매번 다른 답). 0.3 = 보수
+      - **num_ctx** = context window 크기. 4096 = 약 4k 토큰. 긴 log 면 8192+
+      - **stream: false** = 한 번에 응답. true = 토큰 별 스트림
+
+      ## 💻 실행 명령
+
+      ```bash
+      curl -s http://192.168.0.109:11434/api/generate -d '{
+        "model": "gemma3:4b",
+        "prompt": "다음 보안 로그를 한국어로 분석해줘:\n[2026-05-12 14:32:18] sshd[1234]: Failed password for ccc from 1.2.3.4 port 22\n[2026-05-12 14:32:25] sshd[1235]: Failed password for ccc from 1.2.3.4 port 22\n[2026-05-12 14:32:32] sshd[1236]: Failed password for ccc from 1.2.3.4 port 22",
+        "stream": false,
+        "options": {"temperature": 0.3, "num_ctx": 4096}
+      }' 2>&1 | head -50
+      ```
+
+      ## 📋 확인 사항
+
+      - JSON 응답 의 `response` 필드 에 한국어 분석 텍스트
+      - 응답 에 SSH / sshd / 1.2.3.4 / brute force 등 키워드 등장
+      - 응답 시간 3-10 초 (gemma3:4b 의 일반 latency)
+
+      ## 💡 왜 이걸 하는가?
+
+      LLM 사용 의 *가장 기본* 흐름 — prompt → 응답. 본 step 의 SSH log 분석 이
+      W11 (자율보안) 의 *real-time alert 분석* 의 기반.
+
+      ## 🔍 결과 해석
+
+      - **정상**: response 필드 에 한국어 분석 + 3 SSH 시도 인지 + brute force 추정
+      - **응답 없음 (curl error)**: Ollama 서버 미가동 또는 IP 잘못 — `curl
+        http://192.168.0.109:11434/` 확인
+      - **응답 길이 < 100 자**: prompt 가 모호 — 명확화 (예: "분석" → "5W 분석")
+      - **timeout > 30 초**: 모델 미pull 또는 cold start — 1 회 호출 후 재시도
+
+      ## 비정상 시 대응
+
+      - **GPU 부하** — 다른 chat 가 GPU 점유. 5 분 cooling 후 재시도 (GPU 발열 원칙)
+      - **응답 영어 만** — system message 명시 (`/api/chat` 사용 권장)
+      - **JSON parse error** — quote escape 확인 (특히 \n)
     hint: |
-      curl http://192.168.0.109:11434/api/generate -d '{"model": "gemma3:4b", "prompt": "...", "stream": false}'
+      /api/generate + prompt SSH log + temperature 0.3 + JSON parse.
     category: experiment
     points: 20
     answer: |
@@ -172,9 +219,74 @@ steps:
   # ============================================================
   - order: 3
     instruction: |
-      Modelfile 작성 + 사이버보안 도메인의 사용자 정의 모델 생성 + 호출.
+      ## 🎯 MISSION — Modelfile 작성 + ccc-secsec:4b 사용자 정의 모델 생성 + 호출
+
+      Ollama 의 *사용자 정의 모델* 메커니즘 — Modelfile. base 모델 (gemma3:4b) 위에
+      *system prompt + parameter* 를 묶어 *새 모델* 생성. 본 step 에서 ccc-secsec:4b
+      (한국어 보안 전문) 생성 + 효과 검증.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **Modelfile** = Dockerfile 의 LLM 버전. base 모델 + system + parameter + template
+      - **FROM** = base 모델 (gemma3:4b)
+      - **SYSTEM** = 모든 호출 에 자동 prefix 되는 instruction (한국어 강제 / 도메인 등)
+      - **PARAMETER** = temperature / top_p / num_ctx 등 default 값
+      - **ollama create** = Modelfile 로 *새 모델* 등록 (base 모델 의 weight 변경 X)
+
+      ## 💻 실행 명령 + 검증
+
+      ```bash
+      cat > /tmp/Modelfile.secsec <<'EOF'
+      FROM gemma3:4b
+
+      SYSTEM """
+      당신은 사이버보안 전문 AI 어시스턴트입니다.
+      한국어로 응답합니다.
+      응답은 사실 위주 + 운영 권장 포함 + ISMS-P / NIST CSF 매핑 (관련 시).
+      """
+
+      PARAMETER temperature 0.3
+      PARAMETER top_p 0.9
+      PARAMETER num_ctx 8192
+      EOF
+
+      # 모델 생성
+      ollama create ccc-secsec:4b -f /tmp/Modelfile.secsec
+      ollama list | grep ccc-secsec
+
+      # 호출 — system prompt 효과 확인
+      curl -s http://192.168.0.109:11434/api/generate -d '{
+        "model": "ccc-secsec:4b",
+        "prompt": "본 환경 의 정상 SSH 시도 와 brute force 시도 의 차이를 한국어로",
+        "stream": false
+      }' | jq -r .response | head -20
+      ```
+
+      ## 📋 확인 사항
+
+      - `ollama create` 성공 (success 출력)
+      - `ollama list` 에 ccc-secsec:4b 표시
+      - 호출 응답 *한국어* (system prompt 효과)
+      - 응답 에 ISMS-P / NIST CSF / 운영 권장 등 키워드
+
+      ## 💡 왜 이걸 하는가?
+
+      Modelfile 이 *조직 별 사용자 정의 LLM* 의 가장 단순 한 형태. *학습 weight 변경
+      없이* system prompt + parameter 만 으로 *도메인 특화 모델* 생성. 본 step 의
+      ccc-secsec:4b 가 다음 step 의 *비교 baseline*.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 모델 생성 + 한국어 응답 + 보안 키워드
+      - **영어 응답**: system prompt 무시 — Modelfile 의 SYSTEM 재확인
+      - **모델 생성 실패**: FROM 모델 미pull — `ollama pull gemma3:4b` 후 재시도
+
+      ## 비정상 시 대응
+
+      - **Modelfile syntax error** — FROM / SYSTEM / PARAMETER 의 *대문자* 필수
+      - **disk full** — Modelfile 모델 도 layer 저장 (수십 MB) — 디스크 여유 확인
     hint: |
-      ollama create ccc-secsec:4b -f Modelfile
+      Modelfile (FROM + SYSTEM + PARAMETER) + ollama create + 한국어 응답 검증.
     category: configuration
     points: 25
     answer: |
@@ -231,11 +343,63 @@ steps:
   # ============================================================
   - order: 4
     instruction: |
-      Bastion API 의 KG 통합 가시화 + 다음 chat ("Bastion 의 PE-KG 모델 의의 를
-      한국어로") 호출.
+      ## 🎯 MISSION — Bastion API 의 KG 통합 가시화 + chat 호출 (PE-KG 모델 의의)
+
+      Bastion 의 `/kg/metrics` (KG counter) + `/chat` (PE-KG 모델 의의 질문) 의 2
+      endpoint 호출. CCC 의 *실 운영 LLM 에이전트* 의 KG 통합 가시화 + chat 응답
+      품질 확인.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **PE-KG** = Playbook + Experience + Knowledge Graph. Bastion 의 핵심 모델
+      - **/kg/metrics** = KG 호출 counter snapshot (call count / hit rate / anchor 수)
+      - **/chat** = Bastion 의 ReAct loop 호출. master agent (Claude) / manager
+        (gpt-oss:120b) 선택
+      - **master agent** = Claude Code 가 daily 작업 시 사용 (콘텐츠 제작 + 분석)
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-bastion '
+      echo "=== Bastion KG metrics ==="
+      curl -s -H "X-API-Key: ccc-api-key-2026" \
+          http://localhost:8003/kg/metrics 2>&1 | jq | head -20
+
+      echo ""
+      echo "=== Bastion chat (5-10 분 대기) ==="
+      curl -s -X POST \
+          -H "X-API-Key: ccc-api-key-2026" \
+          -H "Content-Type: application/json" \
+          -d "{\"message\":\"Bastion 의 PE-KG 모델 (Playbook + Experience + Knowledge Graph) 의 의의를 한국어로 알려주세요.\", \"agent\":\"master\"}" \
+          http://localhost:8003/chat 2>&1 | head -80
+      '
+      ```
+
+      ## 📋 확인 사항
+
+      - KG metrics 응답 — call_count / hit_count / anchor_count 등 counter
+      - chat 응답 5-10 분 후 — PE-KG / Playbook / Experience / KG 키워드 등장
+      - kg_status event 포함 (CCC CLAUDE.md 원칙)
+      - 한국어 응답
+
+      ## 💡 왜 이걸 하는가?
+
+      Bastion 의 *실 운영 LLM 에이전트* 의 hands-on. lecture 의 *PE-KG 이론* → *실
+      API 호출* → 응답 품질 평가 의 3 단계 학습 흐름.
+
+      ## 🔍 결과 해석
+
+      - **정상**: metrics counter + chat 한국어 응답 + PE-KG 키워드
+      - **chat 10 분 초과**: GPU 부하 (다른 chat 동시 실행) — cooling 후 재시도
+      - **응답 영어**: prompt 가 영어 키워드 가득 → 한국어 강제 system message 추가
+
+      ## 비정상 시 대응
+
+      - **401 Unauthorized** — X-API-Key 누락
+      - **/chat 응답 없음** — Manager (gpt-oss:120b) 미가동 — `/health` 로 확인
+      - **kg_status event 누락** — CCC CLAUDE.md 의 KG 통합 위반, 즉시 보고
     hint: |
-      curl /kg/metrics
-      curl /chat -d "{"message":"..."}"
+      /kg/metrics + /chat (master agent) + 한국어 응답 + 5-10 분 latency.
     category: experiment
     points: 25
     answer: |
@@ -282,10 +446,90 @@ steps:
   # ============================================================
   - order: 5
     instruction: |
-      RAG 의 4 단계 (Embed → Retrieve → Augment → Generate) 의 미니 Python 예시.
-      simple keyword similarity 로 retrieve 시뮬 + LLM 호출.
+      ## 🎯 MISSION — RAG 4 단계 (Embed → Retrieve → Augment → Generate) 미니 Python
+      demo
+
+      RAG (Retrieval-Augmented Generation) 의 *4 단계 흐름* 을 Python 미니 코드 로
+      구현. simple keyword similarity (real embedding 대체) 로 retrieve → LLM 호출.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **RAG** = LLM 의 *외부 지식 결합* 패턴. LLM 가 *모르는 정보* 를 corpus 에서
+        검색 후 prompt 에 추가
+      - **4 단계** = Embed (문서 → vector) → Retrieve (query 와 유사한 vector) →
+        Augment (prompt + retrieved) → Generate (LLM 호출)
+      - **simple keyword similarity** = 본 미니 demo 의 *embedding 대체*. 실 운영
+        은 sentence-transformer / OpenAI ada / bge-m3 등
+      - **W14 의 RAG 검증** = 본 step 의 *심화* — 변조 chunk 검출
+
+      ## 💻 실행 명령
+
+      ```bash
+      cat > /tmp/rag_demo.py <<'PY'
+      """RAG 미니 demo — keyword similarity 기반"""
+
+      documents = [
+          "SQL Injection 은 OWASP A03 의 대표 web vuln 이다.",
+          "XSS 는 사용자 브라우저에서 임의 JS 실행을 가능하게 한다.",
+          "CSRF 는 사용자가 의도하지 않은 요청을 발생시킨다.",
+          "Wazuh 는 오픈소스 SIEM 이며 4.10 버전이 최신이다.",
+          "Suricata 는 IDS / IPS 로 동작하며 ETOpen 룰셋이 표준이다.",
+      ]
+
+      query = "SQLi 의 정의"
+
+      # 1. Embed (simple keyword set 으로 대체)
+      def sim(doc, q):
+          q_w = set(q.lower().split())
+          d_w = set(doc.lower().split())
+          return len(q_w & d_w) / (len(q_w) + 1)
+
+      # 2. Retrieve (top-k = 2)
+      scores = sorted([(d, sim(d, query)) for d in documents], key=lambda x: -x[1])
+      top_k = scores[:2]
+
+      # 3. Augment
+      context = "\n".join([d for d, _ in top_k])
+      prompt = f"다음 context 기반 으로 답: \n{context}\n\nQ: {query}\nA:"
+
+      # 4. Generate (실 LLM 호출 시뮬 — print 만)
+      print("=== RAG 4 단계 demo ===\n")
+      print(f"1. Documents: {len(documents)}")
+      print(f"2. Query: {query}")
+      print(f"3. Retrieved top-2:")
+      for d, s in top_k:
+          print(f"   [score={s:.2f}] {d[:50]}...")
+      print(f"\n4. Augmented prompt 의 첫 200 자:")
+      print(f"   {prompt[:200]}...")
+      PY
+      python3 /tmp/rag_demo.py
+      ```
+
+      ## 📋 확인 사항
+
+      - 4 단계 모두 출력 (Documents 5 / Query / Retrieved top-2 / Augmented prompt)
+      - top-2 의 *첫 번째* 가 SQL Injection 관련 (sim score > 다른 문서)
+      - Augmented prompt 가 retrieved context 포함
+
+      ## 💡 왜 이걸 하는가?
+
+      RAG 가 *LLM 의 한계 극복* 의 핵심 패턴. *모델 모르는 정보* → *corpus 검색* →
+      *최신/정확 답*. 본 미니 demo 가 W14 의 RAG 검증 의 *기반*.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 4 단계 출력 + top-2 SQL Injection 1 위
+      - **top-2 의 1 위 가 SQL 아님**: keyword similarity 의 한계 — 실 운영 은
+        embedding 사용
+      - **Augmented prompt 빈 context**: documents 와 query 의 keyword 안 겹침
+
+      ## 비정상 시 대응
+
+      - **Python syntax error**: indent / quote escape 확인
+      - **실 LLM 호출 추가** (옵션) — curl `$OLLAMA/api/generate` 로 prompt 전달
     hint: |
-      python3 의 simple RAG demo
+      4 단계 (Embed/Retrieve/Augment/Generate) Python + keyword similarity + LLM
+      대체.
     category: experiment
     points: 15
     answer: |
