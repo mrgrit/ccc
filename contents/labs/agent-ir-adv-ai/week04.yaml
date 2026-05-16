@@ -551,3 +551,143 @@ steps:
     cat ~/w04/vpce.json'
   risk_level: low
   bastion_prompt: VPC Endpoint 정책
+- order: 100
+  instruction: '[Multi-task] Cloud IAM 자동 Pivot IR 5단계 통합 — 키 유효성 → 권한 enum → SIGMA → GuardDuty → VPCe 정책.'
+  bastion_prompt: |
+    Cloud IAM 자동 Pivot 공격 IR 5단계 chain 을 한 흐름으로 수행해줘. AWS 의사 시뮬.
+
+    1) [IAM 키 유효성 시뮬] mkdir -p ~/w04; cat > ~/w04/iam-keys.log <<EOF
+       === aws sts get-caller-identity (시뮬) ===
+       {
+         "UserId": "AIDAEXAMPLE12345",
+         "Account": "123456789012",
+         "Arn": "arn:aws:iam::123456789012:user/dev-leaked-key-2024"
+       }
+       Status: VALID (위험: prod 권한 가능)
+       EOF
+       cat ~/w04/iam-keys.log. MITRE T1078.004 매핑.
+
+    2) [IAM 권한 enum - Pacu 또는 ScoutSuite 의사] cat > ~/w04/iam-enum.log <<EOF
+       === Pacu iam__enum_permissions (시뮬) ===
+       User: dev-leaked-key-2024
+       Allowed Actions:
+       - s3:GetObject, s3:ListBucket, s3:PutObject
+       - ec2:DescribeInstances, ec2:RunInstances
+       - iam:ListUsers, iam:GetUser
+       - lambda:InvokeFunction
+       Denied Actions:
+       - iam:CreateUser (Tier-1 정책)
+       - rds:DeleteDBInstance (Tier-0 정책)
+       Risk: HIGH (RunInstances + GetObject 의 조합 = data exfil + pivot 가능)
+       EOF
+       cat ~/w04/iam-enum.log. MITRE T1087.004 + T1580 매핑.
+
+    3) [IAM enum burst SIGMA - CloudTrail] cat > ~/w04/sigma-iam-enum-burst.yml <<EOF
+       title: AWS IAM Enumeration Burst (Reconnaissance)
+       id: 00000000-0000-0000-0000-000000000004
+       status: experimental
+       description: Detect rapid IAM List/Get API calls from single principal (Pacu/ScoutSuite indicator)
+       logsource:
+         product: aws
+         service: cloudtrail
+       detection:
+         selection:
+           eventSource: 'iam.amazonaws.com'
+           eventName|startswith:
+             - 'List'
+             - 'Get'
+         timeframe: 5m
+         condition: selection | count(eventName) by userIdentity.userName > 20
+       fields:
+         - userIdentity.userName
+         - sourceIPAddress
+         - eventName
+       level: high
+       tags:
+         - attack.t1087.004
+         - attack.t1580
+       EOF
+       cat ~/w04/sigma-iam-enum-burst.yml.
+
+    4) [GuardDuty 경보 매핑] cat > ~/w04/guardduty-mapping.md <<EOF
+       # GuardDuty Findings 매핑 (IAM Auto Pivot)
+       | Finding Type | Severity | 의미 | 자동 대응 |
+       |---|---|---|---|
+       | Recon:IAMUser/NetworkPermissions | Medium | IAM enum (Pacu indicator) | IAM key 비활성 + 알림 |
+       | UnauthorizedAccess:IAMUser/InstanceCredentialExfiltrationOutsideAWS | High | EC2 metadata 의 키 외부 사용 | IAM role 의 SCP 강제 |
+       | UnauthorizedAccess:IAMUser/AnomalousBehavior | High | 평소와 다른 region/service 호출 | MFA 강제 + alert |
+       | CredentialAccess:IAMUser/AnomalousBehavior | High | IAM credential 의 brute force | key rotation 강제 |
+       | Discovery:IAMUser/AnomalousBehavior | Medium | 의심 region 의 enum | IP allowlist |
+       EOF
+       cat ~/w04/guardduty-mapping.md.
+
+    5) [VPC Endpoint 정책 - S3 + IAM enum 차단] cat > ~/w04/vpce.json <<EOF
+       {
+         "Version": "2012-10-17",
+         "Statement": [
+           {
+             "Sid": "AllowS3PrivateOnly",
+             "Effect": "Allow",
+             "Principal": "*",
+             "Action": ["s3:GetObject", "s3:ListBucket"],
+             "Resource": ["arn:aws:s3:::company-private-*"],
+             "Condition": {
+               "StringEquals": {"aws:PrincipalOrgID": "o-company123"},
+               "NotIpAddress": {"aws:SourceIp": ["10.0.0.0/8"]}
+             }
+           },
+           {
+             "Sid": "DenyIAMEnumExternally",
+             "Effect": "Deny",
+             "Principal": "*",
+             "Action": ["iam:List*", "iam:Get*"],
+             "Resource": "*",
+             "Condition": {
+               "NotIpAddress": {"aws:SourceIp": ["10.0.0.0/8", "172.16.0.0/12"]}
+             }
+           }
+         ]
+       }
+       EOF
+       cat ~/w04/vpce.json | python3 -m json.tool.
+
+    cleanup: rm -rf ~/w04.
+
+    마지막에 5단계 × (IAM Pivot 단계 / 명령 / 결과 / GuardDuty Finding / MITRE TTP / 방어 권고 (SCP + MFA +
+    VPCe + key rotation + audit)) 의 5×6 매트릭스 + Cloud IAM Defense Playbook (least privilege + SCP +
+    GuardDuty + VPCe + Tier 0 분리) markdown + cleanup 검증 출력.
+  hint: Cloud IAM Pivot 5단계 chain. SCP + GuardDuty + VPCe 의 3 layer 가 핵심.
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: '[통합] Cloud IAM Pivot IR 5단계 — 키/enum/SIGMA/GuardDuty/VPCe. MITRE T1078.004 + T1087.004 + T1580 매핑 + 5×6 매트릭스 + Cloud Defense Playbook.'
+      success_criteria:
+      - 5 단계 모두 실행
+      - IAM key 유효성 + 권한 enum 결과
+      - SIGMA YAML (cloudtrail)
+      - GuardDuty Finding 5개 이상 매핑
+      - VPCe 정책 JSON (Deny IAM external)
+      - cleanup
+      - 5×6 매트릭스 + Playbook
+      acceptable_methods:
+      - bastion 의 multi-stage planning
+      - cat heredoc + python json 표준
+      - AWS SCP / GuardDuty / VPCe 양식
+      - markdown 매트릭스 + Playbook
+      negative_signs:
+      - 3 단계 이하 만 수행
+      - GuardDuty Finding 3개 이하
+      - VPCe 정책 누락
+      - cleanup 미수행
+      - 매트릭스 6 컬럼 미만
+  target_vm: bastion
+  risk_level: low
+  answer: |
+    🤖 위 bastion_prompt 그대로. Cloud IAM IR 5단계 + 5×6 매트릭스 + Cloud Defense Playbook.
+  answer_detail: |
+    Cloud Security Engineer 페르소나 — Cloud IAM Pivot IR chain. SCP + GuardDuty + VPCe 3 layer.
+  script: ''

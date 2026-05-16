@@ -539,3 +539,130 @@ steps:
     cat ~/w03/tier.md'
   risk_level: low
   bastion_prompt: Tier 0 분리 정책
+- order: 100
+  instruction: '[Multi-task] AD Kerberoasting IR 5단계 통합 — SPN 조회 → RC4 TGS → 4769 SIGMA → BloodHound LDAP → Tier 0.'
+  bastion_prompt: |
+    AD Kerberoasting 자동화 IR 5단계 chain 을 한 흐름으로 수행해줘. AD 환경 없이 의사 시뮬.
+
+    1) [SPN 목록 조회 시뮬] mkdir -p ~/w03; cat > ~/w03/spn-enum.log <<EOF
+       === GetUserSPNs.py output (시뮬) ===
+       ServicePrincipalName            Name         MemberOf       PasswordLastSet      LastLogon
+       --------------------------------- ------------ -------------- --------------------- -----------
+       MSSQLSvc/db01.lab.local:1433    svc_sql      Domain Admins  2024-01-15 09:00:00  2024-12-20
+       HTTP/web01.lab.local           svc_iis      svc_group      2023-11-01 14:00:00  2024-12-19
+       cifs/file01.lab.local          svc_file     -              2024-03-20 11:00:00  -
+       EOF
+       cat ~/w03/spn-enum.log. MITRE T1558.003 매핑.
+
+    2) [RC4 TGS 요청 시뮬 - 로그 생성] cat > ~/w03/4769-events.log <<EOF
+       === Windows Event 4769 (Kerberos Service Ticket Request) ===
+       Timestamp           User      ServiceName              EncryptionType    Source IP
+       2024-12-21 14:32:15 attacker  MSSQLSvc/db01.lab        0x17 (RC4-HMAC)   10.20.30.150
+       2024-12-21 14:32:18 attacker  HTTP/web01.lab           0x17 (RC4-HMAC)   10.20.30.150
+       2024-12-21 14:32:20 attacker  cifs/file01.lab          0x17 (RC4-HMAC)   10.20.30.150
+       (RC4 = legacy crypto, hashcat -m 13100 crackable, 의심 패턴)
+       EOF
+       cat ~/w03/4769-events.log.
+
+    3) [SIGMA 룰 - 4769 RC4 detection] cat > ~/w03/sigma-4769-rc4.yml <<EOF
+       title: Kerberoasting via RC4 TGS Request Burst
+       id: 00000000-0000-0000-0000-000000000003
+       status: experimental
+       description: Detect Kerberos service ticket requests with RC4 encryption from single source
+       logsource:
+         product: windows
+         service: security
+       detection:
+         selection:
+           EventID: 4769
+           TicketEncryptionType: '0x17'
+         filter:
+           ServiceName|contains:
+             - 'krbtgt'
+         timeframe: 5m
+         condition: selection and not filter | count(ServiceName) by SourceIp > 5
+       fields:
+         - ServiceName
+         - SourceIp
+         - TargetUserName
+       level: high
+       tags:
+         - attack.t1558.003
+       EOF
+       cat ~/w03/sigma-4769-rc4.yml.
+
+    4) [BloodHound LDAP burst 시뮬] cat > ~/w03/ldap-burst.log <<EOF
+       === LDAP Query Audit (Sysmon Event 5145 또는 Windows AD Audit) ===
+       Timestamp           Source IP      Query                                          Time(ms)
+       2024-12-21 14:25:01 10.20.30.150   (&(objectClass=user)) - 50,000 results        2300
+       2024-12-21 14:25:04 10.20.30.150   (&(objectClass=group))                         1800
+       2024-12-21 14:25:07 10.20.30.150   (memberOf=CN=Domain Admins...) - 12 results    900
+       2024-12-21 14:25:10 10.20.30.150   (servicePrincipalName=*)                       2100
+       (BloodHound default queries: 4 query × 50k+ result = 6500ms 의 burst)
+       EOF
+       cat ~/w03/ldap-burst.log. MITRE T1087.002 매핑.
+
+    5) [Tier 0 분리 정책 + 종합] cat > ~/w03/tier.md <<EOF
+       # Tier 0 분리 정책 (AD Kerberoasting 방어)
+
+       ## Tier 모델 (MS PAW + Tier 모델)
+       | Tier | 자산 | 사용자 | logon 허용 |
+       |---|---|---|---|
+       | Tier 0 | DC / PAM / KDS | Domain Admin only | Tier 0 station only |
+       | Tier 1 | Server / DB | Server Admin | Tier 1+0 |
+       | Tier 2 | Workstation | User | All tier |
+
+       ## Kerberoasting 방어 5 layer
+       1. SPN 의 강한 비밀번호 (25+ char) 강제
+       2. gMSA (Group Managed Service Account) 마이그레이션
+       3. RC4 비활성 (모든 DC 의 RestrictedKerberos = AES only)
+       4. Tier 0 분리 + PAW (Privileged Access Workstation) 강제
+       5. 4769 RC4 + LDAP burst 의 SIEM 알림 + automatic lockout
+
+       ## 권고
+       - GPO 의 Kerberos encryption type 제한 (AES256_HMAC_SHA1, AES128_HMAC_SHA1)
+       - gMSA 의 자동 비번 회전 (30일)
+       - PAM (Privileged Access Management) 의 just-in-time access
+       EOF
+       cat ~/w03/tier.md.
+
+    cleanup: rm -rf ~/w03.
+
+    마지막에 5단계 × (Kerberoasting 단계 / 명령 / 결과 / MITRE TTP / 방어 layer / 운영 권고) 의 5×6 매트릭스 +
+    AD Defense Playbook (Tier 0 분리 + gMSA + RC4 차단 + 4769 SIEM + LDAP audit) markdown + cleanup 검증 출력.
+  hint: AD Kerberoasting 5단계 chain. Tier 0 + gMSA + RC4 차단 의 3 layer 가 핵심.
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: '[통합] AD Kerberoasting IR 5단계 — SPN/RC4/SIGMA/LDAP/Tier 0. MITRE T1558.003 + T1087.002 매핑 + 5×6 매트릭스 + AD Defense Playbook.'
+      success_criteria:
+      - 5 단계 모두 실행
+      - SPN enum 결과 (Domain Admins 의 SPN 명시)
+      - 4769 RC4 events
+      - SIGMA YAML
+      - LDAP burst 분석
+      - Tier 0 분리 + 5 layer 방어
+      - cleanup
+      - 5×6 매트릭스 + Playbook
+      acceptable_methods:
+      - bastion 의 multi-stage planning
+      - cat heredoc + 의사 시뮬
+      - SIGMA / Sysmon / Windows 이벤트 양식
+      - markdown 매트릭스 + Playbook
+      negative_signs:
+      - 3 단계 이하 만 수행
+      - 4769 events 누락
+      - Tier 0 정책 누락
+      - cleanup 미수행
+      - 매트릭스 6 컬럼 미만
+  target_vm: bastion
+  risk_level: low
+  answer: |
+    🤖 위 bastion_prompt 그대로. AD Kerberoasting 5단계 + 5×6 매트릭스 + AD Defense Playbook.
+  answer_detail: |
+    AD Security Engineer 페르소나 — Kerberoasting IR chain. Tier 0 + gMSA + RC4 차단 의 3 layer 핵심.
+  script: ''
