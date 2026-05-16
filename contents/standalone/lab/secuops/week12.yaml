@@ -24,36 +24,87 @@ steps:
 
   - order: 1
     instruction: |
-      ## 🎯 MISSION — OpenCTI 미설치 인지 + 도입 계획
+      ## 🎯 MISSION — OpenCTI 도입 계획서 + docker-compose 사전 검증
 
-      ## 💻 실행 명령
+      OpenCTI 의 6 컨테이너 아키텍처 + 인프라 요구사항 + docker-compose 구성. 본
+      step 은 *실 설치 X*  계획서 학습 (CCC CURRICULUM 원칙 #8 — 도구 부재 시
+      설치 부터, 단 OpenCTI 는 6 컨테이너 의존 으로 학습 환경 자원 한계).
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **OpenCTI** = STIX 2.1 기반 *open-source threat intelligence platform*.
+        Filigran 사 2019 출시. AGPL → 2021 Apache 2.0
+      - **6 컨테이너 아키텍처**:
+        - platform (Web UI + GraphQL API)
+        - elasticsearch (STIX 객체 storage + 검색)
+        - redis (cache + session)
+        - rabbitmq (worker 큐)
+        - minio (S3 호환 file storage)
+        - postgres 또는 graph DB
+      - **자원 요구** = 6v6 환경 최소 사양 초과 — 별도 host 권장 (CCC P22 backlog)
+
+      ## 💻 실행 명령 (현재 상태 + 도입 사전 검증)
 
       ```bash
-      ssh 6v6-bastion 'docker ps --format "{{.Names}}" | grep -i "opencti\|misp" || echo "OpenCTI/MISP NOT_INSTALLED"'
+      # 1) 현재 상태 — OpenCTI / MISP 미설치 확인
+      ssh 6v6-bastion 'docker ps --format "{{.Names}}" 2>/dev/null | grep -iE "opencti|misp" || echo "OpenCTI/MISP NOT_INSTALLED (정상 — 별 host 권장)"'
 
-      cat <<'EOF'
-      OpenCTI 도입 6 컨테이너:
-        - opencti/platform (Web UI + GraphQL API) :8080
-        - elasticsearch:8.10.0 :9200
-        - redis:7
-        - rabbitmq:3-management :15672
-        - minio (S3 호환)
-        - postgres or graph DB
+      # 2) 호스트 자원 검증 — OpenCTI 도입 가능 여부
+      ssh 6v6-bastion '
+        echo "=== CPU ===" && nproc
+        echo "=== RAM ===" && free -h | head -2
+        echo "=== Disk ===" && df -h / | head -2
+      '
 
-      디스크 요구: 50+ GB
-      메모리 요구: 8+ GB
-      EOF
+      # 3) 도입 시 docker-compose.yml 구조 (학습용 표시 — 실 생성 X)
+      cat <<'COMPOSE'
+      version: "3.8"
+      services:
+        opencti:
+          image: opencti/platform:6.0.0
+          ports: ["8080:8080"]
+          depends_on: [elasticsearch, redis, rabbitmq, minio]
+        elasticsearch:
+          image: elasticsearch:8.10.0
+          environment: {discovery.type: single-node, ES_JAVA_OPTS: "-Xms2g -Xmx4g"}
+        redis:
+          image: redis:7
+        rabbitmq:
+          image: rabbitmq:3-management
+          ports: ["15672:15672"]
+        minio:
+          image: minio/minio
+          command: server /data
+      COMPOSE
       ```
 
       ## 📋 확인 사항
 
-      - 6v6 에 OpenCTI/MISP 미설치
-      - 6 컨테이너 + 의존성
+      - 6v6 에 OpenCTI/MISP 미설치 (정상 baseline)
+      - 호스트 자원 (CPU/RAM/Disk) 출력 + OpenCTI 요구 (8GB+ RAM, 50GB+ disk) 비교
+      - docker-compose.yml 의 6 service + 의존성
 
       ## 💡 왜 이걸 하는가?
 
-      운영 갭 인지 + 도입 계획 수립.
-    hint: 'OpenCTI 미설치 + 6 컨테이너 + 의존성'
+      도입 계획서 = *CISO 보고 + 인프라 요구 + 운영 모델*. 자원 부족 시 *별 host*
+      또는 *cloud* 배포 결정. CCC P22 backlog 의 *OpenCTI 별 host 배포* 의 사전
+      검토.
+
+      ## 🔍 결과 해석
+
+      - **정상 (학습 환경)**: NOT_INSTALLED + 호스트 자원 출력 + docker-compose 표시
+      - **bastion 의 RAM 부족 (< 8GB)**: OpenCTI 별 host 배포 필수 결론
+      - **opencti/misp 컨테이너 발견**: 사전 설치 — 본 lab 의 학습 효과 ↓ (clean
+        baseline 권장)
+
+      ## 비정상 시 대응
+
+      - **docker ps 명령 실패** — bastion 의 docker.sock 미마운트. docker-compose
+        의 volume 검토
+      - **RAM 4 GB 미만** — minimal config (Elasticsearch -Xms1g) 검토 + worker 1 로
+    hint: |
+      OpenCTI 6 컨테이너 + 자원 요구 + docker-compose 구조. 학습 환경 자원 한계
+      인지 + 별 host 배포 결정.
     category: planning
     points: 12
     answer: |
