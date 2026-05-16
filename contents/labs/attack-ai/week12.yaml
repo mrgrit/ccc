@@ -1007,3 +1007,67 @@ steps:
 
     '
   script: ''
+- order: 100
+  instruction: '[Multi-task] 은닉 5단계 통합 — Suricata 룰 확인 → nmap 스텔스 → SQLi WAF 우회 → XSS 우회 → 종합 evasion 평가.'
+  bastion_prompt: |
+    Evasion 5 표면을 한 흐름의 평가로 수행해줘.
+
+    1) [Suricata 룰 확인] ssh ccc@{{SECU_IP}} 'sudo ls /var/lib/suricata/rules/ 2>/dev/null;
+       sudo head -30 /etc/suricata/rules/local.rules 2>/dev/null; sudo suricata -T -c /etc/suricata/suricata.yaml
+       2>&1 | head -5' 의 결과로 활성 룰 수 + 카테고리 (drop/alert) + custom rule 의 비율 표 작성. 우회 가능한
+       약한 룰 패턴 (단순 string match 등) 식별. MITRE T1562.001 매핑.
+
+    2) [nmap 스텔스 조합] nmap -sS -T1 -f -D RND:5 --source-port 53 --max-rate 50 -p 22,80,443 {{WEB_IP}} 의
+       정확 syntax + 각 옵션 의 IDS 우회 의미 (-T1 paranoid / -f fragment / -D 5 decoy / --source-port 53 DNS
+       위장 / --max-rate rate limit). 스캔 결과 + Suricata 알림 발생 여부 표 작성. MITRE T1095 + T1572 매핑.
+
+    3) [SQLi WAF 우회] 한 페이로드 의 5 변형 — 대소문자 (sElEcT), 주석 (SE/**/LECT), URL 인코딩 (%53ELECT),
+       Hex (CONCAT(0x73656C656374)), Unicode (ＳELECT) — 각각 curl 로 시도 + WAF (ModSec CRS) 의 응답 (200 통과
+       / 403 차단) 표. 우회 성공 페이로드 의 정확 syntax. MITRE T1027 + OWASP A03 매핑.
+
+    4) [XSS 우회 (<script> 없이)] <img src=x onerror=alert(1)> / <svg onload=alert(1)> / <iframe srcdoc="<script>
+       alert(1)</script>"> / javascript:alert(1) (href 컨텍스트) / "><svg/onload=alert(1)> 의 5 변형 + 각 의
+       CSP (script-src) 우회 가능성 표. curl 로 reflected XSS endpoint 호출 + 응답 의 페이로드 escape 여부.
+       CWE-79 매핑.
+
+    5) [Evasion 효과 종합] 1~4 의 결과를 합쳐 우회 기법 × WAF/IDS 의 통과율 (% blocked vs %% passed) 표 +
+       SOC blue team 시점 의 detection gap analysis (어떤 변형 이 어느 룰 의 약점 을 노출 했는지) + 룰 강화
+       권고 (Suricata 룰 추가, ModSec custom rule, CSP 강화) 5가지 markdown 출력.
+
+    마지막에 5단계 × (우회 표면 / 기법 / 페이로드 변형 수 / 통과율 / detection gap / 보강 권고) 의 5×6 매트릭스
+    + Evasion 효과 graph (ASCII bar chart - 변형별 우회율) 도 함께 출력.
+  hint: Evasion 5 표면 chain. 우회 후 SOC inform 의 정직성 + 룰 보강 권고 가 학습 핵심.
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: '[통합] Evasion 5단계 — Suricata/nmap stealth/SQLi WAF/XSS without script/효과종합. MITRE T1027/T1095/T1562 + CWE-79 + OWASP A03 매핑 + 5×6 매트릭스 + Bar Chart.'
+      success_criteria:
+      - 5 단계 모두 실행
+      - nmap stealth 5 옵션 정확 조합
+      - SQLi 5 변형 (case/comment/URL/hex/unicode)
+      - XSS 5 변형 (<script> 없이)
+      - MITRE T1027 또는 T1095 또는 T1562 중 2개 이상 매핑
+      - 5×6 매트릭스 + Bar Chart
+      acceptable_methods:
+      - bastion 의 multi-stage planning
+      - nmap / curl / suricata-update / openssl 표준
+      - dry-run + 응답 코드 분석
+      - SOC inform 후 룰 보강 권고
+      negative_signs:
+      - 3 단계 이하 만 수행
+      - 변형 3개 이하
+      - SOC inform 누락 (정직성 위반)
+      - 매트릭스 6 컬럼 미만
+      - Bar Chart 누락
+  target_vm: attacker
+  risk_level: low
+  answer: |
+    🤖 위 bastion_prompt 그대로. Evasion 5 표면 + 5×6 매트릭스 + Bar Chart + 보강 권고.
+  answer_detail: |
+    Red Team Evasion Specialist 페르소나 — Evasion 5 표면 chain. 우회 후 SOC inform + 룰 보강 권고
+    가 정직성 + 학습 효과 의 핵심. Bar Chart 가 종합 산출물.
+  script: ''
