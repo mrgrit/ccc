@@ -35,13 +35,77 @@ steps:
   # ============================================================
   - order: 1
     instruction: |
-      CCC 의 nvd_cron, report_cron 의 로그 확인 + systemctl list-timers + 본인의
-      crontab 의 가시화 + 학생 본인의 cron 작업 1 개 추가.
+      ## 🎯 MISSION — 스케줄러 4 종 가시화 + 학생 cron 1 개 직접 등록
 
-      lecture 3-3 ~ 3-6 의 매핑 — 자명종 시계 의 보안 의 응용. nvd_cron 의 1 일
-      의 실 trace 의 lecture 3-6 의 직접 확인.
+      CCC 가 운영 중인 스케줄러 로그 (nvd_cron, report_cron) 를 확인하고, systemd
+      timer 와 사용자 crontab 도 한 번씩 들여다본 다음, 학생 본인 PC 에 cron 작업
+      한 개를 직접 등록한다.
+
+      lecture 3차시 (스케줄러와 왓처) 의 cron / systemd timer 부분과 1대1로
+      매핑된다. lecture 가 *왜* 를 설명했다면, 본 step 은 *어떻게* 를 실습한다.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **cron** = Unix 의 시간 기반 작업 스케줄러. 분/시/일/월/요일 5 필드
+      - **systemd timer** = cron 의 modern 대체. `.timer` + `.service` 두 파일
+      - **CCC 의 cron 운영** = `results/nvd_cron.log` (NVD CVE 매일 수집) +
+        `results/retest/report_cron.log` (R5 retest 진행 자동 commit) — 본 과목
+        에서 학생이 *실 운영 사례* 직접 관찰
+      - **자명종 시계 비유** = lecture 3-3 의 *"운영자가 안 깨워도 시계가 깨우는"*
+        패턴
+
+      ## 💻 실행 명령
+
+      ```bash
+      # 1. CCC nvd_cron 로그
+      tail -10 /home/opsclaw/ccc/results/nvd_cron.log 2>/dev/null
+
+      # 2. CCC report_cron 로그
+      tail -10 /home/opsclaw/ccc/results/retest/report_cron.log 2>/dev/null
+
+      # 3. systemd timer 리스트
+      systemctl list-timers --all 2>/dev/null | head -15
+
+      # 4. 본인 crontab
+      crontab -l 2>/dev/null | head -10
+
+      # 5. 학생이 직접 cron 1 개 등록 — Bastion /health 5 분 주기 모니터
+      (crontab -l 2>/dev/null; echo "*/5 * * * * curl -s -m 5 -H 'X-API-Key: ccc-api-key-2026' http://192.168.0.103:8003/health >> ~/bastion-health.log 2>&1") | crontab -
+      crontab -l | tail -3
+
+      # 6. 5분 대기 후 결과 확인
+      sleep 360 && tail -5 ~/bastion-health.log
+      ```
+
+      ## 📋 확인 사항
+
+      - nvd_cron + report_cron 로그 의 *최근 5 줄* 출력 (CCC 실 운영 증거)
+      - systemd timer 의 5+ 행 (cron 외 modern 대체)
+      - 본인 crontab 에 본 step 의 cron 1 줄 추가됨
+      - 5 분 대기 후 `~/bastion-health.log` 에 1+ 줄
+
+      ## 💡 왜 이걸 하는가?
+
+      자율보안 의 *첫 도구* = 스케줄러. 운영자 가 *수동 으로* 호출 하지 않아도
+      시스템 이 알아서 동작 하는 것이 자율보안 의 기반. 본 step 에서 학생 이 *직접
+      cron 등록* 까지 해야 *진짜 학습*.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 5 단계 모두 출력 + 5 분 후 bastion-health.log 에 1+ 줄
+      - **nvd_cron.log 없음** — CCC 작업 디렉토리 가 다름. `find /home -name "nvd_cron.log"` 로 검색
+      - **bastion-health.log 비어있음 (5 분 후)** — cron daemon 미동작 또는 권한.
+        `systemctl status cron` 확인
+      - **Bastion 응답 401** — API key 누락. `-H "X-API-Key: ccc-api-key-2026"` 확인
+
+      ## 비정상 시 대응
+
+      - **cron daemon 없음** — `sudo apt install cron && sudo systemctl enable --now cron`
+      - **crontab 명령 없음** — `sudo apt install cron` 으로 같이 설치
+      - **Bastion 0.103:8003 응답 없음** — 인프라 상태 확인 (P22 backlog)
     hint: |
-      tail + systemctl + crontab
+      5 단계 (nvd_cron / report_cron / timer / crontab / 학생 직접 등록) + 5분
+      대기 후 health.log 확인.
     category: experiment
     points: 20
     answer: |
