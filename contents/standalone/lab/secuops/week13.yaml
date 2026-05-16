@@ -137,18 +137,84 @@ steps:
 
   - order: 2
     instruction: |
-      ## 🎯 MISSION — 3 enrichment Connector (VT / GeoIP / WHOIS)
+      ## 🎯 MISSION — 3 enrichment Connector 활용 *시나리오* 작성
 
-      ## 💻 산출물
+      step 1 의 external connector 가 *IOC 를 가져오는* 역할 이라면, **enrichment
+      connector** 는 *기존 IOC 를 풍부화* 하는 역할. 같은 IP/domain/hash 에 *추가
+      문맥* 을 붙여 분석가 의 판단을 돕는다.
 
+      ## 📚 사전 학습 — external vs enrichment
+
+      | 구분 | external (step 1) | enrichment (이 step) |
+      |------|-------------------|---------------------|
+      | 입력 | (없음, 자체적 feed pull) | OpenCTI 내부 의 기존 IOC |
+      | 출력 | 신규 STIX object 추가 | 기존 object 의 *속성/관계* 추가 |
+      | 실행 | 스케줄 (분/시간 주기) | 분석가 또는 자동 트리거 |
+      | 예시 | OTX/URLhaus feed import | VT/GeoIP/WHOIS lookup |
+
+      ## 💻 산출물 (시나리오 표)
+
+      ```markdown
+      ## 3 enrichment 매트릭스 + 활용 시나리오
+
+      | Connector | input | output | 활용 시나리오 (W13 의 R/B/P 연결) |
+      |-----------|-------|--------|----------------------------------|
+      | VirusTotal | hash/URL/domain | detection ratio + AV 결과 + first_seen | 의심 binary hash → VT 60+ 엔진 매칭 시 즉시 격리 |
+      | GeoIP (MaxMind GeoLite2) | IPv4 | country / city / ASN / org | brute force IP 의 *비예상 국가* (KR 아닌 곳) 알람 격상 |
+      | WHOIS | domain | 등록자 / 등록 시각 / NS / email | 새 domain (registered <30 일) — phishing 가능성 ↑ |
+
+      ## 운영 시 우선순위
+      1. **VirusTotal** ★★★ — 가장 자주, malware 분석 의 *1차 검증*
+      2. **GeoIP** ★★ — IP 기반 alert 의 *맥락 매번*
+      3. **WHOIS** ★ — phishing/C2 domain *조사 시*
+
+      ## rate limit + retry 정책
+      - VT 무료: 4 req/min, 500/day → batch 처리 + 큐
+      - GeoIP local DB: 무제한 (오프라인 DB 다운로드)
+      - WHOIS: server 별 다름, 5 req/min 보수적
       ```
-      Enrichment 매트릭스:
-      | Connector | input | output |
-      | VirusTotal | hash/URL/domain | detection ratio + AV 결과 |
-      | GeoIP | IPv4 | country / city / ASN |
-      | WHOIS | domain | 등록자 / 등록 시각 / email |
+
+      ## 💻 검증 명령 (각 enrichment 의 *실 호출* 시뮬)
+
+      ```bash
+      # GeoIP 로컬 DB (geoip-bin 패키지) — 폐쇄망 도 가능
+      ssh 6v6-bastion 'command -v geoiplookup && geoiplookup 8.8.8.8 || echo "geoip-bin 미설치"'
+
+      # WHOIS — 외부 망 필요
+      ssh 6v6-bastion 'command -v whois && timeout 5 whois -h whois.iana.org abuse.ch 2>&1 | head -5 || echo "whois 미설치 또는 차단"'
+
+      # VT (curl + dummy API key — 401 응답 정상)
+      ssh 6v6-bastion 'curl -sI --max-time 5 -H "x-apikey: DUMMY" https://www.virustotal.com/api/v3/files/0 2>&1 | head -1'
       ```
-    hint: 'VT + GeoIP + WHOIS'
+
+      ## 📋 확인 사항
+
+      - 4 항목 (input / output / 시나리오) 매트릭스 채움
+      - 우선순위 ★ 부여
+      - rate limit 정책 명시
+      - 3 검증 명령 응답 (geoip 로컬 / whois / VT endpoint 4xx 도 정상)
+
+      ## 💡 왜 이걸 하는가?
+
+      Wazuh alert 의 raw IP/hash/domain 만 으로는 *판단 불가* — enrichment 가 *맥락
+      (country / first_seen / 등록자)* 을 붙여 *false positive 제거 + true
+      positive 격상* 의 두 효과. SOC L1 의 90% 가 *enrichment 결과* 로 결정.
+
+      ## 🔍 결과 해석
+
+      - **정상 (계획서 완성)**: 4 항목 모두 채움 + 우선순위 + rate limit
+      - **VT 401**: API key 없이 호출 → 정상 (endpoint 도달 확인)
+      - **geoip 미설치**: bastion 의 패키지 부재 — `apt install geoip-bin
+        geoip-database` 추가 검토 (인프라 정정 P22)
+
+      ## 비정상 시 대응
+
+      - **3 검증 명령 모두 timeout** — 폐쇄망 정책 (정상). step 1 의 endpoint
+        검증 결과 와 일치 시 *계획서 의 *오프라인 운영 시나리오* 별도 추가.
+      - **VT 200 응답** — DUMMY key 로 200 = 보안 결함, 즉시 보고.
+    hint: |
+      external vs enrichment 차이 + 4 항목 매트릭스 + 우선순위 + rate limit + 3
+      검증 명령. 시나리오 중심 학습.
     category: planning
     points: 12
     answer: |
