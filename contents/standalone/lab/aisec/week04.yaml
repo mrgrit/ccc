@@ -22,8 +22,57 @@ pass_threshold: 0.7
 steps:
   - order: 1
     instruction: |
-      실 Wazuh alert 의 LLM 분석 — 5W + 위험도 + 권장.
-    hint: Bastion /chat 또는 Ollama
+      ## 🎯 MISSION — 실 Wazuh alert 의 LLM 분석 (5W + 위험도 + 권장)
+
+      Wazuh alerts.json 의 *실 alert* 1 건 을 Bastion `/chat` 에 전달 → 5W (Who /
+      What / When / Where / Why) + 위험도 (low/medium/high/critical) + 권장 (차단 /
+      monitor / 무시) 자동 응답.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **alert triage** = 다수 alert 중 *대응 우선순위* 결정. SOC L1 의 daily 작업
+      - **5W** = incident 분석 의 표준 (Who/What/When/Where/Why)
+      - **위험도 4 단계** = low (무시) / medium (monitor) / high (즉시 분석) /
+        critical (즉시 차단)
+      - **master agent** = Claude Code 의 Bastion 호출 모드. *콘텐츠 + 분석* 위주
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-bastion '
+      ALERT=$(sudo tail -1 /var/ossec/logs/alerts/alerts.json | head -1)
+      curl -s -X POST -H "X-API-Key: ccc-api-key-2026" \
+          -H "Content-Type: application/json" \
+          -d "{\"message\":\"다음 Wazuh alert 를 한국어로 5W + 위험도 + 권장으로 분석:\n$ALERT\", \"agent\":\"master\"}" \
+          http://localhost:8003/chat 2>&1 | head -50
+      '
+      ```
+
+      ## 📋 확인 사항
+
+      - alerts.json 에 *실 alert* 1 건 (CURRICULUM #7 — 0 byte 시 fixture)
+      - LLM 응답 에 5W / 위험도 / 권장 모두
+      - 응답 한국어
+      - 5-10 분 latency 정상 (gpt-oss:120b)
+
+      ## 💡 왜 이걸 하는가?
+
+      SOC L1 의 daily 작업 = alert triage. *수동 분석* → *LLM 보조* 시 매 alert 30 분
+      → 30 초. 본 step 이 *AI 보안 운영* 의 가장 frequent use case.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 5W + 위험도 + 권장 모두 응답
+      - **alert 비어있음**: CURRICULUM #7 데이터 부재 → fixture 주입
+      - **응답 매우 짧음**: gpt-oss:120b 의 token limit — `num_predict` 늘리기
+
+      ## 비정상 시 대응
+
+      - **alerts.json 0 byte** — `python3 scripts/lab_fixture_inject.py --lab
+        contents/standalone/lab/aisec/week04.yaml --order 1 --ssh`
+      - **chat 응답 없음** — Manager (gpt-oss:120b) 미가동 — `/health` 로 확인
+    hint: |
+      실 alert → Bastion /chat → 5W + 위험도 + 권장. 5-10 분 latency.
     category: experiment
     points: 25
     answer: |
@@ -54,8 +103,48 @@ steps:
     target_vm: bastion
 
   - order: 2
-    instruction: LLM 의 Sigma rule 자동 생성
-    hint: 가상 시나리오 → Sigma YAML
+    instruction: |
+      ## 🎯 MISSION — LLM 의 Sigma rule 자동 생성 (SSH brute force 시나리오)
+
+      LLM (gemma3:4b) 에 *자연어 시나리오* 전달 → *Sigma YAML* 자동 생성. SOC L2 의
+      *룰 작성 작업* 의 LLM 보조 학습.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **Sigma** = SIEM-agnostic 룰 표준 (YAML). Wazuh / Splunk / Elastic 변환 가능
+      - **9 필수 필드** = title / id / description / tags / logsource / detection /
+        falsepositives / level / references
+      - **ATT&CK 매핑** = tags 의 `attack.tXXXX` 형식
+      - **timeframe** = 시간 윈도우 (예: 60s)
+
+      ## 💻 실행 명령
+
+      위 answer 의 curl 명령 실행. LLM 응답 의 Sigma YAML 검증.
+
+      ## 📋 확인 사항
+
+      - title / id / tags / logsource / detection 필수 5 필드 모두
+      - tags 에 `attack.t1110` 매핑
+      - detection 에 *60 초 timeframe* + *5 회 condition*
+      - level: high
+
+      ## 💡 왜 이걸 하는가?
+
+      Sigma 룰 작성 = 수동 시 30 분/룰 → LLM 보조 시 3 분/룰. *대량 룰 생성* 의
+      productivity 10x.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 9 필드 의 5+ 채움 + ATT&CK 매핑
+      - **YAML syntax error**: indent 또는 quote 검토
+      - **tags 누락**: prompt 의 *tags* 명시 강화
+
+      ## 비정상 시 대응
+
+      - **응답 영어 만** — prompt 에 *한국어 응답* 명시
+      - **YAML 외 응답** — `--format yaml` 또는 `JSON format 강제` 추가
+    hint: |
+      LLM → Sigma YAML 9 필드 + ATT&CK + timeframe.
     category: experiment
     points: 25
     answer: |
@@ -84,8 +173,48 @@ steps:
     target_vm: attacker
 
   - order: 3
-    instruction: LLM 의 Wazuh XML rule 생성
-    hint: id 100400 + level 12
+    instruction: |
+      ## 🎯 MISSION — LLM 의 Wazuh XML rule 생성 (id 100400, level 12)
+
+      LLM 에 *Wazuh rule 시나리오* 전달 → XML rule 자동 생성. ModSec 941100 의 60 초
+      에 3 회 매치 → level 12 격상 의 chain rule.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **Wazuh rule XML** = `<rule>` 의 표준 syntax. `id`, `level`, `if_sid`, `frequency`,
+        `timeframe`, `same_source_ip`
+      - **rule id 범위** = local custom 은 100000-119999 권장
+      - **level 0-15** = 0 (무시) ~ 12 (critical) ~ 15 (highest)
+      - **chain rule** = `if_sid` 로 parent rule (Suricata 의 4751 등) 매칭 후 trigger
+
+      ## 💻 실행 명령
+
+      위 answer 의 curl 명령 실행. LLM 응답 의 XML 검증.
+
+      ## 📋 확인 사항
+
+      - `<rule id="100400" level="12" frequency="3" timeframe="60">` 구조
+      - `<if_sid>` 의 ModSec 941100 매칭
+      - `<same_source_ip/>` 의 시도자 제한
+      - `<description>` 의 자연어 설명
+
+      ## 💡 왜 이걸 하는가?
+
+      Sigma (W04 step 2) 가 *SIEM-agnostic* 이면 Wazuh XML 은 *Wazuh-native*. 운영
+      자가 *바로 적용* 가능 한 형식. LLM 보조 의 *production-ready* 출력.
+
+      ## 🔍 결과 해석
+
+      - **정상**: rule + if_sid + frequency + timeframe + same_source_ip 모두
+      - **frequency 누락**: rate-based rule 의 핵심 누락 — 재시도
+      - **id 100000 미만**: builtin rule 충돌 — id 변경
+
+      ## 비정상 시 대응
+
+      - **XML syntax** — `wazuh-logtest` 로 검증 가능
+      - **chain 매칭 안 됨** — `if_sid` 의 parent rule 존재 확인
+    hint: |
+      LLM → Wazuh XML rule (id 100400, level 12, frequency 3, timeframe 60).
     category: experiment
     points: 20
     answer: |
@@ -114,8 +243,44 @@ steps:
     target_vm: attacker
 
   - order: 4
-    instruction: CVE 의 LLM 분석
-    hint: 5 항목 응답
+    instruction: |
+      ## 🎯 MISSION — CVE 의 LLM 분석 (5 항목 자동 응답)
+
+      가상 CVE (CVE-2024-1234) 의 *5 항목* 자동 분석 — 핵심 vuln + CVSS 의미 + 영향
+      범위 + 익스플로잇 가용성 + 권장 패치. CVE 일일 처리 (NVD 100/일) 의 LLM 보조.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **CVE** = Common Vulnerabilities and Exposures. MITRE/NVD 의 표준 식별자
+      - **CVSS 3.1** = 0-10 점수 (Critical 9.0+ / High 7.0+ / Medium 4.0+ / Low <4.0)
+      - **EPSS** = Exploit Prediction Scoring System. 실 exploit 발생 확률 (W14 step 4)
+      - **PoC** = Proof-of-Concept exploit. exploit-db / GitHub 에 공개 여부
+
+      ## 💻 실행 명령
+
+      위 answer 의 curl 명령 실행. 5 항목 응답 검증.
+
+      ## 📋 확인 사항
+
+      - 5 항목 모두 응답 (1 핵심 / 2 CVSS / 3 영향 / 4 익스플로잇 / 5 패치)
+      - CVSS 9.8 의 *Critical* 인지
+      - "network / no auth" 의 *worst case* 인지
+
+      ## 💡 왜 이걸 하는가?
+
+      NVD 일 100 CVE → 모두 수동 분석 불가. LLM 의 *1차 triage* + 운영자 의 *2차
+      검증* 의 hybrid.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 5 항목 + 각 1-2 문단
+      - **CVSS 의미 응답 약함**: CVSS calculator 등 추가 prompt context
+
+      ## 비정상 시 대응
+
+      - **LLM 의 패치 정보 부정확** — *언어 모델 의 hallucination*. NVD 직접 확인 권장
+    hint: |
+      CVE 시나리오 → LLM 5 항목 (vuln / CVSS / 영향 / exploit / 패치).
     category: analysis
     points: 15
     answer: |
@@ -144,8 +309,47 @@ steps:
     target_vm: attacker
 
   - order: 5
-    instruction: 모의해킹 보조 — JuiceShop 의 LLM 조언
-    hint: 학습 환경 침투 시나리오
+    instruction: |
+      ## 🎯 MISSION — 모의해킹 보조 — JuiceShop 의 LLM 조언 (다음 시도 권장 3)
+
+      JuiceShop 정찰 결과 (REST API / JWT / ModSec WAF) 를 LLM 에 전달 → *다음 시도
+      권장 3* + ATT&CK 매핑 응답. 침투 테스트 분석가 의 *AI 보조* 학습.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **PTES 5 단계** = Recon / Vuln Analysis / Exploit / Post Exploit / Reporting
+      - **본 시나리오** = Vuln Analysis 후 → Exploit 진입 시점
+      - **RoE 강제** = LLM prompt 에 *학습 환경 만* 명시 (외부 거부)
+      - **W12 step 2** = 본 step 의 *심화* (자율 Red Plan-Execute)
+
+      ## 💻 실행 명령
+
+      위 answer 의 curl 명령 실행. LLM 응답 의 3 권장 + ATT&CK 검증.
+
+      ## 📋 확인 사항
+
+      - 3 권장 모두 구체적 (시도 명령 + 예상 결과)
+      - 각 권장 의 ATT&CK Technique ID
+      - RoE 의 *학습 환경 만* 의 명시 응답
+      - JWT 변조 / IDOR / API enumeration 의 3 권장 패턴 1+
+
+      ## 💡 왜 이걸 하는가?
+
+      모의해킹 의 *분석 단계* = 다음 시도 결정 의 *brainstorm*. LLM 의 *지식* + 분석가
+      의 *판단* hybrid 가 가장 효과.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 3 권장 + ATT&CK + RoE 명시
+      - **권장 X** (LLM 거부): system message 의 *학습 환경* 명시 강화
+      - **외부 IP 권장**: RoE 위반 — 즉시 강화
+
+      ## 비정상 시 대응
+
+      - **LLM 가 위험 명령 응답** — ccc-unsafe:2b 가 아닌 *정상 모델* 의 거부 정상
+        (W08 의 unsafe 모델 비교)
+    hint: |
+      JuiceShop 시나리오 → LLM 3 권장 + ATT&CK + RoE 강제.
     category: experiment
     points: 15
     answer: |
