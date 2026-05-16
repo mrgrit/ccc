@@ -296,7 +296,7 @@ fi
 echo ""
 echo "=== 원격 SubAgent ==="
 # 원격 SubAgent 상태
-for host in "secu:192.168.208.150" "web:192.168.208.151" "siem:192.168.208.152"; do
+for host in "fw:10.20.30.1" "web:10.20.32.80" "siem:10.20.32.100"; do   # 6v6 컨테이너 IP
     NAME=$(echo $host | cut -d: -f1)
     IP=$(echo $host | cut -d: -f2)
     printf "%-20s " "$NAME ($IP)"
@@ -539,10 +539,10 @@ HEADERS = {"X-API-Key": API_KEY, "Content-Type": "application/json"}
 
 # 서버별 SubAgent URL
 SERVERS = {
-    "bastion": "http://localhost:8002",
-    "secu": "http://192.168.208.150:8002",
-    "web": "http://192.168.208.151:8002",
-    "siem": "http://192.168.208.152:8002",
+    "bastion": "http://10.20.30.201:8002",
+    "fw": "http://10.20.30.1:8002",
+    "web": "http://10.20.32.80:8002",
+    "siem": "http://10.20.32.100:8002",
 }
 
 # 점검 항목
@@ -697,7 +697,7 @@ python3 ~/lab/week05/analyze_results.py
 
 1. `external_with_llm.py`를 확장하여 다음을 구현하라:
    - LLM에게 "웹 서버 보안 점검" 계획을 요청
-   - web 서버(http://192.168.208.151:8002)에 Task 실행
+   - web 서버 (http://10.20.32.80:8002, 6v6 의 web 컨테이너) 에 Task 실행
    - 결과를 LLM으로 분석
    - 최종 보고서를 Bastion completion-report로 기록
 

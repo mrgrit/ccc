@@ -655,7 +655,7 @@ graph LR
 ### 학생 환경 준비
 
 ```bash
-# attacker VM (192.168.0.112) — 하드웨어 도구
+# 6v6-attacker 컨테이너 (10.20.30.202) — 하드웨어 도구
 sudo apt-get update
 sudo apt-get install -y \
    socat minicom picocom screen cu tio \

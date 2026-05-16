@@ -955,7 +955,7 @@ for e in json.load(sys.stdin)[:5]:
 ### 학생 환경 준비 (한 번만 실행)
 
 ```bash
-ssh ccc@192.168.0.112
+ssh 6v6-attacker
 
 sudo apt update && sudo apt install -y \
   sqlmap ffuf gobuster nikto \

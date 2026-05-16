@@ -1016,7 +1016,7 @@ curl -s -I -L URL | grep -i '^HTTP\|^Location'
 ### 학생 환경 준비 (한 번만 실행)
 
 ```bash
-ssh ccc@192.168.0.112    # attacker VM (pw: 1)
+ssh 6v6-attacker    # 6v6 의 attacker 컨테이너 (pw: ccc 또는 1)
 
 sudo apt update && sudo apt install -y \
   nmap masscan unicornscan amap hping3 fping arp-scan \

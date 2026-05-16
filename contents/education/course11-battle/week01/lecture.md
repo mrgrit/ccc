@@ -1291,8 +1291,8 @@ graph LR
 ### 학생 환경 준비
 
 ```bash
-# Red (attacker VM 192.168.0.112)
-ssh ccc@192.168.0.112
+# Red (6v6 의 attacker 컨테이너)
+ssh 6v6-attacker
 sudo apt install -y nmap masscan amap whatweb wafw00f \
     fping arp-scan netdiscover \
     dnsrecon dnsutils \

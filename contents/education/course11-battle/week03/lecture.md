@@ -793,7 +793,7 @@ graph LR
 
 ```bash
 # Red 측
-ssh ccc@192.168.0.112
+ssh 6v6-attacker
 sudo apt install -y sqlmap hydra dirb wapiti
 
 # XSStrike

@@ -473,7 +473,7 @@ Part 4의 35개 기법을 **본인이 직접 실습한 증거**(스크린샷·ev
 ### 학생 환경 준비 (한 번만 실행, **무선 카드 + 모니터 모드 지원** 필요)
 
 ```bash
-ssh ccc@192.168.0.112
+ssh 6v6-attacker
 
 sudo apt update && sudo apt install -y \
   aircrack-ng kismet wifite \

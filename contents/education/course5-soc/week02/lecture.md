@@ -146,7 +146,7 @@ done
 
 예시:
 ```
-Mar 27 10:15:03 bastion sshd[12345]: Accepted password for user from 192.168.208.1 port 54321 ssh2
+Mar 27 10:15:03 bastion sshd[12345]: Accepted password for user from 10.20.30.202 port 54321 ssh2
 ```
 
 | 필드 | 값 | 의미 |

@@ -159,7 +159,7 @@ fi
 # 4. 원격 SubAgent
 echo ""
 echo "[4] 원격 SubAgent"
-for host in "secu:192.168.208.150" "web:192.168.208.151" "siem:192.168.208.152"; do
+for host in "fw:10.20.30.1" "web:10.20.32.80" "siem:10.20.32.100"; do   # 6v6 컨테이너 IP
     NAME=$(echo $host | cut -d: -f1)
     IP=$(echo $host | cut -d: -f2)
     # 2초 타임아웃
@@ -359,8 +359,8 @@ cat > ~/lab/week08/playbook.json << 'JSONEOF'
         {"order": 7, "command": "find / -perm -4000 -type f 2>/dev/null | wc -l", "risk": "medium", "purpose": "SUID 파일 수"}
       ]
     },
-    "secu": {
-      "subagent_url": "http://192.168.208.150:8002",
+    "fw": {
+      "subagent_url": "http://10.20.30.1:8002",
       "checks": [
         {"order": 1, "command": "hostname && uptime", "risk": "low", "purpose": "서버 식별"},
         {"order": 2, "command": "df -h / 2>/dev/null", "risk": "low", "purpose": "디스크 사용량"},
@@ -371,7 +371,7 @@ cat > ~/lab/week08/playbook.json << 'JSONEOF'
       ]
     },
     "web": {
-      "subagent_url": "http://192.168.208.151:8002",
+      "subagent_url": "http://10.20.32.80:8002",
       "checks": [
         {"order": 1, "command": "hostname && uptime", "risk": "low", "purpose": "서버 식별"},
         {"order": 2, "command": "df -h / 2>/dev/null", "risk": "low", "purpose": "디스크 사용량"},
@@ -382,7 +382,7 @@ cat > ~/lab/week08/playbook.json << 'JSONEOF'
       ]
     },
     "siem": {
-      "subagent_url": "http://192.168.208.152:8002",
+      "subagent_url": "http://10.20.32.100:8002",
       "checks": [
         {"order": 1, "command": "hostname && uptime", "risk": "low", "purpose": "서버 식별"},
         {"order": 2, "command": "df -h / 2>/dev/null", "risk": "low", "purpose": "디스크 사용량"},

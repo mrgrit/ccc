@@ -822,7 +822,7 @@ curl -s -X POST http://localhost:9100/projects/${PROJECT_ID}/dispatch \
   -H "X-API-Key: ccc-api-key-2026" \
   -d '{
     "command": "nft list ruleset | head -30",
-    "subagent_url": "http://192.168.208.150:8002"
+    "subagent_url": "http://10.20.30.1:8002"
   }' | python3 -m json.tool
 ```
 

@@ -455,7 +455,7 @@ graph LR
 ### 학생 환경 준비
 
 ```bash
-# attacker VM (192.168.0.112) — IoT 도구 통합
+# 6v6-attacker 컨테이너 (10.20.30.202) — IoT 도구 통합
 sudo apt-get update
 sudo apt-get install -y \
    mosquitto mosquitto-clients \

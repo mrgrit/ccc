@@ -258,7 +258,7 @@ ssh ccc@10.20.30.80 "grep -cE 'union|select|script' /var/log/nginx/access.log 2>
 echo ""
 echo "=== 3. 초기 접근 성공 ==="
 echo "외부IP SSH 로그인 성공:"
-ssh ccc@10.20.30.201 "grep 'Accepted' /var/log/auth.log 2>/dev/null | grep -v '192.168.208' | head -5"  # 비밀번호 자동입력 SSH
+ssh 6v6-bastion "grep 'Accepted' /var/log/auth.log 2>/dev/null | grep -v '10.20.30' | head -5"  # 외부 SSH 만 (내부 통신 제외)
 
 echo ""
 echo "=== 4. 권한 상승 ==="

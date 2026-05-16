@@ -744,7 +744,7 @@ graph LR
 ### 학생 환경 준비
 
 ```bash
-ssh ccc@192.168.0.112
+ssh 6v6-attacker
 python3 -m venv ~/.venv-aagent && source ~/.venv-aagent/bin/activate
 pip install --upgrade pip
 

@@ -534,7 +534,7 @@ Week 09부터 Blue Team 시각으로 전환한다.
 ### 학생 환경 준비 (한 번만 실행)
 
 ```bash
-ssh ccc@192.168.0.112
+ssh 6v6-attacker
 
 # LinPEAS / WinPEAS (모든 OS 권한 enum 표준)
 mkdir -p ~/peass && cd ~/peass

@@ -419,10 +419,10 @@ HEADERS = {"X-API-Key": API_KEY, "Content-Type": "application/json"}
 
 # SubAgent URL 매핑
 SERVER_MAP = {
-    "bastion": "http://localhost:8002",
-    "secu": "http://192.168.208.150:8002",
-    "web": "http://192.168.208.151:8002",
-    "siem": "http://192.168.208.152:8002",
+    "bastion": "http://10.20.30.201:8002",
+    "fw": "http://10.20.30.1:8002",
+    "web": "http://10.20.32.80:8002",
+    "siem": "http://10.20.32.100:8002",
 }
 
 class BastionMCPTools:
@@ -720,10 +720,10 @@ def claude_thinks(question: str) -> str:
 def bastion_executes(project_id: str, plan: list) -> list:
     """Bastion 역할: 분산 실행"""
     SERVER_MAP = {
-        "bastion": "http://localhost:8002",
-        "secu": "http://192.168.208.150:8002",
-        "web": "http://192.168.208.151:8002",
-        "siem": "http://192.168.208.152:8002",
+        "bastion": "http://10.20.30.201:8002",
+        "fw": "http://10.20.30.1:8002",
+        "web": "http://10.20.32.80:8002",
+        "siem": "http://10.20.32.100:8002",
     }
     results = []
     for task in plan:

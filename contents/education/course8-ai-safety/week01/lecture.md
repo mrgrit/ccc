@@ -919,7 +919,7 @@ AI Safety 의 통제는 *4단계마다* 적용된다 — 한 단계만 적용하
 ### 학생 환경 준비
 
 ```bash
-ssh ccc@192.168.0.112
+ssh 6v6-attacker
 python3 -m venv ~/.venv-safety && source ~/.venv-safety/bin/activate
 pip install --upgrade pip
 

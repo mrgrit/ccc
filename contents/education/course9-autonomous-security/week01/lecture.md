@@ -643,7 +643,7 @@ L3 운영의 KPI 는 *4가지 동시 만족* 이 필요. 자동 처리율만 높
 ### 학생 환경 준비
 
 ```bash
-ssh ccc@192.168.0.112
+ssh 6v6-attacker
 python3 -m venv ~/.venv-autosec && source ~/.venv-autosec/bin/activate
 pip install --upgrade pip
 

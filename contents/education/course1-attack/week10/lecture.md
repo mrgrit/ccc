@@ -490,7 +490,7 @@ w03 정찰 record (208 events, 30 host, 54 port) 가 **모두 block**. 그러나
 ### 학생 환경 준비 (한 번만 실행)
 
 ```bash
-ssh ccc@192.168.0.112
+ssh 6v6-attacker
 
 sudo apt update && sudo apt install -y \
   proxychains4 sshpass sshuttle autossh \

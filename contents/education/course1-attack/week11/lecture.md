@@ -518,7 +518,7 @@ dataset 에 4798/4799 가 7,686 records (group membership enumeration). 권한 �
 ### 학생 환경 준비 (한 번만 실행)
 
 ```bash
-ssh ccc@192.168.0.112
+ssh 6v6-attacker
 
 sudo apt update && sudo apt install -y \
   curl wget lftp ncftp openssh-client \
