@@ -634,6 +634,99 @@ flowchart LR
     R3 --> B3 --> P3
 ```
 
+#### 3-6.1 R/B/P 상세 — Multi-stage 피싱 + Agentic APT 의 평생 학습
+
+본 주차 의 R/B/P 의 마무리 = **본 과목 15 주 의 모든 학습 의 종합** + **7 후속 과목 의
+연결**. Multi-stage 피싱 (사람 의 trust 의 점진적 escalation) + Agentic APT (AI 의 자율
+공격) = 운영 환경 의 가장 정교 한 위협.
+
+**Coverage Matrix — 3 APT 단계 × 3 통합 IR × 평생 책임**
+
+| APT 단계 | Red 의 기법 | Blue 의 통합 IR | 사용 도구 (15 주 종합) | Purple 의 평생 학습 |
+|---------|-----------|-----------------|---------------------|-------------------|
+| **① OSINT + Persona** | Linkedin / Github / 회사 wiki 의 정보 수집 + persona 제작 | Email Gateway 의 DMARC + SPF + DKIM + sandbox | W04-05 의 Suricata + W06 의 ModSec | KG anchor = "persona_threat_pattern" |
+| **② Trust Build** | 5+ email 의 점진적 trust + 시스템 의 정상 사용자 처럼 보임 | User Training (phishing simulation) + behavioral analytics | W07 의 osquery + W09 의 anomaly detection | KG anchor = "trust_escalation_pattern" |
+| **③ Lateral movement** | 압축 file + macro + LOLBin (Living Off the Land Binaries) | Threat Hunting (proactive) + EDR + Wazuh chain rule | W10-12 의 자율 보안 + W13 의 IR + W14 의 SBOM | KG anchor = "lateral_movement_pattern" |
+
+**시간선 — Multi-stage 피싱 + Agentic APT 의 1 cycle (1 주 ~ 1 달)**
+
+```
+T-7d     Red 의 OSINT 단계 (1 주 전)
+         └→ target 회사 의 직원 의 Linkedin 수집
+         └→ Github 의 commit 의 email 추출
+         └→ wiki 의 조직도 + 프로젝트 명 + 도구 명 의 enrichment
+         └→ persona = "신입 외주 개발자, 같은 분야 의 학교 졸업"
+
+T-3d     Red 의 1차 email (trust build, day 1)
+         └→ "안녕하세요, 같은 학교 졸업 의 ... 의 질문" (정상 의도)
+         └→ target 의 답신 = 정상 (의심 X)
+
+T-2d     Red 의 2차 email (day 2)
+         └→ "프로젝트 의 같은 도구 의 이슈 가 있어 ... 의 advice 부탁"
+         └→ target 의 답신 = github repo 의 url 공유 (정상)
+
+T-1d     Red 의 3차 email (day 3, payload 의 첫 등장)
+         └→ "감사합니다 ... PDF 의 첨부 파일 의 의견 부탁"
+         └→ PDF 의 macro = 압축 + LOLBin (powershell -enc ...)
+         └→ target 의 PDF 열기 = 1차 침해
+
+T+0      Blue 1차 — Email Gateway 의 alert
+         └→ DMARC = pass (정상 sender, 의심 X 의 가짜 trust)
+         └→ sandbox 의 PDF 분석 = macro 의 의심 score = 70 → alert
+         └→ Wazuh manager 의 incident 자동 등록
+
+T+1m     Blue 2차 — Bastion 의 자율 분석
+         └→ KG 검색 = 이전 의 "trust_escalation_pattern" 의 5건
+         └→ 3+ email 의 점진적 trust = 의심 score +30
+         └→ persona analysis = "신입 + 같은 학교" = 의심 score +20
+
+T+5m     Containment
+         └→ target 의 PC 의 isolation (network 분리)
+         └→ Email gateway 의 본 sender domain 의 quarantine
+         └→ Wazuh active-response 의 자동 적용
+
+T+1h     Threat Hunting (proactive)
+         └→ osquery 의 매 호스트 의 "powershell -enc" 의 검색
+         └→ 3 호스트 의 의심 발견 = lateral movement 의 흔적
+         └→ network traffic 의 C2 의심 IP 의 추적
+
+T+1d     Lessons Learned + 평생 학습
+         └→ KG anchor 의 update = "trust_escalation_pattern" 의 6건
+         └→ 7 후속 과목 의 연결:
+            1. AI 모의해킹 = Red 의 persona 자동화
+            2. AI 보안운영 = Blue 의 트리아지 자동화
+            3. AI 보안관제 = Blue 의 hunting 자동화
+            4. AI Safety 심화 = Red 의 indirect injection
+            5. 자율보안 시스템 = Purple 의 의사결정 자동화
+            6. AI 보안 에이전트 = 본 과목 의 모든 통합
+            7. 에이전트 IR = Bastion 의 자율 IR
+
+T+1w     평생 책임 의 routine
+         └→ KG anchor 의 정기 검토 (월 1회)
+         └→ persona/trust/lateral 의 3 pattern 의 dataset 업데이트
+         └→ 7 후속 과목 의 학습 진도 의 self-check
+```
+
+**R/B/P 의 핵심 인사이트 (5 항)**
+
+1. **본 과목 의 15 주 의 통합** — W01-W04 (Bastion 기초) + W05-W07 (AI 에이전트) +
+   W08-W10 (AI Safety) + W11-W12 (자율보안) + W13-W14 (IR) + W15 (종합). 15 주 의
+   모든 도구 + 패턴 의 종합 = 본 사건 의 분석 base.
+
+2. **Multi-stage 의 trust 의 시간 의 escalation** — APT 의 본질 = 시간 의 patience.
+   1 일 의 의심 X → 3 일 의 trust → 5 일 의 payload. 단일 email 의 의심 검출 = 한계,
+   email chain 의 패턴 분석 의 필수.
+
+3. **persona analysis 의 자동화** — sender 의 Linkedin / Github / wiki 의 정보 의
+   자동 수집 + persona 의 일관성 score. 신입 + 같은 학교 + 같은 도구 = 의심 score 의
+   가중치.
+
+4. **7 후속 과목 의 연결 의 의의** — 본 과목 = base. 7 후속 과목 = 각 영역 의 심화.
+   본 과목 의 자기 점검 5 영역 중 = 2 점 이하 영역 의 직접 재학습 필요.
+
+5. **평생 책임 의 routine** — KG anchor 의 정기 검토 + dataset 의 update + 7 후속
+   과목 의 self-check = 졸업 후 의 평생 보안 책임 의 base. 본 과목 의 학습 = 시작점.
+
 ### 3-7. 본 주차 hands-on — lab 5 step
 
 본 주차 lab yaml과 lecture를 매핑한다 (본 강의 기말).

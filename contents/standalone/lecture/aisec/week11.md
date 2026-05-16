@@ -727,6 +727,79 @@ flowchart LR
     P3 --> P4
 ```
 
+#### 3-13.1 R/B/P 상세 — 자율보안 의 cron + watcher + RL 통합
+
+본 주차 의 R/B/P 의 핵심 = **Purple 의 자동화 정도 가 W05-W10 보다 한 단계 증가**.
+W05-W10 = 운영자 의 chat 호출 → Bastion 응답. W11 = cron / watcher 의 자동 trigger →
+Bastion 의 자율 의사결정 (rule/ML/LLM/hybrid).
+
+**Coverage Matrix — 3 자동 위협 × 3 자율 응답 × 4 의사결정 패턴**
+
+| 자동 위협 | trigger 의 source | Bastion 의 자율 응답 | 의사결정 패턴 | approval_mode |
+|----------|-----------------|---------------------|------------|---------------|
+| **① Failed login spike** | watcher (Wazuh agent ship) | 1) rule 의 sshd_failed > 10/min → 즉시 차단 | rule-based (즉시) | "allow" (자동 적용) |
+| **② ModSec rule burst** | watcher (audit log realtime) | 2) Bastion LLM 의 alert triage → 정확도 분석 → 차단 | hybrid (rule + LLM) | "review" (사람 검토 후 적용) |
+| **③ novel attack pattern** | cron 주기 (5분) | 3) Bastion LLM 의 unknown pattern 의 자연어 분석 + KG 사전 검색 | LLM-based | "deny" (사람 승인 필수) |
+
+**시간선 — Failed login spike 의 자율 응답 의 1 cycle**
+
+```
+T+0      Red attacker 의 SSH brute (hydra) 시작
+         └→ web (10.20.32.80) 의 sshd 의 실패 100+ 매 분
+
+T+10s    Watcher (Wazuh agent ship) 의 트리거
+         └→ Wazuh agent 의 sshd_failed event 의 manager 전송
+         └→ alerts.json 의 rule 5710 의 burst 매치
+
+T+15s    Bastion 의 cron (1분 주기) + watcher (rule 5710 의 burst) 의 결합
+         └→ /var/log/wazuh/alerts.json 의 monitor 의 trigger
+         └→ Bastion 의 자율 처리 시작 (운영자 의 chat 호출 X)
+
+T+15s+1s 의사결정 — rule-based (즉시)
+         └→ rule = "sshd_failed > 10/min in last 5min by same src" → match
+         └→ approval_mode = "allow" (사전 등록 의 자동 처리)
+         └→ Bastion 의 자동 action = nft_block(src=10.20.30.202, duration=1h)
+
+T+15s+5s nft 룰 적용 (Bastion → fw 의 nft 명령)
+         └→ ssh 6v6-fw "nft add element ip filter blacklist { 10.20.30.202 }"
+         └→ 효과 확인 = Wazuh alert 의 신규 발생 의 정지
+
+T+1m     KG anchor 기록 (자율 task_outcome)
+         └→ task_outcome = "auto_block_ssh_brute_2026-05-16_1430"
+         └→ skills_used = [wazuh_alert_recent, nft_block, kg_anchor_record]
+         └→ approval_mode = "allow"
+         └→ human_review = false
+
+T+5m     운영자 의 사후 검토 (정기, 5분 주기 의 review dashboard)
+         └→ 자동 처리 의 5개 task 의 검토
+         └→ 4개 = 정상 / 1개 = 의심 (false positive) → manual rollback
+
+T+1d     RL Steering (W12 예고)
+         └→ false positive 의 1개 사건 의 dataset 추가
+         └→ rule 의 threshold 의 RL 의 자동 조정 (현재 10/min → 15/min)
+         └→ 다음 주기 = false positive 의 감소
+```
+
+**R/B/P 의 핵심 인사이트 (5 항)**
+
+1. **자율 의 의사결정 의 4 패턴 의 사용** — rule (즉시) + ML (학습 패턴) + LLM (자연어
+   context) + hybrid (조합). 운영 환경 = hybrid 의 default. rule = 명확 한 case 의
+   즉시 처리, LLM = 모호 한 case 의 분석.
+
+2. **approval_mode 의 3 등급** — allow (자동 적용) / review (사람 검토 후 적용) / deny
+   (사람 승인 필수). action 의 risk score 에 따른 default = 운영 의 안전 조절.
+
+3. **watcher 의 source 의 다양성** — file system (inotify) + log (tail -f) + process
+   (/proc) + DB (trigger/WAL) + API (polling). 각 source 의 trade-off + 통합 의 KG
+   anchor 의 base.
+
+4. **cron + watcher 의 결합 의 이중 안전망** — cron 의 주기 (1분/5분/1시간) + watcher
+   의 event-driven 의 결합 = 한 source 의 fail 시 의 다른 source 의 보강. zero
+   downtime 의 detection.
+
+5. **사후 검토 의 sampling** — 자율 처리 의 100% 검토 = 운영자 의 burden. 5% sampling
+   + false-positive 사건 의 100% 검토 = 효율 + 안전 의 trade-off.
+
 ### 3-14. 본 주차 hands-on — lab 5 step
 
 본 주차 lab yaml과 lecture를 직접 매핑한다.

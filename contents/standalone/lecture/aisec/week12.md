@@ -644,6 +644,94 @@ flowchart LR
     P1 --> P2 --> P3
 ```
 
+#### 5-1.1 R/B/P 상세 — 자율 Red + 자율 Blue 의 통합 cycle + RL Steering
+
+본 주차 의 R/B/P 의 정점 = **Red + Blue 양 측 의 자율화** + RL Steering 의 학습. W11
+의 자율 Blue 만 → W12 의 자율 Red + Blue 양 측. Purple = 양 측 의 cycle 의 평가 +
+RL 의 reward 조정.
+
+**Coverage Matrix — 자율 Red 6 task × 자율 Blue 6 단계**
+
+| 자율 Red task | 자율 Blue 단계 | 도구 매핑 | 결과 + KG anchor |
+|-------------|--------------|---------|----------------|
+| **Reconnaissance** | Observe (alert source) | nmap + Suricata SCAN rule | KG: target_profile |
+| **Scanning** | Enrich (CTI + KG) | nikto + Wazuh CDB list | KG: vuln_finding |
+| **Exploitation** | Triage (정확도 분류) | sqlmap + ModSec audit | KG: exploit_attempt |
+| **Post-exploitation** | Prepare (대응 plan) | impacket + osquery JOIN | KG: post_exploit_evidence |
+| **Reporting** | Mitigate (자동 차단) | report_gen + nft_block | KG: incident_response |
+| **Adaptation** | Learn (KG update + RL) | persona_change + DPO update | KG: lessons_learned |
+
+**시간선 — 자율 Red + 자율 Blue 의 1 cycle (학습 환경, dry-run)**
+
+```
+T+0      자율 Red 의 cron trigger (10분 주기)
+         └→ 정찰 task = nmap_scan(target=juice.6v6.lab)
+         └→ 학습 환경 만 — RoE 의 6 윤리 필수 의 100% 준수
+         └→ approval_mode = "dry-run" (실 공격 X)
+
+T+30s    자율 Red 의 Reconnaissance
+         └→ nmap -sV juice.6v6.lab → port 80, Apache, ModSec
+         └→ KG anchor = target_profile_juice_6v6_2026-05-16
+
+T+1m     자율 Blue 의 Observe (Wazuh + Suricata alert)
+         └→ alert = "ET POLICY nmap -sV 의 burst"
+         └→ source = 10.20.30.202 (attacker, 자율 Red 의 출처)
+         └→ KG 검색 = 본 attacker 의 사전 등록 = "자율 Red 의 dry-run"
+         └→ alert 의 severity = info (실 위협 X)
+
+T+1m+5s  자율 Blue 의 Enrich
+         └→ KG 의 target_profile + 이전 사건 5건 의 anchor
+         └→ Wazuh CDB list 의 본 src IP 의 분류 = "internal_test"
+
+T+1m+10s 자율 Blue 의 Triage
+         └→ rule = "internal_test src 의 nmap = info" → escalation X
+         └→ approval_mode = "auto" (사전 등록)
+
+T+2m     자율 Red 의 Scanning (계속)
+         └→ nikto -h juice.6v6.lab → 50+ vuln finding
+         └→ KG anchor = vuln_finding_2026-05-16
+
+T+2m+1s  자율 Blue 의 Enrich + Triage (반복)
+         └→ ModSec 의 913 SCANNER 룰 매치 → audit log
+         └→ KG 의 target_profile 의 vuln 의 5건 의 historical context
+         └→ "이 vuln 는 이전 에 patch 됨" 의 결론
+
+T+5m     자율 Red 의 Adaptation (다음 task 의 자동 plan)
+         └→ persona_change = "deeper_recon" → 다음 cycle 의 -sC 추가
+         └→ DPO update = 이번 cycle 의 reward = +0.7 (적절 한 정찰)
+
+T+5m+5s  자율 Blue 의 Learn (KG update + RL)
+         └→ KG anchor = incident_response_2026-05-16
+         └→ false_positive = false (정상 dry-run)
+         └→ RL reward = +0.8 (정확 한 triage)
+
+T+10m    자율 Purple cycle (Red + Blue 의 통합 평가)
+         └→ Red 의 발견 5건 + Blue 의 차단 0건 (dry-run 이므로 X)
+         └→ coverage_matrix = "5 vuln 의 detect 100% / block 0%"
+         └→ recommendation = "운영 환경 의 동일 vuln 의 block 권장 = 5/5"
+```
+
+**R/B/P 의 핵심 인사이트 (5 항)**
+
+1. **자율 Red 의 6 윤리 필수 의 routine 화** — RoE / scope / blast_radius / consent /
+   audit / rollback 의 6 항 의 매 cycle 의 자동 검증. 1 항 의 fail = cycle 의 즉시
+   중단 + 운영자 알림.
+
+2. **자율 Blue 의 6 단계 의 응급실 비유** — Observe (환자 도착) → Enrich (병력 조회) →
+   Triage (중증도 분류) → Prepare (의료진 배치) → Mitigate (응급 처치) → Learn (사후
+   기록). 6 단계 의 매 step 의 KG anchor 의 누적 = 운영 경험 의 축적.
+
+3. **RL Steering 의 4 연구 의 운영 적용** — RLHF (강아지 의 학습) + DPO (간단 비교) +
+   ACT (음량 조절) + PRM (수학 단계 점수). DPO 가 운영 환경 의 default — Red/Blue
+   cycle 의 reward 의 dataset 의 즉시 학습.
+
+4. **자율 Purple cycle 의 cadence** — Red 10분 + Blue 5분 + Purple 1시간 의 cadence.
+   Purple 의 평가 = 100 cycle 의 통계 + RL reward 의 fine-tune.
+
+5. **운영 환경 의 자율 Red 의 limitation** — 학습 환경 = dry-run 의 자유. 운영 환경 =
+   read-only recon 만 (active exploit X). 자율 Red 의 운영 배포 의 trade-off 의 점진
+   적 확대.
+
 ### 5-2. 본 주차 hands-on — lab 5 step
 
 본 주차 lab yaml과 lecture를 직접 매핑한다.

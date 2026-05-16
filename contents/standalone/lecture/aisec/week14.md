@@ -660,6 +660,86 @@ flowchart LR
     R3 --> B3 --> P3
 ```
 
+#### 3-8.1 R/B/P 상세 — 공급망 + 간접 injection + 0-Day 의 통합 IR
+
+본 주차 의 R/B/P 의 특수성 = **외부 source 의 위협** (모델 hub / 외부 문서 / CVE) +
+**내부 대응** (SBOM / prompt-shield / NVD sync). Log4Shell 의 0-Day 사례 의 학습 자료.
+
+**Coverage Matrix — 3 공격 × 3 방어 × Purple 의 학습 자산화**
+
+| 공격 유형 | source | Blue 의 방어 | Purple 의 자산화 | KG anchor |
+|----------|--------|------------|---------------|----------|
+| **① Model Hub 변조** | Hugging Face / Ollama hub | model digest 의 hash 검증 | SBOM 의 매 model 의 영구 기록 + 변경 audit | model_provenance_anchor |
+| **② Indirect Injection** | wiki / RAG / 외부 문서 | prompt-shield (LLM-as-judge 의 의심 chunk 검출) | KG audit 의 모든 chunk 의 origin + 신뢰 score | rag_chunk_audit_anchor |
+| **③ 0-Day (Log4Shell)** | NVD / 보안 공지 / Twitter | NVD 의 자동 sync (cron) + WAF 의 즉시 룰 추가 | 패치 자동화 + 자산 매핑 (CVE → 6v6 서버) | cve_asset_mapping_anchor |
+
+**시간선 — Log4Shell-class 0-Day 의 detect → patch 의 1 cycle**
+
+```
+T+0      Red 의 0-Day 공개 (NVD 등록)
+         └→ CVE-2024-XXXX (Apache 의 RCE, CVSS 9.8)
+         └→ NIST NVD 의 JSON feed 의 update
+
+T+15m    Blue 1차 — NVD sync (cron 매 15분)
+         └→ nvd_cron.log = "CVE-2024-XXXX 신규 등록, CVSS 9.8"
+         └→ 6v6 자산 의 자동 매칭:
+            - web (10.20.32.80) = Apache 2.4 가동 → 영향 ✓
+            - fw (10.20.30.1) = HAProxy = 영향 X
+            - siem (10.20.32.100) = Wazuh manager = 영향 X
+
+T+30m    Blue 2차 — 운영자 의 alert 수신
+         └→ Bastion 의 cron 의 cve_high_critical 의 trigger
+         └→ Wazuh manager 의 incident 자동 등록
+         └→ 운영자 의 email + dashboard alert
+
+T+1h     Purple — 패치 plan 의 자동 생성
+         └→ 운영자 → Bastion: "CVE-2024-XXXX 의 패치 plan"
+         └→ Bastion ReAct (Purple mode):
+            Turn 1: cve_asset_match(cve_id) → web 1대
+            Turn 2: patch_plan(asset=web, package=apache2) → apt upgrade plan
+            Turn 3: rollback_plan(asset=web, snapshot=current) → snapshot 명령
+         └→ 응답 = "web 의 apache2 패키지 의 즉시 upgrade 권장.
+                   rollback = snapshot create + apt downgrade. risk = low (test 환경)"
+
+T+2h     운영자 의 patch 적용
+         └→ ssh 6v6-web "sudo apt update && sudo apt upgrade -y apache2"
+         └→ 효과 확인 = curl 의 banner 의 version 변경
+         └→ Bastion 의 자동 patch_verify = OK
+
+T+1d     Purple 의 자산화
+         └→ KG anchor = cve_response_2024_XXXX_2026-05-16
+         └→ skills_used = [nvd_sync, cve_asset_match, patch_plan, patch_verify]
+         └→ MTTP (Mean Time To Patch) = 2 시간 (목표 = 24 시간)
+         └→ SBOM 의 web/apache2 의 version 의 update 기록
+
+T+1m     교훈 의 다음 cycle 반영
+         └→ 자산 인벤토리 의 매 cycle 의 자동 검증 (cron 매일)
+         └→ critical 자산 의 24/7 의 alert subscription
+         └→ rollback plan 의 매 patch 의 routine
+```
+
+**R/B/P 의 핵심 인사이트 (5 항)**
+
+1. **공급망 의 외부 source 의 위협 의 다양성** — Model Hub (Hugging Face) + RAG/wiki
+   (외부 문서) + CVE (NVD) + Dependency (PyPI/npm) 의 4 외부 source. SBOM + signature
+   + valid_until 의 4 layer 방어.
+
+2. **간접 prompt injection 의 detect 의 어려움** — 사용자 의 prompt 의 injection =
+   directly. RAG chunk 의 injection = indirectly. prompt-shield (LLM-as-judge) 의
+   사전 검증 + chunk 의 origin metadata 의 trust score.
+
+3. **NVD sync 의 자동화 + 자산 매칭** — NVD 의 매 15분 cron sync + 6v6 자산 의 자동
+   매칭. critical CVE 의 즉시 alert + 패치 plan 의 자동 생성. MTTP 의 목표 = 24
+   시간.
+
+4. **SBOM 의 의무 화** — 매 model + 매 package 의 SBOM (Software Bill of Materials)
+   의 영구 기록. supply chain 공격 의 의심 시 의 영향 범위 추적 의 base. 미국 의
+   Executive Order 14028 의 의무 (참고).
+
+5. **Log4Shell 의 교훈 의 학습** — 2021-12 의 Log4Shell 의 영향 = transitive
+   dependency 의 추적 의 어려움. 6v6 의 SBOM 의 학습 = 운영 환경 의 같은 사고 의 사전
+   대비.
+
 ### 3-9. 본 주차 hands-on — lab 5 step
 
 본 주차 lab yaml과 lecture를 매핑한다.
