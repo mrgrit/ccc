@@ -128,47 +128,85 @@ steps:
     instruction: |
       ## 🎯 MISSION
 
-      ffuf 으로 **경로 fuzz** — common.txt wordlist + 발견 path 추출.
+      ffuf 으로 **경로 fuzz** — common.txt wordlist + Juice Shop SPA pitfall 인지 +
+      `-fs` (content-length 필터) 로 false positive 제거. 3 step 으로 *3 함정* 학습.
 
-      ## 💻 실행 명령
+      ## 💻 실행 명령 (3 단계)
 
       ```bash
-      ssh 6v6-attacker 'timeout 30 ffuf -u "http://10.20.30.1/FUZZ" -H "Host: juice.6v6.lab" -w /usr/share/dirb/wordlists/common.txt -mc 200,302 -t 50 2>&1 | tail -15' || echo "ffuf timeout"
+      # 1) baseline — UA 우회 없이 dirb wordlist (ModSec 913 UA 차단 검증)
+      ssh 6v6-attacker 'timeout 30 ffuf -u http://10.20.30.1/FUZZ -H "Host: juice.6v6.lab" -w /usr/share/dirb/wordlists/common.txt -mc 200,301,302 -of csv -o /tmp/f1.csv -t 50 >/dev/null 2>&1; echo "1) hit (UA=ffuf): $(tail -n +2 /tmp/f1.csv | wc -l)"'
+
+      # 2) UA Mozilla 우회 → Juice Shop SPA 가 모든 path 를 index.html 로 응답 → false positive
+      ssh 6v6-attacker 'timeout 30 ffuf -u http://10.20.30.1/FUZZ -H "Host: juice.6v6.lab" -H "User-Agent: Mozilla/5.0" -w /usr/share/dirb/wordlists/common.txt -mc 200,301,302 -of csv -o /tmp/f2.csv -t 50 >/dev/null 2>&1; echo "2) hit (UA 우회): $(tail -n +2 /tmp/f2.csv | wc -l)"; echo "   content_length 분포 (top 3):"; tail -n +2 /tmp/f2.csv | cut -d, -f6 | sort | uniq -c | sort -rn | head -3'
+
+      # 3) -fs 필터 — index.html 응답 사이즈 제외 → 진짜 path 만
+      ssh 6v6-attacker 'INDEX_SIZE=$(tail -n +2 /tmp/f2.csv | cut -d, -f6 | sort | uniq -c | sort -rn | head -1 | awk "{print \$2}"); timeout 30 ffuf -u http://10.20.30.1/FUZZ -H "Host: juice.6v6.lab" -H "User-Agent: Mozilla/5.0" -w /usr/share/dirb/wordlists/common.txt -mc 200,301,302 -fs $INDEX_SIZE -of csv -o /tmp/f3.csv -t 50 >/dev/null 2>&1; echo "3) hit (-fs $INDEX_SIZE 제외): $(tail -n +2 /tmp/f3.csv | wc -l)"; echo "   진짜 path:"; tail -n +2 /tmp/f3.csv | cut -d, -f1 | head -10'
       ```
 
       ## 📋 확인 사항
 
-      - ffuf 출력에 status / size / words 가 있는 경로 (예: `/admin`, `/api`)
-      - -mc 200,302 → 정상 응답만 표시 (403/404 제외)
+      - 1) **hit 0** — UA `ffuf/2.1.0` 가 ModSec 913 (User-Agent attack) 차단
+      - 2) **hit ≫ 0** + **동일 content_length** 다수 (예: 75002) — SPA index.html
+        반환
+      - 3) **hit ≪ 2** — `-fs` 로 false positive 제거 후 잔여 (또는 0)
 
       ## 💡 왜 이걸 하는가?
 
-      디렉토리 brute 의 모던 표준 (dirb 후속). 숨겨진 admin / api / backup 발견.
+      디렉토리 brute 의 *3 일반 함정* — (a) UA 차단 (b) SPA 동일 응답 (c) WAF rate
+      limit. 학생이 *3 step 실측* 으로 각 함정 인지 + 우회. 학습 가치 > 단일 명령.
 
       ## 🔍 결과 해석
 
-      - **정상**: 1+ path 발견 (예: `/api`)
-      - **운영**: ModSec 가 dirb pattern 차단 가능 (UA 변경 시 우회 가능)
-    hint: ffuf -u FUZZ + wordlist
+      - **정상**: 1 hit 0, 2 hit 다수 + 단일 length, 3 hit 소수 (또는 0)
+      - **결과 모두 0** 도 학습 — Juice Shop = SPA + REST API (`/rest/...` 가 진짜
+        API endpoint). 다음 step 의 API 탐색 으로 자연 연결.
+      - **운영 응용**: dirb / gobuster 도 동일 함정. ffuf 의 `-fs` `-fw` `-fl`
+        (size/words/lines) 필터 가 SPA fuzz 의 표준.
+
+      ## 비정상 시 대응
+
+      - **모든 step 결과 같음** — wordlist path 가 잘못. `-w` 경로 확인 (`ls
+        /usr/share/dirb/wordlists/common.txt`).
+      - **timeout 30 초과** — `-t 20` (스레드 감소) 또는 `--rate 100` (rate limit) 으로
+        ModSec rate trigger 회피.
+    hint: ffuf 3-step (baseline → UA 우회 → -fs 필터). SPA pitfall 학습.
     category: scanning
-    points: 20
+    points: 25
     answer: |
-      ssh 6v6-attacker 'timeout 30 ffuf -u "http://10.20.30.1/FUZZ" -H "Host: juice.6v6.lab" -w /usr/share/dirb/wordlists/common.txt -mc 200,302 -t 50 2>&1 | tail -15' || echo "timeout"
-    answer_detail: ffuf path fuzz.
+      ssh 6v6-attacker 'timeout 30 ffuf -u http://10.20.30.1/FUZZ -H "Host: juice.6v6.lab" -w /usr/share/dirb/wordlists/common.txt -mc 200,301,302 -of csv -o /tmp/f1.csv -t 50 >/dev/null 2>&1; echo "1) hit (UA=ffuf): $(tail -n +2 /tmp/f1.csv | wc -l)"'
+      ssh 6v6-attacker 'timeout 30 ffuf -u http://10.20.30.1/FUZZ -H "Host: juice.6v6.lab" -H "User-Agent: Mozilla/5.0" -w /usr/share/dirb/wordlists/common.txt -mc 200,301,302 -of csv -o /tmp/f2.csv -t 50 >/dev/null 2>&1; echo "2) hit (UA 우회): $(tail -n +2 /tmp/f2.csv | wc -l)"; tail -n +2 /tmp/f2.csv | cut -d, -f6 | sort | uniq -c | sort -rn | head -3'
+      ssh 6v6-attacker 'INDEX_SIZE=$(tail -n +2 /tmp/f2.csv | cut -d, -f6 | sort | uniq -c | sort -rn | head -1 | awk "{print \$2}"); timeout 30 ffuf -u http://10.20.30.1/FUZZ -H "Host: juice.6v6.lab" -H "User-Agent: Mozilla/5.0" -w /usr/share/dirb/wordlists/common.txt -mc 200,301,302 -fs $INDEX_SIZE -of csv -o /tmp/f3.csv -t 50 >/dev/null 2>&1; echo "3) hit (-fs $INDEX_SIZE 제외): $(tail -n +2 /tmp/f3.csv | wc -l)"'
+    answer_detail: |
+      ffuf 3-step — (1) UA 차단 검증 ModSec 913 (2) UA 우회 + SPA false positive
+      인지 (3) -fs 필터 로 false positive 제거. 학생이 *3 함정* (UA / SPA / WAF) 의
+      구조적 차이 인지.
     verify:
       type: output_contains
-      expect: 'ffuf\|Status'
+      expect: 'hit'
       field: stdout
       semantic:
-        intent: "ffuf 경로 fuzz"
-        success_criteria: ["ffuf 실행"]
+        intent: |
+          ffuf 3-step (baseline / UA 우회 / -fs 필터) — UA 차단 (ModSec 913) + SPA
+          false positive + 필터 우회 학습. OWASP A05 misconfiguration + ATT&CK T1083.
+        success_criteria:
+          - "1) UA=ffuf hit ≪ 2 (ModSec 913 차단)"
+          - "2) UA Mozilla hit ≫ 0 + content_length 동일 (SPA false positive 인지)"
+          - "3) -fs 필터 후 hit < 2 (false positive 제거)"
+          - "각 함정 (UA / SPA / WAF rate) 의 의미 명시"
+          - "dirb / gobuster 동일 함정 응용 인지"
         acceptable_methods:
-          - "**[OSS] ffuf -u FUZZ + wordlist**"
-          - "**[OSS] -mc 200,302 만**"
-          - "**[OSS] -fc 403 제외**"
-          - "**[OSS] -e 확장자 (.php .bak)**"
-          - "**[OSS] -recursion**"
-          - "**[OSS] gobuster / dirb 대안**"
-          - "**[OSS] ModSec 942/913 차단 우회**"
-          - "**[OSS] T1594 Search Victim-Owned Websites**"
+          - "ffuf 3-step (수기): UA → -fs 필터. 표준 SPA fuzz."
+          - "gobuster -w (대안): `gobuster dir -u URL -w wordlist`. -k SSL 무시."
+          - "dirb (legacy): `dirb URL wordlist`. 느림 + UA 차단 가능."
+          - "feroxbuster (Rust, recursive): `feroxbuster -u URL -w wordlist`."
+          - "wfuzz: `wfuzz -c -z file,wordlist --hh INDEX_SIZE URL/FUZZ`. --hh = filter content-length."
+          - "Burp Intruder + payload: SPA pitfall 동일."
+          - "ModSec 913 (User-Agent attack) + 942 (SQLi pattern) 인지."
+          - "Bastion AI 3-step + KG: hit count 차이 anchor."
+        negative_signs:
+          - "단일 ffuf 만 (3 step 안 함)"
+          - "SPA false positive 인지 못함 (-fs 필터 안 씀)"
+          - "UA 차단 vs SPA 동일 응답 의 구조 차이 모름"
+          - "결과 0 시 *왜 0* 인지 인지 못함 (API endpoint 로 안 갈아탐)"
     target_vm: attacker
