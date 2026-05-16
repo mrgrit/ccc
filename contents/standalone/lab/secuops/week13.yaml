@@ -174,16 +174,23 @@ steps:
       - WHOIS: server 별 다름, 5 req/min 보수적
       ```
 
-      ## 💻 검증 명령 (각 enrichment 의 *실 호출* 시뮬)
+      ## 💻 설치 + 검증 명령 (CURRICULUM 원칙 #8 — 도구 부재 시 설치 부터)
 
       ```bash
-      # GeoIP 로컬 DB (geoip-bin 패키지) — 폐쇄망 도 가능
-      ssh 6v6-bastion 'command -v geoiplookup && geoiplookup 8.8.8.8 || echo "geoip-bin 미설치"'
+      # === 사전 설치 (bastion 컨테이너 에 도구 가 없을 시) ===
+      ssh 6v6-bastion 'sudo apt-get update && sudo apt-get install -y geoip-bin geoip-database whois'
 
-      # WHOIS — 외부 망 필요
-      ssh 6v6-bastion 'command -v whois && timeout 5 whois -h whois.iana.org abuse.ch 2>&1 | head -5 || echo "whois 미설치 또는 차단"'
+      # === 설치 검증 ===
+      ssh 6v6-bastion 'geoiplookup --version && whois --version'
 
-      # VT (curl + dummy API key — 401 응답 정상)
+      # === 실 호출 시뮬 ===
+      # GeoIP — 로컬 DB (오프라인 가능)
+      ssh 6v6-bastion 'geoiplookup 8.8.8.8'
+
+      # WHOIS — 외부 망 필요 (폐쇄망 시 timeout)
+      ssh 6v6-bastion 'timeout 5 whois -h whois.iana.org abuse.ch 2>&1 | head -5 || echo "whois 외부 망 timeout (폐쇄망 정상)"'
+
+      # VT (curl + dummy API key — 4xx 응답 정상)
       ssh 6v6-bastion 'curl -sI --max-time 5 -H "x-apikey: DUMMY" https://www.virustotal.com/api/v3/files/0 2>&1 | head -1'
       ```
 

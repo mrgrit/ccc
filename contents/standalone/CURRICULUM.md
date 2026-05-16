@@ -170,6 +170,12 @@ Host 6v6-*
    - **공통 generator** (`lib/generators/`): `auth_log`, `wazuh_alert`, `web_access`, `suricata_alert`, `lolbas_log`, `firewall_log` — 시드 재현 가능.
    - **학생 안내**: 데이터 의존 step 의 lecture 첫 박스 + lab instruction 첫 단락 에 정책 명시.
 
+8. **도구 부재 시 *설치 step 우선*** (2026-05-16 추가) — 도구가 없으면 학생이 *설치 부터 직접*:
+   - **lab instruction 의 첫 step** = *설치 명령* (apt/pip/curl). "NOT_INSTALLED" 인지 만 으로 끝내지 말 것.
+   - **폐쇄망 도구** (LinPEAS / sysmonforlinux 등): (a) attacker 컨테이너 *사전 패키지 배포* (`/opt/tools/`) + (b) 학생 lab 의 *오프라인 설치* (`dpkg -i /opt/tools/*.deb` 또는 `bash /opt/tools/linpeas.sh`)
+   - **인프라 정정**: attacker / bastion / web Dockerfile 에 *학습 lab 의존 도구* 사전 설치 (P22 backlog tracker 등재)
+   - **검증**: 설치 명령 → `command -v <tool>` 또는 `<tool> --version` 으로 *바로 검증*.
+
 ## 진행 추적
 
 - `secuops/W01` — ✅ DONE (2026-05-11, 14 step 실측 통과, commit 428a850)

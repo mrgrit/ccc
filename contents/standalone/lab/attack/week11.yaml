@@ -104,9 +104,34 @@ steps:
       ## 💻 실행 명령
 
       ```bash
-      # 1) 다운로드 시도 — 폐쇄망 확인 (14 byte = curl error msg 만 저장)
+      # === 0) 사전 설치 (CURRICULUM 원칙 #8 — 도구 부재 시 설치 부터) ===
+      # 0-a) 폐쇄망 시 fallback — bastion 학생 호스트 에서 wget/scp
+      # 0-b) attacker 컨테이너 의 /opt/tools/ 사전 배포 시 (P22 인프라 정정 후)
+      ssh 6v6-attacker '
+        if [ ! -s /tmp/linpeas.sh ]; then
+          # 1차 — github 직접 (외부 망 가능 시)
+          curl -sL --max-time 10 https://raw.githubusercontent.com/peass-ng/PEASS-ng/master/linPEAS/linpeas.sh -o /tmp/linpeas.sh 2>/dev/null
+        fi
+        if [ ! -s /tmp/linpeas.sh ] || [ $(wc -c < /tmp/linpeas.sh) -lt 1000 ]; then
+          # 2차 — attacker 의 사전 배포 (P22 backlog)
+          [ -f /opt/tools/linpeas.sh ] && cp /opt/tools/linpeas.sh /tmp/linpeas.sh
+        fi
+        chmod +x /tmp/linpeas.sh 2>/dev/null
+        echo "linpeas: $(wc -c < /tmp/linpeas.sh) byte"
+      '
+
+      # === 1) 다운로드 + 설치 결과 검증 ===
       ssh 6v6-bastion 'curl -sL --max-time 5 https://raw.githubusercontent.com/peass-ng/PEASS-ng/master/linPEAS/linpeas.sh -o /tmp/linpeas.sh 2>&1; echo "bastion: $(wc -c < /tmp/linpeas.sh) byte"'
-      ssh 6v6-attacker 'curl -sL --max-time 5 https://raw.githubusercontent.com/peass-ng/PEASS-ng/master/linPEAS/linpeas.sh -o /tmp/linpeas.sh 2>&1; echo "attacker: $(wc -c < /tmp/linpeas.sh) byte"'
+      ssh 6v6-attacker 'echo "attacker: $(wc -c < /tmp/linpeas.sh) byte"'
+
+      # === 1.5) LinPEAS 가 설치 되었으면 실 실행 (양쪽 다 14 byte 이면 폐쇄망 fallback) ===
+      ssh 6v6-attacker '
+        if [ $(wc -c < /tmp/linpeas.sh) -gt 1000 ]; then
+          bash /tmp/linpeas.sh -a 2>&1 | head -40
+        else
+          echo "LinPEAS 미설치 — attacker Dockerfile 의 /opt/tools/ 사전 배포 필요 (P22 backlog)"
+        fi
+      '
 
       # 2) 오프라인 enum — LinPEAS 의 핵심 5 카테고리 를 *수동 스크립트* 로 대체
       ssh 6v6-bastion '
