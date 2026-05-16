@@ -227,10 +227,10 @@ cat > ~/lab/week07/security-project/CLAUDE.md << 'MDEOF'
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| bastion | 10.20.30.201 | Control Plane | ssh ccc@10.20.30.201 |
-| secu | 10.20.30.1 | 방화벽/IPS | ssh ccc@10.20.30.1 |
-| web | 10.20.30.80 | 웹서버 | ssh ccc@10.20.30.80 |
-| siem | 10.20.30.100 | SIEM | ssh ccc@10.20.30.100 |
+| bastion | 10.20.30.201 | Control Plane | ssh 6v6-bastion |
+| secu | 10.20.30.1 | 방화벽/IPS | ssh 6v6-fw |
+| web | 10.20.30.80 | 웹서버 | ssh 6v6-web |
+| siem | 10.20.30.100 | SIEM | ssh 6v6-siem |
 
 ## Bastion API
 
