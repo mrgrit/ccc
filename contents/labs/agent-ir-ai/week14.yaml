@@ -428,3 +428,80 @@ steps:
     ※ ~/ccc/data/bastion/experience/w14-apt.json && cat ~/ccc/data/bastion/experience/w14-apt.json
   risk_level: low
   bastion_prompt: experience 저장.
+- order: 100
+  instruction: '[Multi-task] 모의 실사고 5단계 통합 — Blue 초기 → R1 정찰 → R2 SQLi → R3 측면이동 → IR 보고.'
+  bastion_prompt: |
+    Agentic APT 다단계 실사고 5작업을 한 흐름의 모의 IR 으로 수행해줘.
+
+    1) [Blue 초기 상태 - Bastion 자산 + Wazuh dashboard] ssh ccc@bastion 'curl -sk
+       http://192.168.0.110:9200/health 2>&1 | python3 -c "import json,sys; d=json.load(sys.stdin);
+       print(f\"Bastion: {d.get(\\\"status\\\",\\\"down\\\")} model={d.get(\\\"model\\\")} skills={d.get(\\\"skills\\\")}\")"';
+       ssh ccc@{{SECU_IP}}00 'curl -sk https://localhost:443 -o /dev/null -w "Wazuh Dashboard: %{http_code}\n"' 의
+       Blue 초기 baseline 표.
+
+    2) [R1 - 정찰 시뮬] ssh ccc@{{ATTACKER_IP}} 'for p in /robots.txt /api/Users /rest/admin /score-board
+       /api/Cards; do curl -s -o /dev/null -w "$(date +%s) recon $p %{http_code}\n" {{WEB_IP}}:3000$p; sleep 0.5;
+       done' 의 5 endpoint 정찰 + sleep 5 + ssh ccc@{{SECU_IP}} 'sudo tail -5 /var/log/suricata/fast.log
+       2>/dev/null' 의 alert 표.
+
+    3) [R2 - SQLi 시도] ssh ccc@{{ATTACKER_IP}} 'PAY="email=admin%40juice-sh.op%27--&password=x";
+       curl -s -X POST -d "$PAY" -H "Content-Type: application/x-www-form-urlencoded" -o /dev/null -w
+       "SQLi: %{http_code}\n" {{WEB_IP}}:3000/rest/user/login' + ModSec 응답 확인. CRS 942 매칭 검증.
+
+    4) [R3 - 측면이동 시뮬] ssh ccc@{{ATTACKER_IP}} 'for h in 10.20.30.201 10.20.30.1 10.20.30.100; do echo -n
+       "$h: "; nc -zvw 1 $h 22 2>&1 | tail -1; done' 의 SSH 22 의 3 host scan + ssh ccc@{{SECU_IP}} 'sudo tail -10
+       /var/log/auth.log | grep -E "Failed|Accepted"' 의 SSH 인증 시도 표. MITRE T1018 + T1021 매핑.
+
+    5) [Blue IR 종합 + Bastion KG anchor 등록] sleep 10; ssh ccc@{{SECU_IP}}00 'sudo grep "{{ATTACKER_IP}}"
+       /var/ossec/logs/alerts/alerts.json 2>/dev/null | wc -l; sudo tail -10 /var/ossec/logs/alerts/alerts.json
+       2>/dev/null | python3 -c "import json,sys; alerts=[json.loads(l) for l in sys.stdin if l.strip()];
+       print(f\"Total alerts: {len(alerts)}\"); from collections import Counter; print(Counter((a[\\\"rule\\\"][\\\"id\\\"]
+       for a in alerts if \\\"rule\\\" in a)).most_common(5))"' 의 종합 alert + Bastion KG anchor 등록 시뮬 +
+       experience: cat > ~/ccc/data/bastion/experience/w14-apt.json <<EOF
+       {"id":"w14-apt","ts":"$(date -Iseconds)","red_agents":5,"kill_chain_stages":3,
+        "bastion_blocks":["recon-alert","sqli-block","lateral-detect"],
+        "MTTD":"5min","MTTC":"15min","detection_coverage":"80%",
+        "lessons":["다단계 APT 의 5 stage chain","Bastion KG anchor 의 cross-round 학습",
+                   "Suricata + ModSec + Wazuh 의 3 layer fusion"]}
+       EOF
+       cat ~/ccc/data/bastion/experience/w14-apt.json.
+
+    cleanup X (실사고 evidence 보존).
+
+    마지막에 5단계 × (APT stage / 명령 / 결과 / 탐지 layer / MTTD/MTTC / 운영 권고) 의 5×6 매트릭스 +
+    APT Defense Timeline (T+0 recon → T+5 SQLi → T+10 lateral → T+15 contained) + Lessons Learned
+    (3 가지) markdown 출력.
+  hint: Agentic APT 5단계 chain. 3 layer fusion + MTTD/MTTC + Bastion KG anchor 가 핵심.
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: '[통합] Agentic APT 5단계 — Blue 초기/recon/SQLi/측면이동/IR 종합. MITRE T1018/T1021/T1190 + NIST CSF Respond 매핑 + 5×6 매트릭스 + Defense Timeline.'
+      success_criteria:
+      - 5 단계 모두 실행
+      - 5 endpoint 정찰
+      - SQLi 시도
+      - 3 host SSH scan
+      - alert 카운트 + 상위 rule
+      - MTTD + MTTC 명시
+      - experience JSON 저장
+      - 5×6 매트릭스 + Timeline
+      acceptable_methods:
+      - bastion 의 multi-stage planning
+      - ssh + curl + nc + python3 표준
+      - markdown 매트릭스 + Timeline
+      negative_signs:
+      - 3 단계 이하 만 수행
+      - MTTD/MTTC 누락
+      - alert 분석 누락
+      - 매트릭스 6 컬럼 미만
+  target_vm: bastion
+  risk_level: medium
+  answer: |
+    🤖 위 bastion_prompt 그대로. Agentic APT 5단계 + 5×6 매트릭스 + Defense Timeline + Lessons.
+  answer_detail: |
+    SOC Senior Analyst 페르소나 — Agentic APT 다단계 IR chain. 3 layer fusion + MTTD/MTTC 측정 + Lessons.
+  script: ''
