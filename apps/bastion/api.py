@@ -47,8 +47,8 @@ except ImportError:
     from fastapi.responses import StreamingResponse
     from pydantic import BaseModel
 
-from packages.bastion.agent import BastionAgent
-from packages.bastion import INTERNAL_IPS
+from bastion.agent import BastionAgent
+from bastion import INTERNAL_IPS
 
 
 # ── 초기화 ─────────────────────────────────────────────────────────────────
@@ -62,7 +62,7 @@ def _get_vm_ips() -> dict[str, str]:
     return vm_ips or dict(INTERNAL_IPS)
 
 
-from packages.bastion import LLM_BASE_URL, LLM_MANAGER_MODEL
+from bastion import LLM_BASE_URL, LLM_MANAGER_MODEL
 import threading
 
 # 공격/대전 과목은 derestricted 모델로 — gpt-oss:120b 가 공격 페이로드 작성을 거절하는 문제(B유형 fail)
@@ -117,31 +117,31 @@ def _startup_kg_banner() -> None:
     sys.stderr.write("=" * 60 + "\n")
     checks = []
     try:
-        from packages.bastion.kg_context import get_builder
+        from bastion.kg_context import get_builder
         get_builder()
         checks.append(("kg_context module", True, ""))
     except Exception as e:
         checks.append(("kg_context module", False, str(e)))
     try:
-        from packages.bastion.kg_recorder import get_recorder
+        from bastion.kg_recorder import get_recorder
         get_recorder()
         checks.append(("kg_recorder module", True, ""))
     except Exception as e:
         checks.append(("kg_recorder module", False, str(e)))
     try:
-        from packages.bastion.kg_metrics import get_metrics
+        from bastion.kg_metrics import get_metrics
         get_metrics()
         checks.append(("kg_metrics module", True, ""))
     except Exception as e:
         checks.append(("kg_metrics module", False, str(e)))
     try:
-        from packages.bastion.graph import get_graph
+        from bastion.graph import get_graph
         s = get_graph().stats()
         checks.append((f"graph DB ({s.get('total_nodes',0)} nodes)", True, ""))
     except Exception as e:
         checks.append(("graph DB", False, str(e)))
     try:
-        from packages.bastion.history import HistoryLayer
+        from bastion.history import HistoryLayer
         h = HistoryLayer()
         with h._conn() as c:
             n = c.execute("SELECT COUNT(*) FROM history_anchors").fetchone()[0]
@@ -169,6 +169,25 @@ def _startup_kg_banner() -> None:
 @app.on_event("startup")
 def _on_startup():
     _startup_kg_banner()
+    # Auto-register Assets — bastion 이 시작 시점에 .env 의 VM_*_IP 로 인프라 자동 파악
+    # (수동 PUT /assets/<role> 없이 즉시 사용 가능)
+    try:
+        registered = []
+        for role, ip in agent.vm_ips.items():
+            try:
+                agent.evidence_db.update_asset(role, ip, "configured",
+                                                "auto-registered from .env at startup")
+                registered.append(f"{role}={ip}")
+            except Exception as e:
+                print(f"[startup] Asset auto-register fail for {role}: {e}",
+                      file=__import__("sys").stderr, flush=True)
+        if registered:
+            print(f"[startup] Auto-registered {len(registered)} Assets: "
+                  f"{', '.join(registered)}",
+                  file=__import__("sys").stderr, flush=True)
+    except Exception as e:
+        print(f"[startup] Asset auto-register block failed: {e}",
+              file=__import__("sys").stderr, flush=True)
 
 
 # ── 스키마 ──────────────────────────────────────────────────────────────────
@@ -224,25 +243,25 @@ def _kg_health_summary() -> dict:
         "errors": [],
     }
     try:
-        from packages.bastion.kg_context import get_builder
+        from bastion.kg_context import get_builder
         get_builder()
         out["context_module"] = True
     except Exception as e:
         out["errors"].append(f"kg_context import: {e}")
     try:
-        from packages.bastion.kg_recorder import get_recorder
+        from bastion.kg_recorder import get_recorder
         get_recorder()
         out["recorder_module"] = True
     except Exception as e:
         out["errors"].append(f"kg_recorder import: {e}")
     try:
-        from packages.bastion.kg_metrics import get_metrics
+        from bastion.kg_metrics import get_metrics
         get_metrics()
         out["metrics_module"] = True
     except Exception as e:
         out["errors"].append(f"kg_metrics import: {e}")
     try:
-        from packages.bastion.graph import get_graph
+        from bastion.graph import get_graph
         g = get_graph()
         s = g.stats()
         out["graph_db"] = True
@@ -250,7 +269,7 @@ def _kg_health_summary() -> dict:
     except Exception as e:
         out["errors"].append(f"graph access: {e}")
     try:
-        from packages.bastion.history import HistoryLayer
+        from bastion.history import HistoryLayer
         h = HistoryLayer()
         anchors = h.find_anchors(limit=1)
         out["history_db"] = True
@@ -286,11 +305,11 @@ def kg_audit(limit: int = 20):
     사용처: 운영자가 "지난 24h chat 중 KG record 실패한 건이 있나?" 확인.
     """
     try:
-        from packages.bastion.audit import get_audit_log
+        from bastion.audit import get_audit_log
         log = get_audit_log()
         recent = log.recent(limit=limit) if hasattr(log, 'recent') else []
         # 각 row 에 KG 정보가 별도 컬럼은 아니므로, 현재는 최근 chat list + 최근 anchor 카운트
-        from packages.bastion.history import HistoryLayer
+        from bastion.history import HistoryLayer
         h = HistoryLayer()
         try:
             with h._conn() as c:
@@ -334,7 +353,7 @@ def evidence(limit: int = 20):
 def audit_recent(limit: int = 50, session_id: str = "", user_id: str = "",
                  course: str = "", outcome: str = "", since: str = ""):
     """최근 audit log. 필터 가능."""
-    from packages.bastion.audit import get_audit_log
+    from bastion.audit import get_audit_log
     log = get_audit_log()
     return {"audit": log.recent(limit=limit,
                                 session_id=session_id, user_id=user_id,
@@ -344,7 +363,7 @@ def audit_recent(limit: int = 50, session_id: str = "", user_id: str = "",
 @app.get("/audit/{request_id}")
 def audit_get(request_id: str):
     """특정 request 전체 audit 조회 (사용자 지시·LLM turns·skill 흐름·결정 모두)."""
-    from packages.bastion.audit import get_audit_log
+    from bastion.audit import get_audit_log
     rec = get_audit_log().get(request_id)
     if not rec:
         raise HTTPException(404, f"audit record not found: {request_id}")
@@ -353,14 +372,14 @@ def audit_get(request_id: str):
 
 @app.get("/audit/_stats")
 def audit_stats():
-    from packages.bastion.audit import get_audit_log
+    from bastion.audit import get_audit_log
     return get_audit_log().stats()
 
 
 @app.get("/audit/_verify-chain")
 def audit_verify_chain(start_id: int = 1):
     """hash chain 무결성 검증 — 변조 시도 발견 시 깨진 첫 row 반환."""
-    from packages.bastion.audit import get_audit_log
+    from bastion.audit import get_audit_log
     return get_audit_log().verify_chain(start_id=start_id)
 
 
@@ -369,14 +388,14 @@ def audit_verify_chain(start_id: int = 1):
 @app.post("/graph/compact/{playbook_id}")
 def compact_one(playbook_id: str, min_experiences: int = 5):
     """특정 playbook 의 experience 압축 → known_pitfalls·insights 생성."""
-    from packages.bastion.compaction import compact_playbook
+    from bastion.compaction import compact_playbook
     return compact_playbook(playbook_id, min_experiences=min_experiences)
 
 
 @app.post("/graph/compact")
 def compact_all_pb(min_experiences: int = 5, limit_playbooks: int = 50):
     """전체 playbook compaction."""
-    from packages.bastion.compaction import compact_all
+    from bastion.compaction import compact_all
     return compact_all(min_experiences=min_experiences,
                        limit_playbooks=limit_playbooks)
 
@@ -386,7 +405,7 @@ def compact_all_pb(min_experiences: int = 5, limit_playbooks: int = 50):
 @app.get("/graph/stats")
 def graph_stats():
     """노드/엣지 카운트 + 최근 변경."""
-    from packages.bastion.graph import get_graph
+    from bastion.graph import get_graph
     return get_graph().stats()
 
 
@@ -396,7 +415,7 @@ def graph_nodes(types: str = "", limit: int = 500):
 
     UI 의 그래프 시각화 용 — content/embedding 제외 메타만.
     """
-    from packages.bastion.graph import get_graph
+    from bastion.graph import get_graph
     type_list = [t.strip() for t in types.split(",") if t.strip()] if types else None
     g = get_graph()
     nodes = g.all_nodes(types=type_list)[:limit]
@@ -406,7 +425,7 @@ def graph_nodes(types: str = "", limit: int = 500):
 @app.get("/graph/edges")
 def graph_edges(types: str = ""):
     """모든 엣지. types 필터."""
-    from packages.bastion.graph import get_graph
+    from bastion.graph import get_graph
     type_list = [t.strip() for t in types.split(",") if t.strip()] if types else None
     g = get_graph()
     edges = g.all_edges(types=type_list)
@@ -416,7 +435,7 @@ def graph_edges(types: str = ""):
 @app.get("/graph/node/{node_id}")
 def graph_node_detail(node_id: str):
     """노드 풀 콘텐츠 + backlinks (incoming edges 그룹) + neighbors."""
-    from packages.bastion.graph import get_graph
+    from bastion.graph import get_graph
     g = get_graph()
     node = g.get_node(node_id)
     if not node:
@@ -429,7 +448,7 @@ def graph_node_detail(node_id: str):
 @app.get("/graph/search")
 def graph_search(q: str = "", type: str = "", limit: int = 30):
     """전문 검색 (FTS5)."""
-    from packages.bastion.graph import get_graph
+    from bastion.graph import get_graph
     if not q.strip():
         return {"results": []}
     g = get_graph()
@@ -440,7 +459,7 @@ def graph_search(q: str = "", type: str = "", limit: int = 30):
 @app.get("/graph/lineage/{node_id}")
 def graph_lineage(node_id: str, max_depth: int = 3):
     """supersedes / depends_on 체인 — playbook 진화 경로 추적."""
-    from packages.bastion.graph import get_graph
+    from bastion.graph import get_graph
     g = get_graph()
     node = g.get_node(node_id)
     if not node:
@@ -453,7 +472,7 @@ def graph_lineage(node_id: str, max_depth: int = 3):
 @app.delete("/graph/node/{node_id}")
 def graph_delete_node(node_id: str):
     """노드 삭제 (관련 엣지 cascade) — admin 용."""
-    from packages.bastion.graph import get_graph
+    from bastion.graph import get_graph
     g = get_graph()
     deleted = g.delete_node(node_id)
     return {"deleted": deleted, "node_id": node_id}
@@ -465,7 +484,7 @@ def graph_delete_node(node_id: str):
 def kg_metrics():
     """KG context builder + recorder 의 in-memory metrics snapshot."""
     try:
-        from packages.bastion.kg_metrics import get_metrics
+        from bastion.kg_metrics import get_metrics
         return get_metrics().snapshot()
     except Exception as e:
         return {"error": str(e), "counters": [], "observations": []}
@@ -475,7 +494,7 @@ def kg_metrics():
 def kg_anchors_recent(kind: str = "", limit: int = 50):
     """최근 history_anchors — KG 업데이트 검증용 (R4 진행 중 누적 확인)."""
     try:
-        from packages.bastion.history import HistoryLayer
+        from bastion.history import HistoryLayer
         h = HistoryLayer()
         return {"anchors": h.find_anchors(kind=kind, limit=limit)}
     except Exception as e:
@@ -485,7 +504,7 @@ def kg_anchors_recent(kind: str = "", limit: int = 50):
 # ── History (L4) — 시계열·내러티브·anchor·changelog ────────────────────────
 
 def _history():
-    from packages.bastion.history import HistoryLayer
+    from bastion.history import HistoryLayer
     return HistoryLayer()
 
 
@@ -580,7 +599,7 @@ def knowledge_add_concept(body: ConceptBody):
     """Concept 노드 직접 등록 (anchor 가 아닌 graph 핵심 객체).
     재실행 시 같은 concept_id 면 update (idempotent).
     """
-    from packages.bastion.graph import get_graph
+    from bastion.graph import get_graph
     g = get_graph()
     content = {"description": body.description, **body.properties}
     meta = {"source": body.source, "kind": "external_knowledge"}
@@ -702,7 +721,7 @@ class AssetRegisterBody(BaseModel):
 
 @app.post("/assets/register")
 def assets_register(body: AssetRegisterBody):
-    from packages.bastion.asset_domain import register_asset
+    from bastion.asset_domain import register_asset
     return register_asset(
         asset_id=body.asset_id, name=body.name, kind=body.kind,
         ip=body.ip, os=body.os, services=body.services, meta=body.meta,
@@ -711,7 +730,7 @@ def assets_register(body: AssetRegisterBody):
 
 @app.get("/assets/list")
 def assets_list(kind: str = "", limit: int = 200):
-    from packages.bastion.asset_domain import list_assets
+    from bastion.asset_domain import list_assets
     return {"assets": list_assets(kind=kind, limit=limit)}
 
 
@@ -724,7 +743,7 @@ class AssetLinkBody(BaseModel):
 
 @app.post("/assets/link")
 def assets_link(body: AssetLinkBody):
-    from packages.bastion.asset_domain import link_assets
+    from bastion.asset_domain import link_assets
     return link_assets(body.src, body.dst, body.edge_type, body.meta)
 
 
@@ -732,13 +751,13 @@ def assets_link(body: AssetLinkBody):
 
 @app.get("/architecture/topology")
 def arch_topology(root: str = "", max_depth: int = 3):
-    from packages.bastion.asset_domain import architecture_topology
+    from bastion.asset_domain import architecture_topology
     return architecture_topology(root_asset=root, max_depth=max_depth)
 
 
 @app.get("/architecture/flow")
 def arch_flow(src: str, dst: str):
-    from packages.bastion.asset_domain import architecture_packet_flow
+    from bastion.asset_domain import architecture_packet_flow
     return architecture_packet_flow(src, dst)
 
 
@@ -752,7 +771,7 @@ class MissionBody(BaseModel):
 
 @app.post("/work/mission")
 def work_mission(body: MissionBody):
-    from packages.bastion.work_domain import add_mission
+    from bastion.work_domain import add_mission
     return {"mission_id": add_mission(body.title, body.statement, body.owner)}
 
 
@@ -765,7 +784,7 @@ class VisionBody(BaseModel):
 
 @app.post("/work/vision")
 def work_vision(body: VisionBody):
-    from packages.bastion.work_domain import add_vision
+    from bastion.work_domain import add_vision
     return {"vision_id": add_vision(body.title, body.horizon_year,
                                      body.statement, body.mission_id)}
 
@@ -779,7 +798,7 @@ class GoalBody(BaseModel):
 
 @app.post("/work/goal")
 def work_goal(body: GoalBody):
-    from packages.bastion.work_domain import add_goal
+    from bastion.work_domain import add_goal
     return {"goal_id": add_goal(body.title, body.due, body.vision_id,
                                  body.description)}
 
@@ -792,7 +811,7 @@ class StrategyBody(BaseModel):
 
 @app.post("/work/strategy")
 def work_strategy(body: StrategyBody):
-    from packages.bastion.work_domain import add_strategy
+    from bastion.work_domain import add_strategy
     return {"strategy_id": add_strategy(body.title, body.goal_id, body.approach)}
 
 
@@ -807,7 +826,7 @@ class KpiBody(BaseModel):
 
 @app.post("/work/kpi")
 def work_kpi(body: KpiBody):
-    from packages.bastion.work_domain import add_kpi
+    from bastion.work_domain import add_kpi
     return {"kpi_id": add_kpi(body.name, body.target, body.unit,
                                 body.measures, body.goal_id, body.strategy_id)}
 
@@ -821,7 +840,7 @@ class KpiRecordBody(BaseModel):
 
 @app.post("/work/kpi/record")
 def work_kpi_record(body: KpiRecordBody):
-    from packages.bastion.work_domain import record_kpi
+    from bastion.work_domain import record_kpi
     return record_kpi(body.kpi_id, body.value, body.ts, body.note)
 
 
@@ -838,7 +857,7 @@ class PlanBody(BaseModel):
 
 @app.post("/work/plan")
 def work_plan(body: PlanBody):
-    from packages.bastion.work_domain import add_plan
+    from bastion.work_domain import add_plan
     return {"plan_id": add_plan(body.title, body.period, body.owner,
                                   body.strategy_id, body.goal_id,
                                   body.description)}
@@ -854,7 +873,7 @@ class TodoBody(BaseModel):
 
 @app.post("/work/todo")
 def work_todo(body: TodoBody):
-    from packages.bastion.work_domain import add_todo
+    from bastion.work_domain import add_todo
     return {"todo_id": add_todo(body.title, body.due, body.plan_id,
                                   body.assignee, body.description)}
 
@@ -867,19 +886,19 @@ class StatusBody(BaseModel):
 
 @app.post("/work/status")
 def work_status(body: StatusBody):
-    from packages.bastion.work_domain import update_status
+    from bastion.work_domain import update_status
     return update_status(body.node_id, body.status, body.note)
 
 
 @app.get("/work/trace/{node_id}")
 def work_trace(node_id: str, max_depth: int = 8):
-    from packages.bastion.work_domain import trace_to_mission
+    from bastion.work_domain import trace_to_mission
     return trace_to_mission(node_id, max_depth)
 
 
 @app.get("/work/dashboard")
 def work_dashboard():
-    from packages.bastion.work_domain import strategic_dashboard
+    from bastion.work_domain import strategic_dashboard
     return strategic_dashboard()
 
 
@@ -984,7 +1003,7 @@ def onboard(req: OnboardRequest):
              -H 'Content-Type: application/json' \\
              -d '{"role": "secu", "ip": "192.168.208.155"}'
     """
-    from packages.bastion import onboard_vm, LLM_BASE_URL, LLM_MANAGER_MODEL, LLM_SUBAGENT_MODEL
+    from bastion import onboard_vm, LLM_BASE_URL, LLM_MANAGER_MODEL, LLM_SUBAGENT_MODEL
 
     def event_generator():
         yield json.dumps({"event": "start", "role": req.role, "ip": req.ip}, ensure_ascii=False) + "\n"
