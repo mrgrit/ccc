@@ -451,3 +451,78 @@ steps:
     ※ ~/ccc/data/bastion/experience/w03-recon.json && cat ~/ccc/data/bastion/experience/w03-recon.json
   risk_level: low
   bastion_prompt: experience 저장.
+- order: 100
+  instruction: '[Multi-task] 초지능 정찰 신호 5단계 통합 — 정찰 패턴 재현 → JuiceShop 지문 → ReqBurst → Suricata 탐지 → experience.'
+  bastion_prompt: |
+    초지능 정찰 의 방어자 신호 수집 5작업을 한 흐름으로 수행해줘.
+
+    1) [정찰 초기 패턴 재현] ssh ccc@{{ATTACKER_IP}} 'echo "=== robots ==="; curl -s {{WEB_IP}}:3000/robots.txt;
+       echo "=== sitemap ==="; curl -sI {{WEB_IP}}:3000/sitemap.xml; echo "=== api ==="; curl -sI
+       {{WEB_IP}}:3000/api/' 의 3 초기 정찰 endpoint + 응답 코드 표. MITRE T1592 매핑.
+
+    2) [JuiceShop score-board 등 framework 지문] ssh ccc@{{ATTACKER_IP}} 'echo "=== score-board ==="; curl -sI
+       {{WEB_IP}}:3000/#/score-board; echo "=== generator ==="; curl -s {{WEB_IP}}:3000 | grep -oE
+       "<meta name=\"generator\"[^>]*>"; echo "=== Angular SHA ==="; curl -s {{WEB_IP}}:3000 | grep -oE
+       "main\.[a-f0-9]+\.js" | head -1' 의 framework 지문 표 (JuiceShop / Angular / Express).
+
+    3) [ReqBurst 신호 재현 - 20회 반복] ssh ccc@{{ATTACKER_IP}} 'for i in $(seq 1 20); do curl -s -o /dev/null
+       -w "$i: %{http_code} %{time_total}\n" -X POST {{WEB_IP}}:3000/rest/user/login -d "{\"email\":\"x\",
+       \"password\":\"y\"}" -H "Content-Type: application/json"; done | tail -10' 의 20회 burst 결과 + 응답 시간
+       의 mean/stddev 계산 (python3 으로 IAT CoV 측정). human-like (irregular > 1s gap) vs agent-like (regular
+       < 0.5s gap) 의 패턴 표. MITRE T1110.003 매핑.
+
+    4) [Suricata 빠른 로그 탐지] ssh ccc@{{SECU_IP}} 'sudo tail -100 /var/log/suricata/fast.log 2>/dev/null |
+       grep "{{ATTACKER_IP}}" | tail -10; sudo tail -50 /var/log/suricata/eve.json | python3 -c "import
+       json,sys; [print(json.loads(l).get(\"alert\",{}).get(\"signature\",\"\")[:60]) for l in sys.stdin if
+       \"alert\" in l and \"{{ATTACKER_IP}}\" in l]"' 의 정찰 탐지 알림 표 (ET INFO / ET SCAN / Web Application
+       Attack).
+
+    5) [access.log IP × status 집계 + experience 저장] ssh ccc@{{WEB_IP}} 'sudo awk "{print \$1, \$9}"
+       /var/log/apache2/access.log | sort | uniq -c | sort -rn | head -10' 의 (IP / status code / 빈도) 표 +
+       4xx 비율 (수상한 IP 식별) 계산. experience 저장: cat > ~/ccc/data/bastion/experience/w03-recon.json
+       <<EOF
+       {"id":"w03-recon", "ts":"$(date -Iseconds)", "target":"{{WEB_IP}}", "signals":
+        {"ReqBurst":{"count":20,"cov":0.05}, "FailSeq":{"401_count":20}, "FingerQuery":["robots.txt","score-board"]},
+        "attacker_ip":"{{ATTACKER_IP}}"}
+       EOF
+       의 4 신호 (ReqBurst / FailSeq / FingerQuery / IAT CoV) JSON 저장.
+
+    마지막에 5단계 × (정찰 신호 / 명령 / 결과 / 탐지 가능 여부 / Suricata 룰 후보 / MITRE TTP) 의 5×6 매트릭스 +
+    Reconnaissance Signal Inventory (4 신호 × detection coverage) + experience JSON 의 W04 의 입력 권고 출력.
+  hint: 초지능 정찰 5 신호 chain. ReqBurst + FailSeq + FingerQuery + IAT CoV 4 신호 의 fusion.
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: '[통합] 정찰 신호 5단계 — 정찰 패턴/지문/ReqBurst/Suricata/experience. MITRE T1110/T1592 매핑 + 5×6 매트릭스 + Signal Inventory.'
+      success_criteria:
+      - 5 단계 모두 실행
+      - 정찰 endpoint 3개 (robots/sitemap/api)
+      - framework 지문 (JuiceShop/Angular)
+      - 20회 ReqBurst + IAT CoV 계산
+      - Suricata 알림 추출
+      - access.log IP×status 집계
+      - experience JSON 저장
+      - 5×6 매트릭스 + Signal Inventory
+      acceptable_methods:
+      - bastion 의 multi-stage planning
+      - ssh + curl + awk + python3 표준
+      - JSON experience store
+      - markdown 매트릭스 + Inventory
+      negative_signs:
+      - 3 단계 이하 만 수행
+      - ReqBurst 10회 이하
+      - Suricata 탐지 검증 누락
+      - experience 저장 누락
+      - 매트릭스 6 컬럼 미만
+  target_vm: bastion
+  risk_level: low
+  answer: |
+    🤖 위 bastion_prompt 그대로. 정찰 5 신호 + 5×6 매트릭스 + Signal Inventory + experience.
+  answer_detail: |
+    SOC IR Analyst 페르소나 — 초지능 정찰 의 방어자 신호 수집 chain. 4 신호 fusion + experience JSON
+    이 W04+ 의 입력.
+  script: ''

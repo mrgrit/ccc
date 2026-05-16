@@ -448,3 +448,67 @@ steps:
     ccc@10.20.30.$h 'date -Iseconds' 2>/dev/null || echo skip; done
   risk_level: low
   bastion_prompt: 4대 VM의 시간이 ±1초 이내로 동기화됐는지 확인하시오 (상관 분석 전제 조건).
+- order: 100
+  instruction: '[Multi-task] IR 기준선 5단계 통합 — 4 VM 점검 → 방화벽/Suricata → Apache/Wazuh → 시간 동기화 → 기준선 카드.'
+  bastion_prompt: |
+    AI Vulnerability Storm 의 방어자 기준선 5작업을 한 흐름으로 수행해줘.
+
+    1) [4 VM 점검] for h in bastion {{SECU_IP}} {{WEB_IP}} {{SECU_IP}}00; do echo "=== $h ==="; ssh -o
+       StrictHostKeyChecking=no -o ConnectTimeout=3 ccc@$h 'hostname; uptime; ip -4 addr show | grep inet |
+       head -3' 2>&1 | head -5; done 의 4 VM 의 hostname/uptime/IP 표. 4 VM 전체 가용성 검증. NIST CSF ID.AM-1
+       매핑.
+
+    2) [방화벽 + Suricata 검증] ssh ccc@{{SECU_IP}} 'sudo nft list ruleset 2>&1 | head -20;
+       sudo nft list ruleset | grep -c "rule"; sudo systemctl is-active suricata; sudo suricata --build-info
+       2>&1 | head -5' 의 방화벽 룰 수 + Suricata 상태 표.
+
+    3) [Apache + access.log + Wazuh] ssh ccc@{{WEB_IP}} 'sudo systemctl is-active apache2; ls -lh
+       /var/log/apache2/access.log 2>/dev/null | awk "{print \$5, \$9}"; sudo tail -3 /var/log/apache2/access.log' +
+       ssh ccc@{{SECU_IP}}00 'sudo systemctl is-active wazuh-manager; sudo wc -l /var/ossec/logs/alerts/alerts.log
+       2>/dev/null' 의 Apache + Wazuh manager + alerts 카운트 표.
+
+    4) [시간 동기화 검증 (±1초)] for h in bastion {{SECU_IP}} {{WEB_IP}} {{SECU_IP}}00; do ssh -o
+       ConnectTimeout=3 ccc@$h 'date +%s.%N' 2>/dev/null; done | python3 -c 'import sys; ts=[float(l) for l in
+       sys.stdin if l.strip()]; print(f"max diff: {max(ts)-min(ts):.3f}s"); print(f"all within ±1s: {(max(ts)-min(ts))<2.0}")' 의 시간 diff + 1초 이내 검증. correlation 분석 의 전제 조건.
+
+    5) [Baseline Card 작성] 1~4 결과를 합쳐 (VM / Service / Status / 추가 메타 (룰 수/log size/시간 diff) /
+       Baseline 등급 A~F / 다음 점검 권고) 의 4×6 매트릭스 + Baseline Card markdown (4 VM × 5 항목 × 점검 결과)
+       + 다음 주차 의 입력 (W02 의 공격자 지문 점수 의 reference baseline).
+
+    cleanup X (기준선 데이터 보존).
+
+    마지막에 5단계 × (점검 단계 / 명령 / 결과 / Baseline 의 메타 / NIST CSF 매핑 / 다음 학습 권고) 의 5×6
+    매트릭스 + Baseline Card (1 페이지 markdown) + W02 의 입력 권고 출력.
+  hint: IR 기준선 5단계 chain. 4 VM × 5 항목 의 Baseline Card 가 다음 주차 입력.
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: '[통합] IR 기준선 5단계 — 4 VM/방화벽+Suricata/Apache+Wazuh/시간동기화/Baseline Card. NIST CSF ID.AM-1 매핑 + 5×6 매트릭스 + Baseline Card.'
+      success_criteria:
+      - 5 단계 모두 실행
+      - 4 VM (bastion/secu/web/siem) 모두 점검
+      - 시간 동기화 diff 계산 (±1초)
+      - Baseline Card 4×6 매트릭스
+      - 5×6 종합 매트릭스
+      - W02 입력 권고
+      acceptable_methods:
+      - bastion 의 multi-stage planning
+      - ssh + systemctl + nft + python3 표준
+      - markdown 매트릭스 + Card
+      negative_signs:
+      - 3 단계 이하 만 수행
+      - VM 2개 이하 점검
+      - 시간 동기화 계산 누락
+      - Baseline Card 누락
+      - 매트릭스 6 컬럼 미만
+  target_vm: bastion
+  risk_level: low
+  answer: |
+    🤖 위 bastion_prompt 그대로. IR 기준선 5단계 + 5×6 매트릭스 + Baseline Card + W02 입력.
+  answer_detail: |
+    SOC IR Analyst 페르소나 — Day-1 의 IR 기준선 chain. Baseline Card 가 W02 이후 의 reference.
+  script: ''
