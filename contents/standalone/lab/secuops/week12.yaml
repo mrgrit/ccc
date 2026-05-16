@@ -277,7 +277,21 @@ steps:
 
   - order: 3
     instruction: |
-      ## 🎯 MISSION — TAXII 2.1 client/server + collection
+      ## 🎯 MISSION — TAXII 2.1 client/server 모델 + collection + 5 외부 source 매트릭스
+
+      TAXII (Trusted Automated eXchange of Indicator Information) = STIX 데이터 의
+      *표준 전송 프로토콜*. OpenCTI 가 client 로 외부 source poll 또는 server 로
+      외부 partner 에 push.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **STIX** = 데이터 모델 (JSON 객체). **TAXII** = 전송 프로토콜 (HTTPS API)
+      - **collection** = TAXII server 의 *데이터 묶음 단위* (예: "malicious-ips",
+        "phishing-domains")
+      - **endpoint** = `/api-root/collections/<id>/objects/?added_after=<date>` 의
+        표준 형식
+      - **Accept header** = `application/taxii+json;version=2.1` 필수
+      - **auth** = Basic Auth (user:pass) 또는 Bearer Token
 
       ## 💻 산출물
 
@@ -305,16 +319,42 @@ steps:
       EOF
       ```
 
+      ## 💻 검증 명령 (TAXII source 의 endpoint 접근 검증)
+
+      ```bash
+      # URLhaus TAXII 2.1 endpoint (무료, no auth)
+      ssh 6v6-bastion 'curl -sI --max-time 5 -H "Accept: application/taxii+json;version=2.1" https://urlhaus-taxii.abuse.ch/taxii2/ 2>&1 | head -1'
+      # OTX TAXII (회원가입 후 API key)
+      ssh 6v6-bastion 'curl -sI --max-time 5 https://otx.alienvault.com/taxii/ 2>&1 | head -1'
+      ```
+
       ## 📋 확인 사항
 
-      - 4 endpoint
-      - curl 명령 예
-      - 5+ TAXII source
+      - 4 endpoint (`/taxii2/`, `/api-root/`, `/api-root/collections/`,
+        `/api-root/collections/<id>/objects/`)
+      - curl 명령 예 + Accept header + auth
+      - 5+ TAXII source 매트릭스
+      - 2 endpoint 접근 응답 (폐쇄망 시 timeout)
 
       ## 💡 왜 이걸 하는가?
 
-      TAXII 의 client/server 모델 + OpenCTI 가 client 로 외부 source poll.
-    hint: 'TAXII /api-root/collections/<id>/objects/ + curl'
+      TAXII 의 client/server 모델 + OpenCTI 의 *external Connector* 가 본 프로토콜
+      사용. *공식 표준 endpoint* + *envelope + pagination* 학습 이 *연동 트러블슈팅*
+      의 기반.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 4 endpoint + curl 예 + 5 source + 2 접근 (또는 timeout)
+      - **URLhaus 접근 가능**: 외부 망 OK → OpenCTI 도입 후 즉시 활성 가능
+      - **모두 timeout**: 폐쇄망 정책 — OpenCTI 별 host 또는 proxy 필요
+
+      ## 비정상 시 대응
+
+      - **Accept header 누락**: 406 Not Acceptable 응답. TAXII 표준 — header 필수
+      - **API key 없는 OTX 호출**: 401 — 회원가입 + API key 발급 필요
+    hint: |
+      4 endpoint + Accept header + 5 source + 2 endpoint 접근 검증.
+      STIX 데이터 + TAXII 전송 의 분리 인지.
     category: configuration
     points: 12
     answer: |
