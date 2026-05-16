@@ -167,13 +167,102 @@ steps:
   # ============================================================
   - order: 2
     instruction: |
-      Bastion watchdog log + /health 의 5 회 주기 호출 + 변화 모니터링 + KG 모듈 상태
-      의 자동 검증 의 Python script 작성.
+      ## 🎯 MISSION — Bastion watchdog Python 스크립트 작성 + 변화 감지
 
-      lecture 3-10 의 매핑 — 화재 경보기 의 보안 의 응용. Bastion 의 health 의 이상
-      의 즉시 alert 의 watchdog 의 직접 구현.
+      Bastion 의 `/health` 엔드포인트를 3 회 주기로 호출하고, KG 모듈 상태 변화
+      (graph_nodes, history_anchors 증가) 를 추적한다. 이상 발견 시 즉시 alert.
+      lecture 3차시 의 *왓처 패턴* 을 Python 으로 직접 구현.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **watchdog** = 일정 주기 로 시스템 상태 를 점검 하고, 이상 발견 시 알람
+        하는 운영 도구. 화재 경보기 의 비유 (lecture 3-10)
+      - **Bastion `/health`** = KG 모듈 로드 여부 + graph_nodes / history_anchors
+        개수 등 반환 (CCC 의 핵심 가시화 endpoint)
+      - **변화 감지** = 시점 t 와 t+1 의 값 비교 — 증가/감소 패턴이 학습 시그널
+      - **즉시 alert** = `kg.all_modules_loaded == false` 또는 `errors[]` 비어 있지
+        않으면 즉시 escalation
+
+      ## 💻 실행 명령
+
+      ```bash
+      cd /home/opsclaw/ccc 2>/dev/null
+
+      # 1. 기존 watchdog 로그 확인 (참고)
+      tail -10 results/retest/bastion_watchdog.log 2>/dev/null
+
+      # 2. 미니 watchdog Python 작성 + 실행
+      cat > /tmp/bastion_monitor.py <<'PY'
+      """미니 Bastion watchdog — 3 회 health 호출 + 변화 감지"""
+      import json, subprocess, time
+
+      BASTION = "http://192.168.0.103:8003"
+      API_KEY = "ccc-api-key-2026"
+
+      def check_health():
+          cmd = ["curl","-s","-m","5","-H",f"X-API-Key: {API_KEY}",f"{BASTION}/health"]
+          r = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+          try: return json.loads(r.stdout)
+          except: return None
+
+      print("=== Bastion 3 회 health check ===")
+      results = []
+      for i in range(3):
+          h = check_health()
+          if h is None:
+              print(f"  [#{i+1}] ERROR — Bastion 응답 없음")
+              continue
+          kg = h.get("kg", {})
+          ok = kg.get("all_modules_loaded", False)
+          nodes = kg.get("graph_nodes", 0)
+          anchors = kg.get("history_anchors", 0)
+          errors = kg.get("errors", [])
+          print(f"  [#{i+1}] status={h.get('status')} kg.ok={ok} nodes={nodes} anchors={anchors} errors={len(errors)}")
+          results.append({"iter": i+1, "ok": ok, "nodes": nodes, "anchors": anchors})
+          if i < 2: time.sleep(3)
+
+      print("\n=== 변화 감지 ===")
+      if len(results) > 1:
+          first, last = results[0], results[-1]
+          print(f"  graph_nodes 변화: {first['nodes']} → {last['nodes']}")
+          print(f"  history_anchors 변화: {first['anchors']} → {last['anchors']}")
+          if not last['ok']:
+              print("  ALERT: KG 모듈 미로드 — 즉시 escalation 필요")
+          else:
+              print("  STATUS: 정상")
+      PY
+
+      python3 /tmp/bastion_monitor.py 2>&1 | head -25
+      ```
+
+      ## 📋 확인 사항
+
+      - 기존 watchdog 로그 (CCC 운영 실 증거) 출력
+      - Python 스크립트 정상 실행 (3 회 health 호출)
+      - graph_nodes / history_anchors 의 *변화* (증가 또는 동일)
+      - ALERT 조건 (`kg.all_modules_loaded == false`) 인지
+
+      ## 💡 왜 이걸 하는가?
+
+      자율보안 의 두 번째 도구 = 왓처 (watchdog). 운영자 가 *눈으로 매 분* 확인
+      하지 않아도 시스템 이 *스스로 이상 을 발견* 하고 alert 하는 패턴. CCC 의
+      실 운영 (`bastion_watchdog.log`) 이 같은 원리.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 3 회 health 응답 + nodes/anchors 동일 또는 증가
+      - **응답 없음**: Bastion 미가동 또는 네트워크 차단 — `ping 192.168.0.103`
+      - **kg.ok == false**: KG 모듈 일부 미로드 — `/kg/health` 추가 호출 로 어떤
+        모듈인지 확인
+
+      ## 비정상 시 대응
+
+      - **curl 명령 없음** — `sudo apt install curl`
+      - **API key 401** — `X-API-Key` header 값 확인 (`ccc-api-key-2026`)
+      - **graph_nodes 0**: KG 초기화 안 됨 — CCC 의 `scripts/seed_9tier_kg.py`
+        실행 권장
     hint: |
-      Python watchdog + curl + 변화 감지
+      미니 Python watchdog + 3 회 health + 변화 감지 + ALERT 조건.
     category: experiment
     points: 20
     answer: |
@@ -198,12 +287,12 @@ steps:
           try: return json.loads(r.stdout)
           except: return None
 
-      print("=== Bastion 5 회 의 주기 health check ===")
+      print("=== Bastion 3 회 health check ===")
       results = []
       for i in range(3):  # 시간 절약 — 3 회만
           h = check_health()
           if h is None:
-              print(f"  [#{i+1}] ERROR — Bastion 의 응답 없음")
+              print(f"  [#{i+1}] ERROR — Bastion 응답 없음")
               continue
           kg = h.get("kg", {})
           ok = kg.get("all_modules_loaded", False)
@@ -218,37 +307,37 @@ steps:
       if len(results) > 1:
           first = results[0]
           last = results[-1]
-          print(f"  graph_nodes 의 변화: {first['nodes']} → {last['nodes']}")
-          print(f"  history_anchors 의 변화: {first['anchors']} → {last['anchors']}")
+          print(f"  graph_nodes 변화: {first['nodes']} → {last['nodes']}")
+          print(f"  history_anchors 변화: {first['anchors']} → {last['anchors']}")
           if not last['ok']:
-              print("  ALERT: KG 모듈 의 미로드 — 즉시 escalation 필요")
+              print("  ALERT: KG 모듈 미로드 — 즉시 escalation 필요")
           else:
               print("  STATUS: 정상")
 
-      print("\n=== watchdog 의 운영 의의 ===")
-      print("- 매 호출 의 kg.all_modules_loaded 의 확인")
-      print("- graph_nodes / history_anchors 의 증가 추세 의 확인 (학습 진행)")
-      print("- errors 배열 의 비어 있지 않음 시 즉시 alert")
-      print("- /kg/health 의 추가 확인 의 cross-check")
+      print("\n=== watchdog 운영 의의 ===")
+      print("- 매 호출 마다 kg.all_modules_loaded 확인")
+      print("- graph_nodes / history_anchors 증가 추세 확인 (학습 진행 시그널)")
+      print("- errors 배열 이 비어 있지 않을 때 즉시 alert")
+      print("- /kg/health 추가 호출 로 cross-check")
       PYEOF
       python3 /tmp/bastion_monitor.py 2>&1 | head -25
-    answer_detail: Bastion watchdog Python
+    answer_detail: Bastion watchdog Python 미니 구현
     verify:
       type: output_contains
       expect: health
       field: stdout
       semantic:
-        intent: Bastion watchdog 의 주기 모니터링
+        intent: Bastion watchdog 주기 모니터링
         success_criteria: [health check 응답 + 변화 감지]
         acceptable_methods:
-          - "**[OSS] /health 의 주기 호출**"
-          - "**[OSS] kg.all_modules_loaded 의 모니터링**"
-          - "**[OSS] graph_nodes / history_anchors 의 변화**"
-          - "**[OSS] errors 의 비어 있지 않음 의 escalation**"
+          - "**[OSS] /health 주기 호출**"
+          - "**[OSS] kg.all_modules_loaded 모니터링**"
+          - "**[OSS] graph_nodes / history_anchors 변화 추적**"
+          - "**[OSS] errors 배열 비어 있지 않을 때 escalation**"
           - "**[OSS] systemd restart + alert**"
           - "**[OSS] Prometheus exporter (가능 시)**"
           - "**[OSS] Grafana dashboard**"
-          - "**[OSS] watchdog 의 watchdog**"
+          - "**[OSS] watchdog 의 watchdog (메타)**"
     target_vm: bastion
 
   # ============================================================
