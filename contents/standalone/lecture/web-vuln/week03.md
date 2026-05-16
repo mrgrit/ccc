@@ -1,436 +1,836 @@
-# W03 — A02 Cryptographic Failures — Hash + TLS + JWT secret + Session
-
-> **본 주차의 한 줄 요약**
->
-> OWASP Top 10 의 2 위 (이전 명: Sensitive Data Exposure) — *암호 결함 의 4 표준
-> 영역* — Hash / TLS / JWT secret / Session — 의 audit 표준. *modern crypto 의 4
-> 핵심* 의 *공격 면 + 방어 표준* hands-on.
->
-> **운영자 한 줄 결론**: 암호 의 결함 = *모든 보안 의 무력화*. weak hash =
-> brute 분 단위 / weak TLS = MITM / weak JWT secret = token 위조 / weak cookie
-> = session 절도. 본 주차 의 *4 영역 audit* 가 *최소 보안* 의 baseline.
-
----
+# Week 03: 정보수집 점검
 
 ## 학습 목표
+- 웹 애플리케이션 점검의 첫 단계인 정보수집의 중요성을 이해한다
+- 디렉터리/파일 스캐닝 기법을 curl 기반으로 실습한다
+- 대상 서버의 기술 스택을 식별하는 방법을 익힌다
+- SSL/TLS 설정을 점검하고 취약한 구성을 판별할 수 있다
 
-본 주차 종료 시 학생은 다음 7 가지 를 **본인 손으로** 할 수 있어야 한다.
+## 실습 환경 (6v6 4-tier, 공통)
 
-1. Hash 6 종 (MD5 / SHA1 / SHA256 / SHA512 / bcrypt / Argon2) 의 *길이 + 형식 + 약함*
-   30 초 응답.
-2. TLS 의 *handshake 4 단계* + *cipher suite 의 4 부분* (key exchange + auth +
-   encryption + MAC) 인지.
-3. JWT 의 *alg 5 종* 의 *위험도* + HS256 weak secret 의 *brute 가능성* 인지.
-4. Session cookie 의 *4 표준* (HttpOnly / Secure / SameSite / signed) + 각 의 방어
-   대상.
-5. OpenSSL s_client + nmap ssl-enum-ciphers 의 *TLS audit* 표준 명령.
-6. PyJWT 또는 jwt_tool 의 *HS256 secret brute* 시뮬.
-7. 4 영역 *종합 보고서* 작성 (4 findings + CVSS + CWE + ATT&CK).
+학생 PC 의 `~/.ssh/config` 의 ProxyJump 설정 후 다음 표 의 컨테이너 에 `ssh
+6v6-<name>` 으로 접속.
 
----
+| 컨테이너 | 6v6 IP | 역할 | 접속 |
+|---------|--------|------|------|
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
+| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
+| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
+| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
+| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
 
-## 강의 시간 배분 (3시간 30분)
+**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
+**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
-| 차시 | 주제 | 시간 |
-|:----:|------|------|
-| 1차시 | Hash 6 종 + bcrypt vs Argon2 + 비밀번호 storage 표준 | 50 분 |
-| 2차시 | TLS handshake 4 단계 + cipher suite + cert chain | 60 분 |
-| 3차시 | JWT alg 5 + HS256 brute + RS256 마이그레이션 | 50 분 |
-| 4차시 | Session cookie 4 표준 + 보고서 작성 | 40 분 |
-| 휴식 | 차시 사이 + 마지막 | 20 분 |
+## 강의 시간 배분 (3시간)
 
----
-
-## 1차시 — Hash 6 종 + 비밀번호 storage 표준
-
-### 1-1. Hash 의 *역할*
-
-비밀번호 의 *원본 저장 X* — *역산 불가* 의 *고정 길이* 출력. 사용자 인증 시 *입력
-의 hash* 와 *저장 의 hash* 비교.
-
-**왜 직접 저장 X** — DB 유출 시 *모든 비밀번호 평문 노출*. hash 사용 = *유출 후 도
-공격자 가 비밀번호 모름* (이상적).
-
-### 1-2. 6 hash 의 비교
-
-| Hash | 출시 | 길이 (bit) | 길이 (hex) | 적합성 | 약함 |
-|------|:----:|:---------:|:---------:|:------:|------|
-| **MD5** | 1992 | 128 | 32 | ❌ X | 2004 충돌 + brute 빠름 |
-| **SHA1** | 1995 | 160 | 40 | ❌ X | 2017 충돌 |
-| **SHA256** | 2002 | 256 | 64 | ⚠️ (password X) | brute 빠름 (GPU 의 10억/초) |
-| **SHA512** | 2002 | 512 | 128 | ⚠️ (password X) | brute 가능 |
-| **bcrypt** | 1999 | 184 | 60 (format) | ✅ password OK | cost 12+ 권장 |
-| **Argon2id** | 2015 | variable | ~100 (format) | ✅ password 최고 | PHC winner |
-
-**왜 SHA-* 가 password 부적합** — *single-pass* + *fast* → GPU 의 *brute 분 단위*.
-password 는 *느린* hash (bcrypt / Argon2 의 *시간 + memory cost*) 필수.
-
-### 1-3. bcrypt vs Argon2 — 의 *비교*
-
-**bcrypt (1999, Niels Provos)**:
-- *adaptive cost* — `cost 12` = 2^12 iteration. cost ↑ → 느림 ↑
-- *salt 자동* — `$2y$12$<salt 22 char><hash 31 char>`
-- 한계: *memory-hard 아님* (GPU 의 *parallel brute* 가능)
-
-**Argon2id (2015, PHC winner)**:
-- *3 axis*: time cost + memory cost + parallelism
-- *memory-hard* — GPU 의 *memory bottleneck* 활용
-- *3 variant*: Argon2d (GPU 저항) / Argon2i (side-channel 저항) / Argon2id (mix, 권장)
-- 한계: 신생 — *legacy lib 의 지원 부족*
-
-**선택 기준**:
-- 새 프로젝트 = **Argon2id** (PHC winner)
-- 기존 시스템 = **bcrypt cost 12+** (검증된 lib)
-- 절대 X = **MD5 / SHA-* + salt 만**
-
-### 1-4. 비밀번호 storage 표준 5 step
-
-1. **salt 자동** — bcrypt / Argon2 가 자동. *고유 salt* 필수
-2. **pepper 추가** (옵션) — *application 측 secret* + salt + password
-3. **cost 의 *적정*** — bcrypt 12 (login 100ms) / Argon2id (memory 64MB)
-4. **hash 의 *upgrade*** — cost 5 → 12 의 *user 의 다음 login 시 rehash*
-5. **DB 의 *유출 가정*** — *모든 hash 의 *유출 후* 안전* 설계
-
-### 1-5. JuiceShop 의 password hash (실측)
-
-W03 lab step 1 의 검증:
-- JuiceShop 의 user password = (실측 시 출력) — MD5 / bcrypt / Argon2 중
-
-실 production = *반드시* bcrypt 또는 Argon2id. MD5 발견 시 *즉시 rotate*.
-
----
-
-## 2차시 — TLS handshake 4 단계 + cipher suite + cert chain
-
-### 2-1. TLS 의 *역할*
-
-TLS (Transport Layer Security, 이전 명: SSL) = *HTTPS 의 핵심*. *3 보장* —
-*기밀성 (Encryption)* + *무결성 (MAC)* + *인증 (Cert)*.
-
-### 2-2. TLS handshake 4 단계 (TLS 1.3)
-
-```
-[클라이언트]                              [서버]
-     ↓ ClientHello
-       (지원 cipher list + random)
-                                          ↓ ServerHello
-                                          ← (선택 cipher + random + cert)
-     ↓ Cert 검증 + key 교환
-       (Diffie-Hellman)
-                                          ↓ Finished
-     ← Finished
-     ↓ Application Data (encrypted)       ↔ ↑
-```
-
-**TLS 1.3 (2018)** — *1 RTT* (이전 2 RTT). *0-RTT* 가능 (옵션, replay 위험).
-
-### 2-3. Cipher suite 의 4 부분
-
-`ECDHE-RSA-AES256-GCM-SHA384` 의 분해:
-
-| 부분 | 의미 | 예시 |
+| 시간 | 내용 | 유형 |
 |------|------|------|
-| **Key Exchange** | session key 교환 | ECDHE (Elliptic Curve DH Ephemeral) |
-| **Authentication** | server 인증 | RSA (또는 ECDSA) |
-| **Encryption** | data 암호화 | AES256-GCM (or ChaCha20-Poly1305) |
-| **MAC** | 무결성 | SHA384 (또는 SHA256) |
+| 0:00-0:40 | 이론 강의 (Part 1) | 강의 |
+| 0:40-1:10 | 이론 심화 + 사례 분석 (Part 2) | 강의/토론 |
+| 1:10-1:20 | 휴식 | - |
+| 1:20-2:00 | 실습 (Part 3) | 실습 |
+| 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
+| 2:40-2:50 | 휴식 | - |
+| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
+| 3:20-3:40 | 정리 + 과제 안내 | 정리 |
 
-**TLS 1.3 의 단순화** — `TLS_AES_256_GCM_SHA384` (cipher 만 + 표준 ECDHE / authent).
+---
 
-### 2-4. Cipher 의 적합 / 부적합
+---
 
-**적합 (modern, 2024)**:
-- `TLS_AES_256_GCM_SHA384` (TLS 1.3)
-- `TLS_AES_128_GCM_SHA256` (TLS 1.3)
-- `TLS_CHACHA20_POLY1305_SHA256` (TLS 1.3)
-- `ECDHE-RSA-AES256-GCM-SHA384` (TLS 1.2)
-- `ECDHE-ECDSA-AES256-GCM-SHA384` (TLS 1.2)
+## 용어 해설 (웹취약점 점검 과목)
 
-**부적합 (deprecated 2020+)**:
-- `RC4-*` (CVE-2013-2566) — 즉시 disable
-- `3DES-*` (Sweet32 attack 2016) — 즉시 disable
-- `DES-*` — 1990s 부터 X
-- `EXPORT-*` (FREAK attack 2015) — 즉시 disable
-- `NULL-*` (encryption 없음) — 즉시 disable
+| 용어 | 영문 | 설명 | 비유 |
+|------|------|------|------|
+| **취약점 점검** | Vulnerability Assessment | 시스템의 보안 약점을 체계적으로 찾는 활동 | 건물 안전 진단 |
+| **모의해킹** | Penetration Testing | 실제 공격자처럼 취약점을 악용하여 검증 | 소방 훈련 (실제로 불을 피워봄) |
+| **CVSS** | Common Vulnerability Scoring System | 취약점 심각도 0~10점 (9.0+ Critical) | 질병 위험 등급표 |
+| **SQLi** | SQL Injection | SQL 쿼리에 악성 입력 삽입 | 주문서에 가짜 지시를 끼워넣기 |
+| **XSS** | Cross-Site Scripting | 웹페이지에 악성 스크립트 삽입 | 게시판에 함정 쪽지 붙이기 |
+| **CSRF** | Cross-Site Request Forgery | 사용자 모르게 요청을 위조 | 누군가 내 이름으로 송금 요청 |
+| **SSRF** | Server-Side Request Forgery | 서버가 내부 자원에 요청하도록 조작 | 직원에게 기밀 문서를 가져오라 속이기 |
+| **LFI** | Local File Inclusion | 서버의 로컬 파일을 읽는 취약점 | 사무실 서류함을 몰래 열람 |
+| **RFI** | Remote File Inclusion | 외부 파일을 서버에 로드하는 취약점 | 외부에서 악성 서류를 사무실에 반입 |
+| **RCE** | Remote Code Execution | 원격에서 서버 코드 실행 | 전화로 사무실 컴퓨터 조작 |
+| **WAF 우회** | WAF Bypass | 웹 방화벽의 탐지를 피하는 기법 | 보안 검색대를 우회하는 비밀 통로 |
+| **인코딩** | Encoding | 데이터를 다른 형식으로 변환 (URL, Base64 등) | 택배 재포장 (내용물은 같음) |
+| **난독화** | Obfuscation | 코드를 읽기 어렵게 변환 (탐지 회피) | 범인이 변장하는 것 |
+| **세션** | Session | 서버가 사용자를 식별하는 상태 정보 | 카페 단골 인식표 |
+| **쿠키** | Cookie | 브라우저에 저장되는 작은 데이터 | 가게에서 받은 스탬프 카드 |
+| **Burp Suite** | Burp Suite | 웹 보안 점검 프록시 도구 (PortSwigger) | 우편물 검사 장비 |
+| **OWASP ZAP** | OWASP ZAP | 오픈소스 웹 보안 스캐너 | 무료 보안 검사 장비 |
+| **점검 보고서** | Assessment Report | 발견된 취약점과 대응 방안을 정리한 문서 | 건물 안전 진단 보고서 |
 
-### 2-5. Cert chain — 의 3 구성
+---
+
+## 전제 조건
+- Week 02 도구 환경 구축 완료
+- curl 기본 사용법 숙지
+
+---
+
+## 1. 정보수집이 중요한 이유 (15분)
+
+### 1.1 점검 프로세스에서의 위치
 
 ```
-[leaf cert]           ← www.example.com (가장 자주)
-  signed by ↓
-[intermediate CA]     ← Let's Encrypt R3 (또는 DigiCert / Sectigo 등)
-  signed by ↓
-[root CA]             ← ISRG Root X1 (브라우저 의 trust store 의 root)
+[정보수집] → 취약점 탐색 → 취약점 검증 → 보고서 작성
+  ↑ 지금 여기
 ```
 
-**검증** — *leaf 부터 root 까지* 의 *서명 chain* 검증. 한 단계 라도 *서명 invalid*
-시 거부.
+정보수집(Reconnaissance)은 공격 표면(Attack Surface)을 파악하는 단계이다.
+무엇이 있는지 모르면 무엇을 점검할지도 모른다.
 
-**self-signed** — *leaf = root* (단일). 학습 환경 OK, production 거부 (브라우저 의
-경고 표시).
+### 1.2 수집 대상
 
-### 2-6. JuiceShop 의 TLS (실측 — W03 lab step 2)
+| 항목 | 예시 | 활용 |
+|------|------|------|
+| 디렉터리/파일 구조 | /admin, /api, /.env | 숨겨진 기능, 설정 파일 노출 |
+| 기술 스택 | Node.js, Express, Angular | 알려진 취약점 검색 |
+| HTTP 헤더 | Server, X-Powered-By | 버전 정보 → CVE 매핑 |
+| 에러 메시지 | Stack trace, DB 에러 | 내부 구조 유추 |
+| robots.txt, sitemap | 크롤링 제외 경로 | 민감한 경로 힌트 |
 
-- Protocol: TLSv1.3
-- Cipher: TLS_AES_256_GCM_SHA384
-- Cert: self-signed (학습 환경)
+### 1.3 수동 vs 자동 정보수집
 
-→ *modern* 적합. 단 cert = self-signed (학습 환경 OK, production = Let's Encrypt).
+| 방식 | 장점 | 단점 |
+|------|------|------|
+| 수동 (curl) | 정밀, 은밀, 맞춤형 | 느림, 경험 필요 |
+| 자동 (dirb, gobuster) | 빠름, 대량 스캔 | 노이즈 많음, 탐지 쉬움 |
 
-### 2-7. TLS audit 표준 도구
+---
 
-| 도구 | 용도 |
+## 2. robots.txt / sitemap 분석 (15분)
+
+> **이 실습을 왜 하는가?**
+> "정보수집 점검" — 이 주차의 핵심 기술을 실제 서버 환경에서 직접 실행하여 체험한다.
+> 웹 취약점 점검 분야에서 이 기술은 실무의 핵심이며, 실습을 통해
+> 명령어의 의미, 결과 해석 방법, 보안 관점에서의 판단 기준을 익힌다.
+>
+> **이걸 하면 무엇을 알 수 있는가?**
+> - 이 기술이 실제 시스템에서 어떻게 동작하는지 직접 확인
+> - 정상과 비정상 결과를 구분하는 눈을 기름
+> - 실무에서 바로 활용할 수 있는 명령어와 절차를 체득
+>
+> **주의:** 모든 실습은 허가된 실습 환경(10.20.30.0/24)에서만 수행한다.
+
+### 2.1 robots.txt 확인
+
+> **실습 목적**: robots.txt, 디렉터리 구조, 기술 스택 등 웹 애플리케이션의 공개 정보를 수집한다
+>
+> **배우는 것**: 수동/자동 정보수집 기법으로 점검 대상의 구조와 기술 스택을 파악하는 방법을 배운다
+>
+> **결과 해석**: robots.txt에 숨긴 경로, 서버 헤더의 기술 정보, 디렉터리 리스팅 등이 발견되면 정보 노출 취약점이다
+>
+> **실전 활용**: 취약점 점검 보고서의 '정보수집' 섹션에서 발견된 정보 노출 항목을 기록한다
+
+```bash
+# JuiceShop의 robots.txt 확인
+curl -s http://10.20.30.80:3000/robots.txt
+echo '---'
+# Apache 의 robots.txt 비교
+curl -s -o /dev/null -w "Apache code=%{http_code}\n" http://10.20.30.80:80/robots.txt
+```
+
+**예상 출력**:
+```
+User-agent: *
+Disallow: /ftp
+---
+Apache code=404
+```
+
+> **해석 — robots.txt 가 점검자에게 주는 정보**: JuiceShop 의 `Disallow: /ftp` 는 **점검 시작점**. 운영자가 검색엔진에서 숨기려 명시 = 그 자체가 노출 신호. 공격자는 무시 → 직접 접근. **/ftp 가 200 이면 디렉토리 리스팅 + 백업 파일 가능성** (week06 LFI 학습 재료). Apache 의 404 = robots.txt 미배치 = 양호 (또는 Apache 자체가 정적 정보 없음). 양 서비스 비교 = 점검 첫 순간의 공격 표면 정량화.
+
+> **OSS 대안 — robots.txt + sitemap 일괄 추출**:
+>
+> ```bash
+> # waybackurls — Wayback Machine 의 과거 robots.txt 도 추출 (운영자가 삭제한 경로 찾기)
+> echo http://10.20.30.80:3000 | waybackurls | grep -E 'robots|sitemap'
+>
+> # gau (GetAllUrls) — 다중 source (Wayback/CommonCrawl/AlienVault) 통합
+> echo example.com | gau | head -20
+> ```
+
+### 2.2 sitemap.xml 확인
+
+```bash
+curl -s -o /tmp/sitemap_3000.xml -w "code=%{http_code} size=%{size_download}\n" http://10.20.30.80:3000/sitemap.xml
+curl -s -o /tmp/sitemap_80.xml -w "code=%{http_code} size=%{size_download}\n" http://10.20.30.80:80/sitemap.xml
+head -3 /tmp/sitemap_3000.xml 2>/dev/null
+```
+
+**예상 출력**:
+```
+code=404 size=139
+code=404 size=274
+<!DOCTYPE html>
+<html lang="en">
+```
+
+> **해석**: 둘 다 404 = sitemap.xml 미배포. body 가 HTML (404 페이지 자체) 인지 확인 (`head -3` 결과). **운영 환경에서는 200 + XML 본문**. sitemap 의 `<url><loc>` 태그가 모든 공개 경로 노출 → 점검 1차 매핑. SEO 친화 + 공격 표면 노출 trade-off — 점검자는 운영자에게 *공개 페이지만* sitemap 권장.
+
+### 2.3 .well-known 디렉터리
+
+```bash
+# RFC 8615 표준 경로들
+for path in security.txt openid-configuration change-password apple-app-site-association assetlinks.json; do
+  code=$(curl -o /dev/null -s -w "%{http_code}" "http://10.20.30.80:3000/.well-known/$path")
+  echo "$code  /.well-known/$path"
+done
+```
+
+**예상 출력**:
+```
+404  /.well-known/security.txt
+404  /.well-known/openid-configuration
+404  /.well-known/change-password
+404  /.well-known/apple-app-site-association
+404  /.well-known/assetlinks.json
+```
+
+> **해석**: 모든 경로 404 = JuiceShop 미배포. **security.txt** (RFC 9116) = 보안 신고 채널 — 200 이면 PGP 키·연락처 노출 (양호 / 운영자 식별). **openid-configuration** = OAuth/OIDC 자동 발견 — 200 이면 issuer/jwks_uri 노출 → JWT 분석 입력 (week04 인증 우회). **apple-app-site-association** = iOS Universal Link — 모바일 + 웹 자산 연결. 모두 404 = 점검 대상 단순. 운영 환경이면 *security.txt 만 권장* (책임 있는 disclosure).
+
+---
+
+## 3. 디렉터리 스캐닝 (40분)
+
+### 3.1 개념: dirb/gobuster
+
+**dirb**와 **gobuster**는 사전 파일(wordlist)을 이용해 웹 서버의 숨겨진 디렉터리와 파일을 찾는 도구이다.
+
+```
+# dirb 동작 원리 (개념)
+# wordlist의 각 단어를 URL에 붙여서 요청 → 200/301/403 등 확인
+# /admin → 200 OK (존재!)
+# /secret → 404 Not Found (없음)
+# /backup → 403 Forbidden (접근 차단 = 존재함!)
+```
+
+### 3.2 curl 기반 디렉터리 스캐닝 (직접 구현 — 학습용)
+
+**가장 먼저 권장되는 OSS 도구 (실무 표준)**:
+
+```bash
+# gobuster (Go 기반, 가장 빠름)
+sudo apt install gobuster
+gobuster dir -u http://10.20.30.80:3000 -w /usr/share/wordlists/dirb/common.txt -t 30 -x html,php,bak
+
+# ffuf (단일 wordlist 퍼징, 멀티스레드)
+ffuf -w /usr/share/wordlists/dirb/common.txt -u http://10.20.30.80:3000/FUZZ -mc 200,301,403 -t 50
+
+# dirb (가장 단순, 초보자 권장)
+sudo apt install dirb
+dirb http://10.20.30.80:3000 /usr/share/wordlists/dirb/common.txt
+```
+
+**도구 vs curl 직접 구현**: 도구는 (1) 멀티스레드, (2) 사이즈/응답 시간 자동 비교, (3) recursive 모드, (4) JSON/XML 결과 보고서 등을 제공한다. 학습 목적은 직접 구현이지만 **실제 점검은 도구를 쓴다**.
+
+이하 curl 버전은 **도구 동작 원리 이해용**:
+
+```bash
+# 기본 wordlist 생성
+cat > /tmp/webdirs.txt << 'WORDLIST'
+admin
+api
+login
+register
+console
+debug
+backup
+test
+.env
+.git
+.git/config
+.git/HEAD
+config
+robots.txt
+sitemap.xml
+swagger
+api-docs
+graphql
+rest
+ftp
+WORDLIST
+
+# curl 기반 디렉터리 스캔 스크립트
+while IFS= read -r path; do
+  code=$(curl -o /dev/null -s -w "%{http_code}" "http://10.20.30.80:3000/$path")
+  if [ "$code" != "404" ]; then
+    echo "[${code}] /$path"
+  fi
+done < /tmp/webdirs.txt
+```
+
+### 3.3 JuiceShop 숨겨진 경로 탐색
+
+JuiceShop 특화 경로 sweep — code + size 동시 측정.
+
+```bash
+for path in \
+  "ftp" "api/Products/1" "rest/products/search?q=test" \
+  "rest/user/whoami" "api/SecurityQuestions" "api/Challenges" \
+  "api/Complaints" "api/Feedbacks" "api/Quantitys" \
+  "rest/languages" "rest/memories" "rest/chatbot/status" \
+  "metrics" "promotion" "video" "encryptionkeys" \
+  "assets/public/images/uploads"; do
+  read code size < <(curl -o /dev/null -s -w "%{http_code} %{size_download}" "http://10.20.30.80:3000/$path")
+  echo "[${code}] (${size}B) /$path"
+done
+```
+
+**예상 출력 (발췌)**:
+```
+[200] (1987B) /ftp
+[200] (435B) /api/Products/1
+[200] (8421B) /rest/products/search?q=test
+[401] (87B) /rest/user/whoami
+[200] (5621B) /api/SecurityQuestions
+[200] (245B) /api/Challenges
+[401] (87B) /api/Complaints
+[200] (12340B) /api/Feedbacks
+[404] (139B) /api/Quantitys
+[200] (892B) /rest/languages
+[401] (87B) /rest/memories
+[404] (139B) /rest/chatbot/status
+[200] (1234B) /metrics
+[404] (139B) /promotion
+[200] (3128B) /encryptionkeys
+[200] (245B) /assets/public/images/uploads
+```
+
+> **해석 — code + size 두 축 분석**: **200 (정상 응답)** = 즉시 노출. **401** = 인증 필요 (존재 확인됨, week04 의 인증 우회 입력). **404 size=139B** = 동일 크기 = JuiceShop 의 통일 404 페이지 — 다른 size 면 false-positive. **/encryptionkeys** = 암호화 키 디렉토리 — 운영 환경 노출 = 즉시 critical. **/metrics** = Prometheus endpoint? = 운영 정보 노출. **/api/Feedbacks 12KB** = 다수 피드백 데이터 노출 (BOLA week05). **/api/Quantitys 404** = 오타 명시 (*Quantity 정상 / 의도적 typo) — JuiceShop 의 challenge.
+
+### 3.4 FTP 디렉터리 탐색
+
+```bash
+# JuiceShop /ftp 디렉토리 listing 확인
+curl -s http://10.20.30.80:3000/ftp/ | head -30
+echo '---'
+# 백업 파일 직접 다운
+curl -s -o /tmp/legal.md -w "legal.md code=%{http_code} size=%{size_download}\n" http://10.20.30.80:3000/ftp/legal.md
+curl -s -o /tmp/acquisitions.md -w "acquisitions.md code=%{http_code} size=%{size_download}\n" http://10.20.30.80:3000/ftp/acquisitions.md
+ls -l /tmp/legal.md /tmp/acquisitions.md 2>/dev/null
+```
+
+**예상 출력**:
+```
+<html><head><title>listing directory /ftp</title></head>
+<body>
+<h1>files within directory /ftp</h1>
+<ul>
+  <li><a href="acquisitions.md">acquisitions.md</a></li>
+  <li><a href="announcement_encrypted.md">announcement_encrypted.md</a></li>
+  <li><a href="coupons_2013.md.bak">coupons_2013.md.bak</a></li>
+  <li><a href="eastere.gg">eastere.gg</a></li>
+  <li><a href="encrypt.pyc">encrypt.pyc</a></li>
+  <li><a href="incident-support.kdbx">incident-support.kdbx</a></li>
+  <li><a href="legal.md">legal.md</a></li>
+  <li><a href="package.json.bak">package.json.bak</a></li>
+  <li><a href="suspicious_errors.yml">suspicious_errors.yml</a></li>
+</ul>
+---
+legal.md code=200 size=1834
+acquisitions.md code=200 size=2956
+```
+
+> **해석 — 디렉토리 리스팅 + 백업 파일**: **`Apache Directory Listing`** = OWASP A05 Security Misconfiguration. 9 파일 노출 = 즉시 비고서 critical 항목. **package.json.bak** = Node.js 의존성 + 버전 노출 → SCA + CVE 매핑 (week08). **incident-support.kdbx** = KeePass DB 파일 → 마스터 비번 brute (week04). **coupons_2013.md.bak** = 백업 = 옛 데이터 = 영업 비밀 가능. **suspicious_errors.yml** = 운영자가 'suspicious' 라고 명시한 파일 = JuiceShop 의 의도적 challenge. *모든 .bak/.old/.swp 확장자는 자동 점검 항목*.
+
+> **OSS 대안 — 백업 확장자 brute**:
+>
+> ```bash
+> # ffuf 의 확장자 fuzzing (점검 표준)
+> ffuf -u http://10.20.30.80:3000/FUZZ -w wordlist.txt -e .bak,.old,.swp,.zip,.tar.gz,.tar
+> # 또는 파일명·확장자 동시 fuzzing
+> ffuf -u http://10.20.30.80:3000/FUZZ.FUZZ2 -w names.txt:FUZZ -w exts.txt:FUZZ2 -mode pitchfork
+> ```
+
+### 3.5 디렉터리 스캔 결과 분석
+
+| 응답 코드 | 의미 | 점검 시 행동 |
+|-----------|------|-------------|
+| 200 | 정상 접근 | 내용 확인, 민감 정보 여부 |
+| 301/302 | 리다이렉트 | 리다이렉트 대상 확인 |
+| 403 | 접근 거부 | 존재 확인됨, 우회 시도 가능 |
+| 404 | 미존재 | 무시 |
+| 500 | 서버 에러 | 에러 메시지에 정보 노출 가능 |
+
+---
+
+## 4. 기술 스택 식별 (30분)
+
+### 4.1 HTTP 응답 헤더 분석
+
+```bash
+# 응답 헤더에서 기술 스택 정보 추출
+echo "=== JuiceShop (포트 3000) ==="
+curl -sI http://10.20.30.80:3000 | grep -iE "server|x-powered|x-generator|x-aspnet|set-cookie"
+echo ""
+echo "=== Apache (포트 80) ==="
+curl -sI http://10.20.30.80:80 | grep -iE "server|x-powered|x-generator|x-aspnet|set-cookie"
+```
+
+**예상 출력**:
+```
+=== JuiceShop (포트 3000) ===
+X-Powered-By: Express
+Set-Cookie: language=en; Path=/
+
+=== Apache (포트 80) ===
+Server: Apache/2.4.52 (Ubuntu)
+Set-Cookie: PHPSESSID=abc123; path=/; HttpOnly
+```
+
+> **해석 — 헤더 1줄당 1개 CVE 후보**: **`X-Powered-By: Express`** = Node.js + Express 백엔드. Express 기본 헤더 = `app.disable('x-powered-by')` 1줄로 제거 가능 — 미제거 = OWASP A05 노출. **`Server: Apache/2.4.52 (Ubuntu)`** = Apache 정확 버전 + OS 노출. CVE 자동 매핑: `searchsploit Apache 2.4.52` → CVE-2022-22720 (HTTP Smuggling) 등. 운영 시 `ServerTokens Prod` 설정으로 `Apache` 만 노출. **`PHPSESSID`** = PHP 7+ 사용 → DVWA endpoint 라는 신호. **`connect.sid`** 쿠키가 보이면 Express, **`JSESSIONID`** = Java/Tomcat. 헤더만으로 stack 90% 식별.
+
+**OSS 도구로 자동화** (whatweb/httpx 추천):
+```bash
+# whatweb — 헤더+HTML+쿠키+favicon 시그니처로 자동 식별
+whatweb -v http://10.20.30.80:3000
+whatweb -v http://10.20.30.80                  # Apache 도 동시에
+
+# httpx (projectdiscovery) — 대량 호스트 자동 핑거프린팅
+echo -e "http://10.20.30.80:3000\nhttp://10.20.30.80" | httpx -tech-detect -title -status-code
+```
+whatweb 의 출력은 한 줄에 **프레임워크 + 라이브러리 + CMS + 서버 + WAF** 까지 묶여 있어 curl + grep 의 수십 줄 작업을 1 명령으로 대체한다.
+
+### 4.2 쿠키 분석
+
+```bash
+# 쿠키 이름 + Secure/HttpOnly/SameSite 플래그 동시 점검
+curl -sI http://10.20.30.80:3000 | grep -i set-cookie
+echo '---'
+# 다양한 endpoint 의 쿠키 차이
+for path in "/" "/rest/products/search?q=test" "/api/Users"; do
+  echo "[$path]"
+  curl -sI "http://10.20.30.80:3000$path" | grep -i 'set-cookie' || echo '(no Set-Cookie)'
+done
+```
+
+**예상 출력**:
+```
+Set-Cookie: language=en; Path=/
+---
+[/]
+Set-Cookie: language=en; Path=/
+[/rest/products/search?q=test]
+(no Set-Cookie)
+[/api/Users]
+(no Set-Cookie)
+```
+
+> **해석 — 쿠키 이름 → 기술 스택 + 플래그 누락 = 즉시 취약**:
+> - **`language=en`** = JuiceShop 의 i18n 쿠키. 비표준 명 = JuiceShop 자체 구현 (Express middleware).
+> - **누락 플래그**: `HttpOnly` 없음 → JS 접근 가능 → XSS 시 쿠키 탈취. `Secure` 없음 → HTTP 평문 전송. `SameSite=Strict` 없음 → CSRF 가능.
+> - **쿠키 이름 → 스택 매핑** (이름 보면 즉시 식별):
+>   - `PHPSESSID` → PHP (DVWA)
+>   - `JSESSIONID` → Java/Tomcat/Spring
+>   - `ASP.NET_SessionId` → ASP.NET
+>   - `connect.sid` → Node.js Express
+>   - `_csrf`, `XSRF-TOKEN` → CSRF token 사용
+>   - `token`, `accessToken` → JWT Bearer (Authorization 헤더)
+> - **JuiceShop 은 JWT 사용** (`Authorization: Bearer eyJ...`) — Set-Cookie X = stateless 인증 패턴 식별.
+
+### 4.3 에러 페이지 분석
+
+```bash
+# 존재하지 않는 경로로 404 에러 유도
+curl -s http://10.20.30.80:3000/nonexistent_path_12345
+
+# 잘못된 API 요청으로 에러 유도
+curl -s http://10.20.30.80:3000/api/Products/abc
+
+# 에러 메시지에서 기술 정보 추출
+# - Express 버전
+# - Node.js 버전
+# - 스택 트레이스(stack trace) 중 파일 경로
+```
+
+### 4.4 JavaScript 소스 분석
+
+```bash
+# HTML에서 JS 파일 경로 추출
+curl -s http://10.20.30.80:3000 | grep -oE 'src="[^"]*\.js"' | head -10
+echo '---'
+# main.js 등에서 API 엔드포인트 + secret 패턴 추출
+MAIN_JS=$(curl -s http://10.20.30.80:3000 | grep -oE 'src="[^"]*main[^"]*\.js"' | head -1 | sed 's/src="//;s/"//')
+echo "Main JS: $MAIN_JS"
+curl -s "http://10.20.30.80:3000/$MAIN_JS" | grep -oE '/api/[a-zA-Z/]+|/rest/[a-zA-Z/]+' | sort -u | head -10
+echo '---'
+# 노출된 secret/key 패턴 정규식 검색
+curl -s "http://10.20.30.80:3000/$MAIN_JS" | grep -oE '(AKIA[0-9A-Z]{16}|sk_live_[0-9a-zA-Z]{24,}|api[_-]?key[\"'\'' :=]+[a-zA-Z0-9]{16,})' | head -5
+```
+
+**예상 출력**:
+```
+src="runtime.6271bf12036d6dd16b56.js"
+src="polyfills.4dd0bf48c11ddd96fa1f.js"
+src="main.bb5070bf0f9ce9b58d7c.js"
+---
+Main JS: main.bb5070bf0f9ce9b58d7c.js
+/api/Addresss
+/api/BasketItems
+/api/Cards
+/api/Challenges
+/api/Complaints
+/api/Feedbacks
+/api/Quantitys
+/api/Recycles
+/api/SecurityAnswers
+/api/SecurityQuestions
+---
+```
+
+> **해석 — JS bundle 이 점검자에게 주는 보물**:
+> - **endpoint 추출 10+** = REST API 매핑 자동화 — 수기 brute force 보다 100% 정확.
+> - **`/api/Quantitys` (오타 — Quantities 정상)** = 의도적 이름. JuiceShop challenge.
+> - **secret 패턴**: AKIA (AWS), sk_live (Stripe), api_key= 노출 없음 = 양호. 운영 환경에서는 **truffleHog / gitleaks** 정규식 200+ 패턴 자동 검색.
+> - JS bundle 의 hash (`bb5070bf...`) = **build fingerprint** — 동일 hash 면 재빌드 X (운영자 게으름 신호).
+
+> **OSS 대안 — JS bundle 분석 자동화**:
+>
+> ```bash
+> # LinkFinder (Python) — JS 에서 endpoint·URL·variable 자동 추출
+> pip install jsbeautifier && python3 LinkFinder.py -i http://10.20.30.80:3000/main.js -o cli
+>
+> # SecretFinder — JS 에서 secret/key 정규식 자동 매치
+> python3 SecretFinder.py -i http://target/main.js -o cli
+>
+> # truffleHog v3 — 정규식 + 엔트로피 기반 secret hunting (file/git/url 모드)
+> trufflehog filesystem /path/to/cloned/site
+> ```
+
+### 4.5 기술 스택 정리 템플릿
+
+```
+대상: http://10.20.30.80:3000
+---
+웹 서버: Express (Node.js)
+프레임워크: Angular (프론트엔드)
+DB: SQLite (JuiceShop 기본)
+인증 방식: JWT (Bearer Token)
+추가 정보:
+- /ftp 디렉터리 노출
+- robots.txt 존재
+```
+
+---
+
+## 5. SSL/TLS 점검 (20분)
+
+### 5.1 TLS의 중요성
+
+| 항목 | HTTP | HTTPS |
+|------|------|-------|
+| 데이터 암호화 | X | O |
+| 서버 인증 | X | O |
+| 무결성 보장 | X | O |
+| 중간자 공격 | 취약 | 방어 |
+
+### 5.2 openssl을 이용한 TLS 점검
+
+```bash
+# TLS 연결 테스트 (대상이 HTTPS를 지원하는 경우)
+# 실습 서버는 HTTP이므로, 개념 이해용 명령
+# openssl s_client -connect example.com:443 -servername example.com < /dev/null 2>/dev/null | head -20
+
+# 인증서 정보 확인
+# openssl s_client -connect example.com:443 < /dev/null 2>/dev/null | openssl x509 -noout -dates -subject
+
+# 지원 프로토콜 확인
+# openssl s_client -connect example.com:443 -tls1_2 < /dev/null 2>&1 | grep "Protocol"
+```
+
+**OSS 도구로 자동화** (TLS 점검 표준):
+```bash
+# sslscan — 모든 cipher suite/protocol 자동 점검 + 약점 표시 (RC4/DES/SSLv3 등)
+sudo apt install sslscan
+sslscan example.com
+
+# testssl.sh — 사실상 업계 표준 (Heartbleed/POODLE/BEAST 등 CVE 자동 검출)
+git clone https://github.com/drwetter/testssl.sh.git ~/testssl
+~/testssl/testssl.sh https://example.com           # 종합 진단
+~/testssl/testssl.sh -p https://example.com        # 프로토콜만
+~/testssl/testssl.sh --vulnerable https://example.com   # CVE 만
+
+# nmap NSE — 빠른 1회성 점검
+nmap --script ssl-enum-ciphers,ssl-cert -p 443 example.com
+```
+testssl.sh 는 **CVE-2014-0160 (Heartbleed)** 등 알려진 TLS 취약점을 한 번에 진단한다.
+
+### 5.3 curl로 TLS 정보 확인
+
+```bash
+# Wazuh Dashboard 의 HTTPS 인증서 (실습 가능 대상)
+curl -vI -k https://10.20.30.100:443 2>&1 | grep -E "SSL|TLS|subject|expire|issuer|ALPN" | head -10
+echo '---'
+# JuiceShop 은 HTTP 전용 — HTTPS 시도 시 에러 확인
+curl -vI https://10.20.30.80:3000 2>&1 | head -8
+```
+
+**예상 출력**:
+```
+*  ALPN: server accepted h2
+* TLSv1.3 (IN), TLS handshake, Server hello (2):
+* TLSv1.3 (OUT), TLS change cipher, Change cipher spec (1):
+*  subject: CN=wazuh-dashboard
+*  start date: Jan  1 00:00:00 2026 GMT
+*  expire date: Dec 31 23:59:59 2027 GMT
+*  issuer: CN=wazuh-dashboard
+---
+*   Trying 10.20.30.80:3000...
+* Connected to 10.20.30.80 (10.20.30.80) port 3000
+* ALPN: curl offers h2,http/1.1
+* (304) (OUT), TLS handshake, Client hello (1):
+* OpenSSL/3.0.2: error:0A00010B:SSL routines::wrong version number
+* Closed connection
+```
+
+> **해석 — HTTPS 점검 vs 미지원**:
+> - **Wazuh (10.20.30.100:443)**: TLS 1.3 ✓ + ALPN h2 (HTTP/2) ✓ — 표준 정상 통신. 그러나 **`subject: CN=wazuh-dashboard` + `issuer: CN=wazuh-dashboard`** = **자체 서명 인증서** = 운영 환경에서는 critical (CA 검증 X = MITM 가능). `-k` 가 없으면 curl 거부 = 운영자가 인증서 신뢰 체인 무시 신호.
+> - **expire date** 가 1년 이상이면 정상 (Let's Encrypt 90일 / 일반 1년).
+> - **JuiceShop HTTPS 시도**: `wrong version number` = HTTP 평문 응답을 TLS 로 파싱 → HTTPS 미지원 확정. 운영 환경에서 HTTP 전용 = OWASP A02 Cryptographic Failures. **HSTS preload list** 등록도 못함.
+> - **점검 보고서**: HTTP-only 서비스 = critical, 자체 서명 cert = high, 만료 임박 = high.
+
+### 5.4 점검 체크리스트
+
+```
+[ ] HTTPS 지원 여부
+[ ] HTTP → HTTPS 리다이렉트 여부
+[ ] TLS 1.2 이상만 허용하는지
+[ ] 인증서 유효기간
+[ ] 인증서 발급자 (자체 서명 여부)
+[ ] 취약한 암호 스위트 (RC4, DES, 3DES 등)
+[ ] HSTS 헤더 설정 여부
+```
+
+---
+
+## 6. 종합 실습: 정보수집 보고서 작성 (30분)
+
+### 6.1 보고서 템플릿
+
+```bash
+cat > /tmp/recon_report.md << 'EOF'
+# 정보수집 보고서
+
+## 1. 대상 정보
+- URL: http://10.20.30.80:3000
+- 서비스: OWASP JuiceShop
+- 점검 일시: $(date)
+
+## 2. 기술 스택
+- 웹 서버:
+- 프레임워크:
+- 데이터베이스:
+- 인증 방식:
+
+## 3. 발견된 디렉터리/파일
+| 경로 | 응답코드 | 설명 |
+|------|---------|------|
+| / | 200 | 메인 페이지 |
+| /ftp | | |
+| /api | | |
+
+## 4. 보안 헤더 점검
+| 헤더 | 존재여부 | 값 |
+|------|---------|-----|
+| X-Frame-Options | | |
+| X-Content-Type-Options | | |
+| Content-Security-Policy | | |
+
+## 5. TLS 설정
+- HTTPS 지원:
+- HSTS 설정:
+
+## 6. 정보 노출 항목
+(에러 메시지, 버전 정보 등)
+
+## 7. 요약 및 다음 단계
+EOF
+
+echo "보고서 템플릿이 /tmp/recon_report.md에 생성되었습니다."
+```
+
+---
+
+## 7. 실습 과제
+
+### 과제 1: 디렉터리 스캐닝
+1. 제공된 wordlist로 JuiceShop의 숨겨진 경로를 모두 찾아라
+2. 발견된 각 경로의 내용을 확인하고 위험도를 평가하라
+3. `/ftp` 디렉터리에서 다운로드 가능한 파일 목록을 작성하라
+
+### 과제 2: 기술 스택 식별
+1. JuiceShop의 기술 스택을 모두 식별하라 (서버, 프레임워크, DB, 인증)
+2. Apache(포트 80)의 기술 스택도 동일하게 식별하라
+3. 두 서비스의 보안 헤더를 비교 분석하라
+
+### 과제 3: 정보수집 보고서
+1. 위 템플릿을 기반으로 JuiceShop 정보수집 보고서를 완성하라
+2. 발견된 정보 중 공격에 활용될 수 있는 항목을 3가지 이상 서술하라
+
+---
+
+## 8. 요약
+
+| 기법 | 도구/명령 | 발견 가능한 것 |
+|------|----------|----------------|
+| robots.txt 분석 | curl | 숨겨진 경로 힌트 |
+| 디렉터리 스캐닝 | curl + wordlist | 숨겨진 페이지, 파일 |
+| 헤더 분석 | curl -I | 서버 종류, 버전 |
+| 에러 분석 | curl + 잘못된 요청 | 내부 구조, 파일 경로 |
+| TLS 점검 | openssl, curl -v | 암호화 설정 |
+
+**다음 주 예고**: Week 04 - 인증/세션 관리 점검. 비밀번호 정책, 세션 타임아웃, JWT 검증을 학습한다.
+
+---
+
+> **실습 환경 검증 완료** (2026-03-28): nmap/nikto, SQLi/IDOR/swagger.json, CVSS, 보고서 작성
+
+---
+
+## 웹 UI 실습
+
+### DVWA 보안 레벨 변경 방법 (웹 UI)
+
+> **DVWA URL:** `http://10.20.30.80:8080`
+
+1. 브라우저에서 `http://10.20.30.80:8080` 접속 → 로그인 (admin / password)
+2. 좌측 메뉴 **DVWA Security** 클릭
+3. **Security Level** 드롭다운에서 실습 목적에 맞는 레벨 선택:
+   - **Low**: 필터 없음 → 정보수집 기법이 모두 동작
+   - **Medium**: 일부 헤더 제한 → 정보수집 우회 필요
+   - **High**: 강화된 접근 제어 → 고급 정보수집 기법 실습
+   - **Impossible**: 안전한 구현 참조
+4. **Submit** 클릭하여 적용
+5. 좌측 메뉴에서 실습 항목 선택 후 각 레벨에서의 차이점 비교
+6. 각 항목 페이지 하단 **View Source** 로 레벨별 소스 코드 비교 분석
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+
+### gobuster + nikto
+> **역할:** 디렉토리 브루트포싱 + 웹 서버 기본 취약점 스캔  
+> **실행 위치:** `공격자 측 CLI`  
+> **접속/호출:** `gobuster dir -u <url> -w <wordlist>`, `nikto -h <url>`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
 |------|------|
-| `openssl s_client` | *handshake 단순 분석* |
-| `nmap --script ssl-enum-ciphers` | *cipher list enumeration* |
-| `testssl.sh` | *종합 audit* (Qualys 의 free 대체) |
-| `sslyze` | Python TLS scanner |
-| Qualys SSL Labs (외부) | *production audit* (외부 URL 만) |
+| `/usr/share/wordlists/dirb/common.txt` | 기본 워드리스트 |
+| `/usr/share/seclists/` | SecLists — 실전 워드리스트 |
+
+**핵심 설정·키**
+
+- `-t 50` — gobuster 동시 스레드
+- `-x php,html,bak` — 확장자 조합 탐색
+- `-Tuning 9` — nikto 고급 룰 포함
+
+**로그·확인 명령**
+
+- `-o gobuster.out` — 결과 저장
+- ``nikto -o nikto.html -Format htm`` — HTML 리포트
+
+**UI / CLI 요점**
+
+- gobuster 상태 204/301/302 — 존재는 하지만 리다이렉트되는 경로
+- nikto `OSVDB-...` — 공개 취약점 DB 매핑
+
+> **해석 팁.** 응답 크기와 상태코드의 **공통 패턴**을 `-s 200,204,301` / `-b 123`으로 제외하면 오탐이 급감한다.
 
 ---
 
-## 3차시 — JWT alg 5 + HS256 brute + RS256 마이그레이션
+## 실제 사례 (WitFoo Precinct 6 — 정찰 패턴 1:1 매칭)
 
-### 3-1. JWT alg 5 — 의 *위험도 재확인*
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *정보수집 (T1595·T1592)* 학습 목표에 매칭되는 *외부 mass discovery scan* record 추출.
 
-W02 의 *알람* 재확인:
+### Case 1: 단일 external IP × 30 internal hosts × 54 ports — 1초 burst
 
-| alg | 위험도 | 사용 권장 |
-|-----|------|---------|
-| RS256 | ★ Lowest | production 표준 |
-| ES256 | ★ Lowest | TLS 1.3 + short key |
-| PS256 | ★ Lowest | modern RSA-PSS |
-| HS256 | ★★ — secret 의존 | *long random* secret 필수 |
-| **none** | ★★★★★ — 절대 X | RFC legacy |
+**메타**
 
-### 3-2. HS256 의 *위험*
+| 항목 | 값 |
+|------|---|
+| 시각 | 2023-07-10 01:33:46 UTC (timestamp `1688960026`) |
+| src | `100.64.20.230` (외부 단일 IP) |
+| dst | 172.16.x ~ 172.31.x **30개 distinct host** |
+| dst ports | **54 distinct** (대표: 22·88·623·1433·5060·5632·8333·9418·31337) |
+| 이벤트 수 | 208 (firewall_action=block, severity=warning) |
+| Precinct 6 suspicion_score | 0.92 |
 
-HS256 = HMAC + SHA-256. *서명 + 검증 의 동일 secret* (symmetric).
+**원본 firewall 로그 발췌** (`message_sanitized`):
 
-**위험 1 — secret leak**:
-- secret = `JWT_SECRET=mysecret123` 의 *env var* 노출
-- git commit 의 *config file* 노출
-- log 의 *exception trace* 노출
+```text
+<180>Jul 09 USER-9564 21:56:51: USER-0010-0324
+  Deny tcp src outside:100.64.20.230/CRED-250460
+  dst DMZ:172.28.21.208/22  by ORG-1738-group "outside_ORG-1738_in"
 
-**위험 2 — weak secret brute**:
-- short secret ("secret", "password") brute = *초 단위*
-- dictionary secret 의 *분 단위* brute (jwt_tool / hashcat)
+<180>Jul 09 USER-9564 21:56:51: USER-0010-0324
+  Deny tcp src outside:100.64.20.230/CRED-250460
+  dst DMZ:172.16.249.139/1433 by ORG-1738-group "outside_ORG-1738_in"
 
-**위험 3 — secret rotation 의 *복잡***:
-- HS256 의 *secret rotation* = *모든 active session 무효화*
-- RS256 의 *private key rotation* = *kid 의 graceful migration* 가능
+<180>Jul 09 USER-9564 21:56:51: USER-0010-0324
+  Deny udp src outside:100.64.20.230/CRED-250460
+  dst DMZ:172.27.35.73/623  by ORG-1738-group "outside_ORG-1738_in"
 
-### 3-3. RS256 vs HS256 — *언제 어느 것*
+<180>Jul 09 USER-9564 21:56:51: USER-0010-0324
+  Deny tcp src outside:100.64.20.230/CRED-250460
+  dst DMZ:172.31.224.33/31337 by ORG-1738-group "outside_ORG-1738_in"
+```
 
-**HS256 권장** = *small project + symmetric 가능*:
-- 작은 *monolith*
-- *single server* + *지속 secret*
+**해석 — 본 lecture 와의 매핑**
 
-**RS256 권장** = *production / multi-service*:
-- *microservice* — public key 공유 가능
-- *외부 partner* — public key 만 공유
-- *graceful key rotation* — kid 의 *2 key 공존*
+| 정보수집 학습 항목 | 본 record 에서의 증거 |
+|--------------------|---------------------|
+| **호스트 식별** | 30개 distinct dst IP (172.16~172.31 대역 sweep) |
+| **서비스 지문 (port)** | 54 distinct port — SSH(22)·Kerberos(88)·IPMI(623)·MSSQL(1433)·SIP(5060)·PCAnywhere(5632)·Bitcoin(8333)·git(9418)·elite(31337) |
+| **속도/패턴** | 모든 이벤트 동일 timestamp → 자동화 도구 (사람 손 아님) |
+| **결과** | 외부 firewall 가 *block* 으로 차단했으나 **scan 자체는 완료** — 닫힌 포트는 RST/timeout 응답으로 attacker 가 "이 호스트엔 이 서비스 없음" 정보 획득 |
 
-### 3-4. HS256 brute 의 실 도구
+**점검 관점 액션 아이템**:
+1. 본 패턴은 외부 *공격 표면 매핑* 에 해당하므로 점검 보고서 §정찰 단계 *attacker view* 항목에 *동일 실험 시 유사 결과 가능* 명시.
+2. 31337·5632·623 등 *드물게 열려 있어선 안 되는 포트* 가 dst 에 포함된 경우 별도 *비표준 포트 노출* 챕터로 분리.
+3. 점검 도구 (nmap·masscan) 가 동일 burst pattern 을 만들지 않도록 *--scan-delay* 또는 *-T2* 사용 — 본 record 가 *완전 burst* 인 이유는 자동화 + 의도적 비식별이라는 점 강조.
 
-**jwt_tool** (Python, ticarpi/jwt_tool):
+
+
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (lab week03 — XSS)
+
+| step | 카테고리 | 핵심 도구 |
+|---|---|---|
+| 1 reflected | curl / **XSStrike** / **dalfox** / Burp Active Scan |
+| 2 reflected payload | curl batch / **PayloadsAllTheThings** / XSStrike --fuzzer / OWASP Cheatsheet |
+| 3 stored | curl 2 단계 / XSStrike --crawl / dalfox PUT / **XSS Hunter** OOB |
+| 4 DOM | curl + grep sink / XSStrike --dom / **DevTools Sources** / **RetireJS** |
+| 5 cookie steal | mock 서버 (python http.server) / **webhook.site** / **BeEF C2** / DNS exfil |
+| 6 bypass | 5 인코딩 카테고리 (대소문자/엔티티/URL/Unicode/이중) / dalfox --waf-evasion / **wfuzz** 인코딩 |
+| 7 CSP | curl -I / **Google CSP Evaluator** / **Mozilla Observatory** / nonce 누출 / JSONP 우회 |
+| 8 keylogger | JS payload / BeEF Get Form Values / XSS Hunter screenshot |
+| 9 phishing | innerHTML 가짜 폼 / **BeEF Pretty Theft** / **Gophish** 캠페인 |
+| 10 framework | **RetireJS** / Angular/React/Vue 위험 함수 표 / **semgrep p/react** / **eslint-plugin-security** |
+| 11 polyglot | Mathias / 0xsobky / **PortSwigger Cheatsheet** / wfuzz |
+| 12 auto scan | XSStrike / dalfox / **OWASP ZAP** / wapiti / nuclei (5 도구 비교표) |
+| 13 defense | **DOMPurify** / **bleach** Python / **OWASP Java Encoder** / **Trusted Types** |
+| 14 auto script | bash for / Python requests + BS / **Playwright** headless / CI/CD GitHub Actions |
+| 15 verification | 자동 보고서 / **DefectDojo** Finding 관리 / sha256 |
+
+### 학생 환경 준비
 ```bash
-git clone https://github.com/ticarpi/jwt_tool
-cd jwt_tool
-python3 jwt_tool.py <token> --crack -d /usr/share/wordlists/rockyou.txt
+git clone --depth 1 https://github.com/s0md3v/XSStrike.git ~/XSStrike
+sudo apt install -y dalfox wapiti
+docker run -d -p 3000:3000 --name beef beefproject/beef
+docker run -d --name xsshunter -p 8080:8080 mandatoryprogrammer/xsshunter_express
+npm install -g retire wappalyzer
+pip install playwright; playwright install chromium
+# Gophish: https://github.com/gophish/gophish/releases
 ```
-
-**hashcat** (mode 16500 = JWT HS256):
-```bash
-hashcat -m 16500 token.txt /usr/share/wordlists/rockyou.txt
-```
-
-**brute 시간 추정** (RTX 4090):
-- rockyou.txt (14M words): ~5 분
-- 8 char alphanumeric (62^8 = 218 trillion): ~38 일
-- 12 char random alphanumeric: *수십 년* (안전)
-
-**결론** — HS256 의 secret = *최소 64 char random* (또는 RS256).
-
-### 3-5. RS256 마이그레이션 절차
-
-1. **새 RSA key pair 생성** (RS256 의 2048bit 권장)
-2. **JWT lib 의 *alg whitelist*** — `algorithms=["RS256"]`
-3. **kid 추가** — header 의 `kid: 1` (새 key), `kid: 0` (이전 HS256)
-4. **graceful migration** — 새 token 은 RS256, 기존 HS256 token 은 *유효 기간 까지*
-5. **HS256 deprecation** — 모든 user 의 *다음 login 시* RS256 변환
-
-### 3-6. W03 lab step 3 의의
-
-본 step 의 *시뮬*:
-- weak secret "secret" 의 *brute 5 candidate* 시도
-- *FOUND* 메시지 출력 → secret 발견 가능 인지
-
-실 운영 = *PyJWT 의 weak token 자체 가 위험* — `pip install pyjwt` 후 의 시뮬.
-
----
-
-## 4차시 — Session cookie 4 표준 + 보고서
-
-### 4-1. Session cookie 의 *4 표준*
-
-modern web 의 *session 의 최소 보안*:
-
-**1. HttpOnly** = JS 접근 차단
-```http
-Set-Cookie: sessionid=abc123; HttpOnly
-```
-방어 대상: **XSS** 의 cookie 절도 (`document.cookie` 차단)
-
-**2. Secure** = HTTPS 만 전송
-```http
-Set-Cookie: sessionid=abc123; Secure
-```
-방어 대상: **MITM** (HTTP 의 *평문 전송* 차단)
-
-**3. SameSite** = cross-site 의 차단
-```http
-Set-Cookie: sessionid=abc123; SameSite=Strict
-```
-- `Strict` — *완전 차단* (가장 안전)
-- `Lax` — *navigation* 만 허용 (default 2020+)
-- `None` — *없음* (Secure 필수)
-방어 대상: **CSRF**
-
-**4. signed cookie** = 변조 검출
-```http
-Set-Cookie: sessionid=abc123.signature_hex; HttpOnly
-```
-방어 대상: 변조 (client 의 cookie 수정 검출)
-
-### 4-2. 4 표준 의 *방어 매핑*
-
-| 표준 | 방어 대상 (OWASP) |
-|------|-----------------|
-| HttpOnly | A03 XSS |
-| Secure | A02 MITM |
-| SameSite | A01 CSRF |
-| signed | A08 변조 |
-
-→ 4 표준 모두 적용 = *4 OWASP 카테고리* 동시 방어.
-
-### 4-3. 금융 표준 — 7 추가 권장
-
-NeoBank 같은 금융 시스템 의 *추가 7*:
-
-1. **session timeout** = 15 분 (idle) / 8 시간 (절대)
-2. **session ID 재발급** = login 시 + 권한 변경 시
-3. **device binding** = user-agent + IP (옵션)
-4. **2FA / MFA** = high-risk 행동 의 추가 인증
-5. **rate limit** = login 의 *10 시도 / 5 분* (brute 방어)
-6. **session revocation** = logout / 의심 행동 시 즉시 무효
-7. **session log** = 모든 session 의 *시작 / 종료 / 의심* 기록
-
-### 4-4. W03 lab step 5 의의 — 4 영역 종합 보고서
-
-본 step 의 *4 finding* (hash + TLS + JWT + cookie) 가 *crypto audit 의 최소 단위*.
-실 운영 = *분기 1 회* 의 *4 영역 audit* 가 *기본 frequency*.
-
-**보고서 의 *3 청자*** (W02 와 동일):
-- 임원: *위험 도 + 법 적 책임*
-- 운영자: *즉시 / 단기 권장*
-- 분석가: *reproduction + 근본 원인*
-
----
-
-## 4-5. R/B/P 종합 시나리오 — Cryptographic Failures
-
-### 통합 도식
-
-```mermaid
-graph LR
-    R["🔴 Red Team<br/>4 시도<br/>① weak hash brute<br/>② TLS downgrade<br/>③ JWT secret brute<br/>④ session cookie 의 약점"]
-    WEB["🌐 web Apache<br/>+ JuiceShop<br/>application crypto"]
-    B1["🔵 hash 검증<br/>bcrypt/argon2/PBKDF2<br/>iteration cost"]
-    B2["🔵 TLS config<br/>min TLS 1.2<br/>strong cipher 만"]
-    B3["🔵 JWT secret<br/>32+ byte entropy<br/>+ rotation"]
-    B4["🔵 cookie flag<br/>HttpOnly/Secure/SameSite"]
-    P1["🟣 4 영역 audit<br/>분기 1회 routine"]
-    P2["🟣 Gap 분석<br/>FP/TP balance"]
-    R --> WEB
-    WEB --> B1
-    WEB --> B2
-    WEB --> B3
-    WEB --> B4
-    B1 --> P1
-    B2 --> P1
-    B3 --> P1
-    B4 --> P1
-    P1 --> P2
-    style R fill:#f85149,color:#fff
-    style WEB fill:#3fb950,color:#fff
-    style B1 fill:#1f6feb,color:#fff
-    style B2 fill:#1f6feb,color:#fff
-    style B3 fill:#1f6feb,color:#fff
-    style B4 fill:#1f6feb,color:#fff
-    style P1 fill:#bc8cff,color:#fff
-    style P2 fill:#bc8cff,color:#fff
-```
-
-### Coverage Matrix — 4 시도 × 4 detection
-
-| 시도 | Red 명령 | Blue 검증 | Purple Gap | Purple 권장 |
-|------|---------|----------|-----------|------------|
-| **① weak hash** | `hashcat -m 0 hash.txt rockyou.txt` (MD5) | hash algorithm 의 확인 (bcrypt vs MD5) | legacy DB 의 MD5 password 의 잔존 | 점진적 rehash (login 시 의 자동 migration) |
-| **② TLS downgrade** | `openssl s_client -tls1` (TLS 1.0 강제) | TLS config 의 min version 검증 | 일부 server 의 fallback 의 잔존 | 모든 server 의 TLS 1.3 의 enforce + 로그 audit |
-| **③ JWT secret brute** | `hashcat -m 16500 jwt.txt rockyou.txt` | JWT secret 의 entropy 측정 | 약한 secret ("secret123") 의 사용 | secret 의 32+ byte random + 정기 rotation |
-| **④ session cookie 약점** | `curl -c cookies.txt /login; cat cookies.txt` (flag 확인) | cookie 의 HttpOnly/Secure/SameSite 의 검증 | cookie flag 의 일부 누락 | 모든 session cookie 의 3 flag 의 강제 + automation |
-
-### R/B/P 의 핵심 인사이트
-
-1. **Crypto 의 audit 의 분기 routine** — 4 영역 (hash/TLS/JWT/cookie) 의 분기 1회 의
-   audit = crypto failure 의 사전 detection. 운영 의 routine.
-
-2. **hash migration 의 점진적 적용** — legacy MD5 의 일시적 교체 = 운영 위험. login 시
-   의 자동 rehash (bcrypt) 의 점진 적용. 6개월 이내 의 100% migration.
-
-3. **TLS 1.3 의 enforce** — 모든 server 의 TLS 1.3 의 강제 + fallback 의 차단. 일부
-   legacy client 의 영향 = 5% 이하 (현재 표준).
-
-4. **JWT secret 의 entropy + rotation** — secret = openssl rand -base64 32 의 표준.
-   rotation = 분기 1회 + secret 변경 의 backward-compatible 의 2 secret 의 grace
-   period.
-
-5. **cookie 의 3 flag (HttpOnly/Secure/SameSite) 의 default** — application
-   framework 의 cookie middleware 의 default = 3 flag 의 모두 on. opt-out 의 명시
-   적 결정 만 허용.
-
----
-
-## 본 주차 정리
-
-본 W03 을 마치면 학생 은:
-
-1. ✅ Hash 6 종 의 *길이 + 형식 + 약함* 인지
-2. ✅ TLS handshake + cipher suite 4 부분 + cert chain 인지
-3. ✅ JWT alg 5 + HS256 brute + RS256 마이그레이션 인지
-4. ✅ Session cookie 4 표준 + 방어 매핑 인지
-5. ✅ 4 영역 종합 보고서 + CVSS / CWE / ATT&CK 매핑
-
----
-
-## 자기 점검
-
-```
-[ ] MD5 vs bcrypt 의 *brute 시간 차이* + *왜 password 에 bcrypt 권장* 응답?
-[ ] TLS handshake 4 단계 + cipher suite 의 *4 부분* 응답?
-[ ] HS256 의 weak secret brute 가능성 + RS256 권장 *언제* 응답?
-[ ] Session cookie 의 4 표준 + 각 *방어 대상 OWASP* 응답?
-[ ] W03 의 4 영역 audit 의 *분기 1 회* 의 표준 frequency 응답?
-```
-
----
-
-## 다음 주차 — W04
-
-**W04 — A03 Injection (SQLi 심화)** — sqlmap + tamper script + ModSec 942
-우회 + DVWA + AdminConsole hands-on.
-
-- lecture: SQLi 5 카테고리 + sqlmap 의 4 phase + tamper 의 10 종
-- lab 5 step: DVWA SQLi 자동 + AdminConsole NoSQL + 5 tamper × ModSec 우회 + 보고서
-- 예상 시간: 10 시간 (lecture 3 + lab 7)

@@ -1,659 +1,923 @@
-# W01 — 웹 보안 개요 + OWASP Top 10 + 6v6 의 7 vuln vhost 가시화
-
-> **본 주차의 한 줄 요약**
->
-> 웹 보안 의 *전체 지도* 를 그린다. OWASP Top 10 (2021) 의 10 카테고리 + CWE Top 25
-> 의 매핑 + 6v6 환경 의 7 vuln vhost (JuiceShop / DVWA / NeoBank / GovPortal /
-> MediForum / AdminConsole / AICompanion) 의 가시화 + ModSec CRS 4.0 의 20 rule
-> family 의 *방어 측 도구* 인지. 본 주차 가 14 weeks 의 *학습 backbone*.
->
-> **운영자 한 줄 결론**: 웹 의 *공격 면* 은 OWASP Top 10 의 10 카테고리. *방어 면*
-> 은 WAF (ModSec) + 인증/세션 + 데이터 무결성 의 3 축. 본 과목 은 *공격 → 탐지 →
-> 방어* 의 3 단계 hands-on.
-
----
+# Week 01: 웹취약점 점검 개론
 
 ## 학습 목표
+- 해킹과 취약점 점검의 차이를 명확히 이해한다
+- 취약점 점검의 법적 근거와 윤리적 기준을 파악한다
+- OWASP Testing Guide 기반 점검 방법론의 전체 흐름을 이해한다
+- 주요 취약점 점검 도구의 종류와 용도를 파악한다
+- JuiceShop 실습 환경에 접속하여 구조를 탐색할 수 있다
 
-본 주차 종료 시 학생은 다음 7 가지 를 **본인 손으로** 할 수 있어야 한다.
+## 실습 환경 (6v6 4-tier, 공통)
 
-1. 웹 의 *6 핵심 통신 흐름* (브라우저 → DNS → HTTP → 서버 → DB → 응답) + 각 단계 의
-   *공격 면* 인지.
-2. OWASP Top 10 (2021) 10 카테고리 의 *이름 + 핵심 CWE + 발생 빈도* 30 초 내 응답.
-3. CWE Top 25 의 *상위 10* 의 의미 + OWASP 와 의 *중복 영역* 인지.
-4. 6v6 의 7 vuln vhost 모두 *실 응답* + 각 의 *주요 vuln 카테고리* 인지.
-5. ModSec CRS 4.0 의 *20 rule family* + *paranoia level* 1-4 의 *trade-off* 인지.
-6. 본 과목 의 14 weeks 학습 계획서 의 *5 영역 자가 진단* + *졸업 목표 구체*.
-7. 본인 의 *학습 환경 의 RoE* (Rules of Engagement) — 학습 환경 만, 외부 거부.
+학생 PC 의 `~/.ssh/config` 의 ProxyJump 설정 후 다음 표 의 컨테이너 에 `ssh
+6v6-<name>` 으로 접속.
 
----
+| 컨테이너 | 6v6 IP | 역할 | 접속 |
+|---------|--------|------|------|
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
+| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
+| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
+| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
+| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
 
-## 강의 시간 배분 (3시간 30분)
+**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
+**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
-| 차시 | 주제 | 시간 |
-|:----:|------|------|
-| 1차시 | 웹 보안 의 전체 지도 + 6 핵심 통신 흐름 + 공격 면 | 50 분 |
-| 2차시 | OWASP Top 10 (2021) 10 카테고리 + CWE Top 25 | 60 분 |
-| 3차시 | ModSec CRS 4.0 의 20 rule family + 6v6 의 적용 | 50 분 |
-| 4차시 | 학습 계획 + RoE + 자가 진단 | 30 분 |
-| 휴식 | 차시 사이 + 마지막 | 20 분 |
+## 강의 시간 배분 (3시간)
 
----
-
-## 0. 용어 해설 (먼저 인지)
-
-본 과목 에서 가장 자주 등장 하는 *15 용어* 의 한 줄 정의. 모든 lab + lecture 의
-전제.
-
-| # | 용어 | 한 줄 정의 |
-|:-:|------|----------|
-| 1 | **OWASP** | Open Web Application Security Project — 비영리, 표준 보안 가이드 |
-| 2 | **OWASP Top 10** | 가장 위험 한 10 web vuln 카테고리. 3 년 주기 갱신 |
-| 3 | **CWE** | Common Weakness Enumeration — MITRE 의 weakness 분류 |
-| 4 | **CVE** | Common Vulnerabilities and Exposures — 실 발견 된 취약점 식별자 |
-| 5 | **WAF** | Web Application Firewall — HTTP 트래픽 의 *공격 패턴* 차단 |
-| 6 | **ModSec** | Apache 의 WAF module (most popular open-source WAF) |
-| 7 | **CRS** | Core Rule Set — OWASP 의 표준 ModSec 룰셋 (현재 4.0) |
-| 8 | **paranoia level** | CRS 의 *엄격도* (1=production / 4=stricter) |
-| 9 | **anomaly score** | CRS 의 *위험도 점수* (5+ = 차단 default) |
-| 10 | **vhost** | virtual host — HAProxy/Apache 의 *호스트 헤더* 별 라우팅 |
-| 11 | **HAProxy** | TCP/HTTP load balancer (6v6 의 fw 컨테이너) |
-| 12 | **PTES** | Penetration Testing Execution Standard — 침투 7 단계 |
-| 13 | **ATT&CK** | MITRE 의 *공격자 행동* 분류 (Tactic + Technique) |
-| 14 | **payload** | 공격 요청 의 *실제 위험 코드* (예: `' OR 1=1--`) |
-| 15 | **RoE** | Rules of Engagement — 침투 의 *허용 범위* (학습 환경 만) |
+| 시간 | 내용 | 유형 |
+|------|------|------|
+| 0:00-0:40 | 이론 강의 (Part 1) | 강의 |
+| 0:40-1:10 | 이론 심화 + 사례 분석 (Part 2) | 강의/토론 |
+| 1:10-1:20 | 휴식 | - |
+| 1:20-2:00 | 실습 (Part 3) | 실습 |
+| 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
+| 2:40-2:50 | 휴식 | - |
+| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
+| 3:20-3:40 | 정리 + 과제 안내 | 정리 |
 
 ---
 
-## 1차시 — 웹 보안 의 전체 지도 + 6 핵심 통신 흐름
+---
 
-### 1-1. 왜 웹 이 가장 자주 공격 받는가
+## 용어 해설 (웹취약점 점검 과목)
 
-전 세계 의 사이버 공격 의 **80%+ 가 웹 을 시작점** 으로 한다 (Verizon DBIR 2024).
-이유 는 3 가지:
-
-1. **모든 회사 가 웹 을 사용**: 회사 사이트 / 로그인 / API / 결제 — 외부 노출 가
-   가장 많은 시스템.
-2. **공격 면 이 다양**: HTTP 헤더 / URL / 파라미터 / 쿠키 / JSON body / WebSocket
-   등 *입력 경로* 가 매우 많음.
-3. **취약점 패턴 이 표준화 가능**: SQL injection / XSS 같은 *패턴 화* 된 공격 이
-   가능 — 자동화 도구 (sqlmap / Burp / OWASP ZAP) 가 잘 발달.
-
-본 과목 은 *80% 를 차지하는 웹 공격 의 모든 카테고리* 를 14 weeks 에 *공격 측 +
-방어 측* 양면 학습.
-
-### 1-2. 웹 의 6 핵심 통신 흐름
-
-학생 이 *www.example.com* 의 로그인 페이지 에 *id 입력 + 비밀번호 입력 + 로그인
-버튼 클릭* 시 발생 하는 6 단계. 각 단계 가 *공격 면*.
-
-```
-  ① 브라우저 → ② DNS 조회 → ③ TCP 연결 + TLS handshake →
-  ④ HTTP 요청 → ⑤ 서버 의 처리 (인증 / DB) → ⑥ HTTP 응답
-```
-
-각 단계 의 *대표 공격*:
-
-| 단계 | 정상 동작 | 공격 면 | OWASP 매핑 |
-|:----:|---------|--------|----------|
-| ① 브라우저 | URL 입력 / 폼 제출 | XSS — 응답 의 악성 JS 실행 | A03 |
-| ② DNS | example.com → IP | DNS hijack / cache poisoning | A05 |
-| ③ TCP+TLS | TLS handshake / cert 검증 | TLS downgrade / weak cipher | A02 |
-| ④ HTTP 요청 | GET /login + body | SQLi / XSS / SSRF / IDOR 의 payload | A01-A10 |
-| ⑤ 서버 처리 | DB query / 인증 / 세션 | Auth bypass / IDOR / 권한 우회 | A01 / A07 |
-| ⑥ HTTP 응답 | HTML / JSON / 200 | 정보 노출 / 헤더 누락 / 캐싱 결함 | A04 / A05 |
-
-본 과목 의 14 weeks 의 *대부분* 이 *④ HTTP 요청* + *⑤ 서버 처리* 단계 의 공격
-다룬다. ②/③/⑥ 은 *심화* (network security 또는 cryptography 별 과목).
-
-### 1-3. 웹 의 3 계층 모델 (학생 친화 비유)
-
-웹 서비스 의 3 계층 — *프론트엔드 + 백엔드 + 데이터베이스*. 학생 이 *식당* 비유로
-이해.
-
-```
-  [브라우저]            ←  손님 (학생)
-    ↓
-  [Frontend (HTML/JS)] ←  메뉴판 + 종업원 (주문 받음)
-    ↓
-  [Backend (서버)]     ←  주방 (요리 만듦)
-    ↓
-  [Database]           ←  창고 (식재료 저장)
-```
-
-각 계층 의 *대표 공격*:
-
-| 계층 | 식당 비유 | 대표 공격 |
-|------|---------|---------|
-| Frontend | 메뉴판 변조 | XSS (메뉴 에 악성 코드 삽입) |
-| Backend | 주방 의 명령 변조 | RCE (주방 에 *나쁜 요리* 시킴) |
-| Database | 창고 의 데이터 절도 | SQLi (창고 의 *모든 데이터* 조회) |
-
-본 과목 의 *공격 측* 은 *각 계층* 의 *입력 변조* — 공격자 가 *주문지 / 명령 / 쿼리* 를 변조 → 서버 가 *예상 외* 동작 → 데이터
-유출 / 권한 우회 / 코드 실행.
-
-### 1-4. 실 사고 사례 — 한국 의 web 공격 3 종
-
-학생 의 이해 를 위 한국 의 *실 사고 3 종* (공개 자료, KISA 보고).
-
-**사례 1 (2023-04): 대학교 학적 시스템 의 SQLi → 학생 정보 5 만 건 유출**
-- 공격 면: 학생 검색 페이지 의 `학번` 파라미터
-- payload: `1' OR '1'='1`
-- 영향: 학생 5 만 명 의 이름 + 학번 + 주소 + 전화 노출
-- 본 과목 매핑: W04 (SQLi + sqlmap) 의 실습 대상
-
-**사례 2 (2023-09): 금융 회사 의 JWT alg=none → 무권한 출금 시도**
-- 공격 면: 모바일 앱 의 JWT 토큰 의 *header* 변조
-- payload: `{"alg":"none","typ":"JWT"}` + 임의 payload
-- 영향: 시도 만 — 서버 측 검증 추가 후 차단
-- 본 과목 매핑: W03 (Cryptographic Failures) 의 실습 대상
-
-**사례 3 (2024-02): 공공 기관 의 SSRF → 내부 metadata 노출**
-- 공격 면: 이미지 URL 입력 폼 (썸네일 생성)
-- payload: `http://169.254.169.254/latest/meta-data/` (AWS metadata)
-- 영향: AWS IAM credentials 노출 → 내부 S3 buckets 의 *주민등록번호 의 평문 csv*
-  발견 → 즉시 차단 + 키 회전 + 분기 별 모의해킹 의무화
-- 본 과목 매핑: W13 (SSRF) 의 실습 대상
-
-3 사례 의 *공통 패턴* — **사용자 입력 의 무검증** + **권한 / 인증 의 허술** +
-**로그 의 부재**. 본 과목 의 14 weeks 가 *각 패턴* 의 *원인 → 탐지 → 방어* 의
-hands-on.
+| 용어 | 영문 | 설명 | 비유 |
+|------|------|------|------|
+| **취약점 점검** | Vulnerability Assessment | 시스템의 보안 약점을 체계적으로 찾는 활동 | 건물 안전 진단 |
+| **모의해킹** | Penetration Testing | 실제 공격자처럼 취약점을 악용하여 검증 | 소방 훈련 (실제로 불을 피워봄) |
+| **CVSS** | Common Vulnerability Scoring System | 취약점 심각도 0~10점 (9.0+ Critical) | 질병 위험 등급표 |
+| **SQLi** | SQL Injection | SQL 쿼리에 악성 입력 삽입 | 주문서에 가짜 지시를 끼워넣기 |
+| **XSS** | Cross-Site Scripting | 웹페이지에 악성 스크립트 삽입 | 게시판에 함정 쪽지 붙이기 |
+| **CSRF** | Cross-Site Request Forgery | 사용자 모르게 요청을 위조 | 누군가 내 이름으로 송금 요청 |
+| **SSRF** | Server-Side Request Forgery | 서버가 내부 자원에 요청하도록 조작 | 직원에게 기밀 문서를 가져오라 속이기 |
+| **LFI** | Local File Inclusion | 서버의 로컬 파일을 읽는 취약점 | 사무실 서류함을 몰래 열람 |
+| **RFI** | Remote File Inclusion | 외부 파일을 서버에 로드하는 취약점 | 외부에서 악성 서류를 사무실에 반입 |
+| **RCE** | Remote Code Execution | 원격에서 서버 코드 실행 | 전화로 사무실 컴퓨터 조작 |
+| **WAF 우회** | WAF Bypass | 웹 방화벽의 탐지를 피하는 기법 | 보안 검색대를 우회하는 비밀 통로 |
+| **인코딩** | Encoding | 데이터를 다른 형식으로 변환 (URL, Base64 등) | 택배 재포장 (내용물은 같음) |
+| **난독화** | Obfuscation | 코드를 읽기 어렵게 변환 (탐지 회피) | 범인이 변장하는 것 |
+| **세션** | Session | 서버가 사용자를 식별하는 상태 정보 | 카페 단골 인식표 |
+| **쿠키** | Cookie | 브라우저에 저장되는 작은 데이터 | 가게에서 받은 스탬프 카드 |
+| **Burp Suite** | Burp Suite | 웹 보안 점검 프록시 도구 (PortSwigger) | 우편물 검사 장비 |
+| **OWASP ZAP** | OWASP ZAP | 오픈소스 웹 보안 스캐너 | 무료 보안 검사 장비 |
+| **점검 보고서** | Assessment Report | 발견된 취약점과 대응 방안을 정리한 문서 | 건물 안전 진단 보고서 |
 
 ---
 
-## 2차시 — OWASP Top 10 (2021) 의 10 카테고리 + CWE Top 25
+## 전제 조건
+- Course 1 (모의해킹 기초) 수강 완료 또는 동등 수준
+- HTTP 프로토콜 기본 이해 (GET/POST, 상태 코드, 헤더)
+- 리눅스 터미널에서 curl 명령어 사용 경험
+- 실습 인프라 SSH 접속 가능
 
-### 2-1. OWASP Top 10 의 *역할*
+---
 
-OWASP Top 10 은 *전 세계 web 보안 의 공용 어휘*. 회사 의 보안 정책 / 침투 보고서 /
-취업 면접 의 표준 질문. 본 과목 졸업 = **A01~A10 의 이름 + CWE + 본인 환경 의 적용
-30 초 응답 가능**.
+## 1. 해킹 vs 취약점 점검 (30분)
 
-### 2-2. A01 — Broken Access Control (94% 응용프로그램 발견)
+### 1.1 해킹이란?
 
-가장 흔한 vuln. **인증 후 의 권한 검증 실패**.
+**해킹(Hacking)**은 넓은 의미에서 시스템의 기술적 취약점을 이용하여 의도하지 않은 동작을 유발하는 행위이다. 그러나 일반적으로 "해킹"이라 하면 **불법적인 침입 행위**를 떠올린다.
 
-| 대표 패턴 | 예시 |
-|---------|------|
-| IDOR (Insecure Direct Object Reference) | `/api/Users/2` 의 *본인 외* user 조회 |
-| Path Traversal | `?file=../../etc/passwd` 의 시스템 파일 접근 |
-| Force Browsing | `/admin/secret` 직접 입력 → 권한 검사 누락 |
-| 방법 변경 | `GET /user/1` → `DELETE /user/1` 검증 없음 |
+### 1.2 취약점 점검이란?
 
-**6v6 의 실습 대상**: JuiceShop 의 `/api/Users` IDOR + DVWA 의 Path Traversal.
+**취약점 점검(Vulnerability Assessment)**은 시스템의 보안 약점을 **합법적으로, 체계적으로** 찾아내어 보고하는 전문 활동이다.
 
-### 2-3. A02 — Cryptographic Failures (이전 명: Sensitive Data Exposure)
+### 1.3 핵심 차이
 
-암호화 결함 — *약한 알고리즘 / 키 노출 / TLS 결함*.
+| 구분 | 해킹 (불법) | 취약점 점검 (합법) |
+|------|-----------|-----------------|
+| **목적** | 정보 탈취, 파괴, 금전적 이익 | 보안 강화, 취약점 발견 및 수정 |
+| **권한** | 무단 접근 | **사전 서면 허가** 필수 |
+| **범위** | 제한 없음 | 계약서에 정의된 범위만 |
+| **시간** | 공격자 마음대로 | 합의된 일정 내 |
+| **결과** | 피해 발생 | **보고서** 작성 → 보안 개선 |
+| **법적 지위** | **범죄** (형사 처벌 대상) | **합법** (계약에 의거) |
+| **산출물** | 없음 (흔적 제거) | 취약점 보고서, 조치 권고안 |
 
-| 대표 패턴 | 예시 |
-|---------|------|
-| 약한 hash | MD5 / SHA1 의 *비밀번호 해시* — rainbow table 가능 |
-| 약한 cipher | TLS 의 RC4 / 3DES — 2020 deprecated |
-| 키 hardcode | 코드 의 `API_KEY="abc123"` git push |
-| JWT alg=none | 토큰 검증 우회 — 본 과목 W03 의 hands-on |
+### 1.4 취약점 점검의 종류
 
-**6v6 의 실습 대상**: JuiceShop JWT (alg=none / RS256 confusion) + NeoBank 의
-session cookie 분석.
+```
+취약점 점검 (Vulnerability Assessment)
++-- 자동 스캔 (Automated Scanning)
+|   +-- 도구를 사용한 대규모 자동 점검
+|       예: Nessus, OpenVAS, nikto
+|
++-- 수동 점검 (Manual Testing)
+|   +-- 전문가가 직접 분석하는 정밀 점검
+|       예: Burp Suite를 이용한 파라미터 변조
+|
++-- 모의해킹 (Penetration Testing)
+    +-- 실제 공격자 관점에서 침투 시도
+        예: SQL Injection으로 DB 접근 --> 권한 상승
+```
 
-### 2-4. A03 — Injection (이전 #1 → #3, 단 *영향 도* 최고)
+> **중요**: 취약점 점검은 "취약점을 찾는 것"이 목적이고, 모의해킹은 "취약점을 이용하여 실제로 어디까지 침투 가능한지 증명"하는 것이 목적이다.
 
-*사용자 입력* 이 *명령 / 쿼리* 로 *실행*. 가장 *영향 큰* 카테고리.
+---
 
-| 종류 | 예시 |
+## 2. 법적 프레임워크 (30분)
+
+> **이 실습을 왜 하는가?**
+> "웹취약점 점검 개론" — 이 주차의 핵심 기술을 실제 서버 환경에서 직접 실행하여 체험한다.
+> 웹 취약점 점검 분야에서 이 기술은 실무의 핵심이며, 실습을 통해
+> 명령어의 의미, 결과 해석 방법, 보안 관점에서의 판단 기준을 익힌다.
+>
+> **이걸 하면 무엇을 알 수 있는가?**
+> - 이 기술이 실제 시스템에서 어떻게 동작하는지 직접 확인
+> - 정상과 비정상 결과를 구분하는 눈을 기름
+> - 실무에서 바로 활용할 수 있는 명령어와 절차를 체득
+>
+> **주의:** 모든 실습은 허가된 실습 환경(10.20.30.0/24)에서만 수행한다.
+
+### 2.1 왜 법을 알아야 하는가?
+
+취약점 점검 전문가에게 법적 지식은 **선택이 아닌 필수**이다. 아무리 좋은 의도라도 법적 근거 없이 타인의 시스템을 점검하면 **범죄**가 된다.
+
+### 2.2 대한민국 관련 법률
+
+#### (1) 정보통신망 이용촉진 및 정보보호 등에 관한 법률 (정보통신망법)
+
+**제48조 (정보통신망 침해행위 등의 금지)**
+
+```
+① 누구든지 정당한 접근권한 없이 또는 허용된 접근권한을
+   넘어 정보통신망에 침입하여서는 아니 된다.
+
+② 누구든지 정당한 사유 없이 정보통신시스템, 데이터
+   또는 프로그램 등을 훼손·멸실·변경·위조하거나 그
+   운용을 방해할 수 있는 프로그램을 전달 또는 유포하여서는
+   아니 된다.
+```
+
+**벌칙**: 5년 이하 징역 또는 5천만원 이하 벌금
+
+> **핵심**: "정당한 접근권한" = 사전 서면 허가. 구두 허가만으로는 부족하다.
+
+#### (2) 개인정보 보호법
+
+- 취약점 점검 중 개인정보를 발견할 수 있다
+- 발견한 개인정보를 수집/저장/유출하면 별도의 법적 책임
+- 점검 결과 보고서에 개인정보가 포함되지 않도록 주의
+
+#### (3) 전자금융거래법
+
+- 금융기관 대상 취약점 점검 시 추가 규제 적용
+- 금융감독원 규정에 따른 점검 기준 준수 필요
+
+### 2.3 합법적 취약점 점검을 위한 필수 조건
+
+```
+합법적 점검 = 다음 4가지 모두 충족
+
+1. ✅ 서면 허가 (점검 계약서 / ROE)
+   → 고객사 대표 또는 권한 있는 자의 서명
+
+2. ✅ 범위 명시
+   → IP 대역, 도메인, 시스템 목록이 명확히 정의
+
+3. ✅ 기간 명시
+   → 시작일, 종료일, 점검 시간대 합의
+
+4. ✅ 제한 사항 명시
+   → DoS 테스트 가능 여부, 소셜 엔지니어링 포함 여부 등
+```
+
+### 2.4 ROE (Rules of Engagement)
+
+ROE는 "교전 규칙"이라는 군사 용어에서 유래했으며, 취약점 점검에서는 **점검의 범위와 한계를 정의하는 문서**이다.
+
+**ROE에 포함되어야 할 항목**:
+
+| 항목 | 내용 예시 |
+|------|---------|
+| 점검 대상 | web 서버 (10.20.30.80), 포트 80/443/3000 |
+| 점검 제외 대상 | siem 서버 (운영 중단 시 영향 큼) |
+| 허용된 기법 | SQL Injection, XSS, CSRF 테스트 |
+| 금지된 기법 | DoS/DDoS, 물리적 접근, 소셜 엔지니어링 |
+| 점검 기간 | 2026-03-27 ~ 2026-04-10, 09:00-18:00 |
+| 비상 연락처 | 고객사 보안팀장: 010-XXXX-XXXX |
+| 데이터 처리 | 발견된 개인정보는 즉시 삭제, 보고서에 마스킹 |
+
+> **이 수업의 실습**: 수업에서 제공하는 JuiceShop은 **의도적으로 취약하게 만든 교육용 앱**이며, 실습 인프라 내에서만 점검한다. 이것이 우리의 "ROE"이다.
+
+---
+
+## 3. 취약점 점검 방법론 (30분)
+
+### 3.1 OWASP Testing Guide
+
+**OWASP (Open Web Application Security Project)**는 웹 보안 분야의 대표적인 비영리 단체이다. OWASP Testing Guide는 웹 애플리케이션 보안 점검의 **사실상 표준(de facto standard)**이다.
+
+### 3.2 점검 단계 (5단계)
+
+```
+Phase 1: 계획 (Planning)
+  --> 범위 정의, ROE 작성, 팀 구성, 도구 준비
+       |
+       v
+Phase 2: 정보 수집 (Reconnaissance)
+  --> 대상 시스템 정보 수집 (기술 스택, 구조 파악)
+       |
+       v
+Phase 3: 자동 스캔 (Automated Scanning)
+  --> 도구를 이용한 대규모 취약점 스캔
+       |
+       v
+Phase 4: 수동 점검 (Manual Testing)
+  --> 자동 스캔으로 찾지 못한 취약점 수동 확인
+  --> 비즈니스 로직 취약점, 인증/인가 우회 등
+       |
+       v
+Phase 5: 보고서 작성 (Reporting)
+  --> 발견 사항 문서화, 위험도 평가, 조치 권고안
+```
+
+### 3.3 각 단계 상세
+
+#### Phase 1: 계획 (Planning)
+
+| 활동 | 산출물 |
+|------|-------|
+| 고객과 미팅 | 요구사항 정의서 |
+| 범위 확정 | 점검 대상 목록 (IP, URL, 기능) |
+| ROE 작성 | 교전 규칙 문서 |
+| 일정 수립 | 점검 일정표 |
+| 도구 준비 | 도구 설치 및 설정 완료 |
+
+#### Phase 2: 정보 수집 (Reconnaissance)
+
+```
+정보 수집
++-- 수동적 정보 수집 (Passive)
+|   +-- WHOIS 조회
+|   +-- DNS 정보 수집
+|   +-- Google Dorking
+|   +-- Shodan/Censys 검색
+|
++-- 능동적 정보 수집 (Active)
+    +-- 포트 스캔 (nmap)
+    +-- 디렉토리 브루트포싱 (gobuster)
+    +-- 기술 스택 식별 (Wappalyzer)
+    +-- API 엔드포인트 탐색
+```
+
+#### Phase 3: 자동 스캔
+
+자동화 도구로 알려진 취약점을 빠르게 탐색한다:
+- **nikto**: 웹 서버 취약점 스캐너
+- **OWASP ZAP**: 웹 앱 자동 스캐너
+- **sqlmap**: SQL Injection 전용 도구
+- **Nessus/OpenVAS**: 범용 취약점 스캐너
+
+#### Phase 4: 수동 점검
+
+자동 도구가 찾지 못하는 취약점을 전문가가 직접 확인한다:
+- **비즈니스 로직 취약점**: 정상 기능을 악용 (예: 음수 금액 결제)
+- **인증/인가 우회**: 다른 사용자의 데이터에 접근
+- **경쟁 조건(Race Condition)**: 동시 요청으로 이상 동작 유발
+
+#### Phase 5: 보고서 작성
+
+| 섹션 | 내용 |
 |------|------|
-| SQL Injection | `' OR '1'='1` — DB 의 모든 데이터 조회 |
-| Command Injection | `; cat /etc/passwd` — OS 명령 실행 |
-| XSS (Cross-Site Scripting) | `<script>fetch('/api/data')</script>` — 브라우저 실행 |
-| LDAP / NoSQL / XPath Injection | 각 query 언어 의 syntax |
+| 요약 (Executive Summary) | 경영진을 위한 1-2페이지 요약 |
+| 점검 범위 및 방법 | 무엇을, 어떻게 점검했는지 |
+| 발견 사항 | 각 취약점의 상세 설명 |
+| 위험도 평가 | CVSS 점수, 비즈니스 영향도 |
+| 재현 절차 | 취약점을 재현하는 단계별 설명 |
+| 조치 권고안 | 취약점 수정 방법 |
+| 부록 | 스크린샷, 로그 등 증거 자료 |
 
-**6v6 의 실습 대상**: DVWA SQLi + AdminConsole NoSQL + MediForum XSS + JuiceShop
-Command Injection.
+### 3.4 OWASP Top 10 (2021)
 
-### 2-5. A04 — Insecure Design (2021 신규)
+웹 애플리케이션에서 가장 흔하고 위험한 취약점 10가지:
 
-*설계 단계* 의 결함. *코드 가 아닌 architecture* 의 문제.
-
-| 예시 | 의미 |
-|------|------|
-| 송금 시 *2FA 없음* | 비밀번호 만 으로 송금 가능 |
-| 비밀번호 재설정 *질문* 의 *유추 가능* | "어머니 성함" — 공개 정보 |
-| 결제 *서버 측 가격 검증* 없음 | `price=0` body 변조 가능 |
-| API rate limit 없음 | brute force 무한 시도 |
-
-**6v6 의 실습 대상**: NeoBank 의 *송금 workflow* 분석 + GovPortal 의 *비밀번호
-재설정* 의 logic flaw.
-
-### 2-6. A05 — Security Misconfiguration
-
-*설정 의 default 또는 약함*. *모든 시스템* 에 적용.
-
-| 예시 | 의미 |
-|------|------|
-| Apache default page | `/server-status` 노출 |
-| TLS *self-signed cert* 의 production 사용 | 신뢰 X |
-| `X-Frame-Options` 누락 | clickjacking 가능 |
-| `X-Content-Type-Options` 누락 | MIME 추론 공격 |
-
-**6v6 의 실습 대상**: 7 vhost 의 *HTTP 헤더 매트릭스* 분석.
-
-### 2-7. A06 — Vulnerable and Outdated Components
-
-*외부 라이브러리* 의 *알려진 vuln 사용*. *직접 코드 X*.
-
-| 예시 | 의미 |
-|------|------|
-| 오래 된 jQuery (XSS vuln) | npm audit / retire.js 의 탐지 |
-| Log4Shell (Log4j 2.0-2.14) | 2021 의 *역대 최대* 취약점 |
-| Spring4Shell (Spring Framework) | 2022 의 RCE |
-| `npm install` 의 *malicious package* | dependency confusion |
-
-**6v6 의 실습 대상**: JuiceShop 의 `npm audit` + 본 과목 W11 의 *dependency
-confusion 시뮬*.
-
-### 2-8. A07 — Identification and Authentication Failures
-
-*인증 의 결함*. *brute force / session / MFA bypass*.
-
-| 예시 | 의미 |
-|------|------|
-| 비밀번호 brute force 의 *rate limit 없음* | hydra 의 무한 시도 |
-| session ID 의 *예측 가능* | 1, 2, 3, 4 … 의 순차 |
-| MFA bypass — *복구 코드* 의 약함 | 4 자리 숫자 |
-| 비밀번호 재설정 의 *예전 토큰 의 reuse* | TOCTOU |
-
-**6v6 의 실습 대상**: JuiceShop login 의 hydra brute + GovPortal MFA bypass 시뮬.
-
-### 2-9. A08 — Software and Data Integrity Failures
-
-*무결성 검증 없음*. *공급망 + deserialization + auto-update* 의 결함.
-
-| 예시 | 의미 |
-|------|------|
-| Java deserialization | `readObject()` 의 *클래스 자유 인스턴스화* |
-| auto-update *서명 X* | malicious update 의 자동 적용 |
-| supply chain (xz-utils 2024) | npm/PyPI 의 *변조 package* |
-| CI/CD *signing 없음* | 빌드 의 *임의 변조* |
-
-**6v6 의 실습 대상**: W11 (xz-utils 사례 분석 + npm dependency confusion 시뮬).
-
-### 2-10. A09 — Security Logging and Monitoring Failures
-
-*로그 / 모니터 의 부재*. 사고 발생 시 *추적 불가*.
-
-| 예시 | 의미 |
-|------|------|
-| 로그인 실패 *log X* | brute force 의 *탐지 불가* |
-| ModSec audit log *비활성* | WAF 차단 *추적 불가* |
-| SIEM 미설치 | 실시간 분석 *불가* |
-| 보존 *7 일 미만* | 사고 *과거 분석 불가* |
-
-**6v6 의 실습 대상**: ModSec audit log 의 분석 + Wazuh 통합 + 보존 정책.
-
-### 2-11. A10 — Server-Side Request Forgery (SSRF) (2021 신규)
-
-*서버* 가 *공격자 의 의도* 로 *내부 요청*. *cloud metadata 노출* 의 주 원인.
-
-| 예시 | 의미 |
-|------|------|
-| 이미지 URL 입력 → `http://169.254.169.254/...` | AWS metadata 의 IAM credentials |
-| webhook URL → 내부 admin API | 외부 우회 의 권한 |
-| URL preview → 내부 redis (`http://localhost:6379/`) | 내부 service 노출 |
-
-**6v6 의 실습 대상**: AdminConsole 의 SSRF + AWS metadata 시뮬.
-
-### 2-12. CWE Top 25 — OWASP 와 의 차이
-
-CWE Top 25 = MITRE 의 *weakness 분류*. OWASP 와 *부분 중복* + *추가 영역*.
-
-| 상위 5 CWE | 이름 | OWASP 매핑 |
-|----------|------|----------|
-| CWE-79 | XSS | A03 |
-| CWE-787 | Out-of-bounds Write | (system) |
-| CWE-89 | SQL Injection | A03 |
-| CWE-416 | Use After Free | (system) |
-| CWE-78 | OS Command Injection | A03 |
-
-OWASP 가 *web 특화* 면, CWE 는 *전체 소프트웨어* (web + native + kernel). 본 과목
-은 *OWASP 중심* + CWE 의 *web 관련 25 종* 만.
+| 순위 | 취약점 | 설명 |
+|------|--------|------|
+| A01 | **Broken Access Control** | 권한 없는 리소스에 접근 가능 |
+| A02 | **Cryptographic Failures** | 암호화 부재 또는 취약한 암호화 |
+| A03 | **Injection** | SQL, OS, LDAP 인젝션 |
+| A04 | **Insecure Design** | 설계 단계의 보안 결함 |
+| A05 | **Security Misconfiguration** | 잘못된 보안 설정 |
+| A06 | **Vulnerable Components** | 취약한 라이브러리/프레임워크 사용 |
+| A07 | **Authentication Failures** | 인증 메커니즘 결함 |
+| A08 | **Software/Data Integrity** | 무결성 검증 부재 |
+| A09 | **Logging/Monitoring Failures** | 로깅 부재로 공격 감지 불가 |
+| A10 | **SSRF** | Server-Side Request Forgery |
 
 ---
 
-## 3차시 — ModSec CRS 4.0 의 20 rule family + 6v6 의 적용
+## 4. 주요 취약점 점검 도구 (20분)
 
-### 3-1. ModSec 의 *역할*
+### 4.1 도구 분류
 
-ModSec = *Apache 의 WAF module*. HTTP 요청 의 *공격 패턴* 사전 차단. 본 과목 의
-*방어 측* 의 핵심.
+| 카테고리 | 도구 | 용도 | 라이선스 |
+|---------|------|------|---------|
+| **프록시** | Burp Suite | HTTP 트래픽 가로채기/변조 | Community(무료)/Pro(유료) |
+| **프록시** | OWASP ZAP | 웹 앱 자동/수동 점검 | 오픈소스 (무료) |
+| **웹 스캐너** | nikto | 웹 서버 취약점 스캔 | 오픈소스 |
+| **SQL Injection** | sqlmap | SQL Injection 자동화 | 오픈소스 |
+| **디렉토리 스캔** | gobuster | 숨겨진 경로/파일 탐색 | 오픈소스 |
+| **범용 스캐너** | Nessus | 네트워크/웹 취약점 종합 스캔 | 유료 (Essentials 무료) |
 
-**원리** = `SecRule` 의 *정규식 + 조건 + action*. 매칭 시 *anomaly score* 누적 →
-임계 (5+) 시 차단.
+### 4.2 Burp Suite (프록시 도구)
 
-```apache
-SecRule REQUEST_URI "@rx (?i)select.*from" \
-    "id:942100,phase:2,t:none,t:lowercase,setvar:tx.sql_injection_score=+5"
-```
-
-### 3-2. 6v6 의 ModSec 위치 — *fw 가 아닌 web*
-
-**중요** — 6v6 의 ModSec 은 *fw 컨테이너* 가 아닌 **web 컨테이너** 에 위치.
-
-- **fw**: HAProxy 만 (L4/L7 load balancer + SSL termination)
-- **web**: Apache + ModSec + CRS (HTTP 의 *실 차단*)
-
-**실측 (2026-05-16)**:
-- `/usr/share/modsecurity-crs/rules/` — 20 family 의 conf 파일
-- `/etc/modsecurity/crs/crs-setup.conf` — paranoia / anomaly 설정
-- `/var/log/apache2/modsec_audit.log` — 19766 line (운영 누적)
-
-### 3-3. CRS 4.0 의 20 rule family (실측)
+**Burp Suite**는 웹 취약점 점검에서 가장 많이 사용되는 도구이다.
 
 ```
-901 init                    — CRS 초기화
-903 exclusion before crs    — exclusion rule
-905 common exception        — 흔한 false positive 예외
-910 IP reputation           — IP 평판
-911 method                  — HTTP method 제한
-912 DOS                     — DDoS 패턴
-913 scanner                 — nmap / nikto 등 도구 차단
-920 protocol enforcement    — HTTP 표준
-921 protocol attack         — request smuggling 등
-930 LFI                     — Local File Inclusion
-931 RFI                     — Remote File Inclusion
-932 RCE                     — Remote Code Execution
-933 PHP                     — PHP 특화 공격
-934 deserialization         — Java/PHP deserialization
-941 XSS                     — Cross-Site Scripting
-942 SQLi                    — SQL Injection
-943 session                 — session fixation
-944 java                    — Java application attack
-949 blocking                — anomaly score 의 *최종 차단 결정*
+브라우저 → Burp Suite (Proxy) → 웹 서버
+           ↕
+         가로채기/변조/분석
 ```
 
-본 과목 의 *공격 측* 은 *각 family 의 우회* 시도. *방어 측* 은 *false positive 의
-exception* 작성.
+**주요 기능**:
+- **Proxy**: HTTP 요청/응답 가로채기 및 변조
+- **Scanner**: 자동 취약점 스캔 (Pro 버전)
+- **Repeater**: 요청을 수정하여 반복 전송
+- **Intruder**: 파라미터 변조 자동화 (퍼징)
+- **Decoder**: 인코딩/디코딩 변환
 
-### 3-4. Paranoia Level — 의 *trade-off*
+### 4.3 OWASP ZAP
 
-CRS 의 *엄격도* 1-4. 6v6 default = **1** (production safe).
+**ZAP(Zed Attack Proxy)**는 OWASP에서 개발한 무료 오픈소스 웹 보안 스캐너이다.
 
-| Level | 차단 비율 | False Positive | 운영 적합 |
-|:-----:|---------|---------------|---------|
-| 1 | 80% | < 1% | ✓ production default |
-| 2 | 90% | 1-3% | finance / healthcare |
-| 3 | 95% | 5-10% | classified / military |
-| 4 | 99% | 10-30% | nuclear / national defense |
+- Burp Suite와 유사한 프록시 기능
+- **자동 스캔** 기능이 무료로 제공됨 (Burp는 Pro 필요)
+- 스크립팅 지원 (Python, JavaScript)
+- CI/CD 파이프라인에 통합 가능
 
-**Paradox** — *paranoia ↑* → *공격 차단 ↑* + *false positive ↑*. 실 운영 = *1
-default + exception 추가* 의 hybrid.
+### 4.4 nikto
 
-### 3-5. Anomaly Score 의 *합산 로직*
+**nikto**는 웹 서버의 알려진 취약점을 빠르게 스캔하는 도구이다.
 
-CRS 4.0 = *anomaly score model* (이전 의 *threshold model* 대체). 각 룰 매칭 시
-score 누적, *임계 도달* 시 차단.
+```bash
+# 기본 사용법
+nikto -h http://대상서버                                   # 웹 서버 취약점 스캐너
 
-```
-임계 (default):
-  Inbound (요청): 5
-  Outbound (응답): 4
-```
-
-예시 — SQL injection 의 5 변형:
-- 평문 `' OR '1'='1` → 942100 매칭 → +5 → 차단
-- URL encoded `%27 OR %271%27=%271` → 942130 매칭 → +5 → 차단
-- nested `' OR 1=1 -- ` → 942110 매칭 → +5 → 차단
-
-각 변형 의 *별 룰* — *5 변형 모두 차단 OR 일부 통과* 가능.
-
-### 3-6. 6v6 의 audit log 분석 baseline (19766 line)
-
-본 과목 의 *방어 측* 의 시작 = audit log 의 *읽기*.
-
-```
-[2026-05-16T08:00:00.000+0900] AeOmABCDEFG 192.168.0.112 56789 10.20.32.80 80
---AeOmABCDEFG-A--
-[16/May/2026:08:00:00 +0900] ... GET /?file=../../etc/passwd HTTP/1.1
---AeOmABCDEFG-H--
-Message: Access denied with code 403 ... [id "930100"]
-ModSecurity: Warning. detected SQLi using libinjection [id "942100"]
+# 출력 예시
++ Server: Apache/2.4.52
++ /admin: Admin login page found
++ /backup.sql: Database backup file found
 ```
 
-각 record = *한 차단 또는 의심 event*. 본 과목 의 *분석 도구* = grep / jq / awk.
+### 4.5 sqlmap
+
+**sqlmap**은 SQL Injection 취약점을 자동으로 탐지하고 악용하는 도구이다.
+
+```bash
+# 기본 사용법
+sqlmap -u "http://대상/search?q=test" --batch
+
+# 데이터베이스 목록 추출
+sqlmap -u "http://대상/search?q=test" --dbs
+```
+
+> **주의**: sqlmap은 매우 강력한 도구이다. **반드시 허가된 대상에서만** 사용해야 한다.
 
 ---
 
-## 4차시 — 학습 계획 + RoE + 자가 진단
+## 5. 실습 1: JuiceShop 접속 및 기본 탐색 (30분)
 
-### 4-1. 14 weeks 의 학습 지도
+### 5.1 JuiceShop이란?
 
-본 과목 의 14 weeks (W02-W15) 의 *전체 흐름*:
+**OWASP Juice Shop**은 OWASP에서 만든 **의도적으로 취약한 웹 애플리케이션**이다. 실제 온라인 쇼핑몰과 유사한 기능을 가지고 있으며, OWASP Top 10을 포함한 100개 이상의 취약점이 심어져 있다.
 
-```
-[W02-W07] 공격 측 — A01 ~ A05 (가장 흔한 5)
-    ↓
-[W08] 중간고사 — W01-W07 종합
-    ↓
-[W09-W13] 공격 측 — A06 ~ A10 (심화 5)
-    ↓
-[W14] 심화 — API Security Top 10 (2023)
-    ↓
-[W15] 기말 — 7 vhost 종합 침투 + PTES 보고서
-```
+> JuiceShop는 **교육 목적으로 만들어진 앱**이다. 이 수업에서 실습 대상으로 사용한다.
 
-각 weekly = *lecture 4 차시 + lab 5-7 step*. 평균 *주 5-10 시간* 학습.
+### 5.2 웹 브라우저로 접속
 
-### 4-2. 자가 진단 — 5 영역
-
-본인 의 *현재 수준* 측정. 본 과목 의 *맞춤 학습* 의 input.
+웹 브라우저에서 다음 주소로 접속한다:
 
 ```
-[ ] OWASP Top 10 인지: ____% (0-100)
-    - 0-25%: 입문 — lecture 정독 + lab 의 *기본 step* 우선
-    - 25-75%: 중급 — lab 의 *우회* + *심화* 우선
-    - 75%+: 심화 — *본인 의 도구* 작성 + GitHub PoC 분석
-
-[ ] SQLi / XSS 실습 경험: 횟수 ___
-    - 0 회: W04-W05 의 *모든 step* 정성껏
-    - 5-10 회: W04-W05 의 *변형 + 우회* 우선
-    - 10+ 회: W04-W05 *스킵 가능* + W11/W13 의 *심화* 우선
-
-[ ] JWT / session 분석 경험: 횟수 ___
-[ ] 모의해킹 도구 (sqlmap / Burp / OWASP ZAP) 사용: 횟수 ___
-[ ] 보고서 작성 경험: 횟수 ___
+http://10.20.30.80:3000
 ```
 
-### 4-3. RoE — 학생 의 *평생 책임*
+메인 페이지에 과일 주스 상품 목록이 표시되면 정상이다.
 
-본 과목 의 *모든 hands-on* 은 **학습 환경 의 6v6 + 본인 자산** 만. 외부 시스템
-의 *시도 절대 금지*.
+### 5.3 curl로 접속 확인
 
-**한국 법 (2024 기준)**:
-- **정보통신망법 제48조** — *허가 없는 침투* = 5 년 이하 징역 또는 5천만원 이하 벌금
-- **개인정보보호법** — *개인정보 무단 수집* = 5 년 이하 징역 또는 5천만원 이하 벌금
-- **부정경쟁방지법** — *영업 비밀 의 부정 취득* = 10 년 이하 징역 또는 5억원 이하
-  벌금
+bastion 서버 터미널에서:
 
-**본 과목 의 *명시 적 RoE***:
-- ✅ 6v6 의 7 vhost (`*.6v6.lab`) — 학습 환경
-- ✅ 본인 의 학습 PC / VM — 본인 자산
-- ❌ 외부 회사 / 공공 기관 / 친구 의 서버 — 모두 거부
-- ❌ HackerOne / Bugcrowd 외 — 사전 인가 없는 시도 거부
-- ❌ 본인 의 *재학 학교 의 시스템* — 학교 의 사전 인가 없으면 거부
+> **실습 목적**: 취약점 점검 대상(JuiceShop)이 정상 동작하는지 확인하고, HTTP 응답 코드와 응답 시간을 측정하는 기본기를 익힌다.
+>
+> **배우는 것**: curl 명령으로 웹 서버 상태를 확인하는 방법과, HTTP 상태 코드(200/403/500 등)의 의미를 이해한다.
+>
+> **결과 해석**: HTTP 200은 정상 응답이다. 403은 접근 거부(WAF 차단 가능), 502/503은 서버 장애를 의미한다. 응답 시간이 1초 이상이면 성능 문제를 의심한다.
+>
+> **실전 활용**: 취약점 점검 시작 전 대상 웹 서비스의 가용성을 반드시 확인해야 한다. 서비스가 다운된 상태에서 점검하면 무의미하다.
 
-### 4-4. 졸업 목표 — 본인 구체
-
-본 과목 졸업 시점 의 *측정 가능* 목표:
-
-```
-1. W15 기말 의 PTES 보고서 ___ 점 (목표: 80+)
-2. 본인 의 *학습 도구* 1 종 작성 (예: JWT 변조 자동화 Python)
-3. GitHub 의 *learn-by-doing* repo (PoC + writeup) ___ 개 (목표: 3+)
-4. 본인 의 *학습 환경 의 vuln 발견* 1 회 (학교 의 사전 인가 후)
-5. HackerOne / Bugcrowd 의 *프로필* 생성 (참여 X — 학습 만)
+```bash
+# 기본 접속 테스트
+curl -s -o /dev/null -w "HTTP Status: %{http_code}\nResponse Time: %{time_total}s\n" http://10.20.30.80:3000/
 ```
 
-### 4-5. 다음 주차 (W02) 예고
+**예상 출력**:
+```
+HTTP Status: 200
+Response Time: 0.045s
+```
 
-W02 = **A01 Broken Access Control + IDOR + JWT**. JuiceShop 의 `/api/Users` IDOR
-+ JWT 토큰 의 *3 부분* (header / payload / signature) 분석 + alg=none 우회 시도.
+> **OSS 도구로도 가능** — curl 외에 다음 도구로 동일 결과를 얻을 수 있다. 학생은 도구를 직접 설치하고 명령을 실행해 본다:
+>
+> ```bash
+> # httpie (사람 친화적 HTTP 클라이언트, 색상 강조)
+> sudo apt install httpie
+> http --print=Hh GET http://10.20.30.80:3000/
+>
+> # ab (Apache Bench, 응답 시간·동시 요청 측정)
+> ab -n 10 -c 1 http://10.20.30.80:3000/   # 10 회 요청 평균
+> ```
 
-본 주차 의 lab step 4 의 *학습 계획서* 가 W02 의 *준비 점검* — 의 *완성* 여부 가
-W02 의 *효과* 결정.
+### 5.4 HTTP 응답 헤더 분석
+
+```bash
+# 응답 헤더만 확인
+curl -sI http://10.20.30.80:3000/
+```
+
+**예상 출력**:
+```
+HTTP/1.1 200 OK
+X-Powered-By: Express
+Content-Type: text/html; charset=utf-8
+...
+```
+
+> **보안 포인트**: `X-Powered-By: Express` 헤더가 노출되고 있다. 이 정보를 통해 공격자는 서버가 Node.js + Express로 구축되었음을 알 수 있다. 실제 운영 환경에서는 이 헤더를 제거해야 한다.
+
+> **OSS 도구로도 가능** — 헤더 분석은 도구가 더 풍부한 정보를 준다:
+>
+> ```bash
+> # whatweb — 헤더 + HTML 시그니처로 프레임워크/라이브러리 자동 식별
+> sudo apt install whatweb
+> whatweb -v http://10.20.30.80:3000        # -v 상세 모드
+>
+> # httpie — 헤더만 보기
+> http --print=h HEAD http://10.20.30.80:3000/
+>
+> # nuclei (취약 헤더 자동 점검 — 5주차에서 본격 사용)
+> nuclei -t http/misconfiguration/http-missing-security-headers.yaml -u http://10.20.30.80:3000
+> ```
+>
+> ★ whatweb 는 단순 헤더 외에 사용 중인 프레임워크/CMS 까지 자동 식별 — curl 보다 한 단계 위 정보 제공.
+
+### 5.5 기술 스택 파악
+
+```bash
+# HTML 소스에서 기술 스택 힌트 찾기
+curl -s http://10.20.30.80:3000/ | head -30
+
+# JavaScript 프레임워크 확인
+curl -s http://10.20.30.80:3000/ | grep -i "angular\|react\|vue" | head -5
+```
+
+JuiceShop은 **Angular** 프레임워크를 사용하는 SPA(Single Page Application)이다.
+
+> **OSS 도구로도 가능** — 도구 한 줄로 같은 결론에 도달:
+>
+> ```bash
+> # whatweb — Angular/Node.js/Express 자동 라벨링
+> whatweb http://10.20.30.80:3000
+> # 출력 예: Angular[1.x], Express, JS-Library[...], HTTPServer, etc
+>
+> # wafw00f — WAF 존재 여부 식별 (보너스)
+> sudo apt install wafw00f
+> wafw00f http://10.20.30.80:3000
+> ```
+>
+> 도구 출력 한 줄에 **프레임워크 이름·버전·WAF 종류**가 모두 나온다. curl + grep 조합 대비 이점이 큰 부분.
 
 ---
 
-## 4-6. R/B/P 종합 시나리오 — 본 과목 의 base 관점
+## 6. 실습 2: API 엔드포인트 탐색 (30분)
 
-본 과목 (web-vuln) 의 모든 주차 의 R/B/P 의 base 형식. **Red = 웹 vuln 의 exploit
-(OWASP Top 10) / Blue = ModSec CRS 의 정적 detection + audit log / Purple = 통합 분석
-+ exception tuning**.
+### 6.1 REST API 발견
 
-### 통합 도식
+JuiceShop은 프론트엔드(Angular)와 백엔드(Express API)가 분리된 구조이다. API 엔드포인트를 찾아보자.
 
-```mermaid
-graph LR
-    R["🔴 Red Team<br/>attacker (10.20.30.202)<br/>OWASP Top 10<br/>10 카테고리<br/>각 vhost 별 시도"]
-
-    FE["🌐 fw HAProxy<br/>L7 reverse proxy<br/>7 vuln vhost 라우팅"]
-    WEB["🌐 web Apache<br/>10.20.32.80<br/>ModSec inline<br/>+ JuiceShop"]
-
-    B1["🔵 ModSec CRS 4.0<br/>20 family<br/>941/942/943/944<br/>+ 920/921/930 등"]
-    B2["🔵 paranoia level<br/>1-4 의 강도<br/>anomaly score 누적"]
-    B3["🔵 audit log<br/>JSON format<br/>messages[] 분석"]
-    B4["🔵 Wazuh decoder<br/>modsec 통합<br/>level 7+ alert"]
-
-    P1["🟣 Coverage Matrix<br/>10 카테고리 × 20 family"]
-    P2["🟣 Exception 분석<br/>FP 의 좁은 범위<br/>운영 의 안정성"]
-    P3["🟣 학습 계획<br/>14 weeks 의 5 영역"]
-    P4["🟣 AAR + 운영 baseline"]
-
-    R -->|HTTP request| FE
-    FE --> WEB
-    WEB --> B1
-    B1 --> B2
-    B2 --> B3
-    B3 --> B4
-    B4 --> P1
-    P1 --> P2
-    P1 --> P3
-    P2 --> P4
-
-    style R fill:#f85149,color:#fff
-    style FE fill:#3fb950,color:#fff
-    style WEB fill:#3fb950,color:#fff
-    style B1 fill:#1f6feb,color:#fff
-    style B2 fill:#1f6feb,color:#fff
-    style B3 fill:#1f6feb,color:#fff
-    style B4 fill:#1f6feb,color:#fff
-    style P1 fill:#bc8cff,color:#fff
-    style P2 fill:#bc8cff,color:#fff
-    style P3 fill:#bc8cff,color:#fff
-    style P4 fill:#bc8cff,color:#fff
+```bash
+# 상품 목록 API
+curl -s http://10.20.30.80:3000/api/Products | python3 -m json.tool | head -30
 ```
 
-### Coverage Matrix — OWASP Top 10 × 본 과목 14 weeks 매핑
-
-| OWASP | 카테고리 | Red 의 vhost | Blue 의 CRS family | 본 과목 주차 |
-|-------|---------|-------------|-------------------|------------|
-| A01 | Broken Access Control | juice.6v6.lab | 932/933 RCE | W02 IDOR + JWT |
-| A02 | Cryptographic Failures | api.6v6.lab | 932 알고리즘 약점 | W03 transport + JWT alg |
-| A03 | Injection | juice.6v6.lab | 941 XSS + 942 SQLi | W04-W06 SQLi/XSS/SSTI |
-| A04 | Insecure Design | sso.6v6.lab | (CRS 외) | W11 design review |
-| A05 | Security Misconfiguration | admin.6v6.lab | 930 LFI + 920 protocol | W07 misconfig |
-| A06 | Vulnerable Components | api.6v6.lab | (CRS 외, SBOM 학습) | W12 components |
-| A07 | Auth Failures | juice.6v6.lab | 932 RCE | W02 JWT brute |
-| A08 | Software/Data Integrity | api.6v6.lab | (CRS 외) | W12-W13 integrity |
-| A09 | Logging Failures | (모든 vhost) | (audit log baseline) | W01 + W14 ops |
-| A10 | SSRF | api.6v6.lab | 932 RCE | W08 SSRF |
-
-### 본 과목 의 R/B/P 의 운영 적용
-
-```
-T+0      Red 의 매 주차 의 vuln 의 exploit 시도
-         └→ vhost 별 의 분리 (juice / admin / api / sso 등 7 vhost)
-         └→ payload = OWASP 의 표준 + Korean context 추가
-
-T+1ms    Blue 의 ModSec CRS 의 inline 처리
-         └→ 5 phase 의 평가 (headers / body / response / response_body / log)
-         └→ anomaly score 의 누적
-         └→ score ≥ paranoia threshold = block
-
-T+1s     Blue 의 audit log 기록
-         └→ /var/log/apache2/modsec_audit.log 의 JSON entry
-         └→ messages[] = 매치 룰 의 list
-         └→ unique_id = 추적 의 ID
-
-T+5s     Wazuh agent 의 ship + decoder 의 alert
-         └→ Wazuh manager 의 alerts.json
-         └→ rule 87151 (modsec) level 7+ alert
-
-T+1m     Purple 의 통합 분석
-         └→ 본 주차 의 exploit pattern + ModSec match 의 매핑
-         └→ Coverage Matrix 의 업데이트
-         └→ FP 분석 + Exception 의 좁은 범위 추가
-
-T+1d     Purple 의 학습 자산화
-         └→ KG anchor = "web_vuln_w0X_pattern"
-         └→ 14 weeks 의 base 의 점진적 보강
-         └→ 졸업 의 5 영역 의 자가 진단 의 update
+**예상 출력**:
+```json
+{
+    "status": "success",
+    "data": [
+        {
+            "id": 1,
+            "name": "Apple Juice (1000ml)",
+            "description": "The all-time...",
+            "price": 1.99,
+            "deluxePrice": 0.99,
+            "image": "apple_juice.jpg"
+        },
+        ...
+    ]
+}
 ```
 
-### R/B/P 의 핵심 인사이트 (본 과목 의 base)
+### 6.2 사용자 관련 API 탐색
 
-1. **OWASP Top 10 의 10 카테고리 의 14 weeks 매핑** — 본 과목 의 매 주차 의 학습 =
-   1 카테고리 의 깊이 + 6v6 vhost 의 직접 exploit + ModSec CRS family 의 detection.
-   매 주차 의 R/B/P = 본 base 형식 의 변형.
+```bash
+# 사용자 등록 페이지 확인
+curl -s -o /dev/null -w "Status: %{http_code}\n" http://10.20.30.80:3000/#/register
 
-2. **ModSec CRS 4.0 의 20 family 의 운영 가치** — 941 (XSS), 942 (SQLi), 932 (RCE)
-   의 메인 + 920/921 (protocol), 930 (LFI), 933 (PHP) 의 보조. paranoia level 의
-   조정 = false-positive vs coverage 의 trade-off.
+# 로그인 API 구조 확인 (빈 요청)
+curl -s -X POST http://10.20.30.80:3000/rest/user/login \
+  -H "Content-Type: application/json" \
+  -d '{}' 2>/dev/null | python3 -m json.tool           # 요청 데이터(body)
+```
 
-3. **anomaly score 의 수학 적 모델** — 단일 룰 의 score (3-5) + 누적 score 의
-   paranoia threshold (5) 비교. 다중 룰 매치 시 의 block 의 보장.
+### 6.3 검색 기능 탐색
 
-4. **audit log 의 messages[] 의 분석 의 표준** — JSON format 의 audit log 의
-   분석 = jq 의 명령 의 표준. messages[] 의 룰 ID 의 순서 = phase 처리 순서. 분석
-   의 base 도구.
+```bash
+# 검색 API 테스트
+curl -s "http://10.20.30.80:3000/rest/products/search?q=apple" | python3 -m json.tool | head -20
 
-5. **14 weeks 의 자가 진단 의 5 영역** — Recon / Exploit / Detection / Mitigation /
-   Reporting 의 5 영역. 매 주차 의 학습 의 5 영역 의 progress 의 self-check.
-   졸업 = 5 영역 의 4점 이상.
+# 빈 검색어
+curl -s "http://10.20.30.80:3000/rest/products/search?q=" | python3 -m json.tool | head -20
+```
+
+### 6.4 알려진 경로 탐색
+
+반복문으로 여러 대상에 대해 일괄 작업을 수행합니다.
+
+```bash
+# 관리자 페이지 존재 여부
+for path in "/administration" "/admin" "/api-docs" "/ftp" "/assets/public" "/robots.txt" "/security.txt"; do  # 반복문 시작
+  status=$(curl -s -o /dev/null -w "%{http_code}" "http://10.20.30.80:3000$path")
+  echo "$path → HTTP $status"
+done
+```
+
+**예상 출력**:
+```
+/administration → HTTP 200
+/admin → HTTP 200
+/api-docs → HTTP 200
+/ftp → HTTP 200
+/assets/public → HTTP 200
+/robots.txt → HTTP 200
+/security.txt → HTTP 200
+```
+
+> `/ftp` 경로에서 파일 목록이 노출되고, `/api-docs`에서 API 문서가 공개될 수 있다. 이들은 모두 잠재적 취약점이다.
+
+> **OSS 도구로도 가능** — 디렉토리/경로 brute-force 는 도구가 정공법이다. 다음 3 종 중 하나 이상 직접 실행:
+>
+> ```bash
+> # gobuster — Go 기반 빠른 dir/dns brute
+> sudo apt install gobuster
+> gobuster dir -u http://10.20.30.80:3000 -w /usr/share/wordlists/dirb/common.txt -t 20
+>
+> # ffuf — 단일 wordlist 퍼징, JSON 출력 가능
+> ffuf -w /usr/share/wordlists/dirb/common.txt -u http://10.20.30.80:3000/FUZZ -mc 200,301,403
+>
+> # dirb — 가장 단순, 초보자에 추천
+> sudo apt install dirb
+> dirb http://10.20.30.80:3000 /usr/share/wordlists/dirb/common.txt
+> ```
+>
+> 도구는 **수백~수천 경로를 자동 시도**하면서 발견된 경로의 응답 크기·status 를 표로 정리한다. for-loop curl 은 학습용. 실제 점검은 도구 사용.
+
+### 6.5 FTP 디렉토리 탐색
+
+```bash
+# FTP 공개 디렉토리 확인
+curl -s http://10.20.30.80:3000/ftp/ | python3 -m json.tool 2>/dev/null || curl -s http://10.20.30.80:3000/ftp/
+```
+
+### 6.6 robots.txt 확인
+
+```bash
+# 검색 엔진 크롤링 제어 파일
+curl -s http://10.20.30.80:3000/robots.txt
+```
+
+> **보안 포인트**: `robots.txt`는 검색 엔진에게 크롤링하지 말 것을 **요청**하는 파일이지, 접근을 **차단**하는 파일이 아니다. 공격자는 이 파일에서 숨기고 싶은 경로 정보를 얻을 수 있다.
 
 ---
 
-## 본 주차 정리
+## 7. 실습 3: HTTP 요청/응답 분석 (20분)
 
-본 W01 을 마치면 학생 은:
+### 7.1 상세 HTTP 통신 분석
 
-1. ✅ 웹 보안 의 *전체 지도* + 6 핵심 통신 흐름 + 공격 면 인지
-2. ✅ OWASP Top 10 (2021) 10 카테고리 의 이름 + CWE + 6v6 vhost 매핑
-3. ✅ ModSec CRS 4.0 의 20 family + paranoia level + audit log 분석 baseline
-4. ✅ 14 weeks 학습 계획서 + 자가 진단 + 졸업 목표
-5. ✅ RoE 의 *평생 책임* 인지 + 한국 법 3 종 (정보통신망 / 개인정보 / 부정경쟁)
+```bash
+# -v 옵션으로 전체 HTTP 통신 과정 확인
+curl -v http://10.20.30.80:3000/ 2>&1 | head -40
+```
+
+**출력 분석**:
+```
+> GET / HTTP/1.1           ← 요청 라인 (메서드, 경로, 프로토콜)
+> Host: 10.20.30.80:3000   ← 요청 헤더
+> User-Agent: curl/7.xx    ← 클라이언트 정보
+> Accept: */*              ← 수락 가능한 콘텐츠 타입
+>
+< HTTP/1.1 200 OK          ← 응답 상태 라인
+< X-Powered-By: Express    ← 서버 기술 스택 노출
+< Content-Type: text/html  ← 응답 콘텐츠 타입
+```
+
+### 7.2 쿠키 분석
+
+```bash
+# 로그인 후 쿠키 확인
+curl -s -c - http://10.20.30.80:3000/ | head -5
+```
+
+### 7.3 사용자 등록 및 로그인 테스트
+
+```bash
+# 테스트 사용자 등록
+curl -s -X POST http://10.20.30.80:3000/api/Users \
+  -H "Content-Type: application/json" \
+  -d '{                                                # 요청 데이터(body)
+    "email": "student@test.com",
+    "password": "Test1234!",
+    "passwordRepeat": "Test1234!",
+    "securityQuestion": {
+      "id": 1,
+      "question": "Your eldest siblings middle name?"
+    },
+    "securityAnswer": "test"
+  }' | python3 -m json.tool
+
+# 로그인
+curl -s -X POST http://10.20.30.80:3000/rest/user/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"student@test.com","password":"Test1234!"}' | python3 -m json.tool  # 요청 데이터(body)
+```
+
+**예상 출력** (로그인 성공 시):
+```json
+{
+    "authentication": {
+        "token": "eyJhbGciOiJSUzI1NiIs...",
+        "bid": 1,
+        "umail": "student@test.com"
+    }
+}
+```
+
+> 반환된 `token`은 **JWT (JSON Web Token)**이다. 이 토큰의 구조와 취약점은 이후 수업에서 다룬다.
+
+### 7.4 JWT 토큰 기초 분석
+
+```bash
+# JWT 토큰을 받아서 디코딩 (Base64)
+TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"student@test.com","password":"Test1234!"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])")  # 요청 데이터(body)
+
+# JWT의 3부분 (Header.Payload.Signature) 중 Payload 디코딩
+echo $TOKEN | cut -d. -f2 | base64 -d 2>/dev/null | python3 -m json.tool
+```
+
+> **OSS 도구로도 가능** — JWT 분석 전용 도구는 디코딩뿐 아니라 알고리즘·약점까지 한 번에 점검:
+>
+> ```bash
+> # jwt_tool — JWT 점검 표준 도구 (TicarpiJ)
+> git clone https://github.com/ticarpi/jwt_tool.git ~/jwt_tool
+> cd ~/jwt_tool && pip3 install -r requirements.txt
+>
+> python3 ~/jwt_tool/jwt_tool.py "$TOKEN"                 # 디코딩 + 헤더/payload/sig
+> python3 ~/jwt_tool/jwt_tool.py "$TOKEN" -T              # 약점 자동 진단 (none/weak secret 등)
+>
+> # jq — JSON 시각화 (curl + python -m json.tool 대신)
+> sudo apt install jq
+> echo "$TOKEN" | cut -d. -f2 | base64 -d 2>/dev/null | jq .
+> ```
+>
+> jwt_tool 은 향후 11주차 (인증 우회) 에서 본격 사용 — `none` 알고리즘 공격, secret brute-force, key confusion 등.
+
+**예상 출력**:
+```json
+{
+    "status": "success",
+    "data": {
+        "id": 1,
+        "email": "student@test.com",
+        "role": "customer"
+    },
+    "iat": 1711500000,
+    "exp": 1711536000
+}
+```
+
+> 토큰에 사용자의 역할(`role`)이 포함되어 있다. 만약 이를 변조할 수 있다면? (이후 수업에서 다룸)
 
 ---
 
-## 자기 점검
+## 8. 실습 4: 취약점 점검 사전 조사 체험 (20분)
 
-본 주차 의 *5 자기 평가 질문* — 모두 *yes* 면 W02 진입 가능. 1 개 라도 *no* 면
-해당 영역 *재 학습* 권장.
+실제 취약점 점검의 Phase 2(정보 수집) 과정을 체험해보자.
+
+### 8.1 기술 스택 요약 정리
+
+지금까지 수집한 정보를 정리한다:
+
+```bash
+echo "=== JuiceShop 기술 스택 정보 수집 결과 ==="
+echo ""
+
+# 서버 응답 헤더에서 정보 추출
+echo "[1] 서버 헤더 정보:"
+curl -sI http://10.20.30.80:3000/ | grep -iE "server|x-powered|x-frame|content-security"
+
+echo ""
+echo "[2] API 엔드포인트:"
+echo "  - /api/Products (상품 목록)"
+echo "  - /rest/user/login (로그인)"
+echo "  - /rest/products/search (검색)"
+echo "  - /api/Users (사용자 등록)"
+
+echo ""
+echo "[3] 발견된 경로:"
+for path in "/administration" "/ftp" "/api-docs" "/robots.txt"; do  # 반복문 시작
+  status=$(curl -s -o /dev/null -w "%{http_code}" "http://10.20.30.80:3000$path")
+  echo "  - $path → HTTP $status"
+done
+
+echo ""
+echo "[4] 프레임워크: Angular (SPA) + Express (Node.js)"
+```
+
+### 8.2 점검 대상 프로파일 작성
+
+위 결과를 바탕으로 점검 대상 프로파일을 작성한다:
 
 ```
-[ ] OWASP Top 10 (2021) 의 10 카테고리 이름 + 각 의 핵심 CWE 30 초 내 응답?
-[ ] 6v6 의 7 vhost 의 *URL + 주요 vuln 카테고리* 매트릭스 작성?
-[ ] ModSec CRS 의 20 family 중 *XSS / SQLi / LFI / RCE / SSRF* 5 족 의 family
-    ID 응답?
-[ ] paranoia level 1-4 의 *trade-off* (차단 % vs false positive %) 응답?
-[ ] 본인 학습 계획서 (5 영역 자가 진단 + 14 weeks 시간 + 졸업 목표) 작성?
+[점검 대상 프로파일]
+
+대상: OWASP Juice Shop
+IP: 10.20.30.80
+포트: 3000 (HTTP)
+서버: Node.js + Express
+프론트엔드: Angular (SPA)
+인증: JWT (JSON Web Token)
+API: REST API (/api/*, /rest/*)
+
+발견된 정보 노출:
+  - X-Powered-By 헤더 노출
+  - /ftp 디렉토리 공개
+  - /api-docs API 문서 공개
+  - /robots.txt 존재
+
+우선 점검 대상 기능:
+  - 로그인/회원가입 (인증 취약점)
+  - 검색 기능 (Injection 취약점)
+  - 상품 조회 (접근 제어 취약점)
 ```
 
 ---
 
-## 다음 주차 — W02
+## 과제
 
-**W02 — A01 Broken Access Control + IDOR + JWT** (JuiceShop hands-on).
+### 과제 1: 점검 계약서 작성 (개인)
+다음 시나리오를 가정하고 간이 점검 계약서(ROE)를 작성하라:
+> "A 기업이 자사 웹 애플리케이션(JuiceShop)에 대한 취약점 점검을 의뢰했다."
 
-- lecture: IDOR 5 패턴 + JWT 3 segment + Bearer token 의 흐름
-- lab 5 step: JuiceShop login → JWT decode → IDOR 시퀀스 → alg=none 변조 → 보고
-- 예상 시간: 8 시간 (lecture 3 + lab 5)
+포함할 항목:
+- 점검 대상 (IP, 포트, URL)
+- 점검 범위 (허용된 기법, 금지된 기법)
+- 점검 기간
+- 비상 연락처
+- 데이터 처리 방침
 
+### 과제 2: 정보 수집 보고서 (개인)
+JuiceShop에 대해 추가 정보 수집을 수행하고 다음을 보고서로 작성하라:
+- 발견한 모든 API 엔드포인트 목록
+- `/ftp` 디렉토리에서 발견한 파일 목록
+- `/api-docs`에서 확인한 API 문서 내용 요약
+- 발견한 보안 문제점 3가지 이상
+
+### 과제 3: OWASP Top 10 매핑 (조별)
+JuiceShop의 기능들을 분석하여 OWASP Top 10의 각 항목에 해당하는 잠재적 취약점 위치를 예측하라.
+
+---
+
+## 검증 체크리스트
+
+- [ ] JuiceShop (http://10.20.30.80:3000) 접속 성공
+- [ ] curl로 HTTP 상태 코드 200 확인
+- [ ] 응답 헤더에서 `X-Powered-By` 정보 확인
+- [ ] `/api/Products` API에서 상품 목록 JSON 수신
+- [ ] `/rest/products/search?q=` 검색 API 동작 확인
+- [ ] `/ftp`, `/api-docs`, `/robots.txt` 경로 접근 확인
+- [ ] 테스트 사용자 등록 성공
+- [ ] 로그인 후 JWT 토큰 수신
+- [ ] JWT 토큰의 Payload 디코딩 성공
+- [ ] 점검 대상 프로파일 작성 완료
+
+---
+
+## 다음 주 예고
+
+**Week 02: 정보 수집 심화 + 자동 스캔 도구 실습**
+
+- nmap을 이용한 포트 스캔 및 서비스 식별
+- nikto를 이용한 웹 서버 취약점 스캔
+- gobuster를 이용한 숨겨진 디렉토리/파일 탐색
+- 실습: JuiceShop에 대한 자동 스캔 수행 및 결과 분석
+
+> 다음 주부터 본격적인 취약점 스캐닝이 시작됩니다. 이번 주 과제를 통해 정보 수집의 기본기를 다져두세요!
+
+---
+
+> **실습 환경 검증 완료** (2026-03-28): nmap/nikto, SQLi/IDOR/swagger.json, CVSS, 보고서 작성
+
+---
+
+## 웹 UI 실습
+
+### JuiceShop 첫 접속 + Score Board 확인
+
+> **JuiceShop URL:** `http://10.20.30.80:3000`
+
+1. 브라우저에서 `http://10.20.30.80:3000` 접속
+2. 메인 페이지가 로드되면 쇼핑몰 형태의 웹 애플리케이션 확인
+3. 우측 상단 **Account → Login** 클릭하여 로그인 페이지 구조 확인 (아직 로그인하지 않음)
+4. 주소창에 `http://10.20.30.80:3000/#/score-board` 직접 입력
+5. Score Board 페이지에서:
+   - 난이도별 챌린지 분류 확인 (1~6성)
+   - 카테고리별 필터링 (Injection, XSS, Broken Access Control 등)
+   - 현재 해결된 챌린지 수 확인 (처음에는 0개)
+   - 각 챌린지의 힌트 아이콘 클릭하여 힌트 확인
+6. 이번 학기 동안 Score Board 진행률을 기준으로 실습 성과를 측정함을 인지
+
+> **참고:** Score Board URL(`/#/score-board`)은 JuiceShop의 숨겨진 페이지로, 직접 URL을 알아내는 것 자체가 첫 번째 챌린지다.
+
+---
+
+## 실제 사례 (WitFoo Precinct 6 — 실세계 WAF 트래픽 단면)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> Sanitized — RFC5737 / ORG-NNNN / HOST-NNNN / USER-NNNN 으로 익명화됨.
+> 본 lecture *웹취약점 점검 개론* 의 **점검 대상 환경이 실제로 어떻게 생겼는가**를 보여주기 위해 dataset 의 WAF (CEF) GET 1건을 발췌.
+
+### Case 1: 정상 GET 요청 — WAF 가 보는 1줄 (CEF format)
+
+```text
+<190>Jul 26 USER-9546 06:13:46 USER-0010-4334 CEF:0|USER-0010-57562|WAF|1220|1000|GET|5|
+  cat=TR dvc=10.208.162.175 src=100.64.55.159 spt=54187 dst=10.38.148.233
+  outcome=200 USER-9484Method=GET app=TLSv1.3
+  USER-9484=/servlet/eAndar.WebFileLibrary/3433/.../profile-complete_no%20ribbon.png
+  USER-9484USER-CRED-30678Application="USER-7922 (ORG-0407 NT 5.1; rv:11.0) ORG-0492 Firefox/11.0
+                                       (via ggpht.com GoogleImageProxy)"
+  cs1LUSER-CRED-25456=ORG-0494 cs2=PROTECTED cs6=VALID
+  flexString1LUSER-CRED-25456=ProtocolVersion flexString1=ORG-CRED-31206/1.1
+  USER-0010-57562WafResponseType=SERVER
+```
+
+**해석 — 본 lecture 와의 매핑**
+
+| 점검 개론 학습 항목 | 본 record 에서의 증거 |
+|--------------------|---------------------|
+| **점검 대상의 layer 다양성** | 동일 1건에 *URL path · User-Agent · TLS version · cookie · WAF 검사 결과* 까지 동시 기록 — 점검 보고서가 *어느 layer 까지 봐야 하는지* 보여주는 baseline |
+| **WAF 의 위치** | `dvc=10.208.162.175` 가 reverse proxy / WAF, src 와 dst 사이에 위치 — 점검 시 WAF 우회 여부도 평가해야 한다는 직관 |
+| **CEF 표준** | `CEF:0|vendor|product|version|sig|name|severity|extension` 7-field — 점검 출력물이 SIEM 에 통합 가능해야 한다는 산업 표준 |
+| **PII 마스킹** | `cs2=PROTECTED` 등 vendor-side 자동 마스킹 흔적 — 점검 보고서의 *증거 첨부* 절차에서 동일 마스킹 의무 |
+
+**점검 도구 출력물 형식 권고**: 본 record 처럼 *one-line 단위로 모든 메타 키-값 기록* → SIEM 자동 파싱 + 후속 룰 작성 용이. 자체 점검 결과도 CEF/JSON 양식으로 출력하도록 도구 옵션 설정.
+
+
+
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (lab week01 — HTTP 기초)
+
+본 주차 실습에서 다루는 OSS 도구 카탈로그. 학생은 매 step 별 3~6 종을 실행하며 차이 학습.
+
+| step | 카테고리 | 핵심 도구 |
+|---|---|---|
+| 1 | http_basics | curl -I / **whatweb** / **httpie** / wget --server-response |
+| 2 | http_basics | curl -w / httpie -h / **ab** (Apache Benchmark) / nuclei |
+| 3 | http_basics | curl -X OPTIONS / **nmap --script http-methods** / for 반복 메서드 시도 |
+| 4 | security_headers | curl + grep / **nuclei missing-security-headers** / **testssl.sh --headers** |
+| 5 | security_headers | curl -c cookie jar / httpie --session / nuclei -tags cookie |
+| 6 | fingerprinting | curl Server / whatweb / **nmap -sV --version-intensity** / nuclei CVE |
+| 7 | recon | curl /robots.txt / **gobuster dir** / **ffuf** / **nikto** |
+| 8 | http_basics | curl -L / httpie --follow / wget --max-redirect / testssl --hsts |
+| 9 | http_basics | curl POST / httpie POST / ab POST 부하 |
+| 10 | recon | curl 디렉토리 / nikto / gobuster / nuclei -tags listing |
+| 11 | http_basics | curl -H / httpie key:val / **wfuzz** 헤더 fuzz |
+| 12 | tls | **openssl s_client** / **sslscan** / **testssl.sh** / nmap NSE |
+| 13 | fingerprinting | whatweb / **wappalyzer-cli** / **wpscan** / nuclei CVE |
+| 14 | recon | curl 다양 path / nikto / nuclei exposures / **gitdumper** |
+| 15 | verification | 통합 스크립트 + sha256 + 윤리 footer |
+
+### 학생 환경 준비 (attacker VM)
+```bash
+# Kali/Ubuntu 기본 설치
+sudo apt install -y curl httpie wget jq apache2-utils \
+                    whatweb nikto gobuster ffuf nuclei \
+                    nmap sslscan
+# git clone
+git clone --depth 1 https://github.com/drwetter/testssl.sh.git ~/testssl.sh
+git clone --depth 1 https://github.com/internetwache/GitTools.git ~/GitTools
+```

