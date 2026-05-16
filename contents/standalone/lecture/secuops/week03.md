@@ -1509,6 +1509,132 @@ ips 를 router 로 운영하므로 NAT 가 들어 있어 source IP 가시성에 
 
 ---
 
+## 12.x R/B/P 종합 시나리오 — NAT + HAProxy 충돌·협업 의 3 관점
+
+본 주차 의 핵심 = NAT (L3) 와 HAProxy (L7) 의 협업·충돌. R/B/P 의 3 관점 에서 1 사건
+을 통합 분석.
+
+### 통합 도식
+
+```mermaid
+graph LR
+    R["🔴 Red Team<br/>attacker (10.20.30.202)<br/>3 시도<br/>① 외부→DNAT 도달성<br/>② src IP 위조 시도<br/>③ HAProxy fronting 우회"]
+
+    FW["🌐 fw nftables<br/>(10.20.30.1)<br/>prerouting DNAT<br/>postrouting MASQUERADE"]
+    HAP["🌐 HAProxy<br/>(같은 fw 컨테이너)<br/>L7 reverse proxy<br/>vhost 라우팅"]
+    WEB["🌐 web Apache<br/>(10.20.32.80)<br/>ModSec 941/942<br/>access.log"]
+
+    B1["🔵 nft monitor trace<br/>prerouting hook<br/>DNAT 평가 실시간"]
+    B2["🔵 conntrack -L<br/>NAT mapping table<br/>orig vs reply"]
+    B3["🔵 HAProxy log<br/>haproxy.log<br/>frontend → backend<br/>X-Forwarded-For"]
+    B4["🔵 Apache access.log<br/>src IP = HAProxy ?<br/>= attacker (XFF) ?"]
+    B5["🔵 Wazuh decoder<br/>haproxy + nginx<br/>+ nftables 통합"]
+
+    P1["🟣 Coverage Matrix<br/>NAT vs L7 분리"]
+    P2["🟣 가시성 Gap<br/>NAT 후 src IP 손실<br/>XFF spoofing 우려"]
+    P3["🟣 룰 보완<br/>HAProxy 의<br/>set-header X-Real-IP<br/>+ Apache LogFormat<br/>변경"]
+    P4["🟣 AAR 보고서<br/>L3+L7 책임 분리<br/>운영 표준화"]
+
+    R -->|패킷| FW
+    FW -->|DNAT| HAP
+    HAP -->|backend| WEB
+    FW --> B1
+    FW --> B2
+    HAP --> B3
+    WEB --> B4
+    B3 --> B5
+    B4 --> B5
+    B2 --> B5
+    B5 --> P1
+    P1 --> P2
+    P2 --> P3
+    P3 -.->|haproxy.cfg 패치| HAP
+    P3 -.->|httpd.conf 패치| WEB
+    P3 --> P4
+
+    style R fill:#f85149,color:#fff
+    style FW fill:#3fb950,color:#fff
+    style HAP fill:#3fb950,color:#fff
+    style WEB fill:#3fb950,color:#fff
+    style B1 fill:#1f6feb,color:#fff
+    style B2 fill:#1f6feb,color:#fff
+    style B3 fill:#1f6feb,color:#fff
+    style B4 fill:#1f6feb,color:#fff
+    style B5 fill:#1f6feb,color:#fff
+    style P1 fill:#bc8cff,color:#fff
+    style P2 fill:#bc8cff,color:#fff
+    style P3 fill:#bc8cff,color:#fff
+    style P4 fill:#bc8cff,color:#fff
+```
+
+### Coverage Matrix — NAT + L7 의 3 충돌 사례
+
+| 사례 | Red 시도 | Blue 탐지 source | Blue 결과 | Purple Gap | Purple 권장 |
+|------|----------|----------------|----------|-----------|------------|
+| **① DNAT 노출 검증** | `curl -v http://10.20.30.1/admin` | fw `nft monitor trace prerouting` + HAProxy haproxy.log + Apache access.log | DNAT 적용 → HAProxy → web 도달 | 의도하지 않은 backend 노출 가능 | HAProxy 의 ACL 로 vhost 화이트리스트, fw nft 의 DNAT 룰 review |
+| **② src IP 위조** | `hping3 --spoof 192.168.0.99 -S -p 80 10.20.30.1` | conntrack -L 의 orig vs reply | reverse-path filter (rp_filter) 가 활성 이면 drop | rp_filter 가 loose 면 통과 → log 의 src IP 만 신뢰 위험 | `net.ipv4.conf.all.rp_filter=1` (strict) + nft log prefix 의 분리 |
+| **③ HAProxy fronting 우회** | `curl -H 'Host: internal.lab' http://10.20.30.1/` | HAProxy frontend ACL 평가 | 매칭 안 되면 default backend = 의도 외 라우팅 | default_backend 설정 누락 시 unknown vhost 가 web 도달 | HAProxy `default_backend deny` + 명시 vhost ACL 만 허용 |
+
+### 시간선 — DNAT + HAProxy 의 1 사건 흐름
+
+```
+T+0    Red attacker 에서 curl http://10.20.30.1/admin
+       └→ fw 의 prerouting chain 의 DNAT 룰 평가
+          - dport 80 매칭 → daddr 10.20.32.80, dport 80 으로 변환
+       └→ HAProxy frontend (bind *:80) 수신
+          - ACL "path_beg /admin" 매칭 → backend admin_pool
+       └→ Apache (10.20.32.80) 의 admin vhost 응답
+
+T+1s   Blue 1차 탐지 (실시간)
+       └→ ssh 6v6-fw "nft monitor trace ip filter prerouting" 의 실시간 trace
+          - DNAT 실행 확인 (orig dst 10.20.30.1 → new dst 10.20.32.80)
+       └→ ssh 6v6-fw "conntrack -L | grep ESTABLISHED"
+          - orig: 10.20.30.202 → 10.20.30.1 / reply: 10.20.32.80 → 10.20.30.202
+
+T+5s   Blue 2차 분석 (root cause)
+       └→ ssh 6v6-fw "tail -20 /var/log/haproxy.log"
+          - frontend = web_fe, backend = admin_pool, X-Forwarded-For = 10.20.30.202
+       └→ ssh 6v6-web "tail -20 /var/log/apache2/access.log"
+          - src IP = fw IP (10.20.30.1) ★ 의도 = attacker IP 가 보여야 함
+
+T+30s  Purple Gap 식별
+       └→ Coverage Matrix 의 ② 항목 = "Apache access.log 의 src IP 손실"
+       └→ 원인 = Apache 의 LogFormat 이 %h (REMOTE_ADDR) 만 사용
+       └→ X-Forwarded-For 헤더 가 HAProxy 에 의해 추가 되었지만 Apache 로그 가
+          사용 안 함
+
+T+5m   Purple 룰 보완
+       └→ ssh 6v6-web 의 /etc/apache2/apache2.conf 의 LogFormat 수정:
+          LogFormat "%{X-Forwarded-For}i %h %u %t \"%r\" %>s %O" combined
+       └→ sudo systemctl reload apache2
+       └→ 재테스트 = curl http://10.20.30.1/admin
+          - access.log = 10.20.30.202 10.20.30.1 - [date] "GET /admin" 200
+
+T+15m  Purple AAR 보고서
+       └→ What: NAT 후 Apache 의 src IP 가시성 손실 (해결)
+       └→ Why: HAProxy 의 XFF 헤더 활용 안 함
+       └→ Next: W04 의 ModSec 룰 의 XFF 기반 alert 활성화
+```
+
+### R/B/P 의 핵심 인사이트
+
+1. **L3 (NAT) + L7 (HAProxy) 의 책임 분리** — fw nft 는 L3 라우팅, HAProxy 는 L7
+   라우팅. 각각 의 로그 가 분리 되어 있으면 src IP 추적 이 어려움.
+
+2. **X-Forwarded-For (XFF) 의 표준화** — HAProxy 가 추가 한 XFF 헤더 를 backend
+   (Apache) 가 LogFormat 으로 활용 해야 src IP 가시성 유지.
+
+3. **conntrack 의 운영 가시성** — `conntrack -L` 의 orig vs reply 가 NAT 의 정확
+   한 매핑 보여줌. NAT 디버깅 의 표준 도구.
+
+4. **rp_filter 의 중요성** — src IP 위조 (spoof) 방어 의 최후 보루. loose mode
+   (=2) 는 multipath 환경 에서만, 일반 운영 = strict mode (=1).
+
+5. **HAProxy default_backend = deny** — 의도 안 한 vhost 가 backend 도달 못 하도록
+   default 차단. 새 vhost 추가 시 명시 ACL + backend 매핑 의 routine.
+
+---
+
 ## 13. 과제
 
 ### A. NAT + 방화벽 분리 정책 작성 (필수, 35점)

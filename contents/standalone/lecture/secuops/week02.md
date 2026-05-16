@@ -909,6 +909,128 @@ nftables.conf 에 다음 세 가지를 적용한다.
 
 ---
 
+## 9.6 R/B/P 종합 시나리오 — 본 주차 의 통합 도식 + 시간선
+
+본 주차 의 3 사례 (ICMP flood / SYN flood / forwarded 우회) 를 Red/Blue/Purple 의
+3 시점 에서 통합 도식 으로 묶는다. **mermaid 그림 + 표 + 시간선** 의 세 형식 으로
+설명하여 학생 이 1 사건 의 3 관점 을 한눈에 본다.
+
+### 9.6.1 통합 도식
+
+```mermaid
+graph LR
+    R["🔴 Red Team<br/>attacker (10.20.30.202)<br/>3 시도<br/>① ICMP flood<br/>② SYN flood<br/>③ forwarded 우회"]
+
+    FW["🌐 fw nftables (10.20.30.1)<br/>입력 5 hook<br/>input/forward/output<br/>prerouting/postrouting"]
+
+    B1["🔵 nft counter<br/>패킷·바이트 통계<br/>nft list ruleset"]
+    B2["🔵 nft monitor trace<br/>매 패킷 의 rule 평가<br/>실시간 trace"]
+    B3["🔵 syslog log prefix<br/>/var/log/kern.log<br/>'nft-drop:' 등 접두사"]
+    B4["🔵 conntrack -L<br/>established/new/related<br/>state machine"]
+    B5["🔵 SIEM 통합<br/>Wazuh decoders<br/>nftables → alert"]
+
+    P1["🟣 Coverage Matrix<br/>3 사례 × 5 도구"]
+    P2["🟣 Detection Gap<br/>fragmented 패킷 X<br/>tunneled flood X"]
+    P3["🟣 룰 보완<br/>set timeout 조정<br/>limit rate 조정<br/>policy drop 변경"]
+    P4["🟣 AAR 보고서<br/>What/Why/Next"]
+
+    R -->|패킷 발사| FW
+    FW --> B1
+    FW --> B2
+    FW --> B3
+    FW --> B4
+    B1 --> B5
+    B2 --> B5
+    B3 --> B5
+    B4 --> B5
+    B5 --> P1
+    P1 --> P2
+    P2 --> P3
+    P3 -.->|nftables.conf 패치| FW
+    P3 --> P4
+
+    style R fill:#f85149,color:#fff
+    style FW fill:#3fb950,color:#fff
+    style B1 fill:#1f6feb,color:#fff
+    style B2 fill:#1f6feb,color:#fff
+    style B3 fill:#1f6feb,color:#fff
+    style B4 fill:#1f6feb,color:#fff
+    style B5 fill:#1f6feb,color:#fff
+    style P1 fill:#bc8cff,color:#fff
+    style P2 fill:#bc8cff,color:#fff
+    style P3 fill:#bc8cff,color:#fff
+    style P4 fill:#bc8cff,color:#fff
+```
+
+### 9.6.2 3 사례 의 R/B/P Coverage Matrix
+
+| 사례 | Red 명령 (attacker) | Blue 1차 탐지 (실시간) | Blue 2차 분석 (사후) | Purple Gap | Purple 권장 룰 |
+|------|---------------------|----------------------|---------------------|-----------|--------------|
+| **① ICMP flood** | `hping3 --icmp --flood 10.20.30.1` | `nft monitor` 의 drop count 폭증 | `nft list counter icmp` 의 byte 통계 | 4-tuple set 의 timeout 짧으면 재공격 우회 | set timeout 60s → 300s, src IP dynamic set 의 element 보관 |
+| **② SYN flood** | `hping3 -S --flood -p 80 10.20.30.1` | `nft monitor` 의 forward chain drop | `conntrack -L` 의 SYN_SENT 다수, kern.log 의 'nft-fw-syn:' prefix | rate limit 만 의 보호 = burst 통과, fragmented packet 미차단 | `tcp flags syn limit rate over 100/second` + frag drop |
+| **③ forwarded 우회** | `nmap -sS -p- 10.20.30.80 --source-port 53` | `nft monitor trace forward` 의 rule 평가 | `nft list ruleset` 의 forward chain default policy 확인 | policy accept 면 명시 룰 없는 통신 통과 | forward chain `policy drop` + 명시 룰 명세 (whitelist) |
+
+### 9.6.3 R/B/P 시간선 (1 사건 의 분 단위 흐름)
+
+```
+T+0    Red attacker.202 에서 hping3 SYN flood 시작 (-S --flood -p 80 10.20.30.1)
+       └→ fw 의 input chain 의 tcp dport 80 룰 평가
+          - 합법 트래픽 → accept
+          - 100/sec 초과 → drop (rate limit) + log prefix "nft-fw-syn:"
+
+T+5s   Blue 1차 탐지 (운영자 의 실시간 모니터링)
+       └→ ssh 6v6-fw "nft list counter ip filter syn_drop"
+          - packets 가 5초 안 1000+ 증가 = 비정상
+       └→ tail -f /var/log/kern.log | grep "nft-fw-syn:"
+          - drop event 1초 에 50+ 발생 = SYN flood
+
+T+30s  Blue 2차 분석 (root cause)
+       └→ conntrack -L | grep SYN_SENT | wc -l = 500+ (정상 = 0~5)
+       └→ /var/log/suricata/fast.log = "ET DOS Possible SYN Flood" alert
+       └→ Wazuh manager alerts.json = rule 31301 매치 (level 10)
+
+T+60s  Blue 1차 대응 (수동 차단)
+       └→ ssh 6v6-fw "nft add element ip filter blacklist { 10.20.30.202 }"
+          → src IP 의 dynamic set 추가 (timeout 600s)
+       └→ 효과 확인 = counter syn_drop 의 증가 정지
+
+T+5m   Purple 분석 (사후 Gap 식별)
+       └→ Coverage Matrix 의 ② 항목 = "fragmented packet 미차단"
+       └→ 재현 = hping3 -S --flood -p 80 -f --frag 10.20.30.1
+          - drop count 증가 X (Gap 확인)
+       └→ 권장 룰 = `ip frag-off & 0x1fff != 0 drop`
+
+T+15m  Purple 룰 보완 + 재테스트
+       └→ /etc/nftables.conf 의 input chain 에 frag drop 룰 추가
+       └→ nft -f /etc/nftables.conf 적용
+       └→ hping3 fragmented flood 재시도 → drop 확인 (Gap closed)
+
+T+30m  Purple AAR 보고서 작성
+       └→ What: SYN flood + fragmented bypass
+       └→ Why: 초기 룰 의 frag handling 누락
+       └→ Next: W04 의 IDS 통합 시 Suricata 의 frag 룰 활성화
+```
+
+### 9.6.4 본 주차 R/B/P 의 핵심 인사이트
+
+1. **fw 단독 의 한계** — rate limit 룰 만 으로 는 fragmented / tunneled 우회 가능.
+   IDS (Suricata) + WAF (ModSec) + SIEM (Wazuh) 의 4 계층 detection 이 필요 (W04+ 학습).
+
+2. **Counter 의 운영 가치** — `nft list counter` 의 packets/bytes 통계 가 실시간 SLI.
+   Wazuh 의 decoder 가 counter 변화 를 alert 로 전환 가능.
+
+3. **Purple 의 룰 보완 cycle** — Gap 발견 → 룰 작성 → 적용 → 재테스트 → 효과 측정 의
+   5 단계 가 본 과목 의 모든 주차 의 표준 흐름.
+
+4. **운영 시 의 주의** — 실제 운영 환경 에서 의 `nft -f` 적용 은 atomic rollback 보장
+   (`nft -c` 의 syntax check 후 적용). 룰 적용 실수 = 운영 장애. W14 (운영 자동화)
+   에서 의 deployment pipeline 학습.
+
+5. **ISMS-P 입증 자료** — 본 주차 의 R/B/P 분석 보고서 = ISMS-P 2.10.7 (보안위협 대응)
+   의 입증 자료 로 활용 가능. AAR 보고서 의 What/Why/Next 양식 = 인증 심사 답변 형식.
+
+---
+
 ## 10. 사례 분석 — ISMS-P / KISA / NIST
 
 ### 10.1 ISMS-P 2.6.1 (네트워크 접근통제)
