@@ -386,6 +386,49 @@ steps:
       Red = credential spray + chat 요청 / Blue = Suricata/ModSec/Wazuh 의 alert /
       Purple = Bastion 의 ReAct 응답 (운영자 chat).
 
+      ## 📖 시나리오 상세
+
+      ### 🔴 Red Team — credential spray + 분석 요청
+
+      **페르소나**: external attacker (spray) + 운영자 의 chat 요청 의 결합. spray =
+      외부 위협, chat = 운영자 의 자연어 분석 요청.
+
+      **공격 의도**:
+      1. **credential spray** = admin@juice-sh.op + 다수 password 의 자동 시도
+      2. **Wazuh alert trigger** = 5710 (sshd_failed) 또는 application brute alert
+      3. **운영자 의 분석 요청** = Bastion /chat 의 자연어 질의
+
+      **공격 단계**:
+      - R1: curl 의 3+ password 의 login 시도
+      - R2: alert 의 trigger (수~분 내)
+      - R3: 운영자 가 Bastion /chat 으로 분석 요청
+
+      ### 🔵 Blue Team — 다중 source alert 통합
+
+      **탐지 source**:
+      - Wazuh manager 의 alerts.json (rule 5710/5712)
+      - Suricata (network 의 brute pattern)
+      - ModSec (application brute, 941xxx)
+      - application 의 rate limit 응답 (429)
+
+      **대응**:
+      - B1: alert 의 dashboard 표시
+      - B2: 운영자 의 1차 triage (MTTD < 15분)
+      - B3: Bastion 의 자동 분석 보조
+
+      ### 🟣 Purple Team — Bastion ReAct 자동 분석
+
+      **분석**:
+      - 운영자 의 자연어 질의 → Bastion ReAct loop (3 turn)
+      - skill 33 의 자동 선택 + KG anchor 의 사전 참조
+      - 응답 = 분석 + 차단 권장 + ATT&CK 매핑
+
+      **개선 cycle**:
+      1. ReAct trace audit (KG /kg/audit)
+      2. skill 사용 통계 의 분기 분석
+      3. KG anchor enrichment routine
+      4. response time 의 routine 측정 (목표 30초)
+
       ## 💻
       ```bash
       ssh 6v6-attacker 'for p in 123 admin password; do curl -s -o /dev/null -w "%{http_code}\n" -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"$p\"}" -H "Content-Type: application/json" -H "Host: juice.6v6.lab" http://10.20.30.1/rest/user/login; done'

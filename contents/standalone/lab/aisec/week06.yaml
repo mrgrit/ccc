@@ -318,6 +318,48 @@ steps:
       Red = SQLi payload / Blue = ModSec 차단 / Purple = Bastion chat 의 KG anchor
       5건 + 위키 절차 의 enrichment 응답.
 
+      ## 📖 시나리오 상세
+
+      ### 🔴 Red Team — SQLi UNION SELECT 의 표준 시도
+
+      **페르소나**: external attacker — JuiceShop 의 SQLi 의 시도. Bastion 의 KG 의
+      과거 5건 의 동일 패턴 의 검출 가설 의 검증.
+
+      **공격 의도**:
+      1. **UNION SELECT 의 표준 페이로드** = ModSec 942 의 매치
+      2. **KG enrichment 의 검증** = 본 사건 + 과거 5건 의 패턴 비교
+      3. **운영자 분석 요청** = "방금 SQLi 의 분석 + 과거 비슷 한 사건"
+
+      **공격 단계**:
+      - R1: curl 의 UNION SELECT 페이로드 = 403 확인
+      - R2: ModSec 의 매치 확인
+      - R3: 운영자 의 Bastion chat 요청
+
+      ### 🔵 Blue Team — ModSec + KG anchor 통합
+
+      **탐지/조회 source**:
+      - ModSec audit log 의 942 매치
+      - KG anchor (/kg/anchors/recent?kind=task_outcome) 의 과거 사건
+      - wiki 의 SQLi 대응 절차 (`/var/lib/bastion/wiki/sql-injection-response.md`)
+
+      **대응**:
+      - B1: ModSec 의 inline 차단 (1ms)
+      - B2: Wazuh alert (level 7+)
+      - B3: KG 의 5건 사전 참조
+
+      ### 🟣 Purple Team — KG·위키 의 RAG enrichment
+
+      **분석**:
+      - 본 사건 + 과거 5건 의 timeline 비교
+      - paranoia level 의 영향 의 사례 분석
+      - 위키 의 단계 별 대응 절차 의 자동 추천
+
+      **개선 cycle**:
+      1. KG anchor 의 정기 review + valid_until 의 update
+      2. wiki 의 신규 사건 의 routine 보강
+      3. Bastion 의 분석 시간 의 routine 측정 (목표 35초)
+      4. RAG enrichment 의 효과 의 정량 평가
+
       ## 💻
       ```bash
       ssh 6v6-attacker 'curl -s -o /dev/null -w "SQLi %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/rest/products/search?q=apple%27%20UNION%20SELECT%201,2,3--"'

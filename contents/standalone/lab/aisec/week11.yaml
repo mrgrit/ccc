@@ -898,6 +898,48 @@ alert: {json.dumps(alert, ensure_ascii=False)[:400]}
       Red = SSH brute / Blue = watcher (Wazuh agent) 의 detection / Purple =
       Bastion 의 자율 응답 (rule-based 의 즉시 처리).
 
+      ## 📖 시나리오 상세
+
+      ### 🔴 Red Team — 외부 위협 의 자동 trigger
+
+      **페르소나**: external attacker — 자율 대응 의 trigger 의 검증. 사람 의
+      ad-hoc 대응 없이 의 24/7 자율 운영.
+
+      **공격 의도**:
+      1. **SSH brute** = sshd_failed event 의 burst trigger
+      2. **자동 대응 의 검증** = approval_mode = "allow" 의 즉시 차단
+      3. **bastion_watchdog 의 cron 실행 확인** = 매 분 health check
+
+      **공격 단계**:
+      - R1: hydra 또는 다중 ssh 시도
+      - R2: Wazuh agent 의 alert + manager 의 rule 5710 매치
+      - R3: Bastion 의 자율 처리 + nft block
+
+      ### 🔵 Blue Team — watcher 의 다중 source
+
+      **탐지 source**:
+      - Wazuh agent 의 sshd_failed event
+      - bastion_watchdog 의 health check + KG anchor 검증
+      - cron 의 매 분 의 Bastion health check
+      - results/retest/bastion_watchdog.log 의 routine
+
+      **대응**:
+      - B1: rule-based = 즉시 처리 (allow)
+      - B2: LLM-based = 운영자 검토 (review)
+      - B3: unknown = 사람 승인 (deny)
+
+      ### 🟣 Purple Team — 4 의사결정 패턴 의 hybrid
+
+      **분석**:
+      - rule + ML + LLM + hybrid 의 의사결정 패턴 의 trade-off
+      - approval_mode 의 3 등급 의 적용
+
+      **개선 cycle**:
+      1. cron + watcher 의 결합 의 이중 안전망
+      2. 사후 검토 의 5% sampling + false-positive 100% 검토
+      3. KG anchor 의 자율 task_outcome 의 누적
+      4. RL Steering (W12) 의 reward 학습
+
       ## 💻
       ```bash
       tail -20 /home/opsclaw/ccc/results/retest/bastion_watchdog.log 2>&1 | head -10
