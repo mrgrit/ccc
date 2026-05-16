@@ -1,0 +1,286 @@
+# Skill 카탈로그 — bastion 의 atomic 능력 33 종
+# 인프라 무관. packages/bastion/skills.py 의 SKILLS dict 와 1:1 정렬.
+# 각 skill 은 primary mission 1 개 + 0~N 개 secondary mission.
+
+version: 1
+updated_at: 2026-05-16
+source: packages/bastion/skills.py
+
+skills:
+  # ── M1 정찰 ──────────────────────────────────────────────────────
+  - id: skill:probe_host
+    name: probe_host
+    primary_mission: M1
+    secondary_missions: [M2]
+    description: "호스트 alive 점검 — ping + nmap 기초"
+    typical_tools: [ping, nmap]
+    risk_level: low
+
+  - id: skill:scan_ports
+    name: scan_ports
+    primary_mission: M1
+    secondary_missions: [M4]
+    description: "포트 스캔 — TCP SYN, top-ports, version"
+    typical_tools: [nmap, masscan]
+    risk_level: low
+
+  - id: skill:web_scan
+    name: web_scan
+    primary_mission: M1
+    secondary_missions: [M4]
+    description: "웹 취약점 스캔 — nikto / wapiti / nuclei"
+    typical_tools: [nikto, wapiti, nuclei, gobuster, ffuf]
+    risk_level: medium
+
+  - id: skill:dns_recon
+    name: dns_recon
+    primary_mission: M1
+    secondary_missions: []
+    description: "DNS 정찰 — dig / dnsenum / sublist3r"
+    typical_tools: [dig, dnsenum]
+    risk_level: low
+
+  - id: skill:cve_lookup
+    name: cve_lookup
+    primary_mission: M1
+    secondary_missions: [M4, M5]
+    description: "CVE 검색 — service version → NVD / vendor advisory 매칭"
+    typical_tools: [searchsploit, nmap_vulners, offline NVD mirror]
+    risk_level: low
+
+  - id: skill:probe_all
+    name: probe_all
+    primary_mission: M1
+    secondary_missions: [M2]
+    description: "여러 VM 동시 점검 — 토폴로지 매핑"
+    typical_tools: [shell + nmap loop]
+    risk_level: low
+
+  # ── M2 탐지 ──────────────────────────────────────────────────────
+  - id: skill:check_suricata
+    name: check_suricata
+    primary_mission: M2
+    secondary_missions: [M5]
+    description: "Suricata eve.json 의 최근 알람 조회·정렬"
+    typical_tools: [tail, jq, eve.json]
+    risk_level: low
+
+  - id: skill:check_wazuh
+    name: check_wazuh
+    primary_mission: M2
+    secondary_missions: [M3, M5]
+    description: "Wazuh manager alerts.json + agent 헬스"
+    typical_tools: [wazuh-control, agent_control, alerts.json]
+    risk_level: low
+
+  - id: skill:check_modsecurity
+    name: check_modsecurity
+    primary_mission: M2
+    secondary_missions: [M3]
+    description: "ModSec audit log 의 차단 이벤트 조회"
+    typical_tools: [tail, grep, modsec_audit.log]
+    risk_level: low
+
+  - id: skill:analyze_logs
+    name: analyze_logs
+    primary_mission: M2
+    secondary_missions: [M5]
+    description: "임의 로그 경로의 자연어 질의 분석 (LLM 활용)"
+    typical_tools: [ollama, jq, grep]
+    risk_level: low
+
+  - id: skill:wazuh_api
+    name: wazuh_api
+    primary_mission: M2
+    secondary_missions: [M3]
+    description: "Wazuh manager API — agent / rule / alert CRUD"
+    typical_tools: [Wazuh REST API]
+    risk_level: medium
+
+  # ── M3 방어 ──────────────────────────────────────────────────────
+  - id: skill:configure_nftables
+    name: configure_nftables
+    primary_mission: M3
+    secondary_missions: [M5]
+    description: "nftables 룰셋 변경 — add/delete chain / set / element / rule"
+    typical_tools: [nft]
+    risk_level: high
+    requires_audit: true
+
+  - id: skill:deploy_rule
+    name: deploy_rule
+    primary_mission: M3
+    secondary_missions: [M2]
+    description: "Suricata / Wazuh 룰 신규 배포"
+    typical_tools: [rules.d, local_rules.xml]
+    risk_level: medium
+    requires_audit: true
+
+  - id: skill:enroll_wazuh_agent
+    name: enroll_wazuh_agent
+    primary_mission: M3
+    secondary_missions: [M9]
+    description: "신규 호스트의 Wazuh agent 등록 + key 교환"
+    typical_tools: [wazuh-agent-auth, agent.conf]
+    risk_level: medium
+
+  # ── M4 공격 ──────────────────────────────────────────────────────
+  - id: skill:attack_simulate
+    name: attack_simulate
+    primary_mission: M4
+    secondary_missions: [M1, M2]
+    description: "복합 공격 시뮬레이션 (정찰→포트→웹→SQLi→XSS→흔적)"
+    typical_tools: [nmap, sqlmap, xsstrike, nikto]
+    risk_level: high
+
+  - id: skill:password_attack
+    name: password_attack
+    primary_mission: M4
+    secondary_missions: []
+    description: "자격증명 공격 — hydra / hashcat / john / credential reuse"
+    typical_tools: [hydra, hashcat, john, medusa]
+    risk_level: high
+
+  # ── M5 사고대응 ──────────────────────────────────────────────────
+  - id: skill:memory_dump
+    name: memory_dump
+    primary_mission: M5
+    secondary_missions: []
+    description: "프로세스 또는 시스템 메모리 dump — forensic 입력"
+    typical_tools: [gcore, lime, volatility-target]
+    risk_level: medium
+
+  - id: skill:process_kill
+    name: process_kill
+    primary_mission: M5
+    secondary_missions: [M3]
+    description: "악성 프로세스 격리·종료"
+    typical_tools: [kill, systemctl]
+    risk_level: high
+
+  - id: skill:ioc_export
+    name: ioc_export
+    primary_mission: M5
+    secondary_missions: [M2, M7]
+    description: "탐지된 IoC 를 STIX/MISP/CSV 로 export — 공유"
+    typical_tools: [STIX2, MISP REST]
+    risk_level: low
+
+  - id: skill:forensic_collect
+    name: forensic_collect
+    primary_mission: M5
+    secondary_missions: []
+    description: "디스크·로그·timestamp 수집 — chain of custody"
+    typical_tools: [dd, sha256sum, tar]
+    risk_level: medium
+
+  - id: skill:model_isolate
+    name: model_isolate
+    primary_mission: M5
+    secondary_missions: [M6]
+    description: "AI 침해 시 모델 endpoint 격리 — endpoint disable + traffic block"
+    typical_tools: [Ollama API, nftables]
+    risk_level: high
+
+  # ── M6 AI 보안 ──────────────────────────────────────────────────
+  - id: skill:prompt_fuzz
+    name: prompt_fuzz
+    primary_mission: M6
+    secondary_missions: [M4]
+    description: "프롬프트 인젝션 · jailbreak · system prompt 추출 시도"
+    typical_tools: [custom prompts, garak template]
+    risk_level: medium
+
+  - id: skill:garak_probe
+    name: garak_probe
+    primary_mission: M6
+    secondary_missions: []
+    description: "Garak LLM red-team 도구 실행 — 100+ probe"
+    typical_tools: [garak]
+    risk_level: medium
+
+  - id: skill:rag_corpus_check
+    name: rag_corpus_check
+    primary_mission: M6
+    secondary_missions: [M2]
+    description: "RAG 인덱스의 오염 / poison document 검출"
+    typical_tools: [vector store query, similarity scan]
+    risk_level: medium
+
+  - id: skill:ollama_query
+    name: ollama_query
+    primary_mission: M6
+    secondary_missions: [M9]
+    description: "Ollama LLM 직접 호출 (분석·생성)"
+    typical_tools: [Ollama /api/chat]
+    risk_level: low
+
+  # ── M7 컴플라이언스 ────────────────────────────────────────────
+  - id: skill:compliance_scan
+    name: compliance_scan
+    primary_mission: M7
+    secondary_missions: [M2]
+    description: "통제 항목 자동 점검 — ISMS-P / PCI-DSS / ISO27001 / SOC2 일부"
+    typical_tools: [lynis, openscap, custom scripts]
+    risk_level: low
+
+  - id: skill:secret_scan
+    name: secret_scan
+    primary_mission: M7
+    secondary_missions: [M5]
+    description: "코드·설정·로그의 secret 노출 탐지"
+    typical_tools: [trufflehog, gitleaks, detect-secrets]
+    risk_level: low
+
+  # ── M8 기억 운영 ─────────────────────────────────────────────────
+  - id: skill:history_anchor
+    name: history_anchor
+    primary_mission: M8
+    secondary_missions: []
+    description: "history_anchor 등록 — 압축 면역 이벤트 기록"
+    typical_tools: [bastion API]
+    risk_level: low
+
+  - id: skill:history_narrative
+    name: history_narrative
+    primary_mission: M8
+    secondary_missions: []
+    description: "narrative open/close — 작업 묶음 추적"
+    typical_tools: [bastion API]
+    risk_level: low
+
+  # ── M9 범용 운영 ─────────────────────────────────────────────────
+  - id: skill:shell
+    name: shell
+    primary_mission: M9
+    secondary_missions: [M1, M2, M3, M4, M5, M6, M7]   # 거의 모든 mission 이 보조 활용
+    description: "임의 shell 명령 실행 (가장 일반적인 skill)"
+    typical_tools: [bash]
+    risk_level: depends-on-command
+
+  - id: skill:http_request
+    name: http_request
+    primary_mission: M9
+    secondary_missions: [M1, M4, M6]
+    description: "임의 HTTP 호출 (정찰·공격·API 통합)"
+    typical_tools: [curl, httpx]
+    risk_level: low
+
+  - id: skill:docker_manage
+    name: docker_manage
+    primary_mission: M9
+    secondary_missions: [M5]
+    description: "Docker 컨테이너 시작·중지·exec — 6v6 인프라 운영"
+    typical_tools: [docker, docker compose]
+    risk_level: medium
+
+  - id: skill:file_manage
+    name: file_manage
+    primary_mission: M9
+    secondary_missions: [M5, M7]
+    description: "파일 read/write/move/checksum"
+    typical_tools: [cat, mv, sha256sum]
+    risk_level: low
+
+# 검증 — Mission 별 skill 수
+# M1: 6 / M2: 5 / M3: 3 / M4: 2 / M5: 5 / M6: 4 / M7: 2 / M8: 2 / M9: 4 = 33 ✓

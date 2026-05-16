@@ -1,0 +1,147 @@
+# 9 Mission 카탈로그 — bastion 작업 단위의 최상위 묶음
+# 인프라 무관. 모든 EG instance (eg-6v6 / 향후 다른 인프라) 가 공유.
+#
+# Mission key 결정 기준 (P22):
+# - 비즈니스 사명 X, *작업 단위* 묶음
+# - bastion 의 33 skill 카테고리 9 종을 1:1 매핑
+# - 9-tier 의 1번 tier
+# - [RED]/[BLUE] 는 cross-cutting tag (Mission 자체 아님)
+
+version: 1
+updated_at: 2026-05-16
+
+missions:
+  - id: mission:M1-recon
+    code: M1
+    name: 정찰
+    name_en: Reconnaissance
+    statement: |
+      자산·서비스·표면·취약점의 사전 식별. 공격 가능 표면 매핑과 정보 수집.
+    owner: Bastion Team
+    skill_ids: [probe_host, scan_ports, web_scan, dns_recon, cve_lookup, probe_all]
+    tier: operational
+    primary_cross_cutting_tag: [RED, PURPLE]
+    dod: "33 카테고리 중 recon 관련 카테고리의 R3 anchor ≥ 30, pass rate ≥ 0.7"
+
+  - id: mission:M2-detection
+    code: M2
+    name: 탐지
+    name_en: Detection
+    statement: |
+      Wazuh / Suricata / ModSecurity 등의 알람·로그·이벤트 기반 위협 탐지와 분류.
+    owner: Bastion Team
+    skill_ids: [check_suricata, check_wazuh, check_modsecurity, analyze_logs, wazuh_api]
+    tier: operational
+    primary_cross_cutting_tag: [BLUE, PURPLE]
+    dod: "soc-ops + threat-hunting + siem-engineering 카테고리 R3 pass rate ≥ 0.7"
+
+  - id: mission:M3-defense
+    code: M3
+    name: 방어
+    name_en: Defense
+    statement: |
+      방화벽·IDS·IPS·WAF 정책 배포·튜닝·검증. 방어 룰 운영.
+    owner: Bastion Team
+    skill_ids: [configure_nftables, deploy_rule, enroll_wazuh_agent]
+    tier: operational
+    primary_cross_cutting_tag: [BLUE]
+    dod: "blue-team + network-security + secops 카테고리 R3 anchor 누적 + rule 변경 audit 무결성 100%"
+
+  - id: mission:M4-offensive
+    code: M4
+    name: 공격
+    name_en: Offensive
+    statement: |
+      모의 공격·취약점 검증·exploit PoC·자격증명 공격 등 적극적 공격 수행.
+    owner: Bastion Team
+    skill_ids: [attack_simulate, password_attack]
+    tier: operational
+    primary_cross_cutting_tag: [RED]
+    dod: "pentest + red-team-tactics + redteam-ops 카테고리 R3 anchor 누적"
+
+  - id: mission:M5-ir
+    code: M5
+    name: 사고대응
+    name_en: Incident Response
+    statement: |
+      탐지 후 격리·근절·복구·교훈 추출의 6단계 절차. 메모리·디스크 forensic
+      수집과 IoC 추출.
+    owner: Bastion Team
+    skill_ids: [memory_dump, process_kill, ioc_export, forensic_collect, model_isolate]
+    tier: operational
+    primary_cross_cutting_tag: [BLUE]
+    dod: "incident-response + forensics 카테고리 R3 anchor + 6단계 일관성 ≥ 0.8"
+
+  - id: mission:M6-ai-security
+    code: M6
+    name: AI보안
+    name_en: AI Security
+    statement: |
+      LLM·RAG·에이전트의 프롬프트 인젝션·jailbreak·민감 정보 누출 등 AI 특화 위협
+      평가와 가드레일 검증.
+    owner: Bastion Team
+    skill_ids: [prompt_fuzz, garak_probe, rag_corpus_check, ollama_query]
+    tier: operational
+    primary_cross_cutting_tag: [RED, BLUE]
+    dod: "ai-safety + ai-ir + ai-utilization + ai-pentest 카테고리 R3 anchor + OWASP LLM Top 10 coverage"
+
+  - id: mission:M7-compliance
+    code: M7
+    name: 컴플라이언스
+    name_en: Compliance
+    statement: |
+      ISMS-P / PCI-DSS / ISO27001 / SOC2 등 표준 통제 항목 자동 점검과 증적 수집.
+      Secret scan, 정책 준수 검증.
+    owner: Bastion Team
+    skill_ids: [compliance_scan, secret_scan]
+    tier: operational
+    primary_cross_cutting_tag: [BLUE]
+    dod: "compliance + governance + privacy-engineering 카테고리 R3 anchor + audit completeness 100%"
+
+  - id: mission:M8-knowledge
+    code: M8
+    name: 기억운영
+    name_en: Knowledge Management
+    statement: |
+      그래프 자체의 anchor / narrative 기록·승격·폐기. EG 의 메타 운영.
+      Playbook 자동 승격, Insight 라벨링, snapshot 캡처.
+    owner: Bastion Team
+    skill_ids: [history_anchor, history_narrative]
+    tier: operational
+    primary_cross_cutting_tag: []
+    dod: "R3 종료 시 frozen snapshot 캡처 + playbook 승격 worker ≥ 1 회 정상 작동"
+
+  - id: mission:M9-general
+    code: M9
+    name: 범용운영
+    name_en: General Operations
+    statement: |
+      shell 명령 / HTTP 호출 / docker 관리 / 파일 조작 등 도구 자체에 의존하는
+      공통 운영. 다른 8 Mission 의 보조 역할.
+    owner: Bastion Team
+    skill_ids: [shell, http_request, docker_manage, file_manage]
+    tier: operational
+    primary_cross_cutting_tag: []
+    dod: "shell skill 의 retry 가능성 ≥ 0.8, 즉 자기수정 후 성공률"
+
+# Mission 간 관계
+relationships:
+  # 같이 자주 발생하는 Mission 쌍 (cross-mission anchor 빈도)
+  often_chains:
+    - [M1, M4]      # 정찰 → 공격
+    - [M4, M2]      # 공격 → 탐지 (alert source)
+    - [M2, M5]      # 탐지 → 사고대응
+    - [M5, M3]      # 사고대응 → 방어 (룰 보강)
+    - [M1, M2]      # 정찰 → 탐지 (자산 매핑)
+    - [M6, M5]      # AI 침해 → AI IR
+    - [M3, M7]      # 방어 룰 변경 → 컴플라이언스 audit
+  # Mission 의 보조 관계
+  supports:
+    M9: [M1, M2, M3, M4, M5, M6, M7, M8]    # 범용운영은 모든 mission 의 보조
+    M8: [M1, M2, M3, M4, M5, M6, M7]        # 기억운영은 자기 외 7 mission 의 메타
+
+# Mission 의 cross-cutting tag 정의 (Mission 자체가 아닌 *입장 단위*)
+tags:
+  RED:    Adversarial 입장 — 공격·정찰의 시점에서 본 작업
+  BLUE:   Defender 입장 — 탐지·방어·대응의 시점
+  PURPLE: 양측 통합 — 같은 시나리오를 양 입장에서 분석

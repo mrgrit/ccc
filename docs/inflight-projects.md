@@ -12,38 +12,72 @@
 
 ## In-Progress
 
-### P22. Experience Graph paper — 6v6 인프라 기반 평가 [STATUS: 1차 framework 완료 (2026-05-16)]
+### P22. Experience Graph paper — 6v6 인프라 기반 평가 [STATUS: P1 기반 구축 완료 v0.2 (2026-05-16)]
 
 **동기**: 폐쇄망 / open-weight / 장기 일관성 / 신뢰성 요구 충족을 위한 보안 AI 에이전트의
-핵심 기제로 **경험 그래프 (Experience Graph)** 를 제안. 기존 "지식그래프 (KG)" 명칭을
-"경험 그래프 (EG)" 로 통일.
+핵심 기제로 **경험 그래프 (Experience Graph, EG)** 를 제안. "지식그래프" → "경험그래프"
+명명 통일.
 
-**실험 시스템 분리** (CCC repo 외부):
-- 6v6 (github.com/mrgrit/6v6) — 평가 인프라 (단일 VM × 13 컨테이너)
-- bastion (github.com/mrgrit/bastion) — 평가 대상 에이전트
-- 6bq5 (github.com/mrgrit/6bq5) — EG 저장·검색·승격 백엔드
+**v0.2 핵심 결정사항 (16 결정)**:
+1. EG = 인프라별 격리 (한 인프라 = 한 EG). VM `kg.db` 와 6v6 `eg-6v6.db` 완전 분리, transfer 없음
+2. 6v6 환경에서 R0 부터 새로 시작. VM 누적분 보존만
+3. 9-tier 그대로 (Mission/Vision/Goal/Strategy/KPI/Plan/Todo/Playbook/Experience)
+4. Mission 9 = bastion 작업 skill 카테고리 (M1 정찰/M2 탐지/M3 방어/M4 공격/M5 사고대응/M6 AI보안/M7 컴플라이언스/M8 기억운영/M9 범용운영). 비즈니스 X
+5. 카탈로그 layer 분리 (Skill 33/Mission 9/외부 표준 Concept 52, fixture YAML)
+6. 학생 lab 6v6 재작성 = bastion 검증 source = EG 학습 일부 + 부족 카테고리만 보강
+7. Plan 1 급 노드 + dynamic playbook 즉시 저장 (기존 bastion 갭 해결)
+8. Playbook 4 출처 (author/dynamic/compaction/promotion)
+9. [RED]/[BLUE] = cross-cutting tag (Mission 자체 아님)
+10. anchor 명명 분리 (experience-anchor / history-anchor / Anchor-node)
+11. Primary + Secondary belongs_to (cross-mission node 처리)
+12. 속도 = 캐시 + FAISS + centrality 분리 (수평 분리 안 함)
+13. deploy = 192.168.0.110 (6v6 머신). 6bq5 코드 재사용, DB 만 분리
+14. EG 포털 = 6bq5 frontend + 4 view 추가 (Mission Dashboard / Ablation / Plan / Insight)
+15. CCC frontend 에 EG 진행 view (관리자만, X-Admin-Token proxy)
+16. H3 transfer 가설 제거. H1 일관성 + H2 open-weight×EG 만 유지
 
-**실험 흐름**: 훈련 커리큘럼 생성 → 에이전트 훈련 + EG 생성 → 실전 테스트 생성 → bastion
-수행 → 성능 검증.
+**Q1~Q7 결정**:
+- Q1 Mission 한국어명 = 무난한 걸로 (정찰/탐지/방어/공격/사고대응/AI보안/컴플라이언스/기억운영/범용운영)
+- Q2 P2 우선순위 = 공격 → 방어운영 → AI보안. 실전 (인프라 없는) 5 과목 제외
+- Q3 CCC frontend EG view = 관리자만
+- Q4 0.110 EG 포털 = Admin 만 접근
+- Q5 owner = 역할명 (Bastion Team / Paper Author / Infra Ops)
+- Q6 보강 합성 = P2 중간 checkpoint 마다 측정 → 부족 카테고리만
+- Q7 카탈로그 = fixture YAML 소스 + 같은 DB import (별도 DB 분리 X)
 
-**완료 (3/N)**:
-- [x] `contents/papers/experience-graph/` 디렉토리 + README + 00-outline + 01-benchmark-6v6 (2026-05-16)
-- [x] 기존 590 hold-out 의 6v6 기준 재구성 — 42 카테고리 A/B/C/D 분류, D 9 제거 → 33 카테고리 462 task
-- [x] 6v6 자원 ↔ 카테고리 매트릭스, AI 카테고리 target model (aicompanion + ccc-vulnerable) 통일
-- [x] Papers UI 자동 노출 검증
-- [x] `02-curriculum-design.md` — 훈련 corpus 1,400 task, 합성 Mode H/L/P, R0~R3 누적, EG anchor 분포 (2026-05-16)
-- [x] `03-eg-schema-overview.md` — EG 노드 5종 (cycle/anchor/playbook/insight/task), 엣지 8종 (contradicts 포함), 검색 5 차원, 승격·폐기 규칙, 현재 구현 갭, 6bq5 분리 경계 (2026-05-16)
-- [x] `04-experience-graph-construction.md` — 6bq5 실측 DDL/API 검토 + 03 스키마 매핑, playbook 승격 worker 의사 코드, /api/eg/search 5 차원 가중, frozen snapshot hash 무결성, 9 갭 작업 분담 (2026-05-16)
-- [x] `05-evaluation-protocol.md` — 4 ablation × 5 repeats × 462 = 9,240 run, runner/dashboard 의사코드, 메트릭 식, Table 1~4 보고 포맷, reviewer 재현 패키지, 시간 19 일/4~6 주 estimate (2026-05-16)
+**5 Phase 계획** (총 3~4 개월):
+- **P1 기반 구축** (1 주) — Mission 정의 · 카탈로그 · eg-6v6.db · paper 정정 · 포털 deploy · frontend view
+- **P2 학생 콘텐츠 6v6 재작성 + bastion 검증** (4~8 주) — 17 과목 × 15 주 lab. EG 자연 누적
+- **P3 hold-out 462 + 부족 보강** (P2 병행, 4~6 주) — 누출 차단 + 카테고리 균형
+- **P4 R0~R3 누적 학습** (P2 와 일부 중첩, 2~3 주) — R3 종료 시 frozen snapshot
+- **P5 평가 + paper 마무리** (19 일 + 1 주) — 4 ablation × 5 회 × 462 = 9,240 run
 
-**DoD (남은 작업)**:
-- [ ] Tier A pilot 15 task (pentest/soc-ops/web-vuln × 5) YAML 작성
-- [ ] 6v6 컨테이너 snapshot 자동화 (No-EG / Playbook / Experience / Full 전환)
-- [ ] 1,400 훈련 corpus 작성 (8 주, R0~R3) + 462 평가 본 작성
-- [ ] leak_check + augment endpoint 분리 검증 스크립트 (6bq5 또는 bastion repo)
-- [ ] 6bq5 의 9 갭 채우기 (04 §9 표) — embedding, /api/eg/*, promote worker, Insight UI 등
+**시스템 분리**:
+- CCC (현재 머신) — 콘텐츠 / 카탈로그 / paper / pilot YAML 작성
+- 6v6 (192.168.0.110) — 평가 인프라 13 컨테이너
+- bastion (6v6-bastion 컨테이너) — 평가 대상 에이전트
+- 6bq5 코드 (0.110) — EG 백엔드 (FastAPI + frontend)
+- **eg-6v6.db** (0.110) — 본 paper EG (6v6 환경 전용)
+- VM **kg.db** (별도) — 보존만, 본 paper 와 무관
 
-**Next concrete step**: 사용자 review 후 pilot 15 task YAML 작성 (pentest/soc-ops/web-vuln 5 each) → end-to-end smoke.
+**P1 완료 (2026-05-16)**:
+- [x] P1-a: 9 Mission + 카탈로그 fixture YAML (`contents/eg-catalog/` 4 파일 904 라인 — missions/skills/concepts/README)
+- [x] P1-b: eg-6v6.db 초기화 + 카탈로그 import (`scripts/eg/` 3 파일 490 라인 — schema.sql/init_db.py/import_catalog.py). 검증: Mission 9 + Skill 33 + Concept 52 + edges 180
+- [x] P1-c: paper 5 문서 v0.2 정정 (16 결정 반영, 2,107 라인) — README/00-outline/01-benchmark-6v6/02-curriculum-design/03-eg-schema-overview/04-experience-graph-construction/05-evaluation-protocol
+- [x] P1-d: EG 포털 0.110 deploy 준비 (`scripts/eg/deploy.sh` + admin_auth.py + inject_auth.py). EG_ADMIN_TOKEN 기반 X-Admin-Token 단일 토큰 인증. 실제 deploy 는 사용자 SSH 후 수동
+- [x] P1-e: CCC frontend EG view (`apps/ccc-ui/src/pages/EG.tsx` + App.tsx 정정 + `/eg-portal/{path}` proxy in ccc_api). 검증: 503 EG_ADMIN_TOKEN 미설정 차단 정상
+- [x] P1-f: 본 tracker 갱신 + 5 Phase 박제 (이 문단)
+
+**DoD (P2 이후 남은 작업)**:
+- [ ] **사용자 작업**: 0.110 SSH → `EG_ADMIN_TOKEN=<token> bash scripts/eg/deploy.sh {bootstrap,init-db,patch-auth,start}` 실행. CCC api 환경변수 `EG_ADMIN_TOKEN` + `EG_PORTAL_BASE` 동기화
+- [ ] P2: 17 과목 × 15 주 학생 lab 6v6 재작성 (공격→방어운영→AI보안). 매 lab → bastion 자동 검증. 중간 checkpoint (5 회) 분포 측정 → 부족 카테고리 보강
+- [ ] P3: 평가 462 task YAML 작성 (학생 lab 누출 차단). pilot 15 (pentest/soc-ops/web-vuln × 5) 부터 시작
+- [ ] 6bq5 코드 정정 (0.110 측): `/api/eg/search` (6 차원 weight + exclude_holdout), `/api/eg/plan` (dynamic 즉시 저장), `/api/eg/anchor`, 4 worker (promote/adapt/refute/archive), embedding 채움 (nomic-embed-text + FAISS), Insight UI 4 view
+- [ ] bastion 코드 정정: `_inject_kg_context` → `/api/eg/search` 호출, `_generate_dynamic_playbook` 직후 `/api/eg/plan` 호출
+- [ ] P4: R0~R3 단계적 학습 → frozen snapshot
+- [ ] P5: 462 평가 9,240 run × Mission 9 단위 통계 + Table 1~5 갱신
+
+**Next concrete step**: 사용자 review of P1 → (a) 0.110 deploy 실행 (사용자) (b) pilot 15 task YAML 작성 (Claude).
 
 ### P21. secuops 콘텐츠 W03-W15 W01 깊이로 전면 재작성 [STATUS: ✅ COMPLETE — 13/13 (2026-05-12)]
 

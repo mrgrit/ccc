@@ -2035,6 +2035,46 @@ def get_paper_file(paper_id: str, file_path: str, request: Request):
 
 
 # ══════════════════════════════════════════════════
+#  EG-6v6 Portal Proxy (admin/instructor only)
+# ══════════════════════════════════════════════════
+# 환경변수:
+#   EG_PORTAL_BASE       — 기본 http://192.168.0.110:8500
+#   EG_ADMIN_TOKEN       — 0.110 의 admin token (서버 측 secret, frontend 노출 X)
+import httpx as _httpx_proxy
+
+_EG_BASE = os.environ.get("EG_PORTAL_BASE", "http://192.168.0.110:8500")
+_EG_TOKEN = os.environ.get("EG_ADMIN_TOKEN", "")
+
+
+@app.api_route("/eg-portal/{path:path}", methods=["GET", "POST", "PUT", "DELETE"],
+               dependencies=[Depends(verify_api_key)])
+async def eg_portal_proxy(path: str, request: Request):
+    """CCC frontend → eg-6v6 (192.168.0.110:8500) proxy.
+    admin/instructor 만 허용. EG_ADMIN_TOKEN 은 서버 측에서 자동 주입."""
+    _require_admin(request)
+    if not _EG_TOKEN:
+        raise HTTPException(503, "EG_ADMIN_TOKEN 미설정 — 운영자 확인 필요")
+
+    url = f"{_EG_BASE}/{path}"
+    headers = {"X-Admin-Token": _EG_TOKEN}
+    body = await request.body()
+    async with _httpx_proxy.AsyncClient(timeout=10.0) as client:
+        try:
+            r = await client.request(
+                request.method, url,
+                params=dict(request.query_params),
+                content=body,
+                headers=headers,
+            )
+        except _httpx_proxy.HTTPError as e:
+            raise HTTPException(502, f"EG 포털 연결 실패: {e}")
+    try:
+        return r.json()
+    except Exception:
+        return {"_raw": r.text, "_status": r.status_code}
+
+
+# ══════════════════════════════════════════════════
 #  Lab Catalog (lab_engine 연동)
 # ══════════════════════════════════════════════════
 
