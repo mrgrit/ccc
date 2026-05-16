@@ -601,17 +601,17 @@ for t in d.get('task_results',[]):
 
 ```bash
 # Apache 접근 로그에서 SQLi 흔적 확인
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "cat /var/log/apache2/access.log 2>/dev/null | grep -i 'union\|select\|or%201' | tail -10"
 # 예상 출력: UNION SELECT가 포함된 요청 로그
 
 # Suricata IDS에서 웹 공격 탐지 확인
-ssh ccc@10.20.30.1 \
+ssh 6v6-fw \
   "cat /var/log/suricata/fast.log 2>/dev/null | grep -i 'sql\|xss\|injection' | tail -10"
 # 예상 출력: SQL Injection, XSS 관련 IDS 경보
 
 # Wazuh에서 웹 공격 알림 확인
-ssh ccc@10.20.30.100 \
+ssh 6v6-siem \
   "cat /var/ossec/logs/alerts/alerts.log 2>/dev/null | grep -i 'sql\|xss\|web' | tail -10"
 # 예상 출력: Wazuh 규칙에 매칭된 웹 공격 경보
 ```
@@ -953,7 +953,7 @@ EOF
 sudo tee /var/ossec/active-response/bin/auto-block-ip.sh << 'EOF'
 #!/bin/bash
 IP=$3
-ssh ccc@10.20.30.1 "sudo nft add element inet filter blocked '{ $IP }'"
+ssh 6v6-fw "sudo nft add element inet filter blocked '{ $IP }'"
 EOF
 sudo chmod +x /var/ossec/active-response/bin/auto-block-ip.sh
 ```

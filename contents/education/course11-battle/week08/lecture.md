@@ -170,20 +170,20 @@ IOC는 침해 사고의 존재를 나타내는 증거이다.
 
 ```bash
 # web 서버의 auth.log에서 SSH 관련 로그 확인
-ssh ccc@10.20.30.80   "echo 1 | sudo -S cat /var/log/auth.log 2>/dev/null | grep sshd | tail -20"
+ssh 6v6-web   "echo 1 | sudo -S cat /var/log/auth.log 2>/dev/null | grep sshd | tail -20"
 # 예상 출력: SSH 관련 로그 (성공/실패)
 
 # 실패한 로그인 시도 카운트
-ssh ccc@10.20.30.80   "echo 1 | sudo -S grep 'Failed password' /var/log/auth.log 2>/dev/null | wc -l"
+ssh 6v6-web   "echo 1 | sudo -S grep 'Failed password' /var/log/auth.log 2>/dev/null | wc -l"
 # 예상 출력: 실패 횟수
 
 # IP별 실패 횟수 (브루트포스 탐지)
-ssh ccc@10.20.30.80   "echo 1 | sudo -S grep 'Failed password' /var/log/auth.log 2>/dev/null | grep -oP 'from \K[\d.]+' | sort | uniq -c | sort -rn | head -10"
+ssh 6v6-web   "echo 1 | sudo -S grep 'Failed password' /var/log/auth.log 2>/dev/null | grep -oP 'from \K[\d.]+' | sort | uniq -c | sort -rn | head -10"
 # 예상 출력:
 #  50 10.20.30.201   ← Week 04 hydra 브루트포스 흔적
 
 # 성공한 로그인 목록
-ssh ccc@10.20.30.80   "echo 1 | sudo -S grep 'Accepted' /var/log/auth.log 2>/dev/null | tail -10"
+ssh 6v6-web   "echo 1 | sudo -S grep 'Accepted' /var/log/auth.log 2>/dev/null | tail -10"
 # 예상 출력: 성공한 SSH 로그인 기록
 ```
 
@@ -206,15 +206,15 @@ ssh ccc@10.20.30.80   "echo 1 | sudo -S grep 'Accepted' /var/log/auth.log 2>/dev
 
 ```bash
 # sudo 사용 내역
-ssh ccc@10.20.30.80   "echo 1 | sudo -S grep 'sudo:' /var/log/auth.log 2>/dev/null | tail -15"
+ssh 6v6-web   "echo 1 | sudo -S grep 'sudo:' /var/log/auth.log 2>/dev/null | tail -15"
 # 예상 출력:
 # web : TTY=pts/0 ; PWD=/home/web ; USER=root ; COMMAND=/bin/bash
 
 # 실행된 sudo 명령 목록
-ssh ccc@10.20.30.80   "echo 1 | sudo -S grep 'COMMAND=' /var/log/auth.log 2>/dev/null | grep -oP 'COMMAND=\K.*' | sort | uniq -c | sort -rn | head -10"
+ssh 6v6-web   "echo 1 | sudo -S grep 'COMMAND=' /var/log/auth.log 2>/dev/null | grep -oP 'COMMAND=\K.*' | sort | uniq -c | sort -rn | head -10"
 
 # 위험한 sudo 명령 식별
-ssh ccc@10.20.30.80   "echo 1 | sudo -S grep 'COMMAND=' /var/log/auth.log 2>/dev/null | grep -iE 'shadow|passwd|bash|sh|nft|iptables'"
+ssh 6v6-web   "echo 1 | sudo -S grep 'COMMAND=' /var/log/auth.log 2>/dev/null | grep -iE 'shadow|passwd|bash|sh|nft|iptables'"
 ```
 
 > **결과 해석**:
@@ -232,16 +232,16 @@ ssh ccc@10.20.30.80   "echo 1 | sudo -S grep 'COMMAND=' /var/log/auth.log 2>/dev
 
 ```bash
 # Apache 접근 로그에서 SQLi 흔적
-ssh ccc@10.20.30.80   "cat /var/log/apache2/access.log 2>/dev/null | grep -iE 'union|select|or%201|1=1' | tail -10"
+ssh 6v6-web   "cat /var/log/apache2/access.log 2>/dev/null | grep -iE 'union|select|or%201|1=1' | tail -10"
 
 # XSS 흔적
-ssh ccc@10.20.30.80   "cat /var/log/apache2/access.log 2>/dev/null | grep -iE 'script|alert|onerror' | tail -10"
+ssh 6v6-web   "cat /var/log/apache2/access.log 2>/dev/null | grep -iE 'script|alert|onerror' | tail -10"
 
 # Nikto/스캐너 흔적 (User-Agent)
-ssh ccc@10.20.30.80   "cat /var/log/apache2/access.log 2>/dev/null | grep -iE 'nikto|sqlmap|nmap|dirbuster' | tail -10"
+ssh 6v6-web   "cat /var/log/apache2/access.log 2>/dev/null | grep -iE 'nikto|sqlmap|nmap|dirbuster' | tail -10"
 
 # HTTP 상태 코드별 통계
-ssh ccc@10.20.30.80   "cat /var/log/apache2/access.log 2>/dev/null | awk '{print \$9}' | sort | uniq -c | sort -rn | head -5"
+ssh 6v6-web   "cat /var/log/apache2/access.log 2>/dev/null | awk '{print \$9}' | sort | uniq -c | sort -rn | head -5"
 # 예상 출력:
 #  500 200    (정상)
 #  100 404    (존재하지 않는 페이지)
@@ -277,10 +277,10 @@ curl -s -X POST "http://localhost:9100/projects/$PID/execute-plan" \
   -H "X-API-Key: ccc-api-key-2026" \
   -d '{
     "tasks": [
-      {"order":1,"title":"web SSH 실패 분석","instruction_prompt":"ssh ccc@10.20.30.80 \"echo 1 | sudo -S grep Failed /var/log/auth.log 2>/dev/null | wc -l\"","risk_level":"low","subagent_url":"http://localhost:8002"},
-      {"order":2,"title":"web sudo 분석","instruction_prompt":"ssh ccc@10.20.30.80 \"echo 1 | sudo -S grep COMMAND /var/log/auth.log 2>/dev/null | tail -5\"","risk_level":"low","subagent_url":"http://localhost:8002"},
-      {"order":3,"title":"secu 방화벽 로그","instruction_prompt":"ssh ccc@10.20.30.1 \"echo 1 | sudo -S dmesg 2>/dev/null | grep NFT | tail -5\"","risk_level":"low","subagent_url":"http://localhost:8002"},
-      {"order":4,"title":"secu IDS 경보","instruction_prompt":"ssh ccc@10.20.30.1 \"echo 1 | sudo -S tail -5 /var/log/suricata/fast.log 2>/dev/null\"","risk_level":"low","subagent_url":"http://localhost:8002"}
+      {"order":1,"title":"web SSH 실패 분석","instruction_prompt":"ssh 6v6-web \"echo 1 | sudo -S grep Failed /var/log/auth.log 2>/dev/null | wc -l\"","risk_level":"low","subagent_url":"http://localhost:8002"},
+      {"order":2,"title":"web sudo 분석","instruction_prompt":"ssh 6v6-web \"echo 1 | sudo -S grep COMMAND /var/log/auth.log 2>/dev/null | tail -5\"","risk_level":"low","subagent_url":"http://localhost:8002"},
+      {"order":3,"title":"secu 방화벽 로그","instruction_prompt":"ssh 6v6-fw \"echo 1 | sudo -S dmesg 2>/dev/null | grep NFT | tail -5\"","risk_level":"low","subagent_url":"http://localhost:8002"},
+      {"order":4,"title":"secu IDS 경보","instruction_prompt":"ssh 6v6-fw \"echo 1 | sudo -S tail -5 /var/log/suricata/fast.log 2>/dev/null\"","risk_level":"low","subagent_url":"http://localhost:8002"}
     ],
     "subagent_url":"http://localhost:8002",
     "parallel":true
@@ -494,7 +494,7 @@ graph LR
 ### Blue 환경 준비
 
 ```bash
-ssh ccc@10.20.30.100
+ssh 6v6-siem
 sudo apt install -y lnav multitail jq
 cargo install chainsaw                                     # Rust
 

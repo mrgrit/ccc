@@ -165,7 +165,7 @@ Manager API
 
 ```bash
 # bastion 서버 접속
-ssh ccc@10.20.30.201
+ssh 6v6-bastion
 ```
 
 ```bash

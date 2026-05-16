@@ -121,7 +121,7 @@
 > **실전 활용**: AI 서비스의 GDPR/개인정보보호법 준수, 학습 데이터 정제 프로세스 설계, PII 유출 방지에 활용한다
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'
+ssh 6v6-web << 'ENDSSH'
 python3 << 'PYEOF'
 import json
 
@@ -163,7 +163,7 @@ ENDSSH
 ### 2.2 검색 결과 조작 (SEO Poisoning 유사)
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'
+ssh 6v6-web << 'ENDSSH'
 python3 << 'PYEOF'
 # 악성 문서가 검색 랭킹을 조작하는 기법
 manipulation_techniques = [
@@ -223,7 +223,7 @@ curl -s http://10.20.30.200:11434/v1/chat/completions \
 
 ```bash
 # 간접 인젝션 탐지 스크립트 구현
-ssh ccc@10.20.30.80 << 'ENDSSH'
+ssh 6v6-web << 'ENDSSH'
 python3 << 'PYEOF'
 import re
 
@@ -273,7 +273,7 @@ ENDSSH
 
 ```bash
 # 문서 검증 파이프라인: 인젝션 패턴 + 무결성 검증
-ssh ccc@10.20.30.80 << 'ENDSSH'
+ssh 6v6-web << 'ENDSSH'
 python3 << 'PYEOF'
 rag_security = {
     "문서 수집": [
@@ -340,7 +340,7 @@ Bastion 분산 지식 아키텍처의 신뢰 경계를 분석하고 Supply Chain
 
 ```bash
 # 분산 지식 아키텍처 보안 분석: 신뢰 경계 + 공격 벡터
-ssh ccc@10.20.30.80 << 'ENDSSH'
+ssh 6v6-web << 'ENDSSH'
 python3 << 'PYEOF'
 print("=== Bastion 분산 지식 아키텍처 보안 ===\n")
 

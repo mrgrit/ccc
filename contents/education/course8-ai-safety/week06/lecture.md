@@ -113,7 +113,7 @@ LLM: 프롬프트 변형 -> 안전 장치 우회
 
 ```bash
 # web 서버에서 적대적 텍스트 변환 실험 실행
-ssh ccc@10.20.30.80 << 'ENDSSH'
+ssh 6v6-web << 'ENDSSH'
 python3 << 'PYEOF'
 import random
 
@@ -178,7 +178,7 @@ ENDSSH
 ### 2.2 단어 레벨 공격
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'
+ssh 6v6-web << 'ENDSSH'
 python3 << 'PYEOF'
 # 동의어 치환으로 의미 보존 + 탐지 우회
 synonym_map = {
@@ -248,7 +248,7 @@ curl -s http://10.20.30.200:11434/v1/chat/completions \
 ### 3.1 의미 보존 변형 테스트
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'
+ssh 6v6-web << 'ENDSSH'
 python3 << 'PYEOF'
 import json, urllib.request
 
@@ -289,7 +289,7 @@ ENDSSH
 ### 3.2 안전 분류 일관성 테스트
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'
+ssh 6v6-web << 'ENDSSH'
 python3 << 'PYEOF'
 import json, urllib.request
 
@@ -338,7 +338,7 @@ ENDSSH
 ### 4.1 입력 정규화
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'
+ssh 6v6-web << 'ENDSSH'
 python3 << 'PYEOF'
 import unicodedata, re
 
@@ -382,7 +382,7 @@ ENDSSH
 ### 5.1 자동 강건성 테스트 프레임워크
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'
+ssh 6v6-web << 'ENDSSH'
 python3 << 'PYEOF'
 # 강건성 테스트 결과 시뮬레이션
 results = {

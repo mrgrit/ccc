@@ -424,7 +424,7 @@ Blue Team 탐지 ← IDS 알림, 로그 이상
 
 ```bash
 # secu 서버의 현재 방화벽 규칙 확인
-ssh ccc@10.20.30.1 \
+ssh 6v6-fw \
   "echo 1 | sudo -S nft list ruleset 2>/dev/null"
 # 예상 출력:
 # table inet filter {
@@ -434,17 +434,17 @@ ssh ccc@10.20.30.1 \
 # }
 
 # 현재 규칙 백업 (격리 전 상태 보존)
-ssh ccc@10.20.30.1 \
+ssh 6v6-fw \
   "echo 1 | sudo -S nft list ruleset > /tmp/nft_backup_before.conf 2>/dev/null"
 echo "격리 전 규칙 백업 완료"
 
 # web 서버와의 현재 연결 상태 확인
-ssh ccc@10.20.30.1 \
+ssh 6v6-fw \
   "echo 1 | sudo -S ss -tn | grep 10.20.30.80"
 # 예상 출력: web 서버와의 기존 TCP 연결 목록
 
 # web 서버의 열린 포트 확인 (격리 전 기준선)
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "ss -tlnp 2>/dev/null | head -10"
 # 예상 출력: SSH(22), HTTP(80), JuiceShop(3000), SubAgent(8002)
 ```
@@ -476,24 +476,24 @@ ssh ccc@10.20.30.80 \
 # 조치: secu 서버(게이트웨이)에서 web 서버의 외부 통신을 차단
 
 # 1. web 서버의 외부 통신 차단 (C2 연결 차단)
-ssh ccc@10.20.30.1 \
+ssh 6v6-fw \
   "echo 1 | sudo -S nft add rule inet filter forward \
    ip saddr 10.20.30.80 ip daddr != 10.20.30.0/24 drop 2>/dev/null"
 echo "외부 통신 차단 완료 (outbound)"
 
 # 2. web 서버로의 외부 유입 차단 (추가 공격 차단)
-ssh ccc@10.20.30.1 \
+ssh 6v6-fw \
   "echo 1 | sudo -S nft add rule inet filter forward \
    ip daddr 10.20.30.80 ip saddr != 10.20.30.0/24 drop 2>/dev/null"
 echo "외부 유입 차단 완료 (inbound)"
 
 # 3. 격리 확인: web에서 외부 접근 테스트
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "curl -s --connect-timeout 3 http://8.8.8.8 2>/dev/null || echo '외부 접근 차단됨 (격리 성공)'"
 # 예상 출력: 외부 접근 차단됨 (격리 성공)
 
 # 4. 내부 통신은 유지 확인 (관리 목적)
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "ping -c 2 10.20.30.1 2>/dev/null | tail -1"
 # 예상 출력: 2 packets transmitted, 2 received, 0% packet loss
 
@@ -529,25 +529,25 @@ echo "web → 내부: 허용 (분석 통신)"
 
 ```bash
 # 격리 규칙 확인 (handle 번호 확인)
-ssh ccc@10.20.30.1 \
+ssh 6v6-fw \
   "echo 1 | sudo -S nft -a list chain inet filter forward 2>/dev/null | grep 10.20.30.80"
 # 예상 출력:
 # ip saddr 10.20.30.80 ip daddr != 10.20.30.0/24 drop # handle 15
 # ip daddr 10.20.30.80 ip saddr != 10.20.30.0/24 drop # handle 16
 
 # 백업에서 규칙 복원 (가장 안전한 방법)
-ssh ccc@10.20.30.1 \
+ssh 6v6-fw \
   "echo 1 | sudo -S nft flush ruleset && \
    echo 1 | sudo -S nft -f /tmp/nft_backup_before.conf 2>/dev/null"
 echo "격리 해제: 원래 규칙으로 복원 완료"
 
 # 복원 확인: 외부 통신 가능 여부
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "ping -c 1 -W 2 8.8.8.8 2>/dev/null | tail -1 || echo '외부 통신 여전히 불가'"
 # 예상 출력: (환경에 따라 다름)
 
 # 복원 후 규칙 확인
-ssh ccc@10.20.30.1 \
+ssh 6v6-fw \
   "echo 1 | sudo -S nft list ruleset 2>/dev/null | head -20"
 echo "규칙 복원 상태 확인 완료"
 ```
@@ -583,32 +583,32 @@ mkdir -p "$EVIDENCE_DIR"
 echo "증거 디렉토리: $EVIDENCE_DIR"
 
 # 1. 현재 프로세스 목록 수집 (휘발성 높음)
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "ps auxf" > "$EVIDENCE_DIR/ps_full.txt"
 echo "프로세스 목록 수집 완료: $(wc -l < "$EVIDENCE_DIR/ps_full.txt") lines"
 
 # 2. 네트워크 연결 상태 수집 (휘발성 높음)
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "ss -tnpa" > "$EVIDENCE_DIR/network_connections.txt"
 echo "네트워크 연결 수집 완료"
 
 # 3. 열린 파일 목록 수집
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "echo 1 | sudo -S lsof -i -n 2>/dev/null | head -50" > "$EVIDENCE_DIR/open_files.txt"
 echo "열린 파일 목록 수집 완료"
 
 # 4. 라우팅 테이블 수집
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "ip route" > "$EVIDENCE_DIR/routing_table.txt"
 echo "라우팅 테이블 수집 완료"
 
 # 5. ARP 캐시 수집 (최근 통신 호스트)
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "ip neigh" > "$EVIDENCE_DIR/arp_cache.txt"
 echo "ARP 캐시 수집 완료"
 
 # 6. 환경 변수 수집 (악성코드가 환경 변수 활용 가능)
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "env" > "$EVIDENCE_DIR/environment.txt"
 echo "환경 변수 수집 완료"
 
@@ -647,15 +647,15 @@ mkdir -p "$EVIDENCE_DIR/logs"
 
 # 주요 로그 파일 수집 (web 서버)
 for logfile in auth.log syslog kern.log; do
-  ssh ccc@10.20.30.80 \
+  ssh 6v6-web \
     "cat /var/log/$logfile 2>/dev/null" > "$EVIDENCE_DIR/logs/$logfile"
   echo "수집: $logfile ($(wc -c < "$EVIDENCE_DIR/logs/$logfile") bytes)"
 done
 
 # Apache 로그 수집
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "cat /var/log/apache2/access.log 2>/dev/null" > "$EVIDENCE_DIR/logs/apache_access.log"
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "cat /var/log/apache2/error.log 2>/dev/null" > "$EVIDENCE_DIR/logs/apache_error.log"
 echo "Apache 로그 수집 완료"
 
@@ -721,7 +721,7 @@ EVIDENCE_DIR="/tmp/evidence_$(date +%Y%m%d)"
 mkdir -p "$EVIDENCE_DIR/system"
 
 # 사용자 계정 목록 (백도어 계정 탐지)
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "cat /etc/passwd" > "$EVIDENCE_DIR/system/passwd"
 # 로그인 가능한 계정만 필터링
 grep -v "nologin\|false" "$EVIDENCE_DIR/system/passwd" | \
@@ -732,7 +732,7 @@ grep -v "nologin\|false" "$EVIDENCE_DIR/system/passwd" | \
 # (백도어 계정이 있다면 여기서 발견)
 
 # 예약된 작업 확인 (지속성 메커니즘 탐지)
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "echo 1 | sudo -S crontab -l 2>/dev/null; \
    echo '--- system crontab ---'; \
    echo 1 | sudo -S cat /etc/crontab 2>/dev/null; \
@@ -741,27 +741,27 @@ ssh ccc@10.20.30.80 \
 echo "크론탭 수집 완료"
 
 # 실행 중인 서비스 목록
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "systemctl list-units --type=service --state=running --no-pager 2>/dev/null" \
   > "$EVIDENCE_DIR/system/services.txt"
 echo "서비스 목록 수집 완료"
 
 # SSH 설정 및 인증 키
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "cat /etc/ssh/sshd_config 2>/dev/null" > "$EVIDENCE_DIR/system/sshd_config"
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "cat ~/.ssh/authorized_keys 2>/dev/null" > "$EVIDENCE_DIR/system/authorized_keys"
 echo "SSH 설정 수집 완료"
 
 # 최근 변경된 파일 (최근 24시간)
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "find / -mtime -1 -type f 2>/dev/null | \
    grep -v '/proc\|/sys\|/run\|/dev' | head -50" \
   > "$EVIDENCE_DIR/system/recent_files.txt"
 echo "최근 변경 파일 수집 완료"
 
 # SUID 파일 목록 (권한 상승 백도어 탐지)
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "echo 1 | sudo -S find / -perm -4000 -type f 2>/dev/null" \
   > "$EVIDENCE_DIR/system/suid_files.txt"
 echo "SUID 파일 목록 수집 완료"
@@ -864,35 +864,35 @@ for t in d.get('task_results',[]):
 # 3) crontab에 지속성 설정
 
 # 백도어 사용자 확인
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "grep -E 'bash|sh$' /etc/passwd | grep -v 'root\|web\|sshd\|nologin'"
 # 예상 출력: (백도어 사용자가 있다면 여기서 표시)
 
 # 숨겨진 파일 탐지 (악성코드가 자주 숨는 경로)
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "find /tmp /var/tmp /dev/shm -name '.*' -type f 2>/dev/null"
 # 예상 출력: /tmp/.hidden 등 숨겨진 파일 목록
 
 # 의심스러운 crontab 항목 확인
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "echo 1 | sudo -S crontab -l 2>/dev/null"
 # 예상 출력: (악성 cron 항목이 있다면 표시)
 
 # SUID 비트 설정된 의심 파일 확인
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "echo 1 | sudo -S find / -perm -4000 -type f 2>/dev/null | \
    grep -v '/usr/\|/bin/\|/sbin/'"
 # 예상 출력: 비표준 경로의 SUID 파일 (백도어 가능성)
 
 # SSH authorized_keys 확인 (공격자 키)
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "echo 1 | sudo -S find /home -name authorized_keys -exec cat {} \; 2>/dev/null"
 # 예상 출력: 등록된 SSH 공개키 목록
 
 # 근절 조치 예시 (실습 환경에서만 수행)
-# ssh ccc@10.20.30.80 \
+# ssh 6v6-web \
 #   "echo 1 | sudo -S userdel -r backdoor 2>/dev/null"
-# ssh ccc@10.20.30.80 \
+# ssh 6v6-web \
 #   "echo 1 | sudo -S rm -f /tmp/.hidden 2>/dev/null"
 echo "근절 조치 시뮬레이션 완료 (주석 해제하여 실제 수행)"
 ```
@@ -922,7 +922,7 @@ echo "근절 조치 시뮬레이션 완료 (주석 해제하여 실제 수행)"
 
 ```bash
 # 서비스 상태 확인 (web 서버)
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "systemctl status apache2 2>/dev/null | head -5; \
    echo '---'; \
    systemctl status docker 2>/dev/null | head -5"
@@ -936,11 +936,11 @@ echo "Apache (80):     HTTP $HTTP_80"
 echo "JuiceShop (3000): HTTP $HTTP_3000"
 
 # SSH 접속 확인
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "echo 'SSH 접속 정상'" 2>/dev/null || echo "SSH 접속 실패"
 
 # 포트 상태 확인
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "ss -tlnp 2>/dev/null | grep -E ':(22|80|3000|8002)'"
 # 예상 출력:
 # LISTEN 0 128 *:22    *:*   users:(("sshd",...))
@@ -977,7 +977,7 @@ echo "=== 서비스 복구 검증 완료 ==="
 ```bash
 # auth.log에서 인증 이벤트 추출 (web 서버)
 echo "=== 인증 이벤트 타임라인 ==="
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "grep -E 'Failed|Accepted|session opened|session closed|useradd|usermod|passwd' \
    /var/log/auth.log 2>/dev/null | tail -30"
 # 예상 출력:
@@ -988,13 +988,13 @@ ssh ccc@10.20.30.80 \
 # syslog에서 시스템 이벤트 추출
 echo ""
 echo "=== 시스템 이벤트 타임라인 ==="
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "grep -E 'started|stopped|error|warning|cron' /var/log/syslog 2>/dev/null | tail -20"
 
 # Apache 액세스 로그에서 의심 요청 추출
 echo ""
 echo "=== 웹 의심 요청 ==="
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "grep -iE 'POST.*upload|shell|cmd|exec|union|select|script' \
    /var/log/apache2/access.log 2>/dev/null | tail -20"
 # 예상 출력: 웹셸 업로드, SQL Injection, XSS 시도 등
@@ -1002,7 +1002,7 @@ ssh ccc@10.20.30.80 \
 # Suricata IDS 알림 확인
 echo ""
 echo "=== IDS 알림 타임라인 ==="
-ssh ccc@10.20.30.1 \
+ssh 6v6-fw \
   "tail -30 /var/log/suricata/fast.log 2>/dev/null || echo 'Suricata 로그 없음'"
 
 echo ""
@@ -1271,7 +1271,7 @@ graph LR
 ### Blue 환경 (IR 도구)
 
 ```bash
-ssh ccc@10.20.30.100
+ssh 6v6-siem
 
 # TheHive 5
 docker run -d --name thehive -p 9000:9000 strangebee/thehive:5.2
@@ -1446,7 +1446,7 @@ velociraptor downloads list
 sudo tee /var/ossec/active-response/bin/quarantine.sh << 'EOF'
 #!/bin/bash
 HOST=$3
-ssh ccc@10.20.30.1 "sudo nft add element inet filter blocked '{ $HOST }'"
+ssh 6v6-fw "sudo nft add element inet filter blocked '{ $HOST }'"
 
 # 사용자 잠금 (compromised 사용자)
 USER=$5

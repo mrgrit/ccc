@@ -163,7 +163,7 @@ Tool Calling은 LLM이 자체적으로 답할 수 없는 질문에 대해 외부
 
 ```bash
 # bastion 서버에 접속
-ssh ccc@10.20.30.201
+ssh 6v6-bastion
 ```
 
 ```bash

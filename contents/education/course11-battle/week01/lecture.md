@@ -1090,17 +1090,17 @@ REPORT
 
 ```bash
 # Suricata IDS 로그에서 스캔 탐지 확인 (secu 서버)
-ssh ccc@10.20.30.1 \
+ssh 6v6-fw \
   "cat /var/log/suricata/fast.log 2>/dev/null | tail -20"
 # 예상 출력: 포트 스캔 탐지 이벤트 (있는 경우)
 
 # nftables 방화벽 로그 확인 (secu 서버)
-ssh ccc@10.20.30.1 \
+ssh 6v6-fw \
   "dmesg | grep -i nft | tail -10"
 # 예상 출력: 방화벽에서 차단된 패킷 로그
 
 # 시스템 인증 로그에서 스캔 흔적 (web 서버)
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "cat /var/log/auth.log 2>/dev/null | tail -10"
 # 예상 출력: SSH 연결 시도 기록 (Connect 스캔의 흔적)
 ```
@@ -1313,7 +1313,7 @@ git clone https://github.com/smicallef/spiderfoot ~/spiderfoot
 cd ~/spiderfoot && pip install -r requirements.txt
 
 # Blue (defender VMs)
-ssh ccc@10.20.30.1   # secu
+ssh 6v6-fw   # secu
 sudo systemctl status suricata wazuh-manager fail2ban crowdsec
 ```
 

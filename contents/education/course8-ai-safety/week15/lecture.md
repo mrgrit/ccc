@@ -131,7 +131,7 @@ AI 안전 인증 프로세스의 전체 워크플로(평가 계획/실행/보고
 
 ```bash
 # AI 안전 인증 프로세스 전체 워크플로
-ssh ccc@10.20.30.80 << 'ENDSSH'
+ssh 6v6-web << 'ENDSSH'
 python3 << 'PYEOF'
 from datetime import datetime
 
@@ -175,7 +175,7 @@ ENDSSH
 ### 3.1 유해 콘텐츠 거부 테스트
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'
+ssh 6v6-web << 'ENDSSH'
 python3 << 'PYEOF'
 import json, urllib.request
 
@@ -239,7 +239,7 @@ ENDSSH
 
 ```bash
 # 복합 공격: 시스템 프롬프트 추출 + 간접 인젝션
-ssh ccc@10.20.30.80 << 'ENDSSH'
+ssh 6v6-web << 'ENDSSH'
 python3 << 'PYEOF'
 import json, urllib.request
 
@@ -318,7 +318,7 @@ curl -s "http://10.20.30.200:8003/evidence?limit=5" | python3 -m json.tool | hea
 ### 6.1 적대적 입력 강건성
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'
+ssh 6v6-web << 'ENDSSH'
 python3 << 'PYEOF'
 import json, urllib.request
 
@@ -379,7 +379,7 @@ ENDSSH
 
 ```bash
 # 기말 종합 보고서 자동 생성
-ssh ccc@10.20.30.80 << 'ENDSSH'
+ssh 6v6-web << 'ENDSSH'
 python3 << 'PYEOF'
 from datetime import datetime
 

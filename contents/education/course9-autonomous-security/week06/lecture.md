@@ -181,7 +181,7 @@ Nonce mining은 블록 해시가 특정 조건(난이도)을 만족하는 nonce 
 
 ```bash
 # bastion 서버 접속
-ssh ccc@10.20.30.201
+ssh 6v6-bastion
 ```
 
 ```bash

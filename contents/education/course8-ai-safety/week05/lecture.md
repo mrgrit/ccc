@@ -126,7 +126,7 @@ LLM의 출력이 안전하고 의도된 범위 내에 있도록 제한하는 메
 > **실전 활용**: AI 보안 판단의 근거 설명, 규제 요구사항(설명 가능성) 충족, 보안 분석관의 AI 결과 신뢰도 향상에 활용한다
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'
+ssh 6v6-web << 'ENDSSH'
 python3 << 'PYEOF'
 import re
 
@@ -208,7 +208,7 @@ curl -s http://10.20.30.200:11434/v1/chat/completions \
 ### 3.1 유해성 분류기
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'
+ssh 6v6-web << 'ENDSSH'
 python3 << 'PYEOF'
 import re
 
@@ -254,7 +254,7 @@ ENDSSH
 ### 3.2 PII 마스킹
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'
+ssh 6v6-web << 'ENDSSH'
 python3 << 'PYEOF'
 import re
 
@@ -337,7 +337,7 @@ curl -s http://10.20.30.200:11434/v1/chat/completions \
 ### 5.1 전체 파이프라인 구현
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'
+ssh 6v6-web << 'ENDSSH'
 python3 << 'PYEOF'
 import re, json, urllib.request
 
@@ -424,7 +424,7 @@ ENDSSH
 
 ```bash
 # web 서버에서 필터 우회 실험 Python 스크립트 실행
-ssh ccc@10.20.30.80 << 'ENDSSH'
+ssh 6v6-web << 'ENDSSH'
 python3 << 'PYEOF'
 import re
 
