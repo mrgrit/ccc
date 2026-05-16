@@ -427,8 +427,8 @@ GOVERN(거버넌스) → MAP(매핑) → MEASURE(측정) → MANAGE(관리)
 > **실전 활용**: AI 서비스의 보안 요구사항 정의, Red Teaming 수행, AI 안전 가이드라인 수립에 활용한다
 
 ```bash
-# bastion 서버에 접속
-ssh ccc@10.20.30.201
+# bastion 컨테이너 에 접속 (ProxyJump)
+ssh 6v6-bastion
 ```
 
 ```bash
