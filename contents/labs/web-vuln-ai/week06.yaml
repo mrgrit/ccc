@@ -824,3 +824,68 @@ steps:
 
     '
   script: ''
+- order: 100
+  instruction: '[Multi-task] 인증/세션 5단계 통합 — 로그인 분석 → 브루트포스 → 비번 정책 → 토큰 엔트로피 → 세션 고정.'
+  bastion_prompt: |
+    인증/세션 평가 5작업을 한 흐름의 chain 으로 수행해줘.
+
+    1) [로그인 메커니즘 분석] curl -sI -X POST {{WEB_IP}}:3000/rest/user/login -H 'Content-Type:
+       application/json' -d '{"email":"test","password":"test"}' 의 응답 시간 + 응답 body + Set-Cookie +
+       rate-limit 헤더 (X-RateLimit-*) 점검 표. JWT vs Session Cookie 의 식별. OWASP A07 + CWE-287 매핑.
+
+    2) [브루트포스 시뮬] for pw in admin admin123 password Welcome1 Pass@2024; do curl -s -X POST ...; done 의
+       5 후보 spray + 응답 시간 측정 (유사 시간 → user enum 가능 신호). fail2ban / account lockout 동작 여부
+       (5회 연속 401 후 의 403 / 429). MITRE T1110.003 매핑.
+
+    3) [비번 정책 검증] curl -s -X POST {{WEB_IP}}:3000/api/Users -d '{"email":"a@b.c","password":"1"}'
+       의 weak password (1글자, 숫자만, 사전 단어) 시도 → 응답 (200 통과 / 400 차단 + message). NIST 800-63B
+       의 최소 정책 (8글자+, 사전 단어 차단, leaked password 차단) 대비 표. CWE-521 매핑.
+
+    4) [세션 토큰 엔트로피] curl -s -c /tmp/c1.txt {{WEB_IP}}:3000/login → curl -s -c /tmp/c2.txt → ...
+       의 10 토큰 수집 + python3 -c 'import math, collections; t=open("/tmp/tokens").readlines();
+       freq=collections.Counter("".join(t)); H=-sum((f/sum(freq.values()))*math.log2(f/sum(freq.values()))
+       for f in freq.values()); print(f"Shannon: {H:.2f} bits/char")' 의 엔트로피 계산. JWT (HS256 + RSA SK)
+       의 의사 엔트로피 분석. CWE-330 + CWE-331 매핑.
+
+    5) [세션 고정 + Session ID 갱신] curl -s -b "session=ATTACKER_FIX_ID" {{WEB_IP}}:3000/login -d '{"email":
+       "victim@x", "password":"correct"}' 후 응답 의 Set-Cookie 에 새 session ID 가 발급되는지 확인 (Cookie
+       Rotation 적용 여부). 로그인 성공 시 session 재발급 안 되면 Session Fixation 가능. CWE-384 매핑.
+
+    마지막에 5단계 × (인증/세션 표면 / 발견 finding / 위험 등급 / 표준 (NIST 800-63B) / 권장 정책 / 즉시 적용
+    여부) 의 5×6 매트릭스 + H1 disclosure 5 finding + 권장 정책 stack (1. 비번 NIST 정책 2. account lockout
+    5회 / 15분 3. JWT secure secret 32+ byte 4. Session rotation on auth / privilege change 5. SameSite=Strict +
+    Secure + HttpOnly cookie 6. MFA TOTP / WebAuthn) 출력.
+  hint: 인증/세션 5 표면 chain. NIST 800-63B 표준 대비 + Session rotation 가 핵심.
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: '[통합] 인증/세션 5단계 — 로그인/브루트/비번정책/엔트로피/세션고정. OWASP A07 + CWE-287/330/384/521 + MITRE T1110 매핑 + NIST 800-63B + 6 layer 정책.'
+      success_criteria:
+      - 5 단계 모두 실행
+      - 비번 spray 5 후보 시도
+      - Shannon 엔트로피 계산 명령 포함
+      - NIST 800-63B 정책 대비
+      - Session rotation 검증
+      - 5×6 매트릭스 + 6 layer 정책
+      acceptable_methods:
+      - bastion 의 multi-stage planning
+      - curl + python3 + 통계 표준
+      - fail2ban / wallarm 등 대체 가능
+      - NIST 800-63B / OWASP ASVS 4.0 표준
+      negative_signs:
+      - 3 단계 이하 만 수행
+      - 비번 후보 2개 이하
+      - 엔트로피 계산 누락
+      - NIST 표준 대비 누락
+      - 매트릭스 6 컬럼 미만
+  target_vm: attacker
+  risk_level: low
+  answer: |
+    🤖 위 bastion_prompt 그대로. 인증/세션 5 표면 + 5×6 매트릭스 + NIST 정책.
+  answer_detail: |
+    IAM Engineer 페르소나 — 인증/세션 5 표면 chain. NIST 800-63B 표준 대비 + 6 layer 정책 권고.
+  script: ''
