@@ -1010,3 +1010,62 @@ steps:
   answer_detail: |
     SYN 스캔은 sudo 필요. ACK 는 stateful firewall 탐지용. ATT&CK Recon 매핑이 보고서 차별점.
   script: ''
+- order: 100
+  instruction: '[Multi-task] 포트스캐닝 5단계 통합 — TCP Connect → SYN → ACK 방화벽 → 버전/OS → NSE script.'
+  bastion_prompt: |
+    포트 스캐닝의 5 가지 핵심 기법을 한 흐름의 평가로 수행해줘.
+
+    1) [TCP Connect 스캔] nmap -sT --top-ports 1000 {{WEB_IP}} 의 결과로 open / closed / filtered 의 포트
+       카운트 + open 포트 목록을 정리해줘. 권한 없이 가능한 가장 기본적인 스캔. PTES Stage 2 매핑.
+
+    2) [SYN 스텔스 스캔] sudo nmap -sS -p- -T4 {{WEB_IP}} 로 65535 포트 전체 범위 스캔 (--max-rate 500 으로
+       속도 제한). 응답 패턴 (SYN+ACK vs RST) 의 의미 + Connect 와 의 차이 (3-way handshake 미완료) 를 정리.
+       MITRE T1046 매핑.
+
+    3) [ACK 방화벽 매핑] nmap -sA -p 22,80,443,8080 {{SECU_IP}} 의 unfiltered / filtered 분류로 stateful
+       방화벽 규칙 의 inference. allow-list / deny-list / port-knocking 의 추정 표를 만들어줘. MITRE T1046 매핑.
+
+    4) [서비스 버전 + OS] sudo nmap -sV -O -p OPEN_PORTS {{WEB_IP}} 로 각 포트 의 서비스 (Apache/Node/SSH)
+       + 버전 + OS fingerprint (Linux 5.x / Windows / FreeBSD) 의 응답 신뢰도 (90%+ 만 보고) 를 표로 정리.
+       MITRE T1592.002 매핑.
+
+    5) [NSE 자동화] nmap -sC --script "default and not intrusive" {{WEB_IP}} 의 NSE 기본 스크립트 결과 +
+       --script vuln 으로 알려진 CVE 후보 (예) http-shellshock, smb-vuln-ms17-010) 의 탐지 결과를 정리해줘.
+       Wazuh 룰 ID 후보 도 명시. MITRE T1595.002 매핑.
+
+    마지막에 5단계 × (기법 / nmap 옵션 / 권한 / 결과 신뢰도 / IDS 탐지 가능성 1~5 / MITRE TTP) 의 5×6 매트릭스
+    + 1 페이지 스캔 결과 보고서 (Executive Summary 의 형식) 를 markdown 으로 출력해줘.
+  hint: 스캐닝 5 가지는 각각 다른 정보 + 다른 권한 + 다른 탐지 신호. 매트릭스가 핵심 산출물.
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: '[통합] 포트스캐닝 5단계 — Connect/SYN/ACK/sV+OS/NSE. PTES Stage 2 + MITRE T1046/T1592/T1595 매핑 + 5×6 매트릭스.'
+      success_criteria:
+      - 5 단계 모두 실행 (Connect / SYN / ACK / sV+O / NSE)
+      - sudo 가 필요한 스캔 (SYN, OS) 명확 표기
+      - MITRE T1046 또는 T1592 또는 T1595 중 2개 이상 매핑
+      - 5×6 매트릭스 (기법 × 옵션·권한·신뢰도·IDS·TTP)
+      - Executive Summary 형식 보고서
+      acceptable_methods:
+      - bastion 의 multi-stage planning
+      - nmap 5가지 옵션 정확
+      - rustscan / masscan 의 대체 가능 (해당 가용 시)
+      - markdown 매트릭스 + 보고서
+      negative_signs:
+      - 3 단계 이하 만 수행
+      - sudo 필요 표기 누락 (보안 위험)
+      - nmap 옵션 오류 (예) -sS sudo 없이 사용)
+      - 매트릭스 6 컬럼 미만
+      - Executive Summary 누락
+  target_vm: attacker
+  risk_level: low
+  answer: |
+    🤖 위 bastion_prompt 그대로. 5 스캔 기법 + 5×6 매트릭스 + Executive Summary.
+  answer_detail: |
+    Junior PenTester 페르소나 — 5 스캔 기법의 차이 (Connect/SYN/ACK/sV/NSE) 와 권한·신뢰도·탐지
+    trade-off 학습. 결과는 다음 주차 침투 단계의 입력.
+  script: ''

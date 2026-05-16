@@ -985,3 +985,60 @@ steps:
     Red Team 첫 주 정찰. RoE 동의서가 핵심 — 윤리·법적 근거 + 허용 범위 명시 후에야 실 정찰 시작.
     공격 표면 매트릭스가 다음 주차 입력 (w02 침투 단계).
   script: ''
+- order: 100
+  instruction: '[Multi-task] 정찰 5단계 통합 — Passive → Active → HTTP recon → API enum → 공격 표면 종합.'
+  bastion_prompt: |
+    Recon 첫 주의 핵심 5작업을 한 흐름으로 수행해줘.
+
+    1) [Passive recon] ping -c 3 {{WEB_IP}} + dig -x {{WEB_IP}} 의 ICMP/DNS 응답으로 호스트 활성 + 역방향 DNS
+       매핑 결과를 정리해줘. 시스템 응답 시간 (rtt min/avg/max) + DNS PTR 레코드를 표로 출력. PTES Stage 2 매핑.
+
+    2) [Active 포트 + 배너] nmap -sT -p 22,80,443,3000,8080 {{WEB_IP}} 의 결과 + nc -nv {{WEB_IP}} 3000 의 배너
+       그래빙을 합쳐 host × port × banner 표를 만들어줘. PTES Stage 2 + MITRE T1046 매핑.
+
+    3) [HTTP/웹 핑거프린팅] curl -sI {{WEB_IP}}:3000 의 헤더 (Server, X-Powered-By, X-Frame-Options) +
+       curl -s {{WEB_IP}}:3000/robots.txt + curl -s {{WEB_IP}}:3000 | grep -i 'meta\|generator' 로 기술
+       스택 (Express/Angular/Node 버전) 을 식별하고 표로 정리. MITRE T1592.002 매핑.
+
+    4) [API enum] curl -s {{WEB_IP}}:3000/api/Products | python3 -c 'import json,sys; d=json.load(sys.stdin);
+       print(len(d.get("data",[])), "products")' + curl {{WEB_IP}}:3000/rest/admin/application-version 으로
+       제품 개수 + 앱 버전 정보를 수집. /ftp /api /rest 경로의 응답 표도 추가. MITRE T1595.003 매핑.
+
+    5) [공격 표면 종합 + RoE] 1~4 결과를 합쳐 (자산 / 서비스 / 버전 / 알려진 CVE 후보 / 공격 가능성 1~5) 의 5×5
+       공격 표면 매트릭스를 만들고, Red Team RoE (Rules of Engagement) 6 항목 (Scope / 시간대 / 허용 도구 /
+       금지 도구 / 보고선 / 응급 정지 조건) 을 markdown 으로 정리해줘. 다음 주차 w02 침투 단계의 입력 자료가 됨.
+       PTES Pre-engagement + Stage 2 매핑.
+  hint: Recon 첫 주는 RoE 동의 → Passive → Active → HTTP → API → 공격 표면 종합. 실 공격은 다음 주차.
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: '[통합] 정찰 5단계 — Passive/Active/HTTP/API/공격표면+RoE. PTES Pre+Stage 2 + MITRE T1046/T1592/T1595 매핑 + 5×5 매트릭스 + 6 RoE 항목.'
+      success_criteria:
+      - 5 단계 모두 실행
+      - ping + nmap + curl + nc 의 4 표준 도구 사용
+      - MITRE T1046 또는 T1592 또는 T1595 중 2개 이상 매핑
+      - 5×5 공격 표면 매트릭스
+      - RoE 6 항목 (Scope/시간/허용/금지/보고/응급정지)
+      acceptable_methods:
+      - bastion 의 multi-stage planning
+      - ping / nmap / curl / nc / dig / python3 표준
+      - whatweb / wappalyzer CLI 대체 가능
+      - markdown 매트릭스 + RoE 표
+      negative_signs:
+      - 3 단계 이하 만 수행
+      - 도구 2종 이하
+      - RoE 4 항목 이하
+      - 매트릭스 5×5 미만
+      - PTES/MITRE 매핑 누락
+  target_vm: attacker
+  risk_level: low
+  answer: |
+    🤖 위 bastion_prompt 그대로. Recon 5단계 + 공격 표면 매트릭스 + RoE 6 항목.
+  answer_detail: |
+    Red Team 신입 페르소나 — 첫 주의 정찰 chain. RoE 동의 → Passive/Active recon →
+    HTTP/API 핑거프린팅 → 공격 표면 종합. 다음 주차 의 입력.
+  script: ''
