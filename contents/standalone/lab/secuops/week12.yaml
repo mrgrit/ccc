@@ -522,7 +522,21 @@ steps:
 
   - order: 5
     instruction: |
-      ## 🎯 MISSION — Stream Connector 설계 (OpenCTI → CDB list 자동 sync)
+      ## 🎯 MISSION — Stream Connector 설계 — OpenCTI → CDB list 자동 sync + W13/step3
+      연결
+
+      W12 step 4 의 *수동 CDB list* 를 *자동 sync* 로 발전. 30 분 polling Python
+      Connector. **W13/step3 의 *production 변형* 의 *원형*** — diff sync / error
+      handling / config 분리 가 W13 에서 본격.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **Stream Connector** = OpenCTI 의 *주기적 변경 사항* 을 외부 시스템 sync
+      - **pycti SDK** = `pip install pycti==6.0.0` 후 import — OpenCTI GraphQL API 의
+        Python wrapper
+      - **30분 polling** = OpenCTI 의 STIX update 주기 (1분 가까이 polling 시 부하)
+      - **W12 vs W13 차이**: W12 = *최소 골격*. W13 = *production* (diff / error /
+        config / logging)
 
       ## 💻 산출물
 
@@ -558,17 +572,68 @@ steps:
               time.sleep(1800)   # 30분
       ```
 
+      ## 💻 검증 명령 (코드 syntax + 실 실행 시뮬)
+
+      ```bash
+      # 위 코드 syntax 검증 (pycti 미설치 시 dummy mock 으로 대체)
+      ssh 6v6-bastion bash -s <<'BASH'
+      cat > /tmp/w12-stream.py <<'PY'
+      import os, time
+
+      def list_indicators_mock():
+          # pycti.OpenCTIConnectorHelper.api.indicator.list() 의 mock
+          return [
+              {"pattern": "[ipv4-addr:value = '192.168.99.99']", "labels": ["apt28-c2"]},
+              {"pattern": "[ipv4-addr:value = '1.2.3.4']", "labels": ["emotet"]},
+          ]
+
+      def sync_cdb():
+          indicators = list_indicators_mock()
+          lines = []
+          for ind in indicators:
+              if "ipv4-addr:value" in ind["pattern"]:
+                  ip = ind["pattern"].split("'")[1]
+                  labels = ",".join(ind.get("labels", []))
+                  lines.append(f"{ip}: {labels}")
+          with open("/tmp/cdb-w12-test", "w") as f:
+              f.write("\n".join(lines))
+          print(f"synced {len(lines)} entries")
+
+      sync_cdb()
+      PY
+      python3 /tmp/w12-stream.py
+      cat /tmp/cdb-w12-test
+      BASH
+      ```
+
       ## 📋 확인 사항
 
-      - Python Connector 골격
+      - Python Connector 골격 (main / list / convert / write / makelist / polling)
       - OpenCTI API 사용 (pycti SDK)
       - CDB list 갱신 + 컴파일 + reload
-      - 30분 polling
+      - 30 분 polling (W13/step3 의 *production* 보강 차이)
+      - syntax 검증 + mock 실행 결과 (`synced N entries` + CDB 형식 출력)
 
       ## 💡 왜 이걸 하는가?
 
-      자동 sync 의 표준 패턴 — 30분 마다 OpenCTI 의 indicator → CDB list 갱신.
-    hint: 'Python pycti + indicator list + CDB 갱신 + reload'
+      자동 sync 의 *표준 패턴* — 30 분 마다 OpenCTI 의 indicator → CDB list 갱신.
+      W12 의 *최소 골격* 학습 → W13 의 *production* 확장. *분리 학습* 의 의미.
+
+      ## 🔍 결과 해석
+
+      - **정상**: syntax OK + `synced 2 entries` + CDB 형식 출력
+      - **pycti not found**: 정상 — mock 사용. 실 OpenCTI 환경 에서 `pip install
+        pycti==6.0.0`
+      - **W13 와 비교**: W12 = 최소 골격 (4 단계), W13 = production (6 핵심 요소 +
+        diff + error)
+
+      ## 비정상 시 대응
+
+      - **syntax error**: Python indentation 또는 quote escape
+      - **CDB write 권한**: 실 적용 시 `/var/ossec/etc/lists/` root 소유 — wazuh
+        user 또는 sudo
+    hint: |
+      Python Connector 최소 골격 + mock 실행 + W13/step3 production 과 차이.
     category: integration
     points: 15
     answer: |
@@ -609,7 +674,21 @@ steps:
 
   - order: 6
     instruction: |
-      ## 🎯 MISSION — R/B/P known IOC 매칭 시뮬
+      ## 🎯 MISSION — R/B/P known IOC 매칭 시나리오 + Suricata 4751 → CDB 100100
+      → level 10 격상 + Purple 자동 대응
+
+      W12 step 4 의 CDB list + step 5 의 Stream Connector 가 적용된 후 *실 동작*
+      시나리오. attacker 의 outbound 통신 → Suricata raw alert → Wazuh CDB 매칭
+      → level 격상 → Purple 자동 대응 의 *완전 자동화* 시연.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **룰 chain** = Wazuh 의 *parent → child* 매칭. `<if_sid>4751</if_sid>` = 4751
+        이 발생 한 후 만 100100 매칭 시도
+      - **srcip vs dstip** = CDB 매칭 의 *2 방향*. src = attacker 측 (alert),
+        dst = victim 측 (alert)
+      - **level 3 → 10 격상** = 단순 outbound (3) → known C2 매칭 (10) → 분석가
+        즉시 대응 우선순위 ↑
 
       ## 💻 시뮬
 
@@ -636,17 +715,48 @@ steps:
       EOF
       ```
 
+      ## 💻 검증 명령 (시뮬 trigger + Suricata alert + Wazuh 매칭)
+
+      ```bash
+      # Red — attacker 의 outbound 통신 시뮬 (unreachable IP, 단 packet 발생)
+      ssh 6v6-attacker 'timeout 3 curl -s http://192.168.99.99/ 2>&1 | head -2; echo "exit: $?"'
+
+      # Suricata eve.json 의 alert 누적
+      ssh 6v6-ips 'sudo tail -50 /var/log/suricata/eve.json 2>/dev/null | jq -r "select(.event_type==\"alert\") | .alert.signature" 2>/dev/null | tail -3'
+
+      # Wazuh alerts.json 의 IOC 매칭 (CDB list 적용 후)
+      ssh 6v6-siem 'tail -100 /var/ossec/logs/alerts/alerts.json 2>/dev/null | jq -r "select(.rule.id == \"100100\" or .rule.id == \"100101\") | .rule" 2>/dev/null | head -10'
+      ```
+
       ## 📋 확인 사항
 
-      - Red 시뮬 (실 차단 X)
-      - 룰 chain (4751 → 100101)
-      - level 10 격상
-      - Purple 권장
+      - Red 시뮬 (curl timeout — outbound packet 만 발생, 차단 X)
+      - Suricata eve.json 에 alert event
+      - 룰 chain (4751 Suricata Alert → 100101 CDB dstip 매치)
+      - level 10 격상 alert
+      - Purple 권장 (MITRE / OpenCTI attribution / Active Response)
 
       ## 💡 왜 이걸 하는가?
 
-      CTI 통합의 핵심 효과 — Suricata alert 의 level 3 → CDB 매칭 → level 10 격상.
-    hint: 'Red IOC IP → Suricata 4751 → CDB 100100 → level 10'
+      CTI 통합 의 *핵심 효과 시연* — Suricata alert level 3 → CDB 매칭 → level 10
+      격상 → 분석가 *즉시 대응*. 본 시나리오 가 *W11-W14 의 모든 학습* 의 *통합
+      증명*.
+
+      ## 🔍 결과 해석
+
+      - **정상 (CDB 적용 후)**: 4751 alert + 100101 매칭 + level 10
+      - **CDB 매칭 없음**: step 4 의 list 적용 안 됨 또는 IP 가 list 에 없음
+      - **Suricata alert 0**: 본 환경 의 outbound rule (4751) 미정의
+
+      ## 비정상 시 대응
+
+      - **curl timeout 없음** — 192.168.99.99 가 라우팅 가능 (의도와 반대). 다른
+        unreachable IP 사용
+      - **CDB 매칭 안 됨** — wazuh-control reload 후 다시 시도 (lists 변경 즉시 적용
+        X)
+    hint: |
+      Red curl 시뮬 + Suricata 4751 → CDB 100101 dstip 매칭 → level 10 격상.
+      W11-W14 통합 증명.
     category: redblue
     points: 20
     answer: |
@@ -680,23 +790,94 @@ steps:
 
   - order: 7
     instruction: |
-      ## 🎯 MISSION — W12 종합 보고서
+      ## 🎯 MISSION — W12 종합 보고서 + W13 (OpenCTI 운영) 준비도
 
-      ## 💻 산출물
+      W12 의 마무리 = W13 (Connector 활성 + enrichment + Stream Connector
+      production) 의 *시작 준비*. 8 섹션 + 학습 gap + W13 준비도.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - W12 → W13 의 전환 — W12 = *도입 + 기본 골격*, W13 = *production 운영 + 자동
+        sync + UI workflow*
+      - 본 보고서 의 *W13 준비도* = W13 의 7 step 의 *사전 학습* 점검표
+
+      ## 💻 산출물 (8 섹션 마크다운)
 
       ```markdown
-      # 6v6 W12 OpenCTI 도입 보고서
+      # 6v6 W12 OpenCTI 도입 종합 보고서
 
-      ## 1. STEP 1-6 결과 (6 row 표)
-      ## 2. 6v6 운영 갭 (OpenCTI / MISP / CDB list 미설치)
-      ## 3. STIX 2.1 4 객체 + relationship
-      ## 4. TAXII 2.1 client/server + 5 source
-      ## 5. CDB list + 룰 100100 + MITRE 매핑
-      ## 6. R/B/P 시뮬 — IOC 매칭 → level 10 격상
-      ## 7. W13 (OpenCTI 운영) 준비도
-      ## 8. 본인 학습 gap
+      ## 1. Executive Summary
+      - 본 주차: OpenCTI 도입 계획서 + STIX 2.1 + TAXII + Wazuh CDB + Stream
+        Connector 골격 + R/B/P 자동화
+      - 핵심 산출: docker-compose 6 컨테이너 / STIX 4 객체 / CDB list 5 entry /
+        룰 100100 / Stream Connector mock
+      - 다음 주차: W13 — OpenCTI 운영 (Connector 활성 + enrichment + production)
+
+      ## 2. STEP 1 — OpenCTI 도입 계획서
+      - 6 컨테이너 + 자원 요구 (8GB RAM / 50GB disk)
+      - 6v6 호스트 검증 (CPU 4 / RAM 15Gi / 가용 10Gi) → 도입 가능 단 별 host 권장
+
+      ## 3. STEP 2 — STIX 2.1 4 객체
+      - Indicator (단일 IOC + pattern) / Malware / Threat Actor / Attack Pattern
+      - JSON 검증 + ATT&CK 매핑
+
+      ## 4. STEP 3 — TAXII 2.1 client/server
+      - 4 endpoint 표준 + 5 외부 source (MISP/Anomali/Recorded/OTX/URLhaus)
+      - STIX (데이터) vs TAXII (전송) 분리
+
+      ## 5. STEP 4 — Wazuh CDB list + 룰 100100
+      - 5 entry list + 룰 5 핵심 (if_sid + list + level + MITRE + description)
+      - 실 적용 (ossec-makelists + reload)
+
+      ## 6. STEP 5 — Stream Connector 골격
+      - Python mock + 30 분 polling
+      - W13 의 production 와 비교 (diff sync / error handling)
+
+      ## 7. STEP 6 — R/B/P IOC 매칭
+      - 4 hop pipeline (Suricata 4751 → CDB 100101 → level 10)
+      - Purple 자동 대응 (Active Response / dashboard / OpenCTI context)
+
+      ## 8. 학습 gap + W13 준비도
+
+      ### 학습 gap (W12)
+      - [ ] OpenCTI 실 docker-compose 배포 경험 (별 host)
+      - [ ] STIX 2.1 의 *35 객체* 중 4 외 (Identity / Tool / Course of Action)
+      - [ ] TAXII 2.1 의 *envelope + pagination* 처리
+      - [ ] pycti SDK 의 *production config* (.env + secrets)
+
+      ### W13 (OpenCTI 운영) 준비도
+      - **4 external Connector** 사전 학습 (MITRE / OTX / URLhaus / AbuseIPDB)
+      - **3 enrichment Connector** (VT / GeoIP / WHOIS) API key 발급 시뮬
+      - **6 UI 화면** (Workbench / Investigation / Knowledge / Observables / Threats / Connectors)
+      - **MITRE Navigator** layer json 형식 학습
+      - **운영 사고 3** (noise / retention / rate) 사전 인지
       ```
-    hint: 마크다운 1페이지
+
+      ## 💻 검증 명령 (보고서 구조 검증)
+
+      ```bash
+      ssh 6v6-bastion 'echo "8 sections W12"; for i in 1 2 3 4 5 6 7 8; do echo "Section $i"; done | wc -l'
+      ```
+
+      ## 📋 확인 사항
+
+      - 8 섹션 모두 작성
+      - Executive Summary 의 *수치* (6 컨테이너 / STIX 4 / CDB 5 / 룰 100100)
+      - 학습 gap *4+ checkbox*
+      - W13 준비도 *5+ 항목*
+
+      ## 💡 왜 이걸 하는가?
+
+      W12 의 *도입 학습* 마무리 + W13 의 *production 운영* 진입 준비. 8 섹션 의
+      구조 적 정리 가 *학습 완성도* 의 척도.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 8 섹션 + 4 gap + 5 W13 준비
+      - **W13 준비도 누락**: 가장 흔한 실수 — self-assessment 핵심
+    hint: |
+      8 섹션 + 학습 gap 4+ + W13 (OpenCTI 운영) 준비도 5+. 도입 → 운영 의 진입
+      준비.
     category: synthesis
     points: 8
     answer: |
