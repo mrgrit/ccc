@@ -237,9 +237,21 @@ steps:
 
   - order: 3
     instruction: |
-      ## 🎯 MISSION — config.xml RuleGroup 작성 (Include + Exclude)
+      ## 🎯 MISSION — sysmon config.xml RuleGroup 설계 (Include + Exclude) + XML 검증
 
-      lecture §4 — 6v6 환경 적합 config.xml 설계.
+      sysmon 의 *효과* = config 설계 의 *품질*. *너무 적은* include → false negative.
+      *너무 많은* include → noise 폭증. 6v6 환경 적합 의 *balance config* 작성.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **RuleGroup** = config 의 최상위 — `groupRelation="or"` 면 *하나라도 매치*
+        시 event 발생
+      - **onmatch="include"** = 조건 *매치 시 발생* (whitelist). 표준 — 의심 패턴
+        만 잡기
+      - **onmatch="exclude"** = 조건 *매치 시 무시* (blacklist). noise 제거용
+      - **condition** = `contains` / `begin with` / `end with` / `is` / `image` 등
+        매칭 연산자
+      - **schemaversion** = sysmon-config 의 표준 schema. 4.40 가 모던
 
       ## 💻 산출물
 
@@ -286,15 +298,70 @@ steps:
       </Sysmon>
       ```
 
+      ## 📋 Include 패턴 의 *MITRE ATT&CK 매핑*
+
+      | 패턴 | ATT&CK ID | 의미 |
+      |------|-----------|------|
+      | `base64` | T1027.002 | obfuscated payload |
+      | `wget http` / `curl http` | T1105 | external tool download |
+      | `/dev/shm/` | T1564 | hide in tmpfs |
+      | `nc -e` | T1059.004 | reverse shell |
+      | `bash -i` | T1059.004 | interactive reverse shell |
+      | `sshd` 부모 | T1021.004 | lateral via ssh |
+      | `4444/8080/9999` | T1090 | C2 common ports |
+      | `.php / .jsp` | T1505.003 | web shell |
+      | `authorized_keys` | T1098.004 | persistence |
+
+      ## 📋 Exclude 패턴 의 *근거*
+
+      | 패턴 | 근거 |
+      |------|------|
+      | `systemd` | 시스템 daemon — 모든 process 의 ultimate parent. 매번 발생 |
+      | `cron` | cron daemon — 정기 실행, alert 0 |
+      | `snapd` | Ubuntu snap manager — 정기 자동 refresh, noise |
+
+      ## 💻 XML 검증 명령
+
+      ```bash
+      # 위 config 를 /tmp/sysmon-config.xml 저장 후 xmllint 검증
+      python3 -c "
+      import xml.etree.ElementTree as ET
+      tree = ET.parse('/tmp/sysmon-config.xml')
+      root = tree.getroot()
+      print(f'root: {root.tag}, schema: {root.get(chr(34)+chr(115)+chr(99)+chr(104)+chr(101)+chr(109)+chr(97)+chr(118)+chr(101)+chr(114)+chr(115)+chr(105)+chr(111)+chr(110)+chr(34))}')
+      for rg in root.iter('RuleGroup'):
+          print(f'  RuleGroup relation: {rg.get(chr(34)+chr(103)+chr(114)+chr(111)+chr(117)+chr(112)+chr(82)+chr(101)+chr(108)+chr(97)+chr(116)+chr(105)+chr(111)+chr(110)+chr(34))}')
+      "
+      ```
+
       ## 📋 확인 사항
 
-      - Include: base64 / wget / curl / /dev/shm / nc -e / bash -i / sshd 부모 / 4444/8080/9999 / .php/.jsp/authorized_keys
-      - Exclude: systemd / cron / snapd noise
+      - Include 9 패턴 + ATT&CK 매핑 표 작성
+      - Exclude 3 패턴 + 근거 표 작성
+      - XML 검증: schema 4.40 + RuleGroup relation=or
+      - balance 인지: include 9 (의심 only) + exclude 3 (noise off)
 
       ## 💡 왜 이걸 하는가?
 
-      6v6 환경에 적합 + APT TTP 7 패턴 cover. noise exclude 로 alert flood 차단.
-    hint: 'RuleGroup or + ProcessCreate/NetworkConnect/FileCreate + include + exclude'
+      sysmon 의 *효과* = config 의 *품질*. 6v6 환경 적합 + APT TTP 9 패턴 cover +
+      noise exclude 의 *balance* 가 운영 품질. *SwiftOnSecurity sysmon-config*
+      template 도 참고 (1500+ 라인) — 본 lab 은 *간단 시작* 위 9+3.
+
+      ## 🔍 결과 해석
+
+      - **정상**: Include 9 + Exclude 3 + XML 검증 PASS
+      - **Include 100+**: 너무 많음 — noise 폭증 위험. balance 검토
+      - **Exclude 0**: noise filtering 누락 — alert flood 위험
+
+      ## 비정상 시 대응
+
+      - **xmllint 또는 ET parse error** — XML quote escape 또는 tag mismatch.
+        `python3 -c "import xml.etree.ElementTree as ET; ET.parse('file')"` 로 line
+        확인
+      - **schemaversion mismatch** — sysmon-config 가 4.40 외 schema 사용. sysmon
+        -accepteula 시 *호환 schema* 자동 변환
+    hint: |
+      Include 9 (ATT&CK 매핑) + Exclude 3 (noise) + XML 검증. balance 의 의미 인지.
     category: configuration
     points: 18
     answer: |
