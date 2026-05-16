@@ -244,9 +244,24 @@ steps:
 
   - order: 3
     instruction: |
-      ## 🎯 MISSION — Python Stream Connector (CDB sync)
+      ## 🎯 MISSION — Python Stream Connector (OpenCTI → Wazuh CDB sync) 작성
 
-      lecture §3 의 Python 구조 + diff sync 보강.
+      OpenCTI 의 IOC (특히 IPv4 indicator) 를 30 분 주기 로 Wazuh 의 CDB list
+      파일로 sync 하는 **Python Stream Connector** 를 작성한다. Wazuh 가 alert 에
+      자동 매칭 (rule.cdb 사용) → IOC 매칭 alert 격상 의 *자동화 핵심*.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **Stream Connector** = OpenCTI 의 *변경 사항* 을 실시간/주기 적 으로 *외부
+        시스템* (Wazuh / Splunk / ElasticSearch / Sentinel) 에 전송
+      - **CDB list** = Wazuh 의 *static lookup table* (`/var/ossec/etc/lists/*`).
+        rule 에서 `<list>opencti-iocs</list>` 로 참조 → O(1) 매칭
+      - **`ossec-makelists`** = CDB 의 text 형 → binary 변환 (속도). 갱신 후 반드시
+        호출
+      - **diff sync** = *기존 set* 과 *신규 set* 의 차이만 갱신 — 전체 재기록 보다
+        효율적, audit log 도 명확
+      - **30 분 polling** = OpenCTI 의 STIX update 주기 와 일치 (실시간 X — STIX
+        설계 가 분/시간 단위)
 
       ## 💻 산출물
 
@@ -296,7 +311,71 @@ steps:
               helper.log_error(f"sync failed: {e}")
           time.sleep(1800)
       ```
-    hint: 'pycti + diff sync + error handling + 30분 polling'
+
+      ## 📋 코드 의 6 핵심 요소 (학생 확인 포인트)
+
+      1. `indicator.list(filters=[...], first=10000)` — STIX filter 의 표준 패턴
+      2. `valid_from` + `indicator_types=malicious-activity` — *유효 + 악성* 만
+      3. CDB diff: `existing` set vs `new_iocs` — *변경* 만 적용
+      4. `pattern.split("'")[1]` — STIX pattern `[ipv4-addr:value = '1.2.3.4']` 의
+         IP 추출
+      5. `ossec-makelists` + `wazuh-control reload` — 적용 *순서* 중요 (makelist 먼저)
+      6. `time.sleep(1800)` + while loop — 30분 polling, OpenCTI 부담 적정
+
+      ## 💻 검증 명령 (코드 의 *구조* 검증 — pycti 미설치 환경)
+
+      ```bash
+      # 위 코드를 /tmp/stream_connector.py 로 저장 후 syntax 검증
+      ssh 6v6-bastion '
+        cat > /tmp/stream_connector.py <<PY
+      import os, time
+      from datetime import datetime, timedelta
+
+      def sync_to_wazuh():
+          cdb_path = "/var/ossec/etc/lists/opencti-iocs"
+          existing = set()
+          if os.path.exists(cdb_path):
+              with open(cdb_path) as f:
+                  existing = set(l.split(":")[0].strip() for l in f if l.strip())
+          new_iocs = ["1.2.3.4: opencti-test", "5.6.7.8: opencti-test"]
+          with open("/tmp/cdb-test", "w") as f:
+              f.write("\n".join(new_iocs))
+          print(f"synced {len(new_iocs)} (was {len(existing)})")
+
+      sync_to_wazuh()
+      PY
+        python3 -c "import py_compile; py_compile.compile(\"/tmp/stream_connector.py\")" && echo "syntax OK"
+        python3 /tmp/stream_connector.py
+        cat /tmp/cdb-test
+      '
+      ```
+
+      ## 📋 확인 사항
+
+      - 6 핵심 요소 모두 코드에 포함
+      - syntax 검증 OK
+      - 코드 의 *결정성* (같은 input → 같은 cdb-test) 확인
+      - diff sync 의 *2 단계* (read existing → write new) 인지
+
+      ## 💡 왜 이걸 하는가?
+
+      OpenCTI 의 IOC 가 Wazuh 의 alert 격상 으로 즉시 연결되어야 SOC 의 *T-1 추적*
+      가능. Stream Connector 가 없으면 분석가 가 *수동 lookup* — 평균 30 분 delay,
+      false negative 다수.
+
+      ## 🔍 결과 해석
+
+      - **정상**: syntax OK + 실행 시 `synced 2 (was 0)` + cdb-test 2 라인
+      - **`pycti not found`** — pip 미설치. 정상 — 본 step 은 *코드 구조* 학습
+        (실 OpenCTI 환경 에서 `pip install pycti==6.0.0`)
+
+      ## 비정상 시 대응
+
+      - **syntax error** — Python indentation 또는 quote escape. `python3 -m py_compile`
+        로 라인 번호 확인
+      - **CDB write 권한 거부** — `/var/ossec/etc/lists/` 는 root 소유. systemd
+        unit 으로 wazuh 가 실행 권장
+    hint: 'pycti + diff sync + error handling + 30분 polling. 6 핵심 요소 + syntax 검증'
     category: integration
     points: 15
     answer: |
