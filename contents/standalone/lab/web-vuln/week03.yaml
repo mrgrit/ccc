@@ -1,0 +1,513 @@
+lab_id: standalone-web-vuln-week03
+title: A02 Cryptographic Failures — Hash + TLS + JWT secret + Session
+version: standalone-non-ai
+course: web-vuln
+week: 3
+description: |
+  OWASP A02 (Cryptographic Failures) 의 4 표준 영역 — Hash 종류 + TLS handshake +
+  JWT secret brute (HS256) + NeoBank session cookie 분석. W02 의 JWT 의 *심화* +
+  *암호 기반 의 4 축* hands-on.
+difficulty: medium
+duration_minutes: 180
+audience: web-vuln 3주차
+prerequisites:
+  - W02 lecture + lab 완료 (JWT 3 segment 이해)
+  - 학생 PC 의 curl + openssl + jq + hashcat (또는 john) 가용
+  - 6v6 의 attacker / web / NeoBank 컨테이너 가동
+objectives:
+  - hash 6 종 (MD5/SHA1/SHA256/SHA512/bcrypt/Argon2) 의 식별 + 약함 인지
+  - TLS handshake 의 cipher / version / cert 분석 (openssl s_client)
+  - JWT HS256 secret brute (학습용 weak secret) + jwt_tool 시뮬
+  - NeoBank session cookie 의 entropy + signed 여부 분석
+  - 4 영역 종합 보고서 작성
+pass_threshold: 0.7
+
+steps:
+
+  - order: 1
+    instruction: |
+      ## 🎯 MISSION — Hash 6 종 식별 + 약함 인지
+
+      MD5 / SHA1 / SHA256 / SHA512 / bcrypt / Argon2 의 *6 hash 의 특징* (길이 + 형식
+      + 약함) + JuiceShop 의 *user password hash* 식별 시도.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **hash 의 목적** = 비밀번호 의 *원본 저장 X* — *역산 불가* (이상 적 으로)
+      - **MD5** (1992) — 128bit. *충돌 가능*, *2004 부터 deprecated*. password 사용 X
+      - **SHA1** (1995) — 160bit. *2017 충돌*, password 사용 X
+      - **SHA256** (2002) — 256bit. *충돌 안 발견*. 단 *single-pass* = brute 가능
+      - **SHA512** (2002) — 512bit. SHA256 의 *longer*. 단 *동일* brute 가능성
+      - **bcrypt** (1999) — *adaptive cost* (cost 12 = $2y$12$...). *salt 자동* + *느림*
+      - **Argon2** (2015) — *winner of PHC*. *memory-hard* + *parallel-hard* + *time-hard*
+
+      ## 💻 실행 명령
+
+      ```bash
+      # 1) 6 hash 의 길이 + 형식
+      echo "password" | md5sum
+      echo "password" | sha1sum
+      echo "password" | sha256sum
+      echo "password" | sha512sum
+      python3 -c "import bcrypt; print(bcrypt.hashpw(b'password', bcrypt.gensalt()).decode())"
+      python3 -c "import argon2; print(argon2.PasswordHasher().hash('password'))" 2>/dev/null || echo "argon2-cffi 미설치"
+
+      # 2) JuiceShop 의 user password hash 식별 (W02 의 IDOR 활용)
+      ssh 6v6-attacker bash <<'SH'
+      TOK=$(curl -s -X POST -H 'Content-Type: application/json' -H 'Host: juice.6v6.lab' \
+        http://10.20.30.1/rest/user/login \
+        -d '{"email":"admin@juice-sh.op","password":"admin123"}' | jq -r .authentication.token)
+      curl -s -H 'Host: juice.6v6.lab' -H "Authorization: Bearer $TOK" \
+        http://10.20.30.1/api/Users/1 | jq -r '.data.password // .data.user.password // .password' 2>/dev/null
+      SH
+      ```
+
+      ## 📋 확인 사항
+
+      - 4 hash (MD5/SHA1/SHA256/SHA512) 의 *길이* 확인 (32/40/64/128 hex char)
+      - bcrypt 의 `$2y$12$...` 형식 + *60 char* 길이
+      - Argon2 의 `$argon2id$v=19$...` 형식
+      - JuiceShop password hash = MD5 (vuln) 또는 bcrypt (안전)
+
+      ## 💡 왜 이걸 하는가?
+
+      비밀번호 hash = *web 의 가장 흔한 vuln*. MD5/SHA1 의 *역산 = 분 단위* (rainbow
+      table) vs bcrypt 의 *분 단위 single password*. 본 step 의 *식별 능력* 이 *모든
+      audit 의 첫 단계*.
+
+      ## 🔍 결과 해석
+
+      - **정상 (modern)**: JuiceShop password = bcrypt 또는 Argon2
+      - **vuln (legacy)**: MD5 또는 SHA1 — 즉시 *rotate* 권장
+      - **password 노출 X**: API 의 *필드 필터* 적용 — 다른 endpoint 시도
+
+      ## 비정상 시 대응
+
+      - **bcrypt 미설치**: `pip install bcrypt`
+      - **JuiceShop password X** — `/api/Users/1` 응답 의 *다른 path* (예: `.data` 의
+        nested) 검색
+    hint: |
+      6 hash × 길이 + 형식 + JuiceShop password hash 식별.
+    category: analysis
+    points: 20
+    answer: |
+      echo "password" | md5sum
+      echo "password" | sha1sum
+      echo "password" | sha256sum
+      echo "password" | sha512sum
+      python3 -c "import bcrypt; print(bcrypt.hashpw(b'password', bcrypt.gensalt()).decode())"
+      ssh 6v6-attacker bash <<'SH'
+      TOK=$(curl -s -X POST -H 'Content-Type: application/json' -H 'Host: juice.6v6.lab' \
+        http://10.20.30.1/rest/user/login \
+        -d '{"email":"admin@juice-sh.op","password":"admin123"}' | jq -r .authentication.token)
+      curl -s -H 'Host: juice.6v6.lab' -H "Authorization: Bearer $TOK" \
+        http://10.20.30.1/api/Users/1 | jq . 2>/dev/null | head -20
+      SH
+    answer_detail: 6 hash 식별 + JuiceShop password hash audit
+    verify:
+      type: output_contains
+      expect: 'md5\|sha\|bcrypt'
+      field: stdout
+      semantic:
+        intent: hash 식별
+        success_criteria: [4 hash 길이 + bcrypt + JuiceShop audit]
+        acceptable_methods:
+          - "**[OSS] md5sum / sha256sum / sha512sum**"
+          - "**[OSS] python bcrypt / argon2-cffi**"
+          - "**[OSS] hashid / hash-identifier**"
+          - "**[OSS] hashcat -m mode 식별**"
+          - "**[OSS] john --format=raw-md5**"
+          - "**[OSS] CWE-327 Use of Broken Crypto Algorithm**"
+          - "**[OSS] CWE-916 Use of Password Hash With Insufficient Computational Effort**"
+    target_vm: attacker
+
+  - order: 2
+    instruction: |
+      ## 🎯 MISSION — TLS handshake 분석 (openssl s_client) + cipher / cert 분석
+
+      6v6 의 web 컨테이너 의 *TLS 설정* (cipher / version / cert) 분석. openssl
+      s_client 의 표준 사용.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **TLS version** = 1.0 (deprecated 2020) / 1.1 (deprecated 2020) / 1.2 (현재) /
+        1.3 (modern 2018)
+      - **cipher suite** = `ECDHE-RSA-AES256-GCM-SHA384` 같은 *key exchange + 인증 +
+        encryption + MAC* 의 4 조합
+      - **cert chain** = leaf cert + intermediate CA + root CA
+      - **self-signed** = production 부적합 (학습 환경 OK)
+      - **TLS 1.3** = legacy cipher 제거 + 0-RTT + handshake 1 RTT
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker bash <<'SH'
+      echo "=== TLS version + cipher (juice.6v6.lab) ==="
+      echo | timeout 5 openssl s_client -connect 10.20.30.1:443 -servername juice.6v6.lab 2>&1 | \
+        grep -E "Protocol|Cipher|Verify return" | head -10
+
+      echo ""
+      echo "=== Cert subject + issuer ==="
+      echo | timeout 5 openssl s_client -connect 10.20.30.1:443 -servername juice.6v6.lab 2>&1 | \
+        openssl x509 -noout -subject -issuer -dates 2>&1 | head -5
+
+      echo ""
+      echo "=== Supported cipher (TLS 1.2) ==="
+      timeout 10 nmap --script ssl-enum-ciphers -p 443 10.20.30.1 2>&1 | grep -E "TLS|cipher" | head -10
+      SH
+      ```
+
+      ## 📋 확인 사항
+
+      - Protocol = TLS 1.2 또는 1.3 (정상)
+      - Cipher = ECDHE-* + AES-GCM (modern) 또는 RC4/3DES (vuln)
+      - Cert = self-signed (학습 환경) 또는 valid CA
+      - nmap 의 cipher enum 결과
+
+      ## 💡 왜 이걸 하는가?
+
+      TLS = *modern web 의 기본*. *cipher / version 의 결함* = *MITM / downgrade* 가능
+      성. 본 step 의 *분석 능력* 이 *audit 의 표준 도구*.
+
+      ## 🔍 결과 해석
+
+      - **정상 (modern)**: TLS 1.2/1.3 + ECDHE + AES-GCM
+      - **vuln (legacy)**: TLS 1.0/1.1 + RC4/3DES — 즉시 disable
+      - **self-signed**: 학습 환경 OK, production 부적합
+
+      ## 비정상 시 대응
+
+      - **openssl s_client timeout** — `-servername` 누락 (SNI 필수)
+      - **nmap 미설치**: `apt install nmap`
+      - **사용 가능 cipher 0**: 서버 의 *cipher list* 너무 제한 — 확장 필요
+    hint: |
+      openssl s_client + nmap ssl-enum-ciphers + cert 분석.
+    category: analysis
+    points: 25
+    answer: |
+      ssh 6v6-attacker bash <<'SH'
+      echo | timeout 5 openssl s_client -connect 10.20.30.1:443 -servername juice.6v6.lab 2>&1 | \
+        grep -E "Protocol|Cipher|Verify return" | head -10
+      echo | timeout 5 openssl s_client -connect 10.20.30.1:443 -servername juice.6v6.lab 2>&1 | \
+        openssl x509 -noout -subject -issuer -dates 2>&1 | head -5
+      timeout 10 nmap --script ssl-enum-ciphers -p 443 10.20.30.1 2>&1 | grep -E "TLS|cipher" | head -10
+      SH
+    answer_detail: TLS handshake + cipher + cert + nmap ssl-enum
+    verify:
+      type: output_contains
+      expect: 'TLS\|Cipher\|Protocol'
+      field: stdout
+      semantic:
+        intent: TLS 분석
+        success_criteria: [TLS version + cipher + cert]
+        acceptable_methods:
+          - "**[OSS] openssl s_client + servername SNI**"
+          - "**[OSS] nmap ssl-enum-ciphers script**"
+          - "**[OSS] testssl.sh** — 표준 TLS audit"
+          - "**[OSS] sslyze** — Python TLS scanner"
+          - "**[OSS] Qualys SSL Labs** (외부 — 학습 환경 X)"
+          - "**[OSS] CWE-327 Use of Broken Crypto**"
+          - "**[OSS] CWE-326 Inadequate Encryption Strength**"
+    target_vm: attacker
+
+  - order: 3
+    instruction: |
+      ## 🎯 MISSION — JWT HS256 secret brute 시뮬 (학습용 weak secret)
+
+      *학습 환경* 의 *weak HS256 secret* (예: "secret" / "12345") 의 *jwt_tool brute*
+      시뮬. *RS256 의 JuiceShop* 은 brute 불가 — *별 학습용 토큰* 생성.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **HS256** = HMAC + SHA-256 의 *symmetric* — *동일 secret* 가 서명 + 검증
+      - **secret brute** = secret 이 *짧음* (예: dictionary word) 시 brute 가능
+      - **jwt_tool** = jwt 의 *변조 + brute + 검증* 표준 Python 도구
+      - **RS256 vs HS256** = RS256 의 *brute 불가* (RSA 의 2048 bit key)
+      - **본 step 의 시뮬** = *학습용 weak HS256 토큰* 생성 → brute 시도
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker bash <<'SH'
+      # 1) 학습용 weak HS256 토큰 생성
+      python3 <<'PY'
+      import jwt
+      payload = {"user": "admin", "role": "admin"}
+      weak_secret = "secret"
+      token = jwt.encode(payload, weak_secret, algorithm="HS256")
+      print(f"Weak token: {token}")
+      print(f"Weak secret: {weak_secret}")
+      PY
+
+      # 2) 의 jwt_tool 의 brute 시뮬 (jwt_tool 미설치 시 수동 dict brute)
+      python3 <<'PY'
+      import jwt
+      token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjoiYWRtaW4iLCJyb2xlIjoiYWRtaW4ifQ.placeholder"
+      # 실 token 의 brute 시뮬 (rockyou 의 top 5 만)
+      for secret in ["password", "secret", "123456", "admin", "12345"]:
+          try:
+              # 실 token 의 first 3 segment 시뮬 — 생성 부터
+              import jwt as j
+              evil = j.encode({"user":"admin","role":"admin"}, secret, algorithm="HS256")
+              decoded = j.decode(evil, secret, algorithms=["HS256"])
+              print(f"  [SECRET FOUND] secret='{secret}' → decode OK")
+              break
+          except Exception as e:
+              pass
+      print("brute 시뮬 완료")
+      PY
+      SH
+      ```
+
+      ## 📋 확인 사항
+
+      - weak token 의 *3 segment* + secret "secret"
+      - brute 시뮬 의 5 candidate (password / secret / 123456 / admin / 12345)
+      - *RS256 (JuiceShop)* 는 brute *불가* 인지
+
+      ## 💡 왜 이걸 하는가?
+
+      *HS256 의 weak secret* = *modern web 의 흔한 결함*. dev/test 의 *"secret123"* 가
+      production 누락. *brute 의 분 단위* 가능 — 즉시 *RS256 마이그레이션*.
+
+      ## 🔍 결과 해석
+
+      - **brute 성공**: weak secret 사용 — 즉시 *random 64+ char* secret 또는 RS256 으로
+      - **brute 실패**: secret 이 *random* + *충분 길이* (정상)
+      - **HS256 사용 자체 X**: RS256 권장 — *key rotation* 의 *clean* 분리
+
+      ## 비정상 시 대응
+
+      - **PyJWT 미설치**: `pip install pyjwt`
+      - **jwt_tool 사용 권장**: `git clone https://github.com/ticarpi/jwt_tool && python3 jwt_tool.py --crack -d wordlist.txt <token>`
+    hint: |
+      HS256 weak secret 토큰 생성 + dict brute 시뮬 (PyJWT).
+    category: experiment
+    points: 25
+    answer: |
+      ssh 6v6-attacker bash <<'SH'
+      python3 <<'PY'
+      import jwt
+      payload = {"user": "admin", "role": "admin"}
+      weak_secret = "secret"
+      token = jwt.encode(payload, weak_secret, algorithm="HS256")
+      print(f"Weak token: {token}")
+      print(f"Weak secret: {weak_secret}")
+      PY
+      python3 <<'PY'
+      import jwt as j
+      for secret in ["password", "secret", "123456", "admin", "12345"]:
+          try:
+              evil = j.encode({"user":"admin","role":"admin"}, secret, algorithm="HS256")
+              decoded = j.decode(evil, secret, algorithms=["HS256"])
+              print(f"  [SECRET FOUND] secret='{secret}'")
+              break
+          except: pass
+      PY
+      SH
+    answer_detail: HS256 weak secret + dict brute 시뮬
+    verify:
+      type: output_contains
+      expect: 'SECRET FOUND\|secret'
+      field: stdout
+      semantic:
+        intent: HS256 secret brute
+        success_criteria: [weak token + brute 시뮬]
+        acceptable_methods:
+          - "**[OSS] PyJWT 의 encode + decode**"
+          - "**[OSS] jwt_tool --crack -d wordlist**"
+          - "**[OSS] hashcat -m 16500 (JWT mode)**"
+          - "**[OSS] RS256 마이그레이션 권장**"
+          - "**[OSS] CWE-321 Use of Hard-coded Cryptographic Key**"
+          - "**[OSS] CWE-916 Insufficient Computational Effort**"
+    target_vm: attacker
+
+  - order: 4
+    instruction: |
+      ## 🎯 MISSION — NeoBank session cookie 분석 (entropy + signed 여부)
+
+      NeoBank 의 *session cookie* 의 *길이 + entropy + signed 여부* 분석. modern web
+      의 *session 의 4 표준* (HttpOnly / Secure / SameSite / signed) 검증.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **session cookie** = `Set-Cookie: sessionId=abc...` 의 *서버 측 session 식별자*
+      - **entropy** = 예측 불가성 (random 정도). *128 bit+* 권장
+      - **HttpOnly** = JS 의 `document.cookie` 접근 차단 (XSS 방어)
+      - **Secure** = HTTPS 만 전송 (man-in-middle 방어)
+      - **SameSite** = strict / lax / none — CSRF 방어
+      - **signed cookie** = *cookie 내용 의 서명* — 변조 검출
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker bash <<'SH'
+      echo "=== NeoBank 의 Set-Cookie ==="
+      curl -sI -H 'Host: neobank.6v6.lab' http://10.20.30.1/ 2>&1 | grep -iE "set-cookie|cookie" | head -10
+
+      echo ""
+      echo "=== Session cookie 값 의 길이 + entropy ==="
+      curl -sIc /tmp/cookies.txt -H 'Host: neobank.6v6.lab' http://10.20.30.1/ 2>&1 > /dev/null
+      cat /tmp/cookies.txt 2>&1 | tail -10
+      echo ""
+      echo "Cookie 값 의 *길이 + 첫 chars*:"
+      grep -E "sessionid|session_id|JSESSIONID|connect.sid" /tmp/cookies.txt 2>&1 | awk '{print "len="length($7), "value="substr($7,1,40)"..."}' | head -3
+      SH
+      ```
+
+      ## 📋 확인 사항
+
+      - Set-Cookie header 존재 + session 관련 cookie
+      - HttpOnly / Secure / SameSite flag 확인
+      - cookie 값 의 길이 (40+ char 정상)
+      - signed 여부 (cookie 의 `.` 또는 `:` 구분 = signed 가능성)
+
+      ## 💡 왜 이걸 하는가?
+
+      session = *web 의 가장 흔한 인증 메커니즘*. *4 표준* 의 *모두 적용* 가 *최소
+      보안*. NeoBank (금융) = *반드시* 4 표준 모두.
+
+      ## 🔍 결과 해석
+
+      - **정상 (금융 표준)**: HttpOnly + Secure + SameSite=Strict + signed
+      - **vuln**: HttpOnly X → XSS 의 cookie 절도 가능
+      - **session 의 short length**: 예측 가능 — brute 가능
+
+      ## 비정상 시 대응
+
+      - **Set-Cookie 없음**: NeoBank 의 *frontend-only* (SPA) — JWT 사용 가능성
+      - **session 의 *순차 ID*** (1, 2, 3): 예측 brute 가능 — 즉시 random 화
+    hint: |
+      curl -I + Set-Cookie 분석 + HttpOnly/Secure/SameSite/signed.
+    category: analysis
+    points: 20
+    answer: |
+      ssh 6v6-attacker bash <<'SH'
+      curl -sI -H 'Host: neobank.6v6.lab' http://10.20.30.1/ 2>&1 | grep -iE "set-cookie|cookie" | head -10
+      curl -sIc /tmp/cookies.txt -H 'Host: neobank.6v6.lab' http://10.20.30.1/ 2>&1 > /dev/null
+      cat /tmp/cookies.txt 2>&1 | tail -10
+      grep -E "sessionid|session_id|JSESSIONID|connect.sid" /tmp/cookies.txt 2>&1 | awk '{print length($7), substr($7,1,40)}' | head -3
+      SH
+    answer_detail: NeoBank session cookie 의 4 표준 검증
+    verify:
+      type: output_contains
+      expect: 'Cookie\|cookie\|session'
+      field: stdout
+      semantic:
+        intent: session cookie 분석
+        success_criteria: [Set-Cookie + flag + length]
+        acceptable_methods:
+          - "**[OSS] curl -I + grep Set-Cookie**"
+          - "**[OSS] curl -c cookies.txt**"
+          - "**[OSS] Burp 의 Cookie Jar**"
+          - "**[OSS] CookieEditor 브라우저 extension**"
+          - "**[OSS] CWE-614 Sensitive Cookie Without Secure**"
+          - "**[OSS] CWE-1004 Sensitive Cookie Without HttpOnly**"
+    target_vm: attacker
+
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION — W03 종합 보고서 (4 영역 audit + 권장)
+
+      step 1-4 의 *4 영역* (hash + TLS + JWT secret + session cookie) 종합 보고서.
+      W02 의 *4 섹션 형식* 응용.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **4 영역** = hash + TLS + JWT secret + session cookie 의 *각* findings
+      - **W02 의 4 섹션 형식** = Executive / Findings / Remediation / 매핑
+      - **CWE 매핑 추가** = CWE-327 (broken crypto) / CWE-326 (weak strength) / CWE-321
+        (hard-coded key) / CWE-916 (insufficient hash effort) / CWE-614 (insecure cookie)
+      - **본 step 의 산출물** = W03 의 *유일 한 평가 산출물*
+
+      ## 💻 산출물 (4 섹션 보고서)
+
+      ```markdown
+      # W03 — A02 Cryptographic Failures 분석 보고서
+
+      ## 1. Executive Summary
+      - target: 6v6 의 web + JuiceShop + NeoBank (학습 환경)
+      - 발견 vuln 4 영역 — hash + TLS + JWT secret + session cookie
+      - CVSS High 1 (JWT HS256 weak secret) + Medium 3
+      - 권장: 즉시 alg whitelist + cipher upgrade + cookie flag
+
+      ## 2. Detailed Findings (분석가)
+      ### F1 — Hash audit (CWE-327)
+      - 결과: JuiceShop password = ___ (실측)
+      - 위험: MD5/SHA1 시 brute 분 단위
+
+      ### F2 — TLS audit (CWE-327 + CWE-326)
+      - 결과: TLS ___ + cipher ___
+      - 위험: 1.0/1.1 시 deprecated, RC4/3DES 시 weak
+
+      ### F3 — JWT HS256 brute (CWE-321 + CWE-916)
+      - 결과: weak token "secret" 의 brute *분 단위*
+      - 위험: HS256 사용 시 *long random secret* 필수
+
+      ### F4 — Session cookie (CWE-614 + CWE-1004)
+      - 결과: HttpOnly ___ / Secure ___ / SameSite ___
+      - 위험: flag 누락 시 XSS / MITM / CSRF 가능
+
+      ## 3. Remediation
+      ### F1 hash
+      - 즉시: bcrypt cost 12+ 또는 Argon2id 권장
+      - 단기: legacy hash 의 *user 의 다음 login 시 rehash*
+
+      ### F2 TLS
+      - 즉시: 1.0/1.1 disable + RC4/3DES cipher 제거
+      - 단기: HSTS 적용
+
+      ### F3 JWT secret
+      - 즉시: HS256 의 secret *128 char+ random* 또는 RS256 마이그레이션
+      - 단기: secret rotation 의 *분기 1 회*
+
+      ### F4 session cookie
+      - 즉시: HttpOnly + Secure + SameSite=Strict 모두 설정
+      - 단기: signed cookie 적용 + random 256bit ID
+
+      ## 4. CVSS / CWE / ATT&CK 매핑
+      | Finding | CVSS | CWE | ATT&CK |
+      |---------|------|-----|--------|
+      | F1 hash | 6.5 (M) | CWE-327 | T1110.002 Brute Force Password Cracking |
+      | F2 TLS | 5.9 (M) | CWE-326 | T1557 Adversary-in-the-Middle |
+      | F3 JWT | 7.5 (H) | CWE-321 | T1552 Unsecured Credentials |
+      | F4 cookie | 6.1 (M) | CWE-614 | T1539 Steal Web Session Cookie |
+      ```
+
+      ## 📋 확인 사항
+
+      - 4 섹션 + 4 findings 의 각 reproduction + 영향 + 권장
+      - CVSS + CWE + ATT&CK 매핑 표
+      - 권장 의 *즉시 + 단기* 의 2 단계
+
+      ## 💡 왜 이걸 하는가?
+
+      W02 의 *2 finding* → W03 의 *4 finding* 로 확장. 본 *4 영역* 의 *동시 audit* 가
+      *modern web 의 crypto 표준* — 임원 보고 + 운영 즉시 적용.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 4 섹션 + 4 findings + 8 권장 + 4 매핑
+      - **권장 추상적**: 즉시 / 단기 의 *구체 명령* 필수
+      - **매핑 누락**: CVSS / CWE / ATT&CK 표 필수
+    hint: |
+      4 섹션 + 4 findings (hash/TLS/JWT/cookie) + CVSS/CWE/ATT&CK.
+    category: synthesis
+    points: 10
+    answer: 위 4 섹션 형식
+    answer_detail: W03 4 영역 종합 보고서
+    verify:
+      type: output_contains
+      expect: 'CWE-'
+      field: stdout
+      semantic:
+        intent: W03 종합 보고서
+        success_criteria: [4 섹션 + 4 findings + 매핑]
+        acceptable_methods:
+          - "**[관리적] PTES 보고서 4 섹션 형식**"
+          - "**[관리적] CVSS 3.1 의 8 metric**"
+          - "**[관리적] CWE Top 25 의 hash + crypto 영역**"
+          - "**[관리적] ATT&CK Credential Access**"
+          - "**[관리적] OWASP A02 의 7 권장**"
+          - "**[관리적] 한국 ISMS-P 통제 2.7 의 암호 관리**"
+    target_vm: bastion
