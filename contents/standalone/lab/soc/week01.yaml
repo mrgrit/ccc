@@ -126,3 +126,37 @@ steps:
         success_criteria: [4 영역]
         acceptable_methods: ["**[관리적] SOC 표준**"]
     target_vm: bastion
+
+  # ============================================================
+  # STEP 5 — R/B/P 종합 (SOC 3 tier base)
+  # ============================================================
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION (R/B/P) — SOC 3 tier
+
+      Red = 외부 probe / Blue = L1 (triage) + L2 (investigation) + L3 (hunting) /
+      Purple = Bastion IR 보조.
+
+      ## 💻
+      ```bash
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/admin"'
+      ssh 6v6-siem 'tail -20 /var/ossec/logs/alerts/alerts.json 2>/dev/null | jq -r ".rule.level" | head -5 || echo no alerts'
+      echo "Coverage: L1 triage (MTTD<15min) + L2 + L3 + Bastion IR"
+      ```
+    hint: 'curl + jq alerts'
+    category: rbp_integration
+    points: 4
+    answer: |
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/admin"'
+      ssh 6v6-siem 'tail -20 /var/ossec/logs/alerts/alerts.json 2>/dev/null | jq -r ".rule.level" | head -5 || echo no alerts'
+      echo "Coverage: L1+L2+L3 + Bastion IR"
+    answer_detail: SOC base R/B/P
+    verify:
+      type: output_contains
+      expect: 'Coverage'
+      field: stdout
+      semantic:
+        intent: SOC 3 tier R/B/P
+        success_criteria: [probe, alerts, Coverage]
+        acceptable_methods: ["**[OSS] curl + jq**"]
+    target_vm: bastion

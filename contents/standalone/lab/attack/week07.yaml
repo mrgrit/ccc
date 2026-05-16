@@ -210,3 +210,37 @@ steps:
           - "UA 차단 vs SPA 동일 응답 의 구조 차이 모름"
           - "결과 0 시 *왜 0* 인지 인지 못함 (API endpoint 로 안 갈아탐)"
     target_vm: attacker
+
+  # ============================================================
+  # STEP 3 — R/B/P 종합 (SSRF / Upload / Traversal)
+  # ============================================================
+  - order: 3
+    instruction: |
+      ## 🎯 MISSION (R/B/P 종합)
+
+      Red = path traversal + SSRF / Blue = ModSec 930 (LFI) + audit log / Purple =
+      whitelist URL routine.
+
+      ## 💻
+      ```bash
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "Traversal %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/ftp/../../etc/passwd"'
+      ssh 6v6-web "sudo tail -10 /var/log/apache2/modsec_audit.log 2>/dev/null | grep -oE '930[0-9]+' | sort -u"
+      echo "Coverage: traversal/SSRF → 930 LFI → whitelist URL routine"
+      ```
+    hint: 'curl traversal + 930 매치'
+    category: rbp_integration
+    points: 4
+    answer: |
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "Traversal %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/ftp/../../etc/passwd"'
+      ssh 6v6-web "sudo tail -10 /var/log/apache2/modsec_audit.log 2>/dev/null | grep -oE '930[0-9]+' | sort -u"
+      echo "Coverage: traversal + 930 + whitelist"
+    answer_detail: SSRF/Traversal R/B/P
+    verify:
+      type: output_contains
+      expect: 'Coverage'
+      field: stdout
+      semantic:
+        intent: SSRF R/B/P
+        success_criteria: [traversal, 930, Coverage]
+        acceptable_methods: ["**[OSS] curl + audit**"]
+    target_vm: attacker

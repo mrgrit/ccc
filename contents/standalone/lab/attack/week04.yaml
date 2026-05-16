@@ -243,3 +243,37 @@ steps:
           - "--level=1 만 사용 — 진짜 SQLi 패턴 안 시도"
           - "ModSec audit log 의 *log path* 다름 검증 X"
     target_vm: attacker
+
+  # ============================================================
+  # STEP 3 — R/B/P 종합 (SQLi)
+  # ============================================================
+  - order: 3
+    instruction: |
+      ## 🎯 MISSION (R/B/P 종합) — sqlmap + ModSec 942 의 1 cycle
+
+      Red = sqlmap UNION 시도 / Blue = ModSec 942 매치 / Purple = paranoia level
+      tuning.
+
+      ## 💻
+      ```bash
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/rest/products/search?q=apple%27%20UNION%20SELECT%201,2,3--"'
+      ssh 6v6-web "sudo tail -10 /var/log/apache2/modsec_audit.log 2>/dev/null | grep -oE '942[0-9]+' | sort -u"
+      echo "Coverage: sqlmap UNION → ModSec 942 → 403 → paranoia tuning routine"
+      ```
+    hint: 'curl UNION + 942 매치'
+    category: rbp_integration
+    points: 4
+    answer: |
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/rest/products/search?q=apple%27%20UNION%20SELECT%201,2,3--"'
+      ssh 6v6-web "sudo tail -10 /var/log/apache2/modsec_audit.log 2>/dev/null | grep -oE '942[0-9]+' | sort -u"
+      echo "Coverage: SQLi → ModSec 942 → paranoia tuning"
+    answer_detail: SQLi R/B/P
+    verify:
+      type: output_contains
+      expect: 'Coverage'
+      field: stdout
+      semantic:
+        intent: SQLi R/B/P
+        success_criteria: [UNION, 942 매치, Coverage]
+        acceptable_methods: ["**[OSS] curl + audit log**"]
+    target_vm: attacker

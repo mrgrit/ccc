@@ -250,3 +250,36 @@ steps:
           - "3 layer 방어의 *각 의미* 모름"
           - "step 1 의 결과와 *연결* 안 함"
     target_vm: bastion
+
+  # ============================================================
+  # STEP 3 — R/B/P 종합 (XSS + ModSec 941)
+  # ============================================================
+  - order: 3
+    instruction: |
+      ## 🎯 MISSION (R/B/P 종합)
+
+      Red = XSS payload / Blue = ModSec 941 매치 / Purple = CSP 의 inline-script.
+
+      ## 💻
+      ```bash
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "XSS %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/rest/products/search?q=<script>alert(1)</script>"'
+      ssh 6v6-web "sudo tail -10 /var/log/apache2/modsec_audit.log 2>/dev/null | grep -oE '941[0-9]+' | sort -u"
+      echo "Coverage: XSS → 941 → 403 + CSP + DOMPurify 의 3 layer"
+      ```
+    hint: 'curl XSS + 941 매치'
+    category: rbp_integration
+    points: 4
+    answer: |
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "XSS %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/rest/products/search?q=<script>alert(1)</script>"'
+      ssh 6v6-web "sudo tail -10 /var/log/apache2/modsec_audit.log 2>/dev/null | grep -oE '941[0-9]+' | sort -u"
+      echo "Coverage: XSS + 941 + CSP"
+    answer_detail: XSS R/B/P
+    verify:
+      type: output_contains
+      expect: 'Coverage'
+      field: stdout
+      semantic:
+        intent: XSS R/B/P
+        success_criteria: [XSS, 941, Coverage]
+        acceptable_methods: ["**[OSS] curl + audit**"]
+    target_vm: attacker

