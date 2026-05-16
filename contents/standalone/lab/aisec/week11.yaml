@@ -578,14 +578,107 @@ steps:
   # ============================================================
   - order: 4
     instruction: |
-      Rule + LLM 의 통합 의사결정 Python demo — alert 의 분류 의 명확 rule 만, 모호
-      한 경우 LLM 호출, fail-safe BLOCK.
+      ## 🎯 MISSION — Rule + LLM 통합 의사결정 Python demo (Hybrid 패턴)
 
-      lecture 3-11 의 매핑 — 식당 의 메뉴 (rule) + 직원 의 경험 (ML) + 친구 의
-      대화 (LLM) 의 결합 의 hybrid 의 보안 의 응용. CCC Bastion 의 default 의
-      직접 구현.
+      alert 의 분류 를 *3 단계 우선순위* 로 처리 — (1) 명확 rule 매칭 시 즉시 결정
+      (2) 모호 한 경우 LLM 호출 (3) LLM timeout/error 시 fail-safe BLOCK. CCC
+      Bastion 의 default 와 같은 패턴.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **Hybrid 패턴** = rule (속도) + ML (정확도) + LLM (유연성) 의 *조합*.
+        lecture 3-11 의 *식당 메뉴 + 직원 경험 + 친구 대화* 비유
+      - **fail-safe BLOCK** = LLM 호출 실패 시 *안전 측* 으로 결정 (false positive
+        허용, false negative 절대 X)
+      - **CCC Bastion default** = rule 우선 + LLM fallback + KG anchor 의 패턴
+
+      ## 💻 실행 명령
+
+      ```bash
+      cat > /tmp/hybrid_decision.py <<'PY'
+      """Hybrid 의사결정 — rule + LLM + fail-safe"""
+      import json, subprocess
+
+      OLLAMA = "http://192.168.0.109:11434"
+      MODEL = "gemma3:4b"
+
+      # 명확 rule (시스템 의도)
+      def rule_classify(alert):
+          # rule 1: 학습 환경 attacker VM 은 항상 monitor
+          if alert.get("srcip", "").startswith("192.168.0.112"):
+              return "MONITOR", "rule-attacker-vm"
+          # rule 2: level 12+ 즉시 차단
+          if alert.get("level", 0) >= 12:
+              return "BLOCK", "rule-high-level"
+          # rule 3: 명확한 SQLi (ModSec 941100)
+          if alert.get("rule_id") == 941100:
+              return "BLOCK", "rule-modsec-sqli"
+          return None, "ambiguous"
+
+      def llm_classify(alert):
+          prompt = f"다음 alert 분류 (BLOCK/MONITOR/IGNORE 1 단어): {json.dumps(alert, ensure_ascii=False)[:300]}\n분류:"
+          cmd = ["curl","-s","-m","20",f"{OLLAMA}/api/generate",
+                 "-d",json.dumps({"model":MODEL,"prompt":prompt,"stream":False,
+                                  "options":{"num_predict":30,"temperature":0.1}})]
+          try:
+              r = subprocess.run(cmd, capture_output=True, text=True, timeout=25)
+              resp = json.loads(r.stdout).get("response","").strip()
+              for kw in ["BLOCK","MONITOR","IGNORE"]:
+                  if kw in resp.upper():
+                      return kw, "llm-decided"
+              return "BLOCK", "llm-unclear-fail-safe"
+          except:
+              return "BLOCK", "llm-error-fail-safe"
+
+      alerts = [
+          {"rule_id": 5710, "level": 12, "srcip": "1.2.3.4"},
+          {"rule_id": 941100, "level": 5, "srcip": "192.168.0.50"},
+          {"rule_id": 5710, "level": 5, "srcip": "192.168.0.112"},
+          {"rule_id": 999999, "level": 7, "srcip": "203.0.113.50"},
+          {"rule_id": 12345, "level": 3, "srcip": "10.0.0.5"},
+      ]
+
+      print("=== Hybrid 의사결정 ===\n")
+      print(f"{'STATUS':<10} {'REASON':<25} ALERT")
+      print("-" * 90)
+      for a in alerts:
+          decision, reason = rule_classify(a)
+          if decision is None:
+              decision, reason = llm_classify(a)
+          print(f"{decision:<10} {reason[:24]:<25} {json.dumps(a)[:50]}")
+      PY
+
+      python3 /tmp/hybrid_decision.py 2>&1 | head -25
+      ```
+
+      ## 📋 확인 사항
+
+      - 5 alert 모두 처리 (BLOCK / MONITOR / IGNORE 중 하나)
+      - alert 1 (level 12): rule-high-level → BLOCK
+      - alert 2 (rule_id 941100): rule-modsec-sqli → BLOCK
+      - alert 3 (attacker IP): rule-attacker-vm → MONITOR
+      - alert 4-5 (ambiguous): LLM 호출 → llm-decided 또는 fail-safe BLOCK
+
+      ## 💡 왜 이걸 하는가?
+
+      자율보안 의 *의사결정 패턴* = rule 우선 (속도) + LLM fallback (유연) + fail-safe
+      (안전). 본 step 의 30 라인 코드 가 CCC Bastion 의 *축약 모델*. 학생 이 *실
+      이해* 후 운영 가능.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 5 alert × 3 rule 적중 + 2 LLM 호출 결과
+      - **LLM 응답 없음**: Ollama (0.109:11434) 미가동 — fail-safe BLOCK 으로 진행 (정상)
+      - **모든 alert IGNORE**: rule 매칭 실패 — rule 정의 검토
+
+      ## 비정상 시 대응
+
+      - **Ollama 0.109:11434 응답 없음** — Ollama 서버 health 확인 + 모델 (gemma3:4b)
+        설치 확인
+      - **GPU 부하** — temperature 0.1 + num_predict 30 으로 최소화 — 그래도 cooling 권장
     hint: |
-      rule first + LLM fallback
+      Rule 우선 (속도) + LLM fallback (유연) + fail-safe BLOCK. CCC Bastion 축약
+      모델.
     category: experiment
     points: 20
     answer: |
@@ -647,14 +740,14 @@ alert: {json.dumps(alert, ensure_ascii=False)[:400]}
               decision, reason = llm_classify(a)
           print(f"{decision:<10} {reason[:24]:<25} {json.dumps(a)[:50]}")
 
-      print("\n=== Hybrid 의 운영 의의 ===")
-      print("- 명확 rule 의 우선 (즉시 의사결정, GPU 사용 X)")
-      print("- 모호 한 경우 의 LLM fallback")
-      print("- LLM timeout / error 의 fail-safe BLOCK")
-      print("- 모든 의사결정 의 KG anchor 의 기록")
+      print("\n=== Hybrid 운영 의의 ===")
+      print("- 명확 rule 우선 (즉시 의사결정, GPU 사용 X)")
+      print("- 모호 한 경우 만 LLM fallback")
+      print("- LLM timeout / error 시 fail-safe BLOCK")
+      print("- 모든 의사결정 의 KG anchor 기록")
       PYEOF
       python3 /tmp/hybrid_decision.py 2>&1 | head -25
-    answer_detail: Hybrid Python demo
+    answer_detail: Hybrid Python demo (rule + LLM + fail-safe)
     verify:
       type: output_contains
       expect: decision
@@ -663,14 +756,14 @@ alert: {json.dumps(alert, ensure_ascii=False)[:400]}
         intent: Hybrid 의사결정
         success_criteria: [decision 응답 + reason 분류]
         acceptable_methods:
-          - "**[OSS] rule first 의 명확 경우 의 우선**"
-          - "**[OSS] LLM fallback 의 모호 한 경우**"
-          - "**[OSS] LLM timeout 의 fail-safe BLOCK**"
+          - "**[OSS] rule first 명확 경우 우선**"
+          - "**[OSS] LLM fallback 모호 한 경우**"
+          - "**[OSS] LLM timeout 시 fail-safe BLOCK**"
           - "**[OSS] confidence threshold**"
-          - "**[OSS] LLM-as-judge 의 평가**"
-          - "**[OSS] approval_mode 의 escalation**"
-          - "**[OSS] KG reuse 의 cache**"
-          - "**[OSS] runbook 의 자동 적용**"
+          - "**[OSS] LLM-as-judge 평가**"
+          - "**[OSS] approval_mode escalation**"
+          - "**[OSS] KG reuse cache**"
+          - "**[OSS] runbook 자동 적용**"
     target_vm: bastion
 
   # ============================================================
@@ -678,19 +771,27 @@ alert: {json.dumps(alert, ensure_ascii=False)[:400]}
   # ============================================================
   - order: 5
     instruction: |
-      자율 action 6 분류 (observe / notify / prepare / mitigate / reconfigure /
-      destroy) 의 6v6 실 명령 매핑 + Bastion approval_mode 의 권한 위계 가시화.
+      ## 🎯 MISSION — 자율 action 6 분류 의 6v6 매핑 + approval_mode 권한 위계
 
-      lecture 3-12 의 매핑 — 창문 의 보기 (observe, 매우 낮음) ~ 집 의 파괴
-      (destroy, 매우 높음) 의 일상 위험 위계 의 보안 의 응용. approval_mode 의
-      normal / danger_danger / danger_danger_danger 의 3 단계 의 직접 가시화.
-    hint: |
-      각 분류 의 실 명령 작성
-    category: synthesis
-    points: 15
+      lecture 3-12 의 *자율 action 6 분류 위계* (observe / notify / prepare /
+      mitigate / reconfigure / destroy) 를 6v6 환경 의 *실 명령* 으로 매핑 + Bastion
+      의 *approval_mode 3 단계* (normal / danger_danger / danger_danger_danger) 권한
+      위계 가시화.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **자율 action 위계** = 위험 도 별 분류. 창문 보기 (낮음) → 집 파괴 (매우
+        높음) 의 비유 (lecture 3-12)
+      - **approval_mode** = Bastion 의 *위험 행동 권한 체크* 메커니즘
+        - `normal` — 자유 실행 (observe / notify)
+        - `danger_danger` — 사람 confirm 1 회 (mitigate)
+        - `danger_danger_danger` — 다중 confirm + audit (reconfigure / destroy)
+      - **6 분류 매트릭스** = 본 step 의 핵심 산출물 — 운영 매뉴얼 의 day-1 학습
+
+      ## 💻 산출물
     answer: |
       cat <<'EOF'
-      === 자율 action 6 분류 의 6v6 매핑 ===
+      === 자율 action 6 분류 의 6v6 매핑 (위험도 낮음 → 매우 높음) ===
 
       1. observe (자유 허용) — 위험 낮음
          - tail -f /var/ossec/logs/alerts/alerts.json
@@ -700,30 +801,30 @@ alert: {json.dumps(alert, ensure_ascii=False)[:400]}
       2. notify (자유 허용) — 위험 낮음
          - mail -s "[ALERT] ..." admin@example.com
          - curl -X POST https://hooks.slack.com/services/... (학습 환경 만)
-         - Wazuh 의 alert 의 syslog 자동 전송
+         - Wazuh alert syslog 자동 전송
 
       3. prepare (가시화 만) — 위험 낮음
-         - playbook 의 가시화 (실 적용 X)
-         - Suricata rule 의 dry-run (suricata --engine-analysis)
+         - playbook 가시화 (실 적용 X)
+         - Suricata rule dry-run (suricata --engine-analysis)
          - iptables -nL (조회 만)
 
       4. mitigate (사람 confirm) — 위험 중간
          - iptables -A INPUT -s SRC -j DROP (timeout 600s)
-         - ModSec 의 rule 의 활성
-         - Wazuh active-response 의 호출
+         - ModSec rule 활성
+         - Wazuh active-response 호출
 
       5. reconfigure (다중 confirm) — 위험 높음
-         - nginx config 의 변경 + reload
-         - Suricata rule set 의 hot reload
-         - Bastion 의 config 변경
+         - nginx config 변경 + reload
+         - Suricata rule set hot reload
+         - Bastion config 변경
 
-      6. destroy (항상 명시 적 confirm) — 위험 매우 높음
-         - DB row 의 삭제
-         - container 의 docker rm
-         - log 의 truncate
-         - filesystem 의 wipe
+      6. destroy (항상 명시적 confirm) — 위험 매우 높음
+         - DB row 삭제
+         - container docker rm
+         - log truncate
+         - filesystem wipe
 
-      === Bastion approval_mode 의 위계 ===
+      === Bastion approval_mode 위계 (3 단계) ===
 
       Mode 1: normal (default)
         max_level = mitigate
@@ -737,27 +838,23 @@ alert: {json.dumps(alert, ensure_ascii=False)[:400]}
 
       Mode 3: danger_danger_danger
         max_level = destroy
-        허용: 위 + destroy (항상 명시 적 confirm)
-        주의: 매우 신중
+        허용: 위 + destroy (항상 명시적 confirm)
+        주의: 매우 신중 — 운영 사고 의 가장 흔한 원인
 
       === 운영 원칙 ===
 
-      - default 는 normal
-      - 위 단계 의 운영자 명시 적 호출 만
-      - 모든 자율 action 의 KG anchor 기록
+      - default = normal
+      - 위 단계 는 운영자 명시적 호출 만 (자동 escalation 금지)
+      - 모든 자율 action 은 KG anchor 기록
       - auto_approve = False (default) — 사람 confirm 강제
-      - kill switch (Ctrl-C / systemctl stop bastion) 의 즉시 가용
+      - kill switch (Ctrl-C / systemctl stop bastion) 즉시 가용
 
-      === 학생 의 실 호출 의 가시화 ===
-      EOF
+      === Bastion 실 chat 호출 (approval_mode 명시) ===
 
-      echo ""
-      echo "=== Bastion 의 실 chat 호출 (approval_mode 의 명시) ==="
-      cat <<'EOF'
       # normal mode (default)
       curl -X POST -H "X-API-Key: ccc-api-key-2026" \
           -H "Content-Type: application/json" \
-          -d '{"message":"6v6 의 alert 확인","approval_mode":"normal"}' \
+          -d '{"message":"6v6 alert 확인","approval_mode":"normal"}' \
           http://192.168.0.103:8003/chat
 
       # danger_danger mode (reconfigure 허용)
@@ -766,7 +863,7 @@ alert: {json.dumps(alert, ensure_ascii=False)[:400]}
           -d '{"message":"...","approval_mode":"danger_danger"}' \
           http://192.168.0.103:8003/chat
 
-      # auto_approve True (매우 위험, 보통 X)
+      # auto_approve True (매우 위험, 보통 사용 X)
       curl -X POST -H "X-API-Key: ccc-api-key-2026" \
           -H "Content-Type: application/json" \
           -d '{"message":"...","auto_approve":true}' \
