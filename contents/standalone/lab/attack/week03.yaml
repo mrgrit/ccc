@@ -263,6 +263,43 @@ steps:
 
       Red = login + JWT decode / Blue = access.log audit / Purple = JWT 의 운영 권장.
 
+      ## 📖 시나리오 상세
+
+      ### 🔴 Red Team — JWT decode + Burp web 정찰
+
+      **페르소나**: web pen-tester — JuiceShop API 구조 + JWT 분석. W06 의 JWT 변조
+      의 사전 학습 = JWT 3 부분 의 정확 이해.
+
+      **공격 의도**:
+      1. JWT = signed (암호화 X) = payload 의 가독성 의 직접 확인
+      2. Burp Repeater 의 traffic manual inspection
+      3. API endpoint 매핑 (/rest/user/login + /api/Users/*)
+
+      **공격 단계**:
+      - R1: 정상 login = JWT token 획득
+      - R2: token base64 decode = payload 확인
+      - R3: API endpoint 매핑 + W06 변조 의 base
+
+      ### 🔵 Blue Team — application audit (정상 traffic)
+
+      **탐지 source**:
+      - access.log 의 정상 login 기록
+      - JuiceShop application log
+      - 정상 traffic = ModSec 매치 X = 사후 audit 만
+
+      **대응**: routine audit (정상 사용자 의 정상 행위)
+
+      ### 🟣 Purple Team — JWT 의 운영 권장
+
+      **분석**: JWT = signed → signature 검증 = application 의 책임. alg=none 위험 =
+      W06 의 학습 base.
+
+      **개선 cycle**:
+      1. JWT secret 의 32+ byte entropy 강제
+      2. JWT alg whitelist (HS256) 강제
+      3. JWT expiration 의 적절 (1h)
+      4. JWT rotation 의 분기
+
       ## 💻
       ```bash
       ssh 6v6-attacker 'TOKEN=$(curl -s -d "{\"email\":\"user@me\",\"password\":\"user\"}" -H "Content-Type: application/json" -H "Host: juice.6v6.lab" http://10.20.30.1/rest/user/login | jq -r .authentication.token); echo $TOKEN | cut -d. -f2 | base64 -d 2>/dev/null | head -c 200'

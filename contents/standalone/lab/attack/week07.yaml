@@ -221,6 +221,44 @@ steps:
       Red = path traversal + SSRF / Blue = ModSec 930 (LFI) + audit log / Purple =
       whitelist URL routine.
 
+      ## 📖 시나리오 상세
+
+      ### 🔴 Red Team — SSRF / Upload / Traversal 의 3 vector
+
+      **페르소나**: file system attacker — server 의 file 의 unauthorized access.
+      OWASP A10 (SSRF) + A05 (Misconfig) + A03 (Injection) 의 결합.
+
+      **공격 의도**:
+      1. **path traversal** = `../../etc/passwd` = LFI 의 시도
+      2. **SSRF** = server 의 fetch endpoint 의 internal IP 시도
+      3. **file upload bypass** = filter 우회 의 파일 업로드
+
+      **공격 단계**:
+      - R1: curl 의 traversal payload = 403 확인
+      - R2: ModSec 930 매치 확인
+      - R3: SSRF 의 metadata 시도
+
+      ### 🔵 Blue Team — ModSec 930 (LFI) + 932 (RCE)
+
+      **탐지 source**:
+      - ModSec 930 family (LFI/RFI)
+      - ModSec 932 family (RCE)
+      - application 의 URL whitelist
+      - 파일 시스템 의 permission audit
+
+      **대응**:
+      - B1: ModSec inline 차단
+      - B2: application 의 path validation
+      - B3: SSRF 의 whitelist + IMDSv2
+
+      ### 🟣 Purple Team — defense in depth
+
+      **개선 cycle**:
+      1. ModSec 930 + 932 의 paranoia 적용
+      2. application 의 path whitelist 의 default
+      3. SSRF 의 schema/port 제한 + IMDSv2
+      4. file upload 의 MIME 검증 + virus scan
+
       ## 💻
       ```bash
       ssh 6v6-attacker 'curl -s -o /dev/null -w "Traversal %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/ftp/../../etc/passwd"'

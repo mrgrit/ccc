@@ -288,6 +288,43 @@ steps:
       Red = hydra brute + JWT alg=none + IDOR / Blue = rate limit + access.log /
       Purple = JWT alg whitelist routine.
 
+      ## 📖 시나리오 상세
+
+      ### 🔴 Red Team — Auth 의 3 vector 통합 시도
+
+      **페르소나**: account takeover attacker — Auth 의 3 약점 (brute / JWT / IDOR)
+      의 통합 시도.
+
+      **공격 의도**:
+      1. brute force = login endpoint 의 rate limit 부재 검증
+      2. JWT alg=none = signature 검증 의 우회
+      3. IDOR = application 의 ACL 의 부재
+
+      **공격 단계**:
+      - R1: curl 의 brute = 응답 코드 통계
+      - R2: alg=none token 생성 + 시도
+      - R3: IDOR endpoint 조회
+
+      ### 🔵 Blue Team — application + audit
+
+      **탐지 source**:
+      - application 의 rate limit middleware
+      - access.log 의 burst 의 패턴
+      - audit log 의 sensitive endpoint 의 호출
+
+      **대응**:
+      - B1: rate limit (10/5분)
+      - B2: JWT alg whitelist 강제
+      - B3: per-user ACL 적용
+
+      ### 🟣 Purple Team — defense in depth
+
+      **개선 cycle**:
+      1. rate limit + RBA + HIBP 의 3 layer
+      2. JWT 의 alg whitelist + secret rotation
+      3. ACL 의 middleware 의 default
+      4. 분기 audit (IDOR + brute + JWT)
+
       ## 💻
       ```bash
       ssh 6v6-attacker 'for p in 123 admin user; do curl -s -o /dev/null -w "%{http_code}\n" -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"$p\"}" -H "Content-Type: application/json" -H "Host: juice.6v6.lab" http://10.20.30.1/rest/user/login; done'

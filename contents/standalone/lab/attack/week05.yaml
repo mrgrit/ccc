@@ -260,6 +260,39 @@ steps:
 
       Red = XSS payload / Blue = ModSec 941 매치 / Purple = CSP 의 inline-script.
 
+      ## 📖 시나리오 상세
+
+      ### 🔴 Red Team — XSS payload 의 detection 검증
+
+      **페르소나**: XSS attacker — JuiceShop 의 search endpoint 의 reflected XSS.
+      ModSec 941 의 detection 의 직접 검증.
+
+      **공격 의도**:
+      1. `<script>alert(1)</script>` = ModSec 941100 + 941110 의 동시 매치
+      2. score 누적 = 403 차단 의 routine 확인
+      3. CSP header 의 추가 layer 확인
+
+      **공격 단계**:
+      - R1: curl 의 XSS = 403 응답
+      - R2: ModSec audit 의 941 매치 확인
+      - R3: CSP header 의 inline-script 차단 확인
+
+      ### 🔵 Blue Team — 941 + CSP 의 2 layer
+
+      **탐지 source**:
+      - ModSec 941 family (server-side block)
+      - CSP header (client-side prevention)
+      - browser 의 CSP violation report
+
+      **대응**: 즉시 차단 + audit log + alert
+
+      ### 🟣 Purple Team — 3 layer defense (server + CSP + DOMPurify)
+
+      **개선 cycle**:
+      1. paranoia 2 + 941 의 추가 룰 활성
+      2. CSP unsafe-inline 의 제거 + nonce
+      3. DOMPurify + Trusted Types 의 client 적용
+
       ## 💻
       ```bash
       ssh 6v6-attacker 'curl -s -o /dev/null -w "XSS %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/rest/products/search?q=<script>alert(1)</script>"'
