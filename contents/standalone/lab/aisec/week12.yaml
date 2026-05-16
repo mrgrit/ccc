@@ -34,19 +34,28 @@ steps:
   # ============================================================
   - order: 1
     instruction: |
-      Wazuh 의 active-response 의 XML 구성 의 정독 + 6 단계 워크플로우 (Observe /
-      Enrich / Triage / Prepare / Mitigate / Learn) 의 매핑.
+      ## 🎯 MISSION — Wazuh active-response XML 정독 + 6 단계 워크플로우 매핑
 
-      lecture 1-3 ~ 1-4 의 매핑 — 응급실 의 환자 처리 의 6 단계 의 보안 의 응용.
-      lecture 1-4 의 1 alert 의 실 trace (00:00 sshd brute → 00:03 iptables drop
-      → 10:03 자동 rollback) 의 본 lab 의 XML 의 직접 확인.
+      Wazuh 의 `active-response` 설정 (XML) 을 정독 하고, Blue 자동 대응 의 6 단계
+      워크플로우 (Observe → Enrich → Triage → Prepare → Mitigate → Learn) 를 1대1로
+      매핑. lecture 1차시 의 *응급실 6 단계* 비유 의 실 trace.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **active-response** = Wazuh 의 자동 대응 메커니즘. `<active-response>` +
+        `<command>` 두 XML 블록 으로 구성
+      - **firewall-drop** = 표준 command. attacker IP 를 iptables DROP 으로 차단
+      - **timeout** = 자동 rollback 시간 (sec). 600 = 10 분 후 자동 해제
+      - **6 단계** = 응급실 의 환자 분류 → 처치 → 회복 의 보안 응용 (lecture 1-3)
+
+      ## 💻 산출물
     hint: |
-      ossec.conf XML + 6 단계
+      ossec.conf XML + 6 단계 워크플로우 + 실 명령 trace.
     category: analysis
     points: 20
     answer: |
       cat <<'EOF'
-      === Wazuh active-response 의 XML 구성 ===
+      === Wazuh active-response XML 구성 ===
 
       /var/ossec/etc/ossec.conf 의 일부 (실 구성):
 
@@ -63,45 +72,45 @@ steps:
         <timeout_allowed>yes</timeout_allowed>
       </command>
 
-      === 6 단계 의 매핑 ===
+      === 6 단계 매핑 ===
 
       Step 1: Observe + Notify (자유)
         - Wazuh agent 의 alert 발생 (rule 5712 trigger)
-        - manager 의 alerts.json 의 기록
-        - SIEM / Slack / 이메일 의 자동 통보
+        - manager 의 alerts.json 에 기록
+        - SIEM / Slack / 이메일 자동 통보
 
       Step 2: Enrich (자유)
-        - srcip 의 GeoIP / asset DB 의 자동 결합
-        - CTI feed 의 IoC 매칭
-        - 과거 alert history 의 query
+        - srcip 의 GeoIP / asset DB 자동 결합
+        - CTI feed IoC 매칭
+        - 과거 alert history query
 
       Step 3: Triage (자유)
-        - rule 5712 level 10+ 의 자동 인식
-        - LLM 의 5W + 위험도 (Bastion /chat)
-        - KG 의 PE 의 reuse 검색
+        - rule 5712 level 10+ 자동 인식
+        - LLM 의 5W + 위험도 평가 (Bastion /chat)
+        - KG 의 PE reuse 검색
 
       Step 4: Prepare (가시화)
-        - active-response command 의 가시화 (firewall-drop)
-        - dry-run 의 결과 의 사전 가시화
+        - active-response command 가시화 (firewall-drop)
+        - dry-run 결과 사전 가시화
 
       Step 5: Mitigate (사람 confirm)
-        - iptables -A INPUT -s SRC -j DROP 의 실 적용
-        - timeout 600 sec 의 자동 rollback
+        - iptables -A INPUT -s SRC -j DROP 실 적용
+        - timeout 600 sec 자동 rollback
 
       Step 6: Learn (자동)
         - task_outcome anchor 의 KG 기록
         - 다음 chat 의 context 강화
         - 통계 업데이트
 
-      === 실 명령 의 예 ===
+      === 실 명령 예 ===
 
-      # active-response 의 manual 실행 (학습 환경 만)
+      # active-response manual 실행 (학습 환경 만)
       sudo /var/ossec/active-response/bin/firewall-drop add 192.168.0.112 600
 
       # 차단 확인
       sudo iptables -nL | grep 192.168.0.112
 
-      # 600 sec 후 의 자동 해제 확인
+      # 600 sec 후 자동 해제 확인
       sleep 605
       sudo iptables -nL | grep 192.168.0.112  # 없어짐
       EOF
@@ -129,15 +138,23 @@ steps:
   # ============================================================
   - order: 2
     instruction: |
-      Python 의 미니 자율 Red — Plan-Execute 의 LLM 호출 + 3 단계 의 dry-run +
-      ATT&CK 매핑 + RoE 강제.
+      ## 🎯 MISSION — Python 자율 Red — Plan-Execute LLM 호출 + 3 단계 dry-run +
+      ATT&CK 매핑 + RoE 강제
 
-      lecture 2-3 ~ 2-5 의 매핑 — 합법 의 자물쇠 점검 의 4 조건 (인가 + 본인 자산
-      한정 + 기록 + 강화) 의 보안 의 응용. lecture 2-3 의 6 윤리 필수 의 dry-run
-      의 직접 강제 — 본인 의 학습 환경 (192.168.0.112, 192.168.0.100) 만 의 시도,
-      실 패킷 의 발송 의 X 의 plan 의 가시화 만.
+      LLM 이 *공격 plan* 을 자동 작성 → *dry-run* 으로 실 패킷 없이 명령 가시화 →
+      RoE 위반 시 자동 차단. lecture 2차시 의 *합법 자물쇠 점검 의 4 조건* + 6 윤리
+      필수 강제 의 직접 구현.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **Plan-Execute** = LLM 이 *plan* 작성 → 코드 가 *execute* — Wang 2023 의 표준
+        agentic pattern
+      - **dry-run** = 실 패킷 없이 *명령 만 출력* — 학습 환경 의 *유일 한 허용 방식*
+      - **RoE (Rules of Engagement)** = 본인 학습 환경 (192.168.0.0/24) 만, 외부 거부
+      - **6 윤리 필수** = lecture 2-3 의 *인가 + 자산 한정 + 기록 + 강화 + dry-run +
+        외부 거부* (6 항목)
     hint: |
-      LLM plan + dry-run execute
+      LLM plan + dry-run execute + RoE 강제.
     category: experiment
     points: 25
     answer: |
@@ -159,7 +176,7 @@ target: {TARGET}
 다음 의 정찰 의 3 step 의 plan 을 응답. 각 step 의 명령 + ATT&CK Technique.
 format: '1. <명령> | T<id> <name>'"""
 
-      print("=== 1. Plan (LLM 의 자동 plan) ===")
+      print("=== 1. Plan (LLM 자동 plan) ===")
       cmd = ["curl","-s","-m","30",f"{OLLAMA}/api/generate",
              "-d",json.dumps({"model":MODEL,"prompt":plan_prompt,"stream":False,
                               "options":{"num_predict":250,"temperature":0.2}})]
@@ -191,13 +208,13 @@ format: '1. <명령> | T<id> <name>'"""
       # 3. Report
       print()
       print("=== 3. Report (자동) ===")
-      print("  Plan-Execute cycle 의 완료 — 3 step 의 dry-run")
-      print("  실 실행 시 의 다음 단계 — Bastion KG anchor 의 기록")
+      print("  Plan-Execute cycle 완료 — 3 step dry-run")
+      print("  실 실행 시 다음 단계 — Bastion KG anchor 기록")
       print()
-      print("=== 윤리 의 명시 ===")
-      print("- 본 demo 의 학습 환경 만, 외부 거부")
-      print("- 실 실행 의 의의 — Bastion 의 /chat 의 approval_mode 의 명시")
-      print("- 모든 시도 의 KG 의 anchor 의 기록 의 의의")
+      print("=== 윤리 명시 ===")
+      print("- 본 demo 는 학습 환경 만, 외부 거부")
+      print("- 실 실행 시 Bastion /chat 의 approval_mode 명시 필수")
+      print("- 모든 시도 의 KG anchor 기록")
       PYEOF
       python3 /tmp/auto_red.py 2>&1 | head -30
     answer_detail: 자율 Red Plan-Execute dry-run
@@ -224,69 +241,74 @@ format: '1. <명령> | T<id> <name>'"""
   # ============================================================
   - order: 3
     instruction: |
-      Red 의 시뮬 시도 + Blue 의 응답 + KG anchor 기록 의 1 cycle 시뮬레이션 + 학습
-      의의 의 분석.
+      ## 🎯 MISSION — Purple cycle 1 cycle mini 시뮬 (Red 시도 + Blue 응답 + KG
+      anchor 기록)
 
-      lecture 4-1 ~ 4-2 의 매핑 — Red 시도 → Blue 응답 → KG 기록 → 평가 →
-      improvement 의 자율 Purple cycle. lecture 4-2 의 1 cycle 의 실 trace
-      (00:00 attacker plan → 00:05 sqlmap SQLi 발견 → 00:10 ModSec rule 942100
-      trigger → 00:11 KG search → 00:11 학생 confirm → 00:12 anchor 기록) 의 본
-      lab 의 직접 mini 시뮬.
+      Red attacker 의 5 회 ssh brute → Blue Wazuh 의 rule 5712 매치 + active-response
+      차단 → KG anchor 기록 의 *3 단계 자율 cycle*. lecture 4차시 의 *학습 → 다음
+      cycle 강화* 가시화.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **Purple = Red + Blue 통합** = 둘 다 자동, 분석가 는 *cycle 관찰*
+      - **KG anchor** = 매 cycle 의 *시도 + 결과* 가 graph node 로 영구 기록
+      - **reuse / adapt / new** = 새 cycle 진입 시 KG 의 *과거 PE* 결정 의 3 옵션
+      - **KPI** = MTTD (detect 시간) + MTTR (response 시간) + success rate 의 추이
     hint: |
-      Red simulate + Blue 응답 + KG 가시화
+      Red 시뮬 + Blue 응답 + KG anchor + 학습 가시화.
     category: synthesis
     points: 20
     answer: |
-      echo "=== Purple Cycle 의 1 cycle 시뮬 ==="
+      echo "=== Purple Cycle 1 cycle 시뮬 ==="
 
       echo ""
       echo "--- [Red] simulated SSH brute (학습 환경 만) ---"
       echo "  공격자: 192.168.0.112 (attacker VM)"
       echo "  target: 192.168.0.103 (web)"
-      echo "  시도: 5 회 의 ssh failed login"
+      echo "  시도: 5 회 ssh failed login"
       echo "  command (dry-run): hydra -l ccc -P /tmp/wordlist 192.168.0.103 ssh"
       echo ""
 
-      echo "--- [Blue] Wazuh + active-response 의 응답 ---"
+      echo "--- [Blue] Wazuh + active-response 응답 ---"
       echo "  rule 5710 trigger (Failed password) × 5 회"
       echo "  rule 5712 trigger (Multiple failed = chain rule)"
-      echo "  active-response: firewall-drop 의 600 sec 적용"
+      echo "  active-response: firewall-drop 600 sec 적용"
       echo "  iptables -A INPUT -s 192.168.0.112 -j DROP"
       echo ""
 
-      echo "--- [Purple] KG anchor 의 기록 + 학습 가시화 ---"
+      echo "--- [Purple] KG anchor 기록 + 학습 가시화 ---"
       curl -s -H "X-API-Key: ccc-api-key-2026" \
           "http://192.168.0.103:8003/kg/anchors/recent?kind=task_outcome&limit=3" \
           2>&1 | head -c 2500
       echo ""
 
       echo ""
-      echo "=== Purple 의 학습 의의 ==="
+      echo "=== Purple 학습 의의 ==="
       cat <<'EOF'
       Purple cycle 의 자동 학습:
 
-      1. Red 시도 의 자동 기록
-         - 시간, target, 명령 의 KG anchor 기록
+      1. Red 시도 자동 기록
+         - 시간, target, 명령 → KG anchor 기록
 
-      2. Blue 응답 의 자동 기록
-         - 차단 결과, timeout, false positive 의 KG anchor
+      2. Blue 응답 자동 기록
+         - 차단 결과, timeout, false positive → KG anchor
 
-      3. 매 cycle 의 KG 의 PE 의 결정
-         - reuse: 동일 패턴 의 기존 playbook 적용
-         - adapt: 약간 다른 패턴 의 일부 수정
-         - new: 새 패턴 의 새 playbook 등록
+      3. 매 cycle 마다 KG 의 PE 결정
+         - reuse: 동일 패턴 → 기존 playbook 적용
+         - adapt: 약간 다른 패턴 → 일부 수정
+         - new: 새 패턴 → 새 playbook 등록
 
-      4. 다음 cycle 의 context 강화
-         - 이전 cycle 의 학습 의 다음 응답 의 효율 증가
-         - 시간 의 지남 의 자율 의 정확도 향상
+      4. 다음 cycle context 강화
+         - 이전 cycle 학습 결과 가 다음 응답 효율 ↑
+         - 시간 흐름 에 따라 자율 정확도 향상
 
-      === KPI 의 정량 측정 ===
+      === KPI 정량 측정 ===
 
-      - Red 의 success rate 의 추이 (학습 의 효과)
-      - Blue 의 detection rate 의 추이 (방어 의 강화)
-      - Mean Time to Detect (MTTD) 의 감소
-      - Mean Time to Respond (MTTR) 의 감소
-      - false positive 의 비율 의 감소
+      - Red success rate 추이 (학습 효과)
+      - Blue detection rate 추이 (방어 강화)
+      - Mean Time to Detect (MTTD) 감소
+      - Mean Time to Respond (MTTR) 감소
+      - false positive 비율 감소
       EOF
     answer_detail: Purple cycle 시뮬
     verify:
@@ -312,26 +334,34 @@ format: '1. <명령> | T<id> <name>'"""
   # ============================================================
   - order: 4
     instruction: |
-      gemma3:4b 의 system prompt 의 3 다른 persona 의 적용 + 동일 user message 의
-      응답 의 차이 측정 (RL Steering 의 prompt 기반 의 미니 demo).
+      ## 🎯 MISSION — 3 persona system prompt × 동일 user message — 응답 차이 측정
+      (Steering 미니 demo)
 
-      lecture 3-5 ~ 3-8 의 매핑 — TV 의 음량 dial 의 보안 의 응용. 모델 의 학습
-      weight 의 변경 의 없이 의 system prompt 의 persona 의 dial 의 조정 의
-      응답 의 방향 의 차이 의 직접 측정. lecture 3-8 의 3 적용 (Inference-time
-      Safety, Dynamic Guardrail, Persona Enforcement) 의 직접 확인.
+      동일 한 user message ("SQL injection payload 설명") 를 *3 다른 system prompt*
+      (Conservative / Neutral / Educational) 로 호출 — 응답 의 *tone / depth / safety*
+      차이 를 직접 측정. lecture 3차시 의 *TV 음량 dial* 비유 의 실 실험.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **Steering** = LLM 의 *학습 weight 변경 없이* 응답 방향 조정. prompt 기반 이
+        가장 단순
+      - **3 적용** = lecture 3-8 의 Inference-time Safety + Dynamic Guardrail +
+        Persona Enforcement
+      - **temperature 0.1** = 응답 재현성 위 낮은 값. *persona 효과* 만 분리
+      - **Anthropic ACT** = activation steering — prompt 보다 강력, 본 lab 외 범위
     hint: |
-      동일 user × 3 persona system
+      동일 user × 3 persona × temperature 0.1 → tone/depth 차이.
     category: experiment
     points: 20
     answer: |
       OLLAMA=http://192.168.0.109:11434
-      USER_MSG="SQL injection 의 학습 환경 의 payload 의 의의 의 설명"
+      USER_MSG="SQL injection 학습 환경 payload 설명"
 
       echo "=== Persona 1: 학습 환경 보안 AI (Conservative) ==="
       timeout 30 curl -s $OLLAMA/api/chat -d "{
         \"model\": \"gemma3:4b\",
         \"messages\": [
-          {\"role\":\"system\",\"content\":\"당신은 학습 환경 의 보안 AI 입니다. 학습 만 응답. 외부 거부. 위험 한 응답 의 거부.\"},
+          {\"role\":\"system\",\"content\":\"당신은 학습 환경 보안 AI 입니다. 학습 만 응답. 외부 거부. 위험 응답 거부.\"},
           {\"role\":\"user\",\"content\":\"$USER_MSG\"}
         ],
         \"stream\": false,
@@ -357,7 +387,7 @@ format: '1. <명령> | T<id> <name>'"""
       timeout 30 curl -s $OLLAMA/api/chat -d "{
         \"model\": \"gemma3:4b\",
         \"messages\": [
-          {\"role\":\"system\",\"content\":\"당신은 대학 의 보안 학과 의 전문 강사. 학습 의 깊이 + 사례 + ATT&CK / OWASP 매핑.\"},
+          {\"role\":\"system\",\"content\":\"당신은 대학 보안 학과 전문 강사. 학습 깊이 + 사례 + ATT&CK / OWASP 매핑.\"},
           {\"role\":\"user\",\"content\":\"$USER_MSG\"}
         ],
         \"stream\": false,
@@ -366,11 +396,11 @@ format: '1. <명령> | T<id> <name>'"""
       echo ""
 
       echo ""
-      echo "=== Persona Steering 의 의의 ==="
+      echo "=== Persona Steering 의의 ==="
       echo "- 동일 user message + 다른 system prompt → 다른 응답"
-      echo "- prompt engineering 의 가장 단순 한 형태 의 steering"
-      echo "- Anthropic 의 ACT 의 의의 — internal activation 의 직접 push (더 강력)"
-      echo "- 본 demo 의 학생 의 학습 — 본인 환경의 persona 의 효과 의 직접 측정"
+      echo "- prompt engineering = 가장 단순 한 steering 형태"
+      echo "- Anthropic ACT — internal activation 직접 push (더 강력, 본 lab 외)"
+      echo "- 본 demo 학생 학습 — 본인 환경 persona 효과 직접 측정"
     answer_detail: persona steering
     verify:
       type: output_contains
@@ -395,62 +425,70 @@ format: '1. <명령> | T<id> <name>'"""
   # ============================================================
   - order: 5
     instruction: |
-      CCC R5 main 의 reuse vs new 비율 + KG graph_nodes / history_anchors 의 누적
-      가시화 + 학습 효과 의 정량 분석.
+      ## 🎯 MISSION — CCC R5 main 의 reuse vs new 비율 + KG 누적 가시화 + 학습 효과
+      정량 분석
 
-      lecture 4-1 의 매핑 — CCC Bastion 의 R5 learning loop 가 본 lecture 의 자율
-      Purple cycle 의 직접 구현. 12 attack courses 의 자동 학습 + KG anchor 의
-      누적 의 본 lab 의 직접 가시화.
+      CCC 의 실 운영 중 인 R5 main loop 의 로그 분석 + KG graph_nodes /
+      history_anchors 누적 + 학습 효과 정량 분석. lecture 4차시 의 *자율 Purple
+      cycle* 의 직접 가시화.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **R5 main** = CCC 의 5 번째 learning loop. 12 attack courses 자동 검증
+      - **reuse vs new** = 새 task 진입 시 KG 의 *과거 PE* 가 적용 (reuse) vs *새
+        playbook* 등록 (new). 학습 진행 시 reuse 비율 증가
+      - **VERDICT** = 각 task 의 pass/fail/partial 결과 분포
+      - **/kg/metrics** = Bastion 의 KG 사용 counter (호출 수 / hit rate / anchor 누적)
     hint: |
-      run_r5_main.log + /kg/metrics
+      R5 main log + /kg/metrics + 시간 흐름 분석.
     category: analysis
     points: 15
     answer: |
       cd /home/opsclaw/ccc 2>/dev/null
 
-      echo "=== R5 main 의 reuse vs new 의 분석 ==="
+      echo "=== R5 main 의 reuse vs new 분석 ==="
       grep -oE "new=(True|False)" results/retest/run_r5_main.log 2>/dev/null | \
           sort | uniq -c | head
 
       echo ""
-      echo "=== R5 main 의 VERDICT 의 분포 ==="
+      echo "=== R5 main 의 VERDICT 분포 ==="
       grep -oE "VERDICT: \w+" results/retest/run_r5_main.log 2>/dev/null | \
           sort | uniq -c | head
 
       echo ""
-      echo "=== Bastion 의 KG 누적 (현재 시점) ==="
+      echo "=== Bastion KG 누적 (현재 시점) ==="
       curl -s -H "X-API-Key: ccc-api-key-2026" \
           http://192.168.0.103:8003/health | head -c 500
       echo ""
 
       echo ""
-      echo "=== /kg/metrics 의 counter ==="
+      echo "=== /kg/metrics counter ==="
       curl -s -H "X-API-Key: ccc-api-key-2026" \
           http://192.168.0.103:8003/kg/metrics | head -c 400
       echo ""
 
       echo ""
-      echo "=== 학습 효과 의 정량 분석 ==="
+      echo "=== 학습 효과 정량 분석 ==="
       cat <<'EOF'
-      누적 의 의의:
-      - graph_nodes: KG 의 누적 의 node (4940+ 의 학습 의 결과)
-      - history_anchors: task_outcome 의 누적 (5338+ 의 학습 누적)
-      - new=True: 새 task 의 KG 신규 등록
-      - new=False: 기존 KG 의 reuse
+      누적 의의:
+      - graph_nodes: KG 누적 node 수 (4940+ 학습 결과)
+      - history_anchors: task_outcome 누적 (5338+ 학습 anchor)
+      - new=True: 새 task → KG 신규 등록
+      - new=False: 기존 KG reuse
 
-      운영 의 의의:
-      - reuse 비율 의 증가 = 학습 누적 의 효과
-      - new 증가 = 새 패턴 의 발견
-      - graph_nodes / history_anchors 의 시계열 추이 의 학습 곡선
+      운영 의의:
+      - reuse 비율 증가 = 학습 누적 효과
+      - new 증가 = 새 패턴 발견
+      - graph_nodes / history_anchors 시계열 추이 = 학습 곡선
 
       paper §7 의 source:
-      - R5 main 의 676 case 의 자동 학습
-      - 매 chat 의 task_outcome anchor 의 누적
-      - paper 의 §7 의 의 의 실험 의 data source
+      - R5 main 676 case 자동 학습
+      - 매 chat 의 task_outcome anchor 누적
+      - paper §7 실험 data source
 
-      미래 의 RL Steering 의 적용:
-      - Bastion 의 internal activation 의 학습 환경 의 dominance 학습
-      - inference 시 의 학습 환경 vector 의 강제 활성
+      미래 의 RL Steering 적용:
+      - Bastion 의 internal activation 의 학습 환경 dominance 학습
+      - inference 시 학습 환경 vector 강제 활성
       EOF
     answer_detail: R5 학습 누적 가시화
     verify:
