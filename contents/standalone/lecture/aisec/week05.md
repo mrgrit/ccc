@@ -628,6 +628,80 @@ flowchart LR
 
 본 시나리오 의의 — 학생 이 본 주차 에 학습 한 에이전트 / Claude Code / 하네스 의 통합 동작 을 6v6 의 실 환경 에서 확인.
 
+#### 3-8.1 R/B/P 상세 시나리오 — credential spray → AI 에이전트 의 자동 대응
+
+본 주차 의 R/B/P 의 핵심 = **Purple 의 역할 이 "AI 에이전트 (Bastion)" 자체**. 운영자 의
+chat 응답 = AI 에이전트 의 ReAct loop 결과.
+
+**Coverage Matrix — credential spray 사건 의 3 관점**
+
+| 항목 | Red (attacker) | Blue (보안 도구) | Purple (Bastion 에이전트) |
+|------|---------------|----------------|--------------------------|
+| **목적** | 6v6 의 web vhost 의 SSH brute / web login 시도 | Suricata / ModSec / Wazuh 의 자동 탐지 | 운영자 의 자연어 질문 에 ReAct 로 답변 |
+| **도구** | hydra, ffuf, burp suite | Suricata rule 60xxx (auth), ModSec 941xxx, Wazuh rule 5710 | Bastion `/chat` API + 33 skill + KG |
+| **시간** | 5-30분 (3 vhost × 100 pwd) | 실시간 (1 alert/sec 이내) | 운영자 질문 후 5-30초 |
+| **결과** | 일부 vhost 의 약한 pwd 발견 (가설) | 다중 alert + correlation rule 트리거 | 자연어 보고서 + ReAct trace + KG anchor |
+| **MITRE ATT&CK** | T1110 (Brute Force) | T1110 의 Detection | T1078 (Valid Accounts) 의 사후 분석 |
+
+**시간선 — 1 사건 의 분 단위 흐름**
+
+```
+T+0      Red attacker 에서 hydra -L users.txt -P top100.txt ssh://10.20.32.80
+         └→ 10 connection/sec (5분 간 = 3000 시도)
+
+T+5s     Blue 1차 — Suricata alert
+         └→ "ET POLICY SSH session in progress" 의 burst (sid 2001219)
+         └→ ssh 6v6-siem "tail -20 /var/log/suricata/fast.log"
+
+T+10s    Blue 2차 — Wazuh correlation
+         └→ rule 5710 (sshd authentication failed) 의 10+ 매치
+         └→ Wazuh manager 의 alerts.json 의 level 10 alert
+
+T+30s    Purple — 운영자 가 Bastion 에게 자연어 질문
+         └→ curl -H "X-API-Key: ccc-api-key-2026" \
+            -d '{"text":"방금 SSH brute 의 alert 분석 + 차단 권장"}' \
+            http://192.168.0.103:8003/chat
+         └→ Bastion ReAct loop:
+            Turn 1: Thought = "최근 alert 확인 필요"
+                    Action = suricata_alert_recent(60s)
+                    Observation = 50+ ET POLICY SSH alerts
+            Turn 2: Thought = "source IP 통계 필요"
+                    Action = wazuh_alert_aggregate(by=src_ip, last=300s)
+                    Observation = 10.20.30.202 의 100% 점유
+            Turn 3: Thought = "차단 권장 + nft 룰 작성"
+                    Action = generate_nft_rule(src=10.20.30.202, action=drop)
+                    Observation = 룰 작성 완료
+         └→ 응답 = "10.20.30.202 의 SSH brute 가 5분간 50+ alert 발생.
+                   nft add element ip filter blacklist { 10.20.30.202 timeout 1h }
+                   을 6v6-fw 에서 실행 권장. ATT&CK T1110."
+
+T+1m     Purple — KG anchor 기록
+         └→ task_outcome = "credential_spray_response_2026-05-16_1430"
+         └→ skills_used = [suricata_alert_recent, wazuh_alert_aggregate,
+                           generate_nft_rule]
+         └→ kg_context = 다음 chat 의 사전 참조 자료
+```
+
+**R/B/P 의 핵심 인사이트 (5 항)**
+
+1. **AI 에이전트 가 Purple 역할** — 전통 Purple Team = Red + Blue 의 사람 협업. 본 과목
+   = Bastion 의 ReAct loop = 자동 Purple. 운영자 의 자연어 질문 → AI 가 Red+Blue 의
+   상태 분석 → 권장.
+
+2. **ReAct trace 의 운영 가시성** — 3-7a 의 trace 가 운영자 의 디버깅 자료. AI 가 어떤
+   skill 을 어떤 순서 로 호출 했는지, observation 이 무엇 이었는지 모두 추적 가능.
+
+3. **KG anchor 의 학습 누적** — 매 chat 의 결과 = KG anchor → 다음 chat 의 사전
+   참조. 같은 사건 의 두 번째 분석 = 더 빠른 결론 (RAG 효과).
+
+4. **Skill 33 의 분류** — Bastion 의 33 skill 중 = R 의 도구 (suricata_query 등) /
+   B 의 도구 (wazuh_aggregate 등) / P 의 도구 (incident_summary 등) 의 분류. lab
+   step 2 에서 학생 이 직접 분류 한다.
+
+5. **자율 vs 수동 의 boundary** — 본 주차 = 운영자 가 chat 으로 질문 = 수동 호출. W11
+   (자율보안) 의 scheduler / watcher = 자율 호출. R/B/P 의 P 의 자동화 의 정도 가 다음
+   3 주차 의 학습 주제.
+
 ### 3-8a. 본 주차 hands-on — lab 5 step
 
 본 주차 lab yaml 과 lecture 절을 매핑한다.

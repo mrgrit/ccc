@@ -656,6 +656,96 @@ flowchart LR
     R1 --> B1 --> B2 --> P1 --> P2 --> P3 --> P4 --> P5
 ```
 
+#### 3-10.1 R/B/P 상세 — SQLi 사건 의 KG·위키 활용
+
+본 주차 의 핵심 = KG (Knowledge Graph) + 위키 가 AI 에이전트 의 context 의 source.
+SQLi 사건 의 분석 시 KG 의 사전 anchor + 위키 의 운영 절차 가 ReAct loop 의 thought
+의 근거.
+
+**Coverage Matrix — SQLi 사건 의 3 관점 + KG·위키 통합**
+
+| 항목 | Red | Blue | Purple (Bastion+KG+위키) |
+|------|-----|------|--------------------------|
+| **시나리오** | `' UNION SELECT 1,2,3--` payload | ModSec 941100 (XSS) + 942100 (SQLi) 동시 매치 | "방금 SQLi 가 왜 차단 됐는가? 비슷한 사건 의 과거 분석은?" 의 자연어 질문 |
+| **도구** | sqlmap, burp suite | ModSec, Wazuh, audit log | Bastion `/chat` + KG 검색 + 위키 + ReAct |
+| **데이터 source** | attacker 의 payload | /var/log/apache2/modsec_audit.log + Wazuh alerts.json | KG anchor (이전 SQLi 사건 5건) + 위키 의 SQLi 대응 절차 |
+| **결과** | 일부 의 vhost 의 응답 차이 발견 | level 10 alert + block | KG 의 유사 사건 5건 의 timeline + 위키 의 단계별 대응 + ReAct 의 권장 차단 |
+| **MITRE** | T1190 (Exploit Public-Facing) | T1190 의 Detection | T1190 의 사후 분석 + Pattern enrichment |
+
+**시간선 — SQLi 사건 의 KG·위키 통합 흐름**
+
+```
+T+0      Red sqlmap -u "http://juice.6v6.lab/items?id=1" --dbs
+         └→ '+UNION+SELECT+1,2,3-- payload 전송
+
+T+1s     Blue 1차 — ModSec inline 차단
+         └→ 941100 + 942100 → score 10 → 403 Forbidden
+         └→ audit log JSON entry (unique_id 발급)
+
+T+5s     Blue 2차 — Wazuh agent ship
+         └→ modsec decoder → rule 87151, level 7
+         └→ alerts.json 의 src_ip = 10.20.30.202
+
+T+30s    Purple — 운영자 의 자연어 질문
+         └→ curl -d '{"text":"방금 SQLi 가 왜 차단? 과거 비슷한 사건은?"}' \
+            http://192.168.0.103:8003/chat
+
+T+31s    Bastion 의 KG context 사전 검색 (자동)
+         └→ kg_context.search("SQLi 942100 차단") 호출
+         └→ KG 의 anchor 5건 검색:
+            - 2026-04-12 SQLi (juice.6v6.lab, 차단 성공, ModSec 942100)
+            - 2026-04-18 SQLi (admin.6v6.lab, 차단 실패 ★, paranoia 1 미스)
+            - 2026-04-25 SQLi (api.6v6.lab, 차단 성공, ModSec 942270 UNION)
+            - 2026-05-02 SQLi (juice.6v6.lab, 차단 성공)
+            - 2026-05-09 SQLi (api.6v6.lab, 차단 성공)
+         └→ 위키 검색 = wiki/sql-injection-response.md 매치
+
+T+32s    Bastion ReAct loop (3 turn)
+         Turn 1: Thought = "현재 사건 의 매치 룰 확인"
+                 Action = modsec_audit_recent(unique_id)
+                 Observation = 941100 + 942100 매치, score 10, block
+         Turn 2: Thought = "KG 의 유사 사건 의 패턴 분석"
+                 Action = kg_anchor_compare(current_sqli, kg_anchors_5)
+                 Observation = 5건 중 4건 = 차단 성공, 1건 = paranoia 1 의 실패
+         Turn 3: Thought = "위키 의 대응 절차 의 적용"
+                 Action = wiki_apply(sql-injection-response.md)
+                 Observation = 1) IP 임시 차단, 2) audit log 분석,
+                              3) paranoia 2 확인, 4) 사고 보고서
+
+T+35s    Bastion 응답 = "현재 SQLi (UNION SELECT) = ModSec 942100 + 941100 의
+                       score 10 으로 차단 정상. KG 의 유사 사건 5건 중 4건 = 동일
+                       차단, 1건 (2026-04-18) = paranoia 1 미스 → 현재 paranoia 2
+                       확인 필요. 위키 의 4 단계 대응 절차 적용 권장."
+
+T+1m     KG anchor 기록
+         └→ task_outcome = "sqli_response_2026-05-16_1432"
+         └→ kg_context = 다음 SQLi 사건 의 5건 → 6건 으로 enrichment
+
+T+5m     Purple AAR
+         └→ What: ModSec 의 정상 차단 + KG 의 enrichment
+         └→ Why: 본 사건 의 분석 시간 = 35초 (수동 = 5-10분)
+         └→ Next: KG anchor 의 누적 = 다음 사건 의 응답 속도 향상
+```
+
+**R/B/P 의 핵심 인사이트 (5 항)**
+
+1. **KG 의 사전 anchor 가치** — 단순 chat 의 LLM 응답 = 일반 답변. KG 의 5건 anchor
+   참조 = 본 환경 의 구체 사건 의 base 답변. RAG (Retrieval Augmented Generation) 의
+   효과.
+
+2. **위키 의 절차 의 자동 적용** — 운영자 의 mental model 의 단계 = wiki/*.md 의
+   기록 → ReAct 의 action 의 plan. 신입 운영자 의 학습 곡선 단축.
+
+3. **ReAct trace 의 audit 가치** — 3 turn 의 thought/action/observation 의 trace =
+   AI 의 결론 의 근거. 잘못된 결론 의 root cause 추적 가능.
+
+4. **GPU 단일 의 직렬화 영향** — 3-8 의 GPU 단일 = 동시 chat 호출 불가. Watcher 의
+   주기 호출 + 운영자 의 ad-hoc 호출 의 충돌 = 큐 대기. W11 의 scheduler 설계 의 base.
+
+5. **로컬 Bastion vs 외부 LLM 의 trade-off** — 외부 LLM (Claude/GPT) = 빠름 + 비싸요
+   + 자료 노출. 로컬 Bastion (gpt-oss:120b) = 보통 + 고정 비용 + 자료 보호. 폐쇄망
+   운영 = 로컬 필수.
+
 ### 3-11. 본 주차 hands-on — lab 5 step
 
 본 주차 lab yaml 과 lecture 절을 매핑한다.

@@ -605,6 +605,84 @@ flowchart LR
     P3 --> B3
 ```
 
+#### 3-7.1 R/B/P 상세 — Bastion 의 모의해킹 + 방어 양면 지원
+
+본 주차 의 특이 점 = Bastion 이 **Red 측 (모의해킹 자동화) + Blue 측 (alert triage)
+양면 보조**. 운영자 가 두 mode 를 명시 적 으로 분리 사용.
+
+**Coverage Matrix — Red mode + Blue mode 의 비교**
+
+| 항목 | Red mode (모의해킹) | Blue mode (보안 운영) |
+|------|--------------------|----------------------|
+| **운영자 질문** | "6v6 web 의 vhost 의 정찰 + SQLi 시도 plan 권장" | "방금 ModSec 의 alert 의 triage + 차단 권장" |
+| **사용 skill** | nmap_scan, sqlmap_template, http_probe | modsec_audit_recent, wazuh_aggregate, nft_block_recommend |
+| **결과** | 단계 별 실행 plan (사람 이 실행) | alert 의 src/dst/rule 통계 + 차단 권장 |
+| **MITRE Tactic** | TA0043 Recon → TA0001 Initial Access | TA0007 Discovery → TA0009 Collection (방어 측) |
+| **사람 의 책임** | 모든 명령 의 사전 승인 (RoE 내) | 차단 권장 의 검토 + 적용 |
+| **자동화 정도** | 낮음 (사람 의 매 단계 승인) | 중간 (alert 통계 = 자동, 차단 = 승인) |
+
+**시간선 — Red mode + Blue mode 의 1 사건 cycle**
+
+```
+[Red mode — 모의해킹 plan 생성, T+0 ~ T+5m]
+
+T+0      운영자 → Bastion: "juice.6v6.lab 의 정찰 + SQLi 시도 plan"
+T+1s     Bastion ReAct (Red mode):
+         Turn 1: nmap_scan(target=juice.6v6.lab, mode=passive) → 결과 = port 80, Apache
+         Turn 2: http_probe(target=juice.6v6.lab/items, method=GET) → 결과 = 200, JSON
+         Turn 3: sqlmap_template(target=...items?id=, dbms=guess) → 결과 = 명령 template
+T+5s     응답 = "1) nmap -sV juice.6v6.lab 으로 service 확인,
+                2) curl http://juice.6v6.lab/items?id=1 의 응답 분석,
+                3) sqlmap -u 'http://juice.6v6.lab/items?id=1' --dbs --batch 실행 (RoE 확인)"
+
+T+1m     사람 이 명령 실행 (3 단계 의 매 단계 의 RoE 확인 후)
+         └→ sqlmap 의 응답 = ModSec 차단 (Blue 의 첫 감지)
+
+[Blue mode — alert triage, T+5m ~ T+10m]
+
+T+5m     운영자 → Bastion: "방금 sqlmap 의 차단 의 분석 + 차단 권장"
+T+5m+1s  Bastion ReAct (Blue mode):
+         Turn 1: modsec_audit_recent(last=60s) → 5+ entry, 941100/942100 매치
+         Turn 2: wazuh_aggregate(by=src_ip, last=300s) → 10.20.30.202 의 100%
+         Turn 3: nft_block_recommend(src=10.20.30.202, duration=1h) → 룰 작성
+T+5m+5s  응답 = "10.20.30.202 의 SQLi sqlmap 차단 정상. 942100 + 941100 매치.
+                src IP 의 100% 점유 = 단일 attacker. nft add element ip filter
+                blacklist { 10.20.30.202 timeout 1h } 권장."
+
+T+10m    사람 의 nft 룰 적용 + 효과 확인
+
+[Purple — 통합 보고서, T+10m ~ T+15m]
+
+T+10m    운영자 → Bastion: "오늘 의 모의해킹 + 차단 의 종합 보고서"
+T+10m+1s Bastion ReAct (Purple mode):
+         Turn 1: incident_summary(from=today, target=juice.6v6.lab)
+         Turn 2: cvss_calculate(vuln_class=SQLi, asset_critical=high)
+         Turn 3: report_generate(format=markdown, sections=[scope,timeline,actions])
+T+10m+10s 응답 = 1 page markdown 보고서 (시나리오 + 타임라인 + 발견 + 차단)
+```
+
+**R/B/P 의 핵심 인사이트 (5 항)**
+
+1. **Bastion 의 dual-role 의 운영 가치** — 한 LLM 이 Red 측 (모의해킹 plan) + Blue 측
+   (alert triage) 양 mode 지원. 학습 환경 에서 의 효율 (단일 도구) + 운영 환경 에서 의
+   분리 (다른 사용자 그룹) 의 trade-off 의 학습 자료.
+
+2. **RoE (Rules of Engagement) 의 자동화 한계** — Red mode 의 명령 plan = AI 가 생성,
+   실행 = 사람 의 매 단계 승인. 자동 실행 = RoE 위반 위험. AI 에이전트 의 boundary
+   설계 의 base.
+
+3. **CVE 손 계산 + AI 결합** — 3-7a 의 손 계산 = 운영자 의 판단 base. AI 가 CVSS +
+   EPSS + 자산 분류 의 계산 자동화 + 사람 의 P0/P1/P2 결정 의 보조. 결정 의 책임 =
+   사람.
+
+4. **alert triage 의 단순화 + 정확도 trade-off** — wazuh_aggregate 의 by_src_ip 의
+   단순 통계 = 빠른 triage / 그러나 sophisticated APT 의 multi-source = 누락 위험. W14
+   (APT 분석) 의 base.
+
+5. **운영 의 단계 적 자동화** — alert 통계 = 자동 / 차단 권장 = AI / 차단 적용 =
+   사람. W11+ 의 자율보안 = 차단 적용 의 AI 자동화 의 점진적 도입 + 사람 의 검토 의
+   sampling.
+
 ### 3-7a. CVE 분석 손 계산 — CVE-2024-1234 패치 우선순위
 
 학습 환경에서 CVE 분석을 손 계산하는 깊은 예시다.
