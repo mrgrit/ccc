@@ -30,11 +30,66 @@ steps:
   # ============================================================
   - order: 1
     instruction: |
-      학생 PC 에서 6v6-bastion 점프 호스트로 16 컨테이너 가시화 + aicompanion vhost
-      응답 확인. W01 secuops 의 헬스체크 재 실행 + ai.6v6.lab 추가 확인.
+      ## 🎯 MISSION — 6v6 16 컨테이너 + aicompanion vhost 헬스체크
+
+      학생 PC 에서 6v6-bastion 점프 호스트 로 16 컨테이너 가시화 + aicompanion
+      vhost 응답 확인. W01 secuops 의 헬스체크 응용 + ai.6v6.lab vhost 추가
+      확인. 본 주차 의 *AI 자원* 가시화 의 시작.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **6v6 인프라** = 16 컨테이너 (bastion / attacker / fw / ips / web / siem /
+        wazuh-indexer / wazuh-dashboard / 8 vuln-sites). 본 과목 의 *모든 실습 의
+        기반*
+      - **aicompanion** = 8 vuln-sites 중 *AI 보안 학습용* sub-site. ai.6v6.lab
+        vhost 로 접근
+      - **HAProxy + vhost** = fw 컨테이너 의 HAProxy 가 Host header 별 6 backend 로
+        라우팅. ai.6v6.lab → aicompanion 컨테이너
+      - **AI 자원 = 3 종** — aicompanion (vuln site) + Bastion API (KG /
+        Manager) + (선택) Ollama (LLM serving)
+
+      ## 💻 실행 명령
+
+      ```bash
+      # 1) 16 컨테이너 확인
+      ssh 6v6-bastion 'docker ps --format "{{.Names}} {{.Status}}" | tee /tmp/containers.txt | wc -l'
+      # 2) ai.6v6.lab vhost 응답
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "ai.6v6.lab: %{http_code}\n" -H "Host: ai.6v6.lab" http://10.20.30.1/'
+      # 3) 다른 vhost (juice / dvwa 등) 도 확인 — 기준 비교
+      ssh 6v6-attacker 'for h in juice dvwa govportal mediforum neobank; do code=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: $h.6v6.lab" http://10.20.30.1/); echo "$h: $code"; done'
+      ```
+
+      ## 📋 확인 사항
+
+      - 16 컨테이너 (또는 17 — wazuh 추가 시) 모두 Up
+      - ai.6v6.lab 응답 (200 / 302 / 404 정상, connection refused 비정상)
+      - 다른 5 vhost 도 응답 (기준 비교)
+      - Bastion ProxyJump 정상 동작
+
+      ## 💡 왜 이걸 하는가?
+
+      AI 보안 학습 의 *기반* = AI 자원 가시화. ai.6v6.lab 가 동작 해야 W08-W15 의
+      AI Safety / RL / Adversarial 실습 가능. 본 step 의 *baseline 검증* 이 학습
+      이전 의 필수.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 16 컨테이너 + 5 vhost 모두 200/302
+      - **컨테이너 16 미만**: 일부 컨테이너 down — `docker ps -a` 로 exited 확인 +
+        `docker start <name>`
+      - **ai.6v6.lab 404**: aicompanion backend 미시작 — `docker logs
+        6v6-aicompanion` 로 진단
+      - **모든 vhost connection refused**: fw 의 HAProxy 미시작 — `docker exec
+        6v6-fw systemctl status haproxy`
+
+      ## 비정상 시 대응
+
+      - **ssh 6v6-bastion 실패** — 학생 PC 의 `~/.ssh/config` 의 ProxyJump 설정 +
+        `/etc/hosts` 의 VM_IP 매핑 재확인
+      - **aicompanion 응답 없음** — 6v6 인프라 의 *별 deploy 단계* 필요. 인프라
+        담당 자 에게 보고 (P22 backlog)
     hint: |
-      ssh 6v6-bastion docker ps --format '{{.Names}} {{.Status}}'
-      curl -H 'Host: ai.6v6.lab' http://10.20.30.1/
+      16 컨테이너 + ai.6v6.lab + 5 vhost 기준 비교. AI 자원 가시화 의 baseline.
     category: survey
     points: 15
     answer: |
