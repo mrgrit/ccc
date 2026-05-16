@@ -151,34 +151,123 @@ steps:
 
   - order: 2
     instruction: |
-      ## 🎯 MISSION — MISP 핵심 객체 5 (Event / Attribute / Object / Tag / Galaxy)
+      ## 🎯 MISSION — MISP 5 핵심 객체 의 *관계 + 사용 시점* 학습
+
+      MISP 의 데이터 모델 = 5 객체 의 hierarchy. Event 가 *상위 container*, 그 안에
+      Attribute / Object / Tag / Galaxy 가 *4 종 child*. 각 객체 의 *역할 + 사용
+      시점* 을 명확히 인지.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      | 객체 | 역할 | hierarchy |
+      |------|------|-----------|
+      | **Event** | 한 incident 또는 캠페인 의 *상위 container* | root |
+      | **Attribute** | 단일 IOC (IP/hash/url 등) — Event 의 child | leaf |
+      | **Object** | 여러 Attribute 의 *논리적 묶음* (file, registry, network) | mid |
+      | **Tag** | Event/Attribute 의 *분류 label* (TLP / kill-chain / MITRE) | meta |
+      | **Galaxy** | 표준 *threat actor / malware / tool* 라이브러리 — Event 가 link | reference |
+
+      ## 💻 산출물 (Event JSON 예시 + 5 객체 설명)
 
       ```json
       {
         "Event": {
           "id": "12345",
           "date": "2026-05-12",
-          "threat_level": 2,
+          "threat_level_id": 2,
           "distribution": 1,
-          "tags": ["tlp:amber", "apt28", "malware:emotet"],
+          "info": "APT28 lateral movement detected in 6v6 environment",
+          "Org": {"name": "6v6-secuops"},
+          "Orgc": {"name": "6v6-secuops"},
+
+          "Tag": [
+            {"name": "tlp:amber"},
+            {"name": "type:OSINT"},
+            {"name": "kill-chain:Action on Objectives"},
+            {"name": "misp-galaxy:threat-actor=\"APT28\""}
+          ],
+
           "Attribute": [
-            {"type": "ip-src", "value": "192.168.99.99", "category": "Network activity", "to_ids": true}
+            {
+              "type": "ip-src",
+              "category": "Network activity",
+              "value": "192.168.99.99",
+              "to_ids": true,
+              "comment": "C2 beacon destination - observed 2026-05-12 10:00 KST"
+            },
+            {
+              "type": "domain",
+              "category": "Network activity",
+              "value": "suspicious.ru",
+              "to_ids": true
+            }
           ],
+
           "Object": [
-            {"name": "file", "Attribute": [
-              {"type": "filename", "value": "malware.exe"},
-              {"type": "md5", "value": "abc..."},
-              {"type": "sha256", "value": "def..."}
-            ]}
+            {
+              "name": "file",
+              "meta-category": "file",
+              "description": "Malware sample dropped on 10.20.30.80",
+              "Attribute": [
+                {"object_relation": "filename", "type": "filename", "value": "malware.exe"},
+                {"object_relation": "md5", "type": "md5", "value": "abc123..."},
+                {"object_relation": "sha256", "type": "sha256", "value": "def456..."}
+              ]
+            }
           ],
+
           "Galaxy": [
-            "galaxy-cluster:threat-actor:APT28",
-            "galaxy-cluster:malware:Emotet"
+            {"name": "Threat Actor", "GalaxyCluster": [{"value": "APT28"}]},
+            {"name": "Malware", "GalaxyCluster": [{"value": "Emotet"}]}
           ]
         }
       }
       ```
-    hint: 'Event + Attribute + Object + Tag + Galaxy'
+
+      ## 💻 검증 명령 (JSON 구조 검증)
+
+      ```bash
+      # Event 의 5 객체 모두 존재 여부 + Attribute 수 + Object 수 확인
+      python3 << 'PY'
+      import json
+      event_json = """{"Event":{"id":"12345","date":"2026-05-12","Tag":[{"name":"tlp:amber"}],"Attribute":[{"type":"ip-src","value":"192.168.99.99"},{"type":"domain","value":"suspicious.ru"}],"Object":[{"name":"file","Attribute":[{"object_relation":"filename","value":"malware.exe"}]}],"Galaxy":[{"name":"Threat Actor","GalaxyCluster":[{"value":"APT28"}]}]}}"""
+      e = json.loads(event_json)["Event"]
+      print(f"Event id: {e['id']}")
+      print(f"Tag count: {len(e['Tag'])}")
+      print(f"Attribute count: {len(e['Attribute'])}")
+      print(f"Object count: {len(e['Object'])}")
+      print(f"Galaxy count: {len(e['Galaxy'])}")
+      print(f"file Object 의 Attribute: {len(e['Object'][0]['Attribute'])}")
+      PY
+      ```
+
+      ## 📋 확인 사항
+
+      - 5 객체 hierarchy 표 작성
+      - Event JSON 의 5 객체 모두 포함
+      - Attribute 의 `to_ids: true` 의 의미 (Wazuh/Suricata 에 적용 여부) 인지
+      - Object 의 *논리적 묶음* — 단순 Attribute 와 차이
+      - Galaxy 는 *재사용* — Event 별 정의 X, 라이브러리 reference
+
+      ## 💡 왜 이걸 하는가?
+
+      MISP 의 *분석가 productivity* 의 90% 는 5 객체 모델 이해 에서 옴. *Object 사용
+      vs Attribute 만* 의 차이 가 *분석 품질* 결정.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 5 객체 표 + Event JSON 검증 (Event id 12345, Attribute 2, Object 1, file Object 의 Attribute 1)
+      - **Galaxy 누락**: 가장 흔한 실수 — threat-actor / malware 매핑 안 함
+      - **Object 미사용 (Attribute 만)**: 분석 품질 낮음 — file/network/registry 의
+        *묶음* 의 의미 없음
+
+      ## 비정상 시 대응
+
+      - **JSON parse error** — quote escape 또는 trailing comma. `python3 -m
+        json.tool` 로 라인 확인
+    hint: |
+      5 객체 hierarchy + JSON 구조 + Attribute vs Object 차이 + Galaxy 재사용.
+      분석가 productivity 의 90%.
     category: configuration
     points: 15
     answer: |
