@@ -1303,3 +1303,81 @@ steps:
     domain + SHA-256) STIX 2.1 bundle 작성, uuid 채움. Phase B: siem 의 .env 에서 OPENCTI_ADMIN_TOKEN
     추출, curl POST /graphql Authorization Bearer 로 indicatorAdd mutation 1건 이상 성공. Phase C:
     graphql indicators 검색으로 등록 확인 + STIX vs TAXII + 운영 volume 회고. 종료: lab 변경 없음.
+- order: 100
+  instruction: '[Multi-task] OpenCTI 5단계 통합 — 컨테이너 → 로그 → 포트 → STIX bundle → GraphQL import.'
+  bastion_prompt: |
+    OpenCTI CTI 플랫폼 5작업을 한 흐름의 lab 으로 수행해줘. 6v6-siem 대상.
+
+    1) [컨테이너 + 의존성] ssh ccc@{{SECU_IP}}00 'sudo docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+       | head -15; sudo docker ps --filter "name=opencti" --format "{{.Names}}: {{.Status}}"' 의 OpenCTI
+       컨테이너 inventory + 의존 서비스 (redis, elasticsearch, minio, rabbitmq) 표.
+
+    2) [Platform 로그 + 헬스] sudo docker logs opencti_opencti-platform_1 --tail 20 2>&1 | head -20 +
+       sudo curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/health 의 health endpoint 응답.
+
+    3) [Port 확인] ssh ccc@{{SECU_IP}}00 'sudo ss -tlnp 2>/dev/null | grep -E "8080|7474|9200|9000" | head -10' 의
+       OpenCTI (8080) + Neo4j (7474) + Elasticsearch (9200) + MinIO (9000) 의 listen 확인 표.
+
+    4) [STIX 2.1 IoC bundle 작성] ssh ccc@{{SECU_IP}}00 'mkdir -p /tmp/stix; cat > /tmp/stix/iocs.json <<EOF
+       {
+         "type": "bundle", "id": "bundle--$(uuidgen)", "spec_version": "2.1",
+         "objects": [
+           {"type":"indicator","spec_version":"2.1","id":"indicator--$(uuidgen)","created":"2026-05-16T00:00:00Z",
+            "modified":"2026-05-16T00:00:00Z","pattern":"[ipv4-addr:value = \"203.0.113.5\"]",
+            "pattern_type":"stix","valid_from":"2026-05-16T00:00:00Z","labels":["malicious-activity"]},
+           {"type":"indicator","spec_version":"2.1","id":"indicator--$(uuidgen)","created":"2026-05-16T00:00:00Z",
+            "modified":"2026-05-16T00:00:00Z","pattern":"[domain-name:value = \"evil.test\"]",
+            "pattern_type":"stix","valid_from":"2026-05-16T00:00:00Z","labels":["malicious-activity"]},
+           {"type":"indicator","spec_version":"2.1","id":"indicator--$(uuidgen)","created":"2026-05-16T00:00:00Z",
+            "modified":"2026-05-16T00:00:00Z","pattern":"[file:hashes.SHA-256 = \"a1b2c3d4e5f6...\"]",
+            "pattern_type":"stix","valid_from":"2026-05-16T00:00:00Z","labels":["malicious-activity"]}
+         ]
+       }
+       EOF
+       jq . /tmp/stix/iocs.json | head -30' 의 3 indicator (IPv4 + domain + SHA-256) STIX bundle 작성.
+
+    5) [GraphQL indicatorAdd mutation] TOK=$(sudo grep "OPENCTI_ADMIN_TOKEN" /home/ccc/opencti/.env | cut -d= -f2);
+       curl -s -X POST http://localhost:8080/graphql -H "Authorization: Bearer $TOK" -H "Content-Type:
+       application/json" -d '{"query":"mutation { indicatorAdd(input: { name:\"203.0.113.5\",
+       indicator_types:[\"malicious-activity\"], pattern:\"[ipv4-addr:value = \\\"203.0.113.5\\\"]\",
+       pattern_type:\"stix\", x_opencti_score:80 }) { id name } }"}' | python3 -m json.tool. 응답 의 indicator
+       id 확인 + 검색 query (curl ... '{"query":"query { indicators(first:5){ edges{ node{ name pattern } } } }"}')
+       으로 등록 확인.
+
+    마지막에 5단계 × (OpenCTI 컴포넌트 / 명령 / 결과 / STIX 객체 type / 운영 권고 (token 보안 / STIX vs TAXII
+    선택 / volume tuning) / NIST CSF 매핑) 의 5×6 매트릭스 + CTI Operations Playbook (STIX bundle 표준 양식 /
+    GraphQL import vs TAXII pull / token rotation / connector library) markdown 출력.
+  hint: OpenCTI 5단계 chain. STIX 2.1 양식 + GraphQL API + token 보안이 학습 핵심.
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: '[통합] OpenCTI 5단계 — 컨테이너/로그/포트/STIX bundle/GraphQL. NIST DE.AE-3 + STIX 2.1 표준 매핑 + 5×6 매트릭스 + CTI Operations Playbook.'
+      success_criteria:
+      - 5 단계 모두 실행
+      - 컨테이너 inventory + 의존성 (redis/ES/minio/rabbitmq)
+      - STIX 2.1 bundle 3 indicator (IPv4 + domain + SHA-256)
+      - GraphQL mutation syntax 정확
+      - token 추출 + Bearer 사용
+      - 5×6 매트릭스 + Operations Playbook
+      acceptable_methods:
+      - bastion 의 multi-stage planning
+      - ssh + docker + curl + jq + uuidgen 표준
+      - MISP / ThreatConnect 대체 가능
+      - markdown 매트릭스 + Playbook
+      negative_signs:
+      - 3 단계 이하 만 수행
+      - STIX bundle 1 indicator 만
+      - GraphQL mutation syntax 오류
+      - 의존성 컨테이너 확인 누락
+      - 매트릭스 6 컬럼 미만
+  target_vm: bastion
+  risk_level: low
+  answer: |
+    🤖 위 bastion_prompt 그대로. OpenCTI 5단계 + 5×6 매트릭스 + CTI Operations Playbook.
+  answer_detail: |
+    CTI Analyst 페르소나 — OpenCTI 5단계 chain. STIX 2.1 표준 + GraphQL API + token 보안. cleanup X (CTI 데이터 보존).
+  script: ''

@@ -1331,3 +1331,85 @@ steps:
     추가 (4) sleep 65 후 자동 해제. Phase C: 수동 vs 자동 비교표 + AR 위험 + 운영 best practice.
 
     종료 시 ossec.conf.bak 복구 + iptables -F.'
+- order: 100
+  instruction: '[Multi-task] Wazuh FIM/SCA/AR 5단계 통합 — syscheck → FIM trigger → SCA → Active Response → AR 위험 분석.'
+  bastion_prompt: |
+    Wazuh 의 advanced 기능 5작업을 한 흐름의 lab 으로 수행해줘.
+
+    1) [Syscheck (FIM) 설정 확인] ssh ccc@{{SECU_IP}} 'sudo grep -A20 "<syscheck>" /var/ossec/etc/ossec.conf |
+       head -25; sudo ls -lh /var/ossec/queue/fim/db/fim.db' 의 감시 디렉터리 목록 (/etc, /usr/bin, /bin, /sbin)
+       + fim.db 크기 + frequency (12시간) 표. CIS Benchmark 6.x 매핑.
+
+    2) [FIM trigger + alert] ssh ccc@{{SECU_IP}} 'echo "test-fim-$(date +%s)" > /etc/ccc-fim-test;
+       chmod 644 /etc/ccc-fim-test; ls -l /etc/ccc-fim-test' 의 파일 생성 + sleep 30 +
+       ssh ccc@{{SECU_IP}}00 'sudo grep "ccc-fim-test" /var/ossec/logs/alerts/alerts.json 2>/dev/null |
+       python3 -c "import json,sys; [print(json.loads(l).get(\"rule\",{}).get(\"description\"),
+       json.loads(l).get(\"syscheck\",{}).get(\"event\")) for l in sys.stdin]" | head -5' 의 alert 검증.
+       NIST DE.CM-8 매핑.
+
+    3) [SCA (Security Configuration Assessment)] ssh ccc@{{SECU_IP}}00 'sudo /var/ossec/bin/wazuh-control
+       info | grep sca; sudo ls /var/ossec/ruleset/sca/ | head -10; sudo /var/ossec/bin/agent_groups -a -g
+       default 2>/dev/null | head -5' + GET API 호출 (curl -sk -u admin:admin "https://localhost:55000/sca/
+       000?pretty" -X GET 2>/dev/null | python3 -m json.tool | head -30) 의 SCA 정책 목록 + 점수 표. CIS
+       Benchmark 매핑.
+
+    4) [Active Response 설정 + 트리거] ssh ccc@{{SECU_IP}}00 'sudo cp /var/ossec/etc/ossec.conf /var/ossec/etc/
+       ossec.conf.bak; sudo tee -a /var/ossec/etc/ossec.conf > /dev/null <<EOF
+
+       <active-response>
+         <command>firewall-drop</command>
+         <location>local</location>
+         <rules_id>5712</rules_id>
+         <timeout>60</timeout>
+       </active-response>
+       EOF
+       sudo systemctl restart wazuh-manager' + ssh ccc@{{SECU_IP}} 'for i in {1..6}; do sshpass -p wrong
+       ssh -o StrictHostKeyChecking=no -o ConnectTimeout=2 wronguser@{{SECU_IP}}00 2>/dev/null; done' →
+       AR firewall-drop trigger 시 iptables 의 자동 룰 추가 확인 (sudo iptables -L INPUT -n -v | head -10).
+       MITRE T1110.001 + 자동 차단 매핑.
+
+    5) [AR 위험 분석 + cleanup] AR 의 4 위험 (1. False Positive 시 정상 사용자 차단 2. AR 자동화 의 timeline
+       gap (수동 검토 X) 3. attacker spoofed IP 의 amplification (whitelist drop 유도) 4. AR script 의 권한
+       escalation 위험) 을 표로 정리 + 운영 best practice (1. whitelist 강제 2. timeout 짧게 60-300s 3.
+       review queue 4. allowlist by source). cleanup: sudo cp /var/ossec/etc/ossec.conf.bak /var/ossec/etc/
+       ossec.conf + sudo iptables -F + sudo systemctl restart wazuh-manager.
+
+    마지막에 5단계 × (Wazuh 기능 / 명령 / 결과 / 위험 / Best Practice / NIST CSF 매핑) 의 5×6 매트릭스 +
+    AR Decision Framework (어떤 alert 에 AR 적용 vs 수동 검토 의 의사결정 표) + cleanup 검증 출력.
+  hint: Wazuh 의 advanced 5 chain. AR 의 운영 위험이 학습 핵심. cleanup 필수.
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: '[통합] Wazuh FIM/SCA/AR 5단계 — syscheck/FIM/SCA/AR/위험. NIST DE.CM-8 + CIS Benchmark + MITRE T1110 매핑 + 5×6 매트릭스 + AR Decision.'
+      success_criteria:
+      - 5 단계 모두 실행
+      - FIM trigger + alert 검증
+      - SCA API 호출
+      - AR firewall-drop 설정 + 자동 차단 검증
+      - AR 4 위험 분석 + Best Practice
+      - cleanup (ossec.conf 복구 + iptables -F + restart)
+      - 5×6 매트릭스 + AR Decision
+      acceptable_methods:
+      - bastion 의 multi-stage planning
+      - ssh + Wazuh API + iptables 표준
+      - Splunk PhantomCyber / Cortex XSOAR 대체 가능
+      - markdown 매트릭스 + Decision Framework
+      negative_signs:
+      - 3 단계 이하 만 수행
+      - FIM trigger 검증 누락
+      - AR 자동 차단 검증 누락
+      - 위험 분석 누락
+      - cleanup 미수행
+      - 매트릭스 6 컬럼 미만
+  target_vm: bastion
+  risk_level: medium
+  answer: |
+    🤖 위 bastion_prompt 그대로. Wazuh advanced 5단계 + 5×6 매트릭스 + AR Decision + cleanup.
+  answer_detail: |
+    SOC Senior 페르소나 — Wazuh advanced 5 chain. AR 의 4 위험 + Best Practice 가 운영 핵심.
+    cleanup 미수행 시 prod 위험 큼 (iptables 룰 + ossec.conf 변경).
+  script: ''

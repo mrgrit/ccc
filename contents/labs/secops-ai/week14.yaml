@@ -1438,3 +1438,81 @@ steps:
     +
 
     MTTC + 재발 방지 markdown + sha256. 종료 시 include-after.conf 제거 + cti_ips flush.'
+- order: 100
+  instruction: '[Multi-task] 통합 보안 아키텍처 5단계 — Suricata eve → Wazuh 수집 → SIEM alert → CTI 차단 → IR 보고서.'
+  bastion_prompt: |
+    nft + Suricata + Wazuh + OpenCTI 의 4 layer 통합 chain 을 한 흐름의 종합 lab 으로 수행해줘.
+
+    1) [Suricata eve.json + Wazuh localfile 통합] ssh ccc@{{SECU_IP}} 'ls -lh /var/log/suricata/eve.json;
+       sudo grep -A3 "<localfile>" /var/ossec/etc/ossec.conf | grep -B1 "eve.json"' 의 eve.json 위치 + Wazuh
+       agent 의 수집 설정 확인. event flow 확인 (Suricata alert → eve.json → Wazuh agent → manager → SIEM).
+       NIST DE.AE-3 + DE.CM-1 매핑.
+
+    2) [Wazuh attacker IP alert 조회] ssh ccc@{{SECU_IP}}00 'sudo grep "{{ATTACKER_IP}}" /var/ossec/logs/alerts/
+       alerts.json 2>/dev/null | tail -10 | python3 -c "import json,sys; [print(json.loads(l).get(\"rule\",{}).
+       get(\"id\"), json.loads(l).get(\"rule\",{}).get(\"description\",\"\")[:60]) for l in sys.stdin]"' 의
+       최근 10 alert + rule id 분포 (Suricata 룰 / Wazuh 자체 룰 / decoder) 표.
+
+    3) [SIEM API + CTI 자동 차단 chain] TOK=$(ssh ccc@{{SECU_IP}}00 'sudo grep OPENCTI_ADMIN_TOKEN
+       /home/ccc/opencti/.env | cut -d= -f2'); CURL_OUT=$(ssh ccc@{{SECU_IP}}00 "curl -s -X POST
+       http://localhost:8080/graphql -H 'Authorization: Bearer $TOK' -H 'Content-Type: application/json'
+       -d '{\"query\":\"mutation { indicatorAdd(input: { name:\\\"{{ATTACKER_IP}}\\\",
+       indicator_types:[\\\"malicious-activity\\\"], pattern:\\\"[ipv4-addr:value = \\\\\\\"{{ATTACKER_IP}}\\\\\\\"]\\\",
+       pattern_type:\\\"stix\\\", x_opencti_score:90 }) { id name } }\"}'") ; echo "$CURL_OUT" | head -3 의
+       attacker IP 의 OpenCTI 등록 + 다시 sync script (W13) 가 nft cti_ips 에 자동 추가하는 흐름 시뮬.
+
+    4) [End-to-end attack drill] ssh ccc@{{ATTACKER_IP}} 'curl -s -A "BadBot" "http://{{WEB_IP}}/?id=1+OR+1=1--"
+       -o /dev/null -w "%{http_code}\n"; nmap -sS -F {{WEB_IP}} 2>&1 | head -10; echo "test-fim-drill" |
+       sudo tee /etc/ccc-drill-fim > /dev/null 2>&1 || echo "fim trigger via ssh"' 의 3 vector (SQLi + recon +
+       FIM) + 5분 대기 후 ssh ccc@{{SECU_IP}}00 'sudo tail -50 /var/ossec/logs/alerts/alerts.json | grep -cE
+       "{{ATTACKER_IP}}|drill-fim"' 의 alert 발생 카운트.
+
+    5) [Incident Response 보고서 + Lessons Learned] timeline (T+0 attacker SQLi / T+5 ModSec 403 + Suricata
+       alert / T+30 Wazuh SIEM alert / T+60 CTI 등록 / T+120 nft cti_ips 차단) + cross-check 표 (Vector ×
+       4 layer × 매칭 여부) + MTTC (Mean Time To Containment) 측정 + 재발 방지 권고 (3가지: 1. Suricata 의
+       SQL Injection 룰 강화 / 2. CTI sync 주기 단축 (1h → 15min) / 3. WAF Paranoia Level 상향) 의 1 페이지
+       IR 보고서 markdown.
+
+    cleanup: sudo rm /etc/ccc-drill-fim + sudo a2disconf modsec-exception 2>/dev/null + ssh ccc@{{SECU_IP}}
+       'sudo nft flush set inet ctiwl cti_ips 2>/dev/null'.
+
+    마지막에 5 단계 × (통합 layer / 명령 / 발견 / cross-check 매칭 / MTTC 단축 효과 / 운영 권고) 의 5×6
+    매트릭스 + Integrated Security Architecture diagram (ASCII art: attacker → web/Apache+ModSec → secu/nft+
+    Suricata → SIEM(siem) → OpenCTI → nft cti_ips loop) + Incident Response Report (timeline + lessons +
+    재발 방지 3) markdown 출력.
+  hint: 4 layer 통합 chain end-to-end. MTTC 측정 + Lessons Learned 가 운영 산출물.
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: '[통합] 통합 보안 아키텍처 5단계 — Suricata eve/Wazuh/SIEM/CTI/IR 보고서. NIST CSF Identify/Protect/Detect/Respond 매핑 + 5×6 매트릭스 + Architecture diagram + IR Report.'
+      success_criteria:
+      - 5 단계 모두 실행
+      - eve.json + Wazuh localfile 연계 검증
+      - attacker IP alert 조회
+      - OpenCTI mutation + CTI 자동 차단 chain
+      - end-to-end attack drill (3 vector)
+      - IR 보고서 (timeline + MTTC + 재발 방지 3)
+      - 5×6 매트릭스 + Architecture diagram
+      acceptable_methods:
+      - bastion 의 multi-stage planning
+      - ssh + nft + suricata + wazuh + opencti GraphQL 표준
+      - markdown 매트릭스 + ASCII Architecture
+      negative_signs:
+      - 3 단계 이하 만 수행
+      - 4 layer 통합 누락 (한 layer 만)
+      - end-to-end drill 누락
+      - IR 보고서 누락
+      - cleanup 미수행
+      - 매트릭스 6 컬럼 미만
+  target_vm: bastion
+  risk_level: medium
+  answer: |
+    🤖 위 bastion_prompt 그대로. 4 layer 통합 5단계 + 5×6 매트릭스 + Architecture diagram + IR Report.
+  answer_detail: |
+    Senior SOC Architect 페르소나 — 4 layer 통합 chain end-to-end. MTTC + Lessons Learned 가 운영
+    산출물. cleanup 미수행 시 prod 영향 큼.
+  script: ''

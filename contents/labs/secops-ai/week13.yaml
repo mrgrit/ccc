@@ -1497,3 +1497,84 @@ steps:
     /usr/local/bin/cti-sync.sh 작성 (graphql query + jq IP 파싱 + nft flush set + add elements)
     + 실행. Phase C: nft set 5 IP → 6번째 IP 추가 → sync → 6 IP 반영. 회고: 수동 vs 자동 +
     cron 주기 + score/whitelist. 종료 시 cti_ips flush + script 제거.
+- order: 100
+  instruction: '[Multi-task] OpenCTI 활용 5단계 통합 — GraphQL 응답 → nft set → blocklist 룰 → set 원소 확인 → 자동 sync 스크립트.'
+  bastion_prompt: |
+    OpenCTI → nftables 의 CTI 자동화 5단계 chain 을 수행해줘.
+
+    1) [GraphQL endpoint 응답 확인] ssh ccc@{{SECU_IP}}00 'curl -sk -X POST http://localhost:8080/graphql
+       -H "Content-Type: application/json" -d "{\"query\":\"{ about { version } }\"}" | python3 -m json.tool'
+       의 version 응답 + token 추출 (TOK=$(sudo grep OPENCTI_ADMIN_TOKEN /home/ccc/opencti/.env | cut -d= -f2);
+       echo "${TOK:0:8}...") 형식.
+
+    2) [nft cti_ips set 생성] ssh ccc@{{SECU_IP}} 'sudo nft add table inet ctiwl 2>/dev/null;
+       sudo nft add set inet ctiwl cti_ips "{ type ipv4_addr \; flags interval \; comment \"opencti
+       sync\" \; }"; sudo nft list set inet ctiwl cti_ips' 의 set 생성 확인. CIS Benchmark 매핑.
+
+    3) [filter input chain + blocklist drop 룰] sudo nft add chain inet ctiwl input "{ type filter hook input
+       priority 0 \; policy accept \; }"; sudo nft insert rule inet ctiwl input position 0 ip saddr @cti_ips
+       drop counter "cti-drop"; sudo nft list table inet ctiwl 의 룰 확인. position 0 의 priority 의미 (체인
+       의 첫 룰로 삽입).
+
+    4) [Set 원소 추가 + 확인] sudo nft add element inet ctiwl cti_ips "{ 203.0.113.5, 198.51.100.10,
+       192.0.2.20, 203.0.113.50, 198.51.100.100 }" 의 5 IP 동적 추가 + sudo nft list set inet ctiwl cti_ips
+       의 원소 카운트 (≥ 5) + attacker 에서 trigger 시 cti-drop counter 검증 (ssh ccc@{{ATTACKER_IP}}
+       'ping -c 2 -W 1 -I eth0 -S 203.0.113.5 {{SECU_IP}} 2>&1 | tail -2 || echo "spoof fail"' — 실 spoof 안
+       돼도 OK, 검증은 nft counter 만).
+
+    5) [자동 sync 스크립트 + Cron 권고] cat > /tmp/cti-sync.sh <<'EOF'
+       #!/bin/bash
+       TOK=$(grep OPENCTI_ADMIN_TOKEN /home/ccc/opencti/.env | cut -d= -f2)
+       IPS=$(curl -s -X POST http://localhost:8080/graphql -H "Authorization: Bearer $TOK" -H "Content-Type:
+       application/json" -d '{"query":"{ indicators(first:100) { edges { node { pattern x_opencti_score } } } }"}' \
+       | jq -r '.data.indicators.edges[].node | select(.x_opencti_score > 50) | .pattern' \
+       | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | sort -u)
+       if [ -n "$IPS" ]; then
+         sudo nft flush set inet ctiwl cti_ips
+         for ip in $IPS; do sudo nft add element inet ctiwl cti_ips "{ $ip }"; done
+         logger -t cti-sync "synced $(echo $IPS | wc -w) IPs"
+       fi
+       EOF
+       chmod +x /tmp/cti-sync.sh + cron 권고 (0 */1 * * * /tmp/cti-sync.sh — 1 시간 주기). 운영 권고
+       (score threshold 50+ / whitelist exception set / sync 실패 시 fallback / dry-run 모드).
+
+    cleanup: sudo nft flush set inet ctiwl cti_ips + sudo nft delete table inet ctiwl + rm /tmp/cti-sync.sh.
+
+    마지막에 5단계 × (단계 / 명령 / 결과 / CTI 표면 / 운영 권고 (cron 주기 / score threshold / whitelist /
+    fallback) / NIST CSF 매핑) 의 5×6 매트릭스 + CTI Automation Playbook (sync 주기 가이드 / score 기반 필터 /
+    whitelist 정책 / sync 실패 alert) markdown + cleanup 검증 출력.
+  hint: OpenCTI → nft sync 5단계 chain. score threshold + whitelist + sync 실패 alert 가 운영 핵심.
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: '[통합] OpenCTI 활용 5단계 — GraphQL/nft set/blocklist 룰/원소/sync script. NIST DE.AE-3 + 자동화 매핑 + 5×6 매트릭스 + CTI Automation Playbook.'
+      success_criteria:
+      - 5 단계 모두 실행
+      - cti_ips set 생성 + 원소 5 IP 추가
+      - sync script 작성 (graphql + jq + nft 통합)
+      - cron 권고 + score threshold 명시
+      - cleanup (set flush + table delete + script 제거)
+      - 5×6 매트릭스 + Automation Playbook
+      acceptable_methods:
+      - bastion 의 multi-stage planning
+      - ssh + nft + curl + jq 표준
+      - python3 또는 perl script 대체 가능
+      - cron 또는 systemd timer
+      negative_signs:
+      - 3 단계 이하 만 수행
+      - sync script 누락
+      - score threshold 누락
+      - cleanup 미수행
+      - 매트릭스 6 컬럼 미만
+  target_vm: bastion
+  risk_level: low
+  answer: |
+    🤖 위 bastion_prompt 그대로. OpenCTI → nft 5단계 + 5×6 매트릭스 + Automation Playbook + cleanup.
+  answer_detail: |
+    CTI Automation Engineer 페르소나 — OpenCTI → nft 자동 sync chain. score threshold + whitelist +
+    sync 실패 alert 가 운영 핵심.
+  script: ''
