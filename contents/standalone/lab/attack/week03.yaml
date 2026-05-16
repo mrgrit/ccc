@@ -19,120 +19,237 @@ steps:
 
   - order: 1
     instruction: |
-      ## 🎯 MISSION
+      ## Mission
+      attacker (10.20.30.202) 에서 JuiceShop (vhost juice.6v6.lab) 의 REST API
+      endpoint 3 카테고리 응답을 매핑하라. JuiceShop 은 OWASP 가 만든 *80+ challenge*
+      의 의도적 취약 웹앱. 본 step 은 *API 매핑* — 후속 5 주차 (W04 SQLi / W05 XSS /
+      W06 Auth / W07 Misconfig) 의 공격 표면 전제. 학생은 *3 endpoint 의 의도* + *각
+      endpoint 가 어느 OWASP Top 10 카테고리에 매핑되는지* 인지.
 
-      JuiceShop 의 REST API endpoint **3 카테고리** 응답 조회.
+      ## JuiceShop 의 2 API namespace (외워야 함)
+      | namespace | 의도 | 예시 |
+      |-----------|------|------|
+      | `/api/<Model>` | Sequelize ORM 의 *기본 CRUD* | /api/Products /api/Users /api/Feedbacks |
+      | `/rest/<custom>` | *수동 작성* 의 비즈니스 로직 | /rest/user/login /rest/user/whoami |
 
-      ## 💻 실행 명령
+      → `/api` 의 *대부분 model* 이 *인증 검증 누락* (의도적 취약). `/rest` 는 *명시적
+        검증* 있는 경우 多.
 
+      ## 3 endpoint 의 OWASP Top 10 매핑
+      | endpoint | OWASP | 의도 |
+      |----------|:-----:|------|
+      | `/api/Products` | (정상) | 제품 목록. 공격 X. baseline |
+      | `/api/Users` | **A01 Broken Access Control** | *모든 사용자 정보* 노출 (인증 없이) — IDOR (W06) |
+      | `/rest/user/whoami` | A07 Auth | 인증 없이 호출 시 *빈 사용자* — 정상 동작 |
+
+      ## 실행 절차
+      1. **/api/Products** — baseline (정상 응답 확인)
+      2. **/api/Users** — *IDOR 가능성 검증* (인증 없이 모든 사용자 노출)
+      3. **/rest/user/whoami** — *익명 호출* (인증 토큰 없이) 응답 패턴
+
+      ## 실행 명령
       ```bash
-      # /api/Products
-      ssh 6v6-attacker 'curl -s -H "Host: juice.6v6.lab" http://10.20.30.1/api/Products 2>&1 | head -c 300'
-      echo
-      # /api/Users
-      ssh 6v6-attacker 'curl -s -H "Host: juice.6v6.lab" http://10.20.30.1/api/Users 2>&1 | head -c 300'
-      echo
-      # /rest/user/whoami (인증 없이 → 빈 결과 또는 redirect)
-      ssh 6v6-attacker 'curl -s -H "Host: juice.6v6.lab" http://10.20.30.1/rest/user/whoami 2>&1 | head -c 200'
+      ssh 6v6-attacker '
+        echo "=== /api/Products (baseline) ==="
+        curl -s -H "Host: juice.6v6.lab" http://10.20.30.1/api/Products 2>&1 | head -c 400
+        echo
+        echo "=== /api/Users (IDOR 검증) ==="
+        curl -s -H "Host: juice.6v6.lab" http://10.20.30.1/api/Users 2>&1 | head -c 400
+        echo
+        echo "=== /rest/user/whoami (익명) ==="
+        curl -s -H "Host: juice.6v6.lab" http://10.20.30.1/rest/user/whoami 2>&1 | head -c 200
+      '
       ```
 
-      ## 📋 확인 사항
+      ## 성공 판정
+      - `/api/Products` — JSON 배열 (제품 목록), `"id":1` 또는 `"name"` 포함
+      - `/api/Users` — JSON 배열, **인증 없이도 사용자 목록 노출** = IDOR 확인
+      - `/rest/user/whoami` — `{"user":{}}` 또는 빈 user 응답
+      - 3 endpoint 모두 응답 코드 200 (또는 401 — 401 시 W06 의 인증 우회 학습 기회)
+      - **OWASP A01 (Broken Access Control) 매핑 인지** — /api/Users 가 *왜* 노출되면 안 되는지
 
-      - /api/Products: JSON 배열 (제품 목록)
-      - /api/Users: JSON 배열 (사용자 — IDOR 가능!)
-      - /rest/user/whoami: 빈 사용자 (인증 없음)
+      ## 비정상 시 대응
+      - **403 (ModSec 차단)** — User-Agent 의심. `-H "User-Agent: Mozilla/5.0"` 추가
+      - **빈 응답** — JuiceShop 컨테이너 down. `ssh ccc@host 'docker ps | grep juiceshop'`
+      - **/api/Users 가 401** — 의도적 인증 추가됨. W06 의 JWT 우회 학습 기회
+      - **JSON parse error** — head -c 로 잘림. `-c 0` (전체) 또는 jq 로 정렬
 
-      ## 💡 왜 이걸 하는가?
+      ## 학습 — 다음 주차 입력
+      | 주차 | 이 step 의 결과 활용 |
+      |:----:|----------------------|
+      | W04 | /api/Products 의 search 파라미터 → SQLi |
+      | W05 | /api/Feedbacks 의 comment → 저장형 XSS |
+      | W06 | /api/Users 의 IDOR + /rest/user/login 의 JWT alg=none |
+      | W07 | /api/Cards 의 admin 노출 (Misconfig) |
 
-      JuiceShop 은 80+ challenge 의 vuln 웹앱. API 매핑은 모든 후속 공격의 전제.
+    hint: |
+      3 endpoint 모두 Host header juice.6v6.lab 필수. head -c 400 으로 응답 잘라봄.
+      /api/Users 가 *인증 없이* 응답하면 IDOR — OWASP A01.
 
-      ## 🔍 결과 해석
-
-      - **정상**: 3 endpoint 모두 응답
-      - **IDOR 가능성**: /api/Users 가 인증 없이 사용자 목록 노출 (W06 학습)
-    hint: JuiceShop API 3 endpoint
     category: analysis
     points: 20
     answer: |
-      ssh 6v6-attacker 'curl -s -H "Host: juice.6v6.lab" http://10.20.30.1/api/Products 2>&1 | head -c 300'
-      ssh 6v6-attacker 'curl -s -H "Host: juice.6v6.lab" http://10.20.30.1/api/Users 2>&1 | head -c 300'
-      ssh 6v6-attacker 'curl -s -H "Host: juice.6v6.lab" http://10.20.30.1/rest/user/whoami 2>&1 | head -c 200'
-    answer_detail: 3 REST endpoint 응답 매핑.
+      ssh 6v6-attacker '
+        curl -s -H "Host: juice.6v6.lab" http://10.20.30.1/api/Products | head -c 400
+        echo
+        curl -s -H "Host: juice.6v6.lab" http://10.20.30.1/api/Users | head -c 400
+        echo
+        curl -s -H "Host: juice.6v6.lab" http://10.20.30.1/rest/user/whoami | head -c 200
+      '
+    answer_detail: |
+      3 endpoint 의 응답 매핑 + IDOR 검증. /api/Products = baseline, /api/Users = IDOR
+      (OWASP A01), /rest/user/whoami = 익명 호출 패턴. 후속 W04~W07 의 공격 표면 전제.
     verify:
       type: output_contains
-      expect: data
+      expect: 'id\|email\|user'
       field: stdout
       semantic:
-        intent: "REST API 매핑"
-        success_criteria: ["JSON 응답"]
+        intent: |
+          JuiceShop 의 REST API 3 endpoint 매핑. /api (ORM) vs /rest (커스텀) 의 구분 +
+          /api/Users 의 IDOR 검증 (OWASP A01) + /rest/user/whoami 의 익명 응답 패턴.
+          후속 W04~W07 의 공격 표면 전제.
+        success_criteria:
+          - "/api/Products 가 JSON 배열 응답 (제품 id/name 포함)"
+          - "/api/Users 가 인증 없이 사용자 목록 노출 → IDOR 확인"
+          - "/rest/user/whoami 가 익명 호출 시 빈 user 응답"
+          - "3 endpoint 모두 200 또는 의도적 401/403"
+          - "OWASP A01 (Broken Access Control) 매핑 명시"
         acceptable_methods:
-          - "**[OSS] /api/Products (제품 목록)**"
-          - "**[OSS] /api/Users (IDOR 가능)**"
-          - "**[OSS] /api/Challenges (score-board)**"
-          - "**[OSS] /rest/user/login (POST)**"
-          - "**[OSS] /rest/user/whoami**"
-          - "**[OSS] /api/Cards / /api/Addresses (admin)**"
-          - "**[OSS] OPTIONS preflight CORS**"
-          - "**[OSS] WebSocket /socket.io**"
+          - "curl -H Host (baseline): 명령 `curl -s -H 'Host: juice.6v6.lab' http://10.20.30.1/api/Users`. 인증 없이 사용자 목록 시도."
+          - "curl + jq (가독성): 명령 `... | jq '.data[] | {id, email}'`. JSON 분석."
+          - "httpie: 명령 `http --print=b GET http://10.20.30.1/api/Users 'Host: juice.6v6.lab'`. 컬러 + 자동 JSON 포맷."
+          - "Burp Suite Proxy (수동): 브라우저 proxy → JuiceShop GUI → Burp 가 자동 캡처."
+          - "OWASP ZAP API: zap-cli quick-scan -s xss,sqli -t http://juice.6v6.lab/."
+          - "httpx (병렬): 명령 `echo http://10.20.30.1 | httpx -path /api/Users -H 'Host: juice.6v6.lab' -mc 200`."
+          - "Postman / Insomnia: collection import (JuiceShop OpenAPI spec)."
+          - "Bastion AI 자동 매핑: bastion 이 (1) endpoint list 자동 (2) 인증 없는 응답 → IDOR finding (3) OWASP 매핑 → KG anchor."
+        negative_signs:
+          - "3 endpoint 중 일부만 시도"
+          - "응답 JSON 받고 *IDOR* 의미 인지 못함"
+          - "/api 와 /rest 의 의도 차이 모름"
+          - "403 받고 *원인 분석* 없이 종료 (User-Agent 차단 미고려)"
+          - "OWASP A01 매핑 누락"
     target_vm: attacker
 
   - order: 2
     instruction: |
-      ## 🎯 MISSION
+      ## Mission
+      attacker (10.20.30.202) 에서 JuiceShop 의 `/rest/user/login` 에 admin 계정으로
+      POST 하여 JWT 를 받고, **3 부분 (header.payload.signature) 을 각각 base64 디코드**
+      해 *평문 JSON* 을 추출하라. 본 step 은 W06 의 JWT 우회 (alg=none, HS256 secret
+      brute) 의 *직접적 전제*. 학생은 *JWT 의 stateless 인증 구조* + *base64 가 암호화
+      가 아님* + *서명 (signature) 만 검증함* 의 3 핵심을 인지.
 
-      JuiceShop admin 계정 로그인 + **JWT payload 디코드**.
-
-      ## 💻 실행 명령
-
-      ```bash
-      JWT=$(ssh 6v6-attacker 'curl -s -X POST -H "Host: juice.6v6.lab" -H "Content-Type: application/json" -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"admin123\"}" http://10.20.30.1/rest/user/login 2>&1 | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"authentication\",{}).get(\"token\",\"\"))" 2>/dev/null')
-      echo "JWT 받음 (앞 50): ${JWT:0:50}..."
-      echo
-      echo "=== JWT header ==="
-      echo "$JWT" | cut -d. -f1 | base64 -d 2>/dev/null
-      echo
-      echo "=== JWT payload ==="
-      echo "$JWT" | cut -d. -f2 | base64 -d 2>/dev/null
+      ## JWT 의 3 부분 구조 (외워야 함)
+      ```
+      base64(header).base64(payload).base64(signature)
+              ↓                ↓                  ↓
+      {alg, typ}         {sub, iat, exp,...}    HMAC/RSA 결과
       ```
 
-      ## 📋 확인 사항
+      | 부분 | 내용 | 인코딩 | 보안 의미 |
+      |------|------|--------|----------|
+      | **header** | `{"alg":"HS256\|RS256","typ":"JWT"}` | base64url | alg 만 변경 가능 (alg=none 우회 — W06) |
+      | **payload** | `{"sub":"user_id","email":"...","iat":1700000000,"exp":...}` | base64url | *평문* — base64 만 — 누구나 디코드 |
+      | **signature** | HMAC-SHA256 또는 RSA-SHA256 | base64url | 서버만 검증 가능. 변조 시 거부 |
 
-      - JWT 받음 (3 부분: header.payload.signature)
-      - header: `{"alg":"RS256","typ":"JWT"}` 또는 `{"alg":"HS256",...}`
-      - payload: `{"status":"success","data":{"id":1,"email":"admin@juice-sh.op",...}}`
+      → **핵심 오해 회피** — JWT 는 *암호화* 가 아닌 *서명*. 평문 가시.
 
-      ## 💡 왜 이걸 하는가?
+      ## 실행 절차
+      1. **/rest/user/login POST** — admin 계정 (`admin@juice-sh.op` / `admin123`) 으로 JWT 발급 요청
+      2. **JWT 추출** — JSON 응답의 `authentication.token` 필드
+      3. **3 부분 분할** — `cut -d. -f1/2/3` 으로 header/payload/signature 분리
+      4. **base64 디코드** — header + payload 만 (signature 는 binary)
+      5. **JSON 분석** — alg / payload 의 user id / email / exp 확인
 
-      JWT 는 stateless 인증 표준. base64 decoded → JSON 평문 (서명만 검증). W06 의 JWT
-      alg=none 우회의 전제.
+      ## 실행 명령
+      ```bash
+      JWT=$(ssh 6v6-attacker '
+        curl -s -X POST -H "Host: juice.6v6.lab" -H "Content-Type: application/json" \
+             -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"admin123\"}" \
+             http://10.20.30.1/rest/user/login \
+        | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"authentication\",{}).get(\"token\",\"\"))" 2>/dev/null
+      ')
+      [ -z "$JWT" ] && { echo "JWT 발급 fail — admin 계정 확인"; exit 1; }
+      echo "JWT (앞 50자): ${JWT:0:50}..."
+      echo
+      echo "=== HEADER (alg, typ) ==="
+      echo "$JWT" | cut -d. -f1 | base64 -d 2>/dev/null; echo
+      echo "=== PAYLOAD (user info) ==="
+      echo "$JWT" | cut -d. -f2 | base64 -d 2>/dev/null; echo
+      echo "=== SIGNATURE 길이 (binary 라 디코드 X) ==="
+      echo "$JWT" | cut -d. -f3 | wc -c
+      ```
 
-      ## 🔍 결과 해석
+      ## 성공 판정
+      - JWT 발급 성공 (3 부분 `aaa.bbb.ccc` 형식)
+      - header 디코드 — `{"alg":"...","typ":"JWT"}` 형식
+      - payload 디코드 — `{"data":{"id":1,"email":"admin@juice-sh.op",...}}` 또는 유사
+      - alg 알고리즘 *명시* (HS256 / RS256 / none)
+      - signature 길이 ≥ 32 chars (binary, 디코드 X)
+      - **base64 가 암호화 아님 인지** — payload 가 평문 누구나 보임
 
-      - **정상**: JWT 3 부분 디코드 가능 + payload 의 user id / email
-      - **W06 학습**: alg=none 으로 변조 시 일부 라이브러리 인증 우회
-    hint: JWT 받기 + base64 디코드
+      ## 비정상 시 대응
+      - **login 401 (인증 실패)** — admin 비밀번호 다른 가능. JuiceShop default 는 `admin@juice-sh.op`/`admin123`. 변경됐다면 `/rest/user/login` 의 401 응답 확인 후 password reset 또는 회원가입
+      - **JWT 가 None 또는 empty** — JSON parse 실패. response 의 정확한 필드명 (`authentication.token` 또는 `data.token`) 확인
+      - **base64 디코드 실패** — base64url ≠ base64 표준 (URL-safe). `cut | tr '_-' '/+' | base64 -d` 로 변환
+      - **payload 파싱 시 JSON 깨짐** — base64 padding 부족. `echo "$str====" | base64 -d`
+
+      ## W06 학습 연결 — alg=none 우회 시나리오
+      ```
+      1. 정상 JWT — header 에 alg=HS256, signature 검증
+      2. 공격 — header 의 alg 를 "none" 으로 변경 + signature 제거
+      3. 서버 (취약한 라이브러리) — alg=none 받으면 signature 검증 skip → 인증 통과
+      4. 결과 — 임의 payload (admin id) 로 인증 우회
+      ```
+
+    hint: |
+      /rest/user/login POST + admin 계정. JWT 의 3 부분 (header.payload.signature)
+      각각 cut -d. -f1/2 + base64 -d. base64url 변환 (tr '_-' '/+') 필요할 수도.
+      signature 는 binary 라 디코드 X — 길이만.
+
     category: analysis
     points: 25
     answer: |
-      JWT=$(ssh 6v6-attacker 'curl -s -X POST -H "Host: juice.6v6.lab" -H "Content-Type: application/json" -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"admin123\"}" http://10.20.30.1/rest/user/login 2>&1 | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"authentication\",{}).get(\"token\",\"\"))" 2>/dev/null')
-      echo "JWT: ${JWT:0:50}..."
+      JWT=$(ssh 6v6-attacker '
+        curl -s -X POST -H "Host: juice.6v6.lab" -H "Content-Type: application/json" \
+             -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"admin123\"}" \
+             http://10.20.30.1/rest/user/login \
+        | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"authentication\",{}).get(\"token\",\"\"))" 2>/dev/null
+      ')
       echo "$JWT" | cut -d. -f1 | base64 -d 2>/dev/null
       echo "$JWT" | cut -d. -f2 | base64 -d 2>/dev/null
-    answer_detail: JWT 3 부분 디코드. payload 의 user 정보 추출.
+    answer_detail: |
+      admin 로그인 → JWT 발급 → 3 부분 base64 디코드. header (alg/typ) + payload (user
+      info) 만 의미. signature 는 binary. base64 = 평문 가시. W06 의 JWT 우회 전제.
     verify:
       type: output_contains
-      expect: JWT
+      expect: 'alg\|email'
       field: stdout
       semantic:
-        intent: "JWT 디코드"
-        success_criteria: ["JWT 받음", "header/payload 디코드"]
+        intent: |
+          JuiceShop 의 /rest/user/login 으로 JWT 발급 + 3 부분 base64 디코드 + alg /
+          payload 의 user info 추출. *base64 ≠ 암호화* + *서명만 검증* 인지. W06 의 JWT
+          alg=none 우회의 직접 전제.
+        success_criteria:
+          - "JWT 발급 성공 (a.b.c 형식, 3 부분)"
+          - "header 디코드 — alg + typ 필드 명시"
+          - "payload 디코드 — user id / email 추출"
+          - "signature 의 binary 성격 인지 (디코드 X, 길이만)"
+          - "base64 가 암호화 아닌 인코딩 인지 + payload 평문 가시"
         acceptable_methods:
-          - "**[OSS] /rest/user/login POST**"
-          - "**[OSS] base64 -d (또는 base64url)**"
-          - "**[OSS] jwt.io 외부 디코더**"
-          - "**[OSS] jwt_tool (자동화)**"
-          - "**[OSS] payload exp/iat/aud/iss**"
-          - "**[OSS] signature 검증 (RS256/HS256)**"
-          - "**[OSS] alg:none 우회 (W06)**"
-          - "**[OSS] HS256 secret brute (W06 hashcat -m 16500)**"
+          - "curl POST + JSON body (수기): 명령 `curl -X POST -d '{...}' http://.../rest/user/login`. JWT 발급 표준."
+          - "base64 -d (디코드): 명령 `echo $part | base64 -d`. base64url 인 경우 `tr '_-' '/+'` 변환."
+          - "Python jwt 라이브러리: 명령 `python3 -c \"import jwt; print(jwt.decode(t, options={'verify_signature':False}))\"`. signature 무시."
+          - "jwt.io (외부 GUI): 브라우저 https://jwt.io 에 토큰 paste → 자동 디코드. 인터넷 필요."
+          - "jwt_tool (자동화 toolkit): 명령 `jwt_tool $JWT`. alg=none + HS256 brute + RS-to-HS 등 자동."
+          - "httpie + Authorization: 명령 `http GET http://.../rest/user/whoami 'Authorization:Bearer $JWT'`. JWT 의 실제 사용 검증."
+          - "openssl base64: 명령 `echo $part | openssl base64 -d`. base64 -d 대안."
+          - "Bastion AI 자동 + KG: bastion 이 (1) login → JWT (2) 3 부분 디코드 (3) alg + claims 자동 분석 → KG anchor."
+        negative_signs:
+          - "JWT 발급 시도하고 401 받고 종료 — admin password 확인 없이"
+          - "base64 디코드 결과 출력만 하고 *alg 알고리즘* 무관심"
+          - "signature 까지 디코드 시도 (binary 라 실패 — 정상)"
+          - "base64 = 암호화 라 오인 → JWT 보안 모델 이해 부족"
+          - "W06 의 alg=none 우회 연결 인지 못함"
     target_vm: attacker

@@ -20,178 +20,339 @@ steps:
 
   - order: 1
     instruction: |
-      ## 🎯 MISSION
+      ## Mission
+      attacker (10.20.30.202) 에서 **fw 의 ext endpoint (10.20.30.1)** 의 외부 노출 포트
+      5 종 을 nmap 으로 정찰하라. 본 step 은 PTES 2 단계 (Intelligence Gathering) +
+      MITRE ATT&CK T1595.001 (Active Scanning) 의 *교과서적 첫 행동*. 학생은 *nmap 의
+      3 스캔 종류* (TCP connect / SYN stealth / Service Version) 의 *각각 언제 쓰는지* +
+      *Suricata 의 detection* 를 인지해야 한다.
 
-      attacker 에서 **fw (10.20.30.1) 의 5 핵심 포트** (22/80/443/2204/9100) nmap 스캔.
+      ## fw 의 5 외부 노출 포트 (외워야 함)
+      | 포트 | 서비스 | 백엔드 |
+      |:----:|--------|--------|
+      | 22 | 호스트 SSH | (fw 의 sshd) |
+      | 80 | HTTP — 8 vhost reverse proxy | dmz/int → 7 vuln vhost |
+      | 443 | HTTPS (self-signed) | 동일 |
+      | 2204 | bastion SSH 점프 | bastion :22 |
+      | 9100 | Bastion API | bastion :9100 |
 
-      ## 💻 실행 명령
+      → 이 외 포트 (5601 SIEM lite, 8000 portal, 2202 attacker) 는 외부 노출 X — *내부에서만* 접근.
 
+      ## nmap 스캔 3 종 (각각 언제 쓰는가)
+      | 스캔 | 옵션 | 권한 | 특징 |
+      |------|------|:----:|------|
+      | TCP connect | `-sT` | user | full handshake. 느림, log 남음. *권한 없을 때* |
+      | SYN stealth | `-sS` | root | half-open. 빠름, log 적음. *기본 권장* |
+      | Service Version | `-sV` | user | 각 port 의 banner → 버전 추출. *exploit 검색의 시작* |
+
+      ## 실행 절차
+      1. **TCP connect 스캔** (권한 X 환경 가정) — 5 핵심 포트
+      2. **Service Version 스캔** — open 포트의 banner 추출 (HAProxy / Apache / OpenSSH)
+      3. **출력 분석** — 어느 포트가 어느 서비스로 매핑되는지 표 작성
+
+      ## 실행 명령
       ```bash
-      ssh 6v6-attacker 'nmap -sT -p 22,80,443,2204,9100 10.20.30.1 2>&1 | tail -10'
-      ssh 6v6-attacker 'sudo nmap -sV -p 80,443 10.20.30.1 2>&1 | tail -10'
+      ssh 6v6-attacker '
+        echo "=== TCP connect (-sT) ==="
+        nmap -sT -p 22,80,443,2204,9100 10.20.30.1 2>&1 | tail -10
+        echo
+        echo "=== Service Version (-sV) ==="
+        sudo nmap -sV -p 22,80,443,2204,9100 10.20.30.1 2>&1 | tail -15
+      '
       ```
 
-      ## 📋 확인 사항
+      ## 성공 판정
+      - 5 포트 모두 *open* 표시 (filtered 가 아닌)
+      - 22 → OpenSSH, 80/443 → HAProxy/Apache, 2204 → SSH, 9100 → HTTP (Bastion API) banner
+      - Service Version 의 *정확한 버전 string* 1 개 이상 추출
 
-      - -sT (TCP connect) 출력: 22 open / 80 open / 443 open / 2204 closed (host 측 SSH) / 9100 open
-      - -sV (서비스 버전): HAProxy / nginx-like banner
+      ## 비정상 시 대응
+      - **모든 port filtered** — fw nftables drop 룰 활성 가능. `ssh 6v6-fw 'sudo nft list ruleset \| head -20'` 으로 확인
+      - **TCP connect 만 open, SYN stealth fail** — sudo 권한 부재 또는 raw socket 차단. `-sT` 만 사용
+      - **Service Version 비어있음** — banner 차단 가능. `-sV --version-intensity 9` 로 강화
+      - **Suricata 알람 발생** (siem 의 alert.json) — *정상 동작* (정찰 = 탐지 대상). step 3 R/B/P 에서 활용
 
-      ## 💡 왜 이걸 하는가?
+      ## 학습 — Suricata 의 정찰 탐지
+      ```bash
+      # 별도 검증 (학생) — siem 에서
+      ssh 6v6-siem 'sudo tail -10 /var/log/suricata/eve.json | jq "select(.alert) | .alert.signature" 2>/dev/null'
+      ```
+      정상 환경에선 `ET SCAN Nmap Scan` 또는 `ET SCAN Possible Nmap User-Agent` 알람.
+    hint: |
+      nmap 의 -sT/-sS/-sV 차이 정확히. 5 외부 노출 포트만 (22/80/443/2204/9100).
+      sudo 가 -sS/-sV 의 일부 기능에 필요. 결과 분석 시 port → service 매핑 명시.
 
-      PTES 2 단계 — Recon. 외부 노출 포트 + 서비스 버전 정찰. 운영 환경에선 IDS 가 즉시
-      탐지 (Suricata ET SCAN).
-
-      ## 🔍 결과 해석
-
-      - **정상**: 4 port open + banner
-      - **비정상**: 모든 port filtered → fw 의 drop 룰 활성 (Blue 의 사전 대응)
-    hint: nmap -sT + -sV
     category: scanning
     points: 20
     answer: |
-      ssh 6v6-attacker 'nmap -sT -p 22,80,443,2204,9100 10.20.30.1 2>&1 | tail -10'
-      ssh 6v6-attacker 'sudo nmap -sV -p 80,443 10.20.30.1 2>&1 | tail -10'
-    answer_detail: nmap 결과 + 서비스 버전.
+      ssh 6v6-attacker '
+        nmap -sT -p 22,80,443,2204,9100 10.20.30.1 2>&1 | tail -10
+        sudo nmap -sV -p 22,80,443,2204,9100 10.20.30.1 2>&1 | tail -15
+      '
+    answer_detail: |
+      TCP connect (-sT) 5 포트 + Service Version (-sV) 5 포트. 5 포트 모두 open + banner
+      추출. 22 = OpenSSH, 80/443 = HAProxy/Apache, 2204 = SSH (bastion), 9100 = HTTP
+      (Bastion API). 비정상 시 fw nftables 룰 또는 sudo 권한 점검.
     verify:
       type: output_contains
       expect: open
       field: stdout
       semantic:
-        intent: "fw 포트 스캔"
-        success_criteria: ["open port"]
+        intent: |
+          fw 의 5 외부 노출 포트 (22/80/443/2204/9100) 의 nmap 정찰. -sT + -sV 의 차이
+          인지 + 각 포트의 서비스·백엔드 매핑. PTES 2 단계 + ATT&CK T1595.001 의 교과서
+          행동. Suricata 탐지 대상이라는 사실까지 인지.
+        success_criteria:
+          - "5 포트 모두 open 표시 (filtered 가 아닌)"
+          - "Service Version (-sV) banner 1 개 이상 추출 (HAProxy/Apache/OpenSSH)"
+          - "각 포트의 서비스 매핑 명시 — 22:SSH, 80/443:web reverse proxy, 2204:bastion SSH, 9100:Bastion API"
+          - "비정상 (filtered) 발생 시 fw 룰 또는 sudo 권한 점검 절차 인지"
+          - "정찰이 Suricata 탐지 대상임을 인지 (정상 동작)"
         acceptable_methods:
-          - "**[OSS] nmap -sT (TCP connect, 권한 불필요)**"
-          - "**[OSS] nmap -sS (SYN stealth, root 필요)**"
-          - "**[OSS] nmap -sV (서비스 버전)**"
-          - "**[OSS] nmap -O (OS detection)**"
-          - "**[OSS] nmap -sU (UDP)**"
-          - "**[OSS] nmap --script (NSE)**"
-          - "**[OSS] nmap -oN/-oX/-oG (출력 형식)**"
-          - "**[OSS] T1595.001 Active Scanning**"
+          - "nmap -sT (TCP connect, 권한 X): 명령 `nmap -sT -p 22,80,443,2204,9100 10.20.30.1`. full handshake — 느리지만 log 남음. 권한 없을 때 fallback."
+          - "nmap -sS (SYN stealth, root 필요): 명령 `sudo nmap -sS -p 22,80,443,2204,9100 10.20.30.1`. half-open — 빠름, log 적음. 기본 권장."
+          - "nmap -sV (Service Version): 명령 `sudo nmap -sV -p 22,80,443,2204,9100 10.20.30.1`. banner 추출 → 버전 → CVE 검색."
+          - "nmap -O (OS detection): 명령 `sudo nmap -O 10.20.30.1`. TCP/IP fingerprint → OS family + uptime."
+          - "nmap -sU (UDP): 명령 `sudo nmap -sU -p 53,123,161 10.20.30.1`. UDP 포트 (DNS/NTP/SNMP) 정찰. 느림."
+          - "nmap --script (NSE): 명령 `nmap --script=banner -p 22,80 10.20.30.1`. lua script 600+ 종."
+          - "masscan (ASIC-like 속도): 명령 `sudo masscan -p1-65535 10.20.30.1 --rate=10000`. 65k 포트 1 초. -sV 없음."
+          - "Bastion AI 자동 정찰 + KG: bastion 이 (1) -sT 우선 (2) sudo 가능 시 -sS+-sV (3) 결과 → asset_state anchor + finding."
+        negative_signs:
+          - "5 포트 중 일부만 시도"
+          - "filtered 결과 받고 fw 룰 점검 없이 종료"
+          - "banner 추출 안 함 (-sV 누락)"
+          - "Suricata 탐지 인지 못함 — 정찰이 stealth 라 착각"
+          - "외부 노출 X 포트 (5601, 8000, 2202) 까지 시도 — 의미 없음"
     target_vm: attacker
 
   - order: 2
     instruction: |
-      ## 🎯 MISSION
+      ## Mission
+      attacker (10.20.30.202) 에서 fw (10.20.30.1) 의 :80 으로 **Host: juice.6v6.lab**
+      헤더를 주입하여 nikto 자동 웹 스캐너를 실행하라. 본 step 은 ATT&CK T1595.002
+      (Vulnerability Scanning). 학생은 *nikto 의 6 카테고리 (Tuning)* 와 *Tuning 4/5/9
+      가 web app vuln 의 핵심 axis 임* 을 인지. 또 *ModSec 가 403 으로 차단하는 패턴*
+      을 관찰하여 *step 3 R/B/P 의 입력* 으로 활용.
 
-      nikto 로 juice.6v6.lab **웹 스캐너** 실행 — 알려진 취약점 + 잘못된 설정 + 헤더
-      분석.
+      ## nikto Tuning 카테고리 (외워야 함)
+      | # | Tuning | 의미 |
+      |:-:|--------|------|
+      | 0 | File Upload | 업로드 취약점 |
+      | 1 | Interesting File | 백업 / git / 설정 파일 노출 |
+      | 2 | Misconfiguration | 잘못된 설정 |
+      | 3 | Information Disclosure | 버전 / path 누출 |
+      | **4** | **Injection (XSS/PHP/etc)** | XSS / template injection |
+      | **5** | **Remote File Retrieval (inside)** | LFI |
+      | 6 | Denial of Service | DoS |
+      | 7 | Remote File Retrieval (server) | RFI |
+      | 8 | Command Execution | Cmd injection |
+      | **9** | **SQL Injection** | SQLi |
+      | a | Auth Bypass | 인증 우회 |
+      | b | Web Service / DB | service 별 vuln |
 
-      ## 💻 실행 명령
+      → 본 step 의 `-Tuning 4,5,9` = *Injection + LFI + SQLi* — 가장 빈도 높은 3 axis.
 
+      ## 실행 절차
+      1. **nikto 30 초 timeout 으로 실행** — 전체 scan 은 5~10 분, 30 초 만으로 *초기 발견* 확인
+      2. **결과 분석** — Apache/Server banner / ModSec 403 차단 / Tuning 별 발견 항목
+      3. **403 차단 패턴 기록** — step 3 의 R/B/P 에서 학습 대상
+
+      ## 실행 명령
       ```bash
-      ssh 6v6-attacker 'timeout 30 nikto -h http://10.20.30.1/ -Tuning 4,5,9 2>&1 | tail -25' || echo "nikto timeout"
+      ssh 6v6-attacker '
+        echo "=== nikto 30s (Tuning 4,5,9) ==="
+        timeout 30 nikto -h http://10.20.30.1/ -Vhost juice.6v6.lab \
+                         -Tuning 4,5,9 -nointeractive 2>&1 | tail -30 || echo "(timeout 정상)"
+        echo
+        echo "=== ModSec 차단 통계 (siem) ==="
+        ssh 6v6-siem "sudo grep -c '403' /var/log/apache2/modsec_audit.log 2>/dev/null || echo 0"
+      '
       ```
 
-      ## 📋 확인 사항
+      ## 성공 판정
+      - nikto 가 *banner / server / cookie* 정보 1 개 이상 추출
+      - Tuning 4/5/9 의 *시도 흔적* (response code 다양성)
+      - ModSec 403 차단 발견 시 *정상 동작* 으로 인식 (Blue team 의 기본 방어)
+      - 30 초 timeout 시 *부분 결과* 라도 분석 시도
 
-      - nikto 가 30초 안 일부 결과 출력 (전체 scan 은 5-10분)
-      - Tuning 4 (Injection) / 5 (XSS) / 9 (SQL Injection) 만 선택 (시간 절약)
-      - Apache + ModSec 차단 메시지 (대부분 403)
+      ## 비정상 시 대응
+      - **nikto 시작 자체 fail** — `which nikto` 확인 (W01 step 1 의 13 도구 매트릭스)
+      - **모든 응답 403** — ModSec 가 nikto User-Agent 차단. `-useragent "Mozilla/5.0"` 또는 `-evasion 1~8` 옵션
+      - **타임아웃 결과 비어있음** — `-Tuning x` (Reverse Tuning, 모든 카테고리) 로 axis 확대 또는 *직접 vhost* (`http://10.20.30.81:3000/`) 우회
+      - **fw drop 으로 connection refused** — step 1 의 nmap 결과 재확인
 
-      ## 💡 왜 이걸 하는가?
+      ## 학습 — Tuning 4,5,9 의 ATT&CK 매핑
+      | Tuning | ATT&CK Technique |
+      |:------:|------------------|
+      | 4 Injection | T1190 Exploit Public-Facing App + T1059.007 JavaScript |
+      | 5 LFI | T1083 File and Directory Discovery |
+      | 9 SQLi | T1190 Exploit Public-Facing App + T1505.003 Web Shell (post-exploit) |
 
-      자동화 웹 스캐너 — 수동 nikto 출력 분석 → 잠재 취약점 후보 도출.
+    hint: |
+      nikto 의 -Tuning 6 카테고리 + -Vhost (Host header) + -nointeractive (자동화).
+      timeout 30 으로 부분 결과만. ModSec 403 = 정상 (방어 동작). 모든 403 시
+      User-Agent 변경 또는 vhost 직접 우회.
 
-      ## 🔍 결과 해석
-
-      - **정상**: nikto 가 nice cookie / banner / 403 차단 등 보고
-      - **비정상**: nikto 자체 timeout → -Tuning 으로 범위 축소
-    hint: nikto + 30s timeout + Tuning
     category: scanning
     points: 15
     answer: |
-      ssh 6v6-attacker 'timeout 30 nikto -h http://10.20.30.1/ -Tuning 4,5,9 2>&1 | tail -25' || echo "nikto timeout"
-    answer_detail: nikto Tuning 4/5/9 (Injection/XSS/SQLi) 30초 출력.
+      ssh 6v6-attacker '
+        timeout 30 nikto -h http://10.20.30.1/ -Vhost juice.6v6.lab \
+                         -Tuning 4,5,9 -nointeractive 2>&1 | tail -30
+      '
+    answer_detail: |
+      nikto 30 초 부분 scan. -Tuning 4/5/9 = Injection + LFI + SQLi. ModSec 403 차단 시
+      정상 동작. banner 또는 Tuning 별 시도 흔적 1 개 이상. 모든 응답 403 시 User-Agent
+      변경 또는 직접 vhost 우회.
     verify:
       type: output_contains
-      expect: 'Apache\|Server'
+      expect: 'Apache\|Server\|nikto'
       field: stdout
       semantic:
-        intent: "웹 스캐너"
-        success_criteria: ["스캐너 결과"]
+        intent: |
+          nikto 의 Tuning 4/5/9 (Injection/LFI/SQLi) 30 초 부분 scan. banner 추출 +
+          ModSec 403 차단 패턴 관찰 + step 3 R/B/P 의 입력 준비. ATT&CK T1595.002 의
+          교과서 행동.
+        success_criteria:
+          - "nikto 가 banner/server/cookie 정보 1 개 이상 추출"
+          - "Tuning 4/5/9 의 시도 흔적 (response code 다양성)"
+          - "ModSec 403 차단 발견 시 정상 동작 (방어) 으로 인식"
+          - "30 초 timeout 의 부분 결과도 분석 시도"
+          - "각 Tuning 의 ATT&CK Technique 매핑 (T1190 등) 인지"
         acceptable_methods:
-          - "**[OSS] nikto -h + -Tuning**"
-          - "**[OSS] -p N (포트)**"
-          - "**[OSS] -Format json (자동화)**"
-          - "**[OSS] OWASP ZAP (GUI 대안)**"
-          - "**[OSS] w3af / arachni**"
-          - "**[OSS] burpsuite scanner (Pro)**"
-          - "**[OSS] T1595.002 Vulnerability Scanning**"
-          - "**[OSS] ModSec 403 차단 → -p 또는 헤더 변경**"
+          - "nikto -h + -Tuning (수기 baseline): 명령 `nikto -h http://10.20.30.1/ -Vhost juice.6v6.lab -Tuning 4,5,9`. 6 카테고리 중 3 axis. 30 초 timeout 로 부분."
+          - "nikto -Format json (자동화): 명령 `nikto -h ... -Format json -output /tmp/nikto.json`. CI/CD 연동."
+          - "nikto -evasion 1-8 (ModSec 우회): 명령 `nikto -h ... -evasion 1`. encoding/double-encoding/concat 등 8 종."
+          - "nikto -useragent (UA 변경): 명령 `nikto -h ... -useragent 'Mozilla/5.0'`. User-Agent 기반 차단 우회."
+          - "OWASP ZAP (GUI 대안): zap-baseline.py -t http://... 또는 zap.sh -daemon -quickurl http://...."
+          - "w3af (Python framework): w3af_console + 200+ plugin."
+          - "Wapiti (Python, CI/CD 친화): wapiti -u http://... -m 'sql,xss,exec'."
+          - "Bastion AI 자동 + KG: bastion 이 (1) nikto 30s (2) 403 발생 시 -evasion 자동 (3) Tuning 별 finding anchor."
+        negative_signs:
+          - "nikto 실행 안 함 (which 만 확인하고 종료)"
+          - "30 초 timeout 의 부분 결과 안 보고 종료"
+          - "모든 403 받고 *vuln 없음* 으로 오인 (ModSec 방어 의 결과)"
+          - "Tuning 의 의미 (4/5/9) 인지 못함"
+          - "vhost 매핑 누락 — 그냥 IP 만 시도"
     target_vm: attacker
 
   - order: 3
     instruction: |
-      ## 🎯 MISSION (R/B/P)
+      ## Mission (R/B/P 통합)
+      **Red → Blue → Purple** 의 1 cycle 을 nmap 정찰 시나리오에 적용하라. *침투
+      테스트* 의 *학습 가능한 최소 단위* — Red 가 공격, Blue 가 즉시 대응, Purple 이
+      효과 측정. 본 step 은 step 1 + 2 의 *통합 활용*.
 
-      **Red** 가 nmap 무차별 스캔 → **Blue** 가 fw 의 drop 룰 추가 → **Red 2차**
-      → port 모두 filtered → **Purple** 이 효과 측정.
+      ## R/B/P 의 의미 (외워야 함)
+      | 역할 | 의미 | 본 step 의 행동 |
+      |------|------|---------------|
+      | **Red** | 공격자 — 정찰·exploit·post-exp | nmap 무차별 스캔 (5 포트) |
+      | **Blue** | 방어자 — 룰 배포·차단·복구 | fw nftables 에 source IP drop |
+      | **Purple** | 통합자 — Red+Blue 의 효과 측정 | drop 적용 *전/후* 의 nmap 응답 차이 + nft counter packet 수 |
 
-      ## 💻 실행 명령
+      ## 5 단계 시나리오
+      1. **Red 1차** — nmap -sS 5 포트 → *open* 결과 확인
+      2. **Blue** — fw 의 input chain 에 *attacker source IP* drop 룰 삽입
+      3. **Red 2차** — 같은 nmap → *filtered* 결과 (drop 효과)
+      4. **Purple** — nft counter 의 packet 수 확인 (nmap probe 가 카운터에 잡혔는가)
+      5. **Cleanup** — drop 룰 제거 + 정상 복귀 검증
 
+      ## 실행 명령
       ```bash
-      # Red 1차
-      ssh 6v6-attacker 'sudo nmap -sS -p 22,80,443 10.20.30.1 2>&1 | tail -10'
+      ### Red 1차 — open 확인
+      ssh 6v6-attacker 'sudo nmap -sS -p 22,80,443,2204,9100 10.20.30.1 2>&1 | tail -8'
 
-      # Blue — fw 의 input chain 에 drop
-      ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter drop'
+      ### Blue — drop 룰 추가
+      ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 \
+                          ip saddr 10.20.30.202 counter drop'
 
-      # Red 2차
-      ssh 6v6-attacker 'sudo nmap -sS -p 22,80,443 10.20.30.1 2>&1 | tail -10'
+      ### Red 2차 — filtered 확인 (drop 효과)
+      ssh 6v6-attacker 'sudo nmap -sS -p 22,80,443,2204,9100 10.20.30.1 2>&1 | tail -8'
 
-      # Purple — counter
+      ### Purple — counter 확인 (효과 측정)
       ssh 6v6-fw 'sudo nft list chain inet six_filter input | grep -B1 "10.20.30.202.*drop"'
 
-      # Cleanup
-      HANDLE=$(ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep "10.20.30.202.*drop" | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
+      ### Cleanup — drop 룰 제거
+      HANDLE=$(ssh 6v6-fw "sudo nft -a list chain inet six_filter input | grep '10.20.30.202.*drop' | grep -oE 'handle [0-9]+' | head -1 | awk '{print \$2}'")
       ssh 6v6-fw "sudo nft delete rule inet six_filter input handle $HANDLE"
 
-      # 정상화
+      ### 정상화 검증
       ssh 6v6-attacker 'sudo nmap -sT -p 80 10.20.30.1 2>&1 | tail -5'
       ```
 
-      ## 📋 확인 사항
+      ## 성공 판정 (5 단계 모두 충족)
+      - Red 1차: *open* 결과 (5 포트 중 최소 3 open)
+      - Blue: drop 룰 *handle N* 출력 (nft insert 성공)
+      - Red 2차: 모든 포트 *filtered* (drop 효과 입증)
+      - Purple: counter *packets ≥ 5* (nmap probe 잡힘)
+      - Cleanup 후: 정상화 nmap 의 *open* 결과 복귀
 
-      - Red 1차: 3 port open
-      - Red 2차: 모든 port filtered
-      - Purple: counter packets 5+ (nmap probe)
-      - Cleanup 후 정상 복귀
+      ## 비정상 시 대응
+      - **Blue 의 nft insert fail** — `sudo nft list tables` 로 `inet six_filter` 테이블 존재 확인. 없으면 `inet filter` 또는 `nft -j list chain ...` 로 정확한 이름
+      - **Red 2차 가 filtered 가 아닌 open** — drop 룰 적용 안 됨. `nft list ruleset` 으로 *룰 순서* 확인 (다른 accept 룰이 먼저면 무효)
+      - **Purple 의 counter 0** — drop 룰이 *정찰 packet 을 못 잡음*. position 또는 chain 점검
+      - **Cleanup 후 정상화 fail** — handle 추출 실수. `nft -a list ...` 로 직접 확인 후 수동 delete
+      - **실수로 다른 rule 삭제** — `nft list ruleset` 백업 후 진행 권장
 
-      ## 💡 왜 이걸 하는가?
+      ## MITRE ATT&CK 매핑
+      | 단계 | Tactic / Technique | Defense |
+      |------|-------------------|---------|
+      | Red 1차 | TA0043 Reconnaissance / T1595.001 Active Scanning | D3-NTPM Network Traffic Policy Mapping |
+      | Blue | (방어) | M1037 Filter Network Traffic |
+      | Red 2차 | (회피 시도) | T1095 Non-Standard Port (Red 가 우회할 때 사용 가능) |
+      | Purple | (분석) | DA0005 Coverage Mapping |
 
-      Purple Team standard — Red 가 정찰 → Blue 가 drop 으로 차단 → Purple 이 효과
-      검증. incident response 의 표준.
+      ## 학습 — Wazuh 연동 (W13 secuops)
+      ```bash
+      # 별도 검증 (학생) — Wazuh alert 의 nmap 탐지
+      ssh 6v6-siem 'sudo tail -20 /var/ossec/logs/alerts/alerts.json | jq "select(.rule.id == 5710 or .rule.description | test(\"scan\"; \"i\"))"'
+      ```
 
-      ## 🔍 결과 해석
+    hint: |
+      R/B/P 5 단계 순서대로. Blue 의 nft insert position 0 (chain 첫 룰). Cleanup 의
+      handle 추출 정확히 (handle N awk). 실수로 다른 룰 삭제 회피.
 
-      - **정상**: Red 1차 open → 2차 filtered → cleanup 후 open 복귀
-      - **MITRE ATT&CK**: T1595 (Active Scanning) → 방어 D3-NTPM (Network Traffic Policy Mapping)
-    hint: nmap → drop → 효과 측정
     category: redblue
     points: 25
     answer: |
-      ssh 6v6-attacker 'sudo nmap -sS -p 22,80,443 10.20.30.1 2>&1 | tail -10'
+      ssh 6v6-attacker 'sudo nmap -sS -p 22,80,443,2204,9100 10.20.30.1 2>&1 | tail -8'
       ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter drop'
-      ssh 6v6-attacker 'sudo nmap -sS -p 22,80,443 10.20.30.1 2>&1 | tail -10'
+      ssh 6v6-attacker 'sudo nmap -sS -p 22,80,443,2204,9100 10.20.30.1 2>&1 | tail -8'
       ssh 6v6-fw 'sudo nft list chain inet six_filter input | grep -B1 "10.20.30.202.*drop"'
-      HANDLE=$(ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep "10.20.30.202.*drop" | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
+      HANDLE=$(ssh 6v6-fw "sudo nft -a list chain inet six_filter input | grep '10.20.30.202.*drop' | grep -oE 'handle [0-9]+' | head -1 | awk '{print \$2}'")
       ssh 6v6-fw "sudo nft delete rule inet six_filter input handle $HANDLE"
-    answer_detail: R/B/P 통합.
+      ssh 6v6-attacker 'sudo nmap -sT -p 80 10.20.30.1 2>&1 | tail -5'
+    answer_detail: |
+      R/B/P 5 단계 cycle. 1차 open → drop 룰 → 2차 filtered → counter ≥ 5 → cleanup
+      → 정상화. nft 의 handle 정확 추출. 실수로 다른 룰 삭제 회피.
     verify:
       type: output_contains
-      expect: 'filtered\|open'
+      expect: 'filtered'
       field: stdout
       semantic:
-        intent: "R/B/P nmap"
-        success_criteria: ["nmap 결과 + drop 효과"]
+        intent: |
+          R/B/P 5 단계 통합 — nmap 정찰 → fw drop 룰 → 효과 측정 → cleanup. *방어 룰
+          의 즉시 효과* 를 학생이 *측정 가능한 형태* 로 학습. ATT&CK T1595 + 방어
+          D3-NTPM 의 매핑까지.
+        success_criteria:
+          - "Red 1차 의 open 결과 (최소 3 포트)"
+          - "Blue 의 nft insert 성공 (handle N 출력)"
+          - "Red 2차 의 filtered (drop 효과)"
+          - "Purple 의 counter packets ≥ 5 (nmap probe 잡힘)"
+          - "Cleanup 후 정상화 nmap 의 open 복귀"
         acceptable_methods:
-          - "**[OSS] nmap -sS stealth**"
-          - "**[OSS] nft insert rule input drop**"
-          - "**[OSS] counter packets 증가**"
-          - "**[OSS] cleanup handle 식별**"
-          - "**[OSS] ATT&CK T1595 + D3-NTPM**"
-          - "**[OSS] ISMS-P 2.6.1 (네트워크 접근 통제)**"
-          - "**[OSS] Suricata ET SCAN 자동 detection**"
-          - "**[OSS] Wazuh + CDB list (W13 secuops) 연동**"
+          - "nmap -sS stealth: 명령 `sudo nmap -sS -p 22,80,443,2204,9100 10.20.30.1`. SYN half-open, log 적음. 기본 정찰."
+          - "nft insert rule (Blue): 명령 `sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter drop`. position 0 = chain 첫 룰. counter = 통계."
+          - "nft list chain (Purple): 명령 `sudo nft list chain inet six_filter input`. 룰 + counter packets/bytes 표시."
+          - "nft -a (handle 추출): 명령 `sudo nft -a list chain inet six_filter input`. -a = handle 표시."
+          - "nft delete rule (Cleanup): 명령 `sudo nft delete rule inet six_filter input handle N`. handle 식별 후 정확 삭제."
+          - "iptables 대안 (legacy): 명령 `sudo iptables -I INPUT 1 -s 10.20.30.202 -j DROP`. nftables 대안 (RHEL/CentOS 일부)."
+          - "ufw 대안: 명령 `sudo ufw deny from 10.20.30.202`. 단순 관리."
+          - "Wazuh active-response (자동화): /var/ossec/etc/ossec.conf 의 firewall-drop active response."
+        negative_signs:
+          - "5 단계 중 일부 누락 (Cleanup 안 함 → 다른 학생 실습 영향)"
+          - "Red 2차 결과 filtered 가 아닌 timeout 보고 *drop 효과* 라 오인 (실제는 다른 원인)"
+          - "Purple 의 counter 안 확인 (단순 filtered 만 보고 종결)"
+          - "nft 의 다른 chain 또는 다른 IP 의 룰 삭제 실수"
+          - "정상화 검증 안 함 (Cleanup 후 *진짜 정상* 인지 모름)"
     target_vm: bastion
