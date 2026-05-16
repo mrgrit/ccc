@@ -1109,6 +1109,120 @@ Kibana Discover 에서도 본다.
 
 ---
 
+## 12.6 R/B/P 종합 시나리오 — 룰 5 기술 통합 검증
+
+본 주차 의 5 룰 작성 기술 (pcre / fast_pattern / flowbits / threshold / suppression) 을
+R/B/P 의 3 관점 에서 통합 검증.
+
+### 통합 도식
+
+```mermaid
+graph LR
+    R["🔴 Red Team<br/>attacker (10.20.30.202)<br/>3 시나리오<br/>① 다단계 admin 시도<br/>② PII 누출 응답<br/>③ SSH brute"]
+
+    NET["🌐 ips 의 af-packet<br/>모든 트래픽 sniff<br/>flow 추적"]
+
+    B1["🔵 Suricata fast_pattern<br/>매 패킷 의<br/>1차 prefilter"]
+    B2["🔵 pcre 정규식<br/>매칭 후 정밀 분석<br/>capture group"]
+    B3["🔵 flowbits<br/>다단계 추적<br/>setbit/isset"]
+    B4["🔵 threshold<br/>rate limit alert<br/>limit/threshold/both"]
+    B5["🔵 suppression<br/>FP 차단<br/>IP/rule 단위"]
+
+    P1["🟣 Coverage Matrix<br/>5 기술 × 3 시나리오"]
+    P2["🟣 Detection Gap<br/>flowbits race<br/>pcre catastrophic backtracking"]
+    P3["🟣 룰 튜닝<br/>fast_pattern 위치<br/>threshold count 조정"]
+    P4["🟣 SOC fatigue<br/>측정 + 보고"]
+
+    R --> NET
+    NET --> B1
+    B1 --> B2
+    B2 --> B3
+    B3 --> B4
+    B4 --> B5
+    B5 --> P1
+    P1 --> P2
+    P2 --> P3
+    P3 --> P4
+    P3 -.->|local.rules 패치| B2
+
+    style R fill:#f85149,color:#fff
+    style NET fill:#3fb950,color:#fff
+    style B1 fill:#1f6feb,color:#fff
+    style B2 fill:#1f6feb,color:#fff
+    style B3 fill:#1f6feb,color:#fff
+    style B4 fill:#1f6feb,color:#fff
+    style B5 fill:#1f6feb,color:#fff
+    style P1 fill:#bc8cff,color:#fff
+    style P2 fill:#bc8cff,color:#fff
+    style P3 fill:#bc8cff,color:#fff
+    style P4 fill:#bc8cff,color:#fff
+```
+
+### Coverage Matrix — 5 룰 기술 × 3 시나리오
+
+| 시나리오 | Red 명령 | Blue 1차 탐지 | Blue 2차 분석 | Purple Gap | Purple 권장 |
+|---------|---------|--------------|--------------|-----------|------------|
+| **① 다단계 admin** | `curl /admin/login` → fail → `curl /admin/login -u admin:admin` (15초 내) | flowbits ADM_VISIT setbit → ADM_BRUTE isset → alert | jq 로 src IP / flow id / timestamp 분석 | flowbits race (동시 connection 의 bit 충돌) | flow:to_server,established + flowbits:noalert 의 조합 |
+| **② PII 누출** | DB error 응답 의 `'name':'홍길동','rrn':'880101-...'` 누출 | pcre 의 한국 RRN 정규식 `/[0-9]{6}-[0-9]{7}/` 매칭 | event_filter 의 limit 100/min 로 burst 제어 | catastrophic backtracking 위험 패턴 | pcre 의 atomic group `(?>...)` + possessive quantifier |
+| **③ SSH brute** | `hydra -l admin -P top1k.txt ssh://6v6-fw` | threshold 의 limit 10/60s 로 alert | suppress 의 by_src 의 화이트리스트 IP 제외 | log volume 의 disk I/O 부담 | threshold + filestore 분리 + 압축 |
+
+### 시간선 — 5 룰 기술 의 1 사건 흐름
+
+```
+T+0    Red attacker 의 hydra ssh brute (10 connection/sec)
+       └→ ips 의 af-packet sniff = 모든 패킷 inspection
+
+T+1s   Suricata 의 fast_pattern matching (1차 prefilter)
+       └→ "SSH-2.0" content 매칭 = 10 alert/sec 발생
+       └→ alert 의 burst = SOC fatigue 위험
+
+T+5s   threshold 룰 적용
+       └→ "threshold: type limit, track by_src, count 1, seconds 60"
+       └→ 10 alert/sec → 1 alert/min 으로 축소
+       └→ 운영자 의 dashboard = 1 alert 만 표시
+
+T+30s  운영자 의 분석 (Blue 2차)
+       └→ jq 로 alert 분석:
+          $ ssh 6v6-siem "tail -100 /var/ossec/logs/alerts/alerts.json | \
+             jq 'select(.rule.id==\"100201\") | .data.srcip'"
+       └→ src IP = 10.20.30.202 (attacker)
+
+T+1m   Purple Gap 식별 (Coverage Matrix 의 ③)
+       └→ 측정 = Suricata 의 stats.log 의 capture_kernel_drops
+       └→ alert 빈도 = 10/sec → 0.0167/sec (60배 절감)
+       └→ 그러나 disk I/O = filestore 의 raw payload = 10MB/min 증가
+
+T+5m   Purple 룰 보완
+       └→ /etc/suricata/rules/local.rules 의 SSH brute 룰 의 filestore 분리
+       └→ suppress.config 의 운영자 화이트리스트 IP (192.168.0.x) 제외
+       └→ kill -USR2 $(pidof suricata) — rule reload
+
+T+15m  Purple AAR 보고서
+       └→ What: SSH brute alert flood (60배 절감)
+       └→ Why: threshold 룰 의 부재
+       └→ Next: W06 의 ModSec 룰 의 동일 threshold 적용
+```
+
+### R/B/P 의 핵심 인사이트
+
+1. **fast_pattern 의 1차 prefilter** — Suricata 의 매 룰 의 매칭 의 80% 가
+   fast_pattern 에서 결정. content 의 가장 unique 한 substring 을 fast_pattern 으로 지정.
+
+2. **flowbits 의 race condition** — 동시 connection 의 다단계 추적 시 flowbits 의 bit
+   set/isset 의 순서 가 보장 되지 않음. `flow:to_server,established` 의 명시 가 필수.
+
+3. **threshold 의 SOC fatigue 절감** — alert/sec 가 10 이상 이면 SOC 의 alert
+   fatigue 발생. threshold limit 의 적용 으로 60배 절감 가능.
+
+4. **suppression 의 양면성** — false positive 절감 의 효과 + true positive 누락 위험.
+   분기 별 suppress 목록 검토 + git audit 의 routine 화 필수.
+
+5. **catastrophic backtracking 의 함정** — pcre 의 nested quantifier (`(a+)+`) 가
+   catastrophic backtracking 유발. atomic group `(?>...)` 또는 possessive
+   quantifier `(?>...+)` 로 회피.
+
+---
+
 ## 13. 과제
 
 ### A. 5 룰 작성 (필수, 50점)

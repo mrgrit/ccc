@@ -704,6 +704,136 @@ KISA 2024 보고서의 한국 금융권 침해 패턴:
 
 ---
 
+## 10.5 R/B/P 종합 시나리오 — WAF 의 inline 차단 + paranoia 튜닝
+
+본 주차 의 ModSec + CRS 운영 을 R/B/P 의 3 관점 에서 통합 분석. Suricata (W04-W05)
+의 passive sniff 와 달리 ModSec 은 **inline + 차단** 가능 — Blue Team 의 1차 방어선.
+
+### 통합 도식
+
+```mermaid
+graph LR
+    R["🔴 Red Team<br/>attacker (10.20.30.202)<br/>3 시나리오<br/>① XSS payload<br/>② SQLi UNION<br/>③ scanner UA"]
+
+    FE["🌐 fw HAProxy<br/>(L7 reverse proxy)<br/>vhost 라우팅"]
+    WEB["🌐 web Apache<br/>(10.20.32.80)<br/>ModSec inline<br/>5 phase 처리"]
+
+    B1["🔵 ModSec phase 1<br/>headers 검사<br/>913 SCANNER 룰"]
+    B2["🔵 ModSec phase 2<br/>request body<br/>941 XSS / 942 SQLi"]
+    B3["🔵 anomaly score<br/>누적 → block<br/>SecRuleEngine On"]
+    B4["🔵 audit log<br/>JSON format<br/>messages[] 분석"]
+    B5["🔵 Wazuh decoder<br/>modsec → alert<br/>level 7+ medium"]
+
+    P1["🟣 Coverage Matrix<br/>3 시나리오 × 5 phase"]
+    P2["🟣 Gap 분석<br/>paranoia 1 의 누락<br/>exception 의 과대"]
+    P3["🟣 룰 튜닝<br/>paranoia 2 → 3<br/>SecRuleUpdateTarget"]
+    P4["🟣 AAR<br/>WAF 정상 운영 매트릭스"]
+
+    R -->|HTTP request| FE
+    FE --> WEB
+    WEB --> B1
+    B1 --> B2
+    B2 --> B3
+    B3 --> B4
+    B4 --> B5
+    B5 --> P1
+    P1 --> P2
+    P2 --> P3
+    P3 -.->|crs-setup.conf 패치| B3
+    P3 --> P4
+
+    style R fill:#f85149,color:#fff
+    style FE fill:#3fb950,color:#fff
+    style WEB fill:#3fb950,color:#fff
+    style B1 fill:#1f6feb,color:#fff
+    style B2 fill:#1f6feb,color:#fff
+    style B3 fill:#1f6feb,color:#fff
+    style B4 fill:#1f6feb,color:#fff
+    style B5 fill:#1f6feb,color:#fff
+    style P1 fill:#bc8cff,color:#fff
+    style P2 fill:#bc8cff,color:#fff
+    style P3 fill:#bc8cff,color:#fff
+    style P4 fill:#bc8cff,color:#fff
+```
+
+### Coverage Matrix — 3 공격 시나리오
+
+| 시나리오 | Red 명령 | Blue 1차 (ModSec) | Blue 2차 (audit log) | Purple Gap | Purple 권장 |
+|---------|---------|------------------|---------------------|-----------|------------|
+| **① XSS** | `curl 'http://juice.6v6.lab/search?q=<script>alert(1)</script>'` | 941100 (XSS) + 941110 (script tag) + 941160 (event handler) → score 15 → 403 | audit log 의 messages[] = 3 룰 매치 | paranoia 1 에서 941180 (DOM XSS) 누락 | paranoia 2 + tx.crs_exclusions_xenforo=1 |
+| **② SQLi UNION** | `curl 'http://juice.6v6.lab/items?id=1 UNION SELECT 1,2,3'` | 942100 (SQLi detection lib) + 942270 (UNION SELECT) → score 10 → 403 | audit log 의 unique_id 로 추적 | paranoia 1 에서 942180 (basic SQLi keyword) 만 매치 = score 5 | paranoia 2 → 3 으로 UNION + comment + hex 룰 활성 |
+| **③ scanner UA** | `curl -A 'sqlmap/1.6' http://juice.6v6.lab/` | 913100 (SCANNER nikto/sqlmap UA) → score 2 (alert only, paranoia 1) | audit log 의 REQUEST_HEADERS 의 User-Agent | paranoia 1 의 anomaly threshold 5 → 미만 → 통과 | scanner UA 의 즉시 차단 = SecRuleUpdateActionById 913100 "deny,status:403" |
+
+### 시간선 — XSS 공격 의 1 사건 흐름
+
+```
+T+0    Red attacker 에서 XSS payload (curl '/search?q=<script>alert(1)</script>')
+       └→ fw HAProxy → web Apache → ModSec 5 phase 처리 시작
+
+T+1ms  ModSec phase 1 — REQUEST_HEADERS 검사
+       └→ User-Agent = curl/7.81.0 → 913100 매치 X (정상 UA)
+
+T+2ms  ModSec phase 2 — REQUEST_BODY 검사
+       └→ ARGS:q = "<script>alert(1)</script>"
+       └→ 941100 (XSS Attack Detected) → score +5
+       └→ 941110 (XSS via JS Event Handler) → score +5
+       └→ 941160 (XSS via tag attribute) → score +5
+       └→ anomaly score = 15 ≥ paranoia threshold 5 → block
+
+T+3ms  Apache 응답 = 403 Forbidden + ModSec audit log 기록
+       └→ /var/log/apache2/modsec_audit.log 의 JSON entry
+       └→ messages[] = ["941100", "941110", "941160"]
+       └→ unique_id = "ZjK..." (audit log 추적용)
+
+T+5s   Blue 1차 탐지 (실시간 운영자)
+       └→ ssh 6v6-web "sudo tail -1 /var/log/apache2/modsec_audit.log | jq .messages"
+       └→ 3 룰 매치 = XSS 명확
+
+T+10s  Blue 2차 분석 (Wazuh agent 의 forward)
+       └→ Wazuh modsec decoder 의 alert (rule id 87151, level 7)
+       └→ Wazuh dashboard 의 src IP = 10.20.30.202
+       └→ Wazuh agent state = active (모니터링 정상)
+
+T+1m   Purple Gap 식별
+       └→ Coverage Matrix 의 ① 항목 = "paranoia 1 의 941180 누락"
+       └→ 재현 = curl '/search?q=<a onmouseover="alert(1)">x</a>'
+       └→ paranoia 1 = 941160 만 매치 = score 5 = block (경계)
+       └→ paranoia 2 = 941180 추가 매치 = score 10 = 명확 block
+
+T+10m  Purple 룰 튜닝
+       └→ /etc/modsecurity/crs-setup.conf 의 paranoia level 1 → 2
+       └→ tx.paranoia_level=2
+       └→ sudo systemctl reload apache2
+       └→ false-positive 발생 모니터링 (10 분간)
+
+T+30m  Purple AAR 보고서
+       └→ What: paranoia 2 적용 → XSS detection coverage +20%
+       └→ Why: paranoia 1 의 DOM XSS / event handler 부분 누락
+       └→ Cost: false-positive 율 = 0.5% (수용 가능)
+       └→ Next: W07 의 Wazuh active response 의 자동 차단 학습
+```
+
+### R/B/P 의 핵심 인사이트
+
+1. **inline 차단 의 책임** — Suricata 는 passive (탐지) / ModSec 은 inline (탐지+차단).
+   block 의 false-positive 가 직접 적 운영 영향 = paranoia level 조정 의 routine 화 필수.
+
+2. **anomaly score 의 수학 적 모델** — 단일 룰 의 score 가 5 미만 = alert only,
+   누적 score 가 paranoia threshold (default 5) 이상 = block. 룰 추가 시 score 영향
+   분석 필수.
+
+3. **audit log 의 messages[] 구조** — JSON format 의 audit log 의 messages 배열 의 룰
+   ID 순서 = phase 처리 순서. 분석 시 phase 1 → 2 → 4 의 순서 추적 가능.
+
+4. **paranoia level 의 trade-off** — level 1 = 최소 false-positive (운영 안정) / level
+   4 = 최대 coverage (학습 환경). 운영 환경 = 2-3 의 점진적 ramp-up.
+
+5. **exception 의 좁은 범위** — SecRuleRemoveById 의 광범위 비활성 금지. 반드시
+   SecRuleUpdateTargetById 의 특정 param 만 또는 LocationMatch 의 특정 vhost/URL
+   만 예외.
+
+---
+
 ## 11. 실습 시나리오 (4 축 설명)
 
 ### 실습 1 — 설정 + audit log 구조 점검 (10분)
