@@ -1,0 +1,127 @@
+lab_id: standalone-web-vuln-week13
+title: A10 SSRF — internal recon + cloud metadata
+version: standalone-non-ai
+course: web-vuln
+week: 13
+description: A10 — Server-Side Request Forgery. AdminConsole + cloud metadata 시뮬.
+difficulty: medium
+duration_minutes: 150
+
+steps:
+  - order: 1
+    instruction: |
+      ## 🎯 MISSION — AdminConsole 의 SSRF endpoint 탐색
+
+      AdminConsole (Flask) 의 *URL input field* 탐색 + SSRF 시도.
+
+      ```bash
+      ssh 6v6-attacker bash <<'SH'
+      # AdminConsole 의 endpoint enum
+      for path in /preview /url /fetch /webhook /api/proxy /image; do
+        code=$(curl -s -o /dev/null -w '%{http_code}' \
+          -H 'Host: admin.6v6.lab' \
+          "http://10.20.30.1$path?url=http://example.com")
+        echo "$path: $code"
+      done
+      SH
+      ```
+    hint: 6 endpoint 탐색
+    category: survey
+    points: 25
+    answer: |
+      ssh 6v6-attacker bash <<'SH'
+      for path in /preview /url /fetch /webhook /api/proxy /image; do
+        echo "$path: $(curl -s -o /dev/null -w '%{http_code}' -H 'Host: admin.6v6.lab' "http://10.20.30.1$path?url=http://example.com")"
+      done
+      SH
+    answer_detail: SSRF endpoint enum
+    verify:
+      type: output_contains
+      expect: 'preview\|url\|404'
+      field: stdout
+      semantic:
+        intent: SSRF enum
+        success_criteria: [6 endpoint]
+        acceptable_methods: ["**[OSS] curl + 6 endpoint**"]
+    target_vm: attacker
+
+  - order: 2
+    instruction: |
+      ## 🎯 MISSION — cloud metadata payload 시뮬
+
+      ## 표준 cloud metadata URL
+      - **AWS**: `http://169.254.169.254/latest/meta-data/`
+      - **GCP**: `http://metadata.google.internal/`
+      - **Azure**: `http://169.254.169.254/metadata/instance?api-version=2021-02-01`
+      - **Alibaba**: `http://100.100.100.200/latest/meta-data/`
+
+      ## payload 시뮬 (학습 환경 만)
+      AdminConsole 의 URL preview 가 vuln 시:
+      `?url=http://169.254.169.254/latest/meta-data/`
+      → IAM credentials 노출 가능
+    hint: 4 cloud metadata
+    category: analysis
+    points: 25
+    answer: 학습 산출물
+    answer_detail: cloud metadata 시뮬
+    verify:
+      type: output_contains
+      expect: '169.254\|metadata'
+      field: stdout
+      semantic:
+        intent: cloud metadata
+        success_criteria: [4 cloud URL]
+        acceptable_methods: ["**[OSS] AWS + GCP + Azure + Alibaba**"]
+    target_vm: bastion
+
+  - order: 3
+    instruction: |
+      ## 🎯 MISSION — SSRF 방어 표준 5
+
+      1. **whitelist** = 허용 URL 만
+      2. **DNS rebind 방어** = URL → IP resolve 후 *내부 IP 거부*
+      3. **schema 제한** = http/https 만 (file://, gopher://, dict:// 거부)
+      4. **port 제한** = 80/443 만
+      5. **redirect 추적 X** = max-redirects 0
+
+      ## 한국 사고 사례 (W01 의 사례 3 재학습)
+      - 2024-02 공공 기관 의 SSRF → AWS metadata → IAM credentials → S3 의 *주민등록번호 csv* 발견
+    hint: 5 방어 + 한국 사례
+    category: analysis
+    points: 25
+    answer: 학습 산출물
+    answer_detail: SSRF 방어 + 한국 사례
+    verify:
+      type: output_contains
+      expect: 'whitelist\|DNS\|SSRF'
+      field: stdout
+      semantic:
+        intent: SSRF 방어
+        success_criteria: [5 방어]
+        acceptable_methods: ["**[관리적] OWASP A10 의 5 권장**"]
+    target_vm: bastion
+
+  - order: 4
+    instruction: |
+      ## 🎯 MISSION — W13 보고서 + CWE-918 매핑
+
+      ```markdown
+      ## 1. AdminConsole 의 SSRF endpoint enum
+      ## 2. cloud metadata 시뮬 (4 cloud)
+      ## 3. SSRF 방어 5 + 한국 사례
+      ## 매핑: CWE-918 SSRF
+      ```
+    hint: 3 영역
+    category: synthesis
+    points: 25
+    answer: 위 형식
+    answer_detail: W13 보고서
+    verify:
+      type: output_contains
+      expect: 'CWE-918\|SSRF'
+      field: stdout
+      semantic:
+        intent: W13 종합
+        success_criteria: [3 영역]
+        acceptable_methods: ["**[관리적] PTES + CWE-918**"]
+    target_vm: bastion

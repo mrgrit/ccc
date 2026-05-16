@@ -1,0 +1,167 @@
+lab_id: standalone-web-vuln-week15
+title: 기말 — 7 vhost 종합 침투 + PTES 보고서 (180분, 100점)
+version: standalone-non-ai
+course: web-vuln
+week: 15
+description: |
+  기말 — 6v6 의 7 vhost 중 *3 선택* + PTES 7 단계 + 보고서. 180분 100점.
+difficulty: hard
+duration_minutes: 180
+prerequisites:
+  - W01-W14 모두 통과
+pass_threshold: 0.6
+
+steps:
+  - order: 1
+    instruction: |
+      ## 🎯 단계 1 (15점) — Recon (PTES 2)
+
+      7 vhost 중 *3 선택* + 각 의 nmap + curl 헤더 + 기술 stack 식별.
+
+      ```bash
+      ssh 6v6-attacker bash <<'SH'
+      for h in juice neobank admin; do
+        echo "=== $h ==="
+        curl -sI -H "Host: $h.6v6.lab" http://10.20.30.1/ 2>&1 | grep -iE 'server|x-powered' | head -2
+        curl -s -o /dev/null -w "HTTP %{http_code} | %{size_download} bytes\n" -H "Host: $h.6v6.lab" http://10.20.30.1/
+      done
+      SH
+      ```
+    hint: 3 vhost recon
+    category: exam
+    points: 15
+    answer: |
+      ssh 6v6-attacker bash <<'SH'
+      for h in juice neobank admin; do
+        echo "=== $h ==="
+        curl -sI -H "Host: $h.6v6.lab" http://10.20.30.1/ 2>&1 | grep -iE 'server|x-powered' | head -2
+      done
+      SH
+    answer_detail: 3 vhost recon
+    verify:
+      type: output_contains
+      expect: 'server\|juice'
+      field: stdout
+      semantic:
+        intent: Recon
+        success_criteria: [3 vhost]
+        acceptable_methods: ["**[OSS] curl + nmap + whatweb**"]
+    target_vm: attacker
+
+  - order: 2
+    instruction: |
+      ## 🎯 단계 2 (20점) — Vuln Analysis (PTES 4)
+
+      3 vhost 의 각 *2 vuln* 식별 = *6 vuln 총*.
+
+      ```bash
+      ssh 6v6-attacker bash <<'SH'
+      # JuiceShop IDOR (W02)
+      TOK=$(curl -s -X POST -H 'Content-Type: application/json' -H 'Host: juice.6v6.lab' \
+        http://10.20.30.1/rest/user/login \
+        -d '{"email":"admin@juice-sh.op","password":"admin123"}' | jq -r .authentication.token)
+      echo "Juice IDOR: $(curl -s -o /dev/null -w '%{http_code}' -H 'Host: juice.6v6.lab' -H "Authorization: Bearer $TOK" http://10.20.30.1/api/Users/2)"
+
+      # NeoBank 2FA 부재 (W06)
+      echo "NeoBank /transfer: $(curl -s -o /dev/null -w '%{http_code}' -H 'Host: neobank.6v6.lab' http://10.20.30.1/transfer)"
+
+      # AdminConsole SSRF (W13)
+      echo "Admin /preview: $(curl -s -o /dev/null -w '%{http_code}' -H 'Host: admin.6v6.lab' "http://10.20.30.1/preview?url=http://example.com")"
+      SH
+      ```
+    hint: 3 vhost × 2 vuln
+    category: exam
+    points: 20
+    answer: |
+      ssh 6v6-attacker bash <<'SH'
+      TOK=$(curl -s -X POST -H 'Content-Type: application/json' -H 'Host: juice.6v6.lab' http://10.20.30.1/rest/user/login -d '{"email":"admin@juice-sh.op","password":"admin123"}' | jq -r .authentication.token)
+      echo "Juice IDOR: $(curl -s -o /dev/null -w '%{http_code}' -H 'Host: juice.6v6.lab' -H "Authorization: Bearer $TOK" http://10.20.30.1/api/Users/2)"
+      SH
+    answer_detail: 6 vuln 식별
+    verify:
+      type: output_contains
+      expect: 'IDOR\|200'
+      field: stdout
+      semantic:
+        intent: vuln analysis
+        success_criteria: [6 vuln]
+        acceptable_methods: ["**[OSS] W02 + W04 + W06 + W13 재현**"]
+    target_vm: attacker
+
+  - order: 3
+    instruction: |
+      ## 🎯 단계 3 (25점) — Exploitation (PTES 5)
+
+      6 vuln 중 *3 선택* + 실 exploit + 영향 분석.
+    hint: 3 vuln exploit
+    category: exam
+    points: 25
+    answer: 위 step 2 의 IDOR 의 *실 exploit* + data 추출
+    answer_detail: 3 vuln exploit
+    verify:
+      type: output_contains
+      expect: 'exploit\|user'
+      field: stdout
+      semantic:
+        intent: Exploit
+        success_criteria: [3 vuln 의 실 exploit]
+        acceptable_methods: ["**[OSS] curl + sqlmap + JWT 변조**"]
+    target_vm: attacker
+
+  - order: 4
+    instruction: |
+      ## 🎯 단계 4 (10점) — Post Exploit (PTES 6 — 가설)
+
+      *학습 환경 만*. 권한 상승 + 지속성 *가설* (실 적용 X).
+    hint: 가설 시뮬
+    category: exam
+    points: 10
+    answer: 가설 산출물
+    answer_detail: Post Exploit 가설
+    verify:
+      type: output_contains
+      expect: '가설\|simulated'
+      field: stdout
+      semantic:
+        intent: Post Exploit
+        success_criteria: [가설 시뮬]
+        acceptable_methods: ["**[OSS] 학습 환경 만 가설**"]
+    target_vm: bastion
+
+  - order: 5
+    instruction: |
+      ## 🎯 단계 5 (30점) — Reporting (PTES 7) + 종합 보고서
+
+      PTES 7 섹션 표준 보고서 + 6 finding + CVSS + CWE + ATT&CK + 본인 자가 평가.
+
+      ## 산출물 7 섹션
+      ```markdown
+      # 기말 종합 보고서 — 6v6 web-vuln
+
+      ## 1. Executive Summary
+      ## 2. Methodology (PTES 7 단계)
+      ## 3. Findings (6 vuln × 각 CVSS + CWE + ATT&CK)
+      ## 4. Technical Details (각 vuln 의 reproduction)
+      ## 5. Recommendations (즉시 + 단기 + 장기)
+      ## 6. Appendix (curl log + payload)
+      ## 7. 본인 자가 평가 (W01-W14 의 각 1-5 점 + 졸업 자가)
+      ```
+    hint: PTES 7 섹션
+    category: exam
+    points: 30
+    answer: 위 7 섹션
+    answer_detail: 기말 종합 보고서
+    verify:
+      type: output_contains
+      expect: 'PTES\|CWE\|finding'
+      field: stdout
+      semantic:
+        intent: 기말 보고서
+        success_criteria: [7 섹션 + 6 finding]
+        acceptable_methods:
+          - "**[관리적] PTES 표준 7 섹션**"
+          - "**[관리적] CVSS 3.1**"
+          - "**[관리적] CWE Top 25 매핑**"
+          - "**[관리적] MITRE ATT&CK**"
+          - "**[관리적] OWASP A01-A10 cover**"
+    target_vm: bastion
