@@ -186,27 +186,27 @@ GDPR은 다음 기술적 조치를 요구한다:
 
 ```bash
 # PostgreSQL 접속하여 암호화 확인
-ssh ccc@10.20.30.201 "PGPASSWORD=bastion psql -h 127.0.0.1 -U bastion -d bastion -c \"SHOW ssl;\" 2>/dev/null"
+ssh 6v6-bastion "PGPASSWORD=bastion psql -h 127.0.0.1 -U bastion -d bastion -c \"SHOW ssl;\" 2>/dev/null"
 
 # DB 접근 권한 확인
-ssh ccc@10.20.30.201 "PGPASSWORD=bastion psql -h 127.0.0.1 -U bastion -d bastion -c \"\\du\" 2>/dev/null"
+ssh 6v6-bastion "PGPASSWORD=bastion psql -h 127.0.0.1 -U bastion -d bastion -c \"\\du\" 2>/dev/null"
 
 # DB 접근 로그 설정 확인
-ssh ccc@10.20.30.201 "PGPASSWORD=bastion psql -h 127.0.0.1 -U bastion -d bastion -c \"SHOW log_connections;\" 2>/dev/null"
-ssh ccc@10.20.30.201 "PGPASSWORD=bastion psql -h 127.0.0.1 -U bastion -d bastion -c \"SHOW log_disconnections;\" 2>/dev/null"
+ssh 6v6-bastion "PGPASSWORD=bastion psql -h 127.0.0.1 -U bastion -d bastion -c \"SHOW log_connections;\" 2>/dev/null"
+ssh 6v6-bastion "PGPASSWORD=bastion psql -h 127.0.0.1 -U bastion -d bastion -c \"SHOW log_disconnections;\" 2>/dev/null"
 ```
 
 ### 5.3 실습: 전송 구간 암호화
 
 ```bash
 # 웹 서비스의 TLS 설정 확인
-ssh ccc@10.20.30.80 "echo | openssl s_client -connect localhost:443 2>/dev/null | grep -E 'Protocol|Cipher'"
+ssh 6v6-web "echo | openssl s_client -connect localhost:443 2>/dev/null | grep -E 'Protocol|Cipher'"
 
 # Wazuh API TLS
-ssh ccc@10.20.30.100 "echo | openssl s_client -connect localhost:55000 2>/dev/null | grep Protocol"
+ssh 6v6-siem "echo | openssl s_client -connect localhost:55000 2>/dev/null | grep Protocol"
 
 # Wazuh Dashboard TLS
-ssh ccc@10.20.30.100 "echo | openssl s_client -connect localhost:443 2>/dev/null | grep Protocol"
+ssh 6v6-siem "echo | openssl s_client -connect localhost:443 2>/dev/null | grep Protocol"
 ```
 
 ### 5.4 실습: 접근 통제
@@ -223,10 +223,10 @@ done
 
 ```bash
 # 로그에 IP 주소(개인정보 해당 가능)가 기록되는지 확인
-ssh ccc@10.20.30.1 "tail -20 /var/log/suricata/fast.log 2>/dev/null"
+ssh 6v6-fw "tail -20 /var/log/suricata/fast.log 2>/dev/null"
 
 # 웹 로그에서 사용자 정보 확인
-ssh ccc@10.20.30.80 "tail -10 /var/log/nginx/access.log 2>/dev/null || tail -10 /var/log/apache2/access.log 2>/dev/null"
+ssh 6v6-web "tail -10 /var/log/nginx/access.log 2>/dev/null || tail -10 /var/log/apache2/access.log 2>/dev/null"
 ```
 
 ---
@@ -272,7 +272,7 @@ ssh ccc@10.20.30.80 "tail -10 /var/log/nginx/access.log 2>/dev/null || tail -10 
 
 ```bash
 # 대량 데이터 외부 전송 시도 탐지 (Wazuh 알림)
-ssh ccc@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
+ssh 6v6-siem "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
 import sys, json
 for line in sys.stdin:                                 # 반복문 시작
     try:
@@ -284,7 +284,7 @@ for line in sys.stdin:                                 # 반복문 시작
 \" 2>/dev/null | head -10"
 
 # auth.log에서 대량 접근 시도 확인
-ssh ccc@10.20.30.201 "grep 'session opened' /var/log/auth.log 2>/dev/null | wc -l"  # 비밀번호 자동입력 SSH
+ssh 6v6-bastion "grep 'session opened' /var/log/auth.log 2>/dev/null | wc -l"  # 비밀번호 자동입력 SSH
 ```
 
 ---
@@ -306,11 +306,11 @@ ssh ccc@10.20.30.201 "grep 'session opened' /var/log/auth.log 2>/dev/null | wc -
 
 ```bash
 # 로그에서 IP 주소를 해시로 가명처리하는 예시
-ssh ccc@10.20.30.201 "echo '10.20.30.1 tried SSH login' | \
+ssh 6v6-bastion "echo '10.20.30.1 tried SSH login' | \
   sed -E 's/([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)/[MASKED]/g'"  # 텍스트 치환
 
 # Python으로 가명처리
-ssh ccc@10.20.30.201 "python3 -c \"    # 비밀번호 자동입력 SSH
+ssh 6v6-bastion "python3 -c \"    # 비밀번호 자동입력 SSH
 import hashlib
 ip = '10.20.30.1'                                      # 네트워크 설정
 pseudo = hashlib.sha256(ip.encode()).hexdigest()[:8]
@@ -328,19 +328,19 @@ print(f'가명: user_{pseudo}')
 echo "=== 개인정보보호 기술적 점검 ==="
 
 echo "[1] DB 암호화 설정:"
-ssh ccc@10.20.30.201 "PGPASSWORD=bastion psql -h 127.0.0.1 -U bastion -d bastion -c 'SHOW ssl;' 2>/dev/null"  # 비밀번호 자동입력 SSH
+ssh 6v6-bastion "PGPASSWORD=bastion psql -h 127.0.0.1 -U bastion -d bastion -c 'SHOW ssl;' 2>/dev/null"  # 비밀번호 자동입력 SSH
 
 echo "[2] 전송 암호화 (TLS):"
-ssh ccc@10.20.30.100 "echo | openssl s_client -connect localhost:443 2>/dev/null | grep Protocol"  # 비밀번호 자동입력 SSH
+ssh 6v6-siem "echo | openssl s_client -connect localhost:443 2>/dev/null | grep Protocol"  # 비밀번호 자동입력 SSH
 
 echo "[3] 접근 로그 활성화:"
-ssh ccc@10.20.30.201 "PGPASSWORD=bastion psql -h 127.0.0.1 -U bastion -d bastion -c 'SHOW log_statement;' 2>/dev/null"  # 비밀번호 자동입력 SSH
+ssh 6v6-bastion "PGPASSWORD=bastion psql -h 127.0.0.1 -U bastion -d bastion -c 'SHOW log_statement;' 2>/dev/null"  # 비밀번호 자동입력 SSH
 
 echo "[4] 로그 파일 권한:"
-ssh ccc@10.20.30.201 "stat -c '%a' /var/log/auth.log 2>/dev/null"  # 비밀번호 자동입력 SSH
+ssh 6v6-bastion "stat -c '%a' /var/log/auth.log 2>/dev/null"  # 비밀번호 자동입력 SSH
 
 echo "[5] 백업 암호화:"
-ssh ccc@10.20.30.201 "ls /backup/*.gpg 2>/dev/null || echo '암호화된 백업 없음'"  # 비밀번호 자동입력 SSH
+ssh 6v6-bastion "ls /backup/*.gpg 2>/dev/null || echo '암호화된 백업 없음'"  # 비밀번호 자동입력 SSH
 ```
 
 ---
@@ -403,7 +403,7 @@ ssh ccc@10.20.30.201 "ls /backup/*.gpg 2>/dev/null || echo '암호화된 백업 
 ```bash
 # ISO 27001 A.8.5 (안전한 인증) 점검 증적 수집
 echo "=== 패스워드 정책 확인 ==="
-ssh ccc@10.20.30.80 "  # 비밀번호 자동입력 SSH
+ssh 6v6-web "  # 비밀번호 자동입력 SSH
   echo '--- login.defs ---' && grep -E 'PASS_MAX|PASS_MIN|PASS_WARN' /etc/login.defs
   echo '--- pam 설정 ---' && grep pam_pwquality /etc/pam.d/common-password 2>/dev/null || echo 'pam_pwquality 미설정'
   echo '--- sudo 설정 ---' && sudo -l 2>/dev/null | head -5
@@ -630,7 +630,7 @@ sudo /usr/local/bin/isms-audit.sh
 ### 학생 환경 준비
 
 ```bash
-ssh ccc@10.20.30.100
+ssh 6v6-siem
 sudo apt install -y \
   lynis libopenscap1 openscap-scanner ssg-base \
   aide tripwire \

@@ -173,10 +173,10 @@ for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.1
 done
 
 # 정책 4.1: 미사용 계정 확인
-ssh ccc@10.20.30.201 "lastlog 2>/dev/null | awk 'NR>1 && \$2==\"Never\" {print \$1}'"
+ssh 6v6-bastion "lastlog 2>/dev/null | awk 'NR>1 && \$2==\"Never\" {print \$1}'"
 
 # 정책 4.4: 방화벽 기본 정책 확인
-ssh ccc@10.20.30.1 "sudo nft list ruleset 2>/dev/null | grep 'policy'"
+ssh 6v6-fw "sudo nft list ruleset 2>/dev/null | grep 'policy'"
 ```
 
 ---
@@ -220,10 +220,10 @@ ssh ccc@10.20.30.1 "sudo nft list ruleset 2>/dev/null | grep 'policy'"
 
 ```bash
 # 현재 설정 확인
-ssh ccc@10.20.30.201 "grep -E 'PASS_MAX_DAYS|PASS_MIN_DAYS|PASS_MIN_LEN|PASS_WARN_AGE' /etc/login.defs | grep -v '^#'"
+ssh 6v6-bastion "grep -E 'PASS_MAX_DAYS|PASS_MIN_DAYS|PASS_MIN_LEN|PASS_WARN_AGE' /etc/login.defs | grep -v '^#'"
 
 # pwquality 설정 확인
-ssh ccc@10.20.30.201 "cat /etc/security/pwquality.conf 2>/dev/null | grep -v '^#' | grep -v '^$'"
+ssh 6v6-bastion "cat /etc/security/pwquality.conf 2>/dev/null | grep -v '^#' | grep -v '^$'"
 
 # 정책에 맞게 설정하려면 (예시 - 실제 변경은 주의):
 # /etc/login.defs:
@@ -241,10 +241,10 @@ ssh ccc@10.20.30.201 "cat /etc/security/pwquality.conf 2>/dev/null | grep -v '^#
 #   maxrepeat = 3
 
 # PAM 계정 잠금 설정 확인
-ssh ccc@10.20.30.201 "grep -E 'pam_faillock|pam_tally' /etc/pam.d/common-auth 2>/dev/null || echo '계정 잠금 미설정'"
+ssh 6v6-bastion "grep -E 'pam_faillock|pam_tally' /etc/pam.d/common-auth 2>/dev/null || echo '계정 잠금 미설정'"
 
 # 비밀번호 해시 알고리즘 확인
-ssh ccc@10.20.30.201 "grep '^ENCRYPT_METHOD' /etc/login.defs"
+ssh 6v6-bastion "grep '^ENCRYPT_METHOD' /etc/login.defs"
 ```
 
 ---
@@ -305,10 +305,10 @@ ssh ccc@10.20.30.201 "grep '^ENCRYPT_METHOD' /etc/login.defs"
 ```bash
 # 탐지 체계 확인 (Wazuh)
 echo "=== Wazuh Manager 상태 ==="
-ssh ccc@10.20.30.100 "systemctl is-active wazuh-manager 2>/dev/null"  # 비밀번호 자동입력 SSH
+ssh 6v6-siem "systemctl is-active wazuh-manager 2>/dev/null"  # 비밀번호 자동입력 SSH
 
 echo "=== 최근 고위험 알림 ==="
-ssh ccc@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
+ssh 6v6-siem "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
 import sys, json
 for line in sys.stdin:                                 # 반복문 시작
     try:
@@ -321,11 +321,11 @@ for line in sys.stdin:                                 # 반복문 시작
 
 # 격리 능력 확인 (방화벽으로 IP 차단 가능 여부)
 echo "=== 방화벽 차단 가능 ==="
-ssh ccc@10.20.30.1 "sudo nft list ruleset 2>/dev/null | head -5 && echo 'nftables 사용 가능'"  # 비밀번호 자동입력 SSH
+ssh 6v6-fw "sudo nft list ruleset 2>/dev/null | head -5 && echo 'nftables 사용 가능'"  # 비밀번호 자동입력 SSH
 
 # 증거 보존 확인 (로그 보관 기간)
 echo "=== 로그 보관 설정 ==="
-ssh ccc@10.20.30.201 "cat /etc/logrotate.conf 2>/dev/null | grep -E 'rotate|weekly|monthly'"  # 비밀번호 자동입력 SSH
+ssh 6v6-bastion "cat /etc/logrotate.conf 2>/dev/null | grep -E 'rotate|weekly|monthly'"  # 비밀번호 자동입력 SSH
 ```
 
 ---

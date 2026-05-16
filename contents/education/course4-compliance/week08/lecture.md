@@ -128,16 +128,16 @@ Part A에서 작성한 체크리스트를 실제 4개 서버에서 실행하고 
 
 ```bash
 # bastion (Control Plane)
-ssh ccc@10.20.30.201
+ssh 6v6-bastion
 
 # secu (방화벽/IPS)
-ssh ccc@10.20.30.1
+ssh 6v6-fw
 
 # web (WAF/웹앱)
-ssh ccc@10.20.30.80
+ssh 6v6-web
 
 # siem (SIEM)
-ssh ccc@10.20.30.100
+ssh 6v6-siem
 ```
 
 ### 필수 점검 항목 (최소 이것은 수행할 것)
@@ -214,7 +214,7 @@ done
 ```bash
 # secu 서버 방화벽
 echo "[11] 방화벽 기본 정책:"
-ssh ccc@10.20.30.1 "sudo nft list ruleset 2>/dev/null | grep policy"  # 비밀번호 자동입력 SSH
+ssh 6v6-fw "sudo nft list ruleset 2>/dev/null | grep policy"  # 비밀번호 자동입력 SSH
 
 echo "[12] 열린 포트:"
 for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do  # 반복문 시작
@@ -224,17 +224,17 @@ done
 
 # IPS 상태
 echo "[13] Suricata IPS:"
-ssh ccc@10.20.30.1 "systemctl is-active suricata 2>/dev/null"  # 비밀번호 자동입력 SSH
+ssh 6v6-fw "systemctl is-active suricata 2>/dev/null"  # 비밀번호 자동입력 SSH
 ```
 
 #### 5. 암호화 (A.8.24)
 
 ```bash
 echo "[14] TLS 버전 (Wazuh Dashboard):"
-ssh ccc@10.20.30.100 "echo | openssl s_client -connect localhost:443 2>/dev/null | grep Protocol"  # 비밀번호 자동입력 SSH
+ssh 6v6-siem "echo | openssl s_client -connect localhost:443 2>/dev/null | grep Protocol"  # 비밀번호 자동입력 SSH
 
 echo "[15] SSH 프로토콜 버전:"
-ssh ccc@10.20.30.201 "ssh -V 2>&1"     # 비밀번호 자동입력 SSH
+ssh 6v6-bastion "ssh -V 2>&1"     # 비밀번호 자동입력 SSH
 ```
 
 #### 6. 시스템 설정 (A.8.9)
@@ -389,7 +389,7 @@ done
 ```bash
 # ISO 27001 A.8.5 (안전한 인증) 점검 증적 수집
 echo "=== 패스워드 정책 확인 ==="
-ssh ccc@10.20.30.80 "  # 비밀번호 자동입력 SSH
+ssh 6v6-web "  # 비밀번호 자동입력 SSH
   echo '--- login.defs ---' && grep -E 'PASS_MAX|PASS_MIN|PASS_WARN' /etc/login.defs
   echo '--- pam 설정 ---' && grep pam_pwquality /etc/pam.d/common-password 2>/dev/null || echo 'pam_pwquality 미설정'
   echo '--- sudo 설정 ---' && sudo -l 2>/dev/null | head -5

@@ -151,12 +151,12 @@ for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.1
 done
 
 # ID.AM-2: 소프트웨어 인벤토리
-ssh ccc@10.20.30.201 "dpkg -l | wc -l"
-ssh ccc@10.20.30.201 "systemctl list-units --type=service --state=running --no-pager | wc -l"
+ssh 6v6-bastion "dpkg -l | wc -l"
+ssh 6v6-bastion "systemctl list-units --type=service --state=running --no-pager | wc -l"
 
 # ID.AM-3: 데이터 흐름 매핑
-ssh ccc@10.20.30.1 "ip route show"
-ssh ccc@10.20.30.1 "ss -tlnp | grep LISTEN"
+ssh 6v6-fw "ip route show"
+ssh 6v6-fw "ss -tlnp | grep LISTEN"
 ```
 
 ---
@@ -178,25 +178,25 @@ ssh ccc@10.20.30.1 "ss -tlnp | grep LISTEN"
 
 ```bash
 # PR.AC-1: 접근 통제 (계정 관리)
-ssh ccc@10.20.30.201 "awk -F: '\$3>=1000 && \$3<65534{print \$1}' /etc/passwd"
+ssh 6v6-bastion "awk -F: '\$3>=1000 && \$3<65534{print \$1}' /etc/passwd"
 
 # PR.AC-3: 원격 접근 관리 (SSH 설정)
-ssh ccc@10.20.30.201 "grep -E 'PermitRootLogin|MaxAuthTries|Protocol' /etc/ssh/sshd_config | grep -v '^#'"
+ssh 6v6-bastion "grep -E 'PermitRootLogin|MaxAuthTries|Protocol' /etc/ssh/sshd_config | grep -v '^#'"
 
 # PR.DS-1: 전송 데이터 보호 (TLS)
-ssh ccc@10.20.30.100 "echo | openssl s_client -connect localhost:443 2>/dev/null | grep Protocol"
+ssh 6v6-siem "echo | openssl s_client -connect localhost:443 2>/dev/null | grep Protocol"
 
 # PR.DS-2: 저장 데이터 보호 (파일 권한)
-ssh ccc@10.20.30.201 "ls -la /etc/shadow"
+ssh 6v6-bastion "ls -la /etc/shadow"
 
 # PR.IP-1: 설정 관리 (기본 설정 변경 여부)
-ssh ccc@10.20.30.201 "grep '^Port' /etc/ssh/sshd_config || echo '기본 포트(22) 사용'"
+ssh 6v6-bastion "grep '^Port' /etc/ssh/sshd_config || echo '기본 포트(22) 사용'"
 
 # PR.IP-4: 백업
-ssh ccc@10.20.30.201 "crontab -l 2>/dev/null | grep backup || echo '자동 백업 미설정'"
+ssh 6v6-bastion "crontab -l 2>/dev/null | grep backup || echo '자동 백업 미설정'"
 
 # PR.PT-1: 감사 로그
-ssh ccc@10.20.30.201 "systemctl is-active rsyslog 2>/dev/null"
+ssh 6v6-bastion "systemctl is-active rsyslog 2>/dev/null"
 ```
 
 ---
@@ -215,17 +215,17 @@ ssh ccc@10.20.30.201 "systemctl is-active rsyslog 2>/dev/null"
 
 ```bash
 # DE.CM-1: 네트워크 모니터링 (Suricata IPS)
-ssh ccc@10.20.30.1 "systemctl is-active suricata 2>/dev/null"
-ssh ccc@10.20.30.1 "tail -3 /var/log/suricata/fast.log 2>/dev/null || echo '로그 없음'"
+ssh 6v6-fw "systemctl is-active suricata 2>/dev/null"
+ssh 6v6-fw "tail -3 /var/log/suricata/fast.log 2>/dev/null || echo '로그 없음'"
 
 # DE.CM-4: 악성코드 탐지
-ssh ccc@10.20.30.201 "which clamscan 2>/dev/null || echo 'AV 미설치'"
+ssh 6v6-bastion "which clamscan 2>/dev/null || echo 'AV 미설치'"
 
 # DE.CM-7: 비인가 활동 모니터링 (Wazuh)
-ssh ccc@10.20.30.100 "systemctl is-active wazuh-manager 2>/dev/null"
+ssh 6v6-siem "systemctl is-active wazuh-manager 2>/dev/null"
 
 # DE.AE-3: 이벤트 데이터 수집 확인
-ssh ccc@10.20.30.100 "ls -lh /var/ossec/logs/alerts/alerts.json 2>/dev/null"
+ssh 6v6-siem "ls -lh /var/ossec/logs/alerts/alerts.json 2>/dev/null"
 ```
 
 ---
@@ -247,13 +247,13 @@ ssh ccc@10.20.30.100 "ls -lh /var/ossec/logs/alerts/alerts.json 2>/dev/null"
 ```bash
 # RS.AN-1: 사고 분석 (로그 분석 능력)
 # 최근 SSH 실패 로그 분석
-ssh ccc@10.20.30.201 "grep 'Failed password' /var/log/auth.log 2>/dev/null | tail -5"
+ssh 6v6-bastion "grep 'Failed password' /var/log/auth.log 2>/dev/null | tail -5"
 
 # RS.MI-1: 사고 격리 (방화벽으로 IP 차단 가능 여부)
-ssh ccc@10.20.30.1 "sudo nft list ruleset 2>/dev/null | grep 'drop' | head -5"
+ssh 6v6-fw "sudo nft list ruleset 2>/dev/null | grep 'drop' | head -5"
 
 # RS.CO-1: 알림 체계 확인 (Wazuh 알림 설정)
-ssh ccc@10.20.30.100 "cat /var/ossec/etc/ossec.conf 2>/dev/null | grep -A5 '<email_notification>' | head -6"
+ssh 6v6-siem "cat /var/ossec/etc/ossec.conf 2>/dev/null | grep -A5 '<email_notification>' | head -6"
 ```
 
 ---
@@ -272,13 +272,13 @@ ssh ccc@10.20.30.100 "cat /var/ossec/etc/ossec.conf 2>/dev/null | grep -A5 '<ema
 
 ```bash
 # RC.RP-1: 백업 존재 여부
-ssh ccc@10.20.30.201 "ls -la /backup/ 2>/dev/null || echo '백업 디렉토리 없음'"
+ssh 6v6-bastion "ls -la /backup/ 2>/dev/null || echo '백업 디렉토리 없음'"
 
 # 데이터베이스 백업 확인
-ssh ccc@10.20.30.201 "ls -la /tmp/*dump* /tmp/*backup* 2>/dev/null || echo 'DB 백업 없음'"
+ssh 6v6-bastion "ls -la /tmp/*dump* /tmp/*backup* 2>/dev/null || echo 'DB 백업 없음'"
 
 # 서비스 재시작 능력 확인
-ssh ccc@10.20.30.201 "systemctl is-enabled postgresql 2>/dev/null || echo 'postgresql 서비스 상태 확인 필요'"
+ssh 6v6-bastion "systemctl is-enabled postgresql 2>/dev/null || echo 'postgresql 서비스 상태 확인 필요'"
 ```
 
 ---
@@ -382,7 +382,7 @@ ssh ccc@10.20.30.201 "systemctl is-enabled postgresql 2>/dev/null || echo 'postg
 ```bash
 # ISO 27001 A.8.5 (안전한 인증) 점검 증적 수집
 echo "=== 패스워드 정책 확인 ==="
-ssh ccc@10.20.30.80 "  # 비밀번호 자동입력 SSH
+ssh 6v6-web "  # 비밀번호 자동입력 SSH
   echo '--- login.defs ---' && grep -E 'PASS_MAX|PASS_MIN|PASS_WARN' /etc/login.defs
   echo '--- pam 설정 ---' && grep pam_pwquality /etc/pam.d/common-password 2>/dev/null || echo 'pam_pwquality 미설정'
   echo '--- sudo 설정 ---' && sudo -l 2>/dev/null | head -5

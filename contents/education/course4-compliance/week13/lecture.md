@@ -138,10 +138,10 @@
 ```bash
 # CC6.1: 논리적 접근 보안 소프트웨어
 echo "=== 방화벽 ==="
-ssh ccc@10.20.30.1 "sudo nft list ruleset 2>/dev/null | head -10"  # 비밀번호 자동입력 SSH
+ssh 6v6-fw "sudo nft list ruleset 2>/dev/null | head -10"  # 비밀번호 자동입력 SSH
 
 echo "=== IPS ==="
-ssh ccc@10.20.30.1 "systemctl is-active suricata 2>/dev/null"  # 비밀번호 자동입력 SSH
+ssh 6v6-fw "systemctl is-active suricata 2>/dev/null"  # 비밀번호 자동입력 SSH
 
 # CC6.2: 사용자 인증
 echo "=== 인증 방식 ==="
@@ -152,13 +152,13 @@ done
 
 # CC6.3: 접근 권한 부여/변경/제거
 echo "=== 권한 관리 ==="
-ssh ccc@10.20.30.201 "getent group sudo"  # 비밀번호 자동입력 SSH
-ssh ccc@10.20.30.201 "lastlog 2>/dev/null | head -10"  # 비밀번호 자동입력 SSH
+ssh 6v6-bastion "getent group sudo"  # 비밀번호 자동입력 SSH
+ssh 6v6-bastion "lastlog 2>/dev/null | head -10"  # 비밀번호 자동입력 SSH
 
 # CC6.6: 외부 위협으로부터 보호
 echo "=== 보안 시스템 ==="
-ssh ccc@10.20.30.1 "systemctl is-active suricata nftables 2>/dev/null"  # 비밀번호 자동입력 SSH
-ssh ccc@10.20.30.80 "systemctl is-active apache2 || systemctl is-active apache2 2>/dev/null"  # 비밀번호 자동입력 SSH
+ssh 6v6-fw "systemctl is-active suricata nftables 2>/dev/null"  # 비밀번호 자동입력 SSH
+ssh 6v6-web "systemctl is-active apache2 || systemctl is-active apache2 2>/dev/null"  # 비밀번호 자동입력 SSH
 ```
 
 ### 2.4 실습: CC7 (시스템 운영) 점검
@@ -166,12 +166,12 @@ ssh ccc@10.20.30.80 "systemctl is-active apache2 || systemctl is-active apache2 
 ```bash
 # CC7.1: 이상 징후 탐지
 echo "=== Wazuh 알림 현황 ==="
-ssh ccc@10.20.30.100 "systemctl is-active wazuh-manager 2>/dev/null"  # 비밀번호 자동입력 SSH
-ssh ccc@10.20.30.100 "wc -l /var/ossec/logs/alerts/alerts.json 2>/dev/null"  # 비밀번호 자동입력 SSH
+ssh 6v6-siem "systemctl is-active wazuh-manager 2>/dev/null"  # 비밀번호 자동입력 SSH
+ssh 6v6-siem "wc -l /var/ossec/logs/alerts/alerts.json 2>/dev/null"  # 비밀번호 자동입력 SSH
 
 # CC7.2: 보안 사고 모니터링
 echo "=== 최근 고위험 알림 ==="
-ssh ccc@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
+ssh 6v6-siem "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
 import sys, json
 for line in sys.stdin:                                 # 반복문 시작
     try:
@@ -184,7 +184,7 @@ for line in sys.stdin:                                 # 반복문 시작
 
 # CC7.3: 변경 관리
 echo "=== 최근 패키지 변경 ==="
-ssh ccc@10.20.30.201 "tail -5 /var/log/dpkg.log 2>/dev/null"  # 비밀번호 자동입력 SSH
+ssh 6v6-bastion "tail -5 /var/log/dpkg.log 2>/dev/null"  # 비밀번호 자동입력 SSH
 ```
 
 ---
@@ -225,22 +225,22 @@ ssh ccc@10.20.30.201 "tail -5 /var/log/dpkg.log 2>/dev/null"  # 비밀번호 자
 ```bash
 # 기술적 보호조치: 접근통제 (164.312(a))
 echo "=== 고유 사용자 ID ==="
-ssh ccc@10.20.30.201 "awk -F: '\$3>=1000 && \$3<65534 {print \$1, \$3}' /etc/passwd"  # 비밀번호 자동입력 SSH
+ssh 6v6-bastion "awk -F: '\$3>=1000 && \$3<65534 {print \$1, \$3}' /etc/passwd"  # 비밀번호 자동입력 SSH
 
 echo "=== 자동 로그오프 ==="
-ssh ccc@10.20.30.201 "grep TMOUT /etc/profile /etc/bash.bashrc 2>/dev/null || echo '미설정 (HIPAA 부적합)'"  # 비밀번호 자동입력 SSH
+ssh 6v6-bastion "grep TMOUT /etc/profile /etc/bash.bashrc 2>/dev/null || echo '미설정 (HIPAA 부적합)'"  # 비밀번호 자동입력 SSH
 
 echo "=== 접근 실패 잠금 ==="
-ssh ccc@10.20.30.201 "grep pam_faillock /etc/pam.d/common-auth 2>/dev/null || echo '미설정'"  # 비밀번호 자동입력 SSH
+ssh 6v6-bastion "grep pam_faillock /etc/pam.d/common-auth 2>/dev/null || echo '미설정'"  # 비밀번호 자동입력 SSH
 
 # 기술적 보호조치: 감사통제 (164.312(b))
 echo "=== 감사 로그 ==="
-ssh ccc@10.20.30.201 "systemctl is-active auditd rsyslog 2>/dev/null"  # 비밀번호 자동입력 SSH
-ssh ccc@10.20.30.201 "ls -lh /var/log/auth.log 2>/dev/null"  # 비밀번호 자동입력 SSH
+ssh 6v6-bastion "systemctl is-active auditd rsyslog 2>/dev/null"  # 비밀번호 자동입력 SSH
+ssh 6v6-bastion "ls -lh /var/log/auth.log 2>/dev/null"  # 비밀번호 자동입력 SSH
 
 # 기술적 보호조치: 전송보안 (164.312(e))
 echo "=== 전송 암호화 ==="
-ssh ccc@10.20.30.100 "echo | openssl s_client -connect localhost:443 2>/dev/null | grep Protocol"  # 비밀번호 자동입력 SSH
+ssh 6v6-siem "echo | openssl s_client -connect localhost:443 2>/dev/null | grep Protocol"  # 비밀번호 자동입력 SSH
 ```
 
 ### 3.5 HIPAA 위반 제재
@@ -301,14 +301,14 @@ echo "[2] 로깅"
 ssh $srv  # srv=user@ip (아래 루프 참고) "systemctl is-active rsyslog 2>/dev/null && echo '  rsyslog: OK' || echo '  rsyslog: FAIL'"
 
 echo "[3] 암호화"
-ssh ccc@10.20.30.100 "echo | openssl s_client -connect localhost:443 2>/dev/null | grep 'Protocol' | grep -q 'TLSv1.[23]' && echo '  TLS: OK' || echo '  TLS: 확인필요'"  # 비밀번호 자동입력 SSH
+ssh 6v6-siem "echo | openssl s_client -connect localhost:443 2>/dev/null | grep 'Protocol' | grep -q 'TLSv1.[23]' && echo '  TLS: OK' || echo '  TLS: 확인필요'"  # 비밀번호 자동입력 SSH
 
 echo "[4] 패치"
 cnt=$(ssh $srv  # srv=user@ip (아래 루프 참고) "apt list --upgradable 2>/dev/null | wc -l")
 echo "  미적용 패치: $cnt"
 
 echo "[5] 사고대응"
-ssh ccc@10.20.30.100 "systemctl is-active wazuh-manager 2>/dev/null && echo '  SIEM: OK' || echo '  SIEM: FAIL'"  # 비밀번호 자동입력 SSH
+ssh 6v6-siem "systemctl is-active wazuh-manager 2>/dev/null && echo '  SIEM: OK' || echo '  SIEM: FAIL'"  # 비밀번호 자동입력 SSH
 
 echo "[6] 리스크관리"
 echo "  (문서 점검 항목 - 리스크 평가 문서 존재 여부)"
@@ -406,7 +406,7 @@ echo "  (문서 점검 항목 - 교육 이수 기록 존재 여부)"
 ```bash
 # ISO 27001 A.8.5 (안전한 인증) 점검 증적 수집
 echo "=== 패스워드 정책 확인 ==="
-ssh ccc@10.20.30.80 "  # 비밀번호 자동입력 SSH
+ssh 6v6-web "  # 비밀번호 자동입력 SSH
   echo '--- login.defs ---' && grep -E 'PASS_MAX|PASS_MIN|PASS_WARN' /etc/login.defs
   echo '--- pam 설정 ---' && grep pam_pwquality /etc/pam.d/common-password 2>/dev/null || echo 'pam_pwquality 미설정'
   echo '--- sudo 설정 ---' && sudo -l 2>/dev/null | head -5

@@ -195,53 +195,53 @@ ISMS-P 인증 기준 (총 102개)
 # 실습: 사용자 인증 관련 점검
 
 # 2.5.1 사용자 계정 관리 — 불필요한 계정 확인
-ssh ccc@10.20.30.201 "awk -F: '\$3 >= 1000 && \$3 < 65534 {print \$1}' /etc/passwd"
+ssh 6v6-bastion "awk -F: '\$3 >= 1000 && \$3 < 65534 {print \$1}' /etc/passwd"
 
 # 2.5.2 사용자 식별 — 공용 계정 사용 여부
-ssh ccc@10.20.30.201 "last | head -10"
+ssh 6v6-bastion "last | head -10"
 
 # 2.5.3 사용자 인증 — 비밀번호 정책
-ssh ccc@10.20.30.201 "grep -E 'PASS_MAX_DAYS|PASS_MIN_DAYS|PASS_MIN_LEN' /etc/login.defs"
+ssh 6v6-bastion "grep -E 'PASS_MAX_DAYS|PASS_MIN_DAYS|PASS_MIN_LEN' /etc/login.defs"
 
 # 2.5.4 비밀번호 관리 — 비밀번호 복잡도
-ssh ccc@10.20.30.201 "cat /etc/security/pwquality.conf 2>/dev/null | grep -v '^#' | grep -v '^$'"
+ssh 6v6-bastion "cat /etc/security/pwquality.conf 2>/dev/null | grep -v '^#' | grep -v '^$'"
 ```
 
 ### 4.2 접근통제 (2.6)
 
 ```bash
 # 2.6.1 네트워크 접근 — 방화벽 규칙
-ssh ccc@10.20.30.1 "sudo nft list ruleset | wc -l"
+ssh 6v6-fw "sudo nft list ruleset | wc -l"
 
 # 2.6.2 정보시스템 접근 — SSH 접근 제한
-ssh ccc@10.20.30.201 "grep -E 'AllowUsers|AllowGroups|DenyUsers' /etc/ssh/sshd_config"
+ssh 6v6-bastion "grep -E 'AllowUsers|AllowGroups|DenyUsers' /etc/ssh/sshd_config"
 
 # 2.6.5 인터넷 접속 통제 — 외부 접근 포트 확인
-ssh ccc@10.20.30.1 "sudo nft list ruleset | grep 'dport' | head -10"
+ssh 6v6-fw "sudo nft list ruleset | grep 'dport' | head -10"
 ```
 
 ### 4.3 암호화 적용 (2.7)
 
 ```bash
 # 2.7.1 암호정책 적용 — 전송 구간 암호화
-ssh ccc@10.20.30.100 "echo | openssl s_client -connect localhost:443 2>/dev/null | grep Protocol"
+ssh 6v6-siem "echo | openssl s_client -connect localhost:443 2>/dev/null | grep Protocol"
 
 # 2.7.2 암호키 관리 — 키 파일 권한 확인
-ssh ccc@10.20.30.201 "ls -la ~/.ssh/ 2>/dev/null"
-ssh ccc@10.20.30.201 "stat -c '%a %n' /etc/ssh/ssh_host_*_key 2>/dev/null"
+ssh 6v6-bastion "ls -la ~/.ssh/ 2>/dev/null"
+ssh 6v6-bastion "stat -c '%a %n' /etc/ssh/ssh_host_*_key 2>/dev/null"
 ```
 
 ### 4.4 시스템 및 서비스 보안관리 (2.10)
 
 ```bash
 # 2.10.1 보안시스템 운영 — IPS 상태 확인
-ssh ccc@10.20.30.1 "systemctl status suricata 2>/dev/null | head -5"
+ssh 6v6-fw "systemctl status suricata 2>/dev/null | head -5"
 
 # 2.10.4 로그 및 접속기록 관리 — 로그 보존 기간
-ssh ccc@10.20.30.201 "cat /etc/logrotate.conf | grep -A2 'rotate'"
+ssh 6v6-bastion "cat /etc/logrotate.conf | grep -A2 'rotate'"
 
 # 2.10.7 패치 관리
-ssh ccc@10.20.30.201 "apt list --upgradable 2>/dev/null | head -10"
+ssh 6v6-bastion "apt list --upgradable 2>/dev/null | head -10"
 ```
 
 ---
@@ -325,7 +325,7 @@ done
 
 # 1.2.2 현황분석 — 네트워크 구성 확인
 echo "=== 네트워크 구성 ==="
-ssh ccc@10.20.30.1 "ip route show"        # 비밀번호 자동입력 SSH
+ssh 6v6-fw "ip route show"        # 비밀번호 자동입력 SSH
 
 # 2.11.1 사고 예방 — Wazuh 에이전트 설치 현황
 echo "=== Wazuh Agent 상태 ==="
@@ -394,7 +394,7 @@ done
 ```bash
 # ISO 27001 A.8.5 (안전한 인증) 점검 증적 수집
 echo "=== 패스워드 정책 확인 ==="
-ssh ccc@10.20.30.80 "  # 비밀번호 자동입력 SSH
+ssh 6v6-web "  # 비밀번호 자동입력 SSH
   echo '--- login.defs ---' && grep -E 'PASS_MAX|PASS_MIN|PASS_WARN' /etc/login.defs
   echo '--- pam 설정 ---' && grep pam_pwquality /etc/pam.d/common-password 2>/dev/null || echo 'pam_pwquality 미설정'
   echo '--- sudo 설정 ---' && sudo -l 2>/dev/null | head -5
@@ -553,7 +553,7 @@ EOF
 ### 학생 환경 준비
 
 ```bash
-ssh ccc@10.20.30.100
+ssh 6v6-siem
 pip3 install presidio-analyzer presidio-anonymizer pii-codex scrubadub opacus
 
 # CNIL PIA (DPIA tool, 프랑스 정부 무료)

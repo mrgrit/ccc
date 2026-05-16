@@ -244,11 +244,11 @@ done
 
 # 4. 방화벽 규칙 (A.8.20)
 echo "=== [A.8.20] 방화벽 규칙 수집 ==="
-ssh ccc@10.20.30.1 "sudo nft list ruleset" 2>/dev/null > "$EVIDENCE_DIR/firewall_rules.txt"  # 비밀번호 자동입력 SSH
+ssh 6v6-fw "sudo nft list ruleset" 2>/dev/null > "$EVIDENCE_DIR/firewall_rules.txt"  # 비밀번호 자동입력 SSH
 
 # 5. 비밀번호 정책 (A.8.5)
 echo "=== [A.8.5] 비밀번호 정책 수집 ==="
-ssh ccc@10.20.30.201 "                 # 비밀번호 자동입력 SSH
+ssh 6v6-bastion "                 # 비밀번호 자동입력 SSH
   echo '=== login.defs ==='
   grep -E 'PASS_MAX_DAYS|PASS_MIN_DAYS|PASS_MIN_LEN|PASS_WARN_AGE' /etc/login.defs  # 패턴 검색
   echo '=== pwquality ==='
@@ -257,8 +257,8 @@ ssh ccc@10.20.30.201 "                 # 비밀번호 자동입력 SSH
 
 # 6. 로그 샘플 (A.8.15)
 echo "=== [A.8.15] 로그 샘플 수집 ==="
-ssh ccc@10.20.30.201 "tail -100 /var/log/auth.log" 2>/dev/null > "$EVIDENCE_DIR/auth_log_sample.txt"  # 비밀번호 자동입력 SSH
-ssh ccc@10.20.30.100 "tail -50 /var/ossec/logs/alerts/alerts.json" 2>/dev/null > "$EVIDENCE_DIR/wazuh_alerts_sample.txt"  # 비밀번호 자동입력 SSH
+ssh 6v6-bastion "tail -100 /var/log/auth.log" 2>/dev/null > "$EVIDENCE_DIR/auth_log_sample.txt"  # 비밀번호 자동입력 SSH
+ssh 6v6-siem "tail -50 /var/ossec/logs/alerts/alerts.json" 2>/dev/null > "$EVIDENCE_DIR/wazuh_alerts_sample.txt"  # 비밀번호 자동입력 SSH
 
 # 7. NTP 설정 (A.8.17)
 echo "=== [A.8.17] NTP 설정 수집 ==="
@@ -318,13 +318,13 @@ cat checksums.sha256
 
 ```bash
 # SSH 접근 제한 설정 시연
-ssh ccc@10.20.30.201 "grep -E 'PermitRootLogin|PasswordAuthentication|MaxAuthTries' /etc/ssh/sshd_config | grep -v '^#'"
+ssh 6v6-bastion "grep -E 'PermitRootLogin|PasswordAuthentication|MaxAuthTries' /etc/ssh/sshd_config | grep -v '^#'"
 
 # 방화벽에서 SSH 접근 제한
-ssh ccc@10.20.30.1 "sudo nft list ruleset 2>/dev/null | grep -A2 'ssh\|22'"
+ssh 6v6-fw "sudo nft list ruleset 2>/dev/null | grep -A2 'ssh\|22'"
 
 # 계정 권한 현황
-ssh ccc@10.20.30.201 "getent group sudo"
+ssh 6v6-bastion "getent group sudo"
 ```
 
 **시나리오 2: 모니터링 심사**
@@ -334,13 +334,13 @@ ssh ccc@10.20.30.201 "getent group sudo"
 
 ```bash
 # Wazuh SIEM 운영 현황
-ssh ccc@10.20.30.100 "systemctl status wazuh-manager 2>/dev/null | head -5"
+ssh 6v6-siem "systemctl status wazuh-manager 2>/dev/null | head -5"
 
 # 에이전트 연결 현황
-ssh ccc@10.20.30.100 "/var/ossec/bin/agent_control -l 2>/dev/null | head -10"
+ssh 6v6-siem "/var/ossec/bin/agent_control -l 2>/dev/null | head -10"
 
 # 최근 알림 확인
-ssh ccc@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -3 | python3 -m json.tool 2>/dev/null | head -20"
+ssh 6v6-siem "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -3 | python3 -m json.tool 2>/dev/null | head -20"
 ```
 
 **시나리오 3: 사고대응 심사**
@@ -352,7 +352,7 @@ ssh ccc@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail 
 
 ```bash
 # 고위험 알림 이력
-ssh ccc@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
+ssh 6v6-siem "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
 import sys, json
 for line in sys.stdin:                                 # 반복문 시작
     try:
@@ -450,7 +450,7 @@ for line in sys.stdin:                                 # 반복문 시작
 ```bash
 # ISO 27001 A.8.5 (안전한 인증) 점검 증적 수집
 echo "=== 패스워드 정책 확인 ==="
-ssh ccc@10.20.30.80 "  # 비밀번호 자동입력 SSH
+ssh 6v6-web "  # 비밀번호 자동입력 SSH
   echo '--- login.defs ---' && grep -E 'PASS_MAX|PASS_MIN|PASS_WARN' /etc/login.defs
   echo '--- pam 설정 ---' && grep pam_pwquality /etc/pam.d/common-password 2>/dev/null || echo 'pam_pwquality 미설정'
   echo '--- sudo 설정 ---' && sudo -l 2>/dev/null | head -5

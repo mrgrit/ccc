@@ -138,7 +138,7 @@ done
 
 ```bash
 # 2. 실패한 로그인의 출발지 IP 분석
-ssh ccc@10.20.30.201 "grep 'Failed password' /var/log/auth.log 2>/dev/null | \
+ssh 6v6-bastion "grep 'Failed password' /var/log/auth.log 2>/dev/null | \
   awk '{print \$(NF-3)}' | sort | uniq -c | sort -rn | head -10"  # 텍스트 필드 처리
 ```
 
@@ -154,7 +154,7 @@ done
 
 ```bash
 # 4. 비정상 시간대 로그인 확인 (새벽 2~5시)
-ssh ccc@10.20.30.201 "grep 'session opened' /var/log/auth.log 2>/dev/null | \
+ssh 6v6-bastion "grep 'session opened' /var/log/auth.log 2>/dev/null | \
   awk '{print \$3}' | awk -F: '\$1>=2 && \$1<=5 {print}'"  # 텍스트 필드 처리
 ```
 
@@ -165,11 +165,11 @@ ssh ccc@10.20.30.201 "grep 'session opened' /var/log/auth.log 2>/dev/null | \
 ```bash
 # Suricata 알림 분석
 echo "=== Suricata 알림 통계 ==="
-ssh ccc@10.20.30.1 "cat /var/log/suricata/fast.log 2>/dev/null | \
+ssh 6v6-fw "cat /var/log/suricata/fast.log 2>/dev/null | \
   awk -F'\\]' '{print \$2}' | sort | uniq -c | sort -rn | head -10"  # 텍스트 필드 처리
 
 # Suricata 알림 심각도별 분류
-ssh ccc@10.20.30.1 "cat /var/log/suricata/fast.log 2>/dev/null | \
+ssh 6v6-fw "cat /var/log/suricata/fast.log 2>/dev/null | \
   grep -oE 'Priority: [0-9]+' | sort | uniq -c | sort -rn"  # 디렉터리 재귀 검색
 ```
 
@@ -179,7 +179,7 @@ ssh ccc@10.20.30.1 "cat /var/log/suricata/fast.log 2>/dev/null | \
 
 ```bash
 # Wazuh 알림 레벨별 통계
-ssh ccc@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
+ssh 6v6-siem "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
 import sys, json
 from collections import Counter
 levels = Counter()
@@ -358,7 +358,7 @@ fi
 echo ""
 echo "[A.8.20] 네트워크보안 - 방화벽 기본정책"
 echo "  기준: 기본 정책 DROP"
-result=$(ssh ccc@10.20.30.1 "sudo nft list ruleset 2>/dev/null | grep 'policy drop'" || echo "")
+result=$(ssh 6v6-fw "sudo nft list ruleset 2>/dev/null | grep 'policy drop'" || echo "")
 if [ -n "$result" ]; then
   echo "  현황: 기본 정책 DROP"
   echo "  판정: 적합"
