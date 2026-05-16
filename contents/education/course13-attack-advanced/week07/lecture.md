@@ -15,14 +15,17 @@
 - 리버스 셸의 원리를 이해하고 있어야 한다 (Week 01)
 - Python 기초 네트워크 프로그래밍을 할 수 있어야 한다
 
-## 실습 환경
+## 실습 환경 (6v6 4-tier)
 
-| 호스트 | IP | 역할 | 접속 |
-|--------|-----|------|------|
-| bastion | 10.20.30.201 | C2 서버 (교육용) | `ssh ccc@10.20.30.201` |
-| secu | 10.20.30.1 | 방화벽/IPS (탐지 검증) | `ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 피해 시스템 (비콘 대상) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM 모니터링 | `ssh ccc@10.20.30.100` |
+학생 PC 의 `~/.ssh/config` 의 ProxyJump 설정 후 `ssh 6v6-<name>` 으로 접속.
+
+| 컨테이너 | 6v6 IP | 역할 | 접속 |
+|---------|--------|------|------|
+| bastion | 10.20.30.201 | C2 서버 (교육용) / Control Plane | `ssh 6v6-bastion` (pw: ccc) |
+| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext (탐지 검증) | `ssh 6v6-fw` |
+| web | 10.20.32.80 | 피해 시스템 (비콘 대상) | `ssh 6v6-web` |
+| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
+| attacker | 10.20.30.202 | 공격 출발점 (pen-test 도구) | `ssh 6v6-attacker` |
 
 ## 강의 시간 배분 (3시간)
 
