@@ -1869,6 +1869,12 @@ _STANDALONE_COURSES = {
         "icon": "🗡️",
         "color": "#f85149",
     },
+    "soc-adv": {
+        "title": "보안관제 심화 (6v6)",
+        "description": "Advanced SOC — 위협 헌팅 · UEBA · SOAR · 고급 SIGMA/KQL · IR 자동화 등을 6v6 컨테이너 인프라에서 실습. Training 메뉴의 soc-adv 과목을 6v6 환경에 맞춰 이식.",
+        "icon": "📡",
+        "color": "#3fb950",
+    },
 }
 
 
