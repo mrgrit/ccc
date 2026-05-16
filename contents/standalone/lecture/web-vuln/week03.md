@@ -260,7 +260,7 @@ hashcat -m 16500 token.txt /usr/share/wordlists/rockyou.txt
 4. **graceful migration** — 새 token 은 RS256, 기존 HS256 token 은 *유효 기간 까지*
 5. **HS256 deprecation** — 모든 user 의 *다음 login 시* RS256 변환
 
-### 3-6. W03 lab step 3 의 의의
+### 3-6. W03 lab step 3 의의
 
 본 step 의 *시뮬*:
 - weak secret "secret" 의 *brute 5 candidate* 시도
@@ -326,7 +326,7 @@ NeoBank 같은 금융 시스템 의 *추가 7*:
 6. **session revocation** = logout / 의심 행동 시 즉시 무효
 7. **session log** = 모든 session 의 *시작 / 종료 / 의심* 기록
 
-### 4-4. W03 lab step 5 의 의의 — 4 영역 종합 보고서
+### 4-4. W03 lab step 5 의의 — 4 영역 종합 보고서
 
 본 step 의 *4 finding* (hash + TLS + JWT + cookie) 가 *crypto audit 의 최소 단위*.
 실 운영 = *분기 1 회* 의 *4 영역 audit* 가 *기본 frequency*.
