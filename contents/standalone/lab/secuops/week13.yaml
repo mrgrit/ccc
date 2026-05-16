@@ -553,28 +553,105 @@ steps:
 
   - order: 5
     instruction: |
-      ## 🎯 MISSION — R/B/P IOC enrichment → alert 격상
+      ## 🎯 MISSION — Red/Blue/Purple **IOC enrichment → alert 격상** 시나리오 작성
 
-      ## 💻 시뮬
+      attacker 가 *알려진 악성 IP* 와 통신 → Suricata raw alert (level 3) → Wazuh CDB
+      가 OpenCTI IOC list 와 매칭 → custom rule 로 *level 10 격상* → enrichment
+      (GeoIP/WHOIS/VT) 로 *context 부여* → Purple 측 자동 대응 의 *완전 자동화*
+      시나리오 를 작성한다.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **level 격상** = Wazuh 의 alert level (1~15) 이 *증거 결합* 으로 올라감.
+        예: 단순 outbound (3) → 악성 IP 매칭 (10) → APT attribution + AR (12)
+      - **CDB 매칭** = O(1) lookup. 5712 (brute) / 100100 (IOC 매칭) 의 *별 rule*
+      - **enrichment context** = 같은 alert 라도 *Russia AS12345 / VT 62% / APT28*
+        의 추가 정보 가 SOC L1 의 *판단 시간* 을 30분 → 30초 로 단축
+
+      ## 💻 시뮬 시나리오 (R/B/P 4 단계)
 
       ```
-      [Red] attacker (10.20.30.202) → 외부 IP 192.168.99.99 통신
-      [Suricata] alert level 3
-      [Wazuh] 4751 룰 매치 → level 3
-      [CDB] opencti-iocs 에 192.168.99.99 있음 (OpenCTI 가 sync) → 100100 룰 매치 → level 10
-      [OpenCTI enrichment]:
-        - GeoIP: Russia / Moscow / AS12345
-        - WHOIS: 등록 2020-01-15 / suspicious.ru
-        - VirusTotal: 45/72 (62% positive)
+      ┌─────────────────────────────────────────────────────────────────┐
+      │ [Red] 공격 시뮬 (W12 Caldera 또는 수동 curl)                     │
+      └─────────────────────────────────────────────────────────────────┘
+        attacker (10.20.30.202) → curl http://192.168.99.99/beacon
+        ↓
+      ┌─────────────────────────────────────────────────────────────────┐
+      │ [Blue 1] Suricata 의 raw alert (level 3)                         │
+      └─────────────────────────────────────────────────────────────────┘
+        eve.json: alert{sid=2000001, sig="ET POLICY outbound HTTP", level=3}
+        ↓
+      ┌─────────────────────────────────────────────────────────────────┐
+      │ [Blue 2] Wazuh CDB 매칭 → custom 100100 rule → level 10          │
+      └─────────────────────────────────────────────────────────────────┘
+        alerts.json: rule{id=100100, level=10, desc="IOC match: known C2"}
+        ↓ OpenCTI Stream Connector 가 30분 전 sync → 192.168.99.99 in CDB
+        ↓
+      ┌─────────────────────────────────────────────────────────────────┐
+      │ [OpenCTI enrichment] 5 차원 context                              │
+      └─────────────────────────────────────────────────────────────────┘
+        - GeoIP: Russia / Moscow / AS12345 (Yandex.Cloud)
+        - WHOIS: registered 2020-01-15 / suspicious.ru / privacy-protected
+        - VirusTotal: 45/72 (62% positive) — last scan 2 hours ago
         - Tags: apt28-c2, emotet-distributor
-        - MITRE: T1071.001
-      [Purple]
-        - dashboard: level 10 critical alert
-        - context: APT28 attribution + Emotet
-        - Active Response: attacker IP 차단
-        - report 자동 생성 (analyst workbench)
+        - MITRE Tactic/Technique: TA0011 Command-and-Control / T1071.001 (Web)
+        ↓
+      ┌─────────────────────────────────────────────────────────────────┐
+      │ [Purple] 자동 대응 + 보고서                                       │
+      └─────────────────────────────────────────────────────────────────┘
+        - Dashboard: level 10 critical alert + 5 context tile
+        - Wazuh Active Response: attacker IP 차단 (firewall-drop)
+        - OpenCTI: 자동 Investigation case 생성 (linked: alert + IOC + actor)
+        - 보고서 자동 생성 (Workbench 의 case template)
+        - Slack #soc-alerts 전송 (integratord)
       ```
-    hint: '시뮬 — Red IP 통신 → CDB 매치 → level 10 + enrichment context'
+
+      ## 💻 검증 명령 (각 단계 의 *기록 흔적* 확인)
+
+      ```bash
+      # Suricata raw alert 누적 (W04 의 ET POLICY rule)
+      ssh 6v6-ips 'sudo tail -100 /var/log/suricata/eve.json 2>/dev/null | jq -c "select(.event_type==\"alert\") | {sig:.alert.signature, sev:.alert.severity}" 2>/dev/null | tail -3'
+
+      # Wazuh CDB 의 *존재 여부* (실 IOC sync 후)
+      ssh 6v6-siem 'sudo ls -la /var/ossec/etc/lists/ 2>/dev/null'
+
+      # custom rule 100100 의 *정의 여부*
+      ssh 6v6-siem 'sudo grep -l "100100" /var/ossec/etc/rules/*.xml 2>/dev/null | head -3'
+
+      # alerts.json 의 *level 10+ alert* 분포
+      ssh 6v6-siem 'sudo tail -200 /var/ossec/logs/alerts/alerts.json 2>/dev/null | jq -r "select(.rule.level >= 10) | .rule.id" 2>/dev/null | sort | uniq -c'
+      ```
+
+      ## 📋 확인 사항
+
+      - 4 단계 시나리오 다이어그램 (Red → Blue 2 → Enrichment → Purple)
+      - 5 차원 enrichment context (GeoIP / WHOIS / VT / Tags / MITRE)
+      - 4 검증 명령 모두 실행 (출력 비어도 *왜* 인지)
+      - level 격상 의 *2 단계* (3 → 10 → 12) 인지
+
+      ## 💡 왜 이걸 하는가?
+
+      *raw alert* 만으로는 SOC 의 *대응 우선순위* 결정 불가 — *enrichment context*
+      가 *대응 결정* 의 핵심. APT28 attribution + Russia AS12345 + VT 62% 의 3 개
+      만으로도 *분석가 0초* 에 *critical* 판단 가능. R/B/P 의 *통합 운영* 의 정점.
+
+      ## 🔍 결과 해석
+
+      - **정상 (운영)**: 시나리오 다이어그램 + 5 context + 4 검증 모두 답변
+      - **alerts.json level 10+ 없음** — CDB sync 안 됨 또는 OpenCTI 미운영. 본 lab
+        은 *시뮬 시나리오* 학습 이므로 OK
+      - **custom 100100 rule 없음** — 미정의. lecture §6 의 rule 작성 절차 참고
+
+      ## 비정상 시 대응
+
+      - **alerts.json 0 byte** — 데이터 부재 2 path 정책 (CURRICULUM 원칙 #7) 적용.
+        본 lab 은 SOC 분석 lab → fixture (`lib/generators/wazuh_alert.py`) 주입 후
+        진행 가능.
+      - **OpenCTI 실 인스턴스 부재** — 본 step 은 *시뮬 시나리오* 학습. 실 인스턴스
+        는 별 운영 lab (W14).
+    hint: |
+      4 단계 시나리오 (Red → Blue 2 → Enrichment 5 → Purple) + 4 검증 명령.
+      level 격상 의 2 단계 + APT attribution context 학습.
     category: redblue
     points: 22
     answer: |
