@@ -6,16 +6,24 @@
 - 인증 프로세스의 기본 절차를 이해한다
 - 실습 인프라에서 기본 보안 설정 항목을 점검하는 미니 컴플라이언스 체크를 수행할 수 있다
 
-## 실습 환경 (공통)
+## 실습 환경 (6v6 4-tier, 공통)
 
-| 서버 | IP | 역할 | 접속 |
-|------|-----|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
+6v6 의 *학생 PC SSH 진입점* = `bastion` 컨테이너 (ProxyJump). 학생 PC 의
+`~/.ssh/config` 에 ProxyJump 설정 + `/etc/hosts` 의 vhost 매핑 완료 후 다음 표
+의 4 컨테이너 모두 `ssh 6v6-<name>` 으로 접속 가능.
 
-**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+| 컨테이너 | 6v6 IP | 역할 | 접속 |
+|---------|--------|------|------|
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
+| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata 의 ext | `ssh 6v6-fw` |
+| ips | 10.20.30.x (pipe) | Suricata IDS/IPS | `ssh 6v6-ips` |
+| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
+| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
+| attacker | 10.20.30.202 | pen-test 도구 (nmap/sqlmap/hydra/etc) | `ssh 6v6-attacker` |
+
+**Bastion API:** `http://192.168.0.103:8003` (학습 환경 기본 — 0.110 인 경우 환경 별 다름) / Key: `ccc-api-key-2026`
+
+**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 

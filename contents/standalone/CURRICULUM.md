@@ -239,6 +239,29 @@ OWASP Top 10 (2021) 의 10 카테고리 + CWE Top 25 의 핵심 + 6v6 의 7 vuln
 | W14 | API Security Top 10 (2023) — REST / GraphQL | JuiceShop REST + 추가 GraphQL |
 | W15 | 기말 — 7 vhost 종합 침투 (180분, 100점) | PTES 7 단계 보고서 |
 
+## compliance (정보보안 컴플라이언스, 15 주)
+
+ISMS-P / ISO 27001 / GDPR / 개인정보보호법 / NIST CSF 의 *법규 + 표준* 체계.
+6v6 의 인프라 위 의 *실 audit hands-on* (mini compliance check).
+
+| 주차 | 주제 |
+|------|------|
+| W01 | 정보보안 표준 개론 + 6v6 mini compliance check |
+| W02 | ISMS-P 의 6 영역 + 102 통제 |
+| W03 | ISO 27001:2022 의 93 통제 |
+| W04 | NIST CSF 2.0 의 6 function (GV/ID/PR/DE/RS/RC) |
+| W05 | GDPR + CCPA 의 *데이터 주체 권리* |
+| W06 | 개인정보보호법 + 신용정보법 의 한국 표준 |
+| W07 | PCI-DSS v4.0 의 12 requirement |
+| W08 | 중간 — W01-W07 종합 |
+| W09 | HIPAA + SOX 의 *산업별 표준* |
+| W10 | 위험 평가 (Risk Assessment) — DREAD / FAIR |
+| W11 | 사고 대응 의 *법적 의무* (한국 + EU + US) |
+| W12 | 보안 정책 작성 — 27 분야 |
+| W13 | 내부 audit + 외부 audit 의 절차 |
+| W14 | 인증 시험 준비 (CISSP / CISA / CISM) |
+| W15 | 기말 — 종합 audit (180분, 100점) |
+
 ## soc (보안 운영 센터, 15 주)
 
 secuops 의 *device 설정 중심* 와 다른 *advanced SOC 운영* — Threat Hunting + SOAR

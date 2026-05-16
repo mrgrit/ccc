@@ -3,7 +3,7 @@
 ## 학습 목표
 - 사이버보안의 기본 개념, 역사, 주요 용어를 이해한다
 - CIA Triad, AAA, Defense in Depth 등 보안 원칙을 설명할 수 있다
-- 실습 인프라(4대 VM)에 접속하여 각 서버의 역할과 구성을 파악한다
+- 실습 인프라 (6v6 4-tier 의 16 컨테이너) 에 접속하여 각 서버 의 역할 과 구성 을 파악한다
 - 기본 리눅스 명령어와 네트워크 도구를 사용하여 정보를 수집한다
 - Bastion 에이전트와 CCC API를 구분하고 각각의 역할을 이해한다
 - 보안 윤리와 법적 책임을 인지한다
@@ -452,17 +452,18 @@ ip addr show | grep "inet " | grep -v 127.0.0.1
 - `| grep "inet "`: IPv4 주소 라인만 필터 (`inet6`는 제외됨)
 - `| grep -v 127.0.0.1`: 루프백 주소는 제외 (`-v`는 역매치)
 
-**예상 출력:**
+**예상 출력 (6v6-attacker 컨테이너 내부):**
 ```
-    inet 10.20.30.200/24 brd 10.20.30.255 scope global ens37
-    inet 192.168.208.142/24 brd 192.168.208.255 scope global ens33
+    inet 10.20.30.202/24 brd 10.20.30.255 scope global eth0
 ```
 
 **결과 해석:**
-- `10.20.30.200`: **내부망 IP** — 실습 인프라 네트워크 (모든 VM이 이 대역)
-- `192.168.208.142`: **외부망 IP** — 호스트 OS와의 연결 (NAT)
+- `10.20.30.202`: **6v6 ext bridge IP** — 6v6 의 ext 네트워크 (모든 컨테이너 가
+  이 대역 — bastion .201 / attacker .202 / fw .1)
 - `/24`: 서브넷 마스크 (255.255.255.0) → 같은 네트워크 범위 10.20.30.0~255
-- `scope global`: 외부에서 접근 가능한 주소 (vs `scope host`는 로컬만)
+- `scope global`: 외부 네트워크 와 통신 가능
+- 6v6 은 *학생 VM 의 단일 호스트* 위 *Docker 4-tier* (ext / pipe / dmz / int) 의
+  16 컨테이너 — 외부 노출 은 *5 port* (80/443/2202/2204/9100) 만
 
 ```bash
 ip route show
@@ -1047,11 +1048,14 @@ suspicion_score: 0.92
 | Bastion API | `curl http://localhost:9100` | httpie / curl + jq | (위와 동일) | `/ask`, `/evidence` |
 | Git 작업 | `git clone` | git + lazygit | `sudo apt install git` | 14주차 보고서 제출 |
 
-### 학생 환경 준비 (한 번만 실행, attacker VM 192.168.0.112)
+### 학생 환경 준비 (한 번만 실행, 6v6-attacker 컨테이너)
 
 ```bash
-# attacker VM 접속
-ssh ccc@192.168.0.112   # pw: 1
+# 학생 PC 의 ~/.ssh/config 에 ProxyJump 설정 후:
+ssh 6v6-attacker    # pw: ccc (또는 1 — 학습 환경 기본)
+
+# 또는 VM_IP 직접 접속 (DHCP 변동 가능, 학생 환경 의 VM IP 확인 후)
+ssh -p 2202 ccc@<VM_IP>   # 학생 PC 에 따라 다름
 
 # 1주차 + 향후 weekly 공통 도구 일괄 설치
 sudo apt update && sudo apt install -y \
@@ -1062,6 +1066,10 @@ sudo apt update && sudo apt install -y \
   mtr-tiny traceroute \
   git
 ```
+
+> 6v6 표준 — `ssh 6v6-attacker` 의 ProxyJump 사용 권장 (학생 PC 의 `~/.ssh/config`
+> + `/etc/hosts` 설정 후). 학습 환경 의 VM IP 가 DHCP 로 변동 시 `ssh -p 2202
+> ccc@VM_IP` 직접 사용. 비밀번호 = `ccc` 또는 `1` (default).
 
 ### 본문 본 강의 → 후속 주차 도구 매핑
 
