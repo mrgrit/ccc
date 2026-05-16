@@ -612,33 +612,113 @@ steps:
 
   - order: 5
     instruction: |
-      ## 🎯 MISSION — R/B/P Threat Hunting 5 단계 시뮬
+      ## 🎯 MISSION — Threat Hunting **5 단계** 시뮬 + 실 데이터 query
 
+      Threat Hunting = *가설 기반 능동 탐색*. raw alert 만 기다리는 *수동 SOC* 와
+      구분됨. 5 단계 (Hypothesis → Investigation → Sighting → Report → Share) 의
+      각 단계 별 *산출물* + *실 명령* 을 학습.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      | 단계 | 핵심 활동 | 산출물 | 도구 |
+      |------|----------|--------|------|
+      | 1. Hypothesis | "어떤 actor 의 어떤 TTP 가 본 환경에 가능?" | 가설 1-2 문장 + 관련 indicator | 분석가 직관 + MITRE ATT&CK |
+      | 2. Investigation | 가설 검증 — multi-source 검색 | 의심 사례 2-3 건 | Wazuh + osquery + sysmon + eve.json |
+      | 3. Sighting | 매치 *증거* 등록 | STIX Sighting object | OpenCTI / MISP |
+      | 4. Report | 분석 결과 *종합* | STIX Report + PDF | OpenCTI Workbench |
+      | 5. Share | community 공유 | MISP Event + TLP marking | MISP REST + TAXII |
+
+      ## 💻 산출물 (5 단계 워크플로우)
+
+      ```markdown
+      ### 1. Hypothesis (가설)
+      "APT28 lateral movement (T1078 Valid Accounts + T1021 Remote Services) 가
+      6v6 의 bastion → web 경로 로 발생 가능성. 최근 OTX feed 의 APT28 IP 4 개
+      + 본 환경 의 ssh brute force 패턴 누적 이 *상관* 있을 가능."
+
+      Related indicators:
+        - indicator--apt28-ip-001 (192.168.99.99 — known C2)
+        - indicator--apt28-hash-002 (md5: abc123 — Emotet stager)
+
+      ### 2. Investigation (검증)
+      Wazuh alerts.json 1 주 분 검색:
+        rule.id IN (5712 brute, 86601 Suricata, 4751 outbound, 100100 IOC)
+        AND timestamp > now() - 7d
+        AND agent.ip IN (10.20.30.200, 10.20.30.80)
+
+      osquery query (6v6-web 의 신규 user 점검):
+        SELECT username, uid, last_login FROM users WHERE last_login > date('now', '-7 days');
+
+      sysmon query (sshd 부모 의 비정상 ProcessCreate):
+        ParentImage='/usr/sbin/sshd' AND Image NOT IN ('/bin/bash', '/usr/sbin/sftp-server')
+
+      의심 사례 식별:
+        1. 5/10 02:33 — bastion 의 새 user 'svc-temp' (uid=1500) 생성
+        2. 5/10 02:35 — svc-temp 의 ssh outbound (10.20.30.80:22) — 평소 없음
+        3. 5/11 03:12 — web 의 ProcessCreate {sshd → curl http://192.168.99.99}
+
+      ### 3. Sighting (증거 등록)
+      OpenCTI Sighting object (W14 step 4 참고):
+        sighting--apt28-svc-temp:
+          sighting_of_ref: indicator--apt28-ip-001 (192.168.99.99)
+          first_seen: 2026-05-11T03:12:00Z
+          last_seen: 2026-05-11T03:14:00Z
+          count: 3
+          where_sighted_refs: identity--6v6-secuops
+
+      ### 4. Report (분석 결과)
+      OpenCTI Report object:
+        report--apt28-2026-w14:
+          name: "APT28 lateral movement in 6v6 - W14 Hunting"
+          report_types: [threat-report, campaign]
+          object_refs: [indicator--apt28-ip-001, threat-actor--apt28, sighting--apt28-svc-temp,
+                        attack-pattern--T1078, attack-pattern--T1021]
+          labels: [tlp:amber]
+          external_references: [{source_name: internal, external_id: INC-2026-W14-001}]
+
+      ### 5. Share (community 공유)
+      MISP Event 생성 + tlp:amber + publish-to-misp tag → OpenCTI Connector 가 자동
+      export. 한국 ISAC (FSEC-CTI 또는 KISA C-TAS) 에 전송.
       ```
-      [Hypothesis] APT28 lateral movement (T1078 + T1021) 가 본 환경에 발생 가능성
 
-      [Investigation]
-        - Wazuh alerts.json (rule.id 86601 + 5712 + 60xxx) 1 주 분량 검색
-        - osquery 의 새 user / authorized_keys / cron entry 점검
-        - sysmon (W11 설치 후) 의 ProcessCreate (sshd 부모) + NetworkConnect (외부 IP)
-        - 의심 사례 2-3 건 식별
+      ## 💻 검증 명령 (Investigation step 의 *실 query 의 형식* 검증)
 
-      [Sighting]
-        - OpenCTI Sighting object 등록
-        - sighting_of_ref: 매치된 indicator
-        - where_sighted: 6v6-secuops identity
+      ```bash
+      # Wazuh alerts.json 분석 — rule.id 분포 확인
+      ssh 6v6-siem 'sudo tail -200 /var/ossec/logs/alerts/alerts.json 2>/dev/null | jq -r "select(.rule.id != null) | .rule.id" 2>/dev/null | sort | uniq -c | sort -rn | head -10 || echo "alerts.json empty - fixture 주입 가능 (CURRICULUM 원칙 #7)"'
 
-      [Report]
-        - OpenCTI Report object
-        - name: "APT28 lateral movement in 6v6"
-        - object_refs: indicator + threat-actor + sighting
-
-      [Share]
-        - MISP Event 생성 + tlp:amber
-        - community 공유 (ISAC 또는 trusted partners)
-        - publish-to-misp tag → OpenCTI Connector 자동 export
+      # osquery 의 users 테이블 query (sysmon/Wazuh-FIM 대용)
+      ssh 6v6-web 'sudo osqueryi --json "SELECT username, uid FROM users WHERE uid >= 1000 LIMIT 10;" 2>/dev/null | head -20'
       ```
-    hint: 'Threat Hunting 5 단계 R/B/P'
+
+      ## 📋 확인 사항
+
+      - 5 단계 표 + 각 단계 산출물 + 도구 명시
+      - Hypothesis = *구체적 actor + TTP + 경로* (추상 X)
+      - Investigation = *N source query* (최소 3)
+      - 의심 사례 2-3 건 *시각 + 사용자 + 행위* 명시
+      - 검증 query 응답 (alerts.json 빈 시 fixture 주입 가능 명시)
+
+      ## 💡 왜 이걸 하는가?
+
+      Threat Hunting 은 *unknown unknown* 의 발견 — 룰 없이 도 탐지 가능. SOC 의
+      *성숙도 단계 4* (NIST CSF DE.CM-7) 의 핵심 능력. 5 단계 의 체계적 흐름 이
+      *재현성* 의 핵심.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 5 단계 표 + 가설 + 의심 3건 + Sighting + Report + Share + 검증
+      - **alerts.json empty**: 데이터 부재 2 path 정책 (공격 lab 이 아닌 SOC lab) →
+        fixture 주입 (`scripts/lab_fixture_inject.py --lab ... --order 5 --ssh`)
+      - **osquery 미동작**: web 컨테이너 의 osqueryi 설치 확인
+
+      ## 비정상 시 대응
+
+      - **가설 추상적 ("의심스러운 활동")** — actor + TTP + 경로 의 *3 구체성* 필수
+      - **Investigation 단일 source** — multi-source (3+) 가 hunting 의 정의
+    hint: |
+      5 단계 (Hypothesis → Investigation → Sighting → Report → Share) 표 + 각
+      단계 산출물 + 실 query 검증.
     category: redblue
     points: 20
     answer: |
@@ -670,21 +750,101 @@ steps:
 
   - order: 6
     instruction: |
-      ## 🎯 MISSION — TLP 적용 + 운영 사고 분석
+      ## 🎯 MISSION — TLP 4 등급 적용 + 운영 사고 3 사례 분석
 
-      ```
-      TLP 적용:
-        tlp:white  — 무제한 공개
-        tlp:green  — community (sector)
-        tlp:amber  — limited + need-to-know (default)
-        tlp:red    — restricted (받은 사람만)
+      TLP (Traffic Light Protocol) = 정보 공유 의 *보안 등급 표준* (FIRST.org).
+      MISP 의 모든 Event/Attribute 가 TLP 부여 필수. 본 step 에서 4 등급 의 의미
+      + 잘못 적용 시 사고 + 회피 방법 학습.
 
-      운영 사고 3:
-        1. circular loop → tag filter
-        2. TLP 위반 → 자동 검증
-        3. Sighting 누락 → 자동 생성 (rule 매치 시 API call)
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      | TLP | 의미 | 공유 범위 | MISP 적용 시점 |
+      |-----|------|----------|---------------|
+      | **tlp:red** | restricted | *받은 사람 1 명* 만 | 매우 민감 (개인 식별, 진행 중 incident) |
+      | **tlp:amber** | limited + need-to-know | 본인 조직 내 + need-to-know | **default** (대부분 사용) |
+      | **tlp:green** | community | 본인 industry / sector 내 | 공유 가치 있고 *유출 시 영향 적음* |
+      | **tlp:white** | unlimited | 무제한 공개 | published threat intel 만 |
+
+      *TLP+이력*: 2022 년 *TLP 2.0* — `tlp:clear` (= white), `tlp:amber+strict` 추가
+
+      ## 💻 산출물 (3 사례 × 4 단계 표)
+
+      ```markdown
+      ## 사례 1 — circular loop (W14 step 3 관련)
+
+      | 단계 | 내용 |
+      |------|------|
+      | 증상 | Event 12345 가 양 platform 을 무한 왕복 → 24h 안에 50000 중복 |
+      | 원인 | tag filter 부재 + STIX ID 추적 안 함 |
+      | 단기 | sync 일시 정지 + 중복 Event 일괄 삭제 |
+      | 장기 | W14 step 3 의 3 회피 방법 조합 적용 |
+      | 모니터 | OpenCTI Event count daily delta + MISP Event count daily delta |
+
+      ## 사례 2 — TLP 위반 (가장 위험)
+
+      | 단계 | 내용 |
+      |------|------|
+      | 증상 | tlp:red Event 가 community 에 export — 진행 중 incident 노출 |
+      | 원인 | publish-to-misp tag 가 *분석가 실수* 로 tlp:red Event 에 부여 |
+      | 단기 | 즉시 MISP 측 Event 삭제 + 모든 community partner 에 *unshare* 요청 |
+      | 장기 | OpenCTI Connector 의 *export 전 검증* (tlp:red 자동 거부) |
+      | 모니터 | export 로그 + 분석가 tagging 권한 분리 (tlp:red 부여 권한 = senior 만) |
+
+      ## 사례 3 — Sighting 누락 (조용한 사고)
+
+      | 단계 | 내용 |
+      |------|------|
+      | 증상 | 6개월 후 IOC 의 *유효성* 의문 — 매치 기록 없어 *재사용 가능 여부* 판단 불가 |
+      | 원인 | alert 매치 시 *Sighting 수동 등록* 부담 → 분석가 생략 |
+      | 단기 | Wazuh alerts.json 의 rule.id 100100 매치 retrospective 분석 |
+      | 장기 | 자동 Sighting 생성 — rule 매치 시 OpenCTI API 자동 호출 (Wazuh integrator) |
+      | 모니터 | Sighting count / Indicator count 의 *비율* (정상 = 0.5 이상) |
       ```
-    hint: 'TLP 4 + 사고 3'
+
+      ## 💻 검증 명령 (TLP 적용 의 *자동 검증* 시뮬)
+
+      ```bash
+      python3 << 'PY'
+      # TLP 위반 검증 — tlp:red event 가 export 시도 시 거부
+      def validate_export(event, has_publish_tag):
+          if "tlp:red" in event.get("tags", []) and has_publish_tag:
+              return False, "REJECT: tlp:red event cannot be exported"
+          return True, "ALLOW"
+
+      tests = [
+          ({"tags": ["tlp:red", "publish-to-misp"]}, True),
+          ({"tags": ["tlp:amber", "publish-to-misp"]}, True),
+          ({"tags": ["tlp:red"]}, False),
+      ]
+      for ev, pub in tests:
+          ok, msg = validate_export(ev, pub)
+          print(f"tags={ev['tags']}, publish={pub} -> {msg}")
+      PY
+      ```
+
+      ## 📋 확인 사항
+
+      - TLP 4 등급 표 + MISP 적용 시점
+      - 3 사례 × 4 단계 = 12 셀
+      - 사례 2 (TLP 위반) 의 *가장 위험* 강조
+      - 자동 검증 시뮬 결과: tlp:red+publish → REJECT, tlp:amber+publish → ALLOW
+
+      ## 💡 왜 이걸 하는가?
+
+      TLP 위반 = *유출 사고* — 법적 책임 + community 신뢰 손실. 자동 검증 으로
+      *분석가 실수* 차단 이 필수. 3 사례 의 *day-1 운영 매뉴얼* 학습.
+
+      ## 🔍 결과 해석
+
+      - **정상**: TLP 표 + 12 셀 + 검증 PASS (REJECT/ALLOW 매트릭스)
+      - **사례 2 누락**: 가장 흔한 실수 — TLP 위반 위험성 인지 부족
+
+      ## 비정상 시 대응
+
+      - **TLP 위반 발견 시** — 즉시 community partner 에 *unshare* 요청 + 자동
+        검증 코드 production 적용 + 분석가 권한 review
+    hint: |
+      TLP 4 등급 + 3 사례 × 4 단계 = 12 셀 + 자동 검증 (tlp:red 거부) 시뮬.
     category: operations
     points: 10
     answer: |
@@ -713,21 +873,107 @@ steps:
 
   - order: 7
     instruction: |
-      ## 🎯 MISSION — W14 종합 보고서
+      ## 🎯 MISSION — W14 종합 보고서 작성 + W15 (기말) 준비도 점검
+
+      W13 의 8 섹션 보고서 패턴 응용 + W14 의 *MISP + Threat Hunting* 특화. 본
+      보고서 가 *W15 기말* 의 self-assessment 의 핵심 input.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - W14 의 *2 청자* — (1) CISO/임원 (sharing 의무 충족 보고) + (2) 본인 (W15
+        기말 준비)
+      - W15 기말 = APT 5 단계 통합 시험 (180 분, 100 점). W14 의 Hunting 5 단계 가
+        W15 의 *기반* — 본 step 의 self-assessment 가 기말 점수 결정
+
+      ## 💻 산출물 (8 섹션 마크다운)
 
       ```markdown
-      # 6v6 W14 MISP + Threat Hunting 보고서
+      # 6v6 W14 MISP + Threat Hunting 종합 보고서
 
-      ## 1. STEP 1-6 결과
-      ## 2. MISP vs OpenCTI 비교
-      ## 3. 5 핵심 객체 + 양방향 sync
-      ## 4. Threat Hunting 5 단계
-      ## 5. Sighting + Report
-      ## 6. TLP + ISAC 연계
-      ## 7. W15 (기말) 준비도
-      ## 8. 본인 학습 gap
+      ## 1. Executive Summary
+      - 본 주차: MISP 도입 + OpenCTI 양방향 sync + Threat Hunting 5 단계 시뮬
+      - 핵심 산출: 의심 사례 3 건 (svc-temp / sshd→curl / outbound 192.168.99.99)
+      - sharing 의무 충족: tlp:amber Event 1 건 ISAC 공유 시뮬
+      - 다음 주차: W15 기말 — APT 5 단계 통합 시험
+
+      ## 2. STEP 1 — MISP 도입 기획서
+      - 4 섹션 (목적 / 인프라 / OpenCTI 비교 / 운영 모델)
+      - 핵심 결정: 대체 X *보완* — 둘 다 운영 (analyst UI = OpenCTI, sharing = MISP)
+
+      ## 3. STEP 2 — 5 핵심 객체
+      - hierarchy (Event root, Attribute leaf, Object mid, Tag/Galaxy meta)
+      - Object vs Attribute 차이 — 분석가 productivity 의 90%
+
+      ## 4. STEP 3 — 양방향 sync + circular loop 회피
+      - 3 회피 방법 비교 + 한계
+      - 권장: 3 방법 *조합* 적용
+
+      ## 5. STEP 4 — Sighting + Report STIX
+      - 두 객체 의 역할 + 8 필수 필드
+      - Sighting 가 Report.object_refs 에 포함 검증
+
+      ## 6. STEP 5 — Threat Hunting 5 단계
+      - Hypothesis → Investigation → Sighting → Report → Share
+      - 의심 사례 3 건 (시각 + 사용자 + 행위)
+
+      ## 7. STEP 6 — TLP + 운영 사고 3
+      - TLP 4 등급 + MISP default = tlp:amber
+      - 사례 (circular loop / TLP 위반 / Sighting 누락)
+
+      ## 8. 본인 학습 gap + W15 (기말) 준비도
+
+      ### 학습 gap (W14)
+      - [ ] MISP 실 인스턴스 docker-compose 배포 경험
+      - [ ] PyMISP SDK 의 *실 Event 생성* + Attribute 추가
+      - [ ] OpenCTI ↔ MISP Connector 실 설정 (config.yml)
+      - [ ] STIX 2.1 의 *35 객체* 중 9 외 객체 (Course of Action, Identity, Tool 등)
+      - [ ] TAXII 2.1 server 의 *collection* 구조
+
+      ### W15 (기말) 준비도 — APT 5 단계
+      - **5 단계** (Recon / Initial Access / Persistence / Lateral Movement / Exfil)
+        - 각 단계 의 *대표 TTP* 5 개씩 = 25 TTP
+      - **본 환경 (6v6) 의 *coverage gap* 5 TTP** 자체 식별
+      - **mock APT scenario** 작성 (4 단계 시뮬 + 1 단계 실 실행)
+      - **PTES + ATT&CK + KISA 침투 보고서 표준** 자체 review
+
+      ### W15 시험 시간 배분 (180 분)
+      - 30 분: Recon (W01-W05 의 nmap / Suricata 검색)
+      - 60 분: Initial Access + Persistence (W06-W12 의 brute / SUID / cron)
+      - 60 분: Lateral + Exfil + 보고서 (W13-W14 의 Hunting + Sighting + Report)
+      - 30 분: 종합 보고서 (PTES 7 섹션)
       ```
-    hint: 마크다운
+
+      ## 💻 검증 명령 (보고서 구조 검증)
+
+      ```bash
+      ssh 6v6-bastion 'echo "Sample 8 sections check"; for i in 1 2 3 4 5 6 7 8; do echo "Section $i: OK"; done | wc -l'
+      ```
+
+      ## 📋 확인 사항
+
+      - 8 섹션 모두 존재
+      - 학습 gap *5+ checkbox*
+      - W15 준비도 *25 TTP + 시간 배분 + 보고서 표준*
+      - sharing 의무 충족 명시 (tlp:amber Event 공유 시뮬)
+
+      ## 💡 왜 이걸 하는가?
+
+      W14 의 마무리 = W15 의 *시작 준비*. 종합 보고서 + 학습 gap + W15 준비도 의 3
+      축 이 *학습 완성도* 의 핵심.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 8 섹션 + 5 gap checkbox + 25 TTP + 시간 배분
+      - **W15 준비도 누락**: 가장 흔한 실수 — 본 step 의 self-assessment 의 핵심
+
+      ## 비정상 시 대응
+
+      - **8 섹션 미만**: 누락 섹션 추가
+      - **gap checkbox 없음**: self-assessment 누락 — 학습 의 가장 중요 요소
+      - **시간 배분 비현실적** (예: Recon 90 분): W01-W05 의 실 lab 소요 시간 review
+    hint: |
+      8 섹션 + 학습 gap 5+ checkbox + W15 준비도 (25 TTP + 시간 배분 + 보고서
+      표준). 임원 + 본인 의 2 청자.
     category: synthesis
     points: 10
     answer: |
