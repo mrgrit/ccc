@@ -511,3 +511,46 @@ steps:
           - "**[관리적] OWASP A02 의 7 권장**"
           - "**[관리적] 한국 ISMS-P 통제 2.7 의 암호 관리**"
     target_vm: bastion
+
+  # ============================================================
+  # STEP 6 — R/B/P 종합 (Crypto Failures 의 4 영역)
+  # ============================================================
+  - order: 6
+    instruction: |
+      ## 🎯 MISSION (R/B/P 종합) — 4 영역 audit 1 cycle
+
+      Red = MD5/TLS downgrade/JWT secret 시도 / Blue = config 검증 / Purple = audit
+      Coverage 한 줄.
+
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-attacker 'echo -n "password" | md5sum'
+      ssh 6v6-attacker 'echo | openssl s_client -tls1 -connect 10.20.30.1:443 2>&1 | head -3'
+      ssh 6v6-web 'sudo grep -E "SSLProtocol|SSLCipherSuite" /etc/apache2/mods-enabled/ssl.conf 2>/dev/null | head -3'
+      echo "Coverage: hash/TLS/JWT/cookie 4 영역 분기 audit routine"
+      ```
+
+      ## 💡 왜 이걸 하는가?
+      Crypto Failures 의 4 영역 동시 audit 의 routine 형성.
+    hint: 'md5sum + openssl s_client -tls1 + Apache config grep'
+    category: rbp_integration
+    points: 6
+    answer: |
+      echo "=== Red MD5 ==="
+      ssh 6v6-attacker 'echo -n "password" | md5sum'
+      echo "=== Red TLS 1.0 시도 ==="
+      ssh 6v6-attacker 'echo | openssl s_client -tls1 -connect 10.20.30.1:443 2>&1 | head -3'
+      echo "=== Blue TLS config ==="
+      ssh 6v6-web 'sudo grep -E "SSLProtocol" /etc/apache2/mods-enabled/ssl.conf 2>/dev/null || echo "no ssl.conf"'
+      echo "=== Purple Coverage ==="
+      echo "Coverage: hash/TLS/JWT/cookie 4 영역 분기 audit routine"
+    answer_detail: 4 영역 audit 의 R/B/P 1 cycle
+    verify:
+      type: output_contains
+      expect: 'Coverage'
+      field: stdout
+      semantic:
+        intent: Crypto 4 영역 의 R/B/P 1 cycle
+        success_criteria: [MD5 brute, TLS check, config 확인, Coverage 한 줄]
+        acceptable_methods: ["**[OSS] hashcat + openssl + Apache config grep**"]
+    target_vm: attacker

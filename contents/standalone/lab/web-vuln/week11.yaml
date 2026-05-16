@@ -110,3 +110,40 @@ steps:
         success_criteria: [3 영역]
         acceptable_methods: ["**[관리적] PTES + Supply chain**"]
     target_vm: bastion
+
+  # ============================================================
+  # STEP 5 — R/B/P 종합 (Integrity Failures)
+  # ============================================================
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION (R/B/P 종합)
+
+      Red = pickle 의 임의 코드 실행 시뮬 / Blue = pickle 사용 금지 + JSON 대체 /
+      Purple = SLSA + Sigstore + TUF routine.
+
+      ## 💻 실행
+      ```bash
+      ssh 6v6-attacker 'python3 -c "import pickle, os; payload = pickle.dumps(__import__(\"os\").system); import base64; print(base64.b64encode(pickle.dumps(payload)).decode()[:50])"' 2>&1 | head -3
+      echo "Blue: pickle 의 사용 = 임의 코드 실행 위험. JSON/protobuf 의 default 적용 routine"
+      echo "Coverage: SLSA level 2+ + Sigstore signing + TUF update framework"
+      ```
+
+      ## 💡 왜
+      pickle 의 위험 의 직접 확인 + SLSA/Sigstore 의 modern 표준 routine.
+    hint: 'python3 pickle 의 sample + 위험 분석'
+    category: rbp_integration
+    points: 4
+    answer: |
+      ssh 6v6-attacker 'python3 -c "import pickle, base64; payload = pickle.dumps(\"sample\"); print(base64.b64encode(payload).decode())" 2>&1 | head -3'
+      echo "Blue: pickle = 임의 코드 실행 위험. JSON 의 default routine"
+      echo "Coverage: SLSA + Sigstore + TUF"
+    answer_detail: Integrity R/B/P 1 cycle
+    verify:
+      type: output_contains
+      expect: 'Coverage'
+      field: stdout
+      semantic:
+        intent: pickle 위험 + SLSA 의 routine
+        success_criteria: [pickle sample, 위험 설명, Coverage]
+        acceptable_methods: ["**[OSS] python3 pickle**"]
+    target_vm: attacker

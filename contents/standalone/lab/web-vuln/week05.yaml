@@ -448,3 +448,48 @@ steps:
           - "**[관리적] CSP 권장 5 directive**"
           - "**[관리적] DOMPurify + trusted types**"
     target_vm: bastion
+
+  # ============================================================
+  # STEP 6 — R/B/P 종합 (XSS 3 종)
+  # ============================================================
+  - order: 6
+    instruction: |
+      ## 🎯 MISSION (R/B/P 종합)
+
+      Red = Reflected/Stored XSS (DOM 은 client-side 제외) / Blue = ModSec 941 매치
+      + CSP header 확인 / Purple = inline-script unsafe-inline 분석.
+
+      ## 💻 실행
+      ```bash
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "Reflected %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/rest/products/search?q=<script>alert(1)</script>"'
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "img onerror %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/rest/products/search?q=<img src=x onerror=alert(1)>"'
+      ssh 6v6-web "sudo tail -20 /var/log/apache2/modsec_audit.log | grep -oE '941[0-9]+' | sort -u"
+      ssh 6v6-attacker 'curl -s -I -H "Host: juice.6v6.lab" http://10.20.30.1/ | grep -i "content-security-policy"'
+      echo "Coverage: ModSec 941 block + CSP 의 inline-script 의 분석"
+      ```
+
+      ## 💡 왜
+      XSS 3 종 의 detection + CSP 의 2 layer defense 의 직접 확인.
+    hint: 'curl XSS + audit log 의 941 매치 + CSP header 확인'
+    category: rbp_integration
+    points: 6
+    answer: |
+      echo "=== Red ==="
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "Reflected %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/rest/products/search?q=<script>alert(1)</script>"'
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "img onerror %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/rest/products/search?q=<img src=x onerror=alert(1)>"'
+      echo "=== Blue 941 ==="
+      ssh 6v6-web "sudo tail -20 /var/log/apache2/modsec_audit.log 2>/dev/null | grep -oE '941[0-9]+' | sort -u"
+      echo "=== Blue CSP ==="
+      ssh 6v6-attacker 'curl -s -I -H "Host: juice.6v6.lab" http://10.20.30.1/ | grep -i "content-security"'
+      echo "=== Purple ==="
+      echo "Coverage: ModSec 941 + CSP 2 layer"
+    answer_detail: XSS R/B/P 의 1 cycle
+    verify:
+      type: output_contains
+      expect: 'Coverage'
+      field: stdout
+      semantic:
+        intent: XSS 3 종 의 R/B/P 1 cycle
+        success_criteria: [Reflected XSS, img onerror, 941 매치, CSP 확인]
+        acceptable_methods: ["**[OSS] curl + jq + ModSec audit + CSP header**"]
+    target_vm: attacker

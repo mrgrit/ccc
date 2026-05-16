@@ -127,3 +127,39 @@ steps:
         success_criteria: [3 영역]
         acceptable_methods: ["**[관리적] API Top 10 + GraphQL**"]
     target_vm: bastion
+
+  # ============================================================
+  # STEP 5 — R/B/P 종합 (API Security)
+  # ============================================================
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION (R/B/P 종합)
+
+      Red = BOLA + GraphQL introspection / Blue = ACL + introspection 거부 / Purple
+      = API Gateway routine.
+
+      ## 💻 실행
+      ```bash
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "BOLA %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/api/Users/2"'
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "introspect %{http_code}\n" -H "Host: juice.6v6.lab" -H "Content-Type: application/json" -d "{\"query\":\"{__schema{types{name}}}\"}" "http://10.20.30.1/graphql"'
+      echo "Coverage: API Gateway 의 default + per-user ACL + introspection 거부 routine"
+      ```
+
+      ## 💡 왜
+      API Top 10 의 매트릭스 + shadow API 의 routine.
+    hint: 'curl BOLA + GraphQL introspect 시도'
+    category: rbp_integration
+    points: 4
+    answer: |
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "BOLA %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/api/Users/2"'
+      echo "Coverage: API Gateway + ACL + introspection 거부"
+    answer_detail: API R/B/P 1 cycle
+    verify:
+      type: output_contains
+      expect: 'Coverage'
+      field: stdout
+      semantic:
+        intent: API Top 10 R/B/P
+        success_criteria: [BOLA, Coverage]
+        acceptable_methods: ["**[OSS] curl API endpoint**"]
+    target_vm: attacker

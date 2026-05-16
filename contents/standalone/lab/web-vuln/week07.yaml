@@ -318,3 +318,44 @@ steps:
           - "**[관리적] securityheaders.com 의 자동 audit**"
           - "**[관리적] CI/CD 통합**"
     target_vm: bastion
+
+  # ============================================================
+  # STEP 5 — R/B/P 종합 (Security Misconfiguration)
+  # ============================================================
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION (R/B/P 종합) — 4 misconfig 의 1 cycle
+
+      Red = /.git, default page, HTTP, CORS * 시도 / Blue = 보안 헤더 5 + nginx
+      deny rule / Purple = securityheaders.com A+ score 목표.
+
+      ## 💻 실행
+      ```bash
+      ssh 6v6-attacker 'for h in juice admin api sso medical govportal legacy; do
+        echo "=== $h.6v6.lab ==="
+        curl -s -o /dev/null -w "/.git %{http_code}\n" -H "Host: $h.6v6.lab" http://10.20.30.1/.git/config
+        curl -s -I -H "Host: $h.6v6.lab" http://10.20.30.1/ | grep -iE "Strict-Transport|Content-Security|X-Frame"
+      done'
+      echo "Coverage: /.git deny + 5 보안 헤더 + HTTPS redirect + CORS strict 의 routine"
+      ```
+
+      ## 💡 왜
+      7 vhost 의 misconfig audit 의 routine. securityheaders.com 의 A+ 목표.
+    hint: 'curl 의 /.git + I 의 헤더 + 7 vhost 의 loop'
+    category: rbp_integration
+    points: 6
+    answer: |
+      echo "=== Red /.git + 헤더 ==="
+      ssh 6v6-attacker 'for h in juice admin api; do echo "=== $h ==="; curl -s -o /dev/null -w "/.git %{http_code}\n" -H "Host: $h.6v6.lab" http://10.20.30.1/.git/config; curl -s -I -H "Host: $h.6v6.lab" http://10.20.30.1/ | grep -iE "Strict-Transport|Content-Security|X-Frame"; done'
+      echo "=== Purple ==="
+      echo "Coverage: /.git deny + 5 보안 헤더 + HTTPS + CORS strict"
+    answer_detail: 4 misconfig 의 R/B/P 1 cycle
+    verify:
+      type: output_contains
+      expect: 'Coverage'
+      field: stdout
+      semantic:
+        intent: 4 misconfig 의 R/B/P 1 cycle
+        success_criteria: [/.git 시도, 헤더 확인, Coverage]
+        acceptable_methods: ["**[OSS] curl 의 7 vhost loop**"]
+    target_vm: attacker

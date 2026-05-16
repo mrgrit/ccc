@@ -421,3 +421,48 @@ steps:
           - "**[관리적] CWE-308 / 840 / 799 / 20**"
           - "**[관리적] OWASP A04 의 7 권장**"
     target_vm: bastion
+
+  # ============================================================
+  # STEP 6 — R/B/P 종합 (Insecure Design)
+  # ============================================================
+  - order: 6
+    instruction: |
+      ## 🎯 MISSION (R/B/P 종합) — NeoBank workflow 의 STRIDE 적용
+
+      Red = 송금 의 2FA bypass / 가격 변조 / rate flood 시도 / Blue = application
+      logic 의 server-side 검증 / Purple = STRIDE Threat Model 의 가설 보고서.
+
+      ## 💻 실행
+      ```bash
+      # Red — 송금 rate flood (rate limit 부재 가설 검증)
+      ssh 6v6-attacker 'for i in $(seq 1 20); do curl -s -o /dev/null -w "%{http_code}\n" -H "Host: neobank.6v6.lab" -X POST http://10.20.30.1/api/transfer -d "amount=1&to=admin" & done; wait' 2>&1 | sort -u
+
+      # Blue — application 의 rate limit 응답 확인
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "after burst %{http_code}\n" -H "Host: neobank.6v6.lab" -X POST http://10.20.30.1/api/transfer -d "amount=1&to=admin"'
+
+      # Purple — STRIDE 가설 보고
+      echo "STRIDE: Tampering (가격 변조) + DoS (rate flood) + Elevation (2FA bypass)"
+      echo "Coverage: design review + RBA + 전자금융감독규정 의 routine"
+      ```
+
+      ## 💡 왜
+      A04 = 코드 결함 아닌 architecture. R/B/P 의 결과 = design review 의 trigger.
+    hint: 'curl POST 의 20 burst + 응답 코드 분석 + STRIDE 매핑'
+    category: rbp_integration
+    points: 6
+    answer: |
+      echo "=== Red 송금 flood ==="
+      ssh 6v6-attacker 'for i in $(seq 1 20); do curl -s -o /dev/null -w "%{http_code}\n" -H "Host: neobank.6v6.lab" -X POST http://10.20.30.1/api/transfer -d "amount=1&to=admin" & done; wait' 2>&1 | sort -u
+      echo "=== Purple ==="
+      echo "STRIDE: Tampering + DoS + Elevation"
+      echo "Coverage: design review + RBA + 전자금융감독규정"
+    answer_detail: A04 STRIDE 의 R/B/P 가설
+    verify:
+      type: output_contains
+      expect: 'Coverage'
+      field: stdout
+      semantic:
+        intent: A04 의 R/B/P + STRIDE
+        success_criteria: [송금 flood, STRIDE, Coverage]
+        acceptable_methods: ["**[OSS] curl POST burst + STRIDE 매핑**"]
+    target_vm: attacker

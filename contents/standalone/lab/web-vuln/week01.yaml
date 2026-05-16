@@ -383,3 +383,86 @@ steps:
           - "**[관리적] 졸업 목표 구체화**"
           - "**[관리적] self-assessment 분기 별 review**"
     target_vm: bastion
+
+  # ============================================================
+  # STEP 5 — R/B/P 종합 mission (Red 공격 → Blue 탐지 → Purple 분석)
+  # ============================================================
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION (R/B/P 종합) — OWASP Top 10 의 base 사이클 1회 체험
+
+      본 주차 의 학습 (OWASP Top 10 + 7 vhost + ModSec CRS) 의 R/B/P 의 base 사이클
+      을 1회 직접 체험. **Red = XSS payload + SQLi 결합 1회 / Blue = ModSec
+      audit log + Wazuh alert / Purple = 매치 룰 분석 + Coverage Matrix 한 줄 작성**.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # Red — XSS + SQLi 결합 페이로드 1회 (juice.6v6.lab)
+      ATTACK_TS=$(date -u +%Y-%m-%dT%H:%M:%S)
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "응답: %{http_code}\n" \
+          -A "sqlmap/1.5" -H "Host: juice.6v6.lab" \
+          "http://10.20.30.1/?q=<script>alert(1)</script>&id=1+UNION+SELECT"'
+      echo "ATTACK_TS=$ATTACK_TS"
+
+      # Blue — ModSec audit log 의 본 사건 의 매치 룰 확인
+      ssh 6v6-web "sudo tail -1 /var/log/apache2/modsec_audit.log | jq '.messages'"
+
+      # Blue — Wazuh alert 의 본 사건 (level 7+)
+      ssh 6v6-siem "tail -10 /var/ossec/logs/alerts/alerts.json | jq -r 'select(.rule.level >= 7) | [.rule.id, .rule.description] | @tsv'"
+
+      # Purple — Coverage 한 줄 = "Red 의 XSS+SQLi → Blue 의 ModSec 941+942+949
+      # 매치 → 403 차단 → Wazuh alert level 7"
+      ```
+
+      ## 📋 확인 사항
+
+      - Red 의 응답 = **403** (ModSec 차단)
+      - Blue ModSec audit log 의 messages[] = ["941100", "942100", "949110"] 등 매치
+      - Blue Wazuh alert level = **7 이상**
+      - Purple 의 Coverage 한 줄 = R/B/P 3 시점 의 통합 설명
+
+      ## 💡 왜 이걸 하는가?
+
+      본 과목 의 14 weeks 의 매 주차 의 R/B/P 의 base 형식 의 1회 체험. 의 결합
+      페이로드 1회 = ModSec 의 다중 매치 + Wazuh 통합 의 정상 동작 확인. 후속 주차
+      의 모든 lab 의 R/B/P step 의 base.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 403 + audit log 의 3+ 룰 매치 + Wazuh level 7+
+      - **비정상 1**: 200 응답 = ModSec 비활성 또는 룰 누락 → W06 재학습
+      - **비정상 2**: audit log 비어 있음 = SecAuditEngine Off → modsecurity.conf 확인
+      - **비정상 3**: Wazuh alert 없음 = agent ship 실패 → W12 (logging) 학습 후
+    hint: 'ssh 6v6-attacker "curl -A sqlmap/1.5 -H Host:juice.6v6.lab http://10.20.30.1/?q=<script>"'
+    category: rbp_integration
+    points: 6
+    answer: |
+      echo "=== Red ==="
+      ATTACK_TS=$(date -u +%Y-%m-%dT%H:%M:%S)
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "응답: %{http_code}\n" -A "sqlmap/1.5" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=<script>alert(1)</script>&id=1+UNION+SELECT"'
+      echo "ATTACK_TS=$ATTACK_TS"
+      echo "=== Blue (ModSec) ==="
+      ssh 6v6-web "sudo tail -1 /var/log/apache2/modsec_audit.log | jq '.messages' 2>/dev/null || echo 'audit log 비어 있음'"
+      echo "=== Blue (Wazuh) ==="
+      ssh 6v6-siem "tail -10 /var/ossec/logs/alerts/alerts.json | jq -r 'select(.rule.level >= 7) | [.rule.id, .rule.description] | @tsv' 2>/dev/null"
+      echo "=== Purple Coverage ==="
+      echo "Red XSS+SQLi → Blue ModSec 941+942+949 → 403 → Wazuh level 7"
+    answer_detail: |
+      R/B/P 1 cycle 의 base 체험. Red (XSS+SQLi 결합) → Blue (ModSec audit + Wazuh alert)
+      → Purple (Coverage 한 줄). 14 weeks 의 매 주차 의 base.
+    verify:
+      type: output_contains
+      expect: '403'
+      field: stdout
+      semantic:
+        intent: R/B/P 1 cycle 의 base 사이클 1회 직접 체험
+        success_criteria:
+          - Red 의 403 응답
+          - Blue 의 ModSec 매치 룰 확인
+          - Purple 의 Coverage 한 줄 작성
+        acceptable_methods:
+          - "**[OSS] curl 결합 페이로드 + jq audit log + Wazuh tail**"
+          - "**[OSS] XSS only + jq messages 확인**"
+          - "**[OSS] SQLi only + audit log 의 942100 매치**"
+    target_vm: attacker
