@@ -387,7 +387,22 @@ steps:
 
   - order: 4
     instruction: |
-      ## 🎯 MISSION — Wazuh CDB list 작성 + 룰 100100
+      ## 🎯 MISSION — Wazuh CDB list 작성 + custom 룰 100100 + ATT&CK 매핑 + 실 적용
+
+      OpenCTI 의 indicator → Wazuh 의 CDB list 로 sync → custom 룰 100100 이 매칭
+      → alert level 격상 의 *완전 자동화* 파이프라인 작성. **본 step 은 *실 적용*
+      포함** (Wazuh manager 의 /var/ossec/etc/lists/ + /var/ossec/etc/rules/).
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **CDB list** = Wazuh 의 *static lookup table*. text 형식 (`key: value`),
+        binary compile (`ossec-makelists`) 후 O(1) lookup
+      - **`address_match_key`** = CDB lookup 의 *IP 매칭* mode (CIDR 지원)
+      - **`if_sid`** = parent rule chain — 본 예 의 4751 (Suricata alert) 이 발생한
+        후 만 100100 매칭
+      - **rule level 1-15** — Wazuh 의 alert priority. 10+ = critical
+      - **MITRE tag** = `<mitre><id>TXXXX</id></mitre>` — dashboard 의 MITRE
+        panel 에 자동 표시
 
       ## 💻 산출물
 
@@ -421,15 +436,53 @@ steps:
       EOF
       ```
 
+      ## 💻 검증 명령 (siem 의 실 lists 디렉토리 + 룰 작성)
+
+      ```bash
+      # CDB lists 디렉토리 확인
+      ssh 6v6-siem 'ls -la /var/ossec/etc/lists/ 2>/dev/null | head -10'
+
+      # 본 step 의 CDB list 작성 (실 적용 — 학생이 직접)
+      ssh 6v6-siem bash -s <<'BASH'
+      cat > /var/ossec/etc/lists/known-malicious-ips <<'LIST'
+      192.168.99.99: apt28-c2
+      1.2.3.4: emotet
+      5.6.7.8: malware-distribution
+      203.0.113.10: known-scanner
+      198.51.100.50: ransomware-c2
+      LIST
+      /var/ossec/bin/ossec-makelists
+      ls -la /var/ossec/etc/lists/
+      BASH
+      ```
+
       ## 📋 확인 사항
 
-      - CDB list 5+ entry
-      - 룰 100100 + if_sid + list match + MITRE 매핑
+      - CDB list 5+ entry (`<ip>: <label>` 형식)
+      - 룰 100100 의 5 핵심 (if_sid 4751 + list address_match_key + level 10 +
+        description + MITRE)
+      - `ossec-makelists` 컴파일 후 `.cdb` 파일 생성
+      - lists 디렉토리 출력
 
       ## 💡 왜 이걸 하는가?
 
-      OpenCTI 의 indicator → Wazuh CDB list 자동 sync → 룰이 자동 격상.
-    hint: 'CDB list known-malicious-ips + 룰 100100 + list address_match_key'
+      OpenCTI 의 indicator (raw STIX) → Wazuh CDB list (lookup-optimized) → 자동
+      매칭 → alert 자동 격상. *4 hop 자동화 pipeline* 의 핵심. 분석가 *수동
+      lookup* 없이 *실시간 격상*.
+
+      ## 🔍 결과 해석
+
+      - **정상**: CDB list 5 entry + `.cdb` 파일 + 룰 100100 (XML validation 가능)
+      - **`.cdb` 파일 없음**: `ossec-makelists` 미실행 또는 권한 부족
+      - **룰 100100 syntax error**: libxml2 의 quote escape 또는 tag mismatch
+
+      ## 비정상 시 대응
+
+      - **list 적용 안 됨**: `wazuh-control reload` 필수. lists 변경 만으로는 적용 X
+      - **address_match_key 가 CIDR 매칭 X**: Wazuh 4.4 미만 지원 제한. 4.4+ upgrade
+    hint: |
+      CDB list (5 entry) + 룰 100100 (5 요소) + ossec-makelists + 실 적용
+      검증. OpenCTI ↔ Wazuh sync 의 backbone.
     category: configuration
     points: 15
     answer: |
