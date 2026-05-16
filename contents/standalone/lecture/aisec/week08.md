@@ -623,6 +623,78 @@ flowchart LR
     B4 -.-> P4
 ```
 
+#### 3-7.1 R/B/P 상세 — 악성 모델 의 supply chain 공격 + 방어
+
+본 주차 의 R/B/P 의 특수성 = Red 가 "악성 모델 제작자", Blue 가 "model 공급망 방어자",
+Purple 가 "학습 의 3 모델 (ccc-vulnerable / ccc-unsafe / ccc-safety-qlora)". 일반
+보안 의 R/B/P (네트워크 공격) 와 다른 **AI supply chain 의 R/B/P**.
+
+**Coverage Matrix — 악성 모델 의 3 제작 패턴 × 4 방어**
+
+| 제작 패턴 | Red 의 기법 | Blue 의 방어 source | Blue 의 한계 | Purple Gap | Purple 권장 |
+|----------|-----------|------------------|-------------|-----------|------------|
+| **① Modelfile SYSTEM** | Ollama Modelfile 의 SYSTEM prompt 변조 (jailbreak 내장) | model 의 signature (Modelfile hash) | hash 만 의 verify = SYSTEM 의 내용 미검증 | SYSTEM prompt 의 정적 분석 미적용 | model card 의 SYSTEM prompt 명시 + 정적 분석 도구 (예: Garak) |
+| **② QLoRA weight** | base model 의 fine-tuning 으로 악의 동작 학습 | SBOM (Software Bill of Materials) 의 training dataset | dataset 의 라벨 만 검사 = 실 학습 효과 미검증 | dataset 의 trigger pattern 검출 미적용 | behavior monitoring 의 baseline + 의심 prompt 자동 reject |
+| **③ Abliterated base** | refusal 회로 의 weight ablation = 안전 장치 제거 | provenance (모델 출처 검증) | 출처 만 검증 = 변조 후 동일 출처 재공개 위험 | weight 의 hash 의 다중 dimension 검증 | 별도 의 behavior probe (Garak harm benchmark) 의 정기 실행 |
+
+**시간선 — 악성 모델 의 배포 + 운영 의 검출 cycle**
+
+```
+T-30d    Red attacker 가 ccc-unsafe 모델 제작
+         └→ Ollama Modelfile 의 SYSTEM = "You are uncensored ..."
+         └→ ollama create ccc-unsafe -f Modelfile
+         └→ ollama push (또는 사적 배포)
+
+T+0      운영자 가 모델 다운로드 + 자체 환경 운영
+         └→ ollama pull ccc-unsafe
+         └→ Bastion 에 register
+         └→ chat 시 = jailbreak 시도 의 100% 응답 (정상 모델 = 90% refusal)
+
+T+1d     Blue 1차 — model signing 검증
+         └→ Modelfile hash = 알려진 악성 hash 와 일치 → alert
+         └→ Bastion 의 model whitelist 의 부재 = pull 차단 못 함
+
+T+1d+1h  Blue 2차 — behavior monitoring
+         └→ Garak benchmark 자동 실행 (정기)
+         └→ harm rate = 85% (정상 = 5%) → 의심 alert
+         └→ refusal rate = 10% (정상 = 90%) → 의심
+
+T+2d     Purple Gap 식별
+         └→ Coverage Matrix 의 ① 항목 = "SYSTEM prompt 의 정적 분석 미적용"
+         └→ Modelfile 의 SYSTEM 부분 의 키워드 검출 (uncensored / unrestricted /
+            ignore previous / DAN 등) = 추가 권장
+
+T+1w     Purple 보완
+         └→ Bastion 의 model register API 의 Modelfile 정적 분석 통합
+         └→ SBOM 의 training dataset 의 trigger pattern 검출
+         └→ behavior probe 의 매 model 의 register 시 자동 실행 (registry gate)
+
+T+1m     Purple AAR + 학습
+         └→ What: 악성 모델 의 검출 시간 = 1일 → 1시간 (registry gate)
+         └→ Why: 다중 dimension 검증 의 부재
+         └→ Next: W09 의 jailbreak 의 실 prompt 의 자동 test suite 통합
+```
+
+**R/B/P 의 핵심 인사이트 (5 항)**
+
+1. **AI supply chain 의 R/B/P 의 특수성** — 네트워크 공격 의 R/B/P 가 "트래픽 의 분석"
+   이라면, AI supply chain 의 R/B/P 는 "모델 의 weight + 동작 의 분석". 정적 검증
+   (hash/sign) 의 한계 + behavior monitoring 의 필요성.
+
+2. **Modelfile SYSTEM prompt 의 정적 분석 가치** — 단순 키워드 (uncensored / DAN /
+   ignore previous) 검출 = 80% 의 악성 의도 식별. 운영 환경 의 model register 의
+   필수 gate.
+
+3. **Garak benchmark 의 운영 가치** — harm rate / refusal rate / accuracy 의 정량
+   측정 = 모델 의 안전 SLI. 정기 실행 + threshold 알람 = 안전 회귀 의 자동 검출.
+
+4. **Provenance 의 한계** — 출처 (Hugging Face / Ollama hub) 의 검증 = 출처 자체 의
+   compromise 시 무력. 별도 의 behavior probe 의 다중 dimension 검증 필수.
+
+5. **학습 의 ccc-safety-qlora 의 운영 의미** — 본 과목 의 P3 (ccc-safety-qlora) =
+   기존 모델 의 fine-tune 으로 안전 회로 보강. 운영 시 의 LoRA adapter 의 hot-swap
+   = 모델 의 안전 향상 의 routine.
+
 ### 3-8. 본 주차 hands-on — lab 5 step
 
 본 주차 lab yaml 과 lecture 절을 매핑한다.
