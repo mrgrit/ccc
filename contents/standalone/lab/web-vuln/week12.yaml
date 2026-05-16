@@ -1,0 +1,125 @@
+lab_id: standalone-web-vuln-week12
+title: A09 Logging and Monitoring Failures
+version: standalone-non-ai
+course: web-vuln
+week: 12
+description: |
+  OWASP A09 — *로그 + 모니터 부재*. 6v6 의 ModSec audit log + Wazuh 통합 audit.
+difficulty: easy
+duration_minutes: 120
+
+steps:
+  - order: 1
+    instruction: |
+      ## 🎯 MISSION — 6v6 의 ModSec audit log 분석
+
+      ```bash
+      ssh 6v6-attacker bash <<'SH'
+      docker exec 6v6-web bash -c "sudo wc -l /var/log/apache2/modsec_audit.log"
+      docker exec 6v6-web bash -c "sudo grep -oE 'id ..\"[0-9]+' /var/log/apache2/modsec_audit.log | sort | uniq -c | sort -rn | head -10"
+      SH
+      ```
+    hint: ModSec audit log 분석
+    category: analysis
+    points: 30
+    answer: |
+      ssh 6v6-attacker bash <<'SH'
+      docker exec 6v6-web bash -c "sudo wc -l /var/log/apache2/modsec_audit.log"
+      docker exec 6v6-web bash -c "sudo grep -oE 'id ..\"[0-9]+' /var/log/apache2/modsec_audit.log | sort | uniq -c | sort -rn | head -10"
+      SH
+    answer_detail: audit log 분석
+    verify:
+      type: output_contains
+      expect: 'modsec\|941\|942'
+      field: stdout
+      semantic:
+        intent: log audit
+        success_criteria: [line count + rule 분포]
+        acceptable_methods: ["**[OSS] grep + sort + uniq**"]
+    target_vm: attacker
+
+  - order: 2
+    instruction: |
+      ## 🎯 MISSION — Wazuh 통합 audit (6v6-siem)
+
+      6v6 의 siem 의 web alert ingest 여부.
+
+      ```bash
+      ssh 6v6-attacker bash <<'SH'
+      docker exec 6v6-siem ls /var/ossec/logs/alerts/ 2>/dev/null | head -5
+      docker exec 6v6-siem bash -c "tail -50 /var/ossec/logs/alerts/alerts.json 2>/dev/null | jq -r '.rule.id' 2>/dev/null | sort | uniq -c | head -10"
+      SH
+      ```
+    hint: Wazuh alerts.json 분석
+    category: analysis
+    points: 30
+    answer: |
+      ssh 6v6-attacker bash <<'SH'
+      docker exec 6v6-siem ls /var/ossec/logs/alerts/ 2>/dev/null | head -5
+      docker exec 6v6-siem bash -c "tail -50 /var/ossec/logs/alerts/alerts.json 2>/dev/null | jq -r '.rule.id' 2>/dev/null | sort | uniq -c | head -10"
+      SH
+    answer_detail: Wazuh audit
+    verify:
+      type: output_contains
+      expect: 'alerts\|rule'
+      field: stdout
+      semantic:
+        intent: SIEM audit
+        success_criteria: [alerts.json 분석]
+        acceptable_methods: ["**[OSS] jq + alerts.json**"]
+    target_vm: attacker
+
+  - order: 3
+    instruction: |
+      ## 🎯 MISSION — 로깅 표준 5 + 보존 정책
+
+      ## 표준
+      1. **모든 인증 시도** (성공 + 실패)
+      2. **권한 변경** (role / privilege)
+      3. **데이터 접근** (sensitive read / write)
+      4. **system event** (start / stop / config 변경)
+      5. **WAF 차단** (모든 차단 + 의심)
+
+      ## 보존 정책
+      - 한국 전자금융감독규정 — 5 년
+      - GDPR — 6 개월-2 년
+      - HIPAA — 6 년
+    hint: 5 표준 + 보존
+    category: analysis
+    points: 25
+    answer: 학습 산출물
+    answer_detail: 로깅 표준
+    verify:
+      type: output_contains
+      expect: '로그\|log'
+      field: stdout
+      semantic:
+        intent: 로깅 표준
+        success_criteria: [5 표준 + 보존]
+        acceptable_methods: ["**[관리적] 한국 전자금융감독규정 + GDPR + HIPAA**"]
+    target_vm: bastion
+
+  - order: 4
+    instruction: |
+      ## 🎯 MISSION — W12 보고서 + CWE-778 매핑
+
+      ```markdown
+      ## 1. ModSec audit log (19766 line, rule 분포)
+      ## 2. Wazuh alerts.json ingest
+      ## 3. 로깅 표준 5 + 보존 정책
+      ## 매핑: CWE-778 Insufficient Logging
+      ```
+    hint: 3 영역 + CWE-778
+    category: synthesis
+    points: 15
+    answer: 위 형식
+    answer_detail: W12 보고서
+    verify:
+      type: output_contains
+      expect: 'CWE-778\|log'
+      field: stdout
+      semantic:
+        intent: W12 종합
+        success_criteria: [3 영역]
+        acceptable_methods: ["**[관리적] PTES + 한국 표준**"]
+    target_vm: bastion
