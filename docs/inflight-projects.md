@@ -26,21 +26,24 @@
 **실험 흐름**: 훈련 커리큘럼 생성 → 에이전트 훈련 + EG 생성 → 실전 테스트 생성 → bastion
 수행 → 성능 검증.
 
-**완료 (1/N)**:
+**완료 (3/N)**:
 - [x] `contents/papers/experience-graph/` 디렉토리 + README + 00-outline + 01-benchmark-6v6 (2026-05-16)
 - [x] 기존 590 hold-out 의 6v6 기준 재구성 — 42 카테고리 A/B/C/D 분류, D 9 제거 → 33 카테고리 462 task
 - [x] 6v6 자원 ↔ 카테고리 매트릭스, AI 카테고리 target model (aicompanion + ccc-vulnerable) 통일
 - [x] Papers UI 자동 노출 검증
+- [x] `02-curriculum-design.md` — 훈련 corpus 1,400 task, 합성 Mode H/L/P, R0~R3 누적, EG anchor 분포 (2026-05-16)
+- [x] `03-eg-schema-overview.md` — EG 노드 5종 (cycle/anchor/playbook/insight/task), 엣지 8종 (contradicts 포함), 검색 5 차원, 승격·폐기 규칙, 현재 구현 갭, 6bq5 분리 경계 (2026-05-16)
+- [x] `04-experience-graph-construction.md` — 6bq5 실측 DDL/API 검토 + 03 스키마 매핑, playbook 승격 worker 의사 코드, /api/eg/search 5 차원 가중, frozen snapshot hash 무결성, 9 갭 작업 분담 (2026-05-16)
+- [x] `05-evaluation-protocol.md` — 4 ablation × 5 repeats × 462 = 9,240 run, runner/dashboard 의사코드, 메트릭 식, Table 1~4 보고 포맷, reviewer 재현 패키지, 시간 19 일/4~6 주 estimate (2026-05-16)
 
 **DoD (남은 작업)**:
-- [ ] `02-curriculum-design.md` — 훈련 커리큘럼 (462 평가 task 와 완전 분리된 합성 corpus) 설계
-- [ ] `03-experience-graph-construction.md` — 6bq5 의 EG 스키마, anchor record 모델 명세
-- [ ] `04-evaluation-protocol.md` — bastion endpoint, 4 ablation 전환, 측정 자동화
 - [ ] Tier A pilot 15 task (pentest/soc-ops/web-vuln × 5) YAML 작성
 - [ ] 6v6 컨테이너 snapshot 자동화 (No-EG / Playbook / Experience / Full 전환)
-- [ ] 462 task 본 작성 (단계적, LLM 보조 작성 시 6bq5 와 분리된 외부 endpoint 사용)
+- [ ] 1,400 훈련 corpus 작성 (8 주, R0~R3) + 462 평가 본 작성
+- [ ] leak_check + augment endpoint 분리 검증 스크립트 (6bq5 또는 bastion repo)
+- [ ] 6bq5 의 9 갭 채우기 (04 §9 표) — embedding, /api/eg/*, promote worker, Insight UI 등
 
-**Next concrete step**: 사용자 review 후 `02-curriculum-design.md` 작성.
+**Next concrete step**: 사용자 review 후 pilot 15 task YAML 작성 (pentest/soc-ops/web-vuln 5 each) → end-to-end smoke.
 
 ### P21. secuops 콘텐츠 W03-W15 W01 깊이로 전면 재작성 [STATUS: ✅ COMPLETE — 13/13 (2026-05-12)]
 
