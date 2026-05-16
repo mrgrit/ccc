@@ -523,3 +523,149 @@ steps:
     cat ~/w10/egress.md'
   risk_level: low
   bastion_prompt: egress default-deny
+- order: 100
+  instruction: '[Multi-task] DNS Exfiltration IR 5단계 통합.'
+  bastion_prompt: |
+    DNS Exfiltration + AI 인코딩 IR 5단계 chain 을 한 흐름으로 수행해줘.
+
+    1) [Hex 인코딩 서브도메인 시뮬] mkdir -p ~/w10; cat > ~/w10/dns-exfil-samples.txt <<EOF
+       === DNS Exfil 페이로드 4 변형 ===
+       hex:       6164 6d69 6e 70 77.exfil.attacker.test
+       base32:    NF2GQ2DDMU.exfil.attacker.test
+       base64url: YWRtaW5wdw.exfil.attacker.test
+       AI encoding (synonym): cat.dog.bird.fish.exfil.attacker.test
+                              (word-based encoding, dictionary 으로 reverse)
+
+       DNS query label 한계: 63 char/label, 255 char total
+       청크 split: 60-byte chunks → 60/4*3 = 45 byte data per query
+       EOF
+       cat ~/w10/dns-exfil-samples.txt. MITRE T1048.003 + T1071.004 매핑.
+
+    2) [DoH (DNS over HTTPS) 엔드포인트 - 차단 어려움] cat > ~/w10/doh-endpoints.txt <<EOF
+       === Public DoH endpoints ===
+       https://cloudflare-dns.com/dns-query
+       https://dns.google/dns-query
+       https://dns.quad9.net/dns-query
+       https://mozilla.cloudflare-dns.com/dns-query
+
+       DoH 문제:
+       - 평문 DNS 차단 후도 DoH 는 통과 (TLS 내부)
+       - SNI inspection 없으면 dns.google 의 IP 차단 불가
+       - traffic 의 outbound 443 (정상 HTTPS 와 구분 불가)
+       EOF
+       cat ~/w10/doh-endpoints.txt.
+
+    3) [Zeek 긴 쿼리 룰] cat > ~/w10/zeek-long-query.zeek <<EOF
+       @load base/protocols/dns
+
+       event dns_request(c: connection, msg: dns_msg, query: string, qtype: count, qclass: count)
+       {
+         if (|query| > 50)
+         {
+           NOTICE([\$note=DNS::Long_Query,
+                   \$conn=c, \$msg=fmt("Long DNS query (len=%d): %s", |query|, query)]);
+         }
+         # Suspicious: encoded patterns
+         if (query == /^[a-f0-9]{32,}\\./)  # hex 32+ char prefix
+         {
+           NOTICE([\$note=DNS::Hex_Encoded,
+                   \$conn=c, \$msg=fmt("Hex encoded label: %s", query)]);
+         }
+       }
+       EOF
+       cat ~/w10/zeek-long-query.zeek.
+
+    4) [엔트로피 기반 탐지] cat > ~/w10/dns-entropy.py <<EOF
+       #!/usr/bin/env python3
+       import math, collections
+       def shannon(s):
+           if not s: return 0
+           freq = collections.Counter(s)
+           total = len(s)
+           return -sum((c/total) * math.log2(c/total) for c in freq.values())
+
+       samples = [
+           "google.com",
+           "kr.archive.ubuntu.com",
+           "6164 6d69 6e 70 77.exfil.attacker.test".replace(" ",""),
+           "NF2GQ2DDMU.exfil.attacker.test",
+           "YWRtaW5wdw.exfil.attacker.test",
+           "0fce47a8b9d3c6e2f5170a8b9d3c6e2f.exfil.attacker.test"
+       ]
+       print(f"{'sample':50} {'len':5} {'H':6} {'suspect'}")
+       for s in samples:
+           h = shannon(s)
+           sus = h > 4.0 and len(s) > 40
+           print(f"{s:50} {len(s):5d} {h:6.2f} {'YES' if sus else 'no'}")
+       EOF
+       python3 ~/w10/dns-entropy.py.
+
+    5) [Egress default-deny + 종합 권고] cat > ~/w10/egress.md <<EOF
+       # Egress default-deny + DNS Exfil 방어 5 layer
+
+       ## 1. DNS Egress 제한
+       - 내부 DNS resolver (Pi-hole / BIND / Unbound) 만 허용
+       - public DoH/DoT 의 outbound 443/853 차단 (known IP list)
+       - 의심 도메인 의 sinkhole
+
+       ## 2. nftables egress policy
+       sudo nft add table inet egress
+       sudo nft add chain inet egress output "{ type filter hook output priority 0 \\; policy drop \\; }"
+       sudo nft add rule inet egress output ip daddr {{SECU_IP}} udp dport 53 accept  # 내부 DNS
+       sudo nft add rule inet egress output tcp dport 443 accept  # 일반 HTTPS
+
+       ## 3. Zeek/Suricata 의 anomaly 탐지
+       - DNS query length > 50 char
+       - Hex/base64 인코딩 패턴
+       - Shannon entropy > 4.0 + length > 40
+       - 한 client 의 DNS query 빈도 > 100/min
+
+       ## 4. AI 인코딩 (synonym) 의 detection
+       - 사전 기반 (cat/dog/bird 등 의 frequency 패턴 분석)
+       - LLM 기반 의 "이 query 가 base32 또는 dictionary encoded인가" classifier
+
+       ## 5. DoH 우회 방어
+       - DNS SNI inspection (TLS Client Hello 의 SNI 분석)
+       - Known DoH IP block list (Cloudflare 1.1.1.1, Google 8.8.8.8 의 443 차단)
+       - 내부 DNS server 사용 강제 (DHCP option + GPO)
+       EOF
+       cat ~/w10/egress.md.
+
+    cleanup: rm -rf ~/w10.
+
+    마지막에 5단계 × (DNS Exfil 단계 / 명령 / 결과 / MITRE TTP / 방어 layer / 운영 권고) 의 5×6 매트릭스 +
+    Egress Defense Playbook (DNS 제한 + nftables + Zeek + Shannon + DoH block) markdown + cleanup 출력.
+  hint: DNS Exfil 5 chain. Shannon entropy + Zeek + Egress default-deny 의 3 layer 가 핵심.
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: '[통합] DNS Exfil IR 5단계 — hex/DoH/Zeek/Entropy/Egress. MITRE T1048.003 + T1071.004 매핑 + 5×6 매트릭스 + Egress Defense Playbook.'
+      success_criteria:
+      - 5 단계 모두 실행
+      - DNS Exfil 페이로드 4 변형 (hex/base32/base64url/AI)
+      - Zeek script (long_query event)
+      - Shannon entropy + 6 sample 비교
+      - Egress 5 layer
+      - cleanup
+      - 5×6 매트릭스 + Playbook
+      acceptable_methods:
+      - cat heredoc + python3 + Zeek 표준
+      - DoH/DoT 의 분석
+      - markdown 매트릭스 + Playbook
+      negative_signs:
+      - 3 단계 이하 만 수행
+      - DNS Exfil 변형 2개 이하
+      - Egress 3 layer 이하
+      - cleanup 미수행
+      - 매트릭스 6 컬럼 미만
+  target_vm: bastion
+  risk_level: low
+  answer: |
+    🤖 위 bastion_prompt 그대로. DNS Exfil IR 5단계 + 5×6 매트릭스 + Egress Defense Playbook.
+  answer_detail: |
+    Network Defense Engineer 페르소나 — DNS Exfiltration IR chain. Shannon + Zeek + Egress 3 layer.
+  script: ''

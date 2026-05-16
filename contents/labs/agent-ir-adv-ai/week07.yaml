@@ -599,3 +599,139 @@ steps:
     cat ~/w07/jit.md'
   risk_level: low
   bastion_prompt: JIT 특권
+- order: 100
+  instruction: '[Multi-task] Multi-stage 피싱→웹셸→Pivot IR 5단계 통합.'
+  bastion_prompt: |
+    Multi-stage 피싱→웹셸→Pivot 의 5 stage chain IR 을 수행해줘.
+
+    1) [AI 피싱 메일 템플릿] mkdir -p ~/w07; cat > ~/w07/phish-email.eml <<EOF
+       From: hr-team@company-portal.test
+       Subject: [긴급] 연말 평가 시스템 접속 필요 - 마감 D-1
+       Content-Type: text/html
+
+       안녕하세요 김OO 님,
+       올해 연말 평가 시스템 의 접속이 확인되지 않아 안내드립니다.
+       <a href="http://attacker-portal.test/login?token=abc">평가 시스템 로그인</a>
+       마감 임박 (12월 21일 18:00). 협조 부탁드립니다.
+
+       AI 생성 특징:
+       - 개인화 (이름 의 ${name} 변수 자동 치환)
+       - urgency framing (D-1, 마감 임박)
+       - authority impersonation (HR Team)
+       EOF
+       cat ~/w07/phish-email.eml. MITRE T1566.002 매핑.
+
+    2) [웹셸 삽입 시뮬] cat > ~/w07/webshell.php <<EOF
+       <?php
+       if(isset(\$_REQUEST['cmd'])){
+         echo "<pre>"; system(\$_REQUEST['cmd']); echo "</pre>";
+       }
+       ?>
+       === 삽입 위치 (일반 위치) ===
+       - /var/www/html/uploads/profile_pic.php (이미지 위장)
+       - /tmp/sess_RANDOM.php (세션 디렉토리)
+       - PHP 의 wrapper 통한 인메모리 (php://memory)
+       EOF
+       cat ~/w07/webshell.php. MITRE T1505.003 매핑.
+
+    3) [웹셸 탐지 FIM + YARA] cat > ~/w07/webshell-detect.md <<EOF
+       # 웹셸 탐지 방법
+       ## 1. FIM (Wazuh syscheck)
+       <directories check_all="yes" report_changes="yes">/var/www</directories>
+       → 새 .php 파일 생성 시 alert
+
+       ## 2. YARA 룰
+       rule WebShell_PHP {
+         strings:
+           \$cmd1 = "system(\$_REQUEST" nocase
+           \$cmd2 = "exec(\$_GET" nocase
+           \$cmd3 = "passthru(\$_POST" nocase
+           \$eval = "eval(base64_decode" nocase
+         condition: any of them
+       }
+
+       ## 3. 행위 detection
+       - www-data user 의 sh/bash spawn (Sysmon Event 1)
+       - /var/www/.*\\.php의 stat 시간이 정상 deployment 시간 외
+       EOF
+       cat ~/w07/webshell-detect.md.
+
+    4) [이메일 게이트웨이 + 분리] cat > ~/w07/email-gw.md <<EOF
+       # 이메일 게이트웨이 정책
+       ## 1. SPF/DKIM/DMARC 강제
+       _dmarc 의 p=reject, sp=reject, pct=100
+
+       ## 2. URL 검사
+       - 모든 외부 링크 의 sandbox detonation (자동 클릭 + screenshot + behavior 분석)
+       - alias 도메인 (company-portal.test) 의 typosquat 차단
+
+       ## 3. 첨부 분리
+       - Office/PDF macro 자동 비활성
+       - executable extension (.exe, .scr, .bat) 차단
+       - 의심 파일 의 sandbox 격리 (Cuckoo / Joe Sandbox)
+
+       ## 4. AI 생성 detection
+       - GPT 의 stylometric 분석 (Wachowski 등)
+       - 비정상 urgency framing 감지
+       EOF
+       cat ~/w07/email-gw.md.
+
+    5) [JIT 특권 정책] cat > ~/w07/jit.md <<EOF
+       # JIT (Just-In-Time) Access 정책 (Pivot 차단)
+
+       ## 원칙
+       - 평소 모든 privileged account 비활성 (passwords 자체 없음)
+       - 필요 시 ticket-based approval → 15분 단위 의 임시 자격증명
+       - 모든 액션 audit log + dashboards 실시간 visibility
+
+       ## 5 layer (PAM stack)
+       1. CyberArk / HashiCorp Vault 의 secret management
+       2. AWS IAM Access Analyzer 의 unused permission 탐지
+       3. Conditional Access (Microsoft) - MFA + 기기 의 health check
+       4. PAW (Privileged Access Workstation) 강제
+       5. Session recording (Teleport / Boundary)
+
+       ## Pivot 차단 효과
+       - 피싱 → 사용자 자격 탈취 → JIT 미신청 으로 lateral movement 불가
+       - 웹셸 → www-data 권한 → DB access 불가 (별도 ticket)
+       - 분기별 access review + automatic deprovision
+       EOF
+       cat ~/w07/jit.md.
+
+    cleanup: rm -rf ~/w07.
+
+    마지막에 5단계 × (Multi-stage 단계 / 명령 / 결과 / MITRE TTP / 방어 layer / 운영 권고) 의 5×6 매트릭스 +
+    Pivot Defense Stack (Email GW + WAF + FIM + JIT + Microseg) markdown + cleanup 출력.
+  hint: Multi-stage IR 5 chain. 피싱→웹셸→Pivot 의 3 stage 차단이 핵심.
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: '[통합] Multi-stage IR 5단계 — 피싱/웹셸/FIM/Email GW/JIT. MITRE T1566/T1505.003 매핑 + 5×6 매트릭스 + Pivot Defense Stack.'
+      success_criteria:
+      - 5 단계 모두 실행
+      - 피싱 메일 EML 양식
+      - 웹셸 PHP 코드 + 3 삽입 위치
+      - YARA 룰 + FIM 정책
+      - Email GW 4 정책 (SPF/URL/첨부/AI detect)
+      - JIT 5 layer PAM
+      - cleanup
+      - 5×6 매트릭스
+      acceptable_methods:
+      - cat heredoc + YARA 양식 표준
+      - markdown 매트릭스 + Defense Stack
+      negative_signs:
+      - 3 단계 이하 만 수행
+      - YARA 룰 누락
+      - JIT 정책 누락
+      - 매트릭스 6 컬럼 미만
+  target_vm: bastion
+  risk_level: low
+  answer: |
+    🤖 위 bastion_prompt 그대로. Multi-stage IR 5단계 + 5×6 매트릭스 + Pivot Defense Stack.
+  answer_detail: |
+    IR Lead 페르소나 — Multi-stage 피싱→웹셸→Pivot chain. JIT 가 Pivot 차단 핵심.
+  script: ''

