@@ -236,7 +236,7 @@ JuiceShop = RS256 + admin role 의 token. *vuln* = 본 admin token 으로 *모�
 
 ## 3차시 — IDOR hands-on + alg=none 변조 + modern lib 대응
 
-### 3-1. lab step 3 의 의의 — Bearer IDOR 5 user
+### 3-1. lab step 3 의의 — Bearer IDOR 5 user
 
 ```
 admin token (id=1, role=admin) → /api/Users/{1..5}
@@ -268,7 +268,7 @@ OWASP 의 *A01 권장 13* 중 *web 특화 5*:
 4. **Disable directory listing** — `Index of /` 의 *기본 거부*.
 5. **Log access control failures** — *모든 거부* 의 *log + alert*.
 
-### 3-3. lab step 4 의 의의 — alg=none 변조
+### 3-3. lab step 4 의의 — alg=none 변조
 
 본 step 의 시도:
 
