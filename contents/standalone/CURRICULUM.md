@@ -215,6 +215,30 @@ Host 6v6-*
 
 ---
 
+## web-vuln (웹 취약점 분석, 15 주)
+
+OWASP Top 10 (2021) 의 10 카테고리 + CWE Top 25 의 핵심 + 6v6 의 7 vuln vhost
+(JuiceShop / DVWA / NeoBank / GovPortal / MediForum / AdminConsole / AICompanion)
+실 hands-on. attack 의 *공격 측* + secuops 의 *방어 측* 의 *web 특화 심화*.
+
+| 주차 | 주제 | 7 vuln vhost 활용 |
+|------|------|------------------|
+| W01 | 웹 보안 개요 + OWASP Top 10 + 환경 가시화 | 7 vhost 모두 헬스체크 |
+| W02 | A01 Broken Access Control + IDOR + JWT | JuiceShop /api/Users |
+| W03 | A02 Cryptographic Failures + JWT 변조 | JuiceShop alg=none + NeoBank session |
+| W04 | A03 Injection (SQLi) — sqlmap + tamper | DVWA + AdminConsole |
+| W05 | A03 Injection (XSS) — ModSec 941 + DOM | JuiceShop + MediForum |
+| W06 | A04 Insecure Design — workflow 분석 | NeoBank 송금 workflow |
+| W07 | A05 Misconfiguration + 헤더 분석 | 7 vhost 의 헤더 매트릭스 |
+| W08 | 중간고사 — W01-W07 종합 | 5 챌린지 × 20점 |
+| W09 | A06 Vulnerable Components + SCA | npm audit + retire.js |
+| W10 | A07 Auth Failures — brute / MFA bypass | JuiceShop login + GovPortal MFA |
+| W11 | A08 Software & Data Integrity — supply chain | dependency confusion 시뮬 |
+| W12 | A09 Logging & Monitoring 실패 | ModSec audit + Wazuh 통합 |
+| W13 | A10 SSRF — internal recon | AdminConsole SSRF |
+| W14 | API Security Top 10 (2023) — REST / GraphQL | JuiceShop REST + 추가 GraphQL |
+| W15 | 기말 — 7 vhost 종합 침투 (180분, 100점) | PTES 7 단계 보고서 |
+
 ## aisec (인공지능보안 입문, 15 주)
 
 CCC 의 후속 7 과목 (course7 ai-security / course8 ai-safety / course9 autonomous /
