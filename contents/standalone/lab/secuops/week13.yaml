@@ -408,25 +408,123 @@ steps:
 
   - order: 4
     instruction: |
-      ## 🎯 MISSION — OpenCTI 6 UI 화면 + MITRE Navigator 통합
+      ## 🎯 MISSION — OpenCTI 6 UI 화면 + MITRE Navigator 통합 *워크플로우* 작성
 
-      ## 💻 산출물
+      OpenCTI 의 6 UI 화면 의 *역할* + *분석가 사용 시점* + MITRE Navigator 와 의
+      통합 시나리오 를 작성. **본 step 은 실 UI 화면 캡쳐 없이 *워크플로우 문서*
+      작성 학습** — 6v6 환경에 OpenCTI 실 인스턴스 가 없어도 가능.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **6 UI 화면** = OpenCTI 의 주요 메뉴 (top nav). 각각 *다른 분석 단계* 에
+        사용 — workflow 의 순서 도 있음
+      - **MITRE Navigator** = `mitre-attack-navigator.github.io` 의 visualizer.
+        OpenCTI 가 *export STIX → Navigator layer json* 변환 가능
+      - **coverage** = 내 환경 의 Wazuh/Suricata rule 이 *몇 % 의 TTP 를 탐지하는가*
+        의 척도. coverage gap = 탐지 안 되는 TTP 목록
+
+      ## 💻 산출물 (워크플로우 문서)
+
+      ```markdown
+      ## OpenCTI 6 UI — 분석가 일일 워크플로우
+
+      | # | 화면 | 분석가 사용 시점 | 일일 빈도 |
+      |---|------|----------------|----------|
+      | 1 | **Analyst Workbench** | 출근 후 — 본인 할당 case + 최근 활동 review | 1회 (시작 시) |
+      | 2 | **Investigations** | 새 incident — STIX object 묶음 (alert + IOC + TTP + actor) | 알람 발생 시 |
+      | 3 | **Knowledge > Threats** | Threat Actor / Campaign / Intrusion Set 조회 | 조사 중 (필요 시) |
+      | 4 | **Knowledge > Arsenal** | Malware / Tool / Vulnerability — actor 의 도구 | 조사 중 |
+      | 5 | **Knowledge > Techniques** | ATT&CK TTP — actor 의 행동 패턴 | 조사 중 |
+      | 6 | **Observables** | IOC enrichment 결과 — IP/domain/hash/url 의 풍부화 | 매 alert |
+      | 7 | **Threats** | Threat Actor matrix — APT 그룹 별 활동 시각화 | 주 1회 review |
+      | 8 | **Connectors** | sync status / API quota / error 확인 | 일 1회 모니터 |
+
+      ## MITRE Navigator 통합 워크플로우
 
       ```
-      6 화면:
-      1. Analyst Workbench — 최근 활동 + 할당 case
-      2. Investigations — case 별 STIX object 묶음
-      3. Knowledge — Threats / Arsenal / Techniques / Entities
-      4. Observables — Indicator + Cyber Observable
-      5. Threats — Threat Actor 매트릭스
-      6. Connectors — 통합 관리 + sync status
+      [OpenCTI]                          [MITRE Navigator]
+      Threats → APT28 selected                ▲
+        ↓ "Generate Coverage" button          │
+        ↓                          ┌──────────┘
+      STIX → ATT&CK layer (JSON) ──┘
+        └─ load 'opencti-apt28-layer.json'
+           → Navigator 의 14 Tactics × N Techniques 의 *cell* 색상
+           → "내 환경 (Wazuh rule)" 에 매치된 TTP overlay
+           → 색 없는 cell = coverage gap
 
-      MITRE Navigator 통합:
-        OpenCTI (Threat Actor APT28 의 TTP) ↔ Wazuh dashboard MITRE panel
-        → 본 환경 매치된 Technique overlay → coverage gap 식별
-        → 매월 coverage report
+      gap 식별 후:
+      → Wazuh rule (custom 100XXX) 또는 Suricata rule 추가
+      → 다음 월 coverage report 에 반영
       ```
-    hint: '6 화면 + MITRE Navigator overlay'
+
+      ## 매월 Coverage Report (산출물 예시)
+
+      | Tactic | TTP 총 | 탐지 (rule 있음) | gap |
+      | Initial Access | 9 | 4 | 5 (T1190, T1133, T1078.001, ...) |
+      | Execution | 13 | 8 | 5 |
+      | ... | ... | ... | ... |
+      | 종합 | 174 | 67 | **107 (61.5%)** |
+      ```
+
+      ## 💻 검증 명령 (OpenCTI 부재 시 *대체* 검증)
+
+      bastion 에서 다음 2 단계 로 검증 (학생이 직접 입력):
+
+      Step (a) — Navigator layer 파일 생성:
+      ```bash
+      ssh 6v6-bastion
+      cat > /tmp/navigator-layer.json <<'EOF'
+      {
+        "version": "4.5",
+        "name": "6v6 coverage",
+        "techniques": [
+          {"techniqueID": "T1190", "color": "#ff0000"},
+          {"techniqueID": "T1078", "color": "#ff0000"}
+        ]
+      }
+      EOF
+      ```
+
+      Step (b) — JSON parse + 핵심 필드 확인:
+      ```bash
+      python3 << 'PY'
+      import json
+      d = json.load(open("/tmp/navigator-layer.json"))
+      print(f"version: {d['version']}")
+      print(f"name: {d['name']}")
+      print(f"techniques: {len(d['techniques'])}")
+      PY
+      ```
+
+      ## 📋 확인 사항
+
+      - 6 화면 표 (4 칼럼) 모두 채움 + *사용 시점* 명시
+      - MITRE Navigator 워크플로우 4 단계 다이어그램
+      - 매월 coverage report 표 — 최소 5 tactic + gap 수치
+      - Navigator layer json 의 *3 핵심 필드* (version / name / techniques) 인지
+
+      ## 💡 왜 이걸 하는가?
+
+      OpenCTI 의 6 화면 은 *분석가 일일 워크플로우* 의 단계 — 화면 간 *전환 순서*
+      가 분석 품질 결정. MITRE Navigator overlay 는 *방어 측 자가 진단* — coverage
+      61% 같은 *정량 수치* 가 CISO 보고 의 핵심.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 6 화면 표 + Navigator 다이어그램 + coverage report
+      - **layer json parse 성공**: techniques 2 출력 → STIX→layer 의 *최소 구조* 인지
+      - **Navigator UI 직접 사용**: `mitre-attack-navigator.github.io` 의 online
+        + load layer
+
+      ## 비정상 시 대응
+
+      - **OpenCTI 실 UI 없이 학습 가능한가?** — 본 step 은 *워크플로우 문서* 학습.
+        실 UI 는 OpenCTI demo (`demo.opencti.io`) 또는 docker-compose 별도 lab.
+      - **MITRE Navigator 접근 불가 (폐쇄망)** — github page 의 *self-host* 가능
+        (`docker run -p 8080:80 mitre-attack/attack-navigator`)
+    hint: |
+      6 화면 워크플로우 표 + MITRE Navigator 통합 다이어그램 + coverage report.
+      OpenCTI 부재 시도 layer json 으로 학습 가능.
     category: navigation
     points: 12
     answer: |
