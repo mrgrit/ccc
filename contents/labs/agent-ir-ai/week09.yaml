@@ -456,3 +456,103 @@ steps:
     ※ ~/ccc/data/bastion/experience/w09-rule.json && cat ~/ccc/data/bastion/experience/w09-rule.json
   risk_level: low
   bastion_prompt: experience 저장.
+- order: 100
+  instruction: '[Multi-task] 탐지 룰 5단계 통합 — local_rules 백업 → SIGMA 초안 → Wazuh 변환 → 문법 검증 → trigger.'
+  bastion_prompt: |
+    Detection Engineering (SIGMA → Wazuh) 5작업을 한 흐름으로 수행해줘.
+
+    1) [local_rules.xml 백업] ssh ccc@{{SECU_IP}}00 'sudo cp /var/ossec/etc/rules/local_rules.xml
+       /var/ossec/etc/rules/local_rules.xml.w09bak; sudo ls -la /var/ossec/etc/rules/local_rules.xml*' 의
+       백업 확인. detection engineering 의 첫 단계 = 변경 전 백업. NIST PR.IP-1 매핑.
+
+    2) [SIGMA 룰 초안 작성] cat > /tmp/agent_burst.yml <<EOF
+       title: AI Agent ReqBurst Detection
+       id: 00000000-0000-0000-0000-000000000001
+       status: experimental
+       description: Detect high-frequency HTTP requests indicative of agent automation
+       logsource:
+         product: apache
+         category: webserver
+       detection:
+         selection:
+           cs-method:
+             - GET
+             - POST
+           c-ip: '%MATCHED%'
+         timeframe: 60s
+         condition: selection | count() by c-ip > 15
+       level: medium
+       tags:
+         - attack.t1110.003
+       EOF
+       cat /tmp/agent_burst.yml + SIGMA spec (https://sigmahq.io) 의 표준 양식 검증.
+
+    3) [Wazuh 룰로 수동 변환] ssh ccc@{{SECU_IP}}00 'sudo tee -a /var/ossec/etc/rules/local_rules.xml > /dev/null
+       <<EOF
+
+       <group name="local,agent_ir,">
+         <rule id="100110" level="5">
+           <decoded_as>web-accesslog</decoded_as>
+           <description>Web access log decoded</description>
+         </rule>
+         <rule id="100111" level="10" frequency="15" timeframe="60">
+           <if_matched_sid>100110</if_matched_sid>
+           <same_source_ip />
+           <description>AI Agent ReqBurst (15+ requests / 60s same IP)</description>
+           <mitre><id>T1110.003</id></mitre>
+         </rule>
+       </group>
+       EOF' + 추가 확인. SIGMA → Wazuh 의 mapping 표 (selection→if_matched / count→frequency / timeframe→
+       timeframe).
+
+    4) [Wazuh 룰 문법 검증 + reload] ssh ccc@{{SECU_IP}}00 'sudo /var/ossec/bin/wazuh-analysisd -t 2>&1 |
+       tail -5; sudo systemctl restart wazuh-manager; sudo /var/ossec/bin/wazuh-control status | head -5'
+
+    5) [Trigger + alert 검증] ssh ccc@{{ATTACKER_IP}} 'for i in $(seq 1 20); do curl -s -o /dev/null
+       {{WEB_IP}}/?test=$i; done' + sleep 5 + ssh ccc@{{SECU_IP}}00 'sudo grep "100111" /var/ossec/logs/alerts/
+       alerts.log 2>/dev/null | tail -5; sudo grep -c "100111" /var/ossec/logs/alerts/alerts.log' 의 trigger
+       alert 발생 카운트 (1+ 이면 룰 동작 성공) + experience 저장 (SIGMA YAML + Wazuh rule_id + trigger 결과).
+
+    cleanup: ssh ccc@{{SECU_IP}}00 'sudo cp /var/ossec/etc/rules/local_rules.xml.w09bak /var/ossec/etc/rules/
+       local_rules.xml; sudo systemctl restart wazuh-manager'.
+
+    마지막에 5단계 × (Detection Engineering 단계 / 명령 / 결과 / SIGMA → Wazuh 매핑 / 운영 권고 (룰 ID 관리 /
+    백업 정책 / SIGMA share)) 의 5×6 매트릭스 + SIGMA → Wazuh Conversion Table (5 spec field 의 mapping) +
+    Detection Engineering Workflow (백업 → 작성 → 변환 → 검증 → 모니터링 → 회고) markdown + cleanup 검증 출력.
+  hint: SIGMA → Wazuh 5단계 chain. SIGMA 표준 + Wazuh frequency/timeframe 의 mapping 이 학습 핵심.
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: '[통합] SIGMA → Wazuh 5단계 — 백업/SIGMA/변환/검증/trigger. NIST PR.IP-1 + MITRE T1110.003 매핑 + 5×6 매트릭스 + Conversion Table + Workflow.'
+      success_criteria:
+      - 5 단계 모두 실행
+      - local_rules.xml 백업
+      - SIGMA YAML + Wazuh XML 둘 다 작성
+      - wazuh-analysisd -t 문법 검증
+      - 20회 trigger + alert 검증
+      - cleanup (백업 복원 + restart)
+      - 5×6 매트릭스 + Conversion Table
+      acceptable_methods:
+      - bastion 의 multi-stage planning
+      - ssh + cat heredoc + wazuh-analysisd 표준
+      - sigmac (SIGMA 자동 변환) 대체 가능
+      - markdown 매트릭스 + Table
+      negative_signs:
+      - 3 단계 이하 만 수행
+      - SIGMA YAML 없음
+      - 문법 검증 누락
+      - trigger 검증 누락
+      - cleanup 미수행
+      - 매트릭스 6 컬럼 미만
+  target_vm: bastion
+  risk_level: low
+  answer: |
+    🤖 위 bastion_prompt 그대로. SIGMA → Wazuh 5단계 + 5×6 매트릭스 + Conversion Table + cleanup.
+  answer_detail: |
+    SOC Detection Engineer 페르소나 — SIGMA → Wazuh chain. SIGMA 표준 양식 + manual conversion +
+    backup 정책이 운영 산출물.
+  script: ''

