@@ -14,16 +14,20 @@
 - Bastion 전체 API 사용 경험
 - 팀 리더십 및 협업 경험
 
-## 실습 환경 (공통)
+## 실습 환경 (6v6 4-tier, 공통)
 
-| 호스트 | IP | 역할 | 접속 |
-|--------|-----|------|------|
-| bastion | 10.20.30.201 | CTF Control Plane / 게임 서버 | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS — 방어 인프라 | `ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 대상 서버 — 공격/방어 대상 | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM — 관전/분석 | `ssh ccc@10.20.30.100` |
+학생 PC 의 `~/.ssh/config` 의 ProxyJump 설정 후 `ssh 6v6-<name>` 으로 접속.
 
-**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+| 컨테이너 | 6v6 IP | 역할 | 접속 |
+|---------|--------|------|------|
+| bastion | 10.20.30.201 | CTF Control Plane / 게임 서버 | `ssh 6v6-bastion` (pw: ccc) |
+| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext — 방어 인프라 | `ssh 6v6-fw` |
+| web | 10.20.32.80 | 대상 서버 — Apache + JuiceShop (공격/방어 대상) | `ssh 6v6-web` |
+| siem | 10.20.32.100 | Wazuh manager — 관전/분석 | `ssh 6v6-siem` |
+| attacker | 10.20.30.202 | pen-test 도구 — Red 진영 | `ssh 6v6-attacker` |
+
+**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
+**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
