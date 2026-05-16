@@ -150,7 +150,7 @@
 > **실전 활용**: 점검 보고서의 품질이 곧 컨설팅 회사의 역량 지표이며, CVSS 산출 능력은 필수이다
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
 python3 << 'PYEOF'                                     # Python 스크립트 실행
 # CVSS v3.1 간이 계산기
 def cvss_score(av, ac, pr, ui, scope, c, i, a):
@@ -292,7 +292,7 @@ OWASP: A01:2021 - 카테고리명
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
 echo "=== 취약점 카드 작성 실습 ==="
 
 # 재현 증거 수집
@@ -363,7 +363,7 @@ ENDSSH
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
 python3 << 'PYEOF'                                     # Python 스크립트 실행
 from datetime import datetime
 
@@ -509,7 +509,7 @@ ENDSSH
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
 python3 << 'PYEOF'                                     # Python 스크립트 실행
 recommendations = [
     {
@@ -699,7 +699,7 @@ res.json({ authentication: { token, bid: user.basketId, umail: user.email } });
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
 python3 << 'PYEOF'                                     # Python 스크립트 실행
 checklist = [
     ("표지", "프로젝트명, 일시, 점검 범위, 점검자 정보"),

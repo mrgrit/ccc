@@ -128,7 +128,7 @@
 
 ```bash
 # web 서버에서 ZAP 컨테이너 상태 확인
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "docker ps -a | grep zap 2>/dev/null; echo '---'; which zaproxy 2>/dev/null || echo 'ZAP not installed locally'"
 
 # ZAP이 없는 경우 Python ZAP 클라이언트로 API 모드 사용
@@ -141,7 +141,7 @@ ssh ccc@10.20.30.80 \
 
 ```bash
 # JuiceShop 엔드포인트 자동 수집 (API 기반 스파이더링)
-ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
 echo "=== JuiceShop 엔드포인트 수집 ==="
 
 # 메인 페이지에서 링크 추출
@@ -291,7 +291,7 @@ Mozilla Observatory 등급: D 또는 F
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
 echo "=== 서버 정보 노출 점검 ==="
 
 # Server 헤더
@@ -442,7 +442,7 @@ done
 
 ```bash
 # 종합 자동 점검 스크립트
-ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
 cat << 'SCRIPT' > /tmp/auto_scan.sh
 #!/bin/bash
 TARGET="http://localhost:3000"
@@ -630,7 +630,7 @@ V-010  package.json 노출                 3.1   A05   CWE-200 Low
 
 ```bash
 # Nuclei YAML 템플릿 스타일의 점검 스크립트
-ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
 python3 << 'PYEOF'                                     # Python 스크립트 실행
 import json, subprocess, urllib.request, urllib.parse
 
@@ -711,7 +711,7 @@ ENDSSH
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
 echo "=== WAF 탐지 점검 ==="
 
 # 1. 일반 요청 vs 악성 요청 응답 비교

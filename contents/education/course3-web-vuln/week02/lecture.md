@@ -132,7 +132,7 @@
 
 ```bash
 # bastion 서버에서 web 서버로 SSH 접속
-ssh ccc@10.20.30.80
+ssh 6v6-web
 ```
 
 ### 2.2 JuiceShop 동작 확인

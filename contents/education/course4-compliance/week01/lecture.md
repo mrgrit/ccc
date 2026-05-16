@@ -464,7 +464,7 @@ cat /etc/security/pwquality.conf 2>/dev/null | grep -v "^#" | grep -v "^$"
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-ssh ccc@10.20.30.1 \
+ssh 6v6-fw \
   "cat /etc/login.defs | grep -E '^PASS_MAX_DAYS|^PASS_MIN_DAYS|^PASS_MIN_LEN|^PASS_WARN_AGE'"
 ```
 
@@ -498,17 +498,17 @@ sudo nft list ruleset 2>/dev/null | head -5 || sudo iptables -L 2>/dev/null | he
 
 echo ""
 echo "=== secu 방화벽 상태 ==="
-ssh ccc@10.20.30.1 \
+ssh 6v6-fw \
   "sudo nft list ruleset 2>/dev/null | head -10"
 
 echo ""
 echo "=== web 방화벽 상태 ==="
-ssh ccc@10.20.30.80 \
+ssh 6v6-web \
   "sudo nft list ruleset 2>/dev/null | head -5 || sudo iptables -L 2>/dev/null | head -5 || echo '방화벽 규칙 없음'"
 
 echo ""
 echo "=== siem 방화벽 상태 ==="
-ssh ccc@10.20.30.100 \
+ssh 6v6-siem \
   "sudo nft list ruleset 2>/dev/null | head -5 || sudo iptables -L 2>/dev/null | head -5 || echo '방화벽 규칙 없음'"
 ```
 
@@ -826,7 +826,7 @@ incidents.jsonl 의 host 노드 (예: HOST-4476):
 ### 학생 환경 준비 (한 번만 실행)
 
 ```bash
-ssh ccc@10.20.30.100        # siem VM (Wazuh 이미)
+ssh 6v6-siem        # siem VM (Wazuh 이미)
 
 # Lynis (UNIX 보안 감사 표준 — KISA 권고와 매핑 우수)
 sudo apt update && sudo apt install -y lynis

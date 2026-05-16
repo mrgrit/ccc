@@ -122,7 +122,7 @@
 > **실전 활용**: 이 실습은 실제 웹 취약점 점검 프로젝트의 납품 과정과 동일한 절차를 따른다
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
 echo "=== 점검 대상 시스템 정보 ==="
 
 echo "--- 서비스 상태 ---"
@@ -191,7 +191,7 @@ content-type: text/html; charset=utf-8
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
 python3 << 'PYEOF'                                     # Python 스크립트 실행
 from datetime import datetime
 
@@ -238,7 +238,7 @@ ENDSSH
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
 echo "=== 보안 헤더 점검 ==="
 HEADERS=$(curl -sI http://localhost:3000/)
 
@@ -297,7 +297,7 @@ ENDSSH
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
 echo "=== HTTP 메서드 점검 ==="
 for method in GET POST PUT DELETE OPTIONS TRACE PATCH; do  # 반복문 시작
   CODE=$(curl -s -o /dev/null -w "%{http_code}" -X $method http://localhost:3000/api/Products)
@@ -353,7 +353,7 @@ ENDSSH
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
 echo "=== SQL Injection 점검 ==="
 
 echo "--- 로그인 SQLi ---"
@@ -410,7 +410,7 @@ ENDSSH
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
 echo "=== XSS 점검 ==="
 XSS_PAYLOADS=("<script>alert(1)</script>" "<img src=x onerror=alert(1)>" "<svg onload=alert(1)>")
 
@@ -479,7 +479,7 @@ ENDSSH
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
 echo "=== 계정 잠금 정책 점검 ==="
 echo "5회 연속 실패 시도..."
 for i in $(seq 1 5); do                                # 반복문 시작
@@ -544,7 +544,7 @@ ENDSSH
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
 python3 << 'PYEOF'                                     # Python 스크립트 실행
 from datetime import datetime
 

@@ -221,26 +221,26 @@ Act (조치)   --> 부적합 시정, 프로세스 개선
 
 ```bash
 # bastion 서버 (control plane)
-ssh ccc@10.20.30.201 "hostname; uname -a; cat /etc/os-release | head -5"
+ssh 6v6-bastion "hostname; uname -a; cat /etc/os-release | head -5"
 
 # secu 서버 (방화벽/IPS)
-ssh ccc@10.20.30.1 "hostname; uname -a"
+ssh 6v6-fw "hostname; uname -a"
 
 # web 서버 (WAF/웹앱)
-ssh ccc@10.20.30.80 "hostname; uname -a"
+ssh 6v6-web "hostname; uname -a"
 
 # siem 서버 (Wazuh)
-ssh ccc@10.20.30.100 "hostname; uname -a"
+ssh 6v6-siem "hostname; uname -a"
 ```
 
 ### 6.2 서비스 자산 식별
 
 ```bash
 # 각 서버에서 실행 중인 서비스 확인
-ssh ccc@10.20.30.201 "systemctl list-units --type=service --state=running | head -20"
+ssh 6v6-bastion "systemctl list-units --type=service --state=running | head -20"
 
 # 열린 포트 확인
-ssh ccc@10.20.30.1 "ss -tlnp"
+ssh 6v6-fw "ss -tlnp"
 ```
 
 ### 6.3 자산 목록 작성 (실습 과제)
@@ -263,20 +263,20 @@ ssh ccc@10.20.30.1 "ss -tlnp"
 
 ```bash
 # SSH 설정 점검 (비밀번호 로그인 허용 여부)
-ssh ccc@10.20.30.201 "grep -i 'PasswordAuthentication' /etc/ssh/sshd_config"
+ssh 6v6-bastion "grep -i 'PasswordAuthentication' /etc/ssh/sshd_config"
 
 # 방화벽 상태 확인
-ssh ccc@10.20.30.1 "sudo nft list ruleset | head -30"
+ssh 6v6-fw "sudo nft list ruleset | head -30"
 ```
 
 ### 7.2 Check - 로그 모니터링
 
 ```bash
 # 최근 SSH 접근 시도 확인
-ssh ccc@10.20.30.201 "journalctl -u sshd --since '1 hour ago' --no-pager | tail -10"
+ssh 6v6-bastion "journalctl -u sshd --since '1 hour ago' --no-pager | tail -10"
 
 # 실패한 로그인 시도 확인
-ssh ccc@10.20.30.201 "grep 'Failed password' /var/log/auth.log 2>/dev/null | tail -5"
+ssh 6v6-bastion "grep 'Failed password' /var/log/auth.log 2>/dev/null | tail -5"
 ```
 
 ---
@@ -338,7 +338,7 @@ ssh ccc@10.20.30.201 "grep 'Failed password' /var/log/auth.log 2>/dev/null | tai
 ```bash
 # ISO 27001 A.8.5 (안전한 인증) 점검 증적 수집
 echo "=== 패스워드 정책 확인 ==="
-ssh ccc@10.20.30.80 "  # 비밀번호 자동입력 SSH
+ssh 6v6-web "  # 비밀번호 자동입력 SSH
   echo '--- login.defs ---' && grep -E 'PASS_MAX|PASS_MIN|PASS_WARN' /etc/login.defs
   echo '--- pam 설정 ---' && grep pam_pwquality /etc/pam.d/common-password 2>/dev/null || echo 'pam_pwquality 미설정'
   echo '--- sudo 설정 ---' && sudo -l 2>/dev/null | head -5
@@ -489,7 +489,7 @@ ASA Firewall 만의 cover (network 중심):
 ### 학생 환경 준비
 
 ```bash
-ssh ccc@10.20.30.1     # secu VM
+ssh 6v6-fw     # secu VM
 sudo apt update && sudo apt install -y \
   nftables iproute2 \
   suricata suricata-update \
