@@ -345,17 +345,132 @@ steps:
   # ============================================================
   - order: 3
     instruction: |
-      Q-learning 의 5x5 grid world Python 의 500 episode 학습 + 학습 후 best path
-      + alpha / gamma / epsilon 의 의의 의 실험.
+      ## 🎯 MISSION — Q-learning 5x5 grid world 500 episode 학습 + 4 hyperparameter
+      비교 + optimal path 검증
 
-      lecture 2-3 ~ 2-9 의 매핑 — 강아지 의 훈련 (Agent / Environment / State /
-      Action / Reward 의 5 구성) 의 5x5 미로 의 보안 의 응용. lecture 2-5 의 손
-      계산 의 (s=0, a=Right, r=-1, s'=1, α=0.1, γ=0.9 의 Q[0,Right] 의 2.0 →
-      1.97 의 update) 의 본 lab 의 실 코드 의 동일 의 갱신 의 직접 확인.
-      lecture 2-7 의 α / γ / ε 의 직관 (의견 의 신뢰 / 미래 의 할인 / 단골 vs
-      새 시도) 의 본 lab 의 4 hyperparameter 의 비교 의 실 측정 의 직접 확인.
+      lecture 2차시 의 Q-learning 이론 (강아지 비유 → 5x5 grid world → Q-table →
+      update 공식) 을 Python 으로 직접 실행. 손 계산 (lecture 2-5) 과 실 코드 의
+      *동일 갱신* 확인 + 4 hyperparameter (alpha / gamma / epsilon) 비교 측정.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **Q-table** = state × action 표 (`5x5 grid = 25 state × 4 action = 100 cell`)
+      - **alpha (학습률)** = 새 정보 를 얼마나 빠르게 반영 — lecture 2-7 의 *의견
+        신뢰* 비유
+      - **gamma (할인율)** = 미래 reward 를 현재 와 얼마나 비교 — *미래 할인* 비유
+      - **epsilon (탐색률)** = 무작위 행동 비율 — *단골 vs 새 시도* 비유
+      - **optimal path** = S (0) → G (24) 의 최단 = 8 step (오른쪽 4 + 아래 4)
+
+      ## 💻 실행 명령
+
+      ```bash
+      cat > /tmp/qlearning.py <<'PY'
+      """Q-learning 5x5 grid world demo"""
+      import numpy as np
+
+      GRID = 5; N_STATES = GRID*GRID; N_ACTIONS = 4
+      START = 0; GOAL = N_STATES - 1
+      ACTIONS_NAME = ["Up","Down","Left","Right"]
+
+      def step(state, action):
+          row, col = state // GRID, state % GRID
+          if action == 0 and row > 0: row -= 1
+          elif action == 1 and row < GRID-1: row += 1
+          elif action == 2 and col > 0: col -= 1
+          elif action == 3 and col < GRID-1: col += 1
+          new_state = row * GRID + col
+          reward = 10 if new_state == GOAL else -1
+          done = new_state == GOAL
+          return new_state, reward, done
+
+      def train(alpha, gamma, epsilon, episodes):
+          Q = np.zeros((N_STATES, N_ACTIONS))
+          total_rewards = []
+          for ep in range(episodes):
+              state = START
+              ep_reward = 0
+              for _ in range(50):
+                  if np.random.random() < epsilon:
+                      action = np.random.randint(N_ACTIONS)
+                  else:
+                      action = int(np.argmax(Q[state]))
+                  new_state, reward, done = step(state, action)
+                  Q[state, action] += alpha * (
+                      reward + gamma * float(np.max(Q[new_state])) - Q[state, action]
+                  )
+                  state = new_state
+                  ep_reward += reward
+                  if done: break
+              total_rewards.append(ep_reward)
+          return Q, total_rewards
+
+      # 학습
+      print("=== Q-learning 500 episode 학습 ===")
+      np.random.seed(42)
+      Q, rewards = train(alpha=0.1, gamma=0.9, epsilon=0.2, episodes=500)
+
+      # 학습 진행 추세
+      print(f"  episode 1-50 평균 reward: {np.mean(rewards[:50]):.1f}")
+      print(f"  episode 250-300 평균 reward: {np.mean(rewards[250:300]):.1f}")
+      print(f"  episode 450-500 평균 reward: {np.mean(rewards[-50:]):.1f}")
+
+      # Start state Q 값
+      print("\n=== Start state Q 값 ===")
+      for i, name in enumerate(ACTIONS_NAME):
+          print(f"  {name:6s}: {Q[0, i]:7.2f}")
+      best = int(np.argmax(Q[0]))
+      print(f"  best action: {ACTIONS_NAME[best]}")
+
+      # Optimal path
+      print("\n=== 학습 후 optimal path ===")
+      state = START; path = [state]
+      for _ in range(20):
+          action = int(np.argmax(Q[state]))
+          state, _, done = step(state, action)
+          path.append(state)
+          if done: break
+      print(f"  path: {path}")
+      print(f"  steps: {len(path)-1} (optimal = 8)")
+
+      # 4 hyperparameter 비교
+      print("\n=== 4 hyperparameter 비교 ===")
+      for a, g, e in [(0.05, 0.9, 0.2), (0.5, 0.9, 0.2), (0.1, 0.5, 0.2), (0.1, 0.99, 0.5)]:
+          np.random.seed(42)
+          _, r = train(a, g, e, episodes=500)
+          print(f"  alpha={a} gamma={g} epsilon={e}: 마지막 50 평균 = {np.mean(r[-50:]):.1f}")
+      PY
+
+      python3 /tmp/qlearning.py 2>&1 | head -30
+      ```
+
+      ## 📋 확인 사항
+
+      - 500 episode 학습 완료
+      - 학습 진행 추세 — episode 1-50 평균 < 450-500 평균 (학습 효과)
+      - Start state 의 best action — Down 또는 Right (Up/Left 는 벽, 음수)
+      - optimal path 8 step (또는 매우 근접)
+      - 4 hyperparameter 비교 — alpha 너무 작으면 (0.05) 느림, gamma 너무 작으면
+        (0.5) 근시안적
+
+      ## 💡 왜 이걸 하는가?
+
+      lecture 의 이론 → Python 실 코드 → 결과 확인 의 3 단계 가 강화학습 의 *진짜
+      학습*. 손 계산 1 step 만 으로는 *학습 효과* 못 봄 — 500 episode 의 *누적
+      변화* 가 핵심.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 학습 진행 (음수 → 양수) + best action Down/Right + path 8 step
+      - **path 8 step 초과 (예: 10)**: epsilon 너무 큼 또는 학습 부족 — episode 늘리기
+      - **best action Up/Left** (음수 Q): 학습 안 됨 또는 update 식 오류
+
+      ## 비정상 시 대응
+
+      - **numpy 미설치** — `pip install numpy`
+      - **np.random.seed 결과 다름** — Python 또는 numpy 버전 다름. 결과 *대략적*
+        흐름 이 동일 하면 OK
     hint: |
-      numpy Q-table + epsilon-greedy
+      Q-learning 500 episode + 4 hyperparameter 비교 + 학습 진행 + path 8 step.
     category: ml
     points: 25
     answer: |
@@ -407,20 +522,20 @@ steps:
       np.random.seed(42)
       Q, rewards = train(alpha=0.1, gamma=0.9, epsilon=0.2, episodes=500)
 
-      # 진행
-      print(f"  episode 1-50 의 평균 reward: {np.mean(rewards[:50]):.1f}")
-      print(f"  episode 250-300 의 평균 reward: {np.mean(rewards[250:300]):.1f}")
-      print(f"  episode 450-500 의 평균 reward: {np.mean(rewards[-50:]):.1f}")
+      # 학습 진행 추세
+      print(f"  episode 1-50 평균 reward: {np.mean(rewards[:50]):.1f}")
+      print(f"  episode 250-300 평균 reward: {np.mean(rewards[250:300]):.1f}")
+      print(f"  episode 450-500 평균 reward: {np.mean(rewards[-50:]):.1f}")
 
-      # 학습 결과
-      print("\n=== Start state 의 Q 값 ===")
+      # Start state Q 값
+      print("\n=== Start state Q 값 ===")
       for i, name in enumerate(ACTIONS_NAME):
           print(f"  {name:6s}: {Q[0, i]:7.2f}")
       best = int(np.argmax(Q[0]))
       print(f"  best action: {ACTIONS_NAME[best]}")
 
       # Optimal path
-      print("\n=== 학습 후 의 optimal path ===")
+      print("\n=== 학습 후 optimal path ===")
       state = START
       path = [state]
       for _ in range(20):
@@ -431,15 +546,15 @@ steps:
       print(f"  path: {path}")
       print(f"  steps: {len(path)-1} (optimal = 8)")
 
-      # 다른 hyperparameter 의 비교
-      print("\n=== 다른 hyperparameter 의 비교 ===")
+      # 4 hyperparameter 비교
+      print("\n=== 4 hyperparameter 비교 ===")
       for a, g, e in [(0.05, 0.9, 0.2), (0.5, 0.9, 0.2), (0.1, 0.5, 0.2), (0.1, 0.99, 0.5)]:
           np.random.seed(42)
           _, r = train(a, g, e, episodes=500)
-          print(f"  alpha={a} gamma={g} epsilon={e}: 마지막 50 episode 평균 = {np.mean(r[-50:]):.1f}")
+          print(f"  alpha={a} gamma={g} epsilon={e}: 마지막 50 평균 = {np.mean(r[-50:]):.1f}")
       PYEOF
-      python3 /tmp/qlearning.py 2>&1 | head -25
-    answer_detail: Q-learning 500 episode
+      python3 /tmp/qlearning.py 2>&1 | head -30
+    answer_detail: Q-learning 500 episode + 4 hyperparameter 비교
     verify:
       type: output_contains
       expect: optimal
@@ -450,12 +565,12 @@ steps:
         acceptable_methods:
           - "**[OSS] Q-table tabular value-based**"
           - "**[OSS] epsilon-greedy exploration**"
-          - "**[OSS] alpha learning rate 의 영향**"
-          - "**[OSS] gamma discount factor 의 영향**"
-          - "**[OSS] 학습 진행 (early/mid/late 의 reward 증가)**"
-          - "**[OSS] DQN 의 deep network 확장**"
-          - "**[OSS] PPO / SAC / A3C 의 policy gradient**"
-          - "**[OSS] OpenAI Gym 의 환경 표준**"
+          - "**[OSS] alpha learning rate 영향**"
+          - "**[OSS] gamma discount factor 영향**"
+          - "**[OSS] 학습 진행 (early/mid/late reward 증가)**"
+          - "**[OSS] DQN deep network 확장**"
+          - "**[OSS] PPO / SAC / A3C policy gradient**"
+          - "**[OSS] OpenAI Gym 환경 표준**"
     target_vm: bastion
 
   # ============================================================
