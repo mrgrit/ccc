@@ -522,6 +522,47 @@ steps:
       Red = MD5/TLS downgrade/JWT secret 시도 / Blue = config 검증 / Purple = audit
       Coverage 한 줄.
 
+      ## 📖 시나리오 상세
+
+      ### 🔴 Red Team — Crypto 약점 의 4 영역 audit
+
+      **페르소나**: pen-tester 의 분기 정기 audit. legacy crypto (MD5/TLS 1.0/약한
+      JWT) 의 발견 + 사고 대비.
+
+      **공격 의도**:
+      1. legacy hash (MD5/SHA1) 의 1초 brute 시연 = 모든 패스워드 의 즉시 crack 위험
+      2. TLS 1.0/1.1 의 server fallback 검증 = POODLE/BEAST 잠재 표적
+      3. 약한 JWT secret 의 1분 brute = token 위조 가능성
+
+      **공격 단계**:
+      - R1: md5sum + hashcat 으로 1초 crack 시연
+      - R2: openssl s_client -tls1 의 강제 negotiation
+      - R3: hashcat -m 16500 의 JWT secret dictionary brute
+
+      ### 🔵 Blue Team — config 강도 검증
+
+      **검증 source**:
+      - Apache `ssl.conf` 의 `SSLProtocol` = min TLS version enforce
+      - Apache `SSLCipherSuite` = 강한 cipher 만 허용
+      - application 의 password hash algorithm 정적 분석
+      - JWT secret entropy 정적 분석
+
+      **대응**:
+      - B1: TLS config 의 weak 항목 즉시 정정
+      - B2: legacy hash 의 점진 migration (login 시 rehash)
+      - B3: JWT secret 의 분기 rotation
+
+      ### 🟣 Purple Team — 분기 crypto audit routine
+
+      **분석**: 4 영역 (hash/TLS/JWT/cookie) 매트릭스 = 분기 1회 audit = 사전 detection.
+      hashcat 의 1초 crack = "이 hash 는 절대 사용 X" 의 직접 체험.
+
+      **개선 cycle**:
+      1. 분기 1회 4 영역 audit + 3 청자 보고서
+      2. legacy 의 점진 교체 (6개월 의 100% migration)
+      3. JWT secret rotation 표준화 (분기 + grace 2 secret)
+      4. PCI/ISMS-P audit 의 입증 자료
+
       ## 💻 실행 명령
       ```bash
       ssh 6v6-attacker 'echo -n "password" | md5sum'

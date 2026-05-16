@@ -121,6 +121,52 @@ steps:
       Red = pickle 의 임의 코드 실행 시뮬 / Blue = pickle 사용 금지 + JSON 대체 /
       Purple = SLSA + Sigstore + TUF routine.
 
+      ## 📖 시나리오 상세
+
+      ### 🔴 Red Team — Supply chain + deserialization 의 직접 위험
+
+      **페르소나**: insider threat (악의 적 maintainer) + supply chain attacker.
+      xz-utils (2024) 의 2년 social engineering + Log4Shell 의 transitive dep 의
+      교훈 의 직접 체험.
+
+      **공격 의도**:
+      1. **pickle deserialize 의 위험 시연** = `pickle.loads()` 의 임의 코드 실행
+         가능성 의 직접 확인 = 운영 환경 의 pickle 사용 금지 의 근거
+      2. **공급망 변조 가설** = trusted source (PyPI/npm) 의 의도 적 backdoor 의
+         transitive 영향
+      3. **무서명 update 의 위험** = update server 의 compromise = malicious
+         update 의 자동 적용
+
+      **공격 단계**:
+      - R1: python3 의 pickle sample = base64 payload 의 위험 시연
+      - R2: (개념) malicious package 의 pip install 후 의 import 시 RCE
+      - R3: (개념) TUF 미적용 시 의 update spoofing
+
+      ### 🔵 Blue Team — SLSA + Sigstore + JSON 대체
+
+      **탐지 source / 검증**:
+      - SLSA level 의 build provenance 의 verify
+      - Sigstore 의 keyless signing 의 verify (cosign verify)
+      - SBOM 의 매 build 의 기록 (CycloneDX/SPDX)
+      - application 의 pickle 사용 의 정적 분석
+
+      **대응**:
+      - B1: pickle 사용 의 100% 금지 + JSON/protobuf 의 default 적용
+      - B2: SLSA level 2+ 의 적용 (signed builds)
+      - B3: Sigstore 의 cosign 의 verify 의 routine 통합
+
+      ### 🟣 Purple Team — modern 표준 의 적용
+
+      **분석**:
+      - SLSA / Sigstore / SBOM / TUF 의 4 표준 의 적용 매트릭스
+      - 2024 xz-utils 사고 의 교훈 = maintainer trust 의 verification
+
+      **개선 cycle**:
+      1. SLSA level 의 분기 별 ramp-up (1 → 2 → 3 → 4)
+      2. Sigstore 의 open source 표준 의 적용
+      3. SBOM 의 의무 화 (미국 EO 14028 의 의무)
+      4. TUF (The Update Framework) 의 update security 적용
+
       ## 💻 실행
       ```bash
       ssh 6v6-attacker 'python3 -c "import pickle, os; payload = pickle.dumps(__import__(\"os\").system); import base64; print(base64.b64encode(pickle.dumps(payload)).decode()[:50])"' 2>&1 | head -3

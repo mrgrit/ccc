@@ -138,6 +138,50 @@ steps:
       Red = BOLA + GraphQL introspection / Blue = ACL + introspection 거부 / Purple
       = API Gateway routine.
 
+      ## 📖 시나리오 상세
+
+      ### 🔴 Red Team — API Top 10 (2023) 의 5 vuln 시도
+
+      **페르소나**: API bug bounty hunter — REST + GraphQL 의 새 카테고리 의
+      exploit. Web Top 10 과 다른 API 특유 의 위협 의 발견.
+
+      **공격 의도**:
+      1. **BOLA (Broken Object Level Auth)** = API 의 IDOR = /api/Users/{other_id}
+         의 조회 = per-user ACL 부재 의 검증
+      2. **GraphQL introspection** = `__schema` query 의 production endpoint 의
+         schema 노출 = vuln map 의 자동 작성
+      3. **shadow API** = undocumented endpoint 의 발견 = 보안 검증 의 미적용 영역
+
+      **공격 단계**:
+      - R1: curl 의 BOLA = /api/Users/2 의 응답 분석
+      - R2: curl 의 GraphQL `__schema` query 의 introspection 시도
+      - R3: (개념) shadow API 의 발견 = inventory 와 비교
+
+      ### 🔵 Blue Team — ACL + introspection 거부 + inventory
+
+      **탐지 source / 방어**:
+      - API Gateway (Kong / AWS API Gateway) 의 per-user ACL
+      - GraphQL 의 production introspection 의 거부 (env 별 schema 분리)
+      - API spec (OpenAPI/GraphQL SDL) 의 의무 화 + 자동 inventory
+      - rate limit (per-user + per-IP) 의 default
+
+      **대응**:
+      - B1: API Gateway 의 default 정책 (ACL + rate limit + audit)
+      - B2: introspection 의 env 별 분리 (dev/staging 활성, production 거부)
+      - B3: 자동 API discovery 의 routine = shadow API 의 발견
+
+      ### 🟣 Purple Team — API 의 inventory routine
+
+      **분석**:
+      - API Top 10 (2023) 의 5 vuln 의 detection 매트릭스
+      - shadow API 의 발견 routine = 정기 (월 1회) 의 endpoint discovery
+
+      **개선 cycle**:
+      1. API Gateway 의 default 의 routine 적용
+      2. API spec 의 의무 화 + git audit (PR 시 검증)
+      3. shadow API 의 자동 discovery + inventory 와 비교
+      4. GraphQL 의 batching + depth limit 의 default
+
       ## 💻 실행
       ```bash
       ssh 6v6-attacker 'curl -s -o /dev/null -w "BOLA %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/api/Users/2"'

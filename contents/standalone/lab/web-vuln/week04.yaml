@@ -485,6 +485,50 @@ steps:
       Red = sqlmap UNION/boolean/tamper 의 3 technique / Blue = ModSec 942 family
       매치 / Purple = paranoia level tuning 권장.
 
+      ## 📖 시나리오 상세
+
+      ### 🔴 Red Team — sqlmap 의 technique 별 우회 능력 분석
+
+      **페르소나**: bug bounty hunter — JuiceShop 의 SQLi vuln 의 발견 + sqlmap 의
+      tamper 의 evasion 능력 의 검증. 운영 환경 의 paranoia level 의 영향 의 정량 측정.
+
+      **공격 의도**:
+      1. UNION SELECT 의 명확 한 SQLi = ModSec 942100 (libinjection) + 942270 (UNION)
+         의 score 10 → 명확 block
+      2. boolean blind (AND 1=1) = 942100 만 매치 = score 5 = paranoia 1 의 경계
+      3. tamper randomcase (uNiOn) = ModSec 의 case-sensitive 룰 의 우회 가능성
+
+      **공격 단계**:
+      - R1: curl 의 UNION SELECT 페이로드 = 403 확인
+      - R2: curl 의 boolean blind 페이로드 = score 분석
+      - R3: curl 의 tamper randomcase = paranoia 1 우회 시도
+
+      ### 🔵 Blue Team — ModSec 942 family 의 detection 매트릭스
+
+      **탐지 source**:
+      - ModSec audit log 의 `messages[]` = 매치 룰 ID 의 array
+      - 942100 (SQLi detection lib), 942180 (basic SQLi), 942270 (UNION SELECT) 등
+        의 family
+      - anomaly score 의 누적 = paranoia threshold (default 5) 이상 = block
+
+      **대응**:
+      - B1: audit log 의 messages[] 의 grep + 매치 룰 의 통계
+      - B2: paranoia 1 의 score = 경계 사건 의 분석
+      - B3: tamper 의 detection 의 gap 의 측정
+
+      ### 🟣 Purple Team — paranoia level 의 점진 적 ramp-up
+
+      **분석**:
+      - sqlmap 의 5 technique × paranoia 1-4 의 detection 매트릭스 작성
+      - tamper randomcase 의 paranoia 1 우회 의 score 측정 = paranoia 2/3 의 영향
+        예측
+
+      **개선 cycle**:
+      1. DetectionOnly 모드 의 1주 + 분석 (FP 율 측정)
+      2. paranoia 1 → 2 의 점진 적 ramp-up + 10분 의 FP 모니터링
+      3. tamper-specific custom rule 의 추가 (case-insensitive 매칭)
+      4. 분기 1회 의 sqlmap audit 의 routine
+
       ## 💻 실행
       ```bash
       ssh 6v6-attacker 'curl -s -o /dev/null -w "UNION %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/rest/products/search?q=apple%27%20UNION%20SELECT%201,2,3--"'

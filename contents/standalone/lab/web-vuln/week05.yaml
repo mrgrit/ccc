@@ -459,6 +459,49 @@ steps:
       Red = Reflected/Stored XSS (DOM 은 client-side 제외) / Blue = ModSec 941 매치
       + CSP header 확인 / Purple = inline-script unsafe-inline 분석.
 
+      ## 📖 시나리오 상세
+
+      ### 🔴 Red Team — XSS 의 server vs client 의 boundary 검증
+
+      **페르소나**: web attacker — XSS 의 3 종 (Reflected/Stored/DOM) 의 ModSec
+      detection 범위 의 검증. DOM XSS = server 미경유 = WAF 의 한계 의 직접 확인.
+
+      **공격 의도**:
+      1. Reflected XSS (`<script>alert(1)</script>`) = ModSec 941 의 즉시 block 확인
+      2. img onerror payload = 941110 (event handler) 의 매치 검증
+      3. DOM XSS (#fragment) = server 미경유 = ModSec 우회 의 확인 (browser 에서만
+         detection 가능)
+
+      **공격 단계**:
+      - R1: curl 의 reflected XSS = 403 확인
+      - R2: curl 의 img onerror = 다른 룰 매치 확인
+      - R3: (개념) DOM XSS = curl 으로 server 까지 안 가서 ModSec 매치 X
+
+      ### 🔵 Blue Team — 941 매치 + CSP 의 2 layer
+
+      **탐지 source**:
+      - ModSec audit log 의 941100 (XSS), 941110 (event handler), 941160 (tag attr)
+        의 매치
+      - HTTP response 의 Content-Security-Policy header = client-side 의 2차 방어
+      - browser dev tools 의 CSP violation report (개념)
+
+      **대응**:
+      - B1: server-side = ModSec 941 의 1차 block
+      - B2: client-side = CSP 의 inline-script 차단 + DOMPurify 의 sanitize
+      - B3: monitoring = CSP report-uri 의 violation 수집
+
+      ### 🟣 Purple Team — 3 layer defense
+
+      **분석**:
+      - XSS 3 종 의 각 layer 의 책임 의 매트릭스
+      - DOM XSS 의 WAF 무력 화 = client-side defense 의 routine 필요성
+
+      **개선 cycle**:
+      1. ModSec 941 의 paranoia 2 적용 (XSS 의 추가 룰 활성)
+      2. CSP 의 unsafe-inline 의 제거 (nonce 기반 의 inline 의 routine)
+      3. Trusted Types 의 적용 (`require-trusted-types-for 'script'`)
+      4. DOMPurify 의 application 의 default sanitize
+
       ## 💻 실행
       ```bash
       ssh 6v6-attacker 'curl -s -o /dev/null -w "Reflected %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/rest/products/search?q=<script>alert(1)</script>"'

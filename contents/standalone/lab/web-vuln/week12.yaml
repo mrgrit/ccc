@@ -134,6 +134,50 @@ steps:
       Red = log 회피 시도 (정상 응답 의 비기록 endpoint) / Blue = 5 표준 로그 의
       coverage 검증 / Purple = 한국 보존 정책 (전자금융 5년).
 
+      ## 📖 시나리오 상세
+
+      ### 🔴 Red Team — log coverage 의 blind spot 시도
+
+      **페르소나**: APT — 사고 추적 의 방해 + log 변조 의 시도. 정상 endpoint 의
+      사용 으로 audit log 의 회피.
+
+      **공격 의도**:
+      1. **log 회피** = 정상 응답 (200) 의 endpoint 의 의도 적 사용 = WAF/IDS 의
+         매치 X = audit log 만 의 사후 추적 가능 한 상태
+      2. **log 변조** = log file 의 직접 변경 시도 (append-only / WORM 부재 시)
+      3. **log flood** = 1M alert/sec 의 의도 적 발생 = SOC fatigue + 실 alert 의
+         누락
+
+      **공격 단계**:
+      - R1: curl 의 정상 endpoint (/api/health) 의 호출 = access.log 의 기록 검증
+      - R2: (개념) log file 의 변조 시도 = immutable storage 의 거부 확인
+      - R3: (개념) log flood = rate limit 의 부재 확인
+
+      ### 🔵 Blue Team — 5 표준 로그 의 coverage 검증
+
+      **탐지 source**:
+      - 5 표준 로그 (인증/권한/접근/system/WAF) 의 매 endpoint 의 coverage 검증
+      - Wazuh agent 의 ship 상태 (`/var/ossec/logs/ossec.log` 의 "Agent connected")
+      - append-only storage 의 적용 (S3 object lock 의 WORM)
+      - SIEM 의 burst protection + log throttling
+
+      **대응**:
+      - B1: 모든 endpoint 의 access log 의 의무 화
+      - B2: append-only storage 의 default 적용
+      - B3: log retention 의 정책 의 적용 (전자금융 5년)
+
+      ### 🟣 Purple Team — 한국 보존 정책 + 분기 audit
+
+      **분석**:
+      - 5 표준 로그 의 매 endpoint 의 coverage 매트릭스
+      - 한국 의 보존 의무 (전자금융 5년 + 개인정보 사고 1년 보고) 의 적용
+
+      **개선 cycle**:
+      1. 5 표준 로그 의 의무 적용 (개발 의 routine)
+      2. immutable storage 의 default 적용 (S3 object lock)
+      3. SIEM 의 alert burst protection 의 적용
+      4. 분기 audit = 정책 + 실 storage 의 일치 검증
+
       ## 💻 실행
       ```bash
       # Red — 정상 요청 (의도 적 log 부재 가설 검증)

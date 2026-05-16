@@ -329,6 +329,53 @@ steps:
       Red = /.git, default page, HTTP, CORS * 시도 / Blue = 보안 헤더 5 + nginx
       deny rule / Purple = securityheaders.com A+ score 목표.
 
+      ## 📖 시나리오 상세
+
+      ### 🔴 Red Team — 7 vhost 의 misconfig 자동 audit
+
+      **페르소나**: external attacker — 7 vhost (juice/admin/api/sso/medical/govportal/
+      legacy) 의 정보 노출 의 자동 audit. 2023 한국 의 /.git 1억 record 유출 사고
+      의 직접 시뮬.
+
+      **공격 의도**:
+      1. **/.git 노출 검증** = 모든 vhost 의 /.git/config 의 GET = 200 응답 = 즉시
+         위험
+      2. **보안 헤더 부재 검증** = HSTS / CSP / X-Frame-Options 의 응답 헤더 의 부재
+         = securityheaders.com 의 F score
+      3. **default page 검증** = mod_status / server-status 의 노출 = 운영자 의 정보
+         누출
+
+      **공격 단계**:
+      - R1: 모든 vhost 의 /.git/config GET = 응답 코드 통계
+      - R2: 모든 vhost 의 응답 의 5 보안 헤더 grep
+      - R3: 모든 vhost 의 default endpoint (/server-status, /admin) 의 GET
+
+      ### 🔵 Blue Team — 5 보안 헤더 + nginx deny rule
+
+      **탐지/검증 source**:
+      - nginx/Apache 의 config 의 `location ~ /\.git { deny all; }` rule 의 적용
+      - HTTP response 의 5 보안 헤더 (HSTS/CSP/X-Frame-Options/X-Content-Type-Options/
+        Referrer-Policy) 의 존재 검증
+      - Wazuh agent 의 web server config 의 변경 alert (syscheck)
+
+      **대응**:
+      - B1: /.git/*, /.env, /.svn/* 의 nginx deny rule 의 default 적용
+      - B2: 5 보안 헤더 의 application 의 middleware 기본 적용
+      - B3: HTTP → HTTPS 의 301 redirect 의 의무 화 + HSTS preload
+
+      ### 🟣 Purple Team — securityheaders.com A+ 목표 의 routine
+
+      **분석**:
+      - 7 vhost × 5 보안 헤더 의 매트릭스 = current state vs target (A+ score)
+      - CORS 의 * + credentials 의 불가능 조합 의 직접 확인
+      - 2023 한국 사고 = /.git 의 1억 record 유출 = 동일 패턴 의 사전 차단
+
+      **개선 cycle**:
+      1. CI 통합 = securityheaders-action 의 PR 시 자동 검증
+      2. 분기 audit = securityheaders.com A+ score 의 routine 측정
+      3. nginx config 의 default template 의 의무 화 + git audit
+      4. ZAP passive scan 의 routine 통합
+
       ## 💻 실행
       ```bash
       ssh 6v6-attacker 'for h in juice admin api sso medical govportal legacy; do

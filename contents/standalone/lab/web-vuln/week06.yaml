@@ -432,6 +432,51 @@ steps:
       Red = 송금 의 2FA bypass / 가격 변조 / rate flood 시도 / Blue = application
       logic 의 server-side 검증 / Purple = STRIDE Threat Model 의 가설 보고서.
 
+      ## 📖 시나리오 상세
+
+      ### 🔴 Red Team — 송금 workflow 의 설계 결함 의 exploit
+
+      **페르소나**: 금융 application 의 internal QA / external pen-tester. NeoBank
+      의 송금 workflow 의 설계 결함 (2FA 부재 + 가격 검증 부재 + rate limit 부재) 의
+      실제 exploit 의 시뮬.
+
+      **공격 의도**:
+      1. **rate flood (DoS 의 한 형태)** = 20 req 의 burst = rate limit 부재 가설
+         검증 = 응답 코드 의 통일 = limit 적용 X 확인
+      2. (개념 적) **2FA bypass** = 송금 endpoint 의 2FA 의무 의 코드 audit
+      3. (개념 적) **가격 변조** = client 의 amount 의 server 재계산 의 코드 audit
+
+      **공격 단계**:
+      - R1: curl 의 20 burst (parallel) = rate limit 의 응답 코드 의 통계
+      - R2: (수동) login → 송금 → 2FA prompt 의 부재 확인
+      - R3: (수동) Burp Repeater 의 amount 변조 = server 검증 확인
+
+      ### 🔵 Blue Team — application logic 의 server-side 검증
+
+      **탐지 source**:
+      - application 의 rate limit middleware (nginx limit_req 또는 application 코드)
+      - 송금 endpoint 의 2FA 의무 의 정적 코드 분석
+      - server-side 의 amount 재계산 의 코드 audit
+      - ELA log (전자금융 의 audit log) 의 비정상 거래 의 alert
+
+      **대응**:
+      - B1: rate limit 의 default 강제 (nginx limit_req 의 routine)
+      - B2: 2FA 의 의무 적용 (송금 + 권한 변경 + sensitive 행동)
+      - B3: server-side 의 amount 의 재계산 + DB 의 가격 검증
+
+      ### 🟣 Purple Team — STRIDE Threat Model 의 분기 routine
+
+      **분석**:
+      - STRIDE 6 카테고리 (Spoofing/Tampering/Repudiation/InfoDisc/DoS/Elevation) 의
+        각 항목 의 NeoBank workflow 의 매핑
+      - 가격 변조 = Tampering, rate flood = DoS, 2FA bypass = Elevation
+
+      **개선 cycle**:
+      1. 모든 새 feature 의 design 시 STRIDE review (기본 의무)
+      2. RBA 의 도입 = behavior + device + location + time 의 risk score
+      3. ELA log 의 routine audit (분기 1회) + SIEM 의 correlation rule
+      4. 전자금융감독규정 의 13/18/21 조 의 의무 의 적용
+
       ## 💻 실행
       ```bash
       # Red — 송금 rate flood (rate limit 부재 가설 검증)

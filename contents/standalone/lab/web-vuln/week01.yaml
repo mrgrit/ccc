@@ -395,6 +395,63 @@ steps:
       을 1회 직접 체험. **Red = XSS payload + SQLi 결합 1회 / Blue = ModSec
       audit log + Wazuh alert / Purple = 매치 룰 분석 + Coverage Matrix 한 줄 작성**.
 
+      ## 📖 시나리오 상세
+
+      ### 🔴 Red Team (공격자) 의 시나리오
+
+      **페르소나**: 외부 자동화 scanner (sqlmap 의 UA 사용) — Bug Bounty Hunter 또는
+      malicious external attacker 의 시뮬레이션. 본 환경 의 학습 의도 = "scanner 의
+      자동 탐지 의 ModSec 의 1차 방어 의 확인".
+
+      **공격 의도**:
+      1. **Reconnaissance 동시 검증** — 단일 페이로드 에 sqlmap UA (913 SCANNER 룰
+         매치) + XSS `<script>` (941 매치) + SQLi `UNION SELECT` (942 매치) 의 3
+         vector 결합 = ModSec CRS 의 다중 family 의 동시 동작 검증
+      2. **WAF 의 anomaly score 의 누적** = 단일 룰 매치 (score 3-5) 보다 다중 매치
+         (score 15+) 의 100% block 의 확인
+      3. **공격 timestamp 의 기록** (ATTACK_TS) = Blue/Purple step 에서 의 timestamp
+         매칭 + forensic timeline 의 base
+
+      **공격 단계**:
+      - Step R1: attacker (10.20.30.202) 에서 fw HAProxy (10.20.30.1) 의 juice.6v6.lab
+        vhost 로 GET 요청 + sqlmap/1.5 UA + XSS query string + SQLi query string
+      - Step R2: ModSec 의 inline 처리 = score 누적 → 403 Forbidden 응답 수신
+      - Step R3: 응답 시간 측정 (< 0.1s = 빠른 차단 = HAProxy 의 early reject)
+
+      ### 🔵 Blue Team (방어자) 의 시나리오
+
+      **탐지 source 의 다중 layer**:
+      1. **ModSec audit log** (web 컨테이너 의 `/var/log/apache2/modsec_audit.log`)
+         = inline detection + block 의 1차 source. JSON format 의 messages[] = 매치
+         룰 ID 의 array
+      2. **Wazuh manager 의 alerts.json** (siem 컨테이너 의 `/var/ossec/logs/alerts/
+         alerts.json`) = ModSec decoder 의 통합 + level 7+ 의 운영자 alert
+      3. **HAProxy access log** (fw 컨테이너 의 `/var/log/haproxy.log`) = L7 라우팅
+         의 정상 동작 검증 = 본 사건 의 frontend/backend 의 mapping
+
+      **대응 절차** (운영 환경 의 표준):
+      - Step B1: ModSec audit log 의 `messages[]` 의 JSON 분석 = 매치 룰 ID 확인
+      - Step B2: Wazuh dashboard 의 alert level 7+ 의 timeline 확인 + src IP 통계
+      - Step B3: HAProxy log 의 frontend/backend 의 정상 매핑 = backend 도달 X 확인
+      - Step B4: 운영자 의 인지 (slack alert 또는 email) + 1차 분류 (true positive)
+
+      ### 🟣 Purple Team (분석·개선) 의 시나리오
+
+      **분석 의도**:
+      - Red 의 3 vector 결합 의 detection coverage 의 측정 = "modSec 의 3 family 의
+        100% 매치 의 가설 의 검증"
+      - 단일 vector (XSS only 또는 SQLi only) 의 score 변화 = 다중 vector 의 누적
+        효과 의 정량 측정
+
+      **개선 cycle** (분기 routine 의 base):
+      1. **Coverage Matrix 의 작성** = "OWASP Top 10 의 10 카테고리 × ModSec CRS 의
+         20 family 의 매트릭스 + 본 환경 의 vhost 별 적용 현황"
+      2. **Gap 분석** = 매치 안 되는 카테고리 의 식별 (예: A04 Insecure Design = CRS
+         외 의 application logic 의 책임)
+      3. **룰 보완** = Gap 의 ModSec custom rule 의 추가 or application 의 보강
+      4. **재테스트** = 동일 페이로드 의 재실행 + Gap 의 closed 확인
+      5. **문서화** = KG anchor 또는 wiki 의 update = 다음 사건 의 base
+
       ## 💻 실행 명령
 
       ```bash

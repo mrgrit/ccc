@@ -157,6 +157,49 @@ steps:
       Red = login brute 10 시도 / Blue = rate limit + Wazuh sshd_failed alert /
       Purple = RBA + HIBP routine.
 
+      ## 📖 시나리오 상세
+
+      ### 🔴 Red Team — Auth 의 5 패턴 의 자동 시도
+
+      **페르소나**: credential stuffing attacker (leak DB 의 reuse) + brute force
+      bot. 정상 사용자 의 계정 takeover 의 시뮬.
+
+      **공격 의도**:
+      1. **brute force** = 5+ password 의 자동 시도 = rate limit 부재 의 검증
+      2. **credential stuffing** = leak DB 의 known password reuse = HIBP API 의
+         미통합 위험
+      3. **MFA bypass** = recovery code 의 entropy 약점 또는 TOTP secret 의 노출
+
+      **공격 단계**:
+      - R1: curl 의 5+ password 의 login 시도 = 응답 코드 통계
+      - R2: rate limit 부재 시 = 429 응답 0건 = 무제한 brute 가능
+      - R3: (개념) MFA recovery code 의 dictionary brute
+
+      ### 🔵 Blue Team — rate limit + Wazuh chain rule
+
+      **탐지 source**:
+      - application 의 rate limit middleware = 429 응답
+      - Wazuh manager 의 rule 5712 (sshd_failed) 의 chain rule
+      - HIBP API 의 password leak check (회원가입 + 변경 시)
+      - alerts.json 의 src_ip 의 burst 의 통계
+
+      **대응**:
+      - B1: rate limit 의 application 의 default 적용 (10/5분)
+      - B2: Wazuh 의 brute force chain rule 의 자동 차단
+      - B3: HIBP 의 password check 의 회원가입 의 routine
+
+      ### 🟣 Purple Team — RBA 도입 + 분기 audit
+
+      **분석**:
+      - 5 패턴 (brute/weak/MFA/session/credential stuffing) 의 detection coverage
+      - 고정 2FA 의 UX vs RBA 의 risk-based 의 trade-off
+
+      **개선 cycle**:
+      1. RBA 의 도입 = behavior + device + location + time 의 risk score
+      2. NIST 800-63 (2017) 의 새 표준 적용 = 12 char min + special X + rotation X
+      3. FIDO2 의 high-risk endpoint 의 의무 화
+      4. HIBP 의 password leak alert 의 routine
+
       ## 💻 실행
       ```bash
       ssh 6v6-attacker 'for p in 123 password admin user test; do curl -s -o /dev/null -w "$p: %{http_code}\n" -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"$p\"}" -H "Content-Type: application/json" -H "Host: juice.6v6.lab" http://10.20.30.1/rest/user/login; done'
