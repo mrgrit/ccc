@@ -1839,6 +1839,12 @@ _STANDALONE_COURSES = {
         "icon": "☁️",
         "color": "#3fb950",
     },
+    "ai-security": {
+        "title": "AI/LLM 보안 (6v6)",
+        "description": "Bastion 활용 보안 자동화 · Ollama LLM · 프롬프트 엔지니어링 · 탐지 룰 자동 생성을 6v6 컨테이너 인프라에서 실습. Training 메뉴의 ai-security 과목을 6v6 환경에 맞춰 이식.",
+        "icon": "🤖",
+        "color": "#bc8cff",
+    },
 }
 
 

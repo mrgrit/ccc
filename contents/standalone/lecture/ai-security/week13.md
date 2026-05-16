@@ -1,0 +1,645 @@
+# Week 13: 분산 지식
+
+## 학습 목표
+- 분산 지식 아키텍처의 개념과 필요성을 이해한다
+- local_knowledge.json의 구조와 역할을 파악한다
+- SubAgent 간 지식 전달(knowledge transfer) 메커니즘을 이해한다
+- 분산 지식을 활용한 보안 운영 개선을 실습한다
+
+## 실습 환경 (6v6 4-tier, 공통)
+
+학생 PC 의 `~/.ssh/config` 의 ProxyJump 설정 후 다음 표 의 컨테이너 에 `ssh
+6v6-<name>` 으로 접속.
+
+| 컨테이너 | 6v6 IP | 역할 | 접속 |
+|---------|--------|------|------|
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
+| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
+| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
+| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
+| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+
+**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
+**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+
+## 강의 시간 배분 (3시간)
+
+| 시간 | 내용 | 유형 |
+|------|------|------|
+| 0:00-0:40 | 이론 강의 (Part 1) | 강의 |
+| 0:40-1:10 | 이론 심화 + 사례 분석 (Part 2) | 강의/토론 |
+| 1:10-1:20 | 휴식 | - |
+| 1:20-2:00 | 실습 (Part 3) | 실습 |
+| 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
+| 2:40-2:50 | 휴식 | - |
+| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
+| 3:20-3:40 | 정리 + 과제 안내 | 정리 |
+
+---
+
+---
+
+## 용어 해설 (AI/LLM 보안 활용 과목)
+
+| 용어 | 영문 | 설명 | 비유 |
+|------|------|------|------|
+| **LLM** | Large Language Model | 대규모 언어 모델 (GPT, Claude, Llama 등) | 방대한 텍스트로 훈련된 AI 두뇌 |
+| **Ollama** | Ollama | 로컬에서 LLM을 실행하는 도구 | 내 PC에서 돌리는 AI |
+| **프롬프트** | Prompt | LLM에게 보내는 입력 텍스트 | AI에게 하는 질문/지시 |
+| **토큰** | Token (LLM) | LLM이 처리하는 텍스트의 최소 단위 (~4글자) | 단어의 조각 |
+| **컨텍스트 윈도우** | Context Window | LLM이 한 번에 처리할 수 있는 최대 토큰 수 | AI의 단기 기억 용량 |
+| **파인튜닝** | Fine-tuning | 사전 학습된 모델을 특정 목적에 맞게 추가 학습 | 일반의가 전공 수련 |
+| **RAG** | Retrieval-Augmented Generation | 외부 데이터를 검색하여 LLM 응답에 반영 | AI가 자료를 찾아보고 답변 |
+| **에이전트** | Agent (AI) | 도구를 사용하여 자율적으로 작업하는 AI 시스템 | AI 비서 (스스로 판단하고 실행) |
+| **도구 호출** | Tool Calling | LLM이 외부 도구/API를 호출하는 기능 | AI가 계산기를 꺼내서 계산 |
+| **하네스** | Harness | 에이전트를 관리·제어하는 프레임워크 | AI 비서의 업무 규칙·관리 시스템 |
+| **Playbook** | Playbook | 자동화된 작업 절차 (도구/스킬의 순서화된 묶음) | 표준 작업 지침서 (SOP) |
+| **PoW** | Proof of Work | 작업 증명 (해시 체인 기반 실행 기록) | 작업 일지 + 영수증 |
+| **보상** | Reward (RL) | 태스크 실행 결과에 따른 점수 (+성공, -실패) | 성과급 |
+| **Q-learning** | Q-learning | 보상을 기반으로 최적 행동을 학습하는 RL 알고리즘 | 시행착오로 최적 경로를 찾는 학습 |
+| **UCB1** | Upper Confidence Bound | 탐험(exploration)과 활용(exploitation)을 균형 잡는 전략 | "가본 길 vs 안 가본 길" 선택 전략 |
+| **SubAgent** | SubAgent | 대상 서버에서 명령을 실행하는 경량 런타임 | 현장 파견 직원 |
+
+---
+
+## 1. 왜 분산 지식이 필요한가?
+
+### 중앙 집중 vs 분산
+
+| 방식 | 장점 | 단점 |
+|------|------|------|
+| 중앙 집중 | 단일 관리 지점 | 단일 장애점, 네트워크 의존 |
+| 분산 | 네트워크 장애에 강함 | 동기화 필요 |
+
+각 SubAgent가 자신의 환경에 대한 지식을 로컬에 저장하면:
+- 네트워크 장애 시에도 기본 운영 가능
+- 로컬 컨텍스트로 더 정확한 판단
+- 중앙 서버 부하 감소
+
+---
+
+## 2. local_knowledge.json
+
+> **이 실습을 왜 하는가?**
+> "분산 지식" — 이 주차의 핵심 기술을 실제 서버 환경에서 직접 실행하여 체험한다.
+> AI/LLM 보안 활용 분야에서 이 기술은 실무의 핵심이며, 실습을 통해
+> 명령어의 의미, 결과 해석 방법, 보안 관점에서의 판단 기준을 익힌다.
+>
+> **이걸 하면 무엇을 알 수 있는가?**
+> - 이 기술이 실제 시스템에서 어떻게 동작하는지 직접 확인
+> - 정상과 비정상 결과를 구분하는 눈을 기름
+> - 실무에서 바로 활용할 수 있는 명령어와 절차를 체득
+>
+> **주의:** 모든 실습은 허가된 실습 환경(10.20.30.0/24)에서만 수행한다.
+
+각 SubAgent는 `local_knowledge.json` 파일에 로컬 지식을 저장한다.
+
+### 2.1 구조
+
+```json
+{
+  "agent_id": "http://10.20.30.1:8002",
+  "hostname": "secu",
+  "role": "nftables + Suricata IPS",
+  "last_updated": "2026-03-27T10:00:00Z",
+  "system_info": {
+    "os": "Ubuntu 22.04",
+    "kernel": "6.8.0-106-generic",
+    "services": ["nftables", "suricata", "sshd"]
+  },
+  "security_baseline": {
+    "open_ports": [22, 8002],
+    "users": ["root", "bastion", "student"],
+    "firewall_rules_count": 45
+  },
+  "learned_patterns": [
+    {
+      "pattern": "SSH brute force from 203.0.113.0/24",
+      "first_seen": "2026-03-25",
+      "action_taken": "IP blocked via nftables",
+      "effectiveness": "high"
+    }
+  ],
+  "local_policies": {
+    "auto_block_threshold": 10,
+    "alert_level_minimum": 8
+  }
+}
+```
+
+### 2.2 지식 카테고리
+
+| 카테고리 | 내용 | 갱신 주기 |
+|---------|------|----------|
+| system_info | OS, 서비스, 설정 | Explore 시 |
+| security_baseline | 포트, 사용자, 규칙 | Daemon 주기 |
+| learned_patterns | 학습된 공격 패턴 | 이벤트 발생 시 |
+| local_policies | 로컬 대응 정책 | 관리자 설정 |
+
+---
+
+## 3. Knowledge Transfer
+
+### 3.1 지식 전달 흐름
+
+```
+SubAgent A (secu)          Manager            SubAgent B (web)
+    │                         │                     │
+    │ ── 지식 공유 요청 ──→   │                     │
+    │                         │ ── 지식 전달 ──→    │
+    │                         │                     │
+    │   "secu에서 발견된       │   "secu 에서 공격    │
+    │    공격 패턴 공유"       │    패턴 수신"        │
+```
+
+### 3.2 지식 전달 시나리오
+
+> **실습 목적**: AI 시스템 전체의 보안 위협을 체계적으로 분석하는 위협 모델링을 수행하기 위해 실습한다
+>
+> **배우는 것**: STRIDE/OWASP ML Top 10 프레임워크로 AI 시스템의 위협을 분류하고, 각 위협에 대한 완화 전략을 도출하는 방법을 이해한다
+>
+> **결과 해석**: 위협 모델링 결과의 위험도(높음/중간/낮음)와 완화 전략의 실현 가능성으로 우선순위를 결정한다
+>
+> **실전 활용**: AI 서비스 출시 전 보안 검토, 보안 아키텍처 리뷰, 컴플라이언스 심사 대응에 활용한다
+
+```bash
+# secu에서 공격 패턴 발견
+KNOWLEDGE='{
+  "source": "http://10.20.30.1:8002",
+  "type": "threat_intelligence",
+  "data": {
+    "attack_type": "SSH brute force",
+    "source_ip": "203.0.113.50",
+    "timestamp": "2026-03-27T10:00:00Z",
+    "action": "blocked"
+  }
+}'
+
+# Manager를 통해 다른 SubAgent에 지식 전달
+# 실제 구현에서는 Manager API의 knowledge endpoint 사용
+```
+
+### 3.3 지식 동기화 패턴
+
+```
+시나리오: secu에서 공격 IP 차단 → web/siem에도 알림
+
+1. secu SubAgent: 공격 IP 203.0.113.50 탐지 및 차단
+2. secu → Manager: 위협 인텔리전스 공유
+3. Manager → web SubAgent: "이 IP에서 웹 공격 가능성, 모니터링 강화"
+4. Manager → siem SubAgent: "이 IP 관련 알림 우선순위 상향"
+```
+
+---
+
+## 4. LLM과 분산 지식의 결합
+
+### 4.1 로컬 지식을 LLM 프롬프트에 활용
+
+SubAgent가 수집한 로컬 지식(열린 포트, 최근 알림, 베이스라인 변경)을 LLM 프롬프트에 포함시켜 서버 맞춤형 분석을 수행한다.
+
+```bash
+# web 서버의 로컬 지식을 JSON으로 구성
+LOCAL_KNOWLEDGE='{
+  "hostname": "web",
+  "role": "웹 서버",
+  "open_ports": [22, 80, 443, 8080],
+  "recent_alerts": ["SQL Injection 시도 3건", "XSS 시도 1건"],
+  "baseline_change": "포트 8080이 새로 열림"
+}'
+
+curl -s http://10.20.30.200:11434/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"model\": \"gemma3:12b\",
+    \"messages\": [
+      {\"role\": \"system\", \"content\": \"보안 관제 에이전트입니다. 로컬 지식을 기반으로 현재 상황을 분석합니다.\"},
+      {\"role\": \"user\", \"content\": \"로컬 지식:\\n$LOCAL_KNOWLEDGE\\n\\n현재 보안 상황을 분석하고 조치가 필요한 항목을 우선순위로 나열하세요.\"}
+    ],
+    \"temperature\": 0.3
+  }" | python3 -c "import json,sys; print(json.load(sys.stdin)['choices'][0]['message']['content'])"
+```
+
+### 4.2 교차 지식 분석
+
+```bash
+# 여러 SubAgent의 지식을 통합하여 분석
+COMBINED='{
+  "secu": {"alerts": 15, "blocked_ips": 3, "top_threat": "SSH brute force"},
+  "web":  {"alerts": 8,  "blocked_ips": 1, "top_threat": "SQL Injection"},
+  "siem": {"total_events": 5000, "critical": 2, "high": 15}
+}'
+
+curl -s http://10.20.30.200:11434/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"model\": \"gemma3:12b\",
+    \"messages\": [
+      {\"role\": \"system\", \"content\": \"SOC 매니저입니다. 여러 보안 시스템의 데이터를 종합 분석합니다.\"},
+      {\"role\": \"user\", \"content\": \"3개 서버의 보안 현황:\\n$COMBINED\\n\\n종합 위협 평가와 우선 대응 사항을 제시하세요.\"}
+    ],
+    \"temperature\": 0.3
+  }" | python3 -c "import json,sys; print(json.load(sys.stdin)['choices'][0]['message']['content'])"
+```
+
+---
+
+## 5. 실습
+
+### 실습 1: 복수 자산의 로컬 지식 수집
+
+```bash
+# Bastion 에게 복수 자산의 로컬 지식을 한 번에 수집 지시
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "web과 secu 두 자산에서 hostname·kernel·listening ports 개수·보안 관련 서비스 상태를 수집해 각각 local_knowledge.json 포맷으로 정리해줘"}'
+
+# 증거 조회
+curl -s "http://10.20.30.200:8003/evidence?limit=10" | python3 -m json.tool
+```
+
+### 실습 2: 수집된 지식을 LLM에게 교차 분석 요청
+
+```bash
+# 원시 LLM 직접 호출 (Ollama :11434) — 비교 분석은 LLM이 잘한다
+curl -s http://10.20.30.200:11434/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gemma3:12b",
+    "messages": [
+      {"role": "system", "content": "분산 시스템 보안 분석가."},
+      {"role": "user", "content": "두 자산의 로컬 지식 비교:\nweb: 커널 6.8.0-106, 열린 포트 5개(22,80,443,3000,8002)\nsecu: 커널 6.8.0-106, 열린 포트 3개(22,8002,8443)\n\n각 자산 보안 수준을 평가하고 공격 표면 기준 개선 항목을 우선순위로 제시."}
+    ],
+    "temperature": 0.3
+  }' | python3 -c "import json,sys; print(json.load(sys.stdin)['choices'][0]['message']['content'])"
+```
+
+---
+
+## 6. 분산 지식의 보안 고려사항
+
+| 위험 | 대응 |
+|------|------|
+| 지식 변조 | PoW 체인으로 무결성 검증 |
+| 오래된 지식 | TTL(Time-To-Live) 설정 |
+| 과도한 공유 | need-to-know 원칙 적용 |
+| 동기화 충돌 | 타임스탬프 기반 최신 우선 |
+
+---
+
+## 핵심 정리
+
+1. 분산 지식은 각 SubAgent가 로컬 환경 정보를 자체 저장하는 구조이다
+2. local_knowledge.json에 시스템 정보, 보안 기준선, 학습된 패턴을 저장한다
+3. Manager를 통해 SubAgent 간 지식을 전달하여 전체 보안 수준을 높인다
+4. LLM 프롬프트에 로컬 지식을 포함하면 더 정확한 맥락 분석이 가능하다
+5. 지식의 무결성과 최신성을 유지하기 위한 검증 메커니즘이 필요하다
+
+---
+
+## 다음 주 예고
+- Week 14: RL Steering - 보상 함수 설계와 행동 통제
+
+---
+
+---
+
+## 심화: AI/LLM 보안 활용 보충
+
+### Ollama API 상세 가이드
+
+#### 기본 호출 구조
+
+```bash
+# Ollama는 OpenAI 호환 API를 제공한다
+# URL: http://10.20.30.200:11434/v1/chat/completions
+
+curl -s http://10.20.30.200:11434/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gemma3:12b",        ← 사용할 모델
+    "messages": [
+      {"role": "system", "content": "역할 부여"},  ← 시스템 프롬프트
+      {"role": "user", "content": "실제 질문"}      ← 사용자 입력
+    ],
+    "temperature": 0.1,            ← 출력 다양성 (0=결정론, 1=창의적)
+    "max_tokens": 1000             ← 최대 출력 길이
+  }'
+```
+
+> **각 파라미터의 의미:**
+> - `model`: 어떤 AI 모델을 사용할지. 큰 모델일수록 정확하지만 느림
+> - `messages`: 대화 내역. system(역할)→user(질문)→assistant(답변) 순서
+> - `temperature`: 0에 가까우면 같은 질문에 항상 같은 답. 1에 가까우면 매번 다른 답
+> - `max_tokens`: 출력 길이 제한. 토큰 ≈ 글자 수 × 0.5 (한국어)
+
+#### 모델별 특성
+
+| 모델 | 크기 | 응답 시간 | 정확도 | 권장 용도 |
+|------|------|---------|--------|---------|
+| gemma3:12b | 12B | ~5초 | 양호 | 분석, 룰 생성, 보고서 |
+| llama3.1:8b | 8B | ~3초 | 보통 | 빠른 분류, 검증 |
+| qwen3:8b | 8B | ~5초 | 보통 | 교차 검증 (다른 벤더) |
+| gpt-oss:120b | 120B | ~25초 | 높음 | 복잡한 분석 (시간 여유 시) |
+
+#### 프롬프트 엔지니어링 패턴
+
+**패턴 1: 역할 부여 (Role Assignment)**
+```json
+{"role":"system","content":"당신은 10년 경력의 SOC 분석가입니다. MITRE ATT&CK에 정통합니다."}
+```
+
+**패턴 2: 출력 형식 강제 (Format Control)**
+```json
+{"role":"system","content":"반드시 JSON으로만 응답하세요. 마크다운, 설명, 주석을 포함하지 마세요."}
+```
+
+**패턴 3: Few-shot (예시 제공)**
+```json
+{"role":"user","content":"예시:\n입력: SSH 실패 5회\n출력: {\"severity\":\"HIGH\",\"attack\":\"brute_force\"}\n\n이제 분석하세요: SSH 실패 20회 후 성공"}
+```
+
+**패턴 4: Chain of Thought (단계별 사고)**
+```json
+{"role":"system","content":"단계별로 분석하세요: 1)현상 파악 2)원인 추론 3)ATT&CK 매핑 4)대응 방안"}
+```
+
+### Bastion API 핵심 엔드포인트 요약
+
+```
+POST /ask / /chat        → 자연어 I/F
+GET  /evidence            → 감사 증거
+GET  /skills / /playbooks / /assets → 내부 인벤토리
+```
+
+---
+---
+
+> **실습 환경 검증 완료** (2026-03-28): Ollama 22모델(gemma3:12b ~5s), Bastion 50프로젝트, execute-plan 병렬, RL train/recommend
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+
+### CCC Bastion Agent
+> **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
+> **실행 위치:** `bastion (10.20.30.201)`  
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:11434`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `packages/bastion/agent.py` | 메인 에이전트 루프 |
+| `packages/bastion/skills.py` | 스킬 정의 |
+| `packages/bastion/playbooks/` | 정적 플레이북 YAML |
+| `data/bastion/experience/` | 수집된 경험 (pass/fail) |
+
+**핵심 설정·키**
+
+- `LLM_BASE_URL / LLM_MODEL` — Ollama 연결
+- `CCC_API_KEY` — ccc-api 인증
+- `max_retry=2` — 실패 시 self-correction 재시도
+
+**로그·확인 명령**
+
+- ``docs/test-status.md`` — 현재 테스트 진척 요약
+- ``bastion_test_progress.json`` — 스텝별 pass/fail 원시
+
+**UI / CLI 요점**
+
+- 대화형 TUI 프롬프트 — 자연어 지시 → 계획 → 실행 → 검증
+- `/a2a/mission` (API) — 자율 미션 실행
+- Experience→Playbook 승격 — 반복 성공 패턴 저장
+
+> **해석 팁.** 실패 시 output을 분석해 **근본 원인 교정**이 설계의 핵심. 증상 회피/땜빵은 금지.
+
+### Ollama + LangChain
+> **역할:** 로컬 LLM 서빙(Ollama) + 체인 오케스트레이션(LangChain)  
+> **실행 위치:** `bastion (LLM 서버)`  
+> **접속/호출:** `OLLAMA_HOST=http://10.20.30.201:11434`, Python `from langchain_ollama import OllamaLLM`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `~/.ollama/models/` | 다운로드된 모델 블롭 |
+| `/etc/systemd/system/ollama.service` | 서비스 유닛 |
+
+**핵심 설정·키**
+
+- `OLLAMA_HOST=0.0.0.0:11434` — 외부 바인드
+- `OLLAMA_KEEP_ALIVE=30m` — 모델 유휴 유지
+- `LLM_MODEL=gemma3:4b (env)` — CCC 기본 모델
+
+**로그·확인 명령**
+
+- `journalctl -u ollama` — 서빙 로그
+- `LangChain `verbose=True`` — 체인 단계 출력
+
+**UI / CLI 요점**
+
+- `ollama list` — 설치된 모델
+- `curl -XPOST $OLLAMA_HOST/api/generate -d '{...}'` — REST 생성
+- LangChain `RunnableSequence | parser` — 체인 조립 문법
+
+> **해석 팁.** Ollama는 **첫 호출에 모델 로드**가 커서 지연이 크다. 성능 실험 시 워밍업 호출을 배제하고 측정하자.
+
+---
+
+## 실제 사례 (WitFoo Precinct 6 — 분산 지식 그래프)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *여러 에이전트가 *공유* 하는 분산 KG (지식 그래프)* 학습 항목 매칭.
+
+### 분산 KG 의 필요성 — "한 에이전트의 학습이 모든 에이전트로 전파"
+
+CCC 환경에서 학생이 *수십 개의 Bastion 인스턴스* 를 운영한다고 가정하자. 각 Bastion 이 *자기만의 KG* 를 가지면 — 한 인스턴스가 새 패턴을 학습해도 *다른 인스턴스는 모름*. 결과적으로 같은 패턴을 모든 인스턴스가 *각자 다시 학습* 하는 비효율.
+
+해결책은 **분산 KG (Distributed Knowledge Graph)** — 모든 Bastion 인스턴스가 *동일한 중앙 KG 를 공유* 하며, 한 인스턴스의 학습이 즉시 KG 에 반영되어 *다른 모든 인스턴스가 이용 가능*.
+
+dataset 의 392건 Data Theft 사례를 학습한 후 — 100개 인스턴스가 각자 별개로 학습하면 *392 × 100 = 39,200 LLM 호출*. 분산 KG 면 *392 LLM 호출 1회만* 필요. *100배 효율*.
+
+```mermaid
+graph TB
+    DKG["분산 KG<br/>(중앙 공유)"]
+    B1["Bastion 1"] -->|read| DKG
+    B2["Bastion 2"] -->|read| DKG
+    B3["Bastion 3"] -->|read| DKG
+    B4["Bastion N"] -->|read| DKG
+    B1 -->|학습 결과 write| DKG
+    B2 -->|학습 결과 write| DKG
+    DKG -->|sync| B1
+    DKG -->|sync| B2
+    DKG -->|sync| B3
+    DKG -->|sync| B4
+
+    style DKG fill:#cce6ff
+```
+
+**그림 해석**: 모든 Bastion 인스턴스가 *동일 KG 에 read/write* 하며 *동기화* 된다. 한 인스턴스의 학습 결과가 즉시 다른 모든 인스턴스에 전파. 분산 시스템의 *eventual consistency* 모델.
+
+### Case 1: dataset 392건 학습 — 단일 KG vs 분산 KG 의 비용 비교
+
+| 항목 | 단일 KG (인스턴스별) | 분산 KG (공유) |
+|---|---|---|
+| LLM 호출 (100 인스턴스) | 392 × 100 = 39,200회 | 392 × 1 = 392회 |
+| 비용 (호출당 $0.001 가정) | $39.2 | $0.39 |
+| 학습 일관성 | 인스턴스마다 다름 | 모든 인스턴스 동일 |
+| 신규 인스턴스 startup | 0부터 학습 시작 | 즉시 KG 활용 |
+| 학습 매핑 | §"분산 KG 의 비용 효과" | 100배 절감 |
+
+**자세한 해석**:
+
+분산 KG 의 가장 즉각적 효과는 **비용 절감 100배**. 100개 인스턴스가 각자 학습하면 — *동일한 학습을 100번* 반복하므로 LLM 호출 비용이 100배. 분산 KG 면 *1번 학습 후 모두 공유* 하므로 1배.
+
+또 신규 인스턴스 startup 시점이 다르다 — 단일 KG 환경에서 새 Bastion 을 띄우면 *0부터 학습 시작* 해 처음 며칠은 정확도가 낮음. 분산 KG 면 *기존 KG 를 즉시 활용* 하여 *처음부터 운영 수준 정확도* 도달.
+
+학생이 알아야 할 것은 — **분산 시스템 설계의 핵심은 *학습의 공유* 다**. 같은 작업을 반복하지 않게 만드는 것이 분산화의 본질.
+
+### Case 2: 분산 KG 의 일관성 도전 — eventual consistency 의 trade-off
+
+| 항목 | strong consistency | eventual consistency |
+|---|---|---|
+| 일관성 | 모든 read 가 최신 | 약간의 지연 (~초) 후 최신 |
+| 가용성 | 일부 노드 죽으면 정지 | 일부 노드 죽어도 정상 |
+| 성능 | 느림 (write 동기) | 빠름 (write 비동기) |
+| 학습 매핑 | §"CAP theorem 적용" | 보안 시스템의 선택 |
+
+**자세한 해석**:
+
+분산 시스템의 고전적 trade-off — **CAP theorem** 에 따르면 *Consistency / Availability / Partition tolerance* 중 2가지만 동시에 선택 가능. 분산 KG 는 보통 *AP (가용성 + partition tolerance)* 를 선택한다 — *eventual consistency* 모델.
+
+이는 — 한 인스턴스가 KG 에 *새 패턴* 을 write 하면, 다른 인스턴스가 그 패턴을 read 할 수 있게 되는 데 *수 초의 지연* 이 있다. 이 지연이 보안 운영에 문제가 되는가? 일반적으로 — *사고 분석은 분 단위* 이므로 초 단위 지연은 무시 가능.
+
+그러나 *strong consistency* 가 필요한 경우도 있다 — 예: *playbook 의 v2 갱신* 직후 모든 인스턴스가 *동일한 v2* 를 사용해야 함. 이런 경우는 strong consistency 모델 (예: Raft consensus) 을 별도로 사용. 즉 *데이터 종류별로 다른 일관성 모델* 을 적용.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **분산 KG = 학습의 공유** — 100개 인스턴스 × 100배 비용 → 1배 비용으로 압축.
+2. **신규 인스턴스 startup 효율** — 0부터 학습 X, KG 즉시 활용.
+3. **CAP theorem 의 보안 적용** — eventual consistency 가 일반적 / playbook 만 strong consistency.
+
+**학생 액션**: lab 환경에서 Bastion 인스턴스 2개를 띄우고 — (1) 분산 KG (공유 SQLite) 모드, (2) 단일 KG (인스턴스별) 모드의 비교 테스트. dataset 의 100 신호를 두 모드로 처리하여 *총 LLM 호출 횟수와 학습 결과 일관성* 측정. 측정 결과를 *"우리 환경에서 분산 KG 의 효과는 lecture 가 말한 100배에 근접하는가"* 로 평가.
+
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course7 AI Security — Week 13 AI 거버넌스/규제)
+
+### AI 거버넌스 / 규제 OSS 도구
+
+| 영역 | OSS 도구 |
+|------|---------|
+| EU AI Act | **AI-Verify** (Singapore IMDA) / Microsoft RAI Toolbox |
+| NIST AI RMF | **NIST AI RMF Companion** / OSCAL profiles |
+| 모델 카드 | **model-cards-toolkit** (Google) |
+| 데이터시트 | **datasheets-for-datasets** |
+| 책임 AI | **Responsible AI Toolbox** (Microsoft) / Aequitas / Fairlearn |
+| 영향 평가 | **AI-Verify** (Singapore IMDA, free, OSS-mirror) |
+| 감사 추적 | Langfuse + OSCAL audit log |
+
+### 핵심 — Microsoft RAI Toolbox (responsibleai)
+
+```bash
+pip install responsibleai responsibleai-toolbox
+
+python3 << 'EOF'
+from responsibleai import RAIInsights
+from raiwidgets import ResponsibleAIDashboard
+
+rai_insights = RAIInsights(
+  model=trained_model,
+  train=train_df,
+  test=test_df,
+  target_column="label",
+  task_type="classification"
+)
+
+# 4 가지 분석 추가
+rai_insights.explainer.add()                                      # SHAP
+rai_insights.error_analysis.add()                                 # error tree
+rai_insights.causal.add()                                         # causal effect
+rai_insights.counterfactual.add(total_CFs=10, desired_class="opposite")
+
+rai_insights.compute()
+
+# Dashboard
+ResponsibleAIDashboard(rai_insights, locale="ko")
+EOF
+```
+
+### 학생 환경 준비
+
+```bash
+source ~/.venv-llm/bin/activate
+pip install responsibleai responsibleai-toolbox raiwidgets \
+  fairlearn aif360 \
+  model-card-toolkit datasheets-for-datasets
+
+# AI-Verify (Singapore - free)
+git clone https://github.com/IMDA-BTG/aiverify.git ~/aiverify
+```
+
+### 핵심 사용
+
+```bash
+# 1) Model Cards (Google)
+python3 << 'EOF'
+import model_card_toolkit as mctlib
+mct = mctlib.ModelCardToolkit("/tmp/model_card")
+model_card = mct.scaffold_assets()
+model_card.model_details.name = "JuiceShop XSS Classifier"
+model_card.model_details.owners = [mctlib.Owner(name="Security Team")]
+model_card.considerations.ethical_considerations = [
+  mctlib.Risk(name="Bias", mitigation_strategy="Use fairlearn weighting")
+]
+mct.update_model_card(model_card)
+mct.export_format()                                               # HTML
+EOF
+
+# 2) Fairlearn (편향 측정 / 완화)
+python3 << 'EOF'
+from fairlearn.metrics import demographic_parity_difference
+dp_diff = demographic_parity_difference(y_true, y_pred, sensitive_features=race)
+print(dp_diff)                                                    # 0 = no bias
+
+# 완화: ExponentiatedGradient
+from fairlearn.reductions import ExponentiatedGradient, DemographicParity
+mitigator = ExponentiatedGradient(estimator=clf, constraints=DemographicParity())
+mitigator.fit(X_train, y_train, sensitive_features=race_train)
+EOF
+
+# 3) AIF360 (IBM)
+python3 << 'EOF'
+from aif360.datasets import StandardDataset
+from aif360.metrics import BinaryLabelDatasetMetric
+
+dataset = StandardDataset(df, ...)
+metric = BinaryLabelDatasetMetric(dataset, ...)
+print(metric.disparate_impact())
+EOF
+
+# 4) Aequitas (US 법무부 영향 받음)
+python3 << 'EOF'
+from aequitas.audit import Audit
+audit = Audit(df, score_col="score", label_col="label", protected_col="race")
+audit.audit()
+print(audit.disparities)
+EOF
+```
+
+### EU AI Act 핵심 의무 매핑
+
+| AI Act Article | OSS 도구 |
+|----------------|---------|
+| Art.10 (Data governance) | datasheets / Great Expectations |
+| Art.11 (기술 문서) | model-cards-toolkit / OSCAL |
+| Art.12 (Logging) | Langfuse / OpenTelemetry |
+| Art.14 (Human oversight) | NeMo Guardrails Permissions |
+| Art.15 (Accuracy/Robustness) | RobustBench / TextAttack (week05) |
+| Art.16 (Cyber security) | (전체 course7 14 weekly) |
+
+학생은 본 13주차에서 **responsibleai + fairlearn + AIF360 + model-cards-toolkit + AI-Verify** 5 도구로 EU AI Act + NIST RMF 의 6 의무를 OSS 만으로 충족하는 거버넌스 흐름을 익힌다.

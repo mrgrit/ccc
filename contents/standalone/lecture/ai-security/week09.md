@@ -1,0 +1,597 @@
+# Week 09: Bastion (1) - 기본
+
+## 학습 목표
+- Bastion의 프로젝트 생명주기를 이해한다
+- dispatch와 execute-plan의 차이를 구분하고 적절히 사용한다
+- 증거(evidence) 시스템과 PoW 체인을 이해한다
+- Bastion를 활용한 보안 점검 자동화를 실습한다
+
+## 실습 환경 (6v6 4-tier, 공통)
+
+학생 PC 의 `~/.ssh/config` 의 ProxyJump 설정 후 다음 표 의 컨테이너 에 `ssh
+6v6-<name>` 으로 접속.
+
+| 컨테이너 | 6v6 IP | 역할 | 접속 |
+|---------|--------|------|------|
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
+| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
+| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
+| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
+| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+
+**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
+**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+
+## 강의 시간 배분 (3시간)
+
+| 시간 | 내용 | 유형 |
+|------|------|------|
+| 0:00-0:40 | 이론 강의 (Part 1) | 강의 |
+| 0:40-1:10 | 이론 심화 + 사례 분석 (Part 2) | 강의/토론 |
+| 1:10-1:20 | 휴식 | - |
+| 1:20-2:00 | 실습 (Part 3) | 실습 |
+| 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
+| 2:40-2:50 | 휴식 | - |
+| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
+| 3:20-3:40 | 정리 + 과제 안내 | 정리 |
+
+---
+
+---
+
+## 용어 해설 (AI/LLM 보안 활용 과목)
+
+| 용어 | 영문 | 설명 | 비유 |
+|------|------|------|------|
+| **LLM** | Large Language Model | 대규모 언어 모델 (GPT, Claude, Llama 등) | 방대한 텍스트로 훈련된 AI 두뇌 |
+| **Ollama** | Ollama | 로컬에서 LLM을 실행하는 도구 | 내 PC에서 돌리는 AI |
+| **프롬프트** | Prompt | LLM에게 보내는 입력 텍스트 | AI에게 하는 질문/지시 |
+| **토큰** | Token (LLM) | LLM이 처리하는 텍스트의 최소 단위 (~4글자) | 단어의 조각 |
+| **컨텍스트 윈도우** | Context Window | LLM이 한 번에 처리할 수 있는 최대 토큰 수 | AI의 단기 기억 용량 |
+| **파인튜닝** | Fine-tuning | 사전 학습된 모델을 특정 목적에 맞게 추가 학습 | 일반의가 전공 수련 |
+| **RAG** | Retrieval-Augmented Generation | 외부 데이터를 검색하여 LLM 응답에 반영 | AI가 자료를 찾아보고 답변 |
+| **에이전트** | Agent (AI) | 도구를 사용하여 자율적으로 작업하는 AI 시스템 | AI 비서 (스스로 판단하고 실행) |
+| **도구 호출** | Tool Calling | LLM이 외부 도구/API를 호출하는 기능 | AI가 계산기를 꺼내서 계산 |
+| **하네스** | Harness | 에이전트를 관리·제어하는 프레임워크 | AI 비서의 업무 규칙·관리 시스템 |
+| **Playbook** | Playbook | 자동화된 작업 절차 (도구/스킬의 순서화된 묶음) | 표준 작업 지침서 (SOP) |
+| **PoW** | Proof of Work | 작업 증명 (해시 체인 기반 실행 기록) | 작업 일지 + 영수증 |
+| **보상** | Reward (RL) | 태스크 실행 결과에 따른 점수 (+성공, -실패) | 성과급 |
+| **Q-learning** | Q-learning | 보상을 기반으로 최적 행동을 학습하는 RL 알고리즘 | 시행착오로 최적 경로를 찾는 학습 |
+| **UCB1** | Upper Confidence Bound | 탐험(exploration)과 활용(exploitation)을 균형 잡는 전략 | "가본 길 vs 안 가본 길" 선택 전략 |
+| **SubAgent** | SubAgent | 대상 서버에서 명령을 실행하는 경량 런타임 | 현장 파견 직원 |
+
+---
+
+## 1. Bastion 아키텍처 한눈에
+
+> **왜 배우는가.** 직접 SSH 로 명령을 치면 "누가, 언제, 어디서, 무엇을" 이 남지 않는다.
+> Bastion을 경유하면 자연어 지시 한 번이 자산 라우팅 → 명령 위임 → 결과 수집 → 증거 기록까지
+> 자동 처리된다. 감사·재현·협업의 기반이다.
+>
+> **이걸 하면 무엇을 알 수 있는가:**
+> - Bastion이 외부에 노출하는 2개의 I/F (`/ask`, `/chat`)
+> - Skill / Playbook / Assets / Evidence 개념과 조회 방법
+> - 3계층(ccc-api · Bastion · SubAgent) 역할 분담
+
+```
+ 사용자 ──(자연어)──> Bastion (manager :8003) ──(위임)──> SubAgent (각 자산 :8002)
+                        │  ├── /ask, /chat        (외부 I/F)
+                        │  ├── /skills,/playbooks (내부 도구 인벤토리)
+                        │  ├── /assets            (자산 인벤토리)
+                        │  └── /evidence          (감사 로그)
+                        └── Ollama(:11434) 로 LLM 호출
+```
+
+ccc-api(`localhost:9100`)는 학생·랩 운영을 담당하며 Bastion과는 다른 시스템이다.
+
+---
+
+## 2. 외부 I/F: `/ask`, `/chat`
+
+Bastion은 워크플로 상태머신(plan/execute/dispatch 등)을 외부에 노출하지 않는다.
+사용자는 "무엇을 원하는지"만 말하고, 계획·실행·증거화는 Bastion 내부가 담당한다.
+
+### 2.1 `/ask` — 단일 자연어 질의
+
+```bash
+# 동기 단일 응답 {"answer": "..."}
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "web 자산의 hostname과 uptime을 알려줘"}'
+```
+
+**무엇이 일어나는가:** Bastion이
+(1) 자연어에서 의도 분류 → "자산 정보 조회"
+(2) `/assets` 에서 `web → 10.20.30.80` 확인
+(3) 적절한 Skill(예: `system.status`) 선택
+(4) web SubAgent(:8002)에 명령 위임
+(5) 결과를 요약해 `answer` 로 반환
+(6) `/evidence` 에 {asset, command, exit, stdout, ts} 기록
+
+### 2.2 `/chat` — 대화형 NDJSON 스트림
+
+긴 작업·단계적 대화는 `/chat` 이 낫다. 한 줄 = 한 이벤트의 NDJSON 스트림이다.
+
+```bash
+# -N: 버퍼링 해제, 스트림 그대로 출력
+curl -N -s -X POST http://10.20.30.200:8003/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "web의 최근 로그인 이력을 점검하고, 의심 IP가 있으면 MITRE ATT&CK로 매핑해줘"}'
+```
+
+이벤트 종류(예):
+- `{"type":"think", ...}` — 추론 중간
+- `{"type":"tool", "skill":"system.status", ...}` — Skill 호출
+- `{"type":"evidence", ...}` — 증거 기록
+- `{"type":"final", "answer": "..."}` — 최종 답변
+
+---
+
+## 3. 내부 인벤토리: Skills / Playbooks / Assets
+
+### 3.1 Skill 목록
+
+Skill은 **결정론적 도구**이다. LLM이 매번 다르게 생성하는 명령이 아니라,
+파라미터만 바뀌는 재현 가능한 단위이다.
+
+```bash
+curl -s http://10.20.30.200:8003/skills | python3 -m json.tool | head -40
+```
+
+응답 예 (발췌):
+```json
+{
+  "skills": [
+    {"name": "system.status",     "risk": "low",    "params": ["asset"]},
+    {"name": "network.scan_tcp",  "risk": "medium", "params": ["asset","port"]},
+    {"name": "fw.block_ip",       "risk": "high",   "params": ["asset","ip"]},
+    {"name": "suricata.reload",   "risk": "medium", "params": ["asset"]}
+  ]
+}
+```
+
+`risk` 는 게이트 기준이다. `high`/`critical` 은 사용자 확인이 붙어야 실제 실행된다.
+
+### 3.2 Playbook 목록
+
+Playbook은 **Skill의 순서화된 묶음** — 표준 작업 지침서(SOP)이다.
+
+```bash
+curl -s http://10.20.30.200:8003/playbooks | python3 -m json.tool | head -40
+```
+
+응답 예:
+```json
+{
+  "playbooks": [
+    {"name": "baseline.web",  "steps": ["system.status","network.scan_tcp","http.headers"]},
+    {"name": "ir.block_bruteforce", "steps": ["log.fetch_recent","fw.block_ip","suricata.reload"]}
+  ]
+}
+```
+
+### 3.3 Assets — 자산 인벤토리
+
+자연어 지시에서 자산 이름만 말해도 Bastion이 IP로 변환하는 이유.
+
+```bash
+curl -s http://10.20.30.200:8003/assets | python3 -m json.tool
+```
+
+예:
+```json
+{
+  "assets": [
+    {"name":"secu","ip":"10.20.30.1","role":"firewall/ips","subagent":"http://10.20.30.1:8002"},
+    {"name":"web","ip":"10.20.30.80","role":"webapp","subagent":"http://10.20.30.80:8002"},
+    {"name":"siem","ip":"10.20.30.100","role":"siem","subagent":"http://10.20.30.100:8002"}
+  ]
+}
+```
+
+---
+
+## 4. 감사: `/evidence`
+
+`/ask`·`/chat` 호출로 발생한 모든 실행은 `/evidence` 에 남는다.
+감사·사고 조사·리플레이의 근거이다.
+
+```bash
+# 최근 20건
+curl -s "http://10.20.30.200:8003/evidence?limit=20" | python3 -m json.tool
+
+# 특정 자산의 증거
+curl -s "http://10.20.30.200:8003/evidence?asset=web&limit=10" | python3 -m json.tool
+```
+
+각 entry 필드 (예):
+```json
+{
+  "ts": "2026-04-23T10:05:11Z",
+  "asset": "web",
+  "skill": "system.status",
+  "command": "hostname && uptime",
+  "exit_code": 0,
+  "stdout_head": "web\n 10:05:11 up 3 days...",
+  "request_id": "req_...",
+  "user": "ccc"
+}
+```
+
+**왜 이게 중요한가:** 동일한 자연어 지시라도 Bastion 내부에서 어떤 Skill이 선택되고,
+어떤 명령으로 번역됐는지가 남아야 사후 감사가 가능하다. "AI가 했어요" 는 책임 소재가 된다.
+
+---
+
+## 5. Risk Level과 승인 게이트
+
+Skill/Playbook 메타데이터에는 risk 가 명시되어 있다.
+
+| 수준 | 설명 | Bastion 동작 |
+|------|------|--------------|
+| low | 읽기 전용 | 즉시 실행 |
+| medium | 설정 변경 가능 | 즉시 실행, 증거 강조 |
+| high | 서비스 영향 | `/chat` 에서 사용자 승인 이벤트 요구 |
+| critical | 파괴적 가능성 | 기본 dry-run, 명시적 승인 필요 |
+
+`/ask` 는 동기 단발이므로 high/critical 요청이 오면 "승인 필요" 응답을 돌려주고 실행하지 않는다.
+대화형 `/chat` 에서 승인 확인 이벤트를 수신해야 실제 실행된다.
+
+---
+
+## 6. 실습: 자연어 지시로 엔드투엔드 흐름 체험
+
+### 실습 1: 인프라 확인 → 단일 자연어 지시 → 증거 조회
+
+```bash
+# (1) 3계층 헬스체크
+curl -s http://localhost:9100/health -H "X-API-Key: ccc-api-key-2026" | python3 -m json.tool
+curl -s http://10.20.30.200:8003/health | python3 -m json.tool
+curl -s http://10.20.30.80:8002/health  | python3 -m json.tool
+
+# (2) Bastion에 등록된 Skill/Playbook/Asset 한 번 훑기
+curl -s http://10.20.30.200:8003/skills    | python3 -m json.tool | head -20
+curl -s http://10.20.30.200:8003/playbooks | python3 -m json.tool | head -20
+curl -s http://10.20.30.200:8003/assets    | python3 -m json.tool
+
+# (3) 자연어 지시 한 번으로 web 점검
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "web 자산의 호스트네임·커널·열린 포트·최근 로그인 5건을 요약해줘"}' \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('answer',d))"
+
+# (4) 방금 어떤 명령들이 실제 실행됐는지 증거로 확인
+curl -s "http://10.20.30.200:8003/evidence?asset=web&limit=10" | python3 -m json.tool
+```
+
+### 실습 2: 다중 자산 병렬 점검
+
+```bash
+# 한 번의 요청으로 secu/web/siem 모두 점검
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "secu/web/siem 세 자산의 상태를 병렬로 점검해줘. 각 자산의 hostname·uptime·listening ports를 표로 정리해줘"}'
+```
+
+Bastion은 자산 3개에 대한 명령 위임을 내부에서 병렬화한다. 사용자는 parallelism을 말하지 않는다.
+
+### 실습 3: 대화형 심화 — `/chat`
+
+```bash
+# 실습 2에서 이상치가 보이면 /chat 으로 파고든다
+curl -N -s -X POST http://10.20.30.200:8003/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "방금 점검 결과 중 비정상 포트를 식별하고, MITRE ATT&CK T 번호로 매핑해줘"}'
+```
+
+스트림이 끝나면 `final` 이벤트의 `answer` 가 요약이다.
+
+### 실습 4: 고위험 Skill 승인 흐름 관찰
+
+```bash
+# fw.block_ip 는 high 위험 — /ask 로는 실행되지 않고 승인 요구만 돌아와야 한다
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "secu에서 203.0.113.50 IP를 즉시 차단해줘"}'
+
+# 올바른 Bastion은 {"answer": "승인 필요: risk=high, skill=fw.block_ip ..."} 와 유사한 응답을 준다.
+# 실제 적용은 /chat 승인 이벤트로만 진행한다.
+```
+
+---
+
+## 7. 핵심 정리
+
+1. Bastion이 외부에 제공하는 I/F는 `/ask`·`/chat` 2개뿐이다. 상태머신 엔드포인트(plan/execute 등)는 없다.
+2. 자연어 지시 → 자산 라우팅 → Skill/Playbook 선택 → SubAgent 위임 → 증거 기록이 내부에서 일어난다.
+3. `/skills`, `/playbooks`, `/assets` 로 Bastion이 아는 것을 조회할 수 있다.
+4. 모든 실행은 `/evidence` 에 남아야 감사·재현이 가능하다.
+5. 고위험 Skill은 승인 게이트를 거친다. `/ask` 는 동기 단발이므로 승인 요구 응답만 돌려준다.
+
+---
+
+## 다음 주 예고
+- Week 10: Bastion (2) — Playbook·Skill의 재현성과 RL 연동
+
+---
+
+---
+
+## 심화: AI/LLM 보안 활용 보충
+
+### Ollama API 상세 가이드
+
+#### 기본 호출 구조
+
+```bash
+# Ollama는 OpenAI 호환 API를 제공한다 (포트 11434)
+# URL: http://10.20.30.200:11434/v1/chat/completions
+
+curl -s http://10.20.30.200:11434/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gemma3:12b",        ← 사용할 모델
+    "messages": [
+      {"role": "system", "content": "역할 부여"},  ← 시스템 프롬프트
+      {"role": "user", "content": "실제 질문"}      ← 사용자 입력
+    ],
+    "temperature": 0.1,            ← 출력 다양성 (0=결정론, 1=창의적)
+    "max_tokens": 1000             ← 최대 출력 길이
+  }'
+```
+
+> **각 파라미터의 의미:**
+> - `model`: 어떤 AI 모델을 사용할지. 큰 모델일수록 정확하지만 느림
+> - `messages`: 대화 내역. system(역할)→user(질문)→assistant(답변) 순서
+> - `temperature`: 0에 가까우면 같은 질문에 항상 같은 답. 1에 가까우면 매번 다른 답
+> - `max_tokens`: 출력 길이 제한. 토큰 ≈ 글자 수 × 0.5 (한국어)
+
+#### 모델별 특성
+
+| 모델 | 크기 | 응답 시간 | 정확도 | 권장 용도 |
+|------|------|---------|--------|---------|
+| gemma3:12b | 12B | ~5초 | 양호 | 분석, 룰 생성, 보고서 |
+| llama3.1:8b | 8B | ~3초 | 보통 | 빠른 분류, 검증 |
+| qwen3:8b | 8B | ~5초 | 보통 | 교차 검증 (다른 벤더) |
+| gpt-oss:120b | 120B | ~25초 | 높음 | 복잡한 분석 (시간 여유 시) |
+
+#### 프롬프트 엔지니어링 패턴
+
+**패턴 1: 역할 부여 (Role Assignment)**
+```json
+{"role":"system","content":"당신은 10년 경력의 SOC 분석가입니다. MITRE ATT&CK에 정통합니다."}
+```
+
+**패턴 2: 출력 형식 강제 (Format Control)**
+```json
+{"role":"system","content":"반드시 JSON으로만 응답하세요. 마크다운, 설명, 주석을 포함하지 마세요."}
+```
+
+**패턴 3: Few-shot (예시 제공)**
+```json
+{"role":"user","content":"예시:\n입력: SSH 실패 5회\n출력: {\"severity\":\"HIGH\",\"attack\":\"brute_force\"}\n\n이제 분석하세요: SSH 실패 20회 후 성공"}
+```
+
+**패턴 4: Chain of Thought (단계별 사고)**
+```json
+{"role":"system","content":"단계별로 분석하세요: 1)현상 파악 2)원인 추론 3)ATT&CK 매핑 4)대응 방안"}
+```
+
+### Bastion API 핵심 엔드포인트 요약
+
+```
+POST /ask          → 단일 자연어 질의, 동기 응답 {"answer": "..."}
+POST /chat         → 대화형 NDJSON 스트림
+GET  /evidence     → 과거 실행 증거 (자산·명령·exit·시각)
+GET  /skills       → 등록된 Skill(결정론 도구) 목록
+GET  /playbooks    → 등록된 Playbook(Skill 시나리오) 목록
+GET  /assets       → 자산 인벤토리 (이름↔IP↔역할)
+POST /onboard      → 신규 자산 온보딩
+GET  /health       → 헬스체크
+
+Bastion(:8003)은 내부망 접근 가정 — API 키 불필요.
+ccc-api(:9100)은 학생/랩 운영용 별도 시스템 — `X-API-Key` 필요.
+```
+
+---
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+
+### CCC Bastion Agent
+> **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
+> **실행 위치:** `bastion (10.20.30.201)`  
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://localhost:8003`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `packages/bastion/agent.py` | 메인 에이전트 루프 |
+| `packages/bastion/skills.py` | 스킬 정의 |
+| `packages/bastion/playbooks/` | 정적 플레이북 YAML |
+| `data/bastion/experience/` | 수집된 경험 (pass/fail) |
+
+**핵심 설정·키**
+
+- `LLM_BASE_URL / LLM_MODEL` — Ollama 연결
+- `CCC_API_KEY` — ccc-api 인증
+- `max_retry=2` — 실패 시 self-correction 재시도
+
+**로그·확인 명령**
+
+- ``docs/test-status.md`` — 현재 테스트 진척 요약
+- ``bastion_test_progress.json`` — 스텝별 pass/fail 원시
+
+**UI / CLI 요점**
+
+- 대화형 TUI 프롬프트 — 자연어 지시 → 계획 → 실행 → 검증
+- `/a2a/mission` (API) — 자율 미션 실행
+- Experience→Playbook 승격 — 반복 성공 패턴 저장
+
+> **해석 팁.** 실패 시 output을 분석해 **근본 원인 교정**이 설계의 핵심. 증상 회피/땜빵은 금지.
+
+---
+
+## 실제 사례 (WitFoo Precinct 6 — Bastion 기본 운영)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *Bastion 에이전트의 기본 동작과 dataset 활용* 학습 항목 매칭.
+
+### Bastion 이 dataset 을 어떻게 운영적으로 활용하는가
+
+Bastion 은 CCC 플랫폼의 *보안 운영 자동화 에이전트* 다. 단순한 LLM 호출이 아니라 — *33개의 skill (도구) + 지식 그래프 (KG) + history (회상) + ReAct loop* 를 결합한 운영 가능 수준의 시스템이다.
+
+dataset 은 Bastion 의 *학습 자료* 이자 *검증 자료* 다. Bastion 은 dataset 의 2.07M 신호를 직접 분석하지 않는다 — 너무 많아서 비용이 폭발한다. 대신 — *지식 그래프* 에 dataset 의 *추출된 패턴* 만 저장하고, 새 신호가 들어오면 KG 에서 *유사 패턴* 을 retrieval 하여 LLM 컨텍스트에 추가한다. 이것이 RAG (Retrieval Augmented Generation) 패턴이다.
+
+```mermaid
+graph LR
+    NEW["새 신호 입력"]
+    NEW -->|Bastion 받음| RECV["receive_signal"]
+    RECV -->|skill 선택| SKILL["33 skills 중 적합 선택"]
+    SKILL -->|KG 검색| KG["Knowledge Graph<br/>(dataset 패턴 저장)"]
+    KG -->|RAG retrieve| CTX["LLM context 보강"]
+    CTX -->|LLM 호출| LLM["분류/분석"]
+    LLM -->|결과| OUT["alert / action"]
+    OUT -->|학습| KG
+
+    style NEW fill:#ffe6cc
+    style KG fill:#cce6ff
+    style OUT fill:#ccffcc
+```
+
+**그림 해석**: Bastion 은 *receive → skill → KG → LLM → output → KG 학습* 의 6단계 사이클을 자동 반복한다. dataset 은 *KG 의 초기 자료* 로 들어가고, 운영 중 새로 본 신호도 KG 에 *추가 학습* 된다. 시간이 갈수록 KG 가 풍부해져 분석 정확도 상승.
+
+### Case 1: dataset 으로 KG 초기화 — 392건 Data Theft 의 패턴 추출
+
+| 항목 | 값 | 의미 |
+|---|---|---|
+| 원본 사례 | 392건 (mo_name=Data Theft) | dataset 입력 |
+| 추출 패턴 | ~10개 cluster | 비슷한 사례끼리 묶음 |
+| KG node 수 | ~50 (signal/incident/pattern) | KG 의 정량 규모 |
+| 학습 매핑 | §"KG 초기화 = 압축 학습" | 392 → 50 의 압축 |
+
+**자세한 해석**:
+
+dataset 392건의 Data Theft 사례를 그대로 KG 에 저장하면 — KG 가 너무 커지고 검색 효율이 떨어진다. 대신 *유사한 사례끼리 cluster* 로 묶어 *대표 패턴 1개* 만 KG node 로 저장하는 압축 학습이 효율적이다.
+
+예를 들어 — 392건 중 *80건이 같은 패턴 (registry token leak → ECS enumeration → data exfil)* 이라면, 이 80건은 *1개 cluster node* 로 압축. KG 에는 *"패턴 P1: token leak → ECS enum → exfil, 발생 빈도 80, 대표 신호 ID 5건"* 같은 정보만 저장.
+
+학생이 알아야 할 것은 — **KG 는 정보의 손실 없는 저장이 아니라 *유의미한 압축*** 이라는 점. 392건의 raw signal 보다 50개의 well-curated 패턴이 *분석에 더 유용*. lecture §"KG 의 압축 학습 원칙" 의 핵심.
+
+### Case 2: 새 신호의 RAG 검색 — KG 활용의 정량 효과
+
+| 항목 | RAG 미사용 | RAG 사용 (KG 검색) |
+|---|---|---|
+| context 입력 | 새 신호 1건 (~500 토큰) | 신호 + 유사 5건 (~2,500 토큰) |
+| LLM 정확도 | ~85% | ~94% |
+| 응답 시간 | ~3초 | ~5초 (검색 추가) |
+| 학습 매핑 | §"RAG 의 정량 효과" | 정확도 +9% |
+
+**자세한 해석**:
+
+새 신호 1건이 들어왔을 때 — Bastion 은 **RAG 검색** 으로 KG 에서 유사도가 높은 *5건의 과거 사례* 를 찾아 LLM context 에 함께 넣는다. 즉 LLM 은 *현재 신호 1건* 만 보는 것이 아니라 *비슷한 과거 5건의 분류 결과* 까지 함께 보고 추론한다.
+
+이 RAG 의 정량 효과는 *정확도 +9%*. 같은 LLM 이 RAG 없이 ~85% 분류하던 것을 RAG 로 ~94% 까지 올린다. 응답 시간은 검색 추가로 ~2초 늘어나지만, 정확도 향상이 더 가치 있다.
+
+학생이 알아야 할 것은 — **LLM 자체를 강화하는 것보다 *주변 시스템 (RAG, KG, history)* 을 강화하는 것이 운영 효율이 좋다** 는 점. 4B 모델 → 70B 모델 (10배 비용) 보다, 4B 모델 + RAG (1.5배 비용) 가 더 좋은 정확도를 만든다.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **Bastion = LLM + skills + KG + history + ReAct** — LLM 단독이 아닌 통합 시스템.
+2. **KG 는 압축 학습** — 392건 raw → 50개 패턴 node. 정보 손실 없는 압축이 핵심.
+3. **RAG 가 정확도 +9%** — LLM 강화보다 주변 시스템 강화가 효율적.
+
+**학생 액션**: Bastion 을 lab 에 띄우고, dataset 의 임의 50건을 신호로 입력. (a) RAG 비활성화 모드, (b) RAG 활성화 모드 두 가지로 분류시킨다. 두 모드의 정확도를 비교 측정하고 — *"우리 환경에서 RAG 의 효과가 lecture 가 말한 +9% 와 일치하는가"* 를 검증.
+
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course7 AI Security — Week 09 LLM 설명가능성)
+
+### XAI / Interpretability OSS 도구
+
+| 영역 | OSS 도구 |
+|------|---------|
+| Feature attribution | **SHAP** / **LIME** / **Captum** (PyTorch) / IntegratedGradients |
+| Transformer 내부 | **TransformerLens** (Anthropic 영향) / circuitsvis |
+| Sparse Autoencoders | **sae-lens** / dictionary_learning |
+| Probing | linear-probes / Anthropic interpretability tools |
+| Counterfactual | **DiCE** / what-if-tool |
+| Audit | InterpretML / Aequitas / Fairlearn |
+| Visualization | bertviz / circuitsvis / plotly |
+
+### 핵심 — TransformerLens (LLM 내부 분석)
+
+```bash
+pip install transformer_lens
+
+python3 << 'EOF'
+import transformer_lens
+model = transformer_lens.HookedTransformer.from_pretrained("gpt2")
+
+# Activation 추출
+text = "The Eiffel Tower is in"
+tokens = model.to_tokens(text)
+logits, cache = model.run_with_cache(tokens)
+
+# 각 layer activation
+print(cache["resid_post", 5].shape)                               # layer 5 residual
+print(cache["attn_out", 3].shape)                                 # attention output
+
+# Attention pattern 시각화
+import circuitsvis as cv
+attn = cache["pattern", 3]                                        # layer 3 attention
+cv.attention.attention_patterns(tokens=model.to_str_tokens(text), attention=attn[0])
+EOF
+```
+
+### 학생 환경 준비
+
+```bash
+source ~/.venv-llm/bin/activate
+pip install shap lime captum transformer_lens circuitsvis
+pip install sae_lens
+pip install interpret aequitas fairlearn
+pip install dice-ml
+```
+
+### 핵심 사용
+
+```bash
+# 1) SHAP (모델-agnostic feature attribution)
+python3 << 'EOF'
+import shap
+explainer = shap.Explainer(model, masker=shap.maskers.Text(tokenizer))
+shap_values = explainer(["This movie is great"])
+shap.plots.text(shap_values)
+EOF
+
+# 2) LIME
+python3 << 'EOF'
+from lime.lime_text import LimeTextExplainer
+explainer = LimeTextExplainer(class_names=["neg","pos"])
+exp = explainer.explain_instance("great movie", classifier_fn, num_features=5)
+exp.show_in_notebook()
+EOF
+
+# 3) Captum (PyTorch)
+python3 << 'EOF'
+from captum.attr import IntegratedGradients
+ig = IntegratedGradients(model)
+attributions = ig.attribute(input, target=label)
+EOF
+
+# 4) Sparse Autoencoders (Anthropic 스타일 — neuron interpretation)
+python3 << 'EOF'
+from sae_lens import SAE
+sae, cfg, _ = SAE.from_pretrained(release="gpt2-small-res-jb", sae_id="blocks.5.hook_resid_pre")
+features = sae.encode(activations)
+# 각 feature 가 무엇을 representation 하는지 분석
+EOF
+```
+
+학생은 본 9주차에서 **SHAP + LIME + TransformerLens + sae-lens + Captum** 5 도구로 LLM 의 5 단계 해석 (feature → token → layer → circuit → SAE feature) 분석을 OSS 만으로 익힌다.
