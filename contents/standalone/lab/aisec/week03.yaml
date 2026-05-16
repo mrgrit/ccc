@@ -23,9 +23,54 @@ pass_threshold: 0.7
 steps:
   - order: 1
     instruction: |
-      Wazuh alerts.json 의 export + feature 4 추출 (timestamp / rule.id / rule.level /
-      agent.name + srcip).
-    hint: jq + csv export
+      ## 🎯 MISSION — Wazuh alerts.json export + ML feature 4 추출 (timestamp / rule.id
+      / rule.level / agent.name / srcip)
+
+      Wazuh 의 raw alert 를 ML 학습 feature 4 + 1 (label 후보) 로 변환. jq + CSV
+      export. 본 step 의 출력 이 다음 step (Random Forest 학습) 의 input.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **feature** = ML 모델 의 입력. 본 step 4 종 — timestamp(시간), rule.id(분류),
+        rule.level(중요도), agent.name + srcip(출처)
+      - **jq** = JSON CLI processor. `.rule.id` syntax 로 nested 접근
+      - **CSV** = 표준 ML 데이터 형식. sklearn / pandas 가 직접 load
+      - **데이터 부재 시 2 path 정책** (CURRICULUM #7) = alerts.json 0 byte 시 fixture
+        주입 가능 (SOC lab 패턴)
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-siem 'sudo tail -100 /var/ossec/logs/alerts/alerts.json | \
+          jq -r ". | [.timestamp, .rule.id, .rule.level, .agent.name, .data.srcip // \"unknown\"] | @csv" 2>/dev/null | head -10'
+      ```
+
+      ## 📋 확인 사항
+
+      - CSV 출력 5 칼럼 (timestamp, rule_id, level, agent, srcip)
+      - 10 행 정도 (tail -100 의 jq 추출)
+      - rule.id 다양 (5710 / 5712 / 86601 등) — 분포 확인
+
+      ## 💡 왜 이걸 하는가?
+
+      ML 의 *첫 단계* = 데이터 추출 + 정규화. 본 step 의 CSV 가 step 2 의 sklearn
+      `pd.read_csv` 직접 input.
+
+      ## 🔍 결과 해석
+
+      - **정상**: CSV 10 행 + rule.id 다양 분포
+      - **출력 비어 있음**: alerts.json 0 byte (CURRICULUM #7 데이터 부재) →
+        fixture 주입 `python3 scripts/lab_fixture_inject.py --lab ... --ssh`
+      - **모든 srcip = "unknown"**: alert 가 Suricata/Wazuh 자체 alert (srcip 없음)
+        만 — outbound traffic 추가 시도
+
+      ## 비정상 시 대응
+
+      - **jq 명령 없음** — `apt install jq`
+      - **alerts.json 권한** — siem 컨테이너 root 로 실행
+      - **CSV escape 오류** — jq 의 `@csv` 가 자동 처리. 단 한국어 필드 면 quote 추가 필요
+    hint: |
+      jq alerts.json → CSV 4 feature + srcip. ML input.
     category: analysis
     points: 20
     answer: |
@@ -51,8 +96,46 @@ steps:
     target_vm: siem
 
   - order: 2
-    instruction: Python ML — Random Forest 학습 + Feature Importance
-    hint: scikit-learn RandomForestClassifier
+    instruction: |
+      ## 🎯 MISSION — Python ML 의 Random Forest 학습 + Feature Importance 분석
+
+      sklearn 의 RandomForestClassifier 로 supervised ML 학습 → train/test split →
+      accuracy + feature importance 측정. ML 의 *가장 표준* 흐름 hands-on.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **Random Forest** = 100 개 의 decision tree 의 *앙상블*. 단일 tree 보다 안정
+      - **train_test_split** = 데이터 의 30% 를 *evaluation* (test) 으로 분리
+      - **feature_importances_** = 각 feature 가 예측 에 기여 한 비율 (0-1)
+      - **accuracy** = (정답 / 전체) — 본 demo 의 toy data 라 1.0 정상
+
+      ## 💻 실행 명령
+
+      위 answer 의 Python 코드 를 `/tmp/ml_demo.py` 로 저장 + 실행.
+
+      ## 📋 확인 사항
+
+      - Accuracy 출력 (toy data 라 0.7-1.0)
+      - Feature importance 3 행 (srcip_external / failed_count / time_burst)
+      - failed_count 의 importance 가 가장 높음 (직관 — 시도 횟수 가 가장 강한 시그널)
+
+      ## 💡 왜 이걸 하는가?
+
+      ML 의 *표준 패턴 hands-on*. 본 toy demo 가 *real Wazuh 데이터* (step 1 의 CSV
+      output) 와 같은 흐름 — feature → label → fit → predict → importance.
+
+      ## 🔍 결과 해석
+
+      - **정상**: Accuracy 1.0 + failed_count importance 가장 높음
+      - **Accuracy < 0.7**: random_state 변경 후 재시도 (toy data 의 통계 변동)
+      - **importance 모두 비슷**: feature 들 이 *상관* 또는 *redundant*
+
+      ## 비정상 시 대응
+
+      - **sklearn 미설치** — `pip install scikit-learn pandas`
+      - **import error** — Python 3.8+ 필요
+    hint: |
+      sklearn RandomForestClassifier + feature_importances_ + accuracy.
     category: ml
     points: 25
     answer: |
@@ -102,9 +185,47 @@ steps:
 
   - order: 3
     instruction: |
-      Isolation Forest — novel attack 의 이상 탐지. 정상 데이터 학습 + 새 데이터
-      평가.
-    hint: sklearn IsolationForest
+      ## 🎯 MISSION — Isolation Forest 의 novel attack 이상 탐지 (unsupervised)
+
+      Isolation Forest = *unsupervised* 이상 탐지. *정상 데이터 만* 학습 → 새 데이터
+      의 *정상도 score* 출력. step 2 의 supervised RF 와 *대조 학습*.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **Isolation Forest** = 무작위 partition tree — anomaly 는 *짧은 path* 로 분리
+      - **contamination** = 학습 데이터 중 *예상 anomaly 비율* (0.1 = 10%)
+      - **decision_function** = score (음수 = 이상, 양수 = 정상)
+      - **predict** = -1 (이상) 또는 1 (정상)
+      - **supervised vs unsupervised** = supervised (label 필요) vs unsupervised (label X) — 신규 공격 (zero-day) 에는 unsupervised 가 더 강력
+
+      ## 💻 실행 명령
+
+      위 answer 의 Python 코드 를 `/tmp/iso.py` 로 저장 + 실행.
+
+      ## 📋 확인 사항
+
+      - X_train 5 행 (4 정상 + 1 outlier)
+      - X_test 2 행 — 정상 1 + 이상 1
+      - decision_function score 출력 (정상 양수 / 이상 음수)
+      - predict 결과: [1, -1]
+
+      ## 💡 왜 이걸 하는가?
+
+      *zero-day 공격* 의 탐지 = supervised 불가 (label 없음) → unsupervised 만. Wazuh
+      알려진 rule 외 의 *행동 anomaly* 탐지 의 표준 도구.
+
+      ## 🔍 결과 해석
+
+      - **정상**: predict [1, -1] (정상 / 이상)
+      - **predict 모두 1**: contamination 너무 작거나 학습 데이터 가 너무 다양
+      - **predict 모두 -1**: contamination 너무 크거나 outlier 가 dominant
+
+      ## 비정상 시 대응
+
+      - **score 가 너무 작음** — 데이터 scale 차이 (`StandardScaler` 적용 권장)
+      - **차원 의 저주** — feature 100+ 시 PCA 등 차원 축소 권장
+    hint: |
+      Isolation Forest (unsupervised) + contamination + score + predict.
     category: ml
     points: 20
     answer: |
@@ -152,9 +273,46 @@ steps:
 
   - order: 4
     instruction: |
-      LLM 의 6 프롬프트 기법 — Zero/Few/CoT 의 3 동일 task 의 응답 비교.
+      ## 🎯 MISSION — LLM 의 3 프롬프트 기법 비교 (Zero-shot / Few-shot / Chain of Thought)
+
+      동일 보안 task (SSH log 분석 / 위험도 / SQLi 분석) 를 3 다른 prompt 기법 으로
+      LLM 호출 → 응답 품질 비교. *prompt engineering* 의 가장 기본 학습.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **Zero-shot** = 예시 없이 직접 질문. 가장 단순
+      - **Few-shot** = 1-5 개 *예시* 를 prompt 에 포함. 패턴 학습 능력
+      - **CoT (Chain of Thought)** = "step-by-step 분석" 같은 *추론 강제*. 복잡 task 의 정확도 ↑
+      - **temperature** = 본 step 은 *기법 차이* 비교 → 0.3 고정 권장
+
+      ## 💻 실행 명령
+
+      위 answer 의 3 curl 명령 순차 실행. 각 응답 길이 / 정확도 / 형식 비교.
+
+      ## 📋 확인 사항
+
+      - Zero-shot — 짧고 일반적 응답
+      - Few-shot — 예시 패턴 따라 *위험도: low/medium/high* 형식 응답
+      - CoT — step-by-step 의 *4 단계 분석* (syntactic / 타입 / DB / ModSec)
+      - 3 기법 응답 *명확히 다름* 인지
+
+      ## 💡 왜 이걸 하는가?
+
+      LLM 사용 의 *효과 = 80% prompt 의 quality*. 본 step 의 3 기법 차이 가 *실
+      운영* 의 응답 품질 결정. CCC Bastion 도 ReAct (CoT 변형) 사용.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 3 기법 응답 다름 + CoT 가 가장 길고 구체적
+      - **3 응답 모두 비슷**: temperature 너무 낮음 또는 모델 한계
+      - **CoT 응답 짧음**: prompt 의 step 명시 부족
+
+      ## 비정상 시 대응
+
+      - **응답 영어** — `한국어로` 명시 또는 system message 사용 (`/api/chat`)
+      - **5 분 이상 latency** — GPU 부하, cooling 후 재시도
     hint: |
-      curl http://192.168.0.109:11434/api/generate -d ...
+      3 기법 (Zero/Few/CoT) × 동일 task → 응답 quality 비교.
     category: experiment
     points: 25
     answer: |
@@ -201,8 +359,50 @@ steps:
 
   - order: 5
     instruction: |
-      안전 prompt template + role separation + instruction injection 회피 시뮬.
-    hint: system + user message 의 strict separation
+      ## 🎯 MISSION — 안전 prompt template + role separation + instruction injection
+      회피 시뮬
+
+      LLM 의 system / user / assistant role *strict separation* 으로 *instruction
+      injection* (user 가 system prompt 변경 시도) 회피. /api/chat (multi-turn)
+      활용.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **role separation** = system (운영자 의도) vs user (입력) 의 *명확 분리*. 권한 위계
+      - **instruction injection** = user message 안에 "system prompt 무시하고 X" 같은
+        악의 명령
+      - **회피** = system message 에 *명시적 금지* + role boundary 유지
+      - **W14 RAG judge** 와 연결 = 본 step 의 *기본 회피* + W14 의 *LLM-as-Judge 사전
+        검증*
+
+      ## 💻 실행 명령
+
+      위 answer 의 /api/chat 호출 — instruction injection 시도 prompt → 모델 의
+      *거부* 응답 확인.
+
+      ## 📋 확인 사항
+
+      - 응답 에 *거부 의사* (예: "제공할 수 없습니다 / 학습 환경 외 ...")
+      - SQLi 공격 코드 *생성 X* (응답 길이 매우 짧음 정상)
+      - system prompt 의 강제 효과 인지
+
+      ## 💡 왜 이걸 하는가?
+
+      LLM *production 의 가장 흔한 공격* = instruction injection. 본 step 의 role
+      separation 이 *기본 방어*. 단 *100% 방어 X* — W14 의 RAG judge 도 함께 필요.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 모델 거부 + 학습 환경 명시
+      - **모델 이 SQLi 코드 출력**: system message 약함 — 더 강한 거부 표현
+      - **모델 가 system prompt 변경 시도**: 더 강력 한 model 또는 추가 guardrail 필요
+
+      ## 비정상 시 대응
+
+      - **모델 가 instruction injection 에 취약**: 약한 모델 (예: gemma3:4b) 의 한계.
+        W08 의 unsafe 모델 비교 학습 으로 연결
+    hint: |
+      /api/chat + system message 의 strict role + injection 거부 검증.
     category: synthesis
     points: 10
     answer: |
