@@ -343,8 +343,8 @@ Ollama는 두 가지 API 형식을 지원한다:
 > **실전 활용**: 보안 관제에서 대량 로그 분석, 경보 요약, Suricata 룰 생성 등에 로컬 LLM을 활용하면 비용 절감과 데이터 주권을 동시에 확보할 수 있다.
 
 ```bash
-# bastion 서버에 SSH 접속
-ssh ccc@10.20.30.201
+# bastion 컨테이너 에 SSH 접속 (ProxyJump)
+ssh 6v6-bastion
 ```
 
 ```bash
