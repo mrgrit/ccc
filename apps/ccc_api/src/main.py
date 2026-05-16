@@ -1875,6 +1875,12 @@ _STANDALONE_COURSES = {
         "icon": "📡",
         "color": "#3fb950",
     },
+    "ai-safety-adv": {
+        "title": "AI Safety 심화 (6v6)",
+        "description": "Advanced AI Safety — 정렬(Alignment) · 해석가능성 · 거버넌스 · 평가 · 배포 안전 등을 6v6 컨테이너 인프라에서 실습. Training 메뉴의 ai-safety-adv 과목을 6v6 환경에 맞춰 이식.",
+        "icon": "🛡️",
+        "color": "#bc8cff",
+    },
 }
 
 
