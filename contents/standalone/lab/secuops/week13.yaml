@@ -688,24 +688,92 @@ steps:
 
   - order: 6
     instruction: |
-      ## 🎯 MISSION — 운영 사고 분석 + 권장
+      ## 🎯 MISSION — 운영 사고 분석 (3 실 사례) + 근본 해결
 
-      lecture §8.2 의 3 사례.
+      OpenCTI 의 실 운영 중 발생하는 *3 대표 사고* 의 *증상 → 원인 → 단기 → 장기*
+      해결 의 4 단계 분석. 운영 엔지니어 가 *처음 인수* 받을 때 *반드시* 학습해야
+      할 패턴.
 
-      ## 💻 산출물
+      ## 📚 사전 학습 — 운영 사고 의 3 카테고리
 
+      | 카테고리 | 예시 사고 | 영향 |
+      |---------|----------|------|
+      | **noise** | Connector feed 폭증 | dashboard 과부하, false positive ↑, 분석가 alert fatigue |
+      | **growth** | IOC retention 부재 | 디스크 100GB+, query 속도 ↓, backup 부담 |
+      | **rate** | API 호출 한도 | enrichment 대기열, 분석가 timeout |
+
+      ## 💻 산출물 (3 사례 × 4 단계 표)
+
+      ```markdown
+      ## 사례 1 — Connector noise 폭증
+
+      | 단계 | 내용 |
+      |------|------|
+      | 증상 | OTX Pulse 활성 → 분당 1000+ indicator → CDB 갱신 부담 |
+      | 원인 | filter 미설정 (low confidence + reblog 포함) |
+      | 단기 | OTX connector 일시 정지 + manual CDB 정리 |
+      | 장기 | filter (confidence ≥ 80 only) + 30분 interval + worker scale |
+      | 모니터 | OpenCTI 의 `daily indicator count` 차트 + Wazuh CDB list 크기 |
+
+      ## 사례 2 — IOC retention 부재
+
+      | 단계 | 내용 |
+      |------|------|
+      | 증상 | 1년 누적 후 Elasticsearch index 100GB+, query 속도 5초+ |
+      | 원인 | retention 정책 없이 *모든* indicator 영구 보관 |
+      | 단기 | manual `valid_until < now - 30 days` indicator 삭제 |
+      | 장기 | OpenCTI Settings → retention policy (per type: indicator 30 일, observable 90 일) + auto-expire stream |
+      | 모니터 | Elasticsearch `_cat/indices` 의 docs.count + store.size |
+
+      ## 사례 3 — VT API rate limit
+
+      | 단계 | 내용 |
+      |------|------|
+      | 증상 | enrichment 대기열 분당 100+ pending, 분석가 timeout (3분 이상) |
+      | 원인 | 무료 plan 4 req/min × N 분석가 → 동시 호출 폭증 |
+      | 단기 | enrichment 우선순위 queue (alert level > 7 만) |
+      | 장기 | VT 유료 plan 또는 self-hosted ClamAV/MalwareBazaar 대체 |
+      | 모니터 | VT connector 의 `quota_remaining` (response header) + 일일 quota |
       ```
-      사례 1 — Connector noise 폭증:
-        문제: OTX 활성 → 분당 1000+ → CDB 갱신 부담
-        해결: filter (high confidence only) + 30분 interval
-      사례 2 — IOC retention 부재:
-        문제: 1년 누적 100MB+
-        해결: 30일 retention + auto-expire
-      사례 3 — VT API rate limit:
-        문제: 분당 4 query → 대기열 폭증
-        해결: 유료 plan 또는 우선순위
+
+      ## 💻 검증 명령 (운영 환경 의 *모니터 지표* 측정)
+
+      ```bash
+      # Elasticsearch 인스턴스 (OpenCTI 사용) 의 indices size
+      ssh 6v6-siem 'curl -s http://localhost:9200/_cat/indices?v 2>/dev/null | head -10 || echo "elasticsearch 미운영 (정상)"'
+
+      # CDB list 의 *현재 크기*
+      ssh 6v6-siem 'sudo ls -la /var/ossec/etc/lists/ 2>/dev/null | head -5'
+
+      # disk usage (성장 추적 baseline)
+      ssh 6v6-siem 'df -h /var/ossec 2>/dev/null | head -3'
       ```
-    hint: '3 사고 사례 + 해결'
+
+      ## 📋 확인 사항
+
+      - 3 사례 × 4 단계 = 12 셀 모두 채움
+      - 모니터 지표 *구체적* (count / size / quota 등)
+      - 단기 vs 장기 *구분* — 단기 = 즉시 적용, 장기 = 정책 변경
+      - 3 검증 명령 응답 (없어도 *왜* 인지)
+
+      ## 💡 왜 이걸 하는가?
+
+      운영 엔지니어 *인수* 시점에 *3 대표 사고* 의 패턴을 인지해야 *예방* 가능. 본
+      step 의 12 셀 표 가 *day-1 운영 매뉴얼* 의 핵심. 사고 발생 후 *학습* 보다
+      *사전 인지* 가 훨씬 효율적.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 12 셀 + 모니터 지표 + 3 검증
+      - **Elasticsearch 미운영**: OpenCTI 실 인스턴스 부재 — 본 lab 은 *사례 학습*
+
+      ## 비정상 시 대응
+
+      - **3 사례 외 추가 사고** 발견 시 — 사례 4 (worker crash) / 사례 5
+        (Connector exception loop) 등 확장 작성 권장. lecture §8.3 의 *추가 패턴* 참고.
+    hint: |
+      3 사례 × 4 단계 (증상/원인/단기/장기) + 모니터 지표 + 3 검증. day-1 운영
+      매뉴얼 의 핵심.
     category: operations
     points: 12
     answer: |
@@ -735,21 +803,98 @@ steps:
 
   - order: 7
     instruction: |
-      ## 🎯 MISSION — W13 종합 보고서
+      ## 🎯 MISSION — W13 종합 보고서 작성
+
+      STEP 1~6 의 산출물 을 *임원 보고용 8 섹션 마크다운* 으로 통합. 분석가 본인 의
+      *학습 gap* 도 포함 — 다음 주차 (W14 MISP) 진입 전 의 self-assessment.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      종합 보고서 의 *2 청자* — (1) CISO/임원 (관리적 결정 필요) + (2) 분석가 본인
+      (운영 인수 인계). 본 보고서 는 *둘 다 만족* 하도록 작성:
+      - 임원 — Executive Summary + Coverage + Gap + 다음 분기 계획
+      - 분석가 — 8 connector 매트릭스 + Python 코드 + 6 UI workflow + 사고 사례
+
+      ## 💻 산출물 (8 섹션 마크다운)
 
       ```markdown
       # 6v6 W13 OpenCTI 운영 보고서
 
-      ## 1. STEP 1-6 결과
-      ## 2. 4 external + 3 enrichment + 1 stream connector 매트릭스
-      ## 3. Python Stream Connector 골격
-      ## 4. 6 UI 화면 + MITRE Navigator 통합
-      ## 5. R/B/P enrichment 흐름
-      ## 6. 운영 사고 3 + 해결
-      ## 7. W14 (MISP) 준비도
-      ## 8. 본인 학습 gap
+      ## 1. Executive Summary
+      - 본 주차 : 4 external + 3 enrichment + 1 stream connector 활성 계획 수립
+      - Coverage 추정: MITRE ATT&CK 174 TTP 중 67 탐지 (38.5%)
+      - Critical gap: T1078 (Valid Accounts) / T1133 (External RS) / T1190 (Public-Facing) 미탐지
+      - 다음 주차 (W14) — MISP 양방향 sync 로 *국제 sharing* 추가
+
+      ## 2. STEP 1 — 4 external Connector 매트릭스
+      | MITRE / OTX / URLhaus / AbuseIPDB |
+      | API key 발급 + retention + 우선순위 + endpoint 접근 결과 |
+
+      ## 3. STEP 2 — 3 enrichment Connector 시나리오
+      | VT / GeoIP / WHOIS |
+      | 활용 시나리오 + rate limit + 우선순위 |
+
+      ## 4. STEP 3 — Python Stream Connector 코드
+      - 6 핵심 요소 (filter / valid_from / diff / pattern split / reload / polling)
+      - syntax 검증 결과
+      - production 전환 시 (config / log / retry) 추가 사항
+
+      ## 5. STEP 4 — 6 UI workflow + MITRE Navigator
+      - 분석가 일일 사용 시점
+      - Coverage Report (174 TTP / 67 탐지 / 107 gap)
+
+      ## 6. STEP 5 — R/B/P enrichment 흐름
+      - 4 단계 시나리오 (Red → Blue×2 → Enrichment → Purple)
+      - 5 context (GeoIP / WHOIS / VT / Tags / MITRE)
+      - level 격상 의 2 단계 (3 → 10 → 12)
+
+      ## 7. STEP 6 — 운영 사고 3 + 해결
+      - noise / growth / rate 3 카테고리
+      - 12 셀 (3 사례 × 4 단계)
+      - 모니터 지표 — daily count / index size / quota_remaining
+
+      ## 8. 본인 학습 gap + W14 준비도
+
+      ### 학습 gap
+      - [ ] OpenCTI 실 인스턴스 docker-compose 배포 경험
+      - [ ] pycti SDK 의 *실 indicator.list filter* 작성
+      - [ ] STIX 2.1 pattern 의 *복합 조건* (AND/OR)
+      - [ ] Wazuh custom rule 100100 의 *실 정의* + libxml2 syntax
+
+      ### W14 준비도
+      - MISP vs OpenCTI 의 *역할 차이* 인지: MISP=공유, OpenCTI=분석
+      - 양방향 sync 의 *충돌 해결* 정책 사전 학습
+      - Threat Hunting query (Wazuh + OpenCTI 결합) 준비
       ```
-    hint: 마크다운
+
+      ## 💻 검증 명령 (보고서 작성 산출물 의 *구조* 검증)
+
+      ```bash
+      # 산출물 을 /tmp/w13-report.md 저장 후 markdown 의 *섹션 수* + *행 수* 확인
+      ssh 6v6-bastion 'wc -l /tmp/w13-report.md 2>/dev/null && grep -c "^## " /tmp/w13-report.md 2>/dev/null'
+      ```
+
+      ## 📋 확인 사항
+
+      - 8 섹션 (`## 1. ... ## 8.`) 모두 존재
+      - 각 섹션 5+ 라인
+      - Executive Summary 의 *coverage 수치* 명시
+      - 학습 gap 의 *checkbox* 4 항목 이상
+      - W14 (MISP) 준비도 *3 항목 이상*
+
+      ## 💡 왜 이걸 하는가?
+
+      종합 보고서 가 *주간 마무리* 의 핵심 — *임원 보고* + *본인 self-review* + *다음
+      주차 진입 준비* 의 3 효용. 본 보고서 가 *교과 평가* 의 핵심 산출물.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 8 섹션 + 30+ 라인 + 다음 주차 준비도
+      - **8 섹션 미만**: 누락 섹션 추가
+      - **gap checkbox 없음**: self-assessment 누락 — 학습 의 가장 중요 요소
+    hint: |
+      8 섹션 종합 보고서 + Executive Summary + 학습 gap checkbox + W14 준비도.
+      임원 + 본인 의 2 청자 만족.
     category: synthesis
     points: 15
     answer: |
