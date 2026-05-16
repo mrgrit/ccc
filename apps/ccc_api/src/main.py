@@ -1881,6 +1881,12 @@ _STANDALONE_COURSES = {
         "icon": "🛡️",
         "color": "#bc8cff",
     },
+    "agent-ir": {
+        "title": "AI Agent 침해대응 (6v6)",
+        "description": "AI Agent Incident Response — 에이전트 IR runbook · ATLAS 매핑 · forensics · 가드레일 강화를 6v6 컨테이너 인프라에서 실습. Training 메뉴의 agent-ir 과목을 6v6 환경에 맞춰 이식.",
+        "icon": "🚨",
+        "color": "#bc8cff",
+    },
 }
 
 
