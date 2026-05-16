@@ -1857,6 +1857,12 @@ _STANDALONE_COURSES = {
         "icon": "⚡",
         "color": "#bc8cff",
     },
+    "ai-agent": {
+        "title": "AI 보안 에이전트 (6v6)",
+        "description": "AI 에이전트 기본 · 하네스 구축 · 멀티에이전트 · RAG · 에이전트 보안 을 6v6 컨테이너 인프라에서 실습. Training 메뉴의 ai-agent 과목을 6v6 환경에 맞춰 이식.",
+        "icon": "🕹️",
+        "color": "#bc8cff",
+    },
 }
 
 
