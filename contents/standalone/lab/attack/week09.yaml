@@ -19,36 +19,71 @@ steps:
     instruction: |
       ## 🎯 MISSION
 
-      attacker 에서 **tcpdump** 로 외부 트래픽 10 packet 캡처 + BPF filter 적용.
+      attacker 에서 **tcpdump** 로 트래픽 캡처 + BPF filter 적용. **idle 네트워크
+      에서는 패킷 0** 이 정상 — 학생이 *동시에 트래픽 생성* (curl backgrouund) 후
+      캡처 가 표준 워크플로우.
 
-      ## 💻 실행 명령
+      ## 💻 실행 명령 (트래픽 생성 + 캡처 동시)
 
       ```bash
-      ssh 6v6-attacker 'sudo timeout 5 tcpdump -ni eth0 -c 10 2>&1 | tail -15'
-      echo "--- TCP port 80 만 ---"
-      ssh 6v6-attacker 'sudo timeout 5 tcpdump -ni eth0 "tcp port 80" -c 5 2>&1 | tail -10'
+      # 1) idle 캡처 — 0 packet 정상
+      ssh 6v6-attacker 'sudo timeout 3 tcpdump -ni eth0 -c 5 2>&1 | tail -8'
+
+      # 2) curl 트래픽 발생 + 동시 캡처 (BPF tcp port 80)
+      ssh 6v6-attacker '
+        (sleep 1 && for i in 1 2 3 4 5; do curl -s -o /dev/null -H "Host: juice.6v6.lab" "http://10.20.30.1/" & done; wait) &
+        sudo timeout 5 tcpdump -ni eth0 "tcp port 80" -c 10 2>&1 | tail -15
+      '
+
+      # 3) pcap 저장 (Wireshark 후속 분석)
+      ssh 6v6-attacker '
+        (sleep 1 && curl -s -o /dev/null -H "Host: juice.6v6.lab" "http://10.20.30.1/") &
+        sudo timeout 5 tcpdump -ni eth0 "tcp port 80" -c 10 -w /tmp/cap.pcap 2>&1 | tail -3
+        sudo ls -la /tmp/cap.pcap
+      '
       ```
 
       ## 📋 확인 사항
 
-      - 10 packet 캡처 (IP / ARP / ICMP 등)
-      - BPF filter "tcp port 80" 적용 시 80 port 만 출력
+      - 1) **0 packets captured** — idle 네트워크 의 정상 결과 (학생이 *왜 0* 이해)
+      - 2) **5+ packet** + 모두 `tcp port 80` — BPF filter 동작 확인
+      - 3) **pcap 파일** 생성 + sizes > 0 — Wireshark 후속 가능
 
       ## 💡 왜 이걸 하는가?
 
-      packet 레벨 분석 — 모든 네트워크 공격의 기본 도구.
+      packet 레벨 분석은 *트래픽이 있을 때* 만 의미. 학생이 *idle vs active* 의 차이
+      인지 + *트래픽 생성 + 캡처 동시* 의 표준 워크플로우 습득.
 
       ## 🔍 결과 해석
 
-      - **정상**: 10 packet + BPF filter 5 packet
-      - **운영 권장**: -w pcap 으로 Wireshark 후속 분석
-    hint: tcpdump + BPF filter
+      - **정상**: 1) 0 packet (idle) 2) 5+ packet (curl 트리거) 3) pcap 파일 생성
+      - **2) 도 0 packet** — curl 가 다른 interface (lo 등) 사용. `-i any` 로 재시도.
+      - **운영 권장**: pcap → Wireshark / tshark 의 IO Graph / Follow Stream 분석
+
+      ## 비정상 시 대응
+
+      - **tcpdump: permission denied** — `sudo` 또는 `setcap cap_net_raw+ep
+        /usr/bin/tcpdump`
+      - **No such device eth0** — `ip addr` 로 interface 명 확인 (eth0/ens3/etc)
+    hint: |
+      tcpdump idle = 0 packet 정상. 트래픽 생성 (curl &) + 캡처 동시 = 표준.
+      `-w pcap` 으로 Wireshark 후속.
     category: capture
     points: 20
     answer: |
-      ssh 6v6-attacker 'sudo timeout 5 tcpdump -ni eth0 -c 10 2>&1 | tail -15'
-      ssh 6v6-attacker 'sudo timeout 5 tcpdump -ni eth0 "tcp port 80" -c 5 2>&1 | tail -10'
-    answer_detail: tcpdump 기본 + BPF filter.
+      ssh 6v6-attacker 'sudo timeout 3 tcpdump -ni eth0 -c 5 2>&1 | tail -5'
+      ssh 6v6-attacker '
+        (sleep 1 && for i in 1 2 3 4 5; do curl -s -o /dev/null -H "Host: juice.6v6.lab" "http://10.20.30.1/" & done; wait) &
+        sudo timeout 5 tcpdump -ni eth0 "tcp port 80" -c 10 2>&1 | tail -15
+      '
+      ssh 6v6-attacker '
+        (sleep 1 && curl -s -o /dev/null -H "Host: juice.6v6.lab" "http://10.20.30.1/") &
+        sudo timeout 5 tcpdump -ni eth0 "tcp port 80" -c 10 -w /tmp/cap.pcap 2>&1 | tail -3
+        sudo ls -la /tmp/cap.pcap
+      '
+    answer_detail: |
+      3-step — (1) idle 0 packet (2) curl 트리거 + BPF filter (3) pcap 저장. idle
+      vs active 의 차이 인지 + 표준 워크플로우.
     verify:
       type: output_contains
       expect: IP
