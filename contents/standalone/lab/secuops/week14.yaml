@@ -442,37 +442,148 @@ steps:
 
   - order: 4
     instruction: |
-      ## 🎯 MISSION — Sighting + Report STIX object 작성
+      ## 🎯 MISSION — Sighting + Report **STIX 2.1 object** 작성 + 의미 학습
+
+      STIX 2.1 의 *35 객체* 중 분석가 가 가장 자주 작성 하는 2 객체 — **Sighting**
+      (IOC 매치 증거) + **Report** (분석 결과 묶음). 본 step 은 둘 의 *역할 분담*
+      + *필수 필드* + *관계* 학습.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      | 객체 | 의미 | 누가 작성 | 언제 작성 |
+      |------|------|----------|----------|
+      | **Sighting** | "이 IOC 를 *내 환경* 에서 봄" 의 *증거* | 분석가 (자동 가능) | alert 매치 시 |
+      | **Report** | "본 incident 의 *종합 분석* 결과" | 분석가 (수동) | hunting / incident 마무리 |
+
+      ### 두 객체 의 관계
+      - Sighting 은 *단일 indicator 의 매치* — 작고 자주 발생
+      - Report 는 *N 개 객체 의 묶음* (Sighting + Indicator + Threat Actor + ...) —
+        크고 incident 별 1 회
+      - Report 의 `object_refs` 에 N 개 Sighting 가 포함
+
+      ## 💻 산출물 (Sighting + Report JSON)
+
+      ### Sighting 객체
 
       ```json
       {
         "type": "sighting",
         "spec_version": "2.1",
         "id": "sighting--w14-001",
-        "sighting_of_ref": "indicator--abc-...-001",
+        "created": "2026-05-12T11:35:00Z",
+        "modified": "2026-05-12T11:35:00Z",
+        "sighting_of_ref": "indicator--abc-001",
         "first_seen": "2026-05-12T10:00:00Z",
         "last_seen": "2026-05-12T11:30:00Z",
         "count": 5,
-        "where_sighted_refs": ["identity--6v6-secuops"]
+        "where_sighted_refs": ["identity--6v6-secuops"],
+        "observed_data_refs": ["observed-data--ip-192-168-99-99"],
+        "description": "Indicator matched 5 times in Wazuh alerts.json over 90 min"
       }
       ```
+
+      ### Report 객체
 
       ```json
       {
         "type": "report",
         "spec_version": "2.1",
         "id": "report--w14-002",
-        "name": "APT28 lateral movement in 6v6 - W14",
-        "report_types": ["threat-report"],
+        "created": "2026-05-12T12:00:00Z",
+        "modified": "2026-05-12T12:00:00Z",
+        "name": "APT28 lateral movement in 6v6 - W14 Threat Hunting",
+        "description": "Detailed analysis of APT28 attribution + Emotet C2 + lateral movement T1078 + T1021",
+        "report_types": ["threat-report", "campaign"],
         "published": "2026-05-12T12:00:00Z",
         "object_refs": [
-          "indicator--abc-...-001",
-          "threat-actor--abc-...-003",
-          "sighting--w14-001"
+          "indicator--abc-001",
+          "threat-actor--apt28-003",
+          "malware--emotet-004",
+          "sighting--w14-001",
+          "attack-pattern--T1078",
+          "attack-pattern--T1021"
+        ],
+        "labels": ["tlp:amber", "kill-chain:Action on Objectives"],
+        "external_references": [
+          {"source_name": "internal", "external_id": "INC-2026-001"}
         ]
       }
       ```
-    hint: 'Sighting + Report STIX object'
+
+      ## 📋 Sighting + Report 필수 필드 표
+
+      | 객체 | 필수 필드 | 의미 |
+      |------|----------|------|
+      | Sighting | `sighting_of_ref` | 어떤 indicator 가 매치되었는가 |
+      | Sighting | `first_seen` / `last_seen` | 시간 범위 |
+      | Sighting | `count` | 매치 횟수 |
+      | Sighting | `where_sighted_refs` | 내 환경 의 identity (보고 주체) |
+      | Report | `name` | 보고서 제목 |
+      | Report | `report_types` | threat-report / campaign / observed-data 등 |
+      | Report | `published` | 공개 시각 |
+      | Report | `object_refs` | 묶인 N 객체 의 STIX ID |
+
+      ## 💻 검증 명령 (Sighting + Report JSON 의 *구조 검증*)
+
+      ```bash
+      python3 << 'PY'
+      import json
+
+      sighting = {
+          "type": "sighting", "spec_version": "2.1",
+          "id": "sighting--w14-001",
+          "sighting_of_ref": "indicator--abc-001",
+          "first_seen": "2026-05-12T10:00:00Z",
+          "last_seen": "2026-05-12T11:30:00Z",
+          "count": 5,
+          "where_sighted_refs": ["identity--6v6-secuops"]
+      }
+
+      report = {
+          "type": "report", "spec_version": "2.1",
+          "id": "report--w14-002",
+          "name": "APT28 lateral",
+          "report_types": ["threat-report"],
+          "published": "2026-05-12T12:00:00Z",
+          "object_refs": ["indicator--abc-001", "sighting--w14-001"]
+      }
+
+      print(f"Sighting type: {sighting['type']}, count: {sighting['count']}")
+      print(f"Report type: {report['type']}, refs: {len(report['object_refs'])}")
+      assert sighting['id'] in report['object_refs'], "Sighting 가 Report 에 포함되어야 함"
+      print("PASS: Sighting 가 Report 의 object_refs 에 포함")
+      PY
+      ```
+
+      ## 📋 확인 사항
+
+      - Sighting + Report JSON 작성 (필수 필드 모두)
+      - 필수 필드 표 8 행 채움
+      - Sighting 의 `count` + `first/last_seen` 의 *시간 범위*
+      - Report 의 `object_refs` 에 Sighting + Indicator + ThreatActor 모두
+      - 검증 결과: Sighting id 가 Report refs 에 포함 (PASS)
+
+      ## 💡 왜 이걸 하는가?
+
+      Sighting 가 없으면 *내 환경 의 매치 기록* 없음 → IOC 의 *유효성* 검증 불가.
+      Report 가 없으면 *분석 결과* 의 *공식 산출물* 없음 → CISO 보고 불가. 두
+      객체 가 *분석가 daily output* 의 핵심.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 2 JSON + 8 필수 필드 표 + PASS 메시지
+      - **`AssertionError`**: Sighting 가 Report refs 에 누락 — Report 작성 시 *연관
+        Sighting 추가* 잊지 말 것
+
+      ## 비정상 시 대응
+
+      - **JSON parse error** — quote / colon / comma. `python3 -m json.tool < file`
+        로 라인 확인
+      - **report_types 값 오류** — STIX 표준 vocabulary 만 (threat-report /
+        campaign / attack-pattern / indicator / malware / observed-data / threat-actor / tool)
+    hint: |
+      Sighting (단일 IOC 매치) + Report (N 객체 묶음) JSON + 8 필수 필드 표 +
+      ref 검증.
     category: configuration
     points: 15
     answer: |
