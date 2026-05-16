@@ -17,17 +17,20 @@
 - 기본 Linux 프로세스·파일·네트워크 관찰 도구: `ps`, `strace`, `tcpdump`, `journalctl`
 - LLM API 호출 형식(OpenAI-호환, Ollama `/api/chat`)에 대한 기초 지식 (C7에서 다룸)
 
-## 실습 환경 (공통)
+## 실습 환경 (6v6 4-tier, 공통)
 
-| 호스트 | IP | 역할 | 접속 |
-|--------|-----|------|------|
-| bastion | 10.20.30.201 | Blue Agent | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS | `ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 공격 표적 | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM | `ssh ccc@10.20.30.100` |
-| attacker | 교육자 PC | Claude Code (Red) | — |
+학생 PC 의 `~/.ssh/config` 의 ProxyJump 설정 후 `ssh 6v6-<name>` 으로 접속.
 
-**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+| 컨테이너 | 6v6 IP | 역할 | 접속 |
+|---------|--------|------|------|
+| bastion | 10.20.30.201 | Blue Agent · Control Plane | `ssh 6v6-bastion` (pw: ccc) |
+| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
+| web | 10.20.32.80 | 공격 표적 (Apache + ModSecurity + JuiceShop) | `ssh 6v6-web` |
+| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
+| attacker | 10.20.30.202 | Claude Code (Red) · pen-test 13 종 | `ssh 6v6-attacker` |
+
+**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
+**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -422,11 +425,11 @@ sudo strace -f -e trace=execve -p $(pgrep -f 'claude' | head -1) 2>&1 \
 
 ## 3.3 실습 3-B. 네트워크 측에서 에이전트 보기
 
-방어 측에서 공격자 호스트가 안 보일 때는 **트래픽 패턴**만이 증거다. 실습 인프라의 `secu` VM에서:
+방어 측에서 공격자 호스트가 안 보일 때는 **트래픽 패턴**만이 증거다. 실습 인프라의 `fw` 컨테이너에서:
 
 ```bash
-ssh ccc@10.20.30.1
-sudo tcpdump -i any -n -w /tmp/agent-session.pcap 'host 10.20.30.80 and tcp'
+ssh 6v6-fw
+sudo tcpdump -i any -n -w /tmp/agent-session.pcap 'host 10.20.32.80 and tcp'
 # 공격 관전 중 저장 → 이후 분석
 ```
 
@@ -487,12 +490,12 @@ alert tls any any -> any 443 (msg:"OpenAI API egress";
 폐쇄망 환경에서는 Ollama 자체가 관찰 지점이 된다.
 
 ```bash
-# Ollama 요청 로그 (journalctl 기반)
-ssh ccc@10.20.30.201
+# Manager Ollama 요청 로그 (Bastion 호스트 의 journalctl)
+ssh 6v6-bastion
 journalctl -u ollama -n 50 --no-pager | grep -Ei 'POST|GET'
 
-# 모델 호출 빈도·지속 모델 확인
-curl -s http://10.20.30.201:11434/api/ps
+# Manager LLM (gpt-oss:120b) 호출 빈도·지속 모델 확인
+curl -s http://192.168.0.109:11434/api/ps
 ```
 
 학생은 **Bastion이 돌 때** vs **학생이 직접 호출할 때**의 패턴을 비교한다. Bastion은 *주기적*이고 *도구 연관*이지만, 사람 호출은 *단발성*이다.
