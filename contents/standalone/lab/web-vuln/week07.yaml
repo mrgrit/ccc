@@ -1,0 +1,320 @@
+lab_id: standalone-web-vuln-week07
+title: A05 Security Misconfiguration — 7 vhost 헤더 매트릭스 + 정보 노출
+version: standalone-non-ai
+course: web-vuln
+week: 7
+description: |
+  OWASP A05 (Security Misconfiguration) — 6v6 의 7 vhost 의 *HTTP 헤더 매트릭스* +
+  default page 노출 + server fingerprint + directory listing + ModSec exception 분석.
+difficulty: easy
+duration_minutes: 150
+audience: web-vuln 7주차
+prerequisites:
+  - W02-W06 완료
+  - 학생 PC 의 curl + jq
+objectives:
+  - 7 vhost 의 *5 보안 헤더* (X-Frame / X-Content-Type / Strict-Transport / CSP / X-XSS) 매트릭스
+  - server header 의 *fingerprint 노출* (Apache 버전 / Werkzeug version)
+  - default page (/server-status, /.git, /robots.txt) 노출 enum
+  - directory listing 시도
+  - W07 보고서 + CWE-16
+pass_threshold: 0.7
+
+steps:
+
+  - order: 1
+    instruction: |
+      ## 🎯 MISSION — 7 vhost × 5 보안 헤더 매트릭스 작성
+
+      6v6 의 7 vhost 의 *5 보안 헤더* (X-Frame-Options / X-Content-Type-Options /
+      Strict-Transport-Security / Content-Security-Policy / X-XSS-Protection)
+      매트릭스 + 의 *부족 식별*.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **5 보안 헤더 표준**:
+        - **X-Frame-Options** = clickjacking 방어 (DENY / SAMEORIGIN)
+        - **X-Content-Type-Options** = MIME sniffing 방어 (nosniff)
+        - **Strict-Transport-Security (HSTS)** = HTTPS 강제 (max-age=31536000)
+        - **Content-Security-Policy (CSP)** = XSS 방어 (W05)
+        - **X-XSS-Protection** = legacy (CSP 의 보완)
+      - **modern 표준 (2024)** = HSTS + CSP + X-Content-Type-Options 의 3 필수
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker bash <<'SH'
+      echo "vhost | XFO | XCTO | HSTS | CSP | XXP | server"
+      echo "------|-----|------|------|-----|-----|--------"
+      for h in juice dvwa neobank govportal mediforum admin aicompanion; do
+        H=$(curl -sI -H "Host: $h.6v6.lab" http://10.20.30.1/ 2>&1)
+        XFO=$(echo "$H" | grep -i x-frame-options | wc -l)
+        XCTO=$(echo "$H" | grep -i x-content-type-options | wc -l)
+        HSTS=$(echo "$H" | grep -i strict-transport | wc -l)
+        CSP=$(echo "$H" | grep -i content-security-policy | wc -l)
+        XXP=$(echo "$H" | grep -i x-xss-protection | wc -l)
+        SERVER=$(echo "$H" | grep -i ^server | head -1 | cut -d: -f2 | tr -d '\r' | head -c 30)
+        printf "%-12s | %d | %d | %d | %d | %d | %s\n" "$h" "$XFO" "$XCTO" "$HSTS" "$CSP" "$XXP" "$SERVER"
+      done
+      SH
+      ```
+
+      ## 📋 확인 사항
+
+      - 7 vhost × 5 헤더 = 35 cell 매트릭스
+      - *적용 / 부재* count
+      - server header 의 *version 노출* (Apache/2.4.52 등)
+      - vhost 별 *우선 패치 권장*
+
+      ## 💡 왜 이걸 하는가?
+
+      A05 = *low-hanging fruit*. *5 헤더 추가* 만 으로 *clickjacking + MIME + HTTP
+      downgrade + XSS* 방어. *production 의 minimum*.
+
+      ## 🔍 결과 해석
+
+      - **5/5 적용 (modern)**: 우수 — modern 표준
+      - **0/5 (vuln)**: A05 의 *명백한 결함* — 즉시 적용
+      - **server version 노출**: fingerprint 의 *공격자 favor* — *지우기*
+
+      ## 실측 (2026-05-16)
+      - juice: 2/5 (XCTO + XFO)
+      - dvwa/neobank/...: 0/5 (모두 부족)
+      - server: Apache/2.4.52 + Werkzeug/3.1.8 의 *version 노출*
+    hint: |
+      7 vhost × 5 헤더 매트릭스 + server fingerprint 노출.
+    category: survey
+    points: 25
+    answer: |
+      ssh 6v6-attacker bash <<'SH'
+      for h in juice dvwa neobank govportal mediforum admin aicompanion; do
+        H=$(curl -sI -H "Host: $h.6v6.lab" http://10.20.30.1/ 2>&1)
+        XFO=$(echo "$H" | grep -ic x-frame-options)
+        XCTO=$(echo "$H" | grep -ic x-content-type-options)
+        HSTS=$(echo "$H" | grep -ic strict-transport)
+        CSP=$(echo "$H" | grep -ic content-security-policy)
+        XXP=$(echo "$H" | grep -ic x-xss-protection)
+        SERVER=$(echo "$H" | grep -i ^server | head -1)
+        echo "$h: XFO=$XFO XCTO=$XCTO HSTS=$HSTS CSP=$CSP XXP=$XXP | $SERVER"
+      done
+      SH
+    answer_detail: 7 vhost 의 5 보안 헤더 매트릭스
+    verify:
+      type: output_contains
+      expect: 'juice\|XFO'
+      field: stdout
+      semantic:
+        intent: 보안 헤더 audit
+        success_criteria: [35 cell 매트릭스]
+        acceptable_methods:
+          - "**[OSS] curl -I + 5 헤더 grep**"
+          - "**[OSS] securityheaders.com 의 score**"
+          - "**[OSS] OWASP Secure Headers Project**"
+          - "**[OSS] Mozilla Observatory**"
+          - "**[OSS] CWE-16 Configuration**"
+    target_vm: attacker
+
+  - order: 2
+    instruction: |
+      ## 🎯 MISSION — Server fingerprint + default page 노출 enum
+
+      7 vhost 의 *server fingerprint* (Apache version / Werkzeug / Python version) +
+      *default page* (`/server-status`, `/robots.txt`, `/.git`, `/.env`) 노출 enum.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **fingerprint** = *server 종류 + version* 노출 — 공격자 의 *CVE 매칭* favor
+      - **default page**:
+        - `/server-status` = Apache 의 상태 페이지 (mod_status)
+        - `/.git` = git directory 의 *source code* 노출
+        - `/.env` = environment variable 의 *secret* 노출
+        - `/robots.txt` = *공개* (단 *민감 path 노출* 가능)
+        - `/sitemap.xml` = *공개*
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker bash <<'SH'
+      echo "=== default page 노출 enum ==="
+      for h in juice dvwa neobank govportal mediforum admin aicompanion; do
+        for path in /server-status /server-info /robots.txt /.git/config /.env /sitemap.xml; do
+          code=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "Host: $h.6v6.lab" "http://10.20.30.1$path")
+          [ "$code" != "404" ] && [ "$code" != "403" ] && echo "$h$path: $code"
+        done
+      done
+      SH
+      ```
+
+      ## 📋 확인 사항
+
+      - 7 vhost × 6 path = 42 시도
+      - 200 응답 의 *vuln* (default page 노출)
+      - 404/403 = *정상* (page 없음 또는 차단)
+
+      ## 💡 왜 이걸 하는가?
+
+      *default page 노출* = A05 의 *흔한 결함*. *.git 노출* 시 source code 전체
+      유출 — 매우 critical.
+
+      ## 🔍 결과 해석
+
+      - **모두 404/403**: 정상
+      - **200 (vuln)**: 즉시 *page 차단* — Apache: `Require all denied` / Flask: 미routing
+    hint: |
+      7 vhost × 6 default path enum + 200 응답 식별.
+    category: survey
+    points: 20
+    answer: |
+      ssh 6v6-attacker bash <<'SH'
+      for h in juice dvwa neobank govportal mediforum admin aicompanion; do
+        for path in /server-status /robots.txt /.git/config /.env /sitemap.xml; do
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H "Host: $h.6v6.lab" "http://10.20.30.1$path")
+          [ "$code" != "404" ] && echo "$h$path: $code"
+        done
+      done
+      SH
+    answer_detail: default page 노출 enum
+    verify:
+      type: output_contains
+      expect: 'server-status\|robots\|.git'
+      field: stdout
+      semantic:
+        intent: default page enum
+        success_criteria: [42 시도]
+        acceptable_methods:
+          - "**[OSS] curl + 6 default path**"
+          - "**[OSS] gobuster dir brute (extended wordlist)**"
+          - "**[OSS] OWASP DirBuster**"
+          - "**[OSS] feroxbuster recursive**"
+          - "**[OSS] CWE-548 Information Exposure Through Directory Listing**"
+    target_vm: attacker
+
+  - order: 3
+    instruction: |
+      ## 🎯 MISSION — TLS / HTTP 의 8 misconfiguration 매트릭스
+
+      TLS / HTTP 의 *8 misconfiguration* (HTTP 의 HTTPS redirect / TLS version /
+      cipher / cert / cookie flag / CORS / referrer-policy / permissions-policy)
+      매트릭스.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **HTTP → HTTPS redirect** = HTTP 의 *자동 redirect 의 의무*
+      - **CORS** = `Access-Control-Allow-Origin: *` 의 *위험* (모든 origin 허용)
+      - **Referrer-Policy** = `Referer` header 의 *정보 노출 제어*
+      - **Permissions-Policy** = browser API 의 *제한* (microphone / camera / location)
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker bash <<'SH'
+      echo "=== juice 의 8 misconfiguration audit ==="
+      H=$(curl -sI -H 'Host: juice.6v6.lab' http://10.20.30.1/ 2>&1)
+      echo "HTTP→HTTPS redirect: $(echo "$H" | grep -i 'location: https' | wc -l)"
+      echo "X-Frame-Options: $(echo "$H" | grep -i x-frame-options | head -1 | cut -d: -f2)"
+      echo "CORS Access-Control: $(echo "$H" | grep -i access-control-allow-origin | head -1)"
+      echo "Referrer-Policy: $(echo "$H" | grep -i referrer-policy | head -1)"
+      echo "Permissions-Policy: $(echo "$H" | grep -i permissions-policy | head -1)"
+
+      echo ""
+      echo "=== TLS 의 version + cipher ==="
+      echo | timeout 5 openssl s_client -connect 10.20.30.1:443 -servername juice.6v6.lab 2>&1 | grep -E 'Protocol|Cipher' | head -5
+      SH
+      ```
+
+      ## 📋 확인 사항
+
+      - 8 항목 audit 결과
+      - HTTP→HTTPS redirect 의 *부재* 시 *MITM 위험*
+      - CORS 의 *전역 허용* (`*`) 시 *CSRF 위험*
+
+      ## 💡 왜 이걸 하는가?
+
+      *production 의 minimum* = 8 항목 모두. *audit 의 표준 항목*.
+
+      ## 🔍 결과 해석
+
+      - **8/8 적용**: 우수
+      - **0-3/8**: 즉시 적용 권장
+    hint: |
+      8 항목 (HTTP redirect / TLS / cipher / cookie / CORS / Referrer / Permissions / cert).
+    category: analysis
+    points: 25
+    answer: |
+      ssh 6v6-attacker bash <<'SH'
+      H=$(curl -sI -H 'Host: juice.6v6.lab' http://10.20.30.1/ 2>&1)
+      echo "redirect: $(echo "$H" | grep -ic 'location: https')"
+      echo "XFO: $(echo "$H" | grep -i x-frame | head -1)"
+      echo "CORS: $(echo "$H" | grep -i access-control | head -1)"
+      echo "Referrer: $(echo "$H" | grep -i referrer-policy | head -1)"
+      echo "Permissions: $(echo "$H" | grep -i permissions-policy | head -1)"
+      echo | timeout 5 openssl s_client -connect 10.20.30.1:443 -servername juice.6v6.lab 2>&1 | grep -E 'Protocol|Cipher' | head -3
+      SH
+    answer_detail: 8 misconfiguration audit
+    verify:
+      type: output_contains
+      expect: 'redirect\|XFO\|CORS'
+      field: stdout
+      semantic:
+        intent: 8 misconfiguration
+        success_criteria: [8 항목 audit]
+        acceptable_methods:
+          - "**[OSS] curl -I + 8 grep**"
+          - "**[OSS] testssl.sh 의 TLS 부분**"
+          - "**[OSS] securityheaders.com 의 score**"
+          - "**[OSS] OWASP Secure Headers Project**"
+          - "**[OSS] CWE-16 + CWE-942 (CORS)**"
+    target_vm: attacker
+
+  - order: 4
+    instruction: |
+      ## 🎯 MISSION — W07 종합 보고서 (3 영역 + CWE-16/548/942)
+
+      W07 의 3 영역 audit (보안 헤더 + default page + TLS/HTTP misconfig) 종합 보고서.
+
+      ## 💻 산출물
+
+      ```markdown
+      # W07 — A05 Security Misconfiguration 보고서
+
+      ## 1. Executive Summary
+      - target: 7 vhost 의 *모든* misconfiguration
+      - 발견 vuln 3 영역 (보안 헤더 / default page / TLS-HTTP)
+      - 권장: *15 분* 의 *모든 헤더* 적용 — *low-hanging fruit*
+
+      ## 2. Findings
+      ### F1 — 보안 헤더 매트릭스 (7×5 = 35 cell)
+      ### F2 — default page enum (7×6 = 42 시도)
+      ### F3 — TLS / HTTP misconfig (8 항목)
+
+      ## 3. Remediation
+      - 즉시: 5 보안 헤더 적용 (Apache: `Header always set`)
+      - 단기: server fingerprint 제거 (`ServerTokens Prod`)
+      - 장기: 자동 audit (CI 의 securityheaders.com 통합)
+
+      ## 4. 매핑
+      | F | CVSS | CWE |
+      | F1 | 5.4 (M) | CWE-16 |
+      | F2 | 6.5 (M) | CWE-548 |
+      | F3 | 5.9 (M) | CWE-16 + CWE-942 |
+      ```
+    hint: |
+      3 영역 + CWE-16 + 15 분 의 의무.
+    category: synthesis
+    points: 15
+    answer: 위 4 섹션
+    answer_detail: W07 종합 보고서
+    verify:
+      type: output_contains
+      expect: 'CWE-16'
+      field: stdout
+      semantic:
+        intent: W07 종합
+        success_criteria: [3 영역 + 매핑]
+        acceptable_methods:
+          - "**[관리적] PTES 4 섹션**"
+          - "**[관리적] OWASP A05 의 5 권장**"
+          - "**[관리적] securityheaders.com 의 자동 audit**"
+          - "**[관리적] CI/CD 통합**"
+    target_vm: bastion
