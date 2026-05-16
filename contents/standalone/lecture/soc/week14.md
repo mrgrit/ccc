@@ -1,0 +1,546 @@
+# Week 14: 자동화 관제 - Bastion Agent Daemon
+
+## 학습 목표
+- AI 기반 자율 보안 관제의 개념을 이해한다
+- Bastion Agent Daemon의 explore/daemon/stimulate 기능을 사용한다
+- 자율 탐지 에이전트를 구성하고 자극 테스트를 수행한다
+- 자동화 관제의 장점과 한계를 분석한다
+
+## 실습 환경 (6v6 4-tier, 공통)
+
+학생 PC 의 `~/.ssh/config` 의 ProxyJump 설정 후 다음 표 의 컨테이너 에 `ssh
+6v6-<name>` 으로 접속.
+
+| 컨테이너 | 6v6 IP | 역할 | 접속 |
+|---------|--------|------|------|
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
+| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
+| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
+| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
+| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+
+**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
+**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+
+## 강의 시간 배분 (3시간)
+
+| 시간 | 내용 | 유형 |
+|------|------|------|
+| 0:00-0:40 | 이론 강의 (Part 1) | 강의 |
+| 0:40-1:10 | 이론 심화 + 사례 분석 (Part 2) | 강의/토론 |
+| 1:10-1:20 | 휴식 | - |
+| 1:20-2:00 | 실습 (Part 3) | 실습 |
+| 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
+| 2:40-2:50 | 휴식 | - |
+| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
+| 3:20-3:40 | 정리 + 과제 안내 | 정리 |
+
+---
+
+---
+
+## 용어 해설 (보안관제/SOC 과목)
+
+| 용어 | 영문 | 설명 | 비유 |
+|------|------|------|------|
+| **SOC** | Security Operations Center | 보안 관제 센터 (24/7 모니터링) | 경찰 112 상황실 |
+| **관제** | Monitoring/Surveillance | 보안 이벤트를 실시간 감시하는 활동 | CCTV 관제 |
+| **경보** | Alert | 보안 이벤트가 탐지 규칙에 매칭되어 발생한 알림 | 화재 경보기 울림 |
+| **이벤트** | Event | 시스템에서 발생한 모든 활동 기록 | 일어난 일 하나하나 |
+| **인시던트** | Incident | 보안 정책을 위반한 이벤트 (실제 위협) | 실제 화재 발생 |
+| **오탐** | False Positive | 정상 활동을 공격으로 잘못 탐지 | 화재 경보기가 요리 연기에 울림 |
+| **미탐** | False Negative | 실제 공격을 놓침 | 도둑이 CCTV에 안 잡힘 |
+| **TTD** | Time to Detect | 공격 발생~탐지까지 걸리는 시간 | 화재 발생~경보 울림 시간 |
+| **TTR** | Time to Respond | 탐지~대응까지 걸리는 시간 | 경보~소방차 도착 시간 |
+| **SIGMA** | SIGMA | SIEM 벤더에 무관한 범용 탐지 룰 포맷 | 국제 표준 수배서 양식 |
+| **Tier 1/2/3** | SOC Tiers | 관제 인력 수준 (L1:모니터링, L2:분석, L3:전문가) | 일반의→전문의→교수 |
+| **트리아지** | Triage | 경보를 우선순위별로 분류하는 작업 | 응급실 환자 분류 |
+| **플레이북** | Playbook (IR) | 인시던트 유형별 대응 절차 매뉴얼 | 화재 대응 매뉴얼 |
+| **포렌식** | Forensics | 사이버 범죄 수사를 위한 증거 수집·분석 | 범죄 현장 감식 |
+| **IOC** | Indicator of Compromise | 침해 지표 (악성 IP, 도메인, 해시) | 수배범의 지문, 차량번호 |
+| **TTP** | Tactics, Techniques, Procedures | 공격자의 전술·기법·절차 | 범인의 범행 수법 |
+| **위협 헌팅** | Threat Hunting | 탐지 룰에 걸리지 않는 위협을 능동적으로 찾는 활동 | 잠복 수사 |
+| **syslog** | syslog | 시스템 로그를 원격 전송하는 프로토콜 (UDP 514) | 모든 부서 보고서를 본사로 모으는 시스템 |
+
+---
+
+## 1. 자동화 관제 개념
+
+### 1.1 전통적 관제 vs AI 자동화 관제
+
+| 항목 | 전통적 관제 | AI 자동화 관제 |
+|------|-----------|--------------|
+| 탐지 | 시그니처 룰 기반 | 시그니처 + AI 판단 |
+| 분석 | 분석관 수동 분석 | LLM 자동 분석 + 분석관 검증 |
+| 대응 | 매뉴얼 기반 | 자동 대응 + 승인 체계 |
+| 24/7 | 교대 근무 필요 | 에이전트 상시 가동 |
+| 확장성 | 인력 비례 | 에이전트 추가 |
+
+### 1.2 Bastion Agent Daemon 아키텍처
+
+```
++----------------------------------------------------+
+|              Bastion Manager API                   |
+|              (http://localhost:9100)               |
++----------------------------------------------------+
+|           |           |                            |
+|  Explore  |  Daemon   |  Stimulate                 |
+|  (탐색)    |  (감시)    |  (자극 테스트)           |
+|           |           |                            |
+|  환경 파악  |  주기적    |  의도적 공격            |
+|  자산 조사  |  로그 조회  |  탐지 능력 검증        |
++----------------------------------------------------+
+         |           |                               |
+         +-------------------------------------------+
+                     |
+              SubAgent (각 서버)
+```
+
+---
+
+## 2. Explore: 환경 탐색
+
+> **이 실습을 왜 하는가?**
+> "자동화 관제 - Bastion Agent Daemon" — 이 주차의 핵심 기술을 실제 서버 환경에서 직접 실행하여 체험한다.
+> 보안관제/SOC 분야에서 이 기술은 실무의 핵심이며, 실습을 통해
+> 명령어의 의미, 결과 해석 방법, 보안 관점에서의 판단 기준을 익힌다.
+>
+> **이걸 하면 무엇을 알 수 있는가?**
+> - 이 기술이 실제 시스템에서 어떻게 동작하는지 직접 확인
+> - 정상과 비정상 결과를 구분하는 눈을 기름
+> - 실무에서 바로 활용할 수 있는 명령어와 절차를 체득
+>
+> **주의:** 모든 실습은 허가된 실습 환경(10.20.30.0/24)에서만 수행한다.
+
+### 2.1 Bastion API로 환경 탐색
+
+> **실습 목적**: Bastion API를 활용하여 자동화된 관제 워크플로우를 구축한다
+>
+> **배우는 것**: 경보 수집, 분석, 대응을 API 기반으로 자동화하여 관제 효율을 높이는 방법을 배운다
+>
+> **결과 해석**: API 호출로 경보 수집과 대응이 자동 실행되면 자동화 관제 파이프라인이 정상 동작한다
+>
+> **실전 활용**: SOAR(Security Orchestration, Automation and Response)는 SOC 운영 효율화의 핵심 기술이다
+
+```bash
+# Bastion 자연어 지시로 secu/siem/web 관제 환경 전체 탐색
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "message": "secu(10.20.30.1), siem(10.20.30.100), web(10.20.30.80) 세 서버에 각각 접속해서 다음 정보를 수집하고 표로 정리해줘: (1) hostname·커널·업타임, (2) 실행 중인 보안 서비스(suricata/wazuh/nftables/modsecurity), (3) 최근 로그 엔트리 수."
+  }' \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['answer'])"
+
+# 수행 이력 확인
+curl -s "http://10.20.30.200:8003/evidence?limit=10" | python3 -c "
+import sys, json
+for e in json.load(sys.stdin)[:10]:
+    msg = e.get('user_message','')[:60]
+    ok = '✓' if e.get('success') else '✗'
+    print(f'  {ok} {msg}')
+"
+```
+
+---
+
+## 3. Daemon: 주기적 관제 순환
+
+### 3.1 관제 순환 스크립트
+
+원격 서버에 접속하여 명령을 실행합니다.
+
+```bash
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
+cat << 'SCRIPT' > /tmp/soc_daemon.sh
+#!/bin/bash
+OLLAMA_URL="http://localhost:8003/v1/chat/completions"
+
+echo "=== SOC Daemon 시작 ($(date)) ==="
+
+# 1. Suricata 최신 경보 수집
+echo "[1] Suricata 경보 수집"
+SURICATA_ALERTS=$(ssh 6v6-fw \
+  "tail -20 /var/log/suricata/fast.log 2>/dev/null" 2>/dev/null)
+echo "  수집: $(echo "$SURICATA_ALERTS" | wc -l)줄"
+
+# 2. Wazuh 최신 경보 수집
+echo "[2] Wazuh 경보 수집"
+WAZUH_ALERTS=$(ssh 6v6-siem \
+  "tail -5 /var/ossec/logs/alerts/alerts.json 2>/dev/null" 2>/dev/null)
+echo "  수집: $(echo "$WAZUH_ALERTS" | wc -l)줄"
+
+# 3. LLM 분석
+echo "[3] LLM 분석 요청"
+ANALYSIS=$(curl -s "$OLLAMA_URL" \
+  -H "Content-Type: application/json" \
+  -d "{                                                # 요청 데이터(body)
+    \"model\": \"gemma3:12b\",
+    \"messages\": [
+      {\"role\": \"system\", \"content\": \"SOC L1 자동 분석 에이전트입니다. 경보를 분석하여 심각도와 대응 필요 여부를 판단합니다. 한국어로 간결하게.\"},
+      {\"role\": \"user\", \"content\": \"보안 경보 분석:\\nSuricata: ${SURICATA_ALERTS:-(없음)}\\nWazuh: ${WAZUH_ALERTS:-(없음)}\\n\\n1) 요약 2) 위험도 3) 대응 필요 여부\"}
+    ],
+    \"temperature\": 0.2
+  }" 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin)['choices'][0]['message']['content'])" 2>/dev/null)
+
+echo ""
+echo "=== LLM 분석 결과 ==="
+echo "$ANALYSIS"
+SCRIPT
+
+chmod +x /tmp/soc_daemon.sh                            # 파일 권한 변경
+bash /tmp/soc_daemon.sh
+ENDSSH
+```
+
+### 3.2 경보 임계값 기반 에스컬레이션
+
+원격 서버에 접속하여 명령을 실행합니다.
+
+```bash
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
+python3 << 'PYEOF'                                     # Python 스크립트 실행
+alerts = [
+    {"time": "09:01", "source": "suricata", "severity": "low", "desc": "HTTP 스캔 탐지"},
+    {"time": "09:02", "source": "suricata", "severity": "low", "desc": "포트 스캔 탐지"},
+    {"time": "09:03", "source": "suricata", "severity": "medium", "desc": "SQL Injection 시도"},
+    {"time": "09:04", "source": "wazuh", "severity": "medium", "desc": "SSH 인증 실패 (3회)"},
+    {"time": "09:05", "source": "suricata", "severity": "high", "desc": "리버스셸 탐지"},
+    {"time": "09:06", "source": "wazuh", "severity": "high", "desc": "파일 무결성 변경"},
+    {"time": "09:07", "source": "wazuh", "severity": "critical", "desc": "root 계정 로그인"},
+]
+
+THRESHOLDS = {"critical": 1, "high": 2, "medium": 5, "low": 10}
+
+counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+for a in alerts:                                       # 반복문 시작
+    counts[a["severity"]] += 1
+
+print("=== 경보 에스컬레이션 분석 ===")
+print(f"총 경보: {len(alerts)}건\n")
+
+escalate = False
+for sev in ["critical", "high", "medium", "low"]:      # 반복문 시작
+    t = THRESHOLDS[sev]
+    c = counts[sev]
+    status = "ESCALATE" if c >= t else "OK"
+    if c >= t: escalate = True
+    print(f"  {sev:<10} {c}건 / 임계값 {t} -> [{status}]")
+
+print(f"\n판정: {'에스컬레이션 - SOC L2 호출' if escalate else '정상'}")
+
+if escalate:
+    print("\n에스컬레이션 사유:")
+    for a in alerts:                                   # 반복문 시작
+        if a["severity"] in ["critical", "high"]:
+            print(f"  [{a['time']}] [{a['severity'].upper()}] {a['desc']}")
+PYEOF
+ENDSSH
+```
+
+---
+
+## 4. Stimulate: 자극 테스트
+
+### 4.1 탐지 능력 검증
+
+Bastion Manager API를 호출하여 작업을 수행합니다.
+
+```bash
+# Bastion에게 자극 테스트 + 탐지 확인 자연어 지시
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "message": "자극 테스트를 수행해줘: (1) web(10.20.30.80)에서 secu(10.20.30.1)로 포트 22/80/443/3306/5432/8080 스캔, (2) web의 JuiceShop :3000 /rest/products/search에 test OR 1=1-- SQLi 전송, (3) 그 직후 secu의 /var/log/suricata/fast.log에서 관련 alert 발생 여부 확인. 전체 결과를 표로 정리해줘."
+  }' \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['answer'])"
+```
+
+---
+
+## 5. 자동 대응 파이프라인
+
+### 5.1 탐지-분석-대응 자동화
+
+원격 서버에 접속하여 명령을 실행합니다.
+
+```bash
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
+python3 << 'PYEOF'                                     # Python 스크립트 실행
+def detect(log_entry):
+    keywords = {
+        "critical": ["reverse shell", "root login", "data exfiltration"],
+        "high": ["sql injection", "brute force", "privilege escalation"],
+        "medium": ["port scan", "directory traversal", "xss"],
+        "low": ["404 error", "invalid user agent"],
+    }
+    for severity, patterns in keywords.items():        # 반복문 시작
+        for pattern in patterns:                       # 반복문 시작
+            if pattern in log_entry.lower():
+                return severity, pattern
+    return "info", "unknown"
+
+def respond(severity, pattern):
+    if severity == "critical":
+        return f"[AUTO] 즉시 차단 + SOC L2 알림 ({pattern})"
+    elif severity == "high":
+        return f"[MANUAL] SOC L1 분석 필요 ({pattern})"
+    else:
+        return f"[LOG] 기록 ({pattern})"
+
+test_logs = [
+    "192.168.1.100: Reverse Shell connection on port 4444",
+    "10.0.0.5: SQL Injection attempt on /api/login",
+    "172.16.0.1: Port scan detected (SYN, 100 ports)",
+    "192.168.1.50: 404 error on /nonexistent",
+    "10.0.0.10: Root login from unknown IP",
+]
+
+print("=== 탐지-분석-대응 파이프라인 ===\n")
+for log in test_logs:                                  # 반복문 시작
+    severity, pattern = detect(log)
+    action = respond(severity, pattern)
+    print(f"로그: {log[:60]}...")
+    print(f"  탐지: {severity.upper()} ({pattern})")
+    print(f"  대응: {action}\n")
+PYEOF
+ENDSSH
+```
+
+---
+
+## 6. 자동화 관제의 한계와 인간 역할
+
+### 6.1 역할 분담
+
+원격 서버에 접속하여 명령을 실행합니다.
+
+```bash
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
+python3 << 'PYEOF'                                     # Python 스크립트 실행
+roles = {
+    "자동화(AI) 담당": [
+        "대량 로그 수집 및 정규화",
+        "알려진 패턴 매칭 (시그니처)",
+        "반복적 1차 분류 (L1 티켓팅)",
+        "IOC 자동 업데이트 및 매칭",
+        "정기 보고서 자동 생성",
+        "규칙 기반 자동 차단",
+    ],
+    "인간(분석관) 담당": [
+        "제로데이 공격 분석",
+        "비즈니스 컨텍스트 판단",
+        "오탐/정탐 최종 판별",
+        "법적/규제 대응 결정",
+        "위협 헌팅 가설 수립",
+        "경영진 커뮤니케이션",
+        "사고 대응 의사결정",
+    ],
+}
+
+for role, tasks in roles.items():                      # 반복문 시작
+    print(f"\n{role}")
+    print("=" * 40)
+    for task in tasks:                                 # 반복문 시작
+        print(f"  - {task}")
+
+print("\n핵심: AI는 인간을 '대체'가 아닌 '증강(augment)'한다")
+PYEOF
+ENDSSH
+```
+
+---
+
+## 핵심 정리
+
+1. Bastion Agent Daemon은 explore/daemon/stimulate 3단계로 자율 관제한다
+2. LLM은 경보 1차 분석과 분류를 자동화하여 분석관 부담을 줄인다
+3. 에스컬레이션 임계값으로 자동 경보 분류와 상위 통보를 구현한다
+4. 자극 테스트로 탐지 능력을 지속적으로 검증해야 한다
+5. 자동 대응 파이프라인은 탐지-분석-대응을 연결한다
+6. AI는 인간을 대체가 아닌 증강하며, 최종 판단은 인간이 수행한다
+
+---
+
+## 다음 주 예고
+- Week 15: 기말 종합 인시던트 대응 훈련 - Red Team vs Blue Team
+
+---
+
+---
+
+## 웹 UI 실습: Dashboard에서 실시간 공격 모니터링
+
+> **목적**: Red Team 자극 테스트 중 Wazuh Dashboard에서 실시간으로 경보를 모니터링하여
+> 자동화 관제와 수동 관제의 차이를 체험한다.
+
+### 접속
+
+1. 브라우저에서 `https://10.20.30.100` 접속
+2. 자체 서명 인증서 경고 → "고급" → "계속 진행"
+3. admin / 비밀번호 입력
+
+### 실습 1: 실시간 모니터링 설정
+
+1. **Wazuh** > **Events** 이동
+2. 시간 범위를 "Last 15 minutes"로 설정
+3. 우측 상단 **자동 새로고침** 활성화 (10초 간격)
+4. 검색: `rule.level >= 5`
+5. 이 상태에서 CLI에서 자극 테스트(포트 스캔, SQLi)를 실행
+
+### 실습 2: 자극 테스트 경보 실시간 확인
+
+1. Bastion API로 포트 스캔 자극 실행 후 Dashboard 화면 관찰
+2. 새 경보가 자동으로 나타나는지 확인 (10~30초 소요)
+3. 경보 클릭하여 상세 확인:
+   - 출발지 IP, 목적지 포트, 규칙 설명
+4. MITRE ATT&CK 뷰에서 새로운 기법이 추가되는지 확인
+
+### 실습 3: 자동 대응 vs 수동 대응 비교
+
+1. Active Response에 의해 자동 차단된 이벤트 확인:
+   - `rule.groups: active_response` 검색
+2. 자동 대응이 작동하지 않은 경보 확인:
+   - 자동 대응 규칙에 포함되지 않은 경보 유형 식별
+3. 비교 분석:
+   - **자동 대응 가능**: 반복적, 명확한 패턴 (SSH 무차별 대입)
+   - **수동 분석 필요**: 복합적, 맥락 판단 필요 (SQL Injection 성공 여부)
+
+> **핵심**: Dashboard의 실시간 모니터링은 SOC L1의 일상 업무이다.
+> 자동화 관제(Bastion Daemon)와 수동 관제(Dashboard)를 병행하는 것이 최적의 관제 모델이다.
+
+---
+
+> **실습 환경 검증 완료** (2026-03-28): Wazuh alerts.json/logtest/agent_control, SIGMA 룰, 경보 분석
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+
+### CCC Bastion Agent
+> **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
+> **실행 위치:** `bastion (10.20.30.201)`  
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://localhost:8003`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `packages/bastion/agent.py` | 메인 에이전트 루프 |
+| `packages/bastion/skills.py` | 스킬 정의 |
+| `packages/bastion/playbooks/` | 정적 플레이북 YAML |
+| `data/bastion/experience/` | 수집된 경험 (pass/fail) |
+
+**핵심 설정·키**
+
+- `LLM_BASE_URL / LLM_MODEL` — Ollama 연결
+- `CCC_API_KEY` — ccc-api 인증
+- `max_retry=2` — 실패 시 self-correction 재시도
+
+**로그·확인 명령**
+
+- ``docs/test-status.md`` — 현재 테스트 진척 요약
+- ``bastion_test_progress.json`` — 스텝별 pass/fail 원시
+
+**UI / CLI 요점**
+
+- 대화형 TUI 프롬프트 — 자연어 지시 → 계획 → 실행 → 검증
+- `/a2a/mission` (API) — 자율 미션 실행
+- Experience→Playbook 승격 — 반복 성공 패턴 저장
+
+> **해석 팁.** 실패 시 output을 분석해 **근본 원인 교정**이 설계의 핵심. 증상 회피/땜빵은 금지.
+
+### Wazuh SIEM (4.11.x)
+> **역할:** 에이전트 기반 로그·FIM·SCA 통합 분석 플랫폼  
+> **실행 위치:** `siem (10.20.30.100)`  
+> **접속/호출:** Dashboard `https://10.20.30.100` (admin/admin), Manager API `:55000`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `/var/ossec/etc/ossec.conf` | Manager 메인 설정 (원격, 전송, syscheck 등) |
+| `/var/ossec/etc/rules/local_rules.xml` | 커스텀 룰 (id ≥ 100000) |
+| `/var/ossec/etc/decoders/local_decoder.xml` | 커스텀 디코더 |
+| `/var/ossec/logs/alerts/alerts.json` | 실시간 JSON 알림 스트림 |
+| `/var/ossec/logs/archives/archives.json` | 전체 이벤트 아카이브 |
+| `/var/ossec/logs/ossec.log` | Manager 데몬 로그 |
+| `/var/ossec/queue/fim/db/fim.db` | FIM 기준선 SQLite DB |
+
+**핵심 설정·키**
+
+- `<rule id='100100' level='10'>` — 커스텀 룰 — level 10↑은 고위험
+- `<syscheck><directories>...` — FIM 감시 경로
+- `<active-response>` — 자동 대응 (firewall-drop, restart)
+
+**로그·확인 명령**
+
+- `jq 'select(.rule.level>=10)' alerts.json` — 고위험 알림만
+- `grep ERROR ossec.log` — Manager 오류 (룰 문법 오류 등)
+
+**UI / CLI 요점**
+
+- Dashboard → Security events — KQL 필터 `rule.level >= 10`
+- Dashboard → Integrity monitoring — 변경된 파일 해시 비교
+- `/var/ossec/bin/wazuh-logtest` — 룰 매칭 단계별 확인 (Phase 1→3)
+- `/var/ossec/bin/wazuh-analysisd -t` — 룰·설정 문법 검증
+
+> **해석 팁.** Phase 3에서 원하는 `rule.id`가 떠야 커스텀 룰 정상. `local_rules.xml` 수정 후 `systemctl restart wazuh-manager`, 문법 오류가 있으면 **분석 데몬 전체가 기동 실패**하므로 `-t`로 먼저 검증.
+
+---
+
+## 실제 사례 (WitFoo Precinct 6 — Bastion 자동화 R3 round status)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0) + 본 시스템 R3
+> 본 lecture *Bastion Agent Daemon 자동화 관제* 학습 항목 매칭.
+
+### 본 시스템 자체 R3 round 진행 (live)
+
+`results/retest/report.md` (자동 갱신):
+- pass: 1804 → 2047 (+243)
+- 전체 pass율: **66.3%**
+- R3 cursor: 410+/575 (71%+)
+- driver_r3 (PID 1979883) + supervisor_r3 가동
+
+### 자동화 효과 — 사람 vs Bastion
+
+| 축 | 사람 분석가 | Bastion 자동 |
+|----|----------|-----------|
+| 24h 운영 | 불가 | **가능** |
+| 처리량 | 80~160/일 | **수천/일** |
+| 일관성 | 사람별 차이 | 동일 Playbook |
+| 정책 정합성 | 강함 | 학습 중 |
+
+**학생 액션**: 본 시스템 retest cursor + R3 보고서 양식 그대로 모방하여 본인 환경의 자동화 metric 측정.
+
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course5 SOC — Week 14 레드팀 연동)
+
+| 작업 | 도구 |
+|------|------|
+| 공격 시뮬 | Atomic Red Team / CALDERA / Stratus Red Team (cloud) |
+| Purple Team | Atomic + Wazuh / Sigma → coverage |
+| 보고 매핑 | MITRE ATT&CK Navigator / DeTT&CT |
+| 디텍션 검증 | atomic invoke / Sigma test / Wazuh logtest |
+| 메트릭 | EDR coverage / detection-as-code |
+
+### 핵심
+```bash
+# Atomic Red Team
+sudo invoke run-atomic-test T1059.003                  # bash 명령 실행
+sudo invoke run-atomic-test T1547.006                  # kernel module
+# 실행 후 Wazuh / Suricata 가 잡았는지 확인
+
+# CALDERA — adversary emulation framework (MITRE)
+git clone https://github.com/mitre/caldera.git --recursive ~/caldera
+cd ~/caldera && pip3 install -r requirements.txt
+python3 server.py --insecure                            # http://localhost:8888
+
+# DeTT&CT — coverage 측정
+git clone https://github.com/rabobank-cdc/DeTTECT.git ~/dettect
+cd ~/dettect && pip3 install -r requirements.txt
+python3 dettect.py editor                               # web UI
+```

