@@ -314,7 +314,7 @@ course20 agent-ir-adv) 의 **입문** 과정. AI/LLM 보안 + Bastion 활용 + R
 ### 진행 상태
 
 - `aisec/W01-W15` — DONE (15 lecture + 15 lab, 6v6 port/host 검증 완료)
-  - Bastion API: 192.168.0.103:8003 (X-API-Key: ccc-api-key-2026)
+  - Bastion API: 192.168.0.110:9200 (X-API-Key: ccc-api-key-2026)
   - Ollama: 192.168.0.109:11434 (gemma3:4b 의 ~3 sec / gpt-oss:120b 의 5-10 min)
   - 모든 lab 의 endpoint 의 실 검증 완료
 

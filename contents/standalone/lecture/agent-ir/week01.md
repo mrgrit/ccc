@@ -23,7 +23,7 @@
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
 | bastion | 10.20.30.201 | **Blue Agent(방어자)** 자기 자신 — 관제·대응·스킬 운영 | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext — Bastion 이 조종 | `ssh 6v6-fw` |
+| fw | 10.20.30.1 | 방화벽/HAProxy/Suricata ext — Bastion 이 조종 | `ssh 6v6-fw` |
 | web | 10.20.32.80 | **공격 표적** — Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
 | siem | 10.20.32.100 | Wazuh manager — Blue 의 감각기관 | `ssh 6v6-siem` |
 | attacker | 10.20.30.202 | **공격 에이전트(Red)** 세션 — pen-test 도구 13 종 | `ssh 6v6-attacker` |
