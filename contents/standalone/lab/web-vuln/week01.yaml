@@ -815,50 +815,116 @@ steps:
 
 
     [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
+# ============================================================
+# STEP 8 [RED·정찰·전송보안] — HTTP→HTTPS 리다이렉트 체인 + HSTS 점검
+# ============================================================
 - order: 8
-  instruction: 'HTTP 리다이렉트 동작을 분석하시오: HTTP에서 HTTPS로의 리다이렉트 여부.
+  instruction: |
+    ## 🎯 MISSION
 
+    attacker 컨테이너 (10.20.30.202) 에서 6v6-web 의 (1) HTTP → HTTPS 리다이렉트
+    여부와 (2) HSTS 정책 적용 여부를 점검한다. 리다이렉트 미적용 시 평문
+    HTTP 로 평생 통신 (sslstrip MITM 가능), HSTS 미적용 시 첫 방문에만
+    여전히 평문 가능.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `http_basics` 에 적합한 도구: whatweb, curl -I, nmap
-    -sV. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: curl -L -v 옵션을 사용하세요.
+    ## 💻 실행 명령
+
+    ```bash
+    # 1. 리다이렉트 체인 추적 (-L = follow, -I = HEAD only)
+    curl -sIL http://10.20.32.80/ 2>&1 | grep -iE '^(HTTP/|location:|strict-transport)'
+
+    # 2. HSTS 헤더 단독 (HTTPS 응답에서)
+    curl -sI https://10.20.32.80/ -k 2>&1 | grep -i '^strict-transport-security:'
+
+    # 3. vhost 변형 (HAProxy backend)
+    curl -sIL -H "Host: juice.6v6.lab" http://10.20.32.80/ \
+      | grep -iE '^(HTTP/|location:|strict-transport)'
+    ```
+
+    ## 📋 확인 사항
+
+    - 첫 응답이 `HTTP/1.1 301 Moved Permanently` + `Location: https://...` 인가
+    - 리다이렉트 후 HTTPS 응답에 `Strict-Transport-Security: max-age=N; ...` 헤더
+    - HSTS `max-age` 값 (>= 31536000 권장 = 1 년) + `includeSubDomains` 포함 여부
+    - HTTPS 미설정 또는 self-signed 인증서 일 때 `-k` 옵션 필수 (학습 환경 통상)
+
+    ## 💡 왜 이걸 하는가?
+
+    HTTP → HTTPS 자동 리다이렉트 + HSTS 가 *동시* 적용되어야 sslstrip 등
+    MITM 공격이 차단 (OWASP A02 Cryptographic Failures + MITRE T1557 Adversary
+    -in-the-Middle 의 전제). 리다이렉트만 있고 HSTS 없으면 *첫 방문 의 평문
+    구간* 에서 MITM 가능 — HSTS preload list (Chrome / Firefox) 등록까지 권장.
+
+    ## 🔵 Blue 측 관찰
+
+    학습 환경 의 6v6-web 은 HTTP 80 + HTTPS 443 양쪽 listen 가능 (self-signed
+    인증서). HAProxy 의 stats / 로그 (`/var/log/haproxy.log`) 에 `frontend
+    http→https` 의 redirect 비율 모니터링. Wazuh 의 default 룰은 redirect
+    실패 자체 를 *경고* 하지 않음 — 별도 cron + alert 필요.
+
+    ## 🟣 Purple 보완 권장
+
+    - Apache `<VirtualHost *:80>` 에 `Redirect permanent / https://example.com/`
+      + `<VirtualHost *:443>` 에 `Header always set Strict-Transport-Security
+      "max-age=31536000; includeSubDomains; preload"`
+    - HAProxy `redirect scheme https code 301 if !{ ssl_fc }` 한 줄 (frontend)
+    - HSTS preload list (hstspreload.org) 등록 — *첫 방문 도* TLS 강제
+  hint: |
+    `curl -sIL` 의 `-L` = 리다이렉트 follow. `-k` = self-signed 인증서 무시 (학습
+    환경 통상). `grep -iE '^(HTTP/|location:|strict-transport)'` 로 핵심 라인만.
   category: http_basics
   points: 10
-  answer: '🤖 프롬프트: HTTP 리다이렉트 동작을 분석하시오: HTTP에서 HTTPS로의 리다이렉트 여부해줘
-
-    📎 참고 (CLI): curl -sI -L http://10.20.32.80 2>&1 | grep -iE ''(location|HTTP/)''
-    && echo ''리다이렉트 분석 완료'''
-  answer_detail: HTTP→HTTPS 리다이렉트가 없으면 중간자 공격에 취약합니다.
+  answer: |
+    echo "=== 1. HTTP→HTTPS 리다이렉트 체인 ==="
+    curl -sIL http://10.20.32.80/ 2>&1 | grep -iE '^(HTTP/|location:|strict-transport)' \
+      || echo "(리다이렉트 또는 HSTS 헤더 없음 — 학습 환경 default)"
+    echo ""
+    echo "=== 2. HSTS 헤더 (HTTPS 응답) ==="
+    curl -sI -k https://10.20.32.80/ 2>&1 | grep -i '^strict-transport-security:' \
+      || echo "(HSTS 미설정 또는 HTTPS 미가동)"
+    echo ""
+    echo "=== 3. vhost (juice.6v6.lab) ==="
+    curl -sIL -H "Host: juice.6v6.lab" http://10.20.32.80/ 2>&1 \
+      | grep -iE '^(HTTP/|location:|strict-transport)' || echo "(no redirect / hsts)"
+  answer_detail: |
+    학습 환경 6v6-web 은 default 로 HTTP→HTTPS 리다이렉트 미설정 (학습 단순화)
+    + HSTS 도 미설정. 운영 web 이라면 (a) 301 리다이렉트 + (b) HSTS max-age
+    31536000 + (c) HSTS preload 등록 의 3 단계가 default 권장. HAProxy 의
+    `redirect scheme https if !{ ssl_fc }` 한 줄로 frontend 단 강제 적용.
   verify:
     type: output_contains
-    expect:
-    - 리다이렉트 분석 완료
-    - HTTPS
+    expect: 'HTTP'
     field: stdout
     semantic:
-      intent: HTTP→HTTPS 리다이렉트 확인 — 301/302 응답과 Location 헤더 분석, HSTS 적용 여부
+      intent: |
+        HTTP→HTTPS 리다이렉트 체인 + HSTS 정책 점검. OWASP A02 Cryptographic
+        Failures + MITRE T1557 Adversary-in-the-Middle 의 사전 조건 식별.
+        sslstrip MITM 차단 위한 2 단 방어 (리다이렉트 + HSTS).
       success_criteria:
-      - curl -L 또는 -I 로 리다이렉트 체인 추적
-      - Location 헤더 분석 (https:// 프리픽스)
-      - HSTS 헤더 존재 여부 검증
+        - HTTP / location / strict-transport 헤더 직접 인용 (또는 부재 명시)
+        - 리다이렉트 응답 코드 (301/302) + Location URL 분석
+        - HSTS max-age + includeSubDomains 값 확인 (있을 때)
+        - 6v6-web (10.20.32.80) HTTP + HTTPS 양쪽 점검
       acceptable_methods:
-      - curl -IL <http://url>
-      - curl -I <http://url> + Location 추출
-      - browser dev tools Network 탭
-      - sslyze --resume_attempts
+        - "curl -sIL + grep '^(HTTP/|location|strict-transport)'"
+        - "curl -k -sI https://... + HSTS grep"
+        - "sslyze https://target/ + HSTS 자동 점검"
+        - "Mozilla Observatory observatory.mozilla.org/api/v1/analyze?host=..."
       negative_signs:
-      - 단일 응답만 확인 (리다이렉트 체인 X)
-      - HSTS 언급 없음
-      - Mixed Content 위험 누락
+        - HTTP 응답만 보고 HSTS 누락
+        - HSTS max-age 값 해석 없음 (단순 '있음/없음')
+        - MITM/sslstrip 위험 해석 없음
   target_vm: attacker
-  script: curl -sI -L http://10.20.32.80 2>&1 | grep -iE '(location|HTTP/)' && echo
-    '리다이렉트 분석 완료'
+  script: |
+    curl -sIL http://10.20.32.80/ 2>&1 | grep -iE '^(HTTP/|location:|strict-transport)' || echo "(no redirect/hsts)"
+    curl -sI -k https://10.20.32.80/ 2>&1 | grep -i '^strict-transport-security:' || echo "(no HSTS)"
   risk_level: low
-  bastion_prompt: 'HTTP 리다이렉트 동작을 분석하시오: HTTP에서 HTTPS로의 리다이렉트 여부해줘
-
-
-    [도구 권장] http_basics: whatweb, curl -I, nmap -sV. curl 만 쓰지 말고 **whatweb** 등 적합
-    도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    attacker 컨테이너에서 6v6-web (10.20.32.80) 에 (1) curl -sIL http:// 로
+    HTTP→HTTPS 리다이렉트 체인을 추적하고, (2) curl -k -sI https:// 로 HSTS
+    헤더 존재 + max-age 값을 점검해줘. 두 가지 다 적용되어야 sslstrip MITM
+    이 차단된다는 보안 영향을 설명하고, 부재 시 OWASP A02 / MITRE T1557 와
+    매핑해줘. 학습 환경의 default 는 미설정이 정상 (Apache/HAProxy 학습용).
 - order: 9
   instruction: 'POST 요청을 전송하고 요청/응답을 분석하시오.
 
