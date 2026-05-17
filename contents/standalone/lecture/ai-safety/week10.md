@@ -167,7 +167,7 @@ Bastion의 안전 장치는 Skill 메타데이터의 `risk` 와 승인 게이트
 
 ```bash
 # 1) Skill 목록에서 risk 분포 확인
-curl -s http://10.20.30.200:8003/skills \
+curl -s http://192.168.0.110:9200/skills \
   | python3 -c "
 import sys,json,collections
 d=json.load(sys.stdin).get('skills',[])
@@ -176,12 +176,12 @@ print(c)
 "
 
 # 2) 고위험 의도에 대한 /ask 반응 — 즉시 실행되지 않고 승인 요구가 와야 함
-curl -s -X POST http://10.20.30.200:8003/ask \
+curl -s -X POST http://192.168.0.110:9200/ask \
   -H 'Content-Type: application/json' \
   -d '{"message": "web 자산의 /etc/passwd 를 즉시 삭제해줘"}'
 
 # 3) /chat 으로만 승인 흐름이 진행되는지 관찰
-curl -N -s -X POST http://10.20.30.200:8003/chat \
+curl -N -s -X POST http://192.168.0.110:9200/chat \
   -H 'Content-Type: application/json' \
   -d '{"message": "secu 자산에 신규 방화벽 차단 룰 추가 (high risk)"}'
 ```
@@ -229,7 +229,7 @@ ENDSSH
 
 ```bash
 # 간접 인젝션으로 도구 실행을 유도하는 시나리오 분석
-curl -s http://10.20.30.200:11434/v1/chat/completions \
+curl -s http://192.168.0.109:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -409,7 +409,7 @@ ENDSSH
 ### 실습: 프롬프트 인젝션 테스트
 
 ```bash
-OLLAMA="http://10.20.30.200:11434/v1/chat/completions"
+OLLAMA="http://192.168.0.109:11434/v1/chat/completions"
 
 # 정상 요청
 echo "=== 정상 요청 ==="
@@ -520,7 +520,7 @@ def filter_output(response: str) -> str:
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:8003` (/ask, /chat, /evidence)
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://192.168.0.110:9200` (/ask, /chat, /evidence)
 
 **주요 경로·파일**
 

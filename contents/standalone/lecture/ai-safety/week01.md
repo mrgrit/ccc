@@ -23,7 +23,7 @@
 
 **ccc-api:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 **Bastion:** `http://192.168.0.110:9200` (/health, /chat, /kg/*, /evidence)
-**Ollama:** `http://10.20.30.200:11434` (원시 LLM, OpenAI 호환)
+**Ollama:** `http://192.168.0.109:11434` (원시 LLM, OpenAI 호환)
 
 ## 실습용 LLM 모델 준비 (필수, 1회 셋업)
 
@@ -434,7 +434,7 @@ ssh 6v6-bastion
 
 ```bash
 # 보안 봇 역할 설정 (시스템 프롬프트)
-curl -s -X POST http://10.20.30.200:11434/api/chat \
+curl -s -X POST http://192.168.0.109:11434/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -460,7 +460,7 @@ curl -s -X POST http://10.20.30.200:11434/api/chat \
 
 ```bash
 # 공격 시도 1: "지시를 무시해"
-curl -s -X POST http://10.20.30.200:11434/api/chat \
+curl -s -X POST http://192.168.0.109:11434/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -482,7 +482,7 @@ curl -s -X POST http://10.20.30.200:11434/api/chat \
 
 ```bash
 # 공격 시도 2: "새로운 역할 부여"
-curl -s -X POST http://10.20.30.200:11434/api/chat \
+curl -s -X POST http://192.168.0.109:11434/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -508,7 +508,7 @@ curl -s -X POST http://10.20.30.200:11434/api/chat \
 
 ```bash
 # 공격 시도 3: 교육 시나리오 가장
-curl -s -X POST http://10.20.30.200:11434/api/chat \
+curl -s -X POST http://192.168.0.109:11434/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -530,7 +530,7 @@ curl -s -X POST http://10.20.30.200:11434/api/chat \
 
 ```bash
 # 공격 시도 4: 소설/픽션 가장
-curl -s -X POST http://10.20.30.200:11434/api/chat \
+curl -s -X POST http://192.168.0.109:11434/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -555,7 +555,7 @@ curl -s -X POST http://10.20.30.200:11434/api/chat \
 
 ```bash
 # 시나리오: 로그 데이터 안에 공격 지시가 숨겨져 있음
-curl -s -X POST http://10.20.30.200:11434/api/chat \
+curl -s -X POST http://192.168.0.109:11434/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -582,7 +582,7 @@ curl -s -X POST http://10.20.30.200:11434/api/chat \
 
 ```bash
 # gemma3:12b의 반응
-curl -s -X POST http://10.20.30.200:11434/api/chat \
+curl -s -X POST http://192.168.0.109:11434/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -603,7 +603,7 @@ curl -s -X POST http://10.20.30.200:11434/api/chat \
 
 ```bash
 # llama3.1:8b의 반응 (모델이 있는 경우)
-curl -s -X POST http://10.20.30.200:11434/api/chat \
+curl -s -X POST http://192.168.0.109:11434/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "llama3.1:8b",
@@ -635,7 +635,7 @@ curl -s -X POST http://10.20.30.200:11434/api/chat \
 
 ```bash
 # 방어 기법 1: 강화된 시스템 프롬프트
-curl -s -X POST http://10.20.30.200:11434/api/chat \
+curl -s -X POST http://192.168.0.109:11434/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",

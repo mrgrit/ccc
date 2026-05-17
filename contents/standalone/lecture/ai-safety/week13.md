@@ -186,7 +186,7 @@ ssh 6v6-web << 'ENDSSH'
 python3 << 'PYEOF'
 import json, urllib.request
 
-OLLAMA = "http://10.20.30.200:11434/v1/chat/completions"
+OLLAMA = "http://192.168.0.109:11434/v1/chat/completions"
 
 def test_model(system_prompt, user_prompt, category):
     data = json.dumps({
@@ -349,7 +349,7 @@ LLM에게 평가 결과를 전달하여 경영진용 보안 보고서를 자동 
 
 ```bash
 # LLM으로 AI 보안 평가 보고서 자동 생성
-curl -s http://10.20.30.200:11434/v1/chat/completions \
+curl -s http://192.168.0.109:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -442,7 +442,7 @@ ENDSSH
 ### 실습: 프롬프트 인젝션 테스트
 
 ```bash
-OLLAMA="http://10.20.30.200:11434/v1/chat/completions"
+OLLAMA="http://192.168.0.109:11434/v1/chat/completions"
 
 # 정상 요청
 echo "=== 정상 요청 ==="

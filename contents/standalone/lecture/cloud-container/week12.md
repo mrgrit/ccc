@@ -322,7 +322,7 @@ curl -s http://localhost:9100/students
 ### 실습 2: Bastion LLM으로 K8s 공격 시나리오 분석
 
 ```bash
-curl -s -X POST http://10.20.30.200:8003/ask \
+curl -s -X POST http://192.168.0.110:9200/ask \
   -H 'Content-Type: application/json' \
   -d '{
     "message": "Kubernetes 환경에서 공격자가 취약한 웹 앱을 통해 Pod에 RCE를 얻었고, automountServiceAccountToken이 true이며 SA에 cluster-admin 권한이 있다. 킬체인을 단계별로 설명하고 각 단계의 방어 방법을 정리해줘."

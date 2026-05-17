@@ -478,7 +478,7 @@ import json
 import time
 import requests
 
-OLLAMA_URL = "http://10.20.30.200:11434"
+OLLAMA_URL = "http://192.168.0.109:11434"
 MANAGER_URL = "http://localhost:9100"
 API_KEY = "ccc-api-key-2026"
 HEADERS = {"Content-Type": "application/json", "X-API-Key": API_KEY}
@@ -869,7 +869,7 @@ if __name__ == "__main__":
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:8003` (Bastion /ask·/chat)
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://192.168.0.110:9200` (Bastion /ask·/chat)
 
 **주요 경로·파일**
 

@@ -168,7 +168,7 @@ Claude Code /
 ```bash
 # 1. 외부 Master(Claude Code / 사용자)가 Manager VM의 Bastion에 자연어 지시
 #    (Bastion은 manager:10.20.30.200 의 :8003 에서 /ask, /chat 로 대기)
-curl -s -X POST http://10.20.30.200:8003/ask \
+curl -s -X POST http://192.168.0.110:9200/ask \
   -H 'Content-Type: application/json' \
   -d '{"message": "web 호스트의 호스트네임과 커널 버전을 알려줘"}'
 
@@ -177,7 +177,7 @@ curl -s -X POST http://10.20.30.200:8003/ask \
 #    사용자는 Manager에게만 말하고, SubAgent 직접 호출은 하지 않는다.
 
 # 3. SubAgent가 실행 → 결과 + 증거가 Bastion /evidence 에 영구 기록된다
-curl -s "http://10.20.30.200:8003/evidence?limit=5" | python3 -m json.tool
+curl -s "http://192.168.0.110:9200/evidence?limit=5" | python3 -m json.tool
 ```
 
 ### 3.3 안전 장치
@@ -211,12 +211,12 @@ GET  /health              → 상태 확인
 ```bash
 # Manager(Bastion)를 통한 자연어 도구 호출
 # Bastion이 자산 인벤토리에서 "secu" 자산을 찾고 해당 SubAgent에 uname 실행 위임
-curl -s -X POST http://10.20.30.200:8003/ask \
+curl -s -X POST http://192.168.0.110:9200/ask \
   -H 'Content-Type: application/json' \
   -d '{"message": "secu 자산에서 uname -a 실행 결과를 알려줘"}'
 
 # 결과의 실행 근거는 /evidence 에서 바로 조회 가능
-curl -s "http://10.20.30.200:8003/evidence?asset=secu&limit=3" | python3 -m json.tool
+curl -s "http://192.168.0.110:9200/evidence?asset=secu&limit=3" | python3 -m json.tool
 ```
 
 ---
@@ -230,7 +230,7 @@ curl -s "http://10.20.30.200:8003/evidence?asset=secu&limit=3" | python3 -m json
 curl -s -H "X-API-Key: ccc-api-key-2026" http://localhost:9100/health | python3 -m json.tool
 
 # Bastion(Manager) — manager VM:8003
-curl -s http://10.20.30.200:8003/health | python3 -m json.tool
+curl -s http://192.168.0.110:9200/health | python3 -m json.tool
 
 # SubAgent(현장 에이전트) — 대상 자산의 :8002
 curl -s http://10.20.30.80:8002/health | python3 -m json.tool
@@ -246,7 +246,7 @@ Ollama(:11434)는 원시 LLM 서버이고, Bastion(:8003)은 그 위에 자산·
 얹은 운영 에이전트이다. 본 실습은 **원시 LLM 관점**의 분석이므로 Ollama 포트 사용.
 
 ```bash
-curl -s http://10.20.30.200:11434/v1/chat/completions \
+curl -s http://192.168.0.109:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -263,15 +263,15 @@ curl -s http://10.20.30.200:11434/v1/chat/completions \
 ```bash
 # 자연어 지시 한 번으로 복수 자산 점검.
 # Bastion이 자산 인벤토리에서 web·secu 를 찾아 해당 SubAgent에 위임·수집·정리한다.
-curl -s -X POST http://10.20.30.200:8003/ask \
+curl -s -X POST http://192.168.0.110:9200/ask \
   -H 'Content-Type: application/json' \
   -d '{"message": "web과 secu 자산의 hostname·uptime·현재 로드를 각각 수집해서 비교 요약해줘"}'
 
 # 결과가 어떤 명령·어떤 자산·어떤 시각에 수행됐는지 감사 추적
-curl -s "http://10.20.30.200:8003/evidence?limit=10" | python3 -m json.tool
+curl -s "http://192.168.0.110:9200/evidence?limit=10" | python3 -m json.tool
 
 # 대화형 보강이 필요하면 /chat (NDJSON 스트림) 사용
-curl -N -s -X POST http://10.20.30.200:8003/chat \
+curl -N -s -X POST http://192.168.0.110:9200/chat \
   -H 'Content-Type: application/json' \
   -d '{"message": "방금 점검 결과에서 이상 징후가 있으면 MITRE ATT&CK로 매핑해줘"}'
 ```
@@ -319,9 +319,9 @@ curl -N -s -X POST http://10.20.30.200:8003/chat \
 
 ```bash
 # Ollama는 OpenAI 호환 API를 제공한다
-# URL: http://10.20.30.200:11434/v1/chat/completions
+# URL: http://192.168.0.109:11434/v1/chat/completions
 
-curl -s http://10.20.30.200:11434/v1/chat/completions \
+curl -s http://192.168.0.109:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",        ← 사용할 모델
@@ -439,7 +439,7 @@ GET  /health       → 헬스체크
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:11434`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://192.168.0.109:11434`
 
 **주요 경로·파일**
 

@@ -233,7 +233,7 @@ import time
 import re
 from datetime import datetime
 
-OLLAMA_URL = "http://10.20.30.200:11434/v1/chat/completions"
+OLLAMA_URL = "http://192.168.0.109:11434/v1/chat/completions"
 
 TARGET_SYSTEM_PROMPT = """You are SecureBot, a cybersecurity assistant for AcmeCorp.
 Rules:

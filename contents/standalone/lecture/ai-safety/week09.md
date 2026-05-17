@@ -124,7 +124,7 @@ ssh 6v6-web << 'ENDSSH'
 python3 << 'PYEOF'
 import json, urllib.request
 
-OLLAMA = "http://10.20.30.200:11434/v1/chat/completions"
+OLLAMA = "http://192.168.0.109:11434/v1/chat/completions"
 
 def query_model(prompt, temp=0):
     data = json.dumps({
@@ -440,7 +440,7 @@ ENDSSH
 ### 실습: 프롬프트 인젝션 테스트
 
 ```bash
-OLLAMA="http://10.20.30.200:11434/v1/chat/completions"
+OLLAMA="http://192.168.0.109:11434/v1/chat/completions"
 
 # 정상 요청
 echo "=== 정상 요청 ==="

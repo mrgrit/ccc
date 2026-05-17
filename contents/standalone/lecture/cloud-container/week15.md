@@ -214,7 +214,7 @@ resource "aws_security_group" "web" {
 ```bash
 # Bastion에게 위 Terraform 코드의 보안 문제 분석 요청
 # /ask : 단일 자연어 질의. Bastion이 스킬·자산 컨텍스트까지 참조해서 답을 조립한다.
-curl -s -X POST http://10.20.30.200:8003/ask \
+curl -s -X POST http://192.168.0.110:9200/ask \
   -H 'Content-Type: application/json' \
   -d '{"message": "다음 Terraform 코드에서 보안 문제를 모두 찾고 수정본을 제시해줘. 특히 0.0.0.0/0 egress, 22/tcp 인바운드 개방, 태그 누락을 중점 검토해줘: <위 Terraform 코드 붙여넣기>"}'
 ```
@@ -228,7 +228,7 @@ OpenAI 호환 `/v1/chat/completions` 는 Bastion이 제공하지 않으므로 `/
 ```bash
 # Wazuh 알림을 Bastion에게 분석 요청하여 인시던트 보고서 초안 작성
 # /chat : NDJSON 스트림 대화. 보고서를 단계별로 다듬을 때 사용한다.
-curl -N -s -X POST http://10.20.30.200:8003/chat \
+curl -N -s -X POST http://192.168.0.110:9200/chat \
   -H 'Content-Type: application/json' \
   -d '{"message": "siem(10.20.30.100)의 최근 Wazuh alerts 상위 10건을 요약하고, MITRE ATT&CK 기준 인시던트 보고서(이벤트 요약/위협 평가/대응 권고/재발 방지)를 작성해줘"}'
 

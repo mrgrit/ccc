@@ -185,7 +185,7 @@ MITRE ATT&CK 프레임워크 기준으로 경보를 분류한다.
 mkdir -p ~/lab/week03
 
 # 원칙 1+2 적용: 구조화된 보안 분석 프롬프트
-curl -s http://10.20.30.200:11434/v1/chat/completions \
+curl -s http://192.168.0.109:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "llama3.1:8b",
@@ -227,7 +227,7 @@ Week 03 실습: Few-Shot 프롬프트로 경보 분석
 import requests
 import json
 
-OLLAMA_URL = "http://10.20.30.200:11434/v1/chat/completions"
+OLLAMA_URL = "http://192.168.0.109:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 # Few-Shot 예시가 포함된 system 프롬프트
@@ -298,7 +298,7 @@ Week 03 실습: 제약 조건 + Chain-of-Thought 프롬프트
 import requests
 import json
 
-OLLAMA_URL = "http://10.20.30.200:11434/v1/chat/completions"
+OLLAMA_URL = "http://192.168.0.109:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 # 제약 조건 + CoT 프롬프트
@@ -444,7 +444,7 @@ Week 03 실습: Wazuh 경보 자동 분석 에이전트
 import requests
 import json
 
-OLLAMA_URL = "http://10.20.30.200:11434/v1/chat/completions"
+OLLAMA_URL = "http://192.168.0.109:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 # 5원칙 통합 프롬프트
@@ -569,7 +569,7 @@ Week 03 실습: 프롬프트 주입 공격과 방어
 import requests
 import json
 
-OLLAMA_URL = "http://10.20.30.200:11434/v1/chat/completions"
+OLLAMA_URL = "http://192.168.0.109:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 # 방어 없는 프롬프트
@@ -647,7 +647,7 @@ Week 03 실습: 보안 프롬프트 템플릿 라이브러리
 import requests
 import json
 
-OLLAMA_URL = "http://10.20.30.200:11434/v1/chat/completions"
+OLLAMA_URL = "http://192.168.0.109:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 # 프롬프트 템플릿 라이브러리

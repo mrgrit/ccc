@@ -292,7 +292,7 @@ CLAUDE.md가 있을 때와 없을 때 LLM 응답을 비교한다.
 import requests
 import json
 
-OLLAMA_URL = "http://10.20.30.200:11434/v1/chat/completions"
+OLLAMA_URL = "http://192.168.0.109:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 # CLAUDE.md 읽기
@@ -703,7 +703,7 @@ Claude Code(LLM 판단) + Bastion(분산 실행)을 결합한다.
 import requests
 import json
 
-OLLAMA_URL = "http://10.20.30.200:11434/v1/chat/completions"
+OLLAMA_URL = "http://192.168.0.109:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
 BASTION = "http://localhost:9100"
 HEADERS = {"X-API-Key": "ccc-api-key-2026", "Content-Type": "application/json"}
@@ -893,7 +893,7 @@ fi
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:11434`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://192.168.0.109:11434`
 
 **주요 경로·파일**
 

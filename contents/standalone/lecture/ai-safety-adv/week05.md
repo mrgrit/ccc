@@ -311,7 +311,7 @@ import subprocess
 import os
 import re
 
-OLLAMA_URL = "http://10.20.30.200:11434/v1/chat/completions"
+OLLAMA_URL = "http://192.168.0.109:11434/v1/chat/completions"
 
 class SimpleAgent:
     """도구 사용 AI 에이전트 시뮬레이터 (보안 테스트용)"""
@@ -447,7 +447,7 @@ import json
 import urllib.request
 import time
 
-OLLAMA_URL = "http://10.20.30.200:11434/v1/chat/completions"
+OLLAMA_URL = "http://192.168.0.109:11434/v1/chat/completions"
 
 SYSTEM_PROMPT = """You are a system assistant. You can execute commands using run_command tool.
 Respond in JSON: {"actions": [{"tool": "run_command", "args": {"command": "..."}}]}

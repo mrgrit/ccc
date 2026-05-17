@@ -97,7 +97,7 @@ Bastion은 워크플로 상태머신(plan/execute/dispatch 등)을 외부에 노
 
 ```bash
 # 동기 단일 응답 {"answer": "..."}
-curl -s -X POST http://10.20.30.200:8003/ask \
+curl -s -X POST http://192.168.0.110:9200/ask \
   -H 'Content-Type: application/json' \
   -d '{"message": "web 자산의 hostname과 uptime을 알려줘"}'
 ```
@@ -116,7 +116,7 @@ curl -s -X POST http://10.20.30.200:8003/ask \
 
 ```bash
 # -N: 버퍼링 해제, 스트림 그대로 출력
-curl -N -s -X POST http://10.20.30.200:8003/chat \
+curl -N -s -X POST http://192.168.0.110:9200/chat \
   -H 'Content-Type: application/json' \
   -d '{"message": "web의 최근 로그인 이력을 점검하고, 의심 IP가 있으면 MITRE ATT&CK로 매핑해줘"}'
 ```
@@ -137,7 +137,7 @@ Skill은 **결정론적 도구**이다. LLM이 매번 다르게 생성하는 명
 파라미터만 바뀌는 재현 가능한 단위이다.
 
 ```bash
-curl -s http://10.20.30.200:8003/skills | python3 -m json.tool | head -40
+curl -s http://192.168.0.110:9200/skills | python3 -m json.tool | head -40
 ```
 
 응답 예 (발췌):
@@ -159,7 +159,7 @@ curl -s http://10.20.30.200:8003/skills | python3 -m json.tool | head -40
 Playbook은 **Skill의 순서화된 묶음** — 표준 작업 지침서(SOP)이다.
 
 ```bash
-curl -s http://10.20.30.200:8003/playbooks | python3 -m json.tool | head -40
+curl -s http://192.168.0.110:9200/playbooks | python3 -m json.tool | head -40
 ```
 
 응답 예:
@@ -177,7 +177,7 @@ curl -s http://10.20.30.200:8003/playbooks | python3 -m json.tool | head -40
 자연어 지시에서 자산 이름만 말해도 Bastion이 IP로 변환하는 이유.
 
 ```bash
-curl -s http://10.20.30.200:8003/assets | python3 -m json.tool
+curl -s http://192.168.0.110:9200/assets | python3 -m json.tool
 ```
 
 예:
@@ -200,10 +200,10 @@ curl -s http://10.20.30.200:8003/assets | python3 -m json.tool
 
 ```bash
 # 최근 20건
-curl -s "http://10.20.30.200:8003/evidence?limit=20" | python3 -m json.tool
+curl -s "http://192.168.0.110:9200/evidence?limit=20" | python3 -m json.tool
 
 # 특정 자산의 증거
-curl -s "http://10.20.30.200:8003/evidence?asset=web&limit=10" | python3 -m json.tool
+curl -s "http://192.168.0.110:9200/evidence?asset=web&limit=10" | python3 -m json.tool
 ```
 
 각 entry 필드 (예):
@@ -248,29 +248,29 @@ Skill/Playbook 메타데이터에는 risk 가 명시되어 있다.
 ```bash
 # (1) 3계층 헬스체크
 curl -s http://localhost:9100/health -H "X-API-Key: ccc-api-key-2026" | python3 -m json.tool
-curl -s http://10.20.30.200:8003/health | python3 -m json.tool
+curl -s http://192.168.0.110:9200/health | python3 -m json.tool
 curl -s http://10.20.30.80:8002/health  | python3 -m json.tool
 
 # (2) Bastion에 등록된 Skill/Playbook/Asset 한 번 훑기
-curl -s http://10.20.30.200:8003/skills    | python3 -m json.tool | head -20
-curl -s http://10.20.30.200:8003/playbooks | python3 -m json.tool | head -20
-curl -s http://10.20.30.200:8003/assets    | python3 -m json.tool
+curl -s http://192.168.0.110:9200/skills    | python3 -m json.tool | head -20
+curl -s http://192.168.0.110:9200/playbooks | python3 -m json.tool | head -20
+curl -s http://192.168.0.110:9200/assets    | python3 -m json.tool
 
 # (3) 자연어 지시 한 번으로 web 점검
-curl -s -X POST http://10.20.30.200:8003/ask \
+curl -s -X POST http://192.168.0.110:9200/ask \
   -H 'Content-Type: application/json' \
   -d '{"message": "web 자산의 호스트네임·커널·열린 포트·최근 로그인 5건을 요약해줘"}' \
   | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('answer',d))"
 
 # (4) 방금 어떤 명령들이 실제 실행됐는지 증거로 확인
-curl -s "http://10.20.30.200:8003/evidence?asset=web&limit=10" | python3 -m json.tool
+curl -s "http://192.168.0.110:9200/evidence?asset=web&limit=10" | python3 -m json.tool
 ```
 
 ### 실습 2: 다중 자산 병렬 점검
 
 ```bash
 # 한 번의 요청으로 secu/web/siem 모두 점검
-curl -s -X POST http://10.20.30.200:8003/ask \
+curl -s -X POST http://192.168.0.110:9200/ask \
   -H 'Content-Type: application/json' \
   -d '{"message": "secu/web/siem 세 자산의 상태를 병렬로 점검해줘. 각 자산의 hostname·uptime·listening ports를 표로 정리해줘"}'
 ```
@@ -281,7 +281,7 @@ Bastion은 자산 3개에 대한 명령 위임을 내부에서 병렬화한다. 
 
 ```bash
 # 실습 2에서 이상치가 보이면 /chat 으로 파고든다
-curl -N -s -X POST http://10.20.30.200:8003/chat \
+curl -N -s -X POST http://192.168.0.110:9200/chat \
   -H 'Content-Type: application/json' \
   -d '{"message": "방금 점검 결과 중 비정상 포트를 식별하고, MITRE ATT&CK T 번호로 매핑해줘"}'
 ```
@@ -292,7 +292,7 @@ curl -N -s -X POST http://10.20.30.200:8003/chat \
 
 ```bash
 # fw.block_ip 는 high 위험 — /ask 로는 실행되지 않고 승인 요구만 돌아와야 한다
-curl -s -X POST http://10.20.30.200:8003/ask \
+curl -s -X POST http://192.168.0.110:9200/ask \
   -H 'Content-Type: application/json' \
   -d '{"message": "secu에서 203.0.113.50 IP를 즉시 차단해줘"}'
 
@@ -327,9 +327,9 @@ curl -s -X POST http://10.20.30.200:8003/ask \
 
 ```bash
 # Ollama는 OpenAI 호환 API를 제공한다 (포트 11434)
-# URL: http://10.20.30.200:11434/v1/chat/completions
+# URL: http://192.168.0.109:11434/v1/chat/completions
 
-curl -s http://10.20.30.200:11434/v1/chat/completions \
+curl -s http://192.168.0.109:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",        ← 사용할 모델

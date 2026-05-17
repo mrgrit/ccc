@@ -126,7 +126,7 @@
 
 ```bash
 # Bastion 자연어 지시로 secu/siem/web 관제 환경 전체 탐색
-curl -s -X POST http://10.20.30.200:8003/ask \
+curl -s -X POST http://192.168.0.110:9200/ask \
   -H 'Content-Type: application/json' \
   -d '{
     "message": "secu(10.20.30.1), siem(10.20.30.100), web(10.20.30.80) 세 서버에 각각 접속해서 다음 정보를 수집하고 표로 정리해줘: (1) hostname·커널·업타임, (2) 실행 중인 보안 서비스(suricata/wazuh/nftables/modsecurity), (3) 최근 로그 엔트리 수."
@@ -134,7 +134,7 @@ curl -s -X POST http://10.20.30.200:8003/ask \
   | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['answer'])"
 
 # 수행 이력 확인
-curl -s "http://10.20.30.200:8003/evidence?limit=10" | python3 -c "
+curl -s "http://192.168.0.110:9200/evidence?limit=10" | python3 -c "
 import sys, json
 for e in json.load(sys.stdin)[:10]:
     msg = e.get('user_message','')[:60]
@@ -249,7 +249,7 @@ Bastion Manager API를 호출하여 작업을 수행합니다.
 
 ```bash
 # Bastion에게 자극 테스트 + 탐지 확인 자연어 지시
-curl -s -X POST http://10.20.30.200:8003/ask \
+curl -s -X POST http://192.168.0.110:9200/ask \
   -H 'Content-Type: application/json' \
   -d '{
     "message": "자극 테스트를 수행해줘: (1) web(10.20.30.80)에서 secu(10.20.30.1)로 포트 22/80/443/3306/5432/8080 스캔, (2) web의 JuiceShop :3000 /rest/products/search에 test OR 1=1-- SQLi 전송, (3) 그 직후 secu의 /var/log/suricata/fast.log에서 관련 alert 발생 여부 확인. 전체 결과를 표로 정리해줘."

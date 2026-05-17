@@ -122,12 +122,12 @@ assertions:
 
 ```bash
 # (A) Playbook 이름을 명시적으로 지정
-curl -s -X POST http://10.20.30.200:8003/ask \
+curl -s -X POST http://192.168.0.110:9200/ask \
   -H 'Content-Type: application/json' \
   -d '{"message": "web 자산에 ssh-security-audit playbook을 실행해줘"}'
 
 # (B) 의도만 말하면 Bastion이 적합 Playbook을 선택
-curl -s -X POST http://10.20.30.200:8003/ask \
+curl -s -X POST http://192.168.0.110:9200/ask \
   -H 'Content-Type: application/json' \
   -d '{"message": "web 자산의 SSH 보안 상태를 점검해줘"}'
 ```
@@ -135,7 +135,7 @@ curl -s -X POST http://10.20.30.200:8003/ask \
 어느 Playbook이 실행됐고 각 step이 어떻게 평가됐는지는 `/evidence` 에 남는다.
 
 ```bash
-curl -s "http://10.20.30.200:8003/evidence?asset=web&limit=15" | python3 -m json.tool
+curl -s "http://192.168.0.110:9200/evidence?asset=web&limit=15" | python3 -m json.tool
 ```
 
 ---
@@ -184,7 +184,7 @@ Bastion 내부 상태는 대부분 외부로 노출되지 않지만, 학습 결�
 
 ```bash
 # 최근 증거 기반으로 동일 의도의 실행 이력 비교
-curl -s "http://10.20.30.200:8003/evidence?limit=50" \
+curl -s "http://192.168.0.110:9200/evidence?limit=50" \
   | python3 -c "
 import sys,json,collections
 d=json.load(sys.stdin).get('evidence',[])
@@ -201,15 +201,15 @@ for k,v in c.most_common(10): print(v,k)
 
 ```bash
 # 등록된 Playbook 목록
-curl -s http://10.20.30.200:8003/playbooks | python3 -m json.tool
+curl -s http://192.168.0.110:9200/playbooks | python3 -m json.tool
 
 # 선택한 Playbook을 자연어로 실행 (예: baseline.web)
-curl -s -X POST http://10.20.30.200:8003/ask \
+curl -s -X POST http://192.168.0.110:9200/ask \
   -H 'Content-Type: application/json' \
   -d '{"message": "web 자산에 baseline.web playbook을 실행해줘"}'
 
 # 실행 증거 확인
-curl -s "http://10.20.30.200:8003/evidence?asset=web&limit=10" | python3 -m json.tool
+curl -s "http://192.168.0.110:9200/evidence?asset=web&limit=10" | python3 -m json.tool
 ```
 
 ### 실습 2: 의도 기반 자동 선택
@@ -217,7 +217,7 @@ curl -s "http://10.20.30.200:8003/evidence?asset=web&limit=10" | python3 -m json
 ```bash
 # Playbook 이름을 말하지 않고 의도만 전달
 # Bastion이 /playbooks 중 가장 근접한 것을 선택한다
-curl -s -X POST http://10.20.30.200:8003/ask \
+curl -s -X POST http://192.168.0.110:9200/ask \
   -H 'Content-Type: application/json' \
   -d '{"message": "web의 기본 보안 베이스라인 점검해줘"}'
 ```
@@ -231,7 +231,7 @@ curl -s -X POST http://10.20.30.200:8003/ask \
 
 ```bash
 # LLM에게 Linux 하드닝 Playbook YAML 초안 요청 (Ollama :11434)
-curl -s http://10.20.30.200:11434/v1/chat/completions \
+curl -s http://192.168.0.109:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -276,9 +276,9 @@ curl -s http://10.20.30.200:11434/v1/chat/completions \
 
 ```bash
 # Ollama는 OpenAI 호환 API를 제공한다
-# URL: http://10.20.30.200:11434/v1/chat/completions
+# URL: http://192.168.0.109:11434/v1/chat/completions
 
-curl -s http://10.20.30.200:11434/v1/chat/completions \
+curl -s http://192.168.0.109:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",        ← 사용할 모델
@@ -357,7 +357,7 @@ Ollama(:11434)는 원시 LLM — 초안 설계·분석에 직접 호출.
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:11434`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://192.168.0.109:11434`
 
 **주요 경로·파일**
 

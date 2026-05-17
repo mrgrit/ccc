@@ -711,7 +711,7 @@ python3 ~/lab/week06/rl_training_loop.py
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:11434`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://192.168.0.109:11434`
 
 **주요 경로·파일**
 

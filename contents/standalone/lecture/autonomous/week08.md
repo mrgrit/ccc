@@ -496,7 +496,7 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # LLM에 수집된 로그 분석 요청
-curl -s -X POST http://10.20.30.200:11434/api/chat \
+curl -s -X POST http://192.168.0.109:11434/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -658,7 +658,7 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:11434`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://192.168.0.109:11434`
 
 **주요 경로·파일**
 

@@ -133,7 +133,7 @@ def run_cmd():
     return result
 '
 
-curl -s http://10.20.30.200:11434/v1/chat/completions \
+curl -s http://192.168.0.109:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d "{
     \"model\": \"gemma3:12b\",
@@ -170,7 +170,7 @@ server {
 }
 '
 
-curl -s http://10.20.30.200:11434/v1/chat/completions \
+curl -s http://192.168.0.109:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d "{
     \"model\": \"gemma3:12b\",
@@ -192,7 +192,7 @@ CVE 번호를 LLM에 전달하면 영향 범위, 대응 방법, 환경별 확인
 
 ```bash
 # CVE-2024-3094(xz-utils 백도어) 분석: 7개 항목 형식 지정
-curl -s http://10.20.30.200:11434/v1/chat/completions \
+curl -s http://192.168.0.109:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -210,7 +210,7 @@ curl -s http://10.20.30.200:11434/v1/chat/completions \
 
 ```bash
 # 4대 서버 환경별 Log4Shell 영향 분석 요청
-curl -s http://10.20.30.200:11434/v1/chat/completions \
+curl -s http://192.168.0.109:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -239,7 +239,7 @@ SCAN_RESULT='
 4. CVE-2023-9999 (zlib) - LOW - zlib1g
 '
 
-curl -s http://10.20.30.200:11434/v1/chat/completions \
+curl -s http://192.168.0.109:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d "{
     \"model\": \"gemma3:12b\",
@@ -261,7 +261,7 @@ curl -s http://10.20.30.200:11434/v1/chat/completions \
 # JuiceShop은 의도적으로 취약한 웹 앱이다
 # LLM으로 대표적인 취약점 패턴을 분석
 
-curl -s http://10.20.30.200:11434/v1/chat/completions \
+curl -s http://192.168.0.109:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -281,7 +281,7 @@ ssh 6v6-web
 # Trivy 스캔 결과를 LLM으로 분석
 TRIVY_OUT=$(trivy image --severity CRITICAL nginx:latest -f json 2>/dev/null | head -500)
 
-curl -s http://10.20.30.200:11434/v1/chat/completions \
+curl -s http://192.168.0.109:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d "{
     \"model\": \"gemma3:12b\",
@@ -305,7 +305,7 @@ def ping_host(host):
     return result.stdout.decode()
 '
 
-curl -s http://10.20.30.200:11434/v1/chat/completions \
+curl -s http://192.168.0.109:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d "{
     \"model\": \"gemma3:12b\",
@@ -361,9 +361,9 @@ LLM의 역할: 1차 필터링 + 초안 작성 + 교육 보조
 
 ```bash
 # Ollama는 OpenAI 호환 API를 제공한다
-# URL: http://10.20.30.200:11434/v1/chat/completions
+# URL: http://192.168.0.109:11434/v1/chat/completions
 
-curl -s http://10.20.30.200:11434/v1/chat/completions \
+curl -s http://192.168.0.109:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",        ← 사용할 모델
