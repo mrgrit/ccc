@@ -12,9 +12,9 @@ difficulty: easy
 duration_minutes: 120
 audience: 웹 보안 입문자 (1주차)
 prerequisites:
-  - 학생 PC `~/.ssh/config` 에 6v6-bastion + 6v6-attacker ProxyJump 설정 완료
-  - attacker 컨테이너 (10.20.30.202) 에 curl / whatweb / nmap / nikto 설치
-  - `juice.6v6.lab` 같은 vhost 가 학생 PC `/etc/hosts` 에서 192.168.0.110 으로 매핑
+  - "학생 PC `~/.ssh/config` 에 6v6-bastion + 6v6-attacker ProxyJump 설정 완료"
+  - "attacker 컨테이너 (10.20.30.202) 에 curl / whatweb / nmap / nikto 설치"
+  - "`juice.6v6.lab` 같은 vhost 가 학생 PC `/etc/hosts` 에서 192.168.0.110 으로 매핑"
 objectives:
   - HTTP 요청/응답 구조 + 메서드 (GET/POST/PUT/DELETE/OPTIONS) 의 의미를 이해
   - 보안 헤더 (X-Frame-Options/CSP/HSTS/X-Content-Type-Options) 의 부재가 만드는 공격 벡터 파악
@@ -26,77 +26,77 @@ steps:
   # ============================================================
   # STEP 1 [RED·정찰] — HEAD 요청으로 대상 웹 서버의 응답 헤더 수집
   # ============================================================
-  - order: 1
-    instruction: |
-      ## 🎯 MISSION
+- order: 1
+  instruction: |
+    ## 🎯 MISSION
 
-      attacker (10.20.30.202) 에서 fw HAProxy 를 거쳐 dmz 의 web 컨테이너
-      (Apache + ModSecurity + Juice Shop) 의 HTTP 응답 헤더를 수집한다. 학생은
-      Server/Content-Type/Set-Cookie 등 어떤 헤더가 노출되는지 직접 본다.
+    attacker (10.20.30.202) 에서 fw HAProxy 를 거쳐 dmz 의 web 컨테이너
+    (Apache + ModSecurity + Juice Shop) 의 HTTP 응답 헤더를 수집한다. 학생은
+    Server/Content-Type/Set-Cookie 등 어떤 헤더가 노출되는지 직접 본다.
 
-      ## 💻 실행 명령
+    ## 💻 실행 명령
 
-      ```bash
-      # vhost 기반 (HAProxy host header 라우팅)
-      curl -sI http://juice.6v6.lab/
+    ```bash
+    # vhost 기반 (HAProxy host header 라우팅)
+    curl -sI http://juice.6v6.lab/
 
-      # 또는 web 컨테이너 dmz IP 직접
-      curl -sI http://10.20.32.80/
-      ```
+    # 또는 web 컨테이너 dmz IP 직접
+    curl -sI http://10.20.32.80/
+    ```
 
-      ## 📋 확인 사항
+    ## 📋 확인 사항
 
-      - 응답 첫 줄 `HTTP/1.1 200 OK` (또는 301/302)
-      - `Server: Apache/2.4.52 (Ubuntu)` 같은 배너 노출 여부 (= 정보 누설)
-      - `Content-Type`, `Set-Cookie`, `X-Powered-By` 등 헤더 분포
-      - 보안 헤더 (X-Frame-Options / CSP / HSTS) 의 **부재**
+    - 응답 첫 줄 `HTTP/1.1 200 OK` (또는 301/302)
+    - `Server: Apache/2.4.52 (Ubuntu)` 같은 배너 노출 여부 (= 정보 누설)
+    - `Content-Type`, `Set-Cookie`, `X-Powered-By` 등 헤더 분포
+    - 보안 헤더 (X-Frame-Options / CSP / HSTS) 의 **부재**
 
-      ## 💡 왜 이걸 하는가?
+    ## 💡 왜 이걸 하는가?
 
-      공격자는 침해 첫 단계로 응답 헤더에서 서버 소프트웨어/버전/기술 스택을 식별
-      한다 (MITRE ATT&CK T1592.002 — Gather Victim Host Information: Software).
-      운영자 입장에서는 불필요한 배너 노출이 곧 CVE 매핑의 출발점이 되는지 검토한다.
+    공격자는 침해 첫 단계로 응답 헤더에서 서버 소프트웨어/버전/기술 스택을 식별
+    한다 (MITRE ATT&CK T1592.002 — Gather Victim Host Information: Software).
+    운영자 입장에서는 불필요한 배너 노출이 곧 CVE 매핑의 출발점이 되는지 검토한다.
 
-      ## 🔵 Blue 측 관찰 (다음 STEP 8 에서 본격)
+    ## 🔵 Blue 측 관찰 (다음 STEP 8 에서 본격)
 
-      attacker 의 curl 1 회는 ModSecurity audit log
-      (`/var/log/apache2/modsec_audit.log`) 에 GET 단일 라인으로만 기록. 보안
-      헤더 부재는 운영자가 자체 ModSecurity 룰 또는 nikto/securityheaders.com
-      으로 별도 점검해야 한다.
-    hint: curl -sI 옵션으로 HEAD 요청. -L 옵션은 리다이렉트 따라가기.
-    category: http_basics
-    points: 8
-    answer: |
-      curl -sI http://juice.6v6.lab/ | tee /tmp/web01s1.txt
-      echo "--- 보안 헤더 grep ---"
-      grep -iE "x-frame|x-xss|content-security|strict-transport|x-content-type" /tmp/web01s1.txt || \
-        echo "[!] 보안 헤더 없음 (취약)"
-    answer_detail: |
-      curl -sI 는 HEAD 요청만 수행해 응답 헤더만 받는다. juice.6v6.lab 의
-      HAProxy backend = web (10.20.32.80). 응답에 Server/Content-Type 등은
-      있고 보안 헤더는 모두 미설정 — 클릭재킹/XSS/MIME sniffing 에 취약.
-    verify:
-      type: output_contains
-      expect: HTTP/
-      field: stdout
-      semantic:
-        intent: HTTP HEAD 응답 수집 — 응답 코드 + 핵심 헤더 (Server/Content-Type)
-          노출 여부 + 보안 헤더 부재 확인. 6v6 의 web 은 fw HAProxy 통해 라우팅.
-        success_criteria:
-          - HTTP/1.1 200 OK 또는 30x 응답 코드 라인
-          - Server / Content-Type 등 주요 헤더 3개 이상 인용
-          - 보안 헤더 (X-Frame/CSP/HSTS 등) 부재 명시
-        acceptable_methods:
-          - curl -sI http://juice.6v6.lab/
-          - curl -sI http://10.20.32.80/
-          - whatweb http://juice.6v6.lab/
-          - nmap -sV -p 80 10.20.32.80
-        negative_signs:
-          - 본문 다운로드만, 헤더 무시
-          - 단일 헤더만 확인
-          - 응답 코드 해석 없음
-    target_vm: attacker
-    risk_level: low
+    attacker 의 curl 1 회는 ModSecurity audit log
+    (`/var/log/apache2/modsec_audit.log`) 에 GET 단일 라인으로만 기록. 보안
+    헤더 부재는 운영자가 자체 ModSecurity 룰 또는 nikto/securityheaders.com
+    으로 별도 점검해야 한다.
+  hint: curl -sI 옵션으로 HEAD 요청. -L 옵션은 리다이렉트 따라가기.
+  category: http_basics
+  points: 8
+  answer: |
+    curl -sI http://juice.6v6.lab/ | tee /tmp/web01s1.txt
+    echo "--- 보안 헤더 grep ---"
+    grep -iE "x-frame|x-xss|content-security|strict-transport|x-content-type" /tmp/web01s1.txt || \
+      echo "[!] 보안 헤더 없음 (취약)"
+  answer_detail: |
+    curl -sI 는 HEAD 요청만 수행해 응답 헤더만 받는다. juice.6v6.lab 의
+    HAProxy backend = web (10.20.32.80). 응답에 Server/Content-Type 등은
+    있고 보안 헤더는 모두 미설정 — 클릭재킹/XSS/MIME sniffing 에 취약.
+  verify:
+    type: output_contains
+    expect: HTTP/
+    field: stdout
+    semantic:
+      intent: HTTP HEAD 응답 수집 — 응답 코드 + 핵심 헤더 (Server/Content-Type)
+        노출 여부 + 보안 헤더 부재 확인. 6v6 의 web 은 fw HAProxy 통해 라우팅.
+      success_criteria:
+        - HTTP/1.1 200 OK 또는 30x 응답 코드 라인
+        - Server / Content-Type 등 주요 헤더 3개 이상 인용
+        - 보안 헤더 (X-Frame/CSP/HSTS 등) 부재 명시
+      acceptable_methods:
+        - curl -sI http://juice.6v6.lab/
+        - curl -sI http://10.20.32.80/
+        - whatweb http://juice.6v6.lab/
+        - nmap -sV -p 80 10.20.32.80
+      negative_signs:
+        - 본문 다운로드만, 헤더 무시
+        - 단일 헤더만 확인
+        - 응답 코드 해석 없음
+  target_vm: attacker
+  risk_level: low
 - order: 2
   instruction: 'HTTP 응답 코드 종류를 확인하시오: 존재하는 페이지와 존재하지 않는 페이지의 응답 코드 차이.
 
