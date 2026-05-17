@@ -67,7 +67,7 @@ while IFS=$'\t' read -r course_path order; do
   ts=$(date -Iseconds)
   echo "[$ts] P2-STANDALONE #$idx/$total $course w$wk o$order" >> "$L"
 
-  timeout 720 python3 scripts/test_step.py "$course" "$wk" "$order" \
+  timeout 480 python3 scripts/test_step.py "$course" "$wk" "$order" \
         --standalone --no-augment < /dev/null >> "$L" 2>&1
   rc=$?
 

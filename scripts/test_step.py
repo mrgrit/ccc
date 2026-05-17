@@ -44,8 +44,54 @@ def load_step(course: str, week: int, order: int, standalone: bool = False):
     sys.exit(f"step order {order} not in {yaml_path}")
 
 
-def call_bastion(step: dict, course: str, lab_id: str):
-    prompt = step.get("bastion_prompt") or step.get("instruction")
+_STANDALONE_HARNESS_PREFIX = """[HARNESS — 반드시 준수]
+
+너는 6v6-bastion 컨테이너 내부에서 실행 중인 운영 에이전트다.
+아래 instruction 은 "학생 PC" 관점으로 작성된 강의 자료다. 절대 학생 PC 처럼
+행동하지 마라. 너는 인프라 내부에 있다.
+
+변환 룰 (위반 시 항상 실패):
+  1) `ssh 6v6-bastion '<CMD>'` 또는 `ssh 6v6-bastion <CMD>` 가 나오면
+     ssh 래퍼를 완전히 무시하고 `<CMD>` 만 shell skill 로 실행.
+     target_vm 은 "manager" 를 선택 (= 너 자신, 로컬 실행).
+  2) `ssh 6v6-fw <CMD>` / `ssh 6v6-ips <CMD>` → target_vm="secu", script=<CMD> 만.
+  3) `ssh 6v6-web <CMD>` → target_vm="web", script=<CMD> 만.
+  4) `ssh 6v6-siem <CMD>` / `ssh 6v6-wazuh-*` → target_vm="siem", script=<CMD> 만.
+  5) `ssh 6v6-attacker <CMD>` → target_vm="attacker", script=<CMD> 만.
+  6) `docker exec 6v6-<X> <CMD>` 같은 docker subcommand 는 그대로 실행 가능 (단
+     target_vm 은 docker daemon 이 있는 호스트, 일반적으로 manager).
+  7) instruction 의 "~/.ssh/config", "/etc/hosts", "학생 PC" 같은 학생 환경
+     전제 단어는 너에게 무관 — 무시하고 (1)~(6) 변환 후 실행.
+
+위 변환 없이 `ssh ccc@6v6-bastion ...` 같은 명령을 그대로 shell 에 전달하면
+SSH 인증 실패로 0% 통과한다. 반드시 변환부터 한 뒤 실행하라.
+
+[추가 제약 — 무한 retry 금지]
+  • 같은 의도의 shell 명령을 3 회 이상 재시도하지 마라.
+  • 3 회 시도해도 빈 결과/실패면 즉시 결과를 정리해서 답변하라 (사유 포함).
+  • 다른 target_vm 으로 5 회 이상 바꾸지 마라 — 인프라 한계로 인정하고 종료.
+  • docker daemon 이 컨테이너 안에서 안 보이면 그건 환경 제약이지 너의 잘못이 아니다.
+    "docker socket 미마운트로 host docker 조회 불가" 같은 사실 보고도 valid 결과.
+
+──────────────────────────────────────────────────────────────────────
+원본 lab instruction (학생 관점):
+──────────────────────────────────────────────────────────────────────
+
+"""
+
+
+def _standalone_harness_wrap(prompt: str) -> str:
+    """P2 Track B — standalone lab 의 학생 관점 instruction 을 bastion 관점으로
+    감싸는 harness prefix. system prompt 룰 무시 사례 (LLM 이 user instruction
+    의 imperative 따르는 경향) 차단 목적.
+    """
+    return _STANDALONE_HARNESS_PREFIX + (prompt or "")
+
+
+def call_bastion(step: dict, course: str, lab_id: str, standalone: bool = False):
+    prompt = step.get("bastion_prompt") or step.get("instruction") or ""
+    if standalone:
+        prompt = _standalone_harness_wrap(prompt)
     sem = (step.get("verify") or {}).get("semantic") or {}
     payload = {
         "message": prompt,
@@ -588,7 +634,7 @@ def main():
     print(f"TARGET: {step.get('target_vm')}  CAT: {step.get('category')}")
     print("─" * 70)
 
-    events, elapsed, err = call_bastion(step, args.course, lab_id)
+    events, elapsed, err = call_bastion(step, args.course, lab_id, standalone=args.standalone)
 
     # w22 HITL (interactive) / w27 auto-HITL: ask_user 이벤트 시 답변 받아 follow-up 호출
     if (args.ask or args.auto_hitl) and events:
@@ -624,7 +670,7 @@ def main():
                 fu_step = dict(step)
                 fu_step["bastion_prompt"] = user_answer
                 fu_step["instruction"] = user_answer
-                fu_events, fu_elapsed, fu_err = call_bastion(fu_step, args.course, lab_id)
+                fu_events, fu_elapsed, fu_err = call_bastion(fu_step, args.course, lab_id, standalone=args.standalone)
                 if not fu_err:
                     # 원 이벤트 + 구분자 + follow-up 이벤트
                     events = events + [{"event": "hitl_followup", "auto": args.auto_hitl}] + fu_events
