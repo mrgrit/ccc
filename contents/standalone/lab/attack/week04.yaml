@@ -92,11 +92,11 @@ steps:
     category: exploit
     points: 20
     answer: |
-      ssh 6v6-attacker '
-        curl -s -o /dev/null -w "boolean: code=%{http_code} time=%{time_total}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=1+OR+1=1"
-        curl -s -o /dev/null -w "union:   code=%{http_code} time=%{time_total}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=1+UNION+SELECT+1,2,3--"
-        curl -s -o /dev/null -w "error:   code=%{http_code} time=%{time_total}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=1+AND+extractvalue(1,1)"
-        curl -s -o /dev/null -w "blind:   code=%{http_code} time=%{time_total}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=1+AND+SLEEP(2)"
+      ssh -n 6v6-attacker '
+        curl -s -o /dev/null -w "boolean: code=%{http_code} time=%{time_total}\n" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?q=1+OR+1=1"
+        curl -s -o /dev/null -w "union:   code=%{http_code} time=%{time_total}\n" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?q=1+UNION+SELECT+1,2,3--"
+        curl -s -o /dev/null -w "error:   code=%{http_code} time=%{time_total}\n" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?q=1+AND+extractvalue(1,1)"
+        curl -s -o /dev/null -w "blind:   code=%{http_code} time=%{time_total}\n" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?q=1+AND+SLEEP(2)"
       '
     answer_detail: |
       SQLi 4 타입 → ModSec 942100 (libinjection) 차단. 4 × 403 + Blind 응답시간 <
@@ -200,22 +200,19 @@ steps:
     category: exploit
     points: 25
     answer: |
-      ssh 6v6-attacker '
-        BEFORE=$(ssh 6v6-web "sudo grep -c 942 /var/log/apache2/modsec_audit.log 2>/dev/null || echo 0")
-        echo "before: $BEFORE"
-        timeout 45 sqlmap -u "http://10.20.30.1/?q=1" --batch --random-agent \
-                --headers="Host: juice.6v6.lab" --level=2 --risk=2 --technique=BEUT 2>&1 | tail -20
-        sleep 3
-        AFTER=$(ssh 6v6-web "sudo grep -c 942 /var/log/apache2/modsec_audit.log 2>/dev/null || echo 0")
-        echo "after:  $AFTER"
-        echo "차단: $((AFTER - BEFORE))"
-      '
+      BEFORE=$(ssh -n 6v6-web 'sudo grep -c 942 /var/log/apache2/modsec_audit.log 2>/dev/null || echo 0')
+      echo "before: $BEFORE"
+      ssh -n 6v6-attacker 'timeout 45 sqlmap -u "http://10.20.30.1/?q=1" --batch --random-agent --headers="Host: dvwa.6v6.lab" --level=2 --risk=2 --technique=BEUT 2>&1 | tail -20'
+      sleep 3
+      AFTER=$(ssh -n 6v6-web 'sudo grep -c 942 /var/log/apache2/modsec_audit.log 2>/dev/null || echo 0')
+      echo "after:  $AFTER"
+      echo "sqlmap-blocked: $((AFTER - BEFORE))"
     answer_detail: |
       sqlmap 45 초 + ModSec 942 카운트 before/after 비교. 차단 페이로드 ≥ 10 = 정상.
       "injectable" 보고 시 ModSec 결함 = 즉시 점검. W10 tamper 우회 전제.
     verify:
       type: output_contains
-      expect: 'sqlmap\|차단'
+      expect: 'sqlmap'
       field: stdout
       semantic:
         intent: |
@@ -301,8 +298,8 @@ steps:
     category: rbp_integration
     points: 4
     answer: |
-      ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/rest/products/search?q=apple%27%20UNION%20SELECT%201,2,3--"'
-      ssh 6v6-web "sudo tail -10 /var/log/apache2/modsec_audit.log 2>/dev/null | grep -oE '942[0-9]+' | sort -u"
+      ssh -n 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/rest/products/search?q=apple%27%20UNION%20SELECT%201,2,3--"'
+      ssh -n 6v6-web "sudo tail -10 /var/log/apache2/modsec_audit.log 2>/dev/null | grep -oE '942[0-9]+' | sort -u"
       echo "Coverage: SQLi → ModSec 942 → paranoia tuning"
     answer_detail: SQLi R/B/P
     verify:

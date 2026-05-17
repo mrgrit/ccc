@@ -79,14 +79,14 @@ steps:
     category: exploit
     points: 25
     answer: |
-      ssh 6v6-attacker '
-        BEFORE=$(ssh 6v6-web "sudo grep -c 930 /var/log/apache2/modsec_audit.log 2>/dev/null || echo 0")
+      ssh -n 6v6-attacker '
+        BEFORE=$(ssh -n 6v6-web "sudo grep -c 930 /var/log/apache2/modsec_audit.log 2>/dev/null || echo 0")
         for p in "../../../etc/passwd" "%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd" "....//....//....//etc/passwd" "../etc/passwd%00.jpg" "..%c0%afetc%c0%afpasswd"; do
-          code=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: juice.6v6.lab" "http://10.20.30.1/?file=$p")
+          code=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?file=$p")
           echo "  $code | $p"
         done
         sleep 2
-        AFTER=$(ssh 6v6-web "sudo grep -c 930 /var/log/apache2/modsec_audit.log 2>/dev/null || echo 0")
+        AFTER=$(ssh -n 6v6-web "sudo grep -c 930 /var/log/apache2/modsec_audit.log 2>/dev/null || echo 0")
         echo "차단: $((AFTER - BEFORE))"
       '
     answer_detail: |
@@ -174,9 +174,9 @@ steps:
     category: scanning
     points: 25
     answer: |
-      ssh 6v6-attacker 'timeout 30 ffuf -u http://10.20.30.1/FUZZ -H "Host: juice.6v6.lab" -w /usr/share/dirb/wordlists/common.txt -mc 200,301,302 -of csv -o /tmp/f1.csv -t 50 >/dev/null 2>&1; echo "1) hit (UA=ffuf): $(tail -n +2 /tmp/f1.csv | wc -l)"'
-      ssh 6v6-attacker 'timeout 30 ffuf -u http://10.20.30.1/FUZZ -H "Host: juice.6v6.lab" -H "User-Agent: Mozilla/5.0" -w /usr/share/dirb/wordlists/common.txt -mc 200,301,302 -of csv -o /tmp/f2.csv -t 50 >/dev/null 2>&1; echo "2) hit (UA 우회): $(tail -n +2 /tmp/f2.csv | wc -l)"; tail -n +2 /tmp/f2.csv | cut -d, -f6 | sort | uniq -c | sort -rn | head -3'
-      ssh 6v6-attacker 'INDEX_SIZE=$(tail -n +2 /tmp/f2.csv | cut -d, -f6 | sort | uniq -c | sort -rn | head -1 | awk "{print \$2}"); timeout 30 ffuf -u http://10.20.30.1/FUZZ -H "Host: juice.6v6.lab" -H "User-Agent: Mozilla/5.0" -w /usr/share/dirb/wordlists/common.txt -mc 200,301,302 -fs $INDEX_SIZE -of csv -o /tmp/f3.csv -t 50 >/dev/null 2>&1; echo "3) hit (-fs $INDEX_SIZE 제외): $(tail -n +2 /tmp/f3.csv | wc -l)"'
+      ssh -n 6v6-attacker 'timeout 30 ffuf -u http://10.20.30.1/FUZZ -H "Host: juice.6v6.lab" -w /usr/share/dirb/wordlists/common.txt -mc 200,301,302 -of csv -o /tmp/f1.csv -t 50 >/dev/null 2>&1; echo "1) hit (UA=ffuf): $(tail -n +2 /tmp/f1.csv | wc -l)"'
+      ssh -n 6v6-attacker 'timeout 30 ffuf -u http://10.20.30.1/FUZZ -H "Host: juice.6v6.lab" -H "User-Agent: Mozilla/5.0" -w /usr/share/dirb/wordlists/common.txt -mc 200,301,302 -of csv -o /tmp/f2.csv -t 50 >/dev/null 2>&1; echo "2) hit (UA 우회): $(tail -n +2 /tmp/f2.csv | wc -l)"; tail -n +2 /tmp/f2.csv | cut -d, -f6 | sort | uniq -c | sort -rn | head -3'
+      ssh -n 6v6-attacker 'INDEX_SIZE=$(tail -n +2 /tmp/f2.csv | cut -d, -f6 | sort | uniq -c | sort -rn | head -1 | awk "{print \$2}"); timeout 30 ffuf -u http://10.20.30.1/FUZZ -H "Host: juice.6v6.lab" -H "User-Agent: Mozilla/5.0" -w /usr/share/dirb/wordlists/common.txt -mc 200,301,302 -fs $INDEX_SIZE -of csv -o /tmp/f3.csv -t 50 >/dev/null 2>&1; echo "3) hit (-fs $INDEX_SIZE 제외): $(tail -n +2 /tmp/f3.csv | wc -l)"'
     answer_detail: |
       ffuf 3-step — (1) UA 차단 검증 ModSec 913 (2) UA 우회 + SPA false positive
       인지 (3) -fs 필터 로 false positive 제거. 학생이 *3 함정* (UA / SPA / WAF) 의
@@ -269,8 +269,8 @@ steps:
     category: rbp_integration
     points: 4
     answer: |
-      ssh 6v6-attacker 'curl -s -o /dev/null -w "Traversal %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/ftp/../../etc/passwd"'
-      ssh 6v6-web "sudo tail -10 /var/log/apache2/modsec_audit.log 2>/dev/null | grep -oE '930[0-9]+' | sort -u"
+      ssh -n 6v6-attacker 'curl -s -o /dev/null -w "Traversal %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/ftp/../../etc/passwd"'
+      ssh -n 6v6-web "sudo tail -10 /var/log/apache2/modsec_audit.log 2>/dev/null | grep -oE '930[0-9]+' | sort -u"
       echo "Coverage: traversal + 930 + whitelist"
     answer_detail: SSRF/Traversal R/B/P
     verify:

@@ -85,7 +85,7 @@ steps:
     category: scanning
     points: 20
     answer: |
-      ssh 6v6-attacker '
+      ssh -n 6v6-attacker '
         nmap -sT -p 22,80,443,2204,9100 10.20.30.1 2>&1 | tail -10
         sudo nmap -sV -p 22,80,443,2204,9100 10.20.30.1 2>&1 | tail -15
       '
@@ -196,7 +196,7 @@ steps:
     category: scanning
     points: 15
     answer: |
-      ssh 6v6-attacker '
+      ssh -n 6v6-attacker '
         timeout 30 nikto -h http://10.20.30.1/ -vhost juice.6v6.lab \
                          -Tuning 4,5,9 -nointeractive 2>&1 | tail -30
       '
@@ -206,7 +206,7 @@ steps:
       변경 또는 직접 vhost 우회.
     verify:
       type: output_contains
-      expect: 'Apache\|Server\|nikto'
+      expect: 'Nikto'
       field: stdout
       semantic:
         intent: |
@@ -315,13 +315,13 @@ steps:
     category: redblue
     points: 25
     answer: |
-      ssh 6v6-attacker 'sudo nmap -sS -p 22,80,443,2204,9100 10.20.30.1 2>&1 | tail -8'
-      ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter drop'
-      ssh 6v6-attacker 'sudo nmap -sS -p 22,80,443,2204,9100 10.20.30.1 2>&1 | tail -8'
-      ssh 6v6-fw 'sudo nft list chain inet six_filter input | grep -B1 "10.20.30.202.*drop"'
-      HANDLE=$(ssh 6v6-fw "sudo nft -a list chain inet six_filter input | grep '10.20.30.202.*drop' | grep -oE 'handle [0-9]+' | head -1 | awk '{print \$2}'")
-      ssh 6v6-fw "sudo nft delete rule inet six_filter input handle $HANDLE"
-      ssh 6v6-attacker 'sudo nmap -sT -p 80 10.20.30.1 2>&1 | tail -5'
+      ssh -n 6v6-attacker 'sudo nmap -sS -p 22,80,443,2204,9100 10.20.30.1 2>&1 | tail -8'
+      ssh -n 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter drop'
+      ssh -n 6v6-attacker 'sudo nmap -sS -p 22,80,443,2204,9100 10.20.30.1 2>&1 | tail -8'
+      ssh -n 6v6-fw 'sudo nft list chain inet six_filter input | grep -B1 "10.20.30.202.*drop"'
+      HANDLE=$(ssh -n 6v6-fw "sudo nft -a list chain inet six_filter input | grep '10.20.30.202.*drop' | grep -oE 'handle [0-9]+' | head -1 | awk '{print \$2}'")
+      ssh -n 6v6-fw "sudo nft delete rule inet six_filter input handle $HANDLE"
+      ssh -n 6v6-attacker 'sudo nmap -sT -p 80 10.20.30.1 2>&1 | tail -5'
     answer_detail: |
       R/B/P 5 단계 cycle. 1차 open → drop 룰 → 2차 filtered → counter ≥ 5 → cleanup
       → 정상화. nft 의 handle 정확 추출. 실수로 다른 룰 삭제 회피.

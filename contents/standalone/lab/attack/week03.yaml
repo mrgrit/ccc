@@ -89,7 +89,7 @@ steps:
     category: analysis
     points: 20
     answer: |
-      ssh 6v6-attacker '
+      ssh -n 6v6-attacker '
         curl -s -H "Host: juice.6v6.lab" http://10.20.30.1/api/Products | head -c 400
         echo
         curl -s -H "Host: juice.6v6.lab" http://10.20.30.1/api/Users | head -c 400
@@ -101,7 +101,7 @@ steps:
       (OWASP A01), /rest/user/whoami = 익명 호출 패턴. 후속 W04~W07 의 공격 표면 전제.
     verify:
       type: output_contains
-      expect: 'id\|email\|user'
+      expect: 'id'
       field: stdout
       semantic:
         intent: |
@@ -211,20 +211,13 @@ steps:
     category: analysis
     points: 25
     answer: |
-      JWT=$(ssh 6v6-attacker '
-        curl -s -X POST -H "Host: juice.6v6.lab" -H "Content-Type: application/json" \
-             -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"admin123\"}" \
-             http://10.20.30.1/rest/user/login \
-        | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"authentication\",{}).get(\"token\",\"\"))" 2>/dev/null
-      ')
-      echo "$JWT" | cut -d. -f1 | base64 -d 2>/dev/null
-      echo "$JWT" | cut -d. -f2 | base64 -d 2>/dev/null
+      ssh -n 6v6-attacker 'curl -s -X POST -H "Host: juice.6v6.lab" -H "Content-Type: application/json" -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"admin123\"}" http://10.20.30.1/rest/user/login | python3 -c "import json,sys,base64; t=json.load(sys.stdin)[\"authentication\"][\"token\"]; h=t.split(\".\")[0]; print(base64.urlsafe_b64decode(h+\"==\").decode())"'
     answer_detail: |
       admin 로그인 → JWT 발급 → 3 부분 base64 디코드. header (alg/typ) + payload (user
       info) 만 의미. signature 는 binary. base64 = 평문 가시. W06 의 JWT 우회 전제.
     verify:
       type: output_contains
-      expect: 'alg\|email'
+      expect: 'alg'
       field: stdout
       semantic:
         intent: |
@@ -313,7 +306,7 @@ steps:
     category: rbp_integration
     points: 4
     answer: |
-      ssh 6v6-attacker 'TOKEN=$(curl -s -d "{\"email\":\"user@me\",\"password\":\"user\"}" -H "Content-Type: application/json" -H "Host: juice.6v6.lab" http://10.20.30.1/rest/user/login | jq -r .authentication.token 2>/dev/null); echo $TOKEN | cut -d. -f2 | base64 -d 2>/dev/null | head -c 200'
+      ssh -n 6v6-attacker 'TOKEN=$(curl -s -d "{\"email\":\"user@me\",\"password\":\"user\"}" -H "Content-Type: application/json" -H "Host: juice.6v6.lab" http://10.20.30.1/rest/user/login | jq -r .authentication.token 2>/dev/null); echo $TOKEN | cut -d. -f2 | base64 -d 2>/dev/null | head -c 200'
       echo "Coverage: Burp + JWT + audit"
     answer_detail: Web 정찰 R/B/P
     verify:

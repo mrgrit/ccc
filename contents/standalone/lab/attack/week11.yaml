@@ -23,7 +23,7 @@ steps:
       ## 💻 실행 명령
 
       ```bash
-      ssh 6v6-bastion '
+      
       echo "=== sudo -l ==="
       sudo -l 2>&1 | head -5
       echo "=== SUID binary ==="
@@ -34,7 +34,7 @@ steps:
       cat /etc/crontab 2>/dev/null; ls /etc/cron.d/ 2>/dev/null
       echo "=== world-writable ==="
       find / -perm -002 -type f 2>/dev/null | head -5
-      '
+      
       ```
 
       ## 📋 확인 사항
@@ -57,13 +57,13 @@ steps:
     category: enumeration
     points: 30
     answer: |
-      ssh 6v6-bastion '
+      
       echo "=== sudo -l ==="; sudo -l 2>&1 | head -5
       echo "=== SUID ==="; find / -perm -4000 -type f 2>/dev/null | head -10
       echo "=== capabilities ==="; getcap -r / 2>/dev/null | head -5
       echo "=== cron ==="; cat /etc/crontab 2>/dev/null; ls /etc/cron.d/ 2>/dev/null
       echo "=== world-writable ==="; find / -perm -002 -type f 2>/dev/null | head -5
-      '
+      
     answer_detail: 5 카테고리 권한 상승 enum.
     verify:
       type: output_contains
@@ -121,7 +121,7 @@ steps:
       '
 
       # === 1) 다운로드 + 설치 결과 검증 ===
-      ssh 6v6-bastion 'curl -sL --max-time 5 https://raw.githubusercontent.com/peass-ng/PEASS-ng/master/linPEAS/linpeas.sh -o /tmp/linpeas.sh 2>&1; echo "bastion: $(wc -c < /tmp/linpeas.sh) byte"'
+      curl -sL --max-time 5 https://raw.githubusercontent.com/peass-ng/PEASS-ng/master/linPEAS/linpeas.sh -o /tmp/linpeas.sh 2>&1; echo "bastion: $(wc -c < /tmp/linpeas.sh) byte"
       ssh 6v6-attacker 'echo "attacker: $(wc -c < /tmp/linpeas.sh) byte"'
 
       # === 1.5) LinPEAS 가 설치 되었으면 실 실행 (양쪽 다 14 byte 이면 폐쇄망 fallback) ===
@@ -134,7 +134,7 @@ steps:
       '
 
       # 2) 오프라인 enum — LinPEAS 의 핵심 5 카테고리 를 *수동 스크립트* 로 대체
-      ssh 6v6-bastion '
+      
         echo "[+] SUID binaries (LinPEAS RED 등급):"
         find / -perm -4000 -type f 2>/dev/null | head -10
         echo "[+] sudo NOPASSWD entries (LinPEAS RED):"
@@ -145,15 +145,15 @@ steps:
         find /etc /home -perm -002 -type f 2>/dev/null | head -5
         echo "[+] capabilities (LinPEAS YELLOW):"
         getcap -r / 2>/dev/null | head -5
-      '
+      
 
       # 3) GTFOBins 의 *전제 조건* 검증 — SUID 가 있어야 우회 가능
-      ssh 6v6-bastion '
+      
         echo "[GTFOBins 전제] /usr/bin/find SUID?:"
         ls -la /usr/bin/find | grep -E "rws" && echo "  → 활용 가능: find . -exec /bin/sh \;" || echo "  → SUID 없음 (정상 hardening) → GTFOBins find 우회 불가"
         echo "[GTFOBins 전제] /usr/bin/vim sudo NOPASSWD?:"
         sudo -n -l 2>&1 | grep -i "vim\|/usr/bin/vim" || echo "  → NOPASSWD vim 없음 → GTFOBins vim 우회 불가"
-      '
+      
       ```
 
       ## 📋 확인 사항
@@ -188,9 +188,9 @@ steps:
     category: exploit
     points: 25
     answer: |
-      ssh 6v6-bastion 'curl -sL --max-time 5 https://raw.githubusercontent.com/peass-ng/PEASS-ng/master/linPEAS/linpeas.sh -o /tmp/linpeas.sh 2>&1; echo "bastion: $(wc -c < /tmp/linpeas.sh) byte"'
-      ssh 6v6-attacker 'curl -sL --max-time 5 https://raw.githubusercontent.com/peass-ng/PEASS-ng/master/linPEAS/linpeas.sh -o /tmp/linpeas.sh 2>&1; echo "attacker: $(wc -c < /tmp/linpeas.sh) byte"'
-      ssh 6v6-bastion 'echo SUID:; find / -perm -4000 -type f 2>/dev/null | head -5; echo NOPASSWD:; sudo -n -l 2>&1 | grep -i nopasswd | head -3; echo cron:; cat /etc/crontab 2>/dev/null | head -5'
+      ssh -n 6v6-attacker 'ls -la /opt/tools/linpeas.sh; wc -c /opt/tools/linpeas.sh'
+      ssh -n 6v6-attacker 'echo SUID:; find / -perm -4000 -type f 2>/dev/null | head -5; echo NOPASSWD:; sudo -n -l 2>&1 | grep -i nopasswd | head -3'
+      echo "linpeas: 사전 배포 /opt/tools/linpeas.sh (폐쇄망)"
     answer_detail: |
       폐쇄망 확정 (둘 다 14 byte) + 수동 5 카테고리 enum + GTFOBins 전제 부재.
       LinPEAS 의 자동화 vs 수동 enum 의 차이 인지.
