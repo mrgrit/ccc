@@ -20,15 +20,21 @@ import os, sys, json, time, argparse, pathlib, urllib.request, yaml, re
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PROGRESS = ROOT / "bastion_test_progress.json"
+# --standalone 모드 시 P2 Track B 의 별도 progress 파일 + 별도 lab dir
+PROGRESS_STANDALONE = ROOT / "standalone_test_progress.json"
+LAB_DIR_LEGACY = ROOT / "contents" / "labs"
+LAB_DIR_STANDALONE = ROOT / "contents" / "standalone" / "lab"
 BASTION = os.getenv("BASTION_URL", "http://192.168.0.110:9200").rstrip("/") + "/chat"
 OLLAMA = os.getenv("OLLAMA_URL", "http://192.168.0.109:11434")
 JUDGE_MODEL = "gpt-oss:120b"
 TIMEOUT = 600
 
 
-def load_step(course: str, week: int, order: int):
-    # week names look like soc-adv-ai / week05.yaml
-    yaml_path = ROOT / "contents" / "labs" / course / f"week{week:02d}.yaml"
+def load_step(course: str, week: int, order: int, standalone: bool = False):
+    # week names look like soc-adv-ai / week05.yaml (legacy)
+    # standalone: contents/standalone/lab/<course>/weekNN.yaml (no -ai suffix)
+    base = LAB_DIR_STANDALONE if standalone else LAB_DIR_LEGACY
+    yaml_path = base / course / f"week{week:02d}.yaml"
     if not yaml_path.exists():
         sys.exit(f"YAML not found: {yaml_path}")
     y = yaml.safe_load(open(yaml_path))
@@ -471,8 +477,17 @@ def judge(events, step):
     return "fail", skill, meta
 
 
-def update_progress(course: str, week: int, order: int, status: str, skill: str, elapsed: float):
-    d = json.load(open(PROGRESS))
+def update_progress(course: str, week: int, order: int, status: str, skill: str, elapsed: float, standalone: bool = False):
+    pfile = PROGRESS_STANDALONE if standalone else PROGRESS
+    if not pfile.exists():
+        # 최초 1회: standalone 진척 파일 초기화
+        pfile.write_text(json.dumps({
+            "test_session": "ts-p2-standalone-20260517",
+            "track": "P2-standalone-6v6",
+            "results": {},
+            "completed": 0, "passed": 0, "failed": 0,
+        }, ensure_ascii=False, indent=2))
+    d = json.load(open(pfile))
     wkey = f"week{week:02d}"
     d.setdefault("results", {}).setdefault(course, {}).setdefault(wkey, {})
     cur = d["results"][course][wkey]
@@ -504,7 +519,7 @@ def update_progress(course: str, week: int, order: int, status: str, skill: str,
     d["completed"] = completed
     d["passed"] = passed
     d["failed"] = failed
-    json.dump(d, open(PROGRESS, "w"), ensure_ascii=False, indent=2)
+    json.dump(d, open(pfile, "w"), ensure_ascii=False, indent=2)
     return is_new, completed, passed
 
 
@@ -560,9 +575,11 @@ def main():
                     help="인터랙티브 HITL 모드 — ask_user 이벤트 시 stdin에서 답변 대기")
     ap.add_argument("--auto-hitl", action="store_true",
                     help="자동 HITL — ask_user 이벤트 시 LLM 이 instruction·category 기반으로 답변 생성 (answer_detail·acceptable_methods 사용 금지, 데이터 유출 방지)")
+    ap.add_argument("--standalone", action="store_true",
+                    help="P2 Track B — contents/standalone/lab/<course>/weekNN.yaml + standalone_test_progress.json")
     args = ap.parse_args()
 
-    y, step = load_step(args.course, args.week, args.order)
+    y, step = load_step(args.course, args.week, args.order, standalone=args.standalone)
     lab_id = y.get("lab_id", f"{args.course}-week{args.week:02d}")
     prompt = step.get("bastion_prompt") or step.get("instruction")
     print(f"[{args.course}/week{args.week:02d}/{args.order}] {lab_id}")
@@ -638,9 +655,11 @@ def main():
 
     if not args.dry:
         is_new, completed, passed = update_progress(
-            args.course, args.week, args.order, status, skill, elapsed
+            args.course, args.week, args.order, status, skill, elapsed,
+            standalone=args.standalone,
         )
-        print(f"progress: {completed}/2570 pass={passed} (new={is_new})")
+        scope = "P2-standalone" if args.standalone else "R5-legacy"
+        print(f"progress[{scope}]: {completed} pass={passed} (new={is_new})")
 
 
 if __name__ == "__main__":
