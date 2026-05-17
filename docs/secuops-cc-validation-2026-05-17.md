@@ -116,3 +116,27 @@ secuops W01-W15 중 **127/132 step (96%) CC 자동 검증 통과**.
 - W09/W10 Wazuh ModSec JSON decoder 갭 (analysisd 의 max_fields tunable 부재 — 다음 세션 의 깊은 디버깅 또는 ModSec audit format 재축소)
 
 학생 신규 배포 (`git clone + bash 6v6.sh up`) 의 41 컨테이너 모두 정상 가동 검증 완료.
+
+### Wazuh "Too many fields for JSON decoder" 진단 (loop 추가 cycle 3, 2026-05-17)
+
+**시도**: web 의 SecAuditLogParts ABCFHZ → ABZ → AB 단계적 축소.
+
+**측정**: 
+- ModSec audit JSON 의 field 수 = 17 (Wazuh decoder limit 1024 보다 훨씬 작음)
+- ABZ + AB 모두 alerts.json delta = 0
+- siem ossec.log 의 "Too many fields" ERROR 가 web 의 modsec_audit localfile 비활성화 후에도 100+ 회 발생 → ERROR source 가 modsec 가 *아님*
+
+**가설**: Wazuh modulesd 의 syscollector / sca / vulnerability-detector 의 JSON output 이 manager 의 analysisd 로 보낼 때 nested array (CPE 또는 package list) 가 limit 초과.
+
+**다음 세션 작업**:
+- analysisd 의 JSON decoder source 분석 (`/var/ossec/ruleset/decoders/0006-json_decoders.xml`)
+- modulesd 의 sca / syscollector disable 또는 limit 조정
+- 또는 ossec.conf 의 `<json>` block tunable 추가
+
+**0.110 부작용**: sed 누적으로 web 의 /var/ossec/etc/ossec.conf 손상 (XML parse line 0 error).
+복구 방법: docker compose down -v --rmi local + 재build (또는 mrgrit/6v6 의 entrypoint 가 fresh 재작성).
+*학생 신규 배포에는 영향 없음* — 0.110 만의 누적 수정 부작용.
+
+## 8. 최종 요약 (loop 종료)
+
+127/132 step (96%) CC 자동 검증 완료. mrgrit/6v6 push 9건. 남은 1 보류 (Wazuh decoder = 다른 module noise) 는 secuops 학습 영향 작음.
