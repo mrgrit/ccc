@@ -405,17 +405,17 @@ steps:
       ```bash
       # 1. drop 룰 추가 (input chain 최상단)
       ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 \
-          ip saddr 10.20.30.202 counter log prefix "W02-DROP: " drop'
+          ip saddr 10.20.30.202 counter log prefix W02DROP drop'
 
       # 2. attacker → fw:80 시도 (timeout 예상)
       ssh 6v6-attacker 'timeout 5 curl -s -o /dev/null -w "%{http_code} %{time_total}s\n" \
           -H "Host: juice.6v6.lab" http://10.20.30.1/'
 
       # 3. counter 증가 확인
-      ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep W02-DROP'
+      ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep W02DROP'
 
       # 4. cleanup — handle 식별 후 정확한 삭제
-      HANDLE=$(ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep W02-DROP | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
+      HANDLE=$(ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep W02DROP | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
       ssh 6v6-fw "sudo nft delete rule inet six_filter input handle $HANDLE"
 
       # 5. 복귀 검증
@@ -440,27 +440,27 @@ steps:
         (docker container 의 kernel ring buffer 권한 제한). production host 는 정상.
       - **비정상**: timeout 안 됨 → 룰이 chain 다른 위치 또는 syntax 오류
     hint: |
-      ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter log prefix "W02-DROP: " drop'
+      ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter log prefix W02DROP drop'
     category: manipulation
     points: 20
     answer: |
       echo "=== 룰 추가 (attacker 의 input chain drop) ==="
-      ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter log prefix "W02-DROP: " drop'
+      ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter log prefix W02DROP drop'
       echo "=== 적용 확인 ==="
       ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | head -5'
       echo "=== Red 시도 (timeout 예상) ==="
       ssh 6v6-attacker 'timeout 5 curl -s -o /dev/null -w "응답: %{http_code} / 시간: %{time_total}s\n" -H "Host: juice.6v6.lab" http://10.20.30.1/'
       sleep 2
       echo "=== counter 증가 확인 ==="
-      ssh 6v6-fw 'sudo nft list chain inet six_filter input | grep -B1 W02-DROP | head -3'
+      ssh 6v6-fw 'sudo nft list chain inet six_filter input | grep -B1 W02DROP | head -3'
       echo "=== dmesg log prefix 검증 ==="
-      ssh 6v6-fw 'sudo dmesg | tail -10 | grep W02-DROP | tail -3'
+      ssh 6v6-fw 'sudo dmesg | tail -10 | grep W02DROP | tail -3'
     answer_detail: |
       `nft insert rule ... position 0` 가 input chain 의 최상단에 룰 추가 — 다른 룰
       보다 먼저 평가. attacker 의 curl 이 응답 `000` + time 5s (timeout). counter
       packets/bytes 증가 (실측: packets 3 bytes 180 — SYN 1 + retry 2).
-      `nft list chain inet six_filter input | grep W02-DROP` 출력:
-      `ip saddr 10.20.30.202 counter packets 3 bytes 180 log prefix "W02-DROP: " drop`.
+      `nft list chain inet six_filter input | grep W02DROP` 출력:
+      `ip saddr 10.20.30.202 counter packets 3 bytes 180 log prefix W02DROP drop`.
 
       > 참고: 6v6 컨테이너 (특히 fw) 안에서는 `sudo dmesg` 가 `Operation not permitted`
       > 에러 (docker container 의 kernel ring buffer 권한 제한). production 환경의
@@ -474,12 +474,12 @@ steps:
           동적 drop 룰 추가 + Red 시도 timeout + counter + dmesg log 검증.
         success_criteria:
           - HTTP 000 응답
-          - W02-DROP counter 증가
+          - W02DROP counter 증가
           - dmesg log prefix
         acceptable_methods:
           - |
             **[OSS] nft insert rule position 0** — 표준.
-              ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter log prefix "W02-DROP: " drop'
+              ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter log prefix W02DROP drop'
             예상 출력 `(empty)`.
             운영 해석: position 0 = chain 의 가장 위. counter + log + drop 3 action
             체이닝.
@@ -490,13 +490,13 @@ steps:
             운영 해석: HTTP 000 = curl 응답 없음 (drop). time 5s = timeout 한계.
           - |
             **[OSS] counter 증가** — 검증.
-              ssh 6v6-fw 'sudo nft list chain inet six_filter input | grep -B1 W02-DROP'
+              ssh 6v6-fw 'sudo nft list chain inet six_filter input | grep -B1 W02DROP'
             예상 출력 `ip saddr 10.20.30.202 counter packets 3 bytes 180 ... drop`.
             운영 해석: 3 packets (curl 의 SYN + retransmit) 가 drop.
           - |
             **[OSS] dmesg log prefix** — 가시화.
-              ssh 6v6-fw 'sudo dmesg | tail -10 | grep W02-DROP'
-            예상 출력 `<time> W02-DROP: IN=eth0 OUT= ... SRC=10.20.30.202 DST=10.20.30.1 ...`.
+              ssh 6v6-fw 'sudo dmesg | tail -10 | grep W02DROP'
+            예상 출력 `<time> W02DROP: IN=eth0 OUT= ... SRC=10.20.30.202 DST=10.20.30.1 ...`.
             운영 해석: kernel ring buffer 에 기록. production 은 rsyslog → SIEM.
           - |
             **[OSS] iptables-nft -L view (동일 룰 확인)** — 호환.
@@ -512,7 +512,7 @@ steps:
             운영 해석: 정책 디버그의 핵심 도구.
           - |
             **[OSS] handle 식별 + 정확한 삭제** — 정리.
-              HANDLE=$(ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep W02-DROP | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
+              HANDLE=$(ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep W02DROP | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
               echo "handle: $HANDLE"
               ssh 6v6-fw "sudo nft delete rule inet six_filter input handle $HANDLE"
             예상 출력 `handle: 9`.
@@ -530,9 +530,9 @@ steps:
         negative_signs:
           - HTTP 200 응답 (drop 미동작)
           - counter 0
-          - dmesg 에 W02-DROP 없음
+          - dmesg 에 W02DROP 없음
     cleanup: |
-      ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep W02-DROP | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}" | xargs -I H ssh 6v6-fw "sudo nft delete rule inet six_filter input handle H"' 2>/dev/null
+      ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep W02DROP | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}" | xargs -I H ssh 6v6-fw "sudo nft delete rule inet six_filter input handle H"' 2>/dev/null
     target_vm: fw
 
   # ============================================================
@@ -685,18 +685,18 @@ steps:
 
       # === Blue: drop + log 룰 추가 ===
       ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 \
-          ip saddr 10.20.30.202 counter log prefix "RBP-DROP: " drop'
+          ip saddr 10.20.30.202 counter log prefix RBPDROP drop'
 
       # === Red 2차: drop 룰 적용 후 nmap ===
       ssh 6v6-attacker 'sudo nmap -sS -p 22,80,443,9100 10.20.30.1'
       # 예상: 모든 port filtered (응답 없음)
 
       # === Purple 측정 ===
-      ssh 6v6-fw 'sudo nft list chain inet six_filter input | grep -B1 RBP-DROP'
+      ssh 6v6-fw 'sudo nft list chain inet six_filter input | grep -B1 RBPDROP'
       # counter packets N bytes M (N = nmap probe 수)
 
       # === Cleanup ===
-      HANDLE=$(ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep RBP-DROP | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
+      HANDLE=$(ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep RBPDROP | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
       ssh 6v6-fw "sudo nft delete rule inet six_filter input handle $HANDLE"
       ```
 
@@ -727,8 +727,8 @@ steps:
       echo "=== Red 1차: drop 룰 없는 상태 nmap ==="
       ssh 6v6-attacker 'sudo nmap -sS -p 22,80,443,9100 10.20.30.1 2>&1 | tail -10'
       echo
-      echo "=== Blue: drop + log 룰 추가 (RBP-DROP) ==="
-      ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter log prefix "RBP-DROP: " drop'
+      echo "=== Blue: drop + log 룰 추가 (RBPDROP) ==="
+      ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter log prefix RBPDROP drop'
       ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | head -5'
       echo
       echo "=== Red 2차: drop 룰 적용 후 nmap (모든 port filtered) ==="
@@ -736,8 +736,8 @@ steps:
       sleep 2
       echo
       echo "=== Purple: counter + dmesg ==="
-      ssh 6v6-fw 'sudo nft list chain inet six_filter input | grep -B1 RBP-DROP | head -3'
-      ssh 6v6-fw 'sudo dmesg | tail -30 | grep RBP-DROP | wc -l'
+      ssh 6v6-fw 'sudo nft list chain inet six_filter input | grep -B1 RBPDROP | head -3'
+      ssh 6v6-fw 'sudo dmesg | tail -30 | grep RBPDROP | wc -l'
       echo
       echo "=== Purple: 영구화 patch (시뮬) ==="
       cat <<'EOF'
@@ -750,13 +750,13 @@ steps:
       EOF
       echo
       echo "=== Cleanup ==="
-      HANDLE=$(ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep RBP-DROP | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
+      HANDLE=$(ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep RBPDROP | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
       ssh 6v6-fw "sudo nft delete rule inet six_filter input handle $HANDLE"
     answer_detail: |
       Red 1차: 4 port 모두 응답 (`Host is up`, port state 다양).
       Blue: insert rule + log prefix 추가.
       Red 2차: 모든 port `filtered` 또는 응답 없음 (drop 효과).
-      Purple: counter packets 5+ + dmesg RBP-DROP 라인 5+ + 영구화 patch 시뮬.
+      Purple: counter packets 5+ + dmesg RBPDROP 라인 5+ + 영구화 patch 시뮬.
       Cleanup: handle 식별 + 삭제.
     verify:
       type: output_contains
@@ -786,17 +786,17 @@ steps:
             ESTABLISHED.
           - |
             **[OSS] nft insert rule + log prefix** — Blue.
-              ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter log prefix "RBP-DROP: " drop'
+              ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter log prefix RBPDROP drop'
             예상 출력 `(empty)`.
             운영 해석: log prefix 가 dmesg + rsyslog 에 라인 추가. SIEM 통합 친화.
           - |
             **[OSS] counter packets 변화** — Purple 측정.
-              ssh 6v6-fw 'sudo nft list chain inet six_filter input | grep -B1 RBP-DROP'
+              ssh 6v6-fw 'sudo nft list chain inet six_filter input | grep -B1 RBPDROP'
             예상 출력 `ip saddr 10.20.30.202 counter packets 5 bytes 300 ... drop`.
             운영 해석: nmap 의 SYN 5건 = 4 port × 1.25 (retry).
           - |
-            **[OSS] dmesg 의 RBP-DROP 라인 수** — Purple 가시화.
-              ssh 6v6-fw 'sudo dmesg | tail -30 | grep RBP-DROP | wc -l'
+            **[OSS] dmesg 의 RBPDROP 라인 수** — Purple 가시화.
+              ssh 6v6-fw 'sudo dmesg | tail -30 | grep RBPDROP | wc -l'
             예상 출력 `5 또는 그 이상`.
             운영 해석: nmap port 별 SYN 1건 = log 1 라인.
           - |
@@ -830,7 +830,7 @@ steps:
           - drop 룰 적용 후에도 nmap 정상 응답
           - counter 0
     cleanup: |
-      ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep RBP-DROP | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}" | xargs -I H ssh 6v6-fw "sudo nft delete rule inet six_filter input handle H"' 2>/dev/null
+      ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep RBPDROP | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}" | xargs -I H ssh 6v6-fw "sudo nft delete rule inet six_filter input handle H"' 2>/dev/null
     target_vm: bastion
 
   # ============================================================
@@ -895,7 +895,7 @@ steps:
       | 1 | 3 table 가시화 | pass | inet six_filter + ip nat + ip six_nat |
       | 2 | chain + handle + counter | pass | handle 2 (chain) + handle 8 (ct rule) |
       | 3 | iptables-translate | pass | 3 변환 + 한글 의미 |
-      | 4 | drop 룰 + counter + log | pass | HTTP 000 + counter 3 + dmesg W02-DROP |
+      | 4 | drop 룰 + counter + log | pass | HTTP 000 + counter 3 + dmesg W02DROP |
       | 5 | tcpdump 양 NIC | pass | eth0 SYN 캡처 + 룰 후 200 |
       | 6 | R/B/P (nmap → drop → 영구화) | pass | nmap filtered + counter 5+ + 영구화 patch |
 
@@ -903,7 +903,7 @@ steps:
       - Red 1차 nmap: 4 port open
       - Blue 룰 추가 후: 4 port filtered
       - Purple counter packets: 5+
-      - Purple dmesg RBP-DROP: 5+ 라인
+      - Purple dmesg RBPDROP: 5+ 라인
 
       ## 3. 본인 발견 / 의문점
       예: "drop 룰의 effect 가 ext NIC 에는 SYN 도착 후, fw input chain 에서 drop.
