@@ -128,7 +128,7 @@ steps:
 
       ```bash
       # 1. DNAT 룰 추가 (prerouting)
-      ssh 6v6-fw 'sudo nft add rule ip six_nat prerouting iifname "eth0" tcp dport 8888 \
+      ssh 6v6-fw 'sudo nft add rule ip six_nat prerouting iifname "eth1" tcp dport 8888 \
           counter dnat to 10.20.32.80:80'
 
       # 2. fw 자체로 들어오는 8888/tcp 허용 (DNAT 평가 후 routing 결정 → input/forward 분기)
@@ -184,12 +184,12 @@ steps:
       - **응답 502/503**: web 컨테이너 다운 → `ssh 6v6-web 'systemctl status apache2'`
       - **conntrack 비어 있음**: nf_conntrack 모듈 미적재 → `lsmod | grep nf_conntrack`
       - **counter 0**: 룰이 매치 안 됨 → iifname 오타 또는 packet 이 다른 NIC 로
-    hint: ssh 6v6-fw 'sudo nft add rule ip six_nat prerouting iifname eth0 tcp dport 8888 counter dnat to 10.20.32.80:80'
+    hint: ssh 6v6-fw 'sudo nft add rule ip six_nat prerouting iifname eth1 tcp dport 8888 counter dnat to 10.20.32.80:80'
     category: manipulation
     points: 20
     answer: |
       echo "=== 1. DNAT 룰 추가 ==="
-      ssh 6v6-fw 'sudo nft add rule ip six_nat prerouting iifname "eth0" tcp dport 8888 counter dnat to 10.20.32.80:80'
+      ssh 6v6-fw 'sudo nft add rule ip six_nat prerouting iifname "eth1" tcp dport 8888 counter dnat to 10.20.32.80:80'
       ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 tcp dport 8888 accept'
       echo
       echo "=== 2. curl 검증 ==="
@@ -208,7 +208,7 @@ steps:
       HANDLE2=$(ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep "dport 8888" | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
       [ -n "$HANDLE2" ] && ssh 6v6-fw "sudo nft delete rule inet six_filter input handle $HANDLE2"
     answer_detail: |
-      DNAT 룰 = iifname "eth0" tcp dport 8888 counter dnat to 10.20.32.80:80.
+      DNAT 룰 = iifname "eth1" tcp dport 8888 counter dnat to 10.20.32.80:80.
       input chain 의 8888 accept (fw 자체 input 허용 위함, 그러나 DNAT 가 routing 보다
       먼저 평가되므로 packet 은 forward 로 가서 input 까지 거의 안 오지만 안전 위해 추가).
       curl 응답 200. conntrack reply 의 src 가 10.20.32.80 (변환된 web IP). counter
@@ -226,7 +226,7 @@ steps:
           - "cleanup 후 룰 0"
         acceptable_methods:
           - "**[OSS] nft add rule prerouting + dnat to 10.20.32.80:80** — 표준"
-          - "**[OSS] iifname eth0 추가 — 특정 인터페이스만**"
+          - "**[OSS] iifname eth1 추가 — 특정 인터페이스만**"
           - "**[OSS] counter 명령으로 룰 적중 가시화**"
           - "**[OSS] conntrack -L | grep dport=8888 — 양방향 변환**"
           - "**[OSS] conntrack -L --orig-dst 10.20.30.1 --orig-dport 8888**"
@@ -264,7 +264,7 @@ steps:
       ssh 6v6-fw 'sudo nft list chain ip six_nat postrouting'
 
       # 비교를 위해 동일 subnet 1개 SNAT 명시 (clarity)
-      ssh 6v6-fw 'sudo nft add rule ip six_nat postrouting oifname "eth0" \
+      ssh 6v6-fw 'sudo nft add rule ip six_nat postrouting oifname "eth1" \
           ip saddr 10.20.32.50 counter snat to 10.20.30.1'
 
       # 출력에서 masquerade vs snat to 의 차이 확인
@@ -281,9 +281,9 @@ steps:
 
       - 명령 2 출력: 3 룰
         ```
-        oifname "eth0" ip saddr 10.20.31.0/24 counter packets 0 bytes 0 masquerade
-        oifname "eth0" ip saddr 10.20.32.0/24 counter packets 0 bytes 0 masquerade
-        oifname "eth0" ip saddr 10.20.40.0/24 counter packets 0 bytes 0 masquerade
+        oifname "eth1" ip saddr 10.20.31.0/24 counter packets 0 bytes 0 masquerade
+        oifname "eth1" ip saddr 10.20.32.0/24 counter packets 0 bytes 0 masquerade
+        oifname "eth1" ip saddr 10.20.40.0/24 counter packets 0 bytes 0 masquerade
         ```
       - 명령 4 출력에서 두 형식 비교:
         ```
@@ -306,7 +306,7 @@ steps:
       | 동적 IP 환경 | 적합 | 부적합 |
       | NIC 다중 IP | NIC 의 primary IP | 명시한 IP |
       | SNAT pool | 불가 | 가능 (`snat to 10.20.30.1-10.20.30.5`) |
-    hint: ssh 6v6-fw 'sudo nft add rule ip six_nat postrouting oifname eth0 ip saddr 10.20.31.0/24 counter masquerade'
+    hint: ssh 6v6-fw 'sudo nft add rule ip six_nat postrouting oifname eth1 ip saddr 10.20.31.0/24 counter masquerade'
     category: manipulation
     points: 15
     answer: |
@@ -315,7 +315,7 @@ steps:
       done
       ssh 6v6-fw 'sudo nft list chain ip six_nat postrouting'
       echo "--- SNAT 명시 비교 ---"
-      ssh 6v6-fw 'sudo nft add rule ip six_nat postrouting oifname "eth0" ip saddr 10.20.32.50 counter snat to 10.20.30.1'
+      ssh 6v6-fw 'sudo nft add rule ip six_nat postrouting oifname "eth1" ip saddr 10.20.32.50 counter snat to 10.20.30.1'
       ssh 6v6-fw 'sudo nft list chain ip six_nat postrouting | grep -E "masquerade|snat"'
       echo "--- Cleanup ---"
       for h in $(ssh 6v6-fw 'sudo nft -a list chain ip six_nat postrouting | grep -E "masquerade|snat to" | grep -oE "handle [0-9]+" | awk "{print \$2}"'); do
@@ -607,7 +607,7 @@ steps:
 
       - **trace 출력 예** (한 packet 의 chain 통과):
         ```
-        trace id 0xabcdef inet six_filter input packet: iif "eth0" ether saddr ... \
+        trace id 0xabcdef inet six_filter input packet: iif "eth1" ether saddr ... \
             ether daddr ... ip saddr 10.20.30.202 ip daddr 10.20.30.1 ip protocol tcp \
             tcp sport 43544 tcp dport 80
         trace id 0xabcdef inet six_filter input rule meta nftrace set 1 (verdict continue)
@@ -704,7 +704,7 @@ steps:
 
       # === Blue (충돌 DNAT 룰 삽입) ===
       echo "[Blue] prerouting position 0 에 DNAT 룰 삽입"
-      ssh 6v6-fw 'sudo nft insert rule ip six_nat prerouting position 0 iifname "eth0" \
+      ssh 6v6-fw 'sudo nft insert rule ip six_nat prerouting position 0 iifname "eth1" \
           tcp dport 80 counter dnat to 10.20.32.80:80'
       sleep 1
 
@@ -796,7 +796,7 @@ steps:
       5. **TLS termination 우회** — port 443 에 같은 충돌 시 backend 가 TLS 책임
 
       운영 정책: **한 port = 한 도구**. 혼합 운영 금지. 만약 둘 다 필요하면 다른 port.
-    hint: ssh 6v6-fw 'sudo nft insert rule ip six_nat prerouting position 0 iifname eth0 tcp dport 80 dnat to 10.20.32.80:80'
+    hint: ssh 6v6-fw 'sudo nft insert rule ip six_nat prerouting position 0 iifname eth1 tcp dport 80 dnat to 10.20.32.80:80'
     category: redblue
     points: 25
     answer: |
@@ -809,7 +809,7 @@ steps:
       ssh 6v6-fw 'sudo conntrack -L 2>/dev/null | grep "10.20.30.202" | grep "dport=80" | head -1'
       echo
       echo "=== Blue: DNAT 룰 삽입 (HAProxy 우회 강제) ==="
-      ssh 6v6-fw 'sudo nft insert rule ip six_nat prerouting position 0 iifname "eth0" tcp dport 80 counter dnat to 10.20.32.80:80'
+      ssh 6v6-fw 'sudo nft insert rule ip six_nat prerouting position 0 iifname "eth1" tcp dport 80 counter dnat to 10.20.32.80:80'
       sleep 1
       echo
       echo "=== Red 2: 우회 검증 ==="
@@ -887,7 +887,7 @@ steps:
 
       ```bash
       # 1. DNAT 룰 (외부 9999 → portal 10.20.32.50:8000)
-      ssh 6v6-fw 'sudo nft add rule ip six_nat prerouting iifname "eth0" tcp dport 9999 \
+      ssh 6v6-fw 'sudo nft add rule ip six_nat prerouting iifname "eth1" tcp dport 9999 \
           counter dnat to 10.20.32.50:8000'
       ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 tcp dport 9999 accept'
 
@@ -947,7 +947,7 @@ steps:
     points: 20
     answer: |
       # 1. DNAT + input allow
-      ssh 6v6-fw 'sudo nft add rule ip six_nat prerouting iifname "eth0" tcp dport 9999 counter dnat to 10.20.32.50:8000'
+      ssh 6v6-fw 'sudo nft add rule ip six_nat prerouting iifname "eth1" tcp dport 9999 counter dnat to 10.20.32.50:8000'
       ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 tcp dport 9999 accept'
       # 2. forward 의 명시적 drop (학습용 — attacker source)
       ssh 6v6-fw 'sudo nft insert rule inet six_filter forward position 0 ip saddr 10.20.30.202 ip daddr 10.20.32.50 tcp dport 8000 counter log prefix "POLICY-DENY: " drop'
