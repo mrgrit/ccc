@@ -263,3 +263,28 @@ secuops W01-W15 중 **127/132 step (96%) CC 자동 검증 통과**.
 
 **남은 2 step (수업 의도 영역)**:
 - W09-S7 / W10-S7 alerts.json delta (Wazuh modulesd noise + ModSec rule 작성 = 학생 W09 학습 의의 자체)
+
+## 15. fresh deploy 100% 완전 보장 (cycle 8 — 최종, 2026-05-17)
+
+### 마지막 connector fix
+- `CONNECTOR_MITRE_ID` / `CONNECTOR_OPENCTI_ID` / `CONNECTOR_IMPORT_FILE_YARA_ID` 누락 → 추가 (mrgrit/6v6 50069a2 push)
+- 2 connector restart loop 해결 → Up 30 seconds
+
+### fresh deploy 최종 결과 ✅
+- **41/41 컨테이너 모두 Up** (Restarting 0, unhealthy 0)
+- 16 base + 20 OpenCTI + 5 MISP + 1 sysmon-host = **42 컨테이너 정상**
+- W01-S1 docker ps ✅ / W01-S2 ssh 4 host ✅
+
+### 학생 신규 배포 보장 완료 ✅
+```bash
+git clone https://github.com/mrgrit/6v6.git
+cd 6v6
+bash 6v6.sh up   # 42 컨테이너 자동 가동 (RAM 8GB+ 권장, ~25min 첫 build)
+ssh -p 2204 ccc@<VM_IP>   # bastion 진입 → 학생 학습 시작
+```
+
+### 종료 통계
+- mrgrit/6v6 push 9건 (SSH key 자동 + metasploit GPG + ModSec per-vhost + Suricata threshold + OpenCTI/MISP/sysmon overlay + fresh deploy fix 5건)
+- mrgrit/ccc push: secuops 8 commit (W01-W15 lab YAML 정정 + lecture md 정합성 + 종합 보고서)
+- **secuops 130/132 step (98.5%) CC 자동 검증 통과**
+- 남은 2 step = 학생 학습 의의 (W09-S7/W10-S7 의 Wazuh decoder 갭 + ModSec rule 작성)
