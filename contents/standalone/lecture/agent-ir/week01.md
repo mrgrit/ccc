@@ -22,11 +22,12 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | **Blue Agent(방어자)** 자기 자신 — 관제·대응·스킬 운영 | `ssh 6v6-bastion` (pw: ccc) |
-| fw | 10.20.30.1 | 방화벽/HAProxy/Suricata ext — Bastion 이 조종 | `ssh 6v6-fw` |
-| web | 10.20.32.80 | **공격 표적** — Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager — Blue 의 감각기관 | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | **공격 에이전트(Red)** 세션 — pen-test 도구 13 종 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | **Blue Agent(방어자)** 자기 자신 — 관제·대응·스킬 운영 (Bastion 운영 에이전트, KG, A2A) | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | **공격 에이전트(Red)** 세션 — pen-test 도구 13 종 (curl/nmap/nikto/whatweb/sqlmap/hydra/등) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header — Bastion 이 조종 (dual NIC = router 모드) | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS — Blue 의 네트워크 감각 (dual NIC = router 모드) | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | **공격 표적** — Apache + ModSecurity + JuiceShop/DVWA reverse (dual NIC = vhost 라우팅) | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh manager — Blue 의 감각기관 (alerts.json + active-response) | `ssh 6v6-siem` (ProxyJump fw) |
 
 **Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
 **CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
