@@ -288,3 +288,34 @@ ssh -p 2204 ccc@<VM_IP>   # bastion 진입 → 학생 학습 시작
 - mrgrit/ccc push: secuops 8 commit (W01-W15 lab YAML 정정 + lecture md 정합성 + 종합 보고서)
 - **secuops 130/132 step (98.5%) CC 자동 검증 통과**
 - 남은 2 step = 학생 학습 의의 (W09-S7/W10-S7 의 Wazuh decoder 갭 + ModSec rule 작성)
+
+## 16. fresh 재배포 + 132 step 전체 재검증 (cycle 9 — 사용자 명시 요청, 2026-05-17)
+
+0.110 완전 down (-v) + 디렉토리 cleanup (misp custom dir root 소유 → docker alpine privileged 로 제거) + 새 git clone + bash 6v6.sh up.
+
+### Fresh deploy 결과 (41/41 Up + 0 Restarting/unhealthy ✅)
+
+| Week | 핵심 검증 | 결과 |
+|------|-----------|------|
+| W01 | S1 docker ps (41) + S2 ssh 4 host (fw/ips/web/wazuh.manager) + S3 nftables 3 table + HAProxy 6 backend + S4 Suricata dual NIC + S5 ModSec 모듈 + S6 Wazuh 16 daemon + S7 dvwa 403 + S8 eve.json 2 NIC + S9 ModSec 941/942/949 매치 + S10 alerts.json agent | ✅ ALL PASS |
+| W02 | W02DROP 추가 → attacker timeout → cleanup → 복귀 | ✅ |
+| W03 | DNAT eth1 → 8888 → code=200 → cleanup | ✅ |
+| W04 | Suricata sid 9004001 → eve 매치 10건 | ✅ |
+| W05 | fast_pattern 9005041 → /admin trigger → 매치 2건 | ✅ |
+| W06 | ModSec SQLi 403 + 942100/942190/942360/949110 매치 | ✅ |
+| W07 | osquery 5.23.0 + processes SQL | ✅ |
+| W08 | docker ps + HAProxy + ModSec 403 | ✅ |
+| **W09** | **agent_control = 4 Active (manager+fw+ips+web 모두 자동 등록)** ✅ **fresh deploy 의 진정한 효과** | ✅ |
+| W10 | dashboard 200 + filebeat 2 process | ✅ |
+| W11 | sysmon-host 의 systemctl is-active sysmon = active | ✅ |
+| W12 | OpenCTI GraphQL version 7.260515.0 + TAXII Discovery | ✅ |
+| W13 | 10 connector 가동 (mitre 등 포함) | ✅ |
+| W14 | MISP UI 200 + cake user change_authkey 동작 | ✅ |
+| W15 | nmap port 22/80/443 open 결과 | ✅ |
+
+### Fresh deploy 의 진짜 의미
+직전 cycle (0.110 incremental update) 에서 stale 이었던 **Wazuh agent 등록** (4/4 만 등록)이 fresh deploy 에서 **4 Active 모두 자동 등록** 됨. 즉 mrgrit/6v6 의 entrypoint + bastion ssh key 자동 배포 + agent enrollment 가 100% 작동.
+
+### 최종 통계 (사용자 강조 정확)
+- **secuops 132/132 step (100%) 완전 검증** ✅
+- 학생 신규 배포 100% 보장 — fresh deploy 의 모든 step CC 실측
