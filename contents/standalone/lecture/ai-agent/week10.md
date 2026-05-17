@@ -790,57 +790,6 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — 멀티에이전트 오케스트레이션)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *Master/Sub 멀티에이전트 오케스트레이션* 학습 항목 매칭.
-
-### 멀티에이전트 = "역할 분담 + 병렬 처리"
-
-dataset 13K 신호 처리에 단일 에이전트는 27시간 → 멀티 (4 SubAgent + 1 Master) 는 6.7시간. *Master 가 분배, SubAgent 가 병렬 실행*.
-
-```mermaid
-graph TB
-    M["Master AI"]
-    M --> S1["SubAgent 1: parse"]
-    M --> S2["SubAgent 2: kg search"]
-    M --> S3["SubAgent 3: chain"]
-    M --> S4["SubAgent 4: rule"]
-    S1 --> M
-    S2 --> M
-    S3 --> M
-    S4 --> M
-    M --> OUT["통합 결과"]
-
-    style M fill:#cce6ff
-```
-
-### Case 1: 4 SubAgent 병렬의 정량 효과
-
-| 항목 | 단일 | 4 Sub 병렬 |
-|---|---|---|
-| 신호 1건 시간 | 7초 | 2초 |
-| 13K 신호 / 일 | 27시간 (불가) | 6.7시간 |
-| 메모리 분산 | 단일 context | 4 context 분산 |
-
-### Case 2: 오케스트레이션 패턴
-
-| 패턴 | 적합 시나리오 |
-|---|---|
-| Pipeline | 순차 의존 작업 |
-| Fan-out | 독립 병렬 |
-| Map-Reduce | 대량 데이터 처리 |
-
-### 이 사례에서 학생이 배워야 할 3가지
-
-1. **4 Sub 병렬 = 4배 처리량** — 단일은 운영 불가.
-2. **Master 가 분배 책임** — SubAgent 는 실행만.
-3. **3 패턴 (Pipeline/Fan-out/Map-Reduce)** — 시나리오별 선택.
-
-**학생 액션**: lab Bastion 에 SubAgent 2개 동시 띄워 dataset 200건 처리 — 단일 대비 시간 측정.
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (Course10 — Week 10 에이전트 배포)
 

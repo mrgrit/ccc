@@ -13,14 +13,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -673,28 +675,6 @@ ENDSSH
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — 악성코드 IR 의 process + file evidence)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *악성코드 IR* 학습 항목 매칭. dataset 의 4688 + 4690 + 4663 evidence + IR 단계 매핑.
-
-### 악성코드 IR 단계 ↔ dataset evidence
-
-| Stage | dataset evidence | 건수 |
-|-------|--------------|------|
-| 1. process 생성 (4688) | command line 활성 시 | 4,054 (audit policy 약함) |
-| 2. injection (4690) | handle duplicate | 79,254 |
-| 3. file write (4663) | object access | 98 (희귀 = anomaly) |
-| 4. C2 connection | flow + dns_event | 31K + 11K |
-| 5. lateral (5156) | network connection | 176,060 |
-| 6. exfil (mo_name) | Data Theft | 125,772 |
-
-**해석**: 4688 audit policy + ScriptBlock Logging 강제 → 악성코드 1단계 (process create) 부터 detect.
-
-**학생 액션**: PowerShell 4103/4104 + Sysmon EID 1/3/7 추가 → dataset 한계 보충.
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (Course5 SOC — Week 11 위협 인텔리전스)
 

@@ -14,14 +14,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -923,58 +925,6 @@ fi
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — Claude Code 클라이언트 사이드)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *Claude Code 클라이언트 사이드 하네스의 보안 분석 활용* 학습 항목 매칭.
-
-### Claude Code = "분석가의 IDE 통합 보조 에이전트"
-
-Bastion 이 *24/7 자동 운영* 이라면 Claude Code 는 — *분석가가 IDE 에서 호출* 하는 보조. dataset 의 *복잡한 신호 분석* (Playbook 없는 신규 패턴) 같은 작업에 *분석가의 창의성* 과 *Claude Code 의 도구 활용* 을 결합.
-
-```mermaid
-graph LR
-    ANALYST["SOC 분석가"]
-    CC["Claude Code"]
-    TOOLS["Read/Edit/Bash/Grep<br/>~10 tools"]
-
-    ANALYST -->|질문| CC
-    CC -->|tool 활용| TOOLS
-    TOOLS -->|결과| CC
-    CC -->|답변| ANALYST
-
-    style CC fill:#cce6ff
-```
-
-### Case 1: dataset 복잡 신호 분석 — Bastion vs Claude Code
-
-| 시나리오 | Bastion (서버) | Claude Code (클라이언트) |
-|---|---|---|
-| 13K 일상 신호 | 자동 처리 (적합) | 비효율 |
-| 신규 zero-day 분석 | LLM 즉흥 (가변 결과) | 분석가 + AI 협업 (정확) |
-| 대량 정형 분류 | 적합 | 부적합 |
-
-### Case 2: Claude Code 의 dataset 활용 사례
-
-```
-분석가: "이 dataset 신호를 분석해 chain 추출해줘"
-Claude Code:
-  1. Read dataset/precinct6/...
-  2. Grep mo_name=Data Theft
-  3. Bash duckdb 분석
-  4. 결과 정리해서 답변
-```
-
-### 이 사례에서 학생이 배워야 할 3가지
-
-1. **클라이언트 = 분석가 보조** — 자동화 X, 협업 O.
-2. **신규 패턴은 클라이언트가 적합** — Bastion 의 즉흥보다 정확.
-3. **분석가의 창의성 + AI 도구** — 결합 가치.
-
-**학생 액션**: Claude Code 에 dataset 분석 요청 → Bastion 결과와 비교.
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (Course10 — Week 07 샌드박싱)
 

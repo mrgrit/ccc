@@ -14,14 +14,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -778,58 +780,6 @@ python3 ~/lab/week06/rl_training_loop.py
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — Bastion Playbook + RL)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *Bastion 의 Playbook 시스템 + RL 자기 개선* 학습 항목 매칭.
-
-### Playbook + RL = "반복 작업 자동화 + 자기 개선 사이클"
-
-dataset 392 사례 중 ~80건은 *동일한 chain* 으로 처리 가능 → 1개 Playbook 으로 80건 자동 처리. RL 은 *Playbook 의 실패 사례 (~2%)* 를 학습하여 v2/v3 로 정밀화.
-
-```mermaid
-graph LR
-    OBS["반복 패턴 관찰"]
-    PB["Playbook YAML 생성"]
-    EXEC["자동 실행"]
-    FAIL["실패 사례"]
-    RL["RL 학습"]
-
-    OBS --> PB
-    PB --> EXEC
-    EXEC --> FAIL
-    FAIL --> RL
-    RL --> PB
-
-    style PB fill:#cce6ff
-```
-
-### Case 1: dataset Playbook 적용 정량 효과
-
-| 항목 | 수동 | Playbook |
-|---|---|---|
-| 392 사례 처리 시간 | 65시간 | 3.3시간 |
-| 정확도 | ~85% (분석가별 변동) | ~98% (정해진 절차) |
-| 일관성 | 낮음 | 높음 |
-
-### Case 2: RL 정밀화 곡선
-
-| 시간 | Playbook 정확도 |
-|---|---|
-| v1 | 98% |
-| v2 (RL 1주 후) | 99% |
-| v3 (RL 1개월 후) | 99.5% |
-
-### 이 사례에서 학생이 배워야 할 3가지
-
-1. **Playbook = 20배 시간 절감** — 65시간 → 3.3시간.
-2. **RL 학습 곡선** — exponential decay, 1개월 99.5%.
-3. **자기 개선 사이클** — 실패 사례가 다음 학습 자료.
-
-**학생 액션**: Bastion Playbook 디렉토리 확인 → dataset 사례에 Playbook 적용 → 정확도 측정.
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (Course10 — Week 06 에이전트 보안)
 

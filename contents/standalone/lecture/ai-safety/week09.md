@@ -13,14 +13,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -548,88 +550,6 @@ def filter_output(response: str) -> str:
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — 모델 도난과 추론 공격)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *모델 추출 (extraction) + 멤버십 추론 (membership inference)* 학습 항목 매칭.
-
-### 모델 도난 = "수많은 query 로 모델의 동작을 복제"
-
-**Model Extraction** 은 *공격자가 모델에 query 를 다수 보내, 응답을 학습 데이터로 사용해 모델을 *복제* 하는 공격이다. 비싼 대형 모델을 query 비용만으로 복제할 수 있어 — 지적 재산 침해 + 후속 공격 (white-box attack 가능) 의 위험.
-
-dataset 환경에서 — 공격자가 *SOC LLM 분석기에 dataset 신호 수만 건* 을 query 하여, *분류기의 decision boundary* 를 추출 시도. 약 10K~100K query 로 정확도 80%+ 의 복제 모델을 만들 수 있다.
-
-**Membership Inference** 는 더 미묘한 공격 — *특정 데이터가 모델의 훈련 셋에 포함됐는지를 판별* 하는 공격. 이는 *프라이버시 침해* 를 의미 — 예: 의료 모델이 *특정 환자의 데이터로 훈련됐는지 추론 가능* 하면 그 환자의 의료 정보 일부 유출.
-
-```mermaid
-graph LR
-    ATK["공격자"]
-    LLM["보안 LLM 분석기"]
-    DS["dataset signal"]
-
-    ATK -->|10K-100K queries| LLM
-    LLM -->|응답 logs| ATK
-    ATK -->|학습 데이터로 사용| CLONE["복제 모델"]
-    DS -->|특정 신호| LLM
-    LLM -->|confidence 측정| ATK2["membership 추론"]
-
-    style ATK fill:#ffcccc
-    style CLONE fill:#ff9999
-    style ATK2 fill:#ff9999
-```
-
-**그림 해석**: 두 공격 모두 *대량 query* 를 통해 정보를 추출. 방어는 *query rate limit + 응답 noise 추가* 의 결합.
-
-### Case 1: dataset 환경에서 모델 도난 탐지 — query 패턴 분석
-
-| 항목 | 값 | 의미 |
-|---|---|---|
-| 정상 query 빈도 | 분석가 ~10건/분 | baseline |
-| 자동 시스템 query | ~100건/분 | 정상 자동화 |
-| 모델 도난 의심 | 1,000건+/분 | extraction 공격 |
-| query 다양성 | 정상은 신호 종류 분포 | extraction 은 boundary 근처 집중 |
-| 학습 매핑 | §"query 패턴 분석" | rate + 다양성 동시 |
-
-**자세한 해석**:
-
-모델 도난 탐지는 *query rate* 단독으로는 부족하다 — 정상 자동 시스템도 분당 100건+ query 를 보낸다. 추가로 *query 의 다양성 분포* 를 봐야 한다.
-
-**정상 query 분포**: 다양한 신호 종류가 *균형 있게* 입력 — security_audit_event 30%, 4662 20%, 5156 15% 등 dataset 분포와 비슷.
-
-**모델 도난 query 분포**: 공격자는 *decision boundary 근처의 신호* 에 집중 — 즉 *분류 결과가 0.5 근처 (uncertain)* 인 신호들. 이는 모델의 결정 경계를 정밀하게 매핑하기 위한 패턴. dataset 의 정상 분포와 *현저히 다름*.
-
-학생이 알아야 할 것은 — **rate 만이 아닌 *분포 anomaly* 가 모델 도난 탐지의 핵심**. 정상 분포 baseline 을 알아야 anomaly 가 보임.
-
-### Case 2: 모델 도난 방어 — Rate limit + Confidence noise
-
-| 방어 기법 | 효과 | 한계 |
-|---|---|---|
-| Query rate limit | 단순 차단 | 분산 공격에 무력 |
-| Confidence noise | 응답에 ±0.05 noise 추가 | 정확도 약간 감소 |
-| Query pattern 분석 | 분포 anomaly 탐지 | 이상 자동 차단 |
-| Watermark 응답 | 복제 모델 식별 | 추적 후 법적 대응 |
-| 학습 매핑 | §"4중 방어" | 단일 방어 부족 |
-
-**자세한 해석**:
-
-모델 도난 방어는 *4가지 기법의 결합* 이다.
-
-**Confidence noise** — 모델이 0.85 confidence 를 답해야 하는데, *0.80~0.90 의 random noise* 를 추가해 응답. 공격자가 정확한 boundary 추출 어려움. 정상 분류 정확도는 약간 감소 (0.5%).
-
-**Watermark 응답** — 모델 응답에 *공격자가 모르는 미세 패턴* 을 박는다. 공격자가 복제 모델을 만들면 그 watermark 도 함께 학습 → 복제 모델 식별 가능 → 법적 대응 근거.
-
-학생이 알아야 할 것은 — **모델은 *완전 보호 불가능*, 하지만 *공격 비용을 매우 높임* 가능**. 100K query 로 복제 가능하던 것을 1M query 필요로 만들면 — 공격자의 ROI 가 떨어져 *자연스러운 억제* 효과.
-
-### 이 사례에서 학생이 배워야 할 3가지
-
-1. **모델 도난은 query 량 + 분포 anomaly 동시** — rate 만으로는 못 잡음.
-2. **Confidence noise + watermark 결합** — 공격 비용 ↑ + 복제 식별 가능.
-3. **완전 방어 불가, 공격 비용 ↑ 가 목표** — ROI 를 떨어뜨림.
-
-**학생 액션**: lab 의 LLM 분석기에 — 정상 query 분포 100건, *boundary 근처 query* 100건을 시뮬레이트. 두 분포의 차이를 plot 하고 — *분포 anomaly 가 즉시 보이는지* 평가. 결과를 *"우리 환경에서 분포 기반 모델 도난 탐지가 가능한가"* 로 결론.
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (Course8 AI Safety — Week 09 안전 모니터링)
 

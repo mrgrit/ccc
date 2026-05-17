@@ -9,14 +9,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -573,25 +575,6 @@ echo "TTD (탐지 소요 시간): ${TTD}초"
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — 중간고사 채점 reference)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *중간고사 — 로그 분석 + ATT&CK 매핑* 학습 항목 매칭. dataset 의 단일 incident 분석 → ATT&CK 14전술 매핑 = 만점 답안 양식.
-
-### 만점 답안 reference — incident e5578610 분석
-
-| 평가 항목 | dataset 매핑 |
-|--------|----------|
-| 로그 source | winlogbeat 38만 + firewall 124K + WAF 4106 |
-| timestamp | ms 정밀도 (ts.ms) |
-| ATT&CK 매핑 | TA0043 (firewall_action) + TA0008 (5156) + TA0010 (mo_name=Data Theft) |
-| evidence chain | partition + node + edge ID |
-| framework | iso27001 24 + soc2 4 + nist 다수 |
-
-**채점 함의**: dataset 양식 (timestamp + ATT&CK + framework + evidence chain) 갖춘 답안 = 만점.
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (Course5 SOC — Week 08 대응 절차)
 

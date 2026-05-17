@@ -831,59 +831,6 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — 자율 인시던트 대응 에이전트)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *프로젝트 A: 자율 IR 에이전트 구축* 학습 항목 매칭.
-
-### 자율 IR = "사고 발생 → 자동 대응 6 단계 chain"
-
-dataset 392 Data Theft 사례를 *전수 자동 IR* 로 처리하는 시스템. 6 단계 chain — 탐지 → 격리 → 원인 분석 → 차단 → 복구 → 보고.
-
-```mermaid
-graph LR
-    SIG["dataset 신호"]
-    AUTO["자율 IR 에이전트"]
-    AUTO --> S1["1.탐지"]
-    S1 --> S2["2.격리"]
-    S2 --> S3["3.원인 분석"]
-    S3 --> S4["4.차단"]
-    S4 --> S5["5.복구"]
-    S5 --> S6["6.보고"]
-
-    style AUTO fill:#cce6ff
-```
-
-### Case 1: 자율 IR 의 정량 KPI
-
-| KPI | 임계 |
-|---|---|
-| MTTD (mean time to detect) | ≤30초 |
-| MTTR (mean time to respond) | ≤2분 |
-| MTTRecover | ≤10분 |
-| 사람 개입 횟수 | ≤1회/사고 |
-
-### Case 2: 6 단계의 dataset 매핑
-
-| 단계 | dataset 활용 |
-|---|---|
-| 탐지 | mo_name 분류 |
-| 격리 | 관련 IP 차단 |
-| 원인 분석 | chain 추출 |
-| 차단 | SIGMA 룰 생성 |
-| 복구 | 정상 사용자 unblock |
-| 보고 | 사람 escalation |
-
-### 이 사례에서 학생이 배워야 할 3가지
-
-1. **6 단계 chain 자동화** — MTTD/MTTR/MTTRecover 3 KPI.
-2. **사람 개입 ≤1회 = 자율** — 그 이상은 반자율.
-3. **각 단계의 dataset 활용 명확** — chain 추출이 핵심.
-
-**학생 액션**: 본인의 자율 IR 에이전트로 dataset 392 사례 처리 → 4 KPI 측정.
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (Course10 — Week 13 에이전트 거버넌스)
 

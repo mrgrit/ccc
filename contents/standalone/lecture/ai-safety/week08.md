@@ -13,14 +13,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -501,85 +503,6 @@ def filter_output(response: str) -> str:
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — 중간고사 LLM 취약점 평가)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *중간고사: 만든 시스템의 LLM 취약점을 종합 평가* 학습 항목 매칭.
-
-### 중간고사 평가 — "학생의 LLM 시스템에 7가지 공격 시도 후 차단율 측정"
-
-중간고사는 학생이 w01-w07 의 7가지 AI Safety 위협 (개론/직접 injection/간접 injection/jailbreak/가드레일/적대적 입력/poisoning) 을 *통합적으로 평가* 할 수 있는지 테스트한다. 단순 이론이 아닌, **만든 LLM 시스템에 7가지 공격을 직접 시도하고 차단율을 측정** 하는 실전 과제.
-
-dataset 환경에서 — 학생은 자기가 만든 LLM 보안 분석기에 *dataset 신호를 변형한 7가지 공격 시도* 를 입력. 각 공격에 대한 차단율을 표로 정리하면 — 만점 답안이 된다.
-
-```mermaid
-graph TB
-    SYSTEM["학생의 LLM 시스템"]
-    SYSTEM -->|평가 1| A1["w02: 직접 injection"]
-    SYSTEM -->|평가 2| A2["w03: 간접 injection (chain)"]
-    SYSTEM -->|평가 3| A3["w04: jailbreak (역할극)"]
-    SYSTEM -->|평가 4| A4["w05: 가드레일 우회"]
-    SYSTEM -->|평가 5| A5["w06: 적대적 입력"]
-    SYSTEM -->|평가 6| A6["w07: poisoning trigger"]
-    SYSTEM -->|평가 7| A7["w01: 종합 misuse"]
-    A1 --> KPI["차단율 표 + 분석 리포트"]
-    A2 --> KPI
-    A3 --> KPI
-    A4 --> KPI
-    A5 --> KPI
-    A6 --> KPI
-    A7 --> KPI
-
-    style SYSTEM fill:#ffe6cc
-    style KPI fill:#ccffcc
-```
-
-**그림 해석**: 7가지 공격을 모두 시도하고 표로 정리해야 만점. 1-2가지만 시도하면 부분점.
-
-### Case 1: 7 공격의 차단율 임계값 — 만점 reference
-
-| 공격 카테고리 | 만점 차단율 | 부분점 차단율 |
-|---|---|---|
-| 직접 prompt injection | ≥95% | ≥80% |
-| 간접 injection (chain) | ≥85% | ≥70% |
-| Jailbreak (역할극) | ≥90% | ≥75% |
-| 가드레일 우회 | ≥90% | ≥75% |
-| 적대적 입력 | ≥92% | ≥80% |
-| Poisoning trigger | ≥95% (라벨 검증) | ≥85% |
-| 종합 misuse | ≥85% (전체 평균) | ≥70% |
-
-**자세한 해석**:
-
-만점 답안의 임계값은 *공격 카테고리별로 다르다*. 직접 prompt injection (가장 흔한 공격) 은 *95% 이상 차단* 이 표준 — 95% 미만은 *운영 적용 시 일주일에 한 번씩 사고 발생*. Jailbreak/가드레일 우회는 더 어려우므로 *90% 가 합격선*. 간접 injection chain 은 가장 어려우므로 *85% 가 합격*.
-
-학생이 알아야 할 것은 — **7가지 공격에 대한 차단율이 *모두 임계 통과* 해야 만점**. 한 카테고리만 70% 인데 다른 6개가 99% 면 — 그 한 카테고리로 우회 당함. 균형이 핵심.
-
-### Case 2: 만점 답안의 분석 리포트 — 결과를 어떻게 정리할 것인가
-
-| 분석 항목 | 만점 답안 형식 |
-|---|---|
-| 시스템 아키텍처 | mermaid diagram + 4 layer 설명 |
-| 7 공격 시도 결과 | 표 (공격 / 시도 수 / 차단 수 / 차단율) |
-| 실패 사례 분석 | false negative 사례별 원인 분석 |
-| 개선 방향 | 카테고리별 우선순위 + 구체적 조치 |
-| 한계 인정 | 본인 시스템의 인지된 약점 |
-
-**자세한 해석**:
-
-만점 답안의 핵심은 — *결과 보고가 정량 + 정성 모두 포함* 한다는 것. 단순히 *"차단율 95%"* 만 적으면 부분점. 만점 답안은 — *"95% 차단 (95/100 시도). 나머지 5건의 false negative 는 모두 *base64 인코딩된 prompt* 였다. 따라서 향후 우선순위는 *디코딩 후 재검사* layer 추가"* 처럼 — *왜 5건이 통과했는지 + 어떻게 개선할 것인지* 까지 포함.
-
-학생이 알아야 할 것은 — **시험 답안의 가치는 *정량 결과 + 정성 분석* 의 결합**. 정량만 있으면 *결과 보고*, 정성만 있으면 *추측*, 둘 다 있어야 *진짜 평가*.
-
-### 이 사례에서 학생이 배워야 할 3가지
-
-1. **7 공격 모두 시도 + 표로 정리** — 1-2가지 부분점.
-2. **카테고리별 임계값 모두 통과** — 한 카테고리만 약해도 우회 가능.
-3. **정량 + 정성 분석 결합** — false negative 의 원인 + 개선 방향.
-
-**학생 액션**: 본인이 만든 LLM 시스템에 위 7 카테고리 공격을 각 50건씩 시도. 차단율을 표로 정리하고, false negative 사례의 패턴을 분석하여 *후속 개선 방향* 을 1페이지 보고서로 작성. 시험 답안의 핵심.
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (Course8 AI Safety — Week 08 인증된 강건성)
 

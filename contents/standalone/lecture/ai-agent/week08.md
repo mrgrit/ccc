@@ -14,14 +14,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -1026,59 +1028,6 @@ python3 ~/lab/week08/grading.py
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — 중간 실습 보안 에이전트)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *중간 실습: 학생이 직접 보안 에이전트 구축* 학습 항목 매칭.
-
-### 만점 답안 = "Bastion-mini 수준의 동작 가능 시스템"
-
-학생의 중간 실습 답안은 — *최소 4 layer (LLM + tool + memory + ReAct)* 를 갖추고 *dataset 100건을 자동 분류* 할 수 있어야 만점.
-
-```mermaid
-graph TB
-    STUDENT["학생 답안"]
-    STUDENT --> A["LLM 호출"]
-    STUDENT --> B["tool 1 (dataset query)"]
-    STUDENT --> C["메모리 (KG mini)"]
-    STUDENT --> D["ReAct loop"]
-    A --> WORK["dataset 100건 분류"]
-    B --> WORK
-    C --> WORK
-    D --> WORK
-
-    style STUDENT fill:#ffe6cc
-    style WORK fill:#ccffcc
-```
-
-### Case 1: 만점 답안 임계 KPI
-
-| KPI | 만점 |
-|---|---|
-| 4 layer 모두 구현 | 필수 |
-| dataset 100건 정확도 | ≥85% |
-| 평균 처리 시간 | ≤10초/건 |
-| 종합 보고서 | 5 페이지+ |
-
-### Case 2: 부분점 답안의 흔한 실수
-
-| 실수 | 부분점 |
-|---|---|
-| LLM 단독 (tool/memory 없음) | 50점 |
-| tool 1개만 | 70점 |
-| 메모리 미구현 | 80점 |
-| ReAct 미구현 | 80점 |
-
-### 이 사례에서 학생이 배워야 할 3가지
-
-1. **4 layer 모두 = 만점** — 한 layer 만 빠져도 부분점.
-2. **dataset 100건 검증 = 동작 증명** — demo X, 정량 결과.
-3. **5 페이지 보고서 = 분석 깊이** — 단순 동작 X.
-
-**학생 액션**: 본인의 보안 에이전트 만들고 dataset 100건 분류 → 4 layer + KPI 보고서 작성.
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (Course10 — Week 08 에이전트 모니터링)
 

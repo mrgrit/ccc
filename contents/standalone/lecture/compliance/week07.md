@@ -13,14 +13,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -447,35 +449,6 @@ ssh 6v6-web "  # 비밀번호 자동입력 SSH
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — NIST CSF 5 함수 매핑)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *NIST CSF 사이버보안 프레임워크* 학습 항목과 매핑되는 dataset 의 NIST CSF `csf` framework 키 + 5 함수별 evidence.
-
-### Case 1: NIST CSF 5 함수 ↔ dataset evidence
-
-dataset host 의 framework `csf:[1, 3, 4]` 매핑 + 5 함수 별 evidence:
-
-| CSF 함수 | dataset evidence | 건수 |
-|---------|--------------|------|
-| **ID** (Identify) | host node 30,092 + asset framework 매핑 | 30K asset |
-| **PR** (Protect) | firewall_action 118K + nft block | 118K |
-| **DE** (Detect) | flow + Suricata + 5156 filter | 207K |
-| **RS** (Respond) | mo_name=Data Theft 125K + lifecycle | 125K |
-| **RC** (Recover) | (별도 — backup·DR dataset 부재) | 0 |
-
-→ ID/PR/DE/RS *4 함수* dataset 매핑. RC 만 별도 evidence 필요.
-
-### Case 2: dataset 의 csf:[1,3,4] 분석
-
-WitFoo Precinct 의 `csf` 키가 [1,3,4] = *Identify·Detect·Respond* 만 cover. **PR (Protect) 와 RC (Recover) 은 다른 product** 가 cover (Cisco ASA = PR, backup product = RC).
-
-**해석**: NIST CSF 의 *5 함수 cover* 위해 *single product 부족* — *multi-vendor 통합* 필수. 학생 환경의 5 product (nft+Suricata+ModSec+Wazuh+OpenCTI) 가 모두 cover 하는지 점검.
-
-**학생 액션**: 5 함수 별 *cover product list* 작성 — RC (Recover) 누락 시 backup 솔루션 추가 권장.
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (Course4 Compliance — Week 07 SOX IT 통제)
 

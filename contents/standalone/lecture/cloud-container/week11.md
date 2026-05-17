@@ -13,14 +13,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -517,77 +519,6 @@ ssh 6v6-siem "
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — Kubernetes 보안 기초)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *RBAC + secrets + network policy + service account* 학습 항목 매칭.
-
-### Kubernetes 보안의 핵심 — RBAC 는 *모든 호출* 에 적용된다
-
-Kubernetes 에서 모든 자원 조작은 *kube-apiserver 를 거치는 API 호출* 로 이루어진다. `kubectl get pods` 명령도, controller 의 자동 reconcile loop 도, scheduler 의 pod 배치도 — 모두 동일한 API 호출 메커니즘을 사용한다. 이 호출 하나하나에 RBAC (Role-Based Access Control) 이 적용되어 *그 호출자가 그 자원에 그 동작을 할 권한이 있는지* 가 검증된다.
-
-dataset 에서 K8s 신호를 분석할 때 — *직접적인 K8s 신호는 dataset 에 적게 등장* 하지만 (ListContainerInstances 540건), 실제로는 *동형 의미* 를 가진 다른 cloud 신호로 분석할 수 있다. K8s 의 `pods list` 는 ECS 의 `ListContainerInstances` 와 의미가 동일하고, K8s 의 `Describe pod/secret` 은 cloud 의 `Describe*` 군과 동형이며, K8s secret read 는 *etcd object access* 로 볼 수 있어 event 4662 (object access) 226K 와 동일 분류 체계를 따른다.
-
-```mermaid
-graph TB
-    USER["kubectl user / Service Account"] -->|API call| API["kube-apiserver<br/>(인증 + RBAC + admission)"]
-    API -->|GET /api/v1/pods| LIST["ListContainerInstances 540 +<br/>Describe* 174K<br/>(자원 조회)"]
-    API -->|GET /api/v1/secrets| OBJ["event 4662<br/>226,215건<br/>(etcd 객체 접근)"]
-    API -->|RBAC 검증 audit| AUDIT["security_audit_event<br/>381,552건<br/>(권한 검증 결과)"]
-    LIST --> SIEM["SIEM 분석"]
-    OBJ --> SIEM
-    AUDIT --> SIEM
-
-    style USER fill:#ffe6cc
-    style SIEM fill:#cce6ff
-```
-
-**그림 해석**: 모든 K8s API 호출은 *3개의 audit 신호* 를 만든다 — (1) 자원 조회 자체의 신호, (2) etcd 객체 접근 신호, (3) RBAC 검증 신호. 학생이 `kubectl get pods` 한 번 실행하면 — 정상적으로는 1+1+1 = 3건, RBAC 거부 당하면 *audit 만 발생하고 자원 조회는 안 된 결과* 가 dataset 에 기록된다. 즉 RBAC 거부 audit 의 비율이 높아지면 *공격자가 권한 없는 자원을 시도하는 흔적*.
-
-### Case 1: ListContainerInstances 540건 — K8s `kubectl get pods` 의 정상 baseline
-
-| 항목 | 값 | 의미 |
-|---|---|---|
-| message_type | `ListContainerInstances` | ECS/K8s 의 pod 목록 조회 |
-| 총 호출 | 540건 | 약 30일 분량의 정상 운영 |
-| 정상 caller | 5-10개 SA | controller / scheduler / kubelet |
-| 학습 매핑 | §"RBAC verb=list" | 권한 분배의 정량 신호 |
-
-**자세한 해석**:
-
-`kubectl get pods` 는 K8s 사용자가 가장 흔히 쓰는 명령이다. RBAC 관점에서 이 명령은 *"verb=list, resource=pods, namespace=default"* 의 권한을 요구한다. 이 권한이 적절히 분배되어야 — 운영자는 자기 namespace 만 보고, 모니터링 도구는 cluster-wide 로 보고, 일반 application SA 는 자기 자원만 본다.
-
-**dataset 540건은 정상 ECS/K8s 운영의 한 달치 baseline** 이다. 정상적으로는 — controller manager 가 reconcile loop 에서 호출하는 분량 + scheduler 가 pod 배치 결정 시 호출하는 분량 + kubelet 가 자기 노드 상태 보고할 때 호출하는 분량. 모두 *5-10개의 SA* 가 만든다.
-
-**위험 신호** — 만약 *일반 application SA 1개가 cluster-wide list 호출* 을 발생시키면 — 그 SA 는 RBAC 가 잘못 부여된 것이다. lecture §"RBAC 최소 권한" 의 위반. 단일 SA 의 시간당 list 호출이 50건을 넘으면 — *cluster 전체 enumeration 의도* 로 분류하고 hunt 시작.
-
-### Case 2: event 4662 (object access) 226,215건 — secret/configmap 접근의 etcd 흔적
-
-| 항목 | 값 | 의미 |
-|---|---|---|
-| message_type | `4662` | etcd 또는 directory service 객체 접근 |
-| 총 발생 | 226,215건 | dataset 에서 두 번째로 많은 신호 |
-| 정상 baseline | 호스트 시간당 ~50건 | controller/scheduler 자동 동작 |
-| 학습 매핑 | §"K8s secrets = etcd 객체" | secret 읽기 흔적 |
-
-**자세한 해석**:
-
-K8s 의 secret 과 configmap 은 etcd (분산 key-value store) 에 저장된다. SA 가 `kubectl get secret <name>` 또는 pod 가 `volumeMount: secret` 으로 secret 을 마운트하면 — etcd 에서 그 객체를 read 하는 동작이 발생하고, audit 에 event 4662 (object access) 로 기록된다.
-
-**dataset 226K 는 정상 운영의 *모든 controller + admission + scheduler* 가 만든 흔적** 이다. 학생이 알아야 할 것은 — *정상 SA 는 자기 namespace 의 secret 만* 접근하고, *cluster-wide secret access* 는 거의 없다는 점이다.
-
-**위험 신호** — 단일 SA 의 시간당 secret access 가 50건을 넘으면 — *credential harvesting* 의 강력한 신호다. 공격자가 침해된 SA token 1개로 `kubectl get secrets -A` 같은 명령을 실행하면 — cluster 전체의 모든 secret 을 1번에 추출하려 시도. 그 결과 4662 burst 가 발생하고, audit 룰이 즉시 alert 를 발생시켜야 한다.
-
-### 이 사례에서 학생이 배워야 할 3가지
-
-1. **K8s 모든 호출은 audit 의 3중 흔적을 만든다** — 자원 조회 + etcd 접근 + RBAC 검증. 한 신호만 봐도 일부, 셋을 결합해야 전체.
-2. **list 호출의 baseline 은 정상 SA 5-10개에서만 발생** — 일반 SA 의 cluster-wide list = RBAC 결함.
-3. **secret access 의 namespace 분포가 곧 보안 정책의 정착도** — cluster-wide secret read 는 거의 없어야 정상.
-
-**학생 액션**: lab 환경에서 default SA token 1개로 `kubectl get secrets -A` 와 `kubectl auth can-i --list` 를 실행하고, audit 에 어느 신호가 발생하는지 추적. 그 후 RBAC role 을 *자기 namespace 의 secret list 만 허용* 으로 좁힌 뒤 동일 명령 재실행 — 어느 단계에서 차단되고 어느 audit 가 새로 발생하는지 비교 표 작성.
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (Course6 Cloud-Container — Week 11 IaC 보안)
 

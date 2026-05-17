@@ -13,14 +13,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -575,38 +577,6 @@ for line in sys.stdin:                                 # 반복문 시작
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — Wazuh agent 가 받을 winlogbeat 38만 events)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *Wazuh 관제 환경* 학습 항목 매칭. winlogbeat → Wazuh agent 통합 baseline.
-
-### Case 1: Wazuh agent 1대당 capture 해야 할 event 분포
-
-dataset 의 winlogbeat 8.2.2 수집 분포 (top 10 = 38만 events):
-
-```
-4624 (logon) 17K + 4634 (logoff) 17K + 4656 (handle open) 79K +
-4658 (close) 158K + 4690 (dup) 79K + 4663 (access) 98 +
-4670 (perm) 188 + 4776 (NTLM) 15K + 5156 (WFP) 176K + 5158 (bind) 9K
-```
-
-→ Wazuh agent 1대당 *일일 ~1,000 events* 처리 필요. 30K host 시 *일일 30M events*.
-
-### Case 2: Wazuh decoder 매핑 표
-
-| message_type | Wazuh decoder | rule.level baseline |
-|--------------|------------|------------------|
-| 4624 | windows_evt | 3 (info) |
-| 4625 | windows_evt | 5 (medium) |
-| 4670 | windows_evt | **10 (high)** |
-| 4663 | windows_evt | **10 (high)** |
-| 5136 | windows_evt | **12 (critical)** |
-| firewall_action | json_decoder | 4 (low) |
-
-**학생 액션**: ossec.conf 의 `<localfile><log_format>json` 활성 + winlogbeat 통합 → dataset baseline 38만 events 처리 가능 capacity 측정.
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (Course5 SOC — Week 04 이벤트 분석)
 

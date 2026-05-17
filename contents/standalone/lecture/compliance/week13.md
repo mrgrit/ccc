@@ -13,14 +13,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -471,42 +473,6 @@ ssh 6v6-web "  # 비밀번호 자동입력 SSH
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — SOC 2 + PCI-DSS 매핑 직접 evidence)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *SOC 2 + HIPAA + PCI-DSS* 학습 항목과 매핑되는 dataset 의 framework 키 direct mapping.
-
-### Case 1: dataset host 의 SOC 2 + PCI 매핑
-
-```text
-"soc2": [2, 3, 4]            # 5 TSC 중 3개 cover
-"pci32": [1]                 # PCI-DSS v3.2 1번 요구사항
-"pci40": [1, 2, 11, 12]      # PCI-DSS v4.0 1, 2, 11, 12번 요구사항
-```
-
-**SOC 2 5 Trust Service Criteria (TSC)**:
-- 1 Security (필수) — dataset cover X (host 별 부분 cover)
-- 2 Availability — ✅
-- 3 Processing Integrity — ✅
-- 4 Confidentiality — ✅
-- 5 Privacy — dataset cover X (별도 product 필요)
-
-**PCI-DSS v4.0 12 요구사항 중 매핑된 4개**:
-- 1: 네트워크 보안 (firewall) — Cisco ASA
-- 2: 시스템 강화 (config) — Precinct
-- 11: 보안 테스트 — Suricata flow
-- 12: 정보보안 정책 — 모든 product
-
-### Case 2: HIPAA — dataset 부재
-
-dataset framework 키에 `hipaa` 부재 = 의료 데이터 처리 환경 별도. PHI 처리 시 *HIPAA 별도 매핑* 필요.
-
-**해석**: SOC 2 / PCI-DSS 는 dataset 직접 활용. HIPAA 는 별도 evidence 수집.
-
-**학생 액션**: SOC 2 Type II 감사 시 dataset 양식 모방 + 1 (Security) + 5 (Privacy) 별도 product 매핑 추가.
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (Course4 Compliance — Week 13 보안정책 문서)
 

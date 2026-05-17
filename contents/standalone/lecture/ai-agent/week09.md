@@ -928,58 +928,6 @@ python3 /tmp/agent_security_audit.py
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — 에이전트 보안 위협)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *AI 에이전트의 보안 취약점과 방어* 학습 항목 매칭.
-
-### 에이전트 = "도구 권한 + 자율성 = 새 attack surface"
-
-LLM 단독은 *답변만* 하지만 에이전트는 *직접 도구 호출 + 시스템 변경* 가능. dataset 의 message_sanitized 안에 박힌 prompt injection 텍스트가 — 에이전트 분석 시 *조작된 결정 → 잘못된 시스템 변경* 으로 이어짐.
-
-```mermaid
-graph LR
-    SIG["dataset 신호<br/>(injection 박힘)"]
-    AGENT["에이전트"]
-    TOOLS["도구 호출 권한:<br/>block, revoke, delete"]
-    DAMAGE["진짜 시스템 피해"]
-
-    SIG -->|injection 우회| AGENT
-    AGENT -->|잘못된 결정| TOOLS
-    TOOLS --> DAMAGE
-
-    style SIG fill:#ffcccc
-    style DAMAGE fill:#ff6666
-```
-
-### Case 1: 에이전트 위협 4 카테고리
-
-| 위협 | 영향 | 방어 |
-|---|---|---|
-| Prompt injection | 조작된 결정 | 입력 sanitization |
-| Tool abuse | 권한 오용 | 위험도별 차등 |
-| Memory poisoning | KG 오염 | 입력 검증 + audit |
-| Resource exhaustion | DoS | rate limit |
-
-### Case 2: 위험도별 도구 권한
-
-| 카테고리 | 예시 | 정책 |
-|---|---|---|
-| read-only | dataset_query | 자동 |
-| config | rule_add | 사람 승인 |
-| service | block_traffic | 2명 승인 |
-| destructive | log_delete | 자동 X |
-
-### 이 사례에서 학생이 배워야 할 3가지
-
-1. **에이전트 = 새 attack surface** — LLM 단독과 본질 차이.
-2. **위협 4 카테고리** — injection / tool abuse / poisoning / DoS.
-3. **위험도별 차등 권한** — 모든 도구 동일 권한 X.
-
-**학생 액션**: 본인 에이전트의 33 skill 을 4 카테고리로 분류 → 권한 정책 v1 작성.
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (Course10 — Week 09 에이전트 테스트)
 

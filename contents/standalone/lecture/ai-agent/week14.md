@@ -832,54 +832,6 @@ curl -s -X POST "http://localhost:9100/projects/${PA_PID}/dispatch" \
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — CTF 자동 풀이 에이전트)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *프로젝트 B: CTF 자동 풀이 에이전트* 학습 항목 매칭.
-
-### CTF Agent = "공격 시나리오 자동 풀이"
-
-dataset 의 attack chain (예: recon → exploit → privesc → exfil) 을 *CTF 미션으로 변환* 하여 — 에이전트가 자동 풀이. NYU CTF, Cybench 등 표준 CTF 벤치 활용.
-
-```mermaid
-graph LR
-    CTF["CTF 미션<br/>(dataset chain 변환)"]
-    AGENT["CTF Agent"]
-    AGENT --> RECON["1.recon"]
-    RECON --> EXP["2.exploit"]
-    EXP --> PRIV["3.privesc"]
-    PRIV --> FLAG["4.flag 추출"]
-
-    style AGENT fill:#cce6ff
-    style FLAG fill:#ccffcc
-```
-
-### Case 1: CTF Agent KPI
-
-| KPI | 임계 |
-|---|---|
-| 풀이 성공률 | ≥60% (Easy CTF) |
-| 평균 풀이 시간 | ≤30분 |
-| 사람 개입 | 0회 |
-
-### Case 2: dataset chain → CTF 변환
-
-| dataset | CTF 미션 |
-|---|---|
-| Data Theft 사례 | "S3 bucket 에서 flag 찾기" |
-| Auth Hijack | "leaked IAM 으로 로그인" |
-| Recon burst | "scan 으로 포트 enum" |
-
-### 이 사례에서 학생이 배워야 할 3가지
-
-1. **CTF Agent = 공격 자동 풀이** — 60%+ 성공률이 baseline.
-2. **dataset chain → CTF 변환** — 학습 자료로 활용.
-3. **0 사람 개입** — 자율 풀이.
-
-**학생 액션**: 본인 CTF Agent 로 NYU CTF Easy 10문제 풀이 → 성공률 측정.
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (Course10 — Week 14 공급망 보안)
 

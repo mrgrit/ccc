@@ -13,14 +13,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -602,29 +604,6 @@ echo "TTD (탐지 소요 시간): ${TTD}초"
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — alert ↔ ATT&CK 매핑 워크북)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *경보 분석 실전 + ATT&CK 매핑* 학습 항목 매칭.
-
-### Case 1: alert 별 ATT&CK 매핑 표
-
-| dataset alert | ATT&CK Tactic | Technique |
-|--------------|-------------|---------|
-| firewall block (1초 burst) | TA0043 Recon | T1595.002 Vulnerability Scanning |
-| 4625 logon failure 5+/min | TA0006 Credential Access | T1110.001 Brute Force |
-| 5156 + 5140 share | TA0008 Lateral Movement | T1021.002 SMB |
-| 4670 + 5136 변경 | TA0004 PrivEsc | T1484.001 GPO Modification |
-| 4690 handle dup spike | TA0002 Execution | T1055 Process Injection |
-| mo_name=Data Theft | TA0010 Exfil | T1041 Exfil over C2 |
-| mo_name=Phishing | TA0001 Initial Access | T1566 Phishing |
-
-→ **dataset 의 message_type → ATT&CK 매핑 표** 가 SOC 분석가의 reference.
-
-**학생 액션**: 본인 환경 alert 마다 *ATT&CK Tactic × Technique 자동 매핑* 룰 작성 (Wazuh `<mitre>` 메타데이터).
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (Course5 SOC — Week 06 위협 탐지 룰)
 

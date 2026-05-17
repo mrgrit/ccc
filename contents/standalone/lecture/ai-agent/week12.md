@@ -901,53 +901,6 @@ if __name__ == "__main__":
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — 에이전트 평가와 벤치마크)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *에이전트 성능 평가 + 표준 벤치마크* 학습 항목 매칭.
-
-### 평가의 4 축 — 정확도 + 비용 + 속도 + 안전성
-
-에이전트 평가는 *4 축* — *정확도 (label_binary 일치율), 비용 (LLM 호출 수), 속도 (처리 시간), 안전성 (jailbreak 차단율)* — 모두 측정해야. 한 축만 좋으면 운영 부적합.
-
-```mermaid
-graph TB
-    AGENT["평가 대상 에이전트"]
-    AGENT --> A["정확도 ≥92%"]
-    AGENT --> C["비용 ≤$0.01/건"]
-    AGENT --> S["속도 ≤5초/건"]
-    AGENT --> SAFE["안전성 ≥95%"]
-
-    style AGENT fill:#cce6ff
-```
-
-### Case 1: dataset 100 신호로 4 축 측정
-
-| 축 | 측정 방법 | 임계 |
-|---|---|---|
-| 정확도 | label_binary 일치 비율 | ≥92% |
-| 비용 | 평균 LLM 호출 수 × 단가 | ≤$0.01 |
-| 속도 | 평균 처리 시간 | ≤5초 |
-| 안전성 | jailbreak prompt 차단율 | ≥95% |
-
-### Case 2: 표준 벤치마크 — Bastion-Bench, Cybench, AgentBench
-
-| 벤치 | 적합 |
-|---|---|
-| Bastion-Bench (590 task) | 보안 운영 종합 |
-| Cybench | CTF 기반 평가 |
-| AgentBench | 일반 에이전트 |
-
-### 이 사례에서 학생이 배워야 할 3가지
-
-1. **4 축 모두 임계 통과** — 한 축만 약해도 부적합.
-2. **표준 벤치 사용** — Bastion-Bench / Cybench / AgentBench.
-3. **dataset 으로 자체 벤치 가능** — 100 신호 4 축 평가.
-
-**학생 액션**: 본인 에이전트의 4 축을 dataset 100건 으로 측정.
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (Course10 — Week 12 에이전트 평가)
 

@@ -9,14 +9,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -490,28 +492,6 @@ ssh 6v6-web "  # 비밀번호 자동입력 SSH
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — 중간고사 채점 reference)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *중간고사 — ISO 27001 점검 체크리스트* 학습 항목 매칭. dataset 의 24 ISO 27001 control 매핑 = 학생 채점 reference.
-
-### Case 1: 만점 보고서 reference — dataset 양식
-
-학생 점검 보고서가 *dataset 의 양식 모방* 시 만점:
-
-| 평가 축 | dataset 의 baseline | 학생 목표 |
-|------|----------------|---------|
-| Annex A 통제 cover | iso27001:[24 numbers] | 본인 환경 24+ 통제 매핑 |
-| evidence count | 595K edges per 24 control | 통제 별 수십~수백 evidence |
-| multi-vendor 매핑 | 2 vendor (Precinct + Cisco ASA) | 학생 5 vendor 매핑 |
-| 익명화 4-layer | regex+format+NER+사람 | 동일 절차 적용 |
-
-**해석**: dataset 의 양식 그대로 모방한 보고서가 만점 (특히 *evidence count + 4-layer 익명화* 두 축).
-
-**채점 함의**: 단순 통제 list 만 제출 = 70점 / dataset 양식 + evidence count = 90+점.
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (Course4 Compliance — Week 08 CSAP / 클라우드 인증)
 

@@ -14,14 +14,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -556,79 +558,6 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — 자율보안시스템 개론)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0, 2.07M signals)
-> 본 lecture *자율보안 시스템의 정의와 인간 운영자와의 관계* 학습 항목 매칭.
-
-### "자율" 의 의미 — 사람의 어디까지가 줄어드는가
-
-자율보안시스템은 *AI 가 사람을 대체* 하는 시스템이 아니다. dataset 의 일일 13K 신호를 가지고 보면 — 사람 분석가 1명이 일일 *3,400건* 처리한다 가정해도 매일 *9,600건이 미처리* 된다. 즉 사람만으로는 *원래부터 불가능* 했던 작업을 자율 시스템이 메우는 것.
-
-자율의 5단계 — (Level 0) 완전 수동, (Level 1) 도구 보조, (Level 2) 부분 자동화, (Level 3) 조건부 자율, (Level 4) 고도 자율, (Level 5) 완전 자율. dataset 환경에서 운영 가능한 수준은 *Level 3-4* — 정상 패턴은 자동 처리, 이상 패턴은 사람 검토.
-
-```mermaid
-graph LR
-    L0["L0 수동<br/>사람이 모두"]
-    L3["L3 조건부 자율<br/>정상은 AI, 이상은 사람"]
-    L5["L5 완전 자율<br/>모두 AI"]
-    DS["dataset 13K/일"]
-
-    DS -->|L0 시도| L0
-    DS -->|L3 적용| L3
-    DS -->|L5 가능?| L5
-
-    L0 -->|3,400 처리, 9,600 미처리| F1["사실상 실패"]
-    L3 -->|12,870 자동, 130 사람| F2["운영 가능"]
-    L5 -->|13,000 자동| F3["윤리/규제 위반 위험"]
-
-    style L0 fill:#ffcccc
-    style L3 fill:#ccffcc
-    style L5 fill:#ffe6cc
-```
-
-**그림 해석**: dataset 양에서 *L0 은 실패, L5 는 위험, L3 가 균형*. 자율은 *모든 작업의 자동화* 가 아니라 *처리 가능한 양으로의 압축*.
-
-### Case 1: dataset 일일 처리량 vs 자율 수준 매핑
-
-| 자율 수준 | 처리 자동화율 | 일일 사람 검토 | 운영 적합성 |
-|---|---|---|---|
-| L0 (수동) | 0% | 13,000건 (불가능) | 실패 |
-| L1 (도구 보조) | 30% | 9,100건 | 실패 |
-| L2 (부분 자동) | 80% | 2,600건 | 부분 가능 |
-| L3 (조건부) | 99% | 130건 | 운영 가능 |
-| L4 (고도) | 99.5% | 65건 | 최적 |
-| L5 (완전) | 100% | 0건 | 위험 |
-
-**자세한 해석**:
-
-L3 와 L4 의 차이는 — *0.5% 의 차이가 사람 부담을 절반으로* 줄인다. 130건 vs 65건. 그런데 0.5% 의 정확도 향상은 *기술적으로 매우 어렵다* — 모델 크기 2배, 비용 2배 등이 필요할 수 있다.
-
-학생이 알아야 할 것은 — **자율 수준의 선택은 *기술 가능성 + 비용 + 리스크* 의 trade-off**. L4 가 좋아 보이지만 *비용이 L3 의 3배* 면 — L3 가 ROI 측면에서 더 합리.
-
-### Case 2: dataset 의 실제 운영 자율 수준 측정 — KPI
-
-| KPI | 측정 방법 | 자율 L3 임계 |
-|---|---|---|
-| 자동 처리율 | 13K 중 자동 분류된 비율 | ≥99% |
-| 사람 검토율 | 사람이 봐야 하는 비율 | ≤1% |
-| 잘못된 자동 결정 | 사람 검토에서 뒤집어진 비율 | ≤2% |
-| 응답 시간 | 신호 → 결정의 평균 | ≤5분 |
-
-**자세한 해석**:
-
-L3 운영의 KPI 는 *4가지 동시 만족* 이 필요. 자동 처리율만 높으면 잘못된 결정도 많을 수 있고, 응답 시간만 빠르면 정확도 떨어질 수 있다. 4 KPI 의 균형이 *운영 안정성*.
-
-### 이 사례에서 학생이 배워야 할 3가지
-
-1. **자율 = 사람 대체 X, 처리량 압축 O** — dataset 양이 자율의 동기.
-2. **L3 가 운영 균형점** — L0 실패, L5 위험.
-3. **4 KPI 동시 만족** — 자동률 + 사람 검토율 + 정확도 + 속도.
-
-**학생 액션**: dataset 의 일일 13K 신호 환경에서, 본인이 만든 시스템의 자율 수준 (L0~L5) 을 측정. 4 KPI 모두 표로 정리.
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (Course9 Autonomous Security — Week 01 강화학습 기초)
 

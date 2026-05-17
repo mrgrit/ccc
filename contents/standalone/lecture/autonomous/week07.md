@@ -14,14 +14,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -674,67 +676,6 @@ Bastion RL API를 사용하여 10개 이상의 다양한 task를 실행하고, t
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — RL과 보상)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *강화학습 (RL) 의 보상 함수 설계와 자율 시스템 적용* 학습 항목 매칭.
-
-### RL 의 본질 — "보상 함수가 학습 방향을 결정"
-
-dataset 392 Data Theft 사례를 RL 학습 자료로 사용할 때 — *보상 함수* 가 학습의 모든 것을 결정. 보상이 잘못 설계되면 RL 이 *잘못된 방향으로 더 빨리* 가는 역효과.
-
-```mermaid
-graph LR
-    AGENT["RL agent"]
-    ACTION["action: skill 선택"]
-    REWARD["reward 측정"]
-    POLICY["policy 업데이트"]
-
-    AGENT --> ACTION
-    ACTION --> ENV["dataset 환경"]
-    ENV --> REWARD
-    REWARD --> POLICY
-    POLICY --> AGENT
-
-    style REWARD fill:#cce6ff
-```
-
-### Case 1: dataset 보상 함수 설계 (보안 비대칭)
-
-| 결과 | reward | 이유 |
-|---|---|---|
-| true positive | +10 | 진짜 위협 차단 |
-| true negative | +1 | 정상 분류 |
-| false negative | -100 | 진짜 위협 놓침 (사고) |
-| false positive | -2 | alert fatigue |
-
-**자세한 해석**:
-
-보안 RL 의 보상은 *비대칭* — false negative 페널티가 false positive 의 50배. 이는 *놓친 1건이 alert fatigue 50건보다 비싸기* 때문. 학생이 알아야 할 것은 *비대칭의 정확한 비율* 이 환경마다 다름. 우리 환경에서는 50:1 이지만 *비용 측정으로 비율 산출* 필요.
-
-### Case 2: RL 학습 곡선 — 정확도 추세
-
-| iteration | dataset 정확도 |
-|---|---|
-| 0 (baseline) | 70% |
-| 100 (1주) | 80% |
-| 500 (1개월) | 92% |
-| 1000 (3개월) | 96% |
-
-**자세한 해석**:
-
-RL 학습은 *exponential decay 형태* — 처음 빠르게 향상, 나중 점진적 개선. 운영자는 *학습 곡선의 인내* 가 필요.
-
-### 이 사례에서 학생이 배워야 할 3가지
-
-1. **보상 함수 = 학습 방향** — 잘못 설계 시 역효과.
-2. **비대칭 보상 (false negative -100)** — 보안 비용 반영.
-3. **exponential decay 학습 곡선** — 인내 필요.
-
-**학생 액션**: 본인 환경의 *false negative 비용 / false positive 비용* 을 측정하여 보상 비율 산출.
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (Course9 — Week 07 SOAR 통합)
 

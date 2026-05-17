@@ -13,14 +13,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -476,80 +478,6 @@ curl -s http://10.20.30.200:11434/v1/chat/completions \
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — LLM 기반 취약점 분석)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *LLM 으로 취약점 보고서/CVE/공격 사례 분석* 학습 항목 매칭.
-
-### LLM 으로 취약점 분석 — 사례 묶음에서 *공통 attack chain* 추출
-
-dataset 의 incident 데이터는 *과거에 일어난 사고의 sanitized 기록* 이다. 단일 사고는 보통 5-30개의 신호로 구성되어 있고 — 신호들 사이의 시간순 연결을 이해해야 *attack chain* (공격 단계의 흐름) 이 보인다. 사람이 한 사고를 분석하는 데 1-3시간이 걸리지만, dataset 에는 수천 건의 incident 가 있다.
-
-LLM 은 이 작업에 적합하다. 학생이 dataset 의 단일 incident 의 5-30개 신호를 시간순으로 LLM 에게 던지면서 *"이 사고의 attack chain 을 단계별로 설명하고, 어느 단계에서 차단할 수 있었는지 분석하라"* 라고 요청하면 — LLM 이 30초에 분석을 완료한다. 사람의 1시간 작업이 LLM 30초로 압축.
-
-```mermaid
-graph LR
-    INC["dataset incident 1건<br/>(5-30개 신호)"] -->|LLM 입력| ANALYZE["LLM 시간순 분석"]
-    ANALYZE --> S1["1. 초기 침투<br/>(예: leaked IAM)"]
-    ANALYZE --> S2["2. 정찰<br/>(Describe* burst)"]
-    ANALYZE --> S3["3. 권한 상승<br/>(privileged container)"]
-    ANALYZE --> S4["4. 측면 이동<br/>(SA token 추출)"]
-    ANALYZE --> S5["5. 데이터 탈취<br/>(Data Theft mo_name)"]
-    S1 -.->|차단 가능 지점| BLOCK["방어 룰 작성<br/>(미래 예방)"]
-    S2 -.-> BLOCK
-    S3 -.-> BLOCK
-
-    style INC fill:#ffe6cc
-    style BLOCK fill:#ccffcc
-```
-
-**그림 해석**: LLM 은 한 사고에서 attack chain 5단계를 추출하고 — *각 단계마다 차단 가능 지점* 을 제시한다. 즉 단순 분석이 아니라 *방어 룰 작성으로 직결되는 분석* 이 가능. lecture §"사후 분석의 사전 예방 변환" 의 핵심.
-
-### Case 1: dataset incident 별 신호 묶음 분석 — Data Theft 392건의 평균 chain
-
-| 항목 | 값 | 의미 |
-|---|---|---|
-| Data Theft incident 수 | 392건 | 가장 많은 mo_name |
-| 평균 신호 수 / incident | ~12개 | 단일 사고의 신호량 |
-| chain 단계 평균 | 4-5단계 | recon → privesc → exfil 등 |
-| 학습 매핑 | §"chain 분석의 정량 baseline" | LLM 분석 효율 측정 |
-
-**자세한 해석**:
-
-dataset 의 392건 Data Theft incident 를 분석하면 — 각 incident 가 평균 ~12개 신호로 구성되며, attack chain 4-5 단계를 가진다. 즉 *총 신호 수는 392 × 12 ≈ 4,700건* 이고 — 사람이 직접 분석하면 392 × 1시간 = 392시간, 약 50일.
-
-LLM 이라면 — 인 1건당 30초로 392건 = 약 200분, 3.3시간. 50일 → 3.3시간으로 *360배 빠름*. 이 속도 차이가 LLM 의 본질적 가치.
-
-학생이 알아야 할 것은 — **LLM 분석의 결과를 사람이 *모두 검증* 하지 않아도 된다**. LLM 이 392건을 분석한 후 — *유사한 chain 끼리 자동 grouping* 하여 *대표 사례 5개* 만 사람이 검증하면 충분하다. 운영 가능 수준의 효율.
-
-### Case 2: chain 분석 결과의 활용 — 차단 룰 도출
-
-| chain 단계 | 차단 가능 지점 | 도출되는 룰 |
-|---|---|---|
-| 1. 초기 침투 | leaked IAM 사용 시점 | AssumeRole 신규 IP alert |
-| 2. 정찰 | Describe* burst | 5분 윈도우 100+ 호출 alert |
-| 3. 권한 상승 | privileged container | Wazuh 4690 burst rule |
-| 4. 측면 이동 | SA token access | host fs audit rule |
-| 5. 데이터 탈취 | mo_name=Data Theft | egress anomaly rule |
-
-**자세한 해석**:
-
-LLM 의 chain 분석 결과는 *5단계마다 차단 룰 1개* 를 도출한다. 392건의 Data Theft 사례 모두 비슷한 chain 을 따른다면 — 5개 룰만 잘 만들어도 미래의 *비슷한 패턴 사고를 모두 차단* 가능.
-
-이는 *defense in depth* 의 정량 정당화다. 5단계 chain 에서 단 1단계만 차단해도 사고는 멈춘다. 5단계 모두에 룰을 두면 *5중 방어*. 공격자가 5중 방어를 모두 우회하려면 — 각 룰을 우회하는 *5개의 신규 기법* 이 필요. 이것이 *defense in depth 가 비대칭 방어* 인 이유.
-
-학생이 알아야 할 것은 — **LLM 분석은 단순 이해가 아닌 룰 도출까지 끝내야 가치 있다**. LLM 에게 *"이 사고의 attack chain 과 각 단계의 차단 룰까지 작성하라"* 라고 함께 요청하면, 분석 + 룰 생성을 1회 호출에 끝낼 수 있다.
-
-### 이 사례에서 학생이 배워야 할 3가지
-
-1. **LLM 의 진짜 가치는 사람의 360배 속도** — 50일 작업 → 3.3시간으로 압축.
-2. **유사 chain grouping 으로 검증 부담 줄이기** — 392건 → 대표 5건만 사람이 검증.
-3. **분석 결과는 룰 도출까지 끝내야 운영 가치** — LLM 호출 1회로 분석 + 룰 동시 생성.
-
-**학생 액션**: dataset 에서 mo_name=Data Theft 인 incident 1건을 골라 (5-15개 신호) — LLM 에게 *"시간순으로 attack chain 을 분석하고, 각 단계의 차단 룰을 제시하라"* 의 prompt 입력. LLM 출력 결과를 lecture §"5단계 chain" 표와 비교, 일치 정도를 평가.
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (Course7 AI Security — Week 06 LLM API 보안)
 

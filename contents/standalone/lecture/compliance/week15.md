@@ -9,14 +9,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -531,28 +533,6 @@ ssh 6v6-siem "systemctl is-active wazuh-manager 2>/dev/null"  # 비밀번호 자
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — 기말 모의 심사 채점 reference)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *기말 모의 인증 심사* 학습 항목 매칭. dataset 의 4-layer + 11 framework + 595K edges = 만점 보고서 reference.
-
-### 모의 심사 채점 양식
-
-| 평가 항목 | 만점 기준 (dataset 모방) |
-|--------|------------------|
-| SoA 양식 | iso27001:[24+ numbers] applicable |
-| 증적 수집 | 4-layer (regex+format+NER+사람) |
-| evidence count | control 별 100~10K events |
-| multi-vendor | 5 product 동시 매핑 |
-| 4-layer 익명화 | RFC5737 + ORG/HOST/USER-NNNN |
-| 심사 대응 | NCR 사전 확인 + 대응안 |
-
-→ dataset 의 *완성도 (1 host = 11 framework × 595K edges)* 모방 보고서 = 만점.
-
-**학생 액션**: 기말 시험 시 dataset 양식 모방 5축 보고서 작성 — SoA + 증적 4-layer + evidence count + multi-vendor + NCR 사전 확인.
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (Course4 Compliance — Week 15 종합 평가)
 

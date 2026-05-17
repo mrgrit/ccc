@@ -13,14 +13,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -632,26 +634,6 @@ echo "TTD (탐지 소요 시간): ${TTD}초"
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — 웹 공격 IR 의 4-stage chain)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *웹 공격 IR* 학습 항목 매칭. WAF POST + 후속 단계 evidence chain.
-
-### 웹 공격 IR 단계별 evidence
-
-| Stage | dataset record | 건수 |
-|-------|------------|------|
-| 1. WAF block | WAF GET/POST | 4,106 (모두 outcome=200/302) |
-| 2. WAF 통과 (signature gap) | outcome=200 (POST 88) | 88 |
-| 3. session 탈취 시도 | JSESSIONID 평문 노출 | 모든 POST |
-| 4. 후속 측면이동 | 4624 logon (탈취 token 사용) | 17,482 |
-
-**해석**: WAF 통과 시 *session token* 평문 logging 이 탐지 entry. JSESSIONID 가 다른 src 에서 *재관측* 시 hijack 확정.
-
-**학생 액션**: WAF audit log 의 cookie 평문 logging 차단 + JSESSIONID *cross-src 추적* 룰 작성.
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (Course5 SOC — Week 10 악성코드 분석)
 

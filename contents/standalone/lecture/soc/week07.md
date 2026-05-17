@@ -13,14 +13,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -593,45 +595,6 @@ ssh 6v6-bastion "grep 'Accepted' /var/log/auth.log 2>/dev/null | \
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — SIGMA 룰 검증 입력)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *SIGMA 룰 작성* 학습 항목 매칭. 학생 SIGMA 룰의 정밀도/재현율 측정 입력.
-
-### Case 1: SIGMA 룰 → dataset 적용 결과 측정
-
-```yaml
-title: External recon burst (100.64.20.230 패턴)
-detection:
-  selection:
-    message_type: firewall_action
-    action: block
-    src_ip|startswith: '100.64.'
-  timeframe: 60s
-  condition: selection | count(distinct dst_port) by src_ip > 10
-falsepositives:
-  - 정상 모니터링 도구 (GoogleImageProxy 등)
-level: high
-```
-
-→ 본 룰을 dataset 에 적용 시:
-- **TP**: 100.64.20.230 (54 distinct port) ✅
-- **FP**: 100.64.1.37 (4018 GET 모두 dport=443 단일) ❌ (룰이 cover X)
-- 정밀도 추정: 80%+ (대부분 burst src 가 malicious)
-
-### Case 2: 회귀 테스트 — dataset 의 595K edges 적용
-
-학생 SIGMA 룰의 P/R 측정:
-```python
-# duckdb 로 dataset 적용
-SELECT COUNT(*) as fired, SUM(CASE WHEN label='malicious' THEN 1 ELSE 0 END) as tp
-FROM signals WHERE <학생 룰 조건>
-```
-
-**학생 액션**: 모든 SIGMA 룰을 dataset 에 적용 → P/R 자동 측정 + 회귀 테스트 자동화.
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (Course5 SOC — Week 07 인시던트 분류)
 

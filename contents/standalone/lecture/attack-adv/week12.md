@@ -552,59 +552,6 @@ SolarWinds, Codecov, event-stream, Log4Shell 중 2개를 선택하여 킬체인 
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — Mobile/IoT 공격)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *Mobile/IoT 공격* 학습 항목 매칭.
-
-### Mobile/IoT 공격 의 dataset 흔적 — "ADB + custom radio"
-
-dataset 의 정상 운영에서 *ADB + custom radio* 신호의 baseline 을 알아두면, *Mobile/IoT 공격* 시도 시 발생하는 anomaly 를 정량으로 탐지할 수 있다. 핵심 정량 지표는 — 비표준 protocol.
-
-```mermaid
-graph LR
-    SCENE["Mobile/IoT 공격 시나리오"]
-    TRACE["dataset 흔적<br/>ADB + custom radio"]
-    DETECT["탐지 / 분석"]
-
-    SCENE --> TRACE
-    TRACE --> DETECT
-
-    style SCENE fill:#ffe6cc
-    style DETECT fill:#cce6ff
-```
-
-### Case 1: dataset 정량 지표
-
-| 항목 | 값 |
-|---|---|
-| 핵심 신호 | ADB + custom radio |
-| 정량 baseline | 비표준 protocol |
-| 학습 매핑 | Android root + IoT firmware |
-
-**자세한 해석**: Android root + IoT firmware. 이 차이를 정량으로 측정해야 *공격 시도와 정상 운영의 구분* 이 가능. 학생이 baseline 숫자를 외워두면 — 운영 환경에서 anomaly 를 즉시 탐지할 수 있다.
-
-### Case 2: 실전 적용 시나리오
-
-| 단계 | dataset 활용 |
-|---|---|
-| 시도 식별 | ADB + custom radio 의 spike |
-| 정상 vs 이상 | baseline 대비 비율 |
-| 룰 작성 | Suricata / Wazuh / Sigma |
-| 검증 | dataset 재실행 |
-
-**자세한 해석**: 운영 환경 룰 작성은 — *baseline 측정 → 임계 결정 → 룰 작성 → dataset 검증* 의 4 단계. 한 단계라도 빠지면 false positive 폭증.
-
-### 이 사례에서 학생이 배워야 할 3가지
-
-1. **Mobile/IoT 공격 = ADB + custom radio 의 anomaly** — 정량 신호로 탐지.
-2. **baseline 숫자 외우기** — 비표준 protocol.
-3. **4 단계 룰 작성** — 측정 → 임계 → 룰 → 검증.
-
-**학생 액션**: APK reverse.
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (Course13 Attack Advanced — Week 12 공급망 공격 / 종속성 혼동·CI-CD·SBOM)
 

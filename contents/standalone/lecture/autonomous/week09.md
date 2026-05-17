@@ -653,56 +653,6 @@ Week 10에서는 **Schedule과 Watcher**를 학습한다.
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — Experience와 4-Layer Memory)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *Bastion 의 4-layer memory 시스템* 학습 항목 매칭.
-
-### 에이전트 메모리의 4 층 구조 — "정보 종류별로 분리 저장"
-
-**L1 Working** (현재 step): 진행 중 작업의 중간 결과. **L2 Episodic** (사례별): dataset 의 392 사례 같은 *완결된 사례*. **L3 Semantic** (개념): chain 패턴, MITRE 기법 같은 *추상화된 지식*. **L4 History** (감사): 모든 결정의 시간순 기록 (압축 면역).
-
-```mermaid
-graph TB
-    L1["L1 Working<br/>현재 step (휘발성)"]
-    L2["L2 Episodic<br/>392 사례 저장"]
-    L3["L3 Semantic<br/>패턴/개념 추상화"]
-    L4["L4 History<br/>모든 결정 audit"]
-
-    NEW["새 신호"] --> L1
-    L1 -->|완료 시| L2
-    L2 -->|패턴 추출| L3
-    L1 -->|모든 단계| L4
-
-    style L1 fill:#ffe6cc
-    style L2 fill:#cce6ff
-    style L3 fill:#ccffcc
-    style L4 fill:#ffd6d6
-```
-
-### Case 1: 4 layer 의 dataset 활용
-
-| Layer | 보관 기간 | dataset 양 |
-|---|---|---|
-| L1 Working | ~분 | 30 신호 batch |
-| L2 Episodic | ~월 | 392 사례 |
-| L3 Semantic | ~영구 | 50 패턴 node |
-| L4 History | 영구 (압축 면역) | 모든 결정 |
-
-### Case 2: 압축 면역의 가치
-
-L4 는 *LLM context 압축* 시에도 *그대로 유지* 된다. 이는 *audit/규제* 에서 결정적 — *영구 추적 가능성*. 다른 layer 는 압축으로 일부 손실 가능, L4 는 *모든 결정의 영구 기록*.
-
-### 이 사례에서 학생이 배워야 할 3가지
-
-1. **4-layer = 정보 종류별 분리 저장** — 한 곳에 모두 X.
-2. **L4 압축 면역** — audit/규제 충족.
-3. **각 layer 의 보관 기간 다름** — L1 분, L4 영구.
-
-**학생 액션**: Bastion 의 메모리 디렉토리 (apps/bastion/memory/) 4 layer 별 데이터 양 측정.
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (Course9 — Week 09 팀 조율)
 

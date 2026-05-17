@@ -14,14 +14,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -566,68 +568,6 @@ Python mining 코드를 사용하여 난이도 1~6까지 각각 100회 mining하
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — PoW와 블록체인)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *작업증명 (PoW) + 블록체인을 이용한 자율 시스템의 무결성* 학습 항목 매칭.
-
-### 자율 시스템에 PoW 가 필요한 이유 — "에이전트 결과의 검증 가능성"
-
-자율 에이전트가 dataset 분석 결과를 *블록체인에 기록* 하면 — 그 결과를 *나중에 변조 불가능* 하게 만든다. 이는 *audit/규제* 측면에서 중요 — *AI 가 언제 어떤 결정을 했는지의 변조 불가능 기록*.
-
-```mermaid
-graph LR
-    SIG["dataset signal"]
-    AGENT["에이전트 분석"]
-    POW["PoW 작업"]
-    CHAIN["블록체인<br/>변조 불가 기록"]
-
-    SIG --> AGENT
-    AGENT -->|결과 + hash| POW
-    POW -->|nonce 발견| CHAIN
-    CHAIN -.->|영구 보존| AUDIT["미래 audit"]
-
-    style CHAIN fill:#cce6ff
-    style AUDIT fill:#ccffcc
-```
-
-**그림 해석**: PoW 비용 (계산 시간) 이 *변조의 비용을 매우 높게* 만든다.
-
-### Case 1: dataset 운영의 PoW 적용 — 비용과 효과
-
-| 항목 | 값 |
-|---|---|
-| dataset 일일 critical 결정 | ~130건 (1% 압축 후) |
-| PoW 1건 시간 | ~5초 (적당한 난이도) |
-| 일일 PoW 부하 | ~11분/일 (전체 운영의 1%) |
-| 변조 불가 기록 효과 | 영구 audit |
-
-**자세한 해석**:
-
-PoW 부담이 *전체 운영의 1%* — 적당한 비용으로 *영구 무결성* 확보. 학생이 알아야 할 것은 *PoW 의 핵심은 원 데이터 보호가 아니라 *결정의 시점 증명***. *언제* 그 결정이 내려졌는지 후에도 변경 불가.
-
-### Case 2: 블록체인 vs 일반 audit log 의 차이
-
-| 항목 | 일반 audit | 블록체인 audit |
-|---|---|---|
-| 변조 가능성 | DB admin 이 수정 가능 | 사실상 불가능 |
-| 기록 추가 비용 | $0 | PoW 5초/건 |
-| 미래 검증 | 운영팀 의존 | 누구든 검증 가능 |
-
-**자세한 해석**:
-
-일반 audit 은 *DB admin 의 신뢰* 가 전제. 블록체인은 *trustless* — 신뢰 없이 검증 가능. 규제 환경에서 *외부 감사* 시 가치가 큼.
-
-### 이 사례에서 학생이 배워야 할 3가지
-
-1. **PoW = 자율 결정의 시점 증명** — 변조 불가능 기록.
-2. **운영 부담 1%** — 적당한 비용으로 영구 무결성.
-3. **trustless audit** — DB admin 신뢰 없이 외부 검증.
-
-**학생 액션**: lab 에서 dataset 임의 10건의 분석 결과를 *블록체인 형식으로 기록* 하는 PoW 코드 구현.
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (Course9 — Week 06 위협 헌팅)
 

@@ -13,14 +13,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -990,59 +992,6 @@ curl -s -X POST http://localhost:9100/projects \
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — Mechanistic Interpretability)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *Mechanistic Interpretability* 학습 항목 매칭.
-
-### Mechanistic Interpretability 의 dataset 흔적 — "circuit analysis"
-
-dataset 의 정상 운영에서 *circuit analysis* 신호의 baseline 을 알아두면, *Mechanistic Interpretability* 시도 시 발생하는 anomaly 를 정량으로 탐지할 수 있다. 핵심 정량 지표는 — model internal.
-
-```mermaid
-graph LR
-    SCENE["Mechanistic Interpretability 시나리오"]
-    TRACE["dataset 흔적<br/>circuit analysis"]
-    DETECT["탐지 / 분석"]
-
-    SCENE --> TRACE
-    TRACE --> DETECT
-
-    style SCENE fill:#ffe6cc
-    style DETECT fill:#cce6ff
-```
-
-### Case 1: dataset 정량 지표
-
-| 항목 | 값 |
-|---|---|
-| 핵심 신호 | circuit analysis |
-| 정량 baseline | model internal |
-| 학습 매핑 | feature attribution |
-
-**자세한 해석**: feature attribution. 이 차이를 정량으로 측정해야 *공격 시도와 정상 운영의 구분* 이 가능. 학생이 baseline 숫자를 외워두면 — 운영 환경에서 anomaly 를 즉시 탐지할 수 있다.
-
-### Case 2: 실전 적용 시나리오
-
-| 단계 | dataset 활용 |
-|---|---|
-| 시도 식별 | circuit analysis 의 spike |
-| 정상 vs 이상 | baseline 대비 비율 |
-| 룰 작성 | Suricata / Wazuh / Sigma |
-| 검증 | dataset 재실행 |
-
-**자세한 해석**: 운영 환경 룰 작성은 — *baseline 측정 → 임계 결정 → 룰 작성 → dataset 검증* 의 4 단계. 한 단계라도 빠지면 false positive 폭증.
-
-### 이 사례에서 학생이 배워야 할 3가지
-
-1. **Mechanistic Interpretability = circuit analysis 의 anomaly** — 정량 신호로 탐지.
-2. **baseline 숫자 외우기** — model internal.
-3. **4 단계 룰 작성** — 측정 → 임계 → 룰 → 검증.
-
-**학생 액션**: TransformerLens lab.
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (Course15 AI Safety Advanced — Week 04 백도어 탐지·rootkit·persistence·integrity)
 

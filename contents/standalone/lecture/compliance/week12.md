@@ -13,14 +13,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -565,42 +567,6 @@ rule.groups:service_start OR rule.description:*started* OR rule.description:*sto
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — 감사 evidence 의 *재현 가능성* baseline)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *보안 감사 실습* 학습 항목과 매핑되는 dataset 의 *audit trail 재현 가능성* baseline.
-
-### Case 1: dataset 의 감사 가능 evidence 4 layer
-
-| 감사 layer | dataset evidence | 감사관이 인용 가능한 형식 |
-|---------|--------------|---------------------|
-| 1. **timestamp** | ms 정밀도 (1721992223.7371173) | "2024-07-26 11:09:56.683 UTC" |
-| 2. **partition ID** | UUID 형식 (e562f7c0-d2eb-11ee-...) | 시간 파티션 키 |
-| 3. **node ID** | UUID + sanitized (HOST-4476) | 자산 식별자 |
-| 4. **edge ID + edge_type** | EVENT/AUDIT/FLOW 등 5종 | 행위 분류 |
-
-→ 감사관이 *동일 데이터로 재계산* 가능 = audit trail 의 핵심 요건.
-
-### Case 2: 감사 보고서 양식 — dataset metadata 모방
-
-dataset 의 metadata.json 양식:
-```json
-{
-  "dataset_name": "...",
-  "version": "1.0.0",
-  "node_count": 30092,
-  "edge_count": 595618,
-  "label_distribution": {"benign": 390851, "suspicious": 44681, "malicious": 160086},
-  "sanitization": {"method": "4-layer ..."}
-}
-```
-
-→ 감사 보고서 *Executive Summary* 양식으로 모방 가능.
-
-**학생 액션**: 감사 시 evidence 마다 *4 layer ID* (timestamp + partition + node + edge) 명시 — 재현 가능성 보장.
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (Course4 Compliance — Week 12 BCP/DR)
 

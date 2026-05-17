@@ -13,14 +13,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -476,75 +478,6 @@ ssh 6v6-siem "
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — 이미지 보안)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *이미지 스캔 / 서명 / registry / supply chain* 학습 항목 매칭.
-
-### 이미지 supply chain 결함이 어떻게 운영 사고로 이어지는가
-
-이미지 보안의 핵심 위험은 **"빌드 단계에서 들어간 결함이 운영 단계에서 폭로된다"** 는 시간차에 있다. Dockerfile 한 줄, layer 1개에 박힌 시크릿, latest 태그로 가져온 검증 안 된 base image — 이 모든 결함은 빌드 시점에는 거의 보이지 않다가, 컨테이너가 실제로 동작하면서 *registry pull, runtime access, lateral movement* 의 신호를 만들기 시작한다.
-
-dataset 에서 이 변환 경로를 따라가면 — 이미지 manifest 조회는 174,293건의 Describe\* 군 호출로, 컨테이너 runtime 의 호스트 자원 접근은 4662 (226,215건) 로, 결국 leaked credential 의 사용은 mo_name=Auth Hijack 의 edge 로 분류되어 등장한다.
-
-```mermaid
-graph LR
-    BUILD["image build<br/>(Dockerfile)"] -->|latest tag<br/>secret 박힘| PUSH[registry push]
-    PUSH -->|정상 pull| AR["Describe* call<br/>174,293건<br/>(manifest 조회)"]
-    PUSH -->|secret 누출 시| DT["mo_name=Data Theft<br/>(데이터 탈취 edge)"]
-    AR -->|컨테이너 run| OBJ["event 4662<br/>226,215건<br/>(객체 접근)"]
-    OBJ -->|leaked cred 사용| HIJ["mo_name=Auth Hijack<br/>(인증 탈취 edge)"]
-
-    style BUILD fill:#ffe6cc
-    style DT fill:#ffcccc
-    style HIJ fill:#ff9999
-```
-
-**그림이 보여주는 것**: 노란 박스 (build) 의 결함은 즉시 발견되지 않는다. registry push 까지는 정상 운영처럼 보이지만, 누군가 image layer 를 까서 secret 을 추출하는 순간 — 빨간 박스 (Data Theft / Auth Hijack edge) 로 비약한다. lecture §"image scan" 과 §"image sign" 은 빌드 → push 단계 사이에 *결함 검출 게이트* 를 설치하는 것이 목적이다.
-
-### Case 1: Describe\* 174,293건 — 이미지 manifest enumeration 의 baseline
-
-| 항목 | 값 | 의미 |
-|---|---|---|
-| message_type | `Describe*` | DescribeInstanceStatus 27,127 + 기타 147K 군 |
-| 총 호출 | 174,293건 | 가장 많이 호출되는 cloud API 군 |
-| 학습 매핑 | §1 이미지 layer / manifest | registry 노출 시 enumerate 가능 영역 |
-| 위험 패턴 | 동일 IAM 의 burst | recon timeline 의 첫 단계 |
-
-**자세한 해석**:
-
-ECR/GCR/ACR 같은 컨테이너 registry 는 *image manifest* 라는 메타데이터 (layer 목록, 환경변수, ENTRYPOINT 등) 를 외부에 노출한다. 이 manifest 조회는 cloud 에서 모두 `Describe*` 군 호출로 분류된다 — DescribeImages, DescribeRepositories, DescribeImageScanFindings 등.
-
-dataset 174,293건은 정상 운영 한 달치 — *대부분이 CI/CD 와 ECS scheduler 의 자동 호출* 이다. 학생이 알아야 할 것은 — **공격자가 leaked IAM key 로 ECR 에 진입하면, 그가 가장 먼저 하는 행동이 Describe\* 군 호출** 이다. 어떤 image 들이 있는지, 어떤 layer 가 있는지, 환경변수가 노출되어 있는지를 모두 manifest 에서 한 번에 알아낼 수 있다.
-
-따라서 — "정상 caller 5개의 분포" 와 "비정상 신규 caller 의 짧은 burst" 를 구분할 수 있어야 한다. dataset 174K 의 caller 분포를 보면 보통 5-10개 IAM 으로 수렴 — 11번째 신규 caller 의 시간당 1,000건 burst = recon 시작.
-
-### Case 2: leaked image credential → Auth Hijack edge 변환
-
-| 항목 | 값 | 의미 |
-|---|---|---|
-| edge type | `Auth Hijack` | 인증 탈취 패턴의 edge 분류 |
-| 발생 조건 | image 내 secret 노출 + 외부 사용 | image scan 누락 시 흔히 발생 |
-| 학습 매핑 | §"secret 을 image 에 넣지 말 것" | 위반 시 dataset 분류 결과 |
-
-**자세한 해석**:
-
-학생이 Dockerfile 에 `ENV DB_PASSWORD=admin123` 같은 한 줄을 박으면 — 그 비밀번호는 image layer 에 평문으로 저장된다. Image 가 public registry 에 push 되거나, IAM 이 노출되어 외부에서 pull 가능하면, 누구든 `docker history --no-trunc` 한 번으로 그 비밀번호를 추출할 수 있다.
-
-추출된 비밀번호로 공격자가 *원래 그 secret 의 정당한 사용처에 로그인* 하면 — dataset 에서는 *Auth Hijack* edge 로 분류된다. 정상 caller 가 들어와야 할 곳에 비정상 caller 가 같은 자격으로 들어왔기 때문이다.
-
-이는 lecture 가 강조하는 **"image scan + sign + minimal layer 의 3중 방어"** 가 무력화되는 경로다 — scan 을 안 하면 secret 이 layer 에 남고, sign 을 안 하면 가짜 image 가 push 될 수 있고, minimal layer 가 아니면 불필요한 도구가 함께 노출된다. 세 방어 중 하나만 빠져도 Auth Hijack edge 로 직결.
-
-### 이 사례에서 학생이 배워야 할 3가지
-
-1. **이미지 결함은 빌드 시점에 거의 보이지 않는다** — 운영 단계의 신호로만 폭로되므로 빌드 게이트 + runtime 모니터링이 모두 필요.
-2. **Describe\* 174K 에서 비정상 caller 1개를 찾아내는 것이 recon 차단의 첫 단계** — caller 분포 baseline 을 알아둬야 가능.
-3. **image 1개의 secret 노출은 곧 Auth Hijack** — image scan + sign + minimal layer 3중 방어가 모두 필요.
-
-**학생 액션**: 본인이 작성한 Dockerfile 에서 (1) `ENV PASSWORD=*` 류 평문 secret, (2) `.dockerignore` 누락으로 인한 `.git/.env` 포함, (3) `latest` 태그 사용 의 3가지를 점검하고, Trivy 또는 docker scan 으로 1회 스캔한 결과를 보고서에 첨부. 발견된 issue 별로 *"이 결함이 운영 환경에서 어느 dataset 신호로 폭로되는가"* 를 한 줄씩 작성.
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (Course6 Cloud-Container — Week 03 컨테이너 기초)
 

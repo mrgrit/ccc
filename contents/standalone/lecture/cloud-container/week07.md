@@ -12,14 +12,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -498,81 +500,6 @@ ssh 6v6-siem "
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — Docker 보안 점검 / CIS Benchmark)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *CIS Docker Benchmark + audit + 자동 점검 도구* 학습 항목 매칭.
-
-### CIS Benchmark 가 dataset 에서 어떻게 검증되는가
-
-CIS (Center for Internet Security) Docker Benchmark 는 *"Docker 환경이 보안적으로 올바르게 구성되어 있는가"* 를 점검하는 표준 체크리스트다. 1.x (host config), 2.x (daemon config), 4.x (image), 5.x (runtime), 6.x (operations) 등 6개 카테고리에 약 100여 개 항목이 있다.
-
-이 점검표가 학생에게 어려운 이유는 — *각 항목을 어떻게 검증하는지가 추상적* 이기 때문이다. 예를 들어 "5.4 컨테이너에 PID namespace 공유 금지" 같은 항목을 어떻게 *현실 운영* 에서 검증하는가? Docker bench-security 같은 도구가 자동 점검을 해 주지만, 그 출력만으로는 *왜 그 항목이 중요한지* 가 와닿지 않는다.
-
-dataset 은 그 답을 준다. CIS 의 각 항목은 위반될 때 *특정 message_type 의 신호 변화* 를 만든다. CIS 5.x (runtime) 위반은 event 4690 (handle duplicated) burst 로, CIS 4.x (image) 위반은 event 4662 (object access) 패턴으로, CIS 1.x (host) 점검 자체가 안 되면 diagnostic_event 부재로 — dataset 에 모두 흔적을 남긴다.
-
-```mermaid
-graph TB
-    CIS["CIS Docker Benchmark<br/>(점검 카테고리)"]
-    CIS --> H1["1.x Host Config<br/>auditd / docker daemon 설정"]
-    CIS --> H2["2.x Daemon Config<br/>--icc=false / live-restore"]
-    CIS --> H4["4.x Container Image<br/>USER 명시 / latest 금지"]
-    CIS --> H5["5.x Container Runtime<br/>capabilities 제한 / read-only"]
-    H1 -->|준수 여부 신호| AUD["security_audit_event<br/>381,552건"]
-    H1 -->|점검 동작 흔적| DIA["diagnostic_event<br/>17,997건"]
-    H2 -->|네트워크 정책 적용| WFP["event 5156<br/>176,060건"]
-    H4 -->|host 자원 격리| OBJ["event 4662<br/>226,215건"]
-    H5 -->|capability 사용| CAP["event 4690<br/>79,254건"]
-
-    style CIS fill:#cce6ff
-```
-
-**그림 해석**: 5개 CIS 카테고리가 각각 dataset 의 다른 message_type 에 매핑된다. 즉 — 학생이 CIS 점검표를 읽고 끝내는 것이 아니라, *각 항목이 만드는 운영 신호* 를 동시에 모니터링해야 진짜 점검이 된다는 뜻이다. lecture §"CIS docker-bench" 의 자동 점검 출력은 *시점적 점검* 이고, dataset signal 은 *연속적 점검* — 둘이 서로 보완한다.
-
-### Case 1: diagnostic_event 17,997건 — host audit 가 살아 있다는 증거
-
-| 항목 | 값 | 의미 |
-|---|---|---|
-| message_type | `diagnostic_event` | 시스템 진단 / health-check 이벤트 |
-| 총 발생 | 17,997건 | dataset 약 1년치 수준 |
-| 정상 baseline | host 당 일일 ~50건 | auditd + Wazuh agent 가 살아 있을 때 |
-| 학습 매핑 | §"docker bench-security" | 점검이 동작한다는 증거 |
-
-**자세한 해석**:
-
-`diagnostic_event` 는 *호스트의 auditd, sysdig, Wazuh agent 같은 모니터링 도구가 자체적으로 만들어내는* 진단 이벤트다. 도구가 정상 동작하면 자기 자신의 동작 상태를 주기적으로 audit 에 기록한다 — health beacon 의 역할.
-
-**dataset 17,997건은 약 1년치 수준의 정상 audit 운영 흔적** 이다. 만약 학생의 환경에서 이 신호가 *0이라면* — 그것은 audit 자체가 꺼져 있거나 도구가 죽어 있다는 강력한 신호다. CIS 1.1 ("auditd 활성화") 가 미달인 상태에서는 다른 모든 점검 항목이 무의미해진다 — 점검 결과를 기록할 곳이 없기 때문.
-
-학생이 알아야 할 것은 — **CIS 점검의 첫 번째 검증은 *점검 자체가 동작하는가*** 라는 점이다. diagnostic_event 가 발생하지 않으면 그 환경은 점검 미실시 상태와 동등.
-
-### Case 2: event 5156 (WFP) 176,060건 — `--icc=false` 정책의 정량 검증
-
-| 항목 | 값 | 의미 |
-|---|---|---|
-| message_type | `5156` | Windows Filtering Platform 허용된 연결 |
-| 총 발생 | 176,060건 | dataset 의 connection allow 누적 |
-| CIS 매핑 | §2.1 `--icc=false` | inter-container 통신 차단 정책 |
-| 검증 방법 | container A → B 시도 → 5156 allow 발생 여부 | |
-
-**자세한 해석**:
-
-CIS 2.1 항목은 Docker daemon 옵션 `--icc=false` (inter-container communication 차단) 의 적용을 권고한다. ICC 가 default 인 *true* 상태에서는 같은 bridge 네트워크의 컨테이너들이 서로 자유롭게 통신할 수 있다 — 이는 침해된 컨테이너 1개가 클러스터 내 다른 컨테이너들로 자유롭게 lateral 이동할 수 있는 경로다.
-
-**dataset 5156 (WFP allow) 176K 건의 통계는 ICC 가 default(true) 인 환경의 모습** 을 보여준다. 만약 학생이 `--icc=false` 를 적용한 후 5분간 모니터링하면 — 컨테이너 A → B 의 연결 시도가 5156 allow 가 아닌 5157 (drop) 또는 firewall_action (block) 으로 분류된다. 즉 정책 적용의 효과가 *연결 이벤트 분류의 변화* 로 즉시 가시화된다.
-
-학생이 알아야 할 것은 — **CIS 권고는 *적용 후 효과를 정량 측정* 해야 의미가 있다** 는 점이다. `--icc=false` 적용했다고 보고하는 것이 아니라, 적용 전후의 5156:5157 비율 변화로 검증.
-
-### 이 사례에서 학생이 배워야 할 3가지
-
-1. **CIS 점검은 시점적 점검 + 연속적 신호 모니터링의 결합** — 둘 다 필요.
-2. **diagnostic_event 부재는 점검 자체가 죽었다는 신호** — 첫 번째 검증 항목.
-3. **CIS 권고 적용은 효과를 정량 측정해야 진짜 적용** — 5156:5157 비율 변화로 `--icc=false` 검증.
-
-**학생 액션**: lab 환경에서 docker bench-security 를 1회 실행하고, fail 또는 warn 으로 표시된 항목 5개를 골라 표로 정리. 각 항목 옆에 *"이 항목이 위반되면 dataset 의 어느 message_type 에 어떤 패턴으로 흔적을 남기는가"* 한 줄씩 기재. 5건 모두 매핑 가능한 신호를 찾을 수 있어야 본 lecture 학습 완료.
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (Course6 Cloud-Container — Week 07 컨테이너 네트워크)
 

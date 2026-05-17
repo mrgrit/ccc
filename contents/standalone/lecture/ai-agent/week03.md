@@ -14,14 +14,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -795,59 +797,6 @@ python3 ~/lab/week03/prompt_templates.py
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — 프롬프트 엔지니어링 실전)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *보안 분석에 효과적인 프롬프트 패턴* 학습 항목 매칭.
-
-### 프롬프트의 4 패턴 — "역할 + 작업 + 컨텍스트 + 형식"
-
-dataset 신호 분류용 prompt 의 4 구성요소 — *역할 (You are SOC analyst)*, *작업 (Classify this signal)*, *컨텍스트 (mo_name = ...)*, *형식 (Output JSON)*. 4 모두 명시하면 정확도 ~94%, 1-2개만 명시하면 ~70% 로 24% 차이.
-
-```mermaid
-graph TB
-    P["효과적 prompt"]
-    P --> R["① 역할"]
-    P --> T["② 작업"]
-    P --> C["③ 컨텍스트"]
-    P --> F["④ 형식"]
-    R --> ACC["정확도"]
-    T --> ACC
-    C --> ACC
-    F --> ACC
-
-    style P fill:#cce6ff
-    style ACC fill:#ccffcc
-```
-
-### Case 1: dataset 분류 prompt 정확도
-
-| prompt 구성 | 정확도 |
-|---|---|
-| 작업만 | ~70% |
-| 작업 + 역할 | ~78% |
-| 작업 + 역할 + 컨텍스트 | ~85% |
-| 4 모두 + CoT | ~94% |
-
-### Case 2: 4 패턴의 dataset 적용 예
-
-```
-역할: You are a SOC L2 analyst.
-작업: Classify this signal as critical/normal.
-컨텍스트: dataset baseline shows mo_name=Data Theft has 392 cases.
-형식: Output JSON {"label": "critical|normal", "reason": "..."}
-```
-
-### 이 사례에서 학생이 배워야 할 3가지
-
-1. **4 패턴 모두 명시 = +24% 정확도** — 단편 prompt 무용.
-2. **CoT (단계별 추론) 추가** — 추가 +5%.
-3. **JSON 형식 출력** — 자동 처리 가능성.
-
-**학생 액션**: lab LLM 에 4 prompt 변형 (4가지 구성) 으로 dataset 100건 분류 후 정확도 비교.
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (Course10 — Week 03 멀티 에이전트)
 

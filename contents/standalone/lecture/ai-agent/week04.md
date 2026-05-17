@@ -14,14 +14,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -847,55 +849,6 @@ python3 ~/lab/week04/harness_comparison.py
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — 에이전트 하네스 개론)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *에이전트 하네스 (harness) 의 정의와 종류* 학습 항목 매칭.
-
-### Harness = "에이전트의 ReAct loop + tool + memory 를 통합한 환경"
-
-*하네스* 는 에이전트가 *동작하는 환경* 이다. 종류는 — *서버 사이드 (Bastion 같은 standalone)*, *클라이언트 사이드 (Claude Code 같은 IDE 통합)*, *embedded (앱 내 sub-agent)*. dataset 환경에서 — Bastion 은 서버 사이드 하네스로 구현.
-
-```mermaid
-graph TB
-    HARNESS["에이전트 하네스"]
-    HARNESS --> SS["서버 사이드<br/>(Bastion)"]
-    HARNESS --> CS["클라이언트 사이드<br/>(Claude Code)"]
-    HARNESS --> EMB["Embedded<br/>(앱 내장)"]
-    SS -->|용도| OPS["24/7 운영"]
-    CS -->|용도| DEV["개발 보조"]
-    EMB -->|용도| FEAT["앱 기능"]
-
-    style HARNESS fill:#cce6ff
-```
-
-### Case 1: 서버 vs 클라이언트 하네스 비교
-
-| 항목 | 서버 사이드 | 클라이언트 사이드 |
-|---|---|---|
-| 운영 형태 | 24/7 daemon | 사용자 호출 시 |
-| 권한 범위 | 시스템 access | 사용자 권한 |
-| dataset 처리 | 13K 신호 자동 | 사용자 요청만 |
-| 예시 | Bastion | Claude Code |
-
-### Case 2: 하네스 선택 가이드라인
-
-| 시나리오 | 적합한 하네스 |
-|---|---|
-| 24/7 SOC 자동화 | 서버 (Bastion) |
-| 분석가 Q&A 보조 | 클라이언트 (Claude Code) |
-| 앱 기능 (RAG 검색) | Embedded |
-
-### 이 사례에서 학생이 배워야 할 3가지
-
-1. **3 하네스 = 3 운영 모델** — 24/7 / 사용자 호출 / 앱 기능.
-2. **서버 = 자동화, 클라이언트 = 보조** — 역할 명확.
-3. **dataset 13K 자동 처리는 서버 하네스만** — 클라이언트로는 불가능.
-
-**학생 액션**: 본인 시나리오에 적합한 하네스 1개 선택 + 이유 1문단.
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (Course10 — Week 04 RAG 보안)
 

@@ -13,14 +13,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -526,31 +528,6 @@ ssh 6v6-web "  # 비밀번호 자동입력 SSH
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — A.5~A.8 통제의 dataset 매핑)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *ISO 27001 통제 항목 A.5~A.8 (정책·인적·자산·접근제어)* 학습 항목과 매핑되는 dataset 의 user/asset/access record.
-
-### Case 1: A.5~A.8 ↔ dataset 매핑 표
-
-| ISO 27001 통제 | dataset evidence | 건수 |
-|------------|---------------|------|
-| **A.5 (정책)** | host 노드의 `set_roles` 분류 (Exploiting Target/Host) | 30,092 host |
-| **A.6 (조직)** | username 분포 (USER-NNNN) — 역할 기반 | 5+ top user |
-| **A.7 (인적 자원)** | 4624 logon (USER-0022 6,190회) | 17,482 |
-| **A.8 (자산 관리)** | host 노드의 `id/ip/hostname/managed/internal` 5-field | 30,092 host node |
-| **A.9 (접근제어)** | 4798/4799 group enum (7,686) + 4663 access (98) | 7,784 |
-
-### Case 2: Statement of Applicability (SoA) reference
-
-dataset host 가 보유한 framework `iso27001:[4,8,14,16,67-72,113-124,130-132]` = *24 controls applicable*.
-
-**해석**: SoA 작성 시 *applicable=Y* 통제 마다 *evidence record 직접 인용* 가능 — dataset baseline = *control 별 평균 100~10,000 events* 확보.
-
-**학생 액션**: 본인 환경 SoA 의 *applicable 통제* 마다 dataset 처럼 *evidence count* 명시 → 심사관에게 정량 증거 제공.
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (Course4 Compliance — Week 03 ISMS-P)
 
