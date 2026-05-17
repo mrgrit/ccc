@@ -124,7 +124,7 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 
 ```bash
 # 전체 SubAgent 상태 확인
-for server in "10.20.30.201:8002" "10.20.30.1:8002" "10.20.30.80:8002" "10.20.30.100:8002"; do
+for server in "10.20.30.201:8002" "10.20.30.1:8002" "10.20.32.80:8002" "10.20.30.100:8002"; do
   # 각 SubAgent health check (2초 타임아웃)
   status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 2 http://$server/health)
   # 결과 출력
@@ -194,7 +194,7 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
         "order": 3,
         "instruction_prompt": "echo \"=== $(hostname) ===\" && cat /etc/os-release | head -2 && uname -r",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 4,
@@ -229,7 +229,7 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
         "order": 6,
         "instruction_prompt": "echo \"=== $(hostname) open ports ===\" && ss -tlnp | grep LISTEN",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 7,
@@ -264,7 +264,7 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
         "order": 9,
         "instruction_prompt": "echo \"=== $(hostname) resources ===\" && echo \"Disk:\" && df -h / | tail -1 && echo \"Memory:\" && free -h | head -2 && echo \"CPU Load:\" && cat /proc/loadavg",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 10,
@@ -298,7 +298,7 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
         "order": 12,
         "instruction_prompt": "echo \"=== $(hostname) users ===\" && echo \"UID 0:\" && awk -F: \"\\$3==0\" /etc/passwd && echo \"Login shells:\" && grep -v nologin /etc/passwd | grep -v /bin/false | grep -v /usr/sbin/nologin",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 13,
@@ -357,25 +357,25 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
         "order": 20,
         "instruction_prompt": "echo \"=== HTTP Headers ===\" && curl -s -I http://localhost:3000 | head -15",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 21,
         "instruction_prompt": "echo \"=== Server Version Exposure ===\" && curl -s -I http://localhost:80 | grep -i server",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 22,
         "instruction_prompt": "echo \"=== Directory Listing ===\" && curl -s -o /dev/null -w \"%{http_code}\" http://localhost:80/icons/ && echo --- && curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/api/",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 23,
         "instruction_prompt": "echo \"=== HTTPS Check ===\" && curl -s -o /dev/null -w \"%{http_code}\" --max-time 3 https://localhost:443 2>/dev/null || echo no-https",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       }
     ],
     "subagent_url": "http://localhost:8002"
@@ -442,7 +442,7 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
         "order": 31,
         "instruction_prompt": "echo \"=== $(hostname) auth failures ===\" && grep -c \"Failed password\" /var/log/auth.log 2>/dev/null || echo 0 && echo \"Recent failures:\" && grep \"Failed password\" /var/log/auth.log 2>/dev/null | tail -5 || echo none",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 32,
@@ -477,7 +477,7 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
         "order": 34,
         "instruction_prompt": "echo \"=== $(hostname) top CPU ===\" && ps aux --sort=-%cpu | head -6 && echo \"=== top MEM ===\" && ps aux --sort=-%mem | head -6",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 35,

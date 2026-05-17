@@ -175,7 +175,7 @@ curl -s -X POST "$MGR/schedules" \
     "metadata": {
       "instruction_prompt": "curl -so /dev/null -w \"%{http_code}\" http://localhost:3000 && echo ok || echo fail",
       "risk_level": "low",
-      "subagent_url": "http://10.20.30.80:8002",
+      "subagent_url": "http://10.20.32.80:8002",
       "description": "매시간 JuiceShop(3000) HTTP 상태 코드 확인"
     }
   }' | python3 -m json.tool
@@ -275,7 +275,7 @@ curl -s -X POST $MGR/projects/$PID/execute-plan \
         "order": 2,
         "instruction_prompt": "echo \"=== web ===\"; df -h / | tail -1; free -h | head -2",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 3,
@@ -318,7 +318,7 @@ curl -s -X POST $MGR/projects/$PID/completion-report \
     "outcome": "success",
     "work_details": [
       "secu(10.20.30.1): 디스크/메모리 정상",
-      "web(10.20.30.80): 디스크/메모리 정상",
+      "web(10.20.32.80): 디스크/메모리 정상",
       "siem(10.20.30.100): 디스크/메모리 정상",
       "임계값(80%) 초과 서버: 없음"
     ]
@@ -367,7 +367,7 @@ curl -s -X POST "$MGR/watchers" \
       "check_command": "df / | awk \"NR==2{print \\$5}\" | tr -d \"%\"",
       "threshold": 80,
       "operator": ">",
-      "subagent_url": "http://10.20.30.80:8002",
+      "subagent_url": "http://10.20.32.80:8002",
       "interval_seconds": 300,
       "action": "create_project",
       "action_config": {

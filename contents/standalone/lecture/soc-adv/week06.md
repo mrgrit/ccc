@@ -403,7 +403,7 @@ ls /etc/ld.so.conf.d/ 2>/dev/null
 SCRIPT
 
 echo "=== 전체 서버 지속성 헌팅 ==="
-for server in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.100"; do
+for server in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.32.80" "ccc@10.20.30.100"; do
     user=$(echo $server | cut -d@ -f1)
     ip=$(echo $server | cut -d@ -f2)
     echo ""
@@ -512,7 +512,7 @@ curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute-plan" \
         "order": 2,
         "instruction_prompt": "find /etc/cron* /var/spool/cron -type f -mtime -7 2>/dev/null | wc -l && crontab -l 2>/dev/null | grep -vc \"^#\" && echo CRON_CHECK_DONE",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 3,
@@ -549,7 +549,7 @@ report = {
     "hunter": "SOC Tier 3 분석가",
     "hypothesis": "공격자가 cron/systemd를 통해 Linux 서버에 지속성을 확보했을 수 있다",
     "technique": "T1053.003 (Scheduled Task/Job: Cron)",
-    "scope": ["10.20.30.1 (secu)", "10.20.30.80 (web)", "10.20.30.100 (siem)"],
+    "scope": ["10.20.30.1 (secu)", "10.20.32.80 (web)", "10.20.30.100 (siem)"],
     "data_sources": ["프로세스 목록", "crontab", "systemd 서비스", "파일 시스템"],
     "findings": [
         {

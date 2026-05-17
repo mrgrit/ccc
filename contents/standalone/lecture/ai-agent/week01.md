@@ -764,7 +764,7 @@ def nmap_scan(target: str) -> str:
 from langchain.agents import create_react_agent, AgentExecutor
 agent = create_react_agent(llm, [nmap_scan], prompt)
 executor = AgentExecutor(agent=agent, tools=[nmap_scan], verbose=True)
-result = executor.invoke({"input": "10.20.30.80 점검해줘"})
+result = executor.invoke({"input": "10.20.32.80 점검해줘"})
 ```
 
 ### LangGraph (상태 그래프 기반 — 복잡한 흐름)
@@ -833,8 +833,8 @@ app = g.compile()
 
 # 실행
 result = app.invoke({
-    "messages": ["10.20.30.80 점검 시작"],
-    "target": "10.20.30.80",
+    "messages": ["10.20.32.80 점검 시작"],
+    "target": "10.20.32.80",
     "scan_results": [],
     "next_step": "think"
 })
@@ -892,7 +892,7 @@ manager = GroupChatManager(groupchat=group, llm_config={"config_list": config_li
 # 시작
 user.initiate_chat(
     manager,
-    message="10.20.30.80:3000 (JuiceShop) 모의해킹 + 보고서"
+    message="10.20.40.81:3000 (JuiceShop) 모의해킹 + 보고서"
 )
 ```
 
@@ -928,7 +928,7 @@ exploit = Agent(
 )
 
 # Tasks
-task1 = Task(description="10.20.30.80 정찰", agent=recon)
+task1 = Task(description="10.20.32.80 정찰", agent=recon)
 task2 = Task(
     description="발견된 취약점 검증",
     agent=exploit,
@@ -962,7 +962,7 @@ agent = CodeAgent(
     model=HfApiModel(model_id="meta-llama/Meta-Llama-3-8B-Instruct"),
     additional_authorized_imports=["subprocess", "json"]
 )
-result = agent.run("10.20.30.80 의 모든 서비스 점검 + 보고서 작성")
+result = agent.run("10.20.32.80 의 모든 서비스 점검 + 보고서 작성")
 ```
 
 ### Custom Agent (Bastion 자체)
@@ -977,7 +977,7 @@ agent = BastionAgent(
     memory_path="/var/lib/bastion/memory"
 )
 response = agent.chat(
-    user_message="10.20.30.80 점검 + Wazuh 알람 확인",
+    user_message="10.20.32.80 점검 + Wazuh 알람 확인",
     skills_allowed=["nmap", "wazuh"]
 )
 ```

@@ -103,7 +103,7 @@ Playbook
 │   └── Step 3: 웹 서비스 응답 확인
 │       ├── type: run_command
 │       ├── params: {command: "curl -s -o /dev/null -w '%{http_code}' http://localhost:3000"}
-│       └── metadata: {subagent_url: "http://10.20.30.80:8002"}
+│       └── metadata: {subagent_url: "http://10.20.32.80:8002"}
 └── abort_on_failure: false
 ```
 
@@ -179,7 +179,7 @@ curl -s -X POST http://localhost:9100/playbooks \
         "type": "run_command",
         "name": "web JuiceShop 서비스 응답 확인",
         "params": {"command": "curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000"},
-        "metadata": {"subagent_url": "http://10.20.30.80:8002"}
+        "metadata": {"subagent_url": "http://10.20.32.80:8002"}
       },
       {
         "order": 4,
@@ -193,7 +193,7 @@ curl -s -X POST http://localhost:9100/playbooks \
         "type": "run_command",
         "name": "web 서버 최근 로그인 이력",
         "params": {"command": "last -5 | head -5"},
-        "metadata": {"subagent_url": "http://10.20.30.80:8002"}
+        "metadata": {"subagent_url": "http://10.20.32.80:8002"}
       }
     ]
   }' | python3 -m json.tool
@@ -273,7 +273,7 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
         "order": 3,
         "instruction_prompt": "curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 4,
@@ -285,7 +285,7 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
         "order": 5,
         "instruction_prompt": "last -5 | head -5",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       }
     ],
     "subagent_url": "http://localhost:8002"
@@ -342,7 +342,7 @@ curl -s -X POST http://localhost:9100/playbooks \
         "type": "run_command",
         "name": "공격 IP의 실패 로그 수 확인",
         "params": {"command": "grep \"Failed password\" /var/log/auth.log | grep \"203.0.113.42\" | wc -l"},
-        "metadata": {"subagent_url": "http://10.20.30.80:8002"}
+        "metadata": {"subagent_url": "http://10.20.32.80:8002"}
       },
       {
         "order": 2,
@@ -363,7 +363,7 @@ curl -s -X POST http://localhost:9100/playbooks \
         "type": "run_command",
         "name": "현재 활성 SSH 세션 확인",
         "params": {"command": "ss -tnp | grep :22 | head -10"},
-        "metadata": {"subagent_url": "http://10.20.30.80:8002"}
+        "metadata": {"subagent_url": "http://10.20.32.80:8002"}
       },
       {
         "order": 5,
@@ -389,7 +389,7 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
         "order": 10,
         "instruction_prompt": "grep \"Failed password\" /var/log/auth.log 2>/dev/null | tail -5 || echo no-failed-passwords",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 11,
@@ -407,7 +407,7 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
         "order": 13,
         "instruction_prompt": "ss -tnp | grep :22 | head -5 || echo no-ssh-sessions",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       }
     ],
     "subagent_url": "http://localhost:8002"
@@ -441,10 +441,10 @@ cat << 'EOF' > /tmp/daily-security-check-v2.json
   "steps": [
     {"order": 1, "type": "run_command", "name": "디스크 확인", "params": {"command": "df -h / | tail -1"}, "metadata": {"subagent_url": "http://10.20.30.1:8002"}},
     {"order": 2, "type": "run_command", "name": "방화벽 확인", "params": {"command": "sudo nft list ruleset | grep -c rule"}, "metadata": {"subagent_url": "http://10.20.30.1:8002"}},
-    {"order": 3, "type": "run_command", "name": "웹 응답 확인", "params": {"command": "curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000"}, "metadata": {"subagent_url": "http://10.20.30.80:8002"}},
+    {"order": 3, "type": "run_command", "name": "웹 응답 확인", "params": {"command": "curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000"}, "metadata": {"subagent_url": "http://10.20.32.80:8002"}},
     {"order": 4, "type": "run_command", "name": "Wazuh 상태", "params": {"command": "systemctl is-active wazuh-manager 2>/dev/null || echo inactive"}, "metadata": {"subagent_url": "http://10.20.30.100:8002"}},
-    {"order": 5, "type": "run_command", "name": "로그인 이력", "params": {"command": "last -5 | head -5"}, "metadata": {"subagent_url": "http://10.20.30.80:8002"}},
-    {"order": 6, "type": "run_command", "name": "[신규] SSL 인증서 만료일 확인", "params": {"command": "echo | openssl s_client -connect localhost:443 -servername localhost 2>/dev/null | openssl x509 -noout -dates 2>/dev/null || echo no-ssl"}, "metadata": {"subagent_url": "http://10.20.30.80:8002"}}
+    {"order": 5, "type": "run_command", "name": "로그인 이력", "params": {"command": "last -5 | head -5"}, "metadata": {"subagent_url": "http://10.20.32.80:8002"}},
+    {"order": 6, "type": "run_command", "name": "[신규] SSL 인증서 만료일 확인", "params": {"command": "echo | openssl s_client -connect localhost:443 -servername localhost 2>/dev/null | openssl x509 -noout -dates 2>/dev/null || echo no-ssl"}, "metadata": {"subagent_url": "http://10.20.32.80:8002"}}
   ]
 }
 EOF

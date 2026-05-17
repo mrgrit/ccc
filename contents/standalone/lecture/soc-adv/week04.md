@@ -632,7 +632,7 @@ curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/dispatch" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "command": "which yara && yara --version || echo YARA_NOT_INSTALLED",
-    "subagent_url": "http://10.20.30.80:8002"
+    "subagent_url": "http://10.20.32.80:8002"
   }'
 ```
 

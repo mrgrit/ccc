@@ -129,10 +129,10 @@
 
 ```bash
 # JuiceShop의 robots.txt 확인
-curl -s http://10.20.30.80:3000/robots.txt
+curl -s http://10.20.40.81:3000/robots.txt
 echo '---'
 # Apache 의 robots.txt 비교
-curl -s -o /dev/null -w "Apache code=%{http_code}\n" http://10.20.30.80:80/robots.txt
+curl -s -o /dev/null -w "Apache code=%{http_code}\n" http://10.20.32.80:80/robots.txt
 ```
 
 **예상 출력**:
@@ -149,7 +149,7 @@ Apache code=404
 >
 > ```bash
 > # waybackurls — Wayback Machine 의 과거 robots.txt 도 추출 (운영자가 삭제한 경로 찾기)
-> echo http://10.20.30.80:3000 | waybackurls | grep -E 'robots|sitemap'
+> echo http://10.20.40.81:3000 | waybackurls | grep -E 'robots|sitemap'
 >
 > # gau (GetAllUrls) — 다중 source (Wayback/CommonCrawl/AlienVault) 통합
 > echo example.com | gau | head -20
@@ -158,8 +158,8 @@ Apache code=404
 ### 2.2 sitemap.xml 확인
 
 ```bash
-curl -s -o /tmp/sitemap_3000.xml -w "code=%{http_code} size=%{size_download}\n" http://10.20.30.80:3000/sitemap.xml
-curl -s -o /tmp/sitemap_80.xml -w "code=%{http_code} size=%{size_download}\n" http://10.20.30.80:80/sitemap.xml
+curl -s -o /tmp/sitemap_3000.xml -w "code=%{http_code} size=%{size_download}\n" http://10.20.40.81:3000/sitemap.xml
+curl -s -o /tmp/sitemap_80.xml -w "code=%{http_code} size=%{size_download}\n" http://10.20.32.80:80/sitemap.xml
 head -3 /tmp/sitemap_3000.xml 2>/dev/null
 ```
 
@@ -178,7 +178,7 @@ code=404 size=274
 ```bash
 # RFC 8615 표준 경로들
 for path in security.txt openid-configuration change-password apple-app-site-association assetlinks.json; do
-  code=$(curl -o /dev/null -s -w "%{http_code}" "http://10.20.30.80:3000/.well-known/$path")
+  code=$(curl -o /dev/null -s -w "%{http_code}" "http://10.20.40.81:3000/.well-known/$path")
   echo "$code  /.well-known/$path"
 done
 ```
@@ -217,14 +217,14 @@ done
 ```bash
 # gobuster (Go 기반, 가장 빠름)
 sudo apt install gobuster
-gobuster dir -u http://10.20.30.80:3000 -w /usr/share/wordlists/dirb/common.txt -t 30 -x html,php,bak
+gobuster dir -u http://10.20.40.81:3000 -w /usr/share/wordlists/dirb/common.txt -t 30 -x html,php,bak
 
 # ffuf (단일 wordlist 퍼징, 멀티스레드)
-ffuf -w /usr/share/wordlists/dirb/common.txt -u http://10.20.30.80:3000/FUZZ -mc 200,301,403 -t 50
+ffuf -w /usr/share/wordlists/dirb/common.txt -u http://10.20.40.81:3000/FUZZ -mc 200,301,403 -t 50
 
 # dirb (가장 단순, 초보자 권장)
 sudo apt install dirb
-dirb http://10.20.30.80:3000 /usr/share/wordlists/dirb/common.txt
+dirb http://10.20.40.81:3000 /usr/share/wordlists/dirb/common.txt
 ```
 
 **도구 vs curl 직접 구현**: 도구는 (1) 멀티스레드, (2) 사이즈/응답 시간 자동 비교, (3) recursive 모드, (4) JSON/XML 결과 보고서 등을 제공한다. 학습 목적은 직접 구현이지만 **실제 점검은 도구를 쓴다**.
@@ -258,7 +258,7 @@ WORDLIST
 
 # curl 기반 디렉터리 스캔 스크립트
 while IFS= read -r path; do
-  code=$(curl -o /dev/null -s -w "%{http_code}" "http://10.20.30.80:3000/$path")
+  code=$(curl -o /dev/null -s -w "%{http_code}" "http://10.20.40.81:3000/$path")
   if [ "$code" != "404" ]; then
     echo "[${code}] /$path"
   fi
@@ -277,7 +277,7 @@ for path in \
   "rest/languages" "rest/memories" "rest/chatbot/status" \
   "metrics" "promotion" "video" "encryptionkeys" \
   "assets/public/images/uploads"; do
-  read code size < <(curl -o /dev/null -s -w "%{http_code} %{size_download}" "http://10.20.30.80:3000/$path")
+  read code size < <(curl -o /dev/null -s -w "%{http_code} %{size_download}" "http://10.20.40.81:3000/$path")
   echo "[${code}] (${size}B) /$path"
 done
 ```
@@ -308,11 +308,11 @@ done
 
 ```bash
 # JuiceShop /ftp 디렉토리 listing 확인
-curl -s http://10.20.30.80:3000/ftp/ | head -30
+curl -s http://10.20.40.81:3000/ftp/ | head -30
 echo '---'
 # 백업 파일 직접 다운
-curl -s -o /tmp/legal.md -w "legal.md code=%{http_code} size=%{size_download}\n" http://10.20.30.80:3000/ftp/legal.md
-curl -s -o /tmp/acquisitions.md -w "acquisitions.md code=%{http_code} size=%{size_download}\n" http://10.20.30.80:3000/ftp/acquisitions.md
+curl -s -o /tmp/legal.md -w "legal.md code=%{http_code} size=%{size_download}\n" http://10.20.40.81:3000/ftp/legal.md
+curl -s -o /tmp/acquisitions.md -w "acquisitions.md code=%{http_code} size=%{size_download}\n" http://10.20.40.81:3000/ftp/acquisitions.md
 ls -l /tmp/legal.md /tmp/acquisitions.md 2>/dev/null
 ```
 
@@ -343,9 +343,9 @@ acquisitions.md code=200 size=2956
 >
 > ```bash
 > # ffuf 의 확장자 fuzzing (점검 표준)
-> ffuf -u http://10.20.30.80:3000/FUZZ -w wordlist.txt -e .bak,.old,.swp,.zip,.tar.gz,.tar
+> ffuf -u http://10.20.40.81:3000/FUZZ -w wordlist.txt -e .bak,.old,.swp,.zip,.tar.gz,.tar
 > # 또는 파일명·확장자 동시 fuzzing
-> ffuf -u http://10.20.30.80:3000/FUZZ.FUZZ2 -w names.txt:FUZZ -w exts.txt:FUZZ2 -mode pitchfork
+> ffuf -u http://10.20.40.81:3000/FUZZ.FUZZ2 -w names.txt:FUZZ -w exts.txt:FUZZ2 -mode pitchfork
 > ```
 
 ### 3.5 디렉터리 스캔 결과 분석
@@ -367,10 +367,10 @@ acquisitions.md code=200 size=2956
 ```bash
 # 응답 헤더에서 기술 스택 정보 추출
 echo "=== JuiceShop (포트 3000) ==="
-curl -sI http://10.20.30.80:3000 | grep -iE "server|x-powered|x-generator|x-aspnet|set-cookie"
+curl -sI http://10.20.40.81:3000 | grep -iE "server|x-powered|x-generator|x-aspnet|set-cookie"
 echo ""
 echo "=== Apache (포트 80) ==="
-curl -sI http://10.20.30.80:80 | grep -iE "server|x-powered|x-generator|x-aspnet|set-cookie"
+curl -sI http://10.20.32.80:80 | grep -iE "server|x-powered|x-generator|x-aspnet|set-cookie"
 ```
 
 **예상 출력**:
@@ -389,11 +389,11 @@ Set-Cookie: PHPSESSID=abc123; path=/; HttpOnly
 **OSS 도구로 자동화** (whatweb/httpx 추천):
 ```bash
 # whatweb — 헤더+HTML+쿠키+favicon 시그니처로 자동 식별
-whatweb -v http://10.20.30.80:3000
-whatweb -v http://10.20.30.80                  # Apache 도 동시에
+whatweb -v http://10.20.40.81:3000
+whatweb -v http://10.20.32.80                  # Apache 도 동시에
 
 # httpx (projectdiscovery) — 대량 호스트 자동 핑거프린팅
-echo -e "http://10.20.30.80:3000\nhttp://10.20.30.80" | httpx -tech-detect -title -status-code
+echo -e "http://10.20.40.81:3000\nhttp://10.20.32.80" | httpx -tech-detect -title -status-code
 ```
 whatweb 의 출력은 한 줄에 **프레임워크 + 라이브러리 + CMS + 서버 + WAF** 까지 묶여 있어 curl + grep 의 수십 줄 작업을 1 명령으로 대체한다.
 
@@ -401,12 +401,12 @@ whatweb 의 출력은 한 줄에 **프레임워크 + 라이브러리 + CMS + 서
 
 ```bash
 # 쿠키 이름 + Secure/HttpOnly/SameSite 플래그 동시 점검
-curl -sI http://10.20.30.80:3000 | grep -i set-cookie
+curl -sI http://10.20.40.81:3000 | grep -i set-cookie
 echo '---'
 # 다양한 endpoint 의 쿠키 차이
 for path in "/" "/rest/products/search?q=test" "/api/Users"; do
   echo "[$path]"
-  curl -sI "http://10.20.30.80:3000$path" | grep -i 'set-cookie' || echo '(no Set-Cookie)'
+  curl -sI "http://10.20.40.81:3000$path" | grep -i 'set-cookie' || echo '(no Set-Cookie)'
 done
 ```
 
@@ -438,10 +438,10 @@ Set-Cookie: language=en; Path=/
 
 ```bash
 # 존재하지 않는 경로로 404 에러 유도
-curl -s http://10.20.30.80:3000/nonexistent_path_12345
+curl -s http://10.20.40.81:3000/nonexistent_path_12345
 
 # 잘못된 API 요청으로 에러 유도
-curl -s http://10.20.30.80:3000/api/Products/abc
+curl -s http://10.20.40.81:3000/api/Products/abc
 
 # 에러 메시지에서 기술 정보 추출
 # - Express 버전
@@ -453,15 +453,15 @@ curl -s http://10.20.30.80:3000/api/Products/abc
 
 ```bash
 # HTML에서 JS 파일 경로 추출
-curl -s http://10.20.30.80:3000 | grep -oE 'src="[^"]*\.js"' | head -10
+curl -s http://10.20.40.81:3000 | grep -oE 'src="[^"]*\.js"' | head -10
 echo '---'
 # main.js 등에서 API 엔드포인트 + secret 패턴 추출
-MAIN_JS=$(curl -s http://10.20.30.80:3000 | grep -oE 'src="[^"]*main[^"]*\.js"' | head -1 | sed 's/src="//;s/"//')
+MAIN_JS=$(curl -s http://10.20.40.81:3000 | grep -oE 'src="[^"]*main[^"]*\.js"' | head -1 | sed 's/src="//;s/"//')
 echo "Main JS: $MAIN_JS"
-curl -s "http://10.20.30.80:3000/$MAIN_JS" | grep -oE '/api/[a-zA-Z/]+|/rest/[a-zA-Z/]+' | sort -u | head -10
+curl -s "http://10.20.40.81:3000/$MAIN_JS" | grep -oE '/api/[a-zA-Z/]+|/rest/[a-zA-Z/]+' | sort -u | head -10
 echo '---'
 # 노출된 secret/key 패턴 정규식 검색
-curl -s "http://10.20.30.80:3000/$MAIN_JS" | grep -oE '(AKIA[0-9A-Z]{16}|sk_live_[0-9a-zA-Z]{24,}|api[_-]?key[\"'\'' :=]+[a-zA-Z0-9]{16,})' | head -5
+curl -s "http://10.20.40.81:3000/$MAIN_JS" | grep -oE '(AKIA[0-9A-Z]{16}|sk_live_[0-9a-zA-Z]{24,}|api[_-]?key[\"'\'' :=]+[a-zA-Z0-9]{16,})' | head -5
 ```
 
 **예상 출력**:
@@ -494,7 +494,7 @@ Main JS: main.bb5070bf0f9ce9b58d7c.js
 >
 > ```bash
 > # LinkFinder (Python) — JS 에서 endpoint·URL·variable 자동 추출
-> pip install jsbeautifier && python3 LinkFinder.py -i http://10.20.30.80:3000/main.js -o cli
+> pip install jsbeautifier && python3 LinkFinder.py -i http://10.20.40.81:3000/main.js -o cli
 >
 > # SecretFinder — JS 에서 secret/key 정규식 자동 매치
 > python3 SecretFinder.py -i http://target/main.js -o cli
@@ -506,7 +506,7 @@ Main JS: main.bb5070bf0f9ce9b58d7c.js
 ### 4.5 기술 스택 정리 템플릿
 
 ```
-대상: http://10.20.30.80:3000
+대상: http://10.20.40.81:3000
 ---
 웹 서버: Express (Node.js)
 프레임워크: Angular (프론트엔드)
@@ -568,7 +568,7 @@ testssl.sh 는 **CVE-2014-0160 (Heartbleed)** 등 알려진 TLS 취약점을 한
 curl -vI -k https://10.20.30.100:443 2>&1 | grep -E "SSL|TLS|subject|expire|issuer|ALPN" | head -10
 echo '---'
 # JuiceShop 은 HTTP 전용 — HTTPS 시도 시 에러 확인
-curl -vI https://10.20.30.80:3000 2>&1 | head -8
+curl -vI https://10.20.40.81:3000 2>&1 | head -8
 ```
 
 **예상 출력**:
@@ -581,8 +581,8 @@ curl -vI https://10.20.30.80:3000 2>&1 | head -8
 *  expire date: Dec 31 23:59:59 2027 GMT
 *  issuer: CN=wazuh-dashboard
 ---
-*   Trying 10.20.30.80:3000...
-* Connected to 10.20.30.80 (10.20.30.80) port 3000
+*   Trying 10.20.40.81:3000...
+* Connected to 10.20.32.80 (10.20.32.80) port 3000
 * ALPN: curl offers h2,http/1.1
 * (304) (OUT), TLS handshake, Client hello (1):
 * OpenSSL/3.0.2: error:0A00010B:SSL routines::wrong version number
@@ -618,7 +618,7 @@ cat > /tmp/recon_report.md << 'EOF'
 # 정보수집 보고서
 
 ## 1. 대상 정보
-- URL: http://10.20.30.80:3000
+- URL: http://10.20.40.81:3000
 - 서비스: OWASP JuiceShop
 - 점검 일시: $(date)
 
@@ -697,9 +697,9 @@ echo "보고서 템플릿이 /tmp/recon_report.md에 생성되었습니다."
 
 ### DVWA 보안 레벨 변경 방법 (웹 UI)
 
-> **DVWA URL:** `http://10.20.30.80:8080`
+> **DVWA URL:** `http://10.20.40.82:80`
 
-1. 브라우저에서 `http://10.20.30.80:8080` 접속 → 로그인 (admin / password)
+1. 브라우저에서 `http://10.20.40.82:80` 접속 → 로그인 (admin / password)
 2. 좌측 메뉴 **DVWA Security** 클릭
 3. **Security Level** 드롭다운에서 실습 목적에 맞는 레벨 선택:
    - **Low**: 필터 없음 → 정보수집 기법이 모두 동작

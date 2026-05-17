@@ -253,7 +253,7 @@ ssh 6v6-fw "ss -tlnp"
 |--------|------|---------|--------|----------------|
 | Manager API | 소프트웨어 | 10.20.30.201 | ? | ? |
 | Suricata IPS | 소프트웨어 | 10.20.30.1 | ? | ? |
-| JuiceShop 웹앱 | 소프트웨어 | 10.20.30.80 | ? | ? |
+| JuiceShop 웹앱 | 소프트웨어 | 10.20.32.80 | ? | ? |
 | Wazuh SIEM | 소프트웨어 | 10.20.30.100 | ? | ? |
 | PostgreSQL DB | 소프트웨어 | 10.20.30.201 | ? | ? |
 
@@ -492,8 +492,8 @@ evebox-cli --addr http://localhost:5636 alerts --since "6h ago" | head -20
 evebox-cli --addr http://localhost:5636 reports --since "1d" --output json
 
 # 5) nuclei — HTTP 보안 헤더 자동 점검 (X-Frame, HSTS, CSP)
-nuclei -u http://10.20.30.80 -t http/misconfiguration/http-missing-security-headers.yaml
-nuclei -u http://10.20.30.80 -tags hsts,csp,xss-protection
+nuclei -u http://10.20.32.80 -t http/misconfiguration/http-missing-security-headers.yaml
+nuclei -u http://10.20.32.80 -tags hsts,csp,xss-protection
 ```
 
 ### 본 2주차 점검 흐름
@@ -514,7 +514,7 @@ grep -rn "@@\|@" /etc/rsyslog.conf /etc/rsyslog.d/
 # Wazuh agent 의 ossec.conf 에서 manager forwarding 도 점검
 
 # Phase 4: 웹 보안 헤더 (개인정보 처리 페이지)
-nuclei -u http://10.20.30.80 -tags misconfig -severity high -o /tmp/headers.txt
+nuclei -u http://10.20.32.80 -tags misconfig -severity high -o /tmp/headers.txt
 
 # Phase 5: 종합 보고
 sudo lynis audit system --tests-from-group networking,firewalls > /tmp/lynis.txt

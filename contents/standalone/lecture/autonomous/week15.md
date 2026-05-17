@@ -110,13 +110,13 @@ for m in models[:5]:
 # 기대 결과: gemma3:12b, llama3.1:8b 등 모델 목록
 
 # 3. 원격 서버 접속 확인
-for srv in "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.100"; do
+for srv in "ccc@10.20.30.1" "ccc@10.20.32.80" "ccc@10.20.30.100"; do
   ssh $srv "hostname" 2>/dev/null || echo "$srv: 접속 실패"
 done
 # 기대 결과: secu, web, siem 출력
 
 # 4. SubAgent 연결 확인
-for agent in "http://10.20.30.1:8002" "http://10.20.30.80:8002" "http://10.20.30.100:8002"; do
+for agent in "http://10.20.30.1:8002" "http://10.20.32.80:8002" "http://10.20.30.100:8002"; do
   echo -n "$agent: "
   curl -s --connect-timeout 3 "$agent/health" 2>/dev/null && echo "" || echo "연결 실패"
 done
@@ -145,7 +145,7 @@ export MGR="http://localhost:9100"
 
 ## 1.1 과제 설명
 
-JuiceShop(10.20.30.80:3000)을 대상으로 자율 Red Agent를 구성하라.
+JuiceShop(10.20.40.81:3000)을 대상으로 자율 Red Agent를 구성하라.
 Red Agent는 다음을 수행해야 한다:
 
 1. **정찰 (8점)**: 포트 스캔, HTTP 헤더 분석, 기술 스택 식별
@@ -196,7 +196,7 @@ curl -s -X POST $MGR/projects/$RED_PID/execute -H "X-API-Key: $BASTION_API_KEY" 
 #   - Task 1: ss -tlnp | grep LISTEN (포트 스캔)
 #   - Task 2: curl -sI http://localhost:3000 (HTTP 헤더)
 #   - Task 3: curl -s http://localhost:3000 | grep -ioE "(express|angular|node)" (기술 스택)
-#   - subagent_url: http://10.20.30.80:8002
+#   - subagent_url: http://10.20.32.80:8002
 ```
 
 ```bash
@@ -359,7 +359,7 @@ curl -s -X POST $MGR/projects/$PURPLE_PID/execute -H "X-API-Key: $BASTION_API_KE
 # Step 3: Purple Team 라운드 1 — Red 공격 + Blue 탐지
 # TODO (학생 작성): execute-plan으로 Red 공격 + Blue 탐지를 한 세트로 실행
 # 예시 패턴:
-#   Task 1 (RED):  curl -s "http://10.20.30.80:3000/rest/products/search?q=test'" (SQL Injection)
+#   Task 1 (RED):  curl -s "http://10.20.40.81:3000/rest/products/search?q=test'" (SQL Injection)
 #   Task 2 (BLUE): journalctl --since "2 min ago" -p warning | grep -ciE "injection|error"
 #   Task 3 (BLUE): LLM 분석 결과 기록
 ```
@@ -399,7 +399,7 @@ print(f'secu PoW 블록: {len(blocks)}개')
 "
 
 # web SubAgent의 PoW 블록 확인
-curl -s "$MGR/pow/blocks?agent_id=http://10.20.30.80:8002" \
+curl -s "$MGR/pow/blocks?agent_id=http://10.20.32.80:8002" \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
@@ -466,7 +466,7 @@ curl -s "$MGR/pow/verify?agent_id=http://10.20.30.1:8002" \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 
 # web PoW 검증
-curl -s "$MGR/pow/verify?agent_id=http://10.20.30.80:8002" \
+curl -s "$MGR/pow/verify?agent_id=http://10.20.32.80:8002" \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 
 # siem PoW 검증
@@ -501,7 +501,7 @@ curl -s "$MGR/rl/recommend?agent_id=http://10.20.30.1:8002&risk_level=low" \
 
 # web 추천 확인
 echo "=== web 추천 ==="
-curl -s "$MGR/rl/recommend?agent_id=http://10.20.30.80:8002&risk_level=medium" \
+curl -s "$MGR/rl/recommend?agent_id=http://10.20.32.80:8002&risk_level=medium" \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 
 # siem 추천 확인

@@ -141,7 +141,7 @@ ssh 6v6-web
 
 ```bash
 # HTML body 첫 줄 + HTTP 응답 코드
-curl -s -o /tmp/juice_index.html -w "code=%{http_code} size=%{size_download}\n" http://10.20.30.80:3000
+curl -s -o /tmp/juice_index.html -w "code=%{http_code} size=%{size_download}\n" http://10.20.40.81:3000
 head -3 /tmp/juice_index.html
 ```
 
@@ -159,10 +159,10 @@ code=200 size=1987
 >
 > ```bash
 > # httpie (색상 + JSON pretty)
-> http --print=Hh GET http://10.20.30.80:3000/   # 헤더+상태
+> http --print=Hh GET http://10.20.40.81:3000/   # 헤더+상태
 >
 > # whatweb (1줄로 기술 스택 식별)
-> whatweb http://10.20.30.80:3000
+> whatweb http://10.20.40.81:3000
 > # → JuiceShop[..], Express, Angular[16.x], JS-Library
 > ```
 
@@ -170,10 +170,10 @@ code=200 size=1987
 
 ```bash
 # Apache 80 포트 응답 + 서버 헤더 + ModSecurity 동작 검증
-curl -sI http://10.20.30.80:80 | head -8
+curl -sI http://10.20.32.80:80 | head -8
 echo '---'
 # 의도적 SQLi 페이로드로 WAF 차단 응답 확인
-curl -s -o /dev/null -w "code=%{http_code}\n" "http://10.20.30.80:80/?id=1' OR '1'='1"
+curl -s -o /dev/null -w "code=%{http_code}\n" "http://10.20.32.80:80/?id=1' OR '1'='1"
 ```
 
 **예상 출력**:
@@ -192,7 +192,7 @@ code=403
 >
 > ```bash
 > # wafw00f — WAF 종류·생산자 자동 식별 (40+ WAF 시그니처 DB)
-> wafw00f http://10.20.30.80:80
+> wafw00f http://10.20.32.80:80
 > # 예: The site is behind ModSecurity (Trustwave SpiderLabs)
 > ```
 
@@ -261,10 +261,10 @@ ZAP API client ready
 echo 'zap.sh -daemon -port 8090 -config api.key=zap-api-key &'
 
 # Baseline 스캔 (zap-baseline.py — 5분 내 비파괴 점검)
-echo 'docker run -t owasp/zap2docker-stable zap-baseline.py -t http://10.20.30.80:3000 -r /tmp/zap_baseline.html'
+echo 'docker run -t owasp/zap2docker-stable zap-baseline.py -t http://10.20.40.81:3000 -r /tmp/zap_baseline.html'
 
 # 또는 daemon 가동 시 API 호출
-echo 'curl "http://localhost:8090/JSON/spider/action/scan/?url=http://10.20.30.80:3000&apikey=zap-api-key"'
+echo 'curl "http://localhost:8090/JSON/spider/action/scan/?url=http://10.20.40.81:3000&apikey=zap-api-key"'
 ```
 
 **예상 출력 (Baseline 스캔 결과 일부)**:
@@ -282,7 +282,7 @@ INFO: 0 IGNORE: 0 PASS: 56
 >
 > ```bash
 > # nuclei (template 5,000+ — ZAP Baseline 보다 빠름)
-> nuclei -u http://10.20.30.80:3000 -t http/misconfiguration/ -severity medium,high
+> nuclei -u http://10.20.40.81:3000 -t http/misconfiguration/ -severity medium,high
 > ```
 
 ---
@@ -305,14 +305,14 @@ which nikto || echo "1" | sudo -S apt-get install -y nikto
 
 ```bash
 # JuiceShop 대상 nikto 스캔 (60초 제한)
-nikto -h http://10.20.30.80:3000 -maxtime 60s 2>/dev/null | tail -20
+nikto -h http://10.20.40.81:3000 -maxtime 60s 2>/dev/null | tail -20
 ```
 
 **예상 출력**:
 ```
 - Nikto v2.5.0
-+ Target IP:          10.20.30.80
-+ Target Hostname:    10.20.30.80
++ Target IP:          10.20.32.80
++ Target Hostname:    10.20.32.80
 + Target Port:        3000
 + Server: No banner retrieved
 + /: Retrieved x-powered-by header: Express.
@@ -330,12 +330,12 @@ nikto -h http://10.20.30.80:3000 -maxtime 60s 2>/dev/null | tail -20
 
 ```bash
 # HTML 보고서 + CSV 동시 저장
-nikto -h http://10.20.30.80:3000 -o /tmp/nikto_juice -Format htm -maxtime 60s 2>/dev/null > /dev/null
-nikto -h http://10.20.30.80:3000 -o /tmp/nikto_juice.csv -Format csv -maxtime 60s 2>/dev/null > /dev/null
+nikto -h http://10.20.40.81:3000 -o /tmp/nikto_juice -Format htm -maxtime 60s 2>/dev/null > /dev/null
+nikto -h http://10.20.40.81:3000 -o /tmp/nikto_juice.csv -Format csv -maxtime 60s 2>/dev/null > /dev/null
 ls -l /tmp/nikto_juice* | awk '{print $5,$9}'
 
 # 튜닝 옵션 (1=흥미로운 파일 / 2=잘못된 설정 / 3=정보 노출 / 4=XSS)
-nikto -h http://10.20.30.80:3000 -Tuning 1234 -maxtime 30s 2>/dev/null | grep -c '^+'
+nikto -h http://10.20.40.81:3000 -Tuning 1234 -maxtime 30s 2>/dev/null | grep -c '^+'
 ```
 
 **예상 출력**:
@@ -351,8 +351,8 @@ nikto -h http://10.20.30.80:3000 -Tuning 1234 -maxtime 30s 2>/dev/null | grep -c
 >
 > ```bash
 > # nikto 약점: 60s+ 시간 소요. 대안으로:
-> nuclei -u http://10.20.30.80:3000 -t http/misconfiguration/ -severity medium,high   # 5초 내 완료
-> wapiti -u http://10.20.30.80:3000 -m all -f json -o /tmp/wapiti.json                # OWASP 카테고리 분류
+> nuclei -u http://10.20.40.81:3000 -t http/misconfiguration/ -severity medium,high   # 5초 내 완료
+> wapiti -u http://10.20.40.81:3000 -m all -f json -o /tmp/wapiti.json                # OWASP 카테고리 분류
 > ```
 
 ### 5.5 결과 해석
@@ -396,7 +396,7 @@ sqlmap --version
 
 ```bash
 # JuiceShop /rest/products/search 에 SQLi 자동 테스트
-sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=test" --batch --level=1 --risk=1 2>&1 | grep -E "Type:|Title:|Payload:|back-end DBMS|web application technology|^---" | head -15
+sqlmap -u "http://10.20.40.81:3000/rest/products/search?q=test" --batch --level=1 --risk=1 2>&1 | grep -E "Type:|Title:|Payload:|back-end DBMS|web application technology|^---" | head -15
 ```
 
 **예상 출력**:
@@ -424,7 +424,7 @@ Parameter: q (GET)
 
 ```bash
 # 응답 헤더만 (-I = HEAD)
-curl -sI http://10.20.30.80:3000 | head -8
+curl -sI http://10.20.40.81:3000 | head -8
 ```
 
 **예상 출력**:
@@ -445,7 +445,7 @@ Date: ...
 
 ```bash
 # JuiceShop 로그인 — 잘못된 자격증명
-curl -s -X POST http://10.20.30.80:3000/rest/user/login \
+curl -s -X POST http://10.20.40.81:3000/rest/user/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"admin@juice-sh.op","password":"wrong"}' | python3 -m json.tool
 ```
@@ -467,10 +467,10 @@ curl -s -X POST http://10.20.30.80:3000/rest/user/login \
 >
 > ```bash
 > # httpie — JSON 기본 (헤더 자동)
-> http POST http://10.20.30.80:3000/rest/user/login email=admin@juice-sh.op password=wrong
+> http POST http://10.20.40.81:3000/rest/user/login email=admin@juice-sh.op password=wrong
 >
 > # ffuf — 자격 brute-force (week05 권한 우회 학습 시)
-> ffuf -u http://10.20.30.80:3000/rest/user/login -X POST -H 'Content-Type: application/json' \
+> ffuf -u http://10.20.40.81:3000/rest/user/login -X POST -H 'Content-Type: application/json' \
 >      -d '{"email":"admin@juice-sh.op","password":"FUZZ"}' -w pwlist.txt -fc 401
 > ```
 
@@ -478,35 +478,35 @@ curl -s -X POST http://10.20.30.80:3000/rest/user/login \
 
 ```bash
 # 쿠키 저장
-curl -c /tmp/cookies.txt http://10.20.30.80:3000
+curl -c /tmp/cookies.txt http://10.20.40.81:3000
 
 # 저장된 쿠키로 요청
-curl -b /tmp/cookies.txt http://10.20.30.80:3000/rest/basket/1
+curl -b /tmp/cookies.txt http://10.20.40.81:3000/rest/basket/1
 
 # 쿠키 직접 지정
-curl -b "token=abc123" http://10.20.30.80:3000/rest/basket/1
+curl -b "token=abc123" http://10.20.40.81:3000/rest/basket/1
 ```
 
 ### 7.4 HTTP 헤더 조작
 
 ```bash
 # User-Agent 변경
-curl -H "User-Agent: Mozilla/5.0 (Security Scanner)" http://10.20.30.80:3000
+curl -H "User-Agent: Mozilla/5.0 (Security Scanner)" http://10.20.40.81:3000
 
 # Referer 위조
-curl -H "Referer: http://10.20.30.80:3000/admin" http://10.20.30.80:3000
+curl -H "Referer: http://10.20.40.81:3000/admin" http://10.20.40.81:3000
 
 # 여러 헤더 동시 설정
 curl -H "Accept: application/json" \
      -H "Authorization: Bearer fake-token" \
-     http://10.20.30.80:3000/api/Products/1
+     http://10.20.40.81:3000/api/Products/1
 ```
 
 ### 7.5 상세 정보 + 응답 시간 분석
 
 ```bash
 # 응답 시간 4단계 분리
-curl -o /dev/null -s -w "DNS: %{time_namelookup}s\nConnect: %{time_connect}s\nTTFB: %{time_starttransfer}s\nTotal: %{time_total}s\nSize: %{size_download} bytes\n" http://10.20.30.80:3000/rest/products/search?q=apple
+curl -o /dev/null -s -w "DNS: %{time_namelookup}s\nConnect: %{time_connect}s\nTTFB: %{time_starttransfer}s\nTotal: %{time_total}s\nSize: %{size_download} bytes\n" http://10.20.40.81:3000/rest/products/search?q=apple
 ```
 
 **예상 출력**:
@@ -523,9 +523,9 @@ Size: 285 bytes
 > **OSS 대안 — 본격 부하 측정**:
 >
 > ```bash
-> ab -n 100 -c 10 http://10.20.30.80:3000/             # Apache Bench, 100 요청 / 동시 10
-> wrk -t4 -c50 -d10s http://10.20.30.80:3000/          # wrk, 10초 부하 시험
-> hey -n 100 -c 10 http://10.20.30.80:3000/            # hey, Go binary 가벼움
+> ab -n 100 -c 10 http://10.20.40.81:3000/             # Apache Bench, 100 요청 / 동시 10
+> wrk -t4 -c50 -d10s http://10.20.40.81:3000/          # wrk, 10초 부하 시험
+> hey -n 100 -c 10 http://10.20.40.81:3000/            # hey, Go binary 가벼움
 > ```
 
 ### 7.6 파일 업로드 테스트
@@ -535,7 +535,7 @@ Size: 285 bytes
 echo "test file content" > /tmp/test_upload.txt
 
 # multipart form 업로드
-curl -X POST http://10.20.30.80:3000/file-upload \
+curl -X POST http://10.20.40.81:3000/file-upload \
   -F "file=@/tmp/test_upload.txt" \
   -v 2>&1 | tail -20
 ```
@@ -547,7 +547,7 @@ curl -X POST http://10.20.30.80:3000/file-upload \
 ```bash
 # 민감 경로 순회 — 200/301 = 노출, 404 = 차단, 403 = 존재(권한 X)
 for path in admin robots.txt .env .git/config sitemap.xml ftp api-docs swagger.json package.json; do
-  code=$(curl -o /dev/null -s -w "%{http_code}" "http://10.20.30.80:3000/$path")
+  code=$(curl -o /dev/null -s -w "%{http_code}" "http://10.20.40.81:3000/$path")
   echo "$code - /$path"
 done
 ```
@@ -571,13 +571,13 @@ done
 >
 > ```bash
 > # ffuf — Go binary, 빠름 + JSON 출력
-> ffuf -u http://10.20.30.80:3000/FUZZ -w /usr/share/seclists/Discovery/Web-Content/common.txt -mc 200,301,302 -t 50
+> ffuf -u http://10.20.40.81:3000/FUZZ -w /usr/share/seclists/Discovery/Web-Content/common.txt -mc 200,301,302 -t 50
 >
 > # gobuster — 동일 작업, 다른 wordlist 출력 형식
-> gobuster dir -u http://10.20.30.80:3000 -w /usr/share/wordlists/dirb/common.txt -t 50 -x bak,old,zip
+> gobuster dir -u http://10.20.40.81:3000 -w /usr/share/wordlists/dirb/common.txt -t 50 -x bak,old,zip
 >
 > # feroxbuster — Rust 작, 재귀 brute (서브 디렉토리 자동 탐색)
-> feroxbuster -u http://10.20.30.80:3000 -w /usr/share/seclists/Discovery/Web-Content/common.txt
+> feroxbuster -u http://10.20.40.81:3000 -w /usr/share/seclists/Discovery/Web-Content/common.txt
 > ```
 >
 > ★ ffuf 의 `-mc 200,301,302` (match code) + `-fs 0` (filter size) 조합으로 오탐 90% 감소 — week03 의 핵심 학습 포인트.
@@ -629,9 +629,9 @@ done
 
 ### DVWA 보안 레벨 변경 방법 (웹 UI)
 
-> **DVWA URL:** `http://10.20.30.80:8080`
+> **DVWA URL:** `http://10.20.40.82:80`
 
-1. 브라우저에서 `http://10.20.30.80:8080` 접속
+1. 브라우저에서 `http://10.20.40.82:80` 접속
 2. 로그인: ID `admin` / PW `password`
 3. 좌측 메뉴에서 **DVWA Security** 클릭
 4. **Security Level** 드롭다운에서 레벨 선택:
@@ -653,7 +653,7 @@ done
 
 ### Burp Suite Community
 > **역할:** 웹 프록시 기반 수동/반자동 취약점 점검 도구  
-> **실행 위치:** `작업 PC → web (10.20.30.80:3000)`  
+> **실행 위치:** `작업 PC → web (10.20.40.81:3000)`  
 > **접속/호출:** GUI `burpsuite`, CA 인증서 신뢰 필요 (`http://burp`)
 
 **주요 경로·파일**

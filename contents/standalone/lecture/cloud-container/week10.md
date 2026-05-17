@@ -293,7 +293,7 @@ docker run -d --name exposed-data \
   nginx:alpine
 
 # 누구나 시스템 로그를 볼 수 있음!
-curl http://10.20.30.80:9095/
+curl http://10.20.32.80:9095/
 
 # 좋은 예: 접근 제한
 docker rm -f exposed-data

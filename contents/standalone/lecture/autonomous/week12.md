@@ -134,7 +134,7 @@ curl -s -X POST $MGR/projects \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "name": "week12-red-agent-recon",
-    "request_text": "Red Agent 정찰 — web(10.20.30.80) 공격 표면 분석",
+    "request_text": "Red Agent 정찰 — web(10.20.32.80) 공격 표면 분석",
     "master_mode": "external"
   }' | python3 -m json.tool
 ```
@@ -158,19 +158,19 @@ curl -s -X POST $MGR/projects/$RED_PID/execute-plan \
         "order": 1,
         "instruction_prompt": "echo \"=== Port Scan ===\"; ss -tlnp 2>/dev/null | grep LISTEN || echo no-listen-ports",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 2,
         "instruction_prompt": "echo \"=== HTTP Headers ===\"; curl -sI http://localhost:3000 | head -15",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 3,
         "instruction_prompt": "echo \"=== Web Technologies ===\"; curl -s http://localhost:3000 | grep -ioE \"(express|angular|react|vue|node|juice)\" | sort -u | head -10 || echo unknown",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       }
     ],
     "subagent_url": "http://localhost:8002"
@@ -283,7 +283,7 @@ JSON 배열로 출력:
             },
             {
                 'role': 'user',
-                'content': '대상: http://10.20.30.80:3000 (JuiceShop)\\n기술 스택: Node.js, Express, Angular, SQLite\\nOWASP Top 3 취약점에 대한 검증 시나리오 3개를 생성하라.'
+                'content': '대상: http://10.20.40.81:3000 (JuiceShop)\\n기술 스택: Node.js, Express, Angular, SQLite\\nOWASP Top 3 취약점에 대한 검증 시나리오 3개를 생성하라.'
             }
         ],
         'temperature': 0.3,
@@ -330,19 +330,19 @@ curl -s -X POST $MGR/projects/$ATK_PID/execute-plan \
         "order": 1,
         "instruction_prompt": "echo \"=== A03: SQL Injection Test ===\"; curl -s \"http://localhost:3000/rest/products/search?q=test%27%20OR%201=1--\" -o /dev/null -w \"HTTP %{http_code}\" && echo \" (response received)\"",
         "risk_level": "medium",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 2,
         "instruction_prompt": "echo \"=== A07: XSS Test ===\"; curl -s \"http://localhost:3000/#/search?q=%3Cscript%3Ealert(1)%3C/script%3E\" -o /dev/null -w \"HTTP %{http_code}\" && echo \" (response received)\"",
         "risk_level": "medium",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 3,
         "instruction_prompt": "echo \"=== A01: Access Control Test ===\"; curl -s http://localhost:3000/api/Users -o /dev/null -w \"HTTP %{http_code}\" && echo \" (user list access attempted)\"",
         "risk_level": "medium",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       }
     ],
     "subagent_url": "http://localhost:8002"
@@ -390,19 +390,19 @@ curl -s -X POST $MGR/projects/$MISSION_PID/execute-plan \
         "order": 1,
         "instruction_prompt": "echo \"=== JuiceShop API Enumeration ===\"; curl -s http://localhost:3000/api/Users 2>/dev/null | python3 -c \"import sys,json; d=json.load(sys.stdin); print(f\\\"Users found: {len(d.get(\\\\\\\"data\\\\\\\",[])) if isinstance(d.get(\\\\\\\"data\\\\\\\"),list) else \\\\\\\"N/A\\\\\\\"}\\\")\" 2>/dev/null || echo \"API access check done\"",
         "risk_level": "medium",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 2,
         "instruction_prompt": "echo \"=== Directory Traversal Test ===\"; curl -sI http://localhost:3000/ftp -w \"\\nHTTP_CODE:%{http_code}\" 2>/dev/null | tail -5",
         "risk_level": "medium",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 3,
         "instruction_prompt": "echo \"=== Security Headers Check ===\"; curl -sI http://localhost:3000 | grep -iE \"(x-frame|x-content|strict-transport|content-security|x-xss)\" || echo no-security-headers-found",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       }
     ],
     "subagent_url": "http://localhost:8002"
@@ -512,7 +512,7 @@ curl -s -X POST $MGR/projects/$PURPLE_PID/execute-plan \
     "tasks": [
       {
         "order": 1,
-        "instruction_prompt": "echo \"[RED] SQL Injection attempt\"; curl -s \"http://10.20.30.80:3000/rest/products/search?q=test%27%20OR%201=1--\" -o /dev/null -w \"HTTP %{http_code}\" && echo \" attack-sent\"",
+        "instruction_prompt": "echo \"[RED] SQL Injection attempt\"; curl -s \"http://10.20.40.81:3000/rest/products/search?q=test%27%20OR%201=1--\" -o /dev/null -w \"HTTP %{http_code}\" && echo \" attack-sent\"",
         "risk_level": "medium",
         "subagent_url": "http://localhost:8002"
       },
@@ -526,7 +526,7 @@ curl -s -X POST $MGR/projects/$PURPLE_PID/execute-plan \
         "order": 3,
         "instruction_prompt": "echo \"[BLUE] Checking web server logs\"; journalctl --since \"2 min ago\" --no-pager 2>/dev/null | grep -ciE \"(error|warning|suspicious)\" || echo 0",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       }
     ],
     "subagent_url": "http://localhost:8002"
@@ -633,8 +633,8 @@ SubAgent별 Experience DB, 지식 교환 API, PoW 교차 검증을 실습한다.
 
 **UI / CLI 요점**
 
-- `nmap -sV -p- 10.20.30.80` — 전 포트 + 버전
-- `nmap --script=http-enum 10.20.30.80` — 웹 디렉토리 열거
+- `nmap -sV -p- 10.20.32.80` — 전 포트 + 버전
+- `nmap --script=http-enum 10.20.32.80` — 웹 디렉토리 열거
 - `nmap -sn 10.20.30.0/24` — 호스트 발견(핑 스윕)
 
 > **해석 팁.** IPS가 있는 환경에서 T4 이상은 빠르게 탐지된다. `-T2`로 느리게 + `--max-retries 1`로 재전송 최소화하면 우회 확률↑.

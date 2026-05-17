@@ -504,7 +504,7 @@ ssh 6v6-siem \
 ```
 Available agents:
    ID: 001, Name: secu, IP: 10.20.30.1, Active
-   ID: 002, Name: web, IP: 10.20.30.80, Active
+   ID: 002, Name: web, IP: 10.20.32.80, Active
    ID: 003, Name: bastion, IP: 10.20.30.201, Active
 ```
 
@@ -522,7 +522,7 @@ ssh 6v6-siem \
 
 ```
 secu (10.20.30.1)      --> Wazuh Agent --> TCP 1514 --> Wazuh Manager (siem)
-web (10.20.30.80)      --> Wazuh Agent --> TCP 1514 --> Wazuh Manager (siem)
+web (10.20.32.80)      --> Wazuh Agent --> TCP 1514 --> Wazuh Manager (siem)
 bastion (10.20.30.201) --> Wazuh Agent --> TCP 1514 --> Wazuh Manager (siem)
 
 각 Agent가 수집하는 정보:

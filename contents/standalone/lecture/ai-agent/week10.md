@@ -158,7 +158,7 @@ curl -s -X POST "http://localhost:9100/projects/${PROJECT_ID}/execute-plan" \
         "order": 2,
         "instruction_prompt": "hostname && uptime && df -h",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 3,
@@ -208,7 +208,7 @@ curl -s -X POST "http://localhost:9100/projects/${PROJECT_ID}/execute-plan" \
         "order": 2,
         "instruction_prompt": "curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 3,
@@ -254,7 +254,7 @@ curl -s http://192.168.0.109:11434/api/chat \
       },
       {
         "role": "user",
-        "content": "JuiceShop(http://10.20.30.80:3000)에 대한 보안 점검 계획을 3단계로 수립해줘. 각 단계마다 curl 명령어를 포함해줘."
+        "content": "JuiceShop(http://10.20.40.81:3000)에 대한 보안 점검 계획을 3단계로 수립해줘. 각 단계마다 curl 명령어를 포함해줘."
       }
     ],
     "stream": false
@@ -295,21 +295,21 @@ curl -s -X POST "http://localhost:9100/projects/${RED_PID}/execute-plan" \
     "tasks": [
       {
         "order": 1,
-        "instruction_prompt": "curl -s -o /dev/null -w \"%{http_code}\" http://10.20.30.80:3000/",
+        "instruction_prompt": "curl -s -o /dev/null -w \"%{http_code}\" http://10.20.40.81:3000/",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 2,
-        "instruction_prompt": "curl -s http://10.20.30.80:3000/api/products | head -200",
+        "instruction_prompt": "curl -s http://10.20.40.81:3000/api/products | head -200",
         "risk_level": "medium",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 3,
-        "instruction_prompt": "curl -s http://10.20.30.80:3000/rest/admin/application-configuration | head -100",
+        "instruction_prompt": "curl -s http://10.20.40.81:3000/rest/admin/application-configuration | head -100",
         "risk_level": "medium",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       }
     ],
     "subagent_url": "http://localhost:8002"
@@ -416,7 +416,7 @@ curl -s -X POST "http://localhost:9100/projects/${RED_PID}/dispatch" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
-    "command": "echo {\"finding\": \"JuiceShop /rest/admin 접근 가능\", \"severity\": \"high\", \"target\": \"10.20.30.80:3000\", \"timestamp\": \"2026-03-30T10:00:00Z\"}",
+    "command": "echo {\"finding\": \"JuiceShop /rest/admin 접근 가능\", \"severity\": \"high\", \"target\": \"10.20.40.81:3000\", \"timestamp\": \"2026-03-30T10:00:00Z\"}",
     "subagent_url": "http://localhost:8002"
   }' | python3 -m json.tool
 # Red Agent의 발견 내용을 기록
@@ -512,8 +512,8 @@ def purple_team_cycle(red_pid: str, blue_pid: str):
     print("[RED] 정찰 실행...")
     red_result = dispatch_command(
         red_pid,
-        'curl -s -o /dev/null -w "%{http_code}" http://10.20.30.80:3000/rest/admin/application-configuration',
-        "http://10.20.30.80:8002",
+        'curl -s -o /dev/null -w "%{http_code}" http://10.20.40.81:3000/rest/admin/application-configuration',
+        "http://10.20.32.80:8002",
     )
     print(f"  결과: {json.dumps(red_result, indent=2, ensure_ascii=False)[:300]}")
 

@@ -587,7 +587,7 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 echo ""
 echo "=== 체인 무결성 검증 ==="
 # 각 에이전트의 PoW 체인 무결성 확인
-for AGENT in "http://localhost:8002" "http://10.20.30.1:8002" "http://10.20.30.80:8002" "http://10.20.30.100:8002"; do
+for AGENT in "http://localhost:8002" "http://10.20.30.1:8002" "http://10.20.32.80:8002" "http://10.20.30.100:8002"; do
   # 에이전트별 체인 검증
   RESULT=$(curl -s -H "X-API-Key: $BASTION_API_KEY" \
     "http://localhost:9100/pow/verify?agent_id=${AGENT}" 2>/dev/null)
@@ -614,7 +614,7 @@ echo -n "Ollama LLM: "
 curl -s -o /dev/null -w "%{http_code}" http://192.168.0.109:11434/api/tags 2>/dev/null || echo "FAIL"
 
 # 3. SubAgent 상태 확인
-for AGENT_URL in "http://localhost:8002" "http://10.20.30.1:8002" "http://10.20.30.80:8002" "http://10.20.30.100:8002"; do
+for AGENT_URL in "http://localhost:8002" "http://10.20.30.1:8002" "http://10.20.32.80:8002" "http://10.20.30.100:8002"; do
   # 각 SubAgent 헬스 체크
   echo -n "SubAgent ${AGENT_URL}: "
   curl -s -o /dev/null -w "%{http_code}" "${AGENT_URL}/health" 2>/dev/null || echo "FAIL"
@@ -627,7 +627,7 @@ PGPASSWORD=bastion psql -h 127.0.0.1 -U bastion -d bastion -t -c \
 
 # 5. JuiceShop 상태
 echo -n "JuiceShop: "
-curl -s -o /dev/null -w "%{http_code}" http://10.20.30.80:3000/ 2>/dev/null || echo "FAIL"
+curl -s -o /dev/null -w "%{http_code}" http://10.20.40.81:3000/ 2>/dev/null || echo "FAIL"
 ```
 
 ---

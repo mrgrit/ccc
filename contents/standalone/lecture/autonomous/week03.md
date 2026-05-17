@@ -279,7 +279,7 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
         "order": 3,
         "instruction_prompt": "df -h / | tail -1 && echo --- && free -h | head -2",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 4,
@@ -310,7 +310,7 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
         "order": 6,
         "instruction_prompt": "curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000 && echo --- && curl -s -o /dev/null -w \"%{http_code}\" http://localhost:80",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 7,
@@ -636,7 +636,7 @@ import nmap
 nm = nmap.PortScanner()
 
 # 1) 단일 호스트 종합
-result = nm.scan("10.20.30.80", "22-1024", arguments="-sV -O -A")
+result = nm.scan("10.20.32.80", "22-1024", arguments="-sV -O -A")
 
 for host in nm.all_hosts():
     print(f"Host: {host} ({nm[host].hostname()})")
@@ -657,10 +657,10 @@ print(f"Alive: {len(alive_hosts)}")
 
 ```bash
 # 1) 단일 URL
-nuclei -u http://10.20.30.80:3000 -severity high,critical -j > /tmp/nuclei.json
+nuclei -u http://10.20.40.81:3000 -severity high,critical -j > /tmp/nuclei.json
 
 # 2) 여러 URL 병렬
-echo -e "http://10.20.30.80\nhttp://10.20.30.100" | \
+echo -e "http://10.20.32.80\nhttp://10.20.30.100" | \
     nuclei -severity high,critical -c 50 -j -o /tmp/nuclei-multi.json
 
 # 3) 결과 분석
@@ -672,7 +672,7 @@ import json
 import subprocess
 
 result = subprocess.run([
-    "nuclei", "-u", "http://10.20.30.80:3000",
+    "nuclei", "-u", "http://10.20.40.81:3000",
     "-severity", "high,critical", "-j"
 ], capture_output=True, text=True)
 
@@ -736,7 +736,7 @@ def scan_subnet(**context):
     return nm.csv()
 
 def run_nuclei(**context):
-    subprocess.run(["nuclei", "-u", "http://10.20.30.80:3000",
+    subprocess.run(["nuclei", "-u", "http://10.20.40.81:3000",
                     "-severity", "high,critical", "-j",
                     "-o", "/tmp/nuclei.json"])
 

@@ -118,7 +118,7 @@
 | `<match>` | 로그 문자열 매칭 | `<match>Failed password</match>` |
 | `<regex>` | 정규표현식 매칭 | `<regex>error \d+</regex>` |
 | `<srcip>` | 출발지 IP 매칭 | `<srcip>10.20.30.0/24</srcip>` |
-| `<dstip>` | 목적지 IP 매칭 | `<dstip>10.20.30.80</dstip>` |
+| `<dstip>` | 목적지 IP 매칭 | `<dstip>10.20.32.80</dstip>` |
 | `<if_sid>` | 선행 룰 ID 기반 매칭 | `<if_sid>100001</if_sid>` |
 | `<frequency>` | 반복 횟수 기반 매칭 | `<frequency>5</frequency>` |
 | `<timeframe>` | 시간 윈도우 (초) | `<timeframe>300</timeframe>` |
@@ -1173,7 +1173,7 @@ XML
 # === 룰 검증 ===
 sudo /var/ossec/bin/wazuh-logtest
 # Type log:
-# Apr 25 10:00:00 secu nft[1234]: SRC=192.168.1.50 DST=10.20.30.80 PROTO=TCP DPT=22
+# Apr 25 10:00:00 secu nft[1234]: SRC=192.168.1.50 DST=10.20.32.80 PROTO=TCP DPT=22
 # (반복 8회)
 # Output: Phase 3: Completed filtering (rules)
 #   Rule id: '100101' (level 10) -> 'Port scan detected from same source IP'
@@ -1182,7 +1182,7 @@ sudo /var/ossec/bin/wazuh-control restart
 sudo tail -f /var/ossec/logs/alerts/alerts.log | grep "100101"
 
 # === 시뮬레이션 ===
-ssh 6v6-attacker 'nmap -sS -p 1-100 10.20.30.80'
+ssh 6v6-attacker 'nmap -sS -p 1-100 10.20.32.80'
 sleep 30
 sudo grep "100101" /var/ossec/logs/alerts/alerts.log | tail -5
 ```
@@ -1242,7 +1242,7 @@ MD
 
 # Atomic Red Team 으로 시뮬 + 룰 검증
 ssh 6v6-attacker 'for i in {1..10}; do sshpass -p wrong ssh 6v6-web ls 2>/dev/null; done'
-ssh 6v6-attacker 'nmap -sS -p 1-100 --max-rate 100 10.20.30.80'
+ssh 6v6-attacker 'nmap -sS -p 1-100 --max-rate 100 10.20.32.80'
 sudo cat /etc/shadow > /dev/null
 ```
 

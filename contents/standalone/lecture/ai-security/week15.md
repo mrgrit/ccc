@@ -8,7 +8,7 @@
 | 시간 | 3시간 (180분) |
 | 배점 | 100점 |
 | 환경 | Ollama (192.168.0.109:11434), Bastion (192.168.0.110:9200), ccc-api (localhost:9100) |
-| 대상 서버 | secu(10.20.30.1), web(10.20.30.80), siem(10.20.30.100) |
+| 대상 서버 | secu(10.20.30.1), web(10.20.32.80), siem(10.20.30.100) |
 | 제출 | 스크립트 파일 + 실행 결과 캡처 + 최종 보고서 |
 | 참고 | 오픈 북 (강의 자료, 인터넷 검색 가능. 타인과 공유 금지) |
 
@@ -56,7 +56,7 @@ curl -s http://192.168.0.110:9200/assets | python3 -m json.tool | head -20
 curl -s -H "X-API-Key: ccc-api-key-2026" http://localhost:9100/health | python3 -m json.tool
 
 # 4. SubAgent 확인 (현장 에이전트, 포트 8002)
-for srv in "10.20.30.1" "10.20.30.80" "10.20.30.100"; do
+for srv in "10.20.30.1" "10.20.32.80" "10.20.30.100"; do
   code=$(curl -s -m 3 -o /dev/null -w "%{http_code}" "http://$srv:8002/health")
   echo "  $srv:8002 → $code"
 done
@@ -182,7 +182,7 @@ PLAN=$(curl -s http://192.168.0.109:11434/v1/chat/completions \
     "model": "gemma3:12b",
     "messages": [
       {"role": "system", "content": "침투 테스트 전문가. 안전한(non-destructive) 정보 수집 명령 3개를 JSON으로 제안."},
-      {"role": "user", "content": "대상: web(10.20.30.80). 포트/서비스 버전/사용자 권한 점검. 형식: [{\"title\":\"...\",\"command\":\"...\"}]"}
+      {"role": "user", "content": "대상: web(10.20.32.80). 포트/서비스 버전/사용자 권한 점검. 형식: [{\"title\":\"...\",\"command\":\"...\"}]"}
     ],
     "temperature": 0.3
   }' | python3 -c "import sys,json; print(json.load(sys.stdin)['choices'][0]['message']['content'])")

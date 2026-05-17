@@ -1115,7 +1115,7 @@ chain.invoke({"input": "..."}, config={"callbacks": [handler]})
 langfuse.trace(
     name="security-scan",
     user_id="user-123",
-    metadata={"target": "10.20.30.80", "model_version": "1.2.3"}
+    metadata={"target": "10.20.32.80", "model_version": "1.2.3"}
 )
 
 trace = langfuse.trace(name="agent-run")

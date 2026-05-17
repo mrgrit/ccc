@@ -174,8 +174,8 @@ INFO
 
 ```
 [IP 필터]
-ip.addr == 10.20.30.80          # 특정 IP (src/dst)
-ip.src == 10.20.30.80           # 출발지
+ip.addr == 10.20.32.80          # 특정 IP (src/dst)
+ip.src == 10.20.32.80           # 출발지
 ip.dst == 10.20.30.100          # 목적지
 !(ip.addr == 10.20.30.0/24)    # 내부 IP 제외
 
@@ -203,7 +203,7 @@ tls.handshake.extensions.server_name  # SNI
 ssl.handshake.ciphersuite        # 암호 스위트
 
 [조합]
-(ip.src == 10.20.30.80) && (tcp.dstport == 443)
+(ip.src == 10.20.32.80) && (tcp.dstport == 443)
 http.request || dns.qry.name
 !(arp || dns || mdns)            # 노이즈 제거
 ```
@@ -273,8 +273,8 @@ fi
 echo "=== Step 1: 트래픽 발생 ==="
 # 백그라운드로 웹 요청 생성
 for i in $(seq 1 10); do
-    curl -s -o /dev/null http://10.20.30.80/ 2>/dev/null &
-    curl -s -o /dev/null "http://10.20.30.80/api/test?id=1 OR 1=1" 2>/dev/null &
+    curl -s -o /dev/null http://10.20.32.80/ 2>/dev/null &
+    curl -s -o /dev/null "http://10.20.32.80/api/test?id=1 OR 1=1" 2>/dev/null &
 done
 wait
 
@@ -551,7 +551,7 @@ curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute-plan" \
         "order": 2,
         "instruction_prompt": "ss -tnp 2>/dev/null | grep ESTAB | wc -l && ss -tnp 2>/dev/null | head -10",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       }
     ],
     "subagent_url": "http://localhost:8002"
@@ -567,17 +567,17 @@ cat << 'SCRIPT' > /tmp/network_timeline.py
 from datetime import datetime, timedelta
 
 events = [
-    {"time": "02:00:00", "type": "SCAN", "src": "203.0.113.50", "dst": "10.20.30.80",
+    {"time": "02:00:00", "type": "SCAN", "src": "203.0.113.50", "dst": "10.20.32.80",
      "detail": "포트 스캔 (22,80,443,3306,8080)"},
-    {"time": "02:05:23", "type": "ATTACK", "src": "203.0.113.50", "dst": "10.20.30.80:80",
+    {"time": "02:05:23", "type": "ATTACK", "src": "203.0.113.50", "dst": "10.20.32.80:80",
      "detail": "SQL Injection 시도 (/api/products?id=1 OR 1=1)"},
-    {"time": "02:05:45", "type": "ATTACK", "src": "203.0.113.50", "dst": "10.20.30.80:80",
+    {"time": "02:05:45", "type": "ATTACK", "src": "203.0.113.50", "dst": "10.20.32.80:80",
      "detail": "웹셸 업로드 시도 (POST /upload shell.php)"},
-    {"time": "02:06:10", "type": "ACCESS", "src": "203.0.113.50", "dst": "10.20.30.80:80",
+    {"time": "02:06:10", "type": "ACCESS", "src": "203.0.113.50", "dst": "10.20.32.80:80",
      "detail": "웹셸 접근 (GET /uploads/shell.php?cmd=id)"},
-    {"time": "02:06:30", "type": "C2", "src": "10.20.30.80", "dst": "203.0.113.50:4444",
+    {"time": "02:06:30", "type": "C2", "src": "10.20.32.80", "dst": "203.0.113.50:4444",
      "detail": "리버스 셸 연결 (TCP SYN)"},
-    {"time": "02:07:00", "type": "LATERAL", "src": "10.20.30.80", "dst": "10.20.30.100:22",
+    {"time": "02:07:00", "type": "LATERAL", "src": "10.20.32.80", "dst": "10.20.30.100:22",
      "detail": "내부 SSH 접근 시도"},
     {"time": "02:10:00", "type": "EXFIL", "src": "10.20.30.100", "dst": "203.0.113.50:443",
      "detail": "대량 데이터 전송 (15MB TLS)"},
@@ -676,7 +676,7 @@ for i in range(50):
 for i in range(20):
     flows.append({
         "start": base_time + timedelta(seconds=60 * i + random.randint(-2, 2)),
-        "src": "10.20.30.80",
+        "src": "10.20.32.80",
         "dst": "203.0.113.50",
         "sport": random.randint(32768, 65535),
         "dport": 443,
@@ -734,7 +734,7 @@ if len(beacon_flows) > 5:
     stdev_interval = statistics.stdev(intervals) if len(intervals) > 1 else 0
     cv = stdev_interval / mean_interval if mean_interval > 0 else 0
     
-    print(f"  10.20.30.80 → 203.0.113.50:443")
+    print(f"  10.20.32.80 → 203.0.113.50:443")
     print(f"  플로우 수: {len(beacon_flows)}개")
     print(f"  평균 간격: {mean_interval:.1f}초")
     print(f"  변동계수: {cv:.3f}")
@@ -851,14 +851,14 @@ report = {
         "TCP": 12500, "UDP": 2200, "ICMP": 300, "ARP": 234
     },
     "top_talkers": [
-        ("10.20.30.201", "10.20.30.80", 3500),
-        ("10.20.30.80", "203.0.113.50", 1200),
+        ("10.20.30.201", "10.20.32.80", 3500),
+        ("10.20.32.80", "203.0.113.50", 1200),
         ("10.20.30.201", "10.20.30.100", 800),
     ],
     "findings": [
-        {"severity": "Critical", "finding": "10.20.30.80 → 203.0.113.50:443 규칙적 통신 (비콘 의심)"},
+        {"severity": "Critical", "finding": "10.20.32.80 → 203.0.113.50:443 규칙적 통신 (비콘 의심)"},
         {"severity": "High", "finding": "10.20.30.100 → 203.0.113.50:443 15MB 대량 전송 (유출 의심)"},
-        {"severity": "Medium", "finding": "203.0.113.50 → 10.20.30.80:80 SQL Injection 패턴"},
+        {"severity": "Medium", "finding": "203.0.113.50 → 10.20.32.80:80 SQL Injection 패턴"},
     ],
 }
 
@@ -1266,7 +1266,7 @@ tshark -r $PCAP -Y "frame.time >= \"$ALERT_TIME\" and frame.time < \"$(date -d "
   -T fields -e frame.number -e ip.src -e ip.dst -e http.request.uri | head
 
 # 5-tuple 정밀 매칭
-SRC_IP=192.168.1.50; DST_IP=10.20.30.80; DST_PORT=80
+SRC_IP=192.168.1.50; DST_IP=10.20.32.80; DST_PORT=80
 tshark -r $PCAP -Y "(ip.src == $SRC_IP and ip.dst == $DST_IP and tcp.dstport == $DST_PORT) or (ip.src == $DST_IP and ip.dst == $SRC_IP and tcp.srcport == $DST_PORT)" \
   -T fields -e frame.number -e frame.time -e tcp.flags | head
 ```

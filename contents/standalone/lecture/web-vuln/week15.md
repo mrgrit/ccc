@@ -74,7 +74,7 @@
 
 ## 1. 기말 시험 구성 (10분)
 
-### 대상: JuiceShop (http://10.20.30.80:3000)
+### 대상: JuiceShop (http://10.20.40.81:3000)
 
 ### 점검 범위
 1. 정보수집 (Week 03)
@@ -202,7 +202,7 @@ plan = f"""
            웹 취약점 점검 계획서
 ================================================================
 프로젝트: 기말 종합 점검
-대상: OWASP JuiceShop (http://10.20.30.80:3000)
+대상: OWASP JuiceShop (http://10.20.40.81:3000)
 일시: {datetime.now().strftime('%Y-%m-%d')}
 점검자: (학번/이름)
 방법론: OWASP Testing Guide v4.2
@@ -584,7 +584,7 @@ report = f"""
           종합 웹 취약점 점검 보고서
 {'='*70}
 프로젝트: 기말 종합 점검
-대상: OWASP JuiceShop (http://10.20.30.80:3000)
+대상: OWASP JuiceShop (http://10.20.40.81:3000)
 일시: {datetime.now().strftime('%Y-%m-%d %H:%M')}
 방법론: OWASP Testing Guide v4.2
 
@@ -630,7 +630,7 @@ ENDSSH
           종합 웹 취약점 점검 보고서
 ======================================================================
 프로젝트: 기말 종합 점검
-대상: OWASP JuiceShop (http://10.20.30.80:3000)
+대상: OWASP JuiceShop (http://10.20.40.81:3000)
 일시: 2026-04-29 14:32
 방법론: OWASP Testing Guide v4.2
 
@@ -726,7 +726,7 @@ echo "=== Bastion 프로젝트 생성 ==="
 curl -s -X POST http://192.168.0.110:9200/ask \
   -H 'Content-Type: application/json' \
   -d '{
-    "message": "http://10.20.30.80:3000 JuiceShop 전체 대상 종합 웹취약점 점검: (1) 보안 헤더 수집, (2) 로그인 API에 SQLi 시도, (3) /api/Users IDOR, (4) /ftp 경로 순회, (5) JWT 디코드해서 발견사항을 CVSS v3.1 점수와 함께 표로 정리해줘."
+    "message": "http://10.20.40.81:3000 JuiceShop 전체 대상 종합 웹취약점 점검: (1) 보안 헤더 수집, (2) 로그인 API에 SQLi 시도, (3) /api/Users IDOR, (4) /ftp 경로 순회, (5) JWT 디코드해서 발견사항을 CVSS v3.1 점수와 함께 표로 정리해줘."
   }' \
   | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['answer'])"
 
@@ -867,7 +867,7 @@ Week 15:    기말          -> 종합 점검 프로젝트
 
 ### Burp Suite Community
 > **역할:** 웹 프록시 기반 수동/반자동 취약점 점검 도구  
-> **실행 위치:** `작업 PC → web (10.20.30.80:3000)`  
+> **실행 위치:** `작업 PC → web (10.20.40.81:3000)`  
 > **접속/호출:** GUI `burpsuite`, CA 인증서 신뢰 필요 (`http://burp`)
 
 **주요 경로·파일**

@@ -366,7 +366,7 @@ HEADERS = {"X-API-Key": API_KEY}
 AGENTS = {
     "bastion": "http://localhost:8002",
     "secu": "http://10.20.30.1:8002",
-    "web": "http://10.20.30.80:8002",
+    "web": "http://10.20.32.80:8002",
     "siem": "http://10.20.30.100:8002",
 }
 

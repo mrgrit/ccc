@@ -983,12 +983,12 @@ defaultTest:
 
 tests:
   - description: "정찰 task — 정확한 nmap 명령"
-    vars: {task: "10.20.30.80 의 모든 서비스 식별"}
+    vars: {task: "10.20.32.80 의 모든 서비스 식별"}
     assert:
       - type: contains
         value: "nmap"
       - type: contains
-        value: "10.20.30.80"
+        value: "10.20.32.80"
       - type: latency
         threshold: 30000
       - type: cost
@@ -1050,12 +1050,12 @@ from deepeval.test_case import LLMTestCase, LLMTestCaseParams
 
 def test_recon_task():
     """정찰 task 검증"""
-    actual = agent.run("10.20.30.80 점검")
+    actual = agent.run("10.20.32.80 점검")
     
     test_case = LLMTestCase(
-        input="10.20.30.80 점검",
+        input="10.20.32.80 점검",
         actual_output=actual,
-        expected_output="nmap -sV 10.20.30.80 명령으로 시작",
+        expected_output="nmap -sV 10.20.32.80 명령으로 시작",
         retrieval_context=["과거 정찰 사례 ..."]
     )
     

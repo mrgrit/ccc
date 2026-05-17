@@ -72,7 +72,7 @@
 
 ### 1.1 환경
 
-- **대상**: web 서버 (10.20.30.80) - OWASP JuiceShop
+- **대상**: web 서버 (10.20.32.80) - OWASP JuiceShop
 - **방어**: Apache+ModSecurity WAF, Suricata IPS (secu), Wazuh SIEM
 - JuiceShop은 **의도적으로 취약한** 웹 애플리케이션이다
 
@@ -338,7 +338,7 @@ sha256sum /tmp/*_evidence.txt 2>/dev/null
 
 1. 인시던트 요약
    - 유형: SQL Injection
-   - 대상: JuiceShop (10.20.30.80)
+   - 대상: JuiceShop (10.20.32.80)
    - 공격자: X.X.X.X
    - 발생: 2026-XX-XX XX:XX
    - 탐지: 2026-XX-XX XX:XX (Suricata/Wazuh)

@@ -351,7 +351,7 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
         "order": 2,
         "instruction_prompt": "echo block-2-web && hostname",
         "risk_level": "medium",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 3,
@@ -422,7 +422,7 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 ```bash
 # web SubAgent의 블록만 조회
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:9100/pow/blocks?agent_id=http://10.20.30.80:8002" \
+  "http://localhost:9100/pow/blocks?agent_id=http://10.20.32.80:8002" \
   | python3 -m json.tool
 ```
 

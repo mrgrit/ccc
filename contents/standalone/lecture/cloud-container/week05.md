@@ -172,7 +172,7 @@ docker run -d -p 3306:3306 mysql
 docker run -d -p 127.0.0.1:3306:3306 mysql
 
 # 특정 인터페이스에 바인딩
-docker run -d -p 10.20.30.80:8080:80 nginx
+docker run -d -p 10.20.40.82:80:80 nginx
 ```
 
 ### 3.2 EXPOSE vs -p 차이
@@ -258,7 +258,7 @@ docker exec app ping redis
 
 ## 6. 실습: 네트워크 격리 구성
 
-실습 환경: `web` 서버 (10.20.30.80)
+실습 환경: `web` 서버 (10.20.32.80)
 
 ### 실습 1: 네트워크 격리 확인
 

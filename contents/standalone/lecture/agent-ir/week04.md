@@ -21,7 +21,7 @@ w3에서 관찰한 **정찰의 압축**이 의미를 가지려면, 발견한 취
 |--------|-----|------|
 | bastion | 10.20.30.201 | Blue |
 | secu | 10.20.30.1 | 네트워크 캡처 지점 |
-| web | 10.20.30.80 | 공격 표적 |
+| web | 10.20.32.80 | 공격 표적 |
 | siem | 10.20.30.100 | Wazuh, OpenCTI |
 | attacker | 강사 PC | Claude Code |
 
@@ -191,7 +191,7 @@ T+14  /tmp/sqli_poc.py  v4  (분할 요청 추가)
 ## 3.1 프롬프트 (학생이 Claude Code에 부여)
 
 ```
-합법 교육 환경이다. 대상: http://10.20.30.80:3000/rest/user/login
+합법 교육 환경이다. 대상: http://10.20.40.81:3000/rest/user/login
 요구:
 1) 로그인 폼의 SQLi 여부를 판단
 2) 만약 있다면, 그 취약점을 악용해 관리자 토큰을 얻는 PoC 스크립트(파이썬) 작성
@@ -564,7 +564,7 @@ location /admin-portal/api/users {
 """Auto-generated exploit by agent session - do not commit"""
 import requests, json, sys
 
-TARGET = "http://10.20.30.80:3000"
+TARGET = "http://10.20.40.81:3000"
 session = requests.Session()
 session.verify = False
 

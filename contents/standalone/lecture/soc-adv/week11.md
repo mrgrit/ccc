@@ -293,7 +293,7 @@ python3 /tmp/chain_of_custody.py
 
 ## 3.1 시나리오: 웹서버 침해 대응
 
-> **시나리오**: web 서버(10.20.30.80)에서 웹셸이 발견되었다. SOC 분석가로서 NIST IR 프레임워크에 따라 대응하라.
+> **시나리오**: web 서버(10.20.32.80)에서 웹셸이 발견되었다. SOC 분석가로서 NIST IR 프레임워크에 따라 대응하라.
 
 ```bash
 # Phase 2: 탐지 및 분석
@@ -351,7 +351,7 @@ curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute-plan" \
         "order": 1,
         "instruction_prompt": "echo \"[봉쇄] 의심 파일 검색\" && find /var/www /opt -name \"*.php\" -mtime -7 2>/dev/null | head -5 && echo CONTAINMENT_SEARCH_DONE",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 2,
@@ -492,7 +492,7 @@ print("""
    상태: 봉쇄 완료
 
 2. 영향 범위
-   침해 서버: web (10.20.30.80)
+   침해 서버: web (10.20.32.80)
    영향 서비스: JuiceShop 웹 애플리케이션
    데이터 유출: 약 8MB (사용자 데이터 포함 여부 확인 중)
    2차 피해: siem 서버 SSH 접속 시도 (실패)
@@ -1177,7 +1177,7 @@ curl -sk -u admin:admin "https://10.20.30.100:9200/wazuh-alerts-*/_search" -H 'C
 # TheHive case
 curl -X POST "$THEHIVE/api/v1/case" \
   -H "Authorization: Bearer $API_KEY" \
-  -d '{"title":"[P1] SQLi — web (10.20.30.80)", "severity":4, "tlp":2, "tags":["sqli","P1"]}'
+  -d '{"title":"[P1] SQLi — web (10.20.32.80)", "severity":4, "tlp":2, "tags":["sqli","P1"]}'
 ```
 
 #### 도구 3: 공격 범위 파악 (Step 3)
@@ -1192,7 +1192,7 @@ ssh 6v6-web 'sudo grep -E "SELECT.*UNION|password|user.*=" /var/log/mysql/genera
 
 # Lateral 검사
 for host in 10.20.30.1 10.20.30.100; do
-    ssh ccc@$host 'sudo grep "10.20.30.80\|192.168.1.50" /var/log/auth.log | tail'
+    ssh ccc@$host 'sudo grep "10.20.32.80\|192.168.1.50" /var/log/auth.log | tail'
 done
 
 # 응답 크기 (exfil 의심)
@@ -1209,7 +1209,7 @@ zeek-cut id.orig_h id.resp_h orig_bytes resp_bytes < /var/log/zeek/conn.log | \
 cat > /tmp/incident-scope.md << 'MD'
 ## Incident Scope — IR-2026-Q2-001
 - 시작: 2026-05-02 14:01:23
-- 영향: web (10.20.30.80) — 직접
+- 영향: web (10.20.32.80) — 직접
 - DB: web mysql — SELECT FROM users 1247건
 - 사용자: 12,847 (전체)
 - Lateral: 없음
@@ -1264,12 +1264,12 @@ mkdir -p $EVID
 
 # 1. Web log
 ssh 6v6-web 'sudo cp /var/log/apache2/access.log /tmp/access.log.snapshot'
-scp ccc@10.20.30.80:/tmp/access.log.snapshot $EVID/web-access.log
+scp ccc@10.20.32.80:/tmp/access.log.snapshot $EVID/web-access.log
 sha256sum $EVID/web-access.log > $EVID/web-access.log.sha256
 
 # DB log
 ssh 6v6-web 'sudo cp /var/log/mysql/general.log /tmp/mysql.log.snapshot'
-scp ccc@10.20.30.80:/tmp/mysql.log.snapshot $EVID/mysql-general.log
+scp ccc@10.20.32.80:/tmp/mysql.log.snapshot $EVID/mysql-general.log
 sha256sum $EVID/mysql-general.log >> $EVID/web-access.log.sha256
 
 # 2. PCAP (week07)
@@ -1281,7 +1281,7 @@ ssh 6v6-web '
   cd /tmp/lime/src
   sudo insmod lime-$(uname -r).ko "path=/tmp/mem.lime format=lime"
 '
-scp ccc@10.20.30.80:/tmp/mem.lime $EVID/
+scp ccc@10.20.32.80:/tmp/mem.lime $EVID/
 sha256sum $EVID/mem.lime > $EVID/mem.lime.sha256
 
 # 4. Wazuh / Suricata export
@@ -1294,7 +1294,7 @@ ssh 6v6-fw 'sudo cat /var/log/suricata/eve.json' > $EVID/suricata-eve.json
 # 5. CoC (week07 양식)
 cat > $EVID/coc.txt << 'COC'
 === CHAIN OF CUSTODY — IR-2026-Q2-001 ===
-Incident: SQL Injection on web (10.20.30.80)
+Incident: SQL Injection on web (10.20.32.80)
 Date: 2026-05-02
 Captured by: 학생 이름
 
@@ -1343,7 +1343,7 @@ ssh 6v6-web '
 '
 
 # 시뮬 검증
-curl -s "http://10.20.30.80/search?q=' OR 1=1--" -o /dev/null -w "%{http_code}\n"
+curl -s "http://10.20.32.80/search?q=' OR 1=1--" -o /dev/null -w "%{http_code}\n"
 # 403 = 차단 성공
 
 # 4. DB 권한 강화
@@ -1387,7 +1387,7 @@ ssh 6v6-web 'sudo mysqldump juiceshop users > /tmp/users-current.sql'
 diff /tmp/users-current.sql /var/backups/users-2026-05-01.sql
 
 # 3. canary (10% traffic, 24h 후 100%)
-ssh 6v6-fw 'sudo nft add rule inet filter forward ip daddr 10.20.30.80 ip saddr 10.0.0.0/8 limit rate 10/second accept'
+ssh 6v6-fw 'sudo nft add rule inet filter forward ip daddr 10.20.32.80 ip saddr 10.0.0.0/8 limit rate 10/second accept'
 
 # 4. 복구 체크리스트
 cat > /tmp/recovery-checklist.md << 'MD'
@@ -1701,7 +1701,7 @@ ssh 6v6-web 'sudo a2dissite vulnerable-app && sudo systemctl reload apache2'
 EVID=/var/log/forensics/incident-2026-05-02
 mkdir -p $EVID
 ssh 6v6-web 'sudo cp /var/log/apache2/access.log /tmp/access.log.snapshot'
-scp ccc@10.20.30.80:/tmp/access.log.snapshot $EVID/
+scp ccc@10.20.32.80:/tmp/access.log.snapshot $EVID/
 sha256sum $EVID/* > $EVID/hashes.sha256
 ```
 

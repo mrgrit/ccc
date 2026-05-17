@@ -139,7 +139,7 @@ curl -s http://192.168.0.109:11434/v1/chat/completions \
       {"role": "assistant", "content": "위협수준: LOW\n분석: 단일 실패 시도. 내부 IP에서 발생. 사용자 실수 가능성 높음."},
       {"role": "user", "content": "로그: Failed password for root from 203.0.113.50 (5회 반복)"},
       {"role": "assistant", "content": "위협수준: HIGH\n분석: 외부 IP에서 root 계정 반복 시도. 브루트포스 공격 의심."},
-      {"role": "user", "content": "로그: Accepted publickey for deploy from 10.20.30.80 port 22"}
+      {"role": "user", "content": "로그: Accepted publickey for deploy from 10.20.32.80 port 22"}
     ],
     "temperature": 0.2
   }' | python3 -c "import json,sys; print(json.load(sys.stdin)['choices'][0]['message']['content'])"
@@ -321,7 +321,7 @@ curl -s http://192.168.0.109:11434/v1/chat/completions \
     "model": "gemma3:12b",
     "messages": [
       {"role": "system", "content": "인시던트 대응 전문가입니다. 구체적이고 실행 가능한 대응 절차를 작성합니다."},
-      {"role": "user", "content": "SSH 브루트포스 공격이 탐지되었습니다.\n소스 IP: 203.0.113.50\n대상: web 서버 (10.20.30.80)\n시도 횟수: 500회/10분\n\n대응 플레이북을 단계별로 작성하세요. 각 단계에 실제 명령어를 포함하세요."}
+      {"role": "user", "content": "SSH 브루트포스 공격이 탐지되었습니다.\n소스 IP: 203.0.113.50\n대상: web 서버 (10.20.32.80)\n시도 횟수: 500회/10분\n\n대응 플레이북을 단계별로 작성하세요. 각 단계에 실제 명령어를 포함하세요."}
     ],
     "temperature": 0.3
   }' | python3 -c "import json,sys; print(json.load(sys.stdin)['choices'][0]['message']['content'])"

@@ -104,7 +104,7 @@ curl -s -X POST http://192.168.0.110:9200/ask \
 
 **무엇이 일어나는가:** Bastion이
 (1) 자연어에서 의도 분류 → "자산 정보 조회"
-(2) `/assets` 에서 `web → 10.20.30.80` 확인
+(2) `/assets` 에서 `web → 10.20.32.80` 확인
 (3) 적절한 Skill(예: `system.status`) 선택
 (4) web SubAgent(:8002)에 명령 위임
 (5) 결과를 요약해 `answer` 로 반환
@@ -185,7 +185,7 @@ curl -s http://192.168.0.110:9200/assets | python3 -m json.tool
 {
   "assets": [
     {"name":"secu","ip":"10.20.30.1","role":"firewall/ips","subagent":"http://10.20.30.1:8002"},
-    {"name":"web","ip":"10.20.30.80","role":"webapp","subagent":"http://10.20.30.80:8002"},
+    {"name":"web","ip":"10.20.32.80","role":"webapp","subagent":"http://10.20.32.80:8002"},
     {"name":"siem","ip":"10.20.30.100","role":"siem","subagent":"http://10.20.30.100:8002"}
   ]
 }
@@ -249,7 +249,7 @@ Skill/Playbook 메타데이터에는 risk 가 명시되어 있다.
 # (1) 3계층 헬스체크
 curl -s http://localhost:9100/health -H "X-API-Key: ccc-api-key-2026" | python3 -m json.tool
 curl -s http://192.168.0.110:9200/health | python3 -m json.tool
-curl -s http://10.20.30.80:8002/health  | python3 -m json.tool
+curl -s http://10.20.32.80:8002/health  | python3 -m json.tool
 
 # (2) Bastion에 등록된 Skill/Playbook/Asset 한 번 훑기
 curl -s http://192.168.0.110:9200/skills    | python3 -m json.tool | head -20

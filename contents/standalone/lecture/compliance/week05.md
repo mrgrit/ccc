@@ -320,7 +320,7 @@ ssh 6v6-bastion "apt list --upgradable 2>/dev/null | head -10"
 ```bash
 # 1.2.1 정보자산 식별 — 서버 자산 확인
 echo "=== 자산 목록 ==="
-for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do  # 반복문 시작
+for ip in 10.20.30.201 10.20.30.1 10.20.32.80 10.20.30.100; do  # 반복문 시작
   echo "--- $ip ---"
   ssh $srv  # srv=user@ip (아래 루프 참고) "hostname; uname -r; cat /etc/os-release | grep PRETTY_NAME" 2>/dev/null
 done
@@ -331,7 +331,7 @@ ssh 6v6-fw "ip route show"        # 비밀번호 자동입력 SSH
 
 # 2.11.1 사고 예방 — Wazuh 에이전트 설치 현황
 echo "=== Wazuh Agent 상태 ==="
-for ip in 10.20.30.201 10.20.30.1 10.20.30.80; do      # 반복문 시작
+for ip in 10.20.30.201 10.20.30.1 10.20.32.80; do      # 반복문 시작
   echo "--- $ip ---"
   ssh $srv  # srv=user@ip (아래 루프 참고) "systemctl is-active wazuh-agent 2>/dev/null || echo 'N/A'"
 done

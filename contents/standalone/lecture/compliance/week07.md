@@ -147,7 +147,7 @@ Identify(식별) --> Protect(보호) --> Detect(탐지) --> Respond(대응) --> 
 
 ```bash
 # ID.AM-1: 물리적 장치 및 시스템 인벤토리
-for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.100"; do
+for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.32.80" "ccc@10.20.30.100"; do
   echo "=== $srv ==="
   ssh $srv  # srv=user@ip (아래 루프 참고) "hostname; lscpu | grep 'Model name'; free -h | grep Mem; df -h / | tail -1"
 done

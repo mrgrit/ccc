@@ -200,22 +200,22 @@ Censys는 Shodan과 유사하지만 **TLS 인증서와 서비스 분석에 더 �
 ```bash
 # HTTP 배너 수집 (Shodan이 하는 것과 동일)
 echo "=== HTTP 배너: web 서버 ==="
-curl -sI http://10.20.30.80/ 2>/dev/null | head -10
+curl -sI http://10.20.32.80/ 2>/dev/null | head -10
 
 echo ""
 echo "=== HTTP 배너: Juice Shop ==="
-curl -sI http://10.20.30.80:3000/ 2>/dev/null | head -10
+curl -sI http://10.20.40.81:3000/ 2>/dev/null | head -10
 
 echo ""
 echo "=== SSH 배너 수집 ==="
 # SSH 배너 (서버 소프트웨어 버전 노출)
-echo "" | nc -w3 10.20.30.80 22 2>/dev/null | head -1
+echo "" | nc -w3 10.20.32.80 22 2>/dev/null | head -1
 echo "" | nc -w3 10.20.30.1 22 2>/dev/null | head -1
 echo "" | nc -w3 10.20.30.100 22 2>/dev/null | head -1
 
 echo ""
 echo "=== SubAgent API 배너 ==="
-curl -sI http://10.20.30.80:8002/ 2>/dev/null | head -5
+curl -sI http://10.20.32.80:8002/ 2>/dev/null | head -5
 ```
 
 ## 실습 2.2: 서비스 상세 정보 수집
@@ -235,20 +235,20 @@ curl -sI http://10.20.30.80:8002/ 2>/dev/null | head -5
 ```bash
 # 기술 스택 프로파일링
 echo "=== 1. HTTP 응답 헤더 분석 ==="
-curl -s -D- http://10.20.30.80:3000/ -o /dev/null 2>/dev/null | head -20
+curl -s -D- http://10.20.40.81:3000/ -o /dev/null 2>/dev/null | head -20
 
 echo ""
 echo "=== 2. robots.txt 확인 ==="
-curl -s http://10.20.30.80/robots.txt 2>/dev/null || echo "robots.txt 없음"
+curl -s http://10.20.32.80/robots.txt 2>/dev/null || echo "robots.txt 없음"
 
 echo ""
 echo "=== 3. 에러 페이지에서 정보 추출 ==="
 # 404 에러에서 서버 정보 노출 여부
-curl -s http://10.20.30.80/nonexistent_page_12345 2>/dev/null | head -5
+curl -s http://10.20.32.80/nonexistent_page_12345 2>/dev/null | head -5
 
 echo ""
 echo "=== 4. Juice Shop API 버전 정보 ==="
-curl -s http://10.20.30.80:3000/api/Challenges/ 2>/dev/null | python3 -c "
+curl -s http://10.20.40.81:3000/api/Challenges/ 2>/dev/null | python3 -c "
 import sys,json
 try:
     data=json.load(sys.stdin)
@@ -262,7 +262,7 @@ except: print('API 접근 불가')" 2>/dev/null
 echo ""
 echo "=== 5. 숨겨진 경로 탐색 ==="
 for path in /admin /api /swagger /docs /metrics /.env /config; do
-  CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://10.20.30.80:3000${path}" 2>/dev/null)
+  CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://10.20.40.81:3000${path}" 2>/dev/null)
   echo "  $path → HTTP $CODE"
 done
 ```
@@ -284,7 +284,7 @@ done
 ```bash
 # TLS 인증서 분석
 echo "=== web 서버 HTTPS 인증서 확인 ==="
-echo | timeout 5 openssl s_client -connect 10.20.30.80:443 2>/dev/null | openssl x509 -noout -text 2>/dev/null | grep -E "Subject:|Issuer:|DNS:|Not Before|Not After" || echo "HTTPS 미사용 또는 접속 불가"
+echo | timeout 5 openssl s_client -connect 10.20.32.80:443 2>/dev/null | openssl x509 -noout -text 2>/dev/null | grep -E "Subject:|Issuer:|DNS:|Not Before|Not After" || echo "HTTPS 미사용 또는 접속 불가"
 
 echo ""
 echo "=== 인증서 분석 교육 예시 ==="
@@ -381,7 +381,7 @@ TARGETS=(".env" ".git/config" "wp-config.php" "config.php" "database.yml"
          "backup.sql" "dump.sql" ".DS_Store" "Thumbs.db")
 
 for file in "${TARGETS[@]}"; do
-  CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://10.20.30.80/$file" 2>/dev/null)
+  CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://10.20.32.80/$file" 2>/dev/null)
   if [ "$CODE" != "404" ] && [ "$CODE" != "000" ]; then
     echo "  [!] /$file → HTTP $CODE (발견!)"
   fi
@@ -393,7 +393,7 @@ PATHS=("/ftp" "/api-docs" "/metrics" "/b2bOrder" "/profile" "/administration"
        "/accounting" "/support/logs" "/encryptionkeys" "/assets/public/images/uploads")
 
 for path in "${PATHS[@]}"; do
-  CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://10.20.30.80:3000$path" 2>/dev/null)
+  CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://10.20.40.81:3000$path" 2>/dev/null)
   if [ "$CODE" != "404" ] && [ "$CODE" != "000" ]; then
     echo "  [!] $path → HTTP $CODE"
   fi
@@ -645,7 +645,7 @@ rm -rf /tmp/meta_demo
 echo "=== Juice Shop 공개 파일 탐색 ==="
 
 # FTP 디렉토리 (Juice Shop의 알려진 취약 경로)
-curl -s http://10.20.30.80:3000/ftp/ 2>/dev/null | python3 -c "
+curl -s http://10.20.40.81:3000/ftp/ 2>/dev/null | python3 -c "
 import sys
 content = sys.stdin.read()
 if content:
@@ -665,7 +665,7 @@ else:
 echo ""
 echo "=== HTTP 헤더에서 메타데이터 수집 ==="
 # 서버 응답 헤더 자체도 메타데이터
-for target in "10.20.30.80:80" "10.20.30.80:3000" "10.20.30.1:8002" "10.20.30.100:8002"; do
+for target in "10.20.32.80:80" "10.20.40.81:3000" "10.20.30.1:8002" "10.20.30.100:8002"; do
   echo "--- $target ---"
   curl -sI "http://$target/" 2>/dev/null | grep -iE "server:|x-powered|x-frame|content-security|x-request-id|etag" || echo "  정보 없음"
 done
@@ -697,7 +697,7 @@ nmap -sn 10.20.30.0/24 2>/dev/null | grep "report\|Host is"
 
 echo ""
 echo "[2] 서비스 매핑"
-for host in 10.20.30.1 10.20.30.80 10.20.30.100 10.20.30.201; do
+for host in 10.20.30.1 10.20.32.80 10.20.30.100 10.20.30.201; do
   echo "--- $host ---"
   nmap -sV --open -p 22,80,443,3000,8002,9200,5601 "$host" 2>/dev/null | grep "open" || echo "  스캔 결과 없음"
 done
@@ -705,7 +705,7 @@ done
 echo ""
 echo "[3] 기술 스택 요약"
 echo "  secu (10.20.30.1): nftables 방화벽, Suricata IPS"
-echo "  web (10.20.30.80): Apache/Nginx, Juice Shop (Node.js), SubAgent"
+echo "  web (10.20.32.80): Apache/Nginx, Juice Shop (Node.js), SubAgent"
 echo "  siem (10.20.30.100): Wazuh 4.11.2, SubAgent"
 echo "  bastion (10.20.30.201): Python FastAPI, PostgreSQL, Bastion"
 
@@ -808,8 +808,8 @@ theHarvester, Maltego, recon-ng 세 도구를 비교하는 보고서를 작성�
 
 **UI / CLI 요점**
 
-- `nmap -sV -p- 10.20.30.80` — 전 포트 + 버전
-- `nmap --script=http-enum 10.20.30.80` — 웹 디렉토리 열거
+- `nmap -sV -p- 10.20.32.80` — 전 포트 + 버전
+- `nmap --script=http-enum 10.20.32.80` — 웹 디렉토리 열거
 - `nmap -sn 10.20.30.0/24` — 호스트 발견(핑 스윕)
 
 > **해석 팁.** IPS가 있는 환경에서 T4 이상은 빠르게 탐지된다. `-T2`로 느리게 + `--max-retries 1`로 재전송 최소화하면 우회 확률↑.

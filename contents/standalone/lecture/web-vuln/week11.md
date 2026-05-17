@@ -126,12 +126,12 @@ test_err() {
   local has_dbms=$(echo "$body" | grep -ciE "sqlite|mysql|postgres|sequelize" | head -1)
   printf "%-25s stack:%s path:%s dbms:%s\n" "$name" "$has_stack" "$has_path" "$has_dbms"
 }
-test_err "404 (없는 경로)"      "curl -s 'http://10.20.30.80:3000/nonexistent_xyz123'"
-test_err "타입 에러 /api/x/abc"  "curl -s 'http://10.20.30.80:3000/api/Products/abc'"
-test_err "SQL 에러 (q=')"        "curl -s \"http://10.20.30.80:3000/rest/products/search?q=%27\""
-test_err "빈 JSON body"          "curl -s -X POST http://10.20.30.80:3000/rest/user/login -H 'Content-Type: application/json' -d '{}'"
-test_err "잘못된 Content-Type"   "curl -s -X POST http://10.20.30.80:3000/rest/user/login -H 'Content-Type: text/plain' -d 'not json'"
-test_err "매우 긴 입력 (10K)"    "curl -s \"http://10.20.30.80:3000/rest/products/search?q=\$(python3 -c 'print(\"A\"*10000)')\""
+test_err "404 (없는 경로)"      "curl -s 'http://10.20.40.81:3000/nonexistent_xyz123'"
+test_err "타입 에러 /api/x/abc"  "curl -s 'http://10.20.40.81:3000/api/Products/abc'"
+test_err "SQL 에러 (q=')"        "curl -s \"http://10.20.40.81:3000/rest/products/search?q=%27\""
+test_err "빈 JSON body"          "curl -s -X POST http://10.20.40.81:3000/rest/user/login -H 'Content-Type: application/json' -d '{}'"
+test_err "잘못된 Content-Type"   "curl -s -X POST http://10.20.40.81:3000/rest/user/login -H 'Content-Type: text/plain' -d 'not json'"
+test_err "매우 긴 입력 (10K)"    "curl -s \"http://10.20.40.81:3000/rest/products/search?q=\$(python3 -c 'print(\"A\"*10000)')\""
 ```
 
 **예상 출력**:
@@ -163,7 +163,7 @@ SQL 에러 (q=')            stack:1 path:0 dbms:1
 
 ```bash
 # 에러 응답에서 민감 정보 추출
-curl -s "http://10.20.30.80:3000/rest/products/search?q='" | python3 -c "  # silent 모드
+curl -s "http://10.20.40.81:3000/rest/products/search?q='" | python3 -c "  # silent 모드
 import sys, json
 
 data = sys.stdin.read()
@@ -217,8 +217,8 @@ compare_404() {
   echo "  code=$code size=${size}B / version_leak_lines=$version_leak"
   echo "  body 첫 줄: $(head -1 /tmp/404.html | head -c 80)"
 }
-compare_404 "JuiceShop" "http://10.20.30.80:3000"
-compare_404 "Apache+ModSec" "http://10.20.30.80:80"
+compare_404 "JuiceShop" "http://10.20.40.81:3000"
+compare_404 "Apache+ModSec" "http://10.20.32.80:80"
 compare_404 "Wazuh" "https://10.20.30.100:443"
 compare_404 "OpenCTI" "http://10.20.30.100:8080"
 ```
@@ -271,7 +271,7 @@ PATHS=(
 )
 hits=0
 for path in "${PATHS[@]}"; do
-  read code size < <(curl -s -o /dev/null -w "%{http_code} %{size_download}" "http://10.20.30.80:3000/$path")
+  read code size < <(curl -s -o /dev/null -w "%{http_code} %{size_download}" "http://10.20.40.81:3000/$path")
   if [ "$code" != "404" ]; then
     echo "[$code ${size}B] /$path"
     [ "$code" = "200" ] && hits=$((hits+1))
@@ -304,10 +304,10 @@ echo "노출 endpoint: $hits 건"
 
 ```bash
 echo "=== /metrics 내용 분석 (Prometheus format) ==="
-curl -s http://10.20.30.80:3000/metrics | head -30
+curl -s http://10.20.40.81:3000/metrics | head -30
 echo "---"
 echo "=== 메트릭에서 추출 가능한 민감 정보 ==="
-M=$(curl -s http://10.20.30.80:3000/metrics)
+M=$(curl -s http://10.20.40.81:3000/metrics)
 echo "  Node.js 버전: $(echo "$M" | grep -oE 'nodejs_version_info\{version="[^"]+"' | head -1)"
 echo "  메모리 사용량: $(echo "$M" | grep -oE 'process_resident_memory_bytes [0-9.e+]+' | head -1)"
 echo "  CPU 시간: $(echo "$M" | grep -oE 'process_cpu_seconds_total [0-9.]+' | head -1)"
@@ -345,14 +345,14 @@ nodejs_version_info{version="v18.16.1",major="18",minor="16",patch="1"} 1
 ```bash
 # Angular 앱의 소스맵(.map) 파일이 노출되는지 확인
 # 소스맵이 있으면 프론트엔드 원본 소스 코드를 복원할 수 있음
-MAIN_JS=$(curl -s http://10.20.30.80:3000 | grep -oE 'src="[^"]*main[^"]*\.js"' | head -1 | sed 's/src="//;s/"//')
+MAIN_JS=$(curl -s http://10.20.40.81:3000 | grep -oE 'src="[^"]*main[^"]*\.js"' | head -1 | sed 's/src="//;s/"//')
 if [ -n "$MAIN_JS" ]; then
   echo "JS 파일: $MAIN_JS"
-  code=$(curl -s -o /dev/null -w "%{http_code}" "http://10.20.30.80:3000/${MAIN_JS}.map")
+  code=$(curl -s -o /dev/null -w "%{http_code}" "http://10.20.40.81:3000/${MAIN_JS}.map")
   echo "소스맵 ($MAIN_JS.map): HTTP $code"
   if [ "$code" = "200" ]; then
     echo "소스맵 노출됨! 소스 코드 복원 가능"
-    curl -s "http://10.20.30.80:3000/${MAIN_JS}.map" | python3 -c "  # silent 모드
+    curl -s "http://10.20.40.81:3000/${MAIN_JS}.map" | python3 -c "  # silent 모드
 import sys, json
 data = json.load(sys.stdin)
 sources = data.get('sources', [])
@@ -389,10 +389,10 @@ test_listing() {
 }
 printf "%-12s %-20s %-6s %-6s %-3s %s\n" "server" "dir" "code" "size" "ah" "verdict"
 for d in "/" "/ftp" "/ftp/" "/assets" "/assets/public" "/encryptionkeys"; do
-  test_listing "JuiceShop" "http://10.20.30.80:3000" "$d"
+  test_listing "JuiceShop" "http://10.20.40.81:3000" "$d"
 done
 for d in "/" "/icons/" "/manual/" "/cgi-bin/"; do
-  test_listing "Apache" "http://10.20.30.80:80" "$d"
+  test_listing "Apache" "http://10.20.32.80:80" "$d"
 done
 ```
 
@@ -425,7 +425,7 @@ Apache       /cgi-bin/            403    89     0
 ```bash
 # /ftp 디렉터리의 파일 목록과 내용 확인
 echo "=== /ftp 파일 목록 ==="
-curl -s http://10.20.30.80:3000/ftp/ | python3 -c "    # silent 모드
+curl -s http://10.20.40.81:3000/ftp/ | python3 -c "    # silent 모드
 import sys, json
 try:
     data = json.load(sys.stdin)
@@ -447,7 +447,7 @@ echo ""
 echo "=== 주요 파일 내용 ==="
 for file in "legal.md" "acquisitions.md" "package.json.bak" "coupons_2013.md.bak" "eastere.gg"; do  # 반복문 시작
   echo "--- $file ---"
-  curl -s "http://10.20.30.80:3000/ftp/$file" 2>/dev/null | head -5  # silent 모드
+  curl -s "http://10.20.40.81:3000/ftp/$file" 2>/dev/null | head -5  # silent 모드
   echo ""
 done
 ```
@@ -481,12 +481,12 @@ test_enum() {
   printf "  %-30s %-5sms %s\n" "$label" "$ms" "$msg"
 }
 echo "[1] 로그인 endpoint:"
-test_enum "존재 admin + wrong" '{"email":"admin@juice-sh.op","password":"wrong"}' "http://10.20.30.80:3000/rest/user/login"
-test_enum "미존재 + wrong"     '{"email":"nobody@nowhere.com","password":"wrong"}' "http://10.20.30.80:3000/rest/user/login"
+test_enum "존재 admin + wrong" '{"email":"admin@juice-sh.op","password":"wrong"}' "http://10.20.40.81:3000/rest/user/login"
+test_enum "미존재 + wrong"     '{"email":"nobody@nowhere.com","password":"wrong"}' "http://10.20.40.81:3000/rest/user/login"
 echo ""
 echo "[2] 회원가입 endpoint:"
-test_enum "존재 admin"          '{"email":"admin@juice-sh.op","password":"Test1234!","passwordRepeat":"Test1234!","securityQuestion":{"id":1},"securityAnswer":"a"}' "http://10.20.30.80:3000/api/Users/"
-test_enum "신규 brand_new_xyz"  '{"email":"brand_new_xyz999@test.com","password":"Test1234!","passwordRepeat":"Test1234!","securityQuestion":{"id":1},"securityAnswer":"a"}' "http://10.20.30.80:3000/api/Users/"
+test_enum "존재 admin"          '{"email":"admin@juice-sh.op","password":"Test1234!","passwordRepeat":"Test1234!","securityQuestion":{"id":1},"securityAnswer":"a"}' "http://10.20.40.81:3000/api/Users/"
+test_enum "신규 brand_new_xyz"  '{"email":"brand_new_xyz999@test.com","password":"Test1234!","passwordRepeat":"Test1234!","securityQuestion":{"id":1},"securityAnswer":"a"}' "http://10.20.40.81:3000/api/Users/"
 ```
 
 **예상 출력**:
@@ -516,13 +516,13 @@ test_enum "신규 brand_new_xyz"  '{"email":"brand_new_xyz999@test.com","passwor
 echo ""
 echo "=== 회원가입 열거 ==="
 echo "존재하는 이메일:"
-curl -s -X POST http://10.20.30.80:3000/api/Users/ \
+curl -s -X POST http://10.20.40.81:3000/api/Users/ \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@juice-sh.op","password":"Test1234!","passwordRepeat":"Test1234!","securityQuestion":{"id":1},"securityAnswer":"a"}' | python3 -c "import sys; data=sys.stdin.read(); print(data[:150])" 2>/dev/null  # 요청 데이터(body)
 
 echo ""
 echo "새 이메일:"
-curl -s -X POST http://10.20.30.80:3000/api/Users/ \
+curl -s -X POST http://10.20.40.81:3000/api/Users/ \
   -H "Content-Type: application/json" \
   -d '{"email":"brand_new_user@test.com","password":"Test1234!","passwordRepeat":"Test1234!","securityQuestion":{"id":1},"securityAnswer":"a"}' | python3 -c "import sys; data=sys.stdin.read(); print(data[:150])" 2>/dev/null  # 요청 데이터(body)
 ```
@@ -534,13 +534,13 @@ curl -s -X POST http://10.20.30.80:3000/api/Users/ \
 echo ""
 echo "=== 비밀번호 재설정 열거 ==="
 echo "존재하는 이메일:"
-curl -s -X POST http://10.20.30.80:3000/rest/user/reset-password \
+curl -s -X POST http://10.20.40.81:3000/rest/user/reset-password \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@juice-sh.op","answer":"wrong","new":"Test1234!","repeat":"Test1234!"}' | head -3  # 요청 데이터(body)
 
 echo ""
 echo "미존재 이메일:"
-curl -s -X POST http://10.20.30.80:3000/rest/user/reset-password \
+curl -s -X POST http://10.20.40.81:3000/rest/user/reset-password \
   -H "Content-Type: application/json" \
   -d '{"email":"nobody@test.com","answer":"wrong","new":"Test1234!","repeat":"Test1234!"}' | head -3  # 요청 데이터(body)
 ```
@@ -554,7 +554,7 @@ curl -s -X POST http://10.20.30.80:3000/rest/user/reset-password \
 python3 << 'PYEOF'                                     # Python 스크립트 실행
 import requests, json
 
-BASE = "http://10.20.30.80:3000"
+BASE = "http://10.20.40.81:3000"
 findings = []
 
 print("=" * 60)
@@ -650,7 +650,7 @@ PYEOF
 
 ### Burp Suite Community
 > **역할:** 웹 프록시 기반 수동/반자동 취약점 점검 도구  
-> **실행 위치:** `작업 PC → web (10.20.30.80:3000)`  
+> **실행 위치:** `작업 PC → web (10.20.40.81:3000)`  
 > **접속/호출:** GUI `burpsuite`, CA 인증서 신뢰 필요 (`http://burp`)
 
 **주요 경로·파일**

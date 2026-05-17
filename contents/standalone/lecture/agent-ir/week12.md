@@ -312,9 +312,9 @@ flowchart TB
 import requests, time, logging, sys
 
 SCENARIOS = [
-    {"name": "normal_get", "url": "http://10.20.30.80/",
+    {"name": "normal_get", "url": "http://10.20.32.80/",
      "headers": {"User-Agent": "Mozilla/5.0 ..."}},
-    {"name": "api_health", "url": "http://10.20.30.80/api/health",
+    {"name": "api_health", "url": "http://10.20.32.80/api/health",
      "headers": {"Authorization": "Bearer ${CANARY_TOKEN}"}},
     # SSH scenario은 paramiko·fabric로 별도
 ]

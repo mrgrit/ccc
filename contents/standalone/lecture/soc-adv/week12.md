@@ -98,13 +98,13 @@ graph TB
 
 [Suricata EVE JSON]
 {"timestamp":"2026-04-04T10:15:23.456+0900","event_type":"alert",
- "src_ip":"10.20.30.201","dest_ip":"10.20.30.80","alert":{"signature":"ET SCAN"}}
+ "src_ip":"10.20.30.201","dest_ip":"10.20.32.80","alert":{"signature":"ET SCAN"}}
 
 [auth.log]
 Apr  4 10:15:23 web sshd[12345]: Failed password for root from 10.20.30.201 port 54321
 
 [nftables log]
-Apr  4 10:15:23 secu kernel: nft_log: IN=eth0 SRC=10.20.30.201 DST=10.20.30.80 PROTO=TCP DPT=80
+Apr  4 10:15:23 secu kernel: nft_log: IN=eth0 SRC=10.20.30.201 DST=10.20.32.80 PROTO=TCP DPT=80
 
 → 4개의 서로 다른 포맷을 통일된 구조로 정규화해야 함
 ```
@@ -129,7 +129,7 @@ Apr  4 10:15:23 secu kernel: nft_log: IN=eth0 SRC=10.20.30.201 DST=10.20.30.80 P
 | 필드 | 설명 | 예시 |
 |------|------|------|
 | `srcip` | 출발지 IP | 10.20.30.201 |
-| `dstip` | 목적지 IP | 10.20.30.80 |
+| `dstip` | 목적지 IP | 10.20.32.80 |
 | `srcuser` | 사용자명 | root |
 | `dstuser` | 대상 사용자 | admin |
 | `srcport` | 출발지 포트 | 54321 |
@@ -304,7 +304,7 @@ echo 'bastion-manager: user=admin method=POST path=/projects status=201 ip=10.20
 
 echo ""
 echo "=== nftables 로그 테스트 ==="
-echo 'nft_log: IN=eth0 SRC=203.0.113.50 DST=10.20.30.80 LEN=60 PROTO=TCP SPT=54321 DPT=80' | \
+echo 'nft_log: IN=eth0 SRC=203.0.113.50 DST=10.20.32.80 LEN=60 PROTO=TCP SPT=54321 DPT=80' | \
   sudo /var/ossec/bin/wazuh-logtest -q 2>/dev/null | tail -15
 
 echo ""
@@ -470,7 +470,7 @@ curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute-plan" \
         "order": 2,
         "instruction_prompt": "du -sh /var/log/ 2>/dev/null && ls /var/log/*.log 2>/dev/null | wc -l && echo LOG_AUDIT_DONE",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 3,
@@ -663,7 +663,7 @@ template(name="JsonFormat" type="list") {
 }
 
 # 5. 소스 IP 기반 필터링
-if $fromhost-ip == '10.20.30.80' then /var/log/web_server.log
+if $fromhost-ip == '10.20.32.80' then /var/log/web_server.log
 
 # 6. Wazuh로 전달
 *.* @@10.20.30.100:1514   # TCP 전달
@@ -813,7 +813,7 @@ ecs_events = [
         "@timestamp": "2026-04-04T10:15:23.000+09:00",
         "event": {"category": "authentication", "type": "start", "outcome": "failure"},
         "source": {"ip": "10.20.30.201", "port": 54321},
-        "destination": {"ip": "10.20.30.80"},
+        "destination": {"ip": "10.20.32.80"},
         "user": {"name": "root"},
         "process": {"name": "sshd", "pid": 12345},
         "host": {"name": "web"},
@@ -1029,7 +1029,7 @@ sudo systemctl enable --now auditd
 #### 도구 1: 로그 소스 인벤토리 (Step 1)
 
 ```bash
-for host in 10.20.30.1 10.20.30.80 10.20.30.100 10.20.30.112; do
+for host in 10.20.30.1 10.20.32.80 10.20.30.100 10.20.30.112; do
     echo "=== $host ==="
     ssh ccc@$host '
       ls -la /var/log/ | grep -v "^d" | head -20

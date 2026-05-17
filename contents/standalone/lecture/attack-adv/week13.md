@@ -241,7 +241,7 @@ class IMDSHandler(http.server.BaseHTTPRequestHandler):
             "/latest/meta-data/": "ami-id\nhostname\ninstance-id\niam/\nlocal-ipv4",
             "/latest/meta-data/hostname": "web-server-prod-01",
             "/latest/meta-data/instance-id": "i-0123456789abcdef0",
-            "/latest/meta-data/local-ipv4": "10.20.30.80",
+            "/latest/meta-data/local-ipv4": "10.20.32.80",
             "/latest/meta-data/iam/security-credentials/": "EC2-S3-ReadWrite",
             "/latest/meta-data/iam/security-credentials/EC2-S3-ReadWrite": json.dumps({
                 "Code": "Success",

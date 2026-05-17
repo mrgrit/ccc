@@ -555,7 +555,7 @@ grep -E "^(PermitRootLogin|PasswordAuthentication|Port|MaxAuthTries|Protocol|X11
 반복문으로 여러 대상에 대해 일괄 작업을 수행합니다.
 
 ```bash
-for host in 10.20.30.1 10.20.30.80 10.20.30.100; do    # 반복문 시작
+for host in 10.20.30.1 10.20.32.80 10.20.30.100; do    # 반복문 시작
   echo "=== $host SSH 설정 ==="
   ssh ccc@$host \
     "grep -E '^(PermitRootLogin|PasswordAuthentication|Port|MaxAuthTries)' /etc/ssh/sshd_config 2>/dev/null || echo '설정 확인 불가'"
@@ -612,7 +612,7 @@ ls /etc/logrotate.d/
 반복문으로 여러 대상에 대해 일괄 작업을 수행합니다.
 
 ```bash
-for host in "localhost" "10.20.30.1" "10.20.30.80" "10.20.30.100"; do  # 반복문 시작
+for host in "localhost" "10.20.30.1" "10.20.32.80" "10.20.30.100"; do  # 반복문 시작
   echo "=== $host 로그 상태 ==="
   if [ "$host" = "localhost" ]; then
     ls -lh /var/log/syslog /var/log/auth.log 2>/dev/null | awk '{print $5, $9}'
@@ -680,7 +680,7 @@ echo "--- bastion ---"
 grep "^PASS_MAX_DAYS" /etc/login.defs                  # 패턴 검색
 grep "^PASS_MIN_LEN" /etc/login.defs                   # 패턴 검색
 
-for host in 10.20.30.1 10.20.30.80 10.20.30.100; do    # 반복문 시작
+for host in 10.20.30.1 10.20.32.80 10.20.30.100; do    # 반복문 시작
   echo "--- $host ---"
   ssh ccc@$host \
     "grep '^PASS_MAX_DAYS\|^PASS_MIN_LEN' /etc/login.defs" 2>/dev/null
@@ -691,7 +691,7 @@ echo "[2] SSH PermitRootLogin 점검"
 echo "--- bastion ---"
 grep "^PermitRootLogin" /etc/ssh/sshd_config 2>/dev/null || echo "미설정(기본값)"  # 패턴 검색
 
-for host in 10.20.30.1 10.20.30.80 10.20.30.100; do    # 반복문 시작
+for host in 10.20.30.1 10.20.32.80 10.20.30.100; do    # 반복문 시작
   echo "--- $host ---"
   ssh ccc@$host \
     "grep '^PermitRootLogin' /etc/ssh/sshd_config 2>/dev/null || echo '미설정(기본값)'" 2>/dev/null

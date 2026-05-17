@@ -929,7 +929,7 @@ def check_agent_action(user, tool, args, estimated_cost):
 allowed, reason = check_agent_action(
     user={"role": "soc_analyst", "budget_remaining": 1.5, "rate_limit": 10, "recent_calls": 3},
     tool="block_ip",
-    args={"target": "10.20.30.80"},
+    args={"target": "10.20.32.80"},
     estimated_cost=0.01
 )
 if not allowed:

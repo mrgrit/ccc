@@ -623,7 +623,7 @@ bash /tmp/detect_rootkit.sh
 
 echo ""
 echo "=== 원격 서버 점검 ==="
-for server in "ccc@10.20.30.1" "ccc@10.20.30.80"; do
+for server in "ccc@10.20.30.1" "ccc@10.20.32.80"; do
     echo ""
     echo "--- $server ---"
     sshpass -p1 ssh -o ConnectTimeout=5 "$server" 'bash -s' < /tmp/detect_rootkit.sh 2>/dev/null | \
@@ -737,7 +737,7 @@ curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute-plan" \
         "order": 1,
         "instruction_prompt": "ls -la /proc/*/exe 2>/dev/null | grep -c \"deleted\" && echo DELETED_CHECK",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 2,
@@ -1347,7 +1347,7 @@ cat > /tmp/memory_forensics_report.txt << 'EOF'
 === Memory Forensics Report — IR-2026-Q2-001 ===
 
 ## 1. Acquisition
-- Tool: LiME 1.9 / Target: web (10.20.30.80) / Time: 2026-05-02 14:00:30
+- Tool: LiME 1.9 / Target: web (10.20.32.80) / Time: 2026-05-02 14:00:30
 - File: /var/log/forensics/mem.lime (8.0 GB) / SHA256: 029a5cefb1...
 - CoC: /var/log/forensics/coc-mem-2026-05-02.txt
 
@@ -1363,7 +1363,7 @@ cat > /tmp/memory_forensics_report.txt << 'EOF'
 - Volatility psscan: 1 추가 PID — pslist 에 없음 (unlinked task)
 
 ## 5. Network (suspicious outbound)
-- 10.20.30.80:34567 → 192.168.1.50:4444 (PID 5678 bash, ESTABLISHED)
+- 10.20.32.80:34567 → 192.168.1.50:4444 (PID 5678 bash, ESTABLISHED)
 
 ## 6. Memory Maps + Strings
 - PID 5678 RWX 익명 매핑: 2 (shellcode 의심)

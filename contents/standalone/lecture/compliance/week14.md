@@ -208,7 +208,7 @@ echo "저장 위치: $EVIDENCE_DIR"
 
 # 1. 서버 인벤토리 (A.5.9)
 echo "=== [A.5.9] 자산 인벤토리 수집 ==="
-for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do  # 반복문 시작
+for ip in 10.20.30.201 10.20.30.1 10.20.32.80 10.20.30.100; do  # 반복문 시작
   ssh $srv  # srv=user@ip (아래 루프 참고) "
     echo '=== 서버 정보 ==='
     hostname
@@ -225,13 +225,13 @@ done
 
 # 2. SSH 설정 (A.8.5)
 echo "=== [A.8.5] SSH 설정 수집 ==="
-for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do  # 반복문 시작
+for ip in 10.20.30.201 10.20.30.1 10.20.32.80 10.20.30.100; do  # 반복문 시작
   ssh $srv  # srv=user@ip (아래 루프 참고) "cat /etc/ssh/sshd_config" 2>/dev/null > "$EVIDENCE_DIR/sshd_config_${ip}.txt"
 done
 
 # 3. 사용자 계정 (A.8.2)
 echo "=== [A.8.2] 계정 정보 수집 ==="
-for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do  # 반복문 시작
+for ip in 10.20.30.201 10.20.30.1 10.20.32.80 10.20.30.100; do  # 반복문 시작
   ssh $srv  # srv=user@ip (아래 루프 참고) "
     echo '=== 사용자 목록 ==='
     cat /etc/passwd                                    # 설정 파일 조회
@@ -264,13 +264,13 @@ ssh 6v6-siem "tail -50 /var/ossec/logs/alerts/alerts.json" 2>/dev/null > "$EVIDE
 
 # 7. NTP 설정 (A.8.17)
 echo "=== [A.8.17] NTP 설정 수집 ==="
-for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do  # 반복문 시작
+for ip in 10.20.30.201 10.20.30.1 10.20.32.80 10.20.30.100; do  # 반복문 시작
   ssh $srv  # srv=user@ip (아래 루프 참고) "timedatectl" 2>/dev/null > "$EVIDENCE_DIR/ntp_${ip}.txt"
 done
 
 # 8. 패치 현황 (A.8.8)
 echo "=== [A.8.8] 패치 현황 수집 ==="
-for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do  # 반복문 시작
+for ip in 10.20.30.201 10.20.30.1 10.20.32.80 10.20.30.100; do  # 반복문 시작
   ssh $srv  # srv=user@ip (아래 루프 참고) "apt list --upgradable 2>/dev/null" > "$EVIDENCE_DIR/patches_${ip}.txt"
 done
 

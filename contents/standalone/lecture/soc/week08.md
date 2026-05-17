@@ -102,7 +102,7 @@
 # 실행하여 결과를 분석할 것
 
 # 각 서버별 SSH 실패 횟수
-for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.100"; do
+for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.32.80" "ccc@10.20.30.100"; do
   echo "=== $srv ==="
   echo -n "실패: "
   ssh $srv  # srv=user@ip (아래 루프 참고) "grep -c 'Failed password' /var/log/auth.log 2>/dev/null || echo 0"
@@ -130,13 +130,13 @@ ssh 6v6-bastion "grep 'Failed password' /var/log/auth.log 2>/dev/null | \
 
 ```bash
 # sudo 사용 이력 분석
-for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do
+for ip in 10.20.30.201 10.20.30.1 10.20.32.80 10.20.30.100; do
   echo "=== $ip: sudo 이력 ==="
   ssh $srv  # srv=user@ip (아래 루프 참고) "grep 'COMMAND=' /var/log/auth.log 2>/dev/null | tail -5"
 done
 
 # 비인가 sudo 시도
-for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.100"; do
+for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.32.80" "ccc@10.20.30.100"; do
   echo "=== $srv ==="
   ssh $srv  # srv=user@ip (아래 루프 참고) "grep 'NOT in sudoers' /var/log/auth.log 2>/dev/null"
 done
@@ -150,7 +150,7 @@ done
 
 ```bash
 # syslog에서 이상 징후 검색
-for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.100"; do
+for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.32.80" "ccc@10.20.30.100"; do
   echo "=== $srv ==="
   ssh $srv  # srv=user@ip (아래 루프 참고) "grep -iE 'error|fail|critical|emergency|segfault|oom' /var/log/syslog 2>/dev/null | wc -l"
 done
@@ -336,7 +336,7 @@ level: (low/medium/high/critical)
 
 ```bash
 # 서버 접속 확인
-for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do  # 반복문 시작
+for ip in 10.20.30.201 10.20.30.1 10.20.32.80 10.20.30.100; do  # 반복문 시작
   ssh $srv "hostname" 2>/dev/null \
     && echo "$ip: OK" || echo "$ip: FAIL"
 done

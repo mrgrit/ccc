@@ -135,7 +135,7 @@
 
 ```bash
 # 각 서버의 로그 파일 확인
-for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do
+for ip in 10.20.30.201 10.20.30.1 10.20.32.80 10.20.30.100; do
   echo "========== $ip =========="
   ssh $srv  # srv=user@ip (아래 루프 참고) "ls -lh /var/log/syslog /var/log/auth.log /var/log/kern.log 2>/dev/null"
 done
@@ -315,7 +315,7 @@ Linux Audit System은 **커널 수준**에서 시스템 호출(syscall)을 감�
 
 ```bash
 # auditd 설치 여부 확인
-for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.100"; do
+for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.32.80" "ccc@10.20.30.100"; do
   echo "=== $srv ==="
   ssh $srv  # srv=user@ip (아래 루프 참고) "systemctl is-active auditd 2>/dev/null || echo 'auditd 미설치'"
   ssh $srv  # srv=user@ip (아래 루프 참고) "which auditctl 2>/dev/null || echo 'auditctl 없음'"
@@ -401,7 +401,7 @@ sshpass -p1 ssh ccc@$IP "tail -5 /var/log/dpkg.log 2>/dev/null || echo '  dpkg �
 
 ```bash
 # 모든 서버에서 로그 요약 수집
-for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do
+for ip in 10.20.30.201 10.20.30.1 10.20.32.80 10.20.30.100; do
   echo "========== $ip =========="
   echo -n "SSH 실패: "
   ssh $srv  # srv=user@ip (아래 루프 참고) "grep -c 'Failed password' /var/log/auth.log 2>/dev/null || echo '0'"

@@ -264,7 +264,7 @@ curl -s http://10.20.30.1:8002/health
 
 ```bash
 # SubAgent 상태 확인 (web 서버)
-curl -s http://10.20.30.80:8002/health
+curl -s http://10.20.32.80:8002/health
 # 예상: SubAgent의 상태 정보 반환
 ```
 
@@ -341,7 +341,7 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
         "order": 3,
         "instruction_prompt": "hostname && uptime && cat /etc/os-release | head -3",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 4,
@@ -386,7 +386,7 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/dispatch \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "command": "curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000",
-    "subagent_url": "http://10.20.30.80:8002"
+    "subagent_url": "http://10.20.32.80:8002"
   }' | python3 -m json.tool
 # JuiceShop 웹서버의 HTTP 응답 코드가 반환된다 (200이면 정상)
 ```

@@ -375,7 +375,7 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/dispatch \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "command": "tail -20 /var/log/auth.log 2>/dev/null || tail -20 /var/log/secure 2>/dev/null || echo no-log-found",
-    "subagent_url": "http://10.20.30.80:8002"
+    "subagent_url": "http://10.20.32.80:8002"
   }' | python3 -m json.tool
 # web 서버의 최근 인증 로그 20줄이 반환된다
 ```
@@ -391,7 +391,7 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
         "order": 1,
         "instruction_prompt": "tail -20 /var/log/auth.log 2>/dev/null || echo no-auth-log",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 2,

@@ -169,7 +169,7 @@
 
 ```bash
 # 정책 4.2: root 직접 로그인 금지 — 현재 설정 확인
-for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.100"; do
+for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.32.80" "ccc@10.20.30.100"; do
   echo "=== $srv ==="
   ssh $srv  # srv=user@ip (아래 루프 참고) "grep '^PermitRootLogin' /etc/ssh/sshd_config || echo 'PermitRootLogin: 기본값'"
 done
@@ -350,7 +350,7 @@ ssh 6v6-bastion "cat /etc/logrotate.conf 2>/dev/null | grep -E 'rotate|weekly|mo
 반복문으로 여러 대상에 대해 일괄 작업을 수행합니다.
 
 ```bash
-for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do  # 반복문 시작
+for ip in 10.20.30.201 10.20.30.1 10.20.32.80 10.20.30.100; do  # 반복문 시작
   echo "=== $ip: 패치 현황 ==="
   ssh $srv  # srv=user@ip (아래 루프 참고) "apt list --upgradable 2>/dev/null | head -5"
   echo "보안 패치:"
@@ -597,7 +597,7 @@ EOF
 # 출력: STRIDE 자동 매핑 + 위협 트리
 
 # 4) nuclei — 신호 정확도 높은 스캔
-nuclei -u http://10.20.30.80 -severity critical,high -j > /tmp/nuclei.json
+nuclei -u http://10.20.32.80 -severity critical,high -j > /tmp/nuclei.json
 jq '.["template-id"]' /tmp/nuclei.json | sort | uniq -c
 
 # 5) DefectDojo — 위험 추적

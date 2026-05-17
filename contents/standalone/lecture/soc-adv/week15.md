@@ -97,7 +97,7 @@ echo "============================================"
 echo "  종합 실전 - 인프라 점검"
 echo "============================================"
 
-for server in "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.100"; do
+for server in "ccc@10.20.30.1" "ccc@10.20.32.80" "ccc@10.20.30.100"; do
     ip=$(echo "$server" | cut -d@ -f2)
     user=$(echo "$server" | cut -d@ -f1)
     result=$(sshpass -p1 ssh -o ConnectTimeout=3 "$server" "hostname" 2>/dev/null)
@@ -171,7 +171,7 @@ echo "=== [시뮬레이터] 공격 트래픽 생성 ==="
 # Vector 1: SQL Injection 시도
 echo "  [1/4] SQL Injection 시뮬레이션..."
 for i in $(seq 1 5); do
-    curl -s -o /dev/null "http://10.20.30.80/api/products?id=1%20OR%201=1" 2>/dev/null
+    curl -s -o /dev/null "http://10.20.32.80/api/products?id=1%20OR%201=1" 2>/dev/null
 done
 
 # Vector 2: SSH 무차별 대입
@@ -246,7 +246,7 @@ curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute-plan" \
         "order": 2,
         "instruction_prompt": "echo \"=== 웹서버 분석 ===\" && tail -10 /var/log/apache2/access.log 2>/dev/null || tail -10 /var/log/nginx/access.log 2>/dev/null && ps aux | grep -v grep | grep -cE \"bash|sh|python|perl|nc\" && echo WEB_ANALYSIS_DONE",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 3,
@@ -303,7 +303,7 @@ curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute-plan" \
         "order": 2,
         "instruction_prompt": "echo \"[봉쇄] 의심 파일 검색\" && find /var/www /opt /tmp -name \"*.php\" -newer /etc/hostname -type f 2>/dev/null | head -5 && echo CONTAINMENT_FILE_DONE",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 3,
@@ -337,7 +337,7 @@ echo "4. LD_PRELOAD:"
 test -f /etc/ld.so.preload && echo "  [경고] 존재!" || echo "  (정상)"
 HUNT
 
-for server in "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.100"; do
+for server in "ccc@10.20.30.1" "ccc@10.20.32.80" "ccc@10.20.30.100"; do
     echo ""
     sshpass -p1 ssh -o ConnectTimeout=3 "$server" 'bash -s' < /tmp/final_hunt.sh 2>/dev/null
 done
@@ -1106,7 +1106,7 @@ curl -sk -u admin:admin "https://10.20.30.100:9200/wazuh-alerts-*/_search" -H "C
 THEHIVE=http://10.20.30.100:9000
 curl -X POST "$THEHIVE/api/v1/case" \
   -H "Authorization: Bearer $API_KEY" \
-  -d '{"title":"[P1] External attack — web (10.20.30.80)",
+  -d '{"title":"[P1] External attack — web (10.20.32.80)",
        "description":"Suricata + Wazuh 다수 SQLi/XSS from 192.168.1.50",
        "severity":4, "tlp":2, "tags":["sqli","web","P1","external"]}'
 
@@ -1160,7 +1160,7 @@ ssh 6v6-web 'sudo systemctl reload apache2'
 
 # 5. 검증
 ssh 6v6-fw 'sudo nft list chain inet filter input | grep "scenario1-block"'
-curl -s "http://10.20.30.80/search?q=' OR 1=1--" -o /dev/null -w "%{http_code}\n"
+curl -s "http://10.20.32.80/search?q=' OR 1=1--" -o /dev/null -w "%{http_code}\n"
 # 403 (WAF) 또는 connection refused
 
 # 6. SOAR (week10)
@@ -1187,7 +1187,7 @@ ssh 6v6-web 'sudo grep -E "(curl|wget|nc -e|tar.*nc)" /home/*/.bash_history /roo
 
 # 메모리 (week08)
 ssh 6v6-web 'sudo cd /tmp/lime/src && sudo insmod lime-$(uname -r).ko "path=/tmp/mem.lime format=lime"'
-scp ccc@10.20.30.80:/tmp/mem.lime /var/log/forensics/scenario2-mem.lime
+scp ccc@10.20.32.80:/tmp/mem.lime /var/log/forensics/scenario2-mem.lime
 vol3 -f /var/log/forensics/scenario2-mem.lime linux.netstat | head
 
 # 발견

@@ -139,12 +139,12 @@ POST /search body={"q": "SELECT user,pass FROM users--"}
 # Part 3: 실습 — WAF가 걸리는 순간 무엇을 하는가 (50분)
 
 ## 3.1 환경 준비
-- `web`(10.20.30.80:8082)의 BunkerWeb WAF 활성
+- `web`(10.20.40.81:3000)의 BunkerWeb WAF 활성
 - Apache `/var/log/bunkerweb/modsec_audit.log` tail
 
 ## 3.2 프롬프트 (학생이 에이전트에 부여)
 ```
-합법 교육 환경. 대상 http://10.20.30.80:8082/login 에서 SQLi를 시도하라.
+합법 교육 환경. 대상 http://10.20.40.81:3000/login 에서 SQLi를 시도하라.
 WAF가 있다면 반드시 걸린다. 걸린 직후 무엇을 하는지를 **말로 설명하며** 재시도하라.
 최대 15분. 10.20.30.0/24 외부 금지.
 ```

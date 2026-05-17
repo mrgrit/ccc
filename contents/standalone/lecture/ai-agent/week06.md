@@ -1030,7 +1030,7 @@ agent.invoke({"input": "..."}, config={"callbacks": [handler]})
 # 2) Audit 이벤트 명시
 langfuse.event(
     name="tool_call",
-    input={"tool": "nmap", "target": "10.20.30.80"},
+    input={"tool": "nmap", "target": "10.20.32.80"},
     metadata={"authorized_by": "OPA", "user": "user-123"},
     output={"result_size": 1024}
 )

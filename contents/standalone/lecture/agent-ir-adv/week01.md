@@ -290,7 +290,7 @@ def detect_dep_confusion(ci_network_events):
 내부 미러(devpi)가 *upstream*에서 패키지를 가져오는 것은 정상이다. 구분:
 
 - 정상: `devpi(10.20.30.150)` → `pypi.org`
-- 공격: `CI runner(10.20.30.80)` → `pypi.org`
+- 공격: `CI runner(10.20.32.80)` → `pypi.org`
 
 *직접 연결*이 공격 지문.
 

@@ -215,7 +215,7 @@ ssh 6v6-siem "echo | openssl s_client -connect localhost:443 2>/dev/null | grep 
 
 ```bash
 # 개인정보가 포함될 수 있는 로그 파일의 접근 권한
-for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.100"; do
+for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.32.80" "ccc@10.20.30.100"; do
   echo "=== $srv ==="
   ssh $srv  # srv=user@ip (아래 루프 참고) "ls -la /var/log/auth.log /var/log/syslog 2>/dev/null"
 done
@@ -565,7 +565,7 @@ sudo ssh-audit 127.0.0.1 >> $OUTDIR/2.5-auth.txt
 
 # 2.7 암호 통제
 echo "=== 2.7 암호 통제 ===" > $OUTDIR/2.7-crypto.txt
-testssl.sh --severity HIGH https://10.20.30.80:443 >> $OUTDIR/2.7-crypto.txt 2>&1
+testssl.sh --severity HIGH https://10.20.32.80:443 >> $OUTDIR/2.7-crypto.txt 2>&1
 sudo lynis audit system --tests-from-category crypto >> $OUTDIR/2.7-crypto.txt
 
 # 2.9 시스템 운영관리

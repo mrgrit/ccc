@@ -239,7 +239,7 @@ trivy fs --scanners secret /path/to/project
 
 ## 5. 실습: web 서버에서 이미지 보안 점검
 
-실습 환경: `web` 서버 (10.20.30.80)
+실습 환경: `web` 서버 (10.20.32.80)
 
 ### 실습 1: JuiceShop 이미지 취약점 스캔
 

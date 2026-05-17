@@ -316,7 +316,7 @@ curl -s http://localhost:8003/v1/chat/completions \
 echo "=== Blue Team: 즉시 대응 ==="
 
 echo "--- [1] 공격 IP 차단 (시뮬레이션) ---"
-echo "  nft add rule inet filter input ip saddr 10.20.30.80 tcp dport 22 drop"
+echo "  nft add rule inet filter input ip saddr 10.20.32.80 tcp dport 22 drop"
 
 echo "--- [2] WAF 룰 강화 (시뮬레이션) ---"
 echo "  SecRule ARGS \"@rx (?i)(union.*select|or.*1.*=.*1)\" \"deny,status:403\""

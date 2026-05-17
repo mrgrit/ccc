@@ -200,7 +200,7 @@ flowchart TB
 ```
 
 ## 3.4 검증
-- `curl http://10.20.30.80/admin-portal` → Wazuh rule 100300 발동 확인
+- `curl http://10.20.32.80/admin-portal` → Wazuh rule 100300 발동 확인
 - 정상 사용자는 접근 방법 없음 → FP=0
 
 ### 3.4.1 허니토큰 *재관측* 룰

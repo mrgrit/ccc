@@ -1069,7 +1069,7 @@ async def main():
             # 4) Tool 호출
             result = await session.call_tool(
                 "nmap_scan",
-                {"target": "10.20.30.80", "ports": "1-1000"}
+                {"target": "10.20.32.80", "ports": "1-1000"}
             )
             print(result.content[0].text)
 
@@ -1099,7 +1099,7 @@ tools = [{
 
 response = client.chat.completions.create(
     model="llama3.1:8b",
-    messages=[{"role": "user", "content": "10.20.30.80 점검"}],
+    messages=[{"role": "user", "content": "10.20.32.80 점검"}],
     tools=tools
 )
 
@@ -1113,7 +1113,7 @@ if response.choices[0].message.tool_calls:
         response2 = client.chat.completions.create(
             model="llama3.1:8b",
             messages=[
-                {"role": "user", "content": "10.20.30.80 점검"},
+                {"role": "user", "content": "10.20.32.80 점검"},
                 response.choices[0].message,
                 {"role": "tool", "tool_call_id": tool_call.id, "content": result}
             ]
@@ -1171,7 +1171,7 @@ prompt = PromptTemplate.from_template(template)
 agent = create_react_agent(llm, [nmap_scan, wazuh_alerts, opa_decide], prompt)
 executor = AgentExecutor(agent=agent, tools=[nmap_scan, wazuh_alerts, opa_decide], verbose=True)
 
-result = executor.invoke({"input": "10.20.30.80 점검 후 Wazuh 알람 확인 + OPA 결정"})
+result = executor.invoke({"input": "10.20.32.80 점검 후 Wazuh 알람 확인 + OPA 결정"})
 ```
 
 ### 표준 MCP server 카탈로그 (학생 활용)

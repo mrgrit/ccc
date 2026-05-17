@@ -426,7 +426,7 @@ if __name__ == "__main__":
     )
 
     exp2 = mgr.add_experience(
-        agent_id="http://10.20.30.80:8002",
+        agent_id="http://10.20.32.80:8002",
         category="incident",
         title="JuiceShop 응답 지연 원인 분석",
         content="JuiceShop :3000 포트 응답 시간이 5초 이상으로 증가. "
@@ -1087,7 +1087,7 @@ async def main():
     
     handle = await client.start_workflow(
         PentestWorkflow.run,
-        args=[["10.20.30.80", "10.20.30.100"]],
+        args=[["10.20.32.80", "10.20.30.100"]],
         id=f"pentest-{datetime.now().isoformat()}",
         task_queue="pentest-queue"
     )

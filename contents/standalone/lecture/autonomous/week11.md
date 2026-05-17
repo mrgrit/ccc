@@ -152,7 +152,7 @@ curl -s -X POST $MGR/projects/$PID/execute-plan \
         "order": 2,
         "instruction_prompt": "journalctl --since \"1 hour ago\" --no-pager -p warning 2>/dev/null | tail -30 || echo no-warnings",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 3,
@@ -301,7 +301,7 @@ curl -s -X POST $MGR/projects/$CYCLE_PID/execute-plan \
         "order": 2,
         "instruction_prompt": "echo \"[COLLECT] web - $(date)\"; journalctl --since \"5 min ago\" --no-pager -p err 2>/dev/null | tail -10 || echo clean",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 3,

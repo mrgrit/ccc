@@ -150,9 +150,9 @@ ssh 6v6-siem
 
 ```bash
 # 각 서버에서 실행
-for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do  # 반복문 시작
+for ip in 10.20.30.201 10.20.30.1 10.20.32.80 10.20.30.100; do  # 반복문 시작
   # 서버별 사용자 매핑
-  case $ip in 10.20.30.201) srv="bastion@$ip";; 10.20.30.1) srv="secu@$ip";; 10.20.30.80) srv="web@$ip";; 10.20.30.100) srv="siem@$ip";; esac
+  case $ip in 10.20.30.201) srv="bastion@$ip";; 10.20.30.1) srv="secu@$ip";; 10.20.32.80) srv="web@$ip";; 10.20.30.100) srv="siem@$ip";; esac
   echo "= $ip =========="
 
   echo "[1] 일반 사용자 계정 목록:"
@@ -171,9 +171,9 @@ done
 반복문으로 여러 대상에 대해 일괄 작업을 수행합니다.
 
 ```bash
-for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do  # 반복문 시작
+for ip in 10.20.30.201 10.20.30.1 10.20.32.80 10.20.30.100; do  # 반복문 시작
   # 서버별 사용자 매핑
-  case $ip in 10.20.30.201) srv="bastion@$ip";; 10.20.30.1) srv="secu@$ip";; 10.20.30.80) srv="web@$ip";; 10.20.30.100) srv="siem@$ip";; esac
+  case $ip in 10.20.30.201) srv="bastion@$ip";; 10.20.30.1) srv="secu@$ip";; 10.20.32.80) srv="web@$ip";; 10.20.30.100) srv="siem@$ip";; esac
   echo "= $ip =========="
 
   echo "[4] 비밀번호 정책:"
@@ -192,9 +192,9 @@ done
 반복문으로 여러 대상에 대해 일괄 작업을 수행합니다.
 
 ```bash
-for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do  # 반복문 시작
+for ip in 10.20.30.201 10.20.30.1 10.20.32.80 10.20.30.100; do  # 반복문 시작
   # 서버별 사용자 매핑
-  case $ip in 10.20.30.201) srv="bastion@$ip";; 10.20.30.1) srv="secu@$ip";; 10.20.30.80) srv="web@$ip";; 10.20.30.100) srv="siem@$ip";; esac
+  case $ip in 10.20.30.201) srv="bastion@$ip";; 10.20.30.1) srv="secu@$ip";; 10.20.32.80) srv="web@$ip";; 10.20.30.100) srv="siem@$ip";; esac
   echo "= $ip =========="
 
   echo "[7] syslog 서비스:"
@@ -219,7 +219,7 @@ echo "[11] 방화벽 기본 정책:"
 ssh 6v6-fw "sudo nft list ruleset 2>/dev/null | grep policy"  # 비밀번호 자동입력 SSH
 
 echo "[12] 열린 포트:"
-for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do  # 반복문 시작
+for ip in 10.20.30.201 10.20.30.1 10.20.32.80 10.20.30.100; do  # 반복문 시작
   echo "--- $ip ---"
   ssh $srv "ss -tlnp 2>/dev/null | grep LISTEN"  # 비밀번호 자동입력 SSH
 done
@@ -244,9 +244,9 @@ ssh 6v6-bastion "ssh -V 2>&1"     # 비밀번호 자동입력 SSH
 반복문으로 여러 대상에 대해 일괄 작업을 수행합니다.
 
 ```bash
-for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do  # 반복문 시작
+for ip in 10.20.30.201 10.20.30.1 10.20.32.80 10.20.30.100; do  # 반복문 시작
   # 서버별 사용자 매핑
-  case $ip in 10.20.30.201) srv="bastion@$ip";; 10.20.30.1) srv="secu@$ip";; 10.20.30.80) srv="web@$ip";; 10.20.30.100) srv="siem@$ip";; esac
+  case $ip in 10.20.30.201) srv="bastion@$ip";; 10.20.30.1) srv="secu@$ip";; 10.20.32.80) srv="web@$ip";; 10.20.30.100) srv="siem@$ip";; esac
   echo "= $ip =========="
 
   echo "[16] 커널 보안 파라미터:"
@@ -344,7 +344,7 @@ done
 
 ```bash
 # 서버 접속 확인
-for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do  # 반복문 시작
+for ip in 10.20.30.201 10.20.30.1 10.20.32.80 10.20.30.100; do  # 반복문 시작
   ssh $srv "hostname" 2>/dev/null \
     && echo "$ip: OK" || echo "$ip: FAIL"
 done

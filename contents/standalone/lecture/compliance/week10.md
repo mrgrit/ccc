@@ -132,7 +132,7 @@
 
 ```bash
 # 하드웨어 자산 정보 수집
-for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do  # 반복문 시작
+for ip in 10.20.30.201 10.20.30.1 10.20.32.80 10.20.30.100; do  # 반복문 시작
   echo "========== $ip =========="
   ssh $srv  # srv=user@ip (아래 루프 참고) "
     echo '[호스트명]' && hostname
@@ -147,7 +147,7 @@ done
 
 ```bash
 # 소프트웨어 자산 수집
-for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do
+for ip in 10.20.30.201 10.20.30.1 10.20.32.80 10.20.30.100; do
   echo "========== $ip: 실행 서비스 =========="
   ssh $srv  # srv=user@ip (아래 루프 참고) "systemctl list-units --type=service --state=running --no-pager | grep -v 'loaded units' | tail -n +2 | head -15"
 done
@@ -155,7 +155,7 @@ done
 
 ```bash
 # 네트워크 자산 (열린 포트 = 서비스)
-for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do
+for ip in 10.20.30.201 10.20.30.1 10.20.32.80 10.20.30.100; do
   echo "========== $ip: 열린 포트 =========="
   ssh $srv  # srv=user@ip (아래 루프 참고) "ss -tlnp 2>/dev/null | grep LISTEN"
 done
@@ -332,7 +332,7 @@ ssh 6v6-bastion "sysctl net.ipv4.conf.all.accept_redirects 2>/dev/null"
 
 ```bash
 # 1단계: 자산 확인
-for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.100"; do  # 반복문 시작
+for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.32.80" "ccc@10.20.30.100"; do  # 반복문 시작
   echo "=== $srv ==="
   ssh $srv  # srv=user@ip (아래 루프 참고) "hostname; ss -tlnp 2>/dev/null | grep LISTEN | wc -l; echo '서비스 수'"
 done
@@ -346,7 +346,7 @@ ssh 6v6-fw "wc -l /var/log/suricata/fast.log 2>/dev/null"  # 비밀번호 자동
 
 # 3단계: 취약점 확인
 echo "=== 미패치 현황 ==="
-for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do  # 반복문 시작
+for ip in 10.20.30.201 10.20.30.1 10.20.32.80 10.20.30.100; do  # 반복문 시작
   echo "$ip: $(ssh $srv  # srv=user@ip (아래 루프 참고) 'apt list --upgradable 2>/dev/null | wc -l') 패키지"
 done
 ```

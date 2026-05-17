@@ -181,7 +181,7 @@ curl -s -X POST $MGR/projects/$PID/execute-plan \
         "order": 2,
         "instruction_prompt": "ss -tlnp | head -20",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 3,
@@ -271,7 +271,7 @@ curl -s -X POST $MGR/projects/$PID2/dispatch \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "command": "ss -tlnp | grep LISTEN | awk \"{print \\$4}\" | sort -u",
-    "subagent_url": "http://10.20.30.80:8002"
+    "subagent_url": "http://10.20.32.80:8002"
   }' | python3 -m json.tool
 # web 서버의 열린 포트 목록을 수집한다
 ```
@@ -299,7 +299,7 @@ curl -s -X POST $MGR/projects/$PID2/dispatch \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "command": "curl -sI http://localhost:3000 | head -10 && echo --- && curl -sI http://localhost:80 | head -10",
-    "subagent_url": "http://10.20.30.80:8002"
+    "subagent_url": "http://10.20.32.80:8002"
   }' | python3 -m json.tool
 # 1단계에서 발견된 포트 3000(JuiceShop)과 80(Apache)의 HTTP 헤더를 확인한다
 ```
@@ -325,7 +325,7 @@ curl -s -X POST $MGR/projects/$PID2/completion-report \
     "summary": "web 서버 포트 스캔 → 서비스 식별 완료",
     "outcome": "success",
     "work_details": [
-      "web(10.20.30.80) 열린 포트: 22, 80, 3000",
+      "web(10.20.32.80) 열린 포트: 22, 80, 3000",
       "포트 3000: OWASP JuiceShop (Express)",
       "포트 80: Apache httpd",
       "Auto-Promote: 서비스 식별 결과를 Experience DB에 저장"
@@ -712,7 +712,7 @@ async def main():
     # 3) Recon agent — publishing
     recon_data = {
         "type": "host_discovered",
-        "host": "10.20.30.80",
+        "host": "10.20.32.80",
         "ports": [22, 80, 443, 3000],
         "timestamp": "2026-05-02T10:00:00Z"
     }

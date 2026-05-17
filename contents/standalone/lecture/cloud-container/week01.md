@@ -256,7 +256,7 @@ Docker는 컨테이너 간 통신을 위해 여러 네트워크 드라이버를 
 ### 4.2 Bridge 네트워크 구조
 
 ```
-[호스트: web 서버 (10.20.30.80)]
+[호스트: web 서버 (10.20.32.80)]
 
   Container1 (172.17.0.2)
   Container2 (172.17.0.3)
@@ -264,7 +264,7 @@ Docker는 컨테이너 간 통신을 위해 여러 네트워크 드라이버를 
        |
   docker0 bridge (172.17.0.1)
        |
-  eth0 (호스트) 10.20.30.80
+  eth0 (호스트) 10.20.32.80
 ```
 
 ### 4.3 보안 관점에서의 Docker 네트워킹
@@ -281,7 +281,7 @@ Docker는 컨테이너 간 통신을 위해 여러 네트워크 드라이버를 
 ### 실습 환경 안내
 
 우리 실습 인프라에서 Docker를 사용하는 서버는 다음과 같다:
-- **web (10.20.30.80)**: Apache+ModSecurity WAF + JuiceShop이 Docker로 실행 중
+- **web (10.20.32.80)**: Apache+ModSecurity WAF + JuiceShop이 Docker로 실행 중
 - **siem (10.20.30.100)**: OpenCTI 및 관련 서비스가 Docker Compose로 실행 중
 
 ### 실습 5.1: web 서버 Docker 확인

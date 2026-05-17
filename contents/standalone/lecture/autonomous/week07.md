@@ -338,7 +338,7 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 ```bash
 # 다른 에이전트의 추천
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:9100/rl/recommend?agent_id=http://10.20.30.80:8002&risk_level=medium" \
+  "http://localhost:9100/rl/recommend?agent_id=http://10.20.32.80:8002&risk_level=medium" \
   | python3 -m json.tool
 ```
 
@@ -394,13 +394,13 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
         "order": 4,
         "instruction_prompt": "hostname && uptime",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 5,
         "instruction_prompt": "curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000",
         "risk_level": "medium",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 6,

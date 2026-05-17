@@ -189,7 +189,7 @@ curl -s -X POST $MGR/projects/$PID/execute-plan \
         "order": 2,
         "instruction_prompt": "echo \"medium-risk task on web\" && curl -sI http://localhost:3000 | head -5",
         "risk_level": "medium",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 3,
@@ -331,13 +331,13 @@ curl -s -X POST $MGR/projects/$AGG_PID/execute-plan \
         "order": 1,
         "instruction_prompt": "echo \"aggressive: service probe\" && ss -tlnp | head -20",
         "risk_level": "medium",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 2,
         "instruction_prompt": "echo \"aggressive: vuln check\" && curl -s http://localhost:3000/api/SecurityQuestions | head -20 2>/dev/null || echo check-done",
         "risk_level": "high",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       }
     ],
     "subagent_url": "http://localhost:8002"
@@ -411,7 +411,7 @@ curl -s -X POST $MGR/projects/$MORE_PID/execute-plan \
         "order": 2,
         "instruction_prompt": "echo rl-data-2 && free -m | head -2",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 3,
@@ -438,7 +438,7 @@ curl -s "$MGR/rl/recommend?agent_id=http://10.20.30.1:8002&risk_level=low" \
 
 echo "=== web 추천 ==="
 # web SubAgent의 최적 risk_level 추천
-curl -s "$MGR/rl/recommend?agent_id=http://10.20.30.80:8002&risk_level=medium" \
+curl -s "$MGR/rl/recommend?agent_id=http://10.20.32.80:8002&risk_level=medium" \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 
 echo "=== siem 추천 ==="
@@ -510,7 +510,7 @@ headers = {'X-API-Key': KEY}
 # 각 SubAgent에 대해 모든 risk_level의 추천을 조회
 agents = [
     ('secu', 'http://10.20.30.1:8002'),
-    ('web', 'http://10.20.30.80:8002'),
+    ('web', 'http://10.20.32.80:8002'),
     ('siem', 'http://10.20.30.100:8002'),
 ]
 

@@ -968,7 +968,7 @@ graph LR
 |------|---------------------|----------------------|---------------------|-----------|--------------|
 | **① ICMP flood** | `hping3 --icmp --flood 10.20.30.1` | `nft monitor` 의 drop count 폭증 | `nft list counter icmp` 의 byte 통계 | 4-tuple set 의 timeout 짧으면 재공격 우회 | set timeout 60s → 300s, src IP dynamic set 의 element 보관 |
 | **② SYN flood** | `hping3 -S --flood -p 80 10.20.30.1` | `nft monitor` 의 forward chain drop | `conntrack -L` 의 SYN_SENT 다수, kern.log 의 'nft-fw-syn:' prefix | rate limit 만 의 보호 = burst 통과, fragmented packet 미차단 | `tcp flags syn limit rate over 100/second` + frag drop |
-| **③ forwarded 우회** | `nmap -sS -p- 10.20.30.80 --source-port 53` | `nft monitor trace forward` 의 rule 평가 | `nft list ruleset` 의 forward chain default policy 확인 | policy accept 면 명시 룰 없는 통신 통과 | forward chain `policy drop` + 명시 룰 명세 (whitelist) |
+| **③ forwarded 우회** | `nmap -sS -p- 10.20.32.80 --source-port 53` | `nft monitor trace forward` 의 rule 평가 | `nft list ruleset` 의 forward chain default policy 확인 | policy accept 면 명시 룰 없는 통신 통과 | forward chain `policy drop` + 명시 룰 명세 (whitelist) |
 
 ### 9.6.3 R/B/P 시간선 (1 사건 의 분 단위 흐름)
 

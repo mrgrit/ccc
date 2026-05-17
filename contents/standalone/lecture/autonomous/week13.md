@@ -104,7 +104,7 @@
 | SubAgent | 도메인 | Experience 예시 |
 |----------|--------|----------------|
 | secu (10.20.30.1) | 방화벽/IPS | nftables 규칙 패턴, Suricata 시그니처 |
-| web (10.20.30.80) | 웹 보안 | XSS/SQLi 패턴, WAF 규칙, JuiceShop 취약점 |
+| web (10.20.32.80) | 웹 보안 | XSS/SQLi 패턴, WAF 규칙, JuiceShop 취약점 |
 | siem (10.20.30.100) | SIEM/관제 | Wazuh 경보 패턴, 인시던트 대응 절차 |
 
 ### 2.2 SubAgent별 Experience 축적 실습
@@ -159,7 +159,7 @@ curl -s -X POST $MGR/projects/$PID/execute-plan \
         "order": 2,
         "instruction_prompt": "echo \"=== web Experience: Web Security Knowledge ===\"; curl -s http://localhost:3000/api/SecurityQuestions 2>/dev/null | python3 -c \"import sys,json; print(f\\\"Security items: {len(json.load(sys.stdin).get(\\\\\\\"data\\\\\\\", []))}\\\")\" 2>/dev/null || echo web-check-done",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 3,
@@ -177,7 +177,7 @@ curl -s -X POST $MGR/projects/$PID/execute-plan \
 
 ```bash
 # 4. 각 SubAgent의 PoW 블록 현황 조회
-for AGENT in "http://10.20.30.1:8002" "http://10.20.30.80:8002" "http://10.20.30.100:8002"; do
+for AGENT in "http://10.20.30.1:8002" "http://10.20.32.80:8002" "http://10.20.30.100:8002"; do
   echo "=== $AGENT ==="
   # 각 SubAgent의 PoW 블록 수 확인
   curl -s "$MGR/pow/blocks?agent_id=$AGENT" \
@@ -230,7 +230,7 @@ curl -s -X POST $MGR/projects/$PID/dispatch \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "command": "echo \"{\\\"source\\\": \\\"web\\\", \\\"type\\\": \\\"web_security_knowledge\\\", \\\"content\\\": \\\"JuiceShop SQLi endpoint: /rest/products/search?q= - parameterized query required\\\", \\\"timestamp\\\": \\\"$(date -Iseconds)\\\"}\"",
-    "subagent_url": "http://10.20.30.80:8002"
+    "subagent_url": "http://10.20.32.80:8002"
   }' | python3 -m json.tool
 # web SubAgent의 웹 보안 지식을 수집한다
 ```
@@ -318,7 +318,7 @@ print(f'  tampered: {data.get(\"tampered\", [])}')
 
 ```bash
 # 2. web SubAgent의 PoW 체인 검증
-curl -s "$MGR/pow/verify?agent_id=http://10.20.30.80:8002" \
+curl -s "$MGR/pow/verify?agent_id=http://10.20.32.80:8002" \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
@@ -372,7 +372,7 @@ KEY = 'ccc-api-key-2026'
 headers = {'X-API-Key': KEY}
 agents = [
     ('secu', 'http://10.20.30.1:8002'),
-    ('web', 'http://10.20.30.80:8002'),
+    ('web', 'http://10.20.32.80:8002'),
     ('siem', 'http://10.20.30.100:8002'),
 ]
 
@@ -467,7 +467,7 @@ curl -s -X POST $MGR/projects/$CONFLICT_PID/execute-plan \
         "order": 2,
         "instruction_prompt": "echo \"{\\\"agent\\\": \\\"web\\\", \\\"topic\\\": \\\"ssh_policy\\\", \\\"recommendation\\\": \\\"SSH 포트 변경(2222), key-only 인증으로 전환\\\", \\\"confidence\\\": 0.7}\"",
         "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
+        "subagent_url": "http://10.20.32.80:8002"
       },
       {
         "order": 3,

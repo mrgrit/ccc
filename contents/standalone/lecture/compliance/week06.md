@@ -133,7 +133,7 @@ ssh 6v6-bastion "ls -la /etc/pam.d/ | head -10"  # 비밀번호 자동입력 SSH
 
 ```bash
 # 서버 인벤토리 확인
-for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.100"; do
+for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.32.80" "ccc@10.20.30.100"; do
   echo "=== $srv ==="
   ssh $srv  # srv=user@ip (아래 루프 참고) "hostname; cat /etc/machine-id; lscpu | grep 'Model name'; free -h | grep Mem"
 done
@@ -143,7 +143,7 @@ done
 
 ```bash
 # sudo 권한 사용자 확인 (주요 직무자)
-for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.100"; do
+for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.32.80" "ccc@10.20.30.100"; do
   echo "=== $srv ==="
   ssh $srv  # srv=user@ip (아래 루프 참고) "getent group sudo 2>/dev/null; getent group wheel 2>/dev/null"
 done
@@ -165,7 +165,7 @@ done
 
 ```bash
 # 점검: 불필요한 계정, 기본 계정, 미사용 계정
-for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do
+for ip in 10.20.30.201 10.20.30.1 10.20.32.80 10.20.30.100; do
   echo "=== $ip: 사용자 계정 ==="
   ssh $srv  # srv=user@ip (아래 루프 참고) "awk -F: '\$3 >= 1000 && \$3 < 65534 {print \$1, \$6, \$7}' /etc/passwd"
   echo "--- 최근 로그인 ---"
@@ -187,7 +187,7 @@ ssh 6v6-bastion "last | head -20"  # 비밀번호 자동입력 SSH
 
 ```bash
 # 비밀번호 정책 점검
-for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do
+for ip in 10.20.30.201 10.20.30.1 10.20.32.80 10.20.30.100; do
   echo "=== $ip: 비밀번호 정책 ==="
   ssh $srv  # srv=user@ip (아래 루프 참고) "grep -E 'PASS_MAX_DAYS|PASS_MIN_DAYS|PASS_MIN_LEN|PASS_WARN_AGE' /etc/login.defs"
   echo "--- pwquality ---"
@@ -226,7 +226,7 @@ ssh 6v6-fw "sudo nft list ruleset 2>/dev/null | grep 'policy'"
 
 ```bash
 # SSH 접근 제한 설정 확인
-for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do
+for ip in 10.20.30.201 10.20.30.1 10.20.32.80 10.20.30.100; do
   echo "=== $ip: SSH 설정 ==="
   ssh $srv  # srv=user@ip (아래 루프 참고) "grep -E 'PermitRootLogin|PasswordAuthentication|MaxAuthTries|AllowUsers|AllowGroups|LoginGraceTime' /etc/ssh/sshd_config | grep -v '^#'"
 done
@@ -236,7 +236,7 @@ done
 
 ```bash
 # 불필요한 서비스 확인
-for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do
+for ip in 10.20.30.201 10.20.30.1 10.20.32.80 10.20.30.100; do
   echo "=== $ip: 불필요 서비스 ==="
   ssh $srv  # srv=user@ip (아래 루프 참고) "systemctl list-units --type=service --state=running --no-pager | grep -E 'cups|avahi|bluetooth|rpcbind|telnet|ftp' || echo '해당 없음'"
 done
@@ -287,7 +287,7 @@ ssh 6v6-siem "systemctl status wazuh-manager 2>/dev/null | head -5"
 
 ```bash
 # 로그 보존 설정
-for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do
+for ip in 10.20.30.201 10.20.30.1 10.20.32.80 10.20.30.100; do
   echo "=== $ip: 로그 보존 ==="
   ssh $srv  # srv=user@ip (아래 루프 참고) "cat /etc/logrotate.conf 2>/dev/null | grep -E 'rotate|weekly|monthly|daily'"
   echo "--- 로그 파일 크기 ---"
@@ -301,7 +301,7 @@ done
 
 ```bash
 # NTP 설정 확인 (로그 시간 정확성)
-for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.100"; do
+for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.32.80" "ccc@10.20.30.100"; do
   echo "=== $srv ==="
   ssh $srv  # srv=user@ip (아래 루프 참고) "timedatectl 2>/dev/null | grep -E 'Time zone|NTP|synchronized'"
 done
@@ -311,7 +311,7 @@ done
 
 ```bash
 # 보안 패치 현황
-for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do
+for ip in 10.20.30.201 10.20.30.1 10.20.32.80 10.20.30.100; do
   echo "=== $ip: 패치 현황 ==="
   ssh $srv  # srv=user@ip (아래 루프 참고) "apt list --upgradable 2>/dev/null | wc -l"
 done
@@ -321,7 +321,7 @@ done
 
 ```bash
 # Wazuh 에이전트 설치 및 동작 확인
-for ip in 10.20.30.201 10.20.30.1 10.20.30.80; do
+for ip in 10.20.30.201 10.20.30.1 10.20.32.80; do
   echo "=== $ip: Wazuh Agent ==="
   ssh $srv  # srv=user@ip (아래 루프 참고) "systemctl is-active wazuh-agent 2>/dev/null || echo 'N/A'"
 done
@@ -346,7 +346,7 @@ ssh 6v6-siem "tail -5 /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -
 ```bash
 #!/bin/bash
 # ISMS-P 핵심 20개 항목 자동 점검 스크립트
-SERVERS="10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100"
+SERVERS="10.20.30.201 10.20.30.1 10.20.32.80 10.20.30.100"
 
 echo "=========================================="
 echo " ISMS-P 핵심 점검 실행: $(date)"
@@ -609,7 +609,7 @@ sudo cryptsetup luksDump /dev/sda3                        # LUKS 활성?
 vault kv get secret/pci/card-storage-key                  # 키 보관 위치
 
 # Req.4 — 전송 암호화
-testssl.sh --severity HIGH https://10.20.30.80:443
+testssl.sh --severity HIGH https://10.20.32.80:443
 # 결과에서 NOT secure 항목 = PCI 위반
 
 # Req.5 — 안티바이러스
@@ -622,9 +622,9 @@ sudo /var/ossec/bin/agent_control -ls                     # 모든 agent 상태
 sudo aureport --auth -i | head -20
 
 # Req.11 — 정기 보안 테스트
-nikto -h http://10.20.30.80 -o /tmp/nikto.txt
-nmap -sV -A 10.20.30.80 -oA /tmp/nmap-pci
-nuclei -u http://10.20.30.80 -severity high,critical
+nikto -h http://10.20.32.80 -o /tmp/nikto.txt
+nmap -sV -A 10.20.32.80 -oA /tmp/nmap-pci
+nuclei -u http://10.20.32.80 -severity high,critical
 ```
 
 ### PCI-DSS 점검 사이클 (분기별)
@@ -635,17 +635,17 @@ sudo oscap xccdf eval --profile pci-dss \
   --report /tmp/pci-q1.html ssg-ubuntu2204-ds.xml
 
 # Phase 2: 외부 스캔 (Req.11.3 — 분기별 ASV scan 모방)
-nmap -sV -p- -sC 10.20.30.80
-nikto -h http://10.20.30.80
+nmap -sV -p- -sC 10.20.32.80
+nikto -h http://10.20.32.80
 # 외부 ASV (Approved Scanning Vendor) 와 동등 OSS 점검
 
 # Phase 3: 내부 vuln scan (Req.11.3.2)
-nuclei -u http://10.20.30.80 -severity high
+nuclei -u http://10.20.32.80 -severity high
 ClamAV scan all servers
 
 # Phase 4: 침투테스트 시뮬레이션 (Req.11.4 — 연 1회 + 변경 후)
 # Course13 attack-advanced 와 연계
-sqlmap -u "http://10.20.30.80/api?id=1" --batch
+sqlmap -u "http://10.20.32.80/api?id=1" --batch
 ```
 
 ### PCI-DSS 미준수 → 자동 시정 흐름

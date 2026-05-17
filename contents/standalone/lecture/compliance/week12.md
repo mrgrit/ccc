@@ -127,7 +127,7 @@
 ```bash
 # 1. SSH 로그인 성공/실패 통계
 echo "=== SSH 로그인 감사 ==="
-for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do  # 반복문 시작
+for ip in 10.20.30.201 10.20.30.1 10.20.32.80 10.20.30.100; do  # 반복문 시작
   echo "--- $ip ---"
   echo -n "성공: "
   ssh $srv  # srv=user@ip (아래 루프 참고) "grep 'Accepted' /var/log/auth.log 2>/dev/null | wc -l"
@@ -146,7 +146,7 @@ ssh 6v6-bastion "grep 'Failed password' /var/log/auth.log 2>/dev/null | \
 
 ```bash
 # 3. sudo 사용 감사
-for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do
+for ip in 10.20.30.201 10.20.30.1 10.20.32.80 10.20.30.100; do
   echo "=== $ip: sudo 사용 이력 ==="
   ssh $srv  # srv=user@ip (아래 루프 참고) "grep 'sudo:' /var/log/auth.log 2>/dev/null | tail -5"
 done
@@ -219,7 +219,7 @@ echo "================================================"
 echo " 보안 설정 감사 보고서 - $(date '+%Y-%m-%d %H:%M')"
 echo "================================================"
 
-SERVERS="10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100"
+SERVERS="10.20.30.201 10.20.30.1 10.20.32.80 10.20.30.100"
 
 for ip in $SERVERS; do                                 # 반복문 시작
   echo ""
