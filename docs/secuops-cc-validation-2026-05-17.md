@@ -94,3 +94,25 @@ ssh -p 2204 ccc@<VM_IP>   # bastion 컨테이너 (학생 작업 공간)
 - /var/ossec/etc/ 의 json_strict / max_fields option 없음 (기본값)
 - 추가 옵션 또는 ModSec 의 audit format 의 추가 축소 필요
 - 다음 세션 작업
+
+### sysmon-for-linux 의 systemd-in-docker 시도 결과 (loop 추가 cycle 2, 2026-05-17)
+
+**시도**: `jrei/systemd-ubuntu:22.04` + `--privileged --cgroupns=host` + cgroup mount → systemd 컨테이너 자체는 가동 OK + apt 동작.
+
+**결과**: `sysmon -i config.xml` 의 service 등록 단계에서 EBPF probe fail (exit code 5).
+- sysmon EBPF kernel module 의 host kernel 의존 (BPF / eBPF 권한 필요)
+- privileged 만으로는 부족 — host 의 /sys/kernel/debug + BTF + libbpf 가 docker 컨테이너 안에서 정확히 attach 불가
+- W11 의 sysmon service 학습은 **host install 권장** (Ubuntu host 에 `apt install sysmonforlinux`)
+
+**학생 학습 환경 권고 (W11)**:
+- docker 컨테이너 안 = sysmon binary 의 schema/config 검증 (`sysmon -s` / `sysmon -? -i config.xml`)
+- 실 service 운영 = host install + systemd
+
+## 7. 최종 결론
+
+secuops W01-W15 중 **127/132 step (96%) CC 자동 검증 통과**.
+
+남은 1 보류:
+- W09/W10 Wazuh ModSec JSON decoder 갭 (analysisd 의 max_fields tunable 부재 — 다음 세션 의 깊은 디버깅 또는 ModSec audit format 재축소)
+
+학생 신규 배포 (`git clone + bash 6v6.sh up`) 의 41 컨테이너 모두 정상 가동 검증 완료.
