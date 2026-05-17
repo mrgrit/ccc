@@ -22,7 +22,7 @@
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
 | bastion | 10.20.30.201 | 수신 서버 (공격자) / Control Plane | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext (탐지) | `ssh 6v6-fw` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | 방화벽/HAProxy/Suricata ext (탐지) (nftables + HAProxy host-header) | `ssh 6v6-fw` (ProxyJump bastion) |
 | web | 10.20.32.80 | 유출 대상 (피해 서버) | `ssh 6v6-web` |
 | siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
 | attacker | 10.20.30.202 | 공격 출발점 (pen-test 도구) | `ssh 6v6-attacker` |

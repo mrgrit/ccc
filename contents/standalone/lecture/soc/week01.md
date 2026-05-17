@@ -15,7 +15,7 @@
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
 | ips | 10.20.30.x (pipe) | Suricata IDS/IPS | `ssh 6v6-ips` |
 | web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
 | siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
