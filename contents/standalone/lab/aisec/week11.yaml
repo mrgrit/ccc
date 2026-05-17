@@ -251,7 +251,7 @@ steps:
       ## 🔍 결과 해석
 
       - **정상**: 3 회 health 응답 + nodes/anchors 동일 또는 증가
-      - **응답 없음**: Bastion 미가동 또는 네트워크 차단 — `ping 192.168.0.103`
+      - **응답 없음**: Bastion 미가동 또는 네트워크 차단 — `ping 192.168.0.110`
       - **kg.ok == false**: KG 모듈 일부 미로드 — `/kg/health` 추가 호출 로 어떤
         모듈인지 확인
 
@@ -605,7 +605,7 @@ steps:
       # 명확 rule (시스템 의도)
       def rule_classify(alert):
           # rule 1: 학습 환경 attacker VM 은 항상 monitor
-          if alert.get("srcip", "").startswith("192.168.0.112"):
+          if alert.get("srcip", "").startswith("10.20.30.202"):
               return "MONITOR", "rule-attacker-vm"
           # rule 2: level 12+ 즉시 차단
           if alert.get("level", 0) >= 12:
@@ -633,7 +633,7 @@ steps:
       alerts = [
           {"rule_id": 5710, "level": 12, "srcip": "1.2.3.4"},
           {"rule_id": 941100, "level": 5, "srcip": "192.168.0.50"},
-          {"rule_id": 5710, "level": 5, "srcip": "192.168.0.112"},
+          {"rule_id": 5710, "level": 5, "srcip": "10.20.30.202"},
           {"rule_id": 999999, "level": 7, "srcip": "203.0.113.50"},
           {"rule_id": 12345, "level": 3, "srcip": "10.0.0.5"},
       ]
@@ -693,7 +693,7 @@ steps:
       # 명확 rule (시스템 별 의도)
       def rule_classify(alert):
           # rule 1: 학습 환경 의 attacker VM 은 항상 monitor
-          if alert.get("srcip", "").startswith("192.168.0.112"):
+          if alert.get("srcip", "").startswith("10.20.30.202"):
               return "MONITOR", "rule-attacker-vm"
           # rule 2: level 12+ 의 즉시 차단
           if alert.get("level", 0) >= 12:
@@ -705,11 +705,14 @@ steps:
           return None, "ambiguous"
 
       def llm_classify(alert):
-          prompt = f"""다음 alert 의 분류 (BLOCK/MONITOR/IGNORE 의 1 단어):
-
-alert: {json.dumps(alert, ensure_ascii=False)[:400]}
-
-분류:"""
+          alert_json = json.dumps(alert, ensure_ascii=False)[:400]
+          prompt = "\n".join([
+              "다음 alert 의 분류 (BLOCK/MONITOR/IGNORE 의 1 단어):",
+              "",
+              f"alert: {alert_json}",
+              "",
+              "분류:",
+          ])
           cmd = ["curl","-s","-m","20",f"{OLLAMA}/api/generate",
                  "-d",json.dumps({"model":MODEL,"prompt":prompt,"stream":False,
                                   "options":{"num_predict":30,"temperature":0.1}})]
@@ -726,7 +729,7 @@ alert: {json.dumps(alert, ensure_ascii=False)[:400]}
       alerts = [
           {"rule_id": 5710, "level": 12, "srcip": "1.2.3.4"},
           {"rule_id": 941100, "level": 5, "srcip": "192.168.0.50"},
-          {"rule_id": 5710, "level": 5, "srcip": "192.168.0.112"},
+          {"rule_id": 5710, "level": 5, "srcip": "10.20.30.202"},
           {"rule_id": 999999, "level": 7, "srcip": "203.0.113.50"},
           {"rule_id": 12345, "level": 3, "srcip": "10.0.0.5"},
       ]

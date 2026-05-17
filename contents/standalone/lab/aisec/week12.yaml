@@ -105,14 +105,14 @@ steps:
       === 실 명령 예 ===
 
       # active-response manual 실행 (학습 환경 만)
-      sudo /var/ossec/active-response/bin/firewall-drop add 192.168.0.112 600
+      sudo /var/ossec/active-response/bin/firewall-drop add 10.20.30.202 600
 
       # 차단 확인
-      sudo iptables -nL | grep 192.168.0.112
+      sudo iptables -nL | grep 10.20.30.202
 
       # 600 sec 후 자동 해제 확인
       sleep 605
-      sudo iptables -nL | grep 192.168.0.112  # 없어짐
+      sudo iptables -nL | grep 10.20.30.202  # 없어짐
       EOF
     answer_detail: Wazuh active-response 6 단계
     verify:
@@ -165,16 +165,18 @@ steps:
 
       OLLAMA = "http://192.168.0.109:11434"
       MODEL = "gemma3:4b"
-      TARGET = "192.168.0.103 (학습 환경 의 web VM)"
-      ROE = "RoE: 학습 환경 192.168.0.0/24 만, 외부 거부, dry-run 만."
+      TARGET = "10.20.32.80 (6v6 의 web 컨테이너 dmz vhost)"
+      ROE = "RoE: 학습 환경 10.20.30.0/24 + 10.20.32.0/24 + 10.20.40.0/24 만, 외부 거부, dry-run 만."
 
       # 1. Plan
-      plan_prompt = f"""{ROE}
-
-target: {TARGET}
-
-다음 의 정찰 의 3 step 의 plan 을 응답. 각 step 의 명령 + ATT&CK Technique.
-format: '1. <명령> | T<id> <name>'"""
+      plan_prompt = "\n".join([
+          ROE,
+          "",
+          f"target: {TARGET}",
+          "",
+          "다음 의 정찰 의 3 step 의 plan 을 응답. 각 step 의 명령 + ATT&CK Technique.",
+          "format: '1. <명령> | T<id> <name>'",
+      ])
 
       print("=== 1. Plan (LLM 자동 plan) ===")
       cmd = ["curl","-s","-m","30",f"{OLLAMA}/api/generate",
@@ -192,14 +194,14 @@ format: '1. <명령> | T<id> <name>'"""
       print()
       print("=== 2. Execute (dry-run, 실 실행 X) ===")
       execute_steps = [
-          ("nmap -sV -p- 192.168.0.103", "T1595 Active Scanning"),
-          ("whatweb http://192.168.0.103", "T1593 Search Open Websites"),
-          ("nikto -h http://192.168.0.103", "T1190 Exploit Public-Facing"),
+          ("nmap -sV -p- 10.20.32.80", "T1595 Active Scanning"),
+          ("whatweb http://10.20.32.80", "T1593 Search Open Websites"),
+          ("nikto -h http://10.20.32.80", "T1190 Exploit Public-Facing"),
       ]
       for cmd_str, attck in execute_steps:
-          # RoE 검증
+          # RoE 검증 (6v6 의 ext/dmz/int 대역 만 허용)
           import re
-          if not (re.search(r"192\.168\.0\.", cmd_str) or "localhost" in cmd_str):
+          if not (re.search(r"10\.20\.(30|32|40)\.", cmd_str) or "localhost" in cmd_str):
               print(f"  [BLOCKED] {cmd_str[:50]} — RoE 외부 거부")
               continue
           print(f"  [DRY-RUN] {cmd_str}")
@@ -263,17 +265,17 @@ format: '1. <명령> | T<id> <name>'"""
 
       echo ""
       echo "--- [Red] simulated SSH brute (학습 환경 만) ---"
-      echo "  공격자: 192.168.0.112 (attacker VM)"
-      echo "  target: 192.168.0.103 (web)"
+      echo "  공격자: 10.20.30.202 (6v6-attacker)"
+      echo "  target: 10.20.32.80 (6v6-web)"
       echo "  시도: 5 회 ssh failed login"
-      echo "  command (dry-run): hydra -l ccc -P /tmp/wordlist 192.168.0.103 ssh"
+      echo "  command (dry-run): hydra -l ccc -P /tmp/wordlist 10.20.32.80 ssh"
       echo ""
 
       echo "--- [Blue] Wazuh + active-response 응답 ---"
       echo "  rule 5710 trigger (Failed password) × 5 회"
       echo "  rule 5712 trigger (Multiple failed = chain rule)"
       echo "  active-response: firewall-drop 600 sec 적용"
-      echo "  iptables -A INPUT -s 192.168.0.112 -j DROP"
+      echo "  iptables -A INPUT -s 10.20.30.202 -j DROP"
       echo ""
 
       echo "--- [Purple] KG anchor 기록 + 학습 가시화 ---"
