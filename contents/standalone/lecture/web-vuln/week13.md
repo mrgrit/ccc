@@ -13,14 +13,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -788,45 +790,6 @@ ENDSSH
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — 자동화 도구 트래픽 지문)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *자동화 점검 도구 활용* 학습 항목 (nikto·ZAP·Burp 자동 스캔 trace) 과 매핑되는 *동일 src 가 단일 timestamp 에 burst* 패턴 record.
-
-### Case 1: src `100.64.20.230` — 1초 내 30 host × 54 port × 208 events
-
-(앞서 w03 정찰 lecture 와 동일 record — 본 lecture 에선 *자동화 도구의 출력물* 관점에서 재해석)
-
-**해당 record 의 *자동화 도구 추정* 근거**
-
-| 자동화 추정 단서 | 본 record 의 증거 |
-|------------------|-----------------|
-| 동일 timestamp | 모든 208 events 가 `1688960026` (1초) — *사람 손 불가능* |
-| 포트 다양성 (54) | 22·88·1433·5060·5632·8333·9418·31337 등 — nmap 의 `--top-ports 100` 와 유사한 *알려진 서비스 포트 묶음* |
-| host sweep 패턴 | 30개 dst IP 가 *연속 /24 대역* 분포 — masscan / nmap `-sn` 패턴 |
-| outcome 균일 (block/warning) | 차단 응답이 모두 동일 → *공격 도구가 응답 분류로 host 존재 여부 판정* |
-
-### Case 2: 4018건 GET (단일 src `100.64.1.37`) — *정상* 자동화 (proxy)
-
-**비교 의미**: 자동화 트래픽은 *공격* 만 만드는 게 아님 — 정상 GoogleImageProxy 도 동일한 *burst + 단일 UA* 지문을 가짐. 점검 도구 출력물도 이와 구분 어려움.
-
-**해석 — 본 lecture 와의 매핑**
-
-| 자동화 도구 점검 항목 | 본 record 의 시사점 |
-|---------------------|---------------------|
-| **도구 출력물 분석** | nikto/ZAP 보고서를 *위 두 record 와 비교* — 본인 도구 출력의 *지문 회피도* 평가 |
-| **점검 도구 결과 → SIEM 연동** | 본 dataset 처럼 CEF/JSON 표준 출력 사용 시 SIEM 자동 통합 가능. 자체 점검 도구도 동일 표준 출력 권장 |
-| **결과 통합 (False Positive 분리)** | 정상 (GoogleImageProxy) 과 공격 (recon scan) 모두 burst — 점검 도구는 *통계적 분리* (UA·payload·outcome) 로 FP 제거 |
-| **재현성 보장** | 자동화 도구 결과는 *같은 input → 같은 output* — 본 record 처럼 timestamp 보존하면 재현 가능 |
-
-**점검 액션**:
-1. 본인 점검 도구 (Burp/ZAP) 의 출력 형식이 CEF/JSON 표준 따르는지 확인 → 안 따르면 변환 plugin 사용
-2. 동일 점검 시나리오를 *2회 실행* 하여 결과 일치도 측정 (재현성 확보)
-3. 점검 결과의 *false positive 비율* 측정 (정상 트래픽도 일부 alert 발생) → 임계값 조정
-
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (lab week13 — 인증/세션)
 

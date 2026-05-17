@@ -13,14 +13,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -678,45 +680,6 @@ PYEOF
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — HTTP 4xx/5xx 응답 분포)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *에러 처리 / 정보 노출 점검* 학습 항목 (5xx 시 stack trace · 4xx 시 정보 누설) 과 매핑되는 dataset 의 HTTP-status message_type 분포.
-
-### Case 1: HTTP error code 별 dataset 분포
-
-| message_type | 의미 | 건수 |
-|--------------|------|------|
-| **403** Forbidden | 인증/인가 실패 | 522 |
-| **404** Not Found | 자원 부재 | 176 |
-| **410** Gone | 영구 삭제 | 523 |
-| **412** Precondition Failed | 조건부 요청 실패 | 267 |
-| **413** Payload Too Large | 본문 초과 | 292 |
-| **431** Request Header Too Large | 헤더 초과 | 348 |
-| **510** Not Extended | 확장 필요 | 699 |
-| 합계 | — | 2,827 |
-
-### Case 2: 410 Gone — 본 dataset 에서 가장 흔한 4xx (523건)
-
-**원본 의미**: 410 Gone 은 *resource 가 영구히 삭제* 됨. 단순 404 보다 명확 (서버가 이력 보유). dataset 의 410 spike 는 *대량 삭제 후 stale link 따라가는 client* 의미.
-
-**해석 — 본 lecture 와의 매핑**
-
-| 에러 처리 점검 학습 항목 | 본 record 에서의 증거 |
-|------------------------|---------------------|
-| **에러 응답 일관성** | 7 종 4xx/5xx 가 *동시에 발생* — 점검 시 *모든 응답이 동일 template 으로 정보 노출 안 하는지* 확인. 일부만 stack trace 노출 → *불일관 = 정보 누설* |
-| **404 vs 410** | 404 (176) < 410 (523) — 일반적이지 않음. 본 dataset 는 *명시적 410* 사용. 점검 시 조직이 410 을 사용하는지 (→ 좋은 신호: ID enumeration 유리) 또는 일률 404 인지 |
-| **413/431 의 의미** | 큰 payload·header 거부 — 점검 시 *client-side limit 정책* 점검 (DoS 방어) |
-| **510 (699건) 의 비정상성** | 510 Not Extended 는 *드문* 코드. 본 dataset 의 699건 spike 는 *protocol negotiation 강제 시도* 의심 — 점검 시 endpoint 의 protocol fallback 정책 확인 |
-
-**점검 액션**:
-1. 점검 대상의 4xx/5xx 응답 *총 합계* 와 *분포 비율* 측정 → 본 dataset baseline (4xx 2,128건, 510 699건) 과 비교
-2. 동일 endpoint 의 4xx 응답 *body 크기 분산* — 일부만 큰 body (stack trace) 면 *정보 노출* 항목으로 보고
-3. 410 vs 404 사용 비율 → 조직의 *resource lifecycle 정책 명확성* 평가
-
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (lab week11 — SSRF)
 

@@ -13,14 +13,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -634,52 +636,6 @@ check_cookie "Wazuh" "https://10.20.30.100:443"
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — TLS 1.3 + 5061 Crypto event)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *암호화 / 통신 보안 점검* 학습 항목 (TLS 버전·cipher·인증서) 과 매핑되는 dataset 의 *WAF GET 의 app=TLSv1.3* 라벨 + Windows 5061 Crypto operation event.
-
-### Case 1: WAF GET — `app=TLSv1.3` 라벨
-
-**원본 발췌** (앞서 w01 에서 본 동일 GET record 의 TLS 부분):
-
-```text
-... CEF:0|...|WAF|...|GET|5|
-  ... app=TLSv1.3 ...
-  flexString1LUSER-CRED-25456=ProtocolVersion flexString1=ORG-CRED-31206/1.1
-  USER-0010-57562WafResponseType=SERVER
-```
-
-**dataset 의 TLS 분포**
-
-| 항목 | 값 |
-|------|---|
-| 전체 GET 4018건 중 TLSv1.3 라벨 | 다수 (notice 등급) |
-| 5061 Cryptographic operation 건수 | 1,302 (Windows audit) |
-| 5058 Key file operation | 663 |
-| 5059 Key migration operation | 185 |
-
-### Case 2: 5061 Cryptographic operation — Windows-side 키 사용 audit
-
-**원본 의미**: event 5061 은 *암호 키가 사용될 때마다* 기록 (인증·서명·암복호화). 본 dataset 의 1,302건 중 다수가 *winlogbeat 수집 winauth* 서비스 (USER-0010 호스트군).
-
-**해석 — 본 lecture 와의 매핑**
-
-| 암호화/통신 점검 학습 항목 | 본 record 에서의 증거 |
-|--------------------------|---------------------|
-| **TLS version 점검** | WAF log 에 `app=TLSv1.3` 가 *명시* — 점검 시 *TLSv1.0/1.1 잔존 여부* 자동 측정 가능 (vendor log 형식이 일관) |
-| **HTTP/2 vs HTTP/1.1** | `flexString1=HTTP/1.1` 로 protocol version 도 동시 기록 — HTTP/2 미적용 endpoint 자동 추출 가능 |
-| **Cipher 사용 추적** | 5061 record 의 *Algorithm/KeyType* 필드 → 조직 *비표준 cipher* (DES·RC4·MD5) 사용 점검 |
-| **Certificate 만료** | (본 dataset 직접 매핑 없음) — TLS log 와 별도 cert lifecycle 관리 필요. 점검 시 `openssl s_client -connect` 자동화 |
-
-**점검 액션**:
-1. 점검 대상의 모든 endpoint 가 TLSv1.3 (또는 최소 1.2) 사용하는지 — WAF log 의 `app=` 필드 집계로 확인
-2. 5061 의 *Algorithm* 분포 → MD5/SHA1/RSA-1024 사용 endpoint 식별
-3. WAF log 의 `WafResponseType` (SERVER vs CLIENT) 으로 인증서 검증 누락 endpoint 자동 분류
-
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (lab week10 — Command Injection)
 

@@ -13,14 +13,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -766,50 +768,6 @@ done
 - `sqlmap -r req.txt --batch --crawl=2` — Burp 저장 요청 기반 크롤링
 
 > **해석 팁.** `--batch`로 대화형 프롬프트 자동 Y 처리. WAF가 있을 땐 `--tamper=space2comment,between` 조합으로 우회 시도.
-
----
-
-## 실제 사례 (WitFoo Precinct 6 — 점검 도구가 만드는 트래픽 vs 정상 트래픽)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 / ORG-NNNN / HOST-NNNN 으로 익명화됨.
-> 본 lecture *점검 도구 환경 구축* 의 **점검 도구 트래픽이 운영 환경에서 어떻게 보이는지** 비교를 위해 dataset 의 정상 GoogleImageProxy 와 동일 단일 src 의 4018건 GET 통계를 발췌.
-
-### Case 1: 단일 src `100.64.1.37` — 동일 시각 4018건 GET (정상 proxy 패턴)
-
-**메타**
-
-| 항목 | 값 |
-|------|---|
-| src | `100.64.1.37` (정상 proxy 출구) |
-| dst | `10.0.145.98` (보호 대상) |
-| 총 GET 건수 | 4018 (전체 dataset 의 GET 100%) |
-| 시간 분포 | 단일 timestamp window 내 burst |
-| User-Agent 다양성 | `GoogleImageProxy` (단일 정체) |
-| WAF outcome | 200/302 (정상) |
-
-**원본 발췌**: 
-```text
-<190>Jul 26 06:13:46 ... CEF:0|...|WAF|...|GET|5| ...
-  USER-9484USER-CRED-30678Application="USER-7922 (ORG-0407 NT 5.1; rv:11.0) ORG-0492 Firefox/11.0
-                                       (via ggpht.com GoogleImageProxy)"
-  outcome=200 ...
-```
-
-**해석 — 본 lecture 와의 매핑**
-
-| 도구 환경 학습 항목 | 본 record 의 시사점 |
-|--------------------|---------------------|
-| **Burp/ZAP 의 트래픽 지문** | GoogleImageProxy 는 *명시적 UA* 로 정체 노출 — 마찬가지로 Burp 기본 UA `Mozilla/5.0 ... BurpSuite` 도 *명시적*. *기본 설정 = 들킨다* |
-| **점검 도구 isolation** | 정상 proxy 도 단일 src 가 4018건 발생 → 점검 도구 가동 시 동일 burst 가 *오탐* 으로 분류되지 않도록 *사전 화이트리스트* 신청 필요 |
-| **속도 조절 (Throttle)** | 본 record 는 *수 초 burst* — 점검 시 `--scan-delay`·`-T2`·rate-limit 옵션으로 정상 트래픽과 구분되는 burst 회피 |
-
-**환경 구축 액션 아이템**:
-1. 점검 PC 의 IP 를 사전에 SOC·WAF 화이트리스트 등록 (운영 차단 회피)
-2. 점검 도구 UA 를 *기본 그대로 두기* (탐지 룰 검증 목적) vs *위장* (회피 효과 평가) 두 모드로 점검 — 본 dataset 은 *기본 UA 가 그대로 남는다* 는 증거
-
-
-
 
 ---
 

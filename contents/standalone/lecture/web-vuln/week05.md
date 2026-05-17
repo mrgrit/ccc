@@ -13,14 +13,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -726,48 +728,6 @@ cursor.execute("SELECT * FROM users WHERE email=?", (email,))
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — WAF POST 입력 처리 단면)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *SQLi 점검* 학습 항목 (입력값 처리·WAF 차단·세션 cookie 노출) 에 매핑되는 dataset 의 WAF POST 88건 중 대표 record.
-
-### Case 1: WAF POST 1건 — JSESSIONID 노출 + 200 outcome
-
-**원본 발췌**:
-
-```text
-<190>Jul 26 06:24:30 USER-0010-4334 CEF:0|USER-0010-57562|WAF|1220|1000|POST|5|
-  cat=TR dvc=10.208.162.175 src=100.64.1.67 spt=51071 dst=10.0.145.98
-  USER-9484Cookies=JSESSIONID\=9569E23CF0614F9EF9C81DD49E4C5608
-  outcome=200 USER-9484Method=POST in=1173 out=29521
-```
-
-**dataset 의 POST 통계**
-
-| 항목 | 값 |
-|------|---|
-| 총 POST 건수 | 88 (전체 GET 4018 의 2.2%) |
-| 동일 src `100.64.1.67` 의 outcome 분포 | 200 (정상) + 302 (redirect) 혼재 |
-| `USER-9484Cookies=JSESSIONID\=...` | 모든 POST 에 출현 — 세션 토큰이 *log 에 평문 기록* |
-
-**해석 — 본 lecture 와의 매핑**
-
-| SQLi/입력값 점검 학습 항목 | 본 record 에서의 증거 |
-|--------------------------|---------------------|
-| **입력값 검증 layer** | WAF (signature 1220/1000) 가 1차 검증 — 점검 시 *어느 layer 가 어떤 SQLi pattern 을 잡는지* 매핑 표 작성 |
-| **세션 토큰 노출** | `JSESSIONID\=9569E23CF0614F9EF9C81DD49E4C5608` 가 WAF log 에 평문 기록 — *log access 권한 가진 내부 사용자가 세션 hijack 가능* (점검 항목으로 추가) |
-| **POST body in/out 크기** | `in=1173 out=29521` — 입력 1.1KB → 응답 28.8KB. SQLi blind/UNION 시 응답 크기 차이로 *boolean inference* 가능 (timing 외 size 기반 점검) |
-| **outcome=200** | WAF 가 통과시킨 POST → *WAF 룰셋 미커버 패턴* 존재 추정. 점검 시 *룰셋 버전·last_updated* 기록 필수 |
-
-**SQLi 점검 액션**:
-1. WAF audit log 의 cookie 평문 노출 → *log redaction* 점검 항목 추가 (개인정보보호법 위반 소지)
-2. POST body 크기 *baseline 분포* 측정 후 ±3σ 이상 outlier 를 SQLi 후보로 분류
-3. 룰셋 1220/1000 (WAF vendor signature) 의 *SQLi 커버리지* 표 — vendor doc 참조 → 미커버 pattern (예: NoSQL injection·LDAP injection) 별도 점검
-
-
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (lab week05 — 파일 업로드)
 

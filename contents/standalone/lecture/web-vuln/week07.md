@@ -13,14 +13,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -623,51 +625,6 @@ curl -s -o /dev/null -w "  XSS: %{http_code}\n" "http://10.20.30.80:80/?q=<scrip
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — Windows file 객체 접근 audit)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *파일 업로드 / 경로 순회* 점검 → dataset 내 *Windows file 객체 접근 audit* 4656/4658/4663 (총 약 24만 건) 와 매핑.
-
-### Case 1: file handle 요청 4656 + 종료 4658 짝 — audit 추적
-
-**dataset 분포**
-
-| message_type | 의미 | 건수 |
-|--------------|------|------|
-| 4656 | A handle to an object was requested (open) | 79,311 |
-| 4658 | The handle was closed | 158,374 |
-| 4663 | An attempt was made to access an object | 98 |
-| 4690 | An attempt was made to duplicate a handle | 79,254 |
-
-**원본 발췌** (4656 — 객체 핸들 요청, winlogbeat JSON):
-
-```text
-ORG-1657 ::: {
-  "@metadata":{"beat":"winlogbeat","type":"_doc","version":"8.2.2"},
-  "@timestamp":"2024-07-26T11:09:53.506Z",
-  "agent":{"ephemeral_id":"19c04280-a087-...","id":"393e65fd-5766-48fd-...",
-           "name":"USER-0010-0196","type":"winlogbeat"},
-  ... (event_id=4656, ObjectType=File, ObjectName=...)
-}
-```
-
-**해석 — 본 lecture 와의 매핑**
-
-| 파일 업로드/경로 순회 학습 항목 | 본 record 에서의 증거 |
-|-------------------------------|---------------------|
-| **업로드 후 파일 핸들 추적** | 4656 (open) → 4658 (close) 짝으로 *어떤 user 가 어떤 path 에 얼마나 머물렀는지* 측정 가능. 점검 시 web app 의 `move_uploaded_file()` 후속 4656 발생 여부 확인 |
-| **경로 순회 (`../`) 탐지** | ObjectName 필드에 정규화 전 path 가 기록 → 점검 시 `../` 또는 `..%2f` 가 정규화 없이 4656 의 ObjectName 까지 도달하면 *즉시 critical* |
-| **4663 (98건만 존재) 의 의미** | 4663 = "attempt was made to access an object" (실제 access 시도). 본 dataset 에선 *드물게만* 발생 — 정상 운영에선 *4656 → 4658* 가 dominant. 4663 의 *spike* 는 anomaly |
-| **handle duplicate 4690 (79,254건)** | handle 복제 → *두 process 가 동일 file* 로 *권한 escalation* 가능. 점검 시 web 프로세스의 4690 발생 여부 확인 (정상 web app 은 거의 발생 X) |
-
-**점검 액션**:
-1. 업로드 디렉토리에 auditd / Windows audit policy 활성 → 4656/4658/4663 모두 기록 → 점검 도구가 *path traversal payload* 시도 시 ObjectName 에 `../` 도달 여부 확인
-2. dataset 의 4663:4656 비율 (98:79,311 = 0.12%) 을 *baseline* 으로 — 점검 환경에서 0.12% 이상이면 *이상 access*
-3. 4690 (handle duplicate) 가 *web user* (IIS·Apache 실행 계정) 에서 발생 → web 프로세스 권한 escalation 시도 의심
-
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (lab week07 — SSRF)
 

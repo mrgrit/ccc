@@ -13,14 +13,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -779,50 +781,6 @@ ENDSSH
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — 보고서가 정량 인용해야 할 dataset 통계)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *취약점 점검 보고서 작성법* 학습 항목 (정량 근거·재현·증적 보존) 과 매핑되는 dataset 의 *전체 라벨 분포* 통계.
-
-### Case 1: 보고서 §통계 절에 인용 가능한 정량값
-
-| dataset 메타 | 값 |
-|--------------|---|
-| 총 signal records | **2,070,923** |
-| 총 incident graph nodes | 30,092 |
-| 총 incident graph edges | 595,618 |
-| label 분포 | benign **390,851** / suspicious **44,681** / malicious **160,086** |
-| 노드 type | HOST 28,633 / CRED 1,429 / SERVICE 5 / FILE 3 / ACTOR 1 |
-| edge type | EVENT 40,816 / AUDIT_EVENT 368,019 / NETWORK_FLOW 149,909 / DNS 2,512 / INCIDENT_LINK 34,362 |
-| 익명화 방식 | 4-layer (regex + format-parse + ML/NER + Claude review) |
-| IP 치환 | RFC5737 TEST-NET (외부) + remapped RFC1918 (내부) |
-| 식별자 치환 | ORG-NNNN / HOST-NNNN / USER-NNNN / CRED-NNNN |
-
-### Case 2: 보고서 *재현 가능성* — incident 1건의 추적 chain
-
-dataset 의 incident `e5578610-d2eb-11ee-...` 가 보유한 메타:
-- partition: `e562f7c0-d2eb-11ee-...` (시간 분할 키)
-- 노드 1개당 평균 *5+ 메타 field* (id/ip/org/hostname/type/sets/products)
-- products 마다 framework 매핑 (csc/cmmc/iso27001/soc2 등)
-
-**해석 — 본 lecture (보고서 작성법) 와의 매핑**
-
-| 보고서 작성 학습 항목 | 본 record 의 시사점 |
-|---------------------|---------------------|
-| **정량 근거** | 보고서 모든 주장에 *N=숫자* 와 *분모* 동시 명시. 본 dataset 처럼 *2.07M signals 중 X건* 형태 |
-| **익명화** | 보고서 외부 공유 시 *4-layer 익명화* (regex + format + NER + 사람 review) — 자동 1단계로 부족 |
-| **framework 매핑** | 발견 vuln 마다 *2+ framework* 매핑 (예: SQLi → OWASP A03 + ISO 27001 A.14.2.5 + NIST SP 800-53 SI-10) |
-| **재현 chain** | partition + node id + edge id 까지 명시 → 동일 데이터로 *재계산 가능* — 보고서의 *근거 자료* 절에 동등 수준 메타 첨부 |
-| **product / vendor 추적** | host 마다 *어떤 vendor 의 어떤 product 가 telemetry 보내는지* 기록 — 보고서에서 *발견 도구* 출처 명시 |
-
-**보고서 작성 액션**:
-1. 모든 vuln 항목에 *수량 + 분모* 명시 (예: "관리자 페이지 접근제어 미흡 12건 / 전체 endpoint 87개 = 13.8%")
-2. 외부 공유 보고서는 본 dataset 의 4-layer 익명화 절차 그대로 적용 (regex → format → NER → 검토자 sign-off)
-3. 발견 vuln 마다 *최소 3개 framework 매핑* 표 첨부 — OWASP + ISO + 국내 (개인정보보호법·정보통신망법)
-
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (lab week14 — 보안 설정 오류)
 

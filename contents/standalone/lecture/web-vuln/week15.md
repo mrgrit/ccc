@@ -13,14 +13,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -895,52 +897,6 @@ Week 15:    기말          -> 종합 점검 프로젝트
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — 학생 종합 점검 시 인용 가능한 baseline 묶음)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *기말 — 종합 웹취약점 점검 프로젝트* 학습 항목 (전 주차 통합·실제 운영환경 비교) 와 매핑되는 dataset 의 *전 주차에서 인용한 record summary*.
-
-### Case 1: 본 과목 전 주차 record 인용 표 (final report 부록 양식)
-
-| 본 과목 주차 | 인용 record / 통계 | dataset 출처 |
-|------------|-------------------|--------------|
-| w01 점검 개론 | WAF GET 1줄 (CEF format) | signals.parquet (GET, 4018건) |
-| w02 도구 환경 | GoogleImageProxy 4018건 단일 src burst | signals.parquet (src=100.64.1.37) |
-| w03 정보수집 | 100.64.20.230 — 1초 30 host × 54 port scan | signals.parquet (firewall_action) |
-| w04 인증/세션 | USER-0022 6,190 logon 통계 | signals.parquet (4624/4776) |
-| w05 SQLi | WAF POST JSESSIONID 평문 노출 | signals.parquet (POST 88건) |
-| w06 XSS/CSRF | email_protection block phishingScore=100 | signals.parquet (email_protection_event) |
-| w07 파일 업로드 | 4656/4658/4663/4690 분포 (24만건) | signals.parquet (Windows file audit) |
-| w08 중간고사 | incident `e5578610` 의 host node + framework 매핑 | incidents.jsonl |
-| w09 접근제어 | 5156 Filtering Connection (176K) + 5140 share access | signals.parquet (Windows WFP) |
-| w10 암호화 | WAF `app=TLSv1.3` + 5061 Crypto operation | signals.parquet |
-| w11 에러 처리 | HTTP 4xx (403·404·410·412·413·431·510) 총 2,827건 | signals.parquet |
-| w12 API 보안 | AWS Describe* read-only 150K + AssumeRole 9,340 | signals.parquet |
-| w13 자동화 도구 | 100.64.20.230 burst 재인용 (다른 관점) | signals.parquet |
-| w14 보고서 작성 | 전체 dataset 메타 (2.07M signals, 595K edges, 4-layer 익명화) | metadata.json |
-
-### Case 2: 종합 점검 보고서가 *연결해야 할* incident 1건
-
-dataset 의 `e5578610-d2eb-11ee-...` incident 가 보유한 *동시 다층 정보*:
-- HOST 노드: ip / hostname / org / managed flag / suspicion_score
-- 다중 vendor product: WitFoo Precinct + Cisco ASA Firewall (각각 framework 매핑 보유)
-- 노드 role: "Exploiting Target" + "Exploiting Host" *동시*
-- 시간 partition: `e562f7c0-d2eb-11ee-...` (재현 키)
-
-**해석 — 본 lecture (기말) 와의 매핑**
-
-| 종합 점검 학습 항목 | 본 dataset 의 시사점 |
-|--------------------|---------------------|
-| **다 주차 통합** | 학생 보고서가 전 14주의 발견을 *연결* — 본 dataset 처럼 *signal 단위* + *incident 그래프* + *framework 매핑* 3 layer 동시 보유 권장 |
-| **실제 vs 점검 환경 비교** | 본 dataset 은 *실제 운영* (WitFoo 고객 익명화). 학생 점검 결과를 *동등 layer* 비교 — *어느 부분이 학습 환경 한계* 인지 명시 |
-| **재현성** | partition + node id + edge id 까지 명시 → 기말 보고서도 동일 수준 재현 메타 첨부 |
-| **공개 가능성** | 본 dataset 이 *Apache 2.0 라이선스* 로 공개됨 — 기말 우수작 일부도 *동등 익명화 후 공개* 권장 (다음 코호트 reference) |
-
-**기말 평가 함의**: 본 dataset 의 다층 구조 (signal · graph · framework) 와 4-layer 익명화 를 *모방한 보고서* 가 가장 높은 점수.
-
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (lab week15 — 종합 웹 해킹)
 

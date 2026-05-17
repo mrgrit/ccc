@@ -13,14 +13,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -717,56 +719,6 @@ test_pagination "/api/SecurityQuestions"   "http://10.20.30.80:3000/api/Security
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — AWS API call read-only flood)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *API 보안 점검* 학습 항목 (REST/GraphQL endpoint·인증·rate-limit·schema 노출) 과 매핑되는 dataset 의 AWS API call 분포.
-
-### Case 1: AWS Describe* API call 통계 — read-only flood 패턴
-
-| API Call | 건수 |
-|----------|------|
-| GetLogEvents | 39,639 |
-| DescribeInstanceStatus | 27,127 |
-| DescribeLoadBalancers | 15,062 |
-| DescribeInstances | 14,992 |
-| ListClusters | 10,848 |
-| AssumeRole | 9,340 |
-| DescribeAddresses | 6,094 |
-| DescribeSecurityGroups | 5,858 |
-| DescribeVpcs | 5,079 |
-| DescribeSubnets | 6,603 |
-| DescribeClusters | 6,614 |
-| GetBucketLocation | 3,563 |
-| GenerateDataKey | 3,286 |
-| Decrypt | 1,605 |
-| ... | ... |
-| 합계 (read-only API) | **150,000+** |
-
-**dataset 통찰**: AWS read-only API 호출이 dataset 의 *상당 비율* 차지. 정상 monitoring 일 수도, 침해된 IAM 키의 *enumeration* 일 수도 있음.
-
-### Case 2: AssumeRole — IAM role 전환
-
-**dataset 분포**: AssumeRole 9,340건 — IAM 권한 escalation·cross-account access 의 핵심 신호.
-
-**해석 — 본 lecture 와의 매핑**
-
-| API 점검 학습 항목 | 본 record 에서의 증거 |
-|-------------------|---------------------|
-| **API 사용 baseline** | Describe*/Get*/List* 의 분포 = *조직의 정상 read-only API baseline*. 점검 시 *비정상 spike* 자동 분리 |
-| **AssumeRole 추적** | 9,340 AssumeRole call → *role 전환 chain* 그래프 작성 → *순환 escalation* 또는 *cross-account leak* 점검 항목 |
-| **schema 노출** | DescribeSecurityGroups (5,858) 같은 호출이 *모든 SG 룰 dump* 가능 — 점검 시 *조직의 read-only IAM 정책* 이 *너무 광범위* 한지 확인 |
-| **GetLogEvents 39K** | log access 가 가장 많은 호출 — *공격자가 침투 후 자기 흔적 확인* 시 사용. 점검 시 *log 권한 분리* 항목 |
-| **GenerateDataKey + Decrypt** | KMS API → *암호화 key 사용 빈도* baseline. 점검 시 *key rotation 정책 위반* (동일 key 1만 회+) 검출 |
-
-**점검 액션**:
-1. 점검 대상의 AWS API call 빈도 분포 → 본 dataset baseline 과 비교 — *비정상 Describe* 비율이 baseline 의 5배 이상이면 *enumeration 의심*
-2. AssumeRole 의 *대상 role 다양성* 측정 → 단일 user 가 5+ role 전환하면 *권한 oversight* 점검 항목
-3. *Describe* 같은 read-only API 의 *과도한 권한* (`*` resource scope) 사용 IAM 정책 점검 — 침해 시 *전체 enumeration* 가능
-
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (lab week12 — API 보안)
 

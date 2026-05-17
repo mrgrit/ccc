@@ -12,14 +12,16 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw (secu) | 10.20.30.1 | 방화벽/HAProxy/Suricata ext | `ssh 6v6-fw` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 학생 진입점 + Bastion 운영 에이전트 | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
+**Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
 ## 강의 시간 배분 (3시간)
 
@@ -683,64 +685,6 @@ for c in sorted(data, key=lambda x: x.get('difficulty', 0)):  # 반복문 시작
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — incident 1건의 *전체 그래프* 단면)
-
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *중간고사 — JuiceShop 점검 보고서* — 학생이 실제로 작성하는 보고서가 *어떤 정보까지 포함해야 하는지* baseline 을 dataset 의 incident 1건 (`incidents.jsonl` 533MB 중 발췌) 으로 보여줌.
-
-### Case 1: incident `e5578610-d2eb-11ee-8578-693f933af31d` 의 1차 노드
-
-**Provenance graph 의 첫 host 노드** (incidents.jsonl 발췌):
-
-```json
-{
-  "id": "HOST-4476",
-  "ip_address": "172.27.150.101",
-  "org": "ORG-0006",
-  "internal": true,
-  "managed": false,
-  "hostname": "172.27.150.101",
-  "suspicion_score": 0.71875,
-  "type": "host",
-  "sets": {
-    "5": {"name": "Exploiting Target", "criteria": "none",
-          "data_source": "WitFoo", "type": 1, ...},
-    "1": {"name": "Exploiting Host", "criteria": "none",
-          "data_source": "WitFoo", "type": 1, ...}
-  },
-  "products": {
-    "6": {"name": "Precinct", "vendor_name": "WitFoo",
-          "frameworks": {"csc":[1,6,16,19], "cmmc1":[6], ...,
-                         "iso27001":[4,8,14,16,67,68,...]}},
-    "17": {"name": "ASA Firewall", "vendor_name": "Cisco",
-           "frameworks": {"csc":[9,12], "iso27001":[1,2,53,54,...]}}
-  }
-}
-```
-
-**dataset 통계**
-
-| 항목 | 값 |
-|------|---|
-| 전체 incident 수 | 595,618 edges + 30,092 nodes |
-| 노드 type | HOST 28,633 / CREDENTIAL 1,429 / SERVICE 5 / FILE 3 / ACTOR 1 |
-| label 분포 | benign 390,851 / suspicious 44,681 / malicious 160,086 |
-| 본 incident 의 *role* | "Exploiting Target" + "Exploiting Host" 동시 — *피해자이자 다른 호스트의 발판* |
-
-**해석 — 본 lecture (중간고사 보고서) 와의 매핑**
-
-| 보고서 항목 | 본 record 의 시사점 |
-|-------------|---------------------|
-| **Asset 식별** | host 노드에 `internal/managed/org/hostname/IP` 모두 동시 보유 — 점검 보고서의 "대상 시스템" 표 가 *최소 5 field* 갖춰야 한다는 baseline |
-| **다중 role** | 동일 host 가 *Exploiting Target* (피해) + *Exploiting Host* (발판) 동시 → JuiceShop 점검 보고서에 *피해 시나리오* 와 *측면이동 잠재력* 두 chapter 분리 권장 |
-| **Compliance framework 매핑** | Precinct 자체가 csc/cmmc/pci/nist80053/csf/iso27001/soc2 framework 매핑 보유 — 학생 보고서의 발견 vuln 마다 *해당 framework 조항* 매핑 권장 (예: SQLi → OWASP A03 + ISO 27001 A.14.2) |
-| **products 다중 vendor** | host 가 6 (Precinct/WitFoo) + 17 (ASA/Cisco) 두 vendor 의 telemetry 보유 → 학생 보고서에서 *각 vuln 이 어떤 control 에 의해 탐지/차단되었는지* 명시 |
-
-**시험 채점 기준 함의**: 본 record 가 보여주는 *5-field asset · multi-role · framework 매핑 · multi-vendor 통합* 4축이 학생 보고서에도 갖춰져야 만점 보고서.
-
-
-
----
 
 ## 부록: 학습 OSS 도구 매트릭스 (lab week08 — XXE)
 
