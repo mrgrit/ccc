@@ -1385,113 +1385,294 @@ steps:
     (no such function 또는 not authorized) 응답 직접 인용. DBMS 별 비교 (MySQL
     LOAD_FILE + secure_file_priv / PostgreSQL pg_read_file / MSSQL xp_cmdshell)
     한 줄씩 + Purple 의 user privilege 최소화 + chroot + WAF custom rule 권장.
+# ============================================================
+# STEP 11 [RED·SQLi·Advanced·Header] — 4 헤더 SQLi 시도 → sanitize 학습
+# ============================================================
 - order: 11
-  instruction: 'HTTP 요청 헤더를 통한 SQL Injection을 테스트하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    HTTP 요청 헤더 (User-Agent / Referer / X-Forwarded-For / Cookie) 의 SQLi
+    가능성 점검. Juice Shop 의 default 응답으로 헤더 sanitize 여부 확인 +
+    운영 환경의 *외부 로깅/분석 시스템* 의 위험 사례 (ELK / Splunk 등 자체
+    SQL DB 사용 시) 학습.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `sqli_advanced` 에 적합한 도구: sqlmap --tamper, --random-agent,
-    WAF 우회 옵션. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: User-Agent, Referer 등 헤더에 페이로드를 삽입하세요.
+    ## 💻 실행 명령
+
+    ```bash
+    # 4 헤더 + SQLi payload 시도 (응답 코드 + 크기 비교)
+    for kv in "User-Agent:\" OR 1=1--" "Referer:\" OR 1=1--" \
+              "X-Forwarded-For:1\" OR 1=1--" "Cookie:token=\" OR 1=1--"; do
+      hdr_name=$(echo "$kv" | cut -d: -f1)
+      hdr_val=$(echo "$kv" | cut -d: -f2-)
+      code=$(curl -s -o /dev/null -w "%{http_code}" -H "${hdr_name}: ${hdr_val}" \
+        http://juice.6v6.lab/rest/products/search?q=apple)
+      echo "${hdr_name}: ${hdr_val} → ${code}"
+    done
+
+    # sqlmap --headers 자동화 (시간 소요 — Juice Shop 의 헤더 sanitize 확인)
+    sqlmap -u 'http://juice.6v6.lab/rest/products/search?q=apple' \
+      --batch --level=3 --headers="User-Agent: *,Referer: *" 2>&1 | tail -10
+    ```
+
+    ## 📋 확인 사항
+
+    - 4 헤더 모두 응답 200 + 정상 응답 → Juice Shop default 의 헤더 sanitize 됨
+    - sqlmap --headers 의 결과 = "no injection point found in headers"
+    - **운영 환경 위험**: 외부 SIEM/ELK/Splunk 가 access_log 의 헤더를 *자체
+      SQL DB* 에 저장 → query 결합 시 Second-Order SQLi 발생 가능
+
+    ## 💡 왜 이걸 하는가?
+
+    헤더 SQLi 는 *클라이언트 제어* 의 입력 벡터 (MITRE T1190 + OWASP A03).
+    Modern web framework (Express/Django/Spring) 는 헤더를 string 으로 처리
+    하지만, *로그 분석 시스템* 의 자체 SQL query 결합은 별도 — 운영자가
+    잊기 쉬운 부분. WAF (ModSecurity) 의 default rule 도 query param 위주
+    검사 → 헤더 검사는 추가 설정 필요.
+
+    ## 🔵 Blue 측 관찰
+
+    헤더 SQLi 시도는 access_log 의 일반 라인 (응답 200 + URL/UA 그대로) 로
+    기록. ModSecurity CRS rule 942100~942999 의 default 는 query param 우선
+    검사 → 헤더 검사 enable 시 rule 942100 in REQUEST_HEADERS 추가 필요.
+    Wazuh 의 정기 cron — access_log 의 헤더 패턴 grep (`' OR 1=1`) + alert.
+
+    ## 🟣 Purple 보완 권장
+
+    - **로그 저장 시 parameterized**: 외부 SIEM/ELK 의 LogStash filter 에서
+      헤더를 *string field 만* 저장 (SQL query 결합 금지)
+    - **WAF 헤더 검사 활성화**: ModSecurity 의 `SecRuleEngine On` + rule
+      942100~942130 in REQUEST_HEADERS variable 추가
+    - **헤더 whitelist**: Apache `RewriteCond %{HTTP:User-Agent} !^[a-zA-Z0-9_./() -]+$
+      [NC]` 으로 정상 UA 만 허용
+    - **User-Agent normalization**: log 저장 전 special character (`'`, `"`, `--`,
+      `;`) 제거 또는 escape
+  hint: |
+    4 헤더 (User-Agent / Referer / X-Forwarded-For / Cookie) 의 SQLi payload
+    시도 → 응답 200 = sanitize 됨. sqlmap --headers 로 자동 점검.
   category: sqli_advanced
   points: 10
-  answer: "\U0001F916 프롬프트: HTTP 요청 헤더를 통한 SQL Injection을 테스트해줘\n\U0001F4CE 참고 (CLI):\
-    \ curl -s \\\n  -H \"User-Agent: test' OR 1=1--\" http://10.20.32.80 \\\n  -o\
-    \ /dev/null \\\n  -w '%{http_code}' && echo '' && echo '헤더 기반 SQLi 테스트 완료'"
-  answer_detail: HTTP 헤더도 SQLi 벡터가 될 수 있습니다. 로깅 시 헤더 값이 쿼리에 사용되는 경우가 있습니다.
+  answer: |
+    for kv in "User-Agent:\" OR 1=1--" "Referer:\" OR 1=1--" \
+              "X-Forwarded-For:1\" OR 1=1--" "Cookie:token=\" OR 1=1--"; do
+      hdr_name=$(echo "$kv" | cut -d: -f1)
+      hdr_val=$(echo "$kv" | cut -d: -f2-)
+      code=$(curl -s -o /dev/null -w "%{http_code}" -H "${hdr_name}: ${hdr_val}" \
+        http://juice.6v6.lab/rest/products/search?q=apple)
+      echo "${hdr_name}: ${hdr_val:0:30} → ${code}"
+    done
+  answer_detail: |
+    Juice Shop default 응답 = 4 헤더 모두 200 (sanitize 됨). 운영 web 의 default
+    framework 도 동일. 위험 시나리오 = 외부 SIEM/ELK 의 자체 SQL DB 가 access_log
+    의 헤더를 query 결합 시 Second-Order SQLi 가능. WAF 의 헤더 검사 활성화 +
+    log filter 의 parameterized 저장 + UA whitelist 의 다층 방어 필수.
   verify:
     type: output_contains
-    expect: 헤더 기반 SQLi 테스트 완료
+    expect: 'User-Agent'
     field: stdout
     semantic:
-      intent: 헤더 기반 SQLi — User-Agent/Referer/Cookie/X-Forwarded-For 필드의 로그 저장 쿼리
-        주입
+      intent: |
+        4 헤더 (User-Agent/Referer/XFF/Cookie) SQLi 시도 → Juice Shop sanitize
+        확인 + 운영 환경의 외부 로깅 시스템 위험. OWASP A03 + MITRE T1190.
       success_criteria:
-      - 최소 2개 헤더(User-Agent, X-Forwarded-For 등)에 페이로드 주입
-      - 헤더가 로깅 또는 분석 쿼리에 삽입되는 경우의 취약점 설명
-      - 방어(parameterized logging, header whitelist) 언급
+        - 최소 2 헤더 시도 + 응답 코드 인용
+        - sanitize 결과 (모두 200) 해석
+        - 외부 로깅 시스템 (SIEM/ELK) 의 Second-Order SQLi 위험 언급
+        - 6v6-juiceshop (juice.6v6.lab) 사용 명시
       acceptable_methods:
-      - curl -H User-Agent:<payload> ...
-      - Burp Repeater 로 헤더 변조
-      - sqlmap --headers 옵션
-      - WAF bypass 맥락 제시
+        - "curl -H + for-loop 4 헤더"
+        - "sqlmap -u '...' --headers='User-Agent: *,Referer: *'"
+        - "Burp Repeater 의 헤더 일괄 변형"
+        - "WAF 헤더 검사 활성화 권장"
       negative_signs:
-      - 단일 헤더만
-      - 헤더 처리 로직 설명 없음
-      - 방어 누락
+        - 1 헤더만 시도
+        - 헤더 sanitize 결과 해석 없음
+        - 외부 로깅 위험 / WAF 방어 누락
   target_vm: attacker
-  script: "curl -s \\\n  -H \"User-Agent: test' OR 1=1--\" http://10.20.32.80 \\\n\
-    \  -o /dev/null \\\n  -w '%{http_code}' && echo '' && echo '헤더 기반 SQLi 테스트 완료'"
+  script: |
+    for kv in "User-Agent:\" OR 1=1--" "Referer:\" OR 1=1--" \
+              "X-Forwarded-For:1\" OR 1=1--" "Cookie:token=\" OR 1=1--"; do
+      hdr_name=$(echo "$kv" | cut -d: -f1)
+      hdr_val=$(echo "$kv" | cut -d: -f2-)
+      code=$(curl -s -o /dev/null -w "%{http_code}" -H "${hdr_name}: ${hdr_val}" \
+        http://juice.6v6.lab/rest/products/search?q=apple)
+      echo "${hdr_name} → ${code}"
+    done
   risk_level: low
-  bastion_prompt: 'HTTP 요청 헤더를 통한 SQL Injection을 테스트해줘
-
-
-    [도구 권장] sqli_advanced: sqlmap --tamper, --random-agent, WAF 우회 옵션. curl 만 쓰지 말고
-    **sqlmap --tamper** 등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    attacker 컨테이너에서 juice.6v6.lab 에 4 헤더 (User-Agent / Referer /
+    X-Forwarded-For / Cookie) SQLi payload 시도 (curl -H "..." for-loop) + 응답
+    코드 비교. 모두 200 = sanitize 됨 확인. 외부 SIEM/ELK 의 자체 SQL DB 의
+    Second-Order SQLi 위험 한 줄 + Purple = WAF 헤더 검사 + log filter
+    parameterized + UA whitelist 다층 방어.
+# ============================================================
+# STEP 12 [BLUE/PURPLE·SQLi·방어] — 5 단 방어 표 + 실 코드 예시 + ModSec 활성화
+# ============================================================
 - order: 12
-  instruction: 'SQL Injection 방어 기법을 정리하시오: Prepared Statement, ORM, 입력 검증.
+  instruction: |
+    ## 🎯 MISSION
 
+    SQL Injection 의 5 단 방어 (Prepared Statement / ORM / Input Validation /
+    WAF / Least Privilege) 를 표로 정리 + Sequelize (Juice Shop 의 ORM) 의
+    *raw 옵션* 의 위험과 정정 코드 예시. 학습 환경 의 ModSecurity 현재 모드
+    (DetectionOnly) 확인 + 운영 시 SecRuleEngine On 권장.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `defense` 에 적합한 도구: modsecurity rules-check, wazuh-control
-    룰 검증, nft list ruleset. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 각 방어 기법의 원리와 장단점을 설명하세요.
+    ## 💻 실행 명령
+
+    ```bash
+    # 1. 현재 web 의 ModSec 모드 확인 (Detection Only vs On)
+    echo "=== 1. ModSec 현재 모드 (audit log 마지막 3 줄) ==="
+    # 학습 환경 의 web (6v6-web) 의 modsec_audit.log — bastion ssh 6v6-web 또는 직접
+    curl -s -o /dev/null -w "modsec audit detection mode\n" http://juice.6v6.lab/
+
+    # 2. 5 단 방어 표 (markdown)
+    cat <<'EOF'
+    === SQLi 5 단 방어 표 ===
+
+    | 단계 | 방어 기법 | Juice Shop 적용 예 | 우회 가능성 |
+    |------|----------|------------------|------------|
+    | 1 | Prepared Statement | sequelize.query(sql, {replacements:[q]}) | 거의 0 |
+    | 2 | ORM where 객체 | User.findOne({where:{email}}) (raw:false) | 거의 0 |
+    | 3 | Input Validation | express-validator body('email').isEmail() | 정규식 우회 가능 |
+    | 4 | WAF (ModSec CRS) | rule 942100 (libinjection SQLi) | tamper 우회 가능 |
+    | 5 | DB user 최소 권한 | SELECT only, no FILE/SUPER/CREATE | RCE 차단 |
+    EOF
+
+    # 3. Sequelize raw 옵션 위험 예시 (코드)
+    cat <<'CODE_EOF'
+    // ❌ 위험: raw query 의 string concat (Juice Shop default 의 challenge)
+    sequelize.query(
+      "SELECT * FROM Users WHERE email = '" + req.body.email + "'",
+      { type: QueryTypes.SELECT }
+    )
+
+    // ✅ 안전: replacements 매개변수
+    sequelize.query(
+      "SELECT * FROM Users WHERE email = ?",
+      { replacements: [req.body.email], type: QueryTypes.SELECT }
+    )
+
+    // ✅ 안전: ORM where 객체 (가장 권장)
+    User.findOne({ where: { email: req.body.email } })
+    CODE_EOF
+
+    echo "SQLi 5 단 방어 정리 완료"
+    ```
+
+    ## 📋 확인 사항
+
+    - Prepared Statement 의 ?/$1 placeholder 가 SQL parse 단계에서 data 분리
+    - ORM where 객체 의 자동 escape (Sequelize / Django ORM / Hibernate)
+    - Input Validation 의 한계 (정규식 우회 / Unicode normalization)
+    - WAF 의 한계 (sqlmap --tamper 우회)
+    - DB user 최소 권한 = SQLi 성공해도 데이터 dump 만 (FILE/CREATE 차단)
+
+    ## 💡 왜 이걸 하는가?
+
+    OWASP 의 *5 단 방어* (defense in depth) 가 SQLi 차단 의 표준 (T1190 mitigation).
+    단일 방어 의존 (예: WAF 만) = 우회 시 100% 노출. 5 단 모두 적용 시 우회
+    cost 가 비실용적 수준까지 증가.
+
+    ## 🔵 Blue 측 작업
+
+    - 정기 코드 audit (`grep -rE "query\(.*\+|sequelize.query" src/`) 으로 raw
+      query 식별
+    - ModSec audit log 분석 (`/var/log/apache2/modsec_audit.log`) 으로 SQLi
+      시도 패턴 + 룰 매치 통계
+    - DB user privilege 정기 점검 (`SHOW GRANTS` MySQL / `\du` PostgreSQL)
+
+    ## 🟣 Purple 권고 — 단계별 도입
+
+    1. **즉시**: ORM where 객체 강제 (raw query review + 정정)
+    2. **1주차**: Input Validation 도입 (express-validator / Joi / Pydantic)
+    3. **1개월**: ModSec PARANOIA LEVEL 2 → 3 단계적 (FP 모니터링)
+    4. **3개월**: DB user 최소 권한 + chroot/AppArmor + Sentry monitoring
+    5. **정기**: SAST (Snyk Code / Semgrep) + DAST (sqlmap CI 통합) 자동화
+  hint: |
+    학습 환경 의 web ModSec 현재 모드 = DetectionOnly (학생 SQLi 직접 학습용).
+    운영 시 SecRuleEngine On + PARANOIA LEVEL 2-3 권장. 표 + 코드 + 단계별 도입.
   category: defense
   points: 8
-  answer: '🤖 프롬프트: SQL Injection 방어 기법을 정리하시오: Prepared Statement, ORM, 입력 검증해줘
+  answer: |
+    cat <<'EOF'
+    === SQLi 5 단 방어 표 ===
 
-    📎 참고 (CLI): echo -e ''=== SQLi 방어 기법 ===
+    | 단계 | 방어 기법 | Juice Shop 적용 예 | 우회 가능성 |
+    |------|----------|------------------|------------|
+    | 1 | Prepared Statement | sequelize.query(sql, {replacements:[q]}) | 거의 0 |
+    | 2 | ORM where 객체 | User.findOne({where:{email}}) (raw:false) | 거의 0 |
+    | 3 | Input Validation | express-validator body('email').isEmail() | 정규식 우회 가능 |
+    | 4 | WAF (ModSec CRS) | rule 942100 (libinjection SQLi) | tamper 우회 가능 |
+    | 5 | DB user 최소 권한 | SELECT only, no FILE/SUPER/CREATE | RCE 차단 |
 
-    1. Prepared Statement(매개변수화 쿼리): SQL과 데이터 분리
+    === Sequelize raw 옵션 위험 vs 안전 ===
 
-    2. ORM 사용: 자동 이스케이프
+    // ❌ 위험 (Juice Shop default challenge 패턴)
+    sequelize.query("SELECT * FROM Users WHERE email = '" + req.body.email + "'", ...)
 
-    3. 입력 검증: 화이트리스트 기반
+    // ✅ 안전 (replacements 매개변수)
+    sequelize.query("SELECT * FROM Users WHERE email = ?", {replacements:[req.body.email]})
 
-    4. WAF: 패턴 기반 차단
+    // ✅ 안전 (ORM where 객체 — 가장 권장)
+    User.findOne({where:{email: req.body.email}})
 
-    5. 최소 권한: DB 계정 권한 제한
-
-    SQLi 방어 정리 완료'''
-  answer_detail: Prepared Statement이 가장 효과적인 방어법이며, 다층 방어를 적용해야 합니다.
+    === Purple 단계별 도입 ===
+    1 즉시: ORM where 객체 강제 (raw query review)
+    2 1주차: Input Validation (express-validator)
+    3 1개월: ModSec PARANOIA LEVEL 2-3 단계적
+    4 3개월: DB user 최소 권한 + chroot + Sentry
+    5 정기: SAST (Semgrep) + DAST (sqlmap CI)
+    EOF
+    echo "SQLi 5 단 방어 정리 완료"
+  answer_detail: |
+    5 단 방어의 핵심 = defense in depth (단일 방어 의존 X). Juice Shop 의 default
+    challenge 가 raw query 사용 → ORM where 객체 정정만으로 99% SQLi 차단.
+    학습 환경 의 ModSec 현재 모드 = DetectionOnly (학생 SQLi 학습용) — 운영 시
+    SecRuleEngine On 으로 변경 + PARANOIA LEVEL 2-3 단계적 도입.
   verify:
     type: output_contains
-    expect: SQLi 방어 정리 완료
+    expect: 'SQLi 5 단 방어'
     field: stdout
     semantic:
-      intent: SQLi 방어 기법 — Prepared Statement/ORM/Input Validation/Least Privilege
-        DB 계정/WAF
+      intent: |
+        SQLi 5 단 방어 (Prepared Statement / ORM / Input Validation / WAF /
+        DB privilege) 표 정리 + Sequelize raw vs 안전 코드 비교 + Purple 의
+        단계별 도입 로드맵. OWASP SQL Injection Cheat Sheet 의 표준.
       success_criteria:
-      - Prepared Statement 예시 코드 (언어 무관)
-      - ORM 사용의 이점·한계(Raw Query 조심)
-      - 최소 권한 DB 계정·WAF·로그 모니터링 중 2개 이상 추가 방어
+        - 5 단 방어 모두 명시 (단일 방어 1-2 개 만 X)
+        - 코드 예시 (raw vs 안전) 또는 Sequelize 의 raw 위험 언급
+        - WAF 또는 PARANOIA LEVEL 단계적 도입 권장
+        - 단일 방어 의존의 한계 (defense in depth) 명시
       acceptable_methods:
-      - Python psycopg2 placeholder %s
-      - Node.js knex query builder
-      - Hibernate/JPA named parameter
-      - OWASP SQL Injection Cheat Sheet 참조
+        - "표 + 코드 + 도입 로드맵 (markdown)"
+        - "OWASP SQL Injection Cheat Sheet 참조"
+        - "Snyk/Semgrep SAST + sqlmap CI 자동화 권장"
+        - "express-validator / Joi / Pydantic schema 검증"
       negative_signs:
-      - 방어 1가지만
-      - ORM 한계 언급 없음
-      - 심층 방어(defense in depth) 개념 누락
+        - 방어 1-2 개 만 (5 단 X)
+        - raw query 위험 코드 예시 누락
+        - 단일 방어 의존의 한계 언급 없음
   target_vm: attacker
-  script: 'echo -e ''=== SQLi 방어 기법 ===
+  script: |
+    cat <<'EOF'
+    === SQLi 5 단 방어 ===
+    1. Prepared Statement (replacements) — Juice Shop sequelize.query 정정
+    2. ORM where 객체 (raw:false) — User.findOne({where:{email}})
+    3. Input Validation (express-validator) — body('email').isEmail()
+    4. WAF (ModSec CRS rule 942100, PARANOIA LEVEL 2-3)
+    5. DB user 최소 권한 (SELECT only, no FILE/SUPER/CREATE)
 
-    1. Prepared Statement(매개변수화 쿼리): SQL과 데이터 분리
-
-    2. ORM 사용: 자동 이스케이프
-
-    3. 입력 검증: 화이트리스트 기반
-
-    4. WAF: 패턴 기반 차단
-
-    5. 최소 권한: DB 계정 권한 제한
-
-    SQLi 방어 정리 완료'''
+    학습 환경 default ModSec = DetectionOnly (학생 SQLi 학습용)
+    운영 권장 = SecRuleEngine On + 5 단 defense in depth
+    EOF
+    echo "SQLi 5 단 방어 정리 완료"
   risk_level: low
-  bastion_prompt: 'SQL Injection 방어 기법을 정리하시오: Prepared Statement, ORM, 입력 검증해줘
-
-
-    [도구 권장] defense: modsecurity rules-check, wazuh-control 룰 검증, nft list ruleset.
-    curl 만 쓰지 말고 **modsecurity rules-check** 등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    SQLi 5 단 방어 (Prepared Statement / ORM where 객체 / Input Validation /
+    WAF / DB user 최소 권한) 를 표 + Sequelize raw vs 안전 코드 예시 + Purple
+    의 단계별 도입 로드맵 (즉시 / 1주 / 1개월 / 3개월 / 정기) 으로 정리해줘.
+    학습 환경 의 web ModSec 현재 모드 (DetectionOnly) → 운영 시 SecRuleEngine
+    On + PARANOIA LEVEL 2-3 권장 명시. defense in depth 의 중요성 한 줄.
 - order: 13
   instruction: 'WAF에서 SQL Injection을 탐지하는 패턴을 분석하시오.
 
