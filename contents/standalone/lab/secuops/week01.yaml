@@ -556,7 +556,7 @@ steps:
       ssh 6v6-web 'sudo grep -E "^SecRuleEngine|^SecAuditLog|^SecAuditEngine|^SecAuditLogFormat" /etc/modsecurity/modsecurity.conf'
 
       # 3. XSS payload → 403 차단 검증
-      ssh 6v6-attacker 'curl -s -o /dev/null -w "XSS: %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=<script>alert(1)</script>"'
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "XSS: %{http_code}\n" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?q=<script>alert(1)</script>"'
 
       # 4. modsec_audit.log 에 룰 ID 941 매치 확인
       sleep 2
@@ -630,7 +630,7 @@ steps:
             운영 해석: 31 룰 파일. 941 (XSS), 942 (SQLi), 930 (LFI), 932 (RCE) 핵심.
           - |
             **[OSS] curl XSS → 403 응답** — 동작 검증.
-              ssh 6v6-attacker 'curl -s -o /dev/null -w "XSS: %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=<script>alert(1)</script>"'
+              ssh 6v6-attacker 'curl -s -o /dev/null -w "XSS: %{http_code}\n" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?q=<script>alert(1)</script>"'
               sleep 2
               ssh 6v6-web 'sudo tail -3 /var/log/apache2/modsec_audit.log | head -1 | jq "{code: .transaction.response.http_code, msgs: [.transaction.messages[]? | select(.id | startswith(\"941\")) | .id]}"'
             예상 출력 `XSS: 403 / {"code":403,"msgs":["941100","941160"]}`.
@@ -805,10 +805,12 @@ steps:
       ## 💻 실행 명령
 
       ```bash
-      # Red 공격 — sqlmap UA + XSS + SQLi UNION SELECT 결합
+      # Red 공격 — sqlmap UA + XSS + SQLi UNION SELECT 결합. 대상 vhost = dvwa
+      # (전역 SecRuleEngine On 적용). juice 는 per-vhost DetectionOnly 라 200 통과
+      # → W02 SQLi / W03 XSS 학생 학습용. W01 의 차단 검증은 dvwa/neobank 등 사용.
       ssh 6v6-attacker 'curl -s -o /dev/null -w "응답: %{http_code} 시간: %{time_total}s\n" \
           -A "sqlmap/1.5" \
-          -H "Host: juice.6v6.lab" \
+          -H "Host: dvwa.6v6.lab" \
           "http://10.20.30.1/?q=<script>alert(1)</script>&id=1+UNION+SELECT"'
 
       # 공격 시각 기록 (Blue/Purple step 에서 timestamp 매칭에 사용)
@@ -835,12 +837,12 @@ steps:
       - **비정상 2**: 응답 `5xx` → backend 다운 또는 HAProxy 라우팅 오류 → STEP 3 재점검
       - **비정상 3**: 응답 `000` (timeout) → fw 의 input chain drop 또는 attacker 컨테이너
         다운
-    hint: 'curl -A "sqlmap/1.5" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=<script>"'
+    hint: 'curl -A "sqlmap/1.5" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?q=<script>"  # juice 는 DetectionOnly (W02 용), 차단 검증은 dvwa/neobank/...'
     category: redteam
     points: 8
     answer: |
       echo "=== Red Team: 공격 발생 (sqlmap UA + XSS + SQLi 결합) ==="
-      ssh 6v6-attacker 'curl -s -o /dev/null -w "응답: %{http_code} / 시간: %{time_total}s\n" -A "sqlmap/1.5" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=<script>alert(1)</script>&id=1+UNION+SELECT"'
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "응답: %{http_code} / 시간: %{time_total}s\n" -A "sqlmap/1.5" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?q=<script>alert(1)</script>&id=1+UNION+SELECT"'
       echo "=== 공격 시각 기록 ==="
       ATTACK_TS=$(ssh 6v6-attacker 'date -u +%Y-%m-%dT%H:%M:%S')
       echo "ATTACK_TS=$ATTACK_TS"
@@ -864,17 +866,17 @@ steps:
         acceptable_methods:
           - |
             **[OSS] curl 종합 페이로드** — 표준.
-              ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -A "sqlmap/1.5" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=<script>alert(1)</script>&id=1+UNION+SELECT"'
+              ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -A "sqlmap/1.5" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?q=<script>alert(1)</script>&id=1+UNION+SELECT"'
             예상 출력 `403`.
             운영 해석: 다중 페이로드로 4 도구 동시 검증.
           - |
             **[OSS] 페이로드 변형 — XSS only** — 단순.
-              ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=<script>alert(1)</script>"'
+              ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?q=<script>alert(1)</script>"'
             예상 출력 `403`.
             운영 해석: XSS 단독으로도 941 매치 → 403.
           - |
             **[OSS] 페이로드 변형 — SQLi only** — 단순.
-              ssh 6v6-attacker "curl -s -o /dev/null -w '%{http_code}\n' -H 'Host: juice.6v6.lab' \"http://10.20.30.1/?id=1' OR '1'='1\""
+              ssh 6v6-attacker "curl -s -o /dev/null -w '%{http_code}\n' -H 'Host: dvwa.6v6.lab' \"http://10.20.30.1/?id=1' OR '1'='1\""
             예상 출력 `403`.
             운영 해석: SQLi 단독으로도 942 매치 → 403.
           - |
@@ -928,7 +930,8 @@ steps:
                    || sudo journalctl -u haproxy --since "1m ago" 2>/dev/null | tail -3'
 
       # 2. ips Suricata eve.json 의 HTTP event (juice.6v6.lab 매칭)
-      ssh 6v6-ips 'sudo tail -300 /var/log/suricata/eve.json | jq -c "select(.event_type==\"http\" and .http.hostname==\"juice.6v6.lab\") | {ts:.timestamp, src:.src_ip, url:.http.url, status:.http.status}" | tail -2'
+      # S7 의 Red 공격 대상 = dvwa.6v6.lab (전역 SecRuleEngine On). juice 는 DetectionOnly.
+      ssh 6v6-ips 'sudo tail -300 /var/log/suricata/eve.json | jq -c "select(.event_type==\"http\" and .http.hostname==\"dvwa.6v6.lab\") | {ts:.timestamp, src:.src_ip, url:.http.url, status:.http.status}" | tail -2'
       ```
 
       ## 📋 확인 사항
