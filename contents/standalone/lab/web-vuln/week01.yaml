@@ -573,94 +573,245 @@ steps:
     각 속성 누락 시 공격 시나리오 (XSS 쿠키 탈취 / 다운그레이드 / CSRF) 한
     줄씩 설명. Set-Cookie 응답이 없으면 JWT 가 Authorization 헤더만 사용하는
     SPA 패턴인지 확인 권장.
+# ============================================================
+# STEP 6 [RED·정찰·핑거프린팅] — Server / X-Powered-By + whatweb / nmap -sV
+# ============================================================
 - order: 6
-  instruction: '서버 배너 정보를 수집하여 웹 서버 종류와 버전을 파악하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    attacker 컨테이너 (10.20.30.202) 에서 6v6-web 의 (a) Apache + ModSecurity
+    및 (b) 6v6-juiceshop 의 Node/Express 배너를 수집한다. curl 단일 도구 대신
+    `whatweb`, `nmap -sV`, `curl -I` 3 가지를 교차 검증 — 헤더 위장 / 버전
+    삭제 시에도 응답 패턴 (에러 페이지 / favicon 해시) 으로 보조 식별.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `fingerprinting` 에 적합한 도구: whatweb, nmap -sV,
-    wappalyzer-cli. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: Server 헤더와 에러 페이지를 분석하세요.
+    ## 💻 실행 명령
+
+    ```bash
+    # 1. curl -I — Server / X-Powered-By 헤더
+    curl -sI http://10.20.32.80/ | grep -iE '^(server|x-powered-by|via):'
+
+    # 2. whatweb — framework + CMS + 플러그인 자동 식별
+    whatweb -a 3 http://10.20.32.80/
+
+    # 3. nmap -sV — TCP 핑거프린팅 (포트 + 서비스 버전)
+    nmap -sV -p 80,443 -Pn 10.20.32.80
+
+    # 4. Juice Shop backend 도 동일 (Node/Express 응답)
+    curl -sI http://10.20.40.81:3000/ | grep -iE '^(server|x-powered-by):'
+    whatweb -a 3 http://10.20.40.81:3000/
+    ```
+
+    ## 📋 확인 사항
+
+    - `Server: Apache/2.4.x (Ubuntu)` 같은 정확 버전 노출 여부
+    - `X-Powered-By: Express` (Juice Shop) 또는 PHP/X.Y.Z 노출 여부
+    - whatweb 의 `[Apache[2.4.52]]`, `[Bootstrap]`, `[X-UA-Compatible]` 등
+      framework + 플러그인 매핑
+    - nmap -sV 의 `http Apache httpd 2.4.52 ((Ubuntu))` 같은 정확 버전
+    - 4 도구 결과 일관성 (모두 동일 버전) → 신뢰도 ↑
+
+    ## 💡 왜 이걸 하는가?
+
+    배너에 정확 버전이 노출되면 공격자는 즉시 NVD / Exploit-DB 의 알려진
+    CVE 와 매칭 (MITRE T1592.002 Software). Apache 2.4.49 → CVE-2021-41773
+    (Path Traversal), Express 4.17.1 → CVE-2024-29041 (open redirect) 등.
+    Juice Shop 의 `package.json` 노출 (`curl http://10.20.40.81:3000/package.json`)
+    은 의도된 학습 challenge — SCA 자동화 가능.
+
+    ## 🔵 Blue 측 관찰
+
+    Apache 배너 변경은 `ServerTokens Prod` + `ServerSignature Off` 한 줄.
+    Wazuh / ModSecurity 는 배너 자체를 *경고* 하지 않음 — Blue 는 정기 NVD
+    피드 (`results/nvd_cron.log` 의 CVE 발견) 와 자산 매칭으로 식별 (W14
+    aisec lab 의 CVE-자산 매칭 파이프라인 참고).
+
+    ## 🟣 Purple 보완 권장
+
+    - Apache: `/etc/apache2/conf-available/security.conf` 에
+      `ServerTokens Prod` + `ServerSignature Off` + `Header unset X-Powered-By`
+    - Express (Juice Shop): `app.disable('x-powered-by')` 한 줄 (단, 학습
+      환경 의 default 상태는 보존 권장 — Blue 시야 확보 위함)
+    - HAProxy 단에서 `http-response del-header X-Powered-By` 로 reverse proxy
+      에서 일괄 제거 (앱 수정 불가 시)
+  hint: |
+    `whatweb -a 3` 의 `-a 3` = aggressive level 3 (가장 자세히). `nmap -sV -Pn`
+    의 `-Pn` = ping 건너뜀 (방화벽 차단 시). 4 도구 결과 표로 비교 권장.
   category: fingerprinting
   points: 10
-  answer: '🤖 프롬프트: 서버 배너 정보를 수집하여 웹 서버 종류와 버전을 파악해줘
-
-    📎 참고 (CLI): curl -sI http://10.20.32.80 | grep -i ''server'' && echo ''배너 수집 완료'''
-  answer_detail: Server 헤더에서 웹 서버 종류(Apache, Nginx)와 버전을 파악하여 알려진 취약점을 매칭합니다.
+  answer: |
+    echo "=== 1. curl -I (Apache) ==="
+    curl -sI http://10.20.32.80/ | grep -iE '^(server|x-powered-by|via):' || echo "(헤더 없음)"
+    echo ""
+    echo "=== 2. whatweb (Apache + 플러그인) ==="
+    whatweb -a 3 http://10.20.32.80/ 2>/dev/null | head -3
+    echo ""
+    echo "=== 3. nmap -sV (포트 + 서비스 버전) ==="
+    nmap -sV -p 80,443 -Pn 10.20.32.80 2>/dev/null | grep -E '^[0-9]+/tcp'
+    echo ""
+    echo "=== 4. Juice Shop backend (Node/Express) ==="
+    curl -sI http://10.20.40.81:3000/ | grep -iE '^(server|x-powered-by):' || echo "(헤더 없음)"
+  answer_detail: |
+    Juice Shop 의 default Express 응답은 `X-Powered-By: Express` 노출.
+    Apache (6v6-web reverse proxy) 는 `Server: Apache/2.4.x (Ubuntu)` 노출.
+    nmap -sV 는 동일 버전 정보를 TCP 응답 패턴으로 추정 — 헤더 위장 (예:
+    `ServerTokens Prod` 만 적용) 시에도 추정 가능. 4 도구 결과 일관성 으로
+    신뢰도 판단 + CVE 매핑은 NVD API (CPE) 또는 nvd_cron 자동화 파이프라인.
   verify:
     type: output_contains
-    expect:
-    - 배너 수집 완료
-    - Apache
+    expect: 'Apache'
     field: stdout
     semantic:
-      intent: 서버 배너 수집 — Server, X-Powered-By, Via 헤더로 웹서버 종류·버전 식별 (Nginx/Apache/IIS)
+      intent: |
+        웹 서버 핑거프린팅 — Server / X-Powered-By + whatweb + nmap -sV
+        3-4 도구 교차 검증 으로 Apache / Express 버전 식별. MITRE T1592.002
+        Software + 추후 CVE 매핑 (NVD) 의 기반.
       success_criteria:
-      - Server 헤더 값 수집 및 해석 (nginx/1.18.0 등)
-      - X-Powered-By 또는 기술 스택 힌트 헤더 확인
-      - 버전 기반 CVE 조회 가능성 언급
+        - 최소 3 도구 (curl -I + whatweb + nmap -sV) 사용 + 결과 인용
+        - 6v6-web (10.20.32.80) + 6v6-juiceshop (10.20.40.81:3000) 양쪽 핑거프린팅
+        - 버전 정보 노출 여부 명시 (정확 버전 vs 일반화)
+        - 버전 → CVE 매핑 가능성 한 줄 (T1592.002 명시)
       acceptable_methods:
-      - curl -sI <url>
-      - whatweb <url>
-      - nmap -sV -p 80,443 <target>
-      - telnet <host> 80 후 HEAD / HTTP/1.1
+        - "curl -sI + whatweb -a 3 + nmap -sV (3 도구 교차)"
+        - "wappalyzer-cli (Node) + httprint"
+        - "package.json 직접 노출 확인 (Juice Shop challenge)"
+        - "favicon hash 매칭 (favicons.dev) — 보조"
       negative_signs:
-      - 배너 수집 후 해석 없음
-      - 버전 정보 확인 없음
-      - CVE 매핑 언급 없음
+        - curl -I 1 도구만 사용
+        - Juice Shop backend (Express) 누락 + Apache 만
+        - CVE 매핑 / NVD 언급 누락
   target_vm: attacker
-  script: curl -sI http://10.20.32.80 | grep -i 'server' && echo '배너 수집 완료'
+  script: |
+    curl -sI http://10.20.32.80/ | grep -iE '^(server|x-powered-by|via):' || echo "(no banner header)"
+    whatweb -a 3 http://10.20.32.80/ 2>/dev/null | head -3
+    nmap -sV -p 80,443 -Pn 10.20.32.80 2>/dev/null | grep -E '^[0-9]+/tcp'
+    curl -sI http://10.20.40.81:3000/ | grep -iE '^(server|x-powered-by):' || echo "(no juice banner)"
   risk_level: low
-  bastion_prompt: '서버 배너 정보를 수집하여 웹 서버 종류와 버전을 파악해줘
-
-
-    [도구 권장] fingerprinting: whatweb, nmap -sV, wappalyzer-cli. curl 만 쓰지 말고 **whatweb**
-    등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    attacker 컨테이너에서 6v6-web (10.20.32.80) 과 6v6-juiceshop (10.20.40.81:3000)
+    양쪽에 (1) curl -sI (2) whatweb -a 3 (3) nmap -sV -p 80,443 -Pn 3 도구로
+    핑거프린팅을 시도해줘. Apache 와 Express 의 버전 정보 노출 여부를
+    표로 정리하고, 각 도구 결과의 일관성 (4 곳 모두 동일 버전이면 신뢰도 ↑)
+    을 판단해줘. NVD / Exploit-DB 의 CVE 매핑 가능성도 한 줄 언급 (MITRE
+    T1592.002 Software).
+# ============================================================
+# STEP 7 [RED·정찰·메타파일] — robots.txt / sitemap.xml / humans.txt / security.txt
+# ============================================================
 - order: 7
-  instruction: 'robots.txt 파일을 확인하여 숨겨진 경로를 찾으시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    attacker 컨테이너 (10.20.30.202) 에서 6v6-web 의 4 종 메타 파일 (robots.txt /
+    sitemap.xml / humans.txt / .well-known/security.txt) 을 수집해 *공격자 입장에서
+    유용한 힌트* (Disallow 경로 / sitemap URL list / security 담당자 연락처) 를
+    정리한다. Juice Shop 의 robots.txt 는 의도된 challenge — `/ftp` 노출.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `recon` 에 적합한 도구: whatweb, nmap -sV, nikto, wafw00f.
-    도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: http://{{WEB_IP}}/robots.txt에 접근하세요.
+    ## 💻 실행 명령
+
+    ```bash
+    # 1. 4 종 메타 파일 한 번에 (응답 코드 + 본문 첫 줄)
+    for f in robots.txt sitemap.xml humans.txt .well-known/security.txt; do
+      code=$(curl -o /dev/null -s -w "%{http_code}" "http://10.20.32.80/${f}")
+      echo "=== /${f} → ${code} ==="
+      [ "$code" = "200" ] && curl -s "http://10.20.32.80/${f}" | head -10
+    done
+
+    # 2. Juice Shop /ftp (robots.txt 에서 발견 시) 디렉토리 listing
+    curl -s http://10.20.40.81:3000/ftp/ | head -20
+    ```
+
+    ## 📋 확인 사항
+
+    - `robots.txt` 의 `Disallow:` 엔트리 list (각 경로의 의도 추정)
+    - `sitemap.xml` 의 `<loc>` URL list (공개 endpoint 전수)
+    - `.well-known/security.txt` 의 `Contact:` 의 부재 → 책임 분기 모호
+    - `/ftp` 같은 *오용* 메타 (Juice Shop 의 challenge — 백업 파일 노출)
+
+    ## 💡 왜 이걸 하는가?
+
+    robots.txt 의 Disallow 는 *공격자에게 알려주는 경로* — `Disallow: /admin/`
+    이면 *거기 admin 이 있다* 는 명시적 힌트 (MITRE T1592.004 Client
+    Configurations + OWASP WSTG-INFO-03 Identify Application Entry Points).
+    Juice Shop 의 robots.txt 는 `Disallow: /ftp` 로 백업 파일 디렉토리를
+    노출 — 의도된 학습 challenge.
+
+    ## 🔵 Blue 측 관찰
+
+    메타 파일 요청 자체는 Apache access_log 의 일반 GET 으로 남고 Wazuh /
+    ModSecurity 의 default 룰은 *경고하지 않음* . Blue 는 `find /var/www -name
+    'robots.txt' -exec cat {} \;` 등으로 노출 정책을 정기 감사 + nikto 결과
+    (`OSVDB-3092: /admin/: This might be interesting...`) 활용.
+
+    ## 🟣 Purple 보완 권장
+
+    - `robots.txt` 는 *공개 검색 차단* 만 — 인증/권한 통제는 별도 (`<Location>`
+      또는 `RequireAll`)
+    - `Disallow:` 에 *민감 경로 노출 금지* (예: `/admin/` 대신 `/internal/private`
+      식으로 유의미 단어 회피)
+    - `.well-known/security.txt` 작성 (RFC 9116) — Contact / Encryption / Policy
+      / Hiring 메타데이터 공개로 책임 분기 명확화
+  hint: |
+    `for f in robots.txt sitemap.xml humans.txt .well-known/security.txt; do ... done`
+    으로 4 종 한 번에. 응답 코드 200 일 때만 본문 head -10.
   category: recon
   points: 10
-  answer: '🤖 프롬프트: robots.txt 파일을 확인하여 숨겨진 경로를 찾으시오해줘
-
-    📎 참고 (CLI): curl -s http://10.20.32.80/robots.txt 2>/dev/null && echo ''robots.txt
-    확인 완료'''
-  answer_detail: robots.txt에는 크롤러 접근을 제한하는 경로가 포함되며, 민감한 디렉터리 정보를 노출할 수 있습니다.
+  answer: |
+    echo "=== 4 종 메타 파일 점검 ==="
+    for f in robots.txt sitemap.xml humans.txt .well-known/security.txt; do
+      code=$(curl -o /dev/null -s -w "%{http_code}" "http://10.20.32.80/${f}")
+      echo ""
+      echo "--- /${f} → HTTP ${code} ---"
+      if [ "$code" = "200" ]; then
+        curl -s "http://10.20.32.80/${f}" | head -10
+      fi
+    done
+    echo ""
+    echo "=== Juice Shop /ftp (robots 단서 시) ==="
+    curl -s http://10.20.40.81:3000/ftp/ 2>/dev/null | head -10 || echo "(접근 불가)"
+  answer_detail: |
+    Juice Shop 의 robots.txt 는 의도적으로 `User-agent: * / Disallow: /ftp` 만
+    포함 — `/ftp` 는 백업 파일 (예: acquisitions.md, package.json.bak) 디렉토리
+    listing 노출 (의도된 challenge). 일반 운영 web 은 robots.txt 가 정찰
+    힌트가 되지 않도록 *민감 경로 의 키워드 회피* (admin → mgmt 등). 또는
+    아예 robots.txt 미배포 (기본 검색엔진 차단은 응답 헤더 `X-Robots-Tag` 로).
   verify:
     type: output_contains
-    expect:
-    - robots.txt 확인 완료
-    - ftp
+    expect: 'HTTP'
     field: stdout
     semantic:
-      intent: robots.txt 확인 — 숨겨진 경로(/admin, /api, Disallow 항목) 식별
+      intent: |
+        4 종 메타 파일 (robots.txt / sitemap.xml / humans.txt / security.txt)
+        의 존재 여부 + 본문 정찰. Juice Shop 의 의도된 challenge (/ftp 노출)
+        식별. MITRE T1592.004 + OWASP WSTG-INFO-03.
       success_criteria:
-      - curl <url>/robots.txt 로 파일 획득 시도
-      - Disallow 엔트리 파싱 및 목록화
-      - robots.txt 가 정찰 실패가 아닌 경로 힌트로 쓰임 언급
+        - 4 종 중 최소 2 종 (robots.txt 포함) 요청 + 응답 코드 인용
+        - 200 응답 시 본문 일부 직접 인용 (Disallow 엔트리 또는 sitemap URL)
+        - Juice Shop /ftp 또는 다른 의도된 노출 식별 (해당 시)
+        - 6v6-web (10.20.32.80) 사용 명시
       acceptable_methods:
-      - curl -s <url>/robots.txt
-      - wget -O - <url>/robots.txt
-      - python urllib.request 로 파싱
-      - humans.txt, sitemap.xml 추가 확인
+        - "curl + for-loop 4 종 메타"
+        - "wget -O - <url>/robots.txt"
+        - "nikto -h http://10.20.32.80/ + 'OSVDB-' 결과"
+        - "gobuster dir + small wordlist (보조)"
       negative_signs:
-      - 404 응답만 받고 종료
-      - robots 외 다른 메타 파일 무시
-      - 경로 해석 없음
+        - robots.txt 만 보고 다른 메타 무시
+        - 200 응답 본문 인용 누락
+        - Disallow 엔트리 해석 (정찰 단서) 누락
   target_vm: attacker
-  script: curl -s http://10.20.32.80/robots.txt 2>/dev/null && echo 'robots.txt 확인
-    완료'
+  script: |
+    for f in robots.txt sitemap.xml humans.txt .well-known/security.txt; do
+      code=$(curl -o /dev/null -s -w "%{http_code}" "http://10.20.32.80/${f}")
+      echo "/${f} → HTTP ${code}"
+      [ "$code" = "200" ] && curl -s "http://10.20.32.80/${f}" | head -5
+    done
+    curl -s http://10.20.40.81:3000/ftp/ 2>/dev/null | head -5 || echo "(no /ftp)"
   risk_level: low
-  bastion_prompt: 'robots.txt 파일을 확인하여 숨겨진 경로를 찾으시오해줘
-
-
-
-
-    [도구 권장] recon: whatweb, nmap -sV, nikto, wafw00f. curl 만 쓰지 말고 **whatweb** 등 적합
-    도구로 호출 후 stdout quote.
+  bastion_prompt: |
+    attacker 컨테이너에서 6v6-web (10.20.32.80) 의 4 종 메타 파일 (robots.txt /
+    sitemap.xml / humans.txt / .well-known/security.txt) 의 응답 코드를 수집한 후,
+    200 응답인 파일의 본문 첫 5 줄을 직접 인용해줘. robots.txt 의 Disallow
+    엔트리는 정찰 단서 (공격자에게 admin 경로 알려주는 효과) 라는 보안 영향을
+    설명하고, Juice Shop 의 /ftp 경로 (의도된 challenge) 도 함께 점검해줘.
 
 
     [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
