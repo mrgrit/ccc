@@ -198,7 +198,7 @@ log prefix "FW-DENY: " drop               # 조건: 위 어느 룰도 안 매치
 - `ip saddr <IP>` / `ip daddr <IP>` / `ip protocol tcp`
 - `tcp dport 80` / `tcp dport { 80, 443, 8080 }` (set)
 - `ct state {established, related, new, invalid}`
-- `iifname "eth0"` (입력 인터페이스) / `oifname "eth1"` (출력)
+- `iifname "eth1"` (입력 인터페이스, fw 의 ext NIC = attacker 측) / `oifname "eth0"` (출력, pipe 측)
 - `meta mark 0x100` (skb mark)
 
 자주 쓰는 action:
@@ -535,7 +535,7 @@ ssh 6v6-attacker 'sudo nmap -sS -p 22,80,443,9100 10.20.30.1 2>&1 | tail -10'
 
 **Blue — drop 룰 + log 추가**:
 ```bash
-ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter log prefix "RBP-DROP: " drop'
+ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter log prefix RBPDROP drop'
 ```
 
 **Red — 다시 시도 (timeout 예상)**:
@@ -548,7 +548,7 @@ ssh 6v6-attacker 'sudo nmap -sS -p 22,80,443,9100 10.20.30.1 2>&1 | tail -10'
 ```bash
 ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | head -5'
 # counter packets N bytes M 가 0 → 증가 (drop 적중)
-ssh 6v6-fw 'sudo dmesg | tail -20 | grep RBP-DROP | head -5'
+ssh 6v6-fw 'sudo dmesg | tail -20 | grep RBPDROP | head -5'
 ```
 
 **Purple — 영구화 검토** (학습용 시뮬):
@@ -569,7 +569,7 @@ production 환경은 위 patch 를 git PR 검토 후 image 재빌드 + rolling r
 
 **Cleanup** (실험 종료):
 ```bash
-HANDLE=$(ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep RBP-DROP | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
+HANDLE=$(ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep RBPDROP | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
 ssh 6v6-fw "sudo nft delete rule inet six_filter input handle $HANDLE"
 ```
 
@@ -1104,7 +1104,7 @@ iptables -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
 
 - attacker 의 nmap 결과 (filtered / closed / open 분포)
 - fw counter 의 packets/bytes 증가량
-- dmesg 의 RBP-DROP 라인 수
+- dmesg 의 RBPDROP 라인 수
 - production 환경에서 본 룰을 영구화한다면 어떤 절차 (git PR / 이미지 재빌드 / canary)
 
 ---

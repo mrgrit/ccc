@@ -725,7 +725,7 @@ attacker 에서 30초에 6번 SSH 시도 → 첫 alert + 그 후 5건 마다 1 a
 
 ```
 # /etc/suricata/threshold.config 에 추가
-suppress gen_id 1, sig_id 9005041, track by_src, ip 10.20.30.202
+suppress gen_id 1, sig_id 9005041, track by_src, ip 10.20.31.1  # NAT 후 ips pipe NIC
 ```
 
 attacker (10.20.30.202) 에서는 9005041 alert 없음. 다른 src 는 정상.

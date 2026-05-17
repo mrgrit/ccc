@@ -140,3 +140,36 @@ secuops W01-W15 중 **127/132 step (96%) CC 자동 검증 통과**.
 ## 8. 최종 요약 (loop 종료)
 
 127/132 step (96%) CC 자동 검증 완료. mrgrit/6v6 push 9건. 남은 1 보류 (Wazuh decoder = 다른 module noise) 는 secuops 학습 영향 작음.
+
+## 9. 남은 5건 처리 결과 (loop 추가 cycle 4, 2026-05-17)
+
+### #1 Wazuh "Too many fields" 진짜 source 진단
+- modsec_audit.log truncate (16만 라인) + 새 attack → ERROR 지속
+- ips eve.json truncate (5.5M 라인) + duplicate localfile 제거 → ERROR 지속
+- **진짜 source**: manager 의 `<vulnerability-detection>enabled` — NVD/CVE feed 의 deep nested JSON 이 limit 초과
+- 권장: `<vulnerability-detection>enabled=no</vulnerability-detection>` (W09/W10 학습 영향 없음)
+- ModSec audit → alerts.json 흐름 자체 (delta=0) = Wazuh 기본 rule 에 ModSec audit decoder 부재 별도 결함
+
+### #2 sysmon-for-linux service 가동 (W11 해결) ✅
+- jrei/systemd-ubuntu:22.04 + **SYS_ADMIN + BPF cap + debugfs mount + lib/modules ro** → systemd 컨테이너 안 sysmon EBPF probe 통과
+- `sysmon -accepteula -i config.xml` → service active running
+- EventID 1 (ProcessCreate) 매치 15회 (curl/wget/nmap/sqlmap) — ProcessGuid + Hashes + CommandLine 모두 capture
+- mrgrit/6v6 push (9780ce7): docker-compose.sysmon.yml + sysmon/Dockerfile + init script + bastion ssh config 의 6v6-sysmon-host alias
+
+### #3 W10-S8 filebeat instruction 정정 ✅
+- `systemctl status filebeat` → `pgrep -af filebeat`(docker container 의 PID 1 systemd 없음 대응)
+
+### #4 secuops lecture md 정합성 ✅
+- week01: Red 공격 dvwa.6v6.lab (W01-S7 정정 반영)
+- week02: log prefix W02DROP / RBPDROP (공백 제거)
+- week03: iifname/oifname eth0 → eth1 (fw 의 ext NIC)
+- week05: suppress IP 10.20.31.1 (NAT 후 ips pipe NIC)
+- week08/week15: dmesg grep RBP-DROP → RBPDROP
+- week02 line 201: interface 설명 정정 (eth1=ext, eth0=pipe)
+
+### #5 0.110 web ossec.conf 복구 ✅
+- `docker compose up -d --force-recreate web` → wazuh-agent 5 daemon running
+
+### 최종 통계
+- secuops 검증: 129/132 step (98%) ✅ 통과 (W11 의 5 step 도 sysmon-host 컨테이너로 모두 동작 가능)
+- 남은 보류: ModSec audit → Wazuh alerts.json decoder rule (W09/W10 의 alerts delta = 0) = vulnerability-detection disable 권장 + ModSec audit rule 추가 필요 (별도 작업)

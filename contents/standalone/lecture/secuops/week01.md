@@ -1131,7 +1131,7 @@ ssh 6v6-web 'ls /usr/share/modsecurity-crs/rules/ | wc -l; ls /usr/share/modsecu
 **Step 4.4 — XSS 공격 → 403 차단**
 
 ```bash
-ssh 6v6-attacker 'curl -s -o /dev/null -w "XSS attempt: %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=<script>alert(1)</script>"'
+ssh 6v6-attacker 'curl -s -o /dev/null -w "XSS attempt: %{http_code}\n" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?q=<script>alert(1)</script>"'
 sleep 2
 ssh 6v6-web 'sudo tail -3 /var/log/apache2/modsec_audit.log | head -1 | jq -r ".transaction.messages[]? | select(.id | startswith(\"941\")) | .id" | head -3'
 ```
@@ -1292,7 +1292,7 @@ ssh 6v6-siem 'sudo tail -3 /var/ossec/logs/alerts/alerts.json | tail -1 | jq "{t
 **Red — 공격 발생 (1초)**:
 
 ```bash
-ssh 6v6-attacker 'curl -s -o /dev/null -A "sqlmap/1.5" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=<script>alert(1)</script>&id=1+UNION+SELECT"'
+ssh 6v6-attacker 'curl -s -o /dev/null -A "sqlmap/1.5" -H "Host: dvwa.6v6.lab"  # juice 는 W02 SQLi 학습용 DetectionOnly, 차단 검증은 dvwa "http://10.20.30.1/?q=<script>alert(1)</script>&id=1+UNION+SELECT"'
 ```
 
 이 한 줄의 curl 이 다음 4 도구에 흔적을 남긴다.

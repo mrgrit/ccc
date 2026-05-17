@@ -461,7 +461,7 @@ T+20min : Cleanup 위장 — 신규 사용자 + cron + listener (osquery + Wazuh
 
 ```bash
 # 1. fw 의 forward drop 흔적
-ssh 6v6-fw 'sudo dmesg --ctime | grep "FWD-DROP\|RBP-DROP" | tail -10'
+ssh 6v6-fw 'sudo dmesg --ctime | grep "FWD-DROP\|RBPDROP" | tail -10'
 
 # 2. ips 의 Suricata alert (nmap + SQLi)
 ssh 6v6-ips 'sudo tail -300 /var/log/suricata/eve.json | jq -r "select(.event_type==\"alert\" and .src_ip==\"10.20.30.202\") | \"\(.timestamp) ips alert \(.alert.signature_id) \(.alert.signature)\""'

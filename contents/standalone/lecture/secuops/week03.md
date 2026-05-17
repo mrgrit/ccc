@@ -104,7 +104,7 @@ graph LR
 
 **nft 명령**:
 ```
-sudo nft add rule ip six_nat postrouting oifname "eth0" ip saddr 10.20.31.0/24 \
+sudo nft add rule ip six_nat postrouting oifname "eth1" ip saddr 10.20.31.0/24 \
     snat to 10.20.30.1
 ```
 
@@ -126,7 +126,7 @@ graph LR
 
 **nft 명령**:
 ```
-sudo nft add rule ip six_nat prerouting iifname "eth0" tcp dport 8888 \
+sudo nft add rule ip six_nat prerouting iifname "eth1" tcp dport 8888 \
     dnat to 10.20.32.80:80
 ```
 
@@ -139,7 +139,7 @@ sudo nft add rule ip six_nat prerouting iifname "eth0" tcp dport 8888 \
 명시 없이 NIC 의 **현재** IP 로 자동 변환.
 
 ```
-sudo nft add rule ip six_nat postrouting oifname "eth0" ip saddr 10.20.31.0/24 \
+sudo nft add rule ip six_nat postrouting oifname "eth1" ip saddr 10.20.31.0/24 \
     masquerade
 ```
 
@@ -680,9 +680,9 @@ sudo nft add rule ip six_nat prerouting tcp dport 8888 dnat to 10.20.32.80:80
 
 # ✅ 올바른 정책 (NAT + 방화벽 동시)
 sudo nft add rule ip six_nat prerouting tcp dport 8888 dnat to 10.20.32.80:80
-sudo nft add rule inet six_filter forward iifname "eth0" tcp dport 80 \
+sudo nft add rule inet six_filter forward iifname "eth1" tcp dport 80 \
     ip daddr 10.20.32.80 ip saddr 192.168.0.0/24 accept     # 학생 PC 만
-sudo nft add rule inet six_filter forward iifname "eth0" tcp dport 80 \
+sudo nft add rule inet six_filter forward iifname "eth1" tcp dport 80 \
     ip daddr 10.20.32.80 log prefix "FWD-DROP: " drop       # 그 외 차단
 ```
 
@@ -841,7 +841,7 @@ table ip six_nat {
 
 **Step 1 — DNAT 룰 추가**:
 ```bash
-ssh 6v6-fw 'sudo nft add rule ip six_nat prerouting iifname "eth0" tcp dport 8888 \
+ssh 6v6-fw 'sudo nft add rule ip six_nat prerouting iifname "eth1" tcp dport 8888 \
     counter dnat to 10.20.32.80:80'
 
 # fw 자체로 들어오는 8888/tcp 허용 (input chain — DNAT 평가 전)
@@ -898,7 +898,7 @@ ssh 6v6-fw "sudo nft delete rule inet six_filter input handle $HANDLE2"
 
 ```bash
 for net in 10.20.31.0/24 10.20.32.0/24 10.20.40.0/24; do
-  ssh 6v6-fw "sudo nft add rule ip six_nat postrouting oifname \"eth0\" \
+  ssh 6v6-fw "sudo nft add rule ip six_nat postrouting oifname \"eth1\" \
       ip saddr $net counter masquerade"
 done
 
@@ -1010,7 +1010,7 @@ ssh 6v6-fw 'sudo tail -3 /var/log/haproxy.log 2>/dev/null | grep "10.20.30.202" 
 
 **Step 2 — Blue (충돌 DNAT 룰 삽입)**:
 ```bash
-ssh 6v6-fw 'sudo nft insert rule ip six_nat prerouting position 0 iifname "eth0" \
+ssh 6v6-fw 'sudo nft insert rule ip six_nat prerouting position 0 iifname "eth1" \
     tcp dport 80 counter dnat to 10.20.32.80:80'
 ```
 
@@ -1493,8 +1493,8 @@ graph LR
 
 6v6 의 ips 컨테이너에는 다음 룰이 있다:
 ```
-oifname "eth0" ip saddr 10.20.30.0/24 masquerade
-oifname "eth0" ip saddr 10.20.31.0/24 masquerade
+oifname "eth1" ip saddr 10.20.30.0/24 masquerade
+oifname "eth1" ip saddr 10.20.31.0/24 masquerade
 ```
 
 운영 의도: ips 를 통과한 traffic 이 외부 (ext, pipe) 로 응답할 때 ips 의 NIC IP 로 src
@@ -1726,10 +1726,10 @@ git PR 형식의 patch 첨부 (실제로 nftables.conf 에 적용할 형태).
 |------|------|
 | DNAT 단순 (port 변환만) | `nft add rule ip six_nat prerouting tcp dport 8888 dnat to :80` |
 | DNAT IP+port | `nft add rule ip six_nat prerouting tcp dport 8888 dnat to 10.20.32.80:80` |
-| DNAT 특정 iifname | `nft add rule ip six_nat prerouting iifname "eth0" tcp dport 8888 dnat to ...` |
+| DNAT 특정 iifname | `nft add rule ip six_nat prerouting iifname "eth1" tcp dport 8888 dnat to ...` |
 | SNAT 고정 IP | `nft add rule ip six_nat postrouting ip saddr 10.20.31.0/24 snat to 10.20.30.1` |
 | SNAT pool | `nft add rule ip six_nat postrouting ip saddr 10.20.31.0/24 snat to 10.20.30.1-10.20.30.10` |
-| MASQUERADE | `nft add rule ip six_nat postrouting oifname "eth0" ip saddr 10.20.31.0/24 masquerade` |
+| MASQUERADE | `nft add rule ip six_nat postrouting oifname "eth1" ip saddr 10.20.31.0/24 masquerade` |
 | trace 활성 | `nft add rule inet six_filter input tcp dport 80 meta nftrace set 1` |
 | trace 모니터 | `nft monitor trace` |
 | 변환 가시화 | `conntrack -L --orig-dst 10.20.30.1 --dport 8888` |

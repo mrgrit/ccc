@@ -530,7 +530,7 @@ T+120s: web 안에서 useradd backupz + cron backdoor (W07 학습 연관)
 
 ```bash
 # 1. fw 의 ICMP flood 흔적
-ssh 6v6-fw 'sudo dmesg --ctime | grep -i "ICMP-FLOOD\|RBP-DROP" | tail -10'
+ssh 6v6-fw 'sudo dmesg --ctime | grep -i "ICMP-FLOOD\|RBPDROP" | tail -10'
 
 # 2. ips 의 Suricata scan alert
 ssh 6v6-ips 'sudo tail -200 /var/log/suricata/eve.json | jq -r "select(.event_type==\"alert\" and .src_ip==\"10.20.30.202\") | \"\(.timestamp) ips alert \(.alert.signature_id) \(.alert.signature)\""'
