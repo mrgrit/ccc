@@ -74,3 +74,23 @@ ssh -p 2204 ccc@<VM_IP>   # bastion 컨테이너 (학생 작업 공간)
 | sysmon-for-linux | (host or systemd container) | W11 ⚠ |
 | OpenCTI 7.26 | opencti-* (20 컨테이너) | W12 W13 ✅ |
 | MISP 2.5 | misp-* (5 컨테이너) | W14 ✅ |
+
+## 6. 보류 해결 진행 (loop 추가 cycle, 2026-05-17)
+
+### MISP authkey 추출 (W14-S2 해결)
+- Console/cake CLI: `cake user change_authkey admin@admin.test`
+- 결과: 새 authkey 발급 (학생 환경마다 다름)
+- W14-S2/S3/S4 의 API 검증 완전 자동 가능
+- 검증: `curl -H "Authorization: <key>" https://<vm>:8443/users/view/me.json` → 200 + user JSON
+- 검증: `curl -X POST -H "Authorization: <key>" .../events/add` → 신규 event UUID 발급
+
+### sysmon-for-linux 의 환경 한계 명시 (W11)
+- binary 1.5.2 설치 OK (apt install sysmonforlinux)
+- `sysmon -s` (schema dump) / `sysmon -?` (help) = 동작
+- `sysmon -i config.xml` (service install) = systemctl 필요 → docker minimal 컨테이너 의 한계
+- 학생 환경 학습: schema 이해 + config XML 검증 (binary 로 가능) + 실 service = host install 권장
+
+### Wazuh ModSec JSON decoder 깊은 디버깅 (W09/W10 보류)
+- /var/ossec/etc/ 의 json_strict / max_fields option 없음 (기본값)
+- 추가 옵션 또는 ModSec 의 audit format 의 추가 축소 필요
+- 다음 세션 작업
