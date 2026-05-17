@@ -11,8 +11,8 @@
 > 본 주차 lab 의 hydra brute 후 Wazuh 의 5710/5712 alert 카운트 가 *0* 이면 *공격
 > 자체* 가 아닌 *탐지 측 결함* (Wazuh agent 미설치 / rsyslog forward 미설정 / 룰
 > 비활성). 표준 절차 = (a) `ssh 6v6-siem 'sudo /var/ossec/bin/agent_control -lc'`
-> 로 등록 agent 확인 → bastion (10.20.30.200) 미등록 시 (b) siem 에서
-> `manage_agents -a -n bastion -i 10.20.30.200` + bastion 측 wazuh-agent 설치/등록
+> 로 등록 agent 확인 → bastion (10.20.30.201) 미등록 시 (b) siem 에서
+> `manage_agents -a -n bastion -i 10.20.30.201` + bastion 측 wazuh-agent 설치/등록
 > → (c) 재 brute → alerts.json 검증.
 >
 > 시간 제약 시 fallback — `scripts/lab_fixture_inject.py` 의 `wazuh_alert` 합성

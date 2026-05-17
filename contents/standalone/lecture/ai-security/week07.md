@@ -167,13 +167,13 @@ Claude Code /
 
 ```bash
 # 1. 외부 Master(Claude Code / 사용자)가 Manager VM의 Bastion에 자연어 지시
-#    (Bastion은 manager:10.20.30.200 의 :8003 에서 /ask, /chat 로 대기)
+#    (Bastion API host = 192.168.0.110:9200 / 컨테이너 6v6-bastion = 10.20.30.201 에서 /chat, /health, /kg/*, /evidence 로 대기)
 curl -s -X POST http://192.168.0.110:9200/ask \
   -H 'Content-Type: application/json' \
   -d '{"message": "web 호스트의 호스트네임과 커널 버전을 알려줘"}'
 
 # 2. Bastion(Manager)이 내부적으로 적절한 Skill/Playbook을 선택하고
-#    대상 자산(예: web=10.20.30.80)의 SubAgent에게 명령을 위임한다.
+#    대상 자산(예: 6v6-web=10.20.32.80)의 SubAgent(:8002) 에게 명령을 위임한다.
 #    사용자는 Manager에게만 말하고, SubAgent 직접 호출은 하지 않는다.
 
 # 3. SubAgent가 실행 → 결과 + 증거가 Bastion /evidence 에 영구 기록된다
@@ -229,12 +229,13 @@ curl -s "http://192.168.0.110:9200/evidence?asset=secu&limit=3" | python3 -m jso
 # ccc-api(학생/랩 관리)
 curl -s -H "X-API-Key: ccc-api-key-2026" http://localhost:9100/health | python3 -m json.tool
 
-# Bastion(Manager) — manager VM:8003
+# Bastion(Manager) — host 192.168.0.110:9200 (또는 컨테이너 6v6-bastion:9200)
 curl -s http://192.168.0.110:9200/health | python3 -m json.tool
 
-# SubAgent(현장 에이전트) — 대상 자산의 :8002
-curl -s http://10.20.30.80:8002/health | python3 -m json.tool
-curl -s http://10.20.30.1:8002/health  | python3 -m json.tool
+# SubAgent(현장 에이전트) — 6v6 컨테이너 의 :8002
+curl -s http://10.20.32.80:8002/health | python3 -m json.tool   # 6v6-web
+curl -s http://10.20.30.1:8002/health  | python3 -m json.tool   # 6v6-fw ext side
+curl -s http://10.20.30.202:8002/health | python3 -m json.tool  # 6v6-attacker
 ```
 
 **무엇을 보는가:** 각 계층이 독립 서비스로 기동되어 있는지 확인한다.
