@@ -43,7 +43,7 @@ steps:
       2. **13 도구 가용성 매트릭스** — `which <tool>` 또는 `command -v <tool>` 으로
          13 도구 각각의 PATH 출력. 누락 도구는 ✗ 로 표시.
       3. **핵심 도구 버전 확인** — Recon 의 nmap (`nmap -V | head -1`) 과 Initial
-         Access 의 nikto (`nikto -Version | head -3`) 의 *정확한 버전* 기록. 후속
+         Access 의 nikto (`nikto -Version 2>&1 | grep -E 'Nikto main|LibWhisker'`) 의 *정확한 버전* 기록. 후속
          step 에서 CVE 검색에 활용.
 
       ## 실행 명령 (전체)
@@ -62,7 +62,7 @@ steps:
 
       # 3) 핵심 도구 버전
       nmap -V | head -1            # 예: Nmap version 7.94SVN
-      nikto -Version | head -3     # 예: Nikto v2.5.0
+      nikto -Version 2>&1 | grep -E 'Nikto main|LibWhisker'     # 예: Nikto v2.5.0
       ```
 
       ## 성공 판정 (모두 충족해야 pass)
@@ -97,7 +97,7 @@ steps:
         done
         echo "--- versions ---"
         nmap -V | head -1
-        nikto -Version 2>&1 | head -3
+        nikto -Version 2>&1 | grep -E 'Nikto main|LibWhisker'
       '
     answer_detail: |
       13 도구 가용성 매트릭스 + 핵심 2 도구 (nmap/nikto) 버전. 출력에 ✓ 가 *최소 10
@@ -239,7 +239,11 @@ steps:
     points: 15
     answer: |
       ssh -n 6v6-attacker '
-        for h in 6v6 juice dvwa neobank govportal mediforum admin ai; do
+        # 랜딩 vhost (6v6.lab 자체)
+        code=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: 6v6.lab" http://10.20.30.1/)
+        echo "6v6.lab (랜딩): $code"
+        # 7 개 서브 vhost (juice/dvwa/neobank/govportal/mediforum/admin/ai)
+        for h in juice dvwa neobank govportal mediforum admin ai; do
           code=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: $h.6v6.lab" http://10.20.30.1/)
           echo "$h.6v6.lab: $code"
         done

@@ -39,12 +39,15 @@ steps:
       | endpoint | OWASP | 의도 |
       |----------|:-----:|------|
       | `/api/Products` | (정상) | 제품 목록. 공격 X. baseline |
-      | `/api/Users` | **A01 Broken Access Control** | *모든 사용자 정보* 노출 (인증 없이) — IDOR (W06) |
+      | `/api/Feedbacks` | **A01 Broken Access Control** | *모든 user 의 review* 노출 (인증 없이) — IDOR + 이메일 부분 노출 |
       | `/rest/user/whoami` | A07 Auth | 인증 없이 호출 시 *빈 사용자* — 정상 동작 |
+
+      → 참고: `/api/Users` 는 JuiceShop 의 *의도된 인증 보호 endpoint* (401 응답) — W06 의
+        JWT 우회 학습 시 인증 후 IDOR 시도. 본 step 에선 *인증 없이 노출* 의 대표 = Feedbacks.
 
       ## 실행 절차
       1. **/api/Products** — baseline (정상 응답 확인)
-      2. **/api/Users** — *IDOR 가능성 검증* (인증 없이 모든 사용자 노출)
+      2. **/api/Feedbacks** — *IDOR 검증* (인증 없이 모든 user 의 review + 이메일 부분 노출)
       3. **/rest/user/whoami** — *익명 호출* (인증 토큰 없이) 응답 패턴
 
       ## 실행 명령
@@ -53,8 +56,8 @@ steps:
         echo "=== /api/Products (baseline) ==="
         curl -s -H "Host: juice.6v6.lab" http://10.20.30.1/api/Products 2>&1 | head -c 400
         echo
-        echo "=== /api/Users (IDOR 검증) ==="
-        curl -s -H "Host: juice.6v6.lab" http://10.20.30.1/api/Users 2>&1 | head -c 400
+        echo "=== /api/Feedbacks (IDOR 검증) ==="
+        curl -s -H "Host: juice.6v6.lab" http://10.20.30.1/api/Feedbacks 2>&1 | head -c 400
         echo
         echo "=== /rest/user/whoami (익명) ==="
         curl -s -H "Host: juice.6v6.lab" http://10.20.30.1/rest/user/whoami 2>&1 | head -c 200
@@ -63,15 +66,15 @@ steps:
 
       ## 성공 판정
       - `/api/Products` — JSON 배열 (제품 목록), `"id":1` 또는 `"name"` 포함
-      - `/api/Users` — JSON 배열, **인증 없이도 사용자 목록 노출** = IDOR 확인
+      - `/api/Feedbacks` — JSON 배열, **인증 없이 모든 user 의 review + 이메일 부분 노출** = IDOR 확인
       - `/rest/user/whoami` — `{"user":{}}` 또는 빈 user 응답
       - 3 endpoint 모두 응답 코드 200 (또는 401 — 401 시 W06 의 인증 우회 학습 기회)
-      - **OWASP A01 (Broken Access Control) 매핑 인지** — /api/Users 가 *왜* 노출되면 안 되는지
+      - **OWASP A01 (Broken Access Control) 매핑 인지** — /api/Feedbacks 가 *왜* 인증 없이 노출 되면 안 되는지
 
       ## 비정상 시 대응
       - **403 (ModSec 차단)** — User-Agent 의심. `-H "User-Agent: Mozilla/5.0"` 추가
       - **빈 응답** — JuiceShop 컨테이너 down. `ssh ccc@host 'docker ps | grep juiceshop'`
-      - **/api/Users 가 401** — 의도적 인증 추가됨. W06 의 JWT 우회 학습 기회
+      - **/api/Feedbacks 가 401** — 의도적 인증 추가됨. W06 의 JWT 우회 학습 기회
       - **JSON parse error** — head -c 로 잘림. `-c 0` (전체) 또는 jq 로 정렬
 
       ## 학습 — 다음 주차 입력
@@ -84,7 +87,7 @@ steps:
 
     hint: |
       3 endpoint 모두 Host header juice.6v6.lab 필수. head -c 400 으로 응답 잘라봄.
-      /api/Users 가 *인증 없이* 응답하면 IDOR — OWASP A01.
+      /api/Feedbacks 가 *인증 없이* 응답하면 IDOR — OWASP A01.
 
     category: analysis
     points: 20
@@ -92,13 +95,14 @@ steps:
       ssh -n 6v6-attacker '
         curl -s -H "Host: juice.6v6.lab" http://10.20.30.1/api/Products | head -c 400
         echo
-        curl -s -H "Host: juice.6v6.lab" http://10.20.30.1/api/Users | head -c 400
+        curl -s -H "Host: juice.6v6.lab" http://10.20.30.1/api/Feedbacks | head -c 400
         echo
         curl -s -H "Host: juice.6v6.lab" http://10.20.30.1/rest/user/whoami | head -c 200
       '
     answer_detail: |
-      3 endpoint 의 응답 매핑 + IDOR 검증. /api/Products = baseline, /api/Users = IDOR
-      (OWASP A01), /rest/user/whoami = 익명 호출 패턴. 후속 W04~W07 의 공격 표면 전제.
+      3 endpoint 의 응답 매핑 + IDOR 검증. /api/Products = baseline, /api/Feedbacks = IDOR
+      (OWASP A01, 인증 없이 모든 user review 노출), /rest/user/whoami = 익명 호출 패턴.
+      후속 W04~W07 의 공격 표면 전제.
     verify:
       type: output_contains
       expect: 'id'
@@ -110,17 +114,17 @@ steps:
           후속 W04~W07 의 공격 표면 전제.
         success_criteria:
           - "/api/Products 가 JSON 배열 응답 (제품 id/name 포함)"
-          - "/api/Users 가 인증 없이 사용자 목록 노출 → IDOR 확인"
+          - "/api/Feedbacks 가 인증 없이 user review + 이메일 부분 노출 → IDOR 확인"
           - "/rest/user/whoami 가 익명 호출 시 빈 user 응답"
           - "3 endpoint 모두 200 또는 의도적 401/403"
           - "OWASP A01 (Broken Access Control) 매핑 명시"
         acceptable_methods:
-          - "curl -H Host (baseline): 명령 `curl -s -H 'Host: juice.6v6.lab' http://10.20.30.1/api/Users`. 인증 없이 사용자 목록 시도."
+          - "curl -H Host (baseline): 명령 `curl -s -H 'Host: juice.6v6.lab' http://10.20.30.1/api/Feedbacks`. 인증 없이 review 노출 시도."
           - "curl + jq (가독성): 명령 `... | jq '.data[] | {id, email}'`. JSON 분석."
           - "httpie: 명령 `http --print=b GET http://10.20.30.1/api/Users 'Host: juice.6v6.lab'`. 컬러 + 자동 JSON 포맷."
           - "Burp Suite Proxy (수동): 브라우저 proxy → JuiceShop GUI → Burp 가 자동 캡처."
           - "OWASP ZAP API: zap-cli quick-scan -s xss,sqli -t http://juice.6v6.lab/."
-          - "httpx (병렬): 명령 `echo http://10.20.30.1 | httpx -path /api/Users -H 'Host: juice.6v6.lab' -mc 200`."
+          - "httpx (병렬): 명령 `echo http://10.20.30.1 | httpx -path /api/Feedbacks -H 'Host: juice.6v6.lab' -mc 200`."
           - "Postman / Insomnia: collection import (JuiceShop OpenAPI spec)."
           - "Bastion AI 자동 매핑: bastion 이 (1) endpoint list 자동 (2) 인증 없는 응답 → IDOR finding (3) OWASP 매핑 → KG anchor."
         negative_signs:
@@ -306,9 +310,15 @@ steps:
     category: rbp_integration
     points: 4
     answer: |
-      ssh -n 6v6-attacker 'TOKEN=$(curl -s -d "{\"email\":\"user@me\",\"password\":\"user\"}" -H "Content-Type: application/json" -H "Host: juice.6v6.lab" http://10.20.30.1/rest/user/login | jq -r .authentication.token 2>/dev/null); echo $TOKEN | cut -d. -f2 | base64 -d 2>/dev/null | head -c 200'
-      echo "Coverage: Burp + JWT + audit"
-    answer_detail: Web 정찰 R/B/P
+      # admin 계정 (JuiceShop default) 로 JWT 발급 + payload base64 decode
+      ssh -n 6v6-attacker 'TOKEN=$(curl -s -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"admin123\"}" -H "Content-Type: application/json" -H "Host: juice.6v6.lab" http://10.20.30.1/rest/user/login | python3 -c "import json,sys; print(json.load(sys.stdin)[\"authentication\"][\"token\"])" 2>/dev/null); echo "payload (first 200): $(echo $TOKEN | cut -d. -f2 | base64 -d 2>/dev/null | head -c 200)"'
+      # Blue audit — access.log 의 정상 login 흔적
+      ssh -n 6v6-web "sudo tail -10 /var/log/apache2/access.log 2>/dev/null | grep 'rest/user/login' | head -3"
+      echo "Coverage: Burp + JWT decode (admin) + access.log audit + JWT 운영 권장 (HS256 whitelist + 1h exp)"
+    answer_detail: |
+      R/B/P 통합 — Red: admin 로그인 + JWT payload 디코드 (id/email/role 평문). Blue: web 의
+      access.log 의 /rest/user/login 정상 흔적 audit. Purple: JWT 운영 권장 (HS256 whitelist
+      + alg=none 차단 + 1h expiration + rotation).
     verify:
       type: output_contains
       expect: 'Coverage'

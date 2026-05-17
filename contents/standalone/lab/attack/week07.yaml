@@ -79,16 +79,18 @@ steps:
     category: exploit
     points: 25
     answer: |
+      BEFORE=$(ssh -n 6v6-web 'sudo grep -c 930 /var/log/apache2/modsec_audit.log 2>/dev/null || echo 0')
+      echo "before: $BEFORE"
       ssh -n 6v6-attacker '
-        BEFORE=$(ssh -n 6v6-web "sudo grep -c 930 /var/log/apache2/modsec_audit.log 2>/dev/null || echo 0")
         for p in "../../../etc/passwd" "%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd" "....//....//....//etc/passwd" "../etc/passwd%00.jpg" "..%c0%afetc%c0%afpasswd"; do
           code=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?file=$p")
           echo "  $code | $p"
         done
-        sleep 2
-        AFTER=$(ssh -n 6v6-web "sudo grep -c 930 /var/log/apache2/modsec_audit.log 2>/dev/null || echo 0")
-        echo "차단: $((AFTER - BEFORE))"
       '
+      sleep 2
+      AFTER=$(ssh -n 6v6-web 'sudo grep -c 930 /var/log/apache2/modsec_audit.log 2>/dev/null || echo 0')
+      echo "after:  $AFTER"
+      echo "차단: $((AFTER - BEFORE))"
     answer_detail: |
       5 Path Traversal 변형 → ModSec 930 차단 카운트. 5 × 403 + 차단 ≥ 5 = 정상.
       일부 200 = paranoia 한계 (UTF-8 overlong 등). 모든 200 = ModSec 비활성.

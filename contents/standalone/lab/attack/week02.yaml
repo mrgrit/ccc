@@ -22,21 +22,22 @@ steps:
     instruction: |
       ## Mission
       attacker (10.20.30.202) 에서 **fw 의 ext endpoint (10.20.30.1)** 의 외부 노출 포트
-      5 종 을 nmap 으로 정찰하라. 본 step 은 PTES 2 단계 (Intelligence Gathering) +
+      4 종 을 nmap 으로 정찰하라. 본 step 은 PTES 2 단계 (Intelligence Gathering) +
       MITRE ATT&CK T1595.001 (Active Scanning) 의 *교과서적 첫 행동*. 학생은 *nmap 의
       3 스캔 종류* (TCP connect / SYN stealth / Service Version) 의 *각각 언제 쓰는지* +
       *Suricata 의 detection* 를 인지해야 한다.
 
-      ## fw 의 5 외부 노출 포트 (외워야 함)
+      ## fw 의 4 외부 노출 포트 (외워야 함)
       | 포트 | 서비스 | 백엔드 |
       |:----:|--------|--------|
-      | 22 | 호스트 SSH | (fw 의 sshd) |
+      | 22 | fw 의 SSH | (fw 의 sshd, ProxyJump 시작점) |
       | 80 | HTTP — 8 vhost reverse proxy | dmz/int → 7 vuln vhost |
       | 443 | HTTPS (self-signed) | 동일 |
-      | 2204 | bastion SSH 점프 | bastion :22 |
-      | 9100 | Bastion API | bastion :9100 |
+      | 9100 | Bastion API (HAProxy) | bastion :9100 |
 
-      → 이 외 포트 (5601 SIEM lite, 8000 portal, 2202 attacker) 는 외부 노출 X — *내부에서만* 접근.
+      → 이 외 fw 노출 포트 X. 단 **호스트 (0.110)** 의 *별도 노출* 포트:
+        `2204` → bastion:22 (학생 PC 의 ssh -p 2204 점프), `2202` → attacker:22.
+        이 둘은 fw 노출이 아니라 docker host 의 직접 매핑 — nmap 10.20.30.1 으로는 확인 X.
 
       ## nmap 스캔 3 종 (각각 언제 쓰는가)
       | 스캔 | 옵션 | 권한 | 특징 |
@@ -54,16 +55,16 @@ steps:
       ```bash
       ssh 6v6-attacker '
         echo "=== TCP connect (-sT) ==="
-        nmap -sT -p 22,80,443,2204,9100 10.20.30.1 2>&1 | tail -10
+        nmap -sT -p 22,80,443,9100 10.20.30.1 2>&1 | tail -10
         echo
         echo "=== Service Version (-sV) ==="
-        sudo nmap -sV -p 22,80,443,2204,9100 10.20.30.1 2>&1 | tail -15
+        sudo nmap -sV -p 22,80,443,9100 10.20.30.1 2>&1 | tail -15
       '
       ```
 
       ## 성공 판정
-      - 5 포트 모두 *open* 표시 (filtered 가 아닌)
-      - 22 → OpenSSH, 80/443 → HAProxy/Apache, 2204 → SSH, 9100 → HTTP (Bastion API) banner
+      - 4 포트 모두 *open* 표시 (filtered 가 아닌)
+      - 22 → OpenSSH, 80/443 → Apache (HAProxy 가 80 frontend → Apache 백엔드), 9100 → Bastion API (HAProxy 가 9100 frontend → bastion:9100 backend) banner
       - Service Version 의 *정확한 버전 string* 1 개 이상 추출
 
       ## 비정상 시 대응
@@ -86,8 +87,8 @@ steps:
     points: 20
     answer: |
       ssh -n 6v6-attacker '
-        nmap -sT -p 22,80,443,2204,9100 10.20.30.1 2>&1 | tail -10
-        sudo nmap -sV -p 22,80,443,2204,9100 10.20.30.1 2>&1 | tail -15
+        nmap -sT -p 22,80,443,9100 10.20.30.1 2>&1 | tail -10
+        sudo nmap -sV -p 22,80,443,9100 10.20.30.1 2>&1 | tail -15
       '
     answer_detail: |
       TCP connect (-sT) 5 포트 + Service Version (-sV) 5 포트. 5 포트 모두 open + banner
@@ -103,15 +104,16 @@ steps:
           인지 + 각 포트의 서비스·백엔드 매핑. PTES 2 단계 + ATT&CK T1595.001 의 교과서
           행동. Suricata 탐지 대상이라는 사실까지 인지.
         success_criteria:
-          - "5 포트 모두 open 표시 (filtered 가 아닌)"
+          - "4 포트 모두 open 표시 (filtered 가 아닌)"
           - "Service Version (-sV) banner 1 개 이상 추출 (HAProxy/Apache/OpenSSH)"
-          - "각 포트의 서비스 매핑 명시 — 22:SSH, 80/443:web reverse proxy, 2204:bastion SSH, 9100:Bastion API"
+          - "각 포트의 서비스 매핑 명시 — 22:fw SSH, 80/443:web reverse proxy, 9100:Bastion API (HAProxy → bastion)"
+          - "2204/2202 는 fw 노출이 아닌 host (0.110) 직접 매핑 임을 인지"
           - "비정상 (filtered) 발생 시 fw 룰 또는 sudo 권한 점검 절차 인지"
           - "정찰이 Suricata 탐지 대상임을 인지 (정상 동작)"
         acceptable_methods:
-          - "nmap -sT (TCP connect, 권한 X): 명령 `nmap -sT -p 22,80,443,2204,9100 10.20.30.1`. full handshake — 느리지만 log 남음. 권한 없을 때 fallback."
-          - "nmap -sS (SYN stealth, root 필요): 명령 `sudo nmap -sS -p 22,80,443,2204,9100 10.20.30.1`. half-open — 빠름, log 적음. 기본 권장."
-          - "nmap -sV (Service Version): 명령 `sudo nmap -sV -p 22,80,443,2204,9100 10.20.30.1`. banner 추출 → 버전 → CVE 검색."
+          - "nmap -sT (TCP connect, 권한 X): 명령 `nmap -sT -p 22,80,443,9100 10.20.30.1`. full handshake — 느리지만 log 남음. 권한 없을 때 fallback."
+          - "nmap -sS (SYN stealth, root 필요): 명령 `sudo nmap -sS -p 22,80,443,9100 10.20.30.1`. half-open — 빠름, log 적음. 기본 권장."
+          - "nmap -sV (Service Version): 명령 `sudo nmap -sV -p 22,80,443,9100 10.20.30.1`. banner 추출 → 버전 → CVE 검색."
           - "nmap -O (OS detection): 명령 `sudo nmap -O 10.20.30.1`. TCP/IP fingerprint → OS family + uptime."
           - "nmap -sU (UDP): 명령 `sudo nmap -sU -p 53,123,161 10.20.30.1`. UDP 포트 (DNS/NTP/SNMP) 정찰. 느림."
           - "nmap --script (NSE): 명령 `nmap --script=banner -p 22,80 10.20.30.1`. lua script 600+ 종."
@@ -172,7 +174,8 @@ steps:
       ## 성공 판정
       - nikto 가 *banner / server / cookie* 정보 1 개 이상 추출
       - Tuning 4/5/9 의 *시도 흔적* (response code 다양성)
-      - ModSec 403 차단 발견 시 *정상 동작* 으로 인식 (Blue team 의 기본 방어)
+      - **juice.6v6.lab = DetectionOnly** 라 nikto 의 SQLi/XSS/LFI 가 *403 으로 차단 안 됨* — ModSec audit log 에는 *alert* 만 기록 (탐지 ≠ 차단)
+      - 차단 (403) 관찰 원하면 추가 시도: `-vhost dvwa.6v6.lab` (dvwa = ModSec On)
       - 30 초 timeout 시 *부분 결과* 라도 분석 시도
 
       ## 비정상 시 대응
@@ -216,7 +219,8 @@ steps:
         success_criteria:
           - "nikto 가 banner/server/cookie 정보 1 개 이상 추출"
           - "Tuning 4/5/9 의 시도 흔적 (response code 다양성)"
-          - "ModSec 403 차단 발견 시 정상 동작 (방어) 으로 인식"
+          - "juice = DetectionOnly 라 403 차단 발생 안 함 — ModSec audit log alert 만. 탐지 ≠ 차단 학습"
+          - "차단 (403) 관찰 원하면 -vhost dvwa.6v6.lab (ModSec On) 추가 scan"
           - "30 초 timeout 의 부분 결과도 분석 시도"
           - "각 Tuning 의 ATT&CK Technique 매핑 (T1190 등) 인지"
         acceptable_methods:
@@ -260,14 +264,14 @@ steps:
       ## 실행 명령
       ```bash
       ### Red 1차 — open 확인
-      ssh 6v6-attacker 'sudo nmap -sS -p 22,80,443,2204,9100 10.20.30.1 2>&1 | tail -8'
+      ssh 6v6-attacker 'sudo nmap -sS -p 22,80,443,9100 10.20.30.1 2>&1 | tail -8'
 
       ### Blue — drop 룰 추가
       ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 \
                           ip saddr 10.20.30.202 counter drop'
 
       ### Red 2차 — filtered 확인 (drop 효과)
-      ssh 6v6-attacker 'sudo nmap -sS -p 22,80,443,2204,9100 10.20.30.1 2>&1 | tail -8'
+      ssh 6v6-attacker 'sudo nmap -sS -p 22,80,443,9100 10.20.30.1 2>&1 | tail -8'
 
       ### Purple — counter 확인 (효과 측정)
       ssh 6v6-fw 'sudo nft list chain inet six_filter input | grep -B1 "10.20.30.202.*drop"'
@@ -315,9 +319,9 @@ steps:
     category: redblue
     points: 25
     answer: |
-      ssh -n 6v6-attacker 'sudo nmap -sS -p 22,80,443,2204,9100 10.20.30.1 2>&1 | tail -8'
+      ssh -n 6v6-attacker 'sudo nmap -sS -p 22,80,443,9100 10.20.30.1 2>&1 | tail -8'
       ssh -n 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter drop'
-      ssh -n 6v6-attacker 'sudo nmap -sS -p 22,80,443,2204,9100 10.20.30.1 2>&1 | tail -8'
+      ssh -n 6v6-attacker 'sudo nmap -sS -p 22,80,443,9100 10.20.30.1 2>&1 | tail -8'
       ssh -n 6v6-fw 'sudo nft list chain inet six_filter input | grep -B1 "10.20.30.202.*drop"'
       HANDLE=$(ssh -n 6v6-fw "sudo nft -a list chain inet six_filter input | grep '10.20.30.202.*drop' | grep -oE 'handle [0-9]+' | head -1 | awk '{print \$2}'")
       ssh -n 6v6-fw "sudo nft delete rule inet six_filter input handle $HANDLE"
@@ -341,7 +345,7 @@ steps:
           - "Purple 의 counter packets ≥ 5 (nmap probe 잡힘)"
           - "Cleanup 후 정상화 nmap 의 open 복귀"
         acceptable_methods:
-          - "nmap -sS stealth: 명령 `sudo nmap -sS -p 22,80,443,2204,9100 10.20.30.1`. SYN half-open, log 적음. 기본 정찰."
+          - "nmap -sS stealth: 명령 `sudo nmap -sS -p 22,80,443,9100 10.20.30.1`. SYN half-open, log 적음. 기본 정찰."
           - "nft insert rule (Blue): 명령 `sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter drop`. position 0 = chain 첫 룰. counter = 통계."
           - "nft list chain (Purple): 명령 `sudo nft list chain inet six_filter input`. 룰 + counter packets/bytes 표시."
           - "nft -a (handle 추출): 명령 `sudo nft -a list chain inet six_filter input`. -a = handle 표시."
