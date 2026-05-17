@@ -590,19 +590,55 @@ steps:
     출력 quote + 가장 흔한 결함 (#1, #4) 강조 + 다층 방어 (HMAC + session + CSPRNG + GET-safe)
     한 문장.
 - order: 7
-  instruction: 'Referer 헤더 기반 CSRF 방어를 우회하시오.
+  instruction: |
+    [목표] 서버가 Referer 헤더 검증으로 CSRF 를 방어할 때 가능한 우회 기법 4 가지를 분석
+    하고, Juice Shop 의 Referer/Origin 처리 실측한다.
 
+    [Referer 우회 기법]
+      1. **meta referrer=no-referrer** : HTML 페이지가 Referer 송신 자체를 차단
+      2. **HTTPS → HTTP 다운그레이드** : 브라우저는 보안상 Referer 미전송
+      3. **data: URL / blob: URL** : Referer 없음
+      4. **subdomain takeover** : *.victim.com 점유 후 그곳에서 요청 → Referer 가 같은 도메인
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `csrf_bypass` 에 적합한 도구: curl 로 토큰 누락/재사용 시도. 도구
-    호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: Referer를 제거하는 기법을 사용하세요.
+    [실측 : Juice Shop 의 Referer/Origin 영향]
+      echo '=== 정상 Origin ==='
+      curl -sI -H 'Origin: http://juice.6v6.lab' http://juice.6v6.lab/api/Users \
+        | grep -iE 'HTTP|access-control'
+      echo '=== 악성 Origin ==='
+      curl -sI -H 'Origin: http://evil.com' http://juice.6v6.lab/api/Users \
+        | grep -iE 'HTTP|access-control'
+      echo '=== Referer 없음 ==='
+      curl -sI -e '' http://juice.6v6.lab/api/Users | grep -iE 'HTTP|access-control'
+      echo 'Referer 우회 기법 완료'
+
+    [도구 권장] curl -e (Referer) / -H 'Origin:' / Burp / Mozilla MDN Referrer-Policy 문서.
+    호출 후 stdout 1~3줄 quote.
+  hint: |
+    4가지 우회 기법 모두 나열 + Juice Shop 실측 결과 (정상/악성/없음 Origin 의 응답 차이)
+    quote. Referer-only 방어의 근본 한계 (헤더는 client-side controlled) 설명.
   category: csrf_bypass
   points: 10
-  answer: '🤖 프롬프트: Referer 헤더 기반 CSRF 방어를 우회해줘
+  answer: |
+    🤖 프롬프트: Referer 기반 CSRF 방어 우회 4 가지 (meta no-referrer / HTTPS→HTTP / data URL
+    / subdomain takeover) 분석하고, Juice Shop 에서 Origin/Referer 변형 시 응답 차이를
+    실측해줘.
 
-    📎 참고 (CLI): echo ''<meta name="referrer" content="no-referrer">'' && echo ''Referer
-    우회 기법 완료'''
-  answer_detail: meta 태그로 Referer 전송을 방지하면 서버의 Referer 검증을 우회할 수 있습니다.
+    📎 참고 (CLI):
+      echo '=== 정상 Origin ==='
+      curl -sI -H 'Origin: http://juice.6v6.lab' http://juice.6v6.lab/api/Users \
+        | grep -iE 'HTTP|access-control'
+      echo '=== 악성 Origin ==='
+      curl -sI -H 'Origin: http://evil.com' http://juice.6v6.lab/api/Users \
+        | grep -iE 'HTTP|access-control'
+      echo '=== Referer 없음 ==='
+      curl -sI -e '' http://juice.6v6.lab/api/Users | grep -iE 'HTTP|access-control'
+      echo 'Referer 우회 기법 완료'
+  answer_detail: |
+    Referer 검증의 근본 한계: (1) 클라이언트가 송신 여부 제어 가능 (meta/Policy/링크 속성)
+    (2) Referer 미존재 시 거부할지 통과할지 정책 모호 (3) 다운그레이드/data URL/subdomain
+    로 우회 다수. 따라서 Referer 검증은 *defense in depth* 의 부가적 layer 일 뿐, 단독 방어
+    는 위험. 권장: Origin 헤더 검증 (Referer 보다 신뢰성 높음 — 브라우저가 항상 송신, 변형
+    어려움) + CSRF 토큰.
   verify:
     type: output_contains
     expect:
@@ -610,84 +646,225 @@ steps:
     - curl
     field: stdout
     semantic:
-      intent: Referer 기반 방어 우회 — Referer 헤더 삭제, data URL 사용, subdomain 스푸핑으로 우회
+      intent: |
+        Juice Shop 의 Origin/Referer 영향 실측 + Referer 우회 4 기법 + Origin 헤더가 더
+        신뢰성 높은 이유 분석.
       success_criteria:
-      - Referer-Policy no-referrer 적용해 헤더 제거 기법
-      - data URL 또는 HTTPS to HTTP 전환으로 Referer 미전송
-      - Referer-only 방어의 근본 한계 설명
+      - 3 케이스 (정상 Origin / 악성 Origin / Referer 없음) curl 실측 + 응답 quote
+      - 우회 기법 4가지 (meta/HTTPS↓HTTP/data URL/subdomain takeover) 나열
+      - Referer 단독 방어의 한계 (client-controlled, 미존재 정책 모호) 설명
+      - 대안: Origin 헤더 검증 + CSRF 토큰 다층 방어 권고
       acceptable_methods:
-      - meta referrer=no-referrer 또는 Referrer-Policy
+      - curl -H 'Origin:' / -e (Referer)
+      - Burp Repeater 로 헤더 조작
+      - meta referrer=no-referrer / Referrer-Policy 적용
       - rel=noreferrer 링크 속성
-      - Subdomain takeover 로 Referer 위조
-      - curl -e  로 Referer 없는 요청
       negative_signs:
-      - 헤더 조작 시도 없음
-      - 단일 우회 기법만
-      - 방어 한계 분석 없음
+      - 우회 기법 1-2개만 (4개 미만)
+      - 실측 없이 개념만
+      - Origin vs Referer 비교 누락
   target_vm: attacker
-  script: echo '<meta name="referrer" content="no-referrer">' && echo 'Referer 우회
-    기법 완료'
+  script: |
+    echo '=== 정상 Origin ==='
+    curl -sI -H 'Origin: http://juice.6v6.lab' http://juice.6v6.lab/api/Users \
+      | grep -iE 'HTTP|access-control'
+    echo '=== 악성 Origin ==='
+    curl -sI -H 'Origin: http://evil.com' http://juice.6v6.lab/api/Users \
+      | grep -iE 'HTTP|access-control'
+    echo '=== Referer 없음 ==='
+    curl -sI -e '' http://juice.6v6.lab/api/Users | grep -iE 'HTTP|access-control'
+    echo 'Referer 우회 기법 완료'
   risk_level: low
-  bastion_prompt: 'Referer 헤더 기반 CSRF 방어를 우회해줘
+  bastion_prompt: |
+    Juice Shop 의 Origin/Referer 변형 실측 + Referer 우회 4 기법 분석:
 
+      echo '=== 정상 Origin ==='
+      curl -sI -H 'Origin: http://juice.6v6.lab' http://juice.6v6.lab/api/Users \
+        | grep -iE 'HTTP|access-control'
+      echo '=== 악성 Origin ==='
+      curl -sI -H 'Origin: http://evil.com' http://juice.6v6.lab/api/Users \
+        | grep -iE 'HTTP|access-control'
+      echo '=== Referer 없음 ==='
+      curl -sI -e '' http://juice.6v6.lab/api/Users | grep -iE 'HTTP|access-control'
+      echo 'Referer 우회 기법 완료'
 
-    [도구 권장] csrf_bypass: curl 로 토큰 누락/재사용 시도. curl 만 쓰지 말고 **curl 로 토큰 누락/재사용 시도**
-    등 적합 도구로 호출 후 stdout quote.'
+    출력 quote + 우회 기법 4가지 (meta/HTTPS↓HTTP/data URL/subdomain takeover) + Referer
+    단독 방어의 근본 한계 + Origin 헤더가 더 신뢰성 높은 이유.
 - order: 8
-  instruction: 'JSON 기반 엔드포인트의 CSRF 가능성을 분석하시오.
+  instruction: |
+    [목표] JSON 엔드포인트의 CSRF 가능성을 simple-request vs preflight 의 관점에서 분석하고,
+    Content-Type 우회 시도가 Juice Shop 에서 어떻게 응답하는지 실측한다.
 
+    [핵심 개념]
+      - **simple request** (CORS 스펙) : 메서드 GET/HEAD/POST + Content-Type 이 application/
+        x-www-form-urlencoded / multipart/form-data / text/plain 중 하나 → preflight 없음
+      - **preflight 요청** : 그 외 (예: application/json, Authorization 등 custom 헤더)
+        → OPTIONS 사전 요청 → 서버가 Allow-Origin/Allow-Methods 응답해야 본 요청 허용
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `csrf_advanced` 에 적합한 도구: Burp 매크로 또는 curl + jq.
-    도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: Content-Type 제한을 확인하세요.
+    [공격면]
+      - 서버가 Content-Type 검증 안 하면 attacker 가 Content-Type: text/plain 으로 JSON
+        body 보내 simple request 로 우회 (preflight 회피)
+      - 서버가 JSON parser 가 text/plain 도 받으면 위조 성공
+
+    [실측]
+      echo '=== text/plain 으로 JSON body 시도 ==='
+      curl -s -i -X POST http://juice.6v6.lab/rest/user/login \
+        -H 'Content-Type: text/plain' \
+        -d '{"email":"admin@juice-sh.op","password":"admin123"}' | head -20
+      echo '---'
+      echo '=== application/json 정상 ==='
+      curl -s -i -X POST http://juice.6v6.lab/rest/user/login \
+        -H 'Content-Type: application/json' \
+        -d '{"email":"admin@juice-sh.op","password":"admin123"}' | head -5
+      echo 'JSON CSRF 분석 완료'
+
+    [도구 권장] curl + 다양 Content-Type / Burp Repeater + Macro / OWASP CORS Misconfig
+    가이드. 호출 후 stdout 1~3줄 quote.
+  hint: |
+    text/plain 으로 JSON 보냈을 때 응답 status / body 비교. Content-Type 검증 있으면 400
+    (parse error). 없으면 200 (CSRF 가능). Juice Shop 의 실제 응답 quote 필수.
   category: csrf_advanced
   points: 10
-  answer: "\U0001F916 프롬프트: JSON 기반 엔드포인트의 CSRF 가능성을 분석해줘\n\U0001F4CE 참고 (CLI): curl\
-    \ -s -X POST http://juice.6v6.lab/api/test \\\n  -H 'Content-Type: text/plain' \\\
-    \n  -d '{\"test\":1}' 2>/dev/null && echo 'JSON CSRF 분석 완료'"
-  answer_detail: 서버가 Content-Type을 검증하지 않으면 text/plain으로 JSON 데이터를 전송할 수 있습니다.
+  answer: |
+    🤖 프롬프트: Juice Shop /rest/user/login 에 Content-Type: text/plain 으로 JSON body
+    보내 simple-request 우회 가능 여부 확인하고, application/json 정상 응답과 비교해줘.
+
+    📎 참고 (CLI):
+      echo '=== text/plain 으로 JSON body 시도 ==='
+      curl -s -i -X POST http://juice.6v6.lab/rest/user/login \
+        -H 'Content-Type: text/plain' \
+        -d '{"email":"admin@juice-sh.op","password":"admin123"}' | head -20
+      echo '---'
+      echo '=== application/json 정상 ==='
+      curl -s -i -X POST http://juice.6v6.lab/rest/user/login \
+        -H 'Content-Type: application/json' \
+        -d '{"email":"admin@juice-sh.op","password":"admin123"}' | head -5
+      echo 'JSON CSRF 분석 완료'
+  answer_detail: |
+    JSON CSRF 면역의 *통념* (브라우저가 preflight 보내니 차단) 은 서버가 Content-Type 을
+    엄격 검증할 때만 성립. 검증 없으면 text/plain 으로 simple request 되어 우회. 권장:
+    (1) Content-Type 가 application/json 인지 서버 측 검증 (2) CSRF 토큰 동시 적용 (3)
+    Express body-parser strict / Spring @RequestBody type=application/json 강제.
   verify:
     type: output_contains
     expect: JSON CSRF 분석 완료
     field: stdout
     semantic:
-      intent: JSON 엔드포인트 CSRF — Content-Type application/json 요구로 simple request 불가능,
-        그러나 Flash/특정 우회 가능
+      intent: |
+        Juice Shop login 의 Content-Type text/plain vs application/json 응답 비교 + simple
+        vs preflight 개념 + JSON 면역 통념의 한계 분석.
       success_criteria:
-      - JSON POST 는 simple request 아니므로 preflight 발생함 설명
-      - Content-Type text/plain 우회 또는 XHR boundary 조작 공격 벡터
-      - CSRF 토큰이 여전히 필요한 이유 언급
+      - text/plain + JSON body 시도 실측 + 응답 status quote
+      - application/json 정상 응답과 비교
+      - simple request vs preflight CORS 스펙 차이 설명
+      - Content-Type 검증 없으면 JSON 면역 깨지는 이유 명시
       acceptable_methods:
-      - curl -H Content-Type:application/json -d {...}
+      - curl -H 'Content-Type:' 다양 변형
+      - Burp Repeater + Macro
+      - fetch 의 Content-Type 조작
       - Flash XHR (구형) 또는 form trickery
-      - fetch 로 Content-Type 조작
-      - CORS misconfigured allow any origin 와 결합
       negative_signs:
       - simple vs preflight 구분 없음
       - JSON 만으로 CSRF 완전 차단된다고 오판
-      - CORS 연계 없음
+      - 서버 측 Content-Type 검증 권고 누락
   target_vm: attacker
-  script: "curl -s -X POST http://juice.6v6.lab/api/test \\\n  -H 'Content-Type: text/plain'\
-    \ \\\n  -d '{\"test\":1}' 2>/dev/null && echo 'JSON CSRF 분석 완료'"
+  script: |
+    echo '=== text/plain 으로 JSON body 시도 ==='
+    curl -s -i -X POST http://juice.6v6.lab/rest/user/login \
+      -H 'Content-Type: text/plain' \
+      -d '{"email":"admin@juice-sh.op","password":"admin123"}' | head -20
+    echo '---'
+    echo '=== application/json 정상 ==='
+    curl -s -i -X POST http://juice.6v6.lab/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d '{"email":"admin@juice-sh.op","password":"admin123"}' | head -5
+    echo 'JSON CSRF 분석 완료'
   risk_level: low
-  bastion_prompt: 'JSON 기반 엔드포인트의 CSRF 가능성을 분석해줘
+  bastion_prompt: |
+    Juice Shop login 의 Content-Type 검증 강도 실측:
 
+      echo '=== text/plain 으로 JSON body 시도 ==='
+      curl -s -i -X POST http://juice.6v6.lab/rest/user/login \
+        -H 'Content-Type: text/plain' \
+        -d '{"email":"admin@juice-sh.op","password":"admin123"}' | head -20
+      echo '---'
+      echo '=== application/json 정상 ==='
+      curl -s -i -X POST http://juice.6v6.lab/rest/user/login \
+        -H 'Content-Type: application/json' \
+        -d '{"email":"admin@juice-sh.op","password":"admin123"}' | head -5
+      echo 'JSON CSRF 분석 완료'
 
-    [도구 권장] csrf_advanced: Burp 매크로 또는 curl + jq. curl 만 쓰지 말고 **Burp 매크로 또는 curl
-    + jq** 등 적합 도구로 호출 후 stdout quote.'
+    출력 quote + simple vs preflight 차이 + Content-Type 검증의 CSRF 면역에 대한 역할.
 - order: 9
-  instruction: 'CORS 설정과 CSRF의 관계를 분석하시오.
+  instruction: |
+    [목표] Juice Shop 의 CORS 헤더를 실측하고 CSRF 와의 관계를 분석한다. (CC 실측 결과:
+    `Access-Control-Allow-Origin: *` 와일드카드 발견.)
 
+    [CORS 와 CSRF 의 4 케이스]
+      1. **ACAO 명시 origin + ACAC=true** : 해당 origin 만 credentials 동반 요청 허용 (안전)
+      2. **ACAO=* + ACAC 없음** : simple GET 응답을 cross-origin JS 가 읽을 수 있음 (정보 누출)
+      3. **ACAO=* + ACAC=true** : 브라우저가 강제 차단 (CORS 스펙 위반)
+      4. **ACAO=reflect (Origin echo) + ACAC=true** : 모든 origin 허용 → 가장 위험 (CSRF 가능)
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `csrf_advanced` 에 적합한 도구: Burp 매크로 또는 curl + jq.
-    도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: Access-Control 헤더를 확인하세요.
+    [실측 — Juice Shop CORS]
+      echo '=== Origin: evil ==='
+      curl -sI -H 'Origin: http://evil.com' http://juice.6v6.lab \
+        | grep -iE 'HTTP|access-control'
+      echo '---'
+      echo '=== Origin: legit ==='
+      curl -sI -H 'Origin: http://juice.6v6.lab' http://juice.6v6.lab \
+        | grep -iE 'HTTP|access-control'
+      echo '---'
+      echo '=== OPTIONS preflight ==='
+      curl -sI -X OPTIONS \
+        -H 'Origin: http://evil.com' \
+        -H 'Access-Control-Request-Method: POST' \
+        -H 'Access-Control-Request-Headers: content-type,authorization' \
+        http://juice.6v6.lab/api/Users \
+        | grep -iE 'HTTP|access-control'
+      echo 'CORS 분석 완료'
+
+    [예상 결과] `Access-Control-Allow-Origin: *` 발견 — wildcard. Allow-Credentials 헤더
+    부재 → 케이스 #2 (정보 노출 위험, 단 credentials 동반 CSRF 는 차단). OPTIONS preflight
+    응답: `204 No Content + ACAO: * + ACAM: GET,HEAD,PUT,PATCH,POST,DELETE + ACAH: content-
+    type,authorization` — 매우 관대한 정책. Juice Shop = 의도된 교육용 취약 설정으로,
+    Authorization 헤더 까지 preflight 허용 → JWT 가 cross-origin JS 에서도 전송 가능 (단
+    JWT 자체는 localStorage 의 Same-Origin Policy 로 보호).
+
+    [도구 권장] curl -H 'Origin:' / corsy 자동 스캐너 / Burp CORS scanner / Mozilla CORS docs.
+    호출 후 stdout 1~3줄 quote.
+  hint: |
+    4 케이스 매트릭스 + Juice Shop 실측 결과 (`*` 와일드카드 발견) 분석 + ACAC 부재로 simple
+    GET 응답 노출 위험 + reflect 형 (가장 위험) 패턴 별도 설명.
   category: csrf_advanced
   points: 10
-  answer: "\U0001F916 프롬프트: CORS 설정과 CSRF의 관계를 분석해줘\n\U0001F4CE 참고 (CLI): curl -sI\
-    \ \\\n  -H 'Origin: http://evil.com' http://juice.6v6.lab \\\n | grep -i 'access-control'\
-    \ && echo 'CORS 분석 완료' || echo 'CORS 미설정 확인 완료'"
-  answer_detail: CORS 와일드카드(*)는 credentials와 함께 사용 불가하지만 특정 Origin 반사는 위험합니다.
+  answer: |
+    🤖 프롬프트: Juice Shop 의 CORS 헤더 (ACAO/ACAC) 실측하고 4 케이스 (명시/와일드카드/와일드카드
+    +credentials/reflect) 매트릭스로 CSRF 관계 분석해줘.
+
+    📎 참고 (CLI):
+      echo '=== Origin: evil ==='
+      curl -sI -H 'Origin: http://evil.com' http://juice.6v6.lab \
+        | grep -iE 'HTTP|access-control'
+      echo '---'
+      echo '=== Origin: legit ==='
+      curl -sI -H 'Origin: http://juice.6v6.lab' http://juice.6v6.lab \
+        | grep -iE 'HTTP|access-control'
+      echo '---'
+      echo '=== OPTIONS preflight ==='
+      curl -sI -X OPTIONS \
+        -H 'Origin: http://evil.com' \
+        -H 'Access-Control-Request-Method: POST' \
+        -H 'Access-Control-Request-Headers: content-type,authorization' \
+        http://juice.6v6.lab/api/Users \
+        | grep -iE 'HTTP|access-control'
+      echo 'CORS 분석 완료'
+  answer_detail: |
+    Juice Shop 실측 = ACAO `*` (wildcard) + ACAC 부재. 의미: simple GET 응답이 cross-origin
+    JS 에 노출 가능 (정보 누출), 단 credentials 동반 요청은 브라우저가 거부 (#3 케이스 차단).
+    가장 위험한 패턴은 reflect (Origin 헤더 그대로 echo) + ACAC=true — 모든 origin 이
+    credentials 동반으로 cross-origin 요청 가능 → 완전 CSRF. 권고: ACAO 화이트리스트 명시
+    + ACAC 는 필요한 endpoint 에만.
   verify:
     type: output_contains
     expect:
@@ -696,30 +873,64 @@ steps:
     - Control
     field: stdout
     semantic:
-      intent: CORS 설정과 CSRF 관계 — Access-Control-Allow-Credentials true + Allow-Origin
-        wildcard/reflection 시 CSRF 심화
+      intent: |
+        Juice Shop CORS 헤더 실측 (ACAO/ACAC) + 4 케이스 (명시/wildcard/wildcard+cred/
+        reflect) 매트릭스 + Juice Shop = wildcard 발견 분석.
       success_criteria:
-      - preflight 없는 simple request 와 preflight 요구 차이
-      - ACAO wildcard + credentials 불가 원칙
-      - 반사형 Origin 정책 취약점 및 subdomain takeover 연계
+      - 3 케이스 (evil Origin / legit Origin / OPTIONS preflight) 실측 + 응답 quote
+      - ACAO 와 ACAC 의 4 케이스 매트릭스 정리
+      - ACAO `*` + ACAC=true 가 브라우저에 의해 차단되는 스펙 원칙 명시
+      - reflect 형 (Origin echo + ACAC) 가 가장 위험한 패턴 강조
+      - Juice Shop 실측 결과 (wildcard / ACAC 부재) 의 의미 해석
       acceptable_methods:
-      - curl -H Origin:https://evil.com <url>
-      - corsy 자동 스캐너
-      - Burp CORS * scanner
-      - Mozilla CORS 문서
+      - curl -H 'Origin:' 다양 변형 + OPTIONS preflight 모방
+      - corsy 자동 스캐너 / Burp CORS scanner
+      - Mozilla CORS docs
       negative_signs:
       - CORS 만 언급하고 CSRF 연결 없음
-      - credentials 규칙 설명 없음
-      - Origin 반사 위험 누락
+      - 4 케이스 매트릭스 누락
+      - reflect 형 위험 누락
   target_vm: attacker
-  script: "curl -sI \\\n  -H 'Origin: http://evil.com' http://juice.6v6.lab \\\n | grep\
-    \ -i 'access-control' && echo 'CORS 분석 완료' || echo 'CORS 미설정 확인 완료'"
+  script: |
+    echo '=== Origin: evil ==='
+    curl -sI -H 'Origin: http://evil.com' http://juice.6v6.lab \
+      | grep -iE 'HTTP|access-control'
+    echo '---'
+    echo '=== Origin: legit ==='
+    curl -sI -H 'Origin: http://juice.6v6.lab' http://juice.6v6.lab \
+      | grep -iE 'HTTP|access-control'
+    echo '---'
+    echo '=== OPTIONS preflight ==='
+    curl -sI -X OPTIONS \
+      -H 'Origin: http://evil.com' \
+      -H 'Access-Control-Request-Method: POST' \
+      -H 'Access-Control-Request-Headers: content-type,authorization' \
+      http://juice.6v6.lab/api/Users \
+      | grep -iE 'HTTP|access-control'
+    echo 'CORS 분석 완료'
   risk_level: low
-  bastion_prompt: 'CORS 설정과 CSRF의 관계를 분석해줘
+  bastion_prompt: |
+    Juice Shop CORS 헤더 실측 + 4 케이스 매트릭스:
 
+      echo '=== Origin: evil ==='
+      curl -sI -H 'Origin: http://evil.com' http://juice.6v6.lab \
+        | grep -iE 'HTTP|access-control'
+      echo '---'
+      echo '=== Origin: legit ==='
+      curl -sI -H 'Origin: http://juice.6v6.lab' http://juice.6v6.lab \
+        | grep -iE 'HTTP|access-control'
+      echo '---'
+      echo '=== OPTIONS preflight ==='
+      curl -sI -X OPTIONS \
+        -H 'Origin: http://evil.com' \
+        -H 'Access-Control-Request-Method: POST' \
+        -H 'Access-Control-Request-Headers: content-type,authorization' \
+        http://juice.6v6.lab/api/Users \
+        | grep -iE 'HTTP|access-control'
+      echo 'CORS 분석 완료'
 
-    [도구 권장] csrf_advanced: Burp 매크로 또는 curl + jq. curl 만 쓰지 말고 **Burp 매크로 또는 curl
-    + jq** 등 적합 도구로 호출 후 stdout quote.'
+    출력 quote + ACAO `*` 발견 시 ACAC 부재 의미 + 4 케이스 (명시/wildcard/wildcard+cred/
+    reflect) 비교 + 권고.
 - order: 10
   instruction: 'CSRF와 XSS 체인 공격을 설계하시오.
 
