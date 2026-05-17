@@ -457,7 +457,7 @@ steps:
     # 1. Juice Shop 의 JS 번들 download + DOM sink grep
     echo "=== 1. JS 번들 의 DOM sink (innerHTML/eval/document.write) ==="
     curl -s http://juice.6v6.lab/main-es2018.js 2>/dev/null | head -c 1 > /dev/null || \
-      MAIN_JS=$(curl -s http://juice.6v6.lab/ | grep -oE 'main\.[a-f0-9]+\.js' | head -1)
+      MAIN_JS=$(curl -s http://juice.6v6.lab/ | grep -oE 'main\.js' | head -1)
     [ -z "$MAIN_JS" ] && MAIN_JS=$(curl -s http://juice.6v6.lab/ | grep -oE 'main-[a-z0-9]+\.js' | head -1)
     echo "main JS: ${MAIN_JS}"
     curl -s "http://juice.6v6.lab/${MAIN_JS}" 2>/dev/null \
@@ -524,7 +524,7 @@ steps:
   points: 10
   answer: |
     echo "=== 1. JS 번들 의 DOM sink ==="
-    MAIN_JS=$(curl -s http://juice.6v6.lab/ | grep -oE 'main-[a-zA-Z0-9._-]+\.js|main\.[a-f0-9]+\.js' | head -1)
+    MAIN_JS=$(curl -s http://juice.6v6.lab/ | grep -oE 'main-[a-zA-Z0-9._-]+\.js|main\.js' | head -1)
     echo "main JS: ${MAIN_JS}"
     curl -s "http://juice.6v6.lab/${MAIN_JS}" 2>/dev/null \
       | grep -ioE '(innerHTML|outerHTML|document\.write|eval\(|bypassSecurityTrust[A-Za-z]+|setHTML)' \
@@ -568,7 +568,7 @@ steps:
         - Angular trust pipe / DOMPurify 권고 없음
   target_vm: attacker
   script: |
-    MAIN_JS=$(curl -s http://juice.6v6.lab/ | grep -oE 'main-[a-zA-Z0-9._-]+\.js|main\.[a-f0-9]+\.js' | head -1)
+    MAIN_JS=$(curl -s http://juice.6v6.lab/ | grep -oE 'main-[a-zA-Z0-9._-]+\.js|main\.js' | head -1)
     echo "main JS: ${MAIN_JS}"
     curl -s "http://juice.6v6.lab/${MAIN_JS}" 2>/dev/null \
       | grep -ioE '(innerHTML|bypassSecurityTrust[A-Za-z]+|eval\()' \
@@ -1231,7 +1231,7 @@ steps:
 
     ```bash
     # Juice Shop main JS 의 bypassSecurityTrust 호출 횟수
-    MAIN=$(curl -s http://juice.6v6.lab/ | grep -oE 'main-[a-zA-Z0-9._-]+\.js|main\.[a-f0-9]+\.js' | head -1)
+    MAIN=$(curl -s http://juice.6v6.lab/ | grep -oE 'main-[a-zA-Z0-9._-]+\.js|main\.js' | head -1)
     echo "main JS: ${MAIN}"
     echo ""
     echo "=== Angular trust pipe 호출 통계 ==="
@@ -1265,7 +1265,7 @@ steps:
   category: xss_advanced
   points: 10
   answer: |
-    MAIN=$(curl -s http://juice.6v6.lab/ | grep -oE 'main-[a-zA-Z0-9._-]+\.js|main\.[a-f0-9]+\.js' | head -1)
+    MAIN=$(curl -s http://juice.6v6.lab/ | grep -oE 'main-[a-zA-Z0-9._-]+\.js|main\.js' | head -1)
     echo "=== Angular bypassSecurityTrust 호출 통계 ==="
     curl -s "http://juice.6v6.lab/${MAIN}" 2>/dev/null \
       | grep -oE 'bypassSecurityTrust[A-Za-z]+' | sort | uniq -c | sort -rn | head -5
@@ -1297,7 +1297,7 @@ steps:
       negative_signs: ["framework 1 가지만"]
   target_vm: attacker
   script: |
-    MAIN=$(curl -s http://juice.6v6.lab/ | grep -oE 'main-[a-zA-Z0-9._-]+\.js|main\.[a-f0-9]+\.js' | head -1)
+    MAIN=$(curl -s http://juice.6v6.lab/ | grep -oE 'main-[a-zA-Z0-9._-]+\.js|main\.js' | head -1)
     curl -s "http://juice.6v6.lab/${MAIN}" 2>/dev/null | grep -oE 'bypassSecurityTrust[A-Za-z]+' | sort | uniq -c | head -5
     echo "Angular/React/Vue: trust API 위험 → DOMPurify + Trusted Types"
     echo "프레임워크 XSS 분석 완료"
@@ -1479,12 +1479,18 @@ steps:
       negative_signs: ["도구 없이 수동만"]
   target_vm: attacker
   script: |
-    dalfox url 'http://juice.6v6.lab/rest/products/search?q=apple' --silence 2>&1 | tail -10 || echo "(dalfox 미설치)"
+    echo "=== nikto XSS 룰 (학습 환경 설치 도구) ==="
+    nikto -h http://juice.6v6.lab/ -Tuning x -maxtime 20s 2>&1 | grep -iE 'xss|script|cookie' | head -10
+    echo ""
+    echo "=== dalfox / XSStrike (학습 환경 미설치 — 설치 가이드) ==="
+    echo "dalfox: go install github.com/hahwul/dalfox/v2@latest"
+    echo "XSStrike: git clone https://github.com/s0md3v/XSStrike && pip install -r requirements.txt"
     echo "자동 XSS 스캔 완료"
   risk_level: low
   bastion_prompt: |
-    XSS 자동 스캐너 통합 — dalfox / XSStrike / nikto 3 도구. 도구 비교 표 +
-    CI 통합 (github actions) 정기 자동 스캔.
+    XSS 자동 스캐너 — attacker container 의 nikto 만 사전 설치. 학습 환경에서
+    nikto 실행 + dalfox/XSStrike 의 설치 가이드 (Go / pip) 제시. 운영 web 의
+    CI 통합 (github actions + dalfox) 권장.
 # ============================================================
 # STEP 13 [BLUE/PURPLE·XSS·방어 종합] — OWASP XSS Cheat Sheet 의 7 단계 defense in depth
 # ============================================================
