@@ -1054,190 +1054,515 @@ steps:
     vs 200) + 성공 응답 의 JWT 토큰 추출까지 보고해줘. JWT 는 다음 STEP 인증
     우회 의 입력. timing 차이 (실패/성공) 가 균일하지 않으면 user enumeration
     위험도 한 줄 언급해줘.
+# ============================================================
+# STEP 10 [RED·정찰·디렉토리리스팅] — Index of 노출 + Juice Shop /ftp challenge
+# ============================================================
 - order: 10
-  instruction: '웹 서버의 디렉터리 목록 노출(Directory Listing) 여부를 확인하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    attacker 컨테이너 (10.20.30.202) 에서 6v6-web 의 여러 디렉토리에 trailing
+    slash (`/`) 로 요청하여 *Index of /* 페이지 노출 여부를 점검한다. Juice
+    Shop 의 `/ftp/` 는 의도된 challenge — 백업 파일 (acquisitions.md / coupons_2013.md
+    /package.json.bak / encrypt.pyc 등) 디렉토리 listing 직접 노출.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `recon` 에 적합한 도구: whatweb, nmap -sV, nikto, wafw00f.
-    도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 다양한 경로에 접근해보세요.
+    ## 💻 실행 명령
+
+    ```bash
+    # 1. Juice Shop 의 /ftp/ (의도된 challenge) - 직접
+    echo "=== 1. Juice Shop /ftp/ ==="
+    curl -s http://10.20.40.81:3000/ftp/ | head -20
+
+    # 2. 흔한 디렉토리 후보 enumeration
+    echo ""
+    echo "=== 2. 흔한 디렉토리 후보 ==="
+    for d in /backup/ /uploads/ /images/ /static/ /assets/ /api/ /admin/; do
+      code=$(curl -o /dev/null -s -w "%{http_code}" "http://10.20.32.80${d}")
+      echo "${d} → ${code}"
+      [ "$code" = "200" ] && curl -s "http://10.20.32.80${d}" | grep -i "Index of" \
+        && echo "  ★ Index of 노출!"
+    done
+
+    # 3. nikto 자동 점검 (보조)
+    nikto -h http://10.20.32.80/ -maxtime 10s 2>/dev/null | grep -iE "(indexable|directory)" | head -5
+    ```
+
+    ## 📋 확인 사항
+
+    - Juice Shop `/ftp/` → 200 + 디렉토리 listing 페이지 (acquisitions.md / coupons_*)
+    - 흔한 디렉토리 (/backup /uploads /images 등) 의 200 응답 + Index of 문자열
+    - 200 인데 Index of 없으면 default index page (index.html 등) → 정상
+    - 403 / 404 면 listing 차단 또는 디렉토리 자체 부재
+
+    ## 💡 왜 이걸 하는가?
+
+    Directory Listing 노출은 Apache 의 `Options +Indexes` 또는 Nginx 의
+    `autoindex on` 의 잘못된 default 에서 발생 (OWASP A05 Security
+    Misconfiguration + MITRE T1083 File and Directory Discovery). Juice Shop 의
+    `/ftp/` 는 의도적 challenge — 백업 파일 (coupons_2013.md.bak / package.json.bak)
+    의 plaintext 자격증명 / 쿠폰 코드 유출 → Credential Access 의 직접 경로.
+
+    ## 🔵 Blue 측 관찰
+
+    `Index of /` 페이지 자체는 access_log 의 일반 200 GET 으로 기록.
+    ModSecurity CRS rule 920120 (Directory traversal in URL) 가 `../` 시도에
+    대해서만 트리거. Wazuh rule 31104 (Web attack — multiple requests with
+    Index of) 가 burst 시 감지. Blue 의 정기 cron `find /var/www -name 'Options*'`
+    또는 `apachectl -M | grep autoindex` 로 모듈 활성화 점검.
+
+    ## 🟣 Purple 보완 권장
+
+    - Apache `<Directory /var/www/>` 에 `Options -Indexes` (전역 차단)
+    - Nginx 의 `autoindex off` (default)
+    - 디렉토리 자체에 빈 `index.html` 또는 의도된 default page 배포
+    - Juice Shop 같은 의도 challenge 환경은 별도 — 운영 web 에는 `/backup` `/uploads`
+      디렉토리 자체를 webroot 외부로 분리
+  hint: |
+    Juice Shop `/ftp/` 가 1차 표적 (의도된 challenge). 추가로 흔한 디렉토리
+    후보 (`/backup`, `/uploads`, `/images`) for-loop 점검. `head -20` 으로
+    listing 첫 줄 (Index of /ftp 또는 <pre>) 만.
   category: recon
   points: 10
-  answer: '🤖 프롬프트: 웹 서버의 디렉터리 목록 노출(Directory Listing) 여부를 확인해줘
-
-    📎 참고 (CLI): curl -s http://10.20.32.80/ftp/ 2>/dev/null | head -20 && echo ''디렉터리
-    리스팅 확인 완료'''
-  answer_detail: 디렉터리 리스팅이 활성화되면 파일 목록이 노출되어 민감 정보 유출 위험이 있습니다.
+  answer: |
+    echo "=== 1. Juice Shop /ftp (의도된 challenge) ==="
+    curl -s http://10.20.40.81:3000/ftp/ | head -20
+    echo ""
+    echo "=== 2. 흔한 디렉토리 후보 ==="
+    for d in /backup/ /uploads/ /images/ /static/ /assets/ /api/ /admin/; do
+      code=$(curl -o /dev/null -s -w "%{http_code}" "http://10.20.32.80${d}")
+      echo "${d} → ${code}"
+    done
+    echo ""
+    echo "=== 3. Juice Shop /ftp 백업 파일 list ==="
+    curl -s http://10.20.40.81:3000/ftp/ | grep -oE '[a-zA-Z0-9._-]+\.(md|bak|pyc|txt|json)' | sort -u | head -10
+  answer_detail: |
+    Juice Shop /ftp/ 의 응답 본문 = `<head><title>listing directory /ftp</title>...`
+    형식 — 직접 백업 파일 list 노출 (Express 의 `serve-index` 미들웨어). 노출된
+    파일 (`coupons_2013.md.bak`, `package.json.bak`, `acquisitions.md`) 의 직접
+    다운로드 가능. 운영 web 의 정상 default = Options -Indexes + autoindex off.
   verify:
     type: output_contains
-    expect: 디렉터리 리스팅 확인 완료
+    expect: 'ftp'
     field: stdout
     semantic:
-      intent: 디렉터리 리스팅(Directory Listing) 확인 — Index of 페이지 노출 시 파일·경로 유출 가능
+      intent: |
+        Directory Listing 노출 점검 — Juice Shop /ftp/ (의도 challenge) +
+        흔한 디렉토리 후보 enumeration. OWASP A05 + MITRE T1083 File and
+        Directory Discovery. 백업 파일 plaintext 자격증명 유출 가능성.
       success_criteria:
-      - curl <url>/some/dir/ 로 /Index of/ 텍스트 또는 autoindex 확인
-      - Nginx autoindex, Apache Options +Indexes 설정 차이 설명
-      - 노출 시 방어(Options -Indexes, nginx autoindex off) 제시
+        - Juice Shop /ftp/ 응답 본문 일부 인용 (백업 파일 list 또는 Index of)
+        - 최소 3 디렉토리 후보 enumeration + 응답 코드 (200/403/404) 표시
+        - 노출 시 Apache Options -Indexes / Nginx autoindex off 방어 권장
+        - 6v6-juiceshop (10.20.40.81:3000) + 6v6-web (10.20.32.80) 양쪽 점검
       acceptable_methods:
-      - curl <url>/images/ 등 흔한 경로 시도
-      - gobuster dir -u <url> 로 경로 탐색
-      - dirsearch -u <url>
-      - nikto 로 Indexing 검출
+        - "curl + for-loop 디렉토리 후보 enumeration"
+        - "gobuster dir -u http://10.20.32.80/ -w common.txt -x html,bak,zip"
+        - "dirsearch -u http://10.20.32.80/ -e bak,zip,sql"
+        - "nikto -h http://10.20.32.80/ + 'OSVDB-3268: ... Indexable'"
       negative_signs:
-      - 루트만 확인
-      - Index of 패턴 언급 없음
-      - 방어책 누락
+        - 루트만 점검 + 디렉토리 후보 enumeration 누락
+        - Juice Shop /ftp 의 백업 파일 list 인용 누락
+        - 방어책 (Options -Indexes / autoindex off) 누락
   target_vm: attacker
-  script: curl -s http://10.20.32.80/ftp/ 2>/dev/null | head -20 && echo '디렉터리 리스팅
-    확인 완료'
+  script: |
+    curl -s http://10.20.40.81:3000/ftp/ | head -20
+    echo "---"
+    for d in /backup/ /uploads/ /images/ /admin/; do
+      code=$(curl -o /dev/null -s -w "%{http_code}" "http://10.20.32.80${d}")
+      echo "${d} → ${code}"
+    done
   risk_level: low
-  bastion_prompt: '웹 서버의 디렉터리 목록 노출(Directory Listing) 여부를 확인해줘
-
-
-
-
-    [도구 권장] recon: whatweb, nmap -sV, nikto, wafw00f. curl 만 쓰지 말고 **whatweb** 등 적합
-    도구로 호출 후 stdout quote.
-
-
-    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
+  bastion_prompt: |
+    attacker 컨테이너에서 (1) 6v6-juiceshop (10.20.40.81:3000) 의 /ftp/ 디렉토리에
+    curl 요청 → 백업 파일 list (acquisitions.md / coupons_*.bak 등) 직접 인용,
+    (2) 6v6-web (10.20.32.80) 의 흔한 디렉토리 후보 (/backup, /uploads, /images,
+    /admin) for-loop 점검 + 응답 코드 표시. Juice Shop 의 /ftp 는 의도된
+    challenge (백업 파일 plaintext 자격증명 유출) 라고 설명하고, 운영 web 의
+    방어 (Options -Indexes) 도 한 줄 권장.
+# ============================================================
+# STEP 11 [RED·정찰·헤더위장] — X-Forwarded-For / User-Agent / Host 헤더 IP 위장
+# ============================================================
 - order: 11
-  instruction: 'HTTP 요청에 사용자 정의 헤더를 추가하여 전송하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    attacker 컨테이너 (10.20.30.202) 에서 6v6-web 의 헤더 신뢰 정책을 점검한다.
+    `X-Forwarded-For` 로 source IP 위장 시도 + `User-Agent` 변경 (WAF 우회) +
+    `Host` 헤더 변경 (vhost 라우팅 조작) 3 가지 시나리오 — 서버가 어떤 헤더를
+    *신뢰* 하는지 응답 차이로 추정한다.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `http_basics` 에 적합한 도구: whatweb, curl -I, nmap
-    -sV. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: curl -H 옵션을 사용하세요.
+    ## 💻 실행 명령
+
+    ```bash
+    # 1. X-Forwarded-For 위장 (Wazuh active-response 차단 우회 시도)
+    curl -s -i http://10.20.32.80/ \
+      -H 'X-Forwarded-For: 8.8.8.8' \
+      -H 'X-Real-IP: 1.1.1.1' | head -10
+
+    # 2. User-Agent 변경 (WAF / bot detection 우회)
+    for ua in "Googlebot/2.1" "curl/7.68.0" "<script>alert(1)</script>" "sqlmap/1.6"; do
+      code=$(curl -o /dev/null -s -w "%{http_code}" \
+        -A "$ua" http://10.20.32.80/)
+      echo "UA=${ua:0:30}... → ${code}"
+    done
+
+    # 3. Host 헤더 변경 (vhost 라우팅 조작)
+    for h in "juice.6v6.lab" "admin.6v6.lab" "evil.com" "127.0.0.1"; do
+      code=$(curl -o /dev/null -s -w "%{http_code}" \
+        -H "Host: $h" http://10.20.32.80/)
+      echo "Host=${h} → ${code}"
+    done
+    ```
+
+    ## 📋 확인 사항
+
+    - X-Forwarded-For 가 access_log 의 source IP 로 *기록* 되는가 (HAProxy 의
+      `option forwardfor` 활성화 여부)
+    - User-Agent `sqlmap/1.6` 응답이 다른 UA 와 다르면 → ModSecurity / WAF 가
+      UA 기반 차단 적용 중
+    - `Host: evil.com` → HAProxy 의 default backend 또는 404 (HAProxy 의
+      `acl host_juice hdr(host) -i juice.6v6.lab` 룰 작동 확인)
+    - `Host: 127.0.0.1` → SSRF 시도 시 내부 자원 접근 가능성 점검
+
+    ## 💡 왜 이걸 하는가?
+
+    헤더는 *클라이언트가 제어 가능* → 서버가 어떤 헤더를 *신뢰* 하는지가
+    공격 표면 (MITRE T1556 Modify Authentication Process + OWASP A07).
+    X-Forwarded-For 를 access control / rate-limit / logging 에 사용하면
+    공격자가 위장 가능. User-Agent 기반 WAF 차단은 sqlmap/nikto 등 자동 도구가
+    `--random-agent` 로 우회. Host 헤더 조작은 SSRF / vhost confusion 의 입구.
+
+    ## 🔵 Blue 측 관찰
+
+    HAProxy 의 `option forwardfor` 옵션 활성화 시 access_log 의 `%{X-Forwarded-For}i`
+    필드에 위장 IP 그대로 기록 → Wazuh 가 *위장 IP* 로 active-response 시도 →
+    무효. Blue 는 `Real-IP` (HAProxy 가 신뢰 net 에서만 채워 넣는 헤더) 와
+    구별. ModSecurity CRS rule 920280 (Missing Host header) / 920330 (Invalid
+    HTTP version) 등이 헤더 변조 패턴 트리거.
+
+    ## 🟣 Purple 보완 권장
+
+    - HAProxy `frontend` 의 `acl trusted_proxy src 10.20.30.0/24` + `http-request
+      del-header X-Forwarded-For if !trusted_proxy` → 외부 X-Forwarded-For 제거
+    - ModSecurity CRS rule 913100 (Found User-Agent associated with security
+      scanner) 활성화 → sqlmap/nikto UA 차단
+    - HAProxy 의 `default_backend deny_backend` (Host 매칭 실패 시 404)
+    - SSRF 차단: 내부 자원 (`127.0.0.1`, `10.0.0.0/8`) 으로 의 Host header 차단
+  hint: |
+    3 시나리오 — X-Forwarded-For (IP 위장) / User-Agent (WAF 우회) / Host (vhost
+    조작). 각 시나리오 별 for-loop 변형. 응답 코드 차이 → 신뢰 정책 추정.
   category: http_basics
   points: 8
-  answer: "\U0001F916 프롬프트: HTTP 요청에 사용자 정의 헤더를 추가하여 전송해줘\n\U0001F4CE 참고 (CLI): curl\
-    \ -s \\\n  -H 'X-Custom-Header: SecurityTest' \\\n  -H 'User-Agent: SecurityScanner/1.0'\
-    \ http://10.20.32.80 \\\n  -o /dev/null \\\n  -w '%{http_code}' && echo '' &&\
-    \ echo '커스텀 헤더 테스트 완료'"
-  answer_detail: 커스텀 헤더는 WAF 우회, 인증 토큰 전달 등에 사용됩니다.
+  answer: |
+    echo "=== 1. X-Forwarded-For IP 위장 ==="
+    curl -s -i http://10.20.32.80/ -H 'X-Forwarded-For: 8.8.8.8' | head -5
+    echo ""
+    echo "=== 2. User-Agent 변경 (WAF / 봇 탐지) ==="
+    for ua in "Googlebot/2.1" "curl/7.68.0" "sqlmap/1.6" "Mozilla/5.0"; do
+      code=$(curl -o /dev/null -s -w "%{http_code}" -A "$ua" http://10.20.32.80/)
+      echo "UA=${ua} → ${code}"
+    done
+    echo ""
+    echo "=== 3. Host 헤더 변경 (vhost / SSRF) ==="
+    for h in "juice.6v6.lab" "evil.com" "127.0.0.1"; do
+      code=$(curl -o /dev/null -s -w "%{http_code}" -H "Host: $h" http://10.20.32.80/)
+      echo "Host=${h} → ${code}"
+    done
+  answer_detail: |
+    학습 환경의 default 는 ModSecurity CRS 가 sqlmap UA (rule 913100) 차단,
+    HAProxy 가 Host 기반 라우팅 (juice.6v6.lab → juiceshop / 외 → 404).
+    X-Forwarded-For 는 HAProxy 가 그대로 forward (option forwardfor) → backend
+    log 에 위장 IP 기록 가능. SSRF (Host: 127.0.0.1) 는 backend 가 거부 (HAProxy
+    의 default_backend 의 hostmatch fail) 또는 default 응답.
   verify:
     type: output_contains
-    expect:
-    - 커스텀 헤더 테스트 완료
-    - Header
+    expect: 'UA='
     field: stdout
     semantic:
-      intent: 사용자 정의 헤더 전송 — curl -H 로 X-Forwarded-For, X-Real-IP, Authorization 등
-        추가 헤더 삽입
+      intent: |
+        헤더 변조 3 시나리오 (X-Forwarded-For IP 위장 + User-Agent WAF 우회 +
+        Host SSRF/vhost) 응답 차이 → 서버 신뢰 정책 추정. MITRE T1556 +
+        OWASP A07 의 사전 분석.
       success_criteria:
-      - curl -H <header>:<value> 구문 사용
-      - X-Forwarded-For 등 최소 2개 커스텀 헤더 테스트
-      - 서버의 헤더 처리 방식 해석 (신뢰하는 헤더 악용 위험 언급)
+        - 3 헤더 중 최소 2 시나리오 시도 (XFF + UA 또는 UA + Host)
+        - 응답 코드 차이로 서버 신뢰 정책 추정
+        - sqlmap/Googlebot 등 차별화된 UA 의 응답 차이 인용
+        - 6v6-web (10.20.32.80) 사용 + HAProxy/ModSecurity 매핑 시도
       acceptable_methods:
-      - curl -H X-Forwarded-For:1.2.3.4 <url>
-      - python requests headers={...}
-      - Burp Repeater로 헤더 수정
-      - mitmproxy addon 으로 헤더 주입
+        - "curl -H + -A 다양한 헤더 조합"
+        - "python requests headers={...}"
+        - "Burp Repeater 의 헤더 일괄 변형"
+        - "mitmproxy --modify-headers 룰"
       negative_signs:
-      - 커스텀 헤더 없이 기본 요청만
-      - 서버 반응 해석 없음
-      - 보안 영향 언급 없음
+        - 1 시나리오 만 시도
+        - 응답 차이 해석 없음 (단순 응답 인용)
+        - 신뢰 정책 (WAF / HAProxy / SSRF) 매핑 누락
   target_vm: attacker
-  script: "curl -s \\\n  -H 'X-Custom-Header: SecurityTest' \\\n  -H 'User-Agent:\
-    \ SecurityScanner/1.0' http://10.20.32.80 \\\n  -o /dev/null \\\n  -w '%{http_code}'\
-    \ && echo '' && echo '커스텀 헤더 테스트 완료'"
+  script: |
+    curl -s -i http://10.20.32.80/ -H 'X-Forwarded-For: 8.8.8.8' | head -5
+    for ua in "Googlebot/2.1" "sqlmap/1.6" "Mozilla/5.0"; do
+      code=$(curl -o /dev/null -s -w "%{http_code}" -A "$ua" http://10.20.32.80/)
+      echo "UA=${ua} → ${code}"
+    done
+    for h in "juice.6v6.lab" "evil.com" "127.0.0.1"; do
+      code=$(curl -o /dev/null -s -w "%{http_code}" -H "Host: $h" http://10.20.32.80/)
+      echo "Host=${h} → ${code}"
+    done
   risk_level: low
-  bastion_prompt: 'HTTP 요청에 사용자 정의 헤더를 추가하여 전송해줘
-
-
-    [도구 권장] http_basics: whatweb, curl -I, nmap -sV. curl 만 쓰지 말고 **whatweb** 등 적합
-    도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    attacker 컨테이너에서 6v6-web (10.20.32.80) 에 3 시나리오로 헤더 변조
+    시도 — (1) X-Forwarded-For 로 source IP 위장 (2) User-Agent 로 WAF 우회
+    (sqlmap, Googlebot 등 4 가지) (3) Host 헤더로 vhost / SSRF 조작 (juice.6v6.lab,
+    evil.com, 127.0.0.1). 각 응답 차이를 표로 정리하고 ModSecurity / HAProxy
+    의 신뢰 정책을 추정해줘 (MITRE T1556 + OWASP A07).
+# ============================================================
+# STEP 12 [RED·정찰·TLS] — 인증서 (Subject / Issuer / SAN / NotAfter) + cipher
+# ============================================================
 - order: 12
-  instruction: 'HTTPS 연결의 TLS 인증서 정보를 확인하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    attacker 컨테이너 (10.20.30.202) 에서 6v6-web 의 TLS 인증서 metadata
+    (Subject CN / Issuer / SAN / NotBefore / NotAfter / public key bits) 와
+    지원 cipher suite (TLS 1.2 vs 1.3 / weak cipher 잔재) 를 점검한다. 학습
+    환경은 self-signed 인증서 — 운영 환경 점검 시 *유효 인증서 만료 D-30 일*
+    경보가 핵심.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `tls` 에 적합한 도구: sslscan, testssl.sh, openssl s_client.
-    도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: openssl s_client를 사용하세요.
+    ## 💻 실행 명령
+
+    ```bash
+    # 1. 인증서 metadata
+    echo | openssl s_client -connect 10.20.32.80:443 -servername juice.6v6.lab 2>/dev/null \
+      | openssl x509 -noout -subject -issuer -dates -ext subjectAltName 2>/dev/null
+
+    # 2. 지원 cipher (TLS 1.2 + 1.3)
+    nmap --script ssl-enum-ciphers -p 443 10.20.32.80 2>/dev/null | grep -E "TLSv1\.|ciphers:|cipher pref" | head -30
+
+    # 3. testssl.sh (가능 시) 한 줄 요약
+    testssl.sh --quiet --color 0 --severity HIGH 10.20.32.80:443 2>&1 | head -30 \
+      || echo "(testssl.sh 미설치 시 위 2 명령 만)"
+    ```
+
+    ## 📋 확인 사항
+
+    - `subject=CN = ...` 가 점검 host 와 일치 (또는 SAN 에 포함)
+    - `issuer=` 가 self-signed (subject=issuer 같음) 또는 신뢰 CA
+    - `notAfter=` 만료일 (오늘로부터 D-30 미만이면 갱신 경보)
+    - `subjectAltName=` SAN 에 wildcard / 추가 도메인 포함 여부
+    - cipher 에 weak (RC4, DES, 3DES, MD5) 잔재 여부 → TLS 1.0/1.1 활성화 여부
+
+    ## 💡 왜 이걸 하는가?
+
+    self-signed 인증서는 학습 환경에서 정상이지만 운영 web 의 self-signed 노출은
+    *MITM 학습 환경* 신호 (OWASP A02 Cryptographic Failures). 만료 인증서 +
+    weak cipher 는 PCI-DSS / KISA 의무 점검 항목 (MITRE T1573.002 Encrypted
+    Channel: Asymmetric Cryptography 의 약화). Wildcard SAN 은 도메인 takeover
+    위험.
+
+    ## 🔵 Blue 측 관찰
+
+    학습 환경의 self-signed 인증서는 Blue 가 정기 cron (`echo | openssl s_client
+    | openssl x509 -noout -dates`) 으로 만료 D-30 경보. ModSecurity 의 default
+    룰은 TLS handshake 자체는 검사 *안 함* — Apache `SSLLogLevel` 또는 별도
+    `sslscan` cron 으로 weak cipher 사용 시도 (TLS 1.0/1.1 클라이언트) 감지.
+
+    ## 🟣 Purple 보완 권장
+
+    - Apache: `SSLProtocol -all +TLSv1.2 +TLSv1.3` + `SSLCipherSuite HIGH:!aNULL:!MD5`
+    - 인증서 만료 자동 갱신 (Let's Encrypt certbot + systemd timer)
+    - HSTS preload + Public-Key-Pinning (HPKP 의 후속 — Expect-CT 헤더)
+    - cron 으로 `notAfter < now + 30 일` 경보 (Wazuh 또는 외부 cert-manager)
+  hint: |
+    `echo | openssl s_client -connect target:443` 으로 handshake → 파이프
+    `openssl x509 -noout -subject -issuer -dates -ext subjectAltName` 으로
+    metadata 추출. cipher 점검은 `nmap --script ssl-enum-ciphers` 가 정석.
   category: tls
   points: 10
-  answer: '🤖 프롬프트: HTTPS 연결의 TLS 인증서 정보를 확인해줘
-
-    📎 참고 (CLI): echo | openssl s_client -connect 10.20.32.80:443 2>/dev/null | openssl
-    x509 -text -noout 2>/dev/null | head -15 || echo ''TLS 인증서 확인 완료'''
-  answer_detail: TLS 인증서의 유효기간, 발급자, CN/SAN을 확인하여 위조 인증서를 탐지합니다.
+  answer: |
+    echo "=== 1. 인증서 metadata ==="
+    echo | openssl s_client -connect 10.20.32.80:443 -servername juice.6v6.lab 2>/dev/null \
+      | openssl x509 -noout -subject -issuer -dates -ext subjectAltName 2>/dev/null \
+      || echo "(HTTPS 미가동 — 학습 환경 의 default 상태일 수 있음)"
+    echo ""
+    echo "=== 2. cipher 점검 (TLS 1.2 + 1.3) ==="
+    nmap --script ssl-enum-ciphers -p 443 -Pn 10.20.32.80 2>/dev/null \
+      | grep -E "TLSv1\.|cipher pref|warnings:" | head -20 \
+      || echo "(HTTPS 미가동 또는 nmap 시간 초과)"
+  answer_detail: |
+    학습 환경의 6v6-web 은 HTTPS 미설정 (default 단순화) 또는 self-signed
+    인증서. 운영 web 이면 Let's Encrypt 무료 인증서 + certbot 자동 갱신.
+    weak cipher (RC4 / DES / 3DES / MD5) 또는 TLS 1.0/1.1 활성화 시 PCI-DSS
+    위반 + KISA 의무 점검 NG. nmap ssl-enum-ciphers 가 모든 지원 cipher 와
+    선호도 자동 점검.
   verify:
     type: output_contains
-    expect:
-    - 인증서 확인 완료
-    - openssl
-    - s_client
+    expect: 'ciphers\|subject\|HTTPS'
     field: stdout
     semantic:
-      intent: TLS 인증서 정보 확인 — openssl s_client 또는 curl -v 로 Subject/Issuer/SAN/유효기간
-        수집
+      intent: |
+        TLS 인증서 metadata (Subject / Issuer / SAN / NotAfter) + cipher
+        (TLS 1.2/1.3 / weak cipher) 점검. OWASP A02 + MITRE T1573.002 의
+        암호화 채널 약화 식별. PCI-DSS / KISA 의무 점검 항목.
       success_criteria:
-      - openssl s_client -connect <host>:443 또는 curl -vI <https-url>
-      - Subject/Issuer/Not Before-After 필드 확인
-      - 자체 서명/만료 인증서의 보안 영향 언급
+        - openssl s_client + x509 명령 사용 (또는 sslscan / testssl.sh / nmap script)
+        - Subject CN / Issuer / NotAfter 중 최소 2 필드 인용
+        - cipher 또는 TLS 버전 확인 (1.2 / 1.3 / weak 잔재)
+        - self-signed vs 신뢰 CA 구분 또는 만료 D-30 점검 권장
       acceptable_methods:
-      - openssl s_client -connect <host>:443 -showcerts < /dev/null
-      - curl -vI <https://...>
-      - nmap --script ssl-cert -p 443
-      - sslyze <host>:443
+        - "openssl s_client + x509 -noout -dates 등"
+        - "nmap --script ssl-enum-ciphers -p 443"
+        - "sslscan / testssl.sh / sslyze"
+        - "curl -vI https:// 의 인증서 chain"
       negative_signs:
-      - HTTP 요청만 수행 (HTTPS 검증 없음)
-      - 인증서 필드 해석 없음
-      - 만료/자체서명 체크 누락
+        - HTTP 만 점검 (HTTPS 누락)
+        - 인증서 metadata 필드 분석 없음
+        - cipher / TLS 버전 점검 누락
   target_vm: attacker
-  script: echo | openssl s_client -connect 10.20.32.80:443 2>/dev/null | openssl x509
-    -text -noout 2>/dev/null | head -15 || echo 'TLS 인증서 확인 완료'
+  script: |
+    echo | openssl s_client -connect 10.20.32.80:443 -servername juice.6v6.lab 2>/dev/null \
+      | openssl x509 -noout -subject -issuer -dates 2>/dev/null \
+      || echo "(no HTTPS or no cert)"
+    nmap --script ssl-enum-ciphers -p 443 -Pn 10.20.32.80 2>/dev/null \
+      | grep -E "TLSv1\.|cipher pref" | head -10 || echo "(no nmap script result)"
   risk_level: low
-  bastion_prompt: 'HTTPS 연결의 TLS 인증서 정보를 확인해줘
-
-
-    [도구 권장] tls: sslscan, testssl.sh, openssl s_client. curl 만 쓰지 말고 **sslscan** 등
-    적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    attacker 컨테이너에서 6v6-web (10.20.32.80) 의 (1) TLS 인증서 metadata
+    (Subject / Issuer / NotAfter / SAN) 를 openssl s_client + x509 로 수집,
+    (2) 지원 cipher (TLS 1.2 / 1.3 / weak 잔재) 를 nmap ssl-enum-ciphers 로
+    점검해줘. self-signed 인지 신뢰 CA 인지, weak cipher 가 있는지 보고. PCI-DSS
+    / KISA 의무 점검 매핑도 한 줄 (학습 환경 의 default 는 HTTPS 미설정 가능).
+# ============================================================
+# STEP 13 [RED·정찰·기술스택] — Framework + CMS + Library + 버전 → CVE 조회 준비
+# ============================================================
 - order: 13
-  instruction: '웹 애플리케이션의 기술 스택을 식별하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    attacker 컨테이너 (10.20.30.202) 에서 Juice Shop (10.20.40.81:3000) 의
+    SPA 기술 스택을 식별한다 — Angular 메인 framework + Express backend +
+    Sequelize ORM + JWT (jsonwebtoken) + Bootstrap UI 등. 각 라이브러리의
+    *정확 버전* 까지 (`package.json` 직접 노출 활용) → 다음 단계 CVE 매핑
+    (W14 aisec lab 의 NVD CVE-자산 매칭) 의 입력.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `fingerprinting` 에 적합한 도구: whatweb, nmap -sV,
-    wappalyzer-cli. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 응답 헤더, HTML 소스, 쿠키 이름 등에서 단서를 찾으세요.
+    ## 💻 실행 명령
+
+    ```bash
+    # 1. whatweb (자동 식별)
+    whatweb -a 3 http://10.20.40.81:3000/ 2>/dev/null | head -5
+    whatweb -a 3 http://10.20.32.80/ 2>/dev/null | head -5
+
+    # 2. HTML 응답에서 framework 패턴 grep
+    curl -s http://10.20.40.81:3000/ | grep -ioE \
+      '(angular|react|vue|jquery|express|bootstrap|webpack|moment)[^"<]{0,20}' \
+      | sort -u | head -10
+
+    # 3. Juice Shop의 의도된 challenge — package.json 직접 노출
+    echo ""
+    echo "=== package.json 의 dependencies (10개) ==="
+    curl -s http://10.20.40.81:3000/package.json 2>/dev/null \
+      | python3 -c "import sys,json; d=json.load(sys.stdin); deps=d.get('dependencies',{}); [print(f'  {k} {v}') for k,v in list(deps.items())[:10]]" \
+      || echo "(package.json 직접 노출 안 됨 — 정상 운영 web)"
+
+    # 4. nmap -sV (서비스/버전 detection)
+    nmap -sV -p 80,443,3000 -Pn 10.20.32.80 10.20.40.81 2>/dev/null | grep -E '^[0-9]+/tcp'
+    ```
+
+    ## 📋 확인 사항
+
+    - Juice Shop SPA 의 main framework = Angular (HTML 의 `ng-*` 속성)
+    - Express version (`Server` 또는 `X-Powered-By` 헤더)
+    - `package.json` 직접 노출 시 → **모든 dependency 의 정확 버전** + CVE 매핑 가능
+      (의도된 학습 challenge)
+    - jQuery / Bootstrap 등 client-side library 의 outdated 버전 (XSS / DOM
+      injection 의 사전 조건)
+
+    ## 💡 왜 이걸 하는가?
+
+    framework + version 식별은 CVE 매핑 의 입력 (MITRE T1595.002 Vulnerability
+    Scanning + T1592.002 Software). Juice Shop 의 package.json 직접 노출은
+    의도된 challenge — Express 4.17.1 → CVE-2024-29041, Sequelize 6.6.5 →
+    CVE-2023-22578, jsonwebtoken 8.5.1 → CVE-2022-23529 알려진 취약점 매핑.
+    SCA (Software Composition Analysis) 도구 (Snyk, Dependabot, Trivy) 의
+    수동 버전.
+
+    ## 🔵 Blue 측 관찰
+
+    package.json 직접 노출은 access_log 의 일반 GET 으로 기록 (200 OK).
+    Blue 의 정기 cron `curl -s http://target/package.json && echo found` 또는
+    SCA 자동화 (Snyk/Dependabot) 로 outdated dependency 알림. Wazuh 의 default
+    룰은 *경고하지 않음* — 수동 점검 또는 nvd_cron 의 CVE-자산 매칭 (W14
+    aisec lab).
+
+    ## 🟣 Purple 보완 권장
+
+    - Express: `app.disable('x-powered-by')` + `package.json` 같은 sensitive
+      파일을 `static` middleware 의 `dotfiles: 'deny'` + path whitelist 로 차단
+    - Apache reverse proxy: `<LocationMatch "\\.(json|env|git)$"> Require all
+      denied </LocationMatch>`
+    - SCA 자동화 — Snyk / Dependabot / Trivy 의 CI 통합 + outdated dependency
+      자동 PR
+    - 학습 환경 의 default 노출은 보존 (Juice Shop challenge 학습 위함)
+  hint: |
+    Juice Shop 의 package.json 직접 노출 (의도된 challenge) 이 가장 풍부한
+    정보 — `curl http://10.20.40.81:3000/package.json | python3 -c "import json,sys"`
+    으로 dependencies dict 파싱.
   category: fingerprinting
   points: 10
-  answer: '🤖 프롬프트: 웹 애플리케이션의 기술 스택을 식별해줘
-
-    📎 참고 (CLI): curl -sI http://10.20.32.80 | grep -iE ''(server|x-powered|set-cookie)''
-    && curl -s http://10.20.32.80 | grep -ioE ''(angular|react|vue|jquery|express)''
-    | sort -u && echo ''기술 스택 식별 완료'''
-  answer_detail: 기술 스택 식별로 프레임워크별 알려진 취약점을 매칭할 수 있습니다.
+  answer: |
+    echo "=== 1. whatweb (자동 식별) ==="
+    whatweb -a 3 http://10.20.40.81:3000/ 2>/dev/null | head -3
+    echo ""
+    echo "=== 2. HTML framework 패턴 grep ==="
+    curl -s http://10.20.40.81:3000/ | grep -ioE \
+      '(angular|react|vue|jquery|express|bootstrap|webpack)[^"<]{0,20}' \
+      | sort -u | head -10
+    echo ""
+    echo "=== 3. package.json 의 dependencies (Juice Shop challenge) ==="
+    curl -s http://10.20.40.81:3000/package.json 2>/dev/null \
+      | python3 -c "import sys,json; d=json.load(sys.stdin); deps=d.get('dependencies',{}); print(f'app: {d.get(\"name\")} v{d.get(\"version\")}'); [print(f'  {k} {v}') for k,v in list(deps.items())[:10]]" \
+      || echo "(package.json 미노출)"
+  answer_detail: |
+    Juice Shop 의 package.json 노출은 의도된 학습 challenge — Express + Sequelize
+    + jsonwebtoken + helmet + cors 등 dependency list + 정확 버전 (^1.2.3
+    형식이라 actual installed version 은 npm ls 로 확인) → NVD CVE 매핑 가능.
+    Snyk / Trivy / Dependabot 같은 SCA 도구 의 수동 버전. 운영 web 이면
+    package.json 노출 차단 (Express dotfiles deny 또는 Apache LocationMatch).
   verify:
     type: output_contains
-    expect: 기술 스택 식별 완료
+    expect: 'dependencies\|package\|whatweb'
     field: stdout
     semantic:
-      intent: 웹 기술 스택 식별 — whatweb/wappalyzer 또는 수동 HTML 분석으로 Framework/CMS/Library
-        판별
+      intent: |
+        SPA 기술 스택 (Angular / Express / Sequelize / JWT 등) 식별 + 정확
+        버전 추출 (package.json challenge) → CVE 매핑 입력. MITRE T1595.002
+        Vulnerability Scanning + T1592.002 Software.
       success_criteria:
-      - whatweb 또는 wappalyzer CLI 실행 또는 HTML 의 meta/script 태그 분석
-      - 최소 1개 프레임워크/라이브러리 명시 (Angular, React, WordPress, jQuery 등)
-      - 버전 기반 CVE 조회 가능성 언급
+        - 최소 2 도구 (whatweb + HTML grep 또는 package.json) 사용
+        - framework + library 최소 3 종 명시 (Angular / Express / jQuery 등)
+        - Juice Shop package.json 직접 노출 식별 (의도 challenge)
+        - 6v6-juiceshop (10.20.40.81:3000) 사용 + CVE 매핑 가능성 명시
       acceptable_methods:
-      - whatweb -a 3 <url>
-      - curl <url> 응답에서 ng- 속성, data-reactroot, wp-content, jquery 등 패턴 grep
-      - wappalyzer Chrome/Firefox extension
-      - builtwith.com 조회
+        - "whatweb -a 3 + HTML pattern grep"
+        - "wappalyzer-cli http://target/"
+        - "curl package.json + python json.load"
+        - "nmap -sV -p 3000 + 'Node.js Express framework' 인용"
       negative_signs:
-      - HTML 내 태그 분석 없음
-      - 프레임워크 이름만 나열하고 버전 확인 없음
-      - CVE 또는 보안 영향 누락
+        - package.json 직접 노출 활용 안 함 (가장 풍부한 정보 무시)
+        - 단순 framework 이름 만 (version 누락)
+        - CVE 매핑 가능성 누락
   target_vm: attacker
-  script: curl -sI http://10.20.32.80 | grep -iE '(server|x-powered|set-cookie)' &&
-    curl -s http://10.20.32.80 | grep -ioE '(angular|react|vue|jquery|express)' |
-    sort -u && echo '기술 스택 식별 완료'
+  script: |
+    whatweb -a 3 http://10.20.40.81:3000/ 2>/dev/null | head -3
+    curl -s http://10.20.40.81:3000/ | grep -ioE '(angular|react|vue|jquery|express|bootstrap)[^"<]{0,20}' | sort -u | head -5
+    curl -s http://10.20.40.81:3000/package.json 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); deps=d.get('dependencies',{}); print(f'app: {d.get(\"name\")} v{d.get(\"version\")}'); [print(f'  {k} {v}') for k,v in list(deps.items())[:5]]" || echo "(no package.json)"
   risk_level: low
-  bastion_prompt: '웹 애플리케이션의 기술 스택을 식별해줘
-
-
-    [도구 권장] fingerprinting: whatweb, nmap -sV, wappalyzer-cli. curl 만 쓰지 말고 **whatweb**
-    등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    attacker 컨테이너에서 6v6-juiceshop (10.20.40.81:3000) 의 SPA 기술 스택을
+    (1) whatweb (2) HTML framework pattern grep (3) package.json 직접 노출
+    (의도된 학습 challenge) 3 도구로 식별해줘. Angular / Express / Sequelize /
+    jsonwebtoken 등 dependency list + 정확 버전을 추출하고, NVD CVE 매핑
+    가능성 (MITRE T1595.002 + T1592.002) 을 한 줄 언급해줘. 운영 web 이면
+    Express dotfiles deny / Apache LocationMatch 로 package.json 차단 권장.
 - order: 14
   instruction: '웹 서버의 에러 페이지를 분석하여 정보 누출 여부를 확인하시오.
 
