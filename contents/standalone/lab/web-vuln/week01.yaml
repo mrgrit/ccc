@@ -97,100 +97,221 @@ steps:
         - 응답 코드 해석 없음
   target_vm: attacker
   risk_level: low
+# ============================================================
+# STEP 2 [RED·정찰] — HTTP 응답 코드 enumeration (200/404/301/500)
+# ============================================================
 - order: 2
-  instruction: 'HTTP 응답 코드 종류를 확인하시오: 존재하는 페이지와 존재하지 않는 페이지의 응답 코드 차이.
+  instruction: |
+    ## 🎯 MISSION
 
+    attacker 컨테이너 (10.20.30.202) 에서 6v6-web (Apache + ModSecurity) 에
+    여러 경로를 요청해 응답 코드 분포를 수집한다. 존재하는 경로 (/)와 존재하지
+    않는 경로 (/nonexistent), 보호된 경로 (/admin), API endpoint (/api) 4 개를
+    테스트하여 서버가 어떻게 응답을 구분하는지 직접 본다.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `http_basics` 에 적합한 도구: whatweb, curl -I, nmap
-    -sV. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: curl -o /dev/null -w '%{http_code}' 옵션을 사용하세요.
+    ## 💻 실행 명령
+
+    ```bash
+    # 4 경로 응답 코드 + 본문 크기 한 번에
+    for path in / /nonexistent /admin /api; do
+      curl -o /dev/null -s -w "${path} → %{http_code} (size=%{size_download})\n" \
+        "http://10.20.32.80${path}"
+    done
+
+    # 또는 vhost 형태 (HAProxy host header 라우팅)
+    for path in / /nonexistent /admin; do
+      curl -o /dev/null -s -w "juice.6v6.lab${path} → %{http_code}\n" \
+        -H "Host: juice.6v6.lab" "http://10.20.32.80${path}"
+    done
+    ```
+
+    ## 📋 확인 사항
+
+    - `/` → 200 (정상 응답)
+    - `/nonexistent` → 404 (없는 페이지)
+    - `/admin` → 401 / 403 또는 200 (관리자 페이지 노출 여부)
+    - `/api` → 200 / 404 (API endpoint 존재 여부 = enumeration 단서)
+    - 응답 코드별 Content-Length 차이 (oracle 정보 누설 여부)
+
+    ## 💡 왜 이걸 하는가?
+
+    응답 코드 분포는 공격자가 *어떤 경로가 존재하는지* 추정하는 핵심 신호
+    (MITRE ATT&CK T1595.003 Wordlist Scanning, OWASP WSTG-INFO-08
+    Application Entry Points). 404 vs 200 의 본문 길이 차이로 자동화 fuzz
+    (gobuster / ffuf) 의 hit/miss 판정이 결정된다. 운영자 관점에서는 404 도
+    *일관된 길이* 의 정적 페이지로 통일해 oracle 누설을 줄여야 한다.
+
+    ## 🔵 Blue 측 관찰 (STEP 8 ModSecurity 룰에서 본격)
+
+    4 회 GET 은 ModSecurity audit log
+    (`/var/log/apache2/modsec_audit.log`) 에 4 줄 GET 으로 기록.
+    /nonexistent /admin 은 Apache access_log 의 status 404/401 로
+    별도 통계화 가능. Wazuh rule 31108 (Excessive Web 404 from same src) 가
+    burst 시 트리거 → siem 컨테이너 (10.20.32.100) 의 alerts.json 에 인입.
+
+    ## 🟣 Purple 보완 권장
+
+    - Apache `ErrorDocument 404` 으로 일관된 길이의 404 페이지 → oracle 차단
+    - `/admin` 등 민감 경로는 ModSecurity 룰로 src ip 차단 + Wazuh
+      active-response (`firewall-drop`) 600 sec
+    - mod_evasive 또는 HAProxy stick-table 로 rate-limit (enumeration burst 차단)
+  hint: |
+    `curl -o /dev/null -s -w "%{http_code} %{size_download}\n"` 으로 한 줄에
+    응답 코드 + 본문 크기 동시 수집. `for path in ...; do ... done` 으로 4 경로 일괄.
   category: http_basics
   points: 8
-  answer: '🤖 프롬프트: HTTP 응답 코드 종류를 확인하시오: 존재하는 페이지와 존재하지 않는 페이지의 응답 코드 차이를 확인해줘
-
-    📎 참고 (CLI): echo ''존재하는 페이지:'' && curl -o /dev/null -s -w ''%{http_code}'' http://10.20.32.80/
-    && echo '''' && echo ''존재하지 않는 페이지:'' && curl -o /dev/null -s -w ''%{http_code}''
-    http://10.20.32.80/nonexistent && echo '''''
-  answer_detail: 200은 성공, 404는 페이지 없음, 301/302는 리다이렉트, 500은 서버 에러입니다.
+  answer: |
+    for path in / /nonexistent /admin /api; do
+      curl -o /dev/null -s -w "${path} → %{http_code} (size=%{size_download})\n" \
+        "http://10.20.32.80${path}"
+    done | tee /tmp/web01s2.txt
+    echo "--- 응답 분포 요약 ---"
+    awk -F'→ ' '{print $2}' /tmp/web01s2.txt | awk '{print $1}' | sort | uniq -c
+  answer_detail: |
+    200 / 404 / 401 / 403 / 301 / 500 등 응답 코드별 분포 + Content-Length
+    차이 직접 확인. /admin 응답이 200 이면 access control 결함, 404 이면
+    enumeration 만 차단된 상태. /nonexistent 의 Content-Length 가 다른
+    404 (예: /nonexistent.bak) 와 다르면 oracle 누설 (백업 파일 존재 추정 가능).
   verify:
     type: output_contains
     expect: '200'
     field: stdout
     semantic:
-      intent: HTTP 응답 코드 비교 — 존재 페이지(200) vs 비존재(404) 응답 코드와 Content-Length 차이
+      intent: |
+        HTTP 응답 코드 enumeration — 6v6-web 에 최소 3 경로 (정상/비존재/보호)
+        요청 후 코드 분포 비교. Content-Length 차이까지 보면 oracle 누설 식별.
+        OWASP WSTG-INFO-08 + MITRE T1595.003 Wordlist Scanning 의 정찰 기본.
       success_criteria:
-      - 최소 2개 경로(루트 + 존재하지 않는 경로) 테스트
-      - 각 응답 코드 명시 (200/404/403/500)
-      - Content-Length 또는 본문 길이 차이 비교
+        - 최소 3 경로 (루트 + 비존재 + 보호된 경로) 응답 코드 직접 인용
+        - 200 / 404 (필요 시 401/403/301) 의 분포 명시
+        - Content-Length 차이 비교 또는 명시적 해석
+        - 6v6-web (10.20.32.80) 또는 juice.6v6.lab vhost 사용 명시
       acceptable_methods:
-      - curl -o /dev/null -w %{http_code}\n <url>
-      - curl -I <url>
-      - for path in / /nonexistent; do curl ...; done
-      - python requests.get status_code
+        - "for path in / /nonexistent /admin; do curl -o /dev/null -w ...; done"
+        - "curl -I http://10.20.32.80/{,nonexistent,admin}"
+        - "python requests.get(...).status_code 3 회 이상"
+        - "ffuf -u http://10.20.32.80/FUZZ -w wordlist (응답 코드 분포 자동화)"
       negative_signs:
-      - 단일 URL 만 테스트
-      - 응답 코드 해석 없음
-      - Content 비교 없음
+        - 단일 URL 만 테스트
+        - 응답 코드만 보고 본문 크기 무시
+        - 6v6 IP 가 아닌 외부 도메인 (example.com 등) 사용
   target_vm: attacker
-  script: echo '존재하는 페이지:' && curl -o /dev/null -s -w '%{http_code}' http://10.20.32.80/
-    && echo '' && echo '존재하지 않는 페이지:' && curl -o /dev/null -s -w '%{http_code}' http://10.20.32.80/nonexistent
-    && echo ''
+  script: |
+    for path in / /nonexistent /admin /api; do
+      curl -o /dev/null -s -w "${path} → %{http_code} (size=%{size_download})\n" \
+        "http://10.20.32.80${path}"
+    done
   risk_level: low
-  bastion_prompt: 'HTTP 응답 코드 종류를 확인하시오: 존재하는 페이지와 존재하지 않는 페이지의 응답 코드 차이를 확인해줘
-
-
-    [도구 권장] http_basics: whatweb, curl -I, nmap -sV. curl 만 쓰지 말고 **whatweb** 등 적합
-    도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    attacker 컨테이너에서 6v6-web (10.20.32.80) 의 4 경로 (/, /nonexistent,
+    /admin, /api) 에 curl 로 GET 을 보내 응답 코드 분포 + Content-Length
+    차이를 수집해줘. /admin 응답이 200 인지 404 인지 보고 access control
+    결함을 판단하고, 비존재 404 의 본문 크기가 일관된지 확인해 oracle
+    정보 누설 여부도 보고해줘. for-loop 한 번 + uniq -c 로 분포 요약.
+# ============================================================
+# STEP 3 [RED·정찰] — HTTP 메서드 enumeration (OPTIONS Allow + 5 메서드 직접)
+# ============================================================
 - order: 3
-  instruction: 'HTTP 요청 메서드(GET, POST, PUT, DELETE, OPTIONS)를 테스트하여 서버가 허용하는 메서드를
-    확인하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    attacker 컨테이너 (10.20.30.202) 에서 6v6-web 의 HTTP 메서드 허용 정책을
+    파악한다. (1) OPTIONS 요청으로 Allow 헤더 수집 + (2) 5 메서드 (GET / POST
+    / PUT / DELETE / OPTIONS) 직접 호출 후 응답 코드 분포를 본다. 의도하지
+    않은 PUT/DELETE 허용은 임의 파일 업로드/삭제 위험.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `http_basics` 에 적합한 도구: whatweb, curl -I, nmap
-    -sV. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: curl -X OPTIONS를 사용하세요.
+    ## 💻 실행 명령
+
+    ```bash
+    # 1. OPTIONS Allow 헤더
+    curl -sI -X OPTIONS http://10.20.32.80/ | grep -i '^allow:'
+
+    # 2. 5 메서드 직접 (응답 코드 비교)
+    for m in GET POST PUT DELETE OPTIONS; do
+      curl -o /dev/null -s -w "${m} → %{http_code}\n" -X $m http://10.20.32.80/
+    done
+
+    # 3. nmap http-methods (선택)
+    nmap -p 80 --script http-methods --script-args http-methods.url-path=/ 10.20.32.80
+    ```
+
+    ## 📋 확인 사항
+
+    - `Allow:` 헤더에 어떤 메서드가 나열되는가 (예: `Allow: GET,HEAD,POST,OPTIONS`)
+    - PUT / DELETE 응답이 405 (Method Not Allowed) 인지 200/201/204 인지
+    - 만약 PUT 이 201 이면 → 임의 파일 업로드 가능성 (WebDAV 미정리)
+    - OPTIONS 가 200 인데 Allow 헤더 없으면 서버 응답 부정확
+
+    ## 💡 왜 이걸 하는가?
+
+    PUT/DELETE 의 의도하지 않은 활성화는 OWASP A05 Security Misconfiguration
+    의 전형적 패턴 (MITRE T1190 Exploit Public-Facing Application). WebDAV
+    잔재 또는 framework 의 wildcard route 가 원인. nmap http-methods 스크립트
+    가 자동으로 동일 정보 수집 — 학습 환경에서는 curl 5 회로 직접 확인 권장.
+
+    ## 🔵 Blue 측 관찰
+
+    PUT/DELETE 요청은 Apache access_log 의 첫 토큰에 메서드 명시.
+    Wazuh rule 31106 (Web attack — unusual method) 가 PUT/DELETE/CONNECT
+    burst 를 트리거. ModSecurity CRS rule 911100 (Method is not allowed by
+    policy) 가 default 정책 (GET/HEAD/POST/OPTIONS 외) 에서 차단.
+
+    ## 🟣 Purple 보완 권장
+
+    - Apache `<Limit>` 또는 `<LimitExcept>` 로 메서드 화이트리스트
+    - ModSecurity CRS `tx.allowed_methods` 변수에 GET/HEAD/POST/OPTIONS 만 등록
+    - WebDAV 모듈 (`mod_dav`) 미사용 시 비활성화
+  hint: |
+    1단계 `curl -sI -X OPTIONS` 로 Allow 헤더 + 2단계 `for m in ...; do ...; done`
+    로 5 메서드 응답 코드 직접. `nmap --script http-methods` 는 한 줄 자동.
   category: http_basics
   points: 10
-  answer: '🤖 프롬프트: HTTP 요청 메서드(GET, POST, PUT, DELETE, OPTIONS)를 테스트하여 서버가 허용하는 메서드를
-    확인해줘
-
-    📎 참고 (CLI): curl -s -X OPTIONS http://10.20.32.80/ -I 2>/dev/null | grep -i allow
-    && echo ''OPTIONS 확인 완료'''
-  answer_detail: OPTIONS 메서드로 서버가 허용하는 HTTP 메서드를 확인합니다. 불필요한 메서드(PUT, DELETE)는 비활성화해야
-    합니다.
+  answer: |
+    echo "=== 1. OPTIONS Allow 헤더 ==="
+    curl -sI -X OPTIONS http://10.20.32.80/ | grep -i '^allow:' || echo "Allow 헤더 없음"
+    echo ""
+    echo "=== 2. 5 메서드 응답 코드 ==="
+    for m in GET POST PUT DELETE OPTIONS; do
+      curl -o /dev/null -s -w "${m} → %{http_code}\n" -X $m http://10.20.32.80/
+    done
+  answer_detail: |
+    Allow 헤더에 PUT/DELETE 포함되거나 직접 PUT/DELETE 가 201/204 면 임의 파일
+    업로드/삭제 위험. 정상 정책 = GET/HEAD/POST/OPTIONS 만 허용 + PUT/DELETE
+    응답 405. ModSecurity CRS rule 911100 이 차단 (default tx.allowed_methods).
   verify:
     type: output_contains
-    expect:
-    - OPTIONS 확인 완료
-    - METHOD
-    - ' 혹은 '
+    expect: 'OPTIONS → '
     field: stdout
     semantic:
-      intent: HTTP 메서드(GET/POST/PUT/DELETE/OPTIONS) 테스트 — 서버 허용 메서드 파악, OPTIONS Allow
-        헤더 확인
+      intent: |
+        HTTP 메서드 enumeration — OPTIONS Allow 헤더 + 5 메서드 직접 호출 후
+        응답 코드 비교. PUT/DELETE 의 의도하지 않은 활성화 여부 식별.
+        OWASP A05 Security Misconfiguration + MITRE T1190 정찰.
       success_criteria:
-      - 5개 주요 메서드 시도 또는 OPTIONS 요청으로 Allow 헤더 수집
-      - 각 메서드 응답 코드(200/405) 해석
-      - PUT/DELETE 허용 시 위험(unintended resource modification) 언급
+        - OPTIONS Allow 헤더 직접 인용 (또는 응답이 405/없음 명시)
+        - 최소 4 메서드 (GET/POST/PUT/DELETE) 응답 코드 인용
+        - PUT/DELETE 응답이 405 (정상) vs 200/201/204 (위험) 해석
+        - 6v6-web (10.20.32.80) 사용 명시
       acceptable_methods:
-      - curl -X <METHOD> <url>
-      - curl -X OPTIONS <url> -I
-      - python requests.request(method, url)
-      - nmap --script http-methods -p 80 <target>
+        - "curl -sI -X OPTIONS http://10.20.32.80/ + for-loop 5 메서드"
+        - "nmap --script http-methods -p 80 10.20.32.80"
+        - "python requests.options(...).headers['Allow'] + requests.request"
       negative_signs:
-      - GET 만 사용
-      - OPTIONS 확인 없음
-      - 허용 메서드의 보안 영향 누락
+        - OPTIONS 만 보고 직접 메서드 5 회 호출 누락
+        - PUT/DELETE 응답 코드 인용 누락
+        - 메서드 허용의 보안 영향 (임의 업로드/삭제) 해석 없음
   target_vm: attacker
-  script: curl -s -X OPTIONS http://10.20.32.80/ -I 2>/dev/null | grep -i allow &&
-    echo 'OPTIONS 확인 완료'
+  script: |
+    curl -sI -X OPTIONS http://10.20.32.80/ | grep -i '^allow:' || echo "no-allow-header"
+    for m in GET POST PUT DELETE OPTIONS; do
+      curl -o /dev/null -s -w "${m} → %{http_code}\n" -X $m http://10.20.32.80/
+    done
   risk_level: low
-  bastion_prompt: 'HTTP 요청 메서드(GET, POST, PUT, DELETE, OPTIONS)를 테스트하여 서버가 허용하는 메서드를
-    확인해줘
-
-
-    [도구 권장] http_basics: whatweb, curl -I, nmap -sV. curl 만 쓰지 말고 **whatweb** 등 적합
-    도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    attacker 컨테이너에서 6v6-web (10.20.32.80) 에 (1) OPTIONS 로 Allow 헤더
+    수집 + (2) GET/POST/PUT/DELETE/OPTIONS 5 메서드 직접 호출 후 응답 코드를
+    비교해줘. PUT/DELETE 가 405 (정상) 인지 201/204 (임의 파일 업로드/삭제
+    위험) 인지 판단하고, Allow 헤더 내용 그대로 인용해줘.
 - order: 4
   instruction: '응답 헤더에서 보안 헤더(X-Frame-Options, X-XSS-Protection, Content-Security-Policy
     등)의 존재 여부를 확인하시오.
