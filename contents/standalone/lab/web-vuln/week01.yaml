@@ -925,52 +925,135 @@ steps:
     헤더 존재 + max-age 값을 점검해줘. 두 가지 다 적용되어야 sslstrip MITM
     이 차단된다는 보안 영향을 설명하고, 부재 시 OWASP A02 / MITRE T1557 와
     매핑해줘. 학습 환경의 default 는 미설정이 정상 (Apache/HAProxy 학습용).
+# ============================================================
+# STEP 9 [RED·정찰·요청구성] — POST JSON 로그인 + 응답 분석
+# ============================================================
 - order: 9
-  instruction: 'POST 요청을 전송하고 요청/응답을 분석하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    attacker 컨테이너 (10.20.30.202) 에서 Juice Shop (6v6-juiceshop = 10.20.40.81:3000)
+    의 `/rest/user/login` 에 JSON 형식 POST 요청을 보내 (a) 올바른 자격증명
+    (admin@juice-sh.op / admin123) (b) 잘못된 자격증명 (test@test.com / wrong)
+    두 케이스 응답 차이 (코드, 본문, JWT 토큰 유무) 를 비교한다.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `http_basics` 에 적합한 도구: whatweb, curl -I, nmap
-    -sV. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: curl -d 옵션으로 데이터를 전송하세요.
+    ## 💻 실행 명령
+
+    ```bash
+    # 1. 잘못된 자격증명
+    echo "=== 1. 실패 로그인 ==="
+    curl -s -i -X POST http://10.20.40.81:3000/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d '{"email":"test@test.com","password":"wrong"}' \
+      | head -15
+
+    # 2. 올바른 자격증명 (admin)
+    echo ""
+    echo "=== 2. 성공 로그인 ==="
+    curl -s -i -X POST http://10.20.40.81:3000/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d '{"email":"admin@juice-sh.op","password":"admin123"}' \
+      | head -25
+    ```
+
+    ## 📋 확인 사항
+
+    - 실패: HTTP 401 + 본문 `{"error":"Invalid email or password."}` (또는 유사)
+    - 성공: HTTP 200 + 본문 `{"authentication":{"token":"eyJhbGc...", ...}}`
+    - 응답 본문 의 `token` 필드 = JWT (다음 STEP 의 인증 우회 학습용)
+    - 두 응답 의 *시간* 차이 (timing attack 단서) — `curl -w "%{time_total}"`
+    - Content-Type / Content-Length 차이 (실패/성공 자동 구분 가능)
+
+    ## 💡 왜 이걸 하는가?
+
+    POST + JSON body 는 modern REST API 의 표준 — `application/x-www-form-urlencoded`
+    의 form POST 와 구별. 응답 본문 의 token 은 다음 STEP (10+) 에서 인증 우회 /
+    JWT manipulation (alg=none) 의 입력 (MITRE T1078 Valid Accounts + T1212
+    Exploitation for Credential Access). 실패/성공 응답 의 *균일성* (timing
+    + 본문 길이) 부족 → 사용자 enumeration 가능.
+
+    ## 🔵 Blue 측 관찰
+
+    Juice Shop 의 backend (Express) 는 로그인 시도 로그를 stdout 으로 출력 (Docker
+    log) → Wazuh agent 가 syslog 통해 수집 가능. ModSecurity CRS rule 942100
+    (SQL Injection in args) 가 SQL 패턴 시도 시 트리거. 5 회 연속 실패는
+    Wazuh rule 31108 (Excessive Web 401) 의 트리거 조건.
+
+    ## 🟣 Purple 보완 권장
+
+    - 응답 본문/시간 균일화 (`crypto-safe-compare` + delay) → timing attack 차단
+    - rate-limit (express-rate-limit) 5 회/분 → brute force 차단
+    - Wazuh active-response (`firewall-drop`) 5 회 실패 시 src IP 600 sec block
+    - JWT 토큰 의 `alg` 강제 (`RS256` 만, `none` 거부) — Juice Shop 의 default
+      challenge 가 alg=none 우회 가능
+  hint: |
+    Juice Shop 의 로그인 endpoint = `POST /rest/user/login`. 성공 응답 본문 의
+    `authentication.token` 필드 (JWT) 는 이후 STEP 의 입력. `curl -s -i` 의 `-i` =
+    응답 헤더 + 본문 양쪽 출력.
   category: http_basics
   points: 10
-  answer: "\U0001F916 프롬프트: POST 요청을 전송하고 요청/응답을 분석해줘\n\U0001F4CE 참고 (CLI): curl -s\
-    \ -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type: application/json'\
-    \ \\\n  -d '{\"email\":\"test@test.com\",\"password\":\"test\"}' 2>/dev/null \\\
-    \n | head -5 && echo 'POST 분석 완료'"
-  answer_detail: POST 요청은 로그인, 폼 제출 등에 사용됩니다. 요청 본문과 응답 구조를 분석합니다.
+  answer: |
+    echo "=== 1. 실패 로그인 (잘못된 자격증명) ==="
+    curl -s -i -X POST http://10.20.40.81:3000/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d '{"email":"test@test.com","password":"wrong"}' | head -15
+    echo ""
+    echo "=== 2. 성공 로그인 (admin@juice-sh.op / admin123) ==="
+    curl -s -i -X POST http://10.20.40.81:3000/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d '{"email":"admin@juice-sh.op","password":"admin123"}' | head -25
+    echo ""
+    echo "=== 3. JWT 토큰만 추출 ==="
+    curl -s -X POST http://10.20.40.81:3000/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d '{"email":"admin@juice-sh.op","password":"admin123"}' \
+      | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('authentication',{}).get('token','(token not found)')[:60]+'...')"
+  answer_detail: |
+    Juice Shop 의 성공 응답 본문 = `{"authentication":{"token":"eyJhbGc...",
+    "bid":1,"umail":"admin@juice-sh.op"}}` 형식. token = JWT 로 다음 STEP 의
+    인증 우회/manipulation 의 입력. 응답 본문 + 헤더 시간 차이 (성공/실패) 가
+    *균일하지 않으면* timing attack 으로 유효 email 식별 가능 (예: 존재 email
+    → DB query → 50ms / 비존재 → 즉시 400 → 5ms).
   verify:
     type: output_contains
-    expect:
-    - POST 분석 완료
-    - http_request
-    - Postman
+    expect: 'authentication'
     field: stdout
     semantic:
-      intent: POST 요청 구성·전송 — -X POST -d 로 form data 또는 JSON 전송 후 응답 분석
+      intent: |
+        POST JSON 로그인 요청 + 성공/실패 응답 비교. JWT 토큰 추출 (다음 STEP
+        의 인증 우회 입력). MITRE T1078 Valid Accounts + T1212 Exploitation
+        for Credential Access. timing 균일성 점검 = 사용자 enumeration 차단.
       success_criteria:
-      - curl -X POST -d 또는 --data-urlencode 로 바디 전송
-      - Content-Type 명시(application/x-www-form-urlencoded 또는 application/json)
-      - 응답 코드와 본문 일부 확인
+        - 실패/성공 2 케이스 모두 시도 + 응답 코드 인용 (401 vs 200)
+        - 성공 응답 의 JWT 토큰 추출 또는 인용
+        - Juice Shop 의 admin@juice-sh.op / admin123 default 자격증명 사용
+        - 6v6-juiceshop (10.20.40.81:3000) 사용 명시
       acceptable_methods:
-      - curl -X POST -d param=value <url>
-      - curl -H Content-Type:application/json -d {json} <url>
-      - python requests.post(url, data=...)
-      - wget --post-data <url>
+        - "curl -X POST -H 'Content-Type: application/json' -d {json}"
+        - "python requests.post(url, json={...})"
+        - "httpie 의 http POST url email=... password=..."
+        - "Burp Suite Repeater (보조)"
       negative_signs:
-      - GET 요청으로 대체
-      - Content-Type 없음
-      - 응답 해석 없음
+        - 실패 케이스 누락 (성공만)
+        - JWT 토큰 추출 누락
+        - Content-Type 미명시 → 400 응답 (잘못된 요청)
   target_vm: attacker
-  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{\"email\":\"test@test.com\",\"password\":\"test\"\
-    }' 2>/dev/null \\\n | head -5 && echo 'POST 분석 완료'"
+  script: |
+    curl -s -i -X POST http://10.20.40.81:3000/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d '{"email":"test@test.com","password":"wrong"}' | head -15
+    echo "---"
+    curl -s -i -X POST http://10.20.40.81:3000/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d '{"email":"admin@juice-sh.op","password":"admin123"}' | head -25
   risk_level: low
-  bastion_prompt: 'POST 요청을 전송하고 요청/응답을 분석해줘
-
-
-    [도구 권장] http_basics: whatweb, curl -I, nmap -sV. curl 만 쓰지 말고 **whatweb** 등 적합
-    도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    attacker 컨테이너에서 6v6-juiceshop (10.20.40.81:3000) 의 /rest/user/login
+    에 (1) 잘못된 자격증명 (test@test.com/wrong) (2) 올바른 자격증명
+    (admin@juice-sh.op/admin123) 양쪽 POST JSON 으로 요청 → 응답 코드 (401
+    vs 200) + 성공 응답 의 JWT 토큰 추출까지 보고해줘. JWT 는 다음 STEP 인증
+    우회 의 입력. timing 차이 (실패/성공) 가 균일하지 않으면 user enumeration
+    위험도 한 줄 언급해줘.
 - order: 10
   instruction: '웹 서버의 디렉터리 목록 노출(Directory Listing) 여부를 확인하시오.
 
