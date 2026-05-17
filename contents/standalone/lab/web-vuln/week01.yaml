@@ -459,7 +459,7 @@ steps:
 
     ```bash
     # 1. 직접 backend (Juice Shop) - 로그인 시도 후 Set-Cookie 수집
-    curl -si -X POST http://10.20.40.81:3000/rest/user/login \
+    curl -si -X POST http://juice.6v6.lab/rest/user/login \
       -H 'Content-Type: application/json' \
       -d '{"email":"admin@juice-sh.op","password":"admin123"}' \
       | grep -i '^set-cookie:'
@@ -468,7 +468,7 @@ steps:
     curl -sI -H "Host: juice.6v6.lab" http://10.20.32.80/ | grep -i '^set-cookie:'
 
     # 3. 속성 자동 점검
-    curl -si -X POST http://10.20.40.81:3000/rest/user/login \
+    curl -si -X POST http://juice.6v6.lab/rest/user/login \
       -H 'Content-Type: application/json' \
       -d '{"email":"admin@juice-sh.op","password":"admin123"}' \
       > /tmp/web01s5.txt
@@ -514,7 +514,7 @@ steps:
   category: security_headers
   points: 10
   answer: |
-    curl -si -X POST http://10.20.40.81:3000/rest/user/login \
+    curl -si -X POST http://juice.6v6.lab/rest/user/login \
       -H 'Content-Type: application/json' \
       -d '{"email":"admin@juice-sh.op","password":"admin123"}' \
       > /tmp/web01s5.txt
@@ -547,7 +547,7 @@ steps:
         - 6v6-juiceshop (10.20.40.81:3000) 또는 vhost juice.6v6.lab 사용 명시
       acceptable_methods:
         - "curl -si -X POST .../rest/user/login → grep set-cookie"
-        - "curl -c cookies.txt http://10.20.40.81:3000/ → cat cookies.txt"
+        - "curl -c cookies.txt http://juice.6v6.lab/ → cat cookies.txt"
         - "OWASP ZAP passive scan alert 10010 (Cookie Without HttpOnly Flag)"
         - "browser DevTools Application > Cookies (보조)"
       negative_signs:
@@ -556,7 +556,7 @@ steps:
         - 공격 시나리오 누락
   target_vm: attacker
   script: |
-    curl -si -X POST http://10.20.40.81:3000/rest/user/login \
+    curl -si -X POST http://juice.6v6.lab/rest/user/login \
       -H 'Content-Type: application/json' \
       -d '{"email":"admin@juice-sh.op","password":"admin123"}' > /tmp/web01s5.txt
     grep -i "^set-cookie:" /tmp/web01s5.txt || echo "(no Set-Cookie header)"
@@ -598,8 +598,8 @@ steps:
     nmap -sV -p 80,443 -Pn 10.20.32.80
 
     # 4. Juice Shop backend 도 동일 (Node/Express 응답)
-    curl -sI http://10.20.40.81:3000/ | grep -iE '^(server|x-powered-by):'
-    whatweb -a 3 http://10.20.40.81:3000/
+    curl -sI http://juice.6v6.lab/ | grep -iE '^(server|x-powered-by):'
+    whatweb -a 3 http://juice.6v6.lab/
     ```
 
     ## 📋 확인 사항
@@ -616,7 +616,7 @@ steps:
     배너에 정확 버전이 노출되면 공격자는 즉시 NVD / Exploit-DB 의 알려진
     CVE 와 매칭 (MITRE T1592.002 Software). Apache 2.4.49 → CVE-2021-41773
     (Path Traversal), Express 4.17.1 → CVE-2024-29041 (open redirect) 등.
-    Juice Shop 의 `package.json` 노출 (`curl http://10.20.40.81:3000/package.json`)
+    Juice Shop 의 `package.json` 노출 (`curl http://juice.6v6.lab/package.json`)
     은 의도된 학습 challenge — SCA 자동화 가능.
 
     ## 🔵 Blue 측 관찰
@@ -650,7 +650,7 @@ steps:
     nmap -sV -p 80,443 -Pn 10.20.32.80 2>/dev/null | grep -E '^[0-9]+/tcp'
     echo ""
     echo "=== 4. Juice Shop backend (Node/Express) ==="
-    curl -sI http://10.20.40.81:3000/ | grep -iE '^(server|x-powered-by):' || echo "(헤더 없음)"
+    curl -sI http://juice.6v6.lab/ | grep -iE '^(server|x-powered-by):' || echo "(헤더 없음)"
   answer_detail: |
     Juice Shop 의 default Express 응답은 `X-Powered-By: Express` 노출.
     Apache (6v6-web reverse proxy) 는 `Server: Apache/2.4.x (Ubuntu)` 노출.
@@ -685,7 +685,7 @@ steps:
     curl -sI http://10.20.32.80/ | grep -iE '^(server|x-powered-by|via):' || echo "(no banner header)"
     whatweb -a 3 http://10.20.32.80/ 2>/dev/null | head -3
     nmap -sV -p 80,443 -Pn 10.20.32.80 2>/dev/null | grep -E '^[0-9]+/tcp'
-    curl -sI http://10.20.40.81:3000/ | grep -iE '^(server|x-powered-by):' || echo "(no juice banner)"
+    curl -sI http://juice.6v6.lab/ | grep -iE '^(server|x-powered-by):' || echo "(no juice banner)"
   risk_level: low
   bastion_prompt: |
     attacker 컨테이너에서 6v6-web (10.20.32.80) 과 6v6-juiceshop (10.20.40.81:3000)
@@ -717,7 +717,7 @@ steps:
     done
 
     # 2. Juice Shop /ftp (robots.txt 에서 발견 시) 디렉토리 listing
-    curl -s http://10.20.40.81:3000/ftp/ | head -20
+    curl -s http://juice.6v6.lab/ftp/ | head -20
     ```
 
     ## 📋 확인 사항
@@ -767,7 +767,7 @@ steps:
     done
     echo ""
     echo "=== Juice Shop /ftp (robots 단서 시) ==="
-    curl -s http://10.20.40.81:3000/ftp/ 2>/dev/null | head -10 || echo "(접근 불가)"
+    curl -s http://juice.6v6.lab/ftp/ 2>/dev/null | head -10 || echo "(접근 불가)"
   answer_detail: |
     Juice Shop 의 robots.txt 는 의도적으로 `User-agent: * / Disallow: /ftp` 만
     포함 — `/ftp` 는 백업 파일 (예: acquisitions.md, package.json.bak) 디렉토리
@@ -804,7 +804,7 @@ steps:
       echo "/${f} → HTTP ${code}"
       [ "$code" = "200" ] && curl -s "http://10.20.32.80/${f}" | head -5
     done
-    curl -s http://10.20.40.81:3000/ftp/ 2>/dev/null | head -5 || echo "(no /ftp)"
+    curl -s http://juice.6v6.lab/ftp/ 2>/dev/null | head -5 || echo "(no /ftp)"
   risk_level: low
   bastion_prompt: |
     attacker 컨테이너에서 6v6-web (10.20.32.80) 의 4 종 메타 파일 (robots.txt /
@@ -942,7 +942,7 @@ steps:
     ```bash
     # 1. 잘못된 자격증명
     echo "=== 1. 실패 로그인 ==="
-    curl -s -i -X POST http://10.20.40.81:3000/rest/user/login \
+    curl -s -i -X POST http://juice.6v6.lab/rest/user/login \
       -H 'Content-Type: application/json' \
       -d '{"email":"test@test.com","password":"wrong"}' \
       | head -15
@@ -950,7 +950,7 @@ steps:
     # 2. 올바른 자격증명 (admin)
     echo ""
     echo "=== 2. 성공 로그인 ==="
-    curl -s -i -X POST http://10.20.40.81:3000/rest/user/login \
+    curl -s -i -X POST http://juice.6v6.lab/rest/user/login \
       -H 'Content-Type: application/json' \
       -d '{"email":"admin@juice-sh.op","password":"admin123"}' \
       | head -25
@@ -994,17 +994,17 @@ steps:
   points: 10
   answer: |
     echo "=== 1. 실패 로그인 (잘못된 자격증명) ==="
-    curl -s -i -X POST http://10.20.40.81:3000/rest/user/login \
+    curl -s -i -X POST http://juice.6v6.lab/rest/user/login \
       -H 'Content-Type: application/json' \
       -d '{"email":"test@test.com","password":"wrong"}' | head -15
     echo ""
     echo "=== 2. 성공 로그인 (admin@juice-sh.op / admin123) ==="
-    curl -s -i -X POST http://10.20.40.81:3000/rest/user/login \
+    curl -s -i -X POST http://juice.6v6.lab/rest/user/login \
       -H 'Content-Type: application/json' \
       -d '{"email":"admin@juice-sh.op","password":"admin123"}' | head -25
     echo ""
     echo "=== 3. JWT 토큰만 추출 ==="
-    curl -s -X POST http://10.20.40.81:3000/rest/user/login \
+    curl -s -X POST http://juice.6v6.lab/rest/user/login \
       -H 'Content-Type: application/json' \
       -d '{"email":"admin@juice-sh.op","password":"admin123"}' \
       | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('authentication',{}).get('token','(token not found)')[:60]+'...')"
@@ -1039,11 +1039,11 @@ steps:
         - Content-Type 미명시 → 400 응답 (잘못된 요청)
   target_vm: attacker
   script: |
-    curl -s -i -X POST http://10.20.40.81:3000/rest/user/login \
+    curl -s -i -X POST http://juice.6v6.lab/rest/user/login \
       -H 'Content-Type: application/json' \
       -d '{"email":"test@test.com","password":"wrong"}' | head -15
     echo "---"
-    curl -s -i -X POST http://10.20.40.81:3000/rest/user/login \
+    curl -s -i -X POST http://juice.6v6.lab/rest/user/login \
       -H 'Content-Type: application/json' \
       -d '{"email":"admin@juice-sh.op","password":"admin123"}' | head -25
   risk_level: low
@@ -1071,7 +1071,7 @@ steps:
     ```bash
     # 1. Juice Shop 의 /ftp/ (의도된 challenge) - 직접
     echo "=== 1. Juice Shop /ftp/ ==="
-    curl -s http://10.20.40.81:3000/ftp/ | head -20
+    curl -s http://juice.6v6.lab/ftp/ | head -20
 
     # 2. 흔한 디렉토리 후보 enumeration
     echo ""
@@ -1125,7 +1125,7 @@ steps:
   points: 10
   answer: |
     echo "=== 1. Juice Shop /ftp (의도된 challenge) ==="
-    curl -s http://10.20.40.81:3000/ftp/ | head -20
+    curl -s http://juice.6v6.lab/ftp/ | head -20
     echo ""
     echo "=== 2. 흔한 디렉토리 후보 ==="
     for d in /backup/ /uploads/ /images/ /static/ /assets/ /api/ /admin/; do
@@ -1134,7 +1134,7 @@ steps:
     done
     echo ""
     echo "=== 3. Juice Shop /ftp 백업 파일 list ==="
-    curl -s http://10.20.40.81:3000/ftp/ | grep -oE '[a-zA-Z0-9._-]+\.(md|bak|pyc|txt|json)' | sort -u | head -10
+    curl -s http://juice.6v6.lab/ftp/ | grep -oE '[a-zA-Z0-9._-]+\.(md|bak|pyc|txt|json)' | sort -u | head -10
   answer_detail: |
     Juice Shop /ftp/ 의 응답 본문 = `<head><title>listing directory /ftp</title>...`
     형식 — 직접 백업 파일 list 노출 (Express 의 `serve-index` 미들웨어). 노출된
@@ -1165,7 +1165,7 @@ steps:
         - 방어책 (Options -Indexes / autoindex off) 누락
   target_vm: attacker
   script: |
-    curl -s http://10.20.40.81:3000/ftp/ | head -20
+    curl -s http://juice.6v6.lab/ftp/ | head -20
     echo "---"
     for d in /backup/ /uploads/ /images/ /admin/; do
       code=$(curl -o /dev/null -s -w "%{http_code}" "http://10.20.32.80${d}")
@@ -1448,18 +1448,18 @@ steps:
 
     ```bash
     # 1. whatweb (자동 식별)
-    whatweb -a 3 http://10.20.40.81:3000/ 2>/dev/null | head -5
+    whatweb -a 3 http://juice.6v6.lab/ 2>/dev/null | head -5
     whatweb -a 3 http://10.20.32.80/ 2>/dev/null | head -5
 
     # 2. HTML 응답에서 framework 패턴 grep
-    curl -s http://10.20.40.81:3000/ | grep -ioE \
+    curl -s http://juice.6v6.lab/ | grep -ioE \
       '(angular|react|vue|jquery|express|bootstrap|webpack|moment)[^"<]{0,20}' \
       | sort -u | head -10
 
     # 3. Juice Shop의 의도된 challenge — package.json 직접 노출
     echo ""
     echo "=== package.json 의 dependencies (10개) ==="
-    curl -s http://10.20.40.81:3000/package.json 2>/dev/null \
+    curl -s http://juice.6v6.lab/package.json 2>/dev/null \
       | python3 -c "import sys,json; d=json.load(sys.stdin); deps=d.get('dependencies',{}); [print(f'  {k} {v}') for k,v in list(deps.items())[:10]]" \
       || echo "(package.json 직접 노출 안 됨 — 정상 운영 web)"
 
@@ -1504,21 +1504,21 @@ steps:
     - 학습 환경 의 default 노출은 보존 (Juice Shop challenge 학습 위함)
   hint: |
     Juice Shop 의 package.json 직접 노출 (의도된 challenge) 이 가장 풍부한
-    정보 — `curl http://10.20.40.81:3000/package.json | python3 -c "import json,sys"`
+    정보 — `curl http://juice.6v6.lab/package.json | python3 -c "import json,sys"`
     으로 dependencies dict 파싱.
   category: fingerprinting
   points: 10
   answer: |
     echo "=== 1. whatweb (자동 식별) ==="
-    whatweb -a 3 http://10.20.40.81:3000/ 2>/dev/null | head -3
+    whatweb -a 3 http://juice.6v6.lab/ 2>/dev/null | head -3
     echo ""
     echo "=== 2. HTML framework 패턴 grep ==="
-    curl -s http://10.20.40.81:3000/ | grep -ioE \
+    curl -s http://juice.6v6.lab/ | grep -ioE \
       '(angular|react|vue|jquery|express|bootstrap|webpack)[^"<]{0,20}' \
       | sort -u | head -10
     echo ""
     echo "=== 3. package.json 의 dependencies (Juice Shop challenge) ==="
-    curl -s http://10.20.40.81:3000/package.json 2>/dev/null \
+    curl -s http://juice.6v6.lab/package.json 2>/dev/null \
       | python3 -c "import sys,json; d=json.load(sys.stdin); deps=d.get('dependencies',{}); print(f'app: {d.get(\"name\")} v{d.get(\"version\")}'); [print(f'  {k} {v}') for k,v in list(deps.items())[:10]]" \
       || echo "(package.json 미노출)"
   answer_detail: |
@@ -1552,9 +1552,9 @@ steps:
         - CVE 매핑 가능성 누락
   target_vm: attacker
   script: |
-    whatweb -a 3 http://10.20.40.81:3000/ 2>/dev/null | head -3
-    curl -s http://10.20.40.81:3000/ | grep -ioE '(angular|react|vue|jquery|express|bootstrap)[^"<]{0,20}' | sort -u | head -5
-    curl -s http://10.20.40.81:3000/package.json 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); deps=d.get('dependencies',{}); print(f'app: {d.get(\"name\")} v{d.get(\"version\")}'); [print(f'  {k} {v}') for k,v in list(deps.items())[:5]]" || echo "(no package.json)"
+    whatweb -a 3 http://juice.6v6.lab/ 2>/dev/null | head -3
+    curl -s http://juice.6v6.lab/ | grep -ioE '(angular|react|vue|jquery|express|bootstrap)[^"<]{0,20}' | sort -u | head -5
+    curl -s http://juice.6v6.lab/package.json 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); deps=d.get('dependencies',{}); print(f'app: {d.get(\"name\")} v{d.get(\"version\")}'); [print(f'  {k} {v}') for k,v in list(deps.items())[:5]]" || echo "(no package.json)"
   risk_level: low
   bastion_prompt: |
     attacker 컨테이너에서 6v6-juiceshop (10.20.40.81:3000) 의 SPA 기술 스택을
@@ -1581,26 +1581,26 @@ steps:
     ```bash
     # 1. 잘못된 JSON body (SyntaxError)
     echo "=== 1. 잘못된 JSON ==="
-    curl -s -i -X POST http://10.20.40.81:3000/rest/user/login \
+    curl -s -i -X POST http://juice.6v6.lab/rest/user/login \
       -H 'Content-Type: application/json' \
       -d '{invalid json' | head -15
 
     # 2. SQL 메타문자 포함 query param
     echo ""
     echo "=== 2. SQL 메타문자 ==="
-    curl -s -i "http://10.20.40.81:3000/rest/products/search?q=test')--" | head -15
+    curl -s -i "http://juice.6v6.lab/rest/products/search?q=test')--" | head -15
 
     # 3. 존재하지 않는 endpoint
     echo ""
     echo "=== 3. 존재하지 않는 endpoint ==="
-    curl -s -i http://10.20.40.81:3000/api/Nonexistent | head -15
+    curl -s -i http://juice.6v6.lab/api/Nonexistent | head -15
 
     # 4. 큰 페이로드 (10KB JSON)
     echo ""
     echo "=== 4. 큰 페이로드 (10KB) ==="
     payload=$(python3 -c "print('A'*10000)")
     curl -s -o /dev/null -w "code=%{http_code} size=%{size_download}\n" \
-      -X POST http://10.20.40.81:3000/rest/user/login \
+      -X POST http://juice.6v6.lab/rest/user/login \
       -H 'Content-Type: application/json' \
       -d "{\"email\":\"${payload}\",\"password\":\"x\"}"
     ```
@@ -1645,19 +1645,19 @@ steps:
   points: 12
   answer: |
     echo "=== 1. 잘못된 JSON body ==="
-    curl -s -i -X POST http://10.20.40.81:3000/rest/user/login \
+    curl -s -i -X POST http://juice.6v6.lab/rest/user/login \
       -H 'Content-Type: application/json' -d '{invalid json' | head -10
     echo ""
     echo "=== 2. SQL 메타문자 query ==="
-    curl -s -i "http://10.20.40.81:3000/rest/products/search?q=test%27)--" | head -10
+    curl -s -i "http://juice.6v6.lab/rest/products/search?q=test%27)--" | head -10
     echo ""
     echo "=== 3. 존재하지 않는 endpoint ==="
-    curl -s -i http://10.20.40.81:3000/api/Nonexistent | head -10
+    curl -s -i http://juice.6v6.lab/api/Nonexistent | head -10
     echo ""
     echo "=== 4. 큰 페이로드 ==="
     payload=$(python3 -c "print('A'*10000)")
     curl -s -o /dev/null -w "code=%{http_code} size=%{size_download}\n" \
-      -X POST http://10.20.40.81:3000/rest/user/login \
+      -X POST http://juice.6v6.lab/rest/user/login \
       -H 'Content-Type: application/json' \
       -d "{\"email\":\"${payload}\",\"password\":\"x\"}"
   answer_detail: |
@@ -1693,13 +1693,13 @@ steps:
         - SQL Injection 신호 (SQL 에러 노출) 해석 누락
   target_vm: attacker
   script: |
-    curl -s -i -X POST http://10.20.40.81:3000/rest/user/login \
+    curl -s -i -X POST http://juice.6v6.lab/rest/user/login \
       -H 'Content-Type: application/json' -d '{invalid json' | head -10
-    curl -s -i "http://10.20.40.81:3000/rest/products/search?q=test%27)--" | head -10
-    curl -s -i http://10.20.40.81:3000/api/Nonexistent | head -10
+    curl -s -i "http://juice.6v6.lab/rest/products/search?q=test%27)--" | head -10
+    curl -s -i http://juice.6v6.lab/api/Nonexistent | head -10
     payload=$(python3 -c "print('A'*10000)")
     curl -s -o /dev/null -w "code=%{http_code} size=%{size_download}\n" \
-      -X POST http://10.20.40.81:3000/rest/user/login \
+      -X POST http://juice.6v6.lab/rest/user/login \
       -H 'Content-Type: application/json' -d "{\"email\":\"${payload}\",\"password\":\"x\"}"
   risk_level: low
   bastion_prompt: |
@@ -1755,7 +1755,7 @@ steps:
     echo "" >> $REPORT
     echo "### 1.3 기술 스택 (STEP 13)" >> $REPORT
     echo '```' >> $REPORT
-    curl -s http://10.20.40.81:3000/package.json 2>/dev/null \
+    curl -s http://juice.6v6.lab/package.json 2>/dev/null \
       | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'{d.get(\"name\")} v{d.get(\"version\")}'); deps=d.get('dependencies',{}); [print(f'  {k} {v}') for k,v in list(deps.items())[:5]]" \
       >> $REPORT 2>/dev/null || echo "(package.json 미노출)" >> $REPORT
     echo '```' >> $REPORT
@@ -1923,7 +1923,7 @@ steps:
 - order: 99
   instruction: "[복합 시나리오] \"JuiceShop 첫 점검 — OWASP Testing Guide 정찰 단계 + 점검 보고서 +\
     \ 윤리 진술\"\n\n## 상황 (web-vuln 첫 주)\n\n당신은 ABC 핀테크 회사의 *외부 보안 컨설팅사* 신입 점검원. 첫 임무는\
-    \ client 의\nJuiceShop 인스턴스 (http://10.20.40.81:3000) 첫 점검.\n\n> 멘토: \"1~15 step\
+    \ client 의\nJuiceShop 인스턴스 (http://juice.6v6.lab) 첫 점검.\n\n> 멘토: \"1~15 step\
     \ 으로 HTTP 기초 도구는 익혔지? 이제 *진짜 점검* 흐름을 보자.\n>  OWASP Testing Guide v4 의 첫 단계 — Information\
     \ Gathering — 을 직접 수행하고,\n>  *해킹이 아닌 점검* 의 윤리적 경계를 보고서 끝에 명시해. 우리 일은 *허가받은 범위\
     \ 안에서*\n>  취약점 *식별* 하는 거지 *exploit* 까지 가는 게 아니야. 보고서 형식이 client 에게\n>  넘기는 첫 산출물이라\
@@ -1932,15 +1932,15 @@ steps:
     \ Testing Guide v4.2 의 *Information Gathering* 4 sub-section 직접 수행:\n\n**WSTG-INFO-01**\
     \ — Search engine recon (이번 lab 은 internal 환경이라 skip,\n실제론 site:juiceshop.com\
     \ filetype:txt 등):\n  `# 현실 환경 가정 1줄 메모`\n\n**WSTG-INFO-02** — Server fingerprint:\n\
-    \  ```\n  curl -sI http://10.20.40.81:3000/ | head -20\n  curl -sI http://10.20.40.81:3000/\
-    \ | grep -iE 'server|x-powered-by|x-aspnet'\n  whatweb -a 1 http://10.20.40.81:3000/\
+    \  ```\n  curl -sI http://juice.6v6.lab/ | head -20\n  curl -sI http://juice.6v6.lab/\
+    \ | grep -iE 'server|x-powered-by|x-aspnet'\n  whatweb -a 1 http://juice.6v6.lab/\
     \  # 가능 시\n  ```\n→ 예상: Server: ?, X-Powered-By: Express (Node.js).\n\n**WSTG-INFO-03**\
-    \ — Webapp metafiles:\n  ```\n  curl -s http://10.20.40.81:3000/robots.txt\n \
-    \ curl -s http://10.20.40.81:3000/sitemap.xml\n  curl -sI http://10.20.40.81:3000/.git/config\n\
-    \  curl -s http://10.20.40.81:3000/security.txt\n  ```\n→ 예상: robots.txt 의 Disallow\
+    \ — Webapp metafiles:\n  ```\n  curl -s http://juice.6v6.lab/robots.txt\n \
+    \ curl -s http://juice.6v6.lab/sitemap.xml\n  curl -sI http://juice.6v6.lab/.git/config\n\
+    \  curl -s http://juice.6v6.lab/security.txt\n  ```\n→ 예상: robots.txt 의 Disallow\
     \ path 식별 (JuiceShop 는 일부러 노출).\n\n**WSTG-INFO-04** — Webapp entry point enumeration:\n\
-    \  ```\n  curl -s http://10.20.40.81:3000/ | grep -oE 'href=\"[^\"]+\"' | sort\
-    \ -u | head -20\n  curl -s http://10.20.40.81:3000/api/Users\n  curl -s http://10.20.40.81:3000/api/Products\
+    \  ```\n  curl -s http://juice.6v6.lab/ | grep -oE 'href=\"[^\"]+\"' | sort\
+    \ -u | head -20\n  curl -s http://juice.6v6.lab/api/Users\n  curl -s http://juice.6v6.lab/api/Products\
     \ | head -200\n  ```\n→ 예상: REST endpoint /api/Users / /api/Products 등 확인.\n\n\
     ▶ Phase B — 발견 사항 분석 (5분)\n\nPhase A 의 결과를 *위험도 분류*:\n\n| 발견 항목 | 위험도 | 근거 (OWASP\
     \ TG / CWE) |\n|---------|--------|---------------------|\n| Server header X-Powered-By\

