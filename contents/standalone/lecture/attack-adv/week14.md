@@ -21,11 +21,12 @@
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | 공격 기지 + C2 / Control Plane | `ssh 6v6-bastion` (pw: ccc) |
-| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | 방화벽/HAProxy/Suricata ext (고가치 목표) (nftables + HAProxy host-header) | `ssh 6v6-fw` (ProxyJump bastion) |
-| web | 10.20.32.80 | 웹 서버 (초기 접근점) | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager (최종 목표) | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | 공격 출발점 (pen-test 도구) | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | 공격 기지 + C2 / Control Plane (Bastion 운영 에이전트, KG, A2A) | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 출발점 (pen-test 도구 curl/nmap/nikto/whatweb/sqlmap/hydra) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header (고가치 목표, dual NIC = router 모드) | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS (dual NIC = router 모드) | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | 웹 서버 (초기 접근점, dual NIC = vhost 라우팅) | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh manager (최종 목표, alerts.json + active-response) | `ssh 6v6-siem` (ProxyJump fw) |
 
 ## 강의 시간 배분 (3시간)
 

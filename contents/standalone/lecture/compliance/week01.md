@@ -10,18 +10,18 @@
 
 6v6 의 *학생 PC SSH 진입점* = `bastion` 컨테이너 (ProxyJump). 학생 PC 의
 `~/.ssh/config` 에 ProxyJump 설정 + `/etc/hosts` 의 vhost 매핑 완료 후 다음 표
-의 4 컨테이너 모두 `ssh 6v6-<name>` 으로 접속 가능.
+의 6 컨테이너 모두 학생 PC 의 `~/.ssh/config` ProxyJump 설정 후 `ssh 6v6-<name>` 으로 접속.
 
 | 컨테이너 | 6v6 IP | 역할 | 접속 |
 |---------|--------|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh 6v6-bastion` (pw: ccc) |
-| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | 방화벽/HAProxy/Suricata 의 ext (nftables + HAProxy host-header) | `ssh 6v6-fw` (ProxyJump bastion) |
-| ips | 10.20.30.x (pipe) | Suricata IDS/IPS | `ssh 6v6-ips` |
-| web | 10.20.32.80 | Apache + ModSecurity + JuiceShop | `ssh 6v6-web` |
-| siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
-| attacker | 10.20.30.202 | pen-test 도구 (nmap/sqlmap/hydra/etc) | `ssh 6v6-attacker` |
+| bastion | 10.20.30.201 (ext) | Control Plane (Bastion 운영 에이전트, KG, A2A) | `ssh 6v6-bastion` (pw: ccc) |
+| attacker | 10.20.30.202 (ext) | 공격 도구 (curl/nmap/nikto/whatweb/sqlmap/hydra) | `ssh 6v6-attacker` |
+| fw | 10.20.30.1 (ext) + 10.20.31.1 (pipe) | nftables + HAProxy host-header 라우팅 (dual NIC = router 모드) | `ssh 6v6-fw` (ProxyJump bastion) |
+| ips | 10.20.31.2 (pipe) + 10.20.32.1 (dmz) | Suricata IPS (dual NIC = router 모드) | `ssh 6v6-ips` (ProxyJump fw) |
+| web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse (dual NIC = vhost 라우팅) | `ssh 6v6-web` (ProxyJump fw) |
+| siem | 10.20.32.100 (dmz) | Wazuh manager (alerts.json + active-response) | `ssh 6v6-siem` (ProxyJump fw) |
 
-**Bastion API:** `http://192.168.0.103:8003` (학습 환경 기본 — 0.110 인 경우 환경 별 다름) / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9200` (/health, /chat, /kg/*, /evidence) / Key: `ccc-api-key-2026`
 
 **CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
