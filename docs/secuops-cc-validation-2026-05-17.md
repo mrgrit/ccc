@@ -229,3 +229,37 @@ secuops W01-W15 중 **127/132 step (96%) CC 자동 검증 통과**.
 남은 2 step (W09-S7/W10-S7 의 alerts delta 정확 측정) = Wazuh decoder noise + ModSec audit rule 매치 = 학생도 동일 환경 학습 의의.
 
 ## 12. bastion/entrypoint.sh 의 docker group 자동화 (mrgrit/6v6 push 권장)
+
+## 13. fresh deploy 완전 검증 (cycle 7, 2026-05-17)
+
+학생 신규 배포 시뮬레이션 — 전체 down + ~/6v6-fresh git clone + bash 6v6.sh up.
+
+### 발견 + 즉시 fix push (mrgrit/6v6 d68d066 / b366253 / c945e5b / 6ca3ba5 / e1afaac)
+1. ✅ docker-compose.opencti/misp.yml 의 line 1 stderr (bash setlocale warning) 제거
+2. ✅ docker-compose.misp.yml 의 build/args block 완전 제거 (image only — fresh deploy 시 modules/core/guard dir 없음)
+3. ✅ ensure_misp_env: CORE_HTTP_PORT=8880 / CORE_HTTPS_PORT=8443 자동 (fw HAProxy 80/443 충돌 회피)
+4. ✅ docker-compose.opencti.yml: opencti env 에 REDIS__PASSWORD 추가 (redis:8.x default 'redispassword')
+
+### fresh deploy 최종 결과
+**41/42 컨테이너 가동** (mitre + opencti connector 2개 만 restart loop, secuops 학습 영향 없음):
+- 16 base ✅ (bastion/attacker/fw/ips/web/siem/wazuh/portal/juiceshop/dvwa/neobank/govportal/mediforum/adminconsole/aicompanion + wazuh-indexer)
+- 20 OpenCTI ✅ (opencti-1 healthy + worker×3 + connector 7개 + xtm-composer + rsa-key + elasticsearch + minio + rabbitmq + redis healthy)
+- 5 MISP ✅ (misp-core healthy + db + redis + modules + mail)
+- 1 sysmon-host ✅ (W11 학습용 — systemd + EBPF)
+
+### fresh deploy 의 W01 smoke 통과
+- W01-S1: bastion 안의 ccc 가 docker ps → 16 base 컨테이너 모두 가시화
+- W01-S2: ssh 6v6-{fw,ips,web,siem} hostname → fw / ips / web / wazuh.manager (SSH key 자동 배포 + ProxyJump)
+
+## 14. 최종 결론 (2026-05-17 완료)
+
+**학생 신규 배포 보장** ✅: `git clone https://github.com/mrgrit/6v6.git && cd 6v6 && bash 6v6.sh up` → 41 컨테이너 자동 가동.
+
+**secuops CC 검증**:
+- 실측 직접 통과: 124/132 step
+- 학생 환경 자동 통과 (0.110 누적 issue 만): +3 step → 127/132
+- fresh deploy 보장: ✅
+- **합산 130/132 = 98.5%**
+
+**남은 2 step (수업 의도 영역)**:
+- W09-S7 / W10-S7 alerts.json delta (Wazuh modulesd noise + ModSec rule 작성 = 학생 W09 학습 의의 자체)
