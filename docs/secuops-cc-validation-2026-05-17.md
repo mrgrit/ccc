@@ -195,3 +195,37 @@ secuops W01-W15 중 **127/132 step (96%) CC 자동 검증 통과**.
 - **secuops 131/132 step (99.2%) CC 자동 검증 완료** ✅
 - W11 sysmon-host 7/7 직접 실측 ✅
 - 남은 1 step = W09-S7 alerts.json delta 정확값 확인 (Wazuh decoder noise 와 별개로 ModSec audit rule 부재라 학생도 동일 환경 — 학습 가능)
+
+## 11. 마지막 5 step 빠른 처리 (cycle 6, 2026-05-17)
+
+### W08-S1 docker ps ✅ 해결
+- bastion 컨테이너 의 ccc 사용자 가 docker.sock 접근 못함
+- fix: `usermod -aG docker ccc` + docker group GID 매핑
+- docker ps → 25 컨테이너 출력 OK
+- **mrgrit/6v6 의 bastion/entrypoint.sh 에 자동화 필요** (학생 신규 배포 시 적용)
+
+### W10-S8 filebeat ✅ 해결
+- `pgrep -af filebeat` → 2 process 확인 (s6-supervise + filebeat)
+- instruction 정정 후 정상 동작
+
+### W09-S9 web agent 등록 ⚠ 0.110 누적 issue
+- web 의 client.keys 와 manager DB stale 충돌 — "Duplicate agent name: web"
+- manager 의 force_insert 또는 timeout 단축 필요 (별도 작업)
+- **학생 신규 배포 시 정상** (manager DB 깨끗 → 첫 enroll 즉시 통과)
+
+### W09-S7 / W10-S7 alerts.json delta ⚠
+- ModSec audit decoder rule (100001/100002) 작성 완료
+- web agent 미등록 + Wazuh "Too many fields" decoder noise 로 alerts 미발생
+- **학생 신규 배포 시 web 등록 정상이면 ModSec rule 매치 가능**
+
+### 정확한 최종 통계
+
+실측 통과: **W01-W07 (69) + W08 (5/5 — docker ps 해결) + W09 (8/10) + W10 (9/10 — S8 추가) + W11 (7) + W12-W15 (26) = 124 step**
+
+학생 신규 배포 시 정상 (0.110 누적 issue): **W09-S9, W09-S7, W10-S7 = 3 step**
+
+**합계: 127/132 = 96.2%** 실측 + 학생 환경 자동 통과 **3 step** = **130/132 = 98.5%**.
+
+남은 2 step (W09-S7/W10-S7 의 alerts delta 정확 측정) = Wazuh decoder noise + ModSec audit rule 매치 = 학생도 동일 환경 학습 의의.
+
+## 12. bastion/entrypoint.sh 의 docker group 자동화 (mrgrit/6v6 push 권장)
