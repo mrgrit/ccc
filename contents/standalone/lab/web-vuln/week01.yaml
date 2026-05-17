@@ -1,59 +1,102 @@
-lab_id: web-vuln-ai-week01
-title: HTTP 기초 실습 (AI 지원)
-version: ai
-course: web-vuln-ai
+lab_id: standalone-web-vuln-week01
+title: HTTP 기초 — 요청/응답·헤더·메서드·쿠키 점검 (6v6 4-tier)
+version: standalone-non-ai
+course: web-vuln
 week: 1
-description: HTTP 프로토콜의 구조, 요청/응답 메시지, 헤더 분석 등 웹 보안의 기초를 실습합니다. AI SubAgent가 자동으로
-  명령을 실행하고 결과를 검증합니다.
+description: |
+  6v6 4-tier 토폴로지 위에서 학생 PC → bastion → attacker → fw 거쳐 dmz 의
+  web (Apache + ModSecurity + Juice Shop) 까지 HTTP 기본 통신을 점검한다.
+  주요 HTTP 헤더, 메서드, 상태 코드, 쿠키 속성, 보안 헤더의 의미를 도구
+  (curl/whatweb/nmap) 로 직접 수집하고 해석한다.
 difficulty: easy
 duration_minutes: 120
+audience: 웹 보안 입문자 (1주차)
+prerequisites:
+  - 학생 PC `~/.ssh/config` 에 6v6-bastion + 6v6-attacker ProxyJump 설정 완료
+  - attacker 컨테이너 (10.20.30.202) 에 curl / whatweb / nmap / nikto 설치
+  - `juice.6v6.lab` 같은 vhost 가 학생 PC `/etc/hosts` 에서 192.168.0.110 으로 매핑
 objectives:
-- HTTP 요청/응답 구조를 이해한다
-- 주요 HTTP 헤더의 보안 의미를 파악한다
-- 웹 서버 정보 수집 기법을 익힌다
+  - HTTP 요청/응답 구조 + 메서드 (GET/POST/PUT/DELETE/OPTIONS) 의 의미를 이해
+  - 보안 헤더 (X-Frame-Options/CSP/HSTS/X-Content-Type-Options) 의 부재가 만드는 공격 벡터 파악
+  - 쿠키 속성 (HttpOnly/Secure/SameSite) 의 보안 의미 + 누락 시 CSRF/XSS 위험
+  - 6v6 의 fw HAProxy 가 host header (juice.6v6.lab / dvwa.6v6.lab ...) 기반으로 backend 라우팅
+  - Red/Blue/Purple: Red 정찰 → Blue 가 ModSecurity audit log 에서 검출 → Purple 이 룰 보완
 pass_threshold: 0.6
 steps:
-- order: 1
-  instruction: 'curl을 사용하여 대상 웹 서버(http://{{WEB_IP}})에 GET 요청을 보내고 응답 헤더를 확인하시오.
+  # ============================================================
+  # STEP 1 [RED·정찰] — HEAD 요청으로 대상 웹 서버의 응답 헤더 수집
+  # ============================================================
+  - order: 1
+    instruction: |
+      ## 🎯 MISSION
 
+      attacker (10.20.30.202) 에서 fw HAProxy 를 거쳐 dmz 의 web 컨테이너
+      (Apache + ModSecurity + Juice Shop) 의 HTTP 응답 헤더를 수집한다. 학생은
+      Server/Content-Type/Set-Cookie 등 어떤 헤더가 노출되는지 직접 본다.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `http_basics` 에 적합한 도구: whatweb, curl -I, nmap
-    -sV. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: curl -I 옵션을 사용하세요.
-  category: http_basics
-  points: 8
-  answer: '🤖 프롬프트: curl을 사용하여 대상 웹 서버(http://10.20.30.80)에 GET 요청을 보내고 응답 헤더를 확인해줘
+      ## 💻 실행 명령
 
-    📎 참고 (CLI): curl -I http://10.20.30.80'
-  answer_detail: curl -I는 HEAD 요청으로 응답 헤더만 받습니다. Server, Content-Type, Set-Cookie
-    등 보안 관련 헤더를 확인합니다.
-  verify:
-    type: output_contains
-    expect: HTTP/
-    field: stdout
-    semantic:
-      intent: curl GET 요청으로 대상 웹서버 응답 헤더 수집 — 기본 HTTP 통신 흐름 이해
-      success_criteria:
-      - curl -I 또는 curl -v 로 헤더 획득
-      - Server/Content-Type/Status 코드 등 주요 헤더 3개 이상 확인
-      - 응답 상태 코드 해석
-      acceptable_methods:
-      - curl -sI <url>
-      - curl -v <url> 2>&1 | head
-      - wget --server-response --spider <url>
-      - python requests.head(url).headers
-      negative_signs:
-      - 본문만 다운로드하고 헤더 무시
-      - 단일 헤더만 확인
-      - 상태 코드 해석 없음
-  target_vm: attacker
-  script: curl -I http://10.20.30.80
-  risk_level: low
-  bastion_prompt: 'curl을 사용하여 대상 웹 서버(http://10.20.30.80)에 GET 요청을 보내고 응답 헤더를 확인해줘
+      ```bash
+      # vhost 기반 (HAProxy host header 라우팅)
+      curl -sI http://juice.6v6.lab/
 
+      # 또는 web 컨테이너 dmz IP 직접
+      curl -sI http://10.20.32.80/
+      ```
 
-    [도구 권장] http_basics: whatweb, curl -I, nmap -sV. curl 만 쓰지 말고 **whatweb** 등 적합
-    도구로 호출 후 stdout quote.'
+      ## 📋 확인 사항
+
+      - 응답 첫 줄 `HTTP/1.1 200 OK` (또는 301/302)
+      - `Server: Apache/2.4.52 (Ubuntu)` 같은 배너 노출 여부 (= 정보 누설)
+      - `Content-Type`, `Set-Cookie`, `X-Powered-By` 등 헤더 분포
+      - 보안 헤더 (X-Frame-Options / CSP / HSTS) 의 **부재**
+
+      ## 💡 왜 이걸 하는가?
+
+      공격자는 침해 첫 단계로 응답 헤더에서 서버 소프트웨어/버전/기술 스택을 식별
+      한다 (MITRE ATT&CK T1592.002 — Gather Victim Host Information: Software).
+      운영자 입장에서는 불필요한 배너 노출이 곧 CVE 매핑의 출발점이 되는지 검토한다.
+
+      ## 🔵 Blue 측 관찰 (다음 STEP 8 에서 본격)
+
+      attacker 의 curl 1 회는 ModSecurity audit log
+      (`/var/log/apache2/modsec_audit.log`) 에 GET 단일 라인으로만 기록. 보안
+      헤더 부재는 운영자가 자체 ModSecurity 룰 또는 nikto/securityheaders.com
+      으로 별도 점검해야 한다.
+    hint: curl -sI 옵션으로 HEAD 요청. -L 옵션은 리다이렉트 따라가기.
+    category: http_basics
+    points: 8
+    answer: |
+      curl -sI http://juice.6v6.lab/ | tee /tmp/web01s1.txt
+      echo "--- 보안 헤더 grep ---"
+      grep -iE "x-frame|x-xss|content-security|strict-transport|x-content-type" /tmp/web01s1.txt || \
+        echo "[!] 보안 헤더 없음 (취약)"
+    answer_detail: |
+      curl -sI 는 HEAD 요청만 수행해 응답 헤더만 받는다. juice.6v6.lab 의
+      HAProxy backend = web (10.20.32.80). 응답에 Server/Content-Type 등은
+      있고 보안 헤더는 모두 미설정 — 클릭재킹/XSS/MIME sniffing 에 취약.
+    verify:
+      type: output_contains
+      expect: HTTP/
+      field: stdout
+      semantic:
+        intent: HTTP HEAD 응답 수집 — 응답 코드 + 핵심 헤더 (Server/Content-Type)
+          노출 여부 + 보안 헤더 부재 확인. 6v6 의 web 은 fw HAProxy 통해 라우팅.
+        success_criteria:
+          - HTTP/1.1 200 OK 또는 30x 응답 코드 라인
+          - Server / Content-Type 등 주요 헤더 3개 이상 인용
+          - 보안 헤더 (X-Frame/CSP/HSTS 등) 부재 명시
+        acceptable_methods:
+          - curl -sI http://juice.6v6.lab/
+          - curl -sI http://10.20.32.80/
+          - whatweb http://juice.6v6.lab/
+          - nmap -sV -p 80 10.20.32.80
+        negative_signs:
+          - 본문 다운로드만, 헤더 무시
+          - 단일 헤더만 확인
+          - 응답 코드 해석 없음
+    target_vm: attacker
+    risk_level: low
 - order: 2
   instruction: 'HTTP 응답 코드 종류를 확인하시오: 존재하는 페이지와 존재하지 않는 페이지의 응답 코드 차이.
 
