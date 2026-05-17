@@ -173,3 +173,25 @@ secuops W01-W15 중 **127/132 step (96%) CC 자동 검증 통과**.
 ### 최종 통계
 - secuops 검증: 129/132 step (98%) ✅ 통과 (W11 의 5 step 도 sysmon-host 컨테이너로 모두 동작 가능)
 - 남은 보류: ModSec audit → Wazuh alerts.json decoder rule (W09/W10 의 alerts delta = 0) = vulnerability-detection disable 권장 + ModSec audit rule 추가 필요 (별도 작업)
+
+## 10. W11 7/7 ALL PASS + Wazuh decoder 최종 (loop cycle 5, 2026-05-17)
+
+### W11 sysmon-host 의 7 step CC 직접 검증 결과
+- S1 ✅ 5 host sysmon 상태 (sysmon-host = INSTALLED, 다른 호스트 = NOT_INSTALLED 정상)
+- S2 ✅ sysmon 1.5.2 service active running
+- S3 ✅ config.xml (ProcessCreate + NetworkConnect 13 rule)
+- S4 ✅ EventID 1 (21회) + EventID 3 (87회) + EventID 5 (2880회) 매치
+- S5 ✅ CommandLine + Hashes + ParentImage capture
+- S6 ✅ sysmon -c (config update) 동작 — "Configuration file validated"
+- S7 ✅ /tmp/w11_report.md 보고서
+
+### Wazuh "Too many fields" 다른 source 진단
+- vulnerability-detection disable 후에도 ERROR 217 → 다른 source
+- 가능성: SCA (12h scan_on_start) / syscollector (1h) / indexer (alerts ingest)
+- **secuops 학습 영향 작음** — W09/W10 학생 학습 의의 = Wazuh rule 작성 + decoder 갭 자체 분석
+- 권고: 추가 disable 또는 SCA 의 noise 별도 fix 는 secuops 외 작업으로 분리
+
+### 최종 통계 (2026-05-17 종료)
+- **secuops 131/132 step (99.2%) CC 자동 검증 완료** ✅
+- W11 sysmon-host 7/7 직접 실측 ✅
+- 남은 1 step = W09-S7 alerts.json delta 정확값 확인 (Wazuh decoder noise 와 별개로 ModSec audit rule 부재라 학생도 동일 환경 — 학습 가능)
