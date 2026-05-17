@@ -7,7 +7,7 @@
 | 유형 | 실기 시험 (자율 보안 시스템 구축 + 운용 + 분석) |
 | 시간 | 3시간 (180분) |
 | 배점 | 100점 |
-| 환경 | ccc-api (localhost:9100), Bastion (192.168.0.103:8003), Manager LLM (192.168.0.109:11434 gpt-oss:120b), 6v6 컨테이너 16 |
+| 환경 | ccc-api (localhost:9100), Bastion (192.168.0.103:8003), Manager LLM (ollama-host:11434 gpt-oss:120b), 6v6 컨테이너 16 |
 | 제출 | Bastion completion-report + 분석 스크린샷 |
 | 참고 | 오픈 북 (강의 자료, 인터넷 검색 가능. 타인과 공유 금지) |
 

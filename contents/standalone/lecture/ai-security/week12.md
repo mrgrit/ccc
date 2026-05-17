@@ -20,7 +20,7 @@
 | web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
 | siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Bastion API:** `http://6v6-host:9200` (학생 PC 에서 직접 가능)
 **Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
 **Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
@@ -107,7 +107,7 @@ Agent Daemon은 SubAgent가 **백그라운드에서 지속적으로** 보안 관
 
 ```bash
 # LLM이 환경을 파악하기 위한 탐색 수행
-curl -s http://192.168.0.109:11434/v1/chat/completions \
+curl -s http://ollama-host:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -126,12 +126,12 @@ curl -s http://192.168.0.109:11434/v1/chat/completions \
 
 ```bash
 # OODA Observe 단계 — 한 번의 /ask 로 baseline 수집
-curl -s -X POST http://192.168.0.110:9200/ask \
+curl -s -X POST http://6v6-host:9200/ask \
   -H 'Content-Type: application/json' \
   -d '{"message": "web 자산의 시스템정보·listening ports·로컬사용자·실행중 서비스·디스크 사용량을 한 번에 수집해 baseline 로 기록해줘"}'
 
 # 증거 조회 (baseline 보관용)
-curl -s "http://192.168.0.110:9200/evidence?asset=web&limit=10" | python3 -m json.tool
+curl -s "http://6v6-host:9200/evidence?asset=web&limit=10" | python3 -m json.tool
 ```
 
 ---
@@ -164,8 +164,8 @@ curl -s "http://192.168.0.110:9200/evidence?asset=web&limit=10" | python3 -m jso
 """daemon_loop.py — 개념 코드. 운영에서는 Bastion이 내부 데몬으로 수행."""
 import time, requests
 
-BASTION = "http://192.168.0.110:9200"
-OLLAMA  = "http://192.168.0.109:11434/v1/chat/completions"
+BASTION = "http://6v6-host:9200"
+OLLAMA  = "http://ollama-host:11434/v1/chat/completions"
 
 def bastion_ask(message):
     # Bastion은 자산 라우팅·Skill 선택·증거 기록까지 담당한다
@@ -221,12 +221,12 @@ while True:
 ```bash
 # 안전한 stimulation: 존재하지 않는 사용자로 SSH 실패 이벤트 발생
 # Bastion 에게 명시적으로 "테스트 이벤트 생성"을 지시하면 Skill로 위임된다
-curl -s -X POST http://192.168.0.110:9200/ask \
+curl -s -X POST http://6v6-host:9200/ask \
   -H 'Content-Type: application/json' \
   -d '{"message": "STIMULATE: web 자산에서 존재하지 않는 사용자(testuser)로 SSH 1회 시도해 Wazuh SIEM 탐지 테스트 이벤트를 생성해줘. 실제 로그인은 실패해야 함"}'
 
 # siem 자산에서 알림 확인
-curl -s -X POST http://192.168.0.110:9200/ask \
+curl -s -X POST http://6v6-host:9200/ask \
   -H 'Content-Type: application/json' \
   -d '{"message": "siem 자산의 /var/ossec/logs/alerts/alerts.json 최근 5건에서 rule.id 5710(Authentication failure) 관련 항목을 보여줘"}'
 ```
@@ -237,7 +237,7 @@ LLM에게 SIEM 탐지 능력 검증을 위한 안전한 stimulation 시나리오
 
 ```bash
 # LLM으로 SIEM 탐지 검증용 안전한 시나리오 5가지 자동 생성
-curl -s http://192.168.0.109:11434/v1/chat/completions \
+curl -s http://ollama-host:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -256,24 +256,24 @@ curl -s http://192.168.0.109:11434/v1/chat/completions \
 ### 실습 1: Explore 기준선 수집
 
 ```bash
-curl -s -X POST http://192.168.0.110:9200/ask \
+curl -s -X POST http://6v6-host:9200/ask \
   -H 'Content-Type: application/json' \
   -d '{"message": "web 자산의 listening ports, who/last -5, top 10 메모리 프로세스를 수집해 baseline 로 기록해줘"}'
 
-curl -s "http://192.168.0.110:9200/evidence?asset=web&limit=5" | python3 -m json.tool
+curl -s "http://6v6-host:9200/evidence?asset=web&limit=5" | python3 -m json.tool
 ```
 
 ### 실습 2: Daemon 점검 반복 (변화 비교)
 
 ```bash
 # 30초 간격 2회 점검 → 두 번째 호출에서 Bastion이 baseline과 자동 비교
-curl -s -X POST http://192.168.0.110:9200/ask \
+curl -s -X POST http://6v6-host:9200/ask \
   -H 'Content-Type: application/json' \
   -d '{"message": "web 자산의 현재 listening ports 를 baseline(실습1 결과)과 비교해 변화만 알려줘. 변화 없으면 OK 출력"}'
 
 sleep 30
 
-curl -s -X POST http://192.168.0.110:9200/ask \
+curl -s -X POST http://6v6-host:9200/ask \
   -H 'Content-Type: application/json' \
   -d '{"message": "web 자산의 현재 listening ports 를 baseline과 다시 비교해줘"}'
 ```
@@ -282,12 +282,12 @@ curl -s -X POST http://192.168.0.110:9200/ask \
 
 ```bash
 # 테스트 이벤트 생성
-curl -s -X POST http://192.168.0.110:9200/ask \
+curl -s -X POST http://6v6-host:9200/ask \
   -H 'Content-Type: application/json' \
   -d '{"message": "STIMULATE: web 자산에서 fakeuser로 SSH 3회 실패 이벤트 발생 (BatchMode, ConnectTimeout=1)"}'
 
 # SIEM 알림 확인 + LLM 해석 요청
-curl -s -X POST http://192.168.0.110:9200/ask \
+curl -s -X POST http://6v6-host:9200/ask \
   -H 'Content-Type: application/json' \
   -d '{"message": "siem 자산의 alerts.json 에서 방금 생성한 SSH 실패 이벤트에 매칭되는 Wazuh rule.id를 찾아주고, MITRE ATT&CK T1110(Brute Force)과의 연관성을 설명해줘"}'
 ```
@@ -332,9 +332,9 @@ curl -s -X POST http://192.168.0.110:9200/ask \
 
 ```bash
 # Ollama는 OpenAI 호환 API를 제공한다
-# URL: http://192.168.0.109:11434/v1/chat/completions
+# URL: http://ollama-host:11434/v1/chat/completions
 
-curl -s http://192.168.0.109:11434/v1/chat/completions \
+curl -s http://ollama-host:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",        ← 사용할 모델
@@ -409,7 +409,7 @@ GET  /assets    → 자산 인벤토리
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://192.168.0.109:11434`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://ollama-host:11434`
 
 **주요 경로·파일**
 

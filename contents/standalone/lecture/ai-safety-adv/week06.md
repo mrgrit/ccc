@@ -20,7 +20,7 @@
 | web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
 | siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Bastion API:** `http://6v6-host:9200` (학생 PC 에서 직접 가능)
 **Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
 **Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
@@ -316,7 +316,7 @@ import urllib.request
 import time
 import random
 
-OLLAMA_URL = "http://192.168.0.109:11434/v1/chat/completions"
+OLLAMA_URL = "http://ollama-host:11434/v1/chat/completions"
 TARGET_MODEL = "gemma3:12b"
 
 class ModelExtractor:
@@ -433,7 +433,7 @@ import json
 import urllib.request
 import time
 
-OLLAMA_URL = "http://192.168.0.109:11434/v1/chat/completions"
+OLLAMA_URL = "http://ollama-host:11434/v1/chat/completions"
 
 # 일관성 테스트: 같은 질문을 여러 번 하여 응답 일관성 측정
 TEST_QUERIES = [
@@ -504,7 +504,7 @@ import urllib.request
 import hashlib
 import time
 
-OLLAMA_URL = "http://192.168.0.109:11434/v1/chat/completions"
+OLLAMA_URL = "http://ollama-host:11434/v1/chat/completions"
 
 # 핑거프린트 입력 세트 (고정)
 FINGERPRINT_INPUTS = [

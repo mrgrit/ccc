@@ -713,12 +713,12 @@ graph LR
 
 ```
 Host 6v6-bastion
-    HostName 192.168.0.110
+    HostName 6v6-host
     Port 2204
     User ccc
 
 Host 6v6-attacker
-    HostName 192.168.0.110
+    HostName 6v6-host
     Port 2202
     User ccc
 
@@ -874,7 +874,7 @@ wazuh.manager
 4 컨테이너 모두 hostname 응답 → ProxyJump 정상.
 
 > **핵심 포인트**: 학생 PC 에서 직접 `ssh ccc@10.20.30.1` 은 불가 (docker bridge 가
-> 학생 PC LAN 에 라우팅 안 됨). bastion (192.168.0.110:2204) 만이 유일한 진입점이다.
+> 학생 PC LAN 에 라우팅 안 됨). bastion (6v6-host:2204) 만이 유일한 진입점이다.
 
 ---
 

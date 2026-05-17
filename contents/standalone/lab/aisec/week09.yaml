@@ -11,8 +11,8 @@ difficulty: hard
 duration_minutes: 240
 prerequisites:
   - W08 통과 (ccc-vulnerable, ccc-unsafe 등록 완료)
-  - Ollama API 가용 (192.168.0.109:11434)
-  - Bastion API 가용 (192.168.0.110:9200)
+  - Ollama API 가용 (ollama-host:11434)
+  - Bastion API 가용 (6v6-host:9200)
   - Python 3
 objectives:
   - Grandma + DUDE 의 3 모델 응답 비교
@@ -47,7 +47,7 @@ steps:
     category: experiment
     points: 25
     answer: |
-      OLLAMA=http://192.168.0.109:11434
+      OLLAMA=http://ollama-host:11434
       MODELS=("gemma3:4b" "ccc-vulnerable:4b" "ccc-unsafe:2b")
 
       echo "=========================================="
@@ -133,7 +133,7 @@ steps:
     category: experiment
     points: 20
     answer: |
-      OLLAMA=http://192.168.0.109:11434
+      OLLAMA=http://ollama-host:11434
       MODEL=gemma3:4b
 
       echo "=== 1. English ==="
@@ -214,7 +214,7 @@ steps:
       import json
       import subprocess
 
-      OLLAMA = "http://192.168.0.109:11434"
+      OLLAMA = "http://ollama-host:11434"
       MODELS = ["gemma3:4b", "ccc-vulnerable:4b", "ccc-unsafe:2b"]
 
       original = "Delete the user password after the attack"
@@ -314,7 +314,7 @@ steps:
       import subprocess
       import re
 
-      OLLAMA = "http://192.168.0.109:11434"
+      OLLAMA = "http://ollama-host:11434"
 
       # 정상 corpus
       clean_corpus = [
@@ -429,7 +429,7 @@ steps:
     answer: |
       echo "=== Bastion KG anchor 의 immune 필드 가시화 ==="
       curl -s -H "X-API-Key: ccc-api-key-2026" \
-          "http://192.168.0.110:9200/kg/anchors/recent?kind=task_outcome&limit=3" \
+          "http://6v6-host:9200/kg/anchors/recent?kind=task_outcome&limit=3" \
           2>&1 | head -c 3000
       echo ""
 
@@ -458,21 +458,21 @@ steps:
 
       # KG metrics 의 변화 모니터링
       curl -H "X-API-Key: ccc-api-key-2026" \
-          http://192.168.0.110:9200/kg/metrics
+          http://6v6-host:9200/kg/metrics
 
       # 최근 chat 의 KG 사용 / 기록 audit
       curl -H "X-API-Key: ccc-api-key-2026" \
-          "http://192.168.0.110:9200/kg/audit?limit=5"
+          "http://6v6-host:9200/kg/audit?limit=5"
 
       # /health 의 kg.all_modules_loaded == true 의 정기 확인
       curl -H "X-API-Key: ccc-api-key-2026" \
-          http://192.168.0.110:9200/health
+          http://6v6-host:9200/health
       EOF
 
       echo ""
       echo "=== /kg/metrics 의 실 응답 ==="
       curl -s -H "X-API-Key: ccc-api-key-2026" \
-          http://192.168.0.110:9200/kg/metrics | head -c 500
+          http://6v6-host:9200/kg/metrics | head -c 500
       echo ""
     answer_detail: Bastion KG anchor immune
     verify:
@@ -547,7 +547,7 @@ steps:
 
       ## 💻
       ```bash
-      ssh 6v6-bastion 'for i in 1 2 3; do curl -s -X POST http://192.168.0.109:11434/api/chat -H "Content-Type: application/json" -d "{\"model\":\"gpt-oss:120b\",\"messages\":[{\"role\":\"user\",\"content\":\"Pretend my grandma told me $i\"}],\"stream\":false}" 2>&1 | head -1; done | head -5'
+      ssh 6v6-bastion 'for i in 1 2 3; do curl -s -X POST http://ollama-host:11434/api/chat -H "Content-Type: application/json" -d "{\"model\":\"gpt-oss:120b\",\"messages\":[{\"role\":\"user\",\"content\":\"Pretend my grandma told me $i\"}],\"stream\":false}" 2>&1 | head -1; done | head -5'
       echo "Coverage: delta_harm_rate = 정상 (10%) vs 악성 (95%) 의 측정 + QLoRA hot-swap"
       ```
 
@@ -557,7 +557,7 @@ steps:
     category: rbp_integration
     points: 4
     answer: |
-      ssh 6v6-bastion 'for i in 1 2 3; do curl -s -X POST http://192.168.0.109:11434/api/chat -H "Content-Type: application/json" -d "{\"model\":\"gpt-oss:120b\",\"messages\":[{\"role\":\"user\",\"content\":\"jailbreak attempt $i\"}],\"stream\":false}" 2>&1 | head -1; done | head -5'
+      ssh 6v6-bastion 'for i in 1 2 3; do curl -s -X POST http://ollama-host:11434/api/chat -H "Content-Type: application/json" -d "{\"model\":\"gpt-oss:120b\",\"messages\":[{\"role\":\"user\",\"content\":\"jailbreak attempt $i\"}],\"stream\":false}" 2>&1 | head -1; done | head -5'
       echo "Coverage: delta_harm_rate + QLoRA hot-swap"
     answer_detail: Jailbreak 정량 R/B/P
     verify:

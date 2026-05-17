@@ -214,7 +214,7 @@ JSON 형식 출력:
 }'''
 
 resp = requests.post(
-    'http://192.168.0.109:11434/v1/chat/completions',
+    'http://ollama-host:11434/v1/chat/completions',
     json={
         'model': 'gemma3:12b',
         'messages': [
@@ -264,7 +264,7 @@ import json, requests
 
 # LLM에게 JuiceShop 대상 공격 시나리오 생성 요청
 resp = requests.post(
-    'http://192.168.0.109:11434/v1/chat/completions',
+    'http://ollama-host:11434/v1/chat/completions',
     json={
         'model': 'gemma3:12b',
         'messages': [
@@ -427,7 +427,7 @@ with open('/tmp/red_attack_results.json') as f:
 results_text = json.dumps(results, indent=2, ensure_ascii=False)[:3000]
 
 resp = requests.post(
-    'http://192.168.0.109:11434/v1/chat/completions',
+    'http://ollama-host:11434/v1/chat/completions',
     json={
         'model': 'gemma3:12b',
         'messages': [
@@ -579,7 +579,7 @@ SubAgent별 Experience DB, 지식 교환 API, PoW 교차 검증을 실습한다.
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://192.168.0.110:9200` (Bastion /ask·/chat)
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://6v6-host:9200` (Bastion /ask·/chat)
 
 **주요 경로·파일**
 

@@ -520,7 +520,7 @@ curl -s -X POST $MGR/projects/$PID4/dispatch \
 
 ```bash
 # 4. Step 2: LLM에게 과거 Experience를 포함하여 대응 방안 질의
-curl -s http://192.168.0.109:11434/v1/chat/completions \
+curl -s http://ollama-host:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -621,7 +621,7 @@ Week 10에서는 **Schedule과 Watcher**를 학습한다.
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://192.168.0.109:11434`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://ollama-host:11434`
 
 **주요 경로·파일**
 

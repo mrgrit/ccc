@@ -20,7 +20,7 @@
 | web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
 | siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Bastion API:** `http://6v6-host:9200` (학생 PC 에서 직접 가능)
 **Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
 **Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
@@ -124,7 +124,7 @@ ssh 6v6-web << 'ENDSSH'
 python3 << 'PYEOF'
 import json, urllib.request
 
-OLLAMA = "http://192.168.0.109:11434/v1/chat/completions"
+OLLAMA = "http://ollama-host:11434/v1/chat/completions"
 
 def query_model(prompt, temp=0):
     data = json.dumps({
@@ -440,7 +440,7 @@ ENDSSH
 ### 실습: 프롬프트 인젝션 테스트
 
 ```bash
-OLLAMA="http://192.168.0.109:11434/v1/chat/completions"
+OLLAMA="http://ollama-host:11434/v1/chat/completions"
 
 # 정상 요청
 echo "=== 정상 요청 ==="

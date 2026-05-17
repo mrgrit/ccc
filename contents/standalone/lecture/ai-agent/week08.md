@@ -21,7 +21,7 @@
 | web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
 | siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Bastion API:** `http://6v6-host:9200` (학생 PC 에서 직접 가능)
 **Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
 **Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
@@ -153,7 +153,7 @@ fi
 
 # 3. Ollama
 echo ""
-MODELS=$(curl -s http://192.168.0.109:11434/api/tags 2>/dev/null | \
+MODELS=$(curl -s http://ollama-host:11434/api/tags 2>/dev/null | \
   python3 -c "import sys,json; [print(f'  - {m[\"name\"]}') for m in json.load(sys.stdin).get('models',[])]" 2>/dev/null)
 if [ -n "$MODELS" ]; then
     echo "  Ollama — OK"
@@ -198,10 +198,10 @@ import requests
 import json
 import time
 
-OLLAMA_URL = "http://192.168.0.109:11434/v1/chat/completions"
+OLLAMA_URL = "http://ollama-host:11434/v1/chat/completions"
 
 # 모델 목록 가져오기
-models_resp = requests.get("http://192.168.0.109:11434/api/tags", timeout=10)
+models_resp = requests.get("http://ollama-host:11434/api/tags", timeout=10)
 available_models = [m["name"] for m in models_resp.json().get("models", [])]
 
 # 테스트할 모델 (사용 가능한 것만)
@@ -435,7 +435,7 @@ import datetime
 # ============================================================
 # 설정
 # ============================================================
-OLLAMA_URL = "http://192.168.0.109:11434/v1/chat/completions"
+OLLAMA_URL = "http://ollama-host:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"  # 모델 선택 결과에 따라 변경
 BASTION = "http://localhost:9100"
 API_KEY = "ccc-api-key-2026"
@@ -771,7 +771,7 @@ LLM을 사용하여 종합 분석을 추가한다.
 import requests
 import json
 
-OLLAMA_URL = "http://192.168.0.109:11434/v1/chat/completions"
+OLLAMA_URL = "http://ollama-host:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 # 분석 결과 로드
@@ -996,7 +996,7 @@ python3 ~/lab/week08/grading.py
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://192.168.0.109:11434`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://ollama-host:11434`
 
 **주요 경로·파일**
 

@@ -20,7 +20,7 @@
 | web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
 | siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Bastion API:** `http://6v6-host:9200` (학생 PC 에서 직접 가능)
 **Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
 **Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
@@ -723,7 +723,7 @@ export BASTION_API_KEY=ccc-api-key-2026            # 환경 변수 설정
 
 # 1. 프로젝트 생성
 echo "=== Bastion 프로젝트 생성 ==="
-curl -s -X POST http://192.168.0.110:9200/ask \
+curl -s -X POST http://6v6-host:9200/ask \
   -H 'Content-Type: application/json' \
   -d '{
     "message": "http://10.20.40.81:3000 JuiceShop 전체 대상 종합 웹취약점 점검: (1) 보안 헤더 수집, (2) 로그인 API에 SQLi 시도, (3) /api/Users IDOR, (4) /ftp 경로 순회, (5) JWT 디코드해서 발견사항을 CVSS v3.1 점수와 함께 표로 정리해줘."
@@ -731,7 +731,7 @@ curl -s -X POST http://192.168.0.110:9200/ask \
   | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['answer'])"
 
 # 작업 기록 조회
-curl -s "http://192.168.0.110:9200/evidence?limit=20" | python3 -c "
+curl -s "http://6v6-host:9200/evidence?limit=20" | python3 -c "
 import sys, json
 for e in json.load(sys.stdin)[:20]:
     msg = e.get('user_message','')[:60]
@@ -743,7 +743,7 @@ for e in json.load(sys.stdin)[:20]:
 ### 6.2 Bastion로 보고서 초안 자동 생성
 
 ```bash
-curl -s -X POST http://192.168.0.110:9200/ask \
+curl -s -X POST http://6v6-host:9200/ask \
   -H 'Content-Type: application/json' \
   -d '{
     "message": "최근 20건의 /evidence를 분석해서 CVSS v3.1 점수·CWE·재현단계·권고사항을 포함한 모의해킹 보고서 초안을 한국어 markdown으로 작성해줘. 섹션: Executive Summary / Test Overview / Findings / Recommendations."

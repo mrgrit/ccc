@@ -501,7 +501,7 @@ Ollama 의 평가 (커스텀 모델):
 
 ```bash
 lm_eval --model ollama \
-    --model_args base_url=http://192.168.0.109:11434,model=ccc-vulnerable:4b \
+    --model_args base_url=http://ollama-host:11434,model=ccc-vulnerable:4b \
     --tasks truthfulqa_mc1 \
     --num_fewshot 0 \
     --limit 50 \
@@ -529,7 +529,7 @@ lm_eval --model ollama \
 ```python
 import json, subprocess
 
-OLLAMA = "http://192.168.0.109:11434"
+OLLAMA = "http://ollama-host:11434"
 
 def generate(model, prompt, max_tokens=200):
     cmd = ["curl","-s","-m","30",f"{OLLAMA}/api/generate",

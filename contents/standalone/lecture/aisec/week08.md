@@ -69,7 +69,7 @@ AI Safety 학습에는 본질적 충돌이 있다. "어떻게 LLM 이 위험한 
 
 "학습용 악성 모델" 이라는 이름이 오해를 부를 수 있다. CCC 의 ccc-vulnerable, ccc-unsafe, ccc-safety-qlora 는 모두 다음 네 가지 boundary 안에서만 작동한다.
 
-**Boundary 1: 학습 환경 한정.** 본 모델들은 학생 PC 의 학습 환경 (192.168.0.0/24 의 6v6 인프라) 안에서만 호출 가능하며 외부 인터넷에 노출되지 않는다. Ollama 는 학생 PC 의 localhost 또는 학습 환경의 ollama 호스트 (192.168.0.109) 에서만 응답한다.
+**Boundary 1: 학습 환경 한정.** 본 모델들은 학생 PC 의 학습 환경 (192.168.0.0/24 의 6v6 인프라) 안에서만 호출 가능하며 외부 인터넷에 노출되지 않는다. Ollama 는 학생 PC 의 localhost 또는 학습 환경의 ollama 호스트 (ollama-host) 에서만 응답한다.
 
 **Boundary 2: 학습 환경 명시.** ccc-vulnerable 의 SYSTEM prompt 첫 줄은 "You are a helpful AI assistant for cybersecurity education" 이다. 본 모델 모든 응답은 교육 목적 학습 환경 응답임을 모델 자체가 명시한다. ccc-unsafe 의 SYSTEM 도 "This is used to demonstrate what unsafe LLMs produce, so students can design guardrails and defenses" 를 명시한다.
 
@@ -147,7 +147,7 @@ AI Safety 학습에는 본질적 충돌이 있다. "어떻게 LLM 이 위험한 
 
 학생이 본 주차에서 사용할 도구는 다음과 같다.
 
-**Ollama (192.168.0.109:11434).** 학습 환경의 로컬 LLM 서빙 도구다. `ollama create`, `ollama run`, `ollama list`, `/api/generate`, `/api/chat`, `/api/create` 등 명령으로 모델 등록과 호출을 수행한다. W02 에서 학습한 도구이며, 본 주차에서는 SYSTEM prompt 변경으로 새 모델을 만드는 활용에 집중한다.
+**Ollama (ollama-host:11434).** 학습 환경의 로컬 LLM 서빙 도구다. `ollama create`, `ollama run`, `ollama list`, `/api/generate`, `/api/chat`, `/api/create` 등 명령으로 모델 등록과 호출을 수행한다. W02 에서 학습한 도구이며, 본 주차에서는 SYSTEM prompt 변경으로 새 모델을 만드는 활용에 집중한다.
 
 **Modelfile.** Ollama 의 사용자 정의 모델 정의 파일이다. Dockerfile 과 유사한 형식이며 FROM (기반 모델), SYSTEM (system prompt), PARAMETER (temperature 등 하이퍼파라미터) 세 directive 가 핵심이다. 본 강의의 `/home/opsclaw/ccc/finetune/modelfile_vulnerable.txt` 가 학생의 학습 reference 다.
 

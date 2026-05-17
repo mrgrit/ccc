@@ -21,7 +21,7 @@
 | web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
 | siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Bastion API:** `http://6v6-host:9200` (학생 PC 에서 직접 가능)
 **Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
 **Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
@@ -292,7 +292,7 @@ CLAUDE.md가 있을 때와 없을 때 LLM 응답을 비교한다.
 import requests
 import json
 
-OLLAMA_URL = "http://192.168.0.109:11434/v1/chat/completions"
+OLLAMA_URL = "http://ollama-host:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 # CLAUDE.md 읽기
@@ -703,7 +703,7 @@ Claude Code(LLM 판단) + Bastion(분산 실행)을 결합한다.
 import requests
 import json
 
-OLLAMA_URL = "http://192.168.0.109:11434/v1/chat/completions"
+OLLAMA_URL = "http://ollama-host:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
 BASTION = "http://localhost:9100"
 HEADERS = {"X-API-Key": "ccc-api-key-2026", "Content-Type": "application/json"}
@@ -893,7 +893,7 @@ fi
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://192.168.0.109:11434`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://ollama-host:11434`
 
 **주요 경로·파일**
 

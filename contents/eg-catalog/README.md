@@ -16,7 +16,7 @@
 deploy 시점에 EG instance 의 sqlite 로 import:
 
 ```bash
-# 6v6 머신 (192.168.0.110) 에서
+# 6v6 머신 (6v6-host) 에서
 python3 scripts/eg/import_catalog.py --db /var/eg/eg-6v6.db
 ```
 

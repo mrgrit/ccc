@@ -209,7 +209,7 @@ system_prompt = '''당신은 SOC Blue Agent입니다. 다음 규칙을 따르세
 
 # LLM 호출
 resp = requests.post(
-    'http://192.168.0.109:11434/v1/chat/completions',
+    'http://ollama-host:11434/v1/chat/completions',
     json={
         'model': 'gemma3:12b',
         'messages': [
@@ -461,7 +461,7 @@ system_prompt = '''당신은 SOC 경보 분석가입니다. 각 경보에 대해
 JSON 배열로 출력하라.'''
 
 resp = requests.post(
-    'http://192.168.0.109:11434/v1/chat/completions',
+    'http://ollama-host:11434/v1/chat/completions',
     json={
         'model': 'gemma3:12b',
         'messages': [
@@ -577,7 +577,7 @@ Week 12에서는 **자율 Red Agent**를 학습한다.
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://192.168.0.110:9200` (Bastion /ask·/chat)
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://6v6-host:9200` (Bastion /ask·/chat)
 
 **주요 경로·파일**
 

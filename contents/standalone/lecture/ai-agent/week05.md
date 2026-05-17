@@ -21,7 +21,7 @@
 | web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
 | siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Bastion API:** `http://6v6-host:9200` (학생 PC 에서 직접 가능)
 **Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
 **Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
@@ -293,7 +293,7 @@ else
     echo "DOWN"
 fi
 
-HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://192.168.0.109:11434/api/tags 2>/dev/null)
+HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://ollama-host:11434/api/tags 2>/dev/null)
 if [ "$HEALTH" = "200" ]; then
     echo "OK (port 11434)"
 else
@@ -428,7 +428,7 @@ LLM이 계획을 세우고, 프로그램이 execute-plan으로 실행한다.
 import requests
 import json
 
-OLLAMA_URL = "http://192.168.0.109:11434/v1/chat/completions"
+OLLAMA_URL = "http://ollama-host:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
 BASTION = "http://localhost:9100"
 API_KEY = "ccc-api-key-2026"
@@ -645,7 +645,7 @@ Week 05 실습: 점검 결과를 LLM으로 분석
 import requests
 import json
 
-OLLAMA_URL = "http://192.168.0.109:11434/v1/chat/completions"
+OLLAMA_URL = "http://ollama-host:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 # 점검 결과 로드
@@ -727,7 +727,7 @@ python3 ~/lab/week05/analyze_results.py
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://192.168.0.109:11434`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://ollama-host:11434`
 
 **주요 경로·파일**
 

@@ -21,8 +21,8 @@
 
 **ccc-api:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 **Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**Bastion:** `http://192.168.0.110:9200` (/ask, /chat, /evidence)
-**Ollama:** `http://192.168.0.109:11434/v1` (OpenAI 호환)
+**Bastion:** `http://6v6-host:9200` (/ask, /chat, /evidence)
+**Ollama:** `http://ollama-host:11434/v1` (OpenAI 호환)
 
 ## 강의 시간 배분 (3시간)
 
@@ -148,7 +148,7 @@ Wazuh Alert
 ```bash
 # Ollama LLM 접속 테스트
 echo "=== Ollama 연결 테스트 ==="
-curl -s http://192.168.0.109:11434/v1/models 2>/dev/null | \
+curl -s http://ollama-host:11434/v1/models 2>/dev/null | \
   python3 -c "
 import sys, json
 try:
@@ -296,7 +296,7 @@ try:
 5. 추가 조사: (확인할 사항)"""
     
     response = httpx.post(
-        "http://192.168.0.109:11434/v1/chat/completions",
+        "http://ollama-host:11434/v1/chat/completions",
         json={
             "model": "llama3.1:8b",
             "messages": [
@@ -984,7 +984,7 @@ python3 /tmp/ai_best_practices.py
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://192.168.0.110:9200` (Bastion /ask·/chat)
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://6v6-host:9200` (Bastion /ask·/chat)
 
 **주요 경로·파일**
 

@@ -21,7 +21,7 @@
 | web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
 | siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Bastion API:** `http://6v6-host:9200` (학생 PC 에서 직접 가능)
 **Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
 **Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
@@ -170,7 +170,7 @@ ssh 6v6-bastion
 
 ```bash
 # Ollama에 설치된 모델 목록 확인
-curl -s http://192.168.0.109:11434/api/tags \
+curl -s http://ollama-host:11434/api/tags \
   | python3 -c "
 import sys, json
 # JSON 파싱 후 모델 목록 출력
@@ -185,7 +185,7 @@ for m in data.get('models', []):
 
 ```bash
 # gemma3:12b 모델에 간단한 질문
-curl -s -X POST http://192.168.0.109:11434/api/chat \
+curl -s -X POST http://ollama-host:11434/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -202,7 +202,7 @@ curl -s -X POST http://192.168.0.109:11434/api/chat \
 
 ```bash
 # Temperature 0.0 (결정론적, 매번 같은 답)
-curl -s -X POST http://192.168.0.109:11434/api/chat \
+curl -s -X POST http://ollama-host:11434/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -217,7 +217,7 @@ curl -s -X POST http://192.168.0.109:11434/api/chat \
 
 ```bash
 # Temperature 1.5 (높은 무작위성, 매번 다른 답)
-curl -s -X POST http://192.168.0.109:11434/api/chat \
+curl -s -X POST http://ollama-host:11434/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -246,7 +246,7 @@ curl -s -X POST http://192.168.0.109:11434/api/chat \
 
 ```bash
 # SOC 분석관 역할을 부여하고 JSON 형식으로 분석 결과를 받는다
-curl -s -X POST http://192.168.0.109:11434/api/chat \
+curl -s -X POST http://ollama-host:11434/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -270,7 +270,7 @@ curl -s -X POST http://192.168.0.109:11434/api/chat \
 
 ```bash
 # 단계별 추론을 요구하는 프롬프트
-curl -s -X POST http://192.168.0.109:11434/api/chat \
+curl -s -X POST http://ollama-host:11434/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -294,7 +294,7 @@ curl -s -X POST http://192.168.0.109:11434/api/chat \
 
 ```bash
 # 분석 예시를 먼저 제시하여 출력 형식을 학습시킨다
-curl -s -X POST http://192.168.0.109:11434/api/chat \
+curl -s -X POST http://ollama-host:11434/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -417,7 +417,7 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # gemma3:12b로 분석
-curl -s -X POST http://192.168.0.109:11434/api/chat \
+curl -s -X POST http://ollama-host:11434/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -433,7 +433,7 @@ curl -s -X POST http://192.168.0.109:11434/api/chat \
 
 ```bash
 # llama3.1:8b로 같은 로그 분석
-curl -s -X POST http://192.168.0.109:11434/api/chat \
+curl -s -X POST http://ollama-host:11434/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "llama3.1:8b",
@@ -627,7 +627,7 @@ gemma3:12b와 llama3.1:8b에 동일한 보안 로그 5건을 분석시켜 정확
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://192.168.0.109:11434`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://ollama-host:11434`
 
 **주요 경로·파일**
 

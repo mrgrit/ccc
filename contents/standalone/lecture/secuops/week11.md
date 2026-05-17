@@ -168,7 +168,7 @@ Windows Sysmon 의 30+ EventID 중 Linux 의 9 핵심:
 
 ```xml
 <Data Name="Image">/usr/bin/curl</Data>
-<Data Name="DestinationIp">192.168.0.110</Data>
+<Data Name="DestinationIp">6v6-host</Data>
 <Data Name="DestinationPort">80</Data>
 <Data Name="Protocol">tcp</Data>
 ```

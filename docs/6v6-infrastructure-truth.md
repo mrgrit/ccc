@@ -1,14 +1,16 @@
 # 6v6 인프라 — 단일 진실원 (Truth Source)
 
-> **이 문서는 192.168.0.110 의 실제 상태에서 채취한 사실 (2026-05-17).**
+> **이 문서는 6v6-host 의 실제 상태에서 채취한 사실 (2026-05-17).**
 > 모든 lab/lecture 작성·검수·bastion test 디버깅의 기준.
 > 표현이 콘텐츠와 충돌하면 콘텐츠를 정정 (이 문서를 정정하지 말 것).
 
 ## 1. 호스트와 컨테이너 관계
 
 ```
-HOST = 192.168.0.110 (실 물리/VM 머신, Ubuntu)
-├── 외부 NIC: enp1s0 = 192.168.0.110/24
+HOST = 6v6-host (실 물리/VM 머신, Ubuntu) — 학생 PC 의 /etc/hosts 또는
+       C:\Windows\System32\drivers\etc\hosts 에서 실 IP 매핑
+       예: 192.168.0.110 (학교) / 192.168.0.76 (집) / 다른 — 환경별 변경
+├── 외부 NIC: enp1s0 = <HOST IP>/24 (환경별)
 ├── 4 bridge gateway (host 가 .254 보유)
 │   ├── br-...30.254  → 6v6-ext  (10.20.30.0/24)
 │   ├── br-...31.254  → 6v6-pipe (10.20.31.0/24)
@@ -75,7 +77,7 @@ HOST = 192.168.0.110 (실 물리/VM 머신, Ubuntu)
 ## 6. bastion API 실행 위치 + manager 호출 라우팅 (★ 함정)
 
 **현재 배포 상태** (2026-05-17 확인):
-- `bastion API` (`run-api.py`, port 9200) = **host (192.168.0.110) 의 ccc 사용자 process**
+- `bastion API` (`run-api.py`, port 9200) = **host (6v6-host) 의 ccc 사용자 process**
   - 즉 bastion 컨테이너 안이 아니라 **host 에서 직접 도는 python**
 - host:9200 → PID 218723 (host) listening
 
@@ -96,12 +98,12 @@ HOST = 192.168.0.110 (실 물리/VM 머신, Ubuntu)
 학생 PC 의 `~/.ssh/config` 가정:
 ```
 Host 6v6-bastion
-  HostName 192.168.0.110
+  HostName 6v6-host
   Port 2204
   User ccc
 
 Host 6v6-attacker
-  HostName 192.168.0.110
+  HostName 6v6-host
   Port 2202
   User ccc
 
@@ -118,30 +120,30 @@ Host 6v6-fw 6v6-ips 6v6-web 6v6-siem ...
 
 | host port | → 컨테이너 | 용도 |
 |----------|------------|------|
-| 192.168.0.110:2202 | 6v6-attacker:22 | 학생 SSH (공격자 역할) |
-| 192.168.0.110:2204 | 6v6-bastion:22 | 학생 SSH (운영자 역할, jump host) |
-| 192.168.0.110:80 | 6v6-fw:80 | HAProxy (host header → backend 라우팅) |
-| 192.168.0.110:443 | 6v6-fw:443 | HAProxy TLS |
-| 192.168.0.110:9100 | 6v6-fw:9100 | (학생 portal 또는 운영 API) |
-| 192.168.0.110:9200 | (host process) | bastion API |
+| 6v6-host:2202 | 6v6-attacker:22 | 학생 SSH (공격자 역할) |
+| 6v6-host:2204 | 6v6-bastion:22 | 학생 SSH (운영자 역할, jump host) |
+| 6v6-host:80 | 6v6-fw:80 | HAProxy (host header → backend 라우팅) |
+| 6v6-host:443 | 6v6-fw:443 | HAProxy TLS |
+| 6v6-host:9100 | 6v6-fw:9100 | (학생 portal 또는 운영 API) |
+| 6v6-host:9200 | (host process) | bastion API |
 
 ## 9. 콘텐츠 작성 시 자주 틀리는 표현
 
 | 잘못된 표현 | 정정 |
 |------------|------|
-| "bastion 호스트" | "bastion 컨테이너" — bastion 은 호스트 아님. 호스트는 6v6 머신(192.168.0.110) |
+| "bastion 호스트" | "bastion 컨테이너" — bastion 은 호스트 아님. 호스트는 6v6 머신(6v6-host) |
 | "bastion 에 컨테이너가 떠있다" | "host 에 16 컨테이너가 떠있고 bastion 도 그중 하나" |
 | "공격 VM / 4-VM" | "공격 컨테이너 (6v6-attacker)" — VM 모델은 legacy. 6v6 는 컨테이너 |
 | `ssh ccc@10.20.30.X` | `ssh 6v6-<name>` (학생 PC) 또는 `ssh -J 6v6-bastion <name>` (점프) |
 | "siem VM 에서 ..." | "siem 컨테이너 (10.20.32.100) 에서 ..." |
-| "manager VM 의 ollama" | "manager LLM (192.168.0.109:11434 Ollama 서버)" — Ollama 는 별도 호스트 |
+| "manager VM 의 ollama" | "manager LLM (ollama-host:11434 Ollama 서버)" — Ollama 는 별도 호스트 |
 
 ## 10. 검수·디버깅 체크리스트
 
 각 lab/lecture 파일 검수 시 확인:
 
 - [ ] "bastion 호스트" / "bastion VM" 등 컨테이너 ↔ 호스트 혼동 표현 없는가
-- [ ] IP 가 6v6 대역 (10.20.30/31/32/40.x) 또는 192.168.0.110 인가 (legacy 10.0.0.X / 192.168.X.X 잔재 없는가)
+- [ ] IP 가 6v6 대역 (10.20.30/31/32/40.x) 또는 6v6-host 인가 (legacy 10.0.0.X / 192.168.X.X 잔재 없는가)
 - [ ] 4-VM 모델 (attacker/secu/web/siem 만) 잔재 없는가. 16 컨테이너 사용
 - [ ] `ssh 6v6-<name>` 패턴이 학생 PC 의 `~/.ssh/config` 전제로 작성됐는가
 - [ ] step.target_vm 이 lab YAML 에 명시되어 있는가 (bastion 자율 실행 매핑 위함)

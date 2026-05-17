@@ -549,7 +549,7 @@ evidence_text = json.dumps(evidence, indent=2, ensure_ascii=False)[:2000]
 
 # LLM에게 분석 요청
 resp = requests.post(
-    'http://192.168.0.109:11434/v1/chat/completions',
+    'http://ollama-host:11434/v1/chat/completions',
     json={
         'model': 'gemma3:12b',
         'messages': [
@@ -625,7 +625,7 @@ LLM 기반 실시간 경보 분석과 5분 주기 자동 관제, Slack 알림 �
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://192.168.0.110:9200` (Bastion /ask·/chat)
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://6v6-host:9200` (Bastion /ask·/chat)
 
 **주요 경로·파일**
 

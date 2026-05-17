@@ -681,7 +681,7 @@ Reporting) 의 LLM 응답 quality 표.
 
 1. **실 Wazuh alert의 LLM 분석** — `ssh 6v6-bastion` 으로 `sudo tail /var/ossec/logs/alerts/alerts.json` 을 가져와 Bastion `/chat` 으로 보낸 뒤 5W, 위험도, 권장 응답을 받는다. (평가 기준 A의 base)
 
-2. **LLM의 Sigma rule 자동 생성** — `curl http://192.168.0.109:11434/api/generate` 로 gemma3:4b 를 호출해 SSH 5회 이상 failed login 시나리오의 Sigma YAML (title, id, tags, logsource, detection, level) 을 생성한다.
+2. **LLM의 Sigma rule 자동 생성** — `curl http://ollama-host:11434/api/generate` 로 gemma3:4b 를 호출해 SSH 5회 이상 failed login 시나리오의 Sigma YAML (title, id, tags, logsource, detection, level) 을 생성한다.
 
 3. **LLM의 Wazuh XML rule 생성** — 가상 시나리오 (rule 100400, level 12, frequency 3, timeframe 60) 의 Wazuh XML 을 자동 생성한다.
 

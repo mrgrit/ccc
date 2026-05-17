@@ -495,7 +495,7 @@ ssh 6v6-bastion
 journalctl -u ollama -n 50 --no-pager | grep -Ei 'POST|GET'
 
 # Manager LLM (gpt-oss:120b) 호출 빈도·지속 모델 확인
-curl -s http://192.168.0.109:11434/api/ps
+curl -s http://ollama-host:11434/api/ps
 ```
 
 학생은 **Bastion이 돌 때** vs **학생이 직접 호출할 때**의 패턴을 비교한다. Bastion은 *주기적*이고 *도구 연관*이지만, 사람 호출은 *단발성*이다.

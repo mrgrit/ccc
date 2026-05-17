@@ -19,7 +19,7 @@
 | siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
 | attacker | 10.20.30.202 | 공격/분석 머신 (pen-test 도구) | `ssh 6v6-attacker` |
 
-**LLM API (Manager):** `http://192.168.0.109:11434` (gpt-oss:120b)
+**LLM API (Manager):** `http://ollama-host:11434` (gpt-oss:120b)
 **Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)

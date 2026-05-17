@@ -20,7 +20,7 @@
 | web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
 | siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Bastion API:** `http://6v6-host:9200` (학생 PC 에서 직접 가능)
 **Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
 **Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
@@ -210,7 +210,7 @@ LOCAL_KNOWLEDGE='{
   "baseline_change": "포트 8080이 새로 열림"
 }'
 
-curl -s http://192.168.0.109:11434/v1/chat/completions \
+curl -s http://ollama-host:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d "{
     \"model\": \"gemma3:12b\",
@@ -232,7 +232,7 @@ COMBINED='{
   "siem": {"total_events": 5000, "critical": 2, "high": 15}
 }'
 
-curl -s http://192.168.0.109:11434/v1/chat/completions \
+curl -s http://ollama-host:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d "{
     \"model\": \"gemma3:12b\",
@@ -252,19 +252,19 @@ curl -s http://192.168.0.109:11434/v1/chat/completions \
 
 ```bash
 # Bastion 에게 복수 자산의 로컬 지식을 한 번에 수집 지시
-curl -s -X POST http://192.168.0.110:9200/ask \
+curl -s -X POST http://6v6-host:9200/ask \
   -H 'Content-Type: application/json' \
   -d '{"message": "web과 secu 두 자산에서 hostname·kernel·listening ports 개수·보안 관련 서비스 상태를 수집해 각각 local_knowledge.json 포맷으로 정리해줘"}'
 
 # 증거 조회
-curl -s "http://192.168.0.110:9200/evidence?limit=10" | python3 -m json.tool
+curl -s "http://6v6-host:9200/evidence?limit=10" | python3 -m json.tool
 ```
 
 ### 실습 2: 수집된 지식을 LLM에게 교차 분석 요청
 
 ```bash
 # 원시 LLM 직접 호출 (Ollama :11434) — 비교 분석은 LLM이 잘한다
-curl -s http://192.168.0.109:11434/v1/chat/completions \
+curl -s http://ollama-host:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -314,9 +314,9 @@ curl -s http://192.168.0.109:11434/v1/chat/completions \
 
 ```bash
 # Ollama는 OpenAI 호환 API를 제공한다
-# URL: http://192.168.0.109:11434/v1/chat/completions
+# URL: http://ollama-host:11434/v1/chat/completions
 
-curl -s http://192.168.0.109:11434/v1/chat/completions \
+curl -s http://ollama-host:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",        ← 사용할 모델
@@ -388,7 +388,7 @@ GET  /skills / /playbooks / /assets → 내부 인벤토리
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://192.168.0.109:11434`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://ollama-host:11434`
 
 **주요 경로·파일**
 

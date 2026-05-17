@@ -641,7 +641,7 @@ RECOMMENDATIONS
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://192.168.0.110:9200` (Bastion /ask·/chat)
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://6v6-host:9200` (Bastion /ask·/chat)
 
 **주요 경로·파일**
 

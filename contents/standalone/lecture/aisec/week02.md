@@ -806,9 +806,9 @@ W01 의 학습 계획 + 본 주차 학습 결과 반영. 본 과목 W02-W07 의 
 
 본 주차 lab (`contents/standalone/lab/aisec/week02.yaml`) 의 5 step을 다음과 같이 안내한다.
 
-1. **Ollama 설치 + gemma3:4b list** — 본인 PC 또는 6v6 ollama 호스트 (192.168.0.109) 에서 `ollama list` 를 실행해 30개 이상의 모델 목록을 가시화한다.
+1. **Ollama 설치 + gemma3:4b list** — 본인 PC 또는 6v6 ollama 호스트 (ollama-host) 에서 `ollama list` 를 실행해 30개 이상의 모델 목록을 가시화한다.
 
-2. **Ollama /api/generate 첫 호출** — `curl http://192.168.0.109:11434/api/generate` 로 SSH brute force 로그 분석 prompt 를 보낸다. 응답에 약 3초 걸리는 것은 gemma3:4b에서 정상이다.
+2. **Ollama /api/generate 첫 호출** — `curl http://ollama-host:11434/api/generate` 로 SSH brute force 로그 분석 prompt 를 보낸다. 응답에 약 3초 걸리는 것은 gemma3:4b에서 정상이다.
 
 3. **Modelfile 사용자 정의 모델** — `ccc-secsec:4b` 의 SYSTEM prompt + PARAMETER 를 설정하고 `ollama create` 로 등록한 뒤 호출한다.
 

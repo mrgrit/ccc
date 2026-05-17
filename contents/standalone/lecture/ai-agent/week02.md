@@ -21,7 +21,7 @@
 | web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
 | siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Bastion API:** `http://6v6-host:9200` (학생 PC 에서 직접 가능)
 **Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
 **Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
@@ -210,7 +210,7 @@ LLM은 텍스트만 생성한다. 하지만 Tool Calling을 사용하면 LLM이 
 mkdir -p ~/lab/week02
 
 # 가장 기본적인 API 호출
-curl -s http://192.168.0.109:11434/v1/chat/completions \
+curl -s http://ollama-host:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "llama3.1:8b",
@@ -233,7 +233,7 @@ print(resp['choices'][0]['message']['content'][:500])
 
 ```bash
 # 역할 없이 질문
-curl -s http://192.168.0.109:11434/v1/chat/completions \
+curl -s http://ollama-host:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "llama3.1:8b",
@@ -244,7 +244,7 @@ curl -s http://192.168.0.109:11434/v1/chat/completions \
   }' | python3 -c "import sys,json; print('역할없음:', json.load(sys.stdin)['choices'][0]['message']['content'][:300])"
 
 # 보안 관리자 역할 부여
-curl -s http://192.168.0.109:11434/v1/chat/completions \
+curl -s http://ollama-host:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "llama3.1:8b",
@@ -268,7 +268,7 @@ import requests
 import json
 import time
 
-OLLAMA_URL = "http://192.168.0.109:11434/v1/chat/completions"
+OLLAMA_URL = "http://ollama-host:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 QUESTION = "리눅스 서버가 해킹당했을 때 첫 번째로 해야 할 일은?"
@@ -329,7 +329,7 @@ python3 ~/lab/week02/param_experiment.py
 
 ```bash
 # 스트리밍 모드: 토큰이 실시간으로 출력됨
-curl -s http://192.168.0.109:11434/v1/chat/completions \
+curl -s http://ollama-host:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "llama3.1:8b",
@@ -371,7 +371,7 @@ import requests
 import json
 import subprocess
 
-OLLAMA_URL = "http://192.168.0.109:11434/v1/chat/completions"
+OLLAMA_URL = "http://ollama-host:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 # 사용 가능한 도구 정의
@@ -532,7 +532,7 @@ import json
 import subprocess
 import re
 
-OLLAMA_URL = "http://192.168.0.109:11434/v1/chat/completions"
+OLLAMA_URL = "http://ollama-host:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 # 도구 설명을 프롬프트에 포함
@@ -655,7 +655,7 @@ import requests
 import json
 import subprocess
 
-OLLAMA_URL = "http://192.168.0.109:11434/v1/chat/completions"
+OLLAMA_URL = "http://ollama-host:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 # 보안 전용 도구 정의

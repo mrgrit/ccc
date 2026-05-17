@@ -20,7 +20,7 @@
 | web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
 | siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Bastion API:** `http://6v6-host:9200` (학생 PC 에서 직접 가능)
 **Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
 **Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
@@ -178,7 +178,7 @@ ENDSSH
 
 ```bash
 # Ollama로 입력을 분류하는 가드레일
-curl -s http://192.168.0.109:11434/v1/chat/completions \
+curl -s http://ollama-host:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -191,7 +191,7 @@ curl -s http://192.168.0.109:11434/v1/chat/completions \
 
 echo "---"
 
-curl -s http://192.168.0.109:11434/v1/chat/completions \
+curl -s http://ollama-host:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -301,7 +301,7 @@ ENDSSH
 
 ```bash
 # 2단계 Constitutional AI: 생성 -> 자체 검토 -> 수정
-curl -s http://192.168.0.109:11434/v1/chat/completions \
+curl -s http://ollama-host:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -320,7 +320,7 @@ print(resp[:300])
 echo ""
 echo "=== Step 2: 자체 검토 ==="
 
-curl -s http://192.168.0.109:11434/v1/chat/completions \
+curl -s http://ollama-host:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -343,7 +343,7 @@ ssh 6v6-web << 'ENDSSH'
 python3 << 'PYEOF'
 import re, json, urllib.request
 
-OLLAMA_URL = "http://192.168.0.109:11434/v1/chat/completions"
+OLLAMA_URL = "http://ollama-host:11434/v1/chat/completions"
 
 INJECTION_PATTERNS = [
     r"(?i)ignore.*instructions",

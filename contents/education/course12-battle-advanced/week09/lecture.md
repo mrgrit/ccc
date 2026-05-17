@@ -28,7 +28,7 @@
 | attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
 
 **Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**Manager LLM (Ollama):** `http://192.168.0.109:11434/v1` (gpt-oss:120b primary, gemma3:12b/llama3.1:8b fallback)
+**Manager LLM (Ollama):** `http://ollama-host:11434/v1` (gpt-oss:120b primary, gemma3:12b/llama3.1:8b fallback)
 
 ## 강의 시간 배분 (3시간)
 

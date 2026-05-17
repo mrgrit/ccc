@@ -20,7 +20,7 @@
 | web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
 | siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Bastion API:** `http://6v6-host:9200` (학생 PC 에서 직접 가능)
 **Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
 **Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
@@ -218,7 +218,7 @@ ENDSSH
 ```bash
 # 원본 질문과 적대적 변형의 응답 비교
 echo "=== 원본 질문 ==="
-curl -s http://192.168.0.109:11434/v1/chat/completions \
+curl -s http://ollama-host:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -231,7 +231,7 @@ curl -s http://192.168.0.109:11434/v1/chat/completions \
 
 echo ""
 echo "=== 적대적 변형 (오타 삽입) ==="
-curl -s http://192.168.0.109:11434/v1/chat/completions \
+curl -s http://ollama-host:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -254,7 +254,7 @@ ssh 6v6-web << 'ENDSSH'
 python3 << 'PYEOF'
 import json, urllib.request
 
-OLLAMA = "http://192.168.0.109:11434/v1/chat/completions"
+OLLAMA = "http://ollama-host:11434/v1/chat/completions"
 
 def query_llm(prompt):
     data = json.dumps({
@@ -295,7 +295,7 @@ ssh 6v6-web << 'ENDSSH'
 python3 << 'PYEOF'
 import json, urllib.request
 
-OLLAMA = "http://192.168.0.109:11434/v1/chat/completions"
+OLLAMA = "http://ollama-host:11434/v1/chat/completions"
 
 def classify_safety(text):
     data = json.dumps({

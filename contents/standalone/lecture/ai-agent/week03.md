@@ -21,7 +21,7 @@
 | web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
 | siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Bastion API:** `http://6v6-host:9200` (학생 PC 에서 직접 가능)
 **Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
 **Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
@@ -185,7 +185,7 @@ MITRE ATT&CK 프레임워크 기준으로 경보를 분류한다.
 mkdir -p ~/lab/week03
 
 # 원칙 1+2 적용: 구조화된 보안 분석 프롬프트
-curl -s http://192.168.0.109:11434/v1/chat/completions \
+curl -s http://ollama-host:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "llama3.1:8b",
@@ -227,7 +227,7 @@ Week 03 실습: Few-Shot 프롬프트로 경보 분석
 import requests
 import json
 
-OLLAMA_URL = "http://192.168.0.109:11434/v1/chat/completions"
+OLLAMA_URL = "http://ollama-host:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 # Few-Shot 예시가 포함된 system 프롬프트
@@ -298,7 +298,7 @@ Week 03 실습: 제약 조건 + Chain-of-Thought 프롬프트
 import requests
 import json
 
-OLLAMA_URL = "http://192.168.0.109:11434/v1/chat/completions"
+OLLAMA_URL = "http://ollama-host:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 # 제약 조건 + CoT 프롬프트
@@ -444,7 +444,7 @@ Week 03 실습: Wazuh 경보 자동 분석 에이전트
 import requests
 import json
 
-OLLAMA_URL = "http://192.168.0.109:11434/v1/chat/completions"
+OLLAMA_URL = "http://ollama-host:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 # 5원칙 통합 프롬프트
@@ -569,7 +569,7 @@ Week 03 실습: 프롬프트 주입 공격과 방어
 import requests
 import json
 
-OLLAMA_URL = "http://192.168.0.109:11434/v1/chat/completions"
+OLLAMA_URL = "http://ollama-host:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 # 방어 없는 프롬프트
@@ -647,7 +647,7 @@ Week 03 실습: 보안 프롬프트 템플릿 라이브러리
 import requests
 import json
 
-OLLAMA_URL = "http://192.168.0.109:11434/v1/chat/completions"
+OLLAMA_URL = "http://ollama-host:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 # 프롬프트 템플릿 라이브러리

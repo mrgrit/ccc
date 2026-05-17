@@ -159,7 +159,7 @@ Host 6v6-*
 ## 작성 원칙 (재강조)
 
 1. **수기 작성**: 매 주차 instruction/script 직접 작성. 일괄 처리·템플릿·자동 스크립트 금지.
-2. **6v6 실측 후 다음 주차**: lecture + lab 작성 → 192.168.0.110 에서 모든 step 실행 → 통과 후 push.
+2. **6v6 실측 후 다음 주차**: lecture + lab 작성 → 6v6-host 에서 모든 step 실행 → 통과 후 push.
 3. **Precinct 6 잔재 금지**: 본 커리큘럼 어디에도 Precinct 6 / 300B 토폴로지 / `*.300b.lab` 참조 없음.
 4. **Wazuh 4.10 dashboard 한계 인지**: API rate limit 5000/min, login retry 100, block 60s 설정 반영.
 5. **MITRE ATT&CK 매핑 일관**: 모든 attack 주차에 TTP ID 명시. Caldera 와 직접 연결.
@@ -314,8 +314,8 @@ course20 agent-ir-adv) 의 **입문** 과정. AI/LLM 보안 + Bastion 활용 + R
 ### 진행 상태
 
 - `aisec/W01-W15` — DONE (15 lecture + 15 lab, 6v6 port/host 검증 완료)
-  - Bastion API: 192.168.0.110:9200 (X-API-Key: ccc-api-key-2026)
-  - Ollama: 192.168.0.109:11434 (gemma3:4b 의 ~3 sec / gpt-oss:120b 의 5-10 min)
+  - Bastion API: 6v6-host:9200 (X-API-Key: ccc-api-key-2026)
+  - Ollama: ollama-host:11434 (gemma3:4b 의 ~3 sec / gpt-oss:120b 의 5-10 min)
   - 모든 lab 의 endpoint 의 실 검증 완료
 
 각 주차 완료 시 본 표 갱신 + git commit + push.

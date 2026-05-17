@@ -31,7 +31,7 @@
 10. anchor 명명 분리 (experience-anchor / history-anchor / Anchor-node)
 11. Primary + Secondary belongs_to (cross-mission node 처리)
 12. 속도 = 캐시 + FAISS + centrality 분리 (수평 분리 안 함)
-13. deploy = 192.168.0.110 (6v6 머신). 6bq5 코드 재사용, DB 만 분리
+13. deploy = 6v6-host (6v6 머신). 6bq5 코드 재사용, DB 만 분리
 14. EG 포털 = 6bq5 frontend + 4 view 추가 (Mission Dashboard / Ablation / Plan / Insight)
 15. CCC frontend 에 EG 진행 view (관리자만, X-Admin-Token proxy)
 16. H3 transfer 가설 제거. H1 일관성 + H2 open-weight×EG 만 유지
@@ -54,7 +54,7 @@
 
 **시스템 분리**:
 - CCC (현재 머신) — 콘텐츠 / 카탈로그 / paper / pilot YAML 작성
-- 6v6 (192.168.0.110) — 평가 인프라 13 컨테이너
+- 6v6 (6v6-host) — 평가 인프라 13 컨테이너
 - bastion (6v6-bastion 컨테이너) — 평가 대상 에이전트
 - 6bq5 코드 (0.110) — EG 백엔드 (FastAPI + frontend)
 - **eg-6v6.db** (0.110) — 본 paper EG (6v6 환경 전용)
@@ -784,7 +784,7 @@ Architecture) 모두 비어있음.
 - [x] ccc-ui `Standalone6v6.tsx` + ccc-api `/standalone/*` endpoints (admin masking 포함) + mermaid 렌더링
 - [x] mrgrit/ccc 전 배치 push 완료
 
-**원칙**: 병렬/스크립트/자동화/템플릿 금지, 매 주차 수기, 6v6 실 인프라(192.168.0.110) end-to-end 검증 결과를 콘텐츠에 반영.
+**원칙**: 병렬/스크립트/자동화/템플릿 금지, 매 주차 수기, 6v6 실 인프라(6v6-host) end-to-end 검증 결과를 콘텐츠에 반영.
 
 ### 2026-04-30 23:55 — R3 fix #1/#2/#3 일괄 적용 + 인프라 IP 변동 (bastion 0.115→0.103)
 

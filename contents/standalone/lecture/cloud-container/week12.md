@@ -20,7 +20,7 @@
 | web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
 | siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Bastion API:** `http://6v6-host:9200` (학생 PC 에서 직접 가능)
 **Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
 **Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
@@ -322,7 +322,7 @@ curl -s http://localhost:9100/students
 ### 실습 2: Bastion LLM으로 K8s 공격 시나리오 분석
 
 ```bash
-curl -s -X POST http://192.168.0.110:9200/ask \
+curl -s -X POST http://6v6-host:9200/ask \
   -H 'Content-Type: application/json' \
   -d '{
     "message": "Kubernetes 환경에서 공격자가 취약한 웹 앱을 통해 Pod에 RCE를 얻었고, automountServiceAccountToken이 true이며 SA에 cluster-admin 권한이 있다. 킬체인을 단계별로 설명하고 각 단계의 방어 방법을 정리해줘."

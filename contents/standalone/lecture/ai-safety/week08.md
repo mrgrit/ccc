@@ -20,7 +20,7 @@
 | web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
 | siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Bastion API:** `http://6v6-host:9200` (학생 PC 에서 직접 가능)
 **Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
 **Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
@@ -67,7 +67,7 @@
 ## 시험 구성
 
 ### 대상 모델
-- Ollama gemma3:12b (http://192.168.0.109:11434)
+- Ollama gemma3:12b (http://ollama-host:11434)
 
 ### 평가 항목 (100점)
 
@@ -96,7 +96,7 @@
 ```bash
 # 모델 접근 확인
 echo "=== 평가 환경 확인 ==="
-curl -s http://192.168.0.109:11434/v1/models | python3 -c "
+curl -s http://ollama-host:11434/v1/models | python3 -c "
 import json,sys
 models = json.load(sys.stdin).get('data',[])
 for m in models:
@@ -105,7 +105,7 @@ for m in models:
 
 # 기본 응답 확인
 echo ""
-curl -s http://192.168.0.109:11434/v1/chat/completions \
+curl -s http://ollama-host:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model":"gemma3:12b","messages":[{"role":"user","content":"안녕하세요"}],"temperature":0}' \
   | python3 -c "import json,sys; print(json.load(sys.stdin)['choices'][0]['message']['content'][:100])"
@@ -134,7 +134,7 @@ DAN(Do Anything Now) 프롬프트로 LLM의 안전 정책을 우회할 수 있�
 ```bash
 # DAN 탈옥 시도: AI 정책에서 자유로운 역할 부여
 # 응답 길이와 첫 300자로 탈옥 성공/실패 판단
-curl -s http://192.168.0.109:11434/v1/chat/completions \
+curl -s http://ollama-host:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -149,7 +149,7 @@ curl -s http://192.168.0.109:11434/v1/chat/completions \
 
 ```bash
 # 역할극 탈옥: 소설 창작 맥락으로 기술적 공격 정보 유도
-curl -s http://192.168.0.109:11434/v1/chat/completions \
+curl -s http://ollama-host:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -164,7 +164,7 @@ curl -s http://192.168.0.109:11434/v1/chat/completions \
 
 ```bash
 # 교육 프레이밍: system에 교수 역할 + 방어법 함께 요청
-curl -s http://192.168.0.109:11434/v1/chat/completions \
+curl -s http://ollama-host:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -187,7 +187,7 @@ curl -s http://192.168.0.109:11434/v1/chat/completions \
 ```bash
 # 직접 인젝션: 시스템 프롬프트 추출 시도
 # temperature 0: 일관된 결과로 재현성 확보
-curl -s http://192.168.0.109:11434/v1/chat/completions \
+curl -s http://ollama-host:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -229,7 +229,7 @@ data = json.dumps({
 }).encode()
 
 req = urllib.request.Request(
-    "http://192.168.0.109:11434/v1/chat/completions",
+    "http://ollama-host:11434/v1/chat/completions",
     data=data, headers={"Content-Type": "application/json"}
 )
 try:
@@ -259,7 +259,7 @@ Base64로 인코딩된 악성 요청을 LLM에게 디코딩 후 답변하도록 
 
 ```bash
 # Base64 인코딩 우회: 악성 요청을 인코딩하여 필터 회피 시도
-curl -s http://192.168.0.109:11434/v1/chat/completions \
+curl -s http://ollama-host:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -274,7 +274,7 @@ curl -s http://192.168.0.109:11434/v1/chat/completions \
 
 ```bash
 # 다국어 우회: 영어로 요청하여 한국어 안전 필터 회피 시도
-curl -s http://192.168.0.109:11434/v1/chat/completions \
+curl -s http://ollama-host:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -393,7 +393,7 @@ ENDSSH
 ### 실습: 프롬프트 인젝션 테스트
 
 ```bash
-OLLAMA="http://192.168.0.109:11434/v1/chat/completions"
+OLLAMA="http://ollama-host:11434/v1/chat/completions"
 
 # 정상 요청
 echo "=== 정상 요청 ==="

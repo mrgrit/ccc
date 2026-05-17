@@ -20,7 +20,7 @@
 | web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
 | siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Bastion API:** `http://6v6-host:9200` (학생 PC 에서 직접 가능)
 **Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
 **Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
@@ -264,13 +264,13 @@ cat /var/ossec/logs/alerts/alerts.json | tail -5 | python3 -m json.tool
 
 ### 실습 2: Bastion에게 모니터링 상태 질의
 
-Bastion은 manager VM(`192.168.0.110:9200`)에서 LLM 기반 운영 에이전트로 동작한다.
+Bastion은 manager VM(`6v6-host:9200`)에서 LLM 기반 운영 에이전트로 동작한다.
 `/ask` 는 자연어 단일 질의, `/chat` 은 NDJSON 스트림 대화이다.
 여기서는 "Wazuh가 최근 어떤 경보를 냈는가"를 자연어로 물어 요약을 받는다.
 
 ```bash
 # Bastion에 모니터링 상태 질의 (실제 제공 엔드포인트)
-curl -s -X POST http://192.168.0.110:9200/ask \
+curl -s -X POST http://6v6-host:9200/ask \
   -H 'Content-Type: application/json' \
   -d '{"message": "web 자산의 최근 Wazuh alerts.json 상위 5개를 요약하고 의심 지표를 알려줘"}'
 ```
@@ -284,7 +284,7 @@ curl -s -X POST http://192.168.0.110:9200/ask \
 # Wazuh 알림 1건을 Bastion에게 해석 요청
 SAMPLE='{"rule":{"id":"5710","level":10,"description":"sshd: Attempt to login using a denied user."},"agent":{"name":"web"},"srcip":"192.168.1.100"}'
 
-curl -s -X POST http://192.168.0.110:9200/ask \
+curl -s -X POST http://6v6-host:9200/ask \
   -H 'Content-Type: application/json' \
   -d "{\"message\": \"다음 Wazuh 경보를 해석하고 대응 절차를 MITRE ATT&CK 기준으로 제시해줘: $SAMPLE\"}"
 ```

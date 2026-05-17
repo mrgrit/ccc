@@ -20,7 +20,7 @@
 | web | 10.20.32.80 (dmz) + 10.20.40.80 (int) | Apache + ModSecurity + JuiceShop/DVWA reverse | `ssh 6v6-web` (ProxyJump fw) |
 | siem | 10.20.32.100 (dmz) | Wazuh Manager (`/var/ossec/...`) | `ssh 6v6-siem` (ProxyJump fw, pw: ccc) |
 
-**Bastion API:** `http://192.168.0.110:9200` (학생 PC 에서 직접 가능)
+**Bastion API:** `http://6v6-host:9200` (학생 PC 에서 직접 가능)
 **Wazuh Dashboard (HTTPS UI):** `https://siem.6v6.lab/` (admin / SecretPassword)
 **Juice Shop (학생 브라우저 대상):** `http://juice.6v6.lab/` (HAProxy host header → web)
 
@@ -307,7 +307,7 @@ docker run -d --name safe-data \
 
 ```bash
 # Bastion 자연어 지시로 컨테이너 설정 보안 점검
-curl -s -X POST http://192.168.0.110:9200/ask \
+curl -s -X POST http://6v6-host:9200/ask \
   -H 'Content-Type: application/json' \
   -d '{
     "message": "web/siem에서 실행 중인 Docker 컨테이너를 전부 조회하고, 각 컨테이너의 User·Privileged·NetworkMode·CapAdd 설정을 표로 정리한 뒤 보안 이슈를 분석해줘."
@@ -319,7 +319,7 @@ curl -s -X POST http://192.168.0.110:9200/ask \
 
 ```bash
 # Bastion LLM으로 과도 권한 IAM 정책 분석
-curl -s -X POST http://192.168.0.110:9200/ask \
+curl -s -X POST http://6v6-host:9200/ask \
   -H 'Content-Type: application/json' \
   -d '{
     "message": "다음 AWS IAM 정책의 보안 문제와 최소권한 개선안을 분석해줘: {\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"*\",\"Resource\":\"*\"}]}"
