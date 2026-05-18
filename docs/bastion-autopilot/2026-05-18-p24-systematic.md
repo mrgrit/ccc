@@ -43,8 +43,11 @@
 ### secuops W03 (NAT 학습 — 10 step)
 - W03 S1 (NAT baseline 4 chain) ✅ "DNS 한정 최소 권한 NAT, 추가 취약점 없음"
 - W03 S2 (DNAT 8888 + conntrack) ✅ "inet/ip 네임스페이스 혼용 오류 인지 + 재검증 권고"
+- W03 S3 (MASQUERADE 3 subnet) △ 39초 짧음, dedup 의심
+- W03 S4 (conntrack 상태머신) ✅ "도구 실행 결과 정직 보고"
+- W03 S5 (conntrack capacity + Docker 공존) △ precheck fail 10.20.30.80 unreachable
 
-**누적 18 step (15✅ 3△ 0❌) = 83% strict**
+**누적 21 step / 266 (8%) — 17✅ 5△ 0❌ = 81% strict**
 
 ## 자동 cycle 방식
 
