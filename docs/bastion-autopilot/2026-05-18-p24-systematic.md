@@ -41,13 +41,27 @@
 - **bastion latency**: background timeout 빈번 → direct ssh+docker exec curl 패턴 으로 전환 (1분 29초~1분 40초/mission)
 
 ### secuops W03 (NAT 학습 — 10 step)
-- W03 S1 (NAT baseline 4 chain) ✅ "DNS 한정 최소 권한 NAT, 추가 취약점 없음"
-- W03 S2 (DNAT 8888 + conntrack) ✅ "inet/ip 네임스페이스 혼용 오류 인지 + 재검증 권고"
-- W03 S3 (MASQUERADE 3 subnet) △ 39초 짧음, dedup 의심
-- W03 S4 (conntrack 상태머신) ✅ "도구 실행 결과 정직 보고"
-- W03 S5 (conntrack capacity + Docker 공존) △ precheck fail 10.20.30.80 unreachable
+- W03 S1 (NAT baseline 4 chain) ✅ "DNS 한정 최소 권한 NAT"
+- W03 S2 (DNAT 8888 + conntrack) ✅ "inet/ip 네임스페이스 혼용 인지"
+- W03 S3 (MASQUERADE 3 subnet) △ 39초 dedup 의심
+- W03 S4 (conntrack 상태머신) ✅ "정직 보고"
+- W03 S5 (conntrack capacity) △ precheck fail
+- W03 S6 (nft monitor trace) ✅ "모니터링 권고"
+- W03 S7 (R/B/P HAProxy 충돌) △ 3분+ timeout (long mission)
+- W03 S8 (separation policy) △ 3분+ timeout
+- W03 S9 (trouble-shoot) ✅ 35초 (KG hit 5)
+- W03 S10 (종합 보고) ✅ 40초 (KG hit 3)
 
-**누적 21 step / 266 (8%) — 17✅ 5△ 0❌ = 81% strict**
+**secuops W03: 10/10 step — 6✅ 4△ 0❌ (60% strict)**
+
+## 사용자 룰 update (2026-05-18 20:41)
+**15 mission cycle + 5분 GPU cooling, 야매 금지, 전체 검증**
+
+## 누적
+- secuops W01 (9/9): 8✅ 1△
+- secuops W02 (7/7): 6✅ 1△
+- secuops W03 (10/10): 6✅ 4△
+- **누적 26 step / 266 (10%) — 20✅ 6△ 0❌ = 77% strict**
 
 ## 자동 cycle 방식
 
