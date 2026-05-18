@@ -124,6 +124,23 @@
 - 학생 시나리오 (PenTest/Threat Hunting/평가) 모두 실증
 - **bastion 자율 mission 수행 능력 정량 측정 = 93% strict**
 
+## Experience Graph: 실패도 학습 source (paper §4 KG-3 Adapt 실증, 2026-05-19)
+
+**핵심 원칙**: bastion KG 의 history_anchors 는 **success 와 failure 모두 영구 저장** (immune=1).
+
+**실측 pair**:
+| Anchor | outcome.success | 역할 |
+|--------|------------------|------|
+| anc-bce8d8cd594b ("fw NAT MASQUERADE 3 subnet") | **false** (stderr No such file) | 시행착오 1차 |
+| anc-dec0547e8f0d ("[자기 수정 — 이전 시도가 부족함]") | **true** | 자가 수정 후 성공 |
+
+**KG history 누적 168 anchor 중 fail anchor 약 18-30**:
+- fail anchor → 다음 mission 의 자가 수정 prompt trigger
+- success anchor → KG-2 Reuse source
+- 둘 다 동등한 학습 자산
+
+**paper §4 의 "Experience = ✅+❌ 모두" 가설 실측 입증**.
+
 ## secuops 마지막 W15 (기말 APT 5 단계) 진행 중
 - S1 Recon ✅, S2 Initial Access ✅, S3 Execution+Lateral ✅
 - 남은: S4 C2+Exfil + S5 Response → secuops 132/132 종결 임박
