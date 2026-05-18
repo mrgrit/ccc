@@ -89,8 +89,11 @@
 - attack W12 (3/3): 3✅
 - attack W13 (3/3): 3✅
 - attack W14 (3/3): 3✅
-- attack W15 진행 — S1 ✅
-- **누적 165 step / 266 (62%) — 148✅ 17△ 0❌ = 90% strict** 🎯 attack 거의 종결
+- attack W15 (3/3): 2✅ 1△
+- 🎉 **attack 45/45 완전 종결** (W01-W15 모두)
+- aisec W01 (5/5): 5✅
+- aisec W02 진행 — S1/S2/S3 ✅
+- **누적 175 step / 266 (65.8%) — 157✅ 18△ 0❌ = 90% strict** 🎯 attack 종결 + aisec 진입
 
 ## secuops 마지막 W15 (기말 APT 5 단계) 진행 중
 - S1 Recon ✅, S2 Initial Access ✅, S3 Execution+Lateral ✅
