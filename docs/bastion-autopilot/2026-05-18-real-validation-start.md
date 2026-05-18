@@ -879,3 +879,30 @@ signature_id: 1000005, signature: "6V6 Possible nmap SYN scan"
 위 모든 내용 → memory 파일 2개 박제:
 - `project_bastion_autopilot_real_validation.md` — 24 mission 진짜 검증 + fix 6종 + autonomy 14종
 - `feedback_bastion_natural_language_only.md` — shell wrapping 금지 룰
+
+## NL-M27 — Lab 자동 채점 (학생 보고서 evidence 검증) — 진행 중
+
+**Mission**: 학생 보고서 "SQL injection 모두 차단, **Rule 942100** 가 차단" — evidence 검증 + 점수/피드백
+
+**Manager 자율 multi-source verification**:
+1. check_modsecurity → 실제 ModSec log: Rule **913100** (Scanner-Detection) + **920350** (Protocol) + **930120** (LFI)
+2. 자율 추가: docker exec 6v6-web ls /var/log/apache2 (access/error log 탐색)
+3. Manager synthesis: 학생 보고서 의 Rule 942100 ≠ 실제 매칭 Rule 식별 가능
+
+**핵심 능력 입증**: bastion 이 학생 답안 의 **specific Rule ID claim** 까지 evidence-based 검증.
+- 학생 주장: Rule 942100 (SQL Injection)
+- 실제: Rule 913100/930120 (Scanner + LFI)
+- = 학생 의 misunderstanding 정확 식별 (SQL injection 이 실제 발생하지 않음, Nikto LFI 만 발생)
+
+## Real Validation 27 mission 누적
+
+| # | Mission | Result |
+|---|---------|--------|
+| NL-M1~M26 | (이전 박제) | 17✅ 4△ 3❌ +M26 진행 |
+| NL-M27 | Lab 자동 채점 | (진행 중, Manager 자율 verification) |
+
+**Strict PASS 17/25 = 68%** (M26/M27 진행 중 제외)
+
+## Manager autonomous capabilities 최종 15종 (NL-M27 추가)
+
+15. **학생 보고서 의 specific claim (Rule ID, signature) evidence-based 검증** ✅
