@@ -45,18 +45,15 @@ steps:
     category: experiment
     points: 20
     answer: |
-      ALERT=$(sudo tail -1 /var/ossec/logs/alerts/alerts.json 2>/dev/null | head -1)
-      if [ -z "$ALERT" ]; then
-          ALERT="{\"rule\":{\"id\":\"5710\",\"level\":5},\"agent\":{\"name\":\"web\"},\"data\":{\"srcip\":\"10.20.30.202\",\"srcuser\":\"admin\"},\"timestamp\":\"2026-05-12T14:30:00\"}"
-      fi
+      # alert sample 의 핵심만 텍스트로 prompt — JSON body 내 nested JSON escape 회피
       curl -s -X POST -H "X-API-Key: ccc-api-key-2026" \
-          -H "Content-Type: application/json" \
-          -d "{\"message\":\"다음 alert 의 분석 — 5W + 위험도 + 권장 + ATT&CK:\n$ALERT\", \"agent\":\"master\"}" \
-          http://localhost:9100/chat 2>&1 | head -80
+          -H "Content-Type: application/json" --max-time 90 \
+          -d '{"message":"SSH brute force alert (rule 5710, level 5, srcip 10.20.30.202, srcuser admin) — 5W + 위험도 + 권장 + ATT&CK 매핑 분석","stream":false}' \
+          http://localhost:9100/chat 2>&1 | head -c 600
     answer_detail: alert triage 응답
     verify:
       type: output_contains
-      expect: 'kg_status'
+      expect: 'event'
       field: stdout
       semantic:
         intent: alert triage
@@ -306,10 +303,10 @@ steps:
       ## 💻
       ```bash
       # Red mode
-      curl -s -X POST http://6v6-host:9100/chat -H "X-API-Key: ccc-api-key-2026" -H "Content-Type: application/json" -d "{\"message\":\"juice.6v6.lab 의 정찰 plan 권장\"}" 2>&1 | head -5
+      curl -s -X POST http://localhost:9100/chat -H "X-API-Key: ccc-api-key-2026" -H "Content-Type: application/json" -d "{\"message\":\"juice.6v6.lab 의 정찰 plan 권장\",\"stream\":false}" 2>&1 | head -5
 
       # Blue mode (alert triage)
-      curl -s -X POST http://6v6-host:9100/chat -H "X-API-Key: ccc-api-key-2026" -H "Content-Type: application/json" -d "{\"message\":\"최근 ModSec alert triage\"}" 2>&1 | head -5
+      curl -s -X POST http://localhost:9100/chat -H "X-API-Key: ccc-api-key-2026" -H "Content-Type: application/json" -d "{\"message\":\"최근 ModSec alert triage\",\"stream\":false}" 2>&1 | head -5
 
       echo "Coverage: Bastion 의 dual-mode (Red plan + Blue triage) + Purple 보고서"
       ```
@@ -320,8 +317,8 @@ steps:
     category: rbp_integration
     points: 4
     answer: |
-      curl -s -X POST http://6v6-host:9100/chat -H "X-API-Key: ccc-api-key-2026" -H "Content-Type: application/json" -d "{\"message\":\"juice 정찰 plan\"}" 2>&1 | head -5
-      curl -s -X POST http://6v6-host:9100/chat -H "X-API-Key: ccc-api-key-2026" -H "Content-Type: application/json" -d "{\"message\":\"ModSec alert triage\"}" 2>&1 | head -5
+      curl -s -X POST http://localhost:9100/chat -H "X-API-Key: ccc-api-key-2026" -H "Content-Type: application/json" -d "{\"message\":\"juice 정찰 plan\",\"stream\":false}" 2>&1 | head -5
+      curl -s -X POST http://localhost:9100/chat -H "X-API-Key: ccc-api-key-2026" -H "Content-Type: application/json" -d "{\"message\":\"ModSec alert triage\",\"stream\":false}" 2>&1 | head -5
       echo "Coverage: Bastion dual-mode"
     answer_detail: Bastion dual R/B/P
     verify:
