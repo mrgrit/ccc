@@ -2078,8 +2078,15 @@ class BastionAgent:
                     continue
 
                 # Step 6 self-verify (한 번만)
+                # ★ F13 fix (2026-05-18 reset cycle 4): turn 0 + all_tool_outputs 0
+                #   + empty_content_retry 소진 = LLM 응답 fail → self_verify 강제 트리거.
+                #   M28/M32/M34/M35 의 KG context echo path (도구 미실행 + LLM 직접 응답) 차단.
+                _force_self_verify = (
+                    empty_content_retry_used >= EMPTY_CONTENT_RETRY
+                    and not all_tool_outputs
+                )
                 if (self_verified_attempted < SELF_VERIFY_RETRY and
-                    (turn > 0 or all_tool_outputs)):  # 도구 한 번이라도 돌렸을 때만 의미 있음
+                    (turn > 0 or all_tool_outputs or _force_self_verify)):
                     ok, why = self._self_verify_completion(message, all_tool_outputs, content)
                     if not ok:
                         self_verified_attempted += 1

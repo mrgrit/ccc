@@ -802,6 +802,12 @@ def execute_skill(name: str, params: dict[str, Any], vm_ips: dict[str, str],
         _bastion_patterns = (
             "docker ps", "docker exec", "docker logs", "docker inspect",
             "docker images", "docker version", "docker info",
+            # ★ F14 fix (2026-05-18 reset cycle 4): df / docker network / volume 추가.
+            #   M48 의 df, M51 의 docker network ls 가 attacker 로 잘못 inference 되던 패턴.
+            "docker network", "docker volume", "docker stats", "docker top",
+            "df ", "df -h", "df -T", "du ", "du -h", "du -sh",
+            "free ", "free -m", "free -h", "uptime", "lsblk", "vmstat",
+            "ip route", "ip -br addr", "ip addr show",
             "curl http://localhost:9100", "curl https://localhost:9100",
             "curl -s http://localhost:9100", "curl -s https://localhost:9100",
             # ssh ProxyJump 시작점 = bastion (bastion 의 .ssh/config 에 6v6-* alias).
