@@ -532,14 +532,18 @@ def execute_skill(name: str, params: dict[str, Any], vm_ips: dict[str, str],
         return {"success": True, "output": results}
 
     elif name == "scan_ports":
-        target = params.get("target", "10.20.30.80")
-        ip = _resolve_vm_ip(target, vm_ips)
+        # ★ fix-L (2026-05-18): docker exec wrapping — attacker IP placeholder fail 시
+        #   bastion → docker exec 6v6-attacker nmap 으로 자동 fallback.
+        target = params.get("target", "10.20.32.80")
+        # target 이 IP 면 그대로, 컨테이너 alias 면 _resolve_vm_ip
+        ip = target if target.replace(".", "").isdigit() else _resolve_vm_ip(target, vm_ips)
         ports = params.get("ports", "--top-ports 100")
-        attacker_ip = vm_ips.get("attacker", "")
-        # greppable output (-oG) for reliable parsing, plus normal output
-        r = run_command(attacker_ip,
-            f"nmap -sV {ip} {ports} --max-retries 1 -T4 --host-timeout 30s -oG - 2>/dev/null | grep 'Ports:' || "
-            f"nmap -sV {ip} {ports} --max-retries 1 -T4 --host-timeout 30s 2>/dev/null | grep -E '^[0-9]+/tcp'",
+        bastion_ip = vm_ips.get("bastion") or "127.0.0.1"
+        # bastion 의 docker daemon 통해 attacker 컨테이너 안에서 nmap 실행
+        nmap_cmd = f"nmap -sV {ip} {ports} --max-retries 1 -T4 --host-timeout 30s"
+        r = run_command(bastion_ip,
+            f"docker exec 6v6-attacker sh -c \"{nmap_cmd} -oG - 2>/dev/null | grep 'Ports:' || "
+            f"{nmap_cmd} 2>/dev/null | grep -E '^[0-9]+/tcp'\"",
             timeout=45)
         raw = r.get("stdout", "")
         # extract open ports summary
