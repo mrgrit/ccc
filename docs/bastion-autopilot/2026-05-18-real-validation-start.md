@@ -241,3 +241,79 @@ NL-M1 의 docker_manage(action=ps) 만 통과한 이유 = read-only → approval
 4. **multi-turn 자율 wrapping** (docker_manage exec 으로 fallback) ✅
 5. 자산 발견 → 후속 mission 의 context ✅
 6. 보안 권고 + 한계 인지 ✅
+
+## NL-M6 v2 — Red SQLi (fix-H 자산 매핑 system prompt 적용) ✅
+
+**Mission**: "attacker → web Juice Shop sqlmap UA HTTP 요청, WAF 차단 확인"
+**시간**: 1분 28초
+
+**fix-H 효과 확정**:
+- Manager 가 `10.20.32.80` (실제 web dmz IP) 정확 사용
+- 1차: `curl -A "sqlmap" http://10.20.32.80/` → **HTTP/1.1 403 Forbidden** ✅
+- 자율 2차: `curl http://10.20.32.80/` (UA 없이) → 200 OK → **자율 비교 검증**
+
+**Manager synthesis** (R/B/P scenario):
+- **Payload**: `User-Agent: sqlmap`
+- **Response**: `HTTP/1.1 403 Forbidden` ← ModSecurity 차단
+- **방어 룰 예시**: `SecRule REQUEST_HEADERS:User-Agent "@rx sqlmap" "id:12345,phase:1,deny,log,status:403,msg:'SQLMap UA blocked'"`
+- **한계 인지**: "UA 의존, 일반 브라우저 문자열로 우회 가능 → 다층 방어 필요"
+
+## NL-M7 — Blue Suricata IDS 탐지 확인 ✅
+
+**Mission**: "방금 sqlmap UA 시도가 6v6-ips Suricata IDS alert 에 기록되었는지 확인"
+**시간**: 47초
+
+**Manager 자율 multi-turn**:
+1. `check_suricata` 4번 시도 (empty output)
+2. 자율 fallback: `docker_manage(exec, container=6v6-ips, command="cat /var/log/suricata/eve.json | head -n 20")`
+3. 자율 추가 turn: `docker_manage(exec, command="grep -i sqlmap -C 2 /var/log/suricata/eve.json | head -n 20")`
+
+**진짜 alert event 발견**:
+```json
+{
+  "timestamp":"2026-05-18T07:32:32.657391+0000",
+  "event_type":"alert",
+  "src_ip":"10.20.30.201", "dest_ip":"10.20.32.80", "dest_port":80,
+  "alert":{
+    "signature":"6V6 Bot UA - sqlmap",
+    "signature_id":1000003,
+    "severity":3
+  },
+  "http":{"http_user_agent":"sqlmap", "status":403, "url":"/"}
+}
+```
+
+**Manager synthesis**:
+- signature "6V6 Bot UA - sqlmap" + signature_id 1000003 + severity 3 정확 인용
+- HTTP 403 차단 확인
+- 한계 인지: "POST/파라미터 변조 등 다른 경로는 별도 로그 확인 필요"
+
+## R/B/P Scenario 완벽 입증 ✅
+
+| 단계 | Mission | Manager 자율 결과 | 핵심 evidence |
+|------|---------|-------------------|-------------|
+| **Red** NL-M6 v2 | attacker → sqlmap UA → web | `curl -A sqlmap http://10.20.32.80/` → 403 | HTTP 403 + 차단 HTML |
+| **Blue** NL-M7 | Suricata alert 확인 | docker_manage exec grep → eve.json alert | signature_id 1000003 "6V6 Bot UA - sqlmap" |
+| **Purple** | Manager synthesis (NL-M6+M7 통합) | WAF + IDS multi-layer + 한계 인지 | 방어 룰 + 우회 가능성 |
+
+## Real Validation 누적 (자율 R/B/P 입증)
+
+| # | Mission | Manager autonomous flow | semantic |
+|---|---------|-------------------------|---------|
+| NL-M1 | 컨테이너 수 | docker_manage(ps) + 27 정확 | ✅ |
+| NL-M2 v2 | nftables 규칙 | docker_manage(ps) + 한계 인지 | △ |
+| NL-M3 | ModSec 1차 | check_modsecurity fail | ❌ infra |
+| NL-M4 | **자산 발견** | docker_manage(ps) + docker inspect retry | ✅ |
+| NL-M5 | ModSec 재시도 | check_modsecurity → ps → exec wrapping 3-turn | ✅ |
+| NL-M6 | Red SQLi 1차 | INTERNAL_IPS 매핑 잘못 (web 10.20.30.80) | ❌ |
+| NL-M6 v2 | Red SQLi (fix-H 후) | `curl 10.20.32.80` sqlmap UA → 403 | **✅** |
+| NL-M7 | **Blue Suricata** | docker_manage exec grep → alert signature 정확 | **✅** |
+
+**Manager (gpt-oss:120b) autonomy 완전 입증**:
+- 자연어 → ReAct 구조 (GOAL/SUCCESS/TODO/tool_calls) ✅
+- specialized skill 자율 선택 (check_modsecurity, check_suricata, docker_manage) ✅
+- skill fail 시 자율 retry + multi-turn 학습 (quote escape) ✅
+- skill fail 시 자율 fallback (docker exec wrapping) ✅
+- 자산 매핑 자율 발견 + 후속 mission context ✅
+- R/B/P scenario 의 자율 cross-VM 분석 (attacker→web 공격 + ips alert 검증) ✅
+- 보안 권고 자율 추가 + 한계 인지 ✅
