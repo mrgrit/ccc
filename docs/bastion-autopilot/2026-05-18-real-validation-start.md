@@ -906,3 +906,52 @@ signature_id: 1000005, signature: "6V6 Possible nmap SYN scan"
 ## Manager autonomous capabilities 최종 15종 (NL-M27 추가)
 
 15. **학생 보고서 의 specific claim (Rule ID, signature) evidence-based 검증** ✅
+
+## NL-M28 — Multi-step Incident Response (3-단계 자율) 진행
+
+**Mission**: SOC 분석가 입장 — (1) 공격 식별 (2) 영향 분석 (3) 후속 대응 방안
+**시간**: 1분 17초+
+
+**Manager autonomous flow**:
+1. check_suricata → Suricata alerts (signature 1000004 "6V6 Path Traversal Attempt", 4+ events)
+   - src_ip: 10.20.32.1 (ips eth0) + 10.20.30.201 (bastion)
+2. check_modsecurity → ModSec audit: Nikto UA + path traversal + LFI
+   - Rule 913100 SCANNER-DETECTION
+   - Rule 920350 PROTOCOL-ENFORCEMENT
+   - Rule 930120 APPLICATION-ATTACK-LFI
+3. Manager synthesis: 3-단계 자율 분석 (식별 + 영향 + 대응)
+
+**KG anchor 30+ 누적 검증** — sim < 0.7 인데도 Manager 가 자체 multi-source 분석 능력 충분.
+
+## Real Validation 28 mission 누적
+
+| Strict PASS | △ | ❌ | Total |
+|-------------|---|---|-------|
+| **17/27** | 5 | 5 | 27 confirmed + M28 진행 |
+
+## 핵심 결론 (real validation 2026-05-18)
+
+### Manager (gpt-oss:120b) autonomous capabilities 15종 모두 입증
+1. 자연어 → ReAct 구조 ✅
+2. specialized skill 자율 선택 ✅
+3. fail 시 multi-strategy fallback ✅
+4. 자산 발견 → context 활용 ✅
+5. cross-VM R/B/P 분석 ✅
+6. KG-2 reuse threshold 측정 (한계 확인) ✅
+7. 메타-진단 (root cause) ✅
+8. 한계 인지 + 정직 보고 ✅
+9. 보안 권고 자율 추가 ✅
+10. 고급 jq query 자율 생성 ✅
+11. cross-layer evidence correlation ✅
+12. bash builtin /dev/tcp 활용 ✅
+13. OWASP CRS multi-rule 매칭 분석 ✅
+14. 학생 답안 evidence-based 검증 ✅
+15. 학생 specific claim (Rule ID) 검증 ✅
+
+### Fix 6종 효과
+- F-A (auto_approve body), F-B (system prompt 분류), F-D (precheck skip), F-H (자산 매핑 inject), F-J (check_* docker exec), F-L (scan_ports placeholder)
+- 모두 즉시 효과 입증
+
+### 잔존 한계
+- **KG-2 Reuse 미작동**: sim calc 너무 strict (NL-M23 의 정확 동일 message 도 0.611)
+- **fix-K (sentence-transformers) 시급**: 다음 cycle 의 핵심 작업
