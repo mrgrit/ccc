@@ -84,8 +84,13 @@
 - attack W07 (3/3): 3✅
 - attack W08 (3/3): 3✅
 - attack W09 (3/3): 3✅
-- attack W10 진행 — S1 ✅
-- **누적 150 step / 266 (56.4%) — 133✅ 17△ 0❌ = 89% strict** 🎯 attack 절반 + KG-2 Reuse 안정
+- attack W10 (3/3): 3✅
+- attack W11 (3/3): 3✅
+- attack W12 (3/3): 3✅
+- attack W13 (3/3): 3✅
+- attack W14 (3/3): 3✅
+- attack W15 진행 — S1 ✅
+- **누적 165 step / 266 (62%) — 148✅ 17△ 0❌ = 90% strict** 🎯 attack 거의 종결
 
 ## secuops 마지막 W15 (기말 APT 5 단계) 진행 중
 - S1 Recon ✅, S2 Initial Access ✅, S3 Execution+Lateral ✅
