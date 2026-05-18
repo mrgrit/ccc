@@ -100,8 +100,8 @@
 - aisec W07/W08/W09 — S1+S2 ✅ 각각
 - aisec W10/W11/W12/W13/W14 — S1+S2 ✅ 각각
 - aisec W15 (2/?): S1+S2 ✅
-- aisec W04-W10 — S4 추가 진행 모두 ✅
-- **누적 220 step / 266 (82.7%) — 202✅ 18△ 0❌ = 92% strict** 🎯 85% 직전
+- aisec W04-W15 — S4 추가 진행 모두 ✅
+- **누적 225 step / 266 (84.6%) — 207✅ 18△ 0❌ = 92% strict** 🎯 85% 직전
 
 ## secuops 마지막 W15 (기말 APT 5 단계) 진행 중
 - S1 Recon ✅, S2 Initial Access ✅, S3 Execution+Lateral ✅
