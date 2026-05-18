@@ -67,8 +67,39 @@ last_assistant_content 가 일반론 응답 면 도구 실행 강제.
 - F10 = 효과 미미 (keyword 너무 흔함)
 - F12 = 효과 부분적 (KG hit 시 일부 catch — M33 fallback 정상)
 
+## Mission 추가 (M40-M43, cycle 3 후반)
+
+| # | Mission | KG hit | 결과 | 분석 |
+|---|---------|--------|-----|------|
+| M40 | sysmon-host 상태 (W11) | 3 | ✅ | "Up 28 minutes" 정확 인용 |
+| M41 | opencti 상태 (W12) | 3 | ✅ | "Restarting (1) 19 seconds ago" 정확 (환경 문제) |
+| M42 | misp 상태 (W13) | 3 | ✅ | "6v6-misp-modules-1 Up 28 minutes (healthy)" 정확 |
+| M43 | aicompanion 상태 (aisec) | 3 | △ | "Up 28 minutes" 인용 → "미충족" 자기모순 (F8 부작용) |
+
+## 누적 통계 (reset cycle 1+2+3 = 43 mission)
+
+| 단계 | PASS | △ | ❌ |
+|------|-----|---|---|
+| cycle 1 M1-M2 (F7 전) | 0 | 0 | 2 |
+| cycle 1 M3-M23 (F7 후) | 15 | 5 | 1 |
+| cycle 2 M24-M27 (F8 후) | 0 | 1 | 3 |
+| cycle 2 M28-M32 (F10 후) | 2 | 1 | 2 |
+| cycle 3 M33-M39 (F12 후) | 5 | 0 | 2 |
+| cycle 3 M40-M43 (추가) | 3 | 1 | 0 |
+| **누적** | **25/43 (58%) strict** | **8** | **10** |
+
+### F8 부작용 발견 (M43)
+M43 의 LLM 자기모순: "Up 28 minutes" 인용 → "미충족" 보고.
+F8 의 룰 8 ("결과 없으면 미충족 정직 보고") 가 일부 mission 에서 over-applied.
+LLM 이 "한국어 평문 결론 = 미충족" 의 default 로 회귀.
+
+## 환경 발견 (cycle 3)
+
+- **opencti**: Restarting (1) 19s — 컨테이너 loop. fresh deploy 의 known issue (이전 cycle 도 동일)
+- **misp-modules**: healthy (cycle 1 baseline 의 unhealthy 와 다름 — fresh deploy 28분 후 안정화)
+
 ## 다음 cycle (4)
 
-- F13 (prose extraction 우선) 시도 — 가장 robust 한 path
-- 또는 F14 (multi-agent) — 큰 작업
-- W04~W15 mission 더
+- F13 (prose extraction 우선) — turn loop 시작 전 사용자 message 의 _extract_shell_from_prose 적용
+- 또는 self_verify 의 hard-check: `if not tool_outputs: return False` 즉시 (LLM 호출 skip)
+- W04~W15 R/B/P 시나리오 mission
