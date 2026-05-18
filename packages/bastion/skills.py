@@ -555,15 +555,33 @@ def execute_skill(name: str, params: dict[str, Any], vm_ips: dict[str, str],
         return {"success": r.get("exit_code") == 0, "output": summary, "target": ip, "open_count": len(open_ports)}
 
     elif name == "check_suricata":
+        # ★ fix-J (2026-05-18): docker exec wrapping — secu(10.20.30.x) placeholder 대신
+        #   docker exec 6v6-ips 호출 (bastion 의 docker socket 통해).
         lines = params.get("lines", 10)
-        ip = vm_ips.get("secu", "")
-        r = run_command(ip, f"echo '=== Suricata Status ===' && systemctl is-active suricata && echo '=== Recent Alerts ===' && tail -{lines} /var/log/suricata/eve.json 2>/dev/null | python3 -c \"import sys,json; [print(f'[{{e.get(\\\"timestamp\\\",\\\"\\\")[:19]}}] {{e.get(\\\"alert\\\",{{}}).get(\\\"signature\\\",\\\"?\\\")}} src={{e.get(\\\"src_ip\\\",\\\"?\\\")}}') for l in sys.stdin for e in [json.loads(l)] if e.get('event_type')=='alert']\" 2>/dev/null || tail -{lines} /var/log/suricata/eve.json 2>/dev/null | grep alert | tail -5", timeout=15)
-        return {"success": True, "output": r.get("stdout", "")}
+        ip = vm_ips.get("bastion") or "127.0.0.1"
+        script = (
+            f"echo '=== Suricata Process ===' && "
+            f"docker exec 6v6-ips pgrep -af suricata 2>/dev/null | head -3 && "
+            f"echo '=== Recent Alerts ===' && "
+            f"docker exec 6v6-ips sh -c \"grep -E 'event_type.:.alert' /var/log/suricata/eve.json 2>/dev/null | tail -{lines}\" "
+        )
+        r = run_command(ip, script, timeout=20)
+        return {"success": True, "output": r.get("stdout", "") or r.get("output", "")}
 
     elif name == "check_wazuh":
-        ip = vm_ips.get("siem", "")
-        r = run_command(ip, "echo '=== Wazuh Manager ===' && systemctl is-active wazuh-manager && echo '=== Agents ===' && /var/ossec/bin/agent_control -l 2>/dev/null && echo '=== Recent Alerts ===' && tail -5 /var/ossec/logs/alerts/alerts.json 2>/dev/null | head -5", timeout=15)
-        return {"success": True, "output": r.get("stdout", "")}
+        # ★ fix-J (2026-05-18): docker exec wrapping — siem(10.20.30.100) placeholder 대신
+        #   docker exec 6v6-siem.
+        ip = vm_ips.get("bastion") or "127.0.0.1"
+        script = (
+            "echo '=== Wazuh Daemons ===' && "
+            "docker exec 6v6-siem /var/ossec/bin/wazuh-control status 2>/dev/null | head -8 && "
+            "echo '=== Agents ===' && "
+            "docker exec 6v6-siem /var/ossec/bin/agent_control -lc 2>/dev/null && "
+            "echo '=== Recent Alerts (alerts.log) ===' && "
+            "docker exec 6v6-siem tail -10 /var/ossec/logs/alerts/alerts.log 2>/dev/null"
+        )
+        r = run_command(ip, script, timeout=20)
+        return {"success": True, "output": r.get("stdout", "") or r.get("output", "")}
 
     elif name == "enroll_wazuh_agent":
         target_role = params.get("target", "secu")
@@ -624,10 +642,23 @@ def execute_skill(name: str, params: dict[str, Any], vm_ips: dict[str, str],
         }
 
     elif name == "check_modsecurity":
+        # ★ fix-J (2026-05-18): docker exec wrapping — INTERNAL_IPS web=10.20.30.80 placeholder
+        #   는 bastion 에서 unreachable. 실제 web 컨테이너 는 dmz 10.20.32.80, bastion 의
+        #   docker socket 통해 docker exec 6v6-web 호출 만 정상 작동.
         lines = params.get("lines", 10)
-        ip = vm_ips.get("web", "")
-        r = run_command(ip, f"echo '=== ModSecurity Status ===' && apachectl -M 2>/dev/null | grep security && echo '=== Recent Blocks ===' && grep 'ModSecurity' /var/log/apache2/error.log 2>/dev/null | tail -{lines}", timeout=15)
-        return {"success": True, "output": r.get("stdout", "")}
+        ip = vm_ips.get("bastion") or "127.0.0.1"  # bastion 의 docker daemon
+        script = (
+            f"docker exec 6v6-web sh -c \""
+            f"echo '=== ModSecurity Status ===' && "
+            f"apachectl -M 2>/dev/null | grep -i security2 && "
+            f"echo '=== Config SecRuleEngine ===' && "
+            f"grep -i SecRuleEngine /etc/modsecurity/modsecurity.conf 2>/dev/null && "
+            f"echo '=== Recent ModSec Logs ===' && "
+            f"tail -{lines} /var/log/apache2/modsec_audit.log 2>/dev/null"
+            f"\""
+        )
+        r = run_command(ip, script, timeout=20)
+        return {"success": True, "output": r.get("stdout", "") or r.get("output", "")}
 
     elif name == "configure_nftables":
         action = params.get("action", "list")
