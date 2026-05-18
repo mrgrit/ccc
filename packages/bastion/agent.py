@@ -2243,7 +2243,21 @@ class BastionAgent:
         # 우선순위: prose 추출 → verify.semantic.acceptable_methods → LLM 변환
         _fallback_cmd: str | None = None
         _fallback_source = ""
-        if not all_tool_outputs:
+        # ★ F12 v2 (2026-05-18 reset cycle 3): all_tool_outputs empty 외에도
+        #   last_assistant_content 가 일반론 punt 면 prompt_fallback 강제.
+        #   M28/M32/M34 의 KG context echo 응답 차단.
+        _is_general_punt = False
+        if last_assistant_content and not all_tool_outputs:
+            _ltrim = (last_assistant_content or "").strip()
+            _general_markers = (
+                "확인 필요", "검토 권장", "추가 모니터링", "추가적인 모니터링",
+                "정상 작동 여부", "방화벽 규칙 검토", "네트워크 설정 확인",
+                "비정상적인 활동", "필요하다면", "권장합니다", "추천:",
+                "예상치 못한", "검토하여",
+            )
+            if any(m in _ltrim for m in _general_markers):
+                _is_general_punt = True
+        if not all_tool_outputs or _is_general_punt:
             _msg_cmds = _extract_shell_from_prose(message or "")
             if _msg_cmds:
                 _fallback_cmd = _msg_cmds[0]
@@ -2333,11 +2347,17 @@ class BastionAgent:
         #   추가 패턴 (fix #10): GOAL=/SUCCESS=/TODO_LIST= 만 있고 stdout 인용 없는 plan-only.
         _content_is_punt = False
         _trim = (last_assistant_content or "").strip()
-        if _trim and all_tool_outputs:
+        # ★ F12 fix (2026-05-18 reset cycle 3): all_tool_outputs empty 인 경우도
+        #   punt 검사 — KG context echo 의 일반론 응답 (M27/M28/M32) 차단.
+        if _trim and (all_tool_outputs or not all_tool_outputs):
             _punt_markers = (
                 "다음 단계에서", "다음 단계로", "이어서 분석", "계속 진행하겠습니다",
                 "will analyze", "next step", "[prompt-fallback]", "계속해서",
                 "다음 turn 에서", "이후 분석",
+                # ★ F12: KG context echo 의 일반론 마커
+                "확인 필요", "검토 권장", "추가 모니터링", "추가적인 모니터링",
+                "정상 작동 여부 확인", "방화벽 규칙 검토", "네트워크 설정 확인",
+                "비정상적인 활동", "필요하다면", "권장합니다",
             )
             # plan-only 마커 (fix #10): GOAL/SUCCESS/TODO_LIST 헤더 + 도구 출력 인용 없음
             _plan_markers = ("GOAL=", "SUCCESS=", "TODO_LIST=", "TODO=", "PLAN=")
