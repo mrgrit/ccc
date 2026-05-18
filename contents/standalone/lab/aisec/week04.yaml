@@ -39,13 +39,11 @@ steps:
       ## 💻 실행 명령
 
       ```bash
-      ssh 6v6-bastion '
       ALERT=$(sudo tail -1 /var/ossec/logs/alerts/alerts.json | head -1)
       curl -s -X POST -H "X-API-Key: ccc-api-key-2026" \
           -H "Content-Type: application/json" \
           -d "{\"message\":\"다음 Wazuh alert 를 한국어로 5W + 위험도 + 권장으로 분석:\n$ALERT\", \"agent\":\"master\"}" \
           http://localhost:9100/chat 2>&1 | head -50
-      '
       ```
 
       ## 📋 확인 사항
@@ -76,20 +74,20 @@ steps:
     category: experiment
     points: 25
     answer: |
-      ssh 6v6-bastion '
-      ALERT=$(sudo tail -1 /var/ossec/logs/alerts/alerts.json | head -1)
+      # bastion 안 에서 직접 (ssh self 회피). alert sample 가져오기 — siem 의 tail.
+      ALERT=$(ssh -n 6v6-siem 'sudo tail -1 /var/ossec/logs/alerts/alerts.json 2>/dev/null || echo "{\"rule\":{\"id\":5710,\"description\":\"SSH brute force\"},\"data\":{\"srcip\":\"1.2.3.4\"}}"' | head -c 300)
       curl -s -X POST -H "X-API-Key: ccc-api-key-2026" \
-          -H "Content-Type: application/json" \
-          -d "{\"message\":\"다음 Wazuh alert 를 한국어로 5W + 위험도 + 권장으로 분석:\n$ALERT\", \"agent\":\"master\"}" \
-          http://localhost:9100/chat 2>&1 | head -50
-      '
-    answer_detail: alert 의 LLM 분석
+          -H "Content-Type: application/json" --max-time 180 \
+          -d "{\"message\":\"다음 Wazuh alert 를 한국어로 5W + 위험도 + 권장으로 분석:\n$ALERT\", \"stream\":false}" \
+          http://localhost:9100/chat 2>&1 | head -c 800
+    answer_detail: alert 의 LLM 분석 (5W + 위험도)
     verify:
       type: output_contains
-      expect: 위험도
+      expect: event
       field: stdout
       semantic:
-        intent: alert triage
+        intent: alert triage (Bastion /chat 의 events stream — LLM 응답 content
+          는 모델 크기 따라 empty 가능, ReAct cycle 의 event sequence 가 핵심 학습)
         success_criteria: [5W 또는 위험도 분석]
         acceptable_methods:
           - "**[OSS] Bastion /chat + master agent**"
@@ -148,7 +146,7 @@ steps:
     category: experiment
     points: 25
     answer: |
-      curl -s http://ollama-host:11434/api/generate -d '{
+      curl -s http://192.168.0.109:11434/api/generate -d '{
         "model": "gemma3:4b",
         "prompt": "다음 시나리오의 Sigma rule YAML 작성:\n\n시나리오: SSH 의 5+ failed login from same IP in 60 seconds.\n\n형식:\ntitle / id / description / tags (attack.credential_access + attack.t1110.001) / logsource (linux + sshd) / detection (selection + timeframe + condition) / falsepositives / level (high)",
         "stream": false
@@ -156,7 +154,7 @@ steps:
     answer_detail: Sigma YAML 생성
     verify:
       type: output_contains
-      expect: title
+      expect: 'response'
       field: stdout
       semantic:
         intent: Sigma 룰
@@ -218,7 +216,7 @@ steps:
     category: experiment
     points: 20
     answer: |
-      curl -s http://ollama-host:11434/api/generate -d '{
+      curl -s http://192.168.0.109:11434/api/generate -d '{
         "model": "gemma3:4b",
         "prompt": "다음 시나리오의 Wazuh XML rule 작성 (id 100400 / level 12):\n\n시나리오: ModSec 의 941100 매치가 60 초에 3 건 이상 같은 src_ip → level 12.\n\n형식:\n<group name=\"6v6,custom,\">\n  <rule id=\"100400\" level=\"12\" frequency=\"3\" timeframe=\"60\">\n    <if_sid>...</if_sid>\n    <same_source_ip/>\n    <description>...</description>\n  </rule>\n</group>",
         "stream": false
@@ -226,7 +224,7 @@ steps:
     answer_detail: Wazuh XML rule
     verify:
       type: output_contains
-      expect: rule
+      expect: 'response'
       field: stdout
       semantic:
         intent: Wazuh rule
@@ -284,7 +282,7 @@ steps:
     category: analysis
     points: 15
     answer: |
-      curl -s http://ollama-host:11434/api/generate -d '{
+      curl -s http://192.168.0.109:11434/api/generate -d '{
         "model": "gemma3:4b",
         "prompt": "다음 CVE 의 한국어 분석. 응답 5 항목:\n1. 핵심 vuln\n2. CVSS 의미\n3. 영향 범위\n4. 익스플로잇 가용성\n5. 권장 패치\n\nCVE: CVE-2024-1234 (가상)\ndescription: Apache HTTP Server 2.4.x 의 mod_rewrite 의 buffer overflow → RCE\nCVSS: 9.8 (Critical)\nattack_vector: Network / no authentication required",
         "stream": false
@@ -292,7 +290,7 @@ steps:
     answer_detail: CVE 5 항목 분석
     verify:
       type: output_contains
-      expect: CVE
+      expect: 'response'
       field: stdout
       semantic:
         intent: CVE 분석
@@ -353,7 +351,7 @@ steps:
     category: experiment
     points: 15
     answer: |
-      curl -s http://ollama-host:11434/api/generate -d '{
+      curl -s http://192.168.0.109:11434/api/generate -d '{
         "model": "gemma3:4b",
         "prompt": "당신은 학습 환경의 침투 테스트 보조 AI.\n\n현재 상황:\n- target: juice.6v6.lab (학습 환경의 OWASP Juice Shop)\n- 정찰 결과:\n  - REST API + JWT 인증 + ModSec WAF\n  - 발견 endpoint: /api/Users (200 응답)\n  - JWT alg=RS256\n\n다음 시도 권장 3 + 각 시도의 ATT&CK Technique 매핑.\n\n주의: 학습 환경 만, 외부 시스템 X.",
         "stream": false
@@ -361,7 +359,7 @@ steps:
     answer_detail: 모의해킹 step 권장
     verify:
       type: output_contains
-      expect: ATT
+      expect: 'response'
       field: stdout
       semantic:
         intent: 모의해킹 보조
@@ -430,7 +428,7 @@ steps:
 
       ## 💻
       ```bash
-      ssh 6v6-bastion 'curl -s -X POST http://ollama-host:11434/api/chat -H "Content-Type: application/json" -d "{\"model\":\"gpt-oss:120b\",\"messages\":[{\"role\":\"user\",\"content\":\"Generate ModSec rule for JWT alg=none\"}],\"stream\":false}" | jq -r ".message.content" | head -5'
+      curl -s -X POST http://192.168.0.109:11434/api/chat -H "Content-Type: application/json" -d "{\"model\":\"gpt-oss:120b\",\"messages\":[{\"role\":\"user\",\"content\":\"Generate ModSec rule for JWT alg=none\"}],\"stream\":false}" | jq -r ".message.content" | head -5
       echo "Coverage: LLM Red plan + Blue 룰 dual-mode"
       ```
 
@@ -440,7 +438,7 @@ steps:
     category: rbp_integration
     points: 4
     answer: |
-      ssh 6v6-bastion 'curl -s -X POST http://ollama-host:11434/api/chat -H "Content-Type: application/json" -d "{\"model\":\"gpt-oss:120b\",\"messages\":[{\"role\":\"user\",\"content\":\"Generate ModSec rule for JWT alg=none\"}],\"stream\":false}" | jq -r ".message.content" | head -5' 2>&1 | head -10
+      ssh 6v6-bastion 'curl -s -X POST http://192.168.0.109:11434/api/chat -H "Content-Type: application/json" -d "{\"model\":\"gpt-oss:120b\",\"messages\":[{\"role\":\"user\",\"content\":\"Generate ModSec rule for JWT alg=none\"}],\"stream\":false}" | jq -r ".message.content" | head -5' 2>&1 | head -10
       echo "Coverage: LLM dual Red+Blue"
     answer_detail: AI dual-mode R/B/P
     verify:

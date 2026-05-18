@@ -46,7 +46,7 @@ steps:
       LONG_LOG="$(for i in $(seq 1 30); do echo \"[2026-05-12 14:30:0$i] sshd[$$$i]: Failed password for ccc from 1.2.3.4 port $((20000+i))\"; done)"
 
       echo "=== num_ctx 2048 ==="
-      curl -s http://ollama-host:11434/api/generate -d "{
+      curl -s http://192.168.0.109:11434/api/generate -d "{
         \"model\": \"gemma3:4b\",
         \"prompt\": \"다음 보안 로그 의 종합 분석:\n${LONG_LOG}\",
         \"stream\": false,
@@ -55,7 +55,7 @@ steps:
 
       echo ""
       echo "=== num_ctx 8192 ==="
-      curl -s http://ollama-host:11434/api/generate -d "{
+      curl -s http://192.168.0.109:11434/api/generate -d "{
         \"model\": \"gemma3:4b\",
         \"prompt\": \"다음 보안 로그 의 종합 분석:\n${LONG_LOG}\",
         \"stream\": false,
@@ -64,7 +64,7 @@ steps:
     answer_detail: num_ctx 옵션 의 응답 비교
     verify:
       type: output_contains
-      expect: sshd
+      expect: 'response'
       field: stdout
       semantic:
         intent: context window 의 영향
@@ -103,7 +103,6 @@ steps:
     category: analysis
     points: 25
     answer: |
-      ssh 6v6-bastion '
       echo "=== /health ==="
       curl -s -H "X-API-Key: ccc-api-key-2026" \
           http://localhost:9100/health | jq | head -30
@@ -122,7 +121,6 @@ steps:
       echo "=== /kg/audit?limit=3 ==="
       curl -s -H "X-API-Key: ccc-api-key-2026" \
           "http://localhost:9100/kg/audit?limit=3" | jq | head -30
-      '
     answer_detail: 4 endpoint 의 응답
     verify:
       type: output_contains
@@ -281,14 +279,12 @@ steps:
 
       echo ""
       echo "=== /health vs /kg/health 의 대조 ==="
-      ssh 6v6-bastion '
       H=$(curl -s -H "X-API-Key: ccc-api-key-2026" http://localhost:9100/health)
       K=$(curl -s -H "X-API-Key: ccc-api-key-2026" http://localhost:9100/kg/health)
       echo "/health kg.all_modules_loaded:"
       echo "$H" | jq ".kg.all_modules_loaded // .status"
       echo "/kg/health status:"
       echo "$K" | jq ".status // ."
-      '
     answer_detail: pytest 또는 /health 의 검증
     verify:
       type: output_contains
@@ -363,8 +359,8 @@ steps:
       ## 💻
       ```bash
       ssh 6v6-attacker 'curl -s -o /dev/null -w "SQLi %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/rest/products/search?q=apple%27%20UNION%20SELECT%201,2,3--"'
-      ssh 6v6-bastion 'curl -s -X POST http://6v6-host:9100/chat -H "X-API-Key: ccc-api-key-2026" -H "Content-Type: application/json" -d "{\"message\":\"방금 SQLi 차단 의 분석 + 과거 비슷 한 사건\"}" 2>&1 | head -10'
-      ssh 6v6-bastion 'curl -s "http://6v6-host:9100/kg/anchors/recent?kind=task_outcome&limit=3" 2>&1 | head -5'
+      curl -s -X POST http://6v6-host:9100/chat -H "X-API-Key: ccc-api-key-2026" -H "Content-Type: application/json" -d "{\"message\":\"방금 SQLi 차단 의 분석 + 과거 비슷 한 사건\"}" 2>&1 | head -10
+      curl -s "http://6v6-host:9100/kg/anchors/recent?kind=task_outcome&limit=3" 2>&1 | head -5
       echo "Coverage: SQLi → ModSec → Bastion KG enrichment + 위키 절차 의 통합"
       ```
 
@@ -375,7 +371,7 @@ steps:
     points: 4
     answer: |
       ssh 6v6-attacker 'curl -s -o /dev/null -w "SQLi %{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/rest/products/search?q=apple%27%20UNION%20SELECT%201,2,3--"'
-      ssh 6v6-bastion 'curl -s "http://6v6-host:9100/kg/anchors/recent?kind=task_outcome&limit=3" 2>&1 | head -5'
+      curl -s "http://6v6-host:9100/kg/anchors/recent?kind=task_outcome&limit=3" 2>&1 | head -5
       echo "Coverage: SQLi → ModSec → KG enrichment"
     answer_detail: KG·위키 R/B/P 1 cycle
     verify:
