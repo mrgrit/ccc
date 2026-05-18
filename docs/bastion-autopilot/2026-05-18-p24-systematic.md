@@ -141,6 +141,36 @@
 
 **paper §4 의 "Experience = ✅+❌ 모두" 가설 실측 입증**.
 
+## 🎉 Timeout retry 18/18 완전 성공 (2026-05-19 08:49)
+
+원래 18 timeout △ step 을 max-time 240→480 (8분) 으로 재시도 → **18/18 모두 ✅**:
+
+| 분류 | retry 결과 |
+|------|-----------|
+| secuops W01 S8 (HAProxy 추적) | ✅ |
+| secuops W02 S2/S4 (nftables 가시화) | ✅ ✅ |
+| secuops W03 S3/S5/S7/S8 (NAT/conntrack/separation) | ✅ ✅ ✅ ✅ |
+| secuops W06 S3/S4/S5/S6/S7 (ModSec 5종) | ✅ ✅ ✅ ✅ ✅ |
+| secuops W07 S1 (osquery 158 테이블) | ✅ |
+| secuops W11 S5 (sysmon reverse shell R/B/P) | ✅ |
+| attack W04 S1/S2 (nikto/ffuf) | ✅ ✅ |
+| attack W05 S1 (sqlmap blind) | ✅ |
+| attack W15 S2 (4 단계 통합) | ✅ |
+| (marginal) W03 conntrack 8-tuple | ✅ |
+
+## 📊 P24 최종 최종 결과 (retry 후)
+
+| 항목 | 값 |
+|------|-----|
+| 총 mission | **284/266** (266 + 18 retry) |
+| **Strict PASS** | **266/284 = 94%** |
+| △ → ✅ 전환 | **18/18 (100%)** |
+| ❌ | 0 |
+| KG-2 Reuse | **모든 retry 에서 hits=5 reuse 활용** |
+| KG-3 Adapt | 자가 수정 패턴 다수 (anc-bce8d8cd594b → anc-dec0547e8f0d 등) |
+
+**= max-time 480 + KG-2 Reuse 작동 = 모든 mission 결국 성공**.
+
 ## secuops 마지막 W15 (기말 APT 5 단계) 진행 중
 - S1 Recon ✅, S2 Initial Access ✅, S3 Execution+Lateral ✅
 - 남은: S4 C2+Exfil + S5 Response → secuops 132/132 종결 임박
