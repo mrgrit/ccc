@@ -62,15 +62,20 @@ Push: `commit 304d3f54`
 | R19 | fw sysctl ip_forward | - | ❌ | KG hit (M18 anchor) 잘못 유도 |
 | R20 | bastion /kg/metrics (recursive) | success | ✅ | counters/observations/ts |
 
-### 통계 (M1-M20)
+### 통계 (M1-M23, 50분 연속 작업)
 
 | 단계 | PASS | △ partial | ❌ fail | 종합 |
 |------|------|-----------|--------|------|
 | **F7 적용 전 (M1, M2)** | 0/2 | 0 | 2 | 0% (회귀 발견) |
-| **F7 적용 후 (M3-M20)** | 13/18 | 4 | 1 | 72% strict, **94% (incl. △) — 가산점 포함** |
+| **F7 적용 후 (M3-M23)** | 15/21 | 5 | 1 | 71% strict, **95% (incl. △)** |
 
-- F7 fix 후 skill 실행 자체는 **17/18 success** (M17 의 llm_translate hallucination 만 fail)
-- LLM 해석 정확도: M9/M13/M15/M19 의 4 partial — bastion 코드 fix 가능 영역 (next iteration)
+- F7 fix 후 skill 실행 자체는 **20/21 success** (M17 의 llm_translate hallucination 만 fail)
+- LLM 해석 정확도: M9/M13/M15/M19/M23 의 5 partial — bastion 코드 fix 가능 영역 (F8 candidate)
+
+### 추가 mission (M21-M23)
+- M21: fw auditctl-s → "command not found" 정직 보고 ✅
+- M22: docker logs --tail 5 6v6-ips → ssh login 로그 정확 인용 ✅
+- M23: attacker nikto 빠른 스캔 → banner 만 추출, LLM 결론 가짜 △
 
 ## 핵심 인사이트 — Reset 의 교훈
 
