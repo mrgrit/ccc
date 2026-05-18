@@ -72,8 +72,13 @@
 - secuops W11 (7/7): 6✅ 1△ — S5 (R/B/P reverse shell) △ timeout
 - secuops W12 (7/7): 7✅ — OpenCTI 6 step + 종합 모두 ✅
 - secuops W13 (7/7): 7✅ — OpenCTI 운영 6 step + 종합 모두 ✅
-- secuops W14 진행 — S1-S5 모두 ✅ (MISP)
-- **누적 115 step / 266 (43.2%) — 101✅ 14△ 0❌ = 88% strict** (✅ 100개 돌파, 40% 돌파!)
+- secuops W14 (7/7): 7✅ — MISP 6 step + 종합 모두 ✅
+- secuops W15 진행 — S1/S2/S3 ✅ (기말 APT 5 단계 중 3 단계)
+- **누적 120 step / 266 (45.1%) — 106✅ 14△ 0❌ = 88% strict** 🎯 45% 돌파
+
+## secuops 마지막 W15 (기말 APT 5 단계) 진행 중
+- S1 Recon ✅, S2 Initial Access ✅, S3 Execution+Lateral ✅
+- 남은: S4 C2+Exfil + S5 Response → secuops 132/132 종결 임박
 
 ## KG-2 Reuse 10회+ 누적
 - W12 S7 → W13 S1 (cross-week)
