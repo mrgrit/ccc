@@ -63,8 +63,22 @@
 - secuops W03 (10/10): 6✅ 4△
 - secuops W04 (8/8): 7✅ 1△ (S2-S8 모두 ✅)
 - secuops W05 (10/10): 10✅ 0△ — S1-S10 모두 ✅
-- secuops W06 진행 — S1 ✅ (modsec 6 키 + CRS), S2 ✅ (audit log JSON), S3 △ (XSS empty)
-- **누적 47 step / 266 (17.7%) — 39✅ 8△ 0❌ = 83% strict**
+- secuops W06 (10/10): 5✅ 5△ — S1/S2/S8/S9/S10 ✅, S3/S4/S5/S6/S7 △ (cross-VM + ModSec mission timeout 180s/240s)
+- secuops W07 (6/10 진행) — S2/S3/S4/S5/S6 ✅, S1 △
+  - **KG-2 Reuse 2회 더 확정**: W07 S2-S3 (anc-bf81de37beee 공유), W07 S4-S5 (anc-f4aca0b0cd4c 공유)
+- **누적 60 step / 266 (22.6%) — 47✅ 13△ 0❌ = 78% strict**
+
+## bastion latency 추세
+- W06 부터 응답 시간 증가 (3분+ timeout 빈번)
+- max-time 180s → 240s 으로 조정 (W06 S8+S10 부터)
+- 단순 mission 은 100s, KG hit 시 44s (reuse 효과)
+- gpt-oss:120b 응답 자체가 길어지는 추세 — root cause 미확정
+
+## KG-2 Reuse 실 작동 증거 (P24)
+- W07 S2 → S3: 동일 anchor_id `anc-bf81de37beee` 공유 → reuse
+- W07 S4 → S5: 동일 anchor_id `anc-f4aca0b0cd4c` 공유 → reuse
+- P23 의 NL-M29 확정 (confidence 0.95) 외 추가 실 작동 데이터
+- paper §4 의 PE-KG Reuse 실 작동 강화 증거
 
 ## 데드락 사고 (21:18 회복)
 - bngy8mz5m: `grep -q 'bjhc6c1gb'` 가 grep 자식 process self-match → 무한 loop
