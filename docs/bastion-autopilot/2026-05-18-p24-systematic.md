@@ -24,10 +24,11 @@
 | W01 | S6 (Wazuh manager + 3 agent) | "siem Wazuh 데몬 + fw/ips/web agent 연결" | ✅ Wazuh 데몬 정상 + 3 agent 모두 연결 |
 | W01 | S7 (Red: attacker → juice 공격) | "attacker → juice sqlmap+XSS 공격 + 차단" | ✅ 차단 분석 + 한계 인지 (POST/인코딩 우회) |
 | W01 | S8 (Blue: HAProxy + eve.json 추적) | "fw HAProxy + ips eve.json 공격 기록" | △ HAProxy log 컨테이너 부재 정직 보고 |
-| W01 | S9 (Purple: 종합 평가) | (background bwy4bunu0 진행 중) | - |
+| W01 | S9 (Purple: 종합 평가) | "W01 6v6 인수 작업 + ISMS-P/NIST CSF Identify 평가" | ✅ ISMS-P 평가 + 로그 보존 기간 한계 인지 |
 
 ## 누적 통계
-- **secuops W01: 8/9 step 완료** — 7✅ 1△ 0❌
+- **secuops W01: 9/9 step 완료** — **8✅ 1△ 0❌** (89% strict)
+- 다음: secuops W02 진입
 
 ## 자동 cycle 방식
 
