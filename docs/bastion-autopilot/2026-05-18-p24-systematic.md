@@ -67,8 +67,15 @@
 - secuops W07 (10/10): 9✅ 1△ — S1 △ timeout, S2-S10 ✅
   - **KG-2 Reuse 4회 확정**: W07 S2-S3 (anc-bf81de37beee), S4-S5 (anc-f4aca0b0cd4c), S7-S8 (anc-779fd190229f), S9-S10 (anc-66bf3a89c325)
 - secuops W08 (5/5 중간고사): 5✅ — S1/S2/S5 = anchor `anc-66bf3a89c325` 공유 (cross-week Reuse!)
-- secuops W09 (6/10 진행): S1-S6 모두 ✅
-- **누적 75 step / 266 (28.2%) — 62✅ 13△ 0❌ = 83% strict**
+- secuops W09 (10/10): 10✅ — S1-S10 모두 ✅
+- secuops W10 (10/10): 10✅ — Wazuh dashboard 9 step + 종합 모두 ✅
+- secuops W11 진행 — S1 ✅ (sysmon)
+- **누적 90 step / 266 (33.8%) — 77✅ 13△ 0❌ = 86% strict**
+
+## bastion latency 회복 추세 (W07 부터)
+- W07 부터 응답 시간 40-100s 로 안정화 (W06 의 3분+ timeout 추세 반전)
+- KG-2 Reuse 작동 빈도 증가 — anchor 공유 5+회 (W07-W10)
+- **paper §4 PE-KG Reuse 실 작동 강한 증거 누적**
 
 ## KG-2 Reuse 실 작동 증거 종합 (P24)
 - W07 S2-S3, S4-S5, S7-S8, S9-S10 (4회) — 같은 anchor_id 공유
