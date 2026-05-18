@@ -73,8 +73,14 @@
 - secuops W12 (7/7): 7✅ — OpenCTI 6 step + 종합 모두 ✅
 - secuops W13 (7/7): 7✅ — OpenCTI 운영 6 step + 종합 모두 ✅
 - secuops W14 (7/7): 7✅ — MISP 6 step + 종합 모두 ✅
-- secuops W15 진행 — S1/S2/S3 ✅ (기말 APT 5 단계 중 3 단계)
-- **누적 120 step / 266 (45.1%) — 106✅ 14△ 0❌ = 88% strict** 🎯 45% 돌파
+- secuops W15 (5/5 기말): 5✅ — APT 5 단계 모두 ✅
+- 🎉 **secuops 122/122 완전 종결** (W01-W15 모두 ✅)
+- attack W01 (3/3): 3✅
+- attack W02 (3/3): 3✅
+- attack W03 (3/3): 3✅
+- attack W04 (3/3): 2✅ 1△ — S1+S2 timeout, S3 ✅
+- attack W05 진행 — S1 △ (sqlmap blind timeout)
+- **누적 135 step / 266 (50.8%) — 118✅ 17△ 0❌ = 87% strict** 🎯🎯 **50% 돌파!**
 
 ## secuops 마지막 W15 (기말 APT 5 단계) 진행 중
 - S1 Recon ✅, S2 Initial Access ✅, S3 Execution+Lateral ✅
