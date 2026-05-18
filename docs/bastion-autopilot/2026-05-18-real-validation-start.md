@@ -64,3 +64,27 @@ cycle 1-12 의 모든 mission **자연어 로 재시도** + 진짜 multi-agent f
 - 각 mission 의 진짜 채점 기준: bastion 의 (1) planning 정확성 (2) skill 선택 적절성 (3) Master 결과 분석 (4) KG 활용
 
 **1개씩 수작업, 자동화/병렬 금지**, 매 mission trace 정밀 분석 + fix.
+
+## NL-M2 — 새 문제 노출 (approval gate)
+
+**Mission**: "6v6 의 fw 방화벽 컨테이너에 설정된 nftables 규칙을 확인하고, 어떤 정책이 적용되어 있는지 요약해줘"
+
+**시간**: 약 1분 41초
+
+**trace 핵심 fail 패턴**:
+1. `skill_skip shell denied` x여러번 — default approval_callback 가 모든 shell reject
+2. `risk_warning configure_nftables high` x4 — Manager 가 "확인" mission 에 **변경 skill** 잘못 선택
+3. `precheck_fail docker_manage 10.20.30.1 unreachable` — target 추론 오류 (fw 의 docker daemon)
+4. 최종 skill 실행 0회
+
+**진단**:
+- 가장 큰 문제: **approval gate** — autopilot 모드 인데 default deny
+- Manager 의 skill 선택 정확성 — configure_nftables (변경) vs shell/probe (조회) 구분 못 함
+- target inference 의 정밀화 (docker exec 처리)
+
+**Fix 후보** (1개씩 적용 + 1 mission 재시도):
+- **fix-A**: api.py 의 default approval_callback 을 auto-approve (autopilot 모드)
+- **fix-B**: Manager system prompt 에 skill 분류 명시 (조회 vs 변경)
+- **fix-C**: target inference 정밀화
+
+NL-M1 의 docker_manage(action=ps) 만 통과한 이유 = read-only → approval gate 통과.
