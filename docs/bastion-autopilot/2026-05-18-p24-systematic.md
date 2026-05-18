@@ -32,9 +32,13 @@
   - W02 S1 (3 table 가시화) ✅ "허용 기반 nftables + drop 정책 권고"
   - W02 S2 (chain handle counter) △ "rule 단순 + counter 미표시, -a option 권고"
   - W02 S3 (iptables-translate) ✅ "iptables→nftables 변환 + 핵심 요약"
-  - W02 S4 (drop 룰 + counter) △ nft list 부분 출력, 3 retry (background timeout 의 v1/v2 + simple v3)
-- **누적 13 step (10✅ 3△ 0❌)** = 77% strict
-- **bastion latency 증가 관찰**: gpt-oss:120b 응답 시간 2분+ (background timeout 빈도 증가)
+  - W02 S4 (drop 룰 + counter) △ nft list 부분 출력
+  - W02 S5 (룰 삭제 + tcpdump) ✅ nft delete + tcpdump + sudo/디스크 한계 (direct call)
+  - W02 S6 (R/B/P 통합) ✅ nmap → drop → counter → 영구화 (충족)
+  - W02 S7 (종합 보고서) ✅ W02 6 step 통합 보고서 + iptables-translate 한계 인지
+- **secuops W02: 7/7 step 완료** — 6✅ 1△ 0❌ (86% strict)
+- **누적 16 step (13✅ 3△ 0❌)** = 81% strict
+- **bastion latency**: background timeout 빈번 → direct ssh+docker exec curl 패턴 으로 전환 (1분 29초~1분 40초/mission)
 
 ## 자동 cycle 방식
 
