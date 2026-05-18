@@ -122,3 +122,52 @@ NL-M1 의 docker_manage(action=ps) 만 통과한 이유 = read-only → approval
 | NL-M2 v2 (nftables 규칙) | docker_manage(ps) + shell 선택, 한계 인지 | △ 부분 (포트만, 룰 body 미달) |
 
 → **진짜 multi-agent flow 작동 입증**. cycle 1-12 의 가짜 71% 와 본질 다름.
+
+## NL-M3 — Manager 의 ReAct 구조 자율 생성 입증
+
+**Mission**: "6v6 의 web 컨테이너에 설치된 ModSecurity 가 활성화 되어 있는지 확인하고 결과 보고해줘"
+**시간**: 1분 16초
+
+**Manager 의 자율 ReAct 구조** (json_markdown source):
+```json
+{
+  "GOAL": "6v6 web 컨테이너에 설치된 ModSecurity 가 활성화 되어 있는지 확인",
+  "SUCCESS_CRITERIA": "ModSecurity 상태가 'enabled' 혹은 'active' 로 표시되는 출력이 확인됨",
+  "TODO": ["ModSecurity 상태 조회 (check_modsecurity) - recent logs 5줄"],
+  "tool_calls": [{"name": "check_modsecurity", "arguments": {"lines": 5}}]
+}
+```
+
+**자율 능력 입증**:
+- `check_modsecurity` specialized skill 자율 선택 (shell 이 아닌)
+- target=web (10.20.30.80) inference 정확
+- 한계 인지: "apachectl -M | grep security2 명령이 실행되지 않아 결과가 없음. 추가 명령 실행 필요"
+
+**근본 인프라 문제 노출**:
+- `precheck_fail check_modsecurity 10.20.30.80 unreachable`
+- bastion 의 IP=10.20.30.201, 라우팅: default via 10.20.30.1 (fw) + 10.20.30.0/24 직접
+- web 컨테이너는 실제로 dmz network (10.20.32.x) 에만 있음
+- INTERNAL_IPS 의 `web=10.20.30.80` 매핑은 학습용 placeholder — bastion 안에서 docker exec 호출 시 정상이지만 ping 기반 precheck 가 unreachable 판정
+
+## 다음 Fix 후보 (인프라 차원)
+
+- **fix-D**: precheck logic 완화 — 6v6-* 컨테이너 target 의 경우 ping check skip
+- **fix-E**: INTERNAL_IPS 의 web/siem 매핑을 dmz IP (10.20.32.x) 로 정정 + bastion network 에 dmz 연결
+- **fix-F**: Manager prompt 에 "INTERNAL_IPS unreachable 시 즉시 `docker exec 6v6-*` 로 wrapping 재시도" 명시
+
+## Real Validation 누적 (수작업 3 mission, 자연어 only)
+
+| # | Mission | Manager flow | semantic | fix 후 |
+|---|---------|-------------|---------|-------|
+| NL-M1 | 컨테이너 수 | docker_manage(ps) + 27 정확 + 보안 분석 | ✅ | - |
+| NL-M2 v2 | fw nftables 규칙 | docker_manage(ps) + 한계 인지 (nft list 필요) | △ | fix-A+B |
+| NL-M3 | web ModSec | check_modsecurity 자율 + ReAct 구조 + 한계 인지 | △ | - |
+
+**Manager (gpt-oss:120b) 의 핵심 능력 입증**:
+1. 자연어 → tool_calls 변환 ✅
+2. specialized skill (check_modsecurity) 자율 선택 ✅
+3. GOAL/SUCCESS/TODO/tool_calls ReAct 구조 자율 생성 ✅
+4. 보안 컨텍스트 자율 추가 (TLS 권고, Docker security) ✅
+5. 한계 인지 + 추가 명령 필요 보고 ✅
+
+**미해결**: bastion 컨테이너 의 네트워크 reachability (인프라 차원 fix 필요)
