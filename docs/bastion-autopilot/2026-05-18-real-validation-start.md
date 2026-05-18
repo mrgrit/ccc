@@ -171,3 +171,73 @@ NL-M1 의 docker_manage(action=ps) 만 통과한 이유 = read-only → approval
 5. 한계 인지 + 추가 명령 필요 보고 ✅
 
 **미해결**: bastion 컨테이너 의 네트워크 reachability (인프라 차원 fix 필요)
+
+## NL-M4 — 자산 발견 (사용자 제안, Manager autonomous discovery) ✅
+
+**Mission**: "앞으로 작업하기 위해 6v6 인프라의 현황을 자체 파악 — 컨테이너/네트워크/IP/역할"
+**시간**: 1분 27초
+
+**Manager 자율 multi-turn flow** (자율 retry 학습):
+1. ReAct 구조 자율 생성 (GOAL/SUCCESS/TODO/tool_calls)
+2. `docker_manage(ps, target=auto)` fail → 자율 retry `target=127.0.0.1` success
+3. **추가 turn**: `docker inspect --format` 4번 quote escape 시도 후 성공:
+   ```
+   docker inspect --format '{{.Name}} {{range $net, $conf := .NetworkSettings.Networks}}{{$net}} {{$conf.IPAddress}} {{end}}' $(docker ps -q)
+   ```
+
+**완전한 자산 매핑 stdout** (Manager 자율 획득):
+| Container | Network | IP | 역할 |
+|-----------|---------|-----|-----|
+| 6v6-bastion | ext | 10.20.30.201 | Bastion Master |
+| 6v6-attacker | ext | 10.20.30.202 | Red team VM |
+| 6v6-fw | ext + pipe | 10.20.30.1, 10.20.31.1 | Firewall router |
+| 6v6-ips | dmz + pipe | 10.20.32.1, 10.20.31.2 | Suricata IDS |
+| 6v6-web | dmz + int | 10.20.32.80, 10.20.40.80 | Apache + ModSec WAF |
+| 6v6-siem | dmz | 10.20.32.100 | Wazuh manager |
+| 6v6-juiceshop | int | 10.20.40.81 | OWASP Juice Shop |
+| 6v6-dvwa | int | 10.20.40.82 | DVWA |
+| ... | ... | ... | ... (27 containers) |
+
+**근본 발견** (NL-M2/M3 fail 원인):
+- **INTERNAL_IPS 매핑 잘못**: `web=10.20.30.80` 인데 실제 `10.20.32.80` (dmz)
+- bastion 이 dmz/int network 미연결 → 모든 precheck unreachable
+
+## Fix 진행 (자율)
+
+- **fix-D 코드**: docker exec 명령 + docker_manage/check_*/probe_* skill 의 precheck skip
+- **network attach**: bastion → int (10.20.40.1) + pipe (10.20.31.3) 추가 (dmz 는 gateway 충돌)
+
+## NL-M5 — Manager 자율 multi-turn + docker exec wrapping ✅
+
+**Mission**: "6v6 web ModSecurity 활성 + 룰셋 확인" (NL-M3 재시도)
+**시간**: 55초
+
+**자율 multi-turn flow**:
+1. `check_modsecurity` skill (empty output)
+2. `docker_manage(ps)` (정보 수집)
+3. **`docker_manage(action=exec, container=6v6-web, command="cat /etc/modsecurity/modsecurity.conf | grep SecRuleEngine")` 자율 wrapping**
+
+**stdout**: `SecRuleEngine On\n# when SecRuleEngine is set to DetectionOnly mode in order to minimize\n`
+
+**Manager synthesis**:
+- "**SecRuleEngine On** → ModSecurity 가 현재 **활성화** 상태임을 확인" ✅
+- OWASP CRS 권고
+- 한계 인지: 구체적 규칙셋 파일 경로/버전 추가 탐색 필요
+
+## Real Validation 누적 (자율 진행)
+
+| # | Mission (자연어) | Flow | semantic |
+|---|------------------|------|---------|
+| NL-M1 | 컨테이너 수 | docker_manage(ps) ✅ + 27 정확 + 보안 분석 | ✅ |
+| NL-M2 v2 | fw nftables | docker_manage(ps) + 한계 인지 | △ |
+| NL-M3 | web ModSec (1차) | check_modsecurity 선택 + precheck fail | ❌ infra |
+| NL-M4 | 자산 발견 | docker_manage(ps) + docker inspect 자율 retry | ✅ |
+| NL-M5 | web ModSec (재시도) | check_modsecurity → ps → exec wrapping 3-turn | ✅ |
+
+**Manager (gpt-oss:120b) autonomy 입증**:
+1. 자연어 → ReAct 구조 (GOAL/SUCCESS/TODO/tool_calls) ✅
+2. specialized skill 자율 선택 ✅
+3. fail 시 자율 retry + quote escape 학습 ✅
+4. **multi-turn 자율 wrapping** (docker_manage exec 으로 fallback) ✅
+5. 자산 발견 → 후속 mission 의 context ✅
+6. 보안 권고 + 한계 인지 ✅

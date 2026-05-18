@@ -3387,6 +3387,22 @@ class BastionAgent:
         skill_def = SKILLS.get(skill_name, {})
         target_vm = skill_def.get("target_vm", "auto")
 
+        # ★ fix-D (2026-05-18): bastion 의 ext network 만 직접 reachable.
+        #   dmz/int container 는 ping fail 이지만 docker exec/socket 호출 정상 작동.
+        #   다음 경우 precheck skip:
+        #   1) skill 이 docker daemon 기반 (docker_manage, check_*, probe_*)
+        #   2) shell command 가 docker exec/ps/logs/network/images/volume 시작
+        _docker_skills = {"docker_manage", "check_modsecurity", "check_suricata",
+                          "check_wazuh", "probe_host", "probe_all"}
+        if skill_name in _docker_skills:
+            return True, f"{skill_name} — docker socket 호출, precheck skipped (fix-D)"
+        _cmd = (params.get("command", "") or params.get("script", "") or "").strip()
+        _docker_prefixes = ("docker ", "docker exec", "docker ps", "docker logs",
+                            "docker inspect", "docker network", "docker images",
+                            "docker volume", "docker stats", "docker top")
+        if any(_cmd.startswith(p) for p in _docker_prefixes):
+            return True, "docker command — precheck skipped (fix-D)"
+
         if target_vm == "local":
             return True, "local"
 
