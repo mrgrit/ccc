@@ -2290,7 +2290,16 @@ class BastionAgent:
                             "model": self.model,
                             "messages": [{
                                 "role": "system",
-                                "content": "You convert a Korean/English security task description into ONE single shell command. Output ONLY the command, no explanation, no markdown, no quotes. If you cannot, output 'echo SKIP'."
+                                "content": (
+                                "You convert a Korean/English security task description into ONE single shell command. "
+                                "Output ONLY the command, no explanation, no markdown, no quotes. "
+                                "If you cannot, output 'echo SKIP'.\n\n"
+                                "★ CRITICAL RULES (F15 fix 2026-05-18):\n"
+                                "1. **NEVER convert container names to IPs.** If the task says `6v6-bastion`, "
+                                "`6v6-fw`, `6v6-attacker` etc — keep as-is. DO NOT replace with 127.0.0.1, 10.20.30.x, etc.\n"
+                                "2. **Preserve exact command syntax** including `docker exec`, `ssh`, quotes, pipes.\n"
+                                "3. If the task already contains a shell command after `실행:` or `Run:` — copy that command verbatim."
+                            )
                             }, {
                                 "role": "user",
                                 "content": f"Task: {message[:500]}\n\nVM IPs: {self.vm_ips}\n\nSingle shell command:"
