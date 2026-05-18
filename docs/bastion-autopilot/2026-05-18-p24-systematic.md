@@ -28,7 +28,11 @@
 
 ## 누적 통계
 - **secuops W01: 9/9 step 완료** — **8✅ 1△ 0❌** (89% strict)
-- 다음: secuops W02 진입
+- **secuops W02: 3/7 step 진행** — 2✅ 1△ 0❌
+  - W02 S1 (3 table 가시화) ✅ "허용 기반 nftables + drop 정책 권고"
+  - W02 S2 (chain handle counter) △ "rule 단순 + counter 미표시, -a option 권고"
+  - W02 S3 (iptables-translate) ✅ "iptables→nftables 변환 + 핵심 요약"
+- **누적 12 step (10✅ 2△ 0❌)** = 83% strict
 
 ## 자동 cycle 방식
 
