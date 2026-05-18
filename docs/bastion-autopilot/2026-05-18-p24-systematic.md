@@ -32,7 +32,9 @@
   - W02 S1 (3 table 가시화) ✅ "허용 기반 nftables + drop 정책 권고"
   - W02 S2 (chain handle counter) △ "rule 단순 + counter 미표시, -a option 권고"
   - W02 S3 (iptables-translate) ✅ "iptables→nftables 변환 + 핵심 요약"
-- **누적 12 step (10✅ 2△ 0❌)** = 83% strict
+  - W02 S4 (drop 룰 + counter) △ nft list 부분 출력, 3 retry (background timeout 의 v1/v2 + simple v3)
+- **누적 13 step (10✅ 3△ 0❌)** = 77% strict
+- **bastion latency 증가 관찰**: gpt-oss:120b 응답 시간 2분+ (background timeout 빈도 증가)
 
 ## 자동 cycle 방식
 
