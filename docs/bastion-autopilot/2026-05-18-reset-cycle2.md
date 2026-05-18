@@ -73,8 +73,59 @@
 
 → F7 fix 는 robust (skill execution 보장), F8 fix 는 효과 미미 (LLM 한계).
 
+## F10 fix 추가 적용 (cycle 2 후반)
+
+`kg_context.py` 의 `find_anchors` 결과에 keyword overlap filter 추가:
+```python
+_msg_kws = set(k.lower() for k in _short_keywords(message, max_kws=5))
+if _msg_kws:
+    def _has_overlap(anc): ...
+    result["anchors"] = [a for a in result["anchors"] if _has_overlap(a)]
+```
+
+### Mission M28-M32 결과
+
+| # | Mission | F8/F10 효과 | 결과 |
+|---|---------|-------------|-----|
+| M28 | F10 검증 — fw ip addr show (M27 재시도) | F10 미작동 | ❌ KG anchor "fw/ip/addr" 너무 흔해 filter 효과 X. LLM 응답으로 직접 IP 추출 + skill 미실행 |
+| M29 | fw uname -r (단순) | F8 효과 ✅ | ✅ "5.15.0-177-generic" 정확 인용 + 한국어 평문 결론 |
+| M30 | fw ip route show head -5 | F8 효과 ✅ | ✅ 5 라우트 모두 정확 인용 |
+| M31 | Ollama tags (외부 IP) | F7 정직 보고 ✅ | △ target inference 잘못 (attacker → 외부 IP 접근 불가). 도구 실패 정직 보고 |
+| M32 | fw uptime | F10 미작동 | ❌ KG hit=3 → 일반론 응답, skill 미실행 |
+
+## 누적 통계 (reset cycle 1+2 = 32 mission)
+
+| 단계 | PASS | △ | ❌ |
+|------|-----|---|---|
+| cycle 1 M1-M2 (F7 전) | 0 | 0 | 2 |
+| cycle 1 M3-M23 (F7 후) | 15 | 5 | 1 |
+| cycle 2 M24-M27 (F8 후) | 0 | 1 | 3 |
+| cycle 2 M28-M32 (F10 후) | 2 | 1 | 2 |
+| **누적** | **17/32 (53%) strict** | **7** | **8** |
+
+- F7 = robust skill execution 보장 ✅
+- F8 = gemma3:4b instruction-following 한계로 효과 미미
+- F10 = keyword overlap 너무 느슨해 효과 미미 (M28, M32)
+
+## 핵심 통찰 (reset cycle 1+2 정리)
+
+### LLM (gemma3:4b) 의 hallucination 패턴 (코드 fix 영역)
+1. PID 숫자 → "개수" 미스해석 (M13, M24)
+2. HTTP 200 + "차단" 모순 (M15)
+3. banner-only output → "결과 확인" 가짜 결론 (M23, M26)
+4. json tool-call format 만 + 결론 없음 (M9, M25)
+
+### KG context 의 noise 패턴
+1. anchor 가 흔한 keyword (fw/ip) 매칭 → 무관한 응답 유도 (M19, M27, M28, M32)
+2. LLM 이 KG context 만 보고 skill 미호출 → punt 미트리거
+
+### 진짜 fix 후보
+- **F9 (multi-agent review)**: Manager (gpt-oss:120b) 가 SubAgent (gemma3:4b) 응답 review/correct. paper §4 의 아키텍처 활용
+- **F11 (post-process)**: stream 종료 후 regex 로 hallucination 검출 → 재호출
+- **F12 (skill-first 강제)**: KG context 가 hit 가 있어도 skill_start 강제 (LLM 의 short-circuit 차단)
+
 ## 다음 cycle (3)
 
-- F11 (post-process) 시도 — hallucination 검출 시 재호출 hard-code
-- 또는 multi-agent (F9) 의 더 정밀 검토
-- W04~W15 mission 더 진행
+- F12 시도 (skill 강제) — 가장 robust 한 path
+- 또는 F11 (post-process)
+- 진짜 paper-grade fix 는 F9 (multi-agent) 인데 별도 큰 작업

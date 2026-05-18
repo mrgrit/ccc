@@ -196,6 +196,20 @@ class KGContextBuilder:
                         break
             result["anchors"] = [self._summarize_anchor(a) for a in anchors[:5]]
 
+            # ★ F10 fix (2026-05-18 reset cycle 2 의 M19/M27 분석):
+            #   find_anchors 가 label_like LIKE 검색 → 무관한 anchor inject 가능.
+            #   message keyword 와 anchor label/body 의 overlap 0 이면 제거.
+            _msg_kws = set(k.lower() for k in _short_keywords(message, max_kws=5))
+            if _msg_kws:
+                def _has_overlap(anc: dict) -> bool:
+                    text = (
+                        (anc.get("label") or "") + " " +
+                        (anc.get("body") or "") + " " +
+                        (anc.get("kind") or "")
+                    ).lower()
+                    return any(kw in text for kw in _msg_kws)
+                result["anchors"] = [a for a in result["anchors"] if _has_overlap(a)]
+
         result = self._apply_budget(result, budget)
 
         took_ms = int((time.time() - t0) * 1000)
