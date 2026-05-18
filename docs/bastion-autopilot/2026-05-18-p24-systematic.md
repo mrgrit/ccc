@@ -79,8 +79,13 @@
 - attack W02 (3/3): 3✅
 - attack W03 (3/3): 3✅
 - attack W04 (3/3): 2✅ 1△ — S1+S2 timeout, S3 ✅
-- attack W05 진행 — S1 △ (sqlmap blind timeout)
-- **누적 135 step / 266 (50.8%) — 118✅ 17△ 0❌ = 87% strict** 🎯🎯 **50% 돌파!**
+- attack W05 (3/3): 2✅ 1△ — S1 △ timeout, S2/S3 ✅
+- attack W06 (3/3): 3✅
+- attack W07 (3/3): 3✅
+- attack W08 (3/3): 3✅
+- attack W09 (3/3): 3✅
+- attack W10 진행 — S1 ✅
+- **누적 150 step / 266 (56.4%) — 133✅ 17△ 0❌ = 89% strict** 🎯 attack 절반 + KG-2 Reuse 안정
 
 ## secuops 마지막 W15 (기말 APT 5 단계) 진행 중
 - S1 Recon ✅, S2 Initial Access ✅, S3 Execution+Lateral ✅
