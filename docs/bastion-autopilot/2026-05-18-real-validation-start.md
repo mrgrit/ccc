@@ -838,3 +838,44 @@ signature_id: 1000005, signature: "6V6 Possible nmap SYN scan"
 | PenTest (Recon→Exploit→Report) | NL-M19/M20/M21 | ✅ |
 | 학생 평가 시나리오 | NL-M22 | ✅ |
 | Manager 자율 multi-step | NL-M24 | ✅ |
+
+## NL-M25 — CTF Challenge (LFI 자율 시도) △
+
+**Mission**: "attacker 에서 6v6-dvwa /etc/passwd 를 path traversal/LFI 로 읽기"
+**시간**: 1분 10초+
+
+**Manager autonomous multi-strategy** (CTF 인증 우회 시도):
+1. `curl ?page=../../../etc/passwd` → 404 (DVWA path 잘못)
+2. retry → 404 (path 학습)
+3. retry `/vulnerabilities/fi/` → 302 인증 redirect
+4. **자율 로그인 시도**: `curl -d "username=admin&password=password" -c cookies.txt login.php`
+5. **자율 cookie 사용**: `curl -b cookies.txt vulnerabilities/fi/?page=...` → 302 (여전 인증 fail)
+
+**△ semantic**: 자율 multi-step CTF 능력 ✅, DVWA CSRF token 의 복잡성으로 진짜 LFI 미완. 학생 CTF 시나리오 의 reasoning ability 입증.
+
+## NL-M26 — Defense Rule 자동 생성 (진행 중)
+
+**Mission**: "nikto 스캔 받음 → ModSec SecRule 1개 작성 제안 + 설명"
+**시간**: 50초+
+
+**Manager autonomous**:
+1. check_modsecurity → 현재 ModSec 상태 + Nikto attack log 분석
+2. Manager 가 SecRule 자율 작성 중 (synthesis)
+
+**Manager 의 defense rule 생성 능력** = 학생 SOC 운영자 시나리오 의 핵심 (incident → custom rule).
+
+## Real Validation 26 mission 누적
+
+| # | Mission | Result |
+|---|---------|--------|
+| NL-M1~M24 | (이전 박제) | 17✅ 4△ 3❌ |
+| NL-M25 | CTF LFI 자율 시도 | △ |
+| NL-M26 | Defense Rule 생성 | (진행 중) |
+
+**Strict PASS = 17/25 = 68%** (M26 진행 중 제외).
+
+## Memory 박제 (2026-05-18 real validation 종료)
+
+위 모든 내용 → memory 파일 2개 박제:
+- `project_bastion_autopilot_real_validation.md` — 24 mission 진짜 검증 + fix 6종 + autonomy 14종
+- `feedback_bastion_natural_language_only.md` — shell wrapping 금지 룰
