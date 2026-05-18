@@ -70,8 +70,11 @@
 - secuops W09 (10/10): 10✅ — S1-S10 모두 ✅
 - secuops W10 (10/10): 10✅ — Wazuh dashboard 9 step + 종합 모두 ✅
 - secuops W11 (7/7): 6✅ 1△ — S5 (R/B/P reverse shell) △ timeout
-- secuops W12 진행 — S1-S4 모두 ✅
-- **누적 100 step / 266 (37.6%) — 86✅ 14△ 0❌ = 86% strict** 🎉 100 mission 돌파
+- secuops W12 (7/7): 7✅ — OpenCTI 6 step + 종합 모두 ✅
+- secuops W13 진행 — S1-S3 모두 ✅
+- **누적 106 step / 266 (39.8%) — 92✅ 14△ 0❌ = 87% strict** (40% 직전)
+
+## KG-2 Reuse 9회 누적 (W12 S7 → W13 S1 = 9번째 cross-week)
 
 ## KG-2 Reuse 8회 확정 (P24)
 | pair | anchor_id | reuse 종류 |
