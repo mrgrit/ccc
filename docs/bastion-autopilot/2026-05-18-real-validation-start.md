@@ -373,3 +373,51 @@ NL-M1 의 docker_manage(action=ps) 만 통과한 이유 = read-only → approval
 | KG 활용 | △ (sim threshold 만) | ✅ anchor record + reuse |
 
 **결론**: real validation (NL-M1~M8) = paper §4 의 PE-KG + Manager-SubAgent + R/B/P 시나리오 의 **첫 진짜 입증**.
+
+## NL-M9~M11 — XSS, KG reuse, RCE multi-strategy
+
+### NL-M9 (Red XSS DVWA)
+- Manager 자율: `curl http://10.20.40.82/vulnerabilities/xss_r/?search=<script>...` → HTTP 302 (DVWA 인증 redirect)
+- 추가 turn: log path 탐색 (modsec_audit.log 발견) 학습
+- **△ semantic**: 302=인증 redirect 를 ModSec 차단으로 잘못 해석 (DVWA 의 인증 우회 필요)
+
+### NL-M10 (KG-2 reuse 검증)
+- NL-M6 v2 와 동일 mission 의 paraphrase 재호출
+- **lookup_decision: new, sim=0.565 < 0.7** → reuse 미발생
+- **검증**: KG-2 reuse threshold 0.7 의 boundary 정확 — paraphrase 만으로는 reuse 안 됨
+- 도구 실행은 정상 (403 Forbidden 정확)
+
+### NL-M11 (Red nikto + Suricata)
+- Manager 자율 multi-strategy:
+  1. `timeout 10 nikto -h http://10.20.32.80/` → fail (nikto 미설치 in bastion)
+  2. 자율 fallback: `apt-get install nikto` → fail
+  3. 자율 fallback: `web_scan` skill → success (header only)
+  4. 자율 fallback: `docker exec 6v6-attacker apt-get install nikto` → timeout
+- **△ semantic**: nikto 환경 부재 — Manager 의 자율 retry strategy 4종은 입증 ✅
+
+## Manager autonomy 추가 검증
+
+| 능력 | 입증 mission | 결과 |
+|------|------------|-----|
+| KG-2 reuse threshold | NL-M10 (sim=0.565 < 0.7) | boundary 정확 ✅ |
+| Multi-strategy fallback | NL-M11 (4 strategies sequential) | ✅ |
+| Log path exploration | NL-M9 (modsec_audit.log find) | ✅ |
+| 인증 redirect vs WAF 차단 구분 | NL-M9 | ❌ (302 잘못 해석) |
+
+## Real Validation 누적 11 mission (cycle 1-12 가짜 폐기 후)
+
+| # | Mission | Result |
+|---|---------|--------|
+| NL-M1 | 컨테이너 수 | ✅ |
+| NL-M2 v2 | nftables | △ |
+| NL-M3 | ModSec 1차 | ❌ infra |
+| NL-M4 | 자산 발견 | ✅ |
+| NL-M5 | ModSec 재시도 | ✅ |
+| NL-M6 v2 | Red SQLi 403 | ✅ |
+| NL-M7 | Blue Suricata alert | ✅ |
+| NL-M8 | Purple Wazuh SIEM | ✅ |
+| NL-M9 | XSS DVWA | △ |
+| NL-M10 | KG reuse boundary | ✅ (threshold 검증) |
+| NL-M11 | nikto multi-strategy | △ |
+
+**Strict PASS = 7/11 = 64%** (vs cycle 1-12 의 가짜 71% — 본질 다름).
