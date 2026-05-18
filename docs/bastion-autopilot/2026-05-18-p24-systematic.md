@@ -64,9 +64,16 @@
 - secuops W04 (8/8): 7✅ 1△ (S2-S8 모두 ✅)
 - secuops W05 (10/10): 10✅ 0△ — S1-S10 모두 ✅
 - secuops W06 (10/10): 5✅ 5△ — S1/S2/S8/S9/S10 ✅, S3/S4/S5/S6/S7 △ (cross-VM + ModSec mission timeout 180s/240s)
-- secuops W07 (6/10 진행) — S2/S3/S4/S5/S6 ✅, S1 △
-  - **KG-2 Reuse 2회 더 확정**: W07 S2-S3 (anc-bf81de37beee 공유), W07 S4-S5 (anc-f4aca0b0cd4c 공유)
-- **누적 60 step / 266 (22.6%) — 47✅ 13△ 0❌ = 78% strict**
+- secuops W07 (10/10): 9✅ 1△ — S1 △ timeout, S2-S10 ✅
+  - **KG-2 Reuse 4회 확정**: W07 S2-S3 (anc-bf81de37beee), S4-S5 (anc-f4aca0b0cd4c), S7-S8 (anc-779fd190229f), S9-S10 (anc-66bf3a89c325)
+- secuops W08 (5/5 중간고사): 5✅ — S1/S2/S5 = anchor `anc-66bf3a89c325` 공유 (cross-week Reuse!)
+- secuops W09 (6/10 진행): S1-S6 모두 ✅
+- **누적 75 step / 266 (28.2%) — 62✅ 13△ 0❌ = 83% strict**
+
+## KG-2 Reuse 실 작동 증거 종합 (P24)
+- W07 S2-S3, S4-S5, S7-S8, S9-S10 (4회) — 같은 anchor_id 공유
+- W08 S1+S2+S5 — W07 S10 anchor 와 동일 (**cross-week 의 5번째**)
+- 총 **5+회 reuse 확정** — paper §4 의 PE-KG Reuse 실 작동 강한 증거
 
 ## bastion latency 추세
 - W06 부터 응답 시간 증가 (3분+ timeout 빈번)
