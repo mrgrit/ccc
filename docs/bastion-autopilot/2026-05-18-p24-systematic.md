@@ -62,7 +62,17 @@
 - secuops W02 (7/7): 6✅ 1△
 - secuops W03 (10/10): 6✅ 4△
 - secuops W04 (8/8): 7✅ 1△ (S2-S8 모두 ✅)
-- **누적 34 step / 266 (12.8%) — 27✅ 7△ 0❌ = 79% strict**
+- secuops W05 (10/10): 10✅ 0△ — S1-S10 모두 ✅
+- secuops W06 진행 — S1 ✅ (modsec 6 키 + CRS), S2 ✅ (audit log JSON), S3 △ (XSS empty)
+- **누적 47 step / 266 (17.7%) — 39✅ 8△ 0❌ = 83% strict**
+
+## 데드락 사고 (21:18 회복)
+- bngy8mz5m: `grep -q 'bjhc6c1gb'` 가 grep 자식 process self-match → 무한 loop
+- b118imjsp: `pgrep -f 'step_order.*45'` 가 bngy8mz5m process command line 안의 `step_order:45` string self-match → 무한 loop
+- **원인**: background script 의 wait loop 가 자기 자신을 잡음
+- **해결**: wait loop 제거. bastion chat API 가 GPU 직렬 queue → 단순 `;` sequential 로 충분
+- 21:24 bpa2w2ikd kill+restart 성공 (S2 ✅ S3 △)
+- **이후 wait loop 사용 금지 룰 박제**
 
 ## 자동 cycle 방식
 
