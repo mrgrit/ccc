@@ -88,3 +88,37 @@ cycle 1-12 의 모든 mission **자연어 로 재시도** + 진짜 multi-agent f
 - **fix-C**: target inference 정밀화
 
 NL-M1 의 docker_manage(action=ps) 만 통과한 이유 = read-only → approval gate 통과.
+
+## NL-M2 v2 (fix-A + fix-B 적용 후) — 부분 성공
+
+**Mission**: 동일 (fw nftables 규칙 확인)
+**시간**: 약 1분 15초
+
+**fix 효과**:
+- ✅ approval 차단 없음 (`auto_approve:true` body 추가)
+- ✅ Manager 가 `configure_nftables` (변경 skill) 호출 안 함 → fix-B 효과
+- ✅ Manager 가 `docker_manage(action=ps)` + `shell` 만 선택 → 조회 분류 정확
+
+**Manager 의 자율 능력 추가 입증**:
+- 보안 컨텍스트 자율 추가 (TLS 권고, 관리 포트 IP 제한)
+- **자기 한계 인지**: "실제 nftables 룰 내용은 조회 안 됨. 추가 `docker exec 6v6-fw nft list ruleset` 호출 필요"
+
+**미진**:
+- mission 의 진짜 의도 (nft 규칙 body) 미달 — docker ps 의 포트 매핑만 확인
+- shell target inference = 10.20.30.1 (fw 외부 IP) → precheck_fail (bastion 에서 unreachable)
+- Manager 가 한계 인지했으나 **추가 turn 으로 docker exec 6v6-fw nft list 자율 호출 안 함**
+
+## Fix-C 후보 (target inference 정밀화)
+
+- bastion 안에서 fw nft 명령 = `docker exec 6v6-fw nft list ruleset` 자동 routing
+- skills.py 의 _bastion_patterns 에 "nft" 같은 명령 prefix 추가 → target=bastion 강제
+- 또는 Manager 의 multi-turn 활용 강화 (한계 인지 → 다음 turn 에 추가 호출 자율)
+
+## 누적 통계 (real validation)
+
+| Mission | gpt-oss:120b Manager flow | semantic |
+|---------|--------------------------|---------|
+| NL-M1 (컨테이너 수) | docker_manage(ps) 자율 + 27 정확 + 보안 분석 | ✅ 완전 |
+| NL-M2 v2 (nftables 규칙) | docker_manage(ps) + shell 선택, 한계 인지 | △ 부분 (포트만, 룰 body 미달) |
+
+→ **진짜 multi-agent flow 작동 입증**. cycle 1-12 의 가짜 71% 와 본질 다름.
