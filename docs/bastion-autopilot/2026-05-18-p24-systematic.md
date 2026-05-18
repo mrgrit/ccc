@@ -40,6 +40,12 @@
 - **누적 16 step (13✅ 3△ 0❌)** = 81% strict
 - **bastion latency**: background timeout 빈번 → direct ssh+docker exec curl 패턴 으로 전환 (1분 29초~1분 40초/mission)
 
+### secuops W03 (NAT 학습 — 10 step)
+- W03 S1 (NAT baseline 4 chain) ✅ "DNS 한정 최소 권한 NAT, 추가 취약점 없음"
+- W03 S2 (DNAT 8888 + conntrack) ✅ "inet/ip 네임스페이스 혼용 오류 인지 + 재검증 권고"
+
+**누적 18 step (15✅ 3△ 0❌) = 83% strict**
+
 ## 자동 cycle 방식
 
 - 매 wake 시 1-3 step 진행
