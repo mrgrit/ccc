@@ -21,10 +21,13 @@
 | W01 | S3 (fw nftables + HAProxy 6 backend) | "nftables 룰셋 + 6 backend (juice/dvwa/neobank/...) 매핑" | ✅ HAProxy backend + WAF 적용 + portal/dashboard WAF 우회 분석 |
 | W01 | S4 (ips Suricata 2 NIC) | "Suricata eth0/eth1 sniff + eve.json event 통계" | ✅ 2 NIC + alert 통계 + 샘플링/false-positive 한계 인지 |
 | W01 | S5 (web Apache + ModSec + 11 vhost) | "Apache + ModSec 동작 + 11 vhost 설정" | ✅ ps + apachectl 대체 + 11 vhost 확인 + systemctl 부재 한계 인지 |
-| ... | ... | ... | (진행 중) |
+| W01 | S6 (Wazuh manager + 3 agent) | "siem Wazuh 데몬 + fw/ips/web agent 연결" | ✅ Wazuh 데몬 정상 + 3 agent 모두 연결 |
+| W01 | S7 (Red: attacker → juice 공격) | "attacker → juice sqlmap+XSS 공격 + 차단" | ✅ 차단 분석 + 한계 인지 (POST/인코딩 우회) |
+| W01 | S8 (Blue: HAProxy + eve.json 추적) | "fw HAProxy + ips eve.json 공격 기록" | △ HAProxy log 컨테이너 부재 정직 보고 |
+| W01 | S9 (Purple: 종합 평가) | (background bwy4bunu0 진행 중) | - |
 
 ## 누적 통계
-- secuops W01: 5/9 step 완료, 5✅ 0△ 0❌
+- **secuops W01: 8/9 step 완료** — 7✅ 1△ 0❌
 
 ## 자동 cycle 방식
 
