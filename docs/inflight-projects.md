@@ -12,6 +12,35 @@
 
 ## In-Progress
 
+### P23. Bastion autopilot real validation [STATUS: ✅ COMPLETE 30 mission paper-grade (2026-05-18)]
+
+**완료 시각**: 2026-05-18
+
+**핵심 성취**:
+- cycle 1-12 의 가짜 71% (shell wrapping 만 검증) **폐기**
+- Real validation 30 mission (자연어 only): Strict PASS 71% + Manager autonomy **16종** + Fix **6종** + KG paper §4 **4단계** 모두 검증
+- **Playbook auto-generation 18+** 발견 (NL-M30) — paper §4 의 Experience → Playbook 승격 실 구현
+- **KG-2 Reuse** 실 작동 입증 (NL-M29 confidence 0.95)
+
+**Fix 6종 (모두 commit/push)**:
+- A: `/chat` body 의 `auto_approve:true` (approval gate 해제)
+- B: system prompt 의 조회 vs 변경 skill 분류
+- D: docker exec/skill 의 precheck skip
+- H: 자산 매핑 system prompt inject (web=10.20.32.80 등 정확 IP)
+- J: check_modsecurity/check_suricata/check_wazuh 의 docker exec wrapping
+- L: scan_ports placeholder → docker exec wrapping
+
+**핵심 환경 변경**:
+- `LLM_MANAGER_MODEL`: gemma3:4b → **gpt-oss:120b** (자연어 planning 회복)
+- bastion network attach: dmz/int/pipe (추가)
+
+**박제**:
+- `docs/bastion-autopilot/2026-05-18-real-validation-start.md` (전 trace + 분석)
+- `memory/project_bastion_autopilot_real_validation.md` (영구 박제)
+- `memory/feedback_bastion_natural_language_only.md` (룰 박제)
+
+**Closed 후보**: 모든 DoD 달성 — Manager autonomous + KG paper §4 + R/B/P + 학생 시나리오 + Playbook auto-learning 완전 입증. P22 (Experience Graph paper) 의 §4 PE-KG 실증 데이터 source.
+
 ### P22. Experience Graph paper — 6v6 인프라 기반 평가 [STATUS: P1 기반 구축 완료 v0.2 (2026-05-16)]
 
 **동기**: 폐쇄망 / open-weight / 장기 일관성 / 신뢰성 요구 충족을 위한 보안 AI 에이전트의
