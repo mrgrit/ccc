@@ -2374,9 +2374,13 @@ class BastionAgent:
             # bastion-autopilot cycle 1 (2026-05-18) 발견: skill_result success=false
             # 인데 LLM 이 "출력 결과 (예상):" 같은 가짜 example 생성 (학습 가치 0 +
             # 운영 위험). _synth_prompt 에 명시적 anti-hallucination 룰 추가.
+            # ★ F7 fix (2026-05-18 reset cycle 1): turn_traces 는 content/thinking 만
+            #   저장 (line 2015) — success/output 미저장. 결과적으로 _any_skill_ok 항상
+            #   false → 도구 성공 시 에도 "도구 실행 실패" prompt branch → LLM 가짜 보고.
+            #   all_tool_outputs (line 2318 등) 가 진짜 success/output source.
             _any_skill_ok = any(
-                (tr.get("success") and (tr.get("output") or "").strip())
-                for tr in (turn_traces or [])
+                (to.get("success") and (to.get("output") or "").strip())
+                for to in (all_tool_outputs or [])
             )
             if _any_skill_ok:
                 _synth_prompt = (
