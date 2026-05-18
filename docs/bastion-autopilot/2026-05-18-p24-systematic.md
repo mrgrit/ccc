@@ -69,8 +69,23 @@
 - secuops W08 (5/5 중간고사): 5✅ — S1/S2/S5 = anchor `anc-66bf3a89c325` 공유 (cross-week Reuse!)
 - secuops W09 (10/10): 10✅ — S1-S10 모두 ✅
 - secuops W10 (10/10): 10✅ — Wazuh dashboard 9 step + 종합 모두 ✅
-- secuops W11 진행 — S1 ✅ (sysmon)
-- **누적 90 step / 266 (33.8%) — 77✅ 13△ 0❌ = 86% strict**
+- secuops W11 (7/7): 6✅ 1△ — S5 (R/B/P reverse shell) △ timeout
+- secuops W12 진행 — S1-S4 모두 ✅
+- **누적 100 step / 266 (37.6%) — 86✅ 14△ 0❌ = 86% strict** 🎉 100 mission 돌파
+
+## KG-2 Reuse 8회 확정 (P24)
+| pair | anchor_id | reuse 종류 |
+|------|-----------|-----------|
+| W07 S2-S3 | anc-bf81de37beee | intra-week |
+| W07 S4-S5 | anc-f4aca0b0cd4c | intra-week |
+| W07 S7-S8 | anc-779fd190229f | intra-week |
+| W07 S9-S10 | anc-66bf3a89c325 | intra-week |
+| W07 S10 → W08 S1+S2+S5 | anc-66bf3a89c325 | **cross-week** |
+| W11 S2-S3 | anc-bfeaa68a3474 | intra-week |
+| W11 S6-S7 | anc-81c8f5391c16 | intra-week |
+| W11 S7 → W12 S1+S2 | anc-81c8f5391c16 | **cross-week** |
+
+= 5+ 회 intra-week + 3+ 회 cross-week. paper §4 PE-KG Reuse 강한 실 작동 증거.
 
 ## bastion latency 회복 추세 (W07 부터)
 - W07 부터 응답 시간 40-100s 로 안정화 (W06 의 3분+ timeout 추세 반전)
