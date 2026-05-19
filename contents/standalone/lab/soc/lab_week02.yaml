@@ -23,23 +23,25 @@ steps:
 
   - order: 1
     instruction: |
-      ## 🎯 MISSION — fw 의 syslog 5 필드 추출
+      ## 🎯 MISSION — siem 의 sshd.log 5 필드 추출
 
-      **어디서:** bastion → ssh 6v6-fw
-      **무엇을:** /var/log/syslog 의 최근 5 line 추출 + 각 line 의 5 필드 (timestamp / host / facility.severity / process / message) 의 위치 표시.
+      **어디서:** bastion → ssh 6v6-siem
+      **무엇을:** /var/log/sshd.log 의 최근 5 line 추출 + 각 line 의 5 필드 (timestamp / host / process / pid / message) 의 위치 표시.
+
+      💡 6v6 fw/web/ips 는 **minimal Docker 컨테이너** (rsyslog daemon X, systemd X) 라 일반 /var/log/syslog 부재. siem (Amazon Linux 2023) 의 sshd.log 가 가용.
 
       ## 📋 채점
       - 5 line 추출
       - 5 필드 mapping
-      - RFC 형식 (3164 vs 5424) 판정
-    hint: "tail -5 /var/log/syslog 또는 journalctl -n 5. 일반 syslog format: 'Month Day HH:MM:SS host process[pid]: msg'."
+      - RFC 형식 (3164) 판정
+    hint: "ssh 6v6-siem 'tail -5 /var/log/sshd.log'. 일반 syslog format: 'Month Day HH:MM:SS host process[pid]: msg'."
     category: log_basics
     points: 10
     answer: |
       🤖 가이드:
-      ssh 6v6-fw 'tail -5 /var/log/syslog 2>/dev/null || journalctl -n 5 --no-pager'
+      ssh 6v6-siem 'tail -5 /var/log/sshd.log'
     answer_detail: |
-      대부분 Linux = RFC3164 (BSD format). RFC5424 = 구조화 (severity priority 명시). 6v6 의 fw 컨테이너 = Ubuntu — RFC3164.
+      6v6 의 컨테이너 들 = rsyslog 없는 minimal Docker — /var/log/syslog 부재. 가용 인증 log = siem 의 sshd.log (Amazon Linux 2023 의 systemd 호환 형식).
     verify:
       intent: "fw syslog 5 line + 5 필드 + RFC 판정"
       success_criteria:
@@ -55,22 +57,23 @@ steps:
 
   - order: 2
     instruction: |
-      ## 🎯 MISSION — auth.log 의 sshd 이벤트 5 패턴 식별
+      ## 🎯 MISSION — siem sshd.log 의 sshd 이벤트 5 패턴 식별
 
-      **무엇을:** fw 또는 attacker 컨테이너 의 /var/log/auth.log 에서 sshd 의 5 패턴 (Accepted / Failed password / Disconnect / session opened / Invalid user) 각각 발생 횟수 + 1 예제 인용.
+      **어디서:** ssh 6v6-siem (auth.log 대신 /var/log/sshd.log)
+      **무엇을:** sshd 의 5 패턴 (Accepted / Disconnect / Received disconnect / publickey / Connection closed) 각각 발생 횟수 + 1 예제.
 
       ## 📋 채점
       - 5 패턴 모두 grep
       - 각 의 발생 횟수
       - 1 예제 인용
-    hint: "grep -c 'Accepted\\|Failed\\|Disconnect\\|session opened\\|Invalid' /var/log/auth.log. 각 grep -m1 ... 예제."
+    hint: "ssh 6v6-siem 'for p in Accepted Disconnect ...; do grep -c \"$p\" /var/log/sshd.log; done'."
     category: log_basics
     points: 10
     answer: |
       🤖 가이드:
-      ssh 6v6-fw 'for p in Accepted "Failed password" Disconnect "session opened" "Invalid user"; do
-        c=$(grep -c "$p" /var/log/auth.log 2>/dev/null)
-        ex=$(grep -m1 "$p" /var/log/auth.log 2>/dev/null | head -c 100)
+      ssh 6v6-siem 'for p in Accepted "Received disconnect" Disconnected publickey "Connection closed"; do
+        c=$(grep -c "$p" /var/log/sshd.log 2>/dev/null)
+        ex=$(grep -m1 "$p" /var/log/sshd.log 2>/dev/null | head -c 100)
         echo "[$p] count=$c | $ex"
       done'
     answer_detail: |
@@ -90,19 +93,21 @@ steps:
 
   - order: 3
     instruction: |
-      ## 🎯 MISSION — journald 로 systemd unit 의 최근 상태
+      ## 🎯 MISSION — daemon 의 최근 상태 (Wazuh manager)
 
-      **무엇을:** 한 컨테이너 의 systemd unit (예: sshd 또는 rsyslog) 의 최근 10 line + unit 의 active 상태.
+      **무엇을:** siem 의 wazuh-control status + 7+ daemon 의 active 상태 + Top 3 cpu/mem (ps 또는 top).
+
+      💡 6v6 컨테이너 = systemd 미사용 → journalctl 대신 ps + wazuh-control 의 native 명령.
 
       ## 📋 채점
-      - 1+ unit 의 status + 최근 10 line
-      - active/inactive/failed 판정
-    hint: "systemctl status <unit> 또는 journalctl -u <unit> -n 10."
+      - 7+ daemon active 확인
+      - 1+ daemon 의 process 정보
+    hint: "ssh 6v6-siem '/var/ossec/bin/wazuh-control status; ps aux | grep wazuh | head -5'."
     category: log_basics
     points: 8
     answer: |
       🤖 가이드:
-      ssh 6v6-fw 'systemctl status rsyslog 2>&1 | head -10; echo ---; journalctl -u rsyslog -n 5 --no-pager 2>&1 | tail -5'
+      ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control status 2>&1 | grep "is running" | head -10; ps aux | grep wazuh | head -5'
     answer_detail: |
       journald = systemd 의 통합 로그. journalctl 의 -u (unit) / --since / --priority filter. 운영 환경 의 daemon 상태 의 1 차 진단.
     verify:

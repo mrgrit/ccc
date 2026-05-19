@@ -19,17 +19,23 @@ steps:
 
   - order: 1
     instruction: |
-      ## 🎯 MISSION — HAProxy access log 분석
+      ## 🎯 MISSION — Wazuh alerts.json (가용 main log) 의 web 분류
 
-      **무엇을:** fw 의 HAProxy log (/var/log/haproxy.log 또는 syslog 의 haproxy) 최근 5 line 추출 + vhost / backend / response code / 시간 필드 mapping.
-    hint: "ssh 6v6-fw 'tail -20 /var/log/haproxy.log 2>/dev/null || grep haproxy /var/log/syslog | tail -5'."
+      **무엇을:** siem 의 /var/ossec/logs/alerts/alerts.json 최근 100 alert 중 web 관련 (agent.name=web 또는 rule.groups=web*) 의 5 sample.
+
+      💡 6v6 fw 는 minimal 컨테이너 — /var/log/haproxy.log 부재. 대신 *모든* network alert 가 siem 의 alerts.json 으로 모임 — SOC 의 진짜 단일 진입점.
+
+      ## 📋 채점
+      - 5 sample 추출
+      - 각 의 agent + rule.id + 시간
+    hint: "ssh 6v6-siem 'tail -100 /var/ossec/logs/alerts/alerts.json | grep -E \"web\\|agent.*web\" | head -5'."
     category: log_analysis
     points: 10
     answer: |
       🤖 가이드:
-      ssh 6v6-fw 'tail -10 /var/log/haproxy.log 2>/dev/null || grep -i haproxy /var/log/syslog 2>/dev/null | tail -10'
+      ssh 6v6-siem 'sudo tail -200 /var/ossec/logs/alerts/alerts.json | jq -c "select(.agent.name==\"web\" or (.rule.groups // []) | tostring | contains(\"web\")) | {time: .timestamp, agent: .agent.name, rule: .rule.id, desc: .rule.description}" 2>/dev/null | head -5'
     answer_detail: |
-      HAProxy default log format: timestamp src_ip:port [frontend backend] [request_time/queue/response_time] code+size method+url.
+      SOC 의 핵심 = SIEM 단일 진입점. 모든 web/network alert 가 alerts.json 에 모임. fw 의 HAProxy log 는 별도 access — 운영 환경 에서는 보통 docker logs / external collector 로 수집.
     verify:
       intent: "HAProxy 5 line + 필드 mapping"
       success_criteria:
