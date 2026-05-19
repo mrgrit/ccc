@@ -1,277 +1,1397 @@
 lab_id: standalone-soc-week01
-title: "SOC 개론 — 6v6 SOC stack 데이터 흐름 + Wazuh dashboard 첫 접속 + L1 트리아지 시뮬 (6v6 + R/B/P)"
+title: 보안관제(SOC) 개론 + 6v6 SOC stack 데이터 흐름 + L1 트리아지 + R/B/P 통합 시나리오
 version: standalone-non-ai
 course: soc
 week: 1
 description: |
-  보안관제 입문 — 6v6 SOC stack (web/ips/fw → siem) 의 데이터 흐름 을 학생 본인
-  손 으로 추적 + Wazuh dashboard 접속 + 알림 1 건 의 *L1 트리아지* (위험도 / 출처
-  / 우선순위) 시뮬. SOC 분석가 의 1 일 첫 30 분 의 활동 simulation.
+  6v6 4-tier 토폴로지 위의 SOC stack (fw / ips / web / siem) 의 *데이터 흐름* 을
+  학생 본인 손 으로 추적 + Wazuh dashboard 의 L1 트리아지 활동 + 마지막 5 step
+  (7-11) 의 R/B/P 통합 — Red 의 공격 1 건 이 4 도구 (fw HAProxy → ips Suricata →
+  web ModSec → siem Wazuh) 에 어떻게 흔적 을 남기는지 실시간 추적 + Purple 의
+  Coverage Matrix + Gap 분석.
 
-  Red(공격자) / Blue(분석가) / Purple(개선) 의 입장 모두 — 본 주차 는 *Blue 중심*
-  으로 6v6 의 보안 stack 이 어떻게 alert 를 만들어 dashboard 까지 가는지 직접
-  확인.
-difficulty: easy
-duration_minutes: 90
-audience: 보안관제 입문 (1주차)
+  보안관제 분석가 의 1 일 첫 30 분 활동 (대시보드 모니터링 → 알림 식별 → 트리아지)
+  + 침해 사고 의 첫 30 분 (Red 공격 → Blue 추적 → Purple 보강) 의 두 가지 시뮬레이션.
+
+difficulty: medium
+duration_minutes: 180
+audience: 보안관제 입문자 (1주차)
+
 prerequisites:
-  - "학생 PC 의 ~/.ssh/config 에 6v6-bastion ProxyJump 설정"
-  - "학생 PC 의 /etc/hosts 에 192.168.0.110 siem.6v6.lab 매핑 (브라우저 접근용)"
-  - "lecture_week01.md 정독 (L1/L2/L3 + MTTD/MTTR + SOC 워크플로우)"
+  - "학생 PC `~/.ssh/config` 에 6v6-bastion + 6v6-* ProxyJump 설정 완료"
+  - "학생 PC `/etc/hosts` 에 192.168.0.110 siem.6v6.lab juice.6v6.lab dvwa.6v6.lab 매핑 (브라우저 직접 접근용)"
+  - "Wazuh dashboard 자격증명 (admin / SecretPassword) 인지"
+  - "lecture_week01.md 정독 — L1/L2/L3 + MTTD/MTTR + SOC 워크플로우 5 단계 + R/B/P 의미"
+
 objectives:
-  - "6v6 SOC stack 의 4 컨테이너 (fw / ips / web / siem) 의 역할 + 데이터 흐름 표 1 개로 정리"
-  - "Wazuh dashboard (https://siem.6v6.lab/) 첫 접속 + Discover 에서 최근 1 시간 alert 5+ 행 확인"
-  - "alert 1 건 의 5 필드 (timestamp / rule.id / rule.level / agent.name / rule.description) 추출"
-  - "L1 트리아지 시뮬 — 같은 alert 의 위험도 (0-15 level) + 출처 (agent) + 우선순위 (Critical/High/Med/Low) 의 본인 판정"
-  - "SOC 워크플로우 1 사이클 (모니터링 → 탐지 → 분석 → (대응) → 보고) 의 1 일 첫 30 분 simulation"
-pass_threshold: 0.6
+  - "Wazuh dashboard 접속 + Discover 화면 + 최근 1 시간 alert 5+ 행 확인"
+  - "6v6 SOC stack 의 4 컨테이너 의 역할 + 이벤트 출처 + siem 전달 방식 표"
+  - "wazuh-control status 의 7+ daemon active 확인 + Manager / Agent 구조 이해"
+  - "alerts.json 의 1 alert 의 5 필드 (id/timestamp/rule.id/level/agent) 추출"
+  - "rule.level 분포 + agent 분포 + Top 3 rule.id histogram"
+  - "L1 트리아지 시뮬 — 1 alert 의 위험도 / 출처 / 우선순위 본인 판정"
+  - "Red/Blue/Purple 통합 — 공격 1건이 4 도구 (fw/ips/web/siem) 에 남긴 흔적 chain 추적"
+  - "Purple Coverage Matrix — 4 도구 의 detection coverage + gap 식별 + 권장 보강"
+
+pass_threshold: 0.7
+
 steps:
 
+  # ============================================================
+  # STEP 1 — Wazuh dashboard 첫 접속 + Discover 화면
+  # ============================================================
   - order: 1
     instruction: |
-      ## 🎯 MISSION — 6v6 SOC stack 의 4 컨테이너 역할 + 데이터 흐름 식별
+      ## 🎯 MISSION
 
-      **어디서:** 학생 PC 또는 bastion (read-only 정찰)
-      **무엇을:** 6v6 의 SOC 관련 4 컨테이너 (fw / ips / web / siem) 각각 의 *역할*
-      + *어떤 보안 이벤트 의 출처* + *어디로 데이터 보내는지* 를 표 1 개로 정리.
+      학생 PC 브라우저 로 Wazuh dashboard 에 접속 + Discover 화면 의 최근 1 시간
+      alert 5+ 행 확인. L1 분석가 의 1 일 첫 활동.
+
+      ## 💻 실행 명령
+
+      ```
+      1. 학생 PC 의 /etc/hosts 에 매핑 확인:
+         192.168.0.110 siem.6v6.lab juice.6v6.lab dvwa.6v6.lab
+
+      2. 브라우저 에서 https://siem.6v6.lab/ 접속 (인증서 경고 → 계속)
+
+      3. 자격증명:
+         Username: admin
+         Password: SecretPassword
+
+      4. 좌상단 ☰ → Explore → Discover 클릭
+
+      5. 좌상단 인덱스 selector 확인:
+         wazuh-alerts-* 가 선택 되어 있는지
+
+      6. 우상단 시계 → Last 1 hour
+
+      7. 새로고침 → 화면 의 alert 행 수 + 좌측 Available fields 갯수 인용
+      ```
+
+      ## 📋 확인 사항
+
+      - 인증서 경고 = self-signed cert (lab 환경) — 정상
+      - Discover 화면 의 alert 행 수: 최근 1 hour 보통 30~200 건
+      - 좌측 Available fields 갯수: 50~80 (default Wazuh field set)
+      - 화면 상단 의 시간 histogram 에 burst 패턴 시각화
+
+      ## 💡 왜 이걸 하는가?
+
+      Wazuh dashboard = SOC 의 *유일한 단일 진입점*. L1 분석가 의 1 일 첫 활동 =
+      dashboard 의 첫 화면 의 alert 분포 파악. 운영 환경 의 SOC 는 wallboard 또는
+      multi-monitor 로 항상 dashboard 표시.
+
+      ## 🔍 결과 해석
+
+      - **정상**: alert 행 5+ + 좌측 field 50+ + 시간 histogram 표시
+      - **비정상 1**: alert 0 행 → 시간 범위 확장 (Last 24h) 또는 wazuh-alerts-*
+        인덱스 미생성 (indexer 가용성 점검)
+      - **비정상 2**: 인덱스 selector 가 비어있음 → wazuh-alerts-* template 미배포
+        → siem 의 filebeat 또는 wazuh-indexer 점검
+      - **비정상 3**: dashboard 가 "No API available to connect" → rate limit fix
+        (95-api-rate-limit cont-init 적용 확인) — 이전 fix 의 회귀 가능성
+    hint: "https://siem.6v6.lab/ + admin/SecretPassword. ☰ Explore → Discover. wazuh-alerts-* 인덱스 + Last 1 hour."
+    category: dashboard
+    points: 10
+    answer: |
+      # 브라우저 활동 — 학생 PC 에서 직접 수행.
+      # 결과 메모: alert 행 수 / field 갯수 / Top 3 rule.id Top 3
+      echo "=== 학생 PC 의 /etc/hosts 확인 ==="
+      getent hosts siem.6v6.lab
+      echo "=== siem dashboard health check (API 측) ==="
+      curl -sk -m 5 -u admin:SecretPassword https://siem.6v6.lab:443/ 2>&1 | head -5
+    answer_detail: |
+      Wazuh dashboard 의 Discover = Kibana 의 fork (OpenSearch 기반). 좌측 Available
+      fields 가 50+ 이면 wazuh-alerts-* template 정상. 비어있으면 indexer 측 점검.
+      Discover 화면 의 alert 행 수 가 너무 적으면 (1 시간 < 5) 시간 범위 확장 또는
+      6v6 가 idle 상태 — 학생 PC 또는 attacker 에서 인위적 트래픽 발생 (curl
+      http://juice.6v6.lab/) 후 5 분 대기 후 재확인.
+    verify:
+      type: output_contains
+      expect: siem.6v6.lab
+      field: stdout
+      semantic:
+        intent: |
+          Wazuh dashboard 접속 + Discover 화면 의 최근 1 시간 alert 분포 확인.
+          L1 분석가 의 1 일 첫 활동 시뮬.
+        success_criteria:
+          - "dashboard 접속 성공 (admin / SecretPassword)"
+          - "Discover 화면 도달 (wazuh-alerts-* 인덱스 선택)"
+          - "alert 행 수 + field 갯수 결과 인용"
+        acceptable_methods:
+          - |
+            **[OSS] 브라우저 GUI 표준** — 학생 PC.
+              # 학생 PC 브라우저: https://siem.6v6.lab/
+              # 자격증명: admin / SecretPassword
+              # ☰ → Explore → Discover → wazuh-alerts-* → Last 1 hour
+            예상 출력 `alert 행 50~200 + Available fields 50+`.
+            운영 해석: SOC L1 의 1 일 첫 활동 — wallboard 으로 항상 표시.
+          - |
+            **[OSS] 인덱스 직접 API** — 자동화.
+              curl -sk -u admin:SecretPassword "https://siem.6v6.lab:9200/wazuh-alerts-*/_count?pretty" 2>&1 | head -5
+            예상 출력 `{"count": 12345, ...}`.
+            운영 해석: GUI 없이 alert 총 갯수 API 직접 — 자동 모니터링 의 base.
+          - |
+            **[OSS] 직접 alerts.json tail (siem 측)** — raw.
+              ssh 6v6-siem 'sudo tail -5 /var/ossec/logs/alerts/alerts.json | jq -c "{ts: .timestamp, rule: .rule.id, level: .rule.level, agent: .agent.name}"'
+            예상 출력 `{"ts":"2026-05-19T...","rule":"86601","level":3,"agent":"ips"}`.
+            운영 해석: GUI 없이 raw alert tail — CLI 분석가 의 base.
+          - |
+            **[OSS] dashboard 의 KQL 쿼리** — Discover 검색.
+              # Discover 검색창: rule.level:>=10 AND @timestamp:>now-1h
+            예상 출력 `high-severity alert 만 필터`.
+            운영 해석: L1 의 트리아지 의 1 차 filter — Critical/High 만.
+          - |
+            **[OSS] dashboard 우측 통계 panel** — Top N.
+              # 좌측 Available fields → rule.id → 클릭 → 우측 Top 5 통계
+            예상 출력 `86601 (Suricata generic) 70% / 19007 / 19008 ...`.
+            운영 해석: Top 3 rule.id 의 빈도 분포 — SOC 의 baseline.
+        negative_signs:
+          - "alert 0 (시간 범위 너무 짧음 또는 인덱스 미생성)"
+          - "dashboard 접속 자체 실패 (인증서/포트/443 차단)"
+          - "Available fields 비어있음 (template 미배포)"
+    target_vm: bastion
+    risk_level: low
+
+  # ============================================================
+  # STEP 2 — 6v6 SOC stack 4 컨테이너 데이터 흐름
+  # ============================================================
+  - order: 2
+    instruction: |
+      ## 🎯 MISSION
+
+      6v6 의 SOC 관련 4 컨테이너 (fw / ips / web / siem) 각각 의 *역할* + *어떤
+      보안 이벤트 의 출처* + *어디로 데이터 보내는지* 를 학생 본인 손 으로 확인 +
+      표 1 개로 정리.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # 1. fw 의 docker logs (HAProxy 의 stdout — 일반 syslog 부재 환경)
+      ssh 6v6-bastion 'docker logs --tail 3 6v6-fw' 2>&1 | tail -3
+
+      # 2. ips 의 Suricata eve.json (network 보안 이벤트 의 source)
+      ssh 6v6-ips 'tail -1 /var/log/suricata/eve.json | python3 -m json.tool 2>/dev/null | head -10'
+
+      # 3. web 의 ModSec audit log (WAF 의 source)
+      ssh 6v6-web 'sudo ls -la /var/log/apache2/ | grep -i modsec'
+
+      # 4. siem 의 alerts.json 의 가장 최근 alert (SIEM 의 통합 결과)
+      ssh 6v6-siem 'sudo tail -1 /var/ossec/logs/alerts/alerts.json | jq -c "{rule_id: .rule.id, agent: .agent.name, decoder: .decoder.name}"'
+
+      # 5. siem 의 ossec.conf 의 syslog remote (어떤 source 가 어떻게 siem 으로 모이는지)
+      ssh 6v6-siem 'sudo grep -B1 -A3 "<remote>" /var/ossec/etc/ossec.conf | head -15'
+      ```
+
+      ## 📋 확인 사항
+
+      - 명령 1 (fw docker logs): HAProxy 의 요청 처리 또는 sshd 의 이벤트 — minimal Docker 컨테이너 라 일반 /var/log/syslog 부재
+      - 명령 2 (ips eve.json): JSON 라인 의 event_type 필드 (alert / http / flow / tls)
+      - 명령 3 (web ModSec): `modsec_audit.log` 파일 존재 + 권한
+      - 명령 4 (siem alerts.json): rule_id + agent.name (ips / web / wazuh.manager) + decoder.name
+      - 명령 5 (ossec.conf): `<remote>` block 의 syslog 514/udp + secure 1514
+
+      ## 📊 정리 표 작성
 
       | 컨테이너 | IP | 역할 (1 줄) | 어떤 이벤트 발생 | siem 으로 어떻게 전달 |
       |---|---|---|---|---|
-      | fw | 10.20.30.1 / 10.20.31.1 | nftables + HAProxy | (예: nft log_prefix, HAProxy req log) | (예: rsyslog UDP 514 → siem) |
-      | ips | 10.20.31.2 / 10.20.32.1 | Suricata IDS sniff | | |
-      | web | 10.20.32.80 | Apache + ModSecurity | | |
-      | siem | 10.20.32.100 | Wazuh manager (수신 + alert 생성) | (자체 systemd / cron) | (자기 자신 — alerts.json) |
+      | fw | 10.20.30.1 / 10.20.31.1 | nftables + HAProxy host-header 라우팅 | HAProxy req log (docker stdout) | rsyslog → siem:514/udp (또는 docker logs 외부) |
+      | ips | 10.20.31.2 / 10.20.32.1 | Suricata IDS sniff | eve.json (alert/http/flow/tls) | Wazuh agent → siem:1514/tcp |
+      | web | 10.20.32.80 | Apache + ModSecurity | modsec_audit.log + access.log | Wazuh agent → siem:1514/tcp |
+      | siem | 10.20.32.100 | Wazuh manager + alerts.json | (자체) decoder → rule → alert | (자기 자신) alerts.json + dashboard |
 
       ## 💡 왜 이걸 하는가?
 
-      SOC 분석가 의 1 순위 = *어떤 컨테이너 에서 어떤 데이터 가 어떻게 SIEM 으로 모이는지* 의 mental model. 이 model 없이는 alert 가 떠도 *왜* 가 추론 불가.
+      SOC 분석가 의 1 순위 = *어떤 컨테이너 에서 어떤 데이터 가 어떻게 SIEM 으로
+      모이는지* 의 mental model. 이 model 없이는 alert 가 떠도 *왜* 를 추론 불가.
+      Wazuh 의 ossec.conf 의 `<remote>` 가 5141 (secure) + 514 (syslog) 2 channel
+      = agent 보안 채널 (TLS 가능) + syslog 호환 채널 의 이원화.
 
-      ## 🔵 Blue 측 의 의의
+      ## 🔍 결과 해석
 
-      학생 = 가상 의 L1 분석가. 본 mission 자체 가 L1 의 첫 책무 (운영 환경 의 데이터 흐름 파악).
-
-      ## 📋 채점 기준
-
-      - 4 컨테이너 모두 표 에 포함
-      - 각 컨테이너 의 이벤트 출처 + siem 전달 방식 1 줄 씩
-      - 추론 만 X — `docker ps` 로 컨테이너 가용 검증 동반
-    hint: "bastion 에서 ssh 6v6-fw 'ls /var/log/' 등 으로 각 컨테이너 의 log 출처 직접 확인. fw 의 rsyslog 설정 (/etc/rsyslog.d/) + ips 의 suricata.yaml 의 eve-log 설정 + web 의 ModSec audit log 위치 + siem 의 ossec.conf 의 syslog remote."
-    category: soc_basics
+      - **정상**: 5 명령 모두 응답 + 표 4 컨테이너 모두 채워짐
+      - **fw docker logs 가 sshd 만 보임**: HAProxy 가 stdout 으로 안 보내는 설정
+        — `docker exec 6v6-fw cat /etc/haproxy/haproxy.cfg | grep log` 로 log target 확인
+      - **ips eve.json 없음**: Suricata 가 down 또는 eve-log 의 enabled: no — `docker exec 6v6-ips ps aux | grep suricata`
+      - **siem 의 ossec.conf 의 remote block 없음**: agent 수신 불가 — 모든 alert 가 siem 자체 source 만
+    hint: "ssh 5 컨테이너 의 각 log 위치 확인 + ossec.conf 의 <remote>."
+    category: stack
     points: 12
     answer: |
-      🤖 가이드:
-      ssh 6v6-fw 'grep -r "@.*514" /etc/rsyslog.d/ 2>/dev/null | head -2'
-      ssh 6v6-ips 'cat /etc/suricata/suricata.yaml | grep -A2 eve-log | head -5'
-      ssh 6v6-web 'grep -i SecAuditLog /etc/apache2/conf-enabled/*.conf | head -3'
-      ssh 6v6-siem 'grep -B1 -A3 "<remote>" /var/ossec/etc/ossec.conf | head -10'
+      echo "=== 1. fw docker logs (HAProxy stdout) ==="
+      ssh 6v6-bastion 'docker logs --tail 3 6v6-fw 2>&1 | tail -3'
+      echo "=== 2. ips Suricata eve.json (가장 최근 1건) ==="
+      ssh 6v6-ips 'tail -1 /var/log/suricata/eve.json | python3 -m json.tool 2>/dev/null | head -10'
+      echo "=== 3. web ModSec audit log 파일 ==="
+      ssh 6v6-web 'sudo ls -la /var/log/apache2/ | grep -i modsec'
+      echo "=== 4. siem alerts.json 가장 최근 alert ==="
+      ssh 6v6-siem 'sudo tail -1 /var/ossec/logs/alerts/alerts.json | jq -c "{rule_id: .rule.id, agent: .agent.name, decoder: .decoder.name, desc: .rule.description}"'
+      echo "=== 5. siem ossec.conf 의 syslog remote ==="
+      ssh 6v6-siem 'sudo grep -B1 -A3 "<remote>" /var/ossec/etc/ossec.conf | head -15'
     answer_detail: |
-      fw = nftables drop log + HAProxy req log → rsyslog @siem:514. ips = Suricata eve.json → Wazuh agent → manager. web = ModSec audit log → Wazuh agent. siem = manager 자체 + agent 로부터 수신 + alerts.json 생성.
+      6v6 의 SOC stack 의 데이터 흐름:
+      - fw HAProxy → docker stdout (또는 rsyslog 시 siem:514)
+      - ips Suricata → /var/log/suricata/eve.json → Wazuh agent → siem:1514
+      - web Apache+ModSec → modsec_audit.log + access.log → Wazuh agent → siem:1514
+      - siem 자체 의 sshd / Wazuh manager 활동 → 같은 alerts.json
+      ossec.conf 의 `<remote>` block 2 개:
+      - syslog 514/udp (allowed-ips=10.20.0.0/16) — fw / 외부 syslog 수신
+      - secure 1514/tcp — Wazuh agent (ips/web 등) 수신
     verify:
-      intent: "4 컨테이너 의 역할 + 이벤트 출처 + siem 전달 방식 표 정리"
-      success_criteria:
-        - "4 컨테이너 모두 표"
-        - "각 의 이벤트 + 전달 방식"
-        - "docker ps 또는 ssh 로 가용성 검증"
-      acceptable_methods:
-        - "ssh + grep 또는 docker exec"
-      negative_signs:
-        - "추론 만"
-        - "1~2 컨테이너만"
+      type: output_contains
+      expect: agent
+      field: stdout
+      semantic:
+        intent: |
+          6v6 SOC stack 4 컨테이너 의 데이터 흐름 식별 — 각 의 이벤트 source +
+          전달 방식 + 표 1 개로 정리.
+        success_criteria:
+          - "5 명령 모두 실행 결과 인용"
+          - "4 컨테이너 표 작성 (역할/이벤트/전달)"
+          - "ossec.conf 의 remote block 2 개 (syslog + secure) 확인"
+        acceptable_methods:
+          - |
+            **[OSS] ssh + docker logs / tail / jq** — 표준.
+              ssh 6v6-bastion 'docker logs --tail 3 6v6-fw 2>&1 | tail -3'
+              ssh 6v6-ips 'tail -1 /var/log/suricata/eve.json | python3 -m json.tool | head -10'
+              ssh 6v6-web 'sudo ls -la /var/log/apache2/ | grep modsec'
+              ssh 6v6-siem 'sudo tail -1 /var/ossec/logs/alerts/alerts.json | jq -c "{rule_id, agent: .agent.name}"'
+            예상 출력 `5 결과 모두 raw`.
+            운영 해석: SOC 분석가 의 1 차 정찰 — 5 컨테이너 1 회 sweep.
+          - |
+            **[OSS] Wazuh dashboard 의 Agents tab** — GUI.
+              # Wazuh dashboard ☰ → Management → Agents
+              # 또는 https://siem.6v6.lab/app/wazuh#/agents
+            예상 출력 `Agent list: ips (Active), web (Active), fw (?), siem (Active)`.
+            운영 해석: agent 의 active/disconnected 가시 — agent 누락 시 데이터 흐름 끊김.
+          - |
+            **[OSS] Wazuh API /agents** — 자동화.
+              curl -sk -u wazuh-wui:MyS3cr37P450r.*- "https://siem.6v6.lab:55000/agents?status=active&pretty"
+            예상 출력 `{"data":{"affected_items":[{"id":"001","name":"ips","status":"active"},...]}}`.
+            운영 해석: agent 의 active 갯수 의 API monitor — automation 의 base.
+          - |
+            **[OSS] netstat / ss — 포트 listen 검증** — 인프라.
+              ssh 6v6-siem 'sudo ss -tlnp | grep -E ":(1514|1515|514|55000)"'
+            예상 출력 `LISTEN 0.0.0.0:1514 / :1515 / :514/udp / :55000`.
+            운영 해석: 4 포트 모두 listen = Wazuh manager 의 모든 channel 가용.
+          - |
+            **[OSS] decoder.name 분포 — 통계** — 분류.
+              ssh 6v6-siem 'sudo tail -1000 /var/ossec/logs/alerts/alerts.json | jq -r ".decoder.name // \"unknown\"" | sort | uniq -c | sort -rn | head -5'
+            예상 출력 `400 json / 200 bastion-lifecycle / 100 sshd / ...`.
+            운영 해석: 어떤 decoder (= source) 가 가장 빈도 — SOC 의 트래픽 분포.
+        negative_signs:
+          - "5 명령 중 일부 응답 없음 (컨테이너 down 또는 ssh 차단)"
+          - "표 4 컨테이너 중 일부 누락"
+          - "ossec.conf 의 remote block 미발견"
     target_vm: bastion
     risk_level: low
 
-  - order: 2
+  # ============================================================
+  # STEP 3 — Wazuh manager daemon 상태
+  # ============================================================
+  - order: 3
     instruction: |
-      ## 🎯 MISSION — Wazuh dashboard 첫 접속 + 최근 1 시간 alert 5+ 행 확인
+      ## 🎯 MISSION
 
-      **어디서:** 학생 PC 브라우저
-      **무엇을:**
-      1. https://siem.6v6.lab/ 접속 (인증서 경고 → 계속) — 자격증명 `admin` / `SecretPassword`
-      2. ☰ → **Explore → Discover** 클릭
-      3. 좌상단 인덱스 선택 = `wazuh-alerts-*`
-      4. 우상단 시계 → **Last 1 hour**
-      5. 화면 의 alert 행 수 + 좌측 의 가용 field 갯수 인용
+      siem 의 Wazuh manager 의 daemon 7+ active 확인 + Top 3 cpu/memory 점유 daemon
+      식별. SOC 의 infrastructure health check.
 
-      **결과 정리 (학생 보고서):**
+      ## 💻 실행 명령
+
+      ```bash
+      # 1. 전체 daemon status
+      ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control status'
+
+      # 2. active / not running 카운트
+      ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control status 2>&1 | awk "{if (\$NF==\"running...\") active++; else if (\$NF==\"running...\") active++} END {print \"active:\" active}"'
+
+      # 3. Top 3 process by cpu (wazuh prefix 만)
+      ssh 6v6-siem 'ps -eo pid,pcpu,pmem,cmd --sort=-pcpu 2>&1 | grep -i wazuh | head -5'
+
+      # 4. 각 daemon 의 PID + uptime
+      ssh 6v6-siem 'sudo ps -eo pid,etime,cmd 2>&1 | grep -E "wazuh-(analysisd|remoted|monitord|modulesd|db)" | head -5'
       ```
-      접속 시간: <YYYY-MM-DD HH:MM>
-      Last 1 hour 의 alert 행 수: <N>
-      좌측 Available fields 갯수: <M>
-      가장 빈도 높은 rule.id Top 3: <id 3 개>
+
+      ## 📋 확인 사항
+
+      - 명령 1: 11~13 daemon 중 7+ 가 `is running...` 표시 (clusterd / maild / dbd / agentlessd / csyslogd 는 일반적으로 `not running`)
+      - 명령 3: 가장 cpu 점유 = `wazuh-analysisd` (alert 분석 의 main worker)
+      - 명령 4: 각 daemon 의 PID + 시작 후 경과 시간 (etime)
+
+      ## 💡 왜 이걸 하는가?
+
+      Wazuh manager 의 11~13 daemon 의 각 역할 :
+      - **wazuh-analysisd** — 가장 중요, decoder/rule 매칭 + alert 생성 (cpu 가장 많이 씀)
+      - **wazuh-remoted** — agent 연결 수신 (1514/tcp)
+      - **wazuh-db** — DB 의 query (cdb_list 등)
+      - **wazuh-modulesd** — vuln scanner / SCA / 등 의 module worker
+      - **wazuh-monitord** — agent 의 keepalive 모니터링
+      - **wazuh-apid** — REST API (55000)
+      - **wazuh-syscheckd** — FIM (file integrity)
+      - **wazuh-logcollector** — local log 수집
+
+      analysisd 가 down 시 = 모든 신규 alert 생성 정지 — SOC 의 핵심 SPOF.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 7+ daemon 가 is running...
+      - **clusterd not running**: 단일 노드 환경 (정상)
+      - **analysisd not running**: 즉시 escalation — wazuh-control restart
+      - **apid not running**: dashboard 의 "No API available" 회귀 — rate limit 또는
+        config 점검
+    hint: "wazuh-control status + ps + Top cpu."
+    category: wazuh
+    points: 12
+    answer: |
+      echo "=== 1. wazuh daemon status ==="
+      ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control status 2>&1 | head -15'
+      echo "=== 2. active 카운트 ==="
+      ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control status 2>&1 | grep -c "is running"'
+      echo "=== 3. Top 3 cpu by wazuh ==="
+      ssh 6v6-siem 'ps -eo pid,pcpu,pmem,cmd --sort=-pcpu 2>&1 | grep -i wazuh | head -5'
+      echo "=== 4. daemon uptime ==="
+      ssh 6v6-siem 'sudo ps -eo pid,etime,cmd 2>&1 | grep -E "wazuh-(analysisd|remoted|monitord|modulesd|db)" | head -5'
+    answer_detail: |
+      Wazuh manager 의 daemon 의 핵심 = analysisd (alert 생성). cpu 분포 가
+      analysisd 가 80%+ 면 alert burst 또는 rule loop. modulesd 가 burst 면
+      vuln scanner / SCA 활동. apid 가 down 시 dashboard 의 "No API available
+      to connect" 회귀 — W17 (또는 운영 환경) 의 rate limit fix 확인.
+    verify:
+      type: output_contains
+      expect: running
+      field: stdout
+      semantic:
+        intent: |
+          Wazuh manager 의 daemon 7+ active 확인 + Top cpu daemon 식별.
+          SOC 의 infrastructure health check.
+        success_criteria:
+          - "7+ daemon 가 is running"
+          - "analysisd 의 가용성 확인"
+          - "Top cpu by wazuh process 인용"
+        acceptable_methods:
+          - |
+            **[OSS] wazuh-control status** — 표준.
+              ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control status'
+            예상 출력 `wazuh-clusterd not running / wazuh-modulesd is running / ...`.
+            운영 해석: 11~13 daemon 중 7+ active = 정상. analysisd 의 가용성 필수.
+          - |
+            **[OSS] ps + cpu sort** — 자원.
+              ssh 6v6-siem 'ps -eo pid,pcpu,pmem,cmd --sort=-pcpu | grep -i wazuh | head -5'
+            예상 출력 `<pid> 30.2 5.8 wazuh-analysisd / ...`.
+            운영 해석: analysisd cpu 가장 많음 = 정상 (alert 생성 의 main).
+          - |
+            **[OSS] systemctl status (만약 systemd 가용)** — 대체.
+              ssh 6v6-siem 'sudo systemctl status wazuh-manager 2>&1 | head -10 || echo "systemd 미가용"'
+            예상 출력 `wazuh-manager.service: active (running)` 또는 `미가용`.
+            운영 해석: Wazuh 4.x 의 일부 build = systemd 통합. 6v6 = docker entrypoint.
+          - |
+            **[OSS] /var/ossec/logs/ossec.log** — daemon 로그.
+              ssh 6v6-siem 'sudo tail -10 /var/ossec/logs/ossec.log | head -10'
+            예상 출력 `<date> wazuh-analysisd: INFO: ...`.
+            운영 해석: daemon 의 startup / error / warning 시각 흐름.
+          - |
+            **[OSS] /var/ossec/var/run/*.pid** — PID 의 표준.
+              ssh 6v6-siem 'sudo ls -la /var/ossec/var/run/*.pid 2>&1 | head -10'
+            예상 출력 `wazuh-analysisd-<pid>.pid / wazuh-remoted-<pid>.pid / ...`.
+            운영 해석: PID 파일 = daemon 의 running 의 표준 indicator.
+        negative_signs:
+          - "wazuh-analysisd not running (SPOF — 즉시 escalation)"
+          - "wazuh-apid not running (dashboard 의 No API available 회귀)"
+          - "daemon 의 PID 부재"
+    target_vm: bastion
+    risk_level: low
+
+  # ============================================================
+  # STEP 4 — alerts.json 의 1 alert 5 필드 추출
+  # ============================================================
+  - order: 4
+    instruction: |
+      ## 🎯 MISSION
+
+      alerts.json 의 가장 최근 1 alert 의 5 핵심 필드 (id / timestamp / rule.id /
+      rule.level / agent.name) + 추가 필드 (rule.description / decoder.name /
+      rule.groups) 추출. L1 분석가 의 alert 1 건 의 *who/what/where/when* 파악.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # 1. 가장 최근 1 alert 의 핵심 5 필드
+      ssh 6v6-siem 'sudo tail -1 /var/ossec/logs/alerts/alerts.json | jq "{
+        id: .id,
+        timestamp: .timestamp,
+        rule_id: .rule.id,
+        rule_level: .rule.level,
+        agent: .agent.name
+      }"'
+
+      # 2. 추가 필드 (description / decoder / groups / data 의 핵심 필드)
+      ssh 6v6-siem 'sudo tail -1 /var/ossec/logs/alerts/alerts.json | jq "{
+        rule_id: .rule.id,
+        rule_description: .rule.description,
+        rule_groups: .rule.groups,
+        decoder_name: .decoder.name,
+        data: .data
+      }"'
+
+      # 3. 최근 5 alert 의 동일 필드 표
+      ssh 6v6-siem 'sudo tail -5 /var/ossec/logs/alerts/alerts.json | jq -c "{ts: .timestamp[0:19], rule: .rule.id, level: .rule.level, agent: .agent.name, desc: .rule.description[0:60]}"'
+      ```
+
+      ## 📋 확인 사항
+
+      - 명령 1 의 5 필드 모두 추출:
+        - `id`: `"1779263456.789"` 형식 (timestamp 의 epoch + offset)
+        - `timestamp`: ISO 8601 `"2026-05-19T..."`
+        - `rule_id`: 0-100000+ 범위 (default 0-100000 / custom 100000+)
+        - `rule_level`: 0-15 정수
+        - `agent.name`: `ips` / `web` / `wazuh.manager` / `fw` / ...
+      - 명령 2: rule.groups 가 배열 (`["web","attack","sql_injection"]`) — 분류 의
+        키워드
+      - 명령 3: 5 alert 의 시간순 분포 시각
+
+      ## 💡 왜 이걸 하는가?
+
+      L1 분석가 의 가장 기본 활동 = alert 의 *who/what/where/when* 추출. 5 필드
+      만 으로 다음 단계 (STEP 5 분포 + STEP 6 트리아지) 의 input 확보. 운영 환경 의
+      alert 수십~수백 개 중 *대응 필요* 한 것 만 선별 의 base.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 5 필드 모두 추출 + rule.groups 배열
+      - **rule_level 0**: silent rule (분류 만 + alert 안 함) — 분석 대상 X
+      - **rule_id 미설정**: decoder 매칭 실패 — decoder 점검
+      - **agent.name 이 wazuh.manager**: siem 자체 의 활동 (bastion-lifecycle 등)
+        — 분석 우선순위 낮음
+      - **alerts.json 비어있음**: analysisd 가 down 또는 매우 idle 시스템 — STEP 3 의 daemon status 재점검
+    hint: "tail -1 alerts.json | jq + 5 필드."
+    category: alert
+    points: 10
+    answer: |
+      echo "=== 1. 가장 최근 1 alert 5 필드 ==="
+      ssh 6v6-siem 'sudo tail -1 /var/ossec/logs/alerts/alerts.json | jq "{id: .id, timestamp: .timestamp, rule_id: .rule.id, rule_level: .rule.level, agent: .agent.name}"'
+      echo "=== 2. 추가 필드 (description / decoder / groups / data) ==="
+      ssh 6v6-siem 'sudo tail -1 /var/ossec/logs/alerts/alerts.json | jq "{rule_id: .rule.id, rule_description: .rule.description, rule_groups: .rule.groups, decoder_name: .decoder.name}"'
+      echo "=== 3. 최근 5 alert 표 ==="
+      ssh 6v6-siem 'sudo tail -5 /var/ossec/logs/alerts/alerts.json | jq -c "{ts: .timestamp[0:19], rule: .rule.id, level: .rule.level, agent: .agent.name}"'
+    answer_detail: |
+      Wazuh alert 의 schema = id (string, epoch.offset) / timestamp (ISO 8601) /
+      rule (object: id, level, description, groups, mitre 등) / agent (object:
+      id, name, ip) / decoder (object: name, parent) / data (decoder 가 추출 한
+      추가 필드 — 예: src_ip, dst_port). 5 필드 + rule.groups 의 분류 가 SOC 의
+      트리아지 의 base. rule.groups 가 ["web","sql_injection"] = 즉시 escalation.
+    verify:
+      type: output_contains
+      expect: rule
+      field: stdout
+      semantic:
+        intent: |
+          alerts.json 의 1 alert 의 5 필드 + 추가 메타 추출. L1 분석가 의 alert
+          1 건 의 who/what/where/when 파악.
+        success_criteria:
+          - "5 필드 (id/timestamp/rule.id/level/agent) 모두 추출"
+          - "rule.description + rule.groups 추가 인용"
+          - "최근 5 alert 의 시간순 표"
+        acceptable_methods:
+          - |
+            **[OSS] jq + tail -1** — 표준.
+              ssh 6v6-siem 'sudo tail -1 /var/ossec/logs/alerts/alerts.json | jq "{id, ts: .timestamp, rule: .rule.id, level: .rule.level, agent: .agent.name}"'
+            예상 출력 `{"id":"...","ts":"...","rule":"86601","level":3,"agent":"ips"}`.
+            운영 해석: 5 필드 의 표준 추출 — 모든 SOC 분석 의 base.
+          - |
+            **[OSS] dashboard 의 alert 클릭** — GUI.
+              # Discover 에서 alert 행 클릭 → 좌측 JSON 펼침
+            예상 출력 `(GUI 절차)`.
+            운영 해석: GUI 의 직관적 분석. 학생 첫 학습 시 가장 쉽.
+          - |
+            **[OSS] grep + cut 의 raw filter** — 단순.
+              ssh 6v6-siem 'sudo tail -1 /var/ossec/logs/alerts/alerts.json' | head -c 500
+            예상 출력 `{"timestamp":"...","rule":{"level":3,"description":"...","id":"86601"...},"agent":{"name":"ips"...},...}`.
+            운영 해석: jq 없을 때 raw — JSON 의 구조 의 직접 인지.
+          - |
+            **[OSS] Wazuh API /alerts** — 자동화.
+              curl -sk -u admin:SecretPassword "https://siem.6v6.lab:9200/wazuh-alerts-*/_search?size=1&sort=@timestamp:desc&pretty" 2>&1 | jq ".hits.hits[0]._source | {rule_id: .rule.id, level: .rule.level, agent: .agent.name}"
+            예상 출력 `{"rule_id":"86601","level":3,"agent":"ips"}`.
+            운영 해석: OpenSearch API 직접 — automation 의 base.
+          - |
+            **[OSS] flow 추적 — 같은 rule.id 의 분포** — 연관.
+              RULE=$(ssh 6v6-siem 'sudo tail -1 /var/ossec/logs/alerts/alerts.json | jq -r .rule.id')
+              ssh 6v6-siem "sudo tail -100 /var/ossec/logs/alerts/alerts.json | jq -c 'select(.rule.id == \"$RULE\") | {ts: .timestamp, agent: .agent.name}'"
+            예상 출력 `같은 rule.id 의 최근 5~10 발생 시각`.
+            운영 해석: burst 패턴 식별 — 정상 baseline / 공격 / 오탐 판정.
+        negative_signs:
+          - "alerts.json 비어있음 (analysisd down)"
+          - "5 필드 중 일부 누락 (jq query 오류)"
+          - "rule.id 가 null (decoder 매칭 실패)"
+    target_vm: bastion
+    risk_level: low
+
+  # ============================================================
+  # STEP 5 — rule.level 분포 + Top 3 rule.id + agent 분포
+  # ============================================================
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION
+
+      최근 1000 alert 의 *3 차원 분포* — rule.level histogram + Top 3 rule.id +
+      agent 분포 — 모두 추출 + 학생 본인 의 정상 baseline 판정 1 문장.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # 1. rule.level histogram (0-15 분포)
+      ssh 6v6-siem 'sudo tail -1000 /var/ossec/logs/alerts/alerts.json | jq -r ".rule.level" | sort -n | uniq -c'
+
+      # 2. Top 5 rule.id 빈도
+      ssh 6v6-siem 'sudo tail -1000 /var/ossec/logs/alerts/alerts.json | jq -r ".rule.id" | sort | uniq -c | sort -rn | head -5'
+
+      # 3. agent.name 분포
+      ssh 6v6-siem 'sudo tail -1000 /var/ossec/logs/alerts/alerts.json | jq -r ".agent.name" | sort | uniq -c | sort -rn'
+
+      # 4. 시간별 alert 갯수 (10 분 bucket)
+      ssh 6v6-siem 'sudo tail -1000 /var/ossec/logs/alerts/alerts.json | jq -r ".timestamp[0:15]" | sort | uniq -c | tail -10'
+      ```
+
+      ## 📋 확인 사항
+
+      - 명령 1: level 3 (low) 가 가장 다수 (보통 70~90%) + level 10+ (high) 가
+        critical 분석 대상. level 5/7 의 medium 이 boundary.
+      - 명령 2: Top rule.id — 6v6 환경 에서 보통 `86601` (Suricata generic
+        alert) 또는 `19007/19008` (sshd 인증 관련) 다수.
+      - 명령 3: agent 분포 — `ips` (Suricata 가 다수 발생) > `wazuh.manager`
+        (bastion-lifecycle) > `web` > `fw`.
+      - 명령 4: 시간별 spike 패턴 — burst 또는 idle 의 시각 분포.
+
+      ## 💡 왜 이걸 하는가?
+
+      SOC 의 *baseline* — 평소 의 분포 = burst / 공격 detection 의 reference.
+      level 의 분포 가 매일 비슷 (70% low / 20% medium / 10% high) 면 정상. burst
+      가 발생 하면 normal baseline 에서 의 deviation 으로 감지 → 트리아지 의 우선순위
+      재조정.
+
+      ## 🔍 결과 해석
+
+      - **정상**: level 3 가 다수 + Top rule.id 가 86601 (Suricata generic)
+      - **level 10+ 비율 ↑ (>20%)**: 공격 burst 또는 false-positive 증가 — 즉시 분석
+      - **agent.name 이 1 컨테이너 만**: 다른 agent 의 disconnect 가능성 — STEP 2 의
+        ossec.conf remote / agent_control -l 재점검
+      - **시간별 spike**: 같은 시각 에 burst → 자동화 공격 가능성 (W05 의 SQLi 또는
+        ssh brute force scanner)
+    hint: "tail -1000 + jq + sort | uniq -c."
+    category: stats
+    points: 12
+    answer: |
+      echo "=== 1. rule.level histogram ==="
+      ssh 6v6-siem 'sudo tail -1000 /var/ossec/logs/alerts/alerts.json | jq -r ".rule.level" | sort -n | uniq -c'
+      echo "=== 2. Top 5 rule.id ==="
+      ssh 6v6-siem 'sudo tail -1000 /var/ossec/logs/alerts/alerts.json | jq -r ".rule.id" | sort | uniq -c | sort -rn | head -5'
+      echo "=== 3. agent 분포 ==="
+      ssh 6v6-siem 'sudo tail -1000 /var/ossec/logs/alerts/alerts.json | jq -r ".agent.name" | sort | uniq -c | sort -rn'
+      echo "=== 4. 시간별 spike (10 분 bucket) ==="
+      ssh 6v6-siem 'sudo tail -1000 /var/ossec/logs/alerts/alerts.json | jq -r ".timestamp[0:15]" | sort | uniq -c | tail -10'
+    answer_detail: |
+      6v6 환경 의 typical baseline:
+      - level: 3 (70-90%) > 5 (10-20%) > 7 (5-10%) > 10+ (0-5%)
+      - Top rule.id: 86601 (Suricata, ips) > 19007/19008 (sshd) > 100xxx (custom)
+      - agent: ips (60-80%) > wazuh.manager (10-20%) > web (5-10%)
+      이 baseline 에서 벗어나는 burst = 분석 우선순위. 예: level 10+ 의 갑작스러운
+      spike 또는 새로운 rule.id 의 등장.
+    verify:
+      type: output_contains
+      expect: rule
+      field: stdout
+      semantic:
+        intent: |
+          최근 1000 alert 의 3 차원 분포 (level histogram + Top rule.id +
+          agent 분포) 추출 + baseline 판정.
+        success_criteria:
+          - "level histogram (0-15)"
+          - "Top 3+ rule.id"
+          - "agent 분포 (4+ 컨테이너)"
+          - "baseline 판정 1 문장"
+        acceptable_methods:
+          - |
+            **[OSS] jq + sort | uniq -c** — 표준.
+              ssh 6v6-siem 'sudo tail -1000 /var/ossec/logs/alerts/alerts.json | jq -r ".rule.level" | sort -n | uniq -c'
+            예상 출력 `722 3 / 27 5 / 92 7 / 8 10 / ...`.
+            운영 해석: level 3 다수 = 정상. 10+ 비율 의 baseline 추적.
+          - |
+            **[OSS] dashboard 의 Visualize panel** — GUI.
+              # Visualize → Pie chart → field=rule.level
+            예상 출력 `Pie chart 의 시각 distribution`.
+            운영 해석: 비기술자 도 직관 이해. SOC dashboard 의 wallboard panel.
+          - |
+            **[OSS] KQL + Lens** — interactive.
+              # Discover 의 KQL: rule.level:>=10 + 우측 visualize
+            예상 출력 `Lens 의 dynamic chart`.
+            운영 해석: interactive 분석 — drill-down 의 base.
+          - |
+            **[OSS] OpenSearch API _search aggregations** — 자동화.
+              curl -sk -u admin:SecretPassword "https://siem.6v6.lab:9200/wazuh-alerts-*/_search?size=0&pretty" -H 'Content-Type: application/json' -d '{"aggs":{"by_level":{"terms":{"field":"rule.level"}}}}'
+            예상 출력 `{"aggregations":{"by_level":{"buckets":[{"key":3,"doc_count":722},...]}}}`.
+            운영 해석: API 직접 — 자동 보고서 생성 의 base.
+          - |
+            **[OSS] elasticsearch-curator (rollup)** — 장기 통계.
+              # 일 단위 baseline 추적 — separate script
+              echo "logstash / metricbeat 으로 baseline DB 구축"
+            예상 출력 `(절차)`.
+            운영 해석: 매 일 baseline 의 변화 추적 — anomaly detection 의 base.
+        negative_signs:
+          - "level 분포 없음 (jq 오류 또는 alerts 비어있음)"
+          - "agent 1 종만 (다른 agent disconnect)"
+          - "baseline 판정 누락"
+    target_vm: bastion
+    risk_level: low
+
+  # ============================================================
+  # STEP 6 — L1 트리아지 시뮬 (1 alert 위험도/출처/우선순위)
+  # ============================================================
+  - order: 6
+    instruction: |
+      ## 🎯 MISSION (L1 분석가 트리아지 시뮬)
+
+      STEP 5 의 Top 1 rule.id 또는 가장 최근 high-level (level >= 7) alert 1 건
+      선택 → 5 차원 트리아지 판정 (위험도 / 출처 / 시간 / IoC / 우선순위) + 학생
+      본인 의 진위 판단 (진짜 위협 / 오탐 / 정상 baseline) 1 줄.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # 1. 가장 최근 high-level alert 1 건 (level >= 7)
+      ssh 6v6-siem 'sudo tail -200 /var/ossec/logs/alerts/alerts.json | jq -c "select(.rule.level >= 7)" | tail -1 | jq "."'
+
+      # 또는 Top 1 rule.id 의 가장 최근 1 건
+      RULE=$(ssh 6v6-siem 'sudo tail -1000 /var/ossec/logs/alerts/alerts.json | jq -r ".rule.id" | sort | uniq -c | sort -rn | head -1 | awk "{print \$2}"')
+      echo "Top rule.id: $RULE"
+      ssh 6v6-siem "sudo tail -100 /var/ossec/logs/alerts/alerts.json | jq -c 'select(.rule.id == \"$RULE\")' | tail -1 | jq ."
+      ```
+
+      ## 📊 트리아지 판정 표
+
+      | 차원 | 값 | 학생 본인 판정 |
+      |---|---|---|
+      | rule.level | (0-15) | (Critical 14-15 / High 11-13 / Medium 6-10 / Low 1-5) |
+      | agent.name | | (운영 영향 큼 / 작음 / N/A) |
+      | rule.description | | (어떤 공격 패턴 — SQLi / Brute / XSS / 등) |
+      | rule.groups | | (분류 — web / firewall / intrusion / authentication) |
+      | data.srcip 또는 data.url | | (내부 / 외부 / 알 수 없음) |
+      | 최종 우선순위 | (P1/P2/P3/P4) | (P1 즉시 / P2 정시 / P3 모니터링 / P4 무시) |
+
+      마지막 행 에 **학생 본인 의 1 문장 결정**: 이 alert 가 *진짜 위협* 인가
+      *오탐* 인가 *정상 baseline* 인가 + 그 판단 의 근거 1 줄.
+
+      ## 💡 왜 이걸 하는가?
+
+      L1 의 가장 중요한 활동 = 트리아지 (어떤 alert 가 escalate 할 만한가). 운영
+      환경 의 alert 수십~수백 개 중 *대응 필요* 한 것 만 선별. 트리아지 의 reasoning
+      = SOC 분석가 의 핵심 역량. 자동 도구 가 못 대체 하는 영역.
+
+      ## 🔍 결과 해석
+
+      ### 트리아지 의 표준 의사 결정 흐름:
+      1. **level 14-15 (Critical)** → 무조건 P1 즉시 (15 분 안에 대응)
+      2. **level 11-13 (High)** → 보통 P2 정시 (1 시간 안에 분석)
+      3. **agent 가 운영 critical 컨테이너** (siem / fw) → 우선순위 1 단계 ↑
+      4. **rule.groups 에 sql_injection / xss / brute_force / malware** → P2 이상
+      5. **data.srcip 가 외부 (10.20.x.x 아님)** → P2 이상
+
+      ### 진위 판단 의 단서:
+      - **rule.id 가 자주 발생** (baseline) → 오탐 가능성 높음
+      - **시간 burst 와 일치** → 공격 가능성
+      - **agent 가 idle 시간 의 외부 IP** → 의심 ↑
+      - **rule.description 의 keyword 가 응답 200 의 정상 트래픽** → 오탐
+    hint: "level >= 7 의 alert 선택 + 5 차원 판정."
+    category: triage
+    points: 14
+    answer: |
+      echo "=== 1. 가장 최근 high-level (>= 7) alert ==="
+      ssh 6v6-siem 'sudo tail -200 /var/ossec/logs/alerts/alerts.json | jq -c "select(.rule.level >= 7)" | tail -1 | jq "{id, timestamp, rule, agent, decoder, data}"'
+      echo "=== 2. Top 1 rule.id 의 가장 최근 1 건 ==="
+      RULE=$(ssh 6v6-siem 'sudo tail -1000 /var/ossec/logs/alerts/alerts.json | jq -r ".rule.id" | sort | uniq -c | sort -rn | head -1 | awk "{print \$2}"')
+      echo "Top rule.id: $RULE"
+      ssh 6v6-siem "sudo tail -100 /var/ossec/logs/alerts/alerts.json | jq -c 'select(.rule.id == \"$RULE\")' | tail -1 | jq '{ts: .timestamp, rule_id: .rule.id, level: .rule.level, desc: .rule.description, agent: .agent.name}'"
+    answer_detail: |
+      트리아지 의 reasoning = 정답 X 학습 가치. L1 분석가 의 첫 결정 = escalate 또는
+      close. 운영 환경 의 alert 의 70~80% 는 오탐 또는 baseline — 분석가 의
+      판단 력 으로 P1/P2/P3/P4 분류. P4 (모니터링 / 무시) 의 비율 이 높을수록
+      효율 ↑ 그러나 미탐 위험 도 ↑.
+    verify:
+      type: output_contains
+      expect: rule
+      field: stdout
+      semantic:
+        intent: |
+          L1 트리아지 시뮬 — 1 alert 의 5 차원 판정 + 우선순위 + 진위 판단.
+        success_criteria:
+          - "1 alert 선택 + 5 필드 추출"
+          - "5 차원 판정 표 (level/agent/desc/groups/srcip)"
+          - "최종 우선순위 P1~P4 1 개"
+          - "학생 진위 판단 1 줄"
+        acceptable_methods:
+          - |
+            **[OSS] jq select level >= 7** — 표준.
+              ssh 6v6-siem 'sudo tail -200 /var/ossec/logs/alerts/alerts.json | jq -c "select(.rule.level >= 7)" | tail -1'
+            예상 출력 `high-level alert 1 건`.
+            운영 해석: high-level 만 트리아지 대상 — efficiency.
+          - |
+            **[OSS] dashboard 의 Severity filter** — GUI.
+              # Discover 의 KQL: rule.level:>=10
+            예상 출력 `Critical/High 만 필터`.
+            운영 해석: GUI 의 직관 — L1 의 daily 활동.
+          - |
+            **[OSS] MITRE ATT&CK 매핑 (rule.mitre)** — 분류.
+              ssh 6v6-siem 'sudo tail -200 /var/ossec/logs/alerts/alerts.json | jq -c "select(.rule.mitre != null) | {rule: .rule.id, tactic: .rule.mitre.tactic, technique: .rule.mitre.technique}" | tail -3'
+            예상 출력 `{"rule":"100110","tactic":["Initial Access"],"technique":["T1190"]}`.
+            운영 해석: ATT&CK 매핑 의 alert = 즉시 escalation 의 명확 근거 (W06 본격).
+          - |
+            **[OSS] srcip enrichment — geo / asn** — context.
+              SRC=$(ssh 6v6-siem 'sudo tail -100 /var/ossec/logs/alerts/alerts.json | jq -r ".data.srcip // \"none\"" | tail -1')
+              echo "src: $SRC"
+              # curl ipinfo.io/$SRC/json 또는 internal geo DB
+            예상 출력 `{"ip":"...", "country":"...", "asn":"..."}`.
+            운영 해석: 외부 IP 의 geo / asn = 트리아지 의 context 보강.
+          - |
+            **[OSS] rule.id 의 baseline 비율** — 오탐 판정.
+              RULE=...; ssh 6v6-siem "sudo tail -5000 /var/ossec/logs/alerts/alerts.json | jq -c 'select(.rule.id == \"$RULE\")' | wc -l"
+            예상 출력 `300` (5000 중 300 = 6%).
+            운영 해석: baseline 6% 이면 정상 패턴 — 오탐 가능성 ↑.
+        negative_signs:
+          - "high-level alert 0 (시간 범위 너무 짧음 또는 매우 quiet 시스템)"
+          - "5 차원 중 일부 누락"
+          - "진위 판단 누락"
+    target_vm: bastion
+    risk_level: low
+
+  # ============================================================
+  # STEP 7 — Red Team: 공격 1건 발생 (attacker → dvwa.6v6.lab)
+  # ============================================================
+  - order: 7
+    instruction: |
+      ## 🎯 MISSION (Red Team)
+
+      attacker 컨테이너 에서 **sqlmap UA + XSS + SQLi 결합 페이로드** 1 건 을 발생
+      시킨 후, 4 도구 (fw / ips / web / siem) 의 흔적 을 STEP 8-10 에서 추적 할
+      준비. 시각 (ATTACK_TS) 기록 필수.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # Red 공격 — sqlmap UA + XSS + SQLi UNION SELECT 결합. 대상 = dvwa
+      # (SecRuleEngine On). juice 는 DetectionOnly — W02 학습 용.
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "응답: %{http_code} / 시간: %{time_total}s\n" \
+          -A "sqlmap/1.5" \
+          -H "Host: dvwa.6v6.lab" \
+          "http://10.20.30.1/?q=<script>alert(1)</script>&id=1+UNION+SELECT"'
+
+      # 공격 시각 기록 (Blue/Purple step 에서 timestamp 매칭에 사용)
+      ATTACK_TS=$(ssh 6v6-attacker 'date -u +%Y-%m-%dT%H:%M:%S')
+      echo "ATTACK_TS=$ATTACK_TS"
+      echo "이 시각 이후 의 로그 가 Blue/Purple step 의 추적 대상"
+      ```
+
+      ## 📋 확인 사항
+
+      - 응답 코드 = `403` (ModSec 가 941 XSS + 942 SQLi + 949 anomaly threshold 매치 후 차단)
+      - 시간 < 0.1s (HAProxy 빠른 종료)
+      - ATTACK_TS 변수 = UTC ISO timestamp
+
+      ## 💡 왜 이걸 하는가?
+
+      Defense in Depth 의 효과 를 측정 하려면 실제 공격 필요. sqlmap UA + XSS +
+      SQLi 결합 페이로드 1건 이 4 도구 (fw HAProxy → ips Suricata → web ModSec →
+      siem Wazuh) 에 동시 흔적 을 남긴다. Red Team 의 표준 1 단계 — 학생 의 SOC
+      의 detection chain 가시화.
+
+      ## 🔍 결과 해석
+
+      - **정상 (의도 된 결과)**: 응답 `403` → ModSec 차단 → WAF 정상
+      - **비정상 1**: 응답 `200` → ModSec engine `Off` 또는 룰셋 손실 → web 점검
+      - **비정상 2**: 응답 `5xx` → backend 다운 또는 HAProxy 라우팅 오류 → fw 점검
+      - **비정상 3**: 응답 `000` (timeout) → fw input chain drop 또는 attacker 컨테이너 down
+    hint: "curl -A sqlmap -H Host:dvwa.6v6.lab → 403. ATTACK_TS 기록."
+    category: redteam
+    points: 8
+    answer: |
+      echo "=== Red Team: 공격 발생 (sqlmap UA + XSS + SQLi 결합) ==="
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "응답: %{http_code} / 시간: %{time_total}s\n" -A "sqlmap/1.5" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?q=<script>alert(1)</script>&id=1+UNION+SELECT"'
+      echo "=== 공격 시각 기록 ==="
+      ATTACK_TS=$(ssh 6v6-attacker 'date -u +%Y-%m-%dT%H:%M:%S')
+      echo "ATTACK_TS=$ATTACK_TS"
+      echo "이 시각 이후 의 로그 가 Blue/Purple step 의 추적 대상"
+    answer_detail: |
+      sqlmap/1.5 UA + XSS `<script>` + SQLi UNION SELECT 의 결합 페이로드. ModSec 의
+      941 (XSS) + 942 (SQLi) + 949 (anomaly threshold) 룰 동시 매치 → score 누적
+      → 403 차단. ATTACK_TS 를 기록 하면 STEP 8-10 의 timestamp 매칭 가능.
+    verify:
+      type: output_contains
+      expect: '403'
+      field: stdout
+      semantic:
+        intent: |
+          Red Team 공격 시뮬. sqlmap UA + XSS + SQLi 결합 페이로드 → ModSec 403 차단.
+        success_criteria:
+          - "403 응답"
+          - "sqlmap UA + XSS + SQLi 결합"
+          - "ATTACK_TS 기록"
+        acceptable_methods:
+          - |
+            **[OSS] curl 종합 페이로드** — 표준.
+              ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -A "sqlmap/1.5" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?q=<script>alert(1)</script>&id=1+UNION+SELECT"'
+            예상 출력 `403`.
+            운영 해석: 다중 페이로드 로 4 도구 동시 검증.
+          - |
+            **[OSS] XSS only — 단순** — 룰 분리.
+              ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?q=<script>alert(1)</script>"'
+            예상 출력 `403`.
+            운영 해석: XSS 단독 → 941 매치 → 403. 룰 별 단독 효과 검증.
+          - |
+            **[OSS] SQLi only** — 룰 분리.
+              ssh 6v6-attacker "curl -s -o /dev/null -w '%{http_code}\n' -H 'Host: dvwa.6v6.lab' \"http://10.20.30.1/?id=1' OR '1'='1\""
+            예상 출력 `403`.
+            운영 해석: SQLi 단독 → 942 매치 → 403.
+          - |
+            **[OSS] User-Agent only** — scanner detection.
+              ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -A "sqlmap/1.5" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/"'
+            예상 출력 `403`.
+            운영 해석: 913 (Scanner Detection) 룰 단독 매치.
+          - |
+            **[OSS] 연속 5회 — burst** — burst detection.
+              ssh 6v6-attacker 'for i in 1 2 3 4 5; do curl -s -o /dev/null -w "%{http_code}\n" -A "sqlmap" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?q=<script>"; done'
+            예상 출력 `403 / 403 / 403 / 403 / 403`.
+            운영 해석: 5 회 burst → Wazuh 의 rule frequency 매칭 가능 (STEP 10).
+          - |
+            **[OSS] tcpdump 동시 캡처** — 패킷 증거.
+              # 별 터미널: ssh 6v6-fw 'sudo timeout 10 tcpdump -ni eth0 host 10.20.30.202 and tcp port 80 -c 10 -w /tmp/attack.pcap'
+              echo "pcap 으로 패킷 증거 보존"
+            예상 출력 `(별 터미널 절차)`.
+            운영 해석: 침해 후 분석 의 raw 증거 보존.
+        negative_signs:
+          - "403 아닌 응답 (200 = ModSec 무력)"
+          - "컨테이너 timeout"
+          - "ATTACK_TS 기록 누락"
+    target_vm: attacker
+    risk_level: medium
+
+  # ============================================================
+  # STEP 8 — Blue Team #1: fw HAProxy + ips Suricata eve.json 추적
+  # ============================================================
+  - order: 8
+    instruction: |
+      ## 🎯 MISSION (Blue Team — 1)
+
+      STEP 7 의 Red 공격 이 **fw HAProxy** 와 **ips Suricata** 두 도구 에 흔적 을
+      남겼는지 추적 (chain 의 첫 2 hop 검증).
+
+      ## 💻 실행 명령
+
+      ```bash
+      # 1. fw 의 HAProxy (docker stdout — 일반 syslog 부재 환경)
+      ssh 6v6-bastion 'docker logs --since 5m 6v6-fw 2>&1 | grep -E "dvwa|10.20.30.202" | tail -3'
+
+      # 2. ips Suricata eve.json 의 HTTP event (dvwa.6v6.lab 매칭)
+      ssh 6v6-ips 'sudo tail -300 /var/log/suricata/eve.json | jq -c "select(.event_type==\"http\" and .http.hostname==\"dvwa.6v6.lab\") | {ts: .timestamp, src: .src_ip, url: .http.url, status: .http.status}" | tail -3'
+
+      # 3. ips eve.json 의 alert event (Suricata 의 자체 룰 매치)
+      ssh 6v6-ips 'sudo tail -300 /var/log/suricata/eve.json | jq -c "select(.event_type==\"alert\")" | tail -3'
+      ```
+
+      ## 📋 확인 사항
+
+      - 명령 1: HAProxy log 1+ 라인 — client IP = attacker (10.20.30.202), backend
+        = waf (host header dvwa.6v6.lab)
+      - 명령 2: 같은 transaction 의 ips http event — `{"src":"10.20.31.1",
+        "url":"/?q=<script>...","status":403}` (2 NIC sniff 라 보통 2 라인)
+      - 명령 3: ips 의 alert event — Suricata 자체 룰 (예: SQLi scanner / XSS 시도)
+
+      ## 💡 왜 이걸 하는가?
+
+      "공격 이 어디 까지 도달 했나?" 의 답. fw HAProxy log + ips eve.json 의
+      동일 transaction 매칭 으로 chain 첫 2 hop 검증.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 두 곳 에 흔적 + 매칭 → chain 정상 통과
+      - **HAProxy log 없음**: docker logs 의 sshd 만 — HAProxy 가 stdout 으로 안
+        보내는 설정 (별도 file). `docker exec 6v6-fw cat /etc/haproxy/haproxy.cfg | grep log` 확인
+      - **ips eve.json 에 흔적 없음**: Suricata 의 NIC sniff 실패 또는 protocol decoder 비활성
+      - **alert event 0**: Suricata 의 룰 매치 없음 — sqlmap UA / XSS 룰셋 가용성 점검
+    hint: "fw docker logs + ips eve.json | jq."
+    category: blueteam
+    points: 12
+    answer: |
+      echo "=== Blue #1: fw HAProxy log (docker stdout) ==="
+      ssh 6v6-bastion 'docker logs --since 5m 6v6-fw 2>&1 | grep -E "dvwa|10.20.30.202" | tail -3'
+      echo "=== Blue #1: ips Suricata eve.json http event ==="
+      ssh 6v6-ips 'sudo tail -300 /var/log/suricata/eve.json | jq -c "select(.event_type==\"http\" and .http.hostname==\"dvwa.6v6.lab\") | {ts: .timestamp, src: .src_ip, url: .http.url, status: .http.status}" | tail -3'
+      echo "=== Blue #1: ips Suricata eve.json alert event ==="
+      ssh 6v6-ips 'sudo tail -300 /var/log/suricata/eve.json | jq -c "select(.event_type==\"alert\")" | tail -3'
+    answer_detail: |
+      ips eve.json 의 http event = Suricata 의 application-layer parsing. flow_id
+      필드 로 같은 conn 의 모든 event 추적 가능. alert event 가 0 이면 Suricata 의
+      custom rule (예: sqlmap UA detection rule 1000003) 미배포 — IPS W02 확인.
+    verify:
+      type: output_contains
+      expect: dvwa
+      field: stdout
+      semantic:
+        intent: |
+          Blue Team — fw HAProxy + ips eve.json 두 곳 에서 동일 transaction 흔적.
+        success_criteria:
+          - "dvwa.6v6.lab 키워드 (또는 attacker IP)"
+          - "http event_type + url"
+          - "alert event 또는 status 코드"
+        acceptable_methods:
+          - |
+            **[OSS] docker logs + grep** — 표준.
+              ssh 6v6-bastion 'docker logs --since 5m 6v6-fw 2>&1 | grep -E "dvwa|10.20.30.202" | tail -3'
+            예상 출력 `<time> haproxy: 10.20.30.202:xxx [date] http_in waf 0/0/0/12/12 403 ... GET /?q=<script>...`.
+            운영 해석: backend column = waf → 학생 트래픽 (waf backend) → web.
+          - |
+            **[OSS] ips eve.json http event** — 표준.
+              ssh 6v6-ips 'sudo tail -300 /var/log/suricata/eve.json | jq "select(.event_type==\"http\" and .http.hostname==\"dvwa.6v6.lab\")" | tail -1'
+            예상 출력 `{"event_type":"http","src_ip":"10.20.30.202","http":{"hostname":"dvwa.6v6.lab","url":"/?q=<script>...","status":403}}`.
+            운영 해석: 같은 transaction 의 ips 측 view. status 403 = web 응답 의 echo.
+          - |
+            **[OSS] flow_id 매칭** — chain 추적.
+              FLOW_ID=$(ssh 6v6-ips 'sudo tail -100 /var/log/suricata/eve.json | jq -r "select(.event_type==\"http\" and .http.hostname==\"dvwa.6v6.lab\") | .flow_id" | tail -1')
+              ssh 6v6-ips "sudo tail -1000 /var/log/suricata/eve.json | jq -r 'select(.flow_id==$FLOW_ID) | .event_type'"
+            예상 출력 `flow / http / alert / fileinfo` (같은 flow_id 의 모든 event).
+            운영 해석: flow_id 로 conn 의 모든 event 추적 — 한 페이로드의 모든 흔적.
+          - |
+            **[OSS] tcpdump pcap — 패킷 raw** — 증거.
+              ssh 6v6-ips 'sudo timeout 5 tcpdump -ni eth0 "tcp port 80" -c 10 -w /tmp/attack-ips.pcap 2>&1 | head'
+              # 별 시점 에 STEP 7 의 curl 재실행
+            예상 출력 `tcpdump: listening ... / 10 packets captured`.
+            운영 해석: pcap 으로 raw 패킷 보존 → Wireshark 후속 분석.
+          - |
+            **[OSS] HAProxy stats socket — backend 통계** — 메트릭.
+              ssh 6v6-bastion 'docker exec 6v6-fw bash -c "echo show stat | socat - UNIX-CONNECT:/var/run/haproxy.sock 2>/dev/null | awk -F, \"/^waf/\" | head -3"'
+            예상 출력 `waf,BACKEND,<count>,<resp_4xx>,...`.
+            운영 해석: backend 단위 응답 count. burst 시 증가율 모니터.
+          - |
+            **[OSS] X-Forwarded-For 헤더** — client IP 보존.
+              ssh 6v6-web 'sudo grep "X-Forwarded-For" /var/log/apache2/access.log 2>&1 | tail -3'
+            예상 출력 `X-Forwarded-For: 10.20.30.202`.
+            운영 해석: HAProxy 가 forwardfor 헤더 → web access log 에 원래 IP.
+          - |
+            **[OSS] event_type 별 매트릭스** — 종합.
+              ssh 6v6-ips 'sudo tail -200 /var/log/suricata/eve.json | jq -r .event_type | sort | uniq -c | sort -rn'
+            예상 출력 `flow / http / tls / alert / fileinfo` 분포.
+            운영 해석: 공격 발생 시 alert + http 증가 동시 — 정상 baseline 에 spike.
+        negative_signs:
+          - "dvwa.6v6.lab 흔적 없음 (fw 가 차단 했거나 ips 가 sniff 못함)"
+          - "HAProxy log 의 backend 가 waf 아님"
+          - "alert event 0 (custom rule 미배포)"
+    target_vm: bastion
+    risk_level: low
+
+  # ============================================================
+  # STEP 9 — Blue Team #2: web ModSec audit + Apache access log
+  # ============================================================
+  - order: 9
+    instruction: |
+      ## 🎯 MISSION (Blue Team — 2)
+
+      web 의 **ModSec audit log** (JSON 형식) + **Apache access log** 두 곳 에서
+      Red 공격 의 흔적 + 매치 된 룰 ID 추출 (chain 의 3 번째 hop).
+
+      ## 💻 실행 명령
+
+      ```bash
+      # 1. ModSec audit log 의 룰 매치 추출 (messages 배열 의 rule id)
+      ssh 6v6-web 'sudo tail -3 /var/log/apache2/modsec_audit.log | head -1 | \
+          jq "{
+              client: .transaction.client_ip,
+              code: .transaction.response.http_code,
+              rules: [.transaction.messages[]? | .ruleId // .id]
+          }"'
+
+      # 2. Apache access log (vhost 별 별도 file 또는 통합)
+      ssh 6v6-web 'sudo tail -3 /var/log/apache2/access.log 2>&1 | head -3'
+
+      # 3. Apache error.log 의 ModSec Warning 라인 (rule 941/942 등)
+      ssh 6v6-web 'sudo grep -E "913100|941100|942100" /var/log/apache2/error.log 2>/dev/null | tail -2'
+
+      # 4. ModSec audit 의 매치 룰 통계 (최근 100 transaction)
+      ssh 6v6-web 'sudo tail -100 /var/log/apache2/modsec_audit.log | grep -oE "\"ruleId\":\"[0-9]+\"|id \"[0-9]+\"" | sort | uniq -c | sort -rn | head -5'
+      ```
+
+      ## 📋 확인 사항
+
+      - 명령 1: `{"client":"10.20.31.1", "code":403, "rules":["913100","941100","941160","942100","949110"]}`
+        — 5+ 룰 매치 (sqlmap scanner detection + XSS via libinjection + XSS script tag + SQLi libinjection + anomaly threshold)
+      - 명령 2: `<haproxy_ip> - - [<date>] "GET /?q=<script>... HTTP/1.1" 403 439 "-" "sqlmap/1.5"` 1+ 라인
+      - 명령 3: `[client 10.20.31.1] ModSecurity: Warning. Matched phrase "sqlmap" ...` 라인
+      - 명령 4: 매치 룰 통계 — 941 (XSS) > 942 (SQLi) > 949 (threshold) 분포
+
+      ## 💡 왜 이걸 하는가?
+
+      "WAF 가 어느 룰 로 차단 했나?" 의 답. ModSec 의 rule.id (의 카테고리:
+      913 scanner / 941 XSS / 942 SQLi / 949 anomaly threshold) 의 매치 분포 가
+      공격 의 *유형* 시각화. 운영 환경 의 SOC 가 ModSec audit log 를 가장 자주
+      확인.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 5+ 룰 ID 매치 + 403 + sqlmap UA 흔적
+      - **client IP 가 10.20.31.1 인 이유**: Apache 의 첫 column 은 직전 hop (HAProxy).
+        원래 attacker IP 는 `X-Forwarded-For` 헤더 에서 확인
+      - **비정상**: audit log 비어 있음 → SecAuditEngine 또는 SecAuditLog 경로 점검
+      - **rule.id 945xxx (PHP)**: PHP 의 Wordpress 등 의 룰 — JuiceShop / DVWA 의 backend 확인
+    hint: "web modsec_audit.log JSON + access.log + error.log + 룰 통계."
+    category: blueteam
+    points: 12
+    answer: |
+      echo "=== Blue #2: web ModSec audit log (JSON 의 rule 매치) ==="
+      ssh 6v6-web 'sudo tail -3 /var/log/apache2/modsec_audit.log | head -1 | jq "{client: .transaction.client_ip, code: .transaction.response.http_code, rules: [.transaction.messages[]? | .ruleId // .id]}"'
+      echo "=== Blue #2: web Apache access log ==="
+      ssh 6v6-web 'sudo tail -3 /var/log/apache2/access.log 2>&1 | head -3'
+      echo "=== Blue #2: web Apache error.log 의 ModSec Warning ==="
+      ssh 6v6-web 'sudo grep -E "913100|941100|942100" /var/log/apache2/error.log 2>/dev/null | tail -2'
+      echo "=== Blue #2: 매치 룰 통계 (최근 100) ==="
+      ssh 6v6-web 'sudo tail -100 /var/log/apache2/modsec_audit.log | grep -oE "\"ruleId\":\"[0-9]+\"|id \"[0-9]+\"" | sort | uniq -c | sort -rn | head -5'
+    answer_detail: |
+      ModSec audit log 의 transaction.messages 배열 의 각 element = 매치 된 1 룰.
+      ruleId / id / severity / data 필드. 941 = XSS / 942 = SQLi / 913 = scanner /
+      949 = anomaly threshold (5+ 룰 매치 시 자동 매치 — score 누적). 룰 의 카테고리
+      가 공격 의 유형 시각화 — SOC 의 alert classification base.
+    verify:
+      type: output_contains
+      expect: '403'
+      field: stdout
+      semantic:
+        intent: |
+          ModSec audit log + Apache access log 의 동일 transaction 추적 + 매치
+          된 룰 ID 추출.
+        success_criteria:
+          - "403 응답"
+          - "941 또는 942 룰 매치"
+          - "sqlmap UA 또는 attacker IP"
+        acceptable_methods:
+          - |
+            **[OSS] modsec_audit.log JSON 분석** — 표준.
+              ssh 6v6-web 'sudo tail -3 /var/log/apache2/modsec_audit.log | head -1 | jq'
+            예상 출력 `{"transaction":{"client_ip":"10.20.31.1","request":{...},"response":{"http_code":403},"messages":[{"id":"941100",..},...]}}`.
+            운영 해석: messages 배열 의 ruleId 가 매치 된 카테고리.
+          - |
+            **[OSS] 매치 룰 통계** — 분류.
+              ssh 6v6-web 'sudo tail -100 /var/log/apache2/modsec_audit.log | grep -oE "\"ruleId\":\"[0-9]+\"" | sort | uniq -c | sort -rn'
+            예상 출력 `30 "ruleId":"941100" / 25 "942100" / 20 "949110" / ...`.
+            운영 해석: 941 (XSS) 가장 자주 = XSS 빈번 또는 false-positive.
+          - |
+            **[OSS] Apache access.log + grep** — 표준.
+              ssh 6v6-web 'sudo tail -10 /var/log/apache2/access.log | grep -E "sqlmap|10.20.30.202"'
+            예상 출력 `<haproxy_ip> - - [<date>] "GET /?q=<script>... HTTP/1.1" 403 ... "sqlmap/1.5"`.
+            운영 해석: client IP = HAProxy hop. UA = sqlmap.
+          - |
+            **[OSS] X-Forwarded-For — 원래 client IP** — 헤더 보존.
+              ssh 6v6-web 'sudo grep "X-Forwarded-For" /var/log/apache2/access.log 2>&1 | tail -3'
+              # 또는 audit log 의 헤더
+              ssh 6v6-web 'sudo tail -3 /var/log/apache2/modsec_audit.log | head -1 | jq -r ".transaction.request.headers.\"X-Forwarded-For\""'
+            예상 출력 `10.20.30.202`.
+            운영 해석: HAProxy forwardfor → web access log 에 원래 IP 보존.
+          - |
+            **[OSS] response.http_code 분포** — WAF 효과.
+              ssh 6v6-web 'sudo cat /var/log/apache2/modsec_audit.log | jq -r .transaction.response.http_code 2>/dev/null | sort | uniq -c'
+            예상 출력 `400 200 / 50 403 / 5 500`.
+            운영 해석: 403 비율 = WAF 차단 효과. 100% 면 over-block — 운영 위험.
+          - |
+            **[OSS] Apache error.log 의 ModSec 메시지** — 보조.
+              ssh 6v6-web 'sudo grep -i modsec /var/log/apache2/error.log | tail -3'
+            예상 출력 `[client 10.20.31.1] ModSecurity: Warning. detected XSS...`.
+            운영 해석: error.log = audit log 의 인덱스 — 빠른 시각 검색.
+          - |
+            **[OSS] severity 분석** — 우선순위.
+              ssh 6v6-web 'sudo tail -3 /var/log/apache2/modsec_audit.log | head -1 | jq -r ".transaction.messages[].severity // .audit_data.messages[]?.severity // \"?\""'
+            예상 출력 `2 / 2 / 4` (CRITICAL=2, WARNING=4).
+            운영 해석: severity 2 (CRITICAL) = confirmed attack.
+        negative_signs:
+          - "audit log 비어있음 (SecAuditEngine Off)"
+          - "rule 매치 없음 (룰셋 미배포)"
+          - "403 미발생 (DetectionOnly mode)"
+    target_vm: bastion
+    risk_level: low
+
+  # ============================================================
+  # STEP 10 — Blue Team #3: siem Wazuh alerts.json 통합 추적
+  # ============================================================
+  - order: 10
+    instruction: |
+      ## 🎯 MISSION (Blue Team — 3, 최종)
+
+      siem 의 **alerts.json** 에서 STEP 7 의 Red 공격 의 통합 alert 추적 (chain
+      의 4 번째 hop — SIEM 의 통합 view).
+
+      ## 💻 실행 명령
+
+      ```bash
+      # 1. agent.name=web + 최근 5 분 의 alert (ModSec 의 alert 가 web agent 로 들어옴)
+      ssh 6v6-siem 'sudo tail -500 /var/ossec/logs/alerts/alerts.json | \
+          jq -c "select(.agent.name==\"web\" and (.rule.groups // []) | tostring | contains(\"web\"))" | tail -3'
+
+      # 2. rule.groups 가 web_attack / sql_injection / xss 의 alert
+      ssh 6v6-siem 'sudo tail -500 /var/ossec/logs/alerts/alerts.json | \
+          jq -c "select((.rule.groups // []) | join(\"|\") | test(\"web_attack|sql_injection|xss\"))" | tail -3'
+
+      # 3. agent.name=ips + alert (Suricata 의 alert 가 ips agent 로)
+      ssh 6v6-siem 'sudo tail -500 /var/ossec/logs/alerts/alerts.json | \
+          jq -c "select(.agent.name==\"ips\")" | tail -3'
+
+      # 4. 가장 최근 5 alert 의 전체 chain 시간순
+      ssh 6v6-siem 'sudo tail -10 /var/ossec/logs/alerts/alerts.json | \
+          jq -c "{ts: .timestamp[0:19], rule: .rule.id, level: .rule.level, agent: .agent.name, desc: .rule.description[0:80]}"'
+      ```
+
+      ## 📋 확인 사항
+
+      - 명령 1: web agent 의 alert — rule.id 가 100200+ 또는 31xxx (ModSec 매칭 rule)
+      - 명령 2: rule.groups 의 `web_attack` / `sql_injection` / `xss` 의 alert
+      - 명령 3: ips agent 의 alert — Suricata 의 매치 가 wazuh 로 forward
+      - 명령 4: 가장 최근 chain — 시간순 으로 web (ModSec) → ips (Suricata) → siem
+
+      ## 💡 왜 이걸 하는가?
+
+      "SOC 가 정말 봤나?" 의 답. SIEM 의 통합 view 가 4 도구 의 *어떤* 정보 를
+      어떻게 통합 했는지 검증. dashboard 의 Discover 와 같은 데이터 — CLI 로 직접
+      확인 = SOC 분석가 의 raw 분석.
+
+      ## 🔍 결과 해석
+
+      - **정상**: web/ips agent 모두 alert + 매치 된 rule.groups 가 web_attack/sql_injection 의 키워드 포함
+      - **alert 0**: STEP 8/9 의 흔적 있는데 siem 으로 전달 안 됨 → ossec.conf 의 remote 또는 agent_control 점검
+      - **alert 만 있고 rule.groups 안 맞음**: decoder 의 분류 미흡 — rule XML 의 group 정의 확인
+    hint: "alerts.json | jq filter by agent + rule.groups."
+    category: blueteam
+    points: 12
+    answer: |
+      echo "=== Blue #3: siem alerts.json web agent 의 alert ==="
+      ssh 6v6-siem 'sudo tail -500 /var/ossec/logs/alerts/alerts.json | jq -c "select(.agent.name==\"web\" and (.rule.groups // []) | tostring | contains(\"web\"))" | tail -3'
+      echo "=== Blue #3: rule.groups web_attack/sql/xss 의 alert ==="
+      ssh 6v6-siem 'sudo tail -500 /var/ossec/logs/alerts/alerts.json | jq -c "select((.rule.groups // []) | join(\"|\") | test(\"web_attack|sql_injection|xss\"))" | tail -3'
+      echo "=== Blue #3: ips agent 의 alert ==="
+      ssh 6v6-siem 'sudo tail -500 /var/ossec/logs/alerts/alerts.json | jq -c "select(.agent.name==\"ips\")" | tail -3'
+      echo "=== Blue #3: 가장 최근 chain (시간순) ==="
+      ssh 6v6-siem 'sudo tail -10 /var/ossec/logs/alerts/alerts.json | jq -c "{ts: .timestamp[0:19], rule: .rule.id, level: .rule.level, agent: .agent.name, desc: .rule.description[0:80]}"'
+    answer_detail: |
+      SIEM 의 통합 view = ModSec audit + Suricata eve + sshd 등 *모든* source 의
+      통합. agent.name 으로 source 분리. rule.groups 의 키워드 매칭 으로 분류 +
+      필터링. dashboard 의 Discover 가 같은 데이터 의 GUI view. CLI 직접 확인 =
+      자동화 + automation 의 base.
+    verify:
+      type: output_contains
+      expect: rule
+      field: stdout
+      semantic:
+        intent: |
+          siem alerts.json 의 통합 view — agent.name + rule.groups 의 필터링 으로
+          STEP 7 의 공격 의 4 도구 통합 흔적 확인.
+        success_criteria:
+          - "web/ips agent 의 alert 추출"
+          - "rule.groups 의 web_attack 키워드 매치"
+          - "가장 최근 chain 시간순"
+        acceptable_methods:
+          - |
+            **[OSS] alerts.json + jq filter** — 표준.
+              ssh 6v6-siem 'sudo tail -500 /var/ossec/logs/alerts/alerts.json | jq "select(.agent.name==\"web\")" | tail -3'
+            예상 출력 `web agent 의 최근 3 alert (rule 매치 포함)`.
+            운영 해석: agent 단위 alert 분리 — source 별 분석.
+          - |
+            **[OSS] dashboard 의 Discover** — GUI.
+              # Discover 의 KQL: agent.name:web AND @timestamp:>now-5m
+            예상 출력 `web agent 의 alert만 GUI 분석`.
+            운영 해석: SOC 의 표준 GUI 분석.
+          - |
+            **[OSS] OpenSearch API _search aggs** — 자동화.
+              curl -sk -u admin:SecretPassword "https://siem.6v6.lab:9200/wazuh-alerts-*/_search?pretty" -H 'Content-Type: application/json' -d '{"query":{"bool":{"must":[{"term":{"agent.name":"web"}},{"range":{"@timestamp":{"gte":"now-5m"}}}]}}}'
+            예상 출력 `recent web alert 의 JSON list`.
+            운영 해석: 자동 alerting / Slack notification 의 base.
+          - |
+            **[OSS] full_log 의 raw 검사** — 정밀.
+              ssh 6v6-siem 'sudo tail -500 /var/ossec/logs/alerts/alerts.json | jq -c "select(.agent.name==\"web\") | .full_log // .data" | tail -3'
+            예상 출력 `raw ModSec audit / Apache access 라인`.
+            운영 해석: decoded 후 잃은 raw 정보 의 원본 검사.
+          - |
+            **[OSS] rule.groups 의 카테고리 통계** — 분류.
+              ssh 6v6-siem 'sudo tail -500 /var/ossec/logs/alerts/alerts.json | jq -r ".rule.groups[]?" | sort | uniq -c | sort -rn | head -10'
+            예상 출력 `web 50 / attack 30 / sql_injection 20 / xss 15 / ...`.
+            운영 해석: rule.groups 의 카테고리 = SOC 의 분류 기준.
+          - |
+            **[OSS] rule.id 의 mitre 매핑** — 강화.
+              ssh 6v6-siem 'sudo tail -500 /var/ossec/logs/alerts/alerts.json | jq -c "select(.rule.mitre != null and .agent.name==\"web\") | {rule: .rule.id, tactic: .rule.mitre.tactic}" | tail -3'
+            예상 출력 `{"rule":"100210","tactic":["Initial Access"]}`.
+            운영 해석: ATT&CK 매핑 의 alert = SOC 분석 우선순위 1.
+          - |
+            **[OSS] flow_id 또는 srcip 의 correlation** — 다중 alert 연결.
+              SRC=10.20.30.202
+              ssh 6v6-siem "sudo tail -500 /var/ossec/logs/alerts/alerts.json | jq -c 'select(.data.srcip == \"$SRC\")' | tail -5"
+            예상 출력 `같은 srcip 의 모든 alert (시간순)`.
+            운영 해석: 한 attacker 의 모든 활동 — multi-stage attack 식별.
+        negative_signs:
+          - "alert 0 (siem 으로 전달 안 됨)"
+          - "rule.groups 키워드 매치 없음 (분류 미흡)"
+          - "agent.name 만 wazuh.manager (다른 agent disconnect)"
+    target_vm: bastion
+    risk_level: low
+
+  # ============================================================
+  # STEP 11 — Purple Team: Coverage Matrix + Gap + 권장 보강
+  # ============================================================
+  - order: 11
+    instruction: |
+      ## 🎯 MISSION (Purple Team)
+
+      STEP 7 의 Red 공격 1 건 + STEP 8-10 의 Blue 3 도구 추적 결과 종합 → **Coverage
+      Matrix** + **Gap 식별** + **권장 조치** markdown.
+
+      ## 💻 산출물 — Coverage Matrix markdown
+
+      ```markdown
+      # 6v6 W01 — Red/Blue/Purple Coverage Matrix
+
+      ## 시나리오
+      - Red 공격: sqlmap UA + XSS + SQLi 결합 페이로드 1 건
+      - 대상: dvwa.6v6.lab (host header)
+      - 시각: <ATTACK_TS>
+
+      ## 4 도구 Coverage Matrix
+
+      | 도구 | 흔적 발견? | 발견 내용 | Latency | 강점 | 약점 |
+      |---|---|---|---|---|---|
+      | fw HAProxy log | ✅ / ❌ | (backend=waf, status=403) | 0 s | host-header 라우팅 | 응답 body 안 봄 |
+      | ips Suricata eve | ✅ / ❌ | (http event, alert event) | 0 s | application layer parsing | encrypted traffic limit |
+      | web ModSec audit | ✅ / ❌ | (5 rule 매치, severity 2) | 0 s | rule 기반 정밀 | rule 의 미배포 / over-block |
+      | siem Wazuh alerts | ✅ / ❌ | (web/ips agent 의 통합) | 1-5 s | source 통합 | decoder 의 정확성 의존 |
+
+      ## Gap 식별
+
+      1. **Gap 1**: <학생 본인 분석 — 어느 도구 의 blind spot>
+         - 예: ips 의 alert 가 0 → custom rule (sqlmap UA) 미배포
+         - 권장: ips W02 의 rule 배포 또는 Suricata-Update 의 emerging-scan rule
+
+      2. **Gap 2**: <또 다른 gap>
+         - 예: HAProxy log 에 X-Forwarded-For 헤더 누락 → 원래 attacker IP 추적 불가
+         - 권장: haproxy.cfg 의 forwardfor option 활성
+
+      3. **Gap 3 (선택)**: <또>
+
+      ## SOC 워크플로우 5 단계 매핑
+
+      | 단계 | 본 lab 의 step |
+      |---|---|
+      | 1. 모니터링 | STEP 1 dashboard + STEP 2 stack |
+      | 2. 탐지 | STEP 4 alert 추출 + STEP 7 Red 공격 |
+      | 3. 분석 | STEP 5 분포 + STEP 6 트리아지 + STEP 8-10 Blue |
+      | 4. 대응 | (W08 부터 본격 — 본 lab 의 P1 alert 가 있다면 가상 권고) |
+      | 5. 보고 | STEP 11 의 본 markdown |
+
+      ## MTTD / MTTR 추정
+
+      - MTTD = ATTACK_TS ~ dashboard alert 인지 시각 = (학생 측정)
+      - MTTR = 인지 ~ (가상) 대응 완료 = N/A (W08+ 부터)
+
+      ## R/B/P 회고 (3 문단)
+
+      ### Red 입장
+      <학생 본인 1 문장 — Red 의 1 공격 이 어떻게 4 도구 에 동시 흔적 남겼나>
+
+      ### Blue 입장
+      <학생 본인 1 문장 — 어느 도구 가 가장 빠르고 정밀 한가>
+
+      ### Purple 입장
+      <학생 본인 1 문장 — Gap 의 우선순위 + 보강 권고>
       ```
 
       ## 💡 왜 이걸 하는가?
 
-      Wazuh dashboard = SOC 의 *유일한 단일 진입점*. L1 분석가 의 1 일 첫 활동 = dashboard 첫 화면 의 alert 분포 파악.
-
-      ## 📋 채점 기준
-
-      - dashboard 접속 + Discover 화면 도달
-      - alert 행 수 + field 갯수 + Top 3 rule.id 인용
-    hint: "Last 1 hour 의 alert 가 0 이면 시간 범위 확장 (Last 24h). rule.id Top 3 = 좌측 Available fields 에서 rule.id 클릭 → 우측 panel 의 Top 5 통계."
-    category: soc_basics
-    points: 10
-    answer: |
-      🤖 가이드: 브라우저 활동 — 보고서 에 결과 4 줄 적기. 또는 KQL `_exists_:rule.id` 으로 alert 검색.
-    answer_detail: |
-      dashboard 의 default time = Last 24 hours 또는 본인 설정. alert 0 = 6v6 가 idle 일 수도 있음 — 다음 step 의 인위 트래픽 발생 후 재확인.
-    verify:
-      intent: "Wazuh dashboard 접속 + 1 시간 alert 분포 + Top 3 rule.id"
-      success_criteria:
-        - "dashboard 접속"
-        - "alert 행 수 + field 갯수"
-        - "Top 3 rule.id"
-      acceptable_methods:
-        - "브라우저 GUI"
-        - "또는 ssh 6v6-siem 의 alerts.json grep"
-      negative_signs:
-        - "접속 만, 분석 없음"
-    target_vm: bastion
-    risk_level: low
-
-  - order: 3
-    instruction: |
-      ## 🎯 MISSION — alert 1 건 의 5 필드 추출
-
-      **어디서:** Wazuh dashboard 또는 ssh siem
-      **무엇을:** STEP 2 의 alert 행 중 1 건 클릭 (level 가장 높은 것 선호) → JSON 의 5 필드 추출.
-
-      **결과 정리:**
-      ```
-      alert id: <"id" 필드>
-      @timestamp: ...
-      rule.id: ...
-      rule.level: <0-15>
-      rule.description: ...
-      agent.name: ...
-      data: <있다면 src_ip/dest_ip 또는 url 등 추가 필드 1~2 개>
-      ```
-
-      ## 💡 왜?
-
-      L1 분석가 의 가장 기본 활동 = alert 의 *who/what/where/when* 추출. 5 필드 만 으로 다음 단계 의 트리아지 가능.
+      Purple Team 의 standard cycle. Red 공격 이 Blue 4 도구 에 어떻게 흔적 남기는지
+      종합 + Gap 식별 + 보강 권고. SOC 의 *지속 개선* 의 base. 운영 환경 의 SOC 는
+      매 분기 의 Purple cycle 로 rule / coverage / detection 개선.
 
       ## 📋 채점
 
-      - 5 필드 모두 추출
-      - 학생 본인 의 alert 1 건 선택 (paste X)
-    hint: "dashboard 의 alert 행 클릭 → 좌측 JSON 펼침. 또는 ssh 6v6-siem 'tail -1 /var/ossec/logs/alerts/alerts.json | python3 -m json.tool'."
-    category: soc_basics
-    points: 10
-    answer: |
-      🤖 가이드:
-      ssh 6v6-siem 'tail -1 /var/ossec/logs/alerts/alerts.json | python3 -c "
-      import sys, json
-      d = json.loads(sys.stdin.read())
-      for k in (\"id\", \"timestamp\"):
-          print(k, \":\", d.get(k))
-      for k in (\"id\", \"level\", \"description\", \"groups\"):
-          print(\"rule.\"+k, \":\", d.get(\"rule\",{}).get(k))
-      print(\"agent.name :\", d.get(\"agent\",{}).get(\"name\"))
-      "'
-    answer_detail: |
-      alerts.json 의 1 line = 1 alert (JSON). 5 필드 + 추가 data 가 다음 step 의 트리아지 input.
-    verify:
-      intent: "alert 1 건 의 5 필드 추출"
-      success_criteria:
-        - "5 필드 모두"
-        - "학생 본인 alert"
-      acceptable_methods:
-        - "dashboard GUI 또는 alerts.json tail"
-      negative_signs:
-        - "예시 paste"
-        - "5 중 누락"
-    target_vm: siem
-    risk_level: low
-
-  - order: 4
-    instruction: |
-      ## 🎯 MISSION — L1 트리아지 시뮬 — 위험도 + 출처 + 우선순위 본인 판정
-
-      **무엇을:** STEP 3 의 alert 의 *트리아지* 본인 판정.
-
-      **판정 표 (학생 작성):**
-
-      | 항목 | 값 | 본인 판정 |
-      |---|---|---|
-      | rule.level | (0-15) | (Critical/High/Med/Low) |
-      | agent.name (출처) | | (운영 영향 큼 / 작음) |
-      | rule.description | | (어떤 공격 패턴) |
-      | data 의 src_ip | | (내부/외부/알 수 없음) |
-      | 최종 우선순위 | (P1/P2/P3/P4) | (즉시 대응 / 정시 대응 / 모니터링 / 무시) |
-
-      **본인 1 문장 결정**: 이 alert 가 *진짜 위협 인가* / *오탐 인가* — 그 판단 의 근거 1 줄.
-
-      ## 💡 왜?
-
-      L1 의 가장 중요한 활동 = 트리아지 (어떤 alert 가 escalate 할 만한가). 운영 환경 의 alert 수십~수백 개 중 *대응 필요 한 것* 만 선별.
-
-      ## 📋 채점
-
-      - 5 항목 모두 본인 판정
-      - 최종 우선순위 P1~P4 1 개
-      - 진짜 위협 / 오탐 판단 1 줄
-    hint: "Wazuh 의 default level 매핑: 1-5=Low, 6-10=Medium, 11-13=High, 14-15=Critical. agent 가 web/ips 면 외부 노출 의 단서. src_ip 가 10.20.30.0/24 면 내부 (6v6 점검자).
-"
-    category: soc_basics
+      - 4 도구 Coverage Matrix 표 (4 도구 모두)
+      - Gap 2+ 식별 + 권장 조치
+      - SOC 워크플로우 5 단계 매핑
+      - R/B/P 회고 3 문단
+    hint: "Coverage Matrix + Gap + 5 단계 + R/B/P 회고."
+    category: purple
     points: 14
     answer: |
-      🤖 가이드: 학생 본인 판정 표 + 1 문장. 정답 X — 학생 의 reasoning.
+      cat <<'EOF'
+      # 6v6 W01 — Red/Blue/Purple Coverage Matrix (학생 작성 예시)
+
+      ## 4 도구 Coverage Matrix
+      | 도구 | 흔적? | 발견 내용 | Latency | 강점 | 약점 |
+      |---|---|---|---|---|---|
+      | fw HAProxy | ✅ | backend=waf 403 | 0s | host header 라우팅 | body 안 봄 |
+      | ips Suricata | ✅/❌ | http event + alert | 0s | app-layer parsing | 일부 custom rule 미배포 |
+      | web ModSec | ✅ | 5 rule 매치 (941/942/949) | 0s | rule 정밀 | over-block 위험 |
+      | siem Wazuh | ✅ | web/ips agent 통합 alert | 1-5s | source 통합 | decoder 의존 |
+
+      ## Gap 식별
+      1. ips custom rule (sqlmap UA detection) 미배포 가능성
+      2. HAProxy 의 forwardfor 헤더 활성 여부 점검 필요
+      3. siem 의 ATT&CK 매핑 alert 가 적음 — rule.mitre 의 보강
+
+      ## SOC 워크플로우 매핑 (STEP 별)
+      1. 모니터링: STEP 1 + 2
+      2. 탐지: STEP 4 + 7
+      3. 분석: STEP 5 + 6 + 8-10
+      4. 대응: W08+ 부터
+      5. 보고: STEP 11
+
+      ## R/B/P 회고
+      - Red: 1 페이로드 (sqlmap UA + XSS + SQLi) → 4 도구 동시 흔적 = Defense in Depth 의 가시화
+      - Blue: ModSec 가 가장 정밀 (rule ID 단위) + dashboard 의 통합 view 가 시간순 가시
+      - Purple: ips 의 custom rule 보강 + HAProxy forwardfor 활성 = 다음 주차 우선 조치
+      EOF
     answer_detail: |
-      트리아지 의 reasoning = 정답 X 학습 가치. L1 분석가 의 첫 결정 = escalate 또는 close.
+      Purple cycle 의 표준 산출물 = Coverage Matrix + Gap + 보강. 매 분기 의 R/B/P
+      exercise 의 보고서 base. 학생 본인 의 단어 의 회고 가 가장 중요 — paste 가
+      아닌 학생 의 reasoning.
     verify:
-      intent: "트리아지 5 항목 + 우선순위 + 진위 판단"
-      success_criteria:
-        - "5 항목 본인 판정"
-        - "우선순위 P1-P4"
-        - "진위 1 줄"
-      acceptable_methods:
-        - "표 markdown"
-      negative_signs:
-        - "값만 paste"
-        - "판정 누락"
-    target_vm: bastion
-    risk_level: low
-
-  - order: 5
-    instruction: |
-      ## 🎯 MISSION — SOC 워크플로우 1 사이클 + cleanup
-
-      **무엇을:**
-      1. 본 lab 의 활동 을 **SOC 5 단계** (모니터링 → 탐지 → 분석 → 대응 → 보고) 에 mapping. 각 단계 가 어느 step 에서 일어났나 1 줄 씩.
-      2. 마지막 = 학생 본인 의 *MTTD/MTTR estimate* — STEP 3 alert 의 추정 발생 시간 ~ 학생 의 dashboard 인지 시간 ~ (가상) 대응 시간.
-      3. cleanup = brewer 종료, /tmp 정리 (본 lab 은 read-only).
-
-      ## 📋 채점
-
-      - 5 단계 mapping
-      - MTTD/MTTR 추정
-      - cleanup 안내
-    hint: "MTTD = alert 발생 ~ 분석가 인지. MTTR = 인지 ~ 대응 완료 (lab 은 가상)."
-    category: documentation
-    points: 8
-    answer: |
-      🤖 가이드:
-      # SOC 5 단계 매핑:
-      # 1. 모니터링: STEP 2 (dashboard 의 alert 분포 파악)
-      # 2. 탐지: STEP 3 (alert 1 건 의 5 필드 추출)
-      # 3. 분석: STEP 4 (트리아지 판정)
-      # 4. 대응: (가상) STEP 4 의 P1 alert 가 있다면 IR 절차 시작
-      # 5. 보고: 본 step 의 markdown 보고서
-
-      # MTTD estimate: alert timestamp ~ dashboard 접속 시각 = 분 단위
-      # MTTR estimate: dashboard 인지 ~ 가상 대응 (lab 의 IR 절차 없으므로 'N/A — W08 부터')
-    answer_detail: |
-      W01 의 lab = 5 단계 의 1~3 (모니터링/탐지/분석) 까지. 대응 (4) + 보고 (5) 은 W08 부터.
-    verify:
-      intent: "5 단계 mapping + MTTD/MTTR + cleanup"
-      success_criteria:
-        - "5 단계 mapping"
-        - "MTTD/MTTR 추정"
-        - "cleanup"
-      acceptable_methods:
-        - "markdown"
-      negative_signs:
-        - "단계 누락"
+      type: output_contains
+      expect: Matrix
+      field: stdout
+      semantic:
+        intent: |
+          Purple Team Coverage Matrix + Gap 식별 + SOC 5 단계 매핑 + R/B/P 회고.
+        success_criteria:
+          - "4 도구 Coverage Matrix"
+          - "Gap 2+ 식별 + 권장 조치"
+          - "SOC 5 단계 매핑"
+          - "R/B/P 회고 3 문단"
+        acceptable_methods:
+          - |
+            **[OSS] markdown 표 + 학생 본인 작성** — 표준.
+              # 위 instruction 의 markdown template 작성
+            예상 출력 `Coverage Matrix 4 row + Gap 2+ + R/B/P 3 문단`.
+            운영 해석: 분기 별 R/B/P exercise 의 표준 산출물.
+          - |
+            **[OSS] dashboard 의 Visualize panel** — 시각.
+              # Visualize Library → 4 도구 의 stacked bar (rule.groups 별)
+            예상 출력 `시각 적 distribution chart`.
+            운영 해석: 시각 분석 — 비기술자 설득.
+          - |
+            **[OSS] AAR (After Action Review)** — 정형.
+              echo "AAR 4 질문: 무엇이 일어났나 / 무엇이 잘 되었나 / 무엇이 안 되었나 / 다음에 어떻게"
+            예상 출력 `(4 질문 의 학생 답)`.
+            운영 해석: 군사 / 보안 의 AAR 표준.
+          - |
+            **[OSS] MITRE ATT&CK Navigator** — 시각 매핑.
+              # https://mitre-attack.github.io/attack-navigator/
+              # layer.json: {name, techniques: [{techniqueID:"T1190",score:1}]}
+            예상 출력 `Navigator 의 색칠 된 heatmap`.
+            운영 해석: 점검 coverage 의 시각 — 분기 별 발전 추적.
+          - |
+            **[OSS] Coverage Matrix automation** — DB.
+              # 매 분기 의 Matrix 를 DB 에 저장 → trend chart
+              echo "Excel / OpenSearch / 자체 DB"
+            예상 출력 `(절차)`.
+            운영 해석: 분기 별 Coverage 의 추이 — 개선 측정.
+        negative_signs:
+          - "4 도구 중 일부 미작성"
+          - "Gap 없음 (분석 누락)"
+          - "R/B/P 회고 paste"
     target_vm: bastion
     risk_level: low
