@@ -1,153 +1,908 @@
 lab_id: standalone-soc-week02
-title: "로그 이해 (1) — 시스템 로그 (syslog / auth.log / journald) 직접 분석 (6v6 + R/B/P)"
+title: 로그 이해 (1) — 시스템 로그 (sshd 인증 / journald / wazuh 내부) + R/B/P (ssh brute 추적)
 version: standalone-non-ai
 course: soc
 week: 2
 description: |
-  SOC 분석가 의 base equipment = 시스템 로그 의 raw read. 6v6 의 fw / ips / web /
-  siem 4 컨테이너 의 syslog (/var/log/syslog 또는 /var/log/messages), auth.log
-  (sshd 인증 이벤트), journald (systemd) 의 *raw 위치 + 형식 + 핵심 필드* 를
-  학생 본인 손 으로 추출.
-difficulty: easy
-duration_minutes: 90
+  SOC 분석가 의 base equipment = 시스템 로그 의 raw read. 6v6 의 컨테이너 들 은
+  minimal Docker (rsyslog/systemd 부재) 이므로 가용 시스템 로그 = siem 의 sshd.log
+  + Wazuh 의 ossec.log + alerts.json. 마지막 4 step 은 R/B/P — attacker 의 ssh
+  brute force 가 sshd.log → alerts.json (rule 5710) 으로 어떻게 흔적 남기는지 추적.
+difficulty: medium
+duration_minutes: 150
+audience: 보안관제 입문자 (2주차)
 prerequisites:
-  - "W01 의 6v6 SOC stack 데이터 흐름 이해"
-  - "bastion ssh ProxyJump 로 4 컨테이너 접근 가능"
+  - "W01 통과 — 6v6 SOC stack 데이터 흐름 + Wazuh dashboard"
+  - "bastion ProxyJump 로 siem / fw 접근 가능"
+  - "lecture_week02.md 정독 — syslog RFC3164/5424 + sshd 인증 이벤트"
 objectives:
-  - "syslog 의 RFC3164 / RFC5424 format 의 5 필드 (timestamp / host / facility / severity / message) 추출"
-  - "auth.log 의 sshd 이벤트 (Accepted / Failed password / session opened/closed) 5 패턴 식별"
-  - "journald (systemctl status / journalctl -u) 로 daemon 의 최근 상태 추출"
-  - "logrotate 정책 + 보관 기간 파악 (운영 환경 의 로그 retention)"
-pass_threshold: 0.6
+  - "siem sshd.log 의 syslog 5 필드 (timestamp/host/process/pid/message) 분해"
+  - "sshd 인증 이벤트 5 패턴 (Accepted/Failed/Disconnect/publickey/Invalid) 빈도 + 예제"
+  - "Wazuh ossec.log 의 daemon 시각 흐름 (INFO/WARNING/ERROR)"
+  - "alerts.json 의 sshd 관련 rule (5xxx 인증 계열) 추출"
+  - "R/B/P — ssh brute force 시뮬 → sshd.log Failed 추적 → alerts.json rule 5710 → Purple lockout 권고"
+pass_threshold: 0.7
 steps:
 
   - order: 1
     instruction: |
-      ## 🎯 MISSION — siem 의 sshd.log 5 필드 추출
+      ## 🎯 MISSION
 
-      **어디서:** bastion → ssh 6v6-siem
-      **무엇을:** /var/log/sshd.log 의 최근 5 line 추출 + 각 line 의 5 필드 (timestamp / host / process / pid / message) 의 위치 표시.
+      siem 의 /var/log/sshd.log 의 최근 5 line 추출 + 각 line 의 syslog 5 필드
+      (timestamp / host / process / pid / message) 위치 분해.
 
-      💡 6v6 fw/web/ips 는 **minimal Docker 컨테이너** (rsyslog daemon X, systemd X) 라 일반 /var/log/syslog 부재. siem (Amazon Linux 2023) 의 sshd.log 가 가용.
+      💡 6v6 의 fw/web/ips 는 minimal Docker (rsyslog/systemd 부재) 라 일반
+      /var/log/syslog 부재. 가용 시스템 인증 로그 = siem (Amazon Linux 2023) 의
+      sshd.log.
 
-      ## 📋 채점
-      - 5 line 추출
-      - 5 필드 mapping
-      - RFC 형식 (3164) 판정
-    hint: "ssh 6v6-siem 'tail -5 /var/log/sshd.log'. 일반 syslog format: 'Month Day HH:MM:SS host process[pid]: msg'."
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-siem 'sudo tail -5 /var/log/sshd.log'
+      ```
+
+      ## 📋 확인 사항
+
+      - 5 line 의 형식: `<Month Day HH:MM:SS> <host> <process>[<pid>]: <message>`
+      - process = `sshd`
+      - message = `Accepted publickey for ccc from 10.20.x.x port xxx ssh2: ED25519 ...`
+
+      ## 💡 왜 이걸 하는가?
+
+      syslog 의 5 필드 분해 = 모든 로그 분석 의 base. RFC3164 (BSD format) 의 구조
+      를 손에 익히면 어떤 로그 source 든 빠르게 파싱 가능.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 5 line + sshd process + Accepted/Disconnect message
+      - **sshd.log 없음**: siem 의 sshd 가 syslog 로 안 보냄 — journald 또는 docker logs 대체
+      - **빈 파일**: 최근 ssh 접속 없음 — bastion 에서 ssh 6v6-siem 1 회 후 재확인
+    hint: "ssh 6v6-siem 'sudo tail -5 /var/log/sshd.log'. RFC3164: Month Day Time host process[pid]: msg."
     category: log_basics
     points: 10
     answer: |
-      🤖 가이드:
-      ssh 6v6-siem 'tail -5 /var/log/sshd.log'
+      echo "=== siem sshd.log 최근 5 line ==="
+      ssh 6v6-siem 'sudo tail -5 /var/log/sshd.log'
+      echo "=== 5 필드 분해 (1 line) ==="
+      ssh 6v6-siem 'sudo tail -1 /var/log/sshd.log | awk "{print \"timestamp:\", \$1, \$2, \$3; print \"host:\", \$4; print \"process:\", \$5; print \"message:\", substr(\$0, index(\$0,\$6))}"'
     answer_detail: |
-      6v6 의 컨테이너 들 = rsyslog 없는 minimal Docker — /var/log/syslog 부재. 가용 인증 log = siem 의 sshd.log (Amazon Linux 2023 의 systemd 호환 형식).
+      RFC3164 BSD syslog format: `<PRI>Mmm dd hh:mm:ss HOSTNAME TAG: MSG`. sshd 의
+      인증 이벤트 가 SOC 의 brute force / 비정상 access detection 의 base.
     verify:
-      intent: "fw syslog 5 line + 5 필드 + RFC 판정"
-      success_criteria:
-        - "5 line 추출"
-        - "5 필드 mapping"
-        - "RFC 형식 판정"
-      acceptable_methods:
-        - "tail / journalctl"
-      negative_signs:
-        - "1~2 line만"
-    target_vm: bastion
+      type: output_contains
+      expect: sshd
+      field: stdout
+      semantic:
+        intent: siem sshd.log 의 syslog 5 필드 분해. SOC 의 로그 분석 base.
+        success_criteria:
+          - "5 line 추출"
+          - "5 필드 (timestamp/host/process/pid/message) mapping"
+          - "RFC3164 형식 판정"
+        acceptable_methods:
+          - |
+            **[OSS] tail + awk** — 표준.
+              ssh 6v6-siem 'sudo tail -5 /var/log/sshd.log'
+            예상 출력 `May 19 07:41:00 siem sshd[123]: Accepted publickey for ccc ...`.
+            운영 해석: RFC3164 BSD format — 5 필드 의 표준.
+          - |
+            **[OSS] journalctl 대안 (siem 가용 시)** — systemd.
+              ssh 6v6-siem 'sudo journalctl -u sshd -n 5 --no-pager 2>/dev/null || echo "journald 미가용"'
+            예상 출력 `journald entry 또는 미가용`.
+            운영 해석: Amazon Linux 2023 의 systemd journal.
+          - |
+            **[OSS] docker logs 외부** — 컨테이너.
+              ssh 6v6-bastion 'docker logs --tail 5 6v6-siem 2>&1 | grep -i ssh'
+            예상 출력 `sshd 의 docker stdout`.
+            운영 해석: minimal 컨테이너 의 syslog 부재 시 docker logs.
+          - |
+            **[OSS] last / lastlog — 로그인 이력** — 보조.
+              ssh 6v6-siem 'last -n 10 2>/dev/null | head -10'
+            예상 출력 `ccc pts/0 10.20.x.x <date> still logged in`.
+            운영 해석: wtmp 기반 로그인 이력 — sshd.log 의 보조.
+        negative_signs:
+          - "sshd.log 없음 (syslog 미설정)"
+          - "5 필드 mapping 누락"
+          - "빈 파일 (ssh 접속 이력 없음)"
+    target_vm: siem
     risk_level: low
 
   - order: 2
     instruction: |
-      ## 🎯 MISSION — siem sshd.log 의 sshd 이벤트 5 패턴 식별
+      ## 🎯 MISSION
 
-      **어디서:** ssh 6v6-siem (auth.log 대신 /var/log/sshd.log)
-      **무엇을:** sshd 의 5 패턴 (Accepted / Disconnect / Received disconnect / publickey / Connection closed) 각각 발생 횟수 + 1 예제.
+      sshd 의 5 인증 이벤트 패턴 (Accepted / Failed password / Disconnect /
+      publickey / Invalid user) 각각 의 발생 횟수 + 1 예제.
 
-      ## 📋 채점
-      - 5 패턴 모두 grep
-      - 각 의 발생 횟수
-      - 1 예제 인용
-    hint: "ssh 6v6-siem 'for p in Accepted Disconnect ...; do grep -c \"$p\" /var/log/sshd.log; done'."
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-siem 'for p in "Accepted" "Failed password" "Disconnect" "publickey" "Invalid user"; do
+          c=$(grep -c "$p" /var/log/sshd.log 2>/dev/null)
+          ex=$(grep -m1 "$p" /var/log/sshd.log 2>/dev/null | head -c 90)
+          echo "[$p] count=$c | $ex"
+      done'
+      ```
+
+      ## 📋 확인 사항
+
+      - `Accepted` / `publickey` 다수 (정상 ProxyJump 접속)
+      - `Failed password` / `Invalid user` = brute force 의 흔적 (보통 0 — 6v6 idle 시)
+      - `Disconnect` = 정상 종료
+
+      ## 💡 왜 이걸 하는가?
+
+      sshd 의 인증 이벤트 5 패턴 = Wazuh rule 5710 (multiple failed) / 5715
+      (Accepted) / 5760 (Invalid user) 등 의 source. SOC 의 brute force detection
+      의 base. STEP 7-9 의 R/B/P 에서 직접 brute 발생 + 추적.
+
+      ## 🔍 결과 해석
+
+      - **정상**: Accepted/publickey 다수 + Failed 0
+      - **Failed/Invalid 다수**: brute force 진행 중 또는 과거 흔적 — alerts.json 의 rule 5710 확인
+      - **모든 패턴 0**: sshd.log 가 비어있음 또는 rotate — 다른 시점 확인
+    hint: "grep -c 각 패턴 + grep -m1 예제."
     category: log_basics
     points: 10
     answer: |
-      🤖 가이드:
-      ssh 6v6-siem 'for p in Accepted "Received disconnect" Disconnected publickey "Connection closed"; do
-        c=$(grep -c "$p" /var/log/sshd.log 2>/dev/null)
-        ex=$(grep -m1 "$p" /var/log/sshd.log 2>/dev/null | head -c 100)
-        echo "[$p] count=$c | $ex"
+      echo "=== sshd 5 인증 패턴 ==="
+      ssh 6v6-siem 'for p in "Accepted" "Failed password" "Disconnect" "publickey" "Invalid user"; do
+          c=$(grep -c "$p" /var/log/sshd.log 2>/dev/null)
+          ex=$(grep -m1 "$p" /var/log/sshd.log 2>/dev/null | head -c 90)
+          echo "[$p] count=$c | $ex"
       done'
     answer_detail: |
-      sshd 의 인증 이벤트 5 패턴 = Wazuh rule 5710 (multiple failed) / 5715 (Accepted) 등 의 source. SOC 의 brute force detection 의 base.
+      Accepted publickey = 정상 (6v6 의 ProxyJump key 인증). Failed password +
+      Invalid user 가 0 이상 = brute force 흔적. Wazuh rule 5710 (8 회 fail in 120s)
+      / 5712 (브루트 후 성공) 등 매핑.
     verify:
-      intent: "5 sshd 패턴 + 횟수 + 예제"
-      success_criteria:
-        - "5 패턴"
-        - "횟수"
-        - "예제"
-      acceptable_methods:
-        - "grep / awk"
-      negative_signs:
-        - "1~2 패턴만"
-    target_vm: bastion
+      type: output_contains
+      expect: Accepted
+      field: stdout
+      semantic:
+        intent: sshd 5 인증 패턴 의 빈도 + 예제. SOC brute force detection base.
+        success_criteria:
+          - "5 패턴 모두 grep"
+          - "각 의 발생 횟수"
+          - "1 예제 인용"
+        acceptable_methods:
+          - |
+            **[OSS] grep -c + grep -m1** — 표준.
+              ssh 6v6-siem 'for p in Accepted "Failed password" ...; do grep -c "$p" /var/log/sshd.log; done'
+            예상 출력 `[Accepted] count=15 | May 19 ... Accepted publickey for ccc`.
+            운영 해석: Accepted 다수 = 정상, Failed 다수 = brute.
+          - |
+            **[OSS] awk 의 패턴 카운트** — 효율.
+              ssh 6v6-siem 'awk "/Accepted/{a++} /Failed/{f++} /Invalid/{i++} END{print \"Accepted:\"a, \"Failed:\"f, \"Invalid:\"i}" /var/log/sshd.log'
+            예상 출력 `Accepted:15 Failed:0 Invalid:0`.
+            운영 해석: 한 번 의 scan 으로 다중 패턴 카운트.
+          - |
+            **[OSS] faillog / lastb — 실패 이력** — 보조.
+              ssh 6v6-siem 'sudo lastb -n 10 2>/dev/null | head; faillog -a 2>/dev/null | head -5'
+            예상 출력 `btmp 기반 실패 로그인`.
+            운영 해석: btmp 의 실패 로그인 이력 — sshd.log 의 보조.
+          - |
+            **[OSS] 시간대별 Failed 분포** — burst.
+              ssh 6v6-siem 'grep "Failed" /var/log/sshd.log | awk "{print \$3}" | cut -c1-2 | sort | uniq -c'
+            예상 출력 `시간대별 Failed 횟수`.
+            운영 해석: 특정 시각 의 Failed burst = 자동화 brute.
+        negative_signs:
+          - "5 패턴 중 일부 누락"
+          - "횟수 없이 예제만"
+          - "모든 패턴 0 (빈 로그)"
+    target_vm: siem
     risk_level: low
 
   - order: 3
     instruction: |
-      ## 🎯 MISSION — daemon 의 최근 상태 (Wazuh manager)
+      ## 🎯 MISSION
 
-      **무엇을:** siem 의 wazuh-control status + 7+ daemon 의 active 상태 + Top 3 cpu/mem (ps 또는 top).
+      Wazuh 의 ossec.log 의 daemon 시각 흐름 (INFO / WARNING / ERROR) 추출 + 최근
+      ERROR/WARNING 1+ 확인 + 의미 분석.
 
-      💡 6v6 컨테이너 = systemd 미사용 → journalctl 대신 ps + wazuh-control 의 native 명령.
+      ## 💻 실행 명령
 
-      ## 📋 채점
-      - 7+ daemon active 확인
-      - 1+ daemon 의 process 정보
-    hint: "ssh 6v6-siem '/var/ossec/bin/wazuh-control status; ps aux | grep wazuh | head -5'."
-    category: log_basics
-    points: 8
+      ```bash
+      # 1. 최근 ossec.log 10 line
+      ssh 6v6-siem 'sudo tail -10 /var/ossec/logs/ossec.log'
+
+      # 2. 최근 ERROR / WARNING 만
+      ssh 6v6-siem 'sudo grep -E "ERROR|WARNING|CRITICAL" /var/ossec/logs/ossec.log | tail -5'
+
+      # 3. log level 분포
+      ssh 6v6-siem 'sudo grep -oE "INFO|WARNING|ERROR|CRITICAL" /var/ossec/logs/ossec.log | sort | uniq -c'
+      ```
+
+      ## 📋 확인 사항
+
+      - 명령 1: `<date> wazuh-analysisd: INFO: ...` 형식 의 daemon 활동
+      - 명령 2: ERROR/WARNING 라인 (있다면) — 예: "Too many fields for JSON decoder"
+        같은 decoder 경고
+      - 명령 3: INFO 다수 + ERROR/WARNING 소수 = 정상
+
+      ## 💡 왜 이걸 하는가?
+
+      ossec.log = Wazuh manager 의 daemon 의 health log. analysisd / remoted /
+      modulesd 의 startup / error / warning 의 시각 흐름. SOC 의 *infrastructure
+      health* 모니터링 의 base. ERROR 가 누적 되면 alert 생성 정지 위험.
+
+      ## 🔍 결과 해석
+
+      - **정상**: INFO 다수
+      - **"Too many fields for JSON decoder" ERROR**: Suricata stats event 의
+        256 field overflow (이전 fix 의 회귀) — ips 의 eve-log stats 제외 확인
+      - **CRITICAL: Configuration error**: decoder/rule XML syntax 오류 — 즉시 점검
+    hint: "tail ossec.log + grep ERROR/WARNING."
+    category: wazuh
+    points: 10
     answer: |
-      🤖 가이드:
-      ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control status 2>&1 | grep "is running" | head -10; ps aux | grep wazuh | head -5'
+      echo "=== ossec.log 최근 10 line ==="
+      ssh 6v6-siem 'sudo tail -10 /var/ossec/logs/ossec.log'
+      echo "=== ERROR/WARNING ==="
+      ssh 6v6-siem 'sudo grep -E "ERROR|WARNING|CRITICAL" /var/ossec/logs/ossec.log | tail -5'
+      echo "=== log level 분포 ==="
+      ssh 6v6-siem 'sudo grep -oE "INFO|WARNING|ERROR|CRITICAL" /var/ossec/logs/ossec.log | sort | uniq -c'
     answer_detail: |
-      journald = systemd 의 통합 로그. journalctl 의 -u (unit) / --since / --priority filter. 운영 환경 의 daemon 상태 의 1 차 진단.
+      ossec.log = Wazuh 의 daemon 로그. analysisd 의 alert 생성 / remoted 의 agent
+      연결 / modulesd 의 module 활동. ERROR 의 누적 = SOC 의 infrastructure 경고.
+      "Too many fields" = Suricata stats overflow (fix 됨), "Configuration error" =
+      decoder XML 오류.
     verify:
-      intent: "systemd unit status + journalctl 10 line"
-      success_criteria:
-        - "unit 1+"
-        - "status"
-        - "최근 line"
-      acceptable_methods:
-        - "systemctl + journalctl"
-      negative_signs:
-        - "unit 없음"
-    target_vm: bastion
+      type: output_contains
+      expect: wazuh
+      field: stdout
+      semantic:
+        intent: Wazuh ossec.log 의 daemon 시각 흐름 + ERROR/WARNING 분석.
+        success_criteria:
+          - "ossec.log 10 line"
+          - "ERROR/WARNING 확인 (있다면)"
+          - "log level 분포"
+        acceptable_methods:
+          - |
+            **[OSS] tail + grep ossec.log** — 표준.
+              ssh 6v6-siem 'sudo tail -10 /var/ossec/logs/ossec.log; sudo grep ERROR /var/ossec/logs/ossec.log | tail -5'
+            예상 출력 `<date> wazuh-analysisd: INFO: ...`.
+            운영 해석: daemon 의 health 시각 흐름.
+          - |
+            **[OSS] log level 통계** — 분류.
+              ssh 6v6-siem 'sudo grep -oE "INFO|WARNING|ERROR" /var/ossec/logs/ossec.log | sort | uniq -c'
+            예상 출력 `5000 INFO / 20 WARNING / 3 ERROR`.
+            운영 해석: ERROR 비율 = manager 의 건강도.
+          - |
+            **[OSS] 시간대별 ERROR 추세** — burst.
+              ssh 6v6-siem 'sudo grep ERROR /var/ossec/logs/ossec.log | awk "{print \$1, \$2}" | cut -c1-13 | sort | uniq -c'
+            예상 출력 `시간대별 ERROR 횟수`.
+            운영 해석: 특정 시각 의 ERROR burst = 설정 변경 또는 overflow.
+          - |
+            **[OSS] api.log — REST API 로그** — 보조.
+              ssh 6v6-siem 'sudo tail -5 /var/ossec/logs/api.log'
+            예상 출력 `<date> INFO: wazuh-wui ... GET /agents ... 200`.
+            운영 해석: dashboard 의 API 호출 의 health.
+        negative_signs:
+          - "ossec.log 없음 (경로 오류)"
+          - "CRITICAL Configuration error (decoder 손상)"
+          - "ERROR 다수 (manager 건강도 저하)"
+    target_vm: siem
     risk_level: low
 
   - order: 4
     instruction: |
-      ## 🎯 MISSION — logrotate + retention 정책 + 보고서
+      ## 🎯 MISSION
 
-      **무엇을:**
-      1. /etc/logrotate.d/ 의 rule 1 개 확인 (예: rsyslog)
-      2. 현재 로그 보관 일수 추정 (rotate N + frequency)
-      3. 본 lab 의 3 log source (syslog / auth.log / journald) 의 *3 줄 보고서* + cleanup
-    hint: "cat /etc/logrotate.d/rsyslog. journald 의 SystemMaxUse = /etc/systemd/journald.conf."
-    category: documentation
+      alerts.json 의 sshd / 인증 관련 alert (rule.id 5xxx 계열 또는 rule.groups 에
+      authentication) 추출 + 5 필드 + 의미.
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | \
+          jq -c "select((.rule.groups // []) | join(\"|\") | test(\"authentication|sshd|pam\")) | {ts: .timestamp[0:19], rule: .rule.id, level: .rule.level, desc: .rule.description, src: .data.srcip}" | tail -5'
+      ```
+
+      ## 📋 확인 사항
+
+      - rule.id = 5715 (Accepted) / 5710 (multiple failed) / 5760 (Invalid user) 등
+      - rule.groups 에 `authentication_success` 또는 `authentication_failed`
+      - data.srcip = 접속 source IP
+
+      ## 💡 왜 이걸 하는가?
+
+      sshd.log (STEP 1-2) 의 raw 가 Wazuh decoder 를 거쳐 alert 로 변환 되는 흐름.
+      raw log → decoder → rule → alert 의 전체 chain 의 마지막 단계 인 alert
+      view 가 SOC 의 표준 분석 대상.
+
+      ## 🔍 결과 해석
+
+      - **정상**: 5715 (Accepted) 다수 — 정상 ProxyJump 접속
+      - **5710/5712 (multiple failed / brute success)**: brute force 흔적 — 즉시 분석
+      - **alert 0**: sshd 의 인증 이벤트 가 alert 로 안 만들어짐 — decoder/rule 점검
+    hint: "alerts.json | jq filter rule.groups authentication."
+    category: alert
+    points: 10
+    answer: |
+      echo "=== sshd/인증 관련 alert ==="
+      ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -c "select((.rule.groups // []) | join(\"|\") | test(\"authentication|sshd|pam\")) | {ts: .timestamp[0:19], rule: .rule.id, level: .rule.level, desc: .rule.description, src: .data.srcip}" | tail -5'
+    answer_detail: |
+      Wazuh 의 인증 rule: 5715 (sshd Accepted) / 5710 (8 회 fail in 120s) / 5712
+      (brute force 후 성공) / 5760 (Invalid user). rule.groups 의 키워드 매칭 으로
+      필터링. data.srcip 가 외부 IP 면 의심 ↑.
+    verify:
+      type: output_contains
+      expect: rule
+      field: stdout
+      semantic:
+        intent: alerts.json 의 sshd/인증 alert 추출 + raw log → alert chain 확인.
+        success_criteria:
+          - "인증 관련 alert 추출"
+          - "rule.id + level + srcip"
+          - "5710/5715 등 인증 rule 식별"
+        acceptable_methods:
+          - |
+            **[OSS] jq filter rule.groups** — 표준.
+              ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -c "select((.rule.groups//[])|join(\"|\")|test(\"authentication\"))" | tail -5'
+            예상 출력 `{"rule":"5715","level":3,"desc":"sshd: authentication success"}`.
+            운영 해석: 인증 alert 의 source 별 분석.
+          - |
+            **[OSS] rule.id 직접 필터** — 정밀.
+              ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -c "select(.rule.id | test(\"^57(1|6)\"))" | tail -5'
+            예상 출력 `5710/5715/5760 의 alert`.
+            운영 해석: 특정 rule 계열 의 추출.
+          - |
+            **[OSS] dashboard 의 Authentication module** — GUI.
+              # Wazuh dashboard ☰ → Security events → Authentication
+            예상 출력 `인증 success/failure 의 시각 chart`.
+            운영 해석: GUI 의 인증 분석 module.
+          - |
+            **[OSS] srcip 별 인증 실패 통계** — UEBA.
+              ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -r "select(.rule.id==\"5710\") | .data.srcip" | sort | uniq -c | sort -rn'
+            예상 출력 `srcip 별 brute force 횟수`.
+            운영 해석: 가장 많이 시도한 source = 우선 차단 대상.
+        negative_signs:
+          - "인증 alert 0 (decoder 미작동)"
+          - "rule.id 누락"
+    target_vm: siem
+    risk_level: low
+
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION
+
+      log rotation + retention 정책 확인 — Wazuh 의 logall / rotation + 시스템 의
+      logrotate. SOC 의 로그 보관 기간 파악.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # 1. Wazuh 의 logging 설정 (ossec.conf 의 <logging>)
+      ssh 6v6-siem 'sudo grep -A5 "<logging>\|<global>" /var/ossec/etc/ossec.conf | head -15'
+
+      # 2. alerts 의 보관 구조 (날짜별 디렉토리)
+      ssh 6v6-siem 'sudo ls -la /var/ossec/logs/alerts/ | head; sudo ls /var/ossec/logs/alerts/2026/ 2>/dev/null | head'
+
+      # 3. 시스템 logrotate (있다면)
+      ssh 6v6-siem 'ls /etc/logrotate.d/ 2>/dev/null | head; cat /etc/logrotate.d/wazuh 2>/dev/null | head'
+      ```
+
+      ## 📋 확인 사항
+
+      - alerts 의 보관 = `/var/ossec/logs/alerts/<year>/<month>/ossec-alerts-DD.json.gz` 형식 (압축 보관)
+      - Wazuh default = alert 압축 보관 + 일 단위 rotation
+      - retention = 보통 ossec.conf 의 설정 (또는 무제한)
+
+      ## 💡 왜 이걸 하는가?
+
+      compliance (ISMS-P / ISO 27001) 의 로그 보관 요구 = 보통 1 년+. SOC 의 로그
+      retention 정책 = forensic / 사후 분석 의 가능 범위 결정. 압축 보관 의 경로 +
+      복원 방법 의 이해.
+
+      ## 🔍 결과 해석
+
+      - **정상**: alerts/<year>/<month>/ 의 .gz 압축 보관 + 당일 alerts.json (raw)
+      - **rotation 없음**: alerts.json 무한 증가 — disk full 위험
+      - **retention 무제한**: compliance OK 그러나 disk 모니터링 필요
+    hint: "ossec.conf logging + alerts 디렉토리 구조 + logrotate."
+    category: log_basics
     points: 8
     answer: |
-      🤖 가이드:
-      ssh 6v6-fw 'cat /etc/logrotate.d/rsyslog 2>/dev/null | head -10; grep -i max /etc/systemd/journald.conf 2>/dev/null | head -3'
+      echo "=== Wazuh logging 설정 ==="
+      ssh 6v6-siem 'sudo grep -A5 "<logging>\|<global>" /var/ossec/etc/ossec.conf | head -15'
+      echo "=== alerts 보관 구조 ==="
+      ssh 6v6-siem 'sudo ls -la /var/ossec/logs/alerts/ | head; sudo ls /var/ossec/logs/alerts/2026/ 2>/dev/null | head'
+      echo "=== 시스템 logrotate ==="
+      ssh 6v6-siem 'ls /etc/logrotate.d/ 2>/dev/null | head'
     answer_detail: |
-      운영 환경 의 retention = 통상 30~90 일 (compliance 요구 시 1 년+). 6v6 = lab 환경 default.
+      Wazuh 의 alert 보관 = /var/ossec/logs/alerts/YYYY/Mmm/ossec-alerts-DD.json.gz
+      (일 단위 압축). 당일 = alerts.json (raw). 복원 = zcat. compliance 의 1 년+
+      retention = alerts 디렉토리 의 disk 사용 모니터링 필요.
     verify:
-      intent: "logrotate + retention + 3 줄 보고서"
-      success_criteria:
-        - "logrotate 1+"
-        - "retention 추정"
-        - "보고서"
-      acceptable_methods:
-        - "cat + grep"
-      negative_signs:
-        - "보고서 누락"
+      type: output_contains
+      expect: alerts
+      field: stdout
+      semantic:
+        intent: log rotation + retention 정책 파악. SOC 의 로그 보관 범위.
+        success_criteria:
+          - "Wazuh logging 설정"
+          - "alerts 보관 구조 (날짜별)"
+          - "retention 추정"
+        acceptable_methods:
+          - |
+            **[OSS] ls alerts 디렉토리 구조** — 표준.
+              ssh 6v6-siem 'sudo ls /var/ossec/logs/alerts/2026/ 2>/dev/null'
+            예상 출력 `May/ Apr/ ... (월별 디렉토리)`.
+            운영 해석: 일 단위 압축 보관 의 구조.
+          - |
+            **[OSS] zcat 압축 alert 복원** — forensic.
+              ssh 6v6-siem 'sudo zcat /var/ossec/logs/alerts/2026/May/ossec-alerts-18.json.gz 2>/dev/null | head -2'
+            예상 출력 `과거 alert 의 raw JSON`.
+            운영 해석: 사후 분석 의 압축 alert 복원.
+          - |
+            **[OSS] du — disk 사용량** — 모니터링.
+              ssh 6v6-siem 'sudo du -sh /var/ossec/logs/alerts/ 2>/dev/null'
+            예상 출력 `1.2G /var/ossec/logs/alerts/`.
+            운영 해석: retention 의 disk 비용.
+          - |
+            **[OSS] ossec.conf 의 logging 설정** — 정책.
+              ssh 6v6-siem 'sudo grep -A3 "<logging>" /var/ossec/etc/ossec.conf'
+            예상 출력 `<logging><log_format>plain</log_format></logging>`.
+            운영 해석: Wazuh 의 log format 설정.
+        negative_signs:
+          - "alerts 디렉토리 구조 없음"
+          - "retention 추정 누락"
+    target_vm: siem
+    risk_level: low
+
+  - order: 6
+    instruction: |
+      ## 🎯 MISSION
+
+      Wazuh manager 의 daemon 상태 (STEP W01-3 와 연계) — analysisd 의 EPS (Events
+      Per Second) + queue 상태 + manager stats 확인.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # 1. analysisd stats (EPS / queue)
+      ssh 6v6-siem 'sudo cat /var/ossec/var/run/wazuh-analysisd.state 2>/dev/null | head -20'
+
+      # 2. manager 의 received / processed events
+      ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control status 2>&1 | grep -c "is running"'
+
+      # 3. remoted stats (agent 연결)
+      ssh 6v6-siem 'sudo cat /var/ossec/var/run/wazuh-remoted.state 2>/dev/null | head -10'
+      ```
+
+      ## 📋 확인 사항
+
+      - analysisd.state: `total_events_decoded` / `events_processed` / `events_dropped` (dropped 가 0 이어야)
+      - remoted.state: `discarded_count` / `queue_size` (agent 의 event 큐)
+
+      ## 💡 왜 이걸 하는가?
+
+      EPS = SOC 의 throughput. analysisd 가 처리 못 하는 event 가 dropped 되면
+      미탐 (false negative) 발생. queue 가 가득 차면 alert latency 증가. SOC 의
+      성능 모니터링 의 핵심 지표.
+
+      ## 🔍 결과 해석
+
+      - **정상**: events_dropped = 0 + queue_usage < 80%
+      - **events_dropped > 0**: analysisd 가 throughput 못 따라감 — rule 최적화 또는 scaling
+      - **queue 가득**: alert latency 증가 — MTTD 악화
+    hint: "analysisd.state / remoted.state."
+    category: wazuh
+    points: 8
+    answer: |
+      echo "=== analysisd stats (EPS/queue) ==="
+      ssh 6v6-siem 'sudo cat /var/ossec/var/run/wazuh-analysisd.state 2>/dev/null | head -20'
+      echo "=== daemon active count ==="
+      ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control status 2>&1 | grep -c "is running"'
+      echo "=== remoted stats ==="
+      ssh 6v6-siem 'sudo cat /var/ossec/var/run/wazuh-remoted.state 2>/dev/null | head -10'
+    answer_detail: |
+      analysisd.state 의 events_dropped = 0 이 정상. dropped > 0 면 미탐 위험.
+      EPS = total_events / uptime. queue_usage 가 80%+ 면 scaling 또는 rule 최적화
+      필요. SOC 의 SLA (alert latency) 의 base 지표.
+    verify:
+      type: output_contains
+      expect: events
+      field: stdout
+      semantic:
+        intent: Wazuh analysisd 의 EPS + queue 상태. SOC throughput 모니터링.
+        success_criteria:
+          - "analysisd.state 의 events 통계"
+          - "events_dropped 확인"
+          - "daemon active count"
+        acceptable_methods:
+          - |
+            **[OSS] analysisd.state** — 표준.
+              ssh 6v6-siem 'sudo cat /var/ossec/var/run/wazuh-analysisd.state | head -20'
+            예상 출력 `total_events_decoded='12345' events_dropped='0' ...`.
+            운영 해석: dropped 0 = throughput OK.
+          - |
+            **[OSS] Wazuh API /manager/stats** — 자동화.
+              curl -sk -u wazuh-wui:MyS3cr37P450r.*- "https://siem.6v6.lab:55000/manager/stats/analysisd?pretty" 2>&1 | head -20
+            예상 출력 `{"data":{"affected_items":[{"events_processed":...}]}}`.
+            운영 해석: API 직접 — 자동 모니터링.
+          - |
+            **[OSS] dashboard 의 Statistics** — GUI.
+              # ☰ → Management → Statistics → Analysis Engine
+            예상 출력 `EPS chart + queue usage`.
+            운영 해석: GUI 의 throughput 시각.
+          - |
+            **[OSS] remoted.state — agent queue** — 보조.
+              ssh 6v6-siem 'sudo cat /var/ossec/var/run/wazuh-remoted.state | head'
+            예상 출력 `queue_size / discarded_count`.
+            운영 해석: agent event 의 큐 상태.
+        negative_signs:
+          - "analysisd.state 없음"
+          - "events_dropped > 0 (미탐 위험)"
+    target_vm: siem
+    risk_level: low
+
+  - order: 7
+    instruction: |
+      ## 🎯 MISSION (Red Team)
+
+      attacker 컨테이너 에서 siem (또는 fw) 에 **ssh brute force 시뮬** — 잘못된
+      비밀번호 로 5 회 연속 ssh 시도 → sshd.log 에 Failed 흔적 발생. STEP 8-9 의
+      Blue 추적 준비.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # 5 회 잘못된 비밀번호 ssh 시도 (sshpass 로 wrong password)
+      ssh 6v6-attacker 'for i in 1 2 3 4 5; do
+          sshpass -p "wrongpass$i" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 \
+              baduser@10.20.32.100 "echo test" 2>&1 | tail -1
+      done'
+
+      # 공격 시각 기록
+      ATTACK_TS=$(ssh 6v6-attacker 'date -u +%Y-%m-%dT%H:%M:%S')
+      echo "ATTACK_TS=$ATTACK_TS"
+      ```
+
+      ## 📋 확인 사항
+
+      - 5 회 모두 `Permission denied` 또는 `Connection refused` (인증 실패)
+      - ATTACK_TS 기록
+      - siem 의 sshd 가 외부 (attacker) 접근 허용 시 Failed 로그 발생
+
+      ## 💡 왜 이걸 하는가?
+
+      ssh brute force = 가장 흔한 공격. 5 회 연속 실패 가 Wazuh rule 5710 (multiple
+      failed login) 을 trigger 하는지 검증. Red 의 단순 공격 1 건 이 sshd.log →
+      alerts.json 으로 어떻게 흔적 남기는지 추적.
+
+      ## 🔍 결과 해석
+
+      - **정상 (의도)**: 5 회 Permission denied + sshd.log 에 Failed 5 줄
+      - **Connection refused**: siem 의 sshd 가 외부 차단 (방화벽) — 정상 보안
+      - **즉시 차단**: fail2ban 또는 nftables 의 rate limit 가동
+    hint: "sshpass -p wrongpass ssh baduser@siem 5 회 + ATTACK_TS."
+    category: redteam
+    points: 8
+    answer: |
+      echo "=== Red Team: ssh brute force 5 회 ==="
+      ssh 6v6-attacker 'for i in 1 2 3 4 5; do
+          sshpass -p "wrongpass$i" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 baduser@10.20.32.100 "echo test" 2>&1 | tail -1
+      done'
+      echo "=== 공격 시각 기록 ==="
+      ATTACK_TS=$(ssh 6v6-attacker 'date -u +%Y-%m-%dT%H:%M:%S')
+      echo "ATTACK_TS=$ATTACK_TS"
+    answer_detail: |
+      5 회 연속 잘못된 비밀번호 ssh = brute force 시뮬. siem 의 sshd 가 Failed
+      password / Invalid user 로그 생성 → Wazuh rule 5710 (8 회 fail in 120s)
+      또는 5760 (Invalid user). 6v6 의 siem 이 외부 접근 차단 시 Connection refused.
+    verify:
+      type: output_contains
+      expect: denied
+      field: stdout
+      semantic:
+        intent: Red Team ssh brute force 5 회 → sshd.log Failed 흔적 발생.
+        success_criteria:
+          - "5 회 ssh 시도"
+          - "Permission denied 또는 인증 실패"
+          - "ATTACK_TS 기록"
+        acceptable_methods:
+          - |
+            **[OSS] sshpass loop** — 표준.
+              ssh 6v6-attacker 'for i in 1 2 3 4 5; do sshpass -p wrong$i ssh -o ConnectTimeout=3 baduser@10.20.32.100 echo 2>&1 | tail -1; done'
+            예상 출력 `Permission denied (publickey,password)`.
+            운영 해석: 5 회 fail → rule 5710 trigger.
+          - |
+            **[OSS] hydra ssh module** — 자동화.
+              ssh 6v6-attacker 'hydra -l baduser -P <(echo -e "p1\np2\np3\np4\np5") ssh://10.20.32.100 -t 1 2>&1 | tail -5'
+            예상 출력 `5 attempts, 0 valid`.
+            운영 해석: hydra 의 ssh brute — 실무 도구.
+          - |
+            **[OSS] nmap ssh-brute NSE** — scanner.
+              ssh 6v6-attacker 'nmap -p 22 --script ssh-brute --script-args userdb=<(echo baduser) 10.20.32.100 2>&1 | tail -10'
+            예상 출력 `ssh-brute NSE 결과`.
+            운영 해석: nmap NSE 의 brute module.
+          - |
+            **[OSS] 시각 기록** — 후속 추적.
+              ATTACK_TS=$(date -u +%Y-%m-%dT%H:%M:%S); echo $ATTACK_TS
+            예상 출력 `2026-05-20T...`.
+            운영 해석: Blue step 의 timestamp 매칭.
+        negative_signs:
+          - "ssh 성공 (잘못된 비밀번호 인데 통과 = 심각)"
+          - "ATTACK_TS 누락"
+    target_vm: attacker
+    risk_level: medium
+
+  - order: 8
+    instruction: |
+      ## 🎯 MISSION (Blue Team — 1)
+
+      STEP 7 의 ssh brute force 가 siem 의 **sshd.log** 에 Failed 흔적 을 남겼는지
+      추적 + Failed 횟수 + source IP.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # 1. 최근 Failed / Invalid 흔적
+      ssh 6v6-siem 'sudo grep -E "Failed|Invalid user|authentication failure" /var/log/sshd.log | tail -10'
+
+      # 2. source IP 별 실패 횟수
+      ssh 6v6-siem 'sudo grep -E "Failed|Invalid" /var/log/sshd.log | grep -oE "from [0-9.]+" | sort | uniq -c | sort -rn'
+
+      # 3. 최근 5 분 의 Failed 시각 분포
+      ssh 6v6-siem 'sudo grep "Failed" /var/log/sshd.log | tail -10 | awk "{print \$1, \$2, \$3}"'
+      ```
+
+      ## 📋 확인 사항
+
+      - 명령 1: STEP 7 의 baduser 의 Failed 5 줄
+      - 명령 2: source IP (attacker 10.20.30.202) 의 실패 횟수 5
+      - 명령 3: 5 회 의 시각 이 ATTACK_TS 와 일치 (수 초 간격)
+
+      ## 💡 왜 이걸 하는가?
+
+      "brute force 가 왔나?" 의 답. sshd.log 의 Failed 패턴 + source IP 별 카운트
+      가 SOC 의 brute force detection 의 raw evidence.
+
+      ## 🔍 결과 해석
+
+      - **정상**: STEP 7 의 5 Failed + source IP = attacker
+      - **흔적 없음**: siem 이 외부 ssh 차단 (Connection refused) → 정상 보안 (brute 도달 안 함)
+      - **다른 source IP 의 Failed 다수**: 실제 brute force 진행 중 (lab 외 의 흔적)
+    hint: "grep Failed/Invalid sshd.log + source IP 카운트."
+    category: blueteam
+    points: 12
+    answer: |
+      echo "=== Blue #1: sshd.log Failed/Invalid 흔적 ==="
+      ssh 6v6-siem 'sudo grep -E "Failed|Invalid user|authentication failure" /var/log/sshd.log | tail -10'
+      echo "=== Blue #1: source IP 별 실패 횟수 ==="
+      ssh 6v6-siem 'sudo grep -E "Failed|Invalid" /var/log/sshd.log | grep -oE "from [0-9.]+" | sort | uniq -c | sort -rn'
+    answer_detail: |
+      sshd.log 의 Failed / Invalid user 패턴 + source IP 별 카운트 = brute force
+      의 raw evidence. source IP 가 attacker (10.20.30.202) 면 STEP 7 의 흔적. 다른
+      IP 면 실제 외부 brute force (lab 외).
+    verify:
+      type: output_contains
+      expect: Failed
+      field: stdout
+      semantic:
+        intent: Blue Team — sshd.log 의 Failed 흔적 + source IP.
+        success_criteria:
+          - "Failed/Invalid 패턴 추출"
+          - "source IP 별 카운트"
+          - "STEP 7 과 매칭"
+        acceptable_methods:
+          - |
+            **[OSS] grep Failed + IP 카운트** — 표준.
+              ssh 6v6-siem 'sudo grep "Failed" /var/log/sshd.log | grep -oE "from [0-9.]+" | sort | uniq -c | sort -rn'
+            예상 출력 `5 from 10.20.30.202`.
+            운영 해석: source IP 별 실패 = brute force source 식별.
+          - |
+            **[OSS] lastb — 실패 로그인 이력** — 보조.
+              ssh 6v6-siem 'sudo lastb -n 10 2>/dev/null'
+            예상 출력 `baduser ssh:notty 10.20.30.202 <date>`.
+            운영 해석: btmp 의 실패 로그인.
+          - |
+            **[OSS] 시각 분포 — burst 식별** — 패턴.
+              ssh 6v6-siem 'sudo grep "Failed" /var/log/sshd.log | awk "{print \$3}" | cut -c1-5 | sort | uniq -c'
+            예상 출력 `시각별 Failed (분 단위 burst)`.
+            운영 해석: 짧은 시간 의 다수 Failed = 자동화 brute.
+          - |
+            **[OSS] journalctl _SYSTEMD_UNIT=sshd** — systemd.
+              ssh 6v6-siem 'sudo journalctl -u sshd --since "5m ago" 2>/dev/null | grep Failed | tail -5'
+            예상 출력 `journald 의 sshd Failed`.
+            운영 해석: systemd journal 기반.
+        negative_signs:
+          - "Failed 흔적 없음 (siem 외부 차단 — 정상일 수도)"
+          - "source IP 카운트 누락"
+    target_vm: siem
+    risk_level: low
+
+  - order: 9
+    instruction: |
+      ## 🎯 MISSION (Blue Team — 2)
+
+      STEP 7 의 brute force 가 siem 의 **alerts.json** 에 rule 5710 (multiple failed)
+      또는 5716/5760 alert 로 변환 되었는지 추적 (raw log → alert chain 의 마지막).
+
+      ## 💻 실행 명령
+
+      ```bash
+      # 1. 인증 실패 관련 alert (rule 5710/5716/5760)
+      ssh 6v6-siem 'sudo tail -500 /var/ossec/logs/alerts/alerts.json | \
+          jq -c "select(.rule.id | test(\"^57(1|6)\")) | {ts: .timestamp[0:19], rule: .rule.id, level: .rule.level, desc: .rule.description, src: .data.srcip}" | tail -5'
+
+      # 2. attacker IP 의 모든 alert (correlation)
+      ssh 6v6-siem 'sudo tail -500 /var/ossec/logs/alerts/alerts.json | \
+          jq -c "select(.data.srcip == \"10.20.30.202\") | {ts: .timestamp[0:19], rule: .rule.id, desc: .rule.description}" | tail -5'
+      ```
+
+      ## 📋 확인 사항
+
+      - 명령 1: rule 5710 (8 회 fail in 120s — 5 회면 미달 가능) 또는 5716 (ssh
+        login refused) 또는 5760 (Invalid user)
+      - 명령 2: attacker IP 의 alert correlation
+
+      ## 💡 왜 이걸 하는가?
+
+      raw sshd.log (STEP 8) 의 Failed 가 Wazuh decoder → rule → alert 로 변환 되는
+      전체 chain 의 마지막. SOC 분석가 가 dashboard 에서 보는 것 은 이 alert. 5 회
+      fail 이 rule 5710 의 threshold (8 회) 에 미달 하면 alert 안 뜰 수도 (= 학생 의
+      threshold 학습).
+
+      ## 🔍 결과 해석
+
+      - **5710 발생**: 8+ 회 fail 도달 (STEP 7 을 8+ 회 로 반복 필요)
+      - **5760 발생**: Invalid user (baduser) — 5 회 만으로도 발생
+      - **alert 0**: 5 회 fail 이 threshold 미달 + Invalid user rule 비활성 — STEP 7 을 10 회 로 재시도
+    hint: "alerts.json | jq rule.id 57xx + attacker IP correlation."
+    category: blueteam
+    points: 12
+    answer: |
+      echo "=== Blue #2: 인증 실패 alert (5710/5716/5760) ==="
+      ssh 6v6-siem 'sudo tail -500 /var/ossec/logs/alerts/alerts.json | jq -c "select(.rule.id | test(\"^57(1|6)\")) | {ts: .timestamp[0:19], rule: .rule.id, level: .rule.level, desc: .rule.description, src: .data.srcip}" | tail -5'
+      echo "=== Blue #2: attacker IP correlation ==="
+      ssh 6v6-siem 'sudo tail -500 /var/ossec/logs/alerts/alerts.json | jq -c "select(.data.srcip == \"10.20.30.202\") | {ts: .timestamp[0:19], rule: .rule.id, desc: .rule.description}" | tail -5'
+    answer_detail: |
+      Wazuh rule 5710 = 8 회 fail in 120s (frequency rule). 5 회 면 미달 → 학생 이
+      threshold 학습 위해 STEP 7 을 8-10 회 로 반복. 5760 (Invalid user) 은 단일
+      이벤트 rule 이라 1 회 로도 발생. data.srcip 의 correlation 으로 한 attacker
+      의 모든 활동 추적.
+    verify:
+      type: output_contains
+      expect: rule
+      field: stdout
+      semantic:
+        intent: Blue Team — alerts.json 의 brute force alert (5710/5760) + correlation.
+        success_criteria:
+          - "인증 실패 alert 추출 (또는 threshold 미달 분석)"
+          - "attacker IP correlation"
+          - "rule 5710/5760 의 threshold 이해"
+        acceptable_methods:
+          - |
+            **[OSS] jq rule.id 57xx** — 표준.
+              ssh 6v6-siem 'sudo tail -500 /var/ossec/logs/alerts/alerts.json | jq -c "select(.rule.id|test(\"^57\"))" | tail -5'
+            예상 출력 `{"rule":"5760","desc":"sshd: Attempt to login using a non-existent user"}`.
+            운영 해석: 5760 = Invalid user, 5710 = multiple failed.
+          - |
+            **[OSS] srcip correlation** — 추적.
+              ssh 6v6-siem 'sudo tail -500 /var/ossec/logs/alerts/alerts.json | jq -c "select(.data.srcip==\"10.20.30.202\")" | tail -5'
+            예상 출력 `attacker IP 의 모든 alert`.
+            운영 해석: 한 source 의 활동 timeline.
+          - |
+            **[OSS] dashboard 의 KQL** — GUI.
+              # Discover: rule.id:5710 OR rule.id:5760 AND data.srcip:10.20.30.202
+            예상 출력 `brute force alert filter`.
+            운영 해석: GUI 의 인증 실패 분석.
+          - |
+            **[OSS] rule 정의 확인 (threshold)** — 룰 이해.
+              ssh 6v6-siem 'sudo grep -A5 "id=\"5710\"" /var/ossec/ruleset/rules/*.xml 2>/dev/null | head -10'
+            예상 출력 `<rule id="5710" frequency="8" timeframe="120">`.
+            운영 해석: 5710 의 frequency=8 = 8 회 fail in 120s threshold.
+        negative_signs:
+          - "alert 0 + threshold 분석 누락"
+          - "correlation 누락"
+    target_vm: siem
+    risk_level: low
+
+  - order: 10
+    instruction: |
+      ## 🎯 MISSION (Purple Team)
+
+      STEP 7-9 의 R/B/P 종합 — ssh brute force 의 detection coverage + Gap +
+      lockout 권고 markdown.
+
+      ## 💻 산출물 markdown
+
+      ```markdown
+      # 6v6 SOC W02 — ssh brute force R/B/P
+
+      ## 시나리오
+      - Red: baduser 로 wrong password 5(또는 8+) 회 ssh 시도 (→ 10.20.32.100)
+      - 시각: <ATTACK_TS>
+
+      ## Detection Coverage
+
+      | layer | 흔적? | 발견 내용 | latency |
+      |---|---|---|---|
+      | sshd.log (raw) | ✅/❌ | Failed 5 줄 + source IP | 0 s |
+      | Wazuh decoder | ✅/❌ | sshd decoder 매칭 | < 1 s |
+      | Wazuh rule (5710/5760) | ✅/❌ | rule 발화 (또는 threshold 미달) | < 1 s |
+      | dashboard alert | ✅/❌ | level 표시 | 1-5 s |
+
+      ## Gap 식별
+      1. 5710 의 threshold (8 회) 미달 시 5 회 brute 는 alert 안 뜸 → 미탐 위험
+         - 권고: custom rule 로 threshold 5 회 로 강화 또는 5760 (Invalid user) 활용
+      2. lockout 정책 부재 → 무한 brute 가능
+         - 권고: fail2ban 또는 sshd 의 MaxAuthTries + nftables rate limit
+
+      ## 권고 조치
+      - fail2ban 설치 + sshd jail (5 회 fail → 15 분 ban)
+      - sshd_config 의 MaxAuthTries 3 + PasswordAuthentication no (key only)
+      - Wazuh active response 의 firewall-drop (rule 5710 → auto block)
+      ```
+
+      ## 📋 채점
+      - Detection Coverage 표 (4 layer)
+      - Gap 2+ + 권고
+      - lockout 권고 (fail2ban / MaxAuthTries / active response)
+    hint: "Coverage 표 + Gap + lockout 권고."
+    category: purple
+    points: 12
+    answer: |
+      cat <<'EOF'
+      # 6v6 SOC W02 — ssh brute force R/B/P
+
+      ## Detection Coverage
+      | layer | 흔적? | 발견 | latency |
+      |---|---|---|---|
+      | sshd.log raw | ✅ | Failed 5 줄 + IP | 0s |
+      | Wazuh decoder | ✅ | sshd 매칭 | <1s |
+      | Wazuh rule | ✅/❌ | 5760 (Invalid) 발화, 5710 threshold 미달 가능 | <1s |
+      | dashboard | ✅ | level 5-10 | 1-5s |
+
+      ## Gap
+      1. 5710 threshold 8 회 → 5 회 brute 미탐 → custom rule threshold 5
+      2. lockout 부재 → fail2ban + MaxAuthTries
+
+      ## 권고
+      - fail2ban sshd jail (5 fail → 15m ban)
+      - sshd MaxAuthTries 3 + key only
+      - Wazuh active response firewall-drop
+      EOF
+    answer_detail: |
+      ssh brute force 의 detection chain 의 gap = rule threshold (8 회) + lockout
+      부재. Purple 의 권고 = fail2ban + MaxAuthTries + Wazuh active response 의
+      자동 차단. SOC 의 지속 개선 cycle.
+    verify:
+      type: output_contains
+      expect: Coverage
+      field: stdout
+      semantic:
+        intent: Purple Team — ssh brute force coverage + Gap + lockout 권고.
+        success_criteria:
+          - "Detection Coverage 표 (4 layer)"
+          - "Gap 2+ 식별"
+          - "lockout 권고 (fail2ban/MaxAuthTries/active response)"
+        acceptable_methods:
+          - |
+            **[OSS] markdown Coverage 표** — 표준.
+              # 4 layer 의 흔적 + latency + Gap
+            예상 출력 `Coverage 표 + Gap 2+`.
+            운영 해석: detection chain 의 전체 가시화.
+          - |
+            **[OSS] fail2ban 설정 예제** — 대응.
+              echo "[sshd] enabled=true maxretry=5 bantime=900"
+            예상 출력 `jail.local 설정`.
+            운영 해석: lockout 의 표준 도구.
+          - |
+            **[OSS] Wazuh active response 설정** — 자동.
+              # ossec.conf <active-response> command=firewall-drop rules_id=5710
+            예상 출력 `active response block`.
+            운영 해석: rule 발화 → 자동 차단.
+          - |
+            **[OSS] custom rule threshold 강화** — 룰.
+              # <rule id="100200" frequency="5" timeframe="60">
+            예상 출력 `custom brute rule`.
+            운영 해석: threshold 5 회 로 미탐 감소.
+        negative_signs:
+          - "Coverage 표 누락"
+          - "Gap 없음"
+          - "lockout 권고 누락"
     target_vm: bastion
     risk_level: low
