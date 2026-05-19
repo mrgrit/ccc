@@ -1792,7 +1792,8 @@ def get_training_lecture(course_id: str, week: int):
 
 # ══════════════════════════════════════════════════
 #  6v6 Training — standalone 단일 VM Docker 인프라 컨텐츠
-#  contents/standalone/{lecture,lab}/{secuops,attack}/weekNN.{md,yaml}
+#  contents/standalone/lecture/{course}/lecture_weekNN.md
+#  contents/standalone/lab/{course}/lab_weekNN.yaml
 # ══════════════════════════════════════════════════
 _STANDALONE_DIR = os.path.join(_CONTENT_DIR, "standalone")
 
@@ -1946,8 +1947,8 @@ def list_standalone_weeks(course_id: str):
         raise HTTPException(404, "Course not found")
     weeks = []
     for w in range(1, 16):
-        lecture_path = os.path.join(_STANDALONE_DIR, "lecture", course_id, f"week{w:02d}.md")
-        lab_path = os.path.join(_STANDALONE_DIR, "lab", course_id, f"week{w:02d}.yaml")
+        lecture_path = os.path.join(_STANDALONE_DIR, "lecture", course_id, f"lecture_week{w:02d}.md")
+        lab_path = os.path.join(_STANDALONE_DIR, "lab", course_id, f"lab_week{w:02d}.yaml")
         # title 은 lecture 첫 줄 또는 lab title 필드에서 추출
         title = ""
         if os.path.isfile(lecture_path):
@@ -1992,7 +1993,7 @@ def get_standalone_lecture(course_id: str, week: int):
         raise HTTPException(404, "Course not found")
     if not (1 <= week <= 30):
         raise HTTPException(400, "Invalid week")
-    p = _safe_standalone_join("lecture", course_id, f"week{week:02d}.md")
+    p = _safe_standalone_join("lecture", course_id, f"lecture_week{week:02d}.md")
     if not os.path.isfile(p):
         raise HTTPException(404, "Lecture not found")
     with open(p, "r", encoding="utf-8") as f:
@@ -2007,7 +2008,7 @@ def get_standalone_lab(course_id: str, week: int, request: Request):
         raise HTTPException(404, "Course not found")
     if not (1 <= week <= 30):
         raise HTTPException(400, "Invalid week")
-    p = _safe_standalone_join("lab", course_id, f"week{week:02d}.yaml")
+    p = _safe_standalone_join("lab", course_id, f"lab_week{week:02d}.yaml")
     if not os.path.isfile(p):
         raise HTTPException(404, "Lab not found")
     with open(p, "r", encoding="utf-8") as f:
