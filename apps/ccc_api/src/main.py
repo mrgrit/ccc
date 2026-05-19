@@ -5275,6 +5275,41 @@ def search_content(q: str, limit: int = 30):
     return {"query": q, "total": len(results), "results": results[:limit]}
 
 
+# ── Bastion admin proxy ────────────────────────────
+# bastion (192.168.0.110:9100) API 의 read-only endpoint 를 admin UI 에 proxy.
+# /admin/bastion/<path> → GET http://192.168.0.110:9100/<path>
+_BASTION_URL = os.environ.get("BASTION_URL", "http://192.168.0.110:9100")
+_BASTION_KEY = os.environ.get("BASTION_API_KEY", "ccc-api-key-2026")
+_BASTION_ALLOWED = {
+    "kg/health", "kg/metrics", "kg/audit", "kg/anchors/recent",
+    "graph/stats", "graph/nodes", "graph/edges", "graph/search",
+    "audit", "audit/_verify-chain",
+    "history/anchors", "assets/list", "health",
+}
+
+@app.get("/admin/bastion/{subpath:path}", dependencies=[Depends(verify_api_key)])
+def bastion_proxy(subpath: str, request: Request):
+    """bastion API read-only proxy (admin only). query string passthrough."""
+    user = getattr(request.state, "user", None)
+    if not user or user.get("role") != "admin":
+        raise HTTPException(403, "admin only")
+    # allowlist 의 prefix 만 (or {id} 같은 path param 포함 형태)
+    base = subpath.split("/")[0] + ("/" + subpath.split("/")[1] if "/" in subpath else "")
+    if subpath not in _BASTION_ALLOWED and base not in _BASTION_ALLOWED and \
+       not any(subpath.startswith(p + "/") for p in _BASTION_ALLOWED):
+        raise HTTPException(400, f"path not allowed: {subpath}")
+    import httpx
+    qs = "?" + str(request.url.query) if request.url.query else ""
+    try:
+        with httpx.Client(timeout=10) as c:
+            r = c.get(f"{_BASTION_URL}/{subpath}{qs}",
+                      headers={"X-API-Key": _BASTION_KEY})
+            return JSONResponse(content=r.json() if r.headers.get("content-type","").startswith("application/json") else {"raw": r.text},
+                                status_code=r.status_code)
+    except Exception as e:
+        raise HTTPException(502, f"bastion unreachable: {e}")
+
+
 # ── Static files ───────────────────────────────────
 import pathlib
 from fastapi.staticfiles import StaticFiles
