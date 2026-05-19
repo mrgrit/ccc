@@ -1,115 +1,475 @@
 lab_id: standalone-soc-week04
-title: "Wazuh 관제 환경 — manager 구조 + agent + decoder/rule + alert 흐름 (6v6 + R/B/P)"
+title: Wazuh 관제 환경 — Manager/Agent 구조 + decoder/rule + alert 생성 흐름 + R/B/P (custom rule 검증)
 version: standalone-non-ai
 course: soc
 week: 4
 description: |
-  Wazuh manager / agent 의 구조 + alert 생성 흐름 (수신 → decoder → rule → alert) 의 4 단계 를 학생 본인 손 으로 추적.
+  Wazuh manager/agent 의 구조 + alert 생성 4 단계 (수신 → decoder → rule → alert)
+  를 학생 본인 손 으로 추적. 마지막 4 step 은 R/B/P — 공격 1건 이 어느 decoder /
+  rule 을 거쳐 alert 가 되는지 + custom rule 의 효과 검증.
 difficulty: medium
-duration_minutes: 90
+duration_minutes: 150
+audience: 보안관제 입문자 (4주차)
 prerequisites:
-  - "W01-W03 의 SOC stack + 로그 형식 이해"
+  - "W01-W03 통과 — SOC stack + 로그 형식"
+  - "bastion ProxyJump 로 siem 접근 + sudo"
 objectives:
-  - "wazuh-control status 의 daemon 7+ active 확인"
-  - "agent_control -l 의 agent 목록 + active/disconnected 상태"
-  - "ossec.conf 의 syslog remote + json localfile 설정 위치"
-  - "/var/ossec/ruleset/rules/ 의 default rule + /var/ossec/etc/rules/ 의 custom rule"
-  - "alert 1 건 의 decoder.name → rule.id 매핑 추적"
-pass_threshold: 0.6
+  - "wazuh-control status 의 daemon + agent_control -l 의 agent 목록"
+  - "ossec.conf 의 remote (syslog/secure) + ruleset 구조"
+  - "decoder XML + rule XML 의 위치 + 1 sample"
+  - "alert 1건 의 decoder.name → rule.id 매핑 추적"
+  - "R/B/P — 공격 → 어느 decoder/rule 매칭 → custom rule 효과"
+pass_threshold: 0.7
 steps:
 
   - order: 1
     instruction: |
-      ## 🎯 MISSION — Wazuh daemon 상태 + agent 목록
-      **무엇을:** wazuh-control status + agent_control -l 결과 인용 + 정상/비정상 판정.
-    hint: "ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control status; sudo /var/ossec/bin/agent_control -l'."
+      ## 🎯 MISSION
+
+      Wazuh manager 의 daemon 상태 + agent 목록 (active/disconnected) 확인.
+
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control status'
+      ssh 6v6-siem 'sudo /var/ossec/bin/agent_control -l 2>&1 | head -10'
+      ```
+
+      ## 📋 확인 사항
+      - daemon 7+ is running (analysisd/remoted/db/modulesd/monitord/syscheckd/logcollector)
+      - agent 목록: ips / web / fw (Active) — 각 의 id + status
+
+      ## 💡 왜 이걸 하는가?
+      Wazuh 의 manager-agent 모델. agent 가 disconnect 되면 그 source 의 데이터
+      흐름 끊김 = 미탐. agent_control 의 active 갯수 = SOC 의 visibility 범위.
+
+      ## 🔍 결과 해석
+      - 정상: daemon 7+ + agent 모두 Active
+      - agent disconnected: 해당 컨테이너 의 wazuh-agent 재시작 또는 key 재등록
+      - agent 0: manager 의 remoted (1514) listen 점검
+    hint: "wazuh-control status + agent_control -l."
     category: wazuh
     points: 10
     answer: |
-      🤖 가이드:
-      ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control status | head -15; echo ---; sudo /var/ossec/bin/agent_control -l 2>&1 | head -10'
+      echo "=== daemon status ==="
+      ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control status | head -15'
+      echo "=== agent 목록 ==="
+      ssh 6v6-siem 'sudo /var/ossec/bin/agent_control -l 2>&1 | head -10'
     answer_detail: |
-      wazuh-apid / wazuh-analysisd / wazuh-remoted / wazuh-db / wazuh-syscheckd / wazuh-monitord / wazuh-logcollector / wazuh-modulesd 정상.
+      manager 의 remoted (1514/tcp) 가 agent 의 secure 연결 수신. agent_control -l
+      의 Active 갯수 = SOC visibility. disconnect agent = 미탐 위험.
     verify:
-      intent: "daemon + agent 목록"
-      success_criteria:
-        - "daemon 7+ active"
-        - "agent 목록"
-      acceptable_methods:
-        - "wazuh-control / agent_control"
-      negative_signs:
-        - "daemon 누락"
+      type: output_contains
+      expect: running
+      field: stdout
+      semantic:
+        intent: Wazuh daemon + agent 목록 확인.
+        success_criteria: ["daemon 7+ running", "agent 목록 (Active)"]
+        acceptable_methods:
+          - |
+            **[OSS] wazuh-control + agent_control** — 표준.
+              ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control status; sudo /var/ossec/bin/agent_control -l'
+            예상 출력 `daemon running + agent Active list`.
+            운영 해석: manager-agent 구조의 health.
+          - |
+            **[OSS] Wazuh API /agents** — 자동화.
+              curl -sk -u wazuh-wui:MyS3cr37P450r.*- "https://siem.6v6.lab:55000/agents?status=active&pretty" 2>&1 | head -15
+            예상 출력 `affected_items 의 agent list`.
+            운영 해석: API monitor.
+          - |
+            **[OSS] dashboard Agents tab** — GUI.
+              # ☰ → Management → Agents
+            예상 출력 `agent 상태 시각`.
+            운영 해석: keepalive 모니터.
+        negative_signs: ["daemon 누락", "agent 0 (remoted 점검)"]
     target_vm: siem
     risk_level: low
 
   - order: 2
     instruction: |
-      ## 🎯 MISSION — ossec.conf 의 syslog remote + localfile
-      **무엇을:** /var/ossec/etc/ossec.conf 의 `<remote>` block + `<localfile>` 의 logformat=json (Suricata eve.json) 설정 인용.
-    hint: "grep -B1 -A3 '<remote>\\|<localfile>' /var/ossec/etc/ossec.conf | head -30."
+      ## 🎯 MISSION
+
+      ossec.conf 의 remote (syslog 514 + secure 1514) + ruleset 디렉토리 구조 확인.
+
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-siem 'sudo grep -B1 -A3 "<remote>" /var/ossec/etc/ossec.conf | head -20'
+      ssh 6v6-siem 'sudo ls /var/ossec/ruleset/rules/ | wc -l; sudo ls /var/ossec/ruleset/decoders/ | wc -l; sudo ls /var/ossec/etc/rules/ /var/ossec/etc/decoders/ 2>/dev/null'
+      ```
+
+      ## 📋 확인 사항
+      - remote block 2개: syslog 514/udp (allowed 10.20.0.0/16) + secure 1514/tcp
+      - ruleset/rules/ = default rule (700+) / etc/rules/ = custom (local_rules.xml + bastion-audit-rules.xml 등)
+
+      ## 💡 왜 이걸 하는가?
+      Wazuh 의 룰셋 구조 = default (ruleset/, 수정 금지) + custom (etc/, 학생 작성).
+      remote 의 2 channel = syslog (fw 등) + secure (agent). SOC 의 룰 관리 base.
+
+      ## 🔍 결과 해석
+      - 정상: remote 2개 + default rule 700+ + custom 1+
+      - remote 없음: agent/syslog 수신 불가
+      - custom rule 0: 6v6 의 bastion-audit-rules.xml 등 적용 안 됨
+    hint: "ossec.conf remote + ruleset 디렉토리."
     category: wazuh
-    points: 8
+    points: 10
     answer: |
-      🤖 가이드:
-      ssh 6v6-siem 'sudo grep -B1 -A3 "<remote>\|<localfile>" /var/ossec/etc/ossec.conf | head -30'
+      echo "=== remote block ==="
+      ssh 6v6-siem 'sudo grep -B1 -A3 "<remote>" /var/ossec/etc/ossec.conf | head -20'
+      echo "=== ruleset 구조 ==="
+      ssh 6v6-siem 'echo "default rules:"; sudo ls /var/ossec/ruleset/rules/ | wc -l; echo "default decoders:"; sudo ls /var/ossec/ruleset/decoders/ | wc -l; echo "custom:"; sudo ls /var/ossec/etc/rules/ /var/ossec/etc/decoders/ 2>/dev/null'
     answer_detail: |
-      remote = syslog 514/udp 수신. localfile = agent 의 file 모니터링 (eve.json / modsec audit / 등).
+      remote 2 channel: syslog 514/udp + secure 1514/tcp. default ruleset (ruleset/,
+      수정 금지) vs custom (etc/rules/, etc/decoders/). 6v6 는 bastion-audit-rules.xml +
+      bastion-audit-decoder.xml custom 적용.
     verify:
-      intent: "remote + localfile 설정"
-      success_criteria:
-        - "remote block"
-        - "localfile block"
-      acceptable_methods:
-        - "grep"
-      negative_signs:
-        - "1 block 만"
+      type: output_contains
+      expect: remote
+      field: stdout
+      semantic:
+        intent: ossec.conf remote + ruleset 구조.
+        success_criteria: ["remote 2개", "default + custom rule"]
+        acceptable_methods:
+          - |
+            **[OSS] grep ossec.conf** — 표준.
+              ssh 6v6-siem 'sudo grep -A3 "<remote>" /var/ossec/etc/ossec.conf'
+            예상 출력 `syslog 514 + secure 1514`.
+            운영 해석: 수신 channel 2개.
+          - |
+            **[OSS] ruleset 디렉토리** — 룰 관리.
+              ssh 6v6-siem 'sudo ls /var/ossec/etc/rules/'
+            예상 출력 `local_rules.xml bastion-audit-rules.xml`.
+            운영 해석: custom rule 위치.
+          - |
+            **[OSS] dashboard Ruleset** — GUI.
+              # ☰ → Management → Rules
+            예상 출력 `rule list + search`.
+            운영 해석: 룰 검색/관리.
+        negative_signs: ["remote 없음", "custom rule 0"]
     target_vm: siem
     risk_level: low
 
   - order: 3
     instruction: |
-      ## 🎯 MISSION — decoder + rule 위치 + 1 sample
-      **무엇을:** decoder XML (`/var/ossec/etc/decoders/`, `/var/ossec/ruleset/decoders/`) 와 rule XML (`/var/ossec/etc/rules/`, `/var/ossec/ruleset/rules/`) 의 file 수 + 학생 의 1 custom rule 또는 default rule 인용.
-    hint: "find /var/ossec/etc/{decoders,rules} -name '*.xml' | wc -l."
+      ## 🎯 MISSION
+
+      decoder XML + rule XML 의 1 sample 확인 + 구조 분석.
+
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-siem 'sudo cat /var/ossec/etc/decoders/bastion-audit-decoder.xml 2>/dev/null | head -20'
+      ssh 6v6-siem 'sudo cat /var/ossec/etc/rules/local_rules.xml 2>/dev/null | head -20 || sudo head -20 /var/ossec/ruleset/rules/0095-sshd_rules.xml'
+      ```
+
+      ## 📋 확인 사항
+      - decoder: `<decoder name>` + `<prematch>` + `<plugin_decoder>` (JSON_Decoder)
+      - rule: `<rule id level>` + `<match>` 또는 `<if_sid>` + `<description>` + `<group>`
+
+      ## 💡 왜 이걸 하는가?
+      decoder = raw log → field 추출. rule = field → alert 생성 (조건 매칭). 두 단계
+      가 Wazuh 의 detection logic 의 core. custom rule 작성 (W07 SIGMA) 의 base.
+
+      ## 🔍 결과 해석
+      - 정상: decoder 의 prematch + rule 의 id/level/match
+      - JSON_Decoder: bastion-lifecycle 등 의 JSON 파싱
+      - if_sid: 부모 rule 의 sid 참조 (계층 rule)
+    hint: "cat decoder XML + rule XML."
     category: wazuh
-    points: 8
+    points: 10
     answer: |
-      🤖 가이드:
-      ssh 6v6-siem 'sudo find /var/ossec/etc/decoders /var/ossec/etc/rules /var/ossec/ruleset/rules -name "*.xml" 2>/dev/null | wc -l; sudo cat /var/ossec/etc/rules/local_rules.xml 2>/dev/null | head -20'
+      echo "=== decoder XML ==="
+      ssh 6v6-siem 'sudo cat /var/ossec/etc/decoders/bastion-audit-decoder.xml 2>/dev/null | head -20'
+      echo "=== rule XML ==="
+      ssh 6v6-siem 'sudo cat /var/ossec/etc/rules/local_rules.xml 2>/dev/null | head -20 || sudo head -20 /var/ossec/ruleset/rules/0095-sshd_rules.xml'
     answer_detail: |
-      default rule 수 1000+. custom rule = /var/ossec/etc/rules/local_rules.xml (학생 작성).
+      decoder 의 prematch (substring) + plugin_decoder (JSON_Decoder) 가 raw log 의
+      field 추출. rule 의 id/level + match/if_sid + group 이 alert 조건. 6v6 의
+      bastion-audit-decoder + bastion-audit-rules (100200-100218) 가 custom 예제.
     verify:
-      intent: "decoder/rule 파일 수 + 1 sample"
-      success_criteria:
-        - "파일 수"
-        - "1 rule 인용"
-      acceptable_methods:
-        - "find / cat"
-      negative_signs:
-        - "rule 인용 없음"
+      type: output_contains
+      expect: decoder
+      field: stdout
+      semantic:
+        intent: decoder + rule XML 구조.
+        success_criteria: ["decoder prematch", "rule id/level/match"]
+        acceptable_methods:
+          - |
+            **[OSS] cat decoder/rule XML** — 표준.
+              ssh 6v6-siem 'sudo cat /var/ossec/etc/decoders/bastion-audit-decoder.xml'
+            예상 출력 `<decoder name=...><prematch>...`.
+            운영 해석: detection logic core.
+          - |
+            **[OSS] wazuh-logtest — 룰 테스트** — 검증.
+              ssh 6v6-siem 'echo "test log" | sudo /var/ossec/bin/wazuh-logtest 2>&1 | head -10'
+            예상 출력 `decoder + rule 매칭 결과`.
+            운영 해석: 룰 작성 의 테스트 도구.
+          - |
+            **[OSS] dashboard Rule detail** — GUI.
+              # Rules → rule id 클릭 → XML 보기
+            예상 출력 `rule XML + 관련 decoder`.
+            운영 해석: GUI 의 룰 분석.
+        negative_signs: ["decoder/rule 파일 없음"]
     target_vm: siem
     risk_level: low
 
   - order: 4
     instruction: |
-      ## 🎯 MISSION — alert 1 건 의 decoder → rule 매핑
-      **무엇을:** alerts.json 1 alert 의 decoder.name + rule.id + rule.description + (있다면) rule.groups 추출 + decoder 가 어느 source (Suricata eve / ModSec / syslog) 인지 학생 판정.
-    hint: "tail -1 alerts.json | jq '.decoder, .rule, .agent'."
-    category: wazuh
+      ## 🎯 MISSION
+
+      alert 1건 의 decoder.name → rule.id 매핑 추적 + 어느 source 인지 판정.
+
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-siem 'sudo tail -1 /var/ossec/logs/alerts/alerts.json | jq "{decoder: .decoder.name, parent: .decoder.parent, rule_id: .rule.id, level: .rule.level, groups: .rule.groups, agent: .agent.name}"'
+      ssh 6v6-siem 'sudo tail -1000 /var/ossec/logs/alerts/alerts.json | jq -r ".decoder.name // \"unknown\"" | sort | uniq -c | sort -rn | head -5'
+      ```
+
+      ## 📋 확인 사항
+      - decoder.name = json (Suricata) / bastion-lifecycle / sshd / modsec 등
+      - rule.id + groups 의 매핑
+      - decoder 분포 Top 5
+
+      ## 💡 왜 이걸 하는가?
+      alert 의 decoder.name = 어느 source 의 어느 형식 인지. rule.id = 어느 조건
+      매칭. 이 매핑 이 SOC 의 alert classification 의 base.
+
+      ## 🔍 결과 해석
+      - 정상: decoder + rule 매핑 명확
+      - decoder unknown: 매칭 안 된 raw — decoder 추가 필요
+    hint: "alerts.json | jq decoder + rule + decoder 분포."
+    category: alert
+    points: 10
+    answer: |
+      echo "=== alert decoder → rule 매핑 ==="
+      ssh 6v6-siem 'sudo tail -1 /var/ossec/logs/alerts/alerts.json | jq "{decoder: .decoder.name, parent: .decoder.parent, rule_id: .rule.id, level: .rule.level, groups: .rule.groups, agent: .agent.name}"'
+      echo "=== decoder 분포 Top 5 ==="
+      ssh 6v6-siem 'sudo tail -1000 /var/ossec/logs/alerts/alerts.json | jq -r ".decoder.name // \"unknown\"" | sort | uniq -c | sort -rn | head -5'
+    answer_detail: |
+      decoder.name 이 source 의 형식 식별. parent = 계층 decoder. rule.groups 가
+      분류. decoder 분포 가 SOC 트래픽 의 source 비중. unknown 다수 = decoder 부족.
+    verify:
+      type: output_contains
+      expect: decoder
+      field: stdout
+      semantic:
+        intent: alert decoder→rule 매핑 + decoder 분포.
+        success_criteria: ["decoder + rule.id", "decoder 분포"]
+        acceptable_methods:
+          - |
+            **[OSS] jq decoder/rule** — 표준.
+              ssh 6v6-siem 'sudo tail -1 /var/ossec/logs/alerts/alerts.json | jq "{decoder: .decoder.name, rule: .rule.id}"'
+            예상 출력 `{"decoder":"json","rule":"86601"}`.
+            운영 해석: source 형식 + 조건.
+          - |
+            **[OSS] decoder 분포** — 통계.
+              ssh 6v6-siem 'sudo tail -1000 /var/ossec/logs/alerts/alerts.json | jq -r .decoder.name | sort | uniq -c | sort -rn'
+            예상 출력 `400 json / 200 bastion-lifecycle / ...`.
+            운영 해석: source 비중.
+        negative_signs: ["decoder unknown 다수"]
+    target_vm: siem
+    risk_level: low
+
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION (Red Team)
+
+      attacker 에서 공격 1건 (sqlmap UA) → 특정 decoder/rule 매칭 유도. STEP 6-8 추적 준비.
+
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -A "sqlmap/1.5" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?id=1+UNION+SELECT"'
+      ATTACK_TS=$(ssh 6v6-attacker 'date -u +%Y-%m-%dT%H:%M:%S'); echo "ATTACK_TS=$ATTACK_TS"
+      ```
+
+      ## 📋 확인 사항
+      - 403 응답 + ATTACK_TS
+
+      ## 💡 왜?
+      공격 1건 이 ModSec → web agent decoder → web rule → alert 의 chain 유발.
+
+      ## 🔍 결과 해석
+      - 403 = ModSec 차단 (dvwa)
+    hint: "curl -A sqlmap -H dvwa → 403."
+    category: redteam
+    points: 8
+    answer: |
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -A "sqlmap/1.5" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?id=1+UNION+SELECT"'
+      ATTACK_TS=$(ssh 6v6-attacker 'date -u +%Y-%m-%dT%H:%M:%S'); echo "ATTACK_TS=$ATTACK_TS"
+    answer_detail: "sqlmap UA + SQLi → ModSec 942 + 913 (scanner) → 403 → web agent → siem alert."
+    verify:
+      type: output_contains
+      expect: '403'
+      field: stdout
+      semantic:
+        intent: Red — 공격 1건 decoder/rule 매칭 유도.
+        success_criteria: ["403", "ATTACK_TS"]
+        acceptable_methods:
+          - |
+            **[OSS] curl sqlmap** — 표준.
+              ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -A sqlmap -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?id=1+UNION+SELECT"'
+            예상 출력 `403`.
+            운영 해석: chain 유발.
+        negative_signs: ["200", "ATTACK_TS 누락"]
+    target_vm: attacker
+    risk_level: medium
+
+  - order: 6
+    instruction: |
+      ## 🎯 MISSION (Blue Team — 1)
+
+      STEP 5 공격 의 alert 의 decoder + rule 추적 (어느 decoder/rule 매칭).
+
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-siem 'sudo tail -500 /var/ossec/logs/alerts/alerts.json | jq -c "select(.agent.name==\"web\") | {ts: .timestamp[0:19], decoder: .decoder.name, rule: .rule.id, level: .rule.level, desc: .rule.description}" | tail -5'
+      ```
+
+      ## 📋 확인 사항
+      - web agent 의 alert + decoder (modsec 또는 web-accesslog) + rule
+
+      ## 💡 왜?
+      raw ModSec audit → web agent 의 decoder → rule → alert 의 chain 마지막.
+
+      ## 🔍 결과 해석
+      - decoder = web-accesslog 또는 json + rule 100200+ (custom) 또는 31xxx
+    hint: "alerts.json web agent decoder/rule."
+    category: blueteam
     points: 12
     answer: |
-      🤖 가이드:
-      ssh 6v6-siem 'sudo tail -1 /var/ossec/logs/alerts/alerts.json | jq "{decoder: .decoder, rule_id: .rule.id, desc: .rule.description, groups: .rule.groups, agent: .agent.name}"'
-    answer_detail: |
-      decoder.name = json (Suricata) / bastion-lifecycle / sshd / modsec 등. rule.groups = 분류 (web/firewall/intrusion).
+      ssh 6v6-siem 'sudo tail -500 /var/ossec/logs/alerts/alerts.json | jq -c "select(.agent.name==\"web\") | {ts: .timestamp[0:19], decoder: .decoder.name, rule: .rule.id, level: .rule.level, desc: .rule.description}" | tail -5'
+    answer_detail: "web agent alert 의 decoder = ModSec/Apache 형식. rule 매핑으로 분류."
     verify:
-      intent: "alert decoder→rule 매핑"
-      success_criteria:
-        - "decoder + rule.id + groups"
-        - "source 판정"
-      acceptable_methods:
-        - "jq"
-      negative_signs:
-        - "source 판정 없음"
+      type: output_contains
+      expect: rule
+      field: stdout
+      semantic:
+        intent: Blue — 공격 alert 의 decoder/rule.
+        success_criteria: ["web agent alert", "decoder + rule"]
+        acceptable_methods:
+          - |
+            **[OSS] jq web agent** — 표준.
+              ssh 6v6-siem 'sudo tail -500 /var/ossec/logs/alerts/alerts.json | jq -c "select(.agent.name==\"web\")" | tail -5'
+            예상 출력 `web alert + decoder + rule`.
+            운영 해석: chain 마지막.
+          - |
+            **[OSS] wazuh-logtest 재현** — 검증.
+              ssh 6v6-siem 'echo "sample modsec log" | sudo /var/ossec/bin/wazuh-logtest 2>&1 | grep -E "decoder|rule" | head'
+            예상 출력 `decoder + rule 매칭`.
+            운영 해석: 룰 매칭 재현.
+        negative_signs: ["web alert 0"]
     target_vm: siem
+    risk_level: low
+
+  - order: 7
+    instruction: |
+      ## 🎯 MISSION (Blue Team — 2)
+
+      STEP 5 공격 의 rule 의 정의 (XML) 확인 + level/group/mitre 분석.
+
+      ## 💻 실행 명령
+      ```bash
+      RULE=$(ssh 6v6-siem 'sudo tail -500 /var/ossec/logs/alerts/alerts.json | jq -r "select(.agent.name==\"web\") | .rule.id" | tail -1)
+      echo "rule: $RULE"
+      ssh 6v6-siem "sudo grep -rA5 'id=\"$RULE\"' /var/ossec/ruleset/rules/ /var/ossec/etc/rules/ 2>/dev/null | head -10"
+      ```
+
+      ## 📋 확인 사항
+      - rule XML 의 level / description / group / (mitre)
+
+      ## 💡 왜?
+      alert 의 rule 의 정의 추적 = "왜 이 level/group 인가" 의 답. 룰 의 reasoning.
+
+      ## 🔍 결과 해석
+      - rule 정의 발견 → level/group 근거 확인
+      - 못 찾음 → composite rule (if_sid 계층)
+    hint: "grep rule id XML."
+    category: blueteam
+    points: 12
+    answer: |
+      RULE=$(ssh 6v6-siem 'sudo tail -500 /var/ossec/logs/alerts/alerts.json | jq -r "select(.agent.name==\"web\") | .rule.id" | tail -1)
+      echo "rule: $RULE"
+      ssh 6v6-siem "sudo grep -rA5 'id=\"$RULE\"' /var/ossec/ruleset/rules/ /var/ossec/etc/rules/ 2>/dev/null | head -10"
+    answer_detail: "rule XML 의 level/group/description 이 alert 의 분류 근거. mitre 매핑 시 ATT&CK."
+    verify:
+      type: output_contains
+      expect: rule
+      field: stdout
+      semantic:
+        intent: Blue — rule 정의 (XML) 분석.
+        success_criteria: ["rule XML", "level/group 근거"]
+        acceptable_methods:
+          - |
+            **[OSS] grep rule id** — 표준.
+              ssh 6v6-siem 'sudo grep -rA5 "id=\"100200\"" /var/ossec/etc/rules/'
+            예상 출력 `<rule id="100200" level="..."><description>...`.
+            운영 해석: 룰 정의 = 분류 근거.
+          - |
+            **[OSS] dashboard rule detail** — GUI.
+              # Rules → rule id 검색
+            예상 출력 `rule XML + 관련`.
+            운영 해석: GUI 룰 분석.
+        negative_signs: ["rule 못 찾음"]
+    target_vm: siem
+    risk_level: low
+
+  - order: 8
+    instruction: |
+      ## 🎯 MISSION (Purple Team)
+
+      STEP 5-7 종합 — alert 생성 chain (decoder→rule→alert) coverage + custom rule 보강 권고 markdown.
+
+      ## 💻 산출물
+      ```markdown
+      # SOC W04 — Wazuh 관제 chain R/B/P
+      ## alert 생성 chain
+      | 단계 | 동작 | 검증 |
+      |---|---|---|
+      | 수신 | agent → remoted 1514 | agent_control Active |
+      | decode | raw → field | decoder.name |
+      | rule | field → 조건 | rule.id/level |
+      | alert | alerts.json | dashboard |
+      ## Gap + 권고
+      1. custom rule 의 mitre 매핑 부족 → rule XML 에 <mitre> 추가
+      2. decoder unknown 다수 → custom decoder 추가
+      ```
+
+      ## 📋 채점
+      - chain 4 단계 표
+      - Gap 2+ + 권고
+    hint: "chain 표 + Gap."
+    category: purple
+    points: 12
+    answer: |
+      cat <<'EOF'
+      # SOC W04 — Wazuh 관제 chain R/B/P
+      ## alert 생성 chain
+      | 단계 | 동작 | 검증 |
+      |---|---|---|
+      | 수신 | agent → remoted 1514 | agent_control |
+      | decode | raw → field | decoder.name |
+      | rule | field → 조건 | rule.id/level |
+      | alert | alerts.json | dashboard |
+      ## Gap
+      1. custom rule mitre 매핑 부족
+      2. decoder unknown 다수
+      EOF
+    answer_detail: "alert 생성 chain 의 4 단계 + custom rule/decoder 보강. SOC 의 detection 개선."
+    verify:
+      type: output_contains
+      expect: chain
+      field: stdout
+      semantic:
+        intent: Purple — alert chain coverage + 보강.
+        success_criteria: ["chain 4 단계", "Gap 2+"]
+        acceptable_methods:
+          - |
+            **[OSS] markdown chain** — 표준.
+              # 4 단계 + Gap
+            예상 출력 `chain 표`.
+            운영 해석: detection chain 가시화.
+          - |
+            **[OSS] custom rule 작성** — 보강.
+              # <rule id="100300" level="10"><mitre><id>T1190</id></mitre>
+            예상 출력 `custom rule`.
+            운영 해석: mitre 매핑 강화.
+        negative_signs: ["chain 누락", "Gap 없음"]
+    target_vm: bastion
     risk_level: low

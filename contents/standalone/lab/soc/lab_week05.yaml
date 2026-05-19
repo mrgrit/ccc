@@ -1,92 +1,411 @@
 lab_id: standalone-soc-week05
-title: "경보 분석 (1) — 기초 (alert level / groups / rule.frequency / 시간 분포) (6v6 + R/B/P)"
+title: 경보 분석 (1) 기초 — level/groups/frequency/시간분포 + 오탐 판정 + R/B/P
 version: standalone-non-ai
 course: soc
 week: 5
 description: |
-  경보 분석 의 4 차원 — level / groups / frequency / 시간 분포 — 으로 6v6 의 alert 891+ 건 의 통계 분석.
-difficulty: easy
-duration_minutes: 90
-prerequisites: ["W04 의 Wazuh 구조 이해"]
+  경보 분석 의 4 차원 (level / groups / frequency / 시간 분포) + 오탐(false
+  positive) vs 진성 위협 판정. 마지막 4 step 은 R/B/P — Red 의 burst 공격 이
+  baseline 에서 어떻게 deviation 으로 보이는지 + Blue 의 오탐 필터링.
+difficulty: medium
+duration_minutes: 150
+audience: 보안관제 입문자 (5주차)
+prerequisites: ["W01-W04 통과 — Wazuh 구조 + alert 5 필드"]
 objectives:
-  - "alert 의 level 분포 (0-15) histogram"
-  - "rule.groups 빈도 Top 5"
-  - "1 시간 vs 24 시간 alert 비교"
-  - "특정 rule.id 의 burst 패턴 식별"
-pass_threshold: 0.6
+  - "level histogram + groups Top 5 + agent 분포"
+  - "rule.frequency (같은 rule.id 의 시간당 발생) 분석"
+  - "오탐 판정 — baseline 대비 deviation"
+  - "R/B/P — burst 공격 → baseline deviation → 오탐 필터 → tuning 권고"
+pass_threshold: 0.7
 steps:
+
   - order: 1
     instruction: |
-      ## 🎯 MISSION — alert level histogram
-      **무엇을:** alerts.json 최근 1000 alert 의 level 분포.
-    hint: "tail -1000 alerts.json | jq -r '.rule.level' | sort | uniq -c."
+      ## 🎯 MISSION
+      최근 2000 alert 의 level histogram + groups Top 5 + agent 분포.
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -r .rule.level | sort -n | uniq -c'
+      ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -r ".rule.groups[]?" | sort | uniq -c | sort -rn | head -5'
+      ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -r .agent.name | sort | uniq -c | sort -rn'
+      ```
+      ## 📋 확인 사항
+      - level: 3 다수 (70-90%) + 10+ critical
+      - groups Top 5: ids/web/syslog/authentication 등
+      - agent: ips > wazuh.manager > web
+      ## 💡 왜 이걸 하는가?
+      SOC 의 baseline = 평소 분포. 이 baseline 에서 벗어남 = anomaly. 매일 의
+      분포 비교 가 burst/공격 detection 의 reference.
+      ## 🔍 결과 해석
+      - 정상: level 3 다수
+      - level 10+ 급증: 공격 또는 오탐 증가
+      - agent 1종: 다른 agent disconnect
+    hint: "tail -2000 + jq level/groups/agent."
     category: alert_analysis
     points: 10
     answer: |
-      🤖 가이드:
-      ssh 6v6-siem 'sudo tail -1000 /var/ossec/logs/alerts/alerts.json | jq -r ".rule.level" | sort -n | uniq -c'
-    answer_detail: "level 3 (low) 가 가장 다수, 10+ (high) 가 critical 분석 대상."
+      echo "=== level histogram ==="
+      ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -r .rule.level | sort -n | uniq -c'
+      echo "=== groups Top 5 ==="
+      ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -r ".rule.groups[]?" | sort | uniq -c | sort -rn | head -5'
+      echo "=== agent 분포 ==="
+      ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -r .agent.name | sort | uniq -c | sort -rn'
+    answer_detail: "level 3 (low) 다수 = 정상. groups 가 분류 차원. agent 가 source 비중. baseline 의 deviation 이 anomaly."
     verify:
-      intent: "level histogram"
-      success_criteria: ["histogram 결과", "level 분포 분석 1 줄"]
-      acceptable_methods: ["jq + uniq"]
-      negative_signs: ["분석 없음"]
+      type: output_contains
+      expect: rule
+      field: stdout
+      semantic:
+        intent: alert 의 3 차원 분포 (level/groups/agent).
+        success_criteria: ["level histogram", "groups Top 5", "agent 분포"]
+        acceptable_methods:
+          - |
+            **[OSS] jq 분포 통계** — 표준.
+              ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -r .rule.level | sort -n | uniq -c'
+            예상 출력 `1400 3 / 200 5 / 80 7 / 20 10`.
+            운영 해석: baseline 의 level 분포.
+          - |
+            **[OSS] dashboard Visualize Pie** — GUI.
+              # Visualize → Pie → rule.level
+            예상 출력 `시각 distribution`.
+            운영 해석: wallboard panel.
+          - |
+            **[OSS] OpenSearch aggs** — 자동화.
+              curl -sk -u admin:SecretPassword "https://siem.6v6.lab:9200/wazuh-alerts-*/_search?size=0" -H 'Content-Type: application/json' -d '{"aggs":{"lv":{"terms":{"field":"rule.level"}}}}'
+            예상 출력 `aggregation buckets`.
+            운영 해석: 자동 보고.
+        negative_signs: ["분포 없음", "agent 1종"]
     target_vm: siem
     risk_level: low
 
   - order: 2
     instruction: |
-      ## 🎯 MISSION — rule.groups 빈도 Top 5
-      **무엇을:** 1000 alert 의 rule.groups 빈도 Top 5.
-    hint: "jq -r '.rule.groups[]' | sort | uniq -c | sort -rn | head -5."
+      ## 🎯 MISSION
+      Top 3 rule.id 의 frequency (시간당 발생) + 시간 분포.
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -r .rule.id | sort | uniq -c | sort -rn | head -3'
+      TOP=$(ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -r .rule.id | sort | uniq -c | sort -rn | head -1 | awk "{print \$2}")
+      ssh 6v6-siem "sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -r 'select(.rule.id==\"$TOP\") | .timestamp[0:13]' | sort | uniq -c | tail -10"
+      ```
+      ## 📋 확인 사항
+      - Top rule.id (보통 86601 Suricata)
+      - 시간당 발생 수 (frequency)
+      ## 💡 왜 이걸 하는가?
+      frequency = burst detection 의 base. 같은 rule.id 가 갑자기 급증 = 공격 또는
+      오탐 loop. baseline frequency 대비 spike 가 anomaly.
+      ## 🔍 결과 해석
+      - 일정 frequency = baseline
+      - spike = burst (공격/오탐)
+    hint: "Top rule.id + 시간당 분포."
     category: alert_analysis
     points: 10
     answer: |
-      🤖 가이드:
-      ssh 6v6-siem 'sudo tail -1000 /var/ossec/logs/alerts/alerts.json | jq -r ".rule.groups[]?" 2>/dev/null | sort | uniq -c | sort -rn | head -5'
-    answer_detail: "groups 의 web/firewall/intrusion 등 - SOC 의 분류 dimensions."
+      echo "=== Top 3 rule.id ==="
+      ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -r .rule.id | sort | uniq -c | sort -rn | head -3'
+      TOP=$(ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -r .rule.id | sort | uniq -c | sort -rn | head -1 | awk "{print \$2}"')
+      echo "Top rule.id: $TOP"
+      ssh 6v6-siem "sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -r 'select(.rule.id==\"$TOP\") | .timestamp[0:13]' | sort | uniq -c | tail -10"
+    answer_detail: "frequency = 시간당 발생. spike 가 baseline deviation. 86601 (Suricata generic) 이 다수 = ips 의 정상 sniff."
     verify:
-      intent: "Top 5 groups"
-      success_criteria: ["Top 5 list"]
-      acceptable_methods: ["jq"]
-      negative_signs: ["1~2 만"]
+      type: output_contains
+      expect: rule
+      field: stdout
+      semantic:
+        intent: Top rule.id 의 frequency + 시간 분포.
+        success_criteria: ["Top 3 rule.id", "시간당 frequency"]
+        acceptable_methods:
+          - |
+            **[OSS] jq rule.id 빈도** — 표준.
+              ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -r .rule.id | sort | uniq -c | sort -rn | head -3'
+            예상 출력 `1200 86601 / 80 5715 / ...`.
+            운영 해석: Top rule = baseline.
+          - |
+            **[OSS] dashboard date histogram** — GUI.
+              # Visualize → date histogram + rule.id split
+            예상 출력 `시간별 chart`.
+            운영 해석: burst 시각.
+        negative_signs: ["frequency 누락"]
     target_vm: siem
     risk_level: low
 
   - order: 3
     instruction: |
-      ## 🎯 MISSION — 시간 분포 비교 (1h vs 24h)
-      **무엇을:** Wazuh dashboard 또는 alerts.json 의 시간별 alert 수 (1 시간 / 24 시간).
-    hint: "dashboard 의 time series chart 또는 jq '.timestamp' grep 시간."
+      ## 🎯 MISSION
+      level 10+ (high) alert 만 추출 + 각 의 분석 (진성/오탐 1차 판정).
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -c "select(.rule.level >= 10) | {ts: .timestamp[0:19], rule: .rule.id, level: .rule.level, desc: .rule.description, agent: .agent.name, src: .data.srcip}" | tail -10'
+      ```
+      ## 📋 확인 사항
+      - high level alert 의 목록 + src IP
+      ## 💡 왜?
+      level 10+ = SOC 의 우선 분석 대상. 갯수가 적어야 정상. 많으면 공격 또는 오탐 룰.
+      ## 🔍 결과 해석
+      - high level 소수 = 정상
+      - 다수 = 공격 burst 또는 노이즈 룰 (tuning 필요)
+    hint: "jq select level >= 10."
     category: alert_analysis
-    points: 8
+    points: 10
     answer: |
-      🤖 가이드:
-      ssh 6v6-siem 'sudo tail -5000 /var/ossec/logs/alerts/alerts.json | jq -r ".timestamp" | cut -c1-13 | sort | uniq -c | tail -10'
-    answer_detail: "시간별 spike 패턴 = SOC 의 burst detection signal."
+      ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -c "select(.rule.level >= 10) | {ts: .timestamp[0:19], rule: .rule.id, level: .rule.level, desc: .rule.description, agent: .agent.name, src: .data.srcip}" | tail -10'
+    answer_detail: "level 10+ = high/critical. 우선 분석. 다수 발생 = 공격 또는 노이즈 룰 — tuning 대상."
     verify:
-      intent: "시간 분포"
-      success_criteria: ["1h + 24h 비교"]
-      acceptable_methods: ["dashboard / jq"]
-      negative_signs: ["1 시간만"]
+      type: output_contains
+      expect: level
+      field: stdout
+      semantic:
+        intent: high level alert 추출 + 1차 판정.
+        success_criteria: ["level 10+ alert", "src IP"]
+        acceptable_methods:
+          - |
+            **[OSS] jq select level** — 표준.
+              ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -c "select(.rule.level>=10)" | tail -10'
+            예상 출력 `high level alert`.
+            운영 해석: 우선 분석 대상.
+          - |
+            **[OSS] dashboard KQL** — GUI.
+              # rule.level:>=10
+            예상 출력 `high alert filter`.
+            운영 해석: GUI 필터.
+        negative_signs: ["high level 분석 누락"]
     target_vm: siem
     risk_level: low
 
   - order: 4
     instruction: |
-      ## 🎯 MISSION — burst rule.id 식별 + 1 줄 보고서
-      **무엇을:** Top 1 빈도 rule.id 의 burst 시점 + 학생 판정 (정상 baseline / 공격 / 오탐).
-    hint: "Top rule.id 의 시간 분포 grep."
-    category: documentation
+      ## 🎯 MISSION
+      오탐 판정 시뮬 — Top rule.id 의 baseline 비율 + 진성/오탐 판단 1 문장.
+      ## 💻 실행 명령
+      ```bash
+      TOP=$(ssh 6v6-siem 'sudo tail -5000 /var/ossec/logs/alerts/alerts.json | jq -r .rule.id | sort | uniq -c | sort -rn | head -1 | awk "{print \$2}"')
+      TOTAL=$(ssh 6v6-siem 'sudo tail -5000 /var/ossec/logs/alerts/alerts.json | wc -l')
+      CNT=$(ssh 6v6-siem "sudo tail -5000 /var/ossec/logs/alerts/alerts.json | jq -c 'select(.rule.id==\"$TOP\")' | wc -l")
+      echo "rule $TOP: $CNT / $TOTAL"
+      ```
+      ## 📋 확인 사항
+      - Top rule 의 baseline 비율 (예: 60%)
+      ## 💡 왜?
+      한 rule.id 가 전체 의 60%+ = baseline noise (정상 트래픽). 오탐 가능성 ↑. SOC
+      의 tuning 대상 식별.
+      ## 🔍 결과 해석
+      - baseline 비율 높음 = 오탐 의심 (tuning)
+      - 낮은 비율 + high level = 진성 위협
+    hint: "Top rule 의 비율 계산."
+    category: alert_analysis
     points: 12
     answer: |
-      🤖 가이드:
-      ssh 6v6-siem 'sudo tail -5000 /var/ossec/logs/alerts/alerts.json | jq -r "select(.rule.id==\"86601\") | .timestamp" | cut -c1-13 | sort | uniq -c | tail -5'
-    answer_detail: "86601 = Suricata generic — Suricata alert 가 다수 = ips 의 정상 sniff signal."
+      TOP=$(ssh 6v6-siem 'sudo tail -5000 /var/ossec/logs/alerts/alerts.json | jq -r .rule.id | sort | uniq -c | sort -rn | head -1 | awk "{print \$2}"')
+      TOTAL=$(ssh 6v6-siem 'sudo tail -5000 /var/ossec/logs/alerts/alerts.json | wc -l')
+      CNT=$(ssh 6v6-siem "sudo tail -5000 /var/ossec/logs/alerts/alerts.json | jq -c 'select(.rule.id==\"$TOP\")' | wc -l")
+      echo "rule $TOP: $CNT / $TOTAL ($(echo "scale=1; $CNT*100/$TOTAL" | bc 2>/dev/null)%)"
+    answer_detail: "한 rule 이 60%+ = baseline noise = 오탐 의심. tuning (level 낮춤 또는 suppress)."
     verify:
-      intent: "burst rule.id + 판정"
-      success_criteria: ["burst rule.id", "판정 1 줄"]
-      acceptable_methods: ["jq"]
-      negative_signs: ["판정 누락"]
+      type: output_contains
+      expect: rule
+      field: stdout
+      semantic:
+        intent: 오탐 판정 — baseline 비율.
+        success_criteria: ["Top rule 비율", "오탐/진성 판단"]
+        acceptable_methods:
+          - |
+            **[OSS] 비율 계산** — 표준.
+              # Top rule count / total
+            예상 출력 `rule 86601: 3000/5000 (60%)`.
+            운영 해석: 60%+ = noise.
+          - |
+            **[OSS] rule.id 별 level 평균** — 진성도.
+              ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -r "[.rule.id, (.rule.level|tostring)] | join(\":\")" | sort | uniq -c | sort -rn | head'
+            예상 출력 `rule:level 분포`.
+            운영 해석: 높은 level + 낮은 빈도 = 진성.
+        negative_signs: ["판단 누락"]
     target_vm: siem
+    risk_level: low
+
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION (Red Team)
+      attacker 에서 burst 공격 (10 회 연속 sqlmap) → baseline deviation 유발.
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-attacker 'for i in $(seq 10); do curl -s -o /dev/null -A "sqlmap/1.5" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?id=$i+UNION+SELECT"; done; echo "10 회 완료"'
+      ATTACK_TS=$(ssh 6v6-attacker 'date -u +%Y-%m-%dT%H:%M:%S'); echo "ATTACK_TS=$ATTACK_TS"
+      ```
+      ## 📋 확인 사항
+      - 10 회 burst + ATTACK_TS
+      ## 💡 왜?
+      burst = baseline 에서 의 spike. SOC 의 frequency-based detection (rule 31xxx 의
+      composite) trigger.
+      ## 🔍 결과 해석
+      - 10 회 burst 가 시간 분포 의 spike 로 보임
+    hint: "for seq 10 curl sqlmap burst."
+    category: redteam
+    points: 8
+    answer: |
+      ssh 6v6-attacker 'for i in $(seq 10); do curl -s -o /dev/null -A "sqlmap/1.5" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?id=$i+UNION+SELECT"; done; echo "10 회 완료"'
+      ATTACK_TS=$(ssh 6v6-attacker 'date -u +%Y-%m-%dT%H:%M:%S'); echo "ATTACK_TS=$ATTACK_TS"
+    answer_detail: "10 회 burst → web 의 ModSec 403 10 회 → siem 의 frequency spike. composite rule trigger."
+    verify:
+      type: output_contains
+      expect: 완료
+      field: stdout
+      semantic:
+        intent: Red — burst 공격 baseline deviation.
+        success_criteria: ["10 회 burst", "ATTACK_TS"]
+        acceptable_methods:
+          - |
+            **[OSS] for loop curl** — 표준.
+              ssh 6v6-attacker 'for i in $(seq 10); do curl -s -o /dev/null -A sqlmap -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?id=$i"; done'
+            예상 출력 `10 회 완료`.
+            운영 해석: burst 생성.
+        negative_signs: ["burst 미발생"]
+    target_vm: attacker
+    risk_level: medium
+
+  - order: 6
+    instruction: |
+      ## 🎯 MISSION (Blue Team)
+      STEP 5 burst 가 시간 분포 의 spike 로 보이는지 추적 + frequency.
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-siem 'sudo tail -200 /var/ossec/logs/alerts/alerts.json | jq -r "select(.agent.name==\"web\") | .timestamp[0:16]" | sort | uniq -c | tail -5'
+      ssh 6v6-siem 'sudo tail -200 /var/ossec/logs/alerts/alerts.json | jq -c "select(.agent.name==\"web\")" | tail -10 | jq -s "length"'
+      ```
+      ## 📋 확인 사항
+      - 최근 분 의 web alert spike (STEP 5 의 10 회)
+      ## 💡 왜?
+      baseline 대비 deviation 의 실측. burst 가 SOC 의 dashboard 에서 어떻게 보이나.
+      ## 🔍 결과 해석
+      - spike 보임 = detection 정상
+      - spike 없음 = web alert forwarding 점검
+    hint: "분 단위 web alert count."
+    category: blueteam
+    points: 12
+    answer: |
+      echo "=== 분 단위 web alert ==="
+      ssh 6v6-siem 'sudo tail -200 /var/ossec/logs/alerts/alerts.json | jq -r "select(.agent.name==\"web\") | .timestamp[0:16]" | sort | uniq -c | tail -5'
+    answer_detail: "burst 의 시간 spike. baseline 대비 deviation. composite rule (31xxx) trigger 가능."
+    verify:
+      type: output_contains
+      expect: web
+      field: stdout
+      semantic:
+        intent: Blue — burst spike 추적.
+        success_criteria: ["분 단위 spike", "baseline 대비"]
+        acceptable_methods:
+          - |
+            **[OSS] 분 단위 count** — 표준.
+              ssh 6v6-siem 'sudo tail -200 /var/ossec/logs/alerts/alerts.json | jq -r "select(.agent.name==\"web\") | .timestamp[0:16]" | sort | uniq -c'
+            예상 출력 `10 2026-05-20T02:13`.
+            운영 해석: spike 시각.
+          - |
+            **[OSS] dashboard date histogram** — GUI.
+              # agent.name:web + date histogram 1m bucket
+            예상 출력 `spike chart`.
+            운영 해석: 시각 burst.
+        negative_signs: ["spike 없음"]
+    target_vm: siem
+    risk_level: low
+
+  - order: 7
+    instruction: |
+      ## 🎯 MISSION (Blue Team — 오탐 필터)
+      burst alert 가 진성 인지 오탐 인지 판정 — src IP (attacker=알려진 lab) + 응답 코드.
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-siem 'sudo tail -200 /var/ossec/logs/alerts/alerts.json | jq -c "select(.agent.name==\"web\") | {rule: .rule.id, src: .data.srcip, url: (.data.url // .full_log[0:60])}" | tail -5'
+      ```
+      ## 📋 확인 사항
+      - src IP = attacker (10.20.30.202 또는 HAProxy hop)
+      - 진성/오탐 판단
+      ## 💡 왜?
+      알려진 lab attacker 의 burst = 의도된 테스트 (오탐 아님, 그러나 운영 환경 이면
+      진성 위협). src IP 의 known/unknown 이 판단 의 base.
+      ## 🔍 결과 해석
+      - src = 알려진 → lab 테스트 (운영 이면 진성)
+      - src = unknown 외부 → 진성 위협
+    hint: "src IP 분석."
+    category: blueteam
+    points: 12
+    answer: |
+      ssh 6v6-siem 'sudo tail -200 /var/ossec/logs/alerts/alerts.json | jq -c "select(.agent.name==\"web\") | {rule: .rule.id, src: .data.srcip, url: (.data.url // .full_log[0:60])}" | tail -5'
+    answer_detail: "src IP 의 known/unknown 판단. lab 의 attacker = 테스트. 운영 환경 의 unknown 외부 IP = 진성."
+    verify:
+      type: output_contains
+      expect: rule
+      field: stdout
+      semantic:
+        intent: Blue — 오탐 필터 (src IP 판단).
+        success_criteria: ["src IP", "진성/오탐 판단"]
+        acceptable_methods:
+          - |
+            **[OSS] src IP 추출** — 표준.
+              ssh 6v6-siem 'sudo tail -200 /var/ossec/logs/alerts/alerts.json | jq -r "select(.agent.name==\"web\") | .data.srcip" | sort | uniq -c'
+            예상 출력 `10 10.20.31.1 (HAProxy hop)`.
+            운영 해석: src 의 known 여부.
+          - |
+            **[OSS] X-Forwarded-For 원래 IP** — 정밀.
+              ssh 6v6-web 'sudo grep X-Forwarded-For /var/log/apache2/access.log | tail -3'
+            예상 출력 `10.20.30.202`.
+            운영 해석: 원래 attacker IP.
+        negative_signs: ["판단 누락"]
+    target_vm: siem
+    risk_level: low
+
+  - order: 8
+    instruction: |
+      ## 🎯 MISSION (Purple Team)
+      STEP 5-7 종합 — baseline + burst detection + 오탐 tuning 권고 markdown.
+      ## 💻 산출물
+      ```markdown
+      # SOC W05 — 경보 분석 R/B/P
+      ## Baseline vs Burst
+      | 지표 | baseline | burst (STEP 5) |
+      |---|---|---|
+      | web alert/min | <평소> | <10 회 spike> |
+      | level 분포 | 3 다수 | 7+ 증가 |
+      ## 오탐 tuning 권고
+      1. Top rule (86601) 60%+ → level 낮춤 또는 group 재분류
+      2. lab attacker IP whitelist (운영 이면 X)
+      3. composite rule (frequency) 의 threshold 조정
+      ```
+      ## 📋 채점
+      - Baseline vs Burst 비교
+      - tuning 권고 2+
+    hint: "baseline vs burst + tuning."
+    category: purple
+    points: 12
+    answer: |
+      cat <<'EOF'
+      # SOC W05 — 경보 분석 R/B/P
+      ## Baseline vs Burst
+      | 지표 | baseline | burst |
+      |---|---|---|
+      | web alert/min | 평소 0-1 | 10 spike |
+      | level | 3 다수 | 7+ 증가 |
+      ## 오탐 tuning
+      1. Top rule 60%+ → level 낮춤
+      2. composite rule threshold 조정
+      EOF
+    answer_detail: "baseline 대비 burst deviation 의 detection. 오탐 tuning = noise rule 의 level/group 조정."
+    verify:
+      type: output_contains
+      expect: Baseline
+      field: stdout
+      semantic:
+        intent: Purple — baseline/burst + tuning.
+        success_criteria: ["Baseline vs Burst", "tuning 2+"]
+        acceptable_methods:
+          - |
+            **[OSS] markdown 비교** — 표준.
+              # baseline vs burst 표
+            예상 출력 `비교 표`.
+            운영 해석: deviation 가시화.
+          - |
+            **[OSS] rule tuning XML** — 보강.
+              # <rule id="86601" overwrite="yes"> level 낮춤
+            예상 출력 `tuning rule`.
+            운영 해석: noise 감소.
+        negative_signs: ["비교 누락", "tuning 없음"]
+    target_vm: bastion
     risk_level: low
