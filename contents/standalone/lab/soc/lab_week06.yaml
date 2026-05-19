@@ -1,92 +1,410 @@
 lab_id: standalone-soc-week06
-title: "경보 분석 (2) — ATT&CK 매핑 + Tactic/Technique 분류 (6v6 + R/B/P)"
+title: 경보 분석 (2) — MITRE ATT&CK 매핑 + Tactic/Technique 분류 + R/B/P (kill chain 추적)
 version: standalone-non-ai
 course: soc
 week: 6
 description: |
-  alert 의 MITRE ATT&CK Tactic/Technique 매핑. Wazuh 의 rule.mitre 필드 + 학생 의 보강 매핑.
+  alert 의 MITRE ATT&CK Tactic/Technique 매핑 — Wazuh rule.mitre 필드 + 수동 보강.
+  마지막 4 step 은 R/B/P — Red 의 multi-stage 공격 이 어떤 Tactic chain (recon →
+  initial access → ...) 으로 보이는지 + Navigator layer 작성.
 difficulty: medium
-duration_minutes: 90
-prerequisites: ["W05 의 경보 분류 기초"]
+duration_minutes: 150
+audience: 보안관제 입문자 (6주차)
+prerequisites: ["W01-W05 통과 — 경보 분석 기초"]
 objectives:
-  - "rule.mitre 필드 가용 alert 식별"
-  - "Tactic (TA0001~TA0040) 분포 + Top 3"
-  - "Technique (T1xxx) 분포 + Top 3"
-  - "수동 보강 — rule.mitre 없는 alert 의 학생 매핑"
-pass_threshold: 0.6
+  - "rule.mitre.tactic 가용 alert + Tactic Top 3"
+  - "rule.mitre.technique Top 3 (T1xxx)"
+  - "수동 매핑 — rule.mitre 없는 alert 의 학생 매핑"
+  - "R/B/P — multi-stage 공격 의 Tactic chain + Navigator layer JSON"
+pass_threshold: 0.7
 steps:
+
   - order: 1
     instruction: |
-      ## 🎯 MISSION — rule.mitre 필드 가용 alert
-      **무엇을:** 최근 5000 alert 중 rule.mitre.tactic 필드 있는 alert 수 + Top 3 tactic.
-    hint: "jq '.rule.mitre.tactic[]?' | sort | uniq -c | sort -rn | head -3."
+      ## 🎯 MISSION
+      최근 5000 alert 중 rule.mitre.tactic 가용 alert 수 + Tactic Top 3.
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-siem 'sudo tail -5000 /var/ossec/logs/alerts/alerts.json | jq -c "select(.rule.mitre != null)" | wc -l'
+      ssh 6v6-siem 'sudo tail -5000 /var/ossec/logs/alerts/alerts.json | jq -r ".rule.mitre.tactic[]?" 2>/dev/null | sort | uniq -c | sort -rn | head -5'
+      ```
+      ## 📋 확인 사항
+      - mitre 가용 alert 수 (Wazuh default rule 의 일부)
+      - Tactic Top 3 (Initial Access / Credential Access / Discovery 등)
+      ## 💡 왜 이걸 하는가?
+      MITRE ATT&CK = 공격 의 표준 분류 framework. Tactic (목적) + Technique (방법).
+      alert 를 ATT&CK 에 매핑 = SOC 의 detection coverage 시각화 + 우선순위.
+      ## 🔍 결과 해석
+      - 정상: mitre 가용 alert + Tactic 분포
+      - mitre 0: Wazuh rule 의 mitre tag 미적용 — default ruleset 점검
+    hint: "jq rule.mitre.tactic."
     category: attack
     points: 10
     answer: |
-      🤖 가이드:
+      echo "=== mitre 가용 alert 수 ==="
+      ssh 6v6-siem 'sudo tail -5000 /var/ossec/logs/alerts/alerts.json | jq -c "select(.rule.mitre != null)" | wc -l'
+      echo "=== Tactic Top 5 ==="
       ssh 6v6-siem 'sudo tail -5000 /var/ossec/logs/alerts/alerts.json | jq -r ".rule.mitre.tactic[]?" 2>/dev/null | sort | uniq -c | sort -rn | head -5'
-    answer_detail: "Wazuh default rule 의 일부에 mitre tag — Initial Access / Execution / Defense Evasion 등."
+    answer_detail: "Wazuh default rule 의 일부에 mitre tag. Tactic = TA0001 (Initial Access) 등 14 종. ATT&CK 매핑 = SOC 의 coverage 측정."
     verify:
-      intent: "mitre tactic Top 3"
-      success_criteria: ["Top 3 + 건수"]
-      acceptable_methods: ["jq"]
-      negative_signs: ["1~2 만"]
+      type: output_contains
+      expect: ""
+      field: stdout
+      semantic:
+        intent: rule.mitre.tactic Top 3.
+        success_criteria: ["mitre 가용 alert 수", "Tactic Top 3"]
+        acceptable_methods:
+          - |
+            **[OSS] jq mitre.tactic** — 표준.
+              ssh 6v6-siem 'sudo tail -5000 /var/ossec/logs/alerts/alerts.json | jq -r ".rule.mitre.tactic[]?" | sort | uniq -c | sort -rn'
+            예상 출력 `30 Initial Access / 20 Credential Access / ...`.
+            운영 해석: Tactic = 공격 목적.
+          - |
+            **[OSS] dashboard MITRE module** — GUI.
+              # ☰ → MITRE ATT&CK
+            예상 출력 `Tactic/Technique heatmap`.
+            운영 해석: Wazuh 의 native ATT&CK 모듈.
+          - |
+            **[OSS] Wazuh API mitre** — 자동화.
+              curl -sk -u wazuh-wui:MyS3cr37P450r.*- "https://siem.6v6.lab:55000/mitre/tactics?pretty" 2>&1 | head -15
+            예상 출력 `tactic list`.
+            운영 해석: API.
+        negative_signs: ["mitre 0"]
     target_vm: siem
     risk_level: low
 
   - order: 2
     instruction: |
-      ## 🎯 MISSION — Technique (T1xxx) Top 3
-      **무엇을:** rule.mitre.technique 의 Top 3.
-    hint: "jq '.rule.mitre.technique[]?'."
+      ## 🎯 MISSION
+      rule.mitre.technique Top 3 (T1xxx) + 각 의 의미.
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-siem 'sudo tail -5000 /var/ossec/logs/alerts/alerts.json | jq -r ".rule.mitre.technique[]?" 2>/dev/null | sort | uniq -c | sort -rn | head -5'
+      ```
+      ## 📋 확인 사항
+      - Technique Top 3 (T1110 Brute Force / T1190 Exploit Public App / T1059 Cmd 등)
+      ## 💡 왜?
+      Technique = 구체 방법. T1110 (brute) / T1190 (exploit) 등 의 빈도 가 SOC 가
+      직면 한 공격 의 실제 분포. CVE / detection rule 의 매핑 base.
+      ## 🔍 결과 해석
+      - Technique 다양 = 다양한 공격
+      - T1110 다수 = brute force 빈번 (W02 의 ssh)
+    hint: "jq rule.mitre.technique."
     category: attack
     points: 8
     answer: |
-      🤖 가이드:
       ssh 6v6-siem 'sudo tail -5000 /var/ossec/logs/alerts/alerts.json | jq -r ".rule.mitre.technique[]?" 2>/dev/null | sort | uniq -c | sort -rn | head -5'
-    answer_detail: "T1059 (Cmd interpreter), T1110 (Brute Force), T1190 (Exploit Public App) 다수."
+    answer_detail: "Technique = T1xxx (방법). T1110 Brute Force / T1190 Exploit Public-Facing App / T1059 Command. 빈도 = 실제 공격 분포."
     verify:
-      intent: "technique Top 3"
-      success_criteria: ["Top 3"]
-      acceptable_methods: ["jq"]
-      negative_signs: ["없음"]
+      type: output_contains
+      expect: ""
+      field: stdout
+      semantic:
+        intent: Technique Top 3.
+        success_criteria: ["Technique Top 3"]
+        acceptable_methods:
+          - |
+            **[OSS] jq technique** — 표준.
+              ssh 6v6-siem 'sudo tail -5000 /var/ossec/logs/alerts/alerts.json | jq -r ".rule.mitre.technique[]?" | sort | uniq -c | sort -rn'
+            예상 출력 `T1110 / T1190 / T1059`.
+            운영 해석: 방법별 빈도.
+          - |
+            **[OSS] dashboard technique drill** — GUI.
+              # MITRE → Technique → drill-down
+            예상 출력 `technique 별 alert`.
+            운영 해석: drill-down.
+        negative_signs: ["technique 0"]
     target_vm: siem
     risk_level: low
 
   - order: 3
     instruction: |
-      ## 🎯 MISSION — 수동 매핑 — rule.mitre 없는 alert
-      **무엇을:** rule.mitre 미설정 alert 1 개 선택 → 학생 본인 의 Tactic/Technique 매핑 + 근거 1 문장.
-    hint: "rule.description 에서 SQLi → T1190, brute → T1110, recon → T1595."
+      ## 🎯 MISSION
+      rule.mitre 없는 alert 1개 선택 → 학생 본인 의 Tactic/Technique 수동 매핑 + 근거.
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-siem 'sudo tail -200 /var/ossec/logs/alerts/alerts.json | jq -c "select(.rule.mitre == null and .rule.level >= 5) | {id: .rule.id, desc: .rule.description}" | tail -5'
+      ```
+      ## 📋 확인 사항
+      - mitre 없는 alert 1개 선택 + 학생 매핑 (예: SQLi → T1190)
+      ## 💡 왜?
+      모든 alert 에 mitre tag 가 있지 않음. 분석가 가 rule.description 으로 수동 매핑.
+      ATT&CK Navigator 의 활용 능력.
+      ## 🔍 결과 해석
+      - SQLi/XSS → T1190 (Exploit Public App)
+      - brute → T1110, recon → T1595
+    hint: "mitre null alert + 수동 매핑."
     category: attack
     points: 12
     answer: |
-      🤖 가이드:
-      ssh 6v6-siem 'sudo tail -100 /var/ossec/logs/alerts/alerts.json | jq -c "select(.rule.mitre == null) | {id: .rule.id, desc: .rule.description}" | head -3'
-      # 학생: 위 결과 1 개 선택 후 매핑.
-    answer_detail: "수동 매핑 = MITRE ATT&CK Navigator 의 핵심 활용. SOC 분석가 의 reasoning 학습."
+      ssh 6v6-siem 'sudo tail -200 /var/ossec/logs/alerts/alerts.json | jq -c "select(.rule.mitre == null and .rule.level >= 5) | {id: .rule.id, desc: .rule.description}" | tail -5'
+      echo "# 학생 수동 매핑 예: 위 alert 의 description 기반 → Tactic/Technique"
+    answer_detail: "수동 매핑 = MITRE ATT&CK Navigator 의 핵심. rule.description 의 keyword → Technique. SQLi=T1190, brute=T1110."
     verify:
-      intent: "수동 매핑 + 근거"
-      success_criteria: ["1 alert + Tactic + Technique + 근거"]
-      acceptable_methods: ["MITRE ATT&CK 참조"]
-      negative_signs: ["근거 없음"]
+      type: output_contains
+      expect: desc
+      field: stdout
+      semantic:
+        intent: 수동 ATT&CK 매핑.
+        success_criteria: ["mitre null alert 선택", "Tactic+Technique 매핑", "근거"]
+        acceptable_methods:
+          - |
+            **[OSS] jq mitre null** — 표준.
+              ssh 6v6-siem 'sudo tail -200 /var/ossec/logs/alerts/alerts.json | jq -c "select(.rule.mitre==null and .rule.level>=5)" | tail -5'
+            예상 출력 `mitre 없는 high alert`.
+            운영 해석: 수동 매핑 대상.
+          - |
+            **[OSS] ATT&CK Navigator** — 시각.
+              # https://mitre-attack.github.io/attack-navigator/
+            예상 출력 `Navigator UI`.
+            운영 해석: 매핑 시각.
+        negative_signs: ["매핑 근거 없음"]
     target_vm: siem
     risk_level: low
 
   - order: 4
     instruction: |
-      ## 🎯 MISSION — 보고서 + ATT&CK Navigator JSON
-      **무엇을:** Top 3 Tactic + Top 3 Technique markdown 표 + 학생 의 ATT&CK Navigator layer.json 1 줄.
-    hint: "Navigator layer = JSON { name, technique: [{techniqueID, score, color}] }."
-    category: documentation
+      ## 🎯 MISSION
+      Top 3 Tactic + Technique 의 ATT&CK Navigator layer JSON 작성.
+      ## 💻 산출물
+      ```json
+      {
+        "name": "6v6 SOC W06 Coverage",
+        "versions": {"attack": "14", "navigator": "4.9.1", "layer": "4.5"},
+        "domain": "enterprise-attack",
+        "techniques": [
+          {"techniqueID": "T1190", "score": 50, "color": "#ff6666", "comment": "Exploit Public App (SQLi/XSS)"},
+          {"techniqueID": "T1110", "score": 30, "color": "#ffaa66", "comment": "Brute Force (ssh)"},
+          {"techniqueID": "T1595", "score": 20, "color": "#ffff66", "comment": "Active Scanning (recon)"}
+        ]
+      }
+      ```
+      ## 📋 확인 사항
+      - layer JSON 의 techniques 배열 (3+ technique)
+      ## 💡 왜?
+      Navigator layer = SOC 의 detection coverage 의 시각화. 매 분기 의 발전 추적.
+      ## 🔍 결과 해석
+      - layer JSON 정상 → Navigator 에 import 가능
+    hint: "Navigator layer JSON template."
+    category: attack
     points: 10
     answer: |
-      🤖 가이드: markdown 표 + Navigator JSON 골격.
-    answer_detail: "Navigator (https://mitre-attack.github.io/attack-navigator/) = SOC 의 visual reporting tool."
+      cat <<'EOF'
+      {
+        "name": "6v6 SOC W06 Coverage",
+        "versions": {"attack": "14", "navigator": "4.9.1", "layer": "4.5"},
+        "domain": "enterprise-attack",
+        "techniques": [
+          {"techniqueID": "T1190", "score": 50, "comment": "SQLi/XSS"},
+          {"techniqueID": "T1110", "score": 30, "comment": "ssh brute"},
+          {"techniqueID": "T1595", "score": 20, "comment": "recon"}
+        ]
+      }
+      EOF
+    answer_detail: "Navigator layer = JSON. techniqueID + score + color + comment. https://mitre-attack.github.io/attack-navigator/ 에 import."
     verify:
-      intent: "Top 3 + Navigator JSON"
-      success_criteria: ["Top 3 표", "JSON 1 줄"]
-      acceptable_methods: ["markdown + JSON"]
-      negative_signs: ["JSON 누락"]
+      type: output_contains
+      expect: techniqueID
+      field: stdout
+      semantic:
+        intent: Navigator layer JSON.
+        success_criteria: ["layer JSON", "3+ technique"]
+        acceptable_methods:
+          - |
+            **[OSS] JSON layer 작성** — 표준.
+              # techniques 배열 의 techniqueID + score
+            예상 출력 `valid layer JSON`.
+            운영 해석: Navigator import.
+        negative_signs: ["JSON 오류", "technique 3 미만"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION (Red Team)
+      attacker 에서 multi-stage 공격 (recon → exploit) — nmap scan + SQLi.
+      ## 💻 실행 명령
+      ```bash
+      # Stage 1: recon (T1595 Active Scanning)
+      ssh 6v6-attacker 'nmap -sV -p 80,443 --script http-title -Pn 10.20.30.1 2>&1 | grep -E "open|title" | head -3'
+      # Stage 2: exploit (T1190)
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -A sqlmap -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?id=1+UNION+SELECT"'
+      ATTACK_TS=$(ssh 6v6-attacker 'date -u +%Y-%m-%dT%H:%M:%S'); echo "ATTACK_TS=$ATTACK_TS"
+      ```
+      ## 📋 확인 사항
+      - Stage 1 nmap (recon) + Stage 2 SQLi (exploit)
+      ## 💡 왜?
+      multi-stage = kill chain. recon (T1595) → exploit (T1190) 의 순차. SOC 의
+      attack chain 추적.
+      ## 🔍 결과 해석
+      - 2 stage 모두 흔적 → kill chain detection
+    hint: "nmap recon + curl SQLi."
+    category: redteam
+    points: 8
+    answer: |
+      echo "=== Stage 1: recon ==="
+      ssh 6v6-attacker 'nmap -sV -p 80,443 --script http-title -Pn 10.20.30.1 2>&1 | grep -E "open|title" | head -3'
+      echo "=== Stage 2: exploit ==="
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -A sqlmap -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?id=1+UNION+SELECT"'
+      ATTACK_TS=$(ssh 6v6-attacker 'date -u +%Y-%m-%dT%H:%M:%S'); echo "ATTACK_TS=$ATTACK_TS"
+    answer_detail: "multi-stage = T1595 (recon, nmap) → T1190 (exploit, SQLi). kill chain 의 2 단계."
+    verify:
+      type: output_contains
+      expect: open
+      field: stdout
+      semantic:
+        intent: Red — multi-stage 공격 (recon+exploit).
+        success_criteria: ["nmap recon", "SQLi exploit", "ATTACK_TS"]
+        acceptable_methods:
+          - |
+            **[OSS] nmap + curl** — 표준.
+              ssh 6v6-attacker 'nmap -sV -p 80 -Pn 10.20.30.1; curl -A sqlmap ...'
+            예상 출력 `80 open + 403`.
+            운영 해석: kill chain 2 단계.
+        negative_signs: ["1 stage만"]
+    target_vm: attacker
+    risk_level: medium
+
+  - order: 6
+    instruction: |
+      ## 🎯 MISSION (Blue Team)
+      STEP 5 의 multi-stage 가 ips eve.json + siem 에서 어떤 Tactic chain 으로 보이나.
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-ips 'sudo tail -300 /var/log/suricata/eve.json | jq -c "select(.event_type==\"alert\") | {sig: .alert.signature, cat: .alert.category}" | tail -5'
+      ssh 6v6-siem 'sudo tail -300 /var/ossec/logs/alerts/alerts.json | jq -c "select(.data.srcip==\"10.20.30.202\" or .agent.name==\"ips\") | {rule: .rule.id, desc: .rule.description}" | tail -5'
+      ```
+      ## 📋 확인 사항
+      - ips alert (scan + exploit) + siem 통합
+      ## 💡 왜?
+      kill chain 의 각 stage 가 다른 alert. recon (scan alert) → exploit (web alert)
+      의 시간순 = attack progression.
+      ## 🔍 결과 해석
+      - 2 stage 의 alert → chain 추적
+    hint: "eve.json alert + siem."
+    category: blueteam
+    points: 12
+    answer: |
+      echo "=== ips alert ==="
+      ssh 6v6-ips 'sudo tail -300 /var/log/suricata/eve.json | jq -c "select(.event_type==\"alert\") | {sig: .alert.signature, cat: .alert.category}" | tail -5'
+      echo "=== siem 통합 ==="
+      ssh 6v6-siem 'sudo tail -300 /var/ossec/logs/alerts/alerts.json | jq -c "select(.agent.name==\"ips\") | {rule: .rule.id, desc: .rule.description}" | tail -5'
+    answer_detail: "kill chain 의 stage 별 alert. recon = scan signature, exploit = web attack. 시간순 = progression."
+    verify:
+      type: output_contains
+      expect: rule
+      field: stdout
+      semantic:
+        intent: Blue — multi-stage Tactic chain.
+        success_criteria: ["ips alert", "siem 통합", "chain"]
+        acceptable_methods:
+          - |
+            **[OSS] eve.json alert + siem** — 표준.
+              ssh 6v6-ips 'sudo tail -300 /var/log/suricata/eve.json | jq "select(.event_type==\"alert\")" | tail -5'
+            예상 출력 `scan/exploit alert`.
+            운영 해석: chain stage.
+        negative_signs: ["chain 추적 안 됨"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 7
+    instruction: |
+      ## 🎯 MISSION (Blue Team — 매핑)
+      STEP 6 의 alert 를 ATT&CK Tactic chain 으로 매핑 (recon→initial access).
+      ## 💻 산출물
+      ```markdown
+      | 시각 | alert | Tactic | Technique |
+      |---|---|---|---|
+      | T+0 | nmap scan | Reconnaissance | T1595 |
+      | T+5 | SQLi 403 | Initial Access | T1190 |
+      ```
+      ## 📋 확인 사항
+      - 2+ stage 의 Tactic chain 표
+      ## 💡 왜?
+      attack chain 의 ATT&CK 매핑 = SOC 의 incident timeline. 다음 stage 예측 (T1190 후 → T1059 RCE 가능성).
+      ## 🔍 결과 해석
+      - chain 매핑 → 다음 stage 예측 + 선제 대응
+    hint: "Tactic chain 표."
+    category: blueteam
+    points: 12
+    answer: |
+      cat <<'EOF'
+      | 시각 | alert | Tactic | Technique |
+      |---|---|---|---|
+      | T+0 | nmap scan | Reconnaissance | T1595 |
+      | T+5 | SQLi 403 | Initial Access | T1190 |
+      EOF
+    answer_detail: "Tactic chain = incident timeline. T1595 (recon) → T1190 (exploit). 다음 예측: T1059 (RCE) / T1078 (valid accounts)."
+    verify:
+      type: output_contains
+      expect: Tactic
+      field: stdout
+      semantic:
+        intent: Blue — Tactic chain 매핑.
+        success_criteria: ["2+ stage chain", "Tactic+Technique"]
+        acceptable_methods:
+          - |
+            **[OSS] markdown chain 표** — 표준.
+              # 시각별 Tactic/Technique
+            예상 출력 `chain 표`.
+            운영 해석: incident timeline.
+        negative_signs: ["chain 누락"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 8
+    instruction: |
+      ## 🎯 MISSION (Purple Team)
+      STEP 5-7 종합 — ATT&CK coverage + detection gap + Navigator layer 권고.
+      ## 💻 산출물
+      ```markdown
+      # SOC W06 — ATT&CK R/B/P
+      ## Coverage (관측된 Tactic/Technique)
+      | Tactic | Technique | detection? | rule |
+      |---|---|---|---|
+      | Reconnaissance | T1595 | ✅/❌ | (Suricata scan) |
+      | Initial Access | T1190 | ✅ | (ModSec 941/942) |
+      ## Gap
+      1. T1595 (scan) detection 약함 → Suricata scan rule 강화
+      2. T1059 (RCE) 후속 detection 부재 → command injection rule
+      ```
+      ## 📋 채점
+      - Coverage 표 (관측 Tactic/Technique)
+      - Gap 2+
+    hint: "Coverage 표 + Gap."
+    category: purple
+    points: 12
+    answer: |
+      cat <<'EOF'
+      # SOC W06 — ATT&CK R/B/P
+      ## Coverage
+      | Tactic | Technique | detection | rule |
+      |---|---|---|---|
+      | Reconnaissance | T1595 | ✅/❌ | Suricata scan |
+      | Initial Access | T1190 | ✅ | ModSec 941/942 |
+      ## Gap
+      1. T1595 scan detection 약함
+      2. T1059 RCE 후속 부재
+      EOF
+    answer_detail: "ATT&CK coverage = detection 가능 Technique. Gap = blind spot. Navigator 로 시각화 + 분기별 발전."
+    verify:
+      type: output_contains
+      expect: Coverage
+      field: stdout
+      semantic:
+        intent: Purple — ATT&CK coverage + gap.
+        success_criteria: ["Coverage 표", "Gap 2+"]
+        acceptable_methods:
+          - |
+            **[OSS] markdown Coverage** — 표준.
+              # Tactic/Technique detection 표
+            예상 출력 `Coverage 표`.
+            운영 해석: detection 범위.
+          - |
+            **[OSS] Navigator heatmap** — 시각.
+              # layer JSON → Navigator import → heatmap
+            예상 출력 `색칠된 matrix`.
+            운영 해석: 분기별 발전.
+        negative_signs: ["Coverage 누락", "Gap 없음"]
     target_vm: bastion
     risk_level: low

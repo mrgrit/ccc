@@ -1,52 +1,78 @@
 lab_id: standalone-soc-week07
-title: "SIGMA 룰 작성 — 학생 본인 작성 + 변환 + Wazuh 배포 (6v6 + R/B/P)"
+title: SIGMA 룰 작성 — spec/detection/변환/Wazuh 배포 + R/B/P (custom detection 검증)
 version: standalone-non-ai
 course: soc
 week: 7
 description: |
-  SIGMA = SIEM 벤더 무관 룰 포맷. 학생 본인 의 1 SIGMA 룰 작성 + sigma-cli 로 Wazuh rule 변환 + (option) 배포.
-difficulty: medium
-duration_minutes: 90
-prerequisites: ["W06 의 ATT&CK 매핑 + W04 의 Wazuh rule 위치"]
+  SIGMA = SIEM 벤더 무관 탐지 룰 포맷. 학생 본인 의 SIGMA 룰 작성 + sigma-cli
+  변환 + Wazuh rule 매핑. 마지막 4 step 은 R/B/P — 학생 작성 룰 이 실제 공격 을
+  탐지 하는지 검증 + tuning.
+difficulty: hard
+duration_minutes: 150
+audience: 보안관제 입문자 (7주차)
+prerequisites: ["W01-W06 통과 — Wazuh 룰 구조 + ATT&CK"]
 objectives:
-  - "SIGMA spec 의 7 필드 (title/detection/level/tags/logsource/falsepositives/status) 이해"
-  - "학생 본인 의 1 룰 YAML 작성"
-  - "sigma-cli 또는 sigmac 로 wazuh format 변환"
-  - "변환 결과 분석 (어느 Wazuh field 매핑)"
-pass_threshold: 0.6
+  - "SIGMA spec 7 필드 (title/id/status/logsource/detection/level/tags)"
+  - "학생 본인 의 SIGMA 룰 1개 작성 (ssh brute 또는 web 공격)"
+  - "sigma-cli 변환 (Wazuh backend) 또는 수동 변환"
+  - "R/B/P — 학생 룰 이 실제 공격 탐지 검증 + tuning"
+pass_threshold: 0.7
 steps:
+
   - order: 1
     instruction: |
-      ## 🎯 MISSION — SIGMA spec 7 필드 확인
-      **무엇을:** github.com/SigmaHQ/sigma 의 default rule 1 개 의 7 필드 인용.
-    hint: "git clone --depth 1 https://github.com/SigmaHQ/sigma /tmp/sigma 또는 web fetch."
+      ## 🎯 MISSION
+      SigmaHQ 의 default rule 1개 의 7 필드 분석.
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-attacker 'curl -sL "https://raw.githubusercontent.com/SigmaHQ/sigma/master/rules/linux/auth/lnx_auth_susp_failed_logons_single_source.yml" 2>/dev/null | head -30'
+      ```
+      ## 📋 확인 사항
+      - title / id / status / logsource (product/service) / detection (selection/condition) / level / tags (attack.t1110)
+      ## 💡 왜 이걸 하는가?
+      SIGMA = 탐지 룰 의 lingua franca. 한 번 작성 → 여러 SIEM (Wazuh/Splunk/ELK)
+      으로 변환. detection 의 selection + condition + timeframe 이 핵심.
+      ## 🔍 결과 해석
+      - 7 필드 모두 식별
+      - URL 404 시 다른 rule path 시도
+    hint: "curl SigmaHQ raw rule."
     category: sigma
     points: 8
     answer: |
-      🤖 가이드:
-      ssh 6v6-attacker 'mkdir -p /tmp/sigma && curl -sL https://raw.githubusercontent.com/SigmaHQ/sigma/master/rules/network/web/web_apt_rancor_recon.yml 2>/dev/null | head -30'
-    answer_detail: "spec: title / id / status / description / author / tags / logsource / detection / falsepositives / level."
+      ssh 6v6-attacker 'curl -sL "https://raw.githubusercontent.com/SigmaHQ/sigma/master/rules/linux/auth/lnx_auth_susp_failed_logons_single_source.yml" 2>/dev/null | head -30 || echo "URL 변경 필요 — github SigmaHQ/sigma 의 rules/ 탐색"'
+    answer_detail: "SIGMA spec: title/id/status/description/references/author/date/tags/logsource/detection/falsepositives/level. detection 의 condition 이 핵심 logic."
     verify:
-      intent: "SIGMA spec 7 필드"
-      success_criteria: ["1 룰 인용", "7 필드 식별"]
-      acceptable_methods: ["curl / git"]
-      negative_signs: ["spec 누락"]
-    target_vm: bastion
+      type: output_contains
+      expect: detection
+      field: stdout
+      semantic:
+        intent: SIGMA spec 7 필드.
+        success_criteria: ["1 rule", "7 필드 식별"]
+        acceptable_methods:
+          - |
+            **[OSS] curl SigmaHQ** — 표준.
+              ssh 6v6-attacker 'curl -sL https://raw.githubusercontent.com/SigmaHQ/sigma/master/rules/linux/auth/...yml'
+            예상 출력 `SIGMA YAML`.
+            운영 해석: 표준 룰 참조.
+          - |
+            **[OSS] git clone SigmaHQ** — 로컬.
+              ssh 6v6-attacker 'git clone --depth 1 https://github.com/SigmaHQ/sigma /tmp/sigma 2>&1 | tail -1; ls /tmp/sigma/rules/ | head'
+            예상 출력 `rule 디렉토리`.
+            운영 해석: 전체 룰셋.
+        negative_signs: ["URL 404 + 대안 없음"]
+    target_vm: attacker
     risk_level: low
 
   - order: 2
     instruction: |
-      ## 🎯 MISSION — 학생 본인 SIGMA 룰 1 개 작성
-      **무엇을:** sshd brute force 탐지 SIGMA 룰 YAML (학생 작성).
-    hint: "title/level: high/logsource: product=linux service=sshd/detection: keywords: 'Failed password'."
-    category: sigma
-    points: 14
-    answer: |
-      🤖 가이드:
-      cat > /tmp/sigma_sshd.yml <<'EOF'
-      title: SSH Brute Force - Multiple Failed Logins
-      id: 11111111-1111-1111-1111-111111111111
+      ## 🎯 MISSION
+      학생 본인 의 SIGMA 룰 1개 작성 (ssh brute force 탐지).
+      ## 💻 산출물
+      ```yaml
+      title: SSH Brute Force - Multiple Failed Logins from Single Source
+      id: 6v6-soc-w07-sshbrute
       status: experimental
+      description: 60초 내 5회 이상 ssh 인증 실패
       author: student-name
       tags:
         - attack.credential_access
@@ -56,56 +82,348 @@ steps:
         service: sshd
       detection:
         selection:
-          keywords:
-            - 'Failed password'
+          - 'Failed password'
+          - 'Invalid user'
         timeframe: 60s
-        condition: selection | count() by src_ip > 5
+        condition: selection | count() by src_ip >= 5
       falsepositives:
         - 정상 사용자 의 비밀번호 오타 반복
       level: high
+      ```
+      ## 📋 확인 사항
+      - 7 필드 모두 + detection 의 condition (count/timeframe)
+      ## 💡 왜?
+      detection 의 condition + timeframe = SIGMA 의 frequency rule. Wazuh 의 5710
+      (8회 fail in 120s) 과 동등. 학생 의 threshold 결정.
+      ## 🔍 결과 해석
+      - 7 필드 + valid YAML → 변환 가능
+    hint: "SIGMA YAML 7 필드 + condition."
+    category: sigma
+    points: 14
+    answer: |
+      cat > /tmp/sigma_sshbrute.yml <<'EOF'
+      title: SSH Brute Force - Multiple Failed Logins
+      id: 6v6-soc-w07-sshbrute
+      status: experimental
+      description: 60초 내 5회 이상 ssh 인증 실패
+      author: student
+      tags:
+        - attack.credential_access
+        - attack.t1110
+      logsource:
+        product: linux
+        service: sshd
+      detection:
+        selection:
+          - 'Failed password'
+          - 'Invalid user'
+        timeframe: 60s
+        condition: selection | count() by src_ip >= 5
+      falsepositives:
+        - 정상 사용자 비밀번호 오타
+      level: high
       EOF
-    answer_detail: "SIGMA 의 condition 의 count() / aggregation = 시간 기반 detection 의 핵심."
+      cat /tmp/sigma_sshbrute.yml
+    answer_detail: "SIGMA 의 detection.condition 의 count() by src_ip >= 5 = frequency rule. Wazuh rule 5710 과 동등. timeframe + threshold 가 핵심."
     verify:
-      intent: "1 SIGMA 룰 YAML 작성"
-      success_criteria: ["7 필드 모두", "MITRE tag", "condition"]
-      acceptable_methods: ["YAML"]
-      negative_signs: ["필드 누락"]
-    target_vm: bastion
+      type: output_contains
+      expect: detection
+      field: stdout
+      semantic:
+        intent: 학생 SIGMA 룰 1개 작성.
+        success_criteria: ["7 필드", "detection condition", "tags mitre"]
+        acceptable_methods:
+          - |
+            **[OSS] YAML 작성** — 표준.
+              # 7 필드 + condition
+            예상 출력 `valid SIGMA YAML`.
+            운영 해석: detection rule.
+          - |
+            **[OSS] sigma 의 lint 검증** — 검증.
+              ssh 6v6-attacker 'pip3 install sigma-cli 2>/dev/null; sigma check /tmp/sigma_sshbrute.yml 2>&1 | head'
+            예상 출력 `valid 또는 error`.
+            운영 해석: 문법 검증.
+        negative_signs: ["필드 누락", "condition 없음"]
+    target_vm: attacker
     risk_level: low
 
   - order: 3
     instruction: |
-      ## 🎯 MISSION — sigma-cli 변환 (Wazuh backend)
-      **무엇을:** pip install sigma-cli + pySigma-backend-wazuh 후 변환 실행 — 또는 학습 환경 미설치 시 변환 결과 예제 인용 (lecture 부록).
-    hint: "pip install sigma-cli pysigma-backend-wazuh; sigma convert -t wazuh /tmp/sigma_sshd.yml."
+      ## 🎯 MISSION
+      sigma-cli 로 Wazuh backend 변환 (또는 수동 매핑).
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-attacker 'sudo pip3 install --break-system-packages sigma-cli pysigma-backend-elasticsearch 2>&1 | tail -2'
+      ssh 6v6-attacker 'sigma convert -t elasticsearch /tmp/sigma_sshbrute.yml 2>&1 | head -10 || echo "수동 매핑: Wazuh rule XML 로"'
+      ```
+      ## 📋 확인 사항
+      - 변환 결과 (query 또는 XML) 또는 수동 매핑 설명
+      ## 💡 왜?
+      SIGMA → backend 변환 = 한 룰 의 여러 SIEM 적용. Wazuh 는 공식 backend 가 제한적
+      이라 elasticsearch backend 또는 수동 XML 매핑.
+      ## 🔍 결과 해석
+      - 변환 성공 → query
+      - backend 미지원 → 수동 Wazuh XML
+    hint: "sigma convert -t elasticsearch 또는 수동."
     category: sigma
     points: 10
     answer: |
-      🤖 가이드:
-      sudo pip3 install --break-system-packages sigma-cli pysigma-backend-wazuh 2>&1 | tail -2
-      sigma convert -t wazuh /tmp/sigma_sshd.yml 2>&1 | head -20
-    answer_detail: "sigma 의 generic detection → Wazuh 의 specific decoder + rule XML."
+      ssh 6v6-attacker 'sudo pip3 install --break-system-packages sigma-cli pysigma-backend-elasticsearch 2>&1 | tail -2'
+      ssh 6v6-attacker 'sigma convert -t elasticsearch /tmp/sigma_sshbrute.yml 2>&1 | head -10 || echo "수동: Wazuh <rule id=100400 frequency=5 timeframe=60><if_matched_sid>5716</if_matched_sid>"'
+    answer_detail: "sigma-cli 의 backend 변환. Wazuh 는 native backend 제한적 → elasticsearch query 또는 수동 XML (frequency rule)."
     verify:
-      intent: "변환 시도 + 결과"
-      success_criteria: ["변환 결과 인용"]
-      acceptable_methods: ["sigma-cli"]
-      negative_signs: ["설치 실패 시 lecture 예제 인용"]
+      type: output_contains
+      expect: ""
+      field: stdout
+      semantic:
+        intent: SIGMA 변환 (sigma-cli 또는 수동).
+        success_criteria: ["변환 결과 또는 수동 매핑"]
+        acceptable_methods:
+          - |
+            **[OSS] sigma convert** — 표준.
+              ssh 6v6-attacker 'sigma convert -t elasticsearch /tmp/sigma_sshbrute.yml'
+            예상 출력 `ES query 또는 error`.
+            운영 해석: backend 변환.
+          - |
+            **[OSS] 수동 Wazuh XML** — 대안.
+              # <rule id="100400" frequency="5" timeframe="60"><if_matched_sid>5716</if_matched_sid>
+            예상 출력 `Wazuh frequency rule`.
+            운영 해석: 수동 매핑.
+        negative_signs: ["변환/매핑 둘 다 없음"]
     target_vm: attacker
     risk_level: low
 
   - order: 4
     instruction: |
-      ## 🎯 MISSION — Wazuh local_rules.xml 에 배포 시뮬 + 분석
-      **무엇을:** STEP 3 변환 결과 (또는 lecture 예제) 를 /var/ossec/etc/rules/local_rules.xml 에 직접 추가 하지 *않고* (lab 환경 보호) 학생 본인 의 markdown 분석 — 어느 field 매핑 어떻게.
-    hint: "변환 XML 의 <rule id> + <match> + <description>."
-    category: documentation
+      ## 🎯 MISSION
+      변환된 룰 의 detection logic 분석 (어느 field 매핑).
+      ## 💻 산출물
+      ```markdown
+      ## SIGMA → Wazuh 매핑
+      | SIGMA | Wazuh |
+      |---|---|
+      | logsource.service: sshd | decoder sshd / if_sid 5700 |
+      | selection: 'Failed password' | <match>Failed password |
+      | condition: count >= 5 in 60s | frequency=5 timeframe=60 |
+      | level: high | level 10+ |
+      ```
+      ## 📋 확인 사항
+      - SIGMA field ↔ Wazuh field 매핑 표
+      ## 💡 왜?
+      SIGMA 의 generic detection 이 Wazuh 의 specific 으로 어떻게 변환 되는지. 룰
+      엔지니어링 의 이해.
+      ## 🔍 결과 해석
+      - 매핑 표 → 룰 호환성 이해
+    hint: "SIGMA↔Wazuh 매핑 표."
+    category: sigma
     points: 8
-    answer: "🤖 가이드: markdown 1 page — Wazuh 의 어느 field 와 SIGMA detection 의 어느 keyword 매핑."
-    answer_detail: "Wazuh 의 <if_matched_sid> + <match> + <description> = SIGMA 의 detection.selection + timeframe + level."
+    answer: |
+      cat <<'EOF'
+      ## SIGMA → Wazuh 매핑
+      | SIGMA | Wazuh |
+      |---|---|
+      | logsource.service: sshd | decoder sshd / if_sid 5700 |
+      | selection: 'Failed password' | <match>Failed password |
+      | condition: count >= 5 in 60s | frequency=5 timeframe=60 |
+      | level: high | level 10+ |
+      EOF
+    answer_detail: "SIGMA 의 generic field → Wazuh 의 specific. detection.condition 의 count/timeframe → frequency/timeframe attribute."
     verify:
-      intent: "분석 markdown"
-      success_criteria: ["field 매핑 분석"]
-      acceptable_methods: ["markdown"]
-      negative_signs: ["분석 없음"]
+      type: output_contains
+      expect: Wazuh
+      field: stdout
+      semantic:
+        intent: SIGMA↔Wazuh 매핑.
+        success_criteria: ["매핑 표"]
+        acceptable_methods:
+          - |
+            **[OSS] markdown 매핑 표** — 표준.
+              # SIGMA field ↔ Wazuh field
+            예상 출력 `매핑 표`.
+            운영 해석: 룰 호환성.
+        negative_signs: ["매핑 없음"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION (Red Team)
+      STEP 2 의 SIGMA 룰 이 탐지 할 공격 (ssh brute 5+ 회) 실행.
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-attacker 'for i in $(seq 6); do sshpass -p "wrong$i" ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no baduser@10.20.32.100 echo 2>&1 | tail -1; done'
+      ATTACK_TS=$(ssh 6v6-attacker 'date -u +%Y-%m-%dT%H:%M:%S'); echo "ATTACK_TS=$ATTACK_TS"
+      ```
+      ## 📋 확인 사항
+      - 6 회 fail (SIGMA 룰 의 threshold 5 초과)
+      ## 💡 왜?
+      학생 작성 룰 의 실제 동작 검증. threshold (5 회) 를 넘기는 공격.
+      ## 🔍 결과 해석
+      - 6 회 fail → SIGMA/Wazuh 룰 trigger 예상
+    hint: "sshpass 6 회 fail."
+    category: redteam
+    points: 8
+    answer: |
+      ssh 6v6-attacker 'for i in $(seq 6); do sshpass -p "wrong$i" ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no baduser@10.20.32.100 echo 2>&1 | tail -1; done'
+      ATTACK_TS=$(ssh 6v6-attacker 'date -u +%Y-%m-%dT%H:%M:%S'); echo "ATTACK_TS=$ATTACK_TS"
+    answer_detail: "6 회 fail = SIGMA threshold (5) 초과. Wazuh 5710 (8회) 는 미달 가능 — 학생 룰 (5회) 이 더 민감."
+    verify:
+      type: output_contains
+      expect: denied
+      field: stdout
+      semantic:
+        intent: Red — SIGMA 룰 탐지 대상 공격.
+        success_criteria: ["6 회 fail", "ATTACK_TS"]
+        acceptable_methods:
+          - |
+            **[OSS] sshpass loop** — 표준.
+              ssh 6v6-attacker 'for i in $(seq 6); do sshpass -p wrong$i ssh ... 2>&1 | tail -1; done'
+            예상 출력 `Permission denied x6`.
+            운영 해석: threshold 초과.
+        negative_signs: ["ssh 성공", "5 회 미만"]
+    target_vm: attacker
+    risk_level: medium
+
+  - order: 6
+    instruction: |
+      ## 🎯 MISSION (Blue Team)
+      STEP 5 의 brute 가 sshd.log + alerts.json 에 탐지 되었는지 + SIGMA 룰 threshold 검증.
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-siem 'sudo grep -c "Failed\|Invalid" /var/log/sshd.log'
+      ssh 6v6-siem 'sudo tail -200 /var/ossec/logs/alerts/alerts.json | jq -c "select(.rule.id | test(\"^57\")) | {rule: .rule.id, level: .rule.level, desc: .rule.description, src: .data.srcip}" | tail -5'
+      ```
+      ## 📋 확인 사항
+      - sshd.log 의 fail 6+ + alerts.json 의 5710/5760
+      ## 💡 왜?
+      SIGMA 룰 (5회) vs Wazuh 5710 (8회) 의 threshold 차이. 6 회 면 SIGMA trigger,
+      Wazuh 5710 미달 → 학생 룰 의 가치.
+      ## 🔍 결과 해석
+      - 5760 (Invalid user) = 단건 → 6회 모두
+      - 5710 (8회) = 미달 가능 → 학생 룰 (5회) 이 보완
+    hint: "sshd.log fail count + alerts 5710."
+    category: blueteam
+    points: 12
+    answer: |
+      echo "=== sshd.log fail count ==="
+      ssh 6v6-siem 'sudo grep -c "Failed\|Invalid" /var/log/sshd.log'
+      echo "=== alerts 5710/5760 ==="
+      ssh 6v6-siem 'sudo tail -200 /var/ossec/logs/alerts/alerts.json | jq -c "select(.rule.id | test(\"^57\")) | {rule: .rule.id, level: .rule.level, desc: .rule.description, src: .data.srcip}" | tail -5'
+    answer_detail: "Wazuh 5710 frequency=8 → 6회 미달 가능. 5760 (Invalid user) = 단건 → 6회 모두. 학생 SIGMA (5회) 가 5710 보다 민감 = detection gap 보완."
+    verify:
+      type: output_contains
+      expect: rule
+      field: stdout
+      semantic:
+        intent: Blue — brute 탐지 + threshold 검증.
+        success_criteria: ["sshd fail count", "alerts 5710/5760", "threshold 비교"]
+        acceptable_methods:
+          - |
+            **[OSS] grep + jq** — 표준.
+              ssh 6v6-siem 'sudo grep -c Failed /var/log/sshd.log; sudo tail -200 /var/ossec/logs/alerts/alerts.json | jq "select(.rule.id|test(\"^57\"))" | tail -5'
+            예상 출력 `fail 6 + 5760 alert`.
+            운영 해석: threshold 비교.
+        negative_signs: ["탐지 안 됨"]
+    target_vm: siem
+    risk_level: low
+
+  - order: 7
+    instruction: |
+      ## 🎯 MISSION (Blue Team — tuning)
+      학생 SIGMA 룰 의 false positive 가능성 + threshold tuning 분석.
+      ## 💻 산출물
+      ```markdown
+      ## SIGMA 룰 tuning
+      - threshold 5회: 정상 사용자 오타 가능성 → 너무 낮으면 오탐
+      - threshold 8회 (Wazuh 5710): 미탐 가능성 → 너무 높으면 놓침
+      - 최적: 환경 의 baseline 측정 후 결정 (예: 정상 오타 평균 2회 → threshold 5)
+      - 보완: source IP whitelist (내부 관리 IP)
+      ```
+      ## 📋 확인 사항
+      - threshold tuning 분석 + 권고
+      ## 💡 왜?
+      룰 의 threshold = 오탐 vs 미탐 의 trade-off. 환경 baseline 으로 결정.
+      ## 🔍 결과 해석
+      - 너무 낮음 = 오탐, 너무 높음 = 미탐
+    hint: "threshold tuning 분석."
+    category: blueteam
+    points: 12
+    answer: |
+      cat <<'EOF'
+      ## SIGMA 룰 tuning
+      - threshold 5회: 정상 오타 가능성 → 오탐 위험
+      - threshold 8회 (5710): 미탐 위험
+      - 최적: baseline 측정 (정상 오타 평균 + margin)
+      - 보완: 관리 IP whitelist
+      EOF
+    answer_detail: "threshold = 오탐/미탐 trade-off. baseline 의 정상 오타 빈도 측정 후 + margin. whitelist 로 내부 IP 제외."
+    verify:
+      type: output_contains
+      expect: threshold
+      field: stdout
+      semantic:
+        intent: Blue — SIGMA tuning.
+        success_criteria: ["threshold 분석", "tuning 권고"]
+        acceptable_methods:
+          - |
+            **[OSS] markdown tuning** — 표준.
+              # threshold trade-off 분석
+            예상 출력 `tuning 분석`.
+            운영 해석: 오탐/미탐 균형.
+        negative_signs: ["tuning 없음"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 8
+    instruction: |
+      ## 🎯 MISSION (Purple Team)
+      STEP 5-7 종합 — SIGMA 룰 의 detection 효과 + Wazuh 룰 과 비교 + 배포 권고.
+      ## 💻 산출물
+      ```markdown
+      # SOC W07 — SIGMA R/B/P
+      ## Detection 비교
+      | 룰 | threshold | 6회 brute 탐지? | 오탐 위험 |
+      |---|---|---|---|
+      | 학생 SIGMA | 5회/60s | ✅ | 중 |
+      | Wazuh 5710 | 8회/120s | ❌ (미달) | 저 |
+      | Wazuh 5760 (Invalid) | 단건 | ✅ | 중 |
+      ## 권고
+      1. 학생 룰 을 Wazuh custom (100400) 으로 배포 → 5회 탐지 보완
+      2. whitelist + level 조정 으로 오탐 감소
+      ```
+      ## 📋 채점
+      - Detection 비교 표 (3 룰)
+      - 배포 권고
+    hint: "SIGMA vs Wazuh 비교 + 배포."
+    category: purple
+    points: 12
+    answer: |
+      cat <<'EOF'
+      # SOC W07 — SIGMA R/B/P
+      ## Detection 비교
+      | 룰 | threshold | 6회 탐지 | 오탐 |
+      |---|---|---|---|
+      | 학생 SIGMA | 5/60s | ✅ | 중 |
+      | Wazuh 5710 | 8/120s | ❌ | 저 |
+      | Wazuh 5760 | 단건 | ✅ | 중 |
+      ## 권고
+      1. 학생 룰 → Wazuh custom 100400 배포
+      2. whitelist + level 조정
+      EOF
+    answer_detail: "SIGMA (5회) 가 Wazuh 5710 (8회) 의 detection gap 보완. custom rule 배포 + tuning. SOC 의 룰 엔지니어링 cycle."
+    verify:
+      type: output_contains
+      expect: Detection
+      field: stdout
+      semantic:
+        intent: Purple — SIGMA vs Wazuh + 배포.
+        success_criteria: ["3 룰 비교", "배포 권고"]
+        acceptable_methods:
+          - |
+            **[OSS] markdown 비교** — 표준.
+              # 3 룰 의 threshold/탐지/오탐
+            예상 출력 `비교 표`.
+            운영 해석: 룰 효과 비교.
+        negative_signs: ["비교 누락", "권고 없음"]
     target_vm: bastion
     risk_level: low
