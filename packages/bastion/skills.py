@@ -550,8 +550,8 @@ def execute_skill(name: str, params: dict[str, Any], vm_ips: dict[str, str],
         open_ports = []
         for line in raw.splitlines():
             if "/open/" in line:  # greppable format
-                import re
-                for m in re.finditer(r'(\d+)/open/tcp//([^/]*)//', line):
+                import re as _re_nmap  # 함수 scope local re 충돌 회피 (shell branch 의 re.sub fail 원인)
+                for m in _re_nmap.finditer(r'(\d+)/open/tcp//([^/]*)//', line):
                     open_ports.append(f"{m.group(1)}/tcp {m.group(2)}")
             elif "/tcp" in line and "open" in line:  # normal format
                 open_ports.append(line.strip())
@@ -879,7 +879,8 @@ def execute_skill(name: str, params: dict[str, Any], vm_ips: dict[str, str],
         _has_iL = (" -i" in _stripped) or (" -I" in _stripped) or _stripped.endswith(" -i") or _stripped.endswith(" -I") or (" -sIL" in _stripped) or (" -sI" in _stripped)
         if exit_code == 0 and _is_curl and not _has_iL and len(out.strip()) < 60:
             # 첫 단어 'curl' 다음에 -i -L 삽입 (기존 옵션 유지)
-            retry_cmd = re.sub(r"^curl\s", "curl -i -L ", _stripped, count=1)
+            import re as _re_curl
+            retry_cmd = _re_curl.sub(r"^curl\s", "curl -i -L ", _stripped, count=1)
             r2 = run_command(ip, retry_cmd, timeout=60)
             out2 = r2.get("stdout", "") or ""
             if len(out2.strip()) > len(out.strip()):
