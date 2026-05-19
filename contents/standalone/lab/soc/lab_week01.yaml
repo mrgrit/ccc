@@ -1,445 +1,277 @@
-lab_id: soc-ai-week01
-title: SOC 구축 기초 - 환경 확인 및 구성 점검 (AI 지원)
-version: ai
-course: soc-ai
+lab_id: standalone-soc-week01
+title: "SOC 개론 — 6v6 SOC stack 데이터 흐름 + Wazuh dashboard 첫 접속 + L1 트리아지 시뮬 (6v6 + R/B/P)"
+version: standalone-non-ai
+course: soc
 week: 1
-description: 보안관제센터(SOC) 인프라를 구성하는 핵심 VM들의 상태를 점검하고, Wazuh SIEM·Suricata IDS·웹서버 등
-  각 구성 요소의 역할과 연결 상태를 확인합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+description: |
+  보안관제 입문 — 6v6 SOC stack (web/ips/fw → siem) 의 데이터 흐름 을 학생 본인
+  손 으로 추적 + Wazuh dashboard 접속 + 알림 1 건 의 *L1 트리아지* (위험도 / 출처
+  / 우선순위) 시뮬. SOC 분석가 의 1 일 첫 30 분 의 활동 simulation.
+
+  Red(공격자) / Blue(분석가) / Purple(개선) 의 입장 모두 — 본 주차 는 *Blue 중심*
+  으로 6v6 의 보안 stack 이 어떻게 alert 를 만들어 dashboard 까지 가는지 직접
+  확인.
 difficulty: easy
 duration_minutes: 90
+audience: 보안관제 입문 (1주차)
+prerequisites:
+  - "학생 PC 의 ~/.ssh/config 에 6v6-bastion ProxyJump 설정"
+  - "학생 PC 의 /etc/hosts 에 192.168.0.110 siem.6v6.lab 매핑 (브라우저 접근용)"
+  - "lecture_week01.md 정독 (L1/L2/L3 + MTTD/MTTR + SOC 워크플로우)"
 objectives:
-- SOC를 구성하는 VM별 역할(SIEM, SECU, WEB, ATTACKER)을 이해한다
-- Wazuh 매니저와 에이전트의 동작 상태를 확인할 수 있다
-- SOC 네트워크 토폴로지를 파악하고 연결성을 검증한다
+  - "6v6 SOC stack 의 4 컨테이너 (fw / ips / web / siem) 의 역할 + 데이터 흐름 표 1 개로 정리"
+  - "Wazuh dashboard (https://siem.6v6.lab/) 첫 접속 + Discover 에서 최근 1 시간 alert 5+ 행 확인"
+  - "alert 1 건 의 5 필드 (timestamp / rule.id / rule.level / agent.name / rule.description) 추출"
+  - "L1 트리아지 시뮬 — 같은 alert 의 위험도 (0-15 level) + 출처 (agent) + 우선순위 (Critical/High/Med/Low) 의 본인 판정"
+  - "SOC 워크플로우 1 사이클 (모니터링 → 탐지 → 분석 → (대응) → 보고) 의 1 일 첫 30 분 simulation"
 pass_threshold: 0.6
 steps:
-- order: 1
-  instruction: 현재 시스템의 호스트명과 IP 주소를 확인하여 어떤 VM에 접속했는지 파악하시오.
-  hint: hostname과 ip addr 명령을 조합하세요.
-  category: setup
-  points: 5
-  answer: '🤖 프롬프트: 현재 시스템의 호스트명과 IP 주소를 확인하여 어떤 VM에 접속했는지 파악해줘
 
-    📎 참고 (CLI): hostname && ip -4 addr show | grep inet'
-  answer_detail: hostname은 현재 VM의 이름을 출력하고, ip -4 addr show는 IPv4 주소를 표시합니다. SOC 환경에서
-    자신이 어떤 역할의 VM에 있는지 먼저 파악하는 것이 기본입니다.
-  verify:
-    type: output_contains
-    expect: inet
-    field: stdout
-    semantic:
-      intent: 'SIEM VM 접속 확인 — hostname (예: ccc-siem 반환) + ip -4 addr show | grep
-        inet 로 인터페이스 IP(10.20.30.100) 확인. SOC 실습 시작 시 자신이 어느 역할 VM(SIEM/SECU/WEB/ATTACKER)
-        에 있는지 식별하는 기본 정찰'
+  - order: 1
+    instruction: |
+      ## 🎯 MISSION — 6v6 SOC stack 의 4 컨테이너 역할 + 데이터 흐름 식별
+
+      **어디서:** 학생 PC 또는 bastion (read-only 정찰)
+      **무엇을:** 6v6 의 SOC 관련 4 컨테이너 (fw / ips / web / siem) 각각 의 *역할*
+      + *어떤 보안 이벤트 의 출처* + *어디로 데이터 보내는지* 를 표 1 개로 정리.
+
+      | 컨테이너 | IP | 역할 (1 줄) | 어떤 이벤트 발생 | siem 으로 어떻게 전달 |
+      |---|---|---|---|---|
+      | fw | 10.20.30.1 / 10.20.31.1 | nftables + HAProxy | (예: nft log_prefix, HAProxy req log) | (예: rsyslog UDP 514 → siem) |
+      | ips | 10.20.31.2 / 10.20.32.1 | Suricata IDS sniff | | |
+      | web | 10.20.32.80 | Apache + ModSecurity | | |
+      | siem | 10.20.32.100 | Wazuh manager (수신 + alert 생성) | (자체 systemd / cron) | (자기 자신 — alerts.json) |
+
+      ## 💡 왜 이걸 하는가?
+
+      SOC 분석가 의 1 순위 = *어떤 컨테이너 에서 어떤 데이터 가 어떻게 SIEM 으로 모이는지* 의 mental model. 이 model 없이는 alert 가 떠도 *왜* 가 추론 불가.
+
+      ## 🔵 Blue 측 의 의의
+
+      학생 = 가상 의 L1 분석가. 본 mission 자체 가 L1 의 첫 책무 (운영 환경 의 데이터 흐름 파악).
+
+      ## 📋 채점 기준
+
+      - 4 컨테이너 모두 표 에 포함
+      - 각 컨테이너 의 이벤트 출처 + siem 전달 방식 1 줄 씩
+      - 추론 만 X — `docker ps` 로 컨테이너 가용 검증 동반
+    hint: "bastion 에서 ssh 6v6-fw 'ls /var/log/' 등 으로 각 컨테이너 의 log 출처 직접 확인. fw 의 rsyslog 설정 (/etc/rsyslog.d/) + ips 의 suricata.yaml 의 eve-log 설정 + web 의 ModSec audit log 위치 + siem 의 ossec.conf 의 syslog remote."
+    category: soc_basics
+    points: 12
+    answer: |
+      🤖 가이드:
+      ssh 6v6-fw 'grep -r "@.*514" /etc/rsyslog.d/ 2>/dev/null | head -2'
+      ssh 6v6-ips 'cat /etc/suricata/suricata.yaml | grep -A2 eve-log | head -5'
+      ssh 6v6-web 'grep -i SecAuditLog /etc/apache2/conf-enabled/*.conf | head -3'
+      ssh 6v6-siem 'grep -B1 -A3 "<remote>" /var/ossec/etc/ossec.conf | head -10'
+    answer_detail: |
+      fw = nftables drop log + HAProxy req log → rsyslog @siem:514. ips = Suricata eve.json → Wazuh agent → manager. web = ModSec audit log → Wazuh agent. siem = manager 자체 + agent 로부터 수신 + alerts.json 생성.
+    verify:
+      intent: "4 컨테이너 의 역할 + 이벤트 출처 + siem 전달 방식 표 정리"
       success_criteria:
-      - hostname 명령 실행 + VM 이름 반환
-      - ip -4 addr + inet 10.20.30.x 출력
-      - SIEM 역할 VM 10.20.30.100 확인
+        - "4 컨테이너 모두 표"
+        - "각 의 이벤트 + 전달 방식"
+        - "docker ps 또는 ssh 로 가용성 검증"
       acceptable_methods:
-      - hostname + ip -4 addr show
-      - hostnamectl + ip -br addr
-      - cat /etc/hostname + ifconfig
+        - "ssh + grep 또는 docker exec"
       negative_signs:
-      - hostname 또는 IP 확인 하나만
-      - 어느 VM 인지 식별 없음
-      - IPv6 만 확인 (IPv4 누락)
-  target_vm: siem
-  script: hostname && ip -4 addr show | grep inet
-  risk_level: low
-  bastion_prompt: 현재 시스템의 호스트명과 IP 주소를 확인하여 어떤 VM에 접속했는지 파악해줘
-- order: 2
-  instruction: SOC 네트워크(10.20.30.0/24)에서 주요 VM 4대의 연결 상태를 ping으로 확인하시오.
-  hint: SIEM({{SECU_IP}}00), SECU({{SECU_IP}}), WEB({{WEB_IP}}), ATTACKER({{ATTACKER_IP}})에
-    ping을 보내세요.
-  category: setup
-  points: 5
-  answer: '🤖 프롬프트: SOC 네트워크(10.20.30.0/24)에서 주요 VM 4대의 연결 상태를 ping으로 확인해줘
+        - "추론 만"
+        - "1~2 컨테이너만"
+    target_vm: bastion
+    risk_level: low
 
-    📎 참고 (CLI): ping -c 1 -W 2 10.20.30.100 && ping -c 1 -W 2 10.20.30.1 && ping -c
-    1 -W 2 10.20.32.80 && ping -c 1 -W 2 10.20.30.201'
-  answer_detail: ping -c 1은 ICMP 패킷 1개를 보내고, -W 2는 2초 타임아웃을 설정합니다. SOC 구축 시 모든 구성
-    요소 간 네트워크 연결이 정상인지 확인하는 것이 첫 단계입니다.
-  verify:
-    type: output_contains
-    expect: bytes from 10.20.30
-    field: stdout
-    semantic:
-      intent: 'SOC 네트워크 4 VM ping sweep — ping -c 1 -W 2 10.20.30.100 (SIEM/Wazuh)
-        + .1 (SECU/Gateway) + .80 (WEB/Apache+JuiceShop) + .201 (ATTACKER). ICMP 1
-        패킷 + 2초 타임아웃으로 빠른 가용성 확인. SOC 구축 첫 단계: 모든 구성 요소 reachable 검증'
+  - order: 2
+    instruction: |
+      ## 🎯 MISSION — Wazuh dashboard 첫 접속 + 최근 1 시간 alert 5+ 행 확인
+
+      **어디서:** 학생 PC 브라우저
+      **무엇을:**
+      1. https://siem.6v6.lab/ 접속 (인증서 경고 → 계속) — 자격증명 `admin` / `SecretPassword`
+      2. ☰ → **Explore → Discover** 클릭
+      3. 좌상단 인덱스 선택 = `wazuh-alerts-*`
+      4. 우상단 시계 → **Last 1 hour**
+      5. 화면 의 alert 행 수 + 좌측 의 가용 field 갯수 인용
+
+      **결과 정리 (학생 보고서):**
+      ```
+      접속 시간: <YYYY-MM-DD HH:MM>
+      Last 1 hour 의 alert 행 수: <N>
+      좌측 Available fields 갯수: <M>
+      가장 빈도 높은 rule.id Top 3: <id 3 개>
+      ```
+
+      ## 💡 왜 이걸 하는가?
+
+      Wazuh dashboard = SOC 의 *유일한 단일 진입점*. L1 분석가 의 1 일 첫 활동 = dashboard 첫 화면 의 alert 분포 파악.
+
+      ## 📋 채점 기준
+
+      - dashboard 접속 + Discover 화면 도달
+      - alert 행 수 + field 갯수 + Top 3 rule.id 인용
+    hint: "Last 1 hour 의 alert 가 0 이면 시간 범위 확장 (Last 24h). rule.id Top 3 = 좌측 Available fields 에서 rule.id 클릭 → 우측 panel 의 Top 5 통계."
+    category: soc_basics
+    points: 10
+    answer: |
+      🤖 가이드: 브라우저 활동 — 보고서 에 결과 4 줄 적기. 또는 KQL `_exists_:rule.id` 으로 alert 검색.
+    answer_detail: |
+      dashboard 의 default time = Last 24 hours 또는 본인 설정. alert 0 = 6v6 가 idle 일 수도 있음 — 다음 step 의 인위 트래픽 발생 후 재확인.
+    verify:
+      intent: "Wazuh dashboard 접속 + 1 시간 alert 분포 + Top 3 rule.id"
       success_criteria:
-      - 4 IP ping 모두 실행
-      - bytes from 10.20.30 응답 포함
-      - 4 VM 역할 구분 (SIEM/SECU/WEB/ATTACKER)
+        - "dashboard 접속"
+        - "alert 행 수 + field 갯수"
+        - "Top 3 rule.id"
       acceptable_methods:
-      - for vm in 4ip; do ping -c1 -W2; done
-      - fping 10.20.30.1 10.20.32.80 10.20.30.100 10.20.30.201
-      - nmap -sn 10.20.30.0/24
+        - "브라우저 GUI"
+        - "또는 ssh 6v6-siem 의 alerts.json grep"
       negative_signs:
-      - 3 VM 이하만 ping
-      - 타임아웃 없이 무한 대기
-      - 역할 구분 없이 IP만
-  target_vm: siem
-  script: ping -c 1 -W 2 10.20.30.100 && ping -c 1 -W 2 10.20.30.1 && ping -c 1 -W
-    2 10.20.32.80 && ping -c 1 -W 2 10.20.30.201
-  risk_level: low
-  bastion_prompt: SOC 네트워크(10.20.30.0/24)에서 주요 VM 4대의 연결 상태를 ping으로 확인해줘
-- order: 3
-  instruction: SIEM VM({{SECU_IP}}00)에서 Wazuh 매니저 서비스의 실행 상태를 확인하시오.
-  hint: systemctl 명령으로 wazuh-manager 서비스 상태를 조회하세요.
-  category: setup
-  points: 5
-  answer: '🤖 프롬프트: SIEM VM(10.20.30.100)에서 Wazuh 매니저 서비스의 실행 상태를 확인해줘
+        - "접속 만, 분석 없음"
+    target_vm: bastion
+    risk_level: low
 
-    📎 참고 (CLI): systemctl status wazuh-manager --no-pager'
-  answer_detail: wazuh-manager는 SOC의 핵심인 SIEM 엔진입니다. active (running) 상태여야 로그 수집,
-    분석, 알림 생성이 정상 동작합니다.
-  verify:
-    type: output_contains
-    expect:
-    - active
-    - failed
-    field: stdout
-    semantic:
-      intent: 'Wazuh Manager 데몬 상태 — systemctl status wazuh-manager --no-pager 로 Active:
-        active (running) 확인. SIEM 의 핵심 엔진: 로그 수집·디코딩·룰 매칭·경보 생성. 비활성 시 모든 SOC 기능 마비.
-        --no-pager 로 ssh 환경 호환'
+  - order: 3
+    instruction: |
+      ## 🎯 MISSION — alert 1 건 의 5 필드 추출
+
+      **어디서:** Wazuh dashboard 또는 ssh siem
+      **무엇을:** STEP 2 의 alert 행 중 1 건 클릭 (level 가장 높은 것 선호) → JSON 의 5 필드 추출.
+
+      **결과 정리:**
+      ```
+      alert id: <"id" 필드>
+      @timestamp: ...
+      rule.id: ...
+      rule.level: <0-15>
+      rule.description: ...
+      agent.name: ...
+      data: <있다면 src_ip/dest_ip 또는 url 등 추가 필드 1~2 개>
+      ```
+
+      ## 💡 왜?
+
+      L1 분석가 의 가장 기본 활동 = alert 의 *who/what/where/when* 추출. 5 필드 만 으로 다음 단계 의 트리아지 가능.
+
+      ## 📋 채점
+
+      - 5 필드 모두 추출
+      - 학생 본인 의 alert 1 건 선택 (paste X)
+    hint: "dashboard 의 alert 행 클릭 → 좌측 JSON 펼침. 또는 ssh 6v6-siem 'tail -1 /var/ossec/logs/alerts/alerts.json | python3 -m json.tool'."
+    category: soc_basics
+    points: 10
+    answer: |
+      🤖 가이드:
+      ssh 6v6-siem 'tail -1 /var/ossec/logs/alerts/alerts.json | python3 -c "
+      import sys, json
+      d = json.loads(sys.stdin.read())
+      for k in (\"id\", \"timestamp\"):
+          print(k, \":\", d.get(k))
+      for k in (\"id\", \"level\", \"description\", \"groups\"):
+          print(\"rule.\"+k, \":\", d.get(\"rule\",{}).get(k))
+      print(\"agent.name :\", d.get(\"agent\",{}).get(\"name\"))
+      "'
+    answer_detail: |
+      alerts.json 의 1 line = 1 alert (JSON). 5 필드 + 추가 data 가 다음 step 의 트리아지 input.
+    verify:
+      intent: "alert 1 건 의 5 필드 추출"
       success_criteria:
-      - systemctl status wazuh-manager 실행
-      - active 또는 failed 상태 문자열
-      - --no-pager 또는 tail 로 ssh 호환
+        - "5 필드 모두"
+        - "학생 본인 alert"
       acceptable_methods:
-      - systemctl status wazuh-manager
-      - systemctl is-active wazuh-manager
-      - ps auxf | grep wazuh
+        - "dashboard GUI 또는 alerts.json tail"
       negative_signs:
-      - wazuh-agent 확인 (다른 데몬)
-      - status 대신 start 시도
-      - exit code 무시
-  target_vm: siem
-  script: systemctl status wazuh-manager --no-pager
-  risk_level: low
-  bastion_prompt: SIEM VM(10.20.30.100)에서 Wazuh 매니저 서비스의 실행 상태를 확인해줘
-- order: 4
-  instruction: Wazuh 매니저에 등록된 에이전트 목록을 확인하시오.
-  hint: /var/ossec/bin/agent_control 명령을 사용하세요.
-  category: setup
-  points: 8
-  answer: '🤖 프롬프트: Wazuh 매니저에 등록된 에이전트 목록을 확인해줘
+        - "예시 paste"
+        - "5 중 누락"
+    target_vm: siem
+    risk_level: low
 
-    📎 참고 (CLI): /var/ossec/bin/agent_control -l'
-  answer_detail: agent_control -l은 Wazuh 매니저에 등록된 모든 에이전트의 ID, 이름, IP, 상태를 표시합니다.
-    Active 상태가 정상이며, WEB VM의 에이전트가 등록되어 있어야 합니다.
-  verify:
-    type: output_contains
-    expect:
-    - Active
-    - check_wazuh
-    - Wazuh
-    field: stdout
-    semantic:
-      intent: Wazuh 에이전트 목록 조회 — /var/ossec/bin/agent_control -l 로 매니저에 등록된 모든 에이전트의
-        ID·이름·IP·Active/Disconnected 상태 출력. WEB VM 의 에이전트가 Active 여야 파일 무결성·로그 수집
-        정상
+  - order: 4
+    instruction: |
+      ## 🎯 MISSION — L1 트리아지 시뮬 — 위험도 + 출처 + 우선순위 본인 판정
+
+      **무엇을:** STEP 3 의 alert 의 *트리아지* 본인 판정.
+
+      **판정 표 (학생 작성):**
+
+      | 항목 | 값 | 본인 판정 |
+      |---|---|---|
+      | rule.level | (0-15) | (Critical/High/Med/Low) |
+      | agent.name (출처) | | (운영 영향 큼 / 작음) |
+      | rule.description | | (어떤 공격 패턴) |
+      | data 의 src_ip | | (내부/외부/알 수 없음) |
+      | 최종 우선순위 | (P1/P2/P3/P4) | (즉시 대응 / 정시 대응 / 모니터링 / 무시) |
+
+      **본인 1 문장 결정**: 이 alert 가 *진짜 위협 인가* / *오탐 인가* — 그 판단 의 근거 1 줄.
+
+      ## 💡 왜?
+
+      L1 의 가장 중요한 활동 = 트리아지 (어떤 alert 가 escalate 할 만한가). 운영 환경 의 alert 수십~수백 개 중 *대응 필요 한 것* 만 선별.
+
+      ## 📋 채점
+
+      - 5 항목 모두 본인 판정
+      - 최종 우선순위 P1~P4 1 개
+      - 진짜 위협 / 오탐 판단 1 줄
+    hint: "Wazuh 의 default level 매핑: 1-5=Low, 6-10=Medium, 11-13=High, 14-15=Critical. agent 가 web/ips 면 외부 노출 의 단서. src_ip 가 10.20.30.0/24 면 내부 (6v6 점검자).
+"
+    category: soc_basics
+    points: 14
+    answer: |
+      🤖 가이드: 학생 본인 판정 표 + 1 문장. 정답 X — 학생 의 reasoning.
+    answer_detail: |
+      트리아지 의 reasoning = 정답 X 학습 가치. L1 분석가 의 첫 결정 = escalate 또는 close.
+    verify:
+      intent: "트리아지 5 항목 + 우선순위 + 진위 판단"
       success_criteria:
-      - agent_control -l 실행
-      - Active 키워드 출력 (최소 1 에이전트)
-      - WEB 에이전트 등록 확인
+        - "5 항목 본인 판정"
+        - "우선순위 P1-P4"
+        - "진위 1 줄"
       acceptable_methods:
-      - /var/ossec/bin/agent_control -l
-      - /var/ossec/bin/agent_control -i <id>
-      - Wazuh API /agents endpoint
+        - "표 markdown"
       negative_signs:
-      - agent_control 경로 틀림
-      - Disconnected 상태를 Active 로 오판
-      - 에이전트 수 0
-  target_vm: siem
-  script: /var/ossec/bin/agent_control -l
-  risk_level: low
-  bastion_prompt: Wazuh 매니저에 등록된 에이전트 목록을 확인해줘
-- order: 5
-  instruction: SECU VM({{SECU_IP}})에서 Suricata IDS 서비스의 실행 상태를 확인하시오.
-  hint: ssh로 SECU VM에 접속하여 systemctl로 suricata 상태를 확인하세요.
-  category: setup
-  points: 5
-  answer: '🤖 프롬프트: SECU VM(10.20.30.1)에서 Suricata IDS 서비스의 실행 상태를 확인해줘
+        - "값만 paste"
+        - "판정 누락"
+    target_vm: bastion
+    risk_level: low
 
-    📎 참고 (CLI): systemctl status suricata --no-pager'
-  answer_detail: Suricata는 네트워크 기반 IDS/IPS로, SOC에서 네트워크 트래픽을 실시간 분석하여 위협을 탐지합니다. active
-    상태여야 정상 동작합니다.
-  verify:
-    type: output_contains
-    expect:
-    - active
-    - 10.20.30.1
-    - Suricata
-    field: stdout
-    semantic:
-      intent: SECU VM Suricata 상태 — systemctl status suricata --no-pager 로 네트워크 IDS
-        엔진 가동 여부 확인. SECU(10.20.30.1) 는 보안 게이트웨이로 트래픽 inspection 담당. Suricata 중단 시
-        네트워크 탐지 완전 공백
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION — SOC 워크플로우 1 사이클 + cleanup
+
+      **무엇을:**
+      1. 본 lab 의 활동 을 **SOC 5 단계** (모니터링 → 탐지 → 분석 → 대응 → 보고) 에 mapping. 각 단계 가 어느 step 에서 일어났나 1 줄 씩.
+      2. 마지막 = 학생 본인 의 *MTTD/MTTR estimate* — STEP 3 alert 의 추정 발생 시간 ~ 학생 의 dashboard 인지 시간 ~ (가상) 대응 시간.
+      3. cleanup = brewer 종료, /tmp 정리 (본 lab 은 read-only).
+
+      ## 📋 채점
+
+      - 5 단계 mapping
+      - MTTD/MTTR 추정
+      - cleanup 안내
+    hint: "MTTD = alert 발생 ~ 분석가 인지. MTTR = 인지 ~ 대응 완료 (lab 은 가상)."
+    category: documentation
+    points: 8
+    answer: |
+      🤖 가이드:
+      # SOC 5 단계 매핑:
+      # 1. 모니터링: STEP 2 (dashboard 의 alert 분포 파악)
+      # 2. 탐지: STEP 3 (alert 1 건 의 5 필드 추출)
+      # 3. 분석: STEP 4 (트리아지 판정)
+      # 4. 대응: (가상) STEP 4 의 P1 alert 가 있다면 IR 절차 시작
+      # 5. 보고: 본 step 의 markdown 보고서
+
+      # MTTD estimate: alert timestamp ~ dashboard 접속 시각 = 분 단위
+      # MTTR estimate: dashboard 인지 ~ 가상 대응 (lab 의 IR 절차 없으므로 'N/A — W08 부터')
+    answer_detail: |
+      W01 의 lab = 5 단계 의 1~3 (모니터링/탐지/분석) 까지. 대응 (4) + 보고 (5) 은 W08 부터.
+    verify:
+      intent: "5 단계 mapping + MTTD/MTTR + cleanup"
       success_criteria:
-      - systemctl status suricata
-      - active 상태 확인
-      - SECU VM 대상
+        - "5 단계 mapping"
+        - "MTTD/MTTR 추정"
+        - "cleanup"
       acceptable_methods:
-      - systemctl status
-      - suricatasc -c uptime
-      - ps aux | grep suricata
+        - "markdown"
       negative_signs:
-      - Wazuh 재확인 (다른 서비스)
-      - SECU 가 아닌 VM
-      - suricata-update 와 혼동
-  target_vm: secu
-  script: systemctl status suricata --no-pager
-  risk_level: low
-  bastion_prompt: SECU VM(10.20.30.1)에서 Suricata IDS 서비스의 실행 상태를 확인해줘
-- order: 6
-  instruction: 'SECU VM에서 nftables 방화벽 규칙을 확인하시오.
-
-
-    [FIXTURE] /home/ccc/cyber-range/fixtures/soc-ai-week01/6/syslog 사전 주입. `grep -E
-    ''DROP|REJECT|filter'' /home/ccc/cyber-range/fixtures/soc-ai-week01/6/syslog`
-    후 (1) 빈도·패턴 (2) MITRE (3) 방어 3섹션 분석. **raw dump 금지**.'
-  hint: ssh로 SECU에 접속하여 nft list ruleset 명령을 실행하세요.
-  category: setup
-  points: 8
-  answer: '🤖 프롬프트: SECU VM에서 nftables 방화벽 규칙을 확인해줘
-
-    📎 참고 (CLI): nft list ruleset'
-  answer_detail: nftables는 Linux의 패킷 필터링 프레임워크입니다. SOC의 보안 게이트웨이 역할을 하는 SECU VM에서
-    어떤 트래픽이 허용/차단되는지 방화벽 정책을 확인합니다.
-  verify:
-    type: output_contains
-    expect: table
-    field: stdout
-    semantic:
-      intent: SECU nftables 룰셋 조회 — nft list ruleset 로 SECU 의 방화벽 정책 전체 출력. table
-        inet filter + input/forward/output 체인 + 각 룰 확인. SOC 보안 게이트웨이의 현재 허용/차단 정책
-        파악
-      success_criteria:
-      - nft list ruleset 실행
-      - table 키워드 포함 (최소 1 테이블)
-      - 체인·룰 구조 확인
-      acceptable_methods:
-      - nft list ruleset
-      - nft list tables + nft list chain ...
-      - iptables -L -n -v (레거시 호환)
-      negative_signs:
-      - sudo 누락으로 권한 실패
-      - 개별 체인만 (전체 ruleset 아님)
-      - 빈 출력 해석 없음
-  target_vm: secu
-  script: nft list ruleset
-  risk_level: low
-  bastion_prompt: 'SECU VM에서 nftables 방화벽 규칙을 확인해줘
-
-
-    [FIXTURE] /home/ccc/cyber-range/fixtures/soc-ai-week01/6/syslog 사전 주입. `grep -E
-    ''DROP|REJECT|filter'' /home/ccc/cyber-range/fixtures/soc-ai-week01/6/syslog`
-    후 (1)빈도·패턴 (2)MITRE (3)방어 3섹션. raw dump 금지.'
-  fixtures:
-  - generator: firewall_log
-    target_vm: secu
-    path: /home/ccc/cyber-range/fixtures/soc-ai-week01/6/syslog
-    params:
-      seed: 42
-      duration_days: 7
-      scan_bursts: 5
-      egress_violations: 20
-      syn_flood_count: 200
-    mode: overwrite
-    cleanup: false
-- order: 7
-  instruction: WEB VM({{WEB_IP}})에서 Apache 웹서버와 JuiceShop 애플리케이션의 실행 상태를 확인하시오.
-  hint: ssh로 WEB VM에 접속하여 systemctl과 curl로 확인하세요.
-  category: setup
-  points: 8
-  answer: '🤖 프롬프트: WEB VM(10.20.32.80)에서 Apache 웹서버와 JuiceShop 애플리케이션의 실행 상태를 확인해줘
-
-    📎 참고 (CLI): systemctl status apache2 --no-pager && curl -s -o /dev/null -w "%{http_code}"
-    http://localhost:3000'
-  answer_detail: Apache는 웹서버, JuiceShop(:3000)은 취약한 웹 애플리케이션입니다. SOC 모니터링 대상이 되는 자산이
-    정상 동작하는지 확인합니다. HTTP 200이면 정상입니다.
-  verify:
-    type: output_contains
-    expect:
-    - '200'
-    - 10.20.32.80
-    - Apache
-    field: stdout
-    semantic:
-      intent: WEB VM Apache + JuiceShop 상태 — systemctl status apache2 --no-pager (웹서버
-        active) + curl -s -o /dev/null -w %{http_code} http://localhost:3000 (JuiceShop
-        취약 웹앱 HTTP 200). SOC 모니터링 대상 자산 2종 (웹서버 + 취약앱) 동시 검증
-      success_criteria:
-      - apache2 + JuiceShop(3000) 둘 다 확인
-      - HTTP 200 응답
-      - curl -w 로 상태코드만 추출
-      acceptable_methods:
-      - systemctl + curl -w
-      - ss -ltnp | grep :3000 포트 확인
-      - wget --spider
-      negative_signs:
-      - Apache 또는 JuiceShop 한쪽만
-      - -w 없이 응답 본문 전체
-      - 200 vs 기타 구분 없음
-  target_vm: web
-  script: systemctl status apache2 --no-pager && curl -s -o /dev/null -w "%{http_code}"
-    http://localhost:3000
-  risk_level: low
-  bastion_prompt: WEB VM(10.20.32.80)에서 Apache 웹서버와 JuiceShop 애플리케이션의 실행 상태를 확인해줘
-- order: 8
-  instruction: SIEM VM에서 rsyslog가 UDP 514 포트에서 리스닝 중인지 확인하시오.
-  hint: ss 또는 netstat으로 514 포트 수신 상태를 확인하세요.
-  category: setup
-  points: 8
-  answer: '🤖 프롬프트: SIEM VM에서 rsyslog가 UDP 514 포트에서 리스닝 중인지 확인해줘
-
-    📎 참고 (CLI): ss -ulnp | grep 514'
-  answer_detail: rsyslog는 중앙 로그 서버 역할을 합니다. UDP 514 포트에서 수신 대기 중이어야 다른 VM들(SECU, WEB)로부터
-    syslog를 수집할 수 있습니다.
-  verify:
-    type: output_contains
-    expect: '514'
-    field: stdout
-    semantic:
-      intent: SIEM rsyslog UDP 514 리스닝 — ss -ulnp | grep 514 로 UDP 514 소켓 바인딩 + rsyslogd
-        프로세스 확인. 중앙 로그 서버 수신 준비 상태. 다른 VM(SECU/WEB) 의 syslog 포워딩 수신 전제
-      success_criteria:
-      - ss -ulnp 또는 ss -ul + grep 514
-      - 514 포트 출력
-      - rsyslogd 프로세스 매핑
-      acceptable_methods:
-      - ss -ulnp
-      - netstat -ulnp | grep 514 (레거시)
-      - lsof -iUDP:514
-      negative_signs:
-      - TCP(-tlnp) 확인 (UDP 아님)
-      - -p 없어 프로세스 안 보임
-      - 다른 포트 확인
-  target_vm: siem
-  script: ss -ulnp | grep 514
-  risk_level: low
-  bastion_prompt: SIEM VM에서 rsyslog가 UDP 514 포트에서 리스닝 중인지 확인해줘
-- order: 9
-  instruction: SECU VM의 rsyslog가 SIEM({{SECU_IP}}00)으로 로그를 전달하도록 설정되어 있는지 확인하시오.
-  hint: SECU VM의 rsyslog 설정 파일에서 포워딩 대상을 확인하세요.
-  category: analysis
-  points: 10
-  answer: '🤖 프롬프트: SECU VM의 rsyslog가 SIEM(10.20.30.100)으로 로그를 전달하도록 설정되어 있는지 확인해줘
-
-    📎 참고 (CLI): grep -r "10.20.30.100" /etc/rsyslog.conf /etc/rsyslog.d/ 2>/dev/null'
-  answer_detail: rsyslog 설정에서 @10.20.30.100(UDP) 또는 @@10.20.30.100(TCP) 형태로 SIEM 서버가
-    지정되어 있어야 합니다. 이것이 로그 수집 파이프라인의 핵심 연결고리입니다.
-  verify:
-    type: output_contains
-    expect: 10.20.30.100
-    field: stdout
-    semantic:
-      intent: SECU rsyslog SIEM 포워딩 — grep -r 10.20.30.100 /etc/rsyslog.conf /etc/rsyslog.d/
-        로 *.* @10.20.30.100:514 (UDP) 또는 @@10.20.30.100:514 (TCP) 설정 확인. 로그 중앙 집중
-        파이프라인의 연결고리
-      success_criteria:
-      - grep -r 10.20.30.100 /etc/rsyslog*
-      - 포워딩 설정 출력
-      - '@/@@ UDP/TCP 구분 인지'
-      acceptable_methods:
-      - grep -r + 설정 파일
-      - rsyslogd -N 1 으로 validate
-      - systemctl status rsyslog
-      negative_signs:
-      - 10.20.30.100 포워딩 설정 없음
-      - grep 없이 전체 파일 cat
-      - '@/@@ 차이 무시'
-  target_vm: secu
-  script: grep -r "10.20.30.100" /etc/rsyslog.conf /etc/rsyslog.d/ 2>/dev/null
-  risk_level: low
-  bastion_prompt: SECU VM의 rsyslog가 SIEM(10.20.30.100)으로 로그를 전달하도록 설정되어 있는지 확인해줘
-- order: 10
-  instruction: Wazuh 매니저의 ossec.conf에서 syslog 출력 설정이 어떻게 되어 있는지 확인하시오.
-  hint: SIEM VM의 /var/ossec/etc/ossec.conf 파일을 확인하세요.
-  category: analysis
-  points: 10
-  answer: '🤖 프롬프트: Wazuh 매니저의 ossec.conf에서 syslog 출력 설정이 어떻게 되어 있는지 확인해줘
-
-    📎 참고 (CLI): grep -A 5 "<syslog_output>" /var/ossec/etc/ossec.conf'
-  answer_detail: ossec.conf의 syslog_output 섹션은 Wazuh 알림을 외부 syslog 서버로 전달하는 설정입니다.
-    SOC에서 SIEM과 다른 시스템 간 알림 연동에 사용됩니다.
-  verify:
-    type: output_contains
-    expect:
-    - syslog_output
-    - jsonout_output
-    - /jsonout_output
-    field: stdout
-    semantic:
-      intent: Wazuh ossec.conf syslog_output 설정 — grep -A 5 <syslog_output> /var/ossec/etc/ossec.conf
-        로 <server>IP</server><port>514</port><format>default</format> 블록 확인. Wazuh
-        알림을 외부 syslog(타 SIEM·collector) 로 전달하는 통합 지점. 기본 비활성 상태 일반적
-      success_criteria:
-      - grep -A 5 <syslog_output>
-      - ossec.conf 경로 정확
-      - syslog_output 키워드 출력
-      acceptable_methods:
-      - grep -A N 태그
-      - xmllint --xpath
-      - /var/ossec/bin/manage_agents -v
-      negative_signs:
-      - rsyslog.conf 와 혼동
-      - ossec.conf 경로 오류
-      - 블록 내부 확인 없음
-  target_vm: siem
-  script: grep -A 5 "<syslog_output>" /var/ossec/etc/ossec.conf
-  risk_level: low
-  bastion_prompt: Wazuh 매니저의 ossec.conf에서 syslog 출력 설정이 어떻게 되어 있는지 확인해줘
-- order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  bastion_prompt: '다음 작업들을 순서대로 수행해줘:
-
-    1) 현재 시스템의 호스트명과 IP 주소를 확인하여 어떤 VM에 접속했는지 파악해줘
-
-    2) SOC 네트워크(10.20.30.0/24)에서 주요 VM 4대의 연결 상태를 ping으로 확인해줘
-
-    3) SIEM VM(10.20.30.100)에서 Wazuh 매니저 서비스의 실행 상태를 확인해줘
-
-    4) Wazuh 매니저에 등록된 에이전트 목록을 확인해줘
-
-    5) SECU VM(10.20.30.1)에서 Suricata IDS 서비스의 실행 상태를 확인해줘'
-  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
-  points: 50
-  verify:
-    type: output_contains
-    expect: ''
-    field: stdout
-    semantic:
-      intent: '[통합] SOC 환경 점검 5작업 — hostname/IP/service/log path/audit 통합. 초기 구성 확인.'
-      success_criteria:
-      - 5 환경 작업
-      - 서비스 목록
-      - audit
-      acceptable_methods:
-      - bastion plan
-      - systemd
-      - ansible
-      negative_signs:
-      - 서비스 실패
-      - audit 누락
-      - 단일 명령
-  target_vm: siem
-  risk_level: low
-  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
-
-    1) 현재 시스템의 호스트명과 IP 주소를 확인하여 어떤 VM에 접속했는지 파악해줘
-
-    2) SOC 네트워크(10.20.30.0/24)에서 주요 VM 4대의 연결 상태를 ping으로 확인해줘
-
-    3) SIEM VM(10.20.30.100)에서 Wazuh 매니저 서비스의 실행 상태를 확인해줘
-
-    4) Wazuh 매니저에 등록된 에이전트 목록을 확인해줘
-
-    5) SECU VM(10.20.30.1)에서 Suricata IDS 서비스의 실행 상태를 확인해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
-  script: ''
+        - "단계 누락"
+    target_vm: bastion
+    risk_level: low

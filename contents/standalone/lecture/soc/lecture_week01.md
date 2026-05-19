@@ -21,8 +21,8 @@
 | siem | 10.20.32.100 | Wazuh manager + alerts.json | `ssh 6v6-siem` |
 | attacker | 10.20.30.202 | pen-test 도구 | `ssh 6v6-attacker` |
 
-**Bastion API:** `http://192.168.0.103:8003` / Key: `ccc-api-key-2026`
-**CCC API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion API:** `http://192.168.0.110:9100` (fw HAProxy 경유) / Key: `ccc-api-key-2026`
+**Wazuh Dashboard (브라우저):** `https://siem.6v6.lab/` (admin / SecretPassword) — 학생 PC /etc/hosts 에 `192.168.0.110 siem.6v6.lab` 매핑 필수
 
 ## 강의 시간 배분 (3시간)
 

@@ -1,363 +1,90 @@
-lab_id: soc-ai-week09
-title: 포렌식 기초 - 시스템 아티팩트 수집과 타임라인 분석 (AI 지원)
-version: ai
-course: soc-ai
+lab_id: standalone-soc-week09
+title: "인시던트 대응 절차 — IR 6 단계 (Preparation → Identification → Containment → Eradication → Recovery → Lessons) (6v6 + R/B/P)"
+version: standalone-non-ai
+course: soc
 week: 9
-description: 인시던트 발생 후 디지털 포렌식 관점에서 시스템 아티팩트를 수집하고, 타임라인을 구성하여 공격 경로를 재구성하는 기초 기법을 학습합니다. AI SubAgent가
-  자동으로 명령을 실행하고 결과를 검증합니다.
+description: |
+  NIST SP 800-61 의 IR 6 단계 의 각 단계 의 *실제 활동* 을 6v6 의 alert 1 시나리오 (예: brute force / SQLi) 로 simulation.
 difficulty: medium
-duration_minutes: 150
+duration_minutes: 120
+prerequisites: ["W08 중간고사 통과"]
 objectives:
-- 시스템 휘발성/비휘발성 아티팩트를 식별하고 수집할 수 있다
-- 로그 기반 타임라인을 구성하여 공격 경로를 재구성한다
-- 파일 시스템 메타데이터를 분석하여 변조 흔적을 탐지한다
+  - "IR 6 단계 의 각 활동 mapping (NIST SP 800-61)"
+  - "1 시나리오 (sshd brute force) 의 Identification → Containment 시뮬"
+  - "Containment 의 *비파괴* fw rule 또는 user lock"
+  - "Lessons Learned markdown"
 pass_threshold: 0.6
 steps:
-- order: 1
-  instruction: WEB VM에서 현재 시스템의 휘발성 정보(업타임, 로그인 사용자, 메모리 사용량)를 수집하시오.
-  hint: uptime, who, free 명령을 사용하세요.
-  category: analysis
-  points: 5
-  answer: '🤖 프롬프트: WEB VM에서 현재 시스템의 휘발성 정보(업타임, 로그인 사용자, 메모리 사용량)를 수집해줘
+  - order: 1
+    instruction: |
+      ## 🎯 MISSION — IR 6 단계 mapping + 1 시나리오 선택
+      **무엇을:** 6v6 의 최근 alert 중 1 시나리오 선택 + IR 6 단계 의 각 활동 학생 작성.
+    hint: "brute force 시나리오 = sshd Failed password burst. Identification = Wazuh rule 5710."
+    category: ir
+    points: 12
+    answer: "🤖 가이드: markdown 표 — 6 단계 × 5 컬럼 (활동 / 도구 / 시간 / 산출물 / 책임자)."
+    answer_detail: "NIST IR 6 단계 = SOC L2/L3 분석가 의 핵심 framework."
+    verify:
+      intent: "6 단계 + 시나리오"
+      success_criteria: ["6 단계 모두", "1 시나리오 명시"]
+      acceptable_methods: ["markdown"]
+      negative_signs: ["단계 누락"]
+    target_vm: bastion
+    risk_level: low
 
-    📎 참고 (CLI): echo "=== UPTIME ==="; uptime; echo "=== LOGGED USERS ==="; who; echo "=== MEMORY ===";
-    free -h'
-  answer_detail: 포렌식에서는 휘발성 데이터부터 수집합니다(RFC 3227 증거 수집 순서). 업타임으로 마지막 재부팅 시점, who로 현재 접속자, free로 메모리 상태를
-    파악합니다.
-  verify:
-    type: output_contains
-    expect:
-    - UPTIME
-    - 시스템정보
-    field: stdout
-    semantic:
-      intent: 휘발성 정보 수집 — echo 섹션 + uptime (시스템 가동) + who (활성 세션) + free -h (메모리). RFC 3227 volatility
-        order 상위 3종. 재부팅 전 보존 필수
-      success_criteria:
-      - uptime + who + free 3종
-      - 섹션 구분 echo
-      - RFC 3227 개념
-      acceptable_methods:
-      - echo + 3 명령
-      negative_signs:
-      - 1-2 종만
-  target_vm: siem
-  script: echo "=== UPTIME ==="; uptime; echo "=== LOGGED USERS ==="; who; echo "=== MEMORY ==="; free
-    -h
-  risk_level: low
-  bastion_prompt: WEB VM에서 현재 시스템의 휘발성 정보(업타임, 로그인 사용자, 메모리 사용량)를 수집해줘
-- order: 2
-  instruction: WEB VM에서 현재 네트워크 연결 상태를 수집하시오. 모든 TCP/UDP 연결과 리스닝 포트를 기록하시오.
-  hint: ss -tunap 명령을 사용하세요.
-  category: analysis
-  points: 8
-  answer: '🤖 프롬프트: WEB VM에서 현재 네트워크 연결 상태를 수집해줘
+  - order: 2
+    instruction: |
+      ## 🎯 MISSION — Identification 단계 — 6v6 alert 추출 + IoC 식별
+      **무엇을:** 시나리오 의 alert 추출 + src_ip / username / 시간 의 IoC 표.
+    hint: "tail alerts.json | grep rule.id."
+    category: ir
+    points: 10
+    answer: |
+      🤖 가이드:
+      ssh 6v6-siem 'sudo grep -E "5710|sshd" /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -5 | jq "{time: .timestamp, rule: .rule.id, src: .data.srcip, user: .data.dstuser}"'
+    answer_detail: "IoC = Indicator of Compromise. SOC 의 다음 검색 input."
+    verify:
+      intent: "IoC 추출 표"
+      success_criteria: ["src_ip + user + 시간"]
+      acceptable_methods: ["jq"]
+      negative_signs: ["IoC 1개 미만"]
+    target_vm: siem
+    risk_level: low
 
-    📎 참고 (CLI): ss -tunap'
-  answer_detail: 네트워크 연결은 휘발성 데이터입니다. 공격자의 원격 접속(reverse shell 등)이 ESTABLISHED 상태로 남아있을 수 있습니다. 모든 연결의
-    소스/대상 IP와 프로세스를 기록합니다.
-  verify:
-    type: output_contains
-    expect: LISTEN
-    field: stdout
-    semantic:
-      intent: 네트워크 연결 스냅샷 — ss -tunap 으로 모든 TCP/UDP 연결 + LISTEN/ESTABLISHED 상태 + 프로세스. 포렌식 네트워크 증거. 외부
-        연결·backdoor 포트 식별 근거
-      success_criteria:
-      - ss -tunap
-      - TCP+UDP 모두
-      - 프로세스 포함
-      acceptable_methods:
-      - ss + netstat -tulnp
-      negative_signs:
-      - -p 없음
-      - TCP/UDP 한쪽만
-  target_vm: siem
-  script: ss -tunap
-  risk_level: low
-  bastion_prompt: WEB VM에서 현재 네트워크 연결 상태를 수집해줘
-- order: 3
-  instruction: WEB VM에서 현재 실행 중인 모든 프로세스를 수집하시오. 프로세스 트리 형태로 확인하시오.
-  hint: ps auxf 또는 pstree 명령을 사용하세요.
-  category: analysis
-  points: 8
-  answer: '🤖 프롬프트: WEB VM에서 현재 실행 중인 모든 프로세스를 수집해줘
+  - order: 3
+    instruction: |
+      ## 🎯 MISSION — Containment 비파괴 시뮬
+      **무엇을:** 시나리오 의 src_ip 를 차단 할 fw rule 의 *명령만 작성* (실행 X — 학습 환경 보호).
+    hint: "nft add rule inet six_filter input ip saddr <ip> drop. 또는 hosts.deny. *실행 안 함*."
+    category: ir
+    points: 10
+    answer: |
+      🤖 가이드:
+      # 학생: 실제 실행 X
+      # nft add rule inet six_filter input ip saddr 1.2.3.4 drop
+      # echo 'sshd: 1.2.3.4' >> /etc/hosts.deny
+    answer_detail: "Containment 의 도구 = nftables / iptables / hosts.deny / fail2ban. 운영 환경 의 ROE 필수."
+    verify:
+      intent: "Containment 명령 작성 (실행 X)"
+      success_criteria: ["fw 또는 hosts 명령", "실행 X 명시"]
+      acceptable_methods: ["nftables / hosts.deny / fail2ban"]
+      negative_signs: ["실제 실행"]
+    target_vm: bastion
+    risk_level: medium
 
-    📎 참고 (CLI): ps auxf --cols 200 | head -50'
-  answer_detail: 프로세스 목록은 포렌식의 핵심 아티팩트입니다. 비정상적인 프로세스(이상한 이름, root 권한, 높은 리소스 사용)를 식별합니다. PPID를 통해 프로세스
-    생성 관계도 파악합니다.
-  verify:
-    type: output_contains
-    expect: root
-    field: stdout
-    semantic:
-      intent: 프로세스 트리 — ps auxf --cols 200 | head -50 으로 forest 포맷 parent-child 관계 + USER + CMD 긴 출력.
-        비정상 lineage (apache→sh 등) 식별. --cols 200 으로 잘림 방지
-      success_criteria:
-      - ps auxf --cols 200
-      - 트리 구조
-      - lineage 분석
-      acceptable_methods:
-      - ps auxf
-      - pstree -p
-      negative_signs:
-      - ps aux (포레스트 없음)
-  target_vm: siem
-  script: ps auxf --cols 200 | head -50
-  risk_level: low
-  bastion_prompt: WEB VM에서 현재 실행 중인 모든 프로세스를 수집해줘
-- order: 4
-  instruction: WEB VM에서 최근 24시간 내 수정된 파일을 /etc 디렉토리에서 검색하시오.
-  hint: find 명령의 -mtime 옵션을 사용하세요.
-  category: analysis
-  points: 10
-  answer: '🤖 프롬프트: WEB VM에서 최근 24시간 내 수정된 파일을 /etc 디렉토리에서 검색해줘
-
-    📎 참고 (CLI): find /etc -mtime -1 -type f -ls 2>/dev/null | head -20'
-  answer_detail: 공격자는 지속성 확보를 위해 /etc 하위의 설정 파일(crontab, passwd, ssh 설정 등)을 변조할 수 있습니다. 최근 변경된 설정 파일은
-    포렌식 분석의 핵심 대상입니다.
-  verify:
-    type: output_contains
-    expect: /etc
-    field: stdout
-    semantic:
-      intent: /etc 최근 수정 — find /etc -mtime -1 -type f -ls | head -20 으로 24시간 내 설정 변경 파일. 공격자 설정 조작 (cron·sshd_config·passwd)
-        탐지. 포렌식 변조 확인
-      success_criteria:
-      - find /etc -mtime -1
-      - -ls 상세
-      - 최근 수정 목록
-      acceptable_methods:
-      - find + stat
-      negative_signs:
-      - 기간 지정 없음
-  target_vm: siem
-  script: find /etc -mtime -1 -type f -ls 2>/dev/null | head -20
-  risk_level: low
-  bastion_prompt: WEB VM에서 최근 24시간 내 수정된 파일을 /etc 디렉토리에서 검색해줘
-- order: 5
-  instruction: WEB VM에서 사용자 계정 관련 파일(passwd, shadow, group)의 최근 수정 시간을 확인하시오.
-  hint: stat 또는 ls -la 명령으로 파일 메타데이터를 확인하세요.
-  category: analysis
-  points: 10
-  answer: '🤖 프롬프트: WEB VM에서 사용자 계정 관련 파일(passwd, shadow, group)의 최근 수정 시간을 확인해줘
-
-    📎 참고 (CLI): stat /etc/passwd /etc/shadow /etc/group 2>/dev/null | grep -E "File:|Modify:"'
-  answer_detail: passwd와 shadow 파일의 수정 시간이 예상 시점과 다르면 계정 추가/변경이 발생한 것입니다. 공격자가 백도어 계정을 생성했을 가능성을 조사해야
-    합니다.
-  verify:
-    type: output_contains
-    expect:
-    - Modify
-    - 수정시간
-    field: stdout
-    semantic:
-      intent: 계정 파일 Modify time — stat /etc/passwd /etc/shadow /etc/group | grep -E File:|Modify:. 계정
-        조작(유저 추가·권한 변경) 타임스탬프 확인. FIM baseline 비교 기초
-      success_criteria:
-      - stat 3 파일
-      - Modify time
-      - 계정 조작 검증
-      acceptable_methods:
-      - stat + grep
-      negative_signs:
-      - 1 파일만
-  target_vm: siem
-  script: stat /etc/passwd /etc/shadow /etc/group 2>/dev/null | grep -E "File:|Modify:"
-  risk_level: low
-  bastion_prompt: WEB VM에서 사용자 계정 관련 파일(passwd, shadow, group)의 최근 수정 시간을 확인해줘
-- order: 6
-  instruction: WEB VM에서 cron 작업(예약된 작업)을 확인하시오. 시스템 전체와 사용자별 crontab을 모두 검사하시오.
-  hint: /etc/crontab, /etc/cron.d/, 사용자 crontab을 확인하세요.
-  category: analysis
-  points: 10
-  answer: '🤖 프롬프트: WEB VM에서 cron 작업(예약된 작업)을 확인해줘
-
-    📎 참고 (CLI): cat /etc/crontab && echo "=== cron.d ==="; ls -la /etc/cron.d/ && echo "=== user crontab
-    ==="; crontab -l 2>/dev/null || echo "no user crontab"'
-  answer_detail: 공격자는 지속성(persistence)을 위해 cron에 악성 스크립트를 등록합니다. 비정상적인 스크립트 경로나 외부 URL 다운로드 명령이 있으면 의심해야
-    합니다.
-  verify:
-    type: output_contains
-    expect: cron
-    field: stdout
-    semantic:
-      intent: cron 작업 조사 — cat /etc/crontab + ls /etc/cron.d/ + crontab -l -u <user> 전 계정. 공격자가 심은 지속성
-        cron 탐지 (T1053.003). scheduled task 전수 조사
-      success_criteria:
-      - 3 cron 위치 확인
-      - 시스템 + 사용자
-      acceptable_methods:
-      - cat + ls + crontab -l
-      negative_signs:
-      - 시스템 crontab 만
-  target_vm: siem
-  script: cat /etc/crontab && echo "=== cron.d ==="; ls -la /etc/cron.d/ && echo "=== user crontab ===";
-    crontab -l 2>/dev/null || echo "no user crontab"
-  risk_level: low
-  bastion_prompt: WEB VM에서 cron 작업(예약된 작업)을 확인해줘
-- order: 7
-  instruction: WEB VM에서 bash 히스토리를 확인하여 최근 실행된 명령어를 분석하시오.
-  hint: 각 사용자의 .bash_history 파일을 확인하세요.
-  category: analysis
-  points: 10
-  answer: '🤖 프롬프트: WEB VM에서 bash 히스토리를 확인하여 최근 실행된 명령어를 분석해줘
-
-    📎 참고 (CLI): cat /root/.bash_history 2>/dev/null | tail -30; for user in $(ls /home/); do echo "===
-    $user ==="; cat /home/$user/.bash_history 2>/dev/null | tail -10; done'
-  answer_detail: bash_history에는 사용자가 실행한 명령이 기록됩니다. 공격자가 히스토리를 삭제할 수 있지만, 남아있다면 공격 단계를 재구성하는 데 매우 유용한
-    아티팩트입니다.
-  verify:
-    type: output_contains
-    expect: ''
-    field: stdout
-    semantic:
-      intent: bash_history 분석 — cat /root/.bash_history + for user do cat /home/$user/.bash_history. 공격자
-        실행 명령 기록. wget/curl/nc/chmod +x 패턴 검색
-      success_criteria:
-      - root + 사용자 history
-      - 실행 명령 기록
-      acceptable_methods:
-      - cat + for loop
-      negative_signs:
-      - 단일 사용자만
-  target_vm: siem
-  script: cat /root/.bash_history 2>/dev/null | tail -30; for user in $(ls /home/); do echo "=== $user
-    ==="; cat /home/$user/.bash_history 2>/dev/null | tail -10; done
-  risk_level: low
-  bastion_prompt: WEB VM에서 bash 히스토리를 확인하여 최근 실행된 명령어를 분석해줘
-- order: 8
-  instruction: WEB VM에서 SSH 관련 아티팩트를 수집하시오. authorized_keys, known_hosts, sshd 설정을 확인하시오.
-  hint: /root/.ssh/와 /etc/ssh/ 디렉토리를 확인하세요.
-  category: analysis
-  points: 12
-  answer: '🤖 프롬프트: WEB VM에서 SSH 관련 아티팩트를 수집하시오. authorized_keys, known_hosts, sshd 설정을 확인해줘
-
-    📎 참고 (CLI): echo "=== authorized_keys ==="; cat /root/.ssh/authorized_keys 2>/dev/null; echo "===
-    sshd_config ==="; grep -v "^#" /etc/ssh/sshd_config | grep -v "^$" | head -20'
-  answer_detail: authorized_keys에 알 수 없는 공개키가 있으면 공격자가 SSH 백도어를 설치한 것입니다. sshd_config에서 PermitRootLogin,
-    PasswordAuthentication 설정도 변조 여부를 확인합니다.
-  verify:
-    type: output_contains
-    expect: sshd_config
-    field: stdout
-    semantic:
-      intent: SSH 아티팩트 — authorized_keys (백도어 키) + known_hosts (접속 이력) + sshd_config (설정 변조). 3종 SSH 관련
-        파일 종합 검사. 지속성 + 측면이동 흔적
-      success_criteria:
-      - 3 SSH 파일
-      - 각각 cat
-      acceptable_methods:
-      - cat + echo 섹션
-      negative_signs:
-      - authorized_keys 만
-  target_vm: siem
-  script: echo "=== authorized_keys ==="; cat /root/.ssh/authorized_keys 2>/dev/null; echo "=== sshd_config
-    ==="; grep -v "^#" /etc/ssh/sshd_config | grep -v "^$" | head -20
-  risk_level: low
-  bastion_prompt: WEB VM에서 SSH 관련 아티팩트를 수집하시오. authorized_keys, known_hosts, sshd 설정을 확인해줘
-- order: 9
-  instruction: SIEM VM에서 WEB VM 에이전트의 Wazuh 파일 무결성 모니터링(syscheck) 알림을 확인하시오.
-  hint: alerts.log에서 syscheck 관련 알림을 검색하세요.
-  category: detection
-  points: 12
-  answer: '🤖 프롬프트: SIEM VM에서 WEB VM 에이전트의 Wazuh 파일 무결성 모니터링(syscheck) 알림을 확인해줘
-
-    📎 참고 (CLI): grep -B 2 -A 5 "syscheck\|integrity" /var/ossec/logs/alerts/alerts.log | tail -30'
-  answer_detail: Wazuh syscheck는 파일 변경(추가/수정/삭제)을 탐지하여 알림을 생성합니다. 포렌식에서 syscheck 알림은 공격자의 파일 변조 타임라인을
-    구성하는 핵심 데이터입니다.
-  verify:
-    type: output_contains
-    expect: ''
-    field: stdout
-    semantic:
-      intent: syscheck 알림 — grep -B 2 -A 5 syscheck|integrity alerts.log | tail -30 으로 FIM 변경 알림. /etc/passwd/shadow/sshd_config
-        등 중요 파일 변조 이력. Wazuh FIM 실적 확인
-      success_criteria:
-      - syscheck/integrity 필터
-      - FIM 알림 확인
-      acceptable_methods:
-      - grep + context
-      negative_signs:
-      - syscheck 개념 없음
-  target_vm: siem
-  script: grep -B 2 -A 5 "syscheck\|integrity" /var/ossec/logs/alerts/alerts.log | tail -30
-  risk_level: low
-  bastion_prompt: SIEM VM에서 WEB VM 에이전트의 Wazuh 파일 무결성 모니터링(syscheck) 알림을 확인해줘
-- order: 10
-  instruction: WEB VM에서 최근 로그인 기록(wtmp)과 마지막 접속 기록(lastlog)을 수집하시오.
-  hint: last와 lastlog 명령을 사용하세요.
-  category: analysis
-  points: 10
-  answer: '🤖 프롬프트: WEB VM에서 최근 로그인 기록(wtmp)과 마지막 접속 기록(lastlog)을 수집해줘
-
-    📎 참고 (CLI): echo "=== LAST LOGINS ==="; last -20; echo "=== LASTLOG ==="; lastlog | grep -v "Never"'
-  answer_detail: wtmp(last 명령)은 로그인/로그아웃 기록, lastlog는 각 사용자의 마지막 접속 정보를 보여줍니다. 비정상적인 시간대 접속이나 알 수 없는 소스
-    IP가 있으면 침해 증거입니다.
-  verify:
-    type: output_contains
-    expect: LAST
-    field: stdout
-    semantic:
-      intent: 로그인 기록 — last -20 (wtmp) + lastlog | grep -v Never (마지막 접속). 사용자별 로그인 시각·IP·duration. 비정상
-        시간 접속 식별. 인증 포렌식
-      success_criteria:
-      - last + lastlog 둘 다
-      - 사용자별 로그인
-      acceptable_methods:
-      - last + lastlog
-      negative_signs:
-      - 하나만
-  target_vm: siem
-  script: echo "=== LAST LOGINS ==="; last -20; echo "=== LASTLOG ==="; lastlog | grep -v "Never"
-  risk_level: low
-  bastion_prompt: WEB VM에서 최근 로그인 기록(wtmp)과 마지막 접속 기록(lastlog)을 수집해줘
-- order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  bastion_prompt: '다음 작업들을 순서대로 수행해줘:
-
-    1) WEB VM에서 현재 시스템의 휘발성 정보(업타임, 로그인 사용자, 메모리 사용량)를 수집해줘
-
-    2) WEB VM에서 현재 네트워크 연결 상태를 수집해줘
-
-    3) WEB VM에서 현재 실행 중인 모든 프로세스를 수집해줘
-
-    4) WEB VM에서 최근 24시간 내 수정된 파일을 /etc 디렉토리에서 검색해줘
-
-    5) WEB VM에서 사용자 계정 관련 파일(passwd, shadow, group)의 최근 수정 시간을 확인해줘'
-  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
-  points: 50
-  verify:
-    type: output_contains
-    expect: ''
-    field: stdout
-    semantic:
-      intent: '[통합] 포렌식 기초 5작업 — collect/hash/timeline/chain of custody/audit 통합. NIST SP 800-86.'
-      success_criteria:
-      - 5 포렌식 작업
-      - 해시
-      - CoC
-      acceptable_methods:
-      - bastion plan
-      - plaso + timeline
-      - Sleuth Kit
-      negative_signs:
-      - 해시 없음
-      - CoC 누락
-      - audit 부재
-  target_vm: siem
-  risk_level: low
-  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
-
-    1) WEB VM에서 현재 시스템의 휘발성 정보(업타임, 로그인 사용자, 메모리 사용량)를 수집해줘
-
-    2) WEB VM에서 현재 네트워크 연결 상태를 수집해줘
-
-    3) WEB VM에서 현재 실행 중인 모든 프로세스를 수집해줘
-
-    4) WEB VM에서 최근 24시간 내 수정된 파일을 /etc 디렉토리에서 검색해줘
-
-    5) WEB VM에서 사용자 계정 관련 파일(passwd, shadow, group)의 최근 수정 시간을 확인해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는 다단계 작업.
-  script: ''
+  - order: 4
+    instruction: |
+      ## 🎯 MISSION — Lessons Learned 보고서
+      **무엇을:** 시나리오 의 *왜 발생했나* + *어떻게 예방* + *룰 보강* 3 단락 markdown.
+    hint: "예방 = 비밀번호 정책 + lockout + fail2ban. 룰 보강 = SIGMA 의 timeframe 조정."
+    category: documentation
+    points: 8
+    answer: "🤖 가이드: 3 단락 markdown."
+    answer_detail: "Lessons Learned = IR 의 6 단계 마지막 + 다음 incident 예방."
+    verify:
+      intent: "3 단락 보고서"
+      success_criteria: ["3 단락"]
+      acceptable_methods: ["markdown"]
+      negative_signs: ["단락 누락"]
+    target_vm: bastion
+    risk_level: low
