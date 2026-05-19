@@ -1,0 +1,285 @@
+lab_id: standalone-wazuh-special-week02
+title: 특강 W02 — bastion 에이전트 로그 분석 (Lifecycle Timeline · KG · Self-Correct)
+version: standalone-non-ai
+course: wazuh-special
+week: 2
+description: |
+  bastion (KG-LLM 에이전트) 의 작업 1건이 8 stage 를 거치며 발생시키는 syslog 를
+  wazuh dashboard 에서 시간순으로 추적. request_id correlation, 자가 수정 (KG-3
+  Adapt) 패턴, KG-2 Reuse 통계, 위험 변경 mission 알림 등 paper §4 PE-KG 의 실
+  작동을 학생이 직접 검증.
+difficulty: hard
+duration_minutes: 120
+prerequisites:
+  - "lecture_week02.md 정독 (8 stage + rule.id 100210-100218)"
+  - "특강 W01 lab 통과 (KQL 12 문법)"
+  - "bastion API (192.168.0.110:9100) 가용 + Wazuh manager 가용"
+objectives:
+  - "bastion mission 1건의 8 stage 전체 timeline 추출"
+  - "KG decision (new/reuse/adapt) 분포 측정"
+  - "자가 수정 패턴 식별 + 빈도 분석"
+  - "위험 mission (rule 100204) alert 검증"
+  - "Bastion Operations Dashboard 직접 구성"
+pass_threshold: 0.6
+steps:
+
+  - order: 1
+    instruction: |
+      ## 🎯 STEP 1 — bastion mission 1건 실행 + lifecycle 생성
+
+      ### 실행
+      bastion 에 mission 1개를 보내 lifecycle 8 stage 모두 발생시킴.
+
+      ```bash
+      # 학생 PC 또는 attacker
+      sshpass -p '1' ssh ccc@192.168.0.110 'docker exec -u ccc 6v6-bastion \
+        curl -s -X POST --max-time 120 \
+        -H "X-API-Key: ccc-api-key-2026" \
+        -H "Content-Type: application/json" \
+        -d "{\"message\":\"web 컨테이너 hostname 과 시간 확인\",
+              \"stream\":false,\"course\":\"wazuh-special\",
+              \"step_order\":1,\"auto_approve\":true}" \
+        http://localhost:9100/chat' | tail -c 200
+      ```
+
+      응답의 `anchor_id` 또는 `request_id` 기록 (다음 step 에서 사용).
+
+      ### Dashboard 에서
+      ```kql
+      decoder.name:bastion-lifecycle AND @timestamp:>now-5m
+      ```
+
+      ### 평가 기준
+      - chat 응답 정상 수신 (anchor_id 존재)
+      - dashboard 에 5+ lifecycle alert 확인
+    verify:
+      intent: "bastion mission 1건 실행 + wazuh 에서 lifecycle alert 5+ 확인"
+      success_criteria:
+        - "chat API 호출 성공"
+        - "wazuh dashboard 에 decoder.name:bastion-lifecycle alert 5+"
+
+  - order: 2
+    instruction: |
+      ## 🎯 STEP 2 — request_id 로 timeline 완성
+
+      ### 식별
+      STEP 1 결과의 alert 중 1개 row 클릭 → "data.request_id" 값 복사
+      (예: `5271511e81724ab7b26d0b8f7e49fba8`)
+
+      ### Dashboard 에서
+      ```kql
+      data.request_id:"<복사한값>"
+      ```
+
+      ### 좌측 fields 추가 (Add)
+      - `@timestamp`
+      - `rule.id`
+      - `data.stage`
+      - `data.skill`
+      - `data.success`
+
+      ### 시간순 정렬
+      `@timestamp` 컬럼 헤더 클릭 → ascending
+
+      ### 평가 기준
+      - 같은 request_id 의 alert 5+ 행
+      - rule.id 가 100211 → 100213 → 100214 → 100215 → 100218 순서
+      - timeline 표 형태 보임
+    verify:
+      intent: "1 mission 의 모든 stage 를 request_id 로 group_by + 시간순 정렬"
+      success_criteria:
+        - "같은 request_id 의 alert 5+"
+        - "100211 (REQUEST) 와 100218 (COMPLETED) 모두 보임"
+
+  - order: 3
+    instruction: |
+      ## 🎯 STEP 3 — KG decision 분포 (KG-2 Reuse 측정)
+
+      ### 사전 — 같은 mission 2 회 실행
+      KG-2 Reuse 가 작동하려면 같은 prompt 2회 필요.
+
+      ```bash
+      # 1차
+      sshpass -p '1' ssh ccc@192.168.0.110 'docker exec -u ccc 6v6-bastion \
+        curl -s -X POST --max-time 60 -H "X-API-Key: ccc-api-key-2026" \
+        -H "Content-Type: application/json" \
+        -d "{\"message\":\"web hostname 짧게\",\"stream\":false,
+              \"course\":\"wazuh-special\",\"step_order\":3,\"auto_approve\":true}" \
+        http://localhost:9100/chat' >/dev/null
+
+      sleep 5
+
+      # 2차 (같은 prompt)
+      sshpass -p '1' ssh ccc@192.168.0.110 'docker exec -u ccc 6v6-bastion \
+        curl -s -X POST --max-time 60 -H "X-API-Key: ccc-api-key-2026" \
+        -H "Content-Type: application/json" \
+        -d "{\"message\":\"web hostname 짧게\",\"stream\":false,
+              \"course\":\"wazuh-special\",\"step_order\":3,\"auto_approve\":true}" \
+        http://localhost:9100/chat' >/dev/null
+      ```
+
+      ### Dashboard
+      ```kql
+      rule.id:100213 AND @timestamp:>now-10m
+      ```
+
+      좌측 `data.decision`, `data.confidence` 컬럼 추가.
+
+      ### 분석
+      - 1차: decision=new, confidence=낮음 (KG 에 없음 → 신규)
+      - 2차: decision=reuse 또는 new (KG sim 측정 결과 따라)
+      - confidence 비교
+
+      ### Visualize (선택)
+      `data.decision.keyword` → Pie chart → new vs reuse 비율
+
+      ### 평가 기준
+      - 100213 alert 2+ 확인
+      - decision 의 new/reuse/adapt 중 1+ 확인
+      - 2차 mission 의 duration_ms 가 1차보다 짧으면 reuse 효과 입증
+    verify:
+      intent: "같은 prompt 2회 실행으로 KG-2 Reuse 발생 여부 측정"
+      success_criteria:
+        - "rule.id:100213 alert 2+"
+        - "data.decision 값 추출"
+
+  - order: 4
+    instruction: |
+      ## 🎯 STEP 4 — 자가 수정 (KG-3 Adapt) 패턴 탐지
+
+      ### 실행 — 실패 유도 mission
+      bastion 이 실패하기 쉬운 mission (존재하지 않는 컨테이너 조회) 으로 자가 수정 발생.
+
+      ```bash
+      sshpass -p '1' ssh ccc@192.168.0.110 'docker exec -u ccc 6v6-bastion \
+        curl -s -X POST --max-time 180 -H "X-API-Key: ccc-api-key-2026" \
+        -H "Content-Type: application/json" \
+        -d "{\"message\":\"6v6-nonexistent 컨테이너의 ip 확인\",\"stream\":false,
+              \"course\":\"wazuh-special\",\"step_order\":4,\"auto_approve\":true}" \
+        http://localhost:9100/chat' | tail -c 200
+      ```
+
+      ### Dashboard
+      ```kql
+      rule.id:100217 AND @timestamp:>now-10m
+      ```
+
+      ### 분석
+      - 100217 alert 있으면 자가 수정 발생
+      - 같은 request_id 의 100214 (DISPATCH) 가 2회 이상 = retry
+      - 좌측 `data.attempt` 컬럼 → 1, 2, 3, ... 증가 확인
+
+      ### 평가 기준
+      - 100217 alert 1+ 확인
+      - 같은 request_id 의 attempt 증가 확인
+    verify:
+      intent: "자가 수정 (KG-3 Adapt) 발생 alert 식별"
+      success_criteria:
+        - "rule.id:100217 alert 1+ 또는 'attempt:>1' 의 100214 발견"
+
+  - order: 5
+    instruction: |
+      ## 🎯 STEP 5 — 위험 mission (rule 100204) 모니터링
+
+      ### 시뮬 — 위험 keyword 포함 mission
+      ⚠️ 실제 운영 인프라 변경 금지! prompt 만 위험 keyword 포함.
+
+      ```bash
+      sshpass -p '1' ssh ccc@192.168.0.110 'docker exec -u ccc 6v6-bastion \
+        curl -s -X POST --max-time 120 -H "X-API-Key: ccc-api-key-2026" \
+        -H "Content-Type: application/json" \
+        -d "{\"message\":\"nftables MASQUERADE 룰 의 의미를 설명\",\"stream\":false,
+              \"course\":\"wazuh-special\",\"step_order\":5,\"auto_approve\":true}" \
+        http://localhost:9100/chat' | tail -c 200
+      ```
+
+      ### Dashboard
+      ```kql
+      rule.id:100204 AND @timestamp:>now-15m
+      ```
+
+      ### 또는 audit 의 위험 키워드 직접
+      ```kql
+      rule.groups:bastion_audit AND data.user_prompt:*MASQUERADE*
+      ```
+
+      ### 분석
+      - 100204 (level 10) 발생 → 운영자 즉시 알림 가능
+      - lecture W02 의 "P24 사고" 사례 — 실제 fw drop rule 추가가 운영 차단
+      - 위험 alert 발생 시 즉각 cleanup 권고
+
+      ### 평가 기준
+      - 100204 또는 위험 keyword 의 audit alert 1+
+      - level (위험도) 확인
+    verify:
+      intent: "위험 변경 mission 의 alert 탐지 + 운영 영향 분석"
+      success_criteria:
+        - "rule.id:100204 또는 data.user_prompt:*MASQUERADE* alert 1+"
+
+  - order: 6
+    instruction: |
+      ## 🎯 STEP 6 — Bastion Operations Dashboard 직접 구성
+
+      ### 사전 — 5 Visualize 미리 저장
+      각각 Visualize Library → Create new visualization:
+
+      1. **Total Mission** (Metric): filter `rule.id:100218` count
+      2. **Avg Duration** (Metric): filter `rule.id:100218` avg of `data.duration_ms`
+      3. **KG Decision** (Pie): filter `rule.id:100213` terms `data.decision.keyword`
+      4. **Self-Correct Trend** (Line): filter `rule.id:100217` date_histogram `@timestamp`
+      5. **Top SubAgent Skills** (Tag Cloud): filter `rule.id:100214` terms `data.skill.keyword`
+
+      ### Dashboard 생성
+      1. ☰ → **Dashboards → Create new dashboard**
+      2. Add → 위 5 panel 추가
+      3. Time → Last 24 hours
+      4. **Save** → "Bastion Operations - {본인 이름}"
+
+      ### 종합 보고서 (markdown 1-2 쪽)
+
+      ```markdown
+      # 특강 W02 lab 보고서 — {본인 이름}
+
+      ## STEP 1-2 (Mission lifecycle)
+      - 실행한 mission: ...
+      - request_id: ...
+      - 총 stage event 수: ...
+      - 8 stage 모두 발생? ✅/❌
+
+      ## STEP 3 (KG-2 Reuse)
+      - 1차 duration_ms: ...
+      - 2차 duration_ms: ...
+      - decision 변화: ...
+      - reuse 발생? ✅/❌
+
+      ## STEP 4 (KG-3 Adapt)
+      - 자가 수정 발생 mission: ...
+      - 최대 attempt: ...
+      - 결국 성공? ✅/❌
+
+      ## STEP 5 (위험 mission)
+      - 100204 alert 발생? ✅/❌
+      - level: ...
+      - 운영 영향 분석: ...
+
+      ## STEP 6 (Dashboard)
+      - 저장한 Dashboard 이름: ...
+      - 5 panel 모두 표시? ✅/❌
+
+      ## 배운 점 + 응용 아이디어
+      - bastion 의 PE-KG 4 단계 중 무엇이 가장 인상적이었나?
+      - 자기 mission 운영에 dashboard 어떻게 활용할 것인가?
+      - paper §4 의 가설과 실측 일치도?
+      ```
+
+      ### 평가 기준
+      - 5 Visualize 모두 저장
+      - Dashboard 저장 (panel 5 포함)
+      - 보고서 markdown 작성 (각 step 결과 + 분석)
+      - "배운 점 + 응용 아이디어" 자기 작성
+    verify:
+      intent: "Bastion Operations Dashboard 직접 구성 + 종합 보고서 작성"
+      success_criteria:
+        - "5 Visualization 저장"
+        - "Dashboard 1개 (panel 5+)"
+        - "보고서 markdown 6 section 포함"

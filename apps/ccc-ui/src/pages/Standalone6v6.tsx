@@ -20,6 +20,7 @@ type Course = {
   lab_weeks: number[]
   max_week: number
   expected_total: number
+  category?: string
 }
 
 type Week = {
@@ -236,6 +237,12 @@ export default function Standalone6v6() {
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
               <span style={{ fontSize: 28 }}>{c.icon}</span>
               <h2 style={{ fontSize: 18, color: c.color, margin: 0, fontWeight: 700 }}>{c.title}</h2>
+              {c.category && c.category !== '정규' && (
+                <span style={{ marginLeft: 'auto', background: `${c.color}22`, color: c.color,
+                                fontSize: 11, padding: '2px 8px', borderRadius: 4, fontWeight: 600 }}>
+                  {c.category}
+                </span>
+              )}
             </div>
             <p style={{ color: '#c9d1d9', fontSize: 13, lineHeight: 1.6, margin: '12px 0' }}>
               {c.description}

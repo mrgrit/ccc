@@ -1,0 +1,252 @@
+lab_id: standalone-wazuh-special-week01
+title: 특강 W01 — Wazuh Dashboard + KQL 기초 + 일반 보안시스템 로그 분석
+version: standalone-non-ai
+course: wazuh-special
+week: 1
+description: |
+  Wazuh Dashboard 접속부터 KQL 12 문법 자유 사용, 그리고 6v6 의 nftables / Suricata /
+  ModSec / Wazuh agent 로그 4 종을 직접 검색·시각화. 학생이 dashboard 만으로
+  6v6 의 모든 보안 alert 를 분석할 수 있게 한다.
+difficulty: medium
+duration_minutes: 120
+prerequisites:
+  - "6v6 인프라 가용 (siem 컨테이너 가동)"
+  - "학생 PC /etc/hosts 에 192.168.0.110 siem.6v6.lab 등록"
+  - "lecture_week01.md 정독 (KQL 12 문법 + 4 보안시스템)"
+objectives:
+  - "Discover 에서 KQL 8 종 검색 능숙"
+  - "nftables / Suricata / ModSec / Wazuh agent alert 4 종 식별"
+  - "Visualize 로 1 chart 직접 작성"
+  - "Dashboard 에 chart 모아 6v6 overview 화면 구성"
+pass_threshold: 0.6
+steps:
+
+  - order: 1
+    instruction: |
+      ## 🎯 STEP 1 — Wazuh Dashboard 접속 + Index 선택
+
+      ### 실행
+      1. 브라우저로 https://siem.6v6.lab/ 접속 (인증서 경고 → 진행)
+      2. `admin` / `SecretPassword` 로그인
+      3. ☰ → **Explore → Discover**
+      4. 좌상단 인덱스 드롭다운 → `wazuh-alerts-*` 선택
+      5. 우상단 시계 → **Last 1 hour**
+      6. Refresh 클릭
+
+      ### 확인
+      - 좌측 **Available fields** 패널에 50+ field listing
+      - 중앙에 alert row 들 표시 (timestamp + JSON)
+      - 상단 chart 에 시간대별 count 막대
+
+      ### 평가 기준
+      - Discover 화면 접근 ✅
+      - 좌측에 `rule.id`, `agent.name`, `data.*` field 존재 확인 ✅
+    verify:
+      intent: "Wazuh Dashboard 의 Discover 화면에 정상 접속하고 wazuh-alerts-* 인덱스를 선택했다"
+      success_criteria:
+        - "Dashboard 로그인 성공"
+        - "Discover 화면에서 alert row 1개 이상 확인"
+
+  - order: 2
+    instruction: |
+      ## 🎯 STEP 2 — KQL 기초 8 가지 검색
+
+      검색창에 아래 8 query 를 순서대로 입력 + 결과 row 수 기록.
+
+      ### 8 query
+      1. `rule.level:>=10` — high alert
+      2. `agent.name:fw` — fw 컨테이너만
+      3. `rule.id:5710` — SSH brute (없을 수 있음)
+      4. `rule.description:*ssh*` — wildcard
+      5. `agent.name:(fw OR ips OR web)` — 다중 매치
+      6. `rule.level:>5 AND NOT agent.name:siem` — 복합 조건
+      7. `@timestamp:>now-15m` — 15분 이내
+      8. `data.srcip:*` — srcip 존재
+
+      ### 평가 기준
+      - 8 query 모두 syntax 오류 없이 실행
+      - 결과 row 수 메모 (0 이어도 OK, query 자체가 정확하면 통과)
+      - `rule.description:*ssh*` 같은 wildcard 작동 확인
+    verify:
+      intent: "KQL 8 종 기본 문법을 모두 입력하고 결과 확인했다"
+      success_criteria:
+        - "8 query 모두 실행 (결과 0이어도 OK)"
+        - "wildcard / 다중 매치 / 시간 범위 / 부정 문법 사용"
+
+  - order: 3
+    instruction: |
+      ## 🎯 STEP 3 — nftables (firewall) alert 분석
+
+      ### 사전 — fw 에 트래픽 발생
+      (실 alert 없을 수 있으니 인위적으로 발생)
+
+      ```bash
+      # 학생 PC 또는 bastion 에서
+      curl -m 2 http://juice.6v6.lab/ &
+      curl -m 2 http://dvwa.6v6.lab/ &
+      wait
+      ```
+
+      ### Dashboard 에서
+      ```kql
+      agent.name:fw AND @timestamp:>now-15m
+      ```
+
+      ### 분석할 field
+      - `rule.description` (예: "Apache 200/40x")
+      - `data.srcip`, `data.dstip`, `data.dstport`
+      - `rule.groups`
+
+      ### 평가 기준
+      - fw agent 의 alert 1개 이상 확인
+      - srcip/dstport 같은 network field 추출
+    verify:
+      intent: "fw 컨테이너의 nftables/HAProxy alert 를 wazuh 에서 추출 + 분석"
+      success_criteria:
+        - "agent.name:fw 의 alert 1+"
+        - "data.srcip 또는 data.dstport field 표시"
+
+  - order: 4
+    instruction: |
+      ## 🎯 STEP 4 — Suricata (IDS) alert 분석
+
+      ### 사전 — sqlmap UA 시뮬
+      ```bash
+      # attacker 에서
+      ssh 6v6-attacker 'curl -s -A "sqlmap/1.7" -m 2 http://juice.6v6.lab/ -o /dev/null'
+      ```
+
+      Suricata 의 custom rule 1000003 (sqlmap UA) 이 trigger.
+
+      ### Dashboard
+      ```kql
+      agent.name:ips AND data.alert.signature_id:*
+      ```
+
+      ### 분석할 field
+      - `data.alert.signature` — 룰 설명
+      - `data.alert.signature_id` — custom ID (1000003 등)
+      - `data.alert.severity` — 1 critical, 3 info
+      - `data.alert.category` — 분류
+      - `data.src_ip`, `data.dest_ip`
+
+      ### 평가 기준
+      - ips agent alert 1+ 확인
+      - data.alert.signature_id 추출
+      - severity 별 분포 메모
+    verify:
+      intent: "Suricata IDS 의 custom signature alert 를 wazuh 에서 식별"
+      success_criteria:
+        - "agent.name:ips 의 alert 1+"
+        - "data.alert.signature_id 존재"
+
+  - order: 5
+    instruction: |
+      ## 🎯 STEP 5 — ModSecurity (WAF) alert 분석
+
+      ### 사전 — XSS payload 전송
+      ```bash
+      # attacker 또는 학생 PC
+      curl -s -G "http://juice.6v6.lab/" --data-urlencode 'q=<script>alert(1)</script>' -o /dev/null
+      ```
+
+      ModSec 의 OWASP CRS 941xxx (XSS) rule trigger.
+
+      ### Dashboard
+      ```kql
+      agent.name:web AND data.id:[941000 TO 941999]
+      ```
+
+      ### 분석할 field
+      - `data.id` — ModSec rule ID (예: 941100)
+      - `data.msg` — 룰 메시지
+      - `data.uri` — 공격 URL
+      - `data.client_ip` — 공격자 IP
+      - `data.severity` — CRS severity
+
+      ### 평가 기준
+      - web agent 의 941xxx alert 1+
+      - data.client_ip = 학생 PC 또는 attacker IP
+      - data.uri 에 XSS payload 흔적
+    verify:
+      intent: "ModSec 의 XSS rule 941xxx alert 를 wazuh 에서 식별"
+      success_criteria:
+        - "agent.name:web 의 data.id:[941000 TO 941999] alert 1+"
+        - "data.client_ip 확인"
+
+  - order: 6
+    instruction: |
+      ## 🎯 STEP 6 — Visualize: rule.id Top 10 Bar 만들기
+
+      ### 단계
+      1. ☰ → **Visualize Library** → **Create new visualization**
+      2. **Vertical Bar** 선택
+      3. Index: `wazuh-alerts-*`
+      4. Y-axis: **Count** (자동)
+      5. X-axis (Buckets):
+         - Add → **X-axis**
+         - Aggregation: **Terms**
+         - Field: `rule.id.keyword`
+         - Order by: Count, Descending
+         - Size: 10
+      6. (선택) Filter 추가: `@timestamp:>now-1h`
+      7. **Save** → "Top 10 Rules - {본인 이름}"
+
+      ### 평가 기준
+      - chart 정상 표시 (막대 10개 또는 데이터 있는 만큼)
+      - title 명확
+      - Saved 확인 (☰ → Visualize Library 에서 보임)
+    verify:
+      intent: "rule.id Top 10 막대 차트를 직접 생성하고 저장했다"
+      success_criteria:
+        - "Visualization 저장"
+        - "막대 차트가 rule.id 별 count 정확 표시"
+
+  - order: 7
+    instruction: |
+      ## 🎯 STEP 7 — Dashboard 만들기 + 종합 보고서
+
+      ### Dashboard 생성
+      1. ☰ → **Dashboards** → **Create new dashboard**
+      2. **Add panel** → STEP 6 의 "Top 10 Rules" 추가
+      3. **Add filter** → `agent.name:(fw OR ips OR web)`
+      4. Time → Last 1 hour
+      5. **Save** → "6v6 Security Overview - {본인 이름}"
+
+      ### 보고서 (markdown 1쪽)
+      W01 lab 의 6 step 결과 정리:
+      ```markdown
+      # 특강 W01 lab 보고서 — {본인 이름}
+
+      ## STEP 1-2 (KQL)
+      - 8 query 모두 실행. 결과 row 수: ...
+
+      ## STEP 3 (nftables)
+      - fw alert 수: ...
+      - 주요 src/dst 분석: ...
+
+      ## STEP 4 (Suricata)
+      - ips alert 수: ...
+      - data.alert.signature_id 종류: ...
+
+      ## STEP 5 (ModSec)
+      - 941xxx alert 수: ...
+      - data.uri 의 공격 payload: ...
+
+      ## STEP 6-7 (Visualize + Dashboard)
+      - Top 10 rule 결과: ...
+      - Dashboard URL (또는 스크린샷)
+
+      ## 배운 점
+      ...
+      ```
+
+      ### 평가 기준
+      - Dashboard 저장 + 7 step 모두 결과 기재
+      - "배운 점" 자기 작성 (1-3 문장)
+    verify:
+      intent: "Dashboard 1개 + 7 step 종합 보고서 작성"
+      success_criteria:
+        - "Dashboard 저장 (panel 1+ 포함)"
+        - "보고서 markdown 작성"
+        - "배운 점 자기 작성"

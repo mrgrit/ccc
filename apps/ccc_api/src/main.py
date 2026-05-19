@@ -1894,6 +1894,15 @@ _STANDALONE_COURSES = {
         "icon": "🆘",
         "color": "#bc8cff",
     },
+    # ── 특강 (Special Topic) — 2 주차 단기 강의 ──
+    "wazuh-special": {
+        "title": "특강: Wazuh 로그 분석 (KQL · 보안시스템 · 에이전트)",
+        "description": "Wazuh Dashboard 의 KQL 검색 문법 → 6v6 의 일반 보안시스템 (nftables/Suricata/ModSec) 로그 분석 → bastion 에이전트 lifecycle 로그 분석까지. 2 주차 특강 — 학생이 자신의 mission 을 직접 시간순으로 추적·분석할 수 있게 한다.",
+        "icon": "🔎",
+        "color": "#fbbf24",
+        "category": "특강",
+        "expected_total": 2,
+    },
 }
 
 
@@ -1912,8 +1921,8 @@ def list_standalone_courses():
     import glob as _glob
     result = []
     for cid, meta in _STANDALONE_COURSES.items():
-        lecture_files = sorted(_glob.glob(os.path.join(_STANDALONE_DIR, "lecture", cid, "week*.md")))
-        lab_files = sorted(_glob.glob(os.path.join(_STANDALONE_DIR, "lab", cid, "week*.yaml")))
+        lecture_files = sorted(_glob.glob(os.path.join(_STANDALONE_DIR, "lecture", cid, "lecture_week*.md")))
+        lab_files = sorted(_glob.glob(os.path.join(_STANDALONE_DIR, "lab", cid, "lab_week*.yaml")))
         # 1~15 주차 매핑
         lecture_weeks = set()
         for f in lecture_files:
@@ -1932,10 +1941,11 @@ def list_standalone_courses():
             "description": meta["description"],
             "icon": meta["icon"],
             "color": meta["color"],
+            "category": meta.get("category", "정규"),
             "lecture_weeks": sorted(lecture_weeks),
             "lab_weeks": sorted(lab_weeks),
             "max_week": max(all_weeks) if all_weeks else 0,
-            "expected_total": 15,
+            "expected_total": meta.get("expected_total", 15),
         })
     return {"courses": result, "infra": "6v6", "vm_ip_hint": "192.168.0.110"}
 
@@ -1946,7 +1956,8 @@ def list_standalone_weeks(course_id: str):
     if course_id not in _STANDALONE_COURSES:
         raise HTTPException(404, "Course not found")
     weeks = []
-    for w in range(1, 16):
+    _total = _STANDALONE_COURSES[course_id].get("expected_total", 15)
+    for w in range(1, _total + 1):
         lecture_path = os.path.join(_STANDALONE_DIR, "lecture", course_id, f"lecture_week{w:02d}.md")
         lab_path = os.path.join(_STANDALONE_DIR, "lab", course_id, f"lab_week{w:02d}.yaml")
         # title 은 lecture 첫 줄 또는 lab title 필드에서 추출
