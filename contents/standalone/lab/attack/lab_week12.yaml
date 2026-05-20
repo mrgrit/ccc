@@ -1,166 +1,914 @@
 lab_id: standalone-attack-week12
-title: 지속성 + 안티포렌식 — 5 패턴 + osquery detection
+title: 지속성 + 안티포렌식 (Persistence + Anti-Forensics) — 5 패턴 + R/B/P
 version: standalone-non-ai
 course: attack
 week: 12
 description: |
-  Persistence 5 패턴 (cron / systemd / .bashrc / SSH key / web shell) 시뮬 (실 적용 X)
-  + osquery + Wazuh FIM 으로 detection 권장.
-difficulty: medium
-duration_minutes: 120
-prerequisites: [W11]
-objectives: ["5 patterns 시뮬", "detection 권장"]
+  PTES 6 단계 후반부 — 침투+권한상승 후 재진입 보장(Persistence) + 흔적 제거
+  (Anti-Forensics). ATT&CK TA0003 + TA0005. **윤리 강조: 본 주차의 모든 기법은 검사·
+  시뮬·detection 측면만 학습하고 실제 영구화(Persistence 적용)는 6v6 환경에서도 하지
+  않는다** (다음 학기까지 흔적이 남고 강사 관리 부담). 학생은 (1) 5 Persistence 패턴
+  (cron/systemd/.bashrc/SSH key/web shell)과 backdoor account/rootkit 의 메커니즘을
+  이해하며 baseline 을 검사하고, (2) Anti-forensics 4 카테고리(history/log/shred/
+  timestomp)의 원리를 이해하고, (3) Blue 관점에서 osquery 헌팅 + Wazuh FIM 으로
+  탐지하며 그 한계(FIM 12시간 주기 = 즉시 탐지 못 함)를 식별하고, (4) Purple 관점에서
+  방어 강화를 설계한다. 마지막 3 step 은 R/B/P 통합.
+difficulty: hard
+duration_minutes: 180
+audience: 사이버공격 (12주차)
+prerequisites: ["W11 권한 상승"]
+objectives:
+  - "5 Persistence 패턴 — cron/systemd/.bashrc/SSH key/web shell 메커니즘 + 검사"
+  - "Rootkit(LD_PRELOAD/kernel module) + backdoor account 검사"
+  - "Anti-forensics 4 카테고리 — history/log/shred/timestomp 원리"
+  - "Blue — osquery 헌팅 + Wazuh FIM(rule 550/554) + 12시간 주기 한계"
+  - "Purple — Coverage Matrix + Detection Gap + 방어 강화(realtime/remote syslog)"
 pass_threshold: 0.6
 steps:
 
   - order: 1
     instruction: |
-      ## 🎯 MISSION (5 persistence 패턴 검사 — Docker 환경 적응)
+      ## 🎯 MISSION (Red Team — 5 Persistence 패턴 검사)
 
-      bastion 의 5 persistence 카테고리를 **읽기 전용 검사** — 실 적용 X. *Docker
-      컨테이너* 의 일반적 한계 (systemd 없음 / /etc/crontab 없음) 인지 + 실 환경
-      대비 매핑.
+      bastion 의 5 persistence 카테고리를 **읽기 전용 검사** 하라 (실 적용 X). Docker
+      컨테이너의 호스트와 다른 persistence 면(systemd 없음 등)을 인지하고 baseline 을
+      확보한다.
 
       ## ⚠️ Docker 컨테이너 인지
 
-      `bastion` 은 Docker 컨테이너 — 호스트와 다른 부분:
-      - `/etc/crontab` 없음 → `/etc/cron.d/*` 만 존재
-      - `systemctl` 없음 → process 직접 (`ps -ef`)
-      - `authorized_keys` 미설정 (password SSH)
-      → 학생 학습 = Docker 환경 의 *호스트와 다른 persistence 면* 인지
+      bastion 은 Docker 컨테이너로 호스트와 다르다:
+      - `systemctl` 없음 → process 직접(`ps -ef`)
+      - `/etc/crontab` 없음 → `/etc/cron.d/*` 만
+      - authorized_keys 는 자동 배포된 인프라 key 존재(`6v6-bastion@auto`)
 
       ## 💻 실행 명령
 
       ```bash
-      
+      ssh 6v6-bastion '
       echo "=== 1. cron (Docker: cron.d 만) ==="
-      ls /etc/cron.d/ 2>&1
-      [ -f /etc/crontab ] && cat /etc/crontab | head -5 || echo "  /etc/crontab 없음 (Docker 컨테이너 일반)"
-
-      echo "=== 2. process (systemd 대체) ==="
-      ps -ef 2>&1 | head -10
-      command -v systemctl && systemctl list-unit-files --type=service | head -5 || echo "  systemctl 없음 → Docker 컨테이너 (cgroup 기반 process 만)"
-
+      ls /etc/cron.d/ 2>/dev/null; [ -f /etc/crontab ] && cat /etc/crontab | head || echo "  /etc/crontab 없음(Docker 정상)"
+      echo "=== 2. systemd / process ==="
+      command -v systemctl >/dev/null && systemctl list-unit-files --type=service 2>/dev/null | grep enabled | head || echo "  systemctl 없음 → Docker(ps -ef 로 대체)"
       echo "=== 3. .bashrc / .profile ==="
-      tail -5 ~/.bashrc 2>/dev/null
-      tail -3 ~/.profile 2>/dev/null
-
-      echo "=== 4. ssh authorized_keys ==="
-      ls -la ~/.ssh/ 2>/dev/null
-      [ -f ~/.ssh/authorized_keys ] && cat ~/.ssh/authorized_keys | head -3 || echo "  authorized_keys 없음 (학습 환경 — password SSH)"
-
-      echo "=== 5. web shell 검사 (없어야 함) ==="
-      find /var/www -name "*.php" 2>/dev/null | head
-      [ -d /var/www ] || echo "  /var/www 없음 — web 컨테이너 (6v6-web) 에서 검사"
-      
+      tail -3 ~/.bashrc 2>/dev/null; tail -3 ~/.profile 2>/dev/null
+      echo "=== 4. SSH authorized_keys ==="
+      cat ~/.ssh/authorized_keys 2>/dev/null | head -2 || echo "  없음"
+      echo "=== 5. web shell (/var/www) ==="
+      find /var/www -name "*.php" 2>/dev/null | head || echo "  /var/www 없음(web 컨테이너에서 검사)"
+      '
       ```
 
       ## 📋 확인 사항
 
-      - 1) `/etc/cron.d/` 에 표준 entry (e2scrub_all 등) — `/etc/crontab` 없음 정상
-      - 2) `ps -ef` 출력 + `systemctl 없음` — Docker 인지
-      - 3) `.bashrc` 5 라인 + `.profile` 짧음
-      - 4) `authorized_keys` 없음 — password SSH 학습 환경
-      - 5) `/var/www` 없음 — 호스트 분리 (web 컨테이너 에 있음)
+      - cron.d: e2scrub_all(표준), /etc/crontab 없음(Docker)
+      - systemctl 없음 = Docker 컨테이너(ps -ef 로 process 확인)
+      - .bashrc: 표준(backdoor 라인 추가 없음)
+      - authorized_keys: `6v6-bastion@auto`(자동 배포 인프라 key — 백도어 아님)
+      - /var/www 없음 = bastion 은 web role 아님
 
       ## 💡 왜 이걸 하는가?
 
-      PTES 6 — Persistence (T1543/T1547/T1098 등). Docker 컨테이너 의 *실 호스트와
-      다른 persistence 면* 인지 → 컨테이너 기반 운영 환경 의 IR 베이스라인.
+      Persistence(ATT&CK TA0003)는 침투 후 재진입 보장이다. 검사의 핵심은 *정상 baseline
+      과 비교* — 어느 cron/key/bashrc 가 정상이고 무엇이 추가되었는가. Docker 컨테이너는
+      호스트와 persistence 면이 다르므로(systemd 없음 등) 그 차이를 아는 것이 컨테이너
+      운영 IR 의 기반이다.
 
       ## 🔍 결과 해석
 
-      - **정상 (Docker)**: 1) cron.d 만 2) ps -ef + systemctl 없음 3) .bashrc 표준
-        4) authorized_keys 없음 5) /var/www 없음
-      - **의심**: 예상 외 cron entry / .bashrc 한 줄 추가 / 새 authorized_keys
+      - 5 카테고리 모두 표준 = baseline 깨끗(침해 흔적 0)
+      - authorized_keys 의 `@auto` key = 정상 인프라 키, 알 수 없는 key 추가 시 의심
+      - 추가 cron/bashrc 라인/새 key = persistence 의심 → IR
 
-      ## 비정상 시 대응
+      ## ⚠️ 비정상 시 대응
 
-      - **cron.d 도 비어있음** — 컨테이너 가 cron service 가동 안 됨. `ps -ef |
-        grep cron` 확인.
-      - **/var/www 존재** — bastion 가 web role 도 겸함 (설계 결함 가능).
+      - cron.d 비어있음 — `ps -ef | grep cron` 으로 cron service 확인
+      - authorized_keys 에 `@auto` 외 key — 비인가 key 의심, comment/timestamp 분석
     hint: |
-      Docker bastion = systemd/crontab 없음 정상. cron.d + ps + .bashrc + ssh +
-      web shell 의 5 카테고리.
+      5 패턴 검사(cron.d/systemctl없음/bashrc/ssh key/var-www). Docker = systemd/crontab
+      없음 정상. authorized_keys 의 @auto 는 자동키. baseline 과 비교가 핵심.
     category: simulation
-    points: 25
+    points: 12
     answer: |
-      
-      echo "=== cron.d ==="; ls /etc/cron.d/ 2>&1
-      echo "=== ps ==="; ps -ef 2>&1 | head -10
-      echo "=== .bashrc ==="; tail -5 ~/.bashrc
-      echo "=== authorized_keys ==="; ls -la ~/.ssh/ 2>/dev/null
-      echo "=== web ==="; find /var/www -name "*.php" 2>/dev/null | head; [ -d /var/www ] || echo "no /var/www"
-      
+      ssh -n 6v6-bastion '
+      echo "=== cron ==="; ls /etc/cron.d/ 2>/dev/null; [ -f /etc/crontab ] && cat /etc/crontab | head || echo "crontab 없음"
+      echo "=== systemd ==="; command -v systemctl >/dev/null && systemctl list-unit-files --type=service 2>/dev/null | grep enabled | head || echo "systemctl 없음(Docker)"
+      echo "=== bashrc ==="; tail -3 ~/.bashrc 2>/dev/null
+      echo "=== ssh key ==="; cat ~/.ssh/authorized_keys 2>/dev/null | head -2 || echo none
+      echo "=== web ==="; find /var/www -name "*.php" 2>/dev/null | head || echo "no /var/www"
+      '
     answer_detail: |
-      Docker 환경 5 persistence 카테고리 검사. systemd/crontab 없음 정상.
-      cron.d + ps + .bashrc + ssh + web 의 5 카테고리 baseline.
+      Docker bastion 5 패턴: cron.d(e2scrub_all)/systemctl 없음/.bashrc 표준/authorized_keys
+      (6v6-bastion@auto 자동키)/var-www 없음. 모두 baseline 깨끗. systemd/crontab 없음은
+      Docker 컨테이너 정상. @auto key 는 인프라 자동 배포(백도어 아님).
     verify:
       type: output_contains
       expect: cron
       field: stdout
       semantic:
-        intent: "5 persistence 검사"
-        success_criteria: ["5 카테고리 검사"]
+        intent: Red — 5 Persistence 패턴 검사 + Docker 환경 + baseline.
+        success_criteria: ["5 카테고리 검사", "Docker 인지(systemctl 없음)", "baseline 판정"]
         acceptable_methods:
-          - "**[OSS] /etc/crontab + /etc/cron.d/**"
-          - "**[OSS] systemd unit / timer**"
-          - "**[OSS] .bashrc / .profile / .zshrc**"
-          - "**[OSS] ssh authorized_keys**"
-          - "**[OSS] /var/www/*.php (web shell)**"
-          - "**[OSS] LD_PRELOAD / ld.so.preload**"
-          - "**[OSS] DKMS kernel module**"
-          - "**[OSS] T1053/T1543/T1547/T1098/T1505**"
+          - |
+            **[OSS] /etc/cron.d + crontab** — cron persistence.
+              ssh 6v6-bastion 'ls /etc/cron.d/; cat /etc/crontab'
+            예상 출력 `e2scrub_all / crontab 없음(Docker)`.
+            운영 해석: 표준 cron, 의심 명령(curl/wget) 추가 시 persistence.
+          - |
+            **[OSS] systemctl / ps -ef** — systemd persistence.
+            예상 출력 `systemctl 없음(Docker)`.
+            운영 해석: 컨테이너는 process 직접, 호스트는 systemd unit.
+          - |
+            **[OSS] .bashrc + authorized_keys + /var/www** — login/key/webshell.
+            예상 출력 `bashrc 표준 / @auto key / var-www 없음`.
+            운영 해석: 정상 baseline, 추가 라인/key 시 의심.
+        negative_signs: ["카테고리 일부만", "@auto key 를 백도어로 오인", "baseline 비교 없음"]
     target_vm: bastion
+    risk_level: low
 
   - order: 2
     instruction: |
-      ## 🎯 MISSION
+      ## 🎯 MISSION (Red Team — backdoor account + rootkit 검사)
 
-      osquery 로 5 카테고리 detection 쿼리 작성.
+      Persistence 의 고급 패턴 — UID 0 백도어 계정, LD_PRELOAD/kernel module rootkit 의
+      흔적을 검사하라 (실 적용 X — 검사만).
 
       ## 💻 실행 명령
 
       ```bash
-      ssh 6v6-web 'sudo osqueryi --json "SELECT command, path FROM crontab LIMIT 10;"'
-      ssh 6v6-web 'sudo osqueryi --json "SELECT * FROM authorized_keys LIMIT 5;"' 2>&1 | head
-      ssh 6v6-web 'sudo osqueryi --json "SELECT name, status FROM systemd_units LIMIT 10;"' 2>&1 | head
+      ssh 6v6-bastion '
+      echo "=== UID 0 계정 (root 외 백도어?) ==="
+      grep -E ":0:[0-9]*:" /etc/passwd
+      echo "=== /etc/ld.so.preload (userland rootkit) ==="
+      ls -la /etc/ld.so.preload 2>&1 | head -1
+      echo "=== LD_PRELOAD 사용 process ==="
+      for pid in $(ps -e -o pid --no-header 2>/dev/null); do
+        grep -aoz "LD_PRELOAD=[^[:cntrl:]]*" /proc/$pid/environ 2>/dev/null
+      done | head; echo "(출력 없으면 정상)"
+      echo "=== kernel module (비표준?) ==="
+      lsmod 2>/dev/null | head -5 || cat /proc/modules 2>/dev/null | head -5
+      '
       ```
 
       ## 📋 확인 사항
 
-      - crontab + authorized_keys + systemd_units 쿼리 결과
+      - UID 0: root 만 (root 외 UID 0 = 백도어 계정)
+      - /etc/ld.so.preload: 없음 (존재 시 userland rootkit 의심)
+      - LD_PRELOAD process: 없음 (있으면 hook 의심)
+      - kernel module: 표준(mptcp_diag/xsk_diag 등) — 비표준 시 LKM rootkit 의심
 
       ## 💡 왜 이걸 하는가?
 
-      Blue Team — osquery 로 persistence 5 카테고리 자동 detection. Wazuh FIM 과
-      결합 시 즉시 알람.
+      백도어 계정(T1136)과 rootkit(T1014)은 탐지가 어려운 고급 persistence 다. UID 0
+      계정은 root 와 동등하므로 root 외 UID 0 은 즉시 침해 신호다. LD_PRELOAD/kernel
+      module rootkit 은 syscall 을 후킹해 파일/process 를 숨긴다. 이들의 존재 여부를
+      검사하는 것이 침해 대응의 핵심이다.
 
       ## 🔍 결과 해석
 
-      - **정상**: 정상 baseline
-      - **의심**: 비인가 cron entry 또는 새 SSH key → 즉시 IR
-    hint: osquery 5 detection
-    category: defense
-    points: 25
+      - UID 0 = root 만 + ld.so.preload 없음 + LD_PRELOAD 없음 + 표준 module = rootkit 흔적 0
+      - root 외 UID 0 / ld.so.preload 존재 / 비표준 module = 즉시 IR
+
+      ## ⚠️ 비정상 시 대응
+
+      - lsmod 없음(컨테이너) — `cat /proc/modules` 또는 host 의 module 상속 확인
+      - root 외 UID 0 발견 — `userdel` 전 증거 보존(forensics), 강사 보고
+    hint: |
+      backdoor account(UID0 root만) + rootkit(ld.so.preload 없음/LD_PRELOAD 없음/표준
+      module). root 외 UID0·ld.so.preload 존재·비표준 module = 침해 신호.
+    category: simulation
+    points: 10
     answer: |
-      ssh -n 6v6-web 'sudo osqueryi --json "SELECT command, path FROM crontab LIMIT 10;"'
-      ssh -n 6v6-web 'sudo osqueryi --json "SELECT * FROM authorized_keys LIMIT 5;"' 2>&1 | head
-    answer_detail: osquery detection.
+      ssh -n 6v6-bastion '
+      echo "=== UID 0 ==="; grep -E ":0:[0-9]*:" /etc/passwd
+      echo "=== ld.so.preload ==="; ls -la /etc/ld.so.preload 2>&1 | head -1
+      echo "=== kernel module ==="; lsmod 2>/dev/null | head -5 || cat /proc/modules 2>/dev/null | head -5
+      '
+    answer_detail: |
+      UID 0: root 만(root:x:0:0). /etc/ld.so.preload 없음(userland rootkit 흔적 0).
+      LD_PRELOAD process 없음. kernel module: mptcp_diag/xsk_diag/raw_diag(표준). rootkit
+      + backdoor 흔적 0. root 외 UID 0/ld.so.preload 존재/비표준 module 시 침해.
     verify:
       type: output_contains
-      expect: '['
+      expect: root
       field: stdout
       semantic:
-        intent: "persistence detection"
-        success_criteria: ["osquery 결과"]
+        intent: Red — backdoor account + rootkit(LD_PRELOAD/kernel module) 검사.
+        success_criteria: ["UID 0 계정", "ld.so.preload 검사", "kernel module 검사"]
         acceptable_methods:
-          - "**[OSS] osquery crontab**"
-          - "**[OSS] authorized_keys 테이블**"
-          - "**[OSS] systemd_units**"
-          - "**[OSS] startup_items / launch_agents**"
-          - "**[OSS] Wazuh FIM /root /etc**"
-          - "**[OSS] sysmon ProcessCreate**"
-          - "**[OSS] Wazuh syscheck rule 550**"
-          - "**[OSS] alert level 7+ filter**"
+          - |
+            **[OSS] grep UID 0** — 백도어 계정 탐지.
+              ssh 6v6-bastion 'grep -E ":0:[0-9]*:" /etc/passwd'
+            예상 출력 `root 만`.
+            운영 해석: root 외 UID 0 = 백도어(T1136).
+          - |
+            **[OSS] ld.so.preload + LD_PRELOAD** — userland rootkit.
+              ls /etc/ld.so.preload; /proc/*/environ grep LD_PRELOAD
+            예상 출력 `없음`.
+            운영 해석: 존재 시 syscall hook rootkit.
+          - |
+            **[OSS] lsmod / kernel_modules** — LKM rootkit.
+            예상 출력 `표준 module`.
+            운영 해석: 비표준 module = kernel rootkit(T1014).
+        negative_signs: ["UID 0 검사 누락", "rootkit 카테고리 일부만"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 3
+    instruction: |
+      ## 🎯 MISSION (Red Team — Persistence 메커니즘 분석)
+
+      5 패턴 + backdoor 의 **공격 메커니즘과 ATT&CK Technique** 를 분석표로 작성하라
+      (개념 — 실제 persistence 적용 X). 각 패턴이 어떻게 재진입을 보장하는지 설명한다.
+
+      ## 💻 산출물 (Persistence 메커니즘 분석)
+
+      ```markdown
+      # W12 Persistence 메커니즘 분석 (실 적용 X)
+      | 패턴 | 메커니즘 | 재진입 트리거 | ATT&CK |
+      |------|----------|--------------|--------|
+      | cron | /etc/cron.d/* 에 주기 실행 등록 | 5분 주기 등 | T1053.003 |
+      | systemd | .service + Restart=always | 부팅/crash 시 | T1543.002 |
+      | .bashrc | SSH login 시 실행 라인 추가 | 사용자 login | T1546.004 |
+      | SSH key | authorized_keys 에 공격자 key | 비번 없이 SSH | T1098.004 |
+      | web shell | /var/www 에 PHP shell | HTTP 요청 | T1505.003 |
+      | backdoor 계정 | /etc/passwd UID 0 추가 | su/login | T1136 |
+      ## Volatile vs Persistent: 위 패턴은 모두 Persistent(재부팅 후 자동 재실행)
+      ## 본 환경: 실제 적용 X — 검사로 baseline 깨끗 확인(STEP 1/2)
+      ```
+
+      ## 📋 채점
+
+      - 6 패턴 × 메커니즘 × 재진입 트리거 × ATT&CK Technique
+      - Volatile vs Persistent 구분
+
+      ## 💡 왜 이걸 하는가?
+
+      각 persistence 패턴이 *어떻게 재진입을 보장하는지* 이해해야 Blue 가 무엇을 어디서
+      탐지할지 안다. cron 은 주기 실행, systemd 는 부팅 자동시작, .bashrc 는 login 트리거
+      등 트리거가 다르므로 탐지 지점도 다르다. 실제 적용 없이 메커니즘만 학습하는 것이
+      본 주차의 윤리적 원칙이다(흔적 미생성).
+
+      ## 🔍 결과 해석
+
+      - 6 패턴의 트리거 차이 = Blue 의 탐지 지점 차이(STEP 6/7)
+      - 모두 Persistent = 재부팅으로 안 사라짐 → FIM/osquery 정기 헌팅 필요
+    hint: |
+      6 패턴 메커니즘 분석표(트리거 + ATT&CK T1053/T1543/T1546/T1098/T1505/T1136).
+      Volatile vs Persistent 구분. 실 적용 X — 개념만(윤리 원칙).
+    category: analysis
+    points: 10
+    answer: |
+      cat <<'EOF'
+      # W12 Persistence 메커니즘 (실 적용 X)
+      | 패턴 | 메커니즘 | 트리거 | ATT&CK |
+      | cron | cron.d 주기 실행 | 5분 등 | T1053.003 |
+      | systemd | .service Restart=always | 부팅/crash | T1543.002 |
+      | .bashrc | login 실행 라인 | SSH login | T1546.004 |
+      | SSH key | authorized_keys | 비번없이 SSH | T1098.004 |
+      | web shell | /var/www PHP | HTTP 요청 | T1505.003 |
+      | backdoor 계정 | UID 0 추가 | su/login | T1136 |
+      ## 모두 Persistent(재부팅 후 재실행). 본 환경 실적용 X.
+      EOF
+    answer_detail: |
+      6 패턴 메커니즘: cron(주기)/systemd(부팅)/bashrc(login)/SSH key(비번없이)/web shell
+      (HTTP)/backdoor(su). ATT&CK T1053.003/T1543.002/T1546.004/T1098.004/T1505.003/T1136.
+      모두 Persistent(재부팅 무관). 트리거 차이 = Blue 탐지 지점 차이. 실 적용 X(윤리).
+    verify:
+      type: output_contains
+      expect: T1053
+      field: stdout
+      semantic:
+        intent: Red — Persistence 메커니즘 + ATT&CK 분석(실 적용 X).
+        success_criteria: ["6 패턴 메커니즘", "ATT&CK Technique", "Volatile/Persistent 구분"]
+        acceptable_methods:
+          - |
+            **[OSS] 메커니즘 분석표** — 패턴 × 트리거 × ATT&CK.
+              # cron/systemd/bashrc/ssh/webshell/backdoor
+            예상 출력 `메커니즘 표 + T1053 등`.
+            운영 해석: 트리거 차이 = 탐지 지점 차이.
+          - |
+            **[OSS] ATT&CK TA0003 Technique 매핑** — 표준.
+            예상 출력 `T1053.003/T1543.002/T1098.004/T1505.003/T1136`.
+            운영 해석: MITRE 매핑으로 탐지 룰 설계.
+          - "**[OSS] Volatile vs Persistent 구분** — 재부팅 생존성."
+        negative_signs: ["ATT&CK 매핑 누락", "실 적용 시도(윤리 위반)"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 4
+    instruction: |
+      ## 🎯 MISSION (Red Team — Anti-Forensics 메커니즘)
+
+      흔적 제거(Anti-Forensics, TA0005) 4 카테고리의 메커니즘을 분석하고 현재 환경의
+      관련 흔적을 검사하라 (실 적용 X — 원리 이해 + 검사).
+
+      ## 💻 산출물 + 검사
+
+      ```bash
+      ssh 6v6-bastion '
+      echo "=== history 설정 (T1070.003) ==="
+      echo "HISTFILE=$HISTFILE HISTSIZE=$HISTSIZE"
+      echo "=== log 무결성 — auth/syslog 존재 (T1070.002) ==="
+      ls -la /var/log/auth.log /var/log/syslog 2>/dev/null | head
+      echo "=== shred/wipe 도구 존재 (T1070.004) ==="
+      command -v shred wipe 2>/dev/null
+      echo "=== timestomp — touch 로 mtime 변경 가능 (T1070.006) ==="
+      command -v touch debugfs 2>/dev/null
+      '
+      ```
+
+      ## 📋 Anti-Forensics 4 카테고리 (메커니즘)
+
+      ```markdown
+      | 카테고리 | 기법 | 탐지 우회 | ATT&CK | anti-anti-forensics |
+      | history 제거 | unset HISTFILE / history -c | shell history 은폐 | T1070.003 | osquery shell_history(DB) |
+      | log 변조 | sed -i / truncate /var/log | 침해 흔적 삭제 | T1070.002 | remote syslog(외부 보존) |
+      | shred | shred -uvz / wipe | 파일 복구 불가 삭제 | T1070.004 | process_events(shred spawn) |
+      | timestomp | touch -r / -t / debugfs | timestamp 위조 | T1070.006 | ctime vs mtime + FIM hash |
+      ## 핵심: remote syslog 가 가장 강력한 anti-anti-forensics(log 외부 보존)
+      ```
+
+      ## 💡 왜 이걸 하는가?
+
+      Anti-Forensics 는 침해 흔적을 제거해 탐지/대응을 방해한다. 각 기법의 anti-anti-
+      forensics(대응)를 아는 것이 핵심 — 특히 *remote syslog* 는 host log 가 변조되어도
+      외부 서버에 보존되므로 가장 강력하다. FIM 의 hash 비교는 timestomp 와 무관하게
+      변조를 잡는다. 본 주차는 실 흔적 제거 없이 메커니즘과 대응만 학습한다.
+
+      ## 🔍 결과 해석
+
+      - history/log/shred/timestomp 도구 존재 = 흔적 제거 가능성(대응 필요)
+      - remote syslog + FIM hash = 흔적 제거를 무력화하는 핵심 방어(Purple STEP 9)
+
+      ## ⚠️ 비정상 시 대응
+
+      - auth.log/syslog 없음 — 컨테이너는 journald 또는 stdout 로깅, host 와 다름
+      - 실제 shred/log 변조 발견 — 즉시 forensics(증거 보존) + 보고
+    hint: |
+      Anti-forensics 4 카테고리(history/log/shred/timestomp) 메커니즘 + ATT&CK
+      T1070.* + anti-anti-forensics(remote syslog/FIM hash). 실 적용 X. 원리만.
+    category: analysis
+    points: 10
+    answer: |
+      ssh -n 6v6-bastion '
+      echo "=== history ==="; echo "HISTFILE=$HISTFILE HISTSIZE=$HISTSIZE"
+      echo "=== log ==="; ls -la /var/log/auth.log /var/log/syslog 2>/dev/null | head
+      echo "=== shred/wipe ==="; command -v shred wipe 2>/dev/null
+      echo "=== timestomp ==="; command -v touch debugfs 2>/dev/null
+      '
+    answer_detail: |
+      Anti-forensics 4 카테고리: history 제거(T1070.003, 대응 osquery shell_history),
+      log 변조(T1070.002, 대응 remote syslog), shred(T1070.004, 대응 process_events),
+      timestomp(T1070.006, 대응 ctime/FIM hash). 핵심: remote syslog 가 가장 강력한
+      anti-anti-forensics(외부 보존). 실 적용 X — 메커니즘과 대응만 학습.
+    verify:
+      type: output_contains
+      expect: T1070
+      field: stdout
+      semantic:
+        intent: Red — Anti-forensics 4 카테고리 메커니즘 + anti-anti-forensics.
+        success_criteria: ["4 카테고리", "ATT&CK T1070.*", "remote syslog 핵심 대응"]
+        acceptable_methods:
+          - |
+            **[OSS] history/log/shred/timestomp 검사** — 4 카테고리 도구.
+              echo HISTFILE; ls /var/log; command -v shred touch
+            예상 출력 `history 설정 / log / 도구 존재`.
+            운영 해석: 흔적 제거 가능성 평가.
+          - |
+            **[OSS] ATT&CK T1070.* 매핑** — Defense Evasion.
+            예상 출력 `T1070.002/003/004/006`.
+            운영 해석: 각 기법의 표준 매핑.
+          - "**[OSS] remote syslog / FIM hash** — anti-anti-forensics 대응."
+        negative_signs: ["4 카테고리 일부만", "anti-anti-forensics 누락"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION (Red Team — baseline 무결성 종합)
+
+      STEP 1~4 의 검사 결과를 종합해 **침해 흔적 baseline 무결성 보고서** 를 작성하라.
+      본 환경이 깨끗한지(침해 흔적 0) 정량 판정한다.
+
+      ## 💻 산출물 (무결성 보고서)
+
+      ```markdown
+      # W12 baseline 무결성 보고
+      | 검사 항목 | 결과 | 판정 |
+      |-----------|------|------|
+      | cron persistence | e2scrub_all(표준) | ✅ 깨끗 |
+      | systemd | 없음(Docker) | ✅ N/A |
+      | .bashrc backdoor | 표준 | ✅ 깨끗 |
+      | SSH key | @auto(인프라키) | ✅ 깨끗 |
+      | web shell | /var/www 없음 | ✅ N/A |
+      | backdoor 계정 | UID 0 = root 만 | ✅ 깨끗 |
+      | userland rootkit | ld.so.preload 없음 | ✅ 깨끗 |
+      | kernel rootkit | 표준 module | ✅ 깨끗 |
+      | anti-forensics | log 무결, history 정상 | ✅ 깨끗 |
+      ## 결론: 침해 흔적 0 — baseline 깨끗(학습 환경 정상)
+      ## 의미: 향후 이 baseline 과의 차이가 persistence/침해 신호
+      ```
+
+      ## 📋 채점
+
+      - 9 검사 항목 종합 + 각 판정
+      - baseline 깨끗 결론 + baseline 의 의미(차이 = 침해)
+
+      ## 💡 왜 이걸 하는가?
+
+      Persistence 검사의 최종 산출물은 *baseline 무결성* 이다. 모든 패턴이 깨끗하면 현재
+      깨끗한 baseline 을 확보한 것이고, 향후 이 baseline 과의 *차이* 가 침해 신호가 된다.
+      이것이 IR(침해 대응)의 출발점 — 깨끗한 baseline 없이는 무엇이 변했는지 알 수 없다.
+
+      ## 🔍 결과 해석
+
+      - 9 항목 모두 깨끗 = 침해 흔적 0 = baseline 확보
+      - 이 baseline 을 osquery/FIM 으로 정기 비교(STEP 6/7)하면 persistence 탐지
+    hint: |
+      9 검사 항목(cron/systemd/bashrc/ssh/webshell/backdoor/userland/kernel/anti-forensics)
+      종합 무결성 보고. 침해 흔적 0 = baseline 깨끗. 차이 = 침해 신호.
+    category: analysis
+    points: 8
+    answer: |
+      cat <<'EOF'
+      # W12 baseline 무결성
+      | 항목 | 결과 | 판정 |
+      | cron | e2scrub_all | ✅ |
+      | systemd | 없음(Docker) | ✅ |
+      | bashrc | 표준 | ✅ |
+      | SSH key | @auto | ✅ |
+      | web shell | /var/www 없음 | ✅ |
+      | backdoor 계정 | UID0=root만 | ✅ |
+      | userland rootkit | ld.so.preload 없음 | ✅ |
+      | kernel rootkit | 표준 module | ✅ |
+      | anti-forensics | log 무결 | ✅ |
+      ## 침해 흔적 0 — baseline 깨끗. 차이 = 침해 신호.
+      EOF
+    answer_detail: |
+      9 검사 항목 종합: cron/systemd/bashrc/SSH key/web shell/backdoor 계정/userland
+      rootkit/kernel rootkit/anti-forensics 모두 깨끗. 침해 흔적 0 = baseline 확보. 이
+      baseline 과의 차이가 향후 persistence/침해 신호 = IR 출발점.
+    verify:
+      type: output_contains
+      expect: baseline
+      field: stdout
+      semantic:
+        intent: Red — baseline 무결성 종합 보고(침해 흔적 0).
+        success_criteria: ["9 항목 종합", "baseline 깨끗 결론", "차이=침해 의미"]
+        acceptable_methods:
+          - |
+            **[OSS] 무결성 보고서** — 9 항목 종합.
+              # 검사 항목 × 결과 × 판정
+            예상 출력 `9 항목 ✅ + baseline 깨끗`.
+            운영 해석: 침해 흔적 0 확인.
+          - "**[OSS] baseline 의 의미** — 향후 차이 = 침해 신호(IR 출발점)."
+        negative_signs: ["항목 누락", "baseline 의미 누락"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 6
+    instruction: |
+      ## 🎯 MISSION (Blue Team — osquery 헌팅)
+
+      Persistence 를 방어자 관점에서 osquery 로 헌팅하라. bastion 의 osquery 로 백도어
+      계정, 의심 cron, authorized_keys, LD_PRELOAD, kernel module 을 질의한다.
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-bastion '
+      echo "=== 1. UID 0 계정 (백도어) ==="
+      sudo osqueryi --json "SELECT username,uid,shell FROM users WHERE uid=0;" 2>/dev/null
+      echo "=== 2. 의심 cron (curl/wget) ==="
+      sudo osqueryi --json "SELECT command FROM crontab WHERE command LIKE \"%curl%\" OR command LIKE \"%wget%\";" 2>/dev/null
+      echo "=== 3. authorized_keys 모든 user ==="
+      sudo osqueryi --json "SELECT * FROM authorized_keys LIMIT 5;" 2>/dev/null | head
+      echo "=== 4. LD_PRELOAD process ==="
+      sudo osqueryi --json "SELECT pid,key,value FROM process_envs WHERE key=\"LD_PRELOAD\" LIMIT 5;" 2>/dev/null
+      echo "=== 5. kernel module ==="
+      sudo osqueryi --json "SELECT name FROM kernel_modules LIMIT 5;" 2>/dev/null
+      '
+      ```
+
+      ## 📋 확인 사항
+
+      - users uid=0: root 만 (root 외 = 백도어)
+      - 의심 cron: 없음 (curl/wget 명령 = C2 의심)
+      - authorized_keys: @auto key (알 수 없는 key = 침해)
+      - LD_PRELOAD: 없음 (있으면 rootkit)
+      - kernel module: 표준
+
+      ## 💡 왜 이걸 하는가?
+
+      osquery 는 persistence 헌팅의 핵심 EDR 도구다. STEP 1~5 의 수동 검사를 SQL 질의로
+      정형화하면 *baseline 과의 차이* 를 자동 비교할 수 있다. users/crontab/authorized_keys/
+      process_envs/kernel_modules 5 테이블이 persistence 5 패턴 + rootkit 을 커버한다.
+
+      ## 🔍 결과 해석
+
+      - 5 테이블 모두 baseline 과 동일 = persistence 없음
+      - 차이 발견(새 UID 0, curl cron, 알 수 없는 key) = 즉시 IR
+      - osquery 는 정적 스냅샷 — 정기 scheduled query 로 변화 추적(Purple)
+
+      ## ⚠️ 비정상 시 대응
+
+      - osqueryi 없음 — `sudo apt install osquery`
+      - 권한 오류 — sudo 로 실행
+    hint: |
+      osquery 헌팅 5 테이블(users uid=0/crontab/authorized_keys/process_envs/kernel_modules)
+      = persistence 5패턴+rootkit 커버. baseline 차이 = 침해. 정적 스냅샷(정기 query).
+    category: blueteam
+    points: 14
+    answer: |
+      ssh -n 6v6-bastion '
+      echo "=== UID 0 ==="; sudo osqueryi --json "SELECT username,uid FROM users WHERE uid=0;" 2>/dev/null
+      echo "=== 의심 cron ==="; sudo osqueryi --json "SELECT command FROM crontab WHERE command LIKE \"%curl%\" OR command LIKE \"%wget%\";" 2>/dev/null
+      echo "=== authorized_keys ==="; sudo osqueryi --json "SELECT * FROM authorized_keys LIMIT 5;" 2>/dev/null | head
+      echo "=== kernel module ==="; sudo osqueryi --json "SELECT name FROM kernel_modules LIMIT 5;" 2>/dev/null
+      '
+    answer_detail: |
+      osquery 헌팅 5 테이블: users(uid=0 root 만)/crontab(curl/wget 의심 없음)/authorized_keys
+      (@auto)/process_envs(LD_PRELOAD 없음)/kernel_modules(표준). persistence 5패턴+rootkit
+      커버. baseline 차이(새 UID0/C2 cron/알수없는 key) = 침해. 정적 스냅샷 → 정기 query.
+    verify:
+      type: output_contains
+      expect: uid
+      field: stdout
+      semantic:
+        intent: Blue — osquery persistence 헌팅(5 테이블).
+        success_criteria: ["users uid=0", "crontab/authorized_keys", "kernel_modules"]
+        acceptable_methods:
+          - |
+            **[OSS] osquery users uid=0** — 백도어 계정.
+              sudo osqueryi --json "SELECT username,uid FROM users WHERE uid=0;"
+            예상 출력 `root 만`.
+            운영 해석: root 외 UID 0 = 백도어(T1136).
+          - |
+            **[OSS] osquery crontab/authorized_keys** — cron/key persistence.
+            예상 출력 `e2scrub_all / @auto key`.
+            운영 해석: curl cron·알 수 없는 key = 침해.
+          - |
+            **[OSS] osquery process_envs/kernel_modules** — rootkit.
+            예상 출력 `LD_PRELOAD 없음 / 표준 module`.
+            운영 해석: rootkit 흔적 헌팅.
+        negative_signs: ["테이블 일부만", "baseline 차이 개념 누락"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 7
+    instruction: |
+      ## 🎯 MISSION (Blue Team — Wazuh FIM 검증 + Detection Gap)
+
+      파일 무결성 모니터링(FIM)이 persistence 변경을 탐지하는지 검증하라. web 의 Wazuh
+      syscheck 를 확인하고, FIM alert 가 SIEM 에 도달하는지, 그리고 탐지 주기의 한계를
+      식별한다.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # web 의 syscheck 설정 (frequency / directories)
+      ssh 6v6-web 'sudo grep -E "<syscheck>|<directories|<frequency" /var/ossec/etc/ossec.conf | head -8'
+      # siem 의 FIM alert (rule 550=modified, 554=added, syscheck group)
+      ssh 6v6-siem 'sudo tail -1000 /var/ossec/logs/alerts/alerts.json | jq -rc "select(.rule.groups[]? == \"syscheck\") | \"\(.rule.id) \(.syscheck.path)\"" 2>/dev/null | tail -5'
+      # bastion 이 SIEM 에 연결되어 있나 (persistence 대상 bastion 의 FIM 가용성)
+      ssh 6v6-siem 'sudo /var/ossec/bin/agent_control -l 2>/dev/null | grep -i bastion || echo "bastion agent 없음"'
+      ```
+
+      ## 📋 확인 사항
+
+      - syscheck: `<frequency>43200</frequency>` (12시간 주기), directories /etc /usr/bin 등, **realtime 없음**
+      - FIM alert: rule 550(modified) / 554(added) + syscheck group → SIEM 도달(web/manager)
+      - bastion: Wazuh agent **없음** → persistence 대상인 bastion 의 FIM 미동작
+
+      ## 💡 왜 이걸 하는가?
+
+      Wazuh FIM(syscheck)은 persistence 의 핵심 탐지(파일 변경)다. 그러나 이 환경은 (1)
+      frequency 43200(12시간 주기)라 변경 후 *최대 12시간 뒤* alert — persistence 즉시
+      탐지 불가, (2) realtime="yes" 미설정, (3) persistence 검사 대상인 bastion 에 Wazuh
+      agent 가 없어 FIM 자체가 안 됨. 즉 *탐지는 가능하나 즉시성과 커버리지에 Detection
+      Gap* 이 있다.
+
+      ## 🔍 결과 해석
+
+      - rule 550/554 존재 = FIM 동작 입증(파일 변경 탐지)
+      - frequency 43200 = 12시간 주기 → persistence 가 12시간 동안 미탐지(즉시성 gap)
+      - bastion agent 없음 = persistence 주 대상의 FIM 공백
+      - → Purple: realtime="yes" + bastion agent(STEP 9)
+
+      ## ⚠️ 비정상 시 대응
+
+      - FIM alert 0 — syscheck scan 미실행, `agent_control -r` 또는 frequency 도래 대기
+      - jq 없음(siem) — `sudo yum install -y jq`
+    hint: |
+      web syscheck(frequency 43200=12시간, realtime 없음) + FIM alert rule 550/554 +
+      bastion agent 없음. FIM 동작하나 즉시성·커버리지 Detection Gap. realtime 권고.
+    category: blueteam
+    points: 14
+    answer: |
+      ssh -n 6v6-web 'sudo grep -E "<syscheck>|<directories|<frequency" /var/ossec/etc/ossec.conf | head -8'
+      echo "=== FIM alert ==="
+      ssh -n 6v6-siem 'sudo tail -1000 /var/ossec/logs/alerts/alerts.json | jq -rc "select(.rule.groups[]? == \"syscheck\") | \"\(.rule.id) \(.syscheck.path)\"" 2>/dev/null | tail -5'
+      echo "=== bastion agent ==="
+      ssh -n 6v6-siem 'sudo /var/ossec/bin/agent_control -l 2>/dev/null | grep -i bastion || echo "bastion agent 없음"'
+    answer_detail: |
+      web syscheck: frequency 43200(12시간), directories /etc,/usr/bin,/usr/sbin,/bin,
+      /sbin,/boot, realtime 없음. FIM alert: rule 550(modified)/554(added) + syscheck
+      group → SIEM 도달. bastion Wazuh agent 없음. Detection Gap 3종: 12시간 주기(즉시성)
+      + realtime 미설정 + bastion FIM 공백. → Purple realtime + bastion agent.
+    verify:
+      type: output_contains
+      expect: frequency
+      field: stdout
+      semantic:
+        intent: Blue — Wazuh FIM 검증(rule 550/554) + 주기/커버리지 Detection Gap.
+        success_criteria: ["syscheck frequency/dirs", "FIM alert rule 550/554", "Detection Gap(12시간/bastion)"]
+        acceptable_methods:
+          - |
+            **[OSS] grep syscheck 설정** — frequency/dirs/realtime.
+              ssh 6v6-web 'sudo grep -E "<directories|<frequency" /var/ossec/etc/ossec.conf'
+            예상 출력 `frequency 43200 / /etc 등 / realtime 없음`.
+            운영 해석: 12시간 주기 = 즉시 탐지 불가.
+          - |
+            **[OSS] jq FIM alert (rule 550/554)** — 파일 변경 탐지.
+              ssh 6v6-siem 'sudo tail .../alerts.json | jq "select(.rule.groups[]==\"syscheck\")"'
+            예상 출력 `550 /etc/... / 554 /usr/bin/...`.
+            운영 해석: FIM 동작 입증.
+          - |
+            **[OSS] agent_control bastion 부재** — 커버리지 gap.
+            예상 출력 `bastion agent 없음`.
+            운영 해석: persistence 주 대상의 FIM 공백.
+        negative_signs: ["frequency/주기 한계 누락", "Detection Gap 식별 없음"]
     target_vm: web
+    risk_level: low
+
+  - order: 8
+    instruction: |
+      ## 🎯 MISSION (Purple Team — Coverage Matrix)
+
+      Red(persistence 패턴)와 Blue(탐지 도구)를 통합해 **Coverage Matrix** 를 작성하라.
+      각 패턴을 어느 도구가, 얼마나 즉시 탐지하는지 매핑한다.
+
+      ## 💻 산출물 (Coverage Matrix)
+
+      ```markdown
+      # W12 Coverage Matrix — Persistence 패턴 × 탐지
+      | 패턴 | osquery(정적) | Wazuh FIM | 즉시성 | Coverage |
+      |------|--------------|-----------|--------|----------|
+      | cron 추가 | ✓(crontab) | ✓(rule 550) | 12h 지연 | 부분 |
+      | systemd | ✓(systemd_units) | ✓(/etc/systemd) | 12h 지연 | 부분 |
+      | .bashrc | △(manual) | ✓(/home FIM) | 12h 지연 | 부분 |
+      | SSH key 추가 | ✓(authorized_keys) | ✓(.ssh FIM) | 12h 지연 | 부분 |
+      | web shell | ✗(bastion) | ✓(web /var/www) | 12h 지연 | 부분 |
+      | backdoor UID 0 | ✓(users) | ✓(/etc/passwd) | 12h 지연 | 부분 |
+      ## Detection Gap 3종
+      1. FIM frequency 43200(12시간) → persistence 12시간 동안 미탐지(즉시성)
+      2. bastion 에 Wazuh agent 없음 → persistence 주 대상의 FIM 공백
+      3. anti-forensics(log 변조) → remote syslog 없으면 흔적 소실
+      ## 핵심: 탐지 가능하나 12시간 지연 + bastion 커버리지 공백
+      ```
+
+      ## 📋 채점
+
+      - 6 패턴 × (osquery/FIM) × 즉시성 매트릭스
+      - Detection Gap 3종
+
+      ## 💡 왜 이걸 하는가?
+
+      Purple 은 persistence 패턴과 탐지 도구를 매핑하되, *즉시성* 까지 본다. FIM 이 12시간
+      주기면 "탐지 가능" 하지만 12시간 동안 공격자가 활동한다. 탐지 도구를 "있다/없다" 가
+      아니라 "얼마나 빨리" 로 평가하는 것이 핵심이다.
+
+      ## 🔍 결과 해석
+
+      - 모든 패턴 탐지 가능하나 12시간 지연 + bastion 공백 = 즉시 대응 불가
+      - Purple 우선순위: realtime FIM + bastion agent + remote syslog
+    hint: |
+      Coverage Matrix — 6 패턴 × (osquery/FIM) × 즉시성. Detection Gap 3종(FIM 12시간
+      지연 / bastion agent 없음 / remote syslog 없으면 log 소실). 즉시성 평가가 핵심.
+    category: purple
+    points: 8
+    answer: |
+      cat <<'EOF'
+      # W12 Coverage Matrix
+      | 패턴 | osquery | FIM | 즉시성 | Coverage |
+      | cron | ✓ | ✓ | 12h 지연 | 부분 |
+      | systemd | ✓ | ✓ | 12h 지연 | 부분 |
+      | .bashrc | △ | ✓ | 12h 지연 | 부분 |
+      | SSH key | ✓ | ✓ | 12h 지연 | 부분 |
+      | web shell | ✗(bastion) | ✓(web) | 12h 지연 | 부분 |
+      | backdoor UID0 | ✓ | ✓ | 12h 지연 | 부분 |
+      ## Detection Gap 3종: FIM 12시간 지연 / bastion agent 없음 / remote syslog 없음
+      EOF
+    answer_detail: |
+      Coverage Matrix: 6 패턴 모두 osquery(정적)+FIM 으로 탐지 가능하나 FIM frequency
+      43200(12시간 지연). Detection Gap 3종: (1) 12시간 즉시성 gap, (2) bastion agent
+      없음(커버리지), (3) remote syslog 없으면 anti-forensics 로 log 소실. 탐지 "있다"
+      가 아닌 "얼마나 빨리" 평가가 핵심.
+    verify:
+      type: output_contains
+      expect: Coverage
+      field: stdout
+      semantic:
+        intent: Purple — Coverage Matrix(패턴 × 도구 × 즉시성) + Detection Gap 3종.
+        success_criteria: ["6 패턴 매트릭스", "즉시성 평가", "Detection Gap 3종"]
+        acceptable_methods:
+          - |
+            **[OSS] markdown Coverage Matrix** — 패턴 × 도구 × 즉시성.
+              # cron/systemd/bashrc/ssh/webshell/backdoor × (osquery/FIM)
+            예상 출력 `매트릭스 + 12h 지연`.
+            운영 해석: 탐지 가능 vs 즉시성.
+          - |
+            **[OSS] Detection Gap 3종** — 즉시성/커버리지/log소실.
+            예상 출력 `12h 지연 / bastion 없음 / syslog 없음`.
+            운영 해석: 빠른 탐지의 공백.
+        negative_signs: ["즉시성 평가 누락", "Detection Gap 누락"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 9
+    instruction: |
+      ## 🎯 MISSION (Purple Team — 방어 강화 5 표준 권고)
+
+      Coverage Matrix(STEP 8)의 Detection Gap 을 보완하는 **방어 강화 5 표준** 을 구체적
+      설정과 함께 권고서로 작성하라 (실행 X — 설계만).
+
+      ## 💻 산출물 (방어 강화 권고서)
+
+      ```markdown
+      # W12 방어 강화 5 표준 (Purple 권고)
+      ## 1. Wazuh syscheck realtime="yes" (최우선 — 즉시성 gap 해소)
+      <directories realtime="yes">/etc/cron.d,/etc/systemd/system,/root/.ssh,/home,/var/www</directories>
+      효과: 12시간 주기 → inotify 즉시 alert. persistence 즉시 탐지.
+      ## 2. Remote syslog forward (anti-anti-forensics)
+      /etc/rsyslog.d/01-forward.conf: *.* @@<syslog-server>:514
+      효과: host log 변조해도 외부 보존. STEP 4 anti-forensics 무력화.
+      ## 3. bastion 에 Wazuh agent 설치 (커버리지 gap 해소)
+      wazuh-agent + manager 등록 → bastion 의 persistence 도 FIM 커버
+      효과: STEP 7 의 bastion FIM 공백 해소.
+      ## 4. osquery daemon + scheduled query (정기 헌팅)
+      osqueryd + 5분 주기 users/crontab/authorized_keys/kernel_modules
+      효과: 정적 헌팅을 자동화(준실시간 baseline 차이 탐지).
+      ## 5. AIDE/Tripwire + 분기 audit (immutable baseline)
+      /etc hash baseline + 분기별 UID0/cron/key/module review
+      효과: timestamp 무관 hash 비교로 timestomp 무력화.
+      ```
+
+      ## 📋 채점
+
+      - 5 표준 각각 구체적 설정 + 효과
+      - #1(realtime)·#3(bastion agent)이 STEP 8 의 Detection Gap 을 직접 보완
+
+      ## 💡 왜 이걸 하는가?
+
+      Purple 의 최종 산출물은 Detection Gap 의 구체적 보완이다. 이 환경의 1순위는 FIM
+      realtime="yes"(12시간 → 즉시) + bastion agent(커버리지). 2순위는 remote syslog
+      (anti-forensics 무력화). 추상적 권고가 아니라 실제 설정 라인까지 제시한다.
+
+      ## 🔍 결과 해석
+
+      - 5 표준 적용 시: persistence 즉시 탐지 + 전 호스트 커버 + log 보존 + 무결성 검사
+
+      ## ⚠️ 비정상 시 대응
+
+      - realtime 적용 후 alert 폭증 — 핵심 디렉토리만 realtime, 나머지 scheduled
+    hint: |
+      방어 5표준 — (1)syscheck realtime=yes(즉시성) (2)remote syslog(anti-forensics)
+      (3)bastion Wazuh agent(커버리지) (4)osquery daemon (5)AIDE+분기 audit. #1#3 이 gap 보완.
+    category: purple
+    points: 10
+    answer: |
+      cat <<'EOF'
+      # W12 방어 강화 5 표준
+      1. syscheck realtime="yes"(최우선): /etc/cron.d,/etc/systemd,/root/.ssh,/home,/var/www → 12h→즉시
+      2. Remote syslog forward: *.* @@<server>:514 → log 외부 보존(anti-forensics 무력화)
+      3. bastion Wazuh agent 설치 → bastion persistence 도 FIM 커버
+      4. osqueryd daemon + 5분 주기 users/crontab/authorized_keys/kernel_modules
+      5. AIDE/Tripwire + 분기 audit(UID0/cron/key/module)
+      EOF
+    answer_detail: |
+      방어 5표준: (1) syscheck realtime="yes" 최우선 — 12시간 주기를 inotify 즉시 alert
+      로(STEP8 즉시성 gap 해소), (2) remote syslog(STEP4 anti-forensics 무력화), (3)
+      bastion Wazuh agent(STEP7 커버리지 gap 해소), (4) osqueryd 정기 헌팅, (5) AIDE +
+      분기 audit(timestomp 무력화). #1#3 이 Detection Gap 직접 보완.
+    verify:
+      type: output_contains
+      expect: realtime
+      field: stdout
+      semantic:
+        intent: Purple — 방어 강화 5 표준(realtime FIM + remote syslog + bastion agent).
+        success_criteria: ["syscheck realtime", "remote syslog", "bastion agent(Detection Gap)"]
+        acceptable_methods:
+          - |
+            **[OSS] syscheck realtime="yes"** — 즉시성 gap 해소.
+              <directories realtime="yes">/etc/cron.d,/root/.ssh,...</directories>
+            예상 출력 `inotify 즉시 alert`.
+            운영 해석: 12시간 주기 → 즉시.
+          - |
+            **[OSS] remote syslog forward** — anti-anti-forensics.
+              *.* @@<server>:514
+            예상 출력 `log 외부 보존`.
+            운영 해석: host log 변조 무력화.
+          - |
+            **[OSS] bastion agent + osqueryd + AIDE** — 커버리지/헌팅/무결성.
+            예상 출력 `bastion FIM + 정기 query + hash baseline`.
+            운영 해석: Detection Gap 해소.
+        negative_signs: ["realtime/bastion agent 누락", "추상적 권고만"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 10
+    instruction: |
+      ## 🎯 MISSION (Cleanup)
+
+      실습 중 FIM 검증을 위해 변경한 파일(있다면)을 복구하고, 본 주차의 윤리 원칙대로
+      persistence 가 실제로 적용되지 않았음을 확인하라.
+
+      ## ⚠️ Docker bind mount 주의
+
+      `/etc/hosts` 등 docker bind mount 파일은 `sed -i`(임시파일+rename)가 "Device or
+      resource busy" 로 실패한다. **cat 방식**(truncate+write)으로 in-place 복구한다.
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-web '
+      # FIM 검증용 변경이 있었다면 cat 방식 복구 (sed -i 는 bind mount 에서 실패)
+      if grep -q "# fimtest_" /etc/hosts 2>/dev/null; then
+        grep -v "# fimtest_" /etc/hosts > /tmp/h && cat /tmp/h > /etc/hosts && rm -f /tmp/h
+        echo "fimtest 복구 완료"
+      else
+        echo "변경 없음 (복구 불필요)"
+      fi
+      '
+      # persistence 미적용 확인 — UID 0 root 만, 의심 cron 없음 (윤리 원칙 준수)
+      ssh 6v6-bastion '
+      echo "=== UID 0 = root 만? (백도어 미생성) ==="; grep -E ":0:[0-9]*:" /etc/passwd
+      echo "=== cron.d 표준? (의심 cron 미추가) ==="; ls /etc/cron.d/
+      '
+      echo "=== cleanup 완료 ==="
+      ```
+
+      ## 📋 확인 사항
+
+      - FIM 검증 변경 복구 (cat 방식 — bind mount sed 불가)
+      - UID 0 = root 만 (백도어 계정 미생성)
+      - cron.d 표준 (의심 cron 미추가)
+      - persistence 실제 미적용 (본 주차 윤리 원칙)
+
+      ## 💡 왜 이걸 하는가?
+
+      본 주차의 윤리 원칙은 "검사·시뮬만, 실 적용 X" 다. cleanup 에서 (1) FIM 검증 변경을
+      복구하고 (2) persistence 가 실제로 생성되지 않았음(UID 0 root 만, cron 표준)을
+      확인해 학습 환경이 깨끗하게 유지됨을 보장한다. 특히 bind mount 파일은 sed -i 가
+      실패하므로 cat 방식 복구를 익혀야 한다.
+
+      ## 🔍 결과 해석
+
+      - 복구 완료 + persistence 미적용 = 학습 환경 무결성 유지
+      - UID 0 root 만 = 윤리 원칙 준수(백도어 미생성)
+
+      ## ⚠️ 비정상 시 대응
+
+      - sed -i 실패(Device busy) — bind mount, `grep -v ... > /tmp/h && cat /tmp/h > 파일`
+      - root 외 UID 0 발견 — 실습 중 백도어 생성, 즉시 제거 후 보고
+    hint: |
+      FIM 변경 복구(bind mount → cat 방식, sed -i 불가) + persistence 미적용 확인
+      (UID0 root만, cron 표준). 윤리 원칙(실 적용 X) 준수 검증.
+    category: cleanup
+    points: 6
+    answer: |
+      ssh -n 6v6-web '
+      if grep -q "# fimtest_" /etc/hosts 2>/dev/null; then
+        grep -v "# fimtest_" /etc/hosts > /tmp/h && cat /tmp/h > /etc/hosts && rm -f /tmp/h; echo "fimtest 복구"
+      else echo "변경 없음"; fi
+      '
+      ssh -n 6v6-bastion '
+      echo "=== UID 0 ==="; grep -E ":0:[0-9]*:" /etc/passwd
+      echo "=== cron.d ==="; ls /etc/cron.d/
+      '
+      echo "=== cleanup 완료 ==="
+    answer_detail: |
+      cleanup: FIM 검증 변경을 cat 방식 복구(bind mount 라 sed -i 는 Device busy 실패).
+      persistence 미적용 확인 — UID 0 = root 만(백도어 미생성), cron.d 표준(의심 cron
+      미추가). 본 주차 윤리 원칙(검사·시뮬만, 실 적용 X) 준수. bind mount 복구 패턴 학습.
+    verify:
+      type: output_contains
+      expect: 완료
+      field: stdout
+      semantic:
+        intent: Cleanup — FIM 변경 복구(bind mount cat 방식) + persistence 미적용 확인.
+        success_criteria: ["FIM 변경 복구", "UID 0 root 만(백도어 미생성)", "윤리 원칙 준수"]
+        acceptable_methods:
+          - |
+            **[OSS] cat 방식 복구** — bind mount(sed -i 불가).
+              grep -v "# fimtest_" /etc/hosts > /tmp/h && cat /tmp/h > /etc/hosts
+            예상 출력 `복구 완료`.
+            운영 해석: bind mount 는 truncate+write(rename 불가).
+          - |
+            **[OSS] UID 0 / cron 미변경 확인** — 윤리 원칙.
+              grep ":0:" /etc/passwd; ls /etc/cron.d/
+            예상 출력 `root 만 / 표준 cron`.
+            운영 해석: persistence 실 적용 X(백도어 미생성).
+        negative_signs: ["복구 누락", "sed -i 로 bind mount 시도", "백도어 잔존"]
+    target_vm: web
+    risk_level: low
