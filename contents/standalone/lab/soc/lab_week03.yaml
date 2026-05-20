@@ -34,8 +34,9 @@ steps:
       ```bash
       # 트래픽 1 회 발생
       ssh 6v6-attacker 'curl -sI http://juice.6v6.lab/ > /dev/null'
-      # access.log 확인 (combined format)
-      ssh 6v6-web 'sudo tail -5 /var/log/apache2/access.log 2>/dev/null || sudo tail -5 /var/log/apache2/juice_access.log 2>/dev/null'
+      # 💡 6v6 의 Apache 는 vhost 별 별도 access log (juice_access.log 등). 통합
+      #    access.log 는 0 byte. 트래픽 있는 vhost log 를 직접 확인.
+      ssh 6v6-web 'sudo tail -5 /var/log/apache2/juice_access.log 2>/dev/null || sudo cat /var/log/apache2/*access*.log 2>/dev/null | tail -5'
       ```
 
       ## 📋 확인 사항
@@ -61,7 +62,7 @@ steps:
       echo "=== 트래픽 발생 ==="
       ssh 6v6-attacker 'curl -sI http://juice.6v6.lab/ > /dev/null 2>&1'
       echo "=== Apache access.log ==="
-      ssh 6v6-web 'sudo tail -5 /var/log/apache2/access.log 2>/dev/null || sudo tail -5 /var/log/apache2/juice_access.log 2>/dev/null || sudo ls /var/log/apache2/'
+      ssh 6v6-web 'sudo tail -5 /var/log/apache2/juice_access.log 2>/dev/null || sudo cat /var/log/apache2/*access*.log 2>/dev/null | tail -5'
     answer_detail: |
       Apache combined format = NCSA Common + Referer + User-Agent. 6v6 는 11 vhost
       별 별도 access log (juice_access.log 등) 가능. client IP 의 첫 column 은
@@ -84,7 +85,7 @@ steps:
             운영 해석: combined format 8 필드.
           - |
             **[OSS] status code 분포** — 통계.
-              ssh 6v6-web 'sudo tail -1000 /var/log/apache2/access.log | awk "{print \$9}" | sort | uniq -c | sort -rn'
+              ssh 6v6-web 'sudo tail -1000 /var/log/apache2/juice_access.log | awk "{print \$9}" | sort | uniq -c | sort -rn'
             예상 출력 `800 200 / 50 403 / 30 404 / ...`.
             운영 해석: 403 비율 = WAF 차단, 404 = scan/recon.
           - |
@@ -94,7 +95,7 @@ steps:
             운영 해석: 웹 로그 의 실시간 dashboard.
           - |
             **[OSS] User-Agent 분석** — scanner detection.
-              ssh 6v6-web 'sudo tail -1000 /var/log/apache2/access.log | grep -oE "\"[^\"]*\"$" | sort | uniq -c | sort -rn | head'
+              ssh 6v6-web 'sudo tail -1000 /var/log/apache2/juice_access.log | grep -oE "\"[^\"]*\"$" | sort | uniq -c | sort -rn | head'
             예상 출력 `UA 별 빈도 (sqlmap/nikto 등 scanner 식별)`.
             운영 해석: 비정상 UA = scanner.
         negative_signs:
