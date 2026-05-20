@@ -1,82 +1,396 @@
 lab_id: standalone-soc-week12
-title: "인시던트 대응 (3) — 내부 위협 (Insider Threat) detection + UEBA (6v6 + R/B/P)"
+title: 인시던트 대응 (3) — 내부 위협 (Insider Threat) + UEBA + R/B/P
 version: standalone-non-ai
 course: soc
 week: 12
 description: |
-  내부 위협 — 정당 한 user 계정 의 비정상 활동 — 의 4 detection 패턴: 비정상 시간 access, privilege escalation, data exfiltration (대용량 outbound), 정책 위반 (금지 file access).
-difficulty: medium
-duration_minutes: 120
-prerequisites: ["W09 IR + W11 분석"]
+  내부 위협 — 정당 계정 의 비정상 활동 — 의 4 detection 패턴 (비정상 시간 access /
+  privilege escalation / data exfiltration / 정책 위반). UEBA (User Entity Behavior
+  Analytics) 의 baseline + deviation. 마지막 4 step 은 R/B/P — 내부자 시뮬 → 탐지.
+difficulty: hard
+duration_minutes: 180
+audience: 보안관제 (12주차)
+prerequisites: ["W09-W11 IR"]
 objectives:
-  - "비정상 시간 sshd Accepted login (예: 새벽 시간) 패턴"
-  - "sudo / su / pkexec 의 privilege escalation log"
-  - "대용량 outbound (Suricata flow event 의 큰 bytes_toserver)"
-  - "정책 위반 — 금지 file access (예: /etc/shadow)"
-pass_threshold: 0.6
+  - "비정상 시간 access (새벽 로그인) 패턴"
+  - "privilege escalation (sudo/su) log"
+  - "data exfiltration (대용량 outbound flow)"
+  - "R/B/P — 내부자 시뮬 → UEBA 탐지 → 정책 위반 식별"
+pass_threshold: 0.7
 steps:
+
   - order: 1
-    instruction: "## 🎯 MISSION — 비정상 시간 access\n**무엇을:** auth.log 의 Accepted 시간 분포 + 새벽 (00:00-06:00) 시간대 access 횟수."
-    hint: "grep Accepted /var/log/auth.log | awk '{print $3}' | head -10."
+    instruction: |
+      ## 🎯 MISSION
+      Wazuh alerts.json 의 sshd Accepted alert (rule 5715) 의 시간대별 분포 (UEBA baseline).
+
+      💡 6v6 의 /var/log/sshd.log 는 raw sshd message 만 (timestamp prefix 없음).
+      시각 정보 는 Wazuh alerts.json 의 .timestamp (ISO 8601) 에 있음 → alert 기반 분석.
+
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -r "select(.rule.id==\"5715\" or (.rule.description // \"\" | test(\"authentication success\"))) | .timestamp[11:13]" 2>/dev/null | sort | uniq -c'
+      ```
+      ## 📋 확인 사항
+      - 시간대별 (HH) 정상 access 분포 (업무 시간 vs 새벽)
+      ## 💡 왜 이걸 하는가?
+      UEBA = User behavior baseline. 정상 access 의 시간 패턴 (업무 시간 집중) 이
+      baseline. 새벽 access = anomaly. 내부 위협 의 1차 indicator. 시각 정보 가
+      raw log 에 없으면 SIEM 의 alert timestamp 사용.
+      ## 🔍 결과 해석
+      - 업무 시간 집중 = 정상
+      - 새벽 access = 의심 (내부자 또는 탈취 계정)
+    hint: "alerts.json 의 rule 5715 + .timestamp[11:13] (시각). sshd.log 는 timestamp 없으니 alert 사용."
     category: insider
     points: 10
     answer: |
-      🤖 가이드:
-      ssh 6v6-fw 'grep Accepted /var/log/auth.log 2>/dev/null | awk "{print substr(\\\$3,1,2)}" | sort | uniq -c | sort -rn | head -10'
-    answer_detail: "새벽 시간 access = 정상 baseline 외 — UEBA 의 핵심 indicator."
+      ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -r "select(.rule.id==\"5715\" or (.rule.description // \"\" | test(\"authentication success\"))) | .timestamp[11:13]" 2>/dev/null | sort | uniq -c'
+    answer_detail: |
+      6v6 sshd.log 는 timestamp prefix 없는 raw message → 시각 분석 불가. Wazuh
+      alerts.json 의 .timestamp (ISO 8601) 의 [11:13] = 시각 (HH). rule 5715 =
+      sshd authentication success. UEBA baseline = 업무 시간 집중, 새벽 = anomaly.
     verify:
-      intent: "시간 분포 + 새벽 access"
-      success_criteria: ["시간 분포 표"]
-      acceptable_methods: ["awk / grep"]
-      negative_signs: ["시간 누락"]
-    target_vm: bastion
+      type: output_contains
+      expect: ""
+      field: stdout
+      semantic:
+        intent: UEBA baseline — alerts.json timestamp 기반 시간대 access.
+        success_criteria: ["시간대별 분포 (alert timestamp)"]
+        acceptable_methods:
+          - |
+            **[OSS] jq timestamp 시간대** — 표준.
+              ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -r "select(.rule.id==\"5715\") | .timestamp[11:13]" | sort | uniq -c'
+            예상 출력 `시간별 access 횟수`.
+            운영 해석: alert timestamp 기반 baseline (raw log 에 timestamp 없을 때).
+          - |
+            **[OSS] dashboard time histogram** — GUI.
+              # rule.id:5715 + date histogram hourly
+            예상 출력 `시간 chart`.
+            운영 해석: 시각 baseline.
+          - |
+            **[OSS] last 명령 — 로그인 이력 (시각 포함)** — 보조.
+              ssh 6v6-siem 'last -F 2>/dev/null | head -10'
+            예상 출력 `ccc pts/0 10.20.x.x <full date>`.
+            운영 해석: wtmp 기반 (full timestamp).
+        negative_signs: ["분포 없음", "raw sshd.log 의 timestamp 시도 (없음)"]
+    target_vm: siem
     risk_level: low
 
   - order: 2
-    instruction: "## 🎯 MISSION — privilege escalation log\n**무엇을:** sudo 사용 횟수 + 사용 자 + 명령 Top 5."
-    hint: "grep COMMAND /var/log/auth.log."
+    instruction: |
+      ## 🎯 MISSION
+      privilege escalation log (sudo/su) 분석.
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-siem 'sudo grep -iE "sudo|su\[" /var/log/sshd.log /var/log/secure 2>/dev/null | tail -5; sudo tail -300 /var/ossec/logs/alerts/alerts.json | jq -c "select((.rule.groups // []) | join(\"|\") | test(\"privilege|sudo\")) | {rule: .rule.id, desc: .rule.description}" | tail -5'
+      ```
+      ## 📋 확인 사항
+      - sudo/su 사용 + Wazuh privilege escalation rule
+      ## 💡 왜?
+      privilege escalation = 내부자 의 권한 상승. sudo 의 비정상 사용 (예: cat /etc/shadow)
+      = 의심. Wazuh rule 5402 (sudo) 계열.
+      ## 🔍 결과 해석
+      - 정상 sudo (관리 명령) vs 비정상 (민감 파일 접근)
+    hint: "sudo/su log + Wazuh privilege rule."
     category: insider
-    points: 8
+    points: 10
     answer: |
-      🤖 가이드:
-      ssh 6v6-fw 'grep "sudo:.*COMMAND" /var/log/auth.log 2>/dev/null | sed "s/.*USER=//; s/.*COMMAND=//" | sort | uniq -c | sort -rn | head -5'
-    answer_detail: "sudo Top 명령 = 운영 baseline. 비정상 = chmod 777 / cat /etc/shadow 등."
+      ssh 6v6-siem 'sudo grep -iE "sudo|COMMAND" /var/log/sshd.log /var/log/secure 2>/dev/null | tail -5; echo "---"; sudo tail -300 /var/ossec/logs/alerts/alerts.json | jq -c "select((.rule.groups // []) | join(\"|\") | test(\"privilege|sudo\")) | {rule: .rule.id, desc: .rule.description}" | tail -5'
+    answer_detail: "privilege escalation = sudo/su. Wazuh rule 5402 (sudo success) / 5403 (failed). 비정상 명령 (cat /etc/shadow) = 의심."
     verify:
-      intent: "sudo Top 5"
-      success_criteria: ["Top 5 + 사용자"]
-      acceptable_methods: ["grep"]
-      negative_signs: ["1~2 만"]
-    target_vm: bastion
+      type: output_contains
+      expect: ""
+      field: stdout
+      semantic:
+        intent: privilege escalation log.
+        success_criteria: ["sudo/su log 또는 alert"]
+        acceptable_methods:
+          - |
+            **[OSS] grep sudo + jq** — 표준.
+              ssh 6v6-siem 'sudo grep sudo /var/log/secure | tail -5'
+            예상 출력 `sudo COMMAND log`.
+            운영 해석: 권한 상승.
+        negative_signs: ["log 없음"]
+    target_vm: siem
     risk_level: low
 
   - order: 3
-    instruction: "## 🎯 MISSION — 대용량 outbound (Suricata flow)\n**무엇을:** eve.json 의 flow event 의 bytes_toserver Top 3."
-    hint: "jq 'select(.event_type==\"flow\") | .flow.bytes_toserver' | sort -rn | head -3."
+    instruction: |
+      ## 🎯 MISSION
+      data exfiltration — Suricata flow 의 대용량 outbound.
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-ips 'sudo tail -1000 /var/log/suricata/eve.json | jq -c "select(.event_type==\"flow\") | {src: .src_ip, dst: .dest_ip, bytes_to: .flow.bytes_toserver, bytes_from: .flow.bytes_toclient}" | sort -t: -k4 -rn 2>/dev/null | tail -5'
+      ```
+      ## 📋 확인 사항
+      - flow event 의 bytes_toserver (outbound 추정)
+      ## 💡 왜?
+      data exfiltration = 대용량 outbound. baseline 대비 비정상적 큰 전송 = 의심.
+      Suricata flow event 의 bytes 통계.
+      ## 🔍 결과 해석
+      - 큰 bytes_toserver = 업로드 (exfil 의심)
+    hint: "flow event bytes."
     category: insider
     points: 10
     answer: |
-      🤖 가이드:
-      ssh 6v6-ips 'tail -1000 /var/log/suricata/eve.json | jq -c "select(.event_type==\"flow\") | {src: .src_ip, dst: .dest_ip, bytes_to: .flow.bytes_toserver}" 2>/dev/null | sort -t : -k 4 -rn | head -3'
-    answer_detail: "data exfiltration = 비정상 outbound. 정상 baseline + IDS flow stat 의 비교."
+      ssh 6v6-ips 'sudo tail -1000 /var/log/suricata/eve.json | jq -c "select(.event_type==\"flow\" and .flow.bytes_toserver > 10000) | {src: .src_ip, dst: .dest_ip, bytes_to: .flow.bytes_toserver}" 2>/dev/null | tail -5'
+    answer_detail: "data exfil = 대용량 outbound. Suricata flow 의 bytes_toserver. baseline 대비 spike = 의심. DLP 와 결합."
     verify:
-      intent: "flow Top 3"
-      success_criteria: ["Top 3 + bytes"]
-      acceptable_methods: ["jq"]
-      negative_signs: ["없음"]
-    target_vm: bastion
+      type: output_contains
+      expect: ""
+      field: stdout
+      semantic:
+        intent: data exfiltration — flow bytes.
+        success_criteria: ["flow event bytes"]
+        acceptable_methods:
+          - |
+            **[OSS] jq flow bytes** — 표준.
+              ssh 6v6-ips 'sudo tail -1000 /var/log/suricata/eve.json | jq -c "select(.event_type==\"flow\")" | tail -5'
+            예상 출력 `flow bytes`.
+            운영 해석: outbound 통계.
+        negative_signs: ["flow 없음"]
+    target_vm: ips
     risk_level: low
 
   - order: 4
-    instruction: "## 🎯 MISSION — 정책 위반 + 보고서\n**무엇을:** 금지 파일 (/etc/shadow / /etc/passwd 의 unauthorized read) 의 audit log + 4 detection 통합 markdown."
-    hint: "auditd 설정 시 file access log. 또는 학생 보고서 4 detection 정리."
-    category: documentation
-    points: 10
-    answer: "🤖 가이드: 4 detection 통합 markdown 표."
-    answer_detail: "Insider threat = log + UEBA + DLP 결합. SOC L2 의 주요 활동."
+    instruction: |
+      ## 🎯 MISSION
+      UEBA baseline 표 작성 (4 패턴 의 정상 vs 비정상 기준).
+      ## 💻 산출물
+      ```markdown
+      | 패턴 | baseline (정상) | anomaly (의심) |
+      |---|---|---|
+      | 시간 access | 09-18 업무시간 | 00-06 새벽 |
+      | privilege | 관리 명령 (apt/systemctl) | 민감 파일 (shadow) |
+      | data 전송 | < 1MB/conn | > 100MB outbound |
+      | 정책 | 허용 경로 | 금지 경로 (/etc) |
+      ```
+      ## 📋 채점
+      - 4 패턴 baseline 표
+      ## 💡 왜?
+      UEBA 의 핵심 = baseline 정의. 각 패턴 의 정상 범위 + deviation 임계치. 내부
+      위협 detection 의 기준.
+      ## 🔍 결과 해석
+      - baseline 표 → anomaly 자동 탐지 가능
+    hint: "4 패턴 baseline 표."
+    category: insider
+    points: 12
+    answer: |
+      cat <<'EOF'
+      | 패턴 | baseline | anomaly |
+      |---|---|---|
+      | 시간 access | 09-18 | 00-06 |
+      | privilege | apt/systemctl | shadow 접근 |
+      | data | < 1MB | > 100MB out |
+      | 정책 | 허용 경로 | /etc 금지 |
+      EOF
+    answer_detail: "UEBA baseline = 정상 범위 정의. deviation 임계치. 내부 위협 의 detection 기준."
     verify:
-      intent: "4 detection 통합"
-      success_criteria: ["4 detection 표"]
-      acceptable_methods: ["markdown"]
-      negative_signs: ["detection 누락"]
+      type: output_contains
+      expect: baseline
+      field: stdout
+      semantic:
+        intent: UEBA baseline 표.
+        success_criteria: ["4 패턴 baseline"]
+        acceptable_methods:
+          - |
+            **[OSS] markdown baseline** — 표준.
+              # 4 패턴 정상/anomaly
+            예상 출력 `baseline 표`.
+            운영 해석: UEBA 기준.
+        negative_signs: ["패턴 누락"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION (Red Team — 내부자 시뮬)
+      attacker 가 정당 계정 (ccc) 으로 비정상 활동 — 새벽 로그인 + 민감 파일 접근.
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-attacker 'sshpass -p 1 ssh -o StrictHostKeyChecking=no ccc@10.20.32.100 "sudo cat /etc/shadow 2>&1 | head -2; echo \"민감 파일 접근 시뮬\"" 2>&1 | tail -3'
+      ATTACK_TS=$(ssh 6v6-attacker 'date -u +%Y-%m-%dT%H:%M:%S'); echo "ATTACK_TS=$ATTACK_TS"
+      ```
+      ## 📋 확인 사항
+      - 정당 계정 의 sudo cat /etc/shadow (privilege escalation + 정책 위반)
+      ## 💡 왜?
+      내부자 = 정당 권한 의 오남용. 정상 인증 (Accepted) + 비정상 활동 (민감 파일).
+      외부 공격 과 다른 탐지 (행위 기반).
+      ## 🔍 결과 해석
+      - sudo cat shadow = 정책 위반 (Wazuh rule)
+    hint: "ccc 로 sudo cat /etc/shadow."
+    category: redteam
+    points: 8
+    answer: |
+      ssh 6v6-attacker 'sshpass -p 1 ssh -o StrictHostKeyChecking=no ccc@10.20.32.100 "sudo cat /etc/shadow 2>&1 | head -2; echo done" 2>&1 | tail -3'
+      ATTACK_TS=$(ssh 6v6-attacker 'date -u +%Y-%m-%dT%H:%M:%S'); echo "ATTACK_TS=$ATTACK_TS"
+    answer_detail: "내부자 시뮬 = 정당 계정 의 민감 파일 접근. sudo cat /etc/shadow = privilege escalation + 정책 위반. Wazuh rule 5402 + custom."
+    verify:
+      type: output_contains
+      expect: done
+      field: stdout
+      semantic:
+        intent: Red — 내부자 시뮬 (민감 파일).
+        success_criteria: ["sudo 민감 파일", "ATTACK_TS"]
+        acceptable_methods:
+          - |
+            **[OSS] ssh + sudo cat** — 표준.
+              ssh 6v6-attacker 'sshpass -p 1 ssh ccc@siem "sudo cat /etc/shadow"'
+            예상 출력 `shadow 또는 denied`.
+            운영 해석: 정책 위반.
+        negative_signs: ["ATTACK_TS 누락"]
+    target_vm: attacker
+    risk_level: medium
+
+  - order: 6
+    instruction: |
+      ## 🎯 MISSION (Blue Team)
+      STEP 5 의 내부자 활동 이 sshd.log + alerts.json 에 탐지.
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-siem 'sudo grep -E "Accepted|sudo|shadow" /var/log/sshd.log /var/log/secure 2>/dev/null | tail -5'
+      ssh 6v6-siem 'sudo tail -200 /var/ossec/logs/alerts/alerts.json | jq -c "select(.rule.level >= 5) | {rule: .rule.id, desc: .rule.description}" | tail -8'
+      ```
+      ## 📋 확인 사항
+      - Accepted (정상 인증) + sudo (권한 상승) 의 조합
+      ## 💡 왜?
+      내부자 의 탐지 = 정상 인증 + 비정상 활동 의 correlation. 단일 이벤트 가 아닌
+      행위 패턴.
+      ## 🔍 결과 해석
+      - Accepted + sudo shadow = 내부자 의심
+    hint: "Accepted + sudo correlation."
+    category: blueteam
+    points: 12
+    answer: |
+      echo "=== sshd/secure log ==="
+      ssh 6v6-siem 'sudo grep -E "Accepted|sudo|shadow" /var/log/sshd.log /var/log/secure 2>/dev/null | tail -5'
+      echo "=== alerts ==="
+      ssh 6v6-siem 'sudo tail -200 /var/ossec/logs/alerts/alerts.json | jq -c "select(.rule.level >= 5) | {rule: .rule.id, desc: .rule.description}" | tail -8'
+    answer_detail: "내부자 탐지 = 정상 인증 (Accepted) + 비정상 활동 (sudo shadow) 의 correlation. 행위 기반 detection."
+    verify:
+      type: output_contains
+      expect: rule
+      field: stdout
+      semantic:
+        intent: Blue — 내부자 활동 탐지.
+        success_criteria: ["Accepted + sudo correlation"]
+        acceptable_methods:
+          - |
+            **[OSS] grep + jq correlation** — 표준.
+              ssh 6v6-siem 'sudo grep -E "Accepted|sudo" /var/log/secure | tail -5'
+            예상 출력 `인증 + 권한 상승`.
+            운영 해석: 행위 패턴.
+        negative_signs: ["탐지 안 됨"]
+    target_vm: siem
+    risk_level: low
+
+  - order: 7
+    instruction: |
+      ## 🎯 MISSION (Blue Team — UEBA scoring)
+      STEP 5 활동 의 UEBA risk score 산정 (4 패턴 weighted).
+      ## 💻 산출물
+      ```markdown
+      ## UEBA Risk Score (내부자)
+      | 패턴 | 발생? | weight | score |
+      |---|---|---|---|
+      | 새벽 access | ✅/❌ | 30 | |
+      | privilege (shadow) | ✅ | 40 | 40 |
+      | data exfil | ✅/❌ | 20 | |
+      | 정책 위반 | ✅ | 10 | 10 |
+      | **총점** | | 100 | <합계> |
+      판정: 50+ = 의심, 70+ = 즉시 escalation
+      ```
+      ## 📋 채점
+      - UEBA risk score 표 + 판정
+      ## 💡 왜?
+      UEBA = 다중 indicator 의 weighted score. 단일 이벤트 가 아닌 종합 점수 로 판정.
+      false positive 감소.
+      ## 🔍 결과 해석
+      - 70+ = 즉시 escalation
+    hint: "UEBA weighted score 표."
+    category: blueteam
+    points: 12
+    answer: |
+      cat <<'EOF'
+      ## UEBA Risk Score
+      | 패턴 | 발생 | weight | score |
+      | 새벽 access | ❌ | 30 | 0 |
+      | privilege shadow | ✅ | 40 | 40 |
+      | data exfil | ❌ | 20 | 0 |
+      | 정책 위반 | ✅ | 10 | 10 |
+      | 총점 | | 100 | 50 |
+      판정: 50 = 의심 (escalation 검토)
+      EOF
+    answer_detail: "UEBA = weighted score. 다중 indicator 종합. 50+ 의심, 70+ escalation. false positive 감소."
+    verify:
+      type: output_contains
+      expect: Score
+      field: stdout
+      semantic:
+        intent: Blue — UEBA risk scoring.
+        success_criteria: ["weighted score 표", "판정"]
+        acceptable_methods:
+          - |
+            **[OSS] markdown score** — 표준.
+              # 4 패턴 weighted score
+            예상 출력 `risk score`.
+            운영 해석: UEBA 종합.
+        negative_signs: ["score 누락"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 8
+    instruction: |
+      ## 🎯 MISSION (Purple — 내부 위협 Lessons)
+      내부 위협 detection 종합 + DLP/UEBA 권고.
+      ## 💻 산출물
+      ```markdown
+      # SOC W12 — 내부 위협 R/B/P
+      ## Detection 종합
+      | indicator | 도구 | 탐지 |
+      |---|---|---|
+      | 새벽 access | sshd.log UEBA | 시간 분포 |
+      | privilege | secure log | sudo rule |
+      | data exfil | Suricata flow | bytes |
+      | 정책 위반 | auditd/Wazuh | 민감 파일 |
+      ## 권고
+      1. UEBA 자동화 (시간/privilege/data weighted score)
+      2. DLP (data loss prevention) for exfil
+      3. 민감 파일 (/etc/shadow) auditd 감시 rule
+      ```
+      ## 📋 채점
+      - Detection 종합 + DLP/UEBA 권고
+    hint: "Detection 종합 + DLP/UEBA."
+    category: purple
+    points: 12
+    answer: |
+      cat <<'EOF'
+      # SOC W12 — 내부 위협 R/B/P
+      ## Detection
+      | indicator | 도구 | 탐지 |
+      | 새벽 access | sshd UEBA | 시간 분포 |
+      | privilege | secure log | sudo rule |
+      | data exfil | Suricata flow | bytes |
+      | 정책 위반 | auditd/Wazuh | 민감 파일 |
+      ## 권고
+      1. UEBA 자동화 (weighted score)
+      2. DLP for exfil
+      3. /etc/shadow auditd rule
+      EOF
+    answer_detail: "내부 위협 = UEBA + DLP + auditd 결합. 행위 기반 detection. 외부 공격 보다 탐지 어려움."
+    verify:
+      type: output_contains
+      expect: Detection
+      field: stdout
+      semantic:
+        intent: Purple — 내부 위협 Lessons.
+        success_criteria: ["Detection 종합", "DLP/UEBA 권고"]
+        acceptable_methods:
+          - |
+            **[OSS] markdown 종합** — 표준.
+              # Detection + 권고
+            예상 출력 `종합`.
+            운영 해석: 내부 위협 회고.
+        negative_signs: ["권고 없음"]
     target_vm: bastion
     risk_level: low

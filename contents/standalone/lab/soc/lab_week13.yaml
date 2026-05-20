@@ -1,84 +1,374 @@
 lab_id: standalone-soc-week13
-title: "위협 인텔리전스 (CTI) 활용 — IoC / MISP / OpenCTI / Wazuh integration (6v6 + R/B/P)"
+title: 위협 인텔리전스 (CTI) 활용 — IoC/MISP/OpenCTI/Wazuh CDB + R/B/P
 version: standalone-non-ai
 course: soc
 week: 13
 description: |
-  CTI 의 4 활용 — IoC 수집 (OSINT) / IoC enrichment / Wazuh integration / 자체 IoC export (STIX/TAXII).
-difficulty: medium
-duration_minutes: 120
-prerequisites: ["W11 의 IoC 추출 경험"]
+  CTI 의 4 활용 — OSINT IoC 수집 / IoC enrichment / Wazuh CDB list 통합 / STIX
+  export. 마지막 4 step 은 R/B/P — Red 의 known-bad IoC 활동 → Blue 의 CDB 매칭
+  탐지 → Purple 의 IoC sharing.
+difficulty: hard
+duration_minutes: 180
+audience: 보안관제 (13주차)
+prerequisites: ["W11 IoC 추출"]
 objectives:
-  - "OSINT IoC 1 sample (AlienVault OTX / MalwareBazaar)"
-  - "IoC enrichment (geo / hash → AV detection)"
-  - "Wazuh rule 의 CDB list (IoC 매칭) 가용성"
-  - "본인 IoC 의 STIX 2.1 JSON export"
-pass_threshold: 0.6
+  - "OSINT IoC 1 sample + enrichment"
+  - "Wazuh CDB list (IoC dictionary) 통합"
+  - "STIX 2.1 export + MISP/OpenCTI 연동"
+  - "R/B/P — known-bad IoC 활동 → CDB 매칭 → sharing"
+pass_threshold: 0.7
 steps:
+
   - order: 1
-    instruction: "## 🎯 MISSION — OSINT IoC 1 sample\n**무엇을:** AlienVault OTX 또는 MalwareBazaar 의 IoC 1 sample (예: malicious IP) + 본 lab 환경 의 alert 와 비교."
-    hint: "curl https://otx.alienvault.com/api/v1/indicators/IPv4/<ip>/general 또는 https://bazaar.abuse.ch/api/v1/."
+    instruction: |
+      ## 🎯 MISSION
+      OSINT CTI source 조사 — MalwareBazaar / AlienVault OTX / abuse.ch 의 IoC 1 sample.
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-attacker 'curl -s "https://urlhaus-api.abuse.ch/v1/urls/recent/limit/3/" 2>/dev/null | python3 -m json.tool 2>/dev/null | head -20 || echo "외부 CTI API — 인터넷 가용 시"'
+      ```
+      ## 📋 확인 사항
+      - OSINT IoC 1 sample (URL/hash/IP)
+      ## 💡 왜 이걸 하는가?
+      CTI = 외부 threat intelligence. OSINT (open source) feed = MalwareBazaar /
+      URLhaus / OTX. SOC 의 자체 detection 의 보강 (known-bad IoC).
+      ## 🔍 결과 해석
+      - IoC sample → 자체 환경 매칭
+      - API 차단 시 → 로컬 IoC list 사용
+    hint: "abuse.ch URLhaus API 또는 로컬."
     category: cti
-    points: 10
-    answer: "🤖 가이드: 학생 의 1 sample 인용 + 분석."
-    answer_detail: "OSINT CTI = SOC 의 외부 intelligence. 자체 detection 의 보강."
+    points: 8
+    answer: |
+      ssh 6v6-attacker 'curl -s "https://urlhaus-api.abuse.ch/v1/urls/recent/limit/3/" 2>/dev/null | python3 -m json.tool 2>/dev/null | head -20 || echo "CTI feed 예: malware-c2.example.com, evil.example.com (로컬 IoC)"'
+    answer_detail: "OSINT CTI = URLhaus/MalwareBazaar/OTX. IoC feed 의 known-bad. 자체 환경 매칭 으로 detection 보강. API 차단 시 로컬 IoC."
     verify:
-      intent: "OSINT IoC sample"
-      success_criteria: ["1 IoC"]
-      acceptable_methods: ["API / web"]
-      negative_signs: ["IoC 없음"]
-    target_vm: bastion
+      type: output_contains
+      expect: ""
+      field: stdout
+      semantic:
+        intent: OSINT CTI IoC sample.
+        success_criteria: ["IoC 1 sample (또는 로컬)"]
+        acceptable_methods:
+          - |
+            **[OSS] abuse.ch API** — 표준.
+              ssh 6v6-attacker 'curl -s "https://urlhaus-api.abuse.ch/v1/urls/recent/limit/3/"'
+            예상 출력 `URLhaus IoC JSON`.
+            운영 해석: OSINT feed.
+          - |
+            **[OSS] MISP feed** — CTI 플랫폼.
+              # MISP 의 default feeds (CIRCL/abuse.ch)
+            예상 출력 `feed list`.
+            운영 해석: CTI 통합.
+        negative_signs: ["IoC 없음"]
+    target_vm: attacker
     risk_level: low
 
   - order: 2
-    instruction: "## 🎯 MISSION — IoC enrichment\n**무엇을:** 1 IP 또는 hash 의 enrichment (geo / asn / passive DNS / VT) 결과 학생 정리."
-    hint: "ipinfo.io/<ip>/json 또는 virustotal API."
+    instruction: |
+      ## 🎯 MISSION
+      IoC enrichment — IP/domain 의 geo/asn/reputation.
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-attacker 'curl -s "https://ipinfo.io/8.8.8.8/json" 2>/dev/null | python3 -m json.tool 2>/dev/null | head -10 || echo "enrichment: geo/asn/org"'
+      ```
+      ## 📋 확인 사항
+      - IP 의 geo/asn/org enrichment
+      ## 💡 왜?
+      enrichment = IoC 의 context 보강. geo (출처 국가) / asn (네트워크) / reputation
+      (악성 여부). 트리아지 의 reasoning.
+      ## 🔍 결과 해석
+      - geo/asn → IoC 의 context
+    hint: "ipinfo.io enrichment."
     category: cti
     points: 8
-    answer: "🤖 가이드: 학생 정리 표."
-    answer_detail: "enrichment = IoC 의 context 보강. SOC 의 reasoning 의 base."
+    answer: |
+      ssh 6v6-attacker 'curl -s "https://ipinfo.io/8.8.8.8/json" 2>/dev/null | python3 -m json.tool 2>/dev/null | head -10 || echo "enrichment 예: country/asn/org"'
+    answer_detail: "enrichment = IoC context. geo (국가) / asn (네트워크) / reputation. 트리아지 의 판단 보강."
     verify:
-      intent: "enrichment 표"
-      success_criteria: ["geo + asn 또는 av"]
-      acceptable_methods: ["API"]
-      negative_signs: ["enrichment 없음"]
-    target_vm: bastion
+      type: output_contains
+      expect: ""
+      field: stdout
+      semantic:
+        intent: IoC enrichment.
+        success_criteria: ["geo/asn enrichment"]
+        acceptable_methods:
+          - |
+            **[OSS] ipinfo.io** — 표준.
+              ssh 6v6-attacker 'curl -s ipinfo.io/8.8.8.8/json'
+            예상 출력 `country/asn/org`.
+            운영 해석: context.
+        negative_signs: ["enrichment 없음"]
+    target_vm: attacker
     risk_level: low
 
   - order: 3
-    instruction: "## 🎯 MISSION — Wazuh CDB list integration\n**무엇을:** /var/ossec/etc/lists/ 의 default cdb 또는 학생 의 custom IoC list 작성 + rule 매핑 설명."
-    hint: "ls /var/ossec/etc/lists/. cdb format = key:value."
+    instruction: |
+      ## 🎯 MISSION
+      Wazuh CDB list (IoC dictionary) 구조 + 통합 방법.
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-siem 'sudo ls /var/ossec/etc/lists/ 2>/dev/null; sudo head -5 /var/ossec/etc/lists/* 2>/dev/null | head -15'
+      ```
+      ## 📋 확인 사항
+      - CDB list 파일 (key:value format) + ossec.conf 의 <list>
+      ## 💡 왜?
+      Wazuh CDB list = IoC 의 dictionary lookup (O(1) 매칭). rule 의 <list> 로
+      참조. malicious IP/domain/hash 의 빠른 매칭.
+      ## 🔍 결과 해석
+      - CDB list → IoC 매칭 rule
+    hint: "ls /var/ossec/etc/lists/."
     category: cti
     points: 10
     answer: |
-      🤖 가이드:
-      ssh 6v6-siem 'sudo ls /var/ossec/etc/lists/ 2>/dev/null | head -5; sudo head -5 /var/ossec/etc/lists/audit-keys 2>/dev/null'
-    answer_detail: "Wazuh CDB list = IoC 의 dictionary lookup. rule 의 <list> 로 매칭 빠름."
+      ssh 6v6-siem 'sudo ls /var/ossec/etc/lists/ 2>/dev/null; echo "---"; sudo head -5 /var/ossec/etc/lists/* 2>/dev/null | head -15'
+    answer_detail: "CDB list = IoC dictionary (key:value, O(1) lookup). ossec.conf <list> 로 컴파일. rule 의 <list field=srcip lookup=match_key> 로 IoC 매칭."
     verify:
-      intent: "CDB list 확인"
-      success_criteria: ["list 파일 1+"]
-      acceptable_methods: ["ls / head"]
-      negative_signs: ["없음"]
+      type: output_contains
+      expect: ""
+      field: stdout
+      semantic:
+        intent: Wazuh CDB list 구조.
+        success_criteria: ["CDB list 파일", "통합 방법"]
+        acceptable_methods:
+          - |
+            **[OSS] ls lists** — 표준.
+              ssh 6v6-siem 'sudo ls /var/ossec/etc/lists/'
+            예상 출력 `audit-keys ...`.
+            운영 해석: IoC dictionary.
+          - |
+            **[OSS] CDB 생성** — 통합.
+              # echo "1.2.3.4:malicious" > /var/ossec/etc/lists/malicious-ip; ossec-makelists
+            예상 출력 `cdb compile`.
+            운영 해석: IoC 추가.
+        negative_signs: ["list 없음"]
     target_vm: siem
     risk_level: low
 
   - order: 4
-    instruction: "## 🎯 MISSION — STIX 2.1 JSON export 1 개 + 보고서"
-    hint: "STIX 2.1 = JSON object { type: 'indicator', pattern: '[ipv4-addr:value = ...]' }."
-    category: documentation
+    instruction: |
+      ## 🎯 MISSION
+      IoC CDB list 작성 (학생) + rule 매핑 설명.
+      ## 💻 산출물
+      ```bash
+      # CDB list (key:value)
+      cat > /tmp/malicious-ioc.cdb <<EOF
+      malware-c2.example.com:C2 server
+      evil.example.com:phishing
+      10.20.30.202:lab attacker
+      EOF
+      # rule 매핑 (개념)
+      # <rule id="100600"><list field="url" lookup="address_match_key">etc/lists/malicious-ioc</list>
+      ```
+      ## 📋 채점
+      - CDB list + rule 매핑
+      ## 💡 왜?
+      학생 IoC list 작성. rule 의 <list lookup> 으로 매칭. OSINT IoC (STEP 1) +
+      자체 IoC (W11) 통합.
+      ## 🔍 결과 해석
+      - CDB + rule → IoC 자동 매칭
+    hint: "CDB key:value + rule <list>."
+    category: cti
+    points: 10
+    answer: |
+      cat <<'EOF'
+      # CDB list
+      malware-c2.example.com:C2
+      evil.example.com:phishing
+      10.20.30.202:lab attacker
+      EOF
+      echo "# rule: <list field=url lookup=address_match_key>etc/lists/malicious-ioc</list>"
+    answer_detail: "CDB list = IoC dictionary. ossec-makelists 컴파일. rule <list> 로 srcip/url 매칭. OSINT + 자체 IoC 통합."
+    verify:
+      type: output_contains
+      expect: ""
+      field: stdout
+      semantic:
+        intent: IoC CDB list 작성.
+        success_criteria: ["CDB list", "rule 매핑"]
+        acceptable_methods:
+          - |
+            **[OSS] CDB + rule** — 표준.
+              # key:value list + <list> rule
+            예상 출력 `CDB + rule`.
+            운영 해석: IoC 매칭.
+        negative_signs: ["list 누락"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION (Red Team)
+      attacker 가 known-bad IoC 활동 (malicious domain 접근 시뮬).
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -H "Host: malware-c2.example.com" "http://10.20.30.1/" --max-time 3 2>&1; echo "known-bad domain 접근 시뮬"'
+      ATTACK_TS=$(ssh 6v6-attacker 'date -u +%Y-%m-%dT%H:%M:%S'); echo "ATTACK_TS=$ATTACK_TS"
+      ```
+      ## 📋 확인 사항
+      - known-bad host header (CDB list 의 IoC) 접근
+      ## 💡 왜?
+      CDB list 의 IoC 와 매칭 되는 활동. 자체 환경 의 known-bad 통신 탐지.
+      ## 🔍 결과 해석
+      - CDB 매칭 시 rule 발화
+    hint: "curl -H Host:malware-c2 (CDB IoC)."
+    category: redteam
     points: 8
     answer: |
-      🤖 가이드:
-      cat > /tmp/ioc.json <<'EOF'
-      {"type":"indicator","spec_version":"2.1","id":"indicator--1","created":"2026-05-19T00:00:00Z","modified":"2026-05-19T00:00:00Z","pattern":"[ipv4-addr:value = '1.2.3.4']","valid_from":"2026-05-19T00:00:00Z","labels":["malicious-activity"]}
-      EOF
-      cat /tmp/ioc.json | python3 -m json.tool
-      rm /tmp/ioc.json
-    answer_detail: "STIX/TAXII = CTI 의 표준 교환 포맷. MISP / OpenCTI 의 native input."
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -H "Host: malware-c2.example.com" "http://10.20.30.1/" --max-time 3 2>&1; echo done'
+      ATTACK_TS=$(ssh 6v6-attacker 'date -u +%Y-%m-%dT%H:%M:%S'); echo "ATTACK_TS=$ATTACK_TS"
+    answer_detail: "known-bad domain (CDB IoC) 접근 시뮬. CDB list 매칭 rule trigger. 자체 IoC 의 detection."
     verify:
-      intent: "STIX JSON + cleanup"
-      success_criteria: ["1 STIX JSON"]
-      acceptable_methods: ["JSON"]
-      negative_signs: ["미작성"]
+      type: output_contains
+      expect: done
+      field: stdout
+      semantic:
+        intent: Red — known-bad IoC 활동.
+        success_criteria: ["known-bad host 접근", "ATTACK_TS"]
+        acceptable_methods:
+          - |
+            **[OSS] curl known-bad host** — 표준.
+              ssh 6v6-attacker 'curl -H "Host: malware-c2.example.com" http://10.20.30.1/'
+            예상 출력 `응답 코드`.
+            운영 해석: IoC 활동.
+        negative_signs: ["ATTACK_TS 누락"]
+    target_vm: attacker
+    risk_level: medium
+
+  - order: 6
+    instruction: |
+      ## 🎯 MISSION (Blue Team)
+      STEP 5 의 known-bad 활동 이 ips eve.json (http hostname) + siem 에서 탐지.
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-ips 'sudo tail -300 /var/log/suricata/eve.json | jq -c "select(.event_type==\"http\" and (.http.hostname // \"\" | test(\"malware-c2|evil\"))) | {host: .http.hostname, url: .http.url}" | tail -3'
+      ssh 6v6-siem 'sudo tail -300 /var/ossec/logs/alerts/alerts.json | jq -c "select(.full_log // \"\" | test(\"malware-c2|evil.example\")) | {rule: .rule.id, desc: .rule.description}" | tail -3'
+      ```
+      ## 📋 확인 사항
+      - eve.json 의 known-bad hostname + siem alert
+      ## 💡 왜?
+      CTI IoC (CDB list) 와 실제 트래픽 의 매칭. SOC 의 threat intel 기반 detection.
+      ## 🔍 결과 해석
+      - hostname 매칭 → CTI detection
+    hint: "eve.json hostname + siem full_log."
+    category: blueteam
+    points: 12
+    answer: |
+      echo "=== ips eve.json ==="
+      ssh 6v6-ips 'sudo tail -300 /var/log/suricata/eve.json | jq -c "select(.event_type==\"http\" and (.http.hostname // \"\" | test(\"malware-c2|evil\"))) | {host: .http.hostname, url: .http.url}" | tail -3'
+      echo "=== siem ==="
+      ssh 6v6-siem 'sudo tail -300 /var/ossec/logs/alerts/alerts.json | jq -c "select((.full_log // \"\") | test(\"malware-c2|evil.example\")) | {rule: .rule.id, desc: .rule.description}" | tail -3'
+    answer_detail: "CTI IoC (CDB) 와 트래픽 매칭. eve.json 의 hostname 이 known-bad 면 CDB rule 발화. threat intel 기반 detection."
+    verify:
+      type: output_contains
+      expect: ""
+      field: stdout
+      semantic:
+        intent: Blue — known-bad IoC 탐지.
+        success_criteria: ["hostname 매칭 또는 분석"]
+        acceptable_methods:
+          - |
+            **[OSS] jq hostname** — 표준.
+              ssh 6v6-ips 'sudo tail -300 /var/log/suricata/eve.json | jq "select(.http.hostname | test(\"malware-c2\"))" | tail -3'
+            예상 출력 `known-bad host event`.
+            운영 해석: CTI 매칭.
+        negative_signs: ["탐지 안 됨"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 7
+    instruction: |
+      ## 🎯 MISSION (STIX export)
+      탐지 IoC 를 STIX 2.1 indicator + MISP/OpenCTI 연동 절차.
+      ## 💻 산출물
+      ```json
+      {"type":"indicator","spec_version":"2.1","id":"indicator--soc-w13","pattern":"[domain-name:value = 'malware-c2.example.com']","pattern_type":"stix","valid_from":"2026-05-20T00:00:00Z","labels":["malicious-activity"]}
+      ```
+      + MISP 연동: PyMISP / MISP REST API
+      + OpenCTI 연동: connector
+      ## 📋 채점
+      - STIX indicator + 연동 절차
+      ## 💡 왜?
+      STIX = CTI 교환 표준. 자체 탐지 IoC 를 MISP/OpenCTI 로 sharing. SOC 간 협업.
+      ## 🔍 결과 해석
+      - STIX → MISP import
+    hint: "STIX indicator + MISP/OpenCTI 연동."
+    category: cti
+    points: 12
+    answer: |
+      cat <<'EOF'
+      {"type":"indicator","spec_version":"2.1","id":"indicator--soc-w13","pattern":"[domain-name:value = 'malware-c2.example.com']","pattern_type":"stix","valid_from":"2026-05-20T00:00:00Z","labels":["malicious-activity"]}
+      EOF
+      echo "# MISP: PyMISP add_event. OpenCTI: STIX connector import."
+    answer_detail: "STIX 2.1 indicator = CTI 교환. 자체 IoC → MISP (PyMISP) / OpenCTI (connector) sharing. SOC 협업 + threat sharing."
+    verify:
+      type: output_contains
+      expect: indicator
+      field: stdout
+      semantic:
+        intent: STIX export + MISP/OpenCTI.
+        success_criteria: ["STIX indicator", "연동 절차"]
+        acceptable_methods:
+          - |
+            **[OSS] STIX + PyMISP** — 표준.
+              # STIX JSON + PyMISP add_event
+            예상 출력 `STIX + MISP`.
+            운영 해석: CTI sharing.
+        negative_signs: ["STIX 누락"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 8
+    instruction: |
+      ## 🎯 MISSION (Purple — CTI Lessons)
+      CTI 활용 종합 — feed/enrichment/CDB/STIX + 자동화 권고.
+      ## 💻 산출물
+      ```markdown
+      # SOC W13 — CTI R/B/P
+      ## CTI 활용 chain
+      | 단계 | 도구 | 결과 |
+      |---|---|---|
+      | 수집 | URLhaus/OTX | OSINT IoC |
+      | enrichment | ipinfo | geo/asn |
+      | 매칭 | Wazuh CDB | rule 발화 |
+      | sharing | STIX/MISP | indicator |
+      ## 권고
+      1. CTI feed 자동 import (CDB 갱신 cron)
+      2. MISP-Wazuh integration (자동 IoC sync)
+      3. enrichment 자동화 (alert 의 srcip → geo/reputation)
+      ```
+      ## 📋 채점
+      - CTI chain + 자동화 권고
+    hint: "CTI chain + 자동화."
+    category: purple
+    points: 12
+    answer: |
+      cat <<'EOF'
+      # SOC W13 — CTI R/B/P
+      ## CTI chain
+      | 단계 | 도구 | 결과 |
+      | 수집 | URLhaus/OTX | OSINT IoC |
+      | enrichment | ipinfo | geo/asn |
+      | 매칭 | Wazuh CDB | rule 발화 |
+      | sharing | STIX/MISP | indicator |
+      ## 권고
+      1. CTI feed 자동 import (CDB cron)
+      2. MISP-Wazuh integration
+      3. enrichment 자동화
+      EOF
+    answer_detail: "CTI chain = 수집→enrichment→매칭→sharing. 자동화 (feed import + MISP sync + enrichment) 가 SOC 효율의 핵심."
+    verify:
+      type: output_contains
+      expect: chain
+      field: stdout
+      semantic:
+        intent: Purple — CTI Lessons + 자동화.
+        success_criteria: ["CTI chain", "자동화 권고"]
+        acceptable_methods:
+          - |
+            **[OSS] markdown chain** — 표준.
+              # CTI chain + 권고
+            예상 출력 `CTI 요약`.
+            운영 해석: CTI 회고.
+        negative_signs: ["권고 없음"]
     target_vm: bastion
     risk_level: low

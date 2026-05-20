@@ -1,106 +1,299 @@
 lab_id: standalone-soc-week15
-title: "기말 종합 인시던트 대응 훈련 — 시나리오 + IR + 보고서 + R/B/P 회고"
+title: 기말 — 종합 인시던트 대응 훈련 (multi-stage APT 시나리오) + R/B/P 종합
 version: standalone-non-ai
 course: soc
 week: 15
 description: |
-  기말 — 가공 시나리오 (예: "외부 IP 1.2.3.4 가 web 의 SQLi + ssh brute + 데이터 유출 의 multi-stage attack") 의 종합 IR 훈련 + W01~W14 의 모든 학습 통합 + R/B/P 회고.
+  기말 — W01~W14 의 모든 역량 통합. 가공 APT 시나리오 (recon → ssh brute → web
+  exploit → 내부 이동 → data exfil) 의 full IR cycle. 4 도구 추적 + ATT&CK kill
+  chain + SIGMA + IR 6단계 + CTI sharing + 자동화 + R/B/P 회고 의 종합 평가.
 difficulty: hard
-duration_minutes: 180
-prerequisites: ["W01~W14 통과"]
+duration_minutes: 240
+audience: 보안관제 기말 (15주차)
+prerequisites: ["W01~W14 모두 통과"]
 objectives:
-  - "가공 시나리오 의 IR 6 단계 모두 수행"
-  - "ATT&CK 매핑 (Tactic + Technique 5+)"
-  - "SIGMA 룰 본인 작성 1+"
-  - "IoC 추출 + STIX export"
-  - "Lessons Learned + R/B/P 회고"
-pass_threshold: 0.7
+  - "multi-stage APT 시나리오 발생 (5 stage) + 4 도구 추적"
+  - "ATT&CK kill chain 매핑 (5+ Technique)"
+  - "IR 6 단계 적용 + Containment"
+  - "CTI IoC sharing (STIX)"
+  - "통합 보고서 + R/B/P 종합 회고"
+pass_threshold: 0.75
 steps:
+
   - order: 1
     instruction: |
-      ## 🎯 MISSION — 가공 시나리오 + IR 6 단계 수행
-
-      **시나리오:**
+      ## 🎯 MISSION (Red Team — APT 시나리오)
+      multi-stage APT 5 stage 발생.
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-attacker 'echo "S1 recon"; nmap -sV -p 80,443 -Pn 10.20.30.1 2>&1 | grep open | head -2
+      echo "S2 brute"; for i in $(seq 8); do sshpass -p "a$i" ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no bad@10.20.32.100 echo 2>&1 | tail -1 | head -1; done
+      echo "S3 web exploit"; curl -s -o /dev/null -w "%{http_code}\n" -A sqlmap -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?id=1+UNION+SELECT"
+      echo "S4 C2 sim"; curl -s -o /dev/null -w "%{http_code}\n" -H "Host: malware-c2.example.com" "http://10.20.30.1/" --max-time 3
+      echo "S5 exfil sim"; curl -s -o /dev/null -w "%{http_code}\n" "http://10.20.30.1/" --max-time 3'
+      ATTACK_TS=$(ssh 6v6-attacker 'date -u +%Y-%m-%dT%H:%M:%S'); echo "ATTACK_TS=$ATTACK_TS"
       ```
-      2026-05-20 02:13 UTC — 외부 IP 1.2.3.4 가:
-        02:13:00  juice.6v6.lab 의 /rest/products/search?q=' OR 1=1-- (ModSec CRS 942)
-        02:14:30  /rest/user/login 의 admin@juice-sh.op brute force (10 시도)
-        02:15:00  /api/Users 의 user 데이터 enumeration (5 회 401)
-        02:16:30  /ftp/legal.md 등 metafile 다수 GET (recon)
-      ```
-
-      **무엇을:** 위 시나리오 의 IR 6 단계 (Prep / Identify / Contain / Eradicate / Recover / Lessons) 각각 의 활동 markdown.
-    hint: "W09 의 6 단계 + 본 시나리오 의 구체 timestamp 매핑."
-    category: ir_capstone
-    points: 25
-    answer: "🤖 가이드: 6 단계 × 5 컬럼 (시간 / 활동 / 도구 / 산출물 / 책임자)."
-    answer_detail: "기말 의 기본 = W09 IR + W10/W11/W12 detection 통합."
+      ## 📋 확인 사항
+      - 5 stage 모두 + ATTACK_TS
+      ## 💡 왜?
+      APT = Advanced Persistent Threat 의 multi-stage. kill chain 의 전 단계. 기말
+      의 종합 시나리오.
+      ## 🔍 결과 해석
+      - 5 stage 흔적 → 종합 분석
+    hint: "nmap+sshpass+curl 5 stage."
+    category: redteam
+    points: 12
+    answer: |
+      ssh 6v6-attacker 'echo "S1"; nmap -sV -p 80 -Pn 10.20.30.1 2>&1 | grep open | head -1
+      echo "S2"; for i in $(seq 8); do sshpass -p "a$i" ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no bad@10.20.32.100 echo 2>&1 | tail -1; done | tail -1
+      echo "S3"; curl -s -o /dev/null -w "%{http_code}\n" -A sqlmap -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?id=1+UNION+SELECT"
+      echo "S4"; curl -s -o /dev/null -w "%{http_code}\n" -H "Host: malware-c2.example.com" "http://10.20.30.1/" --max-time 3'
+      ATTACK_TS=$(ssh 6v6-attacker 'date -u +%Y-%m-%dT%H:%M:%S'); echo "ATTACK_TS=$ATTACK_TS"
+    answer_detail: "APT 5 stage: recon(T1595)→brute(T1110)→exploit(T1190)→C2(T1071)→exfil(T1041). kill chain 전 단계."
     verify:
-      intent: "IR 6 단계 모두"
-      success_criteria: ["6 단계", "시간 매핑", "활동"]
-      acceptable_methods: ["markdown 표"]
-      negative_signs: ["단계 누락"]
-    target_vm: bastion
-    risk_level: low
+      type: output_contains
+      expect: open
+      field: stdout
+      semantic:
+        intent: Red — APT 5 stage 시나리오.
+        success_criteria: ["5 stage", "ATTACK_TS"]
+        acceptable_methods:
+          - |
+            **[OSS] nmap+sshpass+curl 5 stage** — 표준.
+              # recon/brute/exploit/C2/exfil
+            예상 출력 `5 stage 흔적`.
+            운영 해석: APT kill chain.
+        negative_signs: ["stage 누락"]
+    target_vm: attacker
+    risk_level: medium
 
   - order: 2
     instruction: |
-      ## 🎯 MISSION — ATT&CK 매핑 + SIGMA 룰 + IoC
-
-      **무엇을:**
-      - ATT&CK: Tactic 3+ (Initial Access / Credential Access / Discovery) + Technique 5+ (T1190 / T1110 / T1087 / T1083)
-      - SIGMA 룰 1 개 (학생 작성 — W07 형식)
-      - IoC 5+ (src_ip + URI + user)
-    hint: "MITRE Navigator JSON 또는 markdown 표."
-    category: ir_capstone
-    points: 25
-    answer: "🤖 가이드: ATT&CK 표 + SIGMA YAML + IoC list."
-    answer_detail: "통합 산출물 의 핵심 — Tactic chain + 학생 의 detection rule."
+      ## 🎯 MISSION (4 도구 종합 추적)
+      5 stage 의 fw/ips/web/siem 4 도구 흔적 종합.
+      ## 💻 실행 명령
+      ```bash
+      echo "=== ips alert (recon/web) ==="; ssh 6v6-ips 'sudo tail -300 /var/log/suricata/eve.json | jq -c "select(.event_type==\"alert\") | .alert.signature" | tail -3'
+      echo "=== siem sshd (brute) ==="; ssh 6v6-siem 'sudo tail -200 /var/ossec/logs/alerts/alerts.json | jq -c "select(.rule.id | test(\"^57\")) | {rule: .rule.id, src: .data.srcip}" | tail -3'
+      echo "=== web ModSec (exploit) ==="; ssh 6v6-web 'sudo tail -1 /var/log/apache2/modsec_audit.log | jq ".transaction.response.http_code" 2>/dev/null'
+      echo "=== siem 통합 ==="; ssh 6v6-siem 'sudo tail -10 /var/ossec/logs/alerts/alerts.json | jq -c "{ts: .timestamp[11:19], rule: .rule.id, agent: .agent.name}"'
+      ```
+      ## 📋 확인 사항
+      - 4 도구 모두 흔적
+      ## 💡 왜?
+      종합 추적 = 전체 visibility. APT 의 각 stage 가 다른 도구.
+      ## 🔍 결과 해석
+      - 4 도구 → full chain
+    hint: "4 도구 종합."
+    category: blueteam
+    points: 15
+    answer: |
+      echo "=== ips ==="; ssh 6v6-ips 'sudo tail -300 /var/log/suricata/eve.json | jq -c "select(.event_type==\"alert\") | .alert.signature" | tail -3'
+      echo "=== siem sshd ==="; ssh 6v6-siem 'sudo tail -200 /var/ossec/logs/alerts/alerts.json | jq -c "select(.rule.id | test(\"^57\")) | {rule: .rule.id, src: .data.srcip}" | tail -3'
+      echo "=== web ==="; ssh 6v6-web 'sudo tail -1 /var/log/apache2/modsec_audit.log | jq ".transaction.response.http_code" 2>/dev/null'
+      echo "=== siem 통합 ==="; ssh 6v6-siem 'sudo tail -10 /var/ossec/logs/alerts/alerts.json | jq -c "{ts: .timestamp[11:19], rule: .rule.id, agent: .agent.name}"'
+    answer_detail: "4 도구 종합 = W01-W03 의 로그 분석 통합. APT 의 각 stage 추적."
     verify:
-      intent: "ATT&CK + SIGMA + IoC"
-      success_criteria:
-        - "Tactic 3+ Technique 5+"
-        - "SIGMA 1"
-        - "IoC 5+"
-      acceptable_methods: ["markdown + YAML"]
-      negative_signs: ["3 요소 중 누락"]
+      type: output_contains
+      expect: rule
+      field: stdout
+      semantic:
+        intent: 4 도구 종합 추적.
+        success_criteria: ["4 도구 흔적"]
+        acceptable_methods:
+          - |
+            **[OSS] 4 도구 jq** — 표준.
+              # ips/siem/web 각 추적
+            예상 출력 `각 도구 흔적`.
+            운영 해석: full chain.
+        negative_signs: ["도구 누락"]
     target_vm: bastion
     risk_level: low
 
   - order: 3
     instruction: |
-      ## 🎯 MISSION — Lessons Learned + R/B/P 회고
-
-      **무엇을:**
-      - Lessons Learned 3 단락 (왜 발생 / 어떻게 예방 / 룰 보강)
-      - R/B/P 종합 회고 (Red 의 공격 흐름 / Blue 의 detection chain / Purple 의 보강)
-    hint: "1 학기 학습 회고 + 본 시나리오 의 detection 어디 가 강했나."
-    category: documentation
-    points: 30
-    answer: "🤖 가이드: 2 부 markdown (Lessons + R/B/P)."
-    answer_detail: "기말 의 최종 산출물 = 학생 본인 의 1 학기 학습 의 reflection."
+      ## 🎯 MISSION (ATT&CK kill chain)
+      5 stage 를 ATT&CK kill chain 으로 매핑 + Navigator layer.
+      ## 💻 산출물
+      ```markdown
+      | stage | Tactic | Technique |
+      | recon | Reconnaissance | T1595 |
+      | brute | Credential Access | T1110 |
+      | exploit | Initial Access | T1190 |
+      | C2 | Command and Control | T1071 |
+      | exfil | Exfiltration | T1041 |
+      ```
+      + Navigator layer JSON (5 technique)
+      ## 📋 채점
+      - 5 stage kill chain + Navigator
+    hint: "5 stage Tactic/Technique + Navigator."
+    category: attack
+    points: 15
+    answer: |
+      cat <<'EOF'
+      | stage | Tactic | Technique |
+      | recon | Reconnaissance | T1595 |
+      | brute | Credential Access | T1110 |
+      | exploit | Initial Access | T1190 |
+      | C2 | Command and Control | T1071 |
+      | exfil | Exfiltration | T1041 |
+      EOF
+      echo '{"name":"W15 APT","domain":"enterprise-attack","techniques":[{"techniqueID":"T1595","score":1},{"techniqueID":"T1110","score":1},{"techniqueID":"T1190","score":1},{"techniqueID":"T1071","score":1},{"techniqueID":"T1041","score":1}]}'
+    answer_detail: "APT kill chain 5 stage 의 ATT&CK 매핑. Navigator layer 로 종합 시각화."
     verify:
-      intent: "Lessons + R/B/P"
-      success_criteria: ["Lessons 3 단락", "R/B/P 3 단락"]
-      acceptable_methods: ["markdown"]
-      negative_signs: ["1 부 누락"]
+      type: output_contains
+      expect: Technique
+      field: stdout
+      semantic:
+        intent: ATT&CK kill chain 매핑.
+        success_criteria: ["5 stage Tactic/Technique", "Navigator"]
+        acceptable_methods:
+          - |
+            **[OSS] markdown + Navigator** — 표준.
+              # 5 stage 매핑 + layer
+            예상 출력 `kill chain`.
+            운영 해석: 종합 매핑.
+        negative_signs: ["stage 누락"]
     target_vm: bastion
     risk_level: low
 
   - order: 4
-    instruction: "## 🎯 MISSION — sha256 무결성 + cleanup\n**무엇을:** 본 학기 의 모든 보고서 sha256 + /tmp cleanup."
-    hint: "sha256sum ~/soc-w*.md > all-reports.sha256."
+    instruction: |
+      ## 🎯 MISSION (IR 6단계 + SIGMA + CTI)
+      APT 의 IR 6 단계 적용 + SIGMA 룰 1+ + IoC STIX export.
+      ## 💻 산출물
+      ```markdown
+      ## IR 6 단계
+      Preparation / Identification (4도구) / Containment (fw+AR) /
+      Eradication / Recovery / Lessons
+      ## SIGMA 룰 (1+)
+      <APT stage 탐지 룰>
+      ## STIX IoC
+      {"type":"indicator","pattern":"[domain-name:value = 'malware-c2.example.com']",...}
+      ```
+      ## 📋 채점
+      - IR 6단계 + SIGMA + STIX
+    hint: "IR 6단계 + SIGMA + STIX 통합."
+    category: ir_capstone
+    points: 20
+    answer: |
+      cat <<'EOF'
+      ## IR 6단계
+      Prep / Identify (4도구) / Contain (fw+AR) / Eradicate / Recover / Lessons
+      ## SIGMA
+      title: APT C2 Beacon
+      detection: {selection: 'malware-c2.example.com', condition: selection}
+      tags: [attack.t1071]
+      ## STIX
+      {"type":"indicator","pattern":"[domain-name:value = 'malware-c2.example.com']","labels":["malicious-activity"]}
+      EOF
+    answer_detail: "기말 = IR 6단계 + SIGMA + CTI 통합. W07/W09/W13 의 적용."
+    verify:
+      type: output_contains
+      expect: indicator
+      field: stdout
+      semantic:
+        intent: IR + SIGMA + CTI 통합.
+        success_criteria: ["IR 6단계", "SIGMA", "STIX"]
+        acceptable_methods:
+          - |
+            **[OSS] markdown 통합** — 표준.
+              # IR + SIGMA + STIX
+            예상 출력 `통합 산출물`.
+            운영 해석: 종합.
+        negative_signs: ["요소 누락"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION (통합 보고서 + R/B/P 종합 회고)
+      APT IR 전체 의 통합 보고서 + 1 학기 R/B/P 종합 회고.
+      ## 💻 산출물
+      ```markdown
+      # SOC 기말 — APT IR 통합 보고서
+      ## 1. Executive Summary
+      multi-stage APT (5 stage) 탐지 + 대응
+      ## 2. 공격 timeline (4도구 + ATT&CK)
+      ## 3. IR cycle 요약
+      ## 4. 탐지 룰 + IoC (SIGMA + STIX)
+      ## 5. 대응 권고 + 우선순위
+      ## R/B/P 종합 회고 (1학기)
+      - Red: APT kill chain 의 각 stage
+      - Blue: 4도구 detection chain
+      - Purple: SOC 의 지속 개선 (rule/CTI/자동화)
+      ```
+      ## 📋 채점
+      - 통합 보고서 5 section + R/B/P 종합 회고
+    hint: "통합 보고서 + R/B/P 1학기 회고."
+    category: documentation
+    points: 38
+    answer: |
+      cat <<'EOF'
+      # SOC 기말 — APT IR 통합 보고서
+      ## 1. Executive Summary
+      multi-stage APT 5 stage 탐지+대응
+      ## 2. timeline (4도구+ATT&CK)
+      ## 3. IR cycle 요약
+      ## 4. SIGMA + STIX
+      ## 5. 권고 + 우선순위
+      ## R/B/P 종합 회고
+      - Red: APT kill chain
+      - Blue: 4도구 detection chain
+      - Purple: SOC 지속 개선
+      EOF
+    answer_detail: "기말 종합 = W01-W14 의 모든 역량 통합. APT IR 보고서 + 1학기 R/B/P 회고. SOC 분석가 의 종합 산출물."
+    verify:
+      type: output_contains
+      expect: Summary
+      field: stdout
+      semantic:
+        intent: 통합 보고서 + R/B/P 종합 회고.
+        success_criteria: ["5 section", "R/B/P 종합 회고"]
+        acceptable_methods:
+          - |
+            **[OSS] markdown 통합** — 표준.
+              # 5 section + R/B/P 회고
+            예상 출력 `통합 보고서`.
+            운영 해석: 종합 산출물.
+        negative_signs: ["section 누락", "회고 누락"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 6
+    instruction: |
+      ## 🎯 MISSION (cleanup + 종강)
+      기말 검체 cleanup + 1학기 보고서 sha256 무결성.
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-attacker 'rm -f /tmp/*.bin /tmp/*.yar /tmp/*.cdb /tmp/*.json /tmp/*.yml 2>/dev/null; echo cleanup 완료'
+      ```
+      ## 📋 채점
+      - cleanup + sha256
+      ## 💡 왜?
+      종강 = 모든 검체/임시 파일 정리 + 산출물 무결성. SOC 의 사고 종료 의 책임.
+      ## 🔍 결과 해석
+      - cleanup 완료 → 깨끗한 환경
+    hint: "rm /tmp/* + sha256."
     category: cleanup
     points: 10
     answer: |
-      🤖 가이드:
-      sha256sum ~/soc-w*.md 2>/dev/null | tee ~/soc-final-reports.sha256
-      rm -f /tmp/sample.bin /tmp/rule.yar /tmp/ioc.json /tmp/sigma_sshd.yml 2>/dev/null
-    answer_detail: "기말 종강 의 책임 = 모든 산출물 무결성 + 환경 cleanup."
+      ssh 6v6-attacker 'rm -f /tmp/*.bin /tmp/*.yar /tmp/*.cdb /tmp/sigma*.yml /tmp/malicious* 2>/dev/null; echo cleanup 완료'
+      echo "# 1학기 보고서 sha256: sha256sum ~/soc-w*.md"
+    answer_detail: "종강 cleanup = 검체 + 임시 파일 정리. 산출물 sha256 무결성. SOC 사고 종료 의 표준."
     verify:
-      intent: "sha256 + cleanup"
-      success_criteria: ["sha256", "cleanup"]
-      acceptable_methods: ["sha256sum / rm"]
-      negative_signs: ["cleanup 누락"]
-    target_vm: bastion
+      type: output_contains
+      expect: 완료
+      field: stdout
+      semantic:
+        intent: cleanup + 종강.
+        success_criteria: ["cleanup", "sha256"]
+        acceptable_methods:
+          - |
+            **[OSS] rm + sha256** — 표준.
+              ssh 6v6-attacker 'rm -f /tmp/*.bin ...; echo 완료'
+            예상 출력 `cleanup 완료`.
+            운영 해석: 종료 정리.
+        negative_signs: ["cleanup 누락"]
+    target_vm: attacker
     risk_level: low

@@ -1,90 +1,397 @@
 lab_id: standalone-soc-week14
-title: "자동화 관제 — Bastion Agent Daemon + Active Response (6v6 + R/B/P)"
+title: 자동화 관제 — Bastion Agent Daemon + Wazuh Active Response + R/B/P
 version: standalone-non-ai
 course: soc
 week: 14
 description: |
-  6v6 의 bastion daemon (Manager + SubAgent) 의 자동 운영 + Wazuh Active Response 의 자동 차단.
-difficulty: medium
-duration_minutes: 120
-prerequisites: ["W09 IR + W11/W12 detection"]
+  6v6 의 bastion daemon (Manager gpt-oss:120b + SubAgent qwen3:8b) 의 자동 운영 +
+  Wazuh Active Response 의 자동 차단. 마지막 4 step 은 R/B/P — Red 의 공격 →
+  bastion/Active Response 의 자동 대응 → Purple 의 자동화 한계 평가.
+difficulty: hard
+duration_minutes: 180
+audience: 보안관제 (14주차)
+prerequisites: ["W09-W13 IR + CTI"]
 objectives:
-  - "bastion API 의 /health + /kg/audit 으로 자동화 동작 확인"
-  - "bastion mission 1 회 자연어 보내기"
-  - "Wazuh Active Response 의 default rule 확인"
-  - "자동화 의 한계 + 운영 관리자 의 monitoring"
-pass_threshold: 0.6
+  - "bastion API /health + /kg/audit 의 자동화 상태"
+  - "bastion 자연어 mission 1 회 + KG anchor"
+  - "Wazuh Active Response default rule + 자동 차단"
+  - "R/B/P — 공격 → 자동 대응 → 한계 평가"
+pass_threshold: 0.7
 steps:
+
   - order: 1
-    instruction: "## 🎯 MISSION — bastion API /health\n**무엇을:** curl http://192.168.0.110:9100/health -H X-API-Key 결과."
-    hint: "curl -H 'X-API-Key: ccc-api-key-2026'."
+    instruction: |
+      ## 🎯 MISSION
+      bastion API /health 로 Manager/SubAgent/KG 상태 확인.
+      ## 💻 실행 명령
+      ```bash
+      curl -s -H "X-API-Key: ccc-api-key-2026" http://192.168.0.110:9100/health | python3 -m json.tool | head -25
+      ```
+      ## 📋 확인 사항
+      - status ok + KG 상태 (all_modules_loaded)
+      ## 💡 왜 이걸 하는가?
+      bastion = 6v6 의 자동 운영 에이전트. /health 가 Manager + SubAgent + KG 통합
+      상태. SOC 의 자동화 인프라 의 health check.
+      ## 🔍 결과 해석
+      - status ok + kg true = 정상
+      - kg false = KG 모듈 미로드 (조사)
+    hint: "curl /health with X-API-Key."
     category: automation
-    points: 8
+    points: 10
     answer: |
-      🤖 가이드:
-      curl -s -H 'X-API-Key: ccc-api-key-2026' http://192.168.0.110:9100/health | python3 -m json.tool | head -20
-    answer_detail: "bastion /health = manager + SubAgent + KG 상태 모두 표시."
+      curl -s -H "X-API-Key: ccc-api-key-2026" http://192.168.0.110:9100/health | python3 -m json.tool | head -25
+    answer_detail: "bastion /health = Manager (gpt-oss:120b) + SubAgent (qwen3:8b) + KG 통합 상태. all_modules_loaded=true 면 KG 정상."
     verify:
-      intent: "/health 호출"
-      success_criteria: ["JSON 응답"]
-      acceptable_methods: ["curl"]
-      negative_signs: ["응답 없음"]
+      type: output_contains
+      expect: status
+      field: stdout
+      semantic:
+        intent: bastion /health 자동화 상태.
+        success_criteria: ["status ok", "KG 상태"]
+        acceptable_methods:
+          - |
+            **[OSS] curl /health** — 표준.
+              curl -s -H "X-API-Key: ccc-api-key-2026" http://192.168.0.110:9100/health
+            예상 출력 `{"status":"ok","kg":{...}}`.
+            운영 해석: 자동화 health.
+          - |
+            **[OSS] curl /kg/health** — KG 전용.
+              curl -s -H "X-API-Key: ccc-api-key-2026" http://192.168.0.110:9100/kg/health
+            예상 출력 `KG 통합 상태`.
+            운영 해석: KG 모듈.
+        negative_signs: ["status 없음", "kg false"]
     target_vm: bastion
     risk_level: low
 
   - order: 2
-    instruction: "## 🎯 MISSION — bastion 자연어 mission 1 회\n**무엇을:** curl POST /chat with 자연어 mission (예: 'siem 의 최근 alert 5 건 의 rule.id Top 3 알려줘'). KG anchor 생성 확인."
-    hint: "POST /chat with message JSON. KG anchor 는 응답 의 kg_status event."
+    instruction: |
+      ## 🎯 MISSION
+      bastion 자연어 mission 1 회 + KG anchor 생성 확인.
+      ## 💻 실행 명령
+      ```bash
+      curl -s -X POST http://192.168.0.110:9100/chat \
+        -H "X-API-Key: ccc-api-key-2026" -H "Content-Type: application/json" \
+        -d '{"message":"siem 의 최근 alert 5건 의 rule.id Top 3 알려줘","stream":false,"course":"soc","step_order":2,"auto_approve":true}' \
+        | python3 -c "import sys,json; d=json.load(sys.stdin); [print('anchor:', e.get('record',{}).get('anchor_id')) for e in d.get('events',[]) if e.get('event')=='kg_status']"
+      ```
+      ## 📋 확인 사항
+      - mission 응답 + KG anchor (anc-xxx)
+      ## 💡 왜?
+      bastion mission = 자연어 → Manager 가 계획 → SubAgent 실행 → KG 기록. 매
+      mission 의 anchor 가 PE-KG 의 학습 cycle (paper §4).
+      ## 🔍 결과 해석
+      - anchor 생성 = 자동 학습
+    hint: "POST /chat + KG anchor."
     category: automation
     points: 10
     answer: |
-      🤖 가이드:
-      curl -s -X POST http://192.168.0.110:9100/chat \
-        -H 'X-API-Key: ccc-api-key-2026' -H 'Content-Type: application/json' \
-        -d '{"message":"siem 의 최근 alert 5 건 의 rule.id Top 3 알려줘","stream":false,"course":"soc","step_order":2,"auto_approve":true}' | python3 -c "
-        import sys, json
-        d = json.load(sys.stdin)
-        for e in d.get('events',[]):
-            if e.get('event') == 'kg_status':
-                print('anchor:', e.get('record',{}).get('anchor_id'))
-        "
-    answer_detail: "KG anchor 생성 = bastion 의 자동 학습. 매 mission 의 paper §4 PE-KG cycle."
+      curl -s -X POST http://192.168.0.110:9100/chat -H "X-API-Key: ccc-api-key-2026" -H "Content-Type: application/json" -d '{"message":"siem 의 최근 alert 5건 의 rule.id Top 3 알려줘","stream":false,"course":"soc","step_order":2,"auto_approve":true}' | python3 -c "import sys,json; d=json.load(sys.stdin); [print('anchor:', e.get('record',{}).get('anchor_id')) for e in d.get('events',[]) if e.get('event')=='kg_status']"
+    answer_detail: "bastion mission = 자연어 → ReAct (Manager 계획 + SubAgent 실행) → KG anchor 기록. PE-KG 의 학습 cycle. anchor = 매 mission 의 학습 흔적."
     verify:
-      intent: "mission + KG anchor"
-      success_criteria: ["mission 응답", "anchor 1+"]
-      acceptable_methods: ["curl"]
-      negative_signs: ["anchor 없음"]
+      type: output_contains
+      expect: anchor
+      field: stdout
+      semantic:
+        intent: bastion mission + KG anchor.
+        success_criteria: ["mission 응답", "anchor 1+"]
+        acceptable_methods:
+          - |
+            **[OSS] curl POST /chat** — 표준.
+              curl -s -X POST http://192.168.0.110:9100/chat -H "X-API-Key: ccc-api-key-2026" -d '{...}'
+            예상 출력 `anchor: anc-xxx`.
+            운영 해석: 자동 mission + 학습.
+          - |
+            **[OSS] /kg/anchors/recent** — 검증.
+              curl -s -H "X-API-Key: ccc-api-key-2026" "http://192.168.0.110:9100/kg/anchors/recent?limit=3"
+            예상 출력 `최근 anchor list`.
+            운영 해석: KG 기록 검증.
+        negative_signs: ["anchor 없음"]
     target_vm: bastion
     risk_level: low
 
   - order: 3
-    instruction: "## 🎯 MISSION — Wazuh Active Response 의 default rule\n**무엇을:** /var/ossec/etc/ossec.conf 의 <active-response> block 확인."
-    hint: "grep -A5 'active-response' ossec.conf."
+    instruction: |
+      ## 🎯 MISSION
+      Wazuh Active Response 의 default 설정 확인.
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-siem 'sudo grep -B1 -A6 "<active-response>" /var/ossec/etc/ossec.conf 2>/dev/null | head -20'
+      ssh 6v6-siem 'sudo ls /var/ossec/active-response/bin/ 2>/dev/null'
+      ```
+      ## 📋 확인 사항
+      - active-response block (command + rules_id + timeout)
+      - bin/ 의 스크립트 (firewall-drop / disable-account 등)
+      ## 💡 왜?
+      Active Response = Wazuh 의 자동 대응. rule 발화 → command 실행 (IP 차단 등).
+      SOC 의 자동 Containment.
+      ## 🔍 결과 해석
+      - active-response 설정 → 자동 차단 가능
+      - 미설정 → 수동 대응만
+    hint: "ossec.conf active-response + bin/."
     category: automation
-    points: 8
+    points: 10
     answer: |
-      🤖 가이드:
-      ssh 6v6-siem 'sudo grep -B1 -A5 "<active-response>" /var/ossec/etc/ossec.conf 2>/dev/null | head -30'
-    answer_detail: "Active Response = command + rule_id + timeout. firewall-drop / disable-account / restart-wazuh 등 default."
+      echo "=== active-response 설정 ==="
+      ssh 6v6-siem 'sudo grep -B1 -A6 "<active-response>" /var/ossec/etc/ossec.conf 2>/dev/null | head -20 || echo "active-response 미설정 — 추가 가능"'
+      echo "=== AR 스크립트 ==="
+      ssh 6v6-siem 'sudo ls /var/ossec/active-response/bin/ 2>/dev/null'
+    answer_detail: "Active Response = command + rules_id + timeout. firewall-drop (IP 차단) / disable-account / restart-wazuh. rule 발화 시 자동 실행."
     verify:
-      intent: "active-response block"
-      success_criteria: ["block 인용"]
-      acceptable_methods: ["grep"]
-      negative_signs: ["없음"]
+      type: output_contains
+      expect: ""
+      field: stdout
+      semantic:
+        intent: Wazuh Active Response 설정.
+        success_criteria: ["active-response block 또는 bin 스크립트"]
+        acceptable_methods:
+          - |
+            **[OSS] grep active-response** — 표준.
+              ssh 6v6-siem 'sudo grep -A6 "<active-response>" /var/ossec/etc/ossec.conf'
+            예상 출력 `command + rules_id`.
+            운영 해석: 자동 대응.
+          - |
+            **[OSS] ls AR bin** — 스크립트.
+              ssh 6v6-siem 'sudo ls /var/ossec/active-response/bin/'
+            예상 출력 `firewall-drop ...`.
+            운영 해석: AR 명령.
+        negative_signs: ["AR 부재"]
     target_vm: siem
     risk_level: low
 
   - order: 4
-    instruction: "## 🎯 MISSION — 자동화 한계 + 운영 monitoring 보고서"
-    hint: "자동화 가 위험한 경우 = false positive 차단. 학생 의견."
-    category: documentation
-    points: 8
-    answer: "🤖 가이드: 2 문단 markdown — 자동화 의 한계 + monitoring 권고."
-    answer_detail: "자동화 = SOC 의 효율 ↑ but 잘못된 차단 위험. SOC manager 의 monitoring 필수."
+    instruction: |
+      ## 🎯 MISSION
+      Active Response 설정 작성 (brute force 자동 차단 — 개념, 실 배포 X).
+      ## 💻 산출물
+      ```xml
+      <!-- ossec.conf active-response (실 배포 X) -->
+      <command>
+        <name>firewall-drop</name>
+        <executable>firewall-drop</executable>
+        <timeout_allowed>yes</timeout_allowed>
+      </command>
+      <active-response>
+        <command>firewall-drop</command>
+        <location>local</location>
+        <rules_id>5710,5760</rules_id>
+        <timeout>600</timeout>
+      </active-response>
+      ```
+      ## 📋 채점
+      - AR 설정 (command + active-response)
+      ## 💡 왜?
+      brute force (5710/5760) 발화 → firewall-drop 600초 자동 차단. SOC 의 자동
+      Containment. 단 false positive 시 정상 IP 차단 위험 → whitelist 필요.
+      ## 🔍 결과 해석
+      - AR 설정 → rule 발화 시 자동 차단
+    hint: "command + active-response XML."
+    category: automation
+    points: 12
+    answer: |
+      cat <<'EOF'
+      <command>
+        <name>firewall-drop</name>
+        <executable>firewall-drop</executable>
+        <timeout_allowed>yes</timeout_allowed>
+      </command>
+      <active-response>
+        <command>firewall-drop</command>
+        <location>local</location>
+        <rules_id>5710,5760</rules_id>
+        <timeout>600</timeout>
+      </active-response>
+      EOF
+    answer_detail: "AR = rule 5710/5760 발화 → firewall-drop 600초. 자동 Containment. whitelist (관리 IP) 로 false positive 방지 필수."
     verify:
-      intent: "자동화 한계 보고서"
-      success_criteria: ["2 문단"]
-      acceptable_methods: ["markdown"]
-      negative_signs: ["1 문단만"]
+      type: output_contains
+      expect: active-response
+      field: stdout
+      semantic:
+        intent: Active Response 설정 작성.
+        success_criteria: ["command + active-response", "rules_id"]
+        acceptable_methods:
+          - |
+            **[OSS] AR XML** — 표준.
+              # command + active-response + rules_id
+            예상 출력 `AR 설정`.
+            운영 해석: 자동 차단.
+        negative_signs: ["설정 누락"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION (Red Team)
+      attacker 에서 brute force (8회) → AR/bastion 자동 대응 trigger.
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-attacker 'for i in $(seq 8); do sshpass -p "z$i" ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no bad@10.20.32.100 echo 2>&1 | tail -1; done'
+      ATTACK_TS=$(ssh 6v6-attacker 'date -u +%Y-%m-%dT%H:%M:%S'); echo "ATTACK_TS=$ATTACK_TS"
+      ```
+      ## 📋 확인 사항
+      - 8회 brute (5710 trigger → AR 가동 시 자동 차단)
+      ## 💡 왜?
+      자동 대응 의 trigger. 8회 brute → rule 5710 → (AR 설정 시) firewall-drop.
+      ## 🔍 결과 해석
+      - 8회 fail + (AR 시) 차단 후 추가 시도 실패
+    hint: "sshpass 8회 brute."
+    category: redteam
+    points: 8
+    answer: |
+      ssh 6v6-attacker 'for i in $(seq 8); do sshpass -p "z$i" ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no bad@10.20.32.100 echo 2>&1 | tail -1; done'
+      ATTACK_TS=$(ssh 6v6-attacker 'date -u +%Y-%m-%dT%H:%M:%S'); echo "ATTACK_TS=$ATTACK_TS"
+    answer_detail: "8회 brute → 5710. AR 설정 시 firewall-drop 자동 차단. 학생 은 AR 미배포 (lab 보호) 라 차단 시뮬만."
+    verify:
+      type: output_contains
+      expect: denied
+      field: stdout
+      semantic:
+        intent: Red — brute 8회 AR trigger.
+        success_criteria: ["8회 fail", "ATTACK_TS"]
+        acceptable_methods:
+          - |
+            **[OSS] sshpass 8회** — 표준.
+              ssh 6v6-attacker 'for i in $(seq 8); do sshpass -p z$i ssh ... 2>&1 | tail -1; done'
+            예상 출력 `denied x8`.
+            운영 해석: AR trigger.
+        negative_signs: ["8회 미만"]
+    target_vm: attacker
+    risk_level: medium
+
+  - order: 6
+    instruction: |
+      ## 🎯 MISSION (Blue Team — bastion 자동 분석)
+      bastion 에 자연어 mission 으로 STEP 5 의 brute 분석 위임 + 자동 보고.
+      ## 💻 실행 명령
+      ```bash
+      curl -s -X POST http://192.168.0.110:9100/chat \
+        -H "X-API-Key: ccc-api-key-2026" -H "Content-Type: application/json" \
+        -d '{"message":"siem 의 최근 sshd 인증 실패 alert (rule 5710 또는 5760) 을 분석해서 source IP 와 시각을 알려줘","stream":false,"course":"soc","step_order":6,"auto_approve":true}' \
+        | python3 -c "import sys,json; d=json.load(sys.stdin); print('events:', len(d.get('events',[]))); [print('anchor:', e.get('record',{}).get('anchor_id')) for e in d.get('events',[]) if e.get('event')=='kg_status']"
+      ```
+      ## 📋 확인 사항
+      - bastion 의 자동 분석 + KG anchor
+      ## 💡 왜?
+      bastion = SOC L1 의 자동화. 자연어 mission 으로 alert 분석 위임. 인력 부족 의
+      SOC 의 효율 증대.
+      ## 🔍 결과 해석
+      - bastion 분석 + anchor → 자동 SOC
+    hint: "bastion mission 으로 brute 분석 위임."
+    category: blueteam
+    points: 12
+    answer: |
+      curl -s -X POST http://192.168.0.110:9100/chat -H "X-API-Key: ccc-api-key-2026" -H "Content-Type: application/json" -d '{"message":"siem 의 최근 sshd 인증 실패 alert (rule 5710 또는 5760) 을 분석해서 source IP 와 시각을 알려줘","stream":false,"course":"soc","step_order":6,"auto_approve":true}' | python3 -c "import sys,json; d=json.load(sys.stdin); print('events:', len(d.get('events',[]))); [print('anchor:', e.get('record',{}).get('anchor_id')) for e in d.get('events',[]) if e.get('event')=='kg_status']"
+    answer_detail: "bastion = SOC 자동화 에이전트. 자연어 mission 으로 alert 분석 위임. Manager 계획 + SubAgent 실행 + KG 학습. 인력 부족 SOC 의 효율."
+    verify:
+      type: output_contains
+      expect: anchor
+      field: stdout
+      semantic:
+        intent: Blue — bastion 자동 분석.
+        success_criteria: ["bastion 분석", "anchor"]
+        acceptable_methods:
+          - |
+            **[OSS] bastion mission** — 표준.
+              curl -s -X POST .../chat -d '{"message":"..."}'
+            예상 출력 `events + anchor`.
+            운영 해석: 자동 SOC.
+        negative_signs: ["anchor 없음"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 7
+    instruction: |
+      ## 🎯 MISSION (Blue Team — 자동화 검증)
+      bastion lifecycle 의 자동 기록 확인 (/kg/audit).
+      ## 💻 실행 명령
+      ```bash
+      curl -s -H "X-API-Key: ccc-api-key-2026" "http://192.168.0.110:9100/kg/audit?limit=3" 2>/dev/null | python3 -m json.tool 2>/dev/null | head -25
+      ```
+      ## 📋 확인 사항
+      - 최근 chat 의 KG 기록 흔적
+      ## 💡 왜?
+      자동화 의 audit = 모든 bastion 활동 의 추적성. SOC 의 자동 대응 도 audit 필수
+      (책임 추적). bastion 의 KG audit 가 매 mission 의 학습 기록.
+      ## 🔍 결과 해석
+      - audit 기록 → 자동화 추적성
+    hint: "/kg/audit endpoint."
+    category: blueteam
+    points: 12
+    answer: |
+      curl -s -H "X-API-Key: ccc-api-key-2026" "http://192.168.0.110:9100/kg/audit?limit=3" 2>/dev/null | python3 -m json.tool 2>/dev/null | head -25
+    answer_detail: "bastion /kg/audit = 최근 chat 의 KG 기록 흔적. 자동화 의 추적성 (audit trail). SOC 자동 대응 의 책임 추적."
+    verify:
+      type: output_contains
+      expect: ""
+      field: stdout
+      semantic:
+        intent: Blue — 자동화 audit.
+        success_criteria: ["kg audit 기록"]
+        acceptable_methods:
+          - |
+            **[OSS] /kg/audit** — 표준.
+              curl -s -H "X-API-Key: ccc-api-key-2026" "http://192.168.0.110:9100/kg/audit?limit=3"
+            예상 출력 `audit 기록`.
+            운영 해석: 추적성.
+          - |
+            **[OSS] /kg/metrics** — 통계.
+              curl -s -H "X-API-Key: ccc-api-key-2026" "http://192.168.0.110:9100/kg/metrics"
+            예상 출력 `KG counter`.
+            운영 해석: 자동화 metrics.
+        negative_signs: ["audit 없음"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 8
+    instruction: |
+      ## 🎯 MISSION (Purple — 자동화 한계)
+      자동화 (bastion + AR) 의 한계 + 운영 monitoring 권고.
+      ## 💻 산출물
+      ```markdown
+      # SOC W14 — 자동화 R/B/P
+      ## 자동화 효과
+      | 자동화 | 효과 | 한계 |
+      |---|---|---|
+      | bastion mission | L1 분석 위임 | LLM hallucination |
+      | Active Response | 자동 차단 | false positive → 정상 IP 차단 |
+      | KG 학습 | 반복 mission 효율 | 잘못된 학습 누적 |
+      ## 권고
+      1. AR whitelist (관리 IP) + timeout (영구 차단 X)
+      2. bastion 의 human-in-the-loop (critical 은 승인)
+      3. KG audit 정기 검토 (잘못된 anchor 제거)
+      ```
+      ## 📋 채점
+      - 자동화 효과/한계 + monitoring 권고
+    hint: "자동화 효과/한계 + 권고."
+    category: purple
+    points: 12
+    answer: |
+      cat <<'EOF'
+      # SOC W14 — 자동화 R/B/P
+      ## 자동화 효과/한계
+      | 자동화 | 효과 | 한계 |
+      | bastion mission | L1 위임 | LLM hallucination |
+      | Active Response | 자동 차단 | FP → 정상 IP 차단 |
+      | KG 학습 | 반복 효율 | 잘못된 학습 누적 |
+      ## 권고
+      1. AR whitelist + timeout
+      2. human-in-the-loop (critical 승인)
+      3. KG audit 정기 검토
+      EOF
+    answer_detail: "자동화 = 효율 ↑ but 위험 (FP 차단 / hallucination / 잘못된 학습). human-in-the-loop + whitelist + audit 가 균형."
+    verify:
+      type: output_contains
+      expect: 자동화
+      field: stdout
+      semantic:
+        intent: Purple — 자동화 한계 + monitoring.
+        success_criteria: ["효과/한계 표", "monitoring 권고"]
+        acceptable_methods:
+          - |
+            **[OSS] markdown 효과/한계** — 표준.
+              # 자동화 효과/한계 + 권고
+            예상 출력 `자동화 분석`.
+            운영 해석: 자동화 회고.
+        negative_signs: ["권고 없음"]
     target_vm: bastion
     risk_level: low
