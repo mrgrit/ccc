@@ -109,7 +109,7 @@ steps:
       STEP 2 공격 의 ModSec audit + siem alert 추출 + 매치 룰.
       ## 💻 실행 명령
       ```bash
-      ssh 6v6-web 'sudo tail -5 /var/log/apache2/modsec_audit.log | jq -c "{code: .transaction.response.http_code, rules: [.transaction.messages[]? | .ruleId // .id]}" 2>/dev/null | tail -3'
+      ssh 6v6-web 'sudo tail -5 /var/log/apache2/modsec_audit.log | jq -c "{code: .response.status, rules: [.audit_data.messages[]? | capture("id .(?<id>[0-9]+).") | .id]}" 2>/dev/null | tail -3'
       ssh 6v6-siem 'sudo tail -300 /var/ossec/logs/alerts/alerts.json | jq -c "select(.agent.name==\"web\") | {rule: .rule.id, desc: .rule.description}" | tail -5'
       ```
       ## 📋 확인 사항
@@ -123,7 +123,7 @@ steps:
     points: 12
     answer: |
       echo "=== ModSec audit ==="
-      ssh 6v6-web 'sudo tail -5 /var/log/apache2/modsec_audit.log | jq -c "{code: .transaction.response.http_code, rules: [.transaction.messages[]? | .ruleId // .id]}" 2>/dev/null | tail -3'
+      ssh 6v6-web 'sudo tail -5 /var/log/apache2/modsec_audit.log | jq -c "{code: .response.status, rules: [.audit_data.messages[]? | capture("id .(?<id>[0-9]+).") | .id]}" 2>/dev/null | tail -3'
       echo "=== siem web alert ==="
       ssh 6v6-siem 'sudo tail -300 /var/ossec/logs/alerts/alerts.json | jq -c "select(.agent.name==\"web\") | {rule: .rule.id, desc: .rule.description}" | tail -5'
     answer_detail: "매치 룰 = 공격 유형. 941 XSS / 942 SQLi / 930 traversal / 949 anomaly threshold."
@@ -137,7 +137,7 @@ steps:
         acceptable_methods:
           - |
             **[OSS] jq modsec + siem** — 표준.
-              ssh 6v6-web 'sudo tail -5 /var/log/apache2/modsec_audit.log | jq .transaction.messages'
+              ssh 6v6-web 'sudo tail -5 /var/log/apache2/modsec_audit.log | jq .audit_data.messages'
             예상 출력 `941/942/930 rules`.
             운영 해석: 공격 유형.
         negative_signs: ["룰 없음"]

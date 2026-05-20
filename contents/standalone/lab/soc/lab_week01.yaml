@@ -1001,9 +1001,9 @@ steps:
       # 1. ModSec audit log 의 룰 매치 추출 (messages 배열 의 rule id)
       ssh 6v6-web 'sudo tail -3 /var/log/apache2/modsec_audit.log | head -1 | \
           jq "{
-              client: .transaction.client_ip,
-              code: .transaction.response.http_code,
-              rules: [.transaction.messages[]? | .ruleId // .id]
+              client: .transaction.remote_address,
+              code: .response.status,
+              rules: [.audit_data.messages[]? | capture("id .(?<id>[0-9]+).") | .id]
           }"'
 
       # 2. Apache access log (vhost 별 별도 file 또는 통합)
@@ -1043,7 +1043,7 @@ steps:
     points: 12
     answer: |
       echo "=== Blue #2: web ModSec audit log (JSON 의 rule 매치) ==="
-      ssh 6v6-web 'sudo tail -3 /var/log/apache2/modsec_audit.log | head -1 | jq "{client: .transaction.client_ip, code: .transaction.response.http_code, rules: [.transaction.messages[]? | .ruleId // .id]}"'
+      ssh 6v6-web 'sudo tail -3 /var/log/apache2/modsec_audit.log | head -1 | jq "{client: .transaction.remote_address, code: .response.status, rules: [.audit_data.messages[]? | capture("id .(?<id>[0-9]+).") | .id]}"'
       echo "=== Blue #2: web Apache access log ==="
       ssh 6v6-web 'sudo tail -3 /var/log/apache2/access.log 2>&1 | head -3'
       echo "=== Blue #2: web Apache error.log 의 ModSec Warning ==="
@@ -1092,7 +1092,7 @@ steps:
             운영 해석: HAProxy forwardfor → web access log 에 원래 IP 보존.
           - |
             **[OSS] response.http_code 분포** — WAF 효과.
-              ssh 6v6-web 'sudo cat /var/log/apache2/modsec_audit.log | jq -r .transaction.response.http_code 2>/dev/null | sort | uniq -c'
+              ssh 6v6-web 'sudo cat /var/log/apache2/modsec_audit.log | jq -r .response.status 2>/dev/null | sort | uniq -c'
             예상 출력 `400 200 / 50 403 / 5 500`.
             운영 해석: 403 비율 = WAF 차단 효과. 100% 면 over-block — 운영 위험.
           - |
@@ -1102,7 +1102,7 @@ steps:
             운영 해석: error.log = audit log 의 인덱스 — 빠른 시각 검색.
           - |
             **[OSS] severity 분석** — 우선순위.
-              ssh 6v6-web 'sudo tail -3 /var/log/apache2/modsec_audit.log | head -1 | jq -r ".transaction.messages[].severity // .audit_data.messages[]?.severity // \"?\""'
+              ssh 6v6-web 'sudo tail -3 /var/log/apache2/modsec_audit.log | head -1 | jq -r ".audit_data.messages[]? // .audit_data.messages[]?.severity // \"?\""'
             예상 출력 `2 / 2 / 4` (CRITICAL=2, WARNING=4).
             운영 해석: severity 2 (CRITICAL) = confirmed attack.
         negative_signs:

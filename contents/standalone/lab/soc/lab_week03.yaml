@@ -16,7 +16,7 @@ prerequisites:
   - "bastion ProxyJump 로 web/ips/siem 접근"
 objectives:
   - "Apache access.log 의 combined format 8 필드 분해"
-  - "ModSec audit log 의 JSON 구조 + transaction.messages 의 rule id"
+  - "ModSec audit log 의 JSON 구조 + audit_data.messages 의 rule id"
   - "Suricata eve.json 의 event_type (alert/http/flow/tls/dns) 분포"
   - "R/B/P — 웹 공격 1건 → ModSec audit → eve.json → alerts.json chain 추적"
 pass_threshold: 0.7
@@ -107,22 +107,22 @@ steps:
     instruction: |
       ## 🎯 MISSION
 
-      web 의 ModSec audit log 의 JSON 구조 + transaction.messages 의 rule id 추출.
+      web 의 ModSec audit log 의 JSON 구조 + audit_data.messages 의 rule id 추출.
 
       ## 💻 실행 명령
 
       ```bash
       ssh 6v6-web 'sudo tail -1 /var/log/apache2/modsec_audit.log | jq "{
-          client: .transaction.client_ip,
+          client: .transaction.remote_address,
           uri: .transaction.request.uri,
-          code: .transaction.response.http_code,
-          rules: [.transaction.messages[]? | .ruleId // .id]
+          code: .response.status,
+          rules: [.audit_data.messages[]? | capture("id .(?<id>[0-9]+).") | .id]
       }" 2>/dev/null || sudo tail -20 /var/log/apache2/modsec_audit.log'
       ```
 
       ## 📋 확인 사항
 
-      - JSON 구조: transaction (client_ip / request / response / messages)
+      - JSON 구조: top-level (transaction.remote_address / request / response.status / audit_data.messages)
       - messages 배열 = 매치 룰 (id / ruleId)
       - 룰 prefix 의 카테고리: 913 (scanner) / 941 (XSS) / 942 (SQLi) / 949 (threshold)
 
@@ -137,12 +137,12 @@ steps:
       - **JSON 아님 (Native format)**: SecAuditLogFormat 이 JSON 아님 — concurrent
         format 의 multi-section (A/B/C/H) 파싱
       - **빈 파일**: SecAuditEngine Off 또는 RelevantOnly (403 만 기록)
-    hint: "tail modsec_audit.log | jq transaction.messages."
+    hint: "tail modsec_audit.log | jq audit_data.messages."
     category: log_analysis
     points: 12
     answer: |
       echo "=== ModSec audit log JSON ==="
-      ssh 6v6-web 'sudo tail -1 /var/log/apache2/modsec_audit.log | jq "{client: .transaction.client_ip, uri: .transaction.request.uri, code: .transaction.response.http_code, rules: [.transaction.messages[]? | .ruleId // .id]}" 2>/dev/null || sudo tail -20 /var/log/apache2/modsec_audit.log'
+      ssh 6v6-web 'sudo tail -1 /var/log/apache2/modsec_audit.log | jq "{client: .transaction.remote_address, uri: .transaction.request.uri, code: .response.status, rules: [.audit_data.messages[]? | capture("id .(?<id>[0-9]+).") | .id]}" 2>/dev/null || sudo tail -20 /var/log/apache2/modsec_audit.log'
     answer_detail: |
       ModSec audit log 의 JSON = transaction object. messages 배열 의 각 element =
       매치 1 룰 (id/ruleId/severity/data). 룰 prefix = 카테고리. RelevantOnly mode
@@ -159,8 +159,8 @@ steps:
           - "룰 카테고리 (941/942 등) 식별"
         acceptable_methods:
           - |
-            **[OSS] jq transaction.messages** — 표준.
-              ssh 6v6-web 'sudo tail -1 /var/log/apache2/modsec_audit.log | jq .transaction.messages'
+            **[OSS] jq audit_data.messages** — 표준.
+              ssh 6v6-web 'sudo tail -1 /var/log/apache2/modsec_audit.log | jq .audit_data.messages'
             예상 출력 `[{"id":"941100","severity":"2",...}]`.
             운영 해석: messages = 매치 룰 배열.
           - |
@@ -170,12 +170,12 @@ steps:
             운영 해석: 가장 자주 매치 룰 = 공격 유형.
           - |
             **[OSS] response code 분포** — WAF 효과.
-              ssh 6v6-web 'sudo cat /var/log/apache2/modsec_audit.log | jq -r .transaction.response.http_code 2>/dev/null | sort | uniq -c'
+              ssh 6v6-web 'sudo cat /var/log/apache2/modsec_audit.log | jq -r .response.status 2>/dev/null | sort | uniq -c'
             예상 출력 `200/403/500 분포`.
             운영 해석: 403 비율 = WAF 차단 효과.
           - |
             **[OSS] 매치 payload 추출** — 정밀.
-              ssh 6v6-web 'sudo tail -1 /var/log/apache2/modsec_audit.log | jq -r ".transaction.messages[].details.data // .transaction.messages[].data" 2>/dev/null'
+              ssh 6v6-web 'sudo tail -1 /var/log/apache2/modsec_audit.log | jq -r ".audit_data.messages[]?" 2>/dev/null'
             예상 출력 `Matched Data: <script> found within ARGS:q`.
             운영 해석: false-positive 판단 의 정밀 정보.
         negative_signs:
@@ -410,7 +410,7 @@ steps:
       ## 💻 실행 명령
       ```bash
       ssh 6v6-web 'sudo grep "sqlmap\|<script>" /var/log/apache2/*access*.log 2>/dev/null | tail -3'
-      ssh 6v6-web 'sudo tail -1 /var/log/apache2/modsec_audit.log | jq "{code: .transaction.response.http_code, rules: [.transaction.messages[]? | .ruleId // .id]}" 2>/dev/null'
+      ssh 6v6-web 'sudo tail -1 /var/log/apache2/modsec_audit.log | jq "{code: .response.status, rules: [.audit_data.messages[]? | capture("id .(?<id>[0-9]+).") | .id]}" 2>/dev/null'
       ```
 
       ## 📋 확인 사항
@@ -430,7 +430,7 @@ steps:
       echo "=== Blue #1: Apache access.log ==="
       ssh 6v6-web 'sudo grep "sqlmap\|<script>" /var/log/apache2/*access*.log 2>/dev/null | tail -3'
       echo "=== Blue #1: ModSec audit rule ==="
-      ssh 6v6-web 'sudo tail -1 /var/log/apache2/modsec_audit.log | jq "{code: .transaction.response.http_code, rules: [.transaction.messages[]? | .ruleId // .id]}" 2>/dev/null'
+      ssh 6v6-web 'sudo tail -1 /var/log/apache2/modsec_audit.log | jq "{code: .response.status, rules: [.audit_data.messages[]? | capture("id .(?<id>[0-9]+).") | .id]}" 2>/dev/null'
     answer_detail: |
       access.log = HTTP 요청 의 raw. ModSec audit = 룰 매치 의 정밀. 두 곳 의 동일
       transaction (시각 + UA + URI) 매칭 으로 web layer 의 detection 검증.
@@ -449,7 +449,7 @@ steps:
             운영 해석: UA + status 가시.
           - |
             **[OSS] jq modsec rule** — 정밀.
-              ssh 6v6-web 'sudo tail -1 /var/log/apache2/modsec_audit.log | jq .transaction.messages'
+              ssh 6v6-web 'sudo tail -1 /var/log/apache2/modsec_audit.log | jq .audit_data.messages'
             예상 출력 `[{"id":"941100"},...]`.
             운영 해석: 매치 룰 카테고리.
           - |
