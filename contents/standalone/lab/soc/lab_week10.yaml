@@ -1,78 +1,373 @@
 lab_id: standalone-soc-week10
-title: "인시던트 대응 (1) — 웹 공격 IR (SQLi/XSS alert 시나리오) (6v6 + R/B/P)"
+title: 인시던트 대응 (1) — 웹 공격 IR (SQLi/XSS) + R/B/P (full IR cycle)
 version: standalone-non-ai
 course: soc
 week: 10
 description: |
-  웹 공격 alert (SQLi / XSS / path traversal) 의 IR 사이클. attacker 컨테이너 에서 의도적 페이로드 발생 → siem 의 alert → 학생 의 분석/대응.
-difficulty: medium
-duration_minutes: 120
-prerequisites: ["W09 의 IR 6 단계"]
+  웹 공격 (SQLi/XSS) 의 IR full cycle. attacker 의 웹 공격 → web ModSec / Suricata
+  / siem 추적 → 영향 평가 → Containment (WAF rule) → Purple 보강. 마지막 4 step
+  은 R/B/P 통합 — 실제 웹 공격 의 IR 6 단계 적용.
+difficulty: hard
+duration_minutes: 180
+audience: 보안관제 (10주차)
+prerequisites: ["W09 IR 6단계"]
 objectives:
-  - "Red 페이로드 시뮬 (SQLi/XSS 1 회) → web access.log + ModSec audit"
-  - "Wazuh dashboard 에서 alert 식별"
-  - "분석 + 의도/영향 판정"
-  - "대응 권고 + Purple 보강"
-pass_threshold: 0.6
+  - "웹 공격 IR — Identification (ModSec audit) → Containment (WAF tuning)"
+  - "공격 의 영향 평가 (data 노출 / 인증 우회 여부)"
+  - "WAF custom rule 권고"
+  - "R/B/P — 웹 공격 full IR cycle"
+pass_threshold: 0.7
 steps:
-  - order: 1
-    instruction: "## 🎯 MISSION — Red 페이로드 1 회\n**무엇을:** attacker 에서 SQLi `' OR 1=1--` 1 회 보내 alert 발생 유도."
-    hint: "curl http://juice.6v6.lab/rest/products/search?q=%27"
-    category: ir_web
-    points: 8
-    answer: "🤖 가이드:\nssh 6v6-attacker 'curl -s \"http://juice.6v6.lab/rest/products/search?q=%27%20OR%201=1--\" | head -c 100'"
-    answer_detail: "ModSec 의 CRS 942100 trigger."
-    verify:
-      intent: "payload 1 회"
-      success_criteria: ["1 회 실행", "응답 인용"]
-      acceptable_methods: ["curl"]
-      negative_signs: ["실행 안 함"]
-    target_vm: attacker
-    risk_level: medium
 
-  - order: 2
-    instruction: "## 🎯 MISSION — Wazuh 의 alert 추출\n**무엇을:** 최근 5 분 의 alert 중 SQLi 관련 추출."
-    hint: "grep modsec_audit 또는 942 alerts.json."
+  - order: 1
+    instruction: |
+      ## 🎯 MISSION
+      웹 공격 IR 의 Preparation — WAF (ModSec) 의 현 설정 + 룰셋 확인.
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-web 'sudo grep -E "SecRuleEngine|SecAuditEngine" /etc/apache2/conf-enabled/*.conf /etc/modsecurity/*.conf 2>/dev/null | head -5'
+      ssh 6v6-web 'sudo ls /etc/modsecurity/ /usr/share/modsecurity-crs/rules/ 2>/dev/null | head'
+      ```
+      ## 📋 확인 사항
+      - SecRuleEngine On (또는 DetectionOnly) + CRS 룰셋
+      ## 💡 왜 이걸 하는가?
+      IR 의 Preparation = 방어 도구 의 현 상태 파악. WAF 의 mode (On/DetectionOnly)
+      가 차단 여부 결정. CRS (Core Rule Set) 의 버전 + 활성 룰.
+      ## 🔍 결과 해석
+      - On = 차단, DetectionOnly = 탐지만 (juice 는 DetectionOnly, dvwa 는 On)
+    hint: "SecRuleEngine + CRS 룰셋."
     category: ir_web
     points: 10
     answer: |
-      🤖 가이드:
-      ssh 6v6-siem 'sudo tail -100 /var/ossec/logs/alerts/alerts.json | grep -E "942|SQL" | tail -3'
-    answer_detail: "ModSec → Wazuh decoder modsec → rule 100200+ 매핑."
+      ssh 6v6-web 'sudo grep -rE "SecRuleEngine|SecAuditEngine" /etc/apache2/ /etc/modsecurity/ 2>/dev/null | head -5'
+      ssh 6v6-web 'sudo ls /usr/share/modsecurity-crs/rules/ 2>/dev/null | head'
+    answer_detail: "ModSec mode: On (차단) vs DetectionOnly (탐지만). CRS = OWASP Core Rule Set (941 XSS, 942 SQLi 등)."
     verify:
-      intent: "alert 추출"
-      success_criteria: ["alert 1+"]
-      acceptable_methods: ["grep / jq"]
-      negative_signs: ["없음"]
-    target_vm: siem
+      type: output_contains
+      expect: Sec
+      field: stdout
+      semantic:
+        intent: 웹 IR Preparation — WAF 설정.
+        success_criteria: ["SecRuleEngine mode", "CRS 룰셋"]
+        acceptable_methods:
+          - |
+            **[OSS] grep SecRuleEngine** — 표준.
+              ssh 6v6-web 'sudo grep -r SecRuleEngine /etc/apache2/'
+            예상 출력 `SecRuleEngine On`.
+            운영 해석: WAF mode.
+          - |
+            **[OSS] CRS 버전** — 룰셋.
+              ssh 6v6-web 'sudo cat /usr/share/modsecurity-crs/crs-setup.conf 2>/dev/null | grep -i version | head'
+            예상 출력 `CRS version`.
+            운영 해석: 룰셋 버전.
+        negative_signs: ["설정 없음"]
+    target_vm: web
     risk_level: low
 
-  - order: 3
-    instruction: "## 🎯 MISSION — 영향 판정 + 대응 권고\n**무엇을:** alert 의 *영향* (data 노출 여부 / 인증 우회 여부) 분석 + 대응 권고 2 줄."
-    hint: "응답 body 의 data 배열 size 비교 (정상 vs payload)."
-    category: ir_web
-    points: 10
-    answer: "🤖 가이드: 학생 분석."
-    answer_detail: "ModSec 차단 = level 7+ alert. 학생 의 정성적 분석."
+  - order: 2
+    instruction: |
+      ## 🎯 MISSION (Red Team)
+      웹 공격 다중 (SQLi + XSS + path traversal) 발생.
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-attacker 'echo "=== SQLi ==="; curl -s -o /dev/null -w "%{http_code}\n" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?id=1+UNION+SELECT"; echo "=== XSS ==="; curl -s -o /dev/null -w "%{http_code}\n" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?q=<script>alert(1)</script>"; echo "=== traversal ==="; curl -s -o /dev/null -w "%{http_code}\n" --path-as-is -H "Host: dvwa.6v6.lab" "http://10.20.30.1/../../etc/passwd"'
+      ATTACK_TS=$(ssh 6v6-attacker 'date -u +%Y-%m-%dT%H:%M:%S'); echo "ATTACK_TS=$ATTACK_TS"
+      ```
+      ## 📋 확인 사항
+      - 3 공격 의 응답 코드 (대부분 403)
+      ## 💡 왜?
+      다중 공격 유형 = IR 의 다양한 시나리오. 각 의 ModSec 룰 매치 + 영향 다름.
+      ## 🔍 결과 해석
+      - 403 = 차단, 200 = 우회 (분석 필요)
+    hint: "SQLi+XSS+traversal 3 공격."
+    category: redteam
+    points: 8
+    answer: |
+      ssh 6v6-attacker 'echo "SQLi:"; curl -s -o /dev/null -w "%{http_code}\n" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?id=1+UNION+SELECT"; echo "XSS:"; curl -s -o /dev/null -w "%{http_code}\n" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?q=<script>alert(1)</script>"; echo "traversal:"; curl -s -o /dev/null -w "%{http_code}\n" --path-as-is -H "Host: dvwa.6v6.lab" "http://10.20.30.1/../../etc/passwd"'
+      ATTACK_TS=$(ssh 6v6-attacker 'date -u +%Y-%m-%dT%H:%M:%S'); echo "ATTACK_TS=$ATTACK_TS"
+    answer_detail: "SQLi (942) + XSS (941) + traversal (930). 각 ModSec 룰 매치 → 403."
     verify:
-      intent: "영향 + 권고"
-      success_criteria: ["영향 분석", "권고 2 줄"]
-      acceptable_methods: ["markdown"]
-      negative_signs: ["권고 누락"]
+      type: output_contains
+      expect: '403'
+      field: stdout
+      semantic:
+        intent: Red — 웹 공격 3 유형.
+        success_criteria: ["3 공격", "응답 코드", "ATTACK_TS"]
+        acceptable_methods:
+          - |
+            **[OSS] curl 3 유형** — 표준.
+              ssh 6v6-attacker 'curl ... SQLi; curl ... XSS; curl ... traversal'
+            예상 출력 `403 x3`.
+            운영 해석: 다중 공격.
+        negative_signs: ["일부 200"]
+    target_vm: attacker
+    risk_level: medium
+
+  - order: 3
+    instruction: |
+      ## 🎯 MISSION (Identification)
+      STEP 2 공격 의 ModSec audit + siem alert 추출 + 매치 룰.
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-web 'sudo tail -5 /var/log/apache2/modsec_audit.log | jq -c "{code: .transaction.response.http_code, rules: [.transaction.messages[]? | .ruleId // .id]}" 2>/dev/null | tail -3'
+      ssh 6v6-siem 'sudo tail -300 /var/ossec/logs/alerts/alerts.json | jq -c "select(.agent.name==\"web\") | {rule: .rule.id, desc: .rule.description}" | tail -5'
+      ```
+      ## 📋 확인 사항
+      - 각 공격 의 매치 룰 (941/942/930)
+      ## 💡 왜?
+      Identification = 어떤 공격 인지 식별. 매치 룰 의 카테고리 가 공격 유형.
+      ## 🔍 결과 해석
+      - 941=XSS, 942=SQLi, 930=traversal
+    hint: "modsec_audit rules + siem alert."
+    category: ir_web
+    points: 12
+    answer: |
+      echo "=== ModSec audit ==="
+      ssh 6v6-web 'sudo tail -5 /var/log/apache2/modsec_audit.log | jq -c "{code: .transaction.response.http_code, rules: [.transaction.messages[]? | .ruleId // .id]}" 2>/dev/null | tail -3'
+      echo "=== siem web alert ==="
+      ssh 6v6-siem 'sudo tail -300 /var/ossec/logs/alerts/alerts.json | jq -c "select(.agent.name==\"web\") | {rule: .rule.id, desc: .rule.description}" | tail -5'
+    answer_detail: "매치 룰 = 공격 유형. 941 XSS / 942 SQLi / 930 traversal / 949 anomaly threshold."
+    verify:
+      type: output_contains
+      expect: rule
+      field: stdout
+      semantic:
+        intent: Identification — 매치 룰 식별.
+        success_criteria: ["ModSec rules", "siem alert", "룰 카테고리"]
+        acceptable_methods:
+          - |
+            **[OSS] jq modsec + siem** — 표준.
+              ssh 6v6-web 'sudo tail -5 /var/log/apache2/modsec_audit.log | jq .transaction.messages'
+            예상 출력 `941/942/930 rules`.
+            운영 해석: 공격 유형.
+        negative_signs: ["룰 없음"]
     target_vm: bastion
     risk_level: low
 
   - order: 4
-    instruction: "## 🎯 MISSION — Purple 보강 — ModSec custom rule 권고 + cleanup"
-    hint: "SecRule + chain 의 추가 패턴."
-    category: documentation
-    points: 8
-    answer: "🤖 가이드: SecRule \"@rx (?i)or\\s+1=1\" \"id:9999001,phase:2,deny\"."
-    answer_detail: "Purple = Red 가 우회한 패턴 의 룰 보강."
+    instruction: |
+      ## 🎯 MISSION (영향 평가)
+      각 공격 의 영향 (data 노출 / 우회 성공 여부) 평가 — 403 (차단) vs 200 (우회).
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-attacker 'echo "응답 body 검사 (200 시 데이터 노출 확인):"; curl -s -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?id=1+UNION+SELECT" | head -c 200'
+      ```
+      ## 📋 확인 사항
+      - 403 = 영향 없음 (차단)
+      - 200 + data = 영향 있음 (우회 + 노출)
+      ## 💡 왜?
+      영향 평가 = IR 의 severity 결정. 차단 = low, 우회+노출 = critical.
+      ## 🔍 결과 해석
+      - 403 = WAF 효과 / 200 = 우회 (즉시 escalation)
+    hint: "응답 body 검사 (data 노출)."
+    category: ir_web
+    points: 12
+    answer: |
+      ssh 6v6-attacker 'curl -s -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?id=1+UNION+SELECT" | head -c 200'
+    answer_detail: "403 = 차단 (영향 없음). 200 + DB data = 우회 성공 (critical). dvwa 는 On 이라 403."
     verify:
-      intent: "Purple 룰 권고"
-      success_criteria: ["SecRule 또는 SIGMA 1 개"]
-      acceptable_methods: ["markdown"]
-      negative_signs: ["보강 없음"]
+      type: output_contains
+      expect: ""
+      field: stdout
+      semantic:
+        intent: 영향 평가 (차단/우회).
+        success_criteria: ["응답 body 검사", "영향 판정"]
+        acceptable_methods:
+          - |
+            **[OSS] curl body 검사** — 표준.
+              ssh 6v6-attacker 'curl -s ... | head -c 200'
+            예상 출력 `403 page 또는 data`.
+            운영 해석: 우회 여부.
+        negative_signs: ["영향 판정 누락"]
+    target_vm: attacker
+    risk_level: low
+
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION (Containment — WAF tuning)
+      우회 가능 공격 의 ModSec custom rule 권고 (실행 X — XML 작성).
+      ## 💻 산출물
+      ```apache
+      # custom ModSec rule (실행 X)
+      SecRule ARGS "@rx (?i:union\s+select)" \
+        "id:100500,phase:2,deny,status:403,msg:'Custom SQLi block',tag:'attack.t1190'"
+      SecRule REQUEST_URI "@contains ../" \
+        "id:100501,phase:1,deny,status:403,msg:'Path traversal block'"
+      ```
+      ## 📋 채점
+      - custom rule 2+ (실행 X)
+      ## 💡 왜?
+      Containment = 추가 차단. CRS 가 못 잡은 패턴 의 custom rule. SecRuleEngine
+      재시작 필요 (운영 영향 평가).
+      ## 🔍 결과 해석
+      - custom rule 작성 → 다음 공격 차단
+    hint: "ModSec SecRule custom 작성."
+    category: ir_web
+    points: 12
+    answer: |
+      cat <<'EOF'
+      # custom ModSec rule (실행 X)
+      SecRule ARGS "@rx (?i:union\s+select)" "id:100500,phase:2,deny,status:403,msg:'Custom SQLi',tag:'attack.t1190'"
+      SecRule REQUEST_URI "@contains ../" "id:100501,phase:1,deny,status:403,msg:'Traversal block'"
+      EOF
+    answer_detail: "Containment = WAF custom rule. CRS 보완. SecRuleEngine 재시작 필요 — 운영 영향 평가 후."
+    verify:
+      type: output_contains
+      expect: SecRule
+      field: stdout
+      semantic:
+        intent: Containment — ModSec custom rule.
+        success_criteria: ["custom rule 2+", "실행 X"]
+        acceptable_methods:
+          - |
+            **[OSS] SecRule 작성** — 표준.
+              # SecRule ARGS @rx ... deny
+            예상 출력 `custom rule`.
+            운영 해석: WAF 보강.
+        negative_signs: ["rule 없음"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 6
+    instruction: |
+      ## 🎯 MISSION (Blue Team — Suricata 측 추적)
+      STEP 2 공격 의 ips Suricata eve.json + alert 추적.
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-ips 'sudo tail -300 /var/log/suricata/eve.json | jq -c "select(.event_type==\"http\" and .http.hostname==\"dvwa.6v6.lab\") | {url: .http.url, status: .http.status}" | tail -5'
+      ssh 6v6-ips 'sudo tail -300 /var/log/suricata/eve.json | jq -c "select(.event_type==\"alert\")" | tail -3'
+      ```
+      ## 📋 확인 사항
+      - http event (url + status) + alert (signature)
+      ## 💡 왜?
+      ModSec (web) + Suricata (ips) 의 cross-validation. 두 도구 의 동일 공격 view.
+      ## 🔍 결과 해석
+      - 두 도구 흔적 → cross-validation 완료
+    hint: "eve.json http + alert."
+    category: blueteam
+    points: 12
+    answer: |
+      echo "=== ips http event ==="
+      ssh 6v6-ips 'sudo tail -300 /var/log/suricata/eve.json | jq -c "select(.event_type==\"http\" and .http.hostname==\"dvwa.6v6.lab\") | {url: .http.url, status: .http.status}" | tail -5'
+      echo "=== ips alert ==="
+      ssh 6v6-ips 'sudo tail -300 /var/log/suricata/eve.json | jq -c "select(.event_type==\"alert\")" | tail -3'
+    answer_detail: "ModSec + Suricata cross-validation. ips 의 http event = L7 view, alert = 룰 매치."
+    verify:
+      type: output_contains
+      expect: dvwa
+      field: stdout
+      semantic:
+        intent: Blue — Suricata 측 cross-validation.
+        success_criteria: ["http event", "alert"]
+        acceptable_methods:
+          - |
+            **[OSS] eve.json jq** — 표준.
+              ssh 6v6-ips 'sudo tail -300 /var/log/suricata/eve.json | jq "select(.http.hostname==\"dvwa.6v6.lab\")" | tail -5'
+            예상 출력 `http event`.
+            운영 해석: cross-validation.
+        negative_signs: ["dvwa 흔적 없음"]
+    target_vm: ips
+    risk_level: low
+
+  - order: 7
+    instruction: |
+      ## 🎯 MISSION (Recovery 검증)
+      STEP 5 의 custom rule 적용 시뮬 후 재공격 → 차단 확인 (개념 — 실제 rule 배포 X).
+      ## 💻 산출물
+      ```markdown
+      ## Recovery 검증 절차
+      1. custom rule 배포 (SecRuleEngine reload — 운영 영향 평가 후)
+      2. 재공격: curl -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?id=1+UNION+SELECT"
+      3. 기대: 100500 rule 매치 → 403 (CRS 942 + custom 100500 이중)
+      4. dashboard 에서 100500 alert 확인
+      5. 정상 트래픽 (curl http://juice.6v6.lab/) 영향 없음 확인 (false positive 검증)
+      ```
+      ## 📋 채점
+      - Recovery 검증 절차 + false positive 검증
+      ## 💡 왜?
+      Recovery = 조치 후 정상 운영 복귀. custom rule 이 정상 트래픽 차단 안 하는지 검증.
+      ## 🔍 결과 해석
+      - 공격 차단 + 정상 통과 → Recovery 완료
+    hint: "Recovery 절차 + false positive 검증."
+    category: ir_web
+    points: 12
+    answer: |
+      cat <<'EOF'
+      ## Recovery 검증
+      1. custom rule 배포 (reload)
+      2. 재공격 → 100500 매치 → 403
+      3. dashboard 100500 alert 확인
+      4. 정상 트래픽 (juice) 영향 없음 검증 (FP)
+      EOF
+    answer_detail: "Recovery = 조치 + 정상화. custom rule 의 false positive 검증 (정상 트래픽 영향 X) 필수."
+    verify:
+      type: output_contains
+      expect: Recovery
+      field: stdout
+      semantic:
+        intent: Recovery 검증 + FP.
+        success_criteria: ["Recovery 절차", "FP 검증"]
+        acceptable_methods:
+          - |
+            **[OSS] markdown 절차** — 표준.
+              # Recovery + FP 검증
+            예상 출력 `절차`.
+            운영 해석: 조치 검증.
+        negative_signs: ["FP 검증 누락"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 8
+    instruction: |
+      ## 🎯 MISSION (Purple — 웹 IR Lessons)
+      웹 공격 IR cycle 종합 — AAR + WAF coverage gap + 권고.
+      ## 💻 산출물
+      ```markdown
+      # SOC W10 — 웹 공격 IR R/B/P
+      ## IR cycle 요약
+      | 단계 | 활동 | 결과 |
+      |---|---|---|
+      | Identification | ModSec audit rule | 941/942/930 |
+      | Containment | custom rule | 100500/100501 |
+      | Recovery | 재공격 차단 + FP | 검증 |
+      ## WAF coverage gap
+      1. CRS 가 못 잡는 변형 payload → custom rule
+      2. DetectionOnly vhost (juice) → On 검토
+      ## 권고
+      - custom rule 정기 추가 (new payload)
+      - WAF tuning (FP 감소)
+      ```
+      ## 📋 채점
+      - IR cycle 요약 + coverage gap + 권고
+    hint: "IR cycle + WAF gap + 권고."
+    category: purple
+    points: 12
+    answer: |
+      cat <<'EOF'
+      # SOC W10 — 웹 공격 IR R/B/P
+      ## IR cycle
+      | 단계 | 활동 | 결과 |
+      | Identification | ModSec rule | 941/942/930 |
+      | Containment | custom rule | 100500/100501 |
+      | Recovery | 재공격+FP | 검증 |
+      ## Gap
+      1. CRS 못 잡는 변형 → custom rule
+      2. DetectionOnly vhost → On 검토
+      EOF
+    answer_detail: "웹 IR cycle 의 종합. WAF coverage gap = CRS 의 blind spot + custom rule 보강."
+    verify:
+      type: output_contains
+      expect: cycle
+      field: stdout
+      semantic:
+        intent: Purple — 웹 IR Lessons + gap.
+        success_criteria: ["IR cycle", "gap", "권고"]
+        acceptable_methods:
+          - |
+            **[OSS] markdown IR cycle** — 표준.
+              # cycle + gap + 권고
+            예상 출력 `IR 요약`.
+            운영 해석: 웹 IR 회고.
+        negative_signs: ["gap 없음"]
     target_vm: bastion
     risk_level: low

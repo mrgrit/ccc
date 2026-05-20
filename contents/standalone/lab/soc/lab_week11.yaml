@@ -1,91 +1,428 @@
 lab_id: standalone-soc-week11
-title: "인시던트 대응 (2) — 악성코드 분석 (정적 + 동적 / yara / hash) (6v6 + R/B/P)"
+title: 인시던트 대응 (2) — 악성코드 분석 (정적/동적/yara) + R/B/P (의심 파일 IR)
 version: standalone-non-ai
 course: soc
 week: 11
 description: |
-  의심 file 1 sample 의 정적 분석 (file / strings / hash) + 동적 분석 (proc/network 추정) + yara rule 매칭.
-difficulty: medium
-duration_minutes: 120
-prerequisites: ["W09 의 IR 6 단계"]
+  의심 파일 의 정적 분석 (file/strings/hash) + 동적 분석 (proc/network) + yara
+  rule 매칭 + IoC 추출. 마지막 4 step 은 R/B/P — attacker 가 의심 파일 배포 →
+  Blue 의 분석 → yara rule 작성 → Purple 의 IoC sharing.
+difficulty: hard
+duration_minutes: 180
+audience: 보안관제 (11주차)
+prerequisites: ["W09 IR 6단계"]
 objectives:
-  - "file 명령 + magic byte"
-  - "sha256/md5 hash + VirusTotal lookup (or 시뮬)"
-  - "strings 의 의심 string (URL / Mutex / API)"
-  - "yara rule 1 개 작성 + 매칭"
-pass_threshold: 0.6
+  - "정적 분석 — file/sha256/strings"
+  - "IoC 추출 (URL/IP/Mutex/API)"
+  - "yara rule 작성 + 매칭"
+  - "R/B/P — 의심 파일 → 분석 → yara → IoC sharing"
+pass_threshold: 0.7
 steps:
+
   - order: 1
-    instruction: "## 🎯 MISSION — 의심 file 1 sample + 정적 분석\n**무엇을:** /tmp/sample.bin 의 file + sha256 + strings Top 10."
-    hint: "ssh 6v6-attacker 'echo test > /tmp/sample.bin; file /tmp/sample.bin; sha256sum /tmp/sample.bin; strings /tmp/sample.bin | head -10'."
+    instruction: |
+      ## 🎯 MISSION
+      악성코드 분석 환경 준비 — attacker 의 분석 도구 (file/strings/yara/sha256sum) 확인.
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-attacker 'for t in file strings sha256sum yara xxd; do command -v $t >/dev/null && echo "$t ✓" || echo "$t ✗"; done'
+      ```
+      ## 📋 확인 사항
+      - file/strings/sha256sum/xxd ✓ (기본), yara (설치 여부)
+      ## 💡 왜 이걸 하는가?
+      악성코드 분석 = 정적 (실행 X, 안전) + 동적 (sandbox). 분석 도구 의 가용성 이
+      IR 의 Preparation. yara = pattern matching 의 표준.
+      ## 🔍 결과 해석
+      - 도구 ✓ → 분석 가능
+      - yara ✗ → apt install yara
+    hint: "command -v file/strings/yara/sha256sum."
     category: malware
-    points: 10
+    points: 8
     answer: |
-      🤖 가이드:
-      ssh 6v6-attacker 'cat > /tmp/sample.bin <<EOF
-      MZ\x90\x00\x03\x00\x00\x00 fake_pe_header
-      http://evil.example.com/payload
-      kernel32.dll
-      EOF
-      file /tmp/sample.bin; sha256sum /tmp/sample.bin; strings /tmp/sample.bin | head -10'
-    answer_detail: "file = magic byte 식별 (PE/ELF/zip). sha256 = VirusTotal/MalwareBazaar lookup key."
+      ssh 6v6-attacker 'for t in file strings sha256sum yara xxd; do command -v $t >/dev/null && echo "$t ✓" || echo "$t ✗"; done'
+    answer_detail: "정적 분석 도구. yara 미설치 시 apt install yara. 동적 분석 은 sandbox (cuckoo/CAPE) 필요 — lab 은 정적 위주."
     verify:
-      intent: "file + hash + strings"
-      success_criteria: ["3 결과"]
-      acceptable_methods: ["file / sha256 / strings"]
-      negative_signs: ["1~2 만"]
+      type: output_contains
+      expect: file
+      field: stdout
+      semantic:
+        intent: 악성코드 분석 도구 확인.
+        success_criteria: ["file/strings/sha256sum/yara 가용성"]
+        acceptable_methods:
+          - |
+            **[OSS] command -v 도구** — 표준.
+              ssh 6v6-attacker 'for t in file strings yara; do command -v $t; done'
+            예상 출력 `/usr/bin/file ...`.
+            운영 해석: 분석 도구.
+        negative_signs: ["도구 누락"]
     target_vm: attacker
     risk_level: low
 
   - order: 2
-    instruction: "## 🎯 MISSION — 의심 string 분류 (IoC 추출)\n**무엇을:** strings 결과 의 IoC (URL / IP / Mutex / API) 분류."
-    hint: "grep -E 'http|\\.dll|\\.exe' strings_output."
-    category: malware
+    instruction: |
+      ## 🎯 MISSION (Red Team)
+      attacker 가 의심 파일 1개 생성 (fake malware sample — 안전한 더미).
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-attacker 'cat > /tmp/suspicious.bin <<EOF
+      MZ fake PE header
+      http://malware-c2.example.com/beacon
+      kernel32.dll VirtualAlloc CreateRemoteThread
+      cmd.exe /c powershell -enc <base64>
+      Mutex: Global\\evil_mutex_2026
+      EOF
+      echo "생성 완료: $(sha256sum /tmp/suspicious.bin)"'
+      ```
+      ## 📋 확인 사항
+      - 더미 파일 생성 (실제 malware 아님 — 분석 학습용)
+      ## 💡 왜?
+      안전한 분석 대상. 실제 IR 에서는 격리된 sandbox 의 실 검체. lab 은 IoC 패턴
+      포함 더미.
+      ## 🔍 결과 해석
+      - 파일 생성 + sha256
+    hint: "더미 malware sample 생성 (IoC 패턴 포함)."
+    category: redteam
     points: 8
-    answer: "🤖 가이드: 학생 분류 표 (IoC type / value / 출처 line)."
-    answer_detail: "IoC = malware analysis 의 가장 actionable output."
+    answer: |
+      ssh 6v6-attacker 'cat > /tmp/suspicious.bin <<EOF
+      MZ fake PE header
+      http://malware-c2.example.com/beacon
+      kernel32.dll VirtualAlloc CreateRemoteThread
+      cmd.exe /c powershell -enc base64payload
+      Mutex Global evil_mutex_2026
+      EOF
+      echo "sha256: $(sha256sum /tmp/suspicious.bin)"'
+    answer_detail: "안전한 더미. IoC 패턴 (C2 URL / Windows API / Mutex / powershell) 포함 — 분석 학습용. 실제 검체 는 sandbox."
     verify:
-      intent: "IoC 분류"
-      success_criteria: ["IoC 3+"]
-      acceptable_methods: ["grep / 수동"]
-      negative_signs: ["분류 누락"]
+      type: output_contains
+      expect: sha256
+      field: stdout
+      semantic:
+        intent: Red — 의심 파일 생성.
+        success_criteria: ["파일 생성", "sha256"]
+        acceptable_methods:
+          - |
+            **[OSS] heredoc + sha256sum** — 표준.
+              ssh 6v6-attacker 'cat > /tmp/suspicious.bin <<EOF ... EOF; sha256sum /tmp/suspicious.bin'
+            예상 출력 `sha256 hash`.
+            운영 해석: 분석 대상.
+        negative_signs: ["파일 생성 실패"]
     target_vm: attacker
     risk_level: low
 
   - order: 3
-    instruction: "## 🎯 MISSION — yara rule 1 개 작성 + 매칭\n**무엇을:** STEP 2 의 IoC 기반 yara rule + 같은 sample 매칭."
-    hint: "yara rule = strings + condition. yara -r rule.yar sample.bin."
+    instruction: |
+      ## 🎯 MISSION (정적 분석)
+      file + sha256 + strings 의 정적 분석.
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-attacker 'echo "=== file ==="; file /tmp/suspicious.bin; echo "=== sha256 ==="; sha256sum /tmp/suspicious.bin; echo "=== strings ==="; strings /tmp/suspicious.bin'
+      ```
+      ## 📋 확인 사항
+      - file (type) + sha256 (VirusTotal lookup key) + strings (의심 문자열)
+      ## 💡 왜?
+      정적 분석 = 실행 없이 분석 (안전). sha256 = VT/MalwareBazaar lookup. strings =
+      C2 URL / API / Mutex 등 IoC 의 source.
+      ## 🔍 결과 해석
+      - strings 의 C2 URL / Windows API = 악성 indicator
+    hint: "file + sha256sum + strings."
     category: malware
     points: 10
     answer: |
-      🤖 가이드:
-      ssh 6v6-attacker 'cat > /tmp/rule.yar <<EOF
-      rule SuspiciousURL {
-          strings: \$s1 = "evil.example.com"
-          condition: \$s1
-      }
-      EOF
-      yara /tmp/rule.yar /tmp/sample.bin 2>&1 | head -3'
-    answer_detail: "yara = 가장 흔한 file pattern matcher. SOC 의 자체 detection 의 기본."
+      ssh 6v6-attacker 'echo "=== file ==="; file /tmp/suspicious.bin; echo "=== sha256 ==="; sha256sum /tmp/suspicious.bin; echo "=== strings ==="; strings /tmp/suspicious.bin'
+    answer_detail: "정적 분석 3종. file=type, sha256=lookup key, strings=IoC source. C2 URL + Windows API (VirtualAlloc/CreateRemoteThread) = injection 의심."
     verify:
-      intent: "yara rule + 매칭"
-      success_criteria: ["rule 작성", "매칭 결과"]
-      acceptable_methods: ["yara"]
-      negative_signs: ["rule 미작성"]
+      type: output_contains
+      expect: sha256
+      field: stdout
+      semantic:
+        intent: 정적 분석 (file/sha256/strings).
+        success_criteria: ["file type", "sha256", "strings 의심 문자열"]
+        acceptable_methods:
+          - |
+            **[OSS] file/sha256/strings** — 표준.
+              ssh 6v6-attacker 'file /tmp/suspicious.bin; sha256sum /tmp/suspicious.bin; strings /tmp/suspicious.bin'
+            예상 출력 `type + hash + strings`.
+            운영 해석: 정적 분석.
+          - |
+            **[OSS] xxd hex dump** — 정밀.
+              ssh 6v6-attacker 'xxd /tmp/suspicious.bin | head -5'
+            예상 출력 `hex dump`.
+            운영 해석: magic byte 확인.
+        negative_signs: ["분석 누락"]
     target_vm: attacker
     risk_level: low
 
   - order: 4
-    instruction: "## 🎯 MISSION — 보고서 (IoC + yara + 권고) + cleanup"
-    hint: "IoC export STIX 또는 markdown."
-    category: documentation
-    points: 8
-    answer: "🤖 가이드: markdown + rm /tmp/sample.bin /tmp/rule.yar."
-    answer_detail: "malware analysis 보고서 = IoC + yara + recommendations + retention."
+    instruction: |
+      ## 🎯 MISSION (IoC 추출)
+      strings 결과 의 IoC 분류 (URL/IP/API/Mutex).
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-attacker 'echo "=== URL ==="; strings /tmp/suspicious.bin | grep -oE "https?://[^ ]+"; echo "=== Windows API ==="; strings /tmp/suspicious.bin | grep -oE "(VirtualAlloc|CreateRemoteThread|WriteProcessMemory)"; echo "=== Mutex ==="; strings /tmp/suspicious.bin | grep -i mutex'
+      ```
+      ## 📋 확인 사항
+      - URL (C2) / API (injection) / Mutex (single instance) 분류
+      ## 💡 왜?
+      IoC = 다음 detection 의 입력. C2 URL → 네트워크 차단, Mutex → endpoint 탐지,
+      API → 행위 패턴.
+      ## 🔍 결과 해석
+      - IoC 3+ 분류 → yara rule + 네트워크 차단
+    hint: "grep URL/API/Mutex."
+    category: malware
+    points: 10
+    answer: |
+      ssh 6v6-attacker 'echo "URL:"; strings /tmp/suspicious.bin | grep -oE "https?://[^ ]+"; echo "API:"; strings /tmp/suspicious.bin | grep -oE "(VirtualAlloc|CreateRemoteThread)"; echo "Mutex:"; strings /tmp/suspicious.bin | grep -i mutex'
+    answer_detail: "IoC 분류: C2 URL (네트워크 차단), API (injection 행위), Mutex (endpoint 탐지). 각 의 detection 적용 다름."
     verify:
-      intent: "보고서 + cleanup"
-      success_criteria: ["보고서", "cleanup"]
-      acceptable_methods: ["markdown"]
-      negative_signs: ["cleanup 누락"]
+      type: output_contains
+      expect: http
+      field: stdout
+      semantic:
+        intent: IoC 분류.
+        success_criteria: ["URL/API/Mutex 분류"]
+        acceptable_methods:
+          - |
+            **[OSS] grep IoC** — 표준.
+              ssh 6v6-attacker 'strings /tmp/suspicious.bin | grep -oE "https?://[^ ]+"'
+            예상 출력 `C2 URL`.
+            운영 해석: IoC.
+        negative_signs: ["IoC 분류 누락"]
     target_vm: attacker
+    risk_level: low
+
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION (Blue Team — yara rule)
+      IoC 기반 yara rule 작성 + 같은 파일 매칭.
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-attacker 'cat > /tmp/malware.yar <<EOF
+      rule Suspicious_C2_Beacon {
+          meta:
+              description = "C2 beacon + injection API"
+              author = "soc-student"
+          strings:
+              \$url = "malware-c2.example.com"
+              \$api1 = "VirtualAlloc"
+              \$api2 = "CreateRemoteThread"
+              \$mutex = "evil_mutex"
+          condition:
+              \$url or (\$api1 and \$api2) or \$mutex
+      }
+      EOF
+      yara /tmp/malware.yar /tmp/suspicious.bin'
+      ```
+      ## 📋 확인 사항
+      - yara rule 매칭 (Suspicious_C2_Beacon /tmp/suspicious.bin)
+      ## 💡 왜?
+      yara = malware pattern matching 의 표준. IoC → rule → 다른 파일 스캔. SOC 의
+      자체 detection signature.
+      ## 🔍 결과 해석
+      - 매칭 → rule 효과
+    hint: "yara rule (strings + condition) + 매칭."
+    category: malware
+    points: 12
+    answer: |
+      ssh 6v6-attacker 'cat > /tmp/malware.yar <<EOF
+      rule Suspicious_C2_Beacon {
+          meta:
+              description = "C2 beacon + injection"
+              author = "soc-student"
+          strings:
+              \$url = "malware-c2.example.com"
+              \$api1 = "VirtualAlloc"
+              \$api2 = "CreateRemoteThread"
+              \$mutex = "evil_mutex"
+          condition:
+              \$url or (\$api1 and \$api2) or \$mutex
+      }
+      EOF
+      yara /tmp/malware.yar /tmp/suspicious.bin'
+    answer_detail: "yara rule = strings + condition. IoC 를 rule 로. condition 의 boolean (or/and) 으로 detection logic. SOC 의 자체 signature."
+    verify:
+      type: output_contains
+      expect: Suspicious
+      field: stdout
+      semantic:
+        intent: Blue — yara rule 작성 + 매칭.
+        success_criteria: ["yara rule", "매칭 결과"]
+        acceptable_methods:
+          - |
+            **[OSS] yara rule + 매칭** — 표준.
+              ssh 6v6-attacker 'yara /tmp/malware.yar /tmp/suspicious.bin'
+            예상 출력 `Suspicious_C2_Beacon /tmp/suspicious.bin`.
+            운영 해석: pattern matching.
+          - |
+            **[OSS] yara -s 매치 문자열** — 정밀.
+              ssh 6v6-attacker 'yara -s /tmp/malware.yar /tmp/suspicious.bin'
+            예상 출력 `매치된 string + offset`.
+            운영 해석: 어느 IoC 매치.
+        negative_signs: ["매칭 안 됨"]
+    target_vm: attacker
+    risk_level: low
+
+  - order: 6
+    instruction: |
+      ## 🎯 MISSION (Blue Team — Wazuh FIM/yara 통합)
+      Wazuh 의 FIM (file integrity) + yara 통합 가능성 분석.
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-siem 'sudo grep -A5 "<syscheck>" /var/ossec/etc/ossec.conf | head -10'
+      ssh 6v6-siem 'sudo ls /var/ossec/etc/rules/ | grep -i yara 2>/dev/null; echo "yara active response 가능 여부"'
+      ```
+      ## 📋 확인 사항
+      - syscheck (FIM) 설정 + yara 통합 (active response)
+      ## 💡 왜?
+      Wazuh FIM = 파일 변경 감지. yara active response = 변경 파일 의 yara 스캔 자동.
+      endpoint 의 malware 자동 탐지.
+      ## 🔍 결과 해석
+      - FIM 활성 → 파일 변경 감지
+      - yara 통합 시 → 자동 malware 스캔
+    hint: "syscheck FIM + yara active response."
+    category: blueteam
+    points: 12
+    answer: |
+      echo "=== syscheck (FIM) ==="
+      ssh 6v6-siem 'sudo grep -A5 "<syscheck>" /var/ossec/etc/ossec.conf | head -10'
+      echo "=== yara 통합 ==="
+      ssh 6v6-siem 'sudo ls /var/ossec/etc/rules/ | grep -i yara 2>/dev/null || echo "yara rule 미통합 — active response 로 추가 가능"'
+    answer_detail: "Wazuh FIM (syscheck) = 파일 변경 감지. yara active response = 변경 파일 자동 yara 스캔 (Wazuh 공식 통합 가이드). endpoint malware 자동 탐지."
+    verify:
+      type: output_contains
+      expect: syscheck
+      field: stdout
+      semantic:
+        intent: Blue — Wazuh FIM/yara 통합.
+        success_criteria: ["syscheck 설정", "yara 통합 가능성"]
+        acceptable_methods:
+          - |
+            **[OSS] grep syscheck** — 표준.
+              ssh 6v6-siem 'sudo grep -A5 "<syscheck>" /var/ossec/etc/ossec.conf'
+            예상 출력 `FIM directories`.
+            운영 해석: 파일 변경 감지.
+          - |
+            **[OSS] Wazuh yara integration 문서** — 참조.
+              echo "Wazuh active response + yara: 변경 파일 자동 스캔"
+            예상 출력 `통합 절차`.
+            운영 해석: endpoint malware.
+        negative_signs: ["syscheck 없음"]
+    target_vm: siem
+    risk_level: low
+
+  - order: 7
+    instruction: |
+      ## 🎯 MISSION (IoC sharing — STIX)
+      추출 IoC 를 STIX 2.1 indicator JSON 으로 export (CTI sharing).
+      ## 💻 산출물
+      ```json
+      {
+        "type": "indicator",
+        "spec_version": "2.1",
+        "id": "indicator--soc-w11-c2",
+        "created": "2026-05-20T00:00:00Z",
+        "pattern": "[url:value = 'http://malware-c2.example.com/beacon']",
+        "pattern_type": "stix",
+        "valid_from": "2026-05-20T00:00:00Z",
+        "labels": ["malicious-activity"],
+        "kill_chain_phases": [{"kill_chain_name": "mitre-attack", "phase_name": "command-and-control"}]
+      }
+      ```
+      ## 📋 채점
+      - STIX indicator JSON (C2 URL 또는 hash)
+      ## 💡 왜?
+      STIX = CTI 교환 표준. IoC 를 MISP/OpenCTI 로 sharing. SOC 간 threat intel 협업.
+      ## 🔍 결과 해석
+      - STIX JSON → MISP import 가능
+    hint: "STIX 2.1 indicator JSON."
+    category: malware
+    points: 12
+    answer: |
+      cat <<'EOF'
+      {
+        "type": "indicator",
+        "spec_version": "2.1",
+        "id": "indicator--soc-w11-c2",
+        "created": "2026-05-20T00:00:00Z",
+        "pattern": "[url:value = 'http://malware-c2.example.com/beacon']",
+        "pattern_type": "stix",
+        "valid_from": "2026-05-20T00:00:00Z",
+        "labels": ["malicious-activity"],
+        "kill_chain_phases": [{"kill_chain_name": "mitre-attack", "phase_name": "command-and-control"}]
+      }
+      EOF
+    answer_detail: "STIX 2.1 indicator = CTI 교환 표준. pattern 의 STIX pattern 언어. MISP/OpenCTI 의 native import. SOC 간 threat sharing."
+    verify:
+      type: output_contains
+      expect: indicator
+      field: stdout
+      semantic:
+        intent: IoC sharing — STIX indicator.
+        success_criteria: ["STIX JSON", "pattern + labels"]
+        acceptable_methods:
+          - |
+            **[OSS] STIX JSON** — 표준.
+              # type:indicator + pattern + labels
+            예상 출력 `STIX indicator`.
+            운영 해석: CTI sharing.
+        negative_signs: ["STIX 누락"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 8
+    instruction: |
+      ## 🎯 MISSION (Purple — malware IR Lessons + cleanup)
+      malware 분석 IR 종합 + IoC + yara + STIX + cleanup.
+      ## 💻 산출물 + cleanup
+      ```markdown
+      # SOC W11 — malware 분석 R/B/P
+      ## 분석 요약
+      | 단계 | 결과 |
+      |---|---|
+      | 정적 | file/sha256/strings |
+      | IoC | C2 URL + API + Mutex |
+      | yara | Suspicious_C2_Beacon 매칭 |
+      | STIX | indicator export |
+      ## 권고
+      1. C2 URL 네트워크 차단 (fw/proxy)
+      2. yara rule Wazuh FIM 통합 (endpoint 자동 스캔)
+      3. STIX → MISP sharing
+      ```
+      cleanup: `rm -f /tmp/suspicious.bin /tmp/malware.yar`
+      ## 📋 채점
+      - 분석 요약 + 권고 + cleanup
+    hint: "분석 요약 + 권고 + cleanup."
+    category: purple
+    points: 12
+    answer: |
+      cat <<'EOF'
+      # SOC W11 — malware 분석 R/B/P
+      ## 분석 요약
+      | 단계 | 결과 |
+      | 정적 | file/sha256/strings |
+      | IoC | C2 URL + API + Mutex |
+      | yara | Suspicious_C2_Beacon 매칭 |
+      | STIX | indicator export |
+      ## 권고
+      1. C2 URL 네트워크 차단
+      2. yara Wazuh FIM 통합
+      3. STIX MISP sharing
+      EOF
+      ssh 6v6-attacker 'rm -f /tmp/suspicious.bin /tmp/malware.yar 2>/dev/null; echo cleanup 완료'
+    answer_detail: "malware IR 의 종합. IoC → yara → STIX 의 흐름. cleanup 으로 분석 검체 정리."
+    verify:
+      type: output_contains
+      expect: 요약
+      field: stdout
+      semantic:
+        intent: Purple — malware IR Lessons + cleanup.
+        success_criteria: ["분석 요약", "권고", "cleanup"]
+        acceptable_methods:
+          - |
+            **[OSS] markdown + cleanup** — 표준.
+              # 요약 + 권고 + rm
+            예상 출력 `요약 + cleanup`.
+            운영 해석: malware IR 회고.
+        negative_signs: ["cleanup 누락"]
+    target_vm: bastion
     risk_level: low
