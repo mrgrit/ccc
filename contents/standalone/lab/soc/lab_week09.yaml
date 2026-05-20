@@ -1,90 +1,407 @@
 lab_id: standalone-soc-week09
-title: "인시던트 대응 절차 — IR 6 단계 (Preparation → Identification → Containment → Eradication → Recovery → Lessons) (6v6 + R/B/P)"
+title: 인시던트 대응 절차 — NIST SP 800-61 IR 6단계 + R/B/P (brute force IR 시뮬)
 version: standalone-non-ai
 course: soc
 week: 9
 description: |
-  NIST SP 800-61 의 IR 6 단계 의 각 단계 의 *실제 활동* 을 6v6 의 alert 1 시나리오 (예: brute force / SQLi) 로 simulation.
-difficulty: medium
-duration_minutes: 120
+  NIST SP 800-61 의 IR 6 단계 (Preparation → Identification → Containment →
+  Eradication → Recovery → Lessons Learned) 의 각 활동 을 6v6 의 실제 시나리오
+  (ssh brute force) 로 simulation. 마지막 4 step 은 R/B/P — Red 의 brute → Blue 의
+  Identification → Containment (비파괴 시뮬) → Purple 의 Lessons.
+difficulty: hard
+duration_minutes: 180
+audience: 보안관제 (9주차)
 prerequisites: ["W08 중간고사 통과"]
 objectives:
-  - "IR 6 단계 의 각 활동 mapping (NIST SP 800-61)"
-  - "1 시나리오 (sshd brute force) 의 Identification → Containment 시뮬"
-  - "Containment 의 *비파괴* fw rule 또는 user lock"
-  - "Lessons Learned markdown"
-pass_threshold: 0.6
+  - "IR 6 단계 의 각 활동 + 도구 + 산출물 mapping"
+  - "Identification — 6v6 alert 에서 IoC 추출"
+  - "Containment — 비파괴 fw rule / user lock 시뮬 (명령 작성만)"
+  - "R/B/P — Red brute → Blue IR → Containment → Lessons Learned"
+pass_threshold: 0.7
 steps:
+
   - order: 1
     instruction: |
-      ## 🎯 MISSION — IR 6 단계 mapping + 1 시나리오 선택
-      **무엇을:** 6v6 의 최근 alert 중 1 시나리오 선택 + IR 6 단계 의 각 활동 학생 작성.
-    hint: "brute force 시나리오 = sshd Failed password burst. Identification = Wazuh rule 5710."
+      ## 🎯 MISSION
+      IR 6 단계 의 각 활동 mapping + 1 시나리오 (ssh brute) 선택.
+      ## 💻 산출물
+      ```markdown
+      | 단계 | 활동 | 도구 | 산출물 |
+      |---|---|---|---|
+      | Preparation | IR 플랜/도구 준비 | playbook | IR 계획서 |
+      | Identification | alert 분석/IoC | Wazuh/grep | IoC 목록 |
+      | Containment | 격리/차단 | nftables/fail2ban | 차단 룰 |
+      | Eradication | 근본 제거 | patch/user 삭제 | 조치 내역 |
+      | Recovery | 정상화 | 모니터링 | 복구 확인 |
+      | Lessons Learned | 회고/개선 | 보고서 | AAR |
+      ```
+      ## 📋 채점
+      - 6 단계 모두 + 시나리오 명시
+      ## 💡 왜 이걸 하는가?
+      NIST IR 6 단계 = SOC L2/L3 의 핵심 framework. 침해 사고 의 표준 대응 절차.
+      ## 🔍 결과 해석
+      - 6 단계 mapping → IR 체계 이해
+    hint: "NIST SP 800-61 6 단계 표."
     category: ir
     points: 12
-    answer: "🤖 가이드: markdown 표 — 6 단계 × 5 컬럼 (활동 / 도구 / 시간 / 산출물 / 책임자)."
-    answer_detail: "NIST IR 6 단계 = SOC L2/L3 분석가 의 핵심 framework."
+    answer: |
+      cat <<'EOF'
+      | 단계 | 활동 | 도구 | 산출물 |
+      |---|---|---|---|
+      | Preparation | IR 플랜 | playbook | 계획서 |
+      | Identification | alert/IoC | Wazuh | IoC 목록 |
+      | Containment | 격리/차단 | nftables/fail2ban | 차단 룰 |
+      | Eradication | 근본 제거 | patch | 조치 |
+      | Recovery | 정상화 | 모니터링 | 복구 확인 |
+      | Lessons Learned | 회고 | 보고서 | AAR |
+      EOF
+    answer_detail: "NIST SP 800-61 의 6 단계. 시나리오: ssh brute force. 각 단계 의 활동/도구/산출물."
     verify:
-      intent: "6 단계 + 시나리오"
-      success_criteria: ["6 단계 모두", "1 시나리오 명시"]
-      acceptable_methods: ["markdown"]
-      negative_signs: ["단계 누락"]
+      type: output_contains
+      expect: Identification
+      field: stdout
+      semantic:
+        intent: IR 6 단계 mapping.
+        success_criteria: ["6 단계 모두", "시나리오"]
+        acceptable_methods:
+          - |
+            **[OSS] markdown 6 단계 표** — 표준.
+              # NIST 6 단계 × 활동/도구/산출물
+            예상 출력 `6 단계 표`.
+            운영 해석: IR framework.
+        negative_signs: ["단계 누락"]
     target_vm: bastion
     risk_level: low
 
   - order: 2
     instruction: |
-      ## 🎯 MISSION — Identification 단계 — 6v6 alert 추출 + IoC 식별
-      **무엇을:** 시나리오 의 alert 추출 + src_ip / username / 시간 의 IoC 표.
-    hint: "tail alerts.json | grep rule.id."
+      ## 🎯 MISSION (Identification)
+      6v6 alert 에서 brute force 시나리오 의 IoC 추출 (src_ip / user / 시각).
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-siem 'sudo tail -500 /var/ossec/logs/alerts/alerts.json | jq -c "select(.rule.id | test(\"^57\")) | {time: .timestamp[0:19], rule: .rule.id, src: .data.srcip, user: .data.dstuser}" | tail -5'
+      ssh 6v6-siem 'sudo grep -E "Failed|Invalid" /var/log/sshd.log | grep -oE "from [0-9.]+" | sort | uniq -c | sort -rn | head'
+      ```
+      ## 📋 확인 사항
+      - IoC: src_ip + user + 시각
+      ## 💡 왜?
+      IoC (Indicator of Compromise) = IR 의 핵심 산출물. 다음 단계 (Containment) 의 입력.
+      ## 🔍 결과 해석
+      - IoC 명확 → Containment 가능
+    hint: "alerts.json IoC + sshd.log src IP."
     category: ir
-    points: 10
+    points: 12
     answer: |
-      🤖 가이드:
-      ssh 6v6-siem 'sudo grep -E "5710|sshd" /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -5 | jq "{time: .timestamp, rule: .rule.id, src: .data.srcip, user: .data.dstuser}"'
-    answer_detail: "IoC = Indicator of Compromise. SOC 의 다음 검색 input."
+      echo "=== IoC from alerts ==="
+      ssh 6v6-siem 'sudo tail -500 /var/ossec/logs/alerts/alerts.json | jq -c "select(.rule.id | test(\"^57\")) | {time: .timestamp[0:19], rule: .rule.id, src: .data.srcip, user: .data.dstuser}" | tail -5'
+      echo "=== src IP 카운트 ==="
+      ssh 6v6-siem 'sudo grep -E "Failed|Invalid" /var/log/sshd.log | grep -oE "from [0-9.]+" | sort | uniq -c | sort -rn | head'
+    answer_detail: "IoC = src_ip (공격자) + user (타겟 계정) + 시각. Containment 의 차단 대상."
     verify:
-      intent: "IoC 추출 표"
-      success_criteria: ["src_ip + user + 시간"]
-      acceptable_methods: ["jq"]
-      negative_signs: ["IoC 1개 미만"]
+      type: output_contains
+      expect: from
+      field: stdout
+      semantic:
+        intent: Identification — IoC 추출.
+        success_criteria: ["IoC (src/user/시각)"]
+        acceptable_methods:
+          - |
+            **[OSS] jq + grep IoC** — 표준.
+              ssh 6v6-siem 'sudo grep Failed /var/log/sshd.log | grep -oE "from [0-9.]+" | sort | uniq -c'
+            예상 출력 `6 from 10.20.30.202`.
+            운영 해석: 공격 src.
+        negative_signs: ["IoC 없음"]
     target_vm: siem
     risk_level: low
 
   - order: 3
     instruction: |
-      ## 🎯 MISSION — Containment 비파괴 시뮬
-      **무엇을:** 시나리오 의 src_ip 를 차단 할 fw rule 의 *명령만 작성* (실행 X — 학습 환경 보호).
-    hint: "nft add rule inet six_filter input ip saddr <ip> drop. 또는 hosts.deny. *실행 안 함*."
+      ## 🎯 MISSION (Containment — 비파괴 시뮬)
+      IoC 의 src_ip 차단 fw rule + user lock 명령 작성 (실행 X — 학습 환경 보호).
+      ## 💻 산출물 (명령만)
+      ```bash
+      # ⚠️ 실행 안 함 — 명령 작성만
+      # 1. nftables 차단
+      nft add rule inet six_filter input ip saddr 10.20.30.202 drop
+      # 2. fail2ban (운영)
+      fail2ban-client set sshd banip 10.20.30.202
+      # 3. user lock
+      passwd -l baduser
+      # 4. Wazuh active response (자동)
+      # ossec.conf: <active-response> command=firewall-drop rules_id=5760
+      ```
+      ## 📋 확인 사항
+      - 4 차단 방법 명령 (실행 X)
+      ## 💡 왜?
+      Containment = 피해 확산 방지. 비파괴 (운영 영향 최소) 가 원칙. 운영 환경 의
+      ROE 사전 합의 필수.
+      ## 🔍 결과 해석
+      - 4 방법 모두 작성 (실행 안 함)
+    hint: "nftables/fail2ban/passwd -l/active response 명령 작성만."
     category: ir
-    points: 10
+    points: 12
     answer: |
-      🤖 가이드:
-      # 학생: 실제 실행 X
-      # nft add rule inet six_filter input ip saddr 1.2.3.4 drop
-      # echo 'sshd: 1.2.3.4' >> /etc/hosts.deny
-    answer_detail: "Containment 의 도구 = nftables / iptables / hosts.deny / fail2ban. 운영 환경 의 ROE 필수."
+      cat <<'EOF'
+      # ⚠️ 실행 안 함 — Containment 명령 작성만
+      nft add rule inet six_filter input ip saddr 10.20.30.202 drop
+      fail2ban-client set sshd banip 10.20.30.202
+      passwd -l baduser
+      # Wazuh active response: <active-response> command=firewall-drop rules_id=5760
+      EOF
+    answer_detail: "Containment = 비파괴 차단. nftables (즉시) / fail2ban (자동) / user lock / Wazuh active response (rule 기반)."
     verify:
-      intent: "Containment 명령 작성 (실행 X)"
-      success_criteria: ["fw 또는 hosts 명령", "실행 X 명시"]
-      acceptable_methods: ["nftables / hosts.deny / fail2ban"]
-      negative_signs: ["실제 실행"]
+      type: output_contains
+      expect: drop
+      field: stdout
+      semantic:
+        intent: Containment — 비파괴 차단 명령 (실행 X).
+        success_criteria: ["4 차단 방법", "실행 X 명시"]
+        acceptable_methods:
+          - |
+            **[OSS] 차단 명령 작성** — 표준.
+              # nftables/fail2ban/passwd/active response
+            예상 출력 `차단 명령 (실행 X)`.
+            운영 해석: 비파괴 Containment.
+        negative_signs: ["실제 실행", "1~2 방법만"]
     target_vm: bastion
     risk_level: medium
 
   - order: 4
     instruction: |
-      ## 🎯 MISSION — Lessons Learned 보고서
-      **무엇을:** 시나리오 의 *왜 발생했나* + *어떻게 예방* + *룰 보강* 3 단락 markdown.
-    hint: "예방 = 비밀번호 정책 + lockout + fail2ban. 룰 보강 = SIGMA 의 timeframe 조정."
-    category: documentation
-    points: 8
-    answer: "🤖 가이드: 3 단락 markdown."
-    answer_detail: "Lessons Learned = IR 의 6 단계 마지막 + 다음 incident 예방."
+      ## 🎯 MISSION (Eradication + Recovery)
+      근본 제거 (baduser 삭제 / 비밀번호 정책) + 정상화 확인 (모니터링) 절차 작성.
+      ## 💻 산출물
+      ```markdown
+      ## Eradication
+      - baduser 계정 삭제 (userdel) 또는 무력화
+      - sshd_config: PasswordAuthentication no (key only) + MaxAuthTries 3
+      - 비밀번호 정책 강화 (length/complexity)
+      ## Recovery
+      - sshd 재시작 후 정상 접속 확인
+      - Wazuh dashboard 에서 brute force alert 중단 확인 (5분 모니터)
+      - baseline 복귀 검증
+      ```
+      ## 📋 채점
+      - Eradication + Recovery 절차
+      ## 💡 왜?
+      Eradication = 근본 원인 제거 (단순 차단 X). Recovery = 정상 운영 복귀 + 재발 방지.
+      ## 🔍 결과 해석
+      - 근본 제거 + 정상화 → IR 완료
+    hint: "Eradication (userdel/sshd_config) + Recovery (모니터)."
+    category: ir
+    points: 12
+    answer: |
+      cat <<'EOF'
+      ## Eradication
+      - baduser 삭제 (userdel) 또는 lock
+      - sshd_config: PasswordAuthentication no + MaxAuthTries 3
+      - 비밀번호 정책 강화
+      ## Recovery
+      - sshd 재시작 + 정상 접속 확인
+      - dashboard brute alert 중단 확인 (5분)
+      - baseline 복귀 검증
+      EOF
+    answer_detail: "Eradication = 근본 제거 (계정/설정). Recovery = 정상화 + 모니터링. 재발 방지 가 핵심."
     verify:
-      intent: "3 단락 보고서"
-      success_criteria: ["3 단락"]
-      acceptable_methods: ["markdown"]
-      negative_signs: ["단락 누락"]
+      type: output_contains
+      expect: Eradication
+      field: stdout
+      semantic:
+        intent: Eradication + Recovery 절차.
+        success_criteria: ["Eradication", "Recovery"]
+        acceptable_methods:
+          - |
+            **[OSS] markdown 절차** — 표준.
+              # Eradication + Recovery
+            예상 출력 `절차`.
+            운영 해석: IR 4-5 단계.
+        negative_signs: ["단계 누락"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION (Red Team)
+      brute force 공격 (8회) 발생 → IR 시나리오 trigger.
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-attacker 'for i in $(seq 8); do sshpass -p "x$i" ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no baduser@10.20.32.100 echo 2>&1 | tail -1; done'
+      ATTACK_TS=$(ssh 6v6-attacker 'date -u +%Y-%m-%dT%H:%M:%S'); echo "ATTACK_TS=$ATTACK_TS"
+      ```
+      ## 📋 확인 사항
+      - 8회 brute (5710 threshold 도달)
+      ## 💡 왜?
+      8회 = Wazuh 5710 (8회/120s) trigger. IR 의 Identification 의 입력.
+      ## 🔍 결과 해석
+      - 8회 fail → 5710 alert 발생 예상
+    hint: "sshpass 8 회."
+    category: redteam
+    points: 8
+    answer: |
+      ssh 6v6-attacker 'for i in $(seq 8); do sshpass -p "x$i" ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no baduser@10.20.32.100 echo 2>&1 | tail -1; done'
+      ATTACK_TS=$(ssh 6v6-attacker 'date -u +%Y-%m-%dT%H:%M:%S'); echo "ATTACK_TS=$ATTACK_TS"
+    answer_detail: "8회 = 5710 threshold. IR Identification trigger."
+    verify:
+      type: output_contains
+      expect: denied
+      field: stdout
+      semantic:
+        intent: Red — brute 8회 IR trigger.
+        success_criteria: ["8회 fail", "ATTACK_TS"]
+        acceptable_methods:
+          - |
+            **[OSS] sshpass 8회** — 표준.
+              ssh 6v6-attacker 'for i in $(seq 8); do sshpass -p x$i ssh ... 2>&1 | tail -1; done'
+            예상 출력 `denied x8`.
+            운영 해석: 5710 trigger.
+        negative_signs: ["8회 미만"]
+    target_vm: attacker
+    risk_level: medium
+
+  - order: 6
+    instruction: |
+      ## 🎯 MISSION (Blue Team — Identification 실측)
+      STEP 5 의 brute 가 5710/5760 alert + IoC 추출.
+      ## 💻 실행 명령
+      ```bash
+      ssh 6v6-siem 'sudo tail -200 /var/ossec/logs/alerts/alerts.json | jq -c "select(.rule.id | test(\"^57\")) | {time: .timestamp[0:19], rule: .rule.id, level: .rule.level, src: .data.srcip}" | tail -8'
+      ```
+      ## 📋 확인 사항
+      - 5710 (8회 도달) 또는 5760 (Invalid) alert + src IP
+      ## 💡 왜?
+      IR 의 Identification 실측. 8회 가 5710 trigger 하는지 검증.
+      ## 🔍 결과 해석
+      - 5710 발생 → threshold 도달
+      - 5760만 → Invalid user (계정 없음)
+    hint: "alerts 5710/5760."
+    category: blueteam
+    points: 12
+    answer: |
+      ssh 6v6-siem 'sudo tail -200 /var/ossec/logs/alerts/alerts.json | jq -c "select(.rule.id | test(\"^57\")) | {time: .timestamp[0:19], rule: .rule.id, level: .rule.level, src: .data.srcip}" | tail -8'
+    answer_detail: "8회 brute → 5710 (multiple failed) 또는 5760 (Invalid user). IoC = src IP + 시각."
+    verify:
+      type: output_contains
+      expect: rule
+      field: stdout
+      semantic:
+        intent: Blue — Identification 실측 (5710/5760).
+        success_criteria: ["5710/5760 alert", "IoC"]
+        acceptable_methods:
+          - |
+            **[OSS] jq 57xx** — 표준.
+              ssh 6v6-siem 'sudo tail -200 /var/ossec/logs/alerts/alerts.json | jq -c "select(.rule.id|test(\"^57\"))" | tail -8'
+            예상 출력 `5710/5760 alert`.
+            운영 해석: brute 탐지.
+        negative_signs: ["alert 없음"]
+    target_vm: siem
+    risk_level: low
+
+  - order: 7
+    instruction: |
+      ## 🎯 MISSION (Blue Team — Containment 실측 가능 여부 분석)
+      STEP 3 의 Containment 명령 중 6v6 환경 에서 실제 적용 가능 한 것 분석 (실행 X).
+      ## 💻 산출물
+      ```markdown
+      | 방법 | 6v6 적용 가능? | 영향 | 권고 |
+      |---|---|---|---|
+      | nftables drop | ✅ (fw 컨테이너) | attacker 차단 | lab 영향 (다른 step) |
+      | fail2ban | ❌ (미설치) | - | 설치 필요 |
+      | passwd -l baduser | ❌ (계정 없음) | - | Invalid user 라 무의미 |
+      | Wazuh active response | ✅ (설정 시) | 자동 차단 | rule 5710 연동 |
+      ```
+      ## 📋 채점
+      - 4 방법 의 적용 가능성 분석
+      ## 💡 왜?
+      Containment 의 현실성 = 환경 의 도구 가용성 + 영향 평가. lab 에서 실제 차단 시
+      다른 step 영향 → 비파괴 원칙.
+      ## 🔍 결과 해석
+      - 적용 가능 방법 + 영향 분석
+    hint: "Containment 4 방법 의 6v6 적용성."
+    category: blueteam
+    points: 12
+    answer: |
+      cat <<'EOF'
+      | 방법 | 6v6 적용 | 영향 | 권고 |
+      |---|---|---|---|
+      | nftables drop | ✅ fw | attacker 차단 | lab 영향 주의 |
+      | fail2ban | ❌ 미설치 | - | 설치 필요 |
+      | passwd -l | ❌ 계정없음 | - | Invalid user |
+      | Wazuh AR | ✅ 설정시 | 자동 | 5710 연동 |
+      EOF
+    answer_detail: "Containment 의 현실성 분석. lab 에서 nftables drop 은 다른 step 영향 → 비파괴 원칙. active response 가 자동화 권장."
+    verify:
+      type: output_contains
+      expect: nftables
+      field: stdout
+      semantic:
+        intent: Blue — Containment 적용 가능성 분석.
+        success_criteria: ["4 방법 적용성", "영향 평가"]
+        acceptable_methods:
+          - |
+            **[OSS] markdown 적용성 표** — 표준.
+              # 4 방법 × 적용/영향/권고
+            예상 출력 `적용성 표`.
+            운영 해석: 현실적 Containment.
+        negative_signs: ["분석 누락"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 8
+    instruction: |
+      ## 🎯 MISSION (Purple Team — Lessons Learned)
+      IR cycle 종합 — AAR (After Action Review) 4 질문 + 개선 권고.
+      ## 💻 산출물
+      ```markdown
+      # SOC W09 — IR Lessons Learned (AAR)
+      ## 1. 무엇이 일어났나
+      ssh brute force 8회 → 5710/5760 alert → Identification
+      ## 2. 무엇이 잘 되었나
+      Wazuh 의 brute 탐지 (5710/5760) 정상
+      ## 3. 무엇이 안 되었나
+      lockout 자동화 부재 (fail2ban 미설치) → 무한 brute 가능
+      ## 4. 다음에 어떻게
+      - fail2ban 설치 + Wazuh active response (5710 → firewall-drop)
+      - sshd key-only + MaxAuthTries 3
+      - SIGMA threshold 5 회 로 조기 탐지
+      ## MTTD/MTTR
+      - MTTD: ATTACK_TS ~ 5710 alert = 약 분
+      - MTTR: 인지 ~ Containment = (lab 가상)
+      ```
+      ## 📋 채점
+      - AAR 4 질문 + 개선 권고 + MTTD/MTTR
+    hint: "AAR 4 질문 + MTTD/MTTR."
+    category: purple
+    points: 12
+    answer: |
+      cat <<'EOF'
+      # SOC W09 — IR Lessons Learned (AAR)
+      ## 1. 무엇이 일어났나
+      ssh brute 8회 → 5710/5760 → Identification
+      ## 2. 잘 된 것
+      Wazuh brute 탐지 정상
+      ## 3. 안 된 것
+      lockout 자동화 부재
+      ## 4. 다음에
+      - fail2ban + active response
+      - sshd key-only + MaxAuthTries 3
+      - SIGMA threshold 5
+      ## MTTD/MTTR
+      MTTD ~ 분 / MTTR lab 가상
+      EOF
+    answer_detail: "AAR = IR 의 Lessons Learned 의 표준 형식. 4 질문 + 개선 + MTTD/MTTR. 다음 incident 예방."
+    verify:
+      type: output_contains
+      expect: Lessons
+      field: stdout
+      semantic:
+        intent: Purple — IR Lessons Learned (AAR).
+        success_criteria: ["AAR 4 질문", "개선 권고", "MTTD/MTTR"]
+        acceptable_methods:
+          - |
+            **[OSS] markdown AAR** — 표준.
+              # 4 질문 + 개선 + MTTD/MTTR
+            예상 출력 `AAR`.
+            운영 해석: IR 회고.
+        negative_signs: ["AAR 누락", "MTTD/MTTR 없음"]
     target_vm: bastion
     risk_level: low

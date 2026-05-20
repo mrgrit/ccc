@@ -1,52 +1,294 @@
 lab_id: standalone-soc-week08
-title: "중간고사 — 로그 분석 + ATT&CK 매핑 + SIGMA 룰 (W01~W07 통합)"
+title: 중간고사 — 로그 분석 + ATT&CK 매핑 + SIGMA 룰 통합 (W01~W07 종합 R/B/P)
 version: standalone-non-ai
 course: soc
 week: 8
 description: |
-  중간고사 — W01~W07 의 종합. 1 시나리오 (실제 6v6 의 최근 24h alert) 분석 + ATT&CK 매핑 + SIGMA 룰 1 개 + 보고서.
+  중간고사 — W01~W07 의 모든 역량 통합. Red 의 multi-stage 공격 (recon → ssh brute
+  → web exploit) 1 시나리오 를 학생 이 독립적 으로 (1) 4 도구 로그 추적 (2) ATT&CK
+  매핑 (3) SIGMA 룰 작성 (4) 트리아지 (5) 통합 보고서 의 5 영역 으로 종합 평가.
 difficulty: hard
-duration_minutes: 120
+duration_minutes: 180
+audience: 보안관제 중간고사 (8주차)
 prerequisites: ["W01~W07 모두 통과"]
 objectives:
-  - "최근 24h alert 분석 + 의심 시나리오 1 개 식별"
-  - "ATT&CK Tactic/Technique 매핑"
-  - "본인 SIGMA 룰 1 개 작성"
-  - "Wazuh dashboard screenshot 또는 KQL 결과"
-  - "통합 보고서 markdown 5 section"
-pass_threshold: 0.7
+  - "Red multi-stage 공격 1 시나리오 발생 + ATTACK_TS 기록"
+  - "4 도구 (fw/ips/web/siem) 로그 추적 + chain 검증"
+  - "ATT&CK Tactic/Technique 매핑 (3+ Tactic, 5+ Technique)"
+  - "학생 본인 SIGMA 룰 1+ 작성"
+  - "트리아지 + 통합 보고서 markdown (5 section)"
+pass_threshold: 0.75
 steps:
+
   - order: 1
     instruction: |
-      ## 🎯 MISSION — 중간고사 통합 보고서
+      ## 🎯 MISSION (Red Team — 시험 시나리오)
 
-      **무엇을:** 24h alert 분석 → 의심 시나리오 1 개 → ATT&CK 매핑 → SIGMA 룰 → markdown 5 section 보고서.
+      multi-stage 공격 1 시나리오 발생 — recon (nmap) → ssh brute (6회) → web exploit
+      (SQLi). 각 stage 의 시각 기록.
 
-      **5 section:**
-      1. Executive Summary (1 페이지)
-      2. 24h alert 분포 (level / agent / groups)
-      3. 의심 시나리오 1 개 (시간 / 경로 / IoC)
-      4. ATT&CK 매핑 (Tactic + Technique + 근거)
-      5. 학생 본인 SIGMA 룰 + 권고
+      ## 💻 실행 명령
+      ```bash
+      echo "=== Stage 1: recon (T1595) ==="
+      ssh 6v6-attacker 'nmap -sV -p 80,443 -Pn 10.20.30.1 2>&1 | grep open'
+      echo "=== Stage 2: ssh brute (T1110) ==="
+      ssh 6v6-attacker 'for i in $(seq 6); do sshpass -p "w$i" ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no bad@10.20.32.100 echo 2>&1 | tail -1; done'
+      echo "=== Stage 3: web exploit (T1190) ==="
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -A sqlmap -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?id=1+UNION+SELECT"'
+      ATTACK_TS=$(ssh 6v6-attacker 'date -u +%Y-%m-%dT%H:%M:%S'); echo "ATTACK_TS=$ATTACK_TS"
+      ```
+
+      ## 📋 확인 사항
+      - 3 stage 모두 실행 + 각 시각
+      ## 💡 왜 이걸 하는가?
+      중간고사 = 실전 multi-stage 공격 의 종합 분석. kill chain 의 3 단계 가 4 도구
+      에 어떻게 흔적 남기는지 학생 독립 분석.
+      ## 🔍 결과 해석
+      - 3 stage 흔적 → 종합 분석 가능
+    hint: "nmap + sshpass + curl 3 stage."
+    category: redteam
+    points: 10
+    answer: |
+      echo "=== Stage 1: recon ==="
+      ssh 6v6-attacker 'nmap -sV -p 80,443 -Pn 10.20.30.1 2>&1 | grep open'
+      echo "=== Stage 2: ssh brute ==="
+      ssh 6v6-attacker 'for i in $(seq 6); do sshpass -p "w$i" ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no bad@10.20.32.100 echo 2>&1 | tail -1; done'
+      echo "=== Stage 3: web exploit ==="
+      ssh 6v6-attacker 'curl -s -o /dev/null -w "%{http_code}\n" -A sqlmap -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?id=1+UNION+SELECT"'
+      ATTACK_TS=$(ssh 6v6-attacker 'date -u +%Y-%m-%dT%H:%M:%S'); echo "ATTACK_TS=$ATTACK_TS"
+    answer_detail: "3 stage kill chain: T1595 (recon) → T1110 (brute) → T1190 (exploit). 4 도구 에 동시 흔적."
+    verify:
+      type: output_contains
+      expect: open
+      field: stdout
+      semantic:
+        intent: Red — multi-stage 시험 시나리오.
+        success_criteria: ["3 stage 실행", "ATTACK_TS"]
+        acceptable_methods:
+          - |
+            **[OSS] nmap+sshpass+curl** — 표준.
+              # 3 stage 순차
+            예상 출력 `open + denied + 403`.
+            운영 해석: kill chain.
+        negative_signs: ["일부 stage 누락"]
+    target_vm: attacker
+    risk_level: medium
+
+  - order: 2
+    instruction: |
+      ## 🎯 MISSION (시험 — 4 도구 로그 추적)
+
+      STEP 1 의 3 stage 가 fw/ips/web/siem 4 도구 에 남긴 흔적 모두 추적.
+
+      ## 💻 실행 명령
+      ```bash
+      echo "=== ips Suricata (recon scan + web) ==="
+      ssh 6v6-ips 'sudo tail -300 /var/log/suricata/eve.json | jq -c "select(.event_type==\"alert\") | .alert.signature" | tail -5'
+      echo "=== siem sshd (brute) ==="
+      ssh 6v6-siem 'sudo grep -c "Failed\|Invalid" /var/log/sshd.log'
+      echo "=== web ModSec (exploit) ==="
+      ssh 6v6-web 'sudo tail -1 /var/log/apache2/modsec_audit.log | jq ".transaction.response.http_code" 2>/dev/null'
+      echo "=== siem 통합 alert ==="
+      ssh 6v6-siem 'sudo tail -300 /var/ossec/logs/alerts/alerts.json | jq -c "{rule: .rule.id, level: .rule.level, agent: .agent.name}" | tail -5'
+      ```
+
+      ## 📋 확인 사항
+      - 4 도구 모두 흔적 (ips scan + siem brute + web exploit + 통합)
+      ## 💡 왜?
+      종합 분석 의 핵심 = 4 도구 의 흔적 통합. 단일 source 가 아닌 전체 chain.
+      ## 🔍 결과 해석
+      - 4 도구 모두 → full visibility
+    hint: "4 도구 각 로그 추적."
+    category: blueteam
+    points: 15
+    answer: |
+      echo "=== ips ==="
+      ssh 6v6-ips 'sudo tail -300 /var/log/suricata/eve.json | jq -c "select(.event_type==\"alert\") | .alert.signature" | tail -5'
+      echo "=== siem sshd ==="
+      ssh 6v6-siem 'sudo grep -c "Failed\|Invalid" /var/log/sshd.log'
+      echo "=== web ModSec ==="
+      ssh 6v6-web 'sudo tail -1 /var/log/apache2/modsec_audit.log | jq ".transaction.response.http_code" 2>/dev/null'
+      echo "=== siem 통합 ==="
+      ssh 6v6-siem 'sudo tail -300 /var/ossec/logs/alerts/alerts.json | jq -c "{rule: .rule.id, level: .rule.level, agent: .agent.name}" | tail -5'
+    answer_detail: "4 도구 통합 추적 = W01-W03 의 로그 분석 + W08 의 종합. full visibility."
+    verify:
+      type: output_contains
+      expect: rule
+      field: stdout
+      semantic:
+        intent: 시험 — 4 도구 로그 추적.
+        success_criteria: ["4 도구 흔적", "chain 검증"]
+        acceptable_methods:
+          - |
+            **[OSS] 4 도구 jq/grep** — 표준.
+              # ips/siem/web 각 로그
+            예상 출력 `각 도구 흔적`.
+            운영 해석: full chain.
+        negative_signs: ["일부 도구 누락"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 3
+    instruction: |
+      ## 🎯 MISSION (시험 — ATT&CK 매핑)
+
+      3 stage 를 ATT&CK Tactic/Technique 으로 매핑 (Navigator layer 포함).
+
+      ## 💻 산출물
+      ```markdown
+      | stage | alert | Tactic | Technique |
+      |---|---|---|---|
+      | recon | nmap scan | Reconnaissance | T1595 |
+      | brute | ssh fail | Credential Access | T1110 |
+      | exploit | SQLi 403 | Initial Access | T1190 |
+      ```
+      + Navigator layer JSON (3 technique)
+
+      ## 📋 채점
+      - 3 stage → Tactic/Technique 매핑
+      - Navigator layer JSON
+    hint: "stage → Tactic/Technique + Navigator."
+    category: attack
+    points: 15
+    answer: |
+      cat <<'EOF'
+      | stage | Tactic | Technique |
+      |---|---|---|
+      | recon | Reconnaissance | T1595 |
+      | brute | Credential Access | T1110 |
+      | exploit | Initial Access | T1190 |
+      EOF
+      cat <<'EOF'
+      {"name":"W08 midterm","domain":"enterprise-attack","techniques":[{"techniqueID":"T1595","score":1},{"techniqueID":"T1110","score":1},{"techniqueID":"T1190","score":1}]}
+      EOF
+    answer_detail: "kill chain ATT&CK 매핑 = W06 의 적용. Navigator layer 로 시각화."
+    verify:
+      type: output_contains
+      expect: Technique
+      field: stdout
+      semantic:
+        intent: 시험 — ATT&CK 매핑.
+        success_criteria: ["3 stage Tactic/Technique", "Navigator JSON"]
+        acceptable_methods:
+          - |
+            **[OSS] markdown + Navigator JSON** — 표준.
+              # stage 매핑 + layer
+            예상 출력 `매핑 표 + JSON`.
+            운영 해석: kill chain 시각.
+        negative_signs: ["매핑 누락"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 4
+    instruction: |
+      ## 🎯 MISSION (시험 — SIGMA 룰)
+
+      3 stage 중 1개 를 탐지 하는 학생 본인 SIGMA 룰 1개 작성.
+
+      ## 💻 산출물
+      ```yaml
+      title: <stage 탐지 룰>
+      logsource: {product: linux, service: sshd}  # 또는 web
+      detection:
+        selection: [...]
+        condition: ...
+      tags: [attack.t1110]  # 해당 technique
+      level: high
+      ```
+
+      ## 📋 채점
+      - SIGMA 룰 7 필드 + detection condition
+    hint: "SIGMA YAML (W07 형식)."
+    category: sigma
+    points: 15
+    answer: |
+      cat <<'EOF'
+      title: SSH Brute Force Detection
+      id: w08-midterm-sshbrute
+      status: experimental
+      logsource: {product: linux, service: sshd}
+      detection:
+        selection: ['Failed password', 'Invalid user']
+        timeframe: 60s
+        condition: selection | count() by src_ip >= 5
+      tags: [attack.credential_access, attack.t1110]
+      level: high
+      EOF
+    answer_detail: "W07 의 SIGMA 작성 능력 적용. 3 stage 중 1개 의 탐지 룰."
+    verify:
+      type: output_contains
+      expect: detection
+      field: stdout
+      semantic:
+        intent: 시험 — SIGMA 룰 작성.
+        success_criteria: ["7 필드", "detection condition", "tags"]
+        acceptable_methods:
+          - |
+            **[OSS] SIGMA YAML** — 표준.
+              # 7 필드 + condition
+            예상 출력 `valid SIGMA`.
+            운영 해석: 탐지 룰.
+        negative_signs: ["필드 누락"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION (시험 — 통합 보고서)
+
+      W01~W07 + STEP 1-4 종합 보고서 markdown 5 section.
+
+      ## 💻 산출물
+      ```markdown
+      # SOC 중간고사 보고서 — <이름>
+      ## 1. Executive Summary
+      multi-stage attack (recon→brute→exploit) 탐지. N finding.
+      ## 2. 공격 timeline (4 도구 추적)
+      | 시각 | stage | 도구 | 흔적 |
+      ## 3. ATT&CK 매핑
+      | Tactic | Technique | detection |
+      ## 4. 탐지 룰 (SIGMA)
+      <학생 룰>
+      ## 5. 대응 권고 + 우선순위
+      P1: ssh brute 차단 (fail2ban) / P2: web WAF tuning
+      ```
 
       ## 📋 채점
       - 5 section 모두
-      - alert 통계 + 의심 시나리오
-      - ATT&CK 매핑 근거
-      - SIGMA 룰 7 필드
-    hint: "W01-W07 의 결과 재사용 가능. 의심 시나리오 = Top rule.id 의 burst 시점 또는 high level alert."
+      - 4 도구 timeline + ATT&CK + SIGMA + 권고
+    hint: "5 section 통합 보고서."
     category: documentation
     points: 30
     answer: |
-      🤖 가이드: markdown 5 section + W01-W07 결과 통합.
-    answer_detail: "중간고사 = 통합 + 학생 본인 의 분석 reasoning."
+      cat <<'EOF'
+      # SOC 중간고사 보고서
+      ## 1. Executive Summary
+      multi-stage attack (recon→brute→exploit). 3 stage 탐지.
+      ## 2. timeline
+      | 시각 | stage | 도구 | 흔적 |
+      | T+0 | recon | ips | scan alert |
+      | T+5 | brute | siem | 5760 |
+      | T+10 | exploit | web | 403 |
+      ## 3. ATT&CK
+      | Reconnaissance T1595 | Credential Access T1110 | Initial Access T1190 |
+      ## 4. SIGMA (학생 룰)
+      ## 5. 권고
+      P1 fail2ban / P2 WAF tuning
+      EOF
+    answer_detail: "중간고사 = W01-W07 의 통합. Executive Summary + timeline + ATT&CK + SIGMA + 권고 의 5 section."
     verify:
-      intent: "5 section + 통합"
-      success_criteria:
-        - "5 section 모두"
-        - "ATT&CK 매핑"
-        - "SIGMA 룰"
-      acceptable_methods: ["markdown"]
-      negative_signs: ["section 누락"]
+      type: output_contains
+      expect: Summary
+      field: stdout
+      semantic:
+        intent: 시험 — 통합 보고서 5 section.
+        success_criteria: ["5 section", "timeline+ATT&CK+SIGMA+권고"]
+        acceptable_methods:
+          - |
+            **[OSS] markdown 5 section** — 표준.
+              # Executive/timeline/ATT&CK/SIGMA/권고
+            예상 출력 `통합 보고서`.
+            운영 해석: 종합 산출물.
+        negative_signs: ["section 누락"]
     target_vm: bastion
     risk_level: low
