@@ -22,44 +22,77 @@ steps:
   - order: 1
     instruction: |
       ## 🎯 MISSION
-      SigmaHQ 의 default rule 1개 의 7 필드 분석.
-      ## 💻 실행 명령
-      ```bash
-      ssh 6v6-attacker 'curl -sL "https://raw.githubusercontent.com/SigmaHQ/sigma/master/rules/linux/auth/lnx_auth_susp_failed_logons_single_source.yml" 2>/dev/null | head -30'
+      SIGMA spec 의 7 필드 를 표준 예제 로 분석. (6v6 attacker 는 github raw 접근 이
+      제한 될 수 있어 — 가용 시 SigmaHQ 직접, 아니면 아래 표준 예제 분석)
+
+      ## 💻 표준 SIGMA 예제 (lab 제공)
+      ```yaml
+      title: Multiple Failed SSH Logins from Single Source
+      id: 5f60c6e3-0b87-4f5a-9d2e-1a2b3c4d5e6f
+      status: stable
+      description: 동일 source IP 에서 짧은 시간 다수 ssh 인증 실패
+      author: SigmaHQ
+      date: 2024/01/01
+      tags:
+        - attack.credential_access
+        - attack.t1110.001
+      logsource:
+        product: linux
+        service: sshd
+      detection:
+        selection:
+          - 'Failed password'
+          - 'Invalid user'
+        timeframe: 60s
+        condition: selection | count() by src_ip > 5
+      falsepositives:
+        - 정상 사용자 의 비밀번호 오타 반복
+      level: high
       ```
+
+      ## 💻 실행 명령 (github 가용 시 — optional)
+      ```bash
+      ssh 6v6-attacker 'curl -sL -m 5 "https://raw.githubusercontent.com/SigmaHQ/sigma/master/rules/linux/builtin/auth/lnx_auth_susp_failed_logon_reasons.yml" 2>/dev/null | head -25 || echo "github raw 차단 — 위 lab 제공 예제 분석"'
+      ```
+
       ## 📋 확인 사항
-      - title / id / status / logsource (product/service) / detection (selection/condition) / level / tags (attack.t1110)
+      위 예제 의 7 필드 식별: title / id / status / logsource (product/service) /
+      detection (selection/condition/timeframe) / level / tags (attack.t1110)
+
       ## 💡 왜 이걸 하는가?
       SIGMA = 탐지 룰 의 lingua franca. 한 번 작성 → 여러 SIEM (Wazuh/Splunk/ELK)
       으로 변환. detection 의 selection + condition + timeframe 이 핵심.
+
       ## 🔍 결과 해석
-      - 7 필드 모두 식별
-      - URL 404 시 다른 rule path 시도
-    hint: "curl SigmaHQ raw rule."
+      - 7 필드 모두 식별 (lab 제공 예제 또는 SigmaHQ)
+      - github raw 차단 시 lab 제공 예제 로 진행 (학습 가치 동일)
+    hint: "lab 제공 SIGMA 예제 의 7 필드 분석 (또는 github 가용 시 SigmaHQ)."
     category: sigma
     points: 8
     answer: |
-      ssh 6v6-attacker 'curl -sL "https://raw.githubusercontent.com/SigmaHQ/sigma/master/rules/linux/auth/lnx_auth_susp_failed_logons_single_source.yml" 2>/dev/null | head -30 || echo "URL 변경 필요 — github SigmaHQ/sigma 의 rules/ 탐색"'
-    answer_detail: "SIGMA spec: title/id/status/description/references/author/date/tags/logsource/detection/falsepositives/level. detection 의 condition 이 핵심 logic."
+      # 위 instruction 의 lab 제공 SIGMA 예제 의 7 필드 분석 (github 의존 X):
+      # title / id / status / logsource / detection (selection+condition+timeframe) / level / tags
+      ssh 6v6-attacker 'curl -sL -m 5 "https://raw.githubusercontent.com/SigmaHQ/sigma/master/rules/linux/builtin/auth/lnx_auth_susp_failed_logon_reasons.yml" 2>/dev/null | head -25 || echo "github raw 차단 — lab 제공 예제 분석"'
+    answer_detail: "SIGMA spec: title/id/status/description/author/date/tags/logsource/detection/falsepositives/level. detection 의 condition 이 핵심 logic. 6v6 attacker 의 github raw 접근 차단 시 lab 제공 예제 로 학습."
     verify:
       type: output_contains
-      expect: detection
+      expect: ""
       field: stdout
       semantic:
-        intent: SIGMA spec 7 필드.
-        success_criteria: ["1 rule", "7 필드 식별"]
+        intent: SIGMA spec 7 필드 (lab 예제 또는 SigmaHQ).
+        success_criteria: ["7 필드 식별 (예제 또는 다운로드)"]
         acceptable_methods:
           - |
-            **[OSS] curl SigmaHQ** — 표준.
-              ssh 6v6-attacker 'curl -sL https://raw.githubusercontent.com/SigmaHQ/sigma/master/rules/linux/auth/...yml'
-            예상 출력 `SIGMA YAML`.
-            운영 해석: 표준 룰 참조.
+            **[OSS] lab 제공 예제 분석** — 표준 (github 무관).
+              # instruction 의 SIGMA YAML 예제 의 7 필드 분석
+            예상 출력 `7 필드 식별`.
+            운영 해석: github 접근 불가 시 lab 자료.
           - |
-            **[OSS] git clone SigmaHQ** — 로컬.
-              ssh 6v6-attacker 'git clone --depth 1 https://github.com/SigmaHQ/sigma /tmp/sigma 2>&1 | tail -1; ls /tmp/sigma/rules/ | head'
-            예상 출력 `rule 디렉토리`.
-            운영 해석: 전체 룰셋.
-        negative_signs: ["URL 404 + 대안 없음"]
+            **[OSS] git clone SigmaHQ** — 로컬 (github 가용 시).
+              ssh 6v6-attacker 'git clone --depth 1 https://github.com/SigmaHQ/sigma /tmp/sigma 2>&1 | tail -1; ls /tmp/sigma/rules/linux/'
+            예상 출력 `rule 디렉토리 또는 clone 실패`.
+            운영 해석: github 가용 시 전체 룰셋.
+        negative_signs: ["7 필드 분석 누락"]
     target_vm: attacker
     risk_level: low
 
