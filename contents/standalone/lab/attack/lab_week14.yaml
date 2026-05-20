@@ -203,8 +203,8 @@ steps:
       ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -r ".rule.id" 2>/dev/null | sort | uniq -c | sort -rn | head -8'
       # Suricata alert (scan/exploit 탐지?)
       ssh 6v6-ips 'sudo tail -400 /var/log/suricata/eve.json | jq -rc "select(.event_type==\"alert\") | .alert.signature" 2>/dev/null | sort | uniq -c | tail -5'
-      # ModSec (web exploit T1190 차단 기록 — Serial grep)
-      ssh 6v6-web 'sudo grep -oE "id \"[0-9]+\"" /var/log/apache2/modsec_audit.log | sort | uniq -c | sort -rn | head -4'
+      # ModSec (web exploit T1190 차단 기록 — audit log 는 JSON 이라 jq)
+      ssh 6v6-web 'sudo tail -50 /var/log/apache2/modsec_audit.log | jq -r ".audit_data.messages[]? | capture(\"id .(?<id>[0-9]+).\") | .id" 2>/dev/null | sort | uniq -c | sort -rn | head -4'
       ```
 
       ## 📋 확인 사항
@@ -242,7 +242,7 @@ steps:
       echo "=== Suricata alert ==="
       ssh -n 6v6-ips 'sudo tail -400 /var/log/suricata/eve.json | jq -rc "select(.event_type==\"alert\") | .alert.signature" 2>/dev/null | sort | uniq -c | tail -5'
       echo "=== ModSec T1190 ==="
-      ssh -n 6v6-web 'sudo grep -oE "id \"[0-9]+\"" /var/log/apache2/modsec_audit.log | sort | uniq -c | sort -rn | head -4'
+      ssh -n 6v6-web 'sudo tail -50 /var/log/apache2/modsec_audit.log | jq -r ".audit_data.messages[]? | capture(\"id .(?<id>[0-9]+).\") | .id" 2>/dev/null | sort | uniq -c | sort -rn | head -4'
     answer_detail: |
       Wazuh rule: 86601(Suricata 다수)/100xxx(custom). discovery(T1083/57/18) 시간대
       alert 없음 = Coverage 0%(정상). Suricata signature(scan/exploit). ModSec 941/942 =
@@ -266,7 +266,7 @@ steps:
             예상 출력 `signature 또는 없음`.
             운영 해석: ET SCAN 룰 의존, 없으면 Gap.
           - |
-            **[OSS] grep ModSec 941/942** — T1190 탐지.
+            **[OSS] jq ModSec 941/942** — T1190 탐지.
             예상 출력 `941/942 카운트`.
             운영 해석: web exploit Coverage 100%.
         negative_signs: ["탐지 측정 누락", "discovery/exploit 구분 없음"]

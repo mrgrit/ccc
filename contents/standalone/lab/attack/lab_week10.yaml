@@ -229,7 +229,7 @@ steps:
         timeout 35 sqlmap -u "http://10.20.30.1/?q=1" --batch --tamper=$tamper --headers="Host: dvwa.6v6.lab" --threads=1 2>&1 | grep -iE "vulnerable|all tested|ending|403|forbidden" | head -4
       done
       '
-      # ModSec 942(SQLi) 매치 카운트 — audit log 는 Serial 형식이라 grep 사용
+      # ModSec 942(SQLi) 매치 카운트 — audit log 는 JSON 이나 942 단순 카운트는 grep -c 문자열 매치로도 가능
       ssh 6v6-web 'sudo grep -c "942" /var/log/apache2/modsec_audit.log 2>/dev/null'
       ```
 
@@ -257,7 +257,7 @@ steps:
       - 942 카운트 0 — `ssh 6v6-web 'sudo find /var/log -name "modsec_audit*"'`
     hint: |
       sqlmap --tamper 3(space2comment/randomcase/between) + 각 메커니즘 + 942 grep
-      카운트. dvwa(On) 차단으로 not injectable 이 정상. audit log 는 Serial → grep.
+      카운트. dvwa(On) 차단으로 not injectable 이 정상. audit log 는 JSON(942 카운트는 grep -c 문자열 매치).
     category: bypass
     points: 12
     answer: |
@@ -271,7 +271,7 @@ steps:
     answer_detail: |
       3 tamper × sqlmap. dvwa(On) 대상이라 ModSec 가 403 차단 → "all tested parameters
       do not appear to be injectable". 942 카운트는 tamper payload 가 942(SQLi) 룰
-      매치하며 증가. audit log 는 Serial(Native) format 이라 jq 아닌 grep '942'.
+      매치하며 증가. audit log 는 JSON format 이며 942 단순 카운트는 grep -c '942' 문자열 매치로 동작.
     verify:
       type: output_contains
       expect: ending
@@ -290,11 +290,11 @@ steps:
             예상 출력 `403` (CRS 942 매치).
             운영 해석: libinjection 은 SQL 토큰 분석이라 우회 어려움.
           - |
-            **[OSS] grep 942 카운트** — Serial audit log.
+            **[OSS] grep 942 카운트** — JSON audit log 의 942 문자열 카운트.
               ssh 6v6-web 'sudo grep -c "942" /var/log/apache2/modsec_audit.log'
             예상 출력 `숫자`.
             운영 해석: tamper 시도가 942(SQLi) 룰 매치.
-        negative_signs: ["tamper 1개만", "ending 없음", "jq 로 942 시도(Serial 인데)"]
+        negative_signs: ["tamper 1개만", "ending 없음", "942 카운트 누락"]
     target_vm: attacker
     risk_level: medium
 
@@ -480,85 +480,89 @@ steps:
       ## 🎯 MISSION (Blue Team — On 차단 audit log + Suricata)
 
       STEP 2/3 의 dvwa(On) 차단(403)이 modsec_audit.log 에 기록된 것을 분석하고, ips
-      Suricata eve.json 에서 동일 공격을 cross-check 하라. audit log 는 **Serial(Native)
-      형식** 이므로 jq 가 아닌 grep 으로 파싱한다.
+      Suricata eve.json 에서 동일 공격을 cross-check 하라. 6v6 의 audit log 는 **JSON
+      형식**(web Dockerfile 의 `SecAuditLogFormat JSON`)이므로 jq 로 파싱한다.
 
       ## 💻 실행 명령
 
       ```bash
-      # audit log 형식 확인 (Serial)
-      ssh 6v6-web 'sudo grep -m1 SecAuditLogType /etc/modsecurity/modsecurity.conf'
-      # On 차단 매치 룰 분포 (grep — Serial 이라 jq 불가)
-      ssh 6v6-web 'sudo grep -oE "id \"[0-9]+\"" /var/log/apache2/modsec_audit.log | sort | uniq -c | sort -rn | head -6'
+      # audit log 형식 확인 (JSON)
+      ssh 6v6-web 'sudo grep -E "SecAuditLogFormat|SecAuditLogType" /etc/modsecurity/modsecurity.conf'
+      # On 차단 매치 룰 분포 (jq — JSON 의 audit_data.messages 파싱)
+      ssh 6v6-web 'sudo tail -50 /var/log/apache2/modsec_audit.log | jq -r ".audit_data.messages[]? | capture(\"id .(?<id>[0-9]+).\") | .id" 2>/dev/null | sort | uniq -c | sort -rn | head -6'
+      # 응답 코드 분포 (jq)
+      ssh 6v6-web 'sudo tail -50 /var/log/apache2/modsec_audit.log | jq -r ".response.status" 2>/dev/null | sort | uniq -c'
       # Suricata eve.json — juice http event (우회 시도 관측)
       ssh 6v6-ips 'sudo tail -500 /var/log/suricata/eve.json | jq -rc "select(.event_type==\"http\" and .http.hostname==\"juice.6v6.lab\") | \"\(.http.status) \(.http.url)\"" 2>/dev/null | tail -6'
-      # Suricata event_type 분포
-      ssh 6v6-ips 'sudo tail -500 /var/log/suricata/eve.json | jq -r ".event_type" 2>/dev/null | sort | uniq -c | sort -rn'
       ```
 
       ## 📋 확인 사항
 
-      - SecAuditLogType Serial → grep 파싱
+      - SecAuditLogFormat JSON → jq 파싱 (.response.status / .audit_data.messages)
       - audit log 매치 룰: dvwa(On) 차단의 941/942/949110
-      - Suricata juice http event: 우회 시도 URL + status(200, DetectionOnly 통과를 관측)
-      - event_type 분포 (flow/tls/http)
+      - 응답 코드: 403(차단) — RelevantOnly 라 200 우회는 미기록(STEP 5 의 error.log)
+      - Suricata juice http event: 우회 시도 URL + status
 
       ## 💡 왜 이걸 하는가?
 
-      On 모드 차단(403)은 audit log(RelevantStatus 4xx 매치)에 기록되고, DetectionOnly
-      통과(200)는 error.log 에만 있었다(STEP 5). 즉 *mode 에 따라 탐지 source 가 다르다*.
-      Suricata 는 mode 와 무관하게 네트워크 L7 에서 모든 http 요청을 관측하므로, ModSec
-      이 어느 로그에 남기든 Suricata 로 cross-check 할 수 있다.
+      On 모드 차단(403)은 audit log(JSON, RelevantStatus 4xx 매치)에 기록되고, DetectionOnly
+      통과(200)는 error.log(텍스트)에만 있었다(STEP 5). 즉 *mode 에 따라 탐지 source 와 형식이
+      다르다* — audit log 는 JSON(jq), error.log 는 텍스트(grep). Suricata 는 mode 무관 네트워크
+      L7 관측이라 어느 로그든 cross-check 할 수 있다.
 
       ## 🔍 결과 해석
 
-      - audit log 941/942 = dvwa(On) 차단 흔적 (Serial grep)
-      - Suricata http event 200 = juice 우회 통과를 네트워크에서 관측 (ModSec 로그와 별개 source)
+      - audit log 941/942 = dvwa(On) 차단 흔적 (JSON jq)
+      - Suricata http event = 네트워크에서 관측 (ModSec 로그와 별개 source)
       - 다중 source(error.log + audit log + Suricata) cross-check = 단일 도구 누락 보완
 
       ## ⚠️ 비정상 시 대응
 
-      - audit log grep 0 — dvwa 차단이 아직 없음, STEP 2/3 재실행
+      - audit log jq 빈 출력 — RelevantOnly 라 4xx/5xx 만 기록, dvwa(On) 공격 후 재확인
+      - SecAuditLogFormat 이 JSON 아님(구 이미지) — `grep -oE 'id "[0-9]+"'` 로 Native fallback
       - eve.json 없음 — `ssh 6v6-ips 'sudo ls /var/log/suricata/'`
-      - jq 빈 출력 — audit log 는 Serial 이라 grep, Suricata eve.json 은 jq (각 형식에 맞게)
     hint: |
-      audit log(Serial→grep): dvwa On 차단 941/942. Suricata eve.json(jq): juice http
-      200 관측. mode별 탐지 source 다름(error.log/audit/Suricata) cross-check.
+      audit log = JSON(SecAuditLogFormat JSON) → jq(.audit_data.messages/.response.status).
+      dvwa On 차단 941/942. Suricata eve.json(jq) cross-check. mode별 source/형식 다름.
     category: blueteam
     points: 12
     answer: |
-      ssh -n 6v6-web 'sudo grep -m1 SecAuditLogType /etc/modsecurity/modsecurity.conf'
-      echo "=== audit log 매치 룰 (On 차단) ==="
-      ssh -n 6v6-web 'sudo grep -oE "id \"[0-9]+\"" /var/log/apache2/modsec_audit.log | sort | uniq -c | sort -rn | head -6'
+      ssh -n 6v6-web 'sudo grep -E "SecAuditLogFormat|SecAuditLogType" /etc/modsecurity/modsecurity.conf'
+      echo "=== audit log 매치 룰 (On 차단, JSON jq) ==="
+      ssh -n 6v6-web 'sudo tail -50 /var/log/apache2/modsec_audit.log | jq -r ".audit_data.messages[]? | capture(\"id .(?<id>[0-9]+).\") | .id" 2>/dev/null | sort | uniq -c | sort -rn | head -6'
+      echo "=== 응답 코드 ==="
+      ssh -n 6v6-web 'sudo tail -50 /var/log/apache2/modsec_audit.log | jq -r ".response.status" 2>/dev/null | sort | uniq -c'
       echo "=== Suricata juice http event ==="
       ssh -n 6v6-ips 'sudo tail -500 /var/log/suricata/eve.json | jq -rc "select(.event_type==\"http\" and .http.hostname==\"juice.6v6.lab\") | \"\(.http.status) \(.http.url)\"" 2>/dev/null | tail -6'
-      echo "=== event_type 분포 ==="
-      ssh -n 6v6-ips 'sudo tail -500 /var/log/suricata/eve.json | jq -r ".event_type" 2>/dev/null | sort | uniq -c | sort -rn'
     answer_detail: |
-      audit log = Serial(Native) → grep. dvwa(On) 차단의 941/942/949110 매치. Suricata
-      eve.json(jq): juice http event 에 우회 시도 URL + 200(DetectionOnly 통과를 네트워크
-      관측). event_type flow/tls/http. mode별 탐지 source(error.log/audit/Suricata)가
-      다르므로 다중 cross-check 가 단일 누락을 보완.
+      audit log = JSON(SecAuditLogFormat JSON) → jq. dvwa(On) 차단의 941/942/949110 매치
+      (.audit_data.messages), 응답 403(.response.status). RelevantOnly 라 200 우회는 미기록
+      (error.log). Suricata eve.json(jq): juice http event. mode별 탐지 source/형식(audit=
+      JSON, error.log=텍스트, Suricata=eve.json)이 다르므로 다중 cross-check 가 단일 누락 보완.
     verify:
       type: output_contains
-      expect: Serial
+      expect: '941'
       field: stdout
       semantic:
-        intent: Blue — On 차단 audit log(Serial) + Suricata cross-check.
-        success_criteria: ["Serial 형식 인지", "audit 매치 룰", "Suricata http event"]
+        intent: Blue — On 차단 audit log(JSON jq) + Suricata cross-check.
+        success_criteria: ["JSON 형식 인지", "audit 매치 룰(jq)", "Suricata http event"]
         acceptable_methods:
           - |
-            **[OSS] grep audit 매치 룰** — Serial(jq 불가).
-              ssh 6v6-web 'sudo grep -oE "id \"[0-9]+\"" /var/log/apache2/modsec_audit.log | sort | uniq -c | sort -rn'
+            **[OSS] jq audit_data.messages** — JSON audit log.
+              ssh 6v6-web 'sudo tail -50 /var/log/apache2/modsec_audit.log | jq -r ".audit_data.messages[]? | capture(\"id .(?<id>[0-9]+).\") | .id"'
             예상 출력 `941/942/949110 카운트`.
             운영 해석: dvwa(On) 차단 흔적.
           - |
+            **[OSS] jq .response.status** — 응답 코드.
+              jq -r ".response.status" | sort | uniq -c
+            예상 출력 `403`.
+            운영 해석: RelevantOnly 4xx/5xx 기록.
+          - |
             **[OSS] jq Suricata http event** — 네트워크 관측.
               ssh 6v6-ips 'sudo tail -500 /var/log/suricata/eve.json | jq "select(.http.hostname==\"juice.6v6.lab\")"'
-            예상 출력 `200 /?q=... 우회 시도`.
+            예상 출력 `우회 시도 http event`.
             운영 해석: mode 무관 네트워크 L7 관측.
-          - "**[OSS] jq event_type 분포** — Suricata 관측 범위(flow/tls/http)."
-        negative_signs: ["audit 에 jq 사용(Serial)", "Suricata cross-check 누락"]
+        negative_signs: ["grep 으로 audit 시도(JSON 인데)", "Suricata cross-check 누락"]
     target_vm: ips
     risk_level: low
 
