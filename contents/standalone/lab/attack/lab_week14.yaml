@@ -1,136 +1,879 @@
 lab_id: standalone-attack-week14
-title: Caldera + Wazuh Purple Team — Coverage Matrix + AAR
+title: Caldera + Wazuh Purple Team — Coverage Matrix + Detection Gap + AAR
 version: standalone-non-ai
 course: attack
 week: 14
 description: |
-  Caldera (Red) + Wazuh (Blue) 협업. 3 TTP (T1083 / T1057 / T1018) 수동 시뮬 +
-  Blue detection 측정 + Purple Coverage Matrix + AAR (After-Action Report).
+  Purple Team 운영 — Red(공격)과 Blue(방어)의 협업으로 Coverage Matrix 측정 +
+  Detection Gap 식별 + AAR(After-Action Report) 작성 + 룰 강화. 본 과목(W01~W13)의
+  종합. Caldera 서버 없이도 ATT&CK ability 를 수동 에뮬레이션하고, 6v6 의 Blue 스택
+  (Wazuh / Suricata / ModSec / osquery)이 각 Technique 를 탐지하는지 정량 측정한다.
+  핵심 통찰: discovery 류(T1083/T1057/T1018)는 정상 명령이라 탐지가 어렵고(Coverage
+  0% 가 정상), exploit 류(T1190)는 탐지되며, 6v6 의 alert 에는 mitre 태그가 거의 없어
+  ATT&CK 매핑을 rule.description 으로 수동 수행해야 한다. 학생은 Coverage Matrix →
+  Detection Gap 5 카테고리 → ATT&CK Navigator → AAR → 룰 강화의 한 사이클을 완성한다.
 difficulty: hard
-duration_minutes: 150
-prerequisites: [W13]
+duration_minutes: 180
+audience: 사이버공격 (14주차)
+prerequisites: ["W13 Caldera adversary emulation"]
 objectives:
-  - "3 TTP 수동 실행 (Caldera 없이도)"
-  - "Blue 3 source detection"
-  - "Coverage Matrix + AAR"
-pass_threshold: 0.7
+  - "ATT&CK ability 수동 에뮬레이션 (discovery + exploit + scan)"
+  - "Blue 탐지 측정 (Wazuh alerts.json / Suricata 86601 / ModSec) + mitre 태그 한계"
+  - "Coverage Matrix (Technique × Red/Blue/도구/%)"
+  - "Detection Gap 5 카테고리 (도구/룰/threshold/context/response)"
+  - "ATT&CK Navigator JSON layer + AAR(NIST SP 800-61)"
+  - "Gap 별 룰 강화 권고 (Wazuh/Suricata/Sigma)"
+pass_threshold: 0.6
 steps:
 
   - order: 1
     instruction: |
-      ## 🎯 MISSION (3 TTP 실행 + Blue detection)
+      ## 🎯 MISSION (Red Team — Discovery ability 에뮬레이션)
 
-      **Red** 가 3 TTP (T1083 File Discovery / T1057 Process / T1018 Network) 수동
-      실행 → **Blue** 가 3 source 추적.
+      Caldera adversary 의 discovery 캠페인을 수동 에뮬레이션하라. attacker 에서 3
+      discovery Technique(T1083 File / T1057 Process / T1018 Network)를 실행하고 각
+      실행 시각을 기록한다 (Blue 측 시간 상관용).
 
       ## 💻 실행 명령
 
       ```bash
-      # === T1083 File Discovery ===
-      ssh 6v6-web 'find /etc -name "*.conf" 2>/dev/null | head -5'
-      sleep 3
-      ssh 6v6-siem 'sudo grep "syscheck\|file" /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -2 | head -1'
-
-      # === T1057 Process Discovery ===
-      ssh 6v6-web 'ps -ef 2>&1 | wc -l'
-      ssh 6v6-web 'sudo osqueryi --json "SELECT count(*) FROM processes;"'
-
-      # === T1018 Network Discovery (nmap) ===
-      ssh 6v6-attacker 'timeout 8 nmap -sT -p 22,80 10.20.32.0/24 2>&1 | tail -3'
-      sleep 5
-      ssh 6v6-ips 'sudo tail -200 /var/log/suricata/eve.json | jq -c "select(.event_type==\"alert\") | {sig:.alert.signature}" 2>/dev/null | tail -2'
+      ssh 6v6-attacker '
+      echo "=== T1083 File Discovery @ $(date -u +%H:%M:%S) ==="
+      find /etc -name "*.conf" 2>/dev/null | head -5
+      echo "=== T1057 Process Discovery @ $(date -u +%H:%M:%S) ==="
+      ps -ef 2>/dev/null | head -5
+      echo "=== T1018 Network Discovery @ $(date -u +%H:%M:%S) ==="
+      ss -tn 2>/dev/null | head -5
+      '
+      CAMPAIGN_TS=$(ssh 6v6-attacker 'date -u +%Y-%m-%dT%H:%M'); echo "CAMPAIGN_TS=$CAMPAIGN_TS"
       ```
 
       ## 📋 확인 사항
 
-      - T1083 / T1057 / T1018 모두 실행
-      - Blue detection: Wazuh syscheck / osquery / Suricata 알람
+      - 3 discovery Technique 실행 (find/ps/ss) + 각 timestamp
+      - CAMPAIGN_TS 기록 (Blue 측 alert 시간 매칭용)
+      - 모두 정상 시스템 명령 (Blue 측 alert 발생 안 함 예상 — STEP 3 에서 확인)
 
       ## 💡 왜 이걸 하는가?
 
-      Purple Team standard — Red 실행 + Blue 측정 + Gap 식별.
+      Discovery(TA0007)는 침투 후 환경 정찰 단계다. find/ps/ss 는 공격자도 쓰지만 정상
+      사용자도 일상적으로 쓰는 명령이라 탐지가 본질적으로 어렵다. 이 ability 들이 Blue
+      측에서 탐지되는지(Coverage)를 측정하는 것이 Purple Team 의 출발점이다. Caldera
+      서버 없이 수동 에뮬레이션해도 동일한 Coverage 측정이 가능하다.
 
       ## 🔍 결과 해석
 
-      - **Coverage Matrix** 작성 (Red 실행 vs Blue 탐지)
-    hint: 3 TTP + Blue 추적
-    category: purpleteam
-    points: 30
+      - 3 ability 실행 + timestamp = Red 측 timeline 확보
+      - 정상 명령이라 Blue alert 없을 것 = discovery 의 본질적 탐지 난점(STEP 5 Coverage 0%)
+
+      ## ⚠️ 비정상 시 대응
+
+      - ss 없음 — `netstat -tn` 또는 `apt install iproute2`
+      - find 권한 오류 — `2>/dev/null` 로 무시 (정상)
+    hint: |
+      3 discovery ability(T1083 find/T1057 ps/T1018 ss) + timestamp + CAMPAIGN_TS.
+      정상 명령이라 Blue alert 없음(Coverage 0%)이 정상 — discovery 탐지 난점 학습.
+    category: redteam
+    points: 10
     answer: |
-      ssh -n 6v6-web 'find /etc -name "*.conf" 2>/dev/null | head -5'
-      sleep 3
-      ssh -n 6v6-siem 'sudo grep "syscheck" /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -2 | head -1'
-      ssh -n 6v6-web 'ps -ef 2>&1 | wc -l'
-      ssh -n 6v6-attacker 'timeout 8 nmap -sT -p 22,80 10.20.32.0/24 2>&1 | tail -3'
-      sleep 5
-      ssh -n 6v6-ips 'sudo tail -200 /var/log/suricata/eve.json | jq -c "select(.event_type==\"alert\") | {sig:.alert.signature}" 2>/dev/null | tail -2'
-    answer_detail: 3 TTP + Blue 추적.
+      ssh -n 6v6-attacker '
+      echo "=== T1083 @ $(date -u +%H:%M:%S) ==="; find /etc -name "*.conf" 2>/dev/null | head -5
+      echo "=== T1057 @ $(date -u +%H:%M:%S) ==="; ps -ef 2>/dev/null | head -5
+      echo "=== T1018 @ $(date -u +%H:%M:%S) ==="; ss -tn 2>/dev/null | head -5
+      '
+      CAMPAIGN_TS=$(ssh -n 6v6-attacker 'date -u +%Y-%m-%dT%H:%M'); echo "CAMPAIGN_TS=$CAMPAIGN_TS"
+    answer_detail: |
+      3 discovery Technique: T1083(find /etc), T1057(ps -ef), T1018(ss -tn) + timestamp.
+      모두 정상 시스템 명령이라 Blue alert 발생 안 함 = discovery 의 본질적 탐지 난점.
+      CAMPAIGN_TS 로 Blue alerts.json 시간 매칭.
     verify:
       type: output_contains
-      expect: 'open'
+      expect: T1083
       field: stdout
       semantic:
-        intent: "Red 3 TTP + Blue detection"
-        success_criteria: ["3 TTP 실행"]
+        intent: Red — discovery ability 3종 에뮬레이션 + timestamp.
+        success_criteria: ["3 discovery 실행", "각 timestamp", "CAMPAIGN_TS"]
         acceptable_methods:
-          - "**[OSS] T1083 find /etc**"
-          - "**[OSS] T1057 ps / osquery processes**"
-          - "**[OSS] T1018 nmap network scan**"
-          - "**[OSS] Wazuh alerts.json**"
-          - "**[OSS] Suricata eve.json**"
-          - "**[OSS] osquery process snapshot**"
-          - "**[OSS] sysmon ProcessCreate / NetworkConnect**"
-          - "**[OSS] Caldera 실 설치 시 자동화**"
-    target_vm: bastion
+          - |
+            **[OSS] T1083 find** — File Discovery.
+              ssh 6v6-attacker 'find /etc -name "*.conf"'
+            예상 출력 `.conf 파일 목록`.
+            운영 해석: 정상 명령, 탐지 어려움.
+          - |
+            **[OSS] T1057 ps / T1018 ss** — Process/Network Discovery.
+            예상 출력 `process 목록 / 연결 목록`.
+            운영 해석: discovery 는 일상 명령과 구분 어려움.
+          - "**[OSS] CAMPAIGN_TS 기록** — Blue alert 시간 매칭용."
+        negative_signs: ["ability 일부만", "timestamp 누락"]
+    target_vm: attacker
+    risk_level: low
 
   - order: 2
     instruction: |
-      ## 🎯 MISSION
+      ## 🎯 MISSION (Red Team — Exploit/Scan ability 에뮬레이션)
 
-      AAR (After-Action Report) — Coverage Matrix + Gap + 권장.
+      탐지 가능성이 높은 ability — T1190(web exploit), T1046(network scan)를 에뮬레이션
+      하라. discovery 와 달리 이들은 Blue 가 탐지할 가능성이 있다.
 
-      ## 💻 산출물
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker '
+      echo "=== T1190 Web Exploit (dvwa On — 차단 예상) @ $(date -u +%H:%M:%S) ==="
+      curl -s -o /dev/null -w "  XSS: %{http_code}\n" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?q=<script>alert(1)</script>"
+      curl -s -o /dev/null -w "  SQLi: %{http_code}\n" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?id=1+UNION+SELECT"
+      echo "=== T1046 Network Scan @ $(date -u +%H:%M:%S) ==="
+      timeout 12 nmap -sT -p 22,80,9200 10.20.32.100 2>&1 | grep -E "open|closed|filtered" | head -3
+      '
+      ```
+
+      ## 📋 확인 사항
+
+      - T1190 web exploit: dvwa(On) → 403 차단 (ModSec)
+      - T1046 nmap scan: port 상태(open/closed/filtered)
+      - 각 timestamp (Blue 매칭용)
+
+      ## 💡 왜 이걸 하는가?
+
+      Exploit/scan 류는 공격 시그니처가 명확해 discovery 보다 탐지 가능성이 높다.
+      T1190(web exploit)은 ModSec/Suricata 가, T1046(scan)은 Suricata ET SCAN 룰이
+      탐지할 수 있다. 단 탐지 여부는 룰 적용 상태에 달려 있어 STEP 3 에서 실측 측정한다.
+
+      ## 🔍 결과 해석
+
+      - web exploit 403 = ModSec 차단 + audit log 기록(W10)
+      - nmap scan = Suricata 가 탐지할 수도/못 할 수도(룰 의존, STEP 3 확인)
+      - exploit 류가 discovery 보다 Coverage 높을 것
+
+      ## ⚠️ 비정상 시 대응
+
+      - nmap 없음 — `apt install nmap`
+      - web 연결 실패 — `-H "Host: dvwa.6v6.lab"` + IP 10.20.30.1 확인
+    hint: |
+      T1190 web exploit(dvwa On→403) + T1046 nmap scan + timestamp. exploit/scan 은
+      discovery 보다 탐지 가능성 높음(시그니처 명확). 실측 Coverage 는 STEP 3.
+    category: redteam
+    points: 10
+    answer: |
+      ssh -n 6v6-attacker '
+      echo "=== T1190 @ $(date -u +%H:%M:%S) ==="
+      curl -s -o /dev/null -w "  XSS: %{http_code}\n" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?q=<script>alert(1)</script>"
+      curl -s -o /dev/null -w "  SQLi: %{http_code}\n" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?id=1+UNION+SELECT"
+      echo "=== T1046 @ $(date -u +%H:%M:%S) ==="
+      timeout 12 nmap -sT -p 22,80,9200 10.20.32.100 2>&1 | grep -E "open|closed|filtered" | head -3
+      '
+    answer_detail: |
+      T1190 web exploit: dvwa(On) XSS/SQLi → 403 차단(ModSec 941/942 + audit log).
+      T1046 nmap scan: port 상태(22 open 등). exploit 은 시그니처 명확해 discovery 보다
+      탐지 가능. scan 의 Suricata 탐지는 ET SCAN 룰 적용 여부에 달림(STEP 3 측정).
+    verify:
+      type: output_contains
+      expect: T1190
+      field: stdout
+      semantic:
+        intent: Red — exploit/scan ability(T1190/T1046) 에뮬레이션.
+        success_criteria: ["T1190 web exploit", "T1046 nmap scan", "timestamp"]
+        acceptable_methods:
+          - |
+            **[OSS] T1190 curl web exploit** — Exploit Public-Facing App.
+              curl -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?q=<script>"
+            예상 출력 `403(ModSec 차단)`.
+            운영 해석: ModSec 941/942 + audit log 탐지.
+          - |
+            **[OSS] T1046 nmap scan** — Network Service Discovery.
+              nmap -sT -p 22,80 10.20.32.100
+            예상 출력 `port 상태`.
+            운영 해석: Suricata ET SCAN 룰 의존 탐지.
+          - "**[OSS] T1110 brute / T1059 command** — 추가 exploit ability(선택)."
+        negative_signs: ["ability 일부만", "timestamp 누락"]
+    target_vm: attacker
+    risk_level: medium
+
+  - order: 3
+    instruction: |
+      ## 🎯 MISSION (Blue Team — 탐지 측정)
+
+      STEP 1/2 의 ability 를 Blue 스택이 탐지했는지 측정하라. Wazuh alerts.json 의 룰
+      분포 + Suricata + ModSec 에서 각 Technique 의 탐지 여부를 확인한다.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # Wazuh alerts.json 의 최근 룰 분포 (siem 에 jq 필요)
+      ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -r ".rule.id" 2>/dev/null | sort | uniq -c | sort -rn | head -8'
+      # Suricata alert (scan/exploit 탐지?)
+      ssh 6v6-ips 'sudo tail -400 /var/log/suricata/eve.json | jq -rc "select(.event_type==\"alert\") | .alert.signature" 2>/dev/null | sort | uniq -c | tail -5'
+      # ModSec (web exploit T1190 차단 기록 — Serial grep)
+      ssh 6v6-web 'sudo grep -oE "id \"[0-9]+\"" /var/log/apache2/modsec_audit.log | sort | uniq -c | sort -rn | head -4'
+      ```
+
+      ## 📋 확인 사항
+
+      - Wazuh: rule 86601(Suricata)이 다수, 100xxx(custom) — discovery(T1083/57/18)는 alert 없음
+      - Suricata: alert signature (scan/exploit 탐지 여부)
+      - ModSec: 941/942(T1190 web exploit 차단)
+
+      ## 💡 왜 이걸 하는가?
+
+      Blue 측정은 Coverage Matrix 의 데이터다. 각 Red ability 에 대응하는 Blue alert 가
+      있는지 시간대(CAMPAIGN_TS)로 매칭한다. discovery(정상 명령)는 alert 가 없고
+      (Coverage 0%), web exploit(T1190)은 ModSec 941/942 로 탐지된다. 이 차이를 정량화
+      하는 것이 Purple Team 의 핵심이다.
+
+      ## 🔍 결과 해석
+
+      - discovery 시간대에 alert 없음 = Coverage 0%(정상 — discovery 탐지 난점)
+      - 86601(Suricata) 다수 = 네트워크 이벤트 탐지 활발
+      - ModSec 941/942 = T1190 web exploit 탐지(Coverage 100%)
+      - nmap scan 의 Suricata alert 없으면 = T1046 Detection Gap
+
+      ## ⚠️ 비정상 시 대응
+
+      - jq 없음(siem) — `sudo yum install -y jq`
+      - alert 0 — alerts.json 경로 확인, ability 재실행 후 시간 대기
+    hint: |
+      Wazuh rule 분포(86601 Suricata + 100xxx custom) + Suricata signature + ModSec
+      941/942. discovery 시간대 alert 없음(Coverage 0%), web exploit 탐지. 시간 매칭.
+    category: blueteam
+    points: 14
+    answer: |
+      echo "=== Wazuh rule 분포 ==="
+      ssh -n 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -r ".rule.id" 2>/dev/null | sort | uniq -c | sort -rn | head -8'
+      echo "=== Suricata alert ==="
+      ssh -n 6v6-ips 'sudo tail -400 /var/log/suricata/eve.json | jq -rc "select(.event_type==\"alert\") | .alert.signature" 2>/dev/null | sort | uniq -c | tail -5'
+      echo "=== ModSec T1190 ==="
+      ssh -n 6v6-web 'sudo grep -oE "id \"[0-9]+\"" /var/log/apache2/modsec_audit.log | sort | uniq -c | sort -rn | head -4'
+    answer_detail: |
+      Wazuh rule: 86601(Suricata 다수)/100xxx(custom). discovery(T1083/57/18) 시간대
+      alert 없음 = Coverage 0%(정상). Suricata signature(scan/exploit). ModSec 941/942 =
+      T1190 web exploit 탐지(Coverage 100%). nmap scan Suricata alert 없으면 T1046 Gap.
+      각 ability ↔ alert 시간 매칭이 Coverage Matrix 데이터.
+    verify:
+      type: output_contains
+      expect: '86601'
+      field: stdout
+      semantic:
+        intent: Blue — ability 별 탐지 측정(Wazuh/Suricata/ModSec).
+        success_criteria: ["Wazuh rule 분포", "Suricata/ModSec 확인", "discovery vs exploit 차이"]
+        acceptable_methods:
+          - |
+            **[OSS] jq Wazuh rule 분포** — 탐지 룰.
+              ssh 6v6-siem 'sudo tail .../alerts.json | jq -r .rule.id | sort | uniq -c'
+            예상 출력 `86601 + 100xxx`.
+            운영 해석: discovery alert 없음, Suricata 활발.
+          - |
+            **[OSS] jq Suricata signature** — scan/exploit 탐지.
+            예상 출력 `signature 또는 없음`.
+            운영 해석: ET SCAN 룰 의존, 없으면 Gap.
+          - |
+            **[OSS] grep ModSec 941/942** — T1190 탐지.
+            예상 출력 `941/942 카운트`.
+            운영 해석: web exploit Coverage 100%.
+        negative_signs: ["탐지 측정 누락", "discovery/exploit 구분 없음"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 4
+    instruction: |
+      ## 🎯 MISSION (Blue Team — ATT&CK 매핑 + mitre 태그 한계)
+
+      Wazuh alert 에 ATT&CK(mitre) 태그가 있는지 확인하고, 없다면 rule.description 으로
+      수동 매핑하는 방법을 적용하라.
+
+      ## 💻 실행 명령
+
+      ```bash
+      # mitre 태그가 있는 alert 수 (전체 대비)
+      ssh 6v6-siem 'echo "mitre 태그 alert:"; sudo grep -c "mitre" /var/ossec/logs/alerts/alerts.json 2>/dev/null'
+      ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -rc "select(.rule.mitre) | .rule.mitre.id[]?" 2>/dev/null | sort | uniq -c | head'
+      # 태그 없으면 rule.description 으로 수동 매핑
+      ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -r ".rule.description" 2>/dev/null | sort | uniq -c | sort -rn | head -6'
+      ```
+
+      ## 📋 확인 사항
+
+      - mitre 태그 alert 수: 매우 적음(대부분 alert 에 mitre 태그 없음)
+      - 태그 있는 것: 일부 Technique(예: T1565.001)만
+      - rule.description: 매핑 source(예: "Suricata: ..." → 수동으로 ATT&CK 매핑)
+
+      ## 💡 왜 이걸 하는가?
+
+      Coverage Matrix 는 ATT&CK Technique 기준인데, 이 환경의 alert 는 mitre 태그가 거의
+      없다(Suricata/custom 룰이 mitre 매핑 미보유). 따라서 rule.description 을 보고 수동
+      으로 ATT&CK Technique 를 매핑해야 한다. 이것이 Detection Gap 의 "context 부재"
+      카테고리(STEP 6)이며, 자동 매핑(mitre 태그) 부재가 Purple Team 작업을 어렵게 한다.
+
+      ## 🔍 결과 해석
+
+      - mitre 태그 거의 없음 = ATT&CK 자동 매핑 불가 → 수동 매핑 필요
+      - rule.description → ATT&CK 매핑 예: "web attack" → T1190, "scan" → T1046
+      - 이 Gap 보완 = Wazuh 룰에 mitre 태그 추가(Purple STEP 9)
+
+      ## ⚠️ 비정상 시 대응
+
+      - mitre 태그 0 — 정상(이 환경), rule.description 으로 수동 매핑
+      - jq 없음 — yum install jq
+    hint: |
+      mitre 태그 거의 없음(자동 ATT&CK 매핑 불가) → rule.description 으로 수동 매핑.
+      이것이 Detection Gap 의 context 부재. Wazuh 룰에 mitre 태그 추가가 보완.
+    category: blueteam
+    points: 12
+    answer: |
+      echo "=== mitre 태그 ==="
+      ssh -n 6v6-siem 'sudo grep -c "mitre" /var/ossec/logs/alerts/alerts.json 2>/dev/null'
+      ssh -n 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -rc "select(.rule.mitre) | .rule.mitre.id[]?" 2>/dev/null | sort | uniq -c | head'
+      echo "=== rule.description (수동 매핑 source) ==="
+      ssh -n 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -r ".rule.description" 2>/dev/null | sort | uniq -c | sort -rn | head -6'
+    answer_detail: |
+      mitre 태그 alert 매우 적음(예: 10/2000, T1565.001 1건). 대부분 Suricata(86601)/
+      custom 룰이 mitre 매핑 미보유 → ATT&CK 자동 매핑 불가. rule.description 으로 수동
+      매핑(예: "web attack"→T1190, "scan"→T1046). 이 mitre 태그 부재가 Detection Gap 의
+      context 부재 카테고리(STEP 6). 보완 = Wazuh 룰에 <mitre> 추가(STEP 9).
+    verify:
+      type: output_contains
+      expect: description
+      field: stdout
+      semantic:
+        intent: Blue — mitre 태그 가용성 + rule.description 수동 ATT&CK 매핑.
+        success_criteria: ["mitre 태그 수 확인", "태그 부재 인지", "rule.description 수동 매핑"]
+        acceptable_methods:
+          - |
+            **[OSS] grep/jq mitre 태그** — 자동 매핑 가용성.
+              ssh 6v6-siem 'sudo grep -c mitre .../alerts.json; jq "select(.rule.mitre)"'
+            예상 출력 `매우 적음(거의 없음)`.
+            운영 해석: ATT&CK 자동 매핑 불가.
+          - |
+            **[OSS] jq rule.description** — 수동 매핑 source.
+              jq -r .rule.description | sort | uniq -c
+            예상 출력 `룰 설명 분포`.
+            운영 해석: description → ATT&CK 수동 매핑.
+          - "**[OSS] mitre 태그 추가 권고** — Wazuh 룰에 <mitre><id> 보강."
+        negative_signs: ["mitre 태그 부재 미인지", "수동 매핑 방법 없음"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 5
+    instruction: |
+      ## 🎯 MISSION (Purple Team — Coverage Matrix)
+
+      STEP 1~4 의 Red ability 와 Blue 탐지를 통합해 **Coverage Matrix** 를 작성하라.
+      각 Technique 의 탐지 도구와 Coverage % 를 정량화한다.
+
+      ## 💻 산출물 (Coverage Matrix)
 
       ```markdown
-      # AAR — 6v6 W14 Purple Team Cycle
-
-      ## Coverage Matrix
-      | TTP | Red 실행 | Blue 탐지 | Coverage |
-      | T1083 File Disc | ✓ | osquery / Wazuh syscheck (있다면) | 50-100% |
-      | T1057 Process | ✓ | osquery / sysmon (있다면) | 100% |
-      | T1018 Network | ✓ | Suricata ET SCAN | 100% |
-      총 Coverage: 67-100%
-
-      ## Gap
-      1. T1083 의 syscheck rule 미정의 → W10 의 FIM 설정 보강
-      2. T1057 의 process_events 비활성 → osqueryd schedule 설정
-
-      ## 권장
-      1. osquery FIM 확장 (file_paths /etc/*)
-      2. Wazuh rule 100400 (file enum > 50 in 60s)
-      3. sysmon-for-linux 본격 설치 (W11)
+      # W14 Coverage Matrix — ATT&CK Technique × Blue 탐지
+      | Technique | Red 실행 | Blue 탐지 | 탐지 도구 | Coverage |
+      |-----------|----------|-----------|-----------|----------|
+      | T1083 File Discovery | ✓ | ✗ | 정상 명령(alert 없음) | 0% |
+      | T1057 Process Discovery | ✓ | ✗ | 정상 명령 | 0% |
+      | T1018 Network Discovery | ✓ | ✗ | 정상 명령 | 0% |
+      | T1046 Network Scan | ✓ | ✗ | Suricata ET SCAN 룰 부재 | 0% |
+      | T1190 Web Exploit | ✓ | ✓ | ModSec 941/942 + Suricata 86601 | 100% |
+      ## 총 Coverage: 20% (1/5 — exploit 만 탐지)
+      ## 핵심 발견
+      - discovery 4종(T1083/57/18/46) Coverage 0% — 정상 명령이라 탐지 본질적 어려움
+      - exploit(T1190)만 100% — 공격 시그니처 명확
+      - mitre 태그 부재로 ATT&CK 자동 매핑 불가(수동)
       ```
-    hint: Coverage Matrix + Gap + 권장
-    category: synthesis
-    points: 30
+
+      ## 📋 채점
+
+      - 5 Technique × Red/Blue/도구/% 매트릭스
+      - 총 Coverage % + discovery vs exploit 차이 분석
+
+      ## 💡 왜 이걸 하는가?
+
+      Coverage Matrix 는 Purple Team 의 핵심 산출물로, "우리가 ATT&CK 의 어디까지 탐지
+      가능한가" 를 정량화한다. 이 환경의 20% 는 낮아 보이지만, discovery 류의 본질적
+      탐지 난점을 반영한 현실적 수치다. Coverage 100% 는 불가능하며, *위험한 Technique
+      우선* 탐지가 합리적 목표다.
+
+      ## 🔍 결과 해석
+
+      - 20% Coverage = exploit 탐지 + discovery 사각지대
+      - 낮은 Coverage 가 곧 실패는 아님 — discovery 탐지는 alert fatigue 와 trade-off
+      - 다음: Gap 분석(STEP 6)으로 보완 우선순위 결정
+    hint: |
+      Coverage Matrix — 5 Technique(T1083/57/18/46 discovery=0%, T1190 exploit=100%).
+      총 ~20%. discovery 본질적 탐지 난점 + mitre 태그 부재. 현실적 수치 해석.
+    category: purple
+    points: 12
     answer: |
-      echo "Purple Coverage: Caldera ability {Discovery,Lateral,Collection} × Wazuh/Suricata 탐지 매핑"
-      echo "Coverage: 14 Tactic 중 6~8 coverage (C2/Collection 일부 누락)"
-    answer_detail: AAR.
+      cat <<'EOF'
+      # W14 Coverage Matrix
+      | Technique | Red | Blue | 도구 | Coverage |
+      | T1083 File Disc | ✓ | ✗ | 정상 명령 | 0% |
+      | T1057 Process | ✓ | ✗ | 정상 명령 | 0% |
+      | T1018 Network | ✓ | ✗ | 정상 명령 | 0% |
+      | T1046 Scan | ✓ | ✗ | ET SCAN 룰 부재 | 0% |
+      | T1190 Web Exploit | ✓ | ✓ | ModSec 941/942 + Suricata 86601 | 100% |
+      ## 총 Coverage 20% (1/5). discovery 0%(정상 명령), exploit 100%.
+      EOF
+    answer_detail: |
+      Coverage Matrix: T1083/T1057/T1018/T1046(discovery/scan) Coverage 0%(정상 명령 +
+      ET SCAN 룰 부재), T1190(web exploit) 100%(ModSec 941/942 + Suricata 86601). 총 20%.
+      discovery 본질적 탐지 난점 반영한 현실적 수치. Coverage 100% 불가, 위험 Technique
+      우선 탐지가 합리적. mitre 태그 부재로 수동 매핑.
     verify:
       type: output_contains
       expect: Coverage
       field: stdout
       semantic:
-        intent: "AAR"
-        success_criteria: ["Matrix + Gap + 권장"]
+        intent: Purple — Coverage Matrix(Technique × 탐지 × %).
+        success_criteria: ["5 Technique 매트릭스", "총 Coverage %", "discovery vs exploit 분석"]
         acceptable_methods:
-          - "**[관리적]** Coverage Matrix 형식"
-          - "**[관리적]** MITRE ATT&CK Navigator export"
-          - "**[관리적]** PCI / ISMS-P 매핑"
-          - "**[관리적]** CISO 보고용 1페이지"
-          - "**[관리적]** 분기별 정기 Cycle"
-          - "**[관리적]** Atomic Red Team 비교"
-          - "**[관리적]** detection gap 자동 분석"
-          - "**[관리적]** SOAR 통합 자동 응답"
+          - |
+            **[OSS] markdown Coverage Matrix** — ATT&CK × 탐지.
+              # Technique × Red/Blue/도구/%
+            예상 출력 `매트릭스 + 총 Coverage %`.
+            운영 해석: 탐지 능력 정량화.
+          - |
+            **[관리적] discovery vs exploit 차이 분석** — 현실적 해석.
+            예상 출력 `discovery 0% / exploit 100%`.
+            운영 해석: discovery 탐지 난점 + alert fatigue trade-off.
+        negative_signs: ["Coverage % 없음", "discovery 난점 분석 누락"]
     target_vm: bastion
+    risk_level: low
+
+  - order: 6
+    instruction: |
+      ## 🎯 MISSION (Purple Team — Detection Gap 5 카테고리)
+
+      Coverage Matrix(STEP 5)의 미탐지 Technique 를 **Detection Gap 5 카테고리**(도구/
+      룰/threshold/context/response)로 분류하고 각 보완 방향을 제시하라.
+
+      ## 💻 산출물 (Detection Gap 분석)
+
+      ```markdown
+      # W14 Detection Gap 5 카테고리 분석
+      | Gap 카테고리 | 해당 Technique | 원인 | 보완 | 소요 |
+      |-------------|---------------|------|------|------|
+      | 1. 도구 부재 | T1057 Process | osquery process_events/sysmon 미설정 | osqueryd + sysmon 설치 | 1-2주 |
+      | 2. 룰 부재 | T1046 Scan | Suricata ET SCAN 룰 미적용 | ET Open 룰 활성 | 1-3일 |
+      | 3. threshold 부재 | T1083 File | find burst 룰 없음 | rate rule(60초 N건) | 1일 |
+      | 4. context 부재 | 전체 | mitre 태그 없음 → ATT&CK 자동매핑 불가 | Wazuh 룰에 <mitre> 추가 | 1-2주 |
+      | 5. response 부재 | T1190 Exploit | 탐지되나 Active Response 없음 | Wazuh AR(fw drop) | 2-4주 |
+      ## 우선순위: context(4, 전체 영향) → 룰(2, 빠름) → 도구(1) → threshold(3) → response(5)
+      ```
+
+      ## 📋 채점
+
+      - 5 카테고리 각각 해당 Technique + 원인 + 보완 + 소요
+      - 보완 우선순위
+
+      ## 💡 왜 이걸 하는가?
+
+      Detection Gap 을 5 카테고리로 분류하면 보완의 *유형* 과 *난이도* 가 명확해진다.
+      "탐지 안 됨" 을 도구/룰/threshold/context/response 로 나누면, 빠르게 해결할 수
+      있는 것(룰 부재, 1-3일)과 오래 걸리는 것(도구 부재, 1-2주)을 구분해 합리적
+      우선순위를 세운다. 특히 mitre 태그 부재(context)는 전체에 영향을 주므로 최우선이다.
+
+      ## 🔍 결과 해석
+
+      - 5 카테고리 분류 = 보완 작업의 로드맵
+      - context(mitre 태그) 부재가 전체 Coverage 측정을 어렵게 함 → 최우선
+      - 룰 부재(ET SCAN)는 1-3일로 빠른 win
+
+      ## ⚠️ 비정상 시 대응
+
+      - 모든 Gap 이 한 카테고리 — 분류 재검토(원인 세분화)
+    hint: |
+      Detection Gap 5 카테고리(도구/룰/threshold/context/response) × Technique × 보완
+      × 소요. mitre 태그 부재(context)가 전체 영향 → 최우선. 룰 부재는 빠른 win.
+    category: purple
+    points: 12
+    answer: |
+      cat <<'EOF'
+      # W14 Detection Gap 5 카테고리
+      | 카테고리 | Technique | 원인 | 보완 | 소요 |
+      | 1.도구 부재 | T1057 | process_events/sysmon 미설정 | osqueryd+sysmon | 1-2주 |
+      | 2.룰 부재 | T1046 | ET SCAN 룰 미적용 | ET Open 활성 | 1-3일 |
+      | 3.threshold | T1083 | find burst 룰 없음 | rate rule | 1일 |
+      | 4.context | 전체 | mitre 태그 없음 | Wazuh <mitre> 추가 | 1-2주 |
+      | 5.response | T1190 | AR 없음 | Wazuh AR(fw drop) | 2-4주 |
+      ## 우선순위: context → 룰 → 도구 → threshold → response
+      EOF
+    answer_detail: |
+      Detection Gap 5 카테고리: (1)도구 부재 T1057(osqueryd/sysmon), (2)룰 부재 T1046
+      (ET SCAN), (3)threshold 부재 T1083(rate rule), (4)context 부재 전체(mitre 태그 →
+      Wazuh <mitre> 추가), (5)response 부재 T1190(Active Response). 우선순위: context
+      (전체 영향) → 룰(빠름) → 도구 → threshold → response. 유형별 난이도로 로드맵.
+    verify:
+      type: output_contains
+      expect: Gap
+      field: stdout
+      semantic:
+        intent: Purple — Detection Gap 5 카테고리 분류 + 보완 우선순위.
+        success_criteria: ["5 카테고리 분류", "각 Technique/원인/보완", "우선순위"]
+        acceptable_methods:
+          - |
+            **[OSS/관리적] Gap 5 카테고리** — 도구/룰/threshold/context/response.
+              # 카테고리 × Technique × 원인 × 보완 × 소요
+            예상 출력 `5 카테고리 표`.
+            운영 해석: 보완 유형·난이도 분류.
+          - |
+            **[관리적] 보완 우선순위** — context/룰 우선.
+            예상 출력 `우선순위 (context → 룰 → ...)`.
+            운영 해석: 빠른 win + 전체 영향 우선.
+        negative_signs: ["카테고리 일부만", "우선순위 없음"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 7
+    instruction: |
+      ## 🎯 MISSION (Purple Team — ATT&CK Navigator layer)
+
+      Coverage Matrix(STEP 5)를 ATT&CK Navigator JSON layer 로 변환하라 (시각화용 산출물).
+      Navigator 에 import 하면 Coverage 를 색상으로 시각화할 수 있다.
+
+      ## 💻 산출물 (Navigator JSON layer)
+
+      ```json
+      {
+        "name": "6v6 Purple Team W14 Coverage",
+        "domain": "enterprise-attack",
+        "techniques": [
+          {"techniqueID": "T1083", "score": 0, "color": "#f85149", "comment": "File Discovery — 정상 명령, 탐지 없음"},
+          {"techniqueID": "T1057", "score": 0, "color": "#f85149", "comment": "Process Discovery — 탐지 없음"},
+          {"techniqueID": "T1018", "score": 0, "color": "#f85149", "comment": "Network Discovery — 탐지 없음"},
+          {"techniqueID": "T1046", "score": 0, "color": "#f85149", "comment": "Network Scan — ET SCAN 룰 부재"},
+          {"techniqueID": "T1190", "score": 100, "color": "#3fb950", "comment": "Web Exploit — ModSec 941/942 + Suricata 86601"}
+        ],
+        "gradient": {"colors": ["#f85149", "#d29922", "#3fb950"], "minValue": 0, "maxValue": 100}
+      }
+      ```
+
+      ## 📋 채점
+
+      - 5 Technique 의 techniqueID + score + color + comment
+      - gradient 정의 (0=빨강 ~ 100=초록)
+
+      ## 💡 왜 이걸 하는가?
+
+      ATT&CK Navigator(MITRE 공식 도구)는 Coverage 를 ATT&CK matrix 위에 색상으로
+      시각화한다. JSON layer 를 생성하면 분기별 Coverage 추이, APT 그룹 TTP 비교,
+      compliance 보고에 활용할 수 있다. CISO/감사 보고 시 정량적 시각 자료가 된다.
+
+      ## 🔍 결과 해석
+
+      - score 0(빨강) = 미탐지, 100(초록) = 탐지 → matrix 에서 한눈에 Gap 파악
+      - 분기별 layer 비교 = Coverage 개선 추세 visible
+
+      ## ⚠️ 비정상 시 대응
+
+      - JSON 문법 오류 — `jq . layer.json` 으로 검증
+      - Navigator import 실패 — domain/version 필드 확인
+    hint: |
+      ATT&CK Navigator JSON layer — 5 Technique(techniqueID/score/color/comment) +
+      gradient. score 0(빨강 미탐지)~100(초록 탐지). 분기 추이·compliance 시각화.
+    category: purple
+    points: 10
+    answer: |
+      cat <<'EOF'
+      {
+        "name": "6v6 Purple Team W14 Coverage",
+        "domain": "enterprise-attack",
+        "techniques": [
+          {"techniqueID": "T1083", "score": 0, "color": "#f85149", "comment": "File Discovery 탐지 없음"},
+          {"techniqueID": "T1057", "score": 0, "color": "#f85149", "comment": "Process Discovery 탐지 없음"},
+          {"techniqueID": "T1018", "score": 0, "color": "#f85149", "comment": "Network Discovery 탐지 없음"},
+          {"techniqueID": "T1046", "score": 0, "color": "#f85149", "comment": "Network Scan ET SCAN 룰 부재"},
+          {"techniqueID": "T1190", "score": 100, "color": "#3fb950", "comment": "Web Exploit ModSec+Suricata"}
+        ],
+        "gradient": {"colors": ["#f85149","#d29922","#3fb950"], "minValue": 0, "maxValue": 100}
+      }
+      EOF
+    answer_detail: |
+      ATT&CK Navigator JSON layer: 5 Technique 의 techniqueID/score(0~100)/color/comment +
+      gradient. T1083/57/18/46 score 0(빨강), T1190 score 100(초록). Navigator import 시
+      matrix 색상 시각화 → 분기 추이·APT 비교·compliance 보고 활용.
+    verify:
+      type: output_contains
+      expect: techniqueID
+      field: stdout
+      semantic:
+        intent: Purple — ATT&CK Navigator JSON layer 작성.
+        success_criteria: ["5 Technique techniqueID/score", "color/comment", "gradient"]
+        acceptable_methods:
+          - |
+            **[OSS] Navigator JSON layer** — MITRE 공식 시각화.
+              {"techniques": [{"techniqueID":"T1190","score":100,...}]}
+            예상 출력 `JSON layer`.
+            운영 해석: Coverage matrix 색상 시각화.
+          - "**[관리적] 분기별 layer 비교** — Coverage 개선 추세."
+        negative_signs: ["techniqueID 누락", "score/color 없음"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 8
+    instruction: |
+      ## 🎯 MISSION (Purple Team — AAR 작성)
+
+      본 사이클을 **AAR(After-Action Report, NIST SP 800-61)** 표준 양식으로 작성하라.
+      본 과목(W01~W13)의 종합 보고서다.
+
+      ## 💻 산출물 (AAR — 7 섹션)
+
+      ```markdown
+      # AAR — 6v6 W14 Purple Team Cycle 1 — 2026-05-20
+
+      ## 1. Executive Summary
+      첫 Purple Team 사이클. 5 ATT&CK Technique 에뮬레이션 → Coverage 20%(1/5).
+      discovery 4종 미탐지(정상 명령 난점), web exploit 1종 탐지. Gap 5 카테고리 식별,
+      context(mitre 태그) 부재가 최우선 보완 대상.
+
+      ## 2. Engagement Overview
+      - 시작/종료: 2026-05-20 (CAMPAIGN_TS 기준)
+      - Adversary: 수동 ATT&CK 에뮬레이션(Caldera 미사용)
+      - Target: 6v6-attacker → web/siem
+      - Operator: 본인
+
+      ## 3. Coverage Matrix
+      (STEP 5 의 표 — T1083/57/18/46 0%, T1190 100%, 총 20%)
+
+      ## 4. Detection Gap 분석
+      (STEP 6 의 5 카테고리 — 도구/룰/threshold/context/response)
+
+      ## 5. Lessons Learned
+      - 잘 된 점: web exploit(T1190) ModSec 즉시 탐지/차단
+      - 개선 필요: discovery 탐지 난점, mitre 태그 부재로 매핑 수작업
+
+      ## 6. Recommendations (우선순위)
+      1. (Critical) Wazuh 룰에 mitre 태그 추가(context Gap)
+      2. (High) Suricata ET SCAN 룰 활성(T1046)
+      3. (Medium) osqueryd + sysmon(T1057)
+
+      ## 7. Next Cycle Plan
+      - 다음 사이클: 1 분기 후
+      - 목표 Coverage: 40%+
+      - 추가 시뮬: T1110 brute, T1543 persistence
+      ```
+
+      ## 📋 채점
+
+      - 7 섹션 모두 작성 (Summary/Overview/Matrix/Gap/Lessons/Recommendations/Next)
+      - Coverage Matrix + Gap 분석 인용
+
+      ## 💡 왜 이걸 하는가?
+
+      AAR 은 Purple Team 사이클의 공식 산출물로, CISO/감사 보고와 다음 사이클 계획의
+      기반이다. NIST SP 800-61 의 7 섹션 구조는 "무엇을 했고, 무엇을 발견했고, 무엇을
+      개선할지" 를 체계화한다. ISMS-P 2.10.7/2.12 의 통제 입증 자료이기도 하다.
+
+      ## 🔍 결과 해석
+
+      - 7 섹션 AAR = 사이클 완결 + 다음 사이클 로드맵
+      - Recommendations 우선순위 = Blue 팀의 작업 큐
+    hint: |
+      AAR 7 섹션(Summary/Overview/Coverage Matrix/Gap/Lessons/Recommendations/Next).
+      NIST SP 800-61. Coverage 20% + Gap 5 + 권고 우선순위 + 다음 사이클 목표.
+    category: purple
+    points: 12
+    answer: |
+      cat <<'EOF'
+      # AAR — 6v6 W14 Purple Team Cycle 1
+      ## 1. Executive Summary: 5 Technique → Coverage 20%, Gap 5 카테고리, context 최우선
+      ## 2. Engagement: 수동 ATT&CK 에뮬, target attacker→web/siem
+      ## 3. Coverage Matrix: T1083/57/18/46=0%, T1190=100%, 총 20%
+      ## 4. Detection Gap: 도구/룰/threshold/context/response 5 카테고리
+      ## 5. Lessons: web exploit 즉시 탐지 / discovery 난점 + mitre 부재
+      ## 6. Recommendations: 1)mitre 태그(Critical) 2)ET SCAN(High) 3)osqueryd/sysmon(Medium)
+      ## 7. Next Cycle: 1 분기 후, 목표 40%+, T1110/T1543 추가
+      EOF
+    answer_detail: |
+      AAR(NIST SP 800-61) 7 섹션: Executive Summary(Coverage 20% + Gap 5 + context 최우선),
+      Engagement Overview(수동 에뮬), Coverage Matrix(STEP5), Detection Gap(STEP6 5카테고리),
+      Lessons Learned(exploit 탐지/discovery 난점), Recommendations(mitre/ET SCAN/osqueryd
+      우선순위), Next Cycle(40%+ 목표). CISO/감사 + ISMS-P 2.10.7 입증 자료.
+    verify:
+      type: output_contains
+      expect: AAR
+      field: stdout
+      semantic:
+        intent: Purple — AAR(NIST SP 800-61) 7 섹션 작성.
+        success_criteria: ["7 섹션", "Coverage/Gap 인용", "Recommendations 우선순위"]
+        acceptable_methods:
+          - |
+            **[관리적] AAR 7 섹션** — NIST SP 800-61.
+              # Summary/Overview/Matrix/Gap/Lessons/Recommendations/Next
+            예상 출력 `7 섹션 보고서`.
+            운영 해석: 사이클 완결 + 다음 로드맵.
+          - "**[관리적] Recommendations 우선순위** — Blue 작업 큐 + ISMS-P 입증."
+        negative_signs: ["섹션 누락", "Coverage/Gap 미인용"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 9
+    instruction: |
+      ## 🎯 MISSION (Purple Team — 룰 강화 권고)
+
+      Detection Gap(STEP 6)을 보완하는 **구체적 룰** 을 작성하라 (실행 X — 설계만). 각
+      Gap 카테고리에 대응하는 Wazuh/Suricata/Sigma 룰을 제시한다.
+
+      ## 💻 산출물 (룰 강화 권고)
+
+      ```markdown
+      # W14 룰 강화 권고 (실행 X — 다음 사이클 적용)
+      ## 1. context Gap — Wazuh 룰에 mitre 태그 추가 (최우선)
+      <rule id="100800" level="7">
+        <if_sid>86601</if_sid>
+        <description>Network scan detected</description>
+        <mitre><id>T1046</id></mitre>
+      </rule>
+      → ATT&CK 자동 매핑 → Navigator 연동.
+      ## 2. 룰 Gap — Suricata ET SCAN 활성 (T1046)
+      /etc/suricata/rules/ 에 emerging-scan.rules 활성 + suricata-update
+      ## 3. threshold Gap — discovery burst (T1083/57/18)
+      <rule id="100801" level="10" frequency="10" timeframe="60">
+        <if_matched_sid>...</if_matched_sid>
+        <description>Discovery burst — find/ps/ss 10+ in 60s</description>
+      </rule>
+      ## 4. 도구 Gap — osqueryd + sysmon (T1057)
+      osqueryd scheduled query(process_events) + sysmon-for-linux ProcessCreate
+      ## 5. response Gap — Wazuh Active Response (T1190)
+      <active-response><command>firewall-drop</command><rules_id>941100</rules_id></active-response>
+      ```
+
+      ## 📋 채점
+
+      - 5 Gap 카테고리 각각 구체적 룰/설정
+      - #1(mitre 태그)이 STEP 4/6 의 context Gap 을 직접 보완
+
+      ## 💡 왜 이걸 하는가?
+
+      Purple 사이클의 최종 행동은 Gap 을 메우는 *구체적 룰* 이다. 추상적 "강화하세요" 가
+      아니라 실제 Wazuh rule XML, Suricata 룰 파일, Active Response 설정까지 제시해야
+      Blue 팀이 다음 사이클에 바로 적용한다. 특히 mitre 태그 추가는 향후 모든 Coverage
+      측정을 자동화한다.
+
+      ## 🔍 결과 해석
+
+      - 5 룰 적용 시: Coverage 측정 자동화 + scan 탐지 + discovery burst + process 탐지 + 자동 대응
+      - 다음 사이클 Coverage 목표 40%+ 달성 기반
+
+      ## ⚠️ 비정상 시 대응
+
+      - 룰 적용 후 alert 폭증 — level/frequency 조정, threshold 상향
+      - mitre 태그 형식 오류 — Wazuh decoder 문서 확인
+    hint: |
+      룰 강화 5종 — (1)Wazuh mitre 태그(context,최우선) (2)Suricata ET SCAN(T1046)
+      (3)discovery burst threshold (4)osqueryd/sysmon (5)Active Response. 구체 XML/설정.
+    category: purple
+    points: 10
+    answer: |
+      cat <<'EOF'
+      # W14 룰 강화 권고 (실행 X)
+      1. context(최우선): Wazuh rule 100800 if_sid 86601 + <mitre><id>T1046</id> → ATT&CK 매핑
+      2. 룰 Gap: Suricata emerging-scan.rules 활성 + suricata-update (T1046)
+      3. threshold: Wazuh rule 100801 frequency=10 timeframe=60 (discovery burst)
+      4. 도구: osqueryd process_events + sysmon-for-linux (T1057)
+      5. response: Wazuh active-response firewall-drop rules_id 941100 (T1190)
+      EOF
+    answer_detail: |
+      룰 강화 5종: (1) Wazuh rule 100800 에 <mitre><id> 추가(context Gap 최우선, ATT&CK
+      자동 매핑), (2) Suricata ET SCAN 룰 활성(T1046), (3) Wazuh rule 100801 frequency/
+      timeframe(discovery burst threshold), (4) osqueryd + sysmon(T1057 도구), (5) Wazuh
+      Active Response firewall-drop(T1190 response). #1 이 STEP4/6 context Gap 직접 보완.
+    verify:
+      type: output_contains
+      expect: mitre
+      field: stdout
+      semantic:
+        intent: Purple — Gap 별 룰 강화 권고(Wazuh/Suricata/AR).
+        success_criteria: ["5 Gap 별 룰", "mitre 태그 추가(context)", "구체 XML/설정"]
+        acceptable_methods:
+          - |
+            **[OSS] Wazuh 룰 + mitre 태그** — context Gap.
+              <rule id="100800"><mitre><id>T1046</id></mitre></rule>
+            예상 출력 `mitre 태그 추가`.
+            운영 해석: ATT&CK 자동 매핑.
+          - |
+            **[OSS] Suricata ET SCAN + threshold rule** — 룰/threshold Gap.
+            예상 출력 `ET SCAN 활성 + burst rule`.
+            운영 해석: scan + discovery burst 탐지.
+          - |
+            **[OSS] osqueryd/sysmon + Active Response** — 도구/response Gap.
+            예상 출력 `process 탐지 + 자동 차단`.
+            운영 해석: 탐지 도구 + 자동 대응.
+        negative_signs: ["mitre 태그 누락", "추상적 권고만"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 10
+    instruction: |
+      ## 🎯 MISSION (Cleanup)
+
+      Purple Team 사이클 중 생성한 시뮬 흔적(nmap 스캔 로그, 임시 산출물)을 정리하고,
+      실습이 환경에 영구 변경(룰 적용 등)을 남기지 않았음을 확인하라.
+
+      ## 💻 실행 명령
+
+      ```bash
+      ssh 6v6-attacker '
+      # nmap 스캔 산출물 정리 (있다면)
+      rm -f /tmp/nmap_* ~/.nmap 2>/dev/null; echo "nmap 산출물 정리"
+      '
+      # Wazuh 룰 미변경 확인 (STEP 9 는 권고만, 실제 룰 추가 X)
+      ssh 6v6-siem 'echo "custom rule 파일 개수(미변경 확인):"; sudo ls /var/ossec/etc/rules/ 2>/dev/null | wc -l'
+      # Suricata 룰 미변경 확인
+      ssh 6v6-ips 'echo "Suricata 룰 미변경(ET SCAN 활성 안 함):"; sudo ls /etc/suricata/rules/ 2>/dev/null | head -2'
+      echo "=== cleanup 완료 ==="
+      ```
+
+      ## 📋 확인 사항
+
+      - nmap 산출물 정리
+      - Wazuh/Suricata 룰 미변경 (STEP 9 권고는 설계만, 실 적용 X)
+      - 사이클은 측정·분석·권고만 수행 (환경 영구 변경 X)
+
+      ## 💡 왜 이걸 하는가?
+
+      Purple Team 사이클은 측정·분석·권고가 핵심이며, 실제 룰 적용은 Blue 팀의 변경 관리
+      절차를 거쳐야 한다. cleanup 에서 룰이 실제로 추가되지 않았음(STEP 9 는 설계)을
+      확인해, 권고와 적용을 분리하고 환경 무결성을 유지한다. nmap 등 시뮬 산출물도
+      정리해 다음 사이클의 baseline 을 깨끗이 한다.
+
+      ## 🔍 결과 해석
+
+      - cleanup 완료 + 룰 미변경 = 권고/적용 분리 + 환경 무결성
+      - 다음 사이클에서 STEP 9 권고를 변경 관리 후 적용
+
+      ## ⚠️ 비정상 시 대응
+
+      - 룰 파일 증가 — 실습 중 룰 추가됨, 변경 내역 확인 후 롤백 검토
+    hint: |
+      nmap 산출물 정리 + Wazuh/Suricata 룰 미변경 확인(STEP9 권고는 설계, 실 적용 X).
+      Purple 사이클은 측정·분석·권고만 — 룰 적용은 변경 관리 절차.
+    category: cleanup
+    points: 6
+    answer: |
+      ssh -n 6v6-attacker 'rm -f /tmp/nmap_* ~/.nmap 2>/dev/null; echo "nmap 산출물 정리"'
+      ssh -n 6v6-siem 'echo "rule 파일:"; sudo ls /var/ossec/etc/rules/ 2>/dev/null | wc -l'
+      ssh -n 6v6-ips 'echo "Suricata 룰:"; sudo ls /etc/suricata/rules/ 2>/dev/null | head -2'
+      echo "=== cleanup 완료 ==="
+    answer_detail: |
+      cleanup: nmap 스캔 산출물 정리, Wazuh/Suricata 룰 미변경 확인(STEP 9 권고는 설계,
+      실 적용 X). Purple 사이클은 측정·분석·권고만 수행하고 룰 적용은 Blue 팀 변경 관리
+      절차. 권고와 적용 분리 + 환경 무결성 + 다음 사이클 baseline 정리.
+    verify:
+      type: output_contains
+      expect: 완료
+      field: stdout
+      semantic:
+        intent: Cleanup — 시뮬 산출물 정리 + 룰 미변경 확인.
+        success_criteria: ["nmap 산출물 정리", "Wazuh/Suricata 룰 미변경", "권고/적용 분리"]
+        acceptable_methods:
+          - |
+            **[OSS] nmap 산출물 정리** — 시뮬 흔적.
+              ssh 6v6-attacker 'rm -f /tmp/nmap_* ~/.nmap'
+            예상 출력 `정리 완료`.
+            운영 해석: 다음 사이클 baseline 정리.
+          - |
+            **[OSS] 룰 미변경 확인** — 권고/적용 분리.
+              ssh 6v6-siem 'sudo ls /var/ossec/etc/rules/ | wc -l'
+            예상 출력 `룰 파일 미증가`.
+            운영 해석: STEP 9 권고는 설계, 실 적용은 변경 관리.
+        negative_signs: ["정리 누락", "룰 실제 적용됨"]
+    target_vm: bastion
+    risk_level: low
