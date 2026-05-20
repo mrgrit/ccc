@@ -22,57 +22,59 @@ steps:
   - order: 1
     instruction: |
       ## 🎯 MISSION
-      Wazuh alerts.json 의 sshd Accepted alert (rule 5715) 의 시간대별 분포 (UEBA baseline).
+      Wazuh alerts.json 전체 alert 의 시간대별 (HH) 분포 — SOC 활동 의 UEBA baseline.
 
-      💡 6v6 의 /var/log/sshd.log 는 raw sshd message 만 (timestamp prefix 없음).
-      시각 정보 는 Wazuh alerts.json 의 .timestamp (ISO 8601) 에 있음 → alert 기반 분석.
+      💡 6v6 의 sshd.log 는 timestamp prefix 없는 raw message 이고, siem 이 sshd
+      인증 을 Wazuh alert (5715) 로 만들지 않으므로 (sshd.log 미 monitoring), UEBA
+      baseline 은 alerts.json *전체 alert* 의 .timestamp (ISO 8601) 의 시간분포 로
+      일반화 한다. (실 운영 SOC 에서는 인증 alert 한정 가능)
 
       ## 💻 실행 명령
       ```bash
-      ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -r "select(.rule.id==\"5715\" or (.rule.description // \"\" | test(\"authentication success\"))) | .timestamp[11:13]" 2>/dev/null | sort | uniq -c'
+      ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -r ".timestamp[11:13]" 2>/dev/null | sort | uniq -c'
       ```
       ## 📋 확인 사항
-      - 시간대별 (HH) 정상 access 분포 (업무 시간 vs 새벽)
+      - 시간대별 (HH) SOC 활동 분포 (업무 시간 집중 vs 분산)
       ## 💡 왜 이걸 하는가?
-      UEBA = User behavior baseline. 정상 access 의 시간 패턴 (업무 시간 집중) 이
-      baseline. 새벽 access = anomaly. 내부 위협 의 1차 indicator. 시각 정보 가
-      raw log 에 없으면 SIEM 의 alert timestamp 사용.
+      UEBA = behavior baseline. SOC 활동 의 시간 패턴 (alert 발생 시각) 이 baseline.
+      특정 시각 의 spike 또는 새벽 의 비정상 활동 = anomaly. 내부 위협 의 1차
+      indicator. 시각 정보 가 raw log 에 없으면 SIEM 의 alert timestamp 사용.
       ## 🔍 결과 해석
-      - 업무 시간 집중 = 정상
-      - 새벽 access = 의심 (내부자 또는 탈취 계정)
-    hint: "alerts.json 의 rule 5715 + .timestamp[11:13] (시각). sshd.log 는 timestamp 없으니 alert 사용."
+      - 시간대별 분포 = baseline. 업무 시간 집중 정상.
+      - 새벽 시간 의 spike = 내부자 또는 자동화 공격 의심
+    hint: "alerts.json 의 .timestamp[11:13] (시각 HH) 시간분포. 6v6 는 인증 alert (5715) 없으니 전체 alert 사용."
     category: insider
     points: 10
     answer: |
-      ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -r "select(.rule.id==\"5715\" or (.rule.description // \"\" | test(\"authentication success\"))) | .timestamp[11:13]" 2>/dev/null | sort | uniq -c'
+      ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -r ".timestamp[11:13]" 2>/dev/null | sort | uniq -c'
     answer_detail: |
-      6v6 sshd.log 는 timestamp prefix 없는 raw message → 시각 분석 불가. Wazuh
-      alerts.json 의 .timestamp (ISO 8601) 의 [11:13] = 시각 (HH). rule 5715 =
-      sshd authentication success. UEBA baseline = 업무 시간 집중, 새벽 = anomaly.
+      6v6 sshd.log 는 timestamp 없는 raw message + siem 이 sshd 인증 을 alert 안 함
+      (sshd.log 미 monitoring) → 인증 한정 시간분포 불가. alerts.json *전체 alert* 의
+      .timestamp[11:13] = 시각 (HH). UEBA baseline = SOC 활동 의 시간 패턴.
     verify:
       type: output_contains
       expect: ""
       field: stdout
       semantic:
-        intent: UEBA baseline — alerts.json timestamp 기반 시간대 access.
+        intent: UEBA baseline — alerts.json 전체 alert 의 timestamp 시간분포.
         success_criteria: ["시간대별 분포 (alert timestamp)"]
         acceptable_methods:
           - |
             **[OSS] jq timestamp 시간대** — 표준.
-              ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -r "select(.rule.id==\"5715\") | .timestamp[11:13]" | sort | uniq -c'
-            예상 출력 `시간별 access 횟수`.
-            운영 해석: alert timestamp 기반 baseline (raw log 에 timestamp 없을 때).
+              ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -r ".timestamp[11:13]" | sort | uniq -c'
+            예상 출력 `시간별 alert 횟수 (UEBA baseline)`.
+            운영 해석: alert timestamp 기반 SOC 활동 baseline.
           - |
             **[OSS] dashboard time histogram** — GUI.
-              # rule.id:5715 + date histogram hourly
+              # Discover + date histogram hourly
             예상 출력 `시간 chart`.
             운영 해석: 시각 baseline.
           - |
-            **[OSS] last 명령 — 로그인 이력 (시각 포함)** — 보조.
-              ssh 6v6-siem 'last -F 2>/dev/null | head -10'
-            예상 출력 `ccc pts/0 10.20.x.x <full date>`.
-            운영 해석: wtmp 기반 (full timestamp).
-        negative_signs: ["분포 없음", "raw sshd.log 의 timestamp 시도 (없음)"]
+            **[OSS] 인증 한정 (운영 환경, sshd monitoring 시)** — 보조.
+              ssh 6v6-siem 'sudo tail -2000 /var/ossec/logs/alerts/alerts.json | jq -r "select(.rule.id==\"5715\") | .timestamp[11:13]" | sort | uniq -c'
+            예상 출력 `인증 alert 시간분포 (6v6 는 0 — 전체 alert 사용)`.
+            운영 해석: 실 SOC 는 sshd monitoring 시 인증 한정 가능.
+        negative_signs: ["분포 없음"]
     target_vm: siem
     risk_level: low
 
@@ -208,7 +210,7 @@ steps:
       attacker 가 정당 계정 (ccc) 으로 비정상 활동 — 새벽 로그인 + 민감 파일 접근.
       ## 💻 실행 명령
       ```bash
-      ssh 6v6-attacker 'sshpass -p 1 ssh -o StrictHostKeyChecking=no ccc@10.20.32.100 "sudo cat /etc/shadow 2>&1 | head -2; echo \"민감 파일 접근 시뮬\"" 2>&1 | tail -3'
+      ssh 6v6-attacker 'sshpass -p ccc ssh -o StrictHostKeyChecking=no ccc@10.20.32.100 "sudo cat /etc/shadow 2>&1 | head -2; echo \"민감 파일 접근 시뮬\"" 2>&1 | tail -3'
       ATTACK_TS=$(ssh 6v6-attacker 'date -u +%Y-%m-%dT%H:%M:%S'); echo "ATTACK_TS=$ATTACK_TS"
       ```
       ## 📋 확인 사항
@@ -222,7 +224,7 @@ steps:
     category: redteam
     points: 8
     answer: |
-      ssh 6v6-attacker 'sshpass -p 1 ssh -o StrictHostKeyChecking=no ccc@10.20.32.100 "sudo cat /etc/shadow 2>&1 | head -2; echo done" 2>&1 | tail -3'
+      ssh 6v6-attacker 'sshpass -p ccc ssh -o StrictHostKeyChecking=no ccc@10.20.32.100 "sudo cat /etc/shadow 2>&1 | head -2; echo done" 2>&1 | tail -3'
       ATTACK_TS=$(ssh 6v6-attacker 'date -u +%Y-%m-%dT%H:%M:%S'); echo "ATTACK_TS=$ATTACK_TS"
     answer_detail: "내부자 시뮬 = 정당 계정 의 민감 파일 접근. sudo cat /etc/shadow = privilege escalation + 정책 위반. Wazuh rule 5402 + custom."
     verify:
