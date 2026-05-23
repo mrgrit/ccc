@@ -18,6 +18,7 @@ import json
 import os
 import re
 import sqlite3
+import sys
 import time
 import unicodedata
 from typing import Generator
@@ -626,6 +627,7 @@ class BastionAgent:
         self.session_id = f"s{int(time.time())}"
         self.evidence_db = EvidenceDB(evidence_db)
         self._test_meta: dict = {}  # 테스트 메타데이터 (course, lab_id, step_order, test_session)
+        self._eg_mode: str = "full"  # EG ablation (off|playbook|experience|full). 운영 기본 full.
         # 승인 모드: normal / danger_danger / danger_danger_danger
         self.approval_mode = approval_mode
 
@@ -1240,6 +1242,13 @@ class BastionAgent:
             "skip_reason": "",
         }
 
+        # EG ablation: eg_mode=off → KG 사전참조 skip (No-KG 조건). 운영 기본 full.
+        eg_mode = getattr(self, "_eg_mode", "full")
+        if eg_mode == "off":
+            self._last_kg_status["skip_reason"] = "eg_mode_off"
+            self._kg_metric_inc("kg_context_skip", labels={"reason": "eg_mode_off"})
+            return messages
+
         if not messages:
             self._last_kg_status["skip_reason"] = "empty_messages"
             return messages
@@ -1265,7 +1274,7 @@ class BastionAgent:
             return messages
 
         try:
-            ctx = builder.build(last_user, model=self.model)
+            ctx = builder.build(last_user, model=self.model, eg_mode=eg_mode)
             block = builder.format(ctx)
         except Exception as e:
             self._last_kg_status["context_error"] = f"build_failed: {e}"
@@ -1944,6 +1953,10 @@ class BastionAgent:
             {"role": "system", "content": sys_prompt},
             {"role": "user", "content": message},
         ]
+        # EG 사전참조: ReAct 본체는 이 msgs 를 모든 turn 의 httpx.post 가 재사용한다.
+        # _stream_llm hook 만으로는 ReAct 의 직접 httpx.post 경로가 우회되어
+        # KG 사전참조가 누락된다(kg_status hits=0). system 에 KG context 1회 주입.
+        msgs = self._inject_kg_context(msgs)
 
         try:
             tools_spec = self._select_relevant_tools(message, max_n=12)
@@ -2561,6 +2574,9 @@ class BastionAgent:
         실제 결정 로직(reuse/adapt/new) 은 KG-4 에서. 여기서는 일단 매번 새 playbook 생성
         (KG-4 가 lookup 으로 redirect). 디스크 + 그래프 동시 갱신.
         """
+        # EG ablation: eg_mode=off → 사후 anchor/playbook 기록 skip (No-KG 조건). 운영 기본 full.
+        if getattr(self, "_eg_mode", "full") == "off":
+            return
         if not tool_outputs:
             return  # tool 안 쓴 Q&A 는 그래프 학습에서 제외
 
