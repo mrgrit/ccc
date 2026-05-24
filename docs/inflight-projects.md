@@ -41,7 +41,27 @@
 
 **Closed 후보**: 모든 DoD 달성 — Manager autonomous + KG paper §4 + R/B/P + 학생 시나리오 + Playbook auto-learning 완전 입증. P22 (Experience Graph paper) 의 §4 PE-KG 실증 데이터 source.
 
-### P22. Experience Graph paper — 6v6 인프라 기반 평가 [STATUS: P1 기반 구축 완료 v0.2 (2026-05-16)]
+### P22. Experience Graph paper — 6v6 인프라 기반 평가 [STATUS: 평가 harness 완성 + 본 ablation run 가동 (2026-05-24)]
+
+**2026-05-24 진행 — 평가 harness 완성 + 본 ablation 측정 run 가동**:
+- **진단**: pilot 이 ai-*(LLM 보안) 카테고리만 건드려 pass율 0 — 원인은 skill 부재 아닌 **타겟 환경 미배포**
+  (취약 LLM API `/api/chat`·`/api/rag/add`, RAG corpus, garak). forensics 도 동일(LiME/Volatility/심긴 증거 부재).
+  즉 "이상적 hold-out task vs 실제 6v6 계측" 갭 — ai-* 한정 아님.
+- **수정**:
+  1. bastion `eg_mode` 토글 완성 (commit a0e77f4c, 양 repo) — ReAct 본체 KG 사전참조 누락 + `import sys` 누락 2 root cause fix. off=anchors 0 / full=anchors 1~5 실측.
+  2. judge fix — qwen3.6:35b thinking 모델 (답을 `thinking` 필드) → response→thinking fallback + regex. judge_err 해소.
+  3. `harness/triage_reachable.py` — 488 도달성 triage → **GREEN 298 / RED 190**. 카테고리 라운드로빈 ordered subset.
+  4. `harness/runner.py` 보강 — `--tasklist`(순서 보존) + checkpoint skip(끝난 step 재실행 방지) + task-major(멈춰도 완전 측정 task 누적).
+- **예상효과**: thesis(KG 장기 운영 신뢰성)의 headline 지표 4종(reuse/CV/MTTC/audit)은 pass율 무관하게 측정.
+  pass율은 데이터-backed 카테고리(soc-ops/web-vuln/pentest)에서 층화 보고. off vs full 대조로 KG 기여 정량화.
+- **측정방법**: `off,full × 3repeat × ordered-298 (task-major)` 백그라운드 run (2026-05-24 15:03 가동, `results/eval_run_20260524_1503.log`).
+  첫 row 정상 적재 확인(soc-ops-h001 off/r1). 앞 60 task ≈ 2.9일 → 균형 표본. KG 성숙 상태(497 nodes/265 anchor) = 장기 정상상태.
+  완료분 → `metrics.py` (reuse_rate/CV/MTTC/audit + 카테고리별 pass율) → 05 Table 1~5.
+- **남은 것**: 60 task 완료 시 metrics 산출 + (선택) 미배포 타겟 provisioning(취약 LLM API/RAG/garak/LiME)으로 ai-*/forensics 회복.
+
+---
+
+**[이전 STATUS]** P1 기반 구축 완료 v0.2 (2026-05-16)
 
 **동기**: 폐쇄망 / open-weight / 장기 일관성 / 신뢰성 요구 충족을 위한 보안 AI 에이전트의
 핵심 기제로 **경험 그래프 (Experience Graph, EG)** 를 제안. "지식그래프" → "경험그래프"
