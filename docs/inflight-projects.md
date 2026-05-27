@@ -12,7 +12,7 @@
 
 ## In-Progress
 
-### P26. secuops-easy 특강 — 보안장비 입문 (방화벽·IPS·WAF GUI + 6주 교안/실습) [STATUS: 🔄 Phase 1 완료, Phase 2 진행 (2026-05-27)]
+### P26. secuops-easy 특강 — 보안장비 입문 (방화벽·IPS·WAF GUI + 6주 교안/실습) [STATUS: ✅ COMPLETE — 5 레포 push, CC 전수 실측 (2026-05-27)]
 
 **동기**: 현 secuops(15주, 50KB/주차)가 완전 초보에게 너무 어려움. nftables/Suricata/ModSecurity 를
 각각 **장비형 웹 GUI** 로 조작하며 GUI 클릭이 만드는 실제 명령을 함께 배우는 6주 입문 특강 신규 제작.
@@ -35,8 +35,16 @@
 - [x] **Phase 3: modsec_edu_gui 완료** — SecRule 분석기 + CRS 브라우저 + 빌더(configtest 보호) + 시나리오 30 → 6v6-web :8080 + vhost `waf-gui.6v6.lab`.
       CC 실측: 빌더→configtest→graceful, **잘못된 룰 거부+Apache 생존**(안전장치), 학생 룰 **LIVE 403 차단**(dvwa/neobank/govportal), audit 뷰어에 차단 기록(rule 9000001), 시나리오 waf-s11 PASS, SIEM(modsec_audit.log) integrated. **commit 7d51076**.
       3 GUI vhost 라우팅 최종 확인: fw-gui/ips-gui/waf-gui 모두 200.
-- [ ] Phase 4: 교안/실습 W1~W6 한 주차씩 수기 (W1 토폴로지/W2 방화벽/W3 IPS기초/W4 IPS시나리오/W5 WAF기초/W6 WAF시나리오+capstone)
-- [ ] Phase 5: 종합 CC 검증 + 전체 push(6v6 인프라글루 포함) + 메모리 박제
+- [x] **Phase 4: 교안/실습 W1~W6 완료** — lecture 6 + lab 6 한 주차씩 수기. 각 주차 6v6 실측:
+      강의 API 서빙 + 랩 answer 명령 전부 실행 + verify.expect 일치 + cleanup 으로 baseline 복구 확인.
+      W6 capstone: 한 공격→WAF403/IPS alert/FW conntrack 동시 확인. mrgrit/ccc **commit 19c9d98c**.
+- [x] **Phase 5: 종합 검증 + 전체 push + 박제 완료** — 3 GUI 레포(nft 64a4d40 / suricata 5240f8d /
+      modsec 7d51076) + 6v6 배포번들(mrgrit/6v6 3764db6 `secuops-easy-deploy/`) + ccc 콘텐츠(19c9d98c) push.
+      메모리 [[project_secuops_easy]] 박제. PAT 로컬 remote 스크럽.
+
+**완료 요약**: 6주 특강(보안장비 입문) + 장비형 GUI 3종(stdlib, fw-gui/ips-gui/waf-gui.6v6.lab) 신규.
+부수 인프라 fix 3건 영구 적용(modsec AH00526 복구 / suricata local.rules 0→5 / haproxy vhost).
+**⚠️ 사용자: 노출된 GitHub PAT revoke/회전 필요.**
 
 **실측 제약 박제**: fw/ips/web 모두 root·python3.10 stdlib만. fw 로그는 syslog 없음→**카운터+conntrack**이 실 telemetry,
 nft native log 는 컨테이너 dmesg 미도달. attacker=10.20.30.202. Wazuh manager=10.20.32.100(agent 3 tier 가동).
