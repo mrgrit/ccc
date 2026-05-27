@@ -12,6 +12,86 @@
 
 ## In-Progress
 
+### P26. secuops-easy 특강 — 보안장비 입문 (방화벽·IPS·WAF GUI + 6주 교안/실습) [STATUS: 🔄 Phase 1 완료, Phase 2 진행 (2026-05-27)]
+
+**동기**: 현 secuops(15주, 50KB/주차)가 완전 초보에게 너무 어려움. nftables/Suricata/ModSecurity 를
+각각 **장비형 웹 GUI** 로 조작하며 GUI 클릭이 만드는 실제 명령을 함께 배우는 6주 입문 특강 신규 제작.
+사용자 자율 위임(질문 금지, 순차 수기, CC 전수 검증, 자동화/병렬/플레이스홀더 금지).
+
+**대상 인프라**: 6v6 전용 호스트 **192.168.0.105** (ccc/1), 20 컨테이너 full stack 가동.
+**GUI 스택**: Python stdlib only(pip 없음), 단일파일 server.py + 정적 vanilla JS. 각 tier 컨테이너 :8080.
+**레포**: GUI 3종 = mrgrit/{nft_edu_gui, suricata_edu_gui, modsec_edu_gui} / 콘텐츠 = ccc / 인프라글루 = mrgrit/6v6.
+
+**계획 파일**: `/home/opsclaw/.claude/plans/cryptic-waddling-salamander.md`
+
+**DoD / 진행**:
+- [x] Phase 0: modsec_edu_gui 레포 확인 · 0.105 known_hosts · **6v6-web Apache/modsec 복구**(241행 triplicated cruft 정규화→XSS 403 정상) · main.py `secuops-easy` 등록(특강, expected_total 6)
+- [x] **Phase 1: nft_edu_gui 완료** — 빌드+시나리오10 → 6v6-fw :8080 배포 + HAProxy vhost `fw-gui.6v6.lab` →
+      CC 실측 전수 PASS(status/룰 preview→apply→counter→delete/NAT/conntrack/Wazuh 연동/시나리오 fw-s01·s08·s10) → push **commit 64a4d40**
+- [x] **Phase 2: suricata_edu_gui 완료** — 룰 구조 분석기 + 빌더 + 시나리오 30 → 6v6-ips :8080 + vhost `ips-gui.6v6.lab`.
+      **IPS infra fix**: 기존 local.rules `!src_ip` 잘못된 옵션으로 rules_loaded 0/failed 7 → 올바른 문법 재작성(any any->any any, 폐쇄망이라 EXTERNAL_NET 매칭불가) → **5/0**.
+      CC 실측: 룰 preview→apply→로딩확인→삭제, **학생 룰 LIVE 탐지**(EDUPROBE→eve.json alert), 시나리오 ips-s01 PASS, SIEM(eve.json) integrated. **commit 0e0efa5**.
+      HAProxy 교훈: reload 후 stale 프로세스(구 config) kill 해야 SO_REUSEPORT split 로 404 안 남.
+- [x] **Phase 3: modsec_edu_gui 완료** — SecRule 분석기 + CRS 브라우저 + 빌더(configtest 보호) + 시나리오 30 → 6v6-web :8080 + vhost `waf-gui.6v6.lab`.
+      CC 실측: 빌더→configtest→graceful, **잘못된 룰 거부+Apache 생존**(안전장치), 학생 룰 **LIVE 403 차단**(dvwa/neobank/govportal), audit 뷰어에 차단 기록(rule 9000001), 시나리오 waf-s11 PASS, SIEM(modsec_audit.log) integrated. **commit 7d51076**.
+      3 GUI vhost 라우팅 최종 확인: fw-gui/ips-gui/waf-gui 모두 200.
+- [ ] Phase 4: 교안/실습 W1~W6 한 주차씩 수기 (W1 토폴로지/W2 방화벽/W3 IPS기초/W4 IPS시나리오/W5 WAF기초/W6 WAF시나리오+capstone)
+- [ ] Phase 5: 종합 CC 검증 + 전체 push(6v6 인프라글루 포함) + 메모리 박제
+
+**실측 제약 박제**: fw/ips/web 모두 root·python3.10 stdlib만. fw 로그는 syslog 없음→**카운터+conntrack**이 실 telemetry,
+nft native log 는 컨테이너 dmesg 미도달. attacker=10.20.30.202. Wazuh manager=10.20.32.100(agent 3 tier 가동).
+HAProxy vhost: fw-gui→127.0.0.1:8080 / ips-gui→10.20.31.2:8080 / waf-gui→10.20.32.80:8080.
+
+**⚠️ 사용자 액션**: 대화에 GitHub PAT 평문 노출 → 작업 후 revoke/회전 권장.
+
+### P25. 외부 공인 보안 벤치마크 확보 + infra-fit harness [STATUS: 🔄 procurement 밤샘 fetch 가동중 (2026-05-27 01:20)]
+
+**별도 repo**: `/home/opsclaw/secu_agent_benchmark` (origin `git@github.com:mrgrit/secu_agent_benchmark.git`)
+**데이터**: repo 밖 `/home/opsclaw/bench_data/` (299G 여유). repo엔 catalog+fetcher+ledger만.
+
+**왜 (진단)**: 기존 590(Bastion-Bench)은 **self-authored** (자체 분산 인프라, `01-benchmark-6v6.md:6`).
+출제·최적화·채점·judge가 같은 진영(judge=gpt-oss=평가대상 동족)이라 방어기제(probe/oracle 분리) 다
+적용해도 validity 구멍이 안 닫힘 → 리뷰어 1순위 공격점. **수정 방향**: 정답키가 제3자에 동결된
+**외부 공인 벤치를 ground-truth anchor**로 삼고, "infra 자동 최적화+반증가능 제외"는 그걸 6v6에
+매핑하는 도구로 사용. 인프라 이해도는 self-score가 아닌 **공인 벤치 통과율**로 증명.
+
+**확보 대상 (catalog 19, 메타벤치 2개가 수십 sub-eval 흡수)**:
+- oracle(un-gameable): cybench, nyu_ctf(db+agents), intercode, agentbench-OS, cve_bench, cybergym, inspect_cyber(🇬🇧UK-AISI cyber range), threecb
+- meta-harness: inspect_evals(🇬🇧UK-AISI), caibench(Alias Robotics, 5범주 10k+)
+- classifier/safety: purplellama(CyberSecEval 1/2/3), harmbench
+- knowledge/mcq: seceval, wmdp(+hf), cybermetric, cti_bench(hf), secqa(hf)
+- 16 git URL + 3 HF 전부 ls-remote 검증 완료, SHA pin.
+
+**수정 (구현)**: resumable 드라이버 `scripts/fetch_all.sh` (continue-on-error, `.fetch_done` 마커 +
+디스크 ledger `bench_data/_ledger.tsv` → 중단/context손실에도 이어받음). git=depth1 clone, hf=
+huggingface_hub snapshot_download. 커밋 68dc162.
+
+**측정/검증 방법**: `make ledger`(DONE/FAIL+commit+size), `make status`(디스크), `bench_data/_fetch.log`.
+
+**DoD**:
+- [x] 19종 fetch 완료 (ledger DONE=19/FAIL=0, ~11G) — 2026-05-27 01:29
+- [x] 내용 실측 검증 + INVENTORY.md (size/content/grading/caveat) — "파악 안됨" 해소
+- [x] git-lfs 3.5.1 사용자영역 설치 + cybench/nyu LFS pull (nyu 1개는 removed/ 404 dead=무영향)
+- [x] submodule 채움: purplellama/CyberSOCEval_data(CrowdStrike) 직접클론, 드라이버에 auto-init 추가. caibench submodule=upstream rebase로 init 불가지만 내용 중복(standalone 보유)
+- [x] push 인증 해결 (PAT→메모리 credential cache 12h, 디스크 미저장). commit 68dc162·6203636 push 완료
+- [x] cybergym FULL corpus **221G 완료**(ledger 20/20). tasks.json=1507 vuln-repro → load_cybergym 통합.
+      **6벤치 1973 task / in-scope 1936** / drop 5 / review 32. commit ed6d30e. 디스크 67G 여유.
+- [x] infra-fit harness ①②③④ + §8 방어증명 완성 (no-GPU 전부 실행·검증). probe(18/6)→tag(466)→
+      select(in-scope 425/drop 4 falsifiable/review 37)→oracle(359 gradeable)→verify_defense(D1·D2 PASS).
+      commit 90a3426·376fcc7·52c3adb. paper `security-agent-benchmarks/` 초안+worklog+report 001/002.
+- [ ] ⑤ agent eval run(EG-on/off) — GPU(0.109) 코디 필수, ready+gated(`run_eval.py --go`), 자율실행 안 함
+- [ ] inspect_cyber 로더 + agentbench/cve_bench self-checker 연결 + cybergym oracle(corpus 완료 후)
+
+**Next step (auto-resume waiter bsc8d33ji 걸림)**: cybergym 완료 시 infra-fit harness 착수 —
+① `probe_infra.py` (6v6 LIVE probe→`capability_inventory.json`: 도구/서비스/타겟/도달성, evidence 동반, no-LLM)
+② `tag_required_caps.py` (각 외부벤치 task에서 required_caps 기계추출; 모호분만 agent)
+③ `select_inscope.py` (keep iff required_caps⊆inventory; drop은 부재 cap+probe증거 자동첨부=반증가능)
+④ 봉인 oracle 채점 (원본 flag/expected 격리, 별도 harness 실행; agent 자가채점 불가)
+⑤ agent(bastion EG-on/off) in-scope 수행→oracle pass율=infra이해도 점수.
+**그다음**: baseline run→공개 leaderboard(Cybench/CVE-Bench GPT-4/Claude) 대비 calibration→drop된 task=
+infra gap list로 6v6 확장 루프→anti-gaming 실증(증거없는 drop 거부/쉬운 rewrite는 oracle 탈락)→paper 평가절.
+**Open(사용자)**: ⚠️ PAT가 대화기록 평문노출 → **revoke/회전 권장**. cybergym 240GB 디스크 빠듯하면 130GB binary-only로 전환 가능. 박제 [[project_secu_agent_benchmark]].
+
 ### P23. Bastion autopilot real validation [STATUS: ✅ COMPLETE 30 mission paper-grade (2026-05-18)]
 
 **완료 시각**: 2026-05-18
@@ -41,7 +121,16 @@
 
 **Closed 후보**: 모든 DoD 달성 — Manager autonomous + KG paper §4 + R/B/P + 학생 시나리오 + Playbook auto-learning 완전 입증. P22 (Experience Graph paper) 의 §4 PE-KG 실증 데이터 source.
 
-### P22. Experience Graph paper — 6v6 인프라 기반 평가 [STATUS: 평가 harness 완성 + 본 ablation run 가동 (2026-05-24)]
+### P22. Experience Graph paper — 6v6 인프라 기반 평가 [STATUS: aidoyak bastion fix 완료 + valid ablation run 재가동 (2026-05-25 심야)]
+
+**2026-05-25 심야 — INCIDENT-3 발견·수정: aidoyak bastion 구버전 → 전체 ablation 무효 → fix 후 valid 재가동**:
+- **진단**: aidoyak(0.103) 임시 6v6 의 bastion 이 commit a0e77f4c **이전 구버전** — `_inject_kg_context` 가 ReAct 본체(`_chat_react`)에 미주입(`_stream_llm` 만)+`eg_mode` 0건 → /chat 경로(=_chat_react)에서 full≡off. 추가로 컨테이너 런타임 env 가 .env 와 불일치(`LLM_MANAGER_MODEL=qwen3.6:35b`=judge모델, gpt-oss:120b 아님) — eval 이 agent==judge 로 돌아감. **첫 13행 전부 무효**(fetched_anchors=0/src=new/ctx_used=false).
+- **수정**: ① 로컬 HEAD packages/bastion+apps/bastion 전체 tar 동기화 ② **rebuild(코드 bake)+`up -d --force-recreate`(.env→gpt-oss:120b/qwen3:8b)** — restart≠recreate(env)≠rebuild(code) ③ graph.db→seed(180 anchor) 리셋 ④ 무효 DB 아카이브(`eval_runs.aidoyak_prefix_invalid.sqlite`)+fresh.
+- **효과(smoke 실측)**: off=`used:false/hits:0/skip_reason:eg_mode_off/record:0`, full=`used:true/hits:1/record:1` → eg_mode 토글+ReAct inject 작동, **full≠off ablation 성립**. /health agent=gpt-oss:120b, judge=qwen3.6:35b(offline)=agent≠judge.
+- **측정**: fresh DB 에서 `tasks=42(38 confirmed+boost 4: investigate/hunt-h021·report-h021·hunt-h022, superset) repeats=3` 가동(soc-ops-h001 full r1 진행중). task 당 full×3+off×3 대칭+300s 쿨링. soc-ops-h009 deferred 격리 유지. 모니터: full 행 fetched_anchors·src=reuse/adapt 누적(EG 신호) vs off 행 anchors=0. 상세 [[project_eg_incident_20260525]].
+- **교훈 박제**: 임시호스트 bastion 배포 직후 **off/full kg_status 분기 smoke** 로 코드commit·런타임env 검증 필수.
+
+---
 
 **2026-05-24 진행 — 평가 harness 완성 + 본 ablation 측정 run 가동**:
 - **진단**: pilot 이 ai-*(LLM 보안) 카테고리만 건드려 pass율 0 — 원인은 skill 부재 아닌 **타겟 환경 미배포**

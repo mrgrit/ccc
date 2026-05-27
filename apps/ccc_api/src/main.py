@@ -1894,7 +1894,15 @@ _STANDALONE_COURSES = {
         "icon": "🆘",
         "color": "#bc8cff",
     },
-    # ── 특강 (Special Topic) — 2 주차 단기 강의 ──
+    # ── 특강 (Special Topic) — 단기 강의 ──
+    "secuops-easy": {
+        "title": "특강: 보안장비 입문 (방화벽·IPS·WAF GUI)",
+        "description": "보안시스템을 처음 다루는 학생을 위한 입문 특강. nftables(방화벽) / Suricata(IPS) / ModSecurity(WAF) 를 각각 장비형 웹 GUI 로 조작하며, GUI 클릭이 만들어내는 실제 명령(raw nft 명령 / Suricata rule / SecRule)을 항상 함께 확인한다. 전체 토폴로지 → 방화벽 → IPS → WAF 순서로 6 주차. 모든 조작은 UI 를 통해 배우고, 각 장비마다 상황별 침해대응 시나리오를 GUI 훈련 모드로 직접 풀어본다.",
+        "icon": "🧰",
+        "color": "#22d3ee",
+        "category": "특강",
+        "expected_total": 6,
+    },
     "wazuh-special": {
         "title": "특강: Wazuh 로그 분석 (KQL · 보안시스템 · 에이전트)",
         "description": "Wazuh Dashboard 의 KQL 검색 문법 → 6v6 의 일반 보안시스템 (nftables/Suricata/ModSec) 로그 분석 → bastion 에이전트 lifecycle 로그 분석까지. 2 주차 특강 — 학생이 자신의 mission 을 직접 시간순으로 추적·분석할 수 있게 한다.",

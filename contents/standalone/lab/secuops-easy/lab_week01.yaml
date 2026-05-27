@@ -1,0 +1,301 @@
+lab_id: standalone-secuops-easy-week01
+title: "W01 — 전체 토폴로지 탐험: 세 콘솔에 접속해 지도 그리기"
+version: standalone-easy
+course: secuops-easy
+week: 1
+description: |
+  이번 실습은 명령어를 외우는 시간이 아니라 "지도" 를 직접 확인하는 시간이다. 세 개의 교육용
+  콘솔(fw-gui / ips-gui / waf-gui)에 접속해 각 장비가 어느 구역에 있는지, 무엇을 검사하는지
+  눈으로 확인한다. 그다음 정상 웹 요청을 한 번 흘려보내, 그 요청이 방화벽→IPS→WAF→웹앱을
+  차례로 지나는 길을 추적한다. 모든 확인은 콘솔 화면(브라우저)으로 하며, 채점을 위해 같은 정보를
+  주는 명령을 함께 제공한다. (콘솔은 fw 의 HAProxy 가 Host 헤더로 라우팅하므로, 명령에서는
+  `-H "Host: <이름>.6v6.lab" http://10.20.30.1/` 형태로 접속한다.)
+difficulty: easy
+duration_minutes: 90
+audience: 보안 솔루션 운영 입문자 (1주차)
+prerequisites:
+  - "W01 강의안 정독 — 4구역(ext/pipe/dmz/int)과 세 장비의 역할"
+  - "브라우저에서 *.6v6.lab 접속 가능하도록 hosts/DNS 설정 확인"
+objectives:
+  - "세 콘솔(fw-gui/ips-gui/waf-gui) 대시보드를 열고 핵심 정보를 읽는다"
+  - "방화벽의 두 인터페이스(eth0=ext, eth1=pipe)와 존을 확인한다"
+  - "IPS 가 가동 중이며 탐지룰이 로딩돼 있음을 확인한다"
+  - "WAF 의 SecRuleEngine 모드와 CRS 버전을 확인한다"
+  - "정상 웹 요청 한 개의 경로(방화벽→IPS→WAF→앱)를 추적한다"
+  - "4구역 토폴로지를 본인 손으로 그려 정리한다"
+pass_threshold: 0.7
+steps:
+
+  - order: 1
+    instruction: |
+      ## 🎯 미션 — 방화벽 콘솔 대시보드 열기
+
+      브라우저에서 **`http://fw-gui.6v6.lab/`** 에 접속한다. 좌측 메뉴에서 **대시보드** 와
+      **인터페이스** 를 눌러, 방화벽이 가진 두 개의 다리(인터페이스)를 확인한다.
+
+      - `eth0` = **10.20.30.1** → ext(외부) 구역을 향한다.
+      - `eth1` = **10.20.31.1** → pipe(통로) 구역을 향한다.
+
+      ## 💻 확인 명령 (채점용)
+
+      ```bash
+      curl -s -H "Host: fw-gui.6v6.lab" http://10.20.30.1/api/status
+      ```
+
+      ## 🔍 무엇을 보나
+      출력의 `interfaces` 에서 eth0(10.20.30.1)과 eth1(10.20.31.1), 그리고 각 인터페이스의
+      `zone`(ext / pipe)을 찾는다. `tables` 에서 방화벽이 다루는 테이블(six_filter, six_nat)도 보인다.
+
+      ## ✅ 합격 기준
+      방화벽 인터페이스 두 개와 각 존을 콘솔에서 확인하고, 출력에 `10.20.30.1` 이 보인다.
+    hint: 'fw-gui.6v6.lab 콘솔 → 인터페이스 메뉴. 채점: curl -H "Host: fw-gui.6v6.lab" http://10.20.30.1/api/status'
+    category: survey
+    points: 15
+    answer: |
+      curl -s -H "Host: fw-gui.6v6.lab" http://10.20.30.1/api/status
+    answer_detail: |
+      hostname=fw, interfaces 에 eth0=10.20.30.1(ext), eth1=10.20.31.1(pipe).
+      방화벽은 두 구역에 양다리를 걸친 "문" 임을 확인.
+    verify:
+      type: output_contains
+      expect: '10.20.30.1'
+      field: stdout
+      semantic:
+        intent: "방화벽 콘솔에서 두 인터페이스와 존(ext/pipe)을 확인 — 방화벽이 경계의 문임을 이해"
+        success_criteria:
+          - "eth0 = 10.20.30.1 (ext 존)"
+          - "eth1 = 10.20.31.1 (pipe 존)"
+          - "방화벽이 두 구역에 걸쳐 있음을 설명"
+        acceptable_methods:
+          - "**[GUI] fw-gui 콘솔 → 인터페이스 메뉴** — eth0/eth1 과 zone 표 확인 (가장 권장)"
+          - "**[GUI] fw-gui 대시보드 카드** — '인터페이스' 카드 수치 확인"
+          - "**[API] curl fw-gui /api/status** — interfaces 배열에서 zone 필드 확인"
+          - "**[설명] 방화벽 양다리 의미** — ext↔pipe 경계의 문 역할을 자기 말로 서술"
+    target_vm: attacker
+
+  - order: 2
+    instruction: |
+      ## 🎯 미션 — IPS 콘솔에서 "가동 중 + 탐지룰" 확인
+
+      **`http://ips-gui.6v6.lab/`** 에 접속한다. 대시보드에서 세 가지를 확인한다.
+      ① Suricata 가 **가동중**인가  ② **로딩된 탐지룰 수**(0보다 커야 함)  ③ 감시 인터페이스.
+
+      ## 💻 확인 명령 (채점용)
+
+      ```bash
+      curl -s -H "Host: ips-gui.6v6.lab" http://10.20.30.1/api/status
+      ```
+
+      ## 🔍 무엇을 보나
+      `running:true`, `rules_loaded`(5 이상), `rules_failed`(0 이어야 정상). 만약 rules_failed 가
+      0보다 크면 잘못 작성된 룰이 있다는 뜻이다 — W3 에서 자세히 배운다.
+
+      ## ✅ 합격 기준
+      IPS 가 가동 중이고 탐지룰이 로딩돼 있음을 콘솔에서 확인. 출력에 `rules_loaded` 가 보인다.
+    hint: 'ips-gui.6v6.lab 콘솔 대시보드. 채점: curl -H "Host: ips-gui.6v6.lab" http://10.20.30.1/api/status'
+    category: survey
+    points: 15
+    answer: |
+      curl -s -H "Host: ips-gui.6v6.lab" http://10.20.30.1/api/status
+    answer_detail: |
+      running=true, rules_loaded>=5, rules_failed=0. Suricata 가 pipe(eth0)와 dmz(eth1)를
+      감시하며 통과하는 트래픽 내용을 검사함.
+    verify:
+      type: output_contains
+      expect: 'rules_loaded'
+      field: stdout
+      semantic:
+        intent: "IPS 가 가동 중이고 탐지룰이 로딩됐음을 확인 — IPS 가 '내용 검사' 층임을 이해"
+        success_criteria:
+          - "running = true"
+          - "rules_loaded 가 0보다 큼"
+          - "rules_failed = 0 (정상)"
+        acceptable_methods:
+          - "**[GUI] ips-gui 대시보드** — 'Suricata 가동중' + '로딩된 룰' 카드 확인 (권장)"
+          - "**[API] curl ips-gui /api/status** — running/rules_loaded/rules_failed 필드"
+          - "**[설명] IPS 역할 서술** — 방화벽이 통과시킨 트래픽의 내용을 검사한다고 설명"
+    target_vm: attacker
+
+  - order: 3
+    instruction: |
+      ## 🎯 미션 — WAF 콘솔에서 보호 모드 확인
+
+      **`http://waf-gui.6v6.lab/`** 에 접속한다. 대시보드에서 **SecRuleEngine** 모드와
+      **OWASP CRS** 버전을 확인한다.
+
+      - `SecRuleEngine: On` → 공격을 탐지하면 **실제로 차단(403)** 한다.
+      - `DetectionOnly` → 탐지만 하고 통과시킨다(학습/튜닝용).
+
+      ## 💻 확인 명령 (채점용)
+
+      ```bash
+      curl -s -H "Host: waf-gui.6v6.lab" http://10.20.30.1/api/status
+      ```
+
+      ## 🔍 무엇을 보나
+      `engine`(On 이면 차단 모드), `crs_version`(3.3.2), `apache_running:true`. WAF 는 웹서버
+      앞단에서 HTTP 요청의 의미를 검사한다.
+
+      ## ✅ 합격 기준
+      WAF 엔진 모드와 CRS 버전을 콘솔에서 확인. 출력에 `On` 이 보인다.
+    hint: 'waf-gui.6v6.lab 콘솔 대시보드. 채점: curl -H "Host: waf-gui.6v6.lab" http://10.20.30.1/api/status'
+    category: survey
+    points: 15
+    answer: |
+      curl -s -H "Host: waf-gui.6v6.lab" http://10.20.30.1/api/status
+    answer_detail: |
+      engine=On (차단 모드), crs_version=3.3.2, apache_running=true. WAF 는 dmz 의 웹서버에서
+      HTTP 요청을 검사하는 마지막 방패.
+    verify:
+      type: output_contains
+      expect: 'On'
+      field: stdout
+      semantic:
+        intent: "WAF 의 보호 모드(On)와 CRS 버전을 확인 — WAF 가 HTTP 의미를 검사하는 층임을 이해"
+        success_criteria:
+          - "SecRuleEngine = On"
+          - "CRS 버전 확인 (3.3.2)"
+          - "WAF 가 웹서버 앞단에서 HTTP 를 검사한다고 설명"
+        acceptable_methods:
+          - "**[GUI] waf-gui 대시보드** — SecRuleEngine/CRS 카드 확인 (권장)"
+          - "**[API] curl waf-gui /api/status** — engine/crs_version/apache_running"
+          - "**[설명] On vs DetectionOnly 차이** — 차단 vs 탐지만 을 구분해 서술"
+    target_vm: attacker
+
+  - order: 4
+    instruction: |
+      ## 🎯 미션 — 세 콘솔이 서로 다른 장비임을 확인
+
+      세 콘솔은 각각 다른 컴퓨터(컨테이너)에서 돌아간다. 각 콘솔의 상태에서 `hostname` 을 확인해
+      서로 다른 장비(fw / ips / web)임을 직접 본다.
+
+      ## 💻 확인 명령 (채점용)
+
+      ```bash
+      for h in fw-gui ips-gui waf-gui; do
+        echo -n "$h => "
+        curl -s -H "Host: $h.6v6.lab" http://10.20.30.1/api/status | grep -o '"hostname":[^,]*'
+      done
+      ```
+
+      ## 🔍 무엇을 보나
+      fw-gui → hostname "fw", ips-gui → "ips", waf-gui → "web". 세 장비가 각자 다른 구역에서
+      자기 역할을 한다.
+
+      ## ✅ 합격 기준
+      세 콘솔의 hostname 이 서로 다름을 확인. 출력에 `hostname` 이 보인다.
+    hint: '세 콘솔의 hostname 비교. 출력에 hostname 키가 보이면 OK.'
+    category: analysis
+    points: 15
+    answer: |
+      for h in fw-gui ips-gui waf-gui; do
+        echo -n "$h => "
+        curl -s -H "Host: $h.6v6.lab" http://10.20.30.1/api/status | grep -o '"hostname":[^,]*'
+      done
+    answer_detail: |
+      fw-gui=fw, ips-gui=ips, waf-gui=web. 세 장비가 각각 ext/pipe 경계, pipe/dmz 경계,
+      dmz 웹서버에 위치.
+    verify:
+      type: output_contains
+      expect: 'hostname'
+      field: stdout
+      semantic:
+        intent: "세 콘솔이 서로 다른 장비(fw/ips/web)에서 동작함을 확인 — 분산된 방어 구조 이해"
+        success_criteria:
+          - "fw-gui → hostname fw"
+          - "ips-gui → hostname ips"
+          - "waf-gui → hostname web"
+        acceptable_methods:
+          - "**[GUI] 세 콘솔 대시보드의 호스트 카드** 각각 확인 (권장)"
+          - "**[API] for 루프로 세 /api/status 의 hostname** 비교"
+          - "**[설명] 장비 분산 배치 의미** — 각 장비가 다른 경계를 지킨다고 서술"
+    target_vm: attacker
+
+  - order: 5
+    instruction: |
+      ## 🎯 미션 — 정상 요청 한 개의 경로 추적
+
+      이제 정상 웹 요청을 한 번 보내, 그 요청이 **방화벽 → IPS → WAF → 내부 앱** 을 거쳐 응답이
+      돌아오는지 확인한다. 우리는 JuiceShop 웹 사이트(`juice.6v6.lab`)에 접속해 본다.
+
+      ## 💻 확인 명령 (채점용)
+
+      ```bash
+      curl -s -o /dev/null -w "응답 코드: %{http_code}\n" -H "Host: juice.6v6.lab" http://10.20.30.1/
+      ```
+
+      ## 🔍 무엇을 보나
+      `200`(정상) 같은 응답 코드가 돌아오면, 이 요청이 방화벽(80포트 허용)을 통과하고, IPS 를
+      거쳐(공격 패턴 없음), WAF 를 통과해(정상 요청), 내부 JuiceShop 까지 닿았다가 응답이 같은
+      길로 돌아온 것이다. 한 번의 접속에 4개 장비가 관여한다.
+
+      ## ✅ 합격 기준
+      정상 응답 코드를 받는다. 출력에 `응답 코드` 가 보인다.
+    hint: 'juice.6v6.lab 으로 정상 요청. 응답 코드 200 이면 전체 경로 통과.'
+    category: trace
+    points: 20
+    answer: |
+      curl -s -o /dev/null -w "응답 코드: %{http_code}\n" -H "Host: juice.6v6.lab" http://10.20.30.1/
+    answer_detail: |
+      200 응답 = 방화벽(포트 허용)→IPS(내용 정상)→WAF(HTTP 정상)→JuiceShop 도달→응답 복귀.
+      정상 트래픽은 네 장비를 매끄럽게 통과한다.
+    verify:
+      type: output_contains
+      expect: '응답 코드'
+      field: stdout
+      semantic:
+        intent: "정상 요청이 4개 장비를 통과해 응답을 받는 전체 경로를 체감 — 트래픽 흐름 이해"
+        success_criteria:
+          - "HTTP 응답 코드 수신 (200 등)"
+          - "요청이 방화벽→IPS→WAF→앱 경로를 지났음을 설명"
+          - "응답이 역방향으로 돌아옴을 이해"
+        acceptable_methods:
+          - "**[GUI/브라우저] juice.6v6.lab 직접 접속** — 사이트가 열리면 전체 경로 통과 (권장)"
+          - "**[API] curl 로 응답 코드 확인** — http_code 200"
+          - "**[설명] hop 순서 서술** — 방화벽→IPS→WAF→앱 순서를 적음"
+    target_vm: attacker
+
+  - order: 6
+    instruction: |
+      ## 🎯 미션 — 그 요청이 IPS 에 남긴 흔적 보기 + 토폴로지 정리
+
+      방금 보낸 요청은 IPS 를 지났으므로, IPS 콘솔의 **이벤트(eve.json)** 에 흔적이 남는다.
+      IPS 콘솔에서 이벤트 타입 분포(http/flow 등)를 확인한다. 그리고 이번 주의 마무리로,
+      4구역 토폴로지를 본인 손으로 그려 정리한다.
+
+      ## 💻 확인 명령 (채점용)
+
+      ```bash
+      curl -s -H "Host: ips-gui.6v6.lab" http://10.20.30.1/api/eve | head -c 400
+      ```
+
+      ## 🔍 무엇을 보나
+      `counts` 에 `http`, `flow` 같은 event_type 별 개수가 보인다. 우리가 보낸 웹 요청이 IPS 의
+      눈에 잡혀 기록된 것이다. (이것이 나중에 SIEM 으로 모이는 원천 데이터다.)
+
+      ## ✅ 합격 기준
+      IPS 이벤트 분포에 `event_type` 이 보인다. + 4구역 토폴로지 그림 제출.
+    hint: 'ips-gui 콘솔 → 이벤트(eve.json) 메뉴. 출력에 event_type 이 보이면 OK.'
+    category: synthesis
+    points: 20
+    answer: |
+      curl -s -H "Host: ips-gui.6v6.lab" http://10.20.30.1/api/eve | head -c 400
+    answer_detail: |
+      counts 에 http/flow 등이 보임 — 방금 요청이 IPS 에 기록됨. 이 데이터가 SIEM(Wazuh)으로
+      모여 통합 관제의 재료가 된다. 토폴로지 그림: ext(10.20.30)→pipe(10.20.31)→dmz(10.20.32)→
+      int(10.20.40), 각 경계에 방화벽/IPS, dmz 에 WAF+웹서버+SIEM.
+    verify:
+      type: output_contains
+      expect: 'event_type'
+      field: stdout
+      semantic:
+        intent: "한 요청이 IPS 에 기록되는 것을 확인 + 전체 토폴로지를 스스로 정리 — 1주차 종합"
+        success_criteria:
+          - "eve.json 이벤트에 event_type(http/flow 등)이 보임"
+          - "그 흔적이 방금 보낸 요청과 연결됨을 이해"
+          - "4구역 토폴로지를 직접 그려 정리"
+        acceptable_methods:
+          - "**[GUI] ips-gui → 이벤트 메뉴** — event_type 분포 확인 (권장)"
+          - "**[API] curl ips-gui /api/eve** — counts/events 의 event_type"
+          - "**[정리] 4구역 토폴로지 직접 작도** — ext/pipe/dmz/int + 장비 위치"
+    target_vm: attacker

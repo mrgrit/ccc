@@ -1,0 +1,333 @@
+lab_id: standalone-secuops-easy-week03
+title: "W03 — IPS(Suricata) 콘솔 실습: 룰 구조·작성·탐지 확인"
+version: standalone-easy
+course: secuops-easy
+week: 3
+description: |
+  IPS 콘솔(ips-gui.6v6.lab)로 Suricata 탐지룰을 배운다. 룰을 구조 분석기로 분해해 보고, 폼으로
+  탐지룰을 만들어 생성되는 Suricata rule 을 확인한 뒤 적용한다(로딩 성공/실패 즉시 확인). 그다음
+  공격을 재현해 eve.json 에서 alert 가 잡히는지 확인하고, 침해대응 시나리오를 검증한다. 마지막에
+  실습 룰을 정리한다. 접속은 `-H "Host: ips-gui.6v6.lab" http://10.20.30.1/...` 형태.
+difficulty: easy
+duration_minutes: 120
+audience: 보안 솔루션 운영 입문자 (3주차)
+prerequisites:
+  - "W03 강의안 정독 — 헤더+옵션, 탐지 버퍼, HOME_NET"
+  - "W01~W02 실습 완료"
+objectives:
+  - "IPS 가동/로딩 룰 수/감시 IF 를 콘솔에서 확인한다"
+  - "탐지룰을 헤더+옵션으로 분해해 이해한다"
+  - "폼으로 탐지룰을 만들어 Suricata rule 을 확인하고 적용한다"
+  - "loaded/failed 로 룰이 정상 로딩됐는지 확인한다"
+  - "공격을 재현해 eve.json 의 alert 로 탐지를 확인한다"
+  - "침해대응 시나리오를 검증 통과시키고 실습 룰을 정리한다"
+pass_threshold: 0.7
+steps:
+
+  - order: 1
+    instruction: |
+      ## 🎯 미션 — IPS 상태 확인
+
+      IPS 콘솔 **대시보드** 를 연다. Suricata 가 가동 중인지, 탐지룰이 몇 개 로딩됐는지(0보다 커야
+      함), 실패가 0인지 확인한다.
+
+      ## 💻 확인 명령
+      ```bash
+      curl -s -H "Host: ips-gui.6v6.lab" http://10.20.30.1/api/status
+      ```
+      ## ✅ 합격 기준
+      출력에 `rules_loaded` 가 보이고 running 이 true 다.
+    hint: 'ips-gui 대시보드. expect: rules_loaded'
+    category: survey
+    points: 10
+    answer: |
+      curl -s -H "Host: ips-gui.6v6.lab" http://10.20.30.1/api/status
+    answer_detail: "running=true, rules_loaded>=5, rules_failed=0. failed>0 이면 잘못된 룰 존재."
+    verify:
+      type: output_contains
+      expect: 'rules_loaded'
+      field: stdout
+      semantic:
+        intent: "IPS 가동/로딩 룰/실패 수 확인 — 탐지 엔진 건강 점검 습관"
+        success_criteria: ["running=true", "rules_loaded>0", "rules_failed=0"]
+        acceptable_methods:
+          - "**[GUI] ips-gui 대시보드 카드** (권장)"
+          - "**[API] GET /api/status** — running/rules_loaded/rules_failed"
+          - "**[설명] failed>0 의 위험** 서술"
+    target_vm: attacker
+
+  - order: 2
+    instruction: |
+      ## 🎯 미션 — 구성과 디렉토리 확인
+
+      **구성·디렉토리** 메뉴에서 HOME_NET, 룰 디렉토리, eve.json 경로를 확인한다. 우리 실습망은
+      공격자도 HOME_NET 안이라, 룰 출발지를 `any` 로 둔다는 점을 기억한다.
+
+      ## 💻 확인 명령
+      ```bash
+      curl -s -H "Host: ips-gui.6v6.lab" http://10.20.30.1/api/config
+      ```
+      ## ✅ 합격 기준
+      출력에 `HOME_NET` 이 보인다.
+    hint: '구성·디렉토리 메뉴. expect: HOME_NET'
+    category: survey
+    points: 10
+    answer: |
+      curl -s -H "Host: ips-gui.6v6.lab" http://10.20.30.1/api/config
+    answer_detail: "HOME_NET=[192.168.0.0/16,10.0.0.0/8,172.16.0.0/12]. 폐쇄망이라 공격자도 HOME_NET → 룰은 any 사용."
+    verify:
+      type: output_contains
+      expect: 'HOME_NET'
+      field: stdout
+      semantic:
+        intent: "IPS 설정/경로 파악 + HOME_NET 의미 이해 — any 를 쓰는 이유"
+        success_criteria: ["HOME_NET 확인", "local.rules/eve.json 경로 확인", "any 사용 이유 이해"]
+        acceptable_methods:
+          - "**[GUI] 구성·디렉토리 메뉴** (권장)"
+          - "**[API] GET /api/config** — yaml.HOME_NET, paths"
+          - "**[설명] 폐쇄망 HOME_NET 함정** 서술"
+    target_vm: attacker
+
+  - order: 3
+    instruction: |
+      ## 🎯 미션 — 룰 구조 분석기로 분해
+
+      **룰 구조 분석기** 에 기본 sqlmap 탐지 룰을 붙여넣고 "분석" 을 누른다. 헤더(action/proto/
+      src/dir/dst)와 옵션(msg/flow/버퍼/content/sid)이 카드로 분해된다.
+
+      ## 💻 확인 명령
+      ```bash
+      curl -s -X POST -H "Host: ips-gui.6v6.lab" -H "Content-Type: application/json" \
+        http://10.20.30.1/api/rule/analyze \
+        -d '{"rule":"alert http any any -> any any (msg:\"6V6 Bot UA - sqlmap\"; flow:to_server; http.user_agent; content:\"sqlmap\"; nocase; sid:1000003; rev:2;)"}'
+      ```
+      ## ✅ 합격 기준
+      분해 결과에 탐지 버퍼 `http.user_agent` 가 보인다.
+    hint: '룰 구조 분석기에 붙여넣고 분석. expect: http.user_agent'
+    category: analysis
+    points: 15
+    answer: |
+      curl -s -X POST -H "Host: ips-gui.6v6.lab" -H "Content-Type: application/json" http://10.20.30.1/api/rule/analyze -d '{"rule":"alert http any any -> any any (msg:\"6V6 Bot UA - sqlmap\"; flow:to_server; http.user_agent; content:\"sqlmap\"; nocase; sid:1000003; rev:2;)"}'
+    answer_detail: "action=alert, proto=http, 버퍼=http.user_agent, content=sqlmap, sid=1000003. 버퍼가 검사 부위를 정한다."
+    verify:
+      type: output_contains
+      expect: 'http.user_agent'
+      field: stdout
+      semantic:
+        intent: "탐지룰을 헤더+옵션으로 분해 — 룰 읽는 능력(특히 탐지 버퍼) 습득"
+        success_criteria: ["헤더 5부분 분해", "옵션(buffer/content/sid) 분해", "버퍼의 역할 이해"]
+        acceptable_methods:
+          - "**[GUI] 룰 구조 분석기 → 분석** (권장)"
+          - "**[API] POST /api/rule/analyze**"
+          - "**[설명] sticky buffer 의미** 서술"
+    target_vm: attacker
+
+  - order: 4
+    instruction: |
+      ## 🎯 미션 — SQLi(UNION) 탐지룰 미리보기
+
+      **탐지룰 관리** 폼에서 — action `alert`, proto `http`, 출발지/목적지 `any`, 탐지 버퍼
+      `http.uri`, content `UNION`, nocase 체크, flow `to_server`, msg `EDU SQLi UNION` →
+      **① 룰 미리보기**.
+
+      ## 💻 확인 명령
+      ```bash
+      curl -s -X POST -H "Host: ips-gui.6v6.lab" -H "Content-Type: application/json" \
+        http://10.20.30.1/api/rule/preview \
+        -d '{"action":"alert","proto":"http","buffer":"http.uri","content":"UNION","nocase":true,"flow":"to_server","msg":"EDU SQLi UNION"}'
+      ```
+      ## ✅ 합격 기준
+      생성된 룰이 `alert http any any -> any any` 로 시작한다.
+    hint: '미리보기는 미실행. expect: alert http any any -> any any'
+    category: survey
+    points: 10
+    answer: |
+      curl -s -X POST -H "Host: ips-gui.6v6.lab" -H "Content-Type: application/json" http://10.20.30.1/api/rule/preview -d '{"action":"alert","proto":"http","buffer":"http.uri","content":"UNION","nocase":true,"flow":"to_server","msg":"EDU SQLi UNION"}'
+    answer_detail: "alert http any any -> any any (msg:...; flow:to_server; http.uri; content:\"UNION\"; nocase; sid:90000xx; rev:1;)"
+    verify:
+      type: output_contains
+      expect: 'alert http any any -> any any'
+      field: stdout
+      semantic:
+        intent: "폼이 Suricata rule 로 변환되는 과정 확인 — 명령을 학습"
+        success_criteria: ["헤더가 any any -> any any (폐쇄망)", "버퍼+content 결합", "sid 자동 배정"]
+        acceptable_methods:
+          - "**[GUI] 룰 미리보기 버튼** (권장)"
+          - "**[API] POST /api/rule/preview** — rule 필드"
+          - "**[설명] any 헤더 이유** 서술"
+    target_vm: attacker
+
+  - order: 5
+    instruction: |
+      ## 🎯 미션 — 룰 적용 + 로딩 확인
+
+      **② 적용 + reload** 를 누른다. 콘솔이 local.rules 에 추가하고 reload 한 뒤, loaded/failed 를
+      보여 준다. failed 가 늘지 않으면 성공이다.
+
+      ## 💻 확인 명령
+      ```bash
+      curl -s -X POST -H "Host: ips-gui.6v6.lab" -H "Content-Type: application/json" \
+        http://10.20.30.1/api/rule/apply \
+        -d '{"rule":"alert http any any -> any any (msg:\"EDU SQLi UNION\"; flow:to_server; http.uri; content:\"UNION\"; nocase; sid:9000001; rev:1;)"}'
+      ```
+      ## ✅ 합격 기준
+      적용 응답에 `정상 로딩` 또는 loaded 증가가 보인다.
+    hint: '적용 후 loaded/failed 확인. expect: 정상 로딩'
+    category: manipulation
+    points: 15
+    answer: |
+      curl -s -X POST -H "Host: ips-gui.6v6.lab" -H "Content-Type: application/json" http://10.20.30.1/api/rule/apply -d '{"rule":"alert http any any -> any any (msg:\"EDU SQLi UNION\"; flow:to_server; http.uri; content:\"UNION\"; nocase; sid:9000001; rev:1;)"}'
+    answer_detail: "ok=true, note='정상 로딩', stats_after.loaded 증가. 문법 틀리면 failed 증가 + 경고."
+    verify:
+      type: output_contains
+      expect: '정상 로딩'
+      field: stdout
+      semantic:
+        intent: "룰을 적용하고 reload·로딩 결과를 즉시 확인 — 문법 피드백 루프 체득"
+        success_criteria: ["ok=true", "reload OK", "loaded 증가/failed 불변"]
+        acceptable_methods:
+          - "**[GUI] 적용+reload 버튼 → loaded/failed 표시** (권장)"
+          - "**[API] POST /api/rule/apply** — note/stats_after"
+          - "**[설명] loaded/failed 확인 습관** 서술"
+    target_vm: attacker
+
+  - order: 6
+    instruction: |
+      ## 🎯 미션 — 공격 재현 → eve.json 에서 탐지 확인
+
+      공격자 박스에서 UNION SQLi 요청을 보낸 뒤, IPS 콘솔 **이벤트(eve.json)** 메뉴를 alert 필터로
+      보면 방금 만든 룰이 잡은 alert 가 나타난다.
+
+      ## 💻 확인 명령
+      ```bash
+      # 공격 재현
+      curl -s -o /dev/null -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=1%20UNION%20SELECT%201"
+      sleep 2
+      # eve.json 에서 alert 확인
+      curl -s -H "Host: ips-gui.6v6.lab" "http://10.20.30.1/api/eve?type=alert&n=30"
+      ```
+      ## ✅ 합격 기준
+      최근 alert 에 `UNION` 관련 signature 가 보인다.
+    hint: 'UNION 공격 재현 후 eve alert 확인. expect: UNION'
+    category: redblue
+    points: 20
+    answer: |
+      curl -s -o /dev/null -H "Host: juice.6v6.lab" "http://10.20.30.1/?q=1%20UNION%20SELECT%201"
+      sleep 2
+      curl -s -H "Host: ips-gui.6v6.lab" "http://10.20.30.1/api/eve?type=alert&n=30"
+    answer_detail: "eve alert 에 'EDU SQLi UNION'(내 룰) 및/또는 '6V6 SQL Injection - UNION SELECT'(기본 룰)가 보임 — 실제 탐지 증거."
+    verify:
+      type: output_contains
+      expect: 'UNION'
+      field: stdout
+      semantic:
+        intent: "내가 만든 룰이 실제 공격을 탐지하는 것을 eve.json 에서 확인 — 탐지의 실증"
+        success_criteria: ["공격 재현", "eve alert 에 UNION signature", "내 룰(또는 기본 룰)이 탐지"]
+        acceptable_methods:
+          - "**[GUI] 공격 재현 후 이벤트 메뉴 alert 필터** (권장)"
+          - "**[API] GET /api/eve?type=alert** — signature 확인"
+          - "**[설명] alert 의 sid/signature/category 해석**"
+    target_vm: attacker
+
+  - order: 7
+    instruction: |
+      ## 🎯 미션 — 침해대응 시나리오 검증 (ips-s01)
+
+      **침해대응 훈련** 에서 ips-s01(SQLi UNION)을 펼치고 **검증** 을 누른다. 콘솔이 local.rules 를
+      읽어 방금 만든 UNION 룰이 정답 조건을 충족하는지 채점한다.
+
+      ## 💻 확인 명령
+      ```bash
+      curl -s -X POST -H "Host: ips-gui.6v6.lab" -H "Content-Type: application/json" \
+        http://10.20.30.1/api/scenario/check -d '{"id":"ips-s01"}'
+      ```
+      ## ✅ 합격 기준
+      검증 evidence 에 `found` 가 보이고 통과한다.
+    hint: '침해대응 훈련 ips-s01 검증. expect: found'
+    category: redblue
+    points: 10
+    answer: |
+      curl -s -X POST -H "Host: ips-gui.6v6.lab" -H "Content-Type: application/json" http://10.20.30.1/api/scenario/check -d '{"id":"ips-s01"}'
+    answer_detail: "ok=true, evidence require=(?i)http.uri;content:UNION;nocase found=true, stats loaded/failed."
+    verify:
+      type: output_contains
+      expect: 'found'
+      field: stdout
+      semantic:
+        intent: "작성한 탐지룰이 시나리오 정답을 충족하는지 콘솔이 실측 채점"
+        success_criteria: ["scenario check ok=true", "require 충족", "ruleset 기반 채점"]
+        acceptable_methods:
+          - "**[GUI] 침해대응 훈련 ips-s01 검증 → ✔ 통과** (권장)"
+          - "**[API] POST /api/scenario/check ips-s01**"
+          - "**[추가] ips-s02~ 더 풀어보기**"
+    target_vm: attacker
+
+  - order: 8
+    instruction: |
+      ## 🎯 미션 — SIEM(Wazuh) 연동 확인
+
+      **SIEM 연동** 메뉴에서 eve.json 이 Wazuh 매니저(10.20.32.100)로 가는지 확인한다. 대개 이미
+      연동돼 있다(Suricata alert → Wazuh rule.id 86601).
+
+      ## 💻 확인 명령
+      ```bash
+      curl -s -H "Host: ips-gui.6v6.lab" http://10.20.30.1/api/siem
+      ```
+      ## ✅ 합격 기준
+      출력에 매니저 주소 `10.20.32.100` 이 보인다.
+    hint: 'SIEM 연동 메뉴. expect: 10.20.32.100'
+    category: integration
+    points: 10
+    answer: |
+      curl -s -H "Host: ips-gui.6v6.lab" http://10.20.30.1/api/siem
+    answer_detail: "integrated=true(대개), manager=10.20.32.100. IPS alert 가 SIEM 으로 모임."
+    verify:
+      type: output_contains
+      expect: '10.20.32.100'
+      field: stdout
+      semantic:
+        intent: "IPS 를 SIEM 에 연동 — 방화벽·WAF 와 함께 통합 관제"
+        success_criteria: ["매니저 주소 확인", "eve.json 이 전송 소스", "에이전트 가동"]
+        acceptable_methods:
+          - "**[GUI] SIEM 연동 메뉴** (권장)"
+          - "**[API] GET /api/siem**"
+          - "**[설명] 통합 관제 이점** 서술"
+    target_vm: attacker
+
+  - order: 9
+    instruction: |
+      ## 🎯 미션 — 실습 룰 정리 (cleanup, 필수)
+
+      실습으로 만든 룰(sid 9000000 이상)을 모두 삭제해 IPS 를 기본 상태로 되돌린다. 콘솔의
+      **탐지룰 관리** 목록에서 각 룰의 "삭제" 버튼으로 지울 수 있다.
+
+      ## 💻 정리 명령
+      ```bash
+      curl -s -H "Host: ips-gui.6v6.lab" http://10.20.30.1/api/rules \
+       | jq -rc '.rules[] | select(.edu) | .sid' \
+       | while read -r sid; do
+           curl -s -X POST -H "Host: ips-gui.6v6.lab" -H "Content-Type: application/json" \
+             http://10.20.30.1/api/rule/delete -d "{\"sid\":\"$sid\"}" >/dev/null; done
+      echo "cleanup done"
+      ```
+      ## ✅ 합격 기준
+      실습 룰이 모두 삭제되어 `cleanup done` 이 보인다(기본 룰 5개는 보존).
+    hint: '탐지룰 관리의 삭제 버튼. 채점: edu 룰(sid>=9000000) 일괄 삭제 → cleanup done'
+    category: cleanup
+    points: 5
+    answer: |
+      curl -s -H "Host: ips-gui.6v6.lab" http://10.20.30.1/api/rules | jq -rc '.rules[] | select(.edu) | .sid' | while read -r sid; do curl -s -X POST -H "Host: ips-gui.6v6.lab" -H "Content-Type: application/json" http://10.20.30.1/api/rule/delete -d "{\"sid\":\"$sid\"}" >/dev/null; done
+      echo "cleanup done"
+    answer_detail: "edu=true 인 룰(sid>=9000000)만 삭제 → reload. 기본 룰(1000000번대) 보존, loaded 5/failed 0 복귀."
+    verify:
+      type: output_contains
+      expect: 'cleanup done'
+      field: stdout
+      semantic:
+        intent: "실습 후 IPS 룰셋을 원상 복구 — 운영 위생"
+        success_criteria: ["edu 룰 전부 삭제", "기본 룰 보존", "loaded 가 기본값으로 복귀"]
+        acceptable_methods:
+          - "**[GUI] 탐지룰 관리의 삭제 버튼** (권장)"
+          - "**[API] /api/rules 조회 → /api/rule/delete 반복**"
+          - "**[원칙] cleanup 중요성** 서술"
+    target_vm: attacker

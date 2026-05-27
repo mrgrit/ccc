@@ -1,0 +1,329 @@
+lab_id: standalone-secuops-easy-week06
+title: "W06 — WAF 침해대응 30 + 종합: 세 장비가 함께 막는다"
+version: standalone-easy
+course: secuops-easy
+week: 6
+description: |
+  WAF 콘솔의 침해대응 훈련 30 SecRule 작성 시나리오를 푼다(대표 5개 + 과제 20개 이상). transform·
+  @pm·deny/pass 를 두루 연습한다. 마지막 종합 capstone 에서는 같은 공격 하나를 보내고 방화벽
+  (conntrack)·IPS(eve.json alert)·WAF(audit 403) 세 장비의 흔적을 한 번에 확인해 심층 방어를
+  종합한다. 끝나면 실습 룰을 정리한다. 세 콘솔(fw-gui/ips-gui/waf-gui)을 모두 사용한다.
+difficulty: easy
+duration_minutes: 150
+audience: 보안 솔루션 운영 입문자 (6주차, 최종)
+prerequisites:
+  - "W06 강의안 정독 — 그룹별 전략, transform, deny/pass, 세 장비 종합"
+  - "W01~W05 실습 완료"
+objectives:
+  - "WAF 시나리오를 변수+연산자+transform 으로 작성·검증한다"
+  - "transform(urlDecodeUni/lowercase)으로 우회를 막는다"
+  - "deny(차단)와 pass(탐지)를 구분해 적용한다"
+  - "같은 공격을 방화벽·IPS·WAF 세 장비에서 추적한다(capstone)"
+  - "실습 룰을 정리한다"
+pass_threshold: 0.7
+steps:
+
+  - order: 1
+    instruction: |
+      ## 🎯 미션 — WAF 침해대응 30 목록 확인
+
+      **침해대응 훈련** 메뉴에서 30개 시나리오(주입 1-10 / 스캐너·경로 11-20 / 심화 21-30)를 훑는다.
+
+      ## 💻 확인 명령
+      ```bash
+      curl -s -H "Host: waf-gui.6v6.lab" http://10.20.30.1/api/scenarios
+      ```
+      ## ✅ 합격 기준
+      목록에 `waf-s30` 까지 보인다.
+    hint: '침해대응 훈련 메뉴. expect: waf-s30'
+    category: survey
+    points: 10
+    answer: |
+      curl -s -H "Host: waf-gui.6v6.lab" http://10.20.30.1/api/scenarios
+    answer_detail: "30개 시나리오(waf-s01~s30), 3그룹."
+    verify:
+      type: output_contains
+      expect: 'waf-s30'
+      field: stdout
+      semantic:
+        intent: "30개 WAF 시나리오 구성 파악"
+        success_criteria: ["30개 확인", "3그룹 구분", "각 항목 구성 이해"]
+        acceptable_methods:
+          - "**[GUI] 침해대응 훈련 목록** (권장)"
+          - "**[API] GET /api/scenarios**"
+          - "**[설명] 그룹별 전략 요약**"
+    target_vm: attacker
+
+  - order: 2
+    instruction: |
+      ## 🎯 미션 — [주입] SQLi UNION 차단 (waf-s01)
+
+      변수 `REQUEST_URI`, 연산자 `@rx`, 패턴 `union.+select`, transform `lowercase`, action `deny`.
+      적용 후 waf-s01 검증.
+
+      ## 💻 확인 명령
+      ```bash
+      curl -s -X POST -H "Host: waf-gui.6v6.lab" -H "Content-Type: application/json" \
+        http://10.20.30.1/api/rule/apply \
+        -d '{"rule":"SecRule REQUEST_URI \"@rx union.+select\" \"id:9000001,phase:2,t:lowercase,deny,status:403,log,msg:'\''EDU s01 sqli'\'',severity:'\''CRITICAL'\''\""}' >/dev/null
+      curl -s -X POST -H "Host: waf-gui.6v6.lab" -H "Content-Type: application/json" \
+        http://10.20.30.1/api/scenario/check -d '{"id":"waf-s01"}'
+      ```
+      ## ✅ 합격 기준
+      검증에 `found` 가 보인다.
+    hint: 'REQUEST_URI @rx union.+select + lowercase + deny. expect: found'
+    category: redblue
+    points: 15
+    answer: |
+      curl -s -X POST -H "Host: waf-gui.6v6.lab" -H "Content-Type: application/json" http://10.20.30.1/api/rule/apply -d '{"rule":"SecRule REQUEST_URI \"@rx union.+select\" \"id:9000001,phase:2,t:lowercase,deny,status:403,log,msg:'\''EDU s01 sqli'\'',severity:'\''CRITICAL'\''\""}' >/dev/null
+      curl -s -X POST -H "Host: waf-gui.6v6.lab" -H "Content-Type: application/json" http://10.20.30.1/api/scenario/check -d '{"id":"waf-s01"}'
+    answer_detail: "@rx + t:lowercase 로 UnIoN 우회까지 차단. waf-s01 통과."
+    verify:
+      type: output_contains
+      expect: 'found'
+      field: stdout
+      semantic:
+        intent: "SQLi 를 정규식+변환으로 차단 — @rx, t:lowercase"
+        success_criteria: ["REQUEST_URI @rx", "t:lowercase", "waf-s01 통과"]
+        acceptable_methods:
+          - "**[GUI] s01 build → 적용 → 검증** (권장)"
+          - "**[API] apply + scenario/check waf-s01**"
+          - "**[설명] lowercase 우회 차단**"
+    target_vm: attacker
+
+  - order: 3
+    instruction: |
+      ## 🎯 미션 — [주입] 경로탐색 + 인코딩 우회 (waf-s06, transform)
+
+      변수 `REQUEST_URI`, 연산자 `@contains`, 패턴 `../`, transform `urlDecodeUni`, action `deny`.
+      `..%2f` 같은 인코딩을 디코딩 후 잡는다. 적용 후 waf-s06 검증.
+
+      ## 💻 확인 명령
+      ```bash
+      curl -s -X POST -H "Host: waf-gui.6v6.lab" -H "Content-Type: application/json" \
+        http://10.20.30.1/api/rule/apply \
+        -d '{"rule":"SecRule REQUEST_URI \"@contains ../\" \"id:9000006,phase:2,t:urlDecodeUni,deny,status:403,log,msg:'\''EDU s06 traversal'\'',severity:'\''CRITICAL'\''\""}' >/dev/null
+      curl -s -X POST -H "Host: waf-gui.6v6.lab" -H "Content-Type: application/json" \
+        http://10.20.30.1/api/scenario/check -d '{"id":"waf-s06"}'
+      ```
+      ## ✅ 합격 기준
+      검증에 `found` 가 보인다.
+    hint: 'urlDecodeUni 가 핵심. expect: found'
+    category: redblue
+    points: 15
+    answer: |
+      curl -s -X POST -H "Host: waf-gui.6v6.lab" -H "Content-Type: application/json" http://10.20.30.1/api/rule/apply -d '{"rule":"SecRule REQUEST_URI \"@contains ../\" \"id:9000006,phase:2,t:urlDecodeUni,deny,status:403,log,msg:'\''EDU s06 traversal'\'',severity:'\''CRITICAL'\''\""}' >/dev/null
+      curl -s -X POST -H "Host: waf-gui.6v6.lab" -H "Content-Type: application/json" http://10.20.30.1/api/scenario/check -d '{"id":"waf-s06"}'
+    answer_detail: "t:urlDecodeUni 없으면 %2f 우회됨. 변환이 인코딩 우회를 무력화."
+    verify:
+      type: output_contains
+      expect: 'found'
+      field: stdout
+      semantic:
+        intent: "인코딩 우회를 transform 으로 차단 — WAF 의 슈퍼파워"
+        success_criteria: ["@contains ../", "t:urlDecodeUni", "waf-s06 통과"]
+        acceptable_methods:
+          - "**[GUI] s06 build → 적용 → 검증** (권장)"
+          - "**[API] apply + scenario/check waf-s06**"
+          - "**[설명] urlDecodeUni 의 효과**"
+    target_vm: attacker
+
+  - order: 4
+    instruction: |
+      ## 🎯 미션 — [스캐너] 다수 도구 한 번에 (waf-s13, @pm)
+
+      변수 `REQUEST_HEADERS:User-Agent`, 연산자 `@pm`, 패턴 `sqlmap nikto nmap gobuster`, transform
+      `lowercase`, action `deny`. 적용 후 waf-s13 검증.
+
+      ## 💻 확인 명령
+      ```bash
+      curl -s -X POST -H "Host: waf-gui.6v6.lab" -H "Content-Type: application/json" \
+        http://10.20.30.1/api/rule/apply \
+        -d '{"rule":"SecRule REQUEST_HEADERS:User-Agent \"@pm sqlmap nikto nmap gobuster\" \"id:9000013,phase:1,t:lowercase,deny,status:403,log,msg:'\''EDU s13 scanners'\'',severity:'\''CRITICAL'\''\""}' >/dev/null
+      curl -s -X POST -H "Host: waf-gui.6v6.lab" -H "Content-Type: application/json" \
+        http://10.20.30.1/api/scenario/check -d '{"id":"waf-s13"}'
+      ```
+      ## ✅ 합격 기준
+      검증에 `found` 가 보인다.
+    hint: '@pm 으로 여러 문구 한 번에. expect: found'
+    category: redblue
+    points: 15
+    answer: |
+      curl -s -X POST -H "Host: waf-gui.6v6.lab" -H "Content-Type: application/json" http://10.20.30.1/api/rule/apply -d '{"rule":"SecRule REQUEST_HEADERS:User-Agent \"@pm sqlmap nikto nmap gobuster\" \"id:9000013,phase:1,t:lowercase,deny,status:403,log,msg:'\''EDU s13 scanners'\'',severity:'\''CRITICAL'\''\""}' >/dev/null
+      curl -s -X POST -H "Host: waf-gui.6v6.lab" -H "Content-Type: application/json" http://10.20.30.1/api/scenario/check -d '{"id":"waf-s13"}'
+    answer_detail: "@pm = 여러 문구 고속 다중 매칭. 스캐너 목록 관리에 적합."
+    verify:
+      type: output_contains
+      expect: 'found'
+      field: stdout
+      semantic:
+        intent: "@pm 으로 다중 시그니처를 한 룰로 — 연산자 선택"
+        success_criteria: ["@pm 사용", "User-Agent 변수", "waf-s13 통과"]
+        acceptable_methods:
+          - "**[GUI] s13 build → 적용 → 검증** (권장)"
+          - "**[API] apply + scenario/check waf-s13**"
+          - "**[설명] @pm vs @contains**"
+    target_vm: attacker
+
+  - order: 5
+    instruction: |
+      ## 🎯 미션 — [운영] 탐지 전용(pass) 모드 (waf-s27)
+
+      새 룰은 바로 차단하지 말고 먼저 탐지만 한다. 변수 `ARGS`, 연산자 `@contains`, 패턴
+      `test_pattern_xyz`, action `pass`, severity `NOTICE`. 적용 후 waf-s27 검증.
+
+      ## 💻 확인 명령
+      ```bash
+      curl -s -X POST -H "Host: waf-gui.6v6.lab" -H "Content-Type: application/json" \
+        http://10.20.30.1/api/rule/apply \
+        -d '{"rule":"SecRule ARGS \"@contains test_pattern_xyz\" \"id:9000027,phase:2,t:none,pass,log,msg:'\''EDU s27 detect-only'\'',severity:'\''NOTICE'\''\""}' >/dev/null
+      curl -s -X POST -H "Host: waf-gui.6v6.lab" -H "Content-Type: application/json" \
+        http://10.20.30.1/api/scenario/check -d '{"id":"waf-s27"}'
+      ```
+      ## ✅ 합격 기준
+      검증에 `found` 가 보인다.
+    hint: 'action=pass(탐지/로그만). expect: found'
+    category: redblue
+    points: 15
+    answer: |
+      curl -s -X POST -H "Host: waf-gui.6v6.lab" -H "Content-Type: application/json" http://10.20.30.1/api/rule/apply -d '{"rule":"SecRule ARGS \"@contains test_pattern_xyz\" \"id:9000027,phase:2,t:none,pass,log,msg:'\''EDU s27 detect-only'\'',severity:'\''NOTICE'\''\""}' >/dev/null
+      curl -s -X POST -H "Host: waf-gui.6v6.lab" -H "Content-Type: application/json" http://10.20.30.1/api/scenario/check -d '{"id":"waf-s27"}'
+    answer_detail: "pass = 매칭해도 통과시키고 로그만. 신규 룰은 pass→관찰→deny 순서가 안전."
+    verify:
+      type: output_contains
+      expect: 'found'
+      field: stdout
+      semantic:
+        intent: "pass(탐지)와 deny(차단)의 차이 — 안전한 룰 도입 절차"
+        success_criteria: ["action=pass", "오탐 관찰 의도", "waf-s27 통과"]
+        acceptable_methods:
+          - "**[GUI] s27 build(action=pass) → 적용 → 검증** (권장)"
+          - "**[API] apply + scenario/check waf-s27**"
+          - "**[설명] pass→deny 전환 절차**"
+    target_vm: attacker
+
+  - order: 6
+    instruction: |
+      ## 🎯 미션 — [우회] 이중 인코딩 (waf-s28, transform 2개)
+
+      변수 `ARGS`, 연산자 `@contains`, 패턴 `script`, transform `urlDecodeUni`+`lowercase`(둘 다),
+      action `deny`. 변환을 여러 개 순서대로 적용한다. 적용 후 waf-s28 검증.
+
+      ## 💻 확인 명령
+      ```bash
+      curl -s -X POST -H "Host: waf-gui.6v6.lab" -H "Content-Type: application/json" \
+        http://10.20.30.1/api/rule/apply \
+        -d '{"rule":"SecRule ARGS \"@contains script\" \"id:9000028,phase:2,t:urlDecodeUni,t:lowercase,deny,status:403,log,msg:'\''EDU s28 double-enc'\'',severity:'\''CRITICAL'\''\""}' >/dev/null
+      curl -s -X POST -H "Host: waf-gui.6v6.lab" -H "Content-Type: application/json" \
+        http://10.20.30.1/api/scenario/check -d '{"id":"waf-s28"}'
+      ```
+      ## ✅ 합격 기준
+      검증에 `found` 가 보인다.
+    hint: 'transform 2개(urlDecodeUni, lowercase). expect: found'
+    category: redblue
+    points: 15
+    answer: |
+      curl -s -X POST -H "Host: waf-gui.6v6.lab" -H "Content-Type: application/json" http://10.20.30.1/api/rule/apply -d '{"rule":"SecRule ARGS \"@contains script\" \"id:9000028,phase:2,t:urlDecodeUni,t:lowercase,deny,status:403,log,msg:'\''EDU s28 double-enc'\'',severity:'\''CRITICAL'\''\""}' >/dev/null
+      curl -s -X POST -H "Host: waf-gui.6v6.lab" -H "Content-Type: application/json" http://10.20.30.1/api/scenario/check -d '{"id":"waf-s28"}'
+    answer_detail: "변환을 순서대로(urlDecodeUni→lowercase) 적용해 이중 인코딩 우회 차단."
+    verify:
+      type: output_contains
+      expect: 'found'
+      field: stdout
+      semantic:
+        intent: "다중 transform 으로 고급 우회 차단 — 변환 순서 이해"
+        success_criteria: ["transform 2개", "@contains script", "waf-s28 통과"]
+        acceptable_methods:
+          - "**[GUI] s28 build(변환 2개 체크) → 적용 → 검증** (권장)"
+          - "**[API] apply + scenario/check waf-s28**"
+          - "**[설명] 변환 순서의 의미**"
+    target_vm: attacker
+
+  - order: 7
+    instruction: |
+      ## 🎯 종합 capstone — 한 공격, 세 장비의 흔적
+
+      6주의 마무리다. WAF 에 sqlmap 차단 룰을 두고, 공격자에서 **sqlmap UA + SQLi(UNION)** 공격을
+      한 번 보낸다. 그리고 **세 장비** 의 흔적을 한 번에 확인한다.
+      - **WAF**: 차단(403)
+      - **IPS**: eve.json 에 sqlmap/UNION alert (기본 룰이 탐지)
+      - **방화벽**: conntrack 에 연결 기록
+
+      ## 💻 확인 명령
+      ```bash
+      # WAF sqlmap 차단 룰
+      curl -s -X POST -H "Host: waf-gui.6v6.lab" -H "Content-Type: application/json" \
+        http://10.20.30.1/api/rule/apply \
+        -d '{"rule":"SecRule REQUEST_HEADERS:User-Agent \"@contains sqlmap\" \"id:9000099,phase:1,t:lowercase,deny,status:403,log,msg:'\''EDU capstone'\'',severity:'\''CRITICAL'\''\""}' >/dev/null
+      # 공격 1회
+      W=$(curl -s -o /dev/null -w "%{http_code}" -A "sqlmap/1.7" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?q=1%20UNION%20SELECT%201")
+      sleep 2
+      # IPS 흔적
+      I=$(curl -s -H "Host: ips-gui.6v6.lab" "http://10.20.30.1/api/eve?type=alert&n=30" | grep -c -i "sqlmap\|union")
+      # 방화벽 흔적
+      F=$(curl -s -H "Host: fw-gui.6v6.lab" "http://10.20.30.1/api/conntrack" | jq .count)
+      echo "capstone WAF=$W IPS_alerts=$I FW_conn=$F"
+      ```
+      ## ✅ 합격 기준
+      출력에 `WAF=403` 이 보인다(세 장비 흔적 동시 확인).
+    hint: '한 공격 → WAF 403 + IPS alert + FW conntrack. expect: WAF=403'
+    category: synthesis
+    points: 20
+    answer: |
+      curl -s -X POST -H "Host: waf-gui.6v6.lab" -H "Content-Type: application/json" http://10.20.30.1/api/rule/apply -d '{"rule":"SecRule REQUEST_HEADERS:User-Agent \"@contains sqlmap\" \"id:9000099,phase:1,t:lowercase,deny,status:403,log,msg:'\''EDU capstone'\'',severity:'\''CRITICAL'\''\""}' >/dev/null
+      W=$(curl -s -o /dev/null -w "%{http_code}" -A "sqlmap/1.7" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?q=1%20UNION%20SELECT%201")
+      sleep 2
+      I=$(curl -s -H "Host: ips-gui.6v6.lab" "http://10.20.30.1/api/eve?type=alert&n=30" | grep -c -i "sqlmap\|union")
+      F=$(curl -s -H "Host: fw-gui.6v6.lab" "http://10.20.30.1/api/conntrack" | jq .count)
+      echo "capstone WAF=$W IPS_alerts=$I FW_conn=$F"
+    answer_detail: "한 공격이 WAF=403 차단, IPS eve 에 sqlmap/UNION alert, FW conntrack 에 연결로 남음. 심층 방어 종합 — 세 흔적 모두 SIEM 으로 모임."
+    verify:
+      type: output_contains
+      expect: 'WAF=403'
+      field: stdout
+      semantic:
+        intent: "같은 공격을 방화벽·IPS·WAF 에서 동시에 추적 — 심층 방어 종합(6주 finale)"
+        success_criteria: ["WAF 가 403 차단", "IPS eve 에 alert", "방화벽 conntrack 에 연결", "세 흔적이 SIEM 으로 모임을 이해"]
+        acceptable_methods:
+          - "**[GUI] 세 콘솔(waf/ips/fw)에서 각 흔적 확인** (권장)"
+          - "**[API] WAF 403 + IPS eve alert + FW conntrack**"
+          - "**[보고서] 한 공격의 3계층 흔적 정리**"
+    target_vm: attacker
+
+  - order: 8
+    instruction: |
+      ## 🎯 미션 — 실습 룰 정리 (cleanup, 필수, 최종)
+
+      WAF 콘솔의 실습 SecRule 을 모두 삭제한다. (IPS/방화벽에는 capstone 에서 룰을 추가하지 않았다 —
+      기본 룰이 탐지했을 뿐. 혹시 이전 주 실습 룰이 남았으면 각 콘솔에서도 정리한다.)
+
+      ## 💻 정리 명령
+      ```bash
+      curl -s -H "Host: waf-gui.6v6.lab" http://10.20.30.1/api/rules \
+       | jq -rc '.rules[].id' \
+       | while read -r id; do
+           curl -s -X POST -H "Host: waf-gui.6v6.lab" -H "Content-Type: application/json" \
+             http://10.20.30.1/api/rule/delete -d "{\"id\":\"$id\"}" >/dev/null; done
+      echo "cleanup done"
+      ```
+      ## ✅ 합격 기준
+      실습 룰이 모두 삭제되어 `cleanup done` 이 보인다.
+    hint: 'WAF SecRule 관리 삭제. 채점: edu 룰 일괄 삭제 → cleanup done'
+    category: cleanup
+    points: 5
+    answer: |
+      curl -s -H "Host: waf-gui.6v6.lab" http://10.20.30.1/api/rules | jq -rc '.rules[].id' | while read -r id; do curl -s -X POST -H "Host: waf-gui.6v6.lab" -H "Content-Type: application/json" http://10.20.30.1/api/rule/delete -d "{\"id\":\"$id\"}" >/dev/null; done
+      echo "cleanup done"
+    answer_detail: "edu_rules.conf 의 모든 GUI 룰 삭제. CRS/기본 보호는 유지. 세 콘솔 모두 정리 권장."
+    verify:
+      type: output_contains
+      expect: 'cleanup done'
+      field: stdout
+      semantic:
+        intent: "특강 종료 — 모든 실습 룰 원상 복구(운영 위생)"
+        success_criteria: ["WAF edu 룰 전부 삭제", "CRS 보호 유지", "세 콘솔 정리 확인"]
+        acceptable_methods:
+          - "**[GUI] 세 콘솔 삭제 버튼** (권장)"
+          - "**[API] 각 콘솔 /api/rules → delete 반복**"
+          - "**[원칙] cleanup 의 중요성**"
+    target_vm: attacker

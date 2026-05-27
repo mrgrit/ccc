@@ -1,0 +1,339 @@
+lab_id: standalone-secuops-easy-week02
+title: "W02 — 방화벽(nftables) 콘솔 실습: 룰·NAT·stateful·SIEM"
+version: standalone-easy
+course: secuops-easy
+week: 2
+description: |
+  방화벽 콘솔(fw-gui.6v6.lab)로 실제 방화벽을 다룬다. 룰을 만들면 콘솔이 생성하는 진짜 nft
+  명령을 확인하고 적용한다. 악성 IP 차단 → SSH 속도 제한 → DNAT 공개 → 연결 추적 → SIEM 연동 →
+  침해대응 시나리오 검증 → 마지막에 실습 룰을 모두 정리(cleanup)한다. 채점 명령은 콘솔이 내부에서
+  호출하는 API 와 동일하다(= GUI 동작 = nft 명령). 모든 접속은 fw 의 HAProxy 가 Host 헤더로
+  라우팅하므로 `-H "Host: fw-gui.6v6.lab" http://10.20.30.1/...` 형태를 쓴다.
+difficulty: easy
+duration_minutes: 120
+audience: 보안 솔루션 운영 입문자 (2주차)
+prerequisites:
+  - "W02 강의안 정독 — 체인/룰 순서/stateful/NAT/카운터"
+  - "W01 실습 완료 — 콘솔 접속 가능"
+objectives:
+  - "방화벽 구성(테이블/인터페이스)을 콘솔에서 읽는다"
+  - "룰을 만들어 생성되는 nft 명령을 확인하고 적용/삭제한다"
+  - "SSH 무차별 대입을 rate limit 으로 완화한다"
+  - "DNAT 으로 내부 서비스를 외부에 공개한다"
+  - "conntrack 으로 stateful 을, 카운터로 차단 증거를 확인한다"
+  - "방화벽을 SIEM(Wazuh)에 연동한다"
+  - "침해대응 시나리오를 검증 통과시키고, 실습 룰을 정리한다"
+pass_threshold: 0.7
+steps:
+
+  - order: 1
+    instruction: |
+      ## 🎯 미션 — 방화벽 구성 읽기
+
+      방화벽 콘솔 **대시보드** 와 **룰 관리** 를 열어, 방화벽이 다루는 테이블을 확인한다.
+      `inet six_filter`(필터 룰), `ip six_nat`(NAT 룰) 두 개가 우리가 편집할 테이블이다.
+      (`ip nat` 은 Docker 용이라 콘솔이 보호한다.)
+
+      ## 💻 확인 명령
+      ```bash
+      curl -s -H "Host: fw-gui.6v6.lab" http://10.20.30.1/api/status
+      ```
+      ## ✅ 합격 기준
+      출력의 tables 에 `six_filter` 가 보인다.
+    hint: 'fw-gui 대시보드/룰 관리. 채점: curl .../api/status 에 six_filter'
+    category: survey
+    points: 10
+    answer: |
+      curl -s -H "Host: fw-gui.6v6.lab" http://10.20.30.1/api/status
+    answer_detail: "tables=[ip nat(보호), inet six_filter(편집), ip six_nat(편집)]. editable=true 인 것만 룰 추가 가능."
+    verify:
+      type: output_contains
+      expect: 'six_filter'
+      field: stdout
+      semantic:
+        intent: "방화벽이 다루는 테이블 구조를 콘솔에서 확인 — 편집 가능 테이블과 보호 테이블 구분"
+        success_criteria: ["inet six_filter 확인", "ip six_nat 확인", "ip nat 은 보호됨을 이해"]
+        acceptable_methods:
+          - "**[GUI] fw-gui 룰 관리 화면** — 테이블/체인 트리 확인 (권장)"
+          - "**[API] curl /api/status** — tables 배열의 editable 필드"
+          - "**[설명] 보호 테이블 의미** — Docker ip nat 을 왜 건드리면 안 되는지 서술"
+    target_vm: attacker
+
+  - order: 2
+    instruction: |
+      ## 🎯 미션 — 룰이 만들어내는 nft 명령 미리보기
+
+      **룰 관리** 폼에서 — 체인 `forward`, 출발지 `10.20.30.202`, 동작 `drop`, 위치 `top` 으로 두고
+      **① 명령 미리보기** 를 누른다. 아직 적용하지 말고, 어떤 `nft` 명령이 만들어지는지 본다.
+
+      ## 💻 확인 명령
+      ```bash
+      curl -s -X POST -H "Host: fw-gui.6v6.lab" -H "Content-Type: application/json" \
+        http://10.20.30.1/api/rule/preview \
+        -d '{"chain":"forward","saddr":"10.20.30.202","action":"drop","position":"top"}'
+      ```
+      ## 🔍 무엇을 보나
+      `nft insert rule inet six_filter forward ip saddr 10.20.30.202 counter drop` — GUI 클릭이 곧
+      이 명령이다. 미리보기는 **실행하지 않는다**(안전).
+      ## ✅ 합격 기준
+      생성된 명령에 `nft insert rule inet six_filter forward` 가 보인다.
+    hint: '미리보기는 실행 없이 명령만 생성. expect: nft insert rule inet six_filter forward'
+    category: survey
+    points: 10
+    answer: |
+      curl -s -X POST -H "Host: fw-gui.6v6.lab" -H "Content-Type: application/json" http://10.20.30.1/api/rule/preview -d '{"chain":"forward","saddr":"10.20.30.202","action":"drop","position":"top"}'
+    answer_detail: "미리보기 = nft 명령 문자열만 반환. 적용 전에 무엇이 실행될지 확인하는 안전 단계."
+    verify:
+      type: output_contains
+      expect: 'nft insert rule inet six_filter forward'
+      field: stdout
+      semantic:
+        intent: "GUI 폼 입력이 실제 nft 명령으로 변환되는 과정을 확인 — 버튼이 아니라 명령을 학습"
+        success_criteria: ["preview 가 nft 명령을 반환", "insert=top 의미 이해", "미리보기는 미실행"]
+        acceptable_methods:
+          - "**[GUI] 룰 만들기 → 명령 미리보기 버튼** — cmdbox 의 nft 명령 확인 (권장)"
+          - "**[API] POST /api/rule/preview** — command 필드"
+          - "**[설명] insert vs add** — top(insert)/bottom(add) 차이 서술"
+    target_vm: attacker
+
+  - order: 3
+    instruction: |
+      ## 🎯 미션 — 악성 IP 차단 룰 적용 (fw-s01)
+
+      이제 **② 적용** 을 눌러 룰을 실제로 적용한다. 우측 현재 룰셋에 새 룰이 나타난다.
+
+      ## 💻 확인 명령
+      ```bash
+      curl -s -X POST -H "Host: fw-gui.6v6.lab" -H "Content-Type: application/json" \
+        http://10.20.30.1/api/rule/apply \
+        -d '{"command":"nft insert rule inet six_filter forward ip saddr 10.20.30.202 counter drop"}'
+      ```
+      ## ✅ 합격 기준
+      적용 응답(또는 갱신된 룰셋)에 `10.20.30.202` 가 보인다.
+    hint: '적용 = 미리보기로 본 명령을 실제 실행. expect: 10.20.30.202'
+    category: manipulation
+    points: 15
+    answer: |
+      curl -s -X POST -H "Host: fw-gui.6v6.lab" -H "Content-Type: application/json" http://10.20.30.1/api/rule/apply -d '{"command":"nft insert rule inet six_filter forward ip saddr 10.20.30.202 counter drop"}'
+    answer_detail: "apply 응답에 ok=true 와 갱신된 ruleset(새 drop 룰 포함). 실제 nft 에 반영됨."
+    verify:
+      type: output_contains
+      expect: '10.20.30.202'
+      field: stdout
+      semantic:
+        intent: "차단 룰을 실제 적용하고 룰셋에 반영됨을 확인 — 1차 침해대응(악성 IP 차단)"
+        success_criteria: ["apply ok=true", "forward 체인에 saddr drop 룰 생성", "현재 룰셋에 반영"]
+        acceptable_methods:
+          - "**[GUI] 적용 버튼 → 우측 룰셋 갱신** 확인 (권장)"
+          - "**[API] POST /api/rule/apply** — ok=true, ruleset 반영"
+          - "**[검증] 침해대응 훈련 fw-s01 → 검증 통과**"
+    target_vm: attacker
+
+  - order: 4
+    instruction: |
+      ## 🎯 미션 — SSH 무차별 대입 완화 (rate limit, fw-s03)
+
+      체인 `input`, 프로토콜 `tcp`, dport `22`, ct state `new`, rate `10/minute` + 초과분만(over),
+      동작 `drop`, 위치 `top` → 미리보기 후 적용한다. 정상 사용자는 통과하고 폭주만 막힌다.
+
+      ## 💻 확인 명령
+      ```bash
+      curl -s -X POST -H "Host: fw-gui.6v6.lab" -H "Content-Type: application/json" \
+        http://10.20.30.1/api/rule/apply \
+        -d '{"command":"nft insert rule inet six_filter input tcp dport 22 ct state new limit rate over 10/minute counter drop"}'
+      ```
+      ## ✅ 합격 기준
+      적용된 룰에 `limit rate over` 가 보인다.
+    hint: 'limit rate over = 초과분만 차단. expect: limit rate over'
+    category: manipulation
+    points: 15
+    answer: |
+      curl -s -X POST -H "Host: fw-gui.6v6.lab" -H "Content-Type: application/json" http://10.20.30.1/api/rule/apply -d '{"command":"nft insert rule inet six_filter input tcp dport 22 ct state new limit rate over 10/minute counter drop"}'
+    answer_detail: "limit rate over 10/minute → 분당 10회 초과 신규 연결만 drop. 가용성 보존형 방어."
+    verify:
+      type: output_contains
+      expect: 'limit rate over'
+      field: stdout
+      semantic:
+        intent: "rate limit 으로 무차별 대입만 차단 — 가용성을 해치지 않는 방어 이해"
+        success_criteria: ["tcp dport 22 + ct state new", "limit rate over 10/minute", "정상 사용자 통과 보존"]
+        acceptable_methods:
+          - "**[GUI] rate/over 체크 후 적용** (권장)"
+          - "**[API] apply 응답에 limit rate over** 확인"
+          - "**[검증] 침해대응 훈련 fw-s03 → 검증 통과**"
+    target_vm: attacker
+
+  - order: 5
+    instruction: |
+      ## 🎯 미션 — DNAT 으로 내부 웹서버 공개 (fw-s08)
+
+      **NAT** 메뉴에서 — DNAT, 인터페이스 eth0, tcp, 외부 포트 8088, 대상 10.20.32.80:80 →
+      미리보기 후 적용. 외부에서 `방화벽:8088` 로 오면 내부 웹서버로 연결된다.
+
+      ## 💻 확인 명령
+      ```bash
+      curl -s -X POST -H "Host: fw-gui.6v6.lab" -H "Content-Type: application/json" \
+        http://10.20.30.1/api/nat/apply \
+        -d '{"command":"nft add rule ip six_nat prerouting iifname \"eth0\" tcp dport 8088 counter dnat to 10.20.32.80:80"}'
+      ```
+      ## ✅ 합격 기준
+      적용된 NAT 룰에 `dnat to 10.20.32.80:80` 이 보인다.
+    hint: 'DNAT 은 prerouting 에서. expect: dnat to 10.20.32.80:80'
+    category: manipulation
+    points: 15
+    answer: |
+      curl -s -X POST -H "Host: fw-gui.6v6.lab" -H "Content-Type: application/json" http://10.20.30.1/api/nat/apply -d '{"command":"nft add rule ip six_nat prerouting iifname \"eth0\" tcp dport 8088 counter dnat to 10.20.32.80:80"}'
+    answer_detail: "prerouting 에서 목적지를 10.20.32.80:80 으로 변환. 포트 포워딩(내부 주소 은닉)."
+    verify:
+      type: output_contains
+      expect: 'dnat to 10.20.32.80:80'
+      field: stdout
+      semantic:
+        intent: "DNAT 으로 내부 서비스를 외부에 공개 — prerouting 훅과 주소 변환 이해"
+        success_criteria: ["six_nat prerouting 에 룰 생성", "dnat to 10.20.32.80:80", "내부 주소 은닉 효과"]
+        acceptable_methods:
+          - "**[GUI] NAT 메뉴 DNAT 폼 → 적용** (권장)"
+          - "**[API] POST /api/nat/apply** — dnat to 확인"
+          - "**[검증] 침해대응 훈련 fw-s08 → 검증 통과**"
+    target_vm: attacker
+
+  - order: 6
+    instruction: |
+      ## 🎯 미션 — 연결 추적(conntrack)으로 stateful 보기
+
+      **Stateful (연결추적)** 메뉴를 연다. 방화벽이 기억하는 연결들이 표로 보인다.
+      `ESTABLISHED` + `[ASSURED]` 가 정상적으로 맺어진 연결이다. 이 연결들의 응답은
+      `ct state established,related accept` 룰로 자동 통과한다.
+
+      ## 💻 확인 명령
+      ```bash
+      curl -s -H "Host: fw-gui.6v6.lab" http://10.20.30.1/api/conntrack
+      ```
+      ## ✅ 합격 기준
+      출력에 `count`(연결 수)가 보인다.
+    hint: 'conntrack = 연결 기억. expect: count'
+    category: monitoring
+    points: 10
+    answer: |
+      curl -s -H "Host: fw-gui.6v6.lab" http://10.20.30.1/api/conntrack
+    answer_detail: "count/summary/conns. ESTABLISHED 연결의 응답이 자동 통과 = stateful inspection."
+    verify:
+      type: output_contains
+      expect: 'count'
+      field: stdout
+      semantic:
+        intent: "stateful 방화벽이 연결을 추적함을 눈으로 확인 — established 자동 통과 이해"
+        success_criteria: ["연결 목록/개수 확인", "ESTABLISHED 의미 이해", "established,related accept 룰과 연결"]
+        acceptable_methods:
+          - "**[GUI] Stateful 메뉴의 연결 표** (권장)"
+          - "**[API] GET /api/conntrack** — count/conns"
+          - "**[설명] stateful vs stateless** 차이 서술"
+    target_vm: attacker
+
+  - order: 7
+    instruction: |
+      ## 🎯 미션 — SIEM(Wazuh) 연동 상태 확인
+
+      **SIEM 연동** 메뉴를 연다. 방화벽 활동(`/var/log/nft_edu/events.log`)이 SIEM 매니저
+      (10.20.32.100)로 가도록 연동할 수 있다. 현재 상태와 매니저 주소를 확인한다. (연동이 꺼져
+      있으면 "연동 켜기" 를 눌러 본다 — 에이전트가 재시작된다.)
+
+      ## 💻 확인 명령
+      ```bash
+      curl -s -H "Host: fw-gui.6v6.lab" http://10.20.30.1/api/siem
+      ```
+      ## ✅ 합격 기준
+      출력에 SIEM 매니저 주소 `10.20.32.100` 이 보인다.
+    hint: 'SIEM 연동 메뉴. expect: 10.20.32.100'
+    category: integration
+    points: 10
+    answer: |
+      curl -s -H "Host: fw-gui.6v6.lab" http://10.20.30.1/api/siem
+    answer_detail: "manager=10.20.32.100. 연동 켜면 events.log 를 Wazuh 에이전트가 tail → 통합 관제."
+    verify:
+      type: output_contains
+      expect: '10.20.32.100'
+      field: stdout
+      semantic:
+        intent: "방화벽을 SIEM 에 연동 — 분산 로그를 한 곳에서 보는 통합 관제의 출발점"
+        success_criteria: ["SIEM 매니저 주소 확인", "events.log 가 전송 소스", "에이전트 가동 확인"]
+        acceptable_methods:
+          - "**[GUI] SIEM 연동 메뉴 상태/켜기** (권장)"
+          - "**[API] GET /api/siem** — manager 10.20.32.100"
+          - "**[설명] 통합 관제 이점** 서술"
+    target_vm: attacker
+
+  - order: 8
+    instruction: |
+      ## 🎯 미션 — 침해대응 시나리오 검증 (fw-s01)
+
+      **침해대응 훈련** 메뉴에서 fw-s01(악성 IP 차단)을 펼치고 **검증** 을 누른다. 콘솔이 실제
+      룰셋을 읽어 step 3 에서 만든 차단 룰이 올바른지 채점한다.
+
+      ## 💻 확인 명령
+      ```bash
+      curl -s -X POST -H "Host: fw-gui.6v6.lab" -H "Content-Type: application/json" \
+        http://10.20.30.1/api/scenario/check -d '{"id":"fw-s01"}'
+      ```
+      ## ✅ 합격 기준
+      검증 결과 evidence 에 `found` 가 보이고 통과(ok=true)한다.
+    hint: '침해대응 훈련 → fw-s01 → 검증. expect: found'
+    category: redblue
+    points: 10
+    answer: |
+      curl -s -X POST -H "Host: fw-gui.6v6.lab" -H "Content-Type: application/json" http://10.20.30.1/api/scenario/check -d '{"id":"fw-s01"}'
+    answer_detail: "ok=true, evidence=[{require: ip saddr 10.20.30.202 .*drop, found: true}]. 룰이 정답 조건 충족."
+    verify:
+      type: output_contains
+      expect: 'found'
+      field: stdout
+      semantic:
+        intent: "작성한 룰이 침해대응 정답 조건을 충족하는지 콘솔이 실측 채점 — 실전 검증"
+        success_criteria: ["scenario check ok=true", "evidence 의 require 충족", "실제 룰셋 기반 채점"]
+        acceptable_methods:
+          - "**[GUI] 침해대응 훈련 fw-s01 검증 버튼 → ✔ 통과** (권장)"
+          - "**[API] POST /api/scenario/check fw-s01** — ok=true"
+          - "**[추가] fw-s02~s10 중 더 풀어보기**"
+    target_vm: attacker
+
+  - order: 9
+    instruction: |
+      ## 🎯 미션 — 실습 룰 정리 (cleanup, 필수)
+
+      실습으로 추가한 룰(악성 IP 차단, SSH rate limit, DNAT)을 모두 삭제해 방화벽을 원래 상태로
+      되돌린다. 콘솔의 **룰 관리 / NAT** 화면에서 각 룰의 "삭제" 버튼으로 지울 수 있다.
+      채점 명령은 같은 일을 API 로 한 번에 한다.
+
+      ## 💻 정리 명령
+      ```bash
+      curl -s -H "Host: fw-gui.6v6.lab" http://10.20.30.1/api/ruleset \
+       | jq -rc '.tables[] | select(.editable) | .chains[] | .name as $ch | .rules[]
+           | select((.matchers|join(" ")|test("10.20.30.202|8088")) or
+                    ((.matchers|join(" ")|test("dport 22")) and .action=="drop"))
+           | {family,table,chain:$ch,handle}' \
+       | while read -r j; do
+           curl -s -X POST -H "Host: fw-gui.6v6.lab" -H "Content-Type: application/json" \
+             http://10.20.30.1/api/rule/delete -d "$j" >/dev/null; done
+      echo "cleanup done"
+      ```
+      ## ✅ 합격 기준
+      실습 룰이 모두 삭제되어 출력에 `cleanup done` 이 보인다(콘솔 룰셋에서도 사라짐).
+    hint: '룰 관리/NAT 화면의 삭제 버튼. 채점: jq 로 실습 룰 일괄 삭제 → cleanup done'
+    category: cleanup
+    points: 5
+    answer: |
+      curl -s -H "Host: fw-gui.6v6.lab" http://10.20.30.1/api/ruleset | jq -rc '.tables[] | select(.editable) | .chains[] | .name as $ch | .rules[] | select((.matchers|join(" ")|test("10.20.30.202|8088")) or ((.matchers|join(" ")|test("dport 22")) and .action=="drop")) | {family,table,chain:$ch,handle}' | while read -r j; do curl -s -X POST -H "Host: fw-gui.6v6.lab" -H "Content-Type: application/json" http://10.20.30.1/api/rule/delete -d "$j" >/dev/null; done
+      echo "cleanup done"
+    answer_detail: "실습으로 추가한 3 룰(saddr 10.20.30.202 drop / dport22 limit drop / dnat 8088)만 골라 삭제. 베이스라인 룰은 보존."
+    verify:
+      type: output_contains
+      expect: 'cleanup done'
+      field: stdout
+      semantic:
+        intent: "실습 후 환경을 원상 복구 — 운영 위생(실습 룰 방치 금지) 습관"
+        success_criteria: ["추가한 실습 룰 전부 삭제", "베이스라인 룰은 보존", "콘솔 룰셋에서 사라짐 확인"]
+        acceptable_methods:
+          - "**[GUI] 룰 관리/NAT 의 삭제 버튼** 으로 하나씩 제거 (권장)"
+          - "**[API] /api/ruleset 조회 → /api/rule/delete 반복**"
+          - "**[원칙] cleanup 의 중요성** — 실습 잔여 룰이 다음 실습/운영에 주는 영향 서술"
+    target_vm: attacker
