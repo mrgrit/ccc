@@ -298,42 +298,95 @@ steps:
 
   - order: 9
     instruction: |
-      ## 🎯 미션 — 실습 룰 정리 (cleanup, 필수)
+      ## 🎯 미션 — 객체(그룹·Alias)로 다중 악성 IP 차단 (fw-s11)
 
-      실습으로 추가한 룰(악성 IP 차단, SSH rate limit, DNAT)을 모두 삭제해 방화벽을 원래 상태로
-      되돌린다. 콘솔의 **룰 관리 / NAT** 화면에서 각 룰의 "삭제" 버튼으로 지울 수 있다.
-      채점 명령은 같은 일을 API 로 한 번에 한다.
+      상용 방화벽의 '주소 그룹/Alias' 처럼, 여러 악성 IP 를 **그룹 하나** 로 묶고 룰은 그 그룹을
+      참조한다(nftables named set). **객체** 메뉴에서 IP 그룹 `blocklist` 를 만들고, **룰 관리** 에서
+      `@blocklist` 를 drop 한 뒤 fw-s11 을 검증한다.
+
+      ## 💻 확인 명령
+      ```bash
+      # ① 그룹 blocklist 생성 + 구성원 2개
+      curl -s -X POST -H "Host: fw-gui.6v6.lab" -H "Content-Type: application/json" \
+        http://10.20.30.1/api/object/apply \
+        -d '{"create":"nft add set inet six_filter blocklist { type ipv4_addr ; }","element":"nft add element inet six_filter blocklist { 10.20.30.202, 10.20.30.250 }"}' >/dev/null
+      # ② forward 에서 @blocklist drop
+      curl -s -X POST -H "Host: fw-gui.6v6.lab" -H "Content-Type: application/json" \
+        http://10.20.30.1/api/rule/apply \
+        -d '{"command":"nft insert rule inet six_filter forward ip saddr @blocklist counter drop"}' >/dev/null
+      # ③ 검증
+      curl -s -X POST -H "Host: fw-gui.6v6.lab" -H "Content-Type: application/json" \
+        http://10.20.30.1/api/scenario/check -d '{"id":"fw-s11"}'
+      ```
+      ## 🔍 무엇을 배우나
+      그룹에 IP 를 추가/삭제(객체 메뉴의 "+ 추가"/"− 삭제")하면 룰을 바꾸지 않아도 즉시 반영된다.
+      여러 룰이 같은 그룹을 재사용할 수 있어 운영이 일관되고 간단해진다.
+      ## ✅ 합격 기준
+      검증 evidence 에 `found` 가 보인다(그룹 존재 + @blocklist 참조 룰 확인).
+    hint: '객체 메뉴에서 blocklist 그룹 생성 → 룰에서 @blocklist drop → fw-s11 검증. expect: found'
+    category: redblue
+    points: 10
+    answer: |
+      curl -s -X POST -H "Host: fw-gui.6v6.lab" -H "Content-Type: application/json" http://10.20.30.1/api/object/apply -d '{"create":"nft add set inet six_filter blocklist { type ipv4_addr ; }","element":"nft add element inet six_filter blocklist { 10.20.30.202, 10.20.30.250 }"}' >/dev/null
+      curl -s -X POST -H "Host: fw-gui.6v6.lab" -H "Content-Type: application/json" http://10.20.30.1/api/rule/apply -d '{"command":"nft insert rule inet six_filter forward ip saddr @blocklist counter drop"}' >/dev/null
+      curl -s -X POST -H "Host: fw-gui.6v6.lab" -H "Content-Type: application/json" http://10.20.30.1/api/scenario/check -d '{"id":"fw-s11"}'
+    answer_detail: "named set blocklist(2 IP) + forward 의 @blocklist drop. ok=true, evidence: 'set blocklist'+'@blocklist drop' found. 그룹 구성원만 바꿔 정책 갱신."
+    verify:
+      type: output_contains
+      expect: 'found'
+      field: stdout
+      semantic:
+        intent: "객체(그룹·Alias)로 다중 IP 를 묶어 룰에서 재사용 — 운영 효율과 일관성"
+        success_criteria: ["named set blocklist 생성", "룰이 @blocklist 참조", "fw-s11 통과", "그룹 수정→룰 자동 반영 이해"]
+        acceptable_methods:
+          - "**[GUI] 객체 메뉴에서 그룹 생성 → 룰 관리에서 @blocklist drop → fw-s11 검증** (권장)"
+          - "**[API] object/apply + rule/apply(@blocklist) + scenario/check fw-s11**"
+          - "**[설명] 주소 객체/그룹/Alias 개념과 운영 이점** 서술"
+    target_vm: attacker
+
+  - order: 10
+    instruction: |
+      ## 🎯 미션 — 실습 룰·객체 정리 (cleanup, 필수)
+
+      실습으로 추가한 룰(악성 IP 차단, SSH rate limit, DNAT, @blocklist)과 객체(blocklist 그룹)를
+      모두 삭제해 방화벽을 원래 상태로 되돌린다. 콘솔의 **룰 관리 / NAT / 객체** 화면의 "삭제"
+      버튼으로도 가능하다. (객체는 그것을 참조하는 룰을 먼저 지워야 삭제된다.)
 
       ## 💻 정리 명령
       ```bash
+      # ① 실습 룰 삭제 (@blocklist 참조 룰 포함)
       curl -s -H "Host: fw-gui.6v6.lab" http://10.20.30.1/api/ruleset \
        | jq -rc '.tables[] | select(.editable) | .chains[] | .name as $ch | .rules[]
-           | select((.matchers|join(" ")|test("10.20.30.202|8088")) or
+           | select((.matchers|join(" ")|test("10.20.30.202|8088|@blocklist")) or
                     ((.matchers|join(" ")|test("dport 22")) and .action=="drop"))
            | {family,table,chain:$ch,handle}' \
        | while read -r j; do
            curl -s -X POST -H "Host: fw-gui.6v6.lab" -H "Content-Type: application/json" \
              http://10.20.30.1/api/rule/delete -d "$j" >/dev/null; done
+      # ② 객체(그룹) 삭제
+      curl -s -X POST -H "Host: fw-gui.6v6.lab" -H "Content-Type: application/json" \
+        http://10.20.30.1/api/object/delete -d '{"name":"blocklist"}' >/dev/null
       echo "cleanup done"
       ```
       ## ✅ 합격 기준
-      실습 룰이 모두 삭제되어 출력에 `cleanup done` 이 보인다(콘솔 룰셋에서도 사라짐).
-    hint: '룰 관리/NAT 화면의 삭제 버튼. 채점: jq 로 실습 룰 일괄 삭제 → cleanup done'
+      실습 룰·객체가 모두 삭제되어 출력에 `cleanup done` 이 보인다(베이스라인은 보존).
+    hint: '룰 먼저, 그다음 객체 삭제. 채점: jq 일괄 삭제 + object/delete → cleanup done'
     category: cleanup
     points: 5
     answer: |
-      curl -s -H "Host: fw-gui.6v6.lab" http://10.20.30.1/api/ruleset | jq -rc '.tables[] | select(.editable) | .chains[] | .name as $ch | .rules[] | select((.matchers|join(" ")|test("10.20.30.202|8088")) or ((.matchers|join(" ")|test("dport 22")) and .action=="drop")) | {family,table,chain:$ch,handle}' | while read -r j; do curl -s -X POST -H "Host: fw-gui.6v6.lab" -H "Content-Type: application/json" http://10.20.30.1/api/rule/delete -d "$j" >/dev/null; done
+      curl -s -H "Host: fw-gui.6v6.lab" http://10.20.30.1/api/ruleset | jq -rc '.tables[] | select(.editable) | .chains[] | .name as $ch | .rules[] | select((.matchers|join(" ")|test("10.20.30.202|8088|@blocklist")) or ((.matchers|join(" ")|test("dport 22")) and .action=="drop")) | {family,table,chain:$ch,handle}' | while read -r j; do curl -s -X POST -H "Host: fw-gui.6v6.lab" -H "Content-Type: application/json" http://10.20.30.1/api/rule/delete -d "$j" >/dev/null; done
+      curl -s -X POST -H "Host: fw-gui.6v6.lab" -H "Content-Type: application/json" http://10.20.30.1/api/object/delete -d '{"name":"blocklist"}' >/dev/null
       echo "cleanup done"
-    answer_detail: "실습으로 추가한 3 룰(saddr 10.20.30.202 drop / dport22 limit drop / dnat 8088)만 골라 삭제. 베이스라인 룰은 보존."
+    answer_detail: "실습 룰 4종(saddr drop / dport22 limit / dnat 8088 / @blocklist) + blocklist 그룹 삭제. 룰 먼저 지워야 그룹이 지워짐. 베이스라인 보존."
     verify:
       type: output_contains
       expect: 'cleanup done'
       field: stdout
       semantic:
-        intent: "실습 후 환경을 원상 복구 — 운영 위생(실습 룰 방치 금지) 습관"
-        success_criteria: ["추가한 실습 룰 전부 삭제", "베이스라인 룰은 보존", "콘솔 룰셋에서 사라짐 확인"]
+        intent: "실습 후 룰·객체를 원상 복구 — 운영 위생(삭제 순서: 룰 → 객체)"
+        success_criteria: ["추가한 실습 룰 전부 삭제", "blocklist 그룹 삭제", "베이스라인 룰 보존"]
         acceptable_methods:
-          - "**[GUI] 룰 관리/NAT 의 삭제 버튼** 으로 하나씩 제거 (권장)"
-          - "**[API] /api/ruleset 조회 → /api/rule/delete 반복**"
-          - "**[원칙] cleanup 의 중요성** — 실습 잔여 룰이 다음 실습/운영에 주는 영향 서술"
+          - "**[GUI] 룰 관리/NAT/객체 의 삭제 버튼** (권장)"
+          - "**[API] rule/delete 반복 → object/delete**"
+          - "**[원칙] 참조 관계상 룰을 먼저 지워야 객체 삭제 가능**"
     target_vm: attacker
