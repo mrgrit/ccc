@@ -881,6 +881,31 @@ sudo grep -i "hydra\|brute" /var/log/apache2/modsec_audit.log 2>/dev/null | head
 
 ---
 
+## 11.5 인증·접근제어 — Windows 측의 추가 표면 (W03 secuops 위빙)
+
+본 주차의 인증·접근제어는 웹 애플리케이션 위주다 (OWASP A01/A07). Windows 사용자 PC 가 들어오면서
+**OS 수준의 인증** 도 공격 표면에 들어왔다.
+
+### Windows 인증의 핵심 표면
+
+| 표면 | 공격 패턴 | Blue 측 단서 |
+|------|----------|--------------|
+| 로컬 로그온 | brute force / pass-the-hash | Security 4625 (실패) / 4624 LogonType 3 (네트워크) |
+| RDP 3389 | password spray | Security 4625 + EID 4624 LogonType 10 |
+| SMB null session | 익명 enum 시도 | Security 4624 LogonType 3 anonymous |
+| WinRM 5985 | PowerShell remoting brute | Security 4625 + Sysmon EID 1 (winrshost) |
+
+### 공격 → Blue 흔적의 1대1 매핑
+
+본 강의는 Red 의 시각이지만, 매번 **그 공격이 Blue 의 어디에 잡히는지** 도 함께 봐 둔다. Windows
+인증 공격은 거의 항상 Security 채널 4624/4625 로 흘러가며, 그 추적은 SOC W12 (내부 위협) 의 핵심
+주제다.
+
+> 본 주차의 OWASP A01/A07 은 웹 인증 — 정작 우리 6v6 의 핵심 자격증명 흐름 중 하나는 Windows
+> 사용자 PC 의 로그온이다. Red 가 인증 표면을 모두 본다는 의미에서, 두 시각을 같이 학습한다.
+
+---
+
 ## 12. 과제
 
 ### A. brute force 보고서 (필수, 40점)

@@ -669,6 +669,28 @@ sudo conntrack -L --src 10.20.30.202 2>/dev/null | head -5
 
 ---
 
+## 11.5 Windows 호스트 측 패킷 분석 — wireshark 의 두 시각 (W03 secuops 위빙)
+
+본 주차의 tcpdump/scapy/Wireshark 는 Linux 호스트 또는 망(span) 에서 캡처가 표준이다. Windows
+사용자 PC 가 들어옴으로써 **호스트 측 캡처** 의 새 source 가 생긴다.
+
+### 두 캡처 시각의 비교
+
+| 시각 | 무엇을 본다 | 분석 측 가치 |
+|------|----------|------------|
+| 망 측 (fw / ips SPAN) | 모든 호스트 간 트래픽 | 외부↔내부 침해 추적 |
+| **Windows 호스트 측 (Sysmon EID 3)** | **어느 프로세스가** 어디로 나갔나 | Red 가 누구인지(프로세스 단위) 추적 |
+
+Wireshark 가 PCAP 의 IP/포트만 본다면, Sysmon EID 3 는 그 connection 의 **출발 프로세스** 까지 본다.
+두 시각이 합쳐지면 — "어느 호스트의 어느 프로세스가 어디로 무엇을 보냈나" 의 완전한 답.
+
+### scapy 의 윤리
+
+> scapy 로 임의 패킷을 만들어 보내는 것은 강력한 학습 도구지만, **6v6 인프라 외부 호스트 대상은
+> 금지**. 동의 없는 SYN flood / ARP spoofing 은 정보통신망법 / 정보보호법 위반 가능.
+
+---
+
 ## 12. 한국 사례 + 표준 매핑
 
 - 2008 Kaminsky DNS attack — DNS poisoning 의 fundamental

@@ -714,6 +714,32 @@ process 별 MAC (Mandatory Access Control) → rootkit / 권한 상승 차단
 
 ---
 
+## 10.5 Windows 측 지속성 + 안티포렌식 — 표준 5 무대 (W03 secuops 위빙)
+
+본 주차는 Linux 의 cron / systemd / .bashrc 등이 중심이다. Windows 의 지속성은 자체 표준 무대 5
+가 있다.
+
+### Windows 지속성 5 무대
+
+| 무대 | 위치 | 분석가 단서 |
+|------|------|-----------|
+| Run/RunOnce | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` 등 | Sysmon EID 13 (RegistrySetValue) |
+| 스케줄러 (Task Scheduler) | `schtasks /create` | Sysmon EID 1 (schtasks.exe) + EID 11 (XML 파일) |
+| 서비스 (Service) | `sc create` | Sysmon EID 1 + Security 7045 (시스템 채널) |
+| WMI Event Subscription | `wmic` / `Register-WmiEvent` | Sysmon EID 19/20/21 (WMI 전용) |
+| Startup 폴더 | `%APPDATA%\...\Programs\Startup\` | Sysmon EID 11 (FileCreate) |
+
+### Windows 안티포렌식 3 패턴
+
+- **이벤트 로그 삭제**: `wevtutil cl Security` → Security EID **1102** (자동 기록, 삭제 흔적이 남음).
+- **타임스탬프 위조**: `SetFileTime` API → Sysmon EID 11 의 OriginalFileName / CreationUtcTime 비교.
+- **기록 우회 (Sysmon kill)**: Sysmon 서비스 stop 시도 → Security 4634 / 7036.
+
+> 본 주차의 Linux 지속성 패턴을 Windows 로 옮기면 무대만 5개로 늘어난다. **분석가 입장에선 무대가
+> 많을수록 다 봐야** 하고, **공격자 입장에선 한 무대만 들켜도 끝**.
+
+---
+
 ## 11. ATT&CK + 한국 표준
 
 ### 11.1 ATT&CK 매핑 (위 §7)

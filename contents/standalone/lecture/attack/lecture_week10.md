@@ -536,6 +536,35 @@ OpenCTI (W14 secuops) 의 IOC feed:
 
 ---
 
+## 8.5 Windows 측의 우회 패턴 — PowerShell 인코딩 / LOLBAS (W03 secuops 위빙)
+
+본 주차의 IDS/WAF 우회는 네트워크 측 페이로드 변형이 중심이다. Windows 측에서도 같은 종류의
+우회 기법이 존재 — 차이는 **호스트 측의 안티바이러스/EDR 을 우회**하는 게 목적.
+
+### Windows 측 우회 4 패턴
+
+| 패턴 | 기법 | Blue 측 단서 |
+|------|------|-------------|
+| PowerShell base64 | `-EncodedCommand <b64>` 로 명령 숨김 | Sysmon EID 1 CommandLine 의 `EncodedCommand` 문자열 |
+| AMSI bypass | AMSI 메모리 패치로 안티바이러스 우회 | Sysmon EID 10 (LSASS 핸들 오픈 등 의심 패턴) |
+| LOLBAS (mshta/rundll32/regsvr32) | OS 정상 도구로 페이로드 실행 | Sysmon EID 1 의 비정상 인자 |
+| process injection | CreateRemoteThread / DLL 주입 | Sysmon EID 8 (CreateRemoteThread), 10 |
+
+### "완전 우회는 없다" 가 본 주차의 메시지
+
+- 페이로드 변형은 IDS/WAF 룰을 우회할 수 있다 — 그러나 endpoint EDR 의 **행위 기반 탐지** 는 더
+  잡기 어렵다.
+- 행위 기반은 "무엇을 했는가" 를 본다. PowerShell 의 base64 인코딩은 명령 내용은 숨기지만, `-EncodedCommand`
+  키워드 자체는 cmdline 에 그대로 남는다.
+- Red 의 학습 관점에선 — **각 우회 기법이 어느 layer 에서 잡히는지** 를 알아야 다음 layer 를 노릴 수 있다.
+
+### 윤리
+
+> 본 주차의 우회 기법은 모두 6v6 내부 학습 한정. 실 환경 endpoint EDR 우회 시도는 명시적 합의서
+> 필요. AMSI bypass / process injection 도구는 6v6 외부 반출 금지.
+
+---
+
 ## 9. 한국 사례 + 표준 매핑
 
 ### 9.1 KISA 우회 사례

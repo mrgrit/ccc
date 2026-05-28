@@ -848,6 +848,34 @@ sudo tail -100 /var/ossec/logs/alerts/alerts.json | \
 
 ---
 
+## 11.5 SQLi 클라이언트가 Windows 직원 PC 일 때 (W03 secuops 위빙)
+
+본 주차의 sqlmap 공격은 외부 attacker 호스트에서 출발하는 게 표준이다. 그러나 실무에서 SQLi 가
+시작되는 자리 중 하나는 **사용자의 브라우저** — 직원 PC 가 의심 URL 을 클릭하는 순간.
+
+### 공격자 시각의 변형 — 직원 PC 경유
+
+```
+시나리오: 직원의 브라우저가 GET 요청
+   URL: http://dvwa.6v6.lab/?q=1' UNION SELECT user,pass FROM users--
+   (피싱 메일 / 악성 광고로 자동 트리거 — XSS-stored 의 발사대 등)
+```
+
+직원 PC 의 IP (10.20.32.60) 가 WAF audit 의 client_ip 로 기록된다. Blue 측에선:
+- WAF audit: client_ip=10.20.32.60 + CRS 942 매칭
+- Sysmon EID 1: chrome.exe / brave.exe / curl.exe + CommandLine 의 URL
+- Sysmon EID 3: dmz 80 으로의 외부 연결
+
+→ Red 입장에선 **흔적이 두 source 에 동시에 남는다** 는 사실이 중요. 직원 PC 경유 공격은
+탐지가 더 쉽다 (출발지가 신원 추적 가능).
+
+### 윤리 — 직원 PC 경유 공격의 의미
+
+직원을 도구로 쓰는 공격은 **사회공학** 영역. 본 강의에선 시뮬레이션만, 실제 직원 대상 피싱은
+별도 사전 동의·합의서 필수.
+
+---
+
 ## 12. 과제
 
 ### A. SQLi 페이로드 매트릭스 (필수, 40점)

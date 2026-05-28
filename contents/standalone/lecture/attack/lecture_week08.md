@@ -354,6 +354,34 @@ graph LR
 
 ---
 
+## 9.5 보너스 챌린지 — Windows 직원 PC 우회 다운로드 (W03 secuops 위빙)
+
+본 중간고사에 보너스 챌린지 1건 — Windows victim PC 시각 — 을 추가한다 (10점, 시험 시간 内 선택).
+
+### 보너스 챌린지 — "Windows Endpoint Initial Foothold"
+
+> 시나리오: 직원 PC (10.20.32.60) 에서 다음을 달성하라.
+>
+> (a) iwr 또는 curl 로 외부에 호스팅된 의심 URL 에 1회 요청을 보내고 (도달 여부 무관),
+>     그 행위가 Sysmon EID 3 의 카운트로 1 이상 증가했음을 증명하라.
+> (b) PowerShell `-EncodedCommand` 한 번 실행하고, 그 행위가 Sysmon Message 에서 `EncodedCommand`
+>     키워드로 매칭됨을 증명하라.
+> (c) 위 (a)(b) 가 SOC 분석가 시각에서 어느 ATT&CK Technique (서브 포함) 에 매핑되는지 1줄.
+
+### 평가 항목 (10점)
+
+```
+3점: (a) 의 명령 + Sysmon EID 3 카운트 증명
+3점: (b) 의 명령 + Sysmon Message EncodedCommand 매칭 증명
+2점: (c) 의 매핑 정확성 (T1071/T1059.001 등)
+2점: 분석가가 이걸 어떻게 잡는지 1문장 설명 (Wazuh KQL 또는 SIEM Discover)
+```
+
+> 본 보너스는 W03 의 R/B/P 실습 경험 그대로 시험에 적용. 학생은 공격자 시각과 분석가 시각을 한
+> 답안에서 모두 보여야 한다 (Red Team 의 자기 인식).
+
+---
+
 ## 10. ATT&CK 시험 매핑
 
 본 시험의 3 challenge 가 다음 ATT&CK Technique 평가:

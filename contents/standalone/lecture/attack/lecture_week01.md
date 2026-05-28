@@ -1121,6 +1121,25 @@ curl -s -o /dev/null -w "portal.6v6.lab: %{http_code}\n" \
 
 ---
 
+## 9.5 공격 표면이 늘었다 — Windows 사용자 PC (W03 secuops 위빙)
+
+본 6v6 인프라에 **Windows 11 사용자 PC (10.20.32.60)** 가 들어오면서 Red Team 의 공격 표면이 한
+호스트 늘었다. Windows 는 다음 측면에서 특별하다.
+
+| 측면 | 의미 (공격자 시각) |
+|------|------------------|
+| 사용자 PC | **사람의 우발 행동** 이 침투 경로 (피싱·매크로·다운로드) |
+| RDP/SMB/WinRM | 네트워크 표면 (3389/445/5985) — fw 의 차단 정책 우회 시 직접 노출 |
+| LOLBAS | OS 정상 도구 (mshta/rundll32/regsvr32/...) 로 페이로드 실행 — 안티바이러스 회피 |
+| PowerShell | 강력한 스크립팅 — base64 인코딩으로 정적 분석 어렵게 |
+| Registry / 서비스 | 지속성 (Persistence) 의 표준 무대 |
+
+> 본 강의의 Red Team 시각은 Linux 서버(JuiceShop/DVWA) 공격 + **Windows 사용자 PC 공격** 의 1+1
+> 구조다. 매 주차의 기법이 Linux 측인지 Windows 측인지 (또는 둘 다 인지) 의식하며 학습하자.
+> Blue Team (W14 Purple / SOC 과목) 도 같은 호스트를 본다 — 두 팀이 같은 데이터를 다른 시각으로.
+
+---
+
 ## 10. 과제
 
 ### A. 환경 점검 보고서 (필수, 40점)

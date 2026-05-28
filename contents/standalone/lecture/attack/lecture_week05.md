@@ -777,6 +777,30 @@ XSS 차단 검증 = 본 통제의 입증.
 
 ---
 
+## 11.5 XSS payload 의 발사대 = Windows 직원 PC 의 브라우저 (W03 secuops 위빙)
+
+XSS 페이로드의 실행 무대는 **victim 의 브라우저** — 본 6v6 에선 Windows 사용자 PC 의 chrome/edge.
+공격자 시각에선 XSS 의 성공 = "직원 PC 의 브라우저에서 내 자바스크립트가 실행됐다".
+
+### 시나리오 한 줄
+
+```
+1. 공격자가 stored XSS 를 dvwa.6v6.lab 의 게시글에 삽입.
+2. 직원이 그 게시글을 본다 (브라우저에서).
+3. 직원 PC 의 브라우저에서 자바스크립트 실행 → 세션 쿠키 외부 전송 / 키로깅 / 추가 다운로드.
+```
+
+### Blue 측 흔적
+
+- WAF audit: client_ip=10.20.32.60, URL=/...의심 path, rule 941 미매칭(읽기 요청은 보통 통과).
+- Sysmon EID 3 (Windows): chrome.exe → 의심 외부 IP (XSS payload 가 fetch() 한 곳).
+- Sysmon EID 22 (DNS): 의심 도메인 조회.
+
+→ Red 의 흔적은 **payload 가 실행된 직원 PC 의 endpoint 측에 가장 많이 남는다**. WAF 가 못 보는
+가시성 사각지대를 endpoint EDR 이 메운다는 사실은 본 공격 학습의 필수 인식.
+
+---
+
 ## 12. 과제
 
 ### A. 페이로드 매트릭스 (필수, 40점)

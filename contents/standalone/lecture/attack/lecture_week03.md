@@ -716,6 +716,34 @@ sudo tail -10 /var/log/apache2/modsec_audit.log | head -1 | \
 
 ---
 
+## 9.5 Burp + Windows 직원 PC — 사용자 시각 공격 (W03 secuops 위빙)
+
+본 주차의 Burp Suite 는 웹 애플리케이션 공격의 표준 도구. Windows 직원 PC 가 들어옴으로써
+**"사용자가 직접 페이로드를 보내는" 공격** 의 시뮬레이션이 가능해진다.
+
+### 공격자 시각 — Windows 직원 PC 의 브라우저로 직접
+
+이전엔 Burp = 공격자의 외부 노트북 가정이었다. 이젠 — **직원 PC 가 의도치 않게 페이로드 발신자
+가 되는 케이스** (피싱·CSRF·악성 광고) 도 시뮬레이션할 수 있다.
+
+```
+시나리오: 직원 PC (10.20.32.60) → JuiceShop 에 의심 요청
+   ① 공격자가 직원에게 피싱 메일 전송 (URL 안에 페이로드 포함)
+   ② 직원이 URL 클릭 → 브라우저가 JuiceShop 에 자동 GET 요청 (XSS / CSRF)
+   ③ 서버 측 WAF audit 의 client_ip = 10.20.32.60
+```
+
+### Blue 측 단서 — 본 강의의 Red 가 알아야 할 것
+
+직원 PC 에서 발생한 요청은 — **WAF audit (client_ip)** + **Windows Sysmon (EID 1+3)** 양쪽에서
+잡힌다. Red 가 직원 PC 를 경유해 페이로드를 보내도, Blue 의 SIEM 에는 두 source 가 함께 등장.
+**완전 익명은 없다** 가 본 강의의 윤리적 메시지.
+
+> Burp 의 학습 목표는 "도구 사용" 이 아니라 **공격이 어디서 어떻게 잡히는지** 이해. Windows 의
+> 시각이 추가되면서 Red 는 자신의 흔적을 더 정확히 그릴 수 있어야 한다.
+
+---
+
 ## 10. 과제
 
 ### A. JuiceShop API 매핑 (필수, 40점)

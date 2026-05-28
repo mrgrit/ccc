@@ -582,6 +582,34 @@ sudo tail -10 /var/log/apache2/modsec_audit.log | head -3 | \
 
 ---
 
+## 9.5 파일 업로드 → Windows 직원 PC 다운로드 → 실행 (W03 secuops 위빙)
+
+파일 업로드 취약점이 잡힌 뒤의 표준 후속 chain: **업로드된 악성 파일을 직원 PC 가 다운로드해 실행
+한다**. 이 chain 의 마지막 단계가 Windows 사용자 PC 에서 일어난다 (대부분 실무 상황).
+
+### 표준 chain — 4 단계
+
+```
+1. (서버) 파일 업로드 취약점으로 webshell.php → /uploads/x.php (외부 노출)
+2. (서버) 공격자가 외부에서 x.php 실행 → 추가 도구 (예: payload.exe) 호스팅
+3. (직원 PC) victim 이 피싱·매크로·악성 광고로 payload.exe 다운로드
+4. (직원 PC) victim 이 payload.exe 실행 → Sysmon EID 1 + EID 3 + EID 11 의 합주
+```
+
+### Red 의 흔적 — 단계별
+
+| 단계 | Blue 측 단서 |
+|------|-------------|
+| ① 업로드 | Apache access + ModSec audit (CRS 932) |
+| ② 외부 호스팅 | Apache access (의심 URL) |
+| ③ 다운로드 | **Sysmon EID 1 (curl/iwr) + EID 3 (외부 IP)** |
+| ④ 실행 | **Sysmon EID 1 (payload.exe ProcessCreate) + EID 11 (FileCreate)** |
+
+> 본 주차의 SSRF/파일업로드/Path Traversal 의 학습 마지막은 **endpoint 측 실행** 까지 — 그 endpoint
+> 가 Windows 직원 PC 라는 사실이 침해 chain 의 본질.
+
+---
+
 ## 10. 한국 사례 + 표준 매핑
 
 - **Capital One 2019** (SSRF → EC2 metadata) : 본 주차의 가장 유명 사례

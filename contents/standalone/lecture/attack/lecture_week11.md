@@ -766,6 +766,32 @@ sudo tail -100 /var/ossec/logs/alerts/alerts.json | \
 
 ---
 
+## 13.5 Windows 권한상승 — 짧은 비교 (W03 secuops 위빙)
+
+본 주차는 Linux 권한상승이 중심이다. Windows 권한상승은 OS 가 다르지만 분석 패턴은 유사하다 —
+**일반 사용자 권한 → 관리자(또는 SYSTEM) 권한**.
+
+### Windows 권한상승 5 표준 패턴
+
+| 패턴 | 의미 | Blue 측 단서 |
+|------|------|-------------|
+| UAC bypass | 사용자 동의 없이 elevated 토큰 획득 (fodhelper, eventvwr 등) | Sysmon EID 1 의 비정상 parent-child 관계 |
+| Token 도용 | SeImpersonatePrivilege 활용 (RottenPotato 류) | Sysmon EID 10 (LSASS 접근) |
+| 서비스 권한 오용 | 약한 서비스 권한 (modify) | Sysmon EID 11 (Service Path 변경) |
+| Registry 권한 오용 | 약한 키 권한 (AlwaysInstallElevated 등) | Sysmon EID 12/13/14 |
+| Stored credential | runas / DPAPI / SAM 파일 | Sysmon EID 1 (mimikatz 류 도구 실행) |
+
+### Linux ↔ Windows 권한상승의 공통점
+
+- 둘 다 **잘못된 권한 설정** 이 핵심 (Linux SUID / Windows 서비스 권한).
+- 둘 다 **stored credential** 이 황금 (Linux /etc/shadow / Windows SAM/DPAPI).
+- 둘 다 **alert source 가 호스트 측** (auditd / Sysmon).
+
+> 본 주차의 Linux 권한상승 학습 패턴은 Windows 에 그대로 옮길 수 있다 — OS 별 도구만 익히면 된다.
+> 실 모의침투에선 거의 항상 **Windows 권한상승** 이 더 자주 나온다 (사용자 PC 가 핵심 표적이므로).
+
+---
+
 ## 14. 한국 사례
 
 - 대부분 KISA 침해 사고가 첫 진입 후 권한 상승 → 본 주차 학습 의 가치

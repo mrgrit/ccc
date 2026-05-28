@@ -618,6 +618,38 @@ Coverage Matrix + AAR = 본 통제의 입증.
 
 ---
 
+## 12.5 Purple Team × Windows victim PC — Red 와 Blue 의 같은 호스트 (W03 secuops 위빙)
+
+Purple Team 의 가치는 **Red 가 무엇을 하고 Blue 가 무엇을 잡는지를 같은 시점에 확인** 하는 것.
+본 6v6 의 Windows 사용자 PC 가 그 무대로 가장 적합.
+
+### Purple cycle — Windows victim 1회
+
+```
+Red (sandcat 또는 수동):
+  ① powershell -EncodedCommand <b64>
+  ② Sysmon 이벤트 발생 (EID 1)
+  ③ Caldera 가 ability 실행 결과 기록 (성공/실패)
+
+Blue (SOC 분석가):
+  ④ Wazuh dashboard 에 alert (rule 100700 등)
+  ⑤ Discover 에서 ProcessGuid → EID 1 의 CommandLine 확인
+  ⑥ ATT&CK heatmap 의 T1059.001 칸이 칠해짐
+
+Coverage 평가:
+  - ability 시도 횟수 N
+  - alert 가 뜬 횟수 M
+  - coverage = M/N
+  → coverage < 100% 인 ability 가 룰 강화 후보
+```
+
+### 본 강의의 핵심 — coverage 의 의미
+
+Purple Team 의 학습은 "Red 가 강한가 / Blue 가 강한가" 가 아니라 **"우리 인프라의 coverage 가 어디
+까지인가"** 의 측정. Windows 사용자 PC 가 들어옴으로써 Windows ability 들의 coverage 도 측정 대상이 된다.
+
+---
+
 ## 13. 과제
 
 ### A. Coverage Matrix (필수, 40점)

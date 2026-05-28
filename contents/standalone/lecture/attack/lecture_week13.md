@@ -697,6 +697,30 @@ ssh 6v6-siem "sudo tail -50 /var/ossec/logs/alerts/alerts.json | jq \"select(.ru
 
 ---
 
+## 10.5 Caldera + Windows agent (sandcat) — 본 6v6 의 추가 표면 (W03 secuops 위빙)
+
+Caldera 의 agent (sandcat) 는 Linux/macOS 외에 **Windows 도 지원** (PowerShell 다운로드 가능).
+본 6v6 의 Windows 사용자 PC (10.20.32.60) 에 sandcat 을 깔면 — Caldera 가 Windows 측 ability
+(PowerShell, mshta, registry 조작 등) 를 자동 emulate 한다.
+
+### Windows ability 의 카탈로그 (예)
+
+| Tactic | Technique | Caldera ability 예 |
+|--------|-----------|------------------|
+| Execution | T1059.001 | PowerShell -EncodedCommand |
+| Defense Evasion | T1218.005 | mshta http URL |
+| Credential Access | T1003.001 | LSASS dump (시뮬레이션) |
+| Discovery | T1082 | systeminfo / Get-ComputerInfo |
+| Persistence | T1547.001 | Run key 추가 |
+| C2 | T1071.001 | HTTPS callback |
+
+### 본 강의의 적용 — 안전한 시뮬레이션
+
+> **본 강의의 sandcat 사용은 6v6 학습 한정**. 6v6 외부에 sandcat 을 배포하는 것은 회사 IT 정책
+> 및 정보통신망법 위반 가능 — 명시적 권한 없이 금지.
+
+---
+
 ## 11. ATT&CK 매핑
 
 위 §8 참조 + 본 ability 작성으로 모든 Tactic 자동화 가능.
