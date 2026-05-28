@@ -12,6 +12,37 @@
 
 ## In-Progress
 
+### P27. 6v6 Windows 엔드포인트 + 4과목 Windows 반영 [STATUS: 🔄 Win 기반 구축중 — tiny11 /oem 자동계측 설치 (2026-05-28)]
+
+**동기**: 사용자 요청 — 6v6(베어메탈 0.105, Ubuntu+Docker)에 Windows 사용자 PC 엔드포인트 추가 후,
+secuops-easy / secuops / soc / attack 4과목 강의+실습에 Windows 활용을 단계적 반영.
+**철칙(사용자)**: 한 줄씩 정독·정성 작성, 전부 테스트로 검증, 자동화/병렬 금지·순차 꼼꼼, 속도<품질,
+재작업 없게 확인 또 확인, 뒤로 갈수록 품질 저하 금지. 리소스 허용 시 구버전 Windows 추가(취약점/악성코드 개념용).
+
+**Windows 엔드포인트**: `dockurr/windows` tiny11, 6v6-int **10.20.40.50**, RDP 3389 / 웹뷰어 :8006 (ccc/ccc).
+compose=`/home/ccc/6v6/docker-compose.windows.yml`, `/oem/install.bat`로 첫 부팅 시 **Sysmon(SwiftOnSecurity)
++ Wazuh agent 4.10.0(→10.20.32.100) 자동 설치**. KVM 네이티브(베어메탈). RAM 15G 천장이 제약.
+
+**DoD**:
+- [ ] Win 기반: tiny11 설치 + Sysmon/Wazuh 계측 + 에이전트 Active + Sysmon 이벤트 SIEM 도달 실측
+- [ ] secuops-easy 6주 Windows 반영 (한 주차씩 실측)
+- [ ] secuops 15주 Windows 반영
+- [ ] soc 15주 Windows 반영
+- [ ] attack 15주 Windows 반영 (구버전 Windows 검토)
+
+**진행/교훈 (2026-05-28 심야)**:
+- **존 격리 발견**: 6v6 docker 네트워크는 존 간 격리 — int(10.20.40)→dmz(매니저 10.20.32.100) timeout.
+  사용자 PC를 int에 두면 SIEM 도달 불가 → **Windows를 dmz 10.20.32.60**(빈 IP; .50은 portal)로 배치.
+- **🚨 SIEM 잠재버그 수정**: 매니저 재시작 시 analysisd가 `local_rules.xml`(root가 `<ruleset>` — 무효,
+  `<group>`이어야 함)로 죽어 **매니저 전체 다운**. 재시작 전엔 메모리상 가려져 있었음. fix: root를
+  `<group name="local,">` + SSH brute-force 룰을 올바른 문법(if_matched_sid/same_source_ip/mitre id)으로
+  재작성 → **`wazuh-analysisd -t`로 검증 후** 재시작 → 전 데몬 가동·authd up·1514/1515 listen·fw/web/ips Active.
+  교훈: 매니저 재시작 전 `analysisd -t` 필수. (이전 .bak 보존)
+- 매니저 authd 미가동도 이 다운의 일부였고 복구로 해결(자동등록 가능).
+
+**Next**: dmz 이동 후 에이전트 등록 대기(bg). 떠도 안 떠도(미설치면 fresh 재설치) → 등록·Sysmon·웹브라우징 검증 → secuops-easy W1. [[project_secuops_easy]] [[feedback_concise_no_tmi]]
+
+
 ### P26. secuops-easy 특강 — 보안장비 입문 (방화벽·IPS·WAF GUI + 6주 교안/실습) [STATUS: ✅ COMPLETE — 5 레포 push, CC 전수 실측 (2026-05-27)]
 
 **동기**: 현 secuops(15주, 50KB/주차)가 완전 초보에게 너무 어려움. nftables/Suricata/ModSecurity 를

@@ -80,6 +80,7 @@ graph LR
         IPS_D[IPS eth1<br/>10.20.32.1]
         WEB[웹서버+WAF<br/>10.20.32.80]
         SIEM[SIEM Wazuh<br/>10.20.32.100]
+        WIN[사용자 PC<br/>Windows 10.20.32.60]
     end
     subgraph INT["④ int 구역 (내부 깊숙한 곳)"]
         APP[실제 웹앱들<br/>JuiceShop 등]
@@ -91,6 +92,8 @@ graph LR
     IPS_D --> WEB
     WEB --> APP
     WEB --> SIEM
+    WIN -->|웹 접속| WEB
+    WIN -.Sysmon/Wazuh.-> SIEM
     style ATK fill:#f85149,color:#fff
     style FW_E fill:#22d3ee,color:#04161a
     style FW_P fill:#22d3ee,color:#04161a
@@ -98,15 +101,19 @@ graph LR
     style IPS_D fill:#f59e0b,color:#04161a
     style WEB fill:#fb7185,color:#fff
     style SIEM fill:#a78bfa,color:#fff
+    style WIN fill:#60a5fa,color:#fff
 ```
 
-**이 그림에서 꼭 기억할 점 3가지:**
+**이 그림에서 꼭 기억할 점 4가지:**
 
 1. **공격자(빨강)** 는 가장 바깥 `ext` 구역에 있습니다. 안으로 들어오려면 반드시 장비들을 거쳐야 합니다.
 2. **방화벽과 IPS 는 다리(NIC)를 두 개씩** 가집니다. 한 발은 바깥 구역에, 한 발은 안쪽 구역에
    걸치고 있어서 "문" 역할을 합니다. (그림의 점선 `-.같은 장비.-` 이 한 장비의 양다리입니다.)
 3. 가장 안쪽 `int` 에는 진짜 웹 애플리케이션이 있습니다. 여기까지 도달하려면 **방화벽 → IPS →
    WAF** 를 모두 통과해야 합니다.
+4. **사용자 PC(파랑, Windows)** 는 실제 직원이 쓰는 엔드포인트입니다. 보안장비들이 결국 지키려는
+   대상이자, 공격자가 노리는 표적입니다. 이 PC 의 행위는 **Sysmon + Wazuh** 로 SIEM 에 기록됩니다.
+   (방화벽·IPS·WAF 가 "관문"이라면, 이 PC 는 "지켜야 할 사람의 책상"입니다.)
 
 ---
 
@@ -131,6 +138,9 @@ graph LR
 - 외부에 서비스를 제공해야 하는 서버들이 모인 곳입니다.
   - **웹서버 + WAF** (10.20.32.80) — 우리가 보호할 대상이자 WAF 가 동작하는 곳
   - **SIEM (Wazuh)** (10.20.32.100) — 모든 장비의 로그를 모아 보는 관제실
+  - **사용자 PC (Windows)** (10.20.32.60) — 실제 직원이 쓰는 윈도우 PC. 웹 사이트에 접속하고,
+    공격자의 **최종 표적**이 되며, **Sysmon + Wazuh 에이전트**로 행위가 SIEM 에 기록·감시된다.
+    (실제 회사망에선 내부망에 두지만, 본 실습망에선 관제·웹에 바로 닿는 dmz 세그먼트에 배치한다.)
 - IPS 의 안쪽 다리(`eth1`, 10.20.32.1)가 이 구역을 향합니다.
 - **보안 관점:** "DMZ" 는 군사용어로 비무장지대입니다. 외부에 노출되지만 내부망과는 분리해서,
   여기가 뚫려도 더 깊은 곳은 지키도록 합니다.

@@ -299,3 +299,47 @@ steps:
           - "**[API] curl ips-gui /api/eve** — counts/events 의 event_type"
           - "**[정리] 4구역 토폴로지 직접 작도** — ext/pipe/dmz/int + 장비 위치"
     target_vm: attacker
+
+  - order: 7
+    instruction: |
+      ## 🎯 미션 — Windows 사용자 PC 가 감시되고 있는지 확인
+
+      6v6 에는 실제 직원이 쓰는 **Windows 사용자 PC**(10.20.32.60)가 있다. 이 PC 는 보안장비들이
+      지키려는 **엔드포인트(표적)** 이자, **Sysmon + Wazuh 에이전트**로 SIEM 에 감시된다. SIEM(Wazuh)
+      에 이 PC 가 에이전트로 등록·연결돼 있는지 확인한다.
+
+      ## 💻 확인 명령 (SIEM 매니저에서)
+      ```bash
+      docker exec 6v6-siem /var/ossec/bin/agent_control -l | grep -i 6v6-win
+      ```
+      ## 🔍 무엇을 보나
+      `ID: 005, Name: 6v6-win, ... Active` — Windows PC 가 활성 에이전트로 감시 중. SIEM 대시보드
+      (`http://siem.6v6.lab/`)의 Agents 화면에서도 `6v6-win` 을 볼 수 있고, 이 PC 의 프로세스 실행
+      (Sysmon), 로그인, 보안 이벤트가 모두 모인다. **방화벽·IPS·WAF 가 "관문"이라면 이 PC 는
+      "지켜야 할 책상"** 이며, 엔드포인트까지 감시망에 들어와야 진짜 방어가 완성된다.
+
+      ## ✅ 합격 기준
+      출력에 `6v6-win` 이 보이고 상태가 Active 다.
+    hint: 'SIEM 에서 Windows 엔드포인트(6v6-win) 에이전트 확인. expect: 6v6-win'
+    category: synthesis
+    points: 10
+    answer: |
+      docker exec 6v6-siem /var/ossec/bin/agent_control -l | grep -i 6v6-win
+    answer_detail: |
+      ID 005, 6v6-win, Active. Windows 11 엔드포인트가 Sysmon+Wazuh 로 SIEM 에 감시됨.
+      수집 채널: Microsoft-Windows-Sysmon/Operational, Security, System, Application, SCA.
+    verify:
+      type: output_contains
+      expect: '6v6-win'
+      field: stdout
+      semantic:
+        intent: "엔드포인트(Windows 사용자 PC)도 감시망에 포함됨을 확인 — 방어의 최종 대상 이해"
+        success_criteria:
+          - "Wazuh 에 6v6-win 에이전트 Active"
+          - "Sysmon/Windows 이벤트가 SIEM 으로 모임을 이해"
+          - "엔드포인트가 보안장비들이 지키는 최종 표적임을 설명"
+        acceptable_methods:
+          - "**[GUI] SIEM 대시보드(siem.6v6.lab) → Agents 에서 6v6-win 확인** (권장)"
+          - "**[CLI] agent_control -l 에서 6v6-win Active**"
+          - "**[설명] 관문(fw/ips/waf) + 엔드포인트(Windows) = 완성된 방어** 서술"
+    target_vm: siem
