@@ -241,53 +241,69 @@ steps:
 
   - order: 7
     instruction: |
-      ## 🎯 종합 capstone — 한 공격, 세 장비의 흔적
+      ## 🎯 종합 capstone — 한 공격, 네 곳의 흔적 (장비 3 + 엔드포인트)
 
-      6주의 마무리다. WAF 에 sqlmap 차단 룰을 두고, 공격자에서 **sqlmap UA + SQLi(UNION)** 공격을
-      한 번 보낸다. 그리고 **세 장비** 의 흔적을 한 번에 확인한다.
-      - **WAF**: 차단(403)
-      - **IPS**: eve.json 에 sqlmap/UNION alert (기본 룰이 탐지)
-      - **방화벽**: conntrack 에 연결 기록
+      6주의 마무리다. ① 공격자가 **sqlmap UA + SQLi(UNION)** 로 외부에서 공격하고, ② 동시에 직원
+      Windows PC 가 악성 페이지(XSS)에 노출되는 두 흐름을 함께 흘려보낸 뒤, **네 곳** 의 흔적을 한
+      번에 확인한다.
+      - **방화벽**: conntrack 에 외부 공격자의 연결 기록
+      - **IPS**: eve.json 에 sqlmap/UNION alert
+      - **WAF**: 외부 공격자 403 차단 + 직원 PC 의 악성 요청도 audit(client_ip 10.20.32.60)에 기록
+      - **엔드포인트(Windows)**: Sysmon 이 PC 내부 행위를 이벤트로 기록 (host 가시성)
 
       ## 💻 확인 명령
       ```bash
-      # WAF sqlmap 차단 룰
+      # ① WAF 에 sqlmap 차단 룰
       curl -s -X POST -H "Host: waf-gui.6v6.lab" -H "Content-Type: application/json" \
         http://10.20.30.1/api/rule/apply \
         -d '{"rule":"SecRule REQUEST_HEADERS:User-Agent \"@contains sqlmap\" \"id:9000099,phase:1,t:lowercase,deny,status:403,log,msg:'\''EDU capstone'\'',severity:'\''CRITICAL'\''\""}' >/dev/null
-      # 공격 1회
+      # ② 외부 공격자 → SQLi
       W=$(curl -s -o /dev/null -w "%{http_code}" -A "sqlmap/1.7" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?q=1%20UNION%20SELECT%201")
+      # ③ 직원 PC(Windows victim) → 악성 페이지 클릭(XSS)
+      sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.32.60 \
+        'try { (iwr -UseBasicParsing "http://dvwa.6v6.lab/?q=%3Cscript%3Ealert%281%29%3C/script%3E" -EA Stop).StatusCode } catch { $_.Exception.Response.StatusCode.value__ }' >/dev/null
       sleep 2
-      # IPS 흔적
+      # 네 곳의 흔적 수집
       I=$(curl -s -H "Host: ips-gui.6v6.lab" "http://10.20.30.1/api/eve?type=alert&n=30" | grep -c -i "sqlmap\|union")
-      # 방화벽 흔적
       F=$(curl -s -H "Host: fw-gui.6v6.lab" "http://10.20.30.1/api/conntrack" | jq .count)
-      echo "capstone WAF=$W IPS_alerts=$I FW_conn=$F"
+      A=$(curl -s -H "Host: waf-gui.6v6.lab" "http://10.20.30.1/api/audit?n=30&blocked=1" | jq '[.events[]|select(.client_ip=="10.20.32.60")]|length')
+      S=$(sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.32.60 \
+        'Get-WinEvent -LogName "Microsoft-Windows-Sysmon/Operational" -MaxEvents 50 -EA SilentlyContinue | Measure-Object | Select -ExpandProperty Count')
+      echo "capstone WAF=$W IPS_alerts=$I FW_conn=$F WIN_victim_audit=$A WIN_sysmon=$S"
       ```
       ## ✅ 합격 기준
-      출력에 `WAF=403` 이 보인다(세 장비 흔적 동시 확인).
-    hint: '한 공격 → WAF 403 + IPS alert + FW conntrack. expect: WAF=403'
+      출력에 `WAF=403` 이 보이고, WIN_victim_audit ≥ 1, WIN_sysmon ≥ 1 (네 곳 모두 흔적 확인).
+    hint: '한 공격 + victim 노출 → fw/ips/waf/엔드포인트 흔적. expect: WAF=403'
     category: synthesis
     points: 20
     answer: |
       curl -s -X POST -H "Host: waf-gui.6v6.lab" -H "Content-Type: application/json" http://10.20.30.1/api/rule/apply -d '{"rule":"SecRule REQUEST_HEADERS:User-Agent \"@contains sqlmap\" \"id:9000099,phase:1,t:lowercase,deny,status:403,log,msg:'\''EDU capstone'\'',severity:'\''CRITICAL'\''\""}' >/dev/null
       W=$(curl -s -o /dev/null -w "%{http_code}" -A "sqlmap/1.7" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?q=1%20UNION%20SELECT%201")
+      sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.32.60 'try { (iwr -UseBasicParsing "http://dvwa.6v6.lab/?q=%3Cscript%3Ealert%281%29%3C/script%3E" -EA Stop).StatusCode } catch { $_.Exception.Response.StatusCode.value__ }' >/dev/null
       sleep 2
       I=$(curl -s -H "Host: ips-gui.6v6.lab" "http://10.20.30.1/api/eve?type=alert&n=30" | grep -c -i "sqlmap\|union")
       F=$(curl -s -H "Host: fw-gui.6v6.lab" "http://10.20.30.1/api/conntrack" | jq .count)
-      echo "capstone WAF=$W IPS_alerts=$I FW_conn=$F"
-    answer_detail: "한 공격이 WAF=403 차단, IPS eve 에 sqlmap/UNION alert, FW conntrack 에 연결로 남음. 심층 방어 종합 — 세 흔적 모두 SIEM 으로 모임."
+      A=$(curl -s -H "Host: waf-gui.6v6.lab" "http://10.20.30.1/api/audit?n=30&blocked=1" | jq '[.events[]|select(.client_ip=="10.20.32.60")]|length')
+      S=$(sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.32.60 'Get-WinEvent -LogName "Microsoft-Windows-Sysmon/Operational" -MaxEvents 50 -EA SilentlyContinue | Measure-Object | Select -ExpandProperty Count')
+      echo "capstone WAF=$W IPS_alerts=$I FW_conn=$F WIN_victim_audit=$A WIN_sysmon=$S"
+    answer_detail: "네 곳 흔적: WAF=403(외부)+IPS alert(네트워크 패턴)+FW conntrack(연결)+WIN_victim_audit(직원의 악성 요청 WAF 차단)+WIN_sysmon(엔드포인트 호스트 이벤트). 모두 같은 SIEM 으로 모임 — 분석가 한 화면 상관분석."
     verify:
       type: output_contains
       expect: 'WAF=403'
       field: stdout
       semantic:
-        intent: "같은 공격을 방화벽·IPS·WAF 에서 동시에 추적 — 심층 방어 종합(6주 finale)"
-        success_criteria: ["WAF 가 403 차단", "IPS eve 에 alert", "방화벽 conntrack 에 연결", "세 흔적이 SIEM 으로 모임을 이해"]
+        intent: "한 공격(과 victim 노출)을 네 곳에서 동시 추적 — 심층 방어+엔드포인트 종합(6주 finale)"
+        success_criteria:
+          - "WAF 403 차단 (외부 sqlmap)"
+          - "IPS eve alert"
+          - "FW conntrack 기록"
+          - "WAF audit 에 victim(10.20.32.60) XSS 차단 기록"
+          - "Windows Sysmon 이 PC 내부 행위 기록"
+          - "네 흔적이 SIEM 으로 모임을 이해"
         acceptable_methods:
-          - "**[GUI] 세 콘솔(waf/ips/fw)에서 각 흔적 확인** (권장)"
-          - "**[API] WAF 403 + IPS eve alert + FW conntrack**"
-          - "**[보고서] 한 공격의 3계층 흔적 정리**"
+          - "**[GUI] 네 콘솔(fw/ips/waf + SIEM의 Agents) 흔적 직접 확인** (권장)"
+          - "**[API] WAF 403 + IPS alert + FW conn + WAF audit client_ip + Win Sysmon**"
+          - "**[보고서] 한 공격·한 노출 → 네 계층 흔적 정리 (분석가 관점)**"
     target_vm: attacker
 
   - order: 8
