@@ -297,3 +297,52 @@ steps:
         negative_signs: ["cleanup 누락"]
     target_vm: attacker
     risk_level: low
+
+  - order: 7
+    instruction: |
+      ## 🎯 시나리오 SOC-W15-Capstone-Windows — Windows victim PC 의 5 단계 timeline 추출
+
+      기말 종합의 핵심. Red 가 victim PC 에서 ① 다운로드(EID 1+3) → ② PowerShell 인코딩 실행(EID 1)
+      을 재현하고, Blue 분석가가 같은 호스트의 Sysmon 채널 timeline 으로 두 단계 가 한 사건임을 확인한다.
+
+      ## 💻 단계
+      ```bash
+      # Red ① — 의심 외부 IP 로 iwr (다운로드의 외형)
+      sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.32.60 \
+        'try { (iwr -UseBasicParsing http://10.20.30.1/ -EA Stop).StatusCode } catch { $_.Exception.Response.StatusCode.value__ }' >/dev/null
+      # Red ② — PowerShell EncodedCommand (실행·권한상승의 외형)
+      sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.32.60 \
+        'powershell -EncodedCommand dwBoAG8AYQBtAGkA' >/dev/null
+      sleep 3
+      # Blue — Sysmon 채널 최근 50개에서 2 단계의 키워드가 모두 보이는지
+      sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.32.60 \
+        'Get-WinEvent -LogName "Microsoft-Windows-Sysmon/Operational" -MaxEvents 100 | Where-Object { $_.Message -match "iwr|EncodedCommand|Invoke-WebRequest" } | Measure-Object | Select-Object -ExpandProperty Count'
+      ```
+      ## ✅ 합격 기준
+      매칭 카운트 ≥ 1 (분석가의 한 timeline 으로 ①+② 를 묶을 수 있음).
+    hint: 'iwr + EncodedCommand → Sysmon 매칭 ≥ 1'
+    category: detect
+    points: 10
+    answer: |
+      sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.32.60 'try { (iwr -UseBasicParsing http://10.20.30.1/ -EA Stop).StatusCode } catch { $_.Exception.Response.StatusCode.value__ }' >/dev/null
+      sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.32.60 'powershell -EncodedCommand dwBoAG8AYQBtAGkA' >/dev/null
+      sleep 3
+      N=$(sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.32.60 'Get-WinEvent -LogName "Microsoft-Windows-Sysmon/Operational" -MaxEvents 100 | Where-Object { $_.Message -match "iwr|EncodedCommand|Invoke-WebRequest" } | Measure-Object | Select-Object -ExpandProperty Count')
+      [ "$(echo $N | tr -d "[:space:]")" -ge 1 ] 2>/dev/null && echo "OK windows_timeline_count=$N" || echo "FAIL windows_timeline_count=$N"
+    answer_detail: "Windows victim 의 ①다운로드 + ②실행 두 단계가 같은 호스트의 같은 Sysmon 채널에 시간순으로 보임 → 분석가가 한 사건의 timeline 으로 묶는다."
+    verify:
+      type: output_contains
+      expect: 'OK'
+      field: stdout
+      semantic:
+        intent: "기말 capstone — Windows victim PC 의 다단계 사건을 한 timeline 으로 묶는 분석가 역량"
+        success_criteria:
+          - "iwr + EncodedCommand 의 두 패턴이 같은 호스트 같은 채널에서 발견"
+          - "분석가의 timeline 시각 (시간순 + 같은 host) 인지"
+          - "각 단계의 ATT&CK Tactic (Initial Access / Execution / C2) 매핑 가능"
+        acceptable_methods:
+          - "**[SSH] 두 Red 액션 후 Sysmon 채널 매칭 (권장)**"
+          - "**[SIEM] Wazuh Discover: agent.name:6v6-win + sort @timestamp + filter message:iwr|EncodedCommand**"
+          - "**[설명] 기말 답안 양식 (timeline 표) 1줄 작성**"
+    target_vm: attacker
+    risk_level: low

@@ -426,3 +426,48 @@ steps:
         negative_signs: ["cleanup 누락"]
     target_vm: bastion
     risk_level: low
+
+  - order: 9
+    instruction: |
+      ## 🎯 시나리오 SOC-W11-Windows — Windows victim 의 의심 실행 (Sysmon EID 1) 분석가 시각
+
+      악성코드 IR 은 90% 이상이 Windows 환경. 본 step 은 W03 R/B/P 의 인코딩된 PowerShell 실행을
+      재현한 뒤, 분석가 시각으로 Sysmon EID 1 의 CommandLine 패턴을 잡는다.
+
+      ## 💻 단계
+      ```bash
+      # Red — victim PC 에서 의심 실행 (EncodedCommand 패턴)
+      sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.32.60 \
+        'powershell -EncodedCommand dwBoAG8AYQBtAGkA' >/dev/null
+      sleep 2
+      # Blue — Sysmon Operational 채널에서 EncodedCommand 매칭 카운트
+      sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.32.60 \
+        'Get-WinEvent -LogName "Microsoft-Windows-Sysmon/Operational" -MaxEvents 100 | Where-Object { $_.Message -match "EncodedCommand" } | Measure-Object | Select-Object -ExpandProperty Count'
+      ```
+      ## ✅ 합격 기준
+      EncodedCommand 매칭 카운트 ≥ 1 (분석가가 즉시 high-severity 로 분류할 단서).
+    hint: 'PowerShell -EncodedCommand → Sysmon Message 매칭 ≥ 1'
+    category: detect
+    points: 10
+    answer: |
+      sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.32.60 'powershell -EncodedCommand dwBoAG8AYQBtAGkA' >/dev/null
+      sleep 2
+      N=$(sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.32.60 'Get-WinEvent -LogName "Microsoft-Windows-Sysmon/Operational" -MaxEvents 100 | Where-Object { $_.Message -match "EncodedCommand" } | Measure-Object | Select-Object -ExpandProperty Count')
+      [ "$(echo $N | tr -d "[:space:]")" -ge 1 ] 2>/dev/null && echo "OK encoded_cmd_count=$N" || echo "FAIL encoded_cmd_count=$N"
+    answer_detail: "Sysmon EID 1 의 CommandLine 패턴 매칭 = 분석가가 high-severity 로 분류하는 1급 단서. SIGMA t1059.001 매핑."
+    verify:
+      type: output_contains
+      expect: 'OK'
+      field: stdout
+      semantic:
+        intent: "Windows 악성코드 IR 의 가장 흔한 단서 (EncodedCommand) 를 분석가 시각으로 잡기"
+        success_criteria:
+          - "Sysmon Message 에 EncodedCommand 매칭"
+          - "T1059.001 ATT&CK 매핑 인지"
+          - "SIEM Discover 에서 같은 쿼리 가능함을 안다"
+        acceptable_methods:
+          - "**[SSH] PowerShell -EncodedCommand 직접 실행 후 Sysmon 매칭 (권장)**"
+          - "**[SIEM] Wazuh Discover: agent.name:6v6-win AND data.win.eventdata.commandLine:*EncodedCommand***"
+          - "**[설명] T1059.001 + 해당 패턴이 false positive 적은 이유 1문장 서술**"
+    target_vm: attacker
+    risk_level: low
