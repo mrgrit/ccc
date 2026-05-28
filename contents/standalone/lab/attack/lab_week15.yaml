@@ -315,3 +315,52 @@ steps:
         success_criteria: [7 stage, 6 finding, Coverage]
         acceptable_methods: ["**[관리적] markdown PTES**"]
     target_vm: bastion
+
+  - order: 7
+    instruction: |
+      ## 🎯 PTES Stage ⑤ Exploitation — Windows victim PC endpoint foothold
+
+      기말 PTES 의 Stage ⑤ Exploitation 표준 시나리오 — **Windows 사용자 PC 의 첫 발판** 확보를
+      실측한다. Red 가 두 단계 (다운로드 시뮬 + 인코딩 실행) 를 수행하고, Blue 가 같은 호스트의
+      Sysmon 채널에서 두 흔적을 함께 찾을 수 있어야 한다.
+
+      ## 💻 단계
+      ```bash
+      # Red ① 다운로드 시뮬 (iwr)
+      sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.32.60 \
+        'try { (iwr -UseBasicParsing http://10.20.30.1/ -EA Stop).StatusCode } catch { $_.Exception.Response.StatusCode.value__ }' >/dev/null
+      # Red ② PowerShell EncodedCommand
+      sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.32.60 \
+        'powershell -EncodedCommand dwBoAG8AYQBtAGkA' >/dev/null
+      sleep 3
+      # Blue — Sysmon Operational 채널에서 두 패턴 모두 매칭 카운트
+      sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.32.60 \
+        'Get-WinEvent -LogName "Microsoft-Windows-Sysmon/Operational" -MaxEvents 100 | Where-Object { $_.Message -match "iwr|EncodedCommand|Invoke-WebRequest" } | Measure-Object | Select-Object -ExpandProperty Count'
+      ```
+      ## ✅ 합격 기준
+      매칭 카운트 ≥ 1 (Red 의 두 단계가 Blue 의 한 채널에서 모두 잡힘).
+    hint: 'iwr + EncodedCommand → Sysmon 매칭 ≥ 1'
+    category: rbp_integration
+    points: 6
+    answer: |
+      sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.32.60 'try { (iwr -UseBasicParsing http://10.20.30.1/ -EA Stop).StatusCode } catch { $_.Exception.Response.StatusCode.value__ }' >/dev/null
+      sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.32.60 'powershell -EncodedCommand dwBoAG8AYQBtAGkA' >/dev/null
+      sleep 3
+      N=$(sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.32.60 'Get-WinEvent -LogName "Microsoft-Windows-Sysmon/Operational" -MaxEvents 100 | Where-Object { $_.Message -match "iwr|EncodedCommand|Invoke-WebRequest" } | Measure-Object | Select-Object -ExpandProperty Count')
+      [ "$(echo $N | tr -d "[:space:]")" -ge 1 ] 2>/dev/null && echo "OK ptes_stage5_count=$N" || echo "FAIL ptes_stage5_count=$N"
+    answer_detail: "PTES Stage ⑤ Exploitation — Windows endpoint foothold 표준 실측. Red 의 두 단계 흔적이 Blue 의 한 timeline 으로 묶임."
+    verify:
+      type: output_contains
+      expect: 'OK'
+      field: stdout
+      semantic:
+        intent: "PTES 7 단계의 Stage ⑤ Exploitation 을 Windows victim 으로 종합 시연 — Red 의 자기 인식 강화"
+        success_criteria:
+          - "iwr + EncodedCommand 의 두 패턴이 같은 호스트 같은 채널에서 발견"
+          - "Red 의 흔적이 Blue 측에 정확히 어디 남는지 인지"
+          - "ATT&CK T1071.001 + T1059.001 매핑 가능"
+        acceptable_methods:
+          - "**[SSH] 두 Red 액션 후 Sysmon 채널 매칭 (권장)**"
+          - "**[SIEM] Wazuh Discover: agent.name:6v6-win + filter message:iwr|EncodedCommand**"
+          - "**[설명] Red 의 자기 인식 (흔적 그리기) 1문장 + ATT&CK 매핑 2개**"
+    target_vm: attacker

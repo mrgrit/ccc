@@ -901,3 +901,42 @@ steps:
         negative_signs: ["정리 누락", "설정 변경됨", "백도어 UID 0 추가"]
     target_vm: bastion
     risk_level: low
+
+  - order: 11
+    instruction: |
+      ## 🎯 시나리오 Windows-Privesc-Compare — Windows 권한상승 패턴 한 가지 시연
+
+      본 주차의 Linux 권한상승 학습에 Windows 의 표준 패턴 한 가지를 추가로 손에 익힌다. Windows
+      에서 일반 사용자가 관리자 토큰을 받기 위해 가장 자주 보는 단서 — runas/whoami /priv 으로
+      현재 권한·특권 목록을 확인한다.
+
+      ## 💻 단계
+      ```bash
+      # 현재 사용자의 권한·특권 목록 (실제 elevation 시도 X — 가시화만)
+      sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.32.60 \
+        'whoami /priv'
+      ```
+      ## ✅ 합격 기준
+      Privilege 또는 SeImpersonatePrivilege 등 특권 목록 키워드가 출력에 포함된다.
+    hint: 'whoami /priv → SeImpersonatePrivilege 등 키워드'
+    category: discovery
+    points: 5
+    answer: |
+      sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.32.60 'whoami /priv'
+    answer_detail: "whoami /priv = 현재 토큰의 특권 목록 (Se*Privilege). SeImpersonatePrivilege / SeAssignPrimaryTokenPrivilege 가 보이면 토큰 도용형 권한상승 후보. 본 step 은 가시화만, 실 elevation X."
+    verify:
+      type: output_contains
+      expect: 'Privilege'
+      field: stdout
+      semantic:
+        intent: "Windows 권한상승 진단의 첫 단계 — 현재 토큰의 특권 가시화. Linux 의 sudo -l 과 같은 위치"
+        success_criteria:
+          - "whoami /priv 가 특권 목록을 반환"
+          - "Linux 의 sudo -l 과 같은 진단 위치 인지"
+          - "SeImpersonatePrivilege 가 켜져 있으면 RottenPotato 류 후보임을 안다"
+        acceptable_methods:
+          - "**[SSH] PowerShell whoami /priv (권장)**"
+          - "**[설명] Linux ↔ Windows 권한상승 진단의 한 줄 비교**"
+          - "**[설명] Se*Privilege 5개 중 토큰 도용에 쓰이는 것 1개 식별**"
+    target_vm: attacker
+    risk_level: low
