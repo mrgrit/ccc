@@ -481,6 +481,32 @@ echo "TTD (탐지 소요 시간): ${TTD}초"
 
 ---
 
+## Windows victim → MITRE ATT&CK 매핑의 풍부함 (W03 위빙)
+
+MITRE ATT&CK 의 기법 대다수는 **Windows 환경 가정** 으로 작성되었다 (LSASS 메모리, WMI, PowerShell,
+LOLBAS 등). 본 SOC 과목에 Windows 사용자 PC 가 들어오면서 ATT&CK 매핑이 **이론에서 실측으로** 바뀐다.
+
+### W03 R/B/P 5건의 ATT&CK 매핑
+
+| W03 시나리오 | ATT&CK Tactic | Technique | Sub-Technique |
+|--------------|---------------|-----------|--------------|
+| win-s01 의심 다운로드 (curl/iwr) | Command and Control | T1071 Application Layer Protocol | T1071.001 Web Protocols |
+| win-s02 PowerShell EncodedCommand | Execution | T1059 Command and Scripting Interpreter | T1059.001 PowerShell |
+| win-s03 인증 실패 폭주 (4625) | Credential Access | T1110 Brute Force | T1110.001 Password Guessing |
+| win-s04 LOLBAS (mshta + http) | Defense Evasion | T1218 System Binary Proxy Execution | T1218.005 Mshta |
+| win-s05 RDP 외부 시도 | Initial Access / Lateral Movement | T1021 Remote Services | T1021.001 Remote Desktop Protocol |
+
+### 분석가의 한 줄 매핑 — Wazuh dashboard 의 MITRE 뷰
+
+Wazuh dashboard 의 **MITRE ATT&CK** 뷰는 각 alert 의 rule.mitre.id 를 자동 매핑해 heatmap 으로 보여준다.
+Windows 사용자 PC 가 들어옴으로써 — Initial Access / Execution / Defense Evasion / Credential Access /
+C2 / Lateral Movement 의 6 Tactic 이 한 화면에서 색칠된다. **이전엔 Linux 위주여서 매핑이 sparse 했다**.
+
+> 본 강의의 ATT&CK 학습은 도표 외우기가 아니라 **우리 인프라의 실측 alert 가 어느 칸에 색칠되는지**
+> 의 손에 익히기다. Windows 가 들어오며 이 작업이 비로소 의미 있어졌다.
+
+---
+
 ## 웹 UI 실습: Dashboard에서 ATT&CK 매핑 + OpenCTI IoC 조회
 
 > **목적**: Wazuh Dashboard의 MITRE ATT&CK 뷰에서 공격 기법을 시각적으로 매핑하고,

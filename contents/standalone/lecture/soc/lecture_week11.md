@@ -537,6 +537,34 @@ ENDSSH
 
 ---
 
+## 악성코드 = Windows 가 본진 — 본 주차의 정수 (W03 위빙)
+
+악성코드 IR 의 90% 이상은 **Windows 환경**에서 일어난다 (악성코드 작성자가 가장 많이 노리는 OS).
+본 6v6 에 Windows 사용자 PC 가 들어오기 전까지 본 주차는 "이론" 이었다 — 이젠 **실측** 이다.
+
+### Windows 악성코드 IR 의 표준 5 단계
+
+| 단계 | 분석가의 행동 | 핵심 데이터 source |
+|------|-------------|------------------|
+| ① 탐지 | high-severity rule alert (CDB 매칭, EncodedCommand, mshta http) | Wazuh dashboard Alerts |
+| ② 격리 | 네트워크 격리 (방화벽 객체 그룹에 src IP 추가) | fw nft + Wazuh active-response |
+| ③ 수집 | Sysmon 이벤트 timeline + 파일 해시 + 메모리 dump (선택) | Sysmon archives + Wazuh FIM |
+| ④ 분석 | VirusTotal / 정적 분석 / sandbox (외부) | OpenCTI feed lookup |
+| ⑤ 박멸·복구 | 파일 제거 (Sysmon EID 11 의 Path), 사용자 PC 재이미징 | endpoint 측 작업 |
+
+### 분석가의 한 시간 — Windows 의심 binary 발견 시
+
+1. Wazuh alert: rule.id=100610 (CDB match), agent.name=6v6-win, hash=ABC...
+2. Discover: 같은 ProcessGuid 의 EID 1+3+11 모두 확인 → narrative 한 줄.
+3. 방화벽 객체 그룹에 destination IP 추가 → active C2 차단.
+4. OpenCTI 에 hash 입력 → 알려진 캠페인인지 확인.
+5. 사용자 격리 + 인터뷰 + (다른 사용자에게도) 동일 hash 검색.
+
+> **Windows 가 들어오기 전 vs 후** — 이전엔 악성코드 IR 이 strings/objdump 같은 정적 분석 위주
+> 였다. 이젠 **분석가의 SIEM dashboard + Sysmon timeline + OpenCTI** 의 3 도구 합주가 본업.
+
+---
+
 ## 다음 주 예고
 - Week 12: 인시던트 대응 실습 (3) - 내부 위협 (sudo 남용, 비인가 접근)
 

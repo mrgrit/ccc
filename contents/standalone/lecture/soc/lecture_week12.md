@@ -459,6 +459,38 @@ ENDSSH
 
 ---
 
+## 내부 위협 = Windows 사용자 PC 가 무대 — 본 주차의 정수 (W03 위빙)
+
+내부 위협 IR 은 정의상 **사용자(직원) 의 행동** 이 핵심 단서다. 본 6v6 에서 그 사용자는 **Windows
+사용자 PC (10.20.32.60) 의 ccc 계정** 이다.
+
+### 내부 위협 4 패턴 × Windows 단서
+
+| 패턴 | 분석가가 보는 Windows 단서 |
+|------|---------------------------|
+| 비인가 데이터 접근 | Security 4663 (객체 접근), 4624 LogonType 3 (네트워크 공유) |
+| sudo / runas 남용 | Security 4672 (특권 부여), Sysmon EID 1 (runas.exe CommandLine) |
+| 비정상 시간대 활동 | Security 4624 시각 + Sysmon EID 1 패턴 |
+| 외부 송신 | Sysmon EID 3 의 외부 DestinationIp, 큰 BytesSent |
+
+### UEBA (User and Entity Behavior Analytics) 관점
+
+UEBA 의 핵심은 **사용자별 baseline** 이다. Windows victim PC 의 baseline:
+- 평일 09:00–18:00 에 explorer/chrome/notepad 등 정상 프로세스.
+- 외부 통신은 회사 도메인 / 알려진 SaaS 위주.
+- 인증은 LogonType 2 (대화형) 가 거의 전부.
+
+baseline 을 벗어난 행위 — 토요일 02:00 에 powershell -EncodedCommand, 평소 안 가던 외부 IP 로 큰
+데이터 송신, LogonType 10 (RemoteInteractive) 의 비정상 시각 — 이것이 분석가의 trigger.
+
+### 분석가의 인터뷰 시점
+
+내부 위협 IR 의 묘미는 **사용자가 협력적인가, 의도적인가, 모르는가**의 판단이다. Wazuh dashboard 의
+이벤트만으론 절대 알 수 없다 — **사용자 인터뷰 + 컨텍스트** 가 결정. SOC 분석가의 일은 기술뿐
+아니라 **사람** 의 영역.
+
+---
+
 ## 다음 주 예고
 - Week 13: 위협 인텔리전스(CTI) 활용 - OpenCTI 연동, IOC 조회, 위협 헌팅
 

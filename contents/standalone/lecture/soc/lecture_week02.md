@@ -444,6 +444,39 @@ done
 
 ---
 
+## Windows 시스템 로그 — 분석가가 매일 보는 채널·EID (W03 위빙)
+
+본 주차의 "시스템 로그" 는 Linux 의 syslog/journald + auth.log/audit.log 가 중심이다. **Windows 측의
+같은 데이터**는 채널 이름이 다를 뿐 같은 분석가가 같은 화면(Wazuh) 에서 본다.
+
+### Linux ↔ Windows 시스템 로그 대조
+
+| 의미 | Linux 위치 | Windows 채널 + EID |
+|------|-----------|-------------------|
+| 로그온 성공 | `/var/log/auth.log` `Accepted password` | Security 4624 |
+| 로그온 실패 | `/var/log/auth.log` `Failed password` | Security 4625 |
+| 새 프로세스 | auditd `EXECVE` | Security 4688 + Sysmon EID 1 |
+| 권한 부여 | auditd `USER_AUTH` | Security 4672 |
+| 시스템 시작/종료 | journald `systemd` | System EID 6005/6006 |
+| 파일 변경 | auditd `PATH` | Sysmon EID 11 |
+
+### Wazuh 가 추상화 — agent.name 으로 OS 가림
+
+분석가의 KQL 한 줄:
+```
+agent.name:* AND (rule.id:5712 OR data.win.system.eventID:4625)
+```
+→ Linux SSH 실패(rule 5712) + Windows 로그온 실패(EID 4625) 가 **한 결과 패널**에 모인다.
+SOC 분석가는 OS 차이를 의식하지 않는다 — **사건 = 한 사람의 인증 실패 패턴** 이라는 시각이 본 주차의
+핵심.
+
+### Windows victim PC 의 일상 — SOC 분석가가 보는 단서
+
+직원이 PC 를 켜면 — Security 4624 (대화형 로그온) → Sysmon EID 1 (explorer.exe / 시작 프로그램들).
+업무 시작. 의심 행위가 없다는 사실 자체가 **baseline** 이다. baseline 을 알아야 이상이 보인다.
+
+---
+
 ## 웹 UI 실습: Wazuh Dashboard 탐색
 
 > **목적**: CLI에서 분석한 시스템 로그를 Wazuh Dashboard에서 검색하고 시각화하는 방법을 익힌다.

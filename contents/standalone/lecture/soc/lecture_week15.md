@@ -451,6 +451,49 @@ Week 15:    기말       -> 종합 인시던트 대응 훈련
 
 ---
 
+## 기말 Red vs Blue — Windows victim 중심 narrative (W03 위빙)
+
+본 기말 종합 IR 훈련의 **희생자(victim)** 를 Windows 사용자 PC (10.20.32.60) 로 두는 것을 권장한다.
+6v6 인프라 + Windows victim PC 의 한 컴플리트 case 는 분석가의 모든 도구·기법을 한 번에 동원시킨다.
+
+### Red vs Blue 5 단계 시나리오 — Windows victim 중심
+
+| 단계 | Red 행동 | Blue 분석가의 발견 source |
+|------|---------|-----------------------|
+| ① 정찰 | 외부 attacker → fw 6v6 포트스캔 | fw events.log + Suricata recon rule |
+| ② 침투 | victim 사용자에게 피싱 메일 → 의심 URL 클릭 (curl 다운로드 시뮬) | **Sysmon EID 1+3+11 (Win)** + WAF audit |
+| ③ 실행·권한상승 | PowerShell EncodedCommand 로 추가 도구 실행 | **Sysmon EID 1 (Win) + rule 100700 high alert** |
+| ④ 측방이동 | victim PC 가 내부 서비스에 비정상 접근 시도 (4625 폭주) | **Security 4625 (Win) + Wazuh 그룹 룰** |
+| ⑤ 데이터 유출 | curl POST 로 외부 IP 에 데이터 송신 | **Sysmon EID 3 + Suricata HTTP rule + fw outbound** |
+
+### Blue 의 종합 timeline 답안 양식
+
+학생은 다음 한 표로 5 단계를 정리한다.
+
+```
+| 시각                | 단계 | 도구       | 이벤트         | 핵심 필드                  | 권장 조치           |
+| ------------------ | ---- | ---------- | -------------- | -------------------------- | ------------------ |
+| 12:01 Day1         | ①   | fw events  | port_scan_9999 | saddr=10.20.30.202          | @blocklist 추가     |
+| 12:14              | ②   | Sysmon Win | EID 1 + 3      | Image=curl.exe / dport=80   | endpoint 격리 검토 |
+| 12:15              | ③   | Sysmon Win | EID 1 EncodedC | cmdline=...base64...        | high alert 조사   |
+| 12:30              | ④   | Win Sec    | 4625 × 8       | TargetUserName=admin        | 계정 잠금          |
+| 12:45              | ⑤   | Sysmon Win | EID 3 outbound | DestIp=10.20.30.202:8080    | 즉시 격리·증거보존 |
+```
+
+### 평가 항목 (배점 예시)
+
+- 각 단계별 도구·이벤트·필드 정확성 (5×5=25점)
+- timeline 의 시간순 일관성 (10점)
+- ATT&CK 매핑 정확성 (5×5=25점)
+- 권장 조치의 SOP 적합성 (15점)
+- **사용자 인터뷰** 필요 시점 식별 (10점) — Windows victim 의 핵심
+- 보고서의 narrative 1문장 요약 (15점)
+
+> **본 기말의 메시지** — Windows 가 본 인프라에 들어오기 전엔 SOC 분석가의 시야가 "서버" 였다.
+> 들어온 뒤엔 **"사람 + 서버"**. 본 기말 시나리오는 그 1+1 시각을 한 번에 평가한다.
+
+---
+
 ## 웹 UI 실습: Dashboard + OpenCTI 종합 관제 실습
 
 > **목적**: 기말 종합 훈련에서 Wazuh Dashboard와 OpenCTI를 동시에 활용하여

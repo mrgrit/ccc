@@ -454,6 +454,43 @@ for desc, cnt in rules.most_common(10):                # 반복문 시작
 
 ---
 
+## Windows 경보의 4 패턴 — 분석가가 가장 자주 보는 것 (W03 위빙)
+
+본 주차의 경보 분석 기초에 **Windows 사용자 PC (6v6-win) 경보 4 패턴** 을 더한다. 분석가가 Wazuh
+dashboard 의 Alerts 패널에서 Windows 측을 보면 다음이 다수다.
+
+### 1) 정상 baseline 경보 (대부분)
+
+- Sysmon EID 1: explorer.exe, chrome.exe, notepad.exe ... 매일 같은 패턴.
+- Security 4624 LogonType=2 (대화형): 직원이 로그온.
+- **분석가의 결정**: false positive 확정 또는 baseline 학습 자료 → 무시.
+
+### 2) 의심 다운로드 경보 (occasional)
+
+- Sysmon EID 1 + 3: `curl.exe` / `powershell.exe` 가 외부 IP 로 나감.
+- **분석가의 결정**: User-Agent / Destination IP / 시간대 보고 — 의심이면 조사 큐.
+
+### 3) 인증 실패 폭주 (rare but high)
+
+- Security 4625 × N 회.
+- **분석가의 결정**: 같은 SourceWorkstation / LogonType / SubStatus 분포 → brute force 판단.
+
+### 4) high-severity rule alert (true positive 후보)
+
+- PowerShell EncodedCommand / mshta + http / 의심 hash CDB 매칭 (W13).
+- **분석가의 결정**: 즉시 조사 + endpoint 확인 + (필요 시) 격리.
+
+### 4 패턴이 SOC 운영을 결정한다
+
+- baseline 경보가 90% — **무시 정확도** 가 분석가의 시간을 결정.
+- 의심·인증 실패가 9% — **triage 속도** 가 핵심.
+- 진짜 침해 후보가 1% 미만 — **놓치지 않는 것** 이 가장 중요.
+
+> 본 주차의 "경보 분석 기초" 는 4 패턴의 비중을 머리에 두고 false positive 와 true positive 의 균형
+> 을 잡는 훈련이다.
+
+---
+
 ## 웹 UI 실습: Dashboard에서 상관분석 뷰
 
 > **목적**: Dashboard의 검색과 시각화 기능을 활용하여 경보 간 상관관계를 분석한다.

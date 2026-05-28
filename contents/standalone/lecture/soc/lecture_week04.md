@@ -485,6 +485,34 @@ for line in sys.stdin:                                 # 반복문 시작
 
 ---
 
+## Windows 에이전트 — Wazuh 관제의 7번째 호스트 (W03 위빙)
+
+본 주차의 Wazuh 관제 환경은 Linux 서버 6대(secu/web/db/log/dev/test 또는 6v6 기준 fw/ips/web/siem
+등) 가 기본이다. 본 학기부터 **Windows 사용자 PC (10.20.32.60, agent name=6v6-win)** 가 7번째 호스트
+로 합류했다.
+
+### 분석가 관점의 차이 — Linux 6대 + Windows 1대
+
+| 측면 | Linux 6대 | Windows 1대 |
+|------|----------|------------|
+| 역할 | 서비스/인프라 | 사용자 PC (직원) |
+| 침해 패턴 | 외부 서비스 노출 → 취약점 공격 | 사용자 우발 행위 → 다운로드/실행 |
+| 주요 로그 | auth/syslog/Apache/Suricata | Sysmon (1/3/22/11) + Security (4624/4625) |
+| Wazuh 룰 그룹 | linux, ssh, apache | windows, sysmon_event*, win_security |
+| alert 빈도 | 낮음 (안정 서비스) | 높음 (사용자 활동 다수) |
+
+### 관제 워크플로 — Windows 가 들어와 바뀐 것
+
+- **알람 분류** — Linux alert 는 보통 "심각/조사" / Windows alert 는 "조사/baseline 학습" 비중이 크다.
+- **baseline 학습** — Windows 사용자 PC 는 매일 비슷한 프로세스(brave/edge/notepad/explorer) 가 뜬다.
+  baseline 을 만들고 그 밖의 것을 탐지하는 게 운영 효율.
+- **악성코드 cycle** — Windows 가 들어와 악성코드 alert 가 가능해졌다 (W11 의 본격 주제).
+
+> 본 강의의 Wazuh 관제는 "Linux 서버 운영" 에서 **"Linux 인프라 + Windows 사용자"** 의 1+1 시각으로
+> 확장된다. 매일 보는 알람의 절반은 Windows 측에서 온다고 가정하자.
+
+---
+
 ## 웹 UI 실습: Dashboard Security Events 분석 실습
 
 > **목적**: Wazuh Dashboard에서 Security Events를 검색, 필터링, 분석하는 실무 워크플로우를 체험한다.

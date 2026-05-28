@@ -517,6 +517,36 @@ echo "TTD (탐지 소요 시간): ${TTD}초"
 
 ---
 
+## Windows 측 네트워크 흔적 — Sysmon EID 3 의 가치 (W03 위빙)
+
+본 주차의 네트워크/웹 로그는 fw events + Suricata eve.json + ModSec audit + Apache access 의 4 source
+가 중심이다. **Windows 사용자 PC (10.20.32.60)** 가 더해지면서 분석가는 **호스트 측면의 네트워크
+시각** 하나를 더 얻는다 — Sysmon **EID 3 (NetworkConnect)**.
+
+### EID 3 가 다른 source 들과 다른 점
+
+- fw events: 트래픽이 어느 IP→어느 IP 인가 (계정 X, 프로세스 X)
+- Suricata: 트래픽의 패턴 (시그니처 매칭) — 프로세스 X
+- Apache access: HTTP 요청의 URL/UA — 클라이언트 호스트 IP 만
+- **Sysmon EID 3**: **어느 프로세스(Image+ProcessGuid) 가** 어디로 나갔나 — 호스트 측 컨텍스트
+
+### 분석가가 합주하는 한 사건
+
+> dvwa.6v6.lab 에 XSS 의심 페이로드가 들어왔다.
+
+- Apache access: 클라이언트 10.20.32.60, URL=/?q=`<script>`
+- ModSec audit: rule 941110 매칭, 차단
+- Suricata: HTTP rule alert (선택)
+- **Sysmon EID 1 + 3** (6v6-win 측): `Image=curl.exe`, `CommandLine=...`, `DestinationIp=10.20.32.80`
+
+→ **누가** (사용자 ccc) **무엇으로** (curl.exe) **어디에** (dvwa) **무엇을** (XSS 페이로드) 보냈는가
+의 한 줄 답이 나온다.
+
+> 네트워크 로그만으론 "어느 IP 가" 까지였다. 엔드포인트 로그가 더해지면서 **"어느 프로세스가"** 가
+> 답에 포함된다. 이게 본 주차의 한 단계 깊이.
+
+---
+
 ## 웹 UI 실습: Dashboard에서 에이전트 로그 확인
 
 > **목적**: CLI로 분석한 웹/네트워크 로그가 Wazuh Dashboard에서 어떻게 수집되고 표시되는지 확인한다.

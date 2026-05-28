@@ -441,6 +441,43 @@ ENDSSH
 
 ---
 
+## CTI 의 가치가 endpoint 까지 도달 — Windows 해시 lookup (W03 위빙)
+
+본 주차의 CTI 활용은 4 IOC 유형 (IP/도메인/URL/해시) 의 SIEM 통합이다. **Windows victim PC** 가
+없을 땐 **파일 해시 IOC** 의 적용 범위가 좁았다 — Linux 서버는 해시 비교의 source 가 거의 없다.
+
+### 4 IOC 의 적용 source — Windows 가 들어와 늘어남
+
+| IOC | source — Linux 만 있을 때 | source — Windows 가 들어온 뒤 |
+|-----|-----------------------|---------------------------|
+| IP | fw events, Suricata | + Sysmon EID 3 (Windows 측 외부 연결) |
+| 도메인 | Suricata DNS | + Sysmon EID 22 (Windows DNS 조회) |
+| URL | Suricata HTTP, Apache | + Sysmon EID 1 (Windows curl/iwr 의 CommandLine) |
+| **파일 해시** | (거의 없음 — Linux 서버는 해시 비교 source 가 없음) | **Sysmon EID 1 의 Hashes (MD5/SHA256/IMPHASH)** |
+
+### Wazuh CDB 통합 cycle — Windows 측
+
+```
+1. OpenCTI feed → SHA256 해시 N개 export → /var/ossec/etc/lists/malware-sha256
+2. ossec-makelists → .cdb 변환
+3. local_rules.xml 에 매칭 룰:
+   <rule id="100610" level="13">
+     <if_sid>61603</if_sid>
+     <list field="data.win.eventdata.hashes" lookup="match_key">
+       etc/lists/malware-sha256
+     </list>
+     <description>Windows malware hash matches CTI feed</description>
+   </rule>
+4. Windows victim 이 해당 binary 실행 시 → 즉시 high-severity alert
+```
+
+### 운영 결과 — CTI 의 ROI 가 비로소 분명해짐
+
+이전엔 OpenCTI 의 CTI 가치가 추상적이었다 (IP/도메인 정도). Windows 가 들어옴으로써 **해시 lookup**
+이 매일 분석가의 dashboard 에 high-severity alert 로 떠오른다 → CTI 운영의 ROI 가 측정 가능해진다.
+
+---
+
 ## 다음 주 예고
 - Week 14: 자동화 관제 - Bastion Agent Daemon 자율 탐지 에이전트
 

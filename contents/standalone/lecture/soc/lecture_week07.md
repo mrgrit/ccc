@@ -519,6 +519,53 @@ ssh 6v6-bastion "grep 'Accepted' /var/log/auth.log 2>/dev/null | \
 
 ---
 
+## SIGMA 룰을 Windows 측에 작성하는 분석가 (W03 위빙)
+
+SIGMA 룰 카탈로그(SigmaHQ) 의 70% 이상이 **Windows 환경 가정** 이다 (LogSource: windows category:
+process_creation 등). 본 SOC 과목에 Windows victim PC 가 들어오면서 분석가는 SIGMA 룰을 **공식
+카탈로그에서 가져와 우리 인프라에 적용**할 수 있다.
+
+### SIGMA → Wazuh 변환 예 (Windows process_creation)
+
+```yaml
+title: PowerShell Encoded Command
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    Image|endswith: '\powershell.exe'
+    CommandLine|contains: '-EncodedCommand'
+  condition: selection
+level: high
+tags:
+  - attack.execution
+  - attack.t1059.001
+```
+
+→ Wazuh local_rules.xml 변환:
+```xml
+<rule id="100700" level="12">
+  <if_sid>61603</if_sid>     <!-- sysmon_event1 -->
+  <field name="data.win.eventdata.image" type="pcre2">powershell\.exe$</field>
+  <field name="data.win.eventdata.commandLine" type="pcre2">-EncodedCommand</field>
+  <description>PowerShell Encoded Command (SIGMA t1059.001)</description>
+  <mitre><id>T1059.001</id></mitre>
+</rule>
+```
+
+### 분석가의 룰 작성 cycle (W03 → SIGMA → Wazuh)
+
+1. W03 R/B/P 시나리오 실측 → 어떤 EID·필드가 실제로 보이는지 확인.
+2. SigmaHQ 에서 해당 패턴의 공식 룰 검색.
+3. logsource·detection 을 우리 Wazuh 룰 문법으로 변환.
+4. 적용 후 같은 R/B/P 재현 → rule.id 매칭 확인.
+
+> **본 주차의 SIGMA 학습** 은 공식 카탈로그 100개를 외우는 게 아니라 — 우리 인프라에 Windows
+> 가 들어왔으니 **그 중 우리에게 필요한 5개를 변환해 적용해 보는 것**이다.
+
+---
+
 ## 웹 UI 실습: Dashboard에서 룰 관리 + OpenCTI IoC 등록
 
 > **목적**: Wazuh Dashboard에서 탐지 규칙을 검색/관리하고, OpenCTI에 IoC를 등록하여

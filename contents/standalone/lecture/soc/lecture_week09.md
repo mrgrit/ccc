@@ -529,6 +529,32 @@ echo "TTD (탐지 소요 시간): ${TTD}초"
 
 ---
 
+## Windows victim PC 의 IR 절차 — 1자리 더 늘어난 케이스 (W03 위빙)
+
+본 주차의 인시던트 대응 절차는 NIST SP 800-61 의 6 단계 (Preparation → Detection & Analysis →
+Containment → Eradication → Recovery → Post-Incident) 가 중심이다. **Windows 사용자 PC** 가 침해
+대상으로 들어옴으로써 분석가는 절차의 각 단계에서 **추가 액션 1줄**을 가진다.
+
+| NIST 단계 | Linux 서버 침해 | Windows 사용자 PC 침해 (추가 액션) |
+|----------|----------------|---------------------------------|
+| Detection & Analysis | rule.level / source 추적 | Sysmon EID 1/3/22 timeline + 사용자 인터뷰 |
+| Containment | iptables drop / 서비스 중단 | **네트워크 격리** (방화벽 객체 그룹) + 사용자 PC 잠금 |
+| Eradication | 패치 / 계정 비활성화 | **악성 파일 격리** (Sysmon EID 11 의 Path) + 사용자 PC 재이미징 |
+| Recovery | 서비스 재기동 | 사용자 PC 복구 + 사용자 비밀번호 재설정 |
+| Post-Incident | RCA 보고서 | **사용자 행동 교육** + 정책 보완 |
+
+### "사용자 인터뷰" 라는 새 단계
+
+Windows 사용자 PC 가 침해되면 **사용자(직원) 와의 짧은 인터뷰** 가 핵심 증거가 된다 — "그 시간에
+어떤 메일을 열었나, 어떤 링크를 클릭했나". 이 단계는 Linux 서버 침해엔 없었다.
+
+분석가의 SOP — **5 분 인터뷰 + 30 분 timeline 분석** 이 보통 첫 회기의 시간 배분.
+
+> 본 주차의 IR 절차에 Windows 가 들어옴으로써 **기술 + 사람** 의 1+1 구조가 명확해졌다. 사용자
+> PC 의 침해는 사람의 행동 패턴을 빼고 분석할 수 없다.
+
+---
+
 ## 웹 UI 실습: Dashboard Integrity Monitoring
 
 > **목적**: Wazuh Dashboard의 Integrity Monitoring(FIM) 뷰를 활용하여

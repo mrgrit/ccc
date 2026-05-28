@@ -505,6 +505,36 @@ echo "TTD (탐지 소요 시간): ${TTD}초"
 
 ---
 
+## 웹 공격의 클라이언트가 Windows 직원 PC 일 때 (W03 위빙)
+
+본 주차의 웹 공격 IR 은 보통 **외부 공격자(10.20.30.202) → 웹서버(10.20.32.80)** 의 구도다. 그러나
+실무에선 **내부 직원의 Windows PC 가 웹 공격의 클라이언트** 가 되는 케이스도 빈번하다 — 실수로
+악성 사이트 접속, 의심 URL 의 매개변수 클릭 등.
+
+### 두 클라이언트 시각의 비교
+
+| 출발지 | 분석가의 단서 source | 사건의 성격 |
+|--------|--------------------|------------|
+| 외부 공격자 | fw events / Suricata / WAF audit / Apache access | 의도된 공격 (sqlmap 등) |
+| **Windows 직원 PC** | **WAF audit (client_ip=10.20.32.60) + Sysmon EID 1+3** | 우발적 노출 / Phishing 결과 / 매크로 |
+
+### 분석가의 한 사건 — Windows victim 의 XSS 페이로드 송신
+
+- WAF audit: client_ip=10.20.32.60, URL=/?q=`<script>`, rule 941110 차단.
+- Sysmon EID 1 (6v6-win): Image=chrome.exe (또는 powershell/curl), CommandLine.
+- Sysmon EID 3: DestinationIp=10.20.32.80, DestinationPort=80.
+
+**분석가의 결정** — 사용자가 의도적으로 XSS 페이로드를 보낼 가능성은 낮다. 보통:
+1. 피싱 메일의 URL 클릭 (URL 안에 XSS 페이로드가 포함된 형태).
+2. 공격자가 만든 사이트가 자동으로 victim 의 브라우저에서 다른 사이트로 요청을 만들게 한 경우 (CSRF/XSS-stored).
+
+→ 사용자 인터뷰 (W09 의 추가 SOP) + 사용자의 메일 inbox 검토 가 핵심.
+
+> 본 주차의 웹 공격 IR 은 "외부 공격자" 시나리오뿐 아니라 "직원 PC 가 클라이언트" 시나리오를
+> 함께 다룬다. Wazuh 의 `client_ip` 필드를 보면서 출발지 IP 가 누구인지 늘 확인하자.
+
+---
+
 ## 웹 UI 실습: OpenCTI 악성코드 IoC 관리
 
 > **목적**: OpenCTI에서 악성코드 관련 IoC(파일 해시, C2 IP, 악성 도메인)를

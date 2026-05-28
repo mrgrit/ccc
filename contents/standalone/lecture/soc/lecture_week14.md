@@ -363,6 +363,31 @@ ENDSSH
 
 ---
 
+## Bastion 자동화에 Windows 호스트가 추가되며 — 6 → 7 (W03 위빙)
+
+Bastion Agent Daemon 은 지금까지 **Linux 호스트 6대** 의 자율 헬스체크·이상 대응을 수행했다.
+**Windows victim PC (6v6-win)** 가 들어오면서 7번째 자동화 대상이 된다 — 단, 운영 방식은 다르다.
+
+### Linux 6 ↔ Windows 1 — Bastion 의 자동화 차이
+
+| 측면 | Linux 6대 (Bastion 기본) | Windows 1대 (추가 자리) |
+|------|------------------------|------------------------|
+| 접속 방식 | SSH (key) | **SSH (Win32-OpenSSH)** 또는 WinRM |
+| 헬스체크 | systemctl + ss + df | Get-Service + Get-Process + Get-EventLog |
+| 자동 격리 | nft 룰 + ip route | **Windows Defender Firewall + 사용자 잠금** |
+| 로그 수집 | tail -f journal | **Get-WinEvent 채널 export** |
+| 자동 대응 | 알려진 패턴의 즉시 룰 적용 | **사용자 영향 高 → 자동 대응 신중** |
+
+### 자동화의 신중함 — Windows 사용자 PC 의 경우
+
+직원 PC 를 함부로 자동 격리하면 업무 마비. Bastion 의 active-response 정책은 **Windows 호스트는
+"알람 + 권장 조치" 까지만**, 실제 격리는 분석가의 ack 후. (Linux 서버는 더 공격적인 자동 대응 가능.)
+
+> Bastion + Windows 의 결합은 **자동화의 경계** 를 보여준다 — 모든 게 자동이어선 안 된다, 사람의
+> 책상에 직접 닿는 곳은 자동화의 끝이다.
+
+---
+
 ## 다음 주 예고
 - Week 15: 기말 종합 인시던트 대응 훈련 - Red Team vs Blue Team
 
