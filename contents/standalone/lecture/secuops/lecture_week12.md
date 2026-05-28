@@ -1062,6 +1062,23 @@ ATT&CK 자체가 STIX 2.1 형식으로 배포
 
 ---
 
+## 10.5 Windows 엔드포인트와의 연결 — Sysmon 해시·도메인 ↔ STIX Indicator (W03 위빙)
+
+CTI 의 IOC 는 IP/도메인/URL/파일 해시 4 종이 핵심이다. 우리 6v6 에서 **파일 해시**는 W03 의
+**Windows Sysmon** 이 생성한다 — EID 1 의 `Hashes` 필드 (MD5/SHA256/IMPHASH) 가 그것.
+
+| STIX Indicator | 6v6 의 source | 운영 사용 |
+|----------------|--------------|----------|
+| `[ipv4-addr:value = '10.20.30.202']` | Suricata + fw events | fw 객체 그룹 / Suricata 룰 |
+| `[domain-name:value = 'evil.example']` | Suricata DNS + Windows Sysmon EID 22 | suricata DNS 룰 / Wazuh DNS 룰 |
+| `[url:value = 'http://...']` | Suricata HTTP + Windows curl/iwr | ModSec URL 룰 |
+| `[file:hashes.'SHA-256' = '...']` | **Windows Sysmon EID 1 Hashes** | Wazuh CDB (W13) |
+
+> Windows 엔드포인트가 들어오면서 **파일 해시 IOC** 가 비로소 우리 인프라의 1급 시민이 된다.
+> 이전엔 Linux 서버 위주여서 해시 IOC 의 활용 가능성이 낮았다.
+
+---
+
 ## 11. 과제
 
 ### A. STIX 분석 (필수, 40점)

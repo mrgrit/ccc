@@ -791,6 +791,38 @@ W12-14 : OpenCTI + Threat Hunting + KISA 공유
 
 ---
 
+## 8.5 APT 5 단계 × Windows victim PC — 본 시험의 중심 narrative
+
+본 기말 APT 5 단계 시뮬의 **희생자(victim) 가 Windows 사용자 PC (10.20.32.60)** 라는 narrative 를
+권장한다 (W03 의 페르소나 그대로). 5 단계 각각에 Windows 흔적이 남는다 — 학생은 그 흔적을 timeline
+으로 묶어 한 report 로 만든다.
+
+| 단계 | 공격 행위 | 잡힐 곳 |
+|------|----------|---------|
+| ① 정찰 | 외부 attacker → ext 포트스캔 | fw events.log (포트별 카운터) |
+| ② 침투 | victim PC 가 의심 URL 클릭 → exe 다운로드 | **Sysmon EID 1 (browser/curl) + EID 3 + EID 11 (Downloads)** |
+| ③ 권한상승 | PowerShell -EncodedCommand 실행 | **Sysmon EID 1 + Wazuh PS 룰 high alert** |
+| ④ 측방이동 | net use \\<target>\ADMIN$ 시도 | **Security 4625 (실패) 또는 4624 LogonType 3 (성공)** |
+| ⑤ 데이터 유출 | curl POST to attacker:8080 | **Sysmon EID 3 + Suricata HTTP alert** |
+
+### 8.5.1 답안 양식 — 5 단계 timeline 표
+
+학생은 다음 표 한 장으로 5 단계를 정리한다.
+
+```
+| 시각               | 단계 | 도구       | 이벤트 (EID/sid) | 핵심 필드               | 권장 조치               |
+| ------------------ | ---- | ---------- | --------------- | ---------------------- | --------------------- |
+| 12:01:03 (Day1)   | ①   | fw events  | port_scan/9999  | saddr=10.20.30.202      | @blocklist 추가         |
+| 12:14:22          | ②   | Sysmon     | EID 1 + 3        | Image=curl.exe / dport=80 | endpoint 격리 검토   |
+| 12:14:45          | ③   | Sysmon     | EID 1 EncodedCmd | cmdline=...base64...    | rule.high alert 조사 |
+| ...               |      |            |                  |                        |                       |
+```
+
+> **본 시험의 평가 핵심** — Windows 흔적을 timeline 의 어디에 두는가. 한 사건의 5 단계를 한 표로
+> 그릴 수 있는가가 secuops 운영자의 완성도다.
+
+---
+
 ## 9. 본 과목 학습 마무리 — 15 주의 종합
 
 ### 9.1 학습한 내용

@@ -1100,6 +1100,35 @@ Top 5
 
 ---
 
+## 11.5 Windows Sysmon (W03) 와의 짝 — 같은 시각, 다른 OS
+
+sysmon-for-linux 는 Microsoft 가 만든 **Linux 측 Sysmon-equivalent** (eBPF 기반) 다. 본 강의의 이
+짝은 W03 의 **Windows Sysmon** 이다 — **같은 EID 체계, 같은 데이터 모델, 다른 OS**.
+
+| EID | Linux (sysmon-for-linux) | Windows (W03) |
+|-----|--------------------------|---------------|
+| 1 | ProcessCreate (eBPF tracepoint) | ProcessCreate (ETW) |
+| 3 | NetworkConnect | NetworkConnect |
+| 11 | FileCreate | FileCreate |
+| (생략) | ... | ... |
+
+**Wazuh** 가 두 OS 의 EID 를 같은 룰그룹(sysmon_event1 등) 으로 매칭해 OS 차이를 추상화한다.
+운영자는 **하나의 Sysmon 룰** 을 작성해 Linux+Windows 양쪽 호스트에 동시에 적용 — 두 번 만들 필요 없다.
+
+### 11.5.1 cross-OS 헌팅 예
+
+> 6v6 의 모든 호스트(서버 6개 + Windows 1개) 에서 **base64 인코딩된 PowerShell/bash 실행** 을 찾고 싶다.
+
+```
+rule.groups:sysmon_event1 AND
+(data.win.eventdata.commandLine:*EncodedCommand* OR data.eventdata.commandLine:*base64*)
+```
+
+한 쿼리가 OS 두 종을 동시에 본다. 본 주차의 sysmon-for-linux 는 Windows-side 의 짝과 함께 봐야
+"호스트 가시화 완성" 이다.
+
+---
+
 ## 12. 한국 사례 + 표준
 
 ### 12.1 ISMS-P 2.9.6

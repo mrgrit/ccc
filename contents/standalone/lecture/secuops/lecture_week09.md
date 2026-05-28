@@ -1051,6 +1051,38 @@ bastion agent 등록 절차 + 보안 고려 (key 관리 / authd 권장).
 
 ---
 
+## 15.5 Windows 엔드포인트와의 연결 — eventchannel ingest + 룰그룹 (W03 위빙)
+
+Wazuh manager 가 Linux 측 ingest (logcollector / syscheck / FIM) 만 받는 게 아니다 — W03 의
+**Windows 엔드포인트(10.20.32.60)** 가 `<localfile><log_format>eventchannel</log_format>` 로 보내는
+**Sysmon/Operational + Security** 채널이 같은 manager 의 같은 analysisd 로 흘러 들어온다.
+
+### 15.5.1 Windows ingest 경로 (요지)
+
+```
+6v6-win (Windows 11)
+  └─ Wazuh agent (ossec.conf <localfile> eventchannel)
+        ├─ Microsoft-Windows-Sysmon/Operational (Sysmon EID 1/3/22/11/...)
+        └─ Security (4624/4625/4688/...)
+              │
+              ▼ 1514/UDP+TCP
+        Wazuh manager (analysisd)
+              │
+              ▼ 룰 매칭 (sca/sysmon_eid1, win_security/4625, ...)
+        archives.json + alerts.json + dashboard
+```
+
+### 15.5.2 운영자가 확인할 것 3가지
+
+1. `agent_control -l` 에 `Name: 6v6-win` Active.
+2. archives.json 에 `"agent.name":"6v6-win"` 이벤트가 들어옴 (raw 로그 도착 확인).
+3. alerts.json 에 sysmon/win_security 룰그룹 alert 가 매칭됨 (룰셋 적용 확인).
+
+> 본 주차의 11 daemon + 3 agent 구조에서 Windows 는 "3 agent" 중 1 자리를 차지한다. 매니저는
+> OS 를 가리지 않고 ingest → 룰 매칭 → alert 의 같은 파이프라인을 돈다.
+
+---
+
 ## 16. 다음 주차 (W10) 예고
 
 - **주제**: Wazuh dashboard + osquery + ModSec audit 통합 + sysmon 1차

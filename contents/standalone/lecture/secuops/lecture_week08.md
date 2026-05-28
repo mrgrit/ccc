@@ -265,10 +265,11 @@ ssh 6v6-web "sudo osqueryi --json \
 #### 평가 항목
 
 ```
-5점: fw / ips / web / Wazuh manager 각 도구의 로그·alert 위치 정확
-5점: 명령 syntax 정확 (jq / grep / sudo 등)
-5점: timeline 의 순서 (Suricata flow → http → alert / ModSec audit / Wazuh alert)
-5점: 운영자 조치 권장 (rate-limit / IP block / 추가 모니터링)
+5점: fw / ips / web / Wazuh manager / **Windows 엔드포인트(W03)** 각 도구의 로그·alert 위치 정확
+5점: 명령 syntax 정확 (jq / grep / sudo / Get-WinEvent 등)
+5점: timeline 의 순서 (Suricata flow → http → alert / ModSec audit / Wazuh alert / **Sysmon EID 1+3**)
+5점: 운영자 조치 권장 (rate-limit / IP block / 추가 모니터링 / **endpoint 격리**)
+보너스 2점: Windows victim PC(10.20.32.60) 가 같은 의심 도메인에 접속한 흔적을 Sysmon EID 22 (DNS) 로 찾는 쿼리 1개 작성
 ```
 
 #### 시뮬 실행 + 분석
@@ -855,7 +856,7 @@ W07 : osquery — 5 테이블 / FIM / 헌팅 쿼리
 3. **시나리오 2**: Suricata 룰 (pcre + threshold + classtype)
 4. **시나리오 3**: ModSec 공격 시뮬 (XSS/SQLi/LFI → 942/941/930)
 5. **시나리오 4**: osquery 헌팅 (4 SQL)
-6. **시나리오 5**: 통합 침해 분석 (4 도구 timeline + 권장)
+6. **시나리오 5**: 통합 침해 분석 (4 도구 + **Windows 엔드포인트 EDR (W03)** = 5 시각 timeline + 권장)
 7. **답안 양식** 1 페이지 — 명령 + 출력 + 분석
 8. **시험 후 cleanup** 필수 (다른 학생 영향)
 9. **본 시험 = Blue Team 의 역할** — secuops 운영 자격 평가

@@ -1371,6 +1371,26 @@ T+15m  Purple AAR + 헌팅 쿼리 자산화
 
 ---
 
+## 18.5 Windows 엔드포인트와의 연결 — osquery(Linux) ↔ Sysmon(Windows) 의 짝 (W03 위빙)
+
+osquery 는 **Linux 호스트의 OS-as-SQL 가시화** 가 본 강의의 초점이다. Windows 측의 같은 역할은 W03
+에서 다룬 **Sysmon + Wazuh agent** 가 한다. 운영자 입장에선 OS 가 달라도 **Wazuh 가 둘을 한 화면에
+모은다** — 그래서 "Linux는 osquery, Windows는 Sysmon" 이 아니라 **하나의 호스트 가시화 전략**.
+
+| 시각 | Linux (osquery) | Windows (Sysmon, W03) |
+|------|-----------------|----------------------|
+| 프로세스 | `SELECT pid, name, cmdline FROM processes;` | EID 1 (ProcessCreate: Image, CommandLine) |
+| 네트워크 연결 | `SELECT pid, remote_address, remote_port FROM process_open_sockets;` | EID 3 (NetworkConnect) |
+| 파일 변경 | FIM + `SELECT path, mode FROM file WHERE path LIKE ...;` | EID 11 (FileCreate) |
+| DNS 조회 | DNS query auditd | EID 22 (DnsQuery) |
+| 로그온 | `SELECT * FROM last;` | Security 4624/4625 |
+
+**Wazuh 가 둘을 합친다** — Linux 의 osquery alert 와 Windows 의 Sysmon alert 가 같은 dashboard 의
+같은 rule.groups 로 묶여, 운영자는 OS 차이를 의식하지 않고 사건을 본다. 본 강의의 호스트 가시화는
+**Linux + Windows 통합** 의 시각.
+
+---
+
 ## 19. 다음 주차 (W08 중간고사) + W09-11 (Wazuh + sysmon) 예고
 
 - **W08 중간고사**: W01-W07 통합 — fw / ips / web / host 4 도구 + R/B/P

@@ -1126,6 +1126,31 @@ sudo iptables -L INPUT -n | grep "10.20.32.80" || echo "rollback complete"
 
 ---
 
+## 12.5 Windows Sysmon 해시 ↔ CDB lookup ↔ Wazuh alert (W03 위빙)
+
+본 주차의 IOC Feed → CDB list 통합 패턴은 **Windows 측에서도 똑같이 강력**하다. 흐름:
+
+```
+OpenCTI/MISP CTI feed
+   ├─ SHA256 해시 N개 추출 → /var/ossec/etc/lists/malware-sha256.cdb (db build)
+   └─ rule + decoder:
+       <rule id="100610" level="12">
+         <if_sid>61603</if_sid>     <!-- sysmon_event1 -->
+         <list field="data.win.eventdata.hashes" lookup="match_key">
+              etc/lists/malware-sha256
+         </list>
+         <description>Sysmon ProcessCreate hash matches CTI feed (Windows malware)</description>
+       </rule>
+```
+
+운영 결과 — Windows victim PC 가 우발적으로 다운로드한 binary 가 **CTI feed 해시와 일치하면 즉시
+high-severity alert** 가 운영자 화면에 뜬다. CTI 의 가치가 endpoint 까지 도달하는 한 cycle.
+
+> **IP/도메인 feed** 는 Linux 측에도 동작하지만, **해시 feed** 는 Windows Sysmon 이 없으면
+> 의미가 없다 — W03 의 ingest 가 본 주차 CDB lookup 의 적용 범위를 두 배로 키웠다.
+
+---
+
 ## 13. 과제
 
 ### A. CDB list 작성 (필수, 40점)

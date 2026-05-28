@@ -1320,6 +1320,34 @@ paranoia level 1 vs 2 비교 시뮬 — 정상 traffic (예: HTML 의 `<b>tag</b
 
 ---
 
+## 14.5 Windows 엔드포인트와의 연결 — 4 층 다층 방어 (방화벽+IPS+WAF+EDR) (W03 위빙)
+
+W02 의 방화벽(나가는/들어오는 패킷), W04 의 IPS(트래픽 페이로드 패턴), 본 주차의 WAF(HTTP 요청
+시맨틱) 에 W03 의 **엔드포인트 EDR(Windows Sysmon)** 가 합쳐지면 **4 층 다층 방어** 가 완성된다.
+
+| 층 | 도구 | 잡는 것 | 예 |
+|----|------|---------|-----|
+| 1 | 방화벽 (W02) | IP/포트/객체 | 악성 IP @blocklist drop |
+| 2 | IPS (W04) | 트래픽 패턴 | sqlmap UA + UNION SELECT |
+| 3 | WAF (본 주차) | HTTP 시맨틱 + 페이로드 | XSS `<script>`, SQLi UNION (CRS 941/942) |
+| 4 | EDR (W03) | 호스트 행위 | victim PC 의 Sysmon EID 1+3 (다운로드 시작점) |
+
+**Windows victim PC(10.20.32.60) 의 의심 행위** 가 4 층을 모두 통과하는 케이스는 극히 드물다 —
+한 층만 잡아도 사건이 끊긴다. **운영자의 시각은 한 도구가 아니라 4 층 합주.**
+
+### 예시 — Windows victim 이 XSS 페이로드를 dvwa 에 보냄
+
+1. victim PC (10.20.32.60) → dvwa (10.20.32.80) HTTP 요청 (XSS 페이로드).
+2. **방화벽** — 같은 dmz 안이라 본 트래픽은 통과 (가시성 한계 — W02 8).
+3. **IPS** — 트래픽이 fw→ips 통로를 거치지 않으면 못 본다. dmz 내부 SPAN 이 없는 한 한계.
+4. **WAF** — Apache+ModSecurity 가 요청 본문/매개변수에서 XSS 룰(932150 등) 매칭 → 403 차단 + audit.
+5. **EDR** — victim PC 의 Sysmon EID 1 (browser/curl 프로세스) + EID 3 (dmz 의 80 으로 나간 연결).
+
+WAF audit + EDR Sysmon 의 두 시각으로 **누가, 무엇을 보내, 어디서 막혔는가** 가 완전한 timeline 이
+된다. 이게 본 강의가 "벤더 엔지니어링" 이 아니라 "공격 대응" 이 되는 이유.
+
+---
+
 ## 15. 다음 주차 (W07) 예고
 
 - **주제**: osquery — OS 를 SQL 로 가시화 (호스트 가시화)

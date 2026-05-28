@@ -1278,6 +1278,23 @@ T+15m  Purple AAR 보고서
 
 ---
 
+## 15.5 Windows 엔드포인트와의 연결 — User-Agent / PowerShell / exe 다운로드 (W03 위빙)
+
+Suricata 의 정규식·flowbits·threshold 는 **Windows 사용자 PC(10.20.32.60)** 의 의심 트래픽 패턴을
+잡는 데도 강력하다. 운영자가 자주 보는 3 패턴:
+
+| 패턴 | Suricata 룰 단서 | Sysmon 짝 |
+|------|------------------|----------|
+| PowerShell 의 외부 콜백 | `http.user_agent;` `content:"WindowsPowerShell"` 또는 비표준 UA | EID 3 + Image=powershell.exe |
+| exe / hta / msi 다운로드 | `http.url; pcre:"/\.(exe\|hta\|msi\|ps1)$/i"` | EID 11 (FileCreate) + EID 1 |
+| 외부 DNS 의 의심 도메인 (DGA/긴 이름) | `dns.query; pcre:"/^[a-z0-9]{16,}\./"` | EID 22 (DnsQuery) + Image |
+
+운영 패턴 — IPS 룰의 sid 와 Sysmon agent.name:6v6-win 을 **같은 timeframe** 에 묶으면 "어떤 호스트의
+어떤 프로세스가 의심 패턴을 만들었나" 의 한 줄 답이 나온다. **flowbits 가 다단계 공격을 연결하듯,
+IPS+EDR 의 시각이 합주해야 사건이 완성된다.**
+
+---
+
 ## 16. 다음 주차 (W06) 예고
 
 - **주제**: Apache + ModSecurity v2 + OWASP CRS — L7 HTTP 검사 + WAF 운영

@@ -971,6 +971,33 @@ ATT&CK panel 의 한 화면에서 두 tactic 의 카드가 모두 활성화 (색
 
 ---
 
+## 14.5 Windows 엔드포인트 패널 — agent.name 필터 + Sysmon 룰그룹 (W03 위빙)
+
+Wazuh dashboard 의 Discover/Alerts 에서 운영자가 매일 쓰는 **Windows victim PC (10.20.32.60)** 시각의
+쿼리 4개:
+
+```
+agent.name:6v6-win AND data.win.system.eventID:1            # 새 프로세스 생성
+agent.name:6v6-win AND data.win.system.eventID:3            # 외부 네트워크 연결
+agent.name:6v6-win AND data.win.system.eventID:4625          # Security 로그온 실패
+agent.name:6v6-win AND rule.groups:windows AND rule.level:>=7  # 중급 이상 alert
+```
+
+### 14.5.1 Active Response 와 Windows
+
+Wazuh active-response 는 Windows agent 에도 동작한다. 예 — 4625 임계 초과 시 **firewall 룰 자동 추가**
+(Windows Defender Firewall 또는 매니저측 SOAR 룰로 fw 의 객체 그룹에 IP 추가). 본 강의에선
+**자동화는 신중히** — false positive 가 운영을 마비시키지 않도록 always-on 격리는 피하고, 알람만
+SIEM 으로 보낸다.
+
+### 14.5.2 통합 운영 화면 — 5 소스 한 dashboard
+
+운영자의 한 화면은 — **fw events.log + Suricata eve.json + ModSec audit + osquery + Windows
+Sysmon/Security** = 5 시각의 단일 dashboard. 본 주차의 "통합 운영" 은 도구 5종이 한 dashboard 에서
+같은 timeline 으로 보이는 것을 의미한다.
+
+---
+
 ## 15. 다음 주차 (W11) 예고
 
 - **주제**: sysmon-for-linux 본격 설치 + decoder + ProcessCreate / NetworkConnect / FileCreate event

@@ -1292,6 +1292,23 @@ ssh 6v6-ips 'sudo grep "\"event_type\":\"tls\"" /var/log/suricata/eve.json | tai
 
 ---
 
+## 14.5 Windows 엔드포인트와의 연결 — IPS alert + Sysmon EID 3 의 합주 (W03 위빙)
+
+본 6v6 에는 W03 에서 다룬 **Windows 사용자 PC(10.20.32.60)** 가 있다. 운영자 시각에선 Suricata 의
+alert 한 줄을 단독으로 보지 않고, 같은 시각에 그 IP/포트로 향한 **호스트의 어느 프로세스** 가
+원인인지 함께 본다 — IPS 의 네트워크 시각 + Sysmon 의 호스트 시각.
+
+| 시각 | 도구 | 데이터 |
+|------|------|--------|
+| 네트워크 (외부 패킷) | Suricata | eve.json `alert.signature` / `flow` / `http.user_agent` |
+| 호스트 (어느 프로세스) | Sysmon EID 1 + EID 3 | `Image` / `CommandLine` / `DestinationIp:Port` |
+
+운영 패턴 — Wazuh dashboard 에서 **agent.name:6v6-win + 같은 5-tuple/시간대** 로 두 데이터를 합치면
+"어느 프로세스가 무엇 때문에 외부 의심 IP 로 나갔고, IPS 가 어떻게 표시했는가" 의 한 timeline 이
+나온다. **본 강의는 "IPS 만의 운영" 이 아니라 "다른 시각과의 합주" 가 핵심.**
+
+---
+
 ## 15. 다음 주차 (W05) 예고
 
 - **주제**: Suricata 룰 작성 심화 — pcre / fast_pattern / flowbits / threshold / suppression
