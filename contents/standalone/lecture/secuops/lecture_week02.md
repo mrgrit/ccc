@@ -1,1144 +1,422 @@
-# Week 02 — nftables 방화벽 (1) — 기초 + table/chain/rule/set
+# Week 02 — 방화벽 운영 (nftables) — fw-gui 콘솔 + 침해대응 [W02+W03 통합]
 
-> **본 주차의 한 줄 요약**
+> **본 주차 한 줄 요약**
 >
-> 6v6-fw 컨테이너의 **nftables** (리눅스 커널 표준 패킷 필터링 프레임워크) 를 깊이
-> 해부한다. 4 핵심 개념 (table / chain / rule / set) + 5 hook (input/output/forward/
-> prerouting/postrouting) + counter 분석 + 동적 룰 추가/삭제 + Red/Blue/Purple 시나리오
-> (Red 가 fw:80 무차별 스캔 → Blue 가 src IP drop 룰 추가 → Purple 가 효과 측정).
+> 우리는 **방화벽을 만드는 엔지니어가 아니라 운영하는 사람** 의 시각으로 nftables 를 배운다.
+> fw-gui 콘솔을 중심으로 — 룰 작성, 객체(그룹), NAT, stateful 연결추적, 카운터/로그, SIEM 연동 까지 —
+> **공격 상황 7건** 을 직접 막아 보면서, 인프라(방화벽) 로 **공격에 대응** 하는 1차 관문을 익힌다.
+> 본 주차는 기존 W02(기본) + W03(NAT) 을 **1주로 통합** 했고, 비운 한 주는 **W03 Windows 엔드포인트
+> 운영** 으로 옮겼다 (운영자가 봐야 하는 가시성의 빈틈 — 엔드포인트 — 을 채우기 위해).
 
 ---
 
-## 학습 목표
+## 0. 학습 목표
 
-1. nftables 의 4 핵심 개념 (table / chain / rule / set) 을 비유 없이 1분 안에 설명한다.
-2. Netfilter 의 5 hook (prerouting / input / forward / output / postrouting) 의 통과
-   순서를 화이트보드에 그린다.
-3. 6v6-fw 의 실제 ruleset (`inet six_filter` + `ip six_nat`) 을 읽고 어떤 트래픽이
-   허용·차단되는지 결정한다.
-4. `nft list ruleset` / `nft -j` (JSON) / `nft -c -f` (syntax check) / `nft monitor`
-   네 핵심 명령을 상황에 맞게 사용한다.
-5. 임시 drop 룰 1개 추가 / counter 증가 검증 / `nft delete rule ... handle N` 으로
-   삭제까지 한 cycle 수행한다.
-6. iptables ↔ nftables 의 관계를 설명하고 `iptables-translate` 로 마이그레이션 명령을
-   생성한다.
-7. **Red/Blue/Purple 시나리오 — Red 가 fw:80 으로 무차별 스캔 → Blue 가 input chain
-   에 drop 룰 추가 → Purple 가 효과 측정 후 ruleset 영구화 검토.**
+본 주차가 끝나면 운영자(여러분)는 다음을 **콘솔만으로** 한다.
 
----
+1. fw-gui 콘솔에서 방화벽의 인터페이스/존, 테이블(`inet six_filter`/`ip six_nat`), 룰셋, 객체, conntrack 을 읽는다.
+2. 폼으로 룰을 만들고, 그것이 만들어내는 **실제 `nft` 명령** 을 함께 익힌다(콘솔 동작 = nft 명령).
+3. 룰 **평가 순서**(top vs bottom, accept 의 단락 효과)와 **rate limit / ct state / 객체 참조** 를 자유롭게 조합한다.
+4. **DNAT/SNAT/MASQUERADE** 를 prerouting/postrouting 에 올바르게 배치한다. **HAProxy(L7) 와 방화벽 NAT(L4) 의 역할 분담**을 이해한다.
+5. **conntrack** 표를 읽어 stateful 의 의미와 운영 상황(NAT 끊김 4 패턴)을 진단한다.
+6. **카운터(packets/bytes)** 와 **GUI 이벤트 로그** 를 **SIEM(Wazuh)** 으로 보낸다.
+7. **침해대응 시나리오 7건** (악성 IP / 포트 스캔 / SSH brute / ICMP flood / 화이트리스트 / DNAT 위험 노출 / C2 egress 차단) 을 실제 콘솔에서 만들고 효과를 카운터로 증명한다.
+8. **가시성의 한계** 를 안다 — 방화벽은 dmz 내부 엔드포인트 트래픽을 못 본다. 그래서 **엔드포인트 EDR(W03)** 과 함께 본다.
 
-## 강의 시간 배분 (총 3시간 40분)
-
-| 시간      | 내용                                                                  | 유형     |
-|-----------|---------------------------------------------------------------------|----------|
-| 0:00–0:25 | 이론 — Netfilter 5 hook + nftables 가 iptables 후속이 된 이유          | 강의     |
-| 0:25–0:55 | 이론 — table / chain / rule / set 4 개념 + family (ip / ip6 / inet)   | 강의     |
-| 0:55–1:05 | 휴식                                                                  | —        |
-| 1:05–1:30 | 6v6-fw 의 실제 ruleset 해부 (nftables.conf + entrypoint)              | 강의/토론 |
-| 1:30–2:00 | 실습 1, 2 — ruleset 가시화 + counter / JSON 변환                       | 실습     |
-| 2:00–2:30 | 실습 3, 4 — 동적 drop 룰 추가 + tcpdump 검증                          | 실습     |
-| 2:30–2:40 | 휴식                                                                  | —        |
-| 2:40–3:10 | 실습 5 — iptables-translate 마이그레이션 + nft monitor trace          | 실습     |
-| 3:10–3:30 | 실습 6 — **R/B/P** (nmap → drop 룰 → 영구화 검토)                      | 실습     |
-| 3:30–3:40 | 정리 + 과제 안내 + W03 (DNAT/SNAT/HAProxy 협업) 예고                  | 정리     |
+> **본 주차의 시선** — 방화벽 "벤더 엔지니어" 의 시선이 아니라 **"방화벽을 사서 운영하는 사람"** 의
+> 시선이다. 모든 동작은 **GUI 가 우선**, 동시에 그 GUI 가 만드는 **명령(nft)** 을 같이 본다.
+> 명령을 외울 필요는 없지만 **읽을 줄은 알아야** 운영자다.
 
 ---
 
-## 0. 용어 해설
+## 1. 용어 8개 (꼭 알아야 할 것만)
 
-| 용어 | 영문 | 뜻 |
-|------|------|----|
-| **Netfilter** | Netfilter | Linux 커널의 packet filtering framework (1999~) |
-| **nf_tables** | netfilter tables | nftables 의 커널 모듈 (2014~) |
-| **xt_tables** | extension tables | iptables 의 커널 모듈 (legacy) |
-| **hook** | — | 커널 packet 처리의 5 위치 (prerouting/input/forward/output/postrouting) |
-| **table** | nftables table | 한 family + 한 이름의 룰 컨테이너 |
-| **chain** | nftables chain | 한 table 내부의 룰 묶음, hook 에 attach |
-| **rule** | nftables rule | condition (왼쪽) + action (오른쪽), 위에서 아래로 순차 평가 |
-| **set** | nftables set | 여러 값을 1개 이름으로 참조 (ipset 내장) |
-| **policy** | chain policy | 어느 룰도 매치 안 됐을 때 기본 동작 (accept/drop) |
-| **handle** | rule handle | nft 가 룰에 부여한 고유 ID (삭제 시 사용) |
-| **family** | — | 패킷의 layer 분류 (`ip` IPv4 / `ip6` IPv6 / `inet` 둘 다 / `arp` / `bridge` / `netdev`) |
-| **counter** | — | 룰 단위 byte/packet 통계 |
-| **conntrack** | connection tracking | 커널의 stateful inspection |
-| **ct state** | — | conntrack 상태 (established / related / new / invalid / untracked) |
-| **NAT** | Network Address Translation | 패킷 IP/port 변환 (W03 심화) |
-| **REJECT** | — | drop + ICMP unreachable 응답 |
-| **DROP** | — | 조용히 폐기 (응답 없음) |
-| **iptables-nft** | — | iptables 명령을 nftables backend 로 호환 실행 |
-| **atomic update** | — | 룰셋 전체를 한 번에 교체 (race 없음) |
+| 용어 | 뜻 | 운영자에게 의미 |
+|------|----|----------------|
+| nftables | 리눅스 커널의 방화벽 도구 (iptables 후속) | 우리 6v6 방화벽의 엔진 |
+| 테이블 / 체인 / 룰 | 룰의 컨테이너 / 트리거 지점 / 매칭+동작 | "룰을 어디에 두는가" 의 단위 |
+| input / forward / output | 방화벽 자신에게 / 통과해 / 나가는 트래픽 | 룰 만들 때 가장 먼저 정할 칸 |
+| ct state (established/related/new) | 연결의 상태 | stateful 의 핵심. new 만 검사, 응답은 자동 통과 |
+| 카운터 (packets/bytes) | 룰이 매칭한 횟수·바이트 | **차단 효과의 증거** (운영자가 매일 본다) |
+| named set (객체/Alias) | IP·포트의 재사용 그룹 | "악성 IP 목록 한 곳에서 관리" |
+| DNAT / SNAT | 목적지 / 출발지 주소 변환 | DNAT=공개, SNAT=내부 위장 |
+| HAProxy | 7계층 reverse proxy (fw 가 같이 돌림) | Host 헤더로 vhost 라우팅. 방화벽 NAT 과 역할 분담 |
+
+> **버려도 되는 깊이**: Netfilter 5 hook 의 hook 우선순위 내부, conntrack helper 모듈 목록,
+> iptables-translate 같은 마이그레이션 도구, nft 의 internal data structure — 이런 건 운영자가
+> 외울 필요 없다. 매뉴얼이 있다. 본 강의의 시간은 "운영" 에 쓴다.
 
 ---
 
-## 1. Netfilter 5 hook — 모든 트래픽이 거치는 5 자리
+## 2. 방화벽 콘솔(`fw-gui.6v6.lab`) 둘러보기
 
-리눅스 커널은 IP 패킷이 NIC 에 도착해서 빠져나갈 때까지 5 개 hook (잡는 자리) 을 제공한다.
-이것이 1999년 Netfilter 프로젝트의 정의이며, nftables / iptables 모두 같은 hook 위에 동작한다.
+운영자의 첫 화면은 항상 콘솔이다.
+
+| 메뉴 | 운영자가 매일 보는 것 |
+|------|----------------------|
+| 📊 대시보드 | 인터페이스·테이블·룰 수·연결 수 (한 눈에 건강 상태) |
+| 🔌 인터페이스 | `eth0`(ext, 외부) / `eth1`(pipe, ips 로 가는 통로) — fw 의 양다리 |
+| 📜 룰 관리 | 룰 만들기(폼→**nft 명령 미리보기**→적용) + 현재 룰셋 |
+| 📦 객체 | **그룹(Alias)** — 악성 IP 묶음, 관리 포트 묶음 |
+| 🔁 NAT | DNAT/SNAT 만들기 (six_nat 테이블) |
+| 🔗 Stateful | conntrack 테이블 — 살아있는 연결 |
+| 📈 로그·활동 | 룰별 카운터, 이벤트 로그 |
+| 🛰️ SIEM 연동 | events.log → Wazuh 매니저(10.20.32.100) |
+| 🎯 침해대응 훈련 | 시나리오 11건 (이 강의에서 7건 정도 소화) |
+
+> 콘솔의 **변경은 `inet six_filter` / `ip six_nat`** 두 테이블에만 적용된다. Docker 가 쓰는
+> `ip nat` 는 콘솔이 보호한다 — 운영자가 무심코 망을 망가뜨리지 않는다.
+
+---
+
+## 3. 네트워크/존, 그리고 가시성의 한계
+
+본 6v6 의 4 존을 다시 본다 (운영자의 관점).
+
+| 존 | 대역 | 무엇이 있나 | fw 의 시야 |
+|----|------|-------------|-----------|
+| ext | 10.20.30.0/24 | 공격자(10.20.30.202), fw eth0 | fw 가 직접 본다 |
+| pipe | 10.20.31.0/24 | fw eth1 ↔ ips eth0 (좁은 통로) | fw 가 본다(통과 트래픽) |
+| dmz | 10.20.32.0/24 | ips eth1, **web/WAF**(10.20.32.80), **SIEM**(.100), **Windows 사용자 PC(.60)** | fw **는 dmz 내부 통신은 못 본다** |
+| int | 10.20.40.0/24 | 백엔드 앱 (JuiceShop 등) | fw 가 못 본다 |
+
+**가시성의 한계 — 매우 중요**: 직원 PC(Windows 10.20.32.60) 가 같은 dmz 안의 웹서버에 접속하는
+트래픽은 **fw 를 거치지 않는다**(같은 구역 스위칭). 즉 fw 는 외부에서 들어오는 트래픽을 다루는
+**경계 장비** 다. "내부 PC 가 무엇을 보고 무엇을 했는가" 는 fw 가 못 본다 — 그건 **WAF(웹 요청)** 과
+**엔드포인트 EDR(Sysmon/Wazuh)** 의 일이다. 다음 주차 W03 (Windows 엔드포인트 운영) 에서 본격적으로 다룬다.
 
 ```mermaid
-graph LR
-    NIC1[NIC 진입]
-    NIC2[NIC 출발]
-    PRE[prerouting<br/>nat -100<br/>filter -150]
-    ROUTE{routing<br/>decision}
-    IN[INPUT]
-    FWD[FORWARD]
-    LOCAL[local processes]
-    OUT[OUTPUT]
-    POST[postrouting<br/>nat 100]
-    NIC1 --> PRE
-    PRE --> ROUTE
-    ROUTE -->|local 목적지| IN
-    ROUTE -->|forward 목적지| FWD
-    IN --> LOCAL
-    LOCAL --> OUT
-    OUT --> POST
-    FWD --> POST
-    POST --> NIC2
-    style PRE fill:#1f6feb,color:#fff
-    style ROUTE fill:#d29922,color:#fff
-    style FWD fill:#3fb950,color:#fff
-    style POST fill:#bc8cff,color:#fff
+flowchart LR
+  ATK[공격자<br/>10.20.30.202<br/><b>ext</b>]:::ext
+  FW[방화벽 fw<br/>eth0:.30.1 / eth1:.31.1<br/>nft + HAProxy<br/><b>경계 장비</b>]:::fw
+  IPS[IPS<br/>eth0:.31.2 / eth1:.32.1]:::ips
+  WEB[웹/WAF<br/>10.20.32.80<br/><b>dmz</b>]:::svc
+  WIN[Windows 사용자 PC<br/>10.20.32.60<br/><b>dmz</b>]:::win
+  SIEM[SIEM<br/>10.20.32.100]:::svc
+  APP[백엔드 앱<br/>10.20.40.x<br/><b>int</b>]:::int
+
+  ATK -- ext --> FW -- pipe --> IPS -- dmz --> WEB
+  WIN -. 직접 .-> WEB
+  WEB --> APP
+  FW -. events.log .-> SIEM
+
+  classDef ext fill:#fee,stroke:#c33
+  classDef fw fill:#fff5d6,stroke:#c80
+  classDef ips fill:#e8e8ff,stroke:#55c
+  classDef svc fill:#e8f8e8,stroke:#494
+  classDef win fill:#e0eef8,stroke:#369
+  classDef int fill:#f4e8f8,stroke:#849
 ```
 
-각 hook 에서 nftables / iptables 룰이 평가되어 트래픽이 ACCEPT / DROP / REJECT / NAT
-변환된다. **어디서 잡느냐가 보안 정책의 핵심**.
-
-| hook | 언제 평가 | 어떤 트래픽 | 활용 |
-|------|----------|------------|------|
-| `prerouting` | NIC 진입 후 라우팅 전 | 모든 inbound | DNAT (W03) |
-| `input` | 라우팅 후 local 목적지로 | fw 자체로 들어오는 | SSH/HTTP 허용·차단 |
-| `forward` | 라우팅 후 다른 host 로 | fw 를 통과하는 | ext↔pipe 통제 |
-| `output` | local 에서 나가는 | fw 가 생성한 패킷 | outbound 통제 |
-| `postrouting` | NIC 출발 직전 | 모든 outbound | SNAT/MASQUERADE (W03) |
+> 점선 화살표(`WIN -. .-> WEB`) 가 **fw 가 못 보는 트래픽** 이다. 운영자가 머릿속에 늘 그려 둘 그림.
 
 ---
 
-## 2. nftables 가 iptables 를 대체한 이유
+## 4. 디렉토리·설정·로그 (운영자가 알아야 할 위치)
 
-| 항목 | iptables (legacy) | nftables (modern) |
-|------|-------------------|--------------------|
-| 도입 | 1998 (커널 2.4) | 2014 (커널 3.13) |
-| backend | xt_tables 모듈 | nf_tables 모듈 |
-| 명령 | iptables / ip6tables / ebtables / arptables 분리 | `nft` 단일 |
-| family | ip 만 (IPv6 는 ip6tables) | ip / ip6 / inet (둘 다) / arp / bridge / netdev |
-| set 자료 구조 | ipset 별도 | 내장 (`add set`) |
-| 동시 atomic update | 불가 (룰별 update) | `nft -f file` 로 ruleset 통째 교체 |
-| JSON 출력 | 비표준 | `nft -j` 표준 |
-| 가독성 | `iptables -A INPUT -p tcp --dport 22 -j ACCEPT` | `add rule inet filter input tcp dport 22 accept` |
-| 표준화 시점 | 2018 (Debian 10 / RHEL 8 부터 nftables 가 기본 backend) | |
+| 항목 | 위치 | 운영자가 만지는가 |
+|------|------|------------------|
+| 명령 | `/usr/sbin/nft` | 거의 콘솔로 대체. 단 `nft list ruleset` 정도는 익숙해질 것 |
+| 설정파일(영구) | `/etc/nftables.conf` | 콘솔로 만든 룰을 영구화할 때 (재부팅 후에도 유지) |
+| 연결추적 | `/usr/sbin/conntrack` | `conntrack -L` 로 살아있는 연결 보기 |
+| 콘솔 이벤트 로그 | `/var/log/nft_edu/events.log` | SIEM 으로 가는 원천 |
+| nft native log | 커널 ring buffer (컨테이너에선 파일 미보존) | 그래서 **카운터** 가 운영자의 주된 증거 |
 
-**요점**: 2026 년 현재 신규 룰은 nftables. 그러나 legacy iptables 룰셋이 남은 환경이
-많아 두 도구의 변환·해석을 동시에 알아야 한다.
+> **두 가지 룰의 집** — 메모리에 올라간 룰(즉시 적용, 재부팅 시 사라짐) vs `/etc/nftables.conf` (영구).
+> 콘솔의 "적용" 은 즉시. 운영에선 검증 후 설정파일에도 반영해 재부팅 안전을 확보한다.
 
 ---
 
-## 3. nftables 4 핵심 개념
+## 5. 룰 작성 — 폼이 만들어내는 진짜 명령
 
-### 3.1 table — 한 family + 한 이름의 룰 컨테이너
+운영자의 시간은 룰 관리 메뉴에서 가장 많이 쓴다.
 
-6v6-fw 의 실제 table (실측 2026-05-11):
+### 5.1 체인 3개와 평가 순서
 
-```bash
-$ docker exec 6v6-fw nft list tables
-table ip nat                # Docker daemon 이 자동 생성 (DNS 127.0.0.11)
-table inet six_filter        # 6v6 의 정책 본체 (IPv4+IPv6 통합 family)
-table ip six_nat             # 6v6 NAT stub (W03 에서 채워짐)
-```
+| 체인 | 트래픽 | 룰의 위치를 어떻게 정할까 |
+|------|--------|--------------------------|
+| `input` | 방화벽 **자신에게** 오는 | 관리 포트(22, 9100) 허용, 외부 직접 접근 차단 |
+| `forward` | 방화벽을 **통과해** 내부로 | 차단 룰의 본거지 (대부분의 보안 정책) |
+| `output` | 방화벽이 **나가는** | C2 egress 차단 등 (적게 쓰지만 중요) |
 
-- `ip` family = IPv4 만
-- `ip6` family = IPv6 만
-- `inet` family = 둘 다 (IPv4+IPv6 통합)
-- `arp`, `bridge`, `netdev` = 특수 (L2 또는 ingress)
+룰은 **위에서 아래로** 평가되고 **accept/drop 을 만나면 끝**난다. 그래서 "차단은 top, 일반 허용은
+bottom" 이 보통이다. 콘솔의 **위치(top/bottom)** 선택이 이 차이를 만든다.
 
-> 식별자는 letter 또는 underscore 로 시작해야 한다. digit 시작 (예: `6v6_filter`) 은
-> nft 파서가 syntax error 로 거부 — 6v6 가 처음 `6v6_filter` 로 했다가 silent fail
-> 후 `six_filter` 로 변경한 이력.
+### 5.2 룰 한 줄을 읽는다
 
-### 3.2 chain — table 내부의 룰 묶음, hook 에 attach
-
-6v6-fw 의 `inet six_filter` 안의 chain 들 (실측):
+콘솔 폼에 — 체인 `forward`, 출발지 `10.20.30.202`, 동작 `drop`, 위치 `top` → 미리보기:
 
 ```
-table inet six_filter {
-    chain input {
-        type filter hook input priority filter; policy accept;
-        tcp dport 22 accept           # SSH 허용
-        ip protocol icmp accept       # IPv4 ICMP 허용
-        ip6 nexthdr icmpv6 accept     # IPv6 ICMP 허용
-        ct state established,related accept   # 응답 path
-    }
-    chain forward {
-        type filter hook forward priority filter; policy accept;
-        ct state established,related accept   # 응답 path
-        # 학생 lab 에서 룰 추가하며 학습할 위치
-    }
-    chain output {
-        type filter hook output priority filter; policy accept;
-    }
-}
+nft insert rule inet six_filter forward ip saddr 10.20.30.202 counter drop
 ```
 
-chain header 의 4 attribute:
-- `type filter` : 필터 (ACCEPT/DROP/REJECT) 용 — `nat` / `route` 도 가능
-- `hook input` : 어느 Netfilter hook 에 attach
-- `priority filter` (= 0) : 같은 hook 에 여러 chain 이 붙을 때 평가 순서 (낮을수록 먼저)
-- `policy accept` : 룰이 다 매치 안 되면 기본 accept (production 은 `drop` 권장)
+각 부분의 의미를 운영자 언어로:
 
-### 3.3 rule — 위에서 아래로 순차 평가
+| 토큰 | 의미 |
+|------|----|
+| `insert` | 체인 **맨 위** 에 넣는다 (위치 top). 가장 먼저 평가됨 |
+| `inet six_filter forward` | 우리 정책 테이블의 forward 체인에 |
+| `ip saddr 10.20.30.202` | **출발지 IP** 가 이것이면 |
+| `counter` | 매칭한 packets/bytes 를 센다 (운영자의 증거) |
+| `drop` | 조용히 버린다 (응답 없음) |
+
+> 운영자가 외울 단어 4개: `add/insert rule`, `ip saddr/daddr`, `counter`, `drop/accept/reject`.
+
+### 5.3 더 운영자스러운 룰 패턴 4가지
+
+#### (a) Rate limit — SSH brute force 완화 (가용성 보존)
 
 ```
-ct state established,related accept       # 조건: ct state → action: accept
-ip saddr 10.20.30.202 drop                # 조건: src IP = attacker → drop
-tcp dport 22 accept                       # 조건: dst port 22 → accept
-log prefix "FW-DENY: " drop               # 조건: 위 어느 룰도 안 매치 → log + drop
+nft insert rule inet six_filter input tcp dport 22 ct state new \
+    limit rate over 10/minute counter drop
 ```
 
-자주 쓰는 condition:
-- `ip saddr <IP>` / `ip daddr <IP>` / `ip protocol tcp`
-- `tcp dport 80` / `tcp dport { 80, 443, 8080 }` (set)
-- `ct state {established, related, new, invalid}`
-- `iifname "eth1"` (입력 인터페이스, fw 의 ext NIC = attacker 측) / `oifname "eth0"` (출력, pipe 측)
-- `meta mark 0x100` (skb mark)
+분당 10회를 **초과** 하는 신규 연결만 drop. 정상 사용자는 통과. 22번을 통째로 막는 것보다 백배 낫다.
 
-자주 쓰는 action:
-- `accept` : 즉시 통과
-- `drop` : 조용히 폐기 (응답 없음, 스캐너 탐지 어려움)
-- `reject` : ICMP unreachable 또는 TCP RST 응답 (사용자 친화)
-- `log prefix "TAG: "` : kernel log 에 기록 (`dmesg` 또는 journald)
-- `counter` : 통계 누적 (byte/packet)
-- `jump <chain>` : 사용자 정의 chain 으로 분기
-- NAT actions (W03): `dnat to ...` / `snat to ...` / `masquerade`
+#### (b) 그룹(객체, Alias) — 악성 IP 묶음
 
-### 3.4 set — 여러 값을 1개 이름으로 참조
+콘솔 **객체** 메뉴에서 IP 그룹 `blocklist` 생성 → 룰에서 `@blocklist` 참조:
 
-대규모 blocklist (1000+ IP) 도 set 하나로 표현 가능.
-
-```bash
-# set 생성
-nft add set ip filter blocklist '{ type ipv4_addr ; }'
-
-# element 추가
-nft add element ip filter blocklist '{ 1.2.3.4, 5.6.7.8, 9.10.11.12 }'
-
-# rule 에서 참조
-nft add rule ip filter input ip saddr @blocklist drop
+```
+nft add set inet six_filter blocklist { type ipv4_addr ; }
+nft add element inet six_filter blocklist { 10.20.30.202, 10.20.30.250 }
+nft insert rule inet six_filter forward ip saddr @blocklist counter drop
 ```
 
-`@blocklist` 가 set 참조. set 에 추가/삭제는 ruleset 재컴파일 없이 O(1).
+**왜 좋은가** — CTI 에서 새 악성 IP 가 오면 **룰은 그대로 두고** 그룹에만 추가하면 모든 참조 룰에 즉시
+반영된다. 운영 일관성 + 빠른 반응. 룰 100개를 만들지 말고 **그룹 1개를 살찌워라**.
+
+#### (c) stateful — 응답 자동 통과
+
+input/forward 체인 맨 위엔 항상 있는 룰:
+
+```
+ct state established,related accept
+```
+
+한 번 허용된 연결의 **응답 패킷** 은 자동 통과. 운영자는 룰 작성 시 "신규(new) 연결" 만 신경 쓰면 된다.
+새 룰의 매치에 `ct state new` 를 추가하면 더 정확하다.
+
+#### (d) 로그 + 차단 + 카운터 — 침해 증거 보존
+
+```
+nft insert rule inet six_filter input ip saddr 10.20.30.202 \
+    counter log prefix "EDU-BLOCK: " drop
+```
+
+`log prefix` 는 커널 ring buffer 로 가서 컨테이너 환경에선 파일에 안 남지만, **`counter`** 가
+운영자의 가장 확실한 증거다. 적용 후 공격을 재현하면 `nft -a list chain ...` 에서 packets 값이 올라간다.
 
 ---
 
-## 4. 6v6-fw 의 ruleset 해부
+## 6. NAT — DNAT / SNAT / MASQUERADE
 
-### 4.1 entrypoint 가 부팅마다 `/etc/nftables.conf` 적용
+NAT 은 **주소를 바꿔치기** 한다. 운영자가 자주 하는 세 종류.
 
-```bash
-# /entrypoint.sh 내부 (요약)
-echo "[fw] applying nftables (six_filter / six_nat tables)"
-nft -f /etc/nftables.conf 2>&1 | sed 's/^/  /' || echo "[fw] WARN: nft apply failed"
+### 6.1 DNAT — 내부 서비스를 외부에 공개
+
+콘솔 **NAT** → DNAT, iif `eth0`, tcp dport `8088`, 대상 `10.20.32.80:80` → 미리보기:
+
+```
+nft add rule ip six_nat prerouting iifname "eth0" tcp dport 8088 \
+    counter dnat to 10.20.32.80:80
 ```
 
-### 4.2 nftables.conf 본체 (실제 컨테이너 파일)
+외부의 `방화벽:8088` → 내부 웹서버(10.20.32.80:80). **prerouting**(라우팅 결정 전)에서 일어난다.
+**내부 IP 는 노출되지 않는다.**
 
-```nft
-#!/usr/sbin/nft -f
-# 6v6 fw — edge router firewall (ext <-> pipe).
-# docker NAT 룰 (table ip nat) 은 보존하고, 우리 정책 테이블만 정의.
-# 식별자는 letter/_ 로 시작 (digit 시작은 nft 파서가 거부).
+### 6.2 SNAT / MASQUERADE — 출발지 위장
 
-add table inet six_filter
-flush table inet six_filter
+내부 호스트가 외부로 나갈 때 출발지 IP 를 방화벽 IP 로 위장(NAT). **postrouting**(라우팅 후)에서.
 
-table inet six_filter {
-    chain input {
-        type filter hook input priority 0
-        policy accept
-        tcp dport 22 accept
-        ip protocol icmp accept
-        ip6 nexthdr icmpv6 accept
-        ct state established,related accept
-    }
-    chain forward {
-        type filter hook forward priority 0
-        policy accept
-        ct state established,related accept
-    }
-    chain output {
-        type filter hook output priority 0
-        policy accept
-    }
-}
-
-add table ip six_nat
-flush table ip six_nat
-table ip six_nat {
-    chain prerouting {
-        type nat hook prerouting priority -100
-        policy accept
-    }
-    chain postrouting {
-        type nat hook postrouting priority 100
-        policy accept
-    }
-}
+```
+nft add rule ip six_nat postrouting oifname "eth1" ip saddr 10.20.40.0/24 \
+    counter snat to 10.20.31.1
 ```
 
-핵심 디자인 결정:
-- `inet six_filter` 가 IPv4+IPv6 통합 → 룰 1번만 작성하면 두 family 모두 적용
-- `flush table inet six_filter` 가 idempotent 보장 (부팅마다 깨끗한 상태)
-- `ip six_nat` 는 chain 만 정의 + 룰 없음 → W03 에서 학생이 NAT 룰 추가하며 학습
-- `policy accept` (학습용). production 은 `policy drop` + 명시적 화이트리스트가 정석.
+또는 `masquerade`(자동 SNAT, 인터페이스 IP 사용). MASQUERADE 는 인터페이스 IP 가 동적일 때 쓴다.
+
+### 6.3 prerouting vs postrouting (외우는 법)
+
+> "**어디로 갈지 정하기 전에 목적지(D)를 바꾸고, 다 정한 뒤 출발지(S)를 바꾼다.**" — DNAT=prerouting,
+> SNAT/MASQUERADE=postrouting.
+
+### 6.4 HAProxy(L7) ↔ 방화벽 NAT(L4) — 역할 분담
+
+6v6 의 fw 컨테이너는 **HAProxy 도 같이** 돌린다. 둘은 같은 호스트지만 역할이 다르다.
+
+| 도구 | 계층 | 어떻게 라우팅하나 | 예 |
+|------|-----|-------------------|-----|
+| HAProxy | L7 (HTTP) | **Host 헤더** | `juice.6v6.lab` → web waf backend |
+| nft NAT | L4 (TCP/IP) | **포트** | tcp 8088 → 10.20.32.80:80 |
+
+**규칙**: 같은 외부 포트(80/443)에 둘이 동시에 못 붙는다(충돌). 운영 패턴은 — **HTTP 는 HAProxy** 로
+호스트 라우팅, **비 HTTP / 다른 포트의 노출** 은 nft DNAT 으로 분담. 흔한 실수는 nft DNAT 으로 80 을
+잡아버려 HAProxy 가 못 뜨는 것. **NAT 만들기 전 `ss -ltn` 으로 충돌 확인**.
+
+### 6.5 NAT 는 방화벽이 아니다 (흔한 오해)
+
+**NAT 이 켜졌다고 그 트래픽이 보안적으로 검사된다는 뜻이 아니다.** NAT 은 주소 변환일 뿐, 콘텐츠
+검사를 안 한다. NAT 으로 공개한 8088 도 똑같이 **차단 룰** 의 적용 대상이어야 안전하다. (DNAT 을
+켰다면 그 대상 IP/포트에 대한 forward 차단 룰을 함께 검토할 것.)
 
 ---
 
-## 5. nft 명령 cheat sheet
+## 7. Stateful — conntrack 표 읽기
 
-| 목적 | 명령 |
-|------|------|
-| 전체 ruleset 출력 | `sudo nft list ruleset` |
-| filter table 만 | `sudo nft list table inet six_filter` |
-| 특정 chain 만 | `sudo nft list chain inet six_filter forward` |
-| **handle 포함** | `sudo nft -a list chain inet six_filter forward` |
-| JSON 출력 | `sudo nft -j list ruleset \| jq .` |
-| syntax 검증 | `sudo nft -c -f /etc/nftables.conf && echo OK` |
-| 룰 추가 (위) | `sudo nft insert rule inet six_filter forward position 0 <cond> <action>` |
-| 룰 추가 (아래) | `sudo nft add rule inet six_filter forward <cond> <action>` |
-| 룰 삭제 | `sudo nft delete rule inet six_filter forward handle <N>` |
-| counter reset | `sudo nft reset counters table inet six_filter` |
-| 룰셋 통째 교체 | `sudo nft -f /tmp/new-ruleset.nft` (atomic) |
-| 룰셋 fully flush | `sudo nft flush table inet six_filter` (6v6 정책만, docker NAT 보존) |
-| 실시간 모니터 | `sudo nft monitor` (변경 감시) |
-| 실시간 trace | `sudo nft monitor trace` (룰 통과 추적) |
+**Stateful** 메뉴에서 보는 연결 추적 표.
+
+```
+proto  state         src                dst                  flags
+tcp    ESTABLISHED   10.20.31.1:40428   10.20.32.120:5601    [ASSURED]
+```
+
+- `proto` = TCP/UDP/ICMP
+- `state` = TCP 상태(NEW/SYN_SENT/ESTABLISHED/TIME_WAIT 등)
+- `[ASSURED]` = 양방향 패킷이 오간, "확실한" 연결 (커널이 잘 안 지운다)
+- `[UNREPLIED]` = 한쪽 방향만 — SYN flood / NAT 실패 / 응답 누락의 신호
+
+### 7.1 conntrack 으로 진단할 수 있는 NAT 끊김 4 패턴
+
+| 증상 | conntrack 의 신호 | 원인 |
+|------|------------------|------|
+| 연결은 되는데 응답이 안 옴 | `[UNREPLIED]` 다수 | 응답 경로가 다른 방향(asymmetric routing) — NAT 비대칭 |
+| 잠시 후 끊긴다 | `TIME_WAIT` 폭증, 새 연결이 같은 5-tuple 재사용 못함 | 짧은 timeout, 포트 고갈 |
+| 일부 클라이언트만 안 됨 | 그 클라이언트만 conntrack 없음 | 룰이 그 출발지 drop |
+| 갑자기 모든 새 연결 안 됨 | conntrack table FULL | 용량 초과(`nf_conntrack_max`) |
+
+운영자는 평소에 `Stateful` 메뉴의 **count + 분포** 만 보면 이상을 빠르게 잡는다.
+
+### 7.2 conntrack table 용량 — 6v6 에선 신경 안 써도 되지만
+
+운영망에서는 `nf_conntrack_max` 초과 시 새 연결이 안 만들어진다. **트래픽 폭증 사고의 단골 원인**.
+운영 환경에선 모니터링 + sysctl 튜닝이 필요하지만, 본 강의 6v6 규모에선 발생하지 않는다.
 
 ---
 
-## 6. iptables ↔ nftables 마이그레이션 (3 도구)
+## 8. 카운터 · 이벤트 로그 · SIEM 연동
 
-### 6.1 iptables-translate — 한 줄 변환
+### 8.1 카운터 — 운영자의 가장 정직한 증거
 
-```bash
-$ echo "iptables -A INPUT -p tcp --dport 22 -j ACCEPT" | iptables-translate
-nft add rule ip filter INPUT tcp dport 22 counter accept
-```
+**로그·활동** 메뉴에서 룰마다 packets/bytes 가 보인다. 차단 룰의 packets 가 0 → 4 → ... 로 늘면
+**그 룰이 실제로 트래픽을 막고 있다** 는 100% 증거다. 어떤 보고서보다 강력하다. **카운터 리셋** 으로
+주기적 측정도 가능.
 
-> ⚠️ STDIN 으로 받는 게 안 되는 경우 (Ubuntu 22.04 의 일부 버전): `iptables-translate
-> -A INPUT -p tcp --dport 22 -j ACCEPT` 처럼 argv 로 전달.
+### 8.2 콘솔 이벤트 로그
 
-### 6.2 iptables-restore-translate — 전체 룰셋 변환
+콘솔이 적용/삭제/리셋한 모든 동작은 `/var/log/nft_edu/events.log` 에 JSON 한 줄씩 남는다 —
+**누가 언제 무엇을 바꿨나** 의 감사 자료. 침해 후 "방화벽 설정을 누가 바꿨는지" 가 핵심 추적 단서가 된다.
 
-```bash
-sudo iptables-save > /tmp/legacy.rules
-sudo iptables-restore-translate -f /tmp/legacy.rules > /tmp/new.nft
-sudo nft -c -f /tmp/new.nft && echo "변환 OK"
-```
+### 8.3 SIEM(Wazuh) 연동
 
-### 6.3 iptables-nft — 호환 backend (자동)
+**SIEM 연동** 메뉴 → "연동 켜기" → fw 의 Wazuh 에이전트가 events.log 를 tail → 매니저(10.20.32.100)
+로 전송. 그러면 SIEM 한 화면에서 **방화벽 변경 이력 + IPS alert + WAF 차단 + Windows Sysmon 이벤트**
+를 시간순으로 함께 본다 — **인프라 전체로 공격에 대응** 하는 출발점.
 
-Debian/Ubuntu/RHEL 의 `iptables` 명령은 이미 nftables backend 호환 모드.
-
-```bash
-$ readlink /etc/alternatives/iptables
-/usr/sbin/iptables-nft     # nftables backend (마이그레이션 표준)
-```
-
-`iptables -L` 의 결과는 사실 nftables `table ip filter` 의 INPUT/FORWARD/OUTPUT chain.
+> SIEM 연동된 다음부터 운영자의 일상은 콘솔보다 **Wazuh 대시보드** 가 중심이 된다. 방화벽 콘솔은
+> "변경" 의 도구, SIEM 은 "관제" 의 도구.
 
 ---
 
-## 7. 영구화: 컨테이너 vs systemd
+## 9. 침해대응 시나리오 7건 (R/B/P)
 
-### 7.1 시스템 호스트 (운영 표준)
+**침해대응 훈련** 메뉴에 11건이 있다. 본 강의에선 핵심 7건을 직접 풀어 본다. 각 시나리오는
+**Red(공격 재현) → Blue(룰 작성·적용) → Purple(검증·증거 보존)** 패턴을 따른다.
 
-```bash
-sudo nft list ruleset > /etc/nftables.conf
-sudo systemctl enable nftables
-sudo systemctl restart nftables
-```
+### 9.1 fw-s01 — 악성 IP 즉시 차단 (수동 대응)
 
-부팅 시 `nftables.service` 가 `/etc/nftables.conf` 를 atomic load.
+- Red: `for i in $(seq 1 50); do curl -s -m1 http://10.20.30.1/ >/dev/null; done`
+- Blue: forward 체인 top 에 `ip saddr 10.20.30.202 drop`.
+- Purple: 카운터 packets ≥ 50 + 콘솔 검증 ✔.
+- 교훈: 단일 IP 차단은 가장 빠른 1차 대응. 단 출발지가 분산되면 무력해진다 → fw-s11 (객체)로 진화.
 
-### 7.2 컨테이너 (6v6 의 방식)
+### 9.2 fw-s02 — 닫혀야 할 관리 포트 보호
 
-도커 컨테이너는 stateless 라 부팅마다 `entrypoint.sh` 가 ruleset 을 재구성한다.
+- Red: `nc -vz 10.20.30.1 9999`.
+- Blue: input 체인에 `tcp dport 9999 drop`.
+- Purple: nc 응답 timeout + counter 증가.
+- 교훈: 최소권한. "쓰지 않는 포트는 닫는다"가 보안의 기본.
 
-```bash
-docker exec 6v6-fw sudo cat /entrypoint.sh | grep -E "^nft|^iptables"
-# nft -f /etc/nftables.conf 2>&1 | sed 's/^/  /' || echo "[fw] WARN: nft apply failed"
-```
+### 9.3 fw-s03 — SSH brute force 완화
 
-학생이 컨테이너 안에서 `nft add rule ...` 으로 추가한 룰은 컨테이너 재시작 시 사라
-진다. 영구화 하려면 `entrypoint.sh` 또는 `nftables.conf` 수정 + 이미지 재빌드 + push
-+ 컨테이너 recreate.
+- Red: `for i in $(seq 1 60); do nc -w1 10.20.30.1 22 </dev/null; done`
+- Blue: `tcp dport 22 ct state new limit rate over 10/minute drop`.
+- Purple: 정상 SSH 는 통과, 폭주만 drop (carrier-grade 패턴).
+- 교훈: 가용성 보존형 방어 — 22 를 통째로 막지 않는다.
 
----
+### 9.4 fw-s04 — ICMP flood 제한
 
-## 8. 정책 설계 원칙 — Deny by Default
+- Red: `ping -f -c 500 10.20.30.1` (flood ping).
+- Blue: `ip protocol icmp limit rate over 5/second drop`.
+- Purple: 정상 ping 통과, flood drop.
+- 교훈: 진단(ping) 가용성을 해치지 않는 방어.
 
-운영 환경의 정석은 두 원칙.
+### 9.5 fw-s07 — 화이트리스트 (관리망만 허용)
 
-1. **Default deny** — chain policy 를 `drop` 으로 설정한 뒤 필요한 트래픽만 명시 허용
-2. **Specific before general** — 더 구체적인 룰을 위에. set 으로 큰 그룹을 한 줄로.
+- Red: 외부에서 `nc -vz 10.20.30.1 9100`.
+- Blue: input top 에 `ip saddr 10.20.31.0/24 tcp dport 9100 accept`, 그 아래 `tcp dport 9100 drop`.
+- Purple: 관리망(pipe)에서만 9100 도달, 외부는 막힘.
+- 교훈: **허용 먼저, 거부 나중** — 순서가 바뀌면 관리망도 막힌다. 화이트리스트 설계의 정석.
 
-production-grade chain 예:
+### 9.6 fw-s08 — DNAT 으로 안전한 공개
 
-```
-chain forward {
-    type filter hook forward priority 0; policy drop;     # ← default deny
+- Red: 공격자가 `방화벽:8088` 접속 시도 (적용 전엔 closed).
+- Blue: NAT 메뉴에서 DNAT 8088 → 10.20.32.80:80.
+- Purple: 접속 OK (200), 내부 IP 미노출.
+- 교훈: NAT 으로 공개 = **내부 주소 은닉** + 외부 노출 표면 제어. 단 NAT 만으로는 보안 X — 차단 정책과 함께.
 
-    ct state established,related accept                   # ← 가장 빈번 (early-exit)
-    ct state invalid drop
+### 9.7 fw-s11 — 객체(그룹)로 다중 차단 + CTI 운영
 
-    # 화이트리스트
-    ip saddr 10.20.30.0/24 ip daddr 10.20.31.0/24 accept  # ext → pipe
-    ip saddr 10.20.31.0/24 ip daddr 10.20.30.0/24 accept  # pipe → ext
+- Red: CTI 에서 악성 IP 5개 식별, 한 번에 차단 필요.
+- Blue: 객체 메뉴에서 `blocklist` 그룹 생성 → IP 5개 등록 → forward 룰 `@blocklist drop` 1줄.
+- Purple: 5 IP 모두 차단, 새 악성 IP 발견 시 그룹에만 추가 → 룰 무수정 즉시 적용.
+- 교훈: **운영 일관성 + 빠른 반응**. 룰의 수를 늘리지 말고 **객체** 로 데이터를 늘려라.
 
-    # log fallback (policy drop 직전 가시화)
-    log prefix "FWD-DROP: " counter
-}
-```
+### 추가 (egress) — C2 콜백 차단 (fw-s06)
 
-6v6 의 실제 ruleset 은 시연 환경 단순화를 위해 `policy accept` 다. 학생이 본 주차의
-과제로 `policy drop` 으로 강화하는 변형을 작성한다.
-
----
-
-## 9. 실습 시나리오 (4 축 설명)
-
-### 실습 1 — fw ruleset 가시화 (10분)
-
-> **이 실습을 왜 하는가?** — fw 의 현재 정책이 무엇인지 파악. 운영 인수의 첫 명령.
->
-> **이걸 하면 무엇을 알 수 있는가?** — 3 table (ip nat / inet six_filter / ip six_nat)
-> 의 존재 + chain header 의 4 attribute + 활성 룰의 정확한 syntax.
->
-> **결과 해석** — table 3 표시 + chain header 의 type/hook/priority/policy 모두 명시
-> + counter 0 (트래픽 미발생 또는 reset 직후).
->
-> **실전 활용** — 운영 인수 첫 5분 명령. 정책 분석.
-
-```bash
-ssh 6v6-fw 'sudo nft list ruleset 2>&1 | grep -v "^XT"'
-ssh 6v6-fw 'sudo nft list table inet six_filter'
-ssh 6v6-fw 'sudo nft -j list ruleset | jq ".nftables | length"'
-```
-
-**실측 결과** (2026-05-11):
-```
-table ip nat
-table inet six_filter
-table ip six_nat
-```
-
-`XT match tcp not found` 같은 경고는 docker 의 ipset 호환 모듈 부재로 인한 출력 잡음
-이며 우리 정책 동작과 무관.
-
-### 실습 2 — counter 분석 (10분)
-
-> **이 실습을 왜 하는가?** — 룰별 byte/packet 통계 가시화. 어느 룰이 빈번한지 확인.
->
-> **결과 해석** — 활성 트래픽 발생 시 counter 가 증가. 0 이면 룰 미매치 (불필요한 룰?).
->
-> **실전 활용** — 룰 효율 측정. 한 번도 매치 안 되는 룰은 candidate for removal.
-
-```bash
-ssh 6v6-fw 'sudo nft -a list chain inet six_filter forward'    # handle 포함
-ssh 6v6-fw 'sudo nft reset counters table inet six_filter'     # counter 0 으로
-ssh 6v6-fw 'sudo nft list chain inet six_filter forward | grep -B1 counter'
-```
-
-**실측 결과**:
-```
-chain forward { # handle 2
-    type filter hook forward priority filter; policy accept;
-    ct state established,related accept # handle 8
-}
-```
-
-`# handle 2` (chain 자체의 handle) + `# handle 8` (룰의 handle). 삭제 시 사용.
-
-### 실습 3 — 동적 drop 룰 추가 + 효과 검증 (15분)
-
-> **이 실습을 왜 하는가?** — 실 운영 시 incident 대응 (특정 IP 즉시 차단) 의 핵심.
->
-> **이걸 하면 무엇을 알 수 있는가?** — `nft insert rule ... position 0` 의 효과 + chain
-> evaluation 순서 + log prefix 의 kernel ring buffer 기록.
->
-> **결과 해석** — 룰 추가 후 attacker 의 fw 진입이 timeout (응답 없음). dmesg 에
-> `DROP-ATTACKER: ...` 라인.
->
-> **실전 활용** — incident response 시 분 단위 IP block. 영구화는 ruleset 수정.
-
-```bash
-# 룰 추가 (input chain — fw 자체로 들어오는 트래픽 차단)
-ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter log prefix "DROP-ATTACKER: " drop'
-
-# attacker 가 fw:80 시도 → timeout
-ssh 6v6-attacker 'timeout 5 curl -s -o /dev/null -w "%{http_code}\n" -H "Host: juice.6v6.lab" http://10.20.30.1/'
-# 응답: 000 (timeout)
-
-# kernel log 의 prefix
-ssh 6v6-fw 'sudo dmesg | tail -5 | grep DROP-ATTACKER'
-
-# 룰 삭제 (handle 식별 후)
-HANDLE=$(ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep DROP-ATTACKER | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
-ssh 6v6-fw "sudo nft delete rule inet six_filter input handle $HANDLE"
-```
-
-> **핵심 인사이트**: fw 자체로 들어오는 트래픽 (HAProxy 가 80 으로 받는) 은 `input`
-> chain. fw 를 통과만 하는 트래픽 (ext → pipe forward) 은 `forward` chain. 같은 src
-> IP 라도 어느 chain 의 drop 인지에 따라 효과가 다르다.
-
-### 실습 4 — tcpdump 로 drop 검증 (15분)
-
-```bash
-# 한 터미널 (학생 PC) — 패킷 캡처
-ssh 6v6-fw 'sudo timeout 10 tcpdump -ni eth0 host 10.20.30.202 -c 5'
-
-# 다른 터미널 — 트래픽 발생
-ssh 6v6-attacker 'curl -H "Host: juice.6v6.lab" http://10.20.30.1/'
-```
-
-drop 룰 있을 때: SYN 만 보이고 SYN-ACK 없음 → 3-way handshake 미완성. 룰 삭제 후:
-SYN + SYN-ACK + ACK 정상 표시.
-
-### 실습 5 — iptables-translate + nft monitor (15분)
-
-```bash
-# iptables 명령을 nft 로 변환
-ssh 6v6-fw 'iptables-translate -A INPUT -p tcp --dport 22 -j ACCEPT'
-ssh 6v6-fw 'iptables-translate -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT'
-
-# nft monitor — 실시간 변경 + trace
-ssh 6v6-fw 'sudo timeout 5 nft monitor 2>&1 | head -10'
-```
-
-`nft monitor` 은 운영 시 누가 룰 추가/삭제하는지 audit + race 검출에 유용.
-
-### 실습 6 — **R/B/P 통합 시나리오** (25분)
-
-```mermaid
-graph LR
-    R["Red — attacker 가<br/>nmap 무차별 스캐닝"] -->|fw port 80 SYN flood| FW[fw nftables]
-    FW -->|log + drop| B["Blue — input chain<br/>drop 룰 추가"]
-    B -->|효과 측정| P["Purple — counter +<br/>tcpdump + 영구화 검토"]
-    P -->|nftables.conf patch| FW
-    style R fill:#f85149,color:#fff
-    style B fill:#1f6feb,color:#fff
-    style P fill:#bc8cff,color:#fff
-```
-
-**Red — nmap 무차별 스캐닝**:
-```bash
-ssh 6v6-attacker 'sudo nmap -sS -p 22,80,443,9100 10.20.30.1 2>&1 | tail -10'
-```
-
-**Blue — drop 룰 + log 추가**:
-```bash
-ssh 6v6-fw 'sudo nft insert rule inet six_filter input position 0 ip saddr 10.20.30.202 counter log prefix RBPDROP drop'
-```
-
-**Red — 다시 시도 (timeout 예상)**:
-```bash
-ssh 6v6-attacker 'sudo nmap -sS -p 22,80,443,9100 10.20.30.1 2>&1 | tail -10'
-# 모든 포트 filtered 또는 closed
-```
-
-**Purple — 효과 측정**:
-```bash
-ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | head -5'
-# counter packets N bytes M 가 0 → 증가 (drop 적중)
-ssh 6v6-fw 'sudo dmesg | tail -20 | grep RBPDROP | head -5'
-```
-
-**Purple — 영구화 검토** (학습용 시뮬):
-```bash
-# 본인이 nftables.conf 에 적용한다고 가정한 patch
-cat <<'EOF'
-# /etc/nftables.conf 의 chain input 끝에 추가
-table inet six_filter {
-    chain input {
-        ...
-        ip saddr 10.20.30.202 counter log prefix "PERSIST-DROP: " drop
-    }
-}
-EOF
-```
-
-production 환경은 위 patch 를 git PR 검토 후 image 재빌드 + rolling restart.
-
-**Cleanup** (실험 종료):
-```bash
-HANDLE=$(ssh 6v6-fw 'sudo nft -a list chain inet six_filter input | grep RBPDROP | grep -oE "handle [0-9]+" | head -1 | awk "{print \$2}"')
-ssh 6v6-fw "sudo nft delete rule inet six_filter input handle $HANDLE"
-```
+내부 호스트가 알려진 C2 IP 로 나가는 콜백을 차단:
+- Blue: output 체인 top 에 `ip daddr <C2 IP> drop`.
+- 교훈: **egress filtering** — 침해 후 데이터 유출/명령 수신을 끊는 마지막 보루. 흔히 잊는다.
 
 ---
 
-## 9.5 R/B/P 공격 분석 케이스 확장 (본 주차 추가)
-
-### 9.5.0 R/B/P 일상 비유 — 출입문 무인 경비원
-
-본 절은 nftables 를 출입문의 무인 경비원에 비유해서 시작한다.
-
-학생이 사는 아파트의 정문 출입문을 떠올려보자. 정문에는 무인 경비원이 한 명 서 있고, 출입 규칙이 정리된 매뉴얼을 들고 있다. 매뉴얼에는 다음과 같은 규칙이 적혀 있다.
-
-- 입주민 카드를 가진 사람은 통과시킨다.
-- 택배 기사는 평일 09시~18시에만 통과시킨다.
-- 같은 사람이 1분 안에 5번 이상 시도하면 차단한다.
-- 매뉴얼에 없는 경우는 일단 차단한다 (deny by default).
-
-무인 경비원이 출입 시도를 기록하면 카운터가 올라간다. 시도가 비정상적으로 많으면 보안실에서 알람이 울린다. 보안실 관리자는 매뉴얼에 새 규칙을 추가하거나 기존 규칙을 강화한다.
-
-| 일상 비유 | nftables |
-|-----------|----------|
-| 무인 경비원 매뉴얼 | nftables.conf 의 ruleset |
-| 매뉴얼 페이지 (입주민, 택배) | table 의 chain |
-| 한 줄 규칙 | rule |
-| 차단 명단 | set |
-| 시도 카운터 | counter |
-| 보안실 알람 | log prefix |
-| 매뉴얼 검토 + 강화 | Purple 의 rule 보완 |
-
-본 절은 nftables 의 set / counter / log / rate limit 같은 기능을 실제 공격에 대응하는 흐름으로 학습한다. 세 케이스를 다룬다.
-
-- 케이스 1 — ICMP flood 를 counter + dynamic set 으로 분석 + 차단한다.
-- 케이스 2 — TCP SYN flood 를 nft monitor trace + rate limit 으로 분석 + 대응한다.
-- 케이스 3 — forwarded chain 우회 시도를 policy drop + log prefix 로 가시화한다.
-
-본 절의 핵심 원칙 네 가지는 W01 의 5.7 절과 동일하다.
-
-- **재현 가능성** — 학생이 6v6-attacker (10.20.30.202) 에서 직접 공격을 발생시킨다.
-- **도구 위주 분석** — `nft list ruleset`, `nft monitor`, `conntrack -L` 같은 표준 도구만 사용한다.
-- **신입생 친화** — 명령의 옵션을 한 줄씩 설명한다.
-- **윤리 강제** — 6v6 lab 의 4 subnet (10.20.30.0/24 ext, 10.20.31.0/24 pipe, 10.20.32.0/24 dmz, 10.20.40.0/24 int) 안에서만 시도한다.
-
-### 9.5.1 케이스 1 — ICMP flood 의 분석 + dynamic set 차단
-
-**0. 일상 비유 — 도둑이 초인종을 1초에 100번 누르기.**
-
-도둑이 아파트 정문 초인종을 1초에 100번 누른다. 정상 입주민은 보통 하루에 몇 번만 누른다. 무인 경비원이 매뉴얼 페이지를 펴면 "분당 60회 초과 시 5분간 차단" 같은 규칙이 적혀 있다. 도둑이 임계치를 넘어서면 명단에 자동 등록되고, 5분 동안 같은 사람의 시도는 모두 차단된다.
-
-이 비유를 ICMP flood 에 그대로 옮긴다.
-
-| 일상 비유 | ICMP flood |
-|-----------|-----------|
-| 초인종 누르기 | ping (ICMP echo request) |
-| 분당 60회 초과 | nft rate limit 의 임계치 |
-| 자동 차단 명단 | nft dynamic set |
-| 5분간 차단 유지 | set element 의 timeout |
-| 매뉴얼의 명단 페이지 | `nft list set inet six_filter blacklist` |
-
-본 케이스의 학습 목표는 nftables 의 동적 set + timeout 의 동작을 실제 ICMP flood 로 직접 확인하는 것이다.
-
-**0a. 사용 도구 사전 안내.**
-
-- **ping** — ICMP echo request 를 보내는 표준 도구다. `-f` (flood), `-c N` (개수), `-i 0.001` (간격) 옵션을 함께 쓰면 부하 시뮬레이션이 가능하다.
-- **nft set** — nftables 의 set 자료구조다. IP 주소나 포트 번호를 묶어서 한 이름으로 참조하게 한다. `flags timeout` 을 붙이면 자동 만료가 가능해진다.
-- **nft counter** — rule 안에서 `counter` keyword 를 쓰면 packets + bytes 가 자동으로 누적된다.
-
-**1. Red — 공격 재현.**
-
-학생이 6v6-attacker (10.20.30.202) 에 들어간 뒤 6v6-fw 의 ext NIC 으로 ICMP flood 를 보낸다. 학습 환경 안에서만 실행해야 한다.
-
-```bash
-ssh 6v6-attacker
-# 비밀번호: ccc
-```
-
-6v6-attacker 내부에서 fw 의 ext IP (`10.20.30.1`) 로 ping flood 를 보낸다.
-
-```bash
-# 6v6-attacker 내부 (학습 환경 한정)
-sudo ping -f -c 500 10.20.30.1
-```
-
-각 옵션의 의미는 다음과 같다.
-
-- `sudo` — flood 옵션은 root 권한이 필요하다.
-- `-f` — flood. 응답을 기다리지 않고 가능한 빨리 보낸다.
-- `-c 500` — 500개만 보내고 종료한다.
-- `10.20.30.1` — target IP. 6v6-fw 의 ext NIC.
-
-500개를 짧은 시간에 보내므로 fw 의 input chain counter 가 급격히 올라간다.
-
-**2. 발생하는 로그/아티팩트.**
-
-먼저 fw 의 nft input chain counter 가 증가한다. ICMP 를 별도로 카운트하는 룰이 있으면 그 룰의 counter 가 크게 뛴다. 다음으로 dmesg 에 log prefix 가 찍히는 룰이 있으면 kernel ring buffer 에 흔적이 남는다.
-
-Wazuh agent 가 dmesg 또는 `/var/log/kern.log` 를 모니터링하기 때문에, 같은 사건이 Wazuh manager 에도 alert 로 다시 기록될 수 있다.
-
-**3. Blue — nft 도구로 직접 분석.**
-
-학생이 fw 에 들어가서 nft 명령으로 상태를 본다. ProxyJump 가 설정되어 있으면 한 줄로 가능하다.
-
-```bash
-ssh 6v6-fw
-# fw 내부
-sudo nft list chain inet six_filter input
-```
-
-화면에 chain 의 모든 rule 이 나열된다. counter 가 붙은 rule 의 첫 줄에 `packets N bytes M` 형태로 누적값이 보인다. ICMP flood 직전과 직후의 counter 값을 비교하면 변화량이 즉시 드러난다.
-
-다음으로 동적 set 의 내용을 확인한다.
-
-```bash
-sudo nft list set inet six_filter blacklist
-```
-
-학습 환경에서는 ICMP rate limit rule 이 set 에 element 를 추가하도록 미리 구성되어 있다. set 안에 `10.20.30.202 timeout 5m` 같은 항목이 보이면 자동 차단이 동작한 것이다.
-
-마지막으로 `nft monitor trace` 로 실시간 packet 흐름을 본다.
-
-```bash
-sudo nft monitor trace
-```
-
-다른 터미널에서 attacker VM 으로부터 다시 ping 을 보내면, fw 의 nft monitor 가 한 줄씩 packet 의 처리 과정을 출력한다. drop verdict 가 보이면 rule 이 적중한 것이다.
-
-**4. Blue — 대응 의사결정.**
-
-학생이 분석을 마친 뒤 다음 세 가지를 판단한다.
-
-- **set timeout 적정성.** 5분이 너무 길거나 짧지 않은지 본다. 학습 환경에서는 1~5분이 적절하다.
-- **임계치 적정성.** 분당 60회가 너무 관대하지 않은지 본다. 정상 헬스체크가 분당 몇 번인지 함께 본다.
-- **로깅 충분성.** drop rule 에 `log prefix` 가 붙어 있는지 본다. 로그가 없으면 사후 분석이 어렵다.
-
-**5. Purple — 보완.**
-
-분석 결과를 바탕으로 nftables.conf 를 다음 세 가지 방향으로 보완한다.
-
-- **set timeout 조정.** `flags timeout` 의 기본 timeout 을 5m 에서 운영 정책에 맞게 정한다.
-- **카운터 분리.** ICMP / TCP SYN / UDP 의 counter 를 별도 rule 로 나누면 다음 분석이 쉬워진다.
-- **log prefix 표준화.** "ICMP-FLOOD: ", "SYN-FLOOD: " 같이 접두어를 명확히 정해서 Wazuh / Suricata 가 파싱하기 쉽게 만든다.
-
-한 케이스 cycle 은 약 20분 정도다.
-
-### 9.5.2 케이스 2 — TCP SYN flood 의 분석 + rate limit 대응
-
-**0. 일상 비유 — 가짜 손님이 입구를 막기.**
-
-식당 입구에 가짜 손님 1000명이 동시에 들어와 자리를 잡지 않고 그냥 서 있다고 상상해보자. 진짜 손님은 자리를 못 찾고 돌아간다. 식당 매니저는 "한 사람당 10초 안에 자리 못 잡으면 나가달라고 안내" 같은 규칙을 추가한다. 이로써 진짜 손님의 자리가 확보된다.
-
-이 비유를 TCP SYN flood 에 그대로 옮긴다.
-
-| 일상 비유 | TCP SYN flood |
-|-----------|---------------|
-| 가짜 손님이 자리만 차지 | SYN 만 보내고 ACK 안 보냄 (half-open) |
-| 진짜 손님이 자리 못 잡음 | 정상 client 의 connection 거부 |
-| 매니저의 시간 제한 규칙 | conntrack 의 SYN_SENT timeout |
-| 안내 직원 추가 | nft rate limit rule 추가 |
-
-**0a. 사용 도구 사전 안내.**
-
-- **hping3** — TCP / UDP / ICMP packet 을 임의로 만들어 보내는 도구다. attacker VM 에 미리 설치되어 있다.
-- **conntrack -L** — 현재 fw 의 connection tracking table 을 보는 명령이다. SYN_SENT / ESTABLISHED / TIME_WAIT 같은 state 별 connection 수를 보여준다.
-- **nft rate limit** — `limit rate 100/second` 같은 형식으로 초당 / 분당 packet 수를 제한하는 rule 옵션이다.
-
-**1. Red — 공격 재현.**
-
-6v6-attacker 에서 hping3 으로 SYN flood 를 보낸다. 학습 환경 안에서만 실행해야 한다.
-
-```bash
-ssh 6v6-attacker
-# 비밀번호: ccc
-
-# 6v6-attacker 내부 (학습 환경 한정)
-sudo hping3 -S -p 80 --flood -c 200 10.20.30.1
-```
-
-각 옵션의 의미는 다음과 같다.
-
-- `-S` — SYN flag 만 set. half-open 시도를 만든다.
-- `-p 80` — target port 80 (HTTP).
-- `--flood` — 응답을 기다리지 않고 최대 속도로 보낸다.
-- `-c 200` — 200개만 보내고 종료한다.
-
-`--flood` 와 `-c` 를 함께 쓰면 짧은 시간에 200개를 폭주시킬 수 있다.
-
-**2. 발생하는 로그/아티팩트.**
-
-fw 의 conntrack table 이 갑자기 부풀어 오른다. SYN_SENT state 의 entry 가 다수 생긴다. nft input chain 의 counter 도 즉시 증가한다. 학습 환경의 ips 컨테이너 Suricata 가 같은 traffic 을 packet sniff 하기 때문에 `eve.json` 에도 `ET SCAN` 또는 `ET DOS` 계열 signature 가 함께 발생할 수 있다.
-
-**3. Blue — conntrack 와 nft 로 직접 분석.**
-
-fw 에 들어간 뒤 conntrack 상태를 본다.
-
-```bash
-ssh 6v6-fw
-sudo conntrack -L -p tcp --dport 80 2>/dev/null | head -20
-```
-
-각 라인은 다음 형식이다.
-
-```
-tcp 6 30 SYN_SENT src=10.20.30.202 dst=10.20.30.1 sport=54321 dport=80 ...
-```
-
-SYN_SENT state entry 가 200개 가까이 있으면 SYN flood 의 직접 흔적이다. 정상 traffic 은 ESTABLISHED state 가 대부분이다.
-
-다음으로 state 별 통계를 본다.
-
-```bash
-sudo conntrack -L 2>/dev/null | awk '{print $4}' | sort | uniq -c | sort -rn | head
-```
-
-`SYN_SENT` 가 비정상적으로 많이 나오면 flood 의 증거다.
-
-마지막으로 nft input chain 의 counter 변화를 본다.
-
-```bash
-sudo nft list chain inet six_filter input | grep -A1 "tcp dport 80"
-```
-
-counter 의 packets 값이 급증한 것을 확인한다.
-
-**4. Blue — 대응 의사결정.**
-
-학생이 다음 세 가지를 판단한다.
-
-- **rate limit 임계치.** 정상 HTTP request 가 초당 몇 건인지 baseline 을 확인한다. flood 가 그보다 훨씬 큰 값인지 본다.
-- **연결 차단 vs rate limit.** 즉시 차단보다 rate limit 이 더 안전한 경우가 많다. 정상 client 의 영향을 최소화한다.
-- **conntrack timeout 조정.** SYN_SENT timeout 을 60초에서 30초로 줄이면 half-open entry 가 빨리 정리된다.
-
-**5. Purple — 보완.**
-
-다음 세 가지를 nftables.conf 에 반영한다.
-
-- **rate limit rule 추가.** input chain 의 tcp dport 80 앞에 `limit rate 100/second burst 50 packets` 를 추가한다. 정상 traffic 은 거의 영향이 없고 flood 만 차단된다.
-- **counter 분리.** `tcp dport 80 syn` 의 counter 를 별도 rule 로 분리하면 SYN flood 의 baseline 을 직접 측정할 수 있다.
-- **conntrack 모니터링 cron 추가.** SYN_SENT 가 100 이상이면 알람이 뜨도록 간단한 shell script 를 cron 에 등록한다.
-
-### 9.5.3 케이스 3 — forwarded chain 우회 시도의 분석
-
-**0. 일상 비유 — 정문 대신 비상구로 들어가려는 시도.**
-
-도둑이 아파트 정문에서 막히면 비상구로 우회를 시도한다. 비상구에도 경비원이 있어야 한다. 비상구의 경비원도 매뉴얼이 있어야 하고, 매뉴얼이 비어 있으면 도둑이 그냥 통과해버린다.
-
-이 비유를 nftables 의 forward chain 에 옮긴다. input chain 은 정문이고 forward chain 은 비상구다. forward chain 의 policy 가 accept 면 6v6 의 다른 서브넷으로 우회가 가능해진다.
-
-| 일상 비유 | forward chain |
-|-----------|---------------|
-| 정문 | input chain |
-| 비상구 | forward chain |
-| 비상구의 경비원 매뉴얼 | forward chain 의 rule |
-| 비상구 매뉴얼 비어 있음 | policy accept |
-| 비상구 매뉴얼 채움 | policy drop + 명시 rule |
-
-**0a. 사용 도구 사전 안내.**
-
-- **nmap -Pn -sS --reason** — `-Pn` 은 host discovery 생략, `--reason` 은 각 port 결과의 이유 (예: `syn-ack`, `reset`, `no-response`) 를 함께 출력한다.
-- **nft policy** — chain 의 default verdict 를 정한다. `policy drop` 이면 매칭되는 rule 이 없을 때 자동 차단된다.
-- **`log prefix`** — rule 에 붙이면 kernel ring buffer 에 prefix 가 찍힌 로그가 남는다.
-
-**1. Red — 공격 재현.**
-
-6v6-attacker 에서 fw 너머의 dmz 자산 (6v6-web) 에 직접 packet 을 보낸다. fw 가 NAT / forwarding 을 처리하는 경로다.
-
-```bash
-ssh 6v6-attacker
-# 비밀번호: ccc
-
-# 6v6-attacker 내부 (학습 환경 한정)
-nmap -Pn -sS --reason -p 22,80,3306,5432 10.20.32.80
-```
-
-각 옵션의 의미는 다음과 같다.
-
-- `-Pn` — host discovery 생략. ICMP block 환경에서 유용하다.
-- `-sS` — SYN scan.
-- `--reason` — 각 port 의 결과 이유를 함께 출력한다.
-- `-p 22,80,3306,5432` — SSH, HTTP, MySQL, PostgreSQL 표준 port.
-- `10.20.32.80` — 6v6-web 의 dmz IP. fw 너머의 자산이다.
-
-예상 결과는 두 가지로 갈린다. forward chain policy 가 drop 이면 모든 port 가 `filtered` 로 표시된다. policy 가 accept 면 일부 port 가 `open` 또는 `closed` 로 표시되며, 이는 우회 가능성을 의미한다.
-
-**2. 발생하는 로그/아티팩트.**
-
-fw 의 nft forward chain counter 가 증가한다. dmesg 에 forward chain 의 log prefix 가 찍힌다. Suricata 가 같은 traffic 을 packet sniff 해서 eve.json 에 alert 가 함께 발생한다.
-
-**3. Blue — nft 와 dmesg 로 직접 분석.**
-
-fw 에 들어가서 forward chain 의 policy 와 rule 을 본다.
-
-```bash
-ssh 6v6-fw
-sudo nft list chain inet six_filter forward
-```
-
-화면 첫 줄에 `policy drop` 또는 `policy accept` 가 표시된다. policy drop 이면 deny by default 가 적용되는 안전한 상태다. policy accept 면 모든 forwarded packet 이 그냥 통과한다.
-
-다음으로 counter 변화량을 확인한다. attacker 시도 전후의 packets 값을 비교한다.
-
-dmesg 에서 log prefix 가 찍힌 라인을 확인한다.
-
-```bash
-sudo dmesg --ctime | grep "FWD-DROP" | tail -20
-```
-
-각 라인에 source IP, destination IP, port 가 함께 기록된다. 이로부터 어떤 우회 시도가 있었는지 즉시 식별할 수 있다.
-
-**4. Blue — 대응 의사결정.**
-
-학생이 다음 세 가지를 판단한다.
-
-- **forward policy 의 안전성.** policy drop 이 기본이어야 한다. policy accept 면 즉시 drop 으로 바꿔야 한다.
-- **로깅 충분성.** log prefix 가 forward chain 의 drop rule 에 붙어 있는지 확인한다.
-- **dmz / int 으로 가는 정상 traffic 식별.** 차단으로 인해 정상 운영이 끊기지 않는지 본다.
-
-**5. Purple — 보완.**
-
-nftables.conf 에 다음 세 가지를 적용한다.
-
-- **policy drop 강제.** forward chain 의 첫 줄을 `type filter hook forward priority 0; policy drop;` 로 설정한다.
-- **명시적 accept rule.** 정상 운영에 필요한 traffic (예: bastion → dmz 의 SSH) 만 명시적으로 accept 한다.
-- **drop 직전 log rule.** 모든 forward drop 의 직전에 `log prefix "FWD-DROP: "` 를 둔다.
-
-본 절의 세 케이스가 끝나면 nftables 의 set / counter / rate limit / forward policy / log 의 운영을 전부 한 번씩 직접 경험한 셈이다.
-
-### 9.5.4 본 절 정리
-
-본 절은 W02 의 nftables 학습을 실제 공격 분석 cycle 에 연결했다. 학생이 다음을 능력으로 갖춘다.
-
-- attacker VM 에서 ICMP / SYN / forwarded 우회 시도를 직접 재현한다.
-- nft list, counter, monitor trace 명령으로 흔적을 직접 분석한다.
-- conntrack -L 로 connection state 를 직접 본다.
-- 분석 결과를 바탕으로 set timeout, rate limit, policy drop, log prefix 를 자기 손으로 보완한다.
-
-다음 주차 W03 에서는 NAT + HAProxy 의 같은 R/B/P cycle 을 학습한다.
+## 10. 운영 트러블슈팅 — 자주 보는 4 가지
+
+| 증상 | 확인 | 처치 |
+|------|------|------|
+| "차단했는데 통과한다" | 카운터 = 0 → 룰이 안 평가됨 (위에 accept 가 먼저) | **위치 top** 또는 위 accept 제거/수정 |
+| "정상 사용자가 막혔다" | 카운터 = 정상 IP, 응답코드 timeout | 룰의 매칭 범위 좁히기 (출발지 CIDR 정확히) |
+| "NAT 가 안 먹는다" | conntrack `[UNREPLIED]` | 응답 경로 / DNAT 대상 도달성 / 충돌 포트 |
+| "방화벽이 갑자기 모든 새 연결 거부" | dmesg `nf_conntrack: table full` | `nf_conntrack_max` 증가 (운영에서) |
 
 ---
 
-## 9.6 R/B/P 종합 시나리오 — 본 주차 의 통합 도식 + 시간선
+## 11. 핵심 정리 (8 줄)
 
-본 주차 의 3 사례 (ICMP flood / SYN flood / forwarded 우회) 를 Red/Blue/Purple 의
-3 시점 에서 통합 도식 으로 묶는다. **mermaid 그림 + 표 + 시간선** 의 세 형식 으로
-설명하여 학생 이 1 사건 의 3 관점 을 한눈에 본다.
-
-### 9.6.1 통합 도식
-
-```mermaid
-graph LR
-    R["🔴 Red Team<br/>attacker (10.20.30.202)<br/>3 시도<br/>① ICMP flood<br/>② SYN flood<br/>③ forwarded 우회"]
-
-    FW["🌐 fw nftables (10.20.30.1)<br/>입력 5 hook<br/>input/forward/output<br/>prerouting/postrouting"]
-
-    B1["🔵 nft counter<br/>패킷·바이트 통계<br/>nft list ruleset"]
-    B2["🔵 nft monitor trace<br/>매 패킷 의 rule 평가<br/>실시간 trace"]
-    B3["🔵 syslog log prefix<br/>/var/log/kern.log<br/>'nft-drop:' 등 접두사"]
-    B4["🔵 conntrack -L<br/>established/new/related<br/>state machine"]
-    B5["🔵 SIEM 통합<br/>Wazuh decoders<br/>nftables → alert"]
-
-    P1["🟣 Coverage Matrix<br/>3 사례 × 5 도구"]
-    P2["🟣 Detection Gap<br/>fragmented 패킷 X<br/>tunneled flood X"]
-    P3["🟣 룰 보완<br/>set timeout 조정<br/>limit rate 조정<br/>policy drop 변경"]
-    P4["🟣 AAR 보고서<br/>What/Why/Next"]
-
-    R -->|패킷 발사| FW
-    FW --> B1
-    FW --> B2
-    FW --> B3
-    FW --> B4
-    B1 --> B5
-    B2 --> B5
-    B3 --> B5
-    B4 --> B5
-    B5 --> P1
-    P1 --> P2
-    P2 --> P3
-    P3 -.->|nftables.conf 패치| FW
-    P3 --> P4
-
-    style R fill:#f85149,color:#fff
-    style FW fill:#3fb950,color:#fff
-    style B1 fill:#1f6feb,color:#fff
-    style B2 fill:#1f6feb,color:#fff
-    style B3 fill:#1f6feb,color:#fff
-    style B4 fill:#1f6feb,color:#fff
-    style B5 fill:#1f6feb,color:#fff
-    style P1 fill:#bc8cff,color:#fff
-    style P2 fill:#bc8cff,color:#fff
-    style P3 fill:#bc8cff,color:#fff
-    style P4 fill:#bc8cff,color:#fff
-```
-
-### 9.6.2 3 사례 의 R/B/P Coverage Matrix
-
-| 사례 | Red 명령 (attacker) | Blue 1차 탐지 (실시간) | Blue 2차 분석 (사후) | Purple Gap | Purple 권장 룰 |
-|------|---------------------|----------------------|---------------------|-----------|--------------|
-| **① ICMP flood** | `hping3 --icmp --flood 10.20.30.1` | `nft monitor` 의 drop count 폭증 | `nft list counter icmp` 의 byte 통계 | 4-tuple set 의 timeout 짧으면 재공격 우회 | set timeout 60s → 300s, src IP dynamic set 의 element 보관 |
-| **② SYN flood** | `hping3 -S --flood -p 80 10.20.30.1` | `nft monitor` 의 forward chain drop | `conntrack -L` 의 SYN_SENT 다수, kern.log 의 'nft-fw-syn:' prefix | rate limit 만 의 보호 = burst 통과, fragmented packet 미차단 | `tcp flags syn limit rate over 100/second` + frag drop |
-| **③ forwarded 우회** | `nmap -sS -p- 10.20.32.80 --source-port 53` | `nft monitor trace forward` 의 rule 평가 | `nft list ruleset` 의 forward chain default policy 확인 | policy accept 면 명시 룰 없는 통신 통과 | forward chain `policy drop` + 명시 룰 명세 (whitelist) |
-
-### 9.6.3 R/B/P 시간선 (1 사건 의 분 단위 흐름)
-
-```
-T+0    Red attacker.202 에서 hping3 SYN flood 시작 (-S --flood -p 80 10.20.30.1)
-       └→ fw 의 input chain 의 tcp dport 80 룰 평가
-          - 합법 트래픽 → accept
-          - 100/sec 초과 → drop (rate limit) + log prefix "nft-fw-syn:"
-
-T+5s   Blue 1차 탐지 (운영자 의 실시간 모니터링)
-       └→ ssh 6v6-fw "nft list counter ip filter syn_drop"
-          - packets 가 5초 안 1000+ 증가 = 비정상
-       └→ tail -f /var/log/kern.log | grep "nft-fw-syn:"
-          - drop event 1초 에 50+ 발생 = SYN flood
-
-T+30s  Blue 2차 분석 (root cause)
-       └→ conntrack -L | grep SYN_SENT | wc -l = 500+ (정상 = 0~5)
-       └→ /var/log/suricata/fast.log = "ET DOS Possible SYN Flood" alert
-       └→ Wazuh manager alerts.json = rule 31301 매치 (level 10)
-
-T+60s  Blue 1차 대응 (수동 차단)
-       └→ ssh 6v6-fw "nft add element ip filter blacklist { 10.20.30.202 }"
-          → src IP 의 dynamic set 추가 (timeout 600s)
-       └→ 효과 확인 = counter syn_drop 의 증가 정지
-
-T+5m   Purple 분석 (사후 Gap 식별)
-       └→ Coverage Matrix 의 ② 항목 = "fragmented packet 미차단"
-       └→ 재현 = hping3 -S --flood -p 80 -f --frag 10.20.30.1
-          - drop count 증가 X (Gap 확인)
-       └→ 권장 룰 = `ip frag-off & 0x1fff != 0 drop`
-
-T+15m  Purple 룰 보완 + 재테스트
-       └→ /etc/nftables.conf 의 input chain 에 frag drop 룰 추가
-       └→ nft -f /etc/nftables.conf 적용
-       └→ hping3 fragmented flood 재시도 → drop 확인 (Gap closed)
-
-T+30m  Purple AAR 보고서 작성
-       └→ What: SYN flood + fragmented bypass
-       └→ Why: 초기 룰 의 frag handling 누락
-       └→ Next: W04 의 IDS 통합 시 Suricata 의 frag 룰 활성화
-```
-
-### 9.6.4 본 주차 R/B/P 의 핵심 인사이트
-
-1. **fw 단독 의 한계** — rate limit 룰 만 으로 는 fragmented / tunneled 우회 가능.
-   IDS (Suricata) + WAF (ModSec) + SIEM (Wazuh) 의 4 계층 detection 이 필요 (W04+ 학습).
-
-2. **Counter 의 운영 가치** — `nft list counter` 의 packets/bytes 통계 가 실시간 SLI.
-   Wazuh 의 decoder 가 counter 변화 를 alert 로 전환 가능.
-
-3. **Purple 의 룰 보완 cycle** — Gap 발견 → 룰 작성 → 적용 → 재테스트 → 효과 측정 의
-   5 단계 가 본 과목 의 모든 주차 의 표준 흐름.
-
-4. **운영 시 의 주의** — 실제 운영 환경 에서 의 `nft -f` 적용 은 atomic rollback 보장
-   (`nft -c` 의 syntax check 후 적용). 룰 적용 실수 = 운영 장애. W14 (운영 자동화)
-   에서 의 deployment pipeline 학습.
-
-5. **ISMS-P 입증 자료** — 본 주차 의 R/B/P 분석 보고서 = ISMS-P 2.10.7 (보안위협 대응)
-   의 입증 자료 로 활용 가능. AAR 보고서 의 What/Why/Next 양식 = 인증 심사 답변 형식.
+1. 운영자는 **콘솔 + nft 명령 읽기** 만으로 충분하다. 엔지니어가 아니다.
+2. **체인은 input/forward/output 3개**, 평가는 **위에서 아래**, accept/drop 에서 끝난다.
+3. 자주 쓰는 패턴: **stateful(established,related accept) + rate limit + 객체(@group)**.
+4. **DNAT=prerouting**, **SNAT/MASQUERADE=postrouting**. HAProxy(L7) 와 nft NAT(L4) 의 역할 분담.
+5. **카운터** 가 차단 효과의 정직한 증거. 콘솔 이벤트 로그가 감사 자료.
+6. **SIEM(Wazuh) 연동** 으로 방화벽이 단독이 아니라 인프라 전체의 일부가 된다.
+7. 침해대응은 **R/B/P** 1 cycle: 공격 재현 → 룰 → 카운터 증거.
+8. 방화벽은 **경계** 만 본다 — dmz 내부 엔드포인트(Windows)는 W03 의 **EDR** 이 본다.
 
 ---
 
-## 10. 사례 분석 — ISMS-P / KISA / NIST
+## 12. 과제
 
-### 10.1 ISMS-P 2.6.1 (네트워크 접근통제)
-
-본 주차의 fw nftables 가 ISMS-P 2.6.1 의 3 sub-control 모두 만족:
-
-| Sub-control | 본 주차 활동 |
-|------------|-------------|
-| 2.6.1.1 외부→내부 접근 통제 | nftables filter table 의 input/forward chain |
-| 2.6.1.2 정책 변경 승인·기록 | git audit (`6v6/fw/nftables.conf`) |
-| 2.6.1.3 로그 1년 보관 | `log prefix` + rsyslog → SIEM 1년 retention |
-
-### 10.2 KISA 보호나라 — 2025 침해사고 사례
-
-KISA "2025 Q1 침해사고" 의 사례 중 **인터넷 노출 관리콘솔** 카테고리 (35%) 의 사고
-패턴:
-
-```
-공격: 인터넷에 노출된 PostgreSQL 5432 → 무차별 대입 → 데이터 유출
-방어: fw input chain 에서 5432/tcp 차단 + IP whitelist
-```
-
-본 주차의 실습 3 과 동일한 패턴. 실제 운영에 그대로 적용 가능.
-
-### 10.3 NIST CSF — Protect.AC-4 (Access Permissions)
-
-```mermaid
-graph LR
-    AC4[NIST PR.AC-4<br/>Access Permissions]
-    AC4 --> NFT[nftables<br/>네트워크 접근 통제]
-    AC4 --> RBAC[RBAC<br/>사용자 권한]
-    AC4 --> MFA[MFA<br/>다요소 인증]
-    NFT --> CHAIN[chain 별 정책]
-    NFT --> SET[set 으로 그룹화]
-    NFT --> LOG[log + counter]
-    style AC4 fill:#1f6feb,color:#fff
-    style NFT fill:#3fb950,color:#fff
-```
-
-본 과목 W02-W03 가 PR.AC-4 의 네트워크 측면 구현.
+1. 시나리오 fw-s01 / s03 / s07 / s08 / s11 다섯 건의 콘솔 검증 화면(✔ 통과) 캡처를 제출하라.
+2. fw-s07 (화이트리스트) 에서 "허용을 아래에 둘 때" 어떻게 망가지는지 시연하고 1문단 설명하라.
+3. fw-s08 DNAT 룰을 만들고 적용 전·후의 `ss -ltn` / 공격자 `curl` 결과를 비교하라.
+4. SIEM 연동을 켠 뒤 룰을 한 건 적용·삭제하고 Wazuh 대시보드에 그 이벤트가 도달했는지 확인한 화면을 제출하라.
+5. (생각) 방화벽이 **못 보는 트래픽 3가지** 를 우리 6v6 구조에서 구체적으로 들고, 각각을 누가 봐 주는지 쓰라.
 
 ---
 
-## 11. 과제
+## 13. 다음 주차 (W03) 예고 — Windows 엔드포인트 운영·침해대응
 
-### A. 정책 강화 시뮬레이션 (필수, 40점)
-
-6v6-fw 의 현재 `policy accept` 를 `policy drop` 으로 바꾸면 어떤 트래픽이 끊기는가?
-다음 4 단계 진행:
-
-1. **변경 전**: 4 vhost (juice / siem / portal / bastion) 모두 200/302 응답 확인
-2. **policy drop 적용**: `ssh 6v6-fw 'sudo nft chain inet six_filter forward "{ policy drop ; }"'`
-3. **영향 측정**: 4 vhost 응답 코드 재측정 + 어느 것이 끊겼는지 분석
-4. **복구**: `policy accept` 복귀 + 정상 응답 확인
-
-보고서: 1페이지 — 4 단계 출력 + 끊긴 트래픽 + 끊기지 않은 트래픽 + 이유 분석.
-
-### B. iptables → nftables 마이그레이션 (심화, 30점)
-
-다음 legacy iptables 룰 3건을 `iptables-translate` 로 변환 + 의미 한글 해설:
-
-```
-iptables -A INPUT -s 192.168.1.0/24 -j ACCEPT
-iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
-iptables -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
-```
-
-### C. R/B/P 보고서 (정성, 30점)
-
-실습 6 의 R/B/P 사이클 결과 + 다음 4 항목 포함 1페이지 보고서:
-
-- attacker 의 nmap 결과 (filtered / closed / open 분포)
-- fw counter 의 packets/bytes 증가량
-- dmesg 의 RBPDROP 라인 수
-- production 환경에서 본 룰을 영구화한다면 어떤 절차 (git PR / 이미지 재빌드 / canary)
-
----
-
-## 12. 평가 기준
-
-| 항목 | 비중 | 평가 방법 |
-|------|------|----------|
-| 정책 강화 (A) | 40% | 4 단계 정확도 + 끊긴 트래픽 분석 |
-| 마이그레이션 (B) | 30% | 3 변환 결과 + 한글 해설 |
-| R/B/P 보고서 (C) | 30% | nmap 결과 + counter + dmesg + 영구화 절차 |
-
----
-
-## 13. 핵심 정리 (1줄씩)
-
-1. **Netfilter 5 hook** — prerouting / input / forward / output / postrouting. 어디서
-   잡느냐가 정책의 핵심.
-2. **nftables 4 핵심 개념** — table / chain / rule / set. 식별자는 letter/_ 로 시작.
-3. **6v6-fw 의 실제 정책** — `inet six_filter` (정책) + `ip six_nat` (NAT stub, W03).
-4. **drop vs reject** — drop 은 응답 없음 (스캐너 회피), reject 는 ICMP unreachable
-   (사용자 친화).
-5. **iptables ↔ nftables** — `iptables-translate` 가 표준 변환 도구. iptables-nft 가
-   호환 backend.
-6. **R/B/P 운영** — Red 가 공격 → Blue 가 룰 추가 → Purple 가 효과 측정 후 영구화 검토.
-
----
-
-## 14. 다음 주차 (W03) 예고
-
-- **주제**: nftables 방화벽 (2) — DNAT / SNAT / HAProxy 협업
-- **실습 환경**: `6v6-fw` + `6v6-attacker` + `6v6-web`
-- **핵심**: HAProxy 가 L7 라우팅 담당해도, nftables 의 `ip six_nat` table 이 어떻게
-  보조 (외부 포트 ↔ 내부 컨테이너 매핑) 하는지, masquerade 가 응답 path 에 어떤 영향을
-  미치는지.
-- **R/B/P 시나리오**: Red 가 fw:8888 DNAT 통해 직접 web 접근 시도 → Blue 가 HAProxy
-  와 nftables 동시 라우팅 충돌 시뮬 → Purple 가 priority + ACL 정리.
+방화벽은 경계의 문지기다. 안에 있는 **사용자 PC(엔드포인트)** 가 무엇을 보고 무엇을 실행하는지는
+못 본다. 다음 주차는 우리 6v6 에 새로 들어온 **Windows 11 사용자 PC(10.20.32.60)** 를 **victim 직원
+PC** 와 **analyst 보안담당 PC** 두 페르소나로 운영하며, **Sysmon + Wazuh 에이전트 + Windows 보안로그**
+를 SIEM 으로 흘려보내 분석한다. 방화벽으로 못 막은 일을 엔드포인트가 잡는다.
