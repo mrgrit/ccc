@@ -330,45 +330,46 @@ steps:
     instruction: |
       ## 🎯 미션 — 직원 PC(Windows victim) 가 악성 페이지를 클릭할 때 WAF 가 본다
 
-      Windows 사용자 PC(10.20.32.60)에서 **XSS 페이로드가 포함된 URL** 을 연다(피싱 링크/악성 광고
-      클릭 상황 시뮬레이션). WAF 는 이 직원의 요청을 **403 으로 차단**하고, audit 로그에 **출발지
-      10.20.32.60** 으로 기록한다. 즉 WAF 는 외부 공격 차단뿐 아니라 **우리 직원이 위험에 노출되는
+      Windows 사용자 PC(user 구역, 10.20.33.60)에서 **XSS 페이로드가 포함된 URL** 을 연다(피싱
+      링크/악성 광고 클릭 상황 시뮬레이션). 직원 PC 의 요청은 user→IPS→dmz 의 웹서버 = **WAF**
+      순서로 흐르고, WAF 는 이 직원의 요청을 **403 으로 차단**하고 audit 로그에 **출발지
+      10.20.33.60** 으로 기록한다. 즉 WAF 는 외부 공격 차단뿐 아니라 **우리 직원이 위험에 노출되는
       순간** 도 잡아낸다.
 
       ## 💻 확인 명령 (트리거 → 검증)
       ```bash
       # ① Windows victim 에서 악성 URL 브라우즈 (SSH 로 in-guest 트리거, PowerShell IWR)
       sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-        ccc@10.20.32.60 'try { (iwr -UseBasicParsing "http://dvwa.6v6.lab/?q=%3Cscript%3Ealert%281%29%3C/script%3E" -EA Stop).StatusCode } catch { $_.Exception.Response.StatusCode.value__ }'
+        ccc@10.20.33.60 'try { (iwr -UseBasicParsing "http://dvwa.6v6.lab/?q=%3Cscript%3Ealert%281%29%3C/script%3E" -EA Stop).StatusCode } catch { $_.Exception.Response.StatusCode.value__ }'
       sleep 2
       # ② WAF audit (waf-gui) 에서 victim IP 의 차단 흔적 (가장 최근 1건)
       curl -s -H "Host: waf-gui.6v6.lab" "http://10.20.30.1/api/audit?n=30&blocked=1" \
-        | jq -c '.events[] | select(.client_ip=="10.20.32.60") | {client_ip,status,uri}' | head -1
+        | jq -c '.events[] | select(.client_ip=="10.20.33.60") | {client_ip,status,uri}' | head -1
       ```
       ## 🔍 무엇을 보나
-      ① 의 응답 코드 **403** — WAF가 직원의 악성 요청을 즉시 차단. ② audit 에 `"client_ip":"10.20.32.60"`,
+      ① 의 응답 코드 **403** — WAF가 직원의 악성 요청을 즉시 차단. ② audit 에 `"client_ip":"10.20.33.60"`,
       `"status":403`, uri 에 `<script>` 흔적 — 어떤 직원이, 어디로, 무엇을 요청했는지 분석가가 즉시 파악.
       **waf-gui 콘솔의 audit 메뉴**에서도 동일 흔적을 그래프로 본다.
 
       ## ✅ 합격 기준
-      출력에 victim IP `10.20.32.60` 가 보인다(WAF audit 이 직원의 악성 요청을 잡았다).
-    hint: 'Windows에서 XSS URL → WAF 403 + audit 에 client_ip 10.20.32.60. expect: 10.20.32.60'
+      출력에 victim IP `10.20.33.60` 가 보인다(WAF audit 이 직원의 악성 요청을 잡았다).
+    hint: 'Windows에서 XSS URL → WAF 403 + audit 에 client_ip 10.20.33.60. expect: 10.20.33.60'
     category: redblue
     points: 15
     answer: |
-      sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.32.60 'try { (iwr -UseBasicParsing "http://dvwa.6v6.lab/?q=%3Cscript%3Ealert%281%29%3C/script%3E" -EA Stop).StatusCode } catch { $_.Exception.Response.StatusCode.value__ }'
+      sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.33.60 'try { (iwr -UseBasicParsing "http://dvwa.6v6.lab/?q=%3Cscript%3Ealert%281%29%3C/script%3E" -EA Stop).StatusCode } catch { $_.Exception.Response.StatusCode.value__ }'
       sleep 2
-      curl -s -H "Host: waf-gui.6v6.lab" "http://10.20.30.1/api/audit?n=30&blocked=1" | jq -c '.events[] | select(.client_ip=="10.20.32.60") | {client_ip,status,uri}' | head -1
-    answer_detail: "Windows victim 의 XSS 요청이 WAF 에서 403 차단 + audit 에 client_ip=10.20.32.60. WAF 는 외부 공격뿐 아니라 내부 직원 위험 노출도 포착하는 창."
+      curl -s -H "Host: waf-gui.6v6.lab" "http://10.20.30.1/api/audit?n=30&blocked=1" | jq -c '.events[] | select(.client_ip=="10.20.33.60") | {client_ip,status,uri}' | head -1
+    answer_detail: "Windows victim 의 XSS 요청이 WAF 에서 403 차단 + audit 에 client_ip=10.20.33.60. WAF 는 외부 공격뿐 아니라 내부 직원 위험 노출도 포착하는 창."
     verify:
       type: output_contains
-      expect: '10.20.32.60'
+      expect: '10.20.33.60'
       field: stdout
       semantic:
         intent: "직원 PC 의 악성 웹 접속이 WAF 에 잡힘을 라이브로 확인 — '직원 보호' 관점의 WAF"
         success_criteria:
           - "Windows victim → 악성 URL 트리거 (403 수신)"
-          - "WAF audit 에 client_ip 10.20.32.60 기록"
+          - "WAF audit 에 client_ip 10.20.33.60 기록"
           - "WAF 는 직원 보호 창이기도 함을 이해"
         acceptable_methods:
           - "**[GUI] Windows RDP → 브라우저로 악성 URL → waf-gui audit 확인** (권장)"

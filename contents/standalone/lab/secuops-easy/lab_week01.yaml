@@ -14,7 +14,7 @@ difficulty: easy
 duration_minutes: 90
 audience: 보안 솔루션 운영 입문자 (1주차)
 prerequisites:
-  - "W01 강의안 정독 — 4구역(ext/pipe/dmz/int)과 세 장비의 역할"
+  - "W01 강의안 정독 — 5구역(ext/pipe/dmz/int + user)과 세 장비의 역할"
   - "브라우저에서 *.6v6.lab 접속 가능하도록 hosts/DNS 설정 확인"
 objectives:
   - "세 콘솔(fw-gui/ips-gui/waf-gui) 대시보드를 열고 핵심 정보를 읽는다"
@@ -22,7 +22,7 @@ objectives:
   - "IPS 가 가동 중이며 탐지룰이 로딩돼 있음을 확인한다"
   - "WAF 의 SecRuleEngine 모드와 CRS 버전을 확인한다"
   - "정상 웹 요청 한 개의 경로(방화벽→IPS→WAF→앱)를 추적한다"
-  - "4구역 토폴로지를 본인 손으로 그려 정리한다"
+  - "5구역 토폴로지(user 포함)를 본인 손으로 그려 정리한다"
 pass_threshold: 0.7
 steps:
 
@@ -261,7 +261,7 @@ steps:
 
       방금 보낸 요청은 IPS 를 지났으므로, IPS 콘솔의 **이벤트(eve.json)** 에 흔적이 남는다.
       IPS 콘솔에서 이벤트 타입 분포(http/flow 등)를 확인한다. 그리고 이번 주의 마무리로,
-      4구역 토폴로지를 본인 손으로 그려 정리한다.
+      5구역 토폴로지를 본인 손으로 그려 정리한다 (사용자 PC `user` 구역 포함).
 
       ## 💻 확인 명령 (채점용)
 
@@ -274,7 +274,7 @@ steps:
       눈에 잡혀 기록된 것이다. (이것이 나중에 SIEM 으로 모이는 원천 데이터다.)
 
       ## ✅ 합격 기준
-      IPS 이벤트 분포에 `event_type` 이 보인다. + 4구역 토폴로지 그림 제출.
+      IPS 이벤트 분포에 `event_type` 이 보인다. + 5구역 토폴로지 그림 제출.
     hint: 'ips-gui 콘솔 → 이벤트(eve.json) 메뉴. 출력에 event_type 이 보이면 OK.'
     category: synthesis
     points: 20
@@ -283,7 +283,8 @@ steps:
     answer_detail: |
       counts 에 http/flow 등이 보임 — 방금 요청이 IPS 에 기록됨. 이 데이터가 SIEM(Wazuh)으로
       모여 통합 관제의 재료가 된다. 토폴로지 그림: ext(10.20.30)→pipe(10.20.31)→dmz(10.20.32)→
-      int(10.20.40), 각 경계에 방화벽/IPS, dmz 에 WAF+웹서버+SIEM.
+      int(10.20.40) + user(10.20.33), 각 경계에 방화벽/IPS (IPS 는 user 구역의 게이트웨이도 겸함),
+      dmz 에 WAF+웹서버+SIEM, user 에 Windows 사용자 PC.
     verify:
       type: output_contains
       expect: 'event_type'
@@ -293,20 +294,21 @@ steps:
         success_criteria:
           - "eve.json 이벤트에 event_type(http/flow 등)이 보임"
           - "그 흔적이 방금 보낸 요청과 연결됨을 이해"
-          - "4구역 토폴로지를 직접 그려 정리"
+          - "5구역 토폴로지(user 포함)를 직접 그려 정리"
         acceptable_methods:
           - "**[GUI] ips-gui → 이벤트 메뉴** — event_type 분포 확인 (권장)"
           - "**[API] curl ips-gui /api/eve** — counts/events 의 event_type"
-          - "**[정리] 4구역 토폴로지 직접 작도** — ext/pipe/dmz/int + 장비 위치"
+          - "**[정리] 5구역 토폴로지 직접 작도** — ext/pipe/dmz/int + user + 장비 위치"
     target_vm: attacker
 
   - order: 7
     instruction: |
       ## 🎯 미션 — Windows 사용자 PC 가 감시되고 있는지 확인
 
-      6v6 에는 실제 직원이 쓰는 **Windows 사용자 PC**(10.20.32.60)가 있다. 이 PC 는 보안장비들이
-      지키려는 **엔드포인트(표적)** 이자, **Sysmon + Wazuh 에이전트**로 SIEM 에 감시된다. SIEM(Wazuh)
-      에 이 PC 가 에이전트로 등록·연결돼 있는지 확인한다.
+      6v6 에는 실제 직원이 쓰는 **Windows 사용자 PC** 가 별도의 `user` 구역(10.20.33.60)에 있다.
+      서버가 모인 dmz 와 분리된 자리로, 직원 책상에 해당한다. 이 PC 는 보안장비들이 지키려는
+      **엔드포인트(표적)** 이자, **Sysmon + Wazuh 에이전트(EDR)**로 PC 안의 행위까지 SIEM 에
+      감시된다. SIEM(Wazuh) 에 이 PC 가 에이전트로 등록·연결돼 있는지 확인한다.
 
       ## 💻 확인 명령 (SIEM 매니저에서)
       ```bash

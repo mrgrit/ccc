@@ -248,7 +248,7 @@ steps:
       번에 확인한다.
       - **방화벽**: conntrack 에 외부 공격자의 연결 기록
       - **IPS**: eve.json 에 sqlmap/UNION alert
-      - **WAF**: 외부 공격자 403 차단 + 직원 PC 의 악성 요청도 audit(client_ip 10.20.32.60)에 기록
+      - **WAF**: 외부 공격자 403 차단 + 직원 PC 의 악성 요청도 audit(client_ip 10.20.33.60)에 기록
       - **엔드포인트(Windows)**: Sysmon 이 PC 내부 행위를 이벤트로 기록 (host 가시성)
 
       ## 💻 확인 명령
@@ -260,14 +260,14 @@ steps:
       # ② 외부 공격자 → SQLi
       W=$(curl -s -o /dev/null -w "%{http_code}" -A "sqlmap/1.7" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?q=1%20UNION%20SELECT%201")
       # ③ 직원 PC(Windows victim) → 악성 페이지 클릭(XSS)
-      sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.32.60 \
+      sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.33.60 \
         'try { (iwr -UseBasicParsing "http://dvwa.6v6.lab/?q=%3Cscript%3Ealert%281%29%3C/script%3E" -EA Stop).StatusCode } catch { $_.Exception.Response.StatusCode.value__ }' >/dev/null
       sleep 2
       # 네 곳의 흔적 수집
       I=$(curl -s -H "Host: ips-gui.6v6.lab" "http://10.20.30.1/api/eve?type=alert&n=30" | grep -c -i "sqlmap\|union")
       F=$(curl -s -H "Host: fw-gui.6v6.lab" "http://10.20.30.1/api/conntrack" | jq .count)
-      A=$(curl -s -H "Host: waf-gui.6v6.lab" "http://10.20.30.1/api/audit?n=30&blocked=1" | jq '[.events[]|select(.client_ip=="10.20.32.60")]|length')
-      S=$(sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.32.60 \
+      A=$(curl -s -H "Host: waf-gui.6v6.lab" "http://10.20.30.1/api/audit?n=30&blocked=1" | jq '[.events[]|select(.client_ip=="10.20.33.60")]|length')
+      S=$(sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.33.60 \
         'Get-WinEvent -LogName "Microsoft-Windows-Sysmon/Operational" -MaxEvents 50 -EA SilentlyContinue | Measure-Object | Select -ExpandProperty Count')
       echo "capstone WAF=$W IPS_alerts=$I FW_conn=$F WIN_victim_audit=$A WIN_sysmon=$S"
       ```
@@ -279,12 +279,12 @@ steps:
     answer: |
       curl -s -X POST -H "Host: waf-gui.6v6.lab" -H "Content-Type: application/json" http://10.20.30.1/api/rule/apply -d '{"rule":"SecRule REQUEST_HEADERS:User-Agent \"@contains sqlmap\" \"id:9000099,phase:1,t:lowercase,deny,status:403,log,msg:'\''EDU capstone'\'',severity:'\''CRITICAL'\''\""}' >/dev/null
       W=$(curl -s -o /dev/null -w "%{http_code}" -A "sqlmap/1.7" -H "Host: dvwa.6v6.lab" "http://10.20.30.1/?q=1%20UNION%20SELECT%201")
-      sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.32.60 'try { (iwr -UseBasicParsing "http://dvwa.6v6.lab/?q=%3Cscript%3Ealert%281%29%3C/script%3E" -EA Stop).StatusCode } catch { $_.Exception.Response.StatusCode.value__ }' >/dev/null
+      sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.33.60 'try { (iwr -UseBasicParsing "http://dvwa.6v6.lab/?q=%3Cscript%3Ealert%281%29%3C/script%3E" -EA Stop).StatusCode } catch { $_.Exception.Response.StatusCode.value__ }' >/dev/null
       sleep 2
       I=$(curl -s -H "Host: ips-gui.6v6.lab" "http://10.20.30.1/api/eve?type=alert&n=30" | grep -c -i "sqlmap\|union")
       F=$(curl -s -H "Host: fw-gui.6v6.lab" "http://10.20.30.1/api/conntrack" | jq .count)
-      A=$(curl -s -H "Host: waf-gui.6v6.lab" "http://10.20.30.1/api/audit?n=30&blocked=1" | jq '[.events[]|select(.client_ip=="10.20.32.60")]|length')
-      S=$(sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.32.60 'Get-WinEvent -LogName "Microsoft-Windows-Sysmon/Operational" -MaxEvents 50 -EA SilentlyContinue | Measure-Object | Select -ExpandProperty Count')
+      A=$(curl -s -H "Host: waf-gui.6v6.lab" "http://10.20.30.1/api/audit?n=30&blocked=1" | jq '[.events[]|select(.client_ip=="10.20.33.60")]|length')
+      S=$(sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.33.60 'Get-WinEvent -LogName "Microsoft-Windows-Sysmon/Operational" -MaxEvents 50 -EA SilentlyContinue | Measure-Object | Select -ExpandProperty Count')
       echo "capstone WAF=$W IPS_alerts=$I FW_conn=$F WIN_victim_audit=$A WIN_sysmon=$S"
     answer_detail: "네 곳 흔적: WAF=403(외부)+IPS alert(네트워크 패턴)+FW conntrack(연결)+WIN_victim_audit(직원의 악성 요청 WAF 차단)+WIN_sysmon(엔드포인트 호스트 이벤트). 모두 같은 SIEM 으로 모임 — 분석가 한 화면 상관분석."
     verify:
@@ -297,7 +297,7 @@ steps:
           - "WAF 403 차단 (외부 sqlmap)"
           - "IPS eve alert"
           - "FW conntrack 기록"
-          - "WAF audit 에 victim(10.20.32.60) XSS 차단 기록"
+          - "WAF audit 에 victim(10.20.33.60) XSS 차단 기록"
           - "Windows Sysmon 이 PC 내부 행위 기록"
           - "네 흔적이 SIEM 으로 모임을 이해"
         acceptable_methods:
