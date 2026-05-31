@@ -1,0 +1,115 @@
+lab_id: standalone-soc-week04
+title: "Wazuh 관제 환경 — manager 구조 + agent + decoder/rule + alert 흐름 (6v6 + R/B/P)"
+version: standalone-non-ai
+course: soc
+week: 4
+description: |
+  Wazuh manager / agent 의 구조 + alert 생성 흐름 (수신 → decoder → rule → alert) 의 4 단계 를 학생 본인 손 으로 추적.
+difficulty: medium
+duration_minutes: 90
+prerequisites:
+  - "W01-W03 의 SOC stack + 로그 형식 이해"
+objectives:
+  - "wazuh-control status 의 daemon 7+ active 확인"
+  - "agent_control -l 의 agent 목록 + active/disconnected 상태"
+  - "ossec.conf 의 syslog remote + json localfile 설정 위치"
+  - "/var/ossec/ruleset/rules/ 의 default rule + /var/ossec/etc/rules/ 의 custom rule"
+  - "alert 1 건 의 decoder.name → rule.id 매핑 추적"
+pass_threshold: 0.6
+steps:
+
+  - order: 1
+    instruction: |
+      ## 🎯 MISSION — Wazuh daemon 상태 + agent 목록
+      **무엇을:** wazuh-control status + agent_control -l 결과 인용 + 정상/비정상 판정.
+    hint: "ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control status; sudo /var/ossec/bin/agent_control -l'."
+    category: wazuh
+    points: 10
+    answer: |
+      🤖 가이드:
+      ssh 6v6-siem 'sudo /var/ossec/bin/wazuh-control status | head -15; echo ---; sudo /var/ossec/bin/agent_control -l 2>&1 | head -10'
+    answer_detail: |
+      wazuh-apid / wazuh-analysisd / wazuh-remoted / wazuh-db / wazuh-syscheckd / wazuh-monitord / wazuh-logcollector / wazuh-modulesd 정상.
+    verify:
+      intent: "daemon + agent 목록"
+      success_criteria:
+        - "daemon 7+ active"
+        - "agent 목록"
+      acceptable_methods:
+        - "wazuh-control / agent_control"
+      negative_signs:
+        - "daemon 누락"
+    target_vm: siem
+    risk_level: low
+
+  - order: 2
+    instruction: |
+      ## 🎯 MISSION — ossec.conf 의 syslog remote + localfile
+      **무엇을:** /var/ossec/etc/ossec.conf 의 `<remote>` block + `<localfile>` 의 logformat=json (Suricata eve.json) 설정 인용.
+    hint: "grep -B1 -A3 '<remote>\\|<localfile>' /var/ossec/etc/ossec.conf | head -30."
+    category: wazuh
+    points: 8
+    answer: |
+      🤖 가이드:
+      ssh 6v6-siem 'sudo grep -B1 -A3 "<remote>\|<localfile>" /var/ossec/etc/ossec.conf | head -30'
+    answer_detail: |
+      remote = syslog 514/udp 수신. localfile = agent 의 file 모니터링 (eve.json / modsec audit / 등).
+    verify:
+      intent: "remote + localfile 설정"
+      success_criteria:
+        - "remote block"
+        - "localfile block"
+      acceptable_methods:
+        - "grep"
+      negative_signs:
+        - "1 block 만"
+    target_vm: siem
+    risk_level: low
+
+  - order: 3
+    instruction: |
+      ## 🎯 MISSION — decoder + rule 위치 + 1 sample
+      **무엇을:** decoder XML (`/var/ossec/etc/decoders/`, `/var/ossec/ruleset/decoders/`) 와 rule XML (`/var/ossec/etc/rules/`, `/var/ossec/ruleset/rules/`) 의 file 수 + 학생 의 1 custom rule 또는 default rule 인용.
+    hint: "find /var/ossec/etc/{decoders,rules} -name '*.xml' | wc -l."
+    category: wazuh
+    points: 8
+    answer: |
+      🤖 가이드:
+      ssh 6v6-siem 'sudo find /var/ossec/etc/decoders /var/ossec/etc/rules /var/ossec/ruleset/rules -name "*.xml" 2>/dev/null | wc -l; sudo cat /var/ossec/etc/rules/local_rules.xml 2>/dev/null | head -20'
+    answer_detail: |
+      default rule 수 1000+. custom rule = /var/ossec/etc/rules/local_rules.xml (학생 작성).
+    verify:
+      intent: "decoder/rule 파일 수 + 1 sample"
+      success_criteria:
+        - "파일 수"
+        - "1 rule 인용"
+      acceptable_methods:
+        - "find / cat"
+      negative_signs:
+        - "rule 인용 없음"
+    target_vm: siem
+    risk_level: low
+
+  - order: 4
+    instruction: |
+      ## 🎯 MISSION — alert 1 건 의 decoder → rule 매핑
+      **무엇을:** alerts.json 1 alert 의 decoder.name + rule.id + rule.description + (있다면) rule.groups 추출 + decoder 가 어느 source (Suricata eve / ModSec / syslog) 인지 학생 판정.
+    hint: "tail -1 alerts.json | jq '.decoder, .rule, .agent'."
+    category: wazuh
+    points: 12
+    answer: |
+      🤖 가이드:
+      ssh 6v6-siem 'sudo tail -1 /var/ossec/logs/alerts/alerts.json | jq "{decoder: .decoder, rule_id: .rule.id, desc: .rule.description, groups: .rule.groups, agent: .agent.name}"'
+    answer_detail: |
+      decoder.name = json (Suricata) / bastion-lifecycle / sshd / modsec 등. rule.groups = 분류 (web/firewall/intrusion).
+    verify:
+      intent: "alert decoder→rule 매핑"
+      success_criteria:
+        - "decoder + rule.id + groups"
+        - "source 판정"
+      acceptable_methods:
+        - "jq"
+      negative_signs:
+        - "source 판정 없음"
+    target_vm: siem
+    risk_level: low

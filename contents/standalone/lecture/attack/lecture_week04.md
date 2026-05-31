@@ -861,8 +861,8 @@ sudo tail -100 /var/ossec/logs/alerts/alerts.json | \
    (피싱 메일 / 악성 광고로 자동 트리거 — XSS-stored 의 발사대 등)
 ```
 
-직원 PC 의 IP (10.20.32.60) 가 WAF audit 의 client_ip 로 기록된다. Blue 측에선:
-- WAF audit: client_ip=10.20.32.60 + CRS 942 매칭
+직원 PC 의 IP (10.20.33.60) 가 WAF audit 의 client_ip 로 기록된다. Blue 측에선:
+- WAF audit: client_ip=10.20.33.60 + CRS 942 매칭
 - Sysmon EID 1: chrome.exe / brave.exe / curl.exe + CommandLine 의 URL
 - Sysmon EID 3: dmz 80 으로의 외부 연결
 

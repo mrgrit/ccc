@@ -1,0 +1,82 @@
+lab_id: standalone-soc-week12
+title: "인시던트 대응 (3) — 내부 위협 (Insider Threat) detection + UEBA (6v6 + R/B/P)"
+version: standalone-non-ai
+course: soc
+week: 12
+description: |
+  내부 위협 — 정당 한 user 계정 의 비정상 활동 — 의 4 detection 패턴: 비정상 시간 access, privilege escalation, data exfiltration (대용량 outbound), 정책 위반 (금지 file access).
+difficulty: medium
+duration_minutes: 120
+prerequisites: ["W09 IR + W11 분석"]
+objectives:
+  - "비정상 시간 sshd Accepted login (예: 새벽 시간) 패턴"
+  - "sudo / su / pkexec 의 privilege escalation log"
+  - "대용량 outbound (Suricata flow event 의 큰 bytes_toserver)"
+  - "정책 위반 — 금지 file access (예: /etc/shadow)"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: "## 🎯 MISSION — 비정상 시간 access\n**무엇을:** auth.log 의 Accepted 시간 분포 + 새벽 (00:00-06:00) 시간대 access 횟수."
+    hint: "grep Accepted /var/log/auth.log | awk '{print $3}' | head -10."
+    category: insider
+    points: 10
+    answer: |
+      🤖 가이드:
+      ssh 6v6-fw 'grep Accepted /var/log/auth.log 2>/dev/null | awk "{print substr(\\\$3,1,2)}" | sort | uniq -c | sort -rn | head -10'
+    answer_detail: "새벽 시간 access = 정상 baseline 외 — UEBA 의 핵심 indicator."
+    verify:
+      intent: "시간 분포 + 새벽 access"
+      success_criteria: ["시간 분포 표"]
+      acceptable_methods: ["awk / grep"]
+      negative_signs: ["시간 누락"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 2
+    instruction: "## 🎯 MISSION — privilege escalation log\n**무엇을:** sudo 사용 횟수 + 사용 자 + 명령 Top 5."
+    hint: "grep COMMAND /var/log/auth.log."
+    category: insider
+    points: 8
+    answer: |
+      🤖 가이드:
+      ssh 6v6-fw 'grep "sudo:.*COMMAND" /var/log/auth.log 2>/dev/null | sed "s/.*USER=//; s/.*COMMAND=//" | sort | uniq -c | sort -rn | head -5'
+    answer_detail: "sudo Top 명령 = 운영 baseline. 비정상 = chmod 777 / cat /etc/shadow 등."
+    verify:
+      intent: "sudo Top 5"
+      success_criteria: ["Top 5 + 사용자"]
+      acceptable_methods: ["grep"]
+      negative_signs: ["1~2 만"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 3
+    instruction: "## 🎯 MISSION — 대용량 outbound (Suricata flow)\n**무엇을:** eve.json 의 flow event 의 bytes_toserver Top 3."
+    hint: "jq 'select(.event_type==\"flow\") | .flow.bytes_toserver' | sort -rn | head -3."
+    category: insider
+    points: 10
+    answer: |
+      🤖 가이드:
+      ssh 6v6-ips 'tail -1000 /var/log/suricata/eve.json | jq -c "select(.event_type==\"flow\") | {src: .src_ip, dst: .dest_ip, bytes_to: .flow.bytes_toserver}" 2>/dev/null | sort -t : -k 4 -rn | head -3'
+    answer_detail: "data exfiltration = 비정상 outbound. 정상 baseline + IDS flow stat 의 비교."
+    verify:
+      intent: "flow Top 3"
+      success_criteria: ["Top 3 + bytes"]
+      acceptable_methods: ["jq"]
+      negative_signs: ["없음"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 4
+    instruction: "## 🎯 MISSION — 정책 위반 + 보고서\n**무엇을:** 금지 파일 (/etc/shadow / /etc/passwd 의 unauthorized read) 의 audit log + 4 detection 통합 markdown."
+    hint: "auditd 설정 시 file access log. 또는 학생 보고서 4 detection 정리."
+    category: documentation
+    points: 10
+    answer: "🤖 가이드: 4 detection 통합 markdown 표."
+    answer_detail: "Insider threat = log + UEBA + DLP 결합. SOC L2 의 주요 활동."
+    verify:
+      intent: "4 detection 통합"
+      success_criteria: ["4 detection 표"]
+      acceptable_methods: ["markdown"]
+      negative_signs: ["detection 누락"]
+    target_vm: bastion
+    risk_level: low

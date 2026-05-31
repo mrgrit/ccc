@@ -1280,7 +1280,7 @@ T+15m  Purple AAR 보고서
 
 ## 15.5 Windows 엔드포인트와의 연결 — User-Agent / PowerShell / exe 다운로드 (W03 위빙)
 
-Suricata 의 정규식·flowbits·threshold 는 **Windows 사용자 PC(10.20.32.60)** 의 의심 트래픽 패턴을
+Suricata 의 정규식·flowbits·threshold 는 **Windows 사용자 PC(10.20.33.60)** 의 의심 트래픽 패턴을
 잡는 데도 강력하다. 운영자가 자주 보는 3 패턴:
 
 | 패턴 | Suricata 룰 단서 | Sysmon 짝 |

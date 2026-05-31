@@ -1,0 +1,84 @@
+lab_id: standalone-soc-week13
+title: "위협 인텔리전스 (CTI) 활용 — IoC / MISP / OpenCTI / Wazuh integration (6v6 + R/B/P)"
+version: standalone-non-ai
+course: soc
+week: 13
+description: |
+  CTI 의 4 활용 — IoC 수집 (OSINT) / IoC enrichment / Wazuh integration / 자체 IoC export (STIX/TAXII).
+difficulty: medium
+duration_minutes: 120
+prerequisites: ["W11 의 IoC 추출 경험"]
+objectives:
+  - "OSINT IoC 1 sample (AlienVault OTX / MalwareBazaar)"
+  - "IoC enrichment (geo / hash → AV detection)"
+  - "Wazuh rule 의 CDB list (IoC 매칭) 가용성"
+  - "본인 IoC 의 STIX 2.1 JSON export"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: "## 🎯 MISSION — OSINT IoC 1 sample\n**무엇을:** AlienVault OTX 또는 MalwareBazaar 의 IoC 1 sample (예: malicious IP) + 본 lab 환경 의 alert 와 비교."
+    hint: "curl https://otx.alienvault.com/api/v1/indicators/IPv4/<ip>/general 또는 https://bazaar.abuse.ch/api/v1/."
+    category: cti
+    points: 10
+    answer: "🤖 가이드: 학생 의 1 sample 인용 + 분석."
+    answer_detail: "OSINT CTI = SOC 의 외부 intelligence. 자체 detection 의 보강."
+    verify:
+      intent: "OSINT IoC sample"
+      success_criteria: ["1 IoC"]
+      acceptable_methods: ["API / web"]
+      negative_signs: ["IoC 없음"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 2
+    instruction: "## 🎯 MISSION — IoC enrichment\n**무엇을:** 1 IP 또는 hash 의 enrichment (geo / asn / passive DNS / VT) 결과 학생 정리."
+    hint: "ipinfo.io/<ip>/json 또는 virustotal API."
+    category: cti
+    points: 8
+    answer: "🤖 가이드: 학생 정리 표."
+    answer_detail: "enrichment = IoC 의 context 보강. SOC 의 reasoning 의 base."
+    verify:
+      intent: "enrichment 표"
+      success_criteria: ["geo + asn 또는 av"]
+      acceptable_methods: ["API"]
+      negative_signs: ["enrichment 없음"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 3
+    instruction: "## 🎯 MISSION — Wazuh CDB list integration\n**무엇을:** /var/ossec/etc/lists/ 의 default cdb 또는 학생 의 custom IoC list 작성 + rule 매핑 설명."
+    hint: "ls /var/ossec/etc/lists/. cdb format = key:value."
+    category: cti
+    points: 10
+    answer: |
+      🤖 가이드:
+      ssh 6v6-siem 'sudo ls /var/ossec/etc/lists/ 2>/dev/null | head -5; sudo head -5 /var/ossec/etc/lists/audit-keys 2>/dev/null'
+    answer_detail: "Wazuh CDB list = IoC 의 dictionary lookup. rule 의 <list> 로 매칭 빠름."
+    verify:
+      intent: "CDB list 확인"
+      success_criteria: ["list 파일 1+"]
+      acceptable_methods: ["ls / head"]
+      negative_signs: ["없음"]
+    target_vm: siem
+    risk_level: low
+
+  - order: 4
+    instruction: "## 🎯 MISSION — STIX 2.1 JSON export 1 개 + 보고서"
+    hint: "STIX 2.1 = JSON object { type: 'indicator', pattern: '[ipv4-addr:value = ...]' }."
+    category: documentation
+    points: 8
+    answer: |
+      🤖 가이드:
+      cat > /tmp/ioc.json <<'EOF'
+      {"type":"indicator","spec_version":"2.1","id":"indicator--1","created":"2026-05-19T00:00:00Z","modified":"2026-05-19T00:00:00Z","pattern":"[ipv4-addr:value = '1.2.3.4']","valid_from":"2026-05-19T00:00:00Z","labels":["malicious-activity"]}
+      EOF
+      cat /tmp/ioc.json | python3 -m json.tool
+      rm /tmp/ioc.json
+    answer_detail: "STIX/TAXII = CTI 의 표준 교환 포맷. MISP / OpenCTI 의 native input."
+    verify:
+      intent: "STIX JSON + cleanup"
+      success_criteria: ["1 STIX JSON"]
+      acceptable_methods: ["JSON"]
+      negative_signs: ["미작성"]
+    target_vm: bastion
+    risk_level: low

@@ -516,11 +516,11 @@ echo "TTD (탐지 소요 시간): ${TTD}초"
 | 출발지 | 분석가의 단서 source | 사건의 성격 |
 |--------|--------------------|------------|
 | 외부 공격자 | fw events / Suricata / WAF audit / Apache access | 의도된 공격 (sqlmap 등) |
-| **Windows 직원 PC** | **WAF audit (client_ip=10.20.32.60) + Sysmon EID 1+3** | 우발적 노출 / Phishing 결과 / 매크로 |
+| **Windows 직원 PC** | **WAF audit (client_ip=10.20.33.60) + Sysmon EID 1+3** | 우발적 노출 / Phishing 결과 / 매크로 |
 
 ### 분석가의 한 사건 — Windows victim 의 XSS 페이로드 송신
 
-- WAF audit: client_ip=10.20.32.60, URL=/?q=`<script>`, rule 941110 차단.
+- WAF audit: client_ip=10.20.33.60, URL=/?q=`<script>`, rule 941110 차단.
 - Sysmon EID 1 (6v6-win): Image=chrome.exe (또는 powershell/curl), CommandLine.
 - Sysmon EID 3: DestinationIp=10.20.32.80, DestinationPort=80.
 

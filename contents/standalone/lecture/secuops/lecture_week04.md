@@ -1294,7 +1294,7 @@ ssh 6v6-ips 'sudo grep "\"event_type\":\"tls\"" /var/log/suricata/eve.json | tai
 
 ## 14.5 Windows 엔드포인트와의 연결 — IPS alert + Sysmon EID 3 의 합주 (W03 위빙)
 
-본 6v6 에는 W03 에서 다룬 **Windows 사용자 PC(10.20.32.60)** 가 있다. 운영자 시각에선 Suricata 의
+본 6v6 에는 W03 에서 다룬 **Windows 사용자 PC(10.20.33.60)** 가 있다. 운영자 시각에선 Suricata 의
 alert 한 줄을 단독으로 보지 않고, 같은 시각에 그 IP/포트로 향한 **호스트의 어느 프로세스** 가
 원인인지 함께 본다 — IPS 의 네트워크 시각 + Sysmon 의 호스트 시각.
 

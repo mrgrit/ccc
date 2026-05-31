@@ -973,7 +973,7 @@ ATT&CK panel 의 한 화면에서 두 tactic 의 카드가 모두 활성화 (색
 
 ## 14.5 Windows 엔드포인트 패널 — agent.name 필터 + Sysmon 룰그룹 (W03 위빙)
 
-Wazuh dashboard 의 Discover/Alerts 에서 운영자가 매일 쓰는 **Windows victim PC (10.20.32.60)** 시각의
+Wazuh dashboard 의 Discover/Alerts 에서 운영자가 매일 쓰는 **Windows victim PC (10.20.33.60)** 시각의
 쿼리 4개:
 
 ```

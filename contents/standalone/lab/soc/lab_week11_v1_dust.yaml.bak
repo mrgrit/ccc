@@ -1,0 +1,91 @@
+lab_id: standalone-soc-week11
+title: "인시던트 대응 (2) — 악성코드 분석 (정적 + 동적 / yara / hash) (6v6 + R/B/P)"
+version: standalone-non-ai
+course: soc
+week: 11
+description: |
+  의심 file 1 sample 의 정적 분석 (file / strings / hash) + 동적 분석 (proc/network 추정) + yara rule 매칭.
+difficulty: medium
+duration_minutes: 120
+prerequisites: ["W09 의 IR 6 단계"]
+objectives:
+  - "file 명령 + magic byte"
+  - "sha256/md5 hash + VirusTotal lookup (or 시뮬)"
+  - "strings 의 의심 string (URL / Mutex / API)"
+  - "yara rule 1 개 작성 + 매칭"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: "## 🎯 MISSION — 의심 file 1 sample + 정적 분석\n**무엇을:** /tmp/sample.bin 의 file + sha256 + strings Top 10."
+    hint: "ssh 6v6-attacker 'echo test > /tmp/sample.bin; file /tmp/sample.bin; sha256sum /tmp/sample.bin; strings /tmp/sample.bin | head -10'."
+    category: malware
+    points: 10
+    answer: |
+      🤖 가이드:
+      ssh 6v6-attacker 'cat > /tmp/sample.bin <<EOF
+      MZ\x90\x00\x03\x00\x00\x00 fake_pe_header
+      http://evil.example.com/payload
+      kernel32.dll
+      EOF
+      file /tmp/sample.bin; sha256sum /tmp/sample.bin; strings /tmp/sample.bin | head -10'
+    answer_detail: "file = magic byte 식별 (PE/ELF/zip). sha256 = VirusTotal/MalwareBazaar lookup key."
+    verify:
+      intent: "file + hash + strings"
+      success_criteria: ["3 결과"]
+      acceptable_methods: ["file / sha256 / strings"]
+      negative_signs: ["1~2 만"]
+    target_vm: attacker
+    risk_level: low
+
+  - order: 2
+    instruction: "## 🎯 MISSION — 의심 string 분류 (IoC 추출)\n**무엇을:** strings 결과 의 IoC (URL / IP / Mutex / API) 분류."
+    hint: "grep -E 'http|\\.dll|\\.exe' strings_output."
+    category: malware
+    points: 8
+    answer: "🤖 가이드: 학생 분류 표 (IoC type / value / 출처 line)."
+    answer_detail: "IoC = malware analysis 의 가장 actionable output."
+    verify:
+      intent: "IoC 분류"
+      success_criteria: ["IoC 3+"]
+      acceptable_methods: ["grep / 수동"]
+      negative_signs: ["분류 누락"]
+    target_vm: attacker
+    risk_level: low
+
+  - order: 3
+    instruction: "## 🎯 MISSION — yara rule 1 개 작성 + 매칭\n**무엇을:** STEP 2 의 IoC 기반 yara rule + 같은 sample 매칭."
+    hint: "yara rule = strings + condition. yara -r rule.yar sample.bin."
+    category: malware
+    points: 10
+    answer: |
+      🤖 가이드:
+      ssh 6v6-attacker 'cat > /tmp/rule.yar <<EOF
+      rule SuspiciousURL {
+          strings: \$s1 = "evil.example.com"
+          condition: \$s1
+      }
+      EOF
+      yara /tmp/rule.yar /tmp/sample.bin 2>&1 | head -3'
+    answer_detail: "yara = 가장 흔한 file pattern matcher. SOC 의 자체 detection 의 기본."
+    verify:
+      intent: "yara rule + 매칭"
+      success_criteria: ["rule 작성", "매칭 결과"]
+      acceptable_methods: ["yara"]
+      negative_signs: ["rule 미작성"]
+    target_vm: attacker
+    risk_level: low
+
+  - order: 4
+    instruction: "## 🎯 MISSION — 보고서 (IoC + yara + 권고) + cleanup"
+    hint: "IoC export STIX 또는 markdown."
+    category: documentation
+    points: 8
+    answer: "🤖 가이드: markdown + rm /tmp/sample.bin /tmp/rule.yar."
+    answer_detail: "malware analysis 보고서 = IoC + yara + recommendations + retention."
+    verify:
+      intent: "보고서 + cleanup"
+      success_criteria: ["보고서", "cleanup"]
+      acceptable_methods: ["markdown"]
+      negative_signs: ["cleanup 누락"]
+    target_vm: attacker
+    risk_level: low

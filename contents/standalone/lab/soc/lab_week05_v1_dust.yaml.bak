@@ -1,0 +1,92 @@
+lab_id: standalone-soc-week05
+title: "경보 분석 (1) — 기초 (alert level / groups / rule.frequency / 시간 분포) (6v6 + R/B/P)"
+version: standalone-non-ai
+course: soc
+week: 5
+description: |
+  경보 분석 의 4 차원 — level / groups / frequency / 시간 분포 — 으로 6v6 의 alert 891+ 건 의 통계 분석.
+difficulty: easy
+duration_minutes: 90
+prerequisites: ["W04 의 Wazuh 구조 이해"]
+objectives:
+  - "alert 의 level 분포 (0-15) histogram"
+  - "rule.groups 빈도 Top 5"
+  - "1 시간 vs 24 시간 alert 비교"
+  - "특정 rule.id 의 burst 패턴 식별"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: |
+      ## 🎯 MISSION — alert level histogram
+      **무엇을:** alerts.json 최근 1000 alert 의 level 분포.
+    hint: "tail -1000 alerts.json | jq -r '.rule.level' | sort | uniq -c."
+    category: alert_analysis
+    points: 10
+    answer: |
+      🤖 가이드:
+      ssh 6v6-siem 'sudo tail -1000 /var/ossec/logs/alerts/alerts.json | jq -r ".rule.level" | sort -n | uniq -c'
+    answer_detail: "level 3 (low) 가 가장 다수, 10+ (high) 가 critical 분석 대상."
+    verify:
+      intent: "level histogram"
+      success_criteria: ["histogram 결과", "level 분포 분석 1 줄"]
+      acceptable_methods: ["jq + uniq"]
+      negative_signs: ["분석 없음"]
+    target_vm: siem
+    risk_level: low
+
+  - order: 2
+    instruction: |
+      ## 🎯 MISSION — rule.groups 빈도 Top 5
+      **무엇을:** 1000 alert 의 rule.groups 빈도 Top 5.
+    hint: "jq -r '.rule.groups[]' | sort | uniq -c | sort -rn | head -5."
+    category: alert_analysis
+    points: 10
+    answer: |
+      🤖 가이드:
+      ssh 6v6-siem 'sudo tail -1000 /var/ossec/logs/alerts/alerts.json | jq -r ".rule.groups[]?" 2>/dev/null | sort | uniq -c | sort -rn | head -5'
+    answer_detail: "groups 의 web/firewall/intrusion 등 - SOC 의 분류 dimensions."
+    verify:
+      intent: "Top 5 groups"
+      success_criteria: ["Top 5 list"]
+      acceptable_methods: ["jq"]
+      negative_signs: ["1~2 만"]
+    target_vm: siem
+    risk_level: low
+
+  - order: 3
+    instruction: |
+      ## 🎯 MISSION — 시간 분포 비교 (1h vs 24h)
+      **무엇을:** Wazuh dashboard 또는 alerts.json 의 시간별 alert 수 (1 시간 / 24 시간).
+    hint: "dashboard 의 time series chart 또는 jq '.timestamp' grep 시간."
+    category: alert_analysis
+    points: 8
+    answer: |
+      🤖 가이드:
+      ssh 6v6-siem 'sudo tail -5000 /var/ossec/logs/alerts/alerts.json | jq -r ".timestamp" | cut -c1-13 | sort | uniq -c | tail -10'
+    answer_detail: "시간별 spike 패턴 = SOC 의 burst detection signal."
+    verify:
+      intent: "시간 분포"
+      success_criteria: ["1h + 24h 비교"]
+      acceptable_methods: ["dashboard / jq"]
+      negative_signs: ["1 시간만"]
+    target_vm: siem
+    risk_level: low
+
+  - order: 4
+    instruction: |
+      ## 🎯 MISSION — burst rule.id 식별 + 1 줄 보고서
+      **무엇을:** Top 1 빈도 rule.id 의 burst 시점 + 학생 판정 (정상 baseline / 공격 / 오탐).
+    hint: "Top rule.id 의 시간 분포 grep."
+    category: documentation
+    points: 12
+    answer: |
+      🤖 가이드:
+      ssh 6v6-siem 'sudo tail -5000 /var/ossec/logs/alerts/alerts.json | jq -r "select(.rule.id==\"86601\") | .timestamp" | cut -c1-13 | sort | uniq -c | tail -5'
+    answer_detail: "86601 = Suricata generic — Suricata alert 가 다수 = ips 의 정상 sniff signal."
+    verify:
+      intent: "burst rule.id + 판정"
+      success_criteria: ["burst rule.id", "판정 1 줄"]
+      acceptable_methods: ["jq"]
+      negative_signs: ["판정 누락"]
+    target_vm: siem
+    risk_level: low

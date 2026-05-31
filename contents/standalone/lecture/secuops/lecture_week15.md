@@ -793,7 +793,7 @@ W12-14 : OpenCTI + Threat Hunting + KISA 공유
 
 ## 8.5 APT 5 단계 × Windows victim PC — 본 시험의 중심 narrative
 
-본 기말 APT 5 단계 시뮬의 **희생자(victim) 가 Windows 사용자 PC (10.20.32.60)** 라는 narrative 를
+본 기말 APT 5 단계 시뮬의 **희생자(victim) 가 Windows 사용자 PC (10.20.33.60)** 라는 narrative 를
 권장한다 (W03 의 페르소나 그대로). 5 단계 각각에 Windows 흔적이 남는다 — 학생은 그 흔적을 timeline
 으로 묶어 한 report 로 만든다.
 

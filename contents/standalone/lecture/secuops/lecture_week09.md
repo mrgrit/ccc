@@ -1054,7 +1054,7 @@ bastion agent 등록 절차 + 보안 고려 (key 관리 / authd 권장).
 ## 15.5 Windows 엔드포인트와의 연결 — eventchannel ingest + 룰그룹 (W03 위빙)
 
 Wazuh manager 가 Linux 측 ingest (logcollector / syscheck / FIM) 만 받는 게 아니다 — W03 의
-**Windows 엔드포인트(10.20.32.60)** 가 `<localfile><log_format>eventchannel</log_format>` 로 보내는
+**Windows 엔드포인트(10.20.33.60)** 가 `<localfile><log_format>eventchannel</log_format>` 로 보내는
 **Sysmon/Operational + Security** 채널이 같은 manager 의 같은 analysisd 로 흘러 들어온다.
 
 ### 15.5.1 Windows ingest 경로 (요지)

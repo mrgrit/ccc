@@ -1,0 +1,132 @@
+lab_id: standalone-soc-week03
+title: "로그 이해 (2) — 네트워크 / 웹 로그 (HAProxy / Apache / ModSec / Suricata eve.json) (6v6 + R/B/P)"
+version: standalone-non-ai
+course: soc
+week: 3
+description: |
+  네트워크/웹 로그 4 종 — fw 의 HAProxy req log + nftables drop log + web 의 Apache access/error + ModSec audit + ips 의 Suricata eve.json — 각각 의 위치 + 형식 + 핵심 필드.
+difficulty: easy
+duration_minutes: 90
+prerequisites:
+  - "W02 의 syslog 5 필드 이해"
+objectives:
+  - "HAProxy access log 의 vhost / backend / response code / 시간 추출"
+  - "Apache access.log 의 combined format (host, user, time, request, status, size, referer, UA)"
+  - "ModSec audit log 의 trigger rule id + matched payload"
+  - "Suricata eve.json 의 event_type (alert/http/flow/tls/dns) 분포"
+pass_threshold: 0.6
+steps:
+
+  - order: 1
+    instruction: |
+      ## 🎯 MISSION — Wazuh alerts.json (가용 main log) 의 web 분류
+
+      **무엇을:** siem 의 /var/ossec/logs/alerts/alerts.json 최근 100 alert 중 web 관련 (agent.name=web 또는 rule.groups=web*) 의 5 sample.
+
+      💡 6v6 fw 는 minimal 컨테이너 — /var/log/haproxy.log 부재. 대신 *모든* network alert 가 siem 의 alerts.json 으로 모임 — SOC 의 진짜 단일 진입점.
+
+      ## 📋 채점
+      - 5 sample 추출
+      - 각 의 agent + rule.id + 시간
+    hint: "ssh 6v6-siem 'tail -100 /var/ossec/logs/alerts/alerts.json | grep -E \"web\\|agent.*web\" | head -5'."
+    category: log_analysis
+    points: 10
+    answer: |
+      🤖 가이드:
+      ssh 6v6-siem 'sudo tail -200 /var/ossec/logs/alerts/alerts.json | jq -c "select(.agent.name==\"web\" or (.rule.groups // []) | tostring | contains(\"web\")) | {time: .timestamp, agent: .agent.name, rule: .rule.id, desc: .rule.description}" 2>/dev/null | head -5'
+    answer_detail: |
+      SOC 의 핵심 = SIEM 단일 진입점. 모든 web/network alert 가 alerts.json 에 모임. fw 의 HAProxy log 는 별도 access — 운영 환경 에서는 보통 docker logs / external collector 로 수집.
+    verify:
+      intent: "HAProxy 5 line + 필드 mapping"
+      success_criteria:
+        - "5 line"
+        - "필드 mapping"
+      acceptable_methods:
+        - "tail / grep"
+      negative_signs:
+        - "log 없음"
+    target_vm: bastion
+    risk_level: low
+
+  - order: 2
+    instruction: |
+      ## 🎯 MISSION — Apache access.log combined format
+
+      **무엇을:** web 의 /var/log/apache2/access.log 최근 5 line + combined format 8 필드 분해.
+    hint: "ssh 6v6-web 'tail -5 /var/log/apache2/access.log'. format: %h %l %u %t \\\"%r\\\" %>s %b \\\"%{Referer}i\\\" \\\"%{User-agent}i\\\"."
+    category: log_analysis
+    points: 10
+    answer: |
+      🤖 가이드:
+      ssh 6v6-web 'tail -5 /var/log/apache2/access.log 2>/dev/null'
+    answer_detail: |
+      Apache combined format = NCSA + Referer + User-Agent. JuiceShop 의 SPA assets / API request 가 대부분.
+    verify:
+      intent: "Apache 5 line + 8 필드"
+      success_criteria:
+        - "5 line"
+        - "8 필드"
+      acceptable_methods:
+        - "tail"
+      negative_signs:
+        - "필드 mapping 없음"
+    target_vm: bastion
+    risk_level: low
+
+  - order: 3
+    instruction: |
+      ## 🎯 MISSION — ModSec audit log
+
+      **무엇을:** web 의 /var/log/apache2/modsec_audit.log (또는 modsec) 의 최근 1 transaction + trigger rule id 추출.
+    hint: "ssh 6v6-web 'find /var/log/apache2 -name *modsec* -mtime -1 | head -1 | xargs tail -30 2>/dev/null'. rule id = id:9XXXXX."
+    category: log_analysis
+    points: 10
+    answer: |
+      🤖 가이드:
+      ssh 6v6-web 'tail -30 /var/log/apache2/modsec_audit.log 2>/dev/null | head -20'
+    answer_detail: |
+      ModSec audit log = 다중 section (A/B/C/D/E/F/H). H section 에 trigger rule. 9XXXXX 형식 (CRS) — 942 SQLi / 941 XSS / 932 OS / 930 traversal.
+    verify:
+      intent: "ModSec audit + rule id"
+      success_criteria:
+        - "최근 transaction"
+        - "rule id 1+"
+      acceptable_methods:
+        - "tail / grep"
+      negative_signs:
+        - "log 없음"
+    target_vm: bastion
+    risk_level: low
+
+  - order: 4
+    instruction: |
+      ## 🎯 MISSION — Suricata eve.json event_type 분포
+
+      **무엇을:** ips 의 /var/log/suricata/eve.json 최근 200 line 의 event_type 분포 + 가장 빈도 높은 event_type 의 1 sample.
+    hint: "ssh 6v6-ips 'tail -200 /var/log/suricata/eve.json | python3 -c \"...\"' (event_type Counter)."
+    category: log_analysis
+    points: 10
+    answer: |
+      🤖 가이드:
+      ssh 6v6-ips 'tail -200 /var/log/suricata/eve.json | python3 -c "
+      import sys, json
+      from collections import Counter
+      c = Counter()
+      for ln in sys.stdin:
+          try: c[json.loads(ln).get(\"event_type\",\"?\")] += 1
+          except: pass
+      print(dict(c))
+      "'
+    answer_detail: |
+      Suricata eve event_type: alert / http / flow / tls / dns / fileinfo. 6v6 의 stats 는 fix 로 제외됨 (256 field overflow). alert 가 의미 있는 SIEM input.
+    verify:
+      intent: "eve.json event_type 분포"
+      success_criteria:
+        - "Counter 결과"
+        - "Top 1 sample"
+      acceptable_methods:
+        - "python jq"
+      negative_signs:
+        - "분포 없음"
+    target_vm: bastion
+    risk_level: low

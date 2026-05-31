@@ -498,7 +498,7 @@ Exploitation / Post-Exploitation / Reporting — 의 종합. **Windows 사용자
 | 단계 | Red 행동 | Blue 측 단서 |
 |------|---------|-------------|
 | ① Pre-engagement | 범위·rules of engagement 동의 (학기 시작 시 학생 동의서) | — |
-| ② Intel Gathering | nmap 10.20.32.60 → 22/3389/445/5985 발견 | fw events.log (포트 access 패턴) |
+| ② Intel Gathering | nmap 10.20.33.60 → 22/3389/445/5985 발견 | fw events.log (포트 access 패턴) |
 | ③ Threat Modeling | RDP brute / SMB null / WinRM brute 후보 식별 | — (계획 단계) |
 | ④ Vulnerability Analysis | 약한 비밀번호 / 패치 미적용 / 사용자 행동 가설 | osquery / Sysmon EID 1 baseline |
 | ⑤ Exploitation | 직원에게 피싱 → curl 다운로드 → powershell 실행 | **Sysmon EID 1+3+11 (Win) + WAF/Suricata** |

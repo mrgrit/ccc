@@ -1,0 +1,92 @@
+lab_id: standalone-soc-week06
+title: "경보 분석 (2) — ATT&CK 매핑 + Tactic/Technique 분류 (6v6 + R/B/P)"
+version: standalone-non-ai
+course: soc
+week: 6
+description: |
+  alert 의 MITRE ATT&CK Tactic/Technique 매핑. Wazuh 의 rule.mitre 필드 + 학생 의 보강 매핑.
+difficulty: medium
+duration_minutes: 90
+prerequisites: ["W05 의 경보 분류 기초"]
+objectives:
+  - "rule.mitre 필드 가용 alert 식별"
+  - "Tactic (TA0001~TA0040) 분포 + Top 3"
+  - "Technique (T1xxx) 분포 + Top 3"
+  - "수동 보강 — rule.mitre 없는 alert 의 학생 매핑"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: |
+      ## 🎯 MISSION — rule.mitre 필드 가용 alert
+      **무엇을:** 최근 5000 alert 중 rule.mitre.tactic 필드 있는 alert 수 + Top 3 tactic.
+    hint: "jq '.rule.mitre.tactic[]?' | sort | uniq -c | sort -rn | head -3."
+    category: attack
+    points: 10
+    answer: |
+      🤖 가이드:
+      ssh 6v6-siem 'sudo tail -5000 /var/ossec/logs/alerts/alerts.json | jq -r ".rule.mitre.tactic[]?" 2>/dev/null | sort | uniq -c | sort -rn | head -5'
+    answer_detail: "Wazuh default rule 의 일부에 mitre tag — Initial Access / Execution / Defense Evasion 등."
+    verify:
+      intent: "mitre tactic Top 3"
+      success_criteria: ["Top 3 + 건수"]
+      acceptable_methods: ["jq"]
+      negative_signs: ["1~2 만"]
+    target_vm: siem
+    risk_level: low
+
+  - order: 2
+    instruction: |
+      ## 🎯 MISSION — Technique (T1xxx) Top 3
+      **무엇을:** rule.mitre.technique 의 Top 3.
+    hint: "jq '.rule.mitre.technique[]?'."
+    category: attack
+    points: 8
+    answer: |
+      🤖 가이드:
+      ssh 6v6-siem 'sudo tail -5000 /var/ossec/logs/alerts/alerts.json | jq -r ".rule.mitre.technique[]?" 2>/dev/null | sort | uniq -c | sort -rn | head -5'
+    answer_detail: "T1059 (Cmd interpreter), T1110 (Brute Force), T1190 (Exploit Public App) 다수."
+    verify:
+      intent: "technique Top 3"
+      success_criteria: ["Top 3"]
+      acceptable_methods: ["jq"]
+      negative_signs: ["없음"]
+    target_vm: siem
+    risk_level: low
+
+  - order: 3
+    instruction: |
+      ## 🎯 MISSION — 수동 매핑 — rule.mitre 없는 alert
+      **무엇을:** rule.mitre 미설정 alert 1 개 선택 → 학생 본인 의 Tactic/Technique 매핑 + 근거 1 문장.
+    hint: "rule.description 에서 SQLi → T1190, brute → T1110, recon → T1595."
+    category: attack
+    points: 12
+    answer: |
+      🤖 가이드:
+      ssh 6v6-siem 'sudo tail -100 /var/ossec/logs/alerts/alerts.json | jq -c "select(.rule.mitre == null) | {id: .rule.id, desc: .rule.description}" | head -3'
+      # 학생: 위 결과 1 개 선택 후 매핑.
+    answer_detail: "수동 매핑 = MITRE ATT&CK Navigator 의 핵심 활용. SOC 분석가 의 reasoning 학습."
+    verify:
+      intent: "수동 매핑 + 근거"
+      success_criteria: ["1 alert + Tactic + Technique + 근거"]
+      acceptable_methods: ["MITRE ATT&CK 참조"]
+      negative_signs: ["근거 없음"]
+    target_vm: siem
+    risk_level: low
+
+  - order: 4
+    instruction: |
+      ## 🎯 MISSION — 보고서 + ATT&CK Navigator JSON
+      **무엇을:** Top 3 Tactic + Top 3 Technique markdown 표 + 학생 의 ATT&CK Navigator layer.json 1 줄.
+    hint: "Navigator layer = JSON { name, technique: [{techniqueID, score, color}] }."
+    category: documentation
+    points: 10
+    answer: |
+      🤖 가이드: markdown 표 + Navigator JSON 골격.
+    answer_detail: "Navigator (https://mitre-attack.github.io/attack-navigator/) = SOC 의 visual reporting tool."
+    verify:
+      intent: "Top 3 + Navigator JSON"
+      success_criteria: ["Top 3 표", "JSON 1 줄"]
+      acceptable_methods: ["markdown + JSON"]
+      negative_signs: ["JSON 누락"]
+    target_vm: bastion
+    risk_level: low

@@ -700,7 +700,7 @@ ssh 6v6-siem "sudo tail -50 /var/ossec/logs/alerts/alerts.json | jq \"select(.ru
 ## 10.5 Caldera + Windows agent (sandcat) — 본 6v6 의 추가 표면 (W03 secuops 위빙)
 
 Caldera 의 agent (sandcat) 는 Linux/macOS 외에 **Windows 도 지원** (PowerShell 다운로드 가능).
-본 6v6 의 Windows 사용자 PC (10.20.32.60) 에 sandcat 을 깔면 — Caldera 가 Windows 측 ability
+본 6v6 의 Windows 사용자 PC (10.20.33.60) 에 sandcat 을 깔면 — Caldera 가 Windows 측 ability
 (PowerShell, mshta, registry 조작 등) 를 자동 emulate 한다.
 
 ### Windows ability 의 카탈로그 (예)

@@ -792,7 +792,7 @@ XSS 페이로드의 실행 무대는 **victim 의 브라우저** — 본 6v6 에
 
 ### Blue 측 흔적
 
-- WAF audit: client_ip=10.20.32.60, URL=/...의심 path, rule 941 미매칭(읽기 요청은 보통 통과).
+- WAF audit: client_ip=10.20.33.60, URL=/...의심 path, rule 941 미매칭(읽기 요청은 보통 통과).
 - Sysmon EID 3 (Windows): chrome.exe → 의심 외부 IP (XSS payload 가 fetch() 한 곳).
 - Sysmon EID 22 (DNS): 의심 도메인 조회.
 

@@ -269,7 +269,7 @@ ssh 6v6-web "sudo osqueryi --json \
 5점: 명령 syntax 정확 (jq / grep / sudo / Get-WinEvent 등)
 5점: timeline 의 순서 (Suricata flow → http → alert / ModSec audit / Wazuh alert / **Sysmon EID 1+3**)
 5점: 운영자 조치 권장 (rate-limit / IP block / 추가 모니터링 / **endpoint 격리**)
-보너스 2점: Windows victim PC(10.20.32.60) 가 같은 의심 도메인에 접속한 흔적을 Sysmon EID 22 (DNS) 로 찾는 쿼리 1개 작성
+보너스 2점: Windows victim PC(10.20.33.60) 가 같은 의심 도메인에 접속한 흔적을 Sysmon EID 22 (DNS) 로 찾는 쿼리 1개 작성
 ```
 
 #### 시뮬 실행 + 분석

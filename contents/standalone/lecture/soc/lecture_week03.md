@@ -520,7 +520,7 @@ echo "TTD (탐지 소요 시간): ${TTD}초"
 ## Windows 측 네트워크 흔적 — Sysmon EID 3 의 가치 (W03 위빙)
 
 본 주차의 네트워크/웹 로그는 fw events + Suricata eve.json + ModSec audit + Apache access 의 4 source
-가 중심이다. **Windows 사용자 PC (10.20.32.60)** 가 더해지면서 분석가는 **호스트 측면의 네트워크
+가 중심이다. **Windows 사용자 PC (10.20.33.60)** 가 더해지면서 분석가는 **호스트 측면의 네트워크
 시각** 하나를 더 얻는다 — Sysmon **EID 3 (NetworkConnect)**.
 
 ### EID 3 가 다른 source 들과 다른 점
@@ -534,7 +534,7 @@ echo "TTD (탐지 소요 시간): ${TTD}초"
 
 > dvwa.6v6.lab 에 XSS 의심 페이로드가 들어왔다.
 
-- Apache access: 클라이언트 10.20.32.60, URL=/?q=`<script>`
+- Apache access: 클라이언트 10.20.33.60, URL=/?q=`<script>`
 - ModSec audit: rule 941110 매칭, 차단
 - Suricata: HTTP rule alert (선택)
 - **Sysmon EID 1 + 3** (6v6-win 측): `Image=curl.exe`, `CommandLine=...`, `DestinationIp=10.20.32.80`

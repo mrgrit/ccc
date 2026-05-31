@@ -308,14 +308,14 @@ steps:
       ## 💻 단계
       ```bash
       # Red ① — 의심 외부 IP 로 iwr (다운로드의 외형)
-      sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.32.60 \
+      sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.33.60 \
         'try { (iwr -UseBasicParsing http://10.20.30.1/ -EA Stop).StatusCode } catch { $_.Exception.Response.StatusCode.value__ }' >/dev/null
       # Red ② — PowerShell EncodedCommand (실행·권한상승의 외형)
-      sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.32.60 \
+      sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.33.60 \
         'powershell -EncodedCommand dwBoAG8AYQBtAGkA' >/dev/null
       sleep 3
       # Blue — Sysmon 채널 최근 50개에서 2 단계의 키워드가 모두 보이는지
-      sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.32.60 \
+      sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.33.60 \
         'Get-WinEvent -LogName "Microsoft-Windows-Sysmon/Operational" -MaxEvents 100 | Where-Object { $_.Message -match "iwr|EncodedCommand|Invoke-WebRequest" } | Measure-Object | Select-Object -ExpandProperty Count'
       ```
       ## ✅ 합격 기준
@@ -324,10 +324,10 @@ steps:
     category: detect
     points: 10
     answer: |
-      sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.32.60 'try { (iwr -UseBasicParsing http://10.20.30.1/ -EA Stop).StatusCode } catch { $_.Exception.Response.StatusCode.value__ }' >/dev/null
-      sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.32.60 'powershell -EncodedCommand dwBoAG8AYQBtAGkA' >/dev/null
+      sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.33.60 'try { (iwr -UseBasicParsing http://10.20.30.1/ -EA Stop).StatusCode } catch { $_.Exception.Response.StatusCode.value__ }' >/dev/null
+      sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.33.60 'powershell -EncodedCommand dwBoAG8AYQBtAGkA' >/dev/null
       sleep 3
-      N=$(sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.32.60 'Get-WinEvent -LogName "Microsoft-Windows-Sysmon/Operational" -MaxEvents 100 | Where-Object { $_.Message -match "iwr|EncodedCommand|Invoke-WebRequest" } | Measure-Object | Select-Object -ExpandProperty Count')
+      N=$(sshpass -p ccc ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ccc@10.20.33.60 'Get-WinEvent -LogName "Microsoft-Windows-Sysmon/Operational" -MaxEvents 100 | Where-Object { $_.Message -match "iwr|EncodedCommand|Invoke-WebRequest" } | Measure-Object | Select-Object -ExpandProperty Count')
       [ "$(echo $N | tr -d "[:space:]")" -ge 1 ] 2>/dev/null && echo "OK windows_timeline_count=$N" || echo "FAIL windows_timeline_count=$N"
     answer_detail: "Windows victim 의 ①다운로드 + ②실행 두 단계가 같은 호스트의 같은 Sysmon 채널에 시간순으로 보임 → 분석가가 한 사건의 timeline 으로 묶는다."
     verify:

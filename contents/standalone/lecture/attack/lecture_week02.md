@@ -751,8 +751,8 @@ OWASP-WSTG-INFO 카테고리 = 본 주차의 표준:
 
 ## 9.5 Windows 호스트 정찰 — 포트와 서비스 (W03 secuops 위빙)
 
-본 주차의 정찰 도구(nmap/nikto/dirb/ffuf) 는 웹 위주다. Windows 사용자 PC (10.20.32.60) 정찰은
-다른 포트 셋을 살펴야 한다.
+본 주차의 정찰 도구(nmap/nikto/dirb/ffuf) 는 웹 위주다. Windows 사용자 PC (user 구역 10.20.33.60)
+정찰은 다른 포트 셋을 살펴야 한다.
 
 ### Windows 정찰 — 핵심 포트 + 서비스
 
@@ -768,7 +768,7 @@ OWASP-WSTG-INFO 카테고리 = 본 주차의 표준:
 ### nmap 명령 — Windows 호스트 정찰
 
 ```
-nmap -p 22,135,139,445,3389,5985 -sV --script=smb-os-discovery,smb-enum-shares 10.20.32.60
+nmap -p 22,135,139,445,3389,5985 -sV --script=smb-os-discovery,smb-enum-shares 10.20.33.60
 ```
 
 > 본 인프라의 fw 정책에 의해 일부 포트는 외부에서 닫혀 있을 수 있다 (W03 의 다층 방어). 정찰

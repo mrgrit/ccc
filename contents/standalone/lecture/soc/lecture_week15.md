@@ -453,7 +453,7 @@ Week 15:    기말       -> 종합 인시던트 대응 훈련
 
 ## 기말 Red vs Blue — Windows victim 중심 narrative (W03 위빙)
 
-본 기말 종합 IR 훈련의 **희생자(victim)** 를 Windows 사용자 PC (10.20.32.60) 로 두는 것을 권장한다.
+본 기말 종합 IR 훈련의 **희생자(victim)** 를 Windows 사용자 PC (10.20.33.60) 로 두는 것을 권장한다.
 6v6 인프라 + Windows victim PC 의 한 컴플리트 case 는 분석가의 모든 도구·기법을 한 번에 동원시킨다.
 
 ### Red vs Blue 5 단계 시나리오 — Windows victim 중심

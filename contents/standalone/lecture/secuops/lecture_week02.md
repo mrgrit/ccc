@@ -77,26 +77,28 @@
 |----|------|-------------|-----------|
 | ext | 10.20.30.0/24 | 공격자(10.20.30.202), fw eth0 | fw 가 직접 본다 |
 | pipe | 10.20.31.0/24 | fw eth1 ↔ ips eth0 (좁은 통로) | fw 가 본다(통과 트래픽) |
-| dmz | 10.20.32.0/24 | ips eth1, **web/WAF**(10.20.32.80), **SIEM**(.100), **Windows 사용자 PC(.60)** | fw **는 dmz 내부 통신은 못 본다** |
+| dmz | 10.20.32.0/24 | ips eth1, **web/WAF**(10.20.32.80), **SIEM**(.100) | fw **는 dmz 내부 통신은 못 본다** |
+| user | 10.20.33.0/24 | ips eth2 (게이트웨이), **Windows 사용자 PC**(.60) | fw 가 못 본다 (ips 가 게이트웨이) |
 | int | 10.20.40.0/24 | 백엔드 앱 (JuiceShop 등) | fw 가 못 본다 |
 
-**가시성의 한계 — 매우 중요**: 직원 PC(Windows 10.20.32.60) 가 같은 dmz 안의 웹서버에 접속하는
-트래픽은 **fw 를 거치지 않는다**(같은 구역 스위칭). 즉 fw 는 외부에서 들어오는 트래픽을 다루는
-**경계 장비** 다. "내부 PC 가 무엇을 보고 무엇을 했는가" 는 fw 가 못 본다 — 그건 **WAF(웹 요청)** 과
-**엔드포인트 EDR(Sysmon/Wazuh)** 의 일이다. 다음 주차 W03 (Windows 엔드포인트 운영) 에서 본격적으로 다룬다.
+**가시성의 한계 — 매우 중요**: 직원 PC(Windows 10.20.33.60, user 구역) 가 dmz 의 웹서버에 접속할
+때 그 트래픽은 user→**ips**→dmz 경로를 거친다. 즉 **ips 가 본다 — 그러나 fw 는 거치지 않는다**.
+fw 는 외부에서 들어오는 트래픽을 다루는 **경계 장비** 다. "내부 PC 가 무엇을 보고 무엇을 했는가" 는
+fw 가 못 본다 — 그건 **IPS(네트워크 패턴) + WAF(웹 요청 의미) + 엔드포인트 EDR(Sysmon/Wazuh, PC
+내부 행위)** 의 일이다. 다음 주차 W03 (Windows 엔드포인트 운영) 에서 본격적으로 다룬다.
 
 ```mermaid
 flowchart LR
   ATK[공격자<br/>10.20.30.202<br/><b>ext</b>]:::ext
   FW[방화벽 fw<br/>eth0:.30.1 / eth1:.31.1<br/>nft + HAProxy<br/><b>경계 장비</b>]:::fw
-  IPS[IPS<br/>eth0:.31.2 / eth1:.32.1]:::ips
+  IPS[IPS<br/>eth0:.31.2 / eth1:.32.1 / eth2:.33.1]:::ips
   WEB[웹/WAF<br/>10.20.32.80<br/><b>dmz</b>]:::svc
-  WIN[Windows 사용자 PC<br/>10.20.32.60<br/><b>dmz</b>]:::win
+  WIN[Windows 사용자 PC<br/>10.20.33.60<br/><b>user</b>]:::win
   SIEM[SIEM<br/>10.20.32.100]:::svc
   APP[백엔드 앱<br/>10.20.40.x<br/><b>int</b>]:::int
 
   ATK -- ext --> FW -- pipe --> IPS -- dmz --> WEB
-  WIN -. 직접 .-> WEB
+  WIN -- user --> IPS
   WEB --> APP
   FW -. events.log .-> SIEM
 
@@ -108,7 +110,8 @@ flowchart LR
   classDef int fill:#f4e8f8,stroke:#849
 ```
 
-> 점선 화살표(`WIN -. .-> WEB`) 가 **fw 가 못 보는 트래픽** 이다. 운영자가 머릿속에 늘 그려 둘 그림.
+> `WIN -- user --> IPS` 화살표 가 **fw 가 못 보고 ips 가 보는 트래픽** 이다. 운영자가 머릿속에 늘
+> 그려 둘 그림: fw 는 경계, ips 는 내부 구역들 사이의 게이트웨이.
 
 ---
 
@@ -417,6 +420,6 @@ tcp    ESTABLISHED   10.20.31.1:40428   10.20.32.120:5601    [ASSURED]
 ## 13. 다음 주차 (W03) 예고 — Windows 엔드포인트 운영·침해대응
 
 방화벽은 경계의 문지기다. 안에 있는 **사용자 PC(엔드포인트)** 가 무엇을 보고 무엇을 실행하는지는
-못 본다. 다음 주차는 우리 6v6 에 새로 들어온 **Windows 11 사용자 PC(10.20.32.60)** 를 **victim 직원
+못 본다. 다음 주차는 우리 6v6 에 새로 들어온 **Windows 11 사용자 PC(10.20.33.60)** 를 **victim 직원
 PC** 와 **analyst 보안담당 PC** 두 페르소나로 운영하며, **Sysmon + Wazuh 에이전트 + Windows 보안로그**
 를 SIEM 으로 흘려보내 분석한다. 방화벽으로 못 막은 일을 엔드포인트가 잡는다.

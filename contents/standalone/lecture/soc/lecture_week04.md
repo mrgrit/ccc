@@ -488,7 +488,7 @@ for line in sys.stdin:                                 # 반복문 시작
 ## Windows 에이전트 — Wazuh 관제의 7번째 호스트 (W03 위빙)
 
 본 주차의 Wazuh 관제 환경은 Linux 서버 6대(secu/web/db/log/dev/test 또는 6v6 기준 fw/ips/web/siem
-등) 가 기본이다. 본 학기부터 **Windows 사용자 PC (10.20.32.60, agent name=6v6-win)** 가 7번째 호스트
+등) 가 기본이다. 본 학기부터 **Windows 사용자 PC (10.20.33.60, agent name=6v6-win)** 가 7번째 호스트
 로 합류했다.
 
 ### 분석가 관점의 차이 — Linux 6대 + Windows 1대

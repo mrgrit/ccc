@@ -844,7 +844,7 @@ L1/L2/L3 분석가 중 하나를 선택하여 다음을 조사하라:
 
 ## SOC 의 시야에 Windows 엔드포인트가 들어왔다 — 본 과목의 한 축
 
-본 6v6 인프라에는 W03(secuops) 에서 다룬 **Windows 11 사용자 PC (10.20.32.60)** 가 SOC 관제 대상으로
+본 6v6 인프라에는 W03(secuops) 에서 다룬 **Windows 11 사용자 PC (10.20.33.60)** 가 SOC 관제 대상으로
 정식 합류했다. SOC 분석가의 일상은 더 이상 Linux 서버 로그만 보는 것이 아니다 — **Windows
 엔드포인트의 Sysmon + Security 채널이 같은 Wazuh dashboard 의 같은 timeline 에 흐른다**.
 

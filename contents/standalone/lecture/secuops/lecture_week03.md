@@ -2,7 +2,7 @@
 
 > **본 주차 한 줄 요약**
 >
-> 6v6 인프라에 새로 들어온 **Windows 11 사용자 PC(10.20.32.60)** 를 두 페르소나로 운영한다 —
+> 6v6 인프라에 새로 들어온 **Windows 11 사용자 PC(10.20.33.60)** 를 두 페르소나로 운영한다 —
 > **victim 직원 PC** (일반 사용자 시점, 우발적으로 위협에 노출되는 자리) + **analyst 보안담당 PC**
 > (분석가 시점, SIEM/EDR 콘솔로 위협을 조사하는 자리). **Sysmon + Wazuh 에이전트 + Windows 보안로그**
 > 가 SIEM 으로 흘러들어가는 데이터 흐름을 머리에 그리고, 방화벽(W2) 이 못 본 일을 **엔드포인트가
@@ -14,7 +14,7 @@
 
 본 주차가 끝나면 운영자(여러분)는 다음을 한다.
 
-1. Windows 엔드포인트(10.20.32.60) 가 6v6 의 어디에 있고 누구와 통신하는지 말할 수 있다.
+1. Windows 엔드포인트(10.20.33.60) 가 6v6 의 어디에 있고 누구와 통신하는지 말할 수 있다.
 2. **두 페르소나** (victim/analyst) 의 의미를 알고, 각자 어떤 화면을 본다고 설명한다.
 3. **Sysmon** 의 주요 EID (1/3/7/8/10/11/22) 와 **Windows 보안 채널** 의 핵심 EID (4624/4625/4688)
    을 보고 무엇이 일어났는지 1줄로 해석한다.
@@ -48,7 +48,7 @@
 
 ## 2. 두 페르소나 — victim 직원 PC + analyst 보안담당 PC
 
-같은 Windows 호스트 한 대(10.20.32.60) 를 두 가지 자리로 본다. 사용자 계정·세션·시점이 다르다.
+같은 Windows 호스트 한 대(10.20.33.60) 를 두 가지 자리로 본다. 사용자 계정·세션·시점이 다르다.
 
 ### 2.1 victim 직원 PC
 
@@ -72,7 +72,7 @@
 
 ```mermaid
 sequenceDiagram
-    participant V as victim 직원 PC (Win 10.20.32.60)
+    participant V as victim 직원 PC (Win 10.20.33.60)
     participant N as 네트워크 (fw/ips/web)
     participant S as Wazuh manager (siem 10.20.32.100)
     participant A as analyst SIEM 대시보드
@@ -161,7 +161,7 @@ Sysmon 은 설정파일(XML) 로 어떤 이벤트를 기록·제외할지 결정
 
 ```mermaid
 flowchart LR
-    OS[Windows 11<br/>10.20.32.60]:::win
+    OS[Windows 11<br/>10.20.33.60]:::win
     SY[Sysmon<br/>Microsoft-Windows-Sysmon/Operational]:::ch
     SE[Windows Security<br/>채널]:::ch
     WA[Wazuh agent<br/>C:\\Program Files (x86)\\ossec-agent]:::ag
@@ -277,7 +277,7 @@ docker exec 6v6-siem /var/ossec/bin/agent_control -l
 
 ### 7.5 win-s05 — 외부 RDP 시도 (방화벽이 막아 둔 경우와의 비교)
 
-- Red (외부 공격자): `nc -vz 10.20.32.60 3389` 또는 RDP 클라이언트로 연결 시도.
+- Red (외부 공격자): `nc -vz 10.20.33.60 3389` 또는 RDP 클라이언트로 연결 시도.
 - 관찰: 방화벽 로그에서 차단 + (도달 못함). 도달했더라도 Security EID 4625/4624 흔적.
 - Blue: 방화벽 forward 에서 3389 외부 차단 룰 유지 + RDP 자체를 관리망에서만 열기.
 - 교훈: **방화벽(W2) + 엔드포인트(W3) = 다층 방어**. 한쪽이 뚫려도 다른 쪽이 잡는다.

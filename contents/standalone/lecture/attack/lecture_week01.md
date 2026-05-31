@@ -1123,8 +1123,9 @@ curl -s -o /dev/null -w "portal.6v6.lab: %{http_code}\n" \
 
 ## 9.5 공격 표면이 늘었다 — Windows 사용자 PC (W03 secuops 위빙)
 
-본 6v6 인프라에 **Windows 11 사용자 PC (10.20.32.60)** 가 들어오면서 Red Team 의 공격 표면이 한
-호스트 늘었다. Windows 는 다음 측면에서 특별하다.
+본 6v6 인프라에 **Windows 11 사용자 PC** 가 별도 `user` 구역(10.20.33.60)으로 분리되어 들어오면서
+Red Team 의 공격 표면이 한 호스트 늘었다. 다른 dmz 서버들과 자리는 분리됐지만, 외부에서 도달하려면
+여전히 `attacker(ext) → fw → ips → user` 경로를 거친다. Windows 는 다음 측면에서 특별하다.
 
 | 측면 | 의미 (공격자 시각) |
 |------|------------------|

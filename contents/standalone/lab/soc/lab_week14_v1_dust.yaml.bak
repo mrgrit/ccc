@@ -1,0 +1,90 @@
+lab_id: standalone-soc-week14
+title: "자동화 관제 — Bastion Agent Daemon + Active Response (6v6 + R/B/P)"
+version: standalone-non-ai
+course: soc
+week: 14
+description: |
+  6v6 의 bastion daemon (Manager + SubAgent) 의 자동 운영 + Wazuh Active Response 의 자동 차단.
+difficulty: medium
+duration_minutes: 120
+prerequisites: ["W09 IR + W11/W12 detection"]
+objectives:
+  - "bastion API 의 /health + /kg/audit 으로 자동화 동작 확인"
+  - "bastion mission 1 회 자연어 보내기"
+  - "Wazuh Active Response 의 default rule 확인"
+  - "자동화 의 한계 + 운영 관리자 의 monitoring"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: "## 🎯 MISSION — bastion API /health\n**무엇을:** curl http://192.168.0.110:9100/health -H X-API-Key 결과."
+    hint: "curl -H 'X-API-Key: ccc-api-key-2026'."
+    category: automation
+    points: 8
+    answer: |
+      🤖 가이드:
+      curl -s -H 'X-API-Key: ccc-api-key-2026' http://192.168.0.110:9100/health | python3 -m json.tool | head -20
+    answer_detail: "bastion /health = manager + SubAgent + KG 상태 모두 표시."
+    verify:
+      intent: "/health 호출"
+      success_criteria: ["JSON 응답"]
+      acceptable_methods: ["curl"]
+      negative_signs: ["응답 없음"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 2
+    instruction: "## 🎯 MISSION — bastion 자연어 mission 1 회\n**무엇을:** curl POST /chat with 자연어 mission (예: 'siem 의 최근 alert 5 건 의 rule.id Top 3 알려줘'). KG anchor 생성 확인."
+    hint: "POST /chat with message JSON. KG anchor 는 응답 의 kg_status event."
+    category: automation
+    points: 10
+    answer: |
+      🤖 가이드:
+      curl -s -X POST http://192.168.0.110:9100/chat \
+        -H 'X-API-Key: ccc-api-key-2026' -H 'Content-Type: application/json' \
+        -d '{"message":"siem 의 최근 alert 5 건 의 rule.id Top 3 알려줘","stream":false,"course":"soc","step_order":2,"auto_approve":true}' | python3 -c "
+        import sys, json
+        d = json.load(sys.stdin)
+        for e in d.get('events',[]):
+            if e.get('event') == 'kg_status':
+                print('anchor:', e.get('record',{}).get('anchor_id'))
+        "
+    answer_detail: "KG anchor 생성 = bastion 의 자동 학습. 매 mission 의 paper §4 PE-KG cycle."
+    verify:
+      intent: "mission + KG anchor"
+      success_criteria: ["mission 응답", "anchor 1+"]
+      acceptable_methods: ["curl"]
+      negative_signs: ["anchor 없음"]
+    target_vm: bastion
+    risk_level: low
+
+  - order: 3
+    instruction: "## 🎯 MISSION — Wazuh Active Response 의 default rule\n**무엇을:** /var/ossec/etc/ossec.conf 의 <active-response> block 확인."
+    hint: "grep -A5 'active-response' ossec.conf."
+    category: automation
+    points: 8
+    answer: |
+      🤖 가이드:
+      ssh 6v6-siem 'sudo grep -B1 -A5 "<active-response>" /var/ossec/etc/ossec.conf 2>/dev/null | head -30'
+    answer_detail: "Active Response = command + rule_id + timeout. firewall-drop / disable-account / restart-wazuh 등 default."
+    verify:
+      intent: "active-response block"
+      success_criteria: ["block 인용"]
+      acceptable_methods: ["grep"]
+      negative_signs: ["없음"]
+    target_vm: siem
+    risk_level: low
+
+  - order: 4
+    instruction: "## 🎯 MISSION — 자동화 한계 + 운영 monitoring 보고서"
+    hint: "자동화 가 위험한 경우 = false positive 차단. 학생 의견."
+    category: documentation
+    points: 8
+    answer: "🤖 가이드: 2 문단 markdown — 자동화 의 한계 + monitoring 권고."
+    answer_detail: "자동화 = SOC 의 효율 ↑ but 잘못된 차단 위험. SOC manager 의 monitoring 필수."
+    verify:
+      intent: "자동화 한계 보고서"
+      success_criteria: ["2 문단"]
+      acceptable_methods: ["markdown"]
+      negative_signs: ["1 문단만"]
+    target_vm: bastion
+    risk_level: low

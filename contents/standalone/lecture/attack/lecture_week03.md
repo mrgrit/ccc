@@ -727,10 +727,10 @@ sudo tail -10 /var/log/apache2/modsec_audit.log | head -1 | \
 가 되는 케이스** (피싱·CSRF·악성 광고) 도 시뮬레이션할 수 있다.
 
 ```
-시나리오: 직원 PC (10.20.32.60) → JuiceShop 에 의심 요청
+시나리오: 직원 PC (10.20.33.60) → JuiceShop 에 의심 요청
    ① 공격자가 직원에게 피싱 메일 전송 (URL 안에 페이로드 포함)
    ② 직원이 URL 클릭 → 브라우저가 JuiceShop 에 자동 GET 요청 (XSS / CSRF)
-   ③ 서버 측 WAF audit 의 client_ip = 10.20.32.60
+   ③ 서버 측 WAF audit 의 client_ip = 10.20.33.60
 ```
 
 ### Blue 측 단서 — 본 강의의 Red 가 알아야 할 것
